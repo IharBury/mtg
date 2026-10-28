@@ -131,6 +131,7 @@ structure ZoneMoveReplacementResult where
   headSource : Option GameObject := none
   applied : Array ReplacementId := #[]
   cause : Option EventCause := none
+  choice? : Option (PlayerId × Array ReplacementId) := none
 deriving Repr, Inhabited, BEq
 
 /-- Run the CR 616.1 replacement loop for `old` moving from `old.zone` to
@@ -148,6 +149,8 @@ def replaceZoneMove (g : Game) (old : GameObject) (beforeSnap : EventObject)
   let mut headSource : Option GameObject := none
   let mut curApplied := applied
   let mut curCause := cause
+  let mut curOrder := g.replacementOrder
+  let mut choice? : Option (PlayerId × Array ReplacementId) := none
   let affected := old.controller.getD old.owner
   let bf := preBattlefield.getD g.battlefield
   let mut fuel := 32
@@ -232,9 +235,14 @@ def replaceZoneMove (g : Game) (old : GameObject) (beforeSnap : EventObject)
         | _ => pure ()
       | _ => pure ()
     let candidates := specs.map (fun (s, _, _) => (ReplacementOrPrevention.replacement s).toCandidate)
-    match g.selectNextReplacement candidates curApplied with
-    | none => fuel := 0
-    | some chosen =>
+    match g.selectNextReplacementStep candidates curApplied curOrder with
+    | .none => fuel := 0
+    | .needChoice chooser choices ord' =>
+      curOrder := ord'
+      choice? := some (chooser, choices)
+      fuel := 0
+    | .chosen chosen ord' =>
+      curOrder := ord'
       match specs.find? (fun (s, _, _) => s.id == chosen.id) with
       | none => fuel := 0
       | some (spec, hSrc, isFinality) =>
@@ -256,6 +264,7 @@ def replaceZoneMove (g : Game) (old : GameObject) (beforeSnap : EventObject)
     headSource := headSource
     applied := curApplied
     cause := curCause
+    choice? := choice?
   }
 
 /-- `partial` because linked-exile returns recurse into `move` (CR 610.3). -/
@@ -287,7 +296,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
   let beforeSnap := g.snapshot old
   let buildArrival (g : Game) (targetZone : Zone) (asOf : Nat)
       (applied : Array ReplacementId := #[]) (curCause : Option EventCause := cause) :
-      GameObject × CounterBag × Nat × Bool × Bool × Option EventCause :=
+      GameObject × CounterBag × Nat × Bool × Bool × Array ReplacementId × Option EventCause × Option (PlayerId × Array ReplacementId) :=
     let newId : ObjectId := ⟨g.nextObjectId⟩
     let ts := g.timestamp + 1
     let leavingPlay :=
@@ -358,15 +367,36 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
           (forceBackFace := nightBack)
           (applied := applied)
           (cause := curCause)
-      (etb.candidate, etb.entersWith, etb.weaverBonus, impendingNotCreature, faceDown, etb.cause)
+      (etb.candidate, etb.entersWith, etb.weaverBonus, impendingNotCreature, faceDown, etb.applied, etb.cause, etb.choice?)
     else
-      (candidate, #[], 0, impendingNotCreature, faceDown, curCause)
+      (candidate, #[], 0, impendingNotCreature, faceDown, applied, curCause, none)
   -- Run the CR 616.1 replacement loop for leaving/destination replacements (CR 614.6).
+  let origDest := dest
   let moveRep :=
     g.replaceZoneMove old beforeSnap dest (verb := verb) (actor := actor)
       (libraryPosition := libraryPosition) (preBattlefield := preBattlefield)
       (cause := cause)
   let dest := moveRep.dest
+  let preCheckArrivalChoice? :=
+    if moveRep.choice?.isNone && dest == .battlefield then
+      let (_, _, _, _, _, _, _, ch?) := buildArrival g dest g.timestamp moveRep.applied moveRep.cause
+      ch?
+    else none
+  match moveRep.choice?.orElse (fun _ => preCheckArrivalChoice?) with
+  | some (chooser, choices) =>
+    let sacrificed := verb == some .sacrifice
+    let discarded :=
+      match old.zone, origDest with
+      | .hand p, .graveyard q => p == q
+      | _, _ => false
+    let faceDown := origDest == .battlefield && old.zone == .stack && old.status.faceDown
+    let fromStackTime := if origDest == .battlefield && old.zone == .stack then old.status.time else 0
+    (g.promptChooseReplacement chooser choices
+      (.move id origDest controller sacrificed discarded verb actor faceDown tapped
+        isAttacking resolvedAttackTarget nightBack returnedAsArtifact onlyFoodArtifact
+        extraEntersWith libraryPosition fromStackTime applyHope cause),
+     id)
+  | none =>
   let exileInstead := moveRep.exileInstead
   let finalityExile := moveRep.finalityExile
   let headSource := moveRep.headSource
@@ -387,8 +417,9 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
       let g :=
         if old.zone == .battlefield then g.removePreparedCopy id else g
       let asOf := g.timestamp
-      let (fresh, entersWith, weaverBonus, impendingNotCreature, faceDown, finalCause) :=
+      let (fresh, entersWith, weaverBonus, impendingNotCreature, faceDown, allApplied, finalCause, _) :=
         buildArrival g dest asOf moveRep.applied moveRep.cause
+      let g := g.consumeReplacementOrder allApplied
       let newId := fresh.id
       let printed := fresh.printed
       let g :=

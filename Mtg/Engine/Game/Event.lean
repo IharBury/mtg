@@ -1115,6 +1115,44 @@ inductive RulesEvent where
   | effectUpdated (id : EffectId) (effect : ContinuousEffect)
 deriving Repr, Inhabited, BEq
 
+/-- Continuation stored while waiting for a player to answer `Pending.chooseReplacement`
+when multiple replacement or prevention effects compete in the same CR 616.1a–e tier. -/
+inductive PendingReplacement where
+  | dealDamageToPlayer (p : PlayerId) (n : Nat) (msg : String)
+      (source : Option EventObject) (combat : Bool) (unpreventable : Bool)
+      (cause : Option EventCause)
+  | dealDamageFrom (sourceId targetId : ObjectId) (n : Nat)
+      (combat : Bool) (unpreventable : Bool) (cause : Option EventCause)
+  | dealDamageToPermanent (targetId : ObjectId) (n : Nat)
+      (source : Option EventObject) (combat : Bool) (unpreventable : Bool)
+      (cause : Option EventCause)
+  | markDamageOn (targetId : ObjectId) (n : Nat) (msg : String)
+      (deathtouch : Bool) (source : Option EventObject) (combat : Bool)
+      (unpreventable : Bool) (cause : Option EventCause)
+  | dealAssignedCombatDamage
+  | gainLife (p : PlayerId) (n : Nat) (msg : String) (cause : Option EventCause)
+  | addPlusOnePlusOneTo (targetId : ObjectId) (n : Nat) (entersWith : Bool)
+      (byPlayer : Option PlayerId) (cause : Option EventCause)
+  | addCounters (targetId : ObjectId) (kind : CounterKind) (n : Nat)
+      (entersWith : Bool) (byPlayer : Option PlayerId) (cause : Option EventCause)
+  | recordPutCounters (targetId : ObjectId) (kind : CounterKind) (n : Nat)
+      (byPlayer : Option PlayerId) (cause : Option EventCause)
+  | move (id : ObjectId) (dest : Zone) (controller : Option PlayerId)
+      (sacrificed : Bool) (discarded : Bool) (verb : Option ZoneVerb)
+      (actor : Option PlayerId) (faceDown : Bool) (tapped : Bool)
+      (attacking : Bool) (attackingTarget : Option AttackTarget)
+      (transformed : Bool) (returnedAsArtifact : Bool) (onlyFoodArtifact : Bool)
+      (extraEntersWith : CounterBag) (libraryPosition : Option LibraryPosition)
+      (fromStackTime : Nat) (applyHope : Bool) (cause : Option EventCause)
+  | destroyPermanent (targetId : ObjectId) (cause : Option EventCause)
+  | createToken (controller : PlayerId) (card : CardDef) (tapped : Bool)
+      (attacking : Bool) (attackingTarget : Option AttackTarget)
+      (applyFoodBonus : Bool) (extraCounters : CounterBag) (cause : Option EventCause)
+  | draw (p : PlayerId) (n : Nat) (drawStepFirst : Bool) (cause : Option EventCause)
+  | connive (controller : PlayerId) (sourceId : Option ObjectId)
+  | checkSBA
+deriving Repr, Inhabited, BEq
+
 /-- Internal engine state mutations that are not rules-level occurrences. -/
 inductive EngineChange where
   /-- Update a player's state. -/
@@ -1255,6 +1293,7 @@ inductive EngineChange where
   | surveilReturnMvAtMost (v : Option Nat)
   | surveilReturnNoncreatureNonland (v : Bool)
   | replacementOrder (ids : Array ReplacementId)
+  | pendingReplacement (v : Option PendingReplacement)
   | castingFromTop (v : Bool)
   | delayedEndStepReturns (v : Array (ObjectId × EventCause))
   | pushDelayedEndStepReturn (id : ObjectId) (cause : EventCause)

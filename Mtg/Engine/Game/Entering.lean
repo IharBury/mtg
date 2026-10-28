@@ -161,19 +161,25 @@ def addPlusOnePlusOneTo (g : Game) (o : GameObject) (n : Nat := 1)
   let putter0 := byPlayer.orElse (fun _ => g.counterPutter o.controller)
   let proposed :=
     GameEvent.counters g.turnNumber putter0 o.asEvent .plusOnePlusOne n (cause := cause)
-  let (n, _, cause') :=
+  let (n', applied, cause', choice?, _) :=
     if proposed.watches .wouldPutCounter then
-      g.replaceCountersPut o .plusOnePlusOne n (putter := byPlayer)
+      g.replaceCountersPutChoice o .plusOnePlusOne n (putter := byPlayer)
         (entersWith := entersWith) (cause := cause)
     else
-      (g.countersYouPut o n (putter := byPlayer) (entersWith := entersWith), #[], cause)
-  let happened := GameEvent.counters g.turnNumber putter0 (g.object! o.id).asEvent .plusOnePlusOne n
-    (cause := cause')
-  let g := if n > 0 && !entersWith then g.record happened else g
-  let phrase :=
-    if entersWith then s!"{o.name} enters with {plusOnePlusOneCountersPhrase n}"
-    else s!"{o.name} gets {plusOnePlusOneCountersPhrase n}"
-  g.logMsg phrase
+      (g.countersYouPut o n (putter := byPlayer) (entersWith := entersWith), #[], cause, none, #[])
+  match choice? with
+  | some (chooser, choices) =>
+    g.promptChooseReplacement chooser choices
+      (.addPlusOnePlusOneTo o.id n entersWith byPlayer cause)
+  | none =>
+    let g := g.consumeReplacementOrder applied
+    let happened := GameEvent.counters g.turnNumber putter0 (g.object! o.id).asEvent .plusOnePlusOne n'
+      (cause := cause')
+    let g := if n' > 0 && !entersWith then g.record happened else g
+    let phrase :=
+      if entersWith then s!"{o.name} enters with {plusOnePlusOneCountersPhrase n'}"
+      else s!"{o.name} gets {plusOnePlusOneCountersPhrase n'}"
+    g.logMsg phrase
 
 /-- CR 306.5b: a planeswalker enters with loyalty counters equal to its
 printed loyalty (placed in `entersWith` during the zone change). -/

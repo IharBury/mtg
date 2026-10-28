@@ -250,6 +250,8 @@ structure Game where
   (CR 616.1); consulted by the replacement/prevention loop when multiple
   candidates tie in the lowest applicable priority tier (CR 616.1a–e). -/
   replacementOrder : Array ReplacementId := #[]
+  /-- Continuation for an event paused on `Pending.chooseReplacement` (CR 616.1). -/
+  pendingReplacement : Option PendingReplacement := none
   /-- True while a spell is being cast from the top of a library
   (Elven Chorus cannot show the new top until that finishes). -/
   castingFromTop : Bool := false
@@ -2364,6 +2366,7 @@ def applyEngineChange (g : Game) (c : EngineChange) : Game :=
   | .surveilReturnMvAtMost v => { g with surveilReturnMvAtMost := v }
   | .surveilReturnNoncreatureNonland v => { g with surveilReturnNoncreatureNonland := v }
   | .replacementOrder ids => { g with replacementOrder := ids }
+  | .pendingReplacement v => { g with pendingReplacement := v }
   | .castingFromTop v => { g with castingFromTop := v }
   | .delayedEndStepReturns v => { g with delayedEndStepReturns := v }
   | .pushDelayedEndStepReturn id cause =>
@@ -2962,43 +2965,121 @@ def apnapPlayers (g : Game) : Array PlayerId :=
 
 /-- Wrap `cause` in `EventCause.replaced id orig` when replacement or prevention
 effect `id` applies (CR 614.6 / 615.6). Preserves batch/resolving-context cause
-upgrade when `cause` is `none`. -/
-def wrapReplacedCause (g : Game) (id : ReplacementId) (cause : Option EventCause)
-    (defaultActor : Option PlayerId := none) : Option EventCause :=
-  let base : EventCause :=
-    match cause with
-    | some c => c
-    | none =>
-      if (g.currentBatch.map Prod.snd).join.isSome || g.currentResolvingContext?.isSome then
-        .unclassified
-      else
-        .oneShotEffect none none defaultActor
-  some (.replaced id base)
+upgrade when `cause` is `none`, without minting a `.oneShotEffect` outside an
+active spell or ability resolution. -/
+def wrapReplacedCause (_g : Game) (id : ReplacementId) (cause : Option EventCause)
+    (_defaultActor : Option PlayerId := none) : Option EventCause :=
+  some (.replaced id (cause.getD .unclassified))
 
-/-- Select the next replacement or prevention candidate according to CR 616.1:
+/-- Whether two replacement/prevention effects in the same CR 616.1a–e tier
+produce an identical outcome regardless of application order, so the engine
+can apply either first without pausing for `Pending.chooseReplacement` when no
+explicit `g.replacementOrder` preference is set. -/
+def replacementPairCommutes (a b : ReplacementOrPrevention) : Bool :=
+  match a, b with
+  | .replacement sa, .replacement sb =>
+    match sa.kind, sb.kind with
+    | .entersTappedSelf _, .entersTappedSelf _
+    | .entersTappedExternal _, .entersTappedExternal _
+    | .entersTappedSelf _, .entersTappedExternal _
+    | .entersTappedExternal _, .entersTappedSelf _ => true
+    | .entersTappedSelf _, .entersWithCountersSelf ..
+    | .entersWithCountersSelf .., .entersTappedSelf _ => true
+    | .entersWithCountersSelf _ ka _, .entersWithCountersSelf _ kb _ => ka != kb
+    | .entersWithExtraCounters _ ka na, .entersWithExtraCounters _ kb nb => ka != kb || na == nb
+    | .modifyCountersPut _ ka addA multA, .modifyCountersPut _ kb addB multB =>
+      (ka.isSome && kb.isSome && ka != kb) ||
+      (multA == 1 && multB == 1) || (addA == 0 && addB == 0)
+    | .addNoncombatDamage _ _, .addNoncombatDamage _ _ => true
+    | .multiplyDamage _ _, .multiplyDamage _ _ => true
+    | .modifyLifeGain _ addA multA, .modifyLifeGain _ addB multB =>
+      (multA == 1 && multB == 1) || (addA == 0 && addB == 0)
+    | .replaceDraw _ _ _, .replaceDraw _ _ _ => true
+    | .extraDrawOnConnive _ _, .extraDrawOnConnive _ _ => true
+    | .createExtraTokenWithFood _ _, .createExtraTokenWithFood _ _ => true
+    | .multiplyTokenCreation _ _, .multiplyTokenCreation _ _ => true
+    | .createExtraTokenWithFood _ _, .multiplyTokenCreation _ _
+    | .multiplyTokenCreation _ _, .createExtraTokenWithFood _ _ => true
+    | .stunCounterUntap _, .stunCounterUntap _ => true
+    | _, _ => false
+  | .prevention pa, .prevention pb =>
+    match pa.kind, pb.kind with
+    | .shieldCounterPreventDamage _, _ | _, .shieldCounterPreventDamage _ => false
+    | _, _ => true
+  | .prevention pa, .replacement sb =>
+    match pa.kind, sb.kind with
+    | .shieldCounterPreventDamage _, _ => false
+    | _, .addNoncombatDamage _ _ | _, .multiplyDamage _ _ => true
+    | _, _ => false
+  | .replacement sa, .prevention pb =>
+    match sa.kind, pb.kind with
+    | _, .shieldCounterPreventDamage _ => false
+    | .addNoncombatDamage _ _, _ | .multiplyDamage _ _, _ => true
+    | _, _ => false
+
+private def poolAllCommute (pool : Array ReplacementCandidate) : Bool :=
+  Id.run do
+    for i in [0:pool.size] do
+      for j in [i+1:pool.size] do
+        if !replacementPairCommutes pool[i]!.spec pool[j]!.spec then
+          return false
+    return true
+
+/-- Selection outcome of one step in the CR 616.1 replacement/prevention loop. -/
+inductive ReplacementSelection where
+  /-- No unapplied candidate remains. -/
+  | none
+  /-- `candidate` is selected; `remainingOrder` has consumed `candidate.id` if it was chosen from `replacementOrder`. -/
+  | chosen (candidate : ReplacementCandidate) (remainingOrder : Array ReplacementId)
+  /-- Multiple non-commuting candidates tie for the affected player `chooser` with no preference in `replacementOrder`; pause for `Pending.chooseReplacement`. -/
+  | needChoice (chooser : PlayerId) (choices : Array ReplacementId) (remainingOrder : Array ReplacementId)
+deriving Repr, Inhabited, BEq
+
+/-- Select the next replacement or prevention step according to CR 616.1:
 1. Filter out candidates whose `id` is already in `applied` (CR 614.5).
 2. Restrict to the lowest applicable `ReplacementTier` rank (`616.1a`–`e`).
 3. If multiple players are affected, the first affected player in APNAP order
    (CR 101.4 / 616.1) chooses among candidates affecting them.
-4. Consult `g.replacementOrder` (set via `Pending.chooseReplacement` /
-   `Action.chooseReplacement`) for the affected player's choice, defaulting to
-   the first candidate in deterministic order. -/
-def selectNextReplacement (g : Game) (candidates : Array ReplacementCandidate)
-    (applied : Array ReplacementId) : Option ReplacementCandidate :=
+4. Consult `order` (`g.replacementOrder`, set via `Pending.chooseReplacement` /
+   `Action.chooseReplacement`) for the affected player's choice, consuming that
+   entry when matched; if no preference matches and multiple non-commuting
+   candidates tie in `pool`, return `.needChoice chooser (pool.map (·.id)) order`. -/
+def selectNextReplacementStep (g : Game) (candidates : Array ReplacementCandidate)
+    (applied : Array ReplacementId)
+    (order : Array ReplacementId := g.replacementOrder) : ReplacementSelection :=
   let unapplied := candidates.filter (fun (c : ReplacementCandidate) => !applied.contains c.id)
-  if unapplied.isEmpty then none
+  if unapplied.isEmpty then .none
   else
     let minRank := unapplied.foldl (fun m (c : ReplacementCandidate) => min m c.tier.rank) 100
     let inTier := unapplied.filter (fun (c : ReplacementCandidate) => c.tier.rank == minRank)
     let apnap := g.apnapPlayers
     let chooser? := apnap.find? (fun p => inTier.any (fun (c : ReplacementCandidate) => c.affectedPlayer == p))
+    let chooser := chooser?.getD (inTier[0]!.affectedPlayer)
     let pool :=
       match chooser? with
       | some p => inTier.filter (fun (c : ReplacementCandidate) => c.affectedPlayer == p)
       | none => inTier
-    match g.replacementOrder.findSome? (fun prefId => pool.find? (fun (c : ReplacementCandidate) => c.id == prefId)) with
-    | some chosen => some chosen
-    | none => pool[0]?
+    match order.findSome? (fun prefId => pool.find? (fun (c : ReplacementCandidate) => c.id == prefId)) with
+    | some c => .chosen c (order.filter (· != c.id))
+    | none =>
+      if pool.size <= 1 || poolAllCommute pool then
+        match pool[0]? with
+        | some c => .chosen c order
+        | none => .none
+      else
+        .needChoice chooser (pool.map (·.id)) order
+
+/-- Select the next replacement or prevention candidate according to CR 616.1. -/
+def selectNextReplacement (g : Game) (candidates : Array ReplacementCandidate)
+    (applied : Array ReplacementId) : Option ReplacementCandidate :=
+  match g.selectNextReplacementStep candidates applied with
+  | .chosen c _ => some c
+  | .none => none
+  | .needChoice _ _ _ =>
+    let unapplied := candidates.filter (fun (c : ReplacementCandidate) => !applied.contains c.id)
+    let minRank := unapplied.foldl (fun m (c : ReplacementCandidate) => min m c.tier.rank) 100
+    let inTier := unapplied.filter (fun (c : ReplacementCandidate) => c.tier.rank == minRank)
+    inTier[0]?
 
 /-- Distinct per-`CounterKind` offset so a source with `.extraCounterOnPermanents`
 gets a distinct `ReplacementId` per kind of counter put on a permanent ("that
@@ -3036,18 +3117,15 @@ private def counterKindRankOffset : CounterKind → Nat
   | .poison => 29
 
 /-- CR 616.1 replacement loop for putting `n` counters of `kind` on `target`
-(CR 122.6 / 614.1a / 614.12). Supports printed static abilities
-(`.extraCounterOnPermanents`, `.extraPlusOneCounter`) on battlefield permanents
-and on `entering?` (when `target` is about to enter the battlefield, CR 614.12),
-as well as active `ContinuousEffect.replacement` specs with `.modifyCountersPut`.
-Returns the modified count, the updated `applied` list (CR 614.5), and the
-updated `EventCause` (CR 614.6). -/
-def replaceCountersPut (g : Game) (target : GameObject) (kind : CounterKind) (n : Nat)
+(CR 122.6 / 614.1a / 614.12), returning `(count, applied, cause, choice?, remainingOrder)`. -/
+def replaceCountersPutChoice (g : Game) (target : GameObject) (kind : CounterKind) (n : Nat)
     (putter : Option PlayerId := none) (entersWith : Bool := false)
     (entering : Option GameObject := none)
     (applied : Array ReplacementId := #[])
-    (cause : Option EventCause := none) : Nat × Array ReplacementId × Option EventCause :=
-  if n == 0 then (0, applied, cause)
+    (cause : Option EventCause := none)
+    (order : Array ReplacementId := g.replacementOrder) :
+    Nat × Array ReplacementId × Option EventCause × Option (PlayerId × Array ReplacementId) × Array ReplacementId :=
+  if n == 0 then (0, applied, cause, none, order)
   else
     let who :=
       if entersWith then target.controller
@@ -3057,6 +3135,8 @@ def replaceCountersPut (g : Game) (target : GameObject) (kind : CounterKind) (n 
       let mut curN := n
       let mut curApplied := applied
       let mut curCause := cause
+      let mut curOrder := order
+      let mut choice? : Option (PlayerId × Array ReplacementId) := none
       let mut fuel := 32
       while fuel > 0 do
         fuel := fuel - 1
@@ -3108,16 +3188,38 @@ def replaceCountersPut (g : Game) (target : GameObject) (kind : CounterKind) (n 
               | _ => pure ()
             | _ => pure ()
           let candidates := specs.map (fun (s, _, _) => (ReplacementOrPrevention.replacement s).toCandidate)
-          match g.selectNextReplacement candidates curApplied with
-          | none => fuel := 0
-          | some chosen =>
+          match g.selectNextReplacementStep candidates curApplied curOrder with
+          | .none => fuel := 0
+          | .needChoice chooser choices ord' =>
+            curOrder := ord'
+            choice? := some (chooser, choices)
+            fuel := 0
+          | .chosen chosen ord' =>
+            curOrder := ord'
             match specs.find? (fun (s, _, _) => s.id == chosen.id) with
             | none => fuel := 0
             | some (_, add, mult) =>
               curN := curN * mult + add
               curApplied := curApplied.push chosen.id
               curCause := g.wrapReplacedCause chosen.id curCause who
-      return (curN, curApplied, curCause)
+      return (curN, curApplied, curCause, choice?, curOrder)
+
+/-- CR 616.1 replacement loop for putting `n` counters of `kind` on `target`
+(CR 122.6 / 614.1a / 614.12). Supports printed static abilities
+(`.extraCounterOnPermanents`, `.extraPlusOneCounter`) on battlefield permanents
+and on `entering?` (when `target` is about to enter the battlefield, CR 614.12),
+as well as active `ContinuousEffect.replacement` specs with `.modifyCountersPut`.
+Returns the modified count, the updated `applied` list (CR 614.5), and the
+updated `EventCause` (CR 614.6). -/
+def replaceCountersPut (g : Game) (target : GameObject) (kind : CounterKind) (n : Nat)
+    (putter : Option PlayerId := none) (entersWith : Bool := false)
+    (entering : Option GameObject := none)
+    (applied : Array ReplacementId := #[])
+    (cause : Option EventCause := none) : Nat × Array ReplacementId × Option EventCause :=
+  let (n', app', c', _, _) :=
+    g.replaceCountersPutChoice target kind n (putter := putter) (entersWith := entersWith)
+      (entering := entering) (applied := applied) (cause := cause)
+  (n', app', c')
 
 /-- Extra counters from each Doc Samson `putter` controls, when that player
 also controls the permanent (`host`) (MSH 517 / 590). -/
@@ -3742,6 +3844,7 @@ structure EtbReplacementResult where
   weaverBonus : Nat := 0
   applied : Array ReplacementId := #[]
   cause : Option EventCause := none
+  choice? : Option (PlayerId × Array ReplacementId) := none
 
 /-- Run the CR 616.1a–g replacement loop for `candidate` about to enter the
 battlefield (CR 614.1c / 614.12 / 616.1):
@@ -3759,24 +3862,31 @@ def applyEtbReplacements (g : Game) (candidate : GameObject)
     (asOf : Nat := g.timestamp) (extraCounters : CounterBag := #[])
     (leavingPlay : Bool := false) (forceBackFace : Bool := false)
     (applied : Array ReplacementId := #[])
-    (cause : Option EventCause := none) : EtbReplacementResult := Id.run do
+    (cause : Option EventCause := none)
+    (order : Array ReplacementId := g.replacementOrder) : EtbReplacementResult := Id.run do
   let mut cur := candidate
   let mut bag : CounterBag :=
     if fromStackTime > 0 then #[(.time, fromStackTime)] else #[]
   let mut curApplied := applied
   let mut curCause := cause
+  let mut curOrder := order
+  let mut choice? : Option (PlayerId × Array ReplacementId) := none
   let mut weaverBonus : Nat := 0
   -- Any caller-supplied `extraCounters` (e.g., incubate, return with finality)
   -- have contained counter-putting replacements applied (CR 616.1g).
   for (k, n) in extraCounters do
-    if n > 0 then
-      let (n', app', c') :=
-        g.replaceCountersPut cur k n (putter := cur.controller) (entersWith := true)
-          (entering := some cur) (applied := curApplied) (cause := curCause)
-      bag := bag.add k n'
-      curApplied := app'
-      curCause := c'
-  let mut fuel := 32
+    if n > 0 && choice?.isNone then
+      let (n', app', c', subChoice?, ord') :=
+        g.replaceCountersPutChoice cur k n (putter := cur.controller) (entersWith := true)
+          (entering := some cur) (applied := curApplied) (cause := curCause) (order := curOrder)
+      curOrder := ord'
+      match subChoice? with
+      | some ch => choice? := some ch
+      | none =>
+        bag := bag.add k n'
+        curApplied := app'
+        curCause := c'
+  let mut fuel := if choice?.isSome then 0 else 32
   while fuel > 0 do
     fuel := fuel - 1
     let ctrl := cur.controller.getD cur.owner
@@ -3894,9 +4004,14 @@ def applyEtbReplacements (g : Game) (candidate : GameObject)
         | _ => pure ()
       | _ => pure ()
     let candidates := specs.map (fun s => (ReplacementOrPrevention.replacement s).toCandidate)
-    match g.selectNextReplacement candidates curApplied with
-    | none => fuel := 0
-    | some chosen =>
+    match g.selectNextReplacementStep candidates curApplied curOrder with
+    | .none => fuel := 0
+    | .needChoice chooser choices ord' =>
+      curOrder := ord'
+      choice? := some (chooser, choices)
+      fuel := 0
+    | .chosen chosen ord' =>
+      curOrder := ord'
       match specs.find? (fun s => s.id == chosen.id) with
       | none => fuel := 0
       | some spec =>
@@ -3906,12 +4021,18 @@ def applyEtbReplacements (g : Game) (candidate : GameObject)
         | .entersTappedSelf _ | .entersTappedExternal _ =>
           cur := { cur with status := { cur.status with tapped := true } }
         | .entersWithCountersSelf _ k n =>
-          let (n', app', c') :=
-            g.replaceCountersPut cur k n (putter := cur.controller) (entersWith := true)
-              (entering := some cur) (applied := curApplied) (cause := curCause)
-          bag := bag.add k n'
-          curApplied := app'
-          curCause := c'
+          let (n', app', c', subChoice?, ord2) :=
+            g.replaceCountersPutChoice cur k n (putter := cur.controller) (entersWith := true)
+              (entering := some cur) (applied := curApplied) (cause := curCause) (order := curOrder)
+          curOrder := ord2
+          match subChoice? with
+          | some ch =>
+            choice? := some ch
+            fuel := 0
+          | none =>
+            bag := bag.add k n'
+            curApplied := app'
+            curCause := c'
         | .entersUnderControl _ newCtrl =>
           cur := { cur with controller := some newCtrl, defaultController := some newCtrl }
         | .entersAsCopy _ template =>
@@ -3932,13 +4053,17 @@ def applyEtbReplacements (g : Game) (candidate : GameObject)
             match spec.source.bind g.findObject? with
             | some w => w.printed.othersEnterWithPlusOneEqualToughness
             | none => false
-          if isWeaver then
-            weaverBonus := weaverBonus + n
-            bag := bag.add k n
-          else
-            let (n', app', c') :=
-              g.replaceCountersPut cur k n (putter := cur.controller) (entersWith := true)
-                (entering := some cur) (applied := curApplied) (cause := curCause)
+          let (n', app', c', subChoice?, ord2) :=
+            g.replaceCountersPutChoice cur k n (putter := cur.controller) (entersWith := true)
+              (entering := some cur) (applied := curApplied) (cause := curCause) (order := curOrder)
+          curOrder := ord2
+          match subChoice? with
+          | some ch =>
+            choice? := some ch
+            fuel := 0
+          | none =>
+            if isWeaver then
+              weaverBonus := weaverBonus + n'
             bag := bag.add k n'
             curApplied := app'
             curCause := c'
@@ -3956,6 +4081,7 @@ def applyEtbReplacements (g : Game) (candidate : GameObject)
     weaverBonus := weaverBonus
     applied := curApplied
     cause := curCause
+    choice? := choice?
   }
 
 /-- Whether `blocker`'s static abilities currently allow it to be declared as
@@ -6628,6 +6754,26 @@ def linkedExileCause? (g : Game) (id : ObjectId) : Option EventCause :=
 def changes (g : Game) (cs : Array EngineChange) : Game :=
   cs.foldl Game.change g
 
+/-- Remove any `ReplacementId`s that were applied during an event from
+`g.replacementOrder` so player preferences apply only to the current event
+and do not stick across subsequent events (CR 616.1). -/
+def consumeReplacementOrder (g : Game) (applied : Array ReplacementId) : Game :=
+  if g.replacementOrder.isEmpty || applied.isEmpty then g
+  else
+    let next := g.replacementOrder.filter (fun id => !applied.contains id)
+    if next == g.replacementOrder then g
+    else g.change (.replacementOrder next)
+
+/-- Open `Pending.chooseReplacement` for `chooser` over `choices` and stash
+`cont` in `g.pendingReplacement` so `Action.chooseReplacement` can resume the
+event once the player chooses (CR 616.1). -/
+def promptChooseReplacement (g : Game) (chooser : PlayerId)
+    (choices : Array ReplacementId) (cont : PendingReplacement) : Game :=
+  g.changes #[
+    .pending (.chooseReplacement chooser choices),
+    .pendingReplacement (some cont)
+  ]
+
 /-- Add and process a `PlayerChange` for `p`. -/
 def changePlayer (g : Game) (p : PlayerId) (c : PlayerChange) : Game :=
   g.change (.player p c)
@@ -7087,10 +7233,16 @@ def recordPutCounters (g : Game) (id : ObjectId) (kind : CounterKind) (n : Nat)
     | none => g
     | some o =>
       let putter := byPlayer.orElse (fun _ => g.counterPutter o.controller)
-      let (_, _, cause') :=
-        g.replaceCountersPut o kind n (putter := byPlayer) (cause := cause)
-      let g := g.record (GameEvent.counters g.turnNumber putter o.asEvent kind n (cause := cause'))
-      if kind == .time then g.syncImpendingNotACreature id (cause := cause') else g
+      let (_, applied, cause', choice?, _) :=
+        g.replaceCountersPutChoice o kind n (putter := byPlayer) (cause := cause)
+      match choice? with
+      | some (chooser, choices) =>
+        g.promptChooseReplacement chooser choices
+          (.recordPutCounters id kind n byPlayer cause)
+      | none =>
+        let g := g.consumeReplacementOrder applied
+        let g := g.record (GameEvent.counters g.turnNumber putter o.asEvent kind n (cause := cause'))
+        if kind == .time then g.syncImpendingNotACreature id (cause := cause') else g
 
 /-- Record removing up to `n` counters of `kind` from `id` via
 `PermanentEvent.counters` (CR 122.1). Clamps to the current counter count and

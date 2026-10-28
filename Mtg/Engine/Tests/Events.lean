@@ -3229,8 +3229,10 @@ modification or share a `ReplacementId`. -/
     ((gTerm0.createEffect (.replacement repDupA true)).createEffect
       (.replacement repDupB true)).createEffect (.replacement repSecond true)
   let baseCause : EventCause := .oneShotEffect (some ⟨701⟩) none (some me)
-  let gTerm2 :=
+  let gTermPaused :=
     (quiet gTerm1).addPlusOnePlusOneTo (gTerm1.object! bTerm.id) 2 (cause := some baseCause)
+  let gTerm2 :=
+    ((quiet gTermPaused).apply me (.chooseReplacement ⟨7001⟩)).toOption.getD gTermPaused
   -- `⟨7001⟩` applies once (2 -> 3), the duplicate `⟨7001⟩` is skipped by CR 614.5,
   -- and `⟨7002⟩` applies once (3 -> 6), then the loop terminates.
   let termCounterEvents := gTerm2.events.filter (fun e =>
@@ -3426,8 +3428,12 @@ trigger, and the modified event carries `EventCause.replaced`. -/
     noUnclassifiedRulesEvents gTier2
 
 /- Phase 7 isolation (CR 616.1e): player-chosen ordering within tier `616.1e`
-(`g.replacementOrder` and `Pending.chooseReplacement` / `Action.chooseReplacement`)
-and APNAP tie-breaking. -/
+(`g.replacementOrder` and `Pending.chooseReplacement` / `Action.chooseReplacement`),
+resumption of paused events, non-sticky consumption of `replacementOrder`,
+rejection of out-of-band `Action.chooseReplacement`, non-resolving `wrapReplacedCause`
+preserving `nextEffectId`, `createAndMarkTokensAttacking` single-pass token
+replacements, single-pass `replaceDamage` in `dealDamageFrom` / `dealDamageToPermanent`,
+and Arwen + Doc Samson ETB counter replacement. -/
 #guard
   let gOrd0 := addPermanent (quiet afterDraw) bear me me
   let ordBear := (gOrd0.battlefield.filter (·.name == "Event Bear"))[0]!
@@ -3442,23 +3448,119 @@ and APNAP tie-breaking. -/
   let gOrd1 :=
     (gOrd0.createEffect (.replacement specAddDmg true)).createEffect
       (.replacement specMulDmg true)
-  let gPrompt :=
-    (gOrd1.change (.replacementOrder #[idMulDmg, idAddDmg])).change
-      (.pending (.chooseReplacement opp #[idAddDmg, idMulDmg]))
-  let gAddFirst :=
-    ((quiet gPrompt).apply opp (.chooseReplacement idAddDmg)).toOption.getD gPrompt
-  let gPrompt2 :=
-    (gOrd1.change (.replacementOrder #[idAddDmg, idMulDmg])).change
-      (.pending (.chooseReplacement opp #[idAddDmg, idMulDmg]))
-  let gMulFirst :=
-    ((quiet gPrompt2).apply opp (.chooseReplacement idMulDmg)).toOption.getD gPrompt2
+  -- Out-of-band `Action.chooseReplacement` is rejected when no `.chooseReplacement` is pending.
+  let outOfBandRejected :=
+    match gOrd1.apply opp (.chooseReplacement idAddDmg) with
+    | .error _ => true
+    | .ok _ => false
+  -- Live prompt: dealing 3 noncombat damage with both +2 and *2 active pauses on `.chooseReplacement`.
   let dmgOrdCause : EventCause := .oneShotEffect (some ⟨711⟩) none (some me)
+  let gDmgPaused :=
+    (quiet gOrd1).dealDamageToPlayer opp 3
+      (source := some (gOrd1.object! ordBear.id)) (cause := some dmgOrdCause)
+  let pausedPromptOk :=
+    gDmgPaused.pending == .chooseReplacement opp #[idAddDmg, idMulDmg] &&
+    (gDmgPaused.player opp).life == (gOrd0.player opp).life
+  -- Choosing `idAddDmg` first resumes the damage event: (3 + 2) * 2 = 10 damage, and consumes `replacementOrder`.
   let gDmgAddFirst :=
-    (quiet gAddFirst).dealDamageToPlayer opp 3
-      (source := some (gAddFirst.object! ordBear.id)) (cause := some dmgOrdCause)
+    ((quiet gDmgPaused).apply opp (.chooseReplacement idAddDmg)).toOption.getD gDmgPaused
+  -- Choosing `idMulDmg` first resumes the damage event: (3 * 2) + 2 = 8 damage, and consumes `replacementOrder`.
   let gDmgMulFirst :=
-    (quiet gMulFirst).dealDamageToPlayer opp 3
-      (source := some (gMulFirst.object! ordBear.id)) (cause := some dmgOrdCause)
+    ((quiet gDmgPaused).apply opp (.chooseReplacement idMulDmg)).toOption.getD gDmgPaused
+  -- A subsequent damage event on `gDmgAddFirst` prompts again because `replacementOrder` was consumed.
+  let gDmgSecondPaused :=
+    (quiet gDmgAddFirst).dealDamageToPlayer opp 3
+      (source := some (gDmgAddFirst.object! ordBear.id)) (cause := some dmgOrdCause)
+  -- Competing graveyard replacements (Finality counter exile vs Head of the Hunt exile + Wolf trigger) prompt `chooseReplacement`.
+  let gFinComp0 := addPermanent (addPermanent (quiet afterDraw) bear me me)
+    { bear with name := "Head of the Hunt Test", staticAbilities := #[.exileOppDeathCreateWolf] } opp opp
+  let finCompBear := (gFinComp0.battlefield.filter (·.name == "Event Bear"))[0]!
+  let headSource := (gFinComp0.battlefield.filter (·.name == "Head of the Hunt Test"))[0]!
+  let idFinExile : ReplacementId := ⟨finCompBear.id.raw * 1000 + 304⟩
+  let idHeadWolf : ReplacementId := ⟨headSource.id.raw * 1000 + 305⟩
+  let gFinComp1 :=
+    gFinComp0.recordPutCounters finCompBear.id .finality 1 (some me)
+      (cause := some (.oneShotEffect (some ⟨713⟩) none (some me)))
+  let gFinCompPaused :=
+    (quiet gFinComp1).moveToOwnerGraveyard (gFinComp1.object! finCompBear.id) "dies"
+      (verb := some .destroy) (cause := some (.oneShotEffect (some ⟨714⟩) none (some me)))
+  let gFinChoseHead :=
+    ((quiet gFinCompPaused).apply me (.chooseReplacement idHeadWolf)).toOption.getD gFinCompPaused
+  let gFinChoseExile :=
+    ((quiet gFinCompPaused).apply me (.chooseReplacement idFinExile)).toOption.getD gFinCompPaused
+  let finChoiceOk :=
+    gFinCompPaused.pending == .chooseReplacement me #[idFinExile, idHeadWolf] &&
+    gFinChoseHead.objects.any (fun o => o.zone == .exile && o.name == "Event Bear") &&
+    (gFinChoseHead.waitingTriggers.size + gFinChoseHead.stack.size) == 1 &&
+    gFinChoseExile.objects.any (fun o => o.zone == .exile && o.name == "Event Bear") &&
+    (gFinChoseExile.waitingTriggers.size + gFinChoseExile.stack.size) == 0
+  -- Non-resolving replacement (`cause := none` outside a resolving spell/ability) does not mint an `EffectId`.
+  let effBefore := gOrd1.nextEffectId
+  let wrappedNonResolving := gOrd1.wrapReplacedCause idAddDmg none (some me)
+  let nonResolvingCauseOk :=
+    wrappedNonResolving == some (.replaced idAddDmg .unclassified) &&
+    gOrd1.nextEffectId == effBefore
+  -- `createAndMarkTokensAttacking` with a token doubler + token-kind replacement applies each once.
+  let specDoubleTok : ReplacementSpec :=
+    { id := ⟨7260⟩, source := some ordBear.id, controller := some me,
+      affectedPlayer := me, kind := .multiplyTokenCreation me 2 }
+  let specFoodTok : ReplacementSpec :=
+    { id := ⟨7261⟩, source := some ordBear.id, controller := some me,
+      affectedPlayer := me, kind := .artifactTokensBecome me foodToken }
+  let gAtkTok0 :=
+    ((gOrd0.createEffect (.replacement specDoubleTok true)).createEffect
+      (.replacement specFoodTok true)).change (.resolvingAbility (some ordBear.id))
+  let gAtkTok1 :=
+    (quiet gAtkTok0).createAndMarkTokensAttacking me .treasure 1 false true
+  let atkTokFoods := gAtkTok1.battlefield.filter (·.name == foodToken.name)
+  let atkTokOk := atkTokFoods.size == 2
+  -- Single-pass `replaceDamage` on `dealDamageFrom` and `dealDamageToPermanent` with a shield counter.
+  let gShdDmg0 :=
+    addPermanent (addPermanent (quiet afterDraw) bear me me)
+      { bear with name := "Attacker Bear" } opp opp
+  let shdVictim := (gShdDmg0.battlefield.filter (·.name == "Event Bear"))[0]!
+  let shdAttacker := (gShdDmg0.battlefield.filter (·.name == "Attacker Bear"))[0]!
+  let shdRepId : ReplacementId := ⟨shdVictim.id.raw * 1000 + 502⟩
+  let gShdDmg1 :=
+    gShdDmg0.recordPutCounters shdVictim.id .shield 1 (some me)
+      (cause := some (.oneShotEffect (some ⟨715⟩) none (some me)))
+  let shdDmgCause : EventCause := .oneShotEffect (some ⟨716⟩) none (some opp)
+  let gShdFrom :=
+    (quiet gShdDmg1).dealDamageFrom "Attacker Bear" (gShdDmg1.object! shdVictim.id) 2
+      (source := some (gShdDmg1.object! shdAttacker.id)) (cause := some shdDmgCause)
+  let shdFromRemoved := gShdFrom.events.filter (fun e =>
+    match e.change with
+    | .rules (.permanent (.counters (.object o) .shield (.removed 1) _)) =>
+      o.id == some shdVictim.id
+    | _ => false)
+  let singlePassDamageOk :=
+    (gShdFrom.object! shdVictim.id).status.shield == 0 &&
+    (gShdFrom.object! shdVictim.id).status.damage == 0 &&
+    shdFromRemoved.size == 1 &&
+    shdFromRemoved[0]!.cause == .replaced shdRepId shdDmgCause
+  -- Arwen (`othersEnterWithPlusOneEqualToughness := true`) + Doc Samson (`.extraCounterOnPermanents`) ETB counter replacement.
+  let samsonDef : CardDef :=
+    { bear with name := "Doc Samson Test", staticAbilities := #[.extraCounterOnPermanents] }
+  let arwenDef : CardDef :=
+    { bear with name := "Arwen Test", toughness := some 2, othersEnterWithPlusOneEqualToughness := true }
+  let gArw0 :=
+    insertObject
+      (addPermanent (addPermanent (quiet afterDraw) samsonDef me me) arwenDef me me)
+      { bear with name := "Newcomer Bear" } me (.hand me) none {} (fun id _ => #[.pushHand id])
+  let newcomerCardId :=
+    ((gArw0.player me).hand.filter (fun id => (gArw0.object! id).name == "Newcomer Bear"))[0]!
+  let arwCause : EventCause := .oneShotEffect (some ⟨717⟩) none (some me)
+  let (gArw1, newcomerPermId) :=
+    (quiet gArw0).putOntoBattlefield newcomerCardId me (cause := some arwCause)
+  let arwenMovedBagOk := gArw1.events.any (fun e =>
+    match e.change with
+    | .rules (.zone (.moved _ after _ .battlefield _ _ bag _)) =>
+      after.id == some newcomerPermId && bag.any (fun (k, c) => k == .plusOnePlusOne && c == 3)
+    | _ => false)
+  let arwenSamsonOk :=
+    (gArw1.object! newcomerPermId).status.plusOnePlusOne == 3 &&
+    arwenMovedBagOk
+  -- Life gain replacement choice (`+2` vs `*2`) and APNAP tie-breaking.
   let idAddLife : ReplacementId := ⟨7301⟩
   let idMulLife : ReplacementId := ⟨7302⟩
   let specAddLife : ReplacementSpec :=
@@ -3471,12 +3573,11 @@ and APNAP tie-breaking. -/
     (gOrd0.createEffect (.replacement specAddLife true)).createEffect
       (.replacement specMulLife true)
   let lifeCause : EventCause := .oneShotEffect (some ⟨712⟩) none (some me)
+  let gLifePaused := (quiet gLife0).gainLife me 3 (cause := some lifeCause)
   let gLifeAddFirst :=
-    (quiet (gLife0.change (.replacementOrder #[idAddLife, idMulLife]))).gainLife me 3
-      (cause := some lifeCause)
+    ((quiet gLifePaused).apply me (.chooseReplacement idAddLife)).toOption.getD gLifePaused
   let gLifeMulFirst :=
-    (quiet (gLife0.change (.replacementOrder #[idMulLife, idAddLife]))).gainLife me 3
-      (cause := some lifeCause)
+    ((quiet gLifePaused).apply me (.chooseReplacement idMulLife)).toOption.getD gLifePaused
   let candMe : ReplacementCandidate :=
     (ReplacementOrPrevention.replacement {
       id := ⟨7401⟩, affectedPlayer := me, kind := .modifyLifeGain me 1 1 }).toCandidate
@@ -3485,17 +3586,30 @@ and APNAP tie-breaking. -/
       id := ⟨7402⟩, affectedPlayer := opp, kind := .modifyLifeGain opp 1 1 }).toCandidate
   let gActiveMe := gOrd0.change (.activePlayer me)
   let gActiveOpp := gOrd0.change (.activePlayer opp)
-  gAddFirst.pending == Pending.none &&
-    gAddFirst.replacementOrder == #[idAddDmg, idMulDmg] &&
-    gMulFirst.replacementOrder == #[idMulDmg, idAddDmg] &&
+  outOfBandRejected &&
+    pausedPromptOk &&
+    gDmgAddFirst.pending == Pending.none &&
+    gDmgAddFirst.replacementOrder.isEmpty &&
+    gDmgMulFirst.pending == Pending.none &&
+    gDmgMulFirst.replacementOrder.isEmpty &&
+    gDmgSecondPaused.pending == .chooseReplacement opp #[idAddDmg, idMulDmg] &&
     (gOrd0.player opp).life - (gDmgAddFirst.player opp).life == 10 &&
     (gOrd0.player opp).life - (gDmgMulFirst.player opp).life == 8 &&
+    finChoiceOk &&
+    nonResolvingCauseOk &&
+    atkTokOk &&
+    singlePassDamageOk &&
+    arwenSamsonOk &&
     (gLifeAddFirst.player me).life - (gOrd0.player me).life == 10 &&
     (gLifeMulFirst.player me).life - (gOrd0.player me).life == 8 &&
     (gActiveMe.selectNextReplacement #[candOpp, candMe] #[]).map (·.id) == some ⟨7401⟩ &&
     (gActiveOpp.selectNextReplacement #[candOpp, candMe] #[]).map (·.id) == some ⟨7402⟩ &&
     noUnclassifiedRulesEvents gDmgAddFirst &&
     noUnclassifiedRulesEvents gDmgMulFirst &&
+    noUnclassifiedRulesEvents gFinChoseHead &&
+    noUnclassifiedRulesEvents gFinChoseExile &&
+    noUnclassifiedRulesEvents gShdFrom &&
+    noUnclassifiedRulesEvents gArw1 &&
     noUnclassifiedRulesEvents gLifeAddFirst &&
     noUnclassifiedRulesEvents gLifeMulFirst
 

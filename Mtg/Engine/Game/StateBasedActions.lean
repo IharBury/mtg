@@ -115,6 +115,8 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
       -- the player keeps one copy (CR 704.5j). Drop a stale prompt if the
       -- group is no longer two or more.
       match g.pending with
+      | .chooseReplacement _ _ =>
+        return (g, (changed, true))
       | .chooseLegend p name ids =>
         let still := ids.filter (fun id =>
           match g.findObject? id with
@@ -162,6 +164,8 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
               (preBattlefield := some preBf)
               (cause := some (.stateBased sba))
             changed := true
+            if let .chooseReplacement _ _ := g.pending then
+              return (g, (true, true))
         | none => pure ()
       g := g.change .sbaChecked
       -- Planeswalkers with 0 loyalty (CR 704.5i), unless their controller

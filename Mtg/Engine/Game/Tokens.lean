@@ -118,6 +118,13 @@ def createOneToken (g : Game) (controller : PlayerId) (printed : CardDef)
       let etb :=
         g.applyEtbReplacements baseObj (asOf := asOf) (extraCounters := extraCounters)
           (cause := cause)
+      match etb.choice? with
+      | some (chooser, choices) =>
+        (g.promptChooseReplacement chooser choices
+          (.createToken controller printed tapped isAttacking resolvedAttackTarget false extraCounters cause),
+         baseObj)
+      | none =>
+      let g := g.consumeReplacementOrder etb.applied
       let obj := etb.candidate
       let g := g.record (GameEvent.created g.turnNumber controller (g.snapshot obj) (cause := etb.cause))
       let g := g.changeObject newId (.enterProcessed true)
@@ -167,17 +174,23 @@ private def tokenBatchIsFood (printed : CardDef) : Bool :=
   printed.keywords.changeling || (CardSubtype.ofSubtypes printed.subtypes).contains .food
 
 /-- Run the CR 616.1 replacement loop on a proposed token-creation batch
-(CR 614.1a / 614.5 / 614.6 / 616.1). Handles:
+(CR 614.1a / 614.5 / 614.6 / 616.1), returning `(batches, applied, choice?)`.
+Handles:
 - Bilbo, Fellow Conspirator (`foodAlsoCreatesTreasure` / `.createExtraTokenWithFood`)
 - Draconic Visitor (`artifactTokensBecomeDragons` / `.artifactTokensBecome`, rulings 780–782)
 - Bard, King of Dale (`tokenDoubling` / `.multiplyTokenCreation`, rulings 180 / 190)
 - Active `ContinuousEffect.replacement` specs for token creation. -/
-def replaceTokenCreation (g : Game) (initial : ProposedTokenBatch)
-    (applied : Array ReplacementId := #[]) : Array ProposedTokenBatch × Array ReplacementId := Id.run do
+def replaceTokenCreationChoice (g : Game) (initial : ProposedTokenBatch)
+    (applied : Array ReplacementId := #[])
+    (includeKindReplacements : Bool := true)
+    (includeMultiplier : Bool := true) :
+    Array ProposedTokenBatch × Array ReplacementId × Option (PlayerId × Array ReplacementId) := Id.run do
   if initial.count == 0 then
-    return (#[], applied)
+    return (#[], applied, none)
   let mut batches : Array ProposedTokenBatch := #[initial]
   let mut curApplied := applied
+  let mut curOrder := g.replacementOrder
+  let mut choice? : Option (PlayerId × Array ReplacementId) := none
   let mut fuel := 32
   while fuel > 0 do
     fuel := fuel - 1
@@ -189,7 +202,7 @@ def replaceTokenCreation (g : Game) (initial : ProposedTokenBatch)
       let hasFood := batches.any (fun b => tokenBatchIsFood b.printed)
       let hasArtifact := batches.any (fun b => b.printed.isArtifact)
       let mut specs : Array ReplacementSpec := #[]
-      if hasFood then
+      if includeKindReplacements && hasFood then
         for o in g.permanentsOf ctrl do
           if o.printed.foodAlsoCreatesTreasure then
             specs := specs.push {
@@ -199,7 +212,7 @@ def replaceTokenCreation (g : Game) (initial : ProposedTokenBatch)
               affectedPlayer := ctrl
               kind := .createExtraTokenWithFood ctrl treasureToken
             }
-      if hasArtifact then
+      if includeKindReplacements && hasArtifact then
         for o in g.permanentsOf ctrl do
           if o.staticAbilities.any (· == .artifactTokensBecomeDragons) then
             specs := specs.push {
@@ -209,31 +222,37 @@ def replaceTokenCreation (g : Game) (initial : ProposedTokenBatch)
               affectedPlayer := ctrl
               kind := .artifactTokensBecome ctrl dragon55flyingToken
             }
-      for o in g.permanentsOf ctrl do
-        if o.printed.tokenDoubling then
-          specs := specs.push {
-            id := ⟨o.id.raw * 1000 + 203⟩
-            source := some o.id
-            controller := some ctrl
-            affectedPlayer := ctrl
-            kind := .multiplyTokenCreation ctrl 2
-          }
+      if includeMultiplier then
+        for o in g.permanentsOf ctrl do
+          if o.printed.tokenDoubling then
+            specs := specs.push {
+              id := ⟨o.id.raw * 1000 + 203⟩
+              source := some o.id
+              controller := some ctrl
+              affectedPlayer := ctrl
+              kind := .multiplyTokenCreation ctrl 2
+            }
       for (_, eff) in g.activeEffects do
         match eff with
         | .replacement spec _ =>
           match spec.kind with
           | .createExtraTokenWithFood p _ =>
-            if p == ctrl && hasFood then specs := specs.push spec
+            if includeKindReplacements && p == ctrl && hasFood then specs := specs.push spec
           | .artifactTokensBecome p _ =>
-            if p == ctrl && hasArtifact then specs := specs.push spec
+            if includeKindReplacements && p == ctrl && hasArtifact then specs := specs.push spec
           | .multiplyTokenCreation p _ =>
-            if p == ctrl then specs := specs.push spec
+            if includeMultiplier && p == ctrl then specs := specs.push spec
           | _ => pure ()
         | _ => pure ()
       let candidates := specs.map (fun s => (ReplacementOrPrevention.replacement s).toCandidate)
-      match g.selectNextReplacement candidates curApplied with
-      | none => fuel := 0
-      | some chosen =>
+      match g.selectNextReplacementStep candidates curApplied curOrder with
+      | .none => fuel := 0
+      | .needChoice chooser choices ord' =>
+        curOrder := ord'
+        choice? := some (chooser, choices)
+        fuel := 0
+      | .chosen chosen ord' =>
+        curOrder := ord'
         match specs.find? (fun s => s.id == chosen.id) with
         | none => fuel := 0
         | some spec =>
@@ -268,7 +287,19 @@ def replaceTokenCreation (g : Game) (initial : ProposedTokenBatch)
                 count := b.count * factor
                 cause := g.wrapReplacedCause chosen.id b.cause (some ctrl) })
           | _ => pure ()
-  return (batches, curApplied)
+  return (batches, curApplied, choice?)
+
+/-- Run the CR 616.1 replacement loop on a proposed token-creation batch
+(CR 614.1a / 614.5 / 614.6 / 616.1). -/
+def replaceTokenCreation (g : Game) (initial : ProposedTokenBatch)
+    (applied : Array ReplacementId := #[])
+    (includeKindReplacements : Bool := true)
+    (includeMultiplier : Bool := true) : Array ProposedTokenBatch × Array ReplacementId :=
+  let (batches, app', _) :=
+    g.replaceTokenCreationChoice initial (applied := applied)
+      (includeKindReplacements := includeKindReplacements)
+      (includeMultiplier := includeMultiplier)
+  (batches, app')
 
 /-- Create a token under `controller`, running the CR 616.1 token-creation
 replacement loop (Food/Treasure, Draconic Visitor, token-doubling). -/
@@ -276,15 +307,16 @@ def createToken (g : Game) (controller : PlayerId) (printed : CardDef)
     (tapped := false) (_batch := false) (attacking := false)
     (attackingWhom : Option PlayerId := none)
     (attackingTarget : Option AttackTarget := none)
+    (applyFoodBonus : Bool := true)
     (extraCounters : CounterBag := #[])
     (cause : Option EventCause := none) : Game × GameObject :=
-  if (g.player controller).lost then
+  if (g.player controller).lost || !applyFoodBonus then
     g.createOneToken controller printed (tapped := tapped)
       (attacking := attacking) (attackingWhom := attackingWhom)
       (attackingTarget := attackingTarget)
       (extraCounters := extraCounters) (cause := cause)
   else
-    let (batches, _) := g.replaceTokenCreation {
+    let (batches, applied, choice?) := g.replaceTokenCreationChoice {
       controller := controller
       printed := printed
       count := 1
@@ -295,6 +327,16 @@ def createToken (g : Game) (controller : PlayerId) (printed : CardDef)
       extraCounters := extraCounters
       cause := cause
     }
+    match choice? with
+    | some (chooser, choices) =>
+      let resolvedTgt :=
+        attackingTarget.orElse (fun _ => attackingWhom.map AttackTarget.player)
+      (g.promptChooseReplacement chooser choices
+        (.createToken controller printed tapped attacking resolvedTgt true extraCounters cause),
+       { id := ⟨0⟩, printed := { printed with isToken := true },
+         owner := controller, zone := .command })
+    | none =>
+    let g := g.consumeReplacementOrder applied
     g.withBatchReturn cause fun g => Id.run do
       let mut g := g
       let mut last : Option GameObject := none

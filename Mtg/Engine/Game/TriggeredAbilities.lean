@@ -3891,17 +3891,19 @@ def createAndMarkTokensAttacking (g : Game) (controller : PlayerId)
     else g.logMsg "no token is created (CR 800.4b)"
   else
     let rawPrinted := tokenPrinted kind
-    let (batches, _) := g.replaceTokenCreation {
+    let (batches, applied) := g.replaceTokenCreation {
       controller := controller
       printed := rawPrinted
       count := n
       tapped := tapped
       cause := cause
-    }
+    } (includeKindReplacements := false)
+    let g := g.consumeReplacementOrder applied
     let total := batches.foldl (fun acc b => acc + b.count) 0
+    let cause' := (batches[0]?.bind (·.cause)).orElse (fun _ => cause)
     let options := g.legalEnteringAttackTargets controller
     let items := Array.replicate total (EnteringAttackItem.token controller kind tapped options)
-    g.promptEnteringAttackItems items (cause := cause)
+    g.promptEnteringAttackItems items (cause := cause')
 
 partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target := #[])

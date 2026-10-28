@@ -86,12 +86,15 @@ def destroyPermanent (g : Game) (o : GameObject)
       | _ => pure ()
     return s
   let candidates := mutSpecs.map (fun s => (ReplacementOrPrevention.replacement s).toCandidate)
-  match g.selectNextReplacement candidates #[] with
-  | some chosen =>
+  match g.selectNextReplacementStep candidates #[] with
+  | .needChoice chooser choices _ =>
+    g.promptChooseReplacement chooser choices (.destroyPermanent o.id cause)
+  | .chosen chosen _ =>
+    let g := g.consumeReplacementOrder #[chosen.id]
     let cause' := g.wrapReplacedCause chosen.id cause o.controller
     let g := g.record (GameEvent.counters g.turnNumber o.controller o.asEvent .shield 1 true (cause := cause'))
     g.logMsg s!"A shield counter is removed from {o.name} instead of destroying it"
-  | none =>
+  | .none =>
     if g.hasIndestructible o then
       g.logMsg s!"{o.name} is indestructible and isn't destroyed"
     else
@@ -118,6 +121,7 @@ structure DamageReplacementResult where
   shieldRemoveCause : Option EventCause := none
   applied : Array ReplacementId := #[]
   cause : Option EventCause := none
+  choice? : Option (PlayerId × Array ReplacementId) := none
 deriving Repr, Inhabited, BEq
 
 /-- Run the CR 616.1 replacement and prevention loop on `n` damage from `src?`
@@ -155,6 +159,8 @@ def replaceDamage (g : Game) (n : Int)
   let mut curAmount := n
   let mut curApplied := applied
   let mut curCause := cause
+  let mut curOrder := g.replacementOrder
+  let mut choice? : Option (PlayerId × Array ReplacementId) := none
   let mut prevented := false
   if unpreventable then
     if let some o := recipientPerm? then
@@ -294,9 +300,14 @@ def replaceDamage (g : Game) (n : Int)
           | _ => pure ()
         | _ => pure ()
       let candidates := items.map ReplacementOrPrevention.toCandidate
-      match g.selectNextReplacement candidates curApplied with
-      | none => fuel := 0
-      | some chosen =>
+      match g.selectNextReplacementStep candidates curApplied curOrder with
+      | .none => fuel := 0
+      | .needChoice chooser choices ord' =>
+        curOrder := ord'
+        choice? := some (chooser, choices)
+        fuel := 0
+      | .chosen chosen ord' =>
+        curOrder := ord'
         match items.find? (fun it => it.replacementId == chosen.id) with
         | none => fuel := 0
         | some (.prevention pspec) =>
@@ -325,16 +336,29 @@ def replaceDamage (g : Game) (n : Int)
     shieldRemoveCause := shieldRemoveCause
     applied := curApplied
     cause := curCause
+    choice? := choice?
   }
 
 def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
     (deathtouch := false) (combat := false) (unpreventable := false)
     (source : Option EventObject := none)
+    (sourceObj : Option GameObject := none)
+    (replaced : Option DamageReplacementResult := none)
     (applied : Array ReplacementId := #[])
     (cause : Option EventCause := none) : Game :=
+  let src? :=
+    sourceObj.orElse (fun _ => (source.bind (·.id)).bind g.findObject?)
+      |>.orElse (fun _ => g.resolvingMovedDamageSource?)
   let rep :=
-    g.replaceDamage n (recipientPerm? := some o) (combat := combat)
-      (unpreventable := unpreventable) (applied := applied) (cause := cause)
+    replaced.getD
+      (g.replaceDamage n (src? := src?) (recipientPerm? := some o) (combat := combat)
+        (unpreventable := unpreventable) (applied := applied) (cause := cause))
+  match rep.choice? with
+  | some (chooser, choices) =>
+    g.promptChooseReplacement chooser choices
+      (.markDamageOn o.id n.toNat msg deathtouch source combat unpreventable cause)
+  | none =>
+  let g := g.consumeReplacementOrder rep.applied
   if n > 0 && !unpreventable && rep.prevented && !rep.shieldRemoved then
     g.logMsg s!"Damage that would be dealt to {o.name} is prevented"
   else
@@ -436,10 +460,13 @@ def gainLife (g : Game) (p : PlayerId) (n : Nat)
     if pl.lifeLocked || pl.lifeCantChange then
       g.logMsg s!"{pl.name}'s life total can't change"
     else
-      let (n, cause') : Nat × Option EventCause := Id.run do
+      let (n, applied, cause', choice?) :
+          Nat × Array ReplacementId × Option EventCause × Option (PlayerId × Array ReplacementId) := Id.run do
         let mut curN := n
         let mut curApplied : Array ReplacementId := #[]
         let mut curCause := cause
+        let mut curOrder := g.replacementOrder
+        let mut choice? : Option (PlayerId × Array ReplacementId) := none
         let mut fuel := 32
         while fuel > 0 do
           fuel := fuel - 1
@@ -456,43 +483,67 @@ def gainLife (g : Game) (p : PlayerId) (n : Nat)
                 | _ => pure ()
               | _ => pure ()
             let candidates := specs.map (fun (s, _, _) => (ReplacementOrPrevention.replacement s).toCandidate)
-            match g.selectNextReplacement candidates curApplied with
-            | none => fuel := 0
-            | some chosen =>
+            match g.selectNextReplacementStep candidates curApplied curOrder with
+            | .none => fuel := 0
+            | .needChoice chooser choices ord' =>
+              curOrder := ord'
+              choice? := some (chooser, choices)
+              fuel := 0
+            | .chosen chosen ord' =>
+              curOrder := ord'
               match specs.find? (fun (s, _, _) => s.id == chosen.id) with
               | none => fuel := 0
               | some (_, add, mult) =>
                 curN := curN * mult + add
                 curApplied := curApplied.push chosen.id
                 curCause := g.wrapReplacedCause chosen.id curCause (some p)
-        return (curN, curCause)
-      if n == 0 then g
-      else
-        let before := pl.life
-        let happened := GameEvent.life g.turnNumber p n true (cause := cause')
-        (g.record happened).logMsg
-          s!"{pl.name} gains {n} life ({before + (n : Int)} life)"
+        return (curN, curApplied, curCause, choice?)
+      match choice? with
+      | some (chooser, choices) =>
+        g.promptChooseReplacement chooser choices (.gainLife p n "" cause)
+      | none =>
+        let g := g.consumeReplacementOrder applied
+        if n == 0 then g
+        else
+          let before := pl.life
+          let happened := GameEvent.life g.turnNumber p n true (cause := cause')
+          (g.record happened).logMsg
+            s!"{pl.name} gains {n} life ({before + (n : Int)} life)"
 
 /-- Deal `n` damage to a creature and log the generic “is dealt” message. -/
 def dealDamageToPermanent (g : Game) (o : GameObject) (n : Int)
     (source : Option EventObject := none)
     (cause : Option EventCause := none) : Game :=
   let srcEvent? := source.orElse (fun _ => g.resolvingDamageSourceEvent?)
-  let prevented := g.preventsAllDamageTo o || o.status.shield > 0
-  let defaultCause :=
-    cause.orElse (fun _ =>
-      if n <= 0 || g.preventsAllDamageTo o then none
-      else g.currentResolvingContext?.map fun (ctxSrc, ctrl) =>
-        .oneShotEffect none
-          (ctxSrc.orElse (fun _ => srcEvent?.bind (·.id)))
-          (ctrl.orElse (fun _ => srcEvent?.bind (·.controller))))
-  g.withBatch defaultCause fun g =>
-  let g := g.markDamageOn o n s!"{o.name} is dealt {n} damage" (source := srcEvent?) (cause := cause)
-  -- CR 702.15b: damage dealt by a source with lifelink.
-  match srcEvent?.bind (fun src => if src.keywords.lifelink then src.controller else none) with
-  | some c =>
-    if n > 0 && !prevented then g.gainLife c n.toNat (cause := cause) else g
-  | none => g
+  let srcObj? :=
+    (srcEvent?.bind (·.id)).bind g.findObject?
+      |>.orElse (fun _ => g.resolvingMovedDamageSource?)
+  let rep :=
+    g.replaceDamage n (src? := srcObj?) (recipientPerm? := some o) (cause := cause)
+  match rep.choice? with
+  | some (chooser, choices) =>
+    g.promptChooseReplacement chooser choices
+      (.dealDamageToPermanent o.id n.toNat source false false cause)
+  | none =>
+    let g := g.consumeReplacementOrder rep.applied
+    let dealtAmt := rep.amount
+    let prevented := rep.prevented || g.preventsAllDamageTo o || o.status.shield > 0
+    let defaultCause :=
+      cause.orElse (fun _ =>
+        if dealtAmt <= 0 && !rep.shieldRemoved then none
+        else g.currentResolvingContext?.map fun (ctxSrc, ctrl) =>
+          .oneShotEffect none
+            (ctxSrc.orElse (fun _ => srcEvent?.bind (·.id)))
+            (ctrl.orElse (fun _ => srcEvent?.bind (·.controller))))
+    g.withBatch defaultCause fun g =>
+    let g :=
+      g.markDamageOn o n s!"{o.name} is dealt {dealtAmt} damage"
+        (source := srcEvent?) (sourceObj := srcObj?) (replaced := some rep) (cause := cause)
+    -- CR 702.15b: damage dealt by a source with lifelink.
+    match srcEvent?.bind (fun src => if src.keywords.lifelink then src.controller else none) with
+    | some c =>
+      if dealtAmt > 0 && !prevented then g.gainLife c dealtAmt.toNat (cause := cause) else g
+    | none => g
 
 /-- Deal `n` damage from a named source (fight, dies trigger, blocked trigger). -/
 def dealDamageFrom (g : Game) (sourceName : String) (o : GameObject) (n : Int)
@@ -501,30 +552,35 @@ def dealDamageFrom (g : Game) (sourceName : String) (o : GameObject) (n : Int)
   match source.orElse (fun _ => g.resolvingMovedDamageSource?) with
   | some src =>
     let rep := g.replaceDamage n (src? := some src) (recipientPerm? := some o) (cause := cause)
-    if rep.prevented && !rep.shieldRemoved && !g.preventsAllDamageTo o then
-      g.logMsg s!"damage from {src.name} is prevented"
-    else
-      let n := rep.amount
-      let prevented := rep.prevented || g.preventsAllDamageTo o || o.status.shield > 0
-      let defaultCause :=
-        cause.orElse (fun _ =>
-          if n <= 0 || g.preventsAllDamageTo o then none
-          else g.currentResolvingContext?.map fun (ctxSrc, ctrl) =>
-            .oneShotEffect none
-              (ctxSrc.orElse (fun _ => some src.id))
-              (ctrl.orElse (fun _ => src.controller)))
-      g.withBatch defaultCause fun g =>
-      let g := g.changeStatus src.id (.dealtDamageThisTurn true)
-      let markAmt := if rep.shieldRemoved && n == 0 then 1 else n
-      let g := g.markDamageOn o markAmt s!"{sourceName} deals {n} damage to {o.name}"
-        (deathtouch || g.hasDeathtouch src) (source := some (g.snapshot src))
-        (applied := rep.applied.filter (fun id => id != ⟨o.id.raw * 1000 + 502⟩ && id != ⟨o.id.raw * 1000 + 505⟩))
-        (cause := rep.cause)
-      -- CR 702.15b: damage dealt by a source with lifelink.
-      match src.controller with
-      | some c =>
-        if n > 0 && !prevented && g.hasLifelink src then g.gainLife c n.toNat (cause := cause) else g
-      | none => g
+    match rep.choice? with
+    | some (chooser, choices) =>
+      g.promptChooseReplacement chooser choices
+        (.dealDamageFrom src.id o.id n.toNat false false cause)
+    | none =>
+      let g := g.consumeReplacementOrder rep.applied
+      if rep.prevented && !rep.shieldRemoved && !g.preventsAllDamageTo o then
+        g.logMsg s!"damage from {src.name} is prevented"
+      else
+        let dealtAmt := rep.amount
+        let prevented := rep.prevented || g.preventsAllDamageTo o || o.status.shield > 0
+        let defaultCause :=
+          cause.orElse (fun _ =>
+            if dealtAmt <= 0 && !rep.shieldRemoved then none
+            else g.currentResolvingContext?.map fun (ctxSrc, ctrl) =>
+              .oneShotEffect none
+                (ctxSrc.orElse (fun _ => some src.id))
+                (ctrl.orElse (fun _ => src.controller)))
+        g.withBatch defaultCause fun g =>
+        let g := g.changeStatus src.id (.dealtDamageThisTurn true)
+        let g :=
+          g.markDamageOn o n s!"{sourceName} deals {dealtAmt} damage to {o.name}"
+            (deathtouch || g.hasDeathtouch src) (source := some (g.snapshot src))
+            (sourceObj := some src) (replaced := some rep) (cause := rep.cause)
+        -- CR 702.15b: damage dealt by a source with lifelink.
+        match src.controller with
+        | some c =>
+          if dealtAmt > 0 && !prevented && g.hasLifelink src then g.gainLife c dealtAmt.toNat (cause := cause) else g
+        | none => g
   | none =>
     g.markDamageOn o n s!"{sourceName} deals {n} damage to {o.name}" deathtouch (cause := cause)
 
@@ -537,6 +593,13 @@ def dealDamageToPlayer (g : Game) (pid : PlayerId) (n : Int)
   let rep :=
     g.replaceDamage n (src? := source) (recipientPlayer? := some pid)
       (unpreventable := !preventable) (cause := cause)
+  match rep.choice? with
+  | some (chooser, choices) =>
+    let msg := s!"{pl.name} is dealt {n} damage"
+    g.promptChooseReplacement chooser choices
+      (.dealDamageToPlayer pid n.toNat msg (source.map g.snapshot) false (!preventable) cause)
+  | none =>
+  let g := g.consumeReplacementOrder rep.applied
   if rep.prevented && preventable && pl.protectionFromEverything &&
       !(source.any (fun src => src.status.preventDamageGrantedBy.any g.grantorStillInPlay)) then
     g.logMsg s!"damage to {pl.name} is prevented (protection from everything)"

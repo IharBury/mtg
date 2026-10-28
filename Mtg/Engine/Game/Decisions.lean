@@ -1049,6 +1049,72 @@ partial def resolvePendingRandom (g : Game) (rng : Rng) : Rng × Game :=
 def resolveRandom (g : Game) (rng : Rng := Rng.ofSeed 1) : Game :=
   (g.resolvePendingRandom rng).2
 
+/-- Resume the rules event that paused on `Pending.chooseReplacement` (CR 616.1). -/
+def resumePendingReplacement (g : Game) : PendingReplacement → Game
+  | .dealDamageToPlayer p n _ source _ unpreventable cause =>
+    let srcObj := source.bind (fun s => s.id.bind g.findObject?)
+    g.dealDamageToPlayer p (Int.ofNat n) (preventable := !unpreventable)
+      (source := srcObj) (cause := cause)
+  | .dealDamageFrom sourceId targetId n _ _ cause =>
+    match g.findObject? sourceId, g.findObject? targetId with
+    | some src, some tgt =>
+      g.dealDamageFrom src.name tgt (Int.ofNat n) (source := some src) (cause := cause)
+    | _, _ => g
+  | .dealDamageToPermanent targetId n source _ _ cause =>
+    match g.findObject? targetId with
+    | some tgt =>
+      g.dealDamageToPermanent tgt (Int.ofNat n) (source := source) (cause := cause)
+    | none => g
+  | .markDamageOn targetId n msg deathtouch source combat unpreventable cause =>
+    match g.findObject? targetId with
+    | some tgt =>
+      let srcObj := source.bind (fun s => s.id.bind g.findObject?)
+      g.markDamageOn tgt (Int.ofNat n) msg (deathtouch := deathtouch) (combat := combat)
+        (source := source) (sourceObj := srcObj) (unpreventable := unpreventable)
+        (cause := cause)
+    | none => g
+  | .dealAssignedCombatDamage =>
+    g.dealAssignedCombatDamage
+  | .gainLife p n _ cause =>
+    g.gainLife p n (cause := cause)
+  | .addPlusOnePlusOneTo targetId n entersWith byPlayer cause =>
+    match g.findObject? targetId with
+    | some tgt =>
+      g.addPlusOnePlusOneTo tgt n (entersWith := entersWith) (byPlayer := byPlayer)
+        (cause := cause)
+    | none => g
+  | .addCounters targetId kind n entersWith byPlayer cause =>
+    match g.findObject? targetId with
+    | some tgt =>
+      g.addCounters tgt kind n (entersWith := entersWith) (byPlayer := byPlayer)
+        (cause := cause)
+    | none => g
+  | .recordPutCounters targetId kind n byPlayer cause =>
+    g.recordPutCounters targetId kind n byPlayer (cause := cause)
+  | .move id dest controller _ _ verb actor _ tapped
+      attacking attackingTarget transformed returnedAsArtifact onlyFoodArtifact
+      extraEntersWith libraryPosition _ applyHope cause =>
+    (g.move id dest controller (tapped := tapped) (applyHope := applyHope)
+      (attacking := attacking) (attackingTarget := attackingTarget)
+      (returnedAsArtifact := returnedAsArtifact) (onlyFoodArtifact := onlyFoodArtifact)
+      (nightBack := transformed) (extraEntersWith := extraEntersWith)
+      (verb := verb) (actor := actor) (libraryPosition := libraryPosition)
+      (cause := cause)).1
+  | .destroyPermanent targetId cause =>
+    match g.findObject? targetId with
+    | some tgt => g.destroyPermanent tgt (cause := cause)
+    | none => g
+  | .createToken controller card tapped attacking attackingTarget _ extraCounters cause =>
+    (g.createToken controller card (tapped := tapped) (attacking := attacking)
+      (attackingTarget := attackingTarget) (extraCounters := extraCounters)
+      (cause := cause)).1
+  | .draw p n _ cause =>
+    g.draw p n (cause := cause)
+  | .connive controller sourceId =>
+    g.applyConnive controller sourceId
+  | .checkSBA =>
+    g.checkSBA
+
 /-- Choose which applicable replacement or prevention effect to apply next (CR 616.1). -/
 def chooseReplacement (g : Game) (p : PlayerId) (id : ReplacementId) : Except String Game := do
   match g.pending with
@@ -1057,11 +1123,14 @@ def chooseReplacement (g : Game) (p : PlayerId) (id : ReplacementId) : Except St
       throw s!"Only {(g.player q).name} may choose a replacement effect"
     if !choices.contains id then
       throw "Replacement effect is not among the applicable choices"
-    let order := #[id] ++ g.replacementOrder.filter (· != id)
-    return g.changes #[.replacementOrder order, .pending .none]
+    let order := (g.replacementOrder.filter (· != id)).push id
+    let cont? := g.pendingReplacement
+    let g := g.changes #[.replacementOrder order, .pending .none, .pendingReplacement none]
+    match cont? with
+    | some cont => return g.resumePendingReplacement cont
+    | none => return g
   | _ =>
-    let order := #[id] ++ g.replacementOrder.filter (· != id)
-    return g.change (.replacementOrder order)
+    throw "No replacement effect choice is pending"
 
 end Game
 end Mtg.Engine

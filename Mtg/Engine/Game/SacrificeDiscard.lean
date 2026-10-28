@@ -102,9 +102,11 @@ def applyConnive (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
   -- CR 616.1 replacement loop for Leader's `.extraDrawOnConnive` ("If a
   -- creature you control would connive, draw a card, then that creature
   -- connives instead", CR 614.5).
-  let (extraDraws, _) : Array (Nat × ReplacementId) × Array ReplacementId := Id.run do
+  let (extraDraws, curApplied, choice?) :
+      Array (Nat × ReplacementId) × Array ReplacementId × Option (PlayerId × Array ReplacementId) := Id.run do
     let mut draws : Array (Nat × ReplacementId) := #[]
     let mut curApplied : Array ReplacementId := #[]
+    let mut choice? : Option (PlayerId × Array ReplacementId) := none
     let mut fuel := 32
     while fuel > 0 do
       fuel := fuel - 1
@@ -126,31 +128,39 @@ def applyConnive (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
           | _ => pure ()
         | _ => pure ()
       let candidates := specs.map (fun (s, _) => (ReplacementOrPrevention.replacement s).toCandidate)
-      match g.selectNextReplacement candidates curApplied with
-      | none => fuel := 0
-      | some chosen =>
+      match g.selectNextReplacementStep candidates curApplied with
+      | .none => fuel := 0
+      | .needChoice chooser choices _ =>
+        choice? := some (chooser, choices)
+        fuel := 0
+      | .chosen chosen _ =>
         match specs.find? (fun (s, _) => s.id == chosen.id) with
         | none => fuel := 0
         | some (_, n) =>
           curApplied := curApplied.push chosen.id
           draws := draws.push (n, chosen.id)
-    return (draws, curApplied)
-  let g := g.change (.conniveSource sourceId)
-  let g := g.logMsg s!"{(g.player controller).name}'s creature connives"
-  -- Each Leader replaces the connive with a draw, then that connive.
-  let g :=
-    extraDraws.foldl (fun acc (n, rid) =>
-      let c := acc.wrapReplacedCause rid none (some controller)
-      acc.draw controller n (cause := c)) g
-  let conniveDrawCause :=
-    extraDraws.foldl (fun acc (_, rid) =>
-      g.wrapReplacedCause rid acc (some controller)) none
-  let g := g.draw controller 1 (cause := conniveDrawCause)
-  if (g.player controller).hand.isEmpty then
-    let g := g.change (.conniveSource none)
-    g.logMsg "No card is discarded; the conniving creature does not receive a +1/+1 counter"
-  else
-    g.beginDiscardCards #[controller]
+    return (draws, curApplied, choice?)
+  match choice? with
+  | some (chooser, choices) =>
+    g.promptChooseReplacement chooser choices (.connive controller sourceId)
+  | none =>
+    let g := g.consumeReplacementOrder curApplied
+    let g := g.change (.conniveSource sourceId)
+    let g := g.logMsg s!"{(g.player controller).name}'s creature connives"
+    -- Each Leader replaces the connive with a draw, then that connive.
+    let g :=
+      extraDraws.foldl (fun acc (n, rid) =>
+        let c := acc.wrapReplacedCause rid none (some controller)
+        acc.draw controller n (cause := c)) g
+    let conniveDrawCause :=
+      extraDraws.foldl (fun acc (_, rid) =>
+        g.wrapReplacedCause rid acc (some controller)) none
+    let g := g.draw controller 1 (cause := conniveDrawCause)
+    if (g.player controller).hand.isEmpty then
+      let g := g.change (.conniveSource none)
+      g.logMsg "No card is discarded; the conniving creature does not receive a +1/+1 counter"
+    else
+      g.beginDiscardCards #[controller]
 
 /-- Finish a pending connive after a card is discarded. -/
 def finishConniveDiscard (g : Game) (discarded : GameObject) : Game :=

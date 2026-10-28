@@ -65,14 +65,20 @@ def setUntilEotForm (g : Game) (o : GameObject) (pt : Int × Int)
 def addFinalityTo (g : Game) (o : GameObject) (n : Nat := 1)
     (byPlayer : Option PlayerId := none) (entersWith := false)
     (cause : Option EventCause := none) : Game :=
-  let (n, _, cause') :=
-    g.replaceCountersPut o .finality n (putter := byPlayer)
+  let (n', applied, cause', choice?, _) :=
+    g.replaceCountersPutChoice o .finality n (putter := byPlayer)
       (entersWith := entersWith) (cause := cause)
-  let putter := byPlayer.orElse (fun _ => o.controller)
-  let g :=
-    if n > 0 && !entersWith then g.record (GameEvent.counters g.turnNumber putter o.asEvent .finality n (cause := cause'))
-    else g
-  g.logMsg s!"{o.name} gets a finality counter"
+  match choice? with
+  | some (chooser, choices) =>
+    g.promptChooseReplacement chooser choices
+      (.addCounters o.id .finality n entersWith byPlayer cause)
+  | none =>
+    let g := g.consumeReplacementOrder applied
+    let putter := byPlayer.orElse (fun _ => o.controller)
+    let g :=
+      if n' > 0 && !entersWith then g.record (GameEvent.counters g.turnNumber putter o.asEvent .finality n' (cause := cause'))
+      else g
+    g.logMsg s!"{o.name} gets a finality counter"
 
 /-- Frozen in Ice, or a granted “can't become untapped”, blocks every untap.
 Enchanted River's Grasp only skips the untap step. -/
@@ -234,38 +240,56 @@ def newestArmy? (g : Game) (controller : PlayerId) : Option GameObject :=
 def addIndestructibleCounter (g : Game) (o : GameObject) (n : Nat := 1)
     (byPlayer : Option PlayerId := none)
     (cause : Option EventCause := none) : Game :=
-  let (n, _, cause') :=
-    g.replaceCountersPut o .indestructible n (putter := byPlayer) (cause := cause)
-  let putter := byPlayer.orElse (fun _ => o.controller)
-  let g :=
-    if n > 0 then g.record (GameEvent.counters g.turnNumber putter o.asEvent .indestructible n (cause := cause'))
-    else g
-  g.logMsg s!"{o.name} gets an indestructible counter"
+  let (n', applied, cause', choice?, _) :=
+    g.replaceCountersPutChoice o .indestructible n (putter := byPlayer) (cause := cause)
+  match choice? with
+  | some (chooser, choices) =>
+    g.promptChooseReplacement chooser choices
+      (.addCounters o.id .indestructible n false byPlayer cause)
+  | none =>
+    let g := g.consumeReplacementOrder applied
+    let putter := byPlayer.orElse (fun _ => o.controller)
+    let g :=
+      if n' > 0 then g.record (GameEvent.counters g.turnNumber putter o.asEvent .indestructible n' (cause := cause'))
+      else g
+    g.logMsg s!"{o.name} gets an indestructible counter"
 
 /-- Put a lifelink counter on `o`. -/
 def addLifelinkCounter (g : Game) (o : GameObject) (n : Nat := 1)
     (byPlayer : Option PlayerId := none)
     (cause : Option EventCause := none) : Game :=
-  let (n, _, cause') :=
-    g.replaceCountersPut o .lifelink n (putter := byPlayer) (cause := cause)
-  let putter := byPlayer.orElse (fun _ => o.controller)
-  let g :=
-    if n > 0 then g.record (GameEvent.counters g.turnNumber putter o.asEvent .lifelink n (cause := cause'))
-    else g
-  g.logMsg s!"{o.name} gets a lifelink counter"
+  let (n', applied, cause', choice?, _) :=
+    g.replaceCountersPutChoice o .lifelink n (putter := byPlayer) (cause := cause)
+  match choice? with
+  | some (chooser, choices) =>
+    g.promptChooseReplacement chooser choices
+      (.addCounters o.id .lifelink n false byPlayer cause)
+  | none =>
+    let g := g.consumeReplacementOrder applied
+    let putter := byPlayer.orElse (fun _ => o.controller)
+    let g :=
+      if n' > 0 then g.record (GameEvent.counters g.turnNumber putter o.asEvent .lifelink n' (cause := cause'))
+      else g
+    g.logMsg s!"{o.name} gets a lifelink counter"
 
 /-- Put a burden counter on `o`. The log includes the new total. -/
 def addBurdenCounter (g : Game) (o : GameObject) (n : Nat := 1)
     (byPlayer : Option PlayerId := none)
     (cause : Option EventCause := none) : Game :=
-  let (n, _, cause') :=
-    g.replaceCountersPut o .burden n (putter := byPlayer) (cause := cause)
-  let putter := byPlayer.orElse (fun _ => o.controller)
-  let g :=
-    if n > 0 then g.record (GameEvent.counters g.turnNumber putter o.asEvent .burden n (cause := cause'))
-    else g
-  let total := (g.object! o.id).status.burden
-  g.logMsg s!"{o.name} gets a burden counter ({total})"
+  let (n', applied, cause', choice?, _) :=
+    g.replaceCountersPutChoice o .burden n (putter := byPlayer) (cause := cause)
+  match choice? with
+  | some (chooser, choices) =>
+    g.promptChooseReplacement chooser choices
+      (.addCounters o.id .burden n false byPlayer cause)
+  | none =>
+    let g := g.consumeReplacementOrder applied
+    let putter := byPlayer.orElse (fun _ => o.controller)
+    let g :=
+      if n' > 0 then g.record (GameEvent.counters g.turnNumber putter o.asEvent .burden n' (cause := cause'))
+      else g
+    let total := (g.object! o.id).status.burden
+    g.logMsg s!"{o.name} gets a burden counter ({total})"
 
 /-- Put `n` counters of `kind` on `o`. +1/+1 counters go through
 `addPlusOnePlusOneTo` so their enters-with bonus and “you put a +1/+1
@@ -278,14 +302,20 @@ def addCounters (g : Game) (o : GameObject) (kind : CounterKind) (n : Nat := 1)
     g.addPlusOnePlusOneTo o n (entersWith := entersWith) (byPlayer := byPlayer) (cause := cause)
   | .burden => g.addBurdenCounter o n (byPlayer := byPlayer) (cause := cause)
   | kind =>
-    let (n, _, cause') :=
-      g.replaceCountersPut o kind n (putter := byPlayer)
+    let (n', applied, cause', choice?, _) :=
+      g.replaceCountersPutChoice o kind n (putter := byPlayer)
         (entersWith := entersWith) (cause := cause)
-    if n == 0 then g
-    else
-      let putter := byPlayer.orElse (fun _ => o.controller)
-      let happened := GameEvent.counters g.turnNumber putter o.asEvent kind n (cause := cause')
-      (if entersWith then g else g.record happened).logMsg s!"{o.name} gets {kind.countersPhrase n}"
+    match choice? with
+    | some (chooser, choices) =>
+      g.promptChooseReplacement chooser choices
+        (.addCounters o.id kind n entersWith byPlayer cause)
+    | none =>
+      let g := g.consumeReplacementOrder applied
+      if n' == 0 then g
+      else
+        let putter := byPlayer.orElse (fun _ => o.controller)
+        let happened := GameEvent.counters g.turnNumber putter o.asEvent kind n' (cause := cause')
+        (if entersWith then g else g.record happened).logMsg s!"{o.name} gets {kind.countersPhrase n'}"
 
 /-- Put the amass counters and subtype on `armyId`. -/
 def finishAmassOn (g : Game) (controller : PlayerId) (armyId : ObjectId)

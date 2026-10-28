@@ -78,9 +78,11 @@ partial def drawOneWithReplacements (g : Game) (p : PlayerId)
           | _ => pure ()
         return acc
     let candidates := specs.map (fun (s, _) => (ReplacementOrPrevention.replacement s).toCandidate)
-    match g.selectNextReplacement candidates applied with
-    | none => g.drawOneCard p (cause := cause)
-    | some chosen =>
+    match g.selectNextReplacementStep candidates applied with
+    | .none => g.drawOneCard p (cause := cause)
+    | .needChoice chooser choices _ =>
+      g.promptChooseReplacement chooser choices (.draw p 1 firstOfYourDrawStep cause)
+    | .chosen chosen _ =>
       match specs.find? (fun (s, _) => s.id == chosen.id) with
       | none => g.drawOneCard p (cause := cause)
       | some (_, factor) =>
@@ -89,10 +91,12 @@ partial def drawOneWithReplacements (g : Game) (p : PlayerId)
         Id.run do
           let mut g := g
           for _ in [0:factor] do
-            if (g.player p).drewFromEmpty then
+            if (g.player p).drewFromEmpty || g.pending != .none then
               return g
             g := g.drawOneWithReplacements p (applied := applied') (cause := cause')
-          return g
+          return if applied.isEmpty && g.pending == .none then
+            g.consumeReplacementOrder (specs.map (·.1.id))
+          else g
 
 def draw (g : Game) (p : PlayerId) (n : Nat := 1)
     (cause : Option EventCause := none) : Game :=
@@ -119,11 +123,13 @@ def draw (g : Game) (p : PlayerId) (n : Nat := 1)
           | none => (g, none)
   Id.run do
     let mut g := g0
-    for _ in [0:n] do
+    for i in [0:n] do
       let pl := g.player p
       if pl.drewFromEmpty then
         return g
       g := g.drawOneWithReplacements p (cause := cause?)
+      if g.pending != .none then
+        return g.change (.pendingReplacement (some (.draw p (n - i) false cause?)))
     return g
 
 /-- Draw, then discard; if the discarded card is not a land, create a

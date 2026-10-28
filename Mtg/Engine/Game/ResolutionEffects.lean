@@ -852,9 +852,6 @@ def commitEnteringAttackItems (g : Game)
             for (item, atkTgt) in chosen do
               if let .token ctrl kind tapped _ := item then
                 let rawPrinted := tokenPrinted kind
-                let doublerIds : Array ReplacementId :=
-                  (g.permanentsOf ctrl).filter (·.printed.tokenDoubling) |>.map
-                    (fun o => ⟨o.id.raw * 1000 + 203⟩)
                 let (batches, _) := g.replaceTokenCreation {
                   controller := ctrl
                   printed := rawPrinted
@@ -863,7 +860,7 @@ def commitEnteringAttackItems (g : Game)
                   attacking := atkTgt.isSome
                   attackingTarget := atkTgt
                   cause := cause
-                } (applied := doublerIds)
+                } (includeMultiplier := false)
                 for b in batches do
                   for _ in [0:b.count] do
                     let (g', obj) := g.createOneToken b.controller b.printed (tapped := b.tapped)
