@@ -1944,13 +1944,21 @@ termination, 614.6 non-occurrence, and the 616.1a–e and 616.1e choice/APNAP or
    `createToken (attackingWhom := dest)` when `isAttacking && attackingTarget.isNone`
    and `Tokens.createTokenBatches` forwards `b.attackingWhom` into
    `createOneToken`—plus `Movement.move` / `Movement.putOntoBattlefield` and
-   `TriggeredAbilities.returnFromGyTappedAttackingFinality` into
-   `attackingTarget : Option AttackTarget`, keeping the defending-player default
-   `some (attackingTarget.getD (.player g.defendingPlayer))` when `isAttacking`
-   on the `createOneToken` and `Game.move` paths while `Tokens.createToken`'s
-   pause path and `returnFromGyTappedAttackingFinality` already fold
+   `ResolutionEffects.returnFromGyTappedAttackingFinality` into
+   `attackingTarget : Option AttackTarget`: today `createOneToken` and
+   `Game.move` resolve
+   `some (attackingTarget.getD (.player (attackingWhom.getD g.defendingPlayer)))`
+   while `isAttacking`—keeping an explicit `attackingWhom := some opp` when
+   `attackingTarget` is `none` and falling back to `g.defendingPlayer` only when
+   both are `none`—so folding `attackingWhom` into `attackingTarget` before that
+   `getD`, including `createTokenBatches`'s `b.attackingWhom`,
+   `createKindTokens`'s `dest`, and `attackingWhom := some opp` call sites,
+   preserves the chosen player while keeping the `g.defendingPlayer` fallback
+   when `isAttacking && attackingTarget.isNone`, matching how
+   `Tokens.createToken`'s pause path and
+   `ResolutionEffects.returnFromGyTappedAttackingFinality` already fold
    `attackingTarget.orElse (fun _ => attackingWhom.map AttackTarget.player)`
-   before building the pending choice, matching how Phase 5 folded
+   before building the pending choice and how Phase 5 folded
    `Status.attackingWhom` into `Status.attackingTarget`), consolidate the 23
    stored counter fields on `Status` (including `Status.poison`; player poison
    stays on `Player.poison`) into `counters : CounterBag` (with computed
