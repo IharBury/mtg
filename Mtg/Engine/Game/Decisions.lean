@@ -1161,8 +1161,12 @@ partial def resumePendingReplacement (g : Game) : PendingReplacement → Game
     g.createAndMarkTokensAttacking controller kind n tapped holds (sourceId := sourceId)
   | .commitEnteringAttackItems chosen cause resetRecent =>
     g.commitEnteringAttackItems chosen (cause := cause) (resetRecent := resetRecent)
-  | .finishEnteringAttackCard effectController cardName mods logKind cause =>
-    match g.objects.back? with
+  | .finishEnteringAttackCard newId? effectController cardName mods logKind cause =>
+    let target? :=
+      match newId? with
+      | some id => g.findObject? id
+      | none => g.objects.back?
+    match target? with
     | some entered =>
       if entered.isOnBattlefield then
         g.finishEnteringAttackCard entered.id effectController cardName mods logKind (cause := cause)
@@ -1182,6 +1186,10 @@ partial def resumePendingReplacement (g : Game) : PendingReplacement → Game
     g.draw p n (cause := cause)
   | .connive controller sourceId =>
     g.applyConnive controller sourceId
+  | .finishSbaSweep moves preBattlefield stage =>
+    (g.finishSbaSweep moves preBattlefield stage).1
+  | .closeBatch batchId startIdx =>
+    g.finishOpenBatch batchId startIdx
   | .checkSBA =>
     g.checkSBA
   | .receivePriority p =>

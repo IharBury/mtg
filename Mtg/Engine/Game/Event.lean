@@ -1129,6 +1129,16 @@ structure ProposedTokenBatch where
   cause : Option EventCause := none
 deriving Repr, Inhabited, BEq
 
+/-- One pending graveyard move determined during a single CR 704.3 state-based
+action check (`checkSBACounted`). -/
+structure SbaGraveyardMove where
+  objectId : ObjectId
+  reason : String
+  verb : Option ZoneVerb := none
+  actor : Option PlayerId := none
+  sba : StateBasedAction
+deriving Repr, Inhabited, BEq
+
 /-- Continuation stored while waiting for a player to answer `Pending.chooseReplacement`
 when multiple replacement or prevention effects compete in the same CR 616.1a–e tier. -/
 inductive PendingReplacement where
@@ -1185,13 +1195,16 @@ inductive PendingReplacement where
       (n : Nat) (tapped holds : Bool) (sourceId : Option ObjectId)
   | commitEnteringAttackItems (chosen : Array (EnteringAttackItem × Option AttackTarget))
       (cause : Option EventCause) (resetRecent : Bool)
-  | finishEnteringAttackCard (effectController : PlayerId) (cardName : String)
-      (mods : List TriggeredAbility.TriggerEnterWith) (logKind : EnteringAttackLog)
-      (cause : Option EventCause)
+  | finishEnteringAttackCard (newId : Option ObjectId) (effectController : PlayerId)
+      (cardName : String) (mods : List TriggeredAbility.TriggerEnterWith)
+      (logKind : EnteringAttackLog) (cause : Option EventCause)
   | afterLastPermanentEnters
   | finishFraChoice
   | draw (p : PlayerId) (n : Nat) (drawStepFirst : Bool) (cause : Option EventCause)
   | connive (controller : PlayerId) (sourceId : Option ObjectId)
+  | finishSbaSweep (moves : Array SbaGraveyardMove) (preBattlefield : Array GameObject)
+      (stage : Nat)
+  | closeBatch (batchId : BatchId) (startIdx : Nat)
   | checkSBA
   | receivePriority (p : PlayerId)
 deriving Repr, Inhabited, BEq

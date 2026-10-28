@@ -183,17 +183,19 @@ def openBatch (g : Game) (cause : Option EventCause := none) : Game × (Game →
     ({ g with currentBatch := some (batchId, mergedCause?) }, id)
   | none =>
     let batchId : BatchId := ⟨g.nextBatchId⟩
-    let pre : GameSnapshot := g
     let startIdx := g.events.size
-    ({ g with currentBatch := some (batchId, cause) },
+    ({ g with
+        currentBatch := some (batchId, cause)
+        nextBatchId := max g.nextBatchId (batchId.raw + 1)
+        openBatchObjects := g.objects
+        openBatchPlayers := g.players
+        openBatchEffects := g.activeEffects
+        openBatchPending := g.pending },
      fun g1 =>
-       let g2 := { g1 with currentBatch := none }
-       let slice := g2.events.extract (min startIdx g2.events.size) g2.events.size
-       let batchEvents := slice.filter (fun ev =>
-         match ev.change with
-         | .rules _ => ev.batch == batchId
-         | .engine _ => false)
-       g2.closeBatch pre batchId batchEvents)
+       if let .chooseReplacement .. := g1.pending then
+         g1.chainPendingReplacement (.closeBatch batchId startIdx)
+       else
+         g1.finishOpenBatch batchId startIdx)
 
 /-- Tap untapped artifacts you control for improvise. Each pays {1}. -/
 def tapArtifactsForImprovise (g : Game) (p : PlayerId) (ids : Array ObjectId) :

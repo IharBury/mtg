@@ -30,6 +30,12 @@ structure Game where
   nextBatchId : Nat := 0
   /-- Active batch `(batchId, sharedCause?)` while recording simultaneous rules events. -/
   currentBatch : Option (BatchId × Option EventCause) := none
+  /-- Pre-batch state captured when an outermost rules-event batch opens so it can
+  close and evaluate CR 603.10 look-back triggers after `Pending.chooseReplacement` finishes. -/
+  openBatchObjects : Array GameObject := #[]
+  openBatchPlayers : Array Player := #[]
+  openBatchEffects : Array (EffectId × ContinuousEffect) := #[]
+  openBatchPending : Pending := .none
   /-- Active continuous effects paired with their unique `EffectId` (CR 611). -/
   activeEffects : Array (EffectId × ContinuousEffect) := #[]
   timestamp : Nat := 0
@@ -6626,9 +6632,43 @@ def recordAll (g : Game) (es : Array GameEvent) : Game :=
 def change (g : Game) (c : EngineChange) : Game :=
   g.record (GameEvent.engine g.turnNumber c)
 
+/-- Append `next` after the currently stored `g.pendingReplacement` (if any), so
+multi-step operations resume remaining work once `Pending.chooseReplacement` finishes. -/
+def chainPendingReplacement (g : Game) (next : PendingReplacement) : Game :=
+  match g.pendingReplacement with
+  | some first => g.change (.pendingReplacement (some (.seq first next)))
+  | none => g.change (.pendingReplacement (some next))
+
+/-- Close an outermost rules-event batch `batchId` that started at `startIdx`,
+reconstructing its pre-batch `GameSnapshot` from `openBatchObjects`,
+`openBatchPlayers`, `openBatchEffects`, `openBatchPending`, and `g.events[0:startIdx]`. -/
+def finishOpenBatch (g : Game) (batchId : BatchId) (startIdx : Nat) : Game :=
+  let pre : GameSnapshot :=
+    { g with
+      objects := g.openBatchObjects
+      players := g.openBatchPlayers
+      activeEffects := g.openBatchEffects
+      pending := g.openBatchPending
+      events := g.events.extract 0 (min startIdx g.events.size) }
+  let g2 :=
+    { g with
+      currentBatch := none
+      openBatchObjects := #[]
+      openBatchPlayers := #[]
+      openBatchEffects := #[]
+      openBatchPending := .none }
+  let slice := g2.events.extract (min startIdx g2.events.size) g2.events.size
+  let batchEvents := slice.filter (fun ev =>
+    match ev.change with
+    | .rules _ => ev.batch == batchId
+    | .engine _ => false)
+  if batchEvents.isEmpty then g2
+  else g2.closeBatch pre batchId batchEvents
+
 /-- Run `f` inside a simultaneous rules-event batch (CR 603.2c / 608.2c / 704.3).
 If a batch is already active on `g`, `f` joins the enclosing batch; otherwise a
-new `BatchId` is opened and triggers are evaluated once when `f` completes. -/
+new `BatchId` is opened and triggers are evaluated once when `f` completes (or
+after `Pending.chooseReplacement` finishes if `f` pauses for a replacement choice). -/
 def withBatchReturn {α : Type} (g : Game) (cause : Option EventCause := none)
     (f : Game → Game × α) : Game × α :=
   match g.currentBatch with
@@ -6642,17 +6682,20 @@ def withBatchReturn {α : Type} (g : Game) (cause : Option EventCause := none)
     (g2, res)
   | none =>
     let batchId : BatchId := ⟨g.nextBatchId⟩
-    let pre : GameSnapshot := g
     let startIdx := g.events.size
-    let (g1, res) := f { g with currentBatch := some (batchId, cause) }
-    let g2 := { g1 with currentBatch := none }
-    let slice := g2.events.extract (min startIdx g2.events.size) g2.events.size
-    let batchEvents := slice.filter (fun ev =>
-      match ev.change with
-      | .rules _ => ev.batch == batchId
-      | .engine _ => false)
-    if batchEvents.isEmpty then (g2, res)
-    else (g2.closeBatch pre batchId batchEvents, res)
+    let g0 :=
+      { g with
+        currentBatch := some (batchId, cause)
+        nextBatchId := max g.nextBatchId (batchId.raw + 1)
+        openBatchObjects := g.objects
+        openBatchPlayers := g.players
+        openBatchEffects := g.activeEffects
+        openBatchPending := g.pending }
+    let (g1, res) := f g0
+    if let .chooseReplacement .. := g1.pending then
+      (g1.chainPendingReplacement (.closeBatch batchId startIdx), res)
+    else
+      (g1.finishOpenBatch batchId startIdx, res)
 
 /-- Run `f` inside a simultaneous rules-event batch (CR 603.2c / 608.2c / 704.3). -/
 def withBatch (g : Game) (cause : Option EventCause := none) (f : Game → Game) : Game :=
@@ -7223,13 +7266,6 @@ def setPlayerControl (g : Game) (you them : PlayerId) (onNextTurn : Bool := fals
         s!"{(g.player you).name} also controls {(g.player mate).name} (Two-Headed Giant team)"
   | none => g
 
-/-- Append `next` after the currently stored `g.pendingReplacement` (if any), so
-multi-step operations resume remaining work once `Pending.chooseReplacement` finishes. -/
-def chainPendingReplacement (g : Game) (next : PendingReplacement) : Game :=
-  match g.pendingReplacement with
-  | some first => g.change (.pendingReplacement (some (.seq first next)))
-  | none => g.change (.pendingReplacement (some next))
-
 /-- Record putting `n` counters of `kind` on `id` via `PermanentEvent.counters`
 (CR 122.1). Does nothing when `n == 0`. -/
 def recordPutCounters (g : Game) (id : ObjectId) (kind : CounterKind) (n : Nat)
@@ -7289,9 +7325,14 @@ def putCountersExceptPlusOne (g : Game) (id : ObjectId) («from» : Status)
   let bag := «from».toCounterBag.filter (fun (k, n) => k != .plusOnePlusOne && n > 0)
   if bag.isEmpty then g
   else
-    g.withBatch cause (fun g =>
-      bag.foldl (fun acc (kind, cnt) =>
-        acc.recordPutCounters id kind (cnt + extra) (byPlayer := byPlayer) (cause := cause)) g)
+    g.withBatch cause fun g => Id.run do
+      let mut g := g
+      for (kind, cnt) in bag do
+        if let .chooseReplacement .. := g.pending then
+          g := g.chainPendingReplacement (.recordPutCounters id kind (cnt + extra) byPlayer cause)
+        else
+          g := g.recordPutCounters id kind (cnt + extra) (byPlayer := byPlayer) (cause := cause)
+      return g
 
 end Game
 end Mtg.Engine

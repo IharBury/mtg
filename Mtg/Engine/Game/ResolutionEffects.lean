@@ -832,25 +832,35 @@ def advanceFixedEnteringAttackItems
   return (remaining.extract idx remaining.size, acc)
 
 /-- Finish the post-entry modifications, logs, and enters-triggers for a card
-that just entered the battlefield via `commitEnteringAttackItems`. -/
+that just entered the battlefield via `commitEnteringAttackItems`. Stops if an
+`applyEnterMod` call opens `Pending.chooseReplacement` so the remaining mods and
+`afterPermanentEnters` run only after the choice is resolved. -/
 def finishEnteringAttackCard (g : Game) (newId : ObjectId)
     (effectController : PlayerId) (cardName : String)
     (mods : List TriggeredAbility.TriggerEnterWith)
     (logKind : EnteringAttackLog) (cause : Option EventCause := none) : Game :=
-  let g := mods.foldl (fun g m => g.applyEnterMod effectController newId m (cause := cause)) g
-  match logKind with
-  | .putOntoBattlefield =>
-    let g := g.logMsg s!"{cardName} is put onto the battlefield"
-    g.afterPermanentEnters (g.object! newId)
-  | .grimReaper =>
-    let entered := g.object! newId
-    let g := g.logMsg s!"{entered.name} gets a finality counter"
-    g.afterPermanentEnters entered |>.logMsg s!"{entered.name} enters tapped and attacking"
-  | .ownerGraveyard loses =>
-    let g := g.afterPermanentEnters (g.object! newId)
-    if loses then
-      g.logMsg s!"{(g.object! newId).name} returns, loses all abilities, and gains haste"
-    else g
+  match mods with
+  | m :: rest =>
+    let g := g.applyEnterMod effectController newId m (cause := cause)
+    if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement
+        (.finishEnteringAttackCard (some newId) effectController cardName rest logKind cause)
+    else
+      g.finishEnteringAttackCard newId effectController cardName rest logKind (cause := cause)
+  | [] =>
+    match logKind with
+    | .putOntoBattlefield =>
+      let g := g.logMsg s!"{cardName} is put onto the battlefield"
+      g.afterPermanentEnters (g.object! newId)
+    | .grimReaper =>
+      let entered := g.object! newId
+      let g := g.logMsg s!"{entered.name} gets a finality counter"
+      g.afterPermanentEnters entered |>.logMsg s!"{entered.name} enters tapped and attacking"
+    | .ownerGraveyard loses =>
+      let g := g.afterPermanentEnters (g.object! newId)
+      if loses then
+        g.logMsg s!"{(g.object! newId).name} returns, loses all abilities, and gains haste"
+      else g
 
 /-- Create the tokens or put the cards in `chosen` onto the battlefield with
 their chosen `AttackTarget`s in a single batch, then run their enters-with
@@ -929,12 +939,17 @@ def commitEnteringAttackItems (g : Game)
             g := g'
             if let .chooseReplacement .. := g.pending then
               g := g.chainPendingReplacement
-                (.finishEnteringAttackCard effectController o.name mods logKind cause)
+                (.finishEnteringAttackCard none effectController o.name mods logKind cause)
               let rem := chosen.extract (i + 1) chosen.size
               if !rem.isEmpty then
                 g := g.chainPendingReplacement (.commitEnteringAttackItems rem cause false)
               return g
             g := g.finishEnteringAttackCard newId effectController o.name mods logKind (cause := cause)
+            if let .chooseReplacement .. := g.pending then
+              let rem := chosen.extract (i + 1) chosen.size
+              if !rem.isEmpty then
+                g := g.chainPendingReplacement (.commitEnteringAttackItems rem cause false)
+              return g
       return g
 
 /-- Have each item's controller choose what it enters attacking when multiple

@@ -3598,28 +3598,38 @@ and Arwen + Doc Samson ETB counter replacement. -/
   let gSimPaused1 := (quiet gSim0).moveSimultaneousToGraveyard #[simC1.id, simC2.id]
     (cause := some finSetupCause)
   let gSimPaused2 :=
-    ((quiet gSimPaused1).apply me (.chooseReplacement c1FinId)).toOption.getD gSimPaused1
+    (gSimPaused1.apply me (.chooseReplacement c1FinId)).toOption.getD gSimPaused1
   let gSimDone :=
-    ((quiet gSimPaused2).apply me (.chooseReplacement c2FinId)).toOption.getD gSimPaused2
+    (gSimPaused2.apply me (.chooseReplacement c2FinId)).toOption.getD gSimPaused2
+  let simMoveBatches := gSimDone.events.filterMap (fun e =>
+    match e.change with
+    | .rules (.zone (.moved ..)) => some e.batch
+    | _ => none)
   let simMoveOk :=
     gSimPaused1.pending == .chooseReplacement me #[c1FinId, idHeadWolf] &&
     gSimPaused2.pending == .chooseReplacement me #[c2FinId, idHeadWolf] &&
     gSimDone.pending == .none &&
-    !gSimDone.battlefield.any (fun o => o.id == simC1.id || o.id == simC2.id)
+    !gSimDone.battlefield.any (fun o => o.id == simC1.id || o.id == simC2.id) &&
+    simMoveBatches.size == 2 && simMoveBatches[0]! == simMoveBatches[1]!
   -- SBA sweep: Creature 1 has lethal damage + Finality + Head of the Hunt; Creature 2 has lethal damage.
-  -- Choosing Finality on Creature 1 queues no trigger, and Creature 2 still dies in the resumed SBA pass.
+  -- Choosing Finality on Creature 1 queues no trigger, and Creature 2 still dies in the same SBA batch.
   let gSba0 :=
     (gSim0.changeStatus simC1.id (.damage 2)).changeStatus simC2.id (.damage 2)
   let gSbaPaused := (quiet gSba0).checkSBA
   let gSbaAfter1 :=
-    ((quiet gSbaPaused).apply me (.chooseReplacement c1FinId)).toOption.getD gSbaPaused
+    (gSbaPaused.apply me (.chooseReplacement c1FinId)).toOption.getD gSbaPaused
   let gSbaDone :=
-    ((quiet gSbaAfter1).apply me (.chooseReplacement c2FinId)).toOption.getD gSbaAfter1
+    (gSbaAfter1.apply me (.chooseReplacement c2FinId)).toOption.getD gSbaAfter1
+  let sbaMoveBatches := gSbaDone.events.filterMap (fun e =>
+    match e.change with
+    | .rules (.zone (.moved ..)) => some e.batch
+    | _ => none)
   let sbaResumeOk :=
     gSbaPaused.pending == .chooseReplacement me #[c1FinId, idHeadWolf] &&
     gSbaAfter1.pending == .chooseReplacement me #[c2FinId, idHeadWolf] &&
     gSbaDone.pending == .none &&
-    !gSbaDone.battlefield.any (fun o => o.id == simC1.id || o.id == simC2.id)
+    !gSbaDone.battlefield.any (fun o => o.id == simC1.id || o.id == simC2.id) &&
+    sbaMoveBatches.size == 2 && sbaMoveBatches[0]! == sbaMoveBatches[1]!
   -- `fightCreatures` chains the second creature's fight damage after a replacement choice on the first.
   let gFight0 :=
     addPermanent (addPermanent gOrd0 { bear with name := "Fighter A" } me me)
@@ -3631,19 +3641,57 @@ and Arwen + Doc Samson ETB counter replacement. -/
   let gFight0 :=
     (gFight0.createEffect (.replacement {
       id := idFightAdd, source := some fighterA.id, controller := some me,
-      affectedPlayer := opp, kind := .addNoncombatDamage fighterA.id 2 } true)).createEffect
+      affectedPlayer := opp, kind := .addNoncombatDamage fighterA.id 2 } true)
+      (cause := some dmgOrdCause)).createEffect
       (.replacement {
         id := idFightMul, source := some fighterA.id, controller := some me,
         affectedPlayer := opp, kind := .multiplyDamage fighterA.id 2 } true)
+      (cause := some dmgOrdCause)
   let gFightPaused := (quiet gFight0).fightCreatures (gFight0.object! fighterA.id)
     (gFight0.object! fighterB.id) (cause := some dmgOrdCause)
   let gFightDone :=
-    ((quiet gFightPaused).apply opp (.chooseReplacement idFightAdd)).toOption.getD gFightPaused
+    (gFightPaused.apply opp (.chooseReplacement idFightAdd)).toOption.getD gFightPaused
+  let fightBatches := gFightDone.events.filterMap (fun e =>
+    match e.change with
+    | .rules (.damage (.dealt ..)) => some e.batch
+    | _ => none)
   let fightResumeOk :=
     gFightPaused.pending == .chooseReplacement opp #[idFightAdd, idFightMul] &&
     gFightDone.pending == .none &&
     (gFightDone.object! fighterB.id).status.damage == 8 &&
-    (gFightDone.object! fighterA.id).status.damage == 2
+    (gFightDone.object! fighterA.id).status.damage == 2 &&
+    fightBatches.size == 2 && fightBatches[0]! == fightBatches[1]!
+  -- `finishEnteringAttackCard` stops on a `.counter` mod that opens `.chooseReplacement` before running `afterPermanentEnters`.
+  let idCtrAdd : ReplacementId := ⟨7601⟩
+  let idCtrMul : ReplacementId := ⟨7602⟩
+  let gEntAtk0 :=
+    insertObject gOrd0 { bear with name := "Entering Striker" } me (.hand me) none {}
+      (fun id _ => #[.pushHand id])
+  let strikerHandId :=
+    ((gEntAtk0.player me).hand.filter (fun id => (gEntAtk0.object! id).name == "Entering Striker"))[0]!
+  let (gEntAtk0, strikerId) :=
+    (quiet gEntAtk0).putOntoBattlefield strikerHandId me (cause := some arwCause)
+  let gEntAtk0 :=
+    (gEntAtk0.createEffect (.replacement {
+      id := idCtrAdd, source := some strikerId, controller := some me,
+      affectedPlayer := me, kind := .modifyCountersPut strikerId (some .plusOnePlusOne) (add := 1) (mult := 1) } true)
+      (cause := some arwCause)).createEffect
+      (.replacement {
+        id := idCtrMul, source := some strikerId, controller := some me,
+        affectedPlayer := me, kind := .modifyCountersPut strikerId (some .plusOnePlusOne) (add := 0) (mult := 2) } true)
+      (cause := some arwCause)
+  let gEntAtkPaused := gEntAtk0.finishEnteringAttackCard strikerId me "Entering Striker"
+    [.counter .plusOnePlusOne 1 false, .counter .shield 1 false] .putOntoBattlefield (cause := some arwCause)
+  let gEntAtkDone :=
+    (gEntAtkPaused.apply me (.chooseReplacement idCtrAdd)).toOption.getD gEntAtkPaused
+  let entAtkOk :=
+    gEntAtkPaused.pending == .chooseReplacement me #[idCtrAdd, idCtrMul] &&
+    (gEntAtkPaused.object! strikerId).status.shield == 0 &&
+    !(gEntAtkPaused.object! strikerId).enterProcessed &&
+    gEntAtkDone.pending == .none &&
+    (gEntAtkDone.object! strikerId).enterProcessed &&
+    (gEntAtkDone.object! strikerId).status.plusOnePlusOne == 4 &&
+    (gEntAtkDone.object! strikerId).status.shield == 1
   outOfBandRejected &&
     pausedPromptOk &&
     gDmgAddFirst.pending == Pending.none &&
@@ -3661,6 +3709,7 @@ and Arwen + Doc Samson ETB counter replacement. -/
     simMoveOk &&
     sbaResumeOk &&
     fightResumeOk &&
+    entAtkOk &&
     (gLifeAddFirst.player me).life - (gOrd0.player me).life == 10 &&
     (gLifeMulFirst.player me).life - (gOrd0.player me).life == 8 &&
     (gActiveMe.selectNextReplacement #[candOpp, candMe] #[]).map (·.id) == some ⟨7401⟩ &&
@@ -3674,6 +3723,7 @@ and Arwen + Doc Samson ETB counter replacement. -/
     noUnclassifiedRulesEvents gSimDone &&
     noUnclassifiedRulesEvents gSbaDone &&
     noUnclassifiedRulesEvents gFightDone &&
+    noUnclassifiedRulesEvents gEntAtkDone &&
     noUnclassifiedRulesEvents gLifeAddFirst &&
     noUnclassifiedRulesEvents gLifeMulFirst
 

@@ -285,7 +285,8 @@ def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
   let o := g.object! o.id
   -- Room of Refuge: “As it enters, choose a color.”
   let g :=
-    if o.staticAbilities.any (· == .fra .entersTappedChooseColor) && o.status.chosenColor.isNone then
+    if o.staticAbilities.any (· == .fra .entersTappedChooseColor) && o.status.chosenColor.isNone &&
+        g.pending == .none then
       match o.controller with
       | some p =>
         (g.change (.pending (.fraChoice p (.chooseColor o.id)))).logMsg

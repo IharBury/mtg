@@ -298,47 +298,94 @@ def checkCombatAssignmentBatch (g : Game) (forAttackers : Bool)
 def dealAssignedCombatDamage (g : Game) : Game :=
   let fs := g.combatHasFirstStrike && !g.firstStrikeDamageDone
   let combatCause := some (EventCause.turnBased (.dealCombatDamage fs))
-  let choice? : Option (PlayerId × Array ReplacementId) := Id.run do
-    for asgn in g.assignedCombatDamage do
-      let src := g.object! asgn.source
-      let defn := g.defendingPlayerOf src
-      let srcRep := g.replaceDamage 1 (src? := some src) (combat := true) (cause := combatCause)
-      if let some ch := srcRep.choice? then
-        return some ch
-      let srcPrevented := srcRep.prevented
-      if !srcPrevented then
-        for (tid, amt) in asgn.toCreatures do
-          if amt > 0 then
-            let t := g.object! tid
-            let rep := g.replaceDamage amt (src? := some src) (recipientPerm? := some t)
-              (combat := true) (cause := combatCause)
-            if let some ch := rep.choice? then
-              return some ch
+  let isOuterCall := g.currentBatch.isNone
+  let g := g.withBatch combatCause fun g => Id.run do
+    let choice? : Option (PlayerId × Array ReplacementId) := Id.run do
+      for asgn in g.assignedCombatDamage do
+        let src := g.object! asgn.source
+        let defn := g.defendingPlayerOf src
+        let srcRep := g.replaceDamage 1 (src? := some src) (combat := true) (cause := combatCause)
+        if let some ch := srcRep.choice? then
+          return some ch
+        let srcPrevented := srcRep.prevented
+        let mut totalDealt : Int := 0
+        let mut dealtToPw : Int := 0
+        let mut dealtToPlayer : Int := 0
         let pwTarget? := src.status.attackingPlaneswalker?
-        if asgn.toPlayer > 0 && pwTarget?.isSome then
-          if let some pw := pwTarget?.bind g.findObject? then
-            if pw.isOnBattlefield then
-              let rep := g.replaceDamage asgn.toPlayer (src? := some src) (recipientPerm? := some pw)
+        if !srcPrevented then
+          for (tid, amt) in asgn.toCreatures do
+            if amt > 0 then
+              let t := g.object! tid
+              let rep := g.replaceDamage amt (src? := some src) (recipientPerm? := some t)
                 (combat := true) (cause := combatCause)
               if let some ch := rep.choice? then
                 return some ch
-        else if asgn.toPlayer > 0 && !(g.player defn).lost then
-          let rep := g.replaceDamage asgn.toPlayer (src? := some src) (recipientPlayer? := some defn)
-            (combat := true) (cause := combatCause)
-          if let some ch := rep.choice? then
-            return some ch
-    return none
-  match choice? with
-  | some (chooser, choices) =>
-    g.promptChooseReplacement chooser choices .dealAssignedCombatDamage
-  | none =>
-  let g := g.withBatch combatCause fun g => Id.run do
+              totalDealt := totalDealt + rep.amount
+          if asgn.toPlayer > 0 && pwTarget?.isSome then
+            if let some pw := pwTarget?.bind g.findObject? then
+              if pw.isOnBattlefield then
+                let rep := g.replaceDamage asgn.toPlayer (src? := some src) (recipientPerm? := some pw)
+                  (combat := true) (cause := combatCause)
+                if let some ch := rep.choice? then
+                  return some ch
+                dealtToPw := rep.amount
+                totalDealt := totalDealt + rep.amount
+          else if asgn.toPlayer > 0 && !(g.player defn).lost then
+            let rep := g.replaceDamage asgn.toPlayer (src? := some src) (recipientPlayer? := some defn)
+              (combat := true) (cause := combatCause)
+            if let some ch := rep.choice? then
+              return some ch
+            if !(rep.prevented && (g.player defn).protectionFromEverything) then
+              dealtToPlayer := rep.amount
+              totalDealt := totalDealt + rep.amount
+      return none
+    match choice? with
+    | some (chooser, choices) =>
+      return g.promptChooseReplacement chooser choices .dealAssignedCombatDamage
+    | none =>
     let mut g := g
     let mut allApplied : Array ReplacementId := #[]
     for i in [0:g.assignedCombatDamage.size] do
       let asgn := g.assignedCombatDamage[i]!
       let src := g.object! asgn.source
       let defn := g.defendingPlayerOf src
+      let pwTarget? := src.status.attackingPlaneswalker?
+      -- Check all damage replacement choices for this assignment before marking any packet.
+      let asgnChoice? : Option (PlayerId × Array ReplacementId) := Id.run do
+        let srcRep := g.replaceDamage 1 (src? := some src) (combat := true) (cause := combatCause)
+        if let some ch := srcRep.choice? then
+          return some ch
+        if !srcRep.prevented then
+          for (tid, amt) in asgn.toCreatures do
+            if amt > 0 then
+              let t := g.object! tid
+              let rep := g.replaceDamage amt (src? := some src) (recipientPerm? := some t)
+                (combat := true) (cause := combatCause)
+              if let some ch := rep.choice? then
+                return some ch
+          if asgn.toPlayer > 0 && pwTarget?.isSome then
+            if let some pw := pwTarget?.bind g.findObject? then
+              if pw.isOnBattlefield then
+                let rep := g.replaceDamage asgn.toPlayer (src? := some src) (recipientPerm? := some pw)
+                  (combat := true) (cause := combatCause)
+                if let some ch := rep.choice? then
+                  return some ch
+          else if asgn.toPlayer > 0 && !(g.player defn).lost then
+            let rep := g.replaceDamage asgn.toPlayer (src? := some src) (recipientPlayer? := some defn)
+              (combat := true) (cause := combatCause)
+            if let some ch := rep.choice? then
+              return some ch
+        return none
+      if let some (chooser, choices) := asgnChoice? then
+        let rem := g.assignedCombatDamage.extract i g.assignedCombatDamage.size
+        let assignedSoFar := (g.assignedCombatDamage.extract 0 i).map (·.source)
+        let firstStrikeAssigned :=
+          if fs then g.firstStrikeAssignedThisCombat ++ assignedSoFar
+          else g.firstStrikeAssignedThisCombat
+        g := g.changes #[
+          .assignedCombatDamage rem,
+          .firstStrikeAssignedThisCombat firstStrikeAssigned ]
+        return g.promptChooseReplacement chooser choices .dealAssignedCombatDamage
       let mut totalDealt : Int := 0
       let recipients :=
         if src.status.attacking then g.blockersOf src.id else g.creaturesBlockedBy src
@@ -351,8 +398,6 @@ def dealAssignedCombatDamage (g : Game) : Game :=
           s!"{src.name} is not blocking any creatures and assigns no combat damage (CR 510.1d)"
       let srcEvent := g.snapshot src
       let srcRep := g.replaceDamage 1 (src? := some src) (combat := true) (cause := combatCause)
-      if let some (chooser, choices) := srcRep.choice? then
-        return g.promptChooseReplacement chooser choices .dealAssignedCombatDamage
       allApplied := allApplied ++ srcRep.applied
       let srcPrevented := srcRep.prevented
       if srcPrevented then
@@ -363,8 +408,6 @@ def dealAssignedCombatDamage (g : Game) : Game :=
             let t := g.object! tid
             let rep := g.replaceDamage amt (src? := some src) (recipientPerm? := some t)
               (combat := true) (cause := combatCause)
-            if let some (chooser, choices) := rep.choice? then
-              return g.promptChooseReplacement chooser choices .dealAssignedCombatDamage
             allApplied := allApplied ++ rep.applied
             let dealtAmt := rep.amount
             g := g.markDamageOn t amt
@@ -373,7 +416,7 @@ def dealAssignedCombatDamage (g : Game) : Game :=
               (source := some srcEvent) (sourceObj := some src)
               (replaced := some rep) (consumeOrder := false) (cause := rep.cause)
             totalDealt := totalDealt + dealtAmt
-      let pwTarget? := src.status.attackingPlaneswalker?
+      let mut dealtToPw : Int := 0
       let mut dealtToPlayer : Int := 0
       if !srcPrevented && asgn.toPlayer > 0 && pwTarget?.isSome then
         -- CR 510.1c / 120.3c: damage to the attacked planeswalker removes loyalty.
@@ -382,27 +425,19 @@ def dealAssignedCombatDamage (g : Game) : Game :=
           if pw.isOnBattlefield then
             let rep := g.replaceDamage asgn.toPlayer (src? := some src) (recipientPerm? := some pw)
               (combat := true) (cause := combatCause)
-            if let some (chooser, choices) := rep.choice? then
-              return g.promptChooseReplacement chooser choices .dealAssignedCombatDamage
             allApplied := allApplied ++ rep.applied
             let dealtAmt := rep.amount
             g := g.markDamageOn pw asgn.toPlayer s!"{src.name} deals {dealtAmt} combat damage to {pw.name}"
               (deathtouch := g.hasDeathtouch src) (combat := true)
               (source := some srcEvent) (sourceObj := some src)
               (replaced := some rep) (consumeOrder := false) (cause := rep.cause)
+            dealtToPw := dealtAmt
             totalDealt := totalDealt + dealtAmt
-            match src.controller with
-            | some pid =>
-              if src.status.combatDamageCreatesTreasure || g.equippedCreatesCombatTreasures src then
-                g := g.createTreasureTokens pid dealtAmt.toNat (cause := combatCause)
-            | none => pure ()
         | none => pure ()
       else if !srcPrevented && asgn.toPlayer > 0 &&
           !(g.player defn).lost then
         let rep := g.replaceDamage asgn.toPlayer (src? := some src) (recipientPlayer? := some defn)
           (combat := true) (cause := combatCause)
-        if let some (chooser, choices) := rep.choice? then
-          return g.promptChooseReplacement chooser choices .dealAssignedCombatDamage
         allApplied := allApplied ++ rep.applied
         let toPlayer := rep.amount
         let pl := g.player defn
@@ -445,14 +480,18 @@ def dealAssignedCombatDamage (g : Game) : Game :=
         | none => pure ()
       if totalDealt > 0 then
         g := g.changeStatus src.id (.dealtCombatDamage true)
-      if dealtToPlayer > 0 && pwTarget?.isNone && !(g.player defn).lost then
+      let treasureCount :=
+        if dealtToPw > 0 then dealtToPw.toNat
+        else if dealtToPlayer > 0 && pwTarget?.isNone && !(g.player defn).lost then dealtToPlayer.toNat
+        else 0
+      if treasureCount > 0 then
         match src.controller with
         | some pid =>
           if src.status.combatDamageCreatesTreasure || g.equippedCreatesCombatTreasures src then
             if let .chooseReplacement .. := g.pending then
-              g := g.chainPendingReplacement (.createTreasureTokens pid dealtToPlayer.toNat false combatCause)
+              g := g.chainPendingReplacement (.createTreasureTokens pid treasureCount false combatCause)
             else
-              g := g.createTreasureTokens pid dealtToPlayer.toNat (cause := combatCause)
+              g := g.createTreasureTokens pid treasureCount (cause := combatCause)
         | none => pure ()
       if let .chooseReplacement .. := g.pending then
         let rem := g.assignedCombatDamage.extract (i + 1) g.assignedCombatDamage.size
@@ -478,8 +517,12 @@ def dealAssignedCombatDamage (g : Game) : Game :=
       .firstStrikeDamageDone (g.firstStrikeDamageDone || g.combatHasFirstStrike),
       .pendingRegularCombatDamage pendingRegular,
       .firstStrikeAssignedThisCombat assignedFs ]
-  if let .chooseReplacement .. := g.pending then g
-  else g.receivePriority g.activePlayer
+  if let .chooseReplacement .. := g.pending then
+    if isOuterCall then g.chainPendingReplacement (.receivePriority g.activePlayer)
+    else g
+  else if isOuterCall then
+    g.receivePriority g.activePlayer
+  else g
 
 /-- Record a legal assignment batch and append it for later dealing. -/
 def storeCombatAssignments (g : Game) (forAttackers : Bool)
