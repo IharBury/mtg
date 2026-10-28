@@ -394,7 +394,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
     (g.promptChooseReplacement chooser choices
       (.move id origDest controller sacrificed discarded verb actor faceDown tapped
         isAttacking resolvedAttackTarget nightBack returnedAsArtifact onlyFoodArtifact
-        extraEntersWith libraryPosition fromStackTime applyHope cause),
+        extraEntersWith libraryPosition fromStackTime applyHope preBattlefield cause),
      id)
   | none =>
   let exileInstead := moveRep.exileInstead
@@ -581,16 +581,25 @@ def moveToOwnerGraveyard (g : Game) (o : GameObject) (reason : String)
 /-- Move several objects to their owners' graveyards as one event.
 Sources that also leave do not see “creature cards put into your
 graveyard” (Robot Domination; MSH 138). -/
-def moveSimultaneousToGraveyard (g : Game) (ids : Array ObjectId) : Game :=
-  g.withBatch none fun g =>
-    let preBf := g.battlefield
-    let objs := ids.filterMap g.findObject?
-    objs.foldl (fun g o =>
-      match g.findObject? o.id with
-      | some o =>
-        g.moveToOwnerGraveyard o s!"{o.name} is put into its owner's graveyard"
-          (preBattlefield := some preBf)
-      | none => g) g
+def moveSimultaneousToGraveyard (g : Game) (ids : Array ObjectId)
+    (preBattlefield : Option (Array GameObject) := none)
+    (cause : Option EventCause := none) : Game :=
+  g.withBatch cause fun g => Id.run do
+    let preBf := preBattlefield.getD g.battlefield
+    let batchCause := cause.orElse (fun _ => g.currentBatch.bind (·.2))
+    let mut g := g
+    for i in [0:ids.size] do
+      let id := ids[i]!
+      if let some o := g.findObject? id then
+        g := g.moveToOwnerGraveyard o s!"{o.name} is put into its owner's graveyard"
+          (preBattlefield := some preBf) (cause := batchCause)
+        if let .chooseReplacement .. := g.pending then
+          let rem := ids.extract (i + 1) ids.size
+          if !rem.isEmpty then
+            g := g.chainPendingReplacement
+              (.moveSimultaneousToGraveyard rem (some preBf) batchCause)
+          return g
+    return g
 
 /-- Put `id` onto the battlefield under `controller`, setting tap, sickness,
 optional attachment, and as-enters counters and status inside the atomic zone

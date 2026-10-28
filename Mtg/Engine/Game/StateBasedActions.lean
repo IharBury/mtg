@@ -165,7 +165,7 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
               (cause := some (.stateBased sba))
             changed := true
             if let .chooseReplacement _ _ := g.pending then
-              return (g, (true, true))
+              return (g.chainPendingReplacement .checkSBA, (true, true))
         | none => pure ()
       g := g.change .sbaChecked
       -- Planeswalkers with 0 loyalty (CR 704.5i), unless their controller
@@ -175,8 +175,11 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
             !g.planeswalkersSurviveZeroLoyalty o.controller then
           g := g.moveToOwnerGraveyard o
             s!"{o.name} is put into its owner's graveyard (0 loyalty, CR 704.5i)"
+            (preBattlefield := some preBf)
             (cause := some (.stateBased .zeroLoyalty))
           changed := true
+          if let .chooseReplacement _ _ := g.pending then
+            return (g.chainPendingReplacement .checkSBA, (true, true))
       -- Legend rule (CR 704.5j): pause so the controller chooses one to keep.
       match g.firstLegendRuleChoice? with
       | some (p, name, ids) =>
@@ -201,8 +204,11 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
             g := g.moveToOwnerGraveyard o
               s!"{o.name} is sacrificed (CR 714.4)"
               (verb := some .sacrifice) (actor := o.controller)
+              (preBattlefield := some preBf)
               (cause := some (.stateBased .sagaFinalChapter))
             changed := true
+            if let .chooseReplacement _ _ := g.pending then
+              return (g.chainPendingReplacement .checkSBA, (true, true))
         | _, _ => pure ()
       -- Unattached or illegally attached Auras (CR 704.5m).
       for o in g.battlefield do
@@ -214,8 +220,11 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
           if !legal then
             g := g.moveToOwnerGraveyard o
               s!"{o.name} is put into its owner's graveyard (CR 704.5n)"
+              (preBattlefield := some preBf)
               (cause := some (.stateBased .illegalAura))
             changed := true
+            if let .chooseReplacement _ _ := g.pending then
+              return (g.chainPendingReplacement .checkSBA, (true, true))
       -- Illegally attached Equipment (CR 704.5n). Unattached Equipment stays.
       for o in g.battlefield do
         if o.printed.isEquipment then
@@ -240,10 +249,10 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
 
 def checkSBA (g : Game) : Game :=
   let g := (g.checkSBACounted).1
-  if g.over then g
+  if g.over || g.pending != .none then g
   else
     let g := g.leavePlayersWhoLost
-    if g.over then g
+    if g.over || g.pending != .none then g
     else (g.checkSBACounted).1
 
 /-- Triggered abilities waiting to be put onto the stack (CR 603.3 / 603.3b,

@@ -831,28 +831,51 @@ def advanceFixedEnteringAttackItems
     idx := idx + 1
   return (remaining.extract idx remaining.size, acc)
 
+/-- Finish the post-entry modifications, logs, and enters-triggers for a card
+that just entered the battlefield via `commitEnteringAttackItems`. -/
+def finishEnteringAttackCard (g : Game) (newId : ObjectId)
+    (effectController : PlayerId) (cardName : String)
+    (mods : List TriggeredAbility.TriggerEnterWith)
+    (logKind : EnteringAttackLog) (cause : Option EventCause := none) : Game :=
+  let g := mods.foldl (fun g m => g.applyEnterMod effectController newId m (cause := cause)) g
+  match logKind with
+  | .putOntoBattlefield =>
+    let g := g.logMsg s!"{cardName} is put onto the battlefield"
+    g.afterPermanentEnters (g.object! newId)
+  | .grimReaper =>
+    let entered := g.object! newId
+    let g := g.logMsg s!"{entered.name} gets a finality counter"
+    g.afterPermanentEnters entered |>.logMsg s!"{entered.name} enters tapped and attacking"
+  | .ownerGraveyard loses =>
+    let g := g.afterPermanentEnters (g.object! newId)
+    if loses then
+      g.logMsg s!"{(g.object! newId).name} returns, loses all abilities, and gains haste"
+    else g
+
 /-- Create the tokens or put the cards in `chosen` onto the battlefield with
 their chosen `AttackTarget`s in a single batch, then run their enters-with
 modifications and enters triggers (CR 508.4 / ruling 181). -/
 def commitEnteringAttackItems (g : Game)
     (chosen : Array (EnteringAttackItem × Option AttackTarget))
-    (cause : Option EventCause := none) : Game :=
+    (cause : Option EventCause := none)
+    (resetRecent : Bool := true) : Game :=
   let hasTokens := chosen.any (fun | (.token .., _) => true | _ => false)
   if hasTokens then
     match chosen[0]? with
     | some (EnteringAttackItem.token controller _ _ _, _) =>
       if (g.player controller).lost then
-        let g := g.change (.recentTokenIds #[])
+        let g := if resetRecent then g.change (.recentTokenIds #[]) else g
         g.logMsg "no token is created (CR 800.4b)"
       else
+        let g := if resetRecent then g.change (.recentTokenIds #[]) else g
         let g :=
           g.withBatch cause fun g => Id.run do
             let mut g := g
-            let mut ids : Array ObjectId := #[]
-            for (item, atkTgt) in chosen do
+            for i in [0:chosen.size] do
+              let (item, atkTgt) := chosen[i]!
               if let .token ctrl kind tapped _ := item then
                 let rawPrinted := tokenPrinted kind
-                let (batches, _) := g.replaceTokenCreation {
+                let (batches, applied, choice?) := g.replaceTokenCreation {
                   controller := ctrl
                   printed := rawPrinted
                   count := 1
@@ -861,45 +884,58 @@ def commitEnteringAttackItems (g : Game)
                   attackingTarget := atkTgt
                   cause := cause
                 } (includeMultiplier := false)
-                for b in batches do
-                  for _ in [0:b.count] do
-                    let (g', obj) := g.createOneToken b.controller b.printed (tapped := b.tapped)
-                      (attacking := b.attacking) (attackingTarget := b.attackingTarget)
-                      (cause := b.cause)
-                    g := g'
-                    if b.attacking == atkTgt.isSome && b.attackingTarget == atkTgt then
-                      ids := ids.push obj.id
-            return g.change (.recentTokenIds ids)
-        g.logMsg s!"{(g.player controller).name} creates two tapped and attacking Spirit tokens"
+                match choice? with
+                | some (chooser, choices) =>
+                  let rem := chosen.extract i chosen.size
+                  return g.promptChooseReplacement chooser choices
+                    (.commitEnteringAttackItems rem cause false)
+                | none =>
+                  g := g.consumeReplacementOrder applied
+                  let expanded := batches.foldl (fun acc b =>
+                    Id.run do
+                      let mut acc := acc
+                      for _ in [0:b.count] do
+                        acc := acc.push { b with count := 1 }
+                      return acc) #[]
+                  let (g', _) := g.createTokenBatches expanded
+                    (attacking := atkTgt.isSome) (attackingTarget := atkTgt)
+                    (recordRecent := true) (cause := cause)
+                  g := g'
+                  if let .chooseReplacement .. := g.pending then
+                    let rem := chosen.extract (i + 1) chosen.size
+                    if !rem.isEmpty then
+                      g := g.chainPendingReplacement (.commitEnteringAttackItems rem cause false)
+                    return g
+            return g
+        if let .chooseReplacement .. := g.pending then g
+        else g.logMsg s!"{(g.player controller).name} creates two tapped and attacking Spirit tokens"
     | _ => g
   else
-    g.withBatch cause fun g =>
-      chosen.foldl (fun g (item, atkTgt) =>
+    g.withBatch cause fun g => Id.run do
+      let mut g := g
+      for i in [0:chosen.size] do
+        let (item, atkTgt) := chosen[i]!
         match item with
-        | .token .. => g
+        | .token .. => pure ()
         | .card cardId enteringController effectController tapped returnedAsArtifact extraEntersWith mods logKind _ =>
           match g.findObject? cardId with
-          | none => g
+          | none => pure ()
           | some o =>
-            let (g, newId) := g.putOntoBattlefield o.id enteringController (tapped := tapped)
+            let (g', newId) := g.putOntoBattlefield o.id enteringController (tapped := tapped)
               (attacking := atkTgt.isSome) (attackingTarget := atkTgt)
               (returnedAsArtifact := returnedAsArtifact)
               (extraEntersWith := extraEntersWith)
               (cause := cause)
-            let g := mods.foldl (fun g m => g.applyEnterMod effectController newId m (cause := cause)) g
-            match logKind with
-            | .putOntoBattlefield =>
-              let g := g.logMsg s!"{o.name} is put onto the battlefield"
-              g.afterPermanentEnters (g.object! newId)
-            | .grimReaper =>
-              let entered := g.object! newId
-              let g := g.logMsg s!"{entered.name} gets a finality counter"
-              g.afterPermanentEnters entered |>.logMsg s!"{entered.name} enters tapped and attacking"
-            | .ownerGraveyard loses =>
-              let g := g.afterPermanentEnters (g.object! newId)
-              if loses then
-                g.logMsg s!"{(g.object! newId).name} returns, loses all abilities, and gains haste"
-              else g) g
+            g := g'
+            if let .chooseReplacement .. := g.pending then
+              g := g.chainPendingReplacement
+                (.finishEnteringAttackCard effectController o.name mods logKind cause)
+              let rem := chosen.extract (i + 1) chosen.size
+              if !rem.isEmpty then
+                g := g.chainPendingReplacement (.commitEnteringAttackItems rem cause false)
+              return g
+            g := g.finishEnteringAttackCard newId effectController o.name mods logKind (cause := cause)
+      return g
 
 /-- Have each item's controller choose what it enters attacking when multiple
 legal attack targets exist (`options.size > 1`), then create the tokens or put

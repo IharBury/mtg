@@ -7223,6 +7223,13 @@ def setPlayerControl (g : Game) (you them : PlayerId) (onNextTurn : Bool := fals
         s!"{(g.player you).name} also controls {(g.player mate).name} (Two-Headed Giant team)"
   | none => g
 
+/-- Append `next` after the currently stored `g.pendingReplacement` (if any), so
+multi-step operations resume remaining work once `Pending.chooseReplacement` finishes. -/
+def chainPendingReplacement (g : Game) (next : PendingReplacement) : Game :=
+  match g.pendingReplacement with
+  | some first => g.change (.pendingReplacement (some (.seq first next)))
+  | none => g.change (.pendingReplacement (some next))
+
 /-- Record putting `n` counters of `kind` on `id` via `PermanentEvent.counters`
 (CR 122.1). Does nothing when `n == 0`. -/
 def recordPutCounters (g : Game) (id : ObjectId) (kind : CounterKind) (n : Nat)

@@ -218,9 +218,12 @@ def resolveTop (g : Game) : Game :=
             (verb := some .resolve)
             (actor := some entry.controller)
             (cause := some (.gameRule .permanentSpellResolved))
-          let o := g.object! newId
-          let g := g.logMsg s!"{o.name} enters the battlefield"
-          g.afterPermanentEnters (g.object! newId)
+          if let .chooseReplacement .. := g.pending then
+            g.chainPendingReplacement .afterLastPermanentEnters
+          else
+            let o := g.object! newId
+            let g := g.logMsg s!"{o.name} enters the battlefield"
+            g.afterPermanentEnters (g.object! newId)
         else
           let finishCause := some (EventCause.gameRule .instantOrSorceryFinishedResolving)
           if obj.isCopy then

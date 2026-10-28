@@ -345,6 +345,7 @@ def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
     (sourceObj : Option GameObject := none)
     (replaced : Option DamageReplacementResult := none)
     (applied : Array ReplacementId := #[])
+    (consumeOrder : Bool := true)
     (cause : Option EventCause := none) : Game :=
   let src? :=
     sourceObj.orElse (fun _ => (source.bind (·.id)).bind g.findObject?)
@@ -358,7 +359,7 @@ def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
     g.promptChooseReplacement chooser choices
       (.markDamageOn o.id n.toNat msg deathtouch source combat unpreventable cause)
   | none =>
-  let g := g.consumeReplacementOrder rep.applied
+  let g := if consumeOrder then g.consumeReplacementOrder rep.applied else g
   if n > 0 && !unpreventable && rep.prevented && !rep.shieldRemoved then
     g.logMsg s!"Damage that would be dealt to {o.name} is prevented"
   else
@@ -635,6 +636,26 @@ def dealDamageToPlayer (g : Game) (pid : PlayerId) (n : Int)
       | none => g
     | none => g
 
+/-- Deal `n` damage to each living player in `players`, stopping if a replacement
+choice opens so the remaining players resume after the choice is answered. -/
+def dealDamageToPlayers (g : Game) (players : Array PlayerId) (n : Int)
+    (source : Option GameObject := none)
+    (cause : Option EventCause := none) : Game :=
+  g.withBatch cause fun g => Id.run do
+    let mut g := g
+    let c := cause.orElse (fun _ => g.currentBatch.bind (·.2))
+    for i in [0:players.size] do
+      let pid := players[i]!
+      if !(g.player pid).lost then
+        g := g.dealDamageToPlayer pid n (source := source) (cause := c)
+        if let .chooseReplacement .. := g.pending then
+          let rem := players.extract (i + 1) players.size
+          if !rem.isEmpty then
+            g := g.chainPendingReplacement
+              (.dealDamageToPlayers rem n.toNat (source.map (·.id)) c)
+          return g
+    return g
+
 /-- Deal `n` damage to each opponent of `controller` under a single shared
 `.oneShotEffect` cause when resolving (CR 120 / 610.1). -/
 def dealDamageToEachOpponent (g : Game) (controller : PlayerId) (n : Int)
@@ -648,9 +669,8 @@ def dealDamageToEachOpponent (g : Game) (controller : PlayerId) (n : Int)
         .oneShotEffect none
           (ctxSrc.orElse (fun _ => source.map (·.id)))
           (ctrl.orElse (fun _ => some controller)))
-  g.withBatch defaultCause fun g =>
-  g.forEachOpponent controller (fun g pid =>
-    g.dealDamageToPlayer pid n (source := source) (cause := cause))
+  g.dealDamageToPlayers ((g.livingOpponents controller).map (·.id)) n
+    (source := source) (cause := defaultCause)
 
 /-- Deal this creature's power as damage to `dest` (one side of a fight). -/
 def dealFightDamage (g : Game) (src dest : GameObject)
@@ -668,10 +688,14 @@ def fightCreatures (g : Game) (src dest : GameObject)
           (ctxSrc.orElse (fun _ => some src.id))
           (ctrl.orElse (fun _ => src.controller)))
   g.withBatch defaultCause fun g =>
-  let g := g.dealFightDamage src dest (cause := cause)
-  match g.findObject? dest.id, g.findObject? src.id with
-  | some dest, some src => g.dealFightDamage dest src (cause := cause)
-  | _, _ => g
+  let c := cause.orElse (fun _ => g.currentBatch.bind (·.2))
+  let g := g.dealFightDamage src dest (cause := c)
+  if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement (.dealFightDamage dest.id src.id c)
+  else
+    match g.findObject? dest.id, g.findObject? src.id with
+    | some dest, some src => g.dealFightDamage dest src (cause := c)
+    | _, _ => g
 
 /-- Decrease `p`'s life total (CR 119.3). Losing 0 life does nothing
 (CR 119.9). Loss of life is not damage (CR 119.3 / 120.3). -/

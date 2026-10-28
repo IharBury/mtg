@@ -1115,14 +1115,32 @@ inductive RulesEvent where
   | effectUpdated (id : EffectId) (effect : ContinuousEffect)
 deriving Repr, Inhabited, BEq
 
+/-- One batch of identical tokens in a proposed token-creation event, tracked
+through the CR 616.1 replacement loop. -/
+structure ProposedTokenBatch where
+  controller : PlayerId
+  printed : CardDef
+  count : Nat := 1
+  tapped : Bool := false
+  attacking : Bool := false
+  attackingWhom : Option PlayerId := none
+  attackingTarget : Option AttackTarget := none
+  extraCounters : CounterBag := #[]
+  cause : Option EventCause := none
+deriving Repr, Inhabited, BEq
+
 /-- Continuation stored while waiting for a player to answer `Pending.chooseReplacement`
 when multiple replacement or prevention effects compete in the same CR 616.1a–e tier. -/
 inductive PendingReplacement where
+  | seq (first rest : PendingReplacement)
   | dealDamageToPlayer (p : PlayerId) (n : Nat) (msg : String)
       (source : Option EventObject) (combat : Bool) (unpreventable : Bool)
       (cause : Option EventCause)
+  | dealDamageToPlayers (players : Array PlayerId) (n : Nat)
+      (sourceId : Option ObjectId) (cause : Option EventCause)
   | dealDamageFrom (sourceId targetId : ObjectId) (n : Nat)
       (combat : Bool) (unpreventable : Bool) (cause : Option EventCause)
+  | dealFightDamage (sourceId targetId : ObjectId) (cause : Option EventCause)
   | dealDamageToPermanent (targetId : ObjectId) (n : Nat)
       (source : Option EventObject) (combat : Bool) (unpreventable : Bool)
       (cause : Option EventCause)
@@ -1143,14 +1161,39 @@ inductive PendingReplacement where
       (attacking : Bool) (attackingTarget : Option AttackTarget)
       (transformed : Bool) (returnedAsArtifact : Bool) (onlyFoodArtifact : Bool)
       (extraEntersWith : CounterBag) (libraryPosition : Option LibraryPosition)
-      (fromStackTime : Nat) (applyHope : Bool) (cause : Option EventCause)
+      (fromStackTime : Nat) (applyHope : Bool)
+      (preBattlefield : Option (Array GameObject) := none)
+      (cause : Option EventCause)
+  | moveSimultaneousToGraveyard (ids : Array ObjectId)
+      (preBattlefield : Option (Array GameObject))
+      (cause : Option EventCause)
   | destroyPermanent (targetId : ObjectId) (cause : Option EventCause)
   | createToken (controller : PlayerId) (card : CardDef) (tapped : Bool)
       (attacking : Bool) (attackingTarget : Option AttackTarget)
-      (applyFoodBonus : Bool) (extraCounters : CounterBag) (cause : Option EventCause)
+      (applyFoodBonus : Bool) (extraCounters : CounterBag)
+      (recordRecent : Bool := false) (cause : Option EventCause)
+  | createTokenBatches (batches : Array ProposedTokenBatch)
+      (attacking : Bool) (attackingTarget : Option AttackTarget)
+      (extraCounters : CounterBag) (recordRecent : Bool)
+      (cause : Option EventCause)
+  | createTreasureTokens (controller : PlayerId) (n : Nat) (tapped : Bool)
+      (cause : Option EventCause)
+  | createKindTokens (controller : PlayerId) (kind : TokenKind) (n : Nat)
+      (tapped : Bool) (attacking : Bool) (attackingTarget : Option AttackTarget)
+      (resetRecent : Bool) (cause : Option EventCause)
+  | createAndMarkTokensAttacking (controller : PlayerId) (kind : TokenKind)
+      (n : Nat) (tapped holds : Bool) (sourceId : Option ObjectId)
+  | commitEnteringAttackItems (chosen : Array (EnteringAttackItem × Option AttackTarget))
+      (cause : Option EventCause) (resetRecent : Bool)
+  | finishEnteringAttackCard (effectController : PlayerId) (cardName : String)
+      (mods : List TriggeredAbility.TriggerEnterWith) (logKind : EnteringAttackLog)
+      (cause : Option EventCause)
+  | afterLastPermanentEnters
+  | finishFraChoice
   | draw (p : PlayerId) (n : Nat) (drawStepFirst : Bool) (cause : Option EventCause)
   | connive (controller : PlayerId) (sourceId : Option ObjectId)
   | checkSBA
+  | receivePriority (p : PlayerId)
 deriving Repr, Inhabited, BEq
 
 /-- Internal engine state mutations that are not rules-level occurrences. -/

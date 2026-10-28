@@ -570,6 +570,8 @@ partial def receivePriority (g : Game) (p : PlayerId) (recheckSba := true) : Gam
   -- CR 704.3 / 704.5j: a required legend-rule choice is part of performing
   -- the SBA. Do not put triggers on the stack or grant priority yet.
   else if g.legendChoicePending? then g
+  else if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement (.receivePriority p)
   else if g.pending != .none then g
   else
     match g.nextTriggerStackingPlayer? with

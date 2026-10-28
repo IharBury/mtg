@@ -23,17 +23,6 @@ inductive FraAnswer where
   | name (name : String)
 deriving Repr, BEq
 
-/-- Clear the choice and let the game continue. A trigger sequence that paused
-on this choice runs its remaining steps first. -/
-def finishFraChoice (g : Game) : Game :=
-  if g.pending != .none then g
-  else
-    let g := g.resumeTriggerSequence
-    if g.pending != .none then g
-    else
-      let g := g.promptTriggerTargetsIfNeeded
-      if g.pending == .none then g.receivePriority g.activePlayer else g
-
 /-- Combine the chosen modes of a modal triggered ability into one effect.
 At most one chosen mode targets. -/
 def combineTriggerModes (modes : Array Effect) (chosen : Array Nat) : Option Effect :=
