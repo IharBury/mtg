@@ -926,27 +926,43 @@ def Game.commitBatch (g : Game) (cause : EventCause) (events : Array RulesEvent)
   queues for individual triggers; Phase 6 replaces `evaluateBatchTriggers` and
   those individual per-event queues with `closeBatch g pre batchId batchEvents`
   (`Core.lean`, calling the unified `matchTriggers pre g batchEvents` pass where
-  `abbrev GameSnapshot := Game`, §3.5). In Phase 7, `withBatchReturn` (`Core.lean`)
-  and `openBatch` (`Pumps.lean`) capture the pre-batch snapshot on `Game`
-  (`openBatchObjects`, `openBatchPlayers`, `openBatchEffects`, and
-  `openBatchPending`) alongside `startIdx := g.events.size`: if the batch body
-  finishes without pausing on `Pending.chooseReplacement`, an as-enters
-  `Pending.fraChoice` (`.chooseColor`, `.entersCreatureType`, `.entersOddEven`,
-  `.chooseCardName`), or `g1.pendingReplacement.isSome`, `finishOpenBatch batchId startIdx`
+  `abbrev GameSnapshot := Game`, §3.5). In Phase 7, the outermost arms
+  (`currentBatch` is `none`) of `withBatchReturn` (`Core.lean`) and `openBatch`
+  (`Pumps.lean`) capture the pre-batch snapshot on `Game` (`openBatchObjects`,
+  `openBatchPlayers`, `openBatchEffects`, and `openBatchPending`) alongside
+  `startIdx := g.events.size`: if the batch body finishes without pausing on
+  `Pending.chooseReplacement`, an as-enters `Pending.fraChoice`
+  (`.chooseColor`, `.entersCreatureType`, `.entersOddEven`, `.chooseCardName`),
+  or `g1.pendingReplacement.isSome`, `finishOpenBatch batchId startIdx`
   (`Core.lean`) reconstructs `pre : GameSnapshot` from those fields and
   `g.events[0:startIdx]`, clears `currentBatch := none` and `openBatch*`, and
   calls `closeBatch pre batchId batchEvents`; otherwise `currentBatch` stays open
   and `PendingReplacement.closeBatch batchId startIdx` is appended via
   `chainPendingReplacement` so `finishOpenBatch` runs once after all paused
   replacement and as-enters choices in the batch finish. Likewise, in Phase 7
-  `checkSBACounted` (`StateBasedActions.lean`) runs a 3-stage resumable sweep
-  (`SbaGraveyardMove`, `finishSbaSweep moves preBattlefield stage`,
-  `PendingReplacement.finishSbaSweep`, and `PendingReplacement.checkSBA`) inside
-  `withBatchReturn none` so that if an SBA graveyard move pauses on
-  `Pending.chooseReplacement`, the remaining SBA graveyard moves, the legend-rule
-  check (704.5j), the Aura/Equipment unattach checks (704.5m/n), the enclosing
-  SBA batch (`PendingReplacement.closeBatch`), and the recursive `checkSBA`
-  re-check (`PendingReplacement.checkSBA`) all resume in order after the choice.
+  `checkSBACounted` (`StateBasedActions.lean`) runs player-loss checks
+  (704.5a–c) and +1/+1 / -1/-1 counter annihilation (704.5q) inside the initial
+  `withBatchReturn none` body ahead of `finishSbaSweep moves preBf stage`
+  (`stage` 0–3: `0` = dying creatures followed by `EngineChange.sbaChecked`;
+  `≤ 1` = 0-loyalty planeswalkers 704.5i unless Sanctum Lurker, then the legend
+  rule 704.5j—which pauses on `Pending.chooseLegend`, not a `PendingReplacement`
+  step; because `withBatchReturn`'s keep-open match does not include
+  `.chooseLegend`, the SBA batch closes through `finishOpenBatch` when
+  `pendingReplacement` is `none`, `checkSBACounted` takes the `paused` branch
+  without chaining `.checkSBA`, and `keepLegend` resumes SBAs—then tokens that
+  have left the battlefield 704.5d; `≤ 2` = final-chapter Sagas 714.4 / 704.5s;
+  `≤ 3` = illegal Auras put into their owner's graveyard 704.5m, followed by an
+  unstaged pass that records `GameEvent.unattached` on illegally attached
+  Equipment 704.5n without pausing on `Pending.chooseReplacement`). If a
+  graveyard move in stage `s` pauses on `Pending.chooseReplacement`,
+  `finishSbaSweep` chains `PendingReplacement.finishSbaSweep rem preBf s` for the
+  remainder of that same stage `s` (which then continues through stages `> s` and
+  the unstaged Equipment pass without re-running earlier stages such as the
+  legend rule when `s` is 2 or 3), `withBatchReturn` appends
+  `PendingReplacement.closeBatch batchId startIdx`, and `checkSBACounted` appends
+  `PendingReplacement.checkSBA` (which resumes `Game.checkSBA`:
+  `checkSBACounted`, then `leavePlayersWhoLost` when `pending == .none`, then one
+  more `checkSBACounted`).
 - An instruction such as "destroy all creatures", "create N tokens",
   "mill N", or "each player discards" runs inside one batch and commits under
   one `BatchId`.
@@ -1074,7 +1090,10 @@ in `apnapPlayers` (101.4 / 616.1), consumes a matching preference from `order`
 `pool` commutes under `replacementPairCommutes`, and otherwise returns
 `.needChoice chooser (pool.map (·.id)) order` so the caller pauses via
 `promptChooseReplacement` and chains remaining work via `chainPendingReplacement`
-(`PendingReplacement.seq`). When an event (or combat damage step) finishes,
+(`PendingReplacement.seq`); `selectNextReplacement` (`Core.lean`, used by
+`replaceUntap` in `Pumps.lean`) delegates to `selectNextReplacementStep` and
+falls back to `inTier[0]?` on `.needChoice` without pausing. When an event (or
+combat damage step) finishes,
 `consumeReplacementOrder` removes the applied `ReplacementId`s from
 `g.replacementOrder` so player preferences do not persist across subsequent
 events, and `wrapReplacedCause` wraps `cause` in
@@ -1084,11 +1103,15 @@ resolving spell or ability (leaving batch/resolving-context cause resolution to
 
 ### 3.5 Triggered abilities and look-back-in-time (603)
 
-Closing an outermost batch (`withBatchReturn` and `finishOpenBatch` in
-`Core.lean`—which `withBatch`, `commitBatchWithCauses`, `commitBatch`, and
-`PendingReplacement.closeBatch` delegate to—`applyEvent` in `Core.lean` for
-standalone `.rules` events when `currentBatch` is `none`, and `openBatch` in
-`Pumps.lean`) calls `closeBatch g pre batchId batchEvents`
+Closing an outermost batch (`finishOpenBatch` in `Core.lean`—called by the
+outermost arm of `withBatchReturn`, which `withBatch`, `commitBatchWithCauses`,
+and `commitBatch` delegate to, by the closer returned from the outermost arm of
+`openBatch` in `Pumps.lean` when the body does not pause, and by
+`Decisions.resumePendingReplacement` on `PendingReplacement.closeBatch`—plus
+`applyEvent` in `Core.lean` for standalone `.rules` events when `currentBatch`
+is `none`, which snapshots `pre := g`, sets and clears `currentBatch` locally
+without touching `openBatch*`, and calls `closeBatch` directly) calls
+`closeBatch g pre batchId batchEvents`
 (`Core.lean`, where `abbrev GameSnapshot := Game`), which refreshes
 `enduringStory` and `citysBlessing` on `g` when any event in `batchEvents` is a
 `ZoneEvent.moved` to `.battlefield` or `ZoneEvent.created` (so
@@ -1268,7 +1291,7 @@ Each field is put in exactly one category. "Log" means a query over
 
 | Category | Fields (type) | Target |
 | :--- | :--- | :--- |
-| **Core & turn/combat state — stays** | `players : Array Player`, `objects : Array GameObject`, `stack : Array StackEntry`, `activePlayer : PlayerId`, `priority : PlayerId`, `step : Step`, `turnNumber : Nat`, `startingPlayer : PlayerId`, `isFirstTurn : Bool`, `nextObjectId : Nat`, `nextEffectId : Nat`, `activeEffects : Array (EffectId × ContinuousEffect)` (`ContinuousEffectSpec` in Phase 8), `timestamp : Nat`, `result : Option GameResult`, `log : Array String`, `format : Format`, `brawl : Bool`, `consecutivePasses : Nat`, `cleanupGivesPriority : Bool`, `isNight : Bool`, `extraTurns : Array PlayerId` (paired with `extraTurnCauses : Array EventCause` in Phase 3; `extraTurnCauses` is replaced when `TurnEvent.extraTurnAdded` writes `extraTurns` in Phase 5), `additionalCombatPhases : Nat`, `assignedCombatDamage : Array CreatureCombatAssignment`, `firstStrikeDamageDone : Bool`, `pendingRegularCombatDamage : Bool`, `firstStrikeAssignedThisCombat : Array ObjectId`, `events : Array GameEvent` (plus `nextBatchId : Nat` and `currentBatch : Option (BatchId × Option EventCause)` in Phase 4, and `openBatchObjects : Array GameObject`, `openBatchPlayers : Array Player`, `openBatchEffects : Array (EffectId × ContinuousEffect)`—`ContinuousEffectSpec` in Phase 8—and `openBatchPending : Pending` in Phase 7) | Written by `RulesEvent`s (`TurnEvent`, `CombatEvent`, `ContinuousEffectEvent`, …) or `EngineChange` (`priority`, `consecutivePasses`, `cleanupGivesPriority`, `log`); `nextBatchId` is bumped directly in `applySingleRulesEventInBatch` (`max g.nextBatchId (batchId.raw + 1)`, with an `EngineChange.nextBatchId` applier in `applyEngineChange`), and `currentBatch` plus `openBatchObjects`, `openBatchPlayers`, `openBatchEffects`, and `openBatchPending` are transient in-memory batch state assigned directly by `withBatchReturn`, `openBatch`, and `applyEvent` and cleared by `finishOpenBatch` when the outermost batch closes. |
+| **Core & turn/combat state — stays** | `players : Array Player`, `objects : Array GameObject`, `stack : Array StackEntry`, `activePlayer : PlayerId`, `priority : PlayerId`, `step : Step`, `turnNumber : Nat`, `startingPlayer : PlayerId`, `isFirstTurn : Bool`, `nextObjectId : Nat`, `nextEffectId : Nat`, `activeEffects : Array (EffectId × ContinuousEffect)` (`ContinuousEffectSpec` in Phase 8), `timestamp : Nat`, `result : Option GameResult`, `log : Array String`, `format : Format`, `brawl : Bool`, `consecutivePasses : Nat`, `cleanupGivesPriority : Bool`, `isNight : Bool`, `extraTurns : Array PlayerId` (paired with `extraTurnCauses : Array EventCause` in Phase 3; `extraTurnCauses` is replaced when `TurnEvent.extraTurnAdded` writes `extraTurns` in Phase 5), `additionalCombatPhases : Nat`, `assignedCombatDamage : Array CreatureCombatAssignment`, `firstStrikeDamageDone : Bool`, `pendingRegularCombatDamage : Bool`, `firstStrikeAssignedThisCombat : Array ObjectId`, `events : Array GameEvent` (plus `nextBatchId : Nat` and `currentBatch : Option (BatchId × Option EventCause)` in Phase 4, and `openBatchObjects : Array GameObject`, `openBatchPlayers : Array Player`, `openBatchEffects : Array (EffectId × ContinuousEffect)`—`ContinuousEffectSpec` in Phase 8—and `openBatchPending : Pending` in Phase 7) | Written by `RulesEvent`s (`TurnEvent`, `CombatEvent`, `ContinuousEffectEvent`, …) or `EngineChange` (`priority`, `consecutivePasses`, `cleanupGivesPriority`, `log`); `nextBatchId` is bumped directly in `applySingleRulesEventInBatch` and the outermost arms of `withBatchReturn` and `openBatch` (`max g.nextBatchId (batchId.raw + 1)`, with an `EngineChange.nextBatchId` applier in `applyEngineChange`); `currentBatch` is transient in-memory batch state assigned by `withBatchReturn`, `openBatch`, and standalone `applyEvent` (`currentBatch == none`, which clears `currentBatch` itself without touching `openBatch*`); and `openBatchObjects`, `openBatchPlayers`, `openBatchEffects`, and `openBatchPending` are transient pre-batch snapshot fields written only by the outermost arms (`currentBatch == none`) of `withBatchReturn` and `openBatch` and cleared (along with `currentBatch`) by `finishOpenBatch` when that outermost batch closes. |
 | **Engine prompt / queue state — stays (`EngineChange`)** | `pending : Pending`, `afterRandom : AfterRandom`, `proposedSpell : Option ProposedSpell`, `awaitingOpeningBegin : Bool`, `mulliganToDeclare : Array PlayerId`, `willMulligan : Array PlayerId`, `mulliganToBottom : Array PlayerId`, `blockersQueue : Array PlayerId`, `waitingTriggers : Array WaitingTrigger`, `wardQueue : Array WardObligation`, `castingFromTop : Bool`, `resolvingSpell : Option ObjectId`, `resolvingAbility : Option ObjectId`, `resolvingContext : Option (Option ObjectId × PlayerId)` (added in Phase 3 for active resolving source/controller across pending choices; moves into the continuation frame stack in Phase 8), `resolvingDivision : Array Nat`, `ancestryLandsTapped : Array ObjectId`, `replacementOrder : Array ReplacementId` (added in Phase 7 for player-chosen CR 616.1 ordering), `pendingReplacement : Option PendingReplacement` (added in Phase 7 for events and batch/SBA/priority tails paused on `Pending.chooseReplacement` or an as-enters `Pending.fraChoice`; moves into the continuation frame stack in Phase 8) | Updated by `EngineChange` while choices, casts, or abilities are in progress. |
 | **Delayed triggers → delayed-trigger table (603.7)** | `delayedEndStepReturns : Array (ObjectId × EventCause)`, `delayedEndStepExiles : Array (ObjectId × EventCause)`, `delayedEndStepSacrifices : Array (ObjectId × EventCause)`, `delayedGraveReturns : Array (ObjectId × PlayerId × EventCause)`, `delayedSynthetic : Array (PlayerId × Nat × EventCause)`, `eaglesBirdsCauses : Array (PlayerId × Nat × EventCause)` (added in Phase 3 alongside `Player.eaglesBirdsNextUpkeep : Nat`) | Delayed-trigger entries created on resolution and fired by `matchTriggers` (603.2; later put on the stack via `TriggerQueueEvent.putOnStack` per 603.3, Phase 8). |
 | **Linked-exile cause cache — deleted in Phase 8** | `linkedExileCauses : Array (ObjectId × EventCause)` | Added in Phase 3 so cards in `GameObject.linkedExile` return under their exiling `.oneShotEffect` cause (610.3); replaced in Phase 8 by reading the `cause` of the `ZoneEvent.moved` that put the card into `.exile`. |
@@ -1771,13 +1794,15 @@ plus new look-back tests for simultaneous deaths and phasing out.
    122.1c / finality 122.1h, enters-with and enters-tapped 614.1c / 614.12,
    commander 903.9b, and flashback 702.34a).
 2. Implement the 616.1 loop from §3.4 (`replacementPairCommutes`,
-   `selectNextReplacementStep` / `selectNextReplacement`, `wrapReplacedCause`,
-   `replaceCountersPutChoice` / `replaceCountersPut`,
-   `applyEtbReplacementsChoice` / `applyEtbReplacements`,
-   `consumeReplacementOrder`, `promptChooseReplacement`,
-   `chainPendingReplacement`, and `finishOpenBatch` in
-   [`Core.lean`](Mtg/Engine/Game/Core.lean), `replaceTokenCreation` in
-   [`Tokens.lean`](Mtg/Engine/Game/Tokens.lean), `replaceZoneMove` and
+   `selectNextReplacementStep` and non-pausing `selectNextReplacement`—which
+   returns `inTier[0]?` on `.needChoice` for `replaceUntap`—`wrapReplacedCause`,
+   `replaceCountersPutChoice` and `replaceCountersPut`—which wraps
+   `replaceCountersPutChoice` and drops `choice?` and `remainingOrder`—`EtbReplacementResult`
+   and `applyEtbReplacements`, `consumeReplacementOrder`,
+   `promptChooseReplacement`, `chainPendingReplacement`, and `finishOpenBatch` in
+   [`Core.lean`](Mtg/Engine/Game/Core.lean), `replaceTokenCreationChoice` /
+   `replaceTokenCreation` in [`Tokens.lean`](Mtg/Engine/Game/Tokens.lean),
+   `replaceZoneMove` and
    `moveSimultaneousToGraveyard` in [`Movement.lean`](Mtg/Engine/Game/Movement.lean),
    `drawOneWithReplacements` and `drawSubDraws` in
    [`Library.lean`](Mtg/Engine/Game/Library.lean), `applyConnive` in
@@ -1818,20 +1843,28 @@ termination, 614.6 non-occurrence, and the 616.1a–e and 616.1e choice/APNAP or
 
 ### Phase 8 — Layers, data durations, delayed triggers, field cleanup, continuations
 
-1. Replace the 62 `ContinuousEffect` constructors (the original 60 plus
+1. Replace the 61 `ContinuousEffect` constructors (59 before Phase 7, plus
    `.replacement` and `.prevention` added in Phase 7) with `ContinuousEffectSpec`
    (§3.3) and `EffectDuration` (folding `.replacement`, `.exileIfDiesUntilEot`,
    and `.exileInstantSorceryInstead` into `ContinuousEffectSpec.replacement`,
-   `.prevention` and `.preventDamageWhileSource` into
-   `ContinuousEffectSpec.prevention`, and `.cantUntapWhileSource` /
-   `.protectionFromEverything` into rule/prevention specs, updating
+   and `.prevention` and `.preventDamageWhileSource` into
+   `ContinuousEffectSpec.prevention`, while `.protectionFromEverything` maps to
+   `ContinuousEffectSpec.playerRule` per 611.2c / §3.8 and `.cantUntapWhileSource`
+   maps to a "can't" rule spec read by `Pumps.hostCantBecomeUntapped`; updating
    `Game.openBatchEffects` alongside `Game.activeEffects` to
-   `Array (EffectId × ContinuousEffectSpec)`, and switching the 616.1 loops in
-   `Core.lean`, `Movement.lean`, `Tokens.lean`, `Library.lean`,
-   `SacrificeDiscard.lean`, `Damage.lean`, and `Pumps.lean` from reading mirrored
-   `Status` / `GameObject` / `Player` replacement and prevention flags to reading
-   `ContinuousEffectSpec` entries in `g.activeEffects`); delete `effectUpdated`
-   and the turn counters.
+   `Array (EffectId × ContinuousEffectSpec)`; and switching the mirror-flag reads
+   in `Movement.replaceZoneMove` (`GameObject.exileInstantSorceryInstead` and
+   `Status.untilEotExileIfDies`), `Damage.replaceDamage`
+   (`Status.preventDamageGrantedBy` and `Player.protectionFromEverything`), and
+   `Combat.dealAssignedCombatDamage` (`Player.protectionFromEverything`), along
+   with the existing `ContinuousEffect.replacement` / `.prevention` matches in
+   `Core.applyEtbReplacements`, `Core.replaceCountersPutChoice`,
+   `Movement.replaceZoneMove`, `Tokens.replaceTokenCreationChoice`,
+   `Library.drawOneWithReplacements`, `SacrificeDiscard.applyConnive`,
+   `Damage.replaceDamage`, and `Pumps.replaceUntap`, to read
+   `ContinuousEffectSpec` entries in `g.activeEffects`, while printed fields and
+   static abilities remain candidate sources); delete `effectUpdated` and the
+   turn counters.
 2. Evaluate characteristics through layers 1–7d with timestamps (613.7) and
    dependencies (613.8) in `Core.lean` (where Phase 6 moved
    `characteristicBasePT`, `snapshotPT`, `snapshotPower`, `snapshotToughness`,
@@ -1839,14 +1872,13 @@ termination, 614.6 non-occurrence, and the 616.1a–e and 616.1e choice/APNAP or
    `hasDeathtouch`, `hasIndestructible`, `hasHexproof`, `hasTrample`, and
    `retainsPrintedAbilities` from `BasePT.lean`, `StatBonuses.lean`,
    `PowerToughness.lean`, and `Keywords.lean`, and where the Phase 7 616.1
-   replacement/prevention loops—`applyEtbReplacementsChoice` and
-   `replaceCountersPutChoice` in `Core.lean`, `replaceZoneMove` in
-   `Movement.lean`, `replaceTokenCreation` in `Tokens.lean`,
-   `drawOneWithReplacements` in `Library.lean`, `applyConnive` in
-   `SacrificeDiscard.lean`, and `replaceDamage` in `Damage.lean`—read permanent
-   characteristics and static abilities, including `entering` in
-   `replaceCountersPutChoice` per 614.12); switch `Game.snapshot` to the
-   layer results.
+   replacement/prevention loops that read layer characteristics and static
+   abilities—`applyEtbReplacements` for Arwen's toughness and `isCreature` and
+   `replaceCountersPutChoice` including `entering` per 614.12 in `Core.lean`,
+   `replaceTokenCreationChoice` / `replaceTokenCreation` in `Tokens.lean`, and
+   `replaceDamage` for `g.power` on Hawkeye and static abilities in
+   `Damage.lean`—switch to the evaluated layer results); switch `Game.snapshot`
+   to the layer results.
 3. Replace the ad-hoc 603.7 delayed-trigger fields (`Player.eaglesBirdsNextUpkeep`,
    `Game.eaglesBirdsCauses`, `Player.attackPumpPerPlainsThisTurn` together with its
    `ContinuousEffect.attackPumpPerPlainsThisTurn` constructor—already polled inside
@@ -1897,8 +1929,13 @@ termination, 614.6 non-occurrence, and the 616.1a–e and 616.1e choice/APNAP or
    events or `SacrificeDiscard.villainConniveTarget?`'s `enterProcessed` check,
    alongside the remaining transitional mirror, 400.7d cast-metadata, and
    LKI fields on `EventObject`: `returnedAsArtifact`, `onlyFoodArtifact`,
-   `wasCast`, `lastKnownPower`, and `lastKnownToughness`, plus the legacy
-   `ProposedTokenBatch.attackingWhom` field in `Event.lean`), consolidate the 23
+   `wasCast`, `lastKnownPower`, and `lastKnownToughness`; also fold
+   `ProposedTokenBatch.attackingWhom` in `Event.lean` and the `attackingWhom`
+   parameter on `Tokens.createOneToken` / `Tokens.createToken` /
+   `Tokens.createKindTokens` into `attackingTarget : Option AttackTarget`, the
+   way `PendingReplacement.createToken` already folds
+   `attackingTarget.orElse (attackingWhom.map AttackTarget.player)` and Phase 5
+   folded `Status.attackingWhom` into `Status.attackingTarget`), consolidate the 23
    stored counter fields on `Status` (including `Status.poison`; player poison
    stays on `Player.poison`) into `counters : CounterBag` (with computed
    projection helpers `Status.plusOnePlusOne`, `Status.loyaltyCounters`, etc.),
