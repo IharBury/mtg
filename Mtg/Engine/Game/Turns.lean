@@ -63,7 +63,10 @@ def clearEOT (g : Game) : Game :=
 not use the stack; the engine discards from the back of the hand array. -/
 def discardToMaxHandSize (g : Game) : Game :=
   let pl := g.player g.activePlayer
-  let extra := pl.hand.size - g.effectiveMaxHandSize g.activePlayer
+  let extra :=
+    match g.effectiveMaxHandSize g.activePlayer with
+    | some maxHandSize => pl.hand.size - maxHandSize
+    | none => 0
   if extra == 0 then g
   else
     g.withBatch (some (.turnBased .cleanupDiscard)) fun g =>

@@ -458,7 +458,7 @@ inductive PlayerChange where
   | name (v : String)
   | life (v : Int)
   | startingLife (v : Int)
-  | maxHandSize (v : Nat)
+  | maxHandSize (v : Option Nat)
   | startingHandSize (v : Nat)
   | manaPool (v : ManaPool)
   | addMana (t : ManaType) (n : Nat := 1) (elfRestricted : Bool := false)

@@ -20,7 +20,7 @@ structure Player where
   name : String
   life : Int := 20
   startingLife : Int := 20
-  maxHandSize : Nat := 7
+  maxHandSize : Option Nat := some 7
   /-- Cards drawn as the game begins (CR 103.5); normally seven. -/
   startingHandSize : Nat := 7
   manaPool : ManaPool := {}
