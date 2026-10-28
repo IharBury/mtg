@@ -3087,41 +3087,6 @@ def selectNextReplacement (g : Game) (candidates : Array ReplacementCandidate)
     let inTier := unapplied.filter (fun (c : ReplacementCandidate) => c.tier.rank == minRank)
     inTier[0]?
 
-/-- Distinct per-`CounterKind` offset so a source with `.extraCounterOnPermanents`
-gets a distinct `ReplacementId` per kind of counter put on a permanent ("that
-many plus one of each of those kinds of counters", CR 614.5). -/
-private def counterKindRankOffset : CounterKind → Nat
-  | .plusOnePlusOne => 0
-  | .minusOneMinusOne => 1
-  | .loyalty => 2
-  | .hope => 3
-  | .charge => 4
-  | .stun => 5
-  | .shield => 6
-  | .finality => 7
-  | .plan => 8
-  | .burden => 9
-  | .quest => 10
-  | .invasion => 11
-  | .influence => 12
-  | .trample => 13
-  | .indestructible => 14
-  | .lifelink => 15
-  | .hone => 16
-  | .shadow => 17
-  | .lore => 18
-  | .story => 19
-  | .time => 20
-  | .haste => 21
-  | .vigilance => 22
-  | .flying => 23
-  | .menace => 24
-  | .reach => 25
-  | .deathtouch => 26
-  | .firstStrike => 27
-  | .doubleStrike => 28
-  | .poison => 29
-
 /-- CR 616.1 replacement loop for putting `n` counters of `kind` on `target`
 (CR 122.6 / 614.1a / 614.12), returning `(count, applied, cause, choice?, remainingOrder)`. -/
 def replaceCountersPutChoice (g : Game) (target : GameObject) (kind : CounterKind) (n : Nat)
@@ -3165,7 +3130,7 @@ def replaceCountersPutChoice (g : Game) (target : GameObject) (kind : CounterKin
             for o in allPerms do
               -- Doc Samson: `.extraCounterOnPermanents` (requires putter == controller)
               if who == some c && o.printed.staticAbilities.any (· == .extraCounterOnPermanents) then
-                let rid : ReplacementId := ⟨o.id.raw * 1000 + 101 + counterKindRankOffset kind⟩
+                let rid : ReplacementId := { kind := .extraCounterOnPermanents, object := some o.id, counterKind := some kind }
                 specs := specs.push (
                   { id := rid
                     source := some o.id
@@ -3175,7 +3140,7 @@ def replaceCountersPutChoice (g : Game) (target : GameObject) (kind : CounterKin
               -- The Golden Gear: `.fra .extraPlusOneCounter` on a creature you control
               if kind == .plusOnePlusOne && target.isCreature &&
                   (!o.status.faceDown && o.staticAbilities.any (· == .fra .extraPlusOneCounter)) then
-                let rid : ReplacementId := ⟨o.id.raw * 1000 + 102⟩
+                let rid : ReplacementId := { kind := .extraPlusOneCounter, object := some o.id }
                 specs := specs.push (
                   { id := rid
                     source := some o.id
@@ -3900,7 +3865,7 @@ def applyEtbReplacements (g : Game) (candidate : GameObject)
     -- 616.1a: self enters-tapped replacement
     if !cur.status.faceDown && !cur.status.tapped && g.selfEntersTapped ctrl cur.printed then
       specs := specs.push {
-        id := ⟨cur.id.raw * 1000 + 1⟩
+        id := { kind := .entersTappedSelf, object := some cur.id }
         source := some cur.id
         controller := some ctrl
         affectedPlayer := ctrl
@@ -3912,7 +3877,7 @@ def applyEtbReplacements (g : Game) (candidate : GameObject)
         if let some loy := cur.printed.loyalty then
           if loy > 0 then
             specs := specs.push {
-              id := ⟨cur.id.raw * 1000 + 2⟩
+              id := { kind := .entersWithLoyalty, object := some cur.id }
               source := some cur.id
               controller := some ctrl
               affectedPlayer := ctrl
@@ -3920,7 +3885,7 @@ def applyEtbReplacements (g : Game) (candidate : GameObject)
             }
       if cur.printed.entersWithPlusOneCounters > 0 then
         specs := specs.push {
-          id := ⟨cur.id.raw * 1000 + 3⟩
+          id := { kind := .entersWithPlusOneCounters, object := some cur.id }
           source := some cur.id
           controller := some ctrl
           affectedPlayer := ctrl
@@ -3930,7 +3895,7 @@ def applyEtbReplacements (g : Game) (candidate : GameObject)
         let xVal := cur.chosenX.getD 0
         if xVal > 0 then
           specs := specs.push {
-            id := ⟨cur.id.raw * 1000 + 4⟩
+            id := { kind := .entersWithXPlusOne, object := some cur.id }
             source := some cur.id
             controller := some ctrl
             affectedPlayer := ctrl
@@ -3938,7 +3903,7 @@ def applyEtbReplacements (g : Game) (candidate : GameObject)
           }
       if cur.printed.entersWithIndestructibleCounter then
         specs := specs.push {
-          id := ⟨cur.id.raw * 1000 + 5⟩
+          id := { kind := .entersWithIndestructibleCounter, object := some cur.id }
           source := some cur.id
           controller := some ctrl
           affectedPlayer := ctrl
@@ -3946,7 +3911,7 @@ def applyEtbReplacements (g : Game) (candidate : GameObject)
         }
       if cur.printed.entersWithShield > 0 then
         specs := specs.push {
-          id := ⟨cur.id.raw * 1000 + 6⟩
+          id := { kind := .entersWithShield, object := some cur.id }
           source := some cur.id
           controller := some ctrl
           affectedPlayer := ctrl
@@ -3958,7 +3923,7 @@ def applyEtbReplacements (g : Game) (candidate : GameObject)
         let totalHope := others + selfCount
         if totalHope > 0 then
           specs := specs.push {
-            id := ⟨cur.id.raw * 1000 + 7⟩
+            id := { kind := .entersWithHopePerCreature, object := some cur.id }
             source := some cur.id
             controller := some ctrl
             affectedPlayer := ctrl
@@ -3966,7 +3931,7 @@ def applyEtbReplacements (g : Game) (candidate : GameObject)
           }
       if cur.printed.saga.isSome then
         specs := specs.push {
-          id := ⟨cur.id.raw * 1000 + 8⟩
+          id := { kind := .entersWithSagaLore, object := some cur.id }
           source := some cur.id
           controller := some ctrl
           affectedPlayer := ctrl
@@ -3976,7 +3941,7 @@ def applyEtbReplacements (g : Game) (candidate : GameObject)
     if !cur.status.transformed && cur.printed.otherFace.isSome &&
         (forceBackFace || (!leavingPlay && cur.printed.daybound && g.isNight)) then
       specs := specs.push {
-        id := ⟨cur.id.raw * 1000 + 9⟩
+        id := { kind := .entersBackFaceUp, object := some cur.id }
         source := some cur.id
         controller := some ctrl
         affectedPlayer := ctrl
@@ -3990,7 +3955,7 @@ def applyEtbReplacements (g : Game) (candidate : GameObject)
           let bonus := weaver.toughness.toNat
           if bonus > 0 then
             specs := specs.push {
-              id := ⟨weaver.id.raw * 1000 + 10⟩
+              id := { kind := .othersEnterWithPlusOneEqualToughness, object := some weaver.id }
               source := some weaver.id
               controller := some ctrl
               affectedPlayer := ctrl

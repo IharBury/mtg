@@ -74,7 +74,7 @@ partial def drawOneWithReplacements (g : Game) (p : PlayerId)
           for o in g.permanentsOf p do
             if o.printed.drawTwoExceptFirstDrawStep then
               acc := acc.push (
-                { id := ⟨o.id.raw * 1000 + 401⟩
+                { id := { kind := .drawTwoExceptFirstDrawStep, object := some o.id }
                   source := some o.id
                   controller := some p
                   affectedPlayer := p
