@@ -118,7 +118,7 @@ def replaceUntap (g : Game) (o : GameObject)
       let mut s : Array ReplacementSpec := #[]
       if o.status.stun > 0 then
         s := s.push {
-          id := { raw := 601, object := some o.id }
+          id := { kind := .stunCounterUntap, object := some o.id }
           source := some o.id
           controller := o.controller
           affectedPlayer := affected

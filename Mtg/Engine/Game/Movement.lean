@@ -168,7 +168,7 @@ def replaceZoneMove (g : Game) (old : GameObject) (beforeSnap : EventObject)
     if proposed.watches .wouldLeaveStack && old.castFromGraveyard &&
         old.printed.flashback.isSome && !old.isCopy && curDest != .exile then
       specs := specs.push (
-        { id := { raw := 301, object := some old.id }
+        { id := { kind := .flashbackExile, object := some old.id }
           source := some old.id
           controller := old.controller
           affectedPlayer := affected
@@ -177,7 +177,7 @@ def replaceZoneMove (g : Game) (old : GameObject) (beforeSnap : EventObject)
     if proposed.watches .wouldEnterGraveyardFromStack && old.exileInstantSorceryInstead &&
         !old.isCopy then
       specs := specs.push (
-        { id := { raw := 302, object := some old.id }
+        { id := { kind := .exileInstantSorceryInstead, object := some old.id }
           source := some old.id
           controller := old.controller
           affectedPlayer := affected
@@ -185,7 +185,7 @@ def replaceZoneMove (g : Game) (old : GameObject) (beforeSnap : EventObject)
     -- Until-EOT exile-if-dies replacement (Smite, etc.).
     if proposed.watches .wouldEnterGraveyardFromBattlefield && old.status.untilEotExileIfDies then
       specs := specs.push (
-        { id := { raw := 303, object := some old.id }
+        { id := { kind := .untilEotExileIfDies, object := some old.id }
           source := some old.id
           controller := old.controller
           affectedPlayer := affected
@@ -193,7 +193,7 @@ def replaceZoneMove (g : Game) (old : GameObject) (beforeSnap : EventObject)
     -- Finality counter replacement (CR 122.1h).
     if proposed.watches .wouldEnterGraveyardFromBattlefield && old.status.finality > 0 then
       specs := specs.push (
-        { id := { raw := 304, object := some old.id }
+        { id := { kind := .finalityCounterExile, object := some old.id }
           source := some old.id
           controller := old.controller
           affectedPlayer := affected
@@ -206,7 +206,7 @@ def replaceZoneMove (g : Game) (old : GameObject) (beforeSnap : EventObject)
           | some p, some q =>
             if p != q then
               specs := specs.push (
-                { id := { raw := 305, object := some src.id }
+                { id := { kind := .exileOppDeath, object := some src.id }
                   source := some src.id
                   controller := some p
                   affectedPlayer := affected

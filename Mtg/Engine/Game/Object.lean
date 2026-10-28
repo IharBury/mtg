@@ -437,9 +437,59 @@ inductive CostKind where
   | putCounters         -- 118.3 / 122.1
 deriving DecidableEq, Repr, Inhabited, BEq
 
+/-- The rule or effect kind that a `ReplacementId` identifies (CR 614 / 615). -/
+inductive ReplacementEffectKind where
+  | entersTappedSelf                     -- 616.1a
+  | entersWithLoyalty                    -- 306.5b / 616.1a
+  | entersWithPlusOneCounters            -- 616.1a
+  | entersWithXPlusOne                   -- 616.1a
+  | entersWithIndestructibleCounter      -- 616.1a
+  | entersWithShield                     -- 616.1a
+  | entersWithHopePerCreature            -- 616.1a
+  | entersWithSagaLore                   -- 714.3a / 616.1a
+  | entersUnderControl                   -- 616.1b
+  | entersAsCopy                         -- 616.1c / 707.5
+  | entersBackFaceUp                     -- 616.1d / 702.145b / 712.14
+  | entersWithExtraCounters              -- 616.1e
+  | othersEnterWithPlusOneEqualToughness -- 616.1e (Arwen, Weaver of Hope)
+  | extraCounterOnPermanents             -- 122.6 / 614.1a (Doc Samson)
+  | extraPlusOneCounter                  -- 122.6 / 614.1a (The Golden Gear)
+  | addCountersPut                       -- 122.6 / 614.1a
+  | multiplyCountersPut                  -- 122.6 / 614.1a
+  | foodAlsoCreatesTreasure              -- 111 / 614.1a (Bilbo, Fellow Conspirator)
+  | artifactTokensBecomeDragons          -- 111 / 614.1a (Draconic Visitor)
+  | artifactTokensBecome                 -- 111 / 614.1a
+  | tokenDoubling                        -- 111 / 614.1a (Bard, King of Dale)
+  | multiplyTokenCreation                -- 111 / 614.1a
+  | flashbackExile                       -- 702.34a
+  | exileInstantSorceryInstead           -- 614.1a (Bilbo, Thief in the Night)
+  | untilEotExileIfDies                  -- 614.1a (Smite, etc.)
+  | finalityCounterExile                 -- 122.1h
+  | exileOppDeath                        -- 614.1a (Head of the Hunt, Kalitas, etc.)
+  | drawTwoExceptFirstDrawStep           -- 121.2 / 614.11
+  | drawThreeExceptFirstDrawStep         -- 121.2 / 614.11
+  | replaceDraw                          -- 121.2 / 614.11
+  | extraDrawOnConnive                   -- 701.50 / 614.1a (Leader)
+  | shieldCounterDestroy                 -- 122.1c
+  | shieldCounterPreventDamage           -- 122.1c
+  | preventDamageGrantedBy               -- 615
+  | protectionPreventDamage              -- 702.16e
+  | preventAllDamageToThis               -- 615
+  | preventAllDamageToPermanent          -- 615
+  | protectionFromEverythingPlayer       -- 702.16j
+  | noncombatDamagePlusSourcePower       -- 614.1a (Hawkeye, Young Avenger)
+  | noncombatDamagePlusOne               -- 614.1a (Tomik, Izzet Sparkmage)
+  | equippedDealsDoubleDamage            -- 614.1a (Mjölnir)
+  | addNoncombatDamage                   -- 614.1a
+  | multiplyDamage                       -- 614.1a
+  | addLifeGain                          -- 119 / 614.1a
+  | multiplyLifeGain                     -- 119 / 614.1a
+  | stunCounterUntap                     -- 122.1d
+deriving DecidableEq, Repr, Inhabited, BEq
+
 /-- Identifier for a replacement or prevention effect (CR 614 / 615). -/
 structure ReplacementId where
-  raw : Nat
+  kind : ReplacementEffectKind
   object : Option ObjectId := none
   grantor : Option ObjectId := none
   player : Option PlayerId := none

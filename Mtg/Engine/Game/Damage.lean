@@ -69,7 +69,7 @@ def destroyPermanent (g : Game) (o : GameObject)
     let mut s : Array ReplacementSpec := #[]
     if o.status.shield > 0 then
       s := s.push {
-        id := { raw := 501, object := some o.id }
+        id := { kind := .shieldCounterDestroy, object := some o.id }
         source := some o.id
         controller := o.controller
         affectedPlayer := affected
@@ -165,7 +165,7 @@ def replaceDamage (g : Game) (n : Int)
   if unpreventable then
     if let some o := recipientPerm? then
       if o.status.shield > 0 then
-        let sid : ReplacementId := { raw := 502, object := some o.id }
+        let sid : ReplacementId := { kind := .shieldCounterPreventDamage, object := some o.id }
         curApplied := curApplied.push sid
         shieldRemoved := true
         shieldRemoveCause := g.wrapReplacedCause sid curCause o.controller
@@ -183,7 +183,7 @@ def replaceDamage (g : Game) (n : Int)
           for gid in src.status.preventDamageGrantedBy do
             if g.grantorStillInPlay gid then
               items := items.push (.prevention {
-                id := { raw := 503, object := some src.id, grantor := some gid }
+                id := { kind := .preventDamageGrantedBy, object := some src.id, grantor := some gid }
                 source := some gid
                 controller := (g.findObject? gid).bind (·.controller)
                 affectedPlayer := affected
@@ -193,7 +193,7 @@ def replaceDamage (g : Game) (n : Int)
           if let some src := src? then
             if g.frcProtectedFrom o src then
               items := items.push (.prevention {
-                id := { raw := 504, object := some o.id }
+                id := { kind := .protectionPreventDamage, object := some o.id }
                 source := some o.id
                 controller := o.controller
                 affectedPlayer := affected
@@ -201,7 +201,7 @@ def replaceDamage (g : Game) (n : Int)
               })
           if o.staticAbilities.any (· == .preventAllDamageToThis) then
             items := items.push (.prevention {
-              id := { raw := 505, object := some o.id }
+              id := { kind := .preventAllDamageToThis, object := some o.id }
               source := some o.id
               controller := o.controller
               affectedPlayer := affected
@@ -209,7 +209,7 @@ def replaceDamage (g : Game) (n : Int)
             })
           if o.status.shield > 0 && !shieldRemoved then
             items := items.push (.prevention {
-              id := { raw := 502, object := some o.id }
+              id := { kind := .shieldCounterPreventDamage, object := some o.id }
               source := some o.id
               controller := o.controller
               affectedPlayer := affected
@@ -218,7 +218,7 @@ def replaceDamage (g : Game) (n : Int)
         if let some pid := recipientPlayer? then
           if (g.player pid).protectionFromEverything then
             items := items.push (.prevention {
-              id := { raw := 506, player := some pid }
+              id := { kind := .protectionFromEverythingPlayer, player := some pid }
               source := none
               controller := some pid
               affectedPlayer := pid
@@ -254,7 +254,7 @@ def replaceDamage (g : Game) (n : Int)
                   let bonus := (g.power o).toNat
                   if bonus > 0 then
                     items := items.push (.replacement {
-                      id := { raw := 511, object := some o.id }
+                      id := { kind := .noncombatDamagePlusSourcePower, object := some o.id }
                       source := some o.id
                       controller := some p
                       affectedPlayer := affected
@@ -266,7 +266,7 @@ def replaceDamage (g : Game) (n : Int)
           if eq.attachedTo == some src.id &&
               eq.staticAbilities.any (· == .equippedDealsDoubleDamage) then
             items := items.push (.replacement {
-              id := { raw := 513, object := some eq.id }
+              id := { kind := .equippedDealsDoubleDamage, object := some eq.id }
               source := some eq.id
               controller := eq.controller
               affectedPlayer := affected
@@ -280,7 +280,7 @@ def replaceDamage (g : Game) (n : Int)
               for o in g.permanentsOf p do
                 if o.staticAbilities.any (· == .fra .noncombatDamagePlusOne) then
                   items := items.push (.replacement {
-                    id := { raw := 512, object := some o.id }
+                    id := { kind := .noncombatDamagePlusOne, object := some o.id }
                     source := some o.id
                     controller := some p
                     affectedPlayer := affected
