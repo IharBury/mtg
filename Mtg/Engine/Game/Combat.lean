@@ -314,29 +314,41 @@ def dealAssignedCombatDamage (g : Game) : Game :=
         g := g.logMsg
           s!"{src.name} is not blocking any creatures and assigns no combat damage (CR 510.1d)"
       let srcEvent := g.snapshot src
-      if g.sourceDamagePrevented src then
+      let srcPrevented :=
+        (g.replaceDamage 1 (src? := some src) (combat := true) (cause := combatCause)).prevented
+      if srcPrevented then
         g := g.logMsg s!"combat damage from {src.name} is prevented"
       else
         for (tid, amt) in asgn.toCreatures do
           if amt > 0 then
-            let amt := g.replacedDamageAmount src amt (combat := true)
             let t := g.object! tid
-            g := g.markDamageOn t amt
+            let rep := g.replaceDamage amt (src? := some src) (recipientPerm? := some t)
+              (combat := true) (cause := combatCause)
+            let amt := rep.amount
+            let markAmt := if rep.shieldRemoved && amt == 0 then 1 else amt
+            g := g.markDamageOn t markAmt
               s!"{src.name} deals {amt} combat damage to {t.name}"
               (deathtouch := g.hasDeathtouch src) (combat := true)
-              (source := some srcEvent) (cause := combatCause)
+              (source := some srcEvent)
+              (applied := rep.applied.filter (fun id => id != ⟨t.id.raw * 1000 + 502⟩ && id != ⟨t.id.raw * 1000 + 505⟩))
+              (cause := rep.cause)
             totalDealt := totalDealt + amt
       let pwTarget? := src.status.attackingPlaneswalker?
       let mut dealtToPlayer : Int := 0
-      if !g.sourceDamagePrevented src && asgn.toPlayer > 0 && pwTarget?.isSome then
+      if !srcPrevented && asgn.toPlayer > 0 && pwTarget?.isSome then
         -- CR 510.1c / 120.3c: damage to the attacked planeswalker removes loyalty.
         match pwTarget?.bind g.findObject? with
         | some pw =>
           if pw.isOnBattlefield then
-            let amt := g.replacedDamageAmount src asgn.toPlayer (combat := true)
-            g := g.markDamageOn pw amt s!"{src.name} deals {amt} combat damage to {pw.name}"
+            let rep := g.replaceDamage asgn.toPlayer (src? := some src) (recipientPerm? := some pw)
+              (combat := true) (cause := combatCause)
+            let amt := rep.amount
+            let markAmt := if rep.shieldRemoved && amt == 0 then 1 else amt
+            g := g.markDamageOn pw markAmt s!"{src.name} deals {amt} combat damage to {pw.name}"
               (deathtouch := g.hasDeathtouch src) (combat := true)
-              (source := some srcEvent) (cause := combatCause)
+              (source := some srcEvent)
+              (applied := rep.applied.filter (fun id => id != ⟨pw.id.raw * 1000 + 502⟩ && id != ⟨pw.id.raw * 1000 + 505⟩))
+              (cause := rep.cause)
             totalDealt := totalDealt + amt
             match src.controller with
             | some pid =>
@@ -344,23 +356,25 @@ def dealAssignedCombatDamage (g : Game) : Game :=
                 g := g.createTreasureTokens pid amt.toNat (cause := combatCause)
             | none => pure ()
         | none => pure ()
-      else if !g.sourceDamagePrevented src && asgn.toPlayer > 0 &&
+      else if !srcPrevented && asgn.toPlayer > 0 &&
           !(g.player defn).lost then
-        let toPlayer := g.replacedDamageAmount src asgn.toPlayer (combat := true)
+        let rep := g.replaceDamage asgn.toPlayer (src? := some src) (recipientPlayer? := some defn)
+          (combat := true) (cause := combatCause)
+        let toPlayer := rep.amount
         let pl := g.player defn
-        if pl.protectionFromEverything then
+        if rep.prevented && pl.protectionFromEverything then
           g := g.logMsg s!"combat damage to {pl.name} is prevented"
         else
           dealtToPlayer := toPlayer
           if toPlayer > 0 then
             g := g.record (GameEvent.damagedPlayer g.turnNumber srcEvent defn toPlayer.toNat true
-              (cause := combatCause))
+              (cause := rep.cause))
           if pl.lifeLocked || pl.lifeCantChange then
             g := g.logMsg s!"{pl.name}'s life total can't change"
           else
             if toPlayer > 0 then
               g := g.record (GameEvent.life g.turnNumber defn toPlayer.toNat false true true
-                (cause := combatCause))
+                (cause := rep.cause))
           totalDealt := totalDealt + toPlayer
           if toPlayer > 0 && srcEvent.toxic > 0 then
             g := g.record (GameEvent.poisoned g.turnNumber defn srcEvent.toxic

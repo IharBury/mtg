@@ -569,6 +569,148 @@ inductive ProposalChange where
   | sneakAttacker (v : Option ObjectId)
 deriving Repr, Inhabited, BEq
 
+/-- Priority tiers for choosing among multiple applicable replacement or
+prevention effects on the same event (CR 616.1a–e). -/
+inductive ReplacementTier where
+  /-- CR 616.1a: Self-replacement effects. -/
+  | self
+  /-- CR 616.1b: Effects modifying under whose control an object enters the battlefield. -/
+  | control
+  /-- CR 616.1c: Effects making an object become a copy as it enters the battlefield. -/
+  | copy
+  /-- CR 616.1d: Effects causing an object to enter the battlefield with its back face up. -/
+  | backFaceUp
+  /-- CR 616.1e: Any other applicable replacement or prevention effect. -/
+  | other
+deriving DecidableEq, Repr, Inhabited, BEq
+
+/-- Numeric priority rank for `ReplacementTier` (CR 616.1a–e): smaller ranks
+apply first. -/
+def ReplacementTier.rank : ReplacementTier → Nat
+  | .self => 0
+  | .control => 1
+  | .copy => 2
+  | .backFaceUp => 3
+  | .other => 4
+
+/-- The kind of replacement effect (CR 614 / 616.1a–e). -/
+inductive ReplacementKind where
+  /-- CR 616.1a: Intrinsic enters-tapped replacement on `object`. -/
+  | entersTappedSelf (object : ObjectId)
+  /-- CR 616.1a: Intrinsic enters-with-counters replacement on `object`. -/
+  | entersWithCountersSelf (object : ObjectId) (kind : CounterKind) (amount : Nat)
+  /-- CR 616.1b: Modifies under whose control `object` enters the battlefield. -/
+  | entersUnderControl (object : ObjectId) (newController : PlayerId)
+  /-- CR 616.1c / 707.5: Makes `object` enter the battlefield as a copy of `template`. -/
+  | entersAsCopy (object : ObjectId) (template : CardDef)
+  /-- CR 616.1d / 702.145b / 712.14: Causes `object` to enter the battlefield with its back face up. -/
+  | entersBackFaceUp (object : ObjectId)
+  /-- CR 616.1e: External static effect causing `object` to enter the battlefield tapped. -/
+  | entersTappedExternal (object : ObjectId)
+  /-- CR 616.1e: External effect causing `object` to enter with additional `kind` counters. -/
+  | entersWithExtraCounters (object : ObjectId) (kind : CounterKind) (amount : Nat)
+  /-- CR 616.1e / 122.6: Modifies the number of counters put on `object` (`count * mult + add`). -/
+  | modifyCountersPut (object : ObjectId) (kind : Option CounterKind) (add : Nat := 0) (mult : Nat := 1)
+  /-- CR 616.1a / 702.34a: Exiles `object` when leaving the stack instead of going elsewhere. -/
+  | exileInsteadOfStackLeave (object : ObjectId)
+  /-- CR 616.1e / 614.1a: Exiles `object` instead of putting it into a graveyard (optionally queueing a reflexive Wolf trigger). -/
+  | exileInsteadOfGraveyard (object : ObjectId) (createsWolf : Bool := false)
+  /-- CR 616.1e / 903.9b: Moves commander `object` to the command zone instead. -/
+  | commanderToCommandZone (object : ObjectId)
+  /-- CR 616.1e / 122.1c: Removes a shield counter from `object` instead of destroying it. -/
+  | shieldCounterDestroy (object : ObjectId)
+  /-- CR 616.1e / 121.2: Replaces a card draw by `player` with `factor` card draws. -/
+  | replaceDraw (player : PlayerId) (factor : Nat := 2) (exceptFirstDrawStep : Bool := true)
+  /-- CR 616.1e / 701.50: Replaces connive by `player`'s creature with drawing `n` cards, then conniving. -/
+  | extraDrawOnConnive (player : PlayerId) (n : Nat := 1)
+  /-- CR 616.1e / 614.1a: Adds `bonus` to noncombat damage dealt by `source`. -/
+  | addNoncombatDamage (source : ObjectId) (bonus : Nat)
+  /-- CR 616.1e / 614.1a: Multiplies damage dealt by `source` by `factor`. -/
+  | multiplyDamage (source : ObjectId) (factor : Nat := 2)
+  /-- CR 616.1e / 119: Modifies life gained by `player` (`amount * mult + add`). -/
+  | modifyLifeGain (player : PlayerId) (add : Nat := 0) (mult : Nat := 1)
+  /-- CR 616.1e / 111: Creates an extra `extraToken` alongside each Food token created by `player`. -/
+  | createExtraTokenWithFood (player : PlayerId) (extraToken : CardDef)
+  /-- CR 616.1e / 111: Replaces artifact tokens created under `player`'s control with `newToken`. -/
+  | artifactTokensBecome (player : PlayerId) (newToken : CardDef)
+  /-- CR 616.1e / 111: Multiplies the number of tokens created under `player`'s control by `factor`. -/
+  | multiplyTokenCreation (player : PlayerId) (factor : Nat := 2)
+  /-- CR 616.1e / 122.1d: Removes a stun counter from `object` instead of untapping it. -/
+  | stunCounterUntap (object : ObjectId)
+deriving Repr, Inhabited, BEq
+
+/-- Priority tier of a `ReplacementKind` under CR 616.1a–e. -/
+def ReplacementKind.tier : ReplacementKind → ReplacementTier
+  | .entersTappedSelf _ => .self
+  | .entersWithCountersSelf .. => .self
+  | .exileInsteadOfStackLeave _ => .self
+  | .entersUnderControl .. => .control
+  | .entersAsCopy .. => .copy
+  | .entersBackFaceUp _ => .backFaceUp
+  | _ => .other
+
+/-- A replacement effect specification (CR 614). -/
+structure ReplacementSpec where
+  id : ReplacementId
+  source : Option ObjectId := none
+  controller : Option PlayerId := none
+  affectedPlayer : PlayerId := ⟨0⟩
+  kind : ReplacementKind
+  tier : ReplacementTier := kind.tier
+deriving Repr, Inhabited, BEq
+
+/-- The kind of prevention effect (CR 615). -/
+inductive PreventionKind where
+  /-- CR 615: Prevent all damage that would be dealt to `target`. -/
+  | preventAllDamageToPermanent (target : ObjectId)
+  /-- CR 615: Prevent all damage that would be dealt by `source`. -/
+  | preventAllDamageFromSource (source : ObjectId)
+  /-- CR 702.16e: Protection on `protectedObject` prevents all damage from `damageSource`. -/
+  | protectionPreventDamage (protectedObject : ObjectId) (damageSource : ObjectId)
+  /-- CR 702.16j: Protection from everything on `player` prevents all damage to `player`. -/
+  | protectionFromEverythingPlayer (player : PlayerId)
+  /-- CR 122.1c: Shield counter on `object` prevents damage that would be dealt to it and removes a shield counter. -/
+  | shieldCounterPreventDamage (object : ObjectId)
+deriving Repr, Inhabited, BEq
+
+/-- A prevention effect specification (CR 615). -/
+structure PreventionSpec where
+  id : ReplacementId
+  source : Option ObjectId := none
+  controller : Option PlayerId := none
+  affectedPlayer : PlayerId := ⟨0⟩
+  kind : PreventionKind
+deriving Repr, Inhabited, BEq
+
+/-- Unified replacement or prevention effect (CR 614–616). -/
+inductive ReplacementOrPrevention where
+  | replacement (spec : ReplacementSpec)
+  | prevention (spec : PreventionSpec)
+deriving Repr, Inhabited, BEq
+
+/-- Priority tier of a replacement or prevention effect under CR 616.1a–e. -/
+def ReplacementOrPrevention.tier : ReplacementOrPrevention → ReplacementTier
+  | .replacement s => s.tier
+  | .prevention _ => .other
+
+/-- The `ReplacementId` of a `ReplacementOrPrevention` effect (CR 614.5). -/
+def ReplacementOrPrevention.replacementId : ReplacementOrPrevention → ReplacementId
+  | .replacement s => s.id
+  | .prevention s => s.id
+
+/-- An applicable replacement or prevention effect candidate in the CR 616.1 loop. -/
+structure ReplacementCandidate where
+  id : ReplacementId
+  spec : ReplacementOrPrevention
+  affectedPlayer : PlayerId
+  tier : ReplacementTier := spec.tier
+deriving Repr, Inhabited, BEq
+
+/-- Construct a `ReplacementCandidate` from a `ReplacementOrPrevention` (CR 616.1). -/
+def ReplacementOrPrevention.toCandidate : ReplacementOrPrevention → ReplacementCandidate
+  | .replacement s => { id := s.id, spec := .replacement s, affectedPlayer := s.affectedPlayer, tier := s.tier }
+  | .prevention s => { id := s.id, spec := .prevention s, affectedPlayer := s.affectedPlayer, tier := .other }
+
 /-- A continuous effect (CR 611), generated either by the resolution of a spell
 or ability (CR 611.2) or by a static ability (CR 611.3). -/
 inductive ContinuousEffect where
@@ -694,6 +836,10 @@ inductive ContinuousEffect where
   | playerControl (controller controlled : PlayerId) (onNextTurn : Bool := false)
   /-- Creatures can't get +X/+Y from spells or abilities this turn (CR 611.2). -/
   | powerUpsForbiddenThisTurn
+  /-- A continuous replacement effect (CR 611.2 / 614). -/
+  | replacement (spec : ReplacementSpec) (untilEot : Bool := false)
+  /-- A continuous prevention effect (CR 611.2 / 615). -/
+  | prevention (spec : PreventionSpec) (untilEot : Bool := false)
 deriving Repr, Inhabited, BEq
 
 /-- Who or what receives or loses counters (CR 122.1). Players in `Mtg.Engine`
@@ -1108,7 +1254,7 @@ inductive EngineChange where
   | spellOrLibrary (v : Bool)
   | surveilReturnMvAtMost (v : Option Nat)
   | surveilReturnNoncreatureNonland (v : Bool)
-  | lockedDeathReplacements (v : Option (Array GameObject))
+  | replacementOrder (ids : Array ReplacementId)
   | castingFromTop (v : Bool)
   | delayedEndStepReturns (v : Array (ObjectId × EventCause))
   | pushDelayedEndStepReturn (id : ObjectId) (cause : EventCause)

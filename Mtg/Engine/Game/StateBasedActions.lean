@@ -10,11 +10,6 @@ APNAP order (CR 101.4), the legend rule and its choice prompt
 namespace Mtg.Engine
 namespace Game
 
-/-- Living players in APNAP order (CR 101.4): the active player, then the
-next player in turn order, and so on. -/
-def apnapPlayers (g : Game) : Array PlayerId :=
-  g.playersInOrderFrom g.activePlayer (fun pl => !pl.lost)
-
 /-- Alias of `apnapPlayers` (CR 101.4). -/
 def apnapOrder (g : Game) : Array PlayerId :=
   g.apnapPlayers
@@ -144,9 +139,9 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
           g := g.logMsg s!"{k} +1/+1 and -1/-1 counter pair(s) are removed from {o.name}"
           changed := true
       -- Creatures with 0 toughness or lethal damage (CR 704.5f–h).
-      -- Snapshot exile-instead replacements first so a simultaneous death
-      -- of Head of the Hunt still exiles opposing creatures.
-      let snap := g.battlefield.filter exilesOppDeath?
+      -- Snapshot the battlefield before moving dying creatures so a
+      -- simultaneous death of Head of the Hunt still exiles opposing creatures (CR 614.6).
+      let preBf := g.battlefield
       let victims :=
         g.battlefield.filterMap (fun o =>
           if !o.isCreature then none
@@ -159,19 +154,16 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
             else if g.deathtouchDealtSinceLastSba o.id && !g.hasIndestructible o then
               some (o, s!"{o.name} dies from deathtouch", ZoneVerb.destroy, StateBasedAction.deathtouchDamage)
             else none)
-      if !victims.isEmpty then
-        g := g.change (.lockedDeathReplacements (some snap))
       for (o, reason, verb, sba) in victims do
         match g.findObject? o.id with
         | some o =>
           if o.isOnBattlefield && o.isCreature then
             g := g.moveToOwnerGraveyard o reason (verb := some verb)
+              (preBattlefield := some preBf)
               (cause := some (.stateBased sba))
             changed := true
         | none => pure ()
-      g := g.changes #[
-        .lockedDeathReplacements none,
-        .sbaChecked]
+      g := g.change .sbaChecked
       -- Planeswalkers with 0 loyalty (CR 704.5i), unless their controller
       -- controls Sanctum Lurker (ruling 778).
       for o in g.battlefield do

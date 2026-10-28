@@ -3891,14 +3891,14 @@ def createAndMarkTokensAttacking (g : Game) (controller : PlayerId)
     else g.logMsg "no token is created (CR 800.4b)"
   else
     let rawPrinted := tokenPrinted kind
-    let proposed := GameEvent.created g.turnNumber controller {
-      controller := some controller, owner := controller, token := true
-      types := rawPrinted.types
-      subtypes := CardSubtype.ofSubtypes rawPrinted.subtypes
-      changeling := rawPrinted.keywords.changeling }
-    let copies :=
-      if proposed.watches .wouldCreateToken then g.tokenCreateMultiplier controller else 1
-    let total := n * copies
+    let (batches, _) := g.replaceTokenCreation {
+      controller := controller
+      printed := rawPrinted
+      count := n
+      tapped := tapped
+      cause := cause
+    }
+    let total := batches.foldl (fun acc b => acc + b.count) 0
     let options := g.legalEnteringAttackTargets controller
     let items := Array.replicate total (EnteringAttackItem.token controller kind tapped options)
     g.promptEnteringAttackItems items (cause := cause)

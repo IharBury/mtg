@@ -172,12 +172,14 @@ def applyPermanentAction (g : Game) (o : GameObject) (action : PermanentAction)
       g.logMsg s!"{o.name} can't become untapped"
     else if !o.status.tapped then
       g.logMsg s!"{o.name} is already untapped"
-    else if o.status.stun > 0 then
-      let g := g.record (GameEvent.counters g.turnNumber o.controller o.asEvent .stun 1 true)
-      g.logMsg s!"A stun counter is removed from {o.name} instead of untapping it (CR 122.1d)"
     else
-      let g := g.record (GameEvent.untapped g.turnNumber o.asEvent false)
-      g.logMsg s!"{o.name} untaps"
+      let (stunned, cause') := g.replaceUntap o
+      if stunned then
+        let g := g.record (GameEvent.counters g.turnNumber o.controller o.asEvent .stun 1 true (cause := cause'))
+        g.logMsg s!"A stun counter is removed from {o.name} instead of untapping it (CR 122.1d)"
+      else
+        let g := g.record (GameEvent.untapped g.turnNumber o.asEvent false)
+        g.logMsg s!"{o.name} untaps"
   | .becomeArtifactIndestructible =>
     let g := g.createEffects #[
       .additionalArtifactUntilEot o.id,

@@ -1049,5 +1049,19 @@ partial def resolvePendingRandom (g : Game) (rng : Rng) : Rng × Game :=
 def resolveRandom (g : Game) (rng : Rng := Rng.ofSeed 1) : Game :=
   (g.resolvePendingRandom rng).2
 
+/-- Choose which applicable replacement or prevention effect to apply next (CR 616.1). -/
+def chooseReplacement (g : Game) (p : PlayerId) (id : ReplacementId) : Except String Game := do
+  match g.pending with
+  | .chooseReplacement q choices =>
+    if !g.decidesFor p q then
+      throw s!"Only {(g.player q).name} may choose a replacement effect"
+    if !choices.contains id then
+      throw "Replacement effect is not among the applicable choices"
+    let order := #[id] ++ g.replacementOrder.filter (· != id)
+    return g.changes #[.replacementOrder order, .pending .none]
+  | _ =>
+    let order := #[id] ++ g.replacementOrder.filter (· != id)
+    return g.change (.replacementOrder order)
+
 end Game
 end Mtg.Engine

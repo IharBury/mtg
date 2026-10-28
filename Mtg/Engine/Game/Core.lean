@@ -246,10 +246,10 @@ structure Game where
   /-- A noncreature, nonland card put into the graveyard by the pending
   surveil goes to its owner's hand (Chandra, Chill of Compliance). -/
   surveilReturnNoncreatureNonland : Bool := false
-  /-- Snapshot of Head-of-the-Hunt-style replacements for one SBA death
-  batch, so simultaneous deaths still see those sources (Gatherer).
-  Objects are stored so a source that also dies still applies (CR 614.6). -/
-  lockedDeathReplacements : Option (Array GameObject) := none
+  /-- Ordered `ReplacementId` preferences supplied by players via `chooseReplacement`
+  (CR 616.1); consulted by the replacement/prevention loop when multiple
+  candidates tie in the lowest applicable priority tier (CR 616.1a–e). -/
+  replacementOrder : Array ReplacementId := #[]
   /-- True while a spell is being cast from the top of a library
   (Elven Chorus cannot show the new top until that finishes). -/
   castingFromTop : Bool := false
@@ -1157,7 +1157,7 @@ def installEffect (g : Game) (eff : ContinuousEffect) : Game :=
   | .keywordsUntilEot .. | .setBasePTUntilEot .. | .replacedCreatureTypesUntilEot ..
   | .cantBeBlockedByPlayerUntilEot .. | .playPermission .. | .copy .. | .control ..
   | .assignCombatDamageEqualToughnessUntilEot .. | .pendingFreeRGCreatureThisTurn ..
-  | .pendingLokiCopy .. | .playerControl .. => g
+  | .pendingLokiCopy .. | .playerControl .. | .replacement .. | .prevention .. => g
 
 /-- Remove one `ContinuousEffect`'s contribution from the game state (CR 611).
 The effect must already be gone from `g.activeEffects`; a flag stays set while
@@ -1318,7 +1318,7 @@ def uninstallEffect (g : Game) (eff : ContinuousEffect) : Game :=
   | .keywordsUntilEot .. | .setBasePTUntilEot .. | .replacedCreatureTypesUntilEot ..
   | .cantBeBlockedByPlayerUntilEot .. | .playPermission .. | .copy .. | .control ..
   | .assignCombatDamageEqualToughnessUntilEot .. | .pendingFreeRGCreatureThisTurn ..
-  | .pendingLokiCopy .. | .playerControl .. => g
+  | .pendingLokiCopy .. | .playerControl .. | .replacement .. | .prevention .. => g
 
 /-- Apply the creation of one `ContinuousEffect` in isolation (CR 611): record
 it under `effectId` in `g.activeEffects` and install its contribution. -/
@@ -2363,7 +2363,7 @@ def applyEngineChange (g : Game) (c : EngineChange) : Game :=
   | .spellOrLibrary v => { g with spellOrLibrary := v }
   | .surveilReturnMvAtMost v => { g with surveilReturnMvAtMost := v }
   | .surveilReturnNoncreatureNonland v => { g with surveilReturnNoncreatureNonland := v }
-  | .lockedDeathReplacements v => { g with lockedDeathReplacements := v }
+  | .replacementOrder ids => { g with replacementOrder := ids }
   | .castingFromTop v => { g with castingFromTop := v }
   | .delayedEndStepReturns v => { g with delayedEndStepReturns := v }
   | .pushDelayedEndStepReturn id cause =>
@@ -2950,6 +2950,175 @@ def counterPutter (g : Game) (fallback : Option PlayerId) : Option PlayerId :=
   ((g.resolvingSpell.orElse (fun _ => g.resolvingAbility)).bind g.findObject?).bind
     (·.controller) |>.orElse (fun _ => fallback)
 
+/-- Living players in APNAP order (CR 101.4), starting from `g.activePlayer`. -/
+def apnapPlayers (g : Game) : Array PlayerId :=
+  let n := g.players.size
+  if n == 0 then #[]
+  else
+    let start := g.activePlayer.idx
+    (List.range n).toArray.filterMap fun offset =>
+      let pl := g.players[(start + offset) % n]!
+      if pl.lost then none else some pl.id
+
+/-- Wrap `cause` in `EventCause.replaced id orig` when replacement or prevention
+effect `id` applies (CR 614.6 / 615.6). Preserves batch/resolving-context cause
+upgrade when `cause` is `none`. -/
+def wrapReplacedCause (g : Game) (id : ReplacementId) (cause : Option EventCause)
+    (defaultActor : Option PlayerId := none) : Option EventCause :=
+  let base : EventCause :=
+    match cause with
+    | some c => c
+    | none =>
+      if (g.currentBatch.map Prod.snd).join.isSome || g.currentResolvingContext?.isSome then
+        .unclassified
+      else
+        .oneShotEffect none none defaultActor
+  some (.replaced id base)
+
+/-- Select the next replacement or prevention candidate according to CR 616.1:
+1. Filter out candidates whose `id` is already in `applied` (CR 614.5).
+2. Restrict to the lowest applicable `ReplacementTier` rank (`616.1a`–`e`).
+3. If multiple players are affected, the first affected player in APNAP order
+   (CR 101.4 / 616.1) chooses among candidates affecting them.
+4. Consult `g.replacementOrder` (set via `Pending.chooseReplacement` /
+   `Action.chooseReplacement`) for the affected player's choice, defaulting to
+   the first candidate in deterministic order. -/
+def selectNextReplacement (g : Game) (candidates : Array ReplacementCandidate)
+    (applied : Array ReplacementId) : Option ReplacementCandidate :=
+  let unapplied := candidates.filter (fun (c : ReplacementCandidate) => !applied.contains c.id)
+  if unapplied.isEmpty then none
+  else
+    let minRank := unapplied.foldl (fun m (c : ReplacementCandidate) => min m c.tier.rank) 100
+    let inTier := unapplied.filter (fun (c : ReplacementCandidate) => c.tier.rank == minRank)
+    let apnap := g.apnapPlayers
+    let chooser? := apnap.find? (fun p => inTier.any (fun (c : ReplacementCandidate) => c.affectedPlayer == p))
+    let pool :=
+      match chooser? with
+      | some p => inTier.filter (fun (c : ReplacementCandidate) => c.affectedPlayer == p)
+      | none => inTier
+    match g.replacementOrder.findSome? (fun prefId => pool.find? (fun (c : ReplacementCandidate) => c.id == prefId)) with
+    | some chosen => some chosen
+    | none => pool[0]?
+
+/-- Distinct per-`CounterKind` offset so a source with `.extraCounterOnPermanents`
+gets a distinct `ReplacementId` per kind of counter put on a permanent ("that
+many plus one of each of those kinds of counters", CR 614.5). -/
+private def counterKindRankOffset : CounterKind → Nat
+  | .plusOnePlusOne => 0
+  | .minusOneMinusOne => 1
+  | .loyalty => 2
+  | .hope => 3
+  | .charge => 4
+  | .stun => 5
+  | .shield => 6
+  | .finality => 7
+  | .plan => 8
+  | .burden => 9
+  | .quest => 10
+  | .invasion => 11
+  | .influence => 12
+  | .trample => 13
+  | .indestructible => 14
+  | .lifelink => 15
+  | .hone => 16
+  | .shadow => 17
+  | .lore => 18
+  | .story => 19
+  | .time => 20
+  | .haste => 21
+  | .vigilance => 22
+  | .flying => 23
+  | .menace => 24
+  | .reach => 25
+  | .deathtouch => 26
+  | .firstStrike => 27
+  | .doubleStrike => 28
+  | .poison => 29
+
+/-- CR 616.1 replacement loop for putting `n` counters of `kind` on `target`
+(CR 122.6 / 614.1a / 614.12). Supports printed static abilities
+(`.extraCounterOnPermanents`, `.extraPlusOneCounter`) on battlefield permanents
+and on `entering?` (when `target` is about to enter the battlefield, CR 614.12),
+as well as active `ContinuousEffect.replacement` specs with `.modifyCountersPut`.
+Returns the modified count, the updated `applied` list (CR 614.5), and the
+updated `EventCause` (CR 614.6). -/
+def replaceCountersPut (g : Game) (target : GameObject) (kind : CounterKind) (n : Nat)
+    (putter : Option PlayerId := none) (entersWith : Bool := false)
+    (entering : Option GameObject := none)
+    (applied : Array ReplacementId := #[])
+    (cause : Option EventCause := none) : Nat × Array ReplacementId × Option EventCause :=
+  if n == 0 then (0, applied, cause)
+  else
+    let who :=
+      if entersWith then target.controller
+      else putter.orElse (fun _ => g.counterPutter target.controller)
+    let affected := target.controller.orElse (fun _ => who) |>.getD target.owner
+    Id.run do
+      let mut curN := n
+      let mut curApplied := applied
+      let mut curCause := cause
+      let mut fuel := 32
+      while fuel > 0 do
+        fuel := fuel - 1
+        if curN == 0 then
+          fuel := 0
+        else
+          let mut specs : Array (ReplacementSpec × Nat × Nat) := #[]
+          -- Battlefield permanents controlled by `target.controller`
+          match target.controller with
+          | some c =>
+            let perms := g.permanentsOf c
+            let allPerms :=
+              match entering with
+              | some ent =>
+                if !ent.status.faceDown && ent.controller == some c &&
+                    !perms.any (·.id == ent.id) then
+                  perms.push ent
+                else perms
+              | none => perms
+            for o in allPerms do
+              -- Doc Samson: `.extraCounterOnPermanents` (requires putter == controller)
+              if who == some c && o.printed.staticAbilities.any (· == .extraCounterOnPermanents) then
+                let rid : ReplacementId := ⟨o.id.raw * 1000 + 101 + counterKindRankOffset kind⟩
+                specs := specs.push (
+                  { id := rid
+                    source := some o.id
+                    controller := some c
+                    affectedPlayer := affected
+                    kind := .modifyCountersPut target.id (some kind) 1 1 }, 1, 1)
+              -- The Golden Gear: `.fra .extraPlusOneCounter` on a creature you control
+              if kind == .plusOnePlusOne && target.isCreature &&
+                  (!o.status.faceDown && o.staticAbilities.any (· == .fra .extraPlusOneCounter)) then
+                let rid : ReplacementId := ⟨o.id.raw * 1000 + 102⟩
+                specs := specs.push (
+                  { id := rid
+                    source := some o.id
+                    controller := some c
+                    affectedPlayer := affected
+                    kind := .modifyCountersPut target.id (some .plusOnePlusOne) 1 1 }, 1, 1)
+          | none => pure ()
+          -- Active `ContinuousEffect.replacement` effects matching `modifyCountersPut`
+          for (_, eff) in g.activeEffects do
+            match eff with
+            | .replacement spec _ =>
+              match spec.kind with
+              | .modifyCountersPut tid k? add mult =>
+                if (tid == target.id || tid == ⟨0⟩) && (k?.isNone || k? == some kind) then
+                  specs := specs.push (spec, add, mult)
+              | _ => pure ()
+            | _ => pure ()
+          let candidates := specs.map (fun (s, _, _) => (ReplacementOrPrevention.replacement s).toCandidate)
+          match g.selectNextReplacement candidates curApplied with
+          | none => fuel := 0
+          | some chosen =>
+            match specs.find? (fun (s, _, _) => s.id == chosen.id) with
+            | none => fuel := 0
+            | some (_, add, mult) =>
+              curN := curN * mult + add
+              curApplied := curApplied.push chosen.id
+              curCause := g.wrapReplacedCause chosen.id curCause who
+      return (curN, curApplied, curCause)
+
 /-- Extra counters from each Doc Samson `putter` controls, when that player
 also controls the permanent (`host`) (MSH 517 / 590). -/
 def docSamsonBonus (g : Game) (putter host : Option PlayerId) : Nat :=
@@ -2968,17 +3137,45 @@ on a permanent controlled by `host`. Zero stays zero. `host` defaults to
 `putter`. -/
 def extraCountersOn (g : Game) (putter : Option PlayerId) (n : Nat)
     (host : Option PlayerId := putter) : Nat :=
-  if n == 0 then 0 else n + g.docSamsonBonus putter host
+  if n == 0 then 0
+  else
+    match host with
+    | some c =>
+      let dummy : GameObject := { id := ⟨0⟩, printed := default, owner := c, controller := some c, zone := .battlefield }
+      (g.replaceCountersPut dummy .charge n (putter := putter)).1
+    | none => n
 
 /-- Counters of one kind actually put on `o`. An enters-with replacement is
 put by the permanent's controller (ruling 517). Otherwise the explicit
 `putter`, the resolving spell or ability, or `o`'s controller. -/
 def countersYouPut (g : Game) (o : GameObject) (n : Nat)
-    (putter : Option PlayerId := none) (entersWith := false) : Nat :=
-  let who :=
-    if entersWith then o.controller
-    else putter.orElse (fun _ => g.counterPutter o.controller)
-  g.extraCountersOn who n (host := o.controller)
+    (putter : Option PlayerId := none) (entersWith := false)
+    (kind : CounterKind := .charge) : Nat :=
+  (g.replaceCountersPut o kind n (putter := putter) (entersWith := entersWith)).1
+
+/-- Extra +1/+1 counters from each permanent `o`'s controller controls with
+`.extraPlusOneCounter` (The Golden Gear, CR 614.1a / 614.12). -/
+def extraPlusOneOnCreature (g : Game) (o : GameObject) (n : Nat) : Nat :=
+  if n == 0 || !o.isCreature then n
+  else
+    match o.controller with
+    | none => n
+    | some p =>
+      let others := ((g.permanentsOf p).filter (fun x =>
+        x.id != o.id && x.staticAbilities.any (· == .fra .extraPlusOneCounter))).size
+      let self :=
+        if !o.status.faceDown && o.staticAbilities.any (· == .fra .extraPlusOneCounter) then 1
+        else 0
+      n + others + self
+
+/-- `extraCountersOn` extended to account for `entering`'s own
+`.extraCounterOnPermanents` ability when `entering` is not yet in
+`g.permanentsOf` (CR 614.12). -/
+def extraCountersOnEntering (g : Game) (entering : GameObject) (n : Nat)
+    (putter : Option PlayerId := entering.controller)
+    (kind : CounterKind := .charge) : Nat :=
+  (g.replaceCountersPut entering kind n (putter := putter) (entersWith := true)
+    (entering := some entering)).1
 
 /-- Legal players, planeswalkers, and battles that a creature put onto the
 battlefield attacking under `controller`'s control may be chosen to attack
@@ -3509,10 +3706,9 @@ def controlsLegendaryCreature (g : Game) (p : PlayerId) : Bool :=
 def controlsEquipment (g : Game) (p : PlayerId) : Bool :=
   (g.permanentsOf p).any (fun o => o.printed.isEquipment)
 
-/-- Whether this face should enter tapped given the controller's board. It is
-checked before the permanent enters, so lands or planeswalkers entering at
-the same time are not counted (rulings 808 / 809). -/
-def entersTapped (g : Game) (p : PlayerId) (card : CardDef) : Bool :=
+/-- Intrinsic self-replacement check for whether `card` enters the battlefield
+tapped under `p`'s control (CR 614.1c / 616.1a; rulings 808 / 809). -/
+private def selfEntersTapped (g : Game) (p : PlayerId) (card : CardDef) : Bool :=
   let proposed := GameEvent.moved g.turnNumber
     { controller := some p, owner := p, types := card.types
       subtypes := CardSubtype.ofSubtypes card.subtypes } .stack .battlefield
@@ -3537,6 +3733,230 @@ def entersTapped (g : Game) (p : PlayerId) (card : CardDef) : Bool :=
          acc + ((g.permanentsOf pl.id).filter (·.printed.isLand)).size) 0
        nOpp < n
      | none => false)
+
+/-- Result of applying CR 616.1a–g enters-the-battlefield replacement effects
+to a permanent or token about to enter the battlefield. -/
+structure EtbReplacementResult where
+  candidate : GameObject
+  entersWith : CounterBag := #[]
+  weaverBonus : Nat := 0
+  applied : Array ReplacementId := #[]
+  cause : Option EventCause := none
+
+/-- Run the CR 616.1a–g replacement loop for `candidate` about to enter the
+battlefield (CR 614.1c / 614.12 / 616.1):
+- `616.1a` (`self`): `entersTappedSelf`, `entersWithCountersSelf` (loyalty,
+  printed +1/+1, X +1/+1, indestructible, shield, hope-per-creature, Saga lore).
+- `616.1b` (`control`): `entersUnderControl`.
+- `616.1c` (`copy`): `entersAsCopy`.
+- `616.1d` (`backFaceUp`): `entersBackFaceUp` (including daybound entering
+  transformed when `g.isNight`, CR 702.145b).
+- `616.1e` (`other`): `entersTappedExternal`, `entersWithExtraCounters`
+  (including Arwen, Weaver of Hope, `othersEnterWithPlusOneEqualToughness`).
+- `616.1g`: contained counter-putting replacements via `replaceCountersPut`. -/
+def applyEtbReplacements (g : Game) (candidate : GameObject)
+    (fromStackTime : Nat := 0) (applyHope : Bool := true)
+    (asOf : Nat := g.timestamp) (extraCounters : CounterBag := #[])
+    (leavingPlay : Bool := false) (forceBackFace : Bool := false)
+    (applied : Array ReplacementId := #[])
+    (cause : Option EventCause := none) : EtbReplacementResult := Id.run do
+  let mut cur := candidate
+  let mut bag : CounterBag :=
+    if fromStackTime > 0 then #[(.time, fromStackTime)] else #[]
+  let mut curApplied := applied
+  let mut curCause := cause
+  let mut weaverBonus : Nat := 0
+  -- Any caller-supplied `extraCounters` (e.g., incubate, return with finality)
+  -- have contained counter-putting replacements applied (CR 616.1g).
+  for (k, n) in extraCounters do
+    if n > 0 then
+      let (n', app', c') :=
+        g.replaceCountersPut cur k n (putter := cur.controller) (entersWith := true)
+          (entering := some cur) (applied := curApplied) (cause := curCause)
+      bag := bag.add k n'
+      curApplied := app'
+      curCause := c'
+  let mut fuel := 32
+  while fuel > 0 do
+    fuel := fuel - 1
+    let ctrl := cur.controller.getD cur.owner
+    let mut specs : Array ReplacementSpec := #[]
+    -- 616.1a: self enters-tapped replacement
+    if !cur.status.faceDown && !cur.status.tapped && g.selfEntersTapped ctrl cur.printed then
+      specs := specs.push {
+        id := ⟨cur.id.raw * 1000 + 1⟩
+        source := some cur.id
+        controller := some ctrl
+        affectedPlayer := ctrl
+        kind := .entersTappedSelf cur.id
+      }
+    -- 616.1a: self enters-with-counters replacements
+    if !cur.status.faceDown then
+      if cur.printed.isPlaneswalker then
+        if let some loy := cur.printed.loyalty then
+          if loy > 0 then
+            specs := specs.push {
+              id := ⟨cur.id.raw * 1000 + 2⟩
+              source := some cur.id
+              controller := some ctrl
+              affectedPlayer := ctrl
+              kind := .entersWithCountersSelf cur.id .loyalty loy.toNat
+            }
+      if cur.printed.entersWithPlusOneCounters > 0 then
+        specs := specs.push {
+          id := ⟨cur.id.raw * 1000 + 3⟩
+          source := some cur.id
+          controller := some ctrl
+          affectedPlayer := ctrl
+          kind := .entersWithCountersSelf cur.id .plusOnePlusOne cur.printed.entersWithPlusOneCounters
+        }
+      if cur.staticAbilities.any (· == .entersWithXPlusOne) then
+        let xVal := cur.chosenX.getD 0
+        if xVal > 0 then
+          specs := specs.push {
+            id := ⟨cur.id.raw * 1000 + 4⟩
+            source := some cur.id
+            controller := some ctrl
+            affectedPlayer := ctrl
+            kind := .entersWithCountersSelf cur.id .plusOnePlusOne xVal
+          }
+      if cur.printed.entersWithIndestructibleCounter then
+        specs := specs.push {
+          id := ⟨cur.id.raw * 1000 + 5⟩
+          source := some cur.id
+          controller := some ctrl
+          affectedPlayer := ctrl
+          kind := .entersWithCountersSelf cur.id .indestructible 1
+        }
+      if cur.printed.entersWithShield > 0 then
+        specs := specs.push {
+          id := ⟨cur.id.raw * 1000 + 6⟩
+          source := some cur.id
+          controller := some ctrl
+          affectedPlayer := ctrl
+          kind := .entersWithCountersSelf cur.id .shield cur.printed.entersWithShield
+        }
+      if cur.printed.entersWithHopePerCreature then
+        let others := ((g.creaturesControlledBy ctrl).filter (·.id != cur.id)).size
+        let selfCount := if cur.isCreature then 1 else 0
+        let totalHope := others + selfCount
+        if totalHope > 0 then
+          specs := specs.push {
+            id := ⟨cur.id.raw * 1000 + 7⟩
+            source := some cur.id
+            controller := some ctrl
+            affectedPlayer := ctrl
+            kind := .entersWithCountersSelf cur.id .hope totalHope
+          }
+      if cur.printed.saga.isSome then
+        specs := specs.push {
+          id := ⟨cur.id.raw * 1000 + 8⟩
+          source := some cur.id
+          controller := some ctrl
+          affectedPlayer := ctrl
+          kind := .entersWithCountersSelf cur.id .lore 1
+        }
+    -- 616.1d: intrinsic daybound / back-face-up replacement (CR 702.145b / 712.14)
+    if !cur.status.transformed && cur.printed.otherFace.isSome &&
+        (forceBackFace || (!leavingPlay && cur.printed.daybound && g.isNight)) then
+      specs := specs.push {
+        id := ⟨cur.id.raw * 1000 + 9⟩
+        source := some cur.id
+        controller := some ctrl
+        affectedPlayer := ctrl
+        kind := .entersBackFaceUp cur.id
+      }
+    -- 616.1e: Arwen, Weaver of Hope (`othersEnterWithPlusOneEqualToughness`)
+    if applyHope && !cur.status.faceDown && cur.isCreature then
+      for weaver in g.permanentsOf ctrl do
+        if weaver.id != cur.id && weaver.printed.othersEnterWithPlusOneEqualToughness &&
+            weaver.timestamp < asOf then
+          let bonus := weaver.toughness.toNat
+          if bonus > 0 then
+            specs := specs.push {
+              id := ⟨weaver.id.raw * 1000 + 10⟩
+              source := some weaver.id
+              controller := some ctrl
+              affectedPlayer := ctrl
+              kind := .entersWithExtraCounters cur.id .plusOnePlusOne bonus
+            }
+    -- Active `ContinuousEffect.replacement` specs targeting `cur.id` (or `⟨0⟩` wildcard)
+    for (_, eff) in g.activeEffects do
+      match eff with
+      | .replacement spec _ =>
+        match spec.kind with
+        | .entersTappedSelf tid | .entersWithCountersSelf tid ..
+        | .entersUnderControl tid _ | .entersAsCopy tid _
+        | .entersBackFaceUp tid | .entersTappedExternal tid
+        | .entersWithExtraCounters tid .. =>
+          if tid == cur.id || tid == ⟨0⟩ then
+            specs := specs.push { spec with affectedPlayer := ctrl }
+        | _ => pure ()
+      | _ => pure ()
+    let candidates := specs.map (fun s => (ReplacementOrPrevention.replacement s).toCandidate)
+    match g.selectNextReplacement candidates curApplied with
+    | none => fuel := 0
+    | some chosen =>
+      match specs.find? (fun s => s.id == chosen.id) with
+      | none => fuel := 0
+      | some spec =>
+        curApplied := curApplied.push chosen.id
+        curCause := g.wrapReplacedCause chosen.id curCause (some ctrl)
+        match spec.kind with
+        | .entersTappedSelf _ | .entersTappedExternal _ =>
+          cur := { cur with status := { cur.status with tapped := true } }
+        | .entersWithCountersSelf _ k n =>
+          let (n', app', c') :=
+            g.replaceCountersPut cur k n (putter := cur.controller) (entersWith := true)
+              (entering := some cur) (applied := curApplied) (cause := curCause)
+          bag := bag.add k n'
+          curApplied := app'
+          curCause := c'
+        | .entersUnderControl _ newCtrl =>
+          cur := { cur with controller := some newCtrl, defaultController := some newCtrl }
+        | .entersAsCopy _ template =>
+          let sick := template.isCreature && !template.keywords.haste
+          cur := { cur with
+            printed := template
+            status := { cur.status with summoningSick := sick } }
+        | .entersBackFaceUp _ =>
+          match cur.printed.otherFace with
+          | some back =>
+            let newPrinted := { back with otherFace := some { cur.printed with otherFace := none } }
+            cur := { cur with
+              printed := newPrinted
+              status := { cur.status with transformed := true, cantTransform := true } }
+          | none => pure ()
+        | .entersWithExtraCounters _ k n =>
+          let isWeaver :=
+            match spec.source.bind g.findObject? with
+            | some w => w.printed.othersEnterWithPlusOneEqualToughness
+            | none => false
+          if isWeaver then
+            weaverBonus := weaverBonus + n
+            bag := bag.add k n
+          else
+            let (n', app', c') :=
+              g.replaceCountersPut cur k n (putter := cur.controller) (entersWith := true)
+                (entering := some cur) (applied := curApplied) (cause := curCause)
+            bag := bag.add k n'
+            curApplied := app'
+            curCause := c'
+        | _ => pure ()
+  let finalObj :=
+    if bag.isEmpty then cur
+    else
+      { cur with
+        status :=
+          { (cur.status.withCounterBag bag) with
+            gotPlusOneThisTurn := bag.count .plusOnePlusOne > 0 } }
+  return {
+    candidate := finalObj
+    entersWith := bag
+    weaverBonus := weaverBonus
+    applied := curApplied
+    cause := curCause
+  }
 
 /-- Whether `blocker`'s static abilities currently allow it to be declared as
 a blocker (CR 509.1b). Checked only when declaring blockers. -/
@@ -3981,11 +4401,6 @@ def playerCanBeTargetedBy (g : Game) (caster target : PlayerId) : Bool :=
           | none => false)
   (caster == target || !g.playerHasHexproof target) &&
     !(g.player target).protectionFromEverything && !typeBlock
-
-/-- True when damage that would be dealt by `src` is prevented (Old Fat
-Spider chapter II). -/
-def sourceDamagePrevented (g : Game) (src : GameObject) : Bool :=
-  src.status.preventDamageGrantedBy.any g.grantorStillInPlay
 
 /-- Whether `o` has deathtouch, printed or granted until end of turn (CR 702.2). -/
 def hasDeathtouch (g : Game) (o : GameObject) : Bool :=
@@ -6276,7 +6691,7 @@ def effectEndsAtCleanup : ContinuousEffect → Bool
   | .ironFistTapUntilEot .. | .losesAbilitiesUntilEot _ | .grantedTriggered _ _ true
   | .cardsInHandPowerUntilEot _ | .firstStrikeOnYourTurn _
   | .combatDamageCreatesTreasureUntilEot _ | .freeCastFromGraveyardUntilEot _
-  | .flashbackUntilEot _ => true
+  | .flashbackUntilEot _ | .replacement _ true | .prevention _ true => true
   | _ => false
 
 /-- The active continuous effect recorded under `eid`, if any. -/
@@ -6672,8 +7087,10 @@ def recordPutCounters (g : Game) (id : ObjectId) (kind : CounterKind) (n : Nat)
     | none => g
     | some o =>
       let putter := byPlayer.orElse (fun _ => g.counterPutter o.controller)
-      let g := g.record (GameEvent.counters g.turnNumber putter o.asEvent kind n (cause := cause))
-      if kind == .time then g.syncImpendingNotACreature id (cause := cause) else g
+      let (_, _, cause') :=
+        g.replaceCountersPut o kind n (putter := byPlayer) (cause := cause)
+      let g := g.record (GameEvent.counters g.turnNumber putter o.asEvent kind n (cause := cause'))
+      if kind == .time then g.syncImpendingNotACreature id (cause := cause') else g
 
 /-- Record removing up to `n` counters of `kind` from `id` via
 `PermanentEvent.counters` (CR 122.1). Clamps to the current counter count and

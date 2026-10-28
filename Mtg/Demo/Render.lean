@@ -972,6 +972,8 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
       | .chooseIndex n =>
         if n == 2 then " [coin toss (--norandom)]"
         else s!" [random index 0..{n - 1} (--norandom)]"
+    | .chooseReplacement p choices =>
+      s!" [choose which replacement effect applies next ({choices.size} choices, CR 616.1, {g.player p |>.name})]"
   let result :=
     match g.result with
     | none => ""

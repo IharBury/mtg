@@ -93,18 +93,19 @@ def createsWolfOnOppExileDeath? (o : GameObject) : Bool :=
     | .exileOppDeathCreateWolf => true
     | _ => false)
 
-/-- Permanents that exile opposing creatures that would die. Uses the SBA
-snapshot when one is locked so a simultaneous death of the source still
-applies (CR 614.4 / 614.6). -/
-def deathReplacementObjects (g : Game) : Array GameObject :=
-  match g.lockedDeathReplacements with
-  | some xs => xs
-  | none => g.battlefield.filter exilesOppDeath?
+/-- Strip outer `.replaced` wrappers from `EventCause` to recover the underlying
+one-shot or game-rule cause for non-replaced side effects of the same instruction. -/
+private def unreplacedCause : EventCause → EventCause
+  | .replaced _ orig => unreplacedCause orig
+  | c => c
 
-/-- Controller of a Head-of-the-Hunt-style replacement, if `dying` is an
-opposing creature that would go to a graveyard. -/
-def exileInsteadSource? (g : Game) (dying : GameObject) : Option GameObject :=
-  g.deathReplacementObjects.find? (fun o =>
+/-- Source of a Head-of-the-Hunt-style replacement, if `dying` is an opposing
+creature that would go to a graveyard. Accepts an optional `preBattlefield`
+snapshot so a simultaneous death of the source still applies (CR 614.4 / 614.6). -/
+def exileInsteadSource? (g : Game) (dying : GameObject)
+    (preBattlefield : Option (Array GameObject) := none) : Option GameObject :=
+  let bf := preBattlefield.getD g.battlefield
+  (bf.filter exilesOppDeath?).find? (fun o =>
     o.id != dying.id &&
       match o.controller, dying.controller with
       | some p, some q => p != q
@@ -112,13 +113,150 @@ def exileInsteadSource? (g : Game) (dying : GameObject) : Option GameObject :=
 
 /-- Controller of a Head-of-the-Hunt-style replacement, if `dying` is an
 opposing creature that would go to a graveyard. -/
-def exileInsteadController? (g : Game) (dying : GameObject) : Option PlayerId :=
-  (g.exileInsteadSource? dying).bind (·.controller)
+def exileInsteadController? (g : Game) (dying : GameObject)
+    (preBattlefield : Option (Array GameObject) := none) : Option PlayerId :=
+  (g.exileInsteadSource? dying preBattlefield).bind (·.controller)
 
 /-- CR 614.6: if this death would be replaced with exile, the die event
 never happens. -/
-def wouldExileInsteadOfDying (g : Game) (dying : GameObject) : Bool :=
-  dying.status.untilEotExileIfDies || (g.exileInsteadSource? dying).isSome
+def wouldExileInsteadOfDying (g : Game) (dying : GameObject)
+    (preBattlefield : Option (Array GameObject) := none) : Bool :=
+  dying.status.untilEotExileIfDies || (g.exileInsteadSource? dying preBattlefield).isSome
+
+/-- Result of running the CR 616.1 replacement loop on a proposed zone move. -/
+structure ZoneMoveReplacementResult where
+  dest : Zone
+  exileInstead : Bool := false
+  finalityExile : Bool := false
+  headSource : Option GameObject := none
+  applied : Array ReplacementId := #[]
+  cause : Option EventCause := none
+deriving Repr, Inhabited, BEq
+
+/-- Run the CR 616.1 replacement loop for `old` moving from `old.zone` to
+`initialDest` (CR 614.1a / 614.5 / 614.6 / 616.1). -/
+def replaceZoneMove (g : Game) (old : GameObject) (beforeSnap : EventObject)
+    (initialDest : Zone) (verb : Option ZoneVerb := none)
+    (actor : Option PlayerId := none)
+    (libraryPosition : Option LibraryPosition := none)
+    (preBattlefield : Option (Array GameObject) := none)
+    (applied : Array ReplacementId := #[])
+    (cause : Option EventCause := none) : ZoneMoveReplacementResult := Id.run do
+  let mut curDest := initialDest
+  let mut exileInstead := false
+  let mut finalityExile := false
+  let mut headSource : Option GameObject := none
+  let mut curApplied := applied
+  let mut curCause := cause
+  let affected := old.controller.getD old.owner
+  let bf := preBattlefield.getD g.battlefield
+  let mut fuel := 32
+  while fuel > 0 do
+    fuel := fuel - 1
+    let discarded :=
+      match old.zone, curDest with
+      | .hand p, .graveyard q => p == q
+      | _, _ => false
+    let proposed :=
+      GameEvent.moved g.turnNumber beforeSnap old.zone curDest (discarded := discarded)
+        (verb := verb) (actor := actor) (libraryPosition := libraryPosition) (cause := curCause)
+    let mut specs : Array (ReplacementSpec × Option GameObject × Bool) := #[]
+    -- CR 702.34a: flashback exiles the spell whenever it would leave the stack for anywhere else.
+    if proposed.watches .wouldLeaveStack && old.castFromGraveyard &&
+        old.printed.flashback.isSome && !old.isCopy && curDest != .exile then
+      specs := specs.push (
+        { id := ⟨old.id.raw * 1000 + 301⟩
+          source := some old.id
+          controller := old.controller
+          affectedPlayer := affected
+          kind := .exileInsteadOfStackLeave old.id }, none, false)
+    -- Bilbo, Thief in the Night: instant/sorcery cast this way is exiled instead of going to graveyard.
+    if proposed.watches .wouldEnterGraveyardFromStack && old.exileInstantSorceryInstead &&
+        !old.isCopy then
+      specs := specs.push (
+        { id := ⟨old.id.raw * 1000 + 302⟩
+          source := some old.id
+          controller := old.controller
+          affectedPlayer := affected
+          kind := .exileInsteadOfGraveyard old.id false }, none, false)
+    -- Until-EOT exile-if-dies replacement (Smite, etc.).
+    if proposed.watches .wouldEnterGraveyardFromBattlefield && old.status.untilEotExileIfDies then
+      specs := specs.push (
+        { id := ⟨old.id.raw * 1000 + 303⟩
+          source := some old.id
+          controller := old.controller
+          affectedPlayer := affected
+          kind := .exileInsteadOfGraveyard old.id false }, none, false)
+    -- Finality counter replacement (CR 122.1h).
+    if proposed.watches .wouldEnterGraveyardFromBattlefield && old.status.finality > 0 then
+      specs := specs.push (
+        { id := ⟨old.id.raw * 1000 + 304⟩
+          source := some old.id
+          controller := old.controller
+          affectedPlayer := affected
+          kind := .exileInsteadOfGraveyard old.id false }, none, true)
+    -- Opposing creature death replacements (Head of the Hunt, Kalitas, etc.).
+    if proposed.watches .wouldDie then
+      for src in bf.filter exilesOppDeath? do
+        if src.id != old.id then
+          match src.controller, old.controller with
+          | some p, some q =>
+            if p != q then
+              specs := specs.push (
+                { id := ⟨src.id.raw * 1000 + 305⟩
+                  source := some src.id
+                  controller := some p
+                  affectedPlayer := affected
+                  kind := .exileInsteadOfGraveyard old.id (createsWolfOnOppExileDeath? src) },
+                some src, false)
+          | _, _ => pure ()
+    -- Active `ContinuousEffect.replacement` effects for zone moves.
+    for (_, eff) in g.activeEffects do
+      match eff with
+      | .replacement spec _ =>
+        match spec.kind with
+        | .exileInsteadOfStackLeave tid =>
+          if (tid == old.id || tid == ⟨0⟩) && proposed.watches .wouldLeaveStack && curDest != .exile then
+            specs := specs.push ({ spec with affectedPlayer := affected }, none, false)
+        | .exileInsteadOfGraveyard tid wolf =>
+          if (tid == old.id || tid == ⟨0⟩) &&
+              (proposed.watches .wouldEnterGraveyardFromBattlefield ||
+                proposed.watches .wouldEnterGraveyardFromStack ||
+                proposed.watches .wouldDie) && curDest != .exile then
+            let srcObj := if wolf then spec.source.bind g.findObject? else none
+            specs := specs.push ({ spec with affectedPlayer := affected }, srcObj, false)
+        | .commanderToCommandZone tid =>
+          if tid == old.id && curDest != .command &&
+              (curDest == .exile || curDest == .graveyard old.owner) then
+            specs := specs.push ({ spec with affectedPlayer := old.owner }, none, false)
+        | _ => pure ()
+      | _ => pure ()
+    let candidates := specs.map (fun (s, _, _) => (ReplacementOrPrevention.replacement s).toCandidate)
+    match g.selectNextReplacement candidates curApplied with
+    | none => fuel := 0
+    | some chosen =>
+      match specs.find? (fun (s, _, _) => s.id == chosen.id) with
+      | none => fuel := 0
+      | some (spec, hSrc, isFinality) =>
+        curApplied := curApplied.push chosen.id
+        curCause := g.wrapReplacedCause chosen.id curCause (some affected)
+        match spec.kind with
+        | .exileInsteadOfStackLeave _ | .exileInsteadOfGraveyard .. =>
+          curDest := .exile
+          exileInstead := true
+          if isFinality then finalityExile := true
+          if hSrc.isSome then headSource := hSrc
+        | .commanderToCommandZone _ =>
+          curDest := .command
+        | _ => pure ()
+  return {
+    dest := curDest
+    exileInstead := exileInstead
+    finalityExile := finalityExile
+    headSource := headSource
+    applied := curApplied
+    cause := curCause
+  }
 
 /-- `partial` because linked-exile returns recurse into `move` (CR 610.3). -/
 partial def move (g : Game) (id : ObjectId) (dest : Zone)
@@ -132,6 +270,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
     (extraEntersWith : CounterBag := #[])
     (verb : Option ZoneVerb := none) (actor : Option PlayerId := none)
     (libraryPosition : Option LibraryPosition := none)
+    (preBattlefield : Option (Array GameObject) := none)
     (cause : Option EventCause := none) : Game × ObjectId :=
   let old := g.object! id
   let isAttacking := attacking || attackingTarget.isSome
@@ -146,12 +285,9 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
   let lkiToughness :=
     if old.zone == .battlefield then some (g.snapshotToughness old) else none
   let beforeSnap := g.snapshot old
-  let discarded :=
-    match old.zone, dest with
-    | .hand p, .graveyard q => p == q
-    | _, _ => false
-  let buildArrival (g : Game) (targetZone : Zone) (asOf : Nat) :
-      GameObject × CounterBag × Nat × Bool × Bool :=
+  let buildArrival (g : Game) (targetZone : Zone) (asOf : Nat)
+      (applied : Array ReplacementId := #[]) (curCause : Option EventCause := cause) :
+      GameObject × CounterBag × Nat × Bool × Bool × Option EventCause :=
     let newId : ObjectId := ⟨g.nextObjectId⟩
     let ts := g.timestamp + 1
     let leavingPlay :=
@@ -163,22 +299,10 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
         | some front =>
           { front with otherFace := some { old.printed with otherFace := none } }
         | none => old.printed
-      else if targetZone == .battlefield && nightBack then
-        match old.printed.otherFace with
-        | some back =>
-          { back with otherFace := some { old.printed with otherFace := none } }
-        | none => old.printed
       else old.printed
     let faceDown := targetZone == .battlefield && old.zone == .stack && old.status.faceDown
     let fromStackTime :=
       if targetZone == .battlefield && old.zone == .stack then old.status.time else 0
-    let entersTapped :=
-      targetZone == .battlefield &&
-        (tapped ||
-          (!faceDown &&
-            match controller with
-            | some p => g.entersTapped p printed
-            | none => false))
     let chosenCardType :=
       if targetZone == .battlefield && !faceDown && printed.asEntersChooseCardType then
         some CardType.creature
@@ -193,15 +317,13 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
     let baseStatus : Status :=
       if targetZone == .battlefield then
         { faceDown := faceDown
-          tapped := entersTapped
+          tapped := tapped
           summoningSick := summoningSick
           attacking := isAttacking
           attackingTarget := resolvedAttackTarget
           chosenCardType := chosenCardType
           windcragMardu := windcragMardu
           prepared := prepared
-          transformed := nightBack
-          cantTransform := nightBack
           returnedAsArtifact := returnedAsArtifact
           onlyFoodArtifact := onlyFoodArtifact
           notACreature := impendingNotCreature }
@@ -225,58 +347,29 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
       lastKnownPower := lkiPower
       lastKnownToughness := lkiToughness
     }
-    let entersWith : CounterBag :=
-      if targetZone == .battlefield then
-        g.computeEntersWithCounters candidate
+    if targetZone == .battlefield then
+      let etb :=
+        g.applyEtbReplacements candidate
           (fromStackTime := fromStackTime)
           (applyHope := applyHope)
           (asOf := asOf)
           (extraCounters := extraEntersWith)
-      else #[]
-    let weaverBonus : Nat :=
-      if targetZone == .battlefield && applyHope then
-        g.hopeCountersOnEnter candidate asOf
-      else 0
-    let fresh : GameObject :=
-      if entersWith.isEmpty then candidate
-      else
-        { candidate with
-          status :=
-            { (candidate.status.withCounterBag entersWith) with
-              gotPlusOneThisTurn := entersWith.count .plusOnePlusOne > 0 } }
-    (fresh, entersWith, weaverBonus, impendingNotCreature, faceDown)
-  let (proposedFresh, proposedEntersWith, _, _, _) := buildArrival g dest g.timestamp
-  let gWithProposed : Game :=
-    { g with objects := g.objects.map (fun (x : GameObject) => if x.id == id then proposedFresh else x) }
-  let proposedAfterSnap := gWithProposed.snapshot proposedFresh
-  -- The change that would happen. Replacements match it before it is recorded
-  -- (CR 614.1). A replaced change never happens (CR 614.6).
-  let proposed :=
-    GameEvent.moved g.turnNumber beforeSnap old.zone dest (discarded := discarded)
-      (after := some proposedAfterSnap) (verb := verb) (actor := actor)
-      (entersWith := proposedEntersWith) (libraryPosition := libraryPosition) (cause := cause)
-  -- Snapshot the replacement source before the object leaves so a
-  -- simultaneous death of Head of the Hunt still applies (CR 614.6).
-  let headSource :=
-    if proposed.watches .wouldDie then g.exileInsteadSource? old else none
-  let headExile := headSource.isSome
-  let smiteExile :=
-    proposed.watches .wouldEnterGraveyardFromBattlefield && old.status.untilEotExileIfDies
-  let finalityExile :=
-    proposed.watches .wouldEnterGraveyardFromBattlefield && old.status.finality > 0
-  -- CR 702.34a: a spell cast with flashback is exiled whenever it would
-  -- leave the stack for anywhere else.
-  let flashbackExile :=
-    proposed.watches .wouldLeaveStack && old.castFromGraveyard &&
-      old.printed.flashback.isSome && !old.isCopy && dest != .exile
-  -- Bilbo, Thief in the Night: an instant or sorcery cast this way is exiled
-  -- instead of going to its owner's graveyard.
-  let bilboExile :=
-    proposed.watches .wouldEnterGraveyardFromStack && old.exileInstantSorceryInstead &&
-      !old.isCopy
-  let exileInstead := headExile || smiteExile || finalityExile || flashbackExile || bilboExile
-  -- CR 614.6: the original move-to-graveyard event never happens.
-  let dest := if exileInstead then Zone.exile else dest
+          (leavingPlay := leavingPlay)
+          (forceBackFace := nightBack)
+          (applied := applied)
+          (cause := curCause)
+      (etb.candidate, etb.entersWith, etb.weaverBonus, impendingNotCreature, faceDown, etb.cause)
+    else
+      (candidate, #[], 0, impendingNotCreature, faceDown, curCause)
+  -- Run the CR 616.1 replacement loop for leaving/destination replacements (CR 614.6).
+  let moveRep :=
+    g.replaceZoneMove old beforeSnap dest (verb := verb) (actor := actor)
+      (libraryPosition := libraryPosition) (preBattlefield := preBattlefield)
+      (cause := cause)
+  let dest := moveRep.dest
+  let exileInstead := moveRep.exileInstead
+  let finalityExile := moveRep.finalityExile
+  let headSource := moveRep.headSource
   let finalDiscarded :=
     match old.zone, dest with
     | .hand p, .graveyard q => p == q
@@ -294,8 +387,8 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
       let g :=
         if old.zone == .battlefield then g.removePreparedCopy id else g
       let asOf := g.timestamp
-      let (fresh, entersWith, weaverBonus, impendingNotCreature, faceDown) :=
-        buildArrival g dest asOf
+      let (fresh, entersWith, weaverBonus, impendingNotCreature, faceDown, finalCause) :=
+        buildArrival g dest asOf moveRep.applied moveRep.cause
       let newId := fresh.id
       let printed := fresh.printed
       let g :=
@@ -315,7 +408,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
           (actor := actor)
           (entersWith := entersWith)
           (libraryPosition := libraryPosition)
-          (cause := cause)
+          (cause := finalCause)
       -- The object that arrives has a new id (CR 400.7). `applyZoneEvent` updates
       -- `g.objects`, zone lists, `nextObjectId`, and `timestamp`.
       let g := g.record happened
@@ -324,11 +417,12 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
           match e.change with
           | .rules _ => some e.cause
           | .engine _ => none).getD .unclassified
+      let baseHappenedCause := unreplacedCause happenedCause
       let g : Game :=
         match (if dest == .battlefield then resolvedAttackTarget else none) with
         | some tgt =>
           g.record (GameEvent.becameAttacking g.turnNumber (g.object! newId).asEvent tgt
-            (cause := some happenedCause))
+            (cause := some baseHappenedCause))
         | none => g
       let g := g.expireEffectsOnLeavingObject old
       let g :=
@@ -348,11 +442,11 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
             else g
           let g : Game :=
             if dest == Zone.battlefield && returnedAsArtifact then
-              g.createEffect (.returnedAsArtifact newId) (cause := some happenedCause)
+              g.createEffect (.returnedAsArtifact newId) (cause := some baseHappenedCause)
             else g
           let g : Game :=
             if dest == Zone.battlefield && onlyFoodArtifact then
-              g.createEffect (.onlyFoodArtifact newId) (cause := some happenedCause)
+              g.createEffect (.onlyFoodArtifact newId) (cause := some baseHappenedCause)
             else g
           g.createPrintedStaticEffects cur
         | none => g
@@ -365,7 +459,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
             if id == old.id then
               g.record (GameEvent.effectUpdated g.turnNumber eid
                 (.pendingLokiCopy p none (old.lastKnownPower.getD old.power))
-                (cause := some happenedCause))
+                (cause := some baseHappenedCause))
             else g
           | _ => g) g
       let g :=
@@ -443,23 +537,28 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
 replacements are applied by `move` (CR 614.1 / 614.6). -/
 def moveToOwnerGraveyard (g : Game) (o : GameObject) (reason : String)
     (verb : Option ZoneVerb := none) (actor : Option PlayerId := none)
+    (preBattlefield : Option (Array GameObject) := none)
     (cause : Option EventCause := none) : Game :=
   let reason :=
     if o.exileInstantSorceryInstead && o.printed.isInstantOrSorcery then
       s!"{o.name} is exiled"
     else reason
   let g := g.logMsg reason
-  (g.move o.id (.graveyard o.owner) none (verb := verb) (actor := actor) (cause := cause)).1
+  (g.move o.id (.graveyard o.owner) none (verb := verb) (actor := actor)
+    (preBattlefield := preBattlefield) (cause := cause)).1
 
 /-- Move several objects to their owners' graveyards as one event.
 Sources that also leave do not see “creature cards put into your
 graveyard” (Robot Domination; MSH 138). -/
 def moveSimultaneousToGraveyard (g : Game) (ids : Array ObjectId) : Game :=
   g.withBatch none fun g =>
+    let preBf := g.battlefield
     let objs := ids.filterMap g.findObject?
     objs.foldl (fun g o =>
       match g.findObject? o.id with
-      | some o => g.moveToOwnerGraveyard o s!"{o.name} is put into its owner's graveyard"
+      | some o =>
+        g.moveToOwnerGraveyard o s!"{o.name} is put into its owner's graveyard"
+          (preBattlefield := some preBf)
       | none => g) g
 
 /-- Put `id` onto the battlefield under `controller`, setting tap, sickness,

@@ -24,9 +24,8 @@ def finishPlayLand (g : Game) (p : PlayerId) (id : ObjectId) (tapped : Bool := f
   match g.findObject? id with
   | none => g
   | some card =>
-    let entersTapped := tapped || g.entersTapped p card.printed
     let (g, newId) := g.putOntoBattlefield id p
-      (tapped := entersTapped) (summoningSick := false)
+      (tapped := tapped) (summoningSick := false)
       (verb := some .playLand) (actor := some p)
       (cause := some (.specialAction .playLand p))
     let g := g.logMsg s!"{(g.player p).name} plays {card.name}"
@@ -46,7 +45,7 @@ def playLand (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game := d
   -- recorded with the final tap status (CR 614.1c).
   match card.printed.entersTappedUnlessPayLife with
   | some n =>
-    if !g.entersTapped p card.printed then
+    if !card.printed.entersTapped then
       return (g.change (.pending (.fraChoice p (.payLifeOrEnterTapped id n)))).logMsg
         s!"{(g.player p).name} may pay {n} life, or {card.name} enters tapped"
   | none => pure ()

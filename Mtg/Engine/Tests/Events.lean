@@ -3209,4 +3209,294 @@ triggers from the event log instead of `Status.firedOnceEachTurn`. -/
     noUnclassifiedRulesEvents gHulkBatch &&
     noUnclassifiedRulesEvents gDmgBatch
 
+/- Phase 7 isolation (CR 614.5): each `ReplacementId` in `applied` applies at
+most once to an event or any modified event that replaced it, even when
+multiple replacement specs remain structurally applicable after the first
+modification or share a `ReplacementId`. -/
+#guard
+  let gTerm0 := addPermanent (quiet afterDraw) bear me me
+  let bTerm := (gTerm0.battlefield.filter (·.name == "Event Bear"))[0]!
+  let repDupA : ReplacementSpec :=
+    { id := ⟨7001⟩, source := some bTerm.id, controller := some me,
+      affectedPlayer := me, kind := .modifyCountersPut bTerm.id (some .plusOnePlusOne) (add := 1) (mult := 1) }
+  let repDupB : ReplacementSpec :=
+    { id := ⟨7001⟩, source := some bTerm.id, controller := some me,
+      affectedPlayer := me, kind := .modifyCountersPut bTerm.id (some .plusOnePlusOne) (add := 10) (mult := 1) }
+  let repSecond : ReplacementSpec :=
+    { id := ⟨7002⟩, source := some bTerm.id, controller := some me,
+      affectedPlayer := me, kind := .modifyCountersPut bTerm.id (some .plusOnePlusOne) (add := 0) (mult := 2) }
+  let gTerm1 :=
+    ((gTerm0.createEffect (.replacement repDupA true)).createEffect
+      (.replacement repDupB true)).createEffect (.replacement repSecond true)
+  let baseCause : EventCause := .oneShotEffect (some ⟨701⟩) none (some me)
+  let gTerm2 :=
+    (quiet gTerm1).addPlusOnePlusOneTo (gTerm1.object! bTerm.id) 2 (cause := some baseCause)
+  -- `⟨7001⟩` applies once (2 -> 3), the duplicate `⟨7001⟩` is skipped by CR 614.5,
+  -- and `⟨7002⟩` applies once (3 -> 6), then the loop terminates.
+  let termCounterEvents := gTerm2.events.filter (fun e =>
+    match e.change with
+    | .rules (.permanent (.counters _ .plusOnePlusOne (.put n) _)) => n == 6
+    | _ => false)
+  (gTerm2.object! bTerm.id).status.plusOnePlusOne == 6 &&
+    termCounterEvents.size == 1 &&
+    termCounterEvents[0]!.cause ==
+      .replaced ⟨7002⟩ (.replaced ⟨7001⟩ baseCause) &&
+    noUnclassifiedRulesEvents gTerm2
+
+/- Phase 7 isolation (CR 614.6): a replaced event never happens (is never
+recorded in `g.events`), so abilities watching the replaced event do not
+trigger, and the modified event carries `EventCause.replaced`. -/
+#guard
+  -- 2a. Death replaced by finality counter exile (CR 122.1h / 614.6).
+  let diesWatcherAb : TriggeredAbility :=
+    .triggered .dies
+      { resolution := .gainLife (.fixed 5), phrase := "You gain 5 life" }
+      {}
+  let finalityBearDef : CardDef :=
+    { bear with
+      name := "Finality Bear"
+      triggeredAbilities := #[diesWatcherAb] }
+  let gFin0 := addPermanent (quiet afterDraw) finalityBearDef me me
+  let finBear0 := (gFin0.battlefield.filter (·.name == "Finality Bear"))[0]!
+  let gFin1 := gFin0.recordPutCounters finBear0.id .finality 1 (some me)
+    (cause := some (.oneShotEffect (some ⟨702⟩) none (some me)))
+  let finDeathCause : EventCause := .oneShotEffect (some ⟨703⟩) none (some me)
+  let gFin2 :=
+    (quiet gFin1).moveToOwnerGraveyard (gFin1.object! finBear0.id) "dies"
+      (verb := some .destroy) (cause := some finDeathCause)
+  let finHasGyMove := gFin2.events.any (fun e =>
+    match e.change with
+    | .rules (.zone (.moved _ _ .battlefield (.graveyard _) ..)) => true
+    | _ => false)
+  let finExileMoves := gFin2.events.filter (fun e =>
+    match e.change with
+    | .rules (.zone (.moved before _ .battlefield .exile .exile _ _ _)) =>
+      before.id == some finBear0.id
+    | _ => false)
+  let finalityId : ReplacementId := ⟨finBear0.id.raw * 1000 + 304⟩
+  -- 2b. Destruction replaced by shield counter removal (CR 122.1c / 614.6).
+  let gShd0 := addPermanent (quiet afterDraw) bear me me
+  let shdBear0 := (gShd0.battlefield.filter (·.name == "Event Bear"))[0]!
+  let gShd1 := gShd0.recordPutCounters shdBear0.id .shield 1 (some me)
+    (cause := some (.oneShotEffect (some ⟨704⟩) none (some me)))
+  let shdDestroyCause : EventCause := .oneShotEffect (some ⟨705⟩) none (some me)
+  let gShd2 :=
+    (quiet gShd1).destroyPermanent (gShd1.object! shdBear0.id) (cause := some shdDestroyCause)
+  let shdId : ReplacementId := ⟨shdBear0.id.raw * 1000 + 501⟩
+  let shdRemovedEvents := gShd2.events.filter (fun e =>
+    match e.change with
+    | .rules (.permanent (.counters (.object o) .shield (.removed 1) _)) =>
+      o.id == some shdBear0.id
+    | _ => false)
+  -- 2c. Untap during untap step replaced by stun counter removal (CR 122.1d / 614.6).
+  let gStun0 := addPermanent (quiet afterDraw) bear me me
+  let stunBear0 := (gStun0.battlefield.filter (·.name == "Event Bear"))[0]!
+  let gStun1 :=
+    (gStun0.becomeTapped (gStun0.object! stunBear0.id)
+      (cause := some (.oneShotEffect (some ⟨706⟩) none (some me)))).recordPutCounters
+      stunBear0.id .stun 1 (some me)
+      (cause := some (.oneShotEffect (some ⟨707⟩) none (some me)))
+  let gStun2 := (quiet gStun1).beginStep .untap
+  let stunId : ReplacementId := ⟨stunBear0.id.raw * 1000 + 601⟩
+  let stunUntapEvents := gStun2.events.filter (fun e =>
+    match e.change with
+    | .rules (.permanent (.untapped o)) => o.id == some stunBear0.id
+    | _ => false)
+  let stunRemovedEvents := gStun2.events.filter (fun e =>
+    match e.change with
+    | .rules (.permanent (.counters (.object o) .stun (.removed 1) _)) =>
+      o.id == some stunBear0.id
+    | _ => false)
+  -- 2d. Draw replaced by two draws (`drawTwoExceptFirstDrawStep`, CR 614.11 / 121.2).
+  let drawReplaceDef : CardDef :=
+    { bear with
+      name := "Draw Replacer"
+      drawTwoExceptFirstDrawStep := true }
+  let gDrw0 := addPermanent (quiet afterDraw) drawReplaceDef me me
+  let drwReplacer := (gDrw0.battlefield.filter (·.name == "Draw Replacer"))[0]!
+  let drwCause : EventCause := .oneShotEffect (some ⟨708⟩) none (some me)
+  let gDrw1 := (quiet gDrw0).draw me 1 (cause := some drwCause)
+  let drwRepId : ReplacementId := ⟨drwReplacer.id.raw * 1000 + 401⟩
+  let drwMoves := gDrw1.events.filter (fun e =>
+    match e.change with
+    | .rules (.zone (.moved _ _ (.library _) (.hand _) (.draw _) _ _ _)) => true
+    | _ => false)
+  -- 2e. Damage prevented by a prevention effect (CR 615.1 / 615.6).
+  let gPrev0 := addPermanent (quiet afterDraw) bear me me
+  let prevBear := (gPrev0.battlefield.filter (·.name == "Event Bear"))[0]!
+  let prevSpec : PreventionSpec :=
+    { id := ⟨7009⟩, source := some prevBear.id, controller := some me,
+      affectedPlayer := me, kind := .preventAllDamageToPermanent prevBear.id }
+  let gPrev1 := gPrev0.createEffect (.prevention prevSpec true)
+  let prevCause : EventCause := .oneShotEffect (some ⟨709⟩) none (some me)
+  let gPrev2 :=
+    (quiet gPrev1).dealDamageToPermanent (gPrev1.object! prevBear.id) 3
+      (source := some prevBear.asEvent) (cause := some prevCause)
+  let prevDamageEvents := gPrev2.events.filter (fun e =>
+    match e.change with
+    | .rules (.damage _) => true
+    | _ => false)
+  !finHasGyMove &&
+    gFin2.waitingTriggers.isEmpty &&
+    finExileMoves.size == 1 &&
+    finExileMoves[0]!.cause == .replaced finalityId finDeathCause &&
+    gShd2.events.all (fun e =>
+      match e.change with
+      | .rules (.zone (.moved ..)) => false
+      | _ => true) &&
+    (gShd2.object! shdBear0.id).zone == .battlefield &&
+    (gShd2.object! shdBear0.id).status.shield == 0 &&
+    shdRemovedEvents.size == 1 &&
+    shdRemovedEvents[0]!.cause == .replaced shdId shdDestroyCause &&
+    stunUntapEvents.isEmpty &&
+    (gStun2.object! stunBear0.id).status.tapped &&
+    (gStun2.object! stunBear0.id).status.stun == 0 &&
+    stunRemovedEvents.size == 1 &&
+    stunRemovedEvents[0]!.cause == .replaced stunId (.turnBased .untapAll) &&
+    drwMoves.size == 2 &&
+    drwMoves.all (fun e => e.cause == .replaced drwRepId drwCause) &&
+    prevDamageEvents.isEmpty &&
+    (gPrev2.object! prevBear.id).status.damage == 0 &&
+    noUnclassifiedRulesEvents gFin2 &&
+    noUnclassifiedRulesEvents gShd2 &&
+    noUnclassifiedRulesEvents gStun2 &&
+    noUnclassifiedRulesEvents gDrw1 &&
+    noUnclassifiedRulesEvents gPrev2
+
+/- Phase 7 isolation (CR 616.1a–e): priority ordering (`self` -> `control` ->
+`copy` -> `backFaceUp` -> `other`) applies in strict tier order even when
+`g.replacementOrder` lists lower-priority tiers first. -/
+#guard
+  let dfcBackFace : CardDef :=
+    { bear with name := "Back Face Bear", power := some 5, toughness := some 5 }
+  let dfcFrontDef : CardDef :=
+    { bear with
+      name := "Front Face Bear"
+      entersTapped := true
+      otherFace := some dfcBackFace }
+  let copyTemplateDef : CardDef :=
+    { hero with name := "Template Hero", otherFace := some dfcBackFace }
+  let gTier0 :=
+    insertObject (quiet afterDraw) dfcFrontDef opp (.hand opp) none {} (fun id _ => #[.pushHand id])
+  let enterCardId :=
+    ((gTier0.player opp).hand.filter (fun id => (gTier0.object! id).name == "Front Face Bear"))[0]!
+  let idSelf : ReplacementId := ⟨enterCardId.raw * 1000 + 1⟩
+  let idControl : ReplacementId := ⟨7102⟩
+  let idCopy : ReplacementId := ⟨7103⟩
+  let idBack : ReplacementId := ⟨7104⟩
+  let idOther : ReplacementId := ⟨7105⟩
+  let specControl : ReplacementSpec :=
+    { id := idControl, source := none, controller := some me,
+      affectedPlayer := opp, kind := .entersUnderControl ⟨0⟩ me }
+  let specCopy : ReplacementSpec :=
+    { id := idCopy, source := none, controller := some me,
+      affectedPlayer := me, kind := .entersAsCopy ⟨0⟩ copyTemplateDef }
+  let specBack : ReplacementSpec :=
+    { id := idBack, source := none, controller := some me,
+      affectedPlayer := me, kind := .entersBackFaceUp ⟨0⟩ }
+  let specOther : ReplacementSpec :=
+    { id := idOther, source := none, controller := some me,
+      affectedPlayer := me, kind := .entersWithExtraCounters ⟨0⟩ .plusOnePlusOne 2 }
+  let gTier1 :=
+    ((((gTier0.createEffect (.replacement specControl true)).createEffect
+        (.replacement specCopy true)).createEffect
+        (.replacement specBack true)).createEffect
+        (.replacement specOther true)).change
+      (.replacementOrder #[idOther, idBack, idCopy, idControl, idSelf])
+  let etbBaseCause : EventCause := .oneShotEffect (some ⟨710⟩) none (some me)
+  let enterCandidate : GameObject :=
+    { (gTier1.object! enterCardId) with controller := some opp, defaultController := some opp }
+  let etbRes :=
+    gTier1.applyEtbReplacements enterCandidate (cause := some etbBaseCause)
+  let (gTier2, enteredPermId) :=
+    (quiet gTier1).putOntoBattlefield enterCardId opp (cause := some etbBaseCause)
+  let enteredPerm := gTier2.object! enteredPermId
+  etbRes.applied == #[idSelf, idControl, idCopy, idBack, idOther] &&
+    enteredPerm.controller == some me &&
+    enteredPerm.name == "Back Face Bear" &&
+    enteredPerm.status.transformed &&
+    enteredPerm.status.tapped &&
+    enteredPerm.status.plusOnePlusOne == 2 &&
+    etbRes.cause ==
+      some (.replaced idOther
+        (.replaced idBack
+          (.replaced idCopy
+            (.replaced idControl
+              (.replaced idSelf etbBaseCause))))) &&
+    noUnclassifiedRulesEvents gTier2
+
+/- Phase 7 isolation (CR 616.1e): player-chosen ordering within tier `616.1e`
+(`g.replacementOrder` and `Pending.chooseReplacement` / `Action.chooseReplacement`)
+and APNAP tie-breaking. -/
+#guard
+  let gOrd0 := addPermanent (quiet afterDraw) bear me me
+  let ordBear := (gOrd0.battlefield.filter (·.name == "Event Bear"))[0]!
+  let idAddDmg : ReplacementId := ⟨7201⟩
+  let idMulDmg : ReplacementId := ⟨7202⟩
+  let specAddDmg : ReplacementSpec :=
+    { id := idAddDmg, source := some ordBear.id, controller := some me,
+      affectedPlayer := opp, kind := .addNoncombatDamage ordBear.id 2 }
+  let specMulDmg : ReplacementSpec :=
+    { id := idMulDmg, source := some ordBear.id, controller := some me,
+      affectedPlayer := opp, kind := .multiplyDamage ordBear.id 2 }
+  let gOrd1 :=
+    (gOrd0.createEffect (.replacement specAddDmg true)).createEffect
+      (.replacement specMulDmg true)
+  let gPrompt :=
+    (gOrd1.change (.replacementOrder #[idMulDmg, idAddDmg])).change
+      (.pending (.chooseReplacement opp #[idAddDmg, idMulDmg]))
+  let gAddFirst :=
+    ((quiet gPrompt).apply opp (.chooseReplacement idAddDmg)).toOption.getD gPrompt
+  let gPrompt2 :=
+    (gOrd1.change (.replacementOrder #[idAddDmg, idMulDmg])).change
+      (.pending (.chooseReplacement opp #[idAddDmg, idMulDmg]))
+  let gMulFirst :=
+    ((quiet gPrompt2).apply opp (.chooseReplacement idMulDmg)).toOption.getD gPrompt2
+  let dmgOrdCause : EventCause := .oneShotEffect (some ⟨711⟩) none (some me)
+  let gDmgAddFirst :=
+    (quiet gAddFirst).dealDamageToPlayer opp 3
+      (source := some (gAddFirst.object! ordBear.id)) (cause := some dmgOrdCause)
+  let gDmgMulFirst :=
+    (quiet gMulFirst).dealDamageToPlayer opp 3
+      (source := some (gMulFirst.object! ordBear.id)) (cause := some dmgOrdCause)
+  let idAddLife : ReplacementId := ⟨7301⟩
+  let idMulLife : ReplacementId := ⟨7302⟩
+  let specAddLife : ReplacementSpec :=
+    { id := idAddLife, source := some ordBear.id, controller := some me,
+      affectedPlayer := me, kind := .modifyLifeGain me (add := 2) (mult := 1) }
+  let specMulLife : ReplacementSpec :=
+    { id := idMulLife, source := some ordBear.id, controller := some me,
+      affectedPlayer := me, kind := .modifyLifeGain me (add := 0) (mult := 2) }
+  let gLife0 :=
+    (gOrd0.createEffect (.replacement specAddLife true)).createEffect
+      (.replacement specMulLife true)
+  let lifeCause : EventCause := .oneShotEffect (some ⟨712⟩) none (some me)
+  let gLifeAddFirst :=
+    (quiet (gLife0.change (.replacementOrder #[idAddLife, idMulLife]))).gainLife me 3
+      (cause := some lifeCause)
+  let gLifeMulFirst :=
+    (quiet (gLife0.change (.replacementOrder #[idMulLife, idAddLife]))).gainLife me 3
+      (cause := some lifeCause)
+  let candMe : ReplacementCandidate :=
+    (ReplacementOrPrevention.replacement {
+      id := ⟨7401⟩, affectedPlayer := me, kind := .modifyLifeGain me 1 1 }).toCandidate
+  let candOpp : ReplacementCandidate :=
+    (ReplacementOrPrevention.replacement {
+      id := ⟨7402⟩, affectedPlayer := opp, kind := .modifyLifeGain opp 1 1 }).toCandidate
+  let gActiveMe := gOrd0.change (.activePlayer me)
+  let gActiveOpp := gOrd0.change (.activePlayer opp)
+  gAddFirst.pending == Pending.none &&
+    gAddFirst.replacementOrder == #[idAddDmg, idMulDmg] &&
+    gMulFirst.replacementOrder == #[idMulDmg, idAddDmg] &&
+    (gOrd0.player opp).life - (gDmgAddFirst.player opp).life == 10 &&
+    (gOrd0.player opp).life - (gDmgMulFirst.player opp).life == 8 &&
+    (gLifeAddFirst.player me).life - (gOrd0.player me).life == 10 &&
+    (gLifeMulFirst.player me).life - (gOrd0.player me).life == 8 &&
+    (gActiveMe.selectNextReplacement #[candOpp, candMe] #[]).map (·.id) == some ⟨7401⟩ &&
+    (gActiveOpp.selectNextReplacement #[candOpp, candMe] #[]).map (·.id) == some ⟨7402⟩ &&
+    noUnclassifiedRulesEvents gDmgAddFirst &&
+    noUnclassifiedRulesEvents gDmgMulFirst &&
+    noUnclassifiedRulesEvents gLifeAddFirst &&
+    noUnclassifiedRulesEvents gLifeMulFirst
+
 end Mtg.Engine.EventTests

@@ -97,6 +97,7 @@ def applyAction (g : Game) (p : PlayerId) : Action → Except String Game
   | .supplyOrder ids => g.supplyOrder ids
   | .supplyIndex i => g.supplyIndex i
   | .chooseName name => g.answerFraChoice p (.name name)
+  | .chooseReplacement id => g.chooseReplacement p id
 
 
 /-- Apply an action, then put any resulting triggered abilities on the stack. -/
@@ -161,6 +162,7 @@ def actor (g : Game) : Option PlayerId :=
     | .mayHaveVillainConnive p _ _ => who p
     | .chooseProliferate p _ => who p
     | .fraChoice p _ => who p
+    | .chooseReplacement p _ => who p
     | .mayCastExiledElseDamage p .. => who p
     | .resolveRandom req =>
       match req with

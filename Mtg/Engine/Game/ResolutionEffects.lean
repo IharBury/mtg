@@ -852,31 +852,26 @@ def commitEnteringAttackItems (g : Game)
             for (item, atkTgt) in chosen do
               if let .token ctrl kind tapped _ := item then
                 let rawPrinted := tokenPrinted kind
-                let proposed := GameEvent.created g.turnNumber ctrl {
-                  controller := some ctrl, owner := ctrl, token := true
-                  types := rawPrinted.types
-                  subtypes := CardSubtype.ofSubtypes rawPrinted.subtypes
-                  changeling := rawPrinted.keywords.changeling }
-                let printed :=
-                  if proposed.watches .wouldCreateToken then
-                    g.replaceArtifactTokenWithDragon ctrl rawPrinted
-                  else rawPrinted
-                let extraTreasure :=
-                  if proposed.watches .wouldCreateToken &&
-                      match proposed.change with
-                      | .rules (.zone (.created object _)) => object.hasSubtype .food
-                      | _ => false then
-                    g.foodTreasureReplacements ctrl
-                  else 0
-                let (g', obj) := g.createOneToken ctrl printed (tapped := tapped)
-                  (attacking := atkTgt.isSome) (attackingTarget := atkTgt) (cause := cause)
-                g := g'
-                ids := ids.push obj.id
-                for _ in [0:extraTreasure] do
-                  let (g', _) := g.createOneToken ctrl
-                    (g.replaceArtifactTokenWithDragon ctrl treasureToken) (tapped := tapped)
-                    (cause := cause)
-                  g := g'
+                let doublerIds : Array ReplacementId :=
+                  (g.permanentsOf ctrl).filter (·.printed.tokenDoubling) |>.map
+                    (fun o => ⟨o.id.raw * 1000 + 203⟩)
+                let (batches, _) := g.replaceTokenCreation {
+                  controller := ctrl
+                  printed := rawPrinted
+                  count := 1
+                  tapped := tapped
+                  attacking := atkTgt.isSome
+                  attackingTarget := atkTgt
+                  cause := cause
+                } (applied := doublerIds)
+                for b in batches do
+                  for _ in [0:b.count] do
+                    let (g', obj) := g.createOneToken b.controller b.printed (tapped := b.tapped)
+                      (attacking := b.attacking) (attackingTarget := b.attackingTarget)
+                      (cause := b.cause)
+                    g := g'
+                    if b.attacking == atkTgt.isSome && b.attackingTarget == atkTgt then
+                      ids := ids.push obj.id
             return g.change (.recentTokenIds ids)
         g.logMsg s!"{(g.player controller).name} creates two tapped and attacking Spirit tokens"
     | _ => g

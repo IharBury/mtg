@@ -209,7 +209,7 @@ def resolveTop (g : Game) : Game :=
               obj.sneakAttackTarget.orElse (fun _ => sneakWhom.map AttackTarget.player)
             else none
           let (g, newId) := g.putOntoBattlefield obj.id entry.controller
-            (tapped := sneak || g.entersTapped entry.controller obj.printed)
+            (tapped := sneak)
             (summoningSick := sick)
             (attacking := sneak)
             (attackingWhom := if sneak then sneakWhom else none)

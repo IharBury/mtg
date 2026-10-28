@@ -42,42 +42,6 @@ def dragon55flyingToken : CardDef :=
 def humanSoldierToken : CardDef :=
   creatureToken "Human Soldier" #[.human, .soldier] 1 1 (some .white)
 
-/-- Extra +1/+1 counters from each permanent `o`'s controller controls with
-`.extraPlusOneCounter` (The Golden Gear: "If one or more +1/+1 counters would
-be put on a creature you control, that many plus one +1/+1 counters are put on
-it instead", CR 614.1a). Handles both an object already on the battlefield and a
-candidate `o` about to enter (CR 614.12). -/
-def extraPlusOneOnCreature (g : Game) (o : GameObject) (n : Nat) : Nat :=
-  if n == 0 || !o.isCreature then n
-  else
-    match o.controller with
-    | none => n
-    | some p =>
-      let others := ((g.permanentsOf p).filter (fun x =>
-        x.id != o.id && x.staticAbilities.any (· == .fra .extraPlusOneCounter))).size
-      let self :=
-        if !o.status.faceDown && o.staticAbilities.any (· == .fra .extraPlusOneCounter) then 1
-        else 0
-      n + others + self
-
-/-- `extraCountersOn` extended to account for `entering`'s own
-`.extraCounterOnPermanents` ability when `entering` is not yet in
-`g.permanentsOf` (CR 614.12). -/
-def extraCountersOnEntering (g : Game) (entering : GameObject) (n : Nat)
-    (putter : Option PlayerId := entering.controller) : Nat :=
-  if n == 0 then 0
-  else
-    let base := g.extraCountersOn putter n (host := entering.controller)
-    let selfSamson :=
-      match putter, entering.controller with
-      | some p, some c =>
-        if p == c && !entering.status.faceDown &&
-            !(g.permanentsOf p).any (·.id == entering.id) &&
-            entering.printed.staticAbilities.any (· == .extraCounterOnPermanents) then 1
-        else 0
-      | _, _ => 0
-    base + selfSamson
-
 /-- Additional +1/+1 counters from Arwen, Weaver of Hope as `entering` enters.
 Only weavers already on the battlefield before timestamp `asOf` apply
 (simultaneous enters do not see each other). -/
@@ -107,70 +71,13 @@ effects (CR 614.1c / 614.12 / 306.5b / 714.3a). -/
 def computeEntersWithCounters (g : Game) (entering : GameObject)
     (fromStackTime : Nat := 0) (applyHope : Bool := true)
     (asOf : Nat := g.timestamp) (extraCounters : CounterBag := #[]) : CounterBag :=
-  let loyalty : Nat :=
-    if !entering.status.faceDown && entering.printed.isPlaneswalker then
-      match entering.printed.loyalty with
-      | some n => if n > 0 then g.extraCountersOnEntering entering n.toNat else 0
-      | none => 0
-    else 0
-  let printedPlusOneBase : Nat :=
-    if entering.status.faceDown then 0 else entering.printed.entersWithPlusOneCounters
-  let fromPrintedPlusOne : Nat :=
-    if printedPlusOneBase > 0 then
-      g.extraPlusOneOnCreature entering (g.extraCountersOnEntering entering printedPlusOneBase)
-    else 0
-  let xPlusOneBase : Nat :=
-    if !entering.status.faceDown && entering.staticAbilities.any (· == .entersWithXPlusOne) then
-      entering.chosenX.getD 0
-    else 0
-  let fromXPlusOne : Nat :=
-    if xPlusOneBase > 0 then
-      g.extraPlusOneOnCreature entering (g.extraCountersOnEntering entering xPlusOneBase)
-    else 0
-  let extraPlusOneBase : Nat := extraCounters.count .plusOnePlusOne
-  let fromExtraPlusOne : Nat :=
-    if extraPlusOneBase > 0 then
-      g.extraPlusOneOnCreature entering (g.extraCountersOnEntering entering extraPlusOneBase)
-    else 0
-  let fromWeaver : Nat :=
-    if applyHope then g.hopeCountersOnEnter entering asOf else 0
-  let plusOneTotal := fromPrintedPlusOne + fromXPlusOne + fromExtraPlusOne + fromWeaver
-  let indestructible : Nat :=
-    if !entering.status.faceDown && entering.printed.entersWithIndestructibleCounter then
-      g.extraCountersOnEntering entering 1
-    else 0
-  let shield : Nat :=
-    if !entering.status.faceDown && entering.printed.entersWithShield > 0 then
-      g.extraCountersOnEntering entering entering.printed.entersWithShield
-    else 0
-  let hope : Nat :=
-    if !entering.status.faceDown && entering.printed.entersWithHopePerCreature then
-      match entering.controller with
-      | some p =>
-        let others := ((g.creaturesControlledBy p).filter (·.id != entering.id)).size
-        let self := if entering.isCreature then 1 else 0
-        g.extraCountersOnEntering entering (others + self) (putter := some p)
-      | none => 0
-    else 0
-  let lore : Nat :=
-    if !entering.status.faceDown && entering.printed.saga.isSome then
-      g.extraCountersOnEntering entering 1
-    else 0
-  let bag : CounterBag := #[]
-  let bag := if loyalty > 0 then bag.add .loyalty loyalty else bag
-  let bag := if plusOneTotal > 0 then bag.add .plusOnePlusOne plusOneTotal else bag
-  let bag := if indestructible > 0 then bag.add .indestructible indestructible else bag
-  let bag := if shield > 0 then bag.add .shield shield else bag
-  let bag := if hope > 0 then bag.add .hope hope else bag
-  let bag := if fromStackTime > 0 then bag.add .time fromStackTime else bag
-  let bag := if lore > 0 then bag.add .lore lore else bag
-  extraCounters.foldl (fun acc (k, n) =>
-    if k == .plusOnePlusOne || n == 0 then acc
-    else acc.add k (g.extraCountersOnEntering entering n)) bag
+  (g.applyEtbReplacements entering (fromStackTime := fromStackTime)
+    (applyHope := applyHope) (asOf := asOf) (extraCounters := extraCounters)).entersWith
 
-/-- Create one token without replacement effects (CR 111.2 / 608.2c). Callers
-that must let enters-the-battlefield triggers see the token (amass, recruit)
-invoke `afterPermanentEnters` after this returns. -/
+/-- Create one token on the battlefield, running the CR 616.1a–g ETB replacement
+loop for the entering token (CR 111.2 / 608.2c / 614.1c). Callers that must let
+enters-the-battlefield triggers see the token (amass, recruit) invoke
+`afterPermanentEnters` after this returns. -/
 def createOneToken (g : Game) (controller : PlayerId) (printed : CardDef)
     (tapped := false) (attacking := false)
     (attackingWhom : Option PlayerId := none)
@@ -188,7 +95,6 @@ def createOneToken (g : Game) (controller : PlayerId) (printed : CardDef)
       let asOf := g.timestamp
       let newId : ObjectId := ⟨g.nextObjectId⟩
       let ts := g.timestamp + 1
-      let entersTapped := tapped || g.entersTapped controller printed
       let isAttacking := attacking || attackingTarget.isSome
       let resolvedAttackTarget : Option AttackTarget :=
         if isAttacking then
@@ -202,65 +108,170 @@ def createOneToken (g : Game) (controller : PlayerId) (printed : CardDef)
         defaultController := some controller
         zone := .battlefield
         status := {
-          tapped := entersTapped
+          tapped := tapped
           summoningSick := sick
           attacking := isAttacking
           attackingTarget := resolvedAttackTarget
         }
         timestamp := ts
       }
-      let entersWith := g.computeEntersWithCounters baseObj (asOf := asOf) (extraCounters := extraCounters)
-      let status :=
-        { (baseObj.status.withCounterBag entersWith) with
-          gotPlusOneThisTurn := entersWith.count .plusOnePlusOne > 0 }
-      let obj := { baseObj with status := status }
-      let g := g.record (GameEvent.created g.turnNumber controller (g.snapshot obj) (cause := cause))
+      let etb :=
+        g.applyEtbReplacements baseObj (asOf := asOf) (extraCounters := extraCounters)
+          (cause := cause)
+      let obj := etb.candidate
+      let g := g.record (GameEvent.created g.turnNumber controller (g.snapshot obj) (cause := etb.cause))
       let g := g.changeObject newId (.enterProcessed true)
       let g : Game :=
         match resolvedAttackTarget with
         | some tgt =>
           g.record (GameEvent.becameAttacking g.turnNumber (g.object! newId).asEvent tgt
-            (cause := cause))
+            (cause := etb.cause))
         | none => g
       let g := g.createPrintedStaticEffects (g.object! newId)
       let g := g.logMsg s!"{(g.player controller).name} creates {obj.nameWithToken}"
-      let weaverBonus := g.hopeCountersOnEnter baseObj asOf
       let g :=
-        if weaverBonus > 0 then
-          g.logMsg s!"{obj.nameWithToken} enters with {weaverBonus} additional +1/+1 counter(s)"
+        if etb.weaverBonus > 0 then
+          g.logMsg s!"{obj.nameWithToken} enters with {etb.weaverBonus} additional +1/+1 counter(s)"
         else g
       -- Storied is not a trigger; an artifact token can be the third permanent.
       let g := g.refreshEnduringStory
       let g := g.refreshCitysBlessing
       (g, g.object! newId)
 
-/-- How many times a token-creating event is replaced (`2^n` for `n`
-token-doublers such as Bard, King of Dale). -/
-def tokenCreateMultiplier (g : Game) (controller : PlayerId) : Nat :=
-  let n := (g.permanentsOf controller).filter (fun o => o.printed.tokenDoubling) |>.size
-  Nat.pow 2 n
+/-- One batch of identical tokens in a proposed token-creation event, tracked
+through the CR 616.1 replacement loop. -/
+structure ProposedTokenBatch where
+  controller : PlayerId
+  printed : CardDef
+  count : Nat := 1
+  tapped : Bool := false
+  attacking : Bool := false
+  attackingWhom : Option PlayerId := none
+  attackingTarget : Option AttackTarget := none
+  extraCounters : CounterBag := #[]
+  cause : Option EventCause := none
+deriving Repr, Inhabited, BEq
 
-/-- Extra Treasures created alongside each Food (Bilbo, Fellow Conspirator). -/
-def foodTreasureReplacements (g : Game) (controller : PlayerId) : Nat :=
-  (g.permanentsOf controller).filter (fun o => o.printed.foodAlsoCreatesTreasure) |>.size
+/-- True if a proposed token creation of `printed` under `controller` watches
+`.wouldCreateToken`. -/
+private def tokenBatchWatchesCreation (g : Game) (controller : PlayerId) (printed : CardDef) : Bool :=
+  let proposed := GameEvent.created g.turnNumber controller {
+    controller := some controller, owner := controller, token := true
+    types := printed.types
+    subtypes := CardSubtype.ofSubtypes printed.subtypes
+    changeling := printed.keywords.changeling }
+  proposed.watches .wouldCreateToken
 
-/-- Draconic Visitor: artifact tokens that would be created under
-`controller`'s control are 5/5 red Dragons with flying instead. Only the
-characteristics change; tapped and other instructions still apply, and the
-token's characteristics as created decide whether it applies (rulings
-780–782). -/
-def replaceArtifactTokenWithDragon (g : Game) (controller : PlayerId)
-    (printed : CardDef) : CardDef :=
-  if printed.isArtifact &&
-      (g.permanentsOf controller).any (fun o =>
-        o.staticAbilities.any (fun
-          | .artifactTokensBecomeDragons => true
-          | _ => false)) then
-    dragon55flyingToken
-  else printed
+/-- True if `printed` is a Food token as created. -/
+private def tokenBatchIsFood (printed : CardDef) : Bool :=
+  printed.keywords.changeling || (CardSubtype.ofSubtypes printed.subtypes).contains .food
 
-/-- Create a token under `controller`, applying token-doubling and
-Food-and-Treasure replacement effects. -/
+/-- Run the CR 616.1 replacement loop on a proposed token-creation batch
+(CR 614.1a / 614.5 / 614.6 / 616.1). Handles:
+- Bilbo, Fellow Conspirator (`foodAlsoCreatesTreasure` / `.createExtraTokenWithFood`)
+- Draconic Visitor (`artifactTokensBecomeDragons` / `.artifactTokensBecome`, rulings 780–782)
+- Bard, King of Dale (`tokenDoubling` / `.multiplyTokenCreation`, rulings 180 / 190)
+- Active `ContinuousEffect.replacement` specs for token creation. -/
+def replaceTokenCreation (g : Game) (initial : ProposedTokenBatch)
+    (applied : Array ReplacementId := #[]) : Array ProposedTokenBatch × Array ReplacementId := Id.run do
+  if initial.count == 0 then
+    return (#[], applied)
+  let mut batches : Array ProposedTokenBatch := #[initial]
+  let mut curApplied := applied
+  let mut fuel := 32
+  while fuel > 0 do
+    fuel := fuel - 1
+    let ctrl := initial.controller
+    let anyWatch := batches.any (fun b => g.tokenBatchWatchesCreation b.controller b.printed)
+    if !anyWatch then
+      fuel := 0
+    else
+      let hasFood := batches.any (fun b => tokenBatchIsFood b.printed)
+      let hasArtifact := batches.any (fun b => b.printed.isArtifact)
+      let mut specs : Array ReplacementSpec := #[]
+      if hasFood then
+        for o in g.permanentsOf ctrl do
+          if o.printed.foodAlsoCreatesTreasure then
+            specs := specs.push {
+              id := ⟨o.id.raw * 1000 + 201⟩
+              source := some o.id
+              controller := some ctrl
+              affectedPlayer := ctrl
+              kind := .createExtraTokenWithFood ctrl treasureToken
+            }
+      if hasArtifact then
+        for o in g.permanentsOf ctrl do
+          if o.staticAbilities.any (· == .artifactTokensBecomeDragons) then
+            specs := specs.push {
+              id := ⟨o.id.raw * 1000 + 202⟩
+              source := some o.id
+              controller := some ctrl
+              affectedPlayer := ctrl
+              kind := .artifactTokensBecome ctrl dragon55flyingToken
+            }
+      for o in g.permanentsOf ctrl do
+        if o.printed.tokenDoubling then
+          specs := specs.push {
+            id := ⟨o.id.raw * 1000 + 203⟩
+            source := some o.id
+            controller := some ctrl
+            affectedPlayer := ctrl
+            kind := .multiplyTokenCreation ctrl 2
+          }
+      for (_, eff) in g.activeEffects do
+        match eff with
+        | .replacement spec _ =>
+          match spec.kind with
+          | .createExtraTokenWithFood p _ =>
+            if p == ctrl && hasFood then specs := specs.push spec
+          | .artifactTokensBecome p _ =>
+            if p == ctrl && hasArtifact then specs := specs.push spec
+          | .multiplyTokenCreation p _ =>
+            if p == ctrl then specs := specs.push spec
+          | _ => pure ()
+        | _ => pure ()
+      let candidates := specs.map (fun s => (ReplacementOrPrevention.replacement s).toCandidate)
+      match g.selectNextReplacement candidates curApplied with
+      | none => fuel := 0
+      | some chosen =>
+        match specs.find? (fun s => s.id == chosen.id) with
+        | none => fuel := 0
+        | some spec =>
+          curApplied := curApplied.push chosen.id
+          match spec.kind with
+          | .createExtraTokenWithFood _ extraCard =>
+            let foodCount := batches.foldl (fun acc b =>
+              if tokenBatchIsFood b.printed then acc + b.count else acc) 0
+            batches := batches.map (fun b =>
+              if tokenBatchIsFood b.printed then
+                { b with cause := g.wrapReplacedCause chosen.id b.cause (some ctrl) }
+              else b)
+            if foodCount > 0 then
+              let baseCause := batches[0]!.cause
+              batches := batches.push {
+                controller := ctrl
+                printed := extraCard
+                count := foodCount
+                tapped := initial.tapped
+                cause := baseCause
+              }
+          | .artifactTokensBecome _ newCard =>
+            batches := batches.map (fun b =>
+              if b.printed.isArtifact then
+                { b with
+                  printed := newCard
+                  cause := g.wrapReplacedCause chosen.id b.cause (some ctrl) }
+              else b)
+          | .multiplyTokenCreation _ factor =>
+            batches := batches.map (fun b =>
+              { b with
+                count := b.count * factor
+                cause := g.wrapReplacedCause chosen.id b.cause (some ctrl) })
+          | _ => pure ()
+  return (batches, curApplied)
+
+/-- Create a token under `controller`, running the CR 616.1 token-creation
+replacement loop (Food/Treasure, Draconic Visitor, token-doubling). -/
 def createToken (g : Game) (controller : PlayerId) (printed : CardDef)
     (tapped := false) (_batch := false) (attacking := false)
     (attackingWhom : Option PlayerId := none)
@@ -273,38 +284,32 @@ def createToken (g : Game) (controller : PlayerId) (printed : CardDef)
       (attackingTarget := attackingTarget)
       (extraCounters := extraCounters) (cause := cause)
   else
-    let proposed := GameEvent.created g.turnNumber controller {
-      controller := some controller, owner := controller, token := true
-      types := printed.types
-      subtypes := CardSubtype.ofSubtypes printed.subtypes, changeling := printed.keywords.changeling }
-    let printed :=
-      if proposed.watches .wouldCreateToken then
-        g.replaceArtifactTokenWithDragon controller printed
-      else printed
-    let copies :=
-      if proposed.watches .wouldCreateToken then g.tokenCreateMultiplier controller else 1
-    let extraTreasure :=
-      if proposed.watches .wouldCreateToken &&
-          match proposed.change with
-          | .rules (.zone (.created object _)) => object.hasSubtype .food
-          | _ => false then
-        g.foodTreasureReplacements controller
-      else 0
+    let (batches, _) := g.replaceTokenCreation {
+      controller := controller
+      printed := printed
+      count := 1
+      tapped := tapped
+      attacking := attacking
+      attackingWhom := attackingWhom
+      attackingTarget := attackingTarget
+      extraCounters := extraCounters
+      cause := cause
+    }
     g.withBatchReturn cause fun g => Id.run do
       let mut g := g
       let mut last : Option GameObject := none
-      for _ in [0:copies] do
-        let (g', obj) := g.createOneToken controller printed (tapped := tapped)
-          (attacking := attacking) (attackingWhom := attackingWhom)
-          (attackingTarget := attackingTarget)
-          (extraCounters := extraCounters) (cause := cause)
-        g := g'
-        last := some obj
-      for _ in [0:copies * extraTreasure] do
-        let (g', _) := g.createOneToken controller
-          (g.replaceArtifactTokenWithDragon controller treasureToken) (tapped := tapped)
-          (cause := cause)
-        g := g'
+      for b in batches do
+        for _ in [0:b.count] do
+          let (g', obj) := g.createOneToken b.controller b.printed (tapped := b.tapped)
+            (attacking := b.attacking) (attackingWhom := b.attackingWhom)
+            (attackingTarget := b.attackingTarget)
+            (extraCounters := b.extraCounters) (cause := b.cause)
+          g := g'
+          if b.attacking == attacking && b.attackingTarget == attackingTarget &&
+              b.extraCounters == extraCounters then
+            last := some obj
+          else if last.isNone then
+            last := some obj
       match last with
       | some obj => (g, g.object! obj.id)
       | none => (g, g.object! ⟨0⟩)

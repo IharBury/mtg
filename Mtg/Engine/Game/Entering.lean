@@ -158,14 +158,17 @@ triggers are evaluated from the recorded event batch in `matchTriggers`. -/
 def addPlusOnePlusOneTo (g : Game) (o : GameObject) (n : Nat := 1)
     (entersWith := false) (byPlayer : Option PlayerId := none)
     (cause : Option EventCause := none) : Game :=
-  let n := g.countersYouPut o n (putter := byPlayer) (entersWith := entersWith)
   let putter0 := byPlayer.orElse (fun _ => g.counterPutter o.controller)
   let proposed :=
     GameEvent.counters g.turnNumber putter0 o.asEvent .plusOnePlusOne n (cause := cause)
-  let n :=
-    if proposed.watches .wouldPutCounter then g.extraPlusOneOnCreature o n else n
+  let (n, _, cause') :=
+    if proposed.watches .wouldPutCounter then
+      g.replaceCountersPut o .plusOnePlusOne n (putter := byPlayer)
+        (entersWith := entersWith) (cause := cause)
+    else
+      (g.countersYouPut o n (putter := byPlayer) (entersWith := entersWith), #[], cause)
   let happened := GameEvent.counters g.turnNumber putter0 (g.object! o.id).asEvent .plusOnePlusOne n
-    (cause := cause)
+    (cause := cause')
   let g := if n > 0 && !entersWith then g.record happened else g
   let phrase :=
     if entersWith then s!"{o.name} enters with {plusOnePlusOneCountersPhrase n}"
@@ -193,7 +196,9 @@ def enterWithPlusOnes (g : Game) (o : GameObject) : Game :=
     let base := o.printed.entersWithPlusOneCounters
     if base == 0 || o.status.plusOnePlusOne == 0 then g
     else
-      let n := g.extraPlusOneOnCreature o (g.extraCountersOnEntering o base)
+      let (n, _, _) :=
+        g.replaceCountersPut o .plusOnePlusOne base (putter := o.controller)
+          (entersWith := true) (entering := some o)
       if n == 0 then g
       else g.logMsg s!"{o.name} enters with {n} +1/+1 counter(s)"
 
@@ -216,7 +221,9 @@ def enterWithXPlusOnes (g : Game) (o : GameObject) : Game :=
   if !o.status.faceDown && o.staticAbilities.any (fun
       | .entersWithXPlusOne => true
       | _ => false) && o.status.plusOnePlusOne > 0 then
-    let n := g.extraPlusOneOnCreature o (g.extraCountersOnEntering o (o.chosenX.getD 0))
+    let (n, _, _) :=
+      g.replaceCountersPut o .plusOnePlusOne (o.chosenX.getD 0) (putter := o.controller)
+        (entersWith := true) (entering := some o)
     if n == 0 then g
     else g.logMsg s!"{o.name} enters with {n} +1/+1 counter(s)"
   else g

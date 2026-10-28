@@ -1157,7 +1157,7 @@ def spiderPrevent : Game :=
 
 #guard
   (namedPermanent spiderPrevent "Gray Ogre").status.preventDamageGrantedBy.size == 1 &&
-    spiderPrevent.sourceDamagePrevented (namedPermanent spiderPrevent "Gray Ogre")
+    (spiderPrevent.replaceDamage 1 (src? := some (namedPermanent spiderPrevent "Gray Ogre"))).prevented
 
 def spiderPreventedDamage : Game :=
   spiderPrevent.dealDamageFrom "Gray Ogre"
@@ -1180,7 +1180,7 @@ def spiderLeaves : Game :=
 #guard
   !spiderLeaves.battlefield.any (fun o => o.name == "Old Fat Spider Can't See Me") &&
     !spiderLeaves.hasHexproof (namedPermanent spiderLeaves "Llanowar Elves") &&
-    !spiderLeaves.sourceDamagePrevented (namedPermanent spiderLeaves "Gray Ogre")
+    !(spiderLeaves.replaceDamage 1 (src? := some (namedPermanent spiderLeaves "Gray Ogre"))).prevented
 
 def roadsChapterI : Game :=
   let g := addToLibraryTop (addToLibraryTop afterDraw plains ⟨0⟩) plains ⟨0⟩

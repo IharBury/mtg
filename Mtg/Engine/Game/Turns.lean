@@ -19,6 +19,9 @@ def clearEOT (g : Game) : Game :=
     g := g.expireAll .powerUpsForbiddenThisTurn (cause := cause)
     g := g.expireMatching (fun | .assignCombatDamageEqualToughnessUntilEot _ => true | _ => false)
       (cause := cause)
+    g := g.expireMatching (fun
+      | .replacement _ true | .prevention _ true => true
+      | _ => false) (cause := cause)
     g := g.restoreCopiesUntilEot
     for pl in g.players do
       g := g.expireAll (.legendRuleOffThisTurn pl.id) (cause := cause)
@@ -273,17 +276,19 @@ partial def beginStep (g : Game) (st : Step) : Game :=
               o.staticAbilities.any (· == .fra .doesntUntap) ||
               g.hostCantBecomeUntapped o ||
               g.hostSkipsUntapStep o
-            let untap := GameEvent.untapped g.turnNumber o.asEvent false (cause := some (.turnBased .untapAll))
-            -- CR 122.1d: a stun counter is removed instead of untapping.
-            let stunned := o.status.tapped && !skipUntap && o.status.stun > 0 && untap.watches .wouldUntap
-            if o.status.tapped && !skipUntap && !stunned then do
-              g := g.logMsg s!"{apName} untaps {o.name}"
-              if untap.watches .wouldUntap then
-                g := g.record untap
-            if stunned then do
-              g := g.logMsg s!"A stun counter is removed from {o.name} instead of untapping it"
-              g := g.record (GameEvent.counters g.turnNumber (some ap) o.asEvent .stun 1 true
-                (cause := some (.turnBased .untapAll)))
+            let baseCause := some (EventCause.turnBased .untapAll)
+            let untap := GameEvent.untapped g.turnNumber o.asEvent false (cause := baseCause)
+            -- CR 122.1d: a stun counter is removed instead of untapping via the CR 616.1 loop.
+            if o.status.tapped && !skipUntap then
+              let (stunned, cause') := g.replaceUntap o (cause := baseCause)
+              if stunned then
+                g := g.logMsg s!"A stun counter is removed from {o.name} instead of untapping it"
+                g := g.record (GameEvent.counters g.turnNumber (some ap) o.asEvent .stun 1 true
+                  (cause := cause'))
+              else
+                g := g.logMsg s!"{apName} untaps {o.name}"
+                if untap.watches .wouldUntap then
+                  g := g.record untap
             if o.status.summoningSick then
               g := g.changeStatus o.id (.summoningSick false)
           return g

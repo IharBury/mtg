@@ -681,6 +681,9 @@ inductive Pending where
   | chooseProliferate (player : PlayerId) (remaining : Nat)
   /-- A Reality Fracture choice made while an effect resolves. -/
   | fraChoice (player : PlayerId) (choice : FraChoice)
+  /-- Choose which applicable replacement or prevention effect to apply next
+  (CR 616.1). -/
+  | chooseReplacement (player : PlayerId) (choices : Array ReplacementId)
   /-- A random event must be resolved by supplying its result (`--norandom`). -/
   | resolveRandom (req : RandomRequest)
 deriving DecidableEq, Repr, Inhabited, BEq
