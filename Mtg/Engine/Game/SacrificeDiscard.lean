@@ -114,7 +114,7 @@ def applyConnive (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
       for o in g.permanentsOf controller do
         if o.staticAbilities.any (· == .extraDrawOnConnive) then
           specs := specs.push (
-            { id := ⟨o.id.raw * 1000 + 402⟩
+            { id := { raw := 402, object := some o.id }
               source := some o.id
               controller := some controller
               affectedPlayer := controller

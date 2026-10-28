@@ -197,7 +197,7 @@ def replaceTokenCreationChoice (g : Game) (initial : ProposedTokenBatch)
         for o in g.permanentsOf ctrl do
           if o.printed.foodAlsoCreatesTreasure then
             specs := specs.push {
-              id := ⟨o.id.raw * 1000 + 201⟩
+              id := { raw := 201, object := some o.id }
               source := some o.id
               controller := some ctrl
               affectedPlayer := ctrl
@@ -207,7 +207,7 @@ def replaceTokenCreationChoice (g : Game) (initial : ProposedTokenBatch)
         for o in g.permanentsOf ctrl do
           if o.staticAbilities.any (· == .artifactTokensBecomeDragons) then
             specs := specs.push {
-              id := ⟨o.id.raw * 1000 + 202⟩
+              id := { raw := 202, object := some o.id }
               source := some o.id
               controller := some ctrl
               affectedPlayer := ctrl
@@ -217,7 +217,7 @@ def replaceTokenCreationChoice (g : Game) (initial : ProposedTokenBatch)
         for o in g.permanentsOf ctrl do
           if o.printed.tokenDoubling then
             specs := specs.push {
-              id := ⟨o.id.raw * 1000 + 203⟩
+              id := { raw := 203, object := some o.id }
               source := some o.id
               controller := some ctrl
               affectedPlayer := ctrl

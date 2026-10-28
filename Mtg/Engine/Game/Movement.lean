@@ -168,7 +168,7 @@ def replaceZoneMove (g : Game) (old : GameObject) (beforeSnap : EventObject)
     if proposed.watches .wouldLeaveStack && old.castFromGraveyard &&
         old.printed.flashback.isSome && !old.isCopy && curDest != .exile then
       specs := specs.push (
-        { id := ⟨old.id.raw * 1000 + 301⟩
+        { id := { raw := 301, object := some old.id }
           source := some old.id
           controller := old.controller
           affectedPlayer := affected
@@ -177,7 +177,7 @@ def replaceZoneMove (g : Game) (old : GameObject) (beforeSnap : EventObject)
     if proposed.watches .wouldEnterGraveyardFromStack && old.exileInstantSorceryInstead &&
         !old.isCopy then
       specs := specs.push (
-        { id := ⟨old.id.raw * 1000 + 302⟩
+        { id := { raw := 302, object := some old.id }
           source := some old.id
           controller := old.controller
           affectedPlayer := affected
@@ -185,7 +185,7 @@ def replaceZoneMove (g : Game) (old : GameObject) (beforeSnap : EventObject)
     -- Until-EOT exile-if-dies replacement (Smite, etc.).
     if proposed.watches .wouldEnterGraveyardFromBattlefield && old.status.untilEotExileIfDies then
       specs := specs.push (
-        { id := ⟨old.id.raw * 1000 + 303⟩
+        { id := { raw := 303, object := some old.id }
           source := some old.id
           controller := old.controller
           affectedPlayer := affected
@@ -193,7 +193,7 @@ def replaceZoneMove (g : Game) (old : GameObject) (beforeSnap : EventObject)
     -- Finality counter replacement (CR 122.1h).
     if proposed.watches .wouldEnterGraveyardFromBattlefield && old.status.finality > 0 then
       specs := specs.push (
-        { id := ⟨old.id.raw * 1000 + 304⟩
+        { id := { raw := 304, object := some old.id }
           source := some old.id
           controller := old.controller
           affectedPlayer := affected
@@ -206,7 +206,7 @@ def replaceZoneMove (g : Game) (old : GameObject) (beforeSnap : EventObject)
           | some p, some q =>
             if p != q then
               specs := specs.push (
-                { id := ⟨src.id.raw * 1000 + 305⟩
+                { id := { raw := 305, object := some src.id }
                   source := some src.id
                   controller := some p
                   affectedPlayer := affected

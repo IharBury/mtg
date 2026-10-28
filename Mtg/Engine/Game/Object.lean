@@ -440,6 +440,10 @@ deriving DecidableEq, Repr, Inhabited, BEq
 /-- Identifier for a replacement or prevention effect (CR 614 / 615). -/
 structure ReplacementId where
   raw : Nat
+  object : Option ObjectId := none
+  grantor : Option ObjectId := none
+  player : Option PlayerId := none
+  counterKind : Option CounterKind := none
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- Every rules event carries the CR mechanism that caused it (CR 603.2, 610.1,
