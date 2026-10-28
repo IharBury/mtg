@@ -936,7 +936,10 @@ def Game.commitBatch (g : Game) (cause : EventCause) (events : Array RulesEvent)
   or `g1.pendingReplacement.isSome`, `finishOpenBatch batchId startIdx`
   (`Core.lean`) reconstructs `pre : GameSnapshot` from those fields and
   `g.events[0:startIdx]`, clears `currentBatch := none` and `openBatch*`, and
-  calls `closeBatch pre batchId batchEvents`; otherwise `currentBatch` stays open
+  calls `closeBatch pre batchId batchEvents` when the filtered `.rules` slice
+  for `batchId` is non-empty (`if batchEvents.isEmpty then g2 else g2.closeBatch pre batchId batchEvents`,
+  so a batch that finishes with no rules events still clears `currentBatch` and
+  `openBatch*` without running `matchTriggers`); otherwise `currentBatch` stays open
   and `PendingReplacement.closeBatch batchId startIdx` is appended via
   `chainPendingReplacement` so `finishOpenBatch` runs once after all paused
   replacement and as-enters choices in the batch finish. Likewise, in Phase 7
@@ -1107,10 +1110,12 @@ Closing an outermost batch (`finishOpenBatch` in `Core.lean`—called by the
 outermost arm of `withBatchReturn`, which `withBatch`, `commitBatchWithCauses`,
 and `commitBatch` delegate to, by the closer returned from the outermost arm of
 `openBatch` in `Pumps.lean` when the body does not pause, and by
-`Decisions.resumePendingReplacement` on `PendingReplacement.closeBatch`—plus
-`applyEvent` in `Core.lean` for standalone `.rules` events when `currentBatch`
-is `none`, which snapshots `pre := g`, sets and clears `currentBatch` locally
-without touching `openBatch*`, and calls `closeBatch` directly) calls
+`Decisions.resumePendingReplacement` on `PendingReplacement.closeBatch`,
+clearing `currentBatch` and `openBatch*` and calling `closeBatch` when the
+filtered `.rules` slice for `batchId` is non-empty—plus `applyEvent` in
+`Core.lean` for standalone `.rules` events when `currentBatch` is `none`, which
+snapshots `pre := g`, sets and clears `currentBatch` locally without touching
+`openBatch*`, and calls `closeBatch` directly on that one rules event) calls
 `closeBatch g pre batchId batchEvents`
 (`Core.lean`, where `abbrev GameSnapshot := Game`), which refreshes
 `enduringStory` and `citysBlessing` on `g` when any event in `batchEvents` is a
@@ -1873,11 +1878,14 @@ termination, 614.6 non-occurrence, and the 616.1a–e and 616.1e choice/APNAP or
    `retainsPrintedAbilities` from `BasePT.lean`, `StatBonuses.lean`,
    `PowerToughness.lean`, and `Keywords.lean`, and where the Phase 7 616.1
    replacement/prevention loops that read layer characteristics and static
-   abilities—`applyEtbReplacements` for Arwen's toughness and `isCreature` and
+   abilities—`applyEtbReplacements` for Arwen's `toughness` and `isCreature` and
    `replaceCountersPutChoice` including `entering` per 614.12 in `Core.lean`,
-   `replaceTokenCreationChoice` / `replaceTokenCreation` in `Tokens.lean`, and
-   `replaceDamage` for `g.power` on Hawkeye and static abilities in
-   `Damage.lean`—switch to the evaluated layer results); switch `Game.snapshot`
+   and `replaceDamage` for `g.power` on Hawkeye plus its `staticAbilities`
+   checks in `Damage.lean`, along with `replaceTokenCreationChoice`'s
+   `o.staticAbilities` check for `.artifactTokensBecomeDragons` in
+   `Tokens.lean` while `CardDef` flags such as `foodAlsoCreatesTreasure` and
+   `tokenDoubling` stay candidate sources—switch to the evaluated layer
+   results); switch `Game.snapshot`
    to the layer results.
 3. Replace the ad-hoc 603.7 delayed-trigger fields (`Player.eaglesBirdsNextUpkeep`,
    `Game.eaglesBirdsCauses`, `Player.attackPumpPerPlainsThisTurn` together with its
@@ -1931,11 +1939,19 @@ termination, 614.6 non-occurrence, and the 616.1a–e and 616.1e choice/APNAP or
    LKI fields on `EventObject`: `returnedAsArtifact`, `onlyFoodArtifact`,
    `wasCast`, `lastKnownPower`, and `lastKnownToughness`; also fold
    `ProposedTokenBatch.attackingWhom` in `Event.lean` and the `attackingWhom`
-   parameter on `Tokens.createOneToken` / `Tokens.createToken` /
-   `Tokens.createKindTokens` into `attackingTarget : Option AttackTarget`, the
-   way `PendingReplacement.createToken` already folds
-   `attackingTarget.orElse (attackingWhom.map AttackTarget.player)` and Phase 5
-   folded `Status.attackingWhom` into `Status.attackingTarget`), consolidate the 23
+   parameter on `Tokens.createOneToken` / `Tokens.createToken`—where
+   `Tokens.createKindTokens` passes a local `dest := some g.defendingPlayer` into
+   `createToken (attackingWhom := dest)` when `isAttacking && attackingTarget.isNone`
+   and `Tokens.createTokenBatches` forwards `b.attackingWhom` into
+   `createOneToken`—plus `Movement.move` / `Movement.putOntoBattlefield` and
+   `TriggeredAbilities.returnFromGyTappedAttackingFinality` into
+   `attackingTarget : Option AttackTarget`, keeping the defending-player default
+   `some (attackingTarget.getD (.player g.defendingPlayer))` when `isAttacking`
+   on the `createOneToken` and `Game.move` paths while `Tokens.createToken`'s
+   pause path and `returnFromGyTappedAttackingFinality` already fold
+   `attackingTarget.orElse (fun _ => attackingWhom.map AttackTarget.player)`
+   before building the pending choice, matching how Phase 5 folded
+   `Status.attackingWhom` into `Status.attackingTarget`), consolidate the 23
    stored counter fields on `Status` (including `Status.poison`; player poison
    stays on `Player.poison`) into `counters : CounterBag` (with computed
    projection helpers `Status.plusOnePlusOne`, `Status.loyaltyCounters`, etc.),
