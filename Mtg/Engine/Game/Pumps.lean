@@ -141,7 +141,7 @@ def replaceUntap (g : Game) (o : GameObject)
     | none =>
       (false, cause)
 
-/-- Timestamp-ordered maximum hand size (MSH 184 / 376). `10000` is "no maximum". -/
+/-- Timestamp-ordered maximum hand size (MSH 184 / 376). `none` is "no maximum". -/
 def grantsNoMaxHandSize (o : GameObject) : Bool :=
   o.printed.staticAbilities.any (fun
     | .noMaximumHandSize => true
@@ -153,14 +153,14 @@ def grantsMaxHandSizeTen (o : GameObject) : Bool :=
     | .maximumHandSize _ => false
     | _ => false)
 
-def effectiveMaxHandSize (g : Game) (p : PlayerId) : Nat :=
+def effectiveMaxHandSize (g : Game) (p : PlayerId) : Option Nat :=
   let effects :=
     ((g.permanentsOf p).filter (fun o =>
       grantsNoMaxHandSize o || grantsMaxHandSizeTen o)).qsort
       (fun a b => decide (a.timestamp < b.timestamp))
   effects.foldl (fun acc o =>
-    if grantsMaxHandSizeTen o then 10
-    else if grantsNoMaxHandSize o then 10000
+    if grantsMaxHandSizeTen o then some 10
+    else if grantsNoMaxHandSize o then none
     else acc) (g.player p).maxHandSize
 
 /-- Reduce generic mana in `cost` by `n` (improvise taps artifacts for {1}). -/

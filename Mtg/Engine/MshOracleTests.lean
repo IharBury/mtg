@@ -1488,10 +1488,10 @@ def maxHandSizeCleanupOnlyOk : Bool :=
   let gBoth := addPermanent gTen msMarvelKamalaKhan ⟨0⟩ ⟨0⟩
   let gRev := addPermanent (addPermanent afterDraw msMarvelKamalaKhan ⟨0⟩ ⟨0⟩)
     theTenRings ⟨0⟩ ⟨0⟩
-  gTen.effectiveMaxHandSize ⟨0⟩ == 10 &&
-    gMarvel.effectiveMaxHandSize ⟨0⟩ == 10000 &&
-    gBoth.effectiveMaxHandSize ⟨0⟩ == 10000 &&
-    gRev.effectiveMaxHandSize ⟨0⟩ == 10 &&
+  gTen.effectiveMaxHandSize ⟨0⟩ == some 10 &&
+    gMarvel.effectiveMaxHandSize ⟨0⟩ == none &&
+    gBoth.effectiveMaxHandSize ⟨0⟩ == none &&
+    gRev.effectiveMaxHandSize ⟨0⟩ == some 10 &&
     (let g := addToHand afterDraw grizzlyBears ⟨0⟩
      let g := addToHand g grayOgre ⟨0⟩
      let g := addToHand g lightningBolt ⟨0⟩
