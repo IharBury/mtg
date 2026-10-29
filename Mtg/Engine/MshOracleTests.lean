@@ -3098,7 +3098,12 @@ def evilsThrallDurationOk : Bool :=
     !held.status.tapped && g.hasHaste held &&
     (let g := g.clearEOT
      (namedPermanent g "Grizzly Bears").controller == some ⟨0⟩ &&
-       g.controlTurnEndsLeft (namedPermanent g "Grizzly Bears") == 1) &&
+       g.controlTurnEndsLeft (namedPermanent g "Grizzly Bears") == 2 &&
+       (let g := g.record (GameEvent.turnBegan (g.turnNumber + 1) ⟨0⟩)
+        g.controlTurnEndsLeft (namedPermanent g "Grizzly Bears") == 1 &&
+          (let g := g.clearEOT
+           (namedPermanent g "Grizzly Bears").controller == some ⟨1⟩ &&
+             g.controlTurnEndsLeft (namedPermanent g "Grizzly Bears") == 0))) &&
     (let short := addPermanent afterDraw hillGiant ⟨1⟩ ⟨1⟩
      let short := short.applyEvilsThrall ⟨0⟩ #[Target.permanent (namedPermanent short "Hill Giant").id]
      short.controlUntilEot (namedPermanent short "Hill Giant") &&

@@ -11,8 +11,29 @@ the next turn, `beginStep`, and step advancement.
 namespace Mtg.Engine
 namespace Game
 
+/-- Expire play-from-exile permissions as `endingPlayer`'s turn ends (CR 611.2). -/
+def expirePlayPermissions (g : Game) (endingPlayer : PlayerId)
+    (cause : Option EventCause := some (.turnBased .cleanupClear)) : Game :=
+  g.activeEffects.foldl (fun g (eid, e) =>
+    match e with
+    | .permission p (.playFromExile oid perm) d =>
+      if perm.fromAdventure || perm.whileExiled || p != endingPlayer then g
+      else
+        let expires :=
+          d == .untilEndOfTurn ||
+          (d == .untilEndOfNextTurnOf endingPlayer &&
+            (g.hasTurnBegunSince eid endingPlayer || cause == some (.turnBased .expireAtStepBegin)))
+        if expires then
+          let g := g.expireEffectById eid (cause := cause)
+          match g.findObject? oid with
+          | some o =>
+            if o.zone == .exile then g.logMsg s!"{o.name} can no longer be played from exile"
+            else g
+          | none => g
+        else g
+    | _ => g) g
+
 def clearEOT (g : Game) : Game :=
-  let g0 := g
   let cause := some (EventCause.turnBased .cleanupClear)
   Id.run do
     let mut g := g
@@ -31,13 +52,14 @@ def clearEOT (g : Game) : Game :=
     let effs := g.activeEffects
     for (eid, e) in effs do
       match e with
-      | .layered (.objects #[oid]) (.control c) d =>
+      | .layered (.objects #[oid]) (.control _) d =>
         if d == .untilEndOfTurn then
           g := g.endControlEffect oid eid (cause := cause)
-        else if d == .untilEndOfNextTurnOf g.activePlayer && c == g.activePlayer &&
-            g0.hasTurnBegunSince eid g.activePlayer then
+        else if d == .untilEndOfNextTurnOf g.activePlayer &&
+            g.hasTurnBegunSince eid g.activePlayer then
           g := g.endControlEffect oid eid (cause := cause)
       | _ => pure ()
+    g := g.expirePlayPermissions g.activePlayer (cause := cause)
     for o in g.battlefield do
       -- Ending a control effect can exile the permanent (CR 800.4c).
       match g.findObject? o.id with
@@ -111,28 +133,6 @@ def clearTurnActivations (g : Game) : Game :=
       g := g.change (.delayedTriggers keepDt)
     return g
 
-/-- Expire play-from-exile permissions as `endingPlayer`'s turn ends (CR 611.2). -/
-def expirePlayPermissions (g : Game) (endingPlayer : PlayerId)
-    (cause : Option EventCause := some (.turnBased .cleanupClear)) : Game :=
-  g.activeEffects.foldl (fun g (eid, e) =>
-    match e with
-    | .permission p (.playFromExile oid perm) d =>
-      if perm.fromAdventure || perm.whileExiled || p != endingPlayer then g
-      else
-        let expires :=
-          d == .untilEndOfTurn ||
-          (d == .untilEndOfNextTurnOf endingPlayer &&
-            (g.hasTurnBegunSince eid endingPlayer || cause == some (.turnBased .expireAtStepBegin)))
-        if expires then
-          let g := g.expireEffectById eid (cause := cause)
-          match g.findObject? oid with
-          | some o =>
-            if o.zone == .exile then g.logMsg s!"{o.name} can no longer be played from exile"
-            else g
-          | none => g
-        else g
-    | _ => g) g
-
 /-- End goad designations placed by `p` as `p`'s next turn begins (CR 701.15a). -/
 def expireGoadedFor (g : Game) (p : PlayerId) : Game :=
   g.battlefield.foldl (fun g o =>
@@ -186,19 +186,50 @@ def startNextTurn (g : Game) : Game :=
   let g := g.record (GameEvent.turnEnded g.turnNumber ending)
   Id.run do
     let mut g := g
+    let dropLost (stk : Array (PlayerId × EventCause)) (lost : Array PlayerId) :
+        Array (PlayerId × EventCause) :=
+      (stk.toList.dropWhile (fun (p, _) => lost.contains p)).toArray
+    let updateLost (lost : Array PlayerId) (p : PlayerId) (isLost : Bool) : Array PlayerId :=
+      if isLost then (if lost.contains p then lost else lost.push p)
+      else lost.filter (· != p)
+    let (stk, _) := g.events.foldl
+      (fun ((stk, lost) : Array (PlayerId × EventCause) × Array PlayerId) e =>
+        match e.change with
+        | .rules (.player (.lost p _)) | .rules (.player (.leftGame p)) =>
+          (stk, updateLost lost p true)
+        | .engine (.player p (.lost v)) =>
+          (stk, updateLost lost p v)
+        | .engine (.playerChanges p cs) =>
+          let lost := cs.foldl (fun acc c =>
+            match c with | .lost v => updateLost acc p v | _ => acc) lost
+          (stk, lost)
+        | .engine (.setPlayer pl) =>
+          (stk, updateLost lost pl.id pl.lost)
+        | .engine (.players pls) =>
+          (stk, pls.foldl (fun acc pl => updateLost acc pl.id pl.lost) #[])
+        | .rules (.turn (.extraTurnAdded p _)) =>
+          (#[(p, e.cause)] ++ stk, lost)
+        | .rules (.turn (.turnBegan p true)) =>
+          let trimmed := dropLost stk lost
+          let next :=
+            match trimmed.findIdx? (fun (q, _) => q == p) with
+            | some idx => trimmed.extract (idx + 1) trimmed.size
+            | none => trimmed.extract 1 trimmed.size
+          (next, lost)
+        | .rules (.turn (.turnBegan _ false)) =>
+          (dropLost stk lost, lost)
+        | _ => (stk, lost))
+      (#[], #[])
+    let mut pendingExtraCauses := stk.map Prod.snd
     let extraN := g.extraTurns.size
     for _ in [0:extraN] do
       if !g.extraTurns.isEmpty && (g.player g.extraTurns[0]!).lost then
         let q := g.extraTurns[0]!
         g := g.expireUntilNextTurnEffects q
         g := { g with extraTurns := g.extraTurns.extract 1 g.extraTurns.size }
+        pendingExtraCauses := pendingExtraCauses.extract 1 pendingExtraCauses.size
     match g.extraTurns[0]? with
     | some q =>
-      let pendingExtraCauses := g.events.foldl (fun (stk : Array EventCause) e =>
-        match e.change with
-        | .rules (.turn (.extraTurnAdded _)) => #[e.cause] ++ stk
-        | .rules (.turn (.turnBegan _ true)) => stk.extract 1 stk.size
-        | _ => stk) #[]
       let extraCause? := pendingExtraCauses[0]?
       g := g.record (GameEvent.turnBegan (g.turnNumber + 1) q (extra := true))
       g := g.change (.cleanupGivesPriority false)

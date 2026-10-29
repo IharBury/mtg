@@ -3947,4 +3947,218 @@ and Arwen + Doc Samson ETB counter replacement. -/
     noUnclassifiedRulesEvents gDelayed1 &&
     noUnclassifiedRulesEvents gPlEv
 
+/- Extra-turn cause alignment when a lost player's extra turn is skipped
+(CR 500.7 / 800.4k): `pendingExtraCauses` pops alongside `extraTurns` so the
+surviving player's extra turn inherits its own cause, not the skipped player's. -/
+#guard
+  let opp : PlayerId := ⟨1⟩
+  let g0 := quiet afterDraw
+  let causeMe1 : EventCause := .oneShotEffect (some ⟨901⟩) none (some me)
+  let causeMe2 : EventCause := .oneShotEffect (some ⟨902⟩) none (some me)
+  let causeOpp : EventCause := .oneShotEffect (some ⟨903⟩) none (some opp)
+  let gQueued :=
+    (((g0.record (GameEvent.extraTurnAdded g0.turnNumber me .current (cause := some causeMe1))).record
+        (GameEvent.extraTurnAdded g0.turnNumber me .current (cause := some causeMe2))).record
+        (GameEvent.extraTurnAdded g0.turnNumber opp .current (cause := some causeOpp))).record
+        (GameEvent.playerLost g0.turnNumber opp .effect (cause := some causeMe1))
+  let gExtra1 := gQueued.startNextTurn
+  let powerUpsCause? (g : Game) : Option EventCause :=
+    g.events.findSomeRev? fun e =>
+      match e.change with
+      | .rules (.continuousEffect (.created _ .powerUpsForbiddenThisTurn)) => some e.cause
+      | _ => none
+  let gExtra2 := (gExtra1.clearEOT).startNextTurn
+  gQueued.extraTurns == #[opp, me, me] &&
+    gExtra1.activePlayer == me &&
+    gExtra1.extraTurns == #[me] &&
+    powerUpsCause? gExtra1 == some causeMe2 &&
+    gExtra2.activePlayer == me &&
+    gExtra2.extraTurns.isEmpty &&
+    powerUpsCause? gExtra2 == some causeMe1 &&
+    noUnclassifiedRulesEvents gExtra2
+
+/- `.untilEndOfNextTurnOf` play permissions and control effects (CR 514.2 /
+611.2a): `.turnBased .cleanupClear` events emitted during the creation turn's
+cleanup step (and any CR 514.3a extra cleanup or an opponent's turn) do not
+count as a turn of `p` beginning, so both last until cleanup of `p`'s next turn. -/
+#guard
+  let opp : PlayerId := ⟨1⟩
+  let g0 := addPermanent (addPermanent (quiet afterDraw) bear opp opp) hero me me
+  let b := (g0.battlefield.filter (·.name == "Event Bear"))[0]!
+  let h := (g0.battlefield.filter (·.name == "Event Hero"))[0]!
+  let causeNext : EventCause := .oneShotEffect (some ⟨910⟩) (some h.id) (some me)
+  let (g1, exId) := g0.move h.id .exile none (cause := some causeNext)
+  let gInit :=
+    (((g1.changeControl (g1.object! b.id) me (turnEndsLeft := 2)).createEffect
+        (.playPermission exId { player := me } (turnEnds := 2)) (cause := some causeNext)).createEffect
+        (.keywordsUntilEot b.id Keyword.haste) (cause := some causeNext)).record
+        (GameEvent.damageMarked g1.turnNumber b.id 1 (cause := some causeNext))
+  let hasPlayPerm (g : Game) : Bool :=
+    g.activeEffects.any fun (_, s) =>
+      match s with
+      | .permission p (.playFromExile oid _) _ => p == me && oid == exId
+      | _ => false
+  -- Turn 1 cleanup (emits `.cleanupClear` events from haste expiration and marked damage)
+  let gClean1 := gInit.clearEOT
+  let hadCleanupClear := gClean1.events.any (fun e => e.cause == .turnBased .cleanupClear)
+  -- Second CR 514.3a cleanup in Turn 1
+  let gClean1b := gClean1.clearEOT
+  -- Advance to `opp`'s turn and run `opp`'s cleanup
+  let gOppTurn := gClean1b.startNextTurn
+  let gOppClean := gOppTurn.clearEOT
+  -- Advance to `me`'s next turn (`TurnEvent.turnBegan me false` recorded)
+  let gMeNext := gOppClean.startNextTurn
+  -- Cleanup of `me`'s next turn finally expires both
+  let gMeNextClean := gMeNext.clearEOT
+  hadCleanupClear &&
+    !gClean1.hasHaste (gClean1.object! b.id) &&
+    (gClean1.object! b.id).controller == some me &&
+    gClean1.controlTurnEndsLeft (gClean1.object! b.id) == 2 &&
+    hasPlayPerm gClean1 &&
+    (gClean1b.object! b.id).controller == some me &&
+    hasPlayPerm gClean1b &&
+    gOppTurn.activePlayer == opp &&
+    (gOppClean.object! b.id).controller == some me &&
+    gOppClean.controlTurnEndsLeft (gOppClean.object! b.id) == 2 &&
+    hasPlayPerm gOppClean &&
+    gMeNext.activePlayer == me &&
+    (gMeNext.object! b.id).controller == some me &&
+    gMeNext.controlTurnEndsLeft (gMeNext.object! b.id) == 1 &&
+    hasPlayPerm gMeNext &&
+    (gMeNextClean.object! b.id).controller == some opp &&
+    gMeNextClean.controlTurnEndsLeft (gMeNextClean.object! b.id) == 0 &&
+    !hasPlayPerm gMeNextClean
+
+/- Layer 4 CR 613.7 timestamp order and CR 613.8 dependency ordering:
+1. Later object-scoped `.set` overrides an earlier `.creaturesControlledBy`
+   type-adding effect without re-adding the overwritten type.
+2. Earlier `.creaturesControlledBy` waits for a later `.additionalCreature` on
+   a noncreature permanent (CR 613.8) and then applies to it.
+3. `.notACreature`, `.returnedAsArtifact`, and `.onlyFoodArtifact` apply at
+   their own timestamps instead of overriding later type/subtype additions. -/
+#guard
+  let shrineDef : CardDef := enchantment "Event Shrine" ManaCost.empty ""
+  let g0 := addPermanent (addPermanent (addPermanent (quiet afterDraw) bear me me) hero me me) shrineDef me me
+  let b := (g0.battlefield.filter (·.name == "Event Bear"))[0]!
+  let h := (g0.battlefield.filter (·.name == "Event Hero"))[0]!
+  let s := (g0.battlefield.filter (·.name == "Event Shrine"))[0]!
+  let c1 : EventCause := .oneShotEffect (some ⟨921⟩) none (some me)
+  let c2 : EventCause := .oneShotEffect (some ⟨922⟩) none (some me)
+  -- 1 & 2: earlier team artifact grant, then `b` becomes Enchantment Creature — God, and `s` becomes a creature
+  let gSetOverride :=
+    (((g0.createEffect
+        (.layered (.creaturesControlledBy me) (.types .add #[.artifact] #[.construct] #[]) .untilEndOfTurn)
+        (cause := some c1)).createEffect
+        (.layered (.objects #[b.id]) (.types .set #[.enchantment, .creature] #[.god] #[.legendary]) .untilEndOfTurn)
+        (cause := some c2)).createEffect
+        (.additionalCreature s.id true) (cause := some c2))
+  let bSet := gSetOverride.object! b.id
+  let hSet := gSetOverride.object! h.id
+  let sSet := gSetOverride.object! s.id
+  let setAndDepOk :=
+    gSetOverride.types bSet == #[.enchantment, .creature] &&
+    !gSetOverride.isArtifact bSet &&
+    gSetOverride.subtypes bSet == #[.god] &&
+    gSetOverride.isLegendary bSet &&
+    gSetOverride.isArtifact hSet &&
+    (gSetOverride.subtypes hSet).contains .construct &&
+    gSetOverride.isEnchantment sSet &&
+    gSetOverride.isCreature sSet &&
+    gSetOverride.isArtifact sSet &&
+    (gSetOverride.subtypes sSet).contains .construct
+  -- 3a: `.notACreature` / `.returnedAsArtifact` vs later `.additionalCreature`
+  let gNotThenAdd :=
+    ((g0.createEffect (.notACreature b.id) (cause := some c1)).createEffect
+      (.additionalCreature b.id true) (cause := some c2))
+  let gAddThenNot :=
+    ((g0.createEffect (.additionalCreature s.id true) (cause := some c1)).createEffect
+      (.notACreature s.id) (cause := some c2))
+  let gRetThenAdd :=
+    ((g0.createEffect (.returnedAsArtifact h.id) (cause := some c1)).createEffect
+      (.additionalCreature h.id true) (cause := some c2))
+  -- 3b: `.onlyFoodArtifact` vs `.additionalSubtype`
+  let gFoodThenTreasure :=
+    ((g0.createEffect (.onlyFoodArtifact b.id) (cause := some c1)).createEffect
+      (.additionalSubtype b.id .treasure) (cause := some c2))
+  let gTreasureThenFood :=
+    ((g0.createEffect (.additionalSubtype b.id .treasure) (cause := some c1)).createEffect
+      (.onlyFoodArtifact b.id) (cause := some c2))
+  setAndDepOk &&
+    gNotThenAdd.isCreature (gNotThenAdd.object! b.id) &&
+    !gAddThenNot.isCreature (gAddThenNot.object! s.id) &&
+    gRetThenAdd.isCreature (gRetThenAdd.object! h.id) &&
+    gRetThenAdd.isArtifact (gRetThenAdd.object! h.id) &&
+    gFoodThenTreasure.types (gFoodThenTreasure.object! b.id) == #[.artifact] &&
+    gFoodThenTreasure.subtypes (gFoodThenTreasure.object! b.id) == #[.food, .treasure] &&
+    gTreasureThenFood.subtypes (gTreasureThenFood.object! b.id) == #[.food] &&
+    noUnclassifiedRulesEvents gSetOverride
+
+/- Layer 6 CR 613.1f / 613.7c / 613.7e keyword-counter and ability-loss ordering:
+1. Keyword counters (including `flying`, `shadow`, `deathtouch`, `lifelink`,
+   `trample`, `indestructible`) placed BEFORE `.losesAbilitiesUntilEot` or
+   BEFORE attaching a loses-abilities Aura are stripped.
+2. Keyword counters placed AFTER ability loss grant their keywords while earlier
+   printed and counter keywords remain lost.
+3. Placing another counter of an earlier kind AFTER ability loss refreshes that
+   counter kind's timestamp (CR 613.7c) and restores only that keyword. -/
+#guard
+  let wingedDef : CardDef :=
+    creature "WingedGuard" ManaCost.empty #["Bird"] 2 2 (keywords := Keyword.vigilance)
+  let freezeAura : CardDef :=
+    { (enchantment "FreezeAura" ManaCost.empty "") with
+      subtypes := #["Aura"]
+      staticAbilities := #[.enchantedLosesAbilitiesCantUntap] }
+  let g0 := addPermanent (addPermanent (quiet afterDraw) wingedDef me me) freezeAura me me
+  let w := (g0.battlefield.filter (·.name == "WingedGuard"))[0]!
+  let aura := (g0.battlefield.filter (·.name == "FreezeAura"))[0]!
+  let c1 : EventCause := .oneShotEffect (some ⟨931⟩) none (some me)
+  let c2 : EventCause := .oneShotEffect (some ⟨932⟩) none (some me)
+  let c3 : EventCause := .oneShotEffect (some ⟨933⟩) none (some me)
+  -- Put counters first, then lose all abilities until EOT
+  let gCountersFirst :=
+    (((((((g0.recordPutCounters w.id .flying 1 (some me) (cause := some c1)).recordPutCounters
+        w.id .shadow 1 (some me) (cause := some c1)).recordPutCounters
+        w.id .deathtouch 1 (some me) (cause := some c1)).recordPutCounters
+        w.id .lifelink 1 (some me) (cause := some c1)).recordPutCounters
+        w.id .trample 1 (some me) (cause := some c1)).recordPutCounters
+        w.id .indestructible 1 (some me) (cause := some c1)).createEffect
+        (.losesAbilitiesUntilEot w.id) (cause := some c2))
+  let wLost := gCountersFirst.object! w.id
+  let strippedOk :=
+    !gCountersFirst.hasVigilance wLost &&
+    !gCountersFirst.hasFlying wLost &&
+    !gCountersFirst.hasShadow wLost &&
+    !gCountersFirst.hasDeathtouch wLost &&
+    !gCountersFirst.hasLifelink wLost &&
+    !gCountersFirst.hasTrample wLost &&
+    !gCountersFirst.hasIndestructible wLost
+  -- Refresh `.flying` counter timestamp (CR 613.7c) and add new `.haste` counter after ability loss
+  let gRefreshed :=
+    (gCountersFirst.recordPutCounters w.id .flying 1 (some me) (cause := some c3)).recordPutCounters
+      w.id .haste 1 (some me) (cause := some c3)
+  let wRef := gRefreshed.object! w.id
+  let refreshedOk :=
+    gRefreshed.hasFlying wRef &&
+    gRefreshed.hasHaste wRef &&
+    !gRefreshed.hasVigilance wRef &&
+    !gRefreshed.hasShadow wRef &&
+    !gRefreshed.hasDeathtouch wRef &&
+    !gRefreshed.hasLifelink wRef &&
+    !gRefreshed.hasTrample wRef &&
+    !gRefreshed.hasIndestructible wRef
+  -- Attached loses-abilities Aura ordering (CR 613.7e vs 613.7c):
+  -- Counter before attachment is stripped; counter after attachment applies.
+  let gBeforeAura :=
+    ((g0.recordPutCounters w.id .deathtouch 1 (some me) (cause := some c1)).record
+      (GameEvent.attached g0.turnNumber aura.id w.id (cause := some c2))).recordPutCounters
+      w.id .lifelink 1 (some me) (cause := some c3)
+  let wAura := gBeforeAura.object! w.id
+  let auraOk :=
+    !gBeforeAura.hasVigilance wAura &&
+    !gBeforeAura.hasDeathtouch wAura &&
+    gBeforeAura.hasLifelink wAura
+  strippedOk && refreshedOk && auraOk &&
+    noUnclassifiedRulesEvents gRefreshed &&
+    noUnclassifiedRulesEvents gBeforeAura
+
 end Mtg.Engine.EventTests
