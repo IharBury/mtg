@@ -708,13 +708,14 @@ under construction (`ProposedSpell`), the waiting-trigger queue
   `StackObjectEvent.copied` (with `applySingleRulesEventInBatch` assigning
   `copy.id := some ⟨g.nextObjectId⟩` when `copy.id.isNone`).
   After Phase 8 (#584), `applyStackObjectEvent` ([`Core.lean`](Mtg/Engine/Game/Core.lean))
-  installs the copy `GameObject` in `.stack`—setting `chosenX` from
-  `copy.chosenX.orElse (fun _ => orig.chosenX)` when `original` (or
-  `g.followMoved original`) is in `g.objects` and `copy.chosenX` otherwise, and
-  copying `adventurerCard`, `abilityEffect`, `triggeredAbility`,
-  `reflexiveResolution`, `sourceId`, `fraCauseId`, `fraCauseController`,
-  `fraCausePower`, and `fraCauseStatus` from `orig` when `original` is in
-  `g.objects`—and pushes the copy's `StackEntry` (copying `targets`,
+  binds `origObj? := (g.objects.find? (·.id == original)).orElse (fun _ => g.objects.find? (·.id == g.followMoved original))`
+  and installs the copy `GameObject` in `.stack`—setting `chosenX` from
+  `copy.chosenX.orElse (fun _ => orig.chosenX)` and copying `adventurerCard`,
+  `abilityEffect`, `triggeredAbility`, `reflexiveResolution`, `sourceId`,
+  `fraCauseId`, `fraCauseController`, `fraCausePower`, and `fraCauseStatus` from
+  `orig` when `origObj?` is `some orig` (or setting `chosenX := copy.chosenX`
+  and leaving those fields at fresh-object defaults when both lookups miss)—and
+  pushes the copy's `StackEntry` (copying `targets`,
   `targetsAnnounced`, `chosenMode`, `extraModes`, `dividedDamage`,
   `skippedOptionalSlots`, `delayedTrigger`, `lastKnownPower`, and
   `lastKnownToughness` from `original`'s `StackEntry` when `original` is still
@@ -723,9 +724,12 @@ under construction (`ProposedSpell`), the waiting-trigger queue
   `targetsAnnounced := true` when `original` is no longer on `g.stack`) per
   707.10. `GameEvent.rootCopiedSpellId`
   ([`Event.lean`](Mtg/Engine/Game/Event.lean)) resolves copied spells back to
-  their root cast for `CastEvent.announced` queries (`wasKicked`,
-  `giftPromised`, `teamwork`, `sneakPaid`, `sneakAttackWhom?`,
-  `sneakAttackTarget?`, `boastExiled`), and `Game.effectCreatedCause`
+  their root cast for `wasKicked`, `giftPromisedTo?` (`giftPromised`),
+  `teamwork`, `sneakAttackTarget?` (`Game.sneakPaid`, `Game.sneakAttackTarget?`,
+  `Game.sneakAttackWhom?`), and `chosenXOf?` (while `GameEvent.boastExiledOf` /
+  `Game.boastExiledOf` folds exile `ZoneEvent.moved` events with
+  `cause := .costPayment .exile _ (some aid)` matching `abilityId`, without a
+  copy-root walk), and `Game.effectCreatedCause`
   ([`Core.lean`](Mtg/Engine/Game/Core.lean)) returns the `EventCause` stored on
   `.rules (.continuousEffect (.created eid spec))` in `g.events` (filling in
   `src.orElse` / `ctrl.orElse` when that cause is `.oneShotEffect`, with
@@ -1312,7 +1316,7 @@ Each field is put in exactly one category. "Log" means a query over
 
 | Category | Fields | Target |
 | :--- | :--- | :--- |
-| **Cast metadata → log (400.7d, deleted in Phase 8)** | `castFromGraveyard : Bool`, `castFromHand : Bool`, `wasCast : Bool`, `kicked : Bool`, `teamworkPaid : Bool`, `sneakPaid : Bool`, `sneakAttackWhom : Option PlayerId`, `sneakAttackTarget : Option AttackTarget` (added in Phase 5 for planeswalker/battle Sneak attack targets), `giftPromisedTo : Option PlayerId`, `isPreparedSpell : Bool`, `treasureManaSpent : Bool`, `boastExiled : Array ObjectId`; `chosenX : Option Nat` once it leaves the stack | Deleted from `GameObject` in Phase 8 (#584); read from `CastEvent`s (`PlayerEvent.manaSpent` for `treasureManaSpent`) keyed by spell id and joined via `moved` (`GameEvent.rootCopiedSpellId` for stack copies). `chosenX` stays while on the stack (107.3a). |
+| **Cast metadata → log (400.7d, deleted in Phase 8)** | `castFromGraveyard : Bool`, `castFromHand : Bool`, `wasCast : Bool`, `kicked : Bool`, `teamworkPaid : Bool`, `sneakPaid : Bool`, `sneakAttackWhom : Option PlayerId`, `sneakAttackTarget : Option AttackTarget` (added in Phase 5 for planeswalker/battle Sneak attack targets), `giftPromisedTo : Option PlayerId`, `isPreparedSpell : Bool`, `treasureManaSpent : Bool`, `boastExiled : Array ObjectId`; `chosenX : Option Nat` once it leaves the stack | Deleted from `GameObject` in Phase 8 (#584); read from `CastEvent`s (`PlayerEvent.manaSpent` for `treasureManaSpent`, and exile `ZoneEvent.moved` with `.costPayment .exile` via `GameEvent.boastExiledOf` for `boastExiled`) keyed by spell/ability id and joined via `moved` (`GameEvent.rootCopiedSpellId` for stack spell copies). `chosenX` stays while on the stack (107.3a). |
 | **Effect mirrors → layers / specs (deleted in Phase 8)** | `copyRestore : Option CardDef`, `copyUntilEot : Bool`, `copyUntilNextTurn : Bool`, `copyUntilSourceLeaves : Option ObjectId` (layer 1); `controlChanged : Bool`, `controlUntilSourceLeaves : Option ObjectId` (layer 2); `playPermission : Option PlayPermission`, `flashbackUntilEot : Bool` (permission); `exileInstantSorceryInstead : Bool` (replacement); `uncounterableThisCast : Bool` (rule); `fraEffectUntilTurnOf : Option PlayerId` (duration of an emblem) | Deleted in Phase 8 (#584) via §3.3 `ContinuousEffectSpec` (`printed` and `controller` stop being mutated by `recomputeCopy` / secondary `controlChanged` events in Phase 9). |
 | **LKI → `moved.before` (deleted in Phase 8)** | `lastKnownPower : Option Int`, `lastKnownToughness : Option Int`, `lastController : Option PlayerId` | Deleted from `GameObject` in Phase 8 (#584) in favor of `moved.before` queries (§3.1), while `StackEntry` ([`Stack.lean`](Mtg/Engine/Game/Stack.lean)) carries `lastKnownPower` and `lastKnownToughness` for stack abilities. |
 | **Stays** | `id : ObjectId`, `printed : CardDef`, `owner : PlayerId`, `controller : Option PlayerId`, `defaultController : Option PlayerId`, `zone : Zone`, `status : Status`, `timestamp : Nat`, `attachedTo : Option ObjectId`, `adventurerCard : Option CardDef`, `isCopy : Bool`, `linkedExile : Array ObjectId`, `returnToZone : Option Zone`, `leaveTriggerExile : Array ObjectId`, `exiledBy : Option ObjectId` (linked abilities, 607), stack data (`abilityEffect : Option Effect`, `triggeredAbility : Option TriggeredAbility`, `reflexiveResolution : Option TriggeredAbility.TriggerResolution`, `sourceId : Option ObjectId`, `fraCauseId : Option ObjectId`, `fraCauseController : Option PlayerId`, `fraCausePower : Option Int`, `fraCauseStatus : Option Status`) | — |
