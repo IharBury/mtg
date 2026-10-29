@@ -67,7 +67,10 @@ def clearEOT (g : Game) : Game :=
       | none => pure ()
       | some cur =>
         g := g.expireObjectUntilEotEffects cur
-    g := g.expireMatching effectEndsAtCleanup (cause := cause)
+    g := g.expireMatching (fun
+      | .layered _ (.copy ..) _ | .layered _ (.control _) _ => false
+      | .layered _ _ .untilEndOfTurn | .gameRule _ .untilEndOfTurn => true
+      | _ => false) (cause := cause)
     let damagedIds :=
       (g.battlefield.filter (fun o => o.status.damage != 0)).map (·.id)
     if !damagedIds.isEmpty then
@@ -169,6 +172,16 @@ def expireUntilNextTurnEffects (g : Game) (p : PlayerId) : Game :=
   let cause := some (EventCause.turnBased .expireAtStepBegin)
   let g := g.expireGoadedFor p
   let g := g.expireFraUntilTurnEffects p
+  let g :=
+    g.activeEffects.foldl (fun acc (eid, e) =>
+      match e with
+      | .layered _ (.control _) (.untilEndOfNextTurnOf q) =>
+        if q == p then acc.endControlEffectById eid (cause := cause) else acc
+      | _ => acc) g
+  let g := g.expireMatching (fun
+    | .layered _ (.copy ..) _ | .layered _ (.control _) _ => false
+    | .layered _ _ (.untilEndOfNextTurnOf q) => q == p
+    | _ => false) (cause := cause)
   let g :=
     if g.hasActiveEffect (.protectionFromEverything p) then
       g.expireAll (.protectionFromEverything p) (cause := cause)

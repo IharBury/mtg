@@ -5041,6 +5041,18 @@ Layer 2 control effects):
     gBothP0Left.controllerOf (gBothP0Left.object! bb.id) == some p1 &&
     bbSurv.isSome &&
     gBothP1Left.controllerOf bbSurv.get! == some p2
-  g3p.players.size == 3 && cleanupScopedOk && scopedLeaveExileOk && scopedOthersRemainOk
+  -- 3. CR 800.4m: `.untilEndOfNextTurnOf p1` control effect expires when left player `p1`'s turn would have begun
+  let g3pOwn := addPermanent g3p bear p0 p0
+  let bOwn := (g3pOwn.battlefield.filter (·.name == "Event Bear"))[0]!
+  let gUntilP1End :=
+    (g3pOwn.createEffect
+      (.layered (.objects #[bOwn.id]) (.control p2) (.untilEndOfNextTurnOf p1))).playerLeavesGame p1
+  let gSkippedP1 := gUntilP1End.startNextTurn
+  let leftPlayerNextTurnEndOk :=
+    gUntilP1End.controllerOf (gUntilP1End.object! bOwn.id) == some p2 &&
+    gSkippedP1.activePlayer == p2 &&
+    gSkippedP1.controllerOf (gSkippedP1.object! bOwn.id) == some p0
+  g3p.players.size == 3 && cleanupScopedOk && scopedLeaveExileOk &&
+    scopedOthersRemainOk && leftPlayerNextTurnEndOk
 
 end Mtg.Engine.EventTests
