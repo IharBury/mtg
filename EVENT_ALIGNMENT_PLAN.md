@@ -2094,11 +2094,14 @@ Tests: `Events.lean`, `SetBasePT.lean`, `BecomeArtifact.lean`, `Auras.lean`,
      (`max(objectTimestamp, grantingEffectTimestamp)` for static abilities granted
      by an effect, and attachment timestamp when an Aura, Equipment, or
      Fortification becomes attached).
-   - **Layer 7a–7d (613.4a–d):** Separate true 604.3 / 613.4a CDAs (such as
-     `hasPrintedCardsInHandPower`, `hasGraveyardCardTypesPT`,
-     `powerEqualsBasicLandTypes`, `powerEqualSubtype?`,
-     `hasSuperAdaptoidPowerCda`, `hasCreaturesYouControlPower`, and
-     `landsYouControl`) from spell/ability continuous effects: move
+   - **Layer 7a–7d (613.4a–d):** Separate true 604.3 / 613.4a CDAs
+     (`hasLandsYouControlPT` / `landsYouControlPT` in `characteristicBase`, plus
+     `StaticAbility.fra .powerEqualsBasicLandTypes`, `hasGraveyardCardTypesPT`,
+     `hasPrintedCardsInHandPower`, `powerEqualSubtype?`,
+     `hasSuperAdaptoidPowerCda`, and `hasCreaturesYouControlPower` in
+     `characteristicBasePT`; the six unused `PtCda` constructors other than
+     `.cardsInHandPower` and `.pumpPerArtifact` currently have no runtime
+     readers) from spell/ability continuous effects: move
      `PtCda.pumpPerArtifact` (`artifactCountPump` in `snapshotPT`) to Layer 7c,
      evaluate Layer 7b in CR 613.7 timestamp and CR 613.8 dependency order
      across `.ptSet` effects (`setBasePower` / `setBaseToughness`), Puppet
@@ -2218,10 +2221,11 @@ timestamp order, and 302.6 animated-land summoning sickness).
      zone move to graveyard / exile / battlefield or `ceaseToExist` plus
      `StackObjectEvent.resolved` / `removedOnResolution` and stack pop only when
      the top `ContinuationFrame` finishes its last step (608.2n, 608.2p, 608.3).
-   - Remove the empty-array `#[{}]` base-frame injection in
-     `Core.applyEngineChange`'s `.pushContinuationFrame` arm (and the on-demand
-     `#[f {}]` creation in `Game.modifyContinuation`) together with the
-     `g.continuations.size > 1` guard in `Triggers.receivePriority`, so
+   - Remove the empty-array `#[{}]` scratchpad base-frame injection in
+     `Core.applyEngineChange`'s `.pushContinuationFrame` arm together with the
+     `g.continuations.size > 1` guard in `Triggers.receivePriority` (and audit
+     callers of `Game.modifyTopFrame`'s empty-array `#[f {}]` fallback so
+     continuation writes occur only inside an active pushed frame), ensuring
      `g.continuations` drains back to `#[]` outside active resolutions/batches and
      every pushed `ContinuationFrame` pops deterministically on completion.
 
