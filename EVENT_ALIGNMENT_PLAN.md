@@ -1067,14 +1067,16 @@ constructors with `ContinuousEffectSpec` (`abbrev ContinuousEffect := Continuous
 `.loseIndestructible`), `PtCda` (8 constructors), `LayerEffect` (10 constructors),
 `PlayerRule` (17 constructors), `GameRule` (9 constructors), and
 `PlayPermissionSpec` (4 constructors), deleted `effectUpdated`, and switched the
-mirror-flag readers onto `Game.activeEffects` and `evalLayer4` / `colors` /
-`currentKeywords` / `staticAbilities` / `triggeredAbilities` / `snapshotPT`.
-**Phase 9** (§4) completes pure CR 613 evaluation where Phase 8 left imperative
-bridges or split evaluators: making `applyContinuousEffectEvent` a pure push/erase
-on `Game.activeEffects` (retiring `LayerEffect.copy`'s `restore` field and
-`recomputeCopy` on `GameObject.printed`, secondary `PermanentEvent.controlChanged`
-writes on `.control` creation/expiry, and imperative `.staticAbility`
-expiry/re-creation in `createEffect` / `expireEffectById`), unifying Layers 3–7d
+mirror-flag readers onto `Game.activeEffects` and `effectiveController?` /
+`evalLayer4` / `colors` / `currentKeywords` / `staticAbilities` /
+`triggeredAbilities` / `snapshotPT`. **Phase 9** (§4) completes pure CR 613
+evaluation where Phase 8 left imperative bridges or split evaluators: making
+`applyContinuousEffectEvent` a pure push/erase on `Game.activeEffects` (retiring
+`LayerEffect.copy`'s `restore` field and `recomputeCopy` on `GameObject.printed`
+in `applyContinuousEffectEvent`, secondary `PermanentEvent.controlChanged`
+writes in `createEffect` / `expireEffectById` on `.control` creation/expiry, and
+imperative `.staticAbility` expiry/re-creation in `createEffect` /
+`expireEffectById`), unifying Layers 3–7d
 under CR 613.3 / 613.7 / 613.7a / 613.7e / 613.8 ordering, and routing the
 remaining battlefield `GameObject.*` and `o.printed.*` characteristic reads in
 `Mtg/Engine/Game/` through `Game.*` layer queries.
@@ -1922,28 +1924,31 @@ termination, 614.6 non-occurrence, and the 616.1a–e and 616.1e choice/APNAP or
    `CastEvent.abilityActivated` with `kind.exhaust`—and
    `optionalOnceActedThisTurn`—derived via `PlayerEvent.optionalOnceActed`).
 2. Add layer evaluation helpers in [`Core.lean`](Mtg/Engine/Game/Core.lean)
-   (`Game.controllerOf`, `evalLayer4` with `types` / `supertypes` / `isCreature` /
-   `isArtifact` / `isLand` / `isPlaneswalker` / `isEnchantment` / `isLegendary` /
-   `hasType` / `hasSupertype`, `colors`, `currentKeywords`, `staticAbilities` /
-   `evalStaticAbilitiesAux`, `triggeredAbilities`, `power` / `toughness` /
-   `characteristicBasePT`) and switch the Phase 7 616.1 replacement/prevention
-   loops (`applyEtbReplacements` for Arwen's `toughness` and `isCreature` and
-   `replaceCountersPutChoice` including `entering` per 614.12 in `Core.lean`,
-   `replaceDamage` for `g.power` on Hawkeye plus its `staticAbilities` checks in
-   `Damage.lean`, and `replaceTokenCreationChoice`'s `g.staticAbilities` check
-   for `.artifactTokensBecomeDragons` in `Tokens.lean`, while `CardDef` flags
-   such as `foodAlsoCreatesTreasure` and `tokenDoubling` stay candidate sources)
-   and `Game.snapshot` to read those helpers. In Phase 8 (#584), Layer 1
-   (`LayerEffect.copy` with `restore : Option CardDef`) still mutates
-   `GameObject.printed` via `recomputeCopy` on `createEffect` /
-   `expireEffectById`, Layer 2 (`LayerEffect.control`) still emits a secondary
-   `PermanentEvent.controlChanged` mutation on `createEffect` / `expireEffectById`
-   (except `.whileAttached`), `createEffect` / `expireEffectById` imperatively
-   expire and re-create `.staticAbility` effects when ability-removing effects
-   toggle, and Layers 3–7d plus remaining battlefield `GameObject` reads keep
-   split per-helper evaluators without full CR 613.7a / 613.8 timestamp and
-   dependency ordering; Phase 9 completes pure CR 613 evaluation and removes the
-   remaining printed-characteristic bypasses.
+   (`Game.effectiveController?`, `evalLayer4` with `types` / `supertypes` /
+   `isCreature` / `isArtifact` / `isLand` / `isPlaneswalker` / `isEnchantment` /
+   `isLegendary` / `hasType` / `hasSupertype`, `colors`, `currentKeywords`,
+   `staticAbilities` / `evalStaticAbilitiesAux`, `triggeredAbilities`, `power` /
+   `toughness` / `characteristicBasePT`) and switch the Phase 7 616.1
+   replacement/prevention loops (`applyEtbReplacements` for Arwen's `toughness`
+   and `isCreature` and `replaceCountersPutChoice` including `entering` per
+   614.12 in `Core.lean`, `replaceDamage` for `g.power` on Hawkeye plus its
+   `staticAbilities` checks in `Damage.lean`, and `replaceTokenCreationChoice`'s
+   `g.staticAbilities` check for `.artifactTokensBecomeDragons` in
+   `Tokens.lean`, while `CardDef` flags such as `foodAlsoCreatesTreasure` and
+   `tokenDoubling` stay candidate sources) and `Game.snapshot` to read those
+   helpers. In Phase 8 (#584), Layer 1 (`LayerEffect.copy` with
+   `restore : Option CardDef`) still mutates `GameObject.printed` via
+   `recomputeCopy` inside `applyContinuousEffectEvent` on `.created` /
+   `.expired`, Layer 2 (`LayerEffect.control`) still records a secondary
+   `PermanentEvent.controlChanged` mutation from `createEffect` /
+   `expireEffectById` for every `.layered (.objects #[id]) (.control _) _`
+   when the effective controller changes, `createEffect` / `expireEffectById`
+   imperatively expire and re-create printed `.staticAbility` effects when
+   `.copy` or `.abilities _ .all` effects are created or expire, and Layers 3–7d
+   plus remaining battlefield `GameObject` reads keep split per-helper
+   evaluators without full CR 613.7a / 613.8 timestamp and dependency ordering;
+   Phase 9 completes pure CR 613 evaluation and removes the remaining
+   printed-characteristic bypasses.
 3. Replace the ad-hoc 603.7 delayed-trigger fields (`Player.eaglesBirdsNextUpkeep`,
    `Game.eaglesBirdsCauses`, `Player.attackPumpPerPlainsThisTurn` together with its
    `ContinuousEffect.attackPumpPerPlainsThisTurn` constructor—already polled inside
@@ -2006,18 +2011,24 @@ termination, 614.6 non-occurrence, and the 616.1a–e and 616.1e choice/APNAP or
    for `lookedAt` / `revealed` / `searched` / 0–1-card `shuffled` / `closeBatch`
    `gainedDesignation`, `ringBearer` single-writer consolidation, and final
    `*Change` pruning move to Phase 10.
-5. Add `ContinuationFrame` (75 fields) and `ContinuationChange` (79 constructors)
-   in [`Event.lean`](Mtg/Engine/Game/Event.lean) and replace those 75 top-level
-   continuation registers on `Game` (including `Game.resolvingContext` and
-   `Game.pendingReplacement` / `EngineChange.pendingReplacement`) with
-   `Game.continuations : Array ContinuationFrame := #[{}]`,
-   `EngineChange.continuations`, `EngineChange.pushContinuationFrame`,
-   `EngineChange.popContinuationFrame`, and `EngineChange.continuation` (plus
-   inline compatibility wrappers in `namespace EngineChange`). Moving
+5. Add `ContinuationFrame` (75 fields) and `ContinuationChange` (80 constructors:
+   75 field setters plus `pushRecentTokenId`, `pushMilledIdThisWay`,
+   `pushExiledIdThisWay`, `setTriggerSequenceRestSteps`, and
+   `setTriggerSequenceRestFromMay`) in [`Event.lean`](Mtg/Engine/Game/Event.lean)
+   and replace those 75 top-level continuation registers on `Game` (including
+   `Game.resolvingContext` and `Game.pendingReplacement` /
+   `EngineChange.pendingReplacement`) with
+   `Game.continuations : Array ContinuationFrame := #[]`,
+   `EngineChange.continuations`, `EngineChange.pushContinuationFrame` (which
+   seeds a base `{}` scratchpad frame at index `0` when `g.continuations` is
+   empty), `EngineChange.popContinuationFrame`, and `EngineChange.continuation`
+   (plus inline compatibility wrappers in `namespace EngineChange`). Moving
    `resolvingSpell`, `resolvingAbility`, `resolvingDivision`, and resolution-scoped
    `afterRandom` into `ContinuationFrame`, keeping resolving objects on `g.stack`
-   until CR 608.2n / 608.3 end-of-resolution cleanup, and retiring the permanent
-   base scratchpad frame `continuations[0]` move to Phase 10.
+   until CR 608.2n / 608.3 end-of-resolution cleanup, and retiring the empty-array
+   base-frame injection in `.pushContinuationFrame` and the
+   `g.continuations.size > 1` guard in `Triggers.receivePriority` move to
+   Phase 10.
 
 Tests: `Events.lean`, `SetBasePT.lean`, `BecomeArtifact.lean`, `Auras.lean`,
 `Grant.lean`, `Abilities.lean`, `Cant.lean`, `PutCounters.lean`,
@@ -2037,11 +2048,11 @@ Tests: `Events.lean`, `SetBasePT.lean`, `BecomeArtifact.lean`, `Auras.lean`,
      copy spec rather than mutating `GameObject.printed` via
      `ObjectChange.printed`; delete `LayerEffect.copy`'s `restore` field,
      `copyRestoreOf?`, and `recomputeCopy` in [`Core.lean`](Mtg/Engine/Game/Core.lean).
-   - Evaluate `Game.controllerOf` in Layer 2 across all `LayerEffect.control`
-     specs in timestamp and dependency order (613.7 / 613.8) from
-     `o.defaultController` / `PermanentEvent.controlChanged` base control without
-     emitting secondary `PermanentEvent.controlChanged` mutations from
-     `createEffect` or `expireEffectById`.
+   - Evaluate and extend `Game.effectiveController?` in Layer 2 across all
+     `LayerEffect.control` specs in timestamp and dependency order (613.7 /
+     613.8) from `o.defaultController.getD o.owner` (with its lost-player
+     fallback) without emitting secondary `PermanentEvent.controlChanged`
+     mutations from `createEffect` or `expireEffectById`.
    - Remove the imperative expiry and re-creation of `.staticAbility` continuous
      effects inside `createEffect` / `expireEffectById`, deriving whether a
      permanent's static abilities generate continuous effects from Layer 6
@@ -2083,14 +2094,23 @@ Tests: `Events.lean`, `SetBasePT.lean`, `BecomeArtifact.lean`, `Auras.lean`,
      (`max(objectTimestamp, grantingEffectTimestamp)` for static abilities granted
      by an effect, and attachment timestamp when an Aura, Equipment, or
      Fortification becomes attached).
-   - **Layer 7a–7d (613.4a–d):** Separate true 604.3 / 613.4a CDAs from
-     spell/ability effects (moving `cardsInHandPowerUntilEot` to Layer 7b and
-     `PtCda.pumpPerArtifact` to Layer 7c), evaluate all Layer 7b effects
-     (`setBasePT`, Puppet Crafting's `animatedConstruct55`, Ms. Marvel's
-     `hasHandSizeSetPower`, and `cardsInHandPowerUntilEot`) in CR 613.7 timestamp
-     and CR 613.8 dependency order instead of a fixed `if/else` chain, evaluate
-     `ObjectScope.creaturesWithout` against Layer 6 `currentKeywords` rather than
-     `printedOrUntilEot`, and sort Layer 7d `.ptSwitch` effects by timestamp.
+   - **Layer 7a–7d (613.4a–d):** Separate true 604.3 / 613.4a CDAs (such as
+     `hasPrintedCardsInHandPower`, `hasGraveyardCardTypesPT`,
+     `powerEqualsBasicLandTypes`, `powerEqualSubtype?`,
+     `hasSuperAdaptoidPowerCda`, `hasCreaturesYouControlPower`, and
+     `landsYouControl`) from spell/ability continuous effects: move
+     `PtCda.pumpPerArtifact` (`artifactCountPump` in `snapshotPT`) to Layer 7c,
+     evaluate Layer 7b in CR 613.7 timestamp and CR 613.8 dependency order
+     across `.ptSet` effects (`setBasePower` / `setBaseToughness`), Puppet
+     Crafting's 5/5 base P/T (currently hardcoded on Layer 4 `.types .addConstruct55`
+     / `animatedConstruct55` as the first battlefield arm of
+     `characteristicBasePT` without storing a `.ptSet`), and the until-EOT /
+     granted hand-size base-power set (`hasHandSizeSetPower`—currently stored as
+     `.ptCda .cardsInHandPower` / `cardsInHandPowerUntilEot` or granted
+     `isCardsInHandPower` and short-circuiting `setBasePower` in
+     `characteristicBasePT`), evaluate `ObjectScope.creaturesWithout` against
+     Layer 6 `currentKeywords` rather than `printedOrUntilEot`, and sort Layer 7d
+     `.ptSwitch` effects by timestamp.
 3. Audit and eliminate remaining printed-characteristic bypasses on battlefield
    permanents across `Mtg/Engine/Game/`:
    - Replace battlefield callers of `GameObject.auraCanEnchant`
@@ -2113,9 +2133,8 @@ Tests: `Events.lean`, `SetBasePT.lean`, `BecomeArtifact.lean`, `Auras.lean`,
      `o.printed.isLand` / `isArtifact` / `isCreature` / `isPlaneswalker` /
      `isEquipment` on permanents to `Game.*` queries, keeping `GameObject.printed`
      helpers exclusively for non-battlefield card characteristics where CR 113.6
-     applies; delete dead `GameObject` helpers (`isArtifactOrLand`,
-     `canPayTapCost`, `waitingTriggersFor`, `changeStatuses`) and dead
-     `Casting.queueBecomesTargetTriggers`.
+     applies; delete the unused `GameObject` helpers `isArtifactOrLand`,
+     `canPayTapCost`, and `waitingTriggersFor`.
 
 Tests: `SetBasePT.lean`, `BecomeArtifact.lean`, `Auras.lean`, `Grant.lean`,
 `Abilities.lean`, `Attach.lean`, `Tap.lean`, `Activation.lean`, `Targets.lean`,
@@ -2199,10 +2218,12 @@ timestamp order, and 302.6 animated-land summoning sickness).
      zone move to graveyard / exile / battlefield or `ceaseToExist` plus
      `StackObjectEvent.resolved` / `removedOnResolution` and stack pop only when
      the top `ContinuationFrame` finishes its last step (608.2n, 608.2p, 608.3).
-   - Remove the permanent base scratchpad frame `continuations[0]`
-     (`g.continuations.size > 1` guards in `Core.lean` and `Triggers.lean`) so
-     `g.continuations` is empty outside active resolutions/batches and every
-     pushed `ContinuationFrame` pops deterministically on completion.
+   - Remove the empty-array `#[{}]` base-frame injection in
+     `Core.applyEngineChange`'s `.pushContinuationFrame` arm (and the on-demand
+     `#[f {}]` creation in `Game.modifyContinuation`) together with the
+     `g.continuations.size > 1` guard in `Triggers.receivePriority`, so
+     `g.continuations` drains back to `#[]` outside active resolutions/batches and
+     every pushed `ContinuationFrame` pops deterministically on completion.
 
 Tests: `Events.lean` (isolation tests for `ManaUnit` source preservation,
 0-card/1-card `shuffled` under 701.24e, `.fraEmblem` `ceasedToExist`, cause
