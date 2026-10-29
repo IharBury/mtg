@@ -295,7 +295,7 @@ Choosing no creature for prevention changes nothing. -/
   let g := step g0 (Effect.chapterGainControlOfUpToTwoCreaturesTotalMvAtMost 6)
     (sourceId := some sid)
     (targets := #[Target.permanent (pid g0 "Bear")])
-  (obj g "Bear").controller == some caster &&
+  g.controllerOf (obj g "Bear") == some caster &&
     g.controlUntilSourceLeaves (obj g "Bear") == some sid
 
 #guard

@@ -74,11 +74,11 @@ def addFinalityTo (g : Game) (o : GameObject) (n : Nat := 1)
       (.addCounters o.id .finality n entersWith byPlayer cause)
   | none =>
     let g := g.consumeReplacementOrder applied
-    let putter := byPlayer.orElse (fun _ => o.controller)
+    let putter := byPlayer.orElse (fun _ => g.controllerOf o)
     let g :=
-      if n' > 0 && !entersWith then g.record (GameEvent.counters g.turnNumber putter o.asEvent .finality n' (cause := cause'))
+      if n' > 0 && !entersWith then g.record (GameEvent.counters g.turnNumber putter (g.snapshot o) .finality n' (cause := cause'))
       else g
-    g.logMsg s!"{o.name} gets a finality counter"
+    g.logMsg s!"{g.name o} gets a finality counter"
 
 /-- Frozen in Ice, or a granted “can't become untapped”, blocks every untap.
 Enchanted River's Grasp only skips the untap step. -/
@@ -113,14 +113,15 @@ def replaceUntap (g : Game) (o : GameObject)
   if !o.status.tapped || !untap.watches .wouldUntap then
     (false, cause)
   else
-    let affected := o.controller.getD o.owner
+    let ctrl := g.controllerOf o
+    let affected := ctrl.getD o.owner
     let specs : Array ReplacementSpec := Id.run do
       let mut s : Array ReplacementSpec := #[]
       if o.status.stun > 0 then
         s := s.push {
           id := { kind := .stunCounterUntap, object := some o.id }
           source := some o.id
-          controller := o.controller
+          controller := ctrl
           affectedPlayer := affected
           kind := .stunCounterUntap o.id
         }
@@ -137,22 +138,11 @@ def replaceUntap (g : Game) (o : GameObject)
     let candidates := specs.map (fun s => (ReplacementOrPrevention.replacement s).toCandidate)
     match g.selectNextReplacement candidates #[] with
     | some chosen =>
-      (true, g.wrapReplacedCause chosen.id cause o.controller)
+      (true, g.wrapReplacedCause chosen.id cause ctrl)
     | none =>
       (false, cause)
 
 /-- Timestamp-ordered maximum hand size (MSH 184 / 376). `none` is "no maximum". -/
-def grantsNoMaxHandSize (o : GameObject) : Bool :=
-  o.printed.staticAbilities.any (fun
-    | .noMaximumHandSize => true
-    | _ => false)
-
-def grantsMaxHandSizeTen (o : GameObject) : Bool :=
-  o.printed.staticAbilities.any (fun
-    | .maximumHandSize 10 => true
-    | .maximumHandSize _ => false
-    | _ => false)
-
 def effectiveMaxHandSize (g : Game) (p : PlayerId) : Option Nat :=
   let hasNoMax (o : GameObject) : Bool :=
     (g.staticAbilities o).any (fun
@@ -181,7 +171,7 @@ def spellHasImprovise (g : Game) (face : CardDef) (caster : PlayerId) : Bool :=
   face.hasImprovise ||
     (!face.isCreature &&
       (g.permanentsOf caster).any (fun o =>
-        o.printed.grantsImproviseToNoncreature && g.retainsPrintedAbilities o))
+        (g.baseCard o).grantsImproviseToNoncreature && g.retainsPrintedAbilities o))
 
 /-- Open a simultaneous rules-event batch on `g` for use across an `Except`
 `do` block, returning the updated `Game` and a `closeBatch` continuation that
@@ -227,24 +217,19 @@ def tapArtifactsForImprovise (g : Game) (p : PlayerId) (ids : Array ObjectId) :
       throw "An artifact cannot be tapped twice for the same improvise payment"
     seen := seen.push id
     let some o := g.findObject? id | throw "no such object"
-    if !(o.isOnBattlefield && o.printed.isArtifact && o.controlledBy p) then
-      throw s!"{o.name} is not an artifact you control"
+    if !(o.isOnBattlefield && g.isArtifact o && g.controlledBy o p) then
+      throw s!"{g.name o} is not an artifact you control"
     if o.status.tapped then
-      throw s!"{o.name} is already tapped"
+      throw s!"{g.name o} is already tapped"
     g := g.becomeTapped o (cause := cause)
   g := closeBatch g
   return g.logMsg s!"{(g.player p).name} taps {ids.size} artifact(s) for improvise"
-
-/-- Equip worthy may attach only to a legendary non-Villain red or white
-creature. Other attach effects ignore this restriction. -/
-def isWorthyPermanent (_g : Game) (o : GameObject) : Bool :=
-  o.isOnBattlefield && o.isCreature && o.printed.isWorthy
 
 /-- Put a +1/+1 counter on `id` when it is still a creature. -/
 def addPlusOneIfStillCreature (g : Game) (id : ObjectId) : Game :=
   match g.findObject? id with
   | some o =>
-    if o.isOnBattlefield && o.isCreature then g.addPlusOnePlusOneTo o 1
+    if o.isOnBattlefield && g.isCreature o then g.addPlusOnePlusOneTo o 1
     else g.logMsg "The target is no longer legal"
   | none => g.logMsg "The target is no longer legal"
 
@@ -268,11 +253,11 @@ def addIndestructibleCounter (g : Game) (o : GameObject) (n : Nat := 1)
       (.addCounters o.id .indestructible n false byPlayer cause)
   | none =>
     let g := g.consumeReplacementOrder applied
-    let putter := byPlayer.orElse (fun _ => o.controller)
+    let putter := byPlayer.orElse (fun _ => g.controllerOf o)
     let g :=
-      if n' > 0 then g.record (GameEvent.counters g.turnNumber putter o.asEvent .indestructible n' (cause := cause'))
+      if n' > 0 then g.record (GameEvent.counters g.turnNumber putter (g.snapshot o) .indestructible n' (cause := cause'))
       else g
-    g.logMsg s!"{o.name} gets an indestructible counter"
+    g.logMsg s!"{g.name o} gets an indestructible counter"
 
 /-- Put a lifelink counter on `o`. -/
 def addLifelinkCounter (g : Game) (o : GameObject) (n : Nat := 1)
@@ -286,11 +271,11 @@ def addLifelinkCounter (g : Game) (o : GameObject) (n : Nat := 1)
       (.addCounters o.id .lifelink n false byPlayer cause)
   | none =>
     let g := g.consumeReplacementOrder applied
-    let putter := byPlayer.orElse (fun _ => o.controller)
+    let putter := byPlayer.orElse (fun _ => g.controllerOf o)
     let g :=
-      if n' > 0 then g.record (GameEvent.counters g.turnNumber putter o.asEvent .lifelink n' (cause := cause'))
+      if n' > 0 then g.record (GameEvent.counters g.turnNumber putter (g.snapshot o) .lifelink n' (cause := cause'))
       else g
-    g.logMsg s!"{o.name} gets a lifelink counter"
+    g.logMsg s!"{g.name o} gets a lifelink counter"
 
 /-- Put a burden counter on `o`. The log includes the new total. -/
 def addBurdenCounter (g : Game) (o : GameObject) (n : Nat := 1)
@@ -304,12 +289,12 @@ def addBurdenCounter (g : Game) (o : GameObject) (n : Nat := 1)
       (.addCounters o.id .burden n false byPlayer cause)
   | none =>
     let g := g.consumeReplacementOrder applied
-    let putter := byPlayer.orElse (fun _ => o.controller)
+    let putter := byPlayer.orElse (fun _ => g.controllerOf o)
     let g :=
-      if n' > 0 then g.record (GameEvent.counters g.turnNumber putter o.asEvent .burden n' (cause := cause'))
+      if n' > 0 then g.record (GameEvent.counters g.turnNumber putter (g.snapshot o) .burden n' (cause := cause'))
       else g
     let total := (g.object! o.id).status.burden
-    g.logMsg s!"{o.name} gets a burden counter ({total})"
+    g.logMsg s!"{g.name o} gets a burden counter ({total})"
 
 /-- Put `n` counters of `kind` on `o`. +1/+1 counters go through
 `addPlusOnePlusOneTo` so their enters-with bonus and “you put a +1/+1
@@ -333,9 +318,9 @@ def addCounters (g : Game) (o : GameObject) (kind : CounterKind) (n : Nat := 1)
       let g := g.consumeReplacementOrder applied
       if n' == 0 then g
       else
-        let putter := byPlayer.orElse (fun _ => o.controller)
-        let happened := GameEvent.counters g.turnNumber putter o.asEvent kind n' (cause := cause')
-        (if entersWith then g else g.record happened).logMsg s!"{o.name} gets {kind.countersPhrase n'}"
+        let putter := byPlayer.orElse (fun _ => g.controllerOf o)
+        let happened := GameEvent.counters g.turnNumber putter (g.snapshot o) kind n' (cause := cause')
+        (if entersWith then g else g.record happened).logMsg s!"{g.name o} gets {kind.countersPhrase n'}"
 
 /-- Put the amass counters and subtype on `armyId`. -/
 def finishAmassOn (g : Game) (controller : PlayerId) (armyId : ObjectId)
@@ -344,7 +329,7 @@ def finishAmassOn (g : Game) (controller : PlayerId) (armyId : ObjectId)
   match g.findObject? armyId with
   | none => g.logMsg "That Army is no longer on the battlefield"
   | some army =>
-    if !army.isOnBattlefield || !army.controlledBy controller || !g.hasSubtype army .army then
+    if !army.isOnBattlefield || !g.controlledBy army controller || !g.hasSubtype army .army then
       g.logMsg "That Army is no longer on the battlefield"
     else
       let (g, cause) : Game × Option EventCause :=

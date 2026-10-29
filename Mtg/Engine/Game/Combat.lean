@@ -14,7 +14,7 @@ namespace Game
 /-- Whether `pw` is limited to one attacker each combat (Tomik, Orzhov
 Lawmage grants this to planeswalkers its controller controls). -/
 def planeswalkerAttackedByOneAtMost (g : Game) (pw : GameObject) : Bool :=
-  match pw.controller with
+  match g.controllerOf pw with
   | some q =>
     (g.permanentsOf q).any (fun o =>
       (g.staticAbilities o).any (· == .fra .planeswalkersAttackedByOneAtMost))
@@ -34,7 +34,7 @@ def declareAttackers (g : Game) (p : PlayerId) (ids : Array ObjectId)
     let id := ids[i]!
     let o := g.object! id
     if !g.canAttack o then
-      throw s!"{o.name} cannot attack"
+      throw s!"{g.name o} cannot attack"
     let want :=
       match each[i]? with
       | some (some d) => some d
@@ -45,25 +45,25 @@ def declareAttackers (g : Game) (p : PlayerId) (ids : Array ObjectId)
       | some (some pwId) =>
         match g.findObject? pwId with
         | some pw =>
-          if !pw.isOnBattlefield || !pw.printed.isPlaneswalker then
-            throw s!"{pw.name} is not a planeswalker on the battlefield"
-          else if !(g.livingOpponents p).any (fun pl => pw.controlledBy pl.id) then
-            throw s!"{pw.name} isn't controlled by an opponent (CR 508.1b)"
+          if !pw.isOnBattlefield || !g.isPlaneswalker pw then
+            throw s!"{g.name pw} is not a planeswalker on the battlefield"
+          else if !(g.livingOpponents p).any (fun pl => g.controlledBy pw pl.id) then
+            throw s!"{g.name pw} isn't controlled by an opponent (CR 508.1b)"
           else pure (some pw)
         | none => throw "no such planeswalker"
       | _ => pure none
     if g.cantAttackJaces p then
       match pw? with
       | some pw =>
-        if pw.name.startsWith "Jace" || g.hasSubtype pw .jace then
-          throw s!"{o.name} can't attack {pw.name} this turn"
+        if (g.name pw).startsWith "Jace" || g.hasSubtype pw .jace then
+          throw s!"{g.name o} can't attack {g.name pw} this turn"
       | none => pure ()
     let dest ←
       match pw? with
-      | some pw => pure (pw.controller.getD pw.owner)
+      | some pw => pure ((g.controllerOf pw).getD pw.owner)
       | none => g.resolveAttackDestination p want
     if g.hasFlying o && g.leftoverFlyingRestriction dest then
-      throw s!"{o.name} can't attack {(g.player dest).name}"
+      throw s!"{g.name o} can't attack {(g.player dest).name}"
     let target : AttackTarget :=
       match pw? with
       | some pw => .planeswalker pw.id
@@ -79,19 +79,19 @@ def declareAttackers (g : Game) (p : PlayerId) (ids : Array ObjectId)
       g := g.becomeTapped o (cause := some (.turnBased .declareAttackers))
     g := g.logMsg
       (match pw? with
-       | some pw => s!"{g.player p |>.name} attacks {pw.name} with {o.name}"
-       | none => s!"{g.player p |>.name} attacks {(g.player dest).name} with {o.name}")
+       | some pw => s!"{g.player p |>.name} attacks {g.name pw} with {g.name o}"
+       | none => s!"{g.player p |>.name} attacks {(g.player dest).name} with {g.name o}")
   g := closeBatch g
   -- Tomik, Orzhov Lawmage (ruling 834): checked on the whole declaration.
   for pw in g.battlefield do
-    if pw.printed.isPlaneswalker && g.planeswalkerAttackedByOneAtMost pw then
+    if g.isPlaneswalker pw && g.planeswalkerAttackedByOneAtMost pw then
       let n := (g.battlefield.filter (fun a =>
         a.status.attacking && a.status.attackingPlaneswalker? == some pw.id)).size
       if n > 1 then
-        throw s!"No more than one creature can attack {pw.name} each combat"
+        throw s!"No more than one creature can attack {g.name pw} each combat"
   for o in g.permanentsOf p do
     if g.mustAttackIfAble o && !ids.contains o.id then
-      throw s!"{o.name} must attack if able"
+      throw s!"{g.name o} must attack if able"
   let tax := ids.foldl (fun acc id =>
     let o := g.object! id
     if o.status.attackingTarget.isSome then
@@ -463,12 +463,12 @@ def dealAssignedCombatDamage (g : Game) (appliedSoFar : Array ReplacementId := #
           if !(g.lifeLocked defn || g.lifeCantChange defn) then
             if src.status.blocked then
               g := g.logMsg
-                s!"{src.name} tramples for {toPlayer} to {pl.name} ({(g.player defn).life} life)"
+                s!"{g.name src} tramples for {toPlayer} to {pl.name} ({(g.player defn).life} life)"
             else
               g := g.logMsg
-                s!"{src.name} deals {toPlayer} combat damage to {pl.name} ({(g.player defn).life} life)"
+                s!"{g.name src} deals {toPlayer} combat damage to {pl.name} ({(g.player defn).life} life)"
       if g.hasLifelink src && totalDealt > 0 then
-        match src.controller with
+        match g.controllerOf src with
         | some pid =>
           if let .chooseReplacement .. := g.pending then
             g := g.chainPendingReplacement (.gainLife pid totalDealt.toNat "" combatCause)
@@ -480,7 +480,7 @@ def dealAssignedCombatDamage (g : Game) (appliedSoFar : Array ReplacementId := #
         else if dealtToPlayer > 0 && pwTarget?.isNone && !(g.player defn).lost then dealtToPlayer.toNat
         else 0
       if treasureCount > 0 then
-        match src.controller with
+        match g.controllerOf src with
         | some pid =>
           if g.combatDamageCreatesTreasure src then
             if let .chooseReplacement .. := g.pending then

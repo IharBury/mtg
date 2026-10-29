@@ -46,8 +46,8 @@ def sharedTriggerModes (ab : TriggeredAbility) : Array Effect :=
 def triggerModesOf (g : Game) (obj : GameObject) : Array Effect :=
   let fra :=
     match obj.sourceId.bind g.findObject? with
-    | some src => src.printed.fraTriggerModes
-    | none => obj.printed.fraTriggerModes
+    | some src => (g.baseCard src).fraTriggerModes
+    | none => (g.baseCard obj).fraTriggerModes
   if !fra.isEmpty then fra
   else (obj.triggeredAbility.map sharedTriggerModes).getD #[]
 
@@ -95,7 +95,7 @@ def putTriggeredAbilityOnStack (g : Game) (controller : PlayerId) (source : Game
       | _ => none
     let g := g.changeObjects obj.id #[
       .fraCauseId (cause.map (·.id)),
-      .fraCauseController (causeController.orElse (fun _ => cause.bind (·.controller))),
+      .fraCauseController (causeController.orElse (fun _ => cause.bind g.controllerOf)),
       .fraCausePower (cause.bind (fun c =>
         if (g.findObject? c.id).any (·.isOnBattlefield) then some (g.power (g.object! c.id))
         else (g.lastKnownPowerOf? c.id).orElse (fun _ => some (g.power c)))),
@@ -104,7 +104,7 @@ def putTriggeredAbilityOnStack (g : Game) (controller : PlayerId) (source : Game
     let obj := g.object! obj.id
     let g := g.record (GameEvent.triggerPutOnStack g.turnNumber obj.id source.asEvent controller
       (cause := eventCause))
-    let g := g.logMsg s!"{source.name}'s {event} is put on the stack"
+    let g := g.logMsg s!"{g.name source}'s {event} is put on the stack"
     match ab.effect.resolution with
     | .chooseTriggerModes n => g.beginTriggerModeChoice controller obj n
     | _ => if (sharedTriggerModes ab).isEmpty then g else g.beginTriggerModeChoice controller obj 1
@@ -124,7 +124,7 @@ def putTriggerOrFizzle (g : Game) (controller : PlayerId) (source : GameObject)
     (delayedTrigger : Option (DelayedTriggerKind × EventCause) := none) : Game :=
   if g.triggerHasNoLegalTarget controller ab source.id then
     g.logMsg
-      s!"{source.name}'s {event} is removed from the stack (no legal target) (CR 603.3d)"
+      s!"{g.name source}'s {event} is removed from the stack (no legal target) (CR 603.3d)"
   else
     g.putTriggeredAbilityOnStack controller source ab event lastKnownPower lastKnownToughness
       (cause := cause) (causeController := causeController) (eventCause := eventCause)
@@ -172,7 +172,7 @@ def queueTrigger (g : Game) (controller : PlayerId) (source : GameObject)
       | _ => false
     let mardu :=
       if attackEvent && (g.permanentsOf controller).any (fun o =>
-          o.printed.asEntersChooseMarduOrJeskai && g.retainsPrintedAbilities o &&
+          (g.baseCard o).asEntersChooseMarduOrJeskai && g.retainsPrintedAbilities o &&
             o.status.windcragMardu) then 1 else 0
     let copies := g.extraTriggerCopies controller source + 1 + mardu
     let wt : WaitingTrigger := {
@@ -193,7 +193,7 @@ def queueTrigger (g : Game) (controller : PlayerId) (source : GameObject)
 
 /-- Put exactly one lore counter on `saga` and queue that chapter. -/
 def addOneLoreRaw (g : Game) (saga : GameObject) : Game :=
-  match saga.controller, saga.printed.saga with
+  match g.controllerOf saga, (g.baseCard saga).saga with
   | some p, some _ =>
     match g.findObject? saga.id with
     | none => g
@@ -201,9 +201,10 @@ def addOneLoreRaw (g : Game) (saga : GameObject) : Game :=
       if !saga.isOnBattlefield then g
       else
         let lore := saga.status.lore + 1
+        let sagaName := g.name saga
         let g := g.record (GameEvent.counters g.turnNumber (some p) saga.asEvent .lore 1
           (cause := some (.turnBased .sagaLoreOnMain)))
-        g.logMsg s!"{saga.name} gets a lore counter ({lore})"
+        g.logMsg s!"{sagaName} gets a lore counter ({lore})"
   | _, _ => g
 
 /-- Add `n` lore counters one at a time, plus one per Doc Samson the
@@ -227,15 +228,16 @@ def addOneLoreCounter (g : Game) (saga : GameObject) : Game :=
 are placed in `entersWith` during the zone change, so we log the lore
 counter(s) on `o`. -/
 def addLoreAsSagaEnters (g : Game) (o : GameObject) : Game :=
-  match o.controller, o.printed.saga with
+  match g.controllerOf o, (g.baseCard o).saga with
   | some _, some _ =>
     if o.status.faceDown || o.status.lore == 0 then g
     else
+      let oName := g.name o
       Id.run do
         let mut g := g
         for i in [0:o.status.lore] do
           let lore := i + 1
-          g := g.logMsg s!"{o.name} gets a lore counter ({lore})"
+          g := g.logMsg s!"{oName} gets a lore counter ({lore})"
         return g
   | _, _ => g
 
@@ -243,7 +245,7 @@ def addLoreAsSagaEnters (g : Game) (o : GameObject) : Game :=
 Saga the active player controls (CR 714.3b). -/
 def addLoreAfterDrawStep (g : Game) : Game :=
   (g.permanentsOf g.activePlayer).foldl (fun acc o =>
-    if o.printed.saga.isSome then acc.addOneLoreCounter o else acc) g
+    if (acc.baseCard o).saga.isSome then acc.addOneLoreCounter o else acc) g
 
 /-- Queue each printed trigger of `source` that fires on `event` (CR 603.3). -/
 def putMatchingSourceTriggers (g : Game) (controller : PlayerId) (source : GameObject)
@@ -276,7 +278,7 @@ def foldBattlefield (g : Game) (pred : GameObject → Bool)
 /-- Apply `f` to each battlefield permanent `p` controls, optionally skipping one id. -/
 def foldControlledPermanents (g : Game) (p : PlayerId)
     (excludeId : Option ObjectId := none) (f : Game → GameObject → Game) : Game :=
-  g.foldBattlefield (fun o => o.controlledBy p && excludeId != some o.id) f
+  g.foldBattlefield (fun o => g.controlledBy o p && excludeId != some o.id) f
 
 /-- Tap an untapped permanent and queue becomes-tapped triggers (CR 603.6d).
 Entering the battlefield tapped is not becoming tapped; only a change from
@@ -284,15 +286,16 @@ untapped to tapped fires these abilities (Hawkeye's Bow, Trick Arrows,
 Captain America, Living Legend). -/
 def becomeTapped (g : Game) (o : GameObject)
     (cause : Option EventCause := none) : Game :=
+  let oName := g.name o
   if o.status.tapped then
-    g.logMsg s!"{o.name} is already tapped"
+    g.logMsg s!"{oName} is already tapped"
   else
     let during :=
-      match o.controller with
+      match g.controllerOf o with
       | some p => g.activePlayer == p
       | none => false
     let happened := GameEvent.tapped g.turnNumber o.asEvent true during (cause := cause)
-    (g.record happened).logMsg s!"{o.name} becomes tapped"
+    (g.record happened).logMsg s!"{oName} becomes tapped"
 
 /-- Apply `f` to each creature `p` controls, optionally skipping one id. -/
 def forEachControlledCreature (g : Game) (p : PlayerId)
@@ -310,238 +313,16 @@ def putControlledTriggers (g : Game) (p : PlayerId)
   let g := g.foldControlledPermanents p excludeId fun g o =>
     g.putMatchingSourceTriggers p o event (lastKnownPower := lastKnownPower) (cause := cause)
   -- Emblems in the command zone trigger too (CR 114.4).
-  (g.objects.filter (fun o => o.zone == .command && o.controlledBy p)).foldl
+  (g.objects.filter (fun o => o.zone == .command && g.controlledBy o p)).foldl
     (fun g e => g.putMatchingSourceTriggers p e event
       (lastKnownPower := lastKnownPower) (cause := cause)) g
 
 /-- Sacrifice `o` to its owner's graveyard (CR 701.21a). -/
 def sacrificeToGraveyard (g : Game) (o : GameObject) (reason : String)
     (cause : Option EventCause := none) : Game :=
-  let actor := o.controller.getD o.owner
+  let actor := (g.controllerOf o).getD o.owner
   g.moveToOwnerGraveyard o reason (verb := some .sacrifice) (actor := some actor)
     (cause := cause)
-
-/-- Cards of `subtype` in `p`'s graveyard (Thranduil-style copies). -/
-def graveyardCardsOfSubtype (g : Game) (p : PlayerId) (subtype : CardSubtype) :
-    Array GameObject :=
-  (g.player p).graveyard.filterMap (fun id =>
-    match g.findObject? id with
-    | some card =>
-      if card.printed.hasSubtype subtype then some card else none
-    | none => none)
-
-private structure Layer6GrantEntry (α : Type) where
-  idx : Nat
-  ts : Nat × Nat
-  rem : AbilityRemoval
-  add : Array α
-deriving Inhabited
-
-/-- Evaluate `init` plus timestamped `grants` (`(ts, items)`) against `o`'s
-Layer 6 `.all` ability removals (attached Auras at `attachmentTimestamp` and
-active `.layered sc (.abilities _ .all) d` effects at `effectTimestamp`),
-optionally also including per-effect `effAdd` from `.abilities add rem`
-(CR 613.1f / 613.7). -/
-private def evalLayer6List {α : Type} (g : Game) (o : GameObject)
-    (init : Array α) (grants : Array ((Nat × Nat) × Array α))
-    (effAdd : AbilitySet → Array α := fun _ => #[])
-    (appendFn : Array α → Array α → Array α := (· ++ ·)) : Array α :=
-  if o.status.faceDown then #[]
-  else
-    let scopeOk (sc : ObjectScope) : Bool :=
-      match sc with
-      | .objects ids => ids.contains o.id
-      | .creaturesControlledBy p => o.isOnBattlefield && o.controlledBy p && g.isCreature o
-      | .creaturesWithout kw =>
-        o.isOnBattlefield && g.isCreature o &&
-          Keywords.merge (g.currentKeywords o) kw != g.currentKeywords o
-      | .permanentsOfSubtype p s => o.isOnBattlefield && o.controlledBy p && g.hasSubtype o s
-    Id.run do
-      let mut raw : Array (Layer6GrantEntry α) := #[]
-      for (ts, items) in grants do
-        if !items.isEmpty then
-          raw := raw.push {
-            idx := raw.size
-            ts := ts
-            rem := .none
-            add := items
-          }
-      if o.isOnBattlefield then
-        for att in g.battlefield do
-          if att.attachedTo == some o.id then
-            let strips := (g.staticAbilities att).any fun
-              | .enchantedLosesAbilitiesDoesntUntap => true
-              | .enchantedLosesAbilitiesCantUntap => true
-              | _ => false
-            if strips then
-              raw := raw.push {
-                idx := raw.size
-                ts := g.attachmentTimestamp att o.id
-                rem := .all
-                add := #[]
-              }
-      for pos in [0:g.activeEffects.size] do
-        let (eid, s) := g.activeEffects[pos]!
-        match s with
-        | .layered sc (.abilities add rem) d =>
-          if scopeOk sc && g.durationActive d then
-            let added := effAdd add
-            if rem == .all || !added.isEmpty then
-              raw := raw.push {
-                idx := raw.size
-                ts := g.effectTimestamp eid pos
-                rem := rem
-                add := added
-              }
-        | _ => pure ()
-      let sorted := raw.qsort fun a b =>
-        if a.ts.1 != b.ts.1 then a.ts.1 < b.ts.1
-        else if a.ts.2 != b.ts.2 then a.ts.2 < b.ts.2
-        else a.idx < b.idx
-      let mut acc := init
-      for e in sorted do
-        if e.rem == .all then acc := #[]
-        acc := appendFn acc e.add
-      return acc
-
-/-- Collect `sel` from graveyard cards named by `copyActivatedFromGySubtype`. -/
-def copiedFromGy {α : Type} (g : Game) (o : GameObject) (sel : CardDef → Array α) :
-    Array α :=
-  if !o.isOnBattlefield then #[]
-  else
-    match o.controller with
-    | none => #[]
-    | some p =>
-      (g.staticAbilities o).foldl (fun acc sa =>
-        match sa with
-        | .copyActivatedFromGySubtype subtype =>
-          (g.graveyardCardsOfSubtype p subtype).foldl
-            (fun acc card => acc ++ sel card.printed) acc
-        | _ => acc) #[]
-
-/-- Printed activated abilities plus those copied from the graveyard and
-loyalty abilities granted to planeswalkers, evaluated in Layer 6 timestamp
-order (CR 613.1f / 613.7). -/
-def activatedAbilitiesOf (g : Game) (o : GameObject) : Array ActivatedAbility :=
-  if o.status.faceDown then
-    match o.printed.morph with
-    | some cost =>
-      #[{ effect := { resolution := .frc .turnFaceUp, phrase := "Turn this face up." }
-          cost := { mana := cost } }]
-    | none => #[]
-  else
-    let copiedFromStatics (sas : Array StaticAbility) : Array ActivatedAbility :=
-      if !o.isOnBattlefield then #[]
-      else
-        match o.controller with
-        | none => #[]
-        | some p =>
-          sas.foldl (fun acc sa =>
-            match sa with
-            | .copyActivatedFromGySubtype subtype =>
-              (g.graveyardCardsOfSubtype p subtype).foldl
-                (fun acc card => acc ++ card.printed.activatedAbilities) acc
-            | _ => acc) #[]
-    let initOwn :=
-      o.printed.activatedAbilities ++
-        copiedFromStatics o.printed.staticAbilities ++
-        (o.printed.crew.map ActivatedAbility.crewAbility).toArray ++
-        (if o.printed.hasBoast then #[ActivatedAbility.zemoBoastAbility] else #[])
-    -- Loyalty abilities granted to planeswalkers you control (Way of the
-    -- Healer and similar). A planeswalker still activates only one loyalty
-    -- ability per turn, however many it has (ruling 779).
-    let pwGrants : Array ((Nat × Nat) × Array ActivatedAbility) :=
-      if o.isOnBattlefield && g.isPlaneswalker o then
-        match o.controller with
-        | some p =>
-          (g.permanentsOf p).filterMap (fun src =>
-            if g.retainsPrintedAbilities src && !src.printed.planeswalkersYouControlHave.isEmpty then
-              some (g.objectEntryTimestamp src, src.printed.planeswalkersYouControlHave)
-            else none)
-        | none => #[]
-      else #[]
-    evalLayer6List g o initOwn pwGrants
-      (effAdd := fun add => copiedFromStatics add.staticAbilities)
-
-/-- True when `p` controls a basic land (CR 205.4c / 305.8). -/
-def controlsBasicLand (g : Game) (p : PlayerId) : Bool :=
-  (g.permanentsOf p).any (fun o => isBasicLandCard o.printed)
-
-/-- Hidden Lair's colored add ability: this land entered this turn, or you
-control a basic land. -/
-def canUseEnteredOrBasicAdd (g : Game) (o : GameObject) : Bool :=
-  g.loggedEntered o.id ||
-    match o.controller with
-    | some p => g.controlsBasicLand p
-    | none => false
-
-/-- Mana types other permanents currently grant `o` (`{T}: Add`), evaluated in
-Layer 6 timestamp order (CR 605.1a / 613.1f / 613.7). -/
-def grantedManaAbilities (g : Game) (o : GameObject) : Array ManaType :=
-  if !o.isOnBattlefield || o.status.faceDown then #[]
-  else
-    match o.controller with
-    | none => #[]
-    | some p =>
-      let anyColor : Array ManaType :=
-        #[.colored .white, .colored .blue, .colored .black,
-          .colored .red, .colored .green]
-      let pushUniq (acc xs : Array ManaType) : Array ManaType :=
-        xs.foldl (fun acc t => if acc.contains t then acc else acc.push t) acc
-      let grants :=
-        (g.permanentsOf p).filterMap (fun src =>
-          let fromSubtypes : Array ManaType :=
-            if src.id == o.id then #[]
-            else
-              (g.staticAbilities src).foldl (fun acc ab =>
-                match ab with
-                | .otherSubtypeHaveTapAddOneOf subtypes mana =>
-                  if subtypes.any (fun s => g.hasSubtype o s) then pushUniq acc mana else acc
-                | _ => acc) #[]
-          let fromChorus : Array ManaType :=
-            if g.isCreature o && src.printed.grantCreaturesTapAddAnyColor &&
-                g.retainsPrintedAbilities src then
-              anyColor
-            else #[]
-          let combined := pushUniq fromSubtypes fromChorus
-          if combined.isEmpty then none
-          else some (g.objectEntryTimestamp src, combined))
-      evalLayer6List g o #[] grants (appendFn := pushUniq)
-
-/-- Whether `o` is a battlefield land that currently has `{T}: Add one mana of
-any color` from a `grantLandsTapAnyColor` permanent (Chromatic Lantern),
-evaluated in Layer 6 timestamp order (CR 605.1a / 613.1f / 613.7). -/
-def landHasLanternGrant (g : Game) (o : GameObject) : Bool :=
-  if !o.isOnBattlefield || o.status.faceDown || !g.isLand o then false
-  else
-    match o.controller with
-    | none => false
-    | some p =>
-      let grants :=
-        (g.permanentsOf p).filterMap (fun src =>
-          if src.printed.grantLandsTapAnyColor && g.retainsPrintedAbilities src then
-            some (g.objectEntryTimestamp src, #[()])
-          else none)
-      !(evalLayer6List g o #[] grants).isEmpty
-
-/-- Whether `o` currently retains an active Emrakul `{T}: Add {C}{C}` grant
-after Layer 6 ability-removal timestamps (CR 613.1f / 613.7). -/
-def hasActiveColorlessGrant (g : Game) (o : GameObject) : Bool :=
-  if !o.isOnBattlefield || o.status.faceDown then false
-  else
-    let grants : Array ((Nat × Nat) × Array Unit) :=
-      Id.run do
-        let mut acc : Array ((Nat × Nat) × Array Unit) := #[]
-        for pos in [0:g.activeEffects.size] do
-          let (eid, s) := g.activeEffects[pos]!
-          match s with
-          | .permission _ (.colorlessGrant landId _) _ =>
-            if landId == o.id then
-              acc := acc.push (g.effectTimestamp eid pos, #[()])
-          | _ => pure ()
-        return acc
-    if grants.isEmpty then false
-    else !(evalLayer6List g o #[] grants).isEmpty
 
 /-- Mana types Reality Fracture mana abilities of `o` produce, including the
 `{T}: Add {C}{C}` Emrakul, the Exigent Doom grants a land. -/

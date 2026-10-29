@@ -902,9 +902,9 @@ def copyTokenOriginalOk : Bool :=
   let tok := g.object! tok.id
   let g := g.becomeCopyOf dest tok
   let dest := g.object! dest.id
-  dest.printed.name == "Soldier" &&
-    dest.printed.power == some 1 &&
-    dest.printed.toughness == some 1 &&
+  g.name dest == "Soldier" &&
+    g.power dest == 1 &&
+    g.toughness dest == 1 &&
     dest.status.plusOnePlusOne == 0 &&
     !dest.status.tapped &&
     (mshRuling 545).comment.contains "original characteristics of that token" &&
@@ -927,8 +927,8 @@ def copyOfCopyOk : Bool :=
   let forge := namedPermanent g "Futurist Forge"
   let g := g.becomeCopyOf forge dest
   let forge := g.object! forge.id
-  dest.printed.name == "S.H.I.E.L.D. Deployment Drone" &&
-    forge.printed.name == "S.H.I.E.L.D. Deployment Drone" &&
+  g.name dest == "S.H.I.E.L.D. Deployment Drone" &&
+    g.name forge == "S.H.I.E.L.D. Deployment Drone" &&
     (mshRuling 546).comment.contains "copy of whatever that permanent copied" &&
     (mshRuling 550).comment.contains "copy of whatever" &&
     (mshRuling 551).comment.contains "whatever that creature copied" &&
@@ -1094,14 +1094,14 @@ def superHeroCivilWarLeaveOk : Bool :=
   let (g, _) := g.move saga.id (.graveyard ⟨0⟩) none
   let g := g.applyChapterEffect ⟨0⟩ (Effect.chapterGainControlOfUpToTwoCreaturesTotalMvAtMost 6)
     (some saga.id) #[Target.permanent bears.id]
-  (namedPermanent g "Grizzly Bears").controlledBy ⟨1⟩ &&
+  g.controlledBy (namedPermanent g "Grizzly Bears") ⟨1⟩ &&
     (let g := addPermanent afterDraw theSuperHeroCivilWar ⟨0⟩ ⟨0⟩
      let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
      let saga := namedPermanent g "The Super Hero Civil War"
      let bears := namedPermanent g "Grizzly Bears"
      let g := g.applyChapterEffect ⟨0⟩ (Effect.chapterGainControlOfUpToTwoCreaturesTotalMvAtMost 6)
        (some saga.id) #[Target.permanent bears.id]
-     (namedPermanent g "Grizzly Bears").controlledBy ⟨0⟩) &&
+     g.controlledBy (namedPermanent g "Grizzly Bears") ⟨0⟩) &&
     (mshRuling 496).comment.contains "won't gain control"
 
 #guard superHeroCivilWarLeaveOk

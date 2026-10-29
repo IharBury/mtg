@@ -195,8 +195,15 @@ def targetingOf (g : Game) (obj : GameObject) : EffectTargeting :=
   | none => fromObj
 
 /-- True when two permanents share a card type (CR 205.2). -/
-def sharesCardType (a b : GameObject) : Bool :=
-  a.types.any (fun t => b.types.contains t)
+def sharesCardType (g : Game) (a b : GameObject) : Bool :=
+  (g.types a).any (fun t => (g.types b).contains t)
+
+/-- Equip worthy may attach only to a legendary non-Villain red or white
+creature (CR 613.1d / 613.1e). -/
+def isWorthyPermanent (g : Game) (o : GameObject) : Bool :=
+  o.isOnBattlefield && g.isCreature o && g.isLegendary o &&
+    !g.hasSubtype o .villain &&
+    ((g.colors o).contains .red || (g.colors o).contains .white)
 
 /-- Current instance of the word “target” being announced (0-based).
 Skipped optional slots count toward this index so the next instance is
@@ -249,12 +256,12 @@ def legalProposedTargets (g : Game) (p : PlayerId) (o : GameObject) : Array Targ
       if prop.spellId == o.id &&
           prop.kind == .activatedAbility &&
           (prop.activation.any (·.equipWorthy) ||
-            prop.original.printed.hasEquipWorthy) then
+            (g.baseCard prop.original).hasEquipWorthy) then
         legal.filter (fun t =>
           match t with
           | Target.permanent id =>
             match g.findObject? id with
-            | some c => c.printed.isWorthy
+            | some c => g.isWorthyPermanent c
             | none => false
           | _ => false)
       else legal
@@ -269,7 +276,7 @@ def legalProposedTargets (g : Game) (p : PlayerId) (o : GameObject) : Array Targ
           match t with
           | Target.permanent oid =>
             match g.findObject? oid with
-            | some other => sharesCardType first other
+            | some other => g.sharesCardType first other
             | none => false
           | _ => false)
       | none => legal
@@ -284,7 +291,7 @@ def legalProposedTargets (g : Game) (p : PlayerId) (o : GameObject) : Array Targ
           | Target.permanent oid =>
             match g.findObject? oid with
             | some other =>
-              first.printed.manaValue + other.printed.manaValue ≤ n
+              g.objectManaValue first + g.objectManaValue other ≤ n
             | none => false
           | _ => false)
       | none => legal
@@ -356,7 +363,7 @@ def abilityCanChooseTarget (g : Game) (p : PlayerId) (ab : ActivatedAbility) : B
         match t with
         | Target.permanent id =>
           match g.findObject? id with
-          | some c => c.printed.isWorthy
+          | some c => g.isWorthyPermanent c
           | none => false
         | _ => false)
     !worthy.isEmpty
@@ -371,12 +378,12 @@ def lastLegalTarget (legal : Array Target) (pred : Target → Bool) : Option Tar
 
 /-- Whether this target is a permanent `p` controls. -/
 def isOwnPermanentTarget (g : Game) (p : PlayerId) : Target → Bool
-  | .permanent oid => (g.findObject? oid).any (fun o => o.controlledBy p)
+  | .permanent oid => (g.findObject? oid).any (fun o => g.controlledBy o p)
   | _ => false
 
 /-- Whether this target is a permanent an opponent of `p` controls. -/
 def isOppPermanentTarget (g : Game) (p : PlayerId) : Target → Bool
-  | .permanent oid => (g.findObject? oid).any (fun o => o.controlledBy (g.opponent p))
+  | .permanent oid => (g.findObject? oid).any (fun o => g.controlledBy o (g.opponent p))
   | _ => false
 
 /-- Default choice among `legal` for this targeting shape (CR 601.2c). -/
@@ -432,8 +439,8 @@ def defaultAbilityMode (g : Game) (p : PlayerId) (modes : Array Effect) : Option
   let destroyIdx :=
     findKind (fun e => e.abilityKind == .destroyColorless)
   let oppHasCreature :=
-    (g.permanentsOf (g.opponent p)).any (·.isCreature)
-  let hasColorless := g.battlefield.any (·.isColorlessNonland)
+    (g.permanentsOf (g.opponent p)).any (g.isCreature ·)
+  let hasColorless := g.battlefield.any (g.isColorlessNonland ·)
   if oppHasCreature then
     damageIdx <|> destroyIdx <|> choosable[0]?.map (·.1)
   else if hasColorless then
@@ -445,7 +452,7 @@ def targetLogName (g : Game) : Target → String
   | .player pid => (g.player pid).name
   | .permanent oid | .card oid =>
     match g.findObject? oid with
-    | some o => o.name
+    | some o => g.name o
     | none => toString oid
 
 end Game

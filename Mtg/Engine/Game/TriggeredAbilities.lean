@@ -89,12 +89,12 @@ def applyAllianceMode (g : Game) (sourceId : ObjectId) (mode : Nat) : Game :=
       g.logMsg "That Alliance mode has already been chosen this turn"
     else
       let g := g.record (GameEvent.triggerModeChosen g.turnNumber sourceId mode)
-      match src.controller, mode with
+      match g.controllerOf src, mode with
       | some c, 0 =>
         let g := g.changePlayer c (.addMana (.colored .green) 3)
         g.logMsg s!"{(g.player c).name} adds \{G}\{G}\{G}"
       | some c, 1 =>
-        let creatures := (g.battlefield.filter (fun o => o.isCreature && o.controlledBy c)).map (·.id)
+        let creatures := (g.battlefield.filter (fun o => g.isCreature o && g.controlledBy o c)).map (·.id)
         let g := g.withBatch none fun g =>
           creatures.foldl (fun g id =>
             match g.findObject? id with
@@ -120,7 +120,7 @@ def applyGollumMode (g : Game) (sourceId : ObjectId) (mode : Nat) : Game :=
       g.logMsg "That mode has already been chosen"
     else
       let g := g.record (GameEvent.triggerModeChosen g.turnNumber sourceId mode (lifetime := true))
-      match src.controller, mode with
+      match g.controllerOf src, mode with
       | some _, 0 =>
         g.addPlusOnePlusOneTo (g.object! sourceId) 1
       | some c, 1 =>
@@ -147,7 +147,7 @@ def offerChooseModes (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       | .oneUnused | .alreadyChosen | .plusOneOrRemoveCounter | .fromLastKnown =>
         g.modesChosenEver src.id
     let available := unusedModes memory (List.range modes.length).toArray
-    match src.controller with
+    match g.controllerOf src with
     | none => g.logMsg "The ability is removed from the stack with no effect"
     | some p =>
       if available.isEmpty then
@@ -199,7 +199,8 @@ def sacrificeChosenOrGone (g : Game) (targets : Array Target) : Game :=
     match g.findObject? id with
     | some o =>
       if o.isOnBattlefield then
-        (g.move id (.graveyard o.owner) none).1.logMsg s!"{o.name} is sacrificed"
+        let name := g.name o
+        (g.move id (.graveyard o.owner) none).1.logMsg s!"{name} is sacrificed"
       else
         g.logMsg "The token was already destroyed and can't be sacrificed"
     | none =>
@@ -352,7 +353,7 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (g, g.loggedSubtypeEntered controller subtype)
   | (.atLeast (.count .landsYouControl) (.fixed n)) =>
     let n := n.toNat
-    let lands := ((g.permanentsOf controller).filter (·.printed.isLand)).size
+    let lands := ((g.permanentsOf controller).filter (g.isLand ·)).size
     if lands < n then
       let g :=
         if n == 6 then
@@ -361,7 +362,7 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       (g, false)
     else (g, true)
   | (.atLeast (.count .planeswalkersYouControl) (.fixed 1)) =>
-    if (g.permanentsOf controller).any (·.printed.isPlaneswalker) then
+    if (g.permanentsOf controller).any (g.isPlaneswalker ·) then
       (g.logMsg "You control a planeswalker. The ability does nothing", true)
     else (g, false)
   | (.atLeast (.count .forestsExceptCause) (.fixed n)) =>
@@ -438,7 +439,7 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       let hostOk :=
         match eq.attachedTo.bind g.findObject? with
         | some host =>
-          host.isOnBattlefield && host.isLegendary && host.controller == some controller
+          host.isOnBattlefield && g.isLegendary host && g.controllerOf host == some controller
         | none => false
       if hostOk then (g, true)
       else
@@ -447,13 +448,13 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
   | (.atLeast (.count (.target .creature)) (.fixed 1)) =>
     let (g, o?) := g.legalTriggerPermanent? controller ab sourceId targets
     match o? with
-    | some o => (g, o.isCreature)
+    | some o => (g, g.isCreature o)
     | none => (g, false)
   | (.atLeast (.count .planeswalker) (.fixed 1))
   | (.atLeast (.count (.target .planeswalker)) (.fixed 1)) =>
     let (g, o?) := g.legalTriggerPermanent? controller ab sourceId targets
     match o? with
-    | some o => (g, o.printed.isPlaneswalker)
+    | some o => (g, g.isPlaneswalker o)
     | none => (g, false)
   | (.atLeast (.count .creatureCardsInGraveyard) (.fixed n)) =>
     let gy := ((g.player controller).graveyard.filter (fun id =>
@@ -479,7 +480,8 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     | some (id, _) =>
       match g.findObject? id with
       | some o =>
-        if o.printed.isEquipment then (g, true)
+        let isEq := if o.isOnBattlefield then g.isEquipment o else o.printed.isEquipment
+        if isEq then (g, true)
         else (g.change (.putArtifactThisWay none), false)
       | none => (g.change (.putArtifactThisWay none), false)
   | .revealedManaValueAtMostLands =>
@@ -557,14 +559,14 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         let (g, o?) := g.legalTriggerPermanent? controller ab sourceId targets
         let n :=
           match o? with
-          | some o => if o.isCreature then 1 else 0
+          | some o => if g.isCreature o then 1 else 0
           | none => 0
         (g, some n)
       | .planeswalker | .target .planeswalker =>
         let (g, o?) := g.legalTriggerPermanent? controller ab sourceId targets
         let n :=
           match o? with
-          | some o => if o.printed.isPlaneswalker then 1 else 0
+          | some o => if g.isPlaneswalker o then 1 else 0
           | none => 0
         (g, some n)
       | .anotherSubtype subtype | .target (.anotherSubtype subtype) =>
@@ -585,7 +587,8 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         | some (id, _) =>
           match g.findObject? id with
           | some o =>
-            if o.printed.isEquipment then (g, some 1)
+            let isEq := if o.isOnBattlefield then g.isEquipment o else o.printed.isEquipment
+            if isEq then (g, some 1)
             else (g.change (.putArtifactThisWay none), some 0)
           | none => (g.change (.putArtifactThisWay none), some 0)
       | .questCounters =>
@@ -601,7 +604,7 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
           let n :=
             match eq.attachedTo.bind g.findObject? with
             | some host =>
-              if host.isOnBattlefield && host.isLegendary && host.controller == some controller then
+              if host.isOnBattlefield && g.isLegendary host && g.controllerOf host == some controller then
                 1
               else 0
             | none => 0
@@ -783,11 +786,12 @@ def offerCopyCause (g : Game) (controller : PlayerId) (sourceId : Option ObjectI
   | some id =>
     match g.findObject? (g.followMoved id) with
     | some src =>
-      if src.printed.isToken || !src.printed.isArtifact || some src.id == sourceId then
+      let isArt := if src.isOnBattlefield then g.isArtifact src else src.printed.isArtifact
+      if src.printed.isToken || !isArt || some src.id == sourceId then
         (g.logMsg "That permanent isn't another nontoken artifact").failMayThen
       else
         g.change (.pending (.fraChoice controller (.ultronMayPay id)))
-          |>.logMsg s!"{(g.player controller).name} may pay {2} to copy {src.name}"
+          |>.logMsg s!"{(g.player controller).name} may pay {2} to copy {g.name src}"
     | none => (g.logMsg "Ultron has nothing to copy").failMayThen
 
 /-- Apply `f` to the permanent `who` names.
@@ -836,23 +840,23 @@ def applyAffectedCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbil
     | .doubleStrike =>
       if n == 1 then g.applyPermanentAction o .doubleStrikeCounter
       else
-        let g := g.recordPutCounters o.id .doubleStrike n (byPlayer := o.controller)
-        g.logMsg s!"{o.name} gets {n} double strike counters"
+        let g := g.recordPutCounters o.id .doubleStrike n (byPlayer := g.controllerOf o)
+        g.logMsg s!"{g.name o} gets {n} double strike counters"
     | .burden =>
       if n == 1 then g.applyPermanentAction o .burdenCounter
       else g.addBurdenCounter o n
     | .stun =>
       let k := g.countersYouPut o n
-      let g := g.recordPutCounters o.id .stun k (byPlayer := o.controller)
+      let g := g.recordPutCounters o.id .stun k (byPlayer := g.controllerOf o)
       let phrase :=
         if n == 1 then "A stun counter is put" else s!"{k} stun counters are put"
-      g.logMsg s!"{phrase} on {o.name}"
+      g.logMsg s!"{phrase} on {g.name o}"
     | .loyalty =>
       let k := g.countersYouPut o n (putter := some controller)
       let g := g.recordPutCounters o.id .loyalty k (byPlayer := some controller)
       let phrase :=
         if n == 1 then "A loyalty counter is put" else s!"{k} loyalty counters are put"
-      g.logMsg s!"{phrase} on {o.name}"
+      g.logMsg s!"{phrase} on {g.name o}"
     | kind =>
       g.addCounters o kind n (byPlayer := some controller)
 
@@ -892,7 +896,7 @@ def applyTriggerPump (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
   | .whileSource | .target .whileSource =>
     g.withAffected controller ab sourceId targets .targetWhileSource pumpOne
   | .cause _ =>
-    match g.battlefield.find? (fun o => o.status.attacking && o.controlledBy controller) with
+    match g.battlefield.find? (fun o => o.status.attacking && g.controlledBy o controller) with
     | some o => pumpOne g o
     | none => g
   | .creaturesYouControl =>
@@ -900,14 +904,14 @@ def applyTriggerPump (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
   | .othersOfSubtype subtype =>
     let srcId? := (sourceId.bind g.findObject?).map (·.id)
     g.foldBattlefield (fun o =>
-        o.controlledBy controller &&
+        g.controlledBy o controller &&
           (match srcId? with
            | some sid => o.id != sid
            | none => true) &&
           g.hasSubtype o subtype)
       pumpOne
   | .opponentsCreatures =>
-    g.foldBattlefield (fun o => o.isCreature && !o.controlledBy controller) pumpOne
+    g.foldBattlefield (fun o => g.isCreature o && !g.controlledBy o controller) pumpOne
   | who =>
     match g.permanentsNamed ctx who with
     | some objs => g.withBatch none fun g => objs.foldl (fun game o => pumpOne game o) g
@@ -927,14 +931,14 @@ def applyTriggerDamage (g : Game) (controller : PlayerId) (ab : TriggeredAbility
     g.withTriggerSource sourceId fun g o =>
       let blockers := g.blockersOf o.id
       if blockers.isEmpty then
-        g.logMsg s!"there are no creatures blocking {o.name}"
+        g.logMsg s!"there are no creatures blocking {g.name o}"
       else if n == 0 then g
       else
         g.withBatch (g.resolvingBatchCause controller sourceId) fun g =>
           Id.run do
             let mut g := g
             for b in blockers do
-              g := g.dealDamageFrom o.name (g.object! b.id) n (source := some o)
+              g := g.dealDamageFrom (g.name o) (g.object! b.id) n (source := some o)
             return g
   | .permanent, .lastKnownPower, .excess =>
     let amt := lastKnownPower.getD 0
@@ -1005,7 +1009,7 @@ def applyTriggerDamage (g : Game) (controller : PlayerId) (ab : TriggeredAbility
           if marked then g.change (.permanentDealtDamageThisWay (some oid)) else g
       | _ => g.logMsg "The target is no longer legal")
   | .player (.target .opponent), .greatestArtifactMv, _ =>
-    let x := g.greatestManaValueAmong controller (·.printed.isArtifact)
+    let x := g.greatestManaValueAmong controller (g.isArtifact ·)
     g.withLegalTriggerPlayer controller ab sourceId targets (fun g pid =>
       g.dealDamageToPlayer pid x (source := sourceId.bind g.findObject?))
   | .eachNonSubtypeAndOpponents subtype, .fixed n, _ =>
@@ -1147,8 +1151,8 @@ def copyKeywordCounter (g : Game) (src other : GameObject)
     (has : GameObject → Bool) (kind : CounterKind) (name : String) : Game :=
   if has other && !has src then
     let n := g.countersYouPut src 1
-    g.recordPutCounters src.id kind n (byPlayer := src.controller)
-      |>.logMsg s!"{src.name} gets a {name} counter"
+    g.recordPutCounters src.id kind n (byPlayer := g.controllerOf src)
+      |>.logMsg s!"{g.name src} gets a {name} counter"
   else g
 
 /-- Put a counter on `src` for each keyword `other` has that `src` does not.
@@ -1201,7 +1205,7 @@ def applyPutCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       let n := if (g.player controller).citysBlessing then 2 else 1
       g.withBatch none fun g =>
         (g.permanentsOf controller).foldl (fun acc o =>
-          if o.isCreature then acc.addPlusOnePlusOneTo o n else acc) g
+          if acc.isCreature o then acc.addPlusOnePlusOneTo o n else acc) g
   | .ofKind .plusOnePlusOne _, .eachOther =>
     g.withBatch none fun g =>
       (g.creaturesControlledBy controller).foldl (fun acc o =>
@@ -1214,7 +1218,7 @@ def applyPutCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     g.withSourceOnBattlefield sourceId (fun g o =>
       let n := g.countersYouPut o 1 (putter := some controller)
       let g := g.recordPutCounters o.id .loyalty n (byPlayer := some controller)
-      g.logMsg s!"A loyalty counter is put on {o.name}")
+      g.logMsg s!"A loyalty counter is put on {g.name o}")
   | .sourceCounters, .permanent _ =>
     -- Rulings 756 / 758: each kind of counter it had as it died, in the same
     -- numbers; nothing moves from the dead creature.
@@ -1223,25 +1227,25 @@ def applyPutCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     | some last =>
       g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
         g.withBatch none fun g =>
-          let extra := g.docSamsonBonus (some controller) o.controller
+          let extra := g.docSamsonBonus (some controller) (g.controllerOf o)
           let g := g.putCountersExceptPlusOne o.id last extra (byPlayer := some controller)
           let o := g.object! o.id
           let g :=
             if last.plusOnePlusOne > 0 then
               g.addPlusOnePlusOneTo o last.plusOnePlusOne (byPlayer := some controller)
             else g
-          g.logMsg s!"The counters are put on {o.name}") "No target was chosen"
+          g.logMsg s!"The counters are put on {g.name o}") "No target was chosen"
   | .ofKind .charge _, .source =>
     g.withSourceOnBattlefield sourceId (fun g o =>
       let n := g.countersYouPut o 1 (putter := some controller)
       let g := g.recordPutCounters o.id .charge n (byPlayer := some controller)
-      g.logMsg s!"A charge counter is put on {o.name}")
+      g.logMsg s!"A charge counter is put on {g.name o}")
   | .ofKind .quest _, .source =>
     g.withTriggerSource sourceId fun g src =>
       let n := g.countersYouPut src 1 (putter := some controller)
       let g := g.recordPutCounters src.id .quest n (byPlayer := some controller)
       let src := g.object! src.id
-      g.logMsg s!"{src.name} gets a quest counter ({src.status.quest})"
+      g.logMsg s!"{g.name src} gets a quest counter ({src.status.quest})"
   | .honePerOpponent, .source =>
     let opp :=
       match targets[0]? with
@@ -1252,7 +1256,7 @@ def applyPutCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     g.withTriggerSource sourceId fun g src =>
       let k := g.countersYouPut src n (putter := some controller)
       g.recordPutCounters src.id .hone k (byPlayer := some controller)
-        |>.logMsg s!"{src.name} gets {k} hone counter(s)"
+        |>.logMsg s!"{g.name src} gets {k} hone counter(s)"
   | .ofKind .plan _, .source =>
     match sourceId.bind g.findObject? with
     | some o =>
@@ -1282,7 +1286,7 @@ def applyPutCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     g.withSourceOnBattlefield sourceId (fun g src =>
       let n := g.countersYouPut src 1 (putter := some controller)
       g.recordPutCounters src.id .invasion n (byPlayer := some controller)
-        |>.logMsg s!"{src.name} gets an invasion counter")
+        |>.logMsg s!"{g.name src} gets an invasion counter")
       "The source is no longer in play"
   | .ofKind .trample _, .permanent _ =>
     match targets[0]? with
@@ -1291,7 +1295,7 @@ def applyPutCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       | some o =>
         let n := g.countersYouPut o 1 (putter := some controller)
         let g := g.recordPutCounters o.id .trample n (byPlayer := some controller)
-        if n == 0 then g else g.logMsg s!"{o.name} gets a trample counter"
+        if n == 0 then g else g.logMsg s!"{g.name o} gets a trample counter"
       | none => g
     | _ => g
   | .ofKind .influence _, .source =>
@@ -1319,7 +1323,7 @@ def applyPutCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
       let n := g.countersYouPut o 1 (putter := some controller)
       let g := g.recordPutCounters o.id .loyalty n (byPlayer := some controller)
-      g.logMsg s!"A loyalty counter is put on {o.name}")
+      g.logMsg s!"A loyalty counter is put on {g.name o}")
   | .plusOneSacrificedPower, .source =>
     let n := g.sacrificedPowerThisWay.getD 0
     let g := g.change (.sacrificedPowerThisWay none)
@@ -1341,7 +1345,7 @@ def applyPutCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       let g := g.recordPutCounters o.id .doubleStrike n (byPlayer := some controller)
       let phrase :=
         if n == 1 then "a double strike counter" else s!"{n} double strike counters"
-      g.logMsg s!"{o.name} gets {phrase}")
+      g.logMsg s!"{g.name o} gets {phrase}")
       "The target is no longer legal"
   | .ofKind .burden n, .permanent false =>
     g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
@@ -1350,10 +1354,10 @@ def applyPutCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
   | .ofKind .stun n, .permanent false =>
     g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
       let k := g.countersYouPut o n
-      let g := g.recordPutCounters o.id .stun k (byPlayer := o.controller)
+      let g := g.recordPutCounters o.id .stun k (byPlayer := g.controllerOf o)
       let phrase :=
         if n == 1 then "A stun counter is put" else s!"{k} stun counters are put"
-      g.logMsg s!"{phrase} on {o.name}")
+      g.logMsg s!"{phrase} on {g.name o}")
       "The target is no longer legal"
   | .ofKind kind n, .source =>
     g.applyAffectedCounters controller ab sourceId targets kind n .source
@@ -1376,7 +1380,7 @@ def applyPutCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       | some (Target.permanent id) =>
         match g.findObject? id with
         | some other =>
-          if !other.isOnBattlefield || !other.isCreature || other.id == src.id then
+          if !other.isOnBattlefield || !g.isCreature other || other.id == src.id then
             g.logMsg "The target is no longer legal"
           else
             g.copyMissingKeywordCounters src other
@@ -1422,7 +1426,7 @@ def applyPutCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         | some objs =>
           g.withBatch none fun g =>
             objs.foldl (fun game o =>
-              let extra := game.docSamsonBonus (some controller) o.controller
+              let extra := game.docSamsonBonus (some controller) (game.controllerOf o)
               let game := game.putCountersExceptPlusOne o.id last extra (byPlayer := some controller)
               if last.plusOnePlusOne > 0 then
                 game.addPlusOnePlusOneTo (game.object! o.id) last.plusOnePlusOne
@@ -1435,7 +1439,7 @@ def applyPutCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         | _ => none
       match other?, g.permanentsNamed ctx who with
       | some other, some objs =>
-        if !other.isOnBattlefield || !other.isCreature then g
+        if !other.isOnBattlefield || !g.isCreature other then g
         else
           g.withBatch none fun g =>
             objs.foldl (fun game o =>
@@ -1631,7 +1635,7 @@ def applyExile (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     let g := g.change (.exiledIdsThisWay #[])
     let (g, cause) := g.allocDelayedCause (some controller) sourceId
     g.foldPermanentTargets targets (fun g o =>
-      if o.controlledBy controller && o.printed.isLand then
+      if g.controlledBy o controller && g.isLand o then
         let (g, newId) := g.move o.id .exile none (cause := some cause)
         g.change (.pushExiledIdThisWay newId)
       else g)
@@ -1750,7 +1754,7 @@ def applyExile (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
           | none => g
         | .nextEndStep => g.exileUntilNextEndStep o (cause := sharedCause?)
         | .playUntilNextTurn =>
-          let name := o.name
+          let name := if o.isOnBattlefield then g.name o else o.name
           let (g, newId) := g.move o.id .exile none (cause := sharedCause?)
           let g := g.createEffect
             (.playPermission newId { player := controller } (turnEnds := 2))
@@ -1758,18 +1762,19 @@ def applyExile (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
           g.logMsg
             s!"{(g.player controller).name} exiles {name} and may play it until the end of their next turn"
         | .playThisTurn =>
-          let name := o.name
+          let name := if o.isOnBattlefield then g.name o else o.name
           let (g, newId) := g.move o.id .exile none (cause := sharedCause?)
           let g := g.createEffect
             (.playPermission newId { player := controller })
             (cause := sharedCause?)
           g.logMsg s!"{(g.player controller).name} exiles {name} and may play it this turn"
         | .forLater =>
-          let name := o.name
+          let name := if o.isOnBattlefield then g.name o else o.name
+          let wasLand := if o.isOnBattlefield then g.isLand o else o.printed.isLand
           let (g, newId) := g.move o.id .exile none (cause := sharedCause?)
           match note with
           | .lands =>
-            if o.printed.isLand then
+            if wasLand then
               g.change (.pushExiledIdThisWay newId)
             else g
           | .playCard => g.change (.playExiledThisWay (some newId))
@@ -1801,7 +1806,7 @@ def applyExile (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
           | .none => g.logMsg s!"{name} is exiled"
         | .returnImmediately =>
           let owner := o.owner
-          let name := o.name
+          let name := if o.isOnBattlefield then g.name o else o.name
           let (g, exId) := g.move o.id .exile none (cause := sharedCause?)
           let ex := g.object! exId
           let (g, retId) := g.move exId .battlefield (some owner)
@@ -1810,10 +1815,13 @@ def applyExile (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
           g.afterPermanentEnters (g.object! retId)
             |>.logMsg s!"{name} is exiled, then returned"
         | .returnTapped =>
-          if o.printed.isToken || !(o.printed.isArtifact || o.isCreature) then g
+          let isArtOrCreature :=
+            if o.isOnBattlefield then g.isArtifact o || g.isCreature o
+            else o.printed.isArtifact || o.printed.isCreature
+          if o.printed.isToken || !isArtOrCreature then g
           else
             let owner := o.owner
-            let name := o.name
+            let name := if o.isOnBattlefield then g.name o else o.name
             let (g, exId) := g.move o.id .exile none (cause := sharedCause?)
             let ex := g.object! exId
             let (g, retId) := g.move exId .battlefield (some owner)
@@ -1846,14 +1854,14 @@ def applySacrifice (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     match how with
     | .isSacrificed =>
       g.withSourceOnBattlefield sourceId (fun g src =>
-        mark (g.sacrificeToGraveyard src s!"{src.name} is sacrificed"))
+        mark (g.sacrificeToGraveyard src s!"{g.name src} is sacrificed"))
     | .controllerSacrifices =>
       g.withSourceOnBattlefield sourceId (fun g src =>
         mark (g.sacrificeToGraveyard src
-          s!"{(g.player controller).name} sacrifices {src.name}"))
+          s!"{(g.player controller).name} sacrifices {g.name src}"))
     | .movedAsSacrificed =>
       g.withTriggerSource sourceId fun g src =>
-        let name := src.name
+        let name := g.name src
         let (g, _) := g.move src.id (.graveyard src.owner) none
         (mark g).logMsg s!"{name} is sacrificed"
   match what, note with
@@ -1924,7 +1932,7 @@ def applySacrifice (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         | .none => g
       g.withBatch none fun g =>
         objs.foldl (fun g o =>
-          let g := g.sacrificeToGraveyard o s!"{o.name} is sacrificed"
+          let g := g.sacrificeToGraveyard o s!"{g.name o} is sacrificed"
           match note with
           | .noted => g.change (.sourceWasSacrificed true)
           | .forReflexive => g.change (.planWasSacrificed true)
@@ -1965,7 +1973,7 @@ def applyAttach (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     | none, some (Target.permanent hid) =>
       match g.findObject? hid, sourceId.bind g.findObject? with
       | some host, some src =>
-        if host.isCreature then g.attachSourceTo src host else g
+        if g.isCreature host then g.attachSourceTo src host else g
       | _, _ => g
     | _, _ => g
   | .anyYouControl, .target =>
@@ -1975,17 +1983,17 @@ def applyAttach (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       match g.findObject? hid with
       | none => g.logMsg "The target is no longer legal"
       | some host =>
-        if !host.isOnBattlefield || !host.isCreature then
+        if !host.isOnBattlefield || !g.isCreature host then
           g.logMsg "The target is no longer legal"
         else
           let eligible :=
             ((g.permanentsOf controller).filter (fun o =>
-              o.printed.isEquipment && o.attachedTo != some host.id)).map (·.id)
+              g.isEquipment o && o.attachedTo != some host.id)).map (·.id)
           if eligible.isEmpty then
             g.logMsg "No Equipment was attached this way"
           else
             g.beginFraChoice controller (.attachAnyEquipment host.id eligible)
-              s!"{(g.player controller).name} chooses any number of Equipment to attach to {host.name}"
+              s!"{(g.player controller).name} chooses any number of Equipment to attach to {g.name host}"
     | _ => g.logMsg "The target is no longer legal"
   | .putArtifact, .notedHost =>
     match g.putArtifactThisWay with
@@ -2013,8 +2021,8 @@ def applyAttach (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     | [Target.permanent eqId, Target.permanent crId] =>
       match g.findObject? eqId, g.findObject? crId with
       | some eq, some cr =>
-        if eq.isOnBattlefield && cr.isOnBattlefield && eq.printed.isEquipment &&
-            cr.isCreature then
+        if eq.isOnBattlefield && cr.isOnBattlefield && g.isEquipment eq &&
+            g.isCreature cr then
           g.attachSourceTo eq cr
         else
           g.logMsg "The Equipment won't move"
@@ -2022,7 +2030,7 @@ def applyAttach (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     | [Target.permanent id] =>
       match g.findObject? id with
       | some o =>
-        if o.isOnBattlefield && o.printed.isEquipment then
+        if o.isOnBattlefield && g.isEquipment o then
           g.logMsg "The Equipment won't move"
         else
           g.logMsg "No Equipment was chosen"
@@ -2041,7 +2049,7 @@ def applyAttach (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
             | Target.permanent id =>
               match g.findObject? id with
               | some eq =>
-                if eq.isOnBattlefield && eq.printed.isEquipment then
+                if eq.isOnBattlefield && g.isEquipment eq then
                   g.attachSourceTo eq host
                 else g
               | none => g
@@ -2291,8 +2299,8 @@ def applyDestroy (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         let mut g := g
         let mut n : Nat := 0
         for o in g.battlefield do
-          if o.isOnBattlefield && !o.controlledBy controller &&
-              (o.types.contains .artifact || o.types.contains .enchantment) then
+          if o.isOnBattlefield && !g.controlledBy o controller &&
+              (g.isArtifact o || g.isEnchantment o) then
             g := g.destroyPermanent o
             -- Only permanents actually destroyed count (indestructible ones stay).
             if !(g.findObject? o.id).any (·.isOnBattlefield) then
@@ -2322,14 +2330,15 @@ def applyDestroy (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       | some o =>
         if !o.isOnBattlefield then clear.logMsg "The target is no longer legal"
         else
+          let oCtrl := g.controllerOf o
           let pw := lastKnownPower.getD (g.power o)
           let n := if pw > 0 then pw.toNat else 0
           let g := g.destroyPermanent o
           g.changes #[
             .destroyedForAmassThisWay true,
-            .amassControllerThisWay o.controller,
+            .amassControllerThisWay oCtrl,
             .amassAmountThisWay n,
-            .amassYouControlledThisWay (o.controller == some controller)]
+            .amassYouControlledThisWay (oCtrl == some controller)]
     | _ =>
       clear.logMsg
         "No target was chosen. Its controller is undefined and no player amasses Goblins."
@@ -2375,14 +2384,15 @@ def applyDestroy (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
             .amassAmountThisWay 0,
             .amassYouControlledThisWay false]
         | some o =>
+          let oCtrl := g.controllerOf o
           let pw := lastKnownPower.getD (g.power o)
           let n := if pw > 0 then pw.toNat else 0
           let g := g.withBatch none fun g => objs.foldl (fun g o => g.destroyPermanent o) g
           g.changes #[
             .destroyedForAmassThisWay true,
-            .amassControllerThisWay o.controller,
+            .amassControllerThisWay oCtrl,
             .amassAmountThisWay n,
-            .amassYouControlledThisWay (o.controller == some controller)]
+            .amassYouControlledThisWay (oCtrl == some controller)]
       | .chosenToken =>
         g.withBatch none fun g =>
           objs.foldl (fun g o => if o.printed.isToken then g.destroyPermanent o else g) g
@@ -2427,7 +2437,7 @@ def applyTriggerDraw (g : Game) (controller : PlayerId) (sourceId : Option Objec
     | some host =>
       match g.triggerCount ctx amount with
       | some n =>
-        if n == 0 then g else g.draw (host.controller.getD host.owner) n
+        if n == 0 then g else g.draw ((g.controllerOf host).getD host.owner) n
       | none => g
     | none =>
       g.logMsg "The enchanted creature has left. No card is drawn."
@@ -2439,7 +2449,7 @@ def applyTriggerDraw (g : Game) (controller : PlayerId) (sourceId : Option Objec
     | some (c, opp, sid) =>
       (g.change (.palantirChoiceReady none)).offerPalantirChoice c opp sid
   | .you, .perControlled ty =>
-    let n := ((g.permanentsOf controller).filter (fun o => o.printed.hasType ty)).size
+    let n := ((g.permanentsOf controller).filter (fun o => g.hasType o ty)).size
     if n == 0 then g else g.draw controller n
   | .eachOpponent, .fixed n =>
     if n.toNat == 0 then g
@@ -2648,7 +2658,7 @@ def applyPut (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         | none => g
         | some o =>
           let name := o.name
-          let (g, retId) := g.move id .battlefield (some o.owner) (tapped := true) (summoningSick := false)
+          let (g, retId) := g.move id .battlefield (some o.owner) (tapped := true)
           let g := g.logMsg s!"{name} is exiled, then returned tapped"
           g.afterLandEnters (g.object! retId)) g
   | .discardedLand, .tapped, _ =>
@@ -2659,7 +2669,7 @@ def applyPut (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       match g.findObject? id with
       | some o =>
         if o.printed.isLand && o.zone == .graveyard o.owner then
-          let entered := g.putOntoBattlefield o.id pid (tapped := true) (summoningSick := false)
+          let entered := g.putOntoBattlefield o.id pid (tapped := true)
           let g := entered.1.logMsg s!"{o.name} enters the battlefield tapped"
           g.afterLandEnters (g.object! entered.2)
         else g
@@ -2808,7 +2818,7 @@ def applyGrant (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
           if o.status.attacking && o.attachedTo.isSome ||
               (o.status.attacking &&
                 g.battlefield.any (fun eq => eq.attachedTo == some o.id)) then
-            if o.isCreature && o.status.attacking &&
+            if g.isCreature o && o.status.attacking &&
                 g.battlefield.any (fun eq => eq.attachedTo == some o.id) then
               g := g.grantUntilEotLogged o Keyword.doubleStrike
         return g
@@ -2859,7 +2869,7 @@ def applyGrant (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     | none => g
     | some objs =>
       let pids := objs.foldl (fun acc o =>
-        match o.controller with
+        match g.controllerOf o with
         | some pid => if acc.contains pid then acc else acc.push pid
         | none => acc) #[]
       pids.foldl (fun g pid =>
@@ -2869,7 +2879,7 @@ def applyGrant (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     let ctx : TriggerRead := { controller, sourceId, targets }
     match g.permanentsNamed ctx who with
     | some objs =>
-      match objs.findSome? (·.controller) with
+      match objs.findSome? (g.controllerOf ·) with
       | some pid =>
         g.createEffect (.assignCombatDamageEqualToughnessUntilEot pid)
           |>.logMsg "Creatures you control assign combat damage equal to their toughness"
@@ -2897,23 +2907,23 @@ def applyGrant (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         match sourceId with
         | some sid =>
           let g := g.createEffect (.hexproofWhileSource o.id sid)
-          g.logMsg s!"{o.name} gains hexproof for as long as the source remains"
+          g.logMsg s!"{g.name o} gains hexproof for as long as the source remains"
         | none => g
       | .preventDamageWhileSource =>
         match sourceId with
         | some sid =>
           let g := g.createEffect (.preventDamageWhileSource o.id sid)
           g.logMsg
-            s!"damage that would be dealt by {o.name} is prevented while the source remains"
+            s!"damage that would be dealt by {g.name o} is prevented while the source remains"
         | none => g
       | .landfallCreateElf => g.gainLandfallCreateElf (some o.id)
       | .basePowerEqualHand =>
         g.createEffect (.cardsInHandPowerUntilEot o.id)
           |>.logMsg
-            s!"{o.name}'s base power is the number of cards in your hand until end of turn"
+            s!"{g.name o}'s base power is the number of cards in your hand until end of turn"
       | .ironFistTap =>
         g.createEffect (.ironFistTapUntilEot o.id)
-          |>.logMsg s!"{o.name} gains a tap ability until end of turn"
+          |>.logMsg s!"{g.name o} gains a tap ability until end of turn"
       | .doubleStrike | .keywords _ | .protectionEverything
         | .assignCombatDamageEqualToughness => g
     match g.permanentsNamed ctx who with
@@ -2943,13 +2953,13 @@ def applyFight (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
       match g.findObject? srcId, g.findObject? destId with
       | some src, some dest =>
         if src.id != dest.id && src.isOnBattlefield && dest.isOnBattlefield &&
-            src.isCreature && dest.isCreature && src.controlledBy controller then
+            g.isCreature src && g.isCreature dest && g.controlledBy src controller then
           g.fightCreatures src dest
         else g.logMsg "The target is no longer legal"
       | _, _ => g.logMsg "The target is no longer legal"
     | some (Target.permanent srcId), none =>
       match g.findObject? srcId with
-      | some src => g.logMsg s!"{src.name} has nothing to fight"
+      | some src => g.logMsg s!"{g.name src} has nothing to fight"
       | none => g.logMsg "The target is no longer legal"
     | _, _ => g.logMsg "The target is no longer legal"
   | .announced, .mutual =>
@@ -2978,7 +2988,7 @@ def applyFight (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
           let effect : Effect :=
             { targeting := .of .creature, allowsZeroTargets := true
               resolution := .damageEqualSourcePower
-              phrase := s!"{host.name} deals damage equal to its power to up to one target creature" }
+              phrase := s!"{g.name host} deals damage equal to its power to up to one target creature" }
           g.putReflexiveTrigger controller (some hostId) effect
       | none => g
   | .announced, .timesPower k =>
@@ -2995,7 +3005,7 @@ def applyFight (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
         else
           let pw := g.power src
           let n := if pw > 0 then pw * (k : Int) else 0
-          g.dealDamageFrom src.name dest n (source := some src)
+          g.dealDamageFrom (g.name src) dest n (source := some src)
       else
         let logIllegal (g : Game) (ok : Bool) (id : ObjectId) : Game :=
           if ok then g else g.illegalAbilityTarget (Target.permanent id)
@@ -3011,7 +3021,7 @@ def applyFight (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
           | Target.permanent id =>
             match g.findObject? id with
             | some o =>
-              if o.isOnBattlefield && o.isCreature && !fighters.any (·.id == o.id) then
+              if o.isOnBattlefield && g.isCreature o && !fighters.any (·.id == o.id) then
                 some o
               else none
             | none => none
@@ -3024,18 +3034,18 @@ def applyFight (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
           else
             g.withBatch (g.resolvingBatchCause controller sourceId) fun g =>
               fighters.foldl (fun g f =>
-                if f.isOnBattlefield && f.isCreature then
-                  g.dealDamageFrom f.name foe (g.power f) (source := some f)
+                if f.isOnBattlefield && g.isCreature f then
+                  g.dealDamageFrom (g.name f) foe (g.power f) (source := some f)
                 else g) g
         | none =>
           fighters.foldl (fun g f =>
-            if !f.isOnBattlefield || !f.isCreature then g
+            if !f.isOnBattlefield || !g.isCreature f then g
             else
               let effect : Effect :=
                 { targeting := .of .creature, allowsZeroTargets := true
                   resolution := .damageEqualSourcePower
                   phrase :=
-                    s!"{f.name} deals damage equal to its power to up to one target creature" }
+                    s!"{g.name f} deals damage equal to its power to up to one target creature" }
               g.putReflexiveTrigger controller (some f.id) effect) g
       | .mutual | .upToOneOther =>
         match foe? with
@@ -3044,13 +3054,13 @@ def applyFight (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
           else
             g.withBatch (g.resolvingBatchCause controller sourceId) fun g =>
               fighters.foldl (fun g f =>
-                if f.isOnBattlefield && f.isCreature && f.id != foe.id then
+                if f.isOnBattlefield && g.isCreature f && f.id != foe.id then
                   g.fightCreatures f foe
                 else g) g
         | none =>
           fighters.foldl (fun g f =>
-            if f.isOnBattlefield && f.isCreature then
-              g.logMsg s!"{f.name} has nothing to fight"
+            if f.isOnBattlefield && g.isCreature f then
+              g.logMsg s!"{g.name f} has nothing to fight"
             else g) g
       | .timesPower k =>
         match foe? with
@@ -3059,17 +3069,17 @@ def applyFight (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
           else
             g.withBatch (g.resolvingBatchCause controller sourceId) fun g =>
               fighters.foldl (fun g f =>
-                if f.isOnBattlefield && f.isCreature && f.id != foe.id then
+                if f.isOnBattlefield && g.isCreature f && f.id != foe.id then
                   if k == 1 then g.dealFightDamage f foe
                   else
                     let pw := g.power f
                     let n := if pw > 0 then pw * (k : Int) else 0
-                    g.dealDamageFrom f.name foe n (source := some f)
+                    g.dealDamageFrom (g.name f) foe n (source := some f)
                 else g) g
         | none =>
           fighters.foldl (fun g f =>
-            if f.isOnBattlefield && f.isCreature then
-              g.logMsg s!"{f.name} has nothing to fight"
+            if f.isOnBattlefield && g.isCreature f then
+              g.logMsg s!"{g.name f} has nothing to fight"
             else g) g
 
 /-- Resolve `TriggerResolution.mill`. Each printed combination keeps
@@ -3192,9 +3202,9 @@ def applyTap (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       | some src =>
         if src.isOnBattlefield && !src.status.tapped then
           g.beginFraChoice controller (.mayTapSourceThen (.mshReflexive 0 0) src.id)
-            s!"{(g.player controller).name} may tap {src.name}"
+            s!"{(g.player controller).name} may tap {g.name src}"
         else
-          (g.logMsg s!"{src.name} can't be tapped this way. The reflexive ability doesn't trigger.").failMayThen
+          (g.logMsg s!"{g.name src} can't be tapped this way. The reflexive ability doesn't trigger.").failMayThen
       | none =>
         (g.logMsg "The source is no longer on the battlefield. The reflexive ability doesn't trigger.").failMayThen
     else
@@ -3226,7 +3236,7 @@ def applyRemoveCounters (g : Game) (controller : PlayerId)
       if src.status.hope == 0 then g
       else
         let g := g.recordRemoveCounters src.id .hope 1 (byPlayer := some controller)
-        let g := g.logMsg s!"{src.name} loses a hope counter"
+        let g := g.logMsg s!"{g.name src} loses a hope counter"
         g.change (.removedHopeThisWay true)
   | .all, .enchanted =>
     match sourceId.bind g.findObject? with
@@ -3236,7 +3246,7 @@ def applyRemoveCounters (g : Game) (controller : PlayerId)
       | none => g
       | some host =>
         let g := g.removeAllCountersFrom host.id (byPlayer := some controller)
-        g.logMsg s!"counters are removed from {host.name}"
+        g.logMsg s!"counters are removed from {g.name host}"
   | what, who =>
     let ctx : TriggerRead := { controller, sourceId, targets }
     match g.permanentsNamed ctx who with
@@ -3250,13 +3260,13 @@ def applyRemoveCounters (g : Game) (controller : PlayerId)
             if o.status.hope == 0 then g
             else
               let g := g.recordRemoveCounters o.id .hope 1 (byPlayer := some controller)
-              let g := g.logMsg s!"{o.name} loses a hope counter"
+              let g := g.logMsg s!"{g.name o} loses a hope counter"
               g.change (.removedHopeThisWay true)) g
       | .all =>
         g.withBatch none fun g =>
           objs.foldl (fun g o =>
             let g := g.removeAllCountersFrom o.id (byPlayer := some controller)
-            g.logMsg s!"counters are removed from {o.name}") g
+            g.logMsg s!"counters are removed from {g.name o}") g
 
 /-- Resolve `TriggerResolution.loseLife`. Each printed combination keeps
 the behavior of the constructor it replaced. Any other count is lost by
@@ -3588,7 +3598,7 @@ def applyRevealFromHand (g : Game) (controller : PlayerId)
         | some (Target.permanent id) =>
           match g.findObject? id with
           | some o =>
-            if o.controlledBy opp then
+            if g.controlledBy o opp then
               g.exileUntilSourceLeaves sourceId o
             else
               g.logMsg "The creature is an illegal target. The ability may still resolve."
@@ -3683,9 +3693,9 @@ def applyLose (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
             if src.isOnBattlefield then
               g.createEffect (.losesAbilitiesWhileSource id src.id)
             else
-              g.logMsg s!"The source has left. {tgt.name} is tapped but keeps its abilities."
+              g.logMsg s!"The source has left. {g.name tgt} is tapped but keeps its abilities."
           | none =>
-            g.logMsg s!"The source has left. {tgt.name} is tapped but keeps its abilities."
+            g.logMsg s!"The source has left. {g.name tgt} is tapped but keeps its abilities."
       | none => g
     | _ => g
   | .indestructible, who =>
@@ -3706,10 +3716,10 @@ def applyLose (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
             g.createEffect (.losesAbilitiesWhileSource o.id src.id)) g
         else
           objs.foldl (fun g o =>
-            g.logMsg s!"The source has left. {o.name} is tapped but keeps its abilities.") g
+            g.logMsg s!"The source has left. {g.name o} is tapped but keeps its abilities.") g
       | none =>
         objs.foldl (fun g o =>
-          g.logMsg s!"The source has left. {o.name} is tapped but keeps its abilities.") g
+          g.logMsg s!"The source has left. {g.name o} is tapped but keeps its abilities.") g
 where
   loseIndestructible (affected : TriggeredAbility.TriggerAffected) : Game :=
     g.withAffected controller ab sourceId targets affected fun g o =>
@@ -3737,14 +3747,14 @@ def applyCant (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     | some affected =>
       g.withAffected controller ab sourceId targets affected fun g o =>
         g.createEffect (.cantBeBlockedExceptByHasteUntilEot o.id)
-          |>.logMsg s!"{o.name} can't be blocked this turn except by creatures with haste"
+          |>.logMsg s!"{g.name o} can't be blocked this turn except by creatures with haste"
     | none =>
       let ctx : TriggerRead := { controller, sourceId, targets }
       match g.permanentsNamed ctx who with
       | some objs =>
         objs.foldl (fun g o =>
           g.createEffect (.cantBeBlockedExceptByHasteUntilEot o.id)
-            |>.logMsg s!"{o.name} can't be blocked this turn except by creatures with haste") g
+            |>.logMsg s!"{g.name o} can't be blocked this turn except by creatures with haste") g
       | none => g
   | .untapWhileYouControl .target =>
     g.withLegalKindPermanent controller .oppCreature targets (fun g o =>
@@ -3757,7 +3767,7 @@ def applyCant (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     | none => g
     | some objs =>
       objs.foldl (fun g o =>
-        if o.controlledBy controller then g
+        if g.controlledBy o controller then g
         else
           let sid := sourceId.getD ⟨0⟩
           g.createEffect (.cantUntapWhileSource o.id sid)) g
@@ -3787,13 +3797,13 @@ def applyBecomeArtifact (g : Game) (controller : PlayerId) (ab : TriggeredAbilit
     | some objs =>
       objs.foldl (fun g o =>
         let g := g.createEffect (.additionalArtifactUntilEot o.id)
-        g.logMsg s!"{o.name} becomes an artifact until end of turn") g
+        g.logMsg s!"{g.name o} becomes an artifact until end of turn") g
     | none => g
 where
   become (affected : TriggeredAbility.TriggerAffected) : Game :=
     g.withAffected controller ab sourceId targets affected fun g o =>
       let g := g.createEffect (.additionalArtifactUntilEot o.id)
-      g.logMsg s!"{o.name} becomes an artifact until end of turn"
+      g.logMsg s!"{g.name o} becomes an artifact until end of turn"
 
 /-- Resolve `TriggerResolution.becomePrepared`. Each printed recipient keeps
 the behavior of the constructor it replaced. A creature that is already
@@ -3874,7 +3884,7 @@ def applySetBasePT (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       let (pw, tw) := g.sourcePTAtResolution sourceId lastKnownPower lastKnownToughness
       let g := g.createEffect (.setBasePTUntilEot o.id (pw, tw))
       g.logMsg
-        s!"{o.name}'s base power and toughness become {pw}/{tw} until end of turn")
+        s!"{g.name o}'s base power and toughness become {pw}/{tw} until end of turn")
       "No target was chosen"
   | power, toughness, who =>
     let ctx : TriggerRead :=
@@ -4133,7 +4143,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       | some o =>
         if o.isOnBattlefield then
           g.beginFraChoice controller (.mayBecomeBasePT o.id p t)
-            s!"{(g.player controller).name} may have {o.name}'s base power and toughness become {p}/{t}"
+            s!"{(g.player controller).name} may have {g.name o}'s base power and toughness become {p}/{t}"
         else g
       | none => g
     | _, _ => g
@@ -4171,18 +4181,18 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         sourceId (some "The target is no longer legal")
   | .honeEachEquipment =>
     let eqs :=
-      g.battlefield.filter (fun o => o.controlledBy controller && o.printed.isEquipment)
+      g.battlefield.filter (fun o => g.controlledBy o controller && g.isEquipment o)
     g.withBatch none fun g =>
       eqs.foldl (init := g) fun acc eq =>
         let n := acc.countersYouPut eq 1 (putter := some controller)
         acc.recordPutCounters eq.id .hone n (byPlayer := some controller)
-          |>.logMsg s!"{eq.name} received a hone counter"
+          |>.logMsg s!"{acc.name eq} received a hone counter"
   | .cascade =>
     let maxMv :=
       match sourceId with
       | some sid =>
         match g.findObject? sid with
-        | some src => src.printed.manaCost.manaValue
+        | some src => (g.copiableValues src).manaCost.manaValue
         | none => 0
       | none => 0
     g.resolveCascade controller maxMv
@@ -4193,7 +4203,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     if n > limit then
       let name :=
         match sourceId.bind g.findObject? with
-        | some o => o.name
+        | some o => if o.isOnBattlefield then g.name o else o.name
         | none => sourceName
       g.logMsg s!"{name}'s ability has no effect (resolved {n} times this turn)"
     else g
@@ -4293,7 +4303,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         if g.hasSubtype o .bear then g
         else
           let g := g.createEffect (.additionalSubtype o.id .bear)
-          g.logMsg s!"{o.name} becomes a Bear in addition to its other types"
+          g.logMsg s!"{g.name o} becomes a Bear in addition to its other types"
       | none => g
     | _ => g
   | .mayCast origin maxMv cost note =>
@@ -4322,13 +4332,15 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     | some src =>
       if src.printed.isToken then g
       else
-        let face := { src.printed with
+        let cv := if src.isOnBattlefield then g.copiableValues src else src.printed
+        let srcName := if src.isOnBattlefield then g.name src else src.name
+        let face := { cv with
           isToken := true
-          supertypes := src.printed.supertypes.filter (· != .legendary) }
+          supertypes := cv.supertypes.filter (· != .legendary) }
         g.withBatch none fun g =>
           let (g, _) := g.createToken controller face
           let (g, _) := g.createToken controller face
-          g.logMsg s!"two nonlegendary tokens that are copies of {src.name} are created"
+          g.logMsg s!"two nonlegendary tokens that are copies of {srcName} are created"
   | .loseLife amount who =>
     g.applyLoseLife controller ab sourceId targets amount who lastKnownPower
   | .may (.draw _ .opponentHasYou) _ =>
@@ -4458,7 +4470,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     match sourceId.bind g.findObject? with
     | some o =>
       if !o.isOnBattlefield then g.logMsg s!"{o.name} is no longer on the battlefield"
-      else if o.status.prepared then g.logMsg s!"{o.name} is already prepared"
+      else if o.status.prepared then g.logMsg s!"{g.name o} is already prepared"
       else g.becomePrepared o
     | none => g.logMsg "The source is no longer on the battlefield"
   | .armSurveilReturnLifeGained =>
@@ -4636,7 +4648,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       | none => (g.logMsg "Nothing to sacrifice").failMayThen
       | some sid =>
         let any := (g.permanentsOf controller).any (fun o =>
-          o.id != sid && (o.isCreature || o.printed.isArtifact))
+          o.id != sid && (g.isCreature o || g.isArtifact o))
         if !any then (g.logMsg "Nothing to sacrifice").failMayThen
         else
           g.beginFraChoice controller (.maySacrificeAnotherForDrawTreasure sid)
@@ -4820,7 +4832,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     let tgt := options[0]?.getD (.player g.defendingPlayer)
     g.recentTokenIds.foldl (fun g id =>
       match g.findObject? id with
-      | some o => g.record (GameEvent.becameAttacking g.turnNumber o.asEvent tgt (cause := cause))
+      | some o => g.record (GameEvent.becameAttacking g.turnNumber (g.snapshot o) tgt (cause := cause))
       | none => g) g
   | .addMana types (.fixed 1) =>
     g.addManaLogged controller types

@@ -29,7 +29,7 @@ private def exileId (g : Game) (id : ObjectId)
   match g.findObject? id with
   | none => g
   | some o =>
-    let name := o.name
+    let name := g.name o
     let (g, _) := g.move id .exile none (cause := cause)
     g.logMsg s!"{name} is exiled"
 
@@ -200,7 +200,7 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
     | some (Target.permanent id) =>
       match g.findObject? id with
       | some o =>
-        let owner := o.controller.getD o.owner
+        let owner := (g.controllerOf o).getD o.owner
         let g := g.exileId id
         g.offerMaySearchBasics owner
       | none => g
@@ -210,7 +210,7 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
     | some (Target.permanent id) =>
       match g.findObject? id with
       | some o =>
-        let owner := o.controller.getD o.owner
+        let owner := (g.controllerOf o).getD o.owner
         let pw := (g.snapshotPower o).toNat
         let g := g.exileId id
         g.gainLife owner pw
@@ -221,7 +221,7 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
     | some (Target.permanent id) =>
       match g.findObject? id with
       | some o =>
-        let owner := o.controller.getD o.owner
+        let owner := (g.controllerOf o).getD o.owner
         let g := g.destroyPermanent o
         g.makeFrc owner .human
       | none => g
@@ -235,7 +235,7 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
     let g := g.createKindTokens controller .soldier11white x
     let _ := src
     if x >= 5 then
-      g.destroyIds (g.battlefield.filter (·.isCreature) |>.map (·.id))
+      g.destroyIds (g.battlefield.filter (g.isCreature ·) |>.map (·.id))
         (fun o => !g.recentTokenIds.contains o.id)
     else g
   | .whiteSuns =>
@@ -245,7 +245,7 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
     let g := g.makeFrc controller .mite x
     let _ := src
     if x >= 5 then
-      g.destroyIds (g.battlefield.filter (·.isCreature) |>.map (·.id))
+      g.destroyIds (g.battlefield.filter (g.isCreature ·) |>.map (·.id))
         (fun o => !g.recentTokenIds.contains o.id)
     else g
   | .occult =>
@@ -263,7 +263,7 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
         if acc.contains name then acc else acc.push name) acc) (#[] : Array String)
     g.createKindTokens controller .spirit types.size
   | .sunfall =>
-    let ids := (g.battlefield.filter (·.isCreature)).map (·.id)
+    let ids := (g.battlefield.filter (g.isCreature ·)).map (·.id)
     let (g, exileCause) := g.allocDelayedCause (some controller) sourceId
     let g := g.withBatch (some exileCause) fun g =>
       ids.foldl (fun g id => g.exileId id (cause := some exileCause)) g
@@ -279,7 +279,7 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
           (byPlayer := some controller) (cause := some incubateCause)
       | none => g
   | .massPolymorph =>
-    let yours := (g.permanentsOf controller).filter (·.isCreature) |>.map (·.id)
+    let yours := (g.permanentsOf controller).filter (g.isCreature ·) |>.map (·.id)
     let (g, exileCause) := g.allocDelayedCause (some controller) sourceId
     let g := g.withBatch (some exileCause) fun g =>
       yours.foldl (fun g id => g.exileId id (cause := some exileCause)) g
@@ -288,7 +288,7 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
     let g := g.putHits controller hits (cause := some revealCause)
     g.restBottom controller rest true (cause := some revealCause)
   | .syntheticDestiny =>
-    let yours := (g.permanentsOf controller).filter (·.isCreature) |>.map (·.id)
+    let yours := (g.permanentsOf controller).filter (g.isCreature ·) |>.map (·.id)
     let (g, cause) := g.allocDelayedCause (some controller) sourceId
     let src := sourceId.bind g.findObject?
     let g := g.withBatch (some cause) fun g =>
@@ -303,7 +303,7 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
     | some (Target.permanent id) =>
       match g.findObject? id with
       | some o =>
-        let owner := o.controller.getD o.owner
+        let owner := (g.controllerOf o).getD o.owner
         let (g, putCause) := g.allocDelayedCause (some controller) sourceId
         let g := g.moveIdsInOrder #[id] (.library owner) (cause := some putCause)
         let (g, revealCause) := g.allocDelayedCause (some controller) sourceId
@@ -320,7 +320,7 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
         Keywords.merge (if flying then Keyword.flying else Keywords.none)
           (if first then Keywords.none else Keywords.none)
       let g := g.setUntilEotForm o (Int.ofNat p, Int.ofNat t) kws
-        s!"{o.name} becomes a {p}/{t} until end of turn"
+        s!"{g.name o} becomes a {p}/{t} until end of turn"
         (additionalCreature := true)
       if first then g.createEffect (.firstStrikeOnYourTurn o.id)
       else g
@@ -329,11 +329,11 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
     match targets[0]? with
     | some (Target.player pid) =>
       let victim :=
-        ((g.permanentsOf pid).find? (·.isCreature)).orElse
-          (fun _ => (g.permanentsOf pid).find? (·.printed.isPlaneswalker))
+        ((g.permanentsOf pid).find? (g.isCreature ·)).orElse
+          (fun _ => (g.permanentsOf pid).find? (g.isPlaneswalker ·))
       let g :=
         match victim with
-        | some o => g.sacrificeToGraveyard o s!"{(g.player pid).name} sacrifices {o.name}"
+        | some o => g.sacrificeToGraveyard o s!"{(g.player pid).name} sacrifices {g.name o}"
         | none => g.logMsg s!"{(g.player pid).name} has no creature or planeswalker to sacrifice"
       let g := g.handDiscard pid
       let g := g.loseLife pid 3
@@ -357,7 +357,7 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
     let g := g.putHits controller hits (cause := some cause)
     let g := hits.foldl (fun g id =>
       match g.followMoved id |> g.findObject? with
-      | some o => g.record (GameEvent.designation g.turnNumber o.asEvent (.goaded controller false) true (cause := some cause))
+      | some o => g.record (GameEvent.designation g.turnNumber (g.snapshot o) (.goaded controller false) true (cause := some cause))
       | none => g) g
     let opps := g.livingOpponents controller
     let g := Id.run do
@@ -417,8 +417,8 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
     g.eachOpponentLosesYouGain controller 1
   | .obEnter =>
     let ids := g.battlefield.filter (fun o =>
-      o.isCreature && o.status.tapped &&
-        match o.controller with
+      g.isCreature o && o.status.tapped &&
+        match g.controllerOf o with
         | some c => c != controller && !(g.player c).lost
         | none => false) |>.map (·.id)
     let g := g.destroyIds ids
@@ -430,7 +430,7 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
     g.changePlayer controller (.addMana .colorless 2)
       |>.logMsg (s!"{pl.name} adds " ++ "{C}{C}")
   | .elspethDestroy =>
-    g.destroyIds (g.battlefield.filter (fun o => o.isCreature && g.snapshotPower o >= 4) |>.map (·.id))
+    g.destroyIds (g.battlefield.filter (fun o => g.isCreature o && g.snapshotPower o >= 4) |>.map (·.id))
   | .elspethEmblem =>
     let (g, emb) := g.allocObject {
         name := "Elspeth emblem"
@@ -469,11 +469,11 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
     else
       match g.frcCause? with
       | some o =>
-        if o.isOnBattlefield && o.isCreature then
+        if o.isOnBattlefield && g.isCreature o then
           let g := g.becomeTapped o
           let n := g.countersYouPut (g.object! o.id) 1 (putter := some controller)
           g.recordPutCounters o.id .stun n (byPlayer := some controller)
-            |>.logMsg s!"{o.name} gets a stun counter"
+            |>.logMsg s!"{g.name o} gets a stun counter"
         else g
       | none => g
   | .teferi =>
@@ -482,7 +482,7 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
       let g := g.createEffects
         #[.protectionFromEverything pid, .lifeCantChange pid]
       let g := g.logMsg s!"{(g.player pid).name} has protection from everything and their life total can't change"
-      let ids := (g.permanentsOf pid).filter (fun o => !o.printed.isLand) |>.map (·.id)
+      let ids := (g.permanentsOf pid).filter (fun o => !g.isLand o) |>.map (·.id)
       let phaseCause := g.resolvingBatchCause controller sourceId
       let g := g.withBatch phaseCause fun g =>
         ids.foldl (fun g id =>
@@ -545,10 +545,10 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
       if src.status.windcragMardu then g
       else
         let g := g.makeFrc controller .goblin
-        match (g.permanentsOf controller).reverse.find? (fun o => o.name == "Goblin" && o.printed.isToken) with
+        match (g.permanentsOf controller).reverse.find? (fun o => g.name o == "Goblin" && o.printed.isToken) with
         | some tok =>
           g.createEffect (.keywordsUntilEot tok.id (Keywords.merge Keyword.lifelink Keyword.haste))
-            |>.logMsg s!"{tok.name} gains lifelink and haste until end of turn"
+            |>.logMsg s!"{g.name tok} gains lifelink and haste until end of turn"
         | none => g
     | none => g
   | .spirit => g.createKindTokens controller .spirit 1
@@ -556,7 +556,7 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
     match g.srcObj? sourceId with
     | some o =>
       g.recordPutCounters o.id .story 1 (byPlayer := some controller)
-        |>.logMsg s!"{o.name} gets a story counter"
+        |>.logMsg s!"{g.name o} gets a story counter"
     | none => g
   | .currencyExile =>
     match g.frcCause? with
@@ -575,7 +575,7 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
     | none => g
     | some src =>
       match src.linkedExile.find? (fun id => (g.findObject? id).any (·.zone == .exile)) with
-      | none => g.logMsg s!"{src.name} has no exiled card"
+      | none => g.logMsg s!"{g.name src} has no exiled card"
       | some id =>
         match g.findObject? id with
         | none => g
@@ -588,12 +588,12 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
     match g.srcObj? sourceId with
     | none => g
     | some art =>
-      match g.battlefield.find? (fun o => o.isCreature && o.id != art.id) with
-      | none => g.logMsg s!"{art.name} does not become a copy"
+      match g.battlefield.find? (fun o => g.isCreature o && o.id != art.id) with
+      | none => g.logMsg s!"{g.name art} does not become a copy"
       | some src =>
         let g := g.becomeCopyOf art src (untilEot := true)
         g.createEffect (.keywordsUntilEot art.id Keyword.haste)
-          |>.logMsg s!"{art.name} has haste until end of turn"
+          |>.logMsg s!"{g.name (g.object! art.id)} has haste until end of turn"
   | .despair =>
     g.withBatch (g.resolvingBatchCause controller sourceId) fun g =>
       g.forEachOpponent controller fun g pid =>
@@ -613,7 +613,7 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
     | none => g
   | .myr n => g.makeFrc controller .myr n
   | .drawPerArtifact =>
-    let n := (g.permanentsOf controller).filter (·.printed.isArtifact) |>.size
+    let n := (g.permanentsOf controller).filter (g.isArtifact ·) |>.size
     g.draw controller n
   | .sharkCast =>
     let x :=
@@ -678,7 +678,7 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
         let g := g.putIdsOnTop controller #[top]
         match g.srcObj? sourceId with
         | some o =>
-          if o.isCreature then
+          if g.isCreature o then
             (g.logMsg s!"{pl.name} explores").addPlusOnePlusOneTo o 1 (byPlayer := some controller)
           else g.logMsg s!"{pl.name} explores and leaves {card.name} on top"
         | none => g.logMsg s!"{pl.name} explores and leaves {card.name} on top"
@@ -686,6 +686,7 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
     match g.srcObj? sourceId with
     | some o =>
       let counters := o.status.plusOnePlusOne
+      let oName := g.name o
       let (src, ctrl) :=
         match g.currentResolvingContext? with
         | some (s, c) => (s.orElse (fun _ => some o.id), c.orElse (fun _ => some controller))
@@ -693,22 +694,22 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
       let transformCause := some (EventCause.oneShotEffect (some ⟨g.nextEffectId⟩) src ctrl)
       let g := g.expirePrintedStaticEffects o (cause := transformCause)
       let g := g.record
-        (GameEvent.transformed g.turnNumber o.asEvent (!o.status.transformed)
+        (GameEvent.transformed g.turnNumber (g.snapshot o) (!o.status.transformed)
           (cause := transformCause))
       g.createPrintedStaticEffects (g.object! o.id)
-        |>.logMsg s!"{o.name} transforms into a 0/0 Phyrexian with {counters} +1/+1 counters"
+        |>.logMsg s!"{oName} transforms into a 0/0 Phyrexian with {counters} +1/+1 counters"
     | none => g
   | .turnFaceUp =>
     match g.srcObj? sourceId with
     | some o =>
-      g.record (GameEvent.turnedFaceUp g.turnNumber o.asEvent)
-        |>.logMsg s!"{o.name} is turned face up"
+      let g := g.record (GameEvent.turnedFaceUp g.turnNumber (g.snapshot o))
+      g.logMsg s!"{g.name (g.object! o.id)} is turned face up"
     | none => g
   | .gingerDash =>
     match g.srcObj? sourceId with
     | some o =>
       g.createEffect (.cantBeBlockedExceptByHasteUntilEot o.id)
-        |>.logMsg s!"{o.name} can't be blocked this turn except by creatures with haste"
+        |>.logMsg s!"{g.name o} can't be blocked this turn except by creatures with haste"
     | none => g
 where
   handDiscardToBottom (g : Game) : Game :=

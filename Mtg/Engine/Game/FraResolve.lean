@@ -46,7 +46,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
   | .destroyDrawIfNotAttacking =>
     g.withLegalKindPermanent controller kind targets (fun g o =>
       let wasAttacking := o.status.attacking
-      let ctrl := o.controller.getD o.owner
+      let ctrl := (g.controllerOf o).getD o.owner
       let g := g.destroyPermanent o
       if wasAttacking then g else g.draw ctrl 1) sourceId illegal
   | .damageEachPlayer n =>
@@ -82,7 +82,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
   | .destroyAllNotChosenType =>
     let chosen := g.chooseCreatureTypeFor controller
     let g := g.logMsg s!"{(g.player controller).name} chooses {chosen}"
-    let doomed := g.battlefield.filter (fun o => o.isCreature && !g.hasSubtype o chosen)
+    let doomed := g.battlefield.filter (fun o => g.isCreature o && !g.hasSubtype o chosen)
     g.withBatch none fun g =>
       doomed.foldl (fun g o =>
         match g.findObject? o.id with
@@ -115,11 +115,12 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     g.withLegalKindPlayer controller kind targets (fun g pid =>
       g.draw controller (g.loggedMilled pid)) sourceId illegal
   | .exileAllCreaturesEmpower =>
-    let creatures := g.battlefield.filter (·.isCreature)
+    let creatures := g.battlefield.filter (g.isCreature ·)
     let g := g.withBatch none fun g =>
       creatures.foldl (fun g o =>
+        let nm := g.name o
         let (g, _) := g.move o.id .exile none
-        g.logMsg s!"{o.name} is exiled") g
+        g.logMsg s!"{nm} is exiled") g
     g.empowerJace controller creatures.size
   | .drawGreatestPowerLoseLife =>
     let n := (g.greatestPowerAmongCreatures controller).toNat
@@ -161,8 +162,8 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
         else g) g
   | .damageEachOppCreatureAndPlaneswalker n =>
     let victims := g.battlefield.filter (fun o =>
-      (o.isCreature || o.printed.isPlaneswalker) && o.controller.isSome &&
-        !o.controlledBy controller)
+      (g.isCreature o || g.isPlaneswalker o) && (g.controllerOf o).isSome &&
+        !g.controlledBy o controller)
     if n == 0 || victims.isEmpty then g
     else
       g.withBatch (g.resolvingBatchCause controller sourceId) fun g =>
@@ -174,24 +175,25 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     match g.legalPermanentAt? controller kind targets index sourceId with
     | none => g.logMsg "The target is no longer legal"
     | some o =>
+      let nm := g.name o
       let g := g.createEffect (.losesAbilitiesUntilEot o.id)
-      g.logMsg s!"{o.name} loses all abilities until end of turn"
+      g.logMsg s!"{nm} loses all abilities until end of turn"
   | .powerDamageFromTo fromIdx toIdx =>
     match g.legalPermanentAt? controller kind targets toIdx sourceId with
     | none => g.logMsg "The target is no longer legal. No damage is dealt"
     | some victim =>
       match g.legalPermanentAt? controller kind targets fromIdx sourceId with
       | some striker =>
-        g.dealDamageFrom striker.name (g.object! victim.id) (max (g.power striker) 0)
+        g.dealDamageFrom (g.name striker) (g.object! victim.id) (max (g.power striker) 0)
           (source := some striker)
       | none => g.logMsg "The target is no longer legal. No damage is dealt"
   | .clashOfElements =>
     let sid := sourceId.orElse (fun _ => g.resolvingSpell)
     g.withLegalKindPermanent controller kind targets (fun g o =>
       g.beginFraChoice o.owner (.topOrBottomDamage o.id 2 sid)
-        s!"{(g.player o.owner).name} may put {o.name} on top of their library") sourceId illegal
+        s!"{(g.player o.owner).name} may put {g.name o} on top of their library") sourceId illegal
   | .entrustTheSpark =>
-    if (g.permanentsOf controller).any (·.printed.isPlaneswalker) then
+    if (g.permanentsOf controller).any (g.isPlaneswalker ·) then
       g.beginFraChoice controller .maySacrificePlaneswalker
         s!"{(g.player controller).name} may sacrifice a planeswalker"
     else g.logMsg s!"{(g.player controller).name} controls no planeswalker to sacrifice"
@@ -281,7 +283,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
   | .untapAllLandsYouControl =>
     g.withBatch none fun g =>
       (g.permanentsOf controller).foldl (fun g o =>
-        if o.printed.isLand && o.status.tapped then g.applyPermanentAction (g.object! o.id) .untap
+        if g.isLand o && o.status.tapped then g.applyPermanentAction (g.object! o.id) .untap
         else g) g
   | .blink =>
     if targets.isEmpty then g
@@ -348,7 +350,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
       | Target.permanent id => g.dealDamageFrom srcName (g.object! id) x (source := src?)
       | Target.card _ => g) sourceId illegal
   | .creaturesGetPowerPerArtifact =>
-    let n : Int := Int.ofNat ((g.permanentsOf controller).filter (·.printed.isArtifact)).size
+    let n : Int := Int.ofNat ((g.permanentsOf controller).filter (g.isArtifact ·)).size
     g.withBatch none fun g =>
       (g.creaturesControlledBy controller).foldl (fun g o =>
         g.pumpPermanent (g.object! o.id) n 0) g
@@ -422,7 +424,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     let g := g.mill controller n
     g.applyFra controller effect .reflexiveReturnLandTapped #[] sourceId
   | .maySacrificeLandForHeartwoods =>
-    if (g.permanentsOf controller).any (·.printed.isLand) then
+    if (g.permanentsOf controller).any (g.isLand ·) then
       g.beginFraChoice controller (.maySacrificeThen #[.land] (.tappedHeartwoods 2) sourceId)
         s!"{(g.player controller).name} may sacrifice a land"
     else g
@@ -541,7 +543,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
         | Target.permanent id =>
           match g.findObject? id with
           | some o =>
-            if o.isOnBattlefield && o.isCreature && g.canBeTargetedBy controller o then
+            if o.isOnBattlefield && g.isCreature o && g.canBeTargetedBy controller o then
               g.applyPermanentAction o .tapAndStun
             else g.illegalAbilityTarget t
           | none => g
@@ -554,7 +556,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     g.withLegalKindPermanent controller kind targets (fun g o =>
       g.removeUpToCountersFrom controller o n) sourceId illegal
   | .maySacrificeThenEdict =>
-    if (g.permanentsOf controller).any (fun o => o.isCreature || o.printed.isPlaneswalker) then
+    if (g.permanentsOf controller).any (fun o => g.isCreature o || g.isPlaneswalker o) then
       g.beginFraChoice controller
         (.maySacrificeThen #[.creature, .planeswalker] .eachOpponentSacrificesCreature sourceId)
         s!"{(g.player controller).name} may sacrifice a creature or planeswalker"
@@ -629,22 +631,22 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
           match g.findObject? id with
           | some o =>
             let shielded :=
-              match o.controller with
+              match g.controllerOf o with
               | some c =>
                 (g.permanentsOf c).any (fun src =>
-                  src.printed.creaturesCantGetMinusCounters && g.retainsPrintedAbilities src)
+                  (g.baseCard src).creaturesCantGetMinusCounters && g.retainsPrintedAbilities src)
               | none => false
-            if o.isOnBattlefield && o.isCreature && g.canBeTargetedBy controller o && x > 0 &&
+            if o.isOnBattlefield && g.isCreature o && g.canBeTargetedBy controller o && x > 0 &&
                 !shielded then
               let n := g.countersYouPut o x (putter := some controller)
               (g.recordPutCounters o.id .minusOneMinusOne n (byPlayer := some controller)).logMsg
-                s!"{n} -1/-1 counter(s) are put on {o.name}"
+                s!"{n} -1/-1 counter(s) are put on {g.name o}"
             else g
           | none => g
         | _ => g) g
   | .drawPerColorAmongOtherArtifacts =>
     let colors := (g.permanentsOf controller).foldl (fun (acc : ColorSet) o =>
-      if o.printed.isArtifact && some o.id != sourceId then ColorSet.union acc o.printed.colors
+      if g.isArtifact o && some o.id != sourceId then ColorSet.union acc (g.colors o)
       else acc) ColorSet.empty
     g.draw controller ((Color.all.filter colors.contains).length)
   | .untapUnblockable =>

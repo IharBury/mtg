@@ -894,8 +894,8 @@ def hellcatReturns : Game :=
 
 #guard (namedPermanent hellcatReturns "Hellcat, Undying Vigilante").isOnBattlefield
 #guard (namedPermanent hellcatReturns "Hellcat, Undying Vigilante").status.plusOnePlusOne == 1
-#guard (namedPermanent hellcatReturns "Hellcat, Undying Vigilante").printed.triggeredAbilities.isEmpty
-#guard (namedPermanent hellcatReturns "Hellcat, Undying Vigilante").printed.keywords.haste
+#guard (hellcatReturns.triggeredAbilities (namedPermanent hellcatReturns "Hellcat, Undying Vigilante")).isEmpty
+#guard hellcatReturns.hasHaste (namedPermanent hellcatReturns "Hellcat, Undying Vigilante")
 
 /- Hawkeye's Bow: +1/+0 and reach, tap damage, Equip {1}. -/
 

@@ -265,7 +265,7 @@ def hallAsLyra : Game := hallCopies lyraWithCounters "Lyra, Archangel of Dawn"
 
 /- Rulings 811 / 813: Hall of Echoes becomes a copy of a legendary creature,
 and the legend rule doesn't apply this turn, so both stay. -/
-#guard (hallAsLyra.battlefield.filter (fun o => o.name == "Lyra, Archangel of Dawn")).size == 2
+#guard (hallAsLyra.battlefield.filter (fun o => hallAsLyra.name o == "Lyra, Archangel of Dawn")).size == 2
 #guard hallAsLyra.checkSBA.pending == .none
 #guard (fraRuling 811).comment.contains "both permanents will remain on the battlefield"
 #guard (fraRuling 813).comment.contains "none of them will be put into the graveyard"
@@ -273,15 +273,15 @@ and the legend rule doesn't apply this turn, so both stay. -/
 /- Ruling 816: the copy doesn't copy counters or tapped status. -/
 #guard
   let copy := (hallAsLyra.battlefield.filter (fun o =>
-    o.name == "Lyra, Archangel of Dawn" && (hallAsLyra.copyRestore o).isSome))[0]!
-  copy.status.plusOnePlusOne == 0 && !copy.status.tapped && copy.isCreature
+    hallAsLyra.name o == "Lyra, Archangel of Dawn" && (hallAsLyra.copyRestore o).isSome))[0]!
+  copy.status.plusOnePlusOne == 0 && !copy.status.tapped && hallAsLyra.isCreature copy
 #guard (fraRuling 816).comment.contains "It doesn't copy whether that creature is tapped"
 
 /- Ruling 812: becoming a copy isn't entering, so Mindseeker Oculus's
 enters ability doesn't trigger. -/
 #guard
   let g := hallCopies (addPermanent afterDraw mindseekerOculus ⟨0⟩ ⟨0⟩) "Mindseeker Oculus"
-  (g.battlefield.filter (fun o => o.name == "Mindseeker Oculus")).size == 2 &&
+  (g.battlefield.filter (fun o => g.name o == "Mindseeker Oculus")).size == 2 &&
     (g.jacePlaneswalkerTokens ⟨0⟩).isEmpty
 #guard (fraRuling 812).comment.contains "isn't entering the battlefield"
 
@@ -290,7 +290,7 @@ enters ability doesn't trigger. -/
   let (g, _) := afterDraw.createToken ⟨0⟩
     { lyraArchangelOfDawn with name := "Lyra, Archangel of Dawn" }
   let g := hallCopies g "Lyra, Archangel of Dawn"
-  (g.battlefield.filter (fun o => o.name == "Lyra, Archangel of Dawn")).size == 2
+  (g.battlefield.filter (fun o => g.name o == "Lyra, Archangel of Dawn")).size == 2
 #guard (fraRuling 815).comment.contains "becomes a copy of whatever that creature copied"
 
 /-- Rulings 814 / 817: in cleanup the copy ends and the legend rule applies
@@ -301,10 +301,11 @@ def hallTwoLyrasAfterCleanup : Game :=
   passBoth (skipTo g .end 80)
 
 #guard hallTwoLyrasAfterCleanup.battlefield.any (fun o =>
-  o.name == "Hall of Echoes" && o.printed.isLand && !o.isCreature)
+  hallTwoLyrasAfterCleanup.name o == "Hall of Echoes" &&
+    hallTwoLyrasAfterCleanup.isLand o && !hallTwoLyrasAfterCleanup.isCreature o)
 #guard
   let g := skipTo hallTwoLyrasAfterCleanup .upkeep 80
-  (g.battlefield.filter (fun o => o.name == "Lyra, Archangel of Dawn")).size == 1
+  (g.battlefield.filter (fun o => g.name o == "Lyra, Archangel of Dawn")).size == 1
 #guard (fraRuling 814).comment.contains "begins applying again"
 #guard (fraRuling 817).comment.contains "wear off at exactly the same time"
 

@@ -152,7 +152,7 @@ shuffled. An empty library finds nothing and still shuffles. -/
   onBattlefield g "Search Forest" && !onBattlefield g "Search Mountain" &&
     inLibrary g caster "Search Mountain" && !inLibrary g caster "Search Forest" &&
     !(permanent g "Search Forest").status.tapped &&
-    !(permanent g "Search Forest").status.summoningSick &&
+    !g.hasSummoningSickness (permanent g "Search Forest") &&
     g.loggedLandsPlayed caster == played &&
     shuffledSince before g &&
     logContains g "searches for a Forest card" &&

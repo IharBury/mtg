@@ -75,7 +75,7 @@ negative power for Loot, the Anomaly. Neither changes the creature's power
 (rulings 825 / 850 / 851). -/
 def combatDamageAmount (g : Game) (source : GameObject) : Int :=
   let ghalta :=
-    match source.controller with
+    match g.controllerOf source with
     | some p =>
       (g.permanentsOf p).any (fun o =>
         (g.staticAbilities o).any (fun
@@ -83,7 +83,7 @@ def combatDamageAmount (g : Game) (source : GameObject) : Int :=
           | _ => false))
     | none => false
   let byToughness :=
-    (ghalta || g.assignCombatDamageEqualToughness.any (source.controlledBy ·)) &&
+    (ghalta || g.assignCombatDamageEqualToughness.any (g.controlledBy source ·)) &&
       g.toughness source > g.power source
   let amt :=
     if byToughness then g.toughness source

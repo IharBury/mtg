@@ -210,9 +210,10 @@ permission continuous effects record `ContinuousEffectEvent.created` and
     !g3.protectionFromEverything me &&
     g3.untilTurnOfPump (g3.object! b.id) == #[]
 
-/- Rule 611.3: static-ability continuous effects are created when a permanent
-with static abilities enters the battlefield, expire if it loses all abilities,
-are re-created when ability loss wears off, and expire when it leaves the
+/- Rule 611.3 / 613.1f: static-ability continuous effects are created when a
+permanent with static abilities enters the battlefield, are suppressed in
+Layer 6 (without expiring/re-creating `.staticAbility` effects) while it loses
+all abilities, resume when ability loss wears off, and expire when it leaves the
 battlefield. -/
 #guard
   let lordDef : CardDef :=
@@ -223,15 +224,21 @@ battlefield. -/
   let g1 := addPermanent g0 lordDef me me
   let lord := (g1.battlefield.filter (·.name == "Bear Lord"))[0]!
   let staticEff := ContinuousEffectSpec.staticAbility lord.id (.fra .creaturesYouControlHaveTrample)
-  let createdOnEnter := (GameEvent.createdEffects g1.events).contains staticEff
+  let createdOnEnter := (GameEvent.createdEffects g1.events).contains staticEff &&
+    g1.hasTrample lord
   let g2 := g1.createEffect (.losesAbilitiesUntilEot lord.id)
-  let expiredOnLose := (GameEvent.expiredEffects g2.events).contains staticEff
+  let suppressedWithoutExpiry :=
+    !(GameEvent.expiredEffects g2.events).contains staticEff &&
+    !(g2.staticAbilities (g2.object! lord.id)).contains (.fra .creaturesYouControlHaveTrample) &&
+    !g2.hasTrample (g2.object! lord.id)
   let n2 := g2.events.size
   let g3 := g2.clearEOT
-  let recreatedOnCleanup := (GameEvent.createdEffects (g3.events.extract n2 g3.events.size)).contains staticEff
+  let resumedWithoutRecreate :=
+    !(GameEvent.createdEffects (g3.events.extract n2 g3.events.size)).contains staticEff &&
+    g3.hasTrample (g3.object! lord.id)
   let (g4, _) := g3.move lord.id (.graveyard me) none
-  let expiredOnLeave := ((GameEvent.expiredEffects g4.events).filter (· == staticEff)).size == 2
-  createdOnEnter && expiredOnLose && recreatedOnCleanup && expiredOnLeave
+  let expiredOnLeave := ((GameEvent.expiredEffects g4.events).filter (· == staticEff)) == #[staticEff]
+  createdOnEnter && suppressedWithoutExpiry && resumedWithoutRecreate && expiredOnLeave
 
 /- Rule 610 / 400: applications of one-shot effects receive unique `EffectId`s
 via `EventCause.oneShotEffect`, whereas non-one-shot `RulesEvent`s
@@ -401,7 +408,6 @@ second "loses all abilities" keeps the printed static abilities off. -/
       staticAbilities := #[.fra .creaturesYouControlHaveTrample] }
   let g0 := quiet (addPermanent afterDraw lordDef me me)
   let lord := (g0.battlefield.filter (·.name == "Bear Lord"))[0]!
-  let staticEff := ContinuousEffectSpec.staticAbility lord.id (.fra .creaturesYouControlHaveTrample)
   let g1 := (g0.createEffect (.cantBlockUntilEot lord.id)).createEffect (.cantBlockUntilEot lord.id)
   let g2 := g1.expireEffect (.cantBlockUntilEot lord.id)
   let g3 := g2.expireEffect (.cantBlockUntilEot lord.id)
@@ -410,8 +416,8 @@ second "loses all abilities" keeps the printed static abilities off. -/
   g2.cantBlockUntilEot (g2.object! lord.id) &&
     !g3.cantBlockUntilEot (g3.object! lord.id) &&
     g4.losesAbilitiesUntilEot (g4.object! lord.id) &&
-    !(GameEvent.createdEffects g4.events).contains staticEff &&
-    !g4.hasActiveEffect staticEff
+    !(g4.staticAbilities (g4.object! lord.id)).contains (.fra .creaturesYouControlHaveTrample) &&
+    !g4.hasTrample (g4.object! lord.id)
 
 /- Effects that used to be written straight onto the status are created as
 continuous effects (CR 611.2): Smite-style damage, "can't be blocked this
@@ -438,10 +444,10 @@ until its source leaves. -/
   let g3 := (quiet g2).clearEOT
   let g4 := g3.expireWhileSourceEffects h.id
   (controlEffectsOn g2 b.id).size == 2 &&
-    (g3.object! b.id).controlledBy me &&
+    g3.controlledBy (g3.object! b.id) me &&
     (controlEffectsOn g3 b.id).map Prod.fst == #[mindControlId] &&
     g3.controlUntilSourceLeaves (g3.object! b.id) == some h.id &&
-    (g4.object! b.id).controlledBy opp &&
+    g4.controlledBy (g4.object! b.id) opp &&
     (controlEffectsOn g4 b.id).isEmpty
 
 /- Act of Treason then Mind Control: cleanup still ends Treason, and the Aura
@@ -456,8 +462,8 @@ leaving later returns the creature to its owner with no control effect left. -/
   let g4 := g3.expireWhileSourceEffects h.id
   g2.controlUntilEot (g2.object! b.id) &&
     (controlEffectsOn g3 b.id).size == 1 &&
-    (g3.object! b.id).controlledBy me &&
-    (g4.object! b.id).controlledBy opp &&
+    g3.controlledBy (g3.object! b.id) me &&
+    g4.controlledBy (g4.object! b.id) opp &&
     (controlEffectsOn g4 b.id).isEmpty
 
 /- A control effect lasting until the end of its controller's next turn
@@ -472,11 +478,11 @@ turn's cleanup (Evil's Thrall, CR 611.2a). -/
   let g3 := g2.record (GameEvent.turnBegan (g2.turnNumber + 1) me)
   let g4 := g3.clearEOT
   (g2.activeEffect? eid).isSome &&
-    (g2.object! b.id).controlledBy me &&
+    g2.controlledBy (g2.object! b.id) me &&
     g2.controlTurnEndsLeft (g2.object! b.id) == 2 &&
     g3.controlTurnEndsLeft (g3.object! b.id) == 1 &&
     (g4.activeEffect? eid).isNone &&
-    (g4.object! b.id).controlledBy opp
+    g4.controlledBy (g4.object! b.id) opp
 
 /- Cleanup does not look up a permanent that ending a control effect exiled
 (CR 800.4c). -/
@@ -569,13 +575,14 @@ copy at cleanup and restores the original card only when the source leaves. -/
   let g2 := g1.becomeCopyOf (g1.object! b.id) gt (untilEot := true)
   let g3 := (quiet g2).clearEOT
   let g4 := g3.expireWhileSourceEffects h.id
-  (g2.object! b.id).name == "Event Giant" &&
+  g2.name (g2.object! b.id) == "Event Giant" &&
+    (g2.object! b.id).printed.name == "Event Bear" &&
     g2.copyUntilEot (g2.object! b.id) &&
-    (g3.object! b.id).name == "Event Hero" &&
+    g3.name (g3.object! b.id) == "Event Hero" &&
     !(g3.copyUntilEot (g3.object! b.id)) &&
     g3.copyUntilSourceLeaves (g3.object! b.id) == some h.id &&
     ((g3.copyRestore (g3.object! b.id)).map CardDef.name) == some "Event Bear" &&
-    (g4.object! b.id).name == "Event Bear" &&
+    g4.name (g4.object! b.id) == "Event Bear" &&
     (g4.copyRestore (g4.object! b.id)).isNone &&
     (g4.copyUntilSourceLeaves (g4.object! b.id)).isNone
 
@@ -4012,20 +4019,20 @@ count as a turn of `p` beginning, so both last until cleanup of `p`'s next turn.
   let gMeNextClean := gMeNext.clearEOT
   hadCleanupClear &&
     !gClean1.hasHaste (gClean1.object! b.id) &&
-    (gClean1.object! b.id).controller == some me &&
+    gClean1.controllerOf (gClean1.object! b.id) == some me &&
     gClean1.controlTurnEndsLeft (gClean1.object! b.id) == 2 &&
     hasPlayPerm gClean1 &&
-    (gClean1b.object! b.id).controller == some me &&
+    gClean1b.controllerOf (gClean1b.object! b.id) == some me &&
     hasPlayPerm gClean1b &&
     gOppTurn.activePlayer == opp &&
-    (gOppClean.object! b.id).controller == some me &&
+    gOppClean.controllerOf (gOppClean.object! b.id) == some me &&
     gOppClean.controlTurnEndsLeft (gOppClean.object! b.id) == 2 &&
     hasPlayPerm gOppClean &&
     gMeNext.activePlayer == me &&
-    (gMeNext.object! b.id).controller == some me &&
+    gMeNext.controllerOf (gMeNext.object! b.id) == some me &&
     gMeNext.controlTurnEndsLeft (gMeNext.object! b.id) == 1 &&
     hasPlayPerm gMeNext &&
-    (gMeNextClean.object! b.id).controller == some opp &&
+    gMeNextClean.controllerOf (gMeNextClean.object! b.id) == some opp &&
     gMeNextClean.controlTurnEndsLeft (gMeNextClean.object! b.id) == 0 &&
     !hasPlayPerm gMeNextClean
 
@@ -4582,5 +4589,242 @@ land ability removal) all obey Layer 6 (CR 104.2a / 106.7 / 605.1a / 613.1f / 61
     noUnclassifiedRulesEvents gPwRe &&
     noUnclassifiedRulesEvents gGrRe &&
     noUnclassifiedRulesEvents gMtnReLantern
+
+/- Phase 9 isolation suite (CR 613.1a–b / 707 / 800.4a): Layer 1 copy and
+Layer 2 control effects are purely derived from `g.activeEffects` without
+mutating `GameObject.printed` / `GameObject.controller` or emitting secondary
+`ObjectChange.printed`, `PermanentEvent.controlChanged`, or `.staticAbility`
+churn on creation or expiry. Copy-of-copy reads Layer 1 `copiableValues`. -/
+#guard
+  let opp : PlayerId := ⟨1⟩
+  let giantDef : CardDef :=
+    { creature "Phase9 Giant" ManaCost.empty #["Giant"] 4 5 with
+      staticAbilities := #[.fra .creaturesYouControlHaveTrample] }
+  let cloneDef : CardDef :=
+    creature "Phase9 Clone" ManaCost.empty #["Shapeshifter"] 0 0
+  let g0 :=
+    addPermanent
+      (addPermanent
+        (addPermanent (quiet afterDraw) bear opp opp)
+        giantDef me me)
+      cloneDef me me
+  let b := (g0.battlefield.filter (·.name == "Event Bear"))[0]!
+  let gt := (g0.battlefield.filter (·.name == "Phase9 Giant"))[0]!
+  let cl := (g0.battlefield.filter (·.name == "Phase9 Clone"))[0]!
+  let gCopy1 := (quiet g0).becomeCopyOf b gt (untilEot := true)
+  let gCopy2 := gCopy1.becomeCopyOf (gCopy1.object! cl.id) (gCopy1.object! b.id) (untilEot := true)
+  let noPrintedMutation :=
+    (gCopy1.object! b.id).printed.name == "Event Bear" &&
+    (gCopy2.object! cl.id).printed.name == "Phase9 Clone" &&
+    !gCopy2.events.any (fun e =>
+      match e.change with
+      | .engine (.object _ (.printed _)) => true
+      | _ => false)
+  let copyValuesOk :=
+    gCopy1.name (gCopy1.object! b.id) == "Phase9 Giant" &&
+    gCopy1.power (gCopy1.object! b.id) == 4 &&
+    gCopy1.toughness (gCopy1.object! b.id) == 5 &&
+    gCopy2.name (gCopy2.object! cl.id) == "Phase9 Giant" &&
+    gCopy2.hasTrample (gCopy2.object! cl.id)
+  let gRevert := (quiet gCopy2).clearEOT
+  let copyRevertClean :=
+    gRevert.name (gRevert.object! b.id) == "Event Bear" &&
+    gRevert.name (gRevert.object! cl.id) == "Phase9 Clone" &&
+    !gRevert.events.any (fun e =>
+      match e.change with
+      | .engine (.object _ (.printed _)) => true
+      | _ => false)
+  let gCtrl := (quiet g0).changeControl b me (untilEot := true)
+  let gCtrlEnd := (quiet gCtrl).clearEOT
+  let hasSecondaryControlEvent (evs : Array GameEvent) : Bool :=
+    evs.any (fun e =>
+      match e.change with
+      | .rules (.permanent (.controlChanged ..)) => true
+      | .engine (.object _ (.controller _)) => true
+      | _ => false)
+  let layer2PureOk :=
+    (gCtrl.object! b.id).controller == some opp &&
+    gCtrl.controllerOf (gCtrl.object! b.id) == some me &&
+    !hasSecondaryControlEvent gCtrl.events &&
+    gCtrlEnd.controllerOf (gCtrlEnd.object! b.id) == some opp &&
+    !hasSecondaryControlEvent gCtrlEnd.events
+  noPrintedMutation && copyValuesOk && copyRevertClean && layer2PureOk
+
+/- Phase 9 isolation suite (CR 613.3 / 702.73a / 205.3d): Changeling applies
+first in Layer 4 as a CDA so a later Layer 4 subtype-replacing effect overwrites
+all creature subtypes, and losing `.creature` in Layer 4 strips creature subtypes. -/
+#guard
+  let changelingDef : CardDef :=
+    { creature "Phase9 Changeling" ManaCost.empty #["Shapeshifter"] 2 2 with
+      keywords := { changeling := true } }
+  let g0 := addPermanent (quiet afterDraw) changelingDef me me
+  let ch := (g0.battlefield.filter (·.name == "Phase9 Changeling"))[0]!
+  let cdaOk :=
+    g0.hasSubtype ch .bear &&
+    g0.hasSubtype ch .elf &&
+    g0.hasSubtype ch .construct &&
+    (g0.snapshot ch).subtypes.contains .bear &&
+    (g0.snapshot ch).changeling
+  let gOverwrite := g0.createEffect (.replacedCreatureTypesUntilEot ch.id #[.construct, .hero])
+  let ch1 := gOverwrite.object! ch.id
+  let overwriteOk :=
+    gOverwrite.subtypes ch1 == #[.construct, .hero] &&
+    !gOverwrite.hasSubtype ch1 .bear &&
+    !gOverwrite.hasSubtype ch1 .elf
+  let gNonCreature := g0.createEffect (.notACreature ch.id)
+  let ch2 := gNonCreature.object! ch.id
+  let lostCreatureSubtypesOk :=
+    !gNonCreature.isCreature ch2 &&
+    (gNonCreature.subtypes ch2).isEmpty
+  cdaOk && overwriteOk && lostCreatureSubtypesOk
+
+/- Phase 9 isolation suite (CR 613.7a / 613.7e):
+1. A static ability granted by an effect has timestamp
+   `max(objectEntryTimestamp, grantingEffectTimestamp)` (CR 613.7a).
+2. Reattaching an Equipment updates its attachment timestamp (CR 613.7e) so its
+   ability grant overrides an earlier `.losesAbilitiesUntilEot` on the host. -/
+#guard
+  let kiteDef : CardDef :=
+    { name := "Phase9 Kitesail"
+      types := #[.artifact]
+      subtypes := #["Equipment"]
+      staticAbilities := #[.equippedCreatureHasKeywords { flying := true }] }
+  let g0 :=
+    addPermanent
+      (addPermanent
+        (addPermanent (quiet afterDraw) bear me me)
+        hero me me)
+      kiteDef me me
+  let b := (g0.battlefield.filter (·.name == "Event Bear"))[0]!
+  let h := (g0.battlefield.filter (·.name == "Event Hero"))[0]!
+  let kite := (g0.battlefield.filter (·.name == "Phase9 Kitesail"))[0]!
+  let handCount : Int := Int.ofNat (g0.player me).hand.size
+  -- CR 613.7a: setBasePT (9, 9) -> grantedStatic powerEqualCardsInHand -> setBasePT (7, 7)
+  let g1 := g0.createEffect (.setBasePTUntilEot b.id (9, 9))
+  let g2 := g1.createEffect (.grantedStatic b.id .powerEqualCardsInHand)
+  let g3 := g2.createEffect (.setBasePTUntilEot b.id (7, 7))
+  let grantedTsOk :=
+    g1.power (g1.object! b.id) == 9 &&
+    g2.power (g2.object! b.id) == handCount &&
+    g2.toughness (g2.object! b.id) == 9 &&
+    g3.power (g3.object! b.id) == 7 &&
+    g3.toughness (g3.object! b.id) == 7
+  -- CR 613.7e: attach Kitesail to Bear -> Bear loses abilities -> reattach to Hero then Bear
+  let gEq1 := g0.attachSourceTo kite b
+  let gEqLost := gEq1.createEffect (.losesAbilitiesUntilEot b.id)
+  let gEqOther := gEqLost.attachSourceTo (gEqLost.object! kite.id) (gEqLost.object! h.id)
+  let gEqRe := gEqOther.attachSourceTo (gEqOther.object! kite.id) (gEqOther.object! b.id)
+  let reattachTsOk :=
+    gEq1.hasFlying (gEq1.object! b.id) &&
+    !gEqLost.hasFlying (gEqLost.object! b.id) &&
+    gEqRe.hasFlying (gEqRe.object! b.id)
+  grantedTsOk && reattachTsOk
+
+/- Phase 9 isolation suite (CR 613.8): Dependency ordering overrides timestamp
+order across Layer 2 (controller-scoped control change), Layer 3 (chained text
+changes), Layer 5 (subtype-scoped color grant vs text change), and Layer 6
+(`ObjectScope.creaturesWithout` ability grant vs `AbilityRemoval.all`). -/
+#guard
+  let opp : PlayerId := ⟨1⟩
+  let flyerDef : CardDef :=
+    { creature "Phase9 Flyer" ManaCost.empty #["Bird"] 2 2 with
+      keywords := { flying := true } }
+  let g0 :=
+    addPermanent
+      (addPermanent (quiet afterDraw) bear opp opp)
+      flyerDef me me
+  let b := (g0.battlefield.filter (·.name == "Event Bear"))[0]!
+  let fl := (g0.battlefield.filter (·.name == "Phase9 Flyer"))[0]!
+  -- Layer 2: earlier `.creaturesControlledBy me -> opp` waits for later `.objects #[b] -> me`
+  let gL2 :=
+    (g0.createEffect (.layered (.creaturesControlledBy me) (.control opp) .untilEndOfTurn)).createEffect
+      (.layered (.objects #[b.id]) (.control me) .untilEndOfTurn)
+  let l2DepOk := gL2.controllerOf (gL2.object! b.id) == some opp
+  -- Layer 5: earlier `.permanentsOfSubtype me .bear` color-add + later `.additionalSubtype`
+  let gL5 :=
+    (g0.createEffect
+      (.layered (.permanentsOfSubtype me .bear) (.colors .add (ColorSet.singleton .green)) .untilEndOfTurn)).createEffect
+      (.additionalSubtype fl.id .bear)
+  let l5DepOk := (gL5.colors (gL5.object! fl.id)).contains .green
+  -- Layer 6: earlier `.creaturesWithout flying -> vigilance` waits for later `losesAbilitiesUntilEot`
+  let gL6 :=
+    (g0.createEffect
+      (.layered (.creaturesWithout { flying := true })
+        (.abilities { keywords := { vigilance := true } } .none) .untilEndOfTurn)).createEffect
+      (.losesAbilitiesUntilEot fl.id)
+  let flAfter := gL6.object! fl.id
+  let l6DepOk := !gL6.hasFlying flAfter && gL6.hasVigilance flAfter
+  l2DepOk && l5DepOk && l6DepOk
+
+/- Phase 9 isolation suite (CR 613.4b–d):
+1. Layer 7b timestamp order across `setBasePTUntilEot`, `auraConstruct55` (5/5),
+   and `cardsInHandPowerUntilEot`.
+2. Layer 7c (`pumpPerArtifactUntilEot` and +1/+1 counters) applies after 7b
+   regardless of timestamp, and Layer 7d (`ptSwitch`) applies after 7b and 7c. -/
+#guard
+  let baubleDef : CardDef := { name := "Phase9 Bauble", types := #[.artifact] }
+  let g0 := addPermanent (addPermanent (quiet afterDraw) bear me me) baubleDef me me
+  let b := (g0.battlefield.filter (·.name == "Event Bear"))[0]!
+  let handCount : Int := Int.ofNat (g0.player me).hand.size
+  -- 7b timestamp order: (8, 4) -> Construct 5/5 -> handSize -> (3, 6)
+  let g7b1 := g0.createEffect (.setBasePTUntilEot b.id (8, 4))
+  let g7b2 := g7b1.createEffect (.auraConstruct55 b.id)
+  let g7b3 := g7b2.createEffect (.cardsInHandPowerUntilEot b.id)
+  let g7b4 := g7b3.createEffect (.setBasePTUntilEot b.id (3, 6))
+  let order7bOk :=
+    (g7b1.power (g7b1.object! b.id), g7b1.toughness (g7b1.object! b.id)) == (8, 4) &&
+    (g7b2.power (g7b2.object! b.id), g7b2.toughness (g7b2.object! b.id)) == (5, 5) &&
+    (g7b3.power (g7b3.object! b.id), g7b3.toughness (g7b3.object! b.id)) == (handCount, 5) &&
+    (g7b4.power (g7b4.object! b.id), g7b4.toughness (g7b4.object! b.id)) == (3, 6)
+  -- 7c (`pumpPerArtifactUntilEot` + +1/+1 counter) created BEFORE 7b `(3, 6)` + 7d `ptSwitch`:
+  -- 1 artifact (`Phase9 Bauble`) => +1/+1, +1/+1 counter => +1/+1, so (3+2, 6+2) = (5, 8), switched => (8, 5).
+  let gSublayers :=
+    (((g0.createEffect (.pumpPerArtifactUntilEot b.id)).addPlusOnePlusOneTo b 1).createEffect
+      (.layered (.objects #[b.id]) .ptSwitch .untilEndOfTurn)).createEffect
+      (.setBasePTUntilEot b.id (3, 6))
+  let sublayersOk :=
+    (gSublayers.power (gSublayers.object! b.id), gSublayers.toughness (gSublayers.object! b.id)) == (8, 5)
+  order7bOk && sublayersOk
+
+/- Phase 9 isolation suite (CR 302.6): A land played this turn enters with
+`status.summoningSick = true`, can tap for mana while noncreature, becomes
+summoning-sick (unable to activate `{T}` mana abilities or attack) if animated
+into a creature on the same turn without haste, can act when granted haste, and
+a creature whose controller changes mid-turn without haste becomes summoning-sick. -/
+#guard
+  let opp : PlayerId := ⟨1⟩
+  let forestDef : CardDef :=
+    { name := "Phase9 Forest", types := #[.land], subtypes := #["Forest"], supertypes := #[.basic] }
+  let (g0, fObj) := (quiet afterDraw).allocObject forestDef me (.hand me) none
+  let g0 := g0.changePlayer me (.pushHand fObj.id)
+  let gPlayed :=
+    match g0.playLand me fObj.id with
+    | .ok g' => g'
+    | .error _ => g0
+  let land := (gPlayed.battlefield.filter (·.name == "Phase9 Forest"))[0]!
+  let noncreatureLandOk :=
+    land.status.summoningSick &&
+    !gPlayed.hasSummoningSickness land &&
+    (gPlayed.manaSources me).any (fun (s, _) => s.id == land.id)
+  let gAnim := gPlayed.createEffect (.additionalCreature land.id (untilEot := true))
+  let animLand := gAnim.object! land.id
+  let animatedSickOk :=
+    gAnim.isCreature animLand &&
+    gAnim.hasSummoningSickness animLand &&
+    !(gAnim.manaSources me).any (fun (s, _) => s.id == land.id)
+  let gHaste := gAnim.createEffect (.keywordsUntilEot land.id Keyword.haste)
+  let hasteLand := gHaste.object! land.id
+  let hasteOk :=
+    !gHaste.hasSummoningSickness hasteLand &&
+    (gHaste.manaSources me).any (fun (s, _) => s.id == land.id)
+  -- Creature controlled since start of turn (`summoningSick := false`) changing control mid-turn
+  let gCreature0 := addPermanent (quiet afterDraw) bear opp opp
+  let b0 := (gCreature0.battlefield.filter (·.name == "Event Bear"))[0]!
+  let gCreatureReady := gCreature0.changeStatus b0.id (.summoningSick false)
+  let gStolen := gCreatureReady.changeControl (gCreatureReady.object! b0.id) me (untilEot := true)
+  let controlSickOk :=
+    !gCreatureReady.hasSummoningSickness (gCreatureReady.object! b0.id) &&
+    gStolen.hasSummoningSickness (gStolen.object! b0.id)
+  noncreatureLandOk && animatedSickOk && hasteOk && controlSickOk
 
 end Mtg.Engine.EventTests

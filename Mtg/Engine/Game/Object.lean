@@ -190,7 +190,7 @@ def hasType (o : GameObject) (t : CardType) : Bool :=
 
 def hasSubtype (o : GameObject) (s : CardSubtype) : Bool :=
   o.subtypes.any (· == s) ||
-    (o.printed.keywords.changeling && !s.isNoncreature)
+    (o.printed.keywords.changeling && (o.hasType .creature || o.hasType .kindred) && !s.isNoncreature)
 
 /-- Printed static abilities of this object. Layer-6 ability grants and
 removals are evaluated in `Game.staticAbilitiesOf` (CR 613.1f). -/
@@ -206,13 +206,10 @@ def auraCanEnchant (host : GameObject) (aura : CardDef) : Bool :=
       host.printed.isArtifact || (host.printed.isEnchantment && !host.printed.isAura)
     else host.isCreature
 
-/-- Colorless nonland permanent (e.g. a legal Goblin Cratermaker destroy target). -/
+/-- Colorless nonland permanent (e.g. a legal Goblin Cratermaker destroy target).
+Prefer `Game.isColorlessNonland` when `Game` is in scope. -/
 def isColorlessNonland (o : GameObject) : Bool :=
   o.isOnBattlefield && !o.printed.isLand && o.printed.colors.isColorless
-
-/-- Artifact or land on the battlefield (e.g. a legal Fire of Orthanc target). -/
-def isArtifactOrLand (o : GameObject) : Bool :=
-  o.isOnBattlefield && (o.printed.isArtifact || o.printed.isLand)
 
 /-- Printed keywords of this object. Layer-6 keyword grants and removals are
 evaluated in `Game.currentKeywords` (CR 613.1f). -/
@@ -224,10 +221,6 @@ def printedOrUntilEot (o : GameObject) : Keywords :=
 is in scope. -/
 def hasSummoningSickness (o : GameObject) : Bool :=
   o.isCreature && o.status.summoningSick && !o.printedOrUntilEot.haste
-
-/-- Whether `{T}` in an activation cost is currently payable (CR 302.6). -/
-def canPayTapCost (o : GameObject) : Bool :=
-  !o.status.tapped && !o.hasSummoningSickness
 
 end GameObject
 
@@ -493,17 +486,5 @@ structure WaitingTrigger where
   when this was queued. -/
   checked : Bool := false
 deriving Repr, Inhabited, BEq
-
-/-- Waiting-trigger snapshots of `source`'s printed abilities that fire on `event`. -/
-def GameObject.waitingTriggersFor (source : GameObject) (controller : PlayerId)
-    (event : TriggerEvent) (lastKnownPower : Option Int := none)
-    (lastKnownToughness : Option Int := none)
-    (causeId : Option ObjectId := none)
-    (cause : Option GameObject := none)
-    (checked : Bool := false)
-    (eventCause : Option EventCause := none) : Array WaitingTrigger :=
-  source.matchingTriggers event |>.map (fun ab =>
-    { controller, source, ability := ab, event, lastKnownPower, lastKnownToughness,
-      causeId, cause, eventCause, checked })
 
 end Mtg.Engine

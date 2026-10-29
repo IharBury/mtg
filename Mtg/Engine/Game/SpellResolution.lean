@@ -11,8 +11,8 @@ namespace Mtg.Engine
 namespace Game
 
 /-- Whether `host` is a legal Enchant-creature attachment (CR 303.4). -/
-def isLegalAuraHost (host : GameObject) : Bool :=
-  host.isOnBattlefield && host.isCreature
+def isLegalAuraHost (g : Game) (host : GameObject) : Bool :=
+  host.isOnBattlefield && g.isCreature host
 
 /-- Resolve an Aura spell, attaching it or putting it into the graveyard (CR 303.4, 608.3a). -/
 def resolveAuraSpell (g : Game) (entry : StackEntry) (obj : GameObject) : Game :=
@@ -24,12 +24,13 @@ def resolveAuraSpell (g : Game) (entry : StackEntry) (obj : GameObject) : Game :
   | some (Target.permanent hostId) =>
     match g.findObject? hostId with
     | some host =>
-      if host.auraCanEnchant obj.printed then
+      if g.auraCanEnchant host obj.printed then
+        let hostName := g.name host
         let (g, newId) := g.putOntoBattlefield obj.id entry.controller
           (attachedTo := some host.id) (verb := some .resolve) (actor := some entry.controller)
           (cause := finishCause)
         let o := g.object! newId
-        let g := g.logMsg s!"{o.name} enters the battlefield attached to {host.name}"
+        let g := g.logMsg s!"{g.name o} enters the battlefield attached to {hostName}"
         g.afterPermanentEnters (g.object! newId)
       else
         toGraveyard g
@@ -187,7 +188,7 @@ def resolveTop (g : Game) : Game :=
         | .chapter n _ =>
           match obj.sourceId.bind g.findObject? with
           | some src =>
-            match src.printed.saga, src.controller with
+            match (g.baseCard src).saga, g.controllerOf src with
             | some s, some p =>
               if n == s.finalChapterNumber then g.finishSagaFinalChapter p else g
             | _, _ => g

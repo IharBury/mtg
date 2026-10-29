@@ -137,7 +137,7 @@ def clearTurnActivations (g : Game) : Game :=
 def expireGoadedFor (g : Game) (p : PlayerId) : Game :=
   g.battlefield.foldl (fun g o =>
     if o.status.goadedUntilNextTurnOf.contains p then
-      g.record (GameEvent.designation g.turnNumber o.asEvent (.goaded p) false
+      g.record (GameEvent.designation g.turnNumber (g.snapshot o) (.goaded p) false
         (cause := some (.turnBased .expireAtStepBegin)))
     else g) g
 
@@ -280,6 +280,7 @@ partial def beginStep (g : Game) (st : Step) : Game :=
       let apName := (g.player ap).name
       g := g.expireGoadedFor ap
       g := g.expireFraUntilTurnEffects ap
+      g := g.restoreCopiesUntilNextTurn ap
       -- CR 502.1: phased-out permanents phase in before the player untaps.
       g := g.phaseInControlled ap
       g := g.expireMatching (fun | .playerRule p (.additionalLands _) _ => p == ap | _ => false)
@@ -298,16 +299,16 @@ partial def beginStep (g : Game) (st : Step) : Game :=
               g.hostCantBecomeUntapped o ||
               g.hostSkipsUntapStep o
             let baseCause := some (EventCause.turnBased .untapAll)
-            let untap := GameEvent.untapped g.turnNumber o.asEvent false (cause := baseCause)
+            let untap := GameEvent.untapped g.turnNumber (g.snapshot o) false (cause := baseCause)
             -- CR 122.1d: a stun counter is removed instead of untapping via the CR 616.1 loop.
             if o.status.tapped && !skipUntap then
               let (stunned, cause') := g.replaceUntap o (cause := baseCause)
               if stunned then
-                g := g.logMsg s!"A stun counter is removed from {o.name} instead of untapping it"
-                g := g.record (GameEvent.counters g.turnNumber (some ap) o.asEvent .stun 1 true
+                g := g.logMsg s!"A stun counter is removed from {g.name o} instead of untapping it"
+                g := g.record (GameEvent.counters g.turnNumber (some ap) (g.snapshot o) .stun 1 true
                   (cause := cause'))
               else
-                g := g.logMsg s!"{apName} untaps {o.name}"
+                g := g.logMsg s!"{apName} untaps {g.name o}"
                 if untap.watches .wouldUntap then
                   g := g.record untap
             if o.status.summoningSick then
@@ -358,11 +359,11 @@ partial def beginStep (g : Game) (st : Step) : Game :=
       Id.run do
         let mut g := g
         for o in g.permanentsOf ap do
-          if o.printed.impending.isSome && g.loggedCastForImpending o.id && o.status.time > 0 then
+          if (g.baseCard o).impending.isSome && g.loggedCastForImpending o.id && o.status.time > 0 then
             let impCause := some (EventCause.gameRule .impending)
-            g := (g.record (GameEvent.counters g.turnNumber (some ap) o.asEvent .time 1 true
+            g := (g.record (GameEvent.counters g.turnNumber (some ap) (g.snapshot o) .time 1 true
               (cause := impCause))).syncImpendingNotACreature o.id (cause := impCause)
-            g := g.logMsg s!"{o.name} loses a time counter"
+            g := g.logMsg s!"{g.name o} loses a time counter"
         return g
     let g := g.record stepEvent
     g.receivePriority ap

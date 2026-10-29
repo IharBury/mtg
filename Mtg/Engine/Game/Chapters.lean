@@ -217,7 +217,7 @@ def applyChapterEffect (g : Game) (controller : PlayerId) (e : Effect)
         (source := src?.map g.snapshot) (cause := cause?)
     g.dealDamageToEachOpponent controller n (source := src?) (cause := cause?)
   | .dealXDamageToTargetOpponentGreatestArtifactMv =>
-    let x := g.greatestManaValueAmong controller (·.printed.isArtifact)
+    let x := g.greatestManaValueAmong controller (g.isArtifact ·)
     g.withLegalKindPlayer controller .opponent targets
       (fun g pid => g.dealDamageToPlayer pid x (source := sourceId.bind g.findObject?))
       sourceId (some "The target is no longer legal")

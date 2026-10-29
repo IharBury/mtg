@@ -106,10 +106,10 @@ def planeswalker (o : EventObject) : Bool :=
 def instantOrSorcery (o : EventObject) : Bool :=
   o.types.any CardType.isInstantOrSorcery
 
-/-- `s` is one of this object's types, including changeling creature types
-(CR 702.72). -/
+/-- `s` is one of this object's types (CR 205.3; changeling creature types
+are expanded into `subtypes` in Layer 4 per CR 613.3 / 702.73a). -/
 def hasSubtype (o : EventObject) (s : CardSubtype) : Bool :=
-  o.subtypes.any (· == s) || (o.changeling && !s.isNoncreature)
+  o.subtypes.any (· == s)
 
 def equipment (o : EventObject) : Bool :=
   o.artifact && o.hasSubtype .equipment
@@ -156,7 +156,10 @@ def GameObject.asEvent (o : GameObject) : EventObject :=
     manaValue := o.printed.manaValue + o.chosenX.getD 0
     supertypes := o.supertypes
     types := o.types
-    subtypes := o.subtypes
+    subtypes :=
+      if o.printed.keywords.changeling && (o.types.contains .creature || o.types.contains .kindred) then
+        CardSubtype.allCreatureSubtypes.foldl (fun acc s => if acc.contains s then acc else acc.push s) o.subtypes
+      else o.subtypes
     power := if o.isCreature || o.printed.power.isSome then some o.power else none
     toughness := if o.isCreature || o.printed.toughness.isSome then some o.toughness else none
     loyalty := o.printed.loyalty.map Int.toNat
@@ -588,14 +591,14 @@ deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- Layered characteristic-modifying effect in CR 613.1 / 613.4 order. -/
 inductive LayerEffect where
-  | copy (values : CardDef) (restore : Option CardDef := none)         -- Layer 1 (CR 613.1a / 707)
+  | copy (values : CardDef)                                            -- Layer 1 (CR 613.1a / 707)
   | control (p : PlayerId)                                             -- Layer 2 (CR 613.1b)
   | text (change : TextChange)                                         -- Layer 3 (CR 613.1c / 612)
   | types (mode : SetOrAdd) (types : Array CardType)
       (subtypes : Array CardSubtype) (supertypes : Array Supertype)    -- Layer 4 (CR 613.1d)
   | colors (mode : SetOrAdd) (colors : ColorSet)                       -- Layer 5 (CR 613.1e)
   | abilities (add : AbilitySet) (remove : AbilityRemoval)             -- Layer 6 (CR 613.1f)
-  | ptCda (cda : PtCda)                                                -- Layer 7a (CR 613.4a)
+  | ptCda (cda : PtCda)                                                -- Layer 7a–7c dynamic P/T (CR 613.4a–c)
   | ptSet (power toughness : Int)                                      -- Layer 7b (CR 613.4b)
   | ptModify (power toughness : Int)                                   -- Layer 7c (CR 613.4c)
   | ptSwitch                                                           -- Layer 7d (CR 613.4d)
@@ -825,7 +828,7 @@ namespace ContinuousEffectSpec
   .gameRule (.fraEmblem object) (.untilNextTurnOf player)
 
 /-- `object` becomes a copy with `printed` characteristics (CR 611.2, 707 / 613.1a). -/
-@[inline] def copy (object : ObjectId) (printed : CardDef) (restore : Option CardDef := none)
+@[inline] def copy (object : ObjectId) (printed : CardDef)
     (untilEot : Bool := false) (untilNextTurn : Bool := false)
     (untilSourceLeaves : Option ObjectId := none)
     (nextTurnOf : Option PlayerId := none) : ContinuousEffectSpec :=
@@ -836,7 +839,7 @@ namespace ContinuousEffectSpec
       if untilEot then .untilEndOfTurn
       else if untilNextTurn then .untilNextTurnOf (nextTurnOf.getD ⟨0⟩)
       else .indefinite
-  .layered (.objects #[object]) (.copy printed restore) d
+  .layered (.objects #[object]) (.copy printed) d
 
 /-- `controller` gains control of `object` (CR 611.2 / 613.1b). -/
 @[inline] def control (object : ObjectId) (controller : PlayerId)

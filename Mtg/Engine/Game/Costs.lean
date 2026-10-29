@@ -29,12 +29,12 @@ def paySneak (g : Game) (p : PlayerId) (spellId : ObjectId) (attackerId : Object
   if !g.canCastForSneak p then
     throw "Sneak can be paid only during the declare blockers step on your turn"
   let some attacker := g.findObject? attackerId | throw "no such object"
-  if !(attacker.isOnBattlefield && attacker.isCreature && attacker.controlledBy p) then
-    throw s!"{attacker.name} is not a creature you control"
+  if !(attacker.isOnBattlefield && g.isCreature attacker && g.controlledBy attacker p) then
+    throw s!"{g.name attacker} is not a creature you control"
   if !attacker.status.attacking then
-    throw s!"{attacker.name} is not attacking"
+    throw s!"{g.name attacker} is not attacking"
   if attacker.status.blocked then
-    throw s!"{attacker.name} is blocked"
+    throw s!"{g.name attacker} is blocked"
   let defPlayer := g.defendingPlayerOf attacker
   let atkTarget := attacker.status.attackingTarget.getD (.player defPlayer)
   let some _spell := g.findObject? spellId | throw "The spell left the stack"
@@ -124,14 +124,14 @@ def applyCastCostReductions (g : Game) (card : GameObject) (face : CardDef)
     | some (n, subtype) =>
       let controls :=
         if false then
-          (g.permanentsOf caster).any (fun o => o.isCreature && o.isLegendary)
+          (g.permanentsOf caster).any (fun o => g.isCreature o && g.isLegendary o)
         else g.countSubtype caster subtype > 0
       if controls then afterDied.reduceGeneric n
       else afterDied
     | none => afterDied
   let afterControl :=
     if face.costReductionIfYouControlLegendary > 0 &&
-        (g.permanentsOf caster).any (fun o => o.isCreature && o.isLegendary) then
+        (g.permanentsOf caster).any (fun o => g.isCreature o && g.isLegendary o) then
       afterControl.reduceGeneric face.costReductionIfYouControlLegendary
     else afterControl
   let afterGy :=
@@ -148,13 +148,13 @@ def applyCastCostReductions (g : Game) (card : GameObject) (face : CardDef)
     if face.costReductionEqualFlyingPower then
       let n :=
         (g.permanentsOf caster).foldl (fun acc o =>
-          if o.isCreature && g.hasFlying o then acc + (g.power o).toNat else acc) 0
+          if g.isCreature o && g.hasFlying o then acc + (g.power o).toNat else acc) 0
       afterGy.reduceGeneric n
     else afterGy
   -- Ghalta: X is the greatest power or toughness among creatures you
   -- control, determined after the spell is on the stack (rulings 824 / 874).
   let afterGreatest :=
-    let creatures := (g.permanentsOf caster).filter (·.isCreature)
+    let creatures := (g.permanentsOf caster).filter (g.isCreature ·)
     let greatest (f : GameObject → Int) : Nat :=
       creatures.foldl (fun acc o => Nat.max acc (f o).toNat) 0
     let n :=
@@ -174,7 +174,7 @@ def applyCastCostReductions (g : Game) (card : GameObject) (face : CardDef)
           if pl.id == caster || pl.lost then acc
           else
             let arts :=
-              (g.permanentsOf pl.id).filter (fun o => o.printed.isArtifact) |>.size
+              (g.permanentsOf pl.id).filter (fun o => g.isArtifact o) |>.size
             max acc arts) 0
       afterAff.reduceGeneric n
     else afterAff
@@ -256,9 +256,9 @@ def applyCastCostReductions (g : Game) (card : GameObject) (face : CardDef)
   let sphinxLess :=
     if face.hasSubtype .sphinx then
       let zone (o : GameObject) :=
-        o.id != card.id && o.controlledBy caster &&
+        o.id != card.id && g.controlledBy o caster &&
           (o.zone == .command || (o.isOnBattlefield && g.retainsPrintedAbilities o))
-      (g.objects.filter zone).foldl (fun acc o => acc + o.printed.eminenceSphinxReduction) 0
+      (g.objects.filter zone).foldl (fun acc o => acc + (g.baseCard o).eminenceSphinxReduction) 0
     else 0
   (afterWitch.reduceGeneric (subtypeLess + selfLess + thisTurnLess)).reduceGeneric sphinxLess
 
@@ -381,14 +381,14 @@ def activationManaCost (g : Game) (p : PlayerId) (ab : ActivatedAbility)
       | some o =>
         let afterEnter :=
           if g.loggedEntered o.id then
-            ab.cost.mana.reduceByCost o.printed.manaCost
+            ab.cost.mana.reduceByCost (g.copiableValues o).manaCost
           else ab.cost.mana
         (withX afterEnter).reduceGeneric (g.hulkPowerUpGenericReduction p o.id)
       | none => withX ab.cost.mana
     else if ab.costReductionIfYouControlLegendary > 0 && g.controlsLegendaryCreature p then
       withX (ab.cost.mana.reduceGeneric ab.costReductionIfYouControlLegendary)
     else if ab.costReductionPerEquipment > 0 then
-      let n := (g.permanentsOf p).filter (fun o => o.printed.isEquipment) |>.size
+      let n := (g.permanentsOf p).filter (fun o => g.isEquipment o) |>.size
       withX (ab.cost.mana.reduceGeneric (ab.costReductionPerEquipment * n))
     else withX ab.cost.mana
   ManaCost.afterReduction ab.cost.mana cost

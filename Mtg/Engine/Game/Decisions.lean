@@ -176,24 +176,24 @@ def convoke (g : Game) (p : PlayerId) (ids : Array ObjectId) : Except String Gam
     let mut tapped := prop.tapped
     for id in ids do
       let some o := g.findObject? id | throw "no such object"
-      if !(o.isOnBattlefield && o.controlledBy p) then
-        throw s!"You don't control {o.name}"
+      if !(o.isOnBattlefield && g.controlledBy o p) then
+        throw s!"You don't control {g.name o}"
       if o.status.tapped then
-        throw s!"{o.name} is already tapped (ruling 863)"
-      if hasConvoke && o.isCreature then
-        match convokePayOne cost o.printed.colors with
-        | none => throw s!"{o.name} can't pay for any of the remaining cost"
+        throw s!"{g.name o} is already tapped (ruling 863)"
+      if hasConvoke && g.isCreature o then
+        match convokePayOne cost (g.colors o) with
+        | none => throw s!"{g.name o} can't pay for any of the remaining cost"
         | some c => cost := c
         g := g.becomeTapped o (cause := some (.costPayment .convoke p (some prop.spellId)))
-        g := g.logMsg s!"{(g.player p).name} taps {o.name} to convoke {spell.name}"
-      else if hasImprovise && o.types.contains .artifact then
+        g := g.logMsg s!"{(g.player p).name} taps {g.name o} to convoke {spell.name}"
+      else if hasImprovise && g.isArtifact o then
         if cost.genericCount == 0 then
-          throw s!"No generic mana is left for {o.name} to pay (CR 702.126a)"
+          throw s!"No generic mana is left for {g.name o} to pay (CR 702.126a)"
         cost := cost.reduceGeneric 1
         g := g.becomeTapped o (cause := some (.costPayment .tap p (some prop.spellId)))
-        g := g.logMsg s!"{(g.player p).name} taps {o.name} for improvise"
+        g := g.logMsg s!"{(g.player p).name} taps {g.name o} for improvise"
       else
-        throw s!"{o.name} can't help pay for {spell.name}"
+        throw s!"{g.name o} can't help pay for {spell.name}"
       tapped := tapped.push id
     g := closeBatch g
     return g.changeProposals #[.cost cost, .tapped tapped]
@@ -510,11 +510,11 @@ def choosePermanents (g : Game) (p : PlayerId) (ids : Array ObjectId) :
     if ids.size != 1 then
       throw "Choose one Equipment to attach"
     let some eq := g.findObject? ids[0]! | throw "no such object"
-    if !(eq.isOnBattlefield && eq.printed.isEquipment && eq.controlledBy p) then
-      throw s!"{eq.name} is not an Equipment you control"
+    if !(eq.isOnBattlefield && g.isEquipment eq && g.controlledBy eq p) then
+      throw s!"{g.name eq} is not an Equipment you control"
     let some host := g.findObject? hostId | throw "The creature is no longer in play"
     if !host.isOnBattlefield then
-      throw s!"{host.name} is no longer on the battlefield"
+      throw s!"{g.name host} is no longer on the battlefield"
     let g := g.attachSourceTo eq host
     let g := g.change (.pending .none)
     return g.receivePriority g.activePlayer
@@ -528,9 +528,9 @@ def choosePermanents (g : Game) (p : PlayerId) (ids : Array ObjectId) :
     let mut n : Nat := 0
     for id in ids do
       let some o := g.findObject? id | throw "no such object"
-      if !(o.isOnBattlefield && o.controlledBy p && g.hasSubtype o .human &&
+      if !(o.isOnBattlefield && g.controlledBy o p && g.hasSubtype o .human &&
           !o.status.tapped) then
-        throw s!"{o.name} is not an untapped Human you control"
+        throw s!"{g.name o} is not an untapped Human you control"
       g := g.applyPermanentAction o .tap
       n := n + 1
     g := closeBatch g
