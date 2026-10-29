@@ -2137,12 +2137,15 @@ Tests: `Events.lean`, `SetBasePT.lean`, `BecomeArtifact.lean`, `Auras.lean`,
    - Migrate remaining battlefield reads of `o.isCreature` (including
      `Designations.ringBearerChoices`), `o.isLegendary`, `o.hasSubtype`,
      `o.types` / `o.subtypes` / `o.supertypes` / `o.hasType` / `o.hasSupertype`,
-     `o.printed.colors` (`Core.frcProtectedFrom`, `Core.matchTriggers`), and
-     `o.printed.isLand` / `isArtifact` / `isCreature` / `isPlaneswalker` /
-     `isEquipment` on permanents to `Game.*` queries, keeping `GameObject.printed`
-     helpers exclusively for non-battlefield card characteristics where CR 113.6
-     applies; delete the unused `GameObject` helpers `isArtifactOrLand`,
-     `canPayTapCost`, and `waitingTriggersFor`.
+     `printed.colors` (`Decisions.convoke`'s `o.printed.colors`, `FraResolve`'s
+     `.drawPerColorAmongOtherArtifacts` `o.printed.colors`,
+     `ManaAbilities.cardManaAbilities`'s `x.printed.colors`, and
+     `Core.frcProtectedFrom`'s `src.printed.colors` when `src` is on the
+     battlefield), and `o.printed.isLand` / `isArtifact` / `isCreature` /
+     `isPlaneswalker` / `isEquipment` on permanents to `Game.*` queries, keeping
+     `GameObject.printed` helpers exclusively for non-battlefield card
+     characteristics where CR 113.6 applies; delete the unused `GameObject`
+     helpers `isArtifactOrLand`, `canPayTapCost`, and `waitingTriggersFor`.
 
 Tests: `SetBasePT.lean`, `BecomeArtifact.lean`, `Auras.lean`, `Grant.lean`,
 `Abilities.lean`, `Attach.lean`, `Tap.lean`, `Activation.lean`, `Targets.lean`,
@@ -2158,9 +2161,16 @@ timestamp order, and 302.6 animated-land summoning sickness).
      `restriction : Option ManaRestriction`, 106.6) in `ManaPool`
      ([`Mana.lean`](Mtg/Engine/Mana.lean),
      [`Player.lean`](Mtg/Engine/Game/Player.lean)) across `addUnit`,
-     `payUnits?`, `unspentManaBecomesColorless`, and `toUnits`, so `manaSpent`
-     and `manaEmptied` carry exact source provenance (including Treasure-mana and
-     restricted-mana riders).
+     `spendOneUnit?` / `payUnits?`, and `toUnits`, and preserve `ManaUnit`
+     `source` and `restriction` provenance in `applyPlayerEvent`'s
+     `PlayerEvent.manaEmptied` (`keptColorless := true`) colorless conversion
+     (recorded by `Game.emptyManaPools` in
+     [`Leaving.lean`](Mtg/Engine/Game/Leaving.lean) when
+     `CardDef.unspentManaBecomesColorless` applies, where
+     `PlayerChange.emptyManaPool` currently sums the six `Nat` totals into
+     `{ colorless := total }` and drops both `source` and `restriction`), so
+     `manaSpent` and `manaEmptied` carry exact source provenance (including
+     Treasure-mana and restricted-mana riders).
    - Migrate all 18 remaining `PlayerChange.addMana` call sites
      ([`Chapters.lean`](Mtg/Engine/Game/Chapters.lean),
      [`EffectResolution.lean`](Mtg/Engine/Game/EffectResolution.lean),
@@ -2196,8 +2206,9 @@ timestamp order, and 302.6 animated-land summoning sickness).
      `ModeledTriggers.lean`; `Casting.reverseProposedSpell`'s CR 733.1 reversal;
      `CastExtras.applyKickerToProposed`'s `StatusChange.faceDown`;
      `Attachments.attachSourceTo`'s `ObjectChange.timestamp`;
-     `EffectResolution.exchangeControl`'s `ObjectChange.controller` →
-     `PermanentEvent.controlChanged`; and `Start.materializeSeat` /
+     `EffectResolution.lean`'s `.exchangeControl` `ObjectChange.controller none`
+     fallback, routing both sides through `Game.effectiveController?` and
+     `changeControl` / `createEffect (.control …)`; and `Start.materializeSeat` /
      `Fixture.insertObject`), and delete all remaining dead or duplicate
      constructors on `StatusChange`, `ObjectChange`, `PlayerChange`, and
      `EngineChange`.
