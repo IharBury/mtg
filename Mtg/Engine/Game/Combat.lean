@@ -15,7 +15,9 @@ namespace Game
 Lawmage grants this to planeswalkers its controller controls). -/
 def planeswalkerAttackedByOneAtMost (g : Game) (pw : GameObject) : Bool :=
   match pw.controller with
-  | some q => (g.permanentsOf q).any (·.staticAbilities.any (· == .fra .planeswalkersAttackedByOneAtMost))
+  | some q =>
+    (g.permanentsOf q).any (fun o =>
+      (g.staticAbilities o).any (· == .fra .planeswalkersAttackedByOneAtMost))
   | none => false
 
 def declareAttackers (g : Game) (p : PlayerId) (ids : Array ObjectId)
@@ -480,7 +482,7 @@ def dealAssignedCombatDamage (g : Game) (appliedSoFar : Array ReplacementId := #
       if treasureCount > 0 then
         match src.controller with
         | some pid =>
-          if g.combatDamageCreatesTreasure src || g.equippedCreatesCombatTreasures src then
+          if g.combatDamageCreatesTreasure src then
             if let .chooseReplacement .. := g.pending then
               g := g.chainPendingReplacement (.createTreasureTokens pid treasureCount false combatCause)
             else

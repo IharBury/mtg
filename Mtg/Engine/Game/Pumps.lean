@@ -154,13 +154,22 @@ def grantsMaxHandSizeTen (o : GameObject) : Bool :=
     | _ => false)
 
 def effectiveMaxHandSize (g : Game) (p : PlayerId) : Option Nat :=
+  let hasNoMax (o : GameObject) : Bool :=
+    (g.staticAbilities o).any (fun
+      | .noMaximumHandSize => true
+      | _ => false)
+  let hasMaxTen (o : GameObject) : Bool :=
+    (g.staticAbilities o).any (fun
+      | .maximumHandSize 10 => true
+      | .maximumHandSize _ => false
+      | _ => false)
   let effects :=
     ((g.permanentsOf p).filter (fun o =>
-      grantsNoMaxHandSize o || grantsMaxHandSizeTen o)).qsort
+      hasNoMax o || hasMaxTen o)).qsort
       (fun a b => decide (a.timestamp < b.timestamp))
   effects.foldl (fun acc o =>
-    if grantsMaxHandSizeTen o then some 10
-    else if grantsNoMaxHandSize o then none
+    if hasMaxTen o then some 10
+    else if hasNoMax o then none
     else acc) (g.player p).maxHandSize
 
 /-- Reduce generic mana in `cost` by `n` (improvise taps artifacts for {1}). -/
@@ -171,7 +180,8 @@ def improviseReduce (cost : ManaCost) (n : Nat) : ManaCost :=
 def spellHasImprovise (g : Game) (face : CardDef) (caster : PlayerId) : Bool :=
   face.hasImprovise ||
     (!face.isCreature &&
-      (g.permanentsOf caster).any (fun o => o.printed.grantsImproviseToNoncreature))
+      (g.permanentsOf caster).any (fun o =>
+        o.printed.grantsImproviseToNoncreature && g.retainsPrintedAbilities o))
 
 /-- Open a simultaneous rules-event batch on `g` for use across an `Except`
 `do` block, returning the updated `Game` and a `closeBatch` continuation that

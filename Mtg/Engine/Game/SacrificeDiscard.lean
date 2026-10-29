@@ -112,7 +112,7 @@ def applyConnive (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
       fuel := fuel - 1
       let mut specs : Array (ReplacementSpec × Nat) := #[]
       for o in g.permanentsOf controller do
-        if o.staticAbilities.any (· == .extraDrawOnConnive) then
+        if (g.staticAbilities o).any (· == .extraDrawOnConnive) then
           specs := specs.push (
             { id := { kind := .extraDrawOnConnive, object := some o.id }
               source := some o.id

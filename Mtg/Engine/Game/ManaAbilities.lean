@@ -234,7 +234,7 @@ def grantedManaAbilityDefs (g : Game) (o : GameObject) : Array ManaAbilityDef :=
     if lords.isEmpty then #[]
     else if anyColor then #[{ output := .oneOf anyColorMana 1 }]
     else #[{ output := .oneOf lords 1 }]
-  let fra := o.staticAbilities.foldl (fun acc ab =>
+  let fra := (g.staticAbilities o).foldl (fun acc ab =>
     match ab with
     | .fra .tapAddColorlessNotFromHand =>
       acc.push { output := .fixed #[.colorless], restriction := .fra .notSpellsFromHand }
@@ -255,7 +255,8 @@ def grantedManaAbilityDefs (g : Game) (o : GameObject) : Array ManaAbilityDef :=
     if o.isOnBattlefield && o.printed.isLand then
       match o.controller with
       | some p =>
-        if (g.permanentsOf p).any (·.printed.grantLandsTapAnyColor) then
+        if (g.permanentsOf p).any (fun src =>
+            src.printed.grantLandsTapAnyColor && g.retainsPrintedAbilities src) then
           #[{ output := .oneOf anyColorMana 1 }]
         else #[]
       | none => #[]
@@ -304,7 +305,7 @@ def addRestrictedMana (pool : ManaPool) (mana : Array ManaType) (r : ManaRestric
 creatures had haste (Shang-Chi, Master of Kung Fu; MSH 280). -/
 def activatesAsThoughHaste (g : Game) (p : PlayerId) : Bool :=
   (g.permanentsOf p).any (fun o =>
-    o.staticAbilities.any (fun
+    (g.staticAbilities o).any (fun
       | .activateCreaturesAsThoughHaste => true
       | _ => false))
 

@@ -102,7 +102,7 @@ def destroyPermanent (g : Game) (o : GameObject)
 
 /-- True when all damage that would be dealt to `o` is prevented. -/
 def preventsAllDamageTo (g : Game) (o : GameObject) : Bool :=
-  o.staticAbilities.any (fun
+  (g.staticAbilities o).any (fun
     | .preventAllDamageToThis => true
     | _ => false) ||
   g.activeEffects.any (fun (_, eff) =>
@@ -250,7 +250,7 @@ def replaceDamage (g : Game) (n : Int)
           | some p, some r =>
             if p != r then
               for o in g.permanentsOf p do
-                if o.staticAbilities.any (· == .noncombatDamagePlusSourcePower) then
+                if (g.staticAbilities o).any (· == .noncombatDamagePlusSourcePower) then
                   let bonus := (g.power o).toNat
                   if bonus > 0 then
                     items := items.push (.replacement {
@@ -264,7 +264,7 @@ def replaceDamage (g : Game) (n : Int)
         -- Mjölnir (`.equippedDealsDoubleDamage`)
         for eq in g.battlefield do
           if eq.attachedTo == some src.id &&
-              eq.staticAbilities.any (· == .equippedDealsDoubleDamage) then
+              (g.staticAbilities eq).any (· == .equippedDealsDoubleDamage) then
             items := items.push (.replacement {
               id := { kind := .equippedDealsDoubleDamage, object := some eq.id }
               source := some eq.id
@@ -278,7 +278,7 @@ def replaceDamage (g : Game) (n : Int)
           | some p, some r =>
             if p != r then
               for o in g.permanentsOf p do
-                if o.staticAbilities.any (· == .fra .noncombatDamagePlusOne) then
+                if (g.staticAbilities o).any (· == .fra .noncombatDamagePlusOne) then
                   items := items.push (.replacement {
                     id := { kind := .noncombatDamagePlusOne, object := some o.id }
                     source := some o.id
@@ -373,7 +373,7 @@ def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
     let base := (source.orElse (fun _ => g.resolvingDamageSourceEvent?)).getD default
     { base with keywords := { base.keywords with deathtouch := base.keywords.deathtouch || deathtouch } }
   let healsOther :=
-    o.printed.staticAbilities.any (fun
+    (g.staticAbilities o).any (fun
       | .healOtherDamageWhenDealt => true
       | _ => false)
   let g :=
@@ -411,7 +411,7 @@ def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
 the time the damage would be dealt (MSH 305). -/
 def hawkeyeNoncombatBonus (g : Game) (sourceController : PlayerId) : Int :=
   (g.permanentsOf sourceController).foldl (fun acc o =>
-    if o.staticAbilities.any (fun
+    if (g.staticAbilities o).any (fun
       | .noncombatDamagePlusSourcePower => true
       | _ => false) then
       acc + g.power o
@@ -422,7 +422,7 @@ def mjolnirMultiplier (g : Game) (src : GameObject) : Nat :=
   let n :=
     (g.battlefield.filter (fun o =>
       o.attachedTo == some src.id &&
-        o.staticAbilities.any (fun
+        (g.staticAbilities o).any (fun
           | .equippedDealsDoubleDamage => true
           | _ => false))).size
   if n == 0 then 1 else Nat.pow 2 n
@@ -442,8 +442,8 @@ def tomikNoncombatBonus (g : Game) (src : GameObject) (recipient : PlayerId) : I
   match src.controller with
   | some p =>
     if p == recipient then 0
-    else Int.ofNat ((g.permanentsOf p).filter (·.staticAbilities.any
-      (· == .fra .noncombatDamagePlusOne))).size
+    else Int.ofNat ((g.permanentsOf p).filter (fun o =>
+      (g.staticAbilities o).any (· == .fra .noncombatDamagePlusOne))).size
   | none => 0
 
 /-- Increase `p`'s life total (CR 119.2), running the CR 616.1 replacement loop
@@ -454,7 +454,8 @@ def gainLife (g : Game) (p : PlayerId) (n : Nat)
   let proposed := GameEvent.life g.turnNumber p n true (cause := cause)
   if n == 0 || !proposed.watches .wouldGainLife then g
   else if (g.livingOpponents p).any (fun opp =>
-      (g.permanentsOf opp.id).any (·.printed.opponentsCantGainLife)) then
+      (g.permanentsOf opp.id).any (fun o =>
+        o.printed.opponentsCantGainLife && g.retainsPrintedAbilities o)) then
     g.logMsg s!"{(g.player p).name} can't gain life"
   else
     let pl := g.player p

@@ -409,7 +409,7 @@ def attackTaxPerCreature (g : Game) (defender : PlayerId) : Nat :=
   if !g.hasEnduringStory defender then 0
   else
     (g.permanentsOf defender).foldl (fun acc src =>
-      src.staticAbilities.foldl (fun acc ab =>
+      (g.staticAbilities src).foldl (fun acc ab =>
         match ab.attackTaxIfEnduringStory? with
         | some n => acc + n
         | none => acc) acc) 0
@@ -425,7 +425,11 @@ def everyAttackCosts (g : Game) (o : GameObject) : Bool :=
 /-- True when `o` must attack this combat. Summoning sickness, being tapped,
 or an unpaid attack cost means it does not have to attack (MSH 130). -/
 def mustAttackIfAble (g : Game) (o : GameObject) (attackRequiresCost := false) : Bool :=
-  (hasAttacksIfAble o || o.status.goaded) && g.canAttack o &&
+  let attacksEachCombat :=
+    (g.staticAbilities o).any (fun
+      | .attacksEachCombatIfAble => true
+      | _ => false)
+  (attacksEachCombat || o.status.goaded) && g.canAttack o &&
     !mustAttackCanDeclineIfOnlyAttackCosts (attackRequiresCost || g.everyAttackCosts o)
 
 /-- Failed Adventure from Bilbo's graveyard ability is exiled by Bilbo, not

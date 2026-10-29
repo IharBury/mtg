@@ -183,7 +183,7 @@ def applyCastCostReductions (g : Game) (card : GameObject) (face : CardDef)
       let n :=
         (g.permanentsOf caster).foldl (fun acc o =>
           let reduces :=
-            o.staticAbilities.any (fun ab =>
+            (g.staticAbilities o).any (fun ab =>
               match ab with
               | .instantSorceryCostReductionEqualEquippedPower => true
               | _ => false)
@@ -199,7 +199,7 @@ def applyCastCostReductions (g : Game) (card : GameObject) (face : CardDef)
     if face.isCreature && g.loggedCreatureSpells caster == 0 then
       let n :=
         (g.permanentsOf caster).foldl (fun acc o =>
-          acc + o.printed.firstCreatureCostsLess) 0
+          if g.retainsPrintedAbilities o then acc + o.printed.firstCreatureCostsLess else acc) 0
       afterSpell.reduceGeneric n
     else afterSpell
   let notFromHand :=
@@ -207,7 +207,7 @@ def applyCastCostReductions (g : Game) (card : GameObject) (face : CardDef)
     | .hand _ => 0
     | _ =>
       (g.permanentsOf caster).foldl (fun acc o =>
-        acc + o.printed.costReductionNotFromHand) 0
+        if g.retainsPrintedAbilities o then acc + o.printed.costReductionNotFromHand else acc) 0
   let afterNotHand := afterFirst.reduceGeneric notFromHand
   let witchLess :=
     if face.isInstant || face.isSorcery then
@@ -216,7 +216,7 @@ def applyCastCostReductions (g : Game) (card : GameObject) (face : CardDef)
       else
         (g.permanentsOf caster).foldl (fun acc o =>
           let reduces :=
-            o.staticAbilities.any (fun ab =>
+            (g.staticAbilities o).any (fun ab =>
               match ab with
               | .instantSorceryCostLessEqualPower => true
               | _ => false)
@@ -234,7 +234,7 @@ def applyCastCostReductions (g : Game) (card : GameObject) (face : CardDef)
   let afterWitch := afterX.reduceGeneric witchLess
   let subtypeLess :=
     (g.permanentsOf caster).foldl (fun acc o =>
-      o.staticAbilities.foldl (fun acc ab =>
+      (g.staticAbilities o).foldl (fun acc ab =>
         match ab with
         | .subtypeSpellsCostLess subtype n =>
           if face.hasSubtype subtype then acc + n else acc
@@ -257,7 +257,7 @@ def applyCastCostReductions (g : Game) (card : GameObject) (face : CardDef)
     if face.hasSubtype .sphinx then
       let zone (o : GameObject) :=
         o.id != card.id && o.controlledBy caster &&
-          (o.isOnBattlefield || o.zone == .command)
+          (o.zone == .command || (o.isOnBattlefield && g.retainsPrintedAbilities o))
       (g.objects.filter zone).foldl (fun acc o => acc + o.printed.eminenceSphinxReduction) 0
     else 0
   (afterWitch.reduceGeneric (subtypeLess + selfLess + thisTurnLess)).reduceGeneric sphinxLess
@@ -340,7 +340,11 @@ def grantsExtraPowerUp (o : GameObject) : Bool :=
 
 /-- Extra lifetime power-up activations granted by Wonder Man (MSH). -/
 def powerUpActivationLimit (g : Game) (p : PlayerId) : Nat :=
-  1 + ((g.permanentsOf p).filter grantsExtraPowerUp).size
+  1 + ((g.permanentsOf p).filter (fun o =>
+    (g.staticAbilities o).any (fun ab =>
+      match ab with
+      | .extraPowerUpActivation => true
+      | _ => false))).size
 
 /-- True when `o` is Hulk's generic power-up cost reduction. -/
 def grantsHulkPowerUpReduction (o : GameObject) : Bool :=
@@ -355,7 +359,7 @@ def hulkPowerUpGenericReduction (g : Game) (p : PlayerId) (sourceId : ObjectId) 
   (g.permanentsOf p).foldl (fun acc o =>
     if o.id == sourceId then acc
     else
-      o.printed.staticAbilities.foldl (fun acc ab =>
+      (g.staticAbilities o).foldl (fun acc ab =>
         match ab with
         | .otherPowerUpCostsLess n => acc + n
         | _ => acc) acc) 0
@@ -368,7 +372,8 @@ def activationManaCost (g : Game) (p : PlayerId) (ab : ActivatedAbility)
     | none => cost
   let firstEquipFree :=
     ab.isEquip && g.hasEnduringStory p && g.loggedEquipActivations p == 0 &&
-      (g.permanentsOf p).any (·.staticAbilities.any (· == .firstEquipFreeIfEnduringStory))
+      (g.permanentsOf p).any (fun o =>
+        (g.staticAbilities o).any (· == .firstEquipFreeIfEnduringStory))
   let cost :=
     if firstEquipFree then ManaCost.empty
     else if ab.powerUp then

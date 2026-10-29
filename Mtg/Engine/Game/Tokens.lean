@@ -193,7 +193,7 @@ def replaceTokenCreationChoice (g : Game) (initial : ProposedTokenBatch)
       let mut specs : Array ReplacementSpec := #[]
       if includeKindReplacements && hasFood then
         for o in g.permanentsOf ctrl do
-          if o.printed.foodAlsoCreatesTreasure then
+          if o.printed.foodAlsoCreatesTreasure && g.retainsPrintedAbilities o then
             specs := specs.push {
               id := { kind := .foodAlsoCreatesTreasure, object := some o.id }
               source := some o.id
@@ -203,7 +203,7 @@ def replaceTokenCreationChoice (g : Game) (initial : ProposedTokenBatch)
             }
       if includeKindReplacements && hasArtifact then
         for o in g.permanentsOf ctrl do
-          if o.staticAbilities.any (· == .artifactTokensBecomeDragons) then
+          if (g.staticAbilities o).any (· == .artifactTokensBecomeDragons) then
             specs := specs.push {
               id := { kind := .artifactTokensBecomeDragons, object := some o.id }
               source := some o.id
@@ -213,7 +213,7 @@ def replaceTokenCreationChoice (g : Game) (initial : ProposedTokenBatch)
             }
       if includeMultiplier then
         for o in g.permanentsOf ctrl do
-          if o.printed.tokenDoubling then
+          if o.printed.tokenDoubling && g.retainsPrintedAbilities o then
             specs := specs.push {
               id := { kind := .tokenDoubling, object := some o.id }
               source := some o.id

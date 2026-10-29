@@ -4321,4 +4321,141 @@ count as a turn of `p` beginning, so both last until cleanup of `p`'s next turn.
     noUnclassifiedRulesEvents gPrecRe &&
     noUnclassifiedRulesEvents gPwRe
 
+/- Phase 8 (PR #584 review round 3): `combatDamageCreatesTreasure` (including
+attached Reaver Cleaver), `ironFistTapGrants`, `canBlock` (`printed.cantBlock`
+vs `.cantBlockUntilEot`), and `wardCostsOn` (printed ward, ward statics,
+attached ward Equipment, and lord ward) all evaluate in Layer 6 timestamp
+order (CR 613.1f / 613.7 / 702.21). -/
+#guard
+  let opp : PlayerId := ⟨1⟩
+  let c1 : EventCause := .oneShotEffect (some ⟨1001⟩) none (some me)
+  let c2 : EventCause := .oneShotEffect (some ⟨1002⟩) none (some me)
+  let c3 : EventCause := .oneShotEffect (some ⟨1003⟩) none (some me)
+  let c4 : EventCause := .oneShotEffect (some ⟨1004⟩) none (some me)
+  -- 1. `combatDamageCreatesTreasure` & Reaver Cleaver timestamp ordering
+  let cleaverDef : CardDef :=
+    { name := "Test Cleaver"
+      types := #[.artifact]
+      subtypes := #["Equipment"]
+      staticAbilities := #[.equippedGetsTrampleAndCombatTreasures 1 1] }
+  let gTr0 := addPermanent (addPermanent (quiet afterDraw) bear me me) cleaverDef me me
+  let atk := (gTr0.battlefield.filter (·.name == "Event Bear"))[0]!
+  let cleaver := (gTr0.battlefield.filter (·.name == "Test Cleaver"))[0]!
+  let gTrPre :=
+    ((gTr0.markAttacking atk.id).record
+      (GameEvent.attached gTr0.turnNumber cleaver.id atk.id (cause := some c1))).createEffect
+      (.combatDamageCreatesTreasureUntilEot atk.id) (cause := some c1)
+  let gTrLost :=
+    gTrPre.createEffect (.losesAbilitiesUntilEot atk.id) (cause := some c2)
+  let gTrLostCombat :=
+    { gTrLost with assignedCombatDamage := #[{ source := atk.id, toPlayer := 2 }] }.dealAssignedCombatDamage
+  let gTrRe :=
+    gTrLost.record (GameEvent.attached gTrLost.turnNumber cleaver.id atk.id (cause := some c3))
+  let gTrReCombat :=
+    { gTrRe with assignedCombatDamage := #[{ source := atk.id, toPlayer := 2 }] }.dealAssignedCombatDamage
+  let gTrPostEff :=
+    gTrLost.createEffect (.combatDamageCreatesTreasureUntilEot atk.id) (cause := some c4)
+  let countTreasures (g : Game) : Nat :=
+    (g.permanentsOf me).filter (fun o => g.hasSubtype o .treasure) |>.size
+  let treasureOk :=
+    gTrPre.combatDamageCreatesTreasure (gTrPre.object! atk.id) &&
+    !gTrLost.combatDamageCreatesTreasure (gTrLost.object! atk.id) &&
+    countTreasures gTrLostCombat == 0 &&
+    gTrRe.combatDamageCreatesTreasure (gTrRe.object! atk.id) &&
+    countTreasures gTrReCombat == 2 &&
+    gTrPostEff.combatDamageCreatesTreasure (gTrPostEff.object! atk.id)
+  -- 2. `ironFistTapGrants` timestamp ordering (effect removal + Aura removal)
+  let stripAuraDef : CardDef :=
+    { name := "Strip Aura"
+      types := #[.enchantment]
+      subtypes := #["Aura"]
+      staticAbilities := #[.enchantedLosesAbilitiesCantUntap] }
+  let gFist0 := addPermanent (addPermanent (quiet afterDraw) bear me me) stripAuraDef me me
+  let fist := (gFist0.battlefield.filter (·.name == "Event Bear"))[0]!
+  let stripAura := (gFist0.battlefield.filter (·.name == "Strip Aura"))[0]!
+  let gFistPre :=
+    (gFist0.createEffect (.ironFistTapUntilEot fist.id) (cause := some c1)).createEffect
+      (.ironFistTapUntilEot fist.id) (cause := some c1)
+  let gFistLost :=
+    gFistPre.createEffect (.losesAbilitiesUntilEot fist.id) (cause := some c2)
+  let gFistPost :=
+    gFistLost.createEffect (.ironFistTapUntilEot fist.id) (cause := some c3)
+  let gFistAuraLost :=
+    gFistPost.record (GameEvent.attached gFistPost.turnNumber stripAura.id fist.id (cause := some c4))
+  let ironFistOk :=
+    gFistPre.ironFistTapGrants (gFistPre.object! fist.id) == 2 &&
+    gFistLost.ironFistTapGrants (gFistLost.object! fist.id) == 0 &&
+    gFistPost.ironFistTapGrants (gFistPost.object! fist.id) == 1 &&
+    gFistAuraLost.ironFistTapGrants (gFistAuraLost.object! fist.id) == 0
+  -- 3. `canBlock`: `printed.cantBlock` is removed in Layer 6, `.cantBlockUntilEot` is not
+  let cantBlockDef : CardDef :=
+    { (creature "Reluctant Blocker" ManaCost.empty #["Human"] 2 2) with
+      cantBlock := true }
+  let gBlk0 :=
+    addPermanent (addPermanent (quiet afterDraw) bear me me) cantBlockDef opp opp
+  let attacker := (gBlk0.battlefield.filter (·.name == "Event Bear"))[0]!
+  let blocker := (gBlk0.battlefield.filter (·.name == "Reluctant Blocker"))[0]!
+  let gBlkAtk := gBlk0.markAttacking attacker.id (some (.player opp))
+  let gBlkLost := gBlkAtk.createEffect (.losesAbilitiesUntilEot blocker.id) (cause := some c1)
+  let gBlkRule := gBlkLost.createEffect (.cantBlockUntilEot blocker.id) (cause := some c2)
+  let gBlkRuleThenLost :=
+    (gBlkAtk.createEffect (.cantBlockUntilEot blocker.id) (cause := some c1)).createEffect
+      (.losesAbilitiesUntilEot blocker.id) (cause := some c2)
+  let canBlockOk :=
+    !gBlkAtk.canBlock (gBlkAtk.object! blocker.id) (gBlkAtk.object! attacker.id) &&
+    gBlkLost.canBlock (gBlkLost.object! blocker.id) (gBlkLost.object! attacker.id) &&
+    !gBlkRule.canBlock (gBlkRule.object! blocker.id) (gBlkRule.object! attacker.id) &&
+    !gBlkRuleThenLost.canBlock (gBlkRuleThenLost.object! blocker.id) (gBlkRuleThenLost.object! attacker.id)
+  -- 4. `wardCostsOn`: printed ward, ward statics, attached ward Equipment, and lord ward
+  let wardHeroDef : CardDef :=
+    { (creature "Ward Hero" ManaCost.empty #["Hero"] 3 3) with
+      supertypes := #[.legendary]
+      ward := some 2
+      staticAbilities := #[.wardDiscardOrPay 1] }
+  let wardEqDef : CardDef :=
+    { name := "Ward Cloak"
+      types := #[.artifact]
+      subtypes := #["Equipment"]
+      staticAbilities := #[.equippedCreatureGetsAndWard 1 1 3] }
+  let wardLordDef : CardDef :=
+    { (creature "Ward Lord" ManaCost.empty #["Advisor"] 2 2) with
+      staticAbilities := #[.legendaryCreaturesGetAndWard 1 1 4] }
+  let gWd0 :=
+    addPermanent
+      (addPermanent
+        (addPermanent (quiet afterDraw) wardLordDef me me)
+        wardHeroDef me me)
+      wardEqDef me me
+  let wHero := (gWd0.battlefield.filter (·.name == "Ward Hero"))[0]!
+  let wCloak := (gWd0.battlefield.filter (·.name == "Ward Cloak"))[0]!
+  let wLord := (gWd0.battlefield.filter (·.name == "Ward Lord"))[0]!
+  let gWdPre :=
+    gWd0.record (GameEvent.attached gWd0.turnNumber wCloak.id wHero.id (cause := some c1))
+  let preWards := gWdPre.wardCostsOn (gWdPre.object! wHero.id)
+  let gWdLost :=
+    gWdPre.createEffect (.losesAbilitiesUntilEot wHero.id) (cause := some c2)
+  let lostWards := gWdLost.wardCostsOn (gWdLost.object! wHero.id)
+  let gWdRe :=
+    addPermanent
+      (gWdLost.record (GameEvent.attached gWdLost.turnNumber wCloak.id wHero.id (cause := some c3)))
+      wardLordDef me me
+  let reWards := gWdRe.wardCostsOn (gWdRe.object! wHero.id)
+  let gWdLordLost :=
+    gWdPre.createEffect (.losesAbilitiesUntilEot wLord.id) (cause := some c2)
+  let lordLostWards := gWdLordLost.wardCostsOn (gWdLordLost.object! wHero.id)
+  let wardOk :=
+    preWards.size == 4 &&
+    preWards.contains (.genericMana 2) &&
+    preWards.contains (.discardOrPay 1) &&
+    preWards.contains (.genericMana 3) &&
+    preWards.contains (.genericMana 4) &&
+    lostWards.isEmpty &&
+    reWards == #[.genericMana 3, .genericMana 4] &&
+    lordLostWards.size == 3 &&
+    !lordLostWards.contains (.genericMana 4)
+  treasureOk && ironFistOk && canBlockOk && wardOk &&
+    noUnclassifiedRulesEvents gTrReCombat &&
+    noUnclassifiedRulesEvents gFistAuraLost &&
+    noUnclassifiedRulesEvents gWdRe
+
 end Mtg.Engine.EventTests

@@ -118,9 +118,9 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
 abilities to trigger. Checked with the permanent as it exists on the
 battlefield (rulings 891–893). Replacement effects still apply (ruling 890). -/
 def enteringCausesNoTriggers (g : Game) (o : GameObject) : Bool :=
-  (o.isCreature || o.types.contains .artifact) &&
+  (g.isCreature o || (g.types o).contains .artifact) &&
     g.battlefield.any (fun src =>
-      src.staticAbilities.any (fun
+      (g.staticAbilities src).any (fun
         | .enteringArtifactsCreaturesDontTrigger => true
         | _ => false))
 
@@ -197,7 +197,7 @@ def enterWithShield (g : Game) (o : GameObject) : Game :=
       g.logMsg s!"{o.name} enters with {n} shield counter(s)"
 
 def enterWithXPlusOnes (g : Game) (o : GameObject) : Game :=
-  if !o.status.faceDown && o.staticAbilities.any (fun
+  if !o.status.faceDown && (g.staticAbilities o).any (fun
       | .entersWithXPlusOne => true
       | _ => false) && o.status.plusOnePlusOne > 0 then
     let (n, _, _) :=
@@ -255,7 +255,7 @@ def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
   let o := g.object! o.id
   -- Room of Refuge: “As it enters, choose a color.”
   let g :=
-    if o.staticAbilities.any (· == .fra .entersTappedChooseColor) && o.status.chosenColor.isNone &&
+    if (g.staticAbilities o).any (· == .fra .entersTappedChooseColor) && o.status.chosenColor.isNone &&
         g.pending == .none then
       match o.controller with
       | some p =>
@@ -265,8 +265,8 @@ def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
     else g
   -- An Unexpected Party: “As this enchantment enters, choose a creature type.”
   let g :=
-    if o.printed.asEntersChooseCreatureType && o.status.chosenCreatureType.isNone &&
-        g.pending == .none then
+    if o.printed.asEntersChooseCreatureType && g.retainsPrintedAbilities o &&
+        o.status.chosenCreatureType.isNone && g.pending == .none then
       match o.controller with
       | some p =>
         (g.change (.pending (.fraChoice p (.entersCreatureType o.id)))).logMsg
@@ -275,7 +275,8 @@ def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
     else g
   -- Gollum, Riddle Master: “As Gollum enters, choose odd or even.”
   let g :=
-    if o.printed.asEntersChooseOddEven && o.status.chosenOdd.isNone && g.pending == .none then
+    if o.printed.asEntersChooseOddEven && g.retainsPrintedAbilities o &&
+        o.status.chosenOdd.isNone && g.pending == .none then
       match o.controller with
       | some p =>
         (g.change (.pending (.fraChoice p (.entersOddEven o.id)))).logMsg
@@ -284,7 +285,7 @@ def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
     else g
   -- Meddling Mage: “As it enters, choose a nonland card name.”
   let g :=
-    if o.staticAbilities.any (· == .fra .entersChooseNonlandCardName) && o.status.chosenName.isNone &&
+    if (g.staticAbilities o).any (· == .fra .entersChooseNonlandCardName) && o.status.chosenName.isNone &&
         g.pending == .none then
       match o.controller with
       | some p =>

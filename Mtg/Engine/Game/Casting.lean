@@ -17,7 +17,7 @@ cast a spell this turn (MSH 105). The permanent need not have been on
 the battlefield when that spell was cast. -/
 def cosmicAwarenessFlash (g : Game) (p : PlayerId) : Bool :=
   (g.permanentsOf p).any (fun o =>
-    o.staticAbilities.any (fun
+    (g.staticAbilities o).any (fun
       | .flashIfOpponentCastThisTurn => true
       | _ => false)) &&
     (g.livingOpponents p).any (fun pl => g.loggedSpellsCast pl.id > 0)
@@ -30,7 +30,8 @@ def timingAllowsCast (g : Game) (p : PlayerId) (face : CardDef) : Bool :=
     | none => false
   let radagastFlash :=
     face.isCreature && g.loggedCreatureSpells p == 0 &&
-      (g.permanentsOf p).any (fun o => o.printed.firstCreatureHasFlash)
+      (g.permanentsOf p).any (fun o =>
+        o.printed.firstCreatureHasFlash && g.retainsPrintedAbilities o)
   g.hasPriority p &&
   (if face.hasSorcerySpeed && !hasConditionalFlash && !radagastFlash &&
       !g.cosmicAwarenessFlash p then
@@ -54,7 +55,7 @@ def isNonlandCardName (g : Game) (name : String) : Bool :=
 def spellNameForbidden (g : Game) (name : String) : Bool :=
   g.battlefield.any (fun o =>
     o.status.chosenName == some name &&
-      o.staticAbilities.any (· == .fra .chosenNameSpellsCantBeCast))
+      (g.staticAbilities o).any (· == .fra .chosenNameSpellsCantBeCast))
 
 /-- Whether `p` may begin to cast `o` (CR 601.3). Having enough mana in the
 pool is not required; mana abilities are activated at CR 601.2g. Additional
@@ -440,63 +441,135 @@ def queueBecomesTargetTriggers (g : Game) (caster : PlayerId)
     | some c => if c != caster then g.putMatchingSourceTriggers c o .becomesTarget else g
     | none => g)
 
-/-- Printed and granted ward costs currently on `o`. -/
-def wardCostsOn (g : Game) (o : GameObject) : Array WardCost :=
-  Id.run do
-    let mut acc : Array WardCost := #[]
-    match o.printed.ward with
-    | some n => acc := acc.push (.genericMana n)
-    | none => pure ()
-    for ab in o.staticAbilities do
-      match ab with
-      | .wardDiscardEnchantmentInstantOrSorcery =>
-        acc := acc.push .discardEnchantmentInstantOrSorcery
-      | .wardSacrificeLegendary =>
-        acc := acc.push .sacrificeLegendary
-      | .wardDiscardOrPay n =>
-        acc := acc.push (.discardOrPay n)
-      | .wardPoisonCounters _ =>
-        acc := acc.push .fivePoison
-      | .fra .wardDiscardCard =>
-        acc := acc.push .discardCard
-      | .fra .wardSacrificeThreePermanents =>
-        acc := acc.push (.sacrificePermanents 3 0)
-      | _ =>
-        match ab.grantedWard? with
+private structure WardEntry where
+  idx : Nat
+  ts : Nat × Nat
+  rem : AbilityRemoval
+  add : Array WardCost
+deriving Inhabited
+
+/-- Ward costs granted to `o` itself by static abilities in `abs`. -/
+private def selfWardCosts (g : Game) (o : GameObject) (abs : Array StaticAbility) :
+    Array WardCost :=
+  abs.foldl (fun acc ab =>
+    match ab with
+    | .wardDiscardEnchantmentInstantOrSorcery =>
+      acc.push .discardEnchantmentInstantOrSorcery
+    | .wardSacrificeLegendary =>
+      acc.push .sacrificeLegendary
+    | .wardDiscardOrPay n =>
+      acc.push (.discardOrPay n)
+    | .wardPoisonCounters _ =>
+      acc.push .fivePoison
+    | .fra .wardDiscardCard =>
+      acc.push .discardCard
+    | .fra .wardSacrificeThreePermanents =>
+      acc.push (.sacrificePermanents 3 0)
+    | _ =>
+      match ab.grantedWard? with
+      | some n =>
+        if ab.lordLegendaryOnly && g.isLegendary o && g.isCreature o then
+          acc.push (.genericMana n)
+        else acc
+      | none =>
+        match ab.teamWardIfEnduringStory? with
         | some n =>
-          if ab.lordLegendaryOnly && o.isLegendary && o.isCreature then
-            acc := acc.push (.genericMana n)
-        | none =>
-          match ab.teamWardIfEnduringStory? with
-          | some n =>
-            match o.controller with
-            | some p =>
-              if g.hasEnduringStory p && (o.printed.isArtifact || o.isCreature) then
-                acc := acc.push (.genericMana n)
-            | none => pure ()
-          | none => pure ()
-    for src in g.battlefield do
-      if src.id != o.id then
-        for ab in src.staticAbilities do
-          match ab.grantedWard? with
-          | some n =>
-            if src.attachedTo == some o.id then
-              acc := acc.push (.genericMana n)
-            else if ab.lordLegendaryOnly && src.controller == o.controller &&
-                o.isLegendary && o.isCreature then
-              acc := acc.push (.genericMana n)
-          | none =>
-            match ab.teamWardIfEnduringStory? with
-            | some n =>
-              if src.controller == o.controller then
-                match o.controller with
-                | some p =>
-                  if g.hasEnduringStory p &&
-                      (o.printed.isArtifact || o.isCreature) then
-                    acc := acc.push (.genericMana n)
-                | none => pure ()
-            | none => pure ()
-    return acc
+          match o.controller with
+          | some p =>
+            if g.hasEnduringStory p && (g.isArtifact o || g.isCreature o) then
+              acc.push (.genericMana n)
+            else acc
+          | none => acc
+        | none => acc) #[]
+
+/-- Printed and granted ward costs currently on `o`, evaluated in Layer 6
+timestamp order (CR 613.1f / 613.7 / 702.21). -/
+def wardCostsOn (g : Game) (o : GameObject) : Array WardCost :=
+  if o.status.faceDown then #[]
+  else
+    let initWards : Array WardCost :=
+      (match o.printed.ward with
+       | some n => #[.genericMana n]
+       | none => #[]) ++ selfWardCosts g o o.printed.staticAbilities
+    let scopeOk (sc : ObjectScope) : Bool :=
+      match sc with
+      | .objects ids => ids.contains o.id
+      | .creaturesControlledBy p => o.isOnBattlefield && o.controlledBy p && g.isCreature o
+      | .creaturesWithout kw =>
+        o.isOnBattlefield && g.isCreature o &&
+          Keywords.merge (g.currentKeywords o) kw != g.currentKeywords o
+      | .permanentsOfSubtype p s => o.isOnBattlefield && o.controlledBy p && g.hasSubtype o s
+    Id.run do
+      let mut raw : Array WardEntry := #[]
+      if o.isOnBattlefield then
+        for att in g.battlefield do
+          if att.attachedTo == some o.id then
+            let attAbs := g.staticAbilities att
+            let strips := attAbs.any fun
+              | .enchantedLosesAbilitiesDoesntUntap => true
+              | .enchantedLosesAbilitiesCantUntap => true
+              | _ => false
+            let addWard := attAbs.filterMap fun ab =>
+              if !ab.lordLegendaryOnly then ab.grantedWard?.map .genericMana else none
+            if strips || !addWard.isEmpty then
+              raw := raw.push {
+                idx := raw.size
+                ts := g.attachmentTimestamp att o.id
+                rem := if strips then .all else .none
+                add := addWard
+              }
+        for src in g.battlefield do
+          if src.id != o.id then
+            let srcAbs := g.staticAbilities src
+            let addWard := srcAbs.foldl (fun acc ab =>
+              match ab.grantedWard? with
+              | some n =>
+                if ab.lordLegendaryOnly && src.controller == o.controller &&
+                    g.isLegendary o && g.isCreature o then
+                  acc.push (.genericMana n)
+                else acc
+              | none =>
+                match ab.teamWardIfEnduringStory? with
+                | some n =>
+                  if src.controller == o.controller then
+                    match o.controller with
+                    | some p =>
+                      if g.hasEnduringStory p && (g.isArtifact o || g.isCreature o) then
+                        acc.push (.genericMana n)
+                      else acc
+                    | none => acc
+                  else acc
+                | none => acc) #[]
+            if !addWard.isEmpty then
+              raw := raw.push {
+                idx := raw.size
+                ts := g.objectEntryTimestamp src
+                rem := .none
+                add := addWard
+              }
+      for pos in [0:g.activeEffects.size] do
+        let (eid, s) := g.activeEffects[pos]!
+        match s with
+        | .layered sc (.abilities add rem) d =>
+          if scopeOk sc && g.durationActive d then
+            let added := selfWardCosts g o add.staticAbilities
+            if rem == .all || !added.isEmpty then
+              raw := raw.push {
+                idx := raw.size
+                ts := g.effectTimestamp eid pos
+                rem := rem
+                add := added
+              }
+        | _ => pure ()
+      let sorted := raw.qsort fun a b =>
+        if a.ts.1 != b.ts.1 then a.ts.1 < b.ts.1
+        else if a.ts.2 != b.ts.2 then a.ts.2 < b.ts.2
+        else a.idx < b.idx
+      let mut acc := initWards
+      for e in sorted do
+        if e.rem == .all then acc := #[]
+        acc := acc ++ e.add
+      return acc
 
 /-- Prompt the next queued ward, if any and no other choice is pending. -/
 def promptNextWard (g : Game) : Game :=
@@ -649,11 +722,11 @@ def lockInTargetCostReduction (g : Game) : Game :=
             else 0
           let nPower :=
             match prop.activation.bind (·.costReductionIfTargetPowerAtMost) with
-            | some (k, most) => if o.isCreature && g.power o ≤ most then k else 0
+            | some (k, most) => if g.isCreature o && g.power o ≤ most then k else 0
             | none => 0
           let nEquip :=
             if prop.activation.any (·.isEquip) && o.controlledBy prop.caster then
-              o.staticAbilities.foldl (fun acc ab =>
+              (g.staticAbilities o).foldl (fun acc ab =>
                 match ab with
                 | .equipAbilitiesTargetingThisCostLess k => acc + k
                 | _ => acc) 0

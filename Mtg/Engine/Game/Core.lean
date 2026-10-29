@@ -1936,20 +1936,6 @@ def cantBeBlockedExceptByHasteUntilEot (g : Game) (o : GameObject) : Bool :=
     | .gameRule (.cantBeBlockedExceptByHaste id) _ => id == o.id
     | _ => false
 
-def combatDamageCreatesTreasure (g : Game) (o : GameObject) : Bool :=
-  g.activeEffects.any fun (_, s) =>
-    match s with
-    | .layered (.objects #[id]) (.abilities add _) _ =>
-      id == o.id && add.combatDamageCreatesTreasure
-    | _ => false
-
-def ironFistTapGrants (g : Game) (o : GameObject) : Nat :=
-  g.activeEffects.foldl (fun acc (_, s) =>
-    match s with
-    | .layered (.objects #[id]) (.abilities add _) _ =>
-      if id == o.id then acc + add.ironFistTapGrants else acc
-    | _ => acc) 0
-
 def hexproofGrantedBy (g : Game) (o : GameObject) : Array ObjectId :=
   g.activeEffects.filterMap fun (_, s) =>
     match s with
@@ -2406,6 +2392,8 @@ def retainsPrintedAbilities (g : Game) (o : GameObject) : Bool :=
       ids.contains o.id && g.durationActive d
     | .layered (.creaturesControlledBy p) (.abilities _ .all) d =>
       o.isOnBattlefield && o.controlledBy p && g.isCreature o && g.durationActive d
+    | .layered (.creaturesWithout _) (.abilities _ .all) d =>
+      o.isOnBattlefield && g.isCreature o && g.durationActive d
     | .layered (.permanentsOfSubtype p sub) (.abilities _ .all) d =>
       o.isOnBattlefield && o.controlledBy p && (g.subtypes o).contains sub && g.durationActive d
     | _ => false)
@@ -3378,7 +3366,8 @@ def replaceCountersPutChoice (g : Game) (target : GameObject) (kind : CounterKin
               | none => perms
             for o in allPerms do
               -- Doc Samson: `.extraCounterOnPermanents` (requires putter == controller)
-              if who == some c && o.printed.staticAbilities.any (· == .extraCounterOnPermanents) then
+              if who == some c && !o.status.faceDown &&
+                  (g.staticAbilities o).any (· == .extraCounterOnPermanents) then
                 let rid : ReplacementId := { kind := .extraCounterOnPermanents, object := some o.id, counterKind := some kind }
                 specs := specs.push (
                   { id := rid
@@ -3449,9 +3438,10 @@ def docSamsonBonus (g : Game) (putter host : Option PlayerId) : Nat :=
     if p != c then 0
     else
       ((g.permanentsOf p).filter (fun o =>
-        o.printed.staticAbilities.any (fun
-          | .extraCounterOnPermanents => true
-          | _ => false))).size
+        !o.status.faceDown &&
+          (g.staticAbilities o).any (fun
+            | .extraCounterOnPermanents => true
+            | _ => false))).size
   | _, _ => 0
 
 /-- `n`, plus one of that kind per Doc Samson, when `putter` puts counters
@@ -3619,7 +3609,7 @@ def characteristicBasePT (g : Game) (o : GameObject) : Int × Int :=
     if g.hasHandSizeSetPower o then
       -- Ms. Marvel (ruling 640): this layer-7b set overwrites earlier sets.
       Int.ofNat (g.player o.you).hand.size
-    else if hasPrintedCardsInHandPower o then
+    else if hasPrintedCardsInHandPower o && g.retainsPrintedAbilities o then
       let cda : Int := Int.ofNat (g.player o.you).hand.size
       if o.isOnBattlefield then (g.setBasePower o).getD cda else cda
     else if let some subtype := g.powerEqualSubtype? o then
@@ -4429,15 +4419,6 @@ def leftoverIndestructible (g : Game) (o : GameObject) : Bool :=
       (g.permanentsOf p).any (fun x =>
         (g.isCreature x && (g.isArtifact x || x.printed.isArtifact)) || g.hasSubtype x .plan)
 
-/-- The Reaver Cleaver: combat damage to a player or planeswalker makes Treasures. -/
-def equippedCreatesCombatTreasures (g : Game) (o : GameObject) : Bool :=
-  o.isOnBattlefield &&
-    g.battlefield.any (fun eq =>
-      eq.attachedTo == some o.id &&
-        (g.staticAbilities eq).any (fun
-          | .equippedGetsTrampleAndCombatTreasures _ _ => true
-          | _ => false))
-
 private def keywordCounterTable : Array (CounterKind × Keywords) :=
   #[(.trample, Keyword.trample),
     (.indestructible, Keyword.indestructible),
@@ -4649,7 +4630,8 @@ def currentKeywords (g : Game) (o : GameObject) : Keywords :=
                   | _ => Keywords.none
                 Keywords.merge (Keywords.merge (Keywords.merge acc eqTeam) menacePlus) byPat) Keywords.none
               let toxicKw :=
-                if o.printed.toxic > 0 && src.printed.corruptedToxicLifelink &&
+                if g.retainsPrintedAbilities o && o.printed.toxic > 0 &&
+                    g.retainsPrintedAbilities src && src.printed.corruptedToxicLifelink &&
                     (g.livingOpponents p).any (fun opp => opp.poison >= 3) then
                   Keyword.lifelink
                 else Keywords.none
@@ -4855,7 +4837,7 @@ def canBlock (g : Game) (blocker attacker : GameObject) : Bool :=
   blocker.isOnBattlefield && g.isCreature blocker &&
   blocker.controlledBy defender && !blocker.status.tapped &&
   blocker.status.blocking.isEmpty && !g.cantBlockUntilEot blocker &&
-  !blocker.printed.cantBlock &&
+  !(blocker.printed.cantBlock && g.retainsPrintedAbilities blocker) &&
   g.mayDeclareAsBlocker blocker &&
   !g.enchantedCantAttackOrBlock blocker &&
   (!g.creaturesWithoutFlyingCantBlock || g.hasFlying blocker) &&
@@ -4921,9 +4903,12 @@ def playerHasHexproof (g : Game) (p : PlayerId) : Bool :=
 
 /-- Protection from the source's colors or from its card type. -/
 def frcProtectedFrom (g : Game) (o src : GameObject) : Bool :=
-  let colorBlock := o.printed.protectionFromColors.any (src.printed.colors.contains ·)
+  let colorBlock :=
+    g.retainsPrintedAbilities o &&
+      o.printed.protectionFromColors.any (src.printed.colors.contains ·)
   let typeMatch (em : GameObject) :=
     em.printed.protectionFromChosenCardType &&
+      g.retainsPrintedAbilities em &&
       match em.status.chosenCardType with
       | some t => src.printed.hasType t
       | none => false
@@ -4940,6 +4925,7 @@ def playerCanBeTargetedBy (g : Game) (caster target : PlayerId) : Bool :=
     | some src =>
       (g.permanentsOf target).any (fun em =>
         em.printed.protectionFromChosenCardType &&
+          g.retainsPrintedAbilities em &&
           match em.status.chosenCardType with
           | some t => src.printed.hasType t
           | none => false)
@@ -5040,6 +5026,7 @@ def snapshot (g : Game) (o : GameObject) : EventObject :=
     subtypes := extraSubtypes
     power := pw
     toughness := tg
+    toxic := if g.retainsPrintedAbilities o then o.printed.toxic else 0
     staticAbilities := g.staticAbilities o
     keywords := { curKw with
       haste := g.hasHaste o
@@ -5373,6 +5360,122 @@ def prowessTriggers (g : Game) (o : GameObject) : Array TriggeredAbility :=
     Array.replicate n (TriggeredAbility.fra .youCastNoncreature
       "Prowess (Whenever you cast a noncreature spell, this creature gets +1/+1 until end of turn.)"
       (.onSource (.pump 1 1)))
+
+private structure BoolAbEntry where
+  idx : Nat
+  ts : Nat × Nat
+  rem : AbilityRemoval
+  add : Bool
+deriving Inhabited
+
+/-- Whether `o` currently has a combat-damage-creates-Treasure trigger from an
+active `.abilities` effect or an attached Equipment (The Reaver Cleaver),
+evaluated in Layer 6 timestamp order (CR 613.1f / 613.7). -/
+def combatDamageCreatesTreasure (g : Game) (o : GameObject) : Bool :=
+  if o.status.faceDown then false
+  else
+    let scopeOk (sc : ObjectScope) : Bool :=
+      match sc with
+      | .objects ids => ids.contains o.id
+      | .creaturesControlledBy p => o.isOnBattlefield && o.controlledBy p && g.isCreature o
+      | .creaturesWithout kw =>
+        o.isOnBattlefield && g.isCreature o &&
+          Keywords.merge (g.currentKeywords o) kw != g.currentKeywords o
+      | .permanentsOfSubtype p s => o.isOnBattlefield && o.controlledBy p && g.hasSubtype o s
+    Id.run do
+      let mut raw : Array BoolAbEntry := #[]
+      if o.isOnBattlefield then
+        for att in g.battlefield do
+          if att.attachedTo == some o.id then
+            let attAbs := g.staticAbilities att
+            let strips := attAbs.any fun
+              | .enchantedLosesAbilitiesDoesntUntap => true
+              | .enchantedLosesAbilitiesCantUntap => true
+              | _ => false
+            let adds := attAbs.any fun
+              | .equippedGetsTrampleAndCombatTreasures _ _ => true
+              | _ => false
+            if strips || adds then
+              raw := raw.push {
+                idx := raw.size
+                ts := g.attachmentTimestamp att o.id
+                rem := if strips then .all else .none
+                add := adds
+              }
+      for pos in [0:g.activeEffects.size] do
+        let (eid, s) := g.activeEffects[pos]!
+        match s with
+        | .layered sc (.abilities add rem) d =>
+          if scopeOk sc && g.durationActive d &&
+              (rem == .all || add.combatDamageCreatesTreasure) then
+            raw := raw.push {
+              idx := raw.size
+              ts := g.effectTimestamp eid pos
+              rem := rem
+              add := add.combatDamageCreatesTreasure
+            }
+        | _ => pure ()
+      let sorted := raw.qsort fun a b =>
+        if a.ts.1 != b.ts.1 then a.ts.1 < b.ts.1
+        else if a.ts.2 != b.ts.2 then a.ts.2 < b.ts.2
+        else a.idx < b.idx
+      let mut cur := false
+      for e in sorted do
+        if e.rem == .all then cur := false
+        if e.add then cur := true
+      return cur
+
+/-- Number of Iron Fist tap abilities currently granted to `o`, evaluated in
+Layer 6 timestamp order (CR 613.1f / 613.7). -/
+def ironFistTapGrants (g : Game) (o : GameObject) : Nat :=
+  if o.status.faceDown then 0
+  else
+    let scopeOk (sc : ObjectScope) : Bool :=
+      match sc with
+      | .objects ids => ids.contains o.id
+      | .creaturesControlledBy p => o.isOnBattlefield && o.controlledBy p && g.isCreature o
+      | .creaturesWithout kw =>
+        o.isOnBattlefield && g.isCreature o &&
+          Keywords.merge (g.currentKeywords o) kw != g.currentKeywords o
+      | .permanentsOfSubtype p s => o.isOnBattlefield && o.controlledBy p && g.hasSubtype o s
+    Id.run do
+      let mut raw : Array ProwessEntry := #[]
+      if o.isOnBattlefield then
+        for att in g.battlefield do
+          if att.attachedTo == some o.id then
+            let strips := (g.staticAbilities att).any fun
+              | .enchantedLosesAbilitiesDoesntUntap => true
+              | .enchantedLosesAbilitiesCantUntap => true
+              | _ => false
+            if strips then
+              raw := raw.push {
+                idx := raw.size
+                ts := g.attachmentTimestamp att o.id
+                rem := .all
+                addCount := 0
+              }
+      for pos in [0:g.activeEffects.size] do
+        let (eid, s) := g.activeEffects[pos]!
+        match s with
+        | .layered sc (.abilities add rem) d =>
+          if scopeOk sc && g.durationActive d &&
+              (rem == .all || add.ironFistTapGrants > 0) then
+            raw := raw.push {
+              idx := raw.size
+              ts := g.effectTimestamp eid pos
+              rem := rem
+              addCount := add.ironFistTapGrants
+            }
+        | _ => pure ()
+      let sorted := raw.qsort fun a b =>
+        if a.ts.1 != b.ts.1 then a.ts.1 < b.ts.1
+        else if a.ts.2 != b.ts.2 then a.ts.2 < b.ts.2
+        else a.idx < b.idx
+      let mut cnt := 0
+      for e in sorted do
+        if e.rem == .all then cnt := 0
+        cnt := cnt + e.addCount
+      return cnt
 
 /-- Match all triggered abilities over a committed batch of simultaneous rules
 events (CR 603.2 / 603.2c / 603.10 / 603.10a–f). Look-back events (`e.isLookBack`,

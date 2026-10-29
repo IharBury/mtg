@@ -337,7 +337,7 @@ def copiedFromGy {α : Type} (g : Game) (o : GameObject) (sel : CardDef → Arra
     match o.controller with
     | none => #[]
     | some p =>
-      o.staticAbilities.foldl (fun acc sa =>
+      (g.staticAbilities o).foldl (fun acc sa =>
         match sa with
         | .copyActivatedFromGySubtype subtype =>
           (g.graveyardCardsOfSubtype p subtype).foldl
@@ -366,7 +366,9 @@ def activatedAbilitiesOf (g : Game) (o : GameObject) : Array ActivatedAbility :=
     if o.isOnBattlefield && o.printed.isPlaneswalker then
       match o.controller with
       | some p => (g.permanentsOf p).foldl (fun acc src =>
-          acc ++ src.printed.planeswalkersYouControlHave) #[]
+          if g.retainsPrintedAbilities src then
+            acc ++ src.printed.planeswalkersYouControlHave
+          else acc) #[]
       | none => #[]
     else #[]
   own ++ granted
@@ -406,7 +408,8 @@ def grantedManaAbilities (g : Game) (o : GameObject) : Array ManaType :=
         #[.colored .white, .colored .blue, .colored .black,
           .colored .red, .colored .green]
       if g.isCreature o &&
-          (g.permanentsOf p).any (fun src => src.printed.grantCreaturesTapAddAnyColor) then
+          (g.permanentsOf p).any (fun src =>
+            src.printed.grantCreaturesTapAddAnyColor && g.retainsPrintedAbilities src) then
         anyColor.foldl (fun acc t =>
           if acc.contains t then acc else acc.push t) fromLords
       else fromLords

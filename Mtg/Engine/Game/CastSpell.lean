@@ -53,7 +53,7 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
     throw "During combat, players can't cast spells (Yuriko, Blade of the Mighty)"
   if p != g.activePlayer &&
       (g.permanentsOf g.activePlayer).any (fun o =>
-        o.staticAbilities.any (fun
+        (g.staticAbilities o).any (fun
           | .opponentsCantCastOnYourTurn => true
           | _ => false)) then
     throw "Opponents can't cast spells during that player's turn"

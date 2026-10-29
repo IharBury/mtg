@@ -78,7 +78,7 @@ def combatDamageAmount (g : Game) (source : GameObject) : Int :=
     match source.controller with
     | some p =>
       (g.permanentsOf p).any (fun o =>
-        o.staticAbilities.any (fun
+        (g.staticAbilities o).any (fun
           | .toughnessAssignsCombatDamage => true
           | _ => false))
     | none => false
@@ -87,7 +87,7 @@ def combatDamageAmount (g : Game) (source : GameObject) : Int :=
       g.toughness source > g.power source
   let amt :=
     if byToughness then g.toughness source
-    else if source.staticAbilities.any (fun
+    else if (g.staticAbilities source).any (fun
         | .negativePowerAssignsAsPositive => true
         | _ => false) then
       Int.ofNat (g.power source).natAbs
