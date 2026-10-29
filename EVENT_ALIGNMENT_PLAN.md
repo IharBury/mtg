@@ -2091,13 +2091,14 @@ Tests: `Events.lean`, `SetBasePT.lean`, `BecomeArtifact.lean`, `Auras.lean`,
      `wardCostsOn` in [`Casting.lean`](Mtg/Engine/Game/Casting.lean), and
      `evalLayer6List` in [`Triggers.lean`](Mtg/Engine/Game/Triggers.lean)) onto
      one shared Layer 6 pass with CR 613.8 dependency ordering across ability
-     grants and ability removals (`AbilityRemoval.all`,
-     `AbilityRemoval.loseIndestructible`, `.enchantedLosesAbilitiesDoesntUntap`,
-     `.enchantedLosesAbilitiesCantUntap`, and `retainsPrintedAbilities`) and CR
-     613.7a / 613.7e timestamp propagation
-     (`max(objectTimestamp, grantingEffectTimestamp)` for static abilities granted
-     by an effect, and attachment timestamp when an Aura, Equipment, or
-     Fortification becomes attached).
+     grants, `AbilityRemoval.all` / `AbilityRemoval.loseIndestructible`, and
+     attached Aura `StaticAbility.enchantedLosesAbilitiesDoesntUntap` /
+     `StaticAbility.enchantedLosesAbilitiesCantUntap` (at `attachmentTimestamp`),
+     replacing the non-timestamped boolean `retainsPrintedAbilities` /
+     `attachedLosesAbilities` check, and propagating CR 613.7a / 613.7e
+     timestamps (`max(objectTimestamp, grantingEffectTimestamp)` for static
+     abilities granted by an effect, and attachment timestamp when an Aura,
+     Equipment, or Fortification becomes attached).
    - **Layer 7a–7d (613.4a–d):** Separate true 604.3 / 613.4a CDAs
      (`hasLandsYouControlPT` / `landsYouControlPT` in `characteristicBase`, plus
      `StaticAbility.fra .powerEqualsBasicLandTypes`, `hasGraveyardCardTypesPT`,
@@ -2197,10 +2198,9 @@ timestamp order, and 302.6 animated-land summoning sickness).
      `Attachments.attachSourceTo`'s `ObjectChange.timestamp`;
      `EffectResolution.exchangeControl`'s `ObjectChange.controller` →
      `PermanentEvent.controlChanged`; and `Start.materializeSeat` /
-     `Fixture.insertObject`), drop the dead `returnedAsArtifact` and
-     `onlyFoodArtifact` parameters on `PendingReplacement.move`, and delete all
-     remaining dead or duplicate constructors on `StatusChange`, `ObjectChange`,
-     `PlayerChange`, and `EngineChange`.
+     `Fixture.insertObject`), and delete all remaining dead or duplicate
+     constructors on `StatusChange`, `ObjectChange`, `PlayerChange`, and
+     `EngineChange`.
 3. Retire `EventCause.unclassified` and align `DelayedTrigger` registration with
    rules events (§2.2, §3.5):
    - Classify the remaining runtime `.unclassified` rules-event paths outside
