@@ -59,10 +59,12 @@ common among creatures they control. -/
 def chooseCreatureTypeFor (g : Game) (p : PlayerId) : CardSubtype :=
   let counts : Array (CardSubtype × Nat) :=
     (g.creaturesControlledBy p).foldl (fun acc o =>
-      o.subtypes.foldl (fun acc t =>
-        match acc.findIdx? (·.1 == t) with
-        | some i => acc.modify i (fun (s, n) => (s, n + 1))
-        | none => acc.push (t, 1)) acc) #[]
+      (g.subtypes o).foldl (fun acc t =>
+        if !t.isCreatureType then acc
+        else
+          match acc.findIdx? (·.1 == t) with
+          | some i => acc.modify i (fun (s, n) => (s, n + 1))
+          | none => acc.push (t, 1)) acc) #[]
   (counts.foldl (fun best c =>
     match best with
     | none => some c

@@ -681,7 +681,7 @@ def applyZoneEvent (g : Game) (e : ZoneEvent) : Game :=
         toZone == .battlefield && !faceDown && printed.entersPrepared
       let sick :=
         if after.printed.isSome then after.summoningSick
-        else (after.creature || printed.isCreature) && !after.keywords.haste
+        else !after.keywords.haste
       let baseStatus : Status :=
         if toZone == .battlefield then
           { faceDown := faceDown
@@ -785,7 +785,7 @@ def applyZoneEvent (g : Game) (e : ZoneEvent) : Game :=
     let printed := object.toCardDef
     let sick :=
       if object.printed.isSome then object.summoningSick
-      else (object.creature || printed.isCreature) && !object.keywords.haste
+      else !object.keywords.haste
     let baseStatus : Status :=
       if object.zone == Zone.battlefield then
         { tapped := object.tapped
@@ -1684,23 +1684,20 @@ private structure Layer1Entry where
 deriving Inhabited
 
 /-- Initial Layer 2 controller of `o` before active `LayerEffect.control` effects,
-used internally by Layer 1 and Layer 2 (CR 613.1a–b / 800.4a). -/
+used internally by Layer 1 and Layer 2 (CR 110.2 / 613.1a–b / 800.4a). -/
 private def initialControllerOf (g : Game) (o : GameObject) : Option PlayerId :=
   if o.zone != .battlefield then o.controller
   else
     let playerAlive (p : PlayerId) : Bool :=
       if h : p.idx < g.players.size then !(g.players[p.idx]).lost else true
-    if o.defaultController.isSome && o.controller != o.defaultController then
-      o.controller
-    else
-      let defP := (o.defaultController.orElse (fun _ => o.controller)).getD o.owner
-      if playerAlive defP then some defP else o.controller
+    let defP := (o.defaultController.orElse (fun _ => o.controller)).getD o.owner
+    if playerAlive defP then some defP else o.controller
 
-/-- Layer 1a copiable values of `o` together with the CR 613.7a base ability
-timestamp (`max(objectEntryTimestamp, lastCopyEffectTimestamp)`) (CR 613.2a /
-707.2). Does not apply Layer 1b face-down masking so morph costs remain readable
-on face-down permanents (CR 702.37e). -/
-def copiableValuesWithTs (g : Game) (o : GameObject) : CardDef × (Nat × Nat) :=
+/-- Layer 1a copiable values of `o` before Layer 1b face-down masking, paired with
+the CR 613.7a base ability timestamp (`max(objectEntryTimestamp,
+lastCopyEffectTimestamp)`) (CR 613.2a / 702.37e). Used only where rules look past
+face-down status (such as reading a face-down permanent's morph cost). -/
+def unmaskedCopiableValuesWithTs (g : Game) (o : GameObject) : CardDef × (Nat × Nat) :=
   let objTs := g.objectEntryTimestamp o
   let hasCopy := g.activeEffects.any fun (_, s) =>
     match s with
@@ -1756,23 +1753,34 @@ def copiableValuesWithTs (g : Game) (o : GameObject) : CardDef × (Nat × Nat) :
         rem := rem.filter (fun e => e.idx != chosen.idx)
       return (cur, curTs)
 
-/-- Layer 1a copiable values of `o` (CR 613.2a / 707.2). -/
+/-- Layer 1a copiable values of `o` before Layer 1b face-down masking (CR 613.2a / 702.37e). -/
+def unmaskedCopiableValues (g : Game) (o : GameObject) : CardDef :=
+  (g.unmaskedCopiableValuesWithTs o).1
+
+/-- Layer 1 copiable values of `o` after both Layer 1a copy effects and Layer 1b
+face-down status (CR 613.2a–c / 707.2 / 708.2), paired with the CR 613.7a base
+timestamp. -/
+def copiableValuesWithTs (g : Game) (o : GameObject) : CardDef × (Nat × Nat) :=
+  if o.status.faceDown then
+    ({ name := "", types := #[.creature], power := some 2, toughness := some 2 },
+     g.objectEntryTimestamp o)
+  else
+    g.unmaskedCopiableValuesWithTs o
+
+/-- Layer 1 copiable values of `o` after Layer 1a copy effects and Layer 1b
+face-down status (CR 613.2a–c / 707.2 / 708.2). -/
 def copiableValues (g : Game) (o : GameObject) : CardDef :=
   (g.copiableValuesWithTs o).1
 
 /-- Layer 1 characteristics of `o` after both Layer 1a copy effects and Layer 1b
 face-down status (CR 613.2a–c / 708.2), paired with the CR 613.7a base timestamp. -/
-def baseCardWithTs (g : Game) (o : GameObject) : CardDef × (Nat × Nat) :=
-  if o.status.faceDown then
-    ({ name := "", types := #[.creature], power := some 2, toughness := some 2 },
-     g.objectEntryTimestamp o)
-  else
-    g.copiableValuesWithTs o
+@[inline] def baseCardWithTs (g : Game) (o : GameObject) : CardDef × (Nat × Nat) :=
+  g.copiableValuesWithTs o
 
 /-- Layer 1 characteristics of `o` after Layer 1a copy effects and Layer 1b
 face-down status (CR 613.2a–c / 708.2). -/
-def baseCard (g : Game) (o : GameObject) : CardDef :=
-  (g.baseCardWithTs o).1
+@[inline] def baseCard (g : Game) (o : GameObject) : CardDef :=
+  g.copiableValues o
 
 /-- Evaluated name of `o` after Layer 1 copy and face-down effects (CR 201 / 613.1a / 708.2a). -/
 def name (g : Game) (o : GameObject) : String :=
@@ -2214,6 +2222,7 @@ def controlUntilSourceLeaves (g : Game) (o : GameObject) : Option ObjectId :=
 def controlChanged (g : Game) (o : GameObject) : Bool :=
   let defCtrl := o.defaultController.getD o.owner
   g.controllerOf o != some defCtrl ||
+    (o.controller.isSome && o.controller != some defCtrl) ||
     g.activeEffects.any (fun (_, s) =>
       match s with
       | .layered (.objects #[id]) (.control _) d => id == o.id && g.durationActive d
@@ -2233,7 +2242,7 @@ def hasActiveCopy (g : Game) (o : GameObject) : Bool :=
       g.durationActive d &&
         match sc with
         | .objects ids => ids.contains o.id
-        | _ => (g.copiableValuesWithTs o).1 != o.printed
+        | _ => (g.unmaskedCopiableValuesWithTs o).1 != o.printed
     | _ => false
 
 def copyRestore (g : Game) (o : GameObject) : Option CardDef :=
@@ -3984,39 +3993,253 @@ def hasMenace (g : Game) (o : GameObject) : Bool :=
 paying a `{T}` cost (CR 302.6), using Layer 4 `isCreature`, Layer 2 continuous
 control since the controller's most recent turn began, and Layer 6 `hasHaste`. -/
 def hasSummoningSickness (g : Game) (o : GameObject) : Bool :=
-  if !g.isCreature o || g.hasHaste o then false
+  if !g.isCreature o || g.hasHaste o || !o.isOnBattlefield then false
   else if o.status.summoningSick then true
-  else if !o.isOnBattlefield then false
   else
     match g.controllerOf o with
     | none => false
     | some ctrl =>
-      let lastCtrlChangeIdx? : Option Nat := Id.run do
-        let mut idx? : Option Nat := none
-        let mut ctrlEids : Array EffectId := #[]
+      Id.run do
+        let mut turnStartIdx? : Option Nat := none
+        let mut inCtrlUntap : Bool := false
+        let mut hasteArrivalIdx? : Option Nat := none
+        let mut createdIds : Array EffectId := #[]
+        let mut sawCtrlEvent : Bool := false
         for i in [0:g.events.size] do
-          match g.events[i]!.change with
-          | .rules (.permanent (.controlChanged eo fromP toP)) =>
-            if eo.id == some o.id && fromP != toP then idx? := some i
-          | .rules (.continuousEffect (.created eid (.layered sc (.control _) _))) =>
-            if (match sc with | .objects ids => ids.contains o.id | _ => false) then
-              ctrlEids := ctrlEids.push eid
-              idx? := some i
-          | .rules (.continuousEffect (.expired eid)) =>
-            if ctrlEids.contains eid then
-              idx? := some i
-          | _ => pure ()
-        return idx?
-      match lastCtrlChangeIdx? with
-      | none => ctrl != (o.defaultController.getD o.owner)
-      | some chIdx =>
-        !(Id.run do
-          for i in [chIdx + 1 : g.events.size] do
-            match g.events[i]!.change with
-            | .rules (.turn (.turnBegan ap _)) =>
-              if ap == ctrl then return true
+          let ev := g.events[i]!
+          match ev.change with
+          | .rules (.turn (.turnBegan ap _)) =>
+            if ap == ctrl then
+              turnStartIdx? := some i
+              inCtrlUntap := true
+            else
+              inCtrlUntap := false
+          | .rules (.turn (.stepBegan .untap ap)) =>
+            if ap == ctrl then
+              turnStartIdx? := some i
+              inCtrlUntap := true
+            else
+              inCtrlUntap := false
+          | .rules (.turn (.stepEnded .untap)) | .rules (.turn (.stepBegan _ _)) =>
+            inCtrlUntap := false
+          | .rules (.zone (.moved _ after fromZ .battlefield ..)) =>
+            if fromZ != .battlefield && after.id == some o.id &&
+                !after.summoningSick && after.keywords.haste then
+              hasteArrivalIdx? := some i
+          | .rules (.zone (.created eo _)) =>
+            if eo.zone == .battlefield && eo.id == some o.id &&
+                !eo.summoningSick && eo.keywords.haste then
+              hasteArrivalIdx? := some i
+          | .rules (.continuousEffect (.created eid spec)) =>
+            createdIds := createdIds.push eid
+            match spec with
+            | .layered _ (.control _) _ | .layered _ (.copy _) _ => sawCtrlEvent := true
             | _ => pure ()
-          return false)
+          | .rules (.continuousEffect (.expired _)) =>
+            if inCtrlUntap && ev.cause == .turnBased .expireAtStepBegin then
+              turnStartIdx? := some i
+            sawCtrlEvent := true
+          | .rules (.permanent (.controlChanged ..)) =>
+            sawCtrlEvent := true
+          | .engine (.object oid c) =>
+            if oid == o.id then
+              match c with
+              | .status (.summoningSick false) => hasteArrivalIdx? := none
+              | .controller _ | .defaultController _ => sawCtrlEvent := true
+              | _ => pure ()
+          | .engine (.objectChanges oid cs) =>
+            if oid == o.id then
+              if cs.any (fun | .status (.summoningSick false) => true | _ => false) then
+                hasteArrivalIdx? := none
+              if cs.any (fun | .controller _ | .defaultController _ => true | _ => false) then
+                sawCtrlEvent := true
+          | _ =>
+            if inCtrlUntap && ev.cause == .turnBased .expireAtStepBegin then
+              turnStartIdx? := some i
+        match hasteArrivalIdx? with
+        | some arrIdx =>
+          match turnStartIdx? with
+          | none => return true
+          | some tsIdx => if arrIdx > tsIdx then return true
+        | none => pure ()
+        let hasActiveCtrl :=
+          g.activeEffects.any fun (_, s) =>
+            match s with | .layered _ (.control _) _ => true | _ => false
+        if !sawCtrlEvent && !hasActiveCtrl && some ctrl == g.initialControllerOf o then
+          return false
+        let initEffects := g.activeEffects.filter (fun (eid, _) => !createdIds.contains eid)
+        let mut fd0 := o.status.faceDown
+        let mut dc0 := o.defaultController
+        let mut rc0 := o.controller
+        let mut objZones : Array (ObjectId × Zone) := #[]
+        let mut plLost : Array (PlayerId × Bool) := #[]
+        let setZone (zs : Array (ObjectId × Zone)) (oid : ObjectId) (z : Zone) :
+            Array (ObjectId × Zone) :=
+          match zs.findIdx? (·.1 == oid) with
+          | some k => zs.set! k (oid, z)
+          | none => zs.push (oid, z)
+        let setLost (ls : Array (PlayerId × Bool)) (pid : PlayerId) (v : Bool) :
+            Array (PlayerId × Bool) :=
+          match ls.findIdx? (·.1 == pid) with
+          | some k => ls.set! k (pid, v)
+          | none => ls.push (pid, v)
+        for rev in [0:g.events.size] do
+          let idx := g.events.size - 1 - rev
+          match g.events[idx]!.change with
+          | .rules (.permanent (.controlChanged eo fromP _)) =>
+            if eo.id == some o.id then rc0 := fromP
+          | .rules (.permanent (.turnedFaceUp eo)) =>
+            if eo.id == some o.id then fd0 := true
+          | .rules (.permanent (.turnedFaceDown eo)) =>
+            if eo.id == some o.id then fd0 := false
+          | .rules (.zone (.moved before after fromZ toZ ..)) =>
+            if after.id == some o.id && toZ == .battlefield then
+              fd0 := after.faceDown
+              dc0 := after.controller
+              rc0 := after.controller
+            if let some bid := before.id then
+              objZones := setZone objZones bid fromZ
+          | .rules (.zone (.created eo c)) =>
+            if eo.id == some o.id && eo.zone == .battlefield then
+              let c' := eo.controller.orElse (fun _ => some c)
+              fd0 := eo.faceDown
+              dc0 := c'
+              rc0 := c'
+          | .rules (.player (.lost p _)) | .rules (.player (.leftGame p)) =>
+            plLost := setLost plLost p false
+          | .engine (.setObject obj) =>
+            if obj.id == o.id then
+              fd0 := obj.status.faceDown
+              dc0 := obj.defaultController
+              rc0 := obj.controller
+          | .engine (.object oid (.status (.faceDown v))) =>
+            if oid == o.id then fd0 := !v
+          | .engine (.objectChanges oid cs) =>
+            if oid == o.id then
+              for c in cs do
+                match c with
+                | .status (.faceDown v) => fd0 := !v
+                | _ => pure ()
+          | _ => pure ()
+        let mkGameAt (effs : Array (EffectId × ContinuousEffectSpec))
+            (fd : Bool) (dc rc : Option PlayerId)
+            (zs : Array (ObjectId × Zone)) (ls : Array (PlayerId × Bool)) :
+            Game × GameObject :=
+          let oAt : GameObject :=
+            { o with
+              zone := .battlefield
+              defaultController := dc
+              controller := rc
+              status := { o.status with faceDown := fd } }
+          let objsAt0 := g.objects.map fun obj =>
+            if obj.id == o.id then oAt
+            else
+              match zs.find? (·.1 == obj.id) with
+              | some (_, z) => { obj with zone := z }
+              | none => obj
+          let missingObjs := zs.filterMap fun (zid, z) =>
+            if z == .battlefield && !objsAt0.any (·.id == zid) then
+              some ({ id := zid, printed := { name := "", types := #[] }, owner := ctrl, zone := .battlefield } : GameObject)
+            else none
+          let objsAt := objsAt0 ++ missingObjs
+          let plsAt := g.players.map fun pl =>
+            match ls.find? (·.1 == pl.id) with
+            | some (_, v) => { pl with lost := v }
+            | none => pl
+          ({ g with activeEffects := effs, objects := objsAt, players := plsAt }, oAt)
+        let mut curEffs := initEffects
+        let mut curFd := fd0
+        let mut curDc := dc0
+        let mut curRc := rc0
+        let mut curZs := objZones
+        let mut curLs := plLost
+        match turnStartIdx? with
+        | none =>
+          let (g0At, o0At) := mkGameAt curEffs curFd curDc curRc curZs curLs
+          if g0At.initialControllerOf o0At != some ctrl ||
+              g0At.controllerOf o0At != some ctrl then
+            return true
+        | some _ => pure ()
+        for i in [0:g.events.size] do
+          let mut dirty := false
+          match g.events[i]!.change with
+          | .rules (.continuousEffect (.created eid spec)) =>
+            curEffs := curEffs.push (eid, spec)
+            match spec with
+            | .layered _ (.control _) _ | .layered _ (.copy _) _ => dirty := true
+            | _ => pure ()
+          | .rules (.continuousEffect (.expired eid)) =>
+            if curEffs.any (·.1 == eid) then
+              curEffs := curEffs.filter (·.1 != eid)
+              dirty := true
+          | .rules (.permanent (.controlChanged eo _ toP)) =>
+            if eo.id == some o.id then
+              curRc := toP
+              dirty := true
+          | .rules (.permanent (.turnedFaceUp eo)) =>
+            if eo.id == some o.id then
+              curFd := false
+              dirty := true
+          | .rules (.permanent (.turnedFaceDown eo)) =>
+            if eo.id == some o.id then
+              curFd := true
+              dirty := true
+          | .rules (.zone (.moved before after _ toZ ..)) =>
+            if let some bid := before.id then
+              curZs := setZone curZs bid toZ
+              dirty := true
+            if let some aid := after.id then
+              curZs := setZone curZs aid toZ
+              dirty := true
+            if after.id == some o.id && toZ == .battlefield then
+              curFd := after.faceDown
+              curDc := after.controller
+              curRc := after.controller
+              dirty := true
+          | .rules (.zone (.created eo c)) =>
+            if let some eid := eo.id then
+              curZs := setZone curZs eid eo.zone
+              dirty := true
+            if eo.id == some o.id && eo.zone == .battlefield then
+              let c' := eo.controller.orElse (fun _ => some c)
+              curFd := eo.faceDown
+              curDc := c'
+              curRc := c'
+              dirty := true
+          | .rules (.player (.lost p _)) | .rules (.player (.leftGame p)) =>
+            curLs := setLost curLs p true
+            dirty := true
+          | .engine (.setObject obj) =>
+            if obj.id == o.id then
+              curFd := obj.status.faceDown
+              curDc := obj.defaultController
+              curRc := obj.controller
+              dirty := true
+          | .engine (.object oid c) =>
+            if oid == o.id then
+              match c with
+              | .controller v => curRc := v; dirty := true
+              | .defaultController v => curDc := v; dirty := true
+              | .status (.faceDown v) => curFd := v; dirty := true
+              | _ => pure ()
+          | .engine (.objectChanges oid cs) =>
+            if oid == o.id then
+              for c in cs do
+                match c with
+                | .controller v => curRc := v; dirty := true
+                | .defaultController v => curDc := v; dirty := true
+                | .status (.faceDown v) => curFd := v; dirty := true
+                | _ => pure ()
+          | _ => pure ()
+          let checkNow :=
+            match turnStartIdx? with
+            | none => dirty
+            | some tsIdx => i == tsIdx || (i > tsIdx && dirty)
+          if checkNow then
+            let (gAt, oAt) := mkGameAt curEffs curFd curDc curRc curZs curLs
+            if gAt.controllerOf oAt != some ctrl then
+              return true
+        return false
 
 /-- Evaluated triggered abilities of `o` in Layer 6 (CR 613.1f / 613.7 / 613.8). -/
 def triggeredAbilities (g : Game) (o : GameObject) : Array TriggeredAbility :=
@@ -4066,7 +4289,7 @@ turn-face-up when `o.status.faceDown`, CR 613.1f / 702.37e). -/
 def activatedAbilitiesOf (g : Game) (o : GameObject) : Array ActivatedAbility :=
   let morphAb : Array ActivatedAbility :=
     if o.status.faceDown then
-      match (g.copiableValues o).morph with
+      match (g.unmaskedCopiableValues o).morph with
       | some cost =>
         #[{ effect := { resolution := .frc .turnFaceUp, phrase := "Turn this face up." }
             cost := { mana := cost } }]
@@ -5506,7 +5729,7 @@ def applyEtbReplacements (g : Game) (candidate : GameObject)
         | .entersUnderControl _ newCtrl =>
           cur := { cur with controller := some newCtrl, defaultController := some newCtrl }
         | .entersAsCopy _ template =>
-          let sick := template.isCreature && !template.keywords.haste
+          let sick := !template.keywords.haste
           cur := { cur with
             printed := template
             status := { cur.status with summoningSick := sick } }

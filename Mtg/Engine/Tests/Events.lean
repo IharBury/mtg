@@ -4827,4 +4827,140 @@ a creature whose controller changes mid-turn without haste becomes summoning-sic
     gStolen.hasSummoningSickness (gStolen.object! b0.id)
   noncreatureLandOk && animatedSickOk && hasteOk && controlSickOk
 
+/- Phase 9 isolation suite (CR 110.2 / 707.2 / 708.2 / 702.37e):
+1. `initialControllerOf` starts from `defaultController` while that player is in
+   the game, ignoring stale raw `o.controller` mutations (`none` or another
+   player), and falls back cleanly when `defaultController` has left the game.
+2. Layer 1 `copiableValues` includes Layer 1b face-down masking: copying a
+   face-down permanent produces a nameless colorless 2/2 creature with no
+   abilities, while `unmaskedCopiableValues` still exposes the original
+   face-down permanent's morph cost. -/
+#guard
+  let opp : PlayerId := ⟨1⟩
+  let morphDef : CardDef :=
+    { creature "Phase9 Morph Angel" { symbols := #[.colored .white, .colored .white] } #["Angel"] 5 5 with
+      keywords := { flying := true }
+      morph := some (ManaCost.ofGeneric 3) }
+  let cloneDef : CardDef := creature "Phase9 Copy" ManaCost.empty #["Shapeshifter"] 0 0
+  let g0 :=
+    addPermanent
+      (addPermanent
+        (addPermanent (quiet afterDraw) bear opp opp)
+        morphDef me me)
+      cloneDef me me
+  let b := (g0.battlefield.filter (·.name == "Event Bear"))[0]!
+  let m := (g0.battlefield.filter (·.name == "Phase9 Morph Angel"))[0]!
+  let cl := (g0.battlefield.filter (·.name == "Phase9 Copy"))[0]!
+  -- Raw `o.controller` mutation does not override living `defaultController`
+  let gRawNone := g0.changeObject b.id (.controller none)
+  let gRawMe := g0.changeObject b.id (.controller (some me))
+  let gOppLost := gRawNone.changePlayer opp (.lost true)
+  let initCtrlOk :=
+    gRawNone.controllerOf (gRawNone.object! b.id) == some opp &&
+    gRawMe.controllerOf (gRawMe.object! b.id) == some opp &&
+    gOppLost.controllerOf (gOppLost.object! b.id) == none
+  -- Face-down permanent copied via `becomeCopyOf` and `copyBattlefieldPermanent`
+  let gFd := g0.changeStatus m.id (.faceDown true)
+  let gCopied := gFd.becomeCopyOf (gFd.object! cl.id) (gFd.object! m.id) (untilEot := true)
+  let (gTok, tok) := gCopied.copyBattlefieldPermanent (gCopied.object! m.id) me
+  let clAfter := gTok.object! cl.id
+  let tokAfter := gTok.object! tok.id
+  let mAfter := gTok.object! m.id
+  let faceDownCopyOk :=
+    !clAfter.status.faceDown &&
+    gTok.name clAfter == "" &&
+    gTok.power clAfter == 2 &&
+    gTok.toughness clAfter == 2 &&
+    gTok.colors clAfter == ColorSet.empty &&
+    !gTok.hasFlying clAfter &&
+    (gTok.activatedAbilitiesOf clAfter).isEmpty &&
+    !tokAfter.status.faceDown &&
+    gTok.name tokAfter == "" &&
+    gTok.power tokAfter == 2 &&
+    gTok.toughness tokAfter == 2 &&
+    !gTok.hasFlying tokAfter &&
+    (gTok.activatedAbilitiesOf tokAfter).isEmpty &&
+    (gTok.activatedAbilitiesOf mAfter).size == 1
+  initCtrlOk && faceDownCopyOk
+
+/- Phase 9 isolation suite (CR 302.6 edge cases & evaluated battlefield helpers):
+1. A no-op `changeControl` on a creature you already controlled since your turn
+   began does not cause summoning sickness, nor does expiring a redundant
+   control effect while another still gives you control.
+2. A scoped `.creaturesControlledBy` control effect causes summoning sickness on
+   the turn control changes and clears once the new controller's next turn begins.
+3. Noncreature tokens (`createTreasureTokens`) and flickered lands/artifacts
+   (`exileThenReturn`) become summoning-sick if animated on the same turn.
+4. `chooseCreatureTypeFor`, `returnCreaturesNotOfType`, and
+   `chooseCreaturesDestroyRest` evaluate Layer 4 types and subtypes. -/
+#guard
+  let opp : PlayerId := ⟨1⟩
+  let relicDef : CardDef := { name := "Phase9 Relic", types := #[.artifact] }
+  let landDef : CardDef :=
+    { name := "Phase9 Wastes", types := #[.land] }
+  let g0 :=
+    addPermanent
+      (addPermanent
+        (addPermanent
+          (addPermanent (quiet afterDraw) bear me me)
+          hero opp opp)
+        relicDef me me)
+      landDef me me
+  let bMe := (g0.battlefield.filter (·.name == "Event Bear"))[0]!
+  let hOpp := (g0.battlefield.filter (·.name == "Event Hero"))[0]!
+  let relic := (g0.battlefield.filter (·.name == "Phase9 Relic"))[0]!
+  let land := (g0.battlefield.filter (·.name == "Phase9 Wastes"))[0]!
+  -- 1a. No-op control effect on `me`'s own creature
+  let gNoop := g0.changeControl bMe me (untilEot := true)
+  let noopOk := !gNoop.hasSummoningSickness (gNoop.object! bMe.id)
+  -- 1b. Redundant control effect expiring on `me`'s next turn while permanent control stays active
+  let gPermSteal :=
+    (g0.changeControl hOpp me).startNextTurn.startNextTurn
+  let gRedundant := gPermSteal.changeControl (gPermSteal.object! hOpp.id) me (untilEot := true)
+  let gRedundantExp := gRedundant.clearEOT
+  let redundantOk :=
+    !gPermSteal.hasSummoningSickness (gPermSteal.object! hOpp.id) &&
+    !gRedundant.hasSummoningSickness (gRedundant.object! hOpp.id) &&
+    gRedundantExp.controllerOf (gRedundantExp.object! hOpp.id) == some me &&
+    !gRedundantExp.hasSummoningSickness (gRedundantExp.object! hOpp.id)
+  -- 2. Scoped `.creaturesControlledBy opp -> .control me` effect
+  let gScoped :=
+    g0.createEffect (.layered (.creaturesControlledBy opp) (.control me) .indefinite)
+  let gScopedNext := gScoped.startNextTurn.startNextTurn
+  let scopedOk :=
+    gScoped.controllerOf (gScoped.object! hOpp.id) == some me &&
+    gScoped.hasSummoningSickness (gScoped.object! hOpp.id) &&
+    gScopedNext.controllerOf (gScopedNext.object! hOpp.id) == some me &&
+    !gScopedNext.hasSummoningSickness (gScopedNext.object! hOpp.id)
+  -- 3. Treasure token & flickered land animated on the same turn
+  let gTr := g0.createTreasureTokens me 1
+  let tr := (gTr.battlefield.filter (·.name == "Treasure"))[0]!
+  let gTrAnim := gTr.createEffect (.additionalCreature tr.id (untilEot := true))
+  let gFlicker := g0.exileThenReturn land "flickers" (land := true)
+  let flickLand := (gFlicker.battlefield.filter (·.name == "Phase9 Wastes"))[0]!
+  let gFlickAnim := gFlicker.createEffect (.additionalCreature flickLand.id (untilEot := true))
+  let noncreatureArrivalOk :=
+    !gTr.hasSummoningSickness tr &&
+    gTrAnim.hasSummoningSickness (gTrAnim.object! tr.id) &&
+    !gFlicker.hasSummoningSickness flickLand &&
+    gFlickAnim.hasSummoningSickness (gFlickAnim.object! flickLand.id)
+  -- 4. Evaluated Layer 4 types/subtypes in battlefield helpers
+  let gTyped :=
+    ((gTrAnim.createEffect (.replacedCreatureTypesUntilEot bMe.id #[.elf])).createEffect
+      (.additionalCreature relic.id (untilEot := true))).createEffect
+      (.notACreature hOpp.id)
+  let chosenTypeOk := gTyped.chooseCreatureTypeFor me == .elf
+  let gBounced := gTyped.returnCreaturesNotOfType .elf
+  let bounceOk :=
+    (gBounced.findObject? bMe.id).any (·.isOnBattlefield) &&
+    (gBounced.findObject? hOpp.id).any (·.isOnBattlefield) &&
+    !(gBounced.findObject? relic.id).any (·.isOnBattlefield)
+  let gDestroyed := gTyped.chooseCreaturesDestroyRest #[bMe.id]
+  let destroyOk :=
+    (gDestroyed.findObject? bMe.id).any (·.isOnBattlefield) &&
+    (gDestroyed.findObject? hOpp.id).any (·.isOnBattlefield) &&
+    !(gDestroyed.findObject? relic.id).any (·.isOnBattlefield)
+  noopOk && redundantOk && scopedOk && noncreatureArrivalOk &&
+    chosenTypeOk && bounceOk && destroyOk
+
 end Mtg.Engine.EventTests

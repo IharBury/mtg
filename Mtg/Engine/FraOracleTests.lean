@@ -392,7 +392,7 @@ def recollectorWithDeaths (prepared : Bool) (deaths : Nat) : Game :=
 the copy. -/
 def angelStolen : Game :=
   let o := namedPermanent preparedAngel "Blossom-Blessed Angel"
-  preparedAngel.changeObject o.id (.controller (some ⟨1⟩))
+  preparedAngel.changeControl o ⟨1⟩
 
 #guard !angelStolen.mayPlayFromExile ⟨0⟩ (seedSutureCopy angelStolen)
 #guard angelStolen.mayPlayFromExile ⟨1⟩ (seedSutureCopy angelStolen)

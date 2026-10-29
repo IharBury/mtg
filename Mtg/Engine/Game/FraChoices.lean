@@ -1175,7 +1175,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
           if o.zone != .hand o.owner then pure g
           else
             let name := o.name
-            let sick := o.printed.isCreature && !o.printed.keywords.haste
+            let sick := !o.printed.keywords.haste
             let (g, newId) := g.move id .battlefield (some o.owner) (summoningSick := sick)
               (cause := some (.gameRule .staticAbility))
             let g := g.logMsg s!"{name} begins the game on the battlefield"
@@ -1386,7 +1386,7 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
   | .entersCreatureType _ =>
     let yours :=
       (g.permanentsOf p).foldl (fun acc o =>
-        o.subtypes.foldl (fun acc s =>
+        (g.subtypes o).foldl (fun acc s =>
           if s.isCreatureType && !acc.contains s then acc.push s else acc) acc) #[]
     .chooseName (yours[0]?.getD CardSubtype.human).englishName
   | .entersOddEven _ => .chooseMode 0

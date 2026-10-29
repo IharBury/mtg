@@ -1496,7 +1496,8 @@ def applyCreateTokens (g : Game) (controller : PlayerId)
     g.createKindTokens controller kind (g.countSubtype controller subtype) (tapped := tapped)
   | .kind, .you, .chosenCreatureType, _ =>
     let types := (g.creaturesControlledBy controller).foldl (fun acc o =>
-      o.subtypes.foldl (fun acc t => if acc.contains t then acc else acc.push t) acc) #[]
+      (g.subtypes o).foldl (fun acc t =>
+        if t.isCreatureType && !acc.contains t then acc.push t else acc) acc) #[]
     if types.isEmpty then
       g.logMsg s!"{(g.player controller).name} controls no creatures, so no Treasures are created"
     else
@@ -1546,7 +1547,8 @@ def applyCreateTokens (g : Game) (controller : PlayerId)
     | none => g
   | .kind, _who, .chosenCreatureType, _ =>
     let types := (g.creaturesControlledBy controller).foldl (fun acc o =>
-      o.subtypes.foldl (fun acc t => if acc.contains t then acc else acc.push t) acc) #[]
+      (g.subtypes o).foldl (fun acc t =>
+        if t.isCreatureType && !acc.contains t then acc.push t else acc) acc) #[]
     if types.isEmpty then
       g.logMsg s!"{(g.player controller).name} controls no creatures, so no Treasures are created"
     else
@@ -1810,7 +1812,7 @@ def applyExile (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
           let (g, exId) := g.move o.id .exile none (cause := sharedCause?)
           let ex := g.object! exId
           let (g, retId) := g.move exId .battlefield (some owner)
-            (summoningSick := ex.printed.isCreature && !ex.printed.keywords.haste)
+            (summoningSick := !ex.printed.keywords.haste)
             (cause := sharedCause?)
           g.afterPermanentEnters (g.object! retId)
             |>.logMsg s!"{name} is exiled, then returned"
@@ -1825,7 +1827,7 @@ def applyExile (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
             let (g, exId) := g.move o.id .exile none (cause := sharedCause?)
             let ex := g.object! exId
             let (g, retId) := g.move exId .battlefield (some owner)
-              (tapped := true) (summoningSick := ex.printed.isCreature && !ex.printed.keywords.haste)
+              (tapped := true) (summoningSick := !ex.printed.keywords.haste)
               (cause := sharedCause?)
             g.afterPermanentEnters (g.object! retId)
               |>.logMsg s!"{name} is exiled, then returned tapped"
@@ -2088,7 +2090,7 @@ def applyMayCast (g : Game) (controller : PlayerId) (lastKnownPower : Option Int
   | .hand, .twiceLegendaryWizards, .withoutPaying, .none =>
     let wizards :=
       (g.permanentsOf controller).filter (fun o =>
-        o.isLegendary && g.hasSubtype o .wizard) |>.size
+        g.isLegendary o && g.hasSubtype o .wizard) |>.size
     g.beginMayCastInstantSorceryFromHand controller (wizards * 2)
   | .hand, .lastKnown, .withoutPaying, .none =>
     g.beginMayCastInstantSorceryFromHand controller (lastKnownPower.getD 0).toNat
@@ -2122,7 +2124,7 @@ def applyMayCast (g : Game) (controller : PlayerId) (lastKnownPower : Option Int
       | .unlimited => none
       | .twiceLegendaryWizards =>
         some (((g.permanentsOf controller).filter (fun o =>
-          o.isLegendary && g.hasSubtype o .wizard)).size * 2)
+          g.isLegendary o && g.hasSubtype o .wizard)).size * 2)
       | .lastKnown => some (lastKnownPower.getD 0).toNat
       | .greatestAttackingPower => some (g.greatestPowerAmongAttacking controller).toNat
       | .causingSpell => some (g.castSpellManaValue controller lastKnownPower)

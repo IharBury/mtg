@@ -631,7 +631,7 @@ def battlefieldCreatureTypes (g : Game) : Array CardSubtype :=
 /-- Return each creature that doesn't have `chosen` to its owner's hand. -/
 def returnCreaturesNotOfType (g : Game) (chosen : CardSubtype) : Game :=
   g.withBatch none fun g =>
-    g.foldBattlefield (fun o => o.isCreature && !g.hasSubtype o chosen)
+    g.foldBattlefield (fun o => g.isCreature o && !g.hasSubtype o chosen)
       (fun g o => g.returnToHand o.id o.owner)
 
 /-- Put `put` onto the battlefield, then the rest of `looked` into their

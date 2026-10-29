@@ -46,10 +46,10 @@ def humanSoldierToken : CardDef :=
 Only weavers already on the battlefield before timestamp `asOf` apply
 (simultaneous enters do not see each other). -/
 def hopeCountersOnEnter (g : Game) (entering : GameObject) (asOf : Nat) : Nat :=
-  match entering.controller with
+  match g.controllerOf entering with
   | none => 0
   | some p =>
-    if !entering.isCreature then 0
+    if !g.isCreature entering then 0
     else
       (g.permanentsOf p).foldl (fun acc weaver =>
         if weaver.id == entering.id then acc
@@ -92,7 +92,7 @@ def createOneToken (g : Game) (controller : PlayerId) (printed : CardDef)
   else
     g.withBatchReturn cause fun g =>
       let printed := { printed with isToken := true }
-      let sick := printed.isCreature && !printed.keywords.haste
+      let sick := !printed.keywords.haste
       let asOf := g.timestamp
       let newId : ObjectId := ⟨g.nextObjectId⟩
       let ts := g.timestamp + 1

@@ -244,6 +244,8 @@ def playerLeavesGame (g : Game) (p : PlayerId) : Game :=
         match e with
         | .layered (.objects #[oid]) (.control c) _ =>
           if c == p then acc.endControlEffect oid eid (cause := cause) else acc
+        | .layered _ (.control c) _ =>
+          if c == p then acc.expireEffectById eid (cause := cause) else acc
         | _ => acc) g
     let g :=
       g.objects.foldl (fun acc o =>

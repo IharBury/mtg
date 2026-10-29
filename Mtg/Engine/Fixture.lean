@@ -172,14 +172,14 @@ is no longer tapped. -/
 /-- Changing control does not move the permanent off the battlefield. -/
 @[irreducible, noinline] def afterControlChange : Game :=
   let o := lastPermanent withMountain
-  withMountain.changeObject o.id (.controller (some ⟨1⟩))
+  withMountain.changeControl o ⟨1⟩
 
 /-- Nissa's permanent entered first; Chandra still has a later Forest. -/
 @[irreducible, noinline] def mixedControllers : Game := addPermanent stolenMountain forest ⟨0⟩ ⟨0⟩
 
 @[irreducible, noinline] def uncontrolledPermanent : Game :=
   let o := lastPermanent withMountain
-  withMountain.changeObject o.id (.controller none)
+  (withMountain.changePlayer ⟨0⟩ (.lost true)).changeObject o.id (.controller none)
 
 @[irreducible, noinline] def withGoblin : Game := addPermanent started ragingGoblin ⟨0⟩ ⟨0⟩
 @[irreducible, noinline] def withElves : Game := addPermanent started llanowarElves ⟨0⟩ ⟨0⟩
