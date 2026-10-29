@@ -47,17 +47,18 @@ def clearEOT (g : Game) : Game :=
     g := g.restoreCopiesUntilEot
     for pl in g.players do
       g := g.expireAll (.legendRuleOffThisTurn pl.id) (cause := cause)
-    -- Each control-changing effect ends or counts down on its own, so another
-    -- control effect on the same permanent keeps applying (CR 514.2 / 613.7).
+    -- Each control-changing effect ends or counts down on its own across all
+    -- ObjectScopes, so another control effect on the same permanent keeps
+    -- applying (CR 514.2 / 613.7 / 800.4c).
     let effs := g.activeEffects
     for (eid, e) in effs do
       match e with
-      | .layered (.objects #[oid]) (.control _) d =>
+      | .layered _ (.control _) d =>
         if d == .untilEndOfTurn then
-          g := g.endControlEffect oid eid (cause := cause)
+          g := g.endControlEffectById eid (cause := cause)
         else if d == .untilEndOfNextTurnOf g.activePlayer &&
             g.hasTurnBegunSince eid g.activePlayer then
-          g := g.endControlEffect oid eid (cause := cause)
+          g := g.endControlEffectById eid (cause := cause)
       | _ => pure ()
     g := g.expirePlayPermissions g.activePlayer (cause := cause)
     for o in g.battlefield do
@@ -66,6 +67,7 @@ def clearEOT (g : Game) : Game :=
       | none => pure ()
       | some cur =>
         g := g.expireObjectUntilEotEffects cur
+    g := g.expireMatching effectEndsAtCleanup (cause := cause)
     let damagedIds :=
       (g.battlefield.filter (fun o => o.status.damage != 0)).map (·.id)
     if !damagedIds.isEmpty then
@@ -146,8 +148,15 @@ Veiled Butcher's toughness and power reduction and the command-zone effects of J
 and Garruk, Curse Breaker (CR 611.2b). -/
 def expireFraUntilTurnEffects (g : Game) (p : PlayerId) : Game :=
   let cause := some (EventCause.turnBased .expireAtStepBegin)
+  let g :=
+    g.activeEffects.foldl (fun acc (eid, e) =>
+      match e with
+      | .layered _ (.control _) (.untilNextTurnOf q) =>
+        if q == p then acc.endControlEffectById eid (cause := cause) else acc
+      | _ => acc) g
   let g := g.expireMatching (fun
-    | .layered _ (.ptModify _ _) (.untilNextTurnOf q) => q == p
+    | .layered _ (.copy ..) _ | .layered _ (.control _) _ => false
+    | .layered _ _ (.untilNextTurnOf q) => q == p
     | _ => false) (cause := cause)
   g.objects.foldl (fun g o =>
     if o.zone == .command && g.fraEffectUntilTurnOf o == some p then

@@ -4963,4 +4963,84 @@ a creature whose controller changes mid-turn without haste becomes summoning-sic
   noopOk && redundantOk && scopedOk && noncreatureArrivalOk &&
     chosenTypeOk && bounceOk && destroyOk
 
+/- Phase 9 isolation suite (CR 514.2 / CR 800.4a / CR 800.4c on non-singleton
+Layer 2 control effects):
+1. `clearEOT` ends `.untilEndOfTurn` and `.untilEndOfNextTurnOf` Layer 2
+   control effects across `.creaturesControlledBy`, `.permanentsOfSubtype`,
+   `.creaturesWithout`, and multi-id `.objects`, reverting control (and exiling
+   under CR 800.4c when the default controller has left the game).
+2. `playerLeavesGame` ends scoped Layer 2 control effects via the same
+   per-permanent CR 800.4c check: exiling when the default controller already
+   left, and keeping the permanent on the battlefield when another scoped
+   control effect still gives a living player control. -/
+#guard
+  let opp : PlayerId := ⟨1⟩
+  let p0 : PlayerId := ⟨0⟩
+  let p1 : PlayerId := ⟨1⟩
+  let p2 : PlayerId := ⟨2⟩
+  let g3p :=
+    match Start.start { seats := #[{ name := "P0", deck := testRedDeck },
+                                   { name := "P1", deck := testRedDeck },
+                                   { name := "P2", deck := testRedDeck }],
+                        startingPlayer := some 0, seed := 7 } with
+    | .ok g => quiet (keepOpeningHands g 16)
+    | .error e => panic! e
+  -- 1. Cleanup expires scoped & multi-id `.untilEndOfTurn` and `.untilEndOfNextTurnOf` control effects
+  let g0 :=
+    addPermanent
+      (addPermanent (quiet afterDraw) bear me me)
+      hero me me
+  let b := (g0.battlefield.filter (·.name == "Event Bear"))[0]!
+  let h := (g0.battlefield.filter (·.name == "Event Hero"))[0]!
+  let gScopedEot :=
+    g0.createEffect (.layered (.creaturesControlledBy me) (.control opp) .untilEndOfTurn)
+  let gScopedClean := gScopedEot.clearEOT
+  let gWithoutEot :=
+    g0.createEffect (.layered (.creaturesWithout Keyword.flying) (.control opp) .untilEndOfTurn)
+  let gWithoutClean := gWithoutEot.clearEOT
+  let gMultiEot :=
+    g0.createEffect (.layered (.objects #[b.id, h.id]) (.control opp) .untilEndOfTurn)
+  let gMultiClean := gMultiEot.clearEOT
+  let gNextTurnEnd :=
+    g0.createEffect (.layered (.permanentsOfSubtype me .bear) (.control opp) (.untilEndOfNextTurnOf opp))
+  let gNextTurnEndAfter1 := gNextTurnEnd.clearEOT
+  let gNextTurnEndOpp := gNextTurnEndAfter1.startNextTurn
+  let gNextTurnEndAfter2 := gNextTurnEndOpp.clearEOT
+  let cleanupScopedOk :=
+    gScopedEot.controllerOf (gScopedEot.object! b.id) == some opp &&
+    gScopedClean.controllerOf (gScopedClean.object! b.id) == some me &&
+    gScopedClean.activeEffects.isEmpty &&
+    gWithoutEot.controllerOf (gWithoutEot.object! b.id) == some opp &&
+    gWithoutClean.controllerOf (gWithoutClean.object! b.id) == some me &&
+    gWithoutClean.activeEffects.isEmpty &&
+    gMultiEot.controllerOf (gMultiEot.object! b.id) == some opp &&
+    gMultiEot.controllerOf (gMultiEot.object! h.id) == some opp &&
+    gMultiClean.controllerOf (gMultiClean.object! b.id) == some me &&
+    gMultiClean.controllerOf (gMultiClean.object! h.id) == some me &&
+    gNextTurnEndAfter1.controllerOf (gNextTurnEndAfter1.object! b.id) == some opp &&
+    gNextTurnEndAfter2.controllerOf (gNextTurnEndAfter2.object! b.id) == some me
+  -- 2a. Scoped control effect ending when leaving player leaves exiles permanent whose defaultController already left
+  let gBribe := addPermanent g3p bear p2 p0
+  let bb := (gBribe.battlefield.filter (·.name == "Event Bear"))[0]!
+  let gScopedSteal :=
+    gBribe.createEffect (.layered (.creaturesWithout Keyword.flying) (.control p1) .indefinite)
+  let gP0Left := gScopedSteal.playerLeavesGame p0
+  let gP1Left := gP0Left.playerLeavesGame p1
+  let scopedLeaveExileOk :=
+    gP0Left.controllerOf (gP0Left.object! bb.id) == some p1 &&
+    !gP1Left.battlefield.any (·.name == "Event Bear") &&
+    gP1Left.objects.any (fun o => o.name == "Event Bear" && o.zone == .exile)
+  -- 2b. Singleton control effect ending while a scoped control effect still gives living `p2` control keeps permanent
+  let gBoth :=
+    (gBribe.createEffect
+      (.layered (.creaturesWithout Keyword.flying) (.control p2) .indefinite)).changeControl bb p1
+  let gBothP0Left := gBoth.playerLeavesGame p0
+  let gBothP1Left := gBothP0Left.playerLeavesGame p1
+  let bbSurv := (gBothP1Left.battlefield.filter (·.name == "Event Bear"))[0]?
+  let scopedOthersRemainOk :=
+    gBothP0Left.controllerOf (gBothP0Left.object! bb.id) == some p1 &&
+    bbSurv.isSome &&
+    gBothP1Left.controllerOf bbSurv.get! == some p2
+  g3p.players.size == 3 && cleanupScopedOk && scopedLeaveExileOk && scopedOthersRemainOk
+
 end Mtg.Engine.EventTests

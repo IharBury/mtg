@@ -1794,22 +1794,25 @@ def nameWithToken (g : Game) (o : GameObject) : String :=
 
 private structure Layer2Entry where
   idx : Nat
+  eid : EffectId
   ts : Nat × Nat
   scope : ObjectScope
   ctrl : PlayerId
 deriving Inhabited
 
-/-- Evaluated controller of `o` in Layer 2 across all active `LayerEffect.control`
-effects in CR 613.7 timestamp and CR 613.8 dependency order (CR 613.1b). -/
-def effectiveController? (g : Game) (o : GameObject) : Option PlayerId :=
+/-- Evaluated controller of `o` in Layer 2 together with the `EffectId`s of all
+active `LayerEffect.control` effects that applied to `o` in CR 613.7 timestamp
+and CR 613.8 dependency order (CR 613.1b). -/
+def effectiveControllerWithApplied (g : Game) (o : GameObject) :
+    Option PlayerId × Array EffectId :=
   let initCtrl := g.initialControllerOf o
-  if o.zone != .battlefield then initCtrl
+  if o.zone != .battlefield then (initCtrl, #[])
   else
     let hasCtrl := g.activeEffects.any fun (_, s) =>
       match s with
       | .layered _ (.control _) _ => true
       | _ => false
-    if !hasCtrl then initCtrl
+    if !hasCtrl then (initCtrl, #[])
     else
       let bc := g.baseCard o
       let scopeMatchesL2 (cur : Option PlayerId) (sc : ObjectScope) : Bool :=
@@ -1834,6 +1837,7 @@ def effectiveController? (g : Game) (o : GameObject) : Option PlayerId :=
             if g.durationActive d then
               raw := raw.push {
                 idx := raw.size
+                eid := eid
                 ts := g.effectTimestamp eid pos
                 scope := sc
                 ctrl := c
@@ -1845,6 +1849,7 @@ def effectiveController? (g : Game) (o : GameObject) : Option PlayerId :=
           else a.idx < b.idx
         let mut rem := sorted
         let mut cur := initCtrl
+        let mut applied : Array EffectId := #[]
         for _ in [0:sorted.size] do
           let applicable := rem.filter (fun e => scopeMatchesL2 cur e.scope)
           if applicable.isEmpty then break
@@ -1854,8 +1859,18 @@ def effectiveController? (g : Game) (o : GameObject) : Option PlayerId :=
           let chosen :=
             (applicable.find? (fun a => !applicable.any (fun b => dependsOn a b))).getD applicable[0]!
           cur := some chosen.ctrl
+          applied := applied.push chosen.eid
           rem := rem.filter (fun e => e.idx != chosen.idx)
-        return cur
+        return (cur, applied)
+
+/-- Evaluated controller of `o` in Layer 2 across all active `LayerEffect.control`
+effects in CR 613.7 timestamp and CR 613.8 dependency order (CR 613.1b). -/
+@[inline] def effectiveController? (g : Game) (o : GameObject) : Option PlayerId :=
+  (g.effectiveControllerWithApplied o).1
+
+/-- Active Layer 2 `EffectId`s currently applying to `o` (CR 613.1b). -/
+@[inline] def appliedControlEffectIds (g : Game) (o : GameObject) : Array EffectId :=
+  (g.effectiveControllerWithApplied o).2
 
 /-- Evaluated controller of `o` after Layer 2 control-changing effects (CR 613.1b). -/
 @[inline] def controllerOf (g : Game) (o : GameObject) : Option PlayerId :=
@@ -2195,43 +2210,50 @@ def fraEffectUntilTurnOf (g : Game) (o : GameObject) : Option PlayerId :=
     | _ => acc) none
 
 def controlUntilEot (g : Game) (o : GameObject) : Bool :=
-  g.activeEffects.any fun (_, s) =>
+  let applied := g.appliedControlEffectIds o
+  g.activeEffects.any fun (eid, s) =>
     match s with
-    | .layered (.objects #[id]) (.control _) .untilEndOfTurn => id == o.id
+    | .layered (.objects ids) (.control _) .untilEndOfTurn => ids.contains o.id
+    | .layered _ (.control _) .untilEndOfTurn => applied.contains eid
     | _ => false
 
 def controlTurnEndsLeft (g : Game) (o : GameObject) : Nat :=
+  let applied := g.appliedControlEffectIds o
   g.activeEffects.foldl (fun acc (eid, s) =>
-    match s with
-    | .layered (.objects #[id]) (.control _) (.untilNextTurnOf _) =>
-      if id == o.id then max acc 1 else acc
-    | .layered (.objects #[id]) (.control _) (.untilEndOfNextTurnOf p) =>
-      if id == o.id then
+    let hits :=
+      match s with
+      | .layered (.objects ids) (.control _) _ => ids.contains o.id
+      | .layered _ (.control _) _ => applied.contains eid
+      | _ => false
+    if !hits then acc
+    else
+      match s with
+      | .layered _ (.control _) (.untilNextTurnOf _) => max acc 1
+      | .layered _ (.control _) (.untilEndOfNextTurnOf p) =>
         let rem := if g.hasTurnBegunSince eid p then 1 else 2
         max acc rem
-      else acc
-    | _ => acc) 0
+      | _ => acc) 0
 
 def controlUntilSourceLeaves (g : Game) (o : GameObject) : Option ObjectId :=
-  g.activeEffects.foldl (fun acc (_, s) =>
+  let applied := g.appliedControlEffectIds o
+  g.activeEffects.foldl (fun acc (eid, s) =>
     match s with
-    | .layered (.objects #[id]) (.control _) (.whileSourceOnBattlefield src) =>
-      if id == o.id then some src else acc
+    | .layered (.objects ids) (.control _) (.whileSourceOnBattlefield src) =>
+      if ids.contains o.id then some src else acc
+    | .layered _ (.control _) (.whileSourceOnBattlefield src) =>
+      if applied.contains eid then some src else acc
     | _ => acc) none
 
 def controlChanged (g : Game) (o : GameObject) : Bool :=
   let defCtrl := o.defaultController.getD o.owner
   g.controllerOf o != some defCtrl ||
     (o.controller.isSome && o.controller != some defCtrl) ||
-    g.activeEffects.any (fun (_, s) =>
-      match s with
-      | .layered (.objects #[id]) (.control _) d => id == o.id && g.durationActive d
-      | _ => false) ||
+    !(g.appliedControlEffectIds o).isEmpty ||
     g.events.any (fun ev =>
       match ev.change with
       | .rules (.permanent (.controlChanged eo _ _)) => eo.id == some o.id
-      | .rules (.continuousEffect (.created _ (.layered (.objects #[id]) (.control _) _))) =>
-        id == o.id
+      | .rules (.continuousEffect (.created _ (.layered (.objects ids) (.control _) _))) =>
+        ids.contains o.id
       | _ => false)
 
 /-- Whether `o` currently has an active Layer 1 copy effect (CR 613.1a / 707). -/
@@ -8487,7 +8509,12 @@ ceases to exist (CR 400.7, CR 611), each under its own `EffectId`. -/
 def expireEffectsOnLeavingObject (g : Game) (o : GameObject)
     (cause : Option EventCause := some (.gameRule .leavingZone)) : Game :=
   let g := g.expirePrintedStaticEffects o (cause := cause)
-  g.expireMatching (fun e => effectObject? e == some o.id) (cause := cause)
+  g.expireMatching (fun e =>
+    effectObject? e == some o.id ||
+      match e with
+      | .layered (.objects ids) _ _ =>
+        ids.contains o.id && ids.all (fun id => id == o.id || (g.findObject? id).isNone)
+      | _ => false) (cause := cause)
 
 /-- Drop a stashed `unlessPays` effect. Paying, or countering for real,
 clears it; leaving without paying sets `unlessPaysDue` instead. -/
@@ -8539,7 +8566,18 @@ def restoreCopiesWhere (g : Game)
           let restName := (acc.baseCard o).name
           acc.logMsg s!"{restName} is no longer a copy of {printed.name}"
         else acc
-      | none => acc
+      | none =>
+        if untilEot && cause == some (.turnBased .cleanupClear) then
+          acc.expireEffectById eid (cause := cause)
+        else acc
+    | .layered _ (.copy _) d =>
+      let untilEot := d == .untilEndOfTurn
+      let untilNextTurn := match d with | .untilNextTurnOf _ => true | _ => false
+      let untilSourceLeaves := match d with | .whileSourceOnBattlefield s => some s | _ => none
+      if acc.battlefield.any (fun o => sel o untilEot untilNextTurn untilSourceLeaves) ||
+          (untilEot && cause == some (.turnBased .cleanupClear)) then
+        acc.expireEffectById eid (cause := cause)
+      else acc
     | _ => acc) g
 
 /-- End every copy effect on `o`, restoring its original printed card (CR 707).
@@ -8583,10 +8621,7 @@ def restoreControlUntilSourceLeaves (g : Game) (srcId : ObjectId)
           let objName := acc.name o
           let acc := acc.expireEffectById eid (cause := cause)
           let p := o.defaultController.getD o.owner
-          let othersRemain := acc.activeEffects.any (fun (_, e) =>
-            match e with
-            | .layered (.objects #[oid]) (.control _) _ => oid == id
-            | _ => false)
+          let othersRemain := !(acc.appliedControlEffectIds o).isEmpty
           if othersRemain then
             match (acc.findObject? id).bind acc.controllerOf with
             | some q => acc.logMsg s!"{objName} returns to {(acc.player q).name}'s control"
@@ -8595,6 +8630,8 @@ def restoreControlUntilSourceLeaves (g : Game) (srcId : ObjectId)
             acc.logMsg s!"{objName} does not change control (CR 800.4b)"
           else
             acc.logMsg s!"{objName} returns to {(acc.player p).name}'s control"
+    | .layered _ (.control _) (.whileSourceOnBattlefield s) =>
+      if s == srcId then acc.expireEffectById eid (cause := cause) else acc
     | _ => acc) g
 
 /-- Expire all continuous effects on other objects that last for as long as

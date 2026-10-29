@@ -290,6 +290,21 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
       some (attackingTarget.getD (.player g.defendingPlayer))
     else none
   let beforeSnap := g.snapshot old
+  let sourceCtrlTargets : Array ObjectId :=
+    if old.zone != .battlefield || dest == .battlefield then #[]
+    else
+      let sourceCtrlIds := g.activeEffects.filterMap fun (eid, e) =>
+        match e with
+        | .layered _ (.control _) (.whileSourceOnBattlefield s) =>
+          if s == old.id then some eid else none
+        | _ => none
+      if sourceCtrlIds.isEmpty then #[]
+      else
+        g.battlefield.filterMap fun pObj =>
+          if pObj.id != old.id &&
+              (g.appliedControlEffectIds pObj).any (fun eid => sourceCtrlIds.contains eid) then
+            some pObj.id
+          else none
   let buildArrival (g : Game) (targetZone : Zone) (asOf : Nat)
       (applied : Array ReplacementId := #[]) (curCause : Option EventCause := cause) :
       GameObject × CounterBag × Nat × Bool × Bool × Array ReplacementId × Option EventCause × Option (PlayerId × Array ReplacementId) :=
@@ -462,7 +477,19 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
       let g := g.expireEffectsOnLeavingObject old
       let g :=
         if old.zone == .battlefield then
-          g.expireWhileSourceEffects old.id
+          let g := g.expireWhileSourceEffects old.id
+          sourceCtrlTargets.foldl (fun acc tid =>
+            match acc.findObject? tid with
+            | none => acc
+            | some cur =>
+              if !cur.isOnBattlefield || !(acc.appliedControlEffectIds cur).isEmpty then acc
+              else
+                let destP := (acc.controllerOf cur).getD (cur.defaultController.getD cur.owner)
+                if (acc.player destP).lost then
+                  let name := acc.name cur
+                  let (acc, _) := acc.move tid .exile none (cause := some (.gameRule .playerLeftGame))
+                  acc.logMsg s!"{name} is exiled (CR 800.4c)"
+                else acc) g
         else g
       let g :=
         match g.findObject? newId with
