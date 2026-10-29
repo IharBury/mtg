@@ -237,9 +237,11 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
       for pl in g.players do
         if !pl.lost then
           let shielded :=
-            (g.permanentsOf pl.id).any (·.printed.cantLoseGame) ||
+            (g.permanentsOf pl.id).any (fun o =>
+              o.printed.cantLoseGame && g.retainsPrintedAbilities o) ||
               (g.objects.filter (fun o =>
-                o.zone == .command && o.controlledBy pl.id)).any (·.printed.cantLoseGame)
+                o.zone == .command && o.controlledBy pl.id)).any (fun o =>
+                  o.printed.cantLoseGame && g.retainsPrintedAbilities o)
           if shielded then
             pure ()
           else if pl.life ≤ 0 then

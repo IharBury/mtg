@@ -630,7 +630,9 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
           | some o =>
             let shielded :=
               match o.controller with
-              | some c => (g.permanentsOf c).any (·.printed.creaturesCantGetMinusCounters)
+              | some c =>
+                (g.permanentsOf c).any (fun src =>
+                  src.printed.creaturesCantGetMinusCounters && g.retainsPrintedAbilities src)
               | none => false
             if o.isOnBattlefield && o.isCreature && g.canBeTargetedBy controller o && x > 0 &&
                 !shielded then

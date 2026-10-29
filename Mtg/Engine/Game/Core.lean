@@ -3797,7 +3797,7 @@ def enduringStoryKeywords (g : Game) (o : GameObject) : Keywords :=
 
 /-- +P/+0 from `powerPerMountain` (e.g. Desert Were-Worm). -/
 def mountainPowerBonus (g : Game) (o : GameObject) : Int :=
-  if o.printed.powerPerMountain == 0 then 0
+  if o.printed.powerPerMountain == 0 || !g.retainsPrintedAbilities o then 0
   else
     let n :=
       (g.permanentsOf o.you).filter (fun p => g.hasSubtype p .mountain) |>.size
@@ -3906,7 +3906,7 @@ def fraStatBonus (g : Game) (o : GameObject) : Int × Int :=
           (2, 2)
         else (0, 0)
       let unspent :=
-        if o.printed.powerPerUnspentMana then
+        if o.printed.powerPerUnspentMana && g.retainsPrintedAbilities o then
           let n : Int := Int.ofNat (g.player p).manaPool.total
           (n, n)
         else (0, 0)
@@ -4197,7 +4197,7 @@ def applyEtbReplacements (g : Game) (candidate : GameObject)
     if applyHope && !cur.status.faceDown && g.isCreature cur then
       for weaver in g.permanentsOf ctrl do
         if weaver.id != cur.id && weaver.printed.othersEnterWithPlusOneEqualToughness &&
-            weaver.timestamp < asOf then
+            g.retainsPrintedAbilities weaver && weaver.timestamp < asOf then
           let bonus := (g.snapshotToughness weaver).toNat
           if bonus > 0 then
             specs := specs.push {
@@ -5513,7 +5513,8 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
           | _ => false
         let mardu :=
           if attackEvent && (board.permanentsOf controller).any (fun o =>
-              o.printed.asEntersChooseMarduOrJeskai && o.status.windcragMardu) then 1 else 0
+              o.printed.asEntersChooseMarduOrJeskai && board.retainsPrintedAbilities o &&
+                o.status.windcragMardu) then 1 else 0
         let curSource :=
           if board.findObject? source.id == some source then source
           else (post.findObject? source.id).getD source

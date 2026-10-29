@@ -72,7 +72,7 @@ partial def drawOneWithReplacements (g : Game) (p : PlayerId)
         let mut acc : Array (ReplacementSpec × Nat) := #[]
         if !firstOfYourDrawStep then
           for o in g.permanentsOf p do
-            if o.printed.drawTwoExceptFirstDrawStep then
+            if o.printed.drawTwoExceptFirstDrawStep && g.retainsPrintedAbilities o then
               acc := acc.push (
                 { id := { kind := .drawTwoExceptFirstDrawStep, object := some o.id }
                   source := some o.id

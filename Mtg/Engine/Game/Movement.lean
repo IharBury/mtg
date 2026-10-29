@@ -80,7 +80,7 @@ def unprepare (g : Game) (o : GameObject) : Game :=
 
 /-- True when `o` replaces an opposing creature dying with exile. -/
 def exilesOppDeath? (g : Game) (o : GameObject) : Bool :=
-  o.printed.exileOppCreaturesInstead ||
+  (o.printed.exileOppCreaturesInstead && g.retainsPrintedAbilities o) ||
     (g.staticAbilities o).any (fun
       | .exileOppDeathCreateWolf => true
       | .fra .exileOpponentsDyingCreatures => true

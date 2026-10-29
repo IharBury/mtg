@@ -71,13 +71,15 @@ def hasPriority (g : Game) (p : PlayerId) : Bool :=
 permanent is cumulative with other extra-land effects (rulings 288 / 306). -/
 def extraLandsFromPermanents (g : Game) (p : PlayerId) : Nat :=
   (g.permanentsOf p).foldl (fun acc o =>
-    match o.printed.extraLandIfOtherSubtype with
-    | none => acc
-    | some t =>
-      if (g.permanentsOf p).any (fun other =>
-        other.id != o.id && g.hasSubtype other t) then
-        acc + 1
-      else acc) 0
+    if !g.retainsPrintedAbilities o then acc
+    else
+      match o.printed.extraLandIfOtherSubtype with
+      | none => acc
+      | some t =>
+        if (g.permanentsOf p).any (fun other =>
+          other.id != o.id && g.hasSubtype other t) then
+          acc + 1
+        else acc) 0
 
 /-- How many lands `p` may play this turn (CR 305.2 / 305.2b). -/
 def landPlaysAllowed (g : Game) (p : PlayerId) : Nat :=
@@ -113,7 +115,9 @@ def mayCastExiledBySource (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
   o.zone == .exile &&
     match o.exiledBy.bind g.findObject? with
     | some src =>
-      src.isOnBattlefield && src.controlledBy p && src.printed.castExiledWithSevenInGraveyard &&
+      src.isOnBattlefield && src.controlledBy p &&
+        src.printed.castExiledWithSevenInGraveyard &&
+        g.retainsPrintedAbilities src &&
         (g.player p).graveyard.size ≥ 7
     | none => false
 
@@ -136,7 +140,8 @@ def mayPlayFromGraveyard (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
 
 /-- True when `p` controls a permanent that lets them look at the library top. -/
 def controlsLookAtTop (g : Game) (p : PlayerId) : Bool :=
-  (g.permanentsOf p).any (fun o => o.printed.mayLookAtTopAnytime)
+  (g.permanentsOf p).any (fun o =>
+    o.printed.mayLookAtTopAnytime && g.retainsPrintedAbilities o)
 
 /-- True when `p` may look at the top card of their library right now.
 Elven Chorus does not reveal a new top while a spell from that top is
@@ -147,7 +152,8 @@ def canLookAtLibraryTop (g : Game) (p : PlayerId) : Bool :=
 /-- True when `p` controls a permanent that lets them cast creatures from
 the top of their library. Does not grant flash or change timing. -/
 def controlsCastCreaturesFromTop (g : Game) (p : PlayerId) : Bool :=
-  (g.permanentsOf p).any (fun o => o.printed.mayCastCreaturesFromTop)
+  (g.permanentsOf p).any (fun o =>
+    o.printed.mayCastCreaturesFromTop && g.retainsPrintedAbilities o)
 
 /-- The top card of `p`'s library, if any. -/
 def libraryTop? (g : Game) (p : PlayerId) : Option GameObject :=
@@ -156,7 +162,8 @@ def libraryTop? (g : Game) (p : PlayerId) : Option GameObject :=
 /-- True when `o` is the top card of `p`'s library and they may cast it as
 a creature spell from there. Timing is still checked by `canCast`. -/
 def controlsPlayLandsFromTop (g : Game) (p : PlayerId) : Bool :=
-  (g.permanentsOf p).any (fun o => o.printed.mayPlayLandsFromTop)
+  (g.permanentsOf p).any (fun o =>
+    o.printed.mayPlayLandsFromTop && g.retainsPrintedAbilities o)
 
 def mayPlayFromLibraryTop (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
   o.zone == .library p &&

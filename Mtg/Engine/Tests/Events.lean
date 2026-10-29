@@ -4458,4 +4458,129 @@ order (CR 613.1f / 613.7 / 702.21). -/
     noUnclassifiedRulesEvents gFistAuraLost &&
     noUnclassifiedRulesEvents gWdRe
 
+/- Phase 8 (PR #584 review round 4): `cantLoseGame` (battlefield + command zone),
+`opponentsCantWin`, `unspentManaBecomesColorless`, `planeswalkersYouControlHave`
+(timestamp order + Layer 4 `isPlaneswalker`), `grantedManaAbilities`
+(`otherSubtypeHaveTapAddOneOf` + `grantCreaturesTapAddAnyColor` in timestamp
+order), and `intrinsicLandMana` / `landsCouldProduce` (`grantLandsTapAnyColor` +
+land ability removal) all obey Layer 6 (CR 104.2a / 106.7 / 605.1a / 613.1f / 613.7). -/
+#guard
+  let opp : PlayerId := ⟨1⟩
+  let c1 : EventCause := .oneShotEffect (some ⟨1101⟩) none (some me)
+  let c2 : EventCause := .oneShotEffect (some ⟨1102⟩) none (some me)
+  -- 1. `cantLoseGame` & `opponentsCantWin` (battlefield + command zone)
+  let angelDef : CardDef :=
+    { (creature "Platinum Test" ManaCost.empty #["Angel"] 4 4) with
+      cantLoseGame := true
+      opponentsCantWin := true }
+  let gAngel0 :=
+    (addPermanent (quiet afterDraw) angelDef me me).changePlayer me (.life 0)
+  let angel := (gAngel0.battlefield.filter (·.name == "Platinum Test"))[0]!
+  let gAngelPre := gAngel0.checkSBA
+  let gAngelLost :=
+    (gAngel0.createEffect (.losesAbilitiesUntilEot angel.id) (cause := some c1)).checkSBA
+  let (gCmd0, cmdObj) :=
+    ((quiet afterDraw).changePlayer me (.life 0)).allocObject angelDef me .command (some me)
+  let gCmdPre := gCmd0.checkSBA
+  let gCmdLost :=
+    (gCmd0.createEffect (.losesAbilitiesUntilEot cmdObj.id) (cause := some c1)).checkSBA
+  let cantLoseWinOk :=
+    !(gAngelPre.player me).lost &&
+    gAngelPre.result.isNone &&
+    (gAngelLost.player me).lost &&
+    gAngelLost.result == some (.won opp) &&
+    !(gCmdPre.player me).lost &&
+    gCmdPre.result.isNone &&
+    (gCmdLost.player me).lost &&
+    gCmdLost.result == some (.won opp)
+  -- 2. `unspentManaBecomesColorless`
+  let horizonDef : CardDef :=
+    { (creature "Horizon Test" ManaCost.empty #["Rogue"] 3 3) with
+      unspentManaBecomesColorless := true }
+  let gMana0 :=
+    (addPermanent (quiet afterDraw) horizonDef me me).changePlayer me
+      (.manaPool ((ManaPool.empty).add (.colored .red)))
+  let horizon := (gMana0.battlefield.filter (·.name == "Horizon Test"))[0]!
+  let gManaKept := gMana0.emptyManaPools
+  let gManaLost :=
+    (gMana0.createEffect (.losesAbilitiesUntilEot horizon.id) (cause := some c1)).emptyManaPools
+  let unspentManaOk :=
+    (gManaKept.player me).manaPool.colorless == 1 &&
+    (gManaKept.player me).manaPool.total == 1 &&
+    (gManaLost.player me).manaPool.isEmpty
+  -- 3. `planeswalkersYouControlHave` (Layer 6 timestamp order + Layer 4 `isPlaneswalker`)
+  let loyaltyGrantAb : ActivatedAbility :=
+    { cost := { loyalty := some (.plus 1) }
+      effect := {} }
+  let pwDef : CardDef :=
+    { name := "Test Planeswalker"
+      types := #[.planeswalker]
+      loyalty := some 4 }
+  let healerDef : CardDef :=
+    { name := "Way of Test"
+      types := #[.enchantment]
+      planeswalkersYouControlHave := #[loyaltyGrantAb] }
+  let gPw0 := addPermanent (addPermanent (quiet afterDraw) healerDef me me) pwDef me me
+  let pw := (gPw0.battlefield.filter (·.name == "Test Planeswalker"))[0]!
+  let gPwLost := gPw0.createEffect (.losesAbilitiesUntilEot pw.id) (cause := some c1)
+  let gPwRe := addPermanent gPwLost healerDef me me
+  let gPwFood := gPw0.createEffect (.onlyFoodArtifact pw.id) (cause := some c2)
+  let pwGrantOk :=
+    (gPw0.activatedAbilitiesOf (gPw0.object! pw.id)).size == 1 &&
+    (gPwLost.activatedAbilitiesOf (gPwLost.object! pw.id)).isEmpty &&
+    (gPwRe.activatedAbilitiesOf (gPwRe.object! pw.id)).size == 1 &&
+    (gPwFood.activatedAbilitiesOf (gPwFood.object! pw.id)).isEmpty
+  -- 4. `grantedManaAbilities` (`otherSubtypeHaveTapAddOneOf` + `grantCreaturesTapAddAnyColor`)
+  let elfDef : CardDef := creature "Test Elf" ManaCost.empty #["Elf"] 1 1
+  let subtypeLordDef : CardDef :=
+    { (creature "Elf Mana Lord" ManaCost.empty #["Advisor"] 2 2) with
+      staticAbilities := #[.otherSubtypeHaveTapAddOneOf #[.elf] #[.colored .green, .colored .blue]] }
+  let chorusDef : CardDef :=
+    { name := "Test Chorus"
+      types := #[.enchantment]
+      grantCreaturesTapAddAnyColor := true }
+  let gGr0 :=
+    addPermanent
+      (addPermanent
+        (addPermanent (quiet afterDraw) subtypeLordDef me me)
+        chorusDef me me)
+      elfDef me me
+  let elf := (gGr0.battlefield.filter (·.name == "Test Elf"))[0]!
+  let gGrLost := gGr0.createEffect (.losesAbilitiesUntilEot elf.id) (cause := some c1)
+  let gGrRe := addPermanent gGrLost subtypeLordDef me me
+  let grantedManaOk :=
+    (gGr0.grantedManaAbilities (gGr0.object! elf.id)).size == 5 &&
+    (gGrLost.grantedManaAbilities (gGrLost.object! elf.id)).isEmpty &&
+    (gGrLost.manaAbilitiesOf (gGrLost.object! elf.id)).isEmpty &&
+    gGrRe.grantedManaAbilities (gGrRe.object! elf.id) == #[.colored .green, .colored .blue]
+  -- 5. `intrinsicLandMana` / `landsCouldProduce` (`grantLandsTapAnyColor` + land ability loss)
+  let mtnDef : CardDef := { name := "Test Mountain", types := #[.land], subtypes := #["Mountain"] }
+  let lanternDef : CardDef :=
+    { name := "Test Lantern"
+      types := #[.artifact]
+      grantLandsTapAnyColor := true }
+  let gLd0 := addPermanent (addPermanent (quiet afterDraw) lanternDef me me) mtnDef me me
+  let mtn := (gLd0.battlefield.filter (·.name == "Test Mountain"))[0]!
+  let lantern := (gLd0.battlefield.filter (·.name == "Test Lantern"))[0]!
+  let gLanternLost := gLd0.createEffect (.losesAbilitiesUntilEot lantern.id) (cause := some c1)
+  let gBothLost := gLanternLost.createEffect (.losesAbilitiesUntilEot mtn.id) (cause := some c2)
+  let gMtnLost := gLd0.createEffect (.losesAbilitiesUntilEot mtn.id) (cause := some c1)
+  let gMtnReLantern := addPermanent gMtnLost lanternDef me me
+  let landManaOk :=
+    (gLd0.intrinsicLandMana (gLd0.object! mtn.id)).size == 5 &&
+    gLanternLost.intrinsicLandMana (gLanternLost.object! mtn.id) == #[.colored .red] &&
+    (gBothLost.intrinsicLandMana (gBothLost.object! mtn.id)).isEmpty &&
+    (gBothLost.landsCouldProduce #[gBothLost.object! mtn.id]).isEmpty &&
+    (gMtnLost.intrinsicLandMana (gMtnLost.object! mtn.id)).isEmpty &&
+    (gMtnLost.manaAbilityDefs (gMtnLost.object! mtn.id)).isEmpty &&
+    (gMtnReLantern.intrinsicLandMana (gMtnReLantern.object! mtn.id)).size == 5 &&
+    (gMtnReLantern.manaAbilityDefs (gMtnReLantern.object! mtn.id)).size == 1
+  cantLoseWinOk && unspentManaOk && pwGrantOk && grantedManaOk && landManaOk &&
+    noUnclassifiedRulesEvents gAngelLost &&
+    noUnclassifiedRulesEvents gManaKept &&
+    noUnclassifiedRulesEvents gManaLost &&
+    noUnclassifiedRulesEvents gPwRe &&
+    noUnclassifiedRulesEvents gGrRe &&
+    noUnclassifiedRulesEvents gMtnReLantern
+
 end Mtg.Engine.EventTests

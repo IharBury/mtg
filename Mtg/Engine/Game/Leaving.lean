@@ -19,7 +19,8 @@ def decideGameIfFinished (g : Game) : Option Game :=
   else if living.size == 1 then
     let w := living[0]!
     let blocked := (g.livingOpponents w.id).any (fun opp =>
-      (g.permanentsOf opp.id).any (·.printed.opponentsCantWin))
+      (g.permanentsOf opp.id).any (fun o =>
+        o.printed.opponentsCantWin && g.retainsPrintedAbilities o))
     if blocked then none
     else some (g.record (GameEvent.gameEnded g.turnNumber (.won w.id)) |>.logMsg s!"{w.name} wins the game")
   else none
@@ -280,7 +281,8 @@ def emptyManaPools (g : Game) : Game :=
     for pl in g.players do
       if !pl.manaPool.isEmpty then
         let colorless :=
-          (g.permanentsOf pl.id).any (·.printed.unspentManaBecomesColorless)
+          (g.permanentsOf pl.id).any (fun o =>
+            o.printed.unspentManaBecomesColorless && g.retainsPrintedAbilities o)
         let units := pl.manaPool.toUnits
         if colorless then
           g := g.record (GameEvent.manaEmptied g.turnNumber pl.id units true (cause := cause))

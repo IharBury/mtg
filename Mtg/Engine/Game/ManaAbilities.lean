@@ -95,37 +95,36 @@ def restrictionOfText (text : String) : ManaRestriction :=
 private def uniqMana (ts : Array ManaType) : Array ManaType :=
   ts.foldl (fun acc t => if acc.contains t then acc else acc.push t) #[]
 
-/-- Mana a land can produce from its own printed abilities. “Could produce”
-abilities are not included, so two such lands do not look at each other. -/
+/-- Mana a land can produce from its own and granted mana abilities (CR 106.7 /
+605.1a / 613.1f). “Could produce” abilities are not included, so two such lands
+do not look at each other. -/
 def intrinsicLandMana (g : Game) (o : GameObject) : Array ManaType :=
   let c := o.printed
-  if !c.isLand && !c.grantLandsTapAnyColor then #[]
+  if !g.isLand o && !(c.grantLandsTapAnyColor && g.retainsPrintedAbilities o) then #[]
   else
-    let p := o.controller.getD o.owner
-    let identity :=
-      if c.tapAddCommanderIdentity && (g.player p).hasCommander then
-        ((g.player p).commanderColorIdentity.toList.map ManaType.colored).toArray
-      else #[]
-    let pain :=
-      match c.tapAddOneOfDealsDamage with
-      | some (ts, _) => ts
-      | none => #[]
-    let filter :=
-      match c.filterMana with
-      | some (_, ts) => ts
-      | none => #[]
-    let any :=
-      if c.tapAddAnyColor || c.tapSacrificeAddAnyColor then anyColorMana else #[]
-    let lantern :=
-      if o.isOnBattlefield && c.isLand then
-        match o.controller with
-        | some q =>
-          if (g.permanentsOf q).any (·.printed.grantLandsTapAnyColor) then anyColorMana
+    let own :=
+      if !g.retainsPrintedAbilities o then #[]
+      else
+        let p := o.controller.getD o.owner
+        let identity :=
+          if c.tapAddCommanderIdentity && (g.player p).hasCommander then
+            ((g.player p).commanderColorIdentity.toList.map ManaType.colored).toArray
           else #[]
-        | none => #[]
-      else #[]
-    uniqMana (c.simpleTapAddMana ++ c.tapAddOneOf ++ c.tapAddTogether ++
-      pain ++ filter ++ identity ++ any ++ lantern ++ c.tapAddTwoAmong)
+        let pain :=
+          match c.tapAddOneOfDealsDamage with
+          | some (ts, _) => ts
+          | none => #[]
+        let filter :=
+          match c.filterMana with
+          | some (_, ts) => ts
+          | none => #[]
+        let any :=
+          if c.tapAddAnyColor || c.tapSacrificeAddAnyColor then anyColorMana else #[]
+        c.simpleTapAddMana ++ c.tapAddOneOf ++ c.tapAddTogether ++
+          pain ++ filter ++ identity ++ any ++ c.tapAddTwoAmong
+    let lantern :=
+      if g.landHasLanternGrant o then anyColorMana else #[]
+    uniqMana (own ++ lantern ++ g.grantedManaAbilities o ++ g.fraManaAbilities o)
 
 /-- Mana any of `lands` could produce from intrinsic abilities. -/
 def landsCouldProduce (g : Game) (lands : Array GameObject) : Array ManaType :=
@@ -188,11 +187,11 @@ def cardManaAbilities (g : Game) (o : GameObject) (c : CardDef) : Array ManaAbil
    | none => #[]) ++
   (if c.tapAddOppCouldProduce then
     let lands := g.livingOpponents p |>.foldl (fun acc pl =>
-      acc ++ (g.permanentsOf pl.id).filter (·.printed.isLand)) #[]
+      acc ++ (g.permanentsOf pl.id).filter (g.isLand ·)) #[]
     #[{ output := .colorAmong (g.landsCouldProduce lands) }]
    else #[]) ++
   (if c.tapAddYouCouldProduce then
-    let lands := (g.permanentsOf p).filter (fun land => land.printed.isLand && land.id != o.id)
+    let lands := (g.permanentsOf p).filter (fun land => g.isLand land && land.id != o.id)
     #[{ output := .colorAmong (g.landsCouldProduce lands) }]
    else #[])
 
@@ -248,18 +247,12 @@ def grantedManaAbilityDefs (g : Game) (o : GameObject) : Array ManaAbilityDef :=
       | none => acc
     | _ => acc) (#[] : Array ManaAbilityDef)
   let emrakul : Array ManaAbilityDef :=
-    if o.isOnBattlefield && !(g.colorlessGrantUntilCast o).isEmpty then
+    if g.hasActiveColorlessGrant o then
       #[{ output := .fixed #[.colorless, .colorless] }]
     else #[]
   let lantern : Array ManaAbilityDef :=
-    if o.isOnBattlefield && o.printed.isLand then
-      match o.controller with
-      | some p =>
-        if (g.permanentsOf p).any (fun src =>
-            src.printed.grantLandsTapAnyColor && g.retainsPrintedAbilities src) then
-          #[{ output := .oneOf anyColorMana 1 }]
-        else #[]
-      | none => #[]
+    if g.landHasLanternGrant o then
+      #[{ output := .oneOf anyColorMana 1 }]
     else #[]
   granted ++ fra ++ emrakul ++ lantern
 

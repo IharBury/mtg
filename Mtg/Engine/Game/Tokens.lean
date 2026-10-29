@@ -53,9 +53,10 @@ def hopeCountersOnEnter (g : Game) (entering : GameObject) (asOf : Nat) : Nat :=
     else
       (g.permanentsOf p).foldl (fun acc weaver =>
         if weaver.id == entering.id then acc
-        else if !weaver.printed.othersEnterWithPlusOneEqualToughness then acc
+        else if !(weaver.printed.othersEnterWithPlusOneEqualToughness &&
+            g.retainsPrintedAbilities weaver) then acc
         else if weaver.timestamp >= asOf then acc
-        else acc + weaver.toughness.toNat) 0
+        else acc + (g.toughness weaver).toNat) 0
 
 /-- Put `n` additional +1/+1 counters on `o` as it enters from hope-weaver
 replacements. -/
