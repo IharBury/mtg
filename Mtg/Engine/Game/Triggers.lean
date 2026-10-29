@@ -252,7 +252,7 @@ def putMatchingSourceTriggers (g : Game) (controller : PlayerId) (source : GameO
   Id.run do
     let mut g := g
     for ab in (g.matchingTriggers source event ++
-        (g.attachedGrantedTriggers source ++ g.prowessTriggers source).filter (·.firesOn event)).filter keep do
+        (g.prowessTriggers source).filter (·.firesOn event)).filter keep do
       let skipInfinity :=
         match ab.shared with
         | .step .harnessedFlicker => !source.status.harnessed

@@ -2439,17 +2439,6 @@ def grantedTriggersUntilEot (g : Game) (o : GameObject) : Array TriggeredAbility
       if ids.contains o.id then acc ++ add.triggeredAbilities else acc
     | _ => acc) #[]
 
-/-- Evaluated triggered abilities of `o` in Layer 6 (CR 613.1f / 613.7). -/
-def triggeredAbilities (g : Game) (o : GameObject) : Array TriggeredAbility :=
-  if o.status.faceDown then #[]
-  else
-    o.printed.triggeredAbilities ++
-      g.grantedTriggeredAbilities o ++
-      g.grantedTriggersUntilEot o
-
-def matchingTriggers (g : Game) (o : GameObject) (e : TriggerEvent) : Array TriggeredAbility :=
-  (g.triggeredAbilities o).filter (·.firesOn e)
-
 def untilEotKeywords (g : Game) (o : GameObject) : Keywords :=
   g.activeEffects.foldl (fun acc (_, s) =>
     match s with
@@ -4547,10 +4536,14 @@ def currentKeywords (g : Game) (o : GameObject) : Keywords :=
       -- Face-down permanents have no printed abilities (CR 708.2a).
       Keywords.none
     else
+      let printedKw : Keywords :=
+        if o.printed.prowessInstances > 0 then
+          { o.printed.keywords with prowess := true }
+        else o.printed.keywords
       let loreKw : Keywords :=
         if g.loreThresholdProtection o then { hexproof := true, indestructible := true }
         else Keywords.none
-      Keywords.merge (Keywords.merge o.printed.keywords loreKw)
+      Keywords.merge (Keywords.merge printedKw loreKw)
         (g.evalSelfStaticKeywords o o.printed.staticAbilities)
   let scopeMatchesL6 (cur : Keywords) (sc : ObjectScope) : Bool :=
     match sc with
@@ -4596,7 +4589,9 @@ def currentKeywords (g : Game) (o : GameObject) : Keywords :=
                 else Keywords.none
               | .equippedGetsTrampleAndCombatTreasures _ _ => Keyword.trample
               | _ => Keywords.none
-            Keywords.merge (Keywords.merge acc ab.hostKeywords) extra) Keywords.none
+            let unblockable : Keywords :=
+              if ab.equippedCantBeBlocked then Keyword.cantBeBlocked else Keywords.none
+            Keywords.merge (Keywords.merge (Keywords.merge acc ab.hostKeywords) extra) unblockable) Keywords.none
           if strips || addKw != Keywords.none then
             raw := raw.push {
               idx := raw.size
@@ -4784,12 +4779,10 @@ def hasDoubleStrike (g : Game) (o : GameObject) : Bool :=
 def hasIslandwalk (g : Game) (o : GameObject) : Bool :=
   g.hasKeyword o (·.islandwalk)
 
-/-- Whether `o` can't be blocked, printed or granted until end of turn
-(CR 509.1b / 611.2a), or while its power is at most a listed value. -/
+/-- Whether `o` can't be blocked, printed or granted in Layer 6
+(CR 509.1b / 611.2a / 613.1f), or while its power is at most a listed value. -/
 def hasCantBeBlocked (g : Game) (o : GameObject) : Bool :=
   g.hasKeyword o (·.cantBeBlocked) ||
-  g.equippedHexproofUnblockableThisTurn o ||
-  g.equippedCantBeBlockedNow o ||
   (o.isOnBattlefield &&
     (g.staticAbilities o).any (fun ab =>
       match ab.cantBeBlockedIfPowerAtMost? with
@@ -4971,13 +4964,11 @@ def objectManaValue (_g : Game) (o : GameObject) : Nat :=
 def hasTrample (g : Game) (o : GameObject) : Bool :=
   g.hasKeyword o (·.trample)
 
-/-- Keywords including those granted by static abilities and until-EOT effects.
-Only trample (lords) and indestructible (until-EOT loss) differ from
-`printedOrUntilEot`; overlaying the other keywords would restate identity. -/
+/-- Current Layer 6 keywords of `o`, including printed keywords, keyword
+counters, static grants, and continuous effects in timestamp order
+(CR 613.1f / 613.7). -/
 def effectiveKeywords (g : Game) (o : GameObject) : Keywords :=
-  { Keywords.merge (g.printedOrUntilEot o) (g.fraGrantedKeywords o) with
-    indestructible := g.hasIndestructible o
-    trample := g.hasTrample o }
+  g.currentKeywords o
 
 /-- Characteristic power before pumps, counters, and attached bonuses. -/
 def basePower (g : Game) (o : GameObject) : Int :=
@@ -5213,34 +5204,172 @@ def triggerConditionHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbil
     g.fraInterveningHolds controller ab source cause &&
     g.fraConditionHolds controller ab.opts.fraCondition source (cause.map (·.status))
 
-/-- Triggered abilities an attached Equipment grants `o` (Hunter's Axe,
-Medic's Kitesail). -/
-def attachedGrantedTriggers (g : Game) (o : GameObject) : Array TriggeredAbility :=
-  if !o.isOnBattlefield then #[]
-  else
-    g.battlefield.foldl (fun acc eq =>
-      if eq.attachedTo != some o.id then acc
-      else
-        (g.staticAbilities eq).foldl (fun acc ab =>
-          match ab with
-          | .fra .equippedHuntersAxe =>
-            acc.push (TriggeredAbility.fra .attack
-              "Whenever this creature attacks, it gains your choice of trample or deathtouch until end of turn."
-              (.chooseKeyword [0, 3]))
-          | .fra .equippedMedicsKitesail =>
-            acc.push (TriggeredAbility.fra .attack
-              "Whenever this creature attacks, you gain 1 life." (.gainLife 1))
-          | _ => acc) acc) #[]
+private structure TriggerAbEntry where
+  idx : Nat
+  ts : Nat × Nat
+  rem : AbilityRemoval
+  add : Array TriggeredAbility
+deriving Inhabited
 
-/-- Prowess triggers of `o`, one for each instance (CR 702.108). -/
+/-- Evaluated triggered abilities of `o` in Layer 6 (CR 613.1f / 613.7).
+Printed triggers start at `(0, 0)` and attached Aura/Equipment grants or
+removals (`attachmentTimestamp`) and active `.abilities` continuous effects
+(`effectTimestamp`) apply in timestamp order. -/
+def triggeredAbilities (g : Game) (o : GameObject) : Array TriggeredAbility :=
+  if o.status.faceDown then #[]
+  else
+    let scopeOk (sc : ObjectScope) : Bool :=
+      match sc with
+      | .objects ids => ids.contains o.id
+      | .creaturesControlledBy p => o.isOnBattlefield && o.controlledBy p && g.isCreature o
+      | .creaturesWithout kw =>
+        o.isOnBattlefield && g.isCreature o &&
+          Keywords.merge (g.currentKeywords o) kw != g.currentKeywords o
+      | .permanentsOfSubtype p s => o.isOnBattlefield && o.controlledBy p && g.hasSubtype o s
+    Id.run do
+      let mut raw : Array TriggerAbEntry := #[]
+      if o.isOnBattlefield then
+        for att in g.battlefield do
+          if att.attachedTo == some o.id then
+            let attAbs := g.staticAbilities att
+            let strips := attAbs.any fun
+              | .enchantedLosesAbilitiesDoesntUntap => true
+              | .enchantedLosesAbilitiesCantUntap => true
+              | _ => false
+            let addTrigs : Array TriggeredAbility :=
+              attAbs.foldl (fun acc ab =>
+                match ab with
+                | .fra .equippedHuntersAxe =>
+                  acc.push (TriggeredAbility.fra .attack
+                    "Whenever this creature attacks, it gains your choice of trample or deathtouch until end of turn."
+                    (.chooseKeyword [0, 3]))
+                | .fra .equippedMedicsKitesail =>
+                  acc.push (TriggeredAbility.fra .attack
+                    "Whenever this creature attacks, you gain 1 life." (.gainLife 1))
+                | _ => acc) #[]
+            if strips || !addTrigs.isEmpty then
+              raw := raw.push {
+                idx := raw.size
+                ts := g.attachmentTimestamp att o.id
+                rem := if strips then .all else .none
+                add := addTrigs
+              }
+      for pos in [0:g.activeEffects.size] do
+        let (eid, s) := g.activeEffects[pos]!
+        match s with
+        | .layered sc (.abilities add rem) d =>
+          if scopeOk sc && g.durationActive d &&
+              (rem == .all || !add.triggeredAbilities.isEmpty) then
+            raw := raw.push {
+              idx := raw.size
+              ts := g.effectTimestamp eid pos
+              rem := rem
+              add := add.triggeredAbilities
+            }
+        | _ => pure ()
+      let sorted := raw.qsort fun a b =>
+        if a.ts.1 != b.ts.1 then a.ts.1 < b.ts.1
+        else if a.ts.2 != b.ts.2 then a.ts.2 < b.ts.2
+        else a.idx < b.idx
+      let mut acc := o.printed.triggeredAbilities
+      for e in sorted do
+        if e.rem == .all then acc := #[]
+        acc := acc ++ e.add
+      return acc
+
+def matchingTriggers (g : Game) (o : GameObject) (e : TriggerEvent) : Array TriggeredAbility :=
+  (g.triggeredAbilities o).filter (·.firesOn e)
+
+private structure ProwessEntry where
+  idx : Nat
+  ts : Nat × Nat
+  rem : AbilityRemoval
+  addCount : Nat
+deriving Inhabited
+
+/-- Prowess triggers of `o`, one for each instance evaluated in Layer 6
+timestamp order (CR 613.1f / 613.7 / 702.108). -/
 def prowessTriggers (g : Game) (o : GameObject) : Array TriggeredAbility :=
   if !o.isOnBattlefield then #[]
   else
-    let printed := if g.retainsPrintedAbilities o then o.printed.prowessInstances else 0
-    let granted :=
-      (g.attachedGrantedKeywords o).prowess || (g.untilEotKeywords o).prowess ||
-        (g.enduringStoryKeywords o).prowess || (g.leftoverGrantedKeywords o).prowess
-    let n := printed + (if granted then 1 else 0)
+    let initCount : Nat :=
+      if o.status.faceDown then 0
+      else
+        max o.printed.prowessInstances (if o.printed.keywords.prowess then 1 else 0) +
+          (if (g.evalSelfStaticKeywords o o.printed.staticAbilities).prowess then 1 else 0)
+    let scopeOk (sc : ObjectScope) : Bool :=
+      match sc with
+      | .objects ids => ids.contains o.id
+      | .creaturesControlledBy p => o.isOnBattlefield && o.controlledBy p && g.isCreature o
+      | .creaturesWithout kw =>
+        o.isOnBattlefield && g.isCreature o &&
+          Keywords.merge (g.currentKeywords o) kw != g.currentKeywords o
+      | .permanentsOfSubtype p s => o.isOnBattlefield && o.controlledBy p && g.hasSubtype o s
+    let n : Nat := Id.run do
+      let mut raw : Array ProwessEntry := #[]
+      for att in g.battlefield do
+        if att.attachedTo == some o.id then
+          let attAbs := g.staticAbilities att
+          let strips := attAbs.any fun
+            | .enchantedLosesAbilitiesDoesntUntap => true
+            | .enchantedLosesAbilitiesCantUntap => true
+            | _ => false
+          let addCount := attAbs.foldl (fun acc ab =>
+            acc + (if ab.hostKeywords.prowess then 1 else 0)) 0
+          if strips || addCount > 0 then
+            raw := raw.push {
+              idx := raw.size
+              ts := g.attachmentTimestamp att o.id
+              rem := if strips then .all else .none
+              addCount
+            }
+      if let some p := o.controller then
+        for src in g.battlefield do
+          if src.controlledBy p then
+            let teamCount := (g.staticAbilities src).foldl (fun acc ab =>
+              let eqProwess :=
+                g.isCreature o && g.attachedEquipmentCount o > 0 && g.activePlayer == p &&
+                  ab.equippedTeamKeywordsDuringYourTurn.prowess
+              let patProwess :=
+                match ab with
+                | .creaturesWithPlusOneHave k =>
+                  g.isCreature o && o.status.plusOnePlusOne > 0 && k.prowess
+                | .attackingTokensHave k =>
+                  o.status.attacking && o.printed.isToken && k.prowess
+                | _ => false
+              acc + (if eqProwess then 1 else 0) + (if patProwess then 1 else 0)) 0
+            if teamCount > 0 then
+              raw := raw.push {
+                idx := raw.size
+                ts := g.objectEntryTimestamp src
+                rem := .none
+                addCount := teamCount
+              }
+      for pos in [0:g.activeEffects.size] do
+        let (eid, s) := g.activeEffects[pos]!
+        match s with
+        | .layered sc (.abilities add rem) d =>
+          if scopeOk sc && g.durationActive d then
+            let addCount :=
+              (if add.keywords.prowess then 1 else 0) +
+                (if (g.evalSelfStaticKeywords o add.staticAbilities).prowess then 1 else 0)
+            if rem == .all || addCount > 0 then
+              raw := raw.push {
+                idx := raw.size
+                ts := g.effectTimestamp eid pos
+                rem := rem
+                addCount
+              }
+        | _ => pure ()
+      let sorted := raw.qsort fun a b =>
+        if a.ts.1 != b.ts.1 then a.ts.1 < b.ts.1
+        else if a.ts.2 != b.ts.2 then a.ts.2 < b.ts.2
+        else a.idx < b.idx
+      let mut cnt := initCount
+      for e in sorted do
+        if e.rem == .all then cnt := 0
+        cnt := cnt + e.addCount
+      return cnt
     Array.replicate n (TriggeredAbility.fra .youCastNoncreature
       "Prowess (Whenever you cast a noncreature spell, this creature gets +1/+1 until end of turn.)"
       (.onSource (.pump 1 1)))
@@ -5304,7 +5433,7 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
       else
         let abs :=
           (board.matchingTriggers source event ++
-            (board.attachedGrantedTriggers source ++ board.prowessTriggers source).filter (·.firesOn event)).filter keep
+            (board.prowessTriggers source).filter (·.firesOn event)).filter keep
         abs.foldl (fun (w, fs) ab =>
           queueAb board controller source ab event lastKnownPower lastKnownToughness
             cause causeController eventCause w fs) (w, fs)
@@ -5567,20 +5696,21 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
           | some postObj =>
             if postObj.isOnBattlefield && !postObj.status.faceDown then
               if kind == .lore then
-                match postObj.controller, postObj.printed.saga with
-                | some p, some sdef =>
-                  let prevLore := if isZoneArrival then 0 else eo.counters.count .lore
-                  for i in [0:n] do
-                    let lore := prevLore + i + 1
-                    for ch in sdef.chaptersForLore lore do
-                      match ch.chapterEffect with
-                      | some ce =>
-                        let (w, fs) :=
-                          queueAb post p postObj (TriggeredAbility.sagaChapter lore ce) .sagaChapter
-                            (w := waiting) (fs := firedSources)
-                        waiting := w; firedSources := fs
-                      | none => pure ()
-                | _, _ => pure ()
+                if post.retainsPrintedAbilities postObj then
+                  match postObj.controller, postObj.printed.saga with
+                  | some p, some sdef =>
+                    let prevLore := if isZoneArrival then 0 else eo.counters.count .lore
+                    for i in [0:n] do
+                      let lore := prevLore + i + 1
+                      for ch in sdef.chaptersForLore lore do
+                        match ch.chapterEffect with
+                        | some ce =>
+                          let (w, fs) :=
+                            queueAb post p postObj (TriggeredAbility.sagaChapter lore ce) .sagaChapter
+                              (w := waiting) (fs := firedSources)
+                          waiting := w; firedSources := fs
+                        | none => pure ()
+                  | _, _ => pure ()
               else if kind == .plan && !isZoneArrival then
                 match postObj.controller with
                 | some p =>
@@ -5619,7 +5749,7 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
             -- Subtype enter triggers (Balin, Fíli, Kíli, Thorin)
             for src in post.permanentsOf ctrl do
               let self := src.id == entered.id
-              for ab in src.printed.triggeredAbilities ++ post.grantedTriggeredAbilities src do
+              for ab in post.triggeredAbilities src do
                 let opts := ab.opts
                 let fireSub (ev : TriggerEvent) (cond : Bool)
                     (w : Array WaitingTrigger) (fs : Array (ObjectId × TriggeredAbility)) :=
@@ -5905,7 +6035,7 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
               waiting := w; firedSources := fs
             for src in post.permanentsOf p do
               let self := src.id == entered.id
-              for ab in src.printed.triggeredAbilities ++ post.grantedTriggeredAbilities src do
+              for ab in post.triggeredAbilities src do
                 let opts := ab.opts
                 let fireSub (ev : TriggerEvent) (cond : Bool)
                     (w : Array WaitingTrigger) (fs : Array (ObjectId × TriggeredAbility)) :=
@@ -6162,7 +6292,7 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
                     waiting := w; firedSources := fs
                     if post.isCreature srcObj then
                       for o in post.permanentsOf pid do
-                        for ab in o.printed.triggeredAbilities do
+                        for ab in post.triggeredAbilities o do
                           match ab with
                           | .triggered _ _ opts =>
                             match ab.shared, opts.watchedSubtype with
@@ -6194,7 +6324,7 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
                       waiting := w; firedSources := fs
                       if post.isCreature srcObj then
                         for o in post.permanentsOf pid do
-                          for ab in o.printed.triggeredAbilities do
+                          for ab in post.triggeredAbilities o do
                             match ab with
                             | .triggered _ _ opts =>
                               match ab.shared, opts.watchedSubtype with

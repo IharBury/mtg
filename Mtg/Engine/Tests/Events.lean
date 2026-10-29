@@ -4131,7 +4131,8 @@ count as a turn of `p` beginning, so both last until cleanup of `p`'s next turn.
     !gCountersFirst.hasDeathtouch wLost &&
     !gCountersFirst.hasLifelink wLost &&
     !gCountersFirst.hasTrample wLost &&
-    !gCountersFirst.hasIndestructible wLost
+    !gCountersFirst.hasIndestructible wLost &&
+    gCountersFirst.effectiveKeywords wLost == Keywords.none
   -- Refresh `.flying` counter timestamp (CR 613.7c) and add new `.haste` counter after ability loss
   let gRefreshed :=
     (gCountersFirst.recordPutCounters w.id .flying 1 (some me) (cause := some c3)).recordPutCounters
@@ -4145,7 +4146,8 @@ count as a turn of `p` beginning, so both last until cleanup of `p`'s next turn.
     !gRefreshed.hasDeathtouch wRef &&
     !gRefreshed.hasLifelink wRef &&
     !gRefreshed.hasTrample wRef &&
-    !gRefreshed.hasIndestructible wRef
+    !gRefreshed.hasIndestructible wRef &&
+    gRefreshed.effectiveKeywords wRef == { flying := true, haste := true }
   -- Attached loses-abilities Aura ordering (CR 613.7e vs 613.7c):
   -- Counter before attachment is stripped; counter after attachment applies.
   let gBeforeAura :=
@@ -4156,9 +4158,167 @@ count as a turn of `p` beginning, so both last until cleanup of `p`'s next turn.
   let auraOk :=
     !gBeforeAura.hasVigilance wAura &&
     !gBeforeAura.hasDeathtouch wAura &&
-    gBeforeAura.hasLifelink wAura
+    gBeforeAura.hasLifelink wAura &&
+    gBeforeAura.effectiveKeywords wAura == Keyword.lifelink
   strippedOk && refreshedOk && auraOk &&
     noUnclassifiedRulesEvents gRefreshed &&
     noUnclassifiedRulesEvents gBeforeAura
+
+/- Layer 6 CR 613.1f / 613.7 timestamp ordering for `triggeredAbilities`,
+`matchTriggers` (including subtype-enter and combat-damage token arms),
+`hasCantBeBlocked` (Bilbo's Ring and My Precious), and `prowessTriggers`
+(printed and Equipment-granted prowess). -/
+#guard
+  let c1 : EventCause := .oneShotEffect (some ⟨941⟩) none (some me)
+  let c2 : EventCause := .oneShotEffect (some ⟨942⟩) none (some me)
+  let c3 : EventCause := .oneShotEffect (some ⟨943⟩) none (some me)
+  let c4 : EventCause := .oneShotEffect (some ⟨944⟩) none (some me)
+  -- 1. Triggered abilities (printed, granted, attached Equipment, subtype-enter, combat-damage token)
+  let subEnterAb : TriggeredAbility := .onThisOrAnotherSubtypeEntersCreateTokens "Dwarf" .treasure 1
+  let combatTokAb : TriggeredAbility := .onSubtypeYouControlCombatDamageCreateTokens "Dwarf" .treasure 2
+  let preGrantAb : TriggeredAbility :=
+    TriggeredAbility.fra .attack "Whenever this creature attacks, draw a card." (.draw 1)
+  let postGrantAb : TriggeredAbility :=
+    TriggeredAbility.fra .attack "Whenever this creature attacks, you gain 2 life." (.gainLife 2)
+  let captainDef : CardDef :=
+    creature "DwarfCaptain" ManaCost.empty #["Dwarf"] 2 2
+      (triggeredAbilities := #[.onAttackScry 1, subEnterAb, combatTokAb])
+  let strikerDef : CardDef :=
+    creature "DwarfStriker" ManaCost.empty #["Dwarf"] 2 2
+  let kitesailDef : CardDef :=
+    { name := "Test Kitesail"
+      types := #[.artifact]
+      subtypes := #["Equipment"]
+      staticAbilities := #[.fra .equippedMedicsKitesail] }
+  let gT0 :=
+    addPermanent
+      (addPermanent
+        (addPermanent (quiet afterDraw) captainDef me me)
+        strikerDef me me)
+      kitesailDef me me
+  let cap := (gT0.battlefield.filter (·.name == "DwarfCaptain"))[0]!
+  let striker := (gT0.battlefield.filter (·.name == "DwarfStriker"))[0]!
+  let kitesail := (gT0.battlefield.filter (·.name == "Test Kitesail"))[0]!
+  let gEquippedAndGranted :=
+    ((gT0.record (GameEvent.attached gT0.turnNumber kitesail.id cap.id (cause := some c1))).createEffect
+      (.grantedTriggered cap.id preGrantAb false) (cause := some c1)).createEffect
+      (.grantedTriggered cap.id (.onEnterDraw 1) true) (cause := some c1)
+  let beforeTriggerCount := (gEquippedAndGranted.triggeredAbilities (gEquippedAndGranted.object! cap.id)).size
+  let gCapLost :=
+    gEquippedAndGranted.createEffect (.losesAbilitiesUntilEot cap.id) (cause := some c2)
+  let capLostEmpty := (gCapLost.triggeredAbilities (gCapLost.object! cap.id)).isEmpty
+  -- Attacking while abilities are lost queues 0 triggers (neither printed, pre-grant, nor Kitesail)
+  let atkEv :=
+    GameEvent.attackersDeclared gCapLost.turnNumber me
+      #[((gCapLost.object! cap.id).asEvent, .player ⟨1⟩)] (cause := some c3)
+  let gAtkLost := gCapLost.record atkEv
+  -- Dwarf token created OR nontoken Dwarf moved onto battlefield while abilities are lost queues 0 triggers
+  let (gEnterTokLost, _) := gCapLost.createToken me strikerDef (cause := some c3)
+  let gEnterMoveLost := addPermanent gCapLost strikerDef me me
+  -- Striker dealing combat damage to player or battle while DwarfCaptain lost abilities queues 0 triggers
+  let strikeSnap := (gCapLost.object! striker.id).asEvent
+  let gDmgPlayerLost :=
+    gCapLost.record (GameEvent.damagedPlayer gCapLost.turnNumber strikeSnap ⟨1⟩ 2 true (cause := some c3))
+  let battleSnap : EventObject := { name := "TestBattle", owner := ⟨1⟩, zone := .battlefield }
+  let gDmgBattleLost :=
+    gCapLost.record
+      { turn := gCapLost.turnNumber
+        cause := c3
+        change := .rules (.damage (.dealt #[{ source := strikeSnap, recipient := .battle battleSnap, amount := 2, combat := true }])) }
+  -- Post-removal grant and post-removal re-attachment ARE retained and DO fire
+  let gPostGrant :=
+    (gCapLost.createEffect (.grantedTriggered cap.id postGrantAb true) (cause := some c3)).record
+      (GameEvent.attached gCapLost.turnNumber kitesail.id cap.id (cause := some c4))
+  let postTriggers := gPostGrant.triggeredAbilities (gPostGrant.object! cap.id)
+  let gAtkPost :=
+    gPostGrant.record
+      (GameEvent.attackersDeclared gPostGrant.turnNumber me
+        #[((gPostGrant.object! cap.id).asEvent, .player ⟨1⟩)] (cause := some c4))
+  let triggersOk :=
+    beforeTriggerCount == 6 &&
+    capLostEmpty &&
+    gAtkLost.waitingTriggers.isEmpty &&
+    gEnterTokLost.waitingTriggers.isEmpty &&
+    gEnterMoveLost.waitingTriggers.isEmpty &&
+    gDmgPlayerLost.waitingTriggers.isEmpty &&
+    gDmgBattleLost.waitingTriggers.isEmpty &&
+    postTriggers.size == 2 &&
+    postTriggers.contains postGrantAb &&
+    gAtkPost.waitingTriggers.size == 2
+  -- 2. `hasCantBeBlocked` with Bilbo's Ring and My Precious
+  let ringDef : CardDef :=
+    { name := "Test Ring"
+      types := #[.artifact]
+      subtypes := #["Equipment"]
+      staticAbilities := #[.equippedHexproofUnblockableDuringYourTurn] }
+  let preciousDef : CardDef :=
+    { name := "Test Precious"
+      types := #[.artifact]
+      subtypes := #["Equipment"]
+      staticAbilities := #[.equippedCreatureHasKeywordsAndCantBeBlocked Keyword.hexproof] }
+  let gEq0 :=
+    addPermanent
+      (addPermanent
+        (addPermanent (quiet afterDraw) bear me me)
+        ringDef me me)
+      preciousDef me me
+  let host := (gEq0.battlefield.filter (·.name == "Event Bear"))[0]!
+  let ring := (gEq0.battlefield.filter (·.name == "Test Ring"))[0]!
+  let precious := (gEq0.battlefield.filter (·.name == "Test Precious"))[0]!
+  let gRingPre :=
+    gEq0.record (GameEvent.attached gEq0.turnNumber ring.id host.id (cause := some c1))
+  let gRingLost :=
+    gRingPre.createEffect (.losesAbilitiesUntilEot host.id) (cause := some c2)
+  let gRingRe :=
+    gRingLost.record (GameEvent.attached gRingLost.turnNumber ring.id host.id (cause := some c3))
+  let gPrecPre :=
+    gEq0.record (GameEvent.attached gEq0.turnNumber precious.id host.id (cause := some c1))
+  let gPrecLost :=
+    gPrecPre.createEffect (.losesAbilitiesUntilEot host.id) (cause := some c2)
+  let gPrecRe :=
+    gPrecLost.record (GameEvent.attached gPrecLost.turnNumber precious.id host.id (cause := some c3))
+  let unblockableOk :=
+    gRingPre.hasCantBeBlocked (gRingPre.object! host.id) &&
+    gRingPre.hasHexproof (gRingPre.object! host.id) &&
+    !gRingLost.hasCantBeBlocked (gRingLost.object! host.id) &&
+    !gRingLost.hasHexproof (gRingLost.object! host.id) &&
+    gRingRe.hasCantBeBlocked (gRingRe.object! host.id) &&
+    gRingRe.hasHexproof (gRingRe.object! host.id) &&
+    gPrecPre.hasCantBeBlocked (gPrecPre.object! host.id) &&
+    gPrecPre.hasHexproof (gPrecPre.object! host.id) &&
+    !gPrecLost.hasCantBeBlocked (gPrecLost.object! host.id) &&
+    !gPrecLost.hasHexproof (gPrecLost.object! host.id) &&
+    gPrecRe.hasCantBeBlocked (gPrecRe.object! host.id) &&
+    gPrecRe.hasHexproof (gPrecRe.object! host.id)
+  -- 3. `prowessTriggers` with printed prowess and Wizard's Staff
+  let mageDef : CardDef :=
+    { (creature "ProwessMage" ManaCost.empty #["Wizard"] 1 2 (keywords := Keyword.prowess)) with
+      prowessInstances := 1 }
+  let staffDef : CardDef :=
+    { name := "Test Staff"
+      types := #[.artifact]
+      subtypes := #["Equipment"]
+      staticAbilities := #[.equippedCreatureHasKeywords Keyword.prowess] }
+  let gPw0 :=
+    addPermanent (addPermanent (quiet afterDraw) mageDef me me) staffDef me me
+  let mage := (gPw0.battlefield.filter (·.name == "ProwessMage"))[0]!
+  let staff := (gPw0.battlefield.filter (·.name == "Test Staff"))[0]!
+  let gPwPre :=
+    gPw0.record (GameEvent.attached gPw0.turnNumber staff.id mage.id (cause := some c1))
+  let gPwLost :=
+    gPwPre.createEffect (.losesAbilitiesUntilEot mage.id) (cause := some c2)
+  let gPwRe :=
+    gPwLost.record (GameEvent.attached gPwLost.turnNumber staff.id mage.id (cause := some c3))
+  let prowessOk :=
+    (gPwPre.prowessTriggers (gPwPre.object! mage.id)).size == 2 &&
+    (gPwLost.prowessTriggers (gPwLost.object! mage.id)).isEmpty &&
+    !(gPwLost.effectiveKeywords (gPwLost.object! mage.id)).prowess &&
+    (gPwRe.prowessTriggers (gPwRe.object! mage.id)).size == 1 &&
+    (gPwRe.effectiveKeywords (gPwRe.object! mage.id)).prowess
+  triggersOk && unblockableOk && prowessOk &&
+    noUnclassifiedRulesEvents gAtkPost &&
+    noUnclassifiedRulesEvents gRingRe &&
+    noUnclassifiedRulesEvents gPrecRe &&
+    noUnclassifiedRulesEvents gPwRe
 
 end Mtg.Engine.EventTests
