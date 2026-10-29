@@ -153,11 +153,7 @@ def castTriggerBeforeSpellOk : Bool :=
   let bears := namedPermanent g "Grizzly Bears"
   let (g, spell) := g.allocObject helicarrierStrike ⟨0⟩ .stack (some ⟨0⟩)
   let g := g.putStackEntry ⟨0⟩ spell.id
-  let g :=
-    match g.stack.findIdx? (fun e => e.objectId == spell.id) with
-    | none => g
-    | some i =>
-      g.changeStackEntry i (.targets #[Target.permanent bears.id])
+  let g := g.record (GameEvent.targeted g.turnNumber spell.id #[Target.permanent bears.id])
   let g := g.putCastTriggersOnStack ⟨0⟩ (g.object! spell.id)
   let names :=
     (g.waitingTriggers.map (fun (t : WaitingTrigger) => t.source.name))
@@ -240,7 +236,7 @@ def hawkeyePreventionSkipsExtraOk : Bool :=
   let gHit := g.dealDamageFrom src.name (namedPermanent g "Grizzly Bears") 1
     (source := some src)
   (namedPermanent gHit "Grizzly Bears").status.damage == 1 + extra &&
-    (let gPrev := g.changeStatus src.id (.preventDamageGrantedBy #[src.id])
+    (let gPrev := g.createEffect (.preventDamageWhileSource src.id src.id)
      let src := namedPermanent gPrev "Aerial Doombot"
      let gPrev := gPrev.dealDamageFrom src.name (namedPermanent gPrev "Grizzly Bears") 1
        (source := some src)
@@ -254,10 +250,10 @@ def hawkeyePreventionSkipsExtraOk : Bool :=
 def wreckingCrewModesOnceOk : Bool :=
   let g := addPermanent afterDraw theRuinousWreckingCrew ⟨0⟩ ⟨0⟩
   let o := namedPermanent g "The Ruinous Wrecking Crew"
-  let g := g.changeStatus o.id (.chosenModes #[0, 2])
-  let o := namedPermanent g "The Ruinous Wrecking Crew"
-  o.status.chosenModes.contains 0 &&
-    !o.status.chosenModes.contains 1 &&
+  let g := #[0, 2].foldl (fun acc m => acc.record (GameEvent.triggerModeChosen acc.turnNumber o.id m (lifetime := true))) g
+  let chosen := g.modesChosenEver o.id
+  chosen.contains 0 &&
+    !chosen.contains 1 &&
     (mshRuling 700).comment.contains "can't choose the same mode"
 
 #guard wreckingCrewModesOnceOk
@@ -318,7 +314,7 @@ def ironFistMultipleGrantsOk : Bool :=
     (some fist.id)
   let g := g.applyModeledTrigger ⟨0⟩ (.onCasting Effect.castingIronFistTap)
     (some fist.id)
-  (namedPermanent g "Iron Fist, Living Weapon").status.ironFistTapGrants == 2 &&
+  g.ironFistTapGrants (namedPermanent g "Iron Fist, Living Weapon") == 2 &&
     (mshRuling 459).comment.contains "multiple instances"
 
 #guard ironFistMultipleGrantsOk
@@ -331,7 +327,7 @@ def mindStoneAuraReturnOk : Bool :=
   let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
   let aura := namedPermanent g "Super-Soldier Serum"
   let bears := namedPermanent g "Grizzly Bears"
-  let g := g.changeStatus bears.id (.grantUntilEot Keyword.hexproof)
+  let g := g.createEffect (.keywordsUntilEot bears.id Keyword.hexproof)
   let (g, _) := g.move aura.id .exile none
   let ex :=
     (g.objects.find? (fun o => o.name == "Super-Soldier Serum" && o.zone == .exile)).getD aura

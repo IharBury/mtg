@@ -61,14 +61,14 @@ def startWithRng (cfg : StartConfig) : Except String (Game × Rng) := do
         let (rng, r) := rng.next
         let startIdx := r.toNat % g.players.size
         let sp : PlayerId := ⟨startIdx⟩
-        let g1 := g.changes #[.startingPlayer sp, .activePlayer sp, .priority sp]
+        let g1 := g.changes #[.startingPlayer sp, .priority sp]
         let g1 := g1.logMsg s!"Rules: {Mtg.Engine.Rules.identification}"
         let g1 := g1.logMsg s!"Starting player: {g1.player sp |>.name}"
         (rng, g1.continueOpeningShuffles 0)
     | some i =>
       let startIdx := i % g.players.size
       let sp : PlayerId := ⟨startIdx⟩
-      let g1 := g.changes #[.startingPlayer sp, .activePlayer sp, .priority sp]
+      let g1 := g.changes #[.startingPlayer sp, .priority sp]
       let g1 := g1.logMsg s!"Rules: {Mtg.Engine.Rules.identification}"
       let g1 := g1.logMsg s!"Starting player: {g1.player sp |>.name}"
       (rng, g1.continueOpeningShuffles 0)

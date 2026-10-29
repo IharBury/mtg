@@ -129,13 +129,13 @@ def paidPassage : Game := mustApply targetedPassage ⟨0⟩ .pay
 #guard paidPassage.hasPriority ⟨0⟩
 #guard paidPassage.stack.size == 1
 #guard (namedPermanent paidPassage "Rogue's Passage").status.tapped
-#guard !(namedPermanent paidPassage "Gray Ogre").status.untilEotKeywords.cantBeBlocked
+#guard !(paidPassage.untilEotKeywords (namedPermanent paidPassage "Gray Ogre")).cantBeBlocked
 #guard paidPassage.log.any (fun s => mentions s "activates Rogue's Passage")
 
 def passageResolved : Game := passBoth paidPassage
 
 #guard passageResolved.stack.isEmpty
-#guard (namedPermanent passageResolved "Gray Ogre").status.untilEotKeywords.cantBeBlocked
+#guard (passageResolved.untilEotKeywords (namedPermanent passageResolved "Gray Ogre")).cantBeBlocked
 #guard passageResolved.hasCantBeBlocked (namedPermanent passageResolved "Gray Ogre")
 #guard !passageResolved.hasCantBeBlocked (namedPermanent passageResolved "Grizzly Bears")
 #guard passageResolved.log.any (fun s => mentions s "Gray Ogre can't be blocked this turn")
@@ -150,7 +150,7 @@ def passageResolved : Game := passBoth paidPassage
 -- Hexproof makes an opposing creature an illegal target (CR 702.11b).
 #guard
   let bears := namedPermanent proposedPassage "Grizzly Bears"
-  let g := proposedPassage.changeStatus bears.id (.untilEotKeywords Keyword.hexproof)
+  let g := proposedPassage.createEffect (.keywordsUntilEot bears.id Keyword.hexproof)
   match g.apply ⟨0⟩
       (.target (Target.permanent (namedPermanent g "Grizzly Bears").id)) with
   | .error msg => mentions msg "Illegal target"
@@ -169,7 +169,7 @@ def passageTargetGone : Game :=
 def afterPassageCleanup : Game :=
   passBoth (skipTo passageResolved .end 80)
 
-#guard !(namedPermanent afterPassageCleanup "Gray Ogre").status.untilEotKeywords.cantBeBlocked
+#guard !(afterPassageCleanup.untilEotKeywords (namedPermanent afterPassageCleanup "Gray Ogre")).cantBeBlocked
 #guard !afterPassageCleanup.hasCantBeBlocked
   (namedPermanent afterPassageCleanup "Gray Ogre")
 
@@ -359,15 +359,15 @@ def resolvedSmiteOnWurm : Game :=
 
 #guard resolvedSmiteOnWurm.battlefield.any (fun o => o.name == "Craw Wurm")
 #guard (namedPermanent resolvedSmiteOnWurm "Craw Wurm").status.damage == 3
-#guard (namedPermanent resolvedSmiteOnWurm "Craw Wurm").status.untilEotLosesIndestructible
-#guard (namedPermanent resolvedSmiteOnWurm "Craw Wurm").status.untilEotExileIfDies
+#guard resolvedSmiteOnWurm.untilEotLosesIndestructible (namedPermanent resolvedSmiteOnWurm "Craw Wurm")
+#guard resolvedSmiteOnWurm.untilEotExileIfDies (namedPermanent resolvedSmiteOnWurm "Craw Wurm")
 #guard !resolvedSmiteOnWurm.objects.any (fun o =>
   o.name == "Craw Wurm" && o.zone == .exile)
 
 /-- Later this turn, 0 toughness is replaced by exile. -/
 def smiteWurmThenZeroToughness : Game :=
   let o := namedPermanent resolvedSmiteOnWurm "Craw Wurm"
-  let g := resolvedSmiteOnWurm.changeStatus o.id (.pump (o.status.pump.1, -4))
+  let g := resolvedSmiteOnWurm.createEffect (.pump o.id 0 (-4))
   g.receivePriority ⟨0⟩
 
 #guard !(smiteWurmThenZeroToughness.battlefield.any (fun o => o.name == "Craw Wurm"))
@@ -381,8 +381,8 @@ def afterSmiteWurmCleanup : Game :=
   passBoth (skipTo resolvedSmiteOnWurm .end 80)
 
 #guard (namedPermanent afterSmiteWurmCleanup "Craw Wurm").status.damage == 0
-#guard !(namedPermanent afterSmiteWurmCleanup "Craw Wurm").status.untilEotLosesIndestructible
-#guard !(namedPermanent afterSmiteWurmCleanup "Craw Wurm").status.untilEotExileIfDies
+#guard !(afterSmiteWurmCleanup.untilEotLosesIndestructible (namedPermanent afterSmiteWurmCleanup "Craw Wurm"))
+#guard !(afterSmiteWurmCleanup.untilEotExileIfDies (namedPermanent afterSmiteWurmCleanup "Craw Wurm"))
 
 /- `.replace .diesThisTurn .exile`: lethal damage exiles the creature, and
 nonlethal damage leaves the replacement in place. -/
@@ -407,7 +407,7 @@ def exileIfDiesOnWurm : Game :=
 
 #guard exileIfDiesOnWurm.battlefield.any (fun o => o.name == "Craw Wurm")
 #guard (namedPermanent exileIfDiesOnWurm "Craw Wurm").status.damage == 3
-#guard (namedPermanent exileIfDiesOnWurm "Craw Wurm").status.untilEotExileIfDies
+#guard exileIfDiesOnWurm.untilEotExileIfDies (namedPermanent exileIfDiesOnWurm "Craw Wurm")
 
 /-- Printed indestructible ignores lethal damage (CR 702.12b / 704.5g). -/
 def indestructibleSurvivesDamage : Game :=
@@ -604,7 +604,7 @@ def hunterExiledInsteadLeaves : Game :=
   let hunter := namedPermanent g "Fiend Hunter"
   let g := g.exileForLeaveTrigger (some hunter.id) (namedPermanent g "Grizzly Bears")
   let hunter := namedPermanent g "Fiend Hunter"
-  let g := g.changeStatus hunter.id (.untilEotExileIfDies true)
+  let g := g.createEffect (.exileIfDiesUntilEot hunter.id)
   (g.move (namedPermanent g "Fiend Hunter").id (.graveyard ⟨0⟩) none).1
 
 #guard hunterExiledInsteadLeaves.objects.any (fun o =>
@@ -752,7 +752,7 @@ def wargFerociousSourceGone : Game :=
 /-- Ravening Warg itself at power 4 or greater also enables Ferocious. -/
 def wargPumpedToFive : Game :=
   let o := namedPermanent withWarg "Ravening Warg"
-  withWarg.changeStatus o.id (.pump (3, 3))
+  withWarg.createEffect (.pump o.id 3 3)
 
 #guard wargPumpedToFive.power (namedPermanent wargPumpedToFive "Ravening Warg") == 5
 #guard wargPumpedToFive.triggerConditionHolds ⟨0⟩ (.onAttackFerociousGainLife 2)
@@ -828,7 +828,8 @@ def wargVsIndestructibleAfterDamage : Game :=
 #guard !(wargVsIndestructibleAfterDamage.battlefield.any (fun o =>
   o.name == "Ravening Warg"))
 #guard (namedPermanent wargVsIndestructibleAfterDamage "Indestructible Flyer").status.damage == 2
-#guard !(namedPermanent wargVsIndestructibleAfterDamage "Indestructible Flyer").status.dealtDeathtouch
+#guard !(wargVsIndestructibleAfterDamage.deathtouchDealtSinceLastSba
+  (namedPermanent wargVsIndestructibleAfterDamage "Indestructible Flyer").id)
 #guard !wargVsIndestructibleAfterDamage.log.any (fun s =>
   mentions s "Indestructible Flyer dies from deathtouch")
 

@@ -561,15 +561,19 @@ def castExiledAsAbilityResolves (g : Game) (p : PlayerId) (id : ObjectId) :
       throw s!"{face.name} requires a target"
     let cost := g.playManaCost card face
     let pl := g.player p
-    let some pool := pl.manaPool.pay? cost
+    let some (pool, spentUnits) := pl.manaPool.payUnits? cost
       | throw s!"{pl.name} cannot pay {cost}"
-    let g := g.changePlayer p (.manaPool pool)
     let stackBefore := g.stack
     let (g, newId) := g.move id .stack (some p) (verb := some .cast) (actor := some p)
       (cause := some (.gameRule .spellCast))
     let g := g.putStackEntry p newId
     let g := g.record (GameEvent.proposed g.turnNumber newId p card.zone
       (.alternative "permission"))
+    let g :=
+      if spentUnits.isEmpty && !cost.includesManaPayment then g
+      else
+        g.record (GameEvent.manaSpent g.turnNumber p spentUnits newId
+          (cause := some (.costPayment .mana p (some newId))))
     let g := g.change (.pending .none)
     let g := g.logMsg s!"{(g.player p).name} casts {face.name} as the ability resolves"
     if face.requiresTarget then
@@ -929,7 +933,7 @@ partial def finishAfterRandom (g : Game) (grantPriority : Bool) : Game :=
       let n := g.players.size
       let i := if n == 0 then 0 else i % n
       let sp : PlayerId := ⟨i⟩
-      let g := g.changes #[.startingPlayer sp, .activePlayer sp, .priority sp]
+      let g := g.changes #[.startingPlayer sp, .priority sp]
       let g := g.logMsg s!"Starting player: {(g.player sp).name}"
       continueOpeningShuffles g 0
     | .revealRandomCreatureThenBottom _ _ => g
@@ -960,8 +964,16 @@ def supplyOrder (g : Game) (ids : Array ObjectId) : Except String Game := do
       let ids := if ids.isEmpty then pl.library else ids
       if !isPermutation ids pl.library then
         throw "Shuffle must list each library card once (bottom first), or omit the ids to keep the current order"
+      let shuffleCause : EventCause :=
+        match g.afterRandom with
+        | .openingShuffles _ => .gameRule .openingHandDraw
+        | .mulliganQueue _ _ => .gameRule .mulligan
+        | .draw _ _ =>
+          if g.openingHandsPending then .gameRule .mulligan
+          else .oneShotEffect none none (some p)
+        | _ => .oneShotEffect none none (some p)
       let g := g.change (.pending .none)
-      let g := g.changePlayer p (.library ids)
+      let g := g.record (GameEvent.shuffled g.turnNumber p ids (cause := some shuffleCause))
       return g.finishAfterRandom true
     | .orderInto expected dest cause =>
       let ids := if ids.isEmpty then expected else ids
@@ -1123,8 +1135,8 @@ partial def resumePendingReplacement (g : Game) : PendingReplacement → Game
         (source := source) (sourceObj := srcObj) (unpreventable := unpreventable)
         (cause := cause)
     | none => g
-  | .dealAssignedCombatDamage applied =>
-    g.dealAssignedCombatDamage applied
+  | .dealAssignedCombatDamage applied startIdx =>
+    g.dealAssignedCombatDamage applied startIdx
   | .gainLife p n _ cause =>
     g.gainLife p n (cause := cause)
   | .addPlusOnePlusOneTo targetId n entersWith byPlayer cause =>

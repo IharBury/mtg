@@ -191,12 +191,12 @@ def paidTitanPump : Game :=
 #guard paidTitanPump.hasPriority ⟨0⟩
 #guard paidTitanPump.stack.size == 1
 #guard paidTitanPump.log.any (fun s => mentions s "activates Inferno Titan")
-#guard (namedPermanent paidTitanPump "Inferno Titan").status.pumpPower == 0
+#guard (paidTitanPump.pumpOf (namedPermanent paidTitanPump "Inferno Titan")).1 == 0
 
 def pumpedTitan : Game := passBoth paidTitanPump
 
 #guard pumpedTitan.stack.isEmpty
-#guard (namedPermanent pumpedTitan "Inferno Titan").status.pumpPower == 1
+#guard (pumpedTitan.pumpOf (namedPermanent pumpedTitan "Inferno Titan")).1 == 1
 #guard pumpedTitan.power (namedPermanent pumpedTitan "Inferno Titan") == 7
 #guard pumpedTitan.log.any (fun s => mentions s "Inferno Titan gets +1/+0 until end of turn")
 
@@ -207,14 +207,14 @@ def titanPumpedTwice : Game :=
   passBoth (mustApply g ⟨0⟩ .pay)
 
 #guard titanPumpedTwice.power (namedPermanent titanPumpedTwice "Inferno Titan") == 8
-#guard (namedPermanent titanPumpedTwice "Inferno Titan").status.pumpPower == 2
+#guard (titanPumpedTwice.pumpOf (namedPermanent titanPumpedTwice "Inferno Titan")).1 == 2
 
 /-- The +1/+0 wears off in cleanup. -/
 def afterTitanCleanup : Game :=
   passBoth (skipTo pumpedTitan .end 80)
 
 #guard afterTitanCleanup.power (namedPermanent afterTitanCleanup "Inferno Titan") == 6
-#guard (namedPermanent afterTitanCleanup "Inferno Titan").status.pumpPower == 0
+#guard (afterTitanCleanup.pumpOf (namedPermanent afterTitanCleanup "Inferno Titan")).1 == 0
 
 /-- If the source leaves before the pump resolves, the pump does not happen. -/
 def titanPumpSourceGone : Game :=

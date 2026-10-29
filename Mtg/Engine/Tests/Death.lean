@@ -116,7 +116,7 @@ A creature that was not attacking is reported and stays in the graveyard. -/
 def attackerReturns : Game :=
   let g := addPermanent afterDraw aresGodOfWar me me
   let ares := named g "Ares, God of War"
-  let g := g.changeStatuses ares.id #[.attacking true, .attackingWhom (some opp)]
+  let g := g.markAttacking ares.id (some (.player opp))
   let (g, _) := g.move (named g "Ares, God of War").id (.graveyard me) none
   resolve g (TriggeredAbility.onDeath Effect.deathAttackingReturnHand)
 

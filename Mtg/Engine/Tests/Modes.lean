@@ -34,7 +34,8 @@ def modeStep (g : Game) (r : TriggeredAbility.TriggerResolution)
 
 def withModes (modes : Array Nat) : Game :=
   let g := addPermanent afterDraw ally caster caster
-  g.changeStatus (allyOf g).id (.chosenModes modes)
+  let src := allyOf g
+  modes.foldl (fun acc m => acc.record (GameEvent.triggerModeChosen acc.turnNumber src.id m (lifetime := true))) g
 
 def allianceModes : TriggeredAbility.TriggerResolution :=
   .chooseModes TriggeredAbility.TriggerResolution.allianceModes .oneUnusedThisTurn
@@ -85,7 +86,8 @@ removes the ability. A missing source does the same. -/
 
 #guard
   let g0 := addPermanent afterDraw ally caster caster
-  let g0 := g0.changeStatus (allyOf g0).id (.allianceModesChosen #[0, 1, 2])
+  let src := allyOf g0
+  let g0 := #[0, 1, 2].foldl (fun acc m => acc.record (GameEvent.triggerModeChosen acc.turnNumber src.id m)) g0
   let g := modeStep g0 (allianceModes)
     (some (allyOf g0).id)
   g.pending == .none && logContains g "all three modes have been chosen" &&
@@ -103,7 +105,7 @@ three Alliance modes. The source remembers the choice. -/
     (some (allyOf g0).id)
   let g := mustApply g caster (.chooseMode 0)
   (g.player caster).manaPool.green == 3 &&
-    (allyOf g).status.allianceModesChosen == #[0] &&
+    g.modesChosenThisTurn (allyOf g).id == #[0] &&
     logContains g "adds mana"
 
 #guard
@@ -112,7 +114,7 @@ three Alliance modes. The source remembers the choice. -/
     (some (allyOf g0).id)
   let g := mustApply g caster (.chooseMode 1)
   (g.battlefield.filter (·.isCreature)).all (·.status.plusOnePlusOne == 1) &&
-    (allyOf g).status.allianceModesChosen == #[1]
+    g.modesChosenThisTurn (allyOf g).id == #[1]
 
 #guard
   let g0 := addPermanent afterDraw ally caster caster
@@ -125,7 +127,7 @@ three Alliance modes. The source remembers the choice. -/
   | .scry .. => false
   | _ =>
     handSize g caster == before + 1 &&
-      (allyOf g).status.allianceModesChosen == #[2]
+      g.modesChosenThisTurn (allyOf g).id == #[2]
 
 /- Gollum offers one unused mode. The choice lasts for the source's
 lifetime, and spending every mode leaves the source on the battlefield. -/
@@ -143,25 +145,26 @@ lifetime, and spending every mode leaves the source on the battlefield. -/
   let g := modeStep g0 (gollumModes) (some (allyOf g0).id)
   let g := mustApply g caster (.chooseMode 0)
   (allyOf g).status.plusOnePlusOne == 1 &&
-    (allyOf g).status.chosenModes == #[0]
+    g.modesChosenEver (allyOf g).id == #[0]
 
 #guard
   let g0 := addPermanent afterDraw ally caster caster
   let g := modeStep g0 (gollumModes) (some (allyOf g0).id)
   let g := mustApply g caster (.chooseMode 1)
   (g.player opponent).life == 18 && (g.player caster).life == 22 &&
-    (allyOf g).status.chosenModes == #[1]
+    g.modesChosenEver (allyOf g).id == #[1]
 
 #guard
   let g0 := addPermanent afterDraw ally caster caster
   let before := handSize g0 caster
   let g := modeStep g0 (gollumModes) (some (allyOf g0).id)
   let g := mustApply g caster (.chooseMode 2)
-  handSize g caster == before + 1 && (allyOf g).status.chosenModes == #[2]
+  handSize g caster == before + 1 && g.modesChosenEver (allyOf g).id == #[2]
 
 #guard
   let g0 := addPermanent afterDraw ally caster caster
-  let g0 := g0.changeStatus (allyOf g0).id (.chosenModes #[0, 1, 2])
+  let src := allyOf g0
+  let g0 := #[0, 1, 2].foldl (fun acc m => acc.record (GameEvent.triggerModeChosen acc.turnNumber src.id m (lifetime := true))) g0
   let g := modeStep g0 (gollumModes) (some (allyOf g0).id)
   g.battlefield.any (·.name == "Test Ally") && g.pending == .none &&
     logContains g "all three modes have been chosen"
@@ -185,7 +188,8 @@ means the sacrifice mode finds it already gone. -/
 #guard
   let g0 := addPermanent afterDraw ally caster caster
   let (g0, tok) := g0.createToken caster Game.soldier11whiteToken
-  let g0 := g0.changeStatus (allyOf g0).id (.chosenModes #[2, 3])
+  let src := allyOf g0
+  let g0 := #[2, 3].foldl (fun acc m => acc.record (GameEvent.triggerModeChosen acc.turnNumber src.id m (lifetime := true))) g0
   let g := modeStep g0 (upToXModes) (some (allyOf g0).id)
     #[Target.permanent tok.id, Target.permanent tok.id]
   !g.battlefield.any (fun o => o.id == tok.id) &&
@@ -219,7 +223,8 @@ means the sacrifice mode finds it already gone. -/
 #guard
   let g0 := addPermanent afterDraw ally caster caster
   let (g0, tok) := g0.createToken caster Game.soldier11whiteToken
-  let g0 := g0.changeStatus (allyOf g0).id (.chosenModes #[2, 3])
+  let src := allyOf g0
+  let g0 := #[2, 3].foldl (fun acc m => acc.record (GameEvent.triggerModeChosen acc.turnNumber src.id m (lifetime := true))) g0
   let g := g0.applyTriggeredAbility caster (.onEnter Effect.enterChooseUpToXModes)
     (some (allyOf g0).id) #[Target.permanent tok.id, Target.permanent tok.id]
   !g.battlefield.any (fun o => o.id == tok.id) &&

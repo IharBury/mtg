@@ -90,7 +90,7 @@ def struckerMayConnive : Game :=
 def struckerConnived : Game :=
   mustApply struckerMayConnive ⟨0⟩ .haveVillainConnive
 
-#guard (namedPermanent struckerConnived "Baron Strucker, HYDRA Overlord").status.optionalOnceUsed
+#guard struckerConnived.optionalOnceUsedThisTurn (namedPermanent struckerConnived "Baron Strucker, HYDRA Overlord").id
 #guard (struckerConnived.player ⟨0⟩).hand.size ==
   (struckerMayConnive.player ⟨0⟩).hand.size + 1
 #guard struckerConnived.log.any (fun s => mentions s "connives")
@@ -98,7 +98,7 @@ def struckerConnived : Game :=
 def struckerDeclinedConnive : Game :=
   mustApply struckerMayConnive ⟨0⟩ .decline
 
-#guard !(namedPermanent struckerDeclinedConnive "Baron Strucker, HYDRA Overlord").status.optionalOnceUsed
+#guard !struckerDeclinedConnive.optionalOnceUsedThisTurn (namedPermanent struckerDeclinedConnive "Baron Strucker, HYDRA Overlord").id
 #guard (struckerDeclinedConnive.player ⟨0⟩).hand.size ==
   (struckerMayConnive.player ⟨0⟩).hand.size
 #guard struckerDeclinedConnive.log.any (fun s => mentions s "declines to have the Villain connive")
@@ -162,7 +162,7 @@ def okoyeSoldiers : Game := settle (mshEnter afterDraw okoyeDoraMilajeLeader) 24
 def pantherCombatDraw : Game :=
   let g := addPermanent afterDraw blackPantherHopeEnduring ⟨0⟩ ⟨0⟩
   let o := namedPermanent g "Black Panther, Hope Enduring"
-  let g := g.changeStatuses o.id #[.attacking true, .summoningSick false]
+  let g := (g.markAttacking o.id).changeStatus o.id (.summoningSick false)
   settle g.combatDamage 24
 
 #guard (pantherCombatDraw.player ⟨0⟩).hand.size ≥ 8
@@ -374,8 +374,8 @@ def paidStature : Game := mustApply statureXChosen ⟨0⟩ .pay
 #guard paidStature.hasPriority ⟨0⟩
 #guard paidStature.stack.size == 1
 #guard (namedPermanent paidStature "Stature, Size Shifter").status.plusOnePlusOne == 0
-#guard (namedPermanent paidStature "Stature, Size Shifter").status.powerUpUsed
-#guard (namedPermanent paidStature "Stature, Size Shifter").status.powerUpActivations == 1
+#guard paidStature.powerUpUsed (namedPermanent paidStature "Stature, Size Shifter").id
+#guard paidStature.powerUpActivations (namedPermanent paidStature "Stature, Size Shifter").id == 1
 
 def staturePowerUpResolved : Game := passBoth paidStature
 
@@ -411,7 +411,7 @@ def statureXZeroUsed : Game :=
   let g := mustApply proposedStature ⟨0⟩ (.chooseX 0)
   mustApply g ⟨0⟩ .pay
 
-#guard (namedPermanent statureXZeroUsed "Stature, Size Shifter").status.powerUpUsed
+#guard statureXZeroUsed.powerUpUsed (namedPermanent statureXZeroUsed "Stature, Size Shifter").id
 #guard
   let o := namedPermanent statureXZeroUsed "Stature, Size Shifter"
   !statureXZeroUsed.canActivate ⟨0⟩ o o.printed.activatedAbilities[0]!
@@ -512,7 +512,7 @@ def bilboRingEquipped : Game :=
   (namedPermanent bilboRingEquipped "Grizzly Bears")
 
 def bilboRingOnNissaTurn : Game :=
-  bilboRingEquipped.change (.activePlayer ⟨1⟩)
+  { bilboRingEquipped with activePlayer := ⟨1⟩ }
 
 #guard !bilboRingOnNissaTurn.hasHexproof
   (namedPermanent bilboRingOnNissaTurn "Grizzly Bears")
@@ -762,8 +762,8 @@ def titaniaFreeCastReady : Game :=
   let g := readyMain (emptyHand afterDraw ⟨0⟩)
   let g := addToHand (addToHand g titaniaRuggedRumbler ⟨0⟩) forest ⟨0⟩
   let card := handCardNamed g ⟨0⟩ "Titania, Rugged Rumbler"
-  g.changeObject card.id (.playPermission (some {
-    player := ⟨0⟩, turnEndsRemaining := 1, withoutManaCost := true }))
+  g.createEffect (.playPermission card.id {
+    player := ⟨0⟩, withoutManaCost := true } 1)
 
 def titaniaFreeCastViaDiscard : Game :=
   let g := mustApply titaniaFreeCastReady ⟨0⟩
@@ -852,8 +852,8 @@ def lukeCageAttacksAlone : Game :=
   g.applyTriggeredAbility ⟨0⟩ (.onThisAttack Effect.thisAttackAttacksAlonePlus2Indestructible)
     (some src.id)
 
-#guard (namedPermanent lukeCageAttacksAlone "Luke Cage, Power Man").status.pump == (2, 0)
-#guard (namedPermanent lukeCageAttacksAlone "Luke Cage, Power Man").status.untilEotKeywords.indestructible
+#guard lukeCageAttacksAlone.pumpOf (namedPermanent lukeCageAttacksAlone "Luke Cage, Power Man") == (2, 0)
+#guard (lukeCageAttacksAlone.untilEotKeywords (namedPermanent lukeCageAttacksAlone "Luke Cage, Power Man")).indestructible
 
 /-- Mockingbird's leftover constructor puts a +1/+1 on the source. -/
 def mockingbirdPlusOneThis : Game :=
@@ -875,7 +875,7 @@ def nontokenHeroModalPump : Game :=
 
 #guard (nontokenHeroModalSoldier.battlefield.filter (fun o =>
   o.printed.isToken && o.printed.hasSubtype .soldier)).size == 1
-#guard (namedPermanent nontokenHeroModalPump "Grizzly Bears").status.pump == (1, 1)
+#guard nontokenHeroModalPump.pumpOf (namedPermanent nontokenHeroModalPump "Grizzly Bears") == (1, 1)
 
 /-- Second-draw drain leftover: each opponent loses 1 and you gain 1. -/
 def secondDrawDrain : Game :=
@@ -917,7 +917,7 @@ def flyerVsHawkeyeBow : Game :=
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
   let g := addAttachedAura g hawkeyeSBow (namedPermanent g "Grizzly Bears") ⟨1⟩ ⟨1⟩
   let smaug := namedPermanent g "Smaug, the Great Calamity"
-  g.changeStatus smaug.id (.attacking true)
+  g.markAttacking smaug.id
 
 #guard flyerVsHawkeyeBow.canBlock
   (namedPermanent flyerVsHawkeyeBow "Grizzly Bears")
@@ -926,7 +926,7 @@ def flyerVsHawkeyeBow : Game :=
   let g := addPermanent started smaugTheGreatCalamity ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
   let smaug := namedPermanent g "Smaug, the Great Calamity"
-  let g := g.changeStatus smaug.id (.attacking true)
+  let g := g.markAttacking smaug.id
   !g.canBlock (namedPermanent g "Grizzly Bears")
     (namedPermanent g "Smaug, the Great Calamity")
 

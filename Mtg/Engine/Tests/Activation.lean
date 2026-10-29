@@ -234,7 +234,7 @@ def activatedHunter : Game :=
 #guard !(activatedHunter.battlefield.any (fun o => o.name == "Raging Goblin"))
 #guard (activatedHunter.player ⟨0⟩).graveyard.any (fun id =>
   (activatedHunter.object! id).name == "Raging Goblin")
-#guard (namedPermanent activatedHunter "Snowslope Hunter").status.activationsThisTurn == 1
+#guard activatedHunter.activationsThisTurn (namedPermanent activatedHunter "Snowslope Hunter").id == 1
 #guard activatedHunter.log.any (fun s => mentions s "sacrifices Raging Goblin")
 #guard activatedHunter.log.any (fun s => mentions s "activates Snowslope Hunter")
 
@@ -506,7 +506,7 @@ def siegeAttackDeclared : Game :=
 def siegePumpResolved : Game := passBoth siegeAttackDeclared
 
 #guard siegePumpResolved.stack.isEmpty
-#guard (namedPermanent siegePumpResolved "Orcish Siegemaster").power == 3
+#guard siegePumpResolved.power (namedPermanent siegePumpResolved "Orcish Siegemaster") == 3
 #guard siegePumpResolved.log.any (fun s => mentions s "gets +3/+0 until end of turn")
 #guard siegePumpResolved.step == .declareAttackers
 
@@ -535,7 +535,7 @@ def siegeAloneResolved : Game :=
   let g := mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Orcish Siegemaster").id])
   passBoth g
 
-#guard (namedPermanent siegeAloneResolved "Orcish Siegemaster").power == 0
+#guard siegeAloneResolved.power (namedPermanent siegeAloneResolved "Orcish Siegemaster") == 0
 #guard siegeAloneResolved.log.any (fun s => mentions s "gets +0/+0 until end of turn")
 
 /-- Opponent creatures do not count toward X. -/
@@ -546,7 +546,7 @@ def siegeVsWurmResolved : Game :=
   let g := mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Orcish Siegemaster").id])
   passBoth g
 
-#guard (namedPermanent siegeVsWurmResolved "Orcish Siegemaster").power == 0
+#guard siegeVsWurmResolved.power (namedPermanent siegeVsWurmResolved "Orcish Siegemaster") == 0
 
 /-- X uses current power, including until-end-of-turn pumps. -/
 def siegePumpedGiantResolved : Game :=
@@ -558,8 +558,8 @@ def siegePumpedGiantResolved : Game :=
   let g := mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Orcish Siegemaster").id])
   passBoth g
 
-#guard (namedPermanent siegePumpedGiantResolved "Hill Giant").power == 5
-#guard (namedPermanent siegePumpedGiantResolved "Orcish Siegemaster").power == 5
+#guard siegePumpedGiantResolved.power (namedPermanent siegePumpedGiantResolved "Hill Giant") == 5
+#guard siegePumpedGiantResolved.power (namedPermanent siegePumpedGiantResolved "Orcish Siegemaster") == 5
 #guard siegePumpedGiantResolved.log.any (fun s => mentions s "gets +5/+0 until end of turn")
 
 /-- If the source leaves before the trigger resolves, the pump does not happen. -/
@@ -572,13 +572,13 @@ def siegeSourceGone : Game :=
 #guard siegeSourceGone.stack.isEmpty
 #guard !(siegeSourceGone.battlefield.any (fun o => o.name == "Orcish Siegemaster"))
 #guard siegeSourceGone.log.any (fun s => mentions s "source is no longer in play")
-#guard (namedPermanent siegeSourceGone "Hill Giant").status.pumpPower == 0
+#guard (siegeSourceGone.pumpOf (namedPermanent siegeSourceGone "Hill Giant")).1 == 0
 
 /-- The +X/+0 wears off in cleanup. -/
 def afterSiegeCleanup : Game := passBoth (skipTo siegePumpResolved .end 80)
 
-#guard (namedPermanent afterSiegeCleanup "Orcish Siegemaster").power == 0
-#guard (namedPermanent afterSiegeCleanup "Orcish Siegemaster").status.pumpPower == 0
+#guard afterSiegeCleanup.power (namedPermanent afterSiegeCleanup "Orcish Siegemaster") == 0
+#guard (afterSiegeCleanup.pumpOf (namedPermanent afterSiegeCleanup "Orcish Siegemaster")).1 == 0
 
 /-- Printed trample still assigns leftover damage (Beorn 5/5 vs Grizzly Bears 2/2). -/
 def afterBeornTrample : Game :=

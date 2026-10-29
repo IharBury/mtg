@@ -17,7 +17,7 @@ def drawOneCard (g : Game) (p : PlayerId)
     (cause : Option EventCause := none) : Game :=
   let pl := g.player p
   if pl.library.isEmpty then
-    let g := g.changePlayer p (.drewFromEmpty true)
+    let g := g.record (GameEvent.drawFromEmptyAttempted g.turnNumber p (cause := cause))
     g.logMsg s!"{pl.name} tries to draw from an empty library"
   else
     let top := pl.library.back!
@@ -51,7 +51,7 @@ partial def drawOneWithReplacements (g : Game) (p : PlayerId)
     (firstOfYourDrawStep? : Option Bool := none)
     (cause : Option EventCause := none) : Game :=
   let pl := g.player p
-  if pl.drewFromEmpty then g
+  if g.drewFromEmpty p then g
   else
     let firstOfYourDrawStep :=
       firstOfYourDrawStep?.getD
@@ -72,7 +72,7 @@ partial def drawOneWithReplacements (g : Game) (p : PlayerId)
         let mut acc : Array (ReplacementSpec × Nat) := #[]
         if !firstOfYourDrawStep then
           for o in g.permanentsOf p do
-            if o.printed.drawTwoExceptFirstDrawStep then
+            if o.printed.drawTwoExceptFirstDrawStep && g.retainsPrintedAbilities o then
               acc := acc.push (
                 { id := { kind := .drawTwoExceptFirstDrawStep, object := some o.id }
                   source := some o.id
@@ -113,7 +113,7 @@ partial def drawSubDraws (g : Game) (p : PlayerId) (remaining : Nat)
     (applied : Array ReplacementId) (cause : Option EventCause := none) : Game := Id.run do
   let mut g := g
   for i in [0:remaining] do
-    if (g.player p).drewFromEmpty then
+    if g.drewFromEmpty p then
       return g
     g := g.drawOneWithReplacements p (applied := applied) (cause := cause)
     if g.pending != .none then
@@ -134,7 +134,7 @@ def draw (g : Game) (p : PlayerId) (n : Nat := 1)
       let firstOfTheirDrawStep :=
         g.step == .draw && g.activePlayer == p &&
           !GameEvent.drewFirstOfDrawStep g.events g.turnNumber p
-      if n == 0 || pl.drewFromEmpty || pl.library.isEmpty || !pl.keptOpeningHand ||
+      if n == 0 || g.drewFromEmpty p || pl.library.isEmpty || !pl.keptOpeningHand ||
           firstOfTheirDrawStep then
         (g, none)
       else
@@ -150,8 +150,7 @@ def draw (g : Game) (p : PlayerId) (n : Nat := 1)
   Id.run do
     let mut g := g0
     for i in [0:n] do
-      let pl := g.player p
-      if pl.drewFromEmpty then
+      if g.drewFromEmpty p then
         return g
       g := g.drawOneWithReplacements p (cause := cause?)
       if g.pending != .none then
@@ -265,16 +264,6 @@ def requestOrderInto (g : Game) (ids : Array ObjectId) (dest : Zone)
     g.moveIdsInOrder ids dest (cause := cause) |>.logMsg log
   else
     (g.change (.pending (.resolveRandom (.orderInto ids dest cause)))).logMsg log
-
-/-- The `EventCause` recorded on the most recent zone-change event that moved
-an object into `id`. Used to thread a one-shot instruction's `EffectId` across
-multi-step library reveal / exile / bottom-of-library effects. -/
-def lastMoveCauseOf? (g : Game) (id : ObjectId) : Option EventCause :=
-  g.events.findSomeRev? fun e =>
-    match e.change with
-    | .rules (.zone (.moved _ after ..)) =>
-      if after.id == some id then some e.cause else none
-    | _ => none
 
 /-- Put `ids` on the bottom of `p`'s library in a random order. The rest of
 the library stays above them, in its current order. -/

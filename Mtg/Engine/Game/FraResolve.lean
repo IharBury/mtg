@@ -196,7 +196,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
         s!"{(g.player controller).name} may sacrifice a planeswalker"
     else g.logMsg s!"{(g.player controller).name} controls no planeswalker to sacrifice"
   | .plusOnePerThreeGraveyardOnRecentIfFromGy =>
-    let fromGy := (g.resolvingSpell.bind g.findObject?).any (·.castFromGraveyard)
+    let fromGy := g.resolvingSpell.any g.castFromGraveyard
     let counters := if fromGy then (g.player controller).graveyard.size / 3 else 0
     if counters == 0 then g
     else
@@ -212,7 +212,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
         | some o => g.grantKeywordsUntilEot o Keyword.haste
         | none => g) g
   | .drawOneOrTwoIfNotFromHand =>
-    let fromHand := (g.resolvingSpell.bind g.findObject?).any (·.castFromHand)
+    let fromHand := g.resolvingSpell.any g.castFromHand
     g.draw controller (if fromHand then 1 else 2)
   | .destroyAt index =>
     match g.legalPermanentAt? controller kind targets index sourceId with
@@ -237,7 +237,8 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
       if mv ≤ n && !o.printed.isToken then
         let (g, back) := g.putOntoBattlefield exiled controller (tapped := true) (cause := some cause)
         let g := g.logMsg s!"{o.name} returns to the battlefield tapped under {(g.player controller).name}'s control"
-        let g := g.change (.pushDelayedEndStepExile back cause)
+        let src := (sourceId.bind g.findObject?).orElse (fun _ => g.findObject? back)
+        let g := g.change (.pushDelayedTrigger { controller, source := src, kind := .endStepExile back, cause })
         g.afterPermanentEnters (g.object! back)
       else g) sourceId illegal
   | .eachPlayerMayWheel n =>
@@ -340,7 +341,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     g.beginFraChoice controller (.mayPayThen n .reflexiveDestroyPerOpponent sourceId)
       s!"{(g.player controller).name} may pay \{{n}}"
   | .damageX =>
-    let x := (sourceId.bind g.findObject?).bind (·.chosenX) |>.getD 0
+    let x := (sourceId.bind g.chosenXOf?).getD 0
     g.withLegalKindTarget controller kind targets (fun g t =>
       match t with
       | Target.player pid => g.dealDamageToPlayer pid x (source := src?)
@@ -378,7 +379,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
       g.beginFraChoice controller (.mayDiscardThen (.reflexiveDamageAnyTarget n) sourceId)
         s!"{(g.player controller).name} may discard a card"
   | .maySearchLandsEqualDamage =>
-    let n := (g.resolvingAbilityObject?.bind (·.lastKnownPower)).getD 0 |>.toNat
+    let n := ((lastKnownPower.orElse (fun _ => g.resolvingAbility.bind g.lastKnownPowerOf?)).getD 0).toNat
     if n == 0 then g
     else
       g.beginFraChoice controller (.mayThen (.searchLandsTapped n) sourceId)
@@ -467,7 +468,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
       }
       let g := g.record (GameEvent.created g.turnNumber controller (g.snapshot copyObj) (cause := cause?))
       let g := g.createEffect (.playPermission copyId {
-        player := controller, turnEndsRemaining := 0,
+        player := controller,
         whileExiled := true, withoutManaCost := true, ignoreTiming := true })
         (cause := cause?)
       (g, cs.push copyId)) (g, #[])
@@ -498,7 +499,6 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
           controller := some controller
           zone := .stack
           isCopy := true
-          wasCast := false
         }
         let g := g.record (GameEvent.stackObjectCopied g.turnNumber spell.id copySnap controller
           (cause := g.resolvingOneShotCause controller sourceId))
@@ -588,7 +588,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     | some land => if g.hasSubtype land .mountain then g.addManaLogged controller #[.colored .red] else g
     | none => g
   | .fblthpSearch =>
-    let x := (sourceId.bind g.findObject?).bind (·.chosenX) |>.getD 0
+    let x := (sourceId.bind g.chosenXOf?).getD 0
     let (g, _) := (g.player controller).library.foldl (fun (acc : Game × Array String) id =>
       let (g, names) := acc
       if names.size ≥ x then acc
@@ -630,7 +630,9 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
           | some o =>
             let shielded :=
               match o.controller with
-              | some c => (g.permanentsOf c).any (·.printed.creaturesCantGetMinusCounters)
+              | some c =>
+                (g.permanentsOf c).any (fun src =>
+                  src.printed.creaturesCantGetMinusCounters && g.retainsPrintedAbilities src)
               | none => false
             if o.isOnBattlefield && o.isCreature && g.canBeTargetedBy controller o && x > 0 &&
                 !shielded then
@@ -674,8 +676,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
         g.withLegalKindPermanent controller kind targets (fun g o =>
           let (g, linkCause) := g.allocDelayedCause (some controller) sourceId
           let (g, ex) := g.move o.id .exile none (cause := some linkCause)
-          let g := (g.changeObject src.id (.pushLinkedExile ex)).change
-            (.setLinkedExileCause ex (some linkCause))
+          let g := g.changeObject src.id (.pushLinkedExile ex)
           g.logMsg s!"{o.name} is exiled until {src.name} leaves the battlefield") sourceId illegal
     | none => g
   | .destroyEachTarget =>

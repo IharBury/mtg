@@ -22,8 +22,10 @@ def zeroZero : CardDef :=
   creature "Zero/Zero" ManaCost.empty #[] 0 0
 
 def addPumpedCreature (g : Game) (card : CardDef) (pumpP pumpT : Int) : Game :=
-  insertObject g card g.activePlayer .battlefield (some g.activePlayer)
-    { pump := (pumpP, pumpT), summoningSick := false }
+  let g := insertObject g card g.activePlayer .battlefield (some g.activePlayer)
+    { summoningSick := false }
+  let o := g.battlefield.back!
+  g.createEffect (.pump o.id pumpP pumpT)
 
 /-- CR 514.3: after both players pass in the end step, cleanup does not grant
 priority, so the next player's upkeep begins immediately. -/
@@ -110,7 +112,7 @@ def afterBolt : Game :=
 def attackingGoblin : Game :=
   let g := addPermanent started ragingGoblin ⟨0⟩ ⟨0⟩
   let o := lastPermanent g
-  g.changeStatus o.id (.attacking true)
+  g.markAttacking o.id
 
 def afterCombatDamage : Game := attackingGoblin.combatDamage
 

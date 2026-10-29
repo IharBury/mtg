@@ -33,7 +33,7 @@ partial def beginSacDamagers (g : Game) (controller : PlayerId)
     let rest := opponents.extract 1 opponents.size
     let ids :=
       ((g.creaturesControlledBy p).filter (fun o =>
-        o.status.combatDamageToPlayers.contains controller)).map (·.id)
+        (g.combatDamageToPlayers o.id).contains controller)).map (·.id)
     if ids.isEmpty then
       let g :=
         g.logMsg s!"{(g.player p).name} controls no creature that dealt combat damage this turn"
@@ -81,14 +81,14 @@ def applyAllianceMode (g : Game) (sourceId : ObjectId) (mode : Nat) : Game :=
   | none =>
     g.logMsg "The ability is removed from the stack with no effect"
   | some src =>
-    if src.status.allianceModesChosen.size >= 3 ||
-        (g.unusedAllianceModes src).isEmpty then
+    let chosen := g.modesChosenThisTurn sourceId
+    if chosen.size >= 3 || (g.unusedAllianceModes src).isEmpty then
       g.logMsg
         "all three modes have been chosen this turn. The ability is removed from the stack with no effect"
-    else if src.status.allianceModesChosen.contains mode then
+    else if chosen.contains mode then
       g.logMsg "That Alliance mode has already been chosen this turn"
     else
-      let g := g.changeStatus sourceId (.pushAllianceModeChosen mode)
+      let g := g.record (GameEvent.triggerModeChosen g.turnNumber sourceId mode)
       match src.controller, mode with
       | some c, 0 =>
         let g := g.changePlayer c (.addMana (.colored .green) 3)
@@ -112,13 +112,14 @@ def applyGollumMode (g : Game) (sourceId : ObjectId) (mode : Nat) : Game :=
   | none =>
     g.logMsg "The ability is removed from the stack with no effect"
   | some src =>
+    let chosen := g.modesChosenEver sourceId
     if (g.unusedGollumModes src).isEmpty then
       g.logMsg
         "all three modes have been chosen. The ability is removed from the stack with no effect"
-    else if src.status.chosenModes.contains mode then
+    else if chosen.contains mode then
       g.logMsg "That mode has already been chosen"
     else
-      let g := g.changeStatus sourceId (.pushChosenMode mode)
+      let g := g.record (GameEvent.triggerModeChosen g.turnNumber sourceId mode (lifetime := true))
       match src.controller, mode with
       | some _, 0 =>
         g.addPlusOnePlusOneTo (g.object! sourceId) 1
@@ -142,10 +143,9 @@ def offerChooseModes (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
   | some src =>
     let memory :=
       match how with
-      | .oneUnusedThisTurn => src.status.allianceModesChosen
-      | .vision => src.status.modesChosenThisTurn
+      | .oneUnusedThisTurn | .vision => g.modesChosenThisTurn src.id
       | .oneUnused | .alreadyChosen | .plusOneOrRemoveCounter | .fromLastKnown =>
-        src.status.chosenModes
+        g.modesChosenEver src.id
     let available := unusedModes memory (List.range modes.length).toArray
     match src.controller with
     | none => g.logMsg "The ability is removed from the stack with no effect"
@@ -223,9 +223,8 @@ revealed cards on the bottom of their owner's library in a random order. -/
 def resolveRandomCreatureReveal (g : Game) (p : PlayerId) (revealed : Array ObjectId)
     (chosen : ObjectId) (cause : Option EventCause := none) : Game :=
   let stashed :=
-    cause.orElse (fun _ =>
-      revealed[0]?.bind (fun id => (g.linkedExileCauses.find? (·.1 == id)).map (·.2)))
-  let g := revealed.foldl (fun g id => g.change (.setLinkedExileCause id none)) g
+    cause.orElse (fun _ => g.stashedCause.orElse (fun _ => revealed[0]?.bind g.lastMoveCauseOf?))
+  let g := if g.stashedCause.isSome then g.change (.stashedCause none) else g
   let (g, cause) : Game × Option EventCause :=
     match stashed with
     | some c => (g, some c)
@@ -290,10 +289,10 @@ def causeAndSourcePT? (g : Game) (sourceId : Option ObjectId) (targets : Array T
         else
           let op :=
             if other.isOnBattlefield then g.power other
-            else other.lastKnownPower.getD (g.power other)
+            else (g.lastKnownPowerOf? other.id).getD (g.power other)
           let ot :=
             if other.isOnBattlefield then g.toughness other
-            else other.lastKnownToughness.getD (g.toughness other)
+            else (g.lastKnownToughnessOf? other.id).getD (g.toughness other)
           (g, some (op, ot, g.power src, g.toughness src))
 
 /-- Whether `cond` holds as this trigger resolves. One-shot notes that the
@@ -512,9 +511,26 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     if x == 0 then (g.logMsg "Whiplash isn't equipped", false)
     else (g, true)
   | .enrageGrantsCombat =>
-    if g.enrageGrantsAdditionalCombat > 0 then
-      (g.change (.enrageGrantsAdditionalCombat (g.enrageGrantsAdditionalCombat - 1)), true)
-    else (g, false)
+    let attacking :=
+      match sourceId with
+      | none => false
+      | some sid =>
+        match g.findObject? sid with
+        | some o =>
+          if o.isOnBattlefield then o.status.attacking
+          else
+            (g.events.reverse.findSome? fun e =>
+              match e.change with
+              | .rules (.zone (.moved before _ .battlefield _ ..)) =>
+                if before.id == some sid then some before.attacking else none
+              | _ => none).getD false
+        | none =>
+          (g.events.reverse.findSome? fun e =>
+            match e.change with
+            | .rules (.zone (.moved before _ .battlefield _ ..)) =>
+              if before.id == some sid then some before.attacking else none
+            | _ => none).getD false
+    (g, attacking)
   | .causeGreaterPower =>
     let (g, stats?) := g.causeAndSourcePT? sourceId targets
     match stats? with
@@ -625,7 +641,7 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     | some (Target.card id) =>
       match g.findObject? (g.followMoved id) with
       | some o =>
-        let mv := o.printed.manaValue + o.chosenX.getD 0
+        let mv := o.printed.manaValue + (g.chosenXOf? o.id).getD 0
         (g, mv ≤ n)
       | none => (g, false)
     | _ => (g, false)
@@ -635,7 +651,7 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       | none => false)
   | .castFromGraveyard =>
     (g, match g.resolvingSpell with
-      | some id => GameEvent.castFromGraveyard g.events id
+      | some id => g.castFromGraveyard id
       | none => false)
   | .giftPromised =>
     (g, match g.resolvingSpell with
@@ -1713,8 +1729,8 @@ def applyExile (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         | .impulse | .anyManaThisTurn => g.change (.revealedIdsThisWay #[])
         | _ => g
       let stashedCause? :=
-        objs[0]?.bind (fun o => (g.linkedExileCauses.find? (·.1 == o.id)).map (·.2))
-      let g := objs.foldl (fun g o => g.change (.setLinkedExileCause o.id none)) g
+        g.stashedCause.orElse (fun _ => objs[0]?.bind (fun o => g.lastMoveCauseOf? o.id))
+      let g := if g.stashedCause.isSome then g.change (.stashedCause none) else g
       let (g, sharedCause?) : Game × Option EventCause :=
         match stashedCause? with
         | some c => (g, some c)
@@ -1737,7 +1753,7 @@ def applyExile (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
           let name := o.name
           let (g, newId) := g.move o.id .exile none (cause := sharedCause?)
           let g := g.createEffect
-            (.playPermission newId { player := controller, turnEndsRemaining := 2 })
+            (.playPermission newId { player := controller } (turnEnds := 2))
             (cause := sharedCause?)
           g.logMsg
             s!"{(g.player controller).name} exiles {name} and may play it until the end of their next turn"
@@ -1745,7 +1761,7 @@ def applyExile (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
           let name := o.name
           let (g, newId) := g.move o.id .exile none (cause := sharedCause?)
           let g := g.createEffect
-            (.playPermission newId { player := controller, turnEndsRemaining := 1 })
+            (.playPermission newId { player := controller })
             (cause := sharedCause?)
           g.logMsg s!"{(g.player controller).name} exiles {name} and may play it this turn"
         | .forLater =>
@@ -1770,7 +1786,6 @@ def applyExile (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
               .grimaImpulseFound (some newId),
               .grimaImpulseOthers g.grimaImpulseOthers]
           | .linked =>
-            let g := g.change (.setLinkedExileCause newId sharedCause?)
             match sourceId.bind g.findObject? with
             | some src =>
               g.changeObject src.id (.pushLinkedExile newId)
@@ -2499,10 +2514,9 @@ def applyReturnToHand (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
   | .milledSubtype subtype, .none =>
     let ids := g.milledIdsThisWay
     let stashed :=
-      ids[0]?.bind (fun id => (g.linkedExileCauses.find? (·.1 == id)).map (·.2))
-    let g := ids.foldl (fun (g : Game) id =>
-        if (g.linkedExileCause? id).isSome then g.change (.setLinkedExileCause id none) else g)
-      (g.change (.milledIdsThisWay #[]))
+      g.stashedCause.orElse (fun _ => ids[0]?.bind g.lastMoveCauseOf?)
+    let g := (if g.stashedCause.isSome then g.change (.stashedCause none) else g).change
+      (.milledIdsThisWay #[])
     let (g, cause?) : Game × Option EventCause :=
       match stashed with
       | some c => (g, some c)
@@ -2537,9 +2551,9 @@ def applyReturnToHand (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
   | .revealed, _ =>
     let ids := g.revealedIdsThisWay
     let stashed :=
-      ids[0]?.bind (fun id => (g.linkedExileCauses.find? (·.1 == id)).map (·.2))
-    let g := ids.foldl (fun g id => g.change (.setLinkedExileCause id none))
-      (g.change (.revealedIdsThisWay #[]))
+      g.stashedCause.orElse (fun _ => ids[0]?.bind g.lastMoveCauseOf?)
+    let g := (if g.stashedCause.isSome then g.change (.stashedCause none) else g).change
+      (.revealedIdsThisWay #[])
     let (g, cause?) : Game × Option EventCause :=
       match stashed with
       | some c => (g, some c)
@@ -2672,9 +2686,9 @@ def applyPut (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
   | .revealed, how, note =>
     let ids := g.revealedIdsThisWay
     let stashed :=
-      ids[0]?.bind (fun id => (g.linkedExileCauses.find? (·.1 == id)).map (·.2))
-    let g := ids.foldl (fun g id => g.change (.setLinkedExileCause id none))
-      (g.change (.revealedIdsThisWay #[]))
+      g.stashedCause.orElse (fun _ => ids[0]?.bind g.lastMoveCauseOf?)
+    let g := (if g.stashedCause.isSome then g.change (.stashedCause none) else g).change
+      (.revealedIdsThisWay #[])
     let (g, cause?) : Game × Option EventCause :=
       match stashed with
       | some c => (g, some c)
@@ -2703,8 +2717,9 @@ def applyPut (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     if ids.isEmpty then g
     else
       let stashed :=
-        ids[0]?.bind (fun id => (g.linkedExileCauses.find? (·.1 == id)).map (·.2))
-      let g := g.change (.revealedIdsThisWay #[])
+        g.stashedCause.orElse (fun _ => ids[0]?.bind g.lastMoveCauseOf?)
+      let g := (if g.stashedCause.isSome then g.change (.stashedCause none) else g).change
+        (.revealedIdsThisWay #[])
       let (g, cause) : Game × EventCause :=
         match stashed with
         | some c => (g, c)
@@ -2716,18 +2731,16 @@ def applyPut (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         | some o => o.owner
         | none => controller
       if creatures.isEmpty then
-        let g := ids.foldl (fun g id => g.change (.setLinkedExileCause id none)) g
         (g.logMsg "No creature card was revealed").putRestOnBottomRandom libraryOwner ids
           (cause := some cause)
       else if creatures.size > 1 then
-        let g := ids.foldl (fun g id => g.change (.setLinkedExileCause id (some cause))) g
+        let g := g.change (.stashedCause (some cause))
         g.changes #[
           .pending (.resolveRandom (.chooseObject creatures)),
           .afterRandom (.revealRandomCreatureThenBottom controller ids)]
           |>.logMsg
             s!"{(g.player controller).name} puts a random creature from among them onto the battlefield"
       else
-        let g := ids.foldl (fun g id => g.change (.setLinkedExileCause id none)) g
         g.resolveRandomCreatureReveal controller ids creatures[0]! (cause := some cause)
   | what, how, note =>
     let inGraveyard (o : GameObject) : Bool :=
@@ -2800,7 +2813,7 @@ def applyGrant (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
               g := g.grantUntilEotLogged o Keyword.doubleStrike
         return g
   | .protectionEverything, .youIfCast =>
-    if !(sourceId.bind g.findObject?).any (·.wasCast) then
+    if !sourceId.any g.wasCast then
       g.logMsg "It wasn't cast. The ability does nothing."
     else
       g.createEffect (.protectionFromEverything controller)
@@ -3363,8 +3376,9 @@ def noteRevealedLibraries (g : Game) (controller : PlayerId)
     (targets : Array Target) (sourceId : Option ObjectId)
     (how : TriggeredAbility.TriggerLibraryHow)
     (who : TriggeredAbility.PlayerSelector)
+    (lastKnownToughness : Option Int := none)
     (cause : Option EventCause := none) : Game × Array (PlayerId × Array ObjectId) :=
-  let ctx : TriggerRead := { controller, sourceId, targets }
+  let ctx : TriggerRead := { controller, sourceId, targets, lastKnownToughness }
   match g.collectPlayers ctx who with
   | none => (g, #[])
   | some pids =>
@@ -3415,8 +3429,8 @@ def noteRevealedLibraries (g : Game) (controller : PlayerId)
           | none => pure ()
       match cause with
       | some c =>
-        for id in found do
-          g := g.change (.setLinkedExileCause id (some c))
+        if !found.isEmpty then
+          g := g.change (.stashedCause (some c))
       | none => pure ()
       return (g.change (.revealedIdsThisWay found), rests)
 
@@ -3427,7 +3441,8 @@ partial def applyRevealLibrary (g : Game) (controller : PlayerId)
     (sourceId : Option ObjectId) (targets : Array Target)
     (how : TriggeredAbility.TriggerLibraryHow)
     (thenDo : TriggeredAbility.TriggerResolution)
-    (who : TriggeredAbility.PlayerSelector) : Option Game :=
+    (who : TriggeredAbility.PlayerSelector)
+    (lastKnownToughness : Option Int := none) : Option Game :=
   match how, thenDo, who with
   | .top n, .put .randomCreature .asPrinted .none, .you => some <|
     let (g, cause) := g.allocDelayedCause (some controller) sourceId
@@ -3441,7 +3456,7 @@ partial def applyRevealLibrary (g : Game) (controller : PlayerId)
       (g.logMsg "No creature card was revealed").putRestOnBottomRandom controller ids
         (cause := some cause)
     else if creatures.size > 1 then
-      let g := ids.foldl (fun g id => g.change (.setLinkedExileCause id (some cause))) g
+      let g := g.change (.stashedCause (some cause))
       g.changes #[
         .pending (.resolveRandom (.chooseObject creatures)),
         .afterRandom (.revealRandomCreatureThenBottom controller ids)]
@@ -3529,7 +3544,7 @@ partial def applyRevealLibrary (g : Game) (controller : PlayerId)
       match targets[0]? with
       | some (Target.player p) => some p
       | _ =>
-        (g.resolvingAbility.bind g.findObject?).bind (·.lastKnownToughness)
+        lastKnownToughness.orElse (fun _ => g.resolvingAbility.bind g.lastKnownToughnessOf?)
           |>.map (fun n => ⟨n.toNat⟩)
     match pid with
     | none => g.logMsg "Black Widow didn't deal combat damage to a player"
@@ -4245,7 +4260,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     | .alreadyChosen =>
       let chosen :=
         match sourceId.bind g.findObject? with
-        | some o => o.status.chosenModes
+        | some o => g.modesChosenEver o.id
         | none => #[]
       chosen.foldl (init := g) fun g idx =>
         match modes[idx]? with
@@ -4289,11 +4304,13 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .grant what who =>
     g.applyGrant controller ab sourceId targets what who
   | .revealLibrary how thenDo who =>
-    match g.applyRevealLibrary controller sourceId targets how thenDo who with
+    match g.applyRevealLibrary controller sourceId targets how thenDo who
+        (lastKnownToughness := lastKnownToughness) with
     | some g => g
     | none =>
       let (g, cause) := g.allocDelayedCause (some controller) sourceId
-      let (g, rests) := g.noteRevealedLibraries controller targets sourceId how who (cause := some cause)
+      let (g, rests) := g.noteRevealedLibraries controller targets sourceId how who
+        (lastKnownToughness := lastKnownToughness) (cause := some cause)
       let g := g.applyTriggeredAbility controller ab sourceId targets dividedDamage
         lastKnownPower lastKnownToughness sourceName (some thenDo) sequencedCardPower
       rests.foldl (fun g (pid, rest) => g.putRestOnBottomRandom pid rest (cause := some cause)) g
@@ -4330,7 +4347,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .winTheGame =>
     -- Ruling 835: you win while the ability resolves, before the
     -- state-based action for drawing from an empty library.
-    g.change (.result (some (.won controller)))
+    g.record (GameEvent.gameEnded g.turnNumber (.won controller)
+      (cause := g.resolvingOneShotCause controller sourceId))
       |>.logMsg s!"{(g.player controller).name} wins the game"
   | .shuffleSource =>
     g.shuffleSourceIntoLibrary sourceId
@@ -4361,7 +4379,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       | none =>
         g.logMsg "Baron Strucker is no longer on the battlefield. The ability has no effect."
       | some src =>
-        if src.status.optionalOnceUsed then
+        if g.optionalOnceUsedThisTurn src.id then
           g.logMsg
             "The optional connive was already chosen this turn. This instance has no effect."
         else
@@ -4382,7 +4400,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       | some o =>
         let name := o.name
         let g := g.createEffect
-          (.playPermission o.id { player := controller, turnEndsRemaining := 2 })
+          (.playPermission o.id { player := controller } (turnEnds := 2))
           (cause := g.lastMoveCauseOf? o.id)
         g.logMsg
           s!"{(g.player controller).name} exiles {name} and may play it until the end of their next turn"
@@ -4833,13 +4851,13 @@ def rememberChosenMode (g : Game) (sourceId : ObjectId)
   | .alreadyChosen, _ | .plusOneOrRemoveCounter, _ | .fromLastKnown, _ => g
   | _, none => g.logMsg "The ability is removed from the stack with no effect"
   | .oneUnusedThisTurn, some src =>
-    g.changeStatus src.id (.pushAllianceModeChosen mode)
+    g.record (GameEvent.triggerModeChosen g.turnNumber src.id mode)
   | .vision, some src =>
     if src.isOnBattlefield then
-      g.changeStatus src.id (.pushModeChosenThisTurn mode)
+      g.record (GameEvent.triggerModeChosen g.turnNumber src.id mode)
     else g
   | .oneUnused, some src =>
-    g.changeStatus src.id (.pushChosenMode mode)
+    g.record (GameEvent.triggerModeChosen g.turnNumber src.id mode (lifetime := true))
 
 /-- Apply one stored `chooseModes` resolution with the ability context from
 the offer. -/
@@ -4860,15 +4878,15 @@ def resolveVisionChoice (g : Game) (rest : ChooseModesRest) (mode : Nat) : Game 
     | some (.draw (.fixed _)) => g.draw controller 1
     | _ => g.logMsg "The Vision is no longer in play"
   | some src =>
-    if src.status.modesChosenThisTurn.contains mode ||
-        src.status.modesChosenThisTurn.size >= 3 then
+    let chosen := g.modesChosenThisTurn src.id
+    if chosen.contains mode || chosen.size >= 3 then
       g.logMsg "The Vision's ability is removed from the stack with no effect"
     else if !src.isOnBattlefield then
       match rest.modes[mode]? with
       | some (.draw (.fixed _)) => g.draw controller 1
       | _ => g.logMsg "The Vision is no longer in play"
     else
-      let g := g.changeStatus src.id (.pushModeChosenThisTurn mode)
+      let g := g.record (GameEvent.triggerModeChosen g.turnNumber src.id mode)
       match rest.modes[mode]? with
       | none => g
       | some r => g.applyListedMode rest r

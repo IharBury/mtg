@@ -89,7 +89,6 @@ def grantWidowCast (g : Game) (controller : PlayerId) (exiled : Option ObjectId)
     let cause := cause.orElse (fun _ => g.lastMoveCauseOf? o.id)
     g.createEffect (.playPermission o.id {
       player := controller
-      turnEndsRemaining := 1
       anyMana := true }) (cause := cause)
       |>.logMsg s!"{(g.player controller).name} may cast {o.name} until end of turn"
 
@@ -116,7 +115,7 @@ def copyEnteredArtifact (g : Game) (controller : PlayerId) (artifactId : ObjectI
             subtypes := mergeSubtypes tok.printed.subtypes #[.robot, .villain]
             power := some 2
             toughness := some 2 }
-        g.createEffect (.copy tok.id printed tok.copyRestore tok.copyUntilEot tok.copyUntilNextTurn tok.copyUntilSourceLeaves)
+        g.createEffect (.copy tok.id printed (g.copyRestore tok) (g.copyUntilEot tok) (g.copyUntilNextTurn tok) (g.copyUntilSourceLeaves tok))
           |>.logMsg s!"{printed.name} becomes a 2/2 Robot Villain creature after it enters"
 
 /-- Exile the top card of your library. A Hero card pumps Daredevil. The
@@ -141,13 +140,14 @@ def applyVisionMode (g : Game) (controller : PlayerId) (sourceId : ObjectId) (mo
     if mode == 2 then g.draw controller 1
     else g.logMsg "The Vision is no longer in play"
   | some src =>
-    if src.status.modesChosenThisTurn.contains mode || src.status.modesChosenThisTurn.size >= 3 then
+    let chosen := g.modesChosenThisTurn src.id
+    if chosen.contains mode || chosen.size >= 3 then
       g.logMsg "The Vision's ability is removed from the stack with no effect"
     else if !src.isOnBattlefield then
       if mode == 2 then g.draw controller 1
       else g.logMsg "The Vision is no longer in play"
     else
-      let g := g.changeStatus src.id (.pushModeChosenThisTurn mode)
+      let g := g.record (GameEvent.triggerModeChosen g.turnNumber src.id mode)
       if mode == 0 then
         g.createEffect (.keywordsUntilEot src.id Keyword.doubleStrike)
       else if mode == 1 then
@@ -177,7 +177,7 @@ def setSpellTargetAt (g : Game) (spellId : ObjectId) (index : Nat) (neu : Target
     | some spell =>
       let legal := g.legalTargetsForKind e.controller (g.targetingOf spell).kind (some spellId)
       if index < e.targets.size && legal.contains neu then
-        g.changeStackEntry i (.setTargetAt index neu)
+        g.record (GameEvent.targeted g.turnNumber spellId (e.targets.set! index neu) (division := e.dividedDamage))
           |>.logMsg "A new target is chosen for the spell"
       else
         g.logMsg "That target stays unchanged"
@@ -472,13 +472,13 @@ the stack, then a mana value recorded this turn. -/
 def castSpellManaValue (g : Game) (controller : PlayerId)
     (lastKnownPower : Option Int) : Nat :=
   match g.castTriggerSpell? with
-  | some spell => spell.printed.manaValue + spell.chosenX.getD 0
+  | some spell => spell.printed.manaValue + (g.chosenXOf? spell.id).getD 0
   | none =>
     match lastKnownPower with
     | some p => p.toNat
     | none =>
       match g.lastStackSpell? with
-      | some o => o.printed.manaValue + o.chosenX.getD 0
+      | some o => o.printed.manaValue + (g.chosenXOf? o.id).getD 0
       | none =>
         match (g.loggedCastManaValues controller).back? with
         | some mv => mv
@@ -518,8 +518,9 @@ def offerVisionModes (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (lastKnownPower : Option Int := none) (sourceName : String := "This creature") : Game :=
   match sourceId.bind (fun id => g.findObject? (g.followMoved id)) with
   | some src =>
+    let chosen := g.modesChosenThisTurn src.id
     let available :=
-      #[0, 1, 2].filter (fun m => !src.status.modesChosenThisTurn.contains m)
+      #[0, 1, 2].filter (fun m => !chosen.contains m)
     if available.isEmpty then
       g.logMsg "The Vision's ability is removed from the stack with no effect"
     else
@@ -700,8 +701,9 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
     g.withLegalKindPermanent controller kind targets (fun g o =>
       let name := o.name
       let (g, cause) := g.allocDelayedCause (some controller) sourceId
+      let src := (sourceId.bind g.findObject?).orElse (fun _ => some o)
       let (g, newId) := g.move o.id .exile none (cause := some cause)
-      g.change (.pushDelayedEndStepReturn newId cause)
+      g.change (.pushDelayedTrigger { controller, source := src, kind := .endStepReturn newId, cause })
         |>.logMsg s!"{name} is exiled until the beginning of the next end step")
       sourceId (some "The target is no longer legal")
   | (.casting .damageEqualMv) =>
@@ -876,7 +878,7 @@ def castExiledAsResolves (g : Game) (p : PlayerId) (n : Nat) : Game :=
   let ids :=
     (g.objects.filter (fun o =>
       o.zone == .exile &&
-        match o.playPermission with
+        match g.playPermission o with
         | some perm => perm.player == p && perm.withoutManaCost
         | none => false)).map (·.id)
   ids.take n |>.foldl (fun acc id =>
@@ -923,12 +925,9 @@ def beginUnlessPays (g : Game) (controller : PlayerId) (effect : Effect)
       | some (Target.permanent id) =>
         match g.findObject? id with
         | some o =>
-          let pid? :=
-            if o.zone == .battlefield then o.controller
-            else o.lastController.orElse (fun _ => o.controller)
           -- The pending choice still stores an object id. Use one that has
           -- not been allocated so the counter fallback cannot hit this permanent.
-          match pid? with
+          match g.lastControllerOf? o with
           | some pid => some (pid, { raw := g.nextObjectId })
           | none => none
         | none => none
@@ -963,7 +962,7 @@ def exileThenReturn (g : Game) (o : GameObject) (logText : String)
   let (g, newId) := g.move o.id .exile none (cause := cause)
   let g :=
     if clearExileFields then
-      g.changeObjects newId #[.playPermission none, .linkedExile #[]]
+      g.changeObject newId (.linkedExile #[])
     else g
   let sick := !land && !(g.object! newId).printed.keywords.haste
   let (g, retId) := g.move newId .battlefield (some owner)

@@ -323,7 +323,7 @@ def batCloudReduced : Game :=
 #guard
   let g := addPermanent afterDraw hillGiant ⟨0⟩ ⟨0⟩
   let o := namedPermanent g "Hill Giant"
-  let g := g.changeStatus o.id (.untilEotExileIfDies true)
+  let g := g.createEffect (.exileIfDiesUntilEot o.id)
   let (g, _) := g.move (namedPermanent g "Hill Giant").id (.graveyard ⟨0⟩) none
   g.loggedCreatureDeaths == 0
 
@@ -373,7 +373,7 @@ def shadowResolved : Game :=
   match (shadowResolved.objects.find? (fun o =>
       o.name == "Gray Ogre" && o.zone == .exile)) with
   | some ogre =>
-    match ogre.playPermission with
+    match shadowResolved.playPermission ogre with
     | some perm => perm.whileExiled && perm.anyMana && perm.player == ⟨0⟩
     | none => false
   | none => false
@@ -807,7 +807,7 @@ def superSpeedFirstStrikeOk : Bool :=
   let g := g.attachSourceTo aura host
   let g := g.applyTriggeredAbility ⟨0⟩
     (.onEnterEnchanted (.grantKeywords Keyword.firstStrike)) (some aura.id)
-  (g.object! host.id).status.untilEotKeywords.firstStrike
+  (g.untilEotKeywords (g.object! host.id)).firstStrike
 
 #guard superSpeedFirstStrikeOk
 
@@ -846,7 +846,7 @@ def stolenStarkIndestructibleOk : Bool :=
   let g := g.applyTriggeredAbility ⟨0⟩
     (.onEnterAttachThen (.grantKeywords Keyword.indestructible))
     (some eq.id) #[Target.permanent host.id]
-  (g.object! host.id).status.untilEotKeywords.indestructible &&
+  (g.untilEotKeywords (g.object! host.id)).indestructible &&
     (g.object! eq.id).attachedTo == some host.id
 
 #guard stolenStarkIndestructibleOk
@@ -870,8 +870,8 @@ def thorExilePlayOk : Bool :=
     (some thor.id) #[Target.card bolt.id]
   match g.objects.find? (fun o => o.zone == .exile && o.name == "Lightning Bolt") with
   | some bolt =>
-    match bolt.playPermission with
-    | some perm => perm.player == ⟨0⟩ && perm.turnEndsRemaining == 2
+    match g.playPermission bolt with
+    | some perm => perm.player == ⟨0⟩ && g.playPermissionDuration bolt == some (.untilEndOfNextTurnOf ⟨0⟩)
     | none => false
   | none => false
 
@@ -913,7 +913,7 @@ def flyingCarFlickerOk : Bool :=
   let g := g.applyTriggeredAbility ⟨0⟩ .onEnterExileCreatureReturnEndStep
     (some car.id) #[Target.permanent bears.id]
   !g.battlefield.any (fun o => o.name == "Grizzly Bears") &&
-    g.delayedEndStepReturns.size == 1
+    g.delayedTriggers.size == 1
 
 #guard flyingCarFlickerOk
 

@@ -271,14 +271,14 @@ def mountainLine (g : Game) : String :=
 #guard
   let g := hospitalityEnteredThisTurn
   let o := namedPermanent g "Beorn's Hospitality"
-  o.isCreature && o.hasSummoningSickness &&
+  g.isCreature o && o.status.summoningSick &&
     mentions (objectLine g o) "(summoning sickness)"
 
 -- The same animation after the permanent has already been in play is not sick.
 #guard
   let g := animatedHospitality
   let o := namedPermanent g "Beorn's Hospitality"
-  o.isCreature && !o.hasSummoningSickness &&
+  g.isCreature o && !o.status.summoningSick &&
     !mentions (objectLine g o) "(summoning sickness)"
 
 -- Stack objects are not battlefield creatures; they do not print the marker.
@@ -503,7 +503,7 @@ def mountainLine (g : Game) : String :=
 #guard
   let g := giantReadyToAssign
   let giant := namedPermanent g "Hill Giant"
-  let g := g.changeStatus giant.id (.grantUntilEot Keyword.trample)
+  let g := g.createEffect (.keywordsUntilEot giant.id Keyword.trample)
   let giant := namedPermanent g "Hill Giant"
   let elves := g.battlefield.filter (fun o => o.name == "Llanowar Elves")
   combatDamageSourceLine g giant true ==
@@ -652,10 +652,10 @@ def mountainLine (g : Game) : String :=
 -- Exile listings print the Oracle face (mana cost, type line, P/T) whether or
 -- not someone may play the card. `exilePlayManaCost` is still empty without a
 -- play permission.
-#guard exilePlayManaCost (exiledBolt resolvedHunter) == "{R}"
-#guard exilePlayManaCost (exiledMountain resolvedHunterLand) == ""
-#guard exilePlayManaCost (exiledSmaug resolvedSpewFlame) == "{5}{R}{R}"
-#guard exilePlayManaCost (exiledBeorn resolvedTillAndTend) == "{4}{G}"
+#guard exilePlayManaCost resolvedHunter (exiledBolt resolvedHunter) == "{R}"
+#guard exilePlayManaCost resolvedHunterLand (exiledMountain resolvedHunterLand) == ""
+#guard exilePlayManaCost resolvedSpewFlame (exiledSmaug resolvedSpewFlame) == "{5}{R}{R}"
+#guard exilePlayManaCost resolvedTillAndTend (exiledBeorn resolvedTillAndTend) == "{4}{G}"
 #guard
   let o := exiledBolt resolvedHunter
   zoneLine resolvedHunter .exile o.id ==
@@ -682,7 +682,7 @@ def mountainLine (g : Game) : String :=
   match resolvedSmiteOnBears.objects.find? (fun o =>
     o.zone == .exile && o.name == "Grizzly Bears") with
   | some o =>
-    exilePlayManaCost o == "" &&
+    exilePlayManaCost resolvedSmiteOnBears o == "" &&
       mentions (zoneLine resolvedSmiteOnBears .exile o.id) "Grizzly Bears" &&
       mentions (zoneLine resolvedSmiteOnBears .exile o.id) "{1}{G}" &&
       mentions (zoneLine resolvedSmiteOnBears .exile o.id) "Creature — Bear" &&
@@ -988,9 +988,9 @@ def mountainLine (g : Game) : String :=
   let hosp := namedPermanent g "Beorn's Hospitality"
   let bears := namedPermanent g "Grizzly Bears"
   let land := namedPermanent g "Mountain"
-  let g' := g.changeStatuses hosp.id #[.additionalCreature true, .additionalSubtypes #[.bear]]
+  let g' := g.createEffects #[.additionalCreature hosp.id false, .additionalSubtype hosp.id .bear]
   let hosp' := namedPermanent g' "Beorn's Hospitality"
-  !hosp.isCreature && hosp'.isCreature &&
+  !g.isCreature hosp && g'.isCreature hosp' &&
     zoneBlock g .battlefield ==
       s!"zone battlefield (3):\n  Chandra:\n    {objectLine g bears (some (some ⟨0⟩))}\n    {objectLine g hosp (some (some ⟨0⟩))}\n    {objectLine g land (some (some ⟨0⟩))}" &&
     zoneBlock g' .battlefield ==
@@ -1579,11 +1579,10 @@ def withFreeExileCast (g : Game) (name : String) (p : PlayerId) : Game :=
   match g.objects.find? (fun o => o.zone == .exile && o.name == name) with
   | none => g
   | some o =>
-    g.changeObject o.id (.playPermission (some {
+    g.createEffect (.playPermission o.id {
       player := p
-      turnEndsRemaining := 0
       whileExiled := true
-      withoutManaCost := true }))
+      withoutManaCost := true } 0)
 
 def freeExileOgre : Game :=
   withFreeExileCast (insertObject started grayOgre ⟨1⟩ .exile) "Gray Ogre" ⟨0⟩
@@ -1595,7 +1594,7 @@ def freeExileOgre : Game :=
     let line := exileLine freeExileOgre o
     mentions line "may be played by Chandra without paying its mana cost" &&
       mentions line "{2}{R}" &&
-      exilePlayManaCost o == "{0}" &&
+      exilePlayManaCost freeExileOgre o == "{0}" &&
       zoneLine freeExileOgre .exile o.id == line &&
       mentions (zoneBlock freeExileOgre .exile) "without paying its mana cost" &&
       mentions (snapshot freeExileOgre) "without paying its mana cost" &&

@@ -64,7 +64,6 @@ def copyStackSpell (g : Game) (src : GameObject) (controller : PlayerId) : Game 
       controller := some controller
       zone := .stack
       isCopy := true
-      wasCast := false
     }
     let g := g.record (GameEvent.stackObjectCopied g.turnNumber src.id copySnap controller
       (cause := g.resolvingOneShotCause controller (some src.id)))
@@ -123,9 +122,7 @@ def castAsPartOfResolution (g : Game) (p : PlayerId) (id : ObjectId)
       let fromGy := original.zone == .graveyard original.owner
       let wasCopy := original.isCopy
       let (g, newId) := g.move id .stack (some p) (verb := some .cast) (actor := some p)
-      let g := g.changeObjects newId #[
-        .castFromGraveyard fromGy,
-        .isCopy wasCopy]
+      let g := g.changeObject newId (.isCopy wasCopy)
       let g :=
         if exileInstantSorceryInstead && fromGy then
           g.createEffect (.exileInstantSorceryInstead newId)
@@ -292,7 +289,7 @@ def counterStackSpell (g : Game) (spellId : ObjectId) (exilePermanent := false)
           |>.orElse (fun _ => some (.oneShotEffect (some ⟨g.nextEffectId⟩) none (some controller)))
       let g := g.ceaseToExist o.id (cause := cause)
       g.logMsg s!"{name} is countered"
-    else if o.printed.cantBeCountered || o.uncounterableThisCast then
+    else if o.printed.cantBeCountered || g.uncounterableThisCast o then
       g.logMsg s!"{o.name} can't be countered"
     else
       let dest :=
@@ -306,7 +303,6 @@ def counterStackSpell (g : Game) (spellId : ObjectId) (exilePermanent := false)
         if dest == .exile && grantFreeCast then
           g.createEffect (.playPermission newId {
             player := controller
-            turnEndsRemaining := 0
             whileExiled := true
             withoutManaCost := true }) (cause := some cause)
         else g
@@ -326,8 +322,7 @@ def exileUntilSourceLeaves (g : Game) (sourceId : Option ObjectId) (o : GameObje
     | some c => (g, c)
     | none => g.allocDelayedCause fallbackCtrl sourceId
   let (g, newId) := g.move o.id .exile none (cause := some linkCause)
-  let g := (g.changeObject newId (.returnToZone (some fromZone))).change
-    (.setLinkedExileCause newId (some linkCause))
+  let g := g.changeObject newId (.returnToZone (some fromZone))
   let g :=
     match sourceId.bind g.findObject? with
     | some src =>
@@ -545,7 +540,7 @@ def exileTopForPlay (g : Game) (fromPlayer caster : PlayerId) (n : Nat)
           let cardName := (g.object! top).name
           let (g', newId) := g.move top .exile none (cause := cause?)
           g := g'
-          g := g.createEffect (.playPermission newId { player := caster, turnEndsRemaining := 1 })
+          g := g.createEffect (.playPermission newId { player := caster })
             (cause := cause?)
           g := g.logMsg (logAfter pl.name cardName)
       return g
@@ -782,19 +777,19 @@ def applyEnterMod (g : Game) (controller : PlayerId) (id : ObjectId)
         keywords := Keywords.none
         triggeredAbilities := #[]
         activatedAbilities := #[]
-        staticAbilities := #[] } o.copyRestore o.copyUntilEot o.copyUntilNextTurn o.copyUntilSourceLeaves)
+        staticAbilities := #[] } (g.copyRestore o) (g.copyUntilEot o) (g.copyUntilNextTurn o) (g.copyUntilSourceLeaves o))
         (cause := cause)
     | .keywords k =>
       let o := g.object! id
       g.createEffect (.copy id { o.printed with
-        keywords := Keywords.merge o.printed.keywords k } o.copyRestore o.copyUntilEot o.copyUntilNextTurn o.copyUntilSourceLeaves)
+        keywords := Keywords.merge o.printed.keywords k } (g.copyRestore o) (g.copyUntilEot o) (g.copyUntilNextTurn o) (g.copyUntilSourceLeaves o))
         (cause := cause)
     | .additionalSubtype subtype =>
       let o := g.object! id
       if o.printed.hasSubtype subtype then g
       else
         g.createEffect (.copy id { o.printed with
-          subtypes := o.printed.subtypes.push subtype.englishName } o.copyRestore o.copyUntilEot o.copyUntilNextTurn o.copyUntilSourceLeaves)
+          subtypes := o.printed.subtypes.push subtype.englishName } (g.copyRestore o) (g.copyUntilEot o) (g.copyUntilNextTurn o) (g.copyUntilSourceLeaves o))
           (cause := cause)
     | .counter kind n asEnters =>
       let o := g.object! id
@@ -977,7 +972,7 @@ def promptEnteringAttackItems (g : Game) (items : Array EnteringAttackItem)
 /-- Return a graveyard creature tapped and attacking with a finality
 counter (Grim Reaper). -/
 def returnFromGyTappedAttackingFinality (g : Game) (controller : PlayerId)
-    (cardId : ObjectId) (attackingWhom : Option PlayerId := none)
+    (cardId : ObjectId)
     (attackingTarget : Option AttackTarget := none) : Game :=
   match g.findObject? cardId with
   | none => g.logMsg "The target is no longer in the graveyard"
@@ -985,9 +980,8 @@ def returnFromGyTappedAttackingFinality (g : Game) (controller : PlayerId)
     if !(o.printed.isCreature && o.zone == .graveyard controller) then
       g.logMsg "The target is no longer a creature card in your graveyard"
     else
-      let explicitTgt := attackingTarget.orElse (fun _ => attackingWhom.map AttackTarget.player)
       let options :=
-        match explicitTgt with
+        match attackingTarget with
         | some tgt => #[tgt]
         | none => g.legalEnteringAttackTargets controller
       let (g, c) := g.allocDelayedCause (some controller)
@@ -1116,7 +1110,7 @@ def becomeCopyOf (g : Game) (o : GameObject) (src : GameObject)
     (addSubtypes : Array CardSubtype := #[])
     (setPT : Option (Int × Int) := none)
     (addVigilance := false) (replaceCreatureLine := false) : Game :=
-  let restore := o.copyRestore.getD o.printed
+  let restore := (g.copyRestore o).getD o.printed
   let printed0 := src.printed
   let types :=
     if replaceCreatureLine then #[.creature]
@@ -1166,7 +1160,6 @@ def copyStackAbility (g : Game) (src : GameObject) (controller : PlayerId) : Gam
       controller := some controller
       zone := .stack
       isCopy := true
-      wasCast := false
     }
     let g := g.record (GameEvent.stackObjectCopied g.turnNumber src.id copySnap controller
       (cause := g.resolvingOneShotCause controller (some src.id)))

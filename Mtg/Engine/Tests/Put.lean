@@ -135,7 +135,7 @@ the battlefield, it stays a creature. -/
     let g := g.applyTriggeredAbility caster .onDiesReturnAsArtifact (some gid)
     match onBoard g "Test Bear" with
     | some o =>
-      !o.isCreature && o.types.contains .artifact && o.status.returnedAsArtifact &&
+      !g.isCreature o && (g.types o).contains .artifact && g.returnedAsArtifact o &&
         logContains g "returns as an artifact"
     | none => false
 
@@ -146,7 +146,7 @@ the battlefield, it stays a creature. -/
   | some src =>
     let g := g.applyTriggeredAbility caster .onDiesReturnAsArtifact (some src.id)
     match onBoard g "Test Bear" with
-    | some o => o.isCreature && !o.status.returnedAsArtifact
+    | some o => g.isCreature o && !g.returnedAsArtifact o
     | none => false
 
 /- Lands noted by the previous exile return tapped. An empty note returns

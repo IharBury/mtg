@@ -298,7 +298,7 @@ def giftReorderedTop : Game :=
 def afterGiftCleanup : Game := passBoth (skipTo giftScried .end 80)
 
 #guard afterGiftCleanup.power (namedPermanent afterGiftCleanup "Grizzly Bears") == 5
-#guard (namedPermanent afterGiftCleanup "Grizzly Bears").status.pumpPower == 0
+#guard (afterGiftCleanup.pumpOf (namedPermanent afterGiftCleanup "Grizzly Bears")).1 == 0
 
 /-- If the target leaves before the Aura resolves, the Aura goes to the graveyard (CR 608.3a). -/
 def giftTargetGone : Game :=

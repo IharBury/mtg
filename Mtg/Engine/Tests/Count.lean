@@ -126,7 +126,7 @@ four others. The cause's id is the last-known power. -/
   let g := addPermanent afterDraw questCard caster caster
   let src := named g "Count Quest"
   let (g, zero) := holds g (.atLeast (.count .questCounters) (.fixed 1)) (some src.id)
-  let g := g.changeStatus src.id (.quest 6)
+  let g := g.recordPutCounters src.id .quest 6
   let (g, six) := holds g (.atLeast (.count .questCounters) (.fixed 6)) (some src.id)
   let (g, seven) := holds g (.atLeast (.count .questCounters) (.fixed 7)) (some src.id)
   let (g, missing) := holds g (.atLeast (.count .questCounters) (.fixed 0)) none
@@ -176,10 +176,11 @@ A harnessed source is reported when it is not. -/
   let g := addPermanent afterDraw bear caster caster
   let src := named g "Count Bear"
   let (g, idle) := holds g (.atLeast (.count (.intersection [.source, .attackingCreatures])) (.fixed 1)) (some src.id)
-  let g := g.changeStatus src.id (.attacking true)
+  let g := g.markAttacking src.id
   let (g, attacking) := holds g (.atLeast (.count (.intersection [.source, .attackingCreatures])) (.fixed 1)) (some src.id)
   let (g, unharnessed) := holds g (.atLeast (.count .harnessedSource) (.fixed 1)) (some src.id)
-  let g := g.changeStatus (named g "Count Bear").id (.harnessed true)
+  let cBear := named g "Count Bear"
+  let g := g.record (GameEvent.designation g.turnNumber cBear.asEvent .harnessed true)
   let (g, harnessed) := holds g (.atLeast (.count .harnessedSource) (.fixed 1)) (some src.id)
   let (_, gone) := holds g (.atLeast (.count (.intersection [.source, .attackingCreatures])) (.fixed 1)) none
   !idle && attacking && !unharnessed && logContains g "not harnessed" && harnessed && !gone
@@ -330,9 +331,9 @@ creatures. Pumping creatures of a subtype leaves the other permanents. -/
 #guard
   let g := addPermanent afterDraw bear caster caster
   let src := named g "Count Bear"
-  let g := g.changeStatus src.id (.attacking true)
+  let g := g.markAttacking src.id
   let g := addPermanent g hero caster caster
-  let g := g.changeStatus (named g "Count Hero").id (.attacking true)
+  let g := g.markAttacking (named g "Count Hero").id
   let ctx : Game.TriggerRead := { controller := caster, sourceId := some src.id }
   let attacking := .intersection [.source, .attackingCreatures]
   let pumped := g.applyTriggeredAbility caster (.onEnterDraw 1) (some src.id)
@@ -340,8 +341,8 @@ creatures. Pumping creatures of a subtype leaves the other permanents. -/
       (.intersection [.creaturesYouControl, .youControl (.subtype .hero)])))
   g.countNamed ctx attacking == some 1 &&
     g.countNamed ctx (.union [.source, .attackingCreatures]) == some 2 &&
-    (named pumped "Count Hero").status.pumpPower == 1 &&
-    (named pumped "Count Bear").status.pumpPower == 0
+    (pumped.pumpOf (named pumped "Count Hero")).1 == 1 &&
+    (pumped.pumpOf (named pumped "Count Bear")).1 == 0
 
 /- Discard candidates follow the same intersection and union. -/
 #guard

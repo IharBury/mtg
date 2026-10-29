@@ -36,13 +36,12 @@ def paySneak (g : Game) (p : PlayerId) (spellId : ObjectId) (attackerId : Object
   if attacker.status.blocked then
     throw s!"{attacker.name} is blocked"
   let defPlayer := g.defendingPlayerOf attacker
-  let whom := some defPlayer
-  let atkTarget := attacker.status.attackingTarget.orElse (fun _ => some (.player defPlayer))
+  let atkTarget := attacker.status.attackingTarget.getD (.player defPlayer)
   let some _spell := g.findObject? spellId | throw "The spell left the stack"
-  let g := g.returnToHand attackerId attacker.owner
-    (cause := some (.costPayment .returnToHand p (some spellId)))
-  let g := g.changeObjects spellId #[
-    .sneakPaid true, .sneakAttackWhom whom, .sneakAttackTarget atkTarget]
+  let cause := some (EventCause.costPayment .returnToHand p (some spellId))
+  let g := g.returnToHand attackerId attacker.owner (cause := cause)
+  let g := g.record (GameEvent.announced g.turnNumber spellId
+    (costs := #[.sneak attackerId atkTarget]) (cause := cause))
   return g.logMsg s!"{(g.player p).name} pays a sneak cost"
 
 /-- Pay the locked-in cost (CR 601.2h / 602.2b). Spells and abilities that still
@@ -73,19 +72,13 @@ def finishProposedSpell (g : Game) : Except String Game := do
   let paid ← g.payCost prop.caster prop.cost allowElf allowInst
     allowHero allowVillain allowCant allowCreature spend (forObject := some prop.spellId)
   let spent (u : FraManaUse) := count paid u < count g u
-  let manaSpent := (g.player prop.caster).manaPool.total - (paid.player prop.caster).manaPool.total
-  let paid :=
-    match prop.kind, paid.findObject? prop.spellId with
-    | .spell, some o => paid.changeStatus o.id (.manaSpentToCast manaSpent)
-    | _, _ => paid
   let g :=
     match prop.kind, paid.findObject? prop.spellId with
     | .spell, some o =>
       if spent .legendarySpell then
-        ((paid.changeObject o.id (.treasureManaSpent (o.treasureManaSpent || spent .fromTreasure)))
-          |>.createEffect (.uncounterableThisCast o.id))
+        paid.createEffect (.uncounterableThisCast o.id)
           |>.logMsg s!"{o.name} can't be countered (Delighted Halfling)"
-      else paid.changeObject o.id (.treasureManaSpent (spent .fromTreasure))
+      else paid
     | _, _ => paid
   if prop.kind == .activatedAbility then
     return (← g.beginActivationPayment prop)
@@ -110,10 +103,10 @@ def finishProposedSpell (g : Game) : Except String Game := do
     return g.becomeCast prop.caster (g.object! prop.spellId)
 
 /-- Starting mana cost of `face` before increases and reductions (CR 118.7). -/
-def playCostStart (card : GameObject) (face : CardDef) : ManaCost :=
-  if card.status.freeCastFromGraveyard && card.zone == .graveyard card.owner then
+def playCostStart (g : Game) (card : GameObject) (face : CardDef) : ManaCost :=
+  if g.freeCastFromGraveyard card && card.zone == .graveyard card.owner then
     ManaCost.empty
-  else if card.castFromGraveyard || card.zone == .graveyard card.owner then
+  else if g.castFromGraveyard card.id || card.zone == .graveyard card.owner then
     face.flashback.getD face.manaCost
   else face.manaCost
 
@@ -190,7 +183,7 @@ def applyCastCostReductions (g : Game) (card : GameObject) (face : CardDef)
       let n :=
         (g.permanentsOf caster).foldl (fun acc o =>
           let reduces :=
-            o.staticAbilities.any (fun ab =>
+            (g.staticAbilities o).any (fun ab =>
               match ab with
               | .instantSorceryCostReductionEqualEquippedPower => true
               | _ => false)
@@ -206,7 +199,7 @@ def applyCastCostReductions (g : Game) (card : GameObject) (face : CardDef)
     if face.isCreature && g.loggedCreatureSpells caster == 0 then
       let n :=
         (g.permanentsOf caster).foldl (fun acc o =>
-          acc + o.printed.firstCreatureCostsLess) 0
+          if g.retainsPrintedAbilities o then acc + o.printed.firstCreatureCostsLess else acc) 0
       afterSpell.reduceGeneric n
     else afterSpell
   let notFromHand :=
@@ -214,7 +207,7 @@ def applyCastCostReductions (g : Game) (card : GameObject) (face : CardDef)
     | .hand _ => 0
     | _ =>
       (g.permanentsOf caster).foldl (fun acc o =>
-        acc + o.printed.costReductionNotFromHand) 0
+        if g.retainsPrintedAbilities o then acc + o.printed.costReductionNotFromHand else acc) 0
   let afterNotHand := afterFirst.reduceGeneric notFromHand
   let witchLess :=
     if face.isInstant || face.isSorcery then
@@ -223,7 +216,7 @@ def applyCastCostReductions (g : Game) (card : GameObject) (face : CardDef)
       else
         (g.permanentsOf caster).foldl (fun acc o =>
           let reduces :=
-            o.staticAbilities.any (fun ab =>
+            (g.staticAbilities o).any (fun ab =>
               match ab with
               | .instantSorceryCostLessEqualPower => true
               | _ => false)
@@ -241,7 +234,7 @@ def applyCastCostReductions (g : Game) (card : GameObject) (face : CardDef)
   let afterWitch := afterX.reduceGeneric witchLess
   let subtypeLess :=
     (g.permanentsOf caster).foldl (fun acc o =>
-      o.staticAbilities.foldl (fun acc ab =>
+      (g.staticAbilities o).foldl (fun acc ab =>
         match ab with
         | .subtypeSpellsCostLess subtype n =>
           if face.hasSubtype subtype then acc + n else acc
@@ -255,17 +248,16 @@ def applyCastCostReductions (g : Game) (card : GameObject) (face : CardDef)
     if face.staticAbilities.any (· == .fra .costsLessIfCastNoncreature) &&
         g.loggedNoncreatureSpells caster > 0 then 2
     else 0
-  let pl := g.player caster
   let thisTurnLess :=
-    (pl.typeSpellCostLessThisTurn.foldl (fun acc (ty, n) =>
+    ((g.typeSpellCostLessThisTurn caster).foldl (fun acc (ty, n) =>
       if face.hasType ty then acc + n else acc) 0) +
-    (pl.supertypeSpellCostLessThisTurn.foldl (fun acc (s, n) =>
+    ((g.supertypeSpellCostLessThisTurn caster).foldl (fun acc (s, n) =>
       if face.hasSupertype s then acc + n else acc) 0)
   let sphinxLess :=
     if face.hasSubtype .sphinx then
       let zone (o : GameObject) :=
         o.id != card.id && o.controlledBy caster &&
-          (o.isOnBattlefield || o.zone == .command)
+          (o.zone == .command || (o.isOnBattlefield && g.retainsPrintedAbilities o))
       (g.objects.filter zone).foldl (fun acc o => acc + o.printed.eminenceSphinxReduction) 0
     else 0
   (afterWitch.reduceGeneric (subtypeLess + selfLess + thisTurnLess)).reduceGeneric sphinxLess
@@ -283,10 +275,10 @@ def playManaCost (g : Game) (card : GameObject) (face : CardDef)
     if face.isCreature then 0
     else
       (g.livingOpponents caster).foldl (fun acc pl =>
-        acc + ((g.permanentsOf pl.id).filter (·.staticAbilities.any
+        acc + ((g.permanentsOf pl.id).filter (fun o => (g.staticAbilities o).any
           (· == .fra .opponentsNoncreatureSpellsCostMore))).size) 0
   let increase := if tax == 0 then increase else increase.addCost (ManaCost.ofGeneric tax)
-  let start := playCostStart card face
+  let start := g.playCostStart card face
   let afterIncrease := start.addCost increase
   let afterEquip := g.applyCastCostReductions card face afterIncrease
   let freeRG :=
@@ -299,7 +291,7 @@ def playManaCost (g : Game) (card : GameObject) (face : CardDef)
     if freeRG then
       g.applyCastCostReductions card face (ManaCost.empty.addCost increase)
     else
-      match card.playPermission with
+      match g.playPermission card with
       | some perm =>
         if perm.withoutManaCost || perm.payLifeEqualManaValue then
           g.applyCastCostReductions card face (ManaCost.empty.addCost increase)
@@ -319,7 +311,7 @@ def playManaCost (g : Game) (card : GameObject) (face : CardDef)
     card.zone == .hand caster && !face.manaCost.containsX &&
       face.manaValue ≤ (g.creaturesControlledBy caster).size &&
       (g.permanentsOf caster).any (fun o =>
-        o.staticAbilities.any (fun
+        (g.staticAbilities o).any (fun
           | .castFromHandFreeUpToCreatures => true
           | _ => false))
   let cost :=
@@ -329,7 +321,7 @@ def playManaCost (g : Game) (card : GameObject) (face : CardDef)
     face.freeCastIfControlCommander &&
       (g.permanentsOf caster).any (·.status.isCommander)
   let cost :=
-    if freeCommander || card.status.freeCastFromGraveyard then
+    if freeCommander || g.freeCastFromGraveyard card then
       g.applyCastCostReductions card face (ManaCost.empty.addCost increase)
     else cost
   ManaCost.afterReduction face.manaCost cost
@@ -348,7 +340,11 @@ def grantsExtraPowerUp (o : GameObject) : Bool :=
 
 /-- Extra lifetime power-up activations granted by Wonder Man (MSH). -/
 def powerUpActivationLimit (g : Game) (p : PlayerId) : Nat :=
-  1 + ((g.permanentsOf p).filter grantsExtraPowerUp).size
+  1 + ((g.permanentsOf p).filter (fun o =>
+    (g.staticAbilities o).any (fun ab =>
+      match ab with
+      | .extraPowerUpActivation => true
+      | _ => false))).size
 
 /-- True when `o` is Hulk's generic power-up cost reduction. -/
 def grantsHulkPowerUpReduction (o : GameObject) : Bool :=
@@ -363,7 +359,7 @@ def hulkPowerUpGenericReduction (g : Game) (p : PlayerId) (sourceId : ObjectId) 
   (g.permanentsOf p).foldl (fun acc o =>
     if o.id == sourceId then acc
     else
-      o.printed.staticAbilities.foldl (fun acc ab =>
+      (g.staticAbilities o).foldl (fun acc ab =>
         match ab with
         | .otherPowerUpCostsLess n => acc + n
         | _ => acc) acc) 0
@@ -376,7 +372,8 @@ def activationManaCost (g : Game) (p : PlayerId) (ab : ActivatedAbility)
     | none => cost
   let firstEquipFree :=
     ab.isEquip && g.hasEnduringStory p && g.loggedEquipActivations p == 0 &&
-      (g.permanentsOf p).any (·.staticAbilities.any (· == .firstEquipFreeIfEnduringStory))
+      (g.permanentsOf p).any (fun o =>
+        (g.staticAbilities o).any (· == .firstEquipFreeIfEnduringStory))
   let cost :=
     if firstEquipFree then ManaCost.empty
     else if ab.powerUp then

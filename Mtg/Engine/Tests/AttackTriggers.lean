@@ -151,7 +151,7 @@ def afterGalionCleanup : Game := passBoth (skipTo galionResolved .end 80)
 
 #guard afterGalionCleanup.power (namedPermanent afterGalionCleanup "Llanowar Elves") == 1
 #guard afterGalionCleanup.basePower (namedPermanent afterGalionCleanup "Llanowar Elves") == 1
-#guard (namedPermanent afterGalionCleanup "Llanowar Elves").status.setBasePower.isNone
+#guard (afterGalionCleanup.setBasePower (namedPermanent afterGalionCleanup "Llanowar Elves")).isNone
 
 def afterGalionPathmakerCleanup : Game := passBoth (skipTo galionOnPathmaker .end 80)
 

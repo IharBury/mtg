@@ -167,8 +167,7 @@ No creatures there is reported. A tied choice is still a choice. -/
 #guard
   let g0 := addPermanent (addPermanent afterDraw attacker caster caster) fodder caster caster
   let sid := pid g0 "Sacrifice Attacker"
-  let g0 := g0.changeStatuses sid #[
-    .attacking true, .attackingWhom (some caster)]
+  let g0 := g0.markAttacking sid (some (.player caster))
   let g := step g0 (.sacrifice .leastPower) (some sid)
   onBoard g "Sacrifice Attacker" && !onBoard g "Sacrifice Fodder" &&
     inGraveyard g caster "Sacrifice Fodder" &&

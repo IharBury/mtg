@@ -262,7 +262,7 @@ controller it had is used. -/
 def controllersNamed (g : Game) (ctx : TriggerRead) (what : TriggeredAbility.ObjectSelector) :
     Option (Array PlayerId) :=
   let controlling (o : GameObject) : PlayerId :=
-    (o.controller.orElse (fun _ => o.lastController)).getD o.owner
+    (g.lastControllerOf? o).getD o.owner
   let distinct (pids : Array PlayerId) : Array PlayerId :=
     pids.foldl (fun acc pid => if acc.contains pid then acc else acc.push pid) #[]
   match what with
@@ -314,7 +314,7 @@ def collectPlayers (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.Player
       | _ => none with
     | some pid => one pid
     | none =>
-      match (g.resolvingAbility.bind g.findObject?).bind (·.lastKnownToughness) with
+      match ctx.lastKnownToughness.orElse (fun _ => g.resolvingAbility.bind g.lastKnownToughnessOf?) with
       | some idx => one ⟨idx.toNat⟩
       | none => none
   | .opponentHasYou => none
@@ -504,10 +504,6 @@ def millCollected (g : Game) (controller : PlayerId) (pids : Array PlayerId) (n 
       pids.foldl (fun g pid => g.mill pid n (cause := cause?)) g
     let milled := (tops.map g.followMoved).filter (fun id =>
       (g.findObject? id).any (fun o => o.zone == .graveyard o.owner))
-    let g :=
-      match cause? with
-      | some c => milled.foldl (fun (g : Game) id => g.change (.setLinkedExileCause id (some c))) g
-      | none => g
     g.change (.milledIdsThisWay milled)
   | .opponentsMilled =>
     let opps := pids.filter (· != controller)

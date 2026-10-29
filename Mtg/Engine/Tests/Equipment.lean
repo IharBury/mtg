@@ -235,7 +235,7 @@ def spearEquipped : Game := passBoth paidEquip
 def afterSpearCleanup : Game := passBoth (skipTo spearEquipped .end 80)
 
 #guard afterSpearCleanup.power (namedPermanent afterSpearCleanup "Grizzly Bears") == 4
-#guard (namedPermanent afterSpearCleanup "Grizzly Bears").status.pumpPower == 0
+#guard (afterSpearCleanup.pumpOf (namedPermanent afterSpearCleanup "Grizzly Bears")).1 == 0
 
 /-- If the target leaves before Equip resolves, the ability does nothing. -/
 def equipTargetGone : Game :=
@@ -761,7 +761,7 @@ def afterBladeCleanup : Game := passBoth (skipTo bladeEquipped .end 80)
 
 #guard afterBladeCleanup.power (namedPermanent afterBladeCleanup "Grizzly Bears") == 4
 #guard afterBladeCleanup.toughness (namedPermanent afterBladeCleanup "Grizzly Bears") == 3
-#guard (namedPermanent afterBladeCleanup "Grizzly Bears").status.pumpPower == 0
+#guard (afterBladeCleanup.pumpOf (namedPermanent afterBladeCleanup "Grizzly Bears")).1 == 0
 
 /-- Combat uses the equipped power and toughness. -/
 def afterEquippedBladeCombat : Game :=
@@ -917,12 +917,12 @@ def paidHospitalityAnimate : Game :=
 def animatedHospitality : Game := passBoth paidHospitalityAnimate
 
 #guard animatedHospitality.stack.isEmpty
-#guard (namedPermanent animatedHospitality "Beorn's Hospitality").isCreature
-#guard (namedPermanent animatedHospitality "Beorn's Hospitality").hasSubtype .bear
+#guard animatedHospitality.isCreature (namedPermanent animatedHospitality "Beorn's Hospitality")
+#guard animatedHospitality.hasSubtype (namedPermanent animatedHospitality "Beorn's Hospitality") .bear
 #guard (namedPermanent animatedHospitality "Beorn's Hospitality").printed.isEnchantment
-#guard (namedPermanent animatedHospitality "Beorn's Hospitality").types.any (· == .creature)
-#guard (namedPermanent animatedHospitality "Beorn's Hospitality").types.any (· == .enchantment)
-#guard (namedPermanent animatedHospitality "Beorn's Hospitality").status.additionalCreature
+#guard (animatedHospitality.types (namedPermanent animatedHospitality "Beorn's Hospitality")).any (· == .creature)
+#guard (animatedHospitality.types (namedPermanent animatedHospitality "Beorn's Hospitality")).any (· == .enchantment)
+#guard animatedHospitality.additionalCreature (namedPermanent animatedHospitality "Beorn's Hospitality")
 #guard animatedHospitality.power
   (namedPermanent animatedHospitality "Beorn's Hospitality") == 3
 #guard animatedHospitality.toughness
@@ -932,7 +932,7 @@ def animatedHospitality : Game := passBoth paidHospitalityAnimate
 /-- The animation does not wear off in cleanup. -/
 def afterHospitalityCleanup : Game := passBoth (skipTo animatedHospitality .end 80)
 
-#guard (namedPermanent afterHospitalityCleanup "Beorn's Hospitality").isCreature
+#guard afterHospitalityCleanup.isCreature (namedPermanent afterHospitalityCleanup "Beorn's Hospitality")
 #guard afterHospitalityCleanup.power
   (namedPermanent afterHospitalityCleanup "Beorn's Hospitality") == 3
 
@@ -962,10 +962,10 @@ def hospitalitySelfLandfall : Game :=
   let g := addPermanent afterDraw beornsHospitality ⟨0⟩ ⟨0⟩
   let g := addForests g ⟨0⟩ 3
   let o := namedPermanent g "Beorn's Hospitality"
-  let g := g.changeStatuses o.id #[
-    .additionalCreature true,
-    .additionalSubtypes #[.bear],
-    .grantedStaticAbilities #[.powerToughnessEqualLandsYouControl]]
+  let g := g.createEffects #[
+    .additionalCreature o.id false,
+    .additionalSubtype o.id .bear,
+    .grantedStatic o.id .powerToughnessEqualLandsYouControl]
   let g := addToHand g forest ⟨0⟩
   let g := mustApply g ⟨0⟩ (.playLand (handCardNamed g ⟨0⟩ "Forest").id)
   let g := mustApply g ⟨0⟩
@@ -991,7 +991,7 @@ def hospitalityEnteredThisTurn : Game :=
   let g := mustApply g ⟨0⟩ .pay
   passBoth g
 
-#guard (namedPermanent hospitalityEnteredThisTurn "Beorn's Hospitality").isCreature
+#guard hospitalityEnteredThisTurn.isCreature (namedPermanent hospitalityEnteredThisTurn "Beorn's Hospitality")
 #guard !(hospitalityEnteredThisTurn.canAttack
   (namedPermanent hospitalityEnteredThisTurn "Beorn's Hospitality"))
 #guard (namedPermanent hospitalityEnteredThisTurn "Beorn's Hospitality").status.summoningSick

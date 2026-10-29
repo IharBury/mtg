@@ -40,6 +40,12 @@ structure StackEntry where
   (CR 115.1c / 601.2c). The current instance index is
   `targets.size + skippedOptionalSlots`. -/
   skippedOptionalSlots : Nat := 0
+  /-- Delayed trigger payload when this stack entry is a CR 603.7 delayed triggered ability. -/
+  delayedTrigger : Option (DelayedTriggerKind × EventCause) := none
+  /-- Trigger or activation parameter / last-known power carried by this stack entry (CR 113.7a / 608.2h). -/
+  lastKnownPower : Option Int := none
+  /-- Trigger parameter / last-known toughness carried by this stack entry (CR 113.7a / 608.2h). -/
+  lastKnownToughness : Option Int := none
 deriving Repr, Inhabited, BEq
 
 /-- Whether a proposed payment is for a spell (CR 601) or an activated ability (CR 602). -/

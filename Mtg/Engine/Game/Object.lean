@@ -15,14 +15,12 @@ namespace Mtg.Engine
 set_option maxRecDepth 2048 in
 deriving instance BEq for CardDef
 
-/-- Permission to play a card from exile (CR 701.14 / 715.3d). -/
+/-- Permission to play a card from exile (CR 701.14 / 715.3d).
+Duration (`untilEndOfTurn`, `untilEndOfNextTurnOf`, or `whileInZone`) is stored
+on the enclosing `ContinuousEffectSpec.permission`. -/
 structure PlayPermission where
   /-- The player who may play the card. -/
   player : PlayerId
-  /-- Remaining endings of `player`'s turns before the permission expires.
-  Granted as 2 during that player's turn so it lasts until the end of their
-  next turn. Ignored when `fromAdventure` is true. -/
-  turnEndsRemaining : Nat
   /-- CR 715.3d permission from resolving an Adventure: lasts while the card
   remains exiled, and the card cannot be recast as an Adventure this way. -/
   fromAdventure : Bool := false
@@ -52,14 +50,9 @@ structure GameObject where
   printed : CardDef
   owner : PlayerId
   controller : Option PlayerId := none
-  /-- Controller as this object last existed on the battlefield (CR 608.2c).
-  Zone changes clear `controller`; this keeps “its controller” readable. -/
-  lastController : Option PlayerId := none
   /-- Player under whose control this object entered the battlefield
   (CR 110.2). Used when a control-changing effect ends (CR 800.4a / 800.4c). -/
   defaultController : Option PlayerId := none
-  /-- True while a control-changing effect is applying (CR 800.4a). -/
-  controlChanged : Bool := false
   zone : Zone
   status : Status := {}
   timestamp : Nat := 0
@@ -72,12 +65,6 @@ structure GameObject where
   reflexiveResolution : Option TriggeredAbility.TriggerResolution := none
   /-- Source of an activated or triggered ability on the stack (CR 113.7). -/
   sourceId : Option ObjectId := none
-  /-- Last known power of a trigger source (CR 113.7a / 608.2g). -/
-  lastKnownPower : Option Int := none
-  /-- Last known toughness of a trigger source (CR 113.7a / 608.2g). -/
-  lastKnownToughness : Option Int := none
-  /-- Set while this card may be played from exile. -/
-  playPermission : Option PlayPermission := none
   /-- Object this Aura or Equipment is attached to (CR 303.4 / 301.5). -/
   attachedTo : Option ObjectId := none
   /-- Normal characteristics of an adventurer card, set while the spell is on
@@ -91,19 +78,6 @@ structure GameObject where
   /-- Cards this permanent exiled that a leave trigger may return (Fiend
   Hunter). Unlike `linkedExile`, these do not return automatically. -/
   leaveTriggerExile : Array ObjectId := #[]
-  /-- This spell was cast from a graveyard (flashback, CR 702.34). -/
-  castFromGraveyard : Bool := false
-  /-- An instant or sorcery cast this way is exiled instead of being put into
-  its owner's graveyard (Bilbo, Thief in the Night). -/
-  exileInstantSorceryInstead : Bool := false
-  /-- This spell was cast from its owner's hand. -/
-  castFromHand : Bool := false
-  /-- This permanent entered the battlefield as a spell that was cast
-  (“if you cast it”). -/
-  wasCast : Bool := false
-  /-- This spell is a copy of a prepare spell cast from exile (a “prepared
-  spell”). -/
-  isPreparedSpell : Bool := false
   /-- For a triggered ability on the stack: the object whose event caused it,
   that object's controller, and its power as the ability triggered. -/
   fraCauseId : Option ObjectId := none
@@ -114,49 +88,11 @@ structure GameObject where
   /-- The permanent that exiled this card, for permissions tied to it (Null
   Summoner). -/
   exiledBy : Option ObjectId := none
-  /-- A command-zone effect object that ends when this player's next turn
-  begins (Jace, Reality Sculptor; Garruk, Curse Breaker). -/
-  fraEffectUntilTurnOf : Option PlayerId := none
-  /-- The instant or sorcery card in a graveyard has flashback until end of
-  turn, with its mana cost as the flashback cost (Stingcaster Mage). -/
-  flashbackUntilEot : Bool := false
-  /-- This spell's kicker cost was paid (CR 702.32). -/
-  kicked : Bool := false
-  /-- This spell's teamwork cost was paid (CR 702.194). -/
-  teamworkPaid : Bool := false
-  /-- This creature spell's sneak cost was paid (MSH sneak). -/
-  sneakPaid : Bool := false
-  /-- Player the sneak-returned attacker was attacking (MSH sneak). -/
-  sneakAttackWhom : Option PlayerId := none
-  /-- Player, planeswalker, or battle the sneak-returned attacker was attacking (CR 508.4 / MSH sneak). -/
-  sneakAttackTarget : Option AttackTarget := none
-  /-- Opponent promised a gift as an additional cost. Given on resolution. -/
-  giftPromisedTo : Option PlayerId := none
   /-- This object is a copy (CR 706). Copies of spells are not cast. -/
   isCopy : Bool := false
-  /-- Mana produced by Delighted Halfling (or similar) was spent to cast this
-  legendary spell, so it can't be countered. Copies do not inherit this. -/
-  uncounterableThisCast : Bool := false
-  /-- Cards exiled to pay this boast activation (Baron Helmut Zemo; MSH 227). -/
-  boastExiled : Array ObjectId := #[]
-  /-- Its entering has been processed (enters triggers queued). -/
-  enterProcessed : Bool := false
-  /-- Mana from a Treasure was spent to cast this spell. -/
-  treasureManaSpent : Bool := false
   /-- Value chosen for `{X}` while this spell is on the stack (CR 107.3a).
   Off the stack, `{X}` is 0. -/
   chosenX : Option Nat := none
-  /-- Printed card to restore when a copy effect ends (CR 707 / MSH). -/
-  copyRestore : Option CardDef := none
-  /-- The current copy effect lasts until end of turn. -/
-  copyUntilEot : Bool := false
-  /-- The current copy effect lasts until this controller's next turn. -/
-  copyUntilNextTurn : Bool := false
-  /-- The current copy effect lasts until this source leaves the battlefield. -/
-  copyUntilSourceLeaves : Option ObjectId := none
-  /-- A control-changing effect lasts until this source leaves (Super Hero
-  Civil War; MSH 143). -/
-  controlUntilSourceLeaves : Option ObjectId := none
 deriving Repr, Inhabited, BEq
 
 /-- How one attacking or blocking creature assigns its combat damage (CR 510.1). -/
@@ -190,63 +126,36 @@ def nameWithToken (o : GameObject) : String :=
       owner := ⟨0⟩, zone := .battlefield }
   card.nameWithToken == "Grizzly Bears"
 
-/-- Current card types, including a lasting “becomes a creature” effect. -/
+/-- Printed card types of this object (CR 205.2). Layer-4 type-changing effects
+are evaluated in `Game.objectTypes` (CR 613.1d). -/
 def types (o : GameObject) : Array CardType :=
-  if o.status.onlyFoodArtifact then #[.artifact]
-  else if o.status.returnedAsArtifact then
-    let ts := o.printed.types.filter (· != .creature)
-    if ts.any (· == .artifact) then ts else ts.push .artifact
-  else
-    let asCreature :=
-      o.status.additionalCreature || o.status.additionalCreatureUntilEot ||
-        o.status.animatedConstruct55
-    let ts :=
-      if o.status.notACreature then
-        o.printed.types.filter (· != .creature)
-      else if asCreature && !o.printed.isCreature then
-        o.printed.types.push .creature
-      else
-        o.printed.types
-    if o.status.additionalArtifactUntilEot && !ts.any (· == .artifact) then
-      ts.push .artifact
-    else ts
+  o.printed.types
 
-/-- Current subtypes, including those granted by a lasting type-changing effect. -/
+/-- Printed subtypes of this object (CR 205.3). Layer-3 and Layer-4 subtype
+effects are evaluated in `Game.currentSubtypes` (CR 613.1c–d). -/
 def subtypes (o : GameObject) : Array CardSubtype :=
-  if o.status.onlyFoodArtifact then #[.food]
-  else
-    let printed := CardSubtype.ofSubtypes o.printed.subtypes
-    let added :=
-      if o.status.animatedConstruct55 then o.status.additionalSubtypes.push .construct
-      else o.status.additionalSubtypes
-    let extra := added.filter (fun s => !printed.any (· == s))
-    let raw := printed ++ extra
-    match o.status.replacedCreatureTypesUntilEot with
-    | none => raw
-    | some types =>
-      let kept := raw.filter CardSubtype.isNoncreature
-      let added := types.filter (fun t => !kept.any (· == t))
-      kept ++ added
+  CardSubtype.ofSubtypes o.printed.subtypes
 
-/-- Current supertypes of this object (CR 205.4). -/
+/-- Printed supertypes of this object (CR 205.4). Layer-4 supertype effects
+are evaluated in `Game.supertypes` (CR 613.1d). -/
 def supertypes (o : GameObject) : Array Supertype :=
   o.printed.supertypes
 
 def hasSupertype (o : GameObject) (s : Supertype) : Bool :=
   o.supertypes.any (· == s)
 
-/-- Type line from current types and subtypes (CR 205.1a). -/
+/-- Type line from printed types and subtypes (CR 205.1a). -/
 def typeLine (o : GameObject) : String :=
   formatTypeLine o.supertypes o.types (o.subtypes.map CardSubtype.englishName)
 
-/-- Printed power/toughness plus until-EOT pumps and +1/+1 counters. Layer-7a
-lands-you-control CDAs (all zones), layer-7b setting, attached Aura/Equipment
-bonuses, and lord bonuses are applied in `Game.power` / `Game.toughness`. -/
+/-- Printed power/toughness plus +1/+1 counters. Layer 7a–7d effects, attached
+Aura/Equipment bonuses, and lord bonuses are evaluated in `Game.power` /
+`Game.toughness` (CR 613.4). -/
 def power (o : GameObject) : Int :=
-  (o.printed.power.getD 0) + o.status.pumpPower + (o.status.plusOnePlusOne : Int)
+  (o.printed.power.getD 0) + (o.status.plusOnePlusOne : Int) - (o.status.minusOneMinusOne : Int)
 
 def toughness (o : GameObject) : Int :=
-  (o.printed.toughness.getD 0) + o.status.pumpToughness + (o.status.plusOnePlusOne : Int)
+  (o.printed.toughness.getD 0) + (o.status.plusOnePlusOne : Int) - (o.status.minusOneMinusOne : Int)
 
 def isOnBattlefield (o : GameObject) : Bool :=
   o.zone == .battlefield && !o.status.phasedOut
@@ -263,12 +172,10 @@ controller, or its owner if it has none. -/
 def you (o : GameObject) : PlayerId :=
   o.controller.getD o.owner
 
-/-- Whether this object is currently a creature (CR 205.1a / 302). -/
+/-- Whether this object has the printed creature card type (CR 205.2a / 302).
+Prefer `Game.isCreature` when `Game` is in scope to include Layer-4 effects. -/
 def isCreature (o : GameObject) : Bool :=
-  !o.status.notACreature &&
-  !o.status.onlyFoodArtifact && !o.status.returnedAsArtifact &&
-    (o.printed.isCreature || o.status.additionalCreature ||
-      o.status.additionalCreatureUntilEot || o.status.animatedConstruct55)
+  o.printed.isCreature
 
 /-- Whether this permanent has the legendary supertype (CR 205.4d / 704.5j). -/
 def isLegendary (o : GameObject) : Bool :=
@@ -285,9 +192,10 @@ def hasSubtype (o : GameObject) (s : CardSubtype) : Bool :=
   o.subtypes.any (· == s) ||
     (o.printed.keywords.changeling && !s.isNoncreature)
 
-/-- Printed static abilities plus those granted by a lasting effect. -/
+/-- Printed static abilities of this object. Layer-6 ability grants and
+removals are evaluated in `Game.staticAbilitiesOf` (CR 613.1f). -/
 def staticAbilities (o : GameObject) : Array StaticAbility :=
-  o.printed.staticAbilities ++ o.status.grantedStaticAbilities
+  o.printed.staticAbilities
 
 /-- Whether an Aura with card `aura` may enchant this permanent: an artifact
 or non-Aura enchantment for “Enchant artifact or non-Aura enchantment”
@@ -306,16 +214,14 @@ def isColorlessNonland (o : GameObject) : Bool :=
 def isArtifactOrLand (o : GameObject) : Bool :=
   o.isOnBattlefield && (o.printed.isArtifact || o.printed.isLand)
 
-/-- Keywords granted until end of turn, if this object is on the battlefield. -/
-def grantedUntilEot (o : GameObject) : Keywords :=
-  if o.isOnBattlefield then o.status.untilEotKeywords else Keywords.none
-
-/-- Printed keywords plus until-end-of-turn grants (CR 611.2a / 514.3). -/
+/-- Printed keywords of this object. Layer-6 keyword grants and removals are
+evaluated in `Game.currentKeywords` (CR 613.1f). -/
 def printedOrUntilEot (o : GameObject) : Keywords :=
-  Keywords.merge o.printed.keywords o.grantedUntilEot
+  o.printed.keywords
 
 /-- True when summoning sickness currently prevents tapping or attacking
-(CR 302.6). Haste overrides it. -/
+(CR 302.6). Haste overrides it; prefer `Game.hasSummoningSickness` when `Game`
+is in scope. -/
 def hasSummoningSickness (o : GameObject) : Bool :=
   o.isCreature && o.status.summoningSick && !o.printedOrUntilEot.haste
 
@@ -325,12 +231,11 @@ def canPayTapCost (o : GameObject) : Bool :=
 
 end GameObject
 
-/-- Printed and granted triggers of `source` that fire on `event`. -/
+/-- Printed triggers of `source` that fire on `event`. Layer-6 granted triggers
+and ability removals are evaluated in `Game.matchingTriggers` (CR 613.1f). -/
 def GameObject.matchingTriggers (source : GameObject) (event : TriggerEvent) :
     Array TriggeredAbility :=
-  (source.printed.triggeredAbilities ++ source.status.grantedTriggeredAbilities ++
-      (if source.isOnBattlefield then source.status.grantedTriggersUntilEot else #[])).filter
-    (·.firesOn event)
+  source.printed.triggeredAbilities.filter (·.firesOn event)
 
 /-- A game rule that causes an event directly (CR 103.5, 303.4h, 304.2, 307.2, 602.2b, 603.3, 608.3, 700.2d, 701.3d, 702.176, 715.3d, 733.1, 800.4a). -/
 inductive GameRuleKind where
@@ -527,6 +432,37 @@ def EventCause.oneShotEffectId? : EventCause → Option EffectId
   | .replaced _ orig => orig.oneShotEffectId?
   | _ => none
 
+/-- Delayed triggered ability kinds created by resolving effects (CR 603.7). -/
+inductive DelayedTriggerKind where
+  /-- Create `count` 1/1 white Bird Soldier creature tokens with flying at the beginning of the next upkeep (The Eagles Are Coming!). -/
+  | eaglesBirds (count : Nat)
+  /-- Whenever you attack this turn, target creature you control gets +1/+1 until end of turn for each Plains you control (Roads Go Ever, Ever On). -/
+  | attackPumpPerPlains
+  /-- Return `objectId` from exile to the battlefield under its owner's control at the beginning of the next end step. -/
+  | endStepReturn (objectId : ObjectId)
+  /-- Exile `objectId` from the battlefield at the beginning of the next end step. -/
+  | endStepExile (objectId : ObjectId)
+  /-- Sacrifice `objectId` at the beginning of the next end step. -/
+  | endStepSacrifice (objectId : ObjectId)
+  /-- Return `objectId` from its owner's graveyard to the battlefield under `underController`'s control at the beginning of the next end step. -/
+  | endStepGraveReturn (objectId : ObjectId) (underController : PlayerId)
+  /-- Reveal creature cards from `controller`'s library for `count` exiled creatures at the beginning of the next end step (Synthetic Destiny). -/
+  | endStepSynthetic (count : Nat)
+deriving DecidableEq, Repr, Inhabited, BEq
+
+/-- Whether this delayed trigger fires at most once and is removed from `Game.delayedTriggers` when it triggers (CR 603.7b). -/
+def DelayedTriggerKind.isOneShot : DelayedTriggerKind → Bool
+  | .attackPumpPerPlains => false
+  | _ => true
+
+/-- A delayed triggered ability waiting for its trigger condition (CR 603.7). -/
+structure DelayedTrigger where
+  controller : PlayerId
+  source : Option GameObject := none
+  kind : DelayedTriggerKind
+  cause : EventCause := .unclassified
+deriving Repr, Inhabited, BEq
+
 /-- A triggered ability waiting to be put onto the stack the next time a
 player would receive priority (CR 603.3 / 603.3b). `source` is a snapshot of
 the permanent as it existed when the trigger event occurred. `lastKnownPower`
@@ -551,6 +487,8 @@ structure WaitingTrigger where
   causeController : Option PlayerId := none
   /-- Rules cause for putting this trigger onto the stack (CR 603.3). -/
   eventCause : Option EventCause := none
+  /-- Delayed trigger payload when this waiting trigger came from a CR 603.7 delayed triggered ability. -/
+  delayedTrigger : Option (DelayedTriggerKind × EventCause) := none
   /-- “Only once each turn” and extra trigger copies were already applied
   when this was queued. -/
   checked : Bool := false

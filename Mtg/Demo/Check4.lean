@@ -142,7 +142,7 @@ open Mtg.Demo.Render
 #guard
   match applyInteractiveAsActor Tests.struckerMayConnive "connive" [] with
   | .ok g' =>
-    (Tests.namedPermanent g' "Baron Strucker, HYDRA Overlord").status.optionalOnceUsed &&
+    g'.optionalOnceUsedThisTurn (Tests.namedPermanent g' "Baron Strucker, HYDRA Overlord").id &&
       g'.log.any (fun s => Tests.mentions s "connives")
   | .error _ => false
 

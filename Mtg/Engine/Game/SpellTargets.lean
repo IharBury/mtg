@@ -70,8 +70,8 @@ def kickedSpellEffect (e : Effect) : Effect :=
 
 /-- Spell effect after a modal choice, if one has been announced (CR 700.2).
 With `extra` modes, the combined effect of all of them. -/
-def spellEffectOf (o : GameObject) (chosenMode : Option Nat) (extra : Array Nat := #[]) :
-    Option Effect :=
+def spellEffectOf (o : GameObject) (chosenMode : Option Nat) (extra : Array Nat := #[])
+    (kicked : Bool := false) : Option Effect :=
   let base :=
     if o.printed.isModal then
       match chosenMode with
@@ -81,13 +81,14 @@ def spellEffectOf (o : GameObject) (chosenMode : Option Nat) (extra : Array Nat 
       | none => none
     else
       o.printed.spellEffect
-  if o.kicked then base.map kickedSpellEffect else base
+  if kicked then base.map kickedSpellEffect else base
 
 /-- Spell effect of `o` using the mode announced on the stack, if any (CR 700.2). -/
 def currentSpellEffect (g : Game) (o : GameObject) : Option Effect :=
+  let kicked := g.wasKicked o.id
   match g.stack.find? (fun e => e.objectId == o.id) with
-  | some e => spellEffectOf o e.chosenMode e.extraModes
-  | none => spellEffectOf o none
+  | some e => spellEffectOf o e.chosenMode e.extraModes (kicked := kicked)
+  | none => spellEffectOf o none (kicked := kicked)
 
 /-- Legal targets for card face `c`, using `chosenMode` when a modal mode has
 been announced (CR 115.1, 303.4, 601.2c). `none` on a modal card unions every
@@ -208,13 +209,21 @@ def currentTargetSlot (g : Game) (obj : GameObject) : Nat :=
 /-- Skip the current optional “up to one” instance without announcing a
 target (CR 115.1c / 601.2c). -/
 def skipOptionalTargetSlot (g : Game) (objectId : ObjectId) : Game :=
-  g.changeStackEntryById objectId .incSkippedOptionalSlots
+  match g.stack.findIdx? (fun e => e.objectId == objectId) with
+  | some i =>
+    let e := g.stack[i]!
+    g.change (.setStackEntryAt i { e with skippedOptionalSlots := e.skippedOptionalSlots + 1 })
+  | none => g
 
 /-- Record whether every instance of “target” on this stack object has been
 announced. A triggered ability with several instances stays unfinished until
 the last one is chosen or skipped (CR 603.3d). -/
 def markTargetsAnnounced (g : Game) (objectId : ObjectId) (done : Bool) : Game :=
-  g.changeStackEntryById objectId (.targetsAnnounced done)
+  match g.stack.findIdx? (fun e => e.objectId == objectId) with
+  | some i =>
+    let e := g.stack[i]!
+    g.change (.setStackEntryAt i { e with targetsAnnounced := done })
+  | none => g
 
 /-- True when the current instance of “target” is optional (“up to one”). -/
 def canSkipCurrentOptionalSlot (g : Game) (obj : GameObject) : Bool :=
@@ -304,7 +313,7 @@ def announcedTargetBounds (g : Game) (obj : GameObject) : Nat × Nat :=
           | .resource .gainLifePlusOnes => true
           | _ => false
         let maxN :=
-          if lifeTargets then (obj.lastKnownPower.getD 0).toNat
+          if lifeTargets then ((g.lastKnownPowerOf? obj.id).getD 0).toNat
           else Nat.max n ab.effect.maxTargetCount
         -- “Up to one” is min 0, max the printed count (usually 1).
         -- Heroic Feast’s maximum is the life gained in that event.

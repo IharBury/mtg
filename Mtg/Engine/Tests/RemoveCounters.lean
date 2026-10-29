@@ -41,19 +41,15 @@ def attach (g : Game) (aura host : String) : Game :=
 
 def withHope (g : Game) (name : String) (n : Nat) : Game :=
   let o := obj g name
-  g.changeStatus o.id (.hope n)
+  g.recordPutCounters o.id .hope n
 
 def load (g : Game) (name : String) : Game :=
   let o := obj g name
-  (g.recordPutCounters o.id .plusOnePlusOne 2).changeStatuses o.id #[
-    .hope 1,
-    .charge 2,
-    .stun 1,
-    .shield 1,
-    .lore 3,
-    .keywordCounters { flying := 1 },
-    .damage 4,
-    .pump (1, 2)]
+  let g :=
+    #[(.plusOnePlusOne, 2), (.hope, 1), (.charge, 2), (.stun, 1),
+      (.shield, 1), (.lore, 3), (.flying, 1)].foldl
+      (fun acc (k, n) => acc.recordPutCounters o.id k n) g
+  (g.changeStatuses o.id #[.damage 4]).createEffect (.pump o.id 1 2)
 
 def dawn : CardDef := { name := "Dawn", types := #[.enchantment] }
 def grasp : CardDef := { name := "Grasp", types := #[.enchantment] }
@@ -79,13 +75,15 @@ def allFromEnchanted : TriggeredAbility.TriggerResolution :=
 def handSize (g : Game) : Nat :=
   (g.player caster).hand.size
 
-def stillLoaded (s : Status) : Bool :=
+def stillLoaded (g : Game) (o : GameObject) : Bool :=
+  let s := o.status
   s.plusOnePlusOne == 2 && s.hope == 1 && s.charge == 2 && s.stun == 1 &&
     s.shield == 1 && s.lore == 3 && s.keywordCounters.flying == 1 &&
-    s.damage == 4 && s.pump == (1, 2)
+    s.damage == 4 && g.pumpOf o == (1, 2)
 
-def stripped (s : Status) : Bool :=
-  !Status.hasCounters s && s.damage == 4 && s.pump == (1, 2) &&
+def stripped (g : Game) (o : GameObject) : Bool :=
+  let s := o.status
+  !Status.hasCounters s && s.damage == 4 && g.pumpOf o == (1, 2) &&
     s.plusOnePlusOne == 0 && s.hope == 0 && s.keywordCounters.flying == 0
 
 /- One hope counter leaves the source, and a later step can see that.
@@ -128,7 +126,7 @@ source, and a source that has left, remove nothing. -/
 #guard
   let g0 := withHope (addPermanent afterDraw dawn caster caster) "Dawn" 3
   let (g1, newId) := g0.move (pid g0 "Dawn") (.graveyard caster) none
-  let g1 := g1.changeStatus (anyObj g1 "Dawn").id (.hope 3)
+  let g1 := g1.recordPutCounters (anyObj g1 "Dawn").id .hope 3
   let g := step g1 hopeFromSource (some newId)
   (anyObj g "Dawn").status.hope == 3 && !g.removedHopeThisWay &&
     logContains g "no longer on the battlefield"
@@ -142,7 +140,7 @@ Removing them does not count as removing a hope counter. -/
     (addPermanent (addPermanent afterDraw bear caster caster) grasp caster caster)
     "Grasp" "Bear") "Bear"
   let g := step g0 allFromEnchanted (some (pid g0 "Grasp"))
-  stripped (obj g "Bear").status && !(obj g "Bear").status.tapped &&
+  stripped g (obj g "Bear") && !(obj g "Bear").status.tapped &&
     logContains g "counters are removed from Bear"
 
 #guard
@@ -151,7 +149,7 @@ Removing them does not count as removing a hope counter. -/
     "Grasp" "Foe") "Foe"
   let g0 := withHope g0 "Grasp" 2
   let g := step g0 allFromEnchanted (some (pid g0 "Grasp"))
-  stripped (obj g "Foe").status && (obj g "Grasp").status.hope == 2 &&
+  stripped g (obj g "Foe") && (obj g "Grasp").status.hope == 2 &&
     logContains g "counters are removed from Foe"
 
 #guard
@@ -170,7 +168,7 @@ Removing them does not count as removing a hope counter. -/
     (addPermanent (addPermanent afterDraw bear caster caster) grasp caster caster)
     "Bear"
   let g := step g0 allFromEnchanted (some (pid g0 "Grasp"))
-  stillLoaded (obj g "Bear").status && g.log == g0.log
+  stillLoaded g (obj g "Bear") && g.log == g0.log
 
 #guard
   let g0 := load (attach
@@ -179,23 +177,23 @@ Removing them does not count as removing a hope counter. -/
   let aura := obj g0 "Grasp"
   let g0 := g0.changeObject aura.id (.attachedTo (some ⟨99999⟩))
   let g := step g0 allFromEnchanted (some (pid g0 "Grasp"))
-  stillLoaded (obj g "Bear").status && g.log == g0.log
+  stillLoaded g (obj g "Bear") && g.log == g0.log
 
 #guard
   let g0 := load (addPermanent afterDraw bear caster caster) "Bear"
   let g := step g0 allFromEnchanted
-  stillLoaded (obj g "Bear").status && g.log == g0.log
+  stillLoaded g (obj g "Bear") && g.log == g0.log
 
 #guard
   let g0 := addPermanent (addPermanent afterDraw bear caster caster) grasp caster caster
   let (g1, bearId) := g0.move (pid g0 "Bear") (.graveyard caster) none
-  let g1 := (g1.recordPutCounters bearId .plusOnePlusOne 2).changeStatuses bearId #[
-    .hope 1, .damage 4, .pump (1, 2)]
+  let g1 := (((g1.recordPutCounters bearId .plusOnePlusOne 2).recordPutCounters bearId .hope 1).changeStatuses bearId #[
+    .damage 4]).createEffect (.pump bearId 1 2)
   let aura := obj g1 "Grasp"
   let g1 := g1.changeObject aura.id (.attachedTo (some bearId))
   let g := step g1 allFromEnchanted (some (pid g1 "Grasp"))
   let host := anyObj g "Bear"
-  !Status.hasCounters host.status && host.status.damage == 4 && host.status.pump == (1, 2) &&
+  !Status.hasCounters host.status && host.status.damage == 4 && g.pumpOf host == (1, 2) &&
     logContains g "counters are removed from Bear"
 
 /- Hope from the enchanted creature is removed, and the note records that.
@@ -220,7 +218,7 @@ not announced clears the note and removes nothing. -/
     "Grasp" "Bear") "Bear"
   let g0 := g0.change (.removedHopeThisWay true)
   let swapped := step g0 (.removeCounters .all .source) (some (pid g0 "Grasp"))
-  swapped.removedHopeThisWay && stillLoaded (obj swapped "Bear").status &&
+  swapped.removedHopeThisWay && stillLoaded swapped (obj swapped "Bear") &&
     (obj swapped "Grasp").status.hope == 0 &&
     (obj swapped "Grasp").status.plusOnePlusOne == 0 &&
     logContains swapped "counters are removed from Grasp"
@@ -232,7 +230,7 @@ not announced clears the note and removes nothing. -/
     "Grasp" "Bear") "Bear"
   let g0 := g0.change (.removedHopeThisWay true)
   let other := step g0 (.removeCounters .hope .target) (some (pid g0 "Grasp"))
-  !other.removedHopeThisWay && stillLoaded (obj other "Bear").status &&
+  !other.removedHopeThisWay && stillLoaded other (obj other "Bear") &&
     (obj other "Grasp").status.hope == 2 && other.log == g0.log
 
 /- Tap, then remove, including when nothing is enchanted. -/
@@ -242,7 +240,7 @@ not announced clears the note and removes nothing. -/
     "Grasp" "Bear") "Bear"
   let g := g0.applyTriggeredAbility caster .onEnterTapEnchantedRemoveCounters
     (some (pid g0 "Grasp"))
-  (obj g "Bear").status.tapped && stripped (obj g "Bear").status
+  (obj g "Bear").status.tapped && stripped g (obj g "Bear")
 
 #guard
   let g0 := load
@@ -250,7 +248,7 @@ not announced clears the note and removes nothing. -/
     "Bear"
   let g := g0.applyTriggeredAbility caster .onEnterTapEnchantedRemoveCounters
     (some (pid g0 "Grasp"))
-  !(obj g "Bear").status.tapped && stillLoaded (obj g "Bear").status &&
+  !(obj g "Bear").status.tapped && stillLoaded g (obj g "Bear") &&
     logContains g "Nothing is enchanted"
 
 #guard TriggeredAbility.resolution .onYourEndStepRemoveHopeDrawSac ==

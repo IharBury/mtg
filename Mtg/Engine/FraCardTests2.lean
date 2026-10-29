@@ -200,7 +200,7 @@ cards in your graveyard. -/
   let g := match g.pending with
     | .chooseTargets _ => mustApply g me (tgt g "Hill Giant")
     | _ => g
-  g.power (namedPermanent (resolved g) "Hill Giant") == 1
+  (resolved g).power (namedPermanent (resolved g) "Hill Giant") == 1
 
 /- Craftwork Crusher chooses two modes (ruling 803: the damage mode's target
 being illegal stops the whole ability). -/
@@ -526,7 +526,7 @@ value in your graveyard; they annihilate with +1/+1 counters (ruling 885). -/
 /- Graft Surgeon counts minus-one counters too (rulings 759 / 760). -/
 #guard
   let g := addPermanent withBears graftSurgeon me me
-  let g := g.changeStatus (namedPermanent g "Graft Surgeon").id (.minusOneMinusOne 2)
+  let g := g.recordPutCounters (namedPermanent g "Graft Surgeon").id .minusOneMinusOne 2
   let g := addPermanent g hillGiant me me
   let g := g.changeStatus (namedPermanent g "Graft Surgeon").id (.damage 5)
   let g := stackTriggers g.checkSBA
@@ -660,7 +660,7 @@ Master of Barbs pumps your team. -/
   let g := addPermanent (afterDraw.empowerJace me 2) wayOfTheParadox me me
   let g := mustApply g me (.activate (jaceTokenOf g).id 0)
   let g := resolved g
-  life g me == 21 && (g.player me).additionalLandsThisTurn == 1
+  life g me == 21 && g.additionalLandsThisTurn me == 1
 #guard
   let g := addPermanent (afterDraw.empowerJace opp 2) gideonTheOathless me me
   let g := skipTo (skipTo g .upkeep 400) .precombatMain 400

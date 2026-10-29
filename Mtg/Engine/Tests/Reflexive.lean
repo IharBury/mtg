@@ -215,8 +215,8 @@ and resolving it applies that follow-up. -/
 #guard
   let g := step afterDraw (.queueReflexive (.pump .perPlains .perPlains .target))
   let again := step g (.queueReflexive (.pump .perPlains .perPlains .target))
-  (g.player caster).attackPumpPerPlainsThisTurn == 1 &&
+  (g.delayedTriggers.filter (fun dt => dt.controller == caster && dt.kind == .attackPumpPerPlains)).size == 1 &&
     logContains g "for each Plains they control" &&
-    (again.player caster).attackPumpPerPlainsThisTurn == 2
+    (again.delayedTriggers.filter (fun dt => dt.controller == caster && dt.kind == .attackPumpPerPlains)).size == 2
 
 end Mtg.Engine.ReflexiveTests

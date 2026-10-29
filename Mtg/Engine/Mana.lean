@@ -412,7 +412,30 @@ def FraManaUse.label : FraManaUse → String
 def FraManaUse.forSubtype (subtype : CardSubtype) : FraManaUse :=
   if subtype == .dragon then .dragonSpell else .subtypeSpell subtype
 
-/-- Unspent mana a player currently has (CR 106.4). Restricted mana (CR 106.10)
+/-- How mana from a mana ability may be spent (CR 106.6). -/
+inductive ManaRestriction where
+  | none
+  | elf
+  | instantOrSorcery
+  | hero
+  | villain
+  | cantNonartifact
+  | creatureSource
+  | fra (u : FraManaUse)
+deriving DecidableEq, Repr, Inhabited, BEq
+
+/-- A short note for the log describing `r`. -/
+def ManaRestriction.note : ManaRestriction → String
+  | .none | .fra .fromTreasure => ""
+  | .elf => " (Elf spells and abilities)"
+  | .instantOrSorcery => " (instant or sorcery spells)"
+  | .hero => " (Hero spells and abilities)"
+  | .villain => " (Villain spells and abilities)"
+  | .cantNonartifact => " (not a nonartifact spell)"
+  | .creatureSource => " (abilities of creature sources)"
+  | .fra u => s!" ({u.label})"
+
+/-- Unspent mana a player currently has (CR 106.4). Restricted mana (CR 106.6)
 is a subset of the colored totals. -/
 structure ManaPool where
   white : Nat := 0
@@ -638,7 +661,7 @@ def add (p : ManaPool) (t : ManaType) (n : Nat := 1) (elfRestricted : Bool := fa
 def total (p : ManaPool) : Nat :=
   p.white + p.blue + p.black + p.red + p.green + p.colorless
 
-/-- Try to spend one mana of the given type (CR 106.10). -/
+/-- Try to spend one mana of the given type (CR 106.6). -/
 def spendOne? (p : ManaPool) (t : ManaType) (allowElfRestricted : Bool := false)
     (allowInstRestricted : Bool := false) (allowHeroRestricted : Bool := false)
     (allowVillainRestricted : Bool := false)
@@ -666,7 +689,7 @@ def spendOne? (p : ManaPool) (t : ManaType) (allowElfRestricted : Bool := false)
   else none
 
 /-- Spend one mana of any type. Restricted Elf mana is spent first when allowed,
-then instant/sorcery-restricted mana, then colorless, then WUBRG (CR 106.10). -/
+then instant/sorcery-restricted mana, then colorless, then WUBRG (CR 106.6). -/
 def spendAny? (p : ManaPool) (allowElfRestricted : Bool := false)
     (allowInstRestricted : Bool := false) (allowHeroRestricted : Bool := false)
     (allowVillainRestricted : Bool := false)
@@ -714,7 +737,7 @@ def spendAny? (p : ManaPool) (allowElfRestricted : Bool := false)
 
 /-- Pay a mana cost, requiring colored/colorless symbols first, then generic (CR 202).
 `allowElfRestricted` permits mana that may be spent only on Elf spells and
-abilities (CR 106.10). `allowInstRestricted` permits mana that may be spent
+abilities (CR 106.6). `allowInstRestricted` permits mana that may be spent
 only on instant or sorcery spells. -/
 def pay? (p : ManaPool) (cost : ManaCost) (allowElfRestricted : Bool := false)
     (allowInstRestricted : Bool := false) (allowHeroRestricted : Bool := false)

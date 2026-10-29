@@ -53,7 +53,7 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
     throw "During combat, players can't cast spells (Yuriko, Blade of the Mighty)"
   if p != g.activePlayer &&
       (g.permanentsOf g.activePlayer).any (fun o =>
-        o.staticAbilities.any (fun
+        (g.staticAbilities o).any (fun
           | .opponentsCantCastOnYourTurn => true
           | _ => false)) then
     throw "Opponents can't cast spells during that player's turn"
@@ -93,7 +93,7 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
         throw s!"{att.name} is not an unblocked attacker you control"
       pure (some c)
   if face.hasSorcerySpeed && !g.asSorcery? p && sneakCost.isNone &&
-      !(card.status.freeCastFromGraveyard && card.zone == .graveyard p) then
+      !(g.freeCastFromGraveyard card && card.zone == .graveyard p) then
     throw s!"{face.name} has sorcery speed"
   if face.isModal then
     if !face.spellModes.any (g.spellModeIsChoosable p) && !face.allowsZeroTargets then
@@ -107,7 +107,8 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
     throw s!"{face.name} requires sacrificing an artifact or creature"
   if face.additionalCostSacrificeCreature && (g.creaturesControlledBy p).isEmpty then
     throw s!"{face.name} requires sacrificing a creature"
-  match card.playPermission.bind (·.prepareSource) with
+  let origPerm := g.playPermission card
+  match origPerm.bind (·.prepareSource) with
   | some src =>
     match g.findObject? src with
     | some perm =>
@@ -143,12 +144,12 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
   -- spell on the stack is a copy, so it isn't put into a graveyard later
   -- (CR 707.10 / 704.5e).
   let g :=
-    match original.playPermission.bind (·.prepareSource) with
+    match origPerm.bind (·.prepareSource) with
     | some src =>
-      let g := g.changeObjects newId #[.isCopy true, .isPreparedSpell true]
+      let g := g.changeObject newId (.isCopy true)
       match g.findObject? src with
       | some perm =>
-        (g.changeStatus src (.prepared false)).logMsg
+        (g.record (GameEvent.designation g.turnNumber perm.asEvent .prepared false)).logMsg
           s!"{perm.name} is no longer prepared"
       | none => g
     | none => g
@@ -157,18 +158,13 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
     if asAdventure then
       g.changeObjects newId #[.printed face, .adventurerCard (some original.printed)]
     else g
-  let g :=
-    if fromGraveyard then
-      g.changeObject newId (.castFromGraveyard true)
-    else if original.zone == .hand original.owner then
-      g.changeObject newId (.castFromHand true)
-    else g
   let g := g.putStackEntry p newId
   let way : CastWay :=
-    if asAdventure then .alternative "adventure"
+    if (origPerm.bind (·.prepareSource)).isSome then .alternative "prepare"
+    else if asAdventure then .alternative "adventure"
     else if sneakAttacker.isSome then .alternative "sneak"
     else if fromGraveyard then .alternative "flashback"
-    else if original.playPermission.isSome then .alternative "permission"
+    else if origPerm.isSome then .alternative "permission"
     else .normal
   let g := g.record (GameEvent.proposed g.turnNumber newId p original.zone way)
   let needsMode := face.isModal
@@ -186,7 +182,7 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
       !needsAdditionalCostChoice && !needsKicker && !needsGift && !needsTeamwork then
     return g.becomeCast p (g.object! newId)
   let lifeInstead :=
-    match original.playPermission with
+    match origPerm with
     | some perm =>
       if perm.payLifeEqualManaValue then g.objectManaValue original else 0
     | none => 0

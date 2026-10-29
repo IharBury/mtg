@@ -13,7 +13,7 @@ namespace Game
 /-- Jace's Machinations lets `p` activate loyalty abilities of Jace
 planeswalkers they control any time they could cast an instant. -/
 def mayActivateLoyaltyAtInstantSpeed (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
-  (g.player p).jaceLoyaltyAtInstantSpeed && o.printed.isPlaneswalker && o.hasSubtype .jace
+  g.jaceLoyaltyAtInstantSpeed p && o.printed.isPlaneswalker && g.hasSubtype o .jace
 
 /-- Loyalty counters among Jace planeswalkers `p` controls. -/
 def jaceLoyaltyAmong (g : Game) (p : PlayerId) : Nat :=
@@ -88,7 +88,7 @@ def validateActivation (g : Game) (p : PlayerId) (o : GameObject) (ab : Activate
     throw s!"{o.name}'s ability can be activated only if an opponent has been dealt noncombat damage this turn"
   if ab.onlyAsSorcery && !g.asSorcery? p then
     throw s!"{o.name}'s ability can be activated only as a sorcery"
-  if ab.exhaust && o.status.exhaustUsed then
+  if ab.exhaust && g.exhaustUsed o.id then
     throw s!"{o.name}'s exhaust ability can be activated only once (CR 702.177)"
   if !g.fraActivationConditionHolds p ab.fraCondition then
     throw s!"{o.name}'s ability can't be activated now (its \"Activate only if\" condition isn't met)"
@@ -103,7 +103,7 @@ def validateActivation (g : Game) (p : PlayerId) (o : GameObject) (ab : Activate
   | some sym =>
     -- CR 606.3: once per turn per permanent, and only as a sorcery unless an
     -- effect such as Jace's Machinations allows otherwise.
-    if o.status.loyaltyActivatedThisTurn then
+    if g.loyaltyActivatedThisTurn o.id then
       throw s!"A loyalty ability of {o.name} has already been activated this turn (CR 606.3)"
     if !g.asSorcery? p && !g.mayActivateLoyaltyAtInstantSpeed p o then
       throw s!"{o.name}'s loyalty abilities can be activated only as a sorcery (CR 606.3)"
@@ -117,13 +117,13 @@ def validateActivation (g : Game) (p : PlayerId) (o : GameObject) (ab : Activate
     throw s!"{o.name}'s ability can be activated only during your turn"
   if ab.onceEachTurn &&
       (match (g.activatedAbilitiesOf o).findIdx? (· == ab) with
-       | some i => o.status.abilitiesActivatedThisTurn.contains i
-       | none => o.status.activationsThisTurn != 0) then
+       | some i => (g.abilitiesActivatedThisTurn o.id).contains i
+       | none => g.activationsThisTurn o.id != 0) then
     throw s!"{o.name}'s ability can be activated only once each turn"
   if ab.powerUp && g.powerUpsForbidden then
     throw s!"Power-up abilities can't be activated during this extra turn"
   if ab.powerUp &&
-      (Nat.max o.status.powerUpActivations (if o.status.powerUpUsed then 1 else 0)) ≥
+      (Nat.max (g.powerUpActivations o.id) (if g.powerUpUsed o.id then 1 else 0)) ≥
         g.powerUpActivationLimit p then
     throw s!"{o.name}'s power-up ability can be activated only once"
   if ab.cost.tap && o.status.tapped then
@@ -193,10 +193,6 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
     throw "You don't have priority"
   g.validateActivation p o ab
   let loyaltyX := ab.cost.loyalty == some .minusX
-  let g :=
-    if ab.exhaust then
-      g.changeStatus id (.exhaustUsed true)
-    else g
   let o := g.object! id
   let pl := g.player p
   let stackBefore := g.stack

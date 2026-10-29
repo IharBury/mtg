@@ -99,7 +99,6 @@ def exileSearchedLinked (g : Game) (p : PlayerId) (id : ObjectId)
       | some c => (g, c)
       | none => g.allocDelayedCause (some p) source
     let (g, newId) := g.move id .exile none (cause := some linkCause)
-    let g := g.change (.setLinkedExileCause newId (some linkCause))
     let g :=
       match source.bind g.findObject? with
       | some src => g.changeObject src.id (.pushLinkedExile newId)
@@ -313,7 +312,7 @@ def resolveExileTopPlayUntilEndOfNextTurn (g : Game) (p : PlayerId) : Game :=
     let cardName := (g.object! top).name
     let (g, cause) := g.allocDelayedCause (some p)
     let (g, newId) := g.move top .exile none (cause := some cause)
-    let g := g.createEffect (.playPermission newId { player := p, turnEndsRemaining := 2 })
+    let g := g.createEffect (.playPermission newId { player := p } (turnEnds := 2))
       (cause := some cause)
     g.logMsg
       s!"{pl.name} exiles {cardName} and may play it until the end of their next turn"

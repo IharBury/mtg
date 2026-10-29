@@ -59,20 +59,20 @@ the token and puts no loyalty. -/
 /- Artifact spells cost {1} less. Another count is read the same way. -/
 #guard
   let g := step afterDraw (.spellsCostLess (.cardType .artifact) (.fixed 1))
-  (g.player caster).typeSpellCostLessThisTurn == #[(.artifact, 1)]
+  g.typeSpellCostLessThisTurn caster == #[(.artifact, 1)]
 
 #guard
   let g := step afterDraw (.spellsCostLess (.supertype .legendary) (.fixed 2))
-  (g.player caster).supertypeSpellCostLessThisTurn == #[(.legendary, 2)]
+  g.supertypeSpellCostLessThisTurn caster == #[(.legendary, 2)]
 
 #guard
   let g := step afterDraw (.spellsCostLess (.cardType .artifact) .perOtherCreature)
-  (g.player caster).typeSpellCostLessThisTurn == #[(.artifact, 0)]
+  g.typeSpellCostLessThisTurn caster == #[(.artifact, 0)]
 
 #guard
   let g0 := addPermanent afterDraw bear caster caster
   let g := step g0 (.spellsCostLess (.cardType .artifact) .perOtherCreature)
-  (g.player caster).typeSpellCostLessThisTurn == #[(.artifact, 1)]
+  g.typeSpellCostLessThisTurn caster == #[(.artifact, 1)]
 
 /- Looking at the top card offers the reveal. Another count looks at that many. -/
 #guard

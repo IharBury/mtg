@@ -65,8 +65,7 @@ def kingpinBoard : Game :=
   let g := addPermanent afterDraw theKingpinOfCrime me me
   let g := addPermanent g grizzlyBears me me
   let kp := named g "The Kingpin of Crime"
-  g.changeStatuses kp.id #[
-    .attacking true, .attackingWhom (some opp), .summoningSick false]
+  (g.markAttacking kp.id (some (.player opp))).changeStatus kp.id (.summoningSick false)
 
 def kingpinOffer : Game :=
   let kp := named kingpinBoard "The Kingpin of Crime"
@@ -130,7 +129,7 @@ def daredevilDeclines : Game :=
 
 #guard (daredevilDeclines.player me).library.size ==
     ((daredevilOffer lightningBolt).player me).library.size &&
-  (named daredevilDeclines "Daredevil, Man Without Fear").status.pump == (0, 0) &&
+  daredevilDeclines.pumpOf (named daredevilDeclines "Daredevil, Man Without Fear") == (0, 0) &&
   logContains daredevilDeclines "doesn't exile"
 
 def daredevilBolt : Game :=
@@ -140,7 +139,7 @@ def daredevilBolt : Game :=
   match exiled daredevilBolt "Lightning Bolt" with
   | some o =>
     daredevilBolt.mayPlayFromExile me o &&
-      (named daredevilBolt "Daredevil, Man Without Fear").status.pump == (0, 0)
+      daredevilBolt.pumpOf (named daredevilBolt "Daredevil, Man Without Fear") == (0, 0)
   | none => false
 
 def daredevilHero : Game :=
@@ -150,7 +149,7 @@ def daredevilHero : Game :=
   match exiled daredevilHero "Misty Knight, Hero for Hire" with
   | some o =>
     daredevilHero.mayPlayFromExile me o &&
-      (named daredevilHero "Daredevil, Man Without Fear").status.pump == (2, 1)
+      daredevilHero.pumpOf (named daredevilHero "Daredevil, Man Without Fear") == (2, 1)
   | none => false
 
 def daredevilLeft : Game :=
@@ -179,7 +178,7 @@ def daredevilEmpty : Game :=
   mustApply g me .accept
 
 #guard (daredevilEmpty.player me).library.isEmpty &&
-  (named daredevilEmpty "Daredevil, Man Without Fear").status.pump == (0, 0) &&
+  daredevilEmpty.pumpOf (named daredevilEmpty "Daredevil, Man Without Fear") == (0, 0) &&
   logContains daredevilEmpty "no cards"
 
 /- Cosmic Cube looks at six cards. The mana-value limit is the greatest
@@ -191,8 +190,7 @@ def cubeBoard (attacking : Bool) : Game :=
   let g := addPermanent g grizzlyBears me me
   if attacking then
     let bears := named g "Grizzly Bears"
-    g.changeStatuses bears.id #[
-      .attacking true, .attackingWhom (some opp)]
+    g.markAttacking bears.id (some (.player opp))
   else g
 
 def cubeLook (attacking : Bool) : Game :=

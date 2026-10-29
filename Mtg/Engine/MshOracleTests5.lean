@@ -61,7 +61,7 @@ def wreckingCrewPrintedOrderOk : Bool :=
   let g := addPermanent afterDraw theRuinousWreckingCrew ⟨0⟩ ⟨0⟩
   let (g, tok) := g.createToken ⟨0⟩ Game.soldier11whiteToken
   let crew := namedPermanent g "The Ruinous Wrecking Crew"
-  let g := g.changeStatus crew.id (.chosenModes #[2, 3])
+  let g := #[2, 3].foldl (fun acc m => acc.record (GameEvent.triggerModeChosen acc.turnNumber crew.id m (lifetime := true))) g
   let g := g.applyTriggeredAbility ⟨0⟩ (.onEnter Effect.enterChooseUpToXModes)
     (some crew.id) #[Target.permanent tok.id, Target.permanent tok.id]
   !g.battlefield.any (fun o => o.id == tok.id) &&
@@ -78,7 +78,7 @@ def moleManPlayLandOk : Bool :=
   let land := namedGraveyardCard g ⟨0⟩ "Forest"
   g.mayPlayFromGraveyard ⟨0⟩ land &&
     g.canPlayLand ⟨0⟩ &&
-    (let gLate := g.change (.step .beginningOfCombat)
+    (let gLate := { g with step := .beginningOfCombat }
      !gLate.canPlayLand ⟨0⟩) &&
     (let gCyc := addToGraveyard afterDraw kreeSentinel ⟨0⟩
      let cyc := namedGraveyardCard gCyc ⟨0⟩ "Kree Sentinel"
@@ -94,7 +94,7 @@ counters still apply. -/
 def moonGirlOverwriteOk : Bool :=
   let g := addPermanent afterDraw moonGirlAndDevilDinosaur ⟨0⟩ ⟨0⟩
   let mg := namedPermanent g "Moon Girl and Devil Dinosaur"
-  let g := g.changeStatuses mg.id #[.setBasePT (some (1, 1)), .pump (1, 1)]
+  let g := g.createEffects #[.setBasePTUntilEot mg.id (1, 1), .pump mg.id 1 1]
   let g := g.addPlusOnePlusOneTo (namedPermanent g "Moon Girl and Devil Dinosaur") 1
   let g := g.applyModeledTrigger ⟨0⟩ (.onResource Effect.resourceSecondDrawBecome66)
     (some (namedPermanent g "Moon Girl and Devil Dinosaur").id)
@@ -148,7 +148,7 @@ def tenRingsReplacementOk : Bool :=
     { bot.printed with drawTwoExceptFirstDrawStep := true })
   let rings := namedPermanent g "The Ten Rings"
   let hand0 := (g.player ⟨0⟩).hand.size
-  let g := g.change (.step .end)
+  let g := { g with step := .end }
   let g := g.applyModeledTrigger ⟨0⟩ (.onStep Effect.stepDrawToTen) (some rings.id)
   (g.player ⟨0⟩).hand.size == hand0 + 2 * (10 - hand0) &&
     (mshRuling 650).comment.contains "replacement effects"
@@ -194,7 +194,7 @@ def grimReaperOtherDestinationOk : Bool :=
   let g := addPermanent afterDraw grimReaperLethalLegionnaire ⟨0⟩ ⟨0⟩
   let g := addToGraveyard g grizzlyBears ⟨0⟩
   let gy := namedGraveyardCard g ⟨0⟩ "Grizzly Bears"
-  let g := g.returnFromGyTappedAttackingFinality ⟨0⟩ gy.id (attackingWhom := some ⟨1⟩)
+  let g := g.returnFromGyTappedAttackingFinality ⟨0⟩ gy.id (attackingTarget := some (.player ⟨1⟩))
   let bears := namedPermanent g "Grizzly Bears"
   bears.status.attacking &&
     bears.status.attackingTarget == some (.player ⟨1⟩) &&
@@ -218,8 +218,8 @@ def castAsResolvesOk : Bool :=
   let giant := cosmicCubeLookedNamed g "Hill Giant"
   let land := cosmicCubeLookedNamed g "Mountain"
   let (gEx, card) := afterDraw.allocObject nightsWhisper ⟨1⟩ .exile none
-  let gEx := gEx.changeObject card.id (.playPermission (some {
-    player := ⟨0⟩, turnEndsRemaining := 1, withoutManaCost := true }))
+  let gEx := gEx.createEffect (.playPermission card.id {
+    player := ⟨0⟩, withoutManaCost := true } 1)
   let gEx := gEx.castExiledAsResolves ⟨0⟩ 1
   match g.pending with
   | .mayCastFromLooked p ids maxMv =>
@@ -255,7 +255,7 @@ def cosmicCubeAuraSetup : Game :=
   let g := addPermanent afterDraw cosmicCube ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
   let bears := namedPermanent g "Grizzly Bears"
-  let g := g.changeStatus bears.id (.attacking true)
+  let g := g.markAttacking bears.id
   let g := addToLibraryTop g mountain ⟨0⟩
   addToLibraryTop g superSpeed ⟨0⟩
 
@@ -293,7 +293,7 @@ def cosmicCubeCastNonAuraEnchantmentOk : Bool :=
   let g := addPermanent afterDraw cosmicCube ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
   let bears := namedPermanent g "Grizzly Bears"
-  let g := g.changeStatus bears.id (.attacking true)
+  let g := g.markAttacking bears.id
   let g := addToLibraryTop g mountain ⟨0⟩
   let g := addToLibraryTop g doomReignsSupreme ⟨0⟩
   let cube := namedPermanent g "Cosmic Cube"

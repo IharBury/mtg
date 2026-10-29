@@ -37,7 +37,7 @@ def withSpent (spent : Nat) : Game :=
     { id := some causeId, controller := some caster, owner := caster } (.hand caster))
   let g := g.changeObjects ab.id #[
     .fraCauseId (some causeId),
-    .fraCauseStatus (some { manaSpentToCast := spent })]
+    .fraCauseStatus (some {})]
   g.change (.resolvingAbility (some ab.id))
 
 def drawStep (g : Game) (r : TriggeredAbility.TriggerResolution) : Game :=

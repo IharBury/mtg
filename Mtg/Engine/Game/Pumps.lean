@@ -86,11 +86,11 @@ def hostCantBecomeUntapped (g : Game) (o : GameObject) : Bool :=
   let frozen :=
     g.battlefield.any (fun aura =>
       aura.attachedTo == some o.id &&
-        aura.staticAbilities.any (fun
+        (g.staticAbilities aura).any (fun
           | .enchantedLosesAbilitiesCantUntap => true
           | _ => false))
   let granted :=
-    o.status.cantUntapGrantedBy.any (fun sid =>
+    (g.cantUntapGrantedBy o).any (fun sid =>
       match g.findObject? sid with
       | some src => src.isOnBattlefield
       | none => false)
@@ -100,7 +100,7 @@ def hostCantBecomeUntapped (g : Game) (o : GameObject) : Bool :=
 def hostSkipsUntapStep (g : Game) (o : GameObject) : Bool :=
   g.battlefield.any (fun aura =>
     aura.attachedTo == some o.id &&
-      aura.staticAbilities.any (fun
+      (g.staticAbilities aura).any (fun
         | .enchantedLosesAbilitiesDoesntUntap => true
         | _ => false))
 
@@ -154,13 +154,22 @@ def grantsMaxHandSizeTen (o : GameObject) : Bool :=
     | _ => false)
 
 def effectiveMaxHandSize (g : Game) (p : PlayerId) : Option Nat :=
+  let hasNoMax (o : GameObject) : Bool :=
+    (g.staticAbilities o).any (fun
+      | .noMaximumHandSize => true
+      | _ => false)
+  let hasMaxTen (o : GameObject) : Bool :=
+    (g.staticAbilities o).any (fun
+      | .maximumHandSize 10 => true
+      | .maximumHandSize _ => false
+      | _ => false)
   let effects :=
     ((g.permanentsOf p).filter (fun o =>
-      grantsNoMaxHandSize o || grantsMaxHandSizeTen o)).qsort
+      hasNoMax o || hasMaxTen o)).qsort
       (fun a b => decide (a.timestamp < b.timestamp))
   effects.foldl (fun acc o =>
-    if grantsMaxHandSizeTen o then some 10
-    else if grantsNoMaxHandSize o then none
+    if hasMaxTen o then some 10
+    else if hasNoMax o then none
     else acc) (g.player p).maxHandSize
 
 /-- Reduce generic mana in `cost` by `n` (improvise taps artifacts for {1}). -/
@@ -171,7 +180,8 @@ def improviseReduce (cost : ManaCost) (n : Nat) : ManaCost :=
 def spellHasImprovise (g : Game) (face : CardDef) (caster : PlayerId) : Bool :=
   face.hasImprovise ||
     (!face.isCreature &&
-      (g.permanentsOf caster).any (fun o => o.printed.grantsImproviseToNoncreature))
+      (g.permanentsOf caster).any (fun o =>
+        o.printed.grantsImproviseToNoncreature && g.retainsPrintedAbilities o))
 
 /-- Open a simultaneous rules-event batch on `g` for use across an `Except`
 `do` block, returning the updated `Game` and a `closeBatch` continuation that
@@ -381,7 +391,7 @@ def amass (g : Game) (controller : PlayerId) (subtype : CardSubtype) (n : Nat)
     let ids := armies.map (fun (o : GameObject) => o.id)
     let g :=
       match cause with
-      | some c => ids.foldl (fun (g : Game) id => g.change (.setLinkedExileCause id (some c))) g
+      | some c => g.change (.stashedCause (some c))
       | none => g
     (g.change (.pending (.fraChoice controller (.chooseCards ids 1 (.amassArmy subtype n attach))))).logMsg
       s!"{(g.player controller).name} chooses an Army to amass"

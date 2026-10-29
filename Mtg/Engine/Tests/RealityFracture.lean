@@ -38,7 +38,7 @@ def preparedAngel : Game :=
 #guard (namedPermanent preparedAngel "Blossom-Blessed Angel").status.prepared
 #guard preparedAngel.objects.any (fun o =>
   o.zone == .exile && o.name == "Seed Suture" &&
-    o.playPermission.any (·.prepareSource.isSome))
+    (preparedAngel.playPermission o).any (·.prepareSource.isSome))
 
 def seedSutureCopy (g : Game) : GameObject :=
   match g.objects.find? (fun o => o.zone == .exile && o.name == "Seed Suture") with

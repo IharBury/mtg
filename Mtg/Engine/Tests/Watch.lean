@@ -131,8 +131,7 @@ def declinedTokenDraw : Game :=
 def aloneKeywords : Game :=
   let g := addPermanent afterDraw grizzlyBears me me
   let bears := named g "Grizzly Bears"
-  let g := g.changeStatuses bears.id #[
-    .attacking true, .attackingWhom (some opp)]
+  let g := g.markAttacking bears.id (some (.player opp))
   resolve g (onWatch Effect.watchAttacksAloneFirstStrikeMenace)
     (some (named g "Grizzly Bears").id)
 

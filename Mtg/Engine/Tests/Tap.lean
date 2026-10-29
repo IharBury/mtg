@@ -144,7 +144,7 @@ has left is still tapped. An already tapped host stays tapped. -/
     (addPermanent (addPermanent afterDraw bear caster caster) grasp caster caster)
     "Grasp" "Bear"
   let bear0 := obj g0 "Bear"
-  let g0 := g0.changeStatus bear0.id (.hope 2)
+  let g0 := g0.recordPutCounters bear0.id .hope 2
   let g := step g0 enchantedRemove (some (pid g0 "Grasp"))
   (obj g "Bear").status.tapped && (obj g "Bear").status.hope == 0 &&
     !(obj g "Grasp").status.tapped &&
@@ -176,7 +176,7 @@ has left is still tapped. An already tapped host stays tapped. -/
 #guard
   let g0 := addPermanent (addPermanent afterDraw bear caster caster) grasp caster caster
   let bear0 := obj g0 "Bear"
-  let g0 := g0.changeStatus bear0.id (.hope 2)
+  let g0 := g0.recordPutCounters bear0.id .hope 2
   let g := step g0 enchantedRemove (some (pid g0 "Grasp"))
   !(obj g "Bear").status.tapped && (obj g "Bear").status.hope == 2 &&
     logContains g "Nothing is enchanted"
@@ -213,7 +213,7 @@ source to still be there. -/
   let g := step g0 targetLose (some (pid g0 "Wasp")) #[Target.permanent (pid g0 "Hawk")]
   (obj g "Hawk").status.tapped && !(obj g "Wasp").status.tapped &&
     !g.hasFlying (obj g "Hawk") &&
-    (obj g "Hawk").status.losesAbilitiesGrantedBy == #[pid g0 "Wasp"]
+    g.losesAbilitiesGrantedBy (obj g "Hawk") == #[pid g0 "Wasp"]
 
 #guard
   let g0 := addPermanent (addPermanent afterDraw hawk caster caster) wasp caster caster
@@ -236,7 +236,7 @@ source to still be there. -/
   let (g1, _) := g0.move waspId (.graveyard caster) none
   let g := step g1 targetLose (some waspId) #[Target.permanent (pid g1 "Hawk")]
   (obj g "Hawk").status.tapped && g.hasFlying (obj g "Hawk") &&
-    (obj g "Hawk").status.losesAbilitiesGrantedBy.isEmpty &&
+    (g.losesAbilitiesGrantedBy (obj g "Hawk")).isEmpty &&
     logContains g "keeps its abilities"
 
 #guard
@@ -251,7 +251,7 @@ source to still be there. -/
   let (g1, newHawk) := g0.move hawkId (.graveyard caster) none
   let g := step g1 targetLose (some (pid g1 "Wasp")) #[Target.permanent newHawk]
   !(anyObj g "Hawk").status.tapped &&
-    (anyObj g "Hawk").status.losesAbilitiesGrantedBy.isEmpty &&
+    (g.losesAbilitiesGrantedBy (anyObj g "Hawk")).isEmpty &&
     !(logContains g "becomes tapped")
 
 #guard

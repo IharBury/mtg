@@ -107,7 +107,7 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
     match source? with
     | some o => if o.isOnBattlefield then f g o else g
     | none => g
-  let chosenX := (g.resolvingAbilityObject?.bind (·.chosenX)).getD 0
+  let chosenX := (g.resolvingAbility.bind g.chosenXOf?).getD 0
   match r with
   | .emrakulGrantMana =>
     match source? with
@@ -116,7 +116,7 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
       let g :=
         if card.zone == .exile then
           let perm : PlayPermission :=
-            { player := controller, turnEndsRemaining := 0, whileExiled := true }
+            { player := controller, whileExiled := true }
           (g.createEffect (.playPermission card.id perm)).logMsg
             s!"{(g.player controller).name} may cast {card.name} for as long as it remains exiled"
         else g
@@ -459,7 +459,7 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
         | none => g.logMsg "The target is no longer legal"
       | _ => g.logMsg "The target is no longer legal") sourceId illegal
   | .zemoBoastCopies =>
-    let exiled := (g.resolvingAbilityObject?.map (·.boastExiled)).getD #[]
+    let exiled := (g.resolvingAbility.map g.boastExiledOf).getD #[]
     let (g, cause?) : Game × Option EventCause :=
       if exiled.any (fun id => (g.findObject? id).any (·.zone == .exile)) then
         let (g, c) := g.allocDelayedCause (some controller) sourceId
@@ -485,7 +485,7 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
             }
             let g := g.record (GameEvent.created g.turnNumber controller (g.snapshot copyObj) (cause := cause?))
             let g := g.createEffect (.playPermission copyId {
-              player := controller, turnEndsRemaining := 0,
+              player := controller,
               whileExiled := true, withoutManaCost := true, ignoreTiming := true })
               (cause := cause?)
             (g, cs.push copyId)

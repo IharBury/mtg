@@ -154,7 +154,7 @@ burden counters. -/
 #guard
   let g0 := addPermanent afterDraw ring caster caster
   let (g1, newId) := g0.move (pid g0 "Ring") (.graveyard caster) none
-  let g1 := g1.changeStatus (anyObj g1 "Ring").id (.burden 2)
+  let g1 := g1.recordPutCounters (anyObj g1 "Ring").id .burden 2
   let g := step g1 perBurden (some newId)
   lifeOf g caster == lifeOf g1 caster - 2
 

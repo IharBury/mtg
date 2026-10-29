@@ -36,7 +36,7 @@ def archAlone : Game := addPermanent started elvishArchdruid ⟨0⟩ ⟨0⟩
 #guard archAndElves.snapshotToughness (namedPermanent archAndElves "Llanowar Elves") == 2
 #guard archAndElves.power (namedPermanent archAndElves "Elvish Archdruid") == 2
 #guard archAndElves.toughness (namedPermanent archAndElves "Elvish Archdruid") == 2
-#guard (namedPermanent archAndElves "Llanowar Elves").status.pumpPower == 0
+#guard (archAndElves.pumpOf (namedPermanent archAndElves "Llanowar Elves")).1 == 0
 #guard archAndBears.power (namedPermanent archAndBears "Grizzly Bears") == 2
 #guard archAndOppElves.power (namedPermanent archAndOppElves "Llanowar Elves") == 1
 #guard archAlone.power (namedPermanent archAlone "Elvish Archdruid") == 2
@@ -64,7 +64,7 @@ def twoArchdruids : Game :=
 def afterArchCleanup : Game := passBoth (skipTo archAndElves .end 80)
 
 #guard afterArchCleanup.power (namedPermanent afterArchCleanup "Llanowar Elves") == 2
-#guard (namedPermanent afterArchCleanup "Llanowar Elves").status.pumpPower == 0
+#guard (afterArchCleanup.pumpOf (namedPermanent afterArchCleanup "Llanowar Elves")).1 == 0
 
 /-- A 0/0 Elf survives while Archdruid is in play, and dies when it leaves. -/
 def zeroElf : CardDef :=
@@ -465,7 +465,7 @@ def celebornScried : Game := keepScry celebornScrying
 #guard celebornScried.stack.size == 1
 #guard (celebornScried.object! celebornScried.stack.back!.objectId).triggeredAbility ==
   some .onScryPumpSelfForEachLookedAt
-#guard (celebornScried.object! celebornScried.stack.back!.objectId).lastKnownPower == some 1
+#guard celebornScried.lastKnownPowerOf? celebornScried.stack.back!.objectId == some 1
 #guard celebornScried.log.any (fun s => mentions s "scry trigger is put on the stack")
 #guard celebornScried.hasPriority ⟨0⟩
 #guard celebornScried.power (namedPermanent celebornScried "Celeborn the Wise") == 3
@@ -475,8 +475,8 @@ def celebornPumped : Game := passBoth celebornScried
 #guard celebornPumped.stack.isEmpty
 #guard celebornPumped.power (namedPermanent celebornPumped "Celeborn the Wise") == 4
 #guard celebornPumped.toughness (namedPermanent celebornPumped "Celeborn the Wise") == 4
-#guard (namedPermanent celebornPumped "Celeborn the Wise").status.pumpPower == 1
-#guard (namedPermanent celebornPumped "Celeborn the Wise").status.pumpToughness == 1
+#guard (celebornPumped.pumpOf (namedPermanent celebornPumped "Celeborn the Wise")).1 == 1
+#guard (celebornPumped.pumpOf (namedPermanent celebornPumped "Celeborn the Wise")).2 == 1
 #guard celebornPumped.log.any (fun s => mentions s "gets +1/+1 until end of turn")
 
 /-- Two Elves attacking still put only one scry trigger on the stack. -/
@@ -526,7 +526,7 @@ def celebornGiftScried : Game := keepScry celebornGiftScrying
 #guard celebornGiftScried.stack.size == 1
 #guard (celebornGiftScried.object! celebornGiftScried.stack.back!.objectId).triggeredAbility ==
   some .onScryPumpSelfForEachLookedAt
-#guard (celebornGiftScried.object! celebornGiftScried.stack.back!.objectId).lastKnownPower == some 2
+#guard celebornGiftScried.lastKnownPowerOf? celebornGiftScried.stack.back!.objectId == some 2
 
 def celebornGiftPumped : Game := passBoth celebornGiftScried
 
@@ -542,7 +542,7 @@ def celebornScryOneOfTwo : Game :=
   keepScry (passBoth g)
 
 #guard celebornScryOneOfTwo.stack.size == 1
-#guard (celebornScryOneOfTwo.object! celebornScryOneOfTwo.stack.back!.objectId).lastKnownPower ==
+#guard celebornScryOneOfTwo.lastKnownPowerOf? celebornScryOneOfTwo.stack.back!.objectId ==
   some 1
 
 def celebornScryOneOfTwoPumped : Game := passBoth celebornScryOneOfTwo
@@ -560,7 +560,7 @@ def celebornEmptyScry : Game :=
 #guard celebornEmptyScry.stack.size == 1
 #guard (celebornEmptyScry.object! celebornEmptyScry.stack.back!.objectId).triggeredAbility ==
   some .onScryPumpSelfForEachLookedAt
-#guard (celebornEmptyScry.object! celebornEmptyScry.stack.back!.objectId).lastKnownPower == some 0
+#guard celebornEmptyScry.lastKnownPowerOf? celebornEmptyScry.stack.back!.objectId == some 0
 #guard celebornEmptyScry.log.any (fun s => mentions s "no cards to look at")
 
 def celebornEmptyPumped : Game := passBoth celebornEmptyScry
@@ -603,14 +603,14 @@ def opponentScriesCeleborn : Game :=
 
 #guard opponentScriesCeleborn.stack.isEmpty
 #guard opponentScriesCeleborn.power (namedPermanent opponentScriesCeleborn "Celeborn the Wise") == 3
-#guard (namedPermanent opponentScriesCeleborn "Celeborn the Wise").status.pumpPower == 0
+#guard (opponentScriesCeleborn.pumpOf (namedPermanent opponentScriesCeleborn "Celeborn the Wise")).1 == 0
 
 /-- The +1/+1 wears off in cleanup. -/
 def afterCelebornCleanup : Game := passBoth (skipTo celebornPumped .end 80)
 
 #guard afterCelebornCleanup.power (namedPermanent afterCelebornCleanup "Celeborn the Wise") == 3
-#guard (namedPermanent afterCelebornCleanup "Celeborn the Wise").status.pumpPower == 0
-#guard (namedPermanent afterCelebornCleanup "Celeborn the Wise").status.pumpToughness == 0
+#guard (afterCelebornCleanup.pumpOf (namedPermanent afterCelebornCleanup "Celeborn the Wise")).1 == 0
+#guard (afterCelebornCleanup.pumpOf (namedPermanent afterCelebornCleanup "Celeborn the Wise")).2 == 0
 
 /- Woodland Weavemaster: vigilance, another-Elf-enters +1/+1, and restricted
 any-color mana equal to power. -/
@@ -738,7 +738,7 @@ def afterWeavemasterCleanup : Game := passBoth (skipTo weavemasterElfPumped .end
 
 #guard afterWeavemasterCleanup.power
   (namedPermanent afterWeavemasterCleanup "Woodland Weavemaster") == 1
-#guard (namedPermanent afterWeavemasterCleanup "Woodland Weavemaster").status.pumpPower == 0
+#guard (afterWeavemasterCleanup.pumpOf (namedPermanent afterWeavemasterCleanup "Woodland Weavemaster")).1 == 0
 
 /-- Tapping adds power of the chosen color as Elf-restricted mana. -/
 def tappedWeavemasterGreen : Game :=

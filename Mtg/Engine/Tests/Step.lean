@@ -144,10 +144,10 @@ def notedCopy : Game :=
     (resolutionOverride := some (.becomeCopy .noted))
 
 #guard
-  match notedCopy.battlefield.find? (fun o => o.copyRestore.isSome) with
+  match notedCopy.battlefield.find? (fun o => (notedCopy.copyRestore o).isSome) with
   | some o =>
     o.printed.name == "Hill Giant" &&
-      (o.copyRestore.getD o.printed).name == "Grizzly Bears" &&
+      ((notedCopy.copyRestore o).getD o.printed).name == "Grizzly Bears" &&
       notedCopy.notedCopyObject.isNone
   | none => false
 
@@ -157,14 +157,14 @@ def notedMissing : Game :=
     (resolutionOverride := some (.becomeCopy .noted))
 
 #guard (named notedMissing "Grizzly Bears").name == "Grizzly Bears" &&
-  (named notedMissing "Grizzly Bears").copyRestore.isNone
+  (notedMissing.copyRestore (named notedMissing "Grizzly Bears")).isNone
 
 /- Any other selector copies nothing. -/
 #guard
   let g0 := addPermanent afterDraw grizzlyBears me me
   let g := g0.applyTriggeredAbility me (TriggeredAbility.onEnterDraw 1) none
     (resolutionOverride := some (.becomeCopy .source))
-  (named g "Grizzly Bears").copyRestore.isNone && g.log.size == g0.log.size
+  (g.copyRestore (named g "Grizzly Bears")).isNone && g.log.size == g0.log.size
 #guard TriggeredAbility.resolutionPhrase { resolution := .becomeCopy .source } ==
   "become a copy"
 #guard TriggeredAbility.resolutionPhrase { resolution := .becomeCopy (.cause (some .villain)) } ==
@@ -207,7 +207,7 @@ def hydePlusOne : Game :=
 does not. A land is not a legal object to blink. -/
 def harness (g : Game) : Game :=
   let stone := named g "The Mind Stone"
-  g.changeStatus stone.id (.harnessed true)
+  g.record (GameEvent.designation g.turnNumber stone.asEvent .harnessed true)
 
 def blinked : Game :=
   let g := harness (addPermanent afterDraw theMindStone me me)

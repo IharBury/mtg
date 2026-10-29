@@ -76,7 +76,12 @@ def returnLinkedExileToHand (g : Game) (sourceId : Option ObjectId) : Game :=
 /-- Whenever the controller attacks this turn, a creature they control
 gets +1/+1 for each Plains they control. -/
 def attackPumpPerPlains (g : Game) (controller : PlayerId) : Game :=
-  g.createEffect (.attackPumpPerPlainsThisTurn controller 1)
+  let (g, cause) := g.allocDelayedCause (some controller)
+  let src :=
+    match g.currentResolvingContext? with
+    | some (some sid, _) => g.findObject? sid
+    | _ => none
+  g.change (.pushDelayedTrigger { controller, source := src, kind := .attackPumpPerPlains, cause })
     |>.logMsg
       s!"Whenever {(g.player controller).name} attacks this turn, a creature they control gets +1/+1 for each Plains they control"
 

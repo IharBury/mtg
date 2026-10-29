@@ -40,7 +40,7 @@ def pid (g : Game) (name : String) : ObjectId :=
 
 def attacking (g : Game) (name : String) : Game :=
   let o := obj g name
-  g.changeStatus o.id (.attacking true)
+  g.markAttacking o.id
 
 def attach (g : Game) (equip host : String) : Game :=
   let eq := obj g equip
@@ -48,7 +48,7 @@ def attach (g : Game) (equip host : String) : Game :=
 
 def cast (g : Game) (name : String) : Game :=
   let o := anyObj g name
-  g.changeObject o.id (.wasCast true)
+  g.record (GameEvent.proposed g.turnNumber o.id o.owner (.hand o.owner) .normal)
 
 def strikes (g : Game) (name : String) : Bool :=
   g.hasDoubleStrike (obj g name)
@@ -117,26 +117,26 @@ the ability logs that it does nothing. -/
 #guard
   let g0 := cast (addPermanent afterDraw ring caster caster) "Ring"
   let g := step g0 protection (some (pid g0 "Ring"))
-  (g.player caster).protectionFromEverything &&
-    !(g.player opp).protectionFromEverything &&
+  g.protectionFromEverything caster &&
+    !g.protectionFromEverything opp &&
     logContains g "gains protection from everything"
 
 #guard
   let g0 := insertObject afterDraw ring caster (.graveyard caster)
   let g0 := cast g0 "Ring"
   let g := step g0 protection (some (anyObj g0 "Ring").id)
-  (g.player caster).protectionFromEverything &&
+  g.protectionFromEverything caster &&
     logContains g "gains protection from everything"
 
 #guard
   let g0 := addPermanent afterDraw ring caster caster
   let g := step g0 protection (some (pid g0 "Ring"))
-  !(g.player caster).protectionFromEverything &&
+  !g.protectionFromEverything caster &&
     logContains g "It wasn't cast. The ability does nothing."
 
 #guard
   let g := step afterDraw protection
-  !(g.player caster).protectionFromEverything &&
+  !g.protectionFromEverything caster &&
     logContains g "It wasn't cast. The ability does nothing."
 
 /- A cast check that names no permanent grants nothing. Protection for
@@ -145,21 +145,21 @@ nothing. -/
 #guard
   let g0 := cast (attach (addPermanent battle ring caster caster) "Axe" "Bear") "Ring"
   let crossed := step g0 (.grant .doubleStrike .youIfCast) (some (pid g0 "Ring"))
-  !strikes crossed "Bear" && !(crossed.player caster).protectionFromEverything &&
+  !strikes crossed "Bear" && !crossed.protectionFromEverything caster &&
     crossed.log.size == g0.log.size
 
 #guard
   let g0 := cast (attach (addPermanent battle ring caster caster) "Axe" "Bear") "Ring"
   let swapped := step g0 (.grant .protectionEverything .equippedAttackers)
       (some (pid g0 "Ring"))
-  !strikes swapped "Bear" && (swapped.player caster).protectionFromEverything &&
-    !(swapped.player opp).protectionFromEverything &&
+  !strikes swapped "Bear" && swapped.protectionFromEverything caster &&
+    !swapped.protectionFromEverything opp &&
     logContains swapped "Chandra gains protection from everything"
 
 #guard
   let g0 := cast (attach (addPermanent battle ring caster caster) "Axe" "Bear") "Ring"
   let other := step g0 (.grant .doubleStrike .humans) (some (pid g0 "Ring"))
-  !strikes other "Bear" && !(other.player caster).protectionFromEverything &&
+  !strikes other "Bear" && !other.protectionFromEverything caster &&
     other.log.size == g0.log.size
 
 #guard TriggeredAbility.resolution .onAttackEquippedGainDoubleStrike == doubleStrike

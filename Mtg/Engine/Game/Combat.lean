@@ -15,7 +15,9 @@ namespace Game
 Lawmage grants this to planeswalkers its controller controls). -/
 def planeswalkerAttackedByOneAtMost (g : Game) (pw : GameObject) : Bool :=
   match pw.controller with
-  | some q => (g.permanentsOf q).any (·.staticAbilities.any (· == .fra .planeswalkersAttackedByOneAtMost))
+  | some q =>
+    (g.permanentsOf q).any (fun o =>
+      (g.staticAbilities o).any (· == .fra .planeswalkersAttackedByOneAtMost))
   | none => false
 
 def declareAttackers (g : Game) (p : PlayerId) (ids : Array ObjectId)
@@ -50,7 +52,7 @@ def declareAttackers (g : Game) (p : PlayerId) (ids : Array ObjectId)
           else pure (some pw)
         | none => throw "no such planeswalker"
       | _ => pure none
-    if (g.player p).cantAttackJaces then
+    if g.cantAttackJaces p then
       match pw? with
       | some pw =>
         if pw.name.startsWith "Jace" || g.hasSubtype pw .jace then
@@ -295,13 +297,15 @@ def checkCombatAssignmentBatch (g : Game) (forAttackers : Bool)
     throw "Every attacking or blocking creature must assign combat damage (CR 510.1)"
 
 /-- Apply assigned combat damage simultaneously (CR 510.2). -/
-def dealAssignedCombatDamage (g : Game) (appliedSoFar : Array ReplacementId := #[]) : Game :=
+def dealAssignedCombatDamage (g : Game) (appliedSoFar : Array ReplacementId := #[])
+    (startIdx : Nat := 0) : Game :=
   let fs := g.combatHasFirstStrike && !g.firstStrikeDamageDone
   let combatCause := some (EventCause.turnBased (.dealCombatDamage fs))
   let isOuterCall := g.currentBatch.isNone
   let g := g.withBatch combatCause fun g => Id.run do
     let choice? : Option (PlayerId × Array ReplacementId) := Id.run do
-      for asgn in g.assignedCombatDamage do
+      for i in [startIdx:g.assignedCombatDamage.size] do
+        let asgn := g.assignedCombatDamage[i]!
         let src := g.object! asgn.source
         let defn := g.defendingPlayerOf src
         let srcRep := g.replaceDamage 1 (src? := some src) (combat := true) (cause := combatCause)
@@ -335,17 +339,17 @@ def dealAssignedCombatDamage (g : Game) (appliedSoFar : Array ReplacementId := #
               (combat := true) (cause := combatCause)
             if let some ch := rep.choice? then
               return some ch
-            if !(rep.prevented && (g.player defn).protectionFromEverything) then
+            if !(rep.prevented && g.protectionFromEverything defn) then
               dealtToPlayer := rep.amount
               totalDealt := totalDealt + rep.amount
       return none
     match choice? with
     | some (chooser, choices) =>
-      return g.promptChooseReplacement chooser choices (.dealAssignedCombatDamage appliedSoFar)
+      return g.promptChooseReplacement chooser choices (.dealAssignedCombatDamage appliedSoFar startIdx)
     | none =>
     let mut g := g
     let mut allApplied : Array ReplacementId := appliedSoFar
-    for i in [0:g.assignedCombatDamage.size] do
+    for i in [startIdx:g.assignedCombatDamage.size] do
       let asgn := g.assignedCombatDamage[i]!
       let src := g.object! asgn.source
       let defn := g.defendingPlayerOf src
@@ -377,15 +381,12 @@ def dealAssignedCombatDamage (g : Game) (appliedSoFar : Array ReplacementId := #
               return some ch
         return none
       if let some (chooser, choices) := asgnChoice? then
-        let rem := g.assignedCombatDamage.extract i g.assignedCombatDamage.size
-        let assignedSoFar := (g.assignedCombatDamage.extract 0 i).map (·.source)
+        let assignedSoFar := (g.assignedCombatDamage.extract startIdx i).map (·.source)
         let firstStrikeAssigned :=
           if fs then g.firstStrikeAssignedThisCombat ++ assignedSoFar
           else g.firstStrikeAssignedThisCombat
-        g := g.changes #[
-          .assignedCombatDamage rem,
-          .firstStrikeAssignedThisCombat firstStrikeAssigned ]
-        return g.promptChooseReplacement chooser choices (.dealAssignedCombatDamage allApplied)
+        g := g.change (.firstStrikeAssignedThisCombat firstStrikeAssigned)
+        return g.promptChooseReplacement chooser choices (.dealAssignedCombatDamage allApplied i)
       let mut totalDealt : Int := 0
       let recipients :=
         if src.status.attacking then g.blockersOf src.id else g.creaturesBlockedBy src
@@ -441,14 +442,14 @@ def dealAssignedCombatDamage (g : Game) (appliedSoFar : Array ReplacementId := #
         allApplied := allApplied ++ rep.applied
         let toPlayer := rep.amount
         let pl := g.player defn
-        if rep.prevented && pl.protectionFromEverything then
+        if rep.prevented && g.protectionFromEverything defn then
           g := g.logMsg s!"combat damage to {pl.name} is prevented"
         else
           dealtToPlayer := toPlayer
           if toPlayer > 0 then
             g := g.record (GameEvent.damagedPlayer g.turnNumber srcEvent defn toPlayer.toNat true
               (cause := rep.cause))
-          if pl.lifeLocked || pl.lifeCantChange then
+          if g.lifeLocked defn || g.lifeCantChange defn then
             g := g.logMsg s!"{pl.name}'s life total can't change"
           else
             if toPlayer > 0 then
@@ -459,11 +460,7 @@ def dealAssignedCombatDamage (g : Game) (appliedSoFar : Array ReplacementId := #
             g := g.record (GameEvent.poisoned g.turnNumber defn srcEvent.toxic
               (cause := combatCause))
             g := g.logMsg s!"{pl.name} gets {srcEvent.toxic} poison counter(s) (toxic)"
-          if toPlayer > 0 then
-            let s := (g.object! src.id).status
-            if !s.combatDamageToPlayers.contains defn then
-              g := g.changeStatus src.id (.combatDamageToPlayers (s.combatDamageToPlayers.push defn))
-          if !(pl.lifeLocked || pl.lifeCantChange) then
+          if !(g.lifeLocked defn || g.lifeCantChange defn) then
             if src.status.blocked then
               g := g.logMsg
                 s!"{src.name} tramples for {toPlayer} to {pl.name} ({(g.player defn).life} life)"
@@ -478,8 +475,6 @@ def dealAssignedCombatDamage (g : Game) (appliedSoFar : Array ReplacementId := #
           else
             g := g.gainLife pid totalDealt.toNat (cause := combatCause)
         | none => pure ()
-      if totalDealt > 0 then
-        g := g.changeStatus src.id (.dealtCombatDamage true)
       let treasureCount :=
         if dealtToPw > 0 then dealtToPw.toNat
         else if dealtToPlayer > 0 && pwTarget?.isNone && !(g.player defn).lost then dealtToPlayer.toNat
@@ -487,35 +482,31 @@ def dealAssignedCombatDamage (g : Game) (appliedSoFar : Array ReplacementId := #
       if treasureCount > 0 then
         match src.controller with
         | some pid =>
-          if src.status.combatDamageCreatesTreasure || g.equippedCreatesCombatTreasures src then
+          if g.combatDamageCreatesTreasure src then
             if let .chooseReplacement .. := g.pending then
               g := g.chainPendingReplacement (.createTreasureTokens pid treasureCount false combatCause)
             else
               g := g.createTreasureTokens pid treasureCount (cause := combatCause)
         | none => pure ()
       if let .chooseReplacement .. := g.pending then
-        let rem := g.assignedCombatDamage.extract (i + 1) g.assignedCombatDamage.size
-        let assignedSoFar := (g.assignedCombatDamage.extract 0 (i + 1)).map (·.source)
+        let assignedSoFar := (g.assignedCombatDamage.extract startIdx (i + 1)).map (·.source)
         let firstStrikeAssigned :=
           if fs then g.firstStrikeAssignedThisCombat ++ assignedSoFar
           else g.firstStrikeAssignedThisCombat
-        g := g.changes #[
-          .assignedCombatDamage rem,
-          .firstStrikeAssignedThisCombat firstStrikeAssigned ]
-        return g.chainPendingReplacement (.dealAssignedCombatDamage allApplied)
+        g := g.change (.firstStrikeAssignedThisCombat firstStrikeAssigned)
+        return g.chainPendingReplacement (.dealAssignedCombatDamage allApplied (i + 1))
     g := g.consumeReplacementOrder allApplied
     let pendingRegular :=
       g.combatHasFirstStrike && !g.firstStrikeDamageDone
     let assignedFs :=
       if pendingRegular then
-        g.firstStrikeAssignedThisCombat ++ g.assignedCombatDamage.map (·.source)
+        g.firstStrikeAssignedThisCombat ++ (g.assignedCombatDamage.extract startIdx g.assignedCombatDamage.size).map (·.source)
       else g.firstStrikeAssignedThisCombat
-    g.changes #[
-      .assignedCombatDamage #[],
+    { g.changes #[
       .pending .none,
       .firstStrikeDamageDone (g.firstStrikeDamageDone || g.combatHasFirstStrike),
       .pendingRegularCombatDamage pendingRegular,
-      .firstStrikeAssignedThisCombat assignedFs ]
+      .firstStrikeAssignedThisCombat assignedFs ] with assignedCombatDamage := #[] }
   if let .chooseReplacement .. := g.pending then
     if isOuterCall then g.chainPendingReplacement (.receivePriority g.activePlayer)
     else g
@@ -545,7 +536,7 @@ def finishAttackerCombatAssignment (g : Game) : Game :=
 
 /-- Start CR 510.1: the active player assigns attacking creatures first. -/
 def beginCombatDamageAssignment (g : Game) : Game :=
-  let g := g.changes #[.assignedCombatDamage #[], .pending .none]
+  let g := g.change (.pending .none)
   if g.needsCombatDamageChoice true then
     g.change (.pending (.assignCombatDamage g.activePlayer true))
       |>.logMsg s!"{(g.player g.activePlayer).name} assigns combat damage (CR 510.1c)"

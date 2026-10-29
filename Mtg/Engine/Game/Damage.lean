@@ -102,7 +102,7 @@ def destroyPermanent (g : Game) (o : GameObject)
 
 /-- True when all damage that would be dealt to `o` is prevented. -/
 def preventsAllDamageTo (g : Game) (o : GameObject) : Bool :=
-  o.staticAbilities.any (fun
+  (g.staticAbilities o).any (fun
     | .preventAllDamageToThis => true
     | _ => false) ||
   g.activeEffects.any (fun (_, eff) =>
@@ -180,7 +180,7 @@ def replaceDamage (g : Game) (n : Int)
       -- 1. Preventions (when damage is preventable)
       if !unpreventable then
         if let some src := src? then
-          for gid in src.status.preventDamageGrantedBy do
+          for gid in g.preventDamageGrantedBy src do
             if g.grantorStillInPlay gid then
               items := items.push (.prevention {
                 id := { kind := .preventDamageGrantedBy, object := some src.id, grantor := some gid }
@@ -199,7 +199,7 @@ def replaceDamage (g : Game) (n : Int)
                 affectedPlayer := affected
                 kind := .protectionPreventDamage o.id src.id
               })
-          if o.staticAbilities.any (· == .preventAllDamageToThis) then
+          if (g.staticAbilities o).any (· == .preventAllDamageToThis) then
             items := items.push (.prevention {
               id := { kind := .preventAllDamageToThis, object := some o.id }
               source := some o.id
@@ -216,7 +216,7 @@ def replaceDamage (g : Game) (n : Int)
               kind := .shieldCounterPreventDamage o.id
             })
         if let some pid := recipientPlayer? then
-          if (g.player pid).protectionFromEverything then
+          if g.protectionFromEverything pid then
             items := items.push (.prevention {
               id := { kind := .protectionFromEverythingPlayer, player := some pid }
               source := none
@@ -250,7 +250,7 @@ def replaceDamage (g : Game) (n : Int)
           | some p, some r =>
             if p != r then
               for o in g.permanentsOf p do
-                if o.staticAbilities.any (· == .noncombatDamagePlusSourcePower) then
+                if (g.staticAbilities o).any (· == .noncombatDamagePlusSourcePower) then
                   let bonus := (g.power o).toNat
                   if bonus > 0 then
                     items := items.push (.replacement {
@@ -264,7 +264,7 @@ def replaceDamage (g : Game) (n : Int)
         -- Mjölnir (`.equippedDealsDoubleDamage`)
         for eq in g.battlefield do
           if eq.attachedTo == some src.id &&
-              eq.staticAbilities.any (· == .equippedDealsDoubleDamage) then
+              (g.staticAbilities eq).any (· == .equippedDealsDoubleDamage) then
             items := items.push (.replacement {
               id := { kind := .equippedDealsDoubleDamage, object := some eq.id }
               source := some eq.id
@@ -278,7 +278,7 @@ def replaceDamage (g : Game) (n : Int)
           | some p, some r =>
             if p != r then
               for o in g.permanentsOf p do
-                if o.staticAbilities.any (· == .fra .noncombatDamagePlusOne) then
+                if (g.staticAbilities o).any (· == .fra .noncombatDamagePlusOne) then
                   items := items.push (.replacement {
                     id := { kind := .noncombatDamagePlusOne, object := some o.id }
                     source := some o.id
@@ -373,7 +373,7 @@ def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
     let base := (source.orElse (fun _ => g.resolvingDamageSourceEvent?)).getD default
     { base with keywords := { base.keywords with deathtouch := base.keywords.deathtouch || deathtouch } }
   let healsOther :=
-    o.printed.staticAbilities.any (fun
+    (g.staticAbilities o).any (fun
       | .healOtherDamageWhenDealt => true
       | _ => false)
   let g :=
@@ -411,7 +411,7 @@ def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
 the time the damage would be dealt (MSH 305). -/
 def hawkeyeNoncombatBonus (g : Game) (sourceController : PlayerId) : Int :=
   (g.permanentsOf sourceController).foldl (fun acc o =>
-    if o.staticAbilities.any (fun
+    if (g.staticAbilities o).any (fun
       | .noncombatDamagePlusSourcePower => true
       | _ => false) then
       acc + g.power o
@@ -422,7 +422,7 @@ def mjolnirMultiplier (g : Game) (src : GameObject) : Nat :=
   let n :=
     (g.battlefield.filter (fun o =>
       o.attachedTo == some src.id &&
-        o.staticAbilities.any (fun
+        (g.staticAbilities o).any (fun
           | .equippedDealsDoubleDamage => true
           | _ => false))).size
   if n == 0 then 1 else Nat.pow 2 n
@@ -442,8 +442,8 @@ def tomikNoncombatBonus (g : Game) (src : GameObject) (recipient : PlayerId) : I
   match src.controller with
   | some p =>
     if p == recipient then 0
-    else Int.ofNat ((g.permanentsOf p).filter (·.staticAbilities.any
-      (· == .fra .noncombatDamagePlusOne))).size
+    else Int.ofNat ((g.permanentsOf p).filter (fun o =>
+      (g.staticAbilities o).any (· == .fra .noncombatDamagePlusOne))).size
   | none => 0
 
 /-- Increase `p`'s life total (CR 119.2), running the CR 616.1 replacement loop
@@ -454,11 +454,12 @@ def gainLife (g : Game) (p : PlayerId) (n : Nat)
   let proposed := GameEvent.life g.turnNumber p n true (cause := cause)
   if n == 0 || !proposed.watches .wouldGainLife then g
   else if (g.livingOpponents p).any (fun opp =>
-      (g.permanentsOf opp.id).any (·.printed.opponentsCantGainLife)) then
+      (g.permanentsOf opp.id).any (fun o =>
+        o.printed.opponentsCantGainLife && g.retainsPrintedAbilities o)) then
     g.logMsg s!"{(g.player p).name} can't gain life"
   else
     let pl := g.player p
-    if pl.lifeLocked || pl.lifeCantChange then
+    if g.lifeLocked p || g.lifeCantChange p then
       g.logMsg s!"{pl.name}'s life total can't change"
     else
       let (n, applied, cause', choice?) :
@@ -572,7 +573,6 @@ def dealDamageFrom (g : Game) (sourceName : String) (o : GameObject) (n : Int)
                 (ctxSrc.orElse (fun _ => some src.id))
                 (ctrl.orElse (fun _ => src.controller)))
         g.withBatch defaultCause fun g =>
-        let g := g.changeStatus src.id (.dealtDamageThisTurn true)
         let g :=
           g.markDamageOn o n s!"{sourceName} deals {dealtAmt} damage to {o.name}"
             (deathtouch || g.hasDeathtouch src) (source := some (g.snapshot src))
@@ -601,8 +601,8 @@ def dealDamageToPlayer (g : Game) (pid : PlayerId) (n : Int)
       (.dealDamageToPlayer pid n.toNat msg (source.map g.snapshot) false (!preventable) cause)
   | none =>
   let g := g.consumeReplacementOrder rep.applied
-  if rep.prevented && preventable && pl.protectionFromEverything &&
-      !(source.any (fun src => src.status.preventDamageGrantedBy.any g.grantorStillInPlay)) then
+  if rep.prevented && preventable && g.protectionFromEverything pid &&
+      !(source.any (fun src => (g.preventDamageGrantedBy src).any g.grantorStillInPlay)) then
     g.logMsg s!"damage to {pl.name} is prevented (protection from everything)"
   else if (rep.prevented || rep.amount == 0) && source.isSome then
     g.logMsg s!"damage from the source is prevented"
@@ -621,7 +621,7 @@ def dealDamageToPlayer (g : Game) (pid : PlayerId) (n : Int)
     let happened := GameEvent.damagedPlayer g.turnNumber srcEvent pid n.toNat false (cause := rep.cause)
     let g := if n > 0 then g.record happened else g
     let g :=
-      if (pl.lifeLocked || pl.lifeCantChange) && n != 0 then
+      if (g.lifeLocked pid || g.lifeCantChange pid) && n != 0 then
         g.logMsg s!"{pl.name}'s life total can't change"
       else if n > 0 then
         (g.record (GameEvent.life g.turnNumber pid n.toNat false true false (cause := rep.cause))).logMsg
@@ -704,7 +704,7 @@ def loseLife (g : Game) (p : PlayerId) (n : Nat)
   if n == 0 then g
   else
     let pl := g.player p
-    if pl.lifeLocked || pl.lifeCantChange then
+    if g.lifeLocked p || g.lifeCantChange p then
       g.logMsg s!"{pl.name}'s life total can't change"
     else
       (g.record (GameEvent.life g.turnNumber p n false (cause := cause))).logMsg
