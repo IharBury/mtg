@@ -155,7 +155,7 @@ target kind decides who is legal. -/
 
 #guard
   let g0 := putOnLibrary afterDraw bolt opp
-  let g0 := g0.changePlayer opp (.protectionFromEverything true)
+  let g0 := g0.createEffect (.protectionFromEverything opp)
   let g := step g0 (.mill (.fixed 1) (.target .player)) #[Target.player opp] (ab := playerMill)
   !inGraveyard g opp "Mill Bolt" &&
     logContains g "The target is no longer legal"

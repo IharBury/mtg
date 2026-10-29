@@ -266,7 +266,7 @@ controller's next turn. -/
     exiled announced "Titan" && onBoard announced "Bear" &&
     exiled source "Bear" && onBoard source "Titan" &&
     match source.objects.find? (·.name == "Bear") with
-    | some o => o.playPermission.isSome
+    | some o => (source.playPermission o).isSome
     | none => false
 
 /- Printed phrases stay with the combination that produces them. -/

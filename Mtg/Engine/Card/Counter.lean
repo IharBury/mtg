@@ -163,22 +163,41 @@ namespace CounterBag
 def count (bag : CounterBag) (k : CounterKind) : Nat :=
   (bag.filter (·.1 == k)).foldl (fun acc (_, n) => acc + n) 0
 
+/-- Canonicalize `bag` by summing counts per kind in `CounterKind.all` order
+and omitting kinds with count `0` (CR 122.1). -/
+def canonical (bag : CounterBag) : CounterBag :=
+  CounterKind.all.foldl (fun acc k =>
+    let n := bag.count k
+    if n > 0 then acc.push (k, n) else acc) #[]
+
 /-- Add `n` counters of kind `k` to `bag` (no-op when `n == 0`). -/
 def add (bag : CounterBag) (k : CounterKind) (n : Nat) : CounterBag :=
-  if n == 0 then bag
+  if n == 0 then canonical bag
   else
-    match bag.findIdx? (·.1 == k) with
-    | some idx => bag.modify idx (fun (_, m) => (k, m + n))
-    | none => bag.push (k, n)
+    let next : CounterBag :=
+      match bag.findIdx? (·.1 == k) with
+      | some idx => bag.modify idx (fun (_, m) => (k, m + n))
+      | none => bag.push (k, n)
+    canonical next
+
+/-- Remove up to `n` counters of kind `k` from `bag` (CR 122.1). -/
+def sub (bag : CounterBag) (k : CounterKind) (n : Nat) : CounterBag :=
+  if n == 0 then canonical bag
+  else
+    let cur := bag.count k
+    let without := bag.filter (·.1 != k)
+    let next : CounterBag := if cur > n then without.push (k, cur - n) else without
+    canonical next
 
 /-- Set the count of `k` in `bag` to `n` (removing `k` when `n == 0`). -/
 def set (bag : CounterBag) (k : CounterKind) (n : Nat) : CounterBag :=
   let without := bag.filter (·.1 != k)
-  if n == 0 then without else without.push (k, n)
+  let next : CounterBag := if n == 0 then without else without.push (k, n)
+  canonical next
 
 /-- Merge two counter bags by summing counts for each kind. -/
 def merge (a b : CounterBag) : CounterBag :=
-  b.foldl (fun acc (k, n) => acc.add k n) a
+  canonical (b.foldl (fun acc (k, n) => acc.add k n) a)
 
 end CounterBag
 

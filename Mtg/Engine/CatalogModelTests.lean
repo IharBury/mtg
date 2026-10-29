@@ -191,7 +191,7 @@ creatures with total power 4 or more; not enough power can't crew it. -/
 #guard
   let g := addPermanent (addPermanent afterDraw dependableQuinjet me me) grizzlyBears me me
   let quinjet := namedPermanent g "Dependable Quinjet"
-  !quinjet.isCreature && activationRejected g quinjet "Crew"
+  !g.isCreature quinjet && activationRejected g quinjet "Crew"
 #guard
   let g := addPermanent afterDraw dependableQuinjet me me
   let g := addPermanent (addPermanent g grizzlyBears me me) grayOgre me me
@@ -201,7 +201,7 @@ creatures with total power 4 or more; not enough power can't crew it. -/
     (namedPermanent g "Gray Ogre").id])
   let g := resolved g
   let quinjet := namedPermanent g "Dependable Quinjet"
-  quinjet.isCreature && g.power quinjet == 3 && (namedPermanent g "Gray Ogre").status.tapped &&
+  g.isCreature quinjet && g.power quinjet == 3 && (namedPermanent g "Gray Ogre").status.tapped &&
     g.canAttack quinjet
 
 /-! ## Modal spells with more than one mode -/
@@ -674,7 +674,7 @@ target creature from blocking. -/
   let g := mustApply g me .accept
   let g := mustApply g me (.chooseMode 0)
   let g := passBoth (mustApply g me (tgt g "Grizzly Bears"))
-  (namedPermanent g "Grizzly Bears").status.cantBlockUntilEot && (pool g).red == 0
+  g.cantBlockUntilEot (namedPermanent g "Grizzly Bears") && (pool g).red == 0
 
 /-! ## Improvise and sneak -/
 
@@ -835,10 +835,10 @@ def onlyLib (g : Game) (cards : Array CardDef) : Game :=
 /- The One Ring gives protection only if it was cast. -/
 #guard
   let g := settle (enterPermanent afterDraw theOneRing me)
-  !(g.player me).protectionFromEverything
+  !g.protectionFromEverything me
 #guard
   let g := resolved (castFra afterDraw theOneRing)
-  (g.player me).protectionFromEverything
+  g.protectionFromEverything me
 
 /- Lake-town Toymaker doesn't trigger unless you've drawn two cards. -/
 #guard
@@ -1171,7 +1171,7 @@ def witchKingAttacksLiliana : Game :=
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
   let g := addPermanent g grayOgre ⟨2⟩ ⟨2⟩
   let wk := namedPermanent g "Witch-king, Bringer of Ruin"
-  let g := g.changeStatuses wk.id #[.attacking true, .attackingWhom (some ⟨2⟩)]
+  let g := g.markAttacking wk.id (some (.player ⟨2⟩))
   g.applyTriggeredAbility ⟨0⟩ .onAttackDefenderSacsLeastPower (some wk.id)
 
 /- Witch-king, Bringer of Ruin makes the player it is attacking sacrifice,
@@ -1350,7 +1350,7 @@ to you, then the Ring tempts you. -/
   let g := addPermanent afterDraw witchKingOfAngmar me me
   let g := addPermanent (addPermanent g grizzlyBears opp opp) grayOgre opp opp
   let bears := namedPermanent g "Grizzly Bears"
-  let g := g.changeStatus bears.id (.combatDamageToPlayers #[me])
+  let g := g.record (GameEvent.damagedPlayer g.turnNumber bears.asEvent me 2 true)
   let g := g.applyTriggeredAbility me .onCombatDamageToYouSacRingTempts
     (some (idOf g "Witch-king of Angmar"))
   !onBattlefield g "Grizzly Bears" && onBattlefield g "Gray Ogre" &&
@@ -1360,8 +1360,8 @@ to you, then the Ring tempts you. -/
   let g := addPermanent (addPermanent g grizzlyBears opp opp) grayOgre opp opp
   let bears := namedPermanent g "Grizzly Bears"
   let ogre := namedPermanent g "Gray Ogre"
-  let g := g.changeStatus bears.id (.combatDamageToPlayers #[me])
-  let g := g.changeStatus ogre.id (.combatDamageToPlayers #[me])
+  let g := g.record (GameEvent.damagedPlayer g.turnNumber bears.asEvent me 2 true)
+  let g := g.record (GameEvent.damagedPlayer g.turnNumber ogre.asEvent me 2 true)
   let g := g.applyTriggeredAbility me .onCombatDamageToYouSacRingTempts
     (some (idOf g "Witch-king of Angmar"))
   let choosing :=
@@ -1474,7 +1474,7 @@ counter action and draws. -/
   let g := g.applyTriggeredAbility me .onTappedForTeamworkPlusOneAndDraw
     (some (idOf g "Agent Maria Hill"))
   (namedPermanent g "Agent Maria Hill").status.plusOnePlusOne == 1 &&
-    (namedPermanent g "Agent Maria Hill").status.gotPlusOneThisTurn &&
+    g.gotPlusOneThisTurn (namedPermanent g "Agent Maria Hill").id &&
     handSize g me == before + 1
 
 /- Claim the Kingdom's landfall puts a +1/+1 counter through the counter
@@ -1483,7 +1483,7 @@ action and a plan counter on the enchantment. -/
   let g := addPermanent (addPermanent afterDraw claimTheKingdom me me) grizzlyBears me me
   let g := g.applyTriggeredAbility me .onLandYouControlEntersPlusOneAndPlan
     (some (idOf g "Claim the Kingdom")) #[Target.permanent (idOf g "Grizzly Bears")]
-  (namedPermanent g "Grizzly Bears").status.gotPlusOneThisTurn &&
+  g.gotPlusOneThisTurn (namedPermanent g "Grizzly Bears").id &&
     (namedPermanent g "Claim the Kingdom").status.plan == 1
 
 /- Political Triumph's completed Plan puts +1/+1 counters through the
@@ -1493,7 +1493,7 @@ counter action. -/
   let g := g.applyTriggeredAbility me .onFourthPlanDrawPlusOneEach
     (some (idOf g "Political Triumph"))
   !onBattlefield g "Political Triumph" &&
-    (namedPermanent g "Grizzly Bears").status.gotPlusOneThisTurn
+    g.gotPlusOneThisTurn (namedPermanent g "Grizzly Bears").id
 
 /- Doom Reigns Supreme drains with the life actions, and its reflexive
 ability may cast up to two of the exiled cards. -/
@@ -1526,7 +1526,7 @@ ability may cast up to two of the exiled cards. -/
   let g := mustApply g me .decline
   offered && inExile g "Shock" &&
     !g.objects.any (fun o => o.name == "Shock" && o.zone == .stack) &&
-    !(g.objects.any (fun o => o.zone == .exile && o.playPermission.isSome))
+    !(g.objects.any (fun o => o.zone == .exile && (g.playPermission o).isSome))
 
 /- Absorbing Man copies an artifact, non-Aura enchantment, or land, and may
 copy nothing. -/
@@ -1582,7 +1582,7 @@ line is Human Mercenary Villain. -/
 #guard
   let g := addPermanent afterDraw theMindStone me me
   let stone := namedPermanent g "The Mind Stone"
-  let g := g.changeStatus stone.id (.harnessed true)
+  let g := g.record (GameEvent.designation g.turnNumber stone.asEvent .harnessed true)
   let g := addPermanent (addPermanent g forest me me) grizzlyBears me me
   let legal := g.legalTargetsForKind me
     (SharedTrigger.timing (.step .harnessedFlicker)).targeting.kind
@@ -1612,7 +1612,7 @@ line is Human Mercenary Villain. -/
   let g := addPermanent (addPermanent afterDraw grizzlyBears me me) enchantedRiverSGrasp me me
   let g := equip g "Enchanted River's Grasp" "Grizzly Bears"
   let host := namedPermanent g "Grizzly Bears"
-  let g := (g.recordPutCounters host.id .plusOnePlusOne 2).changeStatuses host.id #[.stun 1, .minusOneMinusOne 1]
+  let g := ((g.recordPutCounters host.id .plusOnePlusOne 2).recordPutCounters host.id .stun 1).recordPutCounters host.id .minusOneMinusOne 1
   let g := passBoth (fireTrigger g "Enchanted River's Grasp")
   let h := namedPermanent g "Grizzly Bears"
   h.status.tapped && h.status.plusOnePlusOne == 0 && h.status.stun == 0 &&
@@ -1622,7 +1622,7 @@ line is Human Mercenary Villain. -/
 #guard
   let g := addPermanent afterDraw desertWereWorm me me
   let w := namedPermanent g "Desert Were-Worm"
-  let g := g.changeStatuses w.id #[.attacking true, .tapped true]
+  let g := (g.markAttacking w.id).changeStatus w.id (.tapped true)
   let g := passBoth (fireTrigger g "Desert Were-Worm")
   !(namedPermanent g "Desert Were-Worm").status.tapped && g.additionalCombatPhases == 1
 
@@ -1711,7 +1711,7 @@ value 3 or less from any graveyard under its owner's control. -/
   let g := fireTrigger (addPermanent afterDraw mirkwoodMeditator me me) "Mirkwood Meditator"
   let g := passBoth g
   let g := mustApply g me .decline
-  (namedPermanent g "Mirkwood Meditator").status.setBasePT.isNone
+  (g.setBasePT (namedPermanent g "Mirkwood Meditator")).isNone
 
 /- Mirkwood Nurturer may return any other permanent you control. Choosing
 nothing returns nothing and adds no counter. -/
@@ -1828,7 +1828,8 @@ controls; kicked, it targets any number of them. -/
 #guard
   let g := addPermanent (addPermanent afterDraw grizzlyBears me opp) hillGiant opp me
   let g := resolved (castFra g theEaglesAreComing [.announceKicker false, tgt g "Grizzly Bears"])
-  inHand g me "Grizzly Bears" && (g.player me).eaglesBirdsNextUpkeep == 1
+  inHand g me "Grizzly Bears" &&
+    g.delayedTriggers.any (fun dt => dt.controller == me && dt.kind == .eaglesBirds 1)
 #guard
   let g := addPermanent (addPermanent afterDraw grizzlyBears me opp) hillGiant opp me
   castRejected g theEaglesAreComing [.announceKicker false, tgt g "Hill Giant"]
@@ -1836,7 +1837,8 @@ controls; kicked, it targets any number of them. -/
   let g := addPermanent (addPermanent afterDraw grizzlyBears me me) hillGiant me me
   let g := resolved (castFra g theEaglesAreComing
     [.announceKicker true, .targets #[perm g "Grizzly Bears", perm g "Hill Giant"]])
-  inHand g me "Grizzly Bears" && inHand g me "Hill Giant" && (g.player me).eaglesBirdsNextUpkeep == 2
+  inHand g me "Grizzly Bears" && inHand g me "Hill Giant" &&
+    g.delayedTriggers.any (fun dt => dt.controller == me && dt.kind == .eaglesBirds 2)
 
 /- Galadriel's Dismissal kicked targets a player, and each creature that
 player controls phases out. -/

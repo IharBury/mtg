@@ -134,7 +134,7 @@ def declineSearch (g : Game) : Game :=
 def withQuest (n : Nat) : Game :=
   let g := addPermanent afterDraw light caster caster
   let o := lastPermanent g
-  g.changeStatus o.id (.quest n)
+  g.recordPutCounters o.id .quest n
 
 #guard isForestCard forest && isBasicLandCard forest
 #guard isBasicLandCard mountain && !isForestCard mountain

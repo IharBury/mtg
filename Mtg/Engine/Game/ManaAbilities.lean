@@ -11,18 +11,6 @@ the mana immediately, without using the stack (CR 605.3b).
 namespace Mtg.Engine
 namespace Game
 
-/-- How mana from a mana ability may be spent (CR 106.10). -/
-inductive ManaRestriction where
-  | none
-  | elf
-  | instantOrSorcery
-  | hero
-  | villain
-  | cantNonartifact
-  | creatureSource
-  | fra (u : FraManaUse)
-deriving DecidableEq, Repr, Inhabited, BEq
-
 /-- The mana a mana ability adds (CR 106.1). -/
 inductive ManaOutput where
   /-- Exactly these mana. -/
@@ -260,7 +248,7 @@ def grantedManaAbilityDefs (g : Game) (o : GameObject) : Array ManaAbilityDef :=
       | none => acc
     | _ => acc) (#[] : Array ManaAbilityDef)
   let emrakul : Array ManaAbilityDef :=
-    if o.isOnBattlefield && !o.status.colorlessGrantUntilCast.isEmpty then
+    if o.isOnBattlefield && !(g.colorlessGrantUntilCast o).isEmpty then
       #[{ output := .fixed #[.colorless, .colorless] }]
     else #[]
   let lantern : Array ManaAbilityDef :=
@@ -298,7 +286,7 @@ def manaAbilitiesOf (g : Game) (o : GameObject) : Array ManaType :=
       d.output.types.foldl (fun acc t => if acc.contains t then acc else acc.push t) acc
     else acc) #[]
 
-/-- Add `mana` to `p`'s pool with `r` (CR 106.4 / 106.10). -/
+/-- Add `mana` to `p`'s pool with `r` (CR 106.4 / 106.6). -/
 def addRestrictedMana (pool : ManaPool) (mana : Array ManaType) (r : ManaRestriction) :
     ManaPool :=
   mana.foldl (fun pool t =>
@@ -311,17 +299,6 @@ def addRestrictedMana (pool : ManaPool) (mana : Array ManaType) (r : ManaRestric
     | .cantNonartifact => pool.add t (cantNonartifact := true)
     | .creatureSource => pool.add t (creatureRestricted := true)
     | .fra u => pool.add t (fra := some u)) pool
-
-/-- A short note for the log describing `r`. -/
-def ManaRestriction.note : ManaRestriction → String
-  | .none | .fra .fromTreasure => ""
-  | .elf => " (Elf spells and abilities)"
-  | .instantOrSorcery => " (instant or sorcery spells)"
-  | .hero => " (Hero spells and abilities)"
-  | .villain => " (Villain spells and abilities)"
-  | .cantNonartifact => " (not a nonartifact spell)"
-  | .creatureSource => " (abilities of creature sources)"
-  | .fra u => s!" ({u.label})"
 
 /-- `p` may activate abilities of creatures they control as though those
 creatures had haste (Shang-Chi, Master of Kung Fu; MSH 280). -/
@@ -372,7 +349,7 @@ def activateManaAbility (g : Game) (p : PlayerId) (id : ObjectId) (idx : Nat)
       throw s!"{o.name} is needed to pay \{T}"
     if o.hasSummoningSickness && !g.hasHaste o && !(o.isCreature && g.activatesAsThoughHaste p) then
       throw s!"{o.name} has summoning sickness (CR 302.6)"
-  if d.onceEachTurn && d.activatedIdx.any o.status.abilitiesActivatedThisTurn.contains then
+  if d.onceEachTurn && d.activatedIdx.any (g.abilitiesActivatedThisTurn o.id).contains then
     throw s!"{o.name}'s ability can be activated only once each turn"
   if !g.costPicksPayable p id d.picks then
     throw s!"{o.name}'s ability has a cost that can't be paid"
@@ -380,14 +357,14 @@ def activateManaAbility (g : Game) (p : PlayerId) (id : ObjectId) (idx : Nat)
   if costIds.size != need then
     throw s!"Choose what to {String.intercalate " and " (d.picks.map (·.phrase)).toList}"
   let pl := g.player p
-  let pool ←
-    if d.cost.includesManaPayment then
-      match pl.manaPool.pay? d.cost (g.hasSubtype o .elf) false (g.hasSubtype o .hero)
-          (g.hasSubtype o .villain) true o.isCreature with
-      | some pool => pure pool
-      | none => throw s!"{pl.name} cannot pay {d.cost}"
-    else pure pl.manaPool
-  let mut g := g.changePlayer p (.manaPool pool)
+  let mut g := g
+  if d.cost.includesManaPayment then
+    match pl.manaPool.payUnits? d.cost (g.hasSubtype o .elf) false (g.hasSubtype o .hero)
+        (g.hasSubtype o .villain) true o.isCreature with
+    | some (_, spentUnits) =>
+      g := g.record (GameEvent.manaSpent g.turnNumber p spentUnits id
+        (cause := some (.costPayment .mana p (some id))))
+    | none => throw s!"{pl.name} cannot pay {d.cost}"
   g ← g.payLifeCost p d.payLife
   let mut rest := costIds
   for pick in d.picks do
@@ -400,17 +377,14 @@ def activateManaAbility (g : Game) (p : PlayerId) (id : ObjectId) (idx : Nat)
   if d.sacrificeSelf then
     g := g.sacrificeToGraveyard src s!"{(g.player p).name} sacrifices {src.name}"
       (cause := some (.costPayment .sacrifice p (some id)))
-  match d.activatedIdx with
-  | some i =>
-    if (g.findObject? id).isSome then
-      g := g.changeStatuses id #[.incActivationsThisTurn, .pushAbilitiesActivated i]
-  | none => pure ()
-  g := g.record (GameEvent.abilityActivated g.turnNumber id srcSnap p .mana)
-  g := g.changePlayer p (.manaPool (addRestrictedMana (g.player p).manaPool mana d.restriction))
+  g := g.record (GameEvent.abilityActivated g.turnNumber id srcSnap p (.mana d.activatedIdx))
+  let rOpt : Option ManaRestriction := if d.restriction == .none then none else some d.restriction
+  let addedUnits := mana.map (fun t => ({ mana := t, source := some id, restriction := rOpt } : ManaUnit))
+  g := g.record (GameEvent.manaAdded g.turnNumber p addedUnits)
   if d.damageYou > 0 then
     let pl := g.player p
     g :=
-      if pl.lifeLocked || pl.lifeCantChange then
+      if g.lifeLocked p || g.lifeCantChange p then
         g.logMsg s!"{pl.name}'s life total can't change"
       else
         (g.record (GameEvent.life g.turnNumber p d.damageYou false true false
@@ -419,10 +393,11 @@ def activateManaAbility (g : Game) (p : PlayerId) (id : ObjectId) (idx : Nat)
   -- Molten Tide: a triggered mana ability that resolves immediately (CR 605.4a).
   let extraRed :=
     if g.hasSubtype o .mountain && d.tap && !mana.isEmpty then
-      (g.player p).mountainExtraRedThisTurn
+      g.mountainExtraRedThisTurn p
     else 0
   if extraRed > 0 then
-    g := (g.changePlayer p (.addMana (.colored .red) extraRed)).logMsg
+    let extraUnits := Array.replicate extraRed ({ mana := .colored .red, source := some id } : ManaUnit)
+    g := (g.record (GameEvent.manaAdded g.turnNumber p extraUnits)).logMsg
       (s!"{(g.player p).name} adds an additional " ++ String.join (List.replicate extraRed "{R}"))
   let produced :=
     match mana[0]? with

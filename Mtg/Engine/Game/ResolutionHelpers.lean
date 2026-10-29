@@ -128,7 +128,6 @@ def exileCreaturesFromGraveyard (g : Game) (controller fromPlayer : PlayerId)
           g := g'
           g := g.createEffect (.playPermission newId {
             player := controller
-            turnEndsRemaining := 0
             whileExiled := true
             anyMana := true })
             (cause := some cause)

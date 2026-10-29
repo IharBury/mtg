@@ -46,7 +46,6 @@ def temptWithTheRing (g : Game) (p : PlayerId) (chosen : Option ObjectId := none
   let pl := g.player p
   let nextAbilities := min 4 (pl.theRingAbilities + 1)
   let gainedEmblem := pl.theRingAbilities == 0
-  let g := g.changePlayer p (.theRingAbilities nextAbilities)
   let g :=
     if gainedEmblem then
       g.logMsg s!"{(g.player p).name} gets an emblem named The Ring"
@@ -59,15 +58,15 @@ def temptWithTheRing (g : Game) (p : PlayerId) (chosen : Option ObjectId := none
     | some id =>
       if choices.any (fun o => o.id == id) then some id else choices[0]?.map (·.id)
     | none => choices[0]?.map (·.id)
-  let g := g.setRingBearer p pick
+  let cause := g.resolvingOneShotCause p
+  let g := g.setRingBearer p pick (cause := cause)
   let g :=
     match pick with
     | some id =>
       g.logMsg s!"{(g.player p).name} chooses {(g.object! id).name} as their Ring-bearer"
     | none =>
       g.logMsg s!"{(g.player p).name} controls no creature to become Ring-bearer"
-  g.record (GameEvent.ringTempted g.turnNumber p pick nextAbilities
-    (cause := g.resolvingOneShotCause p))
+  g.record (GameEvent.ringTempted g.turnNumber p pick nextAbilities (cause := cause))
 
 /-- A targeted spell or ability that would tempt only does so if it resolves. -/
 def resolveTargetedTempt (g : Game) (p : PlayerId) (kind : EffectTargetKind)
@@ -128,16 +127,16 @@ def applyKickerToProposed (g : Game) (kick : Bool) : Except String Game := do
     let cost := ManaCost.afterReduction alt (g.applyCastCostReductions spell face alt)
     return g.changeProposals #[.kicked true, .kickerAnnounced true, .cost cost]
   | _, some (n, alt), none =>
-    let g := g.changeStatus spell.id (.time n)
+    let g := g.record (GameEvent.announced g.turnNumber spell.id (costs := #[.impending n]))
     let cost := ManaCost.afterReduction alt (g.applyCastCostReductions spell face alt)
     return g.changeProposals #[.kicked true, .kickerAnnounced true, .cost cost]
   | _, _, none => throw "That spell has no kicker"
   | _, _, some kicker =>
     let g := g.record (GameEvent.announced g.turnNumber spell.id (costs := #[.kicker]))
     let start :=
-      if !prop.cost.includesManaPayment && (playCostStart spell face).includesManaPayment then
+      if !prop.cost.includesManaPayment && (g.playCostStart spell face).includesManaPayment then
         ManaCost.empty
-      else playCostStart spell face
+      else g.playCostStart spell face
     let cost :=
       ManaCost.afterReduction face.manaCost
         (g.applyCastCostReductions spell face (start.addCost kicker))
@@ -153,7 +152,7 @@ def applyGiftToProposed (g : Game) (to : Option PlayerId) : Except String Game :
     match to with
     | some opp =>
       g.record (GameEvent.announced g.turnNumber spell.id (costs := #[.gift opp]))
-    | none => g.changeObject spell.id (.giftPromisedTo none)
+    | none => g
   return g.changeProposals #[.giftTo to, .giftAnnounced true]
 
 /-- Continue the proposal window after kicker / gift announcements. -/
@@ -328,7 +327,8 @@ def exileUntilNextEndStep (g : Game) (o : GameObject)
     | some c => (g, c)
     | none => g.allocDelayedCause o.controller
   let (g, newId) := g.move o.id .exile none (cause := some cause)
-  let g := g.change (.pushDelayedEndStepReturn newId cause)
+  let ctrl := o.controller.getD o.owner
+  let g := g.change (.pushDelayedTrigger { controller := ctrl, source := some o, kind := .endStepReturn newId, cause })
   g.logMsg s!"{name} is exiled until the beginning of the next end step"
 
 /-- Put a land from `p`'s hand onto the battlefield tapped (H.E.R.B.I.E.). -/

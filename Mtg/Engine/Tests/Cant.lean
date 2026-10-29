@@ -63,10 +63,10 @@ def tapThenFrozen : TriggeredAbility.TriggerResolution :=
   .sequence [.tap .target, frozen]
 
 def blocked (g : Game) (name : String) : Bool :=
-  (obj g name).status.untilEotKeywords.cantBeBlocked
+  (g.untilEotKeywords (obj g name)).cantBeBlocked
 
 def grantedBy (g : Game) (name : String) : Array ObjectId :=
-  (obj g name).status.cantUntapGrantedBy
+  g.cantUntapGrantedBy (obj g name)
 
 def board : Game :=
   addPermanent (addPermanent afterDraw titan caster caster) bear opp opp
@@ -91,7 +91,7 @@ has left are not affected. -/
 #guard
   let g0 := addPermanent board land caster caster
   let g := step g0 unblockable (targets := #[Target.permanent (pid g0 "Field")])
-  !blocked g "Titan" && !(obj g "Field").status.untilEotKeywords.cantBeBlocked &&
+  !blocked g "Titan" && !(g.untilEotKeywords (obj g "Field")).cantBeBlocked &&
     logContains g "The target is no longer legal"
 
 #guard
@@ -102,7 +102,7 @@ has left are not affected. -/
   let id := pid board "Titan"
   let (g0, newId) := board.move id (.graveyard caster) none
   let g := step g0 unblockable (targets := #[Target.permanent newId])
-  !(anyObj g "Titan").status.untilEotKeywords.cantBeBlocked &&
+  !(g.untilEotKeywords (anyObj g "Titan")).cantBeBlocked &&
     logContains g "The target is no longer in play"
 
 #guard (.cant .beBlocked : TriggeredAbility.TriggerResolution) ==
@@ -124,7 +124,7 @@ left, are not affected. -/
   let id := pid board "Titan"
   let (g0, newId) := board.move id (.graveyard caster) none
   let g := step g0 (.cant (.beBlocked .source)) (some newId)
-  !(anyObj g "Titan").status.untilEotKeywords.cantBeBlocked &&
+  !(g.untilEotKeywords (anyObj g "Titan")).cantBeBlocked &&
     logContains g "Titan is no longer on the battlefield"
 
 /- The enchanted creature can't be blocked. Nothing enchanted is silent.
@@ -193,7 +193,7 @@ left are left alone. -/
   let g := step g0 frozen (some (pid g0 "Titan"))
     #[Target.permanent (pid g0 "Field")] (ab := spider)
   grantedBy g "Bear" == #[] &&
-    (obj g "Field").status.cantUntapGrantedBy == #[] &&
+    g.cantUntapGrantedBy (obj g "Field") == #[] &&
     logContains g "The target is no longer legal"
 
 #guard
@@ -211,7 +211,7 @@ left are left alone. -/
   let (g0, newId) := board.move id (.graveyard opp) none
   let g := step g0 frozen (some (pid g0 "Titan"))
     #[Target.permanent newId] (ab := spider)
-  (anyObj g "Bear").status.cantUntapGrantedBy == #[] &&
+  g.cantUntapGrantedBy (anyObj g "Bear") == #[] &&
     logContains g "The target is no longer in play"
 
 /- A source that has already left still records the restriction. It does
@@ -221,7 +221,7 @@ not apply while that object is off the battlefield. -/
   let (g0, newId) := board.move id (.graveyard caster) none
   let g := step g0 frozen (some newId) #[Target.permanent (pid g0 "Bear")]
     (ab := spider)
-  (obj g "Bear").status.cantUntapGrantedBy == #[newId] &&
+  g.cantUntapGrantedBy (obj g "Bear") == #[newId] &&
     !g.hostCantBecomeUntapped (obj g "Bear")
 
 /- Moving the source off the battlefield ends the restriction. -/
@@ -229,7 +229,7 @@ not apply while that object is off the battlefield. -/
   let g0 := step board frozen (some (pid board "Titan"))
     #[Target.permanent (pid board "Bear")] (ab := spider)
   let (g, _) := g0.move (pid g0 "Titan") (.graveyard caster) none
-  (obj g "Bear").status.cantUntapGrantedBy == #[] &&
+  g.cantUntapGrantedBy (obj g "Bear") == #[] &&
     !g.hostCantBecomeUntapped (obj g "Bear")
 
 /- Tap, then that restriction, is the printed enter ability. -/

@@ -15,13 +15,13 @@ namespace Game
 def decideGameIfFinished (g : Game) : Option Game :=
   let living := g.livingPlayers
   if living.size == 0 then
-    some (g.change (.result (some .draw)) |>.logMsg "The game is a draw")
+    some (g.record (GameEvent.gameEnded g.turnNumber .draw) |>.logMsg "The game is a draw")
   else if living.size == 1 then
     let w := living[0]!
     let blocked := (g.livingOpponents w.id).any (fun opp =>
       (g.permanentsOf opp.id).any (·.printed.opponentsCantWin))
     if blocked then none
-    else some (g.change (.result (some (.won w.id))) |>.logMsg s!"{w.name} wins the game")
+    else some (g.record (GameEvent.gameEnded g.turnNumber (.won w.id)) |>.logMsg s!"{w.name} wins the game")
   else none
 
 /-- True when this stack object is a card (CR 800.4a). Activated and
@@ -57,7 +57,7 @@ def endControlEffect (g : Game) (oid : ObjectId) (eid : EffectId)
     let g := g.expireEffectById eid (cause := cause)
     let othersRemain := g.activeEffects.any (fun (_, e) =>
       match e with
-      | .control id _ _ _ _ => id == oid
+      | .layered (.objects #[id]) (.control _) _ => id == oid
       | _ => false)
     match g.findObject? oid with
     | none => g
@@ -66,7 +66,7 @@ def endControlEffect (g : Game) (oid : ObjectId) (eid : EffectId)
         if cur.controller != o.controller then
           g.logMsg s!"{o.name} reverts to {(g.player (cur.controller.getD cur.owner)).name}'s control"
         else g
-      else if !o.controlChanged then g
+      else if !g.controlChanged o then g
       else
         let dest := o.defaultController.getD o.owner
         if (g.player dest).lost then
@@ -82,7 +82,7 @@ def endControlChangingEffect (g : Game) (o : GameObject)
     (cause : Option EventCause := none) : Game :=
   let ids := g.activeEffects.filterMap (fun (eid, e) =>
     match e with
-    | .control id _ _ _ _ => if id == o.id then some eid else none
+    | .layered (.objects #[id]) (.control _) _ => if id == o.id then some eid else none
     | _ => none)
   ids.foldl (fun acc eid => acc.endControlEffect o.id eid (cause := cause)) g
 
@@ -238,7 +238,8 @@ def playerLeavesGame (g : Game) (p : PlayerId) : Game :=
     let g :=
       g.activeEffects.foldl (fun acc (eid, e) =>
         match e with
-        | .control oid c _ _ _ => if c == p then acc.endControlEffect oid eid (cause := cause) else acc
+        | .layered (.objects #[oid]) (.control c) _ =>
+          if c == p then acc.endControlEffect oid eid (cause := cause) else acc
         | _ => acc) g
     let g :=
       g.objects.foldl (fun acc o =>
@@ -280,13 +281,13 @@ def emptyManaPools (g : Game) : Game :=
       if !pl.manaPool.isEmpty then
         let colorless :=
           (g.permanentsOf pl.id).any (·.printed.unspentManaBecomesColorless)
-        let n := pl.manaPool.total
+        let units := pl.manaPool.toUnits
         if colorless then
-          g := g.record (GameEvent.manaEmptied g.turnNumber pl.id n true (cause := cause))
+          g := g.record (GameEvent.manaEmptied g.turnNumber pl.id units true (cause := cause))
           g := g.logMsg s!"{pl.name}'s unspent mana becomes colorless"
         else
           g := g.logMsg s!"{pl.name} empties mana pool ({pl.manaPool})"
-          g := g.record (GameEvent.manaEmptied g.turnNumber pl.id n false (cause := cause))
+          g := g.record (GameEvent.manaEmptied g.turnNumber pl.id units false (cause := cause))
     return g
 
 end Game

@@ -10,6 +10,232 @@ the `Action` interface players use to act.
 
 namespace Mtg.Engine
 
+/-- One unit of mana in a mana pool or mana event, with its type, producing
+source, and spending restriction (CR 106.1 / 106.6). -/
+structure ManaUnit where
+  mana : ManaType
+  source : Option ObjectId := none
+  restriction : Option ManaRestriction := none
+deriving DecidableEq, Repr, Inhabited, BEq
+
+namespace ManaPool
+
+/-- Add one `ManaUnit` to `p` (CR 106.4 / 106.6). -/
+def addUnit (p : ManaPool) (u : ManaUnit) : ManaPool :=
+  match u.restriction.getD .none with
+  | .none => p.add u.mana
+  | .elf => p.add u.mana (elfRestricted := true)
+  | .instantOrSorcery => p.add u.mana (instRestricted := true)
+  | .hero => p.add u.mana (heroRestricted := true)
+  | .villain => p.add u.mana (villainRestricted := true)
+  | .cantNonartifact => p.add u.mana (cantNonartifact := true)
+  | .creatureSource => p.add u.mana (creatureRestricted := true)
+  | .fra fu => p.add u.mana (fra := some fu)
+
+/-- Add `units` to `p` in order (CR 106.4 / 106.6). -/
+def addUnits (p : ManaPool) (units : Array ManaUnit) : ManaPool :=
+  units.foldl addUnit p
+
+/-- Remove one `ManaUnit` from `p` (CR 106.4 / 106.6). -/
+def removeUnit (p : ManaPool) (u : ManaUnit) : ManaPool :=
+  let t := u.mana
+  if p.get t == 0 then p
+  else
+    let p := p.set t (p.get t - 1)
+    match u.restriction.getD .none with
+    | .none => p
+    | .elf => p.setElf t (p.getElf t - 1)
+    | .instantOrSorcery => p.setInst t (p.getInst t - 1)
+    | .hero => p.setHero t (p.getHero t - 1)
+    | .villain => p.setVillain t (p.getVillain t - 1)
+    | .cantNonartifact =>
+      if t == .colorless then { p with cantNonartifact := p.cantNonartifact - 1 }
+      else if t == .colored .blue then { p with cantNonartifactBlue := p.cantNonartifactBlue - 1 }
+      else p
+    | .creatureSource => p.setCreature t (p.getCreature t - 1)
+    | .fra fu =>
+      match p.fraRestricted.findIdx? (fun (t', fu') => t' == t && fu' == fu) with
+      | some i => { p with fraRestricted := p.fraRestricted.eraseIdx! i }
+      | none => p
+
+/-- Remove `units` from `p` in order (CR 106.4 / 106.6). -/
+def removeUnits (p : ManaPool) (units : Array ManaUnit) : ManaPool :=
+  units.foldl removeUnit p
+
+/-- Enumerate all mana units currently in `p` (CR 106.4). -/
+def toUnits (p : ManaPool) : Array ManaUnit :=
+  let colors : List Color := [.white, .blue, .black, .red, .green]
+  let coloredUnits :=
+    colors.foldl (fun acc c =>
+      let t := ManaType.colored c
+      let acc := acc ++ Array.replicate (p.unrestricted t) { mana := t }
+      let acc := acc ++ Array.replicate (p.getElf t) { mana := t, restriction := some .elf }
+      let acc := acc ++ Array.replicate (p.getInst t) { mana := t, restriction := some .instantOrSorcery }
+      let acc := acc ++ Array.replicate (p.getHero t) { mana := t, restriction := some .hero }
+      let acc := acc ++ Array.replicate (p.getVillain t) { mana := t, restriction := some .villain }
+      let acc := acc ++ Array.replicate (p.getCreature t) { mana := t, restriction := some .creatureSource }
+      if c == .blue then
+        acc ++ Array.replicate p.cantNonartifactBlue { mana := t, restriction := some .cantNonartifact }
+      else acc) (#[] : Array ManaUnit)
+  let colorlessUnits :=
+    Array.replicate (p.unrestricted .colorless) { mana := .colorless } ++
+      Array.replicate p.cantNonartifact { mana := .colorless, restriction := some .cantNonartifact }
+  let fraUnits :=
+    p.fraRestricted.map (fun (t, fu) => ({ mana := t, restriction := some (.fra fu) } : ManaUnit))
+  coloredUnits ++ colorlessUnits ++ fraUnits
+
+/-- Try to spend one mana of the given type, returning the updated pool and the
+`ManaUnit` spent (CR 106.6). -/
+def spendOneUnit? (p : ManaPool) (t : ManaType) (allowElfRestricted : Bool := false)
+    (allowInstRestricted : Bool := false) (allowHeroRestricted : Bool := false)
+    (allowVillainRestricted : Bool := false)
+    (allowCantNonartifact : Bool := false)
+    (allowCreatureRestricted : Bool := false) (spend : ManaSpend := {}) :
+    Option (ManaPool × ManaUnit) :=
+  if p.get t == 0 then none
+  else if let some i := p.fraRestricted.findIdx? (fun (t', u) => t' == t && u.allows spend) then
+    let (_, u) := p.fraRestricted[i]!
+    some ({ p.set t (p.get t - 1) with fraRestricted := p.fraRestricted.eraseIdx! i },
+      { mana := t, restriction := some (.fra u) })
+  else if allowHeroRestricted && p.getHero t > 0 then
+    some (p.set t (p.get t - 1) |>.setHero t (p.getHero t - 1),
+      { mana := t, restriction := some .hero })
+  else if allowVillainRestricted && p.getVillain t > 0 then
+    some (p.set t (p.get t - 1) |>.setVillain t (p.getVillain t - 1),
+      { mana := t, restriction := some .villain })
+  else if allowCreatureRestricted && p.getCreature t > 0 then
+    some (p.set t (p.get t - 1) |>.setCreature t (p.getCreature t - 1),
+      { mana := t, restriction := some .creatureSource })
+  else if allowElfRestricted && p.getElf t > 0 then
+    some (p.set t (p.get t - 1) |>.setElf t (p.getElf t - 1),
+      { mana := t, restriction := some .elf })
+  else if allowInstRestricted && p.getInst t > 0 then
+    some (p.set t (p.get t - 1) |>.setInst t (p.getInst t - 1),
+      { mana := t, restriction := some .instantOrSorcery })
+  else if allowCantNonartifact && t == .colorless && p.cantNonartifact > 0 then
+    some ({ p.set t (p.get t - 1) with cantNonartifact := p.cantNonartifact - 1 },
+      { mana := t, restriction := some .cantNonartifact })
+  else if allowCantNonartifact && t == .colored .blue && p.cantNonartifactBlue > 0 then
+    some ({ p.set t (p.get t - 1) with cantNonartifactBlue := p.cantNonartifactBlue - 1 },
+      { mana := t, restriction := some .cantNonartifact })
+  else if p.unrestricted t > 0 then
+    some (p.set t (p.get t - 1), { mana := t })
+  else none
+
+/-- Spend one mana of any type, returning the updated pool and the `ManaUnit`
+spent. Restricted Elf mana is spent first when allowed, then
+instant/sorcery-restricted mana, then colorless, then WUBRG (CR 106.6). -/
+def spendAnyUnit? (p : ManaPool) (allowElfRestricted : Bool := false)
+    (allowInstRestricted : Bool := false) (allowHeroRestricted : Bool := false)
+    (allowVillainRestricted : Bool := false)
+    (allowCantNonartifact : Bool := false)
+    (allowCreatureRestricted : Bool := false) (spend : ManaSpend := {}) :
+    Option (ManaPool × ManaUnit) :=
+  let colored : List ManaType :=
+    [.colored .white, .colored .blue, .colored .black, .colored .red, .colored .green]
+  let order : List ManaType := [.colorless] ++ colored
+  Id.run do
+    if let some (t, _) := p.fraRestricted.find? (fun (_, u) => u.allows spend) then
+      if let some res := p.spendOneUnit? t (spend := spend) then
+        return some res
+    if allowElfRestricted then
+      for t in colored do
+        if p.getElf t > 0 then
+          if let some res := p.spendOneUnit? t true then
+            return some res
+    if allowInstRestricted then
+      for t in colored do
+        if p.getInst t > 0 then
+          if let some res := p.spendOneUnit? t false true then
+            return some res
+    if allowHeroRestricted then
+      for t in colored do
+        if p.getHero t > 0 then
+          if let some res := p.spendOneUnit? t false false true then
+            return some res
+    if allowVillainRestricted then
+      for t in colored do
+        if p.getVillain t > 0 then
+          if let some res := p.spendOneUnit? t false false false true then
+            return some res
+    if allowCreatureRestricted then
+      for t in colored do
+        if p.getCreature t > 0 then
+          if let some res :=
+              p.spendOneUnit? t false false false false false true then
+            return some res
+    for t in order do
+      if let some res := p.spendOneUnit? t allowElfRestricted allowInstRestricted
+          allowHeroRestricted allowVillainRestricted allowCantNonartifact
+          allowCreatureRestricted spend then
+        return some res
+    return none
+
+/-- Pay a mana cost, requiring colored/colorless symbols first, then generic
+(CR 202), returning the updated pool and the `ManaUnit`s spent. -/
+def payUnits? (p : ManaPool) (cost : ManaCost) (allowElfRestricted : Bool := false)
+    (allowInstRestricted : Bool := false) (allowHeroRestricted : Bool := false)
+    (allowVillainRestricted : Bool := false)
+    (allowCantNonartifact : Bool := false)
+    (allowCreatureRestricted : Bool := false) (spend : ManaSpend := {}) :
+    Option (ManaPool × Array ManaUnit) :=
+  Id.run do
+    let mut pool := p
+    let mut units : Array ManaUnit := #[]
+    let mut unpaidTwobrid : Nat := 0
+    for s in cost.symbols do
+      match s with
+      | .colored c =>
+        match pool.spendOneUnit? (.colored c) allowElfRestricted allowInstRestricted
+            allowHeroRestricted allowVillainRestricted allowCantNonartifact
+            allowCreatureRestricted spend with
+        | some (p', u) => pool := p'; units := units.push u
+        | none => return none
+      | .colorless =>
+        match pool.spendOneUnit? .colorless allowElfRestricted allowInstRestricted
+            allowHeroRestricted allowVillainRestricted allowCantNonartifact
+            allowCreatureRestricted spend with
+        | some (p', u) => pool := p'; units := units.push u
+        | none => return none
+      | .hybrid a b =>
+        match pool.spendOneUnit? (.colored a) allowElfRestricted allowInstRestricted
+            allowHeroRestricted allowVillainRestricted allowCantNonartifact
+            allowCreatureRestricted spend with
+        | some (p', u) => pool := p'; units := units.push u
+        | none =>
+          match pool.spendOneUnit? (.colored b) allowElfRestricted allowInstRestricted
+              allowHeroRestricted allowVillainRestricted allowCantNonartifact
+              allowCreatureRestricted spend with
+          | some (p', u) => pool := p'; units := units.push u
+          | none => return none
+      | .twobrid c =>
+        match pool.spendOneUnit? (.colored c) allowElfRestricted allowInstRestricted
+            allowHeroRestricted allowVillainRestricted allowCantNonartifact
+            allowCreatureRestricted spend with
+        | some (p', u) => pool := p'; units := units.push u
+        | none => unpaidTwobrid := unpaidTwobrid + 1
+      | .generic _ | .x => pure ()
+    for _ in [0:unpaidTwobrid] do
+      for _ in [0:2] do
+        match pool.spendAnyUnit? allowElfRestricted allowInstRestricted
+            allowHeroRestricted allowVillainRestricted allowCantNonartifact
+            allowCreatureRestricted spend with
+        | some (p', u) => pool := p'; units := units.push u
+        | none => return none
+    for s in cost.symbols do
+      match s with
+      | .generic n =>
+        for _ in [0:n] do
+          match pool.spendAnyUnit? allowElfRestricted allowInstRestricted
+              allowHeroRestricted allowVillainRestricted allowCantNonartifact
+              allowCreatureRestricted spend with
+          | some (p', u) => pool := p'; units := units.push u
+          | none => return none
+      | _ => pure ()
+    return some (pool, units)
+
+end ManaPool
+
 inductive GameResult where
   | won (player : PlayerId)
   | draw
@@ -24,15 +250,12 @@ structure Player where
   /-- Cards drawn as the game begins (CR 103.5); normally seven. -/
   startingHandSize : Nat := 7
   manaPool : ManaPool := {}
-  /-- Extra land plays granted this turn (CR 305.2b). Reset in untap. -/
-  additionalLandsThisTurn : Nat := 0
   poison : Nat := 0
   /-- Non-poison counters on this player (CR 122.1). -/
   counters : Array (CounterKind × Nat) := #[]
   lost : Bool := false
   /-- CR 800.4a has already been performed for this player. -/
   leftTheGame : Bool := false
-  drewFromEmpty : Bool := false
   /-- Completed London mulligans this game (CR 103.5). The first may not
   count toward bottoming or the zero-card limit (CR 103.5c). -/
   mulligansTaken : Nat := 0
@@ -54,54 +277,13 @@ structure Player where
   /-- Combined color identity of this player's commander(s). Empty when they
   have no commander or the commander is colorless (CR 903.4). -/
   commanderColorIdentity : ColorSet := {}
-  /-- Protection from everything until this player's next turn
-  (e.g. The One Ring). -/
-  protectionFromEverything : Bool := false
-  /-- Bird Soldier tokens to create at the beginning of the next upkeep
-  (The Eagles Are Coming!). -/
-  eaglesBirdsNextUpkeep : Nat := 0
-  /-- Qualities beheld this game (Elven Passage and similar). A later zone
-  change of the revealed card or chosen permanent does not un-behold. -/
-  beheldQualities : Array CardSubtype := #[]
-  /-- Players can't cast spells this turn (Bilbo's Gambit). -/
-  cantCastSpellsThisTurn : Bool := false
-  /-- Delayed “whenever you attack this turn, pump per Plains” chapters
-  still waiting to fire (Roads Go Ever, Ever On). -/
-  attackPumpPerPlainsThisTurn : Nat := 0
-  /-- This player's life total can't change (Platinum Emperion; MSH 292). -/
-  lifeLocked : Bool := false
-  /-- Generic mana less to cast spells of each of these types this turn
-  (Armor Wars II). -/
-  typeSpellCostLessThisTurn : Array (CardType × Nat) := #[]
-  /-- Generic mana less to cast spells of each of these supertypes this turn. -/
-  supertypeSpellCostLessThisTurn : Array (Supertype × Nat) := #[]
-  /-- Until end of turn, loyalty abilities of Jace planeswalkers this player
-  controls may be activated any time they could cast an instant (Jace's
-  Machinations). Each permanent is still limited to one per turn (ruling 766). -/
-  jaceLoyaltyAtInstantSpeed : Bool := false
-  /-- The legend rule doesn't apply to permanents this player controls this
-  turn (Hall of Echoes). Ends in cleanup with the copy effect (ruling 817). -/
-  legendRuleOffThisTurn : Bool := false
-  /-- Instant or sorcery spells this player casts this turn that are copied
-  (Way of the Cryomancer). -/
-  copyNextInstantSorceryThisTurn : Nat := 0
   /-- Sideboard cards not yet brought into play as objects outside the game
   (CR 400.11b). -/
   sideboard : Array CardDef := #[]
-  /-- Until end of turn, each Mountain this player taps for mana adds this
-  many additional {R} (Molten Tide). -/
-  mountainExtraRedThisTurn : Nat := 0
-  /-- The next spell this player casts this turn can't be countered
-  (Theorist's Proxy). -/
-  nextSpellCantBeCountered : Bool := false
   /-- Two-Headed Giant teammate (MSH 57 / 236). -/
   teammate : Option PlayerId := none
   /-- This player is the monarch (CR 722). -/
   isMonarch : Bool := false
-  /-- This player's life total can't change until their next turn. -/
-  lifeCantChange : Bool := false
-  /-- Creatures this player controls can't attack Jace planeswalkers this turn. -/
-  cantAttackJaces : Bool := false
   /-- Creature types of this player's commander, for Path of Ancestry. -/
   commanderCreatureTypes : Array CardSubtype := #[]
 deriving Repr, Inhabited, BEq

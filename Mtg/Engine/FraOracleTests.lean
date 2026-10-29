@@ -107,7 +107,7 @@ def jaceMinusOne : Game :=
   mustApply g ⟨0⟩ (.activate (jaceTokenOf g).id 0)
 
 #guard (jaceTokenOf jaceMinusOne).status.loyaltyCounters == 4
-#guard (jaceTokenOf jaceMinusOne).status.loyaltyActivatedThisTurn
+#guard jaceMinusOne.loyaltyActivatedThisTurn (jaceTokenOf jaceMinusOne).id
 #guard jaceMinusOne.stack.size == 1
 
 /-- Surveil 1 looks at the top card; a card not kept on top goes to the
@@ -136,7 +136,7 @@ def jaceSurveilledToGraveyard : Game :=
 /- The once-per-turn limit resets as the next turn begins. -/
 #guard
   let g := skipTo (passBoth (skipTo jaceSurveilledToGraveyard .end 80)) .upkeep 80
-  !(jaceTokenOf g).status.loyaltyActivatedThisTurn
+  !g.loyaltyActivatedThisTurn (jaceTokenOf g).id
 
 /-- Loyalty abilities are activated only as a sorcery (CR 606.3). -/
 def jaceAtCombat : Game := skipTo jaceFive .beginningOfCombat 80
@@ -151,7 +151,7 @@ def machinationsResolved : Game :=
   let g := mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Jace's Machinations").id)
   passBoth (mustApply g ⟨0⟩ .pay)
 
-#guard (machinationsResolved.player ⟨0⟩).jaceLoyaltyAtInstantSpeed
+#guard machinationsResolved.jaceLoyaltyAtInstantSpeed ⟨0⟩
 #guard (jaceTokenOf machinationsResolved).status.loyaltyCounters == 8
 
 def machinationsAtCombat : Game := skipTo machinationsResolved .beginningOfCombat 80
@@ -167,7 +167,7 @@ def machinationsActivated : Game :=
 /- The instant-speed permission ends with the turn. -/
 #guard
   let g := passBoth (skipTo machinationsActivated .end 80)
-  !(g.player ⟨0⟩).jaceLoyaltyAtInstantSpeed
+  !g.jaceLoyaltyAtInstantSpeed ⟨0⟩
 
 /- Rulings 856 / 862: a loyalty ability that adds mana is still not a mana
 ability (CR 605.1a), so it uses the stack and follows loyalty timing. -/
@@ -325,9 +325,9 @@ def angelTokenCopy : Game × GameObject :=
 prepared, and its controller may still cast the copy. -/
 def angelNoLongerCreature : Game :=
   let o := namedPermanent preparedAngel "Blossom-Blessed Angel"
-  preparedAngel.changeStatus o.id (.returnedAsArtifact true)
+  preparedAngel.createEffect (.returnedAsArtifact o.id)
 
-#guard !(namedPermanent angelNoLongerCreature "Blossom-Blessed Angel").isCreature
+#guard !angelNoLongerCreature.isCreature (namedPermanent angelNoLongerCreature "Blossom-Blessed Angel")
 #guard (namedPermanent angelNoLongerCreature "Blossom-Blessed Angel").status.prepared
 #guard angelNoLongerCreature.mayPlayFromExile ⟨0⟩ (seedSutureCopy angelNoLongerCreature)
 #guard (fraRuling 740).comment.contains "it will still be prepared"
@@ -401,7 +401,7 @@ def angelStolen : Game :=
 /- Ruling 746: losing all abilities doesn't unprepare the creature. -/
 #guard
   let o := namedPermanent preparedAngel "Blossom-Blessed Angel"
-  let g := preparedAngel.changeStatus o.id (.losesAbilitiesGrantedBy #[o.id])
+  let g := preparedAngel.createEffect (.losesAbilitiesWhileSource o.id o.id)
   (namedPermanent g "Blossom-Blessed Angel").status.prepared &&
     (exiledCopies g "Seed Suture").size == 1
 #guard (fraRuling 746).comment.contains "it won't stop being prepared"
@@ -414,7 +414,7 @@ def bearsTriedToPrepare : Game :=
 
 #guard !(namedPermanent bearsTriedToPrepare "Grizzly Bears").status.prepared
 #guard !bearsTriedToPrepare.objects.any (fun o =>
-  o.zone == .exile && (o.playPermission.bind (·.prepareSource)).isSome)
+  o.zone == .exile && ((bearsTriedToPrepare.playPermission o).bind (·.prepareSource)).isSome)
 #guard
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
   let g := enterPermanent g paradoxShaper ⟨0⟩

@@ -248,7 +248,7 @@ def gollumAndOgreVsOneBearReadyToBlock : Game :=
 def ogreGrantedMenaceReadyToBlock : Game :=
   let g := readyToDeclareBlockers
   let ogre := namedPermanent g "Gray Ogre"
-  g.changeStatus ogre.id (.grantUntilEot Keyword.menace)
+  g.createEffect (.keywordsUntilEot ogre.id Keyword.menace)
 
 #guard ogreGrantedMenaceReadyToBlock.hasMenace
   (namedPermanent ogreGrantedMenaceReadyToBlock "Gray Ogre")
@@ -516,14 +516,14 @@ def islandwalkBlocked : Bool :=
   let g := addPermanent g island ⟨1⟩ ⟨1⟩
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
   let whale := namedPermanent g "Colossal Whale"
-  let g := g.changeStatus whale.id (.attacking true)
+  let g := g.markAttacking whale.id
   !g.canBlock (namedPermanent g "Grizzly Bears") (g.object! whale.id)
 
 def islandwalkOpen : Bool :=
   let g := addPermanent afterDraw colossalWhale ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
   let whale := namedPermanent g "Colossal Whale"
-  let g := g.changeStatus whale.id (.attacking true)
+  let g := g.markAttacking whale.id
   g.canBlock (namedPermanent g "Grizzly Bears") (g.object! whale.id)
 
 #guard islandwalkBlocked

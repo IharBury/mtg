@@ -32,7 +32,7 @@ def tamBoard : Game :=
   let g := enterPermanent g ajaniResolute ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
   let bears := namedPermanent g "Grizzly Bears"
-  let g := (g.recordPutCounters bears.id .plusOnePlusOne 1).changeStatus bears.id (.shield 1)
+  let g := (g.recordPutCounters bears.id .plusOnePlusOne 1).recordPutCounters bears.id .shield 1
   let g := g.changePlayer ⟨1⟩ (.poison 1)
   [Color.white, .blue, .black, .red, .green].foldl (fun g c => withMana g ⟨0⟩ c 1) g
 
@@ -217,14 +217,14 @@ def grantedJace : Game :=
 def cryomancerReady : Game :=
   resolveStack (mustApply grantedJace ⟨0⟩ (.activate (jaceTokenOf grantedJace).id 2)) 20
 
-#guard (cryomancerReady.player ⟨0⟩).copyNextInstantSorceryThisTurn == 1
+#guard cryomancerReady.copyNextInstantSorceryThisTurn ⟨0⟩ == 1
 
 /- Ruling 844: the copy has the same targets. Shock and its copy each deal
 2 damage to Nissa. Only the next instant or sorcery is copied. -/
 #guard
   let g := castShockAtNissa cryomancerReady
   g.stack.size == 2 && (resolveStack g 20 |>.player ⟨1⟩).life == 16 &&
-    (g.player ⟨0⟩).copyNextInstantSorceryThisTurn == 0
+    g.copyNextInstantSorceryThisTurn ⟨0⟩ == 0
 #guard (fraRuling 844).comment.contains "The copy will have the same targets"
 
 /-- Ruling 845: the copy has the same value of X. -/
@@ -262,7 +262,7 @@ counts for it. -/
   let g := mustApply g ⟨0⟩ (.target (.player ⟨1⟩))
   let g := mustApply g ⟨0⟩ .pay
   g.stack.size == 2 && g.pending == .none &&
-    g.stack.all (fun e => (g.object! e.objectId).kicked)
+    g.stack.all (fun e => g.wasKicked e.objectId)
 #guard (fraRuling 843).comment.contains "You can't choose to pay any additional costs for a copied spell"
 
 end Mtg.Engine.FraRulingTests

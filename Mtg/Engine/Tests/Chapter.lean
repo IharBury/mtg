@@ -213,14 +213,14 @@ Choosing no creature for prevention changes nothing. -/
   let sid := pid g0 "Saga"
   let g := step g0 Effect.chapterGrantHexproofWhileRemains (sourceId := some sid)
     (targets := #[Target.permanent (pid g0 "Bear")])
-  (obj g "Bear").status.hexproofGrantedBy == #[sid]
+  g.hexproofGrantedBy (obj g "Bear") == #[sid]
 
 #guard
   let g0 := addPermanent withSaga bear caster caster
   let sid := pid g0 "Saga"
   let g := step g0 Effect.chapterPreventDamageWhileRemains (sourceId := some sid)
     (targets := #[Target.permanent (pid g0 "Bear")])
-  (obj g "Bear").status.preventDamageGrantedBy == #[sid]
+  g.preventDamageGrantedBy (obj g "Bear") == #[sid]
 
 #guard
   let g := step withSaga Effect.chapterPreventDamageWhileRemains
@@ -236,6 +236,7 @@ Choosing no creature for prevention changes nothing. -/
 
 #guard
   let g := step withSaga Effect.chapterPlusOneUpToOne
+    (sourceId := some (pid withSaga "Saga"))
   !logContains g "no longer legal"
 
 /- Exile until the next end step. Choosing none does nothing. -/
@@ -250,12 +251,12 @@ Choosing no creature for prevention changes nothing. -/
 #guard
   let g := step withSaga Effect.chapterGainLandfallCreateElf
     (sourceId := some (pid withSaga "Saga"))
-  (obj g "Saga").status.grantedTriggeredAbilities.size == 1 &&
+  (g.grantedTriggeredAbilities (obj g "Saga")).size == 1 &&
     logContains g "gains landfall"
 
 #guard
   let g := step withSaga Effect.chapterGrantAttackPumpPerPlainsThisTurn
-  (g.player caster).attackPumpPerPlainsThisTurn == 1
+  (g.delayedTriggers.filter (fun dt => dt.controller == caster && dt.kind == .attackPumpPerPlains)).size == 1
 
 /- Non-Villain creatures and each opponent are dealt damage. -/
 #guard
@@ -295,7 +296,7 @@ Choosing no creature for prevention changes nothing. -/
     (sourceId := some sid)
     (targets := #[Target.permanent (pid g0 "Bear")])
   (obj g "Bear").controller == some caster &&
-    (obj g "Bear").controlUntilSourceLeaves == some sid
+    g.controlUntilSourceLeaves (obj g "Bear") == some sid
 
 #guard
   let g0 := addPermanent withSaga bear opp opp

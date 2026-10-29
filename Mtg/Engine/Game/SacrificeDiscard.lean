@@ -193,7 +193,7 @@ def villainConniveTarget? (g : Game) (controller : PlayerId) (sourceId : ObjectI
     | none =>
       let cands :=
         (g.permanentsOf controller).filter (fun x =>
-          x.id != sourceId && g.hasSubtype x .villain && (g.loggedEntered x.id || x.enterProcessed))
+          x.id != sourceId && g.hasSubtype x .villain && g.loggedEntered x.id)
       if cands.isEmpty then none
       else
         some (cands.foldl (fun acc x =>
@@ -218,7 +218,8 @@ def haveVillainConnive (g : Game) (p : PlayerId) : Except String Game := do
     let g := g.change (.pending .none)
     let g :=
       if (g.findObject? sourceId).isSome then
-        g.changeStatus sourceId (.optionalOnceUsed true)
+        g.record (GameEvent.optionalOnceActed g.turnNumber p sourceId
+          (cause := some (.oneShotEffect (some ⟨g.nextEffectId⟩) (some sourceId) (some p))))
       else g
     let g := g.applyConnive p (some villainId)
     return g.receivePriority g.activePlayer
@@ -254,6 +255,7 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
       | .activatedAbility =>
         return g.becomeActivated p prop.original.name prop.sourceId prop.activation
           (sourceSnapshot := some prop.original.asEvent)
+          (sourceOriginal := some prop.original)
     | none =>
       let g := g.changes #[.pending .none, .proposedSpell none, .consecutivePasses 0]
       return g.becomeActivated p (g.object! sourceId).name (some sourceId)

@@ -246,7 +246,7 @@ def beornSetup : Game :=
 #guard
   let g := afterDraw.applyEffect ⟨0⟩ (Effect.playAdditionalLandThisTurn) #[]
   let g := g.applyEffect ⟨0⟩ (Effect.playAdditionalLandThisTurn) #[]
-  (g.player ⟨0⟩).additionalLandsThisTurn == 2 && g.landPlaysAllowed ⟨0⟩ == 3
+  g.additionalLandsThisTurn ⟨0⟩ == 2 && g.landPlaysAllowed ⟨0⟩ == 3
 
 def proposedTillAndTend : Game :=
   mustApply beornSetup ⟨0⟩
@@ -275,7 +275,7 @@ def resolvedTillAndTend : Game := passBoth paidTillAndTend
 #guard resolvedTillAndTend.log.any (fun s => mentions s "is exiled")
 #guard resolvedTillAndTend.log.any (fun s => mentions s "may cast it for as long as it remains exiled")
 #guard resolvedTillAndTend.log.any (fun s => mentions s "may play an additional land this turn")
-#guard (resolvedTillAndTend.player ⟨0⟩).additionalLandsThisTurn == 1
+#guard resolvedTillAndTend.additionalLandsThisTurn ⟨0⟩ == 1
 #guard resolvedTillAndTend.landPlaysAllowed ⟨0⟩ == 2
 #guard resolvedTillAndTend.canPlayLand ⟨0⟩
 
@@ -315,7 +315,7 @@ def resolvedTillAfterLand : Game :=
   passBoth (mustApply g ⟨0⟩ .pay)
 
 #guard resolvedTillAfterLand.canPlayLand ⟨0⟩
-#guard (resolvedTillAfterLand.player ⟨0⟩).additionalLandsThisTurn == 1
+#guard resolvedTillAfterLand.additionalLandsThisTurn ⟨0⟩ == 1
 #guard resolvedTillAfterLand.landPlaysAllowed ⟨0⟩ == 2
 
 def afterSecondForestForBeorn : Game :=
@@ -342,7 +342,7 @@ def beornPermissionLater : Game :=
 
 #guard beornPermissionLater.activePlayer == ⟨0⟩
 #guard beornPermissionLater.mayPlayFromExile ⟨0⟩ (exiledBeorn beornPermissionLater)
-#guard (beornPermissionLater.player ⟨0⟩).additionalLandsThisTurn == 0
+#guard beornPermissionLater.additionalLandsThisTurn ⟨0⟩ == 0
 #guard beornPermissionLater.loggedLandsPlayed ⟨0⟩ == 0
 #guard beornPermissionLater.landPlaysAllowed ⟨0⟩ == 1
 
@@ -456,7 +456,7 @@ def tillWithGuttersnipeResolved : Game :=
   passBoth (passBoth paidTillWithGuttersnipe)
 
 #guard (tillWithGuttersnipeResolved.player ⟨1⟩).life == 18
-#guard (tillWithGuttersnipeResolved.player ⟨0⟩).additionalLandsThisTurn == 1
+#guard tillWithGuttersnipeResolved.additionalLandsThisTurn ⟨0⟩ == 1
 
 /-- Chandra's Gray Ogre attacks; Nissa has Olog-hai Crusher with no Goblin or Orc. -/
 def ogreVsCrusher : Game :=

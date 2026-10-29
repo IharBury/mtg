@@ -48,7 +48,6 @@ def resolveAdventureSpell (g : Game) (entry : StackEntry) (obj : GameObject) : G
   let o := g.object! newId
   let g := g.createEffect (.playPermission o.id {
       player := entry.controller
-      turnEndsRemaining := 0
       fromAdventure := true })
     (cause := finishCause)
   g.logMsg
@@ -71,6 +70,65 @@ def fraAbilityTargetsAllIllegal (g : Game) (controller : PlayerId) (obj : GameOb
       !(g.legalTargetsForAtomicKind controller (kind.slotKind (if kind.spec.slots.isEmpty then 0 else i))
         obj.sourceId).contains targets[i]!)
 
+/-- Resolve a CR 603.7 delayed triggered ability on the stack. -/
+def resolveDelayedTrigger (g : Game) (controller : PlayerId) (kind : DelayedTriggerKind)
+    (cause : EventCause) : Game :=
+  match kind with
+  | .eaglesBirds n =>
+    if n > 0 then
+      let g :=
+        if g.stillInGame controller then
+          g.createKindTokens controller .birdSoldier n (cause := some cause)
+        else g
+      g.logMsg s!"{(g.player controller).name}'s delayed triggered ability creates {n} Bird Soldier token(s)"
+    else g
+  | .attackPumpPerPlains => g
+  | .endStepReturn id =>
+    match g.findObject? id with
+    | none => g
+    | some o =>
+      if o.zone == .exile then
+        let owner := o.owner
+        if (g.player owner).lost then
+          g.logMsg s!"{o.name} remains in its current zone (CR 800.4b)"
+        else
+          let name := o.name
+          let sick := !o.printed.keywords.haste
+          let (g', newId) := g.putOntoBattlefield id owner (summoningSick := sick) (cause := some cause)
+          let g' := g'.logMsg s!"{name} returns to the battlefield (beginning of end step)"
+          let back := g'.object! newId
+          if back.printed.isLand then g'.afterLandEnters back
+          else g'.afterPermanentEnters back
+      else g
+  | .endStepExile id =>
+    match g.findObject? id with
+    | some o =>
+      if o.isOnBattlefield then
+        let (g', _) := g.move id .exile none (cause := some cause)
+        g'.logMsg s!"{o.name} is exiled (beginning of end step)"
+      else g
+    | none => g
+  | .endStepSacrifice id =>
+    match g.findObject? id with
+    | some o =>
+      if o.isOnBattlefield then
+        g.sacrificeToGraveyard o s!"{o.name} is sacrificed" (cause := some cause)
+      else g
+    | none => g
+  | .endStepGraveReturn id who =>
+    match g.findObject? id with
+    | some o =>
+      if o.zone == .graveyard o.owner && !(g.player who).lost then
+        let name := o.name
+        let (g', newId) := g.putOntoBattlefield id who
+          (summoningSick := !o.printed.keywords.haste) (cause := some cause)
+        let g' := g'.logMsg s!"{name} returns to the battlefield"
+        g'.afterPermanentEnters (g'.object! newId)
+      else g
+    | none => g
+  | .endStepSynthetic n =>
+    g.applyOneDelayedSynthetic controller n cause
+
 def resolveTop (g : Game) : Game :=
   if g.stack.isEmpty then g
   else
@@ -80,7 +138,14 @@ def resolveTop (g : Game) : Game :=
     | none => g.logMsg "The spell left the stack unexpectedly"
     | some obj =>
       let ctxSrc := obj.sourceId.orElse (fun _ => some obj.id)
-      if let some e := obj.abilityEffect then
+      if let some (dtKind, dtCause) := entry.delayedTrigger then
+        g.withResolvingContext ctxSrc entry.controller fun g =>
+          let g := g.change (.resolvingAbility (some obj.id))
+          let g := g.withBatch (some dtCause) (fun g =>
+            g.resolveDelayedTrigger entry.controller dtKind dtCause)
+          let g := g.change (.resolvingAbility none)
+          g.ceaseToExist obj.id (cause := some (.gameRule .abilityFinishedResolving))
+      else if let some e := obj.abilityEffect then
         g.withResolvingContext ctxSrc entry.controller fun g =>
         let g := g.changes #[.resolvingAbility (some obj.id), .resolvingDivision entry.dividedDamage]
         let g :=
@@ -93,11 +158,11 @@ def resolveTop (g : Game) : Game :=
             else if g.fraConditionHolds entry.controller t.opts.fraCondition (obj.sourceId.bind g.findObject?)
                 obj.fraCauseStatus then
               g.applyUnifiedAbility entry.controller e entry.targets obj.sourceId
-                obj.lastKnownPower (obj.chosenX.getD 0)
+                entry.lastKnownPower ((g.chosenXOf? obj.id).getD 0)
             else g.logMsg "The intervening condition is no longer true. The ability doesn't resolve."
           | none =>
             g.applyUnifiedAbility entry.controller e entry.targets obj.sourceId
-              obj.lastKnownPower (obj.chosenX.getD 0)
+              entry.lastKnownPower ((g.chosenXOf? obj.id).getD 0)
         let g := g.changes #[.resolvingAbility none, .resolvingDivision #[]]
         -- CR 608.2m: after resolution the ability ceases to exist.
         g.ceaseToExist obj.id (cause := some (.gameRule .abilityFinishedResolving))
@@ -113,7 +178,7 @@ def resolveTop (g : Game) : Game :=
           else if g.fraConditionHolds entry.controller t.opts.fraCondition (obj.sourceId.bind g.findObject?)
                 obj.fraCauseStatus then
             g.applyTriggeredAbility entry.controller t obj.sourceId
-              entry.targets entry.dividedDamage obj.lastKnownPower obj.lastKnownToughness srcName
+              entry.targets entry.dividedDamage entry.lastKnownPower entry.lastKnownToughness srcName
               (resolutionOverride := obj.reflexiveResolution)
           else g.logMsg "The intervening condition is no longer true. The ability doesn't resolve."
         let g := g.change (.resolvingAbility none)
@@ -132,9 +197,13 @@ def resolveTop (g : Game) : Game :=
         -- CR 608.2b: an instant or sorcery whose targets are all illegal
         -- doesn't resolve, so none of its effects happen (rulings 734 / 749).
         -- Each target is checked against its own slot.
+        let kicked := g.wasKicked obj.id
+        let fromGy := g.castFromGraveyard obj.id
+        let giftTo := g.giftPromisedTo? obj.id
+        let chosenX := (g.chosenXOf? obj.id).getD 0
         let allTargetsIllegal :=
           obj.printed.isInstantOrSorcery && !entry.targets.isEmpty &&
-            match spellEffectOf obj entry.chosenMode entry.extraModes with
+            match spellEffectOf obj entry.chosenMode entry.extraModes (kicked := kicked) with
             | some e =>
               let kind := e.targetKind
               let legal :=
@@ -155,7 +224,7 @@ def resolveTop (g : Game) : Game :=
           if obj.isCopy then
             (g.ceaseToExist obj.id (cause := some (.stateBased .copyOutsideStackOrBf))).logMsg
               s!"The copy of {obj.name} ceases to exist (CR 704.5e)"
-          else if obj.castFromGraveyard then
+          else if fromGy then
             let (g, _) := g.move obj.id .exile none (cause := finishCause)
             g.logMsg s!"{obj.name} is exiled (flashback)"
           else
@@ -169,11 +238,11 @@ def resolveTop (g : Game) : Game :=
         let g :=
           g.withResolvingContext ctxSrc entry.controller fun g =>
             let g :=
-              match obj.giftPromisedTo, obj.printed.isInstantOrSorcery with
+              match giftTo, obj.printed.isInstantOrSorcery with
               | some to, true => g.givePromisedGift to
               | _, _ => g
             let modeEffects : Array Effect :=
-              if entry.extraModes.isEmpty then (spellEffectOf obj entry.chosenMode).toArray
+              if entry.extraModes.isEmpty then (spellEffectOf obj entry.chosenMode (kicked := kicked)).toArray
               else
                 ((entry.chosenMode.toArray ++ entry.extraModes).qsort (· < ·)).filterMap
                   (obj.printed.spellModes[·]?)
@@ -187,10 +256,10 @@ def resolveTop (g : Game) : Game :=
                  else e.targetKind.spec.slots.size)
               let n := if modeEffects.size == 1 then rest.size else n
               let g := g.applyUnified entry.controller e (rest.extract 0 n)
-                (castFromGraveyard := obj.castFromGraveyard)
-                (kicked := obj.kicked)
-                (giftPromised := obj.giftPromisedTo.isSome)
-                (chosenX := obj.chosenX.getD 0)
+                (castFromGraveyard := fromGy)
+                (kicked := kicked)
+                (giftPromised := giftTo.isSome)
+                (chosenX := chosenX)
               (g, rest.extract n rest.size)) (g, entry.targets)
             let g := g.change (.resolvingSpell none)
             match obj.printed.empowerJace with
@@ -202,19 +271,17 @@ def resolveTop (g : Game) : Game :=
           g.resolveAuraSpell entry obj
         else if obj.printed.isPermanentCard && !obj.printed.isLand then
           let sick := !obj.printed.keywords.haste
-          let sneak := obj.sneakPaid
-          let sneakWhom := obj.sneakAttackWhom
+          let sneak := g.sneakPaid obj.id
+          let sneakWhom := g.sneakAttackWhom? obj.id
           let sneakTarget :=
             if sneak then
-              obj.sneakAttackTarget.orElse (fun _ => sneakWhom.map AttackTarget.player)
+              (g.sneakAttackTarget? obj.id).orElse (fun _ => sneakWhom.map AttackTarget.player)
             else none
           let (g, newId) := g.putOntoBattlefield obj.id entry.controller
             (tapped := sneak)
             (summoningSick := sick)
             (attacking := sneak)
-            (attackingWhom := if sneak then sneakWhom else none)
             (attackingTarget := sneakTarget)
-            (wasCast := some (!obj.isCopy))
             (verb := some .resolve)
             (actor := some entry.controller)
             (cause := some (.gameRule .permanentSpellResolved))
@@ -229,7 +296,7 @@ def resolveTop (g : Game) : Game :=
           if obj.isCopy then
             (g.ceaseToExist obj.id (cause := some (.stateBased .copyOutsideStackOrBf))).logMsg
               s!"The copy of {obj.name} ceases to exist (CR 704.5e)"
-          else if obj.castFromGraveyard then
+          else if fromGy then
             let (g, _) := g.move obj.id .exile none
               (verb := some .resolve) (actor := some entry.controller) (cause := finishCause)
             g.logMsg s!"{obj.name} is exiled (flashback)"

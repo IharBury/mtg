@@ -63,7 +63,9 @@ def activationRejected (g : Game) (o : GameObject) (needle : String)
   | .ok _ => false
 
 def withLoyalty (g : Game) (name : String) (n : Nat) : Game :=
-  g.changeStatus (namedPermanent g name).id (.loyaltyCounters n)
+  let o := namedPermanent g name
+  let g := g.recordRemoveCounters o.id .loyalty o.status.loyaltyCounters
+  g.recordPutCounters o.id .loyalty n
 
 def pw (card : CardDef) (n : Nat) (g : Game := afterDraw) : Game :=
   withLoyalty (addPermanent g card me me) card.name n
@@ -118,7 +120,7 @@ the ability ends once Emrakul is cast. -/
   let g := mustApply g me (.tapForMana (namedPermanent g "Forest").id .colorless)
   let g := mustApply g me .pay
   g.stack.any (fun e => (g.object! e.objectId).name == "Emrakul, the Exigent Doom") &&
-    (namedPermanent g "Forest").status.colorlessGrantUntilCast.isEmpty
+    (g.colorlessGrantUntilCast (namedPermanent g "Forest")).isEmpty
 
 /- Ruling 730: if Emrakul leaves exile without being cast, the land keeps
 the ability. -/
@@ -272,7 +274,7 @@ artifact or creature each opponent controls; −6 draws three, then puts a
   let g := resolved (activateNamed g "Theorist's Proxy" "can't be countered")
   let g := castFra g shock [.target (.player opp)]
   !onBattlefield g "Theorist's Proxy" &&
-    g.stack.any (fun e => (g.object! e.objectId).uncounterableThisCast)
+    g.stack.any (fun e => g.uncounterableThisCast (g.object! e.objectId))
 
 /- Undulating Witness trades a toughness for a power. -/
 #guard
@@ -601,7 +603,7 @@ creature; it can't enchant a creature that isn't an artifact. -/
   let g := addPermanent afterDraw murmuringVolume me me
   let g := resolved (castFra g puppetCrafting [tgt g "Murmuring Volume"])
   let v := namedPermanent g "Murmuring Volume"
-  v.isCreature && g.power v == 5 && g.toughness v == 5 && g.hasSubtype v .construct
+  g.isCreature v && g.power v == 5 && g.toughness v == 5 && g.hasSubtype v .construct
 #guard castRejected withBears puppetCrafting [tgt withBears "Grizzly Bears"]
 #guard
   let g := addToGraveyard afterDraw puppetCrafting me

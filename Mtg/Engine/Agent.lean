@@ -337,7 +337,7 @@ where
     let available := g.availableMana p
     let playable := (g.handObjects p ++ g.exiledPlayable p).filter (fun o =>
       g.canCast p o &&
-        (o.playPermission.any (·.withoutManaCost) ||
+        ((g.playPermission o).any (·.withoutManaCost) ||
           available.canPay o.printed.manaCost
             (allowElfRestricted := o.hasSubtype .elf)
             (allowInstRestricted := o.printed.isInstantOrSorcery)) &&

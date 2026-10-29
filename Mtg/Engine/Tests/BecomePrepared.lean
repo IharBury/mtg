@@ -48,7 +48,7 @@ def attach (g : Game) (aura host : String) : Game :=
 
 def markPrepared (g : Game) (name : String) : Game :=
   let o := obj g name
-  g.changeStatus o.id (.prepared true)
+  g.record (GameEvent.designation g.turnNumber o.asEvent .prepared true)
 
 def seed : AdventureFace := { name := "Seed" }
 
@@ -82,7 +82,7 @@ def seedExiled (g : Game) (host : String) : Bool :=
   let hostId := (obj g host).id
   g.objects.any fun o =>
     o.zone == .exile && o.name == "Seed" &&
-      (o.playPermission.bind (·.prepareSource)) == some hostId
+      ((g.playPermission o).bind (·.prepareSource)) == some hostId
 
 def board : Game :=
   addPermanent (addPermanent afterDraw angel caster caster) bear opp opp

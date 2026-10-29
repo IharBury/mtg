@@ -135,8 +135,8 @@ def reproach : Game :=
   let g := g.gainLife ⟨1⟩ 5
   g.loseLife ⟨1⟩ 3
 
-#guard (reproach.player ⟨1⟩).lifeCantChange
-#guard (reproach.player ⟨1⟩).protectionFromEverything
+#guard reproach.lifeCantChange ⟨1⟩
+#guard reproach.protectionFromEverything ⟨1⟩
 #guard (reproach.player ⟨1⟩).life == 20
 
 #guard

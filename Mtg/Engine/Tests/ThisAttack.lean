@@ -202,7 +202,7 @@ def luke : Game :=
   resolve g (TriggeredAbility.onThisAttack Effect.thisAttackAttacksAlonePlus2Indestructible)
     (some (named g "Luke Cage, Power Man").id)
 
-#guard (named luke "Luke Cage, Power Man").status.pump == (2, 0) &&
-  (named luke "Luke Cage, Power Man").status.untilEotKeywords.indestructible
+#guard luke.pumpOf (named luke "Luke Cage, Power Man") == (2, 0) &&
+  (luke.untilEotKeywords (named luke "Luke Cage, Power Man")).indestructible
 
 end Mtg.Engine.ThisAttackTests

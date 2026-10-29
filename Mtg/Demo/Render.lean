@@ -136,7 +136,7 @@ def stackFaceExtras (o : GameObject) : String :=
 208.2). Characteristic-defining abilities still apply (CR 604.3). Abilities
 and noncreature spells omit this. -/
 def stackCreatureStats (g : Game) (o : GameObject) : String :=
-  if o.isCreature then s!" {o.typeLine} {g.power o}/{g.toughness o}" else ""
+  if g.isCreature o then s!" {g.typeLine o} {g.power o}/{g.toughness o}" else ""
 
 /-- One object on the stack, including announced targets (CR 115 / 601.2c).
 A creature spell also prints its types and P/T. `withId` prefixes the object
@@ -161,7 +161,7 @@ without paying mana (CR 118.7). Play-from-exile permissions are rendered
 separately by `exilePlayPermissionClause`. -/
 def withoutPayingManaClause (g : Game) (o : GameObject) : String :=
   let play :=
-    match o.playPermission with
+    match g.playPermission o with
     | some _ => ""
     | none =>
       if g.playsWithoutPayingManaCost o then
@@ -205,7 +205,10 @@ it has exiled until it leaves (CR 610.3). -/
 def objectLine (g : Game) (o : GameObject) (group : Option (Option PlayerId) := none) :
     String :=
   let tap := if o.status.tapped then " (tapped)" else ""
-  let sick := if o.hasSummoningSickness then " (summoning sickness)" else ""
+  let sick :=
+    if g.isCreature o && o.status.summoningSick && !(g.printedOrUntilEot o).haste then
+      " (summoning sickness)"
+    else ""
   let atk :=
     if o.status.attacking then
       let dest :=
@@ -219,9 +222,9 @@ def objectLine (g : Game) (o : GameObject) (group : Option (Option PlayerId) := 
     else
       let refs := o.status.blocking.toList.map (objectRef g)
       s!" *blocking {String.intercalate ", " refs}*"
-  let types := s!" {o.typeLine}"
+  let types := s!" {g.typeLine o}"
   let pt :=
-    if o.isCreature then s!" {g.power o}/{g.toughness o}" else ""
+    if g.isCreature o then s!" {g.power o}/{g.toughness o}" else ""
   let ench :=
     match o.attachedTo with
     | none => ""
@@ -234,7 +237,7 @@ def objectLine (g : Game) (o : GameObject) (group : Option (Option PlayerId) := 
   let dmg :=
     if o.status.damage > 0 then s!" dmg:{o.status.damage}" else ""
   let exileIfDies :=
-    if o.status.untilEotExileIfDies then " *exile if dies*" else ""
+    if g.untilEotExileIfDies o then " *exile if dies*" else ""
   let counters :=
     if o.status.plusOnePlusOne > 0 then s!" +1/+1×{o.status.plusOnePlusOne}" else ""
   s!"{o.id} {o.nameWithToken}{types}{pt}{counters}{objectFaceExtras g o}{withoutPayingManaClause g o}{controlClause g o group}{tap}{sick}{atk}{blk}{ench}{linked}{dmg}{exileIfDies}"
@@ -266,8 +269,8 @@ def handLine (g : Game) (id : ObjectId) : String :=
 Lands and other cards with no mana cost omit it rather than printing `{0}`
 (CR 202.1b / 118.6). A granted “without paying its mana cost” permission
 prints `{0}` (CR 107.4d / 118.7). -/
-def exilePlayManaCost (o : GameObject) : String :=
-  match o.playPermission with
+def exilePlayManaCost (g : Game) (o : GameObject) : String :=
+  match g.playPermission o with
   | some perm =>
     if perm.withoutManaCost && o.printed.manaCost.includesManaPayment then
       toString ManaCost.zero
@@ -278,7 +281,7 @@ def exilePlayManaCost (o : GameObject) : String :=
 /-- Who may play `o` from exile, if anyone (CR 701.14 / 715.3d), including
 when the permission replaces the mana cost with `{0}`. -/
 def exilePlayPermissionClause (g : Game) (o : GameObject) : String :=
-  match o.playPermission with
+  match g.playPermission o with
   | some perm =>
     let free :=
       if perm.withoutManaCost then " without paying its mana cost" else ""
@@ -409,9 +412,9 @@ subgroups are dropped. -/
 def battlefieldSubgroups (g : Game) (os : Array GameObject) : Array (Array GameObject) :=
   let hosts := os.filter (fun o => !attachedToBattlefield g o)
   #[
-    hosts.filter (·.isCreature),
-    hosts.filter (fun o => !o.isCreature && !o.printed.isLand),
-    hosts.filter (fun o => !o.isCreature && o.printed.isLand)
+    hosts.filter (g.isCreature ·),
+    hosts.filter (fun o => !g.isCreature o && !o.printed.isLand),
+    hosts.filter (fun o => !g.isCreature o && o.printed.isLand)
   ].filter (fun sg => !sg.isEmpty)
 
 /-- Lines for one unattached host and the permanents attached to it. -/

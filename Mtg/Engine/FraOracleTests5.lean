@@ -57,7 +57,7 @@ its counter arrives. -/
 /- Ajani's −4 creates the Pridemate token. -/
 #guard
   let g := enterPermanent afterDraw ajaniResolute ⟨0⟩
-  let g := g.changeStatus (namedPermanent g "Ajani Resolute").id (.loyaltyCounters 4)
+  let g := g.recordPutCounters (namedPermanent g "Ajani Resolute").id .loyalty 4
   let g := resolveStack (mustApply g ⟨0⟩ (.activate (namedPermanent g "Ajani Resolute").id 1)) 20
   g.battlefield.any (fun o => o.name == "Ajani's Pridemate" && o.printed.isToken)
 
@@ -148,12 +148,12 @@ def rattlerActivated : Game :=
 /- Once the ability resolves, raising the power doesn't matter. -/
 #guard
   let g := passBoth rattlerActivated
-  let g := g.changeStatus (namedPermanent g "Grizzly Bears").id (.addPump 3 0)
+  let g := g.createEffect (.pump (namedPermanent g "Grizzly Bears").id 3 0)
   g.hasCantBeBlocked (namedPermanent g "Grizzly Bears")
 
 /- If the target's power rises above 2 first, the ability does nothing. -/
 #guard
-  let g := rattlerActivated.changeStatus (namedPermanent rattlerActivated "Grizzly Bears").id (.addPump 1 0)
+  let g := rattlerActivated.createEffect (.pump (namedPermanent rattlerActivated "Grizzly Bears").id 1 0)
   let g := passBoth g
   !g.hasCantBeBlocked (namedPermanent g "Grizzly Bears")
 #guard (fraRuling 783).comment.contains "the ability does nothing because the target is no longer legal"
@@ -233,11 +233,13 @@ def futurescribeCombat (scried surveilled : Bool) : Game :=
 
 /- Having scried and surveilled still gives only one counter. -/
 #guard
-  let o := namedPermanent (futurescribeCombat true true) "Grizzly Bears"
-  o.status.plusOnePlusOne == 1 && o.status.pump == (0, 0)
+  let g := futurescribeCombat true true
+  let o := namedPermanent g "Grizzly Bears"
+  o.status.plusOnePlusOne == 1 && g.pumpOf o == (0, 0)
 #guard
-  let o := namedPermanent (futurescribeCombat false false) "Grizzly Bears"
-  o.status.plusOnePlusOne == 0 && o.status.pump == (1, 1)
+  let g := futurescribeCombat false false
+  let o := namedPermanent g "Grizzly Bears"
+  o.status.plusOnePlusOne == 0 && g.pumpOf o == (1, 1)
 #guard (fraRuling 804).comment.contains "only one +1/+1 counter"
 
 /- Scrying records only a scry. Surveilling records only a surveil. Scry 0 records neither. -/

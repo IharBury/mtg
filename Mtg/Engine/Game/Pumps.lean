@@ -86,11 +86,11 @@ def hostCantBecomeUntapped (g : Game) (o : GameObject) : Bool :=
   let frozen :=
     g.battlefield.any (fun aura =>
       aura.attachedTo == some o.id &&
-        aura.staticAbilities.any (fun
+        (g.staticAbilities aura).any (fun
           | .enchantedLosesAbilitiesCantUntap => true
           | _ => false))
   let granted :=
-    o.status.cantUntapGrantedBy.any (fun sid =>
+    (g.cantUntapGrantedBy o).any (fun sid =>
       match g.findObject? sid with
       | some src => src.isOnBattlefield
       | none => false)
@@ -100,7 +100,7 @@ def hostCantBecomeUntapped (g : Game) (o : GameObject) : Bool :=
 def hostSkipsUntapStep (g : Game) (o : GameObject) : Bool :=
   g.battlefield.any (fun aura =>
     aura.attachedTo == some o.id &&
-      aura.staticAbilities.any (fun
+      (g.staticAbilities aura).any (fun
         | .enchantedLosesAbilitiesDoesntUntap => true
         | _ => false))
 
@@ -381,7 +381,7 @@ def amass (g : Game) (controller : PlayerId) (subtype : CardSubtype) (n : Nat)
     let ids := armies.map (fun (o : GameObject) => o.id)
     let g :=
       match cause with
-      | some c => ids.foldl (fun (g : Game) id => g.change (.setLinkedExileCause id (some c))) g
+      | some c => g.change (.stashedCause (some c))
       | none => g
     (g.change (.pending (.fraChoice controller (.chooseCards ids 1 (.amassArmy subtype n attach))))).logMsg
       s!"{(g.player controller).name} chooses an Army to amass"

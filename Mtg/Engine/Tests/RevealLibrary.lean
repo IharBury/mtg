@@ -402,7 +402,7 @@ reported, and an empty library exiles nothing. -/
   let g := stepAt g0 untilNonland none #[Target.player opp]
   g.pending == .none && inExile g "Reveal Bolt" && libNames g opp == ["Reveal Plot"] &&
     (g.objects.any (fun o =>
-      o.name == "Reveal Bolt" && o.zone == .exile && o.playPermission.isSome)) &&
+      o.name == "Reveal Bolt" && o.zone == .exile && (g.playPermission o).isSome)) &&
     logContains g "may cast Reveal Bolt until end of turn"
 
 #guard
@@ -511,7 +511,7 @@ then resolves the follow-up. No announced player reveals nothing. -/
     | _ => false) &&
     inExile g "Reveal Tale" &&
     (g.objects.any fun o =>
-      o.name == "Reveal Tale" && (o.playPermission.bind (fun p => some p.anyMana)) == some true) &&
+      o.name == "Reveal Tale" && ((g.playPermission o).bind (fun p => some p.anyMana)) == some true) &&
     inLib g caster "Reveal Bear" && inLib g caster "Reveal Plot"
 
 #guard

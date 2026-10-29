@@ -69,7 +69,7 @@ def fireOfOrthancSetup : Game :=
 #guard
   let g := addPermanent afterDraw forest ⟨1⟩ ⟨1⟩
   let forest := namedPermanent g "Forest"
-  let g := g.changeStatus forest.id (.untilEotKeywords Keyword.hexproof)
+  let g := g.createEffect (.keywordsUntilEot forest.id Keyword.hexproof)
   let g := withRedMana (addToHand g fireOfOrthanc ⟨0⟩) ⟨0⟩ 4
   !g.canCast ⟨0⟩ (handCardNamed g ⟨0⟩ "Fire of Orthanc")
 
@@ -401,7 +401,7 @@ def quarrelSourceGone : Game :=
 /-- Hexproof gained after targeting makes the dest illegal (CR 608.2b / 702.11b). -/
 def quarrelDestHexproof : Game :=
   let dest := namedPermanent paidQuarrel "Grizzly Bears"
-  let g := paidQuarrel.changeStatus dest.id (.untilEotKeywords Keyword.hexproof)
+  let g := paidQuarrel.createEffect (.keywordsUntilEot dest.id Keyword.hexproof)
   passBoth g
 
 #guard quarrelDestHexproof.log.any (fun s => mentions s "The target is no longer legal")
@@ -434,7 +434,7 @@ def flyerVsAttercop : Game :=
   let g := addPermanent g attercop ⟨1⟩ ⟨1⟩
   let g := addPermanent g grayOgre ⟨1⟩ ⟨1⟩
   let smaug := namedPermanent g "Smaug, the Great Calamity"
-  g.changeStatus smaug.id (.attacking true)
+  g.markAttacking smaug.id
 
 #guard flyerVsAttercop.canBlock
   (namedPermanent flyerVsAttercop "Attercop")
@@ -471,8 +471,8 @@ def attercopLandfallResolved : Game := passBoth attercopLandPlayed
 
 #guard attercopLandfallResolved.stack.isEmpty
 #guard attercopLandfallResolved.hasPriority ⟨0⟩
-#guard (namedPermanent attercopLandfallResolved "Attercop").status.pumpPower == 1
-#guard (namedPermanent attercopLandfallResolved "Attercop").status.pumpToughness == 1
+#guard (attercopLandfallResolved.pumpOf (namedPermanent attercopLandfallResolved "Attercop")).1 == 1
+#guard (attercopLandfallResolved.pumpOf (namedPermanent attercopLandfallResolved "Attercop")).2 == 1
 #guard attercopLandfallResolved.power
   (namedPermanent attercopLandfallResolved "Attercop") == 3
 #guard attercopLandfallResolved.toughness
@@ -506,8 +506,8 @@ def afterAttercopCleanup : Game := passBoth (skipTo attercopLandfallResolved .en
 
 #guard afterAttercopCleanup.power (namedPermanent afterAttercopCleanup "Attercop") == 2
 #guard afterAttercopCleanup.toughness (namedPermanent afterAttercopCleanup "Attercop") == 1
-#guard (namedPermanent afterAttercopCleanup "Attercop").status.pumpPower == 0
-#guard (namedPermanent afterAttercopCleanup "Attercop").status.pumpToughness == 0
+#guard (afterAttercopCleanup.pumpOf (namedPermanent afterAttercopCleanup "Attercop")).1 == 0
+#guard (afterAttercopCleanup.pumpOf (namedPermanent afterAttercopCleanup "Attercop")).2 == 0
 
 /-- Two Attercops both trigger from one land; the controller chooses order
 (CR 603.3b). -/

@@ -136,7 +136,7 @@ def insertObject (g : Game) (card : CardDef) (owner : PlayerId) (zone : Zone)
 def addPermanent (g : Game) (card : CardDef) (owner controller : PlayerId) : Game :=
   let status : Status :=
     { summoningSick := false
-      indestructibleCounters := if card.entersWithIndestructibleCounter then 1 else 0 }
+      counters := if card.entersWithIndestructibleCounter then #[(.indestructible, 1)] else #[] }
   insertObject g card owner .battlefield (some controller) status
 
 /-- Drop a basic land onto the battlefield without using the play-land action. -/

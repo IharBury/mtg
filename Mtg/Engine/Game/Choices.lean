@@ -72,13 +72,13 @@ def unusedModes (chosen : Array Nat) (all : Array Nat := #[0, 1, 2]) : Array Nat
 
 /-- Unused Alliance modes on `src` (0 = add GGG, 1 = +1/+1 each, 2 = scry 2
 then draw). -/
-def unusedAllianceModes (_g : Game) (src : GameObject) : Array Nat :=
-  unusedModes src.status.allianceModesChosen
+def unusedAllianceModes (g : Game) (src : GameObject) : Array Nat :=
+  unusedModes (g.modesChosenThisTurn src.id)
 
 /-- Unused Gollum modes on `src` (0 = +1/+1, 1 = drain, 2 = draw). Modes last
 for the object's lifetime (ruling 164). -/
-def unusedGollumModes (_g : Game) (src : GameObject) : Array Nat :=
-  unusedModes src.status.chosenModes
+def unusedGollumModes (g : Game) (src : GameObject) : Array Nat :=
+  unusedModes (g.modesChosenEver src.id)
 
 /-- Apply the first unused mode of `sourceId`, or log `gone` / `exhausted`. -/
 def applyNextUnusedMode (g : Game) (sourceId : Option ObjectId)
@@ -123,7 +123,7 @@ def beholdQuality (g : Game) (p : PlayerId) (quality : CardSubtype)
 
 /-- True when `p` has beheld `quality`, even if the card or permanent later left. -/
 def qualityWasBeheld (g : Game) (p : PlayerId) (quality : CardSubtype) : Bool :=
-  (g.player p).beheldQualities.contains quality
+  (g.beheldQualities p).contains quality
 
 /-- Choose a creature type as this permanent enters. The static pump applies
 immediately; no player may act between the choice and the bonus. -/
@@ -248,7 +248,6 @@ def exileTopPlayIfYouControlSubtype (g : Game) (p : PlayerId) (n : Nat)
         g := g'
         g := g.createEffect (.playPermission newId {
             player := p
-            turnEndsRemaining := 0
             whileExiled := true
             requireSubtype := some subtype
             faceDown := true })
@@ -437,7 +436,7 @@ def exileFailedAdventureFromBilbo (g : Game) (id : ObjectId) : Game :=
   | some o =>
     let name := o.name
     let (g, newId) := g.move id .exile none
-    let g := g.changeObjects newId #[.playPermission none, .adventurerCard none]
+    let g := g.changeObject newId (.adventurerCard none)
     g.logMsg s!"{name} is exiled (Bilbo's replacement). It cannot be cast as a permanent"
 
 /-- Tom Bombadil is on the battlefield as a final chapter finishes resolving,
@@ -474,7 +473,7 @@ def sourceStillPayable (g : Game) (prop : ProposedSpell) : Bool :=
         | none => true
         | some sym =>
           src.isOnBattlefield && src.controlledBy prop.caster &&
-          !src.status.loyaltyActivatedThisTurn &&
+          !g.loyaltyActivatedThisTurn src.id &&
           match sym.counters with
           | some k => k ≥ 0 || (src.status.loyaltyCounters : Int) ≥ -k
           | none =>

@@ -104,7 +104,7 @@ the opposing team would be in Two-Headed Giant). -/
 def chandraEmblem : Game :=
   let g := chandraBoard afterDraw forest
   let chandra := namedPermanent g "Chandra, Torch of Defiance"
-  let g := g.changeStatus chandra.id (.loyaltyCounters 7)
+  let g := g.recordPutCounters chandra.id .loyalty 3
   passBoth (mustApply g ⟨0⟩ (.activate chandra.id 3))
 
 /- Ruling 858: the emblem is colorless. -/
@@ -130,7 +130,7 @@ def graftSurgeonDied : Game :=
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
   let g := enterPermanent g graftSurgeon ⟨0⟩
   let surgeon := namedPermanent g "Graft Surgeon"
-  let g := g.changeStatus surgeon.id (.shield 1)
+  let g := g.recordPutCounters surgeon.id .shield 1
   let g := g.moveToOwnerGraveyard (g.object! surgeon.id) "Graft Surgeon dies"
   resolveStack (g.receivePriority ⟨0⟩) 20
 
@@ -380,7 +380,7 @@ def bearsVsGiant : Game :=
 the Giant. -/
 #guard
   let g := compelCast 0 "Grizzly Bears" "Hill Giant" bearsVsGiant
-  let g := g.changeStatus (namedPermanent g "Grizzly Bears").id (.addPump 2 0)
+  let g := g.createEffect (.pump (namedPermanent g "Grizzly Bears").id 2 0)
   let g := passBoth g
   !g.battlefield.any (fun o => o.name == "Hill Giant")
 /- If the Bears leave first, no damage is dealt. -/

@@ -75,10 +75,10 @@ not count. A permanent exiled instead of dying still counts. -/
     (artifact "Hardy Relic" ManaCost.empty "" (keywords := Keyword.indestructible)) opp opp
   let g0 := addPermanent g0 (artifact "Shielded Relic" ManaCost.empty "") opp opp
   let shielded := obj g0 "Shielded Relic"
-  let g0 := g0.changeStatus shielded.id (.shield 1)
+  let g0 := g0.recordPutCounters shielded.id .shield 1
   let g0 := addPermanent g0 (artifact "Fleeting Relic" ManaCost.empty "") opp opp
   let fleeting := obj g0 "Fleeting Relic"
-  let g0 := g0.changeStatus fleeting.id (.untilEotExileIfDies true)
+  let g0 := g0.createEffect (.exileIfDiesUntilEot fleeting.id)
   let g0 := addPermanent g0 (creature "Opp Bear" ManaCost.empty #[] 2 2) opp opp
   let g := step g0 oppArts
   !onBoard g "Opp Sword" && buried g "Opp Sword" &&
@@ -144,7 +144,7 @@ counter each leave the permanent in play. -/
 #guard
   let g0 := addPermanent afterDraw (creature "Wyrm" ManaCost.empty #["Dragon"] 4 4) opp opp
   let wyrm := obj g0 "Wyrm"
-  let g0 := g0.changeStatus wyrm.id (.shield 1)
+  let g0 := g0.recordPutCounters wyrm.id .shield 1
   let id := pid g0 "Wyrm"
   let g := step (g0.change (.permanentDealtDamageThisWay (some id))) markedDestroy
   onBoard g "Wyrm" && (obj g "Wyrm").status.shield == 0 &&

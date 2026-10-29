@@ -23,7 +23,7 @@ more legendary permanents with the same name controlled by the same player,
 taking players in APNAP order. -/
 def firstLegendRuleChoice? (g : Game) : Option (PlayerId × String × Array ObjectId) :=
   Id.run do
-    for p in g.apnapPlayers.filter (fun p => !(g.player p).legendRuleOffThisTurn) do
+    for p in g.apnapPlayers.filter (fun p => !g.legendRuleOffThisTurn p) do
       let legs := g.legendaryPermanentsOf p
       let mut seen : Array String := #[]
       for o in legs do
@@ -47,7 +47,7 @@ def planeswalkersSurviveZeroLoyalty (g : Game) (controller : Option PlayerId) : 
   | none => false
   | some p =>
     (g.permanentsOf p).any (fun o =>
-      o.staticAbilities.any (fun
+      (g.staticAbilities o).any (fun
         | .planeswalkersSurviveZeroLoyalty => true
         | _ => false))
 
@@ -66,8 +66,8 @@ def refreshAuraAnimation (g : Game) : Game :=
   g.battlefield.foldl (fun g o =>
     let animated := g.battlefield.any (fun a =>
       a.attachedTo == some o.id &&
-        a.staticAbilities.any (· == .fra .enchantedIsConstruct55))
-    if animated == o.status.animatedConstruct55 then g
+        (g.staticAbilities a).any (· == .fra .enchantedIsConstruct55))
+    if animated == g.animatedConstruct55 o then g
     else if animated then g.createEffect (.auraConstruct55 o.id) (cause := cause)
     else g.expireAll (.auraConstruct55 o.id) (cause := cause)) g
 
@@ -86,7 +86,7 @@ def finishSbaSweep (g : Game) (moves : Array SbaGraveyardMove)
       let m := moves[i]!
       match g.findObject? m.objectId with
       | some o =>
-        if o.isOnBattlefield && o.isCreature then
+        if o.isOnBattlefield && g.isCreature o then
           g := g.moveToOwnerGraveyard o m.reason (verb := m.verb) (actor := m.actor)
             (preBattlefield := some preBf)
             (cause := some (.stateBased m.sba))
@@ -208,7 +208,7 @@ def finishSbaSweep (g : Game) (moves : Array SbaGraveyardMove)
     if o.printed.isEquipment then
       let legal :=
         match o.attachedTo.bind g.findObject? with
-        | some host => host.isOnBattlefield && host.printed.isCreature
+        | some host => host.isOnBattlefield && g.isCreature host
         | none => true
       if !legal then
         let hostId := o.attachedTo.getD ⟨0⟩
@@ -243,17 +243,17 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
           if shielded then
             pure ()
           else if pl.life ≤ 0 then
-            g := g.record (GameEvent.playerLost g.turnNumber pl.id
+            g := g.record (GameEvent.playerLost g.turnNumber pl.id .lifeZeroOrLess
               (cause := some (.stateBased .lifeZeroOrLess)))
             g := g.logMsg s!"{pl.name} loses the game (life total {pl.life})"
             changed := true
-          else if pl.drewFromEmpty then
-            g := g.record (GameEvent.playerLost g.turnNumber pl.id
+          else if g.drewFromEmpty pl.id then
+            g := g.record (GameEvent.playerLost g.turnNumber pl.id .decked
               (cause := some (.stateBased .drewFromEmpty)))
             g := g.logMsg s!"{pl.name} loses the game (drew from empty library)"
             changed := true
           else if pl.poison ≥ 10 then
-            g := g.record (GameEvent.playerLost g.turnNumber pl.id
+            g := g.record (GameEvent.playerLost g.turnNumber pl.id .poison
               (cause := some (.stateBased .tenPoison)))
             g := g.logMsg s!"{pl.name} loses the game (poison)"
             changed := true
@@ -270,7 +270,7 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
         let still := ids.filter (fun id =>
           match g.findObject? id with
           | some o =>
-            o.isOnBattlefield && o.controlledBy p && o.isLegendary && o.name == name
+            o.isOnBattlefield && o.controlledBy p && g.isLegendary o && o.name == name
           | none => false)
         if still.size ≥ 2 then
           return (g, (changed, true))
@@ -295,7 +295,7 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
       let preBf := g.battlefield
       let victims : Array SbaGraveyardMove :=
         g.battlefield.filterMap (fun o =>
-          if !o.isCreature then none
+          if !g.isCreature o then none
           else
             let t := g.toughness o
             if t ≤ 0 then

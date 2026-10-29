@@ -39,7 +39,7 @@ def withCause (g : Game) (source : GameObject) (spell : CardDef)
   let g := g.putStackEntry me spellObj.id
   let g :=
     if targets.isEmpty then g
-    else g.changeStackEntryById spellObj.id (.targets targets)
+    else g.record (GameEvent.targeted g.turnNumber spellObj.id targets)
   let (g, ab) := g.allocStackAbility source me
   let g := g.changeObject ab.id (.fraCauseId (some spellObj.id))
   g.change (.resolvingAbility (some ab.id))
@@ -169,7 +169,7 @@ def speedPays : Game :=
 #guard
   let villain := named speedPays "Volcanic Villain"
   !speedPays.hasModeledReflexiveOnStack &&
-    villain.status.cantBeBlockedExceptByHasteUntilEot
+    speedPays.cantBeBlockedExceptByHasteUntilEot villain
 
 /- A +1/+1 counter goes on each other creature, not the source. -/
 def eachOtherBoard : Game :=
@@ -206,7 +206,7 @@ def wiccanMisses : Game :=
     #[Target.permanent giant.id]
 
 #guard !wiccanExiles.battlefield.any (fun o => o.name == "Grizzly Bears") &&
-  wiccanExiles.delayedEndStepReturns.size == 1 &&
+  wiccanExiles.delayedTriggers.size == 1 &&
   wiccanMisses.battlefield.any (fun o => o.name == "Hill Giant") &&
   logContains wiccanMisses "no longer legal"
 
@@ -229,7 +229,7 @@ def visionStrike : Game :=
 
 #guard
   let vis := named visionStrike "The Vision"
-  visionStrike.hasDoubleStrike vis && vis.status.modesChosenThisTurn == #[0]
+  visionStrike.hasDoubleStrike vis && visionStrike.modesChosenThisTurn vis.id == #[0]
 
 def visionDraw : Game :=
   let src := named visionBoard "The Vision"
@@ -237,12 +237,12 @@ def visionDraw : Game :=
   mustApply g me (.chooseMode 2)
 
 #guard (visionDraw.player me).hand.size == (visionBoard.player me).hand.size + 1 &&
-  (named visionDraw "The Vision").status.modesChosenThisTurn == #[2]
+  visionDraw.modesChosenThisTurn (named visionDraw "The Vision").id == #[2]
 
 def visionExhausted : Game :=
   let g := visionBoard
   let src := named g "The Vision"
-  let g := g.changeStatus src.id (.modesChosenThisTurn #[0, 1, 2])
+  let g := #[0, 1, 2].foldl (fun acc m => acc.record (GameEvent.triggerModeChosen acc.turnNumber src.id m)) g
   resolve g (casting Effect.castingVisionModes) (some (named g "The Vision").id)
 
 #guard (visionExhausted.player me).hand.size == (visionBoard.player me).hand.size &&
@@ -288,7 +288,7 @@ def marvelDraws : Game :=
 #guard
   let marvel := named marvelDraws "Ms. Marvel, Kamala Khan"
   let fromHand := Int.ofNat (marvelDraws.player me).hand.size
-  marvel.status.cardsInHandPowerUntilEot && marvelDraws.power marvel == fromHand &&
+  marvelDraws.cardsInHandPowerUntilEot marvel && marvelDraws.power marvel == fromHand &&
     (marvelBoard.player me).hand.size + 1 == (marvelDraws.player me).hand.size
 
 def marvelLeft : Game :=
@@ -340,7 +340,7 @@ def fistTap : Game :=
   let g := resolve fistBoard (casting Effect.castingIronFistTap) (some src.id)
   resolve g (casting Effect.castingIronFistTap) (some (named g "Iron Fist, Living Weapon").id)
 
-#guard (named fistTap "Iron Fist, Living Weapon").status.ironFistTapGrants == 2
+#guard fistTap.ironFistTapGrants (named fistTap "Iron Fist, Living Weapon") == 2
 
 def fistLeft : Game :=
   let src := named fistBoard "Iron Fist, Living Weapon"
@@ -351,7 +351,7 @@ def fistLeft : Game :=
   match (fistLeft.player me).graveyard.back? with
   | some id =>
     match fistLeft.findObject? id with
-    | some o => o.status.ironFistTapGrants == 0
+    | some o => fistLeft.ironFistTapGrants o == 0
     | none => false
   | none => false
 

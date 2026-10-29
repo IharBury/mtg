@@ -118,7 +118,7 @@ def moonstoneLeft : Game :=
   o.name == "Lightning Bolt" && o.zone == .graveyard me)
 #guard moonstoneExiled.objects.any (fun o =>
   o.name == "Lightning Bolt" && o.zone == .exile &&
-    (o.playPermission.map (·.turnEndsRemaining)) == some 2)
+    moonstoneExiled.playPermissionDuration o == some (.untilEndOfNextTurnOf me))
 #guard logContains moonstoneMissing "No discarded card is in the graveyard"
 #guard logContains moonstoneLeft "no longer in your graveyard"
 
@@ -154,8 +154,7 @@ def moonGirl : Game :=
 
 def moonOverwrite : Game :=
   let src := named moonBoard "Moon Girl and Devil Dinosaur"
-  let g := moonBoard.changeStatuses src.id #[
-    .setBasePT (some (1, 1)), .pump (1, 1)]
+  let g := (moonBoard.createEffect (.setBasePTUntilEot src.id (1, 1))).createEffect (.pump src.id 1 1)
   let g := g.addPlusOnePlusOneTo (named g "Moon Girl and Devil Dinosaur") 1
   resolve g (resource Effect.resourceSecondDrawBecome66)
     (some (named g "Moon Girl and Devil Dinosaur").id)

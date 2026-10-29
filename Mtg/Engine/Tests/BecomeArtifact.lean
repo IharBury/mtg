@@ -63,11 +63,11 @@ def both : TriggeredAbility.TriggerResolution :=
   .sequence [.becomeArtifact, .grant (.keywords Keyword.indestructible) .target]
 
 def flagged (g : Game) (name : String) : Bool :=
-  (obj g name).status.additionalArtifactUntilEot
+  g.additionalArtifactUntilEot (obj g name)
 
 def became (g : Game) (name : String) : Bool :=
   let o := obj g name
-  flagged g name && o.isCreature && o.types.any (· == .artifact)
+  flagged g name && g.isCreature o && (g.types o).any (· == .artifact)
 
 def board : Game :=
   addPermanent (addPermanent afterDraw titan caster caster) bear opp opp
@@ -98,8 +98,8 @@ creature that has left are not affected. -/
 #guard
   let g0 := addPermanent board land caster caster
   let g := step g0 artifacted (targets := #[Target.permanent (pid g0 "Field")])
-  !flagged g "Titan" && !(obj g "Field").status.additionalArtifactUntilEot &&
-    !(obj g "Field").types.any (· == .artifact) &&
+  !flagged g "Titan" && !g.additionalArtifactUntilEot (obj g "Field") &&
+    !(g.types (obj g "Field")).any (· == .artifact) &&
     logContains g "The target is no longer legal"
 
 #guard
@@ -110,7 +110,7 @@ creature that has left are not affected. -/
   let id := pid board "Titan"
   let (g0, newId) := board.move id (.graveyard caster) none
   let g := step g0 artifacted (targets := #[Target.permanent newId])
-  !(anyObj g "Titan").status.additionalArtifactUntilEot &&
+  !g.additionalArtifactUntilEot (anyObj g "Titan") &&
     logContains g "The target is no longer in play"
 
 #guard artifacted == (.becomeArtifact .target : TriggeredAbility.TriggerResolution)
@@ -150,7 +150,7 @@ has left, do not. Gaining indestructible follows the same recipient. -/
   let id := pid board "Titan"
   let (g0, newId) := board.move id (.graveyard caster) none
   let g := step g0 (.becomeArtifact .source) (some newId)
-  !(anyObj g "Titan").status.additionalArtifactUntilEot &&
+  !g.additionalArtifactUntilEot (anyObj g "Titan") &&
     logContains g "Titan is no longer on the battlefield"
 
 /- The enchanted creature becomes an artifact. Nothing enchanted is
@@ -223,7 +223,7 @@ become artifacts. -/
   let yours := step g0 (.becomeArtifact .creaturesYouControl) sid tgt
   quiet.all (fun g =>
     !flagged g "Titan" && !flagged g "Bear" &&
-      !(obj g "Grasp").status.additionalArtifactUntilEot && g.log == g0.log) &&
+      !g.additionalArtifactUntilEot (obj g "Grasp") && g.log == g0.log) &&
     became yours "Titan" && !flagged yours "Bear"
 
 /- Printed phrases stay with the recipient that produces them. -/

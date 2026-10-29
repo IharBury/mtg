@@ -63,7 +63,7 @@ def equalSource : TriggeredAbility.TriggerResolution :=
   .setBasePT .equalSourcePower .equalSourceToughness
 
 def base (g : Game) (name : String) : Option (Int × Int) :=
-  (obj g name).status.setBasePT
+  g.setBasePT (obj g name)
 
 def board : Game :=
   addPermanent (addPermanent afterDraw titan caster caster) bear opp opp
@@ -104,7 +104,7 @@ and a creature that has left are not set. -/
   let id := pid board "Titan"
   let (g0, newId) := board.move id (.graveyard caster) none
   let g := step g0 fixed (targets := #[Target.permanent newId])
-  (anyObj g "Titan").status.setBasePT == none &&
+  g.setBasePT (anyObj g "Titan") == none &&
     logContains g "The target is no longer in play"
 
 #guard (.setBasePT (.fixed 1) (.fixed 1) : TriggeredAbility.TriggerResolution) ==
@@ -126,7 +126,7 @@ left, are not set. -/
   let id := pid board "Titan"
   let (g0, newId) := board.move id (.graveyard caster) none
   let g := step g0 (.setBasePT (.fixed 5) (.fixed 5) .source) (some newId)
-  (anyObj g "Titan").status.setBasePT == none &&
+  g.setBasePT (anyObj g "Titan") == none &&
     logContains g "Titan is no longer on the battlefield"
 
 /- The enchanted creature gets the fixed base. Nothing enchanted is silent.

@@ -18,33 +18,23 @@ it is recorded; a replaced change is not recorded (CR 614.6).
 namespace Mtg.Engine
 
 /-- The object a `GameEvent` is about, as it existed when the change happened
-(CR 113.7a). Subtypes include those granted at that moment.
-Note: `colors`, `manaValue`, `types`, `subtypes`, `power`, `toughness`,
-`keywords`, and `staticAbilities` are provisional until the Layer 1–7 pipeline
-in Phase 8 (CR 613.1). -/
+(CR 113.7a / 613.1). -/
 structure EventObject where
   id              : Option ObjectId      := none
   controller      : Option PlayerId      := none
   owner           : PlayerId             := ⟨0⟩
   -- characteristics (CR 109.3)
   name            : String               := ""
-  /-- Provisional until Layer 5 in Phase 8 (CR 613.1e). -/
   colors          : ColorSet             := {}
   manaValue       : Nat                  := 0
   supertypes      : Array Supertype      := #[]
-  /-- Provisional until Layer 4 in Phase 8 (CR 613.1d). -/
   types           : Array CardType       := #[]
-  /-- Provisional until Layer 4 in Phase 8 (CR 613.1d). -/
   subtypes        : Array CardSubtype    := #[]
-  /-- Provisional until Layer 7 in Phase 8 (CR 613.4). -/
   power           : Option Int           := none
-  /-- Provisional until Layer 7 in Phase 8 (CR 613.4). -/
   toughness       : Option Int           := none
   loyalty         : Option Nat           := none
-  /-- Provisional until Layer 6 in Phase 8 (CR 613.1f). -/
   keywords        : Keywords             := {}
   toxic           : Nat                  := 0
-  /-- Provisional until Layer 6 in Phase 8 (CR 613.1f). -/
   staticAbilities : Array StaticAbility  := #[]
   -- status & designations (CR 110.5–110.6)
   zone            : Zone                 := .battlefield
@@ -63,13 +53,8 @@ structure EventObject where
   -- the `GameObject` without a follow-up `setObject`.
   summoningSick      : Bool                        := false
   attackingTarget    : Option AttackTarget         := none
-  returnedAsArtifact : Bool                        := false
-  onlyFoodArtifact   : Bool                        := false
-  wasCast            : Bool                        := false
   printed            : Option CardDef              := none
   chosenX            : Option Nat                  := none
-  lastKnownPower     : Option Int                  := none
-  lastKnownToughness : Option Int                  := none
 deriving Repr, Inhabited, BEq
 
 namespace EventObject
@@ -159,10 +144,9 @@ def mountain (o : EventObject) : Bool :=
 
 end EventObject
 
-/-- This object as it is now, for a `GameEvent` (CR 113.7a).
-Note: layer-dependent fields (`colors`, `types`, `subtypes`, `power`,
-`toughness`, `keywords`, `staticAbilities`) are provisional until Phase 8 when
-read without `Game`; prefer `Game.snapshot` when `Game` is in scope. -/
+/-- This object's printed characteristics as an `EventObject` (CR 113.7a).
+Prefer `Game.snapshot` when `Game` is in scope so Layers 1–7d (CR 613.1) are
+evaluated. -/
 def GameObject.asEvent (o : GameObject) : EventObject :=
   { id := some o.id
     controller := o.controller
@@ -193,13 +177,8 @@ def GameObject.asEvent (o : GameObject) : EventObject :=
     changeling := o.printed.keywords.changeling
     summoningSick := o.status.summoningSick
     attackingTarget := o.status.attackingTarget
-    returnedAsArtifact := o.status.returnedAsArtifact
-    onlyFoodArtifact := o.status.onlyFoodArtifact
-    wasCast := o.wasCast
     printed := some o.printed
-    chosenX := o.chosenX
-    lastKnownPower := o.lastKnownPower
-    lastKnownToughness := o.lastKnownToughness }
+    chosenX := o.chosenX }
 
 /-- Later steps of a trigger `sequence`, waiting until the pending choice
 opened by an earlier step finishes. They run before any player receives
@@ -252,147 +231,20 @@ deriving Repr, Inhabited, BEq
 inductive StatusChange where
   | set (s : Status)
   | reset
-  | addDamage (n : Int) (deathtouch : Bool := false)
-  | addPump (p t : Int)
-  | grantUntilEot (k : Keywords)
-  | clearedAtCleanup
-  | clearCombat
-  | addBlocking (attackerId : ObjectId)
-  | removeBlocking (attackerId : ObjectId)
-  | pushAbilitiesActivated (idx : Nat)
-  | incActivationsThisTurn
-  | pushGrantedStatic (sa : StaticAbility)
-  | pushGrantedTriggered (ta : TriggeredAbility)
-  | pushGrantedTriggerUntilEot (ta : TriggeredAbility)
-  | pushHexproofGrantedBy (id : ObjectId)
-  | removeHexproofGrantedBy (id : ObjectId)
-  | pushPreventDamageGrantedBy (id : ObjectId)
-  | removePreventDamageGrantedBy (id : ObjectId)
-  | pushCantUntapGrantedBy (id : ObjectId)
-  | removeCantUntapGrantedBy (id : ObjectId)
-  | pushLosesAbilitiesGrantedBy (id : ObjectId)
-  | removeLosesAbilitiesGrantedBy (id : ObjectId)
-  | addAdditionalSubtype (sub : CardSubtype)
-  | pushAdditionalSubtype (sub : CardSubtype)
-  | pushChosenMode (m : Nat)
-  | pushModeChosenThisTurn (m : Nat)
-  | pushAllianceModeChosen (m : Nat)
-  | pushUntilTurnOfPump (p : PlayerId) (dp dt : Int)
-  | clearUntilTurnOfPumpFor (p : PlayerId)
-  | pushColorlessGrantUntilCast (id : ObjectId)
-  | removeColorlessGrantUntilCast (id : ObjectId)
-  | addCombatDamageToPlayer (p : PlayerId)
-  | resetPerTurnFlags
   | tapped (v : Bool)
   | damage (v : Int)
   | summoningSick (v : Bool)
-  | pump (v : Int × Int)
-  | attacking (v : Bool)
-  | attackingTarget (v : Option AttackTarget)
-  | blocking (v : Array ObjectId)
-  | blocked (v : Bool)
-  | activationsThisTurn (v : Nat)
-  | abilitiesActivatedThisTurn (v : Array Nat)
-  | minusOneMinusOne (v : Nat)
-  | loyaltyCounters (v : Nat)
-  | loyaltyActivatedThisTurn (v : Bool)
-  | prepared (v : Bool)
-  | untilEotKeywords (v : Keywords)
-  | untilEotLosesIndestructible (v : Bool)
-  | untilEotExileIfDies (v : Bool)
-  | setBasePT (v : Option (Int × Int))
-  | additionalCreature (v : Bool)
-  | additionalSubtypes (v : Array CardSubtype)
-  | grantedStaticAbilities (v : Array StaticAbility)
-  | grantedTriggeredAbilities (v : Array TriggeredAbility)
-  | hexproofGrantedBy (v : Array ObjectId)
-  | preventDamageGrantedBy (v : Array ObjectId)
-  | dealtDeathtouch (v : Bool)
-  | hope (v : Nat)
-  | charge (v : Nat)
-  | stun (v : Nat)
-  | firedOnceEachTurn (v : Bool)
-  | optionalOnceUsed (v : Bool)
-  | additionalArtifactUntilEot (v : Bool)
-  | hone (v : Nat)
   | phasedOut (v : Bool)
   | phasedWith (v : Option ObjectId)
-  | ringBearer (v : Bool)
-  | allianceModesChosen (v : Array Nat)
-  | shield (v : Nat)
-  | finality (v : Nat)
-  | declaredAsAttackerThisTurn (v : Bool)
-  | boastUsedThisTurn (v : Bool)
-  | plan (v : Nat)
-  | powerUpUsed (v : Bool)
-  | powerUpActivations (v : Nat)
-  | becameTappedThisTurn (v : Bool)
-  | gotPlusOneThisTurn (v : Bool)
-  | cantUntapGrantedBy (v : Array ObjectId)
-  | additionalCreatureUntilEot (v : Bool)
-  | harnessed (v : Bool)
   | transformed (v : Bool)
-  | cantTransform (v : Bool)
-  | losesAbilitiesGrantedBy (v : Array ObjectId)
-  | losesAbilitiesUntilEot (v : Bool)
-  | chosenModes (v : Array Nat)
-  | modesChosenThisTurn (v : Array Nat)
-  | cardsInHandPowerUntilEot (v : Bool)
   | chosenOdd (v : Option Bool)
-  | lore (v : Nat)
-  | indestructibleCounters (v : Nat)
-  | lifelinkCounters (v : Nat)
   | chosenCreatureType (v : Option CardSubtype)
-  | cantBeBlockedByPlayer (v : Option PlayerId)
-  | cantBeBlockedExceptByHasteUntilEot (v : Bool)
-  | cantBlockUntilEot (v : Bool)
-  | manaSpentToCast (v : Nat)
-  | dealtDamageThisTurn (v : Bool)
-  | replacedCreatureTypesUntilEot (v : Option (Array CardSubtype))
-  | pumpPerArtifactUntilEot (v : Bool)
-  | influence (v : Nat)
-  | onlyFoodArtifact (v : Bool)
-  | burden (v : Nat)
-  | quest (v : Nat)
-  | invasion (v : Nat)
-  | trampleCounters (v : Nat)
-  | keywordCounters (v : KeywordCounters)
-  | combatDamageCreatesTreasure (v : Bool)
-  | returnedAsArtifact (v : Bool)
-  | controlUntilEot (v : Bool)
-  | controlTurnEndsLeft (v : Nat)
-  | ironFistTapGrants (v : Nat)
-  | untilTurnOfPump (v : Array (PlayerId × Int × Int))
-  | grantedTriggersUntilEot (v : Array TriggeredAbility)
-  | exhaustUsed (v : Bool)
-  | colorlessGrantUntilCast (v : Array ObjectId)
   | chosenColor (v : Option Color)
-  | dealtCombatDamage (v : Bool)
-  | combatDamageToPlayers (v : Array PlayerId)
-  | animatedConstruct55 (v : Bool)
   | chosenName (v : Option String)
   | faceDown (v : Bool)
-  | story (v : Nat)
-  | time (v : Nat)
-  | notACreature (v : Bool)
   | windcragMardu (v : Bool)
   | chosenCardType (v : Option CardType)
-  | freeCastFromGraveyard (v : Bool)
-  | isCommander (v : Bool)
-  | firstStrikeOnYourTurn (v : Bool)
 deriving Repr, Inhabited, BEq
-
-namespace StatusChange
-
-/-- Set `attackingTarget` to `v.map .player` (CR 508.1b). -/
-def attackingWhom (v : Option PlayerId) : StatusChange :=
-  .attackingTarget (v.map .player)
-
-/-- Set `attackingTarget` to `v.map .planeswalker` (CR 506.3 / 508.1b). -/
-def attackingPlaneswalker (v : Option ObjectId) : StatusChange :=
-  .attackingTarget (v.map .planeswalker)
-
-end StatusChange
 
 /-- One change to a `GameObject` (CR 109). -/
 inductive ObjectChange where
@@ -401,19 +253,13 @@ inductive ObjectChange where
   | printed (v : CardDef)
   | owner (v : PlayerId)
   | controller (v : Option PlayerId)
-  | lastController (v : Option PlayerId)
   | defaultController (v : Option PlayerId)
-  | controlChanged (v : Bool)
   | zone (v : Zone)
   | timestamp (v : Nat)
   | abilityEffect (v : Option Effect)
   | triggeredAbility (v : Option TriggeredAbility)
   | reflexiveResolution (v : Option TriggeredAbility.TriggerResolution)
   | sourceId (v : Option ObjectId)
-  | lastKnownPower (v : Option Int)
-  | lastKnownToughness (v : Option Int)
-  | playPermission (v : Option PlayPermission)
-  | decrementPlayTurnEnds
   | attachedTo (v : Option ObjectId)
   | adventurerCard (v : Option CardDef)
   | linkedExile (v : Array ObjectId)
@@ -421,36 +267,13 @@ inductive ObjectChange where
   | returnToZone (v : Option Zone)
   | leaveTriggerExile (v : Array ObjectId)
   | pushLeaveTriggerExile (id : ObjectId)
-  | castFromGraveyard (v : Bool)
-  | exileInstantSorceryInstead (v : Bool)
-  | castFromHand (v : Bool)
-  | wasCast (v : Bool)
-  | isPreparedSpell (v : Bool)
   | fraCauseId (v : Option ObjectId)
   | fraCauseController (v : Option PlayerId)
   | fraCausePower (v : Option Int)
   | fraCauseStatus (v : Option Status)
   | exiledBy (v : Option ObjectId)
-  | fraEffectUntilTurnOf (v : Option PlayerId)
-  | flashbackUntilEot (v : Bool)
-  | kicked (v : Bool)
-  | teamworkPaid (v : Bool)
-  | sneakPaid (v : Bool)
-  | sneakAttackWhom (v : Option PlayerId)
-  | sneakAttackTarget (v : Option AttackTarget)
-  | giftPromisedTo (v : Option PlayerId)
   | isCopy (v : Bool)
-  | uncounterableThisCast (v : Bool)
-  | boastExiled (v : Array ObjectId)
-  | enterProcessed (v : Bool)
-  | treasureManaSpent (v : Bool)
   | chosenX (v : Option Nat)
-  | copyRestore (v : Option CardDef)
-  | copyUntilEot (v : Bool)
-  | copyUntilNextTurn (v : Bool)
-  | copyUntilSourceLeaves (v : Option ObjectId)
-  | controlUntilSourceLeaves (v : Option ObjectId)
-  | restoreCopy
 deriving Repr, Inhabited, BEq
 
 /-- One change to a `Player` (CR 102). -/
@@ -466,13 +289,10 @@ inductive PlayerChange where
       (villainRestricted : Bool := false) (cantNonartifact : Bool := false)
       (creatureRestricted : Bool := false) (fra : Option FraManaUse := none)
   | emptyManaPool (becomesColorless : Bool := false)
-  | additionalLandsThisTurn (v : Nat)
-  | addAdditionalLandsThisTurn (n : Nat := 1)
   | poison (v : Nat)
   | addPoison (n : Nat)
   | lost (v : Bool)
   | leftTheGame (v : Bool)
-  | drewFromEmpty (v : Bool)
   | mulligansTaken (v : Nat)
   | incMulligansTaken
   | keptOpeningHand (v : Bool)
@@ -493,51 +313,11 @@ inductive PlayerChange where
   | citysBlessing (v : Bool)
   | hasCommander (v : Bool)
   | commanderColorIdentity (v : ColorSet)
-  | protectionFromEverything (v : Bool)
-  | eaglesBirdsNextUpkeep (v : Nat)
-  | addEaglesBirdsNextUpkeep (n : Nat)
-  | beheldQualities (v : Array CardSubtype)
-  | pushBeheldQuality (q : CardSubtype)
-  | cantCastSpellsThisTurn (v : Bool)
-  | attackPumpPerPlainsThisTurn (v : Nat)
-  | addAttackPumpPerPlainsThisTurn (n : Nat := 1)
-  | lifeLocked (v : Bool)
-  | typeSpellCostLessThisTurn (v : Array (CardType × Nat))
-  | pushTypeSpellCostLess (t : CardType) (n : Nat)
-  | supertypeSpellCostLessThisTurn (v : Array (Supertype × Nat))
-  | pushSupertypeSpellCostLess (s : Supertype) (n : Nat)
-  | jaceLoyaltyAtInstantSpeed (v : Bool)
-  | legendRuleOffThisTurn (v : Bool)
-  | copyNextInstantSorceryThisTurn (v : Nat)
-  | addCopyNextInstantSorceryThisTurn (n : Nat := 1)
-  | decCopyNextInstantSorceryThisTurn
   | sideboard (v : Array CardDef)
   | removeSideboardAt (idx : Nat)
-  | mountainExtraRedThisTurn (v : Nat)
-  | addMountainExtraRedThisTurn (n : Nat := 1)
-  | nextSpellCantBeCountered (v : Bool)
   | teammate (v : Option PlayerId)
   | isMonarch (v : Bool)
-  | lifeCantChange (v : Bool)
-  | cantAttackJaces (v : Bool)
   | commanderCreatureTypes (v : Array CardSubtype)
-  | resetPerTurnFlags
-deriving Repr, Inhabited, BEq
-
-/-- One change to a `StackEntry` on the stack (CR 405). -/
-inductive StackEntryChange where
-  | targets (v : Array Target)
-  | pushTarget (t : Target)
-  | pushTargets (ts : Array Target)
-  | setTargetAt (idx : Nat) (t : Target)
-  | dividedDamage (v : Array Nat)
-  | pushDividedDamage (n : Nat)
-  | targetsAnnounced (v : Bool)
-  | chosenMode (v : Option Nat)
-  | extraModes (v : Array Nat)
-  | pushExtraMode (m : Nat)
-  | skippedOptionalSlots (v : Nat)
-  | incSkippedOptionalSlots
 deriving Repr, Inhabited, BEq
 
 /-- One change to a `ProposedSpell` (CR 601.2f–h / 602.2b). -/
@@ -711,135 +491,457 @@ def ReplacementOrPrevention.toCandidate : ReplacementOrPrevention → Replacemen
   | .replacement s => { id := s.id, spec := .replacement s, affectedPlayer := s.affectedPlayer, tier := s.tier }
   | .prevention s => { id := s.id, spec := .prevention s, affectedPlayer := s.affectedPlayer, tier := .other }
 
-/-- A continuous effect (CR 611), generated either by the resolution of a spell
-or ability (CR 611.2) or by a static ability (CR 611.3). -/
-inductive ContinuousEffect where
-  /-- A continuous effect generated by a static ability of `source` (CR 611.3). -/
+/-- Step or phase anchor for `EffectDuration` (CR 500.4 / 500.5). -/
+inductive StepOrPhase where
+  | step (s : Step)
+  | phase (p : Phase)
+deriving DecidableEq, Repr, Inhabited, BEq
+
+/-- Duration of a continuous effect (CR 611.2a–b / 514.2). -/
+inductive EffectDuration where
+  /-- Ends in the cleanup step of the current turn (CR 514.2 / 703.4p). -/
+  | untilEndOfTurn
+  /-- Ends at the end of the combat phase (CR 511.2). -/
+  | untilEndOfCombat
+  /-- Ends at the end of step or phase `s` (CR 500.5). -/
+  | untilEndOfStepOrPhase (s : StepOrPhase)
+  /-- Expires as step or phase `s` begins (CR 500.4). -/
+  | untilStepOrPhase (s : StepOrPhase)
+  /-- Expires as `p`'s next turn begins (CR 611.2a). -/
+  | untilNextTurnOf (p : PlayerId)
+  /-- Ends in cleanup of `p`'s first turn that began after creation (CR 611.2a). -/
+  | untilEndOfNextTurnOf (p : PlayerId)
+  /-- Lasts for as long as `src` remains on the battlefield (CR 611.2b). -/
+  | whileSourceOnBattlefield (src : ObjectId)
+  /-- Lasts for as long as `src` has at least one `k` counter (CR 611.2b). -/
+  | whileSourceHasCounter (src : ObjectId) (k : CounterKind)
+  /-- Lasts for as long as `obj` remains in `z` (CR 611.2b / 400.7). -/
+  | whileInZone (obj : ObjectId) (z : Zone)
+  /-- Lasts indefinitely (until the affected object leaves its zone, CR 400.7 / 611.2a). -/
+  | indefinite
+deriving DecidableEq, Repr, Inhabited, BEq
+
+/-- Closed-data scope of a layered continuous effect (CR 611.2c / 611.3). -/
+inductive ObjectScope where
+  /-- Specific object(s) locked in when the effect was created (CR 611.2c). -/
+  | objects (ids : Array ObjectId)
+  /-- Creatures controlled by `p` (CR 611.3). -/
+  | creaturesControlledBy (p : PlayerId)
+  /-- Creatures without keywords `k` (CR 611.3). -/
+  | creaturesWithout (k : Keywords)
+  /-- Permanents of subtype `s` controlled by `p` (CR 611.3). -/
+  | permanentsOfSubtype (p : PlayerId) (s : CardSubtype)
+deriving DecidableEq, Repr, Inhabited, BEq
+
+/-- Mode for Layer 4 (types) and Layer 5 (colors) continuous effects (CR 205.1a–b / 613.1d–e). -/
+inductive SetOrAdd where
+  /-- Replace existing types/subtypes/colors with the given set (CR 205.1a). -/
+  | set
+  /-- Add the given types/subtypes/colors in addition to existing ones (CR 205.1b). -/
+  | add
+  /-- Add the given subtypes in addition to existing ones, deduplicating if already present. -/
+  | addDedup
+  /-- Replace existing creature subtypes with the given subtypes while keeping noncreature subtypes (CR 205.1a). -/
+  | setAndKeepNoncreatureSubtypes
+  /-- Become an artifact and lose the creature card type (Tom, Bert, and William). -/
+  | addArtifactRemoveCreature
+  /-- Lose the creature card type (Impending, CR 702.176). -/
+  | removeCreature
+  /-- Become an artifact creature with subtype Construct (Puppet Crafting). -/
+  | addConstruct55
+deriving DecidableEq, Repr, Inhabited, BEq
+
+/-- Layer 3 text-changing effect (CR 612 / 613.1c). -/
+inductive TextChange where
+  | replaceCreatureType (fromSub toSub : CardSubtype)
+  | replaceColorWord (fromCol toCol : Color)
+deriving DecidableEq, Repr, Inhabited, BEq
+
+/-- Abilities added by a Layer 6 effect (CR 613.1f). -/
+structure AbilitySet where
+  keywords : Keywords := {}
+  firstStrikeOnYourTurn : Bool := false
+  staticAbilities : Array StaticAbility := #[]
+  triggeredAbilities : Array TriggeredAbility := #[]
+  ironFistTapGrants : Nat := 0
+  combatDamageCreatesTreasure : Bool := false
+deriving Repr, Inhabited, BEq
+
+/-- Abilities removed by a Layer 6 effect (CR 613.1f). -/
+inductive AbilityRemoval where
+  | none
+  | all
+  | loseIndestructible
+deriving DecidableEq, Repr, Inhabited, BEq
+
+/-- Layer 7a characteristic-defining ability or dynamic P/T effect (CR 604.3 / 613.4a). -/
+inductive PtCda where
+  | landsYouControl
+  | graveyardCardTypes
+  | cardsInHandPower
+  | powerEqualSubtype (s : CardSubtype)
+  | powerEqualLegendaryCreatures
+  | creaturesYouControlPower
+  | powerEqualsBasicLandTypes
+  | pumpPerArtifact
+deriving DecidableEq, Repr, Inhabited, BEq
+
+/-- Layered characteristic-modifying effect in CR 613.1 / 613.4 order. -/
+inductive LayerEffect where
+  | copy (values : CardDef) (restore : Option CardDef := none)         -- Layer 1 (CR 613.1a / 707)
+  | control (p : PlayerId)                                             -- Layer 2 (CR 613.1b)
+  | text (change : TextChange)                                         -- Layer 3 (CR 613.1c / 612)
+  | types (mode : SetOrAdd) (types : Array CardType)
+      (subtypes : Array CardSubtype) (supertypes : Array Supertype)    -- Layer 4 (CR 613.1d)
+  | colors (mode : SetOrAdd) (colors : ColorSet)                       -- Layer 5 (CR 613.1e)
+  | abilities (add : AbilitySet) (remove : AbilityRemoval)             -- Layer 6 (CR 613.1f)
+  | ptCda (cda : PtCda)                                                -- Layer 7a (CR 613.4a)
+  | ptSet (power toughness : Int)                                      -- Layer 7b (CR 613.4b)
+  | ptModify (power toughness : Int)                                   -- Layer 7c (CR 613.4c)
+  | ptSwitch                                                           -- Layer 7d (CR 613.4d)
+deriving Repr, Inhabited, BEq
+
+/-- Continuous rule or cost/restriction effect affecting a player (CR 611.2c / 613.11). -/
+inductive PlayerRule where
+  | additionalLands (n : Nat := 1)
+  | protectionFromEverything
+  | lifeCantChange
+  | lifeLocked
+  | cantCastSpells
+  | typeSpellCostLess (cardType : CardType) (n : Nat)
+  | supertypeSpellCostLess (supertype : Supertype) (n : Nat)
+  | jaceLoyaltyAtInstantSpeed
+  | legendRuleOff
+  | copyNextInstantSorcery (n : Nat := 1)
+  | mountainExtraRed (n : Nat := 1)
+  | nextSpellCantBeCountered
+  | cantAttackJaces
+  | assignCombatDamageEqualToughness
+  | pendingFreeRGCreature
+  | pendingLokiCopy (source : Option ObjectId) (power : Int)
+  | controlsPlayer (controlled : PlayerId) (onNextTurn : Bool := false)
+deriving DecidableEq, Repr, Inhabited, BEq
+
+/-- Continuous rule or restriction effect affecting game rules or objects (CR 611.2c / 613.11). -/
+inductive GameRule where
   | staticAbility (source : ObjectId) (ability : StaticAbility)
-  /-- An Aura's static ability setting `object` to a 5/5 Construct artifact creature (CR 611.3). -/
-  | auraConstruct55 (object : ObjectId)
-  /-- `object` gets `power`/`toughness` until end of turn (CR 611.2). -/
-  | pump (object : ObjectId) (power toughness : Int)
-  /-- `object` gets `power`/`toughness` until `player`'s next turn (CR 611.2). -/
-  | untilTurnOfPump (object : ObjectId) (player : PlayerId) (power toughness : Int)
-  /-- `object` gets +1/+1 for each artifact its controller controls until end of turn (CR 611.2). -/
-  | pumpPerArtifactUntilEot (object : ObjectId)
-  /-- `object` gains `keywords` until end of turn (CR 611.2). -/
-  | keywordsUntilEot (object : ObjectId) (keywords : Keywords)
-  /-- `object` has first strike as long as it's its controller's turn (CR 611.2). -/
-  | firstStrikeOnYourTurn (object : ObjectId)
-  /-- `object` loses indestructible until end of turn (CR 611.2). -/
-  | loseIndestructibleUntilEot (object : ObjectId)
-  /-- If `object` would die this turn, exile it instead (CR 611.2). -/
-  | exileIfDiesUntilEot (object : ObjectId)
-  /-- `object` has base power and toughness `pt` until end of turn (CR 611.2). -/
-  | setBasePTUntilEot (object : ObjectId) (pt : Int × Int)
-  /-- `object`'s power and toughness are each equal to cards in its controller's hand until end of turn (CR 611.2). -/
-  | cardsInHandPowerUntilEot (object : ObjectId)
-  /-- `object` becomes a creature in addition to its other types (CR 611.2). -/
-  | additionalCreature (object : ObjectId) (untilEot : Bool := false)
-  /-- `object` becomes an artifact in addition to its other types until end of turn (CR 611.2). -/
-  | additionalArtifactUntilEot (object : ObjectId)
-  /-- `object` gains `subtype` in addition to its other types (CR 611.2). -/
-  | additionalSubtype (object : ObjectId) (subtype : CardSubtype) (dedup : Bool := false)
-  /-- `object`'s creature types are replaced by `subtypes` until end of turn (CR 611.2). -/
-  | replacedCreatureTypesUntilEot (object : ObjectId) (subtypes : Array CardSubtype)
-  /-- `object` is a Food artifact and loses all other card types and subtypes (CR 611.2). -/
-  | onlyFoodArtifact (object : ObjectId)
-  /-- `object` is an artifact and not a creature (CR 611.2). -/
-  | returnedAsArtifact (object : ObjectId)
-  /-- `object` isn't a creature (CR 611.2). -/
-  | notACreature (object : ObjectId)
-  /-- `object` gains static ability `ability` (CR 611.2). -/
-  | grantedStatic (object : ObjectId) (ability : StaticAbility)
-  /-- `object` gains triggered ability `ability` (CR 611.2). -/
-  | grantedTriggered (object : ObjectId) (ability : TriggeredAbility) (untilEot : Bool := false)
-  /-- `object` gains Iron Fist tap ability `n` times until end of turn (CR 611.2). -/
-  | ironFistTapUntilEot (object : ObjectId) (n : Nat := 1)
-  /-- `object` gains combat-damage-creates-Treasure trigger until end of turn (CR 611.2). -/
-  | combatDamageCreatesTreasureUntilEot (object : ObjectId)
-  /-- `object` loses all abilities until end of turn (CR 611.2). -/
-  | losesAbilitiesUntilEot (object : ObjectId)
-  /-- `object` loses all abilities for as long as `source` remains on the battlefield (CR 611.2b). -/
-  | losesAbilitiesWhileSource (object : ObjectId) (source : ObjectId)
-  /-- `object` has hexproof for as long as `source` remains on the battlefield (CR 611.2b). -/
-  | hexproofWhileSource (object : ObjectId) (source : ObjectId)
-  /-- Prevent all damage that would be dealt to `object` for as long as `source` remains on the battlefield (CR 611.2b). -/
-  | preventDamageWhileSource (object : ObjectId) (source : ObjectId)
-  /-- `object` doesn't untap during its controller's untap step for as long as `source` remains on the battlefield (CR 611.2b). -/
-  | cantUntapWhileSource (object : ObjectId) (source : ObjectId)
-  /-- `player`'s creatures can't block `object` this turn (CR 611.2). -/
-  | cantBeBlockedByPlayerUntilEot (object : ObjectId) (player : PlayerId)
-  /-- `object` can't be blocked except by creatures with haste this turn (CR 611.2). -/
-  | cantBeBlockedExceptByHasteUntilEot (object : ObjectId)
-  /-- `object` can't block this turn (CR 611.2). -/
-  | cantBlockUntilEot (object : ObjectId)
-  /-- `card` may be cast spending mana as though it were mana of any color while `object` grants it (CR 611.2). -/
-  | colorlessGrantUntilCast (object : ObjectId) (card : ObjectId)
-  /-- `object` may be cast from the graveyard without paying its mana cost this turn (CR 611.2). -/
-  | freeCastFromGraveyardUntilEot (object : ObjectId)
-  /-- `object` gains flashback until end of turn (CR 611.2). -/
-  | flashbackUntilEot (object : ObjectId)
-  /-- If `object` would be put into a graveyard from the stack, exile it instead (CR 611.2). -/
-  | exileInstantSorceryInstead (object : ObjectId)
-  /-- `object` can't be countered as a spell (CR 611.2). -/
-  | uncounterableThisCast (object : ObjectId)
-  /-- `object` may be played from exile under `perm` (CR 611.2). -/
-  | playPermission (object : ObjectId) (perm : PlayPermission)
-  /-- `object` (an emblem) lasts until `player`'s next turn (CR 611.2). -/
-  | fraEmblemUntilTurnOf (object : ObjectId) (player : PlayerId)
-  /-- `object` becomes a copy with `printed` characteristics (CR 611.2, 707). -/
-  | copy (object : ObjectId) (printed : CardDef) (restore : Option CardDef)
-      (untilEot : Bool := false) (untilNextTurn : Bool := false)
-      (untilSourceLeaves : Option ObjectId := none)
-  /-- `controller` gains control of `object` (CR 611.2). -/
-  | control (object : ObjectId) (controller : PlayerId)
-      (untilEot : Bool := false) (turnEndsLeft : Nat := 0)
-      (untilSourceLeaves : Option ObjectId := none)
-  /-- `player` may play `n` additional lands this turn (CR 611.2). -/
-  | additionalLandsThisTurn (player : PlayerId) (n : Nat := 1)
-  /-- `player` has protection from everything until their next turn (CR 611.2). -/
-  | protectionFromEverything (player : PlayerId)
-  /-- `player`'s life total can't change until their next turn (CR 611.2). -/
-  | lifeCantChange (player : PlayerId)
-  /-- `player`'s life total can't change this turn (CR 611.2). -/
-  | lifeLocked (player : PlayerId)
-  /-- `player` can't cast spells this turn (CR 611.2). -/
-  | cantCastSpellsThisTurn (player : PlayerId)
-  /-- Attacking creatures `player` controls get +1/+1 per Plains this turn (CR 611.2). -/
-  | attackPumpPerPlainsThisTurn (player : PlayerId) (n : Nat := 1)
-  /-- Spells of `cardType` `player` casts cost `n` less this turn (CR 611.2). -/
-  | typeSpellCostLessThisTurn (player : PlayerId) (cardType : CardType) (n : Nat)
-  /-- Spells of `supertype` `player` casts cost `n` less this turn (CR 611.2). -/
-  | supertypeSpellCostLessThisTurn (player : PlayerId) (supertype : Supertype) (n : Nat)
-  /-- `player` may activate loyalty abilities of Jace planeswalkers at instant speed this turn (CR 611.2). -/
-  | jaceLoyaltyAtInstantSpeedThisTurn (player : PlayerId)
-  /-- The "legend rule" doesn't apply to permanents `player` controls this turn (CR 611.2). -/
-  | legendRuleOffThisTurn (player : PlayerId)
-  /-- When `player` casts their next instant or sorcery spell this turn, copy it (CR 611.2). -/
-  | copyNextInstantSorceryThisTurn (player : PlayerId) (n : Nat := 1)
-  /-- Whenever `player` taps a Mountain for mana this turn, add an additional {R} (CR 611.2). -/
-  | mountainExtraRedThisTurn (player : PlayerId) (n : Nat := 1)
-  /-- The next spell `player` casts this turn can't be countered (CR 611.2). -/
-  | nextSpellCantBeCounteredThisTurn (player : PlayerId)
-  /-- Creatures can't attack `player` or Jace planeswalkers `player` controls this turn (CR 611.2). -/
-  | cantAttackJacesThisTurn (player : PlayerId)
-  /-- Creatures without flying can't block this turn (CR 611.2). -/
-  | creaturesWithoutFlyingCantBlockUntilEot
-  /-- Creatures `player` controls assign combat damage equal to their toughness this turn (CR 611.2). -/
-  | assignCombatDamageEqualToughnessUntilEot (player : PlayerId)
-  /-- The next red or green creature spell `player` casts this turn costs {0} (CR 611.2). -/
-  | pendingFreeRGCreatureThisTurn (player : PlayerId)
-  /-- `player`'s next instant or sorcery spell this turn is copied `power` times (CR 611.2). -/
-  | pendingLokiCopy (player : PlayerId) (source : Option ObjectId) (power : Int)
-  /-- `controller` controls `controlled` during their turn (CR 611.2, 720). -/
-  | playerControl (controller controlled : PlayerId) (onNextTurn : Bool := false)
-  /-- Creatures can't get +X/+Y from spells or abilities this turn (CR 611.2). -/
-  | powerUpsForbiddenThisTurn
-  /-- A continuous replacement effect (CR 611.2 / 614). -/
-  | replacement (spec : ReplacementSpec) (untilEot : Bool := false)
-  /-- A continuous prevention effect (CR 611.2 / 615). -/
-  | prevention (spec : PreventionSpec) (untilEot : Bool := false)
+  | creaturesWithoutFlyingCantBlock
+  | powerUpsForbidden
+  | cantUntap (object : ObjectId) (source : ObjectId)
+  | cantBeBlockedByPlayer (object : ObjectId) (player : PlayerId)
+  | cantBeBlockedExceptByHaste (object : ObjectId)
+  | cantBlock (object : ObjectId)
+  | uncounterable (object : ObjectId)
+  | fraEmblem (object : ObjectId)
+deriving Repr, Inhabited, BEq
+
+/-- Continuous permission to play or cast an object or spend mana on it (CR 611.2 / 701.14). -/
+inductive PlayPermissionSpec where
+  | playFromExile (object : ObjectId) (perm : PlayPermission)
+  | freeCastFromGraveyard (object : ObjectId)
+  | flashback (object : ObjectId)
+  | colorlessGrant (object : ObjectId) (card : ObjectId)
+deriving Repr, Inhabited, BEq
+
+/-- Specification of a continuous effect (CR 611 / 613). -/
+inductive ContinuousEffectSpec where
+  | layered (scope : ObjectScope) (e : LayerEffect) (d : EffectDuration)
+  | playerRule (p : PlayerId) (r : PlayerRule) (d : EffectDuration)
+  | gameRule (r : GameRule) (d : EffectDuration)
+  | replacement (r : ReplacementSpec) (d : EffectDuration := .untilEndOfTurn)
+  | prevention (r : PreventionSpec) (d : EffectDuration := .untilEndOfTurn)
+  | permission (p : PlayerId) (r : PlayPermissionSpec) (d : EffectDuration)
+deriving Repr, Inhabited, BEq
+
+abbrev ContinuousEffect := ContinuousEffectSpec
+
+namespace ContinuousEffectSpec
+
+/-- A continuous effect generated by a static ability of `source` (CR 611.3). -/
+@[inline] def staticAbility (source : ObjectId) (ability : StaticAbility) : ContinuousEffectSpec :=
+  .gameRule (.staticAbility source ability) (.whileSourceOnBattlefield source)
+
+/-- An Aura's static ability setting `object` to a 5/5 Construct artifact creature (CR 611.3). -/
+@[inline] def auraConstruct55 (object : ObjectId) : ContinuousEffectSpec :=
+  .layered (.objects #[object]) (.types .addConstruct55 #[.artifact, .creature] #[.construct] #[]) .indefinite
+
+/-- `object` gets `power`/`toughness` until end of turn (CR 611.2 / 613.4c). -/
+@[inline] def pump (object : ObjectId) (power toughness : Int) : ContinuousEffectSpec :=
+  .layered (.objects #[object]) (.ptModify power toughness) .untilEndOfTurn
+
+/-- `object` gets `power`/`toughness` until `player`'s next turn (CR 611.2 / 613.4c). -/
+@[inline] def untilTurnOfPump (object : ObjectId) (player : PlayerId) (power toughness : Int) : ContinuousEffectSpec :=
+  .layered (.objects #[object]) (.ptModify power toughness) (.untilNextTurnOf player)
+
+/-- `object` gets +1/+1 for each artifact its controller controls until end of turn (CR 611.2). -/
+@[inline] def pumpPerArtifactUntilEot (object : ObjectId) : ContinuousEffectSpec :=
+  .layered (.objects #[object]) (.ptCda .pumpPerArtifact) .untilEndOfTurn
+
+/-- `object` gains `keywords` until end of turn (CR 611.2 / 613.1f). -/
+@[inline] def keywordsUntilEot (object : ObjectId) (keywords : Keywords) : ContinuousEffectSpec :=
+  .layered (.objects #[object]) (.abilities { keywords := keywords } .none) .untilEndOfTurn
+
+/-- `object` has first strike as long as it's its controller's turn (CR 611.2 / 613.1f). -/
+@[inline] def firstStrikeOnYourTurn (object : ObjectId) : ContinuousEffectSpec :=
+  .layered (.objects #[object]) (.abilities { firstStrikeOnYourTurn := true } .none) .untilEndOfTurn
+
+/-- `object` loses indestructible until end of turn (CR 611.2 / 613.1f). -/
+@[inline] def loseIndestructibleUntilEot (object : ObjectId) : ContinuousEffectSpec :=
+  .layered (.objects #[object]) (.abilities {} .loseIndestructible) .untilEndOfTurn
+
+/-- If `object` would die this turn, exile it instead (CR 611.2 / 614.1a). -/
+@[inline] def exileIfDiesUntilEot (object : ObjectId) : ContinuousEffectSpec :=
+  .replacement
+    { id := { kind := .untilEotExileIfDies, object := some object }
+      source := some object
+      kind := .exileInsteadOfGraveyard object false }
+    .untilEndOfTurn
+
+/-- `object` has base power and toughness `pt` until end of turn (CR 611.2 / 613.4b). -/
+@[inline] def setBasePTUntilEot (object : ObjectId) (pt : Int × Int) : ContinuousEffectSpec :=
+  .layered (.objects #[object]) (.ptSet pt.1 pt.2) .untilEndOfTurn
+
+/-- `object`'s power and toughness are each equal to cards in its controller's hand until end of turn (CR 611.2 / 613.4a). -/
+@[inline] def cardsInHandPowerUntilEot (object : ObjectId) : ContinuousEffectSpec :=
+  .layered (.objects #[object]) (.ptCda .cardsInHandPower) .untilEndOfTurn
+
+/-- `object` becomes a creature in addition to its other types (CR 611.2 / 613.1d). -/
+@[inline] def additionalCreature (object : ObjectId) (untilEot : Bool := false) : ContinuousEffectSpec :=
+  .layered (.objects #[object]) (.types .add #[.creature] #[] #[])
+    (if untilEot then .untilEndOfTurn else .indefinite)
+
+/-- `object` becomes an artifact in addition to its other types until end of turn (CR 611.2 / 613.1d). -/
+@[inline] def additionalArtifactUntilEot (object : ObjectId) : ContinuousEffectSpec :=
+  .layered (.objects #[object]) (.types .add #[.artifact] #[] #[]) .untilEndOfTurn
+
+/-- `object` gains `subtype` in addition to its other types (CR 611.2 / 613.1d). -/
+@[inline] def additionalSubtype (object : ObjectId) (subtype : CardSubtype) (dedup : Bool := false) : ContinuousEffectSpec :=
+  .layered (.objects #[object]) (.types (if dedup then .addDedup else .add) #[] #[subtype] #[]) .indefinite
+
+/-- `object`'s creature types are replaced by `subtypes` until end of turn (CR 611.2 / 613.1d). -/
+@[inline] def replacedCreatureTypesUntilEot (object : ObjectId) (subtypes : Array CardSubtype) : ContinuousEffectSpec :=
+  .layered (.objects #[object]) (.types .setAndKeepNoncreatureSubtypes #[] subtypes #[]) .untilEndOfTurn
+
+/-- `object` is a Food artifact and loses all other card types and subtypes (CR 611.2 / 613.1d). -/
+@[inline] def onlyFoodArtifact (object : ObjectId) : ContinuousEffectSpec :=
+  .layered (.objects #[object]) (.types .set #[.artifact] #[.food] #[]) .indefinite
+
+/-- `object` is an artifact and not a creature (CR 611.2 / 613.1d). -/
+@[inline] def returnedAsArtifact (object : ObjectId) : ContinuousEffectSpec :=
+  .layered (.objects #[object]) (.types .addArtifactRemoveCreature #[.artifact] #[] #[]) .indefinite
+
+/-- `object` isn't a creature (CR 611.2 / 702.176). -/
+@[inline] def notACreature (object : ObjectId) : ContinuousEffectSpec :=
+  .layered (.objects #[object]) (.types .removeCreature #[] #[] #[]) .indefinite
+
+/-- `object` gains static ability `ability` (CR 611.2 / 613.1f). -/
+@[inline] def grantedStatic (object : ObjectId) (ability : StaticAbility) : ContinuousEffectSpec :=
+  .layered (.objects #[object]) (.abilities { staticAbilities := #[ability] } .none) .indefinite
+
+/-- `object` gains triggered ability `ability` (CR 611.2 / 613.1f). -/
+@[inline] def grantedTriggered (object : ObjectId) (ability : TriggeredAbility) (untilEot : Bool := false) : ContinuousEffectSpec :=
+  .layered (.objects #[object]) (.abilities { triggeredAbilities := #[ability] } .none)
+    (if untilEot then .untilEndOfTurn else .indefinite)
+
+/-- `object` gains Iron Fist tap ability `n` times until end of turn (CR 611.2 / 613.1f). -/
+@[inline] def ironFistTapUntilEot (object : ObjectId) (n : Nat := 1) : ContinuousEffectSpec :=
+  .layered (.objects #[object]) (.abilities { ironFistTapGrants := n } .none) .untilEndOfTurn
+
+/-- `object` gains combat-damage-creates-Treasure trigger until end of turn (CR 611.2 / 613.1f). -/
+@[inline] def combatDamageCreatesTreasureUntilEot (object : ObjectId) : ContinuousEffectSpec :=
+  .layered (.objects #[object]) (.abilities { combatDamageCreatesTreasure := true } .none) .untilEndOfTurn
+
+/-- `object` loses all abilities until end of turn (CR 611.2 / 613.1f). -/
+@[inline] def losesAbilitiesUntilEot (object : ObjectId) : ContinuousEffectSpec :=
+  .layered (.objects #[object]) (.abilities {} .all) .untilEndOfTurn
+
+/-- `object` loses all abilities for as long as `source` remains on the battlefield (CR 611.2b / 613.1f). -/
+@[inline] def losesAbilitiesWhileSource (object : ObjectId) (source : ObjectId) : ContinuousEffectSpec :=
+  .layered (.objects #[object]) (.abilities {} .all) (.whileSourceOnBattlefield source)
+
+/-- `object` has hexproof for as long as `source` remains on the battlefield (CR 611.2b / 613.1f). -/
+@[inline] def hexproofWhileSource (object : ObjectId) (source : ObjectId) : ContinuousEffectSpec :=
+  .layered (.objects #[object]) (.abilities { keywords := { hexproof := true } } .none) (.whileSourceOnBattlefield source)
+
+/-- Prevent all damage that would be dealt by `object` for as long as `source` remains on the battlefield (CR 611.2b / 615). -/
+@[inline] def preventDamageWhileSource (object : ObjectId) (source : ObjectId) : ContinuousEffectSpec :=
+  .prevention
+    { id := { kind := .preventDamageGrantedBy, object := some object, grantor := some source }
+      source := some source
+      kind := .preventAllDamageFromSource object }
+    (.whileSourceOnBattlefield source)
+
+/-- `object` doesn't untap during its controller's untap step for as long as `source` remains on the battlefield (CR 611.2b). -/
+@[inline] def cantUntapWhileSource (object : ObjectId) (source : ObjectId) : ContinuousEffectSpec :=
+  .gameRule (.cantUntap object source) (.whileSourceOnBattlefield source)
+
+/-- `player`'s creatures can't block `object` this turn (CR 611.2). -/
+@[inline] def cantBeBlockedByPlayerUntilEot (object : ObjectId) (player : PlayerId) : ContinuousEffectSpec :=
+  .gameRule (.cantBeBlockedByPlayer object player) .untilEndOfTurn
+
+/-- `object` can't be blocked except by creatures with haste this turn (CR 611.2). -/
+@[inline] def cantBeBlockedExceptByHasteUntilEot (object : ObjectId) : ContinuousEffectSpec :=
+  .gameRule (.cantBeBlockedExceptByHaste object) .untilEndOfTurn
+
+/-- `object` can't block this turn (CR 611.2). -/
+@[inline] def cantBlockUntilEot (object : ObjectId) : ContinuousEffectSpec :=
+  .gameRule (.cantBlock object) .untilEndOfTurn
+
+/-- `object` gains `{T}: Add {C}{C}` until `card` is cast from exile (CR 611.2, ruling 729). -/
+@[inline] def colorlessGrantUntilCast (object : ObjectId) (card : ObjectId) : ContinuousEffectSpec :=
+  .permission ⟨0⟩ (.colorlessGrant object card) .indefinite
+
+/-- `object` may be cast from the graveyard without paying its mana cost this turn (CR 611.2). -/
+@[inline] def freeCastFromGraveyardUntilEot (object : ObjectId) : ContinuousEffectSpec :=
+  .permission ⟨0⟩ (.freeCastFromGraveyard object) .untilEndOfTurn
+
+/-- `object` gains flashback until end of turn (CR 611.2). -/
+@[inline] def flashbackUntilEot (object : ObjectId) : ContinuousEffectSpec :=
+  .permission ⟨0⟩ (.flashback object) .untilEndOfTurn
+
+/-- If `object` would be put into a graveyard from the stack, exile it instead (CR 611.2 / 614.1a). -/
+@[inline] def exileInstantSorceryInstead (object : ObjectId) : ContinuousEffectSpec :=
+  .replacement
+    { id := { kind := .exileInstantSorceryInstead, object := some object }
+      source := some object
+      kind := .exileInsteadOfGraveyard object false }
+    (.whileInZone object .stack)
+
+/-- `object` can't be countered as a spell (CR 611.2). -/
+@[inline] def uncounterableThisCast (object : ObjectId) : ContinuousEffectSpec :=
+  .gameRule (.uncounterable object) (.whileInZone object .stack)
+
+/-- `object` may be played from exile under `perm` with duration `d` (CR 611.2 / 701.14). -/
+@[inline] def playPermission (object : ObjectId) (perm : PlayPermission)
+    (turnEnds : Nat := 1)
+    (d : EffectDuration :=
+      if perm.fromAdventure || perm.whileExiled || turnEnds == 0 then .whileInZone object .exile
+      else if turnEnds >= 2 then .untilEndOfNextTurnOf perm.player
+      else .untilEndOfTurn) : ContinuousEffectSpec :=
+  .permission perm.player (.playFromExile object perm) d
+
+/-- `object` (an emblem) lasts until `player`'s next turn (CR 611.2). -/
+@[inline] def fraEmblemUntilTurnOf (object : ObjectId) (player : PlayerId) : ContinuousEffectSpec :=
+  .gameRule (.fraEmblem object) (.untilNextTurnOf player)
+
+/-- `object` becomes a copy with `printed` characteristics (CR 611.2, 707 / 613.1a). -/
+@[inline] def copy (object : ObjectId) (printed : CardDef) (restore : Option CardDef := none)
+    (untilEot : Bool := false) (untilNextTurn : Bool := false)
+    (untilSourceLeaves : Option ObjectId := none)
+    (nextTurnOf : Option PlayerId := none) : ContinuousEffectSpec :=
+  let d : EffectDuration :=
+    match untilSourceLeaves with
+    | some src => .whileSourceOnBattlefield src
+    | none =>
+      if untilEot then .untilEndOfTurn
+      else if untilNextTurn then .untilNextTurnOf (nextTurnOf.getD ⟨0⟩)
+      else .indefinite
+  .layered (.objects #[object]) (.copy printed restore) d
+
+/-- `controller` gains control of `object` (CR 611.2 / 613.1b). -/
+@[inline] def control (object : ObjectId) (controller : PlayerId)
+    (untilEot : Bool := false) (turnEndsLeft : Nat := 0)
+    (untilSourceLeaves : Option ObjectId := none) : ContinuousEffectSpec :=
+  let d : EffectDuration :=
+    match untilSourceLeaves with
+    | some src => .whileSourceOnBattlefield src
+    | none =>
+      if untilEot || turnEndsLeft == 1 then .untilEndOfTurn
+      else if turnEndsLeft >= 2 then .untilEndOfNextTurnOf controller
+      else .indefinite
+  .layered (.objects #[object]) (.control controller) d
+
+/-- `player` may play `n` additional lands this turn (CR 611.2). -/
+@[inline] def additionalLandsThisTurn (player : PlayerId) (n : Nat := 1) : ContinuousEffectSpec :=
+  .playerRule player (.additionalLands n) (.untilStepOrPhase (.step .untap))
+
+/-- `player` has protection from everything until their next turn (CR 611.2 / 702.16j). -/
+@[inline] def protectionFromEverything (player : PlayerId) : ContinuousEffectSpec :=
+  .playerRule player .protectionFromEverything (.untilNextTurnOf player)
+
+/-- `player`'s life total can't change until their next turn (CR 611.2). -/
+@[inline] def lifeCantChange (player : PlayerId) : ContinuousEffectSpec :=
+  .playerRule player .lifeCantChange (.untilNextTurnOf player)
+
+/-- `player`'s life total can't change this turn (CR 611.2). -/
+@[inline] def lifeLocked (player : PlayerId) : ContinuousEffectSpec :=
+  .playerRule player .lifeLocked .untilEndOfTurn
+
+/-- `player` can't cast spells this turn (CR 611.2). -/
+@[inline] def cantCastSpellsThisTurn (player : PlayerId) : ContinuousEffectSpec :=
+  .playerRule player .cantCastSpells .untilEndOfTurn
+
+/-- Spells of `cardType` `player` casts cost `n` less this turn (CR 611.2). -/
+@[inline] def typeSpellCostLessThisTurn (player : PlayerId) (cardType : CardType) (n : Nat) : ContinuousEffectSpec :=
+  .playerRule player (.typeSpellCostLess cardType n) .untilEndOfTurn
+
+/-- Spells of `supertype` `player` casts cost `n` less this turn (CR 611.2). -/
+@[inline] def supertypeSpellCostLessThisTurn (player : PlayerId) (supertype : Supertype) (n : Nat) : ContinuousEffectSpec :=
+  .playerRule player (.supertypeSpellCostLess supertype n) .untilEndOfTurn
+
+/-- `player` may activate loyalty abilities of Jace planeswalkers at instant speed this turn (CR 611.2). -/
+@[inline] def jaceLoyaltyAtInstantSpeedThisTurn (player : PlayerId) : ContinuousEffectSpec :=
+  .playerRule player .jaceLoyaltyAtInstantSpeed .untilEndOfTurn
+
+/-- The "legend rule" doesn't apply to permanents `player` controls this turn (CR 611.2). -/
+@[inline] def legendRuleOffThisTurn (player : PlayerId) : ContinuousEffectSpec :=
+  .playerRule player .legendRuleOff .untilEndOfTurn
+
+/-- When `player` casts their next instant or sorcery spell this turn, copy it (CR 611.2). -/
+@[inline] def copyNextInstantSorceryThisTurn (player : PlayerId) (n : Nat := 1) : ContinuousEffectSpec :=
+  .playerRule player (.copyNextInstantSorcery n) .untilEndOfTurn
+
+/-- Whenever `player` taps a Mountain for mana this turn, add an additional {R} (CR 611.2). -/
+@[inline] def mountainExtraRedThisTurn (player : PlayerId) (n : Nat := 1) : ContinuousEffectSpec :=
+  .playerRule player (.mountainExtraRed n) .untilEndOfTurn
+
+/-- The next spell `player` casts this turn can't be countered (CR 611.2). -/
+@[inline] def nextSpellCantBeCounteredThisTurn (player : PlayerId) : ContinuousEffectSpec :=
+  .playerRule player .nextSpellCantBeCountered .untilEndOfTurn
+
+/-- Creatures can't attack `player` or Jace planeswalkers `player` controls this turn (CR 611.2). -/
+@[inline] def cantAttackJacesThisTurn (player : PlayerId) : ContinuousEffectSpec :=
+  .playerRule player .cantAttackJaces .untilEndOfTurn
+
+/-- Creatures without flying can't block this turn (CR 611.2). -/
+@[inline] def creaturesWithoutFlyingCantBlockUntilEot : ContinuousEffectSpec :=
+  .gameRule .creaturesWithoutFlyingCantBlock .untilEndOfTurn
+
+/-- Creatures `player` controls assign combat damage equal to their toughness this turn (CR 611.2). -/
+@[inline] def assignCombatDamageEqualToughnessUntilEot (player : PlayerId) : ContinuousEffectSpec :=
+  .playerRule player .assignCombatDamageEqualToughness .untilEndOfTurn
+
+/-- The next red or green creature spell `player` casts this turn costs {0} (CR 611.2). -/
+@[inline] def pendingFreeRGCreatureThisTurn (player : PlayerId) : ContinuousEffectSpec :=
+  .playerRule player .pendingFreeRGCreature .untilEndOfTurn
+
+/-- `player`'s next instant or sorcery spell this turn is copied `power` times (CR 611.2). -/
+@[inline] def pendingLokiCopy (player : PlayerId) (source : Option ObjectId) (power : Int) : ContinuousEffectSpec :=
+  .playerRule player (.pendingLokiCopy source power) .untilEndOfTurn
+
+/-- `controller` controls `controlled` during their turn (CR 611.2, 720). -/
+@[inline] def playerControl (controller controlled : PlayerId) (onNextTurn : Bool := false) : ContinuousEffectSpec :=
+  .playerRule controller (.controlsPlayer controlled onNextTurn) .indefinite
+
+/-- Creatures can't get +X/+Y from spells or abilities this turn (CR 611.2). -/
+@[inline] def powerUpsForbiddenThisTurn : ContinuousEffectSpec :=
+  .gameRule .powerUpsForbidden .untilEndOfTurn
+
+/-- Duration of this continuous effect specification (CR 611.2). -/
+def duration : ContinuousEffectSpec → EffectDuration
+  | .layered _ _ d => d
+  | .playerRule _ _ d => d
+  | .gameRule _ d => d
+  | .replacement _ d => d
+  | .prevention _ d => d
+  | .permission _ _ d => d
+
+end ContinuousEffectSpec
+
+/-- Continuous-effect creation and expiration events (CR 611). -/
+inductive ContinuousEffectEvent where
+  | created (id : EffectId) (spec : ContinuousEffectSpec)
+  | expired (id : EffectId)
 deriving Repr, Inhabited, BEq
 
 /-- Who or what receives or loses counters (CR 122.1). Players in `Mtg.Engine`
@@ -970,9 +1072,32 @@ inductive ZoneEvent where
       (object : EventObject)
 deriving Repr, Inhabited, BEq
 
+/-- Lasting player designations (CR 702.131). -/
+inductive PlayerDesignation where
+  | citysBlessing
+  | enduringStory
+deriving DecidableEq, Repr, Inhabited, BEq
+
+/-- Why a player lost the game (CR 104.3 / 704.5a–c). -/
+inductive LossReason where
+  | lifeZeroOrLess
+  | decked
+  | poison
+  | conceded
+  | effect
+deriving DecidableEq, Repr, Inhabited, BEq
+
 /-- Player-level actions that don't mutate a single object's zone, status, life,
-or damage (CR 701.22, 701.25, 701.34, 701.62). -/
+or damage (CR 104, 106.4, 500.5, 701.20–25, 701.34, 701.54, 701.62, 702.131, 725, 800.4a). -/
 inductive PlayerEvent where
+  /-- `player` added `units` of mana to their mana pool (CR 106.4). -/
+  | manaAdded (player : PlayerId) (units : Array ManaUnit)
+  /-- `player` spent `units` of mana for `forObject` (CR 118.3 / 601.2h). -/
+  | manaSpent (player : PlayerId) (units : Array ManaUnit) (forObject : ObjectId)
+  /-- `player`'s mana pool emptied (CR 500.5 / 703.4q). `units` is the mana
+  that was in the pool; `keptColorless` is true when unspent mana became
+  colorless instead of emptying. -/
+  | manaEmptied (player : PlayerId) (units : Array ManaUnit := #[]) (keptColorless : Bool := false)
   /-- `player` scried `asked` cards (CR 701.22). `lookedAt` cards were looked at,
   putting `top` on top and `bottom` on the bottom. -/
   | scried (player : PlayerId) (top : Array ObjectId := #[])
@@ -985,24 +1110,38 @@ inductive PlayerEvent where
       (graveyard : Array ObjectId := #[])
       (lookedAt : Nat := 0)
       (asked : Nat := 0)
-  /-- `player` beheld `quality` (CR 701.62). Later zone changes do not undo it. -/
-  | beheld (player : PlayerId) (quality : CardSubtype)
+  /-- `player` looked at `cards` (for "look at", not scry/surveil). -/
+  | lookedAt (player : PlayerId) (cards : Array ObjectId)
+  /-- `player` revealed `cards` (CR 701.20). -/
+  | revealed (player : PlayerId) (cards : Array ObjectId)
+  /-- `player` searched `libraryOwner`'s library, finding `found` (CR 701.23). -/
+  | searched (player : PlayerId) (libraryOwner : PlayerId) (found : Array ObjectId)
+  /-- `libraryOwner`'s library was shuffled into `newOrder` (CR 701.24). -/
+  | shuffled (libraryOwner : PlayerId) (newOrder : Array ObjectId)
   /-- `player` proliferated (CR 701.34). Each counter added also emits its own
   `PermanentEvent.counters` event. -/
   | proliferated (player : PlayerId) (permanents : Array ObjectId := #[])
       (players : Array PlayerId := #[])
   /-- The Ring tempted `player` at `stage` with `bearer` (CR 701.54). -/
   | ringTempted (player : PlayerId) (bearer : Option ObjectId) (stage : Nat)
+  /-- `player` beheld `quality` (CR 701.62). Later zone changes do not undo it. -/
+  | beheld (player : PlayerId) (quality : CardSubtype)
   /-- `player` chose to have The Sensational She-Hulk deal damage. Once each turn. -/
   | sheHulkDealtDamage (player : PlayerId)
-  /-- `player`'s mana pool emptied (CR 500.5 / 703.4q). `amount` is the mana
-  that was in the pool; `keptColorless` is true when unspent mana became
-  colorless instead of emptying. -/
-  | manaEmptied (player : PlayerId) (amount : Nat := 0) (keptColorless : Bool := false)
+  /-- `player` chose the optional once-each-turn action of `source` (MSH 69). -/
+  | optionalOnceActed (player : PlayerId) (source : ObjectId)
+  /-- `player` attempted to draw a card from an empty library (CR 121.4 / 704.5b). -/
+  | drawFromEmptyAttempted (player : PlayerId)
+  /-- `player` became the monarch (CR 725). -/
+  | becameMonarch (player : PlayerId) (previous : Option PlayerId := none)
+  /-- `player` gained lasting designation `d` (CR 702.131). -/
+  | gainedDesignation (player : PlayerId) (d : PlayerDesignation)
   /-- `player` lost the game (CR 104.3 / 704.5a–c). -/
-  | lost (player : PlayerId)
+  | lost (player : PlayerId) (reason : LossReason := .lifeZeroOrLess)
   /-- `player` left the game (CR 104.5 / 800.4a). -/
   | leftGame (player : PlayerId)
+  /-- The game ended with `result` (CR 104). -/
+  | gameEnded (result : GameResult)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- Turn, phase, and step transitions and extra-turn/phase/step insertion (CR 500). -/
@@ -1033,12 +1172,15 @@ inductive AdditionalCostChoice where
   | behold (chosen : ObjectId)
   | sacrifice (sacrificed : ObjectId)
   | discard (discarded : ObjectId)
+  | impending (timeCounters : Nat)
+  | sneak (returned : ObjectId) (attackTarget : Option AttackTarget := none)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- Whether an activated ability is a non-mana or mana ability (CR 602.2b / 605.3b). -/
 inductive ActivationKind where
   | nonMana (loyalty : Option Int) (equip : Bool) (powerUp : Bool) (boast : Bool)
-  | mana
+      (abilityIdx : Option Nat := none) (exhaust : Bool := false)
+  | mana (abilityIdx : Option Nat := none)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- Casting and activation lifecycle events (CR 601.2 / 602.2 / 605.3b). -/
@@ -1057,6 +1199,7 @@ inductive TriggerQueueEvent where
   | triggered (source : EventObject) (controller : PlayerId) (ability : TriggeredAbility)
       (origin : BatchId)                                                            -- 603.2
   | putOnStack (stackObj : ObjectId) (source : EventObject) (controller : PlayerId) -- 603.3
+  | modeChosen (source : ObjectId) (mode : Nat) (lifetime : Bool := false)          -- 603.3c / 700.2
 deriving Repr, Inhabited, BEq
 
 /-- Stack-object events (CR 608 / 707.10). -/
@@ -1103,16 +1246,8 @@ inductive RulesEvent where
   | stackObject (e : StackObjectEvent)
   /-- Combat declaration, state transitions, damage assignment, and removal events. -/
   | combat (e : CombatEvent)
-  /-- `player` spent `amount` mana. -/
-  | spentMana (player : PlayerId) (amount : Nat)
-  /-- A continuous effect begins (CR 611). -/
-  | effectCreated (id : EffectId) (effect : ContinuousEffect)
-  /-- A continuous effect ends (CR 611). -/
-  | effectExpired (id : EffectId) (effect : ContinuousEffect)
-  /-- Bookkeeping on an existing continuous effect `id` (a decremented turn
-  counter, or last-known information after its source left), keeping the same
-  `EffectId`. This neither creates nor ends an effect (CR 611). -/
-  | effectUpdated (id : EffectId) (effect : ContinuousEffect)
+  /-- Continuous-effect creation and expiration events (CR 611). -/
+  | continuousEffect (e : ContinuousEffectEvent)
 deriving Repr, Inhabited, BEq
 
 /-- One batch of identical tokens in a proposed token-creation event, tracked
@@ -1123,7 +1258,6 @@ structure ProposedTokenBatch where
   count : Nat := 1
   tapped : Bool := false
   attacking : Bool := false
-  attackingWhom : Option PlayerId := none
   attackingTarget : Option AttackTarget := none
   extraCounters : CounterBag := #[]
   cause : Option EventCause := none
@@ -1157,7 +1291,7 @@ inductive PendingReplacement where
   | markDamageOn (targetId : ObjectId) (n : Nat) (msg : String)
       (deathtouch : Bool) (source : Option EventObject) (combat : Bool)
       (unpreventable : Bool) (cause : Option EventCause)
-  | dealAssignedCombatDamage (applied : Array ReplacementId := #[])
+  | dealAssignedCombatDamage (applied : Array ReplacementId := #[]) (startIdx : Nat := 0)
   | gainLife (p : PlayerId) (n : Nat) (msg : String) (cause : Option EventCause)
   | addPlusOnePlusOneTo (targetId : ObjectId) (n : Nat) (entersWith : Bool)
       (byPlayer : Option PlayerId) (cause : Option EventCause)
@@ -1213,78 +1347,167 @@ inductive PendingReplacement where
   | receivePriority (p : PlayerId)
 deriving Repr, Inhabited, BEq
 
-/-- Internal engine state mutations that are not rules-level occurrences. -/
-inductive EngineChange where
-  /-- Update a player's state. -/
-  | player (p : PlayerId) (c : PlayerChange)
-  | playerChanges (p : PlayerId) (cs : Array PlayerChange)
-  | players (v : Array Player)
-  | setPlayer (pl : Player)
-  /-- Update an object's state. -/
-  | object (id : ObjectId) (c : ObjectChange)
-  | objectChanges (id : ObjectId) (cs : Array ObjectChange)
-  | objects (v : Array GameObject)
-  | setObject (o : GameObject)
-  | removeObject (id : ObjectId)
-  | replaceObject (oldId : ObjectId) (fresh : GameObject)
-  /-- Update the stack. -/
-  | stack (v : Array StackEntry)
-  | pushStack (e : StackEntry)
-  | popStack
-  | removeFromStack (objectId : ObjectId)
-  | setStackEntryAt (idx : Nat) (e : StackEntry)
-  | stackEntry (idx : Nat) (c : StackEntryChange)
-  | stackEntryById (objectId : ObjectId) (c : StackEntryChange)
-  /-- Update the proposed spell or ability. -/
-  | proposedSpell (v : Option ProposedSpell)
-  | proposal (c : ProposalChange)
-  | proposalChanges (cs : Array ProposalChange)
-  /-- Update game fields. -/
-  | activePlayer (v : PlayerId)
-  | priority (v : PlayerId)
-  | step (v : Step)
-  | turnNumber (v : Nat)
-  | startingPlayer (v : PlayerId)
-  | isFirstTurn (v : Bool)
-  | pending (v : Pending)
-  | nextObjectId (v : Nat)
-  | nextEffectId (v : Nat)
-  | nextBatchId (v : Nat)
-  | activeEffects (v : Array (EffectId × ContinuousEffect))
-  | timestamp (v : Nat)
-  | afterRandom (v : AfterRandom)
-  | result (v : Option GameResult)
-  | log (v : Array String)
-  | logMsg (msg : String)
-  | format (v : Format)
-  | brawl (v : Bool)
-  | consecutivePasses (v : Nat)
-  | cleanupGivesPriority (v : Bool)
-  | creaturesWithoutFlyingCantBlock (v : Bool)
-  | awaitingOpeningBegin (v : Bool)
-  | mulliganToDeclare (v : Array PlayerId)
-  | willMulligan (v : Array PlayerId)
-  | pushWillMulligan (p : PlayerId)
-  | mulliganToBottom (v : Array PlayerId)
-  | assignedCombatDamage (v : Array CreatureCombatAssignment)
-  | blockersQueue (v : Array PlayerId)
-  | waitingTriggers (v : Array WaitingTrigger)
-  | enqueueWaitingTriggers (wts : Array WaitingTrigger)
-  | pushWaitingTrigger (wt : WaitingTrigger)
-  | removeWaitingTriggersOf (p : PlayerId)
-  | removeWaitingTriggersForEvent (ev : TriggerEvent)
-  | removeWaitingTriggersForPlayerSource (p : PlayerId) (sourceId : ObjectId) (part2 : Bool)
-  | eraseFirstWaitingTriggerForPlayerSource (p : PlayerId) (sourceId : ObjectId) (part2 : Bool)
-  | addSourceDealtDamagePower (sourceId : ObjectId) (n : Int)
-  | firstStrikeDamageDone (v : Bool)
-  | pendingRegularCombatDamage (v : Bool)
-  | firstStrikeAssignedThisCombat (v : Array ObjectId)
-  | isNight (v : Bool)
+/-- One frame of mid-resolution continuation state (CR 608.2). Grouping the
+72 per-step/per-card registers plus `resolvingContext` and `pendingReplacement`
+into a frame on `Game.continuations` prevents nested resolution choices
+(reflexive triggers, replacement choices, cast-during-resolution) from
+clobbering outer frames. -/
+structure ContinuationFrame where
+  /-- Draw these cards after the current scry finishes (e.g. Hithlain Knots). -/
+  pendingDrawAfterScry : Option (PlayerId × Nat) := none
+  /-- Card discarded while a later `.put .discardedLand (how := .tapped)`
+  may put that land onto the battlefield tapped (Silvan Reveler). -/
+  discardedCardThisWay : Option (PlayerId × ObjectId) := none
+  /-- After Palantír of Orthanc finishes scrying, this opponent may have
+  the controller draw. Stores controller, opponent, and the Palantír. -/
+  palantirAfterScry : Option (PlayerId × PlayerId × ObjectId) := none
+  /-- Tokens created by the most recent `createKindTokens` call, so a following
+  sequence step can haste them or leave them out of a plus-one. -/
+  recentTokenIds : Array ObjectId := #[]
+  /-- Work left after the pending scry or surveil finishes (Eye of Jace):
+  its controller, source, and what to do. -/
+  fraAfterLook : Option (PlayerId × Option ObjectId × FraNext) := none
+  /-- Copies a player may still cast without paying their mana costs as an
+  ability resolves, with the mana value left (Uldaros Theorix). -/
+  pendingFreeCopies : Option (PlayerId × Array ObjectId × Nat × Nat) := none
+  /-- Spells exiled by a resolving ability that may still be cast without
+  paying their mana costs, and how many casts remain (Doom Reigns Supreme). -/
+  pendingMayCastFromExile : Option (PlayerId × Array ObjectId × Nat) := none
+  /-- Paying the pending “you may pay” cost also puts a +1/+1 counter on this
+  permanent (Proft, Consulting Detective). -/
+  mayPayAlsoPlusOneOn : Option ObjectId := none
+  /-- Humans chosen for the current “tap any number of Humans” step. -/
+  humansTappedThisWay : Nat := 0
+  /-- Permanents destroyed by `.destroy .oppArtifactsEnchantments (note := .countDestroyed)`. -/
+  permanentsDestroyedThisWay : Nat := 0
+  /-- A hope counter was removed by the current `removeCounters .hope .source` step. -/
+  removedHopeThisWay : Bool := false
+  /-- The permanent marked by the current `dealDamage` step when it notes `.markedPermanent`. -/
+  permanentDealtDamageThisWay : Option ObjectId := none
+  /-- A permanent was returned to its owner's hand by the current `returnToHand` step. -/
+  returnedPermanentThisWay : Bool := false
+  /-- Ordinal recorded by the current `noteResolveThisTurn` step. -/
+  nthResolveThisWay : Option Nat := none
+  /-- The current sequence step asked the rest of the sequence not to run. -/
+  skipTriggerSequenceRest : Bool := false
+  /-- Excess damage noted by `dealDamage` with `.excess` for the following amass step. -/
+  excessDamageThisWay : Nat := 0
+  /-- `.destroy .target (note := .forAmass)` chose a legal target. -/
+  destroyedForAmassThisWay : Bool := false
+  amassControllerThisWay : Option PlayerId := none
+  amassAmountThisWay : Nat := 0
+  amassYouControlledThisWay : Bool := false
+  /-- Cards milled by `.mill` when it notes `.milledCards`. -/
+  milledIdsThisWay : Array ObjectId := #[]
+  /-- Cards `revealLibrary` just showed. -/
+  revealedIdsThisWay : Array ObjectId := #[]
+  /-- `.mill` noted `.opponentsMilled`: an opponent milled at least one card. -/
+  opponentsMilledThisWay : Bool := false
+  /-- Palantír finished putting an influence counter; the following step offers
+  the opponent's draw choice. -/
+  palantirChoiceReady : Option (PlayerId × PlayerId × ObjectId) := none
+  /-- `revealLibrary .untilInstantOrSorcery (.exile .top .forLater .impulse) .damagedPlayer`
+  stored the impulse. -/
+  grimaImpulseReady : Bool := false
+  grimaImpulseVictim : Option PlayerId := none
+  grimaImpulseFound : Option ObjectId := none
+  grimaImpulseOthers : Array ObjectId := #[]
+  /-- `sacrifice .you .plan .forReflexive` sacrificed the Plan. -/
+  planWasSacrificed : Bool := false
+  /-- `sacrifice .you .source .noted` sacrificed the source. -/
+  sourceWasSacrificed : Bool := false
+  /-- Lands exiled by `exile .landsYouControl .forLater .lands`. -/
+  exiledIdsThisWay : Array ObjectId := #[]
+  /-- Creature exiled by `exile .target .untilSourceLeaves .copyAndHost`, copied by the next step. -/
+  notedCopyObject : Option GameObject := none
+  notedHostId : Option ObjectId := none
+  /-- Cards discarded by accepting `.discard .hand`. `none` means declined. -/
+  handDiscardedThisWay : Option Nat := none
+  /-- Source of the Balin ability, for the damage step after the discard. -/
+  notedSourceThisWay : Option ObjectId := none
+  /-- Creature that received Equipment from `attach .anyYouControl .target`. -/
+  equipmentAttachedHost : Option ObjectId := none
+  /-- A count captured before a later step could change it. -/
+  notedCountThisWay : Nat := 0
+  /-- Token created for the following attach or counter step. -/
+  createdTokenThisWay : Option ObjectId := none
+  /-- Artifact put from hand by `.put .artifactFromHand (note := .forAttach)`. -/
+  putArtifactThisWay : Option (ObjectId × ObjectId) := none
+  /-- Card exiled by `exile .graveyardCard .forLater .playCard`. -/
+  playExiledThisWay : Option ObjectId := none
+  /-- The following `surveil` returns a card with mana value at most the life gained this turn. -/
+  armSurveilReturn : Bool := false
+  /-- Later steps of a trigger `sequence`, waiting on the pending choice an earlier step opened. -/
+  triggerSequenceRest : Option TriggerSequenceRest := none
+  /-- Flattened steps of the `mayThen` conditional waiting in `triggerSequenceRest`. -/
+  mayThenDrop : Nat := 0
+  /-- After an optional `mayThen` action cannot be performed, the sequence fold skips this many steps. -/
+  mayThenSkip : Nat := 0
+  /-- Conditional of the `mayThen` currently offered. -/
+  mayThenConditional : Option TriggeredAbility.TriggerResolution := none
+  /-- Accepting `Pending.mayResolve` applies this trigger resolution. -/
+  mayOnAccept : Option TriggeredAbility.TriggerResolution := none
+  /-- Declining `Pending.mayResolve` applies this trigger resolution instead of `mayOnAccept`. -/
+  mayOnDecline : Option TriggeredAbility.TriggerResolution := none
+  /-- Ability context for `mayOnAccept` and `mayOnDecline`. -/
+  mayContext : Option TriggerSequenceRest := none
+  /-- Power of the creature sacrificed for `putCounters .plusOneSacrificedPower`. -/
+  sacrificedPowerThisWay : Option Nat := none
+  /-- An artifact-or-discard cost accepted a `mayThen`. -/
+  mayThenResume : Bool := false
+  /-- Alternatives for a pending `TriggerResolution.or`. -/
+  triggerOr : Option TriggerOrRest := none
+  /-- Context for a pending Alliance or Gollum mode choice. -/
+  chooseModesRest : Option ChooseModesRest := none
+  /-- Declining `payOrLetCounter` resolves this effect instead of countering. -/
+  unlessPaysInstead : Option Effect := none
+  unlessPaysController : PlayerId := ⟨0⟩
+  unlessPaysTargets : Array Target := #[]
+  /-- The payer left without paying (CR 800.4f). -/
+  unlessPaysDue : Bool := false
+  /-- Accepting `mayResolve` resolves this effect. -/
+  mayEffect : Option Effect := none
+  mayController : PlayerId := ⟨0⟩
+  mayTargets : Array Target := #[]
+  /-- Alternatives for a pending `SpellResolution.or`. -/
+  spellOr : Array Effect := #[]
+  spellOrController : PlayerId := ⟨0⟩
+  spellOrTargets : Array Target := #[]
+  /-- `chooseTop` and `chooseBottom` name the library side, not list order. -/
+  spellOrLibrary : Bool := false
+  /-- After the pending surveil, a card with mana value at most this put into the graveyard goes to hand. -/
+  surveilReturnMvAtMost : Option Nat := none
+  /-- A noncreature, nonland card put into the graveyard by the pending surveil goes to hand. -/
+  surveilReturnNoncreatureNonland : Bool := false
+  /-- Continuation for an event paused on `Pending.chooseReplacement` (CR 616.1). -/
+  pendingReplacement : Option PendingReplacement := none
+  /-- Source of the current connive action, if any (MSH / CR 701.47). -/
+  conniveSource : Option ObjectId := none
+  /-- Put a +1/+1 counter on this permanent after the current discard choices finish. -/
+  plusOneAfterDiscards : Option ObjectId := none
+  /-- After the current library search shuffles, put a +1/+1 counter on this creature. -/
+  plusOneAfterSearch : Option ObjectId := none
+  /-- Remaining discards for Thirst for Knowledge (MSH 344). -/
+  thirstDiscardsLeft : Nat := 0
+  /-- Discarding a card of this type finishes `thirstDiscardsLeft` early. -/
+  thirstDiscardType : CardType := .artifact
+  /-- Remaining discards for a required multi-card discard. -/
+  pendingDiscardsLeft : Nat := 0
+  /-- After the current search, untap the land if its controller has this many lands. -/
+  untapSearchedIfLands : Option Nat := none
+  /-- Active resolving source object id and controller across pending resolution
+  choices and delayed triggered abilities (CR 608 / 610.1). -/
+  resolvingContext : Option (Option ObjectId × PlayerId) := none
+  /-- Active one-shot `EventCause` carried across a multi-step resolution choice
+  before the chosen cards move (CR 608.2c). -/
+  stashedCause : Option EventCause := none
+deriving Repr, Inhabited, BEq
+
+/-- Mutations to the top frame of `Game.continuations`. -/
+inductive ContinuationChange where
   | pendingDrawAfterScry (v : Option (PlayerId × Nat))
   | discardedCardThisWay (v : Option (PlayerId × ObjectId))
   | palantirAfterScry (v : Option (PlayerId × PlayerId × ObjectId))
-  | resolvingSpell (v : Option ObjectId)
-  | resolvingAbility (v : Option ObjectId)
   | recentTokenIds (v : Array ObjectId)
   | pushRecentTokenId (id : ObjectId)
   | fraAfterLook (v : Option (PlayerId × Option ObjectId × FraNext))
@@ -1352,49 +1575,178 @@ inductive EngineChange where
   | spellOrLibrary (v : Bool)
   | surveilReturnMvAtMost (v : Option Nat)
   | surveilReturnNoncreatureNonland (v : Bool)
-  | replacementOrder (ids : Array ReplacementId)
   | pendingReplacement (v : Option PendingReplacement)
-  | castingFromTop (v : Bool)
-  | delayedEndStepReturns (v : Array (ObjectId × EventCause))
-  | pushDelayedEndStepReturn (id : ObjectId) (cause : EventCause)
-  | extraTurns (v : Array PlayerId)
-  | powerUpsForbidden (v : Bool)
-  | delayedEndStepExiles (v : Array (ObjectId × EventCause))
-  | pushDelayedEndStepExile (id : ObjectId) (cause : EventCause)
   | conniveSource (v : Option ObjectId)
   | plusOneAfterDiscards (v : Option ObjectId)
-  | additionalCombatPhases (v : Nat)
-  | enrageGrantsAdditionalCombat (v : Nat)
-  | resolvingDivision (v : Array Nat)
-  | playerControl (v : Option (PlayerId × PlayerId))
-  | controlOnNextTakenTurn (v : Bool)
-  | pendingLokiCopy (v : Option (PlayerId × Option ObjectId × Int))
-  | assignCombatDamageEqualToughness (v : Option PlayerId)
-  | pendingFreeRGCreature (v : Option PlayerId)
   | plusOneAfterSearch (v : Option ObjectId)
   | thirstDiscardsLeft (v : Nat)
   | thirstDiscardType (v : CardType)
   | pendingDiscardsLeft (v : Nat)
+  | untapSearchedIfLands (v : Option Nat)
+  | resolvingContext (v : Option (Option ObjectId × PlayerId))
+  | stashedCause (v : Option EventCause)
+deriving Repr, Inhabited, BEq
+
+/-- Internal engine state mutations that are not rules-level occurrences. -/
+inductive EngineChange where
+  /-- Update a player's state. -/
+  | player (p : PlayerId) (c : PlayerChange)
+  | playerChanges (p : PlayerId) (cs : Array PlayerChange)
+  | players (v : Array Player)
+  | setPlayer (pl : Player)
+  /-- Update an object's state. -/
+  | object (id : ObjectId) (c : ObjectChange)
+  | objectChanges (id : ObjectId) (cs : Array ObjectChange)
+  | objects (v : Array GameObject)
+  | setObject (o : GameObject)
+  | removeObject (id : ObjectId)
+  | replaceObject (oldId : ObjectId) (fresh : GameObject)
+  /-- Update the stack. -/
+  | stack (v : Array StackEntry)
+  | pushStack (e : StackEntry)
+  | popStack
+  | removeFromStack (objectId : ObjectId)
+  | setStackEntryAt (idx : Nat) (e : StackEntry)
+  /-- Update the proposed spell or ability. -/
+  | proposedSpell (v : Option ProposedSpell)
+  | proposal (c : ProposalChange)
+  | proposalChanges (cs : Array ProposalChange)
+  /-- Update the continuation frame stack. -/
+  | continuations (frames : Array ContinuationFrame)
+  | pushContinuationFrame (frame : ContinuationFrame := {})
+  | popContinuationFrame
+  | continuation (c : ContinuationChange)
+  /-- Update game fields. -/
+  | priority (v : PlayerId)
+  | startingPlayer (v : PlayerId)
+  | pending (v : Pending)
+  | nextObjectId (v : Nat)
+  | nextEffectId (v : Nat)
+  | nextBatchId (v : Nat)
+  | activeEffects (v : Array (EffectId × ContinuousEffectSpec))
+  | timestamp (v : Nat)
+  | afterRandom (v : AfterRandom)
+  | result (v : Option GameResult)
+  | log (v : Array String)
+  | logMsg (msg : String)
+  | format (v : Format)
+  | brawl (v : Bool)
+  | consecutivePasses (v : Nat)
+  | cleanupGivesPriority (v : Bool)
+  | awaitingOpeningBegin (v : Bool)
+  | mulliganToDeclare (v : Array PlayerId)
+  | willMulligan (v : Array PlayerId)
+  | pushWillMulligan (p : PlayerId)
+  | mulliganToBottom (v : Array PlayerId)
+  | blockersQueue (v : Array PlayerId)
+  | waitingTriggers (v : Array WaitingTrigger)
+  | enqueueWaitingTriggers (wts : Array WaitingTrigger)
+  | pushWaitingTrigger (wt : WaitingTrigger)
+  | removeWaitingTriggersOf (p : PlayerId)
+  | removeWaitingTriggersForEvent (ev : TriggerEvent)
+  | removeWaitingTriggersForPlayerSource (p : PlayerId) (sourceId : ObjectId) (part2 : Bool)
+  | eraseFirstWaitingTriggerForPlayerSource (p : PlayerId) (sourceId : ObjectId) (part2 : Bool)
+  | firstStrikeDamageDone (v : Bool)
+  | pendingRegularCombatDamage (v : Bool)
+  | firstStrikeAssignedThisCombat (v : Array ObjectId)
+  | resolvingSpell (v : Option ObjectId)
+  | resolvingAbility (v : Option ObjectId)
+  | replacementOrder (ids : Array ReplacementId)
+  | castingFromTop (v : Bool)
+  | delayedTriggers (v : Array DelayedTrigger)
+  | pushDelayedTrigger (dt : DelayedTrigger)
+  | resolvingDivision (v : Array Nat)
   | wardQueue (v : Array WardObligation)
   | enqueueWard (ws : Array WardObligation)
-  | delayedEndStepSacrifices (v : Array (ObjectId × EventCause))
-  | pushDelayedEndStepSacrifice (id : ObjectId) (cause : EventCause)
-  | delayedGraveReturns (v : Array (ObjectId × PlayerId × EventCause))
-  | pushDelayedGraveReturn (id : ObjectId) (p : PlayerId) (cause : EventCause)
-  | delayedSynthetic (v : Array (PlayerId × Nat × EventCause))
-  | pushDelayedSynthetic (p : PlayerId) (n : Nat) (cause : EventCause)
-  | eaglesBirdsCauses (v : Array (PlayerId × Nat × EventCause))
-  | pushEaglesBirdsCause (p : PlayerId) (n : Nat) (cause : EventCause)
-  | linkedExileCauses (v : Array (ObjectId × EventCause))
-  | setLinkedExileCause (id : ObjectId) (cause : Option EventCause)
-  | untapSearchedIfLands (v : Option Nat)
   | ancestryLandsTapped (v : Array ObjectId)
   | pushAncestryLandTapped (id : ObjectId)
   | removeAncestryLandTapped (id : ObjectId)
-  | resolvingContext (v : Option (Option ObjectId × PlayerId))
   | sbaChecked
   | clearEvents
 deriving Repr, Inhabited, BEq
+
+namespace EngineChange
+@[inline] def pendingDrawAfterScry (v : Option (PlayerId × Nat)) : EngineChange := .continuation (.pendingDrawAfterScry v)
+@[inline] def discardedCardThisWay (v : Option (PlayerId × ObjectId)) : EngineChange := .continuation (.discardedCardThisWay v)
+@[inline] def palantirAfterScry (v : Option (PlayerId × PlayerId × ObjectId)) : EngineChange := .continuation (.palantirAfterScry v)
+@[inline] def recentTokenIds (v : Array ObjectId) : EngineChange := .continuation (.recentTokenIds v)
+@[inline] def pushRecentTokenId (id : ObjectId) : EngineChange := .continuation (.pushRecentTokenId id)
+@[inline] def fraAfterLook (v : Option (PlayerId × Option ObjectId × FraNext)) : EngineChange := .continuation (.fraAfterLook v)
+@[inline] def pendingFreeCopies (v : Option (PlayerId × Array ObjectId × Nat × Nat)) : EngineChange := .continuation (.pendingFreeCopies v)
+@[inline] def pendingMayCastFromExile (v : Option (PlayerId × Array ObjectId × Nat)) : EngineChange := .continuation (.pendingMayCastFromExile v)
+@[inline] def mayPayAlsoPlusOneOn (v : Option ObjectId) : EngineChange := .continuation (.mayPayAlsoPlusOneOn v)
+@[inline] def humansTappedThisWay (v : Nat) : EngineChange := .continuation (.humansTappedThisWay v)
+@[inline] def permanentsDestroyedThisWay (v : Nat) : EngineChange := .continuation (.permanentsDestroyedThisWay v)
+@[inline] def removedHopeThisWay (v : Bool) : EngineChange := .continuation (.removedHopeThisWay v)
+@[inline] def permanentDealtDamageThisWay (v : Option ObjectId) : EngineChange := .continuation (.permanentDealtDamageThisWay v)
+@[inline] def returnedPermanentThisWay (v : Bool) : EngineChange := .continuation (.returnedPermanentThisWay v)
+@[inline] def nthResolveThisWay (v : Option Nat) : EngineChange := .continuation (.nthResolveThisWay v)
+@[inline] def skipTriggerSequenceRest (v : Bool) : EngineChange := .continuation (.skipTriggerSequenceRest v)
+@[inline] def excessDamageThisWay (v : Nat) : EngineChange := .continuation (.excessDamageThisWay v)
+@[inline] def destroyedForAmassThisWay (v : Bool) : EngineChange := .continuation (.destroyedForAmassThisWay v)
+@[inline] def amassControllerThisWay (v : Option PlayerId) : EngineChange := .continuation (.amassControllerThisWay v)
+@[inline] def amassAmountThisWay (v : Nat) : EngineChange := .continuation (.amassAmountThisWay v)
+@[inline] def amassYouControlledThisWay (v : Bool) : EngineChange := .continuation (.amassYouControlledThisWay v)
+@[inline] def milledIdsThisWay (v : Array ObjectId) : EngineChange := .continuation (.milledIdsThisWay v)
+@[inline] def pushMilledIdThisWay (id : ObjectId) : EngineChange := .continuation (.pushMilledIdThisWay id)
+@[inline] def revealedIdsThisWay (v : Array ObjectId) : EngineChange := .continuation (.revealedIdsThisWay v)
+@[inline] def opponentsMilledThisWay (v : Bool) : EngineChange := .continuation (.opponentsMilledThisWay v)
+@[inline] def palantirChoiceReady (v : Option (PlayerId × PlayerId × ObjectId)) : EngineChange := .continuation (.palantirChoiceReady v)
+@[inline] def grimaImpulseReady (v : Bool) : EngineChange := .continuation (.grimaImpulseReady v)
+@[inline] def grimaImpulseVictim (v : Option PlayerId) : EngineChange := .continuation (.grimaImpulseVictim v)
+@[inline] def grimaImpulseFound (v : Option ObjectId) : EngineChange := .continuation (.grimaImpulseFound v)
+@[inline] def grimaImpulseOthers (v : Array ObjectId) : EngineChange := .continuation (.grimaImpulseOthers v)
+@[inline] def planWasSacrificed (v : Bool) : EngineChange := .continuation (.planWasSacrificed v)
+@[inline] def sourceWasSacrificed (v : Bool) : EngineChange := .continuation (.sourceWasSacrificed v)
+@[inline] def exiledIdsThisWay (v : Array ObjectId) : EngineChange := .continuation (.exiledIdsThisWay v)
+@[inline] def pushExiledIdThisWay (id : ObjectId) : EngineChange := .continuation (.pushExiledIdThisWay id)
+@[inline] def notedCopyObject (v : Option GameObject) : EngineChange := .continuation (.notedCopyObject v)
+@[inline] def notedHostId (v : Option ObjectId) : EngineChange := .continuation (.notedHostId v)
+@[inline] def handDiscardedThisWay (v : Option Nat) : EngineChange := .continuation (.handDiscardedThisWay v)
+@[inline] def notedSourceThisWay (v : Option ObjectId) : EngineChange := .continuation (.notedSourceThisWay v)
+@[inline] def equipmentAttachedHost (v : Option ObjectId) : EngineChange := .continuation (.equipmentAttachedHost v)
+@[inline] def notedCountThisWay (v : Nat) : EngineChange := .continuation (.notedCountThisWay v)
+@[inline] def createdTokenThisWay (v : Option ObjectId) : EngineChange := .continuation (.createdTokenThisWay v)
+@[inline] def putArtifactThisWay (v : Option (ObjectId × ObjectId)) : EngineChange := .continuation (.putArtifactThisWay v)
+@[inline] def playExiledThisWay (v : Option ObjectId) : EngineChange := .continuation (.playExiledThisWay v)
+@[inline] def armSurveilReturn (v : Bool) : EngineChange := .continuation (.armSurveilReturn v)
+@[inline] def triggerSequenceRest (v : Option TriggerSequenceRest) : EngineChange := .continuation (.triggerSequenceRest v)
+@[inline] def setTriggerSequenceRestSteps (steps : List TriggeredAbility.TriggerResolution) : EngineChange := .continuation (.setTriggerSequenceRestSteps steps)
+@[inline] def setTriggerSequenceRestFromMay (steps : List TriggeredAbility.TriggerResolution) : EngineChange := .continuation (.setTriggerSequenceRestFromMay steps)
+@[inline] def mayThenDrop (v : Nat) : EngineChange := .continuation (.mayThenDrop v)
+@[inline] def mayThenSkip (v : Nat) : EngineChange := .continuation (.mayThenSkip v)
+@[inline] def mayThenConditional (v : Option TriggeredAbility.TriggerResolution) : EngineChange := .continuation (.mayThenConditional v)
+@[inline] def mayOnAccept (v : Option TriggeredAbility.TriggerResolution) : EngineChange := .continuation (.mayOnAccept v)
+@[inline] def mayOnDecline (v : Option TriggeredAbility.TriggerResolution) : EngineChange := .continuation (.mayOnDecline v)
+@[inline] def mayContext (v : Option TriggerSequenceRest) : EngineChange := .continuation (.mayContext v)
+@[inline] def sacrificedPowerThisWay (v : Option Nat) : EngineChange := .continuation (.sacrificedPowerThisWay v)
+@[inline] def mayThenResume (v : Bool) : EngineChange := .continuation (.mayThenResume v)
+@[inline] def triggerOr (v : Option TriggerOrRest) : EngineChange := .continuation (.triggerOr v)
+@[inline] def chooseModesRest (v : Option ChooseModesRest) : EngineChange := .continuation (.chooseModesRest v)
+@[inline] def unlessPaysInstead (v : Option Effect) : EngineChange := .continuation (.unlessPaysInstead v)
+@[inline] def unlessPaysController (v : PlayerId) : EngineChange := .continuation (.unlessPaysController v)
+@[inline] def unlessPaysTargets (v : Array Target) : EngineChange := .continuation (.unlessPaysTargets v)
+@[inline] def unlessPaysDue (v : Bool) : EngineChange := .continuation (.unlessPaysDue v)
+@[inline] def mayEffect (v : Option Effect) : EngineChange := .continuation (.mayEffect v)
+@[inline] def mayController (v : PlayerId) : EngineChange := .continuation (.mayController v)
+@[inline] def mayTargets (v : Array Target) : EngineChange := .continuation (.mayTargets v)
+@[inline] def spellOr (v : Array Effect) : EngineChange := .continuation (.spellOr v)
+@[inline] def spellOrController (v : PlayerId) : EngineChange := .continuation (.spellOrController v)
+@[inline] def spellOrTargets (v : Array Target) : EngineChange := .continuation (.spellOrTargets v)
+@[inline] def spellOrLibrary (v : Bool) : EngineChange := .continuation (.spellOrLibrary v)
+@[inline] def surveilReturnMvAtMost (v : Option Nat) : EngineChange := .continuation (.surveilReturnMvAtMost v)
+@[inline] def surveilReturnNoncreatureNonland (v : Bool) : EngineChange := .continuation (.surveilReturnNoncreatureNonland v)
+@[inline] def pendingReplacement (v : Option PendingReplacement) : EngineChange := .continuation (.pendingReplacement v)
+@[inline] def conniveSource (v : Option ObjectId) : EngineChange := .continuation (.conniveSource v)
+@[inline] def plusOneAfterDiscards (v : Option ObjectId) : EngineChange := .continuation (.plusOneAfterDiscards v)
+@[inline] def plusOneAfterSearch (v : Option ObjectId) : EngineChange := .continuation (.plusOneAfterSearch v)
+@[inline] def thirstDiscardsLeft (v : Nat) : EngineChange := .continuation (.thirstDiscardsLeft v)
+@[inline] def thirstDiscardType (v : CardType) : EngineChange := .continuation (.thirstDiscardType v)
+@[inline] def pendingDiscardsLeft (v : Nat) : EngineChange := .continuation (.pendingDiscardsLeft v)
+@[inline] def untapSearchedIfLands (v : Option Nat) : EngineChange := .continuation (.untapSearchedIfLands v)
+@[inline] def resolvingContext (v : Option (Option ObjectId × PlayerId)) : EngineChange := .continuation (.resolvingContext v)
+@[inline] def stashedCause (v : Option EventCause) : EngineChange := .continuation (.stashedCause v)
+end EngineChange
 
 /-- One change to the game, without the turn number. `GameEvent` stores the turn,
 batch, and cause. -/
@@ -1737,8 +2089,10 @@ def activated (turn : Nat) (player : PlayerId) (source : EventObject)
     (ability : ObjectId := source.id.getD ⟨0⟩)
     (loyaltyDelta : Option Int := if loyalty then some 0 else none)
     (powerUp : Bool := false) (boast : Bool := false)
+    (abilityIdx : Option Nat := none) (exhaust : Bool := false)
     (cause : Option EventCause := none) : GameEvent :=
-  rules turn (.cast (.abilityActivated ability source player (.nonMana loyaltyDelta equip powerUp boast)))
+  rules turn (.cast (.abilityActivated ability source player
+      (.nonMana loyaltyDelta equip powerUp boast abilityIdx exhaust)))
     (cause.getD (.gameRule .abilityActivated))
 
 /-- `ability` on `source` triggered for `controller` from batch `origin` (CR 603.2). -/
@@ -1753,6 +2107,13 @@ def triggerPutOnStack (turn : Nat) (stackObj : ObjectId) (source : EventObject)
     (controller : PlayerId)
     (cause : Option EventCause := none) : GameEvent :=
   rules turn (.triggerQueue (.putOnStack stackObj source controller))
+    (cause.getD (.gameRule .triggeredAbility))
+
+/-- Mode `mode` of a modal triggered ability on `source` was chosen (CR 603.3c / 700.2). -/
+def triggerModeChosen (turn : Nat) (source : ObjectId) (mode : Nat)
+    (lifetime : Bool := false)
+    (cause : Option EventCause := none) : GameEvent :=
+  rules turn (.triggerQueue (.modeChosen source mode lifetime))
     (cause.getD (.gameRule .triggeredAbility))
 
 /-- `original` on the stack was copied as `copy` under `controller`'s control (CR 707.10). -/
@@ -1821,12 +2182,69 @@ def beheld (turn : Nat) (player : PlayerId) (quality : CardSubtype)
     (cause : Option EventCause := none) : GameEvent :=
   rulesOrUnclassified turn (.player (.beheld player quality)) cause
 
+/-- `player` added `units` of mana to their mana pool (CR 106.4 / 605.3b). -/
+def manaAdded (turn : Nat) (player : PlayerId) (units : Array ManaUnit)
+    (cause : Option EventCause := none) : GameEvent :=
+  rules turn (.player (.manaAdded player units))
+    (cause.getD (.gameRule .abilityActivated))
+
+/-- `player` spent `units` of mana for `forObject` (CR 118.3 / 601.2h). -/
+def manaSpent (turn : Nat) (player : PlayerId) (units : Array ManaUnit)
+    (forObject : ObjectId := ⟨0⟩)
+    (cause : Option EventCause := none) : GameEvent :=
+  rules turn (.player (.manaSpent player units forObject))
+    (cause.getD (.costPayment .mana player (some forObject)))
+
 /-- `player` spent mana (CR 118.3). -/
 def spentMana (turn : Nat) (player : PlayerId) (amount : Nat)
     (forObject : Option ObjectId := none)
     (cause : Option EventCause := none) : GameEvent :=
-  rules turn (.spentMana player amount)
+  rules turn
+    (.player (.manaSpent player (Array.replicate amount { mana := .colorless }) (forObject.getD ⟨0⟩)))
     (cause.getD (.costPayment .mana player forObject))
+
+/-- `player` looked at `cards`. -/
+def lookedAt (turn : Nat) (player : PlayerId) (cards : Array ObjectId)
+    (cause : Option EventCause := none) : GameEvent :=
+  rules turn (.player (.lookedAt player cards))
+    (cause.getD (.oneShotEffect none none (some player)))
+
+/-- `player` revealed `cards` (CR 701.20). -/
+def revealed (turn : Nat) (player : PlayerId) (cards : Array ObjectId)
+    (cause : Option EventCause := none) : GameEvent :=
+  rules turn (.player (.revealed player cards))
+    (cause.getD (.oneShotEffect none none (some player)))
+
+/-- `player` searched `libraryOwner`'s library, finding `found` (CR 701.23). -/
+def searched (turn : Nat) (player : PlayerId) (libraryOwner : PlayerId)
+    (found : Array ObjectId := #[])
+    (cause : Option EventCause := none) : GameEvent :=
+  rules turn (.player (.searched player libraryOwner found))
+    (cause.getD (.oneShotEffect none none (some player)))
+
+/-- `libraryOwner`'s library was shuffled into `newOrder` (CR 701.24). -/
+def shuffled (turn : Nat) (libraryOwner : PlayerId) (newOrder : Array ObjectId)
+    (cause : Option EventCause := none) : GameEvent :=
+  rules turn (.player (.shuffled libraryOwner newOrder))
+    (cause.getD (.oneShotEffect none none (some libraryOwner)))
+
+/-- `player` became the monarch (CR 725). -/
+def becameMonarch (turn : Nat) (player : PlayerId) (previous : Option PlayerId := none)
+    (cause : Option EventCause := none) : GameEvent :=
+  rules turn (.player (.becameMonarch player previous))
+    (cause.getD (.oneShotEffect none none (some player)))
+
+/-- `player` gained lasting designation `d` (CR 702.131). -/
+def gainedDesignation (turn : Nat) (player : PlayerId) (d : PlayerDesignation)
+    (cause : Option EventCause := none) : GameEvent :=
+  rules turn (.player (.gainedDesignation player d))
+    (cause.getD (.gameRule .staticAbility))
+
+/-- The game ended with `result` (CR 104). -/
+def gameEnded (turn : Nat) (result : GameResult)
+    (cause : Option EventCause := none) : GameEvent :=
+  rules turn (.player (.gameEnded result))
+    (cause.getD (.gameRule .playerLeftGame))
 
 /-- `player` got poison counters (CR 122.1c). -/
 def poisoned (turn : Nat) (player : PlayerId) (n : Nat)
@@ -1855,6 +2273,18 @@ def sheHulkDealtDamage (turn : Nat) (player : PlayerId)
   rules turn (.player (.sheHulkDealtDamage player))
     (cause.getD (.oneShotEffect id none (some player)))
 
+/-- `player` chose the optional once-each-turn action of `source` (MSH 69). -/
+def optionalOnceActed (turn : Nat) (player : PlayerId) (source : ObjectId)
+    (cause : Option EventCause := none) : GameEvent :=
+  rules turn (.player (.optionalOnceActed player source))
+    (cause.getD (.oneShotEffect none (some source) (some player)))
+
+/-- `player` attempted to draw a card from an empty library (CR 121.4 / 704.5b). -/
+def drawFromEmptyAttempted (turn : Nat) (player : PlayerId)
+    (cause : Option EventCause := none) : GameEvent :=
+  rules turn (.player (.drawFromEmptyAttempted player))
+    (cause.getD (.turnBased .drawStepDraw))
+
 /-- `object` untapped, or a stun counter replaced that untap (CR 701.26b / 122.1d). -/
 def untapped (turn : Nat) (object : EventObject) (replacedByStun : Bool := false)
     (cause : Option EventCause := none) : GameEvent :=
@@ -1870,15 +2300,17 @@ def removedFromCombat (turn : Nat) (object : EventObject)
 
 /-- `player`'s mana pool emptied (CR 500.5 / 703.4q). -/
 def manaEmptied (turn : Nat) (player : PlayerId)
-    (amount : Nat := 0) (keptColorless : Bool := false)
+    (units : Array ManaUnit := #[]) (keptColorless : Bool := false)
     (cause : Option EventCause := none) : GameEvent :=
-  rules turn (.player (.manaEmptied player amount keptColorless))
+  rules turn (.player (.manaEmptied player units keptColorless))
     (cause.getD (.turnBased .emptyManaPools))
 
 /-- `player` lost the game (CR 104.3 / 704.5a–c). -/
 def playerLost (turn : Nat) (player : PlayerId)
+    (reason : LossReason := .lifeZeroOrLess)
     (cause : Option EventCause := none) : GameEvent :=
-  rulesOrUnclassified turn (.player (.lost player)) cause
+  rules turn (.player (.lost player reason))
+    (cause.getD (.stateBased .lifeZeroOrLess))
 
 /-- `player` left the game (CR 104.5 / 800.4a). -/
 def playerLeftGame (turn : Nat) (player : PlayerId)
@@ -1887,19 +2319,14 @@ def playerLeftGame (turn : Nat) (player : PlayerId)
     (cause.getD (.gameRule .playerLeftGame))
 
 /-- A continuous effect begins (CR 611). -/
-def effectCreated (turn : Nat) (id : EffectId) (effect : ContinuousEffect)
+def effectCreated (turn : Nat) (id : EffectId) (spec : ContinuousEffectSpec)
     (cause : Option EventCause := none) : GameEvent :=
-  rulesOrUnclassified turn (.effectCreated id effect) cause
+  rulesOrUnclassified turn (.continuousEffect (.created id spec)) cause
 
 /-- A continuous effect ends (CR 611). -/
-def effectExpired (turn : Nat) (id : EffectId) (effect : ContinuousEffect)
+def effectExpired (turn : Nat) (id : EffectId) (_spec : Option ContinuousEffectSpec := none)
     (cause : Option EventCause := none) : GameEvent :=
-  rulesOrUnclassified turn (.effectExpired id effect) cause
-
-/-- Bookkeeping on an existing continuous effect `id` (CR 611). -/
-def effectUpdated (turn : Nat) (id : EffectId) (effect : ContinuousEffect)
-    (cause : Option EventCause := none) : GameEvent :=
-  rulesOrUnclassified turn (.effectUpdated id effect) cause
+  rulesOrUnclassified turn (.continuousEffect (.expired id)) cause
 
 /-- Same event, sent to `toZone` instead. Used after a zone replacement (CR 614.6). -/
 def withDestination (e : GameEvent) (toZone : Zone) (discarded : Bool) : GameEvent :=
@@ -2285,10 +2712,10 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : ObjectId)
     | .zone (.moved before _ .battlefield (.graveyard owner) .sacrifice actor _ _), .youSacrificeToken =>
       let p := actor.getD (before.controller.getD before.owner)
       you p && before.token && owner == before.owner
-    | .cast (.abilityActivated _ _ p (.nonMana (some _) _ _ _)), .youActivateLoyaltyAbility => you p
+    | .cast (.abilityActivated _ _ p (.nonMana (some _) ..)), .youActivateLoyaltyAbility => you p
     | .cast (.abilityActivated _ source p _), .youActivateCreatureAbility =>
       you p && source.creature
-    | .cast (.abilityActivated _ _ p (.nonMana (some _) _ _ _)), .fra .opponentActivatesLoyaltyAbility => !you p
+    | .cast (.abilityActivated _ _ p (.nonMana (some _) ..)), .fra .opponentActivatesLoyaltyAbility => !you p
     | .cast (.targeted _ targets _), .becomesTarget =>
       targets.any (fun t => match t with | .permanent oid => oid == sourceId | _ => false)
     | .zone (.created object p), .fra .youCreateCreatureTokens => you p && object.creature
@@ -2398,7 +2825,7 @@ def activatedLoyalty (events : Array GameEvent) (turn : Nat) (p : PlayerId) : Bo
   events.any fun e =>
     e.turn == turn &&
       match e.change with
-      | .rules (.cast (.abilityActivated _ _ q (.nonMana (some _) _ _ _))) => q == p
+      | .rules (.cast (.abilityActivated _ _ q (.nonMana (some _) ..))) => q == p
       | _ => false
 
 /-- `p` was dealt noncombat damage on `turn`. -/
@@ -2415,9 +2842,33 @@ def dealtNoncombat (events : Array GameEvent) (turn : Nat) (p : PlayerId) : Bool
 def manaSpentOn (events : Array GameEvent) (spell : ObjectId) : Nat :=
   events.foldl (fun n e =>
     match e.change, e.cause with
-    | .rules (.spentMana _ amount), .costPayment .mana _ (some oid) =>
-      if oid == spell then max n amount else n
+    | .rules (.player (.manaSpent _ units forObj)), .costPayment .mana _ oid? =>
+      if forObj == spell || oid? == some spell then max n units.size else n
+    | .rules (.player (.manaSpent _ units forObj)), _ =>
+      if forObj == spell then max n units.size else n
     | _, _ => n) 0
+
+/-- Whether mana from a Treasure was spent to cast `spell` (CR 106.6). -/
+def treasureManaSpentOn (events : Array GameEvent) (spell : ObjectId) : Bool :=
+  events.any fun e =>
+    match e.change, e.cause with
+    | .rules (.player (.manaSpent _ units forObj)), .costPayment .mana _ oid? =>
+      (forObj == spell || oid? == some spell) &&
+        units.any (·.restriction == some (.fra .fromTreasure))
+    | .rules (.player (.manaSpent _ units forObj)), _ =>
+      forObj == spell && units.any (·.restriction == some (.fra .fromTreasure))
+    | _, _ => false
+
+/-- Whether legendary-restricted mana (Delighted Halfling) was spent to cast `spell` (CR 106.6). -/
+def legendaryManaSpentOn (events : Array GameEvent) (spell : ObjectId) : Bool :=
+  events.any fun e =>
+    match e.change, e.cause with
+    | .rules (.player (.manaSpent _ units forObj)), .costPayment .mana _ oid? =>
+      (forObj == spell || oid? == some spell) &&
+        units.any (·.restriction == some (.fra .legendarySpell))
+    | .rules (.player (.manaSpent _ units forObj)), _ =>
+      forObj == spell && units.any (·.restriction == some (.fra .legendarySpell))
+    | _, _ => false
 
 /-- Same event, naming the object id it has after the zone change or copy (CR 400.7 / 707.10). -/
 def withObjectId (e : GameEvent) (id : ObjectId) : GameEvent :=
@@ -2481,7 +2932,7 @@ def equipActivations (events : Array GameEvent) (turn : Nat) (p : PlayerId) : Na
     if e.turn != turn then n
     else
       match e.change with
-      | .rules (.cast (.abilityActivated _ _ q (.nonMana _ true _ _))) => if q == p then n + 1 else n
+      | .rules (.cast (.abilityActivated _ _ q (.nonMana _ true ..))) => if q == p then n + 1 else n
       | _ => n) 0
 
 /-- Mana values of spells `p` cast on `turn`, oldest first. Copies are absent. -/
@@ -2610,48 +3061,191 @@ def objectEntered (events : Array GameEvent) (turn : Nat) (id : ObjectId) : Bool
       | .rules (.zone (.created object _)) => object.id == some id
       | _ => false
 
-/-- Resolve `spell` back through `StackObjectEvent.copied` to the root spell id on the stack (CR 707.10). -/
+/-- If `id` is a permanent that entered the battlefield from the stack (or later
+left the battlefield), return the stack `ObjectId` it resolved from (CR 400.7d);
+otherwise `id`. -/
+def stackSpellIdOf (events : Array GameEvent) (id : ObjectId) : ObjectId :=
+  events.foldr (fun e cur =>
+    match e.change with
+    | .rules (.zone (.moved before after .stack .battlefield ..)) =>
+      if after.id == some cur then before.id.getD cur else cur
+    | .rules (.zone (.moved before after .battlefield _ ..)) =>
+      if after.id == some cur then before.id.getD cur else cur
+    | _ => cur) id
+
+/-- Resolve `spell` back through `ZoneEvent.moved` (`.stack → .battlefield`) and
+`StackObjectEvent.copied` to the root spell id on the stack (CR 400.7d / 707.10). -/
 def rootCopiedSpellId (events : Array GameEvent) (spell : ObjectId) : ObjectId :=
+  let sid := stackSpellIdOf events spell
   events.foldr (fun e cur =>
     match e.change with
     | .rules (.stackObject (.copied original copy _)) =>
       if copy.id == some cur then original else cur
-    | _ => cur) spell
+    | _ => cur) sid
 
-/-- The cast of `spell` was from a graveyard. -/
-def castFromGraveyard (events : Array GameEvent) (spell : ObjectId) : Bool :=
+/-- Whether `id` (or the spell it resolved from, CR 400.7d) was cast and is not
+a stack copy (CR 707.10). -/
+def wasCast (events : Array GameEvent) (id : ObjectId) (isCopy : Bool := false) : Bool :=
+  if isCopy then false
+  else
+    let sid := stackSpellIdOf events id
+    events.any fun e =>
+      match e.change with
+      | .rules (.cast (.spellCast s _ _)) => s.id == some sid || s.id == some id
+      | .rules (.cast (.proposed obj _ _ _)) => obj == sid || obj == id
+      | .rules (.zone (.moved before after .stack .battlefield ..)) =>
+        (after.id == some id || after.id == some sid) && !before.isCopy && !after.isCopy
+      | .rules (.zone (.moved _ after _ .stack .cast ..)) =>
+        after.id == some sid || after.id == some id
+      | _ => false
+
+/-- The cast of `spell` (or the spell `spell` resolved from, CR 400.7d) was from a graveyard. -/
+def castFromGraveyard (events : Array GameEvent) (spell : ObjectId) (isCopy : Bool := false) : Bool :=
+  if isCopy then false
+  else
+    let sid := stackSpellIdOf events spell
+    events.any fun e =>
+      match e.change with
+      | .rules (.cast (.spellCast s _ (.graveyard _))) => s.id == some sid || s.id == some spell
+      | .rules (.cast (.proposed obj _ (.graveyard _) _)) => obj == sid || obj == spell
+      | .rules (.cast (.proposed obj _ _ (.alternative "flashback"))) => obj == sid || obj == spell
+      | .rules (.zone (.moved _ after (.graveyard _) .stack .cast ..)) =>
+        after.id == some sid || after.id == some spell
+      | _ => false
+
+/-- The cast of `spell` (or the spell `spell` resolved from, CR 400.7d) was from a hand. -/
+def castFromHand (events : Array GameEvent) (spell : ObjectId) (isCopy : Bool := false) : Bool :=
+  if isCopy then false
+  else
+    let sid := stackSpellIdOf events spell
+    events.any fun e =>
+      match e.change with
+      | .rules (.cast (.spellCast s _ (.hand _))) => s.id == some sid || s.id == some spell
+      | .rules (.cast (.proposed obj _ (.hand _) _)) => obj == sid || obj == spell
+      | .rules (.zone (.moved _ after (.hand _) .stack .cast ..)) =>
+        after.id == some sid || after.id == some spell
+      | _ => false
+
+/-- `spell` was proposed as a prepared spell copy (`way == .alternative "prepare"`). -/
+def isPreparedSpell (events : Array GameEvent) (spell : ObjectId) : Bool :=
+  let sid := stackSpellIdOf events spell
   events.any fun e =>
     match e.change with
-    | .rules (.cast (.spellCast s _ (.graveyard _))) => s.id == some spell
-    | .rules (.cast (.proposed obj _ (.graveyard _) _)) => obj == spell
+    | .rules (.cast (.proposed obj _ _ (.alternative "prepare"))) => obj == sid || obj == spell
     | _ => false
+
+/-- `spell` was kicked (or copied from a kicked spell, CR 707.10 / 400.7d). -/
+def wasKicked (events : Array GameEvent) (spell : ObjectId) : Bool :=
+  let sid := stackSpellIdOf events spell
+  let root := rootCopiedSpellId events spell
+  events.any fun e =>
+    match e.change with
+    | .rules (.cast (.announced obj _ _ costs)) =>
+      (obj == spell || obj == sid || obj == root) &&
+        costs.any (fun | .kicker => true | _ => false)
+    | _ => false
+
+/-- Recipient promised a gift as `spell` was cast (or copied, CR 707.10 / 400.7d). -/
+def giftPromisedTo? (events : Array GameEvent) (spell : ObjectId) : Option PlayerId :=
+  let sid := stackSpellIdOf events spell
+  let root := rootCopiedSpellId events spell
+  events.findSomeRev? fun e =>
+    match e.change with
+    | .rules (.cast (.announced obj _ _ costs)) =>
+      if obj == spell || obj == sid || obj == root then
+        costs.findSome? (fun | .gift p => some p | _ => none)
+      else none
+    | _ => none
 
 /-- A gift was promised as `spell` was cast (or copied, CR 707.10). -/
 def giftPromised (events : Array GameEvent) (spell : ObjectId) : Bool :=
-  let root := rootCopiedSpellId events spell
-  events.any fun e =>
-    match e.change with
-    | .rules (.cast (.announced obj _ _ costs)) =>
-      (obj == spell || obj == root) &&
-        costs.any (fun | .gift _ => true | _ => false)
-    | _ => false
+  (giftPromisedTo? events spell).isSome
 
 /-- `spell` was cast using teamwork (or copied from a teamwork spell, CR 707.10). -/
 def teamwork (events : Array GameEvent) (spell : ObjectId) : Bool :=
+  let sid := stackSpellIdOf events spell
   let root := rootCopiedSpellId events spell
   events.any fun e =>
     match e.change with
     | .rules (.cast (.announced obj _ _ costs)) =>
-      (obj == spell || obj == root) &&
+      (obj == spell || obj == sid || obj == root) &&
         costs.any (fun | .teamwork _ => true | _ => false)
     | _ => false
+
+/-- Sneak attack target recorded when `spell` was cast (or copied, CR 707.10).
+Returns `some atkTarget?` when sneak was paid, or `none` when sneak was not paid. -/
+def sneakAttackTarget? (events : Array GameEvent) (spell : ObjectId) : Option (Option AttackTarget) :=
+  let sid := stackSpellIdOf events spell
+  let root := rootCopiedSpellId events spell
+  events.findSomeRev? fun e =>
+    match e.change with
+    | .rules (.cast (.announced obj _ _ costs)) =>
+      if obj == spell || obj == sid || obj == root then
+        costs.findSome? (fun | .sneak _ atk => some atk | _ => none)
+      else none
+    | _ => none
+
+/-- Value of X announced for `id` (or the spell `id` resolved/moved/copied from, CR 107.3a / 400.7d / 707.10). -/
+def chosenXOf? (events : Array GameEvent) (id : ObjectId) : Option Nat :=
+  let moveOrigin :=
+    events.foldr (fun e cur =>
+      match e.change with
+      | .rules (.zone (.moved before after .stack _ ..)) =>
+        if after.id == some cur then before.id.getD cur else cur
+      | _ => cur) id
+  let root := rootCopiedSpellId events moveOrigin
+  events.findSomeRev? fun e =>
+    match e.change with
+    | .rules (.cast (.announced obj _ (some x) _)) =>
+      if obj == id || obj == moveOrigin || obj == root then some x else none
+    | .rules (.zone (.moved before after .stack _ ..)) =>
+      if after.id == some id || before.id == some moveOrigin || before.id == some root then
+        before.chosenX.orElse (fun _ => after.chosenX)
+      else none
+    | .rules (.stackObject (.copied orig copy _)) =>
+      if copy.id == some id || orig == moveOrigin || orig == root then copy.chosenX else none
+    | _ => none
+
+/-- Cards exiled from a graveyard to pay the boast activation cost of `abilityId` (MSH 227). -/
+def boastExiledOf (events : Array GameEvent) (abilityId : ObjectId) : Array ObjectId :=
+  events.foldl (fun acc e =>
+    match e.change, e.cause with
+    | .rules (.zone (.moved _ after _ .exile ..)), .costPayment .exile _ (some aid) =>
+      if aid == abilityId then
+        match after.id with
+        | some id => acc.push id
+        | none => acc
+      else acc
+    | _, _ => acc) #[]
+
+/-- Last-known `before` snapshot for `id` from `ZoneEvent.moved` (CR 113.7a / 608.2h).
+Traces non-battlefield moves backward to find the snapshot when the object left `.battlefield`. -/
+def lastKnownBefore? (events : Array GameEvent) (id : ObjectId) : Option EventObject :=
+  let bfId :=
+    events.foldr (fun e cur =>
+      match e.change with
+      | .rules (.zone (.moved before after fromZone _ ..)) =>
+        if fromZone != .battlefield && after.id == some cur then before.id.getD cur else cur
+      | _ => cur) id
+  (events.findSomeRev? fun e =>
+    match e.change with
+    | .rules (.zone (.moved before after .battlefield _ ..)) =>
+      if before.id == some bfId || after.id == some bfId || before.id == some id || after.id == some id then
+        some before
+      else none
+    | _ => none).orElse fun _ =>
+    events.findSomeRev? fun e =>
+      match e.change with
+      | .rules (.zone (.moved before after ..)) =>
+        if before.id == some id || after.id == some id then some before else none
+      | _ => none
 
 /-- `id` entered from a spell cast for its impending cost (CR 702.176,
 ruling 970). -/
 def castForImpending (events : Array GameEvent) (id : ObjectId) : Bool :=
   events.any fun e =>
     match e.change with
-    | .rules (.effectCreated _ (.notACreature oid)) => oid == id
+    | .rules (.continuousEffect (.created _ eff)) => eff == .notACreature id
     | _ => false
 
 /-- All rules events caused by a one-shot effect in `events`, paired with their
@@ -2661,37 +3255,41 @@ def oneShotEffectsWithId (events : Array GameEvent) : Array (EffectId × RulesEv
     match e.cause.oneShotEffectId?, e.change with
     | some id, .rules r =>
       match r with
-      | .effectCreated .. | .effectExpired .. | .effectUpdated .. => acc
+      | .continuousEffect .. => acc
       | _ => acc.push (id, r)
     | _, _ => acc) #[]
 
 /-- All continuous effects created in `events` with their `EffectId`s, in chronological order (CR 611). -/
-def createdEffectsWithId (events : Array GameEvent) : Array (EffectId × ContinuousEffect) :=
+def createdEffectsWithId (events : Array GameEvent) : Array (EffectId × ContinuousEffectSpec) :=
   events.foldl (fun acc e =>
     match e.change with
-    | .rules (.effectCreated id eff) => acc.push (id, eff)
+    | .rules (.continuousEffect (.created id eff)) => acc.push (id, eff)
     | _ => acc) #[]
 
 /-- All continuous effects created in `events`, in chronological order (CR 611). -/
-def createdEffects (events : Array GameEvent) : Array ContinuousEffect :=
+def createdEffects (events : Array GameEvent) : Array ContinuousEffectSpec :=
   events.foldl (fun acc e =>
     match e.change with
-    | .rules (.effectCreated _ eff) => acc.push eff
+    | .rules (.continuousEffect (.created _ eff)) => acc.push eff
     | _ => acc) #[]
 
 /-- All continuous effects that expired in `events` with their `EffectId`s, in chronological order (CR 611). -/
-def expiredEffectsWithId (events : Array GameEvent) : Array (EffectId × ContinuousEffect) :=
+def expiredEffectsWithId (events : Array GameEvent) : Array (EffectId × ContinuousEffectSpec) :=
   events.foldl (fun acc e =>
     match e.change with
-    | .rules (.effectExpired id eff) => acc.push (id, eff)
+    | .rules (.continuousEffect (.expired id)) =>
+      match events.findSomeRev? (fun ev =>
+        match ev.change with
+        | .rules (.continuousEffect (.created cid eff)) =>
+          if cid == id then some eff else none
+        | _ => none) with
+      | some eff => acc.push (id, eff)
+      | none => acc
     | _ => acc) #[]
 
 /-- All continuous effects that expired in `events`, in chronological order (CR 611). -/
-def expiredEffects (events : Array GameEvent) : Array ContinuousEffect :=
-  events.foldl (fun acc e =>
-    match e.change with
-    | .rules (.effectExpired _ eff) => acc.push eff
-    | _ => acc) #[]
+def expiredEffects (events : Array GameEvent) : Array ContinuousEffectSpec :=
+  (expiredEffectsWithId events).map (·.2)
 
 end GameEvent
 

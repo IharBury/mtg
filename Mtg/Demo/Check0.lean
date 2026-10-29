@@ -229,7 +229,7 @@ Nissa (CR 506.3). -/
 #guard
   let g := Tests.giantReadyToAssign
   let giant := Tests.namedPermanent g "Hill Giant"
-  let g := g.changeStatus giant.id (.grantUntilEot Keyword.trample)
+  let g := g.createEffect (.keywordsUntilEot giant.id Keyword.trample)
   let giant := Tests.namedPermanent g "Hill Giant"
   let elves := g.battlefield.filter (fun o => o.name == "Llanowar Elves")
   match applyAssign g ⟨0⟩
@@ -566,7 +566,7 @@ Nissa (CR 506.3). -/
 
 #guard isPassShortcutCmd "attack" ["step"]
 
-#guard !reachedPassUntil (Tests.afterDraw.change (.step .declareAttackers))
+#guard !reachedPassUntil { Tests.afterDraw with step := .declareAttackers }
   Tests.afterDraw.turnNumber .declareAttackers .nextDeclareAttackers
 
 #guard isPassSequenceCommand "pass" []

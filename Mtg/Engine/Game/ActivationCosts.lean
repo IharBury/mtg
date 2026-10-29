@@ -35,7 +35,7 @@ def payLifeCost (g : Game) (p : PlayerId) (n : Nat)
   if pl.life < (n : Int) then
     throw s!"{pl.name} cannot pay {n} life"
   let g :=
-    if pl.lifeLocked || pl.lifeCantChange then
+    if g.lifeLocked p || g.lifeCantChange p then
       g.logMsg s!"{pl.name}'s life total can't change"
     else
       (g.record (GameEvent.life g.turnNumber p n false false false
@@ -132,7 +132,7 @@ def payCostPick (g : Game) (p : PlayerId) (abilityId sourceId : ObjectId) (pick 
           (cause := some (.costPayment .sacrifice p (some abilityId)))
         if records then
           if (g.findObject? abilityId).isSome then
-            g := g.changeObject abilityId (.lastKnownPower (some pw))
+            g := g.setStackEntryLastKnown abilityId (lastKnownPower := some pw)
       else
         g := (g.move id (.graveyard o.owner) none
           (cause := some (.costPayment .discard p (some abilityId)))).1.logMsg
@@ -253,14 +253,16 @@ def canPayZemoBoast (g : Game) (p : PlayerId) (ids : Array ObjectId) : Bool :=
     g.zemoBoastBlackSymbols ids >= 15
 
 /-- True when a boast ability of `o` may be activated (MSH / CR 702.111). -/
-def canActivateBoast (_g : Game) (o : GameObject) : Bool :=
-  o.printed.hasBoast && o.status.declaredAsAttackerThisTurn && !o.status.boastUsedThisTurn
+def canActivateBoast (g : Game) (o : GameObject) : Bool :=
+  o.printed.hasBoast && g.declaredAsAttackerThisTurn o.id && !g.boastUsedThisTurn o.id
 
 /-- Mark a boast activation used for the turn. -/
 def markBoastUsed (g : Game) (o : GameObject) : Game :=
   match g.findObject? o.id with
   | some o =>
-    (g.changeStatus o.id (.boastUsedThisTurn true)).logMsg
+    let ctrl := o.controller.getD o.owner
+    (g.record (GameEvent.abilityActivated g.turnNumber o.id o.asEvent ctrl
+      (.nonMana none false false true))).logMsg
       s!"{o.name}'s boast ability is activated"
   | none => g
 

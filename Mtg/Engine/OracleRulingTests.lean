@@ -55,7 +55,7 @@ def honeOn (g : Game) (equipName hostName : String) (n : Nat) : Game :=
   let eq := namedPermanent g equipName
   let host := namedPermanent g hostName
   let g := g.attachSourceTo eq host
-  g.changeStatus (namedPermanent g equipName).id (.hone n)
+  g.recordPutCounters (namedPermanent g equipName).id .hone n
 
 /-!
 ## 1, 14–18, 40–41, 51–53, 61 — amass
@@ -597,7 +597,7 @@ def shortswordLeft : Game :=
 /-- Ruling 60: removing hone counters changes power immediately. -/
 def shortswordHoneCleared : Game :=
   let eq := namedPermanent shortswordHone "Dwarven Shortsword"
-  shortswordHone.changeStatus eq.id (.hone 0)
+  shortswordHone.recordRemoveCounters eq.id .hone eq.status.hone
 
 #guard shortswordHoneCleared.power (namedPermanent shortswordHoneCleared "Grizzly Bears") == 3
 
@@ -783,14 +783,14 @@ def kickerProposed : Game :=
 
 def kickerProposedOk : Bool :=
   kickerProposed.pending == .chooseKicker ⟨0⟩ &&
-    !(kickerProposed.object! kickerProposed.stack.back!.objectId).kicked
+    !kickerProposed.wasKicked kickerProposed.stack.back!.objectId
 
 #guard kickerProposedOk
 
 def kickerPaid : Game := mustApply kickerProposed ⟨0⟩ (.announceKicker true)
 
 def kickerPaidOk : Bool :=
-  (kickerPaid.object! kickerPaid.stack.back!.objectId).kicked &&
+  kickerPaid.wasKicked kickerPaid.stack.back!.objectId &&
     (match kickerPaid.proposedSpell with
      | some prop => prop.kicked && prop.cost.manaValue == 4
      | none => false)
@@ -816,7 +816,7 @@ def kickerManaValueUnchanged : Bool :=
 /-- Ruling 218: putting a kicker permanent onto the battlefield does not kick it. -/
 def kickerNotCast : Game := addPermanent started galadrielSDismissal ⟨0⟩ ⟨0⟩
 
-#guard !(namedPermanent kickerNotCast "Galadriel's Dismissal").kicked
+#guard !kickerNotCast.wasKicked (namedPermanent kickerNotCast "Galadriel's Dismissal").id
 
 /-- Ruling 50 / 95 / 196 / 197: casting without paying the mana cost still
 allows kicker as an additional cost. -/
@@ -824,16 +824,14 @@ def kickerWithoutManaCost : Game :=
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
   let g := addToHand g galadrielSDismissal ⟨0⟩
   let card := handCardNamed g ⟨0⟩ "Galadriel's Dismissal"
-  let g := g.changeObject card.id
-    (.playPermission (some {
+  let g := g.createEffect (.playPermission card.id {
       player := ⟨0⟩
-      turnEndsRemaining := 1
-      withoutManaCost := true }))
+      withoutManaCost := true } 1)
   let g := mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Galadriel's Dismissal").id)
   mustApply g ⟨0⟩ (.announceKicker true)
 
 def kickerWithoutManaCostOk : Bool :=
-  (kickerWithoutManaCost.object! kickerWithoutManaCost.stack.back!.objectId).kicked &&
+  kickerWithoutManaCost.wasKicked kickerWithoutManaCost.stack.back!.objectId &&
     (match kickerWithoutManaCost.proposedSpell with
      | some prop => prop.cost.manaValue == 3
      | none => false)
@@ -845,7 +843,7 @@ def kickerCopied : Game :=
   let spell := kickerPaid.object! kickerPaid.stack.back!.objectId
   kickerPaid.copyStackSpell spell ⟨0⟩
 
-#guard (kickerCopied.object! kickerCopied.stack.back!.objectId).kicked
+#guard kickerCopied.wasKicked kickerCopied.stack.back!.objectId
 #guard (kickerCopied.object! kickerCopied.stack.back!.objectId).isCopy
 
 /-!
@@ -864,14 +862,14 @@ def giftProposed : Game :=
 
 def giftProposedOk : Bool :=
   giftProposed.pending == .chooseGift ⟨0⟩ &&
-    (giftProposed.object! giftProposed.stack.back!.objectId).giftPromisedTo.isNone
+    (giftProposed.giftPromisedTo? giftProposed.stack.back!.objectId).isNone
 
 #guard giftProposedOk
 
 def giftPromised : Game := mustApply giftProposed ⟨0⟩ (.announceGift (some ⟨1⟩))
 
 def giftPromisedOk : Bool :=
-  (giftPromised.object! giftPromised.stack.back!.objectId).giftPromisedTo == some ⟨1⟩ &&
+  giftPromised.giftPromisedTo? giftPromised.stack.back!.objectId == some ⟨1⟩ &&
     !(giftPromised.battlefield.any (fun o => o.name == "Treasure"))
 
 #guard giftPromisedOk
@@ -889,7 +887,7 @@ def giftGivenOnResolve : Game :=
   let g := giftPromised
   -- Skip remaining proposal (targets / pay) by resolving a ready stack object.
   let spell := g.object! g.stack.back!.objectId
-  g.givePromisedGift (spell.giftPromisedTo.getD ⟨1⟩)
+  g.givePromisedGift ((g.giftPromisedTo? spell.id).getD ⟨1⟩)
 
 #guard giftGivenOnResolve.battlefield.any (fun o => o.name == "Treasure" && o.controlledBy ⟨1⟩)
 
@@ -905,7 +903,7 @@ def giftCopied : Game :=
   let spell := giftPromised.object! giftPromised.stack.back!.objectId
   giftPromised.copyStackSpell spell ⟨0⟩
 
-#guard (giftCopied.object! giftCopied.stack.back!.objectId).giftPromisedTo == some ⟨1⟩
+#guard giftCopied.giftPromisedTo? giftCopied.stack.back!.objectId == some ⟨1⟩
 
 /-!
 ## 67, 168, 235, 245 — shadow
@@ -940,7 +938,7 @@ def shadowBlockSetup : Game :=
   let g := addPermanent (addPermanent started shadowCreature ⟨0⟩ ⟨0⟩)
     grizzlyBears ⟨1⟩ ⟨1⟩
   let atk := namedPermanent g "Shadow Scout"
-  g.changeStatus atk.id (.attacking true)
+  g.markAttacking atk.id
 
 def shadowCannotBlock : Bool :=
   !shadowBlockSetup.canBlock
@@ -967,9 +965,9 @@ def shadowRemainsBlocked : Game :=
   let g := addPermanent (addPermanent started grizzlyBears ⟨0⟩ ⟨0⟩)
     (creature "Chump" (ManaCost.ofGeneric 1) #["Human"] 1 1) ⟨1⟩ ⟨1⟩
   let atk := namedPermanent g "Grizzly Bears"
-  let g := g.changeStatuses atk.id #[.attacking true, .blocked true]
+  let g := (g.markAttacking atk.id).markBlocked atk.id
   let blk := namedPermanent g "Chump"
-  let g := g.changeStatus blk.id (.blocking #[atk.id])
+  let g := g.markBlocking blk.id #[atk.id]
   g.putShadowCounter (namedPermanent g "Grizzly Bears")
 
 def shadowRemainsBlockedOk : Bool :=
@@ -991,7 +989,7 @@ def phasedAttacker : Game :=
   let eq := namedPermanent g "Dwarven Shortsword"
   let g := g.attachSourceTo eq host
   let host := namedPermanent g "Grizzly Bears"
-  let g := g.changeStatus host.id (.attacking true)
+  let g := g.markAttacking host.id
   g.phaseOut (namedPermanent g "Grizzly Bears")
 
 def phasedAttackerOk : Bool :=
@@ -1036,7 +1034,7 @@ remembered when it phases in. -/
 def phaseRemembersTypes : Game :=
   let g := addPermanent started grizzlyBears ⟨0⟩ ⟨0⟩
   let o := namedPermanent g "Grizzly Bears"
-  let g := g.changeStatus o.id (.additionalSubtypes #[.wraith])
+  let g := g.createEffect (.additionalSubtype o.id .wraith)
   let g := g.phaseOut (namedPermanent g "Grizzly Bears")
   g.phaseIn (namedObject g "Grizzly Bears")
 
@@ -1438,7 +1436,7 @@ def exileReturnNewObjectOk : Bool :=
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
   let bears := namedPermanent g "Grizzly Bears"
   let oldId := bears.id
-  let g := (g.recordPutCounters bears.id .plusOnePlusOne 2).changeStatus bears.id (.attacking true)
+  let g := (g.recordPutCounters bears.id .plusOnePlusOne 2).markAttacking bears.id
   let hunter := namedPermanent g "Fiend Hunter"
   let g := g.exileUntilSourceLeaves (some hunter.id) (namedPermanent g "Grizzly Bears")
   let hunter := namedPermanent g "Fiend Hunter"
@@ -1634,8 +1632,8 @@ def honeAnyEquipmentOk : Bool :=
 def xWithoutPaying : ManaCost :=
   let g := addToHand afterDraw insideInformation ⟨0⟩
   let card := handCardNamed g ⟨0⟩ "Inside Information"
-  let g := g.changeObject card.id (.playPermission (some {
-    player := ⟨0⟩, turnEndsRemaining := 1, withoutManaCost := true }))
+  let g := g.createEffect (.playPermission card.id {
+    player := ⟨0⟩, withoutManaCost := true } 1)
   g.playManaCost (g.object! card.id) insideInformation
 
 def xWithoutPayingOk : Bool :=
@@ -2123,7 +2121,7 @@ def meditatorDamageThenShrink : Game :=
   let m := namedPermanent g "Mirkwood Meditator"
   let g := g.changeStatus m.id (.damage 3)
   let m := namedPermanent g "Mirkwood Meditator"
-  g.changeStatuses m.id #[.damage 3, .setBasePT (some (4, 2))]
+  (g.changeStatus m.id (.damage 3)).createEffect (.setBasePTUntilEot m.id (4, 2))
 
 def meditatorBaseOk : Bool :=
   let m := namedPermanent meditatorDamageThenShrink "Mirkwood Meditator"
@@ -2145,8 +2143,8 @@ def mentorSeesEnterPowerOk : Bool :=
 def settleExilesAttackers : Game :=
   let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
   let (g, tok) := g.createToken ⟨1⟩ Game.humanSoldierToken
-  let g := g.changeStatus (namedPermanent g "Grizzly Bears").id (.attacking true)
-  let g := g.changeStatus tok.id (.attacking true)
+  let g := g.markAttacking (namedPermanent g "Grizzly Bears").id
+  let g := g.markAttacking tok.id
   g.applyEffect ⟨0⟩ (Effect.exileAttackersSearchBasics) #[.player ⟨1⟩]
 
 def settleOk : Bool :=
@@ -2180,8 +2178,8 @@ costs such as kicker. -/
 def withoutPayingStillPaysKickerOk : Bool :=
   let g := addToHand afterDraw insideInformation ⟨0⟩
   let card := handCardNamed g ⟨0⟩ "Inside Information"
-  let g := g.changeObject card.id (.playPermission (some {
-    player := ⟨0⟩, turnEndsRemaining := 1, withoutManaCost := true }))
+  let g := g.createEffect (.playPermission card.id {
+    player := ⟨0⟩, withoutManaCost := true } 1)
   let cost := g.playManaCost (g.object! card.id) insideInformation (ManaCost.ofGeneric 2)
   cost.manaValue == 2 && cost.colors.isColorless &&
     improvisedClub.additionalCostSacrificeArtifactOrCreature &&
@@ -2237,7 +2235,7 @@ def guttersnipeBeforeSpellOk : Bool :=
 
 /-- Ruling 105: Celeborn's pump uses cards actually looked at. -/
 def celebornLookedAtOk : Bool :=
-  (celebornScried.object! celebornScried.stack.back!.objectId).lastKnownPower ==
+  celebornScried.lastKnownPowerOf? celebornScried.stack.back!.objectId ==
       some 1 &&
     (ruling 105).comment.contains "cards you actually looked at"
 
@@ -2411,7 +2409,7 @@ def oriCountsExiled : Game :=
   let g := addPermanent afterDraw oriPlateStacker ⟨0⟩ ⟨0⟩
   let g := addPermanent g dwarvenShortsword ⟨1⟩ ⟨1⟩
   let sw := namedPermanent g "Dwarven Shortsword"
-  let g := g.changeStatus sw.id (.untilEotExileIfDies true)
+  let g := g.createEffect (.exileIfDiesUntilEot sw.id)
   g.applyTriggeredAbility ⟨0⟩ .onEnterDestroyOppArtifactsEnchantmentsGainLife
     (some (namedPermanent g "Ori, Plate Stacker").id)
 
@@ -2464,8 +2462,8 @@ def smiteZeroDamage : Game :=
 
 def smiteZeroDamageOk : Bool :=
   let b := namedPermanent smiteZeroDamage "Grizzly Bears"
-  b.status.untilEotLosesIndestructible &&
-    b.status.untilEotExileIfDies &&
+  smiteZeroDamage.untilEotLosesIndestructible b &&
+    smiteZeroDamage.untilEotExileIfDies b &&
     b.status.damage == 0 &&
     (ruling 142).comment.contains "additional effects will still apply"
 
@@ -2492,7 +2490,7 @@ def exiledTokenCeasesOk : Bool :=
 /-- Ruling 151 / 126 / 256: protection from everything blocks targeting and
 preventable damage, but not unpreventable damage. -/
 def withProtection : Game :=
-  (addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩).changePlayer ⟨1⟩ (.protectionFromEverything true)
+  (addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩).createEffect (.protectionFromEverything ⟨1⟩)
 
 def protectionFromEverythingOk : Bool :=
   let ts := withProtection.legalTargets ⟨0⟩ (Effect.dealDamage 3)
@@ -2517,7 +2515,7 @@ def garrisonTapAttackerOk : Bool :=
     creature "Townsfolk" (ManaCost.ofGeneric 1) #["Human"] 1 1
   let g := addPermanent g human ⟨0⟩ ⟨0⟩
   let h := namedPermanent g "Townsfolk"
-  let g := g.changeStatus h.id (.attacking true)
+  let g := g.markAttacking h.id
   let g := g.change (.pending (.tapHumans ⟨0⟩))
   match g.choosePermanents ⟨0⟩ #[(namedPermanent g "Townsfolk").id] with
   | .error _ => false
@@ -2559,7 +2557,7 @@ def eaglesReturnToken : Game :=
   g.returnOwnedCreaturesScheduleBirds ⟨0⟩ #[tok.id]
 
 def eaglesTokenCountedOk : Bool :=
-  (eaglesReturnToken.player ⟨0⟩).eaglesBirdsNextUpkeep == 1 &&
+  eaglesReturnToken.delayedTriggers.any (fun dt => dt.controller == ⟨0⟩ && dt.kind == .eaglesBirds 1) &&
     eaglesReturnToken.objects.any (fun o =>
       o.name == "Human Soldier" && o.zone == .hand ⟨0⟩) &&
     (ruling 78).comment.contains "creature tokens that were returned"
@@ -2568,7 +2566,7 @@ def eaglesTokenCountedOk : Bool :=
 
 def eaglesBirdsAfterUpkeep : Game :=
   let g := eaglesReturnToken.checkSBA.change (.waitingTriggers #[])
-  (g.changes #[.step .untap, .activePlayer ⟨1⟩]).beginStep .upkeep
+  (({ g with step := .untap, activePlayer := ⟨1⟩ }).beginStep .upkeep).resolveTop
 
 def eaglesBirdsAfterUpkeepOk : Bool :=
   eaglesBirdsAfterUpkeep.battlefield.any (fun o =>
@@ -2715,7 +2713,7 @@ def wereWormTenPowerOk : Bool :=
 def wereWormTenAttacks : Game :=
   let g := wereWormTenPower
   let w := namedPermanent g "Desert Were-Worm"
-  let g := g.changeStatus w.id (.attacking true)
+  let g := g.markAttacking w.id
   g.putAttackTriggersOnStack ⟨0⟩ #[(namedPermanent g "Desert Were-Worm").id]
 
 def wereWormTenAttacksOk : Bool :=
@@ -2728,7 +2726,7 @@ def wereWormTenAttacksOk : Bool :=
 def wereWormTwelveAttacks : Game :=
   let g := wereWormMountains 6
   let w := namedPermanent g "Desert Were-Worm"
-  let g := g.changeStatus w.id (.attacking true)
+  let g := g.markAttacking w.id
   g.putAttackTriggersOnStack ⟨0⟩ #[(namedPermanent g "Desert Were-Worm").id]
 
 def wereWormTwelveAttacksOk : Bool :=
@@ -2750,7 +2748,7 @@ def elvenChorusTimingOk : Bool :=
   chorusInPlay.canLookAtLibraryTop ⟨0⟩ &&
     chorusInPlay.controlsCastCreaturesFromTop ⟨0⟩ &&
     chorusInPlay.asSorcery? ⟨0⟩ &&
-    !(let g := chorusInPlay.change (.step .end)
+    !(let g := { chorusInPlay with step := .end }
       g.timingAllowsCast ⟨0⟩ grizzlyBears) &&
     (ruling 118).comment.contains "doesn't change when you can cast"
 
@@ -2828,7 +2826,7 @@ def andurilOnOppLegend : Game :=
   let g := g.attachSourceTo (namedPermanent g "Andúril, Flame of the West")
     (namedPermanent g "Tom Bombadil")
   let tom := namedPermanent g "Tom Bombadil"
-  let g := g.changeStatus tom.id (.attacking true)
+  let g := g.markAttacking tom.id
   g.putAttackTriggersOnStack ⟨1⟩ #[(namedPermanent g "Tom Bombadil").id]
 
 def andurilOnOppLegendOk : Bool :=
@@ -2860,7 +2858,7 @@ def andurilOnOwnLegend : Game :=
   let g := g.attachSourceTo (namedPermanent g "Andúril, Flame of the West")
     (namedPermanent g "Tom Bombadil")
   let tom := namedPermanent g "Tom Bombadil"
-  let g := g.changeStatus tom.id (.attacking true)
+  let g := g.markAttacking tom.id
   let g := g.putAttackTriggersOnStack ⟨0⟩ #[(namedPermanent g "Tom Bombadil").id]
   g.applyTriggeredAbility ⟨0⟩ .onEquippedAttacksCreateSpirits
     (some (namedPermanent g "Andúril, Flame of the West").id)
@@ -2925,7 +2923,7 @@ def bowmastersAfterDrawOk : Bool :=
 #guard bowmastersAfterDrawOk
 
 def bowmastersFirstDrawStep : Game :=
-  let g := bowmastersInPlay.changes #[.step .draw, .activePlayer ⟨1⟩]
+  let g := { bowmastersInPlay with step := .draw, activePlayer := ⟨1⟩ }
   g.draw ⟨1⟩ 1
 
 def bowmastersFirstDrawStepOk : Bool :=
@@ -3015,10 +3013,10 @@ def celebrateLeavesBeforeExileOk : Bool :=
 def copyOfKickedPermanentOk : Bool :=
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
   let bear := namedPermanent g "Grizzly Bears"
-  let g := g.changeObject bear.id (.kicked true)
+  let g := g.record (GameEvent.announced g.turnNumber bear.id (costs := #[.kicker]))
   let src := namedPermanent g "Grizzly Bears"
-  let (_g, tok) := g.copyBattlefieldPermanent src ⟨0⟩
-  src.kicked && !tok.kicked && tok.printed.isToken &&
+  let (g, tok) := g.copyBattlefieldPermanent src ⟨0⟩
+  g.wasKicked src.id && !g.wasKicked tok.id && tok.printed.isToken &&
     (ruling 147).comment.contains "isn't kicked"
 
 #guard copyOfKickedPermanentOk
@@ -3052,7 +3050,7 @@ def galadrielSimultaneousModesOk : Bool :=
   let sid := (namedPermanent galadrielInPlay "Galadriel, Light of Valinor").id
   let g := galadrielInPlay.applyAllianceMode sid 0
   let g := g.applyAllianceMode sid 1
-  let used := (namedPermanent g "Galadriel, Light of Valinor").status.allianceModesChosen
+  let used := g.modesChosenThisTurn (namedPermanent g "Galadriel, Light of Valinor").id
   used.contains 0 && used.contains 1 && !used.contains 2 &&
     (g.unusedAllianceModes (namedPermanent g "Galadriel, Light of Valinor")).size == 1 &&
     (ruling 172).comment.contains "different modes"
@@ -3078,7 +3076,7 @@ def galadrielLeavesAndReturnsOk : Bool :=
   let (g, _) := g.move (namedPermanent g "Galadriel, Light of Valinor").id
     (.exile) none
   let g := addPermanent g galadrielLightOfValinor ⟨0⟩ ⟨0⟩
-  (namedPermanent g "Galadriel, Light of Valinor").status.allianceModesChosen.isEmpty &&
+  (g.modesChosenThisTurn (namedPermanent g "Galadriel, Light of Valinor").id).isEmpty &&
     (ruling 294).comment.contains "new object with no memory"
 
 #guard galadrielLeavesAndReturnsOk
@@ -3237,9 +3235,9 @@ def radagastCastIsFirstOk : Bool :=
 #guard radagastCastIsFirstOk
 
 def radagastFlashOk : Bool :=
-  let g := radagastInPlay.change (.step .end)
+  let g := { radagastInPlay with step := .end }
   g.timingAllowsCast ⟨0⟩ grizzlyBears &&
-    !(let g := afterDraw.change (.step .end)
+    !(let g := { afterDraw with step := .end }
       g.timingAllowsCast ⟨0⟩ grizzlyBears) &&
     (ruling 292).comment.contains "doesn't necessarily have to be the first spell"
 
@@ -3248,8 +3246,8 @@ def radagastFlashOk : Bool :=
 def radagastAltCostOk : Bool :=
   let g := addToHand radagastInPlay grizzlyBears ⟨0⟩
   let o := handCardNamed g ⟨0⟩ "Grizzly Bears"
-  let g := g.changeObject o.id (.playPermission (some {
-    player := ⟨0⟩, turnEndsRemaining := 1, withoutManaCost := true }))
+  let g := g.createEffect (.playPermission o.id {
+    player := ⟨0⟩, withoutManaCost := true } 1)
   let cost := g.playManaCost (g.object! o.id) grizzlyBears (ManaCost.ofGeneric 2)
   cost == ManaCost.zero &&
     (ruling 282).comment.contains "can apply to alternative costs"
@@ -3264,14 +3262,14 @@ def delightedCopyCanBeCounteredOk : Bool :=
   let g := addToHand afterDraw tomBombadil ⟨0⟩
   let card := handCardNamed g ⟨0⟩ "Tom Bombadil"
   let (g, sid) := g.move card.id .stack (some ⟨0⟩)
-  let g := g.changeObject sid (.uncounterableThisCast true)
+  let g := g.createEffect (.uncounterableThisCast sid)
   let spell := g.object! sid
   let g := g.copyStackSpell spell ⟨0⟩
   let copy :=
     match g.objects.find? (fun o => o.isCopy && o.name == "Tom Bombadil") with
     | some o => o
     | none => panic! "expected copied Tom Bombadil"
-  spell.uncounterableThisCast && !copy.uncounterableThisCast &&
+  g.uncounterableThisCast spell && !g.uncounterableThisCast copy &&
     (let g := g.counterStackSpell copy.id
      g.log.any (fun s => mentions s "is countered")) &&
     (ruling 184).comment.contains "the copy can be countered" &&
@@ -3335,8 +3333,8 @@ def cityBlessingPersistsOk : Bool :=
 #guard cityBlessingPersistsOk
 
 def notCastCannotKickOk : Bool :=
-  !(namedPermanent (addPermanent afterDraw galadrielSDismissal ⟨0⟩ ⟨0⟩)
-      "Galadriel's Dismissal").kicked &&
+  let g := addPermanent afterDraw galadrielSDismissal ⟨0⟩ ⟨0⟩
+  !g.wasKicked (namedPermanent g "Galadriel's Dismissal").id &&
     (ruling 218).comment.contains "you can't kick it"
 
 #guard notCastCannotKickOk
@@ -3346,7 +3344,7 @@ def notCastCannotKickOk : Bool :=
 -/
 
 def kickedCopyAlsoKickedOk : Bool :=
-  (kickerCopied.object! kickerCopied.stack.back!.objectId).kicked &&
+  kickerCopied.wasKicked kickerCopied.stack.back!.objectId &&
     (ruling 209).comment.contains "the copy is also kicked"
 
 #guard kickedCopyAlsoKickedOk
@@ -3409,7 +3407,7 @@ def twoShadowCountersOk : Bool :=
 def blockedKeepsShadowOk : Bool :=
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
   let bear := namedPermanent g "Grizzly Bears"
-  let g := g.changeStatus bear.id (.blocked true)
+  let g := g.markBlocked bear.id
   let g := g.putShadowCounter (namedPermanent g "Grizzly Bears")
   (namedPermanent g "Grizzly Bears").status.blocked &&
     (ruling 245).comment.contains "remains blocked"
@@ -3453,9 +3451,9 @@ def ferociousAttackNoRecheckOk : Bool :=
 -/
 
 def protectionStillAttackableOk : Bool :=
-  let g := afterDraw.changePlayer ⟨1⟩ (.protectionFromEverything true)
+  let g := afterDraw.createEffect (.protectionFromEverything ⟨1⟩)
   let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
-  (g.player ⟨1⟩).protectionFromEverything &&
+  g.protectionFromEverything ⟨1⟩ &&
     (let g := g.dealDamageToPlayer ⟨1⟩ 2 (source := some (namedPermanent g "Grizzly Bears"))
      (g.player ⟨1⟩).life == 20) &&
     (ruling 239).comment.contains "Creatures can still attack you"
@@ -3520,7 +3518,7 @@ def smiteExileAnyDeathOk : Bool :=
   let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
   let b := namedPermanent g "Grizzly Bears"
   let g := g.dealDamageLoseIndestructibleExileTo b 0 b.asEvent
-  (namedPermanent g "Grizzly Bears").status.untilEotExileIfDies &&
+  g.untilEotExileIfDies (namedPermanent g "Grizzly Bears") &&
     (ruling 285).comment.contains "not just if it dies due to damage" &&
     (ruling 332).comment.contains "doesn't have indestructible"
 
@@ -3627,7 +3625,7 @@ def tomWithFourLore : Game :=
   let g := addPermanent afterDraw tomBombadil ⟨0⟩ ⟨0⟩
   let g := addPermanent g testSagaFourChapters ⟨0⟩ ⟨0⟩
   let saga := namedPermanent g "Test Saga"
-  g.changeStatus saga.id (.lore 4)
+  g.recordPutCounters saga.id .lore 4
 
 def tomLoreProtectionOk : Bool :=
   let tom := namedPermanent tomWithFourLore "Tom Bombadil"
@@ -3682,7 +3680,7 @@ def beholdAlreadyRevealedOk : Bool :=
   let g := addToHand afterDraw llanowarElves ⟨0⟩
   let g := g.beholdQuality ⟨0⟩ .elf
   let g := g.beholdQuality ⟨0⟩ .elf
-  (g.player ⟨0⟩).beheldQualities.size == 2 &&
+  (g.beheldQualities ⟨0⟩).size == 2 &&
     (ruling 146).comment.contains "you may reveal it again"
 
 #guard beholdAlreadyRevealedOk
@@ -3860,7 +3858,7 @@ def dwarvenWarriorsAfterBlockNoUnblockOk : Bool :=
   let g := addPermanent afterDraw dwarvenWarriors ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
   let bear := namedPermanent g "Grizzly Bears"
-  let g := g.changeStatus bear.id (.blocked true)
+  let g := g.markBlocked bear.id
   let g := g.applyAbilityEffect ⟨0⟩ (Effect.targetCantBeBlockedPowerAtMost 2)
     #[Target.permanent (namedPermanent g "Grizzly Bears").id]
   (namedPermanent g "Grizzly Bears").status.blocked &&
@@ -4038,7 +4036,7 @@ def blockedStaysBlockedOk : Bool :=
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
   let g := addPermanent g grayOgre ⟨1⟩ ⟨1⟩
   let bear := namedPermanent g "Grizzly Bears"
-  let g := g.changeStatuses bear.id #[.blocked true, .attacking true]
+  let g := (g.markAttacking bear.id).markBlocked bear.id
   let g := g.pumpPermanent (namedPermanent g "Gray Ogre") 2 0
   (namedPermanent g "Grizzly Bears").status.blocked &&
     (namedPermanent g "Grizzly Bears").status.attacking &&
@@ -4123,9 +4121,9 @@ def ologHaiBlockRestrictionOk : Bool :=
 def meditatorOverwritesSetPTOk : Bool :=
   let g := addPermanent afterDraw mirkwoodMeditator ⟨0⟩ ⟨0⟩
   let o := namedPermanent g "Mirkwood Meditator"
-  let g := g.changeStatus o.id (.setBasePT (some (1, 1)))
+  let g := g.createEffect (.setBasePTUntilEot o.id (1, 1))
   let o := namedPermanent g "Mirkwood Meditator"
-  let g := g.changeStatus o.id (.setBasePT (some (4, 2)))
+  let g := g.createEffect (.setBasePTUntilEot o.id (4, 2))
   g.power (namedPermanent g "Mirkwood Meditator") == 4 &&
     g.toughness (namedPermanent g "Mirkwood Meditator") == 2 &&
     (ruling 273).comment.contains "overwrites any previous effects"
@@ -4382,7 +4380,7 @@ def banishingLightAuraHexproofOk : Bool :=
   let g := addPermanent g fogOnTheBarrowDowns ⟨1⟩ ⟨1⟩
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
   let bear := namedPermanent g "Grizzly Bears"
-  let g := g.changeStatus bear.id (.grantUntilEot Keyword.hexproof)
+  let g := g.createEffect (.keywordsUntilEot bear.id Keyword.hexproof)
   let light := namedPermanent g "Banishing Light"
   let g := g.exileUntilSourceLeaves (some light.id) (namedPermanent g "Fog on the Barrow-Downs")
   let light := namedPermanent g "Banishing Light"
@@ -4613,7 +4611,7 @@ def blackGateMostLifeAndLaterCreatureOk : Bool :=
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
   let g := addPermanent g grayOgre ⟨1⟩ ⟨1⟩
   let bear := namedPermanent g "Grizzly Bears"
-  let g := g.changeStatus bear.id (.attacking true)
+  let g := g.markAttacking bear.id
   let g := g.setLife ⟨1⟩ 25 "p1 has most life"
   let g := g.applyBlackGateUnblockable (namedPermanent g "Grizzly Bears").id ⟨1⟩
   let g := addPermanent g lakeshoreApothecary ⟨1⟩ ⟨1⟩
@@ -4675,12 +4673,12 @@ def supperForSpidersFoodOnlyOk : Bool :=
   let card := namedGraveyardCard g ⟨1⟩ "Dáin, Lord of the Iron Hills"
   let g := g.supperForSpidersReturn ⟨0⟩ #[card.id]
   let food := namedPermanent g "Dáin, Lord of the Iron Hills"
-  food.status.onlyFoodArtifact &&
+  g.onlyFoodArtifact food &&
     g.loggedEntered food.id &&
-    !food.isCreature &&
-    food.types == #[.artifact] &&
-    food.subtypes == #[.food] &&
-    food.isLegendary &&
+    !g.isCreature food &&
+    g.types food == #[.artifact] &&
+    g.subtypes food == #[.food] &&
+    g.isLegendary food &&
     food.printed.manaCost == dainLordOfTheIronHills.manaCost &&
     (ruling 295).comment.contains "only Food artifacts" &&
     (ruling 295).comment.contains "retain their name, mana cost, mana value, and abilities"
@@ -4714,7 +4712,7 @@ def bilboFailedAdventureNoLaterCastOk : Bool :=
     match g.objects.find? (fun x => x.name == "Bilbo, Luckwearer") with
     | some x => x
     | none => namedPermanent afterDraw "Grizzly Bears"
-  o.zone == .exile && o.playPermission.isNone &&
+  o.zone == .exile && (g.playPermission o).isNone &&
     (ruling 330).comment.contains "exiled by the replacement effect created by Bilbo"
 
 #guard bilboFailedAdventureNoLaterCastOk
@@ -4774,7 +4772,7 @@ def garrisonHandSizeLayerOk : Bool :=
   let g := addPermanent afterDraw minasTirithGarrison ⟨0⟩ ⟨0⟩
   let o := namedPermanent g "Minas Tirith Garrison"
   let hand := Int.ofNat (g.player ⟨0⟩).hand.size
-  let set := g.changeStatus o.id (.setBasePT (some (1, 1)))
+  let set := g.createEffect (.setBasePTUntilEot o.id (1, 1))
   let setO := namedPermanent set "Minas Tirith Garrison"
   let pumped := set.pumpPermanent setO 2 0
   let inHand := addToHand afterDraw minasTirithGarrison ⟨0⟩
@@ -4823,13 +4821,14 @@ def flameshapeWizardToCastNotResolveOk : Bool :=
     | some o => o
     | none => namedPermanent afterDraw "Grizzly Bears"
   let withWiz := g.mayPlayFromExile ⟨0⟩ bolt
+  let boltPerm := g.playPermission bolt
   let g := g.castAsPartOfResolution ⟨0⟩ bolt.id (ignoreTiming := false)
   let onStack := g.objects.any (fun o => o.name == "Lightning Bolt" && o.zone == .stack)
   let g := (g.move (namedPermanent g "Radagast of Rhosgobel").id (.graveyard ⟨0⟩) none).1
   let stillStack := g.objects.any (fun o => o.name == "Lightning Bolt" && o.zone == .stack)
   without && withWiz && onStack && stillStack &&
-    bolt.playPermission.isSome &&
-    (match bolt.playPermission with
+    boltPerm.isSome &&
+    (match boltPerm with
      | some perm => perm.requireSubtype == some .wizard && !perm.ignoreTiming && !perm.withoutManaCost
      | none => false) &&
     (ruling 351).comment.contains "losing control of your last Wizard" &&
@@ -4846,15 +4845,13 @@ def normalTimingAndCostsOk : Bool :=
   let g := addToHand afterDraw mountain ⟨0⟩
   let land := handCardNamed g ⟨0⟩ "Mountain"
   let (g, eid) := g.move land.id .exile none
-  let g := g.changeObject eid
-    (.playPermission (some {
+  let g := g.createEffect (.playPermission eid {
       player := ⟨0⟩
-      turnEndsRemaining := 0
-      whileExiled := true }))
+      whileExiled := true } 0)
   let o := g.object! eid
   let combat := skipTo g .beginningOfCombat 80
   let o2 := combat.object! eid
-  let perm := o2.playPermission.getD { player := ⟨0⟩, turnEndsRemaining := 0 }
+  let perm := (combat.playPermission o2).getD { player := ⟨0⟩ }
   g.mayPlayFromExile ⟨0⟩ o &&
     g.canPlayLand ⟨0⟩ &&
     !(combat.canPlayLand ⟨0⟩) &&

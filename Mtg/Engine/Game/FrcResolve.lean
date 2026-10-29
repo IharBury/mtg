@@ -11,7 +11,7 @@ namespace Mtg.Engine
 namespace Game
 
 private def spellX (g : Game) : Nat :=
-  let chosen := fun (id? : Option ObjectId) => id?.bind g.findObject? |>.bind (·.chosenX)
+  let chosen := fun (id? : Option ObjectId) => id?.bind g.chosenXOf?
   (chosen g.resolvingSpell).getD ((chosen g.resolvingAbility).getD 0)
 
 private def frcCause? (g : Game) : Option GameObject :=
@@ -19,7 +19,7 @@ private def frcCause? (g : Game) : Option GameObject :=
     ab.fraCauseId.bind fun id => g.findObject? (g.followMoved id)
 
 private def knownN (g : Game) (lastKnownPower : Option Int := none) : Nat :=
-  ((lastKnownPower.orElse (fun _ => g.resolvingAbilityObject?.bind (·.lastKnownPower))).getD 0).toNat
+  ((lastKnownPower.orElse (fun _ => g.resolvingAbility.bind g.lastKnownPowerOf?)).getD 0).toNat
 
 private def srcObj? (g : Game) (sourceId : Option ObjectId) : Option GameObject :=
   sourceId.bind fun id => g.findObject? (g.followMoved id)
@@ -290,9 +290,10 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
   | .syntheticDestiny =>
     let yours := (g.permanentsOf controller).filter (·.isCreature) |>.map (·.id)
     let (g, cause) := g.allocDelayedCause (some controller) sourceId
+    let src := sourceId.bind g.findObject?
     let g := g.withBatch (some cause) fun g =>
       yours.foldl (fun g id => g.exileId id (cause := some cause)) g
-    g.change (.pushDelayedSynthetic controller yours.size cause)
+    g.change (.pushDelayedTrigger { controller, source := src, kind := .endStepSynthetic yours.size, cause })
       |>.logMsg "Those creatures return as revealed cards at the next end step"
   | .searchBasics kinds untapAt =>
     let g := if untapAt == 0 then g else g.change (.untapSearchedIfLands (some untapAt))
@@ -344,7 +345,8 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
     | some o =>
       if o.zone == .graveyard o.owner then
         let (g, cause) := g.allocDelayedCause (some controller) sourceId
-        g.change (.pushDelayedGraveReturn o.id controller cause)
+        let src := (sourceId.bind g.findObject?).orElse (fun _ => some o)
+        g.change (.pushDelayedTrigger { controller, source := src, kind := .endStepGraveReturn o.id controller, cause })
           |>.logMsg s!"{o.name} returns at the beginning of the next end step"
       else g
     | none => g
@@ -390,10 +392,10 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
     let g := g.draw controller
     match g.srcObj? sourceId with
     | some src =>
-      if src.status.optionalOnceUsed then g
+      if g.optionalOnceUsedThisTurn src.id then g
       else
-        let g := g.changeStatus src.id (.optionalOnceUsed true)
         let (g, cause) := g.allocDelayedCause (some controller) sourceId
+        let g := g.record (GameEvent.optionalOnceActed g.turnNumber controller src.id (cause := some cause))
         let (g, hits, rest) := g.revealUntil controller (·.isCreature) 1 (cause := some cause)
         let g := g.putHits controller hits (cause := some cause)
         g.restBottom controller rest false (cause := some cause)
@@ -455,11 +457,9 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
       g.createEffect (.cantAttackJacesThisTurn g.activePlayer)
         |>.logMsg s!"{(g.player g.activePlayer).name}'s creatures can't attack Jaces this turn"
   | .monarch =>
-    let g := g.players.foldl (fun g q =>
-      if q.isMonarch && q.id != controller then
-        g.changePlayer q.id (.isMonarch false)
-      else g) g
-    g.changePlayer controller (.isMonarch true)
+    let prev := (g.players.find? (·.isMonarch)).map (·.id)
+    g.record (GameEvent.becameMonarch g.turnNumber controller prev
+      (cause := g.resolvingOneShotCause controller sourceId))
       |>.logMsg s!"{pl.name} becomes the monarch"
   | .gingerbrute =>
     if (g.player controller).isMonarch then g.makeFrc controller .gingerbrute
@@ -535,7 +535,7 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
               let (g', tok) := g.copyBattlefieldPermanent src controller (cause := some cause)
               g := g'
               g := g.createEffect (.keywordsUntilEot tok.id Keyword.haste) (cause := some cause)
-              g := g.change (.pushDelayedEndStepSacrifice tok.id cause)
+              g := g.change (.pushDelayedTrigger { controller, source := some tok, kind := .endStepSacrifice tok.id, cause })
             return g.logMsg "The token copies gain haste and are sacrificed at the next end step"
       | none => g
     | _ => g
@@ -723,13 +723,10 @@ where
         |>.logMsg s!"{(g.player controller).name} puts {name} on the bottom of their library"
 
 /-- Reveal creature cards exiled by Synthetic Destiny at the end step. -/
-def applyDelayedSynthetic (g : Game) : Game :=
-  let synth := g.delayedSynthetic
-  let g := g.change (.delayedSynthetic #[])
-  synth.foldl (fun g (who, n, cause) =>
-    let (g, hits, rest) := g.revealUntil who (·.isCreature) n (cause := some cause)
-    let g := g.putHits who hits (cause := some cause)
-    g.restBottom who rest true (cause := some cause)) g
+def applyOneDelayedSynthetic (g : Game) (who : PlayerId) (n : Nat) (cause : EventCause) : Game :=
+  let (g, hits, rest) := g.revealUntil who (·.isCreature) n (cause := some cause)
+  let g := g.putHits who hits (cause := some cause)
+  g.restBottom who rest true (cause := some cause)
 
 end Game
 end Mtg.Engine

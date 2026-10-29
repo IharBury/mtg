@@ -87,7 +87,7 @@ def hunterVsToken : Game :=
   let g := addPermanent started duskwatchHunter ⟨0⟩ ⟨0⟩
   let (g, _) := g.createToken ⟨1⟩ Catalog.humanSoldierToken
   let o := namedPermanent g "Duskwatch Hunter"
-  g.changeStatus o.id (.attacking true)
+  g.markAttacking o.id
 
 #guard
   !hunterVsToken.canBlock (namedPermanent hunterVsToken "Human Soldier")
@@ -170,7 +170,7 @@ def riderKeepsWithLegend : Game :=
 def dawnLastHope : Game :=
   let g := addPermanent started dawnOfANewAge ⟨0⟩ ⟨0⟩
   let dawn := namedPermanent g "Dawn of a New Age"
-  let g := g.changeStatus dawn.id (.hope 1)
+  let g := g.recordPutCounters dawn.id .hope 1
   g.applyTriggeredAbility ⟨0⟩ .onYourEndStepRemoveHopeDrawSac (some dawn.id)
 
 #guard
@@ -187,7 +187,7 @@ def dawnLastHope : Game :=
 def dawnKeepsHope : Game :=
   let g := addPermanent started dawnOfANewAge ⟨0⟩ ⟨0⟩
   let dawn := namedPermanent g "Dawn of a New Age"
-  let g := g.changeStatus dawn.id (.hope 2)
+  let g := g.recordPutCounters dawn.id .hope 2
   g.applyTriggeredAbility ⟨0⟩ .onYourEndStepRemoveHopeDrawSac (some dawn.id)
 
 #guard
@@ -380,8 +380,8 @@ def teamPumpThenOppsLoseResolved : Game :=
     (Effect.creaturesYouControlGetOppsLoseLife 2 0 2) #[]
 
 #guard
-  (namedPermanent teamPumpThenOppsLoseResolved "Gray Ogre").status.pumpPower == 2 &&
-    (namedPermanent teamPumpThenOppsLoseResolved "Grizzly Bears").status.pumpPower == 0 &&
+  (teamPumpThenOppsLoseResolved.pumpOf (namedPermanent teamPumpThenOppsLoseResolved "Gray Ogre")).1 == 2 &&
+    (teamPumpThenOppsLoseResolved.pumpOf (namedPermanent teamPumpThenOppsLoseResolved "Grizzly Bears")).1 == 0 &&
     (teamPumpThenOppsLoseResolved.player ⟨0⟩).life == (afterDraw.player ⟨0⟩).life &&
     (teamPumpThenOppsLoseResolved.player ⟨1⟩).life == (afterDraw.player ⟨1⟩).life - 2 &&
     teamPumpThenOppsLoseResolved.log.any (fun s =>
@@ -422,9 +422,9 @@ def plusOneAndGrantResolved : Game :=
 
 #guard
   (namedPermanent plusOneAndGrantResolved "Gray Ogre").status.plusOnePlusOne == 1 &&
-    (namedPermanent plusOneAndGrantResolved "Gray Ogre").status.untilEotKeywords.vigilance &&
-    (namedPermanent plusOneAndGrantResolved "Gray Ogre").status.untilEotKeywords.indestructible &&
-    (namedPermanent plusOneAndGrantResolved "Gray Ogre").status.untilEotKeywords.haste
+    (plusOneAndGrantResolved.untilEotKeywords (namedPermanent plusOneAndGrantResolved "Gray Ogre")).vigilance &&
+    (plusOneAndGrantResolved.untilEotKeywords (namedPermanent plusOneAndGrantResolved "Gray Ogre")).indestructible &&
+    (plusOneAndGrantResolved.untilEotKeywords (namedPermanent plusOneAndGrantResolved "Gray Ogre")).haste
 
 /-- `destroyUpToOneThenPlusOne` still plus-ones with no target. -/
 def destroyUpToOneThenPlusOneNoTarget : Game :=
@@ -473,9 +473,9 @@ def subtypesGainMenaceResolved : Game :=
     (Effect.subtypesGainMenace #["Goblin", "Orc"]) #[]
 
 #guard
-  (namedPermanent subtypesGainMenaceResolved "Raging Goblin").status.untilEotKeywords.menace &&
-    (namedPermanent subtypesGainMenaceResolved "Orcish Siegemaster").status.untilEotKeywords.menace &&
-    !(namedPermanent subtypesGainMenaceResolved "Gray Ogre").status.untilEotKeywords.menace &&
+  (subtypesGainMenaceResolved.untilEotKeywords (namedPermanent subtypesGainMenaceResolved "Raging Goblin")).menace &&
+    (subtypesGainMenaceResolved.untilEotKeywords (namedPermanent subtypesGainMenaceResolved "Orcish Siegemaster")).menace &&
+    !(subtypesGainMenaceResolved.untilEotKeywords (namedPermanent subtypesGainMenaceResolved "Gray Ogre")).menace &&
     subtypesGainMenaceResolved.log.any (fun s => mentions s "Raging Goblin gains menace") &&
     subtypesGainMenaceResolved.log.any (fun s => mentions s "Orcish Siegemaster gains menace") &&
     !subtypesGainMenaceResolved.log.any (fun s => mentions s "Gray Ogre gains menace")
@@ -486,8 +486,8 @@ def elvesGainMenaceResolved : Game :=
     |>.applyAbilityEffect ⟨0⟩ (Effect.subtypesGainMenace #["Elf"]) #[]
 
 #guard
-  (namedPermanent elvesGainMenaceResolved "Llanowar Elves").status.untilEotKeywords.menace &&
-    !(namedPermanent elvesGainMenaceResolved "Raging Goblin").status.untilEotKeywords.menace
+  (elvesGainMenaceResolved.untilEotKeywords (namedPermanent elvesGainMenaceResolved "Llanowar Elves")).menace &&
+    !(elvesGainMenaceResolved.untilEotKeywords (namedPermanent elvesGainMenaceResolved "Raging Goblin")).menace
 
 /-- `teamGain` grants the given keyword to every creature you control. -/
 def teamGainMenaceResolved : Game :=
@@ -495,8 +495,8 @@ def teamGainMenaceResolved : Game :=
     |>.applyAbilityEffect ⟨0⟩ (Effect.teamGain Keyword.menace) #[]
 
 #guard
-  (namedPermanent teamGainMenaceResolved "Raging Goblin").status.untilEotKeywords.menace &&
-    (namedPermanent teamGainMenaceResolved "Gray Ogre").status.untilEotKeywords.menace
+  (teamGainMenaceResolved.untilEotKeywords (namedPermanent teamGainMenaceResolved "Raging Goblin")).menace &&
+    (teamGainMenaceResolved.untilEotKeywords (namedPermanent teamGainMenaceResolved "Gray Ogre")).menace
 
 /-- `becomeSubtypeWithLandsPT` grants the given type, not only Bear. -/
 def becomeWolfWithLandsPT : Game :=
@@ -506,9 +506,9 @@ def becomeWolfWithLandsPT : Game :=
   g.applyAbilityEffect ⟨0⟩ (Effect.becomeSubtypeWithLandsPT "Wolf") #[] (some src.id)
 
 #guard
-  (namedPermanent becomeWolfWithLandsPT "Beorn's Hospitality").hasSubtype .wolf &&
-    !(namedPermanent becomeWolfWithLandsPT "Beorn's Hospitality").hasSubtype .bear &&
-    (namedPermanent becomeWolfWithLandsPT "Beorn's Hospitality").isCreature
+  becomeWolfWithLandsPT.hasSubtype (namedPermanent becomeWolfWithLandsPT "Beorn's Hospitality") .wolf &&
+    !(becomeWolfWithLandsPT.hasSubtype (namedPermanent becomeWolfWithLandsPT "Beorn's Hospitality") .bear) &&
+    becomeWolfWithLandsPT.isCreature (namedPermanent becomeWolfWithLandsPT "Beorn's Hospitality")
 
 /-- Chief Warg's Company cannot attack without two other Wolves. -/
 def loneWargCompany : Game :=
@@ -586,7 +586,7 @@ def oriClears : Game :=
     (artifact "Hardy Relic" ManaCost.empty "" (keywords := Keyword.indestructible)) ⟨1⟩ ⟨1⟩
   let g := addPermanent g (artifact "Shielded Relic" ManaCost.empty "") ⟨1⟩ ⟨1⟩
   let shielded := namedPermanent g "Shielded Relic"
-  let g := g.changeStatus shielded.id (.shield 1)
+  let g := g.recordPutCounters shielded.id .shield 1
   let g := addPermanent g (artifactCreature "Opp Construct" ManaCost.empty #[] 1 1) ⟨1⟩ ⟨1⟩
   g.applyTriggeredAbility ⟨0⟩ .onEnterDestroyOppArtifactsEnchantmentsGainLife
     (some (namedPermanent g "Ori, Plate Stacker").id)
@@ -692,7 +692,7 @@ def arrowShielded : Game :=
   let g := addPermanent started theBlackArrow ⟨0⟩ ⟨0⟩
   let g := addPermanent g (creature "Wyrm" ManaCost.empty #["Dragon"] 4 4) ⟨1⟩ ⟨1⟩
   let wyrm := namedPermanent g "Wyrm"
-  let g := g.changeStatus wyrm.id (.shield 1)
+  let g := g.recordPutCounters wyrm.id .shield 1
   let arrow := namedPermanent g "The Black Arrow"
   let wyrm := namedPermanent g "Wyrm"
   g.applyTriggeredAbility ⟨0⟩ (.onEnterDealDamageDestroyIfSubtype 1 "Dragon")
@@ -1111,7 +1111,7 @@ def valleyLandfall : Game :=
 #guard
   valleyLandfall.battlefield.any (fun o =>
     o.name == "Elf" && o.printed.isToken) &&
-    (namedPermanent valleyLandfall "Down in the Valley").status.grantedTriggeredAbilities.size == 1
+    (valleyLandfall.grantedTriggeredAbilities (namedPermanent valleyLandfall "Down in the Valley")).size == 1
 
 def valleyElvesPumped : Game :=
   let g := addPermanent valleyLandfall llanowarElves ⟨0⟩ ⟨0⟩
@@ -1149,14 +1149,14 @@ def spiderHexproof : Game :=
 
 #guard
   spiderHexproof.hasHexproof (namedPermanent spiderHexproof "Llanowar Elves") &&
-    (namedPermanent spiderHexproof "Llanowar Elves").status.hexproofGrantedBy.size == 1
+    (spiderHexproof.hexproofGrantedBy (namedPermanent spiderHexproof "Llanowar Elves")).size == 1
 
 def spiderPrevent : Game :=
   let g := addPermanent spiderHexproof grayOgre ⟨1⟩ ⟨1⟩
   addSagaLore g "Old Fat Spider Can't See Me"
 
 #guard
-  (namedPermanent spiderPrevent "Gray Ogre").status.preventDamageGrantedBy.size == 1 &&
+  (spiderPrevent.preventDamageGrantedBy (namedPermanent spiderPrevent "Gray Ogre")).size == 1 &&
     (spiderPrevent.replaceDamage 1 (src? := some (namedPermanent spiderPrevent "Gray Ogre"))).prevented
 
 def spiderPreventedDamage : Game :=
@@ -1211,7 +1211,7 @@ def roadsChapterIV : Game :=
 
 #guard
   !roadsChapterIV.battlefield.any (fun o => o.name == "Roads Go Ever, Ever On") &&
-    (roadsChapterIV.player ⟨0⟩).attackPumpPerPlainsThisTurn == 1 &&
+    (roadsChapterIV.delayedTriggers.filter (fun dt => dt.controller == ⟨0⟩ && dt.kind == .attackPumpPerPlains)).size == 1 &&
     roadsChapterIV.log.any (fun s => mentions s "CR 714.4")
 
 def roadsAttackPump : Game :=
@@ -1232,7 +1232,7 @@ def rollBlink : Game :=
 
 #guard
   !rollBlink.battlefield.any (fun o => o.name == "Llanowar Elves") &&
-    rollBlink.delayedEndStepReturns.size == 1
+    rollBlink.delayedTriggers.size == 1
 
 def rollReturned : Game :=
   settle (rollBlink.beginStep .end) 24
@@ -1588,7 +1588,7 @@ def countersOnTargets (kind : CounterKind) (n : Nat) : Game :=
   (namedPermanent g "Grizzly Bears").status.stun == 2 &&
     (namedPermanent g "Rumbling Baloth").status.stun == 2 &&
     (namedPermanent g "Grizzly Bears").status.plusOnePlusOne == 0 &&
-    !(namedPermanent g "Grizzly Bears").status.gotPlusOneThisTurn
+    !g.gotPlusOneThisTurn (namedPermanent g "Grizzly Bears").id
 
 #guard
   let g := countersOnTargets .flying 1
@@ -1612,7 +1612,7 @@ def plusOneCreatureAndLife : Game :=
 
 #guard
   (namedPermanent plusOneCreatureAndLife "Grizzly Bears").status.plusOnePlusOne == 1 &&
-    (namedPermanent plusOneCreatureAndLife "Grizzly Bears").status.gotPlusOneThisTurn &&
+    plusOneCreatureAndLife.gotPlusOneThisTurn (namedPermanent plusOneCreatureAndLife "Grizzly Bears").id &&
     plusOneCreatureAndLife.loggedLifeGained ⟨0⟩ == 2
 
 #guard
@@ -1636,7 +1636,7 @@ def countersOnFirstYouControl : Game :=
 
 #guard
   (namedPermanent countersOnFirstYouControl "Grizzly Bears").status.plusOnePlusOne == 2 &&
-    (namedPermanent countersOnFirstYouControl "Grizzly Bears").status.gotPlusOneThisTurn &&
+    countersOnFirstYouControl.gotPlusOneThisTurn (namedPermanent countersOnFirstYouControl "Grizzly Bears").id &&
     (namedPermanent countersOnFirstYouControl "Rumbling Baloth").status.plusOnePlusOne == 0
 
 #guard
@@ -1691,7 +1691,7 @@ The counters still land. The same check is `Effect.fight`. -/
   let g := addPermanent (addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩) rumblingBaloth ⟨1⟩ ⟨1⟩
   let bears := namedPermanent g "Grizzly Bears"
   let baloth := namedPermanent g "Rumbling Baloth"
-  let g := g.changeStatus baloth.id (.grantUntilEot Keyword.hexproof)
+  let g := g.createEffect (.keywordsUntilEot baloth.id Keyword.hexproof)
   let fought := g.applyEffect ⟨0⟩ (Effect.plusOneThenFight 2)
     #[Target.permanent bears.id, Target.permanent baloth.id]
   let alone := g.applyEffect ⟨0⟩ Effect.fight
@@ -1728,8 +1728,8 @@ def momentFromGraveyard : Game :=
   (namedPermanent momentFromGraveyard "Grizzly Bears").status.plusOnePlusOne == 1 &&
     (namedPermanent momentFromGraveyard "Hill Giant").status.plusOnePlusOne == 1 &&
     (namedPermanent momentFromGraveyard "Rumbling Baloth").status.plusOnePlusOne == 0 &&
-    (namedPermanent momentFromGraveyard "Grizzly Bears").status.gotPlusOneThisTurn &&
-    (namedPermanent momentFromGraveyard "Hill Giant").status.gotPlusOneThisTurn
+    momentFromGraveyard.gotPlusOneThisTurn (namedPermanent momentFromGraveyard "Grizzly Bears").id &&
+    momentFromGraveyard.gotPlusOneThisTurn (namedPermanent momentFromGraveyard "Hill Giant").id
 
 /- An illegal target resolves none of the sequence, including the graveyard follow-up. -/
 #guard
@@ -1812,18 +1812,18 @@ def artifactsCostOneLess : Game :=
   afterDraw.applyEffect ⟨0⟩ (Effect.artifactSpellsCostLessThisTurn 1) #[]
 
 #guard
-  (artifactsCostOneLess.player ⟨0⟩).typeSpellCostLessThisTurn == #[(.artifact, 1)] &&
-    (artifactsCostOneLess.player ⟨0⟩).supertypeSpellCostLessThisTurn.isEmpty &&
-    (artifactsCostOneLess.player ⟨1⟩).typeSpellCostLessThisTurn.isEmpty
+  artifactsCostOneLess.typeSpellCostLessThisTurn ⟨0⟩ == #[(.artifact, 1)] &&
+    (artifactsCostOneLess.supertypeSpellCostLessThisTurn ⟨0⟩).isEmpty &&
+    (artifactsCostOneLess.typeSpellCostLessThisTurn ⟨1⟩).isEmpty
 
 def legendariesCostTwoLess : Game :=
   afterDraw.applyEffect ⟨0⟩ (Effect.supertypeSpellsCostLessThisTurn 2) #[]
 
 #guard
-  (legendariesCostTwoLess.player ⟨0⟩).supertypeSpellCostLessThisTurn ==
+  legendariesCostTwoLess.supertypeSpellCostLessThisTurn ⟨0⟩ ==
       #[(.legendary, 2)] &&
-    (legendariesCostTwoLess.player ⟨0⟩).typeSpellCostLessThisTurn.isEmpty &&
-    (legendariesCostTwoLess.player ⟨1⟩).supertypeSpellCostLessThisTurn.isEmpty
+    (legendariesCostTwoLess.typeSpellCostLessThisTurn ⟨0⟩).isEmpty &&
+    (legendariesCostTwoLess.supertypeSpellCostLessThisTurn ⟨1⟩).isEmpty
 
 /-- `.dealDamageToEachCreature` damages the named set. The controller's Bear
 is spared when only opposing creatures are damaged, and the Goblin is spared

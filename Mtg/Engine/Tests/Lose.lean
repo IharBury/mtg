@@ -65,7 +65,7 @@ def targetLose : TriggeredAbility.TriggerResolution :=
   .sequence [.tap (.target .ifPresent), abilities]
 
 def flagged (g : Game) (name : String) : Bool :=
-  (obj g name).status.untilEotLosesIndestructible
+  g.untilEotLosesIndestructible (obj g name)
 
 def lostFlag (g : Game) (name : String) : Bool :=
   flagged g name && !g.hasIndestructible (obj g name)
@@ -86,14 +86,14 @@ missing target, and a creature that has left lose nothing. -/
 
 #guard
   let g := step board indestructible (targets := #[Target.permanent (pid board "Bear")])
-  (obj g "Bear").status.untilEotLosesIndestructible &&
+  g.untilEotLosesIndestructible (obj g "Bear") &&
     !g.hasIndestructible (obj g "Bear") && kept g "Titan" &&
     logContains g "Bear loses indestructible until end of turn"
 
 #guard
   let marked :=
     let o := obj board "Bear"
-    board.changeStatus o.id (.indestructibleCounters 1)
+    board.recordPutCounters o.id .indestructible 1
   marked.hasIndestructible (obj marked "Bear") &&
     lostFlag (step marked indestructible
       (targets := #[Target.permanent (pid marked "Bear")])) "Bear"
@@ -105,7 +105,7 @@ missing target, and a creature that has left lose nothing. -/
 #guard
   let g0 := addPermanent board land caster caster
   let g := step g0 indestructible (targets := #[Target.permanent (pid g0 "Field")])
-  kept g "Titan" && !(obj g "Field").status.untilEotLosesIndestructible &&
+  kept g "Titan" && !g.untilEotLosesIndestructible (obj g "Field") &&
     logContains g "The target is no longer legal"
 
 #guard
@@ -116,7 +116,7 @@ missing target, and a creature that has left lose nothing. -/
   let id := pid board "Titan"
   let (g0, newId) := board.move id (.graveyard caster) none
   let g := step g0 indestructible (targets := #[Target.permanent newId])
-  !(anyObj g "Titan").status.untilEotLosesIndestructible &&
+  !g.untilEotLosesIndestructible (anyObj g "Titan") &&
     logContains g "The target is no longer in play"
 
 #guard (.lose .indestructible : TriggeredAbility.TriggerResolution) ==
@@ -138,7 +138,7 @@ has left, lose nothing. -/
   let id := pid board "Titan"
   let (g0, newId) := board.move id (.graveyard caster) none
   let g := step g0 (.lose .indestructible .source) (some newId)
-  !(anyObj g "Titan").status.untilEotLosesIndestructible &&
+  !g.untilEotLosesIndestructible (anyObj g "Titan") &&
     logContains g "Titan is no longer on the battlefield"
 
 /- The enchanted creature loses indestructible. Nothing enchanted is
@@ -193,13 +193,13 @@ that has left leaves the creature able. -/
   let g0 := addPermanent (addPermanent afterDraw hawk caster caster) wasp caster caster
   let g := step g0 abilities (some (pid g0 "Wasp")) #[Target.permanent (pid g0 "Hawk")]
   !(obj g "Hawk").status.tapped && !g.hasFlying (obj g "Hawk") &&
-    (obj g "Hawk").status.losesAbilitiesGrantedBy == #[pid g0 "Wasp"]
+    g.losesAbilitiesGrantedBy (obj g "Hawk") == #[pid g0 "Wasp"]
 
 #guard
   let g0 := addPermanent (addPermanent afterDraw hawk caster caster) wasp caster caster
   let g := step g0 abilities (some (pid g0 "Wasp"))
   g.hasFlying (obj g "Hawk") &&
-    (obj g "Hawk").status.losesAbilitiesGrantedBy.isEmpty && g.log == g0.log
+    (g.losesAbilitiesGrantedBy (obj g "Hawk")).isEmpty && g.log == g0.log
 
 #guard
   let g0 := addPermanent (addPermanent afterDraw hawk caster caster) wasp caster caster
@@ -212,7 +212,7 @@ that has left leaves the creature able. -/
   let (g1, newHawk) := g0.move hawkId (.graveyard caster) none
   let g := step g1 abilities (some (pid g1 "Wasp")) #[Target.permanent newHawk]
   g.hasFlying (anyObj g "Hawk") &&
-    (anyObj g "Hawk").status.losesAbilitiesGrantedBy.isEmpty && g.log == g1.log
+    (g.losesAbilitiesGrantedBy (anyObj g "Hawk")).isEmpty && g.log == g1.log
 
 #guard
   let g0 := addPermanent (addPermanent afterDraw hawk caster caster) wasp caster caster
@@ -220,7 +220,7 @@ that has left leaves the creature able. -/
   let (g1, _) := g0.move waspId (.graveyard caster) none
   let g := step g1 abilities (some waspId) #[Target.permanent (pid g1 "Hawk")]
   g.hasFlying (obj g "Hawk") &&
-    (obj g "Hawk").status.losesAbilitiesGrantedBy.isEmpty &&
+    (g.losesAbilitiesGrantedBy (obj g "Hawk")).isEmpty &&
     logContains g "keeps its abilities"
 
 /- Tap, then that loss, is the printed enter ability. The source leaving
@@ -230,7 +230,7 @@ before it resolves still taps and leaves the abilities. -/
   let g := step g0 targetLose (some (pid g0 "Wasp")) #[Target.permanent (pid g0 "Hawk")]
     (ab := .onEnter Effect.enterTapLoseAbilitiesWhileSource)
   (obj g "Hawk").status.tapped && !g.hasFlying (obj g "Hawk") &&
-    (obj g "Hawk").status.losesAbilitiesGrantedBy == #[pid g0 "Wasp"]
+    g.losesAbilitiesGrantedBy (obj g "Hawk") == #[pid g0 "Wasp"]
 
 #guard
   let g0 := addPermanent (addPermanent afterDraw hawk caster caster) wasp caster caster
@@ -260,10 +260,10 @@ source remains lose what the selector names. -/
   let dropped := step g0 (.lose .indestructible (.target .ifPresent)) sid tgt
   quiet.all (fun g =>
     kept g "Titan" && g.hasFlying (obj g "Hawk") &&
-      (obj g "Hawk").status.losesAbilitiesGrantedBy.isEmpty && g.log == g0.log) &&
-    (obj announced "Titan").status.losesAbilitiesGrantedBy == #[bearId] &&
-    (obj fromSource "Bear").status.losesAbilitiesGrantedBy == #[bearId] &&
-    (obj whileSource "Titan").status.losesAbilitiesGrantedBy == #[bearId] &&
+      (g.losesAbilitiesGrantedBy (obj g "Hawk")).isEmpty && g.log == g0.log) &&
+    announced.losesAbilitiesGrantedBy (obj announced "Titan") == #[bearId] &&
+    fromSource.losesAbilitiesGrantedBy (obj fromSource "Bear") == #[bearId] &&
+    whileSource.losesAbilitiesGrantedBy (obj whileSource "Titan") == #[bearId] &&
     lostFlag dropped "Titan"
 
 /- Printed phrases stay with the combination that produces them. -/

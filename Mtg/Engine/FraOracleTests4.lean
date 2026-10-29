@@ -221,7 +221,7 @@ def tetsukoBoard : Game :=
   let g := passBoth g
   let g := mustApply g ⟨1⟩ (.declareBlockers #[((namedPermanent g "Gray Ogre").id,
     (namedPermanent g "Grizzly Bears").id)])
-  let g := g.changeStatus (namedPermanent g "Grizzly Bears").id (.addPump (-1) 0)
+  let g := g.createEffect (.pump (namedPermanent g "Grizzly Bears").id (-1) 0)
   (namedPermanent g "Grizzly Bears").status.blocked
 #guard (fraRuling 842).comment.contains "won't cause it to become unblocked"
 
@@ -273,7 +273,7 @@ and the legend rule doesn't apply this turn, so both stay. -/
 /- Ruling 816: the copy doesn't copy counters or tapped status. -/
 #guard
   let copy := (hallAsLyra.battlefield.filter (fun o =>
-    o.name == "Lyra, Archangel of Dawn" && o.copyRestore.isSome))[0]!
+    o.name == "Lyra, Archangel of Dawn" && (hallAsLyra.copyRestore o).isSome))[0]!
   copy.status.plusOnePlusOne == 0 && !copy.status.tapped && copy.isCreature
 #guard (fraRuling 816).comment.contains "It doesn't copy whether that creature is tapped"
 

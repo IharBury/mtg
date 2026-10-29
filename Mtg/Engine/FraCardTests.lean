@@ -626,7 +626,7 @@ under your control and is exiled at the next end step. -/
   let g := resolved (castFra withBears vindictiveTriumph [tgt withBears "Grizzly Bears"])
   let o := namedPermanent g "Grizzly Bears"
   o.controlledBy me && o.status.tapped &&
-    let g := skipTo g .end 80
+    let g := passBoth (skipTo g .end 80)
     inExile g "Grizzly Bears"
 #guard
   let g := resolved (castFra withGiant vindictiveTriumph [tgt withGiant "Hill Giant"])

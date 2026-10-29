@@ -180,7 +180,7 @@ def replaceDamage (g : Game) (n : Int)
       -- 1. Preventions (when damage is preventable)
       if !unpreventable then
         if let some src := src? then
-          for gid in src.status.preventDamageGrantedBy do
+          for gid in g.preventDamageGrantedBy src do
             if g.grantorStillInPlay gid then
               items := items.push (.prevention {
                 id := { kind := .preventDamageGrantedBy, object := some src.id, grantor := some gid }
@@ -199,7 +199,7 @@ def replaceDamage (g : Game) (n : Int)
                 affectedPlayer := affected
                 kind := .protectionPreventDamage o.id src.id
               })
-          if o.staticAbilities.any (· == .preventAllDamageToThis) then
+          if (g.staticAbilities o).any (· == .preventAllDamageToThis) then
             items := items.push (.prevention {
               id := { kind := .preventAllDamageToThis, object := some o.id }
               source := some o.id
@@ -216,7 +216,7 @@ def replaceDamage (g : Game) (n : Int)
               kind := .shieldCounterPreventDamage o.id
             })
         if let some pid := recipientPlayer? then
-          if (g.player pid).protectionFromEverything then
+          if g.protectionFromEverything pid then
             items := items.push (.prevention {
               id := { kind := .protectionFromEverythingPlayer, player := some pid }
               source := none
@@ -458,7 +458,7 @@ def gainLife (g : Game) (p : PlayerId) (n : Nat)
     g.logMsg s!"{(g.player p).name} can't gain life"
   else
     let pl := g.player p
-    if pl.lifeLocked || pl.lifeCantChange then
+    if g.lifeLocked p || g.lifeCantChange p then
       g.logMsg s!"{pl.name}'s life total can't change"
     else
       let (n, applied, cause', choice?) :
@@ -572,7 +572,6 @@ def dealDamageFrom (g : Game) (sourceName : String) (o : GameObject) (n : Int)
                 (ctxSrc.orElse (fun _ => some src.id))
                 (ctrl.orElse (fun _ => src.controller)))
         g.withBatch defaultCause fun g =>
-        let g := g.changeStatus src.id (.dealtDamageThisTurn true)
         let g :=
           g.markDamageOn o n s!"{sourceName} deals {dealtAmt} damage to {o.name}"
             (deathtouch || g.hasDeathtouch src) (source := some (g.snapshot src))
@@ -601,8 +600,8 @@ def dealDamageToPlayer (g : Game) (pid : PlayerId) (n : Int)
       (.dealDamageToPlayer pid n.toNat msg (source.map g.snapshot) false (!preventable) cause)
   | none =>
   let g := g.consumeReplacementOrder rep.applied
-  if rep.prevented && preventable && pl.protectionFromEverything &&
-      !(source.any (fun src => src.status.preventDamageGrantedBy.any g.grantorStillInPlay)) then
+  if rep.prevented && preventable && g.protectionFromEverything pid &&
+      !(source.any (fun src => (g.preventDamageGrantedBy src).any g.grantorStillInPlay)) then
     g.logMsg s!"damage to {pl.name} is prevented (protection from everything)"
   else if (rep.prevented || rep.amount == 0) && source.isSome then
     g.logMsg s!"damage from the source is prevented"
@@ -621,7 +620,7 @@ def dealDamageToPlayer (g : Game) (pid : PlayerId) (n : Int)
     let happened := GameEvent.damagedPlayer g.turnNumber srcEvent pid n.toNat false (cause := rep.cause)
     let g := if n > 0 then g.record happened else g
     let g :=
-      if (pl.lifeLocked || pl.lifeCantChange) && n != 0 then
+      if (g.lifeLocked pid || g.lifeCantChange pid) && n != 0 then
         g.logMsg s!"{pl.name}'s life total can't change"
       else if n > 0 then
         (g.record (GameEvent.life g.turnNumber pid n.toNat false true false (cause := rep.cause))).logMsg
@@ -704,7 +703,7 @@ def loseLife (g : Game) (p : PlayerId) (n : Nat)
   if n == 0 then g
   else
     let pl := g.player p
-    if pl.lifeLocked || pl.lifeCantChange then
+    if g.lifeLocked p || g.lifeCantChange p then
       g.logMsg s!"{pl.name}'s life total can't change"
     else
       (g.record (GameEvent.life g.turnNumber p n false (cause := cause))).logMsg

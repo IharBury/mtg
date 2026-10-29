@@ -41,7 +41,7 @@ def splitSecondOnStack (g : Game) : Bool :=
       o.abilityEffect.isNone && o.triggeredAbility.isNone &&
         o.printed.isInstantOrSorcery &&
         (g.permanentsOf e.controller).any (fun src =>
-          src.staticAbilities.any (fun
+          (g.staticAbilities src).any (fun
             | .instantSorcerySplitSecond => true
             | _ => false))
     | none => false)
@@ -51,7 +51,7 @@ activate abilities that aren't mana abilities. -/
 def combatLocksNonManaAbilities (g : Game) : Bool :=
   (g.step == .beginningOfCombat || g.step == .declareAttackers ||
     g.step == .declareBlockers || g.step == .combatDamage || g.step == .endOfCombat) &&
-    g.battlefield.any (·.staticAbilities.any (· == .fra .noSpellsOrAbilitiesDuringCombat))
+    g.battlefield.any (fun x => (g.staticAbilities x).any (· == .fra .noSpellsOrAbilitiesDuringCombat))
 
 /-- Mana abilities (CR 605.1a): no target, not a loyalty ability, and the
 effect adds mana. -/
@@ -81,7 +81,7 @@ def extraLandsFromPermanents (g : Game) (p : PlayerId) : Nat :=
 
 /-- How many lands `p` may play this turn (CR 305.2 / 305.2b). -/
 def landPlaysAllowed (g : Game) (p : PlayerId) : Nat :=
-  1 + (g.player p).additionalLandsThisTurn + g.extraLandsFromPermanents p
+  1 + g.additionalLandsThisTurn p + g.extraLandsFromPermanents p
 
 /-- Lands remaining this turn (CR 305.2 / 305.3 / 116.2a). -/
 def canPlayLand (g : Game) (p : PlayerId) : Bool :=
@@ -90,7 +90,7 @@ def canPlayLand (g : Game) (p : PlayerId) : Bool :=
 /-- Whether `p` may play `o` from exile under a granted permission (CR 701.14 / 715.3d). -/
 def mayPlayFromExile (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
   o.zone == .exile &&
-  match o.playPermission with
+  match g.playPermission o with
   | some perm =>
     -- Ruling 744: only the current controller of the prepared permanent may
     -- cast the copy of its prepare spell.
@@ -102,7 +102,6 @@ def mayPlayFromExile (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
         | none => false
       | none => perm.player == p
     mayCast &&
-      (perm.fromAdventure || perm.whileExiled || perm.turnEndsRemaining > 0) &&
       (match perm.requireSubtype with
        | none => true
        | some t => g.controlsAnySubtype p #[t])
@@ -126,13 +125,13 @@ def exiledPlayable (g : Game) (p : PlayerId) : Array GameObject :=
 Cycling and other activated abilities of those cards are still illegal. -/
 def controlsPlayLandsFromGraveyard (g : Game) (p : PlayerId) : Bool :=
   (g.permanentsOf p).any (fun x =>
-    x.staticAbilities.any (fun
+    (g.staticAbilities x).any (fun
       | .mayPlayLandsFromGraveyard => true
       | _ => false))
 
 def mayPlayFromGraveyard (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
   o.zone == .graveyard p && o.owner == p &&
-    (o.printed.flashback.isSome || o.flashbackUntilEot || o.status.freeCastFromGraveyard ||
+    (o.printed.flashback.isSome || g.flashbackUntilEot o || g.freeCastFromGraveyard o ||
       (o.printed.isLand && g.controlsPlayLandsFromGraveyard p))
 
 /-- True when `p` controls a permanent that lets them look at the library top. -/

@@ -603,7 +603,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let g :=
       match g.findObject? newId with
       | some o =>
-        if o.isOnBattlefield && o.printed.otherFace.isSome && !o.status.cantTransform then
+        if o.isOnBattlefield && o.printed.otherFace.isSome && !g.cantTransform o then
           g.beginFraChoice p (.nickFuryMayTransform newId rest)
             s!"{(g.player p).name} may transform {o.name}"
         else g.putRestOnBottomRandom p rest (cause := some cause)
@@ -624,19 +624,13 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     if ordered.size != ids.size || ordered.toList.eraseDups.length != ordered.size ||
         !ordered.all (ids.contains ·) then
       throw "Put every remaining card on the bottom, in the order you choose"
-    let cause := ids[0]?.bind (fun id => (g.linkedExileCauses.find? (·.1 == id)).map (·.2))
-    let g :=
-      match ids[0]? with
-      | some id => g.change (.setLinkedExileCause id none)
-      | none => g
+    let cause := g.stashedCause.orElse (fun _ => ids[0]?.bind g.lastMoveCauseOf?)
+    let g := if g.stashedCause.isSome then g.change (.stashedCause none) else g
     return (g.moveIdsInOrder ordered (.library p) (cause := cause)
       |>.logMsg s!"{(g.player p).name} puts the rest on the bottom of their library in the chosen order").finishFraChoice
   | .orderLibraryBottom ids, .decline =>
-    let cause := ids[0]?.bind (fun id => (g.linkedExileCauses.find? (·.1 == id)).map (·.2))
-    let g :=
-      match ids[0]? with
-      | some id => g.change (.setLinkedExileCause id none)
-      | none => g
+    let cause := g.stashedCause.orElse (fun _ => ids[0]?.bind g.lastMoveCauseOf?)
+    let g := if g.stashedCause.isSome then g.change (.stashedCause none) else g
     return (g.moveIdsInOrder ids (.library p) (cause := cause)
       |>.logMsg s!"{(g.player p).name} puts the rest on the bottom of their library in the chosen order").finishFraChoice
   | .orderLibraryBottom _, _ => throw "Choose the order for the bottom of your library"
@@ -697,11 +691,8 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
         (cause := some (.costPayment .exile p (some abilityId)))
       (g, acc.2.push ex)) (g, #[])
     let g := g.logMsg s!"{(g.player p).name} exiles {exiled.size} card(s) from their graveyard"
-    let g := match g.findObject? abilityId with
-      | some ab => g.changeObject ab.id (.boastExiled exiled)
-      | none => g
     let g := match g.findObject? sourceId with
-      | some src => g.markBoastUsed src
+      | some src => g.logMsg s!"{src.name}'s boast ability is activated"
       | none => g
     let name := ((g.findObject? sourceId).map (·.name)).getD "Baron Helmut Zemo"
     return (g.becomeActivated p name (some sourceId) (some ActivatedAbility.zemoBoastAbility)).finishFraChoice
@@ -870,7 +861,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       let name := o.name
       let (g, cause) := g.allocDelayedCause (some p)
       let (g, newId) := g.move o.id .exile none (cause := some cause)
-      return (g.createEffect (.playPermission newId { player := p, turnEndsRemaining := 2 })
+      return (g.createEffect (.playPermission newId { player := p } (turnEnds := 2))
         (cause := some cause)
         |>.logMsg s!"{name} is exiled. {(g.player p).name} may play it until the end of their next turn").finishFraChoice
     | none => return g.finishFraChoice
@@ -1091,9 +1082,8 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     | .amassArmy .. =>
       if chosen.size != 1 then throw "Choose one Army"
     | _ => pure ()
-    let cause := ids[0]?.bind g.linkedExileCause?
-    let g := ids.foldl (fun (g : Game) id =>
-      if (g.linkedExileCause? id).isSome then g.change (.setLinkedExileCause id none) else g) g
+    let cause := g.stashedCause.orElse (fun _ => ids[0]?.bind g.lastMoveCauseOf?)
+    let g := if g.stashedCause.isSome then g.change (.stashedCause none) else g
     return (g.finishChooseCards p chosen purpose (cause := cause)).finishFraChoice
   | .chooseCards ids _ purpose, .decline =>
     match purpose with
@@ -1101,9 +1091,8 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       if !ids.isEmpty then throw "Choose one card"
     | .amassArmy .. => throw "Choose an Army"
     | _ => pure ()
-    let cause := ids[0]?.bind g.linkedExileCause?
-    let g := ids.foldl (fun (g : Game) id =>
-      if (g.linkedExileCause? id).isSome then g.change (.setLinkedExileCause id none) else g) g
+    let cause := g.stashedCause.orElse (fun _ => ids[0]?.bind g.lastMoveCauseOf?)
+    let g := if g.stashedCause.isSome then g.change (.stashedCause none) else g
     return (g.finishChooseCards p #[] purpose (cause := cause)).finishFraChoice
   | .chooseCards .., _ => throw "Choose cards, or decline"
   | .blackGatePlayer creature players, .mode idx =>

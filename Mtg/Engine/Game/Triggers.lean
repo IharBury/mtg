@@ -73,12 +73,14 @@ def putTriggeredAbilityOnStack (g : Game) (controller : PlayerId) (source : Game
     (ab : TriggeredAbility) (event : String) (lastKnownPower : Option Int := none)
     (lastKnownToughness : Option Int := none) (cause : Option GameObject := none)
     (causeController : Option PlayerId := none)
-    (eventCause : Option EventCause := none) : Game :=
+    (eventCause : Option EventCause := none)
+    (delayedTrigger : Option (DelayedTriggerKind × EventCause) := none) : Game :=
   if (g.player controller).lost then g
   else
     let (g, obj) := g.putStackAbility source controller
       (triggeredAbility := some ab)
       (lastKnownPower := lastKnownPower) (lastKnownToughness := lastKnownToughness)
+      (delayedTrigger := delayedTrigger)
     -- “For each opponent, up to one target … that player controls”: one
     -- optional instance per opponent (CR 601.2c).
     let abilityEffect :=
@@ -96,7 +98,7 @@ def putTriggeredAbilityOnStack (g : Game) (controller : PlayerId) (source : Game
       .fraCauseController (causeController.orElse (fun _ => cause.bind (·.controller))),
       .fraCausePower (cause.bind (fun c =>
         if (g.findObject? c.id).any (·.isOnBattlefield) then some (g.power (g.object! c.id))
-        else c.lastKnownPower.orElse (fun _ => some (g.power c)))),
+        else (g.lastKnownPowerOf? c.id).orElse (fun _ => some (g.power c)))),
       .fraCauseStatus (cause.map (·.status)),
       .abilityEffect abilityEffect]
     let obj := g.object! obj.id
@@ -118,13 +120,15 @@ def putTriggerOrFizzle (g : Game) (controller : PlayerId) (source : GameObject)
     (ab : TriggeredAbility) (event : String)
     (lastKnownPower : Option Int := none) (lastKnownToughness : Option Int := none)
     (cause : Option GameObject := none) (causeController : Option PlayerId := none)
-    (eventCause : Option EventCause := none) : Game :=
+    (eventCause : Option EventCause := none)
+    (delayedTrigger : Option (DelayedTriggerKind × EventCause) := none) : Game :=
   if g.triggerHasNoLegalTarget controller ab source.id then
     g.logMsg
       s!"{source.name}'s {event} is removed from the stack (no legal target) (CR 603.3d)"
   else
     g.putTriggeredAbilityOnStack controller source ab event lastKnownPower lastKnownToughness
       (cause := cause) (causeController := causeController) (eventCause := eventCause)
+      (delayedTrigger := delayedTrigger)
 
 /-- Put `ab` on the stack for `event`, using that event's spec for the log label
 and CR 603.3d check so a new event is not restated at every queue site. -/
@@ -132,16 +136,18 @@ def putQueuedTrigger (g : Game) (controller : PlayerId) (source : GameObject)
     (ab : TriggeredAbility) (event : TriggerEvent)
     (lastKnownPower : Option Int := none) (lastKnownToughness : Option Int := none)
     (cause : Option GameObject := none) (causeController : Option PlayerId := none)
-    (eventCause : Option EventCause := none) : Game :=
+    (eventCause : Option EventCause := none)
+    (delayedTrigger : Option (DelayedTriggerKind × EventCause) := none) : Game :=
   if (g.player controller).lost then g
   else if !g.triggerConditionHolds controller ab cause (some source) then g
   else if event.checkTargets then
     g.putTriggerOrFizzle controller source ab event.label lastKnownPower lastKnownToughness
       (cause := cause) (causeController := causeController) (eventCause := eventCause)
+      (delayedTrigger := delayedTrigger)
   else
     g.putTriggeredAbilityOnStack controller source ab event.label
       lastKnownPower lastKnownToughness (cause := cause) (causeController := causeController)
-      (eventCause := eventCause)
+      (eventCause := eventCause) (delayedTrigger := delayedTrigger)
 
 /-- Queue `ab` until a player would receive priority (CR 603.3 / 603.4). The
 intervening condition is checked when the event occurs. -/
@@ -153,8 +159,7 @@ def queueTrigger (g : Game) (controller : PlayerId) (source : GameObject)
   if (g.player controller).lost then g
   else if !g.triggerConditionHolds controller ab cause (some source) then g
   else if ab.onceEachTurn && g.loggedTriggeredThisTurn source.id ab then g
-  else if ab.optionalOnceEachTurn &&
-      ((g.findObject? source.id).map (·.status.optionalOnceUsed)).getD source.status.optionalOnceUsed then g
+  else if ab.optionalOnceEachTurn && g.optionalOnceUsedThisTurn source.id then g
   else
     let attackEvent :=
       match event with
@@ -246,7 +251,7 @@ def putMatchingSourceTriggers (g : Game) (controller : PlayerId) (source : GameO
     (cause : Option GameObject := none) (keep : TriggeredAbility → Bool := fun _ => true) : Game :=
   Id.run do
     let mut g := g
-    for ab in (source.matchingTriggers event ++
+    for ab in (g.matchingTriggers source event ++
         (g.attachedGrantedTriggers source ++ g.prowessTriggers source).filter (·.firesOn event)).filter keep do
       let skipInfinity :=
         match ab.shared with
@@ -293,7 +298,7 @@ def forEachControlledCreature (g : Game) (p : PlayerId)
     (f : Game → GameObject → Game) (excludeId : Option ObjectId := none) : Game :=
   g.withBatch none fun g =>
     g.foldControlledPermanents p excludeId fun g o =>
-      if o.isCreature then f g o else g
+      if g.isCreature o then f g o else g
 
 /-- Put matching triggers of permanents `p` controls that fire on `event`.
 `cause` is the object that made them trigger, when there is one. -/
@@ -389,7 +394,7 @@ def grantedManaAbilities (g : Game) (o : GameObject) : Array ManaType :=
         (g.permanentsOf p).foldl (fun acc src =>
           if src.id == o.id then acc
           else
-            src.staticAbilities.foldl (fun acc ab =>
+            (g.staticAbilities src).foldl (fun acc ab =>
               match ab with
               | .otherSubtypeHaveTapAddOneOf subtypes mana =>
                 if subtypes.any (fun s => g.hasSubtype o s) then
@@ -400,7 +405,7 @@ def grantedManaAbilities (g : Game) (o : GameObject) : Array ManaType :=
       let anyColor : Array ManaType :=
         #[.colored .white, .colored .blue, .colored .black,
           .colored .red, .colored .green]
-      if o.isCreature &&
+      if g.isCreature o &&
           (g.permanentsOf p).any (fun src => src.printed.grantCreaturesTapAddAnyColor) then
         anyColor.foldl (fun acc t =>
           if acc.contains t then acc else acc.push t) fromLords
@@ -408,10 +413,10 @@ def grantedManaAbilities (g : Game) (o : GameObject) : Array ManaType :=
 
 /-- Mana types Reality Fracture mana abilities of `o` produce, including the
 `{T}: Add {C}{C}` Emrakul, the Exigent Doom grants a land. -/
-def fraManaAbilities (o : GameObject) : Array ManaType :=
+def fraManaAbilities (g : Game) (o : GameObject) : Array ManaType :=
   let anyColor : Array ManaType :=
     #[.colored .white, .colored .blue, .colored .black, .colored .red, .colored .green]
-  let own := o.staticAbilities.foldl (fun acc ab =>
+  let own := (g.staticAbilities o).foldl (fun acc ab =>
     match ab with
     | .fra .tapAddColorlessNotFromHand => acc.push .colorless
     | .fra .tapAddAnyColorPlaneswalkerOnly => acc ++ anyColor
@@ -421,15 +426,15 @@ def fraManaAbilities (o : GameObject) : Array ManaType :=
       | some c => acc.push (.colored c)
       | none => acc
     | _ => acc) #[]
-  if o.isOnBattlefield && !o.status.colorlessGrantUntilCast.isEmpty && !own.contains .colorless then
+  if o.isOnBattlefield && !(g.colorlessGrantUntilCast o).isEmpty && !own.contains .colorless then
     own.push .colorless
   else own
 
 /-- The spending restriction on mana `o` adds when tapped for `mana`. -/
 def fraManaUseOf (g : Game) (o : GameObject) (mana : ManaType) : Option FraManaUse :=
-  if mana == .colorless && !o.status.colorlessGrantUntilCast.isEmpty then none
+  if mana == .colorless && !(g.colorlessGrantUntilCast o).isEmpty then none
   else
-    match o.staticAbilities.findSome? (fun ab =>
+    match (g.staticAbilities o).findSome? (fun ab =>
         match ab with
         | .fra s => s.manaUse?
         | _ => none) with
@@ -487,7 +492,7 @@ def removeWaitingTrigger (g : Game) (wt : WaitingTrigger) : Game :=
   match g.waitingTriggers.findIdx? (fun w =>
     w.controller == wt.controller && w.source.id == wt.source.id &&
       w.ability == wt.ability && w.event == wt.event &&
-      w.causeId == wt.causeId) with
+      w.causeId == wt.causeId && w.delayedTrigger == wt.delayedTrigger) with
   | none => g
   | some i => g.change (.waitingTriggers (g.waitingTriggers.eraseIdx! i))
 
@@ -508,13 +513,11 @@ def putWaitingTrigger (g : Game) (wt : WaitingTrigger) (event : TriggerEvent) : 
     g.putQueuedTrigger wt.controller wt.source wt.ability event
       (lastKnownPowerForTrigger wt.ability wt.lastKnownPower wt.causeId)
       wt.lastKnownToughness (cause := wt.cause) (causeController := wt.causeController)
-      (eventCause := wt.eventCause)
+      (eventCause := wt.eventCause) (delayedTrigger := wt.delayedTrigger)
   if wt.checked then put g
   else
-    let live := g.findObject? wt.source.id
-    let status := (live.map (·.status)).getD wt.source.status
     if wt.ability.onceEachTurn && g.loggedTriggeredThisTurn wt.source.id wt.ability then g
-    else if wt.ability.optionalOnceEachTurn && status.optionalOnceUsed then g
+    else if wt.ability.optionalOnceEachTurn && g.optionalOnceUsedThisTurn wt.source.id then g
     else if !g.triggerConditionHolds wt.controller wt.ability wt.cause (some wt.source) then g
     else
       let originBatch :=
@@ -561,8 +564,8 @@ After that batch, check state-based actions again. Repeat until idle, then
 batch (targets or the next player's triggers). -/
 partial def receivePriority (g : Game) (p : PlayerId) (recheckSba := true) : Game :=
   let g :=
-    if g.pending == .none && g.afterRandom == .none && g.resolvingContext.isSome then
-      g.change (.resolvingContext none)
+    if g.pending == .none && g.afterRandom == .none && g.continuations.size > 1 then
+      g.change .popContinuationFrame
     else g
   let p := g.priorityInstead p
   let g := if recheckSba then g.checkSBA else g
@@ -588,7 +591,7 @@ partial def receivePriority (g : Game) (p : PlayerId) (recheckSba := true) : Gam
         else receivePriority g p true
     | some q =>
       let mine := g.waitingTriggersOf q
-      if mine.size ≤ 1 then
+      if (mine.filter (·.delayedTrigger.isNone)).size ≤ 1 then
         let g := g.putTriggerBatch mine
         if g.over || g.pending != .none then g
         else receivePriority g p false

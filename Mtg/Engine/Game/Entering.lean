@@ -15,34 +15,9 @@ namespace Game
 (CR 601.2i / 603.3). -/
 def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) : Game :=
   let fromZone :=
-    if spell.castFromGraveyard then Zone.graveyard spell.owner
-    else if spell.castFromHand then Zone.hand spell.owner
+    if g.castFromGraveyard spell.id then Zone.graveyard spell.owner
+    else if g.castFromHand spell.id then Zone.hand spell.owner
     else Zone.exile
-  let extraAnnounced : Array AdditionalCostChoice :=
-    let hasKicker := g.events.any fun e =>
-      match e.change with
-      | .rules (.cast (.announced oid _ _ cs)) => oid == spell.id && cs.any (fun | .kicker => true | _ => false)
-      | _ => false
-    let hasGift := g.events.any fun e =>
-      match e.change with
-      | .rules (.cast (.announced oid _ _ cs)) => oid == spell.id && cs.any (fun | .gift _ => true | _ => false)
-      | _ => false
-    let hasTeamwork := g.events.any fun e =>
-      match e.change with
-      | .rules (.cast (.announced oid _ _ cs)) => oid == spell.id && cs.any (fun | .teamwork _ => true | _ => false)
-      | _ => false
-    let cs : Array AdditionalCostChoice := #[]
-    let cs := if spell.kicked && !hasKicker then cs.push .kicker else cs
-    let cs :=
-      match spell.giftPromisedTo with
-      | some p => if !hasGift then cs.push (.gift p) else cs
-      | none => cs
-    let cs := if spell.teamworkPaid && !hasTeamwork then cs.push (.teamwork #[]) else cs
-    cs
-  let g :=
-    if !extraAnnounced.isEmpty then
-      g.record (GameEvent.announced g.turnNumber spell.id (costs := extraAnnounced))
-    else g
   let g :=
     Id.run do
       let mut g := g
@@ -81,10 +56,10 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
   -- copy has the original's targets, mode, X, and paid-cost effects, but
   -- no costs are paid for it (rulings 843–846).
   let g :=
-    if spell.printed.isInstantOrSorcery && (g.player caster).copyNextInstantSorceryThisTurn > 0 then
+    if spell.printed.isInstantOrSorcery && g.copyNextInstantSorceryThisTurn caster > 0 then
       let cryoEid? := g.activeEffects.findSome? (fun (eid, eff) =>
         match eff with
-        | .copyNextInstantSorceryThisTurn p _ => if p == caster then some eid else none
+        | .playerRule p (.copyNextInstantSorcery _) _ => if p == caster then some eid else none
         | _ => none)
       let copyCause : Option EventCause :=
         cryoEid?.map (fun eid => g.effectCreatedCause eid none caster)
@@ -98,7 +73,6 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
         controller := some caster
         zone := .stack
         isCopy := true
-        wasCast := false
       }
       let g := g.record (GameEvent.stackObjectCopied g.turnNumber spell.id copySnap caster
         (cause := copyCause))
@@ -134,7 +108,6 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
         controller := some caster
         zone := .stack
         isCopy := true
-        wasCast := false
       }
       let g := g.record (GameEvent.stackObjectCopied g.turnNumber spell.id copySnap caster
         (cause := some copyCause))
@@ -228,7 +201,7 @@ def enterWithXPlusOnes (g : Game) (o : GameObject) : Game :=
       | .entersWithXPlusOne => true
       | _ => false) && o.status.plusOnePlusOne > 0 then
     let (n, _, _) :=
-      g.replaceCountersPut o .plusOnePlusOne (o.chosenX.getD 0) (putter := o.controller)
+      g.replaceCountersPut o .plusOnePlusOne ((g.chosenXOf? o.id).getD 0) (putter := o.controller)
         (entersWith := true) (entering := some o)
     if n == 0 then g
     else g.logMsg s!"{o.name} enters with {n} +1/+1 counter(s)"
@@ -257,10 +230,7 @@ def applyEntersWith (g : Game) (o : GameObject) : Game :=
 /-- After a permanent enters, put its enters triggers and “another … enters”
 triggers (CR 603.6a). -/
 def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
-  if (g.findObject? o.id).any (·.enterProcessed) then g else
-  let g := match g.findObject? o.id with
-    | some x => g.changeObject x.id (.enterProcessed true)
-    | none => g
+  if (g.findObject? o.id).isNone then g else
   let g :=
     if g.loggedEntered o.id then g
     else

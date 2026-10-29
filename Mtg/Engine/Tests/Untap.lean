@@ -44,11 +44,12 @@ def mark (g : Game) (name : String) (tapped : Bool := true)
     (attacking : Bool := false) (stun : Nat := 0)
     (cantFrom : Option ObjectId := none) : Game :=
   let o := obj g name
-  g.changeStatuses o.id #[
-    .tapped tapped,
-    .attacking attacking,
-    .stun stun,
-    .cantUntapGrantedBy (match cantFrom with | some id => #[id] | none => #[])]
+  let g := if stun > 0 then g.recordPutCounters o.id .stun stun else g
+  let g := if attacking then g.markAttacking o.id else g
+  let g := g.changeStatuses o.id #[.tapped tapped]
+  match cantFrom with
+  | some srcId => g.createEffect (.cantUntapWhileSource o.id srcId)
+  | none => g
 
 def tapped (g : Game) (name : String) : Bool :=
   (obj g name).status.tapped

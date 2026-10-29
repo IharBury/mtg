@@ -506,10 +506,10 @@ open Mtg.Demo.Render
 
 #guard isPassShortcutCmd "your" []
 
-#guard reachedPassUntil (Tests.afterDraw.change (.step .declareAttackers))
+#guard reachedPassUntil { Tests.afterDraw with step := .declareAttackers }
   Tests.afterDraw.turnNumber Tests.afterDraw.step .nextDeclareAttackers
 
-#guard reachedPassUntil (Tests.afterDraw.change (.step .postcombatMain))
+#guard reachedPassUntil { Tests.afterDraw with step := .postcombatMain }
   Tests.afterDraw.turnNumber Tests.afterDraw.step .nextMain
 
 #guard isPassSequenceCommand "noblock" []
@@ -534,7 +534,7 @@ open Mtg.Demo.Render
   let ign := passUntilGoalAt Tests.afterDraw ⟨0⟩ .ignore
   !named.uninterruptible && ign.uninterruptible &&
     !reachedPassUntilGoal Tests.afterDraw named &&
-    reachedPassUntilGoal (Tests.afterDraw.change (.step .postcombatMain)) named
+    reachedPassUntilGoal { Tests.afterDraw with step := .postcombatMain } named
 
 #guard
   match applyKeep Tests.twoBofursSBA ⟨0⟩ [] with
@@ -638,7 +638,7 @@ open Mtg.Demo.Render
 #guard
   match applyInteractiveAsActor Tests.struckerMayConnive "decline" [] with
   | .ok g' =>
-    !(Tests.namedPermanent g' "Baron Strucker, HYDRA Overlord").status.optionalOnceUsed &&
+    !g'.optionalOnceUsedThisTurn (Tests.namedPermanent g' "Baron Strucker, HYDRA Overlord").id &&
       g'.pending == .none &&
       g'.log.any (fun s => Tests.mentions s "declines to have the Villain connive")
   | .error _ => false

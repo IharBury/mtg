@@ -115,7 +115,7 @@ def threeLeftPlayerTriggerSkipped : Game :=
 def threeNoCombatToLeftPlayer : Bool :=
   let g := addPermanent threeStarted grayOgre ⟨0⟩ ⟨0⟩
   let ogre := namedPermanent g "Gray Ogre"
-  let g := g.changeStatuses ogre.id #[.attacking true, .attackingWhom (some ⟨1⟩)]
+  let g := g.markAttacking ogre.id (some (.player ⟨1⟩))
   let g := g.changePlayers ⟨1⟩ #[.lost true, .leftTheGame true]
   let asgn := g.defaultCombatAssignment (namedPermanent g "Gray Ogre") true #[]
   asgn.toPlayer == 0
@@ -144,7 +144,7 @@ def threeAfterLeftPlayerCurrentTurn : Game :=
 
 #guard threeAfterLeftPlayerCurrentTurn.activePlayer == ⟨1⟩
 #guard threeAfterLeftPlayerCurrentTurn.step == .upkeep
-#guard (threeAfterLeftPlayerCurrentTurn.player ⟨0⟩).protectionFromEverything
+#guard threeAfterLeftPlayerCurrentTurn.protectionFromEverything ⟨0⟩
 
 /-- Chandra's next turn does not begin (CR 800.4k). Effects that last until
 that turn expire when it would have begun (CR 800.4m). -/
@@ -154,7 +154,7 @@ def threeSkipLeftPlayerTurn : Game :=
 
 #guard threeSkipLeftPlayerTurn.activePlayer == ⟨1⟩
 #guard threeSkipLeftPlayerTurn.step == .upkeep
-#guard !(threeSkipLeftPlayerTurn.player ⟨0⟩).protectionFromEverything
+#guard !(threeSkipLeftPlayerTurn.protectionFromEverything ⟨0⟩)
 #guard threeSkipLeftPlayerTurn.log.any (fun s => mentions s "CR 800.4m")
 #guard threeSkipLeftPlayerTurn.log.any (fun s => mentions s "Liliana's turn")
 

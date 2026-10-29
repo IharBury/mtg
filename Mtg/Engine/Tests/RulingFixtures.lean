@@ -69,7 +69,7 @@ def cosmicCubeSetup : Game :=
   let g := addPermanent afterDraw cosmicCube ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
   let bears := namedPermanent g "Grizzly Bears"
-  let g := g.changeStatus bears.id (.attacking true)
+  let g := g.markAttacking bears.id
   let g := addToLibraryTop g hillGiant ⟨0⟩
   let g := addToLibraryTop g mountain ⟨0⟩
   addToLibraryTop g lightningBolt ⟨0⟩

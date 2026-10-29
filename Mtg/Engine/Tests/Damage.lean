@@ -25,7 +25,7 @@ def flyerVsGandalf : Game :=
   let g := addPermanent g gandalfSparkStarter ⟨1⟩ ⟨1⟩
   let g := addPermanent g grayOgre ⟨1⟩ ⟨1⟩
   let smaug := namedPermanent g "Smaug, the Great Calamity"
-  g.changeStatus smaug.id (.attacking true)
+  g.markAttacking smaug.id
 
 #guard flyerVsGandalf.canBlock
   (namedPermanent flyerVsGandalf "Gandalf, Spark Starter")
@@ -242,7 +242,7 @@ def gandalfLeftBeforeTrigger : Game :=
 #guard
   let g := addPermanent gandalfEntered velvetwingButterflies ⟨1⟩ ⟨1⟩
   let o := namedPermanent g "Velvetwing Butterflies"
-  let g := g.changeStatus o.id (.untilEotKeywords Keyword.hexproof)
+  let g := g.createEffect (.keywordsUntilEot o.id Keyword.hexproof)
   match g.apply ⟨0⟩
       (.divideDamage #[(Target.permanent (namedPermanent g "Velvetwing Butterflies").id, 3)]) with
   | .error msg => mentions msg "Illegal target"
@@ -311,12 +311,12 @@ def paidFireleaper : Game :=
 #guard paidFireleaper.hasPriority ⟨0⟩
 #guard paidFireleaper.stack.size == 1
 #guard paidFireleaper.log.any (fun s => mentions s "activates Goblin Fireleaper")
-#guard (namedPermanent paidFireleaper "Goblin Fireleaper").status.pumpPower == 0
+#guard (paidFireleaper.pumpOf (namedPermanent paidFireleaper "Goblin Fireleaper")).1 == 0
 
 def pumpedFireleaper : Game := passBoth paidFireleaper
 
 #guard pumpedFireleaper.stack.isEmpty
-#guard (namedPermanent pumpedFireleaper "Goblin Fireleaper").status.pumpPower == 1
+#guard (pumpedFireleaper.pumpOf (namedPermanent pumpedFireleaper "Goblin Fireleaper")).1 == 1
 #guard pumpedFireleaper.power (namedPermanent pumpedFireleaper "Goblin Fireleaper") == 2
 #guard pumpedFireleaper.log.any (fun s => mentions s "Goblin Fireleaper gets +1/+0 until end of turn")
 
@@ -327,7 +327,7 @@ def fireleaperPumpedTwice : Game :=
   passBoth (mustApply g ⟨0⟩ .pay)
 
 #guard fireleaperPumpedTwice.power (namedPermanent fireleaperPumpedTwice "Goblin Fireleaper") == 3
-#guard (namedPermanent fireleaperPumpedTwice "Goblin Fireleaper").status.pumpPower == 2
+#guard (fireleaperPumpedTwice.pumpOf (namedPermanent fireleaperPumpedTwice "Goblin Fireleaper")).1 == 2
 
 /-- The +1/+0 wears off in cleanup. -/
 def afterFireleaperCleanup : Game :=
@@ -335,7 +335,7 @@ def afterFireleaperCleanup : Game :=
 
 #guard afterFireleaperCleanup.power
   (namedPermanent afterFireleaperCleanup "Goblin Fireleaper") == 1
-#guard (namedPermanent afterFireleaperCleanup "Goblin Fireleaper").status.pumpPower == 0
+#guard (afterFireleaperCleanup.pumpOf (namedPermanent afterFireleaperCleanup "Goblin Fireleaper")).1 == 0
 
 /-- If the source leaves before the pump resolves, the pump does not happen;
 the dies trigger waits until after that ability resolves (CR 603.3). -/
@@ -402,8 +402,8 @@ def activatedProwler : Game :=
 #guard activatedProwler.log.any (fun s => mentions s "begins activating Desolation Prowler")
 #guard activatedProwler.log.any (fun s => mentions s "pays 2 life (18 life)")
 #guard activatedProwler.log.any (fun s => mentions s "activates Desolation Prowler")
-#guard (namedPermanent activatedProwler "Desolation Prowler").status.activationsThisTurn == 1
-#guard (namedPermanent activatedProwler "Desolation Prowler").status.pumpPower == 0
+#guard activatedProwler.activationsThisTurn (namedPermanent activatedProwler "Desolation Prowler").id == 1
+#guard (activatedProwler.pumpOf (namedPermanent activatedProwler "Desolation Prowler")).1 == 0
 
 -- Payment of life is not damage (CR 118.3b).
 #guard !(activatedProwler.log.any (fun s => mentions s "is dealt"))
@@ -411,8 +411,8 @@ def activatedProwler : Game :=
 def pumpedProwler : Game := passBoth activatedProwler
 
 #guard pumpedProwler.stack.isEmpty
-#guard (namedPermanent pumpedProwler "Desolation Prowler").status.pumpPower == 2
-#guard (namedPermanent pumpedProwler "Desolation Prowler").status.pumpToughness == 2
+#guard (pumpedProwler.pumpOf (namedPermanent pumpedProwler "Desolation Prowler")).1 == 2
+#guard (pumpedProwler.pumpOf (namedPermanent pumpedProwler "Desolation Prowler")).2 == 2
 #guard pumpedProwler.power (namedPermanent pumpedProwler "Desolation Prowler") == 4
 #guard pumpedProwler.toughness (namedPermanent pumpedProwler "Desolation Prowler") == 4
 #guard (pumpedProwler.player ⟨0⟩).life == 18
@@ -432,8 +432,8 @@ def afterProwlerCleanup : Game :=
 
 #guard afterProwlerCleanup.power
   (namedPermanent afterProwlerCleanup "Desolation Prowler") == 2
-#guard (namedPermanent afterProwlerCleanup "Desolation Prowler").status.pumpPower == 0
-#guard (namedPermanent afterProwlerCleanup "Desolation Prowler").status.activationsThisTurn == 0
+#guard (afterProwlerCleanup.pumpOf (namedPermanent afterProwlerCleanup "Desolation Prowler")).1 == 0
+#guard afterProwlerCleanup.activationsThisTurn (namedPermanent afterProwlerCleanup "Desolation Prowler").id == 0
 
 -- Instant-speed: Prowler can activate during the end step.
 def prowlerAtEndStep : Game := skipTo prowlerReady .end 80
@@ -480,7 +480,7 @@ def fireleaperDied : Game :=
 #guard fireleaperDied.stack.size == 1
 #guard (fireleaperDied.object! fireleaperDied.stack.back!.objectId).triggeredAbility ==
   some .onDiesDealDamageEqualToPowerToOppCreature
-#guard (fireleaperDied.object! fireleaperDied.stack.back!.objectId).lastKnownPower == some 1
+#guard fireleaperDied.lastKnownPowerOf? fireleaperDied.stack.back!.objectId == some 1
 #guard fireleaperDied.stack.back!.targets.isEmpty
 #guard fireleaperDied.log.any (fun s => mentions s "dies from lethal damage")
 #guard fireleaperDied.log.any (fun s => mentions s "dies trigger is put on the stack")
@@ -503,7 +503,7 @@ def fireleaperDied : Game :=
 -- Hexproof on an opponent's creature is not a legal target (CR 702.11b).
 #guard
   let bears := namedPermanent fireleaperDied "Grizzly Bears"
-  let g := fireleaperDied.changeStatus bears.id (.untilEotKeywords Keyword.hexproof)
+  let g := fireleaperDied.createEffect (.keywordsUntilEot bears.id Keyword.hexproof)
   match g.apply ⟨0⟩ (.target (Target.permanent bears.id)) with
   | .error msg => mentions msg "Illegal target"
   | .ok _ => false

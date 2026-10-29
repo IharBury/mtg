@@ -61,15 +61,15 @@ pool is not required; mana abilities are activated at CR 601.2g. Additional
 non-mana costs such as sacrificing a permanent must still be payable. -/
 def canCast (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
   !o.printed.isLand && !g.combatLocksNonManaAbilities && !g.spellNameForbidden o.printed.name &&
-  !(g.player p).cantCastSpellsThisTurn &&
+  !g.cantCastSpellsThisTurn p &&
   g.mayPlay p o &&
-  (match o.playPermission with
+  (match g.playPermission o with
    | some perm => perm.ignoreTiming || g.timingAllowsCast p o.printed
    | none => g.timingAllowsCast p o.printed) &&
   (if o.printed.additionalCostSacrificeArtifactOrCreature &&
       o.printed.additionalCostOrPayGeneric.isNone then
     (g.permanentsOf p).any (fun perm =>
-      perm.id != o.id && (perm.isCreature || perm.printed.isArtifact))
+      perm.id != o.id && (g.isCreature perm || g.isArtifact perm))
    else true) &&
   -- Untargeted permanents, and untargeted instants/sorceries with a modeled
   -- effect (e.g. Night's Whisper), may be proposed (CR 601.3).
@@ -82,8 +82,8 @@ def canCast (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
 alternative). Mana abilities are not activated here. -/
 def canPayAnnouncedAdditional (g : Game) (p : PlayerId) (o : GameObject)
     (available : ManaPool) : Bool :=
-  let allowElf := o.hasSubtype .elf
-  let free := o.playPermission.any (·.withoutManaCost)
+  let allowElf := g.hasSubtype o .elf
+  let free := (g.playPermission o).any (·.withoutManaCost)
   let payExtra (n : Nat) : Bool :=
     if free then
       available.canPay (ManaCost.ofGeneric n) (allowElfRestricted := allowElf)
@@ -105,15 +105,15 @@ def canPayAnnouncedAdditional (g : Game) (p : PlayerId) (o : GameObject)
     (g.permanentsOf p).any (fun perm =>
       perm.id != o.id &&
         if o.printed.additionalCostSacrificeCreatureOrPlaneswalker then
-          perm.isCreature || perm.printed.isPlaneswalker
-        else perm.isCreature || perm.printed.isArtifact) || payExtra n
+          g.isCreature perm || perm.printed.isPlaneswalker
+        else g.isCreature perm || g.isArtifact perm) || payExtra n
   | none, some n =>
     (g.player p).hand.any (fun id => id != o.id) || payExtra n
   | none, none => true
 
 /-- True when the CR 715.3d exile permission forbids recasting as an Adventure. -/
-def adventureExileForbidsRecast (_g : Game) (o : GameObject) : Bool :=
-  match o.playPermission with
+def adventureExileForbidsRecast (g : Game) (o : GameObject) : Bool :=
+  match g.playPermission o with
   | some perm => perm.fromAdventure
   | none => false
 
@@ -129,7 +129,7 @@ def canCastAdventure (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
     let face := adv.toCardDef
     !g.adventureExileForbidsRecast o &&
     g.mayPlay p o &&
-    (match o.playPermission with
+    (match g.playPermission o with
      | some perm => perm.ignoreTiming || g.timingAllowsCast p face
      | none => g.timingAllowsCast p face) &&
     if face.requiresTarget then !(g.legalCastTargets p face).isEmpty
@@ -359,14 +359,13 @@ def payCost (g : Game) (p : PlayerId) (cost : ManaCost)
     (forObject : Option ObjectId := none) :
     Except String Game := do
   let pl := g.player p
-  match pl.manaPool.pay? cost allowElfRestricted allowInstRestricted
+  match pl.manaPool.payUnits? cost allowElfRestricted allowInstRestricted
       allowHeroRestricted allowVillainRestricted allowCantNonartifact
       allowCreatureRestricted spend with
   | none => throw s!"{pl.name} cannot pay {cost}"
-  | some pool =>
-    let spent := cost.manaValue
-    return (g.changePlayer p (.manaPool pool)).record
-      (GameEvent.spentMana g.turnNumber p spent
+  | some (_, spentUnits) =>
+    return g.record
+      (GameEvent.manaSpent g.turnNumber p spentUnits (forObject.getD ⟨0⟩)
         (cause := some (.costPayment .mana p forObject)))
 
 /-- Undo a proposed spell or ability that could not be paid (CR 601.2 / 602.2 / 733.1). -/
@@ -377,9 +376,18 @@ def reverseProposedSpell (g : Game) : Game :=
     Id.run do
       let mut g := g
       let name := (g.player prop.caster).name
+      let origPermSpec? :=
+        g.events.findSomeRev? fun e =>
+          match e.change with
+          | .rules (.continuousEffect (.created _ (.permission p (.playFromExile oid perm) d))) =>
+            if oid == prop.original.id then some (p, perm, d) else none
+          | _ => none
       g := g.change (.removeObject prop.spellId)
       if prop.kind == .spell then
         g := g.change (.setObject prop.original)
+        if let some (p, perm, d) := origPermSpec? then
+          if (g.playPermission prop.original).isNone then
+            g := g.createEffect (.permission p (.playFromExile prop.original.id perm) d)
       g := g.changes #[
         .stack prop.stackBefore,
         .pending .none,
@@ -391,14 +399,10 @@ def reverseProposedSpell (g : Game) : Game :=
         if (g.findObject? id).isSome then
           g := g.changeStatus id (.tapped false)
       -- Undo unpreparing the permanent whose prepare-spell copy was proposed.
-      match prop.kind, (prop.original.playPermission.bind (·.prepareSource)).bind g.findObject? with
+      match prop.kind, (g.playPermission prop.original |>.bind (·.prepareSource)).bind g.findObject? with
       | .spell, some src =>
-        g := g.changeStatus src.id (.prepared true)
+        g := g.record (GameEvent.designation g.turnNumber src.asEvent .prepared true)
       | _, _ => pure ()
-      match prop.kind, prop.sourceId.bind g.findObject?, prop.activation.any (·.exhaust) with
-      | .activatedAbility, some src, true =>
-        g := g.changeStatus src.id (.exhaustUsed false)
-      | _, _, _ => pure ()
       let reversed :=
         match prop.kind with
         | .spell => "the casting is reversed (CR 601.2 / 733.1)"
@@ -559,13 +563,13 @@ def becomeCast (g : Game) (p : PlayerId) (spell : GameObject) : Game :=
   -- Emrakul, the Exigent Doom: the granted mana ability lasts until the card
   -- is cast from exile, so it can help pay for that spell (ruling 729).
   let g := g.battlefield.foldl (fun g land =>
-    land.status.colorlessGrantUntilCast.foldl (fun g cid =>
+    (g.colorlessGrantUntilCast land).foldl (fun g cid =>
       if g.followMoved cid == spell.id then
         g.expireEffect (.colorlessGrantUntilCast land.id cid)
       else g) g) g
   -- Theorist's Proxy: the next spell this player casts this turn.
   let g :=
-    if (g.player p).nextSpellCantBeCountered && !spell.isCopy then
+    if g.nextSpellCantBeCountered p && !spell.isCopy then
       let g := g.expireEffect (.nextSpellCantBeCounteredThisTurn p)
       (g.createEffect (.uncounterableThisCast spell.id)).logMsg
         s!"{spell.name} can't be countered"
@@ -660,12 +664,10 @@ def lockInTargetCostReduction (g : Game) : Game :=
         | none => g
       | _ => g
 
-/-- Pay a loyalty cost: put or remove loyalty counters on the source and
-record that a loyalty ability of it was activated this turn (CR 606.3 / 606.4). -/
+/-- Pay a loyalty cost: put or remove loyalty counters on the source (CR 606.3 / 606.4). -/
 def payLoyaltyCost (g : Game) (p : PlayerId) (o : GameObject) (sym : LoyaltySymbol)
     (forObject : Option ObjectId := none) : Game :=
   let k := (sym.counters).getD 0
-  let g := g.changeStatus o.id (.loyaltyActivatedThisTurn true)
   let g :=
     if k != 0 then
       g.record (GameEvent.counters g.turnNumber (some p) o.asEvent .loyalty k.natAbs (k < 0)
@@ -677,7 +679,8 @@ def payLoyaltyCost (g : Game) (p : PlayerId) (o : GameObject) (sym : LoyaltySymb
 
 def becomeActivated (g : Game) (p : PlayerId) (sourceName : String)
     (sourceId : Option ObjectId := none) (activation : Option ActivatedAbility := none)
-    (sourceSnapshot : Option EventObject := none) : Game :=
+    (sourceSnapshot : Option EventObject := none)
+    (sourceOriginal : Option GameObject := none) : Game :=
   let activation := activation <|> g.proposedSpell.bind (·.activation)
   let abilityId := g.proposedSpell.map (·.spellId) <|> g.stack.back?.map (·.objectId)
   let chosenX :=
@@ -710,32 +713,20 @@ def becomeActivated (g : Game) (p : PlayerId) (sourceName : String)
     | some .zero => some 0
     | some .minusX => some (-(chosenX : Int))
     | none => none
-  let isPowerUp := activation.any (·.powerUp)
+  let srcObj? : Option GameObject :=
+    (sourceId.bind g.findObject?) <|> sourceOriginal <|> g.proposedSpell.map (·.original)
+  let isPowerUp : Bool :=
+    match activation with
+    | some ab => ab.powerUp
+    | none => srcObj?.any (fun src => src.printed.activatedAbilities.any (·.powerUp))
   let isBoast := activation == some ActivatedAbility.zemoBoastAbility
-  let g :=
-    match sourceId with
-    | none => g
-    | some sid =>
-      match g.findObject? sid with
-      | some src =>
-        let powerUp :=
-          match activation with
-          | some ab => ab.powerUp
-          | none =>
-            src.printed.activatedAbilities.any (·.powerUp)
-        let idx := activation.bind (fun ab => (g.activatedAbilitiesOf src).findIdx? (· == ab))
-        let base : Array StatusChange := #[
-          .incActivationsThisTurn,
-          .powerUpUsed (src.status.powerUpUsed || powerUp),
-          .powerUpActivations (src.status.powerUpActivations + (if powerUp then 1 else 0))
-        ]
-        g.changeStatuses src.id (
-          match idx with
-          | some i => base.push (.pushAbilitiesActivated i)
-          | none => base)
-      | none => g
+  let abilityIdx : Option Nat :=
+    match srcObj?, activation with
+    | some src, some ab => (g.activatedAbilitiesOf src).findIdx? (· == ab)
+    | _, _ => none
+  let isExhaust : Bool := activation.any (·.exhaust)
   let g := g.record (GameEvent.abilityActivated g.turnNumber abilityObjId source p
-    (.nonMana loyaltyDelta isEquip isPowerUp isBoast))
+    (.nonMana loyaltyDelta isEquip isPowerUp isBoast abilityIdx isExhaust))
   let g :=
     match g.stack.back? with
     | some e => g.beginWardsForTargets p e.objectId e.targets
@@ -757,6 +748,7 @@ def completeActivation (g : Game) (prop : ProposedSpell) : Except String Game :=
   let g := g.changes #[.pending .none, .proposedSpell none, .consecutivePasses 0]
   return g.becomeActivated prop.caster prop.original.name prop.sourceId prop.activation
     (sourceSnapshot := some prop.original.asEvent)
+    (sourceOriginal := some prop.original)
 
 /-- Ask `p` to choose what pays the first of `picks`, or finish the
 activation when none remain. -/
@@ -851,7 +843,8 @@ def retargetStackSpell (g : Game) (spellId : ObjectId) (newTargets : Array Targe
             if legal.any (fun t => t == neu) then
               out := out.set! j neu
           return out
-      (g.changeStackEntry i (.targets merged)).logMsg "New targets are chosen for the spell"
+      (g.record (GameEvent.targeted g.turnNumber spellId merged (division := e.dividedDamage))).logMsg
+        "New targets are chosen for the spell"
 
 /-- Write `targets` (and optional damage division) onto the stack entry. -/
 def setStackEntryTargets (g : Game) (objectId : ObjectId) (targets : Array Target)
