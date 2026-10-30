@@ -450,7 +450,7 @@ inductive PermanentEvent where
   | phasedIn (object : EventObject) (indirectly : Bool := false)          -- 702.26c / 702.26g; cause is usually .turnBased .phaseInOut
   | transformed (object : EventObject) (nowBackFace : Bool)               -- 701.27a / 712.18
   | turnedFaceUp (object : EventObject)                                   -- 116.2b / 708.8 (special action or effect, by cause)
-  | turnedFaceDown (object : EventObject)                                 -- 708.2a
+  | turnedFaceDown (object : EventObject)                                 -- 708.2
   | counters (target : CounterTarget) (kind : CounterKind) (delta : CounterDelta)
       (actor : Option PlayerId := none)                                   -- 122.1; delta is `put n` or `removed n`
   | attached (attachment : EventObject) (host : ObjectId)
@@ -2579,9 +2579,13 @@ mid-resolution stack residency under 608.2n / 608.3), `AddMana.lean`,
      `Event.lean`); Amass comments on `701.43` (`Pumps.lean`) → `701.47`; Connive
      comments on `701.47` / `701.48` (`Event.lean`, `SpellResolution.lean`) →
      `701.50`; Ring-tempt comments on `701.40` (`CastExtras.lean`) → `701.54`
-     (keeping Manifest `701.40`); `PermanentEvent.turnedFaceUp` / `turnedFaceDown`
-     comments on `701.40b` / `701.40f` (`Event.lean`) → `116.2b` / `708.2a` /
-     `708.8`; Treasure/Food/Clue token comments on `701.42` / `701.34` / `701.55`
+     (keeping Manifest `701.40` / `701.40b` / `701.40f` on manifest comments);
+     `PermanentEvent.turnedFaceUp` and `GameEvent.turnedFaceUp` comments on
+     `701.40b` / `708.8` (`Event.lean`) → `116.2b` / `708.8`, and
+     `PermanentEvent.turnedFaceDown` and `GameEvent.turnedFaceDown` comments on
+     `701.40f` / `708.2` (`Event.lean`) → `708.2` (dropping `701.40f` without
+     replacing `708.2` with `708.2a`); Treasure/Food/Clue token comments on
+     `701.42` / `701.34` / `701.55`
      (`Catalog.lean`, `Tokens.lean`, `Token.lean`, keeping Proliferate `701.34`) →
      `111.10a` / `111.10b` / `111.10f`; zone-object cease-to-exist comments in
      `Attachments.ceaseToExist` (dropping `608.2m` and changing `111.8` → `111.7`
