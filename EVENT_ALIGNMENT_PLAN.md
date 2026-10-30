@@ -794,8 +794,8 @@ under construction (`ProposedSpell`), the waiting-trigger queue
   `Movement.lean` in Phase 11, #590, alongside `preparedCopyOf?` and
   `ensurePreparedCopy` so both `Entering.applyEntersWith` and
   `Tokens.createOneToken` leave the preparation-spell copy in `.exile` with a
-  play permission while the permanent or token stays prepared per rulings
-  741/742, not 707.12)—remain `ZoneEvent.created`.
+  play permission while the permanent or token stays prepared per ruling 742,
+  not 707.12)—remain `ZoneEvent.created`.
 
 ### 2.10 Combat
 
@@ -2491,7 +2491,7 @@ mid-resolution stack residency under 608.2n / 608.3), `AddMana.lean`,
      `StackTriggerSpec`, moving `preparedCopyOf?` / `createPreparedCopy` /
      `ensurePreparedCopy` from `Movement.lean` to `Allocation.lean` so both
      `Entering.applyEntersWith` and `Tokens.createOneToken` exile preparation
-     spell copies on prepared entry per rulings 741/742, and tracking
+     spell copies on prepared entry per ruling 742, and tracking
      chronological `alive : Bool` liveness across `.moved`, `.created`,
      `.ceasedToExist` (`alive := false` without clearing `ts?`),
      `StackObjectEvent.copied`, `TriggerQueueEvent.putOnStack` (`!alive`),
@@ -2542,7 +2542,8 @@ mid-resolution stack residency under 608.2n / 608.3), `AddMana.lean`,
      `Casting.becomeActivated` / `completeActivation`'s `prop.original.asEvent`
      fallback (capturing a pre-cost `g.snapshot` LKI `EventObject` in
      `ProposedSpell.originalSnapshot` in [`Stack.lean`](Mtg/Engine/Game/Stack.lean)
-     before cost payment can move the source) so `Core.snapshot`
+     before cost payment can move the source, also used by
+     `SacrificeDiscard.sacrificeForActivation`) so `Core.snapshot`
      is the sole production caller of `GameObject.asEvent` under
      `Mtg/Engine/Game/` (leaving synthetic `GameObject.asEvent` event fixtures in
      the test and oracle suites outside `Mtg/Engine/Game/`).
@@ -2729,13 +2730,14 @@ off-battlefield changeling search/behold), `SearchLibrary.lean`, `Targets.lean`,
      `EngineChange.materializeObject` / `EngineChange.pushStack` in
      `Activation.lean`, modal `ObjectChange.abilityEffect` in `CastSpell.lean`,
      `CastSpell.castSpell`'s `.flashbackUntilEot` `ContinuousEffectEvent.created`
-     and `.prepared false` `PermanentEvent.designation`, Chandra's pre-proposal
-     `PlayerEvent.manaSpent` in `Decisions.castExiledAsAbilityResolves`,
-     `PermanentEvent.tapped`, `CastEvent.abilityActivated`,
-     `PlayerEvent.manaAdded` / `manaSpent` / `beheld`,
-     `TriggerQueueEvent.triggered`), enqueued `waitingTriggers`, teamwork-tapped
-     creatures (`CastExtras.lean`), non-tap mana-ability payments
-     (`ManaAbilities.lean`), `.uncounterableThisCast` effects on failed
+     and `.prepared false` `PermanentEvent.designation`, Chandra's upfront
+     `PlayerEvent.manaSpent` recorded after `CastEvent.proposed` and before
+     storing `ProposedSpell` in `Decisions.castExiledAsAbilityResolves`—which
+     also stores the post-payment pool in `manaBefore`—`PermanentEvent.tapped`,
+     `CastEvent.abilityActivated`, `PlayerEvent.manaAdded` / `manaSpent` /
+     `beheld`, `TriggerQueueEvent.triggered`), enqueued `waitingTriggers`,
+     teamwork-tapped creatures (`CastExtras.lean`), non-tap mana-ability
+     payments (`ManaAbilities.lean`), `.uncounterableThisCast` effects on failed
      `paySneak` (`Costs.lean`), and `ancestryLandsTapped` live, and overwrites
      `pending := .none`, `priority := prop.caster`, and `consecutivePasses := 0`
      across `Casting.reverseProposedSpell`, `Costs.lean`, `FraChoices.lean`
@@ -2744,8 +2746,9 @@ off-battlefield changeling search/behold), `SearchLibrary.lean`, `Targets.lean`,
      and `g.events` truncation (respecting CR 733.1's library irreversibility
      guard and CR 733.1–733.2 priority/continuation restoration), also moving
      the two non-`ProposedSpell` activation declines (`.crew` and
-     `.zemoBoastExile` in [`Activation.lean`](Mtg/Engine/Game/Activation.lean)
-     and [`FraChoices.lean`](Mtg/Engine/Game/FraChoices.lean)) off
+     `.zemoBoastExile` in [`FraChoices.lean`](Mtg/Engine/Game/FraChoices.lean),
+     whose stack abilities are pre-materialized via `Allocation.putStackAbility`
+     in [`Activation.lean`](Mtg/Engine/Game/Activation.lean)) off
      `ZoneEvent.ceasedToExist` with `.gameRule .reversedActivation` onto
      checkpoint retraction, and deleting `EngineChange.reverseProposal`, the
      three transitional `.engine (.reverseProposal prop)` arms in
@@ -2753,9 +2756,10 @@ off-battlefield changeling search/behold), `SearchLibrary.lean`, `Targets.lean`,
      (`Core.lean`), `ProposedSpell.handBefore` / `stackBefore` / `manaBefore` in
      [`Stack.lean`](Mtg/Engine/Game/Stack.lean) (retaining
      `ProposedSpell.originalSnapshot`, the pre-cost `g.snapshot` LKI fallback
-     used by `Casting.completeActivation` when `findObject?` misses after
-     `payActivationExtraCosts`), and `GameRuleKind.reversedActivation`
-     (`Object.lean`) so undone casts and activations leave `g.events`
+     read before `payActivationExtraCosts` when `findObject?` misses in
+     `Casting.completeActivation` / `becomeActivated` and passed directly by
+     `SacrificeDiscard.sacrificeForActivation` after clearing `proposedSpell`),
+     and `GameRuleKind.reversedActivation` (`Object.lean`) so undone casts and activations leave `g.events`
      replay-exact and neither fire triggers nor pollute `followMoved`,
      `wasCast`, `becameTappedThisTurn`, `activationsThisTurn`,
      `beheldQualities`, `manaSpentOn`, or `abilityTriggeredThisTurn`.
