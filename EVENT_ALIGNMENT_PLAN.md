@@ -2471,7 +2471,9 @@ mid-resolution stack residency under 608.2n / 608.3), `AddMana.lean`,
      `Casting.becomeActivated` / `completeActivation`'s `prop.original.asEvent`
      fallback (capturing a pre-cost `g.snapshot` LKI `EventObject` on
      `ProposedSpell` before cost payment can move the source) so `Core.snapshot`
-     is the sole caller of `GameObject.asEvent`.
+     is the sole production caller of `GameObject.asEvent` under
+     `Mtg/Engine/Game/` (leaving synthetic `GameObject.asEvent` event fixtures in
+     the test and oracle suites outside `Mtg/Engine/Game/`).
    - Replace the stub `{ id := some object }` `EventObject` builders in
      `GameEvent.attached` ([`Event.lean`](Mtg/Engine/Game/Event.lean), accepting
      `attachment : EventObject` so `Attachments.attachSourceTo` passes
@@ -2712,7 +2714,8 @@ spell-cast / target / Ward triggers), `Casting.lean`, `Step.lean`,
 
 Final check (after Phase 12): `lake build`, `lake exe mtg-demo`,
 `lake exe oracle-roundtrip`, no `EventCause.unclassified` constructor, no
-`GameObject.asEvent` callers outside `Core.snapshot`, no `ZoneEvent.created`
+production `GameObject.asEvent` callers under `Mtg/Engine/Game/` outside
+`Core.snapshot`, no `ZoneEvent.created`
 emissions for non-token cards/abilities/emblems/fixtures, no duplicate raw state
 writers (including `EngineChange.reverseProposal` and
 `EngineChange.clearAssignedCombatDamage`) or unjournaled `{ g with … }` writes
