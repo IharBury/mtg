@@ -1450,7 +1450,7 @@ Each field is put in exactly one category. "Log" means a query over
 
 | Category | Fields (type) | Target |
 | :--- | :--- | :--- |
-| **Core & turn/combat state — stays** | `players : Array Player`, `objects : Array GameObject`, `stack : Array StackEntry`, `activePlayer : PlayerId`, `priority : PlayerId`, `step : Step`, `turnNumber : Nat`, `startingPlayer : PlayerId`, `isFirstTurn : Bool`, `nextObjectId : Nat`, `nextEffectId : Nat`, `activeEffects : Array (EffectId × ContinuousEffectSpec)` (updated from `ContinuousEffect` in Phase 8), `timestamp : Nat`, `result : Option GameResult`, `log : Array String`, `format : Format`, `brawl : Bool`, `consecutivePasses : Nat`, `cleanupGivesPriority : Bool`, `isNight : Bool`, `extraTurns : Array PlayerId` (paired with `extraTurnCauses : Array EventCause` in Phase 3; `extraTurnCauses` was replaced when `TurnEvent.extraTurnAdded` wrote `extraTurns` in Phase 5), `additionalCombatPhases : Nat`, `assignedCombatDamage : Array CreatureCombatAssignment`, `firstStrikeDamageDone : Bool`, `pendingRegularCombatDamage : Bool`, `firstStrikeAssignedThisCombat : Array ObjectId` (deriving and deleting `firstStrikeDamageDone`, `pendingRegularCombatDamage`, and `firstStrikeAssignedThisCombat` from `CombatEvent.damageAssigned` / `TurnEvent.extraStepAdded` and removing mid-step partial `firstStrikeAssignedThisCombat` mutations move to Phase 12, §4), `events : Array GameEvent` (plus `nextBatchId : Nat` and `currentBatch : Option (BatchId × Option EventCause)` in Phase 4, and `openBatchObjects : Array GameObject`, `openBatchPlayers : Array Player`, `openBatchEffects : Array (EffectId × ContinuousEffectSpec)`—updated in Phase 8—and `openBatchPending : Pending` in Phase 7) | Written by `RulesEvent`s (`TurnEvent`, `CombatEvent`, `ContinuousEffectEvent`, `DelayedTriggerEvent`, …) or `EngineChange` (`priority`, `consecutivePasses`, `cleanupGivesPriority`, `log`); `nextBatchId` is bumped directly in `applySingleRulesEventInBatch` and the outermost arms of `withBatchReturn` and `openBatch` (`max g.nextBatchId (batchId.raw + 1)`; `EngineChange.nextBatchId` was deleted in Phase 10, #588); `currentBatch` is transient in-memory batch state assigned by `withBatchReturn`, `openBatch`, and standalone `applyEvent` (`currentBatch == none`, which clears `currentBatch` itself without touching `openBatch*`); and `openBatchObjects`, `openBatchPlayers`, `openBatchEffects`, and `openBatchPending` are transient pre-batch snapshot fields written only by the outermost arms (`currentBatch == none`) of `withBatchReturn` and `openBatch` and cleared (along with `currentBatch`) by `finishOpenBatch` when that outermost batch closes. |
+| **Core & turn/combat state — stays** | `players : Array Player`, `objects : Array GameObject`, `stack : Array StackEntry`, `activePlayer : PlayerId`, `priority : PlayerId`, `step : Step`, `turnNumber : Nat`, `startingPlayer : PlayerId`, `isFirstTurn : Bool`, `nextObjectId : Nat`, `nextEffectId : Nat`, `activeEffects : Array (EffectId × ContinuousEffectSpec)` (updated from `ContinuousEffect` in Phase 8), `timestamp : Nat`, `result : Option GameResult`, `log : Array String`, `format : Format`, `brawl : Bool`, `consecutivePasses : Nat`, `cleanupGivesPriority : Bool`, `isNight : Bool`, `extraTurns : Array PlayerId` (paired with `extraTurnCauses : Array EventCause` in Phase 3; `extraTurnCauses` was replaced when `TurnEvent.extraTurnAdded` wrote `extraTurns` in Phase 5), `additionalCombatPhases : Nat`, `assignedCombatDamage : Array CreatureCombatAssignment`, `firstStrikeDamageDone : Bool`, `pendingRegularCombatDamage : Bool`, `firstStrikeAssignedThisCombat : Array ObjectId` (emitting `TurnEvent.extraStepAdded` when first-strike `dealAssignedCombatDamage` finishes plus `stepEnded` / `stepBegan .combatDamage` in `Turns.advanceStep`, deriving and deleting `firstStrikeDamageDone`, `pendingRegularCombatDamage`, and `firstStrikeAssignedThisCombat`, and removing mid-step `firstStrikeAssignedThisCombat` prefix writes move to Phase 12, §4), `events : Array GameEvent` (plus `nextBatchId : Nat` and `currentBatch : Option (BatchId × Option EventCause)` in Phase 4, and `openBatchObjects : Array GameObject`, `openBatchPlayers : Array Player`, `openBatchEffects : Array (EffectId × ContinuousEffectSpec)`—updated in Phase 8—and `openBatchPending : Pending` in Phase 7) | Written by `RulesEvent`s (`TurnEvent`, `CombatEvent`, `ContinuousEffectEvent`, `DelayedTriggerEvent`, …) or `EngineChange` (`priority`, `consecutivePasses`, `cleanupGivesPriority`, `log`); `nextBatchId` is bumped directly in `applySingleRulesEventInBatch` and the outermost arms of `withBatchReturn` and `openBatch` (`max g.nextBatchId (batchId.raw + 1)`; `EngineChange.nextBatchId` was deleted in Phase 10, #588); `currentBatch` is transient in-memory batch state assigned by `withBatchReturn`, `openBatch`, and standalone `applyEvent` (`currentBatch == none`, which clears `currentBatch` itself without touching `openBatch*`); and `openBatchObjects`, `openBatchPlayers`, `openBatchEffects`, and `openBatchPending` are transient pre-batch snapshot fields written only by the outermost arms (`currentBatch == none`) of `withBatchReturn` and `openBatch` and cleared (along with `currentBatch`) by `finishOpenBatch` when that outermost batch closes. |
 | **Engine prompt / queue state — stays (`EngineChange`)** | `pending : Pending`, `pregameRandom : PregameRandom` (added in Phase 10, #588, for pregame/mulligan `--norandom` shuffle continuations in [`Pending.lean`](Mtg/Engine/Game/Pending.lean)), `proposedSpell : Option ProposedSpell` (`ProposedSpell` in [`Stack.lean`](Mtg/Engine/Game/Stack.lean) gained `originalSnapshot : EventObject := {}` in Phase 11, #590), `continuations : Array ContinuationFrame` (added in Phase 8 and expanded to 81 fields in Phase 10, #588, when `resolvingSpell`, `resolvingAbility`, `resolvingDivision`, `afterRandom`, `resolutionFinish`, and `pendingResolvedEvent` moved onto `ContinuationFrame`; bulk setter `EngineChange.continuations` deleted in Phase 11, #590), `awaitingOpeningBegin : Bool`, `mulliganToDeclare : Array PlayerId`, `willMulligan : Array PlayerId`, `mulliganToBottom : Array PlayerId`, `blockersQueue : Array PlayerId`, `waitingTriggers : Array WaitingTrigger`, `wardQueue : Array WardObligation` (migrating Ward onto `WaitingTrigger` / stack triggers per CR 702.21a moves to Phase 12, §4), `castingFromTop : Bool`, `ancestryLandsTapped : Array ObjectId` (deriving Path of Ancestry's creature-cast scry check from `PlayerEvent.manaSpent` + `ManaUnit.source` and deleting `ancestryLandsTapped` moves to Phase 12, §4), `replacementOrder : Array ReplacementId` (added in Phase 7 for player-chosen CR 616.1 ordering) | Updated by `EngineChange` while choices, casts, or abilities are in progress. |
 | **Delayed triggers → delayed-trigger table (603.7, Phase 8 / 10)** | `delayedEndStepReturns : Array (ObjectId × EventCause)`, `delayedEndStepExiles : Array (ObjectId × EventCause)`, `delayedEndStepSacrifices : Array (ObjectId × EventCause)`, `delayedGraveReturns : Array (ObjectId × PlayerId × EventCause)`, `delayedSynthetic : Array (PlayerId × Nat × EventCause)`, `eaglesBirdsCauses : Array (PlayerId × Nat × EventCause)` (added in Phase 3 alongside `Player.eaglesBirdsNextUpkeep : Nat`) | Replaced in Phase 8 (#584) by `Game.delayedTriggers : Array DelayedTrigger := #[]` (`DelayedTriggerKind` in [`Object.lean`](Mtg/Engine/Game/Object.lean)), matched by `matchTriggers` (603.2) and put on the stack via `TriggerQueueEvent.putOnStack` (603.3), with creation, one-shot consumption, and EOT expiry journaled via `DelayedTriggerEvent` (§2.12) in Phase 10 (#588). |
 | **Linked-exile cause cache — deleted in Phase 8** | `linkedExileCauses : Array (ObjectId × EventCause)` | Added in Phase 3 so cards in `GameObject.linkedExile` return under their exiling `.oneShotEffect` cause (610.3); replaced in Phase 8 (#584) by reading the `cause` of the `ZoneEvent.moved` that put the card into `.exile`. |
@@ -2730,10 +2730,12 @@ off-battlefield changeling search/behold), `SearchLibrary.lean`, `Targets.lean`,
      `EngineChange.materializeObject` / `EngineChange.pushStack` in
      `Activation.lean`, modal `ObjectChange.abilityEffect` in `CastSpell.lean`,
      `CastSpell.castSpell`'s `.flashbackUntilEot` `ContinuousEffectEvent.created`
-     and `.prepared false` `PermanentEvent.designation`, Chandra's upfront
-     `PlayerEvent.manaSpent` recorded after `CastEvent.proposed` and before
-     storing `ProposedSpell` in `Decisions.castExiledAsAbilityResolves`—which
-     also stores the post-payment pool in `manaBefore`—`PermanentEvent.tapped`,
+     and `.prepared false` `PermanentEvent.designation`, Chandra's
+     `PlayerEvent.manaSpent` in `Decisions.castExiledAsAbilityResolves`'s
+     `face.requiresTarget` branch—recorded after `CastEvent.proposed` and before
+     storing `ProposedSpell`, with `manaBefore` set to the post-payment pool
+     returned by `payUnits?`, whereas `!face.requiresTarget` completes
+     immediately via `becomeCast` without storing `ProposedSpell`—`PermanentEvent.tapped`,
      `CastEvent.abilityActivated`, `PlayerEvent.manaAdded` / `manaSpent` /
      `beheld`, `TriggerQueueEvent.triggered`), enqueued `waitingTriggers`,
      teamwork-tapped creatures (`CastExtras.lean`), non-tap mana-ability
@@ -2755,11 +2757,14 @@ off-battlefield changeling search/behold), `SearchLibrary.lean`, `Targets.lean`,
      `Core.counterTimestamp`, `attachmentTimestamp`, and `objectEntryTimestamp`
      (`Core.lean`), `ProposedSpell.handBefore` / `stackBefore` / `manaBefore` in
      [`Stack.lean`](Mtg/Engine/Game/Stack.lean) (retaining
-     `ProposedSpell.originalSnapshot`, the pre-cost `g.snapshot` LKI fallback
-     read before `payActivationExtraCosts` when `findObject?` misses in
-     `Casting.completeActivation` / `becomeActivated` and passed directly by
-     `SacrificeDiscard.sacrificeForActivation` after clearing `proposedSpell`),
-     and `GameRuleKind.reversedActivation` (`Object.lean`) so undone casts and activations leave `g.events`
+     `ProposedSpell.originalSnapshot`, the pre-cost `g.snapshot` LKI bound as
+     `Casting.completeActivation`'s `sourceSnapshot` fallback when `findObject?`
+     already misses before `payActivationExtraCosts`, passed directly as
+     `sourceSnapshot` by `SacrificeDiscard.sacrificeForActivation` after clearing
+     `proposedSpell`, and kept as `Casting.becomeActivated`'s fallback when
+     `sourceId` and `sourceSnapshot` are both absent),
+     and `GameRuleKind.reversedActivation` (`Object.lean`) so undone casts and
+     activations leave `g.events`
      replay-exact and neither fire triggers nor pollute `followMoved`,
      `wasCast`, `becameTappedThisTurn`, `activationsThisTurn`,
      `beheldQualities`, `manaSpentOn`, or `abilityTriggeredThisTurn`.
@@ -2775,13 +2780,16 @@ off-battlefield changeling search/behold), `SearchLibrary.lean`, `Targets.lean`,
      `EngineChange.waitingTriggers`; consolidate `Pumps.openBatch`
      ([`Pumps.lean`](Mtg/Engine/Game/Pumps.lean)) onto `Core.withBatchReturn`
      (deferring or rolling back the open-time `nextBatchId` bump when an
-     outermost batch closes with zero `.rules` events); fold full `GameEvent`
-     envelopes during replay (`Game.applyRecordedEvent` / `Game.replay` in
-     [`Core.lean`](Mtg/Engine/Game/Core.lean), starting from `({} : Game)` to
-     match `Start.startWithRng` in [`Start.lean`](Mtg/Engine/Game/Start.lean)) so
-     replaying `.rules` events deterministically advances both `nextEffectId`
-     when `.oneShotEffect (some eid) ..` (including nested inside `.replaced`)
-     mints `eid` and `nextBatchId` from `e.batch`; delete duplicate rules-state
+     outermost batch closes with zero `.rules` events); add a `GameEvent`
+     envelope replay entry point in [`Core.lean`](Mtg/Engine/Game/Core.lean)
+     (alongside live `Game.applyEvent` / `Game.record`, starting from
+     `({} : Game)` to match `Start.startWithRng` in
+     [`Start.lean`](Mtg/Engine/Game/Start.lean), distinct from CLI-command
+     `Demo.replayCompleteGame`) that folds recorded `GameEvent` envelopes
+     without minting new ids or re-running `closeBatch` while advancing
+     `nextEffectId` past any `.oneShotEffect (some eid) ..` carried in `cause`
+     (including under `EventCause.replaced`) and `nextBatchId` past `e.batch`;
+     delete duplicate rules-state
      writer `EngineChange.result` (migrating the two `#guard` sites in
      `Mtg/Demo/Check2.lean` and `Check5.lean` to `GameEvent.gameEnded`), dead
      `EngineChange.nextObjectId` / `EngineChange.timestamp` (0 callers after
@@ -2801,21 +2809,30 @@ off-battlefield changeling search/behold), `SearchLibrary.lean`, `Targets.lean`,
      with `.lost` per CR 104.5 / 800.4a).
 3. Finish combat-damage `TurnEvent`s, `ancestryLandsTapped` removal, and unified
    trigger / ETB replacement routing (§2.7, §2.8, §2.10, §3.4, §3.5):
-   - Emit `TurnEvent.stepEnded .combatDamage` and
-     `TurnEvent.stepBegan .combatDamage` (plus `TurnEvent.extraStepAdded` when
-     first strike or double strike creates the second combat damage step per CR
-     510.4 / 702.7b / 500.9) in `Turns.advanceStep`
-     ([`Turns.lean`](Mtg/Engine/Game/Turns.lean)), derive
-     `firstStrikeDamageDone`, `pendingRegularCombatDamage`, and
-     `firstStrikeAssignedThisCombat` from
-     `CombatEvent.damageAssigned (firstStrike := true)` /
-     `TurnEvent.extraStepAdded` in the current combat phase (removing mid-step
-     `firstStrikeAssignedThisCombat` writes before
-     `PendingReplacement.dealAssignedCombatDamage` in
-     [`Combat.lean`](Mtg/Engine/Game/Combat.lean)), and delete
-     `Game.firstStrikeDamageDone`, `Game.pendingRegularCombatDamage`,
-     `Game.firstStrikeAssignedThisCombat`, their `EngineChange` setters, and
-     duplicate `EngineChange.clearAssignedCombatDamage`.
+   - Record `TurnEvent.extraStepAdded .combatDamage .afterCurrent`
+     (`GameEvent.extraStepAdded`, currently unconstructed) at the end of
+     `Combat.dealAssignedCombatDamage`
+     ([`Combat.lean`](Mtg/Engine/Game/Combat.lean)) when the first-strike combat
+     damage deal finishes (CR 510.4 / 702.7b / 500.9) and emit
+     `TurnEvent.stepEnded .combatDamage` and `TurnEvent.stepBegan .combatDamage`
+     when `Turns.advanceStep` ([`Turns.lean`](Mtg/Engine/Game/Turns.lean))
+     advances into that second combat damage step; derive
+     `firstStrikeDamageDone` (whether `TurnEvent.extraStepAdded .combatDamage ..`
+     has been recorded in the current combat phase) and
+     `pendingRegularCombatDamage` (whether that `extraStepAdded` has no
+     subsequent `TurnEvent.stepBegan .combatDamage` in the current combat phase)
+     so both booleans stay `false` throughout attacker/defender assignment and
+     `dealAssignedCombatDamage` (including replacement pauses) until the
+     first-strike deal finishes, and derive `firstStrikeAssignedThisCombat` once
+     `firstStrikeDamageDone` is `true` from the sources on
+     `CombatEvent.damageAssigned (firstStrike := true)` in the current combat
+     phase (removing the mid-step `firstStrikeAssignedThisCombat` prefix writes
+     before replacement pauses in `Combat.dealAssignedCombatDamage`, since
+     `PendingReplacement.dealAssignedCombatDamage`'s `startIdx` already tracks
+     the dealt prefix); and delete `Game.firstStrikeDamageDone`,
+     `Game.pendingRegularCombatDamage`, `Game.firstStrikeAssignedThisCombat`,
+     their `EngineChange` setters, and duplicate
+     `EngineChange.clearAssignedCombatDamage`.
    - Derive Path of Ancestry's creature-cast scry check in `Casting.becomeCast`
      ([`Casting.lean`](Mtg/Engine/Game/Casting.lean)) from
      `PlayerEvent.manaSpent` units' `ManaUnit.source` (resolved in `g.objects` or
@@ -2857,7 +2874,7 @@ phantom events/triggers and intact `followMoved` identity, full-game `g.events`
 replay equality from `({} : Game)`, second combat-damage step `TurnEvent`s under
 510.4 / 702.7b, Path of Ancestry scry via `ManaUnit.source`, and `matchTriggers`
 spell-cast / target / Ward triggers), `Casting.lean`, `Step.lean`,
-`FirstStrike.lean`, `DoubleStrike.lean`, `Ward.lean`, `Tap.lean`.
+`Combat.lean`, `Abilities.lean`, `Targets.lean`, `Tap.lean`.
 
 Final check (after Phase 12): `lake build`, `lake exe mtg-demo`,
 `lake exe oracle-roundtrip`, no `EventCause.unclassified` constructor, no
@@ -2867,7 +2884,8 @@ emissions for non-token cards/abilities/emblems/fixtures, no duplicate raw state
 writers (including `EngineChange.reverseProposal`,
 `EngineChange.clearAssignedCombatDamage`, `EngineChange.result`,
 `EngineChange.nextObjectId`, and `EngineChange.timestamp`) or
-unjournaled `{ g with … }` writes outside `applyChange` / `applyRecordedEvent`,
+unjournaled `{ g with … }` writes outside `applyChange` (and the Phase 12
+`GameEvent` replay applier),
 full deterministic replay of `g.events` from `({} : Game)`, zero stale
 pre-20260925 CR citations, and `RulesEvent` contains only the 12 families in §2
 (zone, permanent, damage, life, player, turn, combat, cast, trigger queue, stack
