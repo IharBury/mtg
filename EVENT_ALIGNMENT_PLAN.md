@@ -2064,15 +2064,25 @@ Tests: `Events.lean`, `SetBasePT.lean`, `BecomeArtifact.lean`, `Auras.lean`,
      creation (`Choices.copyBattlefieldPermanent`,
      [`EffectResolution.lean`](Mtg/Engine/Game/EffectResolution.lean), and
      [`TriggeredAbilities.lean`](Mtg/Engine/Game/TriggeredAbilities.lean)) rather
-     than mutating `GameObject.printed` via `ObjectChange.printed`, and updating
+     than mutating `GameObject.printed` via `ObjectChange.printed`, updating
      `LayerEffect.copy` creation (`ResolutionEffects.becomeCopyOf`, called from
      [`EffectResolution.lean`](Mtg/Engine/Game/EffectResolution.lean),
-     [`ModeledTriggers.lean`](Mtg/Engine/Game/ModeledTriggers.lean), and
-     [`TriggeredAbilities.lean`](Mtg/Engine/Game/TriggeredAbilities.lean)) while
-     replacing post-entry `.copy` workarounds (`ModeledTriggers.copyEnteredArtifact`
-     and `ResolutionEffects.applyEnterMod`) with Layer 4/6/7b specs; delete
-     `LayerEffect.copy`'s `restore` field, `copyRestoreOf?`, and `recomputeCopy`
-     in [`Core.lean`](Mtg/Engine/Game/Core.lean); and add
+     [`FrcResolve.lean`](Mtg/Engine/Game/FrcResolve.lean)'s `cursedCopy`,
+     [`ModeledTriggers.lean`](Mtg/Engine/Game/ModeledTriggers.lean)'s
+     `applyBecomeCopy`, and
+     [`TriggeredAbilities.lean`](Mtg/Engine/Game/TriggeredAbilities.lean)),
+     having `ModeledTriggers.copyEnteredArtifact` token-copy via
+     `copyBattlefieldPermanent` and then—only when the resulting token is not a
+     creature—create Layer 4 `.types .add #[.creature] #[.robot, .villain] #[]`
+     and Layer 7b `.ptSet 2 2` (with no Layer 6 effect), and having the
+     enters-with `ResolutionEffects.applyEnterMod` loop create Layer 6
+     `.abilities` effects for `.loseAllAbilities` / `.keywords` and Layer 4
+     `ContinuousEffectSpec.additionalSubtype` (`.types .addDedup`) for
+     `.additionalSubtype` (while `.counter` still routes through
+     `addPlusOnePlusOneTo` / `addFinalityTo` / `addCounters` and `.attacking`
+     records nothing); delete `LayerEffect.copy`'s `restore` field,
+     `copyRestoreOf?`, and `recomputeCopy` in
+     [`Core.lean`](Mtg/Engine/Game/Core.lean); and add
      `EffectDuration.untilSourceLeaves` (`Event.lean`, alongside
      `ContinuousEffectSpec.controlWhileSource` and `Game.durationActive`) so
      phasing `src` out suppresses `.whileSourceOnBattlefield src` (611.2b /
