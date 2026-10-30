@@ -3388,7 +3388,7 @@ def revealUntil (g : Game) (pid : PlayerId) (fuel : Nat)
   let g :=
     if shown.isEmpty then g
     else g.record (GameEvent.revealed g.turnNumber pid shown
-      (cause := cause.orElse (fun _ => g.resolvingOneShotCause pid)))
+      (cause := some (cause.getD (g.resolvingOrRuleCause pid))))
   (g, hit, rest)
 
 /-- Look through the libraries `who` names, as `how` says, and remember the
@@ -3414,7 +3414,7 @@ def noteRevealedLibraries (g : Game) (controller : PlayerId)
           let ids := g.scryLookedIds pid n
           if !ids.isEmpty then
             g := g.record (GameEvent.revealed g.turnNumber pid ids
-              (cause := cause.orElse (fun _ => g.resolvingOneShotCause controller sourceId)))
+              (cause := some (cause.getD (g.resolvingOrRuleCause controller sourceId))))
           for id in ids do
             match g.findObject? id with
             | some o => g := g.logMsg s!"{(g.player pid).name} reveals {o.name}"
@@ -3653,7 +3653,7 @@ def applyRevealFromHand (g : Game) (controller : PlayerId)
       let g :=
         if shownIds.isEmpty then g
         else g.record (GameEvent.revealed g.turnNumber pid shownIds
-          (cause := g.resolvingOneShotCause controller sourceId))
+          (cause := some (g.resolvingOrRuleCause controller sourceId)))
       let g := g.revealHand pid (recordEvent := false)
       g.logMsg
         s!"{(g.player pid).name} reveals {shown.size} card(s) (all, if fewer than {n})"
@@ -3974,9 +3974,14 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     (resolutionOverride : Option TriggeredAbility.TriggerResolution := none)
     (sequencedCardPower : Option Nat := none) : Game :=
   if resolutionOverride.isNone && g.continuations.isEmpty then
-    g.withResolvingContext sourceId controller fun g =>
-      g.applyTriggeredAbility controller ab sourceId targets dividedDamage
-        lastKnownPower lastKnownToughness sourceName resolutionOverride sequencedCardPower
+    let prevDepth := g.continuations.size
+    let g :=
+      (g.change (.pushContinuationFrame {})).applyTriggeredAbility controller ab sourceId
+        targets dividedDamage lastKnownPower lastKnownToughness sourceName
+        resolutionOverride sequencedCardPower
+    if g.pending != .none || g.afterRandom != .none then g
+    else if g.continuations.size > prevDepth then g.change .popContinuationFrame
+    else g
   else if resolutionOverride.isNone && !g.interveningStillHolds controller ab then
     g.logMsg "The intervening condition is no longer true. The ability doesn't resolve."
   else if resolutionOverride.isSome || ab.effect.sharedTrigger.isSome then
@@ -4479,7 +4484,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
             let g :=
               if shownIds.isEmpty then g
               else g.record (GameEvent.revealed g.turnNumber pid shownIds
-                (cause := g.resolvingOneShotCause controller sourceId))
+                (cause := some (g.resolvingOrRuleCause controller sourceId)))
             (g.revealHand pid (recordEvent := false)).logMsg
               s!"{(g.player pid).name} reveals {shown.size} card(s) (all, if fewer than {n})") g
       g.applyTriggeredAbility controller ab sourceId targets dividedDamage

@@ -58,15 +58,17 @@ def temptWithTheRing (g : Game) (p : PlayerId) (chosen : Option ObjectId := none
     | some id =>
       if choices.any (fun o => o.id == id) then some id else choices[0]?.map (·.id)
     | none => choices[0]?.map (·.id)
-  let cause := g.resolvingOneShotCause p
-  let g := if pick.isSome then g.setRingBearer p pick (cause := cause) else g
-  let g :=
-    match pick with
-    | some id =>
-      g.logMsg s!"{(g.player p).name} chooses {(g.object! id).name} as their Ring-bearer"
-    | none =>
-      g.logMsg s!"{(g.player p).name} controls no creature to become Ring-bearer"
-  g.record (GameEvent.ringTempted g.turnNumber p pick nextAbilities (cause := cause))
+  let cause := some (g.resolvingOrRuleCause p)
+  g.withBatch cause fun g =>
+    let g := if pick.isSome then g.setRingBearer p pick (cause := cause) else g
+    let g :=
+      match pick with
+      | some id =>
+        g.logMsg s!"{(g.player p).name} chooses {(g.object! id).name} as their Ring-bearer"
+      | none =>
+        g.logMsg s!"{(g.player p).name} controls no creature to become Ring-bearer"
+    g.record (GameEvent.ringTempted g.turnNumber p pick nextAbilities
+      (cause := some (g.resolvingOrRuleCause p)))
 
 /-- A targeted spell or ability that would tempt only does so if it resolves. -/
 def resolveTargetedTempt (g : Game) (p : PlayerId) (kind : EffectTargetKind)
@@ -307,7 +309,7 @@ def discardNonlandFrom (g : Game) (controller victim : PlayerId) : Game :=
   let g :=
     if !handIds.isEmpty then
       g.record (GameEvent.revealed g.turnNumber victim handIds
-        (cause := g.resolvingOneShotCause controller))
+        (cause := some (g.resolvingOrRuleCause controller)))
     else g
   let g :=
     if names.isEmpty then

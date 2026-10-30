@@ -68,19 +68,16 @@ def becomePrepared (g : Game) (o : GameObject) (cause : Option EventCause := non
     if o.status.prepared then g.logMsg s!"{o.name} is already prepared"
     else
       let p := (g.controllerOf o).getD o.owner
-      let (g, prepCause) :=
-        match cause with
-        | some c => (g, c)
-        | none =>
-          match g.currentBatch with
-          | some (_, some bc) => (g, bc)
-          | _ =>
-            match g.currentResolvingContext? with
-            | some (src, ctrl) =>
-              g.allocDelayedCause (ctrl.orElse (fun _ => some p)) (src.orElse (fun _ => some o.id))
-            | none => g.allocDelayedCause (some p) (some o.id)
-      let g := g.createPreparedCopy o face (cause := some prepCause)
-      let g := g.record (GameEvent.designation g.turnNumber o.asEvent .prepared true (cause := prepCause))
+      let srcFallback := (g.currentResolvingContext?.bind Prod.fst).orElse (fun _ => some o.id)
+      let batchCause :=
+        g.resolveOptionalCause cause (fallbackSrc := srcFallback) (fallbackCtrl := some p)
+          (defaultCause := .gameRule .spellCast)
+      let g := g.withBatch (some batchCause) fun g =>
+        let g := g.createPreparedCopy o face (cause := cause)
+        let prepCause :=
+          g.resolveOptionalCause cause (fallbackSrc := srcFallback) (fallbackCtrl := some p)
+            (defaultCause := .gameRule .spellCast)
+        g.record (GameEvent.designation g.turnNumber o.asEvent .prepared true (cause := prepCause))
       g.logMsg s!"{o.name} becomes prepared. A copy of {face.name} is exiled"
 
 /-- `o` stops being prepared and the copy of its prepare spell in exile
@@ -88,9 +85,10 @@ ceases to exist. Nothing happens if it isn't prepared (ruling 737). -/
 def unprepare (g : Game) (o : GameObject) (cause : Option EventCause := none) : Game :=
   if !o.status.prepared then g
   else
+    let srcFallback := (g.currentResolvingContext?.bind Prod.fst).orElse (fun _ => some o.id)
     let resolvedCause :=
-      g.resolveOptionalCause cause (fallbackSrc := some o.id) (fallbackCtrl := g.controllerOf o)
-        (defaultCause := some (.gameRule .staticAbility))
+      g.resolveOptionalCause cause (fallbackSrc := srcFallback) (fallbackCtrl := g.controllerOf o)
+        (defaultCause := .gameRule .spellCast)
     let g := g.record (GameEvent.designation g.turnNumber o.asEvent .prepared false (cause := resolvedCause))
     (g.removePreparedCopy o.id).logMsg s!"{o.name} is no longer prepared"
 

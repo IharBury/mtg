@@ -96,7 +96,7 @@ def continueRiddlesSplit (g : Game) (controller : PlayerId)
   let g :=
     if faceUp.isEmpty then g
     else g.record (GameEvent.revealed g.turnNumber controller faceUp
-      (cause := g.resolvingOneShotCause controller))
+      (cause := some (g.resolvingOrRuleCause controller)))
   let g :=
     faceUp.foldl (fun acc id =>
       match acc.findObject? id with
@@ -185,7 +185,8 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     if !ok a || !ok b then throw "Choose two cards you own from outside the game"
     if (g.object! a).name == (g.object! b).name then
       throw "The two cards must have different names"
-    let g := g.record (GameEvent.revealed g.turnNumber p #[a, b] (cause := g.resolvingOneShotCause p))
+    let g := g.record (GameEvent.revealed g.turnNumber p #[a, b]
+      (cause := some (g.resolvingOrRuleCause p)))
     let g := g.logMsg s!"{(g.player p).name} reveals {(g.object! a).name} and {(g.object! b).name}"
     match (g.livingOpponents p)[0]? with
     | none => return g.finishFraChoice
@@ -1035,7 +1036,8 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .mayCastFromGraveyard _, _ => throw "Choose a card to cast, or decline"
   | .maySearchLibrary eligible count dest after kind, .accept =>
     if eligible.isEmpty then
-      let g := g.record (GameEvent.searched g.turnNumber p p #[] (cause := g.resolvingOneShotCause p))
+      let g := g.record (GameEvent.searched g.turnNumber p p #[]
+        (cause := some (g.resolvingOrRuleCause p)))
       let g :=
         (g.logMsg s!"{(g.player p).name} finds no {searchNoun kind}").shuffleSearch p after
       return g.finishFraChoice

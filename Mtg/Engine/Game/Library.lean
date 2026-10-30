@@ -191,15 +191,15 @@ def pendingRandom? (g : Game) : Option RandomRequest :=
 
 /-- Shuffle `p`'s library (CR 103.3 / 701.24). Even a library of zero or one
 card is shuffled for rules/event purposes (CR 701.24e); a library of two or more
-cards becomes `Pending.resolveRandom` unless a choice is already pending. -/
+cards becomes `Pending.resolveRandom`. -/
 def shuffleLibrary (g : Game) (p : PlayerId) : Game :=
   let pl := g.player p
-  if pl.library.size ≤ 1 || g.pending != .none then
+  if pl.library.size ≤ 1 then
     let shuffleCause : EventCause :=
       match g.pregameRandom with
       | .openingShuffles _ => .gameRule .openingHandDraw
       | .mulliganDraw .. | .mulliganQueue .. => .gameRule .mulligan
-      | _ => (g.resolvingOneShotCause p).getD (.oneShotEffect none none (some p))
+      | _ => g.resolvingOrRuleCause p
     (g.record (GameEvent.shuffled g.turnNumber p pl.library (cause := some shuffleCause)))
       |>.logMsg s!"{pl.name} shuffles their library"
   else
@@ -249,7 +249,7 @@ def putIdsOnTop (g : Game) (p : PlayerId) (ids : Array ObjectId) : Game :=
         if o.zone == .library p then
           let name := o.name
           let snap := g.snapshot o
-          let moveCause := (g.resolvingOneShotCause p).getD (.oneShotEffect none none (some p))
+          let moveCause := g.resolvingOrRuleCause p
           g := g.record (GameEvent.moved g.turnNumber snap (.library p) (.library p)
             (after := some snap) (verb := some .put) (actor := some p)
             (libraryPosition := some .top) (cause := moveCause))

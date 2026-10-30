@@ -37,7 +37,7 @@ def payLifeCost (g : Game) (p : PlayerId) (n : Nat)
     throw s!"{pl.name} cannot pay {n} life"
   let effCause :=
     g.resolveOptionalCause cause (fallbackCtrl := some p)
-      (defaultCause := some (.costPayment .life p forObject))
+      (defaultCause := .costPayment .life p forObject)
   let g :=
     if g.lifeLocked p || g.lifeCantChange p then
       g.logMsg s!"{pl.name}'s life total can't change"

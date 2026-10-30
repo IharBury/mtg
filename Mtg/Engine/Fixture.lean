@@ -127,8 +127,9 @@ def firstHandCard (g : Game) (p : PlayerId) : GameObject :=
 
 /-- Put `card` into the game as a new object in `zone` (inserting into its zone list). -/
 def insertObject (g : Game) (card : CardDef) (owner : PlayerId) (zone : Zone)
-    (controller : Option PlayerId := none) (status : Status := {}) : Game :=
-  (g.allocObject card owner zone controller status).1
+    (controller : Option PlayerId := none) (status : Status := {})
+    (adventurerCard : Option CardDef := none) : Game :=
+  (g.allocObject card owner zone controller status (adventurerCard := adventurerCard)).1
 
 /-- Tap or untap `id` through `PermanentEvent` in test fixtures. -/
 def setTapped (g : Game) (id : ObjectId) (v : Bool) : Game :=

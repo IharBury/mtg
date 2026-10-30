@@ -745,13 +745,16 @@ def applyZoneEvent (g : Game) (e : ZoneEvent) : Game :=
           phasedOut := object.phasedOut
           faceDown := object.faceDown
           transformed := object.transformed }
+      else if object.zone == Zone.stack || object.zone == Zone.exile then
+        { faceDown := object.faceDown }
       else {}
     let status :=
       if object.counters.isEmpty then baseStatus
       else baseStatus.withCounterBag object.counters
     let ctrl :=
       if object.zone == Zone.battlefield || object.zone == Zone.stack then
-        object.controller.orElse (fun _ => some controller)
+        if object.printed.isSome then object.controller
+        else object.controller.orElse (fun _ => some controller)
       else object.controller
     let fresh : GameObject :=
       { id := newId
@@ -763,6 +766,7 @@ def applyZoneEvent (g : Game) (e : ZoneEvent) : Game :=
         status := status
         timestamp := ts
         attachedTo := if object.zone == Zone.battlefield then object.attachedTo else none
+        adventurerCard := object.adventurerCard
         isCopy := object.isCopy
         chosenX := if object.zone == Zone.stack then object.chosenX else none }
     let objs :=
@@ -1141,11 +1145,11 @@ def resolveOneShotCause (g : Game) : EventCause → EventCause × Option EffectI
    sub-event in the batch shares one cause / `EffectId` (CR 608.2c / 610).
 3. Otherwise if a spell or ability is actively resolving (`g.currentResolvingContext?`),
    return `.oneShotEffect none ...` (whose `EffectId` is minted when recorded).
-4. Otherwise fall back to `defaultCause` (or `.oneShotEffect none fallbackSrc fallbackCtrl`). -/
+4. Otherwise fall back to `defaultCause` without allocating an `EffectId`. -/
 def resolveOptionalCause (g : Game) (cause : Option EventCause := none)
     (fallbackSrc : Option ObjectId := none)
     (fallbackCtrl : Option PlayerId := none)
-    (defaultCause : Option EventCause := none) : EventCause :=
+    (defaultCause : EventCause := .gameRule .spellCast) : EventCause :=
   match cause with
   | some c => c
   | none =>
@@ -1156,7 +1160,7 @@ def resolveOptionalCause (g : Game) (cause : Option EventCause := none)
       | some (s, c) =>
         .oneShotEffect none (fallbackSrc.orElse (fun _ => s)) (c.orElse (fun _ => fallbackCtrl))
       | none =>
-        defaultCause.getD (.oneShotEffect none fallbackSrc fallbackCtrl)
+        defaultCause
 
 def findObject? (g : Game) (id : ObjectId) : Option GameObject :=
   g.objects.find? (fun o => o.id == id)
@@ -1229,13 +1233,6 @@ def counterTimestamp (g : Game) (oid : ObjectId) (k : CounterKind) : Nat × Nat 
           let c := eo.counters.count k
           ts? := if c > 0 then some i else none
           prevCount? := some c
-      | .engine (.setObject obj) =>
-        if obj.id == oid then
-          let c := obj.status.counterCount k
-          let grew : Bool := match prevCount? with | some prev => decide (c > prev) | none => decide (c > 0)
-          if c == 0 then ts? := none
-          else if grew then ts? := some i
-          prevCount? := some c
       | _ => pure ()
     return match ts? with
       | some idx => (1, idx)
@@ -1245,35 +1242,21 @@ def counterTimestamp (g : Game) (oid : ObjectId) (k : CounterKind) : Nat × Nat 
 def attachmentTimestamp (g : Game) (aura : GameObject) (hostId : ObjectId) : Nat × Nat :=
   Id.run do
     let mut ts? : Option Nat := none
-    let mut prevAtt? : Option (Option ObjectId) := none
     for i in [0:g.events.size] do
       let ev := g.events[i]!
       match ev.change with
       | .rules (.permanent (.attached aEo hid _)) =>
         if aEo.id == some aura.id then
           ts? := if hid == hostId then some i else none
-          prevAtt? := some (some hid)
       | .rules (.permanent (.unattached aEo _)) =>
         if aEo.id == some aura.id then
           ts? := none
-          prevAtt? := some none
       | .rules (.zone (.moved _ after _ .battlefield ..)) =>
         if after.id == some aura.id then
           ts? := if after.attachedTo == some hostId then some i else none
-          prevAtt? := some after.attachedTo
       | .rules (.zone (.created eo _)) =>
         if eo.id == some aura.id then
-          ts? := if eo.attachedTo == some hostId then some i else none
-          prevAtt? := some eo.attachedTo
-      | .engine (.setObject obj) =>
-        if obj.id == aura.id then
-          let newly :=
-            match prevAtt? with
-            | some prev => prev != some hostId && obj.attachedTo == some hostId
-            | none => obj.attachedTo == some hostId
-          if obj.attachedTo != some hostId then ts? := none
-          else if newly then ts? := some i
-          prevAtt? := some obj.attachedTo
+          ts? := if eo.zone == .battlefield && eo.attachedTo == some hostId then some i else none
       | _ => pure ()
     return match ts? with
       | some idx => (1, idx)
@@ -1289,8 +1272,6 @@ def objectEntryTimestamp (g : Game) (obj : GameObject) : Nat × Nat :=
         if after.id == some obj.id then return (1, i)
       | .rules (.zone (.created eo _)) =>
         if eo.id == some obj.id then return (1, i)
-      | .engine (.setObject o) =>
-        if o.id == obj.id then return (1, i)
       | _ => pure ()
     return (0, 2 + obj.timestamp)
 
@@ -1660,22 +1641,6 @@ def applyEngineChange (g : Game) (c : EngineChange) : Game :=
       let o := g.objects[i]!
       { g with objects := g.objects.set! i (ocs.foldl GameObject.applyChange o) }
     | none => g
-  | .setObject o =>
-    let prevZone? := (g.objects.find? (·.id == o.id)).map (·.zone)
-    let g :=
-      match prevZone? with
-      | some pz => if pz != o.zone then g.stripFromZoneList o.id pz else g
-      | none => g
-    let objs :=
-      match g.objects.findIdx? (·.id == o.id) with
-      | some i => g.objects.set! i o
-      | none => g.objects.push o
-    let g :=
-      { g with
-        objects := objs
-        nextObjectId := max g.nextObjectId (o.id.raw + 1)
-        timestamp := max g.timestamp o.timestamp }
-    if prevZone? == some o.zone then g else g.insertIntoZoneList o.id o.zone
   | .stack v => { g with stack := v }
   | .pushStack e => { g with stack := g.stack.push e }
   | .popStack => { g with stack := g.stack.pop }
@@ -3132,7 +3097,7 @@ def powerUpActivations (g : Game) (id : ObjectId) : Nat :=
     | .rules (.zone (.moved _ after _ .battlefield ..)) =>
       if after.id == some id then 0 else n
     | .rules (.zone (.created obj _)) =>
-      if obj.id == some id then 0 else n
+      if obj.zone == .battlefield && obj.id == some id then 0 else n
     | .rules (.cast (.abilityActivated _ src _ (.nonMana _ _ true ..))) =>
       if src.id == some id then n + 1 else n
     | _ => n) 0
@@ -3148,7 +3113,7 @@ def exhaustUsed (g : Game) (id : ObjectId) : Bool :=
     | .rules (.zone (.moved _ after _ .battlefield ..)) =>
       if after.id == some id then false else used
     | .rules (.zone (.created obj _)) =>
-      if obj.id == some id then false else used
+      if obj.zone == .battlefield && obj.id == some id then false else used
     | .rules (.cast (.abilityActivated _ src _ (.nonMana _ _ _ _ _ true))) =>
       used || src.id == some id
     | _ => used) false
@@ -3193,7 +3158,7 @@ def dealtCombatDamage (g : Game) (id : ObjectId) : Bool :=
     | .rules (.zone (.moved _ after _ .battlefield ..)) =>
       if after.id == some id then false else dealt
     | .rules (.zone (.created obj _)) =>
-      if obj.id == some id then false else dealt
+      if obj.zone == .battlefield && obj.id == some id then false else dealt
     | .rules (.damage (.dealt pkts)) =>
       dealt || pkts.any (fun pkt => pkt.combat && pkt.amount > 0 && pkt.source.id == some id)
     | _ => dealt) false
@@ -3238,7 +3203,7 @@ def modesChosenEver (g : Game) (sourceId : ObjectId) : Array Nat :=
     | .rules (.zone (.moved _ after _ .battlefield ..)) =>
       if after.id == some sourceId then #[] else acc
     | .rules (.zone (.created obj _)) =>
-      if obj.id == some sourceId then #[] else acc
+      if obj.zone == .battlefield && obj.id == some sourceId then #[] else acc
     | .rules (.triggerQueue (.modeChosen sid m true)) =>
       if sid == sourceId then acc.push m else acc
     | _ => acc) #[]
@@ -4471,15 +4436,6 @@ def hasSummoningSickness (g : Game) (o : GameObject) : Bool :=
               sawWindowCtrlChange := true
           | .rules (.player (.lost ..)) | .rules (.player (.leftGame ..)) =>
             sawWindowCtrlChange := true
-          | .engine (.setObject obj) =>
-            if obj.id == o.id then
-              sawWindowCtrlChange := true
-              if obj.zone == .battlefield && !obj.status.summoningSick then
-                overrideIdx? := some i
-                sawUnoverriddenArrival := false
-              else if obj.zone != .battlefield || obj.status.summoningSick then
-                overrideIdx? := none
-                sawUnoverriddenArrival := true
           | _ => pure ()
         if sawUnoverriddenArrival then return true
         let effStartIdx? := overrideIdx?.orElse (fun _ => turnStartIdx?)
@@ -4541,7 +4497,7 @@ def hasSummoningSickness (g : Game) (o : GameObject) : Bool :=
             if eo.id == some o.id then
               z0 := .outside o.owner
               if eo.zone == .battlefield then
-                let c' := eo.controller.orElse (fun _ => some c)
+                let c' := if eo.printed.isSome then eo.controller else eo.controller.orElse (fun _ => some c)
                 fd0 := eo.faceDown
                 dc0 := c'
                 rc0 := c'
@@ -4549,12 +4505,6 @@ def hasSummoningSickness (g : Game) (o : GameObject) : Bool :=
               objZones := setZone objZones eid (.outside eo.owner)
           | .rules (.player (.lost p _)) | .rules (.player (.leftGame p)) =>
             plLost := setLost plLost p false
-          | .engine (.setObject obj) =>
-            if obj.id == o.id then
-              z0 := obj.zone
-              fd0 := obj.status.faceDown
-              dc0 := obj.defaultController
-              rc0 := obj.controller
           | _ => pure ()
         let mkGameAt (effs : Array (EffectId × ContinuousEffectSpec))
             (cz : Zone) (fd : Bool) (dc rc : Option PlayerId)
@@ -4644,7 +4594,7 @@ def hasSummoningSickness (g : Game) (o : GameObject) : Bool :=
               curZ := eo.zone
               dirty := true
             if eo.id == some o.id && eo.zone == .battlefield then
-              let c' := eo.controller.orElse (fun _ => some c)
+              let c' := if eo.printed.isSome then eo.controller else eo.controller.orElse (fun _ => some c)
               curFd := eo.faceDown
               curDc := c'
               curRc := c'
@@ -4652,13 +4602,6 @@ def hasSummoningSickness (g : Game) (o : GameObject) : Bool :=
           | .rules (.player (.lost p _)) | .rules (.player (.leftGame p)) =>
             curLs := setLost curLs p true
             dirty := true
-          | .engine (.setObject obj) =>
-            if obj.id == o.id then
-              curZ := obj.zone
-              curFd := obj.status.faceDown
-              curDc := obj.defaultController
-              curRc := obj.controller
-              dirty := true
           | _ => pure ()
           let checkNow :=
             match effStartIdx? with
@@ -5098,10 +5041,11 @@ def apnapPlayers (g : Game) : Array PlayerId :=
 /-- Wrap `cause` in `EventCause.replaced id orig` when replacement or prevention
 effect `id` applies (CR 614.6 / 615.6). Preserves batch/resolving-context cause
 upgrade when `cause` is `none`, without minting an `EffectId` until the event is
-recorded. -/
+recorded (or falling back to `defaultCause` outside resolution). -/
 def wrapReplacedCause (g : Game) (id : ReplacementId) (cause : Option EventCause)
-    (defaultActor : Option PlayerId := none) : Option EventCause :=
-  some (.replaced id (g.resolveOptionalCause cause (fallbackCtrl := defaultActor)))
+    (defaultActor : Option PlayerId := none)
+    (defaultCause : EventCause := .gameRule .continuousEffect) : Option EventCause :=
+  some (.replaced id (g.resolveOptionalCause cause (fallbackCtrl := defaultActor) (defaultCause := defaultCause)))
 
 /-- Whether two replacement/prevention effects in the same CR 616.1a–e tier
 produce an identical outcome regardless of application order, so the engine
@@ -7038,8 +6982,8 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
       -- Saga chapter and Nth-plan-counter triggers on counters put in this event
       let isZoneArrival :=
         match e.change with
-        | .rules (.zone (.moved _ _ _ .battlefield ..))
-        | .rules (.zone (.created ..)) => true
+        | .rules (.zone (.moved _ _ _ .battlefield ..)) => true
+        | .rules (.zone (.created obj _)) => obj.zone == .battlefield
         | _ => false
       for (eo, kind, n, _) in e.countersPutInEvent do
         if n > 0 then
@@ -8385,8 +8329,8 @@ def closeBatch (g : Game) (pre : GameSnapshot) (batchId : BatchId)
   else
     let anyEntered := batchEvents.any fun ev =>
       match ev.change with
-      | .rules (.zone (.moved _ _ _ .battlefield _ _ _ _))
-      | .rules (.zone (.created _ _)) => true
+      | .rules (.zone (.moved _ _ _ .battlefield _ _ _ _)) => true
+      | .rules (.zone (.created obj _)) => obj.zone == .battlefield
       | _ => false
     let pushInBatch (g : Game) (ev : GameEvent) : Game :=
       let ev := ev.withBatch batchId
@@ -8681,19 +8625,28 @@ def withResolvingContext (g : Game) (src : Option ObjectId) (ctrl : PlayerId)
   else if g.continuations.size > prevDepth then g.change .popContinuationFrame
   else g
 
-/-- Resolving one-shot cause for a player action (`p` is the fallback controller
-when no resolving spell or ability is on the stack; CR 610.1). -/
+/-- Resolving one-shot cause for a player action when an active batch or
+resolving spell/ability is present (`none` on a quiet board so non-resolving
+helpers do not allocate an `EffectId`; CR 610.1). -/
 def resolvingOneShotCause (g : Game) (p : PlayerId)
     (source : Option ObjectId := none) : Option EventCause :=
   match g.currentBatch with
-  | some (_, some (.oneShotEffect (some bid) bsrc bctrl)) =>
-    some (.oneShotEffect (some bid) (bsrc.orElse (fun _ => source)) (bctrl.orElse (fun _ => some p)))
+  | some (_, some (.oneShotEffect bid bsrc bctrl)) =>
+    some (.oneShotEffect bid (bsrc.orElse (fun _ => source)) (bctrl.orElse (fun _ => some p)))
+  | some (_, some bc) => some bc
   | _ =>
-    let (src, ctrl) :=
-      match g.currentResolvingContext? with
-      | some (s, c) => (source.orElse (fun _ => s), c.orElse (fun _ => some p))
-      | none => (source, some p)
-    some (.oneShotEffect (some ⟨g.nextEffectId⟩) src ctrl)
+    match g.currentResolvingContext? with
+    | some (s, c) =>
+      some (.oneShotEffect none (source.orElse (fun _ => s)) (c.orElse (fun _ => some p)))
+    | none => none
+
+/-- Resolving one-shot cause when a spell or ability is actively resolving,
+or `defaultCause` on a quiet board so non-resolving helpers never consume an
+`EffectId` (CR 610.1). -/
+def resolvingOrRuleCause (g : Game) (p : PlayerId)
+    (source : Option ObjectId := none)
+    (defaultCause : EventCause := .gameRule .spellCast) : EventCause :=
+  (g.resolvingOneShotCause p source).getD defaultCause
 
 /-- Record `PlayerEvent.manaAdded` for `units` on `p` (skipping empty arrays; CR 106.4). -/
 def addManaUnits (g : Game) (p : PlayerId) (units : Array ManaUnit)
@@ -8882,6 +8835,7 @@ fresh unique `EffectId` from `g.nextEffectId`; Layers 1–7d derive characterist
 purely from `g.activeEffects` without imperative mutations on creation. -/
 def createEffect (g : Game) (eff : ContinuousEffect)
     (cause : Option EventCause := none) : Game :=
+  let batchCause? := (g.currentBatch.map Prod.snd).join
   let (g, effCause) : Game × EventCause :=
     match cause with
     | some c =>
@@ -8891,18 +8845,23 @@ def createEffect (g : Game) (eff : ContinuousEffect)
           (g.change (.nextEffectId (cid.raw + 1)), c)
         else (g, c)
       | .oneShotEffect none _ _ =>
-        let (c', bumpId?) := g.resolveOneShotCause c
+        let (c', bumpId?, _) := g.resolveCauseInBatch batchCause? c
         match bumpId? with
         | some cid => (g.change (.nextEffectId (max g.nextEffectId (cid.raw + 1))), c')
         | none => (g, c')
       | _ => (g, c)
     | none =>
-      match g.currentBatch with
-      | some (_, some (.oneShotEffect (some bid) bsrc bctrl)) =>
+      match batchCause? with
+      | some (.oneShotEffect (some bid) bsrc bctrl) =>
         (g, .oneShotEffect (some bid) bsrc bctrl)
-      | some (_, some bc) =>
+      | some (.oneShotEffect none bsrc bctrl) =>
+        let (c', bumpId?, _) := g.resolveCauseInBatch batchCause? (.oneShotEffect none bsrc bctrl)
+        match bumpId? with
+        | some cid => (g.change (.nextEffectId (max g.nextEffectId (cid.raw + 1))), c')
+        | none => (g, c')
+      | some bc =>
         (g, bc)
-      | _ =>
+      | none =>
         match g.currentResolvingContext? with
         | some (src, ctrl) =>
           g.allocDelayedCause ctrl src
@@ -8915,17 +8874,23 @@ def createEffects (g : Game) (effs : Array ContinuousEffect)
     (cause : Option EventCause := none) : Game :=
   if effs.isEmpty then g
   else
+    let batchCause? := (g.currentBatch.map Prod.snd).join
     let (g, cause) : Game × Option EventCause :=
-      match cause, g.currentBatch, g.currentResolvingContext? with
-      | none, some (_, some (.oneShotEffect (some bid) bsrc bctrl)), _ =>
+      match cause, batchCause?, g.currentResolvingContext? with
+      | none, some (.oneShotEffect (some bid) bsrc bctrl), _ =>
         (g, some (.oneShotEffect (some bid) bsrc bctrl))
-      | none, some (_, some bc), _ =>
+      | none, some (.oneShotEffect none bsrc bctrl), _ =>
+        let (c', bumpId?, _) := g.resolveCauseInBatch batchCause? (.oneShotEffect none bsrc bctrl)
+        match bumpId? with
+        | some cid => (g.change (.nextEffectId (max g.nextEffectId (cid.raw + 1))), some c')
+        | none => (g, some c')
+      | none, some bc, _ =>
         (g, some bc)
-      | none, _, some (src, ctrl) =>
+      | none, none, some (src, ctrl) =>
         let (g, c) := g.allocDelayedCause ctrl src
         (g, some c)
       | some (.oneShotEffect none src ctrl), _, _ =>
-        let (c', bumpId?) := g.resolveOneShotCause (.oneShotEffect none src ctrl)
+        let (c', bumpId?, _) := g.resolveCauseInBatch batchCause? (.oneShotEffect none src ctrl)
         match bumpId? with
         | some cid => (g.change (.nextEffectId (max g.nextEffectId (cid.raw + 1))), some c')
         | none => (g, some c')
@@ -8942,7 +8907,7 @@ def expireEffectById (g : Game) (eid : EffectId)
   | none => g
   | some eff =>
     let expCause :=
-      g.resolveOptionalCause cause (defaultCause := some (.gameRule .continuousEffect))
+      g.resolveOptionalCause cause (defaultCause := .gameRule .continuousEffect)
     let g := g.record (GameEvent.effectExpired g.turnNumber eid eff (cause := expCause))
     match eff with
     | .gameRule (.fraEmblem id) _ =>
@@ -8999,7 +8964,7 @@ def syncImpendingNotACreature (g : Game) (id : ObjectId)
     | some c => some c
     | none =>
       match g.currentResolvingContext? with
-      | some (src, ctrl) => some (.oneShotEffect (some ⟨g.nextEffectId⟩) src ctrl)
+      | some (src, ctrl) => some (.oneShotEffect none src ctrl)
       | none => some (.gameRule .impending)
   match g.findObject? id with
   | none => g
@@ -9038,7 +9003,7 @@ def markAttacking (g : Game) (id : ObjectId) (target : Option AttackTarget := no
     let tgt := target.getD (.player (g.opponent ((g.controllerOf o).getD g.activePlayer)))
     let effCause :=
       g.resolveOptionalCause cause (fallbackSrc := some id)
-        (defaultCause := some (.turnBased .declareAttackers))
+        (defaultCause := .turnBased .declareAttackers)
     g.record (GameEvent.becameAttacking g.turnNumber (g.snapshot o) tgt (cause := effCause))
   | none => g
 
@@ -9097,7 +9062,7 @@ def noteCombatDamageTo (g : Game) (p : PlayerId) (source : EventObject)
     (cause : Option EventCause := none) : Game :=
   let effCause :=
     g.resolveOptionalCause cause (fallbackSrc := source.id)
-      (defaultCause := some (.turnBased (.assignCombatDamage false)))
+      (defaultCause := .turnBased (.assignCombatDamage false))
   g.record (GameEvent.damagedPlayer g.turnNumber source p 1 true (cause := effCause))
 
 /-- Set `p`'s life total by gaining or losing the difference (CR 119.5) and log `msg`. -/

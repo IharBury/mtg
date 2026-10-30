@@ -377,7 +377,8 @@ def applyRiddlesPiles (g : Game) (p : PlayerId) (faceUp faceDown : Array ObjectI
     else
       let g :=
         if !alreadyRevealed && !faceUp.isEmpty then
-          g.record (GameEvent.revealed g.turnNumber p faceUp (cause := g.resolvingOneShotCause p))
+          g.record (GameEvent.revealed g.turnNumber p faceUp
+            (cause := some (g.resolvingOrRuleCause p)))
         else g
       let g := g.logMsg "The face-up pile is put into hand"
       faceUp.foldl (fun acc id =>

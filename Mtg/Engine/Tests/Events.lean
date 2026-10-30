@@ -951,17 +951,10 @@ events. -/
     (tapped := true) (summoningSick := false)
     (attacking := true) (attackingTarget := some (.player opp))
     (returnedAsArtifact := true) (onlyFoodArtifact := true)
-  let (g2, tok) := (quiet g1).createToken me treasureToken
+  let (_, tok) := (quiet g1).createToken me treasureToken
     (tapped := true) (attacking := true) (attackingTarget := some (.player opp))
-  let hasSetObject (evs : Array GameEvent) : Bool :=
-    evs.any (fun e =>
-      match e.change with
-      | .engine (.setObject _) => true
-      | _ => false)
   let perm := g1.object! permId
-  !hasSetObject g1.events &&
-    !hasSetObject g2.events &&
-    perm.status.tapped &&
+  perm.status.tapped &&
     !perm.status.summoningSick &&
     perm.status.attacking &&
     perm.status.attackingTarget == some (.player opp) &&
@@ -1000,8 +993,10 @@ chosen piles/targets; a resolving pump has cause `.oneShotEffect`; a cleanup
   let gPump := (quiet g0).withResolvingContext (some b.id) me (fun g =>
     g.createEffect (.pump b.id 2 2))
   let gCleanup := ((quiet gPump).clearEOT).clearTurnActivations
-  let gBeholdEff := ((quiet g0).becomeTapped (g0.object! b.id)
-    (cause := some (.oneShotEffect (some ⟨g0.nextEffectId⟩) (some b.id) (some me)))).beholdAndMaybeUntap me b.id .bear
+  let gBeholdEff :=
+    ((quiet g0).becomeTapped (g0.object! b.id)
+      (cause := some (.oneShotEffect (some ⟨g0.nextEffectId⟩) (some b.id) (some me)))).withResolvingContext
+      (some b.id) me (fun g => g.beholdAndMaybeUntap me b.id .bear)
   let gScry0 := (quiet afterDraw).beginScry me 2
   let looked := gScry0.scryLookedIds me 2
   let topChoice := #[looked[0]!]
@@ -1086,8 +1081,8 @@ and `storeCombatAssignments` records `DamageEvent.combatAssigned` under
     | .ok g => g
     | .error _ => gScryOne
   let gProlif0 :=
-    ((quiet g0).recordPutCounters b.id .stun 1).change
-      (.pending (.chooseProliferate me 1))
+    ((quiet g0).recordPutCounters b.id .stun 1).withResolvingContext (some h.id) me (fun g =>
+      g.change (.pending (.chooseProliferate me 1)))
   let gProlifDone :=
     match gProlif0.finishProliferate me #[.permanent b.id] with
     | .ok g => g
@@ -1318,7 +1313,8 @@ cause rather than `.gameRule .leavingZone` (CR 702.26b). -/
   let gInc0 := quiet (addPermanent afterDraw incDef me me)
   let inc := (gInc0.battlefield.filter (·.name == "Incubator Token"))[0]!
   let gIncTransformed :=
-    gInc0.applyFrc me default .transformIncubator #[] (some inc.id)
+    gInc0.withResolvingContext (some inc.id) me (fun g =>
+      g.applyFrc me default .transformIncubator #[] (some inc.id))
   let incAfter := gIncTransformed.object! inc.id
   let staticCreature : CardDef :=
     { name := "Static Bear"
@@ -1378,10 +1374,6 @@ cause rather than `.gameRule .leavingZone` (CR 702.26b). -/
     incAfter.name == "Phyrexian" &&
     incAfter.printed.power == some 0 &&
     incAfter.printed.toughness == some 0 &&
-    !gIncTransformed.events.any (fun e =>
-      match e.change with
-      | .engine (.setObject _) => true
-      | _ => false) &&
     gIncTransformed.events.any (fun e =>
       match e.change, e.cause? with
       | .rules (.permanent (.transformed o true)), some (.oneShotEffect _ (some sid) (some ctrl)) =>
@@ -1558,16 +1550,18 @@ creations, both haste continuous effects, and both delayed end-step sacrifices. 
   -- 2. .exileThenReturnNextEnd and .exileThenReturnYouControl on two targets
   let twoTargets := #[Target.permanent b.id, Target.permanent h.id]
   let gNextEnd :=
-    (quiet gWithSrc).applyUnifiedAbility me Effect.exileThenReturnNextEnd twoTargets
-      (sourceId := some s.id)
+    (quiet gWithSrc).withResolvingContext (some s.id) me (fun g =>
+      g.applyUnifiedAbility me Effect.exileThenReturnNextEnd twoTargets
+        (sourceId := some s.id))
   let nextEndExileCauses :=
     gNextEnd.events.filterMap (fun e =>
       match e.change with
       | .rules (.zone (.moved _ _ .battlefield .exile ..)) => e.cause?
       | _ => none)
   let gBlinkTwo :=
-    (quiet gWithSrc).applyEffect me Effect.exileThenReturnYouControl twoTargets
-      (sourceId := some s.id)
+    (quiet gWithSrc).withResolvingContext (some s.id) me (fun g =>
+      g.applyEffect me Effect.exileThenReturnYouControl twoTargets
+        (sourceId := some s.id))
   let blinkMoveCauses :=
     gBlinkTwo.events.filterMap (fun e =>
       match e.change with
@@ -1578,7 +1572,8 @@ creations, both haste continuous effects, and both delayed end-step sacrifices. 
   --    firing creature-only .youPutPlusOne on the noncreature Incubator, and
   --    transforms via otherFace without EngineChange.object (.printed _)
   let gSynth :=
-    (quiet gWithSrc).applyFrc me default .syntheticDestiny #[] (some s.id)
+    (quiet gWithSrc).withResolvingContext (some s.id) me (fun g =>
+      g.applyFrc me default .syntheticDestiny #[] (some s.id))
   let synthStoredCause := gSynth.delayedTriggers[0]!.cause
   let synthExileCauses :=
     gSynth.events.filterMap (fun e =>
@@ -1586,7 +1581,8 @@ creations, both haste continuous effects, and both delayed end-step sacrifices. 
       | .rules (.zone (.moved _ _ .battlefield .exile ..)) => e.cause?
       | _ => none)
   let gSunfall :=
-    (quiet gWithSrc).applyFrc me default .sunfall #[] (some s.id)
+    (quiet gWithSrc).withResolvingContext (some s.id) me (fun g =>
+      g.applyFrc me default .sunfall #[] (some s.id))
   let sunfallExileCauses :=
     gSunfall.events.filterMap (fun e =>
       match e.change with
@@ -1600,12 +1596,14 @@ creations, both haste continuous effects, and both delayed end-step sacrifices. 
       | _ => none)
   let sunfallInc := (gSunfall.battlefield.filter (·.name == "Incubator"))[0]!
   let gSunfallTransformed :=
-    (quiet gSunfall).applyFrc me default .transformIncubator #[] (some sunfallInc.id)
+    (quiet gSunfall).withResolvingContext (some sunfallInc.id) me (fun g =>
+      g.applyFrc me default .transformIncubator #[] (some sunfallInc.id))
   let sunfallIncAfter := gSunfallTransformed.object! sunfallInc.id
   -- 4. .massPolymorph shares one exileCause for battlefield exiles and one distinct
   --    revealCause across revealUntil, putHits, and restBottom
   let gMassPoly :=
-    (quiet gWithSrc).applyFrc me default .massPolymorph #[] (some s.id)
+    (quiet gWithSrc).withResolvingContext (some s.id) me (fun g =>
+      g.applyFrc me default .massPolymorph #[] (some s.id))
   let polyBfExiles :=
     gMassPoly.events.filterMap (fun e =>
       match e.change with
@@ -1626,7 +1624,8 @@ creations, both haste continuous effects, and both delayed end-step sacrifices. 
   -- 5. .venserPerm shares one cause across both token creations, both haste effects,
   --    and both delayed end-step sacrifices
   let gVenser :=
-    (quiet gWithSrc).applyFrc me default .venserPerm #[Target.permanent b.id] (some s.id)
+    (quiet gWithSrc).withResolvingContext (some s.id) me (fun g =>
+      g.applyFrc me default .venserPerm #[Target.permanent b.id] (some s.id))
   let venserCreateCauses :=
     gVenser.events.filterMap (fun e =>
       match e.change with
@@ -1651,7 +1650,8 @@ creations, both haste continuous effects, and both delayed end-step sacrifices. 
     let g := (g.move h.id (.library me) none (libraryPosition := some .top)).1
     quiet g
   let gJhoiraPending :=
-    gJhoiraSetup.applyFrc me default .jhoira #[Target.player me] (some s.id)
+    gJhoiraSetup.withResolvingContext (some s.id) me (fun g =>
+      g.applyFrc me default .jhoira #[Target.player me] (some s.id))
   let jhoiraPendingOk :=
     match gJhoiraPending.pending with
     | .resolveRandom (.orderInto ids (.library p) (some _)) => p == me && ids.size == 2
@@ -1703,10 +1703,6 @@ creations, both haste continuous effects, and both delayed end-step sacrifices. 
     sunfallIncAfter.printed.power == some 0 &&
     sunfallIncAfter.printed.toughness == some 0 &&
     sunfallIncAfter.status.plusOnePlusOne == 2 &&
-    !gSunfallTransformed.events.any (fun e =>
-      match e.change with
-      | .engine (.setObject _) => true
-      | _ => false) &&
     polyBfExiles.size == 2 &&
     polyBfExiles[0]! == polyBfExiles[1]! &&
     polyRestMoves.size > 0 &&
@@ -1901,7 +1897,9 @@ across all constituent moves, transforms, and continuous-effect creations
     let g := (g.move dfcObj.id (.library me) none (libraryPosition := some .top)).1
     quiet g
   let dfcLibId := (gNickSetup.player me).library.back!
-  let gNick1 := gNickSetup.beginLookPutTypes me 3 #[.hero]
+  let gNick1 :=
+    gNickSetup.withResolvingContext (some h.id) me (fun g =>
+      g.beginLookPutTypes me 3 #[.hero])
   let gNick2 :=
     match gNick1.answerFraChoice me (.objects #[dfcLibId]) with
     | .ok g' => g'
@@ -2012,9 +2010,10 @@ across all constituent moves, transforms, and continuous-effect creations
       match e.change with
       | .rules (.zone (.moved ..)) => e.cause?
       | _ => none)
-  -- 9. `draw` and `mill` outside a resolving context mint classified `.oneShotEffect` causes, while `drawThenLoseLife`,
-  --    `drawEqualToughnessThenPutCreatures`, `.twoPlayersDraw`, `millCollected` / `.milledSubtype`,
-  --    and `.palantirMayDraw` `.decline` share one `.oneShotEffect` cause across each instruction
+  -- 9. `draw` and `mill` outside a resolving context record classified non-one-shot causes without
+  --    bumping `nextEffectId`, while `drawThenLoseLife`, `drawEqualToughnessThenPutCreatures`,
+  --    `.twoPlayersDraw`, `millCollected` / `.milledSubtype`, and `.palantirMayDraw` `.decline`
+  --    share one `.oneShotEffect` cause across each instruction
   let gRawDraw := gLibSetup.draw me 2
   let rawDrawCauses :=
     gRawDraw.events.filterMap (fun e =>
@@ -2246,9 +2245,11 @@ across all constituent moves, transforms, and continuous-effect creations
       match e.change with
       | .rules _ => e.cause?
       | _ => none)
-  let isClassifiedOneShot : EventCause → Bool
-    | .oneShotEffect (some _) _ _ => true
-    | _ => false
+  let isClassifiedNonOneShot (c : EventCause) : Bool :=
+    c.oneShotEffectId?.isNone &&
+      match c with
+      | .oneShotEffect none _ _ => false
+      | _ => true
   mayRevCauses.size == 3 &&
     mayRevCauses.all (· == mayRevCauses[0]!) &&
     nickCauses.size == 4 &&
@@ -2271,9 +2272,11 @@ across all constituent moves, transforms, and continuous-effect creations
     millChooseCauses.size == 3 &&
     millChooseCauses.all (· == millChooseCauses[0]!) &&
     rawDrawCauses.size == 2 &&
-    rawDrawCauses.all isClassifiedOneShot &&
+    rawDrawCauses.all isClassifiedNonOneShot &&
+    gRawDraw.nextEffectId == gLibSetup.nextEffectId &&
     rawMillCauses.size == 2 &&
-    rawMillCauses.all isClassifiedOneShot &&
+    rawMillCauses.all isClassifiedNonOneShot &&
+    gRawMill.nextEffectId == gLibSetup.nextEffectId &&
     drawLoseCauses.size == 3 &&
     drawLoseCauses.all (· == drawLoseCauses[0]!) &&
     (match drawLoseCauses[0]! with | .oneShotEffect (some _) (some _) (some _) => true | _ => false) &&
@@ -2287,9 +2290,11 @@ across all constituent moves, transforms, and continuous-effect creations
     palantirCauses.size == 4 &&
     palantirCauses.all (· == palantirCauses[0]!) &&
     palantirRawCauses.size == 4 &&
-    palantirRawCauses.all isClassifiedOneShot &&
+    palantirRawCauses.all isClassifiedNonOneShot &&
+    gPalantirRawDone.nextEffectId == gPalantirRaw0.nextEffectId &&
     balinRawCauses.size == handSize &&
-    balinRawCauses.all isClassifiedOneShot &&
+    balinRawCauses.all isClassifiedNonOneShot &&
+    gBalinRaw.nextEffectId == gBalinRaw0.nextEffectId &&
     balinResCauses.size == handSize * 2 &&
     (balinResCauses.extract 0 handSize).all (· == balinResCauses[0]!) &&
     (balinResCauses.extract handSize (handSize * 2)).all (· == balinResCauses[handSize]!) &&
@@ -2297,12 +2302,14 @@ across all constituent moves, transforms, and continuous-effect creations
     armorEmptyMoves.isEmpty &&
     gArmorEmptyDone.drewFromEmpty me &&
     dmgPermRawCauses.size == 3 &&
-    dmgPermRawCauses.all isClassifiedOneShot &&
+    dmgPermRawCauses.all isClassifiedNonOneShot &&
+    gDmgPermRaw.nextEffectId == gDmgSetup.nextEffectId &&
     dmgPermResCauses.size == 3 &&
     dmgPermResCauses.all (· == dmgPermResCauses[0]!) &&
     (match dmgPermResCauses[0]! with | .oneShotEffect (some _) (some _) (some _) => true | _ => false) &&
     dmgPlayerRawCauses.size == 3 &&
-    dmgPlayerRawCauses.all isClassifiedOneShot &&
+    dmgPlayerRawCauses.all isClassifiedNonOneShot &&
+    gDmgPlayerRaw.nextEffectId == gDmgSetup.nextEffectId &&
     dmgPlayerResCauses.size == 3 &&
     dmgPlayerResCauses.all (· == dmgPlayerResCauses[0]!) &&
     (match dmgPlayerResCauses[0]! with | .oneShotEffect (some _) (some _) (some _) => true | _ => false) &&
@@ -2311,25 +2318,29 @@ across all constituent moves, transforms, and continuous-effect creations
     (match sweepResCauses[0]! with | .oneShotEffect (some _) (some _) (some _) => true | _ => false) &&
     nivRawCauses.size == 3 &&
     nivRawCauses[0]! == .costPayment .life me none &&
-    isClassifiedOneShot nivRawCauses[1]! &&
-    isClassifiedOneShot nivRawCauses[2]! &&
+    isClassifiedNonOneShot nivRawCauses[1]! &&
+    isClassifiedNonOneShot nivRawCauses[2]! &&
+    gNivRaw.nextEffectId == gDmgSetup.nextEffectId &&
     nivResCauses.size == 3 &&
     nivResCauses[0]! == .costPayment .life me (some lh.id) &&
     nivResCauses[1]! == nivResCauses[2]! &&
     (match nivResCauses[1]! with | .oneShotEffect (some _) (some _) (some _) => true | _ => false) &&
     nivLockedEvents.isEmpty &&
     dreadRawCauses.size == 3 &&
-    dreadRawCauses.all isClassifiedOneShot &&
+    dreadRawCauses.all isClassifiedNonOneShot &&
+    gDreadRaw.nextEffectId == gDmgSetup.nextEffectId &&
     dreadResCauses.size == 3 &&
     dreadResCauses.all (· == dreadResCauses[0]!) &&
     (match dreadResCauses[0]! with | .oneShotEffect (some _) (some _) (some _) => true | _ => false) &&
     skrelvRawCauses.size == 2 &&
-    skrelvRawCauses.all isClassifiedOneShot &&
+    skrelvRawCauses.all isClassifiedNonOneShot &&
+    gSkrelvRaw.nextEffectId == gDmgSetup.nextEffectId &&
     skrelvResCauses.size == 2 &&
     skrelvResCauses.all (· == skrelvResCauses[0]!) &&
     (match skrelvResCauses[0]! with | .oneShotEffect (some _) (some _) (some _) => true | _ => false) &&
     drainPlanRawCauses.size == 3 &&
-    drainPlanRawCauses.all isClassifiedOneShot &&
+    drainPlanRawCauses.all isClassifiedNonOneShot &&
+    gDrainPlanRaw.nextEffectId == gDmgSetup.nextEffectId &&
     drainPlanResCauses.size == 3 &&
     drainPlanResCauses[0]! != drainPlanResCauses[1]! &&
     drainPlanResCauses[1]! == drainPlanResCauses[2]! &&
@@ -2631,11 +2642,26 @@ triggers once, while sequential batches fire them once per batch. -/
     (gKarn3.waitingTriggers.filter (·.event == .fra .youPutLoyaltyCounters)).size == 1 &&
     (gKarn3.waitingTriggers.filter (·.event == .youPutPlusOne)).size == 1
 
+def causeIsStamped : EventCause → Bool
+  | .oneShotEffect none _ _ => false
+  | .replaced _ orig => causeIsStamped orig
+  | _ => true
+
 def allRulesEventsClassified (g : Game) : Bool :=
   g.events.all fun e =>
     match e with
-    | .rules .. => e.cause?.isSome
+    | .rules .. =>
+      match e.cause? with
+      | some c => causeIsStamped c
+      | none => false
     | .engine .. => e.cause?.isNone
+
+def noOneShotCauses (g : Game) : Bool :=
+  allRulesEventsClassified g &&
+  g.events.all fun e =>
+    match e.cause? with
+    | some c => c.oneShotEffectId?.isNone
+    | none => true
 
 /- Phase 5.1 isolation: `TurnEvent` and `applyTurnEvent` drive `turnNumber`,
 `activePlayer`, `step`, `isNight`, `extraTurns` (CR 500.7 LIFO), and
@@ -2902,6 +2928,7 @@ copies `StackEntry` decisions (`targets`, `targetsAnnounced`, `chosenMode`,
       giftTreasure := true
       spellModes := #[.dealDamage 2, .gainLife 2] }
   let gCast0 := insertObject (quiet afterDraw) testModalSpell me .stack (some me)
+    (adventurerCard := some bear)
   let spId := (gCast0.objects.filter (·.name == "Test Modal X Bolt"))[0]!.id
   let gCast0 := gCast0.putStackEntry me spId
   let gCast1 := gCast0.record (GameEvent.proposed gCast0.turnNumber spId me (.graveyard me) (.alternative "flashback"))
@@ -2919,7 +2946,7 @@ copies `StackEntry` decisions (`targets`, `targetsAnnounced`, `chosenMode`,
     (cause := some (.costPayment .returnToHand me (some spId))))
   let gCast4 := gCast4.setStackEntryLastKnown spId
     (lastKnownPower := some 5) (lastKnownToughness := some 6)
-  let gCast4 := ((gCast4.change (.setObject { (gCast4.object! spId) with adventurerCard := some bear })).changeObjects spId #[
+  let gCast4 := (gCast4.changeObjects spId #[
     .reflexiveResolution (some (.draw (.fixed 2) .you)),
     .fraCauseId (some ⟨71⟩),
     .fraCauseController (some opp),
@@ -3525,7 +3552,7 @@ and Arwen + Doc Samson ETB counter replacement. -/
   let effBefore := gOrd1.nextEffectId
   let wrappedNonResolving := gOrd1.wrapReplacedCause idAddDmg none (some me)
   let nonResolvingCauseOk :=
-    wrappedNonResolving == some (.replaced idAddDmg (.oneShotEffect none none (some me))) &&
+    wrappedNonResolving == some (.replaced idAddDmg (.gameRule .continuousEffect)) &&
     gOrd1.nextEffectId == effBefore
   -- `createAndMarkTokensAttacking` with a token doubler + token-kind replacement applies each once.
   let specDoubleTok : ReplacementSpec :=
@@ -4613,11 +4640,7 @@ churn on creation or expiry. Copy-of-copy reads Layer 1 `copiableValues`. -/
   let gCopy2 := gCopy1.becomeCopyOf (gCopy1.object! cl.id) (gCopy1.object! b.id) (untilEot := true)
   let noPrintedMutation :=
     (gCopy1.object! b.id).printed.name == "Event Bear" &&
-    (gCopy2.object! cl.id).printed.name == "Phase9 Clone" &&
-    !gCopy2.events.any (fun e =>
-      match e.change with
-      | .engine (.setObject _) => true
-      | _ => false)
+    (gCopy2.object! cl.id).printed.name == "Phase9 Clone"
   let copyValuesOk :=
     gCopy1.name (gCopy1.object! b.id) == "Phase9 Giant" &&
     gCopy1.power (gCopy1.object! b.id) == 4 &&
@@ -4627,18 +4650,13 @@ churn on creation or expiry. Copy-of-copy reads Layer 1 `copiableValues`. -/
   let gRevert := (quiet gCopy2).clearEOT
   let copyRevertClean :=
     gRevert.name (gRevert.object! b.id) == "Event Bear" &&
-    gRevert.name (gRevert.object! cl.id) == "Phase9 Clone" &&
-    !gRevert.events.any (fun e =>
-      match e.change with
-      | .engine (.setObject _) => true
-      | _ => false)
+    gRevert.name (gRevert.object! cl.id) == "Phase9 Clone"
   let gCtrl := (quiet g0).changeControl b me (untilEot := true)
   let gCtrlEnd := (quiet gCtrl).clearEOT
   let hasSecondaryControlEvent (evs : Array GameEvent) : Bool :=
     evs.any (fun e =>
       match e.change with
       | .rules (.permanent (.controlChanged ..)) => true
-      | .engine (.setObject _) => true
       | _ => false)
   let layer2PureOk :=
     (gCtrl.object! b.id).controller == some opp &&
@@ -4849,8 +4867,8 @@ a creature whose controller changes mid-turn without haste becomes summoning-sic
   let m := (g0.battlefield.filter (·.name == "Phase9 Morph Angel"))[0]!
   let cl := (g0.battlefield.filter (·.name == "Phase9 Copy"))[0]!
   -- Divergent `o.controller` fixture does not override living `defaultController`
-  let gRawNone := g0.change (.setObject { b with controller := none })
-  let gRawMe := g0.change (.setObject { b with controller := some me })
+  let gRawNone := { g0 with objects := g0.objects.map (fun (o : GameObject) => if o.id == b.id then { o with controller := none } else o) }
+  let gRawMe := { g0 with objects := g0.objects.map (fun (o : GameObject) => if o.id == b.id then { o with controller := some me } else o) }
   let gOppLost := gRawNone.record (GameEvent.playerLost gRawNone.turnNumber opp .conceded)
   let initCtrlOk :=
     gRawNone.controllerOf (gRawNone.object! b.id) == some opp &&
@@ -5457,10 +5475,204 @@ continuity, plus `post.snapshot` in `.creatureYouControlDealtDamage` and
     doneStackOk &&
     selfExileOk &&
     allRulesEventsClassified gManaSpent &&
-    allRulesEventsClassified gShuf0 &&
-    allRulesEventsClassified gShuf1 &&
+    noOneShotCauses gShuf0 &&
+    gShuf0.nextEffectId == gEmptyLib0.nextEffectId &&
+    noOneShotCauses gShuf1 &&
+    gShuf1.nextEffectId == gOneLib0.nextEffectId &&
     allRulesEventsClassified gStoryDone &&
     allRulesEventsClassified gEmbExpired &&
     allRulesEventsClassified gRing1
+
+/- Phase 10 review-invariant suite:
+1. Painland `activateManaAbility` records `.gameRule .abilityActivated` on life loss without bumping `nextEffectId` (even inside `withResolvingContext`).
+2. `applyPermanentAction` (`.untap`, `.doubleStrikeCounter`, `.tapAndStun`) and `replaceUntap` / `wrapReplacedCause` outside `withResolvingContext` record non-one-shot causes and leave `nextEffectId` unchanged.
+3. `temptWithTheRing`, `finishScry`, `finishSurveil`, and `supplyOrder` leave `nextEffectId` unchanged outside `withResolvingContext` and share one minted `EffectId` inside `withResolvingContext`.
+4. `shuffleLibrary` on a 2+-card library transitions to `Pending.resolveRandom (.shuffleLibrary p)` even if `g.pending != .none`, and `shuffleThen` chains `PendingReplacement.shuffleThen` behind an as-enters choice instead of recording an unrandomized order.
+5. `beholdAndMaybeUntap` mints two distinct `EffectId`s across its two instructions ("Behold X. If you do, untap") when resolving and allocates zero `EffectId`s outside resolution.
+6. `becomePrepared`, `unprepare` (`.gameRule .spellCast`), and `phaseOut` (`.turnBased .phaseInOut`) allocate zero one-shot `EffectId`s outside `withResolvingContext` and share one `EffectId` inside `withResolvingContext`.
+7. `Start.start` and `allocObject` / `insertObject` emit `ZoneEvent.created` rules events that drive `objectEntryTimestamp`, `counterTimestamp`, `attachmentTimestamp`, and `hasSummoningSickness` without any `.engine` object-creation arm. -/
+#guard
+  -- 1. Painland mana ability life-loss cause
+  let painLandDef : CardDef :=
+    { name := "Phase10 Painland"
+      types := #[.land]
+      tapAddOneOfDealsDamage := some (#[.colored .red, .colored .white], 1) }
+  let gPain0 := quiet (addPermanent afterDraw painLandDef me me)
+  let painObj := (gPain0.battlefield.filter (·.name == "Phase10 Painland"))[0]!
+  let gPainQuiet :=
+    match gPain0.activateManaAbility me painObj.id 0 #[.colored .red] with
+    | .ok g' => g'
+    | .error _ => gPain0
+  let gPainRes :=
+    gPain0.withResolvingContext (some painObj.id) me (fun g =>
+      match g.activateManaAbility me painObj.id 0 #[.colored .red] with
+      | .ok g' => g'
+      | .error _ => g)
+  let painCauses (g : Game) :=
+    g.events.filterMap (fun e =>
+      match e.change with
+      | .rules (.life (.lost ..)) => e.cause?
+      | _ => none)
+  let painOk :=
+    gPainQuiet.nextEffectId == gPain0.nextEffectId &&
+    painCauses gPainQuiet == #[.gameRule .abilityActivated] &&
+    gPainRes.nextEffectId == gPain0.nextEffectId &&
+    painCauses gPainRes == #[.gameRule .abilityActivated] &&
+    noOneShotCauses gPainQuiet &&
+    noOneShotCauses gPainRes
+  -- 2. `applyPermanentAction` and stun-counter `replaceUntap` outside resolution
+  let gAct0 :=
+    let g := addPermanent afterDraw bear me me
+    let bid := (g.battlefield.filter (·.name == "Event Bear"))[0]!.id
+    quiet (setTapped (g.recordPutCounters bid .stun 1) bid true)
+  let actBear := (gAct0.battlefield.filter (·.name == "Event Bear"))[0]!
+  let gUntapStun := gAct0.applyPermanentAction actBear .untap
+  let gDbl := gAct0.applyPermanentAction actBear .doubleStrikeCounter
+  let gTapStun := gAct0.applyPermanentAction actBear .tapAndStun
+  let stunCauses :=
+    gUntapStun.events.filterMap (fun e =>
+      match e.change with
+      | .rules _ => e.cause?
+      | _ => none)
+  let permActionOk :=
+    gUntapStun.nextEffectId == gAct0.nextEffectId &&
+    stunCauses == #[.replaced { kind := .stunCounterUntap, object := some actBear.id } (.turnBased .untapAll)] &&
+    gDbl.nextEffectId == gAct0.nextEffectId &&
+    gTapStun.nextEffectId == gAct0.nextEffectId &&
+    noOneShotCauses gUntapStun &&
+    noOneShotCauses gDbl &&
+    noOneShotCauses gTapStun
+  -- 3. `temptWithTheRing`, `finishScry`, `finishSurveil`, `supplyOrder` outside vs inside resolution
+  let gRingQuiet := gAct0.temptWithTheRing me
+  let gRingRes := gAct0.withResolvingContext (some actBear.id) me (fun g => g.temptWithTheRing me)
+  let ringResIds := (GameEvent.oneShotEffectsWithId gRingRes.events).map Prod.fst
+  let gScry0 := (gAct0.beginScry me 1)
+  let gScryQuiet :=
+    match gScry0.finishScry me (gScry0.scryLookedIds me 1) #[] with
+    | .ok g' => g'
+    | .error _ => gScry0
+  let gSurv0 := (gAct0.beginSurveil me 1)
+  let gSurvQuiet :=
+    match gSurv0.finishSurveil me #[] (gSurv0.scryLookedIds me 1) with
+    | .ok g' => g'
+    | .error _ => gSurv0
+  let resolvingHelpersOk :=
+    gRingQuiet.nextEffectId == gAct0.nextEffectId &&
+    gRingRes.nextEffectId == gAct0.nextEffectId + 1 &&
+    ringResIds.size == 2 &&
+    ringResIds[0]! == ringResIds[1]! &&
+    gScryQuiet.nextEffectId == gAct0.nextEffectId &&
+    gSurvQuiet.nextEffectId == gAct0.nextEffectId &&
+    noOneShotCauses gRingQuiet &&
+    noOneShotCauses gScryQuiet &&
+    noOneShotCauses gSurvQuiet
+  -- 4. `shuffleLibrary` with `pending != .none` and `shuffleThen` behind an as-enters choice
+  let gPending2 := gAct0.change (.pending (.scry me 1 1))
+  let gShufWhilePending := gPending2.shuffleLibrary me
+  let roomDef : CardDef :=
+    { name := "Phase10 Room"
+      types := #[.land]
+      staticAbilities := #[.fra .entersTappedChooseColor] }
+  let gSearchAsEnters0 := quiet (insertObject afterDraw roomDef me (.library me))
+  let roomLibId := ((gSearchAsEnters0.player me).library.filter (fun id => (gSearchAsEnters0.object! id).name == "Phase10 Room"))[0]!
+  let gSearchAsEntersMid :=
+    gSearchAsEnters0.withResolvingContext none me (fun g =>
+      g.finishLibrarySearch me #[roomLibId] (.battlefield true) none "land card")
+  let midNoPrematureShuffled :=
+    (match gSearchAsEntersMid.pending with | .fraChoice _ (.chooseColor _) => true | _ => false) &&
+    !gSearchAsEntersMid.events.any (fun e =>
+      match e.change with | .rules (.player (.shuffled ..)) => true | _ => false)
+  let gSearchAfterColor :=
+    match gSearchAsEntersMid.answerFraChoice me (.mode 1) with
+    | .ok g' => g'
+    | .error _ => gSearchAsEntersMid
+  let shuffleGuardOk :=
+    (gAct0.player me).library.size > 1 &&
+    gShufWhilePending.pending == .resolveRandom (.shuffleLibrary me) &&
+    !gShufWhilePending.events.any (fun e =>
+      match e.change with | .rules (.player (.shuffled ..)) => true | _ => false) &&
+    midNoPrematureShuffled &&
+    gSearchAfterColor.pending == .resolveRandom (.shuffleLibrary me)
+  -- 5. `beholdAndMaybeUntap` mints two distinct `EffectId`s when resolving and zero outside resolution
+  let dragonLandDef : CardDef :=
+    { name := "Phase10 Dragon Roost"
+      types := #[.land] }
+  let dragonCreatureDef : CardDef :=
+    creature "Phase10 Dragon" ManaCost.empty #["Dragon"] 4 4
+  let gBeh0 :=
+    let g := addPermanent (addPermanent afterDraw dragonLandDef me me) dragonCreatureDef me me
+    let lid := (g.battlefield.filter (·.name == "Phase10 Dragon Roost"))[0]!.id
+    quiet (setTapped g lid true)
+  let dLand := (gBeh0.battlefield.filter (·.name == "Phase10 Dragon Roost"))[0]!
+  let gBehQuiet := gBeh0.beholdAndMaybeUntap me dLand.id .dragon
+  let gBehRes := gBeh0.withResolvingContext (some dLand.id) me (fun g =>
+    g.beholdAndMaybeUntap me dLand.id .dragon)
+  let behResIds := (GameEvent.oneShotEffectsWithId gBehRes.events).map Prod.fst
+  let beholdUntapOk :=
+    gBehQuiet.nextEffectId == gBeh0.nextEffectId &&
+    !(gBehQuiet.object! dLand.id).status.tapped &&
+    gBehRes.nextEffectId == gBeh0.nextEffectId + 2 &&
+    behResIds.size == 2 &&
+    behResIds[0]! != behResIds[1]! &&
+    noOneShotCauses gBehQuiet &&
+    allRulesEventsClassified gBehRes
+  -- 6. `becomePrepared`, `unprepare`, and `phaseOut` outside vs inside resolution
+  let prepDef : CardDef :=
+    { creature "Phase10 Prepared" ManaCost.empty #["Knight"] 2 2 with
+      prepareFace := some { name := "Phase10 Seed" } }
+  let gPrep0 := quiet (addPermanent afterDraw prepDef me me)
+  let prepObj := (gPrep0.battlefield.filter (·.name == "Phase10 Prepared"))[0]!
+  let gPrepQuiet := gPrep0.becomePrepared prepObj
+  let prepQuietOneShots := GameEvent.oneShotEffectsWithId gPrepQuiet.events
+  let gUnprepQuiet := (quiet gPrepQuiet).unprepare (gPrepQuiet.object! prepObj.id)
+  let unprepCauses :=
+    gUnprepQuiet.events.filterMap (fun e =>
+      match e.change with
+      | .rules (.permanent (.designation _ .prepared false)) => e.cause?
+      | _ => none)
+  let gPrepRes := gPrep0.withResolvingContext (some prepObj.id) me (fun g => g.becomePrepared prepObj)
+  let prepResIds := (GameEvent.oneShotEffectsWithId gPrepRes.events).map Prod.fst
+  let prepEffOneShots :=
+    gPrepRes.events.filterMap (fun e =>
+      match e.change with
+      | .rules (.continuousEffect (.created ..)) => e.cause?.bind EventCause.oneShotEffectId?
+      | _ => none)
+  let gPhaseQuiet := gPrep0.phaseOut prepObj
+  let gPhaseRes := gPrep0.withResolvingContext (some prepObj.id) me (fun g => g.phaseOut prepObj)
+  let phaseResIds := (GameEvent.oneShotEffectsWithId gPhaseRes.events).map Prod.fst
+  let prepAndPhaseOk :=
+    prepQuietOneShots.isEmpty &&
+    gUnprepQuiet.nextEffectId == gPrepQuiet.nextEffectId &&
+    unprepCauses == #[.gameRule .spellCast] &&
+    prepResIds.size == 2 &&
+    prepResIds[0]! == prepResIds[1]! &&
+    prepEffOneShots == #[prepResIds[0]!] &&
+    gPhaseQuiet.nextEffectId == gPrep0.nextEffectId &&
+    gPhaseRes.nextEffectId == gPrep0.nextEffectId + 1 &&
+    phaseResIds.size == 1 &&
+    noOneShotCauses gPrepQuiet &&
+    noOneShotCauses gUnprepQuiet &&
+    noOneShotCauses gPhaseQuiet &&
+    allRulesEventsClassified gPhaseRes
+  -- 7. `allocObject` / `insertObject` emit `ZoneEvent.created` giving tier-1 timestamps
+  let auraDef : CardDef := enchantment "Phase10 Aura" ManaCost.empty "Enchant creature"
+  let gTs0 := insertObject started bear me .battlefield (some me)
+    { summoningSick := true, counters := #[(.plusOnePlusOne, 1)] }
+  let tsBear := (gTs0.battlefield.filter (·.name == "Event Bear"))[0]!
+  let (gTs1, tsAura) := gTs0.allocObject auraDef me .battlefield (some me) (attachedTo := some tsBear.id)
+  let createdTsOk :=
+    (gTs1.objectEntryTimestamp tsBear).1 == 1 &&
+    (gTs1.counterTimestamp tsBear.id .plusOnePlusOne).1 == 1 &&
+    (gTs1.attachmentTimestamp tsAura tsBear.id).1 == 1 &&
+    gTs1.hasSummoningSickness tsBear &&
+    noOneShotCauses started &&
+    noOneShotCauses gTs1
+  painOk &&
+    permActionOk &&
+    resolvingHelpersOk &&
+    shuffleGuardOk &&
+    beholdUntapOk &&
+    prepAndPhaseOk &&
+    createdTsOk
 
 end Mtg.Engine.EventTests

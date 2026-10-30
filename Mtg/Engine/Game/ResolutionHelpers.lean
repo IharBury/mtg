@@ -173,7 +173,9 @@ def applyPermanentAction (g : Game) (o : GameObject) (action : PermanentAction)
     else if !o.status.tapped then
       g.logMsg s!"{g.name o} is already untapped"
     else
-      let baseCause := g.resolveOptionalCause none (fallbackSrc := sourceId) (fallbackCtrl := g.controllerOf o)
+      let baseCause :=
+        g.resolveOptionalCause none (fallbackSrc := sourceId) (fallbackCtrl := g.controllerOf o)
+          (defaultCause := .turnBased .untapAll)
       let (stunned, cause') := g.replaceUntap o (cause := some baseCause)
       if stunned then
         let g := g.record (GameEvent.counters g.turnNumber (g.controllerOf o) (g.snapshot o) .stun 1 true
@@ -229,7 +231,7 @@ def beginSurveil (g : Game) (p : PlayerId) (n : Nat) : Game :=
     g.logMsg s!"{pl.name} surveils {n} (no cards to look at)"
   else if count == 0 then
     let happened :=
-      GameEvent.looked g.turnNumber p 0 true n (cause := g.resolvingOneShotCause p)
+      GameEvent.looked g.turnNumber p 0 true n (cause := some (g.resolvingOrRuleCause p))
     let g := g.record happened
     g.logMsg s!"{pl.name} surveils {n} (no cards to look at)"
   else

@@ -142,7 +142,7 @@ private def revealUntil (g : Game) (p : PlayerId) (pred : CardDef → Bool) (lim
         else rest := rest.push newId
     if !shown.isEmpty then
       g := g.record (GameEvent.revealed g.turnNumber p shown
-        (cause := cause.orElse (fun _ => g.resolvingOneShotCause p)))
+        (cause := some (cause.getD (g.resolvingOrRuleCause p))))
     return (g, hits, rest)
 
 private def putHits (g : Game) (p : PlayerId) (hits : Array ObjectId) (haste := false)
@@ -437,11 +437,14 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
   | .elspethDestroy =>
     g.destroyIds (g.battlefield.filter (fun o => g.isCreature o && g.snapshotPower o >= 4) |>.map (·.id))
   | .elspethEmblem =>
+    let embCause :=
+      g.resolveOptionalCause none (fallbackSrc := sourceId) (fallbackCtrl := some controller)
+        (defaultCause := .gameRule .spellCast)
     let (g, emb) := g.allocObject {
         name := "Elspeth emblem"
         types := #[.enchantment]
         grantTeamPlusTwoFlying := true
-      } controller .command (some controller)
+      } controller .command (some controller) (cause := embCause)
     g.logMsg s!"{pl.name} gets an emblem ({emb.name})"
   | .jacePlus =>
     let g := g.draw controller 2
@@ -464,7 +467,7 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
   | .monarch =>
     let prev := (g.players.find? (·.isMonarch)).map (·.id)
     g.record (GameEvent.becameMonarch g.turnNumber controller prev
-      (cause := g.resolvingOneShotCause controller sourceId))
+      (cause := some (g.resolvingOrRuleCause controller sourceId)))
       |>.logMsg s!"{pl.name} becomes the monarch"
   | .gingerbrute =>
     if (g.player controller).isMonarch then g.makeFrc controller .gingerbrute
@@ -677,7 +680,7 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
       let top := lib.back!
       let card := g.object! top
       let g := g.record (GameEvent.revealed g.turnNumber controller #[top]
-        (cause := g.resolvingOneShotCause controller sourceId))
+        (cause := some (g.resolvingOrRuleCause controller sourceId)))
       if card.printed.isLand then
         let (g, _) := g.move top (.hand controller) none
         g.logMsg s!"{pl.name} explores and puts {card.name} into their hand"
@@ -694,11 +697,11 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
     | some o =>
       let counters := o.status.plusOnePlusOne
       let oName := g.name o
-      let (src, ctrl) :=
+      let (g, transformCause) : Game × EventCause :=
         match g.currentResolvingContext? with
-        | some (s, c) => (s.orElse (fun _ => some o.id), c.orElse (fun _ => some controller))
-        | none => (some o.id, some controller)
-      let (g, transformCause) := g.allocDelayedCause ctrl src
+        | some (s, c) =>
+          g.allocDelayedCause (c.orElse (fun _ => some controller)) (s.orElse (fun _ => some o.id))
+        | none => (g, .gameRule .spellCast)
       let g := g.expirePrintedStaticEffects o (cause := some transformCause)
       let g := g.record
         (GameEvent.transformed g.turnNumber (g.snapshot o) (!o.status.transformed)

@@ -23,30 +23,26 @@ trigger leaves-the-battlefield abilities (CR 702.26b / 702.26d / 702.26g). -/
 def phaseOut (g : Game) (o : GameObject) (cause : Option EventCause := none) : Game :=
   if o.status.phasedOut || o.zone != .battlefield then g
   else
-    let (g, resolvedCause) :=
-      match cause with
-      | some c => (g, c)
-      | none =>
-        match g.currentBatch with
-        | some (_, some bc) => (g, bc)
-        | _ =>
-          match g.currentResolvingContext? with
-          | some (src, ctrl) => g.allocDelayedCause ctrl src
-          | none => g.allocDelayedCause (g.controllerOf o) none
-    g.withBatch (some resolvedCause) fun g =>
-      let g := g.removeFromCombat o (cause := some resolvedCause)
+    let batchCause :=
+      g.resolveOptionalCause cause (fallbackCtrl := g.controllerOf o)
+        (defaultCause := .turnBased .phaseInOut)
+    g.withBatch (some batchCause) fun g =>
+      let stepCause (g : Game) : EventCause :=
+        g.resolveOptionalCause cause (fallbackCtrl := g.controllerOf o)
+          (defaultCause := .turnBased .phaseInOut)
+      let g := g.removeFromCombat o (cause := some (stepCause g))
       let o := g.object! o.id
       let oName := g.name o
-      let g := g.expirePrintedStaticEffects o (cause := some resolvedCause)
-      let g := g.record (GameEvent.phasedOut g.turnNumber (g.snapshot o) false (cause := resolvedCause))
+      let g := g.expirePrintedStaticEffects o (cause := some (stepCause g))
+      let g := g.record (GameEvent.phasedOut g.turnNumber (g.snapshot o) false (cause := stepCause g))
       let g := g.logMsg s!"{oName} phases out"
       (g.attachmentsOf o).foldl (fun acc att =>
         let att := acc.object! att.id
-        let acc := acc.removeFromCombat att (cause := some resolvedCause)
+        let acc := acc.removeFromCombat att (cause := some (stepCause acc))
         let att := acc.object! att.id
         let attName := acc.name att
-        let acc := acc.expirePrintedStaticEffects att (cause := some resolvedCause)
-        acc.record (GameEvent.phasedOut acc.turnNumber (acc.snapshot att) true (cause := resolvedCause))
+        let acc := acc.expirePrintedStaticEffects att (cause := some (stepCause acc))
+        acc.record (GameEvent.phasedOut acc.turnNumber (acc.snapshot att) true (cause := stepCause acc))
           |>.logMsg s!"{attName} phases out attached to {oName}") g
 
 /-- Phase `o` in, along with anything that phased out attached to it.
@@ -56,7 +52,7 @@ def phaseIn (g : Game) (o : GameObject) (cause : Option EventCause := none) : Ga
   else
     let resolvedCause :=
       g.resolveOptionalCause cause (fallbackCtrl := g.controllerOf o)
-        (defaultCause := some (.turnBased .phaseInOut))
+        (defaultCause := .turnBased .phaseInOut)
     let g := g.record (GameEvent.phasedIn g.turnNumber (g.snapshot o) false (cause := resolvedCause))
     let g := g.createPrintedStaticEffects (g.object! o.id)
     let oName := g.name (g.object! o.id)

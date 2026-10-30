@@ -28,7 +28,7 @@ graveyard, hand, library, or stack keeps nothing of it. -/
 def ceaseToExist (g : Game) (id : ObjectId) (cause : Option EventCause := none) : Game :=
   let effCause :=
     g.resolveOptionalCause cause (fallbackSrc := some id)
-      (defaultCause := some (.gameRule .leavingZone))
+      (defaultCause := .gameRule .leavingZone)
   match g.findObject? id with
   | some old =>
     let snap := g.snapshot old

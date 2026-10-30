@@ -112,7 +112,8 @@ stun counter from it"). Returns `(stunReplaced, cause')`. -/
 def replaceUntap (g : Game) (o : GameObject)
     (cause : Option EventCause := none) : Bool × Option EventCause :=
   let untap := GameEvent.untapped g.turnNumber o.asEvent false
-    (cause := g.resolveOptionalCause cause (fallbackCtrl := g.controllerOf o))
+    (cause := g.resolveOptionalCause cause (fallbackCtrl := g.controllerOf o)
+      (defaultCause := .turnBased .untapAll))
   if !o.status.tapped || !untap.watches .wouldUntap then
     (false, cause)
   else
@@ -141,7 +142,7 @@ def replaceUntap (g : Game) (o : GameObject)
     let candidates := specs.map (fun s => (ReplacementOrPrevention.replacement s).toCandidate)
     match g.selectNextReplacement candidates #[] with
     | some chosen =>
-      (true, g.wrapReplacedCause chosen.id cause ctrl)
+      (true, g.wrapReplacedCause chosen.id cause ctrl (defaultCause := .turnBased .untapAll))
     | none =>
       (false, cause)
 

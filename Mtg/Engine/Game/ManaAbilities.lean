@@ -382,9 +382,8 @@ def activateManaAbility (g : Game) (p : PlayerId) (id : ObjectId) (idx : Nat)
       if g.lifeLocked p || g.lifeCantChange p then
         g.logMsg s!"{pl.name}'s life total can't change"
       else
-        let (g, dmgCause) := g.allocDelayedCause (some p) (some id)
         (g.record (GameEvent.life g.turnNumber p d.damageYou false true false
-          (cause := dmgCause))).logMsg
+          (cause := .gameRule .abilityActivated))).logMsg
           s!"{oname} deals {d.damageYou} damage to {pl.name}"
   -- Molten Tide: a triggered mana ability that resolves immediately (CR 605.4a).
   let extraRed :=

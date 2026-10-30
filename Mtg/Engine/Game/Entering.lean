@@ -245,7 +245,7 @@ def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
       let snap := g.snapshot o
       let enterCause :=
         g.resolveOptionalCause none (fallbackSrc := some o.id) (fallbackCtrl := g.controllerOf o)
-          (defaultCause := some (.gameRule .permanentSpellResolved))
+          (defaultCause := .gameRule .permanentSpellResolved)
       if o.printed.isToken then
         g.record (GameEvent.created g.turnNumber ((g.controllerOf o).getD o.owner)
           { snap with counters := bag } (cause := enterCause))

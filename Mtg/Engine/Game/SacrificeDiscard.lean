@@ -226,7 +226,7 @@ def haveVillainConnive (g : Game) (p : PlayerId) : Except String Game := do
     let g :=
       if (g.findObject? sourceId).isSome then
         g.record (GameEvent.optionalOnceActed g.turnNumber p sourceId
-          (cause := some (.oneShotEffect (some ⟨g.nextEffectId⟩) (some sourceId) (some p))))
+          (cause := some (.oneShotEffect none (some sourceId) (some p))))
       else g
     let g := g.applyConnive p (some villainId)
     return g.receivePriority g.activePlayer

@@ -153,7 +153,7 @@ def createOneToken (g : Game) (controller : PlayerId) (printed : CardDef)
 `.wouldCreateToken`. -/
 private def tokenBatchWatchesCreation (g : Game) (controller : PlayerId) (printed : CardDef) : Bool :=
   let proposed := GameEvent.created g.turnNumber controller {
-    controller := some controller, owner := controller, token := true
+    controller := some controller, owner := controller, zone := .battlefield, token := true
     types := printed.types
     subtypes :=
       let baseSubs := CardSubtype.ofSubtypes printed.subtypes

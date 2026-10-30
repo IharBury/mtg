@@ -80,7 +80,7 @@ def finishScry (g : Game) (p : PlayerId) (top bottom : Array ObjectId) :
   | .scry q count asked =>
     g.checkLookedPiles p q count top bottom "scry" "CR 701.20"
     let looked := g.scryLookedIds p count
-    let cause := g.resolvingOneShotCause p
+    let cause := some (g.resolvingOrRuleCause p)
     let mut g := g
     for id in bottom do
       g := g.logMsg
@@ -102,7 +102,7 @@ def finishSurveil (g : Game) (p : PlayerId) (top graveyard : Array ObjectId) :
   | .surveil q count asked =>
     g.checkLookedPiles p q count top graveyard "surveil" "CR 701.25"
     let looked := g.scryLookedIds p count
-    let cause := g.resolvingOneShotCause p
+    let cause := some (g.resolvingOrRuleCause p)
     let g := (g.logPutOnTop p looked top).withBatch cause fun g => Id.run do
       let mut g := g
       let happened :=
@@ -212,7 +212,7 @@ def finishProliferate (g : Game) (p : PlayerId) (chosen : Array Target) :
       throw s!"Only {(g.player q).name} may proliferate"
     if chosen.toList.eraseDups.length != chosen.size then
       throw "Choose each permanent or player at most once"
-    let cause := g.resolvingOneShotCause p
+    let cause := some (g.resolvingOrRuleCause p)
     let (g0, closeBatch) := g.openBatch cause
     let effCause := g0.resolveOptionalCause cause (fallbackCtrl := some p)
     let mut g := g0
@@ -978,7 +978,7 @@ def supplyOrder (g : Game) (ids : Array ObjectId) : Except String Game := do
         match g.pregameRandom with
         | .openingShuffles _ => .gameRule .openingHandDraw
         | .mulliganDraw .. | .mulliganQueue .. => .gameRule .mulligan
-        | _ => (g.resolvingOneShotCause p).getD (.oneShotEffect none none (some p))
+        | _ => g.resolvingOrRuleCause p
       let g := g.change (.pending .none)
       let g := g.record (GameEvent.shuffled g.turnNumber p ids (cause := some shuffleCause))
       return g.finishAfterRandom true
@@ -1109,6 +1109,8 @@ partial def resumePendingReplacement (g : Game) : PendingReplacement → Game
       g.chainPendingReplacement rest
     else
       g.resumePendingReplacement rest
+  | .shuffleThen p onDone =>
+    g.shuffleThen p onDone
   | .dealDamageToPlayer p n _ source _ unpreventable cause =>
     let srcObj := source.bind (fun s => s.id.bind (fun id =>
       g.findObject? id |>.orElse (fun _ => g.findObject? (g.followMoved id))))

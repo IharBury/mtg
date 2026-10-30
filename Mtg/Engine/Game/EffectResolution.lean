@@ -142,7 +142,10 @@ def applyFraResolution? (g : Game) (controller : PlayerId) (effect : Effect)
       name := "Chandra Emblem", types := #[]
       triggeredAbilities := #[.triggered .youCastSpell
         (Effect.ofTrigger (.onPermanent .playerOrCreature (.dealDamage n)))] }
-    let (g, _) := g.allocObject emblem controller .command (some controller)
+    let embCause :=
+      g.resolveOptionalCause none (fallbackSrc := sourceId) (fallbackCtrl := some controller)
+        (defaultCause := .gameRule .spellCast)
+    let (g, _) := g.allocObject emblem controller .command (some controller) (cause := embCause)
     some (g.logMsg s!"{(g.player controller).name} gets an emblem")
   | .firstDealsStatDamageToSecond useLoyalty =>
     -- Ruling 791: the power or loyalty is checked as the spell resolves; if
@@ -476,7 +479,8 @@ def revealTopDrawIfArtifact (g : Game) (p : PlayerId) : Game :=
   | none => g.logMsg s!"{(g.player p).name} has no cards in their library"
   | some id =>
     let o := g.object! id
-    let g := g.record (GameEvent.revealed g.turnNumber p #[id] (cause := g.resolvingOneShotCause p))
+    let g := g.record (GameEvent.revealed g.turnNumber p #[id]
+      (cause := some (g.resolvingOrRuleCause p)))
     let g := g.logMsg s!"{(g.player p).name} reveals {o.name}"
     if o.printed.isArtifact then g.draw p 1 else g
 
@@ -522,7 +526,7 @@ def returnFromGyFinalityAttach (g : Game) (controller : PlayerId)
 /-- One more counter of each kind already on the target (Powerful Broker). -/
 def proliferateTarget (g : Game) (controller : PlayerId) (targets : Array Target) : Game :=
   g.withLegalKindTarget controller .permanentOrPlayer targets (fun g t =>
-    let cause := g.resolvingOneShotCause controller
+    let cause := some (g.resolvingOrRuleCause controller)
     g.withBatch cause fun g =>
       let effCause := g.resolveOptionalCause cause (fallbackCtrl := some controller)
       match t with
@@ -573,7 +577,8 @@ def finishVisionQuest (g : Game) (p : PlayerId) (id? : Option ObjectId)
                 o.printed.manaValue ≤ x) then #[id]
           else #[]
         | none => #[]
-      g.record (GameEvent.searched g.turnNumber p p foundFromLib (cause := g.resolvingOneShotCause p))
+      g.record (GameEvent.searched g.turnNumber p p foundFromLib
+        (cause := some (g.resolvingOrRuleCause p)))
     else g
   let g :=
     match id? with
@@ -607,7 +612,8 @@ def beginVisionQuest (g : Game) (p : PlayerId) (x : Nat) : Game :=
   let lib := (g.player p).library.filter (fun id => (g.findObject? id).any ok)
   let gy := (g.player p).graveyard.filter (fun id => (g.findObject? id).any ok)
   if lib.isEmpty && gy.isEmpty then
-    let g := g.record (GameEvent.searched g.turnNumber p p #[] (cause := g.resolvingOneShotCause p))
+    let g := g.record (GameEvent.searched g.turnNumber p p #[]
+      (cause := some (g.resolvingOrRuleCause p)))
     (g.logMsg s!"{(g.player p).name} finds no artifact creature card").shuffleThen p .none
   else
     g.change (.pending (.fraChoice p (.visionQuestZones lib gy x)))
@@ -1276,7 +1282,24 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
   | .exileTopPlayIfYouControlSubtype n subtype =>
     g.exileTopPlayIfYouControlSubtype controller n subtype
   | .exileThenReturnYouControl =>
-    let cause := g.resolvingOneShotCause controller sourceId
+    let hasEligible :=
+      targets.any fun t =>
+        match t with
+        | .permanent id =>
+          match g.findObject? id with
+          | some o => g.controlledBy o controller && o.isOnBattlefield
+          | none => false
+        | _ => false
+    let (g, cause) : Game × Option EventCause :=
+      if !hasEligible then (g, none)
+      else
+        match g.currentResolvingContext? with
+        | some (src, ctrl) =>
+          let (g, c) :=
+            g.allocDelayedCause (ctrl.orElse (fun _ => some controller))
+              (sourceId.orElse (fun _ => src))
+          (g, some c)
+        | none => (g, none)
     g.foldPermanentTargets targets (fun g o =>
       if g.controlledBy o controller && o.isOnBattlefield then
         g.exileThenReturn o "is exiled, then returned to the battlefield"
@@ -1433,7 +1456,7 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     let g :=
       if top.isEmpty then g
       else g.record (GameEvent.revealed g.turnNumber controller top
-        (cause := g.resolvingOneShotCause controller sourceId))
+        (cause := some (g.resolvingOrRuleCause controller sourceId)))
     let g :=
       top.foldl (fun g id =>
         match g.findObject? id with

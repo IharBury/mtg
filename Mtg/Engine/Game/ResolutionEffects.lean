@@ -187,7 +187,8 @@ def beginMayCastFromLooked (g : Game) (p : PlayerId) (n : Nat) (maxMv : Int) :
   if ids.isEmpty then
     g.logMsg "No cards to look at"
   else
-    let g := g.record (GameEvent.lookedAt g.turnNumber p ids (cause := g.resolvingOneShotCause p))
+    let g := g.record (GameEvent.lookedAt g.turnNumber p ids
+      (cause := some (g.resolvingOrRuleCause p)))
     (g.change (.pending (.mayCastFromLooked p ids maxMv))).logMsg
       s!"{(g.player p).name} looks at the top {ids.size} cards. You may cast a spell from among them with mana value {maxMv} or less as this ability resolves"
 
@@ -286,10 +287,7 @@ def counterStackSpell (g : Game) (spellId : ObjectId) (exilePermanent := false)
       g.logMsg s!"{o.name} is no longer on the stack"
     else if o.abilityEffect.isSome || o.triggeredAbility.isSome then
       let name := o.name
-      let cause :=
-        g.currentResolvingContext?.map (fun (src, ctrl) =>
-          .oneShotEffect (some ⟨g.nextEffectId⟩) src ctrl)
-          |>.orElse (fun _ => some (.oneShotEffect (some ⟨g.nextEffectId⟩) none (some controller)))
+      let cause := some (g.resolvingOrRuleCause controller)
       let g := g.ceaseToExist o.id (cause := cause)
       g.logMsg s!"{name} is countered"
     else if o.printed.cantBeCountered || g.uncounterableThisCast o then
@@ -299,7 +297,10 @@ def counterStackSpell (g : Game) (spellId : ObjectId) (exilePermanent := false)
         if exilePermanent && o.printed.isPermanentCard then Zone.exile
         else Zone.graveyard o.owner
       let name := o.name
-      let (g, cause) := g.allocDelayedCause (some controller)
+      let (g, cause) : Game × EventCause :=
+        match g.currentResolvingContext? with
+        | some _ => g.allocDelayedCause (some controller)
+        | none => (g, .gameRule .spellCast)
       let (g, newId) := g.move spellId dest none
         (verb := some .counter) (actor := some controller) (cause := some cause)
       let g :=
@@ -524,7 +525,7 @@ def logLookAtTop (g : Game) (p : PlayerId) (n : Nat)
   let g :=
     if looked.isEmpty then g
     else g.record (GameEvent.lookedAt g.turnNumber p looked
-      (cause := g.resolvingOneShotCause p sourceId))
+      (cause := some (g.resolvingOrRuleCause p sourceId)))
   g.logMsg s!"{(g.player p).name} looks at the top {n} cards"
 
 /-- Exile the top `n` cards of `fromPlayer`'s library. `caster` may play
@@ -1172,7 +1173,8 @@ def revealHand (g : Game) (p : PlayerId) (recordEvent : Bool := true) : Game :=
   let hand := (g.player p).hand
   let g :=
     if recordEvent && !hand.isEmpty then
-      g.record (GameEvent.revealed g.turnNumber p hand (cause := g.resolvingOneShotCause p))
+      g.record (GameEvent.revealed g.turnNumber p hand
+        (cause := some (g.resolvingOrRuleCause p)))
     else g
   let names :=
     hand.foldl (fun acc id =>

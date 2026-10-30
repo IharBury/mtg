@@ -937,10 +937,15 @@ it returns tapped when `tapped` is set and `afterLandEnters` runs. -/
 def exileThenReturn (g : Game) (o : GameObject) (logText : String)
     (clearExileFields := false) (tapped := false) (land := false)
     (cause : Option EventCause := none) : Game :=
-  let cause :=
-    cause.orElse (fun _ =>
-      g.currentResolvingContext?.map (fun (src, ctrl) =>
-        .oneShotEffect (some ⟨g.nextEffectId⟩) src ctrl))
+  let (g, cause) : Game × Option EventCause :=
+    match cause with
+    | some c => (g, some c)
+    | none =>
+      match g.currentResolvingContext? with
+      | some (src, ctrl) =>
+        let (g, c) := g.allocDelayedCause ctrl src
+        (g, some c)
+      | none => (g, none)
   let owner := o.owner
   let name := o.name
   let (g, newId) := g.move o.id .exile none (cause := cause)

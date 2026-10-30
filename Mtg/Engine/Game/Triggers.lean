@@ -480,7 +480,7 @@ def beginScry (g : Game) (p : PlayerId) (n : Nat) : Game :=
     g.logMsg s!"{pl.name} scries {n} (no cards to look at)"
   else if count == 0 then
     let happened :=
-      GameEvent.looked g.turnNumber p 0 false n (cause := g.resolvingOneShotCause p)
+      GameEvent.looked g.turnNumber p 0 false n (cause := some (g.resolvingOrRuleCause p))
     let g := g.record happened
     g.logMsg s!"{pl.name} scries {n} (no cards to look at)"
   else
