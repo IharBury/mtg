@@ -749,10 +749,14 @@ under construction (`ProposedSpell`), the waiting-trigger queue
   records `StackObjectEvent.resolved sagaSnap 0 sourceId ability` (`nth := 0`, with
   `cause := .gameRule .abilityFinishedResolving`) so `matchTriggers` matches
   `.finalSagaChapterResolves` without `GameEvent.resolutions`
-  (`Game.loggedResolutions`, which counts `nth > 0`, optionally scoped to
-  `(sourceId, ability)` since Phase 11, #590, for `.noteResolveThisTurn` with
-  `alreadyResolved` deduplication in `Entering.finishOneResolution`) counting it
-  as a numbered resolution.
+  (`Game.loggedResolutions`, which counts `nth > 0`—optionally scoped to
+  `(sourceId, ability)` since Phase 11, #590, where `.noteResolveThisTurn`
+  computes `n := g.loggedResolutions controller sourceId ab? + 1`) counting it as
+  a numbered resolution, while `Entering.finishOneResolution` checks
+  `alreadyResolved` (`g.events.any` for a `StackObjectEvent.resolved` on
+  `g.turnNumber` with `eo.id == some objId`, at any `nth`) so both
+  `finishSagaFinalChapter` and the non-saga arm skip emitting a second
+  `nth := 0` `resolved` event when that stack object id already recorded one.
 - Stack copies (`copyStackSpell`, `copyStackAbility`, Way of the Cryomancer,
   Loki, `.copyCauseSpell`) migrated from `ZoneEvent.created` to
   `StackObjectEvent.copied` (with `applySingleRulesEventInBatch` assigning
@@ -2556,10 +2560,13 @@ mid-resolution stack residency under 608.2n / 608.3), `AddMana.lean`,
      `StackObjectEvent.resolved` / `GameEvent.resolved` / `GameEvent.resolutions`
      (`Event.lean`, `Core.loggedResolutions`, `Entering.finishOneResolution`,
      `Entering.finishSagaFinalChapter`) with optional `sourceId` and `ability`
-     fields so counted ability resolutions carry the resolving ability's
-     `EventObject` and `(sourceId, ability)` identity (counting per ability rather
-     than globally per controller on `turn`) with `alreadyResolved` deduplication
-     when resolution finishes.
+     fields so `.noteResolveThisTurn` records the resolving ability's
+     `EventObject` snapshot and its `loggedResolutions` query (`nth > 0`) counts
+     per `(sourceId, ability)` rather than globally per controller on `turn`,
+     while `Entering.finishOneResolution`'s `alreadyResolved` check
+     (`g.events.any` on `eo.id == some objId` this turn, at any `nth`) skips a
+     second `nth := 0` `resolved` record in `finishSagaFinalChapter` and the
+     non-saga arm.
 3. Eliminate remaining printed-characteristic bypasses across battlefield, CR
    614.12 ETB / leave replacements, stack / LKI, and off-battlefield CR 702.73a
    changeling queries (§3.3):
@@ -2731,11 +2738,13 @@ off-battlefield changeling search/behold), `SearchLibrary.lean`, `Targets.lean`,
      `Activation.lean`, modal `ObjectChange.abilityEffect` in `CastSpell.lean`,
      `CastSpell.castSpell`'s `.flashbackUntilEot` `ContinuousEffectEvent.created`
      and `.prepared false` `PermanentEvent.designation`, Chandra's
-     `PlayerEvent.manaSpent` in `Decisions.castExiledAsAbilityResolves`'s
-     `face.requiresTarget` branch—recorded after `CastEvent.proposed` and before
-     storing `ProposedSpell`, with `manaBefore` set to the post-payment pool
-     returned by `payUnits?`, whereas `!face.requiresTarget` completes
-     immediately via `becomeCast` without storing `ProposedSpell`—`PermanentEvent.tapped`,
+     `PlayerEvent.manaSpent` in `Decisions.castExiledAsAbilityResolves`—recorded
+     after `CastEvent.proposed` on both paths unless
+     `spentUnits.isEmpty && !cost.includesManaPayment`, before the
+     `face.requiresTarget` branch either stores `ProposedSpell` with
+     `manaBefore := pool` (the pool returned by `payUnits?`) or, when
+     `!face.requiresTarget`, completes immediately via `becomeCast` without
+     storing `ProposedSpell`—`PermanentEvent.tapped`,
      `CastEvent.abilityActivated`, `PlayerEvent.manaAdded` / `manaSpent` /
      `beheld`, `TriggerQueueEvent.triggered`), enqueued `waitingTriggers`,
      teamwork-tapped creatures (`CastExtras.lean`), non-tap mana-ability
@@ -2760,9 +2769,10 @@ off-battlefield changeling search/behold), `SearchLibrary.lean`, `Targets.lean`,
      `ProposedSpell.originalSnapshot`, the pre-cost `g.snapshot` LKI bound as
      `Casting.completeActivation`'s `sourceSnapshot` fallback when `findObject?`
      already misses before `payActivationExtraCosts`, passed directly as
-     `sourceSnapshot` by `SacrificeDiscard.sacrificeForActivation` after clearing
-     `proposedSpell`, and kept as `Casting.becomeActivated`'s fallback when
-     `sourceId` and `sourceSnapshot` are both absent),
+     `sourceSnapshot` by `SacrificeDiscard.sacrificeForActivation`'s proposal arm
+     after clearing `proposedSpell`, and read by `Casting.becomeActivated`'s
+     third fallback only when live `sourceId.bind g.findObject?` misses,
+     `sourceSnapshot` is `none`, and `g.proposedSpell` is still `some`),
      and `GameRuleKind.reversedActivation` (`Object.lean`) so undone casts and
      activations leave `g.events`
      replay-exact and neither fire triggers nor pollute `followMoved`,
