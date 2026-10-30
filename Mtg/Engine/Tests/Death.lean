@@ -70,8 +70,11 @@ def hellcatReturns : Game :=
   let cat := named hellcatReturns "Hellcat, Undying Vigilante"
   onBoard hellcatReturns "Hellcat, Undying Vigilante" &&
     cat.status.plusOnePlusOne == 1 && hellcatReturns.hasHaste cat &&
-    cat.printed.keywords.haste && cat.printed.triggeredAbilities.isEmpty &&
-    cat.printed.activatedAbilities.isEmpty && cat.printed.staticAbilities.isEmpty &&
+    (hellcatReturns.currentKeywords cat).haste &&
+    (hellcatReturns.triggeredAbilities cat).isEmpty &&
+    (hellcatReturns.activatedAbilitiesOf cat).isEmpty &&
+    (hellcatReturns.staticAbilities cat).isEmpty &&
+    !cat.printed.triggeredAbilities.isEmpty &&
     logContains hellcatReturns "enters with" &&
     logContains hellcatReturns "loses all abilities"
 

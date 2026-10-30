@@ -47,17 +47,18 @@ def clearEOT (g : Game) : Game :=
     g := g.restoreCopiesUntilEot
     for pl in g.players do
       g := g.expireAll (.legendRuleOffThisTurn pl.id) (cause := cause)
-    -- Each control-changing effect ends or counts down on its own, so another
-    -- control effect on the same permanent keeps applying (CR 514.2 / 613.7).
+    -- Each control-changing effect ends or counts down on its own across all
+    -- ObjectScopes, so another control effect on the same permanent keeps
+    -- applying (CR 514.2 / 613.7 / 800.4c).
     let effs := g.activeEffects
     for (eid, e) in effs do
       match e with
-      | .layered (.objects #[oid]) (.control _) d =>
+      | .layered _ (.control _) d =>
         if d == .untilEndOfTurn then
-          g := g.endControlEffect oid eid (cause := cause)
+          g := g.endControlEffectById eid (cause := cause)
         else if d == .untilEndOfNextTurnOf g.activePlayer &&
             g.hasTurnBegunSince eid g.activePlayer then
-          g := g.endControlEffect oid eid (cause := cause)
+          g := g.endControlEffectById eid (cause := cause)
       | _ => pure ()
     g := g.expirePlayPermissions g.activePlayer (cause := cause)
     for o in g.battlefield do
@@ -66,6 +67,10 @@ def clearEOT (g : Game) : Game :=
       | none => pure ()
       | some cur =>
         g := g.expireObjectUntilEotEffects cur
+    g := g.expireMatching (fun
+      | .layered _ (.copy ..) _ | .layered _ (.control _) _ => false
+      | .layered _ _ .untilEndOfTurn | .gameRule _ .untilEndOfTurn => true
+      | _ => false) (cause := cause)
     let damagedIds :=
       (g.battlefield.filter (fun o => o.status.damage != 0)).map (·.id)
     if !damagedIds.isEmpty then
@@ -137,7 +142,7 @@ def clearTurnActivations (g : Game) : Game :=
 def expireGoadedFor (g : Game) (p : PlayerId) : Game :=
   g.battlefield.foldl (fun g o =>
     if o.status.goadedUntilNextTurnOf.contains p then
-      g.record (GameEvent.designation g.turnNumber o.asEvent (.goaded p) false
+      g.record (GameEvent.designation g.turnNumber (g.snapshot o) (.goaded p) false
         (cause := some (.turnBased .expireAtStepBegin)))
     else g) g
 
@@ -146,8 +151,15 @@ Veiled Butcher's toughness and power reduction and the command-zone effects of J
 and Garruk, Curse Breaker (CR 611.2b). -/
 def expireFraUntilTurnEffects (g : Game) (p : PlayerId) : Game :=
   let cause := some (EventCause.turnBased .expireAtStepBegin)
+  let g :=
+    g.activeEffects.foldl (fun acc (eid, e) =>
+      match e with
+      | .layered _ (.control _) (.untilNextTurnOf q) =>
+        if q == p then acc.endControlEffectById eid (cause := cause) else acc
+      | _ => acc) g
   let g := g.expireMatching (fun
-    | .layered _ (.ptModify _ _) (.untilNextTurnOf q) => q == p
+    | .layered _ (.copy ..) _ | .layered _ (.control _) _ => false
+    | .layered _ _ (.untilNextTurnOf q) => q == p
     | _ => false) (cause := cause)
   g.objects.foldl (fun g o =>
     if o.zone == .command && g.fraEffectUntilTurnOf o == some p then
@@ -160,6 +172,16 @@ def expireUntilNextTurnEffects (g : Game) (p : PlayerId) : Game :=
   let cause := some (EventCause.turnBased .expireAtStepBegin)
   let g := g.expireGoadedFor p
   let g := g.expireFraUntilTurnEffects p
+  let g :=
+    g.activeEffects.foldl (fun acc (eid, e) =>
+      match e with
+      | .layered _ (.control _) (.untilEndOfNextTurnOf q) =>
+        if q == p then acc.endControlEffectById eid (cause := cause) else acc
+      | _ => acc) g
+  let g := g.expireMatching (fun
+    | .layered _ (.copy ..) _ | .layered _ (.control _) _ => false
+    | .layered _ _ (.untilEndOfNextTurnOf q) => q == p
+    | _ => false) (cause := cause)
   let g :=
     if g.hasActiveEffect (.protectionFromEverything p) then
       g.expireAll (.protectionFromEverything p) (cause := cause)
@@ -280,6 +302,7 @@ partial def beginStep (g : Game) (st : Step) : Game :=
       let apName := (g.player ap).name
       g := g.expireGoadedFor ap
       g := g.expireFraUntilTurnEffects ap
+      g := g.restoreCopiesUntilNextTurn ap
       -- CR 502.1: phased-out permanents phase in before the player untaps.
       g := g.phaseInControlled ap
       g := g.expireMatching (fun | .playerRule p (.additionalLands _) _ => p == ap | _ => false)
@@ -298,16 +321,16 @@ partial def beginStep (g : Game) (st : Step) : Game :=
               g.hostCantBecomeUntapped o ||
               g.hostSkipsUntapStep o
             let baseCause := some (EventCause.turnBased .untapAll)
-            let untap := GameEvent.untapped g.turnNumber o.asEvent false (cause := baseCause)
+            let untap := GameEvent.untapped g.turnNumber (g.snapshot o) false (cause := baseCause)
             -- CR 122.1d: a stun counter is removed instead of untapping via the CR 616.1 loop.
             if o.status.tapped && !skipUntap then
               let (stunned, cause') := g.replaceUntap o (cause := baseCause)
               if stunned then
-                g := g.logMsg s!"A stun counter is removed from {o.name} instead of untapping it"
-                g := g.record (GameEvent.counters g.turnNumber (some ap) o.asEvent .stun 1 true
+                g := g.logMsg s!"A stun counter is removed from {g.name o} instead of untapping it"
+                g := g.record (GameEvent.counters g.turnNumber (some ap) (g.snapshot o) .stun 1 true
                   (cause := cause'))
               else
-                g := g.logMsg s!"{apName} untaps {o.name}"
+                g := g.logMsg s!"{apName} untaps {g.name o}"
                 if untap.watches .wouldUntap then
                   g := g.record untap
             if o.status.summoningSick then
@@ -358,11 +381,11 @@ partial def beginStep (g : Game) (st : Step) : Game :=
       Id.run do
         let mut g := g
         for o in g.permanentsOf ap do
-          if o.printed.impending.isSome && g.loggedCastForImpending o.id && o.status.time > 0 then
+          if (g.baseCard o).impending.isSome && g.loggedCastForImpending o.id && o.status.time > 0 then
             let impCause := some (EventCause.gameRule .impending)
-            g := (g.record (GameEvent.counters g.turnNumber (some ap) o.asEvent .time 1 true
+            g := (g.record (GameEvent.counters g.turnNumber (some ap) (g.snapshot o) .time 1 true
               (cause := impCause))).syncImpendingNotACreature o.id (cause := impCause)
-            g := g.logMsg s!"{o.name} loses a time counter"
+            g := g.logMsg s!"{g.name o} loses a time counter"
         return g
     let g := g.record stepEvent
     g.receivePriority ap

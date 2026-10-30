@@ -113,8 +113,9 @@ def copiedLand : Game :=
 
 #guard
   let copied := named copiedLand "Absorbing Man"
-  copied.printed.isLand && copied.name == "Absorbing Man" &&
-    copied.printed.power == some 4 && copiedLand.hasVigilance copied
+  copiedLand.isLand copied && !copied.printed.isLand &&
+    copiedLand.name copied == "Absorbing Man" &&
+    copiedLand.power copied == 4 && copiedLand.hasVigilance copied
 
 def rejectedCreature : Game :=
   let g := addPermanent (addPermanent afterDraw absorbingMan me me) grizzlyBears me me
@@ -122,7 +123,7 @@ def rejectedCreature : Game :=
     (some (named g "Absorbing Man").id)
     #[Target.permanent (named g "Grizzly Bears").id]
 
-#guard !(named rejectedCreature "Absorbing Man").printed.isLand &&
+#guard !rejectedCreature.isLand (named rejectedCreature "Absorbing Man") &&
   logContains rejectedCreature "isn't an artifact, non-Aura enchantment, or land"
 
 def copyNothing : Game :=
@@ -130,7 +131,7 @@ def copyNothing : Game :=
   resolve g (TriggeredAbility.onStep Effect.stepCopyAbsorbingMan)
     (some (named g "Absorbing Man").id)
 
-#guard !(named copyNothing "Absorbing Man").printed.isLand &&
+#guard !copyNothing.isLand (named copyNothing "Absorbing Man") &&
   logContains copyNothing "doesn't become a copy"
 
 /- The enchanted creature becomes a copy of the creature an earlier step
@@ -146,7 +147,8 @@ def notedCopy : Game :=
 #guard
   match notedCopy.battlefield.find? (fun o => (notedCopy.copyRestore o).isSome) with
   | some o =>
-    o.printed.name == "Hill Giant" &&
+    notedCopy.name o == "Hill Giant" &&
+      o.printed.name == "Grizzly Bears" &&
       ((notedCopy.copyRestore o).getD o.printed).name == "Grizzly Bears" &&
       notedCopy.notedCopyObject.isNone
   | none => false

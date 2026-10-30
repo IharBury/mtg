@@ -12,7 +12,7 @@ namespace Game
 
 /-- The lone attacking creature `p` controls, if exactly one is attacking. -/
 def attackingAlone? (g : Game) (p : PlayerId) : Option GameObject :=
-  let xs := (g.permanentsOf p).filter (fun o => o.isCreature && o.status.attacking)
+  let xs := (g.permanentsOf p).filter (fun o => g.isCreature o && o.status.attacking)
   if xs.size == 1 then some xs[0]! else none
 
 /-- Permanent this Aura or Equipment is attached to. -/
@@ -65,7 +65,7 @@ def exileLibraryUntilNonland (g : Game) (pid : PlayerId)
 to sacrifice; once all have chosen, sacrifice them together. -/
 def continueNontokenSacrifices (g : Game) (players : Array PlayerId) (chosen : Array ObjectId) :
     Game :=
-  let hasOne (p : PlayerId) := (g.permanentsOf p).any (fun o => o.isCreature && !o.printed.isToken)
+  let hasOne (p : PlayerId) := (g.permanentsOf p).any (fun o => g.isCreature o && !o.printed.isToken)
   match (players.filter hasOne).toList with
   | p :: rest =>
     (g.change (.pending (.fraChoice p (.sacrificeNontokenEach rest.toArray chosen)))).logMsg
@@ -76,7 +76,7 @@ def continueNontokenSacrifices (g : Game) (players : Array PlayerId) (chosen : A
         match g.findObject? id with
         | some o =>
           if o.isOnBattlefield then
-            g.sacrificeToGraveyard o s!"{(g.player (o.controller.getD o.owner)).name} sacrifices {o.name}"
+            g.sacrificeToGraveyard o s!"{(g.player ((g.controllerOf o).getD o.owner)).name} sacrifices {g.name o}"
           else g
         | none => g) g
 
@@ -98,25 +98,20 @@ def copyEnteredArtifact (g : Game) (controller : PlayerId) (artifactId : ObjectI
   match g.findObject? (g.followMoved artifactId) with
   | none => g.logMsg "Ultron has nothing to copy"
   | some src =>
-    if src.printed.isToken || !src.printed.isArtifact then
+    if src.printed.isToken || !g.isArtifact src then
       g.logMsg "That permanent isn't a nontoken artifact"
     else
       let (g, tok) := g.copyBattlefieldPermanent src controller
       let tok := g.object! tok.id
       let g := g.afterPermanentEnters tok
       let tok := g.object! tok.id
-      if tok.isCreature then g
+      if g.isCreature tok then g
       else
-        let printed : CardDef :=
-          { tok.printed with
-            types :=
-              if tok.printed.types.any (· == CardType.creature) then tok.printed.types
-              else tok.printed.types.push CardType.creature
-            subtypes := mergeSubtypes tok.printed.subtypes #[.robot, .villain]
-            power := some 2
-            toughness := some 2 }
-        g.createEffect (.copy tok.id printed (g.copyRestore tok) (g.copyUntilEot tok) (g.copyUntilNextTurn tok) (g.copyUntilSourceLeaves tok))
-          |>.logMsg s!"{printed.name} becomes a 2/2 Robot Villain creature after it enters"
+        let g := g.createEffect
+          (.layered (.objects #[tok.id]) (.types .add #[.creature] #[.robot, .villain] #[]) .indefinite)
+        let g := g.createEffect
+          (.layered (.objects #[tok.id]) (.ptSet 2 2) .indefinite)
+        g.logMsg s!"{g.name tok} becomes a 2/2 Robot Villain creature after it enters"
 
 /-- Exile the top card of your library. A Hero card pumps Daredevil. The
 exiled card may be played this turn either way (MSH 685). -/
@@ -194,14 +189,15 @@ def applyHydeMode (g : Game) (controller : PlayerId) (sourceId : Option ObjectId
     | some (Target.permanent id) =>
       match g.findObject? id with
       | some o =>
-        if o.isOnBattlefield && o.controlledBy controller && o.status.hasCounters then
+        if o.isOnBattlefield && g.controlledBy o controller && o.status.hasCounters then
+          let nm := g.name o
           let g :=
             if o.status.plusOnePlusOne > 0 then
               g.recordRemoveCounters o.id .plusOnePlusOne 1 (byPlayer := some controller)
-                |>.logMsg s!"A counter is removed from {o.name}"
+                |>.logMsg s!"A counter is removed from {nm}"
             else if o.status.indestructibleCounters > 0 then
               g.recordRemoveCounters o.id .indestructible 1 (byPlayer := some controller)
-                |>.logMsg s!"A counter is removed from {o.name}"
+                |>.logMsg s!"A counter is removed from {nm}"
             else g.logMsg "A counter is removed from the creature"
           g.draw controller 1
         else
@@ -210,7 +206,7 @@ def applyHydeMode (g : Game) (controller : PlayerId) (sourceId : Option ObjectId
         g.logMsg "You must remove a counter from a creature you control if you can"
     | _ =>
       if (g.permanentsOf controller).any (fun o =>
-          o.isCreature && o.status.hasCounters) then
+          g.isCreature o && o.status.hasCounters) then
         g.logMsg "You must remove a counter from a creature you control if you can"
       else g
 
@@ -219,7 +215,7 @@ Nothing enchanted draws nothing. -/
 def drawForEnchantedController (g : Game) (sourceId : Option ObjectId) : Game :=
   match g.attachedHost? sourceId with
   | some host =>
-    match host.controller with
+    match g.controllerOf host with
     | some pid => g.draw pid 1
     | none => g.draw host.owner 1
   | none =>
@@ -279,8 +275,8 @@ def applyBecomeCopy (g : Game) (controller : PlayerId) (sourceId : Option Object
       | some (Target.permanent id) =>
         match g.findObject? id with
         | some tgt =>
-          let ok := tgt.isOnBattlefield && !tgt.printed.isAura &&
-            (tgt.printed.isArtifact || tgt.printed.isEnchantment || tgt.printed.isLand)
+          let ok := tgt.isOnBattlefield && !g.isAura tgt &&
+            (g.isArtifact tgt || g.isEnchantment tgt || g.isLand tgt)
           if ok then
             g.becomeCopyOf src tgt (untilNextTurn := true)
               (exceptName := some "Absorbing Man")
@@ -297,7 +293,7 @@ def applyBecomeCopy (g : Game) (controller : PlayerId) (sourceId : Option Object
       | some (Target.permanent id) | some (Target.card id) =>
         match g.findObject? id with
         | some tgt =>
-          let onBf := tgt.isOnBattlefield && tgt.isCreature
+          let onBf := tgt.isOnBattlefield && g.isCreature tgt
           let inGy := tgt.zone == .graveyard tgt.owner && tgt.printed.isCreature
           if onBf || inGy then
             g.becomeCopyOf src tgt (untilNextTurn := true)
@@ -324,14 +320,12 @@ def flickerChosenNonland (g : Game) (controller : PlayerId) (sourceId : Option O
         match sourceId with
         | some sid => o.id != sid
         | none => true
-      if o.isOnBattlefield && o.controlledBy controller && !o.printed.isLand && other then
+      if o.isOnBattlefield && g.controlledBy o controller && !g.isLand o && other then
         let owner := o.owner
-        let name := o.name
+        let name := g.name o
         let (g, cause) := g.allocDelayedCause (some controller) sourceId
         let (g, exId) := g.move o.id .exile none (cause := some cause)
-        let ex := g.object! exId
-        let (g, retId) := g.move exId .battlefield (some owner)
-          (summoningSick := !ex.printed.keywords.haste) (cause := some cause)
+        let (g, retId) := g.move exId .battlefield (some owner) (cause := some cause)
         g.afterPermanentEnters (g.object! retId)
           |>.logMsg s!"{name} is exiled, then returned"
       else g.logMsg "The target is no longer legal"
@@ -348,14 +342,13 @@ def returnNontokenTapped (g : Game) (targets : Array Target) : Game :=
     match g.findObject? id with
     | some o =>
       if o.isOnBattlefield && !o.printed.isToken &&
-          (o.printed.isArtifact || o.isCreature) then
+          (g.isArtifact o || g.isCreature o) then
         let owner := o.owner
-        let name := o.name
-        let (g, cause) := g.allocDelayedCause o.controller
+        let name := g.name o
+        let (g, cause) := g.allocDelayedCause (g.controllerOf o)
         let (g, newId) := g.move o.id .exile none (cause := some cause)
-        let ex := g.object! newId
         let (g, retId) := g.move newId .battlefield (some owner)
-          (tapped := true) (summoningSick := !ex.printed.keywords.haste) (cause := some cause)
+          (tapped := true) (cause := some cause)
         g.afterPermanentEnters (g.object! retId)
           |>.logMsg s!"{name} is exiled, then returned tapped"
       else g.logMsg "The target is no longer legal"
@@ -570,7 +563,7 @@ def grantKeywordsToSpellCreatureTargets (g : Game) (k : Keywords) : Game :=
     ids.foldl (fun (g : Game) id =>
       match g.findObject? id with
       | some o =>
-        if o.isOnBattlefield && o.isCreature then
+        if o.isOnBattlefield && g.isCreature o then
           g.grantUntilEotLogged o k
         else g
       | none => g) g
@@ -622,7 +615,7 @@ def putPlusOnesUpToLastKnown (g : Game) (controller : PlayerId)
       | Target.permanent id =>
         match g.findObject? id with
         | some o =>
-          if o.isOnBattlefield && o.isCreature && o.controlledBy controller then
+          if o.isOnBattlefield && g.isCreature o && g.controlledBy o controller then
             g.addPlusOnePlusOneTo o 1
           else g.logMsg "The target is no longer legal"
         | none => g.logMsg "The target is no longer legal"
@@ -854,7 +847,7 @@ def applyAvengersDisassembled (g : Game) (_controller : PlayerId)
     (choseDamage choseLand : Bool) (landId : Option ObjectId) : Game :=
   let landOk :=
     match landId.bind g.findObject? with
-    | some o => o.isOnBattlefield && o.printed.isLand
+    | some o => o.isOnBattlefield && g.isLand o
     | none => false
   if choseLand && !landOk then
     g.logMsg "The target is no longer legal. Avengers Disassembled doesn't resolve."
@@ -964,9 +957,8 @@ def exileThenReturn (g : Game) (o : GameObject) (logText : String)
     if clearExileFields then
       g.changeObject newId (.linkedExile #[])
     else g
-  let sick := !land && !(g.object! newId).printed.keywords.haste
   let (g, retId) := g.move newId .battlefield (some owner)
-    (tapped := land && tapped) (summoningSick := sick) (cause := cause)
+    (tapped := land && tapped) (cause := cause)
   let g := g.logMsg s!"{name} {logText}"
   if land then g.afterLandEnters (g.object! retId)
   else g.afterPermanentEnters (g.object! retId)

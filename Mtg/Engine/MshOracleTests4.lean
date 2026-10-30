@@ -189,8 +189,8 @@ def ultronAfterEnterOk : Bool :=
   let g := mustApply g ⟨0⟩ .accept
   let tok :=
     (g.battlefield.find? (fun o =>
-      o.printed.isToken && o.name == "The Mind Stone")).getD stone
-  tok.isCreature &&
+      o.printed.isToken && g.name o == "The Mind Stone")).getD stone
+  g.isCreature tok &&
     g.power tok == 2 &&
     (g.waitingTriggers.filter (fun (t : WaitingTrigger) =>
       t.event == TriggerEvent.creatureYouControlEnters)).size == before &&

@@ -27,11 +27,12 @@ def firstLegendRuleChoice? (g : Game) : Option (PlayerId × String × Array Obje
       let legs := g.legendaryPermanentsOf p
       let mut seen : Array String := #[]
       for o in legs do
-        if !seen.contains o.name then
-          seen := seen.push o.name
-          let group := legs.filter (fun x => x.name == o.name)
+        let nm := g.name o
+        if !seen.contains nm then
+          seen := seen.push nm
+          let group := legs.filter (fun x => g.name x == nm)
           if group.size ≥ 2 then
-            return some (p, o.name, group.map (·.id))
+            return some (p, nm, group.map (·.id))
     return none
 
 /-- True while a player must choose which legendary permanent to keep. -/
@@ -58,18 +59,6 @@ def defaultLegendToKeep (g : Game) (ids : Array ObjectId) : ObjectId :=
     | some a, some b => if b.timestamp ≥ a.timestamp then id else best
     | _, some _ => id
     | _, none => best) (ids[0]!)
-
-/-- Puppet Crafting: the enchanted permanent is a 5/5 Construct creature
-while the Aura is attached to it. -/
-def refreshAuraAnimation (g : Game) : Game :=
-  let cause := some (EventCause.gameRule .staticAbility)
-  g.battlefield.foldl (fun g o =>
-    let animated := g.battlefield.any (fun a =>
-      a.attachedTo == some o.id &&
-        (g.staticAbilities a).any (· == .fra .enchantedIsConstruct55))
-    if animated == g.animatedConstruct55 o then g
-    else if animated then g.createEffect (.auraConstruct55 o.id) (cause := cause)
-    else g.expireAll (.auraConstruct55 o.id) (cause := cause)) g
 
 /-- Execute the remaining permanent-removal stages of a single CR 704.3
 state-based action check inside the currently open batch (`stage` 0 = dying
@@ -103,11 +92,11 @@ def finishSbaSweep (g : Game) (moves : Array SbaGraveyardMove)
       if stage == 1 then moves
       else
         g.battlefield.filterMap (fun o =>
-          if o.printed.isPlaneswalker && o.status.loyaltyCounters == 0 &&
-              !g.planeswalkersSurviveZeroLoyalty o.controller then
+          if g.isPlaneswalker o && o.status.loyaltyCounters == 0 &&
+              !g.planeswalkersSurviveZeroLoyalty (g.controllerOf o) then
             some {
               objectId := o.id
-              reason := s!"{o.name} is put into its owner's graveyard (0 loyalty, CR 704.5i)"
+              reason := s!"{g.name o} is put into its owner's graveyard (0 loyalty, CR 704.5i)"
               sba := .zeroLoyalty
             }
           else none)
@@ -145,15 +134,15 @@ def finishSbaSweep (g : Game) (moves : Array SbaGraveyardMove)
       if stage == 2 then moves
       else
         g.battlefield.filterMap (fun o =>
-          match o.printed.saga, o.controller with
-          | some sdef, some _ =>
+          match (g.baseCard o).saga, g.controllerOf o with
+          | some sdef, some ctrl =>
             if o.status.lore ≥ sdef.finalChapterNumber && sdef.finalChapterNumber > 0 &&
                 !g.sagaChapterPending o.id then
               some {
                 objectId := o.id
-                reason := s!"{o.name} is sacrificed (CR 714.4)"
+                reason := s!"{g.name o} is sacrificed (CR 714.4)"
                 verb := some .sacrifice
-                actor := o.controller
+                actor := some ctrl
                 sba := .sagaFinalChapter
               }
             else none
@@ -177,16 +166,16 @@ def finishSbaSweep (g : Game) (moves : Array SbaGraveyardMove)
       if stage == 3 then moves
       else
         g.battlefield.filterMap (fun o =>
-          if !o.printed.isAura then none
+          if !g.isAura o then none
           else
             let legal :=
               match o.attachedTo.bind g.findObject? with
-              | some host => host.auraCanEnchant o.printed
+              | some host => g.auraObjCanEnchant host o
               | none => false
             if !legal then
               some {
                 objectId := o.id
-                reason := s!"{o.name} is put into its owner's graveyard (CR 704.5n)"
+                reason := s!"{g.name o} is put into its owner's graveyard (CR 704.5n)"
                 sba := .illegalAura
               }
             else none)
@@ -205,16 +194,16 @@ def finishSbaSweep (g : Game) (moves : Array SbaGraveyardMove)
       | none => pure ()
   -- Illegally attached Equipment (CR 704.5n). Unattached Equipment stays.
   for o in g.battlefield do
-    if o.printed.isEquipment then
+    if g.isEquipment o then
       let legal :=
         match o.attachedTo.bind g.findObject? with
         | some host => host.isOnBattlefield && g.isCreature host
         | none => true
       if !legal then
         let hostId := o.attachedTo.getD ⟨0⟩
-        g := g.record (GameEvent.unattached g.turnNumber o.asEvent hostId
+        g := g.record (GameEvent.unattached g.turnNumber (g.snapshot o) hostId
           (cause := some (.stateBased .illegalEquipmentOrFortification)))
-        g := g.logMsg s!"{o.name} becomes unattached (CR 704.5n)"
+        g := g.logMsg s!"{g.name o} becomes unattached (CR 704.5n)"
         changed := true
   match g.decideGameIfFinished with
   | some finished => return (finished, (true, true))
@@ -228,7 +217,6 @@ priority. `keepLegend` resumes the loop. -/
 partial def checkSBACounted (g : Game) : Game × Bool :=
   if g.over then (g, false)
   else
-    let g := g.refreshAuraAnimation
     let (g, (changed, paused)) := g.withBatchReturn none fun g => Id.run do
       let mut g := g
       let mut changed := false
@@ -238,9 +226,9 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
         if !pl.lost then
           let shielded :=
             (g.permanentsOf pl.id).any (fun o =>
-              o.printed.cantLoseGame && g.retainsPrintedAbilities o) ||
+              (g.baseCard o).cantLoseGame && g.retainsPrintedAbilities o) ||
               (g.objects.filter (fun o =>
-                o.zone == .command && o.controlledBy pl.id)).any (fun o =>
+                o.zone == .command && g.controlledBy o pl.id)).any (fun o =>
                   o.printed.cantLoseGame && g.retainsPrintedAbilities o)
           if shielded then
             pure ()
@@ -272,7 +260,7 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
         let still := ids.filter (fun id =>
           match g.findObject? id with
           | some o =>
-            o.isOnBattlefield && o.controlledBy p && g.isLegendary o && o.name == name
+            o.isOnBattlefield && g.controlledBy o p && g.treatedAsLegendary o && g.name o == name
           | none => false)
         if still.size ≥ 2 then
           return (g, (changed, true))

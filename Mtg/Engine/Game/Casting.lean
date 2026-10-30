@@ -31,7 +31,7 @@ def timingAllowsCast (g : Game) (p : PlayerId) (face : CardDef) : Bool :=
   let radagastFlash :=
     face.isCreature && g.loggedCreatureSpells p == 0 &&
       (g.permanentsOf p).any (fun o =>
-        o.printed.firstCreatureHasFlash && g.retainsPrintedAbilities o)
+        (g.baseCard o).firstCreatureHasFlash && g.retainsPrintedAbilities o)
   g.hasPriority p &&
   (if face.hasSorcerySpeed && !hasConditionalFlash && !radagastFlash &&
       !g.cosmicAwarenessFlash p then
@@ -106,7 +106,7 @@ def canPayAnnouncedAdditional (g : Game) (p : PlayerId) (o : GameObject)
     (g.permanentsOf p).any (fun perm =>
       perm.id != o.id &&
         if o.printed.additionalCostSacrificeCreatureOrPlaneswalker then
-          g.isCreature perm || perm.printed.isPlaneswalker
+          g.isCreature perm || g.isPlaneswalker perm
         else g.isCreature perm || g.isArtifact perm) || payExtra n
   | none, some n =>
     (g.player p).hand.any (fun id => id != o.id) || payExtra n
@@ -189,7 +189,7 @@ def proposedAllowsCreatureRestricted (g : Game) (prop : ProposedSpell) : Bool :=
   | .spell => false
   | .activatedAbility =>
     match g.proposedRestrictionSource prop with
-    | some o => o.printed.isCreature || o.isCreature
+    | some o => g.isCreature o
     | none => false
 
 /-- Whether paying this proposal may spend “can't be spent to cast a
@@ -200,7 +200,7 @@ def proposedAllowsCantNonartifact (g : Game) (prop : ProposedSpell) : Bool :=
   | .activatedAbility => true
   | .spell =>
     match g.findObject? prop.spellId with
-    | some o => o.printed.isArtifact
+    | some o => g.isArtifact o
     | none => false
 
 /-- What paying `prop` is for, as Reality Fracture mana restrictions see it. -/
@@ -211,9 +211,9 @@ def proposedManaSpend (g : Game) (prop : ProposedSpell) : ManaSpend :=
     match g.findObject? prop.spellId with
     | some o =>
       { spell := true, fromHand := prop.original.zone == .hand prop.caster
-        supertypes := o.supertypes
-        types := o.printed.types
-        subtypes := CardSubtype.ofSubtypes o.printed.subtypes }
+        supertypes := g.supertypes o
+        types := g.types o
+        subtypes := g.subtypes o }
     | none => {}
 
 /-- Whether mana with restriction `r` may be spent on `prop` (CR 106.10). -/
@@ -327,10 +327,10 @@ def preferredManaType (g : Game) (p : PlayerId) (src : GameObject)
 /-- Whether `(src, t)` is a better next tap than `(bestSrc, bestT)`: avoid
 creatures when another source helps, then prefer colorless. Equal ranks keep
 the earlier source. -/
-def betterManaTap (src : GameObject) (t : ManaType)
+def betterManaTap (g : Game) (src : GameObject) (t : ManaType)
     (bestSrc : GameObject) (bestT : ManaType) : Bool :=
-  (!src.isCreature && bestSrc.isCreature) ||
-    (src.isCreature == bestSrc.isCreature && t == .colorless && bestT != .colorless)
+  (!g.isCreature src && g.isCreature bestSrc) ||
+    (g.isCreature src == g.isCreature bestSrc && t == .colorless && bestT != .colorless)
 
 /-- Next source to tap for `prop`. Noncreatures are chosen before creatures
 when both help, and colorless is preferred when that type can be spent.
@@ -350,7 +350,7 @@ def preferredManaTap (g : Game) (p : PlayerId) (prop : ProposedSpell) :
       match acc with
       | none => some (src, t)
       | some (bestSrc, bestT) =>
-        if betterManaTap src t bestSrc bestT then some (src, t) else acc) none
+        if g.betterManaTap src t bestSrc bestT then some (src, t) else acc) none
 
 def payCost (g : Game) (p : PlayerId) (cost : ManaCost)
     (allowElfRestricted : Bool := false) (allowInstRestricted : Bool := false)
@@ -437,139 +437,9 @@ more than once still triggers only once. -/
 def queueBecomesTargetTriggers (g : Game) (caster : PlayerId)
     (targets : Array Target) : Game :=
   g.foldPermanentTargets targets (unique := true) (f := fun g o =>
-    match o.controller with
+    match g.controllerOf o with
     | some c => if c != caster then g.putMatchingSourceTriggers c o .becomesTarget else g
     | none => g)
-
-private structure WardEntry where
-  idx : Nat
-  ts : Nat × Nat
-  rem : AbilityRemoval
-  add : Array WardCost
-deriving Inhabited
-
-/-- Ward costs granted to `o` itself by static abilities in `abs`. -/
-private def selfWardCosts (g : Game) (o : GameObject) (abs : Array StaticAbility) :
-    Array WardCost :=
-  abs.foldl (fun acc ab =>
-    match ab with
-    | .wardDiscardEnchantmentInstantOrSorcery =>
-      acc.push .discardEnchantmentInstantOrSorcery
-    | .wardSacrificeLegendary =>
-      acc.push .sacrificeLegendary
-    | .wardDiscardOrPay n =>
-      acc.push (.discardOrPay n)
-    | .wardPoisonCounters _ =>
-      acc.push .fivePoison
-    | .fra .wardDiscardCard =>
-      acc.push .discardCard
-    | .fra .wardSacrificeThreePermanents =>
-      acc.push (.sacrificePermanents 3 0)
-    | _ =>
-      match ab.grantedWard? with
-      | some n =>
-        if ab.lordLegendaryOnly && g.isLegendary o && g.isCreature o then
-          acc.push (.genericMana n)
-        else acc
-      | none =>
-        match ab.teamWardIfEnduringStory? with
-        | some n =>
-          match o.controller with
-          | some p =>
-            if g.hasEnduringStory p && (g.isArtifact o || g.isCreature o) then
-              acc.push (.genericMana n)
-            else acc
-          | none => acc
-        | none => acc) #[]
-
-/-- Printed and granted ward costs currently on `o`, evaluated in Layer 6
-timestamp order (CR 613.1f / 613.7 / 702.21). -/
-def wardCostsOn (g : Game) (o : GameObject) : Array WardCost :=
-  if o.status.faceDown then #[]
-  else
-    let initWards : Array WardCost :=
-      (match o.printed.ward with
-       | some n => #[.genericMana n]
-       | none => #[]) ++ selfWardCosts g o o.printed.staticAbilities
-    let scopeOk (sc : ObjectScope) : Bool :=
-      match sc with
-      | .objects ids => ids.contains o.id
-      | .creaturesControlledBy p => o.isOnBattlefield && o.controlledBy p && g.isCreature o
-      | .creaturesWithout kw =>
-        o.isOnBattlefield && g.isCreature o &&
-          Keywords.merge (g.currentKeywords o) kw != g.currentKeywords o
-      | .permanentsOfSubtype p s => o.isOnBattlefield && o.controlledBy p && g.hasSubtype o s
-    Id.run do
-      let mut raw : Array WardEntry := #[]
-      if o.isOnBattlefield then
-        for att in g.battlefield do
-          if att.attachedTo == some o.id then
-            let attAbs := g.staticAbilities att
-            let strips := attAbs.any fun
-              | .enchantedLosesAbilitiesDoesntUntap => true
-              | .enchantedLosesAbilitiesCantUntap => true
-              | _ => false
-            let addWard := attAbs.filterMap fun ab =>
-              if !ab.lordLegendaryOnly then ab.grantedWard?.map .genericMana else none
-            if strips || !addWard.isEmpty then
-              raw := raw.push {
-                idx := raw.size
-                ts := g.attachmentTimestamp att o.id
-                rem := if strips then .all else .none
-                add := addWard
-              }
-        for src in g.battlefield do
-          if src.id != o.id then
-            let srcAbs := g.staticAbilities src
-            let addWard := srcAbs.foldl (fun acc ab =>
-              match ab.grantedWard? with
-              | some n =>
-                if ab.lordLegendaryOnly && src.controller == o.controller &&
-                    g.isLegendary o && g.isCreature o then
-                  acc.push (.genericMana n)
-                else acc
-              | none =>
-                match ab.teamWardIfEnduringStory? with
-                | some n =>
-                  if src.controller == o.controller then
-                    match o.controller with
-                    | some p =>
-                      if g.hasEnduringStory p && (g.isArtifact o || g.isCreature o) then
-                        acc.push (.genericMana n)
-                      else acc
-                    | none => acc
-                  else acc
-                | none => acc) #[]
-            if !addWard.isEmpty then
-              raw := raw.push {
-                idx := raw.size
-                ts := g.objectEntryTimestamp src
-                rem := .none
-                add := addWard
-              }
-      for pos in [0:g.activeEffects.size] do
-        let (eid, s) := g.activeEffects[pos]!
-        match s with
-        | .layered sc (.abilities add rem) d =>
-          if scopeOk sc && g.durationActive d then
-            let added := selfWardCosts g o add.staticAbilities
-            if rem == .all || !added.isEmpty then
-              raw := raw.push {
-                idx := raw.size
-                ts := g.effectTimestamp eid pos
-                rem := rem
-                add := added
-              }
-        | _ => pure ()
-      let sorted := raw.qsort fun a b =>
-        if a.ts.1 != b.ts.1 then a.ts.1 < b.ts.1
-        else if a.ts.2 != b.ts.2 then a.ts.2 < b.ts.2
-        else a.idx < b.idx
-      let mut acc := initWards
-      for e in sorted do
-        if e.rem == .all then acc := #[]
-        acc := acc ++ e.add
-      return acc
 
 /-- Prompt the next queued ward, if any and no other choice is pending. -/
 def promptNextWard (g : Game) : Game :=
@@ -616,7 +486,7 @@ or ability (CR 702.21). -/
 def beginWardsForTargets (g : Game) (caster : PlayerId) (spellId : ObjectId)
     (targets : Array Target) : Game :=
   let g := g.foldPermanentTargets targets (unique := true) (f := fun g o =>
-    if o.controller != some caster && o.isOnBattlefield then
+    if g.controllerOf o != some caster && o.isOnBattlefield then
       (g.wardCostsOn o).foldl (fun g cost =>
         g.change (.enqueueWard #[{ player := caster, spellId, cost }])) g
     else g)
@@ -624,13 +494,13 @@ def beginWardsForTargets (g : Game) (caster : PlayerId) (spellId : ObjectId)
 
 def becomeCast (g : Game) (p : PlayerId) (spell : GameObject) : Game :=
   let g := g.change (.castingFromTop false)
-  let g := g.logMsg s!"{(g.player p).name} casts {spell.name}"
+  let g := g.logMsg s!"{(g.player p).name} casts {g.name spell}"
   let ancestry := g.ancestryLandsTapped
   let g := g.change (.ancestryLandsTapped #[])
   let g :=
-    if spell.printed.isCreature &&
-        ancestry.any (fun id => (g.findObject? id).any (·.printed.commanderIdentityScryCreature)) &&
-        (CardSubtype.ofSubtypes spell.printed.subtypes).any ((g.player p).commanderCreatureTypes.contains) then
+    if g.isCreature spell &&
+        ancestry.any (fun id => (g.findObject? id).any (fun l => (g.baseCard l).commanderIdentityScryCreature)) &&
+        (g.subtypes spell).any ((g.player p).commanderCreatureTypes.contains) then
       g.beginScry p 1
     else g
   -- Emrakul, the Exigent Doom: the granted mana ability lasts until the card
@@ -725,7 +595,7 @@ def lockInTargetCostReduction (g : Game) : Game :=
             | some (k, most) => if g.isCreature o && g.power o ≤ most then k else 0
             | none => 0
           let nEquip :=
-            if prop.activation.any (·.isEquip) && o.controlledBy prop.caster then
+            if prop.activation.any (·.isEquip) && g.controlledBy o prop.caster then
               (g.staticAbilities o).foldl (fun acc ab =>
                 match ab with
                 | .equipAbilitiesTargetingThisCostLess k => acc + k
@@ -741,13 +611,14 @@ def lockInTargetCostReduction (g : Game) : Game :=
 def payLoyaltyCost (g : Game) (p : PlayerId) (o : GameObject) (sym : LoyaltySymbol)
     (forObject : Option ObjectId := none) : Game :=
   let k := (sym.counters).getD 0
+  let oName := g.name o
   let g :=
     if k != 0 then
       g.record (GameEvent.counters g.turnNumber (some p) o.asEvent .loyalty k.natAbs (k < 0)
         (cause := some (.costPayment .loyalty p forObject)))
     else g
-  if k > 0 then g.logMsg s!"{k} loyalty counter(s) are put on {o.name}"
-  else if k < 0 then g.logMsg s!"{-k} loyalty counter(s) are removed from {o.name}"
+  if k > 0 then g.logMsg s!"{k} loyalty counter(s) are put on {oName}"
+  else if k < 0 then g.logMsg s!"{-k} loyalty counter(s) are removed from {oName}"
   else g
 
 def becomeActivated (g : Game) (p : PlayerId) (sourceName : String)
@@ -768,7 +639,7 @@ def becomeActivated (g : Game) (p : PlayerId) (sourceName : String)
     | none => g
   let isEquip := activation.any (·.isEquip)
   let source : EventObject :=
-    match (sourceId.bind g.findObject?).map GameObject.asEvent <|> sourceSnapshot <|>
+    match (sourceId.bind g.findObject?).map g.snapshot <|> sourceSnapshot <|>
         g.proposedSpell.map (·.original.asEvent) with
     | some src => src
     | none =>
@@ -791,7 +662,7 @@ def becomeActivated (g : Game) (p : PlayerId) (sourceName : String)
   let isPowerUp : Bool :=
     match activation with
     | some ab => ab.powerUp
-    | none => srcObj?.any (fun src => src.printed.activatedAbilities.any (·.powerUp))
+    | none => srcObj?.any (fun src => (g.baseCard src).activatedAbilities.any (·.powerUp))
   let isBoast := activation == some ActivatedAbility.zemoBoastAbility
   let abilityIdx : Option Nat :=
     match srcObj?, activation with
@@ -812,6 +683,8 @@ the stack (CR 601.2h–i / 602.2b). -/
 def completeActivation (g : Game) (prop : ProposedSpell) : Except String Game := do
   let some sid := prop.sourceId | throw "The ability has no source"
   let x := ((g.findObject? prop.spellId).bind (·.chosenX)).getD 0
+  let srcSnap := (g.findObject? sid).map g.snapshot |>.orElse (fun _ => some prop.original.asEvent)
+  let srcName := (g.findObject? sid).map g.name |>.getD (g.name prop.original)
   let g ← g.payActivationExtraCosts prop.caster sid prop.tapSource prop.sacrificeSource
     prop.payLife prop.discardSource prop.activation (if prop.removePlusOneX then x else 0)
   if prop.needsSacrificeOther then
@@ -819,8 +692,8 @@ def completeActivation (g : Game) (prop : ProposedSpell) : Except String Game :=
     return g.logMsg
       s!"{(g.player prop.caster).name} must sacrifice another creature or artifact"
   let g := g.changes #[.pending .none, .proposedSpell none, .consecutivePasses 0]
-  return g.becomeActivated prop.caster prop.original.name prop.sourceId prop.activation
-    (sourceSnapshot := some prop.original.asEvent)
+  return g.becomeActivated prop.caster srcName prop.sourceId prop.activation
+    (sourceSnapshot := srcSnap)
     (sourceOriginal := some prop.original)
 
 /-- Ask `p` to choose what pays the first of `picks`, or finish the

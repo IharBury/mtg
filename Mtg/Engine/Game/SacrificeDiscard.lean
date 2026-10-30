@@ -39,10 +39,10 @@ def finishChosenSacrifices (g : Game) (chosen : Array ObjectId) : Game :=
     for id in chosen do
       match g.findObject? id with
       | some o =>
-        if o.isOnBattlefield && o.isCreature then
-          let who := o.controller.getD o.owner
+        if o.isOnBattlefield && g.isCreature o then
+          let who := (g.controllerOf o).getD o.owner
           g := g.sacrificeToGraveyard o
-            s!"{(g.player who).name} sacrifices {o.name}"
+            s!"{(g.player who).name} sacrifices {g.name o}"
       | none => pure ()
     return g
   g.receivePriority g.activePlayer
@@ -174,7 +174,7 @@ def finishConniveDiscard (g : Game) (discarded : GameObject) : Game :=
       match g.findObject? sid with
       | some o =>
         if o.isOnBattlefield then
-          g.addPlusOnePlusOneTo o 1 (byPlayer := o.controller)
+          g.addPlusOnePlusOneTo o 1 (byPlayer := g.controllerOf o)
         else
           g.logMsg "The conniving creature has left the battlefield; no +1/+1 counter is put"
       | none =>
@@ -204,7 +204,7 @@ def beginMayHaveVillainConnive (g : Game) (controller : PlayerId)
     (sourceId villainId : ObjectId) : Game :=
   let who :=
     match g.findObject? villainId with
-    | some o => o.name
+    | some o => if o.isOnBattlefield then g.name o else o.name
     | none => "the Villain"
   (g.change (.pending (.mayHaveVillainConnive controller sourceId villainId))).logMsg
     s!"{(g.player controller).name} may have {who} connive (do this only once each turn)"
@@ -242,10 +242,10 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
       throw s!"Only {(g.player caster).name} may sacrifice"
     let some sac := g.findObject? id | throw "no such object"
     if !g.canSacrificeAsCreatureOrArtifact p sourceId sac then
-      throw s!"Can't sacrifice {sac.name}"
+      throw s!"Can't sacrifice {g.name sac}"
     let forObject := g.proposedSpell.map (·.spellId) <|> some sourceId
     let g := g.sacrificeToGraveyard sac
-      s!"{(g.player p).name} sacrifices {sac.name}"
+      s!"{(g.player p).name} sacrifices {g.name sac}"
       (cause := some (.costPayment .sacrifice p forObject))
     match g.proposedSpell with
     | some prop =>
@@ -254,49 +254,49 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
       | .spell => return g.becomeCast prop.caster (g.object! prop.spellId)
       | .activatedAbility =>
         return g.becomeActivated p prop.original.name prop.sourceId prop.activation
-          (sourceSnapshot := some prop.original.asEvent)
+          (sourceSnapshot := some (g.snapshot prop.original))
           (sourceOriginal := some prop.original)
     | none =>
       let g := g.changes #[.pending .none, .proposedSpell none, .consecutivePasses 0]
-      return g.becomeActivated p (g.object! sourceId).name (some sourceId)
+      return g.becomeActivated p (g.name (g.object! sourceId)) (some sourceId)
   | .chooseSacrificeCreature q chosen remaining =>
     if q != p then
       throw s!"Only {(g.player q).name} may sacrifice"
     let some sac := g.findObject? id | throw "no such object"
-    if !sac.isOnBattlefield || !sac.isCreature || !sac.controlledBy p then
-      throw s!"Can't sacrifice {sac.name}"
+    if !sac.isOnBattlefield || !g.isCreature sac || !g.controlledBy sac p then
+      throw s!"Can't sacrifice {g.name sac}"
     return g.beginSacrificeCreatures remaining (chosen.push id)
   | .sacrificeCreature q =>
     if p != q then
       throw s!"Only {(g.player q).name} may sacrifice"
     let some sac := g.findObject? id | throw "no such object"
     if !g.canSacrificeCreature p sac then
-      throw s!"Can't sacrifice {sac.name}"
+      throw s!"Can't sacrifice {g.name sac}"
     let g := g.sacrificeToGraveyard sac
-      s!"{(g.player p).name} sacrifices {sac.name}"
+      s!"{(g.player p).name} sacrifices {g.name sac}"
     let g := g.change (.pending .none)
     return g.receivePriority g.activePlayer
   | .maySacrificeAnotherBolg q bolgId =>
     if p != q then
       throw s!"Only {(g.player q).name} may sacrifice"
     let some sac := g.findObject? id | throw "no such object"
-    if !sac.isOnBattlefield || !sac.isCreature || !sac.controlledBy p ||
+    if !sac.isOnBattlefield || !g.isCreature sac || !g.controlledBy sac p ||
         sac.id == bolgId then
-      throw s!"Can't sacrifice {sac.name} to Bolg"
+      throw s!"Can't sacrifice {g.name sac} to Bolg"
     let g := g.sacrificeToGraveyard sac
-      s!"{(g.player p).name} sacrifices {sac.name} (Bolg)"
+      s!"{(g.player p).name} sacrifices {g.name sac} (Bolg)"
     let g := g.change (.pending .none)
     return g.receivePriority g.activePlayer
   | .payWard q spellId (.sacrificePermanents left paid) =>
     if p != q then
       throw s!"Only {(g.player q).name} may sacrifice for ward"
     let some sac := g.findObject? id | throw "no such object"
-    if !sac.isOnBattlefield || !sac.controlledBy p then
-      throw s!"Can't sacrifice {sac.name} to pay ward"
+    if !sac.isOnBattlefield || !g.controlledBy sac p then
+      throw s!"Can't sacrifice {g.name sac} to pay ward"
     if paid == 0 && (g.permanentsOf p).size < left then
       throw s!"{(g.player p).name} can't sacrifice {left} permanents"
     let g := g.sacrificeToGraveyard sac
-      s!"{(g.player p).name} sacrifices {sac.name} (ward)"
+      s!"{(g.player p).name} sacrifices {g.name sac} (ward)"
       (cause := some (.costPayment .ward p (some spellId)))
     if left ≤ 1 then return g.afterWardResolved
     else return g.change (.pending (.payWard q spellId (.sacrificePermanents (left - 1) (paid + 1))))
@@ -305,19 +305,19 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
       throw s!"Only {(g.player q).name} may sacrifice for ward"
     let some sac := g.findObject? id | throw "no such object"
     if !(g.legendaryWardSacrificeChoices p).any (fun o => o.id == id) then
-      throw s!"Can't sacrifice {sac.name} to pay ward"
+      throw s!"Can't sacrifice {g.name sac} to pay ward"
     let g := g.sacrificeToGraveyard sac
-      s!"{(g.player p).name} sacrifices {sac.name} (ward)"
+      s!"{(g.player p).name} sacrifices {g.name sac} (ward)"
       (cause := some (.costPayment .ward p (some spellId)))
     return g.afterWardResolved
   | .maySacArtifactOrDiscard q n =>
     if p != q then
       throw s!"Only {(g.player q).name} may sacrifice"
     let some sac := g.findObject? id | throw "no such object"
-    if !sac.isOnBattlefield || !sac.printed.isArtifact || !sac.controlledBy p then
-      throw s!"Can't sacrifice {sac.name}"
+    if !sac.isOnBattlefield || !g.isArtifact sac || !g.controlledBy sac p then
+      throw s!"Can't sacrifice {g.name sac}"
     let g := g.sacrificeToGraveyard sac
-      s!"{(g.player p).name} sacrifices {sac.name}"
+      s!"{(g.player p).name} sacrifices {g.name sac}"
     return g.finishSacArtifactOrDiscardDraw p n
   | _ => throw "Not time to sacrifice a permanent"
 

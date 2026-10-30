@@ -13,12 +13,12 @@ namespace Game
 /-- Jace's Machinations lets `p` activate loyalty abilities of Jace
 planeswalkers they control any time they could cast an instant. -/
 def mayActivateLoyaltyAtInstantSpeed (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
-  g.jaceLoyaltyAtInstantSpeed p && o.printed.isPlaneswalker && g.hasSubtype o .jace
+  g.jaceLoyaltyAtInstantSpeed p && g.isPlaneswalker o && g.hasSubtype o .jace
 
 /-- Loyalty counters among Jace planeswalkers `p` controls. -/
 def jaceLoyaltyAmong (g : Game) (p : PlayerId) : Nat :=
   (g.permanentsOf p).foldl (fun acc o =>
-    if o.printed.isPlaneswalker && g.hasSubtype o .jace then acc + o.status.loyaltyCounters
+    if g.isPlaneswalker o && g.hasSubtype o .jace then acc + o.status.loyaltyCounters
     else acc) 0
 
 /-- Whether a Reality Fracture “Activate only if …” condition holds. -/
@@ -40,8 +40,9 @@ def canPayFraCost (g : Game) (p : PlayerId) (o : GameObject) (c : FraCost) : Boo
   | .exileSourceFromHand => o.zone == .hand o.owner
   | .exileSource => o.isOnBattlefield
   | .zemoBoast =>
+    let col := TextChange.applyColor (g.evalLayer3 o) .black
     g.canPayZemoBoast p ((g.player p).graveyard.filter (fun id =>
-      (g.findObject? id).any (·.printed.colors.contains .black)))
+      (g.findObject? id).any (fun card => (g.colors card).contains col))) col
   | .crew n =>
     ((g.creaturesControlledBy p).filter (fun c => c.id != o.id && !c.status.tapped)).foldl
       (fun acc c => acc + (g.power c).toNat) 0 ≥ n
@@ -76,8 +77,8 @@ def validateActivation (g : Game) (p : PlayerId) (o : GameObject) (ab : Activate
       throw s!"{o.name}'s ability can be activated only from your hand"
   else
     if !o.isOnBattlefield then
-      throw s!"{o.name} is not on the battlefield"
-    if !o.controlledBy p then
+      throw s!"{g.name o} is not on the battlefield"
+    if !g.controlledBy o p then
       throw "You don't control that permanent"
   if ab.onlyIfYouControlLegendary && !g.controlsLegendaryCreature p then
     throw s!"{o.name}'s ability can be activated only if you control a legendary creature"
@@ -127,21 +128,21 @@ def validateActivation (g : Game) (p : PlayerId) (o : GameObject) (ab : Activate
         g.powerUpActivationLimit p then
     throw s!"{o.name}'s power-up ability can be activated only once"
   if ab.cost.tap && o.status.tapped then
-    throw s!"{o.name} is already tapped"
-  if ab.cost.tap && o.hasSummoningSickness && !g.activatesAsThoughHaste p && !g.hasHaste o then
-    throw s!"{o.name} has summoning sickness (CR 302.6)"
+    throw s!"{g.name o} is already tapped"
+  if ab.cost.tap && g.hasSummoningSickness o && !(g.isCreature o && g.activatesAsThoughHaste p) then
+    throw s!"{g.name o} has summoning sickness (CR 302.6)"
   if ab.cost.sacrificeAnotherCreatureOrArtifact &&
       (g.sacrificeCreatureOrArtifactChoices p o.id).isEmpty then
-    throw s!"{o.name}'s ability requires sacrificing another creature or artifact"
+    throw s!"{g.name o}'s ability requires sacrificing another creature or artifact"
   if !g.costPicksPayable p o.id (costPicksOf ab) then
-    throw s!"{o.name}'s ability has a cost that can't be paid"
+    throw s!"{g.name o}'s ability has a cost that can't be paid"
   if ab.cost.removeAnyNumberPlusOne && ab.cost.tap && o.status.tapped then
-    throw s!"{o.name} is already tapped"
+    throw s!"{g.name o} is already tapped"
   if !g.canPayLife p ab.cost.payLife then
     throw s!"{(g.player p).name} cannot pay {ab.cost.payLife} life"
   if ab.onlyIfYouControlCreatureToughnessAtLeast != 0 &&
       !(g.permanentsOf p).any (fun x =>
-        x.isCreature && g.toughness x >= (ab.onlyIfYouControlCreatureToughnessAtLeast : Int)) then
+        g.isCreature x && g.toughness x >= (ab.onlyIfYouControlCreatureToughnessAtLeast : Int)) then
     throw s!"{o.name}'s ability can be activated only if you control a creature with toughness {ab.onlyIfYouControlCreatureToughnessAtLeast} or greater"
   if ab.onlyIfGyCreaturesAtLeast != 0 then
     let gy :=

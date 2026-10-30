@@ -890,7 +890,7 @@ def woodElvesResolved : Game := applyIdle (passBoth woodElvesKnownLib)
 #guard woodElvesResolved.battlefield.any (fun o => o.name == "Wood Elves")
 #guard woodElvesResolved.battlefield.any (fun o => o.name == "Forest")
 #guard !(namedPermanent woodElvesResolved "Forest").status.tapped
-#guard !(namedPermanent woodElvesResolved "Forest").status.summoningSick
+#guard !woodElvesResolved.hasSummoningSickness (namedPermanent woodElvesResolved "Forest")
 #guard woodElvesResolved.loggedLandsPlayed ⟨0⟩ ==
   woodElvesKnownLib.loggedLandsPlayed ⟨0⟩
 #guard woodElvesResolved.log.any (fun s =>

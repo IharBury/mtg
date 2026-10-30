@@ -156,35 +156,35 @@ def applyPermanentAction (g : Game) (o : GameObject) (action : PermanentAction)
     g.dealDamageToPermanent o n (source := (sourceId.bind g.findObject?).map g.snapshot)
   | .loseIndestructible =>
     let g := g.createEffect (.loseIndestructibleUntilEot o.id)
-    g.logMsg s!"{o.name} loses indestructible until end of turn"
+    g.logMsg s!"{g.name o} loses indestructible until end of turn"
   | .cantBeBlocked => g.grantCantBeBlockedThisTurn o
   | .grantKeywords k =>
     g.grantUntilEotLogged o k
   | .indestructibleCounter => g.addIndestructibleCounter o
   | .doubleStrikeCounter =>
-    let g := g.record (GameEvent.counters g.turnNumber o.controller o.asEvent .doubleStrike 1)
-    g.logMsg s!"{o.name} gets a double strike counter"
+    let g := g.record (GameEvent.counters g.turnNumber (g.controllerOf o) (g.snapshot o) .doubleStrike 1)
+    g.logMsg s!"{g.name o} gets a double strike counter"
   | .burdenCounter => g.addBurdenCounter o
   | .tap => g.becomeTapped o
   | .untap =>
     if g.hostCantBecomeUntapped o then
-      g.logMsg s!"{o.name} can't become untapped"
+      g.logMsg s!"{g.name o} can't become untapped"
     else if !o.status.tapped then
-      g.logMsg s!"{o.name} is already untapped"
+      g.logMsg s!"{g.name o} is already untapped"
     else
       let (stunned, cause') := g.replaceUntap o
       if stunned then
-        let g := g.record (GameEvent.counters g.turnNumber o.controller o.asEvent .stun 1 true (cause := cause'))
-        g.logMsg s!"A stun counter is removed from {o.name} instead of untapping it (CR 122.1d)"
+        let g := g.record (GameEvent.counters g.turnNumber (g.controllerOf o) (g.snapshot o) .stun 1 true (cause := cause'))
+        g.logMsg s!"A stun counter is removed from {g.name o} instead of untapping it (CR 122.1d)"
       else
-        let g := g.record (GameEvent.untapped g.turnNumber o.asEvent false)
-        g.logMsg s!"{o.name} untaps"
+        let g := g.record (GameEvent.untapped g.turnNumber (g.snapshot o) false)
+        g.logMsg s!"{g.name o} untaps"
   | .becomeArtifactIndestructible =>
     let g := g.createEffects #[
       .additionalArtifactUntilEot o.id,
       .keywordsUntilEot o.id Keyword.indestructible]
     g.logMsg
-      s!"{o.name} becomes an artifact and gains indestructible until end of turn"
+      s!"{g.name o} becomes an artifact and gains indestructible until end of turn"
   | .becomePrepared => g.becomePrepared o
   | .tapAndStun =>
     -- Ruling 764: an already tapped creature still gets the stun counter.
@@ -193,12 +193,12 @@ def applyPermanentAction (g : Game) (o : GameObject) (action : PermanentAction)
     let n := g.countersYouPut cur 1
     let g :=
       if n > 0 then
-        g.record (GameEvent.counters g.turnNumber cur.controller cur.asEvent .stun n)
+        g.record (GameEvent.counters g.turnNumber (g.controllerOf cur) (g.snapshot cur) .stun n)
       else g
-    g.logMsg s!"A stun counter is put on {o.name}"
+    g.logMsg s!"A stun counter is put on {g.name cur}"
   | .setBasePT pw tw =>
     let g := g.createEffect (.setBasePTUntilEot o.id (pw, tw))
-    g.logMsg s!"{o.name} has base power and toughness {pw}/{tw} until end of turn"
+    g.logMsg s!"{g.name o} has base power and toughness {pw}/{tw} until end of turn"
   | .putOnTopOfLibrary => g.putOnOwnerLibrary o true
   | .putOnBottomOfLibrary => g.putOnOwnerLibrary o false
   | .exile => (g.move o.id .exile none).1
@@ -294,7 +294,7 @@ def dealDamageToEachCreatureMatching (g : Game) (n : Nat)
       if n == 0 then none
       else g.currentResolvingContext?.map fun (src, ctrl) => .oneShotEffect none src ctrl)
   g.withBatch defaultCause fun g =>
-  g.foldBattlefield (fun o => o.isCreature && pred o)
+  g.foldBattlefield (fun o => g.isCreature o && pred o)
     (fun g o => g.dealDamageToPermanent o n (source := source) (cause := cause))
 
 /-- Deal `n` damage to each creature that is not `subtype`. -/

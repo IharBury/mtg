@@ -88,9 +88,9 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
       if !g.canCastForSneak p then
         throw "Sneak can be paid only during the declare blockers step on your turn"
       let some att := g.findObject? a | throw "no such object"
-      if !(att.isOnBattlefield && att.isCreature && att.controlledBy p &&
+      if !(att.isOnBattlefield && g.isCreature att && g.controlledBy att p &&
           att.status.attacking && !att.status.blocked) then
-        throw s!"{att.name} is not an unblocked attacker you control"
+        throw s!"{g.name att} is not an unblocked attacker you control"
       pure (some c)
   if face.hasSorcerySpeed && !g.asSorcery? p && sneakCost.isNone &&
       !(g.freeCastFromGraveyard card && card.zone == .graveyard p) then
@@ -113,9 +113,9 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
     match g.findObject? src with
     | some perm =>
       if !perm.isOnBattlefield || !perm.status.prepared then
-        throw s!"{perm.name} is not prepared"
-      if !perm.controlledBy p then
-        throw s!"Only {perm.name}'s controller may cast this copy (ruling 744)"
+        throw s!"{g.name perm} is not prepared"
+      if !g.controlledBy perm p then
+        throw s!"Only {g.name perm}'s controller may cast this copy (ruling 744)"
     | none => throw "The prepared permanent is gone"
   | none => pure ()
   -- CR 601.2a: propose the spell by moving it onto the stack. Modes and
@@ -337,7 +337,7 @@ targets. -/
 def finishTriggerTargets (g : Game) (p : PlayerId) (obj : GameObject) : Game :=
   let targets := ((g.stackEntry? obj.id).map (·.targets)).getD #[]
   let g := g.foldPermanentTargets targets (unique := true) (f := fun g o =>
-    if o.controller != some p && o.isOnBattlefield then
+    if g.controllerOf o != some p && o.isOnBattlefield then
       (g.wardCostsOn o).foldl (fun g cost =>
         g.change (.enqueueWard #[{ player := p, spellId := obj.id, cost }])) g
     else g)

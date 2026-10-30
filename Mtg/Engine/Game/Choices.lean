@@ -15,13 +15,13 @@ namespace Game
 def sacrificeCreatureOrArtifactChoices (g : Game) (p : PlayerId) (sourceId : ObjectId) :
     Array GameObject :=
   let src := g.findObject? sourceId
-  let creatureOrPlaneswalker := src.any (·.printed.additionalCostSacrificeCreatureOrPlaneswalker)
-  let creatureOnly := src.any (·.printed.additionalCostSacrificeCreature)
+  let creatureOrPlaneswalker := src.any (fun s => (g.baseCard s).additionalCostSacrificeCreatureOrPlaneswalker)
+  let creatureOnly := src.any (fun s => (g.baseCard s).additionalCostSacrificeCreature)
   g.permanentsOf p |>.filter (fun o =>
     o.id != sourceId &&
-      if creatureOrPlaneswalker then o.isCreature || o.printed.isPlaneswalker
-      else if creatureOnly then o.isCreature
-      else o.isCreature || o.printed.isArtifact)
+      if creatureOrPlaneswalker then g.isCreature o || g.isPlaneswalker o
+      else if creatureOnly then g.isCreature o
+      else g.isCreature o || g.isArtifact o)
 
 /-- Creatures `p` may sacrifice to a “sacrifices a creature of their choice” effect. -/
 def sacrificeCreatureChoices (g : Game) (p : PlayerId) : Array GameObject :=
@@ -333,7 +333,7 @@ def canPaySarumanWard (g : Game) (p : PlayerId) : Bool :=
 /-- Legendary artifacts and creatures `p` may sacrifice to Sauron's ward. -/
 def legendaryWardSacrificeChoices (g : Game) (p : PlayerId) : Array GameObject :=
   (g.permanentsOf p).filter (fun o =>
-    o.isLegendary && (o.isCreature || o.printed.isArtifact))
+    g.isLegendary o && (g.isCreature o || g.isArtifact o))
 
 /-- Split the top four library cards into a face-up pile and a face-down pile.
 A 4/0 split is legal. The face-down pile is not revealed if it is put into
@@ -416,7 +416,7 @@ def attackTaxPerCreature (g : Game) (defender : PlayerId) : Nat :=
 
 /-- Every legal defending player charges a cost to be attacked. -/
 def everyAttackCosts (g : Game) (o : GameObject) : Bool :=
-  match o.controller with
+  match g.controllerOf o with
   | none => false
   | some p =>
     let opps := g.livingOpponents p
@@ -455,14 +455,14 @@ def finishSagaFinalChapter (g : Game) (controller : PlayerId) : Game :=
   let g := g.record (GameEvent.resolved g.turnNumber controller 0 (obj := some sagaSnap)
     (cause := some (.gameRule .abilityFinishedResolving)))
   match (g.permanentsOf controller).find? (fun o =>
-    o.printed.hexproofIndestructibleIfLore.isSome) with
+    (g.baseCard o).hexproofIndestructibleIfLore.isSome) with
   | none => g
-  | some tom => g.logMsg s!"{tom.name}'s last ability triggers"
+  | some tom => g.logMsg s!"{g.name tom}'s last ability triggers"
 
 /-- A token copy of a battlefield permanent. The copy is not kicked. -/
 def copyBattlefieldPermanent (g : Game) (src : GameObject) (controller : PlayerId)
     (cause : Option EventCause := none) : Game × GameObject :=
-  g.createToken controller src.printed (cause := cause)
+  g.createToken controller (g.copiableValues src) (cause := cause)
 
 /-- Whether the source of a proposed activated ability can still pay tap/sacrifice/discard/loyalty. -/
 def sourceStillPayable (g : Game) (prop : ProposedSpell) : Bool :=
@@ -476,7 +476,7 @@ def sourceStillPayable (g : Game) (prop : ProposedSpell) : Bool :=
         match prop.activation.bind (·.cost.loyalty) with
         | none => true
         | some sym =>
-          src.isOnBattlefield && src.controlledBy prop.caster &&
+          src.isOnBattlefield && g.controlledBy src prop.caster &&
           !g.loyaltyActivatedThisTurn src.id &&
           match sym.counters with
           | some k => k ≥ 0 || (src.status.loyaltyCounters : Int) ≥ -k
@@ -484,7 +484,7 @@ def sourceStillPayable (g : Game) (prop : ProposedSpell) : Bool :=
             let x := ((g.findObject? prop.spellId).bind (·.chosenX)).getD 0
             sym == LoyaltySymbol.minusX && src.status.loyaltyCounters ≥ x
       loyaltyPayable &&
-      ((src.isOnBattlefield && src.controlledBy prop.caster &&
+      ((src.isOnBattlefield && g.controlledBy src prop.caster &&
         (!prop.tapSource || !src.status.tapped) && !prop.discardSource) ||
       (src.zone == .graveyard src.owner && src.owner == prop.caster &&
         !prop.tapSource && !prop.sacrificeSource && !prop.discardSource) ||

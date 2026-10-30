@@ -145,7 +145,7 @@ def played : Game :=
 #guard (lastPermanent stolenMountain).controller == some ⟨1⟩
 
 #guard withMountain.battlefield.map (·.id) == afterControlChange.battlefield.map (·.id)
-#guard (lastPermanent afterControlChange).controller == some ⟨1⟩
+#guard afterControlChange.controllerOf (lastPermanent afterControlChange) == some ⟨1⟩
 #guard (lastPermanent afterControlChange).owner == ⟨0⟩
 
 #guard (mixedControllers.permanentsOf ⟨0⟩)[0]!.name == "Forest"

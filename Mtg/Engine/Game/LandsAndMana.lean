@@ -25,7 +25,7 @@ def finishPlayLand (g : Game) (p : PlayerId) (id : ObjectId) (tapped : Bool := f
   | none => g
   | some card =>
     let (g, newId) := g.putOntoBattlefield id p
-      (tapped := tapped) (summoningSick := false)
+      (tapped := tapped)
       (verb := some .playLand) (actor := some p)
       (cause := some (.specialAction .playLand p))
     let g := g.logMsg s!"{(g.player p).name} plays {card.name}"
@@ -58,8 +58,8 @@ def manaSources (g : Game) (p : PlayerId) : Array (GameObject × Array ManaType)
   g.permanentsOf p |>.filterMap (fun o =>
     let types := g.manaAbilitiesOf o
     if types.isEmpty || o.status.tapped then none
-    else if o.hasSummoningSickness && !g.hasHaste o &&
-        !(o.isCreature && g.activatesAsThoughHaste p) then none
+    else if g.hasSummoningSickness o &&
+        !(g.isCreature o && g.activatesAsThoughHaste p) then none
     else some (o, types))
 
 /-- Permanents `p` currently controls with this subtype. -/
@@ -69,7 +69,7 @@ def countSubtype (g : Game) (p : PlayerId) (subtype : CardSubtype) : Nat :=
 /-- Greatest mana value among permanents `p` controls matching `pred`. -/
 def greatestManaValueAmong (g : Game) (p : PlayerId) (pred : GameObject → Bool) : Nat :=
   (g.permanentsOf p).foldl (fun acc o =>
-    if pred o then max acc o.printed.manaValue else acc) 0
+    if pred o then max acc (g.objectManaValue o) else acc) 0
 
 /-- Mana in `p`'s pool plus mana from each of their untapped sources, skipping
 `exclude` (used when that source's `{T}` is part of an activation cost).

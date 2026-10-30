@@ -64,14 +64,15 @@ would die this turn under an exile replacement, `move` sends it to exile instead
 of the graveyard (CR 614.1). -/
 def destroyPermanent (g : Game) (o : GameObject)
     (cause : Option EventCause := none) : Game :=
-  let affected := o.controller.getD o.owner
+  let ctrl := g.controllerOf o
+  let affected := ctrl.getD o.owner
   let mutSpecs : Array ReplacementSpec := Id.run do
     let mut s : Array ReplacementSpec := #[]
     if o.status.shield > 0 then
       s := s.push {
         id := { kind := .shieldCounterDestroy, object := some o.id }
         source := some o.id
-        controller := o.controller
+        controller := ctrl
         affectedPlayer := affected
         kind := .shieldCounterDestroy o.id
       }
@@ -91,14 +92,15 @@ def destroyPermanent (g : Game) (o : GameObject)
     g.promptChooseReplacement chooser choices (.destroyPermanent o.id cause)
   | .chosen chosen _ =>
     let g := g.consumeReplacementOrder #[chosen.id]
-    let cause' := g.wrapReplacedCause chosen.id cause o.controller
-    let g := g.record (GameEvent.counters g.turnNumber o.controller o.asEvent .shield 1 true (cause := cause'))
-    g.logMsg s!"A shield counter is removed from {o.name} instead of destroying it"
+    let cause' := g.wrapReplacedCause chosen.id cause ctrl
+    let oName := g.name o
+    let g := g.record (GameEvent.counters g.turnNumber ctrl (g.snapshot o) .shield 1 true (cause := cause'))
+    g.logMsg s!"A shield counter is removed from {oName} instead of destroying it"
   | .none =>
     if g.hasIndestructible o then
-      g.logMsg s!"{o.name} is indestructible and isn't destroyed"
+      g.logMsg s!"{g.name o} is indestructible and isn't destroyed"
     else
-      g.moveToOwnerGraveyard o s!"{o.name} is destroyed" (verb := some .destroy) (cause := cause)
+      g.moveToOwnerGraveyard o s!"{g.name o} is destroyed" (verb := some .destroy) (cause := cause)
 
 /-- True when all damage that would be dealt to `o` is prevented. -/
 def preventsAllDamageTo (g : Game) (o : GameObject) : Bool :=
@@ -138,16 +140,16 @@ def replaceDamage (g : Game) (n : Int)
   if n <= 0 then
     return { amount := n, applied := applied, cause := cause }
   let recipientCtrl? : Option PlayerId :=
-    recipientPlayer?.orElse (fun _ => recipientPerm?.bind (·.controller))
+    recipientPlayer?.orElse (fun _ => recipientPerm?.bind g.controllerOf)
   let affected : PlayerId :=
     recipientCtrl?.orElse (fun _ => recipientPerm?.map (·.owner))
-      |>.orElse (fun _ => src?.bind (·.controller))
+      |>.orElse (fun _ => src?.bind g.controllerOf)
       |>.getD ⟨0⟩
   let srcEvent : EventObject :=
     (src?.map g.snapshot).orElse (fun _ => g.resolvingDamageSourceEvent?) |>.getD default
   let proposed :=
     match recipientPerm?, recipientPlayer? with
-    | some o, _ => GameEvent.damaged g.turnNumber srcEvent o.asEvent n.toNat combat
+    | some o, _ => GameEvent.damaged g.turnNumber srcEvent (g.snapshot o) n.toNat combat
     | none, some pid => GameEvent.damagedPlayer g.turnNumber srcEvent pid n.toNat combat
     | none, none => GameEvent.damaged g.turnNumber srcEvent srcEvent n.toNat combat
   if !proposed.watches .wouldDealDamage then
@@ -168,7 +170,7 @@ def replaceDamage (g : Game) (n : Int)
         let sid : ReplacementId := { kind := .shieldCounterPreventDamage, object := some o.id }
         curApplied := curApplied.push sid
         shieldRemoved := true
-        shieldRemoveCause := g.wrapReplacedCause sid curCause o.controller
+        shieldRemoveCause := g.wrapReplacedCause sid curCause (g.controllerOf o)
         curCause := shieldRemoveCause
   let mut fuel := 32
   while fuel > 0 do
@@ -185,7 +187,7 @@ def replaceDamage (g : Game) (n : Int)
               items := items.push (.prevention {
                 id := { kind := .preventDamageGrantedBy, object := some src.id, grantor := some gid }
                 source := some gid
-                controller := (g.findObject? gid).bind (·.controller)
+                controller := (g.findObject? gid).bind g.controllerOf
                 affectedPlayer := affected
                 kind := .preventAllDamageFromSource src.id
               })
@@ -195,7 +197,7 @@ def replaceDamage (g : Game) (n : Int)
               items := items.push (.prevention {
                 id := { kind := .protectionPreventDamage, object := some o.id }
                 source := some o.id
-                controller := o.controller
+                controller := g.controllerOf o
                 affectedPlayer := affected
                 kind := .protectionPreventDamage o.id src.id
               })
@@ -203,7 +205,7 @@ def replaceDamage (g : Game) (n : Int)
             items := items.push (.prevention {
               id := { kind := .preventAllDamageToThis, object := some o.id }
               source := some o.id
-              controller := o.controller
+              controller := g.controllerOf o
               affectedPlayer := affected
               kind := .preventAllDamageToPermanent o.id
             })
@@ -211,7 +213,7 @@ def replaceDamage (g : Game) (n : Int)
             items := items.push (.prevention {
               id := { kind := .shieldCounterPreventDamage, object := some o.id }
               source := some o.id
-              controller := o.controller
+              controller := g.controllerOf o
               affectedPlayer := affected
               kind := .shieldCounterPreventDamage o.id
             })
@@ -246,7 +248,7 @@ def replaceDamage (g : Game) (n : Int)
       if let some src := src? then
         -- Hawkeye, Young Avenger (`.noncombatDamagePlusSourcePower`)
         if !combat then
-          match src.controller, recipientCtrl? with
+          match g.controllerOf src, recipientCtrl? with
           | some p, some r =>
             if p != r then
               for o in g.permanentsOf p do
@@ -268,13 +270,13 @@ def replaceDamage (g : Game) (n : Int)
             items := items.push (.replacement {
               id := { kind := .equippedDealsDoubleDamage, object := some eq.id }
               source := some eq.id
-              controller := eq.controller
+              controller := g.controllerOf eq
               affectedPlayer := affected
               kind := .multiplyDamage src.id 2
             })
         -- Tomik, Izzet Sparkmage (`.fra .noncombatDamagePlusOne`)
         if !combat then
-          match src.controller, recipientCtrl? with
+          match g.controllerOf src, recipientCtrl? with
           | some p, some r =>
             if p != r then
               for o in g.permanentsOf p do
@@ -381,19 +383,20 @@ def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
       g.record (GameEvent.damageMarkedCleared g.turnNumber #[o.id] (cause := cause))
     else g
   let o := g.findObject? o.id |>.getD o
+  let oName := g.name o
   if n > 0 && rep.shieldRemoved && !unpreventable then
-    let g := g.record (GameEvent.counters g.turnNumber o.controller o.asEvent .shield 1 true (cause := rep.shieldRemoveCause))
-    g.logMsg s!"A shield counter is removed from {o.name} instead of damage"
+    let g := g.record (GameEvent.counters g.turnNumber (g.controllerOf o) (g.snapshot o) .shield 1 true (cause := rep.shieldRemoveCause))
+    g.logMsg s!"A shield counter is removed from {oName} instead of damage"
   else if n > 0 && rep.shieldRemoved && unpreventable then
-    let g := g.record (GameEvent.counters g.turnNumber o.controller o.asEvent .shield 1 true (cause := rep.shieldRemoveCause))
-    let g := g.logMsg s!"A shield counter is removed from {o.name} (unpreventable damage)"
+    let g := g.record (GameEvent.counters g.turnNumber (g.controllerOf o) (g.snapshot o) .shield 1 true (cause := rep.shieldRemoveCause))
+    let g := g.logMsg s!"A shield counter is removed from {oName} (unpreventable damage)"
     let marked := g.object! o.id
-    let happened := GameEvent.damaged g.turnNumber srcEvent marked.asEvent rep.amount.toNat combat (cause := cause)
+    let happened := GameEvent.damaged g.turnNumber srcEvent (g.snapshot marked) rep.amount.toNat combat (cause := cause)
     (g.record happened |>.record (GameEvent.damageMarked g.turnNumber marked.id rep.amount.toNat (cause := cause))).logMsg msg
   else
   -- CR 120.3c: damage dealt to a planeswalker removes that many loyalty counters.
   let n := rep.amount
-  let happened := GameEvent.damaged g.turnNumber srcEvent o.asEvent n.toNat combat (cause := cause)
+  let happened := GameEvent.damaged g.turnNumber srcEvent (g.snapshot o) n.toNat combat (cause := cause)
   let g := if n > 0 then g.record happened else g
   let g :=
     let g :=
@@ -401,8 +404,8 @@ def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
         g.record (GameEvent.damageMarked g.turnNumber o.id n.toNat (cause := cause))
       else g
     let g :=
-      if o.printed.isPlaneswalker && n > 0 then
-        g.record (GameEvent.counters g.turnNumber none o.asEvent .loyalty n.toNat true (cause := cause))
+      if g.isPlaneswalker o && n > 0 then
+        g.record (GameEvent.counters g.turnNumber none (g.snapshot o) .loyalty n.toNat true (cause := cause))
       else g
     g.logMsg msg
   g
@@ -439,7 +442,7 @@ def replacedDamageAmount (g : Game) (src : GameObject) (n : Int)
 /-- Tomik, Izzet Sparkmage: noncombat damage a source deals to an opponent of
 its controller, or a permanent one controls, is increased by 1 for each. -/
 def tomikNoncombatBonus (g : Game) (src : GameObject) (recipient : PlayerId) : Int :=
-  match src.controller with
+  match g.controllerOf src with
   | some p =>
     if p == recipient then 0
     else Int.ofNat ((g.permanentsOf p).filter (fun o =>
@@ -455,7 +458,7 @@ def gainLife (g : Game) (p : PlayerId) (n : Nat)
   if n == 0 || !proposed.watches .wouldGainLife then g
   else if (g.livingOpponents p).any (fun opp =>
       (g.permanentsOf opp.id).any (fun o =>
-        o.printed.opponentsCantGainLife && g.retainsPrintedAbilities o)) then
+        (g.baseCard o).opponentsCantGainLife && g.retainsPrintedAbilities o)) then
     g.logMsg s!"{(g.player p).name} can't gain life"
   else
     let pl := g.player p
@@ -539,7 +542,7 @@ def dealDamageToPermanent (g : Game) (o : GameObject) (n : Int)
             (ctrl.orElse (fun _ => srcEvent?.bind (·.controller))))
     g.withBatch defaultCause fun g =>
     let g :=
-      g.markDamageOn o n s!"{o.name} is dealt {dealtAmt} damage"
+      g.markDamageOn o n s!"{g.name o} is dealt {dealtAmt} damage"
         (source := srcEvent?) (sourceObj := srcObj?) (replaced := some rep) (cause := cause)
     -- CR 702.15b: damage dealt by a source with lifelink.
     match srcEvent?.bind (fun src => if src.keywords.lifelink then src.controller else none) with
@@ -561,7 +564,7 @@ def dealDamageFrom (g : Game) (sourceName : String) (o : GameObject) (n : Int)
     | none =>
       let g := g.consumeReplacementOrder rep.applied
       if rep.prevented && !rep.shieldRemoved && !g.preventsAllDamageTo o then
-        g.logMsg s!"damage from {src.name} is prevented"
+        g.logMsg s!"damage from {g.name src} is prevented"
       else
         let dealtAmt := rep.amount
         let prevented := rep.prevented || g.preventsAllDamageTo o || o.status.shield > 0
@@ -571,19 +574,19 @@ def dealDamageFrom (g : Game) (sourceName : String) (o : GameObject) (n : Int)
             else g.currentResolvingContext?.map fun (ctxSrc, ctrl) =>
               .oneShotEffect none
                 (ctxSrc.orElse (fun _ => some src.id))
-                (ctrl.orElse (fun _ => src.controller)))
+                (ctrl.orElse (fun _ => g.controllerOf src)))
         g.withBatch defaultCause fun g =>
         let g :=
-          g.markDamageOn o n s!"{sourceName} deals {dealtAmt} damage to {o.name}"
+          g.markDamageOn o n s!"{sourceName} deals {dealtAmt} damage to {g.name o}"
             (deathtouch || g.hasDeathtouch src) (source := some (g.snapshot src))
             (sourceObj := some src) (replaced := some rep) (cause := rep.cause)
         -- CR 702.15b: damage dealt by a source with lifelink.
-        match src.controller with
+        match g.controllerOf src with
         | some c =>
           if dealtAmt > 0 && !prevented && g.hasLifelink src then g.gainLife c dealtAmt.toNat (cause := cause) else g
         | none => g
   | none =>
-    g.markDamageOn o n s!"{sourceName} deals {n} damage to {o.name}" deathtouch (cause := cause)
+    g.markDamageOn o n s!"{sourceName} deals {n} damage to {g.name o}" deathtouch (cause := cause)
 
 /-- Deal `n` damage to a player and log the resulting life total (CR 120). -/
 def dealDamageToPlayer (g : Game) (pid : PlayerId) (n : Int)
@@ -614,7 +617,7 @@ def dealDamageToPlayer (g : Game) (pid : PlayerId) (n : Int)
         else g.currentResolvingContext?.map fun (ctxSrc, ctrl) =>
           .oneShotEffect none
             (ctxSrc.orElse (fun _ => source.map (·.id)))
-            (ctrl.orElse (fun _ => source.bind (·.controller))))
+            (ctrl.orElse (fun _ => source.bind g.controllerOf)))
     g.withBatch defaultCause fun g =>
     let srcEvent :=
       ((source.map g.snapshot).orElse (fun _ => g.resolvingDamageSourceEvent?)).getD default
@@ -631,7 +634,7 @@ def dealDamageToPlayer (g : Game) (pid : PlayerId) (n : Int)
     -- CR 702.15b: damage dealt by a source with lifelink.
     match source with
     | some src =>
-      match src.controller with
+      match g.controllerOf src with
       | some c => if n > 0 && g.hasLifelink src then g.gainLife c n.toNat (cause := cause) else g
       | none => g
     | none => g
@@ -675,7 +678,7 @@ def dealDamageToEachOpponent (g : Game) (controller : PlayerId) (n : Int)
 /-- Deal this creature's power as damage to `dest` (one side of a fight). -/
 def dealFightDamage (g : Game) (src dest : GameObject)
     (cause : Option EventCause := none) : Game :=
-  g.dealDamageFrom src.name dest (g.power src).toNat (source := some src) (cause := cause)
+  g.dealDamageFrom (g.name src) dest (g.power src).toNat (source := some src) (cause := cause)
 
 /-- Both sides of a fight deal damage simultaneously-looking: `src` first,
 then `dest` if both are still in play. -/
@@ -686,7 +689,7 @@ def fightCreatures (g : Game) (src dest : GameObject)
       g.currentResolvingContext?.map fun (ctxSrc, ctrl) =>
         .oneShotEffect none
           (ctxSrc.orElse (fun _ => some src.id))
-          (ctrl.orElse (fun _ => src.controller)))
+          (ctrl.orElse (fun _ => g.controllerOf src)))
   g.withBatch defaultCause fun g =>
   let c := cause.orElse (fun _ => g.currentBatch.bind (·.2))
   let g := g.dealFightDamage src dest (cause := c)

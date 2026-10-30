@@ -100,7 +100,7 @@ def mayPlayFromExile (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
       match perm.prepareSource with
       | some src =>
         match g.findObject? src with
-        | some perm => perm.isOnBattlefield && perm.status.prepared && perm.controlledBy p
+        | some perm => perm.isOnBattlefield && perm.status.prepared && g.controlledBy perm p
         | none => false
       | none => perm.player == p
     mayCast &&
@@ -115,8 +115,8 @@ def mayCastExiledBySource (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
   o.zone == .exile &&
     match o.exiledBy.bind g.findObject? with
     | some src =>
-      src.isOnBattlefield && src.controlledBy p &&
-        src.printed.castExiledWithSevenInGraveyard &&
+      src.isOnBattlefield && g.controlledBy src p &&
+        (g.baseCard src).castExiledWithSevenInGraveyard &&
         g.retainsPrintedAbilities src &&
         (g.player p).graveyard.size ≥ 7
     | none => false

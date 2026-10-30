@@ -190,8 +190,8 @@ def returnOwnedCreaturesScheduleBirds (g : Game) (p : PlayerId)
       match g.findObject? id with
       | none => pure ()
       | some o =>
-        if o.isOnBattlefield && o.isCreature && o.owner == p then
-          let name := o.name
+        if o.isOnBattlefield && g.isCreature o && o.owner == p then
+          let name := g.name o
           let owner := o.owner
           let (g', _) := g.move o.id (.hand owner) none (cause := some cause)
           g := g'.logMsg s!"{name} is returned to {(g'.player owner).name}'s hand"
@@ -208,7 +208,7 @@ def chooseCreaturesDestroyRest (g : Game) (keep : Array ObjectId) : Game :=
   Id.run do
     let mut g := g
     for o in g.battlefield do
-      if o.isCreature && !keep.contains o.id then
+      if g.isCreature o && !keep.contains o.id then
         g := g.destroyPermanent o
     return g.logMsg "Chosen creatures are kept; the rest are destroyed"
 

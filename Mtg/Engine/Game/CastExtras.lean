@@ -249,10 +249,10 @@ def payTeamworkCreatures (g : Game) (p : PlayerId) (ids : Array ObjectId) :
         throw "A creature cannot be tapped twice for the same teamwork cost"
       seen := seen.push id
       let some o := g.findObject? id | throw "no such object"
-      if !(o.isOnBattlefield && o.isCreature && o.controlledBy p) then
-        throw s!"{o.name} is not a creature you control"
+      if !(o.isOnBattlefield && g.isCreature o && g.controlledBy o p) then
+        throw s!"{g.name o} is not a creature you control"
       if o.status.tapped then
-        throw s!"{o.name} is already tapped"
+        throw s!"{g.name o} is already tapped"
       total := total + g.power o
     if total < (need : Int) then
       throw s!"Tapped creatures must have total power {need} or more"
@@ -321,13 +321,14 @@ def discardNonlandFrom (g : Game) (controller victim : PlayerId) : Game :=
 /-- Exile `o` and return it at the beginning of the next end step. -/
 def exileUntilNextEndStep (g : Game) (o : GameObject)
     (cause : Option EventCause := none) : Game :=
-  let name := o.name
+  let name := g.name o
+  let curCtrl := g.controllerOf o
   let (g, cause) :=
     match cause with
     | some c => (g, c)
-    | none => g.allocDelayedCause o.controller
+    | none => g.allocDelayedCause curCtrl
   let (g, newId) := g.move o.id .exile none (cause := some cause)
-  let ctrl := o.controller.getD o.owner
+  let ctrl := curCtrl.getD o.owner
   let g := g.change (.pushDelayedTrigger { controller := ctrl, source := some o, kind := .endStepReturn newId, cause })
   g.logMsg s!"{name} is exiled until the beginning of the next end step"
 
@@ -344,7 +345,7 @@ def putLandFromHandTapped (g : Game) (p : PlayerId) (id : ObjectId) :
     let some land := g.findObject? id | throw "no such object"
     if !land.printed.isLand then
       throw s!"{land.name} is not a land card"
-    let (g, newId) := g.putOntoBattlefield id p (tapped := true) (summoningSick := false)
+    let (g, newId) := g.putOntoBattlefield id p (tapped := true)
     let g := g.change (.pending .none)
     return g.afterLandEnters (g.object! newId) |>.receivePriority g.activePlayer
   | _ => throw "Not time to put a land from hand onto the battlefield"

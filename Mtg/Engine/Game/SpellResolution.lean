@@ -11,8 +11,8 @@ namespace Mtg.Engine
 namespace Game
 
 /-- Whether `host` is a legal Enchant-creature attachment (CR 303.4). -/
-def isLegalAuraHost (host : GameObject) : Bool :=
-  host.isOnBattlefield && host.isCreature
+def isLegalAuraHost (g : Game) (host : GameObject) : Bool :=
+  host.isOnBattlefield && g.isCreature host
 
 /-- Resolve an Aura spell, attaching it or putting it into the graveyard (CR 303.4, 608.3a). -/
 def resolveAuraSpell (g : Game) (entry : StackEntry) (obj : GameObject) : Game :=
@@ -24,12 +24,13 @@ def resolveAuraSpell (g : Game) (entry : StackEntry) (obj : GameObject) : Game :
   | some (Target.permanent hostId) =>
     match g.findObject? hostId with
     | some host =>
-      if host.auraCanEnchant obj.printed then
+      if g.auraCanEnchant host obj.printed then
+        let hostName := g.name host
         let (g, newId) := g.putOntoBattlefield obj.id entry.controller
           (attachedTo := some host.id) (verb := some .resolve) (actor := some entry.controller)
           (cause := finishCause)
         let o := g.object! newId
-        let g := g.logMsg s!"{o.name} enters the battlefield attached to {host.name}"
+        let g := g.logMsg s!"{g.name o} enters the battlefield attached to {hostName}"
         g.afterPermanentEnters (g.object! newId)
       else
         toGraveyard g
@@ -58,12 +59,14 @@ Applied to Reality Fracture triggered abilities, each target checked against
 its own instance of “target”. -/
 def fraAbilityTargetsAllIllegal (g : Game) (controller : PlayerId) (obj : GameObject)
     (t : TriggeredAbility) (targets : Array Target) : Bool :=
+  let tcs := g.evalLayer3 obj
   let isFra :=
     obj.abilityEffect.isSome ||
       match t.effect.resolution with
       | .sequence rs => rs.any Resolution.isFra
       | r => r.isFra || !t.opts.printed.isEmpty
-  let e := obj.abilityEffect.getD t.effect
+  let rawE := obj.abilityEffect.getD t.effect
+  let e := if tcs.isEmpty then rawE else TextChange.applyEffect tcs rawE
   let kind := e.targetKind
   isFra && !targets.isEmpty &&
     (List.range targets.size).all (fun i =>
@@ -93,8 +96,7 @@ def resolveDelayedTrigger (g : Game) (controller : PlayerId) (kind : DelayedTrig
           g.logMsg s!"{o.name} remains in its current zone (CR 800.4b)"
         else
           let name := o.name
-          let sick := !o.printed.keywords.haste
-          let (g', newId) := g.putOntoBattlefield id owner (summoningSick := sick) (cause := some cause)
+          let (g', newId) := g.putOntoBattlefield id owner (cause := some cause)
           let g' := g'.logMsg s!"{name} returns to the battlefield (beginning of end step)"
           let back := g'.object! newId
           if back.printed.isLand then g'.afterLandEnters back
@@ -120,8 +122,7 @@ def resolveDelayedTrigger (g : Game) (controller : PlayerId) (kind : DelayedTrig
     | some o =>
       if o.zone == .graveyard o.owner && !(g.player who).lost then
         let name := o.name
-        let (g', newId) := g.putOntoBattlefield id who
-          (summoningSick := !o.printed.keywords.haste) (cause := some cause)
+        let (g', newId) := g.putOntoBattlefield id who (cause := some cause)
         let g' := g'.logMsg s!"{name} returns to the battlefield"
         g'.afterPermanentEnters (g'.object! newId)
       else g
@@ -145,12 +146,15 @@ def resolveTop (g : Game) : Game :=
             g.resolveDelayedTrigger entry.controller dtKind dtCause)
           let g := g.change (.resolvingAbility none)
           g.ceaseToExist obj.id (cause := some (.gameRule .abilityFinishedResolving))
-      else if let some e := obj.abilityEffect then
+      else if let some rawE := obj.abilityEffect then
+        let tcs := g.evalLayer3 obj
+        let e := if tcs.isEmpty then rawE else TextChange.applyEffect tcs rawE
         g.withResolvingContext ctxSrc entry.controller fun g =>
         let g := g.changes #[.resolvingAbility (some obj.id), .resolvingDivision entry.dividedDamage]
         let g :=
           match obj.triggeredAbility with
-          | some t =>
+          | some rawT =>
+            let t := if tcs.isEmpty then rawT else TextChange.applyTriggeredAbility tcs rawT
             if g.fraAbilityTargetsAllIllegal entry.controller obj t entry.targets then
               let g := g.record (GameEvent.removedOnResolution g.turnNumber obj.asEvent)
               let g := entry.targets.foldl (fun (g : Game) (tg : Target) => g.illegalAbilityTarget tg) g
@@ -166,7 +170,9 @@ def resolveTop (g : Game) : Game :=
         let g := g.changes #[.resolvingAbility none, .resolvingDivision #[]]
         -- CR 608.2m: after resolution the ability ceases to exist.
         g.ceaseToExist obj.id (cause := some (.gameRule .abilityFinishedResolving))
-      else if let some t := obj.triggeredAbility then
+      else if let some rawT := obj.triggeredAbility then
+        let tcs := g.evalLayer3 obj
+        let t := if tcs.isEmpty then rawT else TextChange.applyTriggeredAbility tcs rawT
         g.withResolvingContext ctxSrc entry.controller fun g =>
         let srcName := obj.printed.name.replace "'s ability" ""
         let g := g.change (.resolvingAbility (some obj.id))
@@ -187,7 +193,7 @@ def resolveTop (g : Game) : Game :=
         | .chapter n _ =>
           match obj.sourceId.bind g.findObject? with
           | some src =>
-            match src.printed.saga, src.controller with
+            match (g.baseCard src).saga, g.controllerOf src with
             | some s, some p =>
               if n == s.finalChapterNumber then g.finishSagaFinalChapter p else g
             | _, _ => g
@@ -202,8 +208,8 @@ def resolveTop (g : Game) : Game :=
         let giftTo := g.giftPromisedTo? obj.id
         let chosenX := (g.chosenXOf? obj.id).getD 0
         let allTargetsIllegal :=
-          obj.printed.isInstantOrSorcery && !entry.targets.isEmpty &&
-            match spellEffectOf obj entry.chosenMode entry.extraModes (kicked := kicked) with
+          g.isInstantOrSorcery obj && !entry.targets.isEmpty &&
+            match g.spellEffectOf obj entry.chosenMode entry.extraModes (kicked := kicked) with
             | some e =>
               let kind := e.targetKind
               let legal :=
@@ -238,14 +244,16 @@ def resolveTop (g : Game) : Game :=
         let g :=
           g.withResolvingContext ctxSrc entry.controller fun g =>
             let g :=
-              match giftTo, obj.printed.isInstantOrSorcery with
+              match giftTo, g.isInstantOrSorcery obj with
               | some to, true => g.givePromisedGift to
               | _, _ => g
+            let bc := g.baseCard obj
+            let tcs := g.evalLayer3 obj
             let modeEffects : Array Effect :=
-              if entry.extraModes.isEmpty then (spellEffectOf obj entry.chosenMode (kicked := kicked)).toArray
+              if entry.extraModes.isEmpty then (g.spellEffectOf obj entry.chosenMode (kicked := kicked)).toArray
               else
-                ((entry.chosenMode.toArray ++ entry.extraModes).qsort (· < ·)).filterMap
-                  (obj.printed.spellModes[·]?)
+                ((entry.chosenMode.toArray ++ entry.extraModes).qsort (· < ·)).filterMap fun i =>
+                  bc.spellModes[i]?.map fun e => if tcs.isEmpty then e else TextChange.applyEffect tcs e
             -- Several chosen modes resolve in printed order, each with the targets
             -- announced for its own instances of “target” (CR 700.2 / 608.2c).
             let g := g.change (.resolvingSpell (some obj.id))
@@ -270,7 +278,6 @@ def resolveTop (g : Game) : Game :=
         else if obj.printed.isAura then
           g.resolveAuraSpell entry obj
         else if obj.printed.isPermanentCard && !obj.printed.isLand then
-          let sick := !obj.printed.keywords.haste
           let sneak := g.sneakPaid obj.id
           let sneakWhom := g.sneakAttackWhom? obj.id
           let sneakTarget :=
@@ -279,7 +286,6 @@ def resolveTop (g : Game) : Game :=
             else none
           let (g, newId) := g.putOntoBattlefield obj.id entry.controller
             (tapped := sneak)
-            (summoningSick := sick)
             (attacking := sneak)
             (attackingTarget := sneakTarget)
             (verb := some .resolve)

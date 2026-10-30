@@ -1540,13 +1540,14 @@ copy nothing. -/
   let g := g.applyModeledTrigger me (.onStep Effect.stepCopyAbsorbingMan)
     (some (idOf g "Absorbing Man")) #[Target.permanent (idOf g "Forest")]
   let copied := namedPermanent g "Absorbing Man"
-  forestOk && !bearOk && copied.printed.isLand && copied.name == "Absorbing Man" &&
+  forestOk && !bearOk && g.isLand copied && !copied.printed.isLand &&
+    g.name copied == "Absorbing Man" &&
     g.power copied == 4 && g.hasVigilance copied
 #guard
   let g := addPermanent afterDraw absorbingMan me me
   let g := g.applyModeledTrigger me (.onStep Effect.stepCopyAbsorbingMan)
     (some (idOf g "Absorbing Man"))
-  !(namedPermanent g "Absorbing Man").printed.isLand &&
+  !g.isLand (namedPermanent g "Absorbing Man") &&
     g.log.any (fun s => mentions s "doesn't become a copy")
 
 /- Taskmaster can copy a creature card in a graveyard, and that copy's type

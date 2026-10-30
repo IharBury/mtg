@@ -46,14 +46,14 @@ def humanSoldierToken : CardDef :=
 Only weavers already on the battlefield before timestamp `asOf` apply
 (simultaneous enters do not see each other). -/
 def hopeCountersOnEnter (g : Game) (entering : GameObject) (asOf : Nat) : Nat :=
-  match entering.controller with
+  match g.controllerOf entering with
   | none => 0
   | some p =>
-    if !entering.isCreature then 0
+    if !g.isCreature entering then 0
     else
       (g.permanentsOf p).foldl (fun acc weaver =>
         if weaver.id == entering.id then acc
-        else if !(weaver.printed.othersEnterWithPlusOneEqualToughness &&
+        else if !((g.baseCard weaver).othersEnterWithPlusOneEqualToughness &&
             g.retainsPrintedAbilities weaver) then acc
         else if weaver.timestamp >= asOf then acc
         else acc + (g.toughness weaver).toNat) 0
@@ -64,8 +64,8 @@ def applyHopeEnterCounters (g : Game) (o : GameObject) (asOf : Nat) : Game :=
   let n := g.hopeCountersOnEnter o asOf
   if n == 0 then g
   else
-    let g := g.recordPutCounters o.id .plusOnePlusOne n (byPlayer := o.controller)
-    g.logMsg s!"{o.nameWithToken} enters with {n} additional +1/+1 counter(s)"
+    let g := g.recordPutCounters o.id .plusOnePlusOne n (byPlayer := g.controllerOf o)
+    g.logMsg s!"{g.nameWithToken o} enters with {n} additional +1/+1 counter(s)"
 
 /-- Counters placed on `entering` as it enters the battlefield from replacement
 effects (CR 614.1c / 614.12 / 306.5b / 714.3a). -/
@@ -92,7 +92,6 @@ def createOneToken (g : Game) (controller : PlayerId) (printed : CardDef)
   else
     g.withBatchReturn cause fun g =>
       let printed := { printed with isToken := true }
-      let sick := printed.isCreature && !printed.keywords.haste
       let asOf := g.timestamp
       let newId : ObjectId := ⟨g.nextObjectId⟩
       let ts := g.timestamp + 1
@@ -110,7 +109,7 @@ def createOneToken (g : Game) (controller : PlayerId) (printed : CardDef)
         zone := .battlefield
         status := {
           tapped := tapped
-          summoningSick := sick
+          summoningSick := true
           attacking := isAttacking
           attackingTarget := resolvedAttackTarget
         }
@@ -131,14 +130,14 @@ def createOneToken (g : Game) (controller : PlayerId) (printed : CardDef)
       let g : Game :=
         match resolvedAttackTarget with
         | some tgt =>
-          g.record (GameEvent.becameAttacking g.turnNumber (g.object! newId).asEvent tgt
+          g.record (GameEvent.becameAttacking g.turnNumber (g.snapshot (g.object! newId)) tgt
             (cause := etb.cause))
         | none => g
       let g := g.createPrintedStaticEffects (g.object! newId)
-      let g := g.logMsg s!"{(g.player controller).name} creates {obj.nameWithToken}"
+      let g := g.logMsg s!"{(g.player controller).name} creates {g.nameWithToken (g.object! newId)}"
       let g :=
         if etb.weaverBonus > 0 then
-          g.logMsg s!"{obj.nameWithToken} enters with {etb.weaverBonus} additional +1/+1 counter(s)"
+          g.logMsg s!"{g.nameWithToken (g.object! newId)} enters with {etb.weaverBonus} additional +1/+1 counter(s)"
         else g
       -- Storied is not a trigger; an artifact token can be the third permanent.
       let g := g.refreshEnduringStory
@@ -155,13 +154,17 @@ private def tokenBatchWatchesCreation (g : Game) (controller : PlayerId) (printe
   let proposed := GameEvent.created g.turnNumber controller {
     controller := some controller, owner := controller, token := true
     types := printed.types
-    subtypes := CardSubtype.ofSubtypes printed.subtypes
+    subtypes :=
+      let baseSubs := CardSubtype.ofSubtypes printed.subtypes
+      if printed.keywords.changeling && (printed.types.contains .creature || printed.types.contains .kindred) then
+        CardSubtype.allCreatureSubtypes.foldl (fun acc s => if acc.contains s then acc else acc.push s) baseSubs
+      else baseSubs
     changeling := printed.keywords.changeling }
   proposed.watches .wouldCreateToken
 
 /-- True if `printed` is a Food token as created. -/
 private def tokenBatchIsFood (printed : CardDef) : Bool :=
-  printed.keywords.changeling || (CardSubtype.ofSubtypes printed.subtypes).contains .food
+  (CardSubtype.ofSubtypes printed.subtypes).contains .food
 
 /-- Run the CR 616.1 replacement loop on a proposed token-creation batch
 (CR 614.1a / 614.5 / 614.6 / 616.1), returning `(batches, applied, choice?)`.
@@ -194,7 +197,7 @@ def replaceTokenCreationChoice (g : Game) (initial : ProposedTokenBatch)
       let mut specs : Array ReplacementSpec := #[]
       if includeKindReplacements && hasFood then
         for o in g.permanentsOf ctrl do
-          if o.printed.foodAlsoCreatesTreasure && g.retainsPrintedAbilities o then
+          if (g.baseCard o).foodAlsoCreatesTreasure && g.retainsPrintedAbilities o then
             specs := specs.push {
               id := { kind := .foodAlsoCreatesTreasure, object := some o.id }
               source := some o.id
@@ -214,7 +217,7 @@ def replaceTokenCreationChoice (g : Game) (initial : ProposedTokenBatch)
             }
       if includeMultiplier then
         for o in g.permanentsOf ctrl do
-          if o.printed.tokenDoubling && g.retainsPrintedAbilities o then
+          if (g.baseCard o).tokenDoubling && g.retainsPrintedAbilities o then
             specs := specs.push {
               id := { kind := .tokenDoubling, object := some o.id }
               source := some o.id
@@ -615,7 +618,7 @@ def beast44trampleToken : CardDef :=
 planeswalkers don't count, but a token copy of one does (ruling 733). -/
 def jacePlaneswalkerTokens (g : Game) (controller : PlayerId) : Array GameObject :=
   (g.permanentsOf controller).filter (fun o =>
-    o.printed.isPlaneswalker && o.hasSubtype .jace && o.printed.isToken)
+    g.isPlaneswalker o && g.hasSubtype o .jace && o.printed.isToken)
 
 /-- Empower Jace `n` (Reality Fracture, ruling 732). If you don't control a
 Jace planeswalker token, create one with 0 loyalty. Then put `n` loyalty
@@ -646,7 +649,7 @@ def empowerJace (g : Game) (controller : PlayerId) (n : Nat)
       if k > 0 then
         g.record (GameEvent.counters g.turnNumber (some controller) o.asEvent .loyalty k)
       else g
-    g.logMsg s!"Empower Jace {n}: {k} loyalty counter(s) are put on {o.name}"
+    g.logMsg s!"Empower Jace {n}: {k} loyalty counter(s) are put on {g.name o}"
 
 /-- Printed characteristics for a `TokenKind`. -/
 def tokenPrinted (k : TokenKind) : CardDef :=

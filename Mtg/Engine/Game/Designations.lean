@@ -46,7 +46,7 @@ def isRingBearer (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
 
 /-- Creatures `p` controls that can be chosen as Ring-bearer. -/
 def ringBearerChoices (g : Game) (p : PlayerId) : Array GameObject :=
-  (g.permanentsOf p).filter (fun o => o.isCreature)
+  (g.permanentsOf p).filter (fun o => g.isCreature o)
 
 /-- Clear Ring-bearer marks, then mark `chosen` if present. -/
 def setRingBearer (g : Game) (p : PlayerId) (chosen : Option ObjectId)
@@ -54,7 +54,7 @@ def setRingBearer (g : Game) (p : PlayerId) (chosen : Option ObjectId)
   let cause := cause.orElse (fun _ => g.resolvingOneShotCause p)
   let g :=
     g.objects.foldl (fun acc o =>
-      if o.status.ringBearer && o.controlledBy p then
+      if o.status.ringBearer && acc.controlledBy o p then
         acc.record (GameEvent.designation acc.turnNumber o.asEvent .ringBearer false (cause := cause))
       else acc) g
   match chosen with
@@ -80,9 +80,9 @@ def refreshCitysBlessing (g : Game) : Game :=
 /-- Put a shadow counter on `o`. It has shadow and is a Wraith. -/
 def putShadowCounter (g : Game) (o : GameObject) : Game :=
   let n := g.countersYouPut o 1
-  let g := g.recordPutCounters o.id .shadow n (byPlayer := o.controller)
+  let g := g.recordPutCounters o.id .shadow n (byPlayer := g.controllerOf o)
   let g := g.createEffect (.additionalSubtype o.id .wraith true)
-  g.logMsg s!"{o.name} gets a shadow counter"
+  g.logMsg s!"{g.name o} gets a shadow counter"
 
 end Game
 end Mtg.Engine

@@ -967,6 +967,11 @@ instance : Coe CardSubtype String where
 def all : List CardSubtype :=
   subtypeEntries.map (·.subtype)
 
+/-- Every creature subtype in CR 205.3m, in that order. -/
+def allCreatureSubtypes : Array CardSubtype :=
+  subtypeEntryArray.filterMap fun e =>
+    if e.kind == .creature then some e.subtype else none
+
 /-- Canonical `CardSubtype` for a printed singular or plural subtype, in any
 case. A missing apostrophe still finds `C'tan`, `Shi'ar`, and `Urza's`. -/
 def ofOracle? (s : String) : Option CardSubtype :=

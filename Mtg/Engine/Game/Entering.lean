@@ -131,9 +131,9 @@ triggers are evaluated from the recorded event batch in `matchTriggers`. -/
 def addPlusOnePlusOneTo (g : Game) (o : GameObject) (n : Nat := 1)
     (entersWith := false) (byPlayer : Option PlayerId := none)
     (cause : Option EventCause := none) : Game :=
-  let putter0 := byPlayer.orElse (fun _ => g.counterPutter o.controller)
+  let putter0 := byPlayer.orElse (fun _ => g.counterPutter (g.controllerOf o))
   let proposed :=
-    GameEvent.counters g.turnNumber putter0 o.asEvent .plusOnePlusOne n (cause := cause)
+    GameEvent.counters g.turnNumber putter0 (g.snapshot o) .plusOnePlusOne n (cause := cause)
   let (n', applied, cause', choice?, _) :=
     if proposed.watches .wouldPutCounter then
       g.replaceCountersPutChoice o .plusOnePlusOne n (putter := byPlayer)
@@ -146,12 +146,12 @@ def addPlusOnePlusOneTo (g : Game) (o : GameObject) (n : Nat := 1)
       (.addPlusOnePlusOneTo o.id n entersWith byPlayer cause)
   | none =>
     let g := g.consumeReplacementOrder applied
-    let happened := GameEvent.counters g.turnNumber putter0 (g.object! o.id).asEvent .plusOnePlusOne n'
+    let happened := GameEvent.counters g.turnNumber putter0 (g.snapshot (g.object! o.id)) .plusOnePlusOne n'
       (cause := cause')
     let g := if n' > 0 && !entersWith then g.record happened else g
     let phrase :=
-      if entersWith then s!"{o.name} enters with {plusOnePlusOneCountersPhrase n'}"
-      else s!"{o.name} gets {plusOnePlusOneCountersPhrase n'}"
+      if entersWith then s!"{g.name o} enters with {plusOnePlusOneCountersPhrase n'}"
+      else s!"{g.name o} gets {plusOnePlusOneCountersPhrase n'}"
     g.logMsg phrase
 
 /-- CR 306.5b: a planeswalker enters with loyalty counters equal to its
@@ -159,11 +159,12 @@ printed loyalty (placed in `entersWith` during the zone change). -/
 def enterWithLoyalty (g : Game) (o : GameObject) : Game :=
   if o.status.faceDown then g
   else
-    match o.printed.isPlaneswalker, o.printed.loyalty with
+    let bc := g.baseCard o
+    match g.isPlaneswalker o, bc.loyalty with
     | true, some n =>
       if n > 0 && o.status.loyaltyCounters > 0 then
         let k := o.status.loyaltyCounters
-        g.logMsg s!"{o.name} enters with {k} loyalty counter(s)"
+        g.logMsg s!"{g.name o} enters with {k} loyalty counter(s)"
       else g
     | _, _ => g
 
@@ -172,44 +173,44 @@ during the zone change). -/
 def enterWithPlusOnes (g : Game) (o : GameObject) : Game :=
   if o.status.faceDown then g
   else
-    let base := o.printed.entersWithPlusOneCounters
+    let base := (g.baseCard o).entersWithPlusOneCounters
     if base == 0 || o.status.plusOnePlusOne == 0 then g
     else
       let (n, _, _) :=
-        g.replaceCountersPut o .plusOnePlusOne base (putter := o.controller)
+        g.replaceCountersPut o .plusOnePlusOne base (putter := g.controllerOf o)
           (entersWith := true) (entering := some o)
       if n == 0 then g
-      else g.logMsg s!"{o.name} enters with {n} +1/+1 counter(s)"
+      else g.logMsg s!"{g.name o} enters with {n} +1/+1 counter(s)"
 
 def enterWithIndestructibleCounter (g : Game) (o : GameObject) : Game :=
-  if !o.status.faceDown && o.printed.entersWithIndestructibleCounter &&
+  if !o.status.faceDown && (g.baseCard o).entersWithIndestructibleCounter &&
       o.status.indestructibleCounters > 0 then
-    g.logMsg s!"{o.name} enters with an indestructible counter"
+    g.logMsg s!"{g.name o} enters with an indestructible counter"
   else g
 
 def enterWithShield (g : Game) (o : GameObject) : Game :=
   if o.status.faceDown then g
   else
-    let base := o.printed.entersWithShield
+    let base := (g.baseCard o).entersWithShield
     if base == 0 || o.status.shield == 0 then g
     else
       let n := o.status.shield
-      g.logMsg s!"{o.name} enters with {n} shield counter(s)"
+      g.logMsg s!"{g.name o} enters with {n} shield counter(s)"
 
 def enterWithXPlusOnes (g : Game) (o : GameObject) : Game :=
   if !o.status.faceDown && (g.staticAbilities o).any (fun
       | .entersWithXPlusOne => true
       | _ => false) && o.status.plusOnePlusOne > 0 then
     let (n, _, _) :=
-      g.replaceCountersPut o .plusOnePlusOne ((g.chosenXOf? o.id).getD 0) (putter := o.controller)
+      g.replaceCountersPut o .plusOnePlusOne ((g.chosenXOf? o.id).getD 0) (putter := g.controllerOf o)
         (entersWith := true) (entering := some o)
     if n == 0 then g
-    else g.logMsg s!"{o.name} enters with {n} +1/+1 counter(s)"
+    else g.logMsg s!"{g.name o} enters with {n} +1/+1 counter(s)"
   else g
 
 def enterWithHope (g : Game) (o : GameObject) : Game :=
-  if !o.status.faceDown && o.printed.entersWithHopePerCreature && o.status.hope > 0 then
-    g.logMsg s!"{o.name} enters with {o.status.hope} hope counter(s)"
+  if !o.status.faceDown && (g.baseCard o).entersWithHopePerCreature && o.status.hope > 0 then
+    g.logMsg s!"{g.name o} enters with {o.status.hope} hope counter(s)"
   else g
 
 /-- Counters and statuses a permanent enters with (CR 614.1c / 614.12):
@@ -241,7 +242,7 @@ def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
         else o.status.toCounterBag
       let snap := g.snapshot o
       if o.printed.isToken then
-        g.record (GameEvent.created g.turnNumber (o.controller.getD o.owner)
+        g.record (GameEvent.created g.turnNumber ((g.controllerOf o).getD o.owner)
           { snap with counters := bag })
       else
         g.record (GameEvent.moved g.turnNumber
@@ -257,46 +258,46 @@ def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
   let g :=
     if (g.staticAbilities o).any (· == .fra .entersTappedChooseColor) && o.status.chosenColor.isNone &&
         g.pending == .none then
-      match o.controller with
+      match g.controllerOf o with
       | some p =>
         (g.change (.pending (.fraChoice p (.chooseColor o.id)))).logMsg
-          s!"{(g.player p).name} chooses a color for {o.name}"
+          s!"{(g.player p).name} chooses a color for {g.name o}"
       | none => g
     else g
   -- An Unexpected Party: “As this enchantment enters, choose a creature type.”
   let g :=
-    if o.printed.asEntersChooseCreatureType && g.retainsPrintedAbilities o &&
+    if (g.baseCard o).asEntersChooseCreatureType && g.retainsPrintedAbilities o &&
         o.status.chosenCreatureType.isNone && g.pending == .none then
-      match o.controller with
+      match g.controllerOf o with
       | some p =>
         (g.change (.pending (.fraChoice p (.entersCreatureType o.id)))).logMsg
-          s!"{(g.player p).name} chooses a creature type for {o.name}"
+          s!"{(g.player p).name} chooses a creature type for {g.name o}"
       | none => g
     else g
   -- Gollum, Riddle Master: “As Gollum enters, choose odd or even.”
   let g :=
-    if o.printed.asEntersChooseOddEven && g.retainsPrintedAbilities o &&
+    if (g.baseCard o).asEntersChooseOddEven && g.retainsPrintedAbilities o &&
         o.status.chosenOdd.isNone && g.pending == .none then
-      match o.controller with
+      match g.controllerOf o with
       | some p =>
         (g.change (.pending (.fraChoice p (.entersOddEven o.id)))).logMsg
-          s!"{(g.player p).name} chooses odd or even for {o.name}"
+          s!"{(g.player p).name} chooses odd or even for {g.name o}"
       | none => g
     else g
   -- Meddling Mage: “As it enters, choose a nonland card name.”
   let g :=
     if (g.staticAbilities o).any (· == .fra .entersChooseNonlandCardName) && o.status.chosenName.isNone &&
         g.pending == .none then
-      match o.controller with
+      match g.controllerOf o with
       | some p =>
         (g.change (.pending (.fraChoice p (.chooseCardName o.id)))).logMsg
-          s!"{(g.player p).name} chooses a nonland card name for {o.name}"
+          s!"{(g.player p).name} chooses a nonland card name for {g.name o}"
       | none => g
     else g
   let g := g.addLoreAsSagaEnters o
   let o := g.object! o.id
   if g.enteringCausesNoTriggers o then
-    g.logMsg s!"{o.name} entering doesn't cause abilities to trigger"
+    g.logMsg s!"{g.name o} entering doesn't cause abilities to trigger"
   else if g.currentBatch.isNone then
     g.promptTriggerTargetsIfNeeded
   else g

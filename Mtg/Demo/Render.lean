@@ -16,6 +16,7 @@ controller unless they differ from that heading (`gp = none` is the
 no-controller group). -/
 def controlClause (g : Game) (o : GameObject) (group : Option (Option PlayerId) := none) :
     String :=
+  let ctrl := g.controllerOf o
   let showOwner :=
     match group with
     | none => true
@@ -23,10 +24,10 @@ def controlClause (g : Game) (o : GameObject) (group : Option (Option PlayerId) 
   let showController :=
     match group with
     | none => true
-    | some gp => o.controller != gp
+    | some gp => ctrl != gp
   let owned := s!"owned by {g.player o.owner |>.name}"
   let controlled :=
-    match o.controller with
+    match ctrl with
     | some p => s!"controlled by {g.player p |>.name}"
     | none => "no controller"
   let parts : List String :=
@@ -40,7 +41,7 @@ def controlClause (g : Game) (o : GameObject) (group : Option (Option PlayerId) 
 A token's name includes `(token)`. -/
 def objectRef (g : Game) (id : ObjectId) : String :=
   match g.findObject? id with
-  | some o => s!"{o.id} {o.nameWithToken}"
+  | some o => s!"{o.id} {g.nameWithToken o}"
   | none => toString id
 
 /-- Source of an activated or triggered ability on the stack (CR 113.7). -/
@@ -150,11 +151,11 @@ def stackObjectLine (g : Game) (e : StackEntry) (withId : Bool := true) : String
 
 /-- Like `faceExtras`, but includes keywords granted by other permanents. -/
 def objectFaceExtras (g : Game) (o : GameObject) : String :=
-  spacedSuffix (o.printed.keywordsAndAbilitiesOf (g.effectiveKeywords o))
+  spacedSuffix ((g.baseCard o).keywordsAndAbilitiesOf (g.effectiveKeywords o))
 
 /-- Player who would activate `o`'s abilities (controller, else owner). -/
-def abilityActivator (o : GameObject) : PlayerId :=
-  o.controller.getD o.owner
+def abilityActivator (g : Game) (o : GameObject) : PlayerId :=
+  (g.controllerOf o).getD o.owner
 
 /-- Parenthetical when `o` can be played or an ability can be activated
 without paying mana (CR 118.7). Play-from-exile permissions are rendered
@@ -168,7 +169,7 @@ def withoutPayingManaClause (g : Game) (o : GameObject) : String :=
         " (may be cast without paying its mana cost)"
       else ""
   let activate :=
-    if (g.activatedAbilitiesOf o).any (g.activatesWithoutPayingManaCost (abilityActivator o))
+    if (g.activatedAbilitiesOf o).any (g.activatesWithoutPayingManaCost (abilityActivator g o))
     then " (may be activated without paying its mana cost)"
     else ""
   play ++ activate
@@ -206,7 +207,7 @@ def objectLine (g : Game) (o : GameObject) (group : Option (Option PlayerId) := 
     String :=
   let tap := if o.status.tapped then " (tapped)" else ""
   let sick :=
-    if g.isCreature o && o.status.summoningSick && !(g.printedOrUntilEot o).haste then
+    if g.hasSummoningSickness o then
       " (summoning sickness)"
     else ""
   let atk :=
@@ -229,7 +230,7 @@ def objectLine (g : Game) (o : GameObject) (group : Option (Option PlayerId) := 
     match o.attachedTo with
     | none => ""
     | some hostId =>
-      if o.printed.isEquipment then
+      if g.isEquipment o then
         s!" *equipping {objectRef g hostId}*"
       else
         s!" *enchanting {objectRef g hostId}*"
@@ -240,7 +241,7 @@ def objectLine (g : Game) (o : GameObject) (group : Option (Option PlayerId) := 
     if g.untilEotExileIfDies o then " *exile if dies*" else ""
   let counters :=
     if o.status.plusOnePlusOne > 0 then s!" +1/+1×{o.status.plusOnePlusOne}" else ""
-  s!"{o.id} {o.nameWithToken}{types}{pt}{counters}{objectFaceExtras g o}{withoutPayingManaClause g o}{controlClause g o group}{tap}{sick}{atk}{blk}{ench}{linked}{dmg}{exileIfDies}"
+  s!"{o.id} {g.nameWithToken o}{types}{pt}{counters}{objectFaceExtras g o}{withoutPayingManaClause g o}{controlClause g o group}{tap}{sick}{atk}{blk}{ench}{linked}{dmg}{exileIfDies}"
 
 /-- Printed Oracle face. `CardDef.summary` starts with the name; a token
 uses `nameWithToken` in that position. -/
@@ -413,8 +414,8 @@ def battlefieldSubgroups (g : Game) (os : Array GameObject) : Array (Array GameO
   let hosts := os.filter (fun o => !attachedToBattlefield g o)
   #[
     hosts.filter (g.isCreature ·),
-    hosts.filter (fun o => !g.isCreature o && !o.printed.isLand),
-    hosts.filter (fun o => !g.isCreature o && o.printed.isLand)
+    hosts.filter (fun o => !g.isCreature o && !g.isLand o),
+    hosts.filter (fun o => !g.isCreature o && g.isLand o)
   ].filter (fun sg => !sg.isEmpty)
 
 /-- Lines for one unattached host and the permanents attached to it. -/
@@ -453,7 +454,7 @@ def battlefieldGroups (g : Game) : Array (String × Option PlayerId × Array Gam
       if !ps.isEmpty then
         groups := groups.push (pl.name, some pl.id, ps)
     let uncontrolled := g.battlefield.filter (fun o =>
-      o.controller.isNone && !attachedToBattlefield g o)
+      (g.controllerOf o).isNone && !attachedToBattlefield g o)
     if !uncontrolled.isEmpty then
       groups := groups.push ("(no controller)", none, uncontrolled)
     return groups

@@ -99,13 +99,13 @@ private def uniqMana (ts : Array ManaType) : Array ManaType :=
 605.1a / 613.1f). “Could produce” abilities are not included, so two such lands
 do not look at each other. -/
 def intrinsicLandMana (g : Game) (o : GameObject) : Array ManaType :=
-  let c := o.printed
+  let c := g.baseCard o
   if !g.isLand o && !(c.grantLandsTapAnyColor && g.retainsPrintedAbilities o) then #[]
   else
     let own :=
       if !g.retainsPrintedAbilities o then #[]
       else
-        let p := o.controller.getD o.owner
+        let p := (g.controllerOf o).getD o.owner
         let identity :=
           if c.tapAddCommanderIdentity && (g.player p).hasCommander then
             ((g.player p).commanderColorIdentity.toList.map ManaType.colored).toArray
@@ -132,19 +132,19 @@ def landsCouldProduce (g : Game) (lands : Array GameObject) : Array ManaType :=
 
 /-- Mana abilities from a card's printed `{T}: Add` lines, for `o`. -/
 def cardManaAbilities (g : Game) (o : GameObject) (c : CardDef) : Array ManaAbilityDef :=
-  let p := o.controller.getD o.owner
+  let p := (g.controllerOf o).getD o.owner
   let count (subtype : CardSubtype) := ((g.permanentsOf p).filter (g.hasSubtype · subtype)).size
   let power := (g.power o).toNat
   let one (out : ManaOutput) (r : ManaRestriction := .none) : Array ManaAbilityDef :=
     #[{ output := out, restriction := r }]
   let simple := c.simpleTapAddMana.map (fun t =>
     ({ output := .fixed #[t]
-       restriction := if t == .colorless && c.hasSubtype .vibranium then .cantNonartifact else .none }
+       restriction := if t == .colorless && g.hasSubtype o .vibranium then .cantNonartifact else .none }
       : ManaAbilityDef))
   let legendaryColors :=
     (g.permanentsOf p).foldl (fun acc x =>
-      if x.isLegendary && (x.isCreature || x.printed.isPlaneswalker) then
-        ColorSet.union acc x.printed.colors
+      if g.isLegendary x && (g.isCreature x || g.isPlaneswalker x) then
+        ColorSet.union acc (g.colors x)
       else acc) ColorSet.empty
   let pl := g.player p
   let identity := if pl.hasCommander then pl.commanderColorIdentity.toList else []
@@ -261,7 +261,7 @@ def manaAbilityDefs (g : Game) (o : GameObject) : Array ManaAbilityDef :=
   let own :=
     if !g.retainsPrintedAbilities o then #[]
     else
-      g.cardManaAbilities o o.printed ++
+      g.cardManaAbilities o (g.baseCard o) ++
         (g.copiedFromGy o (fun c => #[c])).foldl (fun acc c => acc ++ g.cardManaAbilities o c) #[]
   let defs := own ++ g.activatedManaAbilities o ++ g.grantedManaAbilityDefs o
   let treasure := g.hasSubtype o .treasure
@@ -329,24 +329,25 @@ def activateManaAbility (g : Game) (p : PlayerId) (id : ObjectId) (idx : Nat)
   if !g.canActivateManaAbility p then
     throw "You can't activate a mana ability now (CR 605.3a)"
   let some o := g.findObject? id | throw "no such object"
-  if !o.controlledBy p || !o.isOnBattlefield then
+  if !g.controlledBy o p || !o.isOnBattlefield then
     throw "You don't control that permanent"
-  let some d := (g.manaAbilityDefs o)[idx]? | throw s!"{o.name} has no such mana ability"
+  let oname := g.name o
+  let some d := (g.manaAbilityDefs o)[idx]? | throw s!"{oname} has no such mana ability"
   if !d.output.allows mana then
-    throw s!"{o.name}'s mana ability can't add that mana"
+    throw s!"{oname}'s mana ability can't add that mana"
   if d.tap then
     if o.status.tapped then
-      throw s!"{o.name} is already tapped"
+      throw s!"{oname} is already tapped"
     if (match g.proposedSpell with
         | some prop => prop.tapSource && prop.sourceId == some id
         | none => false) then
-      throw s!"{o.name} is needed to pay \{T}"
-    if o.hasSummoningSickness && !g.hasHaste o && !(o.isCreature && g.activatesAsThoughHaste p) then
-      throw s!"{o.name} has summoning sickness (CR 302.6)"
+      throw s!"{oname} is needed to pay \{T}"
+    if g.hasSummoningSickness o && !(g.isCreature o && g.activatesAsThoughHaste p) then
+      throw s!"{oname} has summoning sickness (CR 302.6)"
   if d.onceEachTurn && d.activatedIdx.any (g.abilitiesActivatedThisTurn o.id).contains then
-    throw s!"{o.name}'s ability can be activated only once each turn"
+    throw s!"{oname}'s ability can be activated only once each turn"
   if !g.costPicksPayable p id d.picks then
-    throw s!"{o.name}'s ability has a cost that can't be paid"
+    throw s!"{oname}'s ability has a cost that can't be paid"
   let need := d.picks.foldl (fun acc pick => acc + pick.count) 0
   if costIds.size != need then
     throw s!"Choose what to {String.intercalate " and " (d.picks.map (·.phrase)).toList}"
@@ -354,7 +355,7 @@ def activateManaAbility (g : Game) (p : PlayerId) (id : ObjectId) (idx : Nat)
   let mut g := g
   if d.cost.includesManaPayment then
     match pl.manaPool.payUnits? d.cost (g.hasSubtype o .elf) false (g.hasSubtype o .hero)
-        (g.hasSubtype o .villain) true o.isCreature with
+        (g.hasSubtype o .villain) true (g.isCreature o) with
     | some (_, spentUnits) =>
       g := g.record (GameEvent.manaSpent g.turnNumber p spentUnits id
         (cause := some (.costPayment .mana p (some id))))
@@ -367,9 +368,9 @@ def activateManaAbility (g : Game) (p : PlayerId) (id : ObjectId) (idx : Nat)
   if d.tap then
     g := g.becomeTapped (g.object! id) (cause := some (.costPayment .tap p (some id)))
   let src := g.object! id
-  let srcSnap := src.asEvent
+  let srcSnap := g.snapshot src
   if d.sacrificeSelf then
-    g := g.sacrificeToGraveyard src s!"{(g.player p).name} sacrifices {src.name}"
+    g := g.sacrificeToGraveyard src s!"{(g.player p).name} sacrifices {g.name src}"
       (cause := some (.costPayment .sacrifice p (some id)))
   g := g.record (GameEvent.abilityActivated g.turnNumber id srcSnap p (.mana d.activatedIdx))
   let rOpt : Option ManaRestriction := if d.restriction == .none then none else some d.restriction
@@ -383,7 +384,7 @@ def activateManaAbility (g : Game) (p : PlayerId) (id : ObjectId) (idx : Nat)
       else
         (g.record (GameEvent.life g.turnNumber p d.damageYou false true false
           (cause := if g.currentResolvingContext?.isSome then g.resolvingOneShotCause p (some id) else none))).logMsg
-          s!"{o.name} deals {d.damageYou} damage to {pl.name}"
+          s!"{oname} deals {d.damageYou} damage to {pl.name}"
   -- Molten Tide: a triggered mana ability that resolves immediately (CR 605.4a).
   let extraRed :=
     if g.hasSubtype o .mountain && d.tap && !mana.isEmpty then
@@ -402,13 +403,13 @@ def activateManaAbility (g : Game) (p : PlayerId) (id : ObjectId) (idx : Nat)
     | none => ""
   let verb := if d.tap then "taps" else "activates"
   g :=
-    if mana.isEmpty then g.logMsg s!"{(g.player p).name} {verb} {o.name} but adds no mana"
-    else g.logMsg s!"{(g.player p).name} {verb} {o.name} for {produced}{d.restriction.note}"
+    if mana.isEmpty then g.logMsg s!"{(g.player p).name} {verb} {oname} but adds no mana"
+    else g.logMsg s!"{(g.player p).name} {verb} {oname} for {produced}{d.restriction.note}"
   if d.tap then
     g := match g.proposedSpell with
       | some _ =>
         let g := g.changeProposal (.pushTapped id)
-        if o.printed.commanderIdentityScryCreature then
+        if (g.baseCard o).commanderIdentityScryCreature then
           g.change (.pushAncestryLandTapped id)
         else g
       | none => g
@@ -427,12 +428,12 @@ def manaAbilityIndexFor (g : Game) (o : GameObject) (mana : ManaType) (plainOnly
 (CR 605.3). Abilities that need other choices use `activateManaAbility`. -/
 def tapForMana (g : Game) (p : PlayerId) (id : ObjectId) (mana : ManaType) : Except String Game := do
   let some o := g.findObject? id | throw "no such object"
-  if o.printed.tapAddOneOfIfEnteredOrBasic.contains mana && !g.canUseEnteredOrBasicAdd o then
-    throw s!"{o.nameWithToken}'s colored mana ability can be activated only if this land entered this turn or if you control a basic land"
+  if (g.baseCard o).tapAddOneOfIfEnteredOrBasic.contains mana && !g.canUseEnteredOrBasicAdd o then
+    throw s!"{g.nameWithToken o}'s colored mana ability can be activated only if this land entered this turn or if you control a basic land"
   let some i := g.manaAbilityIndexFor o mana false
-    | throw s!"{o.nameWithToken} cannot produce {mana}"
-  let some d := (g.manaAbilityDefs o)[i]? | throw s!"{o.nameWithToken} cannot produce {mana}"
-  let some added := d.output.withType mana | throw s!"{o.nameWithToken} cannot produce {mana}"
+    | throw s!"{g.nameWithToken o} cannot produce {mana}"
+  let some d := (g.manaAbilityDefs o)[i]? | throw s!"{g.nameWithToken o} cannot produce {mana}"
+  let some added := d.output.withType mana | throw s!"{g.nameWithToken o} cannot produce {mana}"
   g.activateManaAbility p id i added
 
 /-- Mana `o` adds when tapped for `mana` with a plain `{T}` ability. -/

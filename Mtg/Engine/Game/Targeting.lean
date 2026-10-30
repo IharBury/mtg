@@ -17,7 +17,7 @@ def canBeTargetedBy (g : Game) (caster : PlayerId) (o : GameObject) : Bool :=
     match (g.resolvingSpell.orElse (fun _ => g.proposedSpell.map (·.spellId))).bind g.findObject? with
     | some src => g.frcProtectedFrom o src
     | none => false
-  (!g.hasHexproof o || o.controlledBy caster) && !srcBlocked
+  (!g.hasHexproof o || g.controlledBy o caster) && !srcBlocked
 
 /-- Player targets `caster` may choose. A player with hexproof is not a
 legal target for an opponent (CR 702.11c). -/
@@ -37,11 +37,11 @@ def legalCreatureTargets (g : Game) (caster : PlayerId) (pred : GameObject → B
 
 /-- Creatures `caster` controls that they may target (CR 115.1). -/
 def legalCreatureYouControlTargets (g : Game) (caster : PlayerId) : Array Target :=
-  g.legalCreatureTargets caster (fun o => o.controlledBy caster)
+  g.legalCreatureTargets caster (fun o => g.controlledBy o caster)
 
 /-- Creatures an opponent of `caster` controls that `caster` may target. -/
 def legalOppCreatureTargets (g : Game) (caster : PlayerId) : Array Target :=
-  g.legalCreatureTargets caster (fun o => o.controlledBy (g.opponent caster))
+  g.legalCreatureTargets caster (fun o => g.controlledBy o (g.opponent caster))
 
 /-- Cards in `p`'s graveyard matching `pred` (CR 404 / 115.1). Hexproof does
 not apply off the battlefield (CR 702.11b). -/
@@ -101,7 +101,7 @@ def oppStackSpells (g : Game) (p : PlayerId) : Array GameObject :=
 /-- Whether `o` has card type `t`, counting type-changing effects on
 permanents. -/
 def objectHasCardType (g : Game) (o : GameObject) (t : CardType) : Bool :=
-  if t == .creature then g.isCreature o else (g.types o).contains t || o.printed.types.contains t
+  g.hasType o t
 
 /-- Whether object `o` has every characteristic `f` asks for (CR 115.1).
 Zone and hexproof are checked by the caller. -/
@@ -112,7 +112,7 @@ def matchesTargetFilter (g : Game) (caster : PlayerId) (f : TargetFilter)
       f.types.any (g.objectHasCardType o) || f.orSupertypes.any (g.hasSupertype o)
   let supertypeOk := f.supertypes.isEmpty || f.supertypes.any (g.hasSupertype o)
   let colorOk := f.colors.isEmpty || f.colors.any ((g.colors o).contains ·)
-  let who := o.controller.getD o.owner
+  let who := (g.controllerOf o).getD o.owner
   let controllerOk :=
     match f.controller with
     | .any => true
@@ -124,7 +124,7 @@ def matchesTargetFilter (g : Game) (caster : PlayerId) (f : TargetFilter)
   typeOk && supertypeOk && colorOk && controllerOk && subtypeOk &&
     f.nonSupertypes.all (fun s => !g.hasSupertype o s) &&
     f.nonTypes.all (fun t => !g.objectHasCardType o t) &&
-    (!f.nonAura || !o.printed.isAura) &&
+    (!f.nonAura || !g.isAura o) &&
     (!f.nontoken || !o.printed.isToken) &&
     (!f.permanentCard || o.printed.isPermanentCard) &&
     (f.mvAtLeast.all (mv ≥ ·)) && (f.mvAtMost.all (mv ≤ ·)) &&
@@ -157,7 +157,7 @@ def legalFilteredTargets (g : Game) (caster : PlayerId) (f : TargetFilter)
   | .anyTarget =>
     g.playerTargets g.livingPlayers ++
       g.legalPermanentTargets caster (fun o =>
-        o.isOnBattlefield && (g.isCreature o || g.isPlaneswalker o || o.printed.isBattle) && ok o)
+        o.isOnBattlefield && (g.isCreature o || g.isPlaneswalker o || g.isBattle o) && ok o)
   | .player =>
     g.playerTargets (g.livingPlayers.filter (fun pl =>
       match f.controller with
@@ -187,14 +187,14 @@ def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTarge
   | .creatureYouControl =>
     g.legalCreatureYouControlTargets caster
   | .anotherCreatureYouControl =>
-    g.legalCreatureTargets caster (fun o => o.controlledBy caster && some o.id != sourceId)
+    g.legalCreatureTargets caster (fun o => g.controlledBy o caster && some o.id != sourceId)
   | .anotherCreature =>
     g.legalCreatureTargets caster (fun o => some o.id != sourceId)
   | .playerOrCreature =>
     -- CR 115.4: “any target” is a creature, player, planeswalker, or battle.
     g.legalPlayerTargets caster g.livingPlayers ++
       g.legalPermanentTargets caster (fun o =>
-        o.isOnBattlefield && (g.isCreature o || g.isPlaneswalker o || o.printed.isBattle))
+        o.isOnBattlefield && (g.isCreature o || g.isPlaneswalker o || g.isBattle o))
   | .elfInYourGraveyard =>
     g.legalGraveyardCardTargets caster (fun o => g.hasSubtype o .elf)
   | .oppCreature =>
@@ -202,7 +202,7 @@ def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTarge
   | .oppTappedCreature =>
     g.legalCreatureTargets caster (fun o =>
       o.status.tapped &&
-        (g.livingOpponents caster).any (fun pl => o.controlledBy pl.id))
+        (g.livingOpponents caster).any (fun pl => g.controlledBy o pl.id))
   | .creature =>
     g.legalCreatureTargets caster (fun _ => true)
   | .creatureOrGyCreatureCard =>
@@ -230,17 +230,17 @@ def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTarge
       o.isOnBattlefield && (g.isArtifact o || g.isEnchantment o))
   | .artifactOrCreatureYouControl =>
     g.legalPermanentTargets caster (fun o =>
-      o.controlledBy caster && (g.isCreature o || g.isArtifact o))
+      g.controlledBy o caster && (g.isCreature o || g.isArtifact o))
   | .nonland =>
     g.legalPermanentTargets caster (fun o => o.isOnBattlefield && !g.isLand o)
   | .oppNonland =>
     g.legalPermanentTargets caster (fun o =>
       o.isOnBattlefield && !g.isLand o &&
-        (g.livingOpponents caster).any (fun pl => o.controlledBy pl.id))
+        (g.livingOpponents caster).any (fun pl => g.controlledBy o pl.id))
   | .attackingCreatureWithoutFlying =>
     g.legalCreatureTargets caster (fun o => o.status.attacking && !g.hasFlying o)
   | .creatureYouControlSubtype subtype =>
-    g.legalCreatureTargets caster (fun o => o.controlledBy caster && g.hasSubtype o subtype)
+    g.legalCreatureTargets caster (fun o => g.controlledBy o caster && g.hasSubtype o subtype)
   | .spell =>
     g.legalStackSpellTargets (fun _ => true)
   | .creatureSpell =>
@@ -261,7 +261,7 @@ def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTarge
         let fromSelf := if src.status.attacking then some (g.defendingPlayerOf src) else none
         (fromHost.orElse (fun _ => fromSelf)).getD g.defendingPlayer
       | none => g.defendingPlayer
-    g.legalCreatureTargets caster (fun o => o.controlledBy defender)
+    g.legalCreatureTargets caster (fun o => g.controlledBy o defender)
   | .twoNonlandsSharingType => #[]
   | .creaturePowerAtLeast n =>
     g.legalCreatureTargets caster (fun o => g.power o >= n)
@@ -269,23 +269,23 @@ def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTarge
     g.legalCreatureTargets caster (fun o => g.power o <= n)
   | .creatureYouControlAnySubtype subtypes =>
     g.legalCreatureTargets caster (fun o =>
-      o.controlledBy caster && subtypes.any (fun s => g.hasSubtype o s))
+      g.controlledBy o caster && subtypes.any (fun s => g.hasSubtype o s))
   | .permanent =>
     g.legalPermanentTargets caster (·.isOnBattlefield)
   | .creatureCardInYourGraveyard =>
     g.legalGraveyardCardTargets caster (·.printed.isCreature)
   | .legendaryCreatureYouControl =>
     g.legalCreatureTargets caster (fun o =>
-      o.controlledBy caster && g.isLegendary o)
+      g.controlledBy o caster && g.isLegendary o)
   | .creatureYouControlPowerAtMost n =>
     g.legalCreatureTargets caster (fun o =>
-      o.controlledBy caster && g.power o <= n)
+      g.controlledBy o caster && g.power o <= n)
   | .artifact =>
     g.legalPermanentTargets caster (fun o => o.isOnBattlefield && g.isArtifact o)
   | .oppArtifact =>
     g.legalPermanentTargets caster (fun o =>
       o.isOnBattlefield && g.isArtifact o &&
-        (g.livingOpponents caster).any (fun pl => o.controlledBy pl.id))
+        (g.livingOpponents caster).any (fun pl => g.controlledBy o pl.id))
   | .creatureCardInYourGraveyardMvAtMost n =>
     let anyCreature := g.spellPaidTeamwork
     g.legalGraveyardCardTargets caster (fun o =>
@@ -297,10 +297,10 @@ def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTarge
     g.legalCreatureTargets caster (fun o => o.status.attacking)
   | .equipmentYouControl =>
     g.legalPermanentTargets caster (fun o =>
-      o.controlledBy caster && o.printed.isEquipment)
+      g.controlledBy o caster && g.isEquipment o)
   | .creatureOrLandYouControl =>
     g.legalPermanentTargets caster (fun o =>
-      o.controlledBy caster && (g.isCreature o || g.isLand o))
+      g.controlledBy o caster && (g.isCreature o || g.isLand o))
   | .twoCreaturesOrLandsYouControl => #[]
   | .equipmentYouControlThenCreatureYouControl => #[]
   | .upToOneEquipmentThenCreatureYouControl => #[]
@@ -311,12 +311,12 @@ def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTarge
       o.status.attacking || !o.status.blocking.isEmpty)
   | .creatureMvAtMost n =>
     let anyCreature := g.spellPaidTeamwork
-    g.legalCreatureTargets caster (fun o => anyCreature || o.printed.manaValue ≤ n)
+    g.legalCreatureTargets caster (fun o => anyCreature || g.objectManaValue o ≤ n)
   | .creatureToughnessAtLeast n =>
     g.legalCreatureTargets caster (fun o => g.toughness o >= n)
   | .enchantmentMvAtLeast n =>
     g.legalPermanentTargets caster (fun o =>
-      o.isOnBattlefield && g.isEnchantment o && o.printed.manaValue ≥ n)
+      o.isOnBattlefield && g.isEnchantment o && g.objectManaValue o ≥ n)
   | .noncreatureArtifact =>
     g.legalPermanentTargets caster (fun o =>
       o.isOnBattlefield && g.isArtifact o && !g.isCreature o)
@@ -325,11 +325,11 @@ def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTarge
   | .oppCreaturePowerAtMost n =>
     g.legalCreatureTargets caster (fun o =>
       g.power o <= n &&
-        (g.livingOpponents caster).any (fun pl => o.controlledBy pl.id))
+        (g.livingOpponents caster).any (fun pl => g.controlledBy o pl.id))
   | .oppCreatureDealtDamageThisTurn =>
     g.legalCreatureTargets caster (fun o =>
       g.dealtDamageThisTurn o.id &&
-        (g.livingOpponents caster).any (fun pl => o.controlledBy pl.id))
+        (g.livingOpponents caster).any (fun pl => g.controlledBy o pl.id))
   | .nonlandNontoken =>
     g.legalPermanentTargets caster (fun o =>
       o.isOnBattlefield && !g.isLand o && !o.printed.isToken)
@@ -343,32 +343,32 @@ def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTarge
       o.printed.isArtifact || o.printed.isEnchantment)
   | .artifactYouControl =>
     g.legalPermanentTargets caster (fun o =>
-      o.controlledBy caster && o.isOnBattlefield && g.isArtifact o)
+      g.controlledBy o caster && o.isOnBattlefield && g.isArtifact o)
   | .twoArtifactsYouControl => #[]
   | .creatureOrPlaneswalker =>
     g.legalPermanentTargets caster (fun o =>
       o.isOnBattlefield && (g.isCreature o || g.isPlaneswalker o))
   | .permanentYouControl =>
-    g.legalPermanentTargets caster (fun o => o.isOnBattlefield && o.controlledBy caster)
+    g.legalPermanentTargets caster (fun o => o.isOnBattlefield && g.controlledBy o caster)
   | .oppPermanent =>
     g.legalPermanentTargets caster (fun o =>
-      o.isOnBattlefield && o.controller.isSome && !o.controlledBy caster)
+      o.isOnBattlefield && (g.controllerOf o).isSome && !g.controlledBy o caster)
   | .planeswalkerYouControl =>
     g.legalPermanentTargets caster (fun o =>
-      o.isOnBattlefield && g.isPlaneswalker o && o.controlledBy caster)
+      o.isOnBattlefield && g.isPlaneswalker o && g.controlledBy o caster)
   | .oppCreatureOrPlaneswalker =>
     g.legalPermanentTargets caster (fun o =>
       o.isOnBattlefield && (g.isCreature o || g.isPlaneswalker o) &&
-        o.controller.isSome && !o.controlledBy caster)
+        (g.controllerOf o).isSome && !g.controlledBy o caster)
   | .creatureYouControlThenOppCreatureOrPlaneswalker => #[]
   | .planeswalkerYouControlThenOppCreatureOrPlaneswalker => #[]
   | .anotherCreatureYouControlPowerAtMost n =>
     g.legalCreatureTargets caster (fun o =>
-      o.controlledBy caster && some o.id != sourceId && g.snapshotPower o <= n)
+      g.controlledBy o caster && some o.id != sourceId && g.snapshotPower o <= n)
   | .attackingAloneCreatureYouControl =>
     let attackers :=
       g.legalCreatureTargets caster (fun o =>
-        o.controlledBy caster && o.status.attacking)
+        g.controlledBy o caster && o.status.attacking)
     if attackers.size == 1 then attackers else #[]
   | .noncreatureArtifactOrEnchantment =>
     g.legalPermanentTargets caster (fun o =>
@@ -378,7 +378,7 @@ def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTarge
     g.legalPlayerTargets caster g.livingPlayers ++
       g.legalPermanentTargets caster (·.isOnBattlefield)
   | .upToTwoCreaturesTotalMvAtMost n =>
-    g.legalCreatureTargets caster (fun o => o.printed.manaValue ≤ n)
+    g.legalCreatureTargets caster (fun o => g.objectManaValue o ≤ n)
   | .filtered f => g.legalFilteredTargets caster f sourceId
   | .multi .. | .pair .. => #[]
 

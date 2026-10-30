@@ -44,8 +44,7 @@ def placeSearched (g : Game) (p : PlayerId) (id : ObjectId) (tapped : Bool)
   | none => (g, none)
   | some o =>
     let name := o.name
-    let sick := !o.printed.isLand
-    let (g, newId) := g.putOntoBattlefield id p (tapped := tapped) (summoningSick := sick)
+    let (g, newId) := g.putOntoBattlefield id p (tapped := tapped)
       (cause := cause)
     let phrase := if tapped then " onto the battlefield tapped" else " onto the battlefield"
     let g := g.logMsg s!"{(g.player p).name} puts {name}{phrase}"
@@ -54,16 +53,16 @@ def placeSearched (g : Game) (p : PlayerId) (id : ObjectId) (tapped : Bool)
       match g.untapSearchedIfLands with
       | some n =>
         let landCount := (g.permanentsOf p).foldl (fun acc (o : GameObject) =>
-          if o.printed.isLand then acc + 1 else acc) 0
-        if tapped && entered.printed.isLand && landCount >= n then
+          if g.isLand o then acc + 1 else acc) 0
+        if tapped && g.isLand entered && landCount >= n then
           let g := g.change (.untapSearchedIfLands none)
-          (g.record (GameEvent.untapped g.turnNumber entered.asEvent false (cause := cause))).logMsg
-            s!"{(g.object! newId).name} is untapped"
+          (g.record (GameEvent.untapped g.turnNumber (g.snapshot entered) false (cause := cause))).logMsg
+            s!"{g.name (g.object! newId)} is untapped"
         else g
       | none => g
     let entered := g.object! newId
     let g :=
-      if entered.printed.isLand then g.afterLandEnters entered
+      if g.isLand entered then g.afterLandEnters entered
       else g.afterPermanentEnters entered
     (g, some newId)
 
@@ -120,11 +119,11 @@ def beholdAndMaybeUntap (g : Game) (p : PlayerId) (landId : ObjectId) (subtype :
       if o.isOnBattlefield && o.status.tapped && !g.hostCantBecomeUntapped o then
         let (stunned, cause') := g.replaceUntap o (cause := cause)
         if stunned then
-          let g := g.record (GameEvent.counters g.turnNumber o.controller o.asEvent .stun 1 true (cause := cause'))
-          g.logMsg s!"A stun counter is removed from {o.name} instead of untapping it (CR 122.1d)"
+          let g := g.record (GameEvent.counters g.turnNumber (g.controllerOf o) (g.snapshot o) .stun 1 true (cause := cause'))
+          g.logMsg s!"A stun counter is removed from {g.name o} instead of untapping it (CR 122.1d)"
         else
-          let g := g.record (GameEvent.untapped g.turnNumber o.asEvent false (cause := cause))
-          g.logMsg s!"{o.name} untaps"
+          let g := g.record (GameEvent.untapped g.turnNumber (g.snapshot o) false (cause := cause))
+          g.logMsg s!"{g.name o} untaps"
       else g
     | none => g
 

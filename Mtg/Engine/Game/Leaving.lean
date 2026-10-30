@@ -20,7 +20,7 @@ def decideGameIfFinished (g : Game) : Option Game :=
     let w := living[0]!
     let blocked := (g.livingOpponents w.id).any (fun opp =>
       (g.permanentsOf opp.id).any (fun o =>
-        o.printed.opponentsCantWin && g.retainsPrintedAbilities o))
+        (g.baseCard o).opponentsCantWin && g.retainsPrintedAbilities o))
     if blocked then none
     else some (g.record (GameEvent.gameEnded g.turnNumber (.won w.id)) |>.logMsg s!"{w.name} wins the game")
   else none
@@ -36,56 +36,80 @@ def changeControl (g : Game) (o : GameObject) (p : PlayerId)
     (untilSourceLeaves : Option ObjectId := none)
     (cause : Option EventCause := none) : Game :=
   if (g.player p).lost then
-    g.logMsg s!"{o.name} does not change control (CR 800.4b)"
-  else if o.controlledBy p then
+    g.logMsg s!"{g.name o} does not change control (CR 800.4b)"
+  else if g.controlledBy o p then
     if untilEot || turnEndsLeft > 0 || untilSourceLeaves.isSome then
       g.createEffect (.control o.id p untilEot turnEndsLeft untilSourceLeaves) (cause := cause)
     else g
   else
     g.createEffect (.control o.id p untilEot turnEndsLeft untilSourceLeaves) (cause := cause)
-      |>.logMsg s!"{(g.player p).name} gains control of {o.name}"
+      |>.logMsg s!"{(g.player p).name} gains control of {g.name o}"
 
-/-- End the control-changing effect recorded under `eid` on `oid`. Any other
-control-changing effects on that permanent keep applying, and the most recent
-of them decides its controller (CR 613.1b / 613.7). When none remain and the
-default controller has left the game, the permanent is exiled (CR 800.4a /
-800.4c). -/
-def endControlEffect (g : Game) (oid : ObjectId) (eid : EffectId)
+/-- End the Layer 2 control-changing effect recorded under `eid` across every
+battlefield permanent it applies to (singleton `.objects #[id]`, multi-target
+`.objects ids`, `.creaturesControlledBy`, `.permanentsOfSubtype`, or
+`.creaturesWithout`). Any other control-changing effects still applying to a
+permanent keep applying, and Layer 2 timestamp/dependency order decides its
+controller (CR 613.1b / 613.7 / 613.8). When none remain on an affected
+permanent and the player who would control it has left the game, the permanent
+is exiled (CR 800.4a / 800.4c). -/
+def endControlEffectById (g : Game) (eid : EffectId)
     (cause : Option EventCause := none) : Game :=
-  match g.findObject? oid with
-  | none => g.expireEffectById eid (cause := cause)
-  | some o =>
+  match g.activeEffect? eid with
+  | none => g
+  | some spec =>
+    let explicitIds : Array ObjectId :=
+      match spec with
+      | .layered (.objects ids) (.control _) _ => ids
+      | _ => #[]
+    let candidates : Array (ObjectId × Option PlayerId × Bool) :=
+      g.battlefield.filterMap fun o =>
+        let applied := g.appliedControlEffectIds o
+        if applied.contains eid || explicitIds.contains o.id then
+          some (o.id, g.controllerOf o, g.controlChanged o || applied.contains eid)
+        else none
     let g := g.expireEffectById eid (cause := cause)
-    let othersRemain := g.activeEffects.any (fun (_, e) =>
-      match e with
-      | .layered (.objects #[id]) (.control _) _ => id == oid
-      | _ => false)
-    match g.findObject? oid with
-    | none => g
-    | some cur =>
-      if othersRemain then
-        if cur.controller != o.controller then
-          g.logMsg s!"{o.name} reverts to {(g.player (cur.controller.getD cur.owner)).name}'s control"
-        else g
-      else if !g.controlChanged o then g
-      else
-        let dest := o.defaultController.getD o.owner
-        if (g.player dest).lost then
-          let name := o.name
-          let (g, _) := g.move oid .exile none (cause := some (.gameRule .playerLeftGame))
-          g.logMsg s!"{name} is exiled (CR 800.4c)"
+    candidates.foldl (fun acc (oid, prevCtrl, hadControlChange) =>
+      match acc.findObject? oid with
+      | none => acc
+      | some cur =>
+        if !cur.isOnBattlefield then acc
         else
-          g.logMsg s!"{o.name} reverts to {(g.player dest).name}'s control"
+          let othersRemain := !(acc.appliedControlEffectIds cur).isEmpty
+          let curCtrl := acc.controllerOf cur
+          if othersRemain then
+            if curCtrl != prevCtrl then
+              acc.logMsg s!"{acc.name cur} reverts to {(acc.player (curCtrl.getD cur.owner)).name}'s control"
+            else acc
+          else if !hadControlChange then acc
+          else
+            let dest := curCtrl.getD (cur.defaultController.getD cur.owner)
+            if (acc.player dest).lost then
+              let name := acc.name cur
+              let (acc, _) := acc.move oid .exile none (cause := some (.gameRule .playerLeftGame))
+              acc.logMsg s!"{name} is exiled (CR 800.4c)"
+            else if curCtrl != prevCtrl || prevCtrl != some dest then
+              acc.logMsg s!"{acc.name cur} reverts to {(acc.player dest).name}'s control"
+            else acc) g
 
-/-- End every control-changing effect on `o`, each under its own `EffectId`
-(CR 800.4a / 800.4c). -/
+/-- End the control-changing effect recorded under `eid` (CR 613.1b / 800.4c). -/
+def endControlEffect (g : Game) (_oid : ObjectId) (eid : EffectId)
+    (cause : Option EventCause := none) : Game :=
+  g.endControlEffectById eid (cause := cause)
+
+/-- End every control-changing effect applying to `o`, each under its own
+`EffectId` (CR 800.4a / 800.4c). -/
 def endControlChangingEffect (g : Game) (o : GameObject)
     (cause : Option EventCause := none) : Game :=
+  let applied := g.appliedControlEffectIds o
   let ids := g.activeEffects.filterMap (fun (eid, e) =>
     match e with
-    | .layered (.objects #[id]) (.control _) _ => if id == o.id then some eid else none
+    | .layered (.objects oids) (.control _) _ =>
+      if oids.contains o.id || applied.contains eid then some eid else none
+    | .layered _ (.control _) _ =>
+      if applied.contains eid then some eid else none
     | _ => none)
-  ids.foldl (fun acc eid => acc.endControlEffect o.id eid (cause := cause)) g
+  ids.foldl (fun acc eid => acc.endControlEffectById eid (cause := cause)) g
 
 /-- Gain control of `o` until end of turn (CR 611.2a). -/
 def giveControlUntilEot (g : Game) (o : GameObject) (p : PlayerId) : Game :=
@@ -239,21 +263,21 @@ def playerLeavesGame (g : Game) (p : PlayerId) : Game :=
     let g :=
       g.activeEffects.foldl (fun acc (eid, e) =>
         match e with
-        | .layered (.objects #[oid]) (.control c) _ =>
-          if c == p then acc.endControlEffect oid eid (cause := cause) else acc
+        | .layered _ (.control c) _ =>
+          if c == p then acc.endControlEffectById eid (cause := cause) else acc
         | _ => acc) g
     let g :=
       g.objects.foldl (fun acc o =>
-        if o.zone == .stack && o.controlledBy p && !representedByCard o then
+        if o.zone == .stack && acc.controlledBy o p && !representedByCard o then
           acc.ceaseToExist o.id (cause := cause)
         else acc) g
-    let still := g.objects.filter (fun o => o.controlledBy p)
+    let still := g.objects.filter (fun o => g.controlledBy o p)
     let g :=
       still.foldl (fun acc o =>
         match acc.findObject? o.id with
         | none => acc
         | some o =>
-          let name := o.name
+          let name := acc.name o
           let (acc, _) := acc.move o.id .exile none (cause := cause)
           acc.logMsg s!"{name} is exiled (CR 800.4a)") g
     let g := g.change (.removeWaitingTriggersOf p)

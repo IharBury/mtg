@@ -30,12 +30,12 @@ def putPalantirInfluence (g : Game) (sourceId : ObjectId) (target : Option Playe
       match g.findObject? sourceId with
       | none => refuse
       | some src =>
-        if !src.isOnBattlefield || pid == src.you then refuse
+        if !src.isOnBattlefield || pid == g.you src then refuse
         else
           let before := src.status.influence
-          let n := g.countersYouPut src 1 (putter := src.controller)
-          let g := g.recordPutCounters src.id .influence n (byPlayer := src.controller)
-          let g := g.logMsg s!"{src.name} gets an influence counter"
+          let n := g.countersYouPut src 1 (putter := g.controllerOf src)
+          let g := g.recordPutCounters src.id .influence n (byPlayer := g.controllerOf src)
+          let g := g.logMsg s!"{g.name src} gets an influence counter"
           let after := ((g.findObject? sourceId).map (·.status.influence)).getD before
           (g, some (after > before))
 
@@ -47,7 +47,7 @@ def applyPalantir (g : Game) (sourceId : ObjectId) (target : Option PlayerId) : 
   | none => g
   | some _ =>
     match g.findObject? sourceId with
-    | some src => g.beginScry src.you 2
+    | some src => g.beginScry (g.you src) 2
     | none => g
 
 /-- Copy a spell on the stack, with its modes, targets, X, and paid optional
@@ -265,12 +265,13 @@ def applyBardBowman (g : Game) (targetId : ObjectId) : Game :=
   match g.findObject? targetId with
   | none => g.logMsg "The target is no longer legal"
   | some o =>
-    if !o.isOnBattlefield || !o.isCreature then
+    if !o.isOnBattlefield || !g.isCreature o then
       g.logMsg "The target is no longer legal"
     else
+      let nm := g.name o
       let g := g.addPlusOnePlusOneTo o 1
       let g := g.createEffect (.keywordsUntilEot o.id Keyword.lifelink)
-      g.logMsg s!"{o.name} gains lifelink until end of turn"
+      g.logMsg s!"{nm} gains lifelink until end of turn"
 
 /-- Counter a spell on the stack. `exile` puts a permanent spell into exile
 and may grant a free cast (CR 701.5 / Thranduil's Decree). -/
@@ -313,10 +314,10 @@ def counterStackSpell (g : Game) (spellId : ObjectId) (exilePermanent := false)
 and storing the exiling one-shot `EventCause` for the return (CR 610.3). -/
 def exileUntilSourceLeaves (g : Game) (sourceId : Option ObjectId) (o : GameObject)
     (cause : Option EventCause := none) : Game :=
-  let name := o.name
+  let name := g.name o
   let fromZone := o.zone
   let fallbackCtrl :=
-    (sourceId.bind g.findObject?).bind (fun src => src.controller.orElse (fun _ => some src.owner))
+    (sourceId.bind g.findObject?).bind (fun src => (g.controllerOf src).orElse (fun _ => some src.owner))
   let (g, linkCause) :=
     match cause with
     | some c => (g, c)
@@ -362,20 +363,18 @@ def returnExiledId (g : Game) (id : ObjectId) : Game :=
         g.logMsg s!"{name} returns to {(g.player p).name}'s graveyard"
       | _ =>
         if o.printed.isAura then
-          match g.battlefield.find? (fun h => h.auraCanEnchant o.printed) with
+          match g.battlefield.find? (fun h => g.auraCanEnchant h o.printed) with
           | none =>
             g.logMsg s!"{name} remains in exile (can't be attached legally; CR 614.6)"
           | some host =>
             let hostId := host.id
-            let hostName := host.name
+            let hostName := g.name host
             let (g, newId) := g.move id .battlefield (some owner)
               (attachedTo := some hostId)
             let g := g.logMsg s!"{name} returns attached to {hostName} (does not target)"
             g.afterPermanentEnters (g.object! newId)
         else
-          let sick := !o.printed.keywords.haste
           let (g, newId) := g.move id .battlefield (some owner)
-            (summoningSick := sick)
           let g := g.logMsg s!"{name} returns to the battlefield"
           g.afterPermanentEnters (g.object! newId)
 
@@ -773,23 +772,15 @@ def applyEnterMod (g : Game) (controller : PlayerId) (id : ObjectId)
   | some o =>
     match mod with
     | .loseAllAbilities =>
-      g.createEffect (.copy id { o.printed with
-        keywords := Keywords.none
-        triggeredAbilities := #[]
-        activatedAbilities := #[]
-        staticAbilities := #[] } (g.copyRestore o) (g.copyUntilEot o) (g.copyUntilNextTurn o) (g.copyUntilSourceLeaves o))
+      g.createEffect (.layered (.objects #[id]) (.abilities {} .all) .indefinite)
         (cause := cause)
     | .keywords k =>
-      let o := g.object! id
-      g.createEffect (.copy id { o.printed with
-        keywords := Keywords.merge o.printed.keywords k } (g.copyRestore o) (g.copyUntilEot o) (g.copyUntilNextTurn o) (g.copyUntilSourceLeaves o))
+      g.createEffect (.layered (.objects #[id]) (.abilities { keywords := k } .none) .indefinite)
         (cause := cause)
     | .additionalSubtype subtype =>
-      let o := g.object! id
-      if o.printed.hasSubtype subtype then g
+      if g.hasSubtype o subtype then g
       else
-        g.createEffect (.copy id { o.printed with
-          subtypes := o.printed.subtypes.push subtype.englishName } (g.copyRestore o) (g.copyUntilEot o) (g.copyUntilNextTurn o) (g.copyUntilSourceLeaves o))
+        g.createEffect (.additionalSubtype id subtype (dedup := true))
           (cause := cause)
     | .counter kind n asEnters =>
       let o := g.object! id
@@ -1110,8 +1101,8 @@ def becomeCopyOf (g : Game) (o : GameObject) (src : GameObject)
     (addSubtypes : Array CardSubtype := #[])
     (setPT : Option (Int × Int) := none)
     (addVigilance := false) (replaceCreatureLine := false) : Game :=
-  let restore := (g.copyRestore o).getD o.printed
-  let printed0 := src.printed
+  let origName := g.name o
+  let printed0 := { g.copiableValues src with isToken := o.printed.isToken }
   let types :=
     if replaceCreatureLine then #[.creature]
     else
@@ -1142,8 +1133,8 @@ def becomeCopyOf (g : Game) (o : GameObject) (src : GameObject)
       keywords :=
         if addVigilance then Keywords.merge printed0.keywords Keyword.vigilance
         else printed0.keywords }
-  let g := g.createEffect (.copy o.id printed (some restore) untilEot untilNextTurn untilSourceLeaves)
-  g.logMsg s!"{restore.name} becomes a copy of {printed0.name}"
+  let g := g.createEffect (.copy o.id printed untilEot untilNextTurn untilSourceLeaves)
+  g.logMsg s!"{origName} becomes a copy of {printed0.name}"
 
 /-- Copy an activated or triggered ability on the stack. The copy is not
 cast or activated (MSH 34 / 40 / 66) and uses the same source and X
@@ -1239,10 +1230,10 @@ def applyWorldsWithinWorlds (g : Game) (controller : PlayerId)
   let (g, exiled) := g.withBatchReturn none fun g =>
     Id.run do
       let mut g := g
-      let creatures := g.battlefield.filter (fun o => o.isCreature)
+      let creatures := g.battlefield.filter (fun o => g.isCreature o)
       let mut exiled : Array ObjectId := #[]
       for o in creatures do
-        let name := o.name
+        let name := g.name o
         let (g', nid) := g.move o.id .exile none
         g := g'
         exiled := exiled.push nid

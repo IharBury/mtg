@@ -1970,11 +1970,12 @@ def absorbingManCopyOk : Bool :=
   let g := g.applyModeledTrigger ⟨0⟩ (.onStep Effect.stepCopyAbsorbingMan) (some am.id)
     #[Target.permanent land.id]
   let am := namedPermanent g "Absorbing Man"
-  !(namedPermanent rejected "Absorbing Man").printed.isLand &&
-    am.printed.name == "Absorbing Man" &&
-    am.printed.power == some 4 &&
-    am.printed.types.any (· == .creature) &&
-    am.printed.isLand &&
+  !rejected.isLand (namedPermanent rejected "Absorbing Man") &&
+    g.name am == "Absorbing Man" &&
+    g.power am == 4 &&
+    g.isCreature am &&
+    g.isLand am &&
+    !am.printed.isLand &&
     (g.copyRestore am).isSome &&
     g.copyUntilNextTurn am &&
     g.waitingTriggers.size == before &&
@@ -1992,8 +1993,8 @@ def taskmasterCopyOk : Bool :=
   let g := g.applyModeledTrigger ⟨0⟩ (.onStep Effect.stepCopyTaskmaster) (some tm.id)
     #[Target.permanent giant.id]
   let tm := namedPermanent g "Taskmaster, Mercenary Mimic"
-  tm.printed.name == "Taskmaster, Mercenary Mimic" &&
-    tm.printed.power == hillGiant.power &&
+  g.name tm == "Taskmaster, Mercenary Mimic" &&
+    some (g.power tm) == hillGiant.power &&
     g.copyUntilNextTurn tm &&
     (let g2 := addPermanent afterDraw taskmasterMercenaryMimic ⟨0⟩ ⟨0⟩
      let g2 := addPermanent g2 hillGiant ⟨1⟩ ⟨1⟩
@@ -2003,7 +2004,7 @@ def taskmasterCopyOk : Bool :=
      let tm := namedPermanent g2 "Taskmaster, Mercenary Mimic"
      let g2 := g2.applyModeledTrigger ⟨0⟩ (.onStep Effect.stepCopyTaskmaster)
        (some tm.id) #[Target.card gy.id]
-     (namedPermanent g2 "Taskmaster, Mercenary Mimic").printed.power ==
+     some (g2.power (namedPermanent g2 "Taskmaster, Mercenary Mimic")) ==
        hillGiant.power) &&
     (mshRuling 475).comment.contains "exactly what was printed" &&
     (mshRuling 678).comment.contains "neither entering nor leaving"
@@ -2020,20 +2021,20 @@ def shuriCopyUntilEotOk : Bool :=
   let g := g.applyAbilityEffect ⟨0⟩ (Effect.copyArtifactYouControlNotLegendary)
     #[Target.permanent destId, Target.permanent src.id]
   let dest := g.object! destId
-  dest.printed.name == "S.H.I.E.L.D. Deployment Drone" &&
+  g.name dest == "S.H.I.E.L.D. Deployment Drone" &&
     g.copyUntilEot dest &&
-    !dest.printed.supertypes.any (· == .legendary) &&
+    !g.isLegendary dest &&
     (g.copyRestore dest).isSome &&
     ((g.copyRestore dest).getD dest.printed).name == "Aerial Doombot" &&
     (let g := g.clearEOT
-     (g.object! destId).printed.name == "Aerial Doombot") &&
+     g.name (g.object! destId) == "Aerial Doombot") &&
     (let g2 := addPermanent afterDraw shuriWakandanInventor ⟨0⟩ ⟨0⟩
      let g2 := addPermanent g2 aerialDoombot ⟨0⟩ ⟨0⟩
      let dest := namedPermanent g2 "Aerial Doombot"
      let destName := dest.printed.name
      let g2 := g2.applyAbilityEffect ⟨0⟩ (Effect.copyArtifactYouControlNotLegendary)
        #[Target.permanent dest.id]
-     (g2.object! dest.id).printed.name == destName) &&
+     g2.name (g2.object! dest.id) == destName) &&
     (mshRuling 473).comment.contains "exactly what was printed" &&
     (mshRuling 540).comment.contains "won't have any effect" &&
     (mshRuling 682).comment.contains "neither entering nor leaving"
@@ -2054,10 +2055,11 @@ def secretInvasionCopyOk : Bool :=
   let host := g.object! host.id
   (g.copyRestore host).isSome &&
     ((g.copyRestore host).getD host.printed).name == "Grizzly Bears" &&
-    host.printed.name == "Hill Giant" &&
+    g.name host == "Hill Giant" &&
+    host.printed.name == "Grizzly Bears" &&
     (let aura := namedPermanent g "Secret Invasion"
      let (g, _) := g.move aura.id (.graveyard ⟨0⟩) none
-     (namedPermanent g "Grizzly Bears").printed.name == "Grizzly Bears") &&
+     g.name (namedPermanent g "Grizzly Bears") == "Grizzly Bears") &&
     (mshRuling 677).comment.contains "exactly what was printed" &&
     (mshRuling 681).comment.contains "neither entering nor leaving"
 
@@ -2730,10 +2732,10 @@ def ultronMayPayCopyOk : Bool :=
        tokens paid == 1 &&
          (paid.player ⟨0⟩).manaPool.colorless == 0 &&
          (paid.battlefield.any (fun o =>
-           o.printed.isToken && o.name == "The Mind Stone" && o.isCreature &&
+           o.printed.isToken && paid.name o == "The Mind Stone" && paid.isCreature o &&
              paid.power o == 2 && paid.toughness o == 2 &&
-             o.printed.subtypes.any (· == "Robot") &&
-             o.printed.subtypes.any (· == "Villain"))))
+             paid.hasSubtype o .robot &&
+             paid.hasSubtype o .villain)))
   | _ => false
 
 #guard ultronMayPayCopyOk
@@ -3075,13 +3077,11 @@ def hexMagicExileHandOk : Bool :=
 legendary. Tokens are not copied. -/
 def multiversalCopyOk : Bool :=
   let g := addPermanent afterDraw thanosTheMadTitan ⟨0⟩ ⟨0⟩
-  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
-  let token := namedPermanent g "Grizzly Bears"
-  let g := g.changeObject token.id (.printed { token.printed with isToken := true })
+  let (g, _) := g.createOneToken ⟨0⟩ grizzlyBears
   let g := g.copyNontokenCreaturesYouControl ⟨0⟩
-  let copies := g.battlefield.filter (fun o => o.printed.isToken && o.name == "Thanos, the Mad Titan")
-  copies.size == 1 && !copies[0]!.isLegendary &&
-    (g.battlefield.filter (fun o => o.printed.isToken && o.name == "Grizzly Bears")).size == 1
+  let copies := g.battlefield.filter (fun o => o.printed.isToken && g.name o == "Thanos, the Mad Titan")
+  copies.size == 1 && !g.isLegendary copies[0]! &&
+    (g.battlefield.filter (fun o => o.printed.isToken && g.name o == "Grizzly Bears")).size == 1
 
 #guard multiversalCopyOk
 
@@ -3094,15 +3094,15 @@ def evilsThrallDurationOk : Bool :=
   let g := g.changeStatus bears.id (.tapped true)
   let g := g.applyEvilsThrall ⟨0⟩ #[Target.permanent (namedPermanent g "Grizzly Bears").id]
   let held := namedPermanent g "Grizzly Bears"
-  held.controller == some ⟨0⟩ && g.controlTurnEndsLeft held == 2 &&
+  g.controllerOf held == some ⟨0⟩ && g.controlTurnEndsLeft held == 2 &&
     !held.status.tapped && g.hasHaste held &&
     (let g := g.clearEOT
-     (namedPermanent g "Grizzly Bears").controller == some ⟨0⟩ &&
+     g.controllerOf (namedPermanent g "Grizzly Bears") == some ⟨0⟩ &&
        g.controlTurnEndsLeft (namedPermanent g "Grizzly Bears") == 2 &&
        (let g := g.record (GameEvent.turnBegan (g.turnNumber + 1) ⟨0⟩)
         g.controlTurnEndsLeft (namedPermanent g "Grizzly Bears") == 1 &&
           (let g := g.clearEOT
-           (namedPermanent g "Grizzly Bears").controller == some ⟨1⟩ &&
+           g.controllerOf (namedPermanent g "Grizzly Bears") == some ⟨1⟩ &&
              g.controlTurnEndsLeft (namedPermanent g "Grizzly Bears") == 0))) &&
     (let short := addPermanent afterDraw hillGiant ⟨1⟩ ⟨1⟩
      let short := short.applyEvilsThrall ⟨0⟩ #[Target.permanent (namedPermanent short "Hill Giant").id]
@@ -4211,8 +4211,8 @@ def exchangeControlSwapsOk : Bool :=
   let ogre := namedPermanent g "Gray Ogre"
   let g := g.applyEffect ⟨0⟩ Effect.exchangeControlSharingType
     #[Target.permanent bears.id, Target.permanent ogre.id]
-  (namedPermanent g "Grizzly Bears").controller == some ⟨1⟩ &&
-    (namedPermanent g "Gray Ogre").controller == some ⟨0⟩
+  g.controllerOf (namedPermanent g "Grizzly Bears") == some ⟨1⟩ &&
+    g.controllerOf (namedPermanent g "Gray Ogre") == some ⟨0⟩
 
 #guard exchangeControlSwapsOk
 

@@ -59,10 +59,12 @@ common among creatures they control. -/
 def chooseCreatureTypeFor (g : Game) (p : PlayerId) : CardSubtype :=
   let counts : Array (CardSubtype × Nat) :=
     (g.creaturesControlledBy p).foldl (fun acc o =>
-      o.subtypes.foldl (fun acc t =>
-        match acc.findIdx? (·.1 == t) with
-        | some i => acc.modify i (fun (s, n) => (s, n + 1))
-        | none => acc.push (t, 1)) acc) #[]
+      (g.subtypes o).foldl (fun acc t =>
+        if !t.isCreatureType then acc
+        else
+          match acc.findIdx? (·.1 == t) with
+          | some i => acc.modify i (fun (s, n) => (s, n + 1))
+          | none => acc.push (t, 1)) acc) #[]
   (counts.foldl (fun best c =>
     match best with
     | none => some c
@@ -132,7 +134,7 @@ def removeUpToCountersFrom (g : Game) (controller : PlayerId) (o : GameObject) (
   let take (have_ left : Nat) : Nat × Nat := (Nat.min have_ left, left - Nat.min have_ left)
   let s := o.status
   let removals : Array (CounterKind × Nat) :=
-    if o.controlledBy controller then
+    if g.controlledBy o controller then
       let (a, left) := take s.stun n
       let (b, _) := take s.minusOneMinusOne left
       #[(.stun, a), (.minusOneMinusOne, b)]
@@ -145,7 +147,7 @@ def removeUpToCountersFrom (g : Game) (controller : PlayerId) (o : GameObject) (
   let g := g.withBatch none fun g =>
     removals.foldl (fun g (k, amt) =>
       g.recordRemoveCounters o.id k amt (byPlayer := some controller)) g
-  g.logMsg s!"Counters are removed from {o.name}"
+  g.logMsg s!"Counters are removed from {g.name o}"
 
 /-- The resolving activated or triggered ability's stack object. -/
 def resolvingAbilityObject? (g : Game) : Option GameObject :=
@@ -173,14 +175,14 @@ def plusOneOnEachCreatureOf (g : Game) (p : PlayerId) (n : Nat := 1) : Game :=
 
 /-- Put a loyalty counter on each planeswalker `p` controls. -/
 def loyaltyOnEachPlaneswalkerOf (g : Game) (p : PlayerId) : Game :=
-  let pws := (g.permanentsOf p).filter (·.printed.isPlaneswalker)
+  let pws := (g.permanentsOf p).filter (g.isPlaneswalker ·)
   if pws.isEmpty then g
   else
     g.withBatch none fun g =>
       pws.foldl (fun g o =>
         let n := g.countersYouPut (g.object! o.id) 1 (putter := some p)
         (g.recordPutCounters o.id .loyalty n (byPlayer := some p)).logMsg
-          s!"A loyalty counter is put on {o.name}") g
+          s!"A loyalty counter is put on {g.name o}") g
 
 end Game
 end Mtg.Engine
