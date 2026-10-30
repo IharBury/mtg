@@ -162,7 +162,8 @@ def applyPermanentAction (g : Game) (o : GameObject) (action : PermanentAction)
     g.grantUntilEotLogged o k
   | .indestructibleCounter => g.addIndestructibleCounter o
   | .doubleStrikeCounter =>
-    let g := g.record (GameEvent.counters g.turnNumber (g.controllerOf o) (g.snapshot o) .doubleStrike 1)
+    let g := g.record (GameEvent.counters g.turnNumber (g.controllerOf o) (g.snapshot o) .doubleStrike 1
+      (cause := g.resolveOptionalCause none (fallbackSrc := sourceId) (fallbackCtrl := g.controllerOf o)))
     g.logMsg s!"{g.name o} gets a double strike counter"
   | .burdenCounter => g.addBurdenCounter o
   | .tap => g.becomeTapped o
@@ -172,12 +173,14 @@ def applyPermanentAction (g : Game) (o : GameObject) (action : PermanentAction)
     else if !o.status.tapped then
       g.logMsg s!"{g.name o} is already untapped"
     else
-      let (stunned, cause') := g.replaceUntap o
+      let baseCause := g.resolveOptionalCause none (fallbackSrc := sourceId) (fallbackCtrl := g.controllerOf o)
+      let (stunned, cause') := g.replaceUntap o (cause := some baseCause)
       if stunned then
-        let g := g.record (GameEvent.counters g.turnNumber (g.controllerOf o) (g.snapshot o) .stun 1 true (cause := cause'))
+        let g := g.record (GameEvent.counters g.turnNumber (g.controllerOf o) (g.snapshot o) .stun 1 true
+          (cause := cause'.getD baseCause))
         g.logMsg s!"A stun counter is removed from {g.name o} instead of untapping it (CR 122.1d)"
       else
-        let g := g.record (GameEvent.untapped g.turnNumber (g.snapshot o) false)
+        let g := g.record (GameEvent.untapped g.turnNumber (g.snapshot o) false (cause := baseCause))
         g.logMsg s!"{g.name o} untaps"
   | .becomeArtifactIndestructible =>
     let g := g.createEffects #[
@@ -193,7 +196,8 @@ def applyPermanentAction (g : Game) (o : GameObject) (action : PermanentAction)
     let n := g.countersYouPut cur 1
     let g :=
       if n > 0 then
-        g.record (GameEvent.counters g.turnNumber (g.controllerOf cur) (g.snapshot cur) .stun n)
+        g.record (GameEvent.counters g.turnNumber (g.controllerOf cur) (g.snapshot cur) .stun n
+          (cause := g.resolveOptionalCause none (fallbackSrc := sourceId) (fallbackCtrl := g.controllerOf cur)))
       else g
     g.logMsg s!"A stun counter is put on {g.name cur}"
   | .setBasePT pw tw =>

@@ -17,7 +17,9 @@ A player the selector does not name reveals nothing.
 namespace Mtg.Engine.RevealLibraryTests
 
 open Mtg.Engine
-open Mtg.Engine.Tests
+open Mtg.Engine.Tests hiding afterDraw
+
+def afterDraw : Game := Mtg.Engine.Tests.afterDraw.change (.pushContinuationFrame {})
 
 def caster : PlayerId := ⟨0⟩
 def opp : PlayerId := ⟨1⟩
@@ -67,13 +69,12 @@ def tale : CardDef := {
 }
 
 def putOnLibrary (g : Game) (card : CardDef) (p : PlayerId) : Game :=
-  insertObject g card p (.library p) none {} (fun id _ =>
-    #[.pushLibrary id])
+  insertObject g card p (.library p)
 
 /-- Replace `p`'s library. The last card is on top. -/
 def onlyLibrary (g : Game) (p : PlayerId) (cards : List CardDef) : Game :=
   cards.foldl (fun g c => putOnLibrary g c p)
-    (g.changePlayer p (.library #[]))
+    (emptyLibrary g p)
 
 def withLands (g : Game) (n : Nat) : Game :=
   (List.range n).foldl (fun g _ => addPermanent g plot caster caster) g

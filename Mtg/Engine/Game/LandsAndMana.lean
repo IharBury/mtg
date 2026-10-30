@@ -16,7 +16,7 @@ def recordLandPlayed (g : Game) (p : PlayerId) : Game :=
   let snap : EventObject := { id := some ⟨Nat.pow 2 60⟩, controller := some p, owner := p, zone := .outside p }
   g.record (GameEvent.moved g.turnNumber snap (.outside p) (.outside p)
     (after := some snap) (verb := some .playLand) (actor := some p)
-    (cause := some (.specialAction .playLand p)))
+    (cause := .specialAction .playLand p))
 
 /-- Put `id` onto the battlefield as `p`'s land play and run its enters
 processing (CR 305.1). -/

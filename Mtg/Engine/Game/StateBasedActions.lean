@@ -202,7 +202,7 @@ def finishSbaSweep (g : Game) (moves : Array SbaGraveyardMove)
       if !legal then
         let hostId := o.attachedTo.getD ⟨0⟩
         g := g.record (GameEvent.unattached g.turnNumber (g.snapshot o) hostId
-          (cause := some (.stateBased .illegalEquipmentOrFortification)))
+          (cause := .stateBased .illegalEquipmentOrFortification))
         g := g.logMsg s!"{g.name o} becomes unattached (CR 704.5n)"
         changed := true
   match g.decideGameIfFinished with
@@ -272,7 +272,7 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
       for o in g.battlefield do
         let k := Nat.min o.status.plusOnePlusOne o.status.minusOneMinusOne
         if k > 0 then
-          let cause := some (EventCause.stateBased .counterAnnihilation)
+          let cause := EventCause.stateBased .counterAnnihilation
           g := g.record (GameEvent.counters g.turnNumber none o.asEvent .plusOnePlusOne k true
             (cause := cause))
           g := g.record (GameEvent.counters g.turnNumber none (g.object! o.id).asEvent .minusOneMinusOne k true

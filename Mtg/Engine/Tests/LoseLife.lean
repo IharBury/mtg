@@ -16,7 +16,9 @@ namespace Mtg.Engine.LoseLifeTests
 
 open Mtg.Engine
 open Mtg.Engine.Catalog
-open Mtg.Engine.Tests
+open Mtg.Engine.Tests hiding afterDraw
+
+def afterDraw : Game := Mtg.Engine.Tests.afterDraw.change (.pushContinuationFrame {})
 
 def caster : PlayerId := ⟨0⟩
 def opp : PlayerId := ⟨1⟩

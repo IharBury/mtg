@@ -16,7 +16,9 @@ namespace Mtg.Engine.CastingTests
 
 open Mtg.Engine
 open Mtg.Engine.Catalog
-open Mtg.Engine.Tests
+open Mtg.Engine.Tests hiding afterDraw
+
+def afterDraw : Game := Mtg.Engine.Tests.afterDraw.change (.pushContinuationFrame {})
 
 def me : PlayerId := ⟨0⟩
 def opp : PlayerId := ⟨1⟩
@@ -35,7 +37,9 @@ def tokensNamed (g : Game) (name : String) : Nat :=
 def withCause (g : Game) (source : GameObject) (spell : CardDef)
     (targets : Array Target := #[]) (x : Option Nat := none) : Game :=
   let (g, spellObj) := g.allocObject spell me .stack (some me)
-  let g := g.changeObject spellObj.id (.chosenX x)
+  let g := match x with
+    | some n => g.record (GameEvent.announced g.turnNumber spellObj.id (x := some n))
+    | none => g
   let g := g.putStackEntry me spellObj.id
   let g :=
     if targets.isEmpty then g
@@ -162,7 +166,7 @@ def speedDeclines : Game :=
   logContains speedDeclines "isn't paid"
 
 def speedPays : Game :=
-  let g := speedOffer.changePlayer me (.addMana (.colored .green) 1)
+  let g := speedOffer.addMana me (.colored .green) 1
   let g := mustApply g me .accept
   g.applyModeledReflexive #[Target.permanent (named g "Volcanic Villain").id]
 
@@ -189,9 +193,7 @@ A token is not a legal target. -/
 def wiccanBoard : Game :=
   let g := addPermanent afterDraw wiccanRisingMagician me me
   let g := addPermanent g grizzlyBears me me
-  let g := addPermanent g hillGiant me me
-  let giant := named g "Hill Giant"
-  g.changeObject giant.id (.printed { giant.printed with isToken := true })
+  addPermanent g { hillGiant with isToken := true } me me
 
 def wiccanExiles : Game :=
   let src := named wiccanBoard "Wiccan, Rising Magician"

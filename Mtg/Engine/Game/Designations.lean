@@ -17,7 +17,8 @@ def grantDesignationIfNeeded (g : Game) (p : PlayerId)
     (designation : PlayerDesignation) (msg : String) : Game :=
   if already (g.player p) then g
   else if qualifies g p then
-    g.record (GameEvent.gainedDesignation g.turnNumber p designation) |>.logMsg s!"{(g.player p).name} {msg}"
+    g.record (GameEvent.gainedDesignation g.turnNumber p designation
+      (cause := some (.gameRule .staticAbility))) |>.logMsg s!"{(g.player p).name} {msg}"
   else g
 
 /-- Grant an enduring story if `p` now qualifies. The designation is on the
@@ -40,30 +41,39 @@ def hasTheRing (g : Game) (p : PlayerId) : Bool :=
 def theRingAbilityCount (g : Game) (p : PlayerId) : Nat :=
   (g.player p).theRingAbilities
 
-/-- Whether `o` is `p`'s Ring-bearer. -/
+/-- Whether `o` is `p`'s Ring-bearer (CR 701.54a / 701.54c). -/
 def isRingBearer (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
-  (g.player p).ringBearerId == some o.id && o.status.ringBearer
+  o.isOnBattlefield && (g.player p).ringBearerId == some o.id && g.controlledBy o p
+
+/-- Whether `o` is any player's Ring-bearer (CR 701.54a). -/
+def isAnyRingBearer (g : Game) (o : GameObject) : Bool :=
+  o.isOnBattlefield && g.players.any (fun pl => g.isRingBearer pl.id o)
 
 /-- Creatures `p` controls that can be chosen as Ring-bearer. -/
 def ringBearerChoices (g : Game) (p : PlayerId) : Array GameObject :=
   (g.permanentsOf p).filter (fun o => g.isCreature o)
 
-/-- Clear Ring-bearer marks, then mark `chosen` if present. -/
+/-- Clear `p`'s previous Ring-bearer if different, then mark `chosen` if present (CR 701.54a). -/
 def setRingBearer (g : Game) (p : PlayerId) (chosen : Option ObjectId)
     (cause : Option EventCause := none) : Game :=
-  let cause := cause.orElse (fun _ => g.resolvingOneShotCause p)
+  let effCause := g.resolveOptionalCause (cause.orElse (fun _ => g.resolvingOneShotCause p)) (fallbackCtrl := some p)
   let g :=
-    g.objects.foldl (fun acc o =>
-      if o.status.ringBearer && acc.controlledBy o p then
-        acc.record (GameEvent.designation acc.turnNumber o.asEvent .ringBearer false (cause := cause))
-      else acc) g
+    match (g.player p).ringBearerId with
+    | some oldId =>
+      if some oldId == chosen then g
+      else
+        match g.findObject? oldId with
+        | some oldObj =>
+          g.record (GameEvent.designation g.turnNumber (g.snapshot oldObj) .ringBearer false (cause := effCause))
+        | none => g
+    | none => g
   match chosen with
   | none => g
   | some id =>
     match g.findObject? id with
     | none => g
     | some o =>
-      g.record (GameEvent.designation g.turnNumber o.asEvent .ringBearer true (cause := cause))
+      g.record (GameEvent.designation g.turnNumber (g.snapshot o) .ringBearer true (cause := effCause))
 
 /-- Grant the city's blessing if `p` now qualifies. The designation is on the
 player and is never removed. Not a triggered ability. -/

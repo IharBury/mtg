@@ -395,7 +395,7 @@ def hunterEmptyLibrary : Game :=
   let g := skipTo started .precombatMain 80
   let g := addPermanent g snowslopeHunter ⟨0⟩ ⟨0⟩
   let g := addPermanent g ragingGoblin ⟨0⟩ ⟨0⟩
-  g.changePlayer ⟨0⟩ (.library #[])
+  emptyLibrary g ⟨0⟩
 
 def resolvedHunterEmpty : Game :=
   passBoth (completeHunterActivation hunterEmptyLibrary "Raging Goblin")

@@ -1775,7 +1775,7 @@ def controllerOfBearLosesTwo : Game :=
 `oneOf` asks for one instant or sorcery, `upTo` may take lands, and `allOf`
 moves every instant or sorcery without a choice. -/
 def millLibrary : Game :=
-  afterDraw.changePlayers ⟨0⟩ #[.library #[], .hand #[]]
+  emptyHand (emptyLibrary afterDraw ⟨0⟩) ⟨0⟩
 
 def millOneInstantOrSorcery : Game :=
   let g := addToLibraryTop (addToLibraryTop millLibrary mountain ⟨0⟩) lightningBolt ⟨0⟩

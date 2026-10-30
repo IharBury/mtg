@@ -51,7 +51,7 @@ def passageSource (g : Game) : GameObject :=
 -- Cannot activate while the land is tapped.
 #guard
   let o := passageSource passageReady
-  let g := passageReady.changeStatus o.id (.tapped true)
+  let g := setTapped passageReady o.id true
   !g.canActivate ⟨0⟩ (namedPermanent g "Rogue's Passage") passageAbility
 
 -- Instant-speed: Passage can activate during the end step.
@@ -530,7 +530,7 @@ def countWaitingAbility (g : Game) (ab : TriggeredAbility) : Nat :=
 /-- Mark `name` with lethal damage so the next SBA check will try to make it die. -/
 def withLethal (g : Game) (name : String) : Game :=
   let o := namedPermanent g name
-  g.changeStatus o.id (.damage 20)
+  setMarkedDamage g o.id 20
 
 /-!
 CR 614.6: if an event is replaced, it never happens. A modified event occurs
@@ -966,7 +966,7 @@ def resolvedNightsWhisper : Game := passBoth nightsWhisperKnownLib
 
 /-- Drawing from an empty library is a state-based loss (CR 704.5b / 121.4). -/
 def nightsWhisperEmptyLib : Game :=
-  let g := paidNightsWhisper.changePlayer ⟨0⟩ (.library #[])
+  let g := emptyLibrary paidNightsWhisper ⟨0⟩
   passBoth g
 
 #guard nightsWhisperEmptyLib.over
@@ -977,7 +977,7 @@ def nightsWhisperEmptyLib : Game :=
 
 /-- Losing the last 2 life ends the game (CR 704.5a). The spell is still legal. -/
 def nightsWhisperPaysLastLife : Game :=
-  let g := paidNightsWhisper.changePlayer ⟨0⟩ (.life 2)
+  let g := paidNightsWhisper.setLifeTotal ⟨0⟩ 2
   passBoth g
 
 #guard (nightsWhisperPaysLastLife.player ⟨0⟩).life == 0
@@ -998,21 +998,21 @@ def agentNightsWhisperOnly : Game :=
 
 -- The heuristic will not lose the last 2 life.
 #guard
-  let g := agentNightsWhisperOnly.changePlayer ⟨0⟩ (.life 2)
+  let g := agentNightsWhisperOnly.setLifeTotal ⟨0⟩ 2
   match Agent.choose g ⟨0⟩ with
   | some (.cast _) => false
   | _ => true
 
 -- The heuristic will not draw into an empty library.
 #guard
-  let g := agentNightsWhisperOnly.changePlayer ⟨0⟩ (.library #[])
+  let g := emptyLibrary agentNightsWhisperOnly ⟨0⟩
   match Agent.choose g ⟨0⟩ with
   | some (.cast _) => false
   | _ => true
 
 -- The heuristic still casts at 3 life (survives at 1).
 #guard
-  let g := agentNightsWhisperOnly.changePlayer ⟨0⟩ (.life 3)
+  let g := agentNightsWhisperOnly.setLifeTotal ⟨0⟩ 3
   match Agent.choose g ⟨0⟩ with
   | some (.cast id) => (g.object! id).name == "Night's Whisper"
   | _ => false

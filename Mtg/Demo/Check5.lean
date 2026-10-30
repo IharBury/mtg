@@ -117,13 +117,13 @@ open Mtg.Demo.Render
 
 #guard
   let g := Tests.readyToDeclareAttackers.objects.foldl
-    (fun g o => g.changeStatus o.id (.tapped true))
+    (fun g o => Tests.setTapped g o.id true)
     Tests.readyToDeclareAttackers
   shouldAutoNoAttack g []
 
 #guard
   let g := Tests.readyToDeclareBlockers.objects.foldl (fun g o =>
-    if o.controlledBy ⟨1⟩ then g.changeStatus o.id (.tapped true) else g)
+    if o.controlledBy ⟨1⟩ then Tests.setTapped g o.id true else g)
     Tests.readyToDeclareBlockers
   !shouldAutoNoBlock g ["noblock"]
 

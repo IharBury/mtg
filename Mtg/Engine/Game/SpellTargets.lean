@@ -268,7 +268,8 @@ def legalProposedTargets (g : Game) (p : PlayerId) (o : GameObject) : Array Targ
     | none => #[]
   let kind := (g.targetingOf o).kind
   let slot := kind.slotKind (g.currentTargetSlot o)
-  let legal := (g.legalTargetsForKind p slot o.sourceId).filter (fun t => !already.contains t)
+  let selfSource := o.sourceId.orElse (fun _ => if o.zone == .stack then some o.id else none)
+  let legal := (g.legalTargetsForKind p slot selfSource).filter (fun t => !already.contains t)
   let legal :=
     match g.proposedSpell with
     | some prop =>

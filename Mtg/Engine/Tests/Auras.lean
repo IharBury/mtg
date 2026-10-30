@@ -18,7 +18,7 @@ open Mtg.Engine.Catalog
 
 /-- Fill `p`'s mana pool with `n` mana of color `c`. -/
 def withMana (g : Game) (p : PlayerId) (c : Color) (n : Nat := 4) : Game :=
-  g.changePlayer p (.addMana (.colored c) n)
+  g.addMana p (.colored c) n
 
 /-- Fill `p`'s mana pool with `n` green mana. -/
 def withGreenMana (g : Game) (p : PlayerId) (n : Nat := 4) : Game :=
@@ -78,7 +78,7 @@ def proposedDecree : Game :=
 
 /-- Empty `p`'s hand and mark a land already played this turn. -/
 def clearHandPlayedLand (g : Game) (p : PlayerId) : Game :=
-  (g.changePlayer p (.hand #[])).recordLandPlayed p
+  (emptyHand g p).recordLandPlayed p
 
 /-- Chandra has her own Bolt on the stack and a counter in hand. -/
 def agentOwnBoltWithDecree : Game :=
@@ -247,11 +247,12 @@ def giftScrying : Game := passBoth giftEntered
 #guard giftScrying.actor == some ⟨0⟩
 #guard !giftScrying.hasPriority ⟨0⟩
 #guard giftScrying.log.any (fun s => mentions s "scries 2")
-#guard giftScrying.stack.isEmpty
+#guard giftScrying.stack.size == 1
 
 def giftScried : Game := keepScry giftScrying
 
 #guard giftScried.pending == .none
+#guard giftScried.stack.isEmpty
 #guard giftScried.hasPriority ⟨0⟩
 #guard giftScried.power (namedPermanent giftScried "Grizzly Bears") == 5
 
@@ -612,7 +613,7 @@ def agentGiftOnly : Game :=
 def scryOneCard : Game :=
   let g := giftEntered.changes #[.pending .none, .stack #[]]
   let lib := (g.player ⟨0⟩).library
-  let g := g.changePlayer ⟨0⟩ (.library (lib.extract (lib.size - 1) lib.size))
+  let g := retainLibrary g ⟨0⟩ (lib.extract (lib.size - 1) lib.size)
   g.beginScry ⟨0⟩ 2
 
 #guard
@@ -622,7 +623,7 @@ def scryOneCard : Game :=
 
 def scryEmpty : Game :=
   let g := giftEntered.changes #[.pending .none, .stack #[]]
-  let g := g.changePlayer ⟨0⟩ (.library #[])
+  let g := emptyLibrary g ⟨0⟩
   g.beginScry ⟨0⟩ 2
 
 #guard scryEmpty.pending == .none
@@ -678,12 +679,13 @@ def guideScrying : Game := passBoth guideEntered
 #guard guideScrying.actor == some ⟨0⟩
 #guard !guideScrying.hasPriority ⟨0⟩
 #guard guideScrying.log.any (fun s => mentions s "scries 2")
-#guard guideScrying.stack.isEmpty
+#guard guideScrying.stack.size == 1
 #guard guideScrying.battlefield.any (fun o => o.name == "Galadhrim Guide")
 
 def guideScried : Game := keepScry guideScrying
 
 #guard guideScried.pending == .none
+#guard guideScried.stack.isEmpty
 #guard guideScried.hasPriority ⟨0⟩
 #guard guideScried.battlefield.any (fun o => o.name == "Galadhrim Guide")
 
@@ -802,7 +804,7 @@ def visionaryLeftBeforeTrigger : Game :=
 
 /-- Drawing from an empty library is a state-based loss (CR 704.5b / 121.4). -/
 def visionaryEmptyLib : Game :=
-  let g := visionaryEntered.changePlayer ⟨0⟩ (.library #[])
+  let g := emptyLibrary visionaryEntered ⟨0⟩
   passBoth g
 
 #guard visionaryEmptyLib.over

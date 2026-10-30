@@ -128,8 +128,8 @@ def tappedArchAndOppElves : Game :=
 
 -- Summoning sickness still stops the mana ability (CR 302.6).
 #guard
-  let o := namedPermanent archAlone "Elvish Archdruid"
-  let g := archAlone.changeStatus o.id (.summoningSick true)
+  let g := addSickPermanent afterDraw elvishArchdruid ⟨0⟩ ⟨0⟩
+  let o := namedPermanent g "Elvish Archdruid"
   match g.tapForMana ⟨0⟩ o.id (.colored .green) with
   | .error msg => mentions msg "summoning sickness"
   | .ok _ => false
@@ -454,7 +454,7 @@ def celebornScrying : Game := passBoth celebornAttackDeclared
   match celebornScrying.pending with
   | .scry ⟨0⟩ 1 _ => true
   | _ => false
-#guard celebornScrying.stack.isEmpty
+#guard celebornScrying.stack.size == 1
 #guard celebornScrying.log.any (fun s => mentions s "scries 1")
 #guard !celebornScrying.hasPriority ⟨0⟩
 
@@ -538,7 +538,7 @@ def celebornGiftPumped : Game := passBoth celebornGiftScried
 def celebornScryOneOfTwo : Game :=
   let g := addPermanent giftEntered celebornTheWise ⟨0⟩ ⟨0⟩
   let lib := (g.player ⟨0⟩).library
-  let g := g.changePlayer ⟨0⟩ (.library (lib.extract (lib.size - 1) lib.size))
+  let g := retainLibrary g ⟨0⟩ (lib.extract (lib.size - 1) lib.size)
   keepScry (passBoth g)
 
 #guard celebornScryOneOfTwo.stack.size == 1
@@ -553,7 +553,7 @@ def celebornScryOneOfTwoPumped : Game := passBoth celebornScryOneOfTwo
 /-- An empty library still scries; Celeborn gets +0/+0. -/
 def celebornEmptyScry : Game :=
   let g := addPermanent giftEntered celebornTheWise ⟨0⟩ ⟨0⟩
-  let g := g.changePlayer ⟨0⟩ (.library #[])
+  let g := emptyLibrary g ⟨0⟩
   passBoth g
 
 #guard celebornEmptyScry.pending == .none
@@ -807,8 +807,7 @@ def weavemasterPaysGrowth : Game :=
 
 /-- Summoning sickness still stops the mana ability (CR 302.6). -/
 def weavemasterSick : Game :=
-  let o := namedPermanent weavemasterReady "Woodland Weavemaster"
-  weavemasterReady.changeStatus o.id (.summoningSick true)
+  addSickPermanent afterDraw woodlandWeavemaster ⟨0⟩ ⟨0⟩
 
 #guard
   match weavemasterSick.tapForMana ⟨0⟩

@@ -14,7 +14,9 @@ namespace Mtg.Engine.PutTests
 
 open Mtg.Engine
 open Mtg.Engine.Catalog
-open Mtg.Engine.Tests
+open Mtg.Engine.Tests hiding afterDraw
+
+def afterDraw : Game := Mtg.Engine.Tests.afterDraw.change (.pushContinuationFrame {})
 
 def caster : PlayerId := ⟨0⟩
 def owner : PlayerId := ⟨1⟩
@@ -36,12 +38,10 @@ def sword : CardDef :=
   equipment "Test Sword" (ManaCost.ofGeneric 1) "" (ManaCost.ofGeneric 2)
 
 def putInHand (g : Game) (card : CardDef) (p : PlayerId) : Game :=
-  insertObject g card p (.hand p) none {} (fun id _ =>
-    #[.pushHand id])
+  insertObject g card p (.hand p)
 
 def putInGraveyard (g : Game) (card : CardDef) (p : PlayerId) : Game :=
-  insertObject g card p (.graveyard p) none {} (fun id _ =>
-    #[.pushGraveyard id])
+  insertObject g card p (.graveyard p)
 
 def putInExile (g : Game) (card : CardDef) (p : PlayerId) : Game :=
   insertObject g card p .exile
@@ -74,7 +74,7 @@ returns nothing. -/
   match bearId, beastId, src with
   | some bearId, some beastId, some src =>
     let g := g.changeObjects src.id
-      #[.leaveTriggerExile #[bearId], .linkedExile #[beastId]]
+      #[.pushLeaveTriggerExile bearId, .linkedExile #[beastId]]
     let g := g.applyTriggeredAbility caster .onLeaveReturnExiled (some src.id)
     match onBoard g "Test Bear", onBoard g "Costly Beast", onBoard g "Test Hunter" with
     | some bear, some beast, some _ =>
@@ -241,14 +241,17 @@ attach; another artifact is not. An empty hand skips the choice. -/
         match g.pending with
         | .mayPutArtifactFromHand p hid => p == caster && hid == host.id
         | _ => false
-      let g := mustApply g caster (.cast id)
-      match g.putArtifactThisWay, onBoard g "Test Sword" with
-      | some (putId, hid), some sword =>
-        let (g, holds) := g.triggerIfHolds caster (.onEnterDraw 1) (some host.id)
-          #[] none (.atLeast (.count .putEquipment) (.fixed 1))
-        offered && putId == sword.id && hid == host.id && holds &&
-          g.putArtifactThisWay.isSome
-      | _, _ => false
+      match g.choosePutArtifactFromHand caster id with
+      | .error _ => false
+      | .ok gMid =>
+        match gMid.putArtifactThisWay, onBoard gMid "Test Sword" with
+        | some (putId, hid), some sword =>
+          let (gMid, holds) := gMid.triggerIfHolds caster (.onEnterDraw 1) (some host.id)
+            #[] none (.atLeast (.count .putEquipment) (.fixed 1))
+          let gDone := gMid.resumeSequenceThenPriority
+          offered && putId == sword.id && hid == host.id && holds &&
+            gMid.putArtifactThisWay.isSome && gDone.continuations.isEmpty
+        | _, _ => false
 
 #guard
   let g := addPermanent afterDraw hunter caster caster

@@ -265,9 +265,12 @@ def graveyardHas (g : Game) (name : String) : Bool :=
       | some fid =>
         match applyInteractiveAsActor g2 "choose" [toString fid] with
         | .ok g' =>
-          g'.stack.isEmpty &&
+          g'.stack.size == 1 &&
           g'.log.any (fun s => Tests.mentions s "puts Forest onto the battlefield") &&
-          g'.battlefield.any (fun o => o.name == "Forest" && !o.status.tapped)
+          g'.battlefield.any (fun o => o.name == "Forest" && !o.status.tapped) &&
+          match applyInteractiveAsActor g' "shuffle" [] with
+          | .ok g'' => g''.stack.isEmpty
+          | .error _ => false
         | .error _ => false
     | .error _ => false
   | .error _ => false

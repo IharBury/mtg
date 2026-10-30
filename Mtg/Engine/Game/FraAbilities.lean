@@ -143,13 +143,17 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
             return (revealed, some id)
           revealed := revealed.push id
         return (revealed, none)
-      let g := (revealed ++ hit.toArray).foldl (fun g id =>
-        g.logMsg s!"{(g.player controller).name} reveals {(g.object! id).name}") g
+      let allRevealed := revealed ++ hit.toArray
       let (g, revealCause?) : Game × Option EventCause :=
-        if hit.isSome || !revealed.isEmpty then
+        if !allRevealed.isEmpty then
           let (g, c) := g.allocDelayedCause (some controller) sourceId
           (g, some c)
         else (g, none)
+      let g :=
+        if allRevealed.isEmpty then g
+        else g.record (GameEvent.revealed g.turnNumber controller allRevealed (cause := revealCause?))
+      let g := allRevealed.foldl (fun g id =>
+        g.logMsg s!"{(g.player controller).name} reveals {(g.object! id).name}") g
       let g :=
         match hit with
         | some id =>
@@ -230,8 +234,8 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
     | .surveil .. => g.change (.surveilReturnNoncreatureNonland true)
     | _ => g
   | .addBlueNoncreatureOnly =>
-    (g.changePlayer controller
-      (.addMana (.colored .blue) 1 (fra := some .noncreatureSpell))).logMsg
+    (g.addMana controller (.colored .blue) 1 (source := sourceId)
+      (restriction := some (.fra .noncreatureSpell))).logMsg
       s!"{(g.player controller).name} adds \{U} (noncreature spells only)"
   | .tapAndStunX =>
     g.withLegalKindPermanent controller kind targets (fun g o =>
@@ -455,7 +459,8 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
               timestamp := copyTs
               isCopy := true
             }
-            let g := g.record (GameEvent.created g.turnNumber controller (g.snapshot copyObj))
+            let g := g.record (GameEvent.created g.turnNumber controller (g.snapshot copyObj)
+              (cause := g.resolveOptionalCause none (fallbackSrc := sourceId) (fallbackCtrl := some controller)))
             g.beginFraChoice controller (.mayCastCopy copyId)
               s!"{(g.player controller).name} may cast the copy of {name} without paying its mana cost"
         | none => g.logMsg "The target is no longer legal"
@@ -485,7 +490,8 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
               timestamp := copyTs
               isCopy := true
             }
-            let g := g.record (GameEvent.created g.turnNumber controller (g.snapshot copyObj) (cause := cause?))
+            let g := g.record (GameEvent.created g.turnNumber controller (g.snapshot copyObj)
+              (cause := g.resolveOptionalCause cause? (fallbackSrc := sourceId) (fallbackCtrl := some controller)))
             let g := g.createEffect (.playPermission copyId {
               player := controller,
               whileExiled := true, withoutManaCost := true, ignoreTiming := true })

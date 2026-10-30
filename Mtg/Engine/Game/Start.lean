@@ -18,22 +18,21 @@ def materializeSeat (g : Game) (seatIdx : Nat) (seat : Seat) : Except String Gam
   | .error e => throw s!"{seat.name}: {e}"
   | .ok _ => pure ()
   let pid : PlayerId := ⟨seatIdx⟩
+  -- CR 400.11b: sideboard cards are outside the game. They become objects
+  -- only when an effect reaches outside the game.
   let player : Player := {
     id := pid
     name := seat.name
     life := 20
     startingLife := 20
+    sideboard := seat.sideboard
   }
   let g := g.change (.players (g.players.push player))
   return Id.run do
     let mut g := g
     for card in seat.deck do
-      let (g', obj) := g.allocObject card pid (.library pid)
+      let (g', _) := g.allocObject card pid (.library pid)
       g := g'
-      g := g.changePlayer pid (.pushLibrary obj.id)
-    -- CR 400.11b: sideboard cards are outside the game. They become objects
-    -- only when an effect reaches outside the game.
-    g := g.changePlayer pid (.sideboard seat.sideboard)
     return g
 
 def startWithRng (cfg : StartConfig) : Except String (Game × Rng) := do
@@ -53,7 +52,7 @@ def startWithRng (cfg : StartConfig) : Except String (Game × Rng) := do
         let g1 := g.logMsg s!"Rules: {Mtg.Engine.Rules.identification}"
         let g1 := g1.changes #[
           .pending (.resolveRandom (.chooseIndex g1.players.size)),
-          .afterRandom (.setStartingPlayer 0) ]
+          .pregameRandom (.setStartingPlayer 0) ]
         let g1 := g1.logMsg
           "Choose who takes the first turn (CR 103.1); the engine will not roll"
         (rng, g1)

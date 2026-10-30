@@ -33,7 +33,7 @@ def tamBoard : Game :=
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
   let bears := namedPermanent g "Grizzly Bears"
   let g := (g.recordPutCounters bears.id .plusOnePlusOne 1).recordPutCounters bears.id .shield 1
-  let g := g.changePlayer ⟨1⟩ (.poison 1)
+  let g := g.addPlayerCounters ⟨1⟩ .poison 1
   [Color.white, .blue, .black, .red, .green].foldl (fun g c => withMana g ⟨0⟩ c 1) g
 
 def tamActivated : Game :=

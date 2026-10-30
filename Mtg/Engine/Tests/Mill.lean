@@ -13,7 +13,9 @@ A count of zero mills nothing.
 namespace Mtg.Engine.MillTests
 
 open Mtg.Engine
-open Mtg.Engine.Tests
+open Mtg.Engine.Tests hiding afterDraw
+
+def afterDraw : Game := Mtg.Engine.Tests.afterDraw.change (.pushContinuationFrame {})
 
 def caster : PlayerId := ⟨0⟩
 def opp : PlayerId := ⟨1⟩
@@ -42,17 +44,15 @@ def plot : CardDef := {
 }
 
 def putInGraveyard (g : Game) (card : CardDef) (p : PlayerId) : Game :=
-  insertObject g card p (.graveyard p) none {} (fun id _ =>
-    #[.pushGraveyard id])
+  insertObject g card p (.graveyard p)
 
 def putOnLibrary (g : Game) (card : CardDef) (p : PlayerId) : Game :=
-  insertObject g card p (.library p) none {} (fun id _ =>
-    #[.pushLibrary id])
+  insertObject g card p (.library p)
 
 /-- Replace `p`'s library. The last card is on top. -/
 def onlyLibrary (g : Game) (p : PlayerId) (cards : List CardDef) : Game :=
   cards.foldl (fun g c => putOnLibrary g c p)
-    (g.changePlayer p (.library #[]))
+    (emptyLibrary g p)
 
 def libSize (g : Game) (p : PlayerId) : Nat :=
   (g.player p).library.size
@@ -148,7 +148,7 @@ target kind decides who is legal. -/
 
 #guard
   let g0 := putOnLibrary afterDraw bolt opp
-  let g0 := g0.changePlayer opp (.lost true)
+  let g0 := g0.record (GameEvent.playerLost g0.turnNumber opp .conceded)
   let g := step g0 (.mill (.fixed 1) (.target .player)) #[Target.player opp] (ab := playerMill)
   !inGraveyard g opp "Mill Bolt" &&
     logContains g "The target is no longer legal"
@@ -281,7 +281,7 @@ A lost opponent is not milled. The controller's earlier note stays. -/
 
 #guard
   let g0 := onlyLibrary afterDraw opp [bolt]
-  let g0 := g0.changePlayer opp (.lost true)
+  let g0 := g0.record (GameEvent.playerLost g0.turnNumber opp .conceded)
   let g := step g0 (.mill (.fixed 2) .eachOpponent (note := .opponentsMilled))
   !g.opponentsMilledThisWay && !inGraveyard g opp "Mill Bolt" &&
     g.log.size == g0.log.size

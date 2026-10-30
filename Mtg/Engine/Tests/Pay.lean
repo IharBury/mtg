@@ -14,7 +14,9 @@ namespace Mtg.Engine.PayTests
 
 open Mtg.Engine
 open Mtg.Engine.Catalog
-open Mtg.Engine.Tests
+open Mtg.Engine.Tests hiding afterDraw
+
+def afterDraw : Game := Mtg.Engine.Tests.afterDraw.change (.pushContinuationFrame {})
 
 def caster : PlayerId := ⟨0⟩
 def opp : PlayerId := ⟨1⟩
@@ -59,12 +61,10 @@ def inHand (g : Game) (p : PlayerId) (name : String) : Bool :=
   (g.player p).hand.any (fun id => (g.findObject? id).any (·.name == name))
 
 def putInGraveyard (g : Game) (card : CardDef) (p : PlayerId) : Game :=
-  insertObject g card p (.graveyard p) none {} (fun id _ =>
-    #[.pushGraveyard id])
+  insertObject g card p (.graveyard p)
 
 def putInHand (g : Game) (card : CardDef) (p : PlayerId) : Game :=
-  insertObject g card p (.hand p) none {} (fun id _ =>
-    #[.pushHand id])
+  insertObject g card p (.hand p)
 
 def namedIn (g : Game) (ids : Array ObjectId) (name : String) : ObjectId :=
   match ids.find? (fun id => (g.findObject? id).any (·.name == name)) with
@@ -72,11 +72,10 @@ def namedIn (g : Game) (ids : Array ObjectId) (name : String) : ObjectId :=
   | none => panic! s!"missing {name}"
 
 def withMana (g : Game) : Game :=
-  g.changePlayers caster
-    #[.addMana (.colored .green) 2, .addMana (.colored .blue) 1, .addMana .colorless 1]
+  ((g.addMana caster (.colored .green) 2).addMana caster (.colored .blue) 1).addMana caster .colorless 1
 
 def emptyHand (g : Game) : Game :=
-  g.changePlayer caster (.hand #[])
+  Mtg.Engine.Tests.emptyHand g caster
 
 def payDraw : TriggeredAbility.TriggerResolution :=
   .may (.pay (.mana #[.generic 1])) (.draw (.fixed 1)) .ifYouDo

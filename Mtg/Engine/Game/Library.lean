@@ -65,7 +65,7 @@ partial def drawOneWithReplacements (g : Game) (p : PlayerId)
       else none)
     let proposed :=
       GameEvent.drew g.turnNumber p ⟨0⟩ (GameEvent.draws g.events g.turnNumber p + 1)
-        firstOfYourDrawStep
+        firstOfYourDrawStep (cause := g.resolveOptionalCause cause (fallbackCtrl := some p))
     let specs : Array (ReplacementSpec × Nat) :=
       if !pl.keptOpeningHand || !proposed.watches .wouldDraw then #[]
       else Id.run do
@@ -189,12 +189,19 @@ def pendingRandom? (g : Game) : Option RandomRequest :=
   | .resolveRandom req => some req
   | _ => none
 
-/-- Shuffle `p`'s library (CR 103.3 / 701.20). A library of two or more cards
-becomes `Pending.resolveRandom` unless a choice is already pending. -/
+/-- Shuffle `p`'s library (CR 103.3 / 701.24). Even a library of zero or one
+card is shuffled for rules/event purposes (CR 701.24e); a library of two or more
+cards becomes `Pending.resolveRandom` unless a choice is already pending. -/
 def shuffleLibrary (g : Game) (p : PlayerId) : Game :=
   let pl := g.player p
   if pl.library.size ≤ 1 || g.pending != .none then
-    g.logMsg s!"{pl.name} shuffles their library"
+    let shuffleCause : EventCause :=
+      match g.pregameRandom with
+      | .openingShuffles _ => .gameRule .openingHandDraw
+      | .mulliganDraw .. | .mulliganQueue .. => .gameRule .mulligan
+      | _ => (g.resolvingOneShotCause p).getD (.oneShotEffect none none (some p))
+    (g.record (GameEvent.shuffled g.turnNumber p pl.library (cause := some shuffleCause)))
+      |>.logMsg s!"{pl.name} shuffles their library"
   else
     g.change (.pending (.resolveRandom (.shuffleLibrary p)))
       |>.logMsg s!"{pl.name} shuffles their library"
@@ -202,7 +209,9 @@ def shuffleLibrary (g : Game) (p : PlayerId) : Game :=
 /-- Record `after` and shuffle. If `--norandom` pauses, `after` stays on the
 game until the host supplies an order. -/
 def requestShuffle (g : Game) (p : PlayerId) (after : AfterRandom := .none) : Game :=
-  (g.change (.afterRandom after)).shuffleLibrary p
+  let run (g : Game) : Game := (g.change (.afterRandom after)).shuffleLibrary p
+  if after != .none && g.continuations.isEmpty then g.withResolvingContext none p run
+  else run g
 
 /-- Move `ids` into `dest` in this order. For a library, first listed becomes
 the new bottom of that group. -/
@@ -239,7 +248,11 @@ def putIdsOnTop (g : Game) (p : PlayerId) (ids : Array ObjectId) : Game :=
       | some o =>
         if o.zone == .library p then
           let name := o.name
-          g := g.changePlayer p (.library (((g.player p).library.filter (· != id)).push id))
+          let snap := g.snapshot o
+          let moveCause := (g.resolvingOneShotCause p).getD (.oneShotEffect none none (some p))
+          g := g.record (GameEvent.moved g.turnNumber snap (.library p) (.library p)
+            (after := some snap) (verb := some .put) (actor := some p)
+            (libraryPosition := some .top) (cause := moveCause))
           g := g.logMsg s!"{(g.player p).name} puts {name} on top of their library"
         else pure ()
       | none => pure ()

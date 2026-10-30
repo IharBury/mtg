@@ -58,12 +58,13 @@ def spearMayDiscard : Game := passBoth spearEntered
 #guard spearMayDiscard.actor == some ⟨0⟩
 #guard !spearMayDiscard.hasPriority ⟨0⟩
 #guard spearMayDiscard.log.any (fun s => mentions s "may discard a card")
-#guard spearMayDiscard.stack.isEmpty
+#guard spearMayDiscard.stack.size == 1
 
 /-- Declining the optional discard draws nothing. -/
 def spearDeclined : Game := mustApply spearMayDiscard ⟨0⟩ .decline
 
 #guard spearDeclined.pending == .none
+#guard spearDeclined.stack.isEmpty
 #guard spearDeclined.hasPriority ⟨0⟩
 #guard spearDeclined.log.any (fun s => mentions s "declines to discard")
 #guard (spearDeclined.player ⟨0⟩).hand.size == (spearMayDiscard.player ⟨0⟩).hand.size
@@ -119,7 +120,7 @@ def spearDiscardedForest : Game :=
 /-- An empty hand skips the optional discard; no draw. -/
 def spearEmptyHand : Game :=
   let g := spearEntered.changes #[.pending .none, .stack #[]]
-  let g := g.changePlayer ⟨0⟩ (.hand #[])
+  let g := emptyHand g ⟨0⟩
   g.beginMayDiscardDraw ⟨0⟩ 2
 
 #guard spearEmptyHand.pending == .none
@@ -408,7 +409,7 @@ def bladeMustSac : Game := passBoth bladeTargeted
 #guard !bladeMustSac.hasPriority ⟨0⟩
 #guard !bladeMustSac.hasPriority ⟨1⟩
 #guard bladeMustSac.log.any (fun s => mentions s "must sacrifice a creature")
-#guard bladeMustSac.stack.isEmpty
+#guard bladeMustSac.stack.size == 1
 #guard (bladeMustSac.sacrificeCreatureChoices ⟨1⟩).any (fun o => o.name == "Grizzly Bears")
 #guard (bladeMustSac.sacrificeCreatureChoices ⟨0⟩).isEmpty
 
@@ -892,7 +893,7 @@ def hospitalityTargetGone : Game :=
 def hospitalityAnimateSetup : Game :=
   let g := addPermanent afterDraw beornsHospitality ⟨0⟩ ⟨0⟩
   let g := addForests g ⟨0⟩ 3
-  (g.changePlayer ⟨0⟩ (.addMana (.colored .green) 7)).recordLandPlayed ⟨0⟩
+  (g.addMana ⟨0⟩ (.colored .green) 7).recordLandPlayed ⟨0⟩
 
 #guard hospitalityAnimateSetup.canActivate ⟨0⟩
   (namedPermanent hospitalityAnimateSetup "Beorn's Hospitality")

@@ -116,7 +116,8 @@ def threeNoCombatToLeftPlayer : Bool :=
   let g := addPermanent threeStarted grayOgre ⟨0⟩ ⟨0⟩
   let ogre := namedPermanent g "Gray Ogre"
   let g := g.markAttacking ogre.id (some (.player ⟨1⟩))
-  let g := g.changePlayers ⟨1⟩ #[.lost true, .leftTheGame true]
+  let g := (g.record (GameEvent.playerLost g.turnNumber ⟨1⟩ .conceded)).record
+    (GameEvent.playerLeftGame g.turnNumber ⟨1⟩)
   let asgn := g.defaultCombatAssignment (namedPermanent g "Gray Ogre") true #[]
   asgn.toPlayer == 0
 

@@ -11,7 +11,9 @@ Discarding when mana was spent is `TriggerResolution.if`.
 namespace Mtg.Engine.DiscardTests
 
 open Mtg.Engine
-open Mtg.Engine.Tests
+open Mtg.Engine.Tests hiding afterDraw
+
+def afterDraw : Game := Mtg.Engine.Tests.afterDraw.change (.pushContinuationFrame {})
 
 def caster : PlayerId := ⟨0⟩
 def opp : PlayerId := ⟨1⟩
@@ -44,9 +46,6 @@ def withSpent (spent : Nat) : Game :=
     .fraCauseId (some causeId),
     .fraCauseStatus (some {})]
   g.change (.resolvingAbility (some ab.id))
-
-def emptyHand (g : Game) (p : PlayerId) : Game :=
-  g.changePlayer p (.hand #[])
 
 /- The controller discards the printed count. One card leaves the hand.
 An empty hand skips the choice. The discarded-land note is cleared. -/

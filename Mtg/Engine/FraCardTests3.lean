@@ -113,7 +113,7 @@ def emrakulExiled : Game :=
 the ability ends once Emrakul is cast. -/
 #guard (fraRuling 729).comment.contains "while casting Emrakul from exile"
 #guard
-  let g := emrakulExiled.players.foldl (fun g pl => g.changePlayer pl.id (.manaPool {})) emrakulExiled
+  let g := emrakulExiled.emptyManaPools
   let card := (g.objects.find? (fun o => o.zone == .exile && o.name == "Emrakul, the Exigent Doom")).get!
   let g := withMana g me .black 8
   let g := mustApply g me (.cast card.id)
@@ -225,12 +225,11 @@ creatures; {6} puts a counter on a legendary creature. -/
 
 /- Thalia, the Survivor: the opponent's noncreature spells cost {1} more. -/
 #guard
-  let g := insertObject (addPermanent afterDraw thaliaTheSurvivor me me) shock opp (.hand opp)
-  let shockCard := g.objects.back!
-  let gOpp := g.changeObject shockCard.id (.controller (some opp))
-  let gMe := g.changeObjects shockCard.id #[.owner me, .controller (some me)]
-  (gOpp.playManaCost (gOpp.object! shockCard.id) shock).manaValue == 2 &&
-    (gMe.playManaCost (gMe.object! shockCard.id) shock).manaValue == 1
+  let base := addPermanent afterDraw thaliaTheSurvivor me me
+  let gOpp := insertObject base shock opp .stack (some opp)
+  let gMe := insertObject base shock me .stack (some me)
+  (gOpp.playManaCost gOpp.objects.back! shock).manaValue == 2 &&
+    (gMe.playManaCost gMe.objects.back! shock).manaValue == 1
 
 /- Yuriko, Blade of the Mighty: no spells or non-mana abilities in combat. -/
 #guard
@@ -456,7 +455,7 @@ creature is exiled instead of dying. -/
 didn't discard two nonland cards. -/
 #guard
   let g0 := pw garrukVeiledButcher 5
-  let g := g0.changePlayer opp (.hand #[])
+  let g := emptyHand g0 opp
   let g := addToHand (addToHand (addToHand g forest opp) forest opp) shock opp
   let before := handSize g me
   let g := settle (loyaltyAbility g "Garruk, Veiled Butcher" (.minus 3))
@@ -535,7 +534,6 @@ creature can attack. -/
 #guard
   let g := addPermanent afterDraw samutHazoretsChampion me me
   let g := enterPermanent g grizzlyBears me
-  let g := g.changeStatus (namedPermanent g "Grizzly Bears").id (.summoningSick true)
   g.canAttack (namedPermanent g "Grizzly Bears")
 
 /- Tomik, Izzet Sparkmage: noncombat damage to an opponent or their
@@ -830,7 +828,7 @@ Immovable). -/
 Hunt. -/
 def equip (g : Game) (gear host : String) : Game :=
   let o := namedPermanent g gear
-  g.changeObject o.id (.attachedTo (some (namedPermanent g host).id))
+  g.attachSourceTo o (namedPermanent g host)
 
 #guard
   let g := equip (addPermanent (addPermanent afterDraw huntersAxe me me) grizzlyBears me me) "Hunter's Axe" "Grizzly Bears"

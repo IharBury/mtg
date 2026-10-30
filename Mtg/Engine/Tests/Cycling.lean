@@ -412,7 +412,7 @@ def magnificentEndSetup (tapped : Bool) : Game :=
   let g :=
     if tapped then
       let o := namedPermanent g "Grizzly Bears"
-      g.changeStatus o.id (.tapped true)
+      setTapped g o.id true
     else g
   let g := readyMain (emptyHand g ⟨0⟩)
   withWhiteMana (addToHand g magnificentEnd ⟨0⟩) ⟨0⟩ 5
@@ -535,7 +535,7 @@ def fogCantAttack : Bool :=
   let g := addPermanent g fogOnTheBarrowDowns ⟨1⟩ ⟨1⟩
   let bears := namedPermanent g "Grizzly Bears"
   let fog := namedPermanent g "Fog on the Barrow-Downs"
-  let g := g.changeObject fog.id (.attachedTo (some bears.id))
+  let g := g.record (GameEvent.attached g.turnNumber fog.id bears.id (cause := .gameRule .staticAbility))
   !g.canAttack (namedPermanent g "Grizzly Bears")
 
 #guard fogCantAttack
@@ -546,7 +546,7 @@ def fogCantAttack : Bool :=
   let g := addPermanent g fogOnTheBarrowDowns ⟨1⟩ ⟨1⟩
   let bears := namedPermanent g "Grizzly Bears"
   let fog := namedPermanent g "Fog on the Barrow-Downs"
-  let g := g.changeObject fog.id (.attachedTo (some bears.id))
+  let g := g.record (GameEvent.attached g.turnNumber fog.id bears.id (cause := .gameRule .staticAbility))
   let host := namedPermanent g "Grizzly Bears"
   g.hasSubtype host .spirit && !g.hasSubtype host .bear
 

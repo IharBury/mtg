@@ -65,7 +65,7 @@ def kingpinBoard : Game :=
   let g := addPermanent afterDraw theKingpinOfCrime me me
   let g := addPermanent g grizzlyBears me me
   let kp := named g "The Kingpin of Crime"
-  (g.markAttacking kp.id (some (.player opp))).changeStatus kp.id (.summoningSick false)
+  g.markAttacking kp.id (some (.player opp))
 
 def kingpinOffer : Game :=
   let kp := named kingpinBoard "The Kingpin of Crime"
@@ -99,7 +99,7 @@ def kingpinPays : Game :=
     kingpinPays.assignCombatDamageEqualToughness == some me
 
 def kingpinCantPay : Game :=
-  let g := kingpinBoard.changePlayer me (.life 1)
+  let g := kingpinBoard.setLifeTotal me 1
   let kp := named g "The Kingpin of Crime"
   resolve g (TriggeredAbility.onYouAttacking Effect.youAttackingPay2LifeToughness)
     (some kp.id)
@@ -171,7 +171,7 @@ def daredevilLeft : Game :=
 
 def daredevilEmpty : Game :=
   let g := addPermanent afterDraw daredevilManWithoutFear me me
-  let g := g.changePlayer me (.library #[])
+  let g := emptyLibrary g me
   let dd := named g "Daredevil, Man Without Fear"
   let g := resolve g
     (TriggeredAbility.onYouAttacking Effect.youAttackingExileTopHeroPump) (some dd.id)
@@ -221,7 +221,7 @@ def cubeAttacking : Game := cubeLook true
 
 def cubeEmpty : Game :=
   let g := cubeBoard true
-  let g := g.changePlayer me (.library #[])
+  let g := emptyLibrary g me
   let cube := named g "Cosmic Cube"
   resolve g (TriggeredAbility.onYouAttacking Effect.youAttackingLookSixCast)
     (some cube.id)

@@ -130,7 +130,7 @@ def powerUpOnceOk : Bool :=
 def teamworkPaidOk : Bool :=
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
   let bears := namedPermanent g "Grizzly Bears"
-  let g := (g.markAttacking bears.id).changeStatus bears.id (.summoningSick false)
+  let g := g.markAttacking bears.id
   let g := insertObject g grayOgre ⟨1⟩ .battlefield (some ⟨1⟩)
     { attacking := true, summoningSick := false }
   let g := addToHand g helicarrierStrike ⟨0⟩
@@ -183,7 +183,7 @@ additional costs such as teamwork. -/
 def teamworkOptionalOnFreeCastOk : Bool :=
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
   let bears := namedPermanent g "Grizzly Bears"
-  let g := (g.markAttacking bears.id).changeStatus bears.id (.summoningSick false)
+  let g := g.markAttacking bears.id
   let g := addToHand g helicarrierStrike ⟨0⟩
   let card := handCardNamed g ⟨0⟩ "Helicarrier Strike"
   let g := g.createEffect (.playPermission card.id {
@@ -466,7 +466,7 @@ def attacksAloneOk : Bool :=
 def hulkEnrageOnce : Game :=
   let g := addPermanent afterDraw theIncredibleHulk ⟨0⟩ ⟨0⟩
   let o := namedPermanent g "The Incredible Hulk"
-  let g := (g.markAttacking o.id).changeStatus o.id (.summoningSick false)
+  let g := g.markAttacking o.id
   let o := namedPermanent g "The Incredible Hulk"
   let g := g.dealDamageToPermanent o 1 (source := some o.asEvent)
   settle g 24
@@ -585,11 +585,12 @@ def heroSourceOk : Bool :=
   let pool := (g.player ⟨0⟩).manaPool
   let capPay := dummyProposal g .activatedAbility cap (ManaCost.ofColor .white)
   let bearPay := dummyProposal g .activatedAbility bears (ManaCost.ofColor .white)
-  let gCh :=
-    g.changeObject bears.id (.printed { bears.printed with keywords := Keyword.changeling })
+  let gCh := addPermanent (addPermanent afterDraw avengersTower ⟨0⟩ ⟨0⟩)
+    { grizzlyBears with keywords := Keyword.changeling } ⟨0⟩ ⟨0⟩
   let chameleon := namedPermanent gCh "Grizzly Bears"
   let gCh :=
-    gCh.applyAbilityEffect ⟨0⟩ (Effect.addAnyColorSpendOnlyHero) #[] (some tower.id)
+    gCh.applyAbilityEffect ⟨0⟩ (Effect.addAnyColorSpendOnlyHero) #[]
+      (some (namedPermanent gCh "Avengers Tower").id)
   let gGy := addToGraveyard g braveBrawler ⟨0⟩
   let gy := graveyardCardNamed gGy ⟨0⟩ "Brave Brawler"
   let gGy :=
@@ -626,11 +627,12 @@ def villainSourceOk : Bool :=
   let bears := namedPermanent g "Grizzly Bears"
   let g := g.applyAbilityEffect ⟨0⟩ (Effect.addAnyColorSpendOnlyVillain) #[] (some hideout.id)
   let pool := (g.player ⟨0⟩).manaPool
-  let gCh :=
-    g.changeObject bears.id (.printed { bears.printed with keywords := Keyword.changeling })
+  let gCh := addPermanent (addPermanent afterDraw villainousHideout ⟨0⟩ ⟨0⟩)
+    { grizzlyBears with keywords := Keyword.changeling } ⟨0⟩ ⟨0⟩
   let chameleon := namedPermanent gCh "Grizzly Bears"
   let gCh :=
-    gCh.applyAbilityEffect ⟨0⟩ (Effect.addAnyColorSpendOnlyVillain) #[] (some hideout.id)
+    gCh.applyAbilityEffect ⟨0⟩ (Effect.addAnyColorSpendOnlyVillain) #[]
+      (some (namedPermanent gCh "Villainous Hideout").id)
   let gGy := addToGraveyard g elektraDaughterOfTheHand ⟨0⟩
   let gy := graveyardCardNamed gGy ⟨0⟩ "Elektra, Daughter of the Hand"
   let gGy :=
@@ -753,7 +755,7 @@ def improviseTapOk : Bool :=
 /-- Ruling 399: a tapped artifact cannot be tapped again for improvise. -/
 def improviseAlreadyTappedOk : Bool :=
   let (g, tok) := afterDraw.createToken ⟨0⟩ treasureToken
-  let g := g.changeStatus tok.id (.tapped true)
+  let g := setTapped g tok.id true
   match g.tapArtifactsForImprovise ⟨0⟩ #[tok.id] with
   | .error msg =>
     msg.contains "already tapped" &&
@@ -800,9 +802,9 @@ def sneakCostOk : Bool :=
   elektraDaughterOfTheHand.sneakCost ==
       some ({ symbols := #[.generic 1, .colored .black, .colored .black] } : ManaCost) &&
     !afterDraw.canCastForSneak ⟨0⟩ &&
-    (let g := { afterDraw with step := .declareBlockers, activePlayer := ⟨0⟩ }
+    (let g := afterDraw.record (GameEvent.stepBegan afterDraw.turnNumber .declareBlockers ⟨0⟩)
      g.canCastForSneak ⟨0⟩ && !g.canCastForSneak ⟨1⟩) &&
-    (let g := { afterDraw with step := .declareAttackers, activePlayer := ⟨0⟩ }
+    (let g := afterDraw.record (GameEvent.stepBegan afterDraw.turnNumber .declareAttackers ⟨0⟩)
      !g.canCastForSneak ⟨0⟩) &&
     (mshRuling 510).comment.contains "enters tapped and attacking" &&
     (mshRuling 636).comment.contains "declare blockers step"
@@ -811,7 +813,7 @@ def sneakCostOk : Bool :=
 
 def sneakPayOk : Bool :=
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
-  let g := { g with step := .declareBlockers, activePlayer := ⟨0⟩ }
+  let g := g.record (GameEvent.stepBegan g.turnNumber .declareBlockers ⟨0⟩)
   let bears := namedPermanent g "Grizzly Bears"
   let g := g.markAttacking bears.id (some (.player ⟨1⟩))
   let (g, spell) := g.allocObject elektraDaughterOfTheHand ⟨0⟩ .stack (some ⟨0⟩)
@@ -1046,7 +1048,7 @@ def equipmentTapIndependentOk : Bool :=
   let sh := namedPermanent g "Captain America's Shield"
   let g := g.attachSourceTo sh cap
   let cap := namedPermanent g "Captain America, Super-Soldier"
-  let g := g.changeStatus cap.id (.tapped true)
+  let g := setTapped g cap.id true
   let sh := namedPermanent g "Captain America's Shield"
   !sh.status.tapped &&
     (mshRuling 396).comment.contains "doesn't become tapped"
@@ -1066,7 +1068,7 @@ def xZeroWithoutPayingOk : Bool :=
 
 def copyKeepsXAndIsNotCastOk : Bool :=
   let (g, src) := afterDraw.allocObject photonBlastBarrage ⟨0⟩ .stack (some ⟨0⟩)
-  let g := g.changeObject src.id (.chosenX (some 3))
+  let g := g.record (GameEvent.announced g.turnNumber src.id (x := some 3))
   let g := g.copyStackSpell (g.object! src.id) ⟨0⟩
   let copies := g.objects.filter (fun o =>
     o.name == "Photon Blast Barrage" && o.zone == .stack && o.isCopy)
@@ -1129,7 +1131,7 @@ def creatureAndArtifactSourceOk : Bool :=
 #guard creatureAndArtifactSourceOk
 
 def poisonTenLosesOk : Bool :=
-  let g := afterDraw.changePlayer ⟨0⟩ (.poison 10)
+  let g := afterDraw.addPlayerCounters ⟨0⟩ .poison 10
   let g := g.checkSBA
   (g.player ⟨0⟩).lost &&
     g.log.any (fun s => mentions s "poison") &&
@@ -1216,7 +1218,7 @@ def xIsZeroInZonesOk : Bool :=
 def tapAlreadyTappedOk : Bool :=
   let g := addPermanent afterDraw captainAmericaLivingLegend ⟨0⟩ ⟨0⟩
   let o := namedPermanent g "Captain America, Living Legend"
-  let g := g.changeStatus o.id (.tapped true)
+  let g := setTapped g o.id true
   let o := g.object! o.id
   let g := g.applyPermanentAction o PermanentAction.tap
   let o2 := g.object! o.id
@@ -1563,7 +1565,7 @@ def docSamsonYouPutAllKindsOk : Bool :=
       marked.status.lifelinkCounters == 2 &&
       marked.status.stun == 2
   let (gSpell, spell) := g.allocObject lightningBolt ⟨1⟩ .stack (some ⟨1⟩)
-  let gOpp := gSpell.change (.resolvingSpell (some spell.id))
+  let gOpp := gSpell.change (.pushContinuationFrame { resolvingSpell := some spell.id })
   let gOpp := gOpp.addPlusOnePlusOneTo (gOpp.object! bears.id) 1
   let opponentPuts := (gOpp.object! bears.id).status.plusOnePlusOne == 1
   let gTheirs := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
@@ -1660,7 +1662,7 @@ def frozenInIceCantUntapOk : Bool :=
   let host := namedPermanent g "Grizzly Bears"
   let aura := namedPermanent g "Frozen in Ice"
   let g := g.attachSourceTo aura host
-  let g := g.changeStatus (namedPermanent g "Grizzly Bears").id (.tapped true)
+  let g := setTapped g (namedPermanent g "Grizzly Bears").id true
   let host := namedPermanent g "Grizzly Bears"
   g.hostCantBecomeUntapped host &&
     (let g := g.applyPermanentAction host PermanentAction.untap
@@ -1717,7 +1719,7 @@ def hulklingSmallerDoesNotTriggerOk : Bool :=
 def wolverineHealsOtherDamageOk : Bool :=
   let g := addPermanent afterDraw wolverineFierceFighter ⟨0⟩ ⟨0⟩
   let o := namedPermanent g "Wolverine, Fierce Fighter"
-  let g := g.changeStatus o.id (.damage 3)
+  let g := setMarkedDamage g o.id 3
   let o := namedPermanent g "Wolverine, Fierce Fighter"
   let g := g.markDamageOn o 2 "Wolverine is dealt 2 damage" (source := some o.asEvent)
   (namedPermanent g "Wolverine, Fierce Fighter").status.damage == 2 &&
@@ -1803,7 +1805,7 @@ def hydraulicHelperRestrictedBlueOk : Bool :=
 
 def copyKeepsChosenXOk : Bool :=
   let (g, src) := afterDraw.allocObject photonBlastBarrage ⟨0⟩ .stack (some ⟨0⟩)
-  let g := g.changeObject src.id (.chosenX (some 4))
+  let g := g.record (GameEvent.announced g.turnNumber src.id (x := some 4))
   let g := g.copyStackSpell (g.object! src.id) ⟨0⟩
   let copies := g.objects.filter (fun o =>
     o.name == "Photon Blast Barrage" && o.zone == .stack && o.isCopy)
@@ -1862,7 +1864,8 @@ def hawkeyeBowBecomesTappedOk : Bool :=
 /-- Rulings 98 / 110 / 244–246 / 249 / 255 / 277: second-card triggers fire
 even if the permanent entered after the first draw. -/
 def secondCardDrawnAfterEnterOk : Bool :=
-  let g := afterDraw.record (GameEvent.drew afterDraw.turnNumber ⟨0⟩ ⟨70⟩ 1)
+  let g := afterDraw.record (GameEvent.drew afterDraw.turnNumber ⟨0⟩ ⟨70⟩ 1
+    (cause := .turnBased .drawStepDraw))
   let g := addPermanent g kangTemporalTyrant ⟨0⟩ ⟨0⟩
   let g := addPermanent g kidLoki ⟨0⟩ ⟨0⟩
   let g := g.draw ⟨0⟩ 1
@@ -2107,7 +2110,7 @@ def copyStackAbilityOk : Bool :=
   let src := namedPermanent g "Aerial Doombot"
   let (g, ab) := g.putStackAbility src ⟨0⟩
     (triggeredAbility := some (.onEnterDraw 1)) (lastKnownPower := some 4)
-  let g := g.changeObject ab.id (.chosenX (some 2))
+  let g := g.record (GameEvent.announced g.turnNumber ab.id (x := some 2))
   let origId := ab.id
   let g := g.copyStackAbility (g.object! origId) ⟨0⟩
   let copies := g.objects.filter (fun o =>
@@ -2412,7 +2415,7 @@ def hawkeyeReflexivePayOk : Bool :=
   let nonePaid :=
     g.applyTriggeredAbility ⟨0⟩ (.onWatch Effect.watchHawkeyeModes) (some hawk.id)
   !nonePaid.hasModeledReflexiveOnStack &&
-    (let g := nonePaid.changePlayer ⟨0⟩ (.addMana (.colored .red) 2)
+    (let g := nonePaid.addMana ⟨0⟩ (.colored .red) 2
      let g := mustApply g ⟨0⟩ (.chooseMode 2)
      let g := mustApply g ⟨0⟩ (.chooseMode 1)
      let g := mustApply g ⟨0⟩ .decline
@@ -2476,7 +2479,8 @@ def mightyThorBlinkOk : Bool :=
   let bears := namedPermanent g "Grizzly Bears"
   let stone := namedPermanent g "The Mind Stone"
   let land := namedPermanent g "Mountain"
-  let gTok := g.changeObject bears.id (.printed { bears.printed with isToken := true })
+  let gTok := addPermanent (addPermanent afterDraw theMightyThorJaneFoster ⟨0⟩ ⟨0⟩)
+    { grizzlyBears with isToken := true } ⟨1⟩ ⟨1⟩
   let tok := namedPermanent gTok "Grizzly Bears"
   let kind := (SharedTrigger.timing (.thisAttack .blinkNontoken)).targeting.kind
   let legal := g.legalTargetsForKind ⟨0⟩ kind (some thor.id)
@@ -2484,7 +2488,8 @@ def mightyThorBlinkOk : Bool :=
     legal.contains (Target.permanent stone.id) &&
     legal.contains (Target.permanent thor.id) &&
     !legal.contains (Target.permanent land.id) &&
-    !(gTok.legalTargetsForKind ⟨0⟩ kind (some thor.id)).contains (Target.permanent tok.id) &&
+    !(gTok.legalTargetsForKind ⟨0⟩ kind
+      (some (namedPermanent gTok "The Mighty Thor, Jane Foster").id)).contains (Target.permanent tok.id) &&
     (let g0 := g.applyTriggeredAbility ⟨0⟩ (.onThisAttack Effect.thisAttackBlinkNontoken)
         (some thor.id) #[]
      (namedPermanent g0 "Grizzly Bears").id == bears.id &&
@@ -2566,13 +2571,13 @@ def hulklingComparesCauseOk : Bool :=
   (namedPermanent noCause "Hulkling, Burgeoning Bruiser").status.plusOnePlusOne == 0 &&
     (let (g, ab) := g.allocStackAbility hulkling ⟨0⟩
      let g := g.changeObject ab.id (.fraCauseId (some bot.id))
-     let g := g.change (.resolvingAbility (some ab.id))
+     let g := g.change (.pushContinuationFrame { resolvingAbility := some ab.id })
      let g := g.applyTriggeredAbility ⟨0⟩ (.onWatch Effect.watchHulklingCompare)
        (some hulkling.id) #[]
      (namedPermanent g "Hulkling, Burgeoning Bruiser").status.plusOnePlusOne == 0) &&
     (let (g, ab) := g.allocStackAbility hulkling ⟨0⟩
      let g := g.changeObject ab.id (.fraCauseId (some giant.id))
-     let g := g.change (.resolvingAbility (some ab.id))
+     let g := g.change (.pushContinuationFrame { resolvingAbility := some ab.id })
      let g := g.applyTriggeredAbility ⟨0⟩ (.onWatch Effect.watchHulklingCompare)
        (some hulkling.id) #[]
      (namedPermanent g "Hulkling, Burgeoning Bruiser").status.plusOnePlusOne == 1) &&
@@ -2583,7 +2588,7 @@ def hulklingComparesCauseOk : Bool :=
      g.lastKnownPowerOf? gy.id == some 1 && g.lastKnownToughnessOf? gy.id == some 1 &&
        (let (g, ab) := g.allocStackAbility hulkling ⟨0⟩
         let g := g.changeObject ab.id (.fraCauseId (some giantId))
-        let g := g.change (.resolvingAbility (some ab.id))
+        let g := g.change (.pushContinuationFrame { resolvingAbility := some ab.id })
         let g := g.applyTriggeredAbility ⟨0⟩ (.onWatch Effect.watchHulklingCompare)
           (some hulkling.id) #[]
         (namedPermanent g "Hulkling, Burgeoning Bruiser").status.plusOnePlusOne == 0))
@@ -2613,7 +2618,7 @@ def capUntapsTriggeringCreatureOk : Bool :=
   let cap := namedPermanent g "Captain America, Living Legend"
   let (g, ab) := g.allocStackAbility cap ⟨0⟩
   let g := g.changeObject ab.id (.fraCauseId (some bears.id))
-  let g := g.change (.resolvingAbility (some ab.id))
+  let g := g.change (.pushContinuationFrame { resolvingAbility := some ab.id })
   let g := g.applyTriggeredAbility ⟨0⟩ (.onWatch Effect.watchFirstTapUntap)
     (some cap.id) #[]
   before == afterEarly &&
@@ -2628,7 +2633,7 @@ to put a +1/+1 counter. Declining grants permission to cast the nonland. -/
 def blackWidowChoiceOk : Bool :=
   let setup :=
     let g := addPermanent afterDraw blackWidowSuperSpy ⟨0⟩ ⟨0⟩
-    let g := g.changePlayer ⟨1⟩ (.library #[])
+    let g := emptyLibrary g ⟨1⟩
     let g := addToLibraryTop g mountain ⟨1⟩
     addToLibraryTop g lightningBolt ⟨1⟩
   let widow := namedPermanent setup "Black Widow, Super Spy"
@@ -2652,7 +2657,7 @@ def blackWidowChoiceOk : Bool :=
            o.zone == .exile && o.name == "Lightning Bolt" && (declined.playPermission o).isSome))
      | _ => false) &&
     (let (g, ab) := setup.putStackAbility widow ⟨0⟩ (lastKnownToughness := some 1)
-     let g := g.change (.resolvingAbility (some ab.id))
+     let g := g.change (.pushContinuationFrame { resolvingAbility := some ab.id })
      let g := g.applyTriggeredAbility ⟨0⟩
        (.onWatch Effect.watchCombatDamageExileUntilNonland) (some widow.id) #[]
      match g.pending with
@@ -2714,12 +2719,12 @@ noncreature token becomes a 2/2 Robot Villain after it enters. -/
 def ultronMayPayCopyOk : Bool :=
   let g := addPermanent afterDraw ultronArtificialMalevolence ⟨0⟩ ⟨0⟩
   let g := addPermanent g theMindStone ⟨0⟩ ⟨0⟩
-  let g := g.changePlayer ⟨0⟩ (.addMana .colorless 2)
+  let g := g.addMana ⟨0⟩ .colorless 2
   let ultron := namedPermanent g "Ultron, Artificial Malevolence"
   let stone := namedPermanent g "The Mind Stone"
   let (g, ab) := g.allocStackAbility ultron ⟨0⟩
   let g := g.changeObject ab.id (.fraCauseId (some stone.id))
-  let g := g.change (.resolvingAbility (some ab.id))
+  let g := g.change (.pushContinuationFrame { resolvingAbility := some ab.id })
   let g := g.applyTriggeredAbility ⟨0⟩ (.onWatch Effect.watchUltronCopy)
     (some ultron.id) #[]
   let tokens (g : Game) :=
@@ -2893,13 +2898,13 @@ def thorSpellManaValueOk : Bool :=
   let g := addPermanent afterDraw thorGodOfThunder ⟨0⟩ ⟨0⟩
   let thor := namedPermanent g "Thor, God of Thunder"
   let (g, spell) := g.allocObject photonBlastBarrage ⟨0⟩ .stack (some ⟨0⟩)
-  let g := g.changeObject spell.id (.chosenX (some 3))
+  let g := g.record (GameEvent.announced g.turnNumber spell.id (x := some 3))
   let g := g.putStackEntry ⟨0⟩ spell.id
   let (g, bolt) := g.allocObject lightningBolt ⟨0⟩ .stack (some ⟨0⟩)
   let g := g.putStackEntry ⟨0⟩ bolt.id
   let (g, ab) := g.allocStackAbility thor ⟨0⟩
   let g := g.changeObject ab.id (.fraCauseId (some spell.id))
-  let g := g.change (.resolvingAbility (some ab.id))
+  let g := g.change (.pushContinuationFrame { resolvingAbility := some ab.id })
   let life0 := (g.player ⟨1⟩).life
   let g := g.applyModeledTrigger ⟨0⟩ (.onCasting Effect.castingDamageEqualMv)
     (some thor.id) #[Target.player ⟨1⟩]
@@ -2909,7 +2914,7 @@ def thorSpellManaValueOk : Bool :=
      g.chosenXOf? gy.id == some 3 &&
        (let (g, ab2) := g.allocStackAbility thor ⟨0⟩
         let g := g.changeObject ab2.id (.fraCauseId (some spell.id))
-        let g := g.change (.resolvingAbility (some ab2.id))
+        let g := g.change (.pushContinuationFrame { resolvingAbility := some ab2.id })
         let life1 := (g.player ⟨1⟩).life
         let g := g.applyModeledTrigger ⟨0⟩ (.onCasting Effect.castingDamageEqualMv)
           (some thor.id) #[Target.player ⟨1⟩]
@@ -2930,13 +2935,13 @@ def namorTriggeringSpellOk : Bool :=
     (g.battlefield.filter (fun o => o.printed.isToken && o.hasSubtype .merfolk)).size
   let (gBlue, ab) := g.allocStackAbility namor ⟨0⟩
   let gBlue := gBlue.changeObject ab.id (.fraCauseId (some aura.id))
-  let gBlue := gBlue.change (.resolvingAbility (some ab.id))
+  let gBlue := gBlue.change (.pushContinuationFrame { resolvingAbility := some ab.id })
   let gBlue := gBlue.applyModeledTrigger ⟨0⟩ (.onCasting Effect.castingMerfolkFromBlue)
     (some namor.id)
   merfolk gBlue == 2 &&
     (let (gRed, ab) := g.allocStackAbility namor ⟨0⟩
      let gRed := gRed.changeObject ab.id (.fraCauseId (some bolt.id))
-     let gRed := gRed.change (.resolvingAbility (some ab.id))
+     let gRed := gRed.change (.pushContinuationFrame { resolvingAbility := some ab.id })
      let gRed := gRed.applyModeledTrigger ⟨0⟩ (.onCasting Effect.castingMerfolkFromBlue)
        (some namor.id)
      merfolk gRed == 0 && logContains gRed "No blue mana symbols")
@@ -2948,12 +2953,10 @@ def wiccanAnotherNonlandNontokenOk : Bool :=
   let g := addPermanent afterDraw wiccanRisingMagician ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
   let g := addPermanent g mountain ⟨0⟩ ⟨0⟩
-  let g := addPermanent g hillGiant ⟨0⟩ ⟨0⟩
+  let g := addPermanent g { hillGiant with isToken := true } ⟨0⟩ ⟨0⟩
   let wiccan := namedPermanent g "Wiccan, Rising Magician"
   let bears := namedPermanent g "Grizzly Bears"
   let land := namedPermanent g "Mountain"
-  let giant := namedPermanent g "Hill Giant"
-  let g := g.changeObject giant.id (.printed { giant.printed with isToken := true })
   let giant := namedPermanent g "Hill Giant"
   let kind := (SharedTrigger.timing (.casting .exileFlicker)).targeting.kind
   let legal := g.legalTargetsForKind ⟨0⟩ kind (some wiccan.id)
@@ -3091,7 +3094,7 @@ def evilsThrallDurationOk : Bool :=
   let g := addPermanent afterDraw thanosTheMadTitan ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
   let bears := namedPermanent g "Grizzly Bears"
-  let g := g.changeStatus bears.id (.tapped true)
+  let g := setTapped g bears.id true
   let g := g.applyEvilsThrall ⟨0⟩ #[Target.permanent (namedPermanent g "Grizzly Bears").id]
   let held := namedPermanent g "Grizzly Bears"
   g.controllerOf held == some ⟨0⟩ && g.controlTurnEndsLeft held == 2 &&
@@ -3253,7 +3256,7 @@ battlefield with X +1/+1 counters, and haste when X is 4 or greater. -/
 def visionQuestOk : Bool :=
   let g := addToLibraryTop afterDraw warMachineLegacyOfIron ⟨0⟩
   let top := (g.player ⟨0⟩).library.back!
-  let g := g.changePlayer ⟨0⟩ (.library #[top])
+  let g := retainLibrary g ⟨0⟩ #[top]
   let gSmall := g.beginVisionQuest ⟨0⟩ 2
   gSmall.pending == .none &&
     (gSmall.player ⟨0⟩).library.any (fun id => (gSmall.object! id).name == "War Machine, Legacy of Iron") &&
@@ -3368,7 +3371,7 @@ def powerfulBrokerOk : Bool :=
   let g := g.proliferateTarget ⟨0⟩ #[Target.permanent (namedPermanent g "Grizzly Bears").id]
   let bear := namedPermanent g "Grizzly Bears"
   bear.status.plusOnePlusOne == 2 && bear.status.stun == 3 &&
-    (let g := g.changePlayer ⟨1⟩ (.poison 1)
+    (let g := g.addPlayerCounters ⟨1⟩ .poison 1
      let g := g.proliferateTarget ⟨0⟩ #[Target.player ⟨1⟩]
      (g.player ⟨1⟩).poison == 2)
 
@@ -3521,7 +3524,7 @@ def tricksterChoiceAndConniveOk : Bool :=
 def pantherPounceTargetsOk : Bool :=
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
   let bears := namedPermanent g "Grizzly Bears"
-  let g := g.changeStatus bears.id (.tapped true)
+  let g := setTapped g bears.id true
   let g := g.applyEffect ⟨0⟩ Effect.investigatePumpFlyingUntap
     #[Target.player ⟨1⟩, Target.permanent bears.id]
   (g.permanentsOf ⟨1⟩).any (fun o => o.name == "Clue") &&
@@ -3569,7 +3572,7 @@ def tooEvilTeamworkEntersOk : Bool :=
      let returned := namedPermanent gBear "Grizzly Bears"
      gBear.loggedEntered returned.id) &&
     (let paid := g.record (GameEvent.announced g.turnNumber bear.id (costs := #[.teamwork #[]]))
-     let paid := paid.change (.resolvingSpell (some bear.id))
+     let paid := paid.change (.pushContinuationFrame { resolvingSpell := some bear.id })
      let paid := paid.applyEffect ⟨0⟩ (Effect.returnGyCreatureMvAtMostOrAny 4)
        #[Target.card dino.id]
      paid.loggedEntered (namedPermanent paid "Savage Land Dinosaur").id)
@@ -3595,7 +3598,7 @@ def cruelAllianceTeamworkOk : Bool :=
         #[Target.permanent giant.id]
      gMiss.battlefield.any (fun o => o.name == "Hill Giant")) &&
     (let paid := g.record (GameEvent.announced g.turnNumber bears.id (costs := #[.teamwork #[]]))
-     let paid := paid.change (.resolvingSpell (some bears.id))
+     let paid := paid.change (.pushContinuationFrame { resolvingSpell := some bears.id })
      let wide := paid.legalTargetsForKind ⟨0⟩ kind
      wide.contains (Target.permanent giant.id) &&
        (let paid := paid.applyEffect ⟨0⟩ (Effect.exileCreatureMvAtMostOrAnyIfTeamwork 3 3)
@@ -3628,21 +3631,21 @@ def callForthCountsOtherSpellsOk : Bool :=
   let (g, spell) := g.allocObject callForthTheTempest ⟨0⟩ .stack (some ⟨0⟩)
   let g := #[2, 8, 1].foldl (fun g mv =>
     g.record (GameEvent.cast g.turnNumber ⟨0⟩ {} (.hand ⟨0⟩) mv)) g
-  let g := g.change (.resolvingSpell (some spell.id))
+  let g := g.change (.pushContinuationFrame { resolvingSpell := some spell.id })
   let dealt := g.applyEffect ⟨0⟩ Effect.damageOppCreaturesEqualOtherSpellsMv #[]
   (namedPermanent dealt "Hill Giant").status.damage == 3 &&
     (namedPermanent dealt "Grizzly Bears").status.damage == 0 &&
     (let (g0, spell0) :=
         (addPermanent afterDraw hillGiant ⟨1⟩ ⟨1⟩).allocObject callForthTheTempest ⟨0⟩ .stack (some ⟨0⟩)
      let g0 := g0.record (GameEvent.cast g0.turnNumber ⟨0⟩ {} (.hand ⟨0⟩) 8)
-     let g0 := g0.change (.resolvingSpell (some spell0.id))
+     let g0 := g0.change (.pushContinuationFrame { resolvingSpell := some spell0.id })
      let dealt0 := g0.applyEffect ⟨0⟩ Effect.damageOppCreaturesEqualOtherSpellsMv #[]
      (namedPermanent dealt0 "Hill Giant").status.damage == 0) &&
     (let gCopy := addPermanent afterDraw hillGiant ⟨1⟩ ⟨1⟩
-     let (gCopy, spellC) := gCopy.allocObject callForthTheTempest ⟨0⟩ .stack (some ⟨0⟩)
-     let gCopy := gCopy.changeObject spellC.id (.isCopy true)
+     let (gCopy, spellC) := gCopy.allocObject callForthTheTempest ⟨0⟩ (.outside ⟨0⟩) none
+     let (gCopy, spellCId) := gCopy.move spellC.id .stack (some ⟨0⟩) (isCopy := some true)
      let gCopy := gCopy.record (GameEvent.cast gCopy.turnNumber ⟨0⟩ {} (.hand ⟨0⟩) 2)
-     let gCopy := gCopy.change (.resolvingSpell (some spellC.id))
+     let gCopy := gCopy.change (.pushContinuationFrame { resolvingSpell := some spellCId })
      let dealtC := gCopy.applyEffect ⟨0⟩ Effect.damageOppCreaturesEqualOtherSpellsMv #[]
      (namedPermanent dealtC "Hill Giant").status.damage == 2)
 
@@ -3676,7 +3679,7 @@ def insideInformationExpiresThisTurnOk : Bool :=
 /-- Riddles asks for a face-up pile, then an opponent chooses which pile
 goes to hand. A 4/0 face-down pile is not revealed. -/
 def riddlesPileChoiceOk : Bool :=
-  let g := afterDraw.changePlayer ⟨0⟩ (.library #[])
+  let g := emptyLibrary afterDraw ⟨0⟩
   let g := addToLibraryTop g shock ⟨0⟩
   let g := addToLibraryTop g lightningBolt ⟨0⟩
   let g := addToLibraryTop g grizzlyBears ⟨0⟩
@@ -3737,7 +3740,7 @@ def palisadeChoosesCreatureTypeOk : Bool :=
 /-- Earth's Mightiest Heroes may put one revealed creature, or any number
 once teamwork is paid. The chosen creatures' enters abilities run. -/
 def earthsMightiestChoosesOk : Bool :=
-  let base := afterDraw.changePlayer ⟨0⟩ (.library #[])
+  let base := emptyLibrary afterDraw ⟨0⟩
   let base := addToLibraryTop base mountain ⟨0⟩
   let base := addToLibraryTop base grizzlyBears ⟨0⟩
   let g := base.applyEffect ⟨0⟩ (Effect.revealTopPutCreatures 8) #[]
@@ -3762,7 +3765,7 @@ def earthsMightiestChoosesOk : Bool :=
       (let two := addToLibraryTop base hillGiant ⟨0⟩
        let (two, spell) := two.allocObject earthSMightiestHeroes ⟨0⟩ .stack (some ⟨0⟩)
        let two := two.record (GameEvent.announced two.turnNumber spell.id (costs := #[.teamwork #[]]))
-       let two := two.change (.resolvingSpell (some spell.id))
+       let two := two.change (.pushContinuationFrame { resolvingSpell := some spell.id })
        let gTeam := two.applyEffect ⟨0⟩ (Effect.revealTopPutCreatures 8) #[]
        match gTeam.pending with
        | .fraChoice ⟨0⟩ (.revealPutCreatures _ both true) =>
@@ -3856,7 +3859,7 @@ def soundTheTrumpetsManaValueOk : Bool :=
     #[Target.card shockId.id]
   (match gShock.pending with | .recruitDiscard ⟨0⟩ => true | _ => false) &&
     (let (gX, spell) := afterDraw.allocObject insideInformation ⟨1⟩ .stack (some ⟨1⟩)
-     let gX := gX.changeObject spell.id (.chosenX (some 3))
+     let gX := gX.record (GameEvent.announced gX.turnNumber spell.id (x := some 3))
      let gX := gX.putStackEntry ⟨1⟩ spell.id
      let gX := gX.applyEffect ⟨0⟩ (Effect.counterThenRecruitIfMvAtMost 2)
        #[Target.card spell.id]
@@ -3904,7 +3907,7 @@ Vehicle from the top seven onto the battlefield and may transform a
 double-faced card. -/
 def nickFuryLookPutOk : Bool :=
   let g := addPermanent afterDraw nickFuryAgentOfSHIELD ⟨0⟩ ⟨0⟩
-  let g := g.changePlayer ⟨0⟩ (.library #[])
+  let g := emptyLibrary g ⟨0⟩
   let g := addToLibraryTop g mountain ⟨0⟩
   let g := addToLibraryTop g whiteTigerAvaAyala ⟨0⟩
   let g := addToLibraryTop g tonyStark ⟨0⟩
@@ -3944,7 +3947,7 @@ def nickFuryLookPutOk : Bool :=
 /-- Tony Stark may reveal an artifact from the top four and put it into his hand. -/
 def tonyStarkRevealArtifactOk : Bool :=
   let g := addPermanent afterDraw tonyStark ⟨0⟩ ⟨0⟩
-  let g := g.changePlayer ⟨0⟩ (.library #[])
+  let g := emptyLibrary g ⟨0⟩
   let g := addToLibraryTop g mountain ⟨0⟩
   let g := addToLibraryTop g superSuit ⟨0⟩
   let src := namedPermanent g "Tony Stark"
@@ -3964,7 +3967,7 @@ def tonyStarkRevealArtifactOk : Bool :=
 chosen order. -/
 def avengersTowerHeroOrderOk : Bool :=
   let g := addPermanent afterDraw avengersTower ⟨0⟩ ⟨0⟩
-  let g := g.changePlayer ⟨0⟩ (.library #[])
+  let g := emptyLibrary g ⟨0⟩
   let g := addToLibraryTop g mountain ⟨0⟩
   let g := addToLibraryTop g shock ⟨0⟩
   let g := addToLibraryTop g whiteTigerAvaAyala ⟨0⟩
@@ -4081,7 +4084,7 @@ def directPlusOneCountersOk : Bool :=
 
 /-- Speak Secrets asks which instant or sorcery to take from the milled cards. -/
 def speakSecretsChoosesOk : Bool :=
-  let g := afterDraw.changePlayer ⟨0⟩ (.library #[])
+  let g := emptyLibrary afterDraw ⟨0⟩
   let g := addToLibraryTop g mountain ⟨0⟩
   let g := addToLibraryTop g shock ⟨0⟩
   let g := addToLibraryTop g lightningBolt ⟨0⟩
@@ -4101,7 +4104,7 @@ def speakSecretsChoosesOk : Bool :=
 
 /-- Silvan Rally may put up to two of the milled lands into hand. -/
 def silvanRallyUpToTwoOk : Bool :=
-  let g := afterDraw.changePlayer ⟨0⟩ (.library #[])
+  let g := emptyLibrary afterDraw ⟨0⟩
   let g := addToLibraryTop g mountain ⟨0⟩
   let g := addToLibraryTop g forest ⟨0⟩
   let g := addToLibraryTop g shock ⟨0⟩
@@ -4137,7 +4140,7 @@ def lastMarchChoosesCreaturesOk : Bool :=
 
 /-- Through the Forest Gate may put any number of the looked-at lands. -/
 def forestGateChoosesLandsOk : Bool :=
-  let g := afterDraw.changePlayer ⟨0⟩ (.library #[])
+  let g := emptyLibrary afterDraw ⟨0⟩
   let g := addToLibraryTop g shock ⟨0⟩
   let g := addToLibraryTop g mountain ⟨0⟩
   let life0 := (g.player ⟨0⟩).life
@@ -4274,8 +4277,8 @@ def withGraveyard (g : Game) (p : PlayerId) (n : Nat) : Game :=
   (List.range n).foldl (fun g _ => addToGraveyard g forest p) g
 
 def attackStep (g : Game) : Game :=
-  { (g.changes #[.pending .declareAttackers, .priority ⟨0⟩]) with
-    step := .declareAttackers, activePlayer := ⟨0⟩ }
+  (g.record (GameEvent.stepBegan g.turnNumber .declareAttackers ⟨0⟩)).changes
+    #[.pending .declareAttackers, .priority ⟨0⟩]
 
 /-- Threshold gives +1/+1 once seven cards are in your graveyard. -/
 def thresholdGetsOk : Bool :=
@@ -4302,7 +4305,7 @@ def longLostLancesOk : Bool :=
     (namedPermanent g "Grizzly Bears")
   let bears := namedPermanent g "Grizzly Bears"
   let ogre := namedPermanent g "Gray Ogre"
-  let theirs := { g with activePlayer := ⟨1⟩ }
+  let theirs := g.record (GameEvent.turnBegan (g.turnNumber + 1) ⟨1⟩ false)
   g.power bears == 4 && g.toughness bears == 2 &&
     g.hasFirstStrike bears && g.hasVigilance bears &&
     !g.hasFirstStrike ogre && !g.hasVigilance ogre &&
@@ -4318,11 +4321,15 @@ def dainAttackTaxOk : Bool :=
   let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
   let bearsId := (namedPermanent g "Grizzly Bears").id
   let free := attackStep g
-  let taxed := attackStep (g.changePlayer ⟨1⟩ (.enduringStory true))
-  let paid := taxed.changePlayer ⟨0⟩ (.addMana .colorless 1)
+  let taxed := attackStep
+    (g.record (GameEvent.gainedDesignation g.turnNumber ⟨1⟩ .enduringStory
+      (cause := some (.gameRule .staticAbility))))
+  let paid := taxed.addMana ⟨0⟩ .colorless 1
   let withAres := attackStep (addPermanent g aresGodOfWar ⟨0⟩ ⟨0⟩)
   let aresTaxed := attackStep
-    ((addPermanent g aresGodOfWar ⟨0⟩ ⟨0⟩).changePlayer ⟨1⟩ (.enduringStory true))
+    (let g' := addPermanent g aresGodOfWar ⟨0⟩ ⟨0⟩
+     g'.record (GameEvent.gainedDesignation g'.turnNumber ⟨1⟩ .enduringStory
+       (cause := some (.gameRule .staticAbility))))
   (match free.apply ⟨0⟩ (.declareAttackers #[bearsId]) with
     | .ok g => (namedPermanent g "Grizzly Bears").status.attacking
     | .error _ => false) &&
@@ -4418,15 +4425,13 @@ def serumLegendarySoldierOk : Bool :=
 
 /-- Granted haste, from an Aura or an enduring story, removes summoning sickness. -/
 def grantedHasteRemovesSicknessOk : Bool :=
-  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addSickPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
   let g := addPermanent g superSpeed ⟨0⟩ ⟨0⟩
-  let bears := namedPermanent g "Grizzly Bears"
-  let g := g.changeStatus bears.id (.summoningSick true)
   let g := g.attachSourceTo (namedPermanent g "Super Speed") (namedPermanent g "Grizzly Bears")
   let sped := namedPermanent g "Grizzly Bears"
-  let oin := addPermanent afterDraw oinTheBrave ⟨0⟩ ⟨0⟩
-  let sick := oin.changeStatus (namedPermanent oin "Óin the Brave").id (.summoningSick true)
-  let story := sick.changePlayer ⟨0⟩ (.enduringStory true)
+  let sick := addSickPermanent afterDraw oinTheBrave ⟨0⟩ ⟨0⟩
+  let story := sick.record (GameEvent.gainedDesignation sick.turnNumber ⟨0⟩ .enduringStory
+    (cause := some (.gameRule .staticAbility)))
   let brave := namedPermanent story "Óin the Brave"
   g.hasHaste sped && g.canAttack sped && g.power sped == 3 &&
     !sick.hasHaste (namedPermanent sick "Óin the Brave") &&
@@ -4453,7 +4458,8 @@ def hostKeywordChecksOk : Bool :=
     (namedPermanent g3 "Grizzly Bears")
   let armed := namedPermanent g3 "Grizzly Bears"
   let g3 := g3.markAttacking armed.id (some (.player ⟨1⟩))
-  let g3 := { g3 with assignedCombatDamage := #[{ source := armed.id, toPlayer := 3 }] }
+  let g3 := g3.record (GameEvent.combatDamageAssigned g3.turnNumber true
+    #[{ source := armed.id, toPlayer := 3 }])
   let g3 := g3.dealAssignedCombatDamage
   g.hasMenace mail && g.power mail == 3 &&
     g2.hasIndestructible coat &&
@@ -4466,7 +4472,7 @@ def hostKeywordChecksOk : Bool :=
 removes abilities and skips only the untap step. -/
 def loseAbilitiesUntapOk : Bool :=
   let g := addPermanent afterDraw largeBear ⟨0⟩ ⟨0⟩
-  let g := g.changeStatus (namedPermanent g "Large Bear").id (.tapped true)
+  let g := setTapped g (namedPermanent g "Large Bear").id true
   let ice := addPermanent g frozenInIce ⟨0⟩ ⟨0⟩
   let ice := ice.attachSourceTo (namedPermanent ice "Frozen in Ice")
     (namedPermanent ice "Large Bear")
@@ -4522,16 +4528,14 @@ def quicksilverMayStayInHandOk : Bool :=
 
 /-- Printed prowess and prowess from Wizard's Staff are separate triggers. -/
 def prowessPrintedPlusGrantedOk : Bool :=
-  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
-  let host := namedPermanent g "Grizzly Bears"
-  let g1 := g.changeObject host.id (.printed { host.printed with prowessInstances := 2 })
+  let g1 := addPermanent afterDraw { grizzlyBears with prowessInstances := 2 } ⟨0⟩ ⟨0⟩
+  let host := namedPermanent g1 "Grizzly Bears"
   let g2 := g1.createEffect (.keywordsUntilEot host.id Keyword.prowess)
-  let gStaff := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let gStaff := addPermanent afterDraw { grizzlyBears with prowessInstances := 1 } ⟨0⟩ ⟨0⟩
   let gStaff := addPermanent gStaff wizardSStaff ⟨0⟩ ⟨0⟩
   let gStaff := gStaff.attachSourceTo (namedPermanent gStaff "Wizard's Staff")
     (namedPermanent gStaff "Grizzly Bears")
   let armed := namedPermanent gStaff "Grizzly Bears"
-  let gStaff := gStaff.changeObject armed.id (.printed { armed.printed with prowessInstances := 1 })
   (g1.prowessTriggers (g1.object! host.id)).size == 2 &&
     (g2.prowessTriggers (g2.object! host.id)).size == 3 &&
     (gStaff.prowessTriggers (gStaff.object! armed.id)).size == 2

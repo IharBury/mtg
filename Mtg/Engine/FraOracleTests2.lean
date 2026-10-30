@@ -142,7 +142,7 @@ because X there is 0. On the stack the chosen X is included. -/
     let g := addToGraveyard afterDraw guidingHydra ⟨0⟩
     let card := graveyardCard g ⟨0⟩ "Guiding Hydra"
     let (gStack, spell) := g.allocObject guidingHydra ⟨0⟩ .stack (some ⟨0⟩)
-    let gStack := gStack.changeObject spell.id (.chosenX (some 5))
+    let gStack := gStack.record (GameEvent.announced gStack.turnNumber spell.id (x := some 5))
     g.objectManaValue card == 1 &&
       (g.legalTargetsForKind ⟨0⟩ e.targetKind).contains (Target.card card.id) &&
       gStack.objectManaValue (gStack.object! spell.id) == 6 &&
@@ -157,7 +157,7 @@ X as 0, so Guiding Hydra returns tapped even if a value was chosen for X. -/
   | some e =>
     let g := addPermanent afterDraw guidingHydra ⟨1⟩ ⟨1⟩
     let o := namedPermanent g "Guiding Hydra"
-    let g := g.changeObject o.id (.chosenX (some 9))
+    let g := g.record (GameEvent.announced g.turnNumber o.id (x := some 9))
     let id := (namedPermanent g "Guiding Hydra").id
     g.objectManaValue (g.object! id) == 1 &&
       (let g := g.applyEffect ⟨0⟩ e #[Target.permanent id]

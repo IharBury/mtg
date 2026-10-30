@@ -126,12 +126,13 @@ def createOneToken (g : Game) (controller : PlayerId) (printed : CardDef)
       | none =>
       let g := g.consumeReplacementOrder etb.applied
       let obj := etb.candidate
-      let g := g.record (GameEvent.created g.turnNumber controller (g.snapshot obj) (cause := etb.cause))
+      let resolvedEtbCause := g.resolveOptionalCause etb.cause (fallbackCtrl := some controller)
+      let g := g.record (GameEvent.created g.turnNumber controller (g.snapshot obj) (cause := resolvedEtbCause))
       let g : Game :=
         match resolvedAttackTarget with
         | some tgt =>
           g.record (GameEvent.becameAttacking g.turnNumber (g.snapshot (g.object! newId)) tgt
-            (cause := etb.cause))
+            (cause := resolvedEtbCause))
         | none => g
       let g := g.createPrintedStaticEffects (g.object! newId)
       let g := g.logMsg s!"{(g.player controller).name} creates {g.nameWithToken (g.object! newId)}"
@@ -143,7 +144,7 @@ def createOneToken (g : Game) (controller : PlayerId) (printed : CardDef)
       let g := g.refreshEnduringStory
       let g := g.refreshCitysBlessing
       let g :=
-        if recordRecent then
+        if recordRecent && !g.continuations.isEmpty then
           g.change (.recentTokenIds (g.recentTokenIds.push newId))
         else g
       (g, g.object! newId)
@@ -160,6 +161,7 @@ private def tokenBatchWatchesCreation (g : Game) (controller : PlayerId) (printe
         CardSubtype.allCreatureSubtypes.foldl (fun acc s => if acc.contains s then acc else acc.push s) baseSubs
       else baseSubs
     changeling := printed.keywords.changeling }
+    (cause := .oneShotEffect none none (some controller))
   proposed.watches .wouldCreateToken
 
 /-- True if `printed` is a Food token as created. -/
@@ -647,7 +649,8 @@ def empowerJace (g : Game) (controller : PlayerId) (n : Nat)
     let k := g.countersYouPut o n (putter := some controller)
     let g :=
       if k > 0 then
-        g.record (GameEvent.counters g.turnNumber (some controller) o.asEvent .loyalty k)
+        g.record (GameEvent.counters g.turnNumber (some controller) o.asEvent .loyalty k
+          (cause := g.resolveOptionalCause none (fallbackCtrl := some controller)))
       else g
     g.logMsg s!"Empower Jace {n}: {k} loyalty counter(s) are put on {g.name o}"
 

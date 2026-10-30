@@ -56,8 +56,7 @@ def castFreeCopy (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game 
   let stackBefore := g.stack
   let pool := (g.player p).manaPool
   let (g, newId) := g.move id .stack (some p) (verb := some .cast) (actor := some p)
-    (cause := some (.gameRule .spellCast))
-  let g := g.changeObject newId (.isCopy true)
+    (isCopy := some true) (cause := some (.gameRule .spellCast))
   let g := g.putStackEntry p newId
   let g := g.record (GameEvent.proposed g.turnNumber newId p card.zone (.alternative "free copy"))
   let g := g.changes #[.pending .none, .pendingFreeCopies (some (p, rest, budget - mv, castsLeft - 1))]
@@ -95,6 +94,10 @@ def hawkeyeArrowsEffect (modes : Array Nat) : Effect :=
 def continueRiddlesSplit (g : Game) (controller : PlayerId)
     (faceUp faceDown : Array ObjectId) : Game :=
   let g :=
+    if faceUp.isEmpty then g
+    else g.record (GameEvent.revealed g.turnNumber controller faceUp
+      (cause := g.resolvingOneShotCause controller))
+  let g :=
     faceUp.foldl (fun acc id =>
       match acc.findObject? id with
       | some o => acc.logMsg s!"{(acc.player controller).name} reveals {o.name}"
@@ -104,7 +107,7 @@ def continueRiddlesSplit (g : Game) (controller : PlayerId)
     g.beginFraChoice opp.id (.riddlesChoosePile controller faceUp faceDown)
       s!"{opp.name} chooses which pile goes to {(g.player controller).name}'s hand"
   | none =>
-    g.applyRiddlesPiles controller faceUp faceDown false
+    g.applyRiddlesPiles controller faceUp faceDown false (alreadyRevealed := true)
 
 def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except String Game := do
   let .fraChoice q choice := g.pending | throw "Nothing to choose now"
@@ -159,12 +162,16 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
           let g := g.logMsg s!"{(g.player owner).name} puts {oName} on the bottom of their library"
           return g.finishFraChoice
   | .topOrBottomDamage .., _ => throw "Choose top or bottom"
-  | .sphinxsApproach _, .accept =>
+  | .sphinxsApproach spellId, .accept =>
+    let onStack := (g.findObject? spellId).any (fun o => o.zone == .stack && !o.isCopy)
     let approaches := g.sphinxsApproachesInGraveyard p
-    if approaches.size < 5 then
+    let toExile : Array ObjectId :=
+      if onStack then #[spellId] ++ approaches.extract 0 4
+      else approaches.extract 0 5
+    if toExile.size < 5 then
       return (g.logMsg "There aren't five cards named Sphinx's Approach to exile").finishFraChoice
     let g := g.withBatch none fun g =>
-      (approaches.extract 0 5).foldl (fun g id =>
+      toExile.foldl (fun g id =>
         let (g, _) := g.move id .exile none
         g) g
     let g := g.logMsg s!"{(g.player p).name} exiles five cards named Sphinx's Approach"
@@ -178,6 +185,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     if !ok a || !ok b then throw "Choose two cards you own from outside the game"
     if (g.object! a).name == (g.object! b).name then
       throw "The two cards must have different names"
+    let g := g.record (GameEvent.revealed g.turnNumber p #[a, b] (cause := g.resolvingOneShotCause p))
     let g := g.logMsg s!"{(g.player p).name} reveals {(g.object! a).name} and {(g.object! b).name}"
     match (g.livingOpponents p)[0]? with
     | none => return g.finishFraChoice
@@ -535,7 +543,9 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .mayPayPickThen pick .., _ => throw s!"Choose what to {pick.phrase}, or decline"
   | .addManaColors left use, .mode idx =>
     let some c := Color.all[idx]? | throw "Choose white, blue, black, red, or green (0-4)"
-    let g := g.changePlayer p (.addMana (.colored c) 1 (fra := some use))
+    let g := g.addMana p (.colored c) 1
+      (source := g.currentResolvingContext?.bind Prod.fst)
+      (restriction := some (.fra use))
     let g := g.logMsg s!"{(g.player p).name} adds {ManaType.colored c} ({use.label})"
     if left > 1 then return g.change (.pending (.fraChoice p (.addManaColors (left - 1) use)))
     return g.finishFraChoice
@@ -582,6 +592,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     if !eligible.contains id then throw "Choose one of the eligible cards"
     let name := (g.object! id).name
     let (g, cause) := g.allocDelayedCause (some p)
+    let g := g.record (GameEvent.revealed g.turnNumber p #[id] (cause := some cause))
     let (g, _) := g.move id (.hand p) none (cause := some cause)
     let g := g.logMsg s!"{(g.player p).name} reveals {name} and puts it into their hand"
     let rest := looked.filter (· != id)
@@ -1024,6 +1035,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .mayCastFromGraveyard _, _ => throw "Choose a card to cast, or decline"
   | .maySearchLibrary eligible count dest after kind, .accept =>
     if eligible.isEmpty then
+      let g := g.record (GameEvent.searched g.turnNumber p p #[] (cause := g.resolvingOneShotCause p))
       let g :=
         (g.logMsg s!"{(g.player p).name} finds no {searchNoun kind}").shuffleSearch p after
       return g.finishFraChoice
@@ -1049,9 +1061,9 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     return (g.continueRiddlesSplit p #[] looked).finishFraChoice
   | .riddlesSplit _, _ => throw "Choose the face-up pile, or decline for all face-down"
   | .riddlesChoosePile controller faceUp faceDown, .accept =>
-    return (g.applyRiddlesPiles controller faceUp faceDown false).finishFraChoice
+    return (g.applyRiddlesPiles controller faceUp faceDown false (alreadyRevealed := true)).finishFraChoice
   | .riddlesChoosePile controller faceUp faceDown, .decline =>
-    return (g.applyRiddlesPiles controller faceUp faceDown true).finishFraChoice
+    return (g.applyRiddlesPiles controller faceUp faceDown true (alreadyRevealed := true)).finishFraChoice
   | .riddlesChoosePile .., _ => throw "Choose the face-up pile (accept) or the face-down pile (decline)"
   | .palisadeCreatureType types, .mode idx =>
     let some sub := types[idx]? | throw "No such creature type"

@@ -19,10 +19,6 @@ open Mtg.Engine.Catalog
 
 /- Black Hobbit Welcome Deck: structured abilities for each remaining card. -/
 
-/-- Empty `p`'s hand so injected spells are the only playable cards. -/
-def emptyHand (g : Game) (p : PlayerId) : Game :=
-  g.changePlayer p (.hand #[])
-
 def readyMain (g : Game) : Game :=
   g.recordLandPlayed ⟨0⟩
 
@@ -297,7 +293,7 @@ def batCloudFull : Game :=
 def batCloudReduced : Game :=
   batCloudFull.record (GameEvent.moved batCloudFull.turnNumber
     { id := some ⟨73⟩, controller := some ⟨1⟩, owner := ⟨1⟩, types := #[.creature] }
-    .battlefield (.graveyard ⟨1⟩))
+    .battlefield (.graveyard ⟨1⟩) (cause := .stateBased .lethalDamage))
 
 #guard batCloudFull.canCast ⟨0⟩ (handCardNamed batCloudFull ⟨0⟩ "Dreaded Bat-Cloud")
 #guard
@@ -392,7 +388,7 @@ def shadowResolved : Game :=
 
 def shadowCastOgre : Game :=
   let g := readyMain (emptyHand shadowResolved ⟨0⟩)
-  let g := g.changePlayer ⟨0⟩ (.manaPool {})
+  let g := g.emptyManaPools
   let g := withGreenMana g ⟨0⟩ 3
   match g.objects.find? (fun o => o.name == "Gray Ogre" && o.zone == .exile) with
   | none => panic! "expected Gray Ogre in exile"
@@ -588,7 +584,7 @@ def downfallSetup (damaged : Bool) : Game :=
   let g :=
     if damaged then
       let o := namedPermanent g "Grizzly Bears"
-      g.changeStatus o.id (.damage 1)
+      setMarkedDamage g o.id 1
     else g
   let g := readyMain (emptyHand g ⟨0⟩)
   withBlackMana (addToHand g bitterDownfall ⟨0⟩) ⟨0⟩ 4
@@ -827,7 +823,7 @@ def frozenInIceTapOk : Bool :=
 def superSuitUntapOk : Bool :=
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
   let host := namedPermanent g "Grizzly Bears"
-  let g := g.changeStatus host.id (.tapped true)
+  let g := setTapped g host.id true
   let g := addPermanent g superSuit ⟨0⟩ ⟨0⟩
   let eq := namedPermanent g "Super Suit"
   let g := g.applyTriggeredAbility ⟨0⟩ (.onEnterAttachThen .untap)

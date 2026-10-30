@@ -415,7 +415,8 @@ def oriAlone : Game := addPermanent started oriKeeperOfSongs ⟨0⟩ ⟨0⟩
 #guard !(oriAlone.currentKeywords (namedPermanent oriAlone "Ori, Keeper of Songs")).vigilance
 
 def oriWithStory : Game :=
-  oriAlone.changePlayer ⟨0⟩ (.enduringStory true)
+  oriAlone.record (GameEvent.gainedDesignation oriAlone.turnNumber ⟨0⟩ .enduringStory
+    (cause := some (.gameRule .staticAbility)))
 
 #guard oriWithStory.power (namedPermanent oriWithStory "Ori, Keeper of Songs") == 4
 #guard (oriWithStory.currentKeywords (namedPermanent oriWithStory "Ori, Keeper of Songs")).vigilance
@@ -428,7 +429,8 @@ def filiAndBears : Game :=
 #guard filiAndBears.power (namedPermanent filiAndBears "Grizzly Bears") == 2
 
 def filiAndBearsStory : Game :=
-  filiAndBears.changePlayer ⟨0⟩ (.enduringStory true)
+  filiAndBears.record (GameEvent.gainedDesignation filiAndBears.turnNumber ⟨0⟩ .enduringStory
+    (cause := some (.gameRule .staticAbility)))
 
 #guard filiAndBearsStory.power (namedPermanent filiAndBearsStory "Grizzly Bears") == 3
 #guard filiAndBearsStory.toughness (namedPermanent filiAndBearsStory "Grizzly Bears") == 3
@@ -437,14 +439,15 @@ def filiAndBearsStory : Game :=
 def bomburTapped : Game :=
   let g := addPermanent started bomburGentleDreamer ⟨0⟩ ⟨0⟩
   let o := namedPermanent g "Bombur, Gentle Dreamer"
-  g.changeStatus o.id (.tapped true)
+  setTapped g o.id true
 
 def bomburStillTapped : Game := bomburTapped.beginStep .untap
 
 #guard (namedPermanent bomburStillTapped "Bombur, Gentle Dreamer").status.tapped
 
 def bomburUntapsWithStory : Game :=
-  let g := bomburTapped.changePlayer ⟨0⟩ (.enduringStory true)
+  let g := bomburTapped.record (GameEvent.gainedDesignation bomburTapped.turnNumber ⟨0⟩ .enduringStory
+    (cause := some (.gameRule .staticAbility)))
   g.beginStep .untap
 
 #guard !(namedPermanent bomburUntapsWithStory "Bombur, Gentle Dreamer").status.tapped
@@ -582,7 +585,9 @@ def shortswordHone : Game :=
 /-- Ruling 60: unattaching removes the power immediately. -/
 def shortswordUnattached : Game :=
   let eq := namedPermanent shortswordHone "Dwarven Shortsword"
-  shortswordHone.changeObject eq.id (.attachedTo none)
+  let host := namedPermanent shortswordHone "Grizzly Bears"
+  shortswordHone.record (GameEvent.unattached shortswordHone.turnNumber (shortswordHone.snapshot eq) host.id
+    (cause := .gameRule .staticAbility))
 
 #guard shortswordUnattached.power (namedPermanent shortswordUnattached "Grizzly Bears") == 2
 #guard shortswordUnattached.toughness (namedPermanent shortswordUnattached "Grizzly Bears") == 2
@@ -603,8 +608,9 @@ def shortswordHoneCleared : Game :=
 
 /-- Ruling 38: the boost is from the counter, not an Equipment ability. -/
 def shortswordNoStatics : Game :=
-  let eq := namedPermanent shortswordHone "Dwarven Shortsword"
-  shortswordHone.changeObject eq.id (.printed { eq.printed with staticAbilities := #[] })
+  let g := addPermanent (addPermanent started { dwarvenShortsword with staticAbilities := #[] } ⟨0⟩ ⟨0⟩)
+    grizzlyBears ⟨0⟩ ⟨0⟩
+  honeOn g "Dwarven Shortsword" "Grizzly Bears" 2
 
 #guard shortswordNoStatics.power (namedPermanent shortswordNoStatics "Grizzly Bears") == 4
 #guard shortswordNoStatics.toughness (namedPermanent shortswordNoStatics "Grizzly Bears") == 2
@@ -671,7 +677,7 @@ def ringFirstTempt : Game :=
 def ringFirstTemptOk : Bool :=
   ringFirstTempt.hasTheRing ⟨0⟩ &&
     ringFirstTempt.theRingAbilityCount ⟨0⟩ == 1 &&
-    (namedPermanent ringFirstTempt "Grizzly Bears").status.ringBearer &&
+    ringFirstTempt.isAnyRingBearer (namedPermanent ringFirstTempt "Grizzly Bears") &&
     ringFirstTempt.log.any (fun s => mentions s "emblem named The Ring") &&
     ringFirstTempt.log.any (fun s => mentions s "Ring-bearer")
 
@@ -682,7 +688,7 @@ def ringSecondTempt : Game := ringFirstTempt.temptWithTheRing ⟨0⟩
 def ringSecondTemptOk : Bool :=
   ringSecondTempt.theRingAbilityCount ⟨0⟩ == 2 &&
     (ringSecondTempt.log.filter (fun s => mentions s "gets an emblem named The Ring")).size == 1 &&
-    (namedPermanent ringSecondTempt "Grizzly Bears").status.ringBearer
+    ringSecondTempt.isAnyRingBearer (namedPermanent ringSecondTempt "Grizzly Bears")
 
 #guard ringSecondTemptOk
 
@@ -695,8 +701,8 @@ def ringBothPlayers : Game :=
 
 def ringBothPlayersOk : Bool :=
   ringBothPlayers.hasTheRing ⟨0⟩ && ringBothPlayers.hasTheRing ⟨1⟩ &&
-    (namedPermanent ringBothPlayers "Grizzly Bears").status.ringBearer &&
-    (namedPermanent ringBothPlayers "Gray Ogre").status.ringBearer &&
+    ringBothPlayers.isAnyRingBearer (namedPermanent ringBothPlayers "Grizzly Bears") &&
+    ringBothPlayers.isAnyRingBearer (namedPermanent ringBothPlayers "Gray Ogre") &&
     !(ringBothPlayers.isRingBearer ⟨0⟩ (namedPermanent ringBothPlayers "Gray Ogre"))
 
 #guard ringBothPlayersOk
@@ -706,7 +712,7 @@ def ringMustChoose : Game :=
   let g := addPermanent started grizzlyBears ⟨0⟩ ⟨0⟩
   g.temptWithTheRing ⟨0⟩ none
 
-#guard (namedPermanent ringMustChoose "Grizzly Bears").status.ringBearer
+#guard ringMustChoose.isAnyRingBearer (namedPermanent ringMustChoose "Grizzly Bears")
 
 /-- Ruling 56: the Ring can tempt you with no creature; tempt triggers still fire. -/
 def ringNoCreature : Game :=
@@ -732,7 +738,7 @@ def ringRechoose : Game :=
 def ringRechooseOk : Bool :=
   (ringRechoose.waitingTriggers.filter (fun wt =>
     wt.ability == .onChooseRingBearerDraw)).size == 2 &&
-    (namedPermanent ringRechoose "Grizzly Bears").status.ringBearer
+    ringRechoose.isAnyRingBearer (namedPermanent ringRechoose "Grizzly Bears")
 
 #guard ringRechooseOk
 
@@ -1092,7 +1098,7 @@ lesser mana value. Casting is optional. -/
 def cascadeExiles : Game :=
   let (g, bolt) := started.allocObject lightningBolt ⟨0⟩ (.library ⟨0⟩)
   let (g, land) := g.allocObject forest ⟨0⟩ (.library ⟨0⟩)
-  let g := g.changePlayer ⟨0⟩ (.library #[bolt.id, land.id])
+  let g := retainLibrary g ⟨0⟩ #[bolt.id, land.id]
   g.resolveCascade ⟨0⟩ 8
 
 def cascadeExilesOk : Bool :=
@@ -2021,7 +2027,7 @@ def knotsIllegal : Game :=
 def knotsAlreadyTapped : Game :=
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
   let bears := namedPermanent g "Grizzly Bears"
-  let g := g.changeStatus bears.id (.tapped true)
+  let g := setTapped g bears.id true
   g.applyEffect ⟨0⟩ (Effect.tapScryDraw 1 1) #[.permanent (namedPermanent g "Grizzly Bears").id]
 
 def knotsAfterScry : Except String Game :=
@@ -2119,9 +2125,8 @@ def eaglesPumpOk : Bool :=
 def meditatorDamageThenShrink : Game :=
   let g := addPermanent afterDraw mirkwoodMeditator ⟨0⟩ ⟨0⟩
   let m := namedPermanent g "Mirkwood Meditator"
-  let g := g.changeStatus m.id (.damage 3)
-  let m := namedPermanent g "Mirkwood Meditator"
-  (g.changeStatus m.id (.damage 3)).createEffect (.setBasePTUntilEot m.id (4, 2))
+  let g := setMarkedDamage g m.id 3
+  g.createEffect (.setBasePTUntilEot m.id (4, 2))
 
 def meditatorBaseOk : Bool :=
   let m := namedPermanent meditatorDamageThenShrink "Mirkwood Meditator"
@@ -2388,8 +2393,8 @@ def headDiesWithPrey : Game :=
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
   let head := namedPermanent g "Head of the Hunt"
   let bears := namedPermanent g "Grizzly Bears"
-  let g := g.changeStatus head.id (.damage 10)
-  let g := g.changeStatus bears.id (.damage 10)
+  let g := setMarkedDamage g head.id 10
+  let g := setMarkedDamage g bears.id 10
   g.checkSBA
 
 def headDiesWithPreyOk : Bool :=
@@ -2427,8 +2432,8 @@ def beeDiesWithOthers : Game :=
   let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
   let bee := namedPermanent g "Great Fierce Bee"
   let bears := namedPermanent g "Grizzly Bears"
-  let g := g.changeStatus bee.id (.damage 20)
-  let g := g.changeStatus bears.id (.damage 10)
+  let g := setMarkedDamage g bee.id 20
+  let g := setMarkedDamage g bears.id 10
   g.checkSBA
 
 def beeDiesWithOthersOk : Bool :=
@@ -2566,7 +2571,9 @@ def eaglesTokenCountedOk : Bool :=
 
 def eaglesBirdsAfterUpkeep : Game :=
   let g := eaglesReturnToken.checkSBA.change (.waitingTriggers #[])
-  (({ g with step := .untap, activePlayer := ⟨1⟩ }).beginStep .upkeep).resolveTop
+  let g := g.record (GameEvent.turnBegan (g.turnNumber + 1) ⟨1⟩ false)
+  let g := g.record (GameEvent.stepBegan g.turnNumber .untap ⟨1⟩)
+  (g.beginStep .upkeep).resolveTop
 
 def eaglesBirdsAfterUpkeepOk : Bool :=
   eaglesBirdsAfterUpkeep.battlefield.any (fun o =>
@@ -2660,7 +2667,7 @@ def bolgMarkedExcess : Game :=
   let g := addPermanent afterDraw bolgOfTheNorth ⟨0⟩ ⟨0⟩
   let g := addPermanent g hillGiant ⟨1⟩ ⟨1⟩
   let giant := namedPermanent g "Hill Giant"
-  let g := g.changeStatus giant.id (.damage 2)
+  let g := setMarkedDamage g giant.id 2
   bolgDeal g 3 giant.id
 
 def bolgMarkedExcessOk : Bool :=
@@ -2748,7 +2755,7 @@ def elvenChorusTimingOk : Bool :=
   chorusInPlay.canLookAtLibraryTop ⟨0⟩ &&
     chorusInPlay.controlsCastCreaturesFromTop ⟨0⟩ &&
     chorusInPlay.asSorcery? ⟨0⟩ &&
-    !(let g := { chorusInPlay with step := .end }
+    !(let g := chorusInPlay.record (GameEvent.stepBegan chorusInPlay.turnNumber .end ⟨0⟩)
       g.timingAllowsCast ⟨0⟩ grizzlyBears) &&
     (ruling 118).comment.contains "doesn't change when you can cast"
 
@@ -3062,7 +3069,7 @@ def galadrielStolenKeepsModesOk : Bool :=
   let g := galadrielInPlay.applyAllianceMode sid 0
   let g := g.applyAllianceMode sid 1
   let gala := namedPermanent g "Galadriel, Light of Valinor"
-  let g := g.changeObject gala.id (.controller (some ⟨1⟩))
+  let g := g.changeControl gala ⟨1⟩
   let left := g.unusedAllianceModes (namedPermanent g "Galadriel, Light of Valinor")
   left == #[2] &&
     (ruling 231).comment.contains "that player can choose only the third mode"
@@ -3235,9 +3242,9 @@ def radagastCastIsFirstOk : Bool :=
 #guard radagastCastIsFirstOk
 
 def radagastFlashOk : Bool :=
-  let g := { radagastInPlay with step := .end }
+  let g := radagastInPlay.record (GameEvent.stepBegan radagastInPlay.turnNumber .end ⟨0⟩)
   g.timingAllowsCast ⟨0⟩ grizzlyBears &&
-    !(let g := { afterDraw with step := .end }
+    !(let g := afterDraw.record (GameEvent.stepBegan afterDraw.turnNumber .end ⟨0⟩)
       g.timingAllowsCast ⟨0⟩ grizzlyBears) &&
     (ruling 292).comment.contains "doesn't necessarily have to be the first spell"
 
@@ -3640,7 +3647,7 @@ def tomLoreProtectionOk : Bool :=
 
 def tomSagaLeavesLethalOk : Bool :=
   let tom := namedPermanent tomWithFourLore "Tom Bombadil"
-  let g := tomWithFourLore.changeStatus tom.id (.damage 4)
+  let g := setMarkedDamage tomWithFourLore tom.id 4
   let saga := namedPermanent g "Test Saga"
   let (g, _) := g.move saga.id (.graveyard ⟨0⟩) none
   let g := g.checkSBA
@@ -3729,7 +3736,7 @@ def gollumEvenCastTriggersOk : Bool :=
 
 def xOnStackUsesChosenOk : Bool :=
   let (g, spell) := afterDraw.allocObject xGreenCreature ⟨0⟩ .stack (some ⟨0⟩)
-  let g := g.changeObject spell.id (.chosenX (some 3))
+  let g := g.record (GameEvent.announced g.turnNumber spell.id (x := some 3))
   let o := g.object! spell.id
   g.objectManaValue o == 4 &&
     xGreenCreature.manaValue == 1 &&
@@ -3749,7 +3756,7 @@ def xOffStackIsZeroOk : Bool :=
 
 def glamdringForcesXZeroOk : Bool :=
   let (g, spell) := afterDraw.allocObject xGreenCreature ⟨0⟩ .stack (some ⟨0⟩)
-  let g := g.changeObject spell.id (.chosenX (some 0))
+  let g := g.record (GameEvent.announced g.turnNumber spell.id (x := some 0))
   g.objectManaValue (g.object! spell.id) == 1 &&
     (ruling 186).comment.contains "you must choose 0 as the value of X"
 
@@ -4398,7 +4405,7 @@ def banishingLightAuraHexproofOk : Bool :=
 -/
 
 def grimaEmptyLibraryBecomesLibraryOk : Bool :=
-  let g := afterDraw.changePlayer ⟨1⟩ (.library #[])
+  let g := emptyLibrary afterDraw ⟨1⟩
   let g := addToLibraryTop g mountain ⟨1⟩
   let g := addToLibraryTop g mountain ⟨1⟩
   let before := (g.player ⟨1⟩).library.size
@@ -4445,7 +4452,7 @@ def castDuringResolutionIgnoresTimingOk : Bool :=
 -/
 
 def sarumanWardNeedsCardOk : Bool :=
-  let empty := afterDraw.changePlayer ⟨0⟩ (.hand #[])
+  let empty := emptyHand afterDraw ⟨0⟩
   let g := addToHand empty lightningBolt ⟨0⟩
   !(empty.canPaySarumanWard ⟨0⟩) &&
     g.canPaySarumanWard ⟨0⟩ &&
@@ -4456,8 +4463,7 @@ def sarumanWardNeedsCardOk : Bool :=
 def uncastCopyCeasesOk : Bool :=
   let g := addToHand afterDraw lightningBolt ⟨0⟩
   let bolt := handCardNamed g ⟨0⟩ "Lightning Bolt"
-  let (g, eid) := g.move bolt.id .exile none
-  let g := g.changeObject eid (.isCopy true)
+  let (g, _) := g.move bolt.id .exile none (isCopy := some true)
   let g := g.ceaseUncastCopies
   !(g.objects.any (fun o => o.isCopy && o.name == "Lightning Bolt")) &&
     g.log.any (fun s => mentions s "ceases to exist") &&
@@ -4506,7 +4512,7 @@ def bardTargetsRecruitSoldierOk : Bool :=
 def batCloudReductionIfPlayerLostOk : Bool :=
   let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
   let (g, _) := g.move (namedPermanent g "Grizzly Bears").id (.graveyard ⟨1⟩) none
-  let g := g.changePlayer ⟨1⟩ (.lost true)
+  let g := g.record (GameEvent.playerLost g.turnNumber ⟨1⟩ .conceded)
   let g := addToHand g dreadedBatCloud ⟨0⟩
   let card := handCardNamed g ⟨0⟩ "Dreaded Bat-Cloud"
   let cost := g.playManaCost card dreadedBatCloud
@@ -4645,7 +4651,7 @@ def uneasyPartingsOwnerChoosesOk : Bool :=
 -/
 
 def balinEmptyHandDiscardOk : Bool :=
-  let g := afterDraw.changePlayer ⟨0⟩ (.hand #[])
+  let g := emptyHand afterDraw ⟨0⟩
   let g := g.mayDiscardHandDrawThatMany ⟨0⟩ true
   (g.player ⟨0⟩).hand.size == 0 &&
     g.pending == .none &&

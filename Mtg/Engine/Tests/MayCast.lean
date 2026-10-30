@@ -12,7 +12,9 @@ namespace Mtg.Engine.MayCastTests
 
 open Mtg.Engine
 open Mtg.Engine.Catalog
-open Mtg.Engine.Tests
+open Mtg.Engine.Tests hiding afterDraw
+
+def afterDraw : Game := Mtg.Engine.Tests.afterDraw.change (.pushContinuationFrame {})
 
 def caster : PlayerId := ⟨0⟩
 def victim : PlayerId := ⟨1⟩
@@ -38,15 +40,13 @@ def bauble : CardDef := {
 }
 
 def putInHand (g : Game) (card : CardDef) (p : PlayerId) : Game :=
-  insertObject g card p (.hand p) none {} (fun id _ => #[.pushHand id])
+  insertObject g card p (.hand p)
 
 def putInGraveyard (g : Game) (card : CardDef) (p : PlayerId) : Game :=
-  insertObject g card p (.graveyard p) none {} (fun id _ =>
-    #[.pushGraveyard id])
+  insertObject g card p (.graveyard p)
 
 def putOnLibrary (g : Game) (card : CardDef) (p : PlayerId) : Game :=
-  insertObject g card p (.library p) none {} (fun id _ =>
-    #[.pushLibrary id])
+  insertObject g card p (.library p)
 
 def namedId (g : Game) (ids : Array ObjectId) (name : String) : Option ObjectId :=
   ids.find? (fun id => (g.findObject? id).any (·.name == name))
@@ -69,7 +69,7 @@ def onBattlefield (g : Game) (name : String) : Bool :=
   g.objects.any (fun o => o.name == name && o.zone == .battlefield)
 
 def withRed (g : Game) (p : PlayerId) (n : Nat) : Game :=
-  g.changePlayer p (.addMana (.colored .red) n)
+  g.addMana p (.colored .red) n
 
 /- One legendary Wizard makes the hand limit 2. Shock is offered; a
 mana value 4 sorcery is not. Declining leaves both in hand. -/

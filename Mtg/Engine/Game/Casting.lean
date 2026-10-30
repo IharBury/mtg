@@ -383,34 +383,23 @@ def reverseProposedSpell (g : Game) : Game :=
           | .rules (.continuousEffect (.created _ (.permission p (.playFromExile oid perm) d))) =>
             if oid == prop.original.id then some (p, perm, d) else none
           | _ => none
-      g := g.change (.removeObject prop.spellId)
+      g := g.change (.reverseProposal prop)
       if prop.kind == .spell then
-        g := g.change (.setObject prop.original)
         if let some (p, perm, d) := origPermSpec? then
           if (g.playPermission prop.original).isNone then
             g := g.createEffect (.permission p (.playFromExile prop.original.id perm) d)
-      g := g.changes #[
-        .stack prop.stackBefore,
-        .pending .none,
-        .proposedSpell none,
-        .castingFromTop false
-      ]
-      g := g.changePlayers prop.caster #[.hand prop.handBefore, .manaPool prop.manaBefore]
-      for id in prop.tapped do
-        if (g.findObject? id).isSome then
-          g := g.changeStatus id (.tapped false)
+              (cause := some (.gameRule .spellCast))
       -- Undo unpreparing the permanent whose prepare-spell copy was proposed.
       match prop.kind, (g.playPermission prop.original |>.bind (·.prepareSource)).bind g.findObject? with
       | .spell, some src =>
-        g := g.record (GameEvent.designation g.turnNumber src.asEvent .prepared true)
+        g := g.record (GameEvent.designation g.turnNumber src.asEvent .prepared true
+          (cause := .gameRule .spellCast))
       | _, _ => pure ()
       let reversed :=
         match prop.kind with
         | .spell => "the casting is reversed (CR 601.2 / 733.1)"
         | .activatedAbility => "the activation is reversed (CR 602.2 / 733.1)"
-      g := g.logMsg s!"{name} cannot pay {prop.cost}; {reversed}"
-      -- The player who had priority retains it (CR 733.2).
-      return g.changes #[.priority prop.caster, .consecutivePasses 0]
+      return g.logMsg s!"{name} cannot pay {prop.cost}; {reversed}"
 
 /-- Fold `f` over each targeted permanent that still exists. Non-permanent
 targets are skipped. `unique` visits a permanent only once even when it is
@@ -492,7 +481,8 @@ def beginWardsForTargets (g : Game) (caster : PlayerId) (spellId : ObjectId)
     else g)
   g.promptNextWard
 
-def becomeCast (g : Game) (p : PlayerId) (spell : GameObject) : Game :=
+def becomeCast (g : Game) (p : PlayerId) (spell : GameObject)
+    (grantPriority : Bool := true) : Game :=
   let g := g.change (.castingFromTop false)
   let g := g.logMsg s!"{(g.player p).name} casts {g.name spell}"
   let ancestry := g.ancestryLandsTapped
@@ -553,7 +543,7 @@ def becomeCast (g : Game) (p : PlayerId) (spell : GameObject) : Game :=
         else
           g.change (.pending (.fraChoice q (.castCopiesFree alive budget castsLeft)))
     | none => g
-  if g.pending != .none then g else g.receivePriority p
+  if g.pending != .none || !grantPriority then g else g.receivePriority p
 
 /-- After targets are announced, reduce the locked-in cost if the spell cares
 about a damaged, tapped, or attacking nontoken target, or the ability about
@@ -615,7 +605,7 @@ def payLoyaltyCost (g : Game) (p : PlayerId) (o : GameObject) (sym : LoyaltySymb
   let g :=
     if k != 0 then
       g.record (GameEvent.counters g.turnNumber (some p) o.asEvent .loyalty k.natAbs (k < 0)
-        (cause := some (.costPayment .loyalty p forObject)))
+        (cause := .costPayment .loyalty p forObject))
     else g
   if k > 0 then g.logMsg s!"{k} loyalty counter(s) are put on {oName}"
   else if k < 0 then g.logMsg s!"{-k} loyalty counter(s) are removed from {oName}"

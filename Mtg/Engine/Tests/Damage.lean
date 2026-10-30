@@ -443,17 +443,17 @@ def prowlerAtEndStep : Game := skipTo prowlerReady .end 80
 
 -- A player with 1 life cannot pay 2 life (CR 119.4).
 #guard
-  let g := prowlerReady.changePlayer ⟨0⟩ (.life 1)
+  let g := prowlerReady.setLifeTotal ⟨0⟩ 1
   !g.canActivate ⟨0⟩ (prowlerSource g) prowlerAbility
 #guard
-  let g := prowlerReady.changePlayer ⟨0⟩ (.life 1)
+  let g := prowlerReady.setLifeTotal ⟨0⟩ 1
   match g.activateAbility ⟨0⟩ (prowlerSource g).id 0 with
   | .error msg => mentions msg "cannot pay 2 life"
   | .ok _ => false
 
 -- Paying 2 life from 2 life is legal, then CR 704.5a ends the game.
 def prowlerPaysLastLife : Game :=
-  let g := prowlerReady.changePlayer ⟨0⟩ (.life 2)
+  let g := prowlerReady.setLifeTotal ⟨0⟩ 2
   mustApply g ⟨0⟩ (.activate (prowlerSource g).id 0)
 
 #guard (prowlerPaysLastLife.player ⟨0⟩).life == 0
@@ -465,7 +465,7 @@ def prowlerPaysLastLife : Game :=
 
 -- The heuristic will not pay the last 2 life.
 #guard
-  let g := prowlerReady.changePlayer ⟨0⟩ (.life 2)
+  let g := prowlerReady.setLifeTotal ⟨0⟩ 2
   match Agent.choose g ⟨0⟩ with
   | some (.activate _ 0) => false
   | _ => true
@@ -473,7 +473,7 @@ def prowlerPaysLastLife : Game :=
 /-- Lethal damage puts the dies trigger on the stack (CR 700.4 / 603.3d). -/
 def fireleaperDied : Game :=
   let o := namedPermanent fireleaperReady "Goblin Fireleaper"
-  let g := fireleaperReady.changeStatus o.id (.damage 1)
+  let g := setMarkedDamage fireleaperReady o.id 1
   g.receivePriority ⟨0⟩
 
 #guard fireleaperDied.pending == .chooseTargets ⟨0⟩
@@ -536,7 +536,7 @@ def fireleaperDeathResolved : Game := passBoth fireleaperDeathTargeted
 /-- Pumped power is last known information when the Fireleaper dies (CR 113.7a). -/
 def fireleaperPumpedThenDied : Game :=
   let o := namedPermanent pumpedFireleaper "Goblin Fireleaper"
-  let g := pumpedFireleaper.changeStatus o.id (.damage 1)
+  let g := setMarkedDamage pumpedFireleaper o.id 1
   let g := g.receivePriority ⟨0⟩
   let g := mustApply g ⟨0⟩
     (.target (Target.permanent (namedPermanent g "Grizzly Bears").id))
@@ -551,7 +551,7 @@ def fireleaperPumpedThenDied : Game :=
 def fireleaperDiedAlone : Game :=
   let g := addPermanent afterDraw goblinFireleaper ⟨0⟩ ⟨0⟩
   let o := namedPermanent g "Goblin Fireleaper"
-  let g := g.changeStatus o.id (.damage 1)
+  let g := setMarkedDamage g o.id 1
   g.receivePriority ⟨0⟩
 
 #guard fireleaperDiedAlone.stack.isEmpty

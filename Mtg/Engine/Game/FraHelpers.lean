@@ -77,6 +77,9 @@ def createOneKindToken (g : Game) (controller : PlayerId) (kind : TokenKind) :
 
 /-- Begin a `FraChoice` for `p`. -/
 def beginFraChoice (g : Game) (p : PlayerId) (choice : FraChoice) (msg : String) : Game :=
+  let g :=
+    if g.continuations.isEmpty then g.change (.pushContinuationFrame {})
+    else g
   (g.change (.pending (.fraChoice p choice))).logMsg msg
 
 /-- Cards in `p`'s hand that a “reveal your hand, you choose” effect may pick. -/

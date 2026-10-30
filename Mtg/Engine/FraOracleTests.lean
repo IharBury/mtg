@@ -372,7 +372,7 @@ def recollectorWithDeaths (prepared : Bool) (deaths : Nat) : Game :=
   let g := (List.range deaths).foldl (fun g i =>
     g.record (GameEvent.moved g.turnNumber
       { id := some ⟨90 + i⟩, owner := ⟨0⟩, types := #[.creature] }
-      .battlefield (.graveyard ⟨0⟩))) g
+      .battlefield (.graveyard ⟨0⟩) (cause := .stateBased .lethalDamage))) g
   g.applyTriggeredAbility ⟨0⟩ recollectorTrigger (some o.id)
 
 #guard (exiledCopies (recollectorWithDeaths true 3) "Ancestral Craving").size == 1

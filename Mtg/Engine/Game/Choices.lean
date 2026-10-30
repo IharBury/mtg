@@ -116,7 +116,8 @@ def beholdQuality (g : Game) (p : PlayerId) (quality : CardSubtype)
       | some o => o.printed.hasSubtype quality
       | none => false)
   if hasPerm || hasHand then
-    let g := g.record (GameEvent.beheld g.turnNumber p quality (cause := cause))
+    let effCause := g.resolveOptionalCause cause (fallbackCtrl := some p)
+    let g := g.record (GameEvent.beheld g.turnNumber p quality (cause := effCause))
     g.logMsg s!"{(g.player p).name} beholds a {quality}"
   else
     g.logMsg s!"{(g.player p).name} does not behold a {quality}"
@@ -365,7 +366,7 @@ def riddlesInTheDark (g : Game) (p : PlayerId) (faceUpCount : Nat)
 /-- Put one Riddles pile into `p`'s hand and the other into the graveyard.
 The face-down pile is not revealed when it is the one that goes to hand. -/
 def applyRiddlesPiles (g : Game) (p : PlayerId) (faceUp faceDown : Array ObjectId)
-    (chooseFaceDown : Bool) : Game :=
+    (chooseFaceDown : Bool) (alreadyRevealed : Bool := false) : Game :=
   let g := g.logMsg
     s!"{(g.player p).name} separates {faceUp.size} face-up and {faceDown.size} face-down"
   let toHand := if chooseFaceDown then faceDown else faceUp
@@ -374,6 +375,10 @@ def applyRiddlesPiles (g : Game) (p : PlayerId) (faceUp faceDown : Array ObjectI
     if chooseFaceDown then
       g.logMsg "The face-down pile is put into hand without being revealed"
     else
+      let g :=
+        if !alreadyRevealed && !faceUp.isEmpty then
+          g.record (GameEvent.revealed g.turnNumber p faceUp (cause := g.resolvingOneShotCause p))
+        else g
       let g := g.logMsg "The face-up pile is put into hand"
       faceUp.foldl (fun acc id =>
         match acc.findObject? id with
@@ -439,25 +444,8 @@ def exileFailedAdventureFromBilbo (g : Game) (id : ObjectId) : Game :=
   | none => g
   | some o =>
     let name := o.name
-    let (g, newId) := g.move id .exile none
-    let g := g.changeObject newId (.adventurerCard none)
+    let (g, _) := g.move id .exile none
     g.logMsg s!"{name} is exiled (Bilbo's replacement). It cannot be cast as a permanent"
-
-/-- Tom Bombadil is on the battlefield as a final chapter finishes resolving,
-so his last ability triggers (ruling 74). -/
-def finishSagaFinalChapter (g : Game) (controller : PlayerId) : Game :=
-  let g := g.logMsg "The final chapter ability is removed from the stack"
-  let sagaSnap : EventObject :=
-    { controller := some controller
-      owner := controller
-      zone := .stack
-      subtypes := #[.saga] }
-  let g := g.record (GameEvent.resolved g.turnNumber controller 0 (obj := some sagaSnap)
-    (cause := some (.gameRule .abilityFinishedResolving)))
-  match (g.permanentsOf controller).find? (fun o =>
-    (g.baseCard o).hexproofIndestructibleIfLore.isSome) with
-  | none => g
-  | some tom => g.logMsg s!"{g.name tom}'s last ability triggers"
 
 /-- A token copy of a battlefield permanent. The copy is not kicked. -/
 def copyBattlefieldPermanent (g : Game) (src : GameObject) (controller : PlayerId)

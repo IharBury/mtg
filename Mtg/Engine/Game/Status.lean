@@ -46,8 +46,6 @@ structure Status where
   phasedOut : Bool := false
   /-- Host this Aura or Equipment phased out with. -/
   phasedWith : Option ObjectId := none
-  /-- This creature is its controller's Ring-bearer. -/
-  ringBearer : Bool := false
   /-- The Mind Stone (or similar) has been harnessed. -/
   harnessed : Bool := false
   /-- This permanent is currently showing its back face (MSH modal DFC). -/

@@ -881,7 +881,7 @@ open Mtg.Demo.Render
 
 #guard
   let g := Tests.readyToDeclareAttackers.objects.foldl
-    (fun g o => g.changeStatus o.id (.tapped true))
+    (fun g o => Tests.setTapped g o.id true)
     Tests.readyToDeclareAttackers
   !shouldAutoNoAttack g ["noattack"]
 

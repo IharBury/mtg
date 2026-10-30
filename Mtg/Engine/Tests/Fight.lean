@@ -638,7 +638,7 @@ def attercopWoodElvesPumped : Game := passBoth attercopWoodElvesResolved
 
 /-- The heuristic plays a land when Attercop is in play. -/
 def agentAttercopLand : Game :=
-  let g := afterDraw.changePlayer ⟨0⟩ (.hand #[])
+  let g := emptyHand afterDraw ⟨0⟩
   let g := addPermanent g attercop ⟨0⟩ ⟨0⟩
   addToHand g forest ⟨0⟩
 

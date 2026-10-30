@@ -206,7 +206,7 @@ def proftScrying : Game :=
 second draw is from an empty library, but Chandra wins as it resolves,
 before that state-based action. -/
 def fblthpWins : Game :=
-  let g := afterDraw.changePlayer ⟨0⟩ (.library #[])
+  let g := emptyLibrary afterDraw ⟨0⟩
   let g := addToLibraryTop g forest ⟨0⟩
   let g := addPermanent g fblthpImpossiblyLost ⟨0⟩ ⟨0⟩
   resolveStack (attackWith g #["Fblthp, Impossibly Lost"]) 20
@@ -305,7 +305,7 @@ gets a stun counter. Cryotheory Adept is exiled from the graveyard to pay. -/
 def adeptStunned : Game :=
   let g := withBlueMana (addToGraveyard afterDraw cryotheoryAdept ⟨0⟩) ⟨0⟩ 4
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
-  let g := g.changeStatus (namedPermanent g "Grizzly Bears").id (.tapped true)
+  let g := setTapped g (namedPermanent g "Grizzly Bears").id true
   let g := mustApply g ⟨0⟩ (.activate (graveyardCard g ⟨0⟩ "Cryotheory Adept").id 0)
   let g := mustApply g ⟨0⟩ (.target (.permanent (namedPermanent g "Grizzly Bears").id))
   resolveStack (mustApply g ⟨0⟩ .pay) 20

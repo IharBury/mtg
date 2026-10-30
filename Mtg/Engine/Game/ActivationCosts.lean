@@ -19,7 +19,7 @@ def payRemoveIndestructibleCounter (g : Game) (o : GameObject)
   let ctrl := g.controllerOf o
   let p := ctrl.getD o.owner
   let g := g.record (GameEvent.counters g.turnNumber ctrl (g.snapshot o) .indestructible 1 true
-    (cause := some (.costPayment .removeCounters p forObject)))
+    (cause := .costPayment .removeCounters p forObject))
   return g.logMsg s!"{g.name o} loses an indestructible counter"
 
 /-- Whether `p` can pay `n` life (CR 119.4). Paying 0 life is always legal. -/
@@ -35,12 +35,15 @@ def payLifeCost (g : Game) (p : PlayerId) (n : Nat)
   let pl := g.player p
   if pl.life < (n : Int) then
     throw s!"{pl.name} cannot pay {n} life"
+  let effCause :=
+    g.resolveOptionalCause cause (fallbackCtrl := some p)
+      (defaultCause := some (.costPayment .life p forObject))
   let g :=
     if g.lifeLocked p || g.lifeCantChange p then
       g.logMsg s!"{pl.name}'s life total can't change"
     else
       (g.record (GameEvent.life g.turnNumber p n false false false
-        (cause := cause))).logMsg
+        (cause := effCause))).logMsg
         s!"{pl.name} pays {n} life ({pl.life - (n : Int)} life)"
   return g
 
@@ -195,7 +198,7 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
         throw s!"{g.name src} has no story counter"
       let srcName := g.name src
       g := g.record (GameEvent.counters g.turnNumber (some p) (g.snapshot src) .story 1 true
-        (cause := some (.costPayment .removeCounters p forObject)))
+        (cause := .costPayment .removeCounters p forObject))
       g := g.logMsg s!"{(g.player p).name} removes a story counter from {srcName}"
     if a.cost.removeIndestructibleCounter then
       g := (← g.payRemoveIndestructibleCounter (g.object! sourceId) forObject)
@@ -206,7 +209,7 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
       let g' :=
         if n > 0 then
           g.record (GameEvent.counters g.turnNumber (some p) (g.snapshot src) .stun n
-            (cause := some (.costPayment .putCounters p forObject)))
+            (cause := .costPayment .putCounters p forObject))
         else g
       g := g'.logMsg s!"{(g.player p).name} puts a stun counter on {srcName}"
     if a.cost.removeAnyNumberPlusOne then
@@ -217,7 +220,7 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
       let g' :=
         if removePlusOnes > 0 then
           g.record (GameEvent.counters g.turnNumber (some p) (g.snapshot src) .plusOnePlusOne removePlusOnes true
-            (cause := some (.costPayment .removeCounters p forObject)))
+            (cause := .costPayment .removeCounters p forObject))
         else g
       g := g'.logMsg
         s!"{(g.player p).name} removes {removePlusOnes} +1/+1 counters from {srcName}"

@@ -18,7 +18,9 @@ namespace Mtg.Engine.CountTests
 
 open Mtg.Engine
 open Mtg.Engine.Catalog
-open Mtg.Engine.Tests
+open Mtg.Engine.Tests hiding afterDraw
+
+def afterDraw : Game := Mtg.Engine.Tests.afterDraw.change (.pushContinuationFrame {})
 
 def caster : PlayerId := ⟨0⟩
 
@@ -56,7 +58,7 @@ def named (g : Game) (name : String) : GameObject :=
   | none => panic! s!"missing {name}"
 
 def putInGraveyard (g : Game) (card : CardDef) (p : PlayerId) : Game :=
-  insertObject g card p (.graveyard p) none {} (fun id _ => #[.pushGraveyard id])
+  insertObject g card p (.graveyard p)
 
 /- No legendary creature fails the printed check. One succeeds, and two
 succeeds at a higher count. The threshold can be another count. -/
@@ -180,7 +182,8 @@ A harnessed source is reported when it is not. -/
   let (g, attacking) := holds g (.atLeast (.count (.intersection [.source, .attackingCreatures])) (.fixed 1)) (some src.id)
   let (g, unharnessed) := holds g (.atLeast (.count .harnessedSource) (.fixed 1)) (some src.id)
   let cBear := named g "Count Bear"
-  let g := g.record (GameEvent.designation g.turnNumber cBear.asEvent .harnessed true)
+  let g := g.record (GameEvent.designation g.turnNumber cBear.asEvent .harnessed true
+    (cause := .gameRule .staticAbility))
   let (g, harnessed) := holds g (.atLeast (.count .harnessedSource) (.fixed 1)) (some src.id)
   let (_, gone) := holds g (.atLeast (.count (.intersection [.source, .attackingCreatures])) (.fixed 1)) none
   !idle && attacking && !unharnessed && logContains g "not harnessed" && harnessed && !gone
@@ -254,8 +257,8 @@ power. A number that cannot be read does not hold. -/
   let (_, unread) := holds afterDraw (.atLeast .double (.fixed 0))
   let g := afterDraw
   let (g, drawnNone) := holds g (.atLeast .cardsDrawnThisTurn (.fixed 1))
-  let g := (g.record (GameEvent.drew g.turnNumber caster ⟨11⟩ 1)).record
-    (GameEvent.drew g.turnNumber caster ⟨12⟩ 2)
+  let g := (g.record (GameEvent.drew g.turnNumber caster ⟨11⟩ 1 (cause := .turnBased .drawStepDraw))).record
+    (GameEvent.drew g.turnNumber caster ⟨12⟩ 2 (cause := .oneShotEffect none none (some caster)))
   let (g, drawnTwo) := holds g (.atLeast .cardsDrawnThisTurn (.fixed 2))
   let (g, drawnThree) := holds g (.atLeast .cardsDrawnThisTurn (.fixed 3))
   let (g, loyaltyMissing) := holds g (.atLeast .lastKnownPower (.fixed 2))
@@ -268,9 +271,9 @@ power. A number that cannot be read does not hold. -/
 
 /- A library with a card, and an empty library. -/
 #guard
-  let filled := afterDraw.changePlayer caster (.pushLibrary ⟨0⟩)
+  let filled := insertObject afterDraw hero caster (.library caster)
   let (g, has) := holds filled (.atLeast .libraryCards (.fixed 1))
-  let emptied := g.changePlayer caster (.library #[])
+  let emptied := emptyLibrary g caster
   let (g, empty) := holds emptied (.atLeast .libraryCards (.fixed 1))
   let (_, negated) := holds emptied (.not (.atLeast .libraryCards (.fixed 1)))
   has && !empty && negated && g.log.size == emptied.log.size

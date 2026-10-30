@@ -75,7 +75,7 @@ def clearEOT (g : Game) : Game :=
       (g.battlefield.filter (fun o => o.status.damage != 0)).map (·.id)
     if !damagedIds.isEmpty then
       g := g.record (GameEvent.damageMarkedCleared g.turnNumber damagedIds
-        (cause := cause))
+        (cause := .turnBased .cleanupClear))
     return g
 
 /-- Discard down to maximum hand size (CR 514.1). This turn-based action does
@@ -130,12 +130,12 @@ def clearTurnActivations (g : Game) : Game :=
           | .playerRule p (.typeSpellCostLess _ _) .untilEndOfTurn
           | .playerRule p (.supertypeSpellCostLess _ _) .untilEndOfTurn => p == pl.id
           | _ => false) (cause := cause)
-    let keepDt := g.delayedTriggers.filter (fun dt =>
+    let expiredDt := g.delayedTriggers.filter (fun dt =>
       match dt.kind with
-      | .attackPumpPerPlains => (g.player dt.controller).lost
-      | _ => true)
-    if keepDt.size != g.delayedTriggers.size then
-      g := g.change (.delayedTriggers keepDt)
+      | .attackPumpPerPlains => !(g.player dt.controller).lost
+      | _ => false)
+    for dt in expiredDt do
+      g := g.record (GameEvent.delayedTriggerExpired g.turnNumber dt (.turnBased .cleanupClear))
     return g
 
 /-- End goad designations placed by `p` as `p`'s next turn begins (CR 701.15a). -/
@@ -143,7 +143,7 @@ def expireGoadedFor (g : Game) (p : PlayerId) : Game :=
   g.battlefield.foldl (fun g o =>
     if o.status.goadedUntilNextTurnOf.contains p then
       g.record (GameEvent.designation g.turnNumber (g.snapshot o) (.goaded p) false
-        (cause := some (.turnBased .expireAtStepBegin)))
+        (cause := .turnBased .expireAtStepBegin))
     else g) g
 
 /-- End Reality Fracture effects that last until `p`'s next turn: Garruk,
@@ -192,11 +192,10 @@ def expireUntilNextTurnEffects (g : Game) (p : PlayerId) : Game :=
   let g := g.restoreCopiesUntilNextTurn p
   let g := g.expirePlayPermissions p (cause := cause)
   let g := g.expireAll (.cantCastSpellsThisTurn p) (cause := cause)
-  let keepDt := g.delayedTriggers.filter (fun dt =>
-    !(dt.kind == .attackPumpPerPlains && dt.controller == p))
-  if keepDt.size != g.delayedTriggers.size then
-    g.change (.delayedTriggers keepDt)
-  else g
+  let expiredDt := g.delayedTriggers.filter (fun dt =>
+    dt.kind == .attackPumpPerPlains && dt.controller == p)
+  expiredDt.foldl (fun g dt =>
+    g.record (GameEvent.delayedTriggerExpired g.turnNumber dt (.turnBased .expireAtStepBegin))) g
 
 /-- Advance to the next living player's turn after a cleanup step ends.
 A player who has left does not begin a turn (CR 800.4k); effects that last
@@ -219,18 +218,12 @@ def startNextTurn (g : Game) : Game :=
         match e.change with
         | .rules (.player (.lost p _)) | .rules (.player (.leftGame p)) =>
           (stk, updateLost lost p true)
-        | .engine (.player p (.lost v)) =>
-          (stk, updateLost lost p v)
-        | .engine (.playerChanges p cs) =>
-          let lost := cs.foldl (fun acc c =>
-            match c with | .lost v => updateLost acc p v | _ => acc) lost
-          (stk, lost)
-        | .engine (.setPlayer pl) =>
-          (stk, updateLost lost pl.id pl.lost)
         | .engine (.players pls) =>
           (stk, pls.foldl (fun acc pl => updateLost acc pl.id pl.lost) #[])
         | .rules (.turn (.extraTurnAdded p _)) =>
-          (#[(p, e.cause)] ++ stk, lost)
+          match e.cause? with
+          | some c => (#[(p, c)] ++ stk, lost)
+          | none => (stk, lost)
         | .rules (.turn (.turnBegan p true)) =>
           let trimmed := dropLost stk lost
           let next :=
@@ -242,17 +235,14 @@ def startNextTurn (g : Game) : Game :=
           (dropLost stk lost, lost)
         | _ => (stk, lost))
       (#[], #[])
-    let mut pendingExtraCauses := stk.map Prod.snd
-    let extraN := g.extraTurns.size
-    for _ in [0:extraN] do
-      if !g.extraTurns.isEmpty && (g.player g.extraTurns[0]!).lost then
-        let q := g.extraTurns[0]!
-        g := g.expireUntilNextTurnEffects q
-        g := { g with extraTurns := g.extraTurns.extract 1 g.extraTurns.size }
-        pendingExtraCauses := pendingExtraCauses.extract 1 pendingExtraCauses.size
-    match g.extraTurns[0]? with
+    let pendingExtraCauses := stk.map Prod.snd
+    let mut skipIdx := 0
+    while skipIdx < g.extraTurns.size && (g.player g.extraTurns[skipIdx]!).lost do
+      g := g.expireUntilNextTurnEffects g.extraTurns[skipIdx]!
+      skipIdx := skipIdx + 1
+    match (g.extraTurns.extract skipIdx g.extraTurns.size)[0]? with
     | some q =>
-      let extraCause? := pendingExtraCauses[0]?
+      let extraCause? := (pendingExtraCauses.extract skipIdx pendingExtraCauses.size)[0]?
       g := g.record (GameEvent.turnBegan (g.turnNumber + 1) q (extra := true))
       g := g.change (.cleanupGivesPriority false)
       if !g.powerUpsForbidden then
@@ -292,12 +282,12 @@ partial def beginStep (g : Game) (st : Step) : Game :=
         (cause := some (.gameRule .stepAdvance)))
     else g
   let stepEvent := GameEvent.stepped g.turnNumber st g.activePlayer
-  let g := if st == .draw && g.skipsFirstDraw then g else { g with step := st }
+  let g := if st == .draw && g.skipsFirstDraw then g else g.record stepEvent
   let g := g.logMsg s!"— Turn {g.turnNumber}, {g.player g.activePlayer |>.name}: {st} —"
   match st with
   | .untap =>
     Id.run do
-      let mut g := g.record stepEvent
+      let mut g := g
       let ap := g.activePlayer
       let apName := (g.player ap).name
       g := g.expireGoadedFor ap
@@ -320,21 +310,19 @@ partial def beginStep (g : Game) (st : Step) : Game :=
               (g.staticAbilities o).any (· == .fra .doesntUntap) ||
               g.hostCantBecomeUntapped o ||
               g.hostSkipsUntapStep o
-            let baseCause := some (EventCause.turnBased .untapAll)
+            let baseCause := EventCause.turnBased .untapAll
             let untap := GameEvent.untapped g.turnNumber (g.snapshot o) false (cause := baseCause)
             -- CR 122.1d: a stun counter is removed instead of untapping via the CR 616.1 loop.
             if o.status.tapped && !skipUntap then
-              let (stunned, cause') := g.replaceUntap o (cause := baseCause)
+              let (stunned, cause') := g.replaceUntap o (cause := some baseCause)
               if stunned then
                 g := g.logMsg s!"A stun counter is removed from {g.name o} instead of untapping it"
                 g := g.record (GameEvent.counters g.turnNumber (some ap) (g.snapshot o) .stun 1 true
-                  (cause := cause'))
+                  (cause := cause'.getD baseCause))
               else
                 g := g.logMsg s!"{apName} untaps {g.name o}"
                 if untap.watches .wouldUntap then
                   g := g.record untap
-            if o.status.summoningSick then
-              g := g.changeStatus o.id (.summoningSick false)
           return g
       -- No priority (CR 502.4). Immediately continue.
       g := g.record (GameEvent.stepEnded g.turnNumber .untap
@@ -352,12 +340,10 @@ partial def beginStep (g : Game) (st : Step) : Game :=
     else
       -- The turn-based draw happens before triggers (ruling 770).
       let g := g.draw g.activePlayer 1 (cause := some (.turnBased .drawStepDraw))
-      let g := g.record stepEvent
       g.receivePriority g.activePlayer
   | .declareAttackers =>
-    (g.record stepEvent).change (.pending .declareAttackers)
+    g.change (.pending .declareAttackers)
   | .declareBlockers =>
-    let g := g.record stepEvent
     if (g.battlefield.filter (·.status.attacking)).isEmpty then
       g.logMsg "No attackers; skipping declare blockers and combat damage (CR 508.8)"
     else
@@ -366,14 +352,12 @@ partial def beginStep (g : Game) (st : Step) : Game :=
         if ps.isEmpty then #[g.opponent g.activePlayer] else ps
       g.changes #[.pending .declareBlockers, .blockersQueue queue]
   | .combatDamage =>
-      (g.record stepEvent).beginCombatDamageAssignment
+      g.beginCombatDamageAssignment
   | .upkeep =>
     let ap := g.activePlayer
-    let g := g.record stepEvent
     g.receivePriority ap
   | .beginningOfCombat =>
     let ap := g.activePlayer
-    let g := g.record stepEvent
     g.receivePriority ap
   | .end =>
     let ap := g.activePlayer
@@ -382,15 +366,13 @@ partial def beginStep (g : Game) (st : Step) : Game :=
         let mut g := g
         for o in g.permanentsOf ap do
           if (g.baseCard o).impending.isSome && g.loggedCastForImpending o.id && o.status.time > 0 then
-            let impCause := some (EventCause.gameRule .impending)
+            let impCause := EventCause.gameRule .impending
             g := (g.record (GameEvent.counters g.turnNumber (some ap) (g.snapshot o) .time 1 true
-              (cause := impCause))).syncImpendingNotACreature o.id (cause := impCause)
+              (cause := impCause))).syncImpendingNotACreature o.id (cause := some impCause)
             g := g.logMsg s!"{g.name o} loses a time counter"
         return g
-    let g := g.record stepEvent
     g.receivePriority ap
   | .cleanup =>
-    let g := g.record stepEvent
     -- CR 514.1–514.3.
     let g := g.discardToMaxHandSize
     let g := g.clearEOT
@@ -414,10 +396,9 @@ partial def beginStep (g : Game) (st : Step) : Game :=
   | .precombatMain =>
     let ap := g.activePlayer
     let g := g.addLoreAfterDrawStep
-    let g := g.record stepEvent
     g.receivePriority ap
   | _ =>
-    (g.record stepEvent).receivePriority g.activePlayer
+    g.receivePriority g.activePlayer
 
 def beginTurn (g : Game) : Game :=
   let p := g.activePlayer

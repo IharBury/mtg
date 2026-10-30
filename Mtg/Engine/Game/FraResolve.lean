@@ -240,7 +240,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
         let (g, back) := g.putOntoBattlefield exiled controller (tapped := true) (cause := some cause)
         let g := g.logMsg s!"{o.name} returns to the battlefield tapped under {(g.player controller).name}'s control"
         let src := (sourceId.bind g.findObject?).orElse (fun _ => g.findObject? back)
-        let g := g.change (.pushDelayedTrigger { controller, source := src, kind := .endStepExile back, cause })
+        let g := g.registerDelayedTrigger { controller, source := src, kind := .endStepExile back, cause }
         g.afterPermanentEnters (g.object! back)
       else g) sourceId illegal
   | .eachPlayerMayWheel n =>
@@ -468,7 +468,8 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
         timestamp := copyTs
         isCopy := true
       }
-      let g := g.record (GameEvent.created g.turnNumber controller (g.snapshot copyObj) (cause := cause?))
+      let g := g.record (GameEvent.created g.turnNumber controller (g.snapshot copyObj)
+        (cause := g.resolveOptionalCause cause? (fallbackSrc := sourceId) (fallbackCtrl := some controller)))
       let g := g.createEffect (.playPermission copyId {
         player := controller,
         whileExiled := true, withoutManaCost := true, ignoreTiming := true })
@@ -503,7 +504,8 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
           isCopy := true
         }
         let g := g.record (GameEvent.stackObjectCopied g.turnNumber spell.id copySnap controller
-          (cause := g.resolvingOneShotCause controller sourceId))
+          (cause := g.resolveOptionalCause (g.resolvingOneShotCause controller sourceId)
+            (fallbackSrc := sourceId) (fallbackCtrl := some controller)))
         g.logMsg s!"A copy of {spell.name} is created"
     | none => g.logMsg "The spell is no longer on the stack"
   | .eyeOfJace =>
@@ -587,22 +589,35 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
   | .kothGeomancer =>
     let g := g.dealDamageToEachOpponent controller 1 (source := src?)
     match g.fraCause? with
-    | some land => if g.hasSubtype land .mountain then g.addManaLogged controller #[.colored .red] else g
+    | some land =>
+      if g.hasSubtype land .mountain then
+        g.addManaLogged controller #[.colored .red] (source := sourceId)
+      else g
     | none => g
   | .fblthpSearch =>
     let x := (sourceId.bind g.chosenXOf?).getD 0
-    let (g, _) := (g.player controller).library.foldl (fun (acc : Game × Array String) id =>
-      let (g, names) := acc
-      if names.size ≥ x then acc
-      else
-        match g.findObject? id with
-        | some o =>
-          if isBasicLandCard o.printed && !names.contains o.name then
-            let g := g.logMsg s!"{(g.player controller).name} reveals {o.name}"
-            let (g, _) := g.move id (.hand controller) none
-            (g, names.push o.name)
-          else acc
-        | none => acc) (g, #[])
+    let (pickedIds, _) := (g.player controller).library.foldl
+      (fun (acc : Array ObjectId × Array String) id =>
+        let (picked, names) := acc
+        if names.size ≥ x then acc
+        else
+          match g.findObject? id with
+          | some o =>
+            if isBasicLandCard o.printed && !names.contains o.name then
+              (picked.push id, names.push o.name)
+            else acc
+          | none => acc) (#[], #[])
+    let (g, cause) := g.allocDelayedCause (some controller) sourceId
+    let g := g.record (GameEvent.searched g.turnNumber controller controller pickedIds (cause := some cause))
+    let g :=
+      if pickedIds.isEmpty then g
+      else g.record (GameEvent.revealed g.turnNumber controller pickedIds (cause := some cause))
+    let g := pickedIds.foldl (fun g id =>
+      match g.findObject? id with
+      | some o =>
+        let g := g.logMsg s!"{(g.player controller).name} reveals {o.name}"
+        (g.move id (.hand controller) none (cause := some cause)).1
+      | none => g) g
     g.shuffleLibrary controller
   | .untapAllTokensYouControl =>
     g.withBatch none fun g =>

@@ -11,7 +11,9 @@ Which cards, and whose hand, are one `ObjectSelector`.
 namespace Mtg.Engine.ReturnToHandTests
 
 open Mtg.Engine
-open Mtg.Engine.Tests
+open Mtg.Engine.Tests hiding afterDraw
+
+def afterDraw : Game := Mtg.Engine.Tests.afterDraw.change (.pushContinuationFrame {})
 
 def caster : PlayerId := ⟨0⟩
 def owner : PlayerId := ⟨1⟩
@@ -40,15 +42,13 @@ def plot : CardDef := {
 }
 
 def putInHand (g : Game) (card : CardDef) (p : PlayerId) : Game :=
-  insertObject g card p (.hand p) none {} (fun id _ => #[.pushHand id])
+  insertObject g card p (.hand p)
 
 def putInGraveyard (g : Game) (card : CardDef) (p : PlayerId) : Game :=
-  insertObject g card p (.graveyard p) none {} (fun id _ =>
-    #[.pushGraveyard id])
+  insertObject g card p (.graveyard p)
 
 def putOnLibrary (g : Game) (card : CardDef) (p : PlayerId) : Game :=
-  insertObject g card p (.library p) none {} (fun id _ =>
-    #[.pushLibrary id])
+  insertObject g card p (.library p)
 
 def namedIn (g : Game) (ids : Array ObjectId) (name : String) : ObjectId :=
   match ids.find? (fun id => (g.findObject? id).any (·.name == name)) with

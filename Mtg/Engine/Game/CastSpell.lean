@@ -132,7 +132,11 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
   let manaBefore := pl.manaPool
   let fromTop :=
     original.zone == .library p && (g.player p).library.back? == some id
+  let prepSrc := origPerm.bind (·.prepareSource)
   let (g, newId) := g.move id .stack (some p) (verb := some .cast) (actor := some p)
+    (isCopy := if prepSrc.isSome then some true else none)
+    (overridePrinted := if asAdventure then some face else none)
+    (adventurerCard := if asAdventure then some original.printed else none)
     (cause := some (.gameRule .spellCast))
   -- CR 601.2a / 601.2f: the total cost is determined after the spell is on
   -- the stack (rulings 824 / 874).
@@ -144,20 +148,16 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
   -- spell on the stack is a copy, so it isn't put into a graveyard later
   -- (CR 707.10 / 704.5e).
   let g :=
-    match origPerm.bind (·.prepareSource) with
+    match prepSrc with
     | some src =>
-      let g := g.changeObject newId (.isCopy true)
       match g.findObject? src with
       | some perm =>
-        (g.record (GameEvent.designation g.turnNumber perm.asEvent .prepared false)).logMsg
+        (g.record (GameEvent.designation g.turnNumber perm.asEvent .prepared false
+          (cause := .gameRule .spellCast))).logMsg
           s!"{perm.name} is no longer prepared"
       | none => g
     | none => g
   let g := g.change (.castingFromTop (fromTop || g.castingFromTop))
-  let g :=
-    if asAdventure then
-      g.changeObjects newId #[.printed face, .adventurerCard (some original.printed)]
-    else g
   let g := g.putStackEntry p newId
   let way : CastWay :=
     if (origPerm.bind (·.prepareSource)).isSome then .alternative "prepare"

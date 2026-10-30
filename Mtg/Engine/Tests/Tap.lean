@@ -20,6 +20,10 @@ def opp : PlayerId := ⟨1⟩
 
 def step (g : Game) (r : TriggeredAbility.TriggerResolution)
     (sourceId : Option ObjectId := none) (targets : Array Target := #[]) : Game :=
+  let g :=
+    if g.continuations.isEmpty then
+      g.change (.pushContinuationFrame { resolvingContext := some (sourceId, caster) })
+    else g
   g.applyTriggeredAbility caster (.onEnterDraw 1) sourceId targets
     (resolutionOverride := some r)
 
@@ -41,7 +45,7 @@ def handSize (g : Game) : Nat :=
 
 def attach (g : Game) (aura host : String) : Game :=
   let a := obj g aura
-  g.changeObject a.id (.attachedTo (some (pid g host)))
+  g.record (GameEvent.attached g.turnNumber a.id (pid g host) (cause := .gameRule .staticAbility))
 
 def folk : CardDef := creature "Townsfolk" ManaCost.empty #["Human"] 1 1
 def scout : CardDef := creature "Scout" ManaCost.empty #["Human"] 1 1
@@ -67,7 +71,7 @@ def village : Game :=
   addPermanent g bear caster caster
 
 def offered : Game :=
-  step (village.change (.humansTappedThisWay 4)) humansDraw
+  step ((village.change (.pushContinuationFrame {})).change (.humansTappedThisWay 4)) humansDraw
 
 def rejects (g : Game) (ids : Array ObjectId) (needle : String) : Bool :=
   match g.choosePermanents caster ids with
@@ -112,10 +116,12 @@ A choice that is not an untapped Human you control is refused. -/
     logContains g "taps no Humans"
 
 #guard
+  let askedSeq := step village (.sequence [.tap .humans, .may (.gainLife (.fixed 1)) (.sequence [])])
+  let gMid := mustApply askedSeq caster (.choosePermanents #[pid askedSeq "Townsfolk"])
   let asked := step village (.tap .humans)
   let g := mustApply asked caster (.choosePermanents #[pid asked "Townsfolk"])
   (obj g "Townsfolk").status.tapped && !(obj g "Scout").status.tapped &&
-    g.humansTappedThisWay == 1 && g.pending == .none &&
+    gMid.humansTappedThisWay == 1 && g.continuations.isEmpty && g.pending == .none &&
     handSize g == handSize village
 
 #guard rejects offered #[pid offered "Bear"] "not an untapped Human"
@@ -124,7 +130,7 @@ A choice that is not an untapped Human you control is refused. -/
   rejects g #[pid g "Foe"] "not an untapped Human"
 #guard
   let towns := obj offered "Townsfolk"
-  let g := offered.changeStatus towns.id (.tapped true)
+  let g := setTapped offered towns.id true
   rejects g #[pid g "Townsfolk"] "not an untapped Human"
 #guard rejects offered #[pid offered "Townsfolk", pid offered "Townsfolk"] "Duplicate card"
 #guard
@@ -169,7 +175,7 @@ has left is still tapped. An already tapped host stays tapped. -/
     (addPermanent (addPermanent afterDraw bear caster caster) grasp caster caster)
     "Grasp" "Bear"
   let bear0 := obj g0 "Bear"
-  let g0 := g0.changeStatus bear0.id (.tapped true)
+  let g0 := setTapped g0 bear0.id true
   let g := step g0 (.tap .enchanted) (some (pid g0 "Grasp"))
   (obj g "Bear").status.tapped && logContains g "already tapped"
 
@@ -186,7 +192,7 @@ has left is still tapped. An already tapped host stays tapped. -/
     (addPermanent (addPermanent afterDraw bear caster caster) grasp caster caster)
     "Grasp" "Bear"
   let aura := obj g0 "Grasp"
-  let g0 := g0.changeObject aura.id (.attachedTo (some ⟨99999⟩))
+  let g0 := g0.record (GameEvent.attached g0.turnNumber aura.id ⟨99999⟩ (cause := .gameRule .staticAbility))
   let g := step g0 (.tap .enchanted) (some (pid g0 "Grasp"))
   !(obj g "Bear").status.tapped && logContains g "Nothing is enchanted"
 
@@ -201,7 +207,7 @@ has left is still tapped. An already tapped host stays tapped. -/
     "Grasp" "Bear"
   let (g1, bearId) := g0.move (pid g0 "Bear") (.graveyard caster) none
   let aura := anyObj g1 "Grasp"
-  let g1 := g1.changeObject aura.id (.attachedTo (some bearId))
+  let g1 := g1.record (GameEvent.attached g1.turnNumber aura.id bearId (cause := .gameRule .staticAbility))
   let g := step g1 (.tap .enchanted) (some aura.id)
   (anyObj g "Bear").status.tapped && logContains g "becomes tapped"
 
@@ -225,7 +231,7 @@ source to still be there. -/
 #guard
   let g0 := addPermanent (addPermanent afterDraw hawk caster caster) wasp caster caster
   let hawk0 := obj g0 "Hawk"
-  let g0 := g0.changeStatus hawk0.id (.tapped true)
+  let g0 := setTapped g0 hawk0.id true
   let g := step g0 (.tap (.target .ifPresent)) (some (pid g0 "Wasp"))
     #[Target.permanent (pid g0 "Hawk")]
   (obj g "Hawk").status.tapped && logContains g "already tapped"
