@@ -705,8 +705,7 @@ def finishChooseCards (g : Game) (p : PlayerId) (chosen : Array ObjectId)
         match g.findObject? id with
         | some o =>
           if o.zone == .hand o.owner && o.printed.isCreature then
-            let sick := !o.printed.keywords.haste
-            let (g, newId) := g.putOntoBattlefield id p (summoningSick := sick) (cause := cause?)
+            let (g, newId) := g.putOntoBattlefield id p (cause := cause?)
             let g := g.logMsg s!"{o.name} enters the battlefield"
             g.afterPermanentEnters (g.object! newId)
           else g
@@ -1615,9 +1614,7 @@ def returnSourceFromGraveyard (g : Game) (sourceId : Option ObjectId)
       g.returnToHand o.id o.owner
     else
       let name := o.name
-      let sick := !o.printed.keywords.haste
       let (g, newId) := g.putOntoBattlefield o.id controller (tapped := tapped)
-        (summoningSick := sick)
       let g := g.logMsg
         (if tapped then s!"{name} returns to the battlefield tapped"
          else s!"{name} returns to the battlefield")

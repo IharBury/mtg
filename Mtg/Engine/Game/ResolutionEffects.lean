@@ -374,9 +374,7 @@ def returnExiledId (g : Game) (id : ObjectId) : Game :=
             let g := g.logMsg s!"{name} returns attached to {hostName} (does not target)"
             g.afterPermanentEnters (g.object! newId)
         else
-          let sick := !o.printed.keywords.haste
           let (g, newId) := g.move id .battlefield (some owner)
-            (summoningSick := sick)
           let g := g.logMsg s!"{name} returns to the battlefield"
           g.afterPermanentEnters (g.object! newId)
 

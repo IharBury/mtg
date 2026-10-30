@@ -92,7 +92,6 @@ def createOneToken (g : Game) (controller : PlayerId) (printed : CardDef)
   else
     g.withBatchReturn cause fun g =>
       let printed := { printed with isToken := true }
-      let sick := !printed.keywords.haste
       let asOf := g.timestamp
       let newId : ObjectId := ⟨g.nextObjectId⟩
       let ts := g.timestamp + 1
@@ -110,7 +109,7 @@ def createOneToken (g : Game) (controller : PlayerId) (printed : CardDef)
         zone := .battlefield
         status := {
           tapped := tapped
-          summoningSick := sick
+          summoningSick := true
           attacking := isAttacking
           attackingTarget := resolvedAttackTarget
         }

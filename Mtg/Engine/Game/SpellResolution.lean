@@ -96,8 +96,7 @@ def resolveDelayedTrigger (g : Game) (controller : PlayerId) (kind : DelayedTrig
           g.logMsg s!"{o.name} remains in its current zone (CR 800.4b)"
         else
           let name := o.name
-          let sick := !o.printed.keywords.haste
-          let (g', newId) := g.putOntoBattlefield id owner (summoningSick := sick) (cause := some cause)
+          let (g', newId) := g.putOntoBattlefield id owner (cause := some cause)
           let g' := g'.logMsg s!"{name} returns to the battlefield (beginning of end step)"
           let back := g'.object! newId
           if back.printed.isLand then g'.afterLandEnters back
@@ -123,8 +122,7 @@ def resolveDelayedTrigger (g : Game) (controller : PlayerId) (kind : DelayedTrig
     | some o =>
       if o.zone == .graveyard o.owner && !(g.player who).lost then
         let name := o.name
-        let (g', newId) := g.putOntoBattlefield id who
-          (summoningSick := !o.printed.keywords.haste) (cause := some cause)
+        let (g', newId) := g.putOntoBattlefield id who (cause := some cause)
         let g' := g'.logMsg s!"{name} returns to the battlefield"
         g'.afterPermanentEnters (g'.object! newId)
       else g
@@ -280,7 +278,6 @@ def resolveTop (g : Game) : Game :=
         else if obj.printed.isAura then
           g.resolveAuraSpell entry obj
         else if obj.printed.isPermanentCard && !obj.printed.isLand then
-          let sick := !obj.printed.keywords.haste
           let sneak := g.sneakPaid obj.id
           let sneakWhom := g.sneakAttackWhom? obj.id
           let sneakTarget :=
@@ -289,7 +286,6 @@ def resolveTop (g : Game) : Game :=
             else none
           let (g, newId) := g.putOntoBattlefield obj.id entry.controller
             (tapped := sneak)
-            (summoningSick := sick)
             (attacking := sneak)
             (attackingTarget := sneakTarget)
             (verb := some .resolve)

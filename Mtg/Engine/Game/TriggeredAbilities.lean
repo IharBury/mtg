@@ -1810,9 +1810,7 @@ def applyExile (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
           let owner := o.owner
           let name := if o.isOnBattlefield then g.name o else o.name
           let (g, exId) := g.move o.id .exile none (cause := sharedCause?)
-          let ex := g.object! exId
           let (g, retId) := g.move exId .battlefield (some owner)
-            (summoningSick := !ex.printed.keywords.haste)
             (cause := sharedCause?)
           g.afterPermanentEnters (g.object! retId)
             |>.logMsg s!"{name} is exiled, then returned"
@@ -1825,10 +1823,8 @@ def applyExile (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
             let owner := o.owner
             let name := if o.isOnBattlefield then g.name o else o.name
             let (g, exId) := g.move o.id .exile none (cause := sharedCause?)
-            let ex := g.object! exId
             let (g, retId) := g.move exId .battlefield (some owner)
-              (tapped := true) (summoningSick := !ex.printed.keywords.haste)
-              (cause := sharedCause?)
+              (tapped := true) (cause := sharedCause?)
             g.afterPermanentEnters (g.object! retId)
               |>.logMsg s!"{name} is exiled, then returned tapped"
         | .mayCastUpTo casts =>

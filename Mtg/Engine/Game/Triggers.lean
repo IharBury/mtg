@@ -202,7 +202,7 @@ def addOneLoreRaw (g : Game) (saga : GameObject) : Game :=
       else
         let lore := saga.status.lore + 1
         let sagaName := g.name saga
-        let g := g.record (GameEvent.counters g.turnNumber (some p) saga.asEvent .lore 1
+        let g := g.record (GameEvent.counters g.turnNumber (some p) (g.snapshot saga) .lore 1
           (cause := some (.turnBased .sagaLoreOnMain)))
         g.logMsg s!"{sagaName} gets a lore counter ({lore})"
   | _, _ => g
@@ -294,7 +294,7 @@ def becomeTapped (g : Game) (o : GameObject)
       match g.controllerOf o with
       | some p => g.activePlayer == p
       | none => false
-    let happened := GameEvent.tapped g.turnNumber o.asEvent true during (cause := cause)
+    let happened := GameEvent.tapped g.turnNumber (g.snapshot o) true during (cause := cause)
     (g.record happened).logMsg s!"{oName} becomes tapped"
 
 /-- Apply `f` to each creature `p` controls, optionally skipping one id. -/

@@ -453,7 +453,7 @@ def applyPermanentEvent (g : Game) (e : PermanentEvent) : Game :=
     match findEventIdx? object with
     | some i =>
       let o := g.objects[i]!
-      { g with objects := g.objects.set! i { o with status := { o.status with phasedOut := false, phasedWith := none, summoningSick := false } } }
+      { g with objects := g.objects.set! i { o with status := { o.status with phasedOut := false, phasedWith := none } } }
     | none => g
   | .transformed object nowBackFace =>
     match findEventIdx? object with
@@ -681,7 +681,7 @@ def applyZoneEvent (g : Game) (e : ZoneEvent) : Game :=
         toZone == .battlefield && !faceDown && printed.entersPrepared
       let sick :=
         if after.printed.isSome then after.summoningSick
-        else !after.keywords.haste
+        else true
       let baseStatus : Status :=
         if toZone == .battlefield then
           { faceDown := faceDown
@@ -785,7 +785,7 @@ def applyZoneEvent (g : Game) (e : ZoneEvent) : Game :=
     let printed := object.toCardDef
     let sick :=
       if object.printed.isSome then object.summoningSick
-      else !object.keywords.haste
+      else true
     let baseStatus : Status :=
       if object.zone == Zone.battlefield then
         { tapped := object.tapped
@@ -4453,21 +4453,40 @@ def hasSummoningSickness (g : Game) (o : GameObject) : Bool :=
           match turnStartIdx? with
           | some tsIdx => tsIdx + 1
           | none => 0
-        let mut hasteArrival : Bool := false
+        let mut sawUnoverriddenArrival : Bool := false
+        let mut overrideIdx? : Option Nat := none
         let mut sawWindowCtrlChange : Bool := false
+        let mut inUntap : Bool := false
         for i in [startScanIdx : g.events.size] do
           let ev := g.events[i]!
           match ev.change with
-          | .rules (.zone (.moved _ after fromZ toZ ..)) =>
+          | .rules (.turn (.stepBegan st _)) =>
+            inUntap := st == .untap
+          | .rules (.turn (.stepEnded .untap)) =>
+            inUntap := false
+          | .rules (.zone (.moved before after fromZ toZ ..)) =>
+            if before.id == some o.id && toZ != .battlefield then
+              sawWindowCtrlChange := true
+              overrideIdx? := none
+              sawUnoverriddenArrival := true
             if after.id == some o.id && toZ == .battlefield then
               sawWindowCtrlChange := true
-              if fromZ != .battlefield && !after.summoningSick && after.keywords.haste then
-                hasteArrival := true
+              if fromZ != .battlefield then
+                if !after.summoningSick && after.printed.isSome then
+                  overrideIdx? := some i
+                  sawUnoverriddenArrival := false
+                else
+                  overrideIdx? := none
+                  sawUnoverriddenArrival := true
           | .rules (.zone (.created eo _)) =>
             if eo.zone == .battlefield && eo.id == some o.id then
               sawWindowCtrlChange := true
-              if !eo.summoningSick && eo.keywords.haste then
-                hasteArrival := true
+              if !eo.summoningSick && eo.printed.isSome then
+                overrideIdx? := some i
+                sawUnoverriddenArrival := false
+              else
+                overrideIdx? := none
+                sawUnoverriddenArrival := true
           | .rules (.continuousEffect (.created _ spec)) =>
             match spec with
             | .layered _ (.control _) _ | .layered _ (.copy _) _ =>
@@ -4486,30 +4505,48 @@ def hasSummoningSickness (g : Game) (o : GameObject) : Bool :=
           | .engine (.setObject obj) =>
             if obj.id == o.id then
               sawWindowCtrlChange := true
+              if obj.zone == .battlefield && !obj.status.summoningSick then
+                overrideIdx? := some i
+                sawUnoverriddenArrival := false
+              else if obj.zone != .battlefield || obj.status.summoningSick then
+                overrideIdx? := none
+                sawUnoverriddenArrival := true
           | .engine (.object oid c) =>
             if oid == o.id then
               match c with
-              | .status (.summoningSick false) => hasteArrival := false
+              | .status (.summoningSick false) =>
+                if !inUntap && ev.cause != .turnBased .untapAll then
+                  overrideIdx? := some i
+                  sawUnoverriddenArrival := false
+              | .status (.summoningSick true) =>
+                overrideIdx? := none
+                sawUnoverriddenArrival := true
               | .controller _ | .defaultController _ | .status (.faceDown _) =>
                 sawWindowCtrlChange := true
               | _ => pure ()
           | .engine (.objectChanges oid cs) =>
             if oid == o.id then
-              if cs.any (fun | .status (.summoningSick false) => true | _ => false) then
-                hasteArrival := false
+              if cs.any (fun | .status (.summoningSick false) => true | _ => false) &&
+                  !inUntap && ev.cause != .turnBased .untapAll then
+                overrideIdx? := some i
+                sawUnoverriddenArrival := false
+              if cs.any (fun | .status (.summoningSick true) => true | _ => false) then
+                overrideIdx? := none
+                sawUnoverriddenArrival := true
               if cs.any (fun
                 | .controller _ | .defaultController _ | .status (.faceDown _) => true
                 | _ => false) then
                 sawWindowCtrlChange := true
           | _ => pure ()
-        if hasteArrival then return true
+        if sawUnoverriddenArrival then return true
+        let effStartIdx? := overrideIdx?.orElse (fun _ => turnStartIdx?)
         let hasActiveCtrlOrCopy :=
           g.activeEffects.any fun (_, s) =>
             match s with
             | .layered _ (.control _) _ | .layered _ (.copy _) _ => true
             | _ => false
         if !sawWindowCtrlChange && !hasActiveCtrlOrCopy &&
-            (turnStartIdx?.isSome || some ctrl == g.initialControllerOf o) then
+            (effStartIdx?.isSome || some ctrl == g.initialControllerOf o) then
           return false
         let mut createdIds : Array EffectId := #[]
         for i in [0:g.events.size] do
@@ -4518,6 +4555,7 @@ def hasSummoningSickness (g : Game) (o : GameObject) : Bool :=
             createdIds := createdIds.push eid
           | _ => pure ()
         let initEffects := g.activeEffects.filter (fun (eid, _) => !createdIds.contains eid)
+        let mut z0 : Zone := o.zone
         let mut fd0 := o.status.faceDown
         let mut dc0 := o.defaultController
         let mut rc0 := o.controller
@@ -4543,22 +4581,34 @@ def hasSummoningSickness (g : Game) (o : GameObject) : Bool :=
           | .rules (.permanent (.turnedFaceDown eo)) =>
             if eo.id == some o.id then fd0 := false
           | .rules (.zone (.moved before after fromZ toZ ..)) =>
-            if after.id == some o.id && toZ == .battlefield then
-              fd0 := after.faceDown
-              dc0 := after.controller
-              rc0 := after.controller
+            if after.id == some o.id then
+              z0 := fromZ
+              if toZ == .battlefield then
+                fd0 := after.faceDown
+                dc0 := after.controller
+                rc0 := after.controller
+            if before.id == some o.id then
+              z0 := fromZ
             if let some bid := before.id then
               objZones := setZone objZones bid fromZ
+            if let some aid := after.id then
+              if before.id != some aid then
+                objZones := setZone objZones aid fromZ
           | .rules (.zone (.created eo c)) =>
-            if eo.id == some o.id && eo.zone == .battlefield then
-              let c' := eo.controller.orElse (fun _ => some c)
-              fd0 := eo.faceDown
-              dc0 := c'
-              rc0 := c'
+            if eo.id == some o.id then
+              z0 := .outside o.owner
+              if eo.zone == .battlefield then
+                let c' := eo.controller.orElse (fun _ => some c)
+                fd0 := eo.faceDown
+                dc0 := c'
+                rc0 := c'
+            if let some eid := eo.id then
+              objZones := setZone objZones eid (.outside eo.owner)
           | .rules (.player (.lost p _)) | .rules (.player (.leftGame p)) =>
             plLost := setLost plLost p false
           | .engine (.setObject obj) =>
             if obj.id == o.id then
+              z0 := obj.zone
               fd0 := obj.status.faceDown
               dc0 := obj.defaultController
               rc0 := obj.controller
@@ -4572,12 +4622,12 @@ def hasSummoningSickness (g : Game) (o : GameObject) : Bool :=
                 | _ => pure ()
           | _ => pure ()
         let mkGameAt (effs : Array (EffectId × ContinuousEffectSpec))
-            (fd : Bool) (dc rc : Option PlayerId)
+            (cz : Zone) (fd : Bool) (dc rc : Option PlayerId)
             (zs : Array (ObjectId × Zone)) (ls : Array (PlayerId × Bool)) :
             Game × GameObject :=
           let oAt : GameObject :=
             { o with
-              zone := .battlefield
+              zone := cz
               defaultController := dc
               controller := rc
               status := { o.status with faceDown := fd } }
@@ -4598,15 +4648,17 @@ def hasSummoningSickness (g : Game) (o : GameObject) : Bool :=
             | none => pl
           ({ g with activeEffects := effs, objects := objsAt, players := plsAt }, oAt)
         let mut curEffs := initEffects
+        let mut curZ := z0
         let mut curFd := fd0
         let mut curDc := dc0
         let mut curRc := rc0
         let mut curZs := objZones
         let mut curLs := plLost
-        match turnStartIdx? with
+        match effStartIdx? with
         | none =>
-          let (g0At, o0At) := mkGameAt curEffs curFd curDc curRc curZs curLs
-          if g0At.initialControllerOf o0At != some ctrl ||
+          let (g0At, o0At) := mkGameAt curEffs curZ curFd curDc curRc curZs curLs
+          if o0At.zone != .battlefield ||
+              g0At.initialControllerOf o0At != some ctrl ||
               g0At.controllerOf o0At != some ctrl then
             return true
         | some _ => pure ()
@@ -4641,6 +4693,9 @@ def hasSummoningSickness (g : Game) (o : GameObject) : Bool :=
             if let some aid := after.id then
               curZs := setZone curZs aid toZ
               dirty := true
+            if before.id == some o.id || after.id == some o.id then
+              curZ := toZ
+              dirty := true
             if after.id == some o.id && toZ == .battlefield then
               curFd := after.faceDown
               curDc := after.controller
@@ -4649,6 +4704,9 @@ def hasSummoningSickness (g : Game) (o : GameObject) : Bool :=
           | .rules (.zone (.created eo c)) =>
             if let some eid := eo.id then
               curZs := setZone curZs eid eo.zone
+              dirty := true
+            if eo.id == some o.id then
+              curZ := eo.zone
               dirty := true
             if eo.id == some o.id && eo.zone == .battlefield then
               let c' := eo.controller.orElse (fun _ => some c)
@@ -4661,6 +4719,7 @@ def hasSummoningSickness (g : Game) (o : GameObject) : Bool :=
             dirty := true
           | .engine (.setObject obj) =>
             if obj.id == o.id then
+              curZ := obj.zone
               curFd := obj.status.faceDown
               curDc := obj.defaultController
               curRc := obj.controller
@@ -4682,12 +4741,12 @@ def hasSummoningSickness (g : Game) (o : GameObject) : Bool :=
                 | _ => pure ()
           | _ => pure ()
           let checkNow :=
-            match turnStartIdx? with
+            match effStartIdx? with
             | none => dirty
-            | some tsIdx => i == tsIdx || (i > tsIdx && dirty)
+            | some sIdx => i == sIdx || (i > sIdx && dirty)
           if checkNow then
-            let (gAt, oAt) := mkGameAt curEffs curFd curDc curRc curZs curLs
-            if gAt.controllerOf oAt != some ctrl then
+            let (gAt, oAt) := mkGameAt curEffs curZ curFd curDc curRc curZs curLs
+            if oAt.zone != .battlefield || gAt.controllerOf oAt != some ctrl then
               return true
         return false
       sickWithoutHaste && !g.hasHaste o
@@ -6277,10 +6336,7 @@ def applyEtbReplacements (g : Game) (candidate : GameObject)
         | .entersUnderControl _ newCtrl =>
           cur := { cur with controller := some newCtrl, defaultController := some newCtrl }
         | .entersAsCopy _ template =>
-          let sick := !template.keywords.haste
-          cur := { cur with
-            printed := template
-            status := { cur.status with summoningSick := sick } }
+          cur := { cur with printed := template }
         | .entersBackFaceUp _ =>
           match cur.printed.otherFace with
           | some back =>
@@ -7753,8 +7809,9 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
                       waiting := w; firedSources := fs
           -- Per-permanent dealt-damage triggers
           for (recObj, totalAmt, noncombatAmt, _) in dealtToPerm do
+            let recSnap := post.snapshot recObj
             let pktEv :=
-              GameEvent.damaged e.turn { owner := recObj.owner } recObj.asEvent totalAmt (noncombatAmt == 0)
+              GameEvent.damaged e.turn { owner := recObj.owner } recSnap totalAmt (noncombatAmt == 0)
             match post.controllerOf recObj with
             | some c =>
               if !firedSourceDealtDamage.contains recObj.id &&
@@ -7775,7 +7832,7 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
                 waiting := w; firedSources := fs
               if noncombatAmt > 0 then
                 let ncEv :=
-                  GameEvent.damaged e.turn { owner := recObj.owner } recObj.asEvent noncombatAmt false
+                  GameEvent.damaged e.turn { owner := recObj.owner } recSnap noncombatAmt false
                 if ncEv.matchesTrigger c recObj.id .sourceDealtNoncombatDamage then
                   let (w, fs) :=
                     queueSrc post c recObj .sourceDealtNoncombatDamage
@@ -9216,7 +9273,7 @@ def recordPutCounters (g : Game) (id : ObjectId) (kind : CounterKind) (n : Nat)
           (.recordPutCounters id kind n byPlayer cause)
       | none =>
         let g := g.consumeReplacementOrder applied
-        let g := g.record (GameEvent.counters g.turnNumber putter o.asEvent kind n (cause := cause'))
+        let g := g.record (GameEvent.counters g.turnNumber putter (g.snapshot o) kind n (cause := cause'))
         if kind == .time then g.syncImpendingNotACreature id (cause := cause') else g
 
 /-- Record removing up to `n` counters of `kind` from `id` via
@@ -9231,7 +9288,7 @@ def recordRemoveCounters (g : Game) (id : ObjectId) (kind : CounterKind) (n : Na
     if actual == 0 then g
     else
       let actor := byPlayer.orElse (fun _ => g.counterPutter (g.controllerOf o))
-      let g := g.record (GameEvent.counters g.turnNumber actor o.asEvent kind actual (removed := true) (cause := cause))
+      let g := g.record (GameEvent.counters g.turnNumber actor (g.snapshot o) kind actual (removed := true) (cause := cause))
       if kind == .time then g.syncImpendingNotACreature id (cause := cause) else g
 
 /-- Remove all counters currently on `id`, emitting one `PermanentEvent.counters`

@@ -568,9 +568,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
                   g := g.logMsg
                     s!"{name} returns attached to {hostName} (does not target)"
               else
-                let sick := !o.printed.keywords.haste
-                let (g', _) := g.move o.id .battlefield (some o.owner)
-                  (summoningSick := sick) (cause := linkCause)
+                let (g', _) := g.move o.id .battlefield (some o.owner) (cause := linkCause)
                 g := g'
                 g := g.logMsg s!"{name} returns to the battlefield"
           | none => pure ()

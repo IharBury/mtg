@@ -147,7 +147,8 @@ private def putHits (g : Game) (p : PlayerId) (hits : Array ObjectId) (haste := 
       match g.findObject? id with
       | none => g
       | some _ =>
-        let (g, newId) := g.putOntoBattlefield id p (summoningSick := !haste) (cause := cause)
+        let (g, newId) := g.putOntoBattlefield id p (cause := cause)
+        let g := if haste then g.createEffect (.keywordsUntilEot newId Keyword.haste) else g
         g.afterPermanentEnters (g.object! newId)) g
 
 private def restBottom (g : Game) (p : PlayerId) (rest : Array ObjectId) (shuffle : Bool)

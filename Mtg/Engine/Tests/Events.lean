@@ -5179,4 +5179,88 @@ substitutions vs mana-derived colors):
     !critTargets.contains (.permanent bSrc.id)
   peerStaticsOk && phasingDurationOk && textColorOk
 
+/- Phase 9 isolation suite (summoning sickness across phasing and arrival zone
+continuity, plus `post.snapshot` in `.creatureYouControlDealtDamage` and
+`.creatureYouControlTapped`):
+1. Phasing a creature out and back in preserves `status.summoningSick` (CR
+   302.6 / 702.26d), and `hasSummoningSickness` tracks `o`'s zone across arrival
+   rather than pinning `oAt.zone` to `.battlefield` before `o` entered.
+2. `matchTriggers` (`.creatureYouControlDealtDamage`) and `becomeTapped`
+   (`.creatureYouControlTapped`) build event objects via `snapshot`, so creatures
+   controlled via Layer 2 effects and noncreatures animated in Layer 4 queue the
+   triggers for their evaluated controller. -/
+#guard
+  let opp : PlayerId := ⟨1⟩
+  -- 1. Summoning sickness across phasing & arrival zone continuity
+  let (gHand, handBear) := afterDraw.allocObject bear me (.hand me) none
+  let (gArr, arrId) := gHand.putOntoBattlefield handBear.id me
+  let gPhOut := gArr.phaseOut (gArr.object! arrId)
+  let gPhIn := gPhOut.phaseIn (gPhOut.object! arrId)
+  let gUntapCleared :=
+    { gArr with
+      objects := gArr.objects.map fun (obj : GameObject) =>
+        if obj.id == arrId then { obj with status := { obj.status with summoningSick := false } }
+        else obj }
+  let (gGobHand, handGob) := afterDraw.allocObject ragingGoblin me (.hand me) none
+  let (gGobArr, gobId) := gGobHand.putOntoBattlefield handGob.id me
+  let gGobStripped :=
+    gGobArr.createEffect (.layered (.objects #[gobId]) (.abilities {} .all) .untilEndOfTurn)
+  let gPreExisting := addPermanent afterDraw hero me me
+  let preHero := (gPreExisting.battlefield.filter (·.name == "Event Hero"))[0]!
+  let gPrePhIn := (gPreExisting.phaseOut preHero).phaseIn ((gPreExisting.phaseOut preHero).object! preHero.id)
+  let phaseSickOk :=
+    (gPhIn.object! arrId).status.summoningSick &&
+    gPhIn.hasSummoningSickness (gPhIn.object! arrId) &&
+    !(gUntapCleared.object! arrId).status.summoningSick &&
+    gUntapCleared.hasSummoningSickness (gUntapCleared.object! arrId) &&
+    !gGobArr.hasSummoningSickness (gGobArr.object! gobId) &&
+    gGobStripped.hasSummoningSickness (gGobStripped.object! gobId) &&
+    !gPrePhIn.hasSummoningSickness (gPrePhIn.object! preHero.id)
+  -- 2. `.creatureYouControlDealtDamage` and `.creatureYouControlTapped` with Layer 2 & Layer 4
+  let dmgWatchAb : TriggeredAbility := .triggered .fromEffect Effect.watchSheHulkRedirectOnce {}
+  let tapWatchAb : TriggeredAbility := .triggered .fromEffect Effect.watchFirstTapUntap {}
+  let watcherDef : CardDef :=
+    { name := "Phase9 Damage Tap Watcher"
+      manaCost := ManaCost.empty
+      types := #[.enchantment]
+      triggeredAbilities := #[dmgWatchAb, tapWatchAb] }
+  let relicDef : CardDef :=
+    { name := "Phase9 Animated Relic", manaCost := ManaCost.empty, types := #[.artifact] }
+  let gW0 :=
+    addPermanent
+      (addPermanent
+        (addPermanent
+          (addPermanent (quiet afterDraw) watcherDef me me)
+          watcherDef opp opp)
+        bear opp opp)
+      relicDef me me
+  let oppBear := (gW0.battlefield.filter (·.name == "Event Bear"))[0]!
+  let relic := (gW0.battlefield.filter (·.name == "Phase9 Animated Relic"))[0]!
+  let gLayered :=
+    (gW0.createEffect (.layered (.objects #[oppBear.id]) (.control me) .untilEndOfTurn)).createEffect
+      (.additionalCreature relic.id (untilEot := true))
+  let cause1 : EventCause := .oneShotEffect (some ⟨201⟩) none (some me)
+  let gDmgStolen :=
+    gLayered.withBatch (some cause1) fun g =>
+      let target := g.object! oppBear.id
+      g.dealDamageToPermanent target 1 (source := some target.asEvent) (cause := some cause1)
+  let gDmgAnim :=
+    gLayered.withBatch (some cause1) fun g =>
+      let target := g.object! relic.id
+      g.dealDamageToPermanent target 1 (source := some target.asEvent) (cause := some cause1)
+  let gTapStolen :=
+    gLayered.withBatch (some cause1) fun g =>
+      g.becomeTapped (g.object! oppBear.id) (cause := some cause1)
+  let gTapAnim :=
+    gLayered.withBatch (some cause1) fun g =>
+      g.becomeTapped (g.object! relic.id) (cause := some cause1)
+  let dmgAndTapSnapOk :=
+    (gLayered.object! oppBear.id).controller == some opp &&
+    gDmgStolen.waitingTriggers.any (fun wt => wt.controller == me && wt.ability == dmgWatchAb) &&
+    !gDmgStolen.waitingTriggers.any (fun wt => wt.controller == opp && wt.ability == dmgWatchAb) &&
+    gDmgAnim.waitingTriggers.any (fun wt => wt.controller == me && wt.ability == dmgWatchAb) &&
+    gTapStolen.waitingTriggers.any (fun wt => wt.controller == me && wt.ability == tapWatchAb) &&
+    gTapAnim.waitingTriggers.any (fun wt => wt.controller == me && wt.ability == tapWatchAb)
+  phaseSickOk && dmgAndTapSnapOk
+
 end Mtg.Engine.EventTests

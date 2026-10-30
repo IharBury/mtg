@@ -325,9 +325,7 @@ def flickerChosenNonland (g : Game) (controller : PlayerId) (sourceId : Option O
         let name := g.name o
         let (g, cause) := g.allocDelayedCause (some controller) sourceId
         let (g, exId) := g.move o.id .exile none (cause := some cause)
-        let ex := g.object! exId
-        let (g, retId) := g.move exId .battlefield (some owner)
-          (summoningSick := !ex.printed.keywords.haste) (cause := some cause)
+        let (g, retId) := g.move exId .battlefield (some owner) (cause := some cause)
         g.afterPermanentEnters (g.object! retId)
           |>.logMsg s!"{name} is exiled, then returned"
       else g.logMsg "The target is no longer legal"
@@ -349,9 +347,8 @@ def returnNontokenTapped (g : Game) (targets : Array Target) : Game :=
         let name := g.name o
         let (g, cause) := g.allocDelayedCause (g.controllerOf o)
         let (g, newId) := g.move o.id .exile none (cause := some cause)
-        let ex := g.object! newId
         let (g, retId) := g.move newId .battlefield (some owner)
-          (tapped := true) (summoningSick := !ex.printed.keywords.haste) (cause := some cause)
+          (tapped := true) (cause := some cause)
         g.afterPermanentEnters (g.object! retId)
           |>.logMsg s!"{name} is exiled, then returned tapped"
       else g.logMsg "The target is no longer legal"
@@ -960,9 +957,8 @@ def exileThenReturn (g : Game) (o : GameObject) (logText : String)
     if clearExileFields then
       g.changeObject newId (.linkedExile #[])
     else g
-  let sick := !(g.object! newId).printed.keywords.haste
   let (g, retId) := g.move newId .battlefield (some owner)
-    (tapped := land && tapped) (summoningSick := sick) (cause := cause)
+    (tapped := land && tapped) (cause := cause)
   let g := g.logMsg s!"{name} {logText}"
   if land then g.afterLandEnters (g.object! retId)
   else g.afterPermanentEnters (g.object! retId)
