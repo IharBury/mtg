@@ -1646,11 +1646,15 @@ def effectTimestamp (g : Game) (eid : EffectId) (pos : Nat) : Nat × Nat :=
     return (0, 1000000 + pos)
 
 /-- Whether `d` is currently active in `g` (e.g. `.whileSourceOnBattlefield src`
-requires `src` to be on the battlefield, CR 611.2b). -/
+requires `src` to be phased in on the battlefield per CR 611.2b / 702.26f,
+whereas `.untilSourceLeaves src` stays active through phasing as long as `src`
+has not left the battlefield per CR 611.2a / 702.26d). -/
 def durationActive (g : Game) (d : EffectDuration) : Bool :=
   match d with
   | .whileSourceOnBattlefield src =>
     (g.findObject? src).any (·.isOnBattlefield)
+  | .untilSourceLeaves src =>
+    (g.findObject? src).any (fun o => o.zone == .battlefield)
   | .whileSourceHasCounter src k =>
     (g.findObject? src).any (fun o => o.isOnBattlefield && o.status.counterCount k > 0)
   | .whileInZone oid z =>
@@ -1666,7 +1670,7 @@ def maxTs (a b : Nat × Nat) : Nat × Nat :=
 
 /-- Source `ObjectId` bound to a source-tied `EffectDuration`, if any. -/
 def effSourceId? : EffectDuration → Option ObjectId
-  | .whileSourceOnBattlefield src | .whileSourceHasCounter src _ => some src
+  | .whileSourceOnBattlefield src | .untilSourceLeaves src | .whileSourceHasCounter src _ => some src
   | _ => none
 
 -- Layer 1: Copy effects and face-down status (CR 613.1a / 613.2 / 613.7 / 613.8)
@@ -2248,9 +2252,11 @@ def controlUntilSourceLeaves (g : Game) (o : GameObject) : Option ObjectId :=
   let applied := g.appliedControlEffectIds o
   g.activeEffects.foldl (fun acc (eid, s) =>
     match s with
-    | .layered (.objects ids) (.control _) (.whileSourceOnBattlefield src) =>
+    | .layered (.objects ids) (.control _) (.whileSourceOnBattlefield src)
+    | .layered (.objects ids) (.control _) (.untilSourceLeaves src) =>
       if ids.contains o.id then some src else acc
-    | .layered _ (.control _) (.whileSourceOnBattlefield src) =>
+    | .layered _ (.control _) (.whileSourceOnBattlefield src)
+    | .layered _ (.control _) (.untilSourceLeaves src) =>
       if applied.contains eid then some src else acc
     | _ => acc) none
 
@@ -2295,6 +2301,7 @@ def copyUntilNextTurn (g : Game) (o : GameObject) : Bool :=
 def copyUntilSourceLeaves (g : Game) (o : GameObject) : Option ObjectId :=
   g.activeEffects.foldl (fun acc (_, s) =>
     match s with
+    | .layered (.objects #[id]) (.copy _) (.untilSourceLeaves src)
     | .layered (.objects #[id]) (.copy _) (.whileSourceOnBattlefield src) =>
       if id == o.id then some src else acc
     | _ => acc) none
@@ -2372,6 +2379,39 @@ def TextChange.applyTriggerWhen (tcs : Array TextChange) : SharedTriggerWhen →
   | .or a b => .or (TextChange.applyTriggerWhen tcs a) (TextChange.applyTriggerWhen tcs b)
   | w => w
 
+/-- Apply Layer 3 text changes to a `TargetFilter` (CR 612.2 / 613.1c). -/
+def TextChange.applyTargetFilter (tcs : Array TextChange) (f : TargetFilter) : TargetFilter :=
+  if tcs.isEmpty then f
+  else
+    { f with
+      subtypes := if f.subtypes.isEmpty then f.subtypes else f.subtypes.map (TextChange.applySubtype tcs)
+      colors := if f.colors.isEmpty then f.colors else f.colors.map (TextChange.applyColor tcs) }
+
+/-- Apply Layer 3 text changes to an `EffectTargetKind` (CR 612.2 / 613.1c). -/
+def TextChange.applyTargetKind (tcs : Array TextChange) : EffectTargetKind → EffectTargetKind
+  | .creatureYouControlSubtype s => .creatureYouControlSubtype (TextChange.applySubtype tcs s)
+  | .creatureYouControlAnySubtype ss => .creatureYouControlAnySubtype (ss.map (TextChange.applySubtype tcs))
+  | .filtered f => .filtered (TextChange.applyTargetFilter tcs f)
+  | .multi fs opt => .multi (fs.map (TextChange.applyTargetFilter tcs)) opt
+  | .pair a b => .pair (TextChange.applyTargetKind tcs a) (TextChange.applyTargetKind tcs b)
+  | k => k
+
+/-- Apply Layer 3 text changes to a one-shot `Effect` (CR 612.2 / 613.1c). -/
+def TextChange.applyEffect (tcs : Array TextChange) (e : Effect) : Effect :=
+  if tcs.isEmpty then e
+  else { e with targeting := { e.targeting with kind := TextChange.applyTargetKind tcs e.targeting.kind } }
+
+/-- Apply Layer 3 text changes to an `ActivatedAbility` (CR 612.2 / 613.1c). -/
+def TextChange.applyActivatedAbility (tcs : Array TextChange) (ab : ActivatedAbility) : ActivatedAbility :=
+  if tcs.isEmpty then ab
+  else
+    let ms := TextChange.applySubtype tcs
+    { ab with
+      cost := { ab.cost with sacrificeAnotherSubtype := ab.cost.sacrificeAnotherSubtype.map ms }
+      effect := TextChange.applyEffect tcs ab.effect
+      otherModes := if ab.otherModes.isEmpty then ab.otherModes else ab.otherModes.map (TextChange.applyEffect tcs)
+      equipSubtype := ab.equipSubtype.map ms }
+
 /-- Apply Layer 3 text changes to a `TriggeredAbility` (CR 612.2 / 613.1c). -/
 def TextChange.applyTriggeredAbility (tcs : Array TextChange) (ab : TriggeredAbility) : TriggeredAbility :=
   if tcs.isEmpty then ab
@@ -2385,7 +2425,7 @@ def TextChange.applyTriggeredAbility (tcs : Array TextChange) (ab : TriggeredAbi
         anotherSubtypeOrEquipment := opts.anotherSubtypeOrEquipment.map ms
         watchedSubtype := opts.watchedSubtype.map ms
       }
-      .triggered (TextChange.applyTriggerWhen tcs w) eff opts'
+      .triggered (TextChange.applyTriggerWhen tcs w) (TextChange.applyEffect tcs eff) opts'
 
 /-- Evaluate Layer 3 text-changing effects on `o` across every `ObjectScope` in
 CR 613.7 timestamp and CR 613.8 dependency order (CR 612 / 613.1c). -/
@@ -2831,13 +2871,13 @@ private structure Layer5Entry where
 deriving Inhabited
 
 /-- Evaluated colors of `o` in Layer 5 across all `ObjectScope`s in CR 613.7
-timestamp and CR 613.8 dependency order, after Layer 1 copy/face-down and
-Layer 3 color-word text changes (CR 613.1e / 613.3). -/
+timestamp and CR 613.8 dependency order, after Layer 1 copy/face-down
+(CR 202.2 / 612.1 / 613.1e / 613.3). -/
 def colors (g : Game) (o : GameObject) : ColorSet :=
   if o.status.faceDown then ColorSet.empty
   else
     let bc := g.baseCard o
-    let initCols := TextChange.applyColorSet (g.evalLayer3 o) bc.colors
+    let initCols := bc.colors
     if !o.isOnBattlefield then initCols
     else
       let hasCol := g.activeEffects.any fun (_, s) =>
@@ -3522,7 +3562,6 @@ private def evalStaticsFast (g : Game) (needTs : Bool) :
           (xBc.staticAbilities.map (fun ab => (TextChange.applyStaticAbility xTcs ab, xBaseTs)), true)
     else if x.status.faceDown then
       let xObjTs := g.objectEntryTimestamp x
-      let xTcs := g.evalLayer3 x
       let xBc := g.baseCard x
       let scopeOk (sc : ObjectScope) : Bool :=
         match sc with
@@ -3557,7 +3596,7 @@ private def evalStaticsFast (g : Game) (needTs : Bool) :
                 idx := raw.size
                 ts := effTs
                 rem := rem
-                add := add.staticAbilities.map (fun ab => (TextChange.applyStaticAbility xTcs ab, grantTs))
+                add := add.staticAbilities.map (·, grantTs)
               }
           | _ => pure ()
         let sorted := raw.qsort fun a b =>
@@ -3606,7 +3645,7 @@ private def evalStaticsFast (g : Game) (needTs : Bool) :
                 idx := raw.size
                 ts := effTs
                 rem := rem
-                add := add.staticAbilities.map (fun ab => (TextChange.applyStaticAbility xTcs ab, grantTs))
+                add := add.staticAbilities.map (·, grantTs)
               }
           | _ => pure ()
         let sorted := raw.qsort fun a b =>
@@ -3727,19 +3766,25 @@ private def evalLayer6Aux (g : Game) (needStaticsTs kwOnly : Bool) : Nat → Gam
           { retainsBase := true, kw := initKw }
         else
           let ownPwGrants : Array ActivatedAbility :=
-            if oIsPw && ctrl?.isSome then bc.planeswalkersYouControlHave else #[]
+            if oIsPw && ctrl?.isSome then
+              if oTcs.isEmpty then bc.planeswalkersYouControlHave
+              else bc.planeswalkersYouControlHave.map (TextChange.applyActivatedAbility oTcs)
+            else #[]
+          let ownAct : Array ActivatedAbility :=
+            if oTcs.isEmpty then bc.activatedAbilities
+            else bc.activatedAbilities.map (TextChange.applyActivatedAbility oTcs)
           let ownManaGrants : Array ManaType :=
             if oIsCreature && ctrl?.isSome && bc.grantCreaturesTapAddAnyColor then anyColorMana else #[]
           let ownLantern : Bool :=
             oIsLand && ctrl?.isSome && bc.grantLandsTapAnyColor
           { retainsBase := true
             kw := initKw
-            staticsWithTs := if needStaticsTs then mappedOwnStatics.map (·, initBaseTs) else #[]
+            staticsWithTs := if mappedOwnStatics.isEmpty then #[] else mappedOwnStatics.map (·, initBaseTs)
             triggers :=
               if oTcs.isEmpty then bc.triggeredAbilities
               else bc.triggeredAbilities.map (TextChange.applyTriggeredAbility oTcs)
             activated :=
-              bc.activatedAbilities ++
+              ownAct ++
                 copiedFromStatics mappedOwnStatics ++
                 (bc.crew.map ActivatedAbility.crewAbility).toArray ++
                 (if bc.hasBoast then #[ActivatedAbility.zemoBoastAbility] else #[]) ++
@@ -3944,15 +3989,18 @@ private def evalLayer6Aux (g : Game) (needStaticsTs kwOnly : Bool) : Nat → Gam
               addKw := Keyword.lifelink
             })
           for src in g.objects do
-            if src.zone == .battlefield && src.id != o.id && g.controlledBy src p then
+            if src.isOnBattlefield && src.id != o.id && g.controlledBy src p then
               let srcSimple :=
                 !hasStaticEff && !src.status.faceDown &&
                   !(anyAttached && g.objects.any fun a2 =>
                     a2.isOnBattlefield && a2.attachedTo == some src.id && a2.id != src.id)
               if srcSimple then
                 let srcBc := g.baseCard src
+                let srcTcs :=
+                  if !srcBc.staticAbilities.isEmpty || (oIsPw && !srcBc.planeswalkersYouControlHave.isEmpty) then
+                    g.evalLayer3 src
+                  else #[]
                 if !srcBc.staticAbilities.isEmpty then
-                  let srcTcs := g.evalLayer3 src
                   for ab0 in srcBc.staticAbilities do
                     let ab := TextChange.applyStaticAbility srcTcs ab0
                     let (kw, prow, wards, mana) := g.evalTeamStaticOn o p true src srcTcs ab
@@ -3976,7 +4024,9 @@ private def evalLayer6Aux (g : Game) (needStaticsTs kwOnly : Bool) : Nat → Gam
                   pending := pending.push (.peerBase src, {
                     idx := pending.size
                     scope := .objects #[o.id]
-                    addActivated := srcBc.planeswalkersYouControlHave
+                    addActivated :=
+                      if srcTcs.isEmpty then srcBc.planeswalkersYouControlHave
+                      else srcBc.planeswalkersYouControlHave.map (TextChange.applyActivatedAbility srcTcs)
                   })
                 if oIsCreature && srcBc.grantCreaturesTapAddAnyColor then
                   pending := pending.push (.peerBase src, {
@@ -4025,7 +4075,9 @@ private def evalLayer6Aux (g : Game) (needStaticsTs kwOnly : Bool) : Nat → Gam
                       pending := pending.push (.peerBase src, {
                         idx := pending.size
                         scope := .objects #[o.id]
-                        addActivated := srcBc.planeswalkersYouControlHave
+                        addActivated :=
+                          if srcTcs.isEmpty then srcBc.planeswalkersYouControlHave
+                          else srcBc.planeswalkersYouControlHave.map (TextChange.applyActivatedAbility srcTcs)
                       })
                     if oIsCreature && srcBc.grantCreaturesTapAddAnyColor then
                       pending := pending.push (.peerBase src, {
@@ -4052,17 +4104,15 @@ private def evalLayer6Aux (g : Game) (needStaticsTs kwOnly : Bool) : Nat → Gam
         match s with
         | .layered sc (.abilities add rem) d =>
           if g.durationActive d then
-            let mappedStatics :=
-              if oTcs.isEmpty then add.staticAbilities
-              else add.staticAbilities.map (TextChange.applyStaticAbility oTcs)
+            let grantedStatics := add.staticAbilities
             let fsKw :=
               if add.firstStrikeOnYourTurn && ctrl? == some g.activePlayer then
                 Keyword.firstStrike
               else Keywords.none
             let stKw :=
-              if mappedStatics.isEmpty then Keywords.none
-              else g.evalSelfStaticKeywords o mappedStatics
-            let (selfTeamKw, selfTeamProw) := evalSelfTeamList mappedStatics
+              if grantedStatics.isEmpty then Keywords.none
+              else g.evalSelfStaticKeywords o grantedStatics
+            let (selfTeamKw, selfTeamProw) := evalSelfTeamList grantedStatics
             let addKw := Keywords.merge (Keywords.merge (Keywords.merge add.keywords fsKw) stKw) selfTeamKw
             if kwOnly then
               if rem != .none || addKw != Keywords.none then
@@ -4073,26 +4123,26 @@ private def evalLayer6Aux (g : Game) (needStaticsTs kwOnly : Bool) : Nat → Gam
                   addKw := addKw
                 })
             else
-              let mappedTrigs :=
-                if oTcs.isEmpty then add.triggeredAbilities
-                else add.triggeredAbilities.map (TextChange.applyTriggeredAbility oTcs)
-              let addAct := copiedFromStatics mappedStatics
+              let grantedTrigs := add.triggeredAbilities
+              let addAct := copiedFromStatics grantedStatics
               let addWards :=
-                if mappedStatics.isEmpty then #[] else g.selfWardCosts o mappedStatics
+                if grantedStatics.isEmpty then #[] else g.selfWardCosts o grantedStatics
               let addProw :=
                 (if add.keywords.prowess then 1 else 0) +
                   (if stKw.prowess then 1 else 0) + selfTeamProw
-              if rem != .none || addKw != Keywords.none || !mappedStatics.isEmpty ||
-                  !mappedTrigs.isEmpty || !addAct.isEmpty || !addWards.isEmpty ||
+              if rem != .none || addKw != Keywords.none || !grantedStatics.isEmpty ||
+                  !grantedTrigs.isEmpty || !addAct.isEmpty || !addWards.isEmpty ||
                   addProw > 0 || add.combatDamageCreatesTreasure || add.ironFistTapGrants > 0 then
                 pending := pending.push (.eff eid pos, {
                   idx := pending.size
                   scope := sc
                   rem := rem
                   addKw := addKw
-                  addStaticsRaw := if needStaticsTs then mappedStatics else #[]
-                  addStatics := if needStaticsTs then mappedStatics.map (·, (0, 0)) else #[]
-                  addTriggers := mappedTrigs
+                  addStaticsRaw := if needStaticsTs then grantedStatics else #[]
+                  addStatics :=
+                    if needStaticsTs || grantedStatics.isEmpty then #[]
+                    else grantedStatics.map (·, (0, 0))
+                  addTriggers := grantedTrigs
                   addActivated := addAct
                   addWards := addWards
                   addProwess := addProw
@@ -4728,7 +4778,11 @@ def activatedAbilitiesOf (g : Game) (o : GameObject) : Array ActivatedAbility :=
         !g.hasAnyStaticLayer6Effect &&
         !(o.isOnBattlefield &&
           g.objects.any fun att => att.isOnBattlefield && att.attachedTo == some o.id && att.id != o.id) then
-      bc.activatedAbilities
+      if bc.activatedAbilities.isEmpty then #[]
+      else
+        let tcs := g.evalLayer3 o
+        if tcs.isEmpty then bc.activatedAbilities
+        else bc.activatedAbilities.map (TextChange.applyActivatedAbility tcs)
     else
       (g.evalLayer6Fast o).activated
   else
@@ -5894,7 +5948,7 @@ def fraStatBonus (g : Game) (o : GameObject) : Int × Int :=
           addStats acc (Int.ofNat n, 0)
         | _ => acc) (0, 0)
       let (fromObjs, hasFlyingEmblem) := g.objects.foldl (fun (acc, sawFlyEmb) src =>
-        if src.zone == .battlefield then
+        if src.isOnBattlefield then
           let acc1 :=
             if g.controlledBy src p then
               let sas := g.staticAbilities src
@@ -9030,7 +9084,10 @@ def restoreCopiesWhere (g : Game)
     | .layered (.objects #[id]) (.copy printed) d =>
       let untilEot := d == .untilEndOfTurn
       let untilNextTurn := match d with | .untilNextTurnOf _ => true | _ => false
-      let untilSourceLeaves := match d with | .whileSourceOnBattlefield s => some s | _ => none
+      let untilSourceLeaves :=
+        match d with
+        | .untilSourceLeaves s | .whileSourceOnBattlefield s => some s
+        | _ => none
       match acc.findObject? id with
       | some o =>
         if o.zone == .battlefield && sel o untilEot untilNextTurn untilSourceLeaves then
@@ -9045,7 +9102,10 @@ def restoreCopiesWhere (g : Game)
     | .layered _ (.copy _) d =>
       let untilEot := d == .untilEndOfTurn
       let untilNextTurn := match d with | .untilNextTurnOf _ => true | _ => false
-      let untilSourceLeaves := match d with | .whileSourceOnBattlefield s => some s | _ => none
+      let untilSourceLeaves :=
+        match d with
+        | .untilSourceLeaves s | .whileSourceOnBattlefield s => some s
+        | _ => none
       if acc.battlefield.any (fun o => sel o untilEot untilNextTurn untilSourceLeaves) ||
           (untilEot && cause == some (.turnBased .cleanupClear)) then
         acc.expireEffectById eid (cause := cause)
@@ -9084,7 +9144,8 @@ def restoreControlUntilSourceLeaves (g : Game) (srcId : ObjectId)
     (cause : Option EventCause := some (.gameRule .leavingZone)) : Game :=
   g.activeEffects.foldl (fun acc (eid, e) =>
     match e with
-    | .layered (.objects #[id]) (.control _) (.whileSourceOnBattlefield s) =>
+    | .layered (.objects #[id]) (.control _) (.whileSourceOnBattlefield s)
+    | .layered (.objects #[id]) (.control _) (.untilSourceLeaves s) =>
       if s != srcId then acc
       else
         match acc.findObject? id with
@@ -9102,19 +9163,22 @@ def restoreControlUntilSourceLeaves (g : Game) (srcId : ObjectId)
             acc.logMsg s!"{objName} does not change control (CR 800.4b)"
           else
             acc.logMsg s!"{objName} returns to {(acc.player p).name}'s control"
-    | .layered _ (.control _) (.whileSourceOnBattlefield s) =>
+    | .layered _ (.control _) (.whileSourceOnBattlefield s)
+    | .layered _ (.control _) (.untilSourceLeaves s) =>
       if s == srcId then acc.expireEffectById eid (cause := cause) else acc
     | _ => acc) g
 
 /-- Expire all continuous effects on other objects that last for as long as
-`srcId` remains on the battlefield (CR 611.2b), each under its own `EffectId`. -/
+`srcId` remains on the battlefield or until `srcId` leaves the battlefield
+(CR 611.2a / 611.2b), each under its own `EffectId`. -/
 def expireWhileSourceEffects (g : Game) (srcId : ObjectId)
     (cause : Option EventCause := some (.gameRule .leavingZone)) : Game :=
   let g := g.restoreCopiesUntilSourceLeaves srcId (cause := cause)
   let g := g.restoreControlUntilSourceLeaves srcId (cause := cause)
   g.expireMatching (fun s =>
     match s.duration with
-    | .whileSourceOnBattlefield src => src == srcId && Game.effectObject? s != some srcId
+    | .whileSourceOnBattlefield src | .untilSourceLeaves src =>
+      src == srcId && Game.effectObject? s != some srcId
     | _ => false) (cause := cause)
 
 /-- Last player-controlling effect wins (MSH 259). The controlled player

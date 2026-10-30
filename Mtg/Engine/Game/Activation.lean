@@ -40,8 +40,9 @@ def canPayFraCost (g : Game) (p : PlayerId) (o : GameObject) (c : FraCost) : Boo
   | .exileSourceFromHand => o.zone == .hand o.owner
   | .exileSource => o.isOnBattlefield
   | .zemoBoast =>
+    let col := TextChange.applyColor (g.evalLayer3 o) .black
     g.canPayZemoBoast p ((g.player p).graveyard.filter (fun id =>
-      (g.findObject? id).any (·.printed.colors.contains .black)))
+      (g.findObject? id).any (fun card => (g.colors card).contains col))) col
   | .crew n =>
     ((g.creaturesControlledBy p).filter (fun c => c.id != o.id && !c.status.tapped)).foldl
       (fun acc c => acc + (g.power c).toNat) 0 ≥ n

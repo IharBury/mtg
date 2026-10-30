@@ -115,7 +115,7 @@ def gainControlWhileSource (g : Game) (controller : PlayerId)
               if (g.player controller).lost then
                 g.logMsg s!"{o.name} does not change control (CR 800.4b)"
               else
-                g.createEffect (.control o.id controller false 0 (some src.id))
+                g.createEffect (.controlWhileSource o.id controller src.id)
             g.logMsg s!"{(g.player controller).name} gains control of {o.name}"
           else g
         | none => g

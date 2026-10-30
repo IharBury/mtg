@@ -514,8 +514,11 @@ inductive EffectDuration where
   | untilNextTurnOf (p : PlayerId)
   /-- Ends in cleanup of `p`'s first turn that began after creation (CR 611.2a). -/
   | untilEndOfNextTurnOf (p : PlayerId)
-  /-- Lasts for as long as `src` remains on the battlefield (CR 611.2b). -/
+  /-- Lasts for as long as `src` remains on the battlefield (CR 611.2b / 702.26f). -/
   | whileSourceOnBattlefield (src : ObjectId)
+  /-- Lasts until `src` leaves the battlefield (CR 611.2a / 702.26d). Unlike
+  `.whileSourceOnBattlefield`, phasing `src` out does not end or suppress it. -/
+  | untilSourceLeaves (src : ObjectId)
   /-- Lasts for as long as `src` has at least one `k` counter (CR 611.2b). -/
   | whileSourceHasCounter (src : ObjectId) (k : CounterKind)
   /-- Lasts for as long as `obj` remains in `z` (CR 611.2b / 400.7). -/
@@ -834,7 +837,7 @@ namespace ContinuousEffectSpec
     (nextTurnOf : Option PlayerId := none) : ContinuousEffectSpec :=
   let d : EffectDuration :=
     match untilSourceLeaves with
-    | some src => .whileSourceOnBattlefield src
+    | some src => .untilSourceLeaves src
     | none =>
       if untilEot then .untilEndOfTurn
       else if untilNextTurn then .untilNextTurnOf (nextTurnOf.getD ⟨0⟩)
@@ -847,12 +850,18 @@ namespace ContinuousEffectSpec
     (untilSourceLeaves : Option ObjectId := none) : ContinuousEffectSpec :=
   let d : EffectDuration :=
     match untilSourceLeaves with
-    | some src => .whileSourceOnBattlefield src
+    | some src => .untilSourceLeaves src
     | none =>
       if untilEot || turnEndsLeft == 1 then .untilEndOfTurn
       else if turnEndsLeft >= 2 then .untilEndOfNextTurnOf controller
       else .indefinite
   .layered (.objects #[object]) (.control controller) d
+
+/-- `controller` gains control of `object` for as long as `source` remains on
+the battlefield (CR 611.2b / 613.1b / 702.26f). -/
+@[inline] def controlWhileSource (object : ObjectId) (controller : PlayerId)
+    (source : ObjectId) : ContinuousEffectSpec :=
+  .layered (.objects #[object]) (.control controller) (.whileSourceOnBattlefield source)
 
 /-- `player` may play `n` additional lands this turn (CR 611.2). -/
 @[inline] def additionalLandsThisTurn (player : PlayerId) (n : Nat := 1) : ContinuousEffectSpec :=

@@ -688,7 +688,11 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .discardThenDraw, _ => throw "Choose a card to discard"
   | .zemoBoastExile abilityId sourceId, .objects ids =>
     if ids.toList.eraseDups.length != ids.size then throw "Choose each card once"
-    if !g.canPayZemoBoast p ids then
+    let col :=
+      match g.findObject? sourceId with
+      | some src => TextChange.applyColor (g.evalLayer3 src) .black
+      | none => .black
+    if !g.canPayZemoBoast p ids col then
       throw "Choose black cards from your graveyard with fifteen or more black mana symbols among their mana costs"
     let (g, exiled) := ids.foldl (fun (acc : Game × Array ObjectId) id =>
       let (g, ex) := acc.1.move id .exile none
@@ -1375,9 +1379,13 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
   | .palisadeCreatureType _ => .chooseMode 0
   | .worldsPutCreatures .. => .decline
   | .revealPutCreatures .. => .decline
-  | .zemoBoastExile .. =>
+  | .zemoBoastExile _ sourceId =>
+    let col :=
+      match g.findObject? sourceId with
+      | some src => TextChange.applyColor (g.evalLayer3 src) .black
+      | none => .black
     .choosePermanents ((g.player p).graveyard.filter (fun id =>
-      (g.findObject? id).any (·.printed.colors.contains .black)))
+      (g.findObject? id).any (fun card => (g.colors card).contains col)))
   | .chooseCardName _ =>
     -- Name a nonland card an opponent owns, else any nonland card.
     let opp := g.objects.find? (fun o => o.owner != p && !o.printed.isLand)

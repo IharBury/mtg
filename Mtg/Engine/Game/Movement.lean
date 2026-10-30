@@ -295,7 +295,8 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
     else
       let sourceCtrlIds := g.activeEffects.filterMap fun (eid, e) =>
         match e with
-        | .layered _ (.control _) (.whileSourceOnBattlefield s) =>
+        | .layered _ (.control _) (.whileSourceOnBattlefield s)
+        | .layered _ (.control _) (.untilSourceLeaves s) =>
           if s == old.id then some eid else none
         | _ => none
       if sourceCtrlIds.isEmpty then #[]

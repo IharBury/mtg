@@ -68,46 +68,58 @@ def kickedSpellEffect (e : Effect) : Effect :=
   | .phaseOutKicker => { e with targeting := .of .player }
   | _ => e
 
-/-- Spell effect after a modal choice, if one has been announced (CR 700.2).
+/-- Spell effect of `c` after a modal choice, if one has been announced (CR 700.2).
 With `extra` modes, the combined effect of all of them. -/
-def spellEffectOf (o : GameObject) (chosenMode : Option Nat) (extra : Array Nat := #[])
+def spellEffectOfCard (c : CardDef) (chosenMode : Option Nat) (extra : Array Nat := #[])
     (kicked : Bool := false) : Option Effect :=
   let base :=
-    if o.printed.isModal then
+    if c.isModal then
       match chosenMode with
       | some i =>
-        if extra.isEmpty then o.printed.spellModes[i]?
-        else combinedModesEffect (((#[i] ++ extra).qsort (· < ·)).filterMap (o.printed.spellModes[·]?))
+        if extra.isEmpty then c.spellModes[i]?
+        else combinedModesEffect (((#[i] ++ extra).qsort (· < ·)).filterMap (c.spellModes[·]?))
       | none => none
     else
-      o.printed.spellEffect
+      c.spellEffect
   if kicked then base.map kickedSpellEffect else base
 
-/-- Spell effect of `o` using the mode announced on the stack, if any (CR 700.2). -/
+/-- Spell effect of `o` after a modal choice, if one has been announced (CR 700.2),
+after Layer 1 copy and Layer 3 text-changing effects (CR 612 / 613.1c).
+With `extra` modes, the combined effect of all of them. -/
+def spellEffectOf (g : Game) (o : GameObject) (chosenMode : Option Nat)
+    (extra : Array Nat := #[]) (kicked : Bool := false) : Option Effect :=
+  let bc := g.baseCard o
+  let tcs := g.evalLayer3 o
+  let raw := spellEffectOfCard bc chosenMode extra (kicked := kicked)
+  if tcs.isEmpty then raw else raw.map (TextChange.applyEffect tcs)
+
+/-- Spell effect of `o` using the mode announced on the stack, if any (CR 700.2),
+after Layer 1 copy and Layer 3 text-changing effects (CR 612 / 613.1c). -/
 def currentSpellEffect (g : Game) (o : GameObject) : Option Effect :=
   let kicked := g.wasKicked o.id
   match g.stack.find? (fun e => e.objectId == o.id) with
-  | some e => spellEffectOf o e.chosenMode e.extraModes (kicked := kicked)
-  | none => spellEffectOf o none (kicked := kicked)
+  | some e => g.spellEffectOf o e.chosenMode e.extraModes (kicked := kicked)
+  | none => g.spellEffectOf o none (kicked := kicked)
 
 /-- Legal targets for card face `c`, using `chosenMode` when a modal mode has
 been announced (CR 115.1, 303.4, 601.2c). `none` on a modal card unions every
 mode's targets (used when beginning to cast). -/
 def legalTargetsForFace (g : Game) (p : PlayerId) (c : CardDef)
-    (chosenMode : Option Nat := none) : Array Target :=
+    (chosenMode : Option Nat := none) (tcs : Array TextChange := #[]) : Array Target :=
   if c.isModal && chosenMode.isNone then
-    c.spellModes.foldl (fun acc e => acc ++ g.legalEffectTargets p e) #[]
+    c.spellModes.foldl (fun acc e =>
+      acc ++ g.legalEffectTargets p (if tcs.isEmpty then e else TextChange.applyEffect tcs e)) #[]
   else
     let effect :=
       if c.isModal then chosenMode.bind (fun i => c.spellModes[i]?)
       else c.spellEffect
     match effect with
-    | some e => g.legalEffectTargets p e
+    | some e => g.legalEffectTargets p (if tcs.isEmpty then e else TextChange.applyEffect tcs e)
     | none => if c.isAura then g.legalAuraTargets p c else #[]
 
 /-- Legal targets for beginning to cast `o`, or for the chosen mode (CR 115.1, 303.4, 601.2c). -/
 def legalSpellTargets (g : Game) (p : PlayerId) (o : GameObject) : Array Target :=
-  g.legalTargetsForFace p o.printed (g.chosenModeOf o)
+  g.legalTargetsForFace p (g.baseCard o) (g.chosenModeOf o) (g.evalLayer3 o)
 
 /-- True when this mode can be announced: it needs no target, or a legal one
 exists (CR 700.2d). -/
@@ -117,12 +129,15 @@ def spellModeIsChoosable (g : Game) (p : PlayerId) (e : Effect) : Bool :=
 /-- Legal mode indices for a modal spell (CR 700.2d). Untargeted modes stay
 choosable even when another mode has no legal target. -/
 def legalModes (g : Game) (p : PlayerId) (o : GameObject) : Array Nat :=
-  if !o.printed.isModal then #[]
+  let bc := g.baseCard o
+  if !bc.isModal then #[]
   else
+    let tcs := g.evalLayer3 o
     Id.run do
       let mut acc : Array Nat := #[]
-      for i in [0:o.printed.spellModes.size] do
-        if g.spellModeIsChoosable p o.printed.spellModes[i]! then
+      for i in [0:bc.spellModes.size] do
+        let m := if tcs.isEmpty then bc.spellModes[i]! else TextChange.applyEffect tcs bc.spellModes[i]!
+        if g.spellModeIsChoosable p m then
           acc := acc.push i
       return acc
 
@@ -136,14 +151,18 @@ mode. Spell-counter modes are skipped unless an opponent's spell is a legal
 target, so the demonstration agent does not counter its own spells. -/
 def defaultMode (g : Game) (p : PlayerId) (spell : GameObject) : Option Nat :=
   let legal := g.legalModes p spell
+  let bc := g.baseCard spell
+  let tcs := g.evalLayer3 spell
+  let modeAt? (i : Nat) : Option Effect :=
+    bc.spellModes[i]?.map (fun e => if tcs.isEmpty then e else TextChange.applyEffect tcs e)
   let avoidOwnCounter (i : Nat) : Bool :=
-    match spell.printed.spellModes[i]? with
+    match modeAt? i with
     | some e => e.targetKind.targetsStackSpell && !g.effectHasOppSpellTarget p e
     | none => false
   let usable := legal.filter (fun i => !avoidOwnCounter i)
   let pool := if usable.isEmpty then legal else usable
   let preferredIdx := pool.find? (fun i =>
-    match spell.printed.spellModes[i]? with
+    match modeAt? i with
     | some e => e.preferAsDefaultMode
     | none => false)
   match preferredIdx with
@@ -179,8 +198,8 @@ def targetingOf (g : Game) (obj : GameObject) : EffectTargeting :=
         match g.currentSpellEffect obj with
         | some e => e.targeting
         | none =>
-          if obj.printed.isAura then
-            match auraTargetKind obj.printed with
+          if g.isAura obj then
+            match auraTargetKind (g.baseCard obj) with
             | .creature => EffectTargeting.of .creature .own
             | k => EffectTargeting.of k
 

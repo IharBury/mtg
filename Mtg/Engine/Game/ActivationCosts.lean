@@ -240,24 +240,24 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
     | none => pure ()
   return g
 
-/-- Black mana symbols among `ids` for Zemo's boast, counting hybrid symbols
-that include black (MSH 128). -/
-def zemoBoastBlackSymbols (g : Game) (ids : Array ObjectId) : Nat :=
+/-- Colored mana symbols of `col` among `ids` for Zemo's boast, counting hybrid
+symbols that include `col` (MSH 128 / CR 612.2). -/
+def zemoBoastBlackSymbols (g : Game) (ids : Array ObjectId) (col : Color := .black) : Nat :=
   ids.foldl (fun n id =>
     match g.findObject? id with
-    | some o => n + o.printed.manaCost.symbolsIncludingColor .black
+    | some o => n + (g.baseCard o).manaCost.symbolsIncludingColor col
     | none => n) 0
 
-/-- True when `ids` are black cards in `p`'s graveyard whose mana costs have
-fifteen or more black mana symbols, including `{B/x}` hybrids (MSH 128). -/
-def canPayZemoBoast (g : Game) (p : PlayerId) (ids : Array ObjectId) : Bool :=
+/-- True when `ids` are `col` cards in `p`'s graveyard whose mana costs have
+fifteen or more `col` mana symbols, including `{col/x}` hybrids (MSH 128 / CR 612.2). -/
+def canPayZemoBoast (g : Game) (p : PlayerId) (ids : Array ObjectId) (col : Color := .black) : Bool :=
   !ids.isEmpty &&
     ids.all (fun id =>
       match g.findObject? id with
       | some o =>
-        o.zone == .graveyard p && o.printed.colors.contains .black
+        o.zone == .graveyard p && (g.colors o).contains col
       | none => false) &&
-    g.zemoBoastBlackSymbols ids >= 15
+    g.zemoBoastBlackSymbols ids col >= 15
 
 /-- True when a boast ability of `o` may be activated (MSH / CR 702.111). -/
 def canActivateBoast (g : Game) (o : GameObject) : Bool :=

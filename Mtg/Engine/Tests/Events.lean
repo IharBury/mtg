@@ -5055,4 +5055,128 @@ Layer 2 control effects):
   g3p.players.size == 3 && cleanupScopedOk && scopedLeaveExileOk &&
     scopedOthersRemainOk && leftPlayerNextTurnEndOk
 
+/- Phase 9 isolation suite (peer static preservation when skipping timestamps,
+CR 611.2a vs CR 611.2b phasing durations, and CR 202.2 / 612.2 Layer 3 text
+substitutions vs mana-derived colors):
+1. `evalLayer6Aux` preserves printed and Layer-6-granted static abilities on
+   peer permanents when `needStaticsTs == false` and `hasCwStaticEff == true`,
+   while suppressing phased-out peers (CR 613.1f / 702.26b).
+2. `EffectDuration.untilSourceLeaves` (CR 611.2a / 702.26d) keeps `"until ~
+   leaves the battlefield"` copy and control effects active while the source is
+   phased out and expires them when the source leaves `.battlefield`, whereas
+   `EffectDuration.whileSourceOnBattlefield` (CR 611.2b / 702.26f) suspends
+   `"for as long as ~ remains on the battlefield"` effects while phased out.
+3. Layer 3 `.replaceColorWord` rewrites color words in rules-text abilities
+   (protection, cast-color triggers, target filters) without altering colors
+   derived from `manaCost` or `colorIndicator` (CR 202.2 / 612.1 / 612.2). -/
+#guard
+  let opp : PlayerId := ⟨1⟩
+  -- 1. Peer static abilities preserved under `hasCwStaticEff && !needStaticsTs`
+  let lordCard : CardDef :=
+    { creature "Phase9 Trample Lord" ManaCost.empty #["Beast"] 3 3 with
+      staticAbilities := #[.fra .creaturesYouControlHaveTrample] }
+  let gPeer0 :=
+    addPermanent
+      (addPermanent (quiet afterDraw) lordCard me me)
+      bear me me
+  let lord := (gPeer0.battlefield.filter (·.name == "Phase9 Trample Lord"))[0]!
+  let peerBear := (gPeer0.battlefield.filter (·.name == "Event Bear"))[0]!
+  let gCw :=
+    gPeer0.createEffect
+      (.layered (.creaturesWithout Keyword.flying)
+        (.abilities { staticAbilities := #[.noMaximumHandSize] } .none) .untilEndOfTurn)
+  let gCwPhased := gCw.phaseOut (gCw.object! lord.id)
+  let gGrantPeer :=
+    ((addPermanent (addPermanent (quiet afterDraw) hero me me) bear me me).createEffect
+      (.layered (.objects #[(addPermanent (addPermanent (quiet afterDraw) hero me me) bear me me |>.battlefield.filter (·.name == "Event Hero"))[0]!.id])
+        (.abilities { staticAbilities := #[.fra .creaturesYouControlHaveTrample] } .none) .untilEndOfTurn)).createEffect
+      (.layered (.creaturesWithout Keyword.flying)
+        (.abilities { staticAbilities := #[.noMaximumHandSize] } .none) .untilEndOfTurn)
+  let grantBear := (gGrantPeer.battlefield.filter (·.name == "Event Bear"))[0]!
+  let peerStaticsOk :=
+    gCw.hasTrample (gCw.object! peerBear.id) &&
+    (gCw.staticAbilities (gCw.object! lord.id)).contains (.fra .creaturesYouControlHaveTrample) &&
+    (gCw.staticAbilities (gCw.object! lord.id)).contains .noMaximumHandSize &&
+    !gCwPhased.hasTrample (gCwPhased.object! peerBear.id) &&
+    gGrantPeer.hasTrample grantBear
+  -- 2. `untilSourceLeaves` vs `whileSourceOnBattlefield` across phasing
+  let invCard : CardDef :=
+    { name := "Phase9 Secret Invasion", manaCost := ManaCost.empty, types := #[.enchantment] }
+  let gPh0 :=
+    addPermanent
+      (addPermanent
+        (addPermanent (quiet afterDraw) bear me me)
+        hero opp opp)
+      invCard me me
+  let host := (gPh0.battlefield.filter (·.name == "Event Bear"))[0]!
+  let copied := (gPh0.battlefield.filter (·.name == "Event Hero"))[0]!
+  let inv := (gPh0.battlefield.filter (·.name == "Phase9 Secret Invasion"))[0]!
+  let gUntil :=
+    (gPh0.becomeCopyOf host copied (untilSourceLeaves := some inv.id)).changeControl
+      host opp (untilSourceLeaves := some inv.id)
+  let gUntilPhased := gUntil.phaseOut (gUntil.object! inv.id)
+  let gUntilLeft := gUntilPhased.moveToOwnerGraveyard (gUntilPhased.object! inv.id) "leaves"
+  let gWhile :=
+    (gPh0.createEffect (.controlWhileSource host.id opp inv.id)).createEffect
+      (.hexproofWhileSource host.id inv.id)
+  let gWhilePhased := gWhile.phaseOut (gWhile.object! inv.id)
+  let phasingDurationOk :=
+    (gUntilPhased.object! inv.id).status.phasedOut &&
+    gUntilPhased.name (gUntilPhased.object! host.id) == "Event Hero" &&
+    gUntilPhased.controllerOf (gUntilPhased.object! host.id) == some opp &&
+    gUntilLeft.name (gUntilLeft.object! host.id) == "Event Bear" &&
+    gUntilLeft.controllerOf (gUntilLeft.object! host.id) == some me &&
+    gWhile.controllerOf (gWhile.object! host.id) == some opp &&
+    gWhile.hasHexproof (gWhile.object! host.id) &&
+    gWhilePhased.controllerOf (gWhilePhased.object! host.id) == some me &&
+    !gWhilePhased.hasHexproof (gWhilePhased.object! host.id)
+  -- 3. Layer 3 text substitutions vs mana-cost/color-indicator colors
+  let blueMage : CardDef :=
+    { bear with
+      name := "Phase9 Blue Mage"
+      manaCost := { symbols := #[.colored .blue] }
+      protectionFromColors := #[.blue]
+      triggeredAbilities := #[.onCastColorScry .blue 2] }
+  let redGoblin : CardDef :=
+    { bear with name := "Phase9 Red Goblin", manaCost := { symbols := #[.colored .red] } }
+  let blueMerfolk : CardDef :=
+    { bear with name := "Phase9 Blue Merfolk", manaCost := { symbols := #[.colored .blue] } }
+  let whiteKnight : CardDef :=
+    { bear with name := "Phase9 White Knight", manaCost := { symbols := #[.colored .white] } }
+  let critCard : CardDef :=
+    { name := "Phase9 Criticism"
+      manaCost := { symbols := #[.colored .black] }
+      types := #[.instant]
+      spellEffect := some .terminalCriticism }
+  let gTxt0 :=
+    insertObject
+      (addPermanent
+        (addPermanent
+          (addPermanent
+            (addPermanent (quiet afterDraw) blueMage me me)
+            redGoblin opp opp)
+          blueMerfolk opp opp)
+        whiteKnight opp opp)
+      critCard me (.hand me) none {} (fun id pl => #[.hand (pl.hand.push id)])
+  let u := (gTxt0.battlefield.filter (·.name == "Phase9 Blue Mage"))[0]!
+  let rSrc := (gTxt0.battlefield.filter (·.name == "Phase9 Red Goblin"))[0]!
+  let bSrc := (gTxt0.battlefield.filter (·.name == "Phase9 Blue Merfolk"))[0]!
+  let wSrc := (gTxt0.battlefield.filter (·.name == "Phase9 White Knight"))[0]!
+  let crit := (gTxt0.handObjects me |>.filter (·.name == "Phase9 Criticism"))[0]!
+  let gTxt :=
+    (gTxt0.createEffect
+      (.layered (.objects #[u.id]) (.text (.replaceColorWord .blue .red)) .untilEndOfTurn)).createEffect
+      (.layered (.objects #[crit.id]) (.text (.replaceColorWord .blue .white)) .untilEndOfTurn)
+  let critTargets := gTxt.legalSpellTargets me (gTxt.object! crit.id)
+  let textColorOk :=
+    gTxt.colors (gTxt.object! u.id) == ColorSet.singleton .blue &&
+    gTxt.frcProtectedFrom (gTxt.object! u.id) (gTxt.object! rSrc.id) &&
+    !gTxt.frcProtectedFrom (gTxt.object! u.id) (gTxt.object! bSrc.id) &&
+    gTxt.triggeredAbilities (gTxt.object! u.id) == #[.onCastColorScry .red 2] &&
+    gTxt.colors (gTxt.object! crit.id) == ColorSet.singleton .black &&
+    critTargets.contains (.permanent wSrc.id) &&
+    critTargets.contains (.permanent rSrc.id) &&
+    !critTargets.contains (.permanent bSrc.id)
+  peerStaticsOk && phasingDurationOk && textColorOk
+
 end Mtg.Engine.EventTests
