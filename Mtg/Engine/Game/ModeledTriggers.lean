@@ -696,7 +696,7 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
       let (g, cause) := g.allocDelayedCause (some controller) sourceId
       let src := (sourceId.bind g.findObject?).orElse (fun _ => some o)
       let (g, newId) := g.move o.id .exile none (cause := some cause)
-      g.change (.pushDelayedTrigger { controller, source := src, kind := .endStepReturn newId, cause })
+      g.registerDelayedTrigger { controller, source := src, kind := .endStepReturn newId, cause }
         |>.logMsg s!"{name} is exiled until the beginning of the next end step")
       sourceId (some "The target is no longer legal")
   | (.casting .damageEqualMv) =>
@@ -804,7 +804,7 @@ def applyLeftoverTextEffect (g : Game) (controller : PlayerId) (text : String)
     | some (Target.permanent id) => g.addPlusOnePlusOneTo (g.object! id) 1
     | _ => g
   else if text.startsWith "Add " || text.startsWith "Add" then
-    g.changePlayer controller (.addMana (.colored .white))
+    g.addMana controller (.colored .white) 1 (source := sourceId)
   else
     g
 
@@ -819,22 +819,11 @@ def applyOwnerPutsLibraryThenConnive (g : Game) (_controller : PlayerId)
       if o.isOnBattlefield then
         let owner := o.owner
         if putOnBottom then
-          let (g, newId) := g.move id (.library owner) none
-          let pl := g.player owner
-          let without := pl.library.filter (· != newId)
-          g.changePlayer owner (.library (#[newId] ++ without))
-            |>.logMsg s!"{o.name} is put on the bottom of {(g.player owner).name}'s library"
+          let (g, _) := g.move id (.library owner) none (libraryPosition := some .bottom)
+          g.logMsg s!"{o.name} is put on the bottom of {(g.player owner).name}'s library"
         else
-          let (g, newId) := g.move id (.library owner) none
-          let pl := g.player owner
-          let lib := pl.library
-          let without := lib.filter (· != newId)
-          let lib :=
-            match without.back? with
-            | none => #[newId]
-            | some top => without.pop.push newId |>.push top
-          g.changePlayer owner (.library lib)
-            |>.logMsg s!"{o.name} is put second from the top of {(g.player owner).name}'s library"
+          let (g, _) := g.move id (.library owner) none (libraryPosition := some (.fromTop 1))
+          g.logMsg s!"{o.name} is put second from the top of {(g.player owner).name}'s library"
       else g.logMsg "The target is no longer legal"
     | none => g.logMsg "The target is no longer legal"
   | _ => g.logMsg "The target is no longer legal"
@@ -886,8 +875,10 @@ def teamworkAmount (g : Game) (base alt : Nat) : Nat :=
   if g.resolvingTeamworkPaid then alt else base
 
 /-- Add `types` to `p`'s mana pool and log it (shared `.addMana` resolution). -/
-def addManaLogged (g : Game) (p : PlayerId) (types : Array ManaType) : Game :=
-  let g := g.changePlayers p (types.map fun t => .addMana t)
+def addManaLogged (g : Game) (p : PlayerId) (types : Array ManaType)
+    (source : Option ObjectId := none) : Game :=
+  let g := g.addManaUnits p (types.map fun t => { mana := t, source })
+    (cause := g.resolvingOneShotCause p source)
   g.logMsg s!"{(g.player p).name} adds mana"
 
 /-- Ask the target spell's controller to pay `{n}` or let it be countered. -/
@@ -946,10 +937,15 @@ it returns tapped when `tapped` is set and `afterLandEnters` runs. -/
 def exileThenReturn (g : Game) (o : GameObject) (logText : String)
     (clearExileFields := false) (tapped := false) (land := false)
     (cause : Option EventCause := none) : Game :=
-  let cause :=
-    cause.orElse (fun _ =>
-      g.currentResolvingContext?.map (fun (src, ctrl) =>
-        .oneShotEffect (some ⟨g.nextEffectId⟩) src ctrl))
+  let (g, cause) : Game × Option EventCause :=
+    match cause with
+    | some c => (g, some c)
+    | none =>
+      match g.currentResolvingContext? with
+      | some (src, ctrl) =>
+        let (g, c) := g.allocDelayedCause ctrl src
+        (g, some c)
+      | none => (g, none)
   let owner := o.owner
   let name := o.name
   let (g, newId) := g.move o.id .exile none (cause := cause)

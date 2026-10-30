@@ -259,7 +259,7 @@ def hallCopies (g : Game) (target : String) : Game :=
 def lyraWithCounters : Game :=
   let g := addPermanent afterDraw lyraArchangelOfDawn ⟨0⟩ ⟨0⟩
   let lyra := namedPermanent g "Lyra, Archangel of Dawn"
-  (g.recordPutCounters lyra.id .plusOnePlusOne 2).changeStatus lyra.id (.tapped true)
+  setTapped (g.recordPutCounters lyra.id .plusOnePlusOne 2) lyra.id true
 
 def hallAsLyra : Game := hallCopies lyraWithCounters "Lyra, Archangel of Dawn"
 

@@ -123,17 +123,15 @@ def afterCombatDamage : Game := attackingGoblin.combatDamage
 
 /-- Put `card` into `p`'s hand without drawing. -/
 def addToHand (g : Game) (card : CardDef) (p : PlayerId) : Game :=
-  insertObject g card p (.hand p) none {} (fun id _ => #[.pushHand id])
+  insertObject g card p (.hand p)
 
 /-- Put `card` into `p`'s graveyard. -/
 def addToGraveyard (g : Game) (card : CardDef) (p : PlayerId) : Game :=
-  insertObject g card p (.graveyard p) none {} (fun id _ =>
-    #[.pushGraveyard id])
+  insertObject g card p (.graveyard p)
 
 /-- Put `card` on top of `p`'s library (the back of the library array). -/
 def addToLibraryTop (g : Game) (card : CardDef) (p : PlayerId) : Game :=
-  insertObject g card p (.library p) none {} (fun id _ =>
-    #[.pushLibrary id])
+  insertObject g card p (.library p)
 
 /-- Propose a spell (CR 601.2a) and announce its target (CR 601.2c). -/
 def proposeTargeted (g : Game) (p : PlayerId) (id : ObjectId) (t : Target) : Game :=

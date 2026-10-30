@@ -413,10 +413,6 @@ inductive EventCause where
   /-- A replacement effect (614) or prevention effect (615) modified a prior
   proposed event. `original` is the cause of the event that was replaced. -/
   | replaced (replacement : ReplacementId) (original : EventCause)
-  /-- Migration-only: a call site not yet classified. Excluded from trigger
-  matching that depends on cause; must reach zero uses for rules events by the
-  end of Phase 3. -/
-  | unclassified
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- Extract the `EffectId` if this cause is (or replaces) a one-shot effect (CR 610). -/
@@ -453,7 +449,7 @@ structure DelayedTrigger where
   controller : PlayerId
   source : Option GameObject := none
   kind : DelayedTriggerKind
-  cause : EventCause := .unclassified
+  cause : EventCause
 deriving Repr, Inhabited, BEq
 
 /-- A triggered ability waiting to be put onto the stack the next time a

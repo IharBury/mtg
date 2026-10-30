@@ -18,7 +18,9 @@ namespace Mtg.Engine.StepTests
 
 open Mtg.Engine
 open Mtg.Engine.Catalog
-open Mtg.Engine.Tests
+open Mtg.Engine.Tests hiding afterDraw
+
+def afterDraw : Game := Mtg.Engine.Tests.afterDraw.change (.pushContinuationFrame {})
 
 def me : PlayerId := ⟨0⟩
 def opp : PlayerId := ⟨1⟩
@@ -209,7 +211,8 @@ def hydePlusOne : Game :=
 does not. A land is not a legal object to blink. -/
 def harness (g : Game) : Game :=
   let stone := named g "The Mind Stone"
-  g.record (GameEvent.designation g.turnNumber stone.asEvent .harnessed true)
+  g.record (GameEvent.designation g.turnNumber stone.asEvent .harnessed true
+    (cause := .gameRule .staticAbility))
 
 def blinked : Game :=
   let g := harness (addPermanent afterDraw theMindStone me me)

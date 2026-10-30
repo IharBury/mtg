@@ -203,7 +203,7 @@ def addOneLoreRaw (g : Game) (saga : GameObject) : Game :=
         let lore := saga.status.lore + 1
         let sagaName := g.name saga
         let g := g.record (GameEvent.counters g.turnNumber (some p) (g.snapshot saga) .lore 1
-          (cause := some (.turnBased .sagaLoreOnMain)))
+          (cause := .turnBased .sagaLoreOnMain))
         g.logMsg s!"{sagaName} gets a lore counter ({lore})"
   | _, _ => g
 
@@ -294,7 +294,8 @@ def becomeTapped (g : Game) (o : GameObject)
       match g.controllerOf o with
       | some p => g.activePlayer == p
       | none => false
-    let happened := GameEvent.tapped g.turnNumber (g.snapshot o) true during (cause := cause)
+    let happened := GameEvent.tapped g.turnNumber (g.snapshot o) true during
+      (cause := g.resolveOptionalCause cause (fallbackCtrl := g.controllerOf o))
     (g.record happened).logMsg s!"{oName} becomes tapped"
 
 /-- Apply `f` to each creature `p` controls, optionally skipping one id. -/
@@ -470,48 +471,6 @@ def flushWaitingTriggers (g : Game) (event : TriggerEvent) : Game :=
         g := g.putWaitingTrigger wt event
       return g.promptTriggerTargetsIfNeeded
 
-/-- CR 704.3 / 603.3b: check state-based actions, then put waiting triggers
-on the stack in APNAP order (each player choosing the order of their own).
-After that batch, check state-based actions again. Repeat until idle, then
-`p` receives priority. `recheckSba` is false while still placing the current
-batch (targets or the next player's triggers). -/
-partial def receivePriority (g : Game) (p : PlayerId) (recheckSba := true) : Game :=
-  let g :=
-    if g.pending == .none && g.afterRandom == .none && g.continuations.size > 1 then
-      g.change .popContinuationFrame
-    else g
-  let p := g.priorityInstead p
-  let g := if recheckSba then g.checkSBA else g
-  if g.over then g
-  -- CR 704.3 / 704.5j: a required legend-rule choice is part of performing
-  -- the SBA. Do not put triggers on the stack or grant priority yet.
-  else if g.legendChoicePending? then g
-  else if let .chooseReplacement .. := g.pending then
-    g.chainPendingReplacement (.receivePriority p)
-  else if g.pending != .none then g
-  else
-    match g.nextTriggerStackingPlayer? with
-    | none =>
-      if g.waitingTriggers.isEmpty then
-        if recheckSba then
-          g.changes #[.priority p, .consecutivePasses 0]
-        else
-          -- Finished this CR 603.3b pass; check SBAs and any new triggers.
-          receivePriority g p true
-      else
-        let g := g.putTriggerBatch g.currentTriggerBatch
-        if g.over || g.pending != .none then g
-        else receivePriority g p true
-    | some q =>
-      let mine := g.waitingTriggersOf q
-      if (mine.filter (·.delayedTrigger.isNone)).size ≤ 1 then
-        let g := g.putTriggerBatch mine
-        if g.over || g.pending != .none then g
-        else receivePriority g p false
-      else
-        (g.change (.pending (.chooseTriggerToStack q))).logMsg
-          s!"{(g.player q).name} chooses the order of triggered abilities (CR 603.3b)"
-
 /-- Start scrying `n` as a keyword action (CR 701.22).
 Scry 0 is skipped and does not trigger “whenever you scry” (CR 701.22c). -/
 def beginScry (g : Game) (p : PlayerId) (n : Nat) : Game :=
@@ -521,7 +480,7 @@ def beginScry (g : Game) (p : PlayerId) (n : Nat) : Game :=
     g.logMsg s!"{pl.name} scries {n} (no cards to look at)"
   else if count == 0 then
     let happened :=
-      GameEvent.looked g.turnNumber p 0 false n (cause := g.resolvingOneShotCause p)
+      GameEvent.looked g.turnNumber p 0 false n (cause := some (g.resolvingOrRuleCause p))
     let g := g.record happened
     g.logMsg s!"{pl.name} scries {n} (no cards to look at)"
   else

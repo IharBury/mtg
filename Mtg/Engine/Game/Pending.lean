@@ -26,7 +26,22 @@ inductive RandomRequest where
   | chooseIndex (n : Nat)
 deriving DecidableEq, Repr, Inhabited, BEq
 
-/-- Work that still belongs to an effect after a `--norandom` result is
+/-- Pre-game `--norandom` continuation state (CR 103.1–103.5), kept outside
+`ContinuationFrame` so `Game.continuations` remains `#[]` before turn 1. -/
+inductive PregameRandom where
+  | none
+  /-- Seat `i` takes the first turn; then opening shuffles. -/
+  | setStartingPlayer (i : Nat)
+  /-- Continue CR 103.3 opening shuffles from this seat index. -/
+  | openingShuffles (next : Nat)
+  /-- After this player's library is ordered, draw `n` cards for a single mulligan. -/
+  | mulliganDraw (p : PlayerId) (n : Nat)
+  /-- After this player's library is ordered, draw a new opening hand and
+  continue simultaneous mulligans for `rest`. -/
+  | mulliganQueue (drawn : PlayerId) (rest : Array PlayerId)
+deriving DecidableEq, Repr, Inhabited, BEq
+
+/-- Work that still belongs to a resolving effect after a `--norandom` result is
 applied. The RNG path runs the same work immediately. -/
 inductive AfterRandom where
   | none
@@ -34,13 +49,6 @@ inductive AfterRandom where
   | draw (p : PlayerId) (n : Nat)
   /-- `p` gains `n` life. -/
   | gainLife (p : PlayerId) (n : Nat)
-  /-- Continue CR 103.3 opening shuffles from this seat index. -/
-  | openingShuffles (next : Nat)
-  /-- After this player's library is ordered, draw a new opening hand and
-  continue simultaneous mulligans for `rest`. -/
-  | mulliganQueue (drawn : PlayerId) (rest : Array PlayerId)
-  /-- Seat `i` takes the first turn; then opening shuffles. -/
-  | setStartingPlayer (i : Nat)
   /-- Put the chosen creature from `revealed` onto the battlefield, then the
   other revealed cards on the bottom of `controller`'s library in a random
   order (Getaway Barrel). -/

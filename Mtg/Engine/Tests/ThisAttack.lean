@@ -87,7 +87,7 @@ def antManDeclines : Game :=
   logContains antManDeclines "isn't paid"
 
 def antManPays : Game :=
-  let g := antManOffer.changePlayer me (.addMana (.colored .green) 1)
+  let g := antManOffer.addMana me (.colored .green) 1
   let g := mustApply g me .accept
   g.applyModeledReflexive #[Target.permanent (named g "Ant-Man, Colony Commander").id]
 
@@ -122,7 +122,7 @@ def ironDraws : Bool :=
   let g := addPermanent afterDraw ironManMasterOfMachines me me
   let g := g.record (GameEvent.moved g.turnNumber
     { id := some ⟨40⟩, controller := some me, owner := me, types := #[.artifact] }
-    (.hand me) .battlefield)
+    (.hand me) .battlefield (cause := .oneShotEffect none none (some me)))
   let iron := named g "Iron Man, Master of Machines"
   let ab := TriggeredAbility.onThisAttack Effect.thisAttackIfArtifactEnteredDraw
   let hand0 := hand g

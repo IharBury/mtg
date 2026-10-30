@@ -12,7 +12,9 @@ counter. A card or an unmade choice loses nothing.
 namespace Mtg.Engine.RemoveCountersTests
 
 open Mtg.Engine
-open Mtg.Engine.Tests
+open Mtg.Engine.Tests hiding afterDraw
+
+def afterDraw : Game := Mtg.Engine.Tests.afterDraw.change (.pushContinuationFrame {})
 
 def caster : PlayerId := ⟨0⟩
 def opp : PlayerId := ⟨1⟩
@@ -37,7 +39,7 @@ def pid (g : Game) (name : String) : ObjectId :=
 
 def attach (g : Game) (aura host : String) : Game :=
   let a := obj g aura
-  g.changeObject a.id (.attachedTo (some (pid g host)))
+  g.record (GameEvent.attached g.turnNumber a.id (pid g host) (cause := .gameRule .staticAbility))
 
 def withHope (g : Game) (name : String) (n : Nat) : Game :=
   let o := obj g name
@@ -49,7 +51,7 @@ def load (g : Game) (name : String) : Game :=
     #[(.plusOnePlusOne, 2), (.hope, 1), (.charge, 2), (.stun, 1),
       (.shield, 1), (.lore, 3), (.flying, 1)].foldl
       (fun acc (k, n) => acc.recordPutCounters o.id k n) g
-  (g.changeStatuses o.id #[.damage 4]).createEffect (.pump o.id 1 2)
+  (setMarkedDamage g o.id 4).createEffect (.pump o.id 1 2)
 
 def dawn : CardDef := { name := "Dawn", types := #[.enchantment] }
 def grasp : CardDef := { name := "Grasp", types := #[.enchantment] }
@@ -175,7 +177,7 @@ Removing them does not count as removing a hope counter. -/
     (addPermanent (addPermanent afterDraw bear caster caster) grasp caster caster)
     "Grasp" "Bear") "Bear"
   let aura := obj g0 "Grasp"
-  let g0 := g0.changeObject aura.id (.attachedTo (some ⟨99999⟩))
+  let g0 := g0.record (GameEvent.attached g0.turnNumber aura.id ⟨99999⟩ (cause := .gameRule .staticAbility))
   let g := step g0 allFromEnchanted (some (pid g0 "Grasp"))
   stillLoaded g (obj g "Bear") && g.log == g0.log
 
@@ -187,10 +189,9 @@ Removing them does not count as removing a hope counter. -/
 #guard
   let g0 := addPermanent (addPermanent afterDraw bear caster caster) grasp caster caster
   let (g1, bearId) := g0.move (pid g0 "Bear") (.graveyard caster) none
-  let g1 := (((g1.recordPutCounters bearId .plusOnePlusOne 2).recordPutCounters bearId .hope 1).changeStatuses bearId #[
-    .damage 4]).createEffect (.pump bearId 1 2)
+  let g1 := (setMarkedDamage ((g1.recordPutCounters bearId .plusOnePlusOne 2).recordPutCounters bearId .hope 1) bearId 4).createEffect (.pump bearId 1 2)
   let aura := obj g1 "Grasp"
-  let g1 := g1.changeObject aura.id (.attachedTo (some bearId))
+  let g1 := g1.record (GameEvent.attached g1.turnNumber aura.id bearId (cause := .gameRule .staticAbility))
   let g := step g1 allFromEnchanted (some (pid g1 "Grasp"))
   let host := anyObj g "Bear"
   !Status.hasCounters host.status && host.status.damage == 4 && g.pumpOf host == (1, 2) &&

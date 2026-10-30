@@ -329,8 +329,7 @@ Choosing no creature for prevention changes nothing. -/
 
 /- The opponent reveals a nonland and discards it. -/
 #guard
-  let g0 := insertObject withSaga bolt opp (.hand opp)
-    (updateOwner := fun id _ => #[.hand #[id]])
+  let g0 := insertObject (emptyHand withSaga opp) bolt opp (.hand opp)
   let g := step g0 Effect.chapterOpponentDiscardsNonland
     (targets := #[Target.player opp])
   (obj g "Bolt").zone == .graveyard opp &&
@@ -345,7 +344,6 @@ Choosing no creature for prevention changes nothing. -/
 
 #guard
   let g0 := insertObject withSaga plains caster (.library caster)
-    (updateOwner := fun id _ => #[.pushLibrary id])
   let g := step g0 (Effect.chapterSearchBasicPlainsExileGainLife 2 2)
     (sourceId := some (pid g0 "Saga"))
   match g.pending with

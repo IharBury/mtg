@@ -69,20 +69,15 @@ def light : CardDef := {
 }
 
 def putInHand (g : Game) (card : CardDef) (p : PlayerId) : Game :=
-  insertObject g card p (.hand p) none {} (fun id _ =>
-    #[.pushHand id])
+  insertObject g card p (.hand p)
 
 def putOnLibrary (g : Game) (card : CardDef) (p : PlayerId) : Game :=
-  insertObject g card p (.library p) none {} (fun id _ =>
-    #[.pushLibrary id])
+  insertObject g card p (.library p)
 
 /-- Replace `p`'s library. The last card is on top. -/
 def onlyLibrary (g : Game) (p : PlayerId) (cards : List CardDef) : Game :=
   cards.foldl (fun g c => putOnLibrary g c p)
-    (g.changePlayer p (.library #[]))
-
-def emptyHand (g : Game) (p : PlayerId) : Game :=
-  g.changePlayer p (.hand #[])
+    (emptyLibrary g p)
 
 def inHand (g : Game) (p : PlayerId) (name : String) : Bool :=
   (g.player p).hand.any (fun id => (g.findObject? id).any (·.name == name))

@@ -17,7 +17,9 @@ namespace Mtg.Engine.ExileTests
 
 open Mtg.Engine
 open Mtg.Engine.Catalog
-open Mtg.Engine.Tests
+open Mtg.Engine.Tests hiding afterDraw
+
+def afterDraw : Game := Mtg.Engine.Tests.afterDraw.change (.pushContinuationFrame {})
 
 def caster : PlayerId := ⟨0⟩
 def opp : PlayerId := ⟨1⟩
@@ -47,7 +49,7 @@ def exiled (g : Game) (name : String) : Bool :=
 
 def attach (g : Game) (aura host : String) : Game :=
   let a := obj g aura
-  g.changeObject a.id (.attachedTo (some (pid g host)))
+  g.record (GameEvent.attached g.turnNumber a.id (pid g host) (cause := .gameRule .staticAbility))
 
 def topName (g : Game) (p : PlayerId) : String :=
   match (g.player p).library.back? with
@@ -194,7 +196,7 @@ An empty library exiles nothing. -/
     logContains g s!"exiles {name} and may play it until the end of their next turn"
 
 #guard
-  let g0 := board.changePlayer caster (.library #[])
+  let g0 := emptyLibrary board caster
   let g := step g0 (.exile .top .playUntilNextTurn)
   onBoard g "Titan" && onBoard g "Bear" &&
     logContains g "has no cards in their library to exile"
@@ -214,7 +216,6 @@ A creature, and an opponent's land, stay. -/
 /- Up to `max` basic cards of a subtype open a library search. -/
 #guard
   let g0 := insertObject board plains caster (.library caster)
-    (updateOwner := fun id _ => #[.pushLibrary id])
   let g := step g0 (.exile (.basicUpTo .plains 2) .forLater .linked)
     (some (pid g0 "Titan"))
   match g.pending with

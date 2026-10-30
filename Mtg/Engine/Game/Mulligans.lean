@@ -139,7 +139,11 @@ def executeOneMulligan (g : Game) (p : PlayerId) : Game :=
   let g := g.changePlayer p (.mulligansTaken n)
   let g := g.logMsg s!"{g.player p |>.name} takes a mulligan ({n})"
   let g := g.returnHandToLibrary p
-  g.requestShuffle p (.draw p size) |>.continueIfShuffled
+  let g := (g.change (.pregameRandom (.mulliganDraw p size))).shuffleLibrary p
+  match g.pendingRandom? with
+  | some _ => g
+  | none =>
+    (g.change (.pregameRandom .none)).draw p size (cause := some (.gameRule .mulligan))
 
 /-- Players whose first mulligan is free put no cards on the bottom
 (CR 103.5c). -/
@@ -170,7 +174,7 @@ partial def executeMulliganQueue (g : Game) (rest : Array PlayerId) : Game :=
     let g := g.executeOneMulligan p
     match g.pendingRandom? with
     | some _ =>
-      g.change (.afterRandom (.mulliganQueue p more))
+      g.change (.pregameRandom (.mulliganQueue p more))
     | none =>
       executeMulliganQueue g more
 

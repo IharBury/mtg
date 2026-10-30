@@ -66,7 +66,8 @@ def copyStackSpell (g : Game) (src : GameObject) (controller : PlayerId) : Game 
       isCopy := true
     }
     let g := g.record (GameEvent.stackObjectCopied g.turnNumber src.id copySnap controller
-      (cause := g.resolvingOneShotCause controller (some src.id)))
+      (cause := g.resolveOptionalCause (g.resolvingOneShotCause controller (some src.id))
+        (fallbackSrc := some src.id) (fallbackCtrl := some controller)))
     g.logMsg s!"A copy of {src.name} is created"
 
 /-- Announce the modes and targets of a spell cast while an ability resolves
@@ -94,7 +95,7 @@ def beginResolutionCastTargets (g : Game) (p : PlayerId) (prop : ProposedSpell) 
       |>.logMsg s!"{(g.player p).name} may activate mana abilities (CR 601.2g)"
   else
     let g := g.change (.proposedSpell none)
-    g.becomeCast p (g.object! prop.spellId)
+    g.becomeCast p (g.object! prop.spellId) (grantPriority := false)
 
 /-- Put a card onto the stack as an ability is resolving. Timing may be
 ignored. The permission does not last after this ability finishes.
@@ -122,7 +123,7 @@ def castAsPartOfResolution (g : Game) (p : PlayerId) (id : ObjectId)
       let fromGy := original.zone == .graveyard original.owner
       let wasCopy := original.isCopy
       let (g, newId) := g.move id .stack (some p) (verb := some .cast) (actor := some p)
-      let g := g.changeObject newId (.isCopy wasCopy)
+        (isCopy := some wasCopy)
       let g :=
         if exileInstantSorceryInstead && fromGy then
           g.createEffect (.exileInstantSorceryInstead newId)
@@ -186,6 +187,8 @@ def beginMayCastFromLooked (g : Game) (p : PlayerId) (n : Nat) (maxMv : Int) :
   if ids.isEmpty then
     g.logMsg "No cards to look at"
   else
+    let g := g.record (GameEvent.lookedAt g.turnNumber p ids
+      (cause := some (g.resolvingOrRuleCause p)))
     (g.change (.pending (.mayCastFromLooked p ids maxMv))).logMsg
       s!"{(g.player p).name} looks at the top {ids.size} cards. You may cast a spell from among them with mana value {maxMv} or less as this ability resolves"
 
@@ -284,10 +287,7 @@ def counterStackSpell (g : Game) (spellId : ObjectId) (exilePermanent := false)
       g.logMsg s!"{o.name} is no longer on the stack"
     else if o.abilityEffect.isSome || o.triggeredAbility.isSome then
       let name := o.name
-      let cause :=
-        g.currentResolvingContext?.map (fun (src, ctrl) =>
-          .oneShotEffect (some ⟨g.nextEffectId⟩) src ctrl)
-          |>.orElse (fun _ => some (.oneShotEffect (some ⟨g.nextEffectId⟩) none (some controller)))
+      let cause := some (g.resolvingOrRuleCause controller)
       let g := g.ceaseToExist o.id (cause := cause)
       g.logMsg s!"{name} is countered"
     else if o.printed.cantBeCountered || g.uncounterableThisCast o then
@@ -297,7 +297,10 @@ def counterStackSpell (g : Game) (spellId : ObjectId) (exilePermanent := false)
         if exilePermanent && o.printed.isPermanentCard then Zone.exile
         else Zone.graveyard o.owner
       let name := o.name
-      let (g, cause) := g.allocDelayedCause (some controller)
+      let (g, cause) : Game × EventCause :=
+        match g.currentResolvingContext? with
+        | some _ => g.allocDelayedCause (some controller)
+        | none => (g, .gameRule .spellCast)
       let (g, newId) := g.move spellId dest none
         (verb := some .counter) (actor := some controller) (cause := some cause)
       let g :=
@@ -467,7 +470,8 @@ def incrementPlanThen (g : Game) (controller : PlayerId) (sourceId : Option Obje
             for _ in [0:n] do
               match g.findObject? o.id with
               | some cur =>
-                g := g.record (GameEvent.counters g.turnNumber (some controller) cur.asEvent .plan 1)
+                g := g.record (GameEvent.counters g.turnNumber (some controller) cur.asEvent .plan 1
+                  (cause := g.resolveOptionalCause none (fallbackSrc := sourceId) (fallbackCtrl := some controller)))
               | none => pure ()
             return g
     k g (g.object! o.id)
@@ -514,8 +518,14 @@ def scryLookedIds (g : Game) (p : PlayerId) (count : Nat) : Array ObjectId :=
   let n := min count lib.size
   lib.extract (lib.size - n) lib.size
 
-/-- Log that `p` looks at the top `n` cards of their library. -/
-def logLookAtTop (g : Game) (p : PlayerId) (n : Nat) : Game :=
+/-- Record `PlayerEvent.lookedAt` when `looked` is non-empty and log that `p`
+looks at the top `n` cards of their library. -/
+def logLookAtTop (g : Game) (p : PlayerId) (n : Nat)
+    (looked : Array ObjectId := #[]) (sourceId : Option ObjectId := none) : Game :=
+  let g :=
+    if looked.isEmpty then g
+    else g.record (GameEvent.lookedAt g.turnNumber p looked
+      (cause := some (g.resolvingOrRuleCause p sourceId)))
   g.logMsg s!"{(g.player p).name} looks at the top {n} cards"
 
 /-- Exile the top `n` cards of `fromPlayer`'s library. `caster` may play
@@ -598,7 +608,8 @@ def putReflexiveTrigger (g : Game) (controller : PlayerId) (sourceId : Option Ob
       (triggeredAbility := some marker)
     let g := g.changeObject obj.id (.sourceId sourceId)
     let g := g.logMsg s!"{src.name}'s reflexive ability is put on the stack"
-    g.promptTriggerTargetsIfNeeded
+    if g.resolvingAbility.isSome || g.resolvingSpell.isSome then g
+    else g.promptTriggerTargetsIfNeeded
 
 /-- The reflexive triggered ability `kind` of an MSH card, with its targets
 (MSH 359–369). -/
@@ -1153,13 +1164,20 @@ def copyStackAbility (g : Game) (src : GameObject) (controller : PlayerId) : Gam
       isCopy := true
     }
     let g := g.record (GameEvent.stackObjectCopied g.turnNumber src.id copySnap controller
-      (cause := g.resolvingOneShotCause controller (some src.id)))
+      (cause := g.resolveOptionalCause (g.resolvingOneShotCause controller (some src.id))
+        (fallbackSrc := some src.id) (fallbackCtrl := some controller)))
     g.logMsg s!"A copy of {src.name} is created"
 
 /-- Reveal `p`'s hand (Cloak and Dagger; MSH 132 / 225). -/
-def revealHand (g : Game) (p : PlayerId) : Game :=
+def revealHand (g : Game) (p : PlayerId) (recordEvent : Bool := true) : Game :=
+  let hand := (g.player p).hand
+  let g :=
+    if recordEvent && !hand.isEmpty then
+      g.record (GameEvent.revealed g.turnNumber p hand
+        (cause := some (g.resolvingOrRuleCause p)))
+    else g
   let names :=
-    (g.player p).hand.foldl (fun acc id =>
+    hand.foldl (fun acc id =>
       match g.findObject? id with
       | some o => if acc == "" then o.name else s!"{acc}, {o.name}"
       | none => acc) ""

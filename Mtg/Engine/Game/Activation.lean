@@ -173,7 +173,7 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
       let g ← g.payCost p cost (forObject := some o.id)
       let g := g.record
         (GameEvent.turnedFaceUp g.turnNumber (g.object! o.id).asEvent
-          (cause := some (.specialAction .turnFaceUp p)))
+          (cause := .specialAction .turnFaceUp p))
       let g := g.createPrintedStaticEffects (g.object! o.id)
       return g.logMsg s!"{pl.name} turns {o.name} face up"
     | none => throw s!"{o.name} is face down"

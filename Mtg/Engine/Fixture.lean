@@ -125,12 +125,93 @@ def firstHandCard (g : Game) (p : PlayerId) : GameObject :=
 
 @[irreducible, noinline] def drawnOnce : Game := Game.draw started ⟨0⟩
 
-/-- Put `card` into the game as a new object and optionally update its owner. -/
+/-- Put `card` into the game as a new object in `zone` (inserting into its zone list). -/
 def insertObject (g : Game) (card : CardDef) (owner : PlayerId) (zone : Zone)
     (controller : Option PlayerId := none) (status : Status := {})
-    (updateOwner : ObjectId → Player → Array PlayerChange := fun _ _ => #[]) : Game :=
-  let (g, obj) := g.allocObject card owner zone controller status
-  g.changePlayers owner (updateOwner obj.id (g.player owner))
+    (adventurerCard : Option CardDef := none) : Game :=
+  (g.allocObject card owner zone controller status (adventurerCard := adventurerCard)).1
+
+/-- Tap or untap `id` through `PermanentEvent` in test fixtures. -/
+def setTapped (g : Game) (id : ObjectId) (v : Bool) : Game :=
+  match g.findObject? id with
+  | none => g
+  | some o =>
+    let c := EventCause.gameRule .staticAbility
+    if v then g.record (GameEvent.tapped g.turnNumber (g.snapshot o) (cause := c))
+    else g.record (GameEvent.untapped g.turnNumber (g.snapshot o) false (cause := c))
+
+/-- Set `id`'s marked damage through `DamageEvent` in test fixtures. -/
+def setMarkedDamage (g : Game) (id : ObjectId) (amt : Nat) : Game :=
+  let g := g.record (GameEvent.damageMarkedCleared g.turnNumber #[id]
+    (cause := .turnBased .cleanupClear))
+  if amt == 0 then g
+  else g.record (GameEvent.damageMarked g.turnNumber id amt (cause := .gameRule .staticAbility))
+
+/-- Turn `id` face down or face up through `PermanentEvent` in test fixtures. -/
+def setFaceDown (g : Game) (id : ObjectId) (v : Bool) : Game :=
+  match g.findObject? id with
+  | none => g
+  | some o =>
+    let c := EventCause.gameRule .staticAbility
+    if v then g.record (GameEvent.turnedFaceDown g.turnNumber (g.snapshot o) (cause := c))
+    else g.record (GameEvent.turnedFaceUp g.turnNumber (g.snapshot o) (cause := c))
+
+/-- Retain only `keep` (in bottom-to-top order) in `p`'s library via `ZoneEvent`. -/
+def retainLibrary (g : Game) (p : PlayerId) (keep : Array ObjectId) : Game :=
+  let g := ((g.player p).library.filter (!keep.contains ·)).foldl
+    (fun acc id => acc.ceaseToExist id) g
+  keep.foldl (fun acc id =>
+    match acc.findObject? id with
+    | some o =>
+      let snap := acc.snapshot o
+      acc.record (GameEvent.moved acc.turnNumber snap o.zone (.library p)
+        (after := some { snap with zone := .library p })
+        (libraryPosition := some .top)
+        (cause := .gameRule .leavingZone))
+    | none => acc) g
+
+/-- Remove all cards from `p`'s library via `ZoneEvent.ceasedToExist`. -/
+def emptyLibrary (g : Game) (p : PlayerId) : Game :=
+  retainLibrary g p #[]
+
+/-- Retain only `keep` in `p`'s hand via `ZoneEvent`. -/
+def retainHand (g : Game) (p : PlayerId) (keep : Array ObjectId) : Game :=
+  let g := ((g.player p).hand.filter (!keep.contains ·)).foldl
+    (fun acc id => acc.ceaseToExist id) g
+  keep.foldl (fun acc id =>
+    match acc.findObject? id with
+    | some o =>
+      let snap := acc.snapshot o
+      acc.record (GameEvent.moved acc.turnNumber snap o.zone (.hand p)
+        (after := some { snap with zone := .hand p })
+        (cause := .gameRule .leavingZone))
+    | none => acc) g
+
+/-- Remove all cards from `p`'s hand via `ZoneEvent.ceasedToExist`. -/
+def emptyHand (g : Game) (p : PlayerId) : Game :=
+  retainHand g p #[]
+
+/-- Set `p`'s life total through `LifeEvent` in test fixtures. -/
+def _root_.Mtg.Engine.Game.setLifeTotal (g : Game) (p : PlayerId) (life : Int) : Game :=
+  let cur := (g.player p).life
+  let c := EventCause.gameRule .staticAbility
+  if life > cur then
+    g.record (GameEvent.life g.turnNumber p (life - cur).toNat (gained := true) (cause := c))
+  else if life < cur then
+    g.record (GameEvent.life g.turnNumber p (cur - life).toNat (gained := false) (cause := c))
+  else g
+
+/-- Make `p` the monarch through `PlayerEvent.becameMonarch` in test fixtures. -/
+def _root_.Mtg.Engine.Game.becomeMonarch (g : Game) (p : PlayerId) : Game :=
+  let prev := (g.players.find? (·.isMonarch)).map (·.id)
+  g.record (GameEvent.becameMonarch g.turnNumber p prev (cause := some (.gameRule .staticAbility)))
+
+/-- Put `n` counters of `kind` on `p` through `PermanentEvent.counters` in test fixtures. -/
+def _root_.Mtg.Engine.Game.addPlayerCounters (g : Game) (p : PlayerId) (kind : CounterKind) (n : Nat) : Game :=
+  if n == 0 then g
+  else
+    g.record (GameEvent.rules g.turnNumber (.permanent (.counters (.player p) kind (.put n) none))
+      (.gameRule .staticAbility))
 
 /-- Put `card` onto the battlefield with explicit owner and controller. -/
 def addPermanent (g : Game) (card : CardDef) (owner controller : PlayerId) : Game :=
@@ -138,6 +219,19 @@ def addPermanent (g : Game) (card : CardDef) (owner controller : PlayerId) : Gam
     { summoningSick := false
       counters := if card.entersWithIndestructibleCounter then #[(.indestructible, 1)] else #[] }
   insertObject g card owner .battlefield (some controller) status
+
+/-- Put `card` onto the battlefield summoning-sick. -/
+def addSickPermanent (g : Game) (card : CardDef) (owner controller : PlayerId) : Game :=
+  let status : Status :=
+    { summoningSick := true
+      counters := if card.entersWithIndestructibleCounter then #[(.indestructible, 1)] else #[] }
+  insertObject g card owner .battlefield (some controller) status
+
+/-- Begin a new turn for `p` at `g.step` so `p`'s permanents lose summoning sickness (CR 302.6). -/
+def readyControlledForTurn (g : Game) (p : PlayerId := g.activePlayer) : Game :=
+  let st := g.step
+  let g := g.record (GameEvent.turnBegan (g.turnNumber + 1) p false)
+  g.record (GameEvent.stepBegan g.turnNumber st p)
 
 /-- Drop a basic land onto the battlefield without using the play-land action. -/
 def addUntappedLand (g : Game) (card : CardDef) : Game :=
@@ -178,8 +272,8 @@ is no longer tapped. -/
 @[irreducible, noinline] def mixedControllers : Game := addPermanent stolenMountain forest ⟨0⟩ ⟨0⟩
 
 @[irreducible, noinline] def uncontrolledPermanent : Game :=
-  let o := lastPermanent withMountain
-  (withMountain.changePlayer ⟨0⟩ (.lost true)).changeObject o.id (.controller none)
+  insertObject (started.record (GameEvent.playerLost started.turnNumber ⟨0⟩ .conceded))
+    mountain ⟨0⟩ .battlefield none { summoningSick := false }
 
 @[irreducible, noinline] def withGoblin : Game := addPermanent started ragingGoblin ⟨0⟩ ⟨0⟩
 @[irreducible, noinline] def withElves : Game := addPermanent started llanowarElves ⟨0⟩ ⟨0⟩

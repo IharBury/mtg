@@ -162,7 +162,7 @@ def okoyeSoldiers : Game := settle (mshEnter afterDraw okoyeDoraMilajeLeader) 24
 def pantherCombatDraw : Game :=
   let g := addPermanent afterDraw blackPantherHopeEnduring ⟨0⟩ ⟨0⟩
   let o := namedPermanent g "Black Panther, Hope Enduring"
-  let g := (g.markAttacking o.id).changeStatus o.id (.summoningSick false)
+  let g := g.markAttacking o.id
   settle g.combatDamage 24
 
 #guard (pantherCombatDraw.player ⟨0⟩).hand.size ≥ 8
@@ -617,9 +617,7 @@ def gandalfWardPending : Game :=
   | _ => false
 
 def gandalfWardPaid : Game :=
-  let pl := gandalfWardPending.player ⟨0⟩
-  let g := gandalfWardPending.changePlayer ⟨0⟩
-    (.manaPool (pl.manaPool.set .colorless 3))
+  let g := gandalfWardPending.emptyManaPools.addMana ⟨0⟩ .colorless 3
   mustApply g ⟨0⟩ .payGeneric
 
 #guard gandalfWardPaid.stack.any (fun e =>

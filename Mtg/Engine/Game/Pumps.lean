@@ -76,7 +76,9 @@ def addFinalityTo (g : Game) (o : GameObject) (n : Nat := 1)
     let g := g.consumeReplacementOrder applied
     let putter := byPlayer.orElse (fun _ => g.controllerOf o)
     let g :=
-      if n' > 0 && !entersWith then g.record (GameEvent.counters g.turnNumber putter (g.snapshot o) .finality n' (cause := cause'))
+      if n' > 0 && !entersWith then
+        g.record (GameEvent.counters g.turnNumber putter (g.snapshot o) .finality n'
+          (cause := g.resolveOptionalCause cause' (fallbackCtrl := putter)))
       else g
     g.logMsg s!"{g.name o} gets a finality counter"
 
@@ -109,7 +111,9 @@ permanent with a stun counter on it would become untapped, instead remove a
 stun counter from it"). Returns `(stunReplaced, cause')`. -/
 def replaceUntap (g : Game) (o : GameObject)
     (cause : Option EventCause := none) : Bool × Option EventCause :=
-  let untap := GameEvent.untapped g.turnNumber o.asEvent false (cause := cause)
+  let untap := GameEvent.untapped g.turnNumber o.asEvent false
+    (cause := g.resolveOptionalCause cause (fallbackCtrl := g.controllerOf o)
+      (defaultCause := .turnBased .untapAll))
   if !o.status.tapped || !untap.watches .wouldUntap then
     (false, cause)
   else
@@ -138,7 +142,7 @@ def replaceUntap (g : Game) (o : GameObject)
     let candidates := specs.map (fun s => (ReplacementOrPrevention.replacement s).toCandidate)
     match g.selectNextReplacement candidates #[] with
     | some chosen =>
-      (true, g.wrapReplacedCause chosen.id cause ctrl)
+      (true, g.wrapReplacedCause chosen.id cause ctrl (defaultCause := .turnBased .untapAll))
     | none =>
       (false, cause)
 
@@ -255,7 +259,9 @@ def addIndestructibleCounter (g : Game) (o : GameObject) (n : Nat := 1)
     let g := g.consumeReplacementOrder applied
     let putter := byPlayer.orElse (fun _ => g.controllerOf o)
     let g :=
-      if n' > 0 then g.record (GameEvent.counters g.turnNumber putter (g.snapshot o) .indestructible n' (cause := cause'))
+      if n' > 0 then
+        g.record (GameEvent.counters g.turnNumber putter (g.snapshot o) .indestructible n'
+          (cause := g.resolveOptionalCause cause' (fallbackCtrl := putter)))
       else g
     g.logMsg s!"{g.name o} gets an indestructible counter"
 
@@ -273,7 +279,9 @@ def addLifelinkCounter (g : Game) (o : GameObject) (n : Nat := 1)
     let g := g.consumeReplacementOrder applied
     let putter := byPlayer.orElse (fun _ => g.controllerOf o)
     let g :=
-      if n' > 0 then g.record (GameEvent.counters g.turnNumber putter (g.snapshot o) .lifelink n' (cause := cause'))
+      if n' > 0 then
+        g.record (GameEvent.counters g.turnNumber putter (g.snapshot o) .lifelink n'
+          (cause := g.resolveOptionalCause cause' (fallbackCtrl := putter)))
       else g
     g.logMsg s!"{g.name o} gets a lifelink counter"
 
@@ -291,7 +299,9 @@ def addBurdenCounter (g : Game) (o : GameObject) (n : Nat := 1)
     let g := g.consumeReplacementOrder applied
     let putter := byPlayer.orElse (fun _ => g.controllerOf o)
     let g :=
-      if n' > 0 then g.record (GameEvent.counters g.turnNumber putter (g.snapshot o) .burden n' (cause := cause'))
+      if n' > 0 then
+        g.record (GameEvent.counters g.turnNumber putter (g.snapshot o) .burden n'
+          (cause := g.resolveOptionalCause cause' (fallbackCtrl := putter)))
       else g
     let total := (g.object! o.id).status.burden
     g.logMsg s!"{g.name o} gets a burden counter ({total})"
@@ -319,7 +329,8 @@ def addCounters (g : Game) (o : GameObject) (kind : CounterKind) (n : Nat := 1)
       if n' == 0 then g
       else
         let putter := byPlayer.orElse (fun _ => g.controllerOf o)
-        let happened := GameEvent.counters g.turnNumber putter (g.snapshot o) kind n' (cause := cause')
+        let happened := GameEvent.counters g.turnNumber putter (g.snapshot o) kind n'
+          (cause := g.resolveOptionalCause cause' (fallbackCtrl := putter))
         (if entersWith then g else g.record happened).logMsg s!"{g.name o} gets {kind.countersPhrase n'}"
 
 /-- Put the amass counters and subtype on `armyId`. -/
@@ -412,9 +423,10 @@ def amassZombies (g : Game) (controller : PlayerId) (n : Nat)
 Spells apply those three steps in order. This sets the same flags at once. -/
 def dealDamageLoseIndestructibleExileTo (g : Game) (o : GameObject) (n : Nat)
     (source : EventObject) : Game :=
-  let g := if n > 0 then g.record (GameEvent.damaged g.turnNumber source (g.snapshot o) n) else g
-  let g := g.record (GameEvent.damageMarked g.turnNumber o.id n)
-  let g := g.createEffects #[.loseIndestructibleUntilEot o.id, .exileIfDiesUntilEot o.id]
+  let (g, cause) := g.allocDelayedCause source.controller source.id
+  let g := if n > 0 then g.record (GameEvent.damaged g.turnNumber source (g.snapshot o) n (cause := cause)) else g
+  let g := g.record (GameEvent.damageMarked g.turnNumber o.id n (cause := cause))
+  let g := g.createEffects #[.loseIndestructibleUntilEot o.id, .exileIfDiesUntilEot o.id] (cause := some cause)
   g.logMsg
     s!"{o.name} is dealt {n} damage, loses indestructible until end of turn, and will be exiled if it would die this turn"
 

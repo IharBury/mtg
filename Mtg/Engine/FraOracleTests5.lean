@@ -33,8 +33,7 @@ open Mtg.Engine.Tests
 gains, so Ajani's first ability and the Pridemate token each trigger twice. -/
 def ajaniResoluteTwoLifelinkers : Game :=
   let g := enterPermanent afterDraw ajaniResolute ⟨0⟩
-  let g := g.createKindTokens ⟨0⟩ .pridemate 1
-  let g := g.changeStatus (namedPermanent g "Ajani's Pridemate").id (.summoningSick false)
+  let g := readyControlledForTurn (g.createKindTokens ⟨0⟩ .pridemate 1) ⟨0⟩
   let g := addPermanent (addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩) grayOgre ⟨0⟩ ⟨0⟩
   let g := withLifelink (withLifelink g "Grizzly Bears") "Gray Ogre"
   resolveStack (attackWith g #["Grizzly Bears", "Gray Ogre"]) 30
@@ -46,8 +45,7 @@ def ajaniResoluteTwoLifelinkers : Game :=
 /- Ruling 822: a Pridemate dealt lethal damage as you gain life dies before
 its counter arrives. -/
 #guard
-  let g := afterDraw.createKindTokens ⟨0⟩ .pridemate 1
-  let g := g.changeStatus (namedPermanent g "Ajani's Pridemate").id (.summoningSick false)
+  let g := readyControlledForTurn (afterDraw.createKindTokens ⟨0⟩ .pridemate 1) ⟨0⟩
   let g := addPermanent g crawWurm ⟨1⟩ ⟨1⟩
   let g := withLifelink g "Ajani's Pridemate"
   let g := attackWith g #["Ajani's Pridemate"] #[("Craw Wurm", "Ajani's Pridemate")]
@@ -331,7 +329,7 @@ def chandraTokens (g : Game) (name : String) : Array GameObject :=
 def facedOculus : Game :=
   let g := addPermanent afterDraw mindseekerOculus ⟨1⟩ ⟨1⟩
   let oc := namedPermanent g "Mindseeker Oculus"
-  let g := (g.recordPutCounters oc.id .plusOnePlusOne 2).changeStatus oc.id (.tapped true)
+  let g := setTapped (g.recordPutCounters oc.id .plusOnePlusOne 2) oc.id true
   faceYourselfAt g
 
 #guard (chandraTokens facedOculus "Mindseeker Oculus").size == 1

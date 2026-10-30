@@ -446,19 +446,20 @@ def dealAssignedCombatDamage (g : Game) (appliedSoFar : Array ReplacementId := #
           g := g.logMsg s!"combat damage to {pl.name} is prevented"
         else
           dealtToPlayer := toPlayer
+          let dealtCause := rep.cause.getD (.turnBased (.dealCombatDamage fs))
           if toPlayer > 0 then
             g := g.record (GameEvent.damagedPlayer g.turnNumber srcEvent defn toPlayer.toNat true
-              (cause := rep.cause))
+              (cause := dealtCause))
           if g.lifeLocked defn || g.lifeCantChange defn then
             g := g.logMsg s!"{pl.name}'s life total can't change"
           else
             if toPlayer > 0 then
               g := g.record (GameEvent.life g.turnNumber defn toPlayer.toNat false true true
-                (cause := rep.cause))
+                (cause := dealtCause))
           totalDealt := totalDealt + toPlayer
           if toPlayer > 0 && srcEvent.toxic > 0 then
             g := g.record (GameEvent.poisoned g.turnNumber defn srcEvent.toxic
-              (cause := combatCause))
+              (cause := .turnBased (.dealCombatDamage fs)))
             g := g.logMsg s!"{pl.name} gets {srcEvent.toxic} poison counter(s) (toxic)"
           if !(g.lifeLocked defn || g.lifeCantChange defn) then
             if src.status.blocked then
@@ -502,11 +503,12 @@ def dealAssignedCombatDamage (g : Game) (appliedSoFar : Array ReplacementId := #
       if pendingRegular then
         g.firstStrikeAssignedThisCombat ++ (g.assignedCombatDamage.extract startIdx g.assignedCombatDamage.size).map (·.source)
       else g.firstStrikeAssignedThisCombat
-    { g.changes #[
+    g.changes #[
       .pending .none,
       .firstStrikeDamageDone (g.firstStrikeDamageDone || g.combatHasFirstStrike),
       .pendingRegularCombatDamage pendingRegular,
-      .firstStrikeAssignedThisCombat assignedFs ] with assignedCombatDamage := #[] }
+      .firstStrikeAssignedThisCombat assignedFs,
+      .clearAssignedCombatDamage ]
   if let .chooseReplacement .. := g.pending then
     if isOuterCall then g.chainPendingReplacement (.receivePriority g.activePlayer)
     else g
@@ -569,8 +571,9 @@ def clearCombat (g : Game) : Game :=
       .firstStrikeDamageDone false,
       .pendingRegularCombatDamage false,
       .firstStrikeAssignedThisCombat #[],
-      .blockersQueue #[] ]
-    let cause := some (EventCause.turnBased .removeFromCombatAtEndOfCombat)
+      .blockersQueue #[],
+      .clearAssignedCombatDamage ]
+    let cause := EventCause.turnBased .removeFromCombatAtEndOfCombat
     for o in g.battlefield do
       if o.status.attacking || !o.status.blocking.isEmpty || o.status.blocked then
         g := g.record (GameEvent.removedFromCombat g.turnNumber o.asEvent (cause := cause))

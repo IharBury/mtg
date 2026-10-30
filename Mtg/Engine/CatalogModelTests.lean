@@ -423,7 +423,8 @@ turn costs {0}; the next one costs its equip cost. -/
 #guard
   let g := addPermanent (addPermanent afterDraw kiliTheResourceful me me) grizzlyBears me me
   let g := addPermanent (addPermanent g huntersAxe me me) huntersAxe me me
-  let g := g.changePlayer me (.enduringStory true)
+  let g := g.record (GameEvent.gainedDesignation g.turnNumber me .enduringStory
+    (cause := some (.gameRule .staticAbility)))
   let axes := ((g.permanentsOf me).filter (·.name == "Hunter's Axe")).map (·.id)
   let idx := abIdx g (g.object! axes[0]!) "Attach"
   let first := manaSpent g axes[0]! idx [tgt g "Grizzly Bears"]
@@ -827,7 +828,7 @@ def inLibrary (g : Game) (name : String) : Bool :=
   (g.player me).library.any (fun id => (g.object! id).name == name)
 
 def onlyLib (g : Game) (cards : Array CardDef) : Game :=
-  let g := g.changePlayer me (.library #[])
+  let g := emptyLibrary g me
   cards.foldl (fun g c => addToLibraryTop g c me) g
 
 /-! ## Intervening “if” clauses (CR 603.4) -/
@@ -848,8 +849,8 @@ def onlyLib (g : Game) (cards : Array CardDef) : Game :=
 /- After two draws, another creature gets +3/+0 and first strike. -/
 #guard
   let g := addPermanent (addPermanent afterDraw lakeTownToymaker me me) grizzlyBears me me
-  let g := (g.record (GameEvent.drew g.turnNumber me ⟨61⟩ 1)).record
-    (GameEvent.drew g.turnNumber me ⟨62⟩ 2)
+  let g := (g.record (GameEvent.drew g.turnNumber me ⟨61⟩ 1 (cause := .turnBased .drawStepDraw))).record
+    (GameEvent.drew g.turnNumber me ⟨62⟩ 2 (cause := .oneShotEffect none none (some me)))
   let g := settle (passBoth (skipTo g .beginningOfCombat 80))
   power g "Grizzly Bears" == 5 &&
     g.hasFirstStrike (namedPermanent g "Grizzly Bears") &&
@@ -1062,7 +1063,7 @@ draw and create a Treasure. -/
 its graveyard ability asks to pay {1}{G}{U}. -/
 #guard
   let g := addPermanent afterDraw silvanReveler me me
-  let g := g.changePlayer me (.hand #[])
+  let g := emptyHand g me
   let g := onlyLib g #[forest]
   let g := g.applyTriggeredAbility me .onEnterLootLandEntersTapped
     (some (idOf g "Silvan Reveler"))
@@ -1071,7 +1072,7 @@ its graveyard ability asks to pay {1}{G}{U}. -/
   onBattlefield g "Forest" && (namedPermanent g "Forest").status.tapped
 #guard
   let g := addPermanent afterDraw silvanReveler me me
-  let g := g.changePlayer me (.hand #[])
+  let g := emptyHand g me
   let g := onlyLib g #[lightningBolt]
   let g := g.applyTriggeredAbility me .onEnterLootLandEntersTapped
     (some (idOf g "Silvan Reveler"))
@@ -1253,7 +1254,7 @@ mills and loses life equal to the milled cards' mana values. -/
 Banishing Light under Lightning Bolt. The spell's mana value is 1. -/
 def sarumanMilled : Game :=
   let g := addPermanent afterDraw sarumanOfManyColors me me
-  let g := g.changePlayer opp (.library #[])
+  let g := emptyLibrary g opp
   let g := addToLibraryTop (addToLibraryTop g banishingLight opp) lightningBolt opp
   g.applyTriggeredAbility me .onCastSecondSpellMillThenCopy
     (some (idOf g "Saruman of Many Colors")) (lastKnownPower := some 1)
@@ -1304,7 +1305,7 @@ is optional. -/
   | none => false
 #guard
   let g := addPermanent afterDraw sarumanOfManyColors me me
-  let g := g.changePlayer opp (.library #[])
+  let g := emptyLibrary g opp
   let g := g.applyTriggeredAbility me .onCastSecondSpellMillThenCopy
     (some (idOf g "Saruman of Many Colors")) (lastKnownPower := some 1)
   g.stack.isEmpty && g.pending == .none
@@ -1320,7 +1321,7 @@ is optional. -/
     g.log.any (fun s => mentions s "does not discard")
 #guard
   let g := addPermanent afterDraw sauronTheDarkLord me me
-  let g := g.changePlayer me (.hand #[])
+  let g := emptyHand g me
   let g := g.applyTriggeredAbility me (.onRingTemptsMayDiscardDraw 4)
     (some (idOf g "Sauron, the Dark Lord"))
   let g := mustApply g me .accept
@@ -1338,7 +1339,8 @@ him deal that much damage to each opponent. -/
 #guard
   let g := addPermanent afterDraw balinLoremaster me me
   let n := handSize g me
-  let g := g.changePlayer me (.enduringStory true)
+  let g := g.record (GameEvent.gainedDesignation g.turnNumber me .enduringStory
+    (cause := some (.gameRule .staticAbility)))
   let g := g.applyTriggeredAbility me (.onThisOrAnotherSubtypeEntersDiscardHand "Dwarf")
     (some (idOf g "Balin, Loremaster"))
   let g := mustApply g me .accept
@@ -1350,7 +1352,8 @@ to you, then the Ring tempts you. -/
   let g := addPermanent afterDraw witchKingOfAngmar me me
   let g := addPermanent (addPermanent g grizzlyBears opp opp) grayOgre opp opp
   let bears := namedPermanent g "Grizzly Bears"
-  let g := g.record (GameEvent.damagedPlayer g.turnNumber bears.asEvent me 2 true)
+  let g := g.record (GameEvent.damagedPlayer g.turnNumber bears.asEvent me 2 true
+    (cause := .turnBased (.dealCombatDamage false)))
   let g := g.applyTriggeredAbility me .onCombatDamageToYouSacRingTempts
     (some (idOf g "Witch-king of Angmar"))
   !onBattlefield g "Grizzly Bears" && onBattlefield g "Gray Ogre" &&
@@ -1360,8 +1363,10 @@ to you, then the Ring tempts you. -/
   let g := addPermanent (addPermanent g grizzlyBears opp opp) grayOgre opp opp
   let bears := namedPermanent g "Grizzly Bears"
   let ogre := namedPermanent g "Gray Ogre"
-  let g := g.record (GameEvent.damagedPlayer g.turnNumber bears.asEvent me 2 true)
-  let g := g.record (GameEvent.damagedPlayer g.turnNumber ogre.asEvent me 2 true)
+  let g := g.record (GameEvent.damagedPlayer g.turnNumber bears.asEvent me 2 true
+    (cause := .turnBased (.dealCombatDamage false)))
+  let g := g.record (GameEvent.damagedPlayer g.turnNumber ogre.asEvent me 2 true
+    (cause := .turnBased (.dealCombatDamage false)))
   let g := g.applyTriggeredAbility me .onCombatDamageToYouSacRingTempts
     (some (idOf g "Witch-king of Angmar"))
   let choosing :=
@@ -1507,7 +1512,7 @@ ability may cast up to two of the exiled cards. -/
     g.log.any (fun s => mentions s "gains 1 life")
 #guard
   let g := addPermanent afterDraw doomReignsSupreme me me
-  let g := g.changePlayer opp (.library #[])
+  let g := emptyLibrary g opp
   let g := addToLibraryTop g grizzlyBears opp
   let g := addToLibraryTop g mountain opp
   let g := addToLibraryTop g forest opp
@@ -1583,7 +1588,8 @@ line is Human Mercenary Villain. -/
 #guard
   let g := addPermanent afterDraw theMindStone me me
   let stone := namedPermanent g "The Mind Stone"
-  let g := g.record (GameEvent.designation g.turnNumber stone.asEvent .harnessed true)
+  let g := g.record (GameEvent.designation g.turnNumber stone.asEvent .harnessed true
+    (cause := .oneShotEffect none (some stone.id) (some me)))
   let g := addPermanent (addPermanent g forest me me) grizzlyBears me me
   let legal := g.legalTargetsForKind me
     (SharedTrigger.timing (.step .harnessedFlicker)).targeting.kind
@@ -1623,7 +1629,7 @@ line is Human Mercenary Villain. -/
 #guard
   let g := addPermanent afterDraw desertWereWorm me me
   let w := namedPermanent g "Desert Were-Worm"
-  let g := (g.markAttacking w.id).changeStatus w.id (.tapped true)
+  let g := setTapped (g.markAttacking w.id) w.id true
   let g := passBoth (fireTrigger g "Desert Were-Worm")
   !(namedPermanent g "Desert Were-Worm").status.tapped && g.additionalCombatPhases == 1
 

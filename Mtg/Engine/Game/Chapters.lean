@@ -81,7 +81,7 @@ def attackPumpPerPlains (g : Game) (controller : PlayerId) : Game :=
     match g.currentResolvingContext? with
     | some (some sid, _) => g.findObject? sid
     | _ => none
-  g.change (.pushDelayedTrigger { controller, source := src, kind := .attackPumpPerPlains, cause })
+  g.registerDelayedTrigger { controller, source := src, kind := .attackPumpPerPlains, cause }
     |>.logMsg
       s!"Whenever {(g.player controller).name} attacks this turn, a creature they control gets +1/+1 for each Plains they control"
 
@@ -137,7 +137,7 @@ def applyChapterEffect (g : Game) (controller : PlayerId) (e : Effect)
     g.withLegalKindPermanent controller .oppArtifact targets (fun g o =>
       g.destroyPermanent o) sourceId (some "The target is no longer legal")
   | .addMana mana =>
-    g.changePlayer controller (.addMana mana 1)
+    g.addMana controller mana 1 (source := sourceId)
       |>.logMsg s!"{(g.player controller).name} adds {mana}"
   | .searchBasicLandToHand =>
     g.resolveSearchBasicLandToHand controller

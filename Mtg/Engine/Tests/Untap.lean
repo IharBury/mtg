@@ -38,7 +38,7 @@ def pid (g : Game) (name : String) : ObjectId :=
 
 def attach (g : Game) (aura host : String) : Game :=
   let a := obj g aura
-  g.changeObject a.id (.attachedTo (some (pid g host)))
+  g.record (GameEvent.attached g.turnNumber a.id (pid g host) (cause := .gameRule .staticAbility))
 
 def mark (g : Game) (name : String) (tapped : Bool := true)
     (attacking : Bool := false) (stun : Nat := 0)
@@ -46,7 +46,7 @@ def mark (g : Game) (name : String) (tapped : Bool := true)
   let o := obj g name
   let g := if stun > 0 then g.recordPutCounters o.id .stun stun else g
   let g := if attacking then g.markAttacking o.id else g
-  let g := g.changeStatuses o.id #[.tapped tapped]
+  let g := setTapped g o.id tapped
   match cantFrom with
   | some srcId => g.createEffect (.cantUntapWhileSource o.id srcId)
   | none => g
@@ -169,7 +169,7 @@ that has left is reported. -/
   let g0 := attach
     (addPermanent (mark board "Titan") grasp caster caster) "Grasp" "Titan"
   let aura := obj g0 "Grasp"
-  let g0 := g0.changeObject aura.id (.attachedTo (some ⟨99999⟩))
+  let g0 := g0.record (GameEvent.attached g0.turnNumber aura.id ⟨99999⟩ (cause := .gameRule .staticAbility))
   let g := step g0 (.untap .enchanted) (some (pid g0 "Grasp"))
   tapped g "Titan" && g.log == g0.log
 

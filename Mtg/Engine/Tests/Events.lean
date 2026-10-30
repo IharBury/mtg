@@ -18,6 +18,8 @@ open Mtg.Engine.Tests
 
 def me : PlayerId := ⟨0⟩
 
+def testCause : EventCause := .oneShotEffect (some ⟨1⟩) none (some me)
+
 def bear : CardDef :=
   creature "Event Bear" ManaCost.empty #["Bear"] 2 2
 
@@ -35,8 +37,8 @@ turn counter is cleared. -/
 #guard
   let g := quiet afterDraw
   let (_, noDraw) := holds g (.atLeast .cardsDrawnThisTurn (.fixed 1))
-  let g := (g.record (GameEvent.drew g.turnNumber me ⟨9⟩ 1)).record
-    (GameEvent.drew g.turnNumber me ⟨8⟩ 2)
+  let g := (g.record (GameEvent.drew g.turnNumber me ⟨9⟩ 1 (cause := testCause))).record
+    (GameEvent.drew g.turnNumber me ⟨8⟩ 2 (cause := testCause))
   let (_, two) := holds g (.atLeast .cardsDrawnThisTurn (.fixed 2))
   let (_, three) := holds g (.atLeast .cardsDrawnThisTurn (.fixed 3))
   !noDraw && two && !three && g.loggedDraws me == 2
@@ -60,6 +62,7 @@ turn counter is cleared. -/
   let (_, no) := holds g .artifactEnteredThisTurn
   let entered := GameEvent.moved g.turnNumber
     { id := some ⟨4⟩, controller := some me, owner := me, types := #[.artifact] } .stack .battlefield
+    (cause := testCause)
   let g := g.record entered
   let (_, yes) := holds g .artifactEnteredThisTurn
   !no && yes && entered.watches .wouldEnterBattlefield
@@ -71,6 +74,7 @@ turn counter is cleared. -/
     { id := some ⟨5⟩, controller := some me, owner := me, types := #[.creature], subtypes := #[.hero] } ⟨1⟩
   let entered := GameEvent.moved g.turnNumber
     { id := some ⟨6⟩, controller := some me, owner := me, types := #[.creature], subtypes := #[.villain] } .stack .battlefield
+    (cause := testCause)
   let g := (g.record attack).record entered
   let (_, yes) := holds g (.attackedWithSubtype .hero)
   let (_, no) := holds g (.attackedWithSubtype .goblin)
@@ -84,9 +88,10 @@ turn counter is cleared. -/
 A creature moving to a graveyard matches dies, and not once it is exiled
 instead. -/
 #guard
-  let second := GameEvent.drew 1 me ⟨1⟩ 2
+  let second := GameEvent.drew 1 me ⟨1⟩ 2 (cause := testCause)
   let death := GameEvent.moved 1
     { id := some ⟨7⟩, controller := some me, owner := me, types := #[.creature] } .battlefield (.graveyard me)
+    (cause := testCause)
   let exiled := death.withDestination .exile false
   second.matchesTrigger me ⟨0⟩ .youDraw &&
     second.matchesTrigger me ⟨0⟩ .youDrawSecondCard &&
@@ -252,7 +257,7 @@ do not mint `EffectId`s. -/
     (((g0.gainLife me 3 (cause := some (.turnBased .cleanupClear))).loseLife me 2
       (cause := some (.costPayment .life me))).record
       (GameEvent.tapped g0.turnNumber b.asEvent true true
-        (cause := some (.turnBased .declareAttackers))))
+        (cause := .turnBased .declareAttackers)))
   let nonOneShotDidNotAdvance :=
     gNonOneShot.nextEffectId == effId0 &&
       (GameEvent.oneShotEffectsWithId gNonOneShot.events).isEmpty
@@ -260,11 +265,11 @@ do not mint `EffectId`s. -/
   let g2 := g1.gainLife me 3 (cause := some (.turnBased .cleanupClear))
   let g3 := g2.loseLife me 2 (cause := some (.costPayment .life me))
   let g4 := g3.record (GameEvent.counters g3.turnNumber (some me) b.asEvent .plusOnePlusOne 2 false
-    (cause := some (.costPayment .removeCounters me)))
+    (cause := .costPayment .removeCounters me))
   let g5 := g4.record (GameEvent.tapped g4.turnNumber b.asEvent true true
-    (cause := some (.costPayment .tap me)))
+    (cause := .costPayment .tap me))
   let g6 := g5.record (GameEvent.untapped g5.turnNumber b.asEvent false
-    (cause := some (.turnBased .untapAll)))
+    (cause := .turnBased .untapAll))
   let g7 := g6.withResolvingContext (some b.id) me (fun g => g.createTreasureTokens me 1)
   let g8 := ((g7.record (GameEvent.looked g7.turnNumber me 2)).record
     (GameEvent.resolved g7.turnNumber me 1)).record
@@ -489,7 +494,8 @@ turn's cleanup (Evil's Thrall, CR 611.2a). -/
 #guard
   let g0 := quiet (addPermanent afterDraw bear opp opp)
   let b := (g0.battlefield.filter (·.name == "Event Bear"))[0]!
-  let g1 := (g0.changeControl b me (untilEot := true)).changePlayer opp (.lost true)
+  let g1 := (g0.changeControl b me (untilEot := true)).record
+    (GameEvent.playerLost g0.turnNumber opp .conceded)
   let g2 := (quiet g1).clearEOT
   (g2.findObject? b.id).isNone &&
     g2.objects.any (fun o => o.name == "Event Bear" && o.zone == .exile)
@@ -600,7 +606,7 @@ step (CR 702.176, ruling 970). -/
       impending := some (1, ManaCost.empty) }
   let g0 := addPermanent afterDraw impDef me me
   let copyId := (g0.battlefield.filter (·.name == "Impending Bear"))[0]!.id
-  let g0 := insertObject g0 impDef me (.hand me) none {} (fun id _ => #[.pushHand id])
+  let g0 := insertObject g0 impDef me (.hand me)
   let cardId := ((g0.player me).hand.filter (fun id => (g0.object! id).name == "Impending Bear"))[0]!
   match g0.apply me (.cast cardId) with
   | .error _ => false
@@ -690,7 +696,7 @@ marked damage does not end the CR 704.5h window). -/
   let g0 := quiet (addPermanent afterDraw bear me me)
   let b := (g0.battlefield.filter (·.name == "Event Bear"))[0]!
   let dtSource : EventObject := { keywords := { deathtouch := true } }
-  let gDealtOnly := g0.record (GameEvent.damaged g0.turnNumber dtSource b.asEvent 1 false)
+  let gDealtOnly := g0.record (GameEvent.damaged g0.turnNumber dtSource b.asEvent 1 false (cause := testCause))
   let g1 := gDealtOnly.applyChange (.rules (.damage (.marked b.id 1)))
   let g2 := g1.applyChange (.rules (.damage (.markedCleared #[b.id])))
   let gDestroyed := g2.checkSBA
@@ -718,10 +724,10 @@ in isolation (CR 701.3 / 110.2 / 701.15b). -/
   let g6 := g5.applyChange (.rules (.permanent (.designation b.asEvent (.goaded opp) true)))
   let g7 := g6.expireGoadedFor me
   let g8 := g7.expireGoadedFor opp
-  let heroToPlayer := GameEvent.damagedPlayer 1 h.asEvent opp 2 true
-  let bearToHero := GameEvent.damaged 1 b.asEvent h.asEvent 2 false
-  (g1.object! h.id) == { h with attachedTo := some b.id } &&
-    (g2.object! h.id) == { h with attachedTo := none } &&
+  let heroToPlayer := GameEvent.damagedPlayer 1 h.asEvent opp 2 true (cause := testCause)
+  let bearToHero := GameEvent.damaged 1 b.asEvent h.asEvent 2 false (cause := testCause)
+  (g1.object! h.id) == { h with attachedTo := some b.id, timestamp := g0.timestamp + 1 } &&
+    (g2.object! h.id) == { h with attachedTo := none, timestamp := g0.timestamp + 1 } &&
     (g3.object! b.id) == { b with controller := some opp } &&
     g3.controlChanged (g3.object! b.id) &&
     (g4.object! b.id) == { b with controller := some me } &&
@@ -751,7 +757,7 @@ in isolation (CR 701.3 / 110.2 / 701.15b). -/
     heroToPlayer.matchesTrigger me h.id .heroesDealDamageToPlayer &&
     !bearToHero.matchesTrigger me h.id .heroesDealDamageToPlayer &&
     !(GameEvent.moved 1 { controller := some me, owner := me, types := #[.creature] }
-      .stack .battlefield).matchesTrigger me b.id .anotherCreatureYouControlEnters
+      .stack .battlefield (cause := testCause)).matchesTrigger me b.id .anotherCreatureYouControlEnters
 
 /- Phase 2 isolation: applying `ZoneEvent.moved`, `ZoneEvent.created`, and
 `ZoneEvent.ceasedToExist` via `Game.applyChange` atomically updates `g.objects`,
@@ -832,10 +838,10 @@ both `PermanentEvent.counters` and `ZoneEvent.moved.entersWith` (CR 122.6 /
     { bear with
       name := "Impending Bear"
       impending := some (3, ManaCost.ofGeneric 1) }
-  let g0 := insertObject (quiet afterDraw) tapPlusCreature me (.hand me) none {} (fun id _ => #[.pushHand id])
-  let g0 := insertObject g0 testPlaneswalker me (.hand me) none {} (fun id _ => #[.pushHand id])
-  let g0 := insertObject g0 testSaga me (.hand me) none {} (fun id _ => #[.pushHand id])
-  let g0 := insertObject g0 testImpending me .stack (some me) { counters := #[(.time, 3)] } (fun _ _ => #[])
+  let g0 := insertObject (quiet afterDraw) tapPlusCreature me (.hand me)
+  let g0 := insertObject g0 testPlaneswalker me (.hand me)
+  let g0 := insertObject g0 testSaga me (.hand me)
+  let g0 := insertObject g0 testImpending me .stack (some me) { counters := #[(.time, 3)] }
   let cid := ((g0.player me).hand.filter (fun id => (g0.object! id).name == "Tapped Plus Bear"))[0]!
   let pwid := ((g0.player me).hand.filter (fun id => (g0.object! id).name == "Test Planeswalker"))[0]!
   let sagaId := ((g0.player me).hand.filter (fun id => (g0.object! id).name == "Test Saga"))[0]!
@@ -939,23 +945,16 @@ writers of the objects they install (preserving full `printed` `CardDef`,
 `wasCast`, and stack-copy metadata), with zero `EngineChange.setObject`
 events. -/
 #guard
-  let g0 := insertObject (quiet afterDraw) bear me (.hand me) none {} (fun id _ => #[.pushHand id])
+  let g0 := insertObject (quiet afterDraw) bear me (.hand me)
   let cid := ((g0.player me).hand.filter (fun id => (g0.object! id).name == "Event Bear"))[0]!
   let (g1, permId) := (quiet g0).putOntoBattlefield cid me
     (tapped := true) (summoningSick := false)
     (attacking := true) (attackingTarget := some (.player opp))
     (returnedAsArtifact := true) (onlyFoodArtifact := true)
-  let (g2, tok) := (quiet g1).createToken me treasureToken
+  let (_, tok) := (quiet g1).createToken me treasureToken
     (tapped := true) (attacking := true) (attackingTarget := some (.player opp))
-  let hasSetObject (evs : Array GameEvent) : Bool :=
-    evs.any (fun e =>
-      match e.change with
-      | .engine (.setObject _) => true
-      | _ => false)
   let perm := g1.object! permId
-  !hasSetObject g1.events &&
-    !hasSetObject g2.events &&
-    perm.status.tapped &&
+  perm.status.tapped &&
     !perm.status.summoningSick &&
     perm.status.attacking &&
     perm.status.attackingTarget == some (.player opp) &&
@@ -989,13 +988,15 @@ chosen piles/targets; a resolving pump has cause `.oneShotEffect`; a cleanup
   let g2 := g1.phaseOut (g1.object! b.id) (cause := some (.turnBased .phaseInOut))
   let g3 := g2.phaseInControlled me
   let g4 := g3.record (GameEvent.transformed g3.turnNumber (g3.object! b.id).asEvent true
-    (cause := some (.oneShotEffect (some ⟨g3.nextEffectId⟩) (some b.id) (some me))))
+    (cause := .oneShotEffect (some ⟨g3.nextEffectId⟩) (some b.id) (some me)))
   let g5 := g4.record (GameEvent.resolved g4.turnNumber me 1)
   let gPump := (quiet g0).withResolvingContext (some b.id) me (fun g =>
     g.createEffect (.pump b.id 2 2))
   let gCleanup := ((quiet gPump).clearEOT).clearTurnActivations
-  let gBeholdEff := ((quiet g0).becomeTapped (g0.object! b.id)
-    (cause := some (.oneShotEffect (some ⟨g0.nextEffectId⟩) (some b.id) (some me)))).beholdAndMaybeUntap me b.id .bear
+  let gBeholdEff :=
+    ((quiet g0).becomeTapped (g0.object! b.id)
+      (cause := some (.oneShotEffect (some ⟨g0.nextEffectId⟩) (some b.id) (some me)))).withResolvingContext
+      (some b.id) me (fun g => g.beholdAndMaybeUntap me b.id .bear)
   let gScry0 := (quiet afterDraw).beginScry me 2
   let looked := gScry0.scryLookedIds me 2
   let topChoice := #[looked[0]!]
@@ -1005,7 +1006,7 @@ chosen piles/targets; a resolving pump has cause `.oneShotEffect`; a cleanup
     | .ok g => g
     | .error _ => gScry0
   let libAfter := (gScryDone.player me).library
-  let gMana := ((quiet afterDraw).changePlayer me (.addMana (.colored .red) 2)).emptyManaPools
+  let gMana := ((quiet afterDraw).addMana me (.colored .red) 2).emptyManaPools
   let gCombat := ((quiet g0).markAttacking b.id).clearCombat
   g1.qualityWasBeheld me .bear &&
     g1.beheldQualities me == #[.bear] &&
@@ -1019,29 +1020,29 @@ chosen piles/targets; a resolving pump has cause `.oneShotEffect`; a cleanup
     libAfter[0]? == some botChoice[0]! &&
     g1.events.any (fun e =>
       e.change == .rules (.player (.beheld me .bear)) &&
-        e.cause == .costPayment .behold me (some b.id)) &&
+        e.cause? == some (.costPayment .behold me (some b.id))) &&
     g2.events.any (fun e =>
       match e.change with
-      | .rules (.permanent (.phasedOut o false)) => o.id == some b.id && e.cause == .turnBased .phaseInOut
+      | .rules (.permanent (.phasedOut o false)) => o.id == some b.id && e.cause? == some (.turnBased .phaseInOut)
       | _ => false) &&
     g3.events.any (fun e =>
       match e.change with
-      | .rules (.permanent (.phasedIn o false)) => o.id == some b.id && e.cause == .turnBased .phaseInOut
+      | .rules (.permanent (.phasedIn o false)) => o.id == some b.id && e.cause? == some (.turnBased .phaseInOut)
       | _ => false) &&
     gPump.events.any (fun e =>
-      match e.change, e.cause with
+      match e.change, e.cause? with
       | .rules (.continuousEffect (.created _ (.layered (.objects #[id]) (.ptModify 2 2) .untilEndOfTurn))),
-        .oneShotEffect _ (some sid) (some ctrl) =>
+        some (.oneShotEffect _ (some sid) (some ctrl)) =>
         id == b.id && sid == b.id && ctrl == me
       | _, _ => false) &&
     gCleanup.events.any (fun e =>
       match e.change with
       | .rules (.continuousEffect (.expired _)) =>
-        e.cause == .turnBased .cleanupClear
+        e.cause? == some (.turnBased .cleanupClear)
       | _ => false) &&
     gBeholdEff.events.any (fun e =>
-      match e.change, e.cause with
-      | .rules (.player (.beheld p .bear)), .oneShotEffect _ _ (some ctrl) =>
+      match e.change, e.cause? with
+      | .rules (.player (.beheld p .bear)), some (.oneShotEffect _ _ (some ctrl)) =>
         p == me && ctrl == me
       | _, _ => false) &&
     gScryDone.events.any (fun e =>
@@ -1051,12 +1052,12 @@ chosen piles/targets; a resolving pump has cause `.oneShotEffect`; a cleanup
       | _ => false) &&
     gMana.events.any (fun e =>
       e.change == .rules (.player (.manaEmptied me #[{ mana := .colored .red }, { mana := .colored .red }] false)) &&
-        e.cause == .turnBased .emptyManaPools) &&
+        e.cause? == some (.turnBased .emptyManaPools)) &&
     (gMana.player me).manaPool.isEmpty &&
     gCombat.events.any (fun e =>
       match e.change with
       | .rules (.combat (.removedFromCombat o)) =>
-        o.id == some b.id && e.cause == .turnBased .removeFromCombatAtEndOfCombat
+        o.id == some b.id && e.cause? == some (.turnBased .removeFromCombatAtEndOfCombat)
       | _ => false) &&
     !(gCombat.object! b.id).status.attacking
 
@@ -1073,15 +1074,15 @@ and `storeCombatAssignments` records `DamageEvent.combatAssigned` under
   let lib := (g0.player me).library
   let oneCard := lib.extract (lib.size - 1) lib.size
   let gScryOne :=
-    (g0.changePlayer me (.library oneCard)).withResolvingContext (some h.id) opp (fun g =>
+    (retainLibrary g0 me oneCard).withResolvingContext (some h.id) opp (fun g =>
       g.beginScry me 3)
   let gScryOneDone :=
     match gScryOne.finishScry me oneCard #[] with
     | .ok g => g
     | .error _ => gScryOne
   let gProlif0 :=
-    ((quiet g0).recordPutCounters b.id .stun 1).change
-      (.pending (.chooseProliferate me 1))
+    ((quiet g0).recordPutCounters b.id .stun 1).withResolvingContext (some h.id) me (fun g =>
+      g.change (.pending (.chooseProliferate me 1)))
   let gProlifDone :=
     match gProlif0.finishProliferate me #[.permanent b.id] with
     | .ok g => g
@@ -1092,27 +1093,27 @@ and `storeCombatAssignments` records `DamageEvent.combatAssigned` under
   let exileCause? : Option EventCause :=
     gBlink.events.findSome? (fun e =>
       match e.change with
-      | .rules (.zone (.moved _ _ .battlefield .exile ..)) => some e.cause
+      | .rules (.zone (.moved _ _ .battlefield .exile ..)) => e.cause?
       | _ => none)
   let gReturned := ((quiet gBlink).beginStep .end).resolveTop
   let returnCause? : Option EventCause :=
     gReturned.events.findSome? (fun e =>
       match e.change with
-      | .rules (.zone (.moved _ _ .exile .battlefield ..)) => some e.cause
+      | .rules (.zone (.moved _ _ .exile .battlefield ..)) => e.cause?
       | _ => none)
   let gAssign :=
     match ((quiet g0).markAttacking b.id).storeCombatAssignments true #[] with
     | .ok g => g
     | .error _ => g0
   gScryOneDone.events.any (fun e =>
-    match e.change, e.cause with
-    | .rules (.player (.scried p top bottom 1 3)), .oneShotEffect _ (some sid) (some ctrl) =>
+    match e.change, e.cause? with
+    | .rules (.player (.scried p top bottom 1 3)), some (.oneShotEffect _ (some sid) (some ctrl)) =>
       p == me && top == oneCard && bottom.isEmpty && sid == h.id && ctrl == opp
     | _, _ => false) &&
   gProlifDone.events.any (fun e =>
-    match e.change, e.cause with
+    match e.change, e.cause? with
     | .rules (.permanent (.counters (.object o) .stun (.put 1) (some actor))),
-      .oneShotEffect _ _ (some ctrl) =>
+      some (.oneShotEffect _ _ (some ctrl)) =>
       o.id == some b.id && actor == me && ctrl == me
     | _, _ => false) &&
   (match exileCause?, returnCause? with
@@ -1123,7 +1124,7 @@ and `storeCombatAssignments` records `DamageEvent.combatAssigned` under
   gAssign.events.any (fun e =>
     match e.change with
     | .rules (.combat (.damageAssigned false true _)) =>
-      e.cause == .turnBased (.assignCombatDamage false)
+      e.cause? == some (.turnBased (.assignCombatDamage false))
     | _ => false)
 
 /- Phase 3: linked-exile returns preserve the exiling one-shot `EventCause`
@@ -1145,7 +1146,7 @@ accepted boast exiles use `.costPayment .exile` (CR 602.2b / 733.1). -/
   let linkReturnCause? : Option EventCause :=
     gLinkReturn.events.findSomeRev? (fun e =>
       match e.change with
-      | .rules (.zone (.moved _ _ .exile .battlefield ..)) => some e.cause
+      | .rules (.zone (.moved _ _ .exile .battlefield ..)) => e.cause?
       | _ => none)
   let gLoki0 := g0.createEffect (.pendingLokiCopy me (some h.id) 3)
     (cause := some (.oneShotEffect (some ⟨g0.nextEffectId⟩) (some h.id) (some me)))
@@ -1205,12 +1206,12 @@ accepted boast exiles use `.costPayment .exile` (CR 602.2b / 733.1). -/
     gLinkReturn.nextEffectId == effIdAfterExile + 1 &&
     gLokiLeft.events.any (fun e =>
       match e.change with
-      | .rules (.continuousEffect (.created _ (.playerRule _ (.pendingLokiCopy none _) _))) => e.cause == destroyCause
+      | .rules (.continuousEffect (.created _ (.playerRule _ (.pendingLokiCopy none _) _))) => e.cause? == some destroyCause
       | _ => false) &&
     gPermStack.events.any (fun e =>
       match e.change with
       | .rules (.zone (.moved _ _ .stack .battlefield ..)) =>
-        e.cause == EventCause.gameRule .permanentSpellResolved
+        e.cause? == some (EventCause.gameRule .permanentSpellResolved)
       | _ => false) &&
     !gCrewDeclined.events.any (fun e =>
       match e.change with
@@ -1219,16 +1220,16 @@ accepted boast exiles use `.costPayment .exile` (CR 602.2b / 733.1). -/
     gCrewDeclined.events.any (fun e =>
       match e.change with
       | .rules (.zone (.ceasedToExist o)) =>
-        o.zone == .stack && e.cause == EventCause.gameRule .reversedActivation
+        o.zone == .stack && e.cause? == some (EventCause.gameRule .reversedActivation)
       | _ => false) &&
     gZemoAccepted.events.any (fun e =>
-      match e.change, e.cause with
-      | .rules (.zone (.moved _ _ (.graveyard _) .exile ..)), .costPayment .exile payer (some _) =>
+      match e.change, e.cause? with
+      | .rules (.zone (.moved _ _ (.graveyard _) .exile ..)), some (.costPayment .exile payer (some _)) =>
         payer == me
       | _, _ => false) &&
     gZemoAccepted.events.any (fun e =>
       match e.change with
-      | .rules (.cast (.abilityActivated ..)) => e.cause == EventCause.gameRule .abilityActivated
+      | .rules (.cast (.abilityActivated ..)) => e.cause? == some (EventCause.gameRule .abilityActivated)
       | _ => false)
 
 /- Phase 3: `GameEvent.activated`, loyalty counter costs, and loyalty activation
@@ -1271,11 +1272,11 @@ cause rather than `.gameRule .leavingZone` (CR 702.26b). -/
   let proposedAbId := gPwProposed.proposedSpell.get!.spellId
   let gPwReversed := gPwProposed.reverseProposedSpell
   let gPwPaid :=
-    match (gPwProposed.changePlayer me (.addMana .colorless 2)).apply me .pay with
+    match (gPwProposed.addMana me .colorless 2).apply me .pay with
     | .ok g => g
     | .error _ => gPwProposed
   let gPwInGy :=
-    (gPwProposed.changePlayer me (.addMana .colorless 2)).changeObject pw.id (.zone (.graveyard me))
+    ((gPwProposed.addMana me .colorless 2).move pw.id (.graveyard me) none).1
   let gPwInGyPaid :=
     match gPwInGy.apply me .pay with
     | .ok g => g
@@ -1288,7 +1289,7 @@ cause rather than `.gameRule .leavingZone` (CR 702.26b). -/
             effect := {} }] }
   let gWb0 :=
     let g := addPermanent afterDraw baubleDef me me
-    let g := g.changePlayer me (.addMana .colorless 2)
+    let g := g.addMana me .colorless 2
     quiet g
   let wb := (gWb0.battlefield.filter (·.name == "Test Bauble"))[0]!
   let gWbPaid :=
@@ -1312,7 +1313,8 @@ cause rather than `.gameRule .leavingZone` (CR 702.26b). -/
   let gInc0 := quiet (addPermanent afterDraw incDef me me)
   let inc := (gInc0.battlefield.filter (·.name == "Incubator Token"))[0]!
   let gIncTransformed :=
-    gInc0.applyFrc me default .transformIncubator #[] (some inc.id)
+    gInc0.withResolvingContext (some inc.id) me (fun g =>
+      g.applyFrc me default .transformIncubator #[] (some inc.id))
   let incAfter := gIncTransformed.object! inc.id
   let staticCreature : CardDef :=
     { name := "Static Bear"
@@ -1328,13 +1330,13 @@ cause rather than `.gameRule .leavingZone` (CR 702.26b). -/
   let expiredCause? : Option EventCause :=
     gPhasedOut.events.findSome? (fun e =>
       match e.change with
-      | .rules (.continuousEffect (.expired _)) => some e.cause
+      | .rules (.continuousEffect (.expired _)) => e.cause?
       | _ => none)
   let phasedCause? : Option EventCause :=
     gPhasedOut.events.findSome? (fun e =>
       match e.change with
       | .rules (.permanent (.phasedOut o false)) =>
-        if o.id == some sb.id then some e.cause else none
+        if o.id == some sb.id then e.cause? else none
       | _ => none)
   !gPwProposed.loggedActivatedLoyalty me &&
     !gPwReversed.loggedActivatedLoyalty me &&
@@ -1350,9 +1352,9 @@ cause rather than `.gameRule .leavingZone` (CR 702.26b). -/
       | _ => false) &&
     proposedAbId != pw.id &&
     gPwPaid.events.any (fun e =>
-      match e.change, e.cause with
+      match e.change, e.cause? with
       | .rules (.permanent (.counters (.object o) .loyalty (.put 1) (some actor))),
-        .costPayment .loyalty payer (some forId) =>
+        some (.costPayment .loyalty payer (some forId)) =>
         o.id == some pw.id && actor == me && payer == me && forId == proposedAbId
       | _, _ => false) &&
     !gPwInGy.sourceStillPayable gPwInGy.proposedSpell.get! &&
@@ -1366,19 +1368,15 @@ cause rather than `.gameRule .leavingZone` (CR 702.26b). -/
       match e.change with
       | .rules (.cast (.abilityActivated _ o p (.nonMana none false false false ..))) =>
         p == me && o.id == some wb.id && o.name == "Test Bauble" &&
-          e.cause == EventCause.gameRule .abilityActivated
+          e.cause? == some (EventCause.gameRule .abilityActivated)
       | _ => false) &&
     incAfter.status.transformed &&
     incAfter.name == "Phyrexian" &&
     incAfter.printed.power == some 0 &&
     incAfter.printed.toughness == some 0 &&
-    !gIncTransformed.events.any (fun e =>
-      match e.change with
-      | .engine (.object _ (.printed _)) => true
-      | _ => false) &&
     gIncTransformed.events.any (fun e =>
-      match e.change, e.cause with
-      | .rules (.permanent (.transformed o true)), .oneShotEffect _ (some sid) (some ctrl) =>
+      match e.change, e.cause? with
+      | .rules (.permanent (.transformed o true)), some (.oneShotEffect _ (some sid) (some ctrl)) =>
         o.id == some inc.id && sid == inc.id && ctrl == me
       | _, _ => false) &&
     (match expiredCause?, phasedCause? with
@@ -1414,7 +1412,7 @@ before the next upkeep keep each batch's delayed `.oneShotEffect` cause (CR 603.
   let storedExtraCause? : Option EventCause :=
     gExtraQueued.events.findSome? (fun e =>
       match e.change with
-      | .rules (.turn (.extraTurnAdded _)) => some e.cause
+      | .rules (.turn (.extraTurnAdded _)) => e.cause?
       | _ => none)
   let gExtraStarted := gExtraQueued.startNextTurn
   let gExtraClearedEot := (quiet gExtraStarted).clearEOT
@@ -1446,7 +1444,7 @@ before the next upkeep keep each batch's delayed `.oneShotEffect` cause (CR 603.
   let kickedPhaseCauses :=
     gKickedPhase.events.filterMap (fun e =>
       match e.change with
-      | .rules (.permanent (.phasedOut _ false)) => some e.cause
+      | .rules (.permanent (.phasedOut _ false)) => e.cause?
       | _ => none)
   -- 6. Two eaglesAreComing / returnOwnedCreaturesScheduleBirds batches keep distinct delayed causes
   let gEagles1 := g0.returnOwnedCreaturesScheduleBirds me #[b.id]
@@ -1457,43 +1455,43 @@ before the next upkeep keep each batch's delayed `.oneShotEffect` cause (CR 603.
   gPermTurnEnd.events.any (fun e =>
     match e.change with
     | .rules (.continuousEffect (.expired _)) =>
-      e.cause == EventCause.turnBased .cleanupClear
+      e.cause? == some (EventCause.turnBased .cleanupClear)
     | _ => false) &&
     gPermNextTurn.events.any (fun e =>
       match e.change with
       | .rules (.continuousEffect (.expired _)) =>
-        e.cause == EventCause.turnBased .expireAtStepBegin
+        e.cause? == some (EventCause.turnBased .expireAtStepBegin)
       | _ => false) &&
     storedExtraCause? == some (EventCause.oneShotEffect (some ⟨effBeforeExtra⟩) (some h.id) (some me)) &&
     gExtraStarted.events.any (fun e =>
       match e.change with
       | .rules (.continuousEffect (.created _ (.gameRule .powerUpsForbidden .untilEndOfTurn))) =>
-        some e.cause == storedExtraCause?
+        e.cause? == storedExtraCause?
       | _ => false) &&
     gExtraClearedEot.events.any (fun e =>
       match e.change with
       | .rules (.continuousEffect (.expired _)) =>
-        e.cause == EventCause.turnBased .cleanupClear
+        e.cause? == some (EventCause.turnBased .cleanupClear)
       | _ => false) &&
     gExtraEndedTurn.events.any (fun e =>
       match e.change with
       | .rules (.continuousEffect (.expired _)) =>
-        e.cause == EventCause.turnBased .cleanupClear
+        e.cause? == some (EventCause.turnBased .cleanupClear)
       | _ => false) &&
     gTreasPlayer.events.any (fun e =>
       match e.change with
       | .rules (.zone (.created o p)) =>
-        o.name == "Treasure" && p == me && e.cause == EventCause.turnBased (.dealCombatDamage false)
+        o.name == "Treasure" && p == me && e.cause? == some (EventCause.turnBased (.dealCombatDamage false))
       | _ => false) &&
     gTreasPw.events.any (fun e =>
       match e.change with
       | .rules (.zone (.created o p)) =>
-        o.name == "Treasure" && p == me && e.cause == EventCause.turnBased (.dealCombatDamage false)
+        o.name == "Treasure" && p == me && e.cause? == some (EventCause.turnBased (.dealCombatDamage false))
       | _ => false) &&
     gEndCombat.events.any (fun e =>
       match e.change with
       | .rules (.combat (.removedFromCombat o)) =>
-        o.id == some b.id && e.cause == EventCause.turnBased .removeFromCombatAtEndOfCombat
+        o.id == some b.id && e.cause? == some (EventCause.turnBased .removeFromCombatAtEndOfCombat)
       | _ => false) &&
     !gCleanupCombat.events.any (fun e =>
       match e.change with
@@ -1505,12 +1503,12 @@ before the next upkeep keep each batch's delayed `.oneShotEffect` cause (CR 603.
     gEaglesUpkeep.events.any (fun e =>
       match e.change with
       | .rules (.zone (.created o p)) =>
-        o.name == "Bird Soldier" && p == me && e.cause == causeEagles1
+        o.name == "Bird Soldier" && p == me && e.cause? == some causeEagles1
       | _ => false) &&
     gEaglesUpkeep.events.any (fun e =>
       match e.change with
       | .rules (.zone (.created o p)) =>
-        o.name == "Bird Soldier" && p == me && e.cause == causeEagles2
+        o.name == "Bird Soldier" && p == me && e.cause? == some causeEagles2
       | _ => false)
 
 /- Phase 3: `createEffect` and `createEffects` inside a resolving context
@@ -1547,89 +1545,96 @@ creations, both haste continuous effects, and both delayed end-step sacrifices. 
   let oneShotIds :=
     gEffBatch.events.filterMap (fun e =>
       match e.change with
-      | .rules (.continuousEffect (.created ..)) => e.cause.oneShotEffectId?
+      | .rules (.continuousEffect (.created ..)) => e.cause?.bind EventCause.oneShotEffectId?
       | _ => none)
   -- 2. .exileThenReturnNextEnd and .exileThenReturnYouControl on two targets
   let twoTargets := #[Target.permanent b.id, Target.permanent h.id]
   let gNextEnd :=
-    (quiet gWithSrc).applyUnifiedAbility me Effect.exileThenReturnNextEnd twoTargets
-      (sourceId := some s.id)
+    (quiet gWithSrc).withResolvingContext (some s.id) me (fun g =>
+      g.applyUnifiedAbility me Effect.exileThenReturnNextEnd twoTargets
+        (sourceId := some s.id))
   let nextEndExileCauses :=
     gNextEnd.events.filterMap (fun e =>
       match e.change with
-      | .rules (.zone (.moved _ _ .battlefield .exile ..)) => some e.cause
+      | .rules (.zone (.moved _ _ .battlefield .exile ..)) => e.cause?
       | _ => none)
   let gBlinkTwo :=
-    (quiet gWithSrc).applyEffect me Effect.exileThenReturnYouControl twoTargets
-      (sourceId := some s.id)
+    (quiet gWithSrc).withResolvingContext (some s.id) me (fun g =>
+      g.applyEffect me Effect.exileThenReturnYouControl twoTargets
+        (sourceId := some s.id))
   let blinkMoveCauses :=
     gBlinkTwo.events.filterMap (fun e =>
       match e.change with
-      | .rules (.zone (.moved ..)) => some e.cause
+      | .rules (.zone (.moved ..)) => e.cause?
       | _ => none)
   -- 3. .syntheticDestiny and .sunfall share one cause across all exiled creatures,
   --    and .sunfall records enters-with +1/+1 counters on ZoneEvent.created without
   --    firing creature-only .youPutPlusOne on the noncreature Incubator, and
   --    transforms via otherFace without EngineChange.object (.printed _)
   let gSynth :=
-    (quiet gWithSrc).applyFrc me default .syntheticDestiny #[] (some s.id)
+    (quiet gWithSrc).withResolvingContext (some s.id) me (fun g =>
+      g.applyFrc me default .syntheticDestiny #[] (some s.id))
   let synthStoredCause := gSynth.delayedTriggers[0]!.cause
   let synthExileCauses :=
     gSynth.events.filterMap (fun e =>
       match e.change with
-      | .rules (.zone (.moved _ _ .battlefield .exile ..)) => some e.cause
+      | .rules (.zone (.moved _ _ .battlefield .exile ..)) => e.cause?
       | _ => none)
   let gSunfall :=
-    (quiet gWithSrc).applyFrc me default .sunfall #[] (some s.id)
+    (quiet gWithSrc).withResolvingContext (some s.id) me (fun g =>
+      g.applyFrc me default .sunfall #[] (some s.id))
   let sunfallExileCauses :=
     gSunfall.events.filterMap (fun e =>
       match e.change with
-      | .rules (.zone (.moved _ _ .battlefield .exile ..)) => some e.cause
+      | .rules (.zone (.moved _ _ .battlefield .exile ..)) => e.cause?
       | _ => none)
   let sunfallCreated? :=
     gSunfall.events.findSome? (fun e =>
-      match e.change with
-      | .rules (.zone (.created o p)) =>
-        if o.name == "Incubator" && p == me then some (o, e.cause) else none
+      match e with
+      | .rules _ (.zone (.created o p)) c _ =>
+        if o.name == "Incubator" && p == me then some (o, c) else none
       | _ => none)
   let sunfallInc := (gSunfall.battlefield.filter (·.name == "Incubator"))[0]!
   let gSunfallTransformed :=
-    (quiet gSunfall).applyFrc me default .transformIncubator #[] (some sunfallInc.id)
+    (quiet gSunfall).withResolvingContext (some sunfallInc.id) me (fun g =>
+      g.applyFrc me default .transformIncubator #[] (some sunfallInc.id))
   let sunfallIncAfter := gSunfallTransformed.object! sunfallInc.id
   -- 4. .massPolymorph shares one exileCause for battlefield exiles and one distinct
   --    revealCause across revealUntil, putHits, and restBottom
   let gMassPoly :=
-    (quiet gWithSrc).applyFrc me default .massPolymorph #[] (some s.id)
+    (quiet gWithSrc).withResolvingContext (some s.id) me (fun g =>
+      g.applyFrc me default .massPolymorph #[] (some s.id))
   let polyBfExiles :=
     gMassPoly.events.filterMap (fun e =>
       match e.change with
-      | .rules (.zone (.moved _ _ .battlefield .exile ..)) => some e.cause
+      | .rules (.zone (.moved _ _ .battlefield .exile ..)) => e.cause?
       | _ => none)
   let polyRevealMoves :=
     gMassPoly.events.filterMap (fun e =>
       match e.change with
       | .rules (.zone (.moved _ _ (.library _) .exile ..))
       | .rules (.zone (.moved _ _ .exile .battlefield ..))
-      | .rules (.zone (.moved _ _ .exile (.library _) ..)) => some e.cause
+      | .rules (.zone (.moved _ _ .exile (.library _) ..)) => e.cause?
       | _ => none)
   let polyRestMoves :=
     gMassPoly.events.filterMap (fun e =>
       match e.change with
-      | .rules (.zone (.moved _ _ .exile (.library _) ..)) => some e.cause
+      | .rules (.zone (.moved _ _ .exile (.library _) ..)) => e.cause?
       | _ => none)
   -- 5. .venserPerm shares one cause across both token creations, both haste effects,
   --    and both delayed end-step sacrifices
   let gVenser :=
-    (quiet gWithSrc).applyFrc me default .venserPerm #[Target.permanent b.id] (some s.id)
+    (quiet gWithSrc).withResolvingContext (some s.id) me (fun g =>
+      g.applyFrc me default .venserPerm #[Target.permanent b.id] (some s.id))
   let venserCreateCauses :=
     gVenser.events.filterMap (fun e =>
       match e.change with
-      | .rules (.zone (.created ..)) => some e.cause
+      | .rules (.zone (.created ..)) => e.cause?
       | _ => none)
   let venserEffectCauses :=
     gVenser.events.filterMap (fun e =>
       match e.change with
-      | .rules (.continuousEffect (.created ..)) => some e.cause
+      | .rules (.continuousEffect (.created ..)) => e.cause?
       | _ => none)
   -- 6. .jhoira shares one cause across revealUntil, putHits, loseLife, and the
   --    deferred RandomRequest.orderInto library return when 2+ cards remain
@@ -1645,7 +1650,8 @@ creations, both haste continuous effects, and both delayed end-step sacrifices. 
     let g := (g.move h.id (.library me) none (libraryPosition := some .top)).1
     quiet g
   let gJhoiraPending :=
-    gJhoiraSetup.applyFrc me default .jhoira #[Target.player me] (some s.id)
+    gJhoiraSetup.withResolvingContext (some s.id) me (fun g =>
+      g.applyFrc me default .jhoira #[Target.player me] (some s.id))
   let jhoiraPendingOk :=
     match gJhoiraPending.pending with
     | .resolveRandom (.orderInto ids (.library p) (some _)) => p == me && ids.size == 2
@@ -1657,17 +1663,17 @@ creations, both haste continuous effects, and both delayed end-step sacrifices. 
   let jhoiraMoveCauses :=
     gJhoiraDone.events.filterMap (fun e =>
       match e.change with
-      | .rules (.zone (.moved ..)) => some e.cause
+      | .rules (.zone (.moved ..)) => e.cause?
       | _ => none)
   let jhoiraRestCauses :=
     gJhoiraDone.events.filterMap (fun e =>
       match e.change with
-      | .rules (.zone (.moved _ _ .exile (.library _) ..)) => some e.cause
+      | .rules (.zone (.moved _ _ .exile (.library _) ..)) => e.cause?
       | _ => none)
   let jhoiraLifeCauses :=
     gJhoiraDone.events.filterMap (fun e =>
       match e.change with
-      | .rules (.life (.lost _ 2 ..)) => some e.cause
+      | .rules (.life (.lost _ 2 ..)) => e.cause?
       | _ => none)
   oneShotIds == #[⟨eff0⟩, ⟨eff0⟩] &&
     createdIds == #[⟨eff0 + 1⟩, ⟨eff0 + 2⟩] &&
@@ -1697,10 +1703,6 @@ creations, both haste continuous effects, and both delayed end-step sacrifices. 
     sunfallIncAfter.printed.power == some 0 &&
     sunfallIncAfter.printed.toughness == some 0 &&
     sunfallIncAfter.status.plusOnePlusOne == 2 &&
-    !gSunfallTransformed.events.any (fun e =>
-      match e.change with
-      | .engine (.object _ (.printed _)) => true
-      | _ => false) &&
     polyBfExiles.size == 2 &&
     polyBfExiles[0]! == polyBfExiles[1]! &&
     polyRestMoves.size > 0 &&
@@ -1742,7 +1744,7 @@ produced by the single one-shot instruction (CR 610.1 / 701.14 / 702.85a). -/
   let landExileCauses :=
     gLands.events.filterMap (fun e =>
       match e.change with
-      | .rules (.zone (.moved _ _ .battlefield .exile ..)) => some e.cause
+      | .rules (.zone (.moved _ _ .battlefield .exile ..)) => e.cause?
       | _ => none)
   -- 2. `applyExile` with `.nextEndStep` on multiple permanents shares one cause
   let gNextEndTrig :=
@@ -1751,7 +1753,7 @@ produced by the single one-shot instruction (CR 610.1 / 701.14 / 702.85a). -/
   let nextEndTrigCauses :=
     gNextEndTrig.events.filterMap (fun e =>
       match e.change with
-      | .rules (.zone (.moved _ _ .battlefield .exile ..)) => some e.cause
+      | .rules (.zone (.moved _ _ .battlefield .exile ..)) => e.cause?
       | _ => none)
   -- 3. `applyExile` `.playUntilNextTurn` and `.playThisTurn` share cause between
   --    `ZoneEvent.moved` and `effectCreated (.playPermission ...)`
@@ -1760,24 +1762,24 @@ produced by the single one-shot instruction (CR 610.1 / 701.14 / 702.85a). -/
   let playNextMoveCauses :=
     gPlayNext.events.filterMap (fun e =>
       match e.change with
-      | .rules (.zone (.moved _ _ (.library _) .exile ..)) => some e.cause
+      | .rules (.zone (.moved _ _ (.library _) .exile ..)) => e.cause?
       | _ => none)
   let playNextEffCauses :=
     gPlayNext.events.filterMap (fun e =>
       match e.change with
-      | .rules (.continuousEffect (.created ..)) => some e.cause
+      | .rules (.continuousEffect (.created ..)) => e.cause?
       | _ => none)
   let gPlayThis :=
     (quiet g0).applyExile me default (some b.id) #[] .top .playThisTurn .none
   let playThisMoveCauses :=
     gPlayThis.events.filterMap (fun e =>
       match e.change with
-      | .rules (.zone (.moved _ _ (.library _) .exile ..)) => some e.cause
+      | .rules (.zone (.moved _ _ (.library _) .exile ..)) => e.cause?
       | _ => none)
   let playThisEffCauses :=
     gPlayThis.events.filterMap (fun e =>
       match e.change with
-      | .rules (.continuousEffect (.created ..)) => some e.cause
+      | .rules (.continuousEffect (.created ..)) => e.cause?
       | _ => none)
   -- 4. `applyRevealLibrary` `.untilCreature` shares one cause across revealed
   --    non-creature exiles, putting the creature onto the battlefield, and
@@ -1800,7 +1802,7 @@ produced by the single one-shot instruction (CR 610.1 / 701.14 / 702.85a). -/
   let revMoveCauses :=
     gRevDone.events.filterMap (fun e =>
       match e.change with
-      | .rules (.zone (.moved ..)) => some e.cause
+      | .rules (.zone (.moved ..)) => e.cause?
       | _ => none)
   -- 5. `resolveCascade` + `.mayCastCascade` `.decline` shares one cause across
   --    exiling from library and returning the exiled cards to the bottom
@@ -1816,7 +1818,7 @@ produced by the single one-shot instruction (CR 610.1 / 701.14 / 702.85a). -/
   let cascMoveCauses :=
     gCascDone.events.filterMap (fun e =>
       match e.change with
-      | .rules (.zone (.moved ..)) => some e.cause
+      | .rules (.zone (.moved ..)) => e.cause?
       | _ => none)
   landExileCauses.size == 2 &&
     landExileCauses[0]! == landExileCauses[1]! &&
@@ -1884,7 +1886,7 @@ across all constituent moves, transforms, and continuous-effect creations
   let mayRevCauses :=
     gMayRevDone.events.filterMap (fun e =>
       match e.change with
-      | .rules (.zone (.moved ..)) => some e.cause
+      | .rules (.zone (.moved ..)) => e.cause?
       | _ => none)
   -- 2. `.nickFuryPut` + `.nickFuryMayTransform` `.accept`
   let gNick0 := addPermanent g0 dfcHero me me
@@ -1895,7 +1897,9 @@ across all constituent moves, transforms, and continuous-effect creations
     let g := (g.move dfcObj.id (.library me) none (libraryPosition := some .top)).1
     quiet g
   let dfcLibId := (gNickSetup.player me).library.back!
-  let gNick1 := gNickSetup.beginLookPutTypes me 3 #[.hero]
+  let gNick1 :=
+    gNickSetup.withResolvingContext (some h.id) me (fun g =>
+      g.beginLookPutTypes me 3 #[.hero])
   let gNick2 :=
     match gNick1.answerFraChoice me (.objects #[dfcLibId]) with
     | .ok g' => g'
@@ -1911,12 +1915,12 @@ across all constituent moves, transforms, and continuous-effect creations
   let nickCauses :=
     gNickDone.events.filterMap (fun e =>
       match e.change with
-      | .rules (.zone (.moved ..)) => some e.cause
-      | .rules (.permanent (.transformed ..)) => some e.cause
+      | .rules (.zone (.moved ..)) => e.cause?
+      | .rules (.permanent (.transformed ..)) => e.cause?
       | _ => none)
   -- 3. `grimaExileUntilInstantOrSorcery` with `castTheCard := true`
   let gGrima0 :=
-    insertObject g0 shockDef me (.library me) none {} (fun id _ => #[.pushLibrary id])
+    insertObject g0 shockDef me (.library me)
   let gGrimaSetup :=
     let g := (gGrima0.move l1.id (.library me) none (libraryPosition := some .top)).1
     let g := (g.move l2.id (.library me) none (libraryPosition := some .top)).1
@@ -1931,7 +1935,7 @@ across all constituent moves, transforms, and continuous-effect creations
   let grimaCauses :=
     gGrimaDone.events.filterMap (fun e =>
       match e.change with
-      | .rules (.zone (.moved ..)) => some e.cause
+      | .rules (.zone (.moved ..)) => e.cause?
       | _ => none)
   -- 4. Generic `TriggerResolution.revealLibrary` (`applyRevealLibrary == none`)
   let gTrigRevPending :=
@@ -1945,7 +1949,7 @@ across all constituent moves, transforms, and continuous-effect creations
   let trigRevCauses :=
     gTrigRevDone.events.filterMap (fun e =>
       match e.change with
-      | .rules (.zone (.moved ..)) => some e.cause
+      | .rules (.zone (.moved ..)) => e.cause?
       | _ => none)
   -- 5. `exileTopPlayIfYouControlSubtype` while resolving
   let gExTop :=
@@ -1954,8 +1958,8 @@ across all constituent moves, transforms, and continuous-effect creations
   let exTopCauses :=
     gExTop.events.filterMap (fun e =>
       match e.change with
-      | .rules (.zone (.moved ..)) => some e.cause
-      | .rules (.continuousEffect (.created _ (.permission _ (.playFromExile ..) _))) => some e.cause
+      | .rules (.zone (.moved ..)) => e.cause?
+      | .rules (.continuousEffect (.created _ (.permission _ (.playFromExile ..) _))) => e.cause?
       | _ => none)
   -- 6. `exileHandDrawPlayUntilNext` shares one cause across hand exiles, play permissions, and draws
   let handSize := (gLibSetup.player me).hand.size
@@ -1965,8 +1969,8 @@ across all constituent moves, transforms, and continuous-effect creations
   let hexCauses :=
     gHex.events.filterMap (fun e =>
       match e.change with
-      | .rules (.zone (.moved ..)) => some e.cause
-      | .rules (.continuousEffect (.created _ (.permission _ (.playFromExile ..) _))) => some e.cause
+      | .rules (.zone (.moved ..)) => e.cause?
+      | .rules (.continuousEffect (.created _ (.permission _ (.playFromExile ..) _))) => e.cause?
       | _ => none)
   -- 7. `.identityEcho` uses one cause for the exile and a distinct shared cause for the reveal/put/bottom
   let gEchoPending :=
@@ -1979,12 +1983,12 @@ across all constituent moves, transforms, and continuous-effect creations
   let echoMoveCauses :=
     gEchoDone.events.filterMap (fun e =>
       match e.change with
-      | .rules (.zone (.moved ..)) => some e.cause
+      | .rules (.zone (.moved ..)) => e.cause?
       | _ => none)
   -- 8. `millThenChooseForHand` shares one cause across the mill and deferred `.chooseCards` `.toHand`,
   --    and only offers cards actually milled from the library even when `n` exceeds `library.size`
   let gShortLib :=
-    let g := g0.changePlayer me (.library #[])
+    let g := emptyLibrary g0 me
     let (g, gyLandId) := g.move l1.id (.graveyard me) none
     let g := (g.move b.id (.library me) none (libraryPosition := some .top)).1
     let g := (g.move l2.id (.library me) none (libraryPosition := some .top)).1
@@ -2004,22 +2008,23 @@ across all constituent moves, transforms, and continuous-effect creations
   let millChooseCauses :=
     gMillChooseDone.events.filterMap (fun e =>
       match e.change with
-      | .rules (.zone (.moved ..)) => some e.cause
+      | .rules (.zone (.moved ..)) => e.cause?
       | _ => none)
-  -- 9. `draw` and `mill` outside a resolving context leave `.unclassified`, while `drawThenLoseLife`,
-  --    `drawEqualToughnessThenPutCreatures`, `.twoPlayersDraw`, `millCollected` / `.milledSubtype`,
-  --    and `.palantirMayDraw` `.decline` share one `.oneShotEffect` cause across each instruction
+  -- 9. `draw` and `mill` outside a resolving context record classified non-one-shot causes without
+  --    bumping `nextEffectId`, while `drawThenLoseLife`, `drawEqualToughnessThenPutCreatures`,
+  --    `.twoPlayersDraw`, `millCollected` / `.milledSubtype`, and `.palantirMayDraw` `.decline`
+  --    share one `.oneShotEffect` cause across each instruction
   let gRawDraw := gLibSetup.draw me 2
   let rawDrawCauses :=
     gRawDraw.events.filterMap (fun e =>
       match e.change with
-      | .rules (.zone (.moved ..)) => some e.cause
+      | .rules (.zone (.moved ..)) => e.cause?
       | _ => none)
   let gRawMill := gLibSetup.mill me 2
   let rawMillCauses :=
     gRawMill.events.filterMap (fun e =>
       match e.change with
-      | .rules (.zone (.moved ..)) => some e.cause
+      | .rules (.zone (.moved ..)) => e.cause?
       | _ => none)
   let gDrawLose :=
     gLibSetup.withResolvingContext (some h.id) me (fun g =>
@@ -2027,8 +2032,8 @@ across all constituent moves, transforms, and continuous-effect creations
   let drawLoseCauses :=
     gDrawLose.events.filterMap (fun e =>
       match e.change with
-      | .rules (.zone (.moved ..)) => some e.cause
-      | .rules (.life (.lost ..)) => some e.cause
+      | .rules (.zone (.moved ..)) => e.cause?
+      | .rules (.life (.lost ..)) => e.cause?
       | _ => none)
   let gLastMarchSetup :=
     let g := (g0.move l1.id (.library me) none (libraryPosition := some .top)).1
@@ -2049,7 +2054,7 @@ across all constituent moves, transforms, and continuous-effect creations
   let lastMarchCauses :=
     gLastMarchDone.events.filterMap (fun e =>
       match e.change with
-      | .rules (.zone (.moved ..)) => some e.cause
+      | .rules (.zone (.moved ..)) => e.cause?
       | _ => none)
   let gTwoDraw :=
     gLibSetup.withResolvingContext (some h.id) me (fun g =>
@@ -2057,7 +2062,7 @@ across all constituent moves, transforms, and continuous-effect creations
   let twoDrawCauses :=
     gTwoDraw.events.filterMap (fun e =>
       match e.change with
-      | .rules (.zone (.moved ..)) => some e.cause
+      | .rules (.zone (.moved ..)) => e.cause?
       | _ => none)
   let gMillSubtype :=
     gLibSetup.withResolvingContext (some h.id) me (fun g =>
@@ -2066,11 +2071,11 @@ across all constituent moves, transforms, and continuous-effect creations
   let millSubtypeCauses :=
     gMillSubtype.events.filterMap (fun e =>
       match e.change with
-      | .rules (.zone (.moved ..)) => some e.cause
+      | .rules (.zone (.moved ..)) => e.cause?
       | _ => none)
   let gPalantir0 :=
     (gGrimaSetup.recordPutCounters h.id .influence 3).change (.pending (.fraChoice opp (.palantirMayDraw me h.id)))
-      |>.change (.resolvingContext (some (some h.id, me)))
+      |>.change (.pushContinuationFrame { resolvingContext := some (some h.id, me) })
   let gPalantirDone :=
     match gPalantir0.answerFraChoice opp .decline with
     | .ok g' => g'
@@ -2078,8 +2083,8 @@ across all constituent moves, transforms, and continuous-effect creations
   let palantirCauses :=
     gPalantirDone.events.filterMap (fun e =>
       match e.change with
-      | .rules (.zone (.moved ..)) => some e.cause
-      | .rules (.life (.lost ..)) => some e.cause
+      | .rules (.zone (.moved ..)) => e.cause?
+      | .rules (.life (.lost ..)) => e.cause?
       | _ => none)
   let gPalantirRaw0 :=
     (gGrimaSetup.recordPutCounters h.id .influence 3).change (.pending (.fraChoice opp (.palantirMayDraw me h.id)))
@@ -2090,8 +2095,8 @@ across all constituent moves, transforms, and continuous-effect creations
   let palantirRawCauses :=
     gPalantirRawDone.events.filterMap (fun e =>
       match e.change with
-      | .rules (.zone (.moved ..)) => some e.cause
-      | .rules (.life (.lost ..)) => some e.cause
+      | .rules (.zone (.moved ..)) => e.cause?
+      | .rules (.life (.lost ..)) => e.cause?
       | _ => none)
   let balinSeq : TriggeredAbility.TriggerResolution :=
     .sequence [.may (.discard .hand) (.sequence []), .draw .discardedHand]
@@ -2104,7 +2109,7 @@ across all constituent moves, transforms, and continuous-effect creations
   let balinRawCauses :=
     gBalinRaw.events.filterMap (fun e =>
       match e.change with
-      | .rules (.zone (.moved ..)) => some e.cause
+      | .rules (.zone (.moved ..)) => e.cause?
       | _ => none)
   let gBalinRes0 :=
     gLibSetup.withResolvingContext (some h.id) me (fun g =>
@@ -2117,11 +2122,11 @@ across all constituent moves, transforms, and continuous-effect creations
   let balinResCauses :=
     gBalinRes.events.filterMap (fun e =>
       match e.change with
-      | .rules (.zone (.moved ..)) => some e.cause
+      | .rules (.zone (.moved ..)) => e.cause?
       | _ => none)
   let gArmorEmpty0 :=
-    (gLibSetup.changePlayer me (.library #[])).change (.pending (.fraChoice me (.mayDrawThenEachOpponentDraws 1)))
-      |>.change (.resolvingContext (some (some h.id, me)))
+    (emptyLibrary gLibSetup me).change (.pending (.fraChoice me (.mayDrawThenEachOpponentDraws 1)))
+      |>.change (.pushContinuationFrame { resolvingContext := some (some h.id, me) })
   let gArmorEmptyDone :=
     match gArmorEmpty0.answerFraChoice me .accept with
     | .ok g' => g'
@@ -2129,7 +2134,7 @@ across all constituent moves, transforms, and continuous-effect creations
   let armorEmptyMoves :=
     gArmorEmptyDone.events.filterMap (fun e =>
       match e.change with
-      | .rules (.zone (.moved ..)) => some e.cause
+      | .rules (.zone (.moved ..)) => e.cause?
       | _ => none)
   let lifelinkHero : CardDef :=
     { hero with name := "Lifelink Hero", keywords := Keyword.lifelink }
@@ -2141,7 +2146,7 @@ across all constituent moves, transforms, and continuous-effect creations
   let dmgPermRawCauses :=
     gDmgPermRaw.events.filterMap (fun e =>
       match e.change with
-      | .rules _ => some e.cause
+      | .rules _ => e.cause?
       | _ => none)
   let gDmgPermRes :=
     gDmgSetup.withResolvingContext (some lh.id) me (fun g =>
@@ -2149,13 +2154,13 @@ across all constituent moves, transforms, and continuous-effect creations
   let dmgPermResCauses :=
     gDmgPermRes.events.filterMap (fun e =>
       match e.change with
-      | .rules _ => some e.cause
+      | .rules _ => e.cause?
       | _ => none)
   let gDmgPlayerRaw := gDmgSetup.dealDamageToPlayer opp 2 (source := some lh)
   let dmgPlayerRawCauses :=
     gDmgPlayerRaw.events.filterMap (fun e =>
       match e.change with
-      | .rules _ => some e.cause
+      | .rules _ => e.cause?
       | _ => none)
   let gDmgPlayerRes :=
     gDmgSetup.withResolvingContext (some lh.id) me (fun g =>
@@ -2163,7 +2168,7 @@ across all constituent moves, transforms, and continuous-effect creations
   let dmgPlayerResCauses :=
     gDmgPlayerRes.events.filterMap (fun e =>
       match e.change with
-      | .rules _ => some e.cause
+      | .rules _ => e.cause?
       | _ => none)
   let gSweepRes :=
     gDmgSetup.withResolvingContext (some lh.id) me (fun g =>
@@ -2172,13 +2177,13 @@ across all constituent moves, transforms, and continuous-effect creations
   let sweepResCauses :=
     gSweepRes.events.filterMap (fun e =>
       match e.change with
-      | .rules _ => some e.cause
+      | .rules _ => e.cause?
       | _ => none)
   let gNivRaw := gDmgSetup.applyFrc me default .nivPay #[] (some lh.id) (lastKnownPower := some 2)
   let nivRawCauses :=
     gNivRaw.events.filterMap (fun e =>
       match e.change with
-      | .rules _ => some e.cause
+      | .rules _ => e.cause?
       | _ => none)
   let gNivRes :=
     gDmgSetup.withResolvingContext (some lh.id) me (fun g =>
@@ -2186,7 +2191,7 @@ across all constituent moves, transforms, and continuous-effect creations
   let nivResCauses :=
     gNivRes.events.filterMap (fun e =>
       match e.change with
-      | .rules _ => some e.cause
+      | .rules _ => e.cause?
       | _ => none)
   let gNivLocked :=
     quiet (gDmgSetup.createEffect (.lifeCantChange me))
@@ -2195,13 +2200,13 @@ across all constituent moves, transforms, and continuous-effect creations
   let nivLockedEvents :=
     gNivLocked.events.filterMap (fun e =>
       match e.change with
-      | .rules _ => some e.cause
+      | .rules _ => e.cause?
       | _ => none)
   let gDreadRaw := gDmgSetup.applyFrc me default .dreadUpkeep #[] (some lh.id)
   let dreadRawCauses :=
     gDreadRaw.events.filterMap (fun e =>
       match e.change with
-      | .rules _ => some e.cause
+      | .rules _ => e.cause?
       | _ => none)
   let gDreadRes :=
     gDmgSetup.withResolvingContext (some lh.id) me (fun g =>
@@ -2209,13 +2214,13 @@ across all constituent moves, transforms, and continuous-effect creations
   let dreadResCauses :=
     gDreadRes.events.filterMap (fun e =>
       match e.change with
-      | .rules _ => some e.cause
+      | .rules _ => e.cause?
       | _ => none)
   let gSkrelvRaw := gDmgSetup.applyFrc me default .skrelv #[] (some lh.id)
   let skrelvRawCauses :=
     gSkrelvRaw.events.filterMap (fun e =>
       match e.change with
-      | .rules _ => some e.cause
+      | .rules _ => e.cause?
       | _ => none)
   let gSkrelvRes :=
     gDmgSetup.withResolvingContext (some lh.id) me (fun g =>
@@ -2223,14 +2228,14 @@ across all constituent moves, transforms, and continuous-effect creations
   let skrelvResCauses :=
     gSkrelvRes.events.filterMap (fun e =>
       match e.change with
-      | .rules _ => some e.cause
+      | .rules _ => e.cause?
       | _ => none)
   let gDrainPlanRaw :=
     gDmgSetup.applyTriggeredAbility me (.onVillainYouControlEntersDrainAndPlan 2) (some lh.id)
   let drainPlanRawCauses :=
     gDrainPlanRaw.events.filterMap (fun e =>
       match e.change with
-      | .rules _ => some e.cause
+      | .rules _ => e.cause?
       | _ => none)
   let gDrainPlanRes :=
     gDmgSetup.withResolvingContext (some lh.id) me (fun g =>
@@ -2238,8 +2243,13 @@ across all constituent moves, transforms, and continuous-effect creations
   let drainPlanResCauses :=
     gDrainPlanRes.events.filterMap (fun e =>
       match e.change with
-      | .rules _ => some e.cause
+      | .rules _ => e.cause?
       | _ => none)
+  let isClassifiedNonOneShot (c : EventCause) : Bool :=
+    c.oneShotEffectId?.isNone &&
+      match c with
+      | .oneShotEffect none _ _ => false
+      | _ => true
   mayRevCauses.size == 3 &&
     mayRevCauses.all (· == mayRevCauses[0]!) &&
     nickCauses.size == 4 &&
@@ -2262,9 +2272,11 @@ across all constituent moves, transforms, and continuous-effect creations
     millChooseCauses.size == 3 &&
     millChooseCauses.all (· == millChooseCauses[0]!) &&
     rawDrawCauses.size == 2 &&
-    rawDrawCauses.all (· == .unclassified) &&
+    rawDrawCauses.all isClassifiedNonOneShot &&
+    gRawDraw.nextEffectId == gLibSetup.nextEffectId &&
     rawMillCauses.size == 2 &&
-    rawMillCauses.all (· == .unclassified) &&
+    rawMillCauses.all isClassifiedNonOneShot &&
+    gRawMill.nextEffectId == gLibSetup.nextEffectId &&
     drawLoseCauses.size == 3 &&
     drawLoseCauses.all (· == drawLoseCauses[0]!) &&
     (match drawLoseCauses[0]! with | .oneShotEffect (some _) (some _) (some _) => true | _ => false) &&
@@ -2278,9 +2290,11 @@ across all constituent moves, transforms, and continuous-effect creations
     palantirCauses.size == 4 &&
     palantirCauses.all (· == palantirCauses[0]!) &&
     palantirRawCauses.size == 4 &&
-    palantirRawCauses.all (· == .unclassified) &&
+    palantirRawCauses.all isClassifiedNonOneShot &&
+    gPalantirRawDone.nextEffectId == gPalantirRaw0.nextEffectId &&
     balinRawCauses.size == handSize &&
-    balinRawCauses.all (· == .unclassified) &&
+    balinRawCauses.all isClassifiedNonOneShot &&
+    gBalinRaw.nextEffectId == gBalinRaw0.nextEffectId &&
     balinResCauses.size == handSize * 2 &&
     (balinResCauses.extract 0 handSize).all (· == balinResCauses[0]!) &&
     (balinResCauses.extract handSize (handSize * 2)).all (· == balinResCauses[handSize]!) &&
@@ -2288,12 +2302,14 @@ across all constituent moves, transforms, and continuous-effect creations
     armorEmptyMoves.isEmpty &&
     gArmorEmptyDone.drewFromEmpty me &&
     dmgPermRawCauses.size == 3 &&
-    dmgPermRawCauses.all (· == .unclassified) &&
+    dmgPermRawCauses.all isClassifiedNonOneShot &&
+    gDmgPermRaw.nextEffectId == gDmgSetup.nextEffectId &&
     dmgPermResCauses.size == 3 &&
     dmgPermResCauses.all (· == dmgPermResCauses[0]!) &&
     (match dmgPermResCauses[0]! with | .oneShotEffect (some _) (some _) (some _) => true | _ => false) &&
     dmgPlayerRawCauses.size == 3 &&
-    dmgPlayerRawCauses.all (· == .unclassified) &&
+    dmgPlayerRawCauses.all isClassifiedNonOneShot &&
+    gDmgPlayerRaw.nextEffectId == gDmgSetup.nextEffectId &&
     dmgPlayerResCauses.size == 3 &&
     dmgPlayerResCauses.all (· == dmgPlayerResCauses[0]!) &&
     (match dmgPlayerResCauses[0]! with | .oneShotEffect (some _) (some _) (some _) => true | _ => false) &&
@@ -2301,24 +2317,30 @@ across all constituent moves, transforms, and continuous-effect creations
     sweepResCauses.all (· == sweepResCauses[0]!) &&
     (match sweepResCauses[0]! with | .oneShotEffect (some _) (some _) (some _) => true | _ => false) &&
     nivRawCauses.size == 3 &&
-    nivRawCauses.all (· == .unclassified) &&
+    nivRawCauses[0]! == .costPayment .life me none &&
+    isClassifiedNonOneShot nivRawCauses[1]! &&
+    isClassifiedNonOneShot nivRawCauses[2]! &&
+    gNivRaw.nextEffectId == gDmgSetup.nextEffectId &&
     nivResCauses.size == 3 &&
     nivResCauses[0]! == .costPayment .life me (some lh.id) &&
     nivResCauses[1]! == nivResCauses[2]! &&
     (match nivResCauses[1]! with | .oneShotEffect (some _) (some _) (some _) => true | _ => false) &&
     nivLockedEvents.isEmpty &&
     dreadRawCauses.size == 3 &&
-    dreadRawCauses.all (· == .unclassified) &&
+    dreadRawCauses.all isClassifiedNonOneShot &&
+    gDreadRaw.nextEffectId == gDmgSetup.nextEffectId &&
     dreadResCauses.size == 3 &&
     dreadResCauses.all (· == dreadResCauses[0]!) &&
     (match dreadResCauses[0]! with | .oneShotEffect (some _) (some _) (some _) => true | _ => false) &&
     skrelvRawCauses.size == 2 &&
-    skrelvRawCauses.all (· == .unclassified) &&
+    skrelvRawCauses.all isClassifiedNonOneShot &&
+    gSkrelvRaw.nextEffectId == gDmgSetup.nextEffectId &&
     skrelvResCauses.size == 2 &&
     skrelvResCauses.all (· == skrelvResCauses[0]!) &&
     (match skrelvResCauses[0]! with | .oneShotEffect (some _) (some _) (some _) => true | _ => false) &&
     drainPlanRawCauses.size == 3 &&
-    drainPlanRawCauses.all (· == .unclassified) &&
+    drainPlanRawCauses.all isClassifiedNonOneShot &&
+    gDrainPlanRaw.nextEffectId == gDmgSetup.nextEffectId &&
     drainPlanResCauses.size == 3 &&
     drainPlanResCauses[0]! != drainPlanResCauses[1]! &&
     drainPlanResCauses[1]! == drainPlanResCauses[2]! &&
@@ -2341,18 +2363,14 @@ fresh `EffectId` when recorded. -/
     (EventCause.oneShotEffect none none none).oneShotEffectId? == none &&
     (EventCause.oneShotEffect (some ⟨0⟩) none none).oneShotEffectId? == some ⟨0⟩
 
-/- Phase 3: no rules event in a full demo game has `e.cause == .unclassified`. -/
+/- Phase 3 / Phase 10: every rules event in a full demo game carries a total `EventCause`. -/
 #guard
   let g := Agent.play drawnHands 400
-  let rec causeHasUnclassified : EventCause → Bool
-    | .unclassified => true
-    | .replaced _ orig => causeHasUnclassified orig
-    | _ => false
-  let hasUnclassifiedRules (e : GameEvent) : Bool :=
-    match e.change with
-    | .rules _ => causeHasUnclassified e.cause
-    | .engine _ => false
-  g.over && !g.events.any hasUnclassifiedRules
+  let rulesClassified := g.events.all fun e =>
+    match e with
+    | .rules .. => e.cause?.isSome
+    | .engine .. => e.cause?.isNone
+  g.over && rulesClassified
 
 /- Phase 4: `commitBatch` shares one `BatchId` and one minted `EffectId` across
 all events in the batch, `commitBatchWithCauses` shares one `BatchId` while
@@ -2372,21 +2390,21 @@ outside `withBatch` allocate distinct, strictly increasing `BatchId`s
     (.stateBased .zeroOrLessToughness, .life (.lost opp 1 false))]
   let rules2 := g2.events.filter (fun e => match e.change with | .rules _ => true | _ => false)
   let g3 :=
-    ((quiet g2).record (GameEvent.life g2.turnNumber me 1 true)).record
-      (GameEvent.life g2.turnNumber me 1 true)
+    ((quiet g2).record (GameEvent.life g2.turnNumber me 1 true (cause := testCause))).record
+      (GameEvent.life g2.turnNumber me 1 true (cause := testCause))
   let rules3 := g3.events.filter (fun e => match e.change with | .rules _ => true | _ => false)
   rules1.size == 2 &&
     rules1[0]!.batch == ⟨b0⟩ &&
     rules1[1]!.batch == ⟨b0⟩ &&
-    rules1[0]!.cause == .oneShotEffect (some ⟨e0⟩) none (some me) &&
-    rules1[1]!.cause == .oneShotEffect (some ⟨e0⟩) none (some me) &&
+    rules1[0]!.cause? == some (.oneShotEffect (some ⟨e0⟩) none (some me)) &&
+    rules1[1]!.cause? == some (.oneShotEffect (some ⟨e0⟩) none (some me)) &&
     g1.nextBatchId == b0 + 1 &&
     g1.nextEffectId == e0 + 1 &&
     rules2.size == 2 &&
     rules2[0]!.batch == ⟨b0 + 1⟩ &&
     rules2[1]!.batch == ⟨b0 + 1⟩ &&
-    rules2[0]!.cause == .stateBased .lethalDamage &&
-    rules2[1]!.cause == .stateBased .zeroOrLessToughness &&
+    rules2[0]!.cause? == some (.stateBased .lethalDamage) &&
+    rules2[1]!.cause? == some (.stateBased .zeroOrLessToughness) &&
     g2.nextBatchId == b0 + 2 &&
     rules3.size == 2 &&
     rules3[0]!.batch == ⟨b0 + 2⟩ &&
@@ -2411,11 +2429,11 @@ state-based actions under one `BatchId` per pass (CR 704.3). -/
   let gReg := gFs.combatDamage
   let fsEvents := gReg.events.filter (fun e =>
     match e.change with
-    | .rules _ => e.cause == .turnBased (.dealCombatDamage true)
+    | .rules _ => e.cause? == some (.turnBased (.dealCombatDamage true))
     | _ => false)
   let regEvents := gReg.events.filter (fun e =>
     match e.change with
-    | .rules _ => e.cause == .turnBased (.dealCombatDamage false)
+    | .rules _ => e.cause? == some (.turnBased (.dealCombatDamage false))
     | _ => false)
   let lordDef : CardDef :=
     { (creature "Bear Lord" ManaCost.empty #["Bear"] 2 2) with
@@ -2425,7 +2443,7 @@ state-based actions under one `BatchId` per pass (CR 704.3). -/
     let ld := (g.battlefield.filter (·.name == "Bear Lord"))[0]!
     let b := (g.battlefield.filter (·.name == bear.name))[0]!
     let h := (g.battlefield.filter (·.name == hero.name))[0]!
-    let g := ((g.changeStatus ld.id (.damage 2)).changeStatus h.id (.damage 3)).changeStatus b.id (.damage 2)
+    let g := setMarkedDamage (setMarkedDamage (setMarkedDamage g ld.id 2) h.id 3) b.id 2
     quiet g
   let ldId := (gSba0.battlefield.filter (·.name == "Bear Lord"))[0]!.id
   let hId := (gSba0.battlefield.filter (·.name == hero.name))[0]!.id
@@ -2435,7 +2453,7 @@ state-based actions under one `BatchId` per pass (CR 704.3). -/
     gSbaDone.events.findSome? (fun e =>
       match e.change with
       | .rules (.zone (.moved before ..)) =>
-        if before.id == some oid && e.cause == .stateBased .lethalDamage then some e.batch else none
+        if before.id == some oid && e.cause? == some (.stateBased .lethalDamage) then some e.batch else none
       | _ => none)
   !fsEvents.isEmpty &&
     !regEvents.isEmpty &&
@@ -2624,15 +2642,26 @@ triggers once, while sequential batches fire them once per batch. -/
     (gKarn3.waitingTriggers.filter (·.event == .fra .youPutLoyaltyCounters)).size == 1 &&
     (gKarn3.waitingTriggers.filter (·.event == .youPutPlusOne)).size == 1
 
-def noUnclassifiedRulesEvents (g : Game) : Bool :=
-  let rec causeHasUnclassified : EventCause → Bool
-    | .unclassified => true
-    | .replaced _ orig => causeHasUnclassified orig
-    | _ => false
-  !g.events.any (fun e =>
-    match e.change with
-    | .rules _ => causeHasUnclassified e.cause
-    | .engine _ => false)
+def causeIsStamped : EventCause → Bool
+  | .oneShotEffect none _ _ => false
+  | .replaced _ orig => causeIsStamped orig
+  | _ => true
+
+def allRulesEventsClassified (g : Game) : Bool :=
+  g.events.all fun e =>
+    match e with
+    | .rules .. =>
+      match e.cause? with
+      | some c => causeIsStamped c
+      | none => false
+    | .engine .. => e.cause?.isNone
+
+def noOneShotCauses (g : Game) : Bool :=
+  allRulesEventsClassified g &&
+  g.events.all fun e =>
+    match e.cause? with
+    | some c => c.oneShotEffectId?.isNone
+    | none => true
 
 /- Phase 5.1 isolation: `TurnEvent` and `applyTurnEvent` drive `turnNumber`,
 `activePlayer`, `step`, `isNight`, `extraTurns` (CR 500.7 LIFO), and
@@ -2644,11 +2673,11 @@ def noUnclassifiedRulesEvents (g : Game) : Bool :=
   -- Extra turns LIFO (CR 500.7) and extra combat phase (CR 500.8)
   let g1 :=
     (g0.record (GameEvent.extraTurnAdded g0.turnNumber me .current
-      (cause := some (.oneShotEffect (some ⟨97⟩) none (some me))))).record
+      (cause := .oneShotEffect (some ⟨97⟩) none (some me)))).record
       (GameEvent.extraTurnAdded g0.turnNumber opp .current
-        (cause := some (.oneShotEffect (some ⟨98⟩) none (some me))))
+        (cause := .oneShotEffect (some ⟨98⟩) none (some me)))
   let g2 := g1.record (GameEvent.extraPhaseAdded g1.turnNumber .combat .current
-    (cause := some (.oneShotEffect (some ⟨99⟩) none (some me))))
+    (cause := .oneShotEffect (some ⟨99⟩) none (some me)))
   let g3 := g2.record (GameEvent.turnBegan (g2.turnNumber + 1) opp (extra := true))
   let g4 := (g3.record (GameEvent.stepBegan g3.turnNumber .endOfCombat opp)).record
     (GameEvent.phaseBegan g3.turnNumber .combat)
@@ -2671,9 +2700,9 @@ def noUnclassifiedRulesEvents (g : Game) : Bool :=
     turnEvents.contains (.phaseEnded .beginning) &&
     turnEvents.contains (.phaseBegan .precombatMain) &&
     turnEvents.contains (.stepBegan .precombatMain me) &&
-    noUnclassifiedRulesEvents g1 &&
-    noUnclassifiedRulesEvents g2 &&
-    noUnclassifiedRulesEvents gStep
+    allRulesEventsClassified g1 &&
+    allRulesEventsClassified g2 &&
+    allRulesEventsClassified gStep
 
 /- Phase 5.2 isolation: `CombatEvent` (`attackersDeclared`, `becameAttacking`,
 `blockersDeclared`, `becameBlocked`, `remainedUnblocked`, `damageAssigned`,
@@ -2702,7 +2731,7 @@ attacks" triggers (CR 508.3a). -/
   let bOpp := (g0.battlefield.filter (fun o => o.name == bear.name && o.controlledBy opp))[0]!
   -- 1. 508.4 becameAttacking (targeting planeswalker) does NOT fire attack triggers
   let gBecame := g0.record (GameEvent.becameAttacking g0.turnNumber hMe.asEvent (.planeswalker pwOpp.id)
-    (cause := some (.oneShotEffect (some ⟨77⟩) none (some me))))
+    (cause := .oneShotEffect (some ⟨77⟩) none (some me)))
   let hAfterBecame := gBecame.object! hMe.id
   let becameEvents := gBecame.events.filter (fun e =>
     match e.change with
@@ -2722,7 +2751,7 @@ attacks" triggers (CR 508.3a). -/
     | _ => false)
   -- 3. declareBlockers with bOpp blocking bMe while hMe (made attacking) remains unblocked
   let gBothAtk := (quiet gAtk).record (GameEvent.becameAttacking gAtk.turnNumber (gAtk.object! hMe.id).asEvent (.player opp)
-    (cause := some (.oneShotEffect (some ⟨78⟩) none (some me))))
+    (cause := .oneShotEffect (some ⟨78⟩) none (some me)))
   let gToBlk := quiet { gBothAtk with
     step := .declareBlockers
     pending := .declareBlockers
@@ -2751,8 +2780,7 @@ attacks" triggers (CR 508.3a). -/
   let bAfterRem := gRem.object! bMe.id
   let bOppAfterRem := gRem.object! bOpp.id
   -- 5. Entering attacking (default defendingPlayer vs planeswalker target via Sneak / tokens)
-  let gEnter0 := insertObject (quiet g0) bear me (.graveyard me) none {} (fun id _ =>
-    #[.pushGraveyard id])
+  let gEnter0 := insertObject (quiet g0) bear me (.graveyard me)
   let gyBearId := (gEnter0.objects.filter (fun o => o.name == bear.name && o.zone == .graveyard me))[0]!.id
   let (gEnterDefault, enteredDefId) := gEnter0.putOntoBattlefield gyBearId me (attacking := true)
     (cause := some (.oneShotEffect (some ⟨80⟩) none (some me)))
@@ -2768,11 +2796,11 @@ attacks" triggers (CR 508.3a). -/
     | _ => none)
   let gSneak0 :=
     let g := (quiet g0).record (GameEvent.becameAttacking g0.turnNumber hMe.asEvent (.planeswalker pwOpp.id)
-      (cause := some (.oneShotEffect (some ⟨81⟩) none (some me))))
+      (cause := .oneShotEffect (some ⟨81⟩) none (some me)))
     let g := insertObject g bear me .stack (some me) {}
     let spId := (g.objects.filter (fun o => o.name == bear.name && o.zone == .stack))[0]!.id
     let g := g.putStackEntry me spId
-    { g with step := .declareBlockers }
+    { g with step := .declareBlockers, pending := .none }
   let sneakSpellId := gSneak0.stack.back!.objectId
   let gSneak1 :=
     match gSneak0.paySneak me sneakSpellId hMe.id with
@@ -2805,8 +2833,7 @@ attacks" triggers (CR 508.3a). -/
     | .rules (.combat (.becameAttacking _ tgt)) => some (tgt, e.batch)
     | _ => none)
   -- Grim Reaper / returnFromGyTappedAttackingFinality (CR 508.4): asks before entering when multiple targets exist
-  let gReaper0 := insertObject (quiet g0) bear me (.graveyard me) none {} (fun id _ =>
-    #[.pushGraveyard id])
+  let gReaper0 := insertObject (quiet g0) bear me (.graveyard me)
   let reaperGyId := (gReaper0.objects.filter (fun o => o.name == bear.name && o.zone == .graveyard me))[0]!.id
   let gReaper1 := gReaper0.returnFromGyTappedAttackingFinality me reaperGyId
   let gReaper2 :=
@@ -2830,7 +2857,7 @@ attacks" triggers (CR 508.3a). -/
     gAtk.declaredAsAttackerThisTurn bAfterAtk.id &&
     atkCombatAndTap.size == 2 &&
     atkCombatAndTap[0]!.batch == atkCombatAndTap[1]!.batch &&
-    atkCombatAndTap[0]!.cause == .turnBased .declareAttackers &&
+    atkCombatAndTap[0]!.cause? == some (.turnBased .declareAttackers) &&
     !gAtk.stack.isEmpty &&
     hasBlockersDeclared &&
     hasBecameBlocked &&
@@ -2863,15 +2890,15 @@ attacks" triggers (CR 508.3a). -/
     (gReaper1.object! reaperGyId).zone == .graveyard me &&
     (reaperBear?.map (·.status.attackingTarget)) == some (some (AttackTarget.planeswalker pwOpp.id)) &&
     reaperMovedTarget == some (AttackTarget.planeswalker pwOpp.id) &&
-    noUnclassifiedRulesEvents gBecame &&
-    noUnclassifiedRulesEvents gAtk &&
-    noUnclassifiedRulesEvents gBlk &&
-    noUnclassifiedRulesEvents gRem &&
-    noUnclassifiedRulesEvents gEnterDefault &&
-    noUnclassifiedRulesEvents gSneak1 &&
-    noUnclassifiedRulesEvents gTokPw &&
-    noUnclassifiedRulesEvents gAnduril2 &&
-    noUnclassifiedRulesEvents gReaper2
+    allRulesEventsClassified gBecame &&
+    allRulesEventsClassified gAtk &&
+    allRulesEventsClassified gBlk &&
+    allRulesEventsClassified gRem &&
+    allRulesEventsClassified gEnterDefault &&
+    allRulesEventsClassified gSneak1 &&
+    allRulesEventsClassified gTokPw &&
+    allRulesEventsClassified gAnduril2 &&
+    allRulesEventsClassified gReaper2
 
 /- Phase 5.3 isolation: `CastEvent` (`proposed`, `announced`, `targeted`,
 `spellCast`, `abilityActivated`), `TriggerQueueEvent.putOnStack`,
@@ -2889,7 +2916,7 @@ copies `StackEntry` decisions (`targets`, `targetsAnnounced`, `chosenMode`,
   let landMovedEvents := gLand1.events.filter (fun e =>
     match e.change with
     | .rules (.zone (.moved _ _ (.outside _) (.outside _) .playLand (some p) _ _)) =>
-      p == me && e.cause == .specialAction .playLand me
+      p == me && e.cause? == some (.specialAction .playLand me)
     | _ => false)
   -- 2. CastEvent milestones via applyCastEvent
   let testModalSpell : CardDef :=
@@ -2900,7 +2927,8 @@ copies `StackEntry` decisions (`targets`, `targetsAnnounced`, `chosenMode`,
       kicker := some (ManaCost.ofGeneric 1)
       giftTreasure := true
       spellModes := #[.dealDamage 2, .gainLife 2] }
-  let gCast0 := insertObject (quiet afterDraw) testModalSpell me .stack (some me) {} (fun _ _ => #[])
+  let gCast0 := insertObject (quiet afterDraw) testModalSpell me .stack (some me)
+    (adventurerCard := some bear)
   let spId := (gCast0.objects.filter (·.name == "Test Modal X Bolt"))[0]!.id
   let gCast0 := gCast0.putStackEntry me spId
   let gCast1 := gCast0.record (GameEvent.proposed gCast0.turnNumber spId me (.graveyard me) (.alternative "flashback"))
@@ -2919,7 +2947,6 @@ copies `StackEntry` decisions (`targets`, `targetsAnnounced`, `chosenMode`,
   let gCast4 := gCast4.setStackEntryLastKnown spId
     (lastKnownPower := some 5) (lastKnownToughness := some 6)
   let gCast4 := (gCast4.changeObjects spId #[
-    .adventurerCard (some bear),
     .reflexiveResolution (some (.draw (.fixed 2) .you)),
     .fraCauseId (some ⟨71⟩),
     .fraCauseController (some opp),
@@ -2940,8 +2967,8 @@ copies `StackEntry` decisions (`targets`, `targetsAnnounced`, `chosenMode`,
       (cause := some lokiCause)
   let gCryoLoki := gCryoLoki0.becomeCast me (gCryoLoki0.object! spId)
   let copiedEvents := gCryoLoki.events.filterMap (fun e =>
-    match e.change with
-    | .rules (.stackObject (.copied orig copy ctrl)) => some (orig, copy, ctrl, e.cause)
+    match e with
+    | .rules _ (.stackObject (.copied orig copy ctrl)) c _ => some (orig, copy, ctrl, c)
     | _ => none)
   -- 4. TriggerQueueEvent.putOnStack and StackObjectEvent.removedOnResolution (CR 608.2b)
   let gTrig0 := addPermanent (quiet afterDraw) bear opp opp
@@ -2953,7 +2980,7 @@ copies `StackEntry` decisions (`targets`, `targetsAnnounced`, `chosenMode`,
     match e.change with
     | .rules (.triggerQueue (.putOnStack stackId _ ctrl)) =>
       ctrl == me && gTrig1.stack.any (·.objectId == stackId) &&
-        e.cause == .gameRule .triggeredAbility
+        e.cause? == some (.gameRule .triggeredAbility)
     | _ => false)
   let (gTrig2, _) := (quiet gTrig1).move oppBear.id (.graveyard opp) (verb := some .destroy)
     (cause := some (.oneShotEffect (some ⟨89⟩) none (some me)))
@@ -2961,7 +2988,7 @@ copies `StackEntry` decisions (`targets`, `targetsAnnounced`, `chosenMode`,
   let hasRemovedOnResolution := gTrig3.events.any (fun e =>
     match e.change with
     | .rules (.stackObject (.removedOnResolution _)) =>
-      e.cause == .gameRule .abilityFinishedResolving
+      e.cause? == some (.gameRule .abilityFinishedResolving)
     | _ => false)
   -- Spell fizzle on resolution records .instantOrSorceryFinishedResolving cause
   let gFizzle0 := addPermanent (quiet afterDraw) bear opp opp
@@ -2975,7 +3002,7 @@ copies `StackEntry` decisions (`targets`, `targetsAnnounced`, `chosenMode`,
   let hasSpellRemovedOnResolution := gFizzle2.events.any (fun e =>
     match e.change with
     | .rules (.stackObject (.removedOnResolution _)) =>
-      e.cause == .gameRule .instantOrSorceryFinishedResolving
+      e.cause? == some (.gameRule .instantOrSorceryFinishedResolving)
     | _ => false)
   gLand1.loggedLandsPlayed me == 1 &&
     landMovedEvents.size == 1 &&
@@ -3026,13 +3053,13 @@ copies `StackEntry` decisions (`targets`, `targetsAnnounced`, `chosenMode`,
     hasTrigPutOnStack &&
     hasRemovedOnResolution &&
     hasSpellRemovedOnResolution &&
-    noUnclassifiedRulesEvents gLand1 &&
-    noUnclassifiedRulesEvents gCast4 &&
-    noUnclassifiedRulesEvents gCopy1 &&
-    noUnclassifiedRulesEvents gCryoLoki &&
-    noUnclassifiedRulesEvents gTrig1 &&
-    noUnclassifiedRulesEvents gTrig3 &&
-    noUnclassifiedRulesEvents gFizzle2
+    allRulesEventsClassified gLand1 &&
+    allRulesEventsClassified gCast4 &&
+    allRulesEventsClassified gCopy1 &&
+    allRulesEventsClassified gCryoLoki &&
+    allRulesEventsClassified gTrig1 &&
+    allRulesEventsClassified gTrig3 &&
+    allRulesEventsClassified gFizzle2
 
 /- Phase 6: `matchTriggers (pre : GameSnapshot) (post : Game) (batch : Array GameEvent)`
 evaluates all triggers at outermost batch close, covers CR 603.10a–f look-back
@@ -3042,19 +3069,19 @@ triggers from the event log instead of `Status.firedOnceEachTurn`. -/
 #guard
   -- 1. CR 603.10a–f look-back classification on `GameEvent.isLookBack`
   let snapA : EventObject := { id := some ⟨1⟩, owner := me, controller := some me, types := #[.creature] }
-  let evLtb := GameEvent.moved 1 snapA .battlefield (.graveyard me)
-  let evSac := GameEvent.moved 1 snapA .battlefield (.graveyard me) (verb := some .sacrifice)
-  let evLeaveGy := GameEvent.moved 1 snapA (.graveyard me) .exile
-  let evBounce := GameEvent.moved 1 snapA .battlefield (.hand me)
-  let evTuck := GameEvent.moved 1 snapA .exile (.library me)
-  let evPhaseOut := GameEvent.phasedOut 1 snapA false
-  let evPhaseIn := GameEvent.phasedIn 1 snapA false
-  let evUnattach := GameEvent.unattached 1 snapA ⟨2⟩
-  let evControl := GameEvent.control 1 ⟨1⟩ me opp
-  let evCounter := GameEvent.moved 1 snapA .stack (.graveyard me) (verb := some .counter)
+  let evLtb := GameEvent.moved 1 snapA .battlefield (.graveyard me) (cause := testCause)
+  let evSac := GameEvent.moved 1 snapA .battlefield (.graveyard me) (verb := some .sacrifice) (cause := testCause)
+  let evLeaveGy := GameEvent.moved 1 snapA (.graveyard me) .exile (cause := testCause)
+  let evBounce := GameEvent.moved 1 snapA .battlefield (.hand me) (cause := testCause)
+  let evTuck := GameEvent.moved 1 snapA .exile (.library me) (cause := testCause)
+  let evPhaseOut := GameEvent.phasedOut 1 snapA false (cause := testCause)
+  let evPhaseIn := GameEvent.phasedIn 1 snapA false (cause := testCause)
+  let evUnattach := GameEvent.unattached 1 snapA ⟨2⟩ (cause := testCause)
+  let evControl := GameEvent.control 1 ⟨1⟩ me opp (cause := testCause)
+  let evCounter := GameEvent.moved 1 snapA .stack (.graveyard me) (verb := some .counter) (cause := testCause)
   let evPlayerLost := GameEvent.playerLost 1 opp
-  let evEtb := GameEvent.moved 1 snapA (.hand me) .battlefield
-  let evDiscard := GameEvent.moved 1 snapA (.hand me) (.graveyard me) (discarded := true)
+  let evEtb := GameEvent.moved 1 snapA (.hand me) .battlefield (cause := testCause)
+  let evDiscard := GameEvent.moved 1 snapA (.hand me) (.graveyard me) (discarded := true) (cause := testCause)
   let lookBackFlagsOk :=
     evLtb.isLookBack &&
     evSac.isLookBack &&
@@ -3092,9 +3119,9 @@ triggers from the event log instead of `Status.firedOnceEachTurn`. -/
       g.moveToOwnerGraveyard w2 "w2 dies" (verb := some .destroy) (cause := some simCause)
   let simTrigSources := gSim1.waitingTriggers.map (·.source.id)
   let simTrigEvents := gSim1.events.filterMap (fun e =>
-    match e.change with
-    | .rules (.triggerQueue (.triggered src ctrl ab origin)) =>
-      some (src.id, ctrl, ab, origin, e.cause, e.batch)
+    match e with
+    | .rules _ (.triggerQueue (.triggered src ctrl ab origin)) c b =>
+      some (src.id, ctrl, ab, origin, c, b)
     | _ => none)
   let simDeathsOk :=
     simTrigSources.size == 2 &&
@@ -3228,11 +3255,11 @@ triggers from the event log instead of `Status.firedOnceEachTurn`. -/
     onceEachTurnOk &&
     hulkBatchOk &&
     dmgBatchCopiesOk &&
-    noUnclassifiedRulesEvents gSim1 &&
-    noUnclassifiedRulesEvents gPhaseOnly &&
-    noUnclassifiedRulesEvents gPhaseAndDie &&
-    noUnclassifiedRulesEvents gHulkBatch &&
-    noUnclassifiedRulesEvents gDmgBatch
+    allRulesEventsClassified gSim1 &&
+    allRulesEventsClassified gPhaseOnly &&
+    allRulesEventsClassified gPhaseAndDie &&
+    allRulesEventsClassified gHulkBatch &&
+    allRulesEventsClassified gDmgBatch
 
 /- Phase 7 isolation (CR 614.5): each `ReplacementId` in `applied` applies at
 most once to an event or any modified event that replaced it, even when
@@ -3268,9 +3295,9 @@ modification or share a `ReplacementId`. -/
     | _ => false)
   (gTerm2.object! bTerm.id).status.plusOnePlusOne == 6 &&
     termCounterEvents.size == 1 &&
-    termCounterEvents[0]!.cause ==
-      .replaced idMulCtr (.replaced idAddCtr baseCause) &&
-    noUnclassifiedRulesEvents gTerm2
+    termCounterEvents[0]!.cause? ==
+      some (.replaced idMulCtr (.replaced idAddCtr baseCause)) &&
+    allRulesEventsClassified gTerm2
 
 /- Phase 7 isolation (CR 614.6): a replaced event never happens (is never
 recorded in `g.events`), so abilities watching the replaced event do not
@@ -3368,7 +3395,7 @@ trigger, and the modified event carries `EventCause.replaced`. -/
   !finHasGyMove &&
     gFin2.waitingTriggers.isEmpty &&
     finExileMoves.size == 1 &&
-    finExileMoves[0]!.cause == .replaced finalityId finDeathCause &&
+    finExileMoves[0]!.cause? == some (.replaced finalityId finDeathCause) &&
     gShd2.events.all (fun e =>
       match e.change with
       | .rules (.zone (.moved ..)) => false
@@ -3376,21 +3403,21 @@ trigger, and the modified event carries `EventCause.replaced`. -/
     (gShd2.object! shdBear0.id).zone == .battlefield &&
     (gShd2.object! shdBear0.id).status.shield == 0 &&
     shdRemovedEvents.size == 1 &&
-    shdRemovedEvents[0]!.cause == .replaced shdId shdDestroyCause &&
+    shdRemovedEvents[0]!.cause? == some (.replaced shdId shdDestroyCause) &&
     stunUntapEvents.isEmpty &&
     (gStun2.object! stunBear0.id).status.tapped &&
     (gStun2.object! stunBear0.id).status.stun == 0 &&
     stunRemovedEvents.size == 1 &&
-    stunRemovedEvents[0]!.cause == .replaced stunId (.turnBased .untapAll) &&
+    stunRemovedEvents[0]!.cause? == some (.replaced stunId (.turnBased .untapAll)) &&
     drwMoves.size == 2 &&
-    drwMoves.all (fun e => e.cause == .replaced drwRepId drwCause) &&
+    drwMoves.all (fun e => e.cause? == some (.replaced drwRepId drwCause)) &&
     prevDamageEvents.isEmpty &&
     (gPrev2.object! prevBear.id).status.damage == 0 &&
-    noUnclassifiedRulesEvents gFin2 &&
-    noUnclassifiedRulesEvents gShd2 &&
-    noUnclassifiedRulesEvents gStun2 &&
-    noUnclassifiedRulesEvents gDrw1 &&
-    noUnclassifiedRulesEvents gPrev2
+    allRulesEventsClassified gFin2 &&
+    allRulesEventsClassified gShd2 &&
+    allRulesEventsClassified gStun2 &&
+    allRulesEventsClassified gDrw1 &&
+    allRulesEventsClassified gPrev2
 
 /- Phase 7 isolation (CR 616.1a–e): priority ordering (`self` -> `control` ->
 `copy` -> `backFaceUp` -> `other`) applies in strict tier order even when
@@ -3406,7 +3433,7 @@ trigger, and the modified event carries `EventCause.replaced`. -/
   let copyTemplateDef : CardDef :=
     { hero with name := "Template Hero", otherFace := some dfcBackFace }
   let gTier0 :=
-    insertObject (quiet afterDraw) dfcFrontDef opp (.hand opp) none {} (fun id _ => #[.pushHand id])
+    insertObject (quiet afterDraw) dfcFrontDef opp (.hand opp)
   let enterCardId :=
     ((gTier0.player opp).hand.filter (fun id => (gTier0.object! id).name == "Front Face Bear"))[0]!
   let idSelf : ReplacementId := { kind := .entersTappedSelf, object := some enterCardId }
@@ -3452,7 +3479,7 @@ trigger, and the modified event carries `EventCause.replaced`. -/
           (.replaced idCopy
             (.replaced idControl
               (.replaced idSelf etbBaseCause))))) &&
-    noUnclassifiedRulesEvents gTier2
+    allRulesEventsClassified gTier2
 
 /- Phase 7 isolation (CR 616.1e): player-chosen ordering within tier `616.1e`
 (`g.replacementOrder` and `Pending.chooseReplacement` / `Action.chooseReplacement`),
@@ -3525,7 +3552,7 @@ and Arwen + Doc Samson ETB counter replacement. -/
   let effBefore := gOrd1.nextEffectId
   let wrappedNonResolving := gOrd1.wrapReplacedCause idAddDmg none (some me)
   let nonResolvingCauseOk :=
-    wrappedNonResolving == some (.replaced idAddDmg .unclassified) &&
+    wrappedNonResolving == some (.replaced idAddDmg (.gameRule .continuousEffect)) &&
     gOrd1.nextEffectId == effBefore
   -- `createAndMarkTokensAttacking` with a token doubler + token-kind replacement applies each once.
   let specDoubleTok : ReplacementSpec :=
@@ -3564,7 +3591,7 @@ and Arwen + Doc Samson ETB counter replacement. -/
     (gShdFrom.object! shdVictim.id).status.shield == 0 &&
     (gShdFrom.object! shdVictim.id).status.damage == 0 &&
     shdFromRemoved.size == 1 &&
-    shdFromRemoved[0]!.cause == .replaced shdRepId shdDmgCause
+    shdFromRemoved[0]!.cause? == some (.replaced shdRepId shdDmgCause)
   -- Arwen (`othersEnterWithPlusOneEqualToughness := true`) + Doc Samson (`.extraCounterOnPermanents`) ETB counter replacement.
   let samsonDef : CardDef :=
     { bear with name := "Doc Samson Test", staticAbilities := #[.extraCounterOnPermanents] }
@@ -3573,7 +3600,7 @@ and Arwen + Doc Samson ETB counter replacement. -/
   let gArw0 :=
     insertObject
       (addPermanent (addPermanent (quiet afterDraw) samsonDef me me) arwenDef me me)
-      { bear with name := "Newcomer Bear" } me (.hand me) none {} (fun id _ => #[.pushHand id])
+      { bear with name := "Newcomer Bear" } me (.hand me)
   let newcomerCardId :=
     ((gArw0.player me).hand.filter (fun id => (gArw0.object! id).name == "Newcomer Bear"))[0]!
   let arwCause : EventCause := .oneShotEffect (some ⟨717⟩) none (some me)
@@ -3643,7 +3670,7 @@ and Arwen + Doc Samson ETB counter replacement. -/
   -- SBA sweep: Creature 1 has lethal damage + Finality + Head of the Hunt; Creature 2 has lethal damage.
   -- Choosing Finality on Creature 1 queues no trigger, and Creature 2 still dies in the same SBA batch.
   let gSba0 :=
-    (gSim0.changeStatus simC1.id (.damage 2)).changeStatus simC2.id (.damage 2)
+    setMarkedDamage (setMarkedDamage gSim0 simC1.id 2) simC2.id 2
   let gSbaPaused := (quiet gSba0).checkSBA
   let gSbaAfter1 :=
     (gSbaPaused.apply me (.chooseReplacement c1FinId)).toOption.getD gSbaPaused
@@ -3692,8 +3719,7 @@ and Arwen + Doc Samson ETB counter replacement. -/
     fightBatches.size == 2 && fightBatches[0]! == fightBatches[1]!
   -- `finishEnteringAttackCard` stops on a `.counter` mod that opens `.chooseReplacement` before running `afterPermanentEnters`.
   let gEntAtk0 :=
-    insertObject gOrd0 { bear with name := "Entering Striker" } me (.hand me) none {}
-      (fun id _ => #[.pushHand id])
+    insertObject gOrd0 { bear with name := "Entering Striker" } me (.hand me)
   let strikerHandId :=
     ((gEntAtk0.player me).hand.filter (fun id => (gEntAtk0.object! id).name == "Entering Striker"))[0]!
   let (gEntAtk0, strikerId) :=
@@ -3754,8 +3780,8 @@ and Arwen + Doc Samson ETB counter replacement. -/
   let oddEvenDef2 : CardDef := { bear with name := "Parity Striker 2", asEntersChooseOddEven := true }
   let gFraEnt0 :=
     insertObject
-      (insertObject gOrd0 oddEvenDef1 me (.hand me) none {} (fun id _ => #[.pushHand id]))
-      oddEvenDef2 me (.hand me) none {} (fun id _ => #[.pushHand id])
+      (insertObject gOrd0 oddEvenDef1 me (.hand me))
+      oddEvenDef2 me (.hand me)
   let pCard1 := ((gFraEnt0.player me).hand.filter (fun id => (gFraEnt0.object! id).name == "Parity Striker 1"))[0]!
   let pCard2 := ((gFraEnt0.player me).hand.filter (fun id => (gFraEnt0.object! id).name == "Parity Striker 2"))[0]!
   let item1 : EnteringAttackItem :=
@@ -3854,21 +3880,21 @@ and Arwen + Doc Samson ETB counter replacement. -/
     (gLifeMulFirst.player me).life - (gOrd0.player me).life == 8 &&
     (gActiveMe.selectNextReplacement #[candOpp, candMe] #[]).map (·.id) == some idLifeMe &&
     (gActiveOpp.selectNextReplacement #[candOpp, candMe] #[]).map (·.id) == some idLifeOpp &&
-    noUnclassifiedRulesEvents gDmgAddFirst &&
-    noUnclassifiedRulesEvents gDmgMulFirst &&
-    noUnclassifiedRulesEvents gFinChoseHead &&
-    noUnclassifiedRulesEvents gFinChoseExile &&
-    noUnclassifiedRulesEvents gShdFrom &&
-    noUnclassifiedRulesEvents gArw1 &&
-    noUnclassifiedRulesEvents gSimDone &&
-    noUnclassifiedRulesEvents gSbaDone &&
-    noUnclassifiedRulesEvents gFightDone &&
-    noUnclassifiedRulesEvents gEntAtkDone &&
-    noUnclassifiedRulesEvents gDrwSubDone &&
-    noUnclassifiedRulesEvents gFraEntDone &&
-    noUnclassifiedRulesEvents gCbtDone &&
-    noUnclassifiedRulesEvents gLifeAddFirst &&
-    noUnclassifiedRulesEvents gLifeMulFirst
+    allRulesEventsClassified gDmgAddFirst &&
+    allRulesEventsClassified gDmgMulFirst &&
+    allRulesEventsClassified gFinChoseHead &&
+    allRulesEventsClassified gFinChoseExile &&
+    allRulesEventsClassified gShdFrom &&
+    allRulesEventsClassified gArw1 &&
+    allRulesEventsClassified gSimDone &&
+    allRulesEventsClassified gSbaDone &&
+    allRulesEventsClassified gFightDone &&
+    allRulesEventsClassified gEntAtkDone &&
+    allRulesEventsClassified gDrwSubDone &&
+    allRulesEventsClassified gFraEntDone &&
+    allRulesEventsClassified gCbtDone &&
+    allRulesEventsClassified gLifeAddFirst &&
+    allRulesEventsClassified gLifeMulFirst
 
 /- Phase 8 isolation (CR 611 / 613):
 1. `ContinuousEffectEvent` (`created` / `expired`) and `ContinuousEffectSpec`
@@ -3913,11 +3939,11 @@ and Arwen + Doc Samson ETB counter replacement. -/
     bAfter.status.counters == #[(.plusOnePlusOne, 1)]
   -- Delayed trigger `.endStepSacrifice` (CR 603.7): fires at `.end` step and removes itself (`isOneShot == true`).
   let gDelayed0 :=
-    { (g0.change (.pushDelayedTrigger {
+    { (g0.registerDelayedTrigger {
         controller := me
         source := some h
         kind := .endStepSacrifice b.id
-        cause := cause8 })) with step := .postcombatMain }
+        cause := cause8 }) with step := .postcombatMain }
   let gDelayed1 := (quiet gDelayed0).beginStep .end
   let delayedOk :=
     !gDelayed1.delayedTriggers.any (·.kind == .endStepSacrifice b.id) &&
@@ -3936,7 +3962,7 @@ and Arwen + Doc Samson ETB counter replacement. -/
     (gPlEv.player me).citysBlessing &&
     !gPlEv.isNight
   -- ContinuationFrame stack (`g.continuations`): nested frame isolates scratch state and restores outer frame on pop.
-  let gCont0 := g0.change (.continuation (.notedCountThisWay 7))
+  let gCont0 := (g0.change (.pushContinuationFrame {})).change (.continuation (.notedCountThisWay 7))
   let gContPushed := (gCont0.change (.pushContinuationFrame {})).change (.continuation (.notedCountThisWay 99))
   let gContInner :=
     if gContPushed.notedCountThisWay == 99 then gContPushed.change .popContinuationFrame
@@ -3950,9 +3976,9 @@ and Arwen + Doc Samson ETB counter replacement. -/
     delayedOk &&
     plEvOk &&
     contOk &&
-    noUnclassifiedRulesEvents gLayers &&
-    noUnclassifiedRulesEvents gDelayed1 &&
-    noUnclassifiedRulesEvents gPlEv
+    allRulesEventsClassified gLayers &&
+    allRulesEventsClassified gDelayed1 &&
+    allRulesEventsClassified gPlEv
 
 /- Extra-turn cause alignment when a lost player's extra turn is skipped
 (CR 500.7 / 800.4k): `pendingExtraCauses` pops alongside `extraTurns` so the
@@ -3964,15 +3990,15 @@ surviving player's extra turn inherits its own cause, not the skipped player's. 
   let causeMe2 : EventCause := .oneShotEffect (some ⟨902⟩) none (some me)
   let causeOpp : EventCause := .oneShotEffect (some ⟨903⟩) none (some opp)
   let gQueued :=
-    (((g0.record (GameEvent.extraTurnAdded g0.turnNumber me .current (cause := some causeMe1))).record
-        (GameEvent.extraTurnAdded g0.turnNumber me .current (cause := some causeMe2))).record
-        (GameEvent.extraTurnAdded g0.turnNumber opp .current (cause := some causeOpp))).record
+    (((g0.record (GameEvent.extraTurnAdded g0.turnNumber me .current (cause := causeMe1))).record
+        (GameEvent.extraTurnAdded g0.turnNumber me .current (cause := causeMe2))).record
+        (GameEvent.extraTurnAdded g0.turnNumber opp .current (cause := causeOpp))).record
         (GameEvent.playerLost g0.turnNumber opp .effect (cause := some causeMe1))
   let gExtra1 := gQueued.startNextTurn
   let powerUpsCause? (g : Game) : Option EventCause :=
     g.events.findSomeRev? fun e =>
       match e.change with
-      | .rules (.continuousEffect (.created _ .powerUpsForbiddenThisTurn)) => some e.cause
+      | .rules (.continuousEffect (.created _ .powerUpsForbiddenThisTurn)) => e.cause?
       | _ => none
   let gExtra2 := (gExtra1.clearEOT).startNextTurn
   gQueued.extraTurns == #[opp, me, me] &&
@@ -3982,7 +4008,7 @@ surviving player's extra turn inherits its own cause, not the skipped player's. 
     gExtra2.activePlayer == me &&
     gExtra2.extraTurns.isEmpty &&
     powerUpsCause? gExtra2 == some causeMe1 &&
-    noUnclassifiedRulesEvents gExtra2
+    allRulesEventsClassified gExtra2
 
 /- `.untilEndOfNextTurnOf` play permissions and control effects (CR 514.2 /
 611.2a): `.turnBased .cleanupClear` events emitted during the creation turn's
@@ -3999,7 +4025,7 @@ count as a turn of `p` beginning, so both last until cleanup of `p`'s next turn.
     (((g1.changeControl (g1.object! b.id) me (turnEndsLeft := 2)).createEffect
         (.playPermission exId { player := me } (turnEnds := 2)) (cause := some causeNext)).createEffect
         (.keywordsUntilEot b.id Keyword.haste) (cause := some causeNext)).record
-        (GameEvent.damageMarked g1.turnNumber b.id 1 (cause := some causeNext))
+        (GameEvent.damageMarked g1.turnNumber b.id 1 (cause := causeNext))
   let hasPlayPerm (g : Game) : Bool :=
     g.activeEffects.any fun (_, s) =>
       match s with
@@ -4007,7 +4033,7 @@ count as a turn of `p` beginning, so both last until cleanup of `p`'s next turn.
       | _ => false
   -- Turn 1 cleanup (emits `.cleanupClear` events from haste expiration and marked damage)
   let gClean1 := gInit.clearEOT
-  let hadCleanupClear := gClean1.events.any (fun e => e.cause == .turnBased .cleanupClear)
+  let hadCleanupClear := gClean1.events.any (fun e => e.cause? == some (.turnBased .cleanupClear))
   -- Second CR 514.3a cleanup in Turn 1
   let gClean1b := gClean1.clearEOT
   -- Advance to `opp`'s turn and run `opp`'s cleanup
@@ -4098,7 +4124,7 @@ count as a turn of `p` beginning, so both last until cleanup of `p`'s next turn.
     gFoodThenTreasure.types (gFoodThenTreasure.object! b.id) == #[.artifact] &&
     gFoodThenTreasure.subtypes (gFoodThenTreasure.object! b.id) == #[.food, .treasure] &&
     gTreasureThenFood.subtypes (gTreasureThenFood.object! b.id) == #[.food] &&
-    noUnclassifiedRulesEvents gSetOverride
+    allRulesEventsClassified gSetOverride
 
 /- Layer 6 CR 613.1f / 613.7c / 613.7e keyword-counter and ability-loss ordering:
 1. Keyword counters (including `flying`, `shadow`, `deathtouch`, `lifelink`,
@@ -4159,7 +4185,7 @@ count as a turn of `p` beginning, so both last until cleanup of `p`'s next turn.
   -- Counter before attachment is stripped; counter after attachment applies.
   let gBeforeAura :=
     ((g0.recordPutCounters w.id .deathtouch 1 (some me) (cause := some c1)).record
-      (GameEvent.attached g0.turnNumber aura.id w.id (cause := some c2))).recordPutCounters
+      (GameEvent.attached g0.turnNumber aura.id w.id (cause := c2))).recordPutCounters
       w.id .lifelink 1 (some me) (cause := some c3)
   let wAura := gBeforeAura.object! w.id
   let auraOk :=
@@ -4168,8 +4194,8 @@ count as a turn of `p` beginning, so both last until cleanup of `p`'s next turn.
     gBeforeAura.hasLifelink wAura &&
     gBeforeAura.effectiveKeywords wAura == Keyword.lifelink
   strippedOk && refreshedOk && auraOk &&
-    noUnclassifiedRulesEvents gRefreshed &&
-    noUnclassifiedRulesEvents gBeforeAura
+    allRulesEventsClassified gRefreshed &&
+    allRulesEventsClassified gBeforeAura
 
 /- Layer 6 CR 613.1f / 613.7 timestamp ordering for `triggeredAbilities`,
 `matchTriggers` (including subtype-enter and combat-damage token arms),
@@ -4207,7 +4233,7 @@ count as a turn of `p` beginning, so both last until cleanup of `p`'s next turn.
   let striker := (gT0.battlefield.filter (·.name == "DwarfStriker"))[0]!
   let kitesail := (gT0.battlefield.filter (·.name == "Test Kitesail"))[0]!
   let gEquippedAndGranted :=
-    ((gT0.record (GameEvent.attached gT0.turnNumber kitesail.id cap.id (cause := some c1))).createEffect
+    ((gT0.record (GameEvent.attached gT0.turnNumber kitesail.id cap.id (cause := c1))).createEffect
       (.grantedTriggered cap.id preGrantAb false) (cause := some c1)).createEffect
       (.grantedTriggered cap.id (.onEnterDraw 1) true) (cause := some c1)
   let beforeTriggerCount := (gEquippedAndGranted.triggeredAbilities (gEquippedAndGranted.object! cap.id)).size
@@ -4225,17 +4251,17 @@ count as a turn of `p` beginning, so both last until cleanup of `p`'s next turn.
   -- Striker dealing combat damage to player or battle while DwarfCaptain lost abilities queues 0 triggers
   let strikeSnap := (gCapLost.object! striker.id).asEvent
   let gDmgPlayerLost :=
-    gCapLost.record (GameEvent.damagedPlayer gCapLost.turnNumber strikeSnap ⟨1⟩ 2 true (cause := some c3))
+    gCapLost.record (GameEvent.damagedPlayer gCapLost.turnNumber strikeSnap ⟨1⟩ 2 true (cause := c3))
   let battleSnap : EventObject := { name := "TestBattle", owner := ⟨1⟩, zone := .battlefield }
   let gDmgBattleLost :=
     gCapLost.record
-      { turn := gCapLost.turnNumber
-        cause := c3
-        change := .rules (.damage (.dealt #[{ source := strikeSnap, recipient := .battle battleSnap, amount := 2, combat := true }])) }
+      (GameEvent.rules gCapLost.turnNumber
+        (.damage (.dealt #[{ source := strikeSnap, recipient := .battle battleSnap, amount := 2, combat := true }]))
+        c3)
   -- Post-removal grant and post-removal re-attachment ARE retained and DO fire
   let gPostGrant :=
     (gCapLost.createEffect (.grantedTriggered cap.id postGrantAb true) (cause := some c3)).record
-      (GameEvent.attached gCapLost.turnNumber kitesail.id cap.id (cause := some c4))
+      (GameEvent.attached gCapLost.turnNumber kitesail.id cap.id (cause := c4))
   let postTriggers := gPostGrant.triggeredAbilities (gPostGrant.object! cap.id)
   let gAtkPost :=
     gPostGrant.record
@@ -4273,17 +4299,17 @@ count as a turn of `p` beginning, so both last until cleanup of `p`'s next turn.
   let ring := (gEq0.battlefield.filter (·.name == "Test Ring"))[0]!
   let precious := (gEq0.battlefield.filter (·.name == "Test Precious"))[0]!
   let gRingPre :=
-    gEq0.record (GameEvent.attached gEq0.turnNumber ring.id host.id (cause := some c1))
+    gEq0.record (GameEvent.attached gEq0.turnNumber ring.id host.id (cause := c1))
   let gRingLost :=
     gRingPre.createEffect (.losesAbilitiesUntilEot host.id) (cause := some c2)
   let gRingRe :=
-    gRingLost.record (GameEvent.attached gRingLost.turnNumber ring.id host.id (cause := some c3))
+    gRingLost.record (GameEvent.attached gRingLost.turnNumber ring.id host.id (cause := c3))
   let gPrecPre :=
-    gEq0.record (GameEvent.attached gEq0.turnNumber precious.id host.id (cause := some c1))
+    gEq0.record (GameEvent.attached gEq0.turnNumber precious.id host.id (cause := c1))
   let gPrecLost :=
     gPrecPre.createEffect (.losesAbilitiesUntilEot host.id) (cause := some c2)
   let gPrecRe :=
-    gPrecLost.record (GameEvent.attached gPrecLost.turnNumber precious.id host.id (cause := some c3))
+    gPrecLost.record (GameEvent.attached gPrecLost.turnNumber precious.id host.id (cause := c3))
   let unblockableOk :=
     gRingPre.hasCantBeBlocked (gRingPre.object! host.id) &&
     gRingPre.hasHexproof (gRingPre.object! host.id) &&
@@ -4311,11 +4337,11 @@ count as a turn of `p` beginning, so both last until cleanup of `p`'s next turn.
   let mage := (gPw0.battlefield.filter (·.name == "ProwessMage"))[0]!
   let staff := (gPw0.battlefield.filter (·.name == "Test Staff"))[0]!
   let gPwPre :=
-    gPw0.record (GameEvent.attached gPw0.turnNumber staff.id mage.id (cause := some c1))
+    gPw0.record (GameEvent.attached gPw0.turnNumber staff.id mage.id (cause := c1))
   let gPwLost :=
     gPwPre.createEffect (.losesAbilitiesUntilEot mage.id) (cause := some c2)
   let gPwRe :=
-    gPwLost.record (GameEvent.attached gPwLost.turnNumber staff.id mage.id (cause := some c3))
+    gPwLost.record (GameEvent.attached gPwLost.turnNumber staff.id mage.id (cause := c3))
   let prowessOk :=
     (gPwPre.prowessTriggers (gPwPre.object! mage.id)).size == 2 &&
     (gPwLost.prowessTriggers (gPwLost.object! mage.id)).isEmpty &&
@@ -4323,10 +4349,10 @@ count as a turn of `p` beginning, so both last until cleanup of `p`'s next turn.
     (gPwRe.prowessTriggers (gPwRe.object! mage.id)).size == 1 &&
     (gPwRe.effectiveKeywords (gPwRe.object! mage.id)).prowess
   triggersOk && unblockableOk && prowessOk &&
-    noUnclassifiedRulesEvents gAtkPost &&
-    noUnclassifiedRulesEvents gRingRe &&
-    noUnclassifiedRulesEvents gPrecRe &&
-    noUnclassifiedRulesEvents gPwRe
+    allRulesEventsClassified gAtkPost &&
+    allRulesEventsClassified gRingRe &&
+    allRulesEventsClassified gPrecRe &&
+    allRulesEventsClassified gPwRe
 
 /- Phase 8 (PR #584 review round 3): `combatDamageCreatesTreasure` (including
 attached Reaver Cleaver), `ironFistTapGrants`, `canBlock` (`printed.cantBlock`
@@ -4350,14 +4376,14 @@ order (CR 613.1f / 613.7 / 702.21). -/
   let cleaver := (gTr0.battlefield.filter (·.name == "Test Cleaver"))[0]!
   let gTrPre :=
     ((gTr0.markAttacking atk.id).record
-      (GameEvent.attached gTr0.turnNumber cleaver.id atk.id (cause := some c1))).createEffect
+      (GameEvent.attached gTr0.turnNumber cleaver.id atk.id (cause := c1))).createEffect
       (.combatDamageCreatesTreasureUntilEot atk.id) (cause := some c1)
   let gTrLost :=
     gTrPre.createEffect (.losesAbilitiesUntilEot atk.id) (cause := some c2)
   let gTrLostCombat :=
     { gTrLost with assignedCombatDamage := #[{ source := atk.id, toPlayer := 2 }] }.dealAssignedCombatDamage
   let gTrRe :=
-    gTrLost.record (GameEvent.attached gTrLost.turnNumber cleaver.id atk.id (cause := some c3))
+    gTrLost.record (GameEvent.attached gTrLost.turnNumber cleaver.id atk.id (cause := c3))
   let gTrReCombat :=
     { gTrRe with assignedCombatDamage := #[{ source := atk.id, toPlayer := 2 }] }.dealAssignedCombatDamage
   let gTrPostEff :=
@@ -4388,7 +4414,7 @@ order (CR 613.1f / 613.7 / 702.21). -/
   let gFistPost :=
     gFistLost.createEffect (.ironFistTapUntilEot fist.id) (cause := some c3)
   let gFistAuraLost :=
-    gFistPost.record (GameEvent.attached gFistPost.turnNumber stripAura.id fist.id (cause := some c4))
+    gFistPost.record (GameEvent.attached gFistPost.turnNumber stripAura.id fist.id (cause := c4))
   let ironFistOk :=
     gFistPre.ironFistTapGrants (gFistPre.object! fist.id) == 2 &&
     gFistLost.ironFistTapGrants (gFistLost.object! fist.id) == 0 &&
@@ -4437,14 +4463,14 @@ order (CR 613.1f / 613.7 / 702.21). -/
   let wCloak := (gWd0.battlefield.filter (·.name == "Ward Cloak"))[0]!
   let wLord := (gWd0.battlefield.filter (·.name == "Ward Lord"))[0]!
   let gWdPre :=
-    gWd0.record (GameEvent.attached gWd0.turnNumber wCloak.id wHero.id (cause := some c1))
+    gWd0.record (GameEvent.attached gWd0.turnNumber wCloak.id wHero.id (cause := c1))
   let preWards := gWdPre.wardCostsOn (gWdPre.object! wHero.id)
   let gWdLost :=
     gWdPre.createEffect (.losesAbilitiesUntilEot wHero.id) (cause := some c2)
   let lostWards := gWdLost.wardCostsOn (gWdLost.object! wHero.id)
   let gWdRe :=
     addPermanent
-      (gWdLost.record (GameEvent.attached gWdLost.turnNumber wCloak.id wHero.id (cause := some c3)))
+      (gWdLost.record (GameEvent.attached gWdLost.turnNumber wCloak.id wHero.id (cause := c3)))
       wardLordDef me me
   let reWards := gWdRe.wardCostsOn (gWdRe.object! wHero.id)
   let gWdLordLost :=
@@ -4461,9 +4487,9 @@ order (CR 613.1f / 613.7 / 702.21). -/
     lordLostWards.size == 3 &&
     !lordLostWards.contains (.genericMana 4)
   treasureOk && ironFistOk && canBlockOk && wardOk &&
-    noUnclassifiedRulesEvents gTrReCombat &&
-    noUnclassifiedRulesEvents gFistAuraLost &&
-    noUnclassifiedRulesEvents gWdRe
+    allRulesEventsClassified gTrReCombat &&
+    allRulesEventsClassified gFistAuraLost &&
+    allRulesEventsClassified gWdRe
 
 /- Phase 8 (PR #584 review round 4): `cantLoseGame` (battlefield + command zone),
 `opponentsCantWin`, `unspentManaBecomesColorless`, `planeswalkersYouControlHave`
@@ -4481,13 +4507,13 @@ land ability removal) all obey Layer 6 (CR 104.2a / 106.7 / 605.1a / 613.1f / 61
       cantLoseGame := true
       opponentsCantWin := true }
   let gAngel0 :=
-    (addPermanent (quiet afterDraw) angelDef me me).changePlayer me (.life 0)
+    (addPermanent (quiet afterDraw) angelDef me me).setLifeTotal me 0
   let angel := (gAngel0.battlefield.filter (·.name == "Platinum Test"))[0]!
   let gAngelPre := gAngel0.checkSBA
   let gAngelLost :=
     (gAngel0.createEffect (.losesAbilitiesUntilEot angel.id) (cause := some c1)).checkSBA
   let (gCmd0, cmdObj) :=
-    ((quiet afterDraw).changePlayer me (.life 0)).allocObject angelDef me .command (some me)
+    ((quiet afterDraw).setLifeTotal me 0).allocObject angelDef me .command (some me)
   let gCmdPre := gCmd0.checkSBA
   let gCmdLost :=
     (gCmd0.createEffect (.losesAbilitiesUntilEot cmdObj.id) (cause := some c1)).checkSBA
@@ -4505,8 +4531,7 @@ land ability removal) all obey Layer 6 (CR 104.2a / 106.7 / 605.1a / 613.1f / 61
     { (creature "Horizon Test" ManaCost.empty #["Rogue"] 3 3) with
       unspentManaBecomesColorless := true }
   let gMana0 :=
-    (addPermanent (quiet afterDraw) horizonDef me me).changePlayer me
-      (.manaPool ((ManaPool.empty).add (.colored .red)))
+    (addPermanent (quiet afterDraw) horizonDef me me).addMana me (.colored .red) 1
   let horizon := (gMana0.battlefield.filter (·.name == "Horizon Test"))[0]!
   let gManaKept := gMana0.emptyManaPools
   let gManaLost :=
@@ -4583,12 +4608,12 @@ land ability removal) all obey Layer 6 (CR 104.2a / 106.7 / 605.1a / 613.1f / 61
     (gMtnReLantern.intrinsicLandMana (gMtnReLantern.object! mtn.id)).size == 5 &&
     (gMtnReLantern.manaAbilityDefs (gMtnReLantern.object! mtn.id)).size == 1
   cantLoseWinOk && unspentManaOk && pwGrantOk && grantedManaOk && landManaOk &&
-    noUnclassifiedRulesEvents gAngelLost &&
-    noUnclassifiedRulesEvents gManaKept &&
-    noUnclassifiedRulesEvents gManaLost &&
-    noUnclassifiedRulesEvents gPwRe &&
-    noUnclassifiedRulesEvents gGrRe &&
-    noUnclassifiedRulesEvents gMtnReLantern
+    allRulesEventsClassified gAngelLost &&
+    allRulesEventsClassified gManaKept &&
+    allRulesEventsClassified gManaLost &&
+    allRulesEventsClassified gPwRe &&
+    allRulesEventsClassified gGrRe &&
+    allRulesEventsClassified gMtnReLantern
 
 /- Phase 9 isolation suite (CR 613.1a–b / 707 / 800.4a): Layer 1 copy and
 Layer 2 control effects are purely derived from `g.activeEffects` without
@@ -4615,11 +4640,7 @@ churn on creation or expiry. Copy-of-copy reads Layer 1 `copiableValues`. -/
   let gCopy2 := gCopy1.becomeCopyOf (gCopy1.object! cl.id) (gCopy1.object! b.id) (untilEot := true)
   let noPrintedMutation :=
     (gCopy1.object! b.id).printed.name == "Event Bear" &&
-    (gCopy2.object! cl.id).printed.name == "Phase9 Clone" &&
-    !gCopy2.events.any (fun e =>
-      match e.change with
-      | .engine (.object _ (.printed _)) => true
-      | _ => false)
+    (gCopy2.object! cl.id).printed.name == "Phase9 Clone"
   let copyValuesOk :=
     gCopy1.name (gCopy1.object! b.id) == "Phase9 Giant" &&
     gCopy1.power (gCopy1.object! b.id) == 4 &&
@@ -4629,18 +4650,13 @@ churn on creation or expiry. Copy-of-copy reads Layer 1 `copiableValues`. -/
   let gRevert := (quiet gCopy2).clearEOT
   let copyRevertClean :=
     gRevert.name (gRevert.object! b.id) == "Event Bear" &&
-    gRevert.name (gRevert.object! cl.id) == "Phase9 Clone" &&
-    !gRevert.events.any (fun e =>
-      match e.change with
-      | .engine (.object _ (.printed _)) => true
-      | _ => false)
+    gRevert.name (gRevert.object! cl.id) == "Phase9 Clone"
   let gCtrl := (quiet g0).changeControl b me (untilEot := true)
   let gCtrlEnd := (quiet gCtrl).clearEOT
   let hasSecondaryControlEvent (evs : Array GameEvent) : Bool :=
     evs.any (fun e =>
       match e.change with
       | .rules (.permanent (.controlChanged ..)) => true
-      | .engine (.object _ (.controller _)) => true
       | _ => false)
   let layer2PureOk :=
     (gCtrl.object! b.id).controller == some opp &&
@@ -4796,7 +4812,6 @@ a creature whose controller changes mid-turn without haste becomes summoning-sic
   let forestDef : CardDef :=
     { name := "Phase9 Forest", types := #[.land], subtypes := #["Forest"], supertypes := #[.basic] }
   let (g0, fObj) := (quiet afterDraw).allocObject forestDef me (.hand me) none
-  let g0 := g0.changePlayer me (.pushHand fObj.id)
   let gPlayed :=
     match g0.playLand me fObj.id with
     | .ok g' => g'
@@ -4820,7 +4835,7 @@ a creature whose controller changes mid-turn without haste becomes summoning-sic
   -- Creature controlled since start of turn (`summoningSick := false`) changing control mid-turn
   let gCreature0 := addPermanent (quiet afterDraw) bear opp opp
   let b0 := (gCreature0.battlefield.filter (·.name == "Event Bear"))[0]!
-  let gCreatureReady := gCreature0.changeStatus b0.id (.summoningSick false)
+  let gCreatureReady := gCreature0
   let gStolen := gCreatureReady.changeControl (gCreatureReady.object! b0.id) me (untilEot := true)
   let controlSickOk :=
     !gCreatureReady.hasSummoningSickness (gCreatureReady.object! b0.id) &&
@@ -4851,16 +4866,16 @@ a creature whose controller changes mid-turn without haste becomes summoning-sic
   let b := (g0.battlefield.filter (·.name == "Event Bear"))[0]!
   let m := (g0.battlefield.filter (·.name == "Phase9 Morph Angel"))[0]!
   let cl := (g0.battlefield.filter (·.name == "Phase9 Copy"))[0]!
-  -- Raw `o.controller` mutation does not override living `defaultController`
-  let gRawNone := g0.changeObject b.id (.controller none)
-  let gRawMe := g0.changeObject b.id (.controller (some me))
-  let gOppLost := gRawNone.changePlayer opp (.lost true)
+  -- Divergent `o.controller` fixture does not override living `defaultController`
+  let gRawNone := { g0 with objects := g0.objects.map (fun (o : GameObject) => if o.id == b.id then { o with controller := none } else o) }
+  let gRawMe := { g0 with objects := g0.objects.map (fun (o : GameObject) => if o.id == b.id then { o with controller := some me } else o) }
+  let gOppLost := gRawNone.record (GameEvent.playerLost gRawNone.turnNumber opp .conceded)
   let initCtrlOk :=
     gRawNone.controllerOf (gRawNone.object! b.id) == some opp &&
     gRawMe.controllerOf (gRawMe.object! b.id) == some opp &&
     gOppLost.controllerOf (gOppLost.object! b.id) == none
   -- Face-down permanent copied via `becomeCopyOf` and `copyBattlefieldPermanent`
-  let gFd := g0.changeStatus m.id (.faceDown true)
+  let gFd := setFaceDown g0 m.id true
   let gCopied := gFd.becomeCopyOf (gFd.object! cl.id) (gFd.object! m.id) (untilEot := true)
   let (gTok, tok) := gCopied.copyBattlefieldPermanent (gCopied.object! m.id) me
   let clAfter := gTok.object! cl.id
@@ -5157,7 +5172,7 @@ substitutions vs mana-derived colors):
             redGoblin opp opp)
           blueMerfolk opp opp)
         whiteKnight opp opp)
-      critCard me (.hand me) none {} (fun id pl => #[.hand (pl.hand.push id)])
+      critCard me (.hand me)
   let u := (gTxt0.battlefield.filter (·.name == "Phase9 Blue Mage"))[0]!
   let rSrc := (gTxt0.battlefield.filter (·.name == "Phase9 Red Goblin"))[0]!
   let bSrc := (gTxt0.battlefield.filter (·.name == "Phase9 Blue Merfolk"))[0]!
@@ -5262,5 +5277,460 @@ continuity, plus `post.snapshot` in `.creatureYouControlDealtDamage` and
     gTapStolen.waitingTriggers.any (fun wt => wt.controller == me && wt.ability == tapWatchAb) &&
     gTapAnim.waitingTriggers.any (fun wt => wt.controller == me && wt.ability == tapWatchAb)
   phaseSickOk && dmgAndTapSnapOk
+
+/- Phase 10 isolation:
+1. `ManaPool` stores `ManaUnit` provenance (`source` and `restriction`, CR 106.4 /
+   106.6) across `manaAdded`, `manaEmptied` (`keptColorless := true` under
+   `unspentManaBecomesColorless`), and `manaSpent` (`treasureManaSpentOn` and
+   `legendaryManaSpentOn`).
+2. `shuffleLibrary` emits `PlayerEvent.shuffled` even on 0-card and 1-card
+   libraries (CR 701.24e), and `closeBatch` emits `PlayerEvent.gainedDesignation`
+   inside the closing batch.
+3. `.fraEmblem` expiration emits `ZoneEvent.ceasedToExist` alongside a pure
+   `applyContinuousEffectEvent` table update, and `ringBearerId` is the single
+   stored Ring-bearer source of truth.
+4. `DelayedTriggerEvent` (`created`, one-shot `consumed`, duration `expired`)
+   records explicit `EventCause` provenance on every transition.
+5. CR 608.2n / 608.2p / 608.3 mid-resolution stack residency keeps resolving
+   spells on `g.stack` across `Pending` pauses, excludes self-targeting on the
+   stack (CR 115.5), handles mid-resolution self-exile without moving to the
+   graveyard, emits `StackObjectEvent.resolved` on completion, and drains
+   `g.continuations` back to `#[]`. -/
+#guard
+  let opp : PlayerId := ⟨1⟩
+  let p10Cause : EventCause := .oneShotEffect (some ⟨1001⟩) none (some me)
+  -- 1. `ManaUnit` provenance across `manaAdded`, `manaEmptied` (`keptColorless := true`), and `manaSpent`
+  let horizonDef : CardDef :=
+    { (creature "Phase10 Horizon" ManaCost.empty #["Rogue"] 3 3) with
+      unspentManaBecomesColorless := true }
+  let gTr0 := (addPermanent (quiet afterDraw) horizonDef me me).createTreasureTokens me 1 (cause := some p10Cause)
+  let trObj := (gTr0.battlefield.filter (·.printed.isToken))[0]!
+  let gTrMana :=
+    match gTr0.tapForMana me trObj.id (.colored .green) with
+    | .ok g' => g'
+    | .error _ => gTr0
+  let unitLeg : ManaUnit :=
+    { mana := .colored .green
+      source := none
+      restriction := some (.fra .legendarySpell) }
+  let gManaAdded := gTrMana.record (GameEvent.manaAdded gTrMana.turnNumber me #[unitLeg] (cause := some p10Cause))
+  let gManaConv := gManaAdded.emptyManaPools
+  let convUnits := (gManaConv.player me).manaPool.units
+  let targetSpellId : ObjectId := ⟨7777⟩
+  let gManaSpent := gManaConv.record (GameEvent.manaSpent gManaConv.turnNumber me convUnits targetSpellId)
+  let manaProvenanceOk :=
+    convUnits.size == 2 &&
+    convUnits.all (·.mana == .colorless) &&
+    convUnits[0]!.source == some trObj.id &&
+    convUnits[1]!.restriction == some (.fra .legendarySpell) &&
+    gManaConv.events.any (fun e =>
+      match e.change with
+      | .rules (.player (.manaEmptied p us true)) =>
+        p == me && us.size == 2 && us[0]!.source == some trObj.id &&
+          us[1]!.restriction == some (.fra .legendarySpell)
+      | _ => false) &&
+    GameEvent.treasureManaSpentOn gManaSpent.events targetSpellId &&
+    GameEvent.legendaryManaSpentOn gManaSpent.events targetSpellId
+  -- 2. 0-card and 1-card `PlayerEvent.shuffled` (CR 701.24e) and `gainedDesignation` inside `closeBatch`
+  let gEmptyLib0 :=
+    quiet ((afterDraw.player me).library.foldl (fun acc id => (acc.move id .exile none (cause := some p10Cause)).1) afterDraw)
+  let gShuf0 := gEmptyLib0.shuffleLibrary me
+  let (gOneAlloc, oneRaw) := gEmptyLib0.allocObject bear me (.outside me) none
+  let (gOneLib0, oneCardId) := gOneAlloc.move oneRaw.id (.library me) none (cause := some p10Cause)
+  let gShuf1 := (quiet gOneLib0).shuffleLibrary me
+  let storiedDef : CardDef :=
+    { name := "Phase10 Storied Relic"
+      manaCost := ManaCost.empty
+      types := #[.artifact]
+      keywords := Keyword.storied }
+  let (gStoryH1, sCard1) := afterDraw.allocObject storiedDef me (.hand me) none
+  let (gStoryH2, sCard2) := gStoryH1.allocObject storiedDef me (.hand me) none
+  let (gStoryH3, sCard3) := gStoryH2.allocObject storiedDef me (.hand me) none
+  let gStoryDone :=
+    (quiet gStoryH3).withBatch (some p10Cause) fun g =>
+      let (g, _) := g.putOntoBattlefield sCard1.id me (cause := some p10Cause)
+      let (g, _) := g.putOntoBattlefield sCard2.id me (cause := some p10Cause)
+      (g.putOntoBattlefield sCard3.id me (cause := some p10Cause)).1
+  let shufAndDesigOk :=
+    gShuf0.pending == .none &&
+    gShuf0.events.any (fun e =>
+      match e.change with
+      | .rules (.player (.shuffled p ord)) => p == me && ord.isEmpty
+      | _ => false) &&
+    gShuf1.pending == .none &&
+    gShuf1.events.any (fun e =>
+      match e.change with
+      | .rules (.player (.shuffled p ord)) => p == me && ord == #[oneCardId]
+      | _ => false) &&
+    (gStoryDone.player me).enduringStory &&
+    gStoryDone.events.any (fun e =>
+      match e.change with
+      | .rules (.player (.gainedDesignation p .enduringStory)) => p == me && e.batch.raw > 0
+      | _ => false)
+  -- 3. `.fraEmblem` expiration (`ZoneEvent.ceasedToExist` + pure `applyContinuousEffectEvent`) & `ringBearerId`
+  let (gEmb0, embObj) := (quiet afterDraw).allocObject
+    { name := "Phase10 Emblem", types := #[] } me .command (some me)
+  let embEffId : EffectId := ⟨1050⟩
+  let gEmbCreated :=
+    gEmb0.record (GameEvent.effectCreated gEmb0.turnNumber embEffId
+      (.fraEmblemUntilTurnOf embObj.id opp) p10Cause)
+  let gEmbPureApplier :=
+    gEmbCreated.applyChange (.rules (.continuousEffect (.expired embEffId)))
+  let gEmbExpired := gEmbCreated.expireEffectById embEffId (cause := some (.turnBased .expireAtStepBegin))
+  let gRing0 := addPermanent (quiet afterDraw) bear me me
+  let ringBear := (gRing0.battlefield.filter (·.name == "Event Bear"))[0]!
+  let gRing1 := gRing0.record (GameEvent.ringTempted gRing0.turnNumber me (some ringBear.id) 1 (cause := some p10Cause))
+  let emblemAndRingOk :=
+    !gEmbPureApplier.activeEffects.any (·.1 == embEffId) &&
+    (gEmbPureApplier.findObject? embObj.id).isSome &&
+    !gEmbExpired.activeEffects.any (·.1 == embEffId) &&
+    (gEmbExpired.findObject? embObj.id).isNone &&
+    gEmbExpired.events.any (fun e =>
+      match e.change with
+      | .rules (.zone (.ceasedToExist eo)) => eo.id == some embObj.id
+      | _ => false) &&
+    (gRing1.player me).ringBearerId == some ringBear.id &&
+    gRing1.isRingBearer me (gRing1.object! ringBear.id)
+  -- 4. `DelayedTriggerEvent` (`created`, one-shot `consumed`, duration `expired`) + cause totality
+  let gDt0 := addPermanent (addPermanent (quiet afterDraw) bear me me) hero me me
+  let dtBear := (gDt0.battlefield.filter (·.name == "Event Bear"))[0]!
+  let dtHero := (gDt0.battlefield.filter (·.name == "Event Hero"))[0]!
+  let dtOneShot : DelayedTrigger :=
+    { controller := me, source := some dtHero, kind := .endStepSacrifice dtBear.id, cause := p10Cause }
+  let dtUntilEot : DelayedTrigger :=
+    { controller := me, source := some dtHero, kind := .attackPumpPerPlains, cause := p10Cause }
+  let gDtReg := { ((gDt0.registerDelayedTrigger dtOneShot).registerDelayedTrigger dtUntilEot) with step := .postcombatMain }
+  let gDtConsumed := gDtReg.beginStep .end
+  let gDtExpired := gDtConsumed.clearTurnActivations
+  let delayedTriggerEventsOk :=
+    gDtReg.events.any (fun e =>
+      match e.change with
+      | .rules (.delayedTrigger (.created dt)) => dt == dtOneShot
+      | _ => false) &&
+    gDtConsumed.events.any (fun e =>
+      match e.change with
+      | .rules (.delayedTrigger (.consumed dt)) => dt == dtOneShot
+      | _ => false) &&
+    !gDtConsumed.delayedTriggers.any (·.kind == .endStepSacrifice dtBear.id) &&
+    gDtConsumed.delayedTriggers.any (·.kind == .attackPumpPerPlains) &&
+    gDtExpired.events.any (fun e =>
+      match e.change with
+      | .rules (.delayedTrigger (.expired dt)) => dt == dtUntilEot
+      | _ => false) &&
+    gDtExpired.delayedTriggers.isEmpty &&
+    allRulesEventsClassified gDtExpired
+  -- 5. CR 608.2n / 608.2p / 608.3 mid-resolution stack residency, CR 115.5, self-exile, and `continuations == #[]`
+  let scrySpellDef : CardDef :=
+    { name := "Phase10 Scry Instant"
+      manaCost := ManaCost.empty
+      types := #[.instant]
+      spellEffect := some (Effect.scry 2) }
+  let (gSp0, spObj) := (quiet afterDraw).allocObject scrySpellDef me .stack (some me)
+  let gSpOnStack := gSp0.putStackEntry me spObj.id
+  let gSpMid := gSpOnStack.resolveTop
+  let midStackOk :=
+    (match gSpMid.pending with | .scry p 2 _ => p == me | _ => false) &&
+    gSpMid.stack.any (·.objectId == spObj.id) &&
+    (gSpMid.findObject? spObj.id).any (·.zone == .stack) &&
+    gSpMid.resolvingSpell == some spObj.id &&
+    !gSpMid.continuations.isEmpty &&
+    !(gSpMid.legalStackSpellTargets (fun _ => true) (some spObj.id)).contains (.card spObj.id) &&
+    !gSpMid.events.any (fun e =>
+      match e.change with
+      | .rules (.stackObject (.resolved ..)) => true
+      | _ => false)
+  let keepScry2 (g : Game) : Game :=
+    match g.apply me (.scry (g.scryLookedIds me 2) #[]) with
+    | .ok g' => g'
+    | .error _ => g
+  let gSpDone := keepScry2 gSpMid
+  let doneStackOk :=
+    gSpDone.pending == .none &&
+    gSpDone.stack.isEmpty &&
+    gSpDone.continuations.isEmpty &&
+    gSpDone.resolvingSpell.isNone &&
+    gSpDone.objects.any (fun o => o.name == "Phase10 Scry Instant" && o.zone == .graveyard me) &&
+    gSpDone.events.any (fun e =>
+      match e.change with
+      | .rules (.stackObject (.resolved eo _)) => eo.id == some spObj.id
+      | _ => false) &&
+    allRulesEventsClassified gSpDone
+  let (gSpMidExiled, exiledSpId) := gSpMid.move spObj.id .exile none (cause := some p10Cause)
+  let gSpSelfExileDone := keepScry2 gSpMidExiled
+  let selfExileOk :=
+    gSpSelfExileDone.stack.isEmpty &&
+    gSpSelfExileDone.continuations.isEmpty &&
+    (gSpSelfExileDone.findObject? exiledSpId).any (·.zone == .exile) &&
+    !gSpSelfExileDone.objects.any (fun o => o.name == "Phase10 Scry Instant" && o.zone == .graveyard me) &&
+    gSpSelfExileDone.events.any (fun e =>
+      match e.change with
+      | .rules (.stackObject (.resolved eo _)) => eo.id == some spObj.id
+      | _ => false) &&
+    allRulesEventsClassified gSpSelfExileDone
+  manaProvenanceOk &&
+    shufAndDesigOk &&
+    emblemAndRingOk &&
+    delayedTriggerEventsOk &&
+    midStackOk &&
+    doneStackOk &&
+    selfExileOk &&
+    allRulesEventsClassified gManaSpent &&
+    noOneShotCauses gShuf0 &&
+    gShuf0.nextEffectId == gEmptyLib0.nextEffectId &&
+    noOneShotCauses gShuf1 &&
+    gShuf1.nextEffectId == gOneLib0.nextEffectId &&
+    allRulesEventsClassified gStoryDone &&
+    allRulesEventsClassified gEmbExpired &&
+    allRulesEventsClassified gRing1
+
+/- Phase 10 review-invariant suite:
+1. Painland `activateManaAbility` records `.gameRule .abilityActivated` on life loss without bumping `nextEffectId` (even inside `withResolvingContext`).
+2. `applyPermanentAction` (`.untap`, `.doubleStrikeCounter`, `.tapAndStun`) and `replaceUntap` / `wrapReplacedCause` outside `withResolvingContext` record non-one-shot causes and leave `nextEffectId` unchanged.
+3. `temptWithTheRing`, `finishScry`, `finishSurveil`, and `supplyOrder` leave `nextEffectId` unchanged outside `withResolvingContext` and share one minted `EffectId` inside `withResolvingContext`.
+4. `shuffleLibrary` on a 2+-card library transitions to `Pending.resolveRandom (.shuffleLibrary p)` even if `g.pending != .none`, and `shuffleThen` chains `PendingReplacement.shuffleThen` behind an as-enters choice instead of recording an unrandomized order.
+5. `beholdAndMaybeUntap` mints two distinct `EffectId`s across its two instructions ("Behold X. If you do, untap") when resolving and allocates zero `EffectId`s outside resolution.
+6. `becomePrepared`, `unprepare` (`.gameRule .spellCast`), and `phaseOut` (`.turnBased .phaseInOut`) allocate zero one-shot `EffectId`s outside `withResolvingContext` and share one `EffectId` inside `withResolvingContext`.
+7. `Start.start` and `allocObject` / `insertObject` emit `ZoneEvent.created` rules events that drive `objectEntryTimestamp`, `counterTimestamp`, `attachmentTimestamp`, and `hasSummoningSickness` without any `.engine` object-creation arm. -/
+#guard
+  -- 1. Painland mana ability life-loss cause
+  let painLandDef : CardDef :=
+    { name := "Phase10 Painland"
+      types := #[.land]
+      tapAddOneOfDealsDamage := some (#[.colored .red, .colored .white], 1) }
+  let gPain0 := quiet (addPermanent afterDraw painLandDef me me)
+  let painObj := (gPain0.battlefield.filter (·.name == "Phase10 Painland"))[0]!
+  let gPainQuiet :=
+    match gPain0.activateManaAbility me painObj.id 0 #[.colored .red] with
+    | .ok g' => g'
+    | .error _ => gPain0
+  let gPainRes :=
+    gPain0.withResolvingContext (some painObj.id) me (fun g =>
+      match g.activateManaAbility me painObj.id 0 #[.colored .red] with
+      | .ok g' => g'
+      | .error _ => g)
+  let painCauses (g : Game) :=
+    g.events.filterMap (fun e =>
+      match e.change with
+      | .rules (.life (.lost ..)) => e.cause?
+      | _ => none)
+  let painOk :=
+    gPainQuiet.nextEffectId == gPain0.nextEffectId &&
+    painCauses gPainQuiet == #[.gameRule .abilityActivated] &&
+    gPainRes.nextEffectId == gPain0.nextEffectId &&
+    painCauses gPainRes == #[.gameRule .abilityActivated] &&
+    noOneShotCauses gPainQuiet &&
+    noOneShotCauses gPainRes
+  -- 2. `applyPermanentAction` and stun-counter `replaceUntap` outside resolution
+  let gAct0 :=
+    let g := addPermanent afterDraw bear me me
+    let bid := (g.battlefield.filter (·.name == "Event Bear"))[0]!.id
+    quiet (setTapped (g.recordPutCounters bid .stun 1) bid true)
+  let actBear := (gAct0.battlefield.filter (·.name == "Event Bear"))[0]!
+  let gUntapStun := gAct0.applyPermanentAction actBear .untap
+  let gDbl := gAct0.applyPermanentAction actBear .doubleStrikeCounter
+  let gTapStun := gAct0.applyPermanentAction actBear .tapAndStun
+  let stunCauses :=
+    gUntapStun.events.filterMap (fun e =>
+      match e.change with
+      | .rules _ => e.cause?
+      | _ => none)
+  let permActionOk :=
+    gUntapStun.nextEffectId == gAct0.nextEffectId &&
+    stunCauses == #[.replaced { kind := .stunCounterUntap, object := some actBear.id } (.turnBased .untapAll)] &&
+    gDbl.nextEffectId == gAct0.nextEffectId &&
+    gTapStun.nextEffectId == gAct0.nextEffectId &&
+    noOneShotCauses gUntapStun &&
+    noOneShotCauses gDbl &&
+    noOneShotCauses gTapStun
+  -- 3. `temptWithTheRing`, `finishScry`, `finishSurveil`, `supplyOrder` outside vs inside resolution
+  let gRingQuiet := gAct0.temptWithTheRing me
+  let gRingRes := gAct0.withResolvingContext (some actBear.id) me (fun g => g.temptWithTheRing me)
+  let ringResIds := (GameEvent.oneShotEffectsWithId gRingRes.events).map Prod.fst
+  let gScry0 := (gAct0.beginScry me 1)
+  let gScryQuiet :=
+    match gScry0.finishScry me (gScry0.scryLookedIds me 1) #[] with
+    | .ok g' => g'
+    | .error _ => gScry0
+  let gSurv0 := (gAct0.beginSurveil me 1)
+  let gSurvQuiet :=
+    match gSurv0.finishSurveil me #[] (gSurv0.scryLookedIds me 1) with
+    | .ok g' => g'
+    | .error _ => gSurv0
+  let resolvingHelpersOk :=
+    gRingQuiet.nextEffectId == gAct0.nextEffectId &&
+    gRingRes.nextEffectId == gAct0.nextEffectId + 1 &&
+    ringResIds.size == 2 &&
+    ringResIds[0]! == ringResIds[1]! &&
+    gScryQuiet.nextEffectId == gAct0.nextEffectId &&
+    gSurvQuiet.nextEffectId == gAct0.nextEffectId &&
+    noOneShotCauses gRingQuiet &&
+    noOneShotCauses gScryQuiet &&
+    noOneShotCauses gSurvQuiet
+  -- 4. `shuffleLibrary` with `pending != .none` and `shuffleThen` behind an as-enters choice
+  let gPending2 := gAct0.change (.pending (.scry me 1 1))
+  let gShufWhilePending := gPending2.shuffleLibrary me
+  let roomDef : CardDef :=
+    { name := "Phase10 Room"
+      types := #[.land]
+      staticAbilities := #[.fra .entersTappedChooseColor] }
+  let gSearchAsEnters0 := quiet (insertObject afterDraw roomDef me (.library me))
+  let roomLibId := ((gSearchAsEnters0.player me).library.filter (fun id => (gSearchAsEnters0.object! id).name == "Phase10 Room"))[0]!
+  let gSearchAsEntersMid :=
+    gSearchAsEnters0.withResolvingContext none me (fun g =>
+      g.finishLibrarySearch me #[roomLibId] (.battlefield true) none "land card")
+  let midNoPrematureShuffled :=
+    (match gSearchAsEntersMid.pending with | .fraChoice _ (.chooseColor _) => true | _ => false) &&
+    !gSearchAsEntersMid.events.any (fun e =>
+      match e.change with | .rules (.player (.shuffled ..)) => true | _ => false)
+  let gSearchAfterColor :=
+    match gSearchAsEntersMid.answerFraChoice me (.mode 1) with
+    | .ok g' => g'
+    | .error _ => gSearchAsEntersMid
+  let shuffleGuardOk :=
+    (gAct0.player me).library.size > 1 &&
+    gShufWhilePending.pending == .resolveRandom (.shuffleLibrary me) &&
+    !gShufWhilePending.events.any (fun e =>
+      match e.change with | .rules (.player (.shuffled ..)) => true | _ => false) &&
+    midNoPrematureShuffled &&
+    gSearchAfterColor.pending == .resolveRandom (.shuffleLibrary me)
+  -- 5. `beholdAndMaybeUntap` mints two distinct `EffectId`s when resolving and zero outside resolution
+  let dragonLandDef : CardDef :=
+    { name := "Phase10 Dragon Roost"
+      types := #[.land] }
+  let dragonCreatureDef : CardDef :=
+    creature "Phase10 Dragon" ManaCost.empty #["Dragon"] 4 4
+  let gBeh0 :=
+    let g := addPermanent (addPermanent afterDraw dragonLandDef me me) dragonCreatureDef me me
+    let lid := (g.battlefield.filter (·.name == "Phase10 Dragon Roost"))[0]!.id
+    quiet (setTapped g lid true)
+  let dLand := (gBeh0.battlefield.filter (·.name == "Phase10 Dragon Roost"))[0]!
+  let gBehQuiet := gBeh0.beholdAndMaybeUntap me dLand.id .dragon
+  let gBehRes := gBeh0.withResolvingContext (some dLand.id) me (fun g =>
+    g.beholdAndMaybeUntap me dLand.id .dragon)
+  let behResIds := (GameEvent.oneShotEffectsWithId gBehRes.events).map Prod.fst
+  let beholdUntapOk :=
+    gBehQuiet.nextEffectId == gBeh0.nextEffectId &&
+    !(gBehQuiet.object! dLand.id).status.tapped &&
+    gBehRes.nextEffectId == gBeh0.nextEffectId + 2 &&
+    behResIds.size == 2 &&
+    behResIds[0]! != behResIds[1]! &&
+    noOneShotCauses gBehQuiet &&
+    allRulesEventsClassified gBehRes
+  -- 6. `becomePrepared`, `unprepare`, and `phaseOut` outside vs inside resolution
+  let prepDef : CardDef :=
+    { creature "Phase10 Prepared" ManaCost.empty #["Knight"] 2 2 with
+      prepareFace := some { name := "Phase10 Seed" } }
+  let gPrep0 := quiet (addPermanent afterDraw prepDef me me)
+  let prepObj := (gPrep0.battlefield.filter (·.name == "Phase10 Prepared"))[0]!
+  let gPrepQuiet := gPrep0.becomePrepared prepObj
+  let prepQuietOneShots := GameEvent.oneShotEffectsWithId gPrepQuiet.events
+  let gUnprepQuiet := (quiet gPrepQuiet).unprepare (gPrepQuiet.object! prepObj.id)
+  let unprepCauses :=
+    gUnprepQuiet.events.filterMap (fun e =>
+      match e.change with
+      | .rules (.permanent (.designation _ .prepared false)) => e.cause?
+      | _ => none)
+  let gPrepRes := gPrep0.withResolvingContext (some prepObj.id) me (fun g => g.becomePrepared prepObj)
+  let prepResIds := (GameEvent.oneShotEffectsWithId gPrepRes.events).map Prod.fst
+  let prepEffOneShots :=
+    gPrepRes.events.filterMap (fun e =>
+      match e.change with
+      | .rules (.continuousEffect (.created ..)) => e.cause?.bind EventCause.oneShotEffectId?
+      | _ => none)
+  let gPhaseQuiet := gPrep0.phaseOut prepObj
+  let gPhaseRes := gPrep0.withResolvingContext (some prepObj.id) me (fun g => g.phaseOut prepObj)
+  let phaseResIds := (GameEvent.oneShotEffectsWithId gPhaseRes.events).map Prod.fst
+  let prepAndPhaseOk :=
+    prepQuietOneShots.isEmpty &&
+    gUnprepQuiet.nextEffectId == gPrepQuiet.nextEffectId &&
+    unprepCauses == #[.gameRule .spellCast] &&
+    prepResIds.size == 2 &&
+    prepResIds[0]! == prepResIds[1]! &&
+    prepEffOneShots == #[prepResIds[0]!] &&
+    gPhaseQuiet.nextEffectId == gPrep0.nextEffectId &&
+    gPhaseRes.nextEffectId == gPrep0.nextEffectId + 1 &&
+    phaseResIds.size == 1 &&
+    noOneShotCauses gPrepQuiet &&
+    noOneShotCauses gUnprepQuiet &&
+    noOneShotCauses gPhaseQuiet &&
+    allRulesEventsClassified gPhaseRes
+  -- 7. `allocObject` / `insertObject` emit `ZoneEvent.created` giving tier-1 timestamps
+  let auraDef : CardDef := enchantment "Phase10 Aura" ManaCost.empty "Enchant creature"
+  let gTs0 := insertObject started bear me .battlefield (some me)
+    { summoningSick := true, counters := #[(.plusOnePlusOne, 1)] }
+  let tsBear := (gTs0.battlefield.filter (·.name == "Event Bear"))[0]!
+  let (gTs1, tsAura) := gTs0.allocObject auraDef me .battlefield (some me) (attachedTo := some tsBear.id)
+  let createdTsOk :=
+    (gTs1.objectEntryTimestamp tsBear).1 == 1 &&
+    (gTs1.counterTimestamp tsBear.id .plusOnePlusOne).1 == 1 &&
+    (gTs1.attachmentTimestamp tsAura tsBear.id).1 == 1 &&
+    gTs1.hasSummoningSickness tsBear &&
+    noOneShotCauses started &&
+    noOneShotCauses gTs1
+  -- 8. Round-2 continuation-frame & 0-card `shuffleThen` invariants:
+  --    (a) `requestShuffle` with `after != .none` on a quiet board keeps `afterRandom` without minting `EffectId`
+  --    (b) 0-card remaining library `shuffleThen` behind an as-enters choice waits for the choice before shuffling or running `onDone`
+  --    (c) `applyGainLifeSearchBasicPlusOne` on a quiet board keeps `plusOneAfterSearch` and adds the +1/+1 counter without minting `EffectId`
+  let gEmptyForReq :=
+    quiet ((afterDraw.player me).library.foldl (fun acc id => (acc.move id .exile none (cause := some testCause)).1) afterDraw)
+  let gReq0 := gEmptyForReq.requestShuffle me (.gainLife me 1)
+  let gReqMany := gAct0.requestShuffle me (.gainLife me 1)
+  let gReqManyDone :=
+    match gReqMany.supplyOrder (gReqMany.player me).library with
+    | .ok g' => g'
+    | .error _ => gReqMany
+  let gZeroAfterSearch0 :=
+    let g := addPermanent gEmptyForReq dragonCreatureDef me me
+    quiet (insertObject g roomDef me (.library me))
+  let onlyRoomId := (gZeroAfterSearch0.player me).library[0]!
+  let gZeroMid :=
+    gZeroAfterSearch0.finishLibrarySearch me #[onlyRoomId] (.battlefieldTappedBeholdUntap .dragon) none "land card"
+  let zeroMidDeferred :=
+    (match gZeroMid.pending with | .fraChoice _ (.chooseColor _) => true | _ => false) &&
+    !gZeroMid.events.any (fun e =>
+      match e.change with
+      | .rules (.player (.shuffled ..)) => true
+      | .rules (.player (.beheld ..)) => true
+      | _ => false)
+  let gZeroDone :=
+    match gZeroMid.answerFraChoice me (.mode 1) with
+    | .ok g' => g'
+    | .error _ => gZeroMid
+  let basicPlainsDef : CardDef :=
+    { name := "Plains", types := #[.land], supertypes := #[.basic], subtypes := #["Plains"] }
+  let gRestTech0 :=
+    let g := addPermanent gEmptyForReq bear me me
+    quiet (insertObject g basicPlainsDef me (.library me))
+  let restBear := (gRestTech0.battlefield.filter (·.name == "Event Bear"))[0]!
+  let basicLibId := (gRestTech0.player me).library[0]!
+  let gRestMid :=
+    gRestTech0.applyGainLifeSearchBasicPlusOne me #[.player me, .permanent restBear.id] 2
+  let gRestDone :=
+    match gRestMid.answerFraChoice me (.objects #[basicLibId]) with
+    | .ok g' => g'
+    | .error _ => gRestMid
+  let round2ContinuationOk :=
+    gReq0.afterRandom == .gainLife me 1 &&
+    gReq0.nextEffectId == gEmptyForReq.nextEffectId &&
+    noOneShotCauses gReq0 &&
+    gReqMany.afterRandom == .gainLife me 1 &&
+    gReqManyDone.nextEffectId == gAct0.nextEffectId &&
+    noOneShotCauses gReqManyDone &&
+    zeroMidDeferred &&
+    gZeroDone.events.any (fun e => match e.change with | .rules (.player (.shuffled ..)) => true | _ => false) &&
+    gZeroDone.events.any (fun e => match e.change with | .rules (.player (.beheld _ .dragon)) => true | _ => false) &&
+    gZeroDone.nextEffectId == gZeroMid.nextEffectId &&
+    noOneShotCauses gZeroDone &&
+    (gRestDone.object! restBear.id).status.plusOnePlusOne == 1 &&
+    gRestDone.nextEffectId == gRestTech0.nextEffectId &&
+    noOneShotCauses gRestDone
+  painOk &&
+    permActionOk &&
+    resolvingHelpersOk &&
+    shuffleGuardOk &&
+    beholdUntapOk &&
+    prepAndPhaseOk &&
+    createdTsOk &&
+    round2ContinuationOk
 
 end Mtg.Engine.EventTests

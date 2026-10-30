@@ -91,7 +91,7 @@ def applyAllianceMode (g : Game) (sourceId : ObjectId) (mode : Nat) : Game :=
       let g := g.record (GameEvent.triggerModeChosen g.turnNumber sourceId mode)
       match g.controllerOf src, mode with
       | some c, 0 =>
-        let g := g.changePlayer c (.addMana (.colored .green) 3)
+        let g := g.addMana c (.colored .green) 3 (source := some sourceId)
         g.logMsg s!"{(g.player c).name} adds \{G}\{G}\{G}"
       | some c, 1 =>
         let creatures := (g.battlefield.filter (fun o => g.isCreature o && g.controlledBy o c)).map (·.id)
@@ -1371,7 +1371,9 @@ def applyPutCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       if o.isOnBattlefield then g.addPlusOnePlusOneTo o n
       else g.logMsg s!"{o.name} is no longer on the battlefield. No counter is put."
     | none =>
-      g.logMsg "The source is no longer on the battlefield. No counter is put."
+      match sourceId.bind g.lastKnownBefore? with
+      | some o => g.logMsg s!"{o.name} is no longer on the battlefield. No counter is put."
+      | none => g.logMsg "The source is no longer on the battlefield. No counter is put."
   | .ofKind .plusOnePlusOne _, .eachUpToLastKnown =>
     g.putPlusOnesUpToLastKnown controller targets lastKnownPower
   | .missingKeywordsFromTarget, .source =>
@@ -2416,7 +2418,7 @@ def applyAddMana (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
     if n == 0 then g
     else
       let types := types.foldl (fun acc t => acc ++ Array.replicate n t) #[]
-      g.addManaLogged controller types
+      g.addManaLogged controller types (source := sourceId)
 
 /-- Resolve `TriggerResolution.draw`. Each printed combination keeps
 the behavior of the constructor it replaced. -/
@@ -3358,24 +3360,36 @@ def applyGainLife (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       | some k => g.gainLife controller k (cause := cause)
       | none => g
 
+private def revealUntilLoop (g : Game) (pid : PlayerId) (fuel : Nat)
+    (stop : GameObject → Bool) (rest shown : Array ObjectId)
+    (cause : Option EventCause := none) :
+    Game × Option ObjectId × Array ObjectId × Array ObjectId :=
+  match fuel with
+  | 0 => (g, none, rest, shown)
+  | fuel + 1 =>
+    if (g.player pid).library.isEmpty then (g, none, rest, shown)
+    else
+      let top := (g.player pid).library.back!
+      let o := g.object! top
+      let shown := shown.push top
+      let g := g.logMsg s!"{(g.player pid).name} reveals {o.name}"
+      if stop o then (g, some top, rest, shown)
+      else
+        let (g, newId) := g.move top .exile none (cause := cause)
+        revealUntilLoop g pid fuel stop (rest.push newId) shown (cause := cause)
+
 /-- Reveal cards from the top of a library until `stop`, or `fuel` runs out.
 Non-matching cards are exiled and returned in `rest`. -/
 def revealUntil (g : Game) (pid : PlayerId) (fuel : Nat)
     (stop : GameObject → Bool) (rest : Array ObjectId)
     (cause : Option EventCause := none) :
     Game × Option ObjectId × Array ObjectId :=
-  match fuel with
-  | 0 => (g, none, rest)
-  | fuel + 1 =>
-    if (g.player pid).library.isEmpty then (g, none, rest)
-    else
-      let top := (g.player pid).library.back!
-      let o := g.object! top
-      let g := g.logMsg s!"{(g.player pid).name} reveals {o.name}"
-      if stop o then (g, some top, rest)
-      else
-        let (g, newId) := g.move top .exile none (cause := cause)
-        revealUntil g pid fuel stop (rest.push newId) (cause := cause)
+  let (g, hit, rest, shown) := revealUntilLoop g pid fuel stop rest #[] (cause := cause)
+  let g :=
+    if shown.isEmpty then g
+    else g.record (GameEvent.revealed g.turnNumber pid shown
+      (cause := some (cause.getD (g.resolvingOrRuleCause pid))))
+  (g, hit, rest)
 
 /-- Look through the libraries `who` names, as `how` says, and remember the
 cards that were found. Returns any remaining revealed cards to put on the
@@ -3398,6 +3412,9 @@ def noteRevealedLibraries (g : Game) (controller : PlayerId)
         match how with
         | .top n =>
           let ids := g.scryLookedIds pid n
+          if !ids.isEmpty then
+            g := g.record (GameEvent.revealed g.turnNumber pid ids
+              (cause := some (cause.getD (g.resolvingOrRuleCause controller sourceId))))
           for id in ids do
             match g.findObject? id with
             | some o => g := g.logMsg s!"{(g.player pid).name} reveals {o.name}"
@@ -3455,6 +3472,9 @@ partial def applyRevealLibrary (g : Game) (controller : PlayerId)
   | .top n, .put .randomCreature .asPrinted .none, .you => some <|
     let (g, cause) := g.allocDelayedCause (some controller) sourceId
     let ids := g.scryLookedIds controller n
+    let g :=
+      if ids.isEmpty then g
+      else g.record (GameEvent.revealed g.turnNumber controller ids (cause := some cause))
     let g := ids.foldl (fun g id =>
       match g.findObject? id with
       | some o => g.logMsg s!"{(g.player controller).name} reveals {o.name}"
@@ -3481,9 +3501,11 @@ partial def applyRevealLibrary (g : Game) (controller : PlayerId)
       let mut g := g0
       let mut found : Option ObjectId := none
       let mut rest : Array ObjectId := #[]
+      let mut shown : Array ObjectId := #[]
       while found.isNone && !(g.player controller).library.isEmpty do
         let top := (g.player controller).library.back!
         let o := g.object! top
+        shown := shown.push top
         g := g.logMsg s!"{(g.player controller).name} reveals {o.name}"
         if o.printed.isCreature then
           found := some top
@@ -3491,6 +3513,8 @@ partial def applyRevealLibrary (g : Game) (controller : PlayerId)
           let (g', newId) := g.move top .exile none (cause := some cause)
           g := g'
           rest := rest.push newId
+      if !shown.isEmpty then
+        g := g.record (GameEvent.revealed g.turnNumber controller shown (cause := some cause))
       match found with
       | none =>
         return g.putRestOnBottomRandom controller rest (cause := some cause)
@@ -3517,15 +3541,19 @@ partial def applyRevealLibrary (g : Game) (controller : PlayerId)
       let mut g := g0
       let mut found : Option ObjectId := none
       let mut rest : Array ObjectId := #[]
+      let mut shown : Array ObjectId := #[]
       while found.isNone && !(g.player controller).library.isEmpty do
         let top := (g.player controller).library.back!
         let o := g.object! top
+        shown := shown.push top
         g := g.logMsg s!"{(g.player controller).name} reveals {o.name}"
         if o.printed.saga.isSome then found := some top
         else
           let (g', newId) := g.move top .exile none (cause := some cause)
           g := g'
           rest := rest.push newId
+      if !shown.isEmpty then
+        g := g.record (GameEvent.revealed g.turnNumber controller shown (cause := some cause))
       match found with
       | none =>
         return g.putRestOnBottomRandom controller rest (cause := some cause)
@@ -3621,7 +3649,12 @@ def applyRevealFromHand (g : Game) (controller : PlayerId)
       let hand :=
         (g.player pid).hand.filterMap (fun id => g.findObject? id)
       let shown := if hand.size ≤ n then hand else hand.take n
-      let g := g.revealHand pid
+      let shownIds := shown.map (·.id)
+      let g :=
+        if shownIds.isEmpty then g
+        else g.record (GameEvent.revealed g.turnNumber pid shownIds
+          (cause := some (g.resolvingOrRuleCause controller sourceId)))
+      let g := g.revealHand pid (recordEvent := false)
       g.logMsg
         s!"{(g.player pid).name} reveals {shown.size} card(s) (all, if fewer than {n})"
     | _ => g
@@ -3940,7 +3973,12 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     (sourceName : String := "This creature")
     (resolutionOverride : Option TriggeredAbility.TriggerResolution := none)
     (sequencedCardPower : Option Nat := none) : Game :=
-  if resolutionOverride.isNone && !g.interveningStillHolds controller ab then
+  if resolutionOverride.isNone && g.continuations.isEmpty then
+    g.withContinuationFrame fun g =>
+      g.applyTriggeredAbility controller ab sourceId
+        targets dividedDamage lastKnownPower lastKnownToughness sourceName
+        resolutionOverride sequencedCardPower
+  else if resolutionOverride.isNone && !g.interveningStillHolds controller ab then
     g.logMsg "The intervening condition is no longer true. The ability doesn't resolve."
   else if resolutionOverride.isSome || ab.effect.sharedTrigger.isSome then
   match resolutionOverride.getD ab.resolution with
@@ -4153,7 +4191,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     | none => g
     | some n =>
       let ids := g.scryLookedIds controller n
-      let g := g.logLookAtTop controller n
+      let g := g.logLookAtTop controller n ids sourceId
       let eligible := ids.filter (fun id =>
         match g.findObject? id with
         | some o =>
@@ -4259,7 +4297,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.applySacrifice controller ab sourceId targets .another .none
   | .additionalCombatPhase =>
     g.record (GameEvent.extraPhaseAdded g.turnNumber .combat
-      (cause := g.resolvingOneShotCause controller sourceId))
+      (cause := g.resolveOptionalCause (g.resolvingOneShotCause controller sourceId)
+        (fallbackSrc := sourceId) (fallbackCtrl := some controller)))
       |>.logMsg "Attacking creatures untap. After this phase, there is an additional combat phase"
   | .chooseModes modes how =>
     match how with
@@ -4437,7 +4476,12 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
                 (g.findObject? id).any (·.printed.isCreature))).size
             let hand := (g.player pid).hand.filterMap (fun id => g.findObject? id)
             let shown := if hand.size ≤ n then hand else hand.take n
-            (g.revealHand pid).logMsg
+            let shownIds := shown.map (·.id)
+            let g :=
+              if shownIds.isEmpty then g
+              else g.record (GameEvent.revealed g.turnNumber pid shownIds
+                (cause := some (g.resolvingOrRuleCause controller sourceId)))
+            (g.revealHand pid (recordEvent := false)).logMsg
               s!"{(g.player pid).name} reveals {shown.size} card(s) (all, if fewer than {n})") g
       g.applyTriggeredAbility controller ab sourceId targets dividedDamage
         lastKnownPower lastKnownToughness sourceName (some thenDo) sequencedCardPower
@@ -4825,7 +4869,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .createTokens kind (.fixed n) tapped .kind .you .none =>
     g.createKindTokens controller kind n.toNat (tapped := tapped)
   | .markRecentTokensAttacking =>
-    let cause := g.resolvingOneShotCause controller sourceId
+    let cause := g.resolveOptionalCause (g.resolvingOneShotCause controller sourceId)
+      (fallbackSrc := sourceId) (fallbackCtrl := some controller)
     let options := g.legalEnteringAttackTargets controller
     let tgt := options[0]?.getD (.player g.defendingPlayer)
     g.recentTokenIds.foldl (fun g id =>
@@ -4833,7 +4878,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       | some o => g.record (GameEvent.becameAttacking g.turnNumber (g.snapshot o) tgt (cause := cause))
       | none => g) g
   | .addMana types (.fixed 1) =>
-    g.addManaLogged controller types
+    g.addManaLogged controller types (source := sourceId)
   | .discard (.cards n) => g.beginDiscardCards #[controller] n
   | r =>
     match Resolution.toSpell r with

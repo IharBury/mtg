@@ -425,12 +425,13 @@ def lookoutScrying : Game := passBoth lookoutAttackDeclared
 #guard lookoutScrying.actor == some ⟨0⟩
 #guard !lookoutScrying.hasPriority ⟨0⟩
 #guard lookoutScrying.log.any (fun s => mentions s "scries 1")
-#guard lookoutScrying.stack.isEmpty
+#guard lookoutScrying.stack.size == 1
 #guard lookoutScrying.battlefield.any (fun o => o.name == "Lothlórien Lookout")
 
 def lookoutScried : Game := keepScry lookoutScrying
 
 #guard lookoutScried.pending == .none
+#guard lookoutScried.stack.isEmpty
 #guard lookoutScried.hasPriority ⟨0⟩
 #guard lookoutScried.battlefield.any (fun o => o.name == "Lothlórien Lookout")
 

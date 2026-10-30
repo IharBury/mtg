@@ -142,13 +142,10 @@ def arnimActivationLockOk : Bool :=
 /-- Ruling 650: Ten Rings draws through replacement effects. -/
 def tenRingsReplacementOk : Bool :=
   let g := addPermanent afterDraw theTenRings ⟨0⟩ ⟨0⟩
-  let g := addPermanent g aerialDoombot ⟨0⟩ ⟨0⟩
-  let bot := namedPermanent g "Aerial Doombot"
-  let g := g.changeObject bot.id (.printed
-    { bot.printed with drawTwoExceptFirstDrawStep := true })
+  let g := addPermanent g { aerialDoombot with drawTwoExceptFirstDrawStep := true } ⟨0⟩ ⟨0⟩
   let rings := namedPermanent g "The Ten Rings"
   let hand0 := (g.player ⟨0⟩).hand.size
-  let g := { g with step := .end }
+  let g := g.record (GameEvent.stepBegan g.turnNumber .end ⟨0⟩)
   let g := g.applyModeledTrigger ⟨0⟩ (.onStep Effect.stepDrawToTen) (some rings.id)
   (g.player ⟨0⟩).hand.size == hand0 + 2 * (10 - hand0) &&
     (mshRuling 650).comment.contains "replacement effects"

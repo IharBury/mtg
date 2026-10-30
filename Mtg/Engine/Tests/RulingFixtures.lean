@@ -25,7 +25,7 @@ def oliphauntCycleAbility : ActivatedAbility :=
 
 /-- Isolated library so the search finds a known card. -/
 def withOnlyLibrary (g : Game) (p : PlayerId) (cards : Array CardDef) : Game :=
-  let g := g.changePlayer p (.library #[])
+  let g := emptyLibrary g p
   cards.foldl (fun g c => addToLibraryTop g c p) g
 
 def oliphauntCycleReady : Game :=

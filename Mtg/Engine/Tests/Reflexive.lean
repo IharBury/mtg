@@ -12,7 +12,9 @@ with the combination that produces them.
 namespace Mtg.Engine.ReflexiveTests
 
 open Mtg.Engine
-open Mtg.Engine.Tests
+open Mtg.Engine.Tests hiding afterDraw
+
+def afterDraw : Game := Mtg.Engine.Tests.afterDraw.change (.pushContinuationFrame {})
 
 def caster : PlayerId := ⟨0⟩
 def opp : PlayerId := ⟨1⟩
@@ -42,8 +44,7 @@ def planId (g : Game) : ObjectId :=
   | none => panic! "missing The Plan"
 
 def putInGraveyard (g : Game) (card : CardDef) (p : PlayerId) : Game :=
-  insertObject g card p (.graveyard p) none {} (fun id _ =>
-    #[.pushGraveyard id])
+  insertObject g card p (.graveyard p)
 
 def stackEffect (g : Game) : Option Effect :=
   match g.stack.back? with

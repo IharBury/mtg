@@ -42,6 +42,14 @@ def changeControl (g : Game) (o : GameObject) (p : PlayerId)
       g.createEffect (.control o.id p untilEot turnEndsLeft untilSourceLeaves) (cause := cause)
     else g
   else
+    let g :=
+      match g.controllerOf o with
+      | some oldCtrl =>
+        if oldCtrl != p && (g.player oldCtrl).ringBearerId == some o.id then
+          g.record (GameEvent.designation g.turnNumber (g.snapshot o) .ringBearer false
+            (cause := cause.getD (.gameRule .staticAbility)))
+        else g
+      | none => g
     g.createEffect (.control o.id p untilEot turnEndsLeft untilSourceLeaves) (cause := cause)
       |>.logMsg s!"{(g.player p).name} gains control of {g.name o}"
 
@@ -77,6 +85,14 @@ def endControlEffectById (g : Game) (eid : EffectId)
         else
           let othersRemain := !(acc.appliedControlEffectIds cur).isEmpty
           let curCtrl := acc.controllerOf cur
+          let acc :=
+            match prevCtrl with
+            | some prev =>
+              if curCtrl != prevCtrl && (acc.player prev).ringBearerId == some oid then
+                acc.record (GameEvent.designation acc.turnNumber (acc.snapshot cur) .ringBearer false
+                  (cause := cause.getD (.gameRule .staticAbility)))
+              else acc
+            | none => acc
           if othersRemain then
             if curCtrl != prevCtrl then
               acc.logMsg s!"{acc.name cur} reverts to {(acc.player (curCtrl.getD cur.owner)).name}'s control"

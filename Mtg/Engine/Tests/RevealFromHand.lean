@@ -77,12 +77,10 @@ def handSize (g : Game) (p : PlayerId) : Nat :=
   (g.player p).hand.size
 
 def putInHand (g : Game) (card : CardDef) (p : PlayerId) : Game :=
-  insertObject g card p (.hand p) none {} (fun id _ =>
-    #[.pushHand id])
+  insertObject g card p (.hand p)
 
 def putInGraveyard (g : Game) (card : CardDef) (p : PlayerId) : Game :=
-  insertObject g card p (.graveyard p) none {} (fun id _ =>
-    #[.pushGraveyard id])
+  insertObject g card p (.graveyard p)
 
 def clearHand (g : Game) (p : PlayerId) : Game :=
   (g.player p).hand.foldl (fun g id => (g.move id (.library p) none).1) g

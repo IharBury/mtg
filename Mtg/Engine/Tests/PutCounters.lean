@@ -12,7 +12,9 @@ does not.
 namespace Mtg.Engine.PutCountersTests
 
 open Mtg.Engine
-open Mtg.Engine.Tests
+open Mtg.Engine.Tests hiding afterDraw
+
+def afterDraw : Game := Mtg.Engine.Tests.afterDraw.change (.pushContinuationFrame {})
 
 def caster : PlayerId := ⟨0⟩
 def opp : PlayerId := ⟨1⟩
@@ -88,11 +90,11 @@ def board : Game :=
 
 def attach (g : Game) (auraName hostName : String) : Game :=
   let a := obj g auraName
-  g.changeObject a.id (.attachedTo (some (pid g hostName)))
+  g.record (GameEvent.attached g.turnNumber a.id (pid g hostName) (cause := .gameRule .staticAbility))
 
 def leave (g : Game) (name : String) : Game :=
   let o := obj g name
-  g.changeObject o.id (.zone (.graveyard o.owner))
+  (g.move o.id (.graveyard o.owner) none).1
 
 /- Each creature you control gets one +1/+1 counter. A subtype limits that
 to permanents of the subtype. The city's blessing puts two instead.
@@ -111,7 +113,8 @@ An opponent's creature and an artifact are left alone. -/
 #guard
   let plain := step board (.putCounters (.ofKind .plusOnePlusOne) (.youControl .citysBlessing))
   let blessed := step
-    (board.changePlayer caster (.citysBlessing true))
+    (board.record (GameEvent.gainedDesignation board.turnNumber caster .citysBlessing
+      (cause := some (.gameRule .staticAbility))))
     (.putCounters (.ofKind .plusOnePlusOne) (.youControl .citysBlessing))
   plus plain "Counter Bear" == 1 && plus plain "Counter Rock" == 0 &&
     plus blessed "Counter Bear" == 2 && plus blessed "Counter Elf" == 2 &&

@@ -54,6 +54,7 @@ structure EventObject where
   summoningSick      : Bool                        := false
   attackingTarget    : Option AttackTarget         := none
   printed            : Option CardDef              := none
+  adventurerCard     : Option CardDef              := none
   chosenX            : Option Nat                  := none
 deriving Repr, Inhabited, BEq
 
@@ -181,6 +182,7 @@ def GameObject.asEvent (o : GameObject) : EventObject :=
     summoningSick := o.status.summoningSick
     attackingTarget := o.status.attackingTarget
     printed := some o.printed
+    adventurerCard := o.adventurerCard
     chosenX := o.chosenX }
 
 /-- Later steps of a trigger `sequence`, waiting until the pending choice
@@ -230,97 +232,41 @@ structure ChooseModesRest where
   how : TriggeredAbility.TriggerModeHow := .oneUnused
 deriving Repr, Inhabited, BEq
 
-/-- One change to a permanent's `Status` (CR 110.5). -/
+/-- One non-rules as-enters choice on a permanent's `Status` (CR 614.12). -/
 inductive StatusChange where
-  | set (s : Status)
-  | reset
-  | tapped (v : Bool)
-  | damage (v : Int)
-  | summoningSick (v : Bool)
-  | phasedOut (v : Bool)
-  | phasedWith (v : Option ObjectId)
-  | transformed (v : Bool)
   | chosenOdd (v : Option Bool)
   | chosenCreatureType (v : Option CardSubtype)
   | chosenColor (v : Option Color)
   | chosenName (v : Option String)
-  | faceDown (v : Bool)
-  | windcragMardu (v : Bool)
-  | chosenCardType (v : Option CardType)
 deriving Repr, Inhabited, BEq
 
-/-- One change to a `GameObject` (CR 109). -/
+/-- One non-rules engine metadata change on a `GameObject` (CR 109 / 607). -/
 inductive ObjectChange where
   | status (c : StatusChange)
   | statuses (cs : Array StatusChange)
-  | printed (v : CardDef)
-  | owner (v : PlayerId)
-  | controller (v : Option PlayerId)
-  | defaultController (v : Option PlayerId)
-  | zone (v : Zone)
-  | timestamp (v : Nat)
   | abilityEffect (v : Option Effect)
   | triggeredAbility (v : Option TriggeredAbility)
   | reflexiveResolution (v : Option TriggeredAbility.TriggerResolution)
   | sourceId (v : Option ObjectId)
-  | attachedTo (v : Option ObjectId)
-  | adventurerCard (v : Option CardDef)
   | linkedExile (v : Array ObjectId)
   | pushLinkedExile (id : ObjectId)
   | returnToZone (v : Option Zone)
-  | leaveTriggerExile (v : Array ObjectId)
   | pushLeaveTriggerExile (id : ObjectId)
   | fraCauseId (v : Option ObjectId)
   | fraCauseController (v : Option PlayerId)
   | fraCausePower (v : Option Int)
   | fraCauseStatus (v : Option Status)
   | exiledBy (v : Option ObjectId)
-  | isCopy (v : Bool)
-  | chosenX (v : Option Nat)
 deriving Repr, Inhabited, BEq
 
-/-- One change to a `Player` (CR 102). -/
+/-- One pregame or format-setup change on a `Player` (CR 102 / 103). -/
 inductive PlayerChange where
-  | name (v : String)
-  | life (v : Int)
-  | startingLife (v : Int)
-  | maxHandSize (v : Option Nat)
-  | startingHandSize (v : Nat)
-  | manaPool (v : ManaPool)
-  | addMana (t : ManaType) (n : Nat := 1) (elfRestricted : Bool := false)
-      (instRestricted : Bool := false) (heroRestricted : Bool := false)
-      (villainRestricted : Bool := false) (cantNonartifact : Bool := false)
-      (creatureRestricted : Bool := false) (fra : Option FraManaUse := none)
-  | emptyManaPool (becomesColorless : Bool := false)
-  | poison (v : Nat)
-  | addPoison (n : Nat)
-  | lost (v : Bool)
-  | leftTheGame (v : Bool)
   | mulligansTaken (v : Nat)
-  | incMulligansTaken
   | keptOpeningHand (v : Bool)
-  | library (v : Array ObjectId)
-  | pushLibrary (id : ObjectId)
-  | prependLibrary (ids : Array ObjectId)
-  | appendLibrary (ids : Array ObjectId)
-  | stripLibrary (id : ObjectId)
-  | hand (v : Array ObjectId)
-  | pushHand (id : ObjectId)
-  | stripHand (id : ObjectId)
-  | graveyard (v : Array ObjectId)
-  | pushGraveyard (id : ObjectId)
-  | stripGraveyard (id : ObjectId)
-  | enduringStory (v : Bool)
-  | theRingAbilities (v : Nat)
-  | ringBearerId (v : Option ObjectId)
-  | citysBlessing (v : Bool)
   | hasCommander (v : Bool)
   | commanderColorIdentity (v : ColorSet)
   | sideboard (v : Array CardDef)
-  | removeSideboardAt (idx : Nat)
   | teammate (v : Option PlayerId)
-  | isMonarch (v : Bool)
-  | commanderCreatureTypes (v : Array CardSubtype)
 deriving Repr, Inhabited, BEq
 
 /-- One change to a `ProposedSpell` (CR 601.2f–h / 602.2b). -/
@@ -1176,9 +1122,10 @@ inductive CastWay where
   | alternative (name : String)          -- flashback, sneak, impending, prepare, miracle, cascade, free copy, etc.
 deriving DecidableEq, Repr, Inhabited, BEq
 
-/-- An additional cost chosen during announcement (CR 601.2b). -/
+/-- An additional or alternative cost choice recorded during announcement (CR 601.2b). -/
 inductive AdditionalCostChoice where
   | kicker
+  | morph
   | gift (recipient : PlayerId)
   | teamwork (tapped : Array ObjectId)
   | behold (chosen : ObjectId)
@@ -1236,6 +1183,13 @@ inductive CombatEvent where
   | removedFromCombat (object : EventObject)
 deriving Repr, Inhabited, BEq
 
+/-- Lifecycle events for CR 603.7 delayed triggered abilities. -/
+inductive DelayedTriggerEvent where
+  | created (dt : DelayedTrigger)
+  | consumed (dt : DelayedTrigger)
+  | expired (dt : DelayedTrigger)
+deriving Repr, Inhabited, BEq
+
 /-- A rules-level occurrence in the game (CR 603.2 / 610 / 611 / 614). -/
 inductive RulesEvent where
   /-- Zone-change, token/copy creation, and cease-to-exist events. -/
@@ -1260,6 +1214,8 @@ inductive RulesEvent where
   | combat (e : CombatEvent)
   /-- Continuous-effect creation and expiration events (CR 611). -/
   | continuousEffect (e : ContinuousEffectEvent)
+  /-- Delayed triggered ability creation, consumption, and expiration events (CR 603.7). -/
+  | delayedTrigger (e : DelayedTriggerEvent)
 deriving Repr, Inhabited, BEq
 
 /-- One batch of identical tokens in a proposed token-creation event, tracked
@@ -1319,6 +1275,9 @@ inductive PendingReplacement where
       (extraEntersWith : CounterBag) (libraryPosition : Option LibraryPosition)
       (fromStackTime : Nat) (applyHope : Bool)
       (preBattlefield : Option (Array GameObject) := none)
+      (isCopy : Option Bool := none)
+      (overridePrinted : Option CardDef := none)
+      (adventurerCard : Option CardDef := none)
       (cause : Option EventCause)
   | moveSimultaneousToGraveyard (ids : Array ObjectId)
       (preBattlefield : Option (Array GameObject))
@@ -1346,6 +1305,7 @@ inductive PendingReplacement where
       (logKind : EnteringAttackLog) (cause : Option EventCause)
   | afterLastPermanentEnters
   | finishFraChoice
+  | shuffleThen (player : PlayerId) (onDone : AfterRandom)
   | draw (p : PlayerId) (n : Nat) (drawStepFirst : Bool) (cause : Option EventCause)
   | drawOne (p : PlayerId) (applied : Array ReplacementId) (drawStepFirst : Bool)
       (cause : Option EventCause)
@@ -1359,11 +1319,20 @@ inductive PendingReplacement where
   | receivePriority (p : PlayerId)
 deriving Repr, Inhabited, BEq
 
+/-- Final CR 608.2n / 608.2p / 608.3 step run when a resolving stack object's
+`ContinuationFrame` completes all `Pending` and `resolveRandom` pauses. -/
+inductive ResolutionFinish where
+  | ability (objId : ObjectId) (snap : EventObject) (controller : PlayerId)
+      (sourceId : Option ObjectId := none) (sagaChapter : Option Nat := none)
+  | spell (entry : StackEntry) (snap : EventObject) (fromGy : Bool)
+deriving Repr, Inhabited, BEq
+
 /-- One frame of mid-resolution continuation state (CR 608.2). Grouping the
-72 per-step/per-card registers plus `resolvingContext` and `pendingReplacement`
-into a frame on `Game.continuations` prevents nested resolution choices
-(reflexive triggers, replacement choices, cast-during-resolution) from
-clobbering outer frames. -/
+per-step/per-card registers plus `resolvingContext`, `resolvingSpell`,
+`resolvingAbility`, `resolvingDivision`, `afterRandom`, `resolutionFinish`, and
+`pendingReplacement` into a frame on `Game.continuations` prevents nested
+resolution choices (reflexive triggers, replacement choices,
+cast-during-resolution) from clobbering outer frames. -/
 structure ContinuationFrame where
   /-- Draw these cards after the current scry finishes (e.g. Hithlain Knots). -/
   pendingDrawAfterScry : Option (PlayerId × Nat) := none
@@ -1513,6 +1482,19 @@ structure ContinuationFrame where
   /-- Active one-shot `EventCause` carried across a multi-step resolution choice
   before the chosen cards move (CR 608.2c). -/
   stashedCause : Option EventCause := none
+  /-- The spell whose effect is currently resolving (CR 608.2). -/
+  resolvingSpell : Option ObjectId := none
+  /-- The activated or triggered ability currently resolving (CR 608.2). -/
+  resolvingAbility : Option ObjectId := none
+  /-- Damage assigned to each target of the resolving divided-damage ability (CR 601.2d). -/
+  resolvingDivision : Array Nat := #[]
+  /-- Resolution-scoped continuation after a `--norandom` result is applied. -/
+  afterRandom : AfterRandom := .none
+  /-- Deferred CR 608.2n / 608.2p / 608.3 completion step for the resolving stack object. -/
+  resolutionFinish : Option ResolutionFinish := none
+  /-- Deferred `StackObjectEvent.resolved` payload waiting on an ETB replacement
+  or as-enters choice opened during `resolutionFinish`. -/
+  pendingResolvedEvent : Option (EventObject × PlayerId × EventCause) := none
 deriving Repr, Inhabited, BEq
 
 /-- Mutations to the top frame of `Game.continuations`. -/
@@ -1597,32 +1579,33 @@ inductive ContinuationChange where
   | untapSearchedIfLands (v : Option Nat)
   | resolvingContext (v : Option (Option ObjectId × PlayerId))
   | stashedCause (v : Option EventCause)
+  | resolvingSpell (v : Option ObjectId)
+  | resolvingAbility (v : Option ObjectId)
+  | resolvingDivision (v : Array Nat)
+  | afterRandom (v : AfterRandom)
+  | resolutionFinish (v : Option ResolutionFinish)
+  | pendingResolvedEvent (v : Option (EventObject × PlayerId × EventCause))
 deriving Repr, Inhabited, BEq
 
 /-- Internal engine state mutations that are not rules-level occurrences. -/
 inductive EngineChange where
-  /-- Update a player's state. -/
+  /-- Update a player's pregame/format state. -/
   | player (p : PlayerId) (c : PlayerChange)
   | playerChanges (p : PlayerId) (cs : Array PlayerChange)
   | players (v : Array Player)
-  | setPlayer (pl : Player)
-  /-- Update an object's state. -/
+  /-- Update an object's non-rules engine metadata. -/
   | object (id : ObjectId) (c : ObjectChange)
   | objectChanges (id : ObjectId) (cs : Array ObjectChange)
-  | objects (v : Array GameObject)
-  | setObject (o : GameObject)
-  | removeObject (id : ObjectId)
-  | replaceObject (oldId : ObjectId) (fresh : GameObject)
   /-- Update the stack. -/
   | stack (v : Array StackEntry)
   | pushStack (e : StackEntry)
   | popStack
-  | removeFromStack (objectId : ObjectId)
   | setStackEntryAt (idx : Nat) (e : StackEntry)
-  /-- Update the proposed spell or ability. -/
+  /-- Update or reverse the proposed spell or ability (CR 601.2 / 602.2 / 733.1). -/
   | proposedSpell (v : Option ProposedSpell)
   | proposal (c : ProposalChange)
   | proposalChanges (cs : Array ProposalChange)
+  | reverseProposal (prop : ProposedSpell)
   /-- Update the continuation frame stack. -/
   | continuations (frames : Array ContinuationFrame)
   | pushContinuationFrame (frame : ContinuationFrame := {})
@@ -1634,10 +1617,8 @@ inductive EngineChange where
   | pending (v : Pending)
   | nextObjectId (v : Nat)
   | nextEffectId (v : Nat)
-  | nextBatchId (v : Nat)
-  | activeEffects (v : Array (EffectId × ContinuousEffectSpec))
   | timestamp (v : Nat)
-  | afterRandom (v : AfterRandom)
+  | pregameRandom (v : PregameRandom)
   | result (v : Option GameResult)
   | log (v : Array String)
   | logMsg (msg : String)
@@ -1656,23 +1637,16 @@ inductive EngineChange where
   | pushWaitingTrigger (wt : WaitingTrigger)
   | removeWaitingTriggersOf (p : PlayerId)
   | removeWaitingTriggersForEvent (ev : TriggerEvent)
-  | removeWaitingTriggersForPlayerSource (p : PlayerId) (sourceId : ObjectId) (part2 : Bool)
-  | eraseFirstWaitingTriggerForPlayerSource (p : PlayerId) (sourceId : ObjectId) (part2 : Bool)
   | firstStrikeDamageDone (v : Bool)
   | pendingRegularCombatDamage (v : Bool)
   | firstStrikeAssignedThisCombat (v : Array ObjectId)
-  | resolvingSpell (v : Option ObjectId)
-  | resolvingAbility (v : Option ObjectId)
+  | clearAssignedCombatDamage
   | replacementOrder (ids : Array ReplacementId)
   | castingFromTop (v : Bool)
-  | delayedTriggers (v : Array DelayedTrigger)
-  | pushDelayedTrigger (dt : DelayedTrigger)
-  | resolvingDivision (v : Array Nat)
   | wardQueue (v : Array WardObligation)
   | enqueueWard (ws : Array WardObligation)
   | ancestryLandsTapped (v : Array ObjectId)
   | pushAncestryLandTapped (id : ObjectId)
-  | removeAncestryLandTapped (id : ObjectId)
   | sbaChecked
   | clearEvents
 deriving Repr, Inhabited, BEq
@@ -1758,45 +1732,65 @@ namespace EngineChange
 @[inline] def untapSearchedIfLands (v : Option Nat) : EngineChange := .continuation (.untapSearchedIfLands v)
 @[inline] def resolvingContext (v : Option (Option ObjectId × PlayerId)) : EngineChange := .continuation (.resolvingContext v)
 @[inline] def stashedCause (v : Option EventCause) : EngineChange := .continuation (.stashedCause v)
+@[inline] def resolvingSpell (v : Option ObjectId) : EngineChange := .continuation (.resolvingSpell v)
+@[inline] def resolvingAbility (v : Option ObjectId) : EngineChange := .continuation (.resolvingAbility v)
+@[inline] def resolvingDivision (v : Array Nat) : EngineChange := .continuation (.resolvingDivision v)
+@[inline] def afterRandom (v : AfterRandom) : EngineChange := .continuation (.afterRandom v)
+@[inline] def resolutionFinish (v : Option ResolutionFinish) : EngineChange := .continuation (.resolutionFinish v)
+@[inline] def pendingResolvedEvent (v : Option (EventObject × PlayerId × EventCause)) : EngineChange := .continuation (.pendingResolvedEvent v)
 end EngineChange
 
-/-- One change to the game, without the turn number. `GameEvent` stores the turn,
-batch, and cause. -/
+/-- One change to the game, without the turn number. -/
 inductive GameChange where
   | rules (e : RulesEvent)
   | engine (c : EngineChange)
 deriving Repr, Inhabited, BEq
 
 /-- A game state change on a given turn (CR 500). `Game.events` records each
-one that happens. -/
-structure GameEvent where
-  turn : Nat
-  batch : BatchId := ⟨0⟩
-  cause : EventCause
-  change : GameChange
+one that happens. Every `RulesEvent` carries an explicit `EventCause`;
+internal `EngineChange` mutations are cause-free. -/
+inductive GameEvent where
+  | rules (turn : Nat) (e : RulesEvent) (cause : EventCause) (batch : BatchId := ⟨0⟩)
+  | engine (turn : Nat) (c : EngineChange) (batch : BatchId := ⟨0⟩)
 deriving Repr, Inhabited, BEq
 
 namespace GameEvent
 
-/-- Migration helper for sites that have not yet classified their `EventCause`. -/
-def unclassified (turn : Nat) (change : GameChange) (batch : BatchId := ⟨0⟩) : GameEvent :=
-  { turn, batch, cause := .unclassified, change }
+/-- Turn number on which `e` occurred. -/
+@[inline] def turn : GameEvent → Nat
+  | .rules t .. | .engine t .. => t
 
-/-- Construct a `GameEvent` from a `RulesEvent` with an explicit `EventCause`. -/
-def rules (turn : Nat) (e : RulesEvent) (cause : EventCause)
-    (batch : BatchId := ⟨0⟩) : GameEvent :=
-  { turn, batch, cause, change := .rules e }
+/-- Batch identifier of `e` (`⟨0⟩` for engine changes or unbatched events). -/
+@[inline] def batch : GameEvent → BatchId
+  | .rules _ _ _ b | .engine _ _ b => b
 
-/-- Route a `RulesEvent` with an optional `EventCause` through `rules`,
-defaulting `none` to `.unclassified` (upgraded to `.oneShotEffect` by
-`applyEvent` when a spell or ability is actively resolving). -/
-def rulesOrUnclassified (turn : Nat) (e : RulesEvent)
-    (cause : Option EventCause := none) (batch : BatchId := ⟨0⟩) : GameEvent :=
-  rules turn e (cause.getD .unclassified) batch
+/-- Return `e` stamped with `b`. -/
+@[inline] def withBatch (e : GameEvent) (b : BatchId) : GameEvent :=
+  match e with
+  | .rules t r c _ => .rules t r c b
+  | .engine t c _ => .engine t c b
 
-/-- Construct an internal `EngineChange` event. -/
-def engine (turn : Nat) (c : EngineChange) (batch : BatchId := ⟨0⟩) : GameEvent :=
-  unclassified turn (.engine c) batch
+/-- Return `e` with its `RulesEvent` payload replaced, preserving turn, cause, and batch. -/
+@[inline] def withRules (e : GameEvent) (r : RulesEvent) : GameEvent :=
+  match e with
+  | .rules t _ c b => .rules t r c b
+  | .engine .. => e
+
+/-- Return `e` with its `EventCause` replaced (no-op on `.engine`). -/
+@[inline] def withCause (e : GameEvent) (c : EventCause) : GameEvent :=
+  match e with
+  | .rules t r _ b => .rules t r c b
+  | .engine .. => e
+
+/-- Tagged rules/engine payload of `e`. -/
+@[inline] def change : GameEvent → GameChange
+  | .rules _ r .. => .rules r
+  | .engine _ c .. => .engine c
+
+/-- `some cause` for a `RulesEvent`, or `none` for a cause-free `EngineChange`. -/
+@[inline] def cause? : GameEvent → Option EventCause
+  | .rules _ _ c _ => some c
+  | .engine .. => none
 
 /-- `object` moved from `fromZone` to `toZone` (CR 400.6 / 400.7). -/
 def moved (turn : Nat) (before : EventObject) (fromZone toZone : Zone)
@@ -1806,7 +1800,7 @@ def moved (turn : Nat) (before : EventObject) (fromZone toZone : Zone)
     (actor : Option PlayerId := none)
     (entersWith : CounterBag := #[])
     (libraryPosition : Option LibraryPosition := none)
-    (cause : Option EventCause := none) : GameEvent :=
+    (cause : EventCause) : GameEvent :=
   let v :=
     match verb with
     | some v => v
@@ -1839,7 +1833,7 @@ def moved (turn : Nat) (before : EventObject) (fromZone toZone : Zone)
         | .hand p => some p
         | _ => some before.owner
       else none
-  rulesOrUnclassified turn
+  rules turn
     (.zone (.moved beforeObj afterObj fromZone toZone v actor' entersWith libraryPosition))
     cause
 
@@ -1848,27 +1842,27 @@ def drew (turn : Nat) (player : PlayerId) (card : ObjectId) (nth : Nat)
     (firstOfOwnDrawStep : Bool := false)
     (before : Option EventObject := none)
     (after : Option EventObject := none)
-    (cause : Option EventCause := none) : GameEvent :=
+    (cause : EventCause) : GameEvent :=
   let b := before.getD { id := some card, owner := player, zone := .library player }
   let a := after.getD { b with id := some card, owner := player, zone := .hand player }
-  rulesOrUnclassified turn
+  rules turn
     (.zone (.moved b a (.library player) (.hand player) (.draw nth firstOfOwnDrawStep) (some player)))
     cause
 
 /-- `player` gained or lost life (CR 119.2 / 119.3). -/
 def life (turn : Nat) (player : PlayerId) (amount : Nat)
     (gained : Bool := false) (fromDamage : Bool := false) (combat : Bool := false)
-    (cause : Option EventCause := none) : GameEvent :=
+    (cause : EventCause) : GameEvent :=
   let ev :=
     if gained then LifeEvent.gained player amount
     else .lost player amount fromDamage combat
-  rulesOrUnclassified turn (.life ev) cause
+  rules turn (.life ev) cause
 
 /-- Damage was dealt to an object (CR 120.3 / 120.4b). -/
 def damaged (turn : Nat) (source : EventObject) (object : EventObject)
     (amount : Nat) (combat : Bool := false)
-    (cause : Option EventCause := none) : GameEvent :=
-  rulesOrUnclassified turn (.damage (.dealt #[{
+    (cause : EventCause) : GameEvent :=
+  rules turn (.damage (.dealt #[{
     source := source
     recipient := .permanent object
     amount := amount
@@ -1877,8 +1871,8 @@ def damaged (turn : Nat) (source : EventObject) (object : EventObject)
 /-- Damage was dealt to a player (CR 120.3a / 120.4b). -/
 def damagedPlayer (turn : Nat) (source : EventObject) (player : PlayerId)
     (amount : Nat) (combat : Bool := false)
-    (cause : Option EventCause := none) : GameEvent :=
-  rulesOrUnclassified turn (.damage (.dealt #[{
+    (cause : EventCause) : GameEvent :=
+  rules turn (.damage (.dealt #[{
     source := source
     recipient := .player player
     amount := amount
@@ -1886,19 +1880,19 @@ def damagedPlayer (turn : Nat) (source : EventObject) (player : PlayerId)
 
 /-- Result of damage to a creature (CR 120.3e): marks `amount` damage on `object`. -/
 def damageMarked (turn : Nat) (object : ObjectId) (amount : Nat)
-    (cause : Option EventCause := none) : GameEvent :=
-  rulesOrUnclassified turn (.damage (.marked object amount)) cause
+    (cause : EventCause) : GameEvent :=
+  rules turn (.damage (.marked object amount)) cause
 
 /-- Result of cleanup (CR 514.2) or regeneration (CR 701.19a): clears marked damage. -/
 def damageMarkedCleared (turn : Nat) (objects : Array ObjectId)
-    (cause : Option EventCause := none) : GameEvent :=
-  rulesOrUnclassified turn (.damage (.markedCleared objects)) cause
+    (cause : EventCause) : GameEvent :=
+  rules turn (.damage (.markedCleared objects)) cause
 
 /-- Damage that was prevented (CR 615.1 / 615.6). -/
 def damagePrevented (turn : Nat) (source : EventObject)
     (recipient : DamageRecipient) (amount : Nat)
-    (cause : Option EventCause := none) : GameEvent :=
-  rulesOrUnclassified turn (.damage (.prevented source recipient amount)) cause
+    (cause : EventCause) : GameEvent :=
+  rules turn (.damage (.prevented source recipient amount)) cause
 
 /-- Combat damage was assigned by attacking (`forAttackers`) or blocking
 creatures (CR 510.1 / 510.4 / 703.4k). -/
@@ -1952,8 +1946,8 @@ def attackersDeclared (turn : Nat) (player : PlayerId)
 
 /-- `creature` entered the battlefield attacking or was made attacking by an effect (CR 508.4). -/
 def becameAttacking (turn : Nat) (creature : EventObject) (target : AttackTarget)
-    (cause : Option EventCause := none) : GameEvent :=
-  rulesOrUnclassified turn (.combat (.becameAttacking creature target)) cause
+    (cause : EventCause) : GameEvent :=
+  rules turn (.combat (.becameAttacking creature target)) cause
 
 /-- `player` declared `decls` as blockers (CR 509.1g). -/
 def blockersDeclared (turn : Nat) (player : PlayerId)
@@ -1983,18 +1977,18 @@ def attacked (turn : Nat) (player : PlayerId) (attacker : EventObject) (whom : P
 /-- `object` became tapped or untapped by a tap action (CR 701.26a). `nowTapped` is the result. -/
 def tapped (turn : Nat) (object : EventObject) (nowTapped : Bool := true)
     (duringControllersTurn : Bool := false)
-    (cause : Option EventCause := none) : GameEvent :=
+    (cause : EventCause) : GameEvent :=
   if nowTapped then
-    rulesOrUnclassified turn (.permanent (.tapped object duringControllersTurn)) cause
+    rules turn (.permanent (.tapped object duringControllersTurn)) cause
   else
-    rulesOrUnclassified turn (.permanent (.untapped object)) cause
+    rules turn (.permanent (.untapped object)) cause
 
 /-- Counters were put on or removed from `object` (CR 122.1). -/
 def counters (turn : Nat) (player : Option PlayerId) (object : EventObject)
     (kind : CounterKind) (n : Nat) (removed : Bool := false)
-    (cause : Option EventCause := none) : GameEvent :=
+    (cause : EventCause) : GameEvent :=
   let delta := if removed then CounterDelta.removed n else .put n
-  rulesOrUnclassified turn (.permanent (.counters (.object object) kind delta player)) cause
+  rules turn (.permanent (.counters (.object object) kind delta player)) cause
 
 /-- `player` scried or surveilled (CR 701.22 / 701.25 / 610.1). `n` cards were looked at. `asked` is the
 printed number; it defaults to `n`. -/
@@ -2009,27 +2003,27 @@ def looked (turn : Nat) (player : PlayerId) (n : Nat) (surveil : Bool := false)
 
 /-- `player` sacrificed `object` (CR 701.21 / 400.7). -/
 def sacrificed (turn : Nat) (player : PlayerId) (object : EventObject)
-    (cause : Option EventCause := none) : GameEvent :=
+    (cause : EventCause) : GameEvent :=
   let before := { object with zone := .battlefield }
   let after := { object with zone := .graveyard object.owner, controller := none }
-  rulesOrUnclassified turn
+  rules turn
     (.zone (.moved before after .battlefield (.graveyard object.owner) .sacrifice (some player)))
     cause
 
 /-- `player` created `object` (CR 111 / 701.7 / 707.10). -/
 def created (turn : Nat) (player : PlayerId) (object : EventObject)
-    (cause : Option EventCause := none) : GameEvent :=
-  rulesOrUnclassified turn (.zone (.created object player)) cause
+    (cause : EventCause) : GameEvent :=
+  rules turn (.zone (.created object player)) cause
 
 /-- `object` ceased to exist (CR 704.5d / 704.5e / 111.8). -/
 def ceasedToExist (turn : Nat) (object : EventObject)
-    (cause : Option EventCause := none) : GameEvent :=
-  rulesOrUnclassified turn (.zone (.ceasedToExist object)) cause
+    (cause : EventCause) : GameEvent :=
+  rules turn (.zone (.ceasedToExist object)) cause
 
 /-- `object` changed controller from `fromPlayer` to `toPlayer` (CR 110.2 / 613.1b). -/
 def control (turn : Nat) (object : ObjectId) (fromPlayer toPlayer : PlayerId)
-    (cause : Option EventCause := none) : GameEvent :=
-  rulesOrUnclassified turn (.permanent (.controlChanged { id := some object } fromPlayer toPlayer)) cause
+    (cause : EventCause) : GameEvent :=
+  rules turn (.permanent (.controlChanged { id := some object } fromPlayer toPlayer)) cause
 
 /-- `player` began a turn (CR 500.1 / 500.7). -/
 def turnBegan (turn : Nat) (player : PlayerId) (extra : Bool := false)
@@ -2069,18 +2063,18 @@ def turnEnded (turn : Nat) (player : PlayerId)
 
 /-- `player` was granted an extra turn after `after` (CR 500.7). -/
 def extraTurnAdded (turn : Nat) (player : PlayerId) (after : TurnRef := .current)
-    (cause : Option EventCause := none) : GameEvent :=
-  rulesOrUnclassified turn (.turn (.extraTurnAdded player after)) cause
+    (cause : EventCause) : GameEvent :=
+  rules turn (.turn (.extraTurnAdded player after)) cause
 
 /-- An extra `phase` was added after `afterPhase` (CR 500.8). -/
 def extraPhaseAdded (turn : Nat) (phase : Phase) (afterPhase : PhaseRef := .current)
-    (cause : Option EventCause := none) : GameEvent :=
-  rulesOrUnclassified turn (.turn (.extraPhaseAdded phase afterPhase)) cause
+    (cause : EventCause) : GameEvent :=
+  rules turn (.turn (.extraPhaseAdded phase afterPhase)) cause
 
 /-- An extra `step` was added at `anchor` (CR 500.9). -/
 def extraStepAdded (turn : Nat) (step : Step) (anchor : StepAnchor)
-    (cause : Option EventCause := none) : GameEvent :=
-  rulesOrUnclassified turn (.turn (.extraStepAdded step anchor)) cause
+    (cause : EventCause) : GameEvent :=
+  rules turn (.turn (.extraStepAdded step anchor)) cause
 
 /-- The step or phase changed (CR 500.1). -/
 def stepped (turn : Nat) (step : Step) (active : PlayerId)
@@ -2131,8 +2125,8 @@ def triggerModeChosen (turn : Nat) (source : ObjectId) (mode : Nat)
 /-- `original` on the stack was copied as `copy` under `controller`'s control (CR 707.10). -/
 def stackObjectCopied (turn : Nat) (original : ObjectId) (copy : EventObject)
     (controller : PlayerId)
-    (cause : Option EventCause := none) : GameEvent :=
-  rulesOrUnclassified turn (.stackObject (.copied original copy controller)) cause
+    (cause : EventCause) : GameEvent :=
+  rules turn (.stackObject (.copied original copy controller)) cause
 
 /-- `obj` was removed from the stack on resolution because all its targets were illegal (CR 608.2b). -/
 def removedOnResolution (turn : Nat) (obj : EventObject)
@@ -2151,48 +2145,48 @@ def resolved (turn : Nat) (player : PlayerId) (nth : Nat)
 /-- `object` became attached to `host` (CR 701.3a / 303.4 / 301.5). -/
 def attached (turn : Nat) (object host : ObjectId)
     (previous : Option ObjectId := none)
-    (cause : Option EventCause := none) : GameEvent :=
-  rulesOrUnclassified turn (.permanent (.attached { id := some object } host previous)) cause
+    (cause : EventCause) : GameEvent :=
+  rules turn (.permanent (.attached { id := some object } host previous)) cause
 
 /-- `attachment` became unattached from `fromHost` (CR 701.3d / 704.5n / 704.5p). -/
 def unattached (turn : Nat) (attachment : EventObject) (fromHost : ObjectId)
-    (cause : Option EventCause := none) : GameEvent :=
-  rulesOrUnclassified turn (.permanent (.unattached attachment fromHost)) cause
+    (cause : EventCause) : GameEvent :=
+  rules turn (.permanent (.unattached attachment fromHost)) cause
 
 /-- `object` gained or lost designation `d` (CR 110.6 / 701.15b / 701.54a / 903.3). -/
 def designation (turn : Nat) (object : EventObject) (d : PermanentDesignation)
-    (gained : Bool := true) (cause : Option EventCause := none) : GameEvent :=
-  rulesOrUnclassified turn (.permanent (.designation object d gained)) cause
+    (gained : Bool := true) (cause : EventCause) : GameEvent :=
+  rules turn (.permanent (.designation object d gained)) cause
 
 /-- `object` phased out (CR 702.26b / 702.26g). -/
 def phasedOut (turn : Nat) (object : EventObject) (indirectly : Bool := false)
-    (cause : Option EventCause := none) : GameEvent :=
-  rulesOrUnclassified turn (.permanent (.phasedOut object indirectly)) cause
+    (cause : EventCause) : GameEvent :=
+  rules turn (.permanent (.phasedOut object indirectly)) cause
 
 /-- `object` phased in (CR 702.26c / 702.26g). -/
 def phasedIn (turn : Nat) (object : EventObject) (indirectly : Bool := false)
-    (cause : Option EventCause := none) : GameEvent :=
-  rulesOrUnclassified turn (.permanent (.phasedIn object indirectly)) cause
+    (cause : EventCause) : GameEvent :=
+  rules turn (.permanent (.phasedIn object indirectly)) cause
 
 /-- `object` transformed (CR 701.27a / 712.18). -/
 def transformed (turn : Nat) (object : EventObject) (nowBackFace : Bool)
-    (cause : Option EventCause := none) : GameEvent :=
-  rulesOrUnclassified turn (.permanent (.transformed object nowBackFace)) cause
+    (cause : EventCause) : GameEvent :=
+  rules turn (.permanent (.transformed object nowBackFace)) cause
 
 /-- `object` was turned face up (CR 701.40b / 708.8). -/
 def turnedFaceUp (turn : Nat) (object : EventObject)
-    (cause : Option EventCause := none) : GameEvent :=
-  rulesOrUnclassified turn (.permanent (.turnedFaceUp object)) cause
+    (cause : EventCause) : GameEvent :=
+  rules turn (.permanent (.turnedFaceUp object)) cause
 
 /-- `object` was turned face down (CR 701.40f / 708.2). -/
 def turnedFaceDown (turn : Nat) (object : EventObject)
-    (cause : Option EventCause := none) : GameEvent :=
-  rulesOrUnclassified turn (.permanent (.turnedFaceDown object)) cause
+    (cause : EventCause) : GameEvent :=
+  rules turn (.permanent (.turnedFaceDown object)) cause
 
 /-- `player` beheld `quality` (CR 701.62). -/
 def beheld (turn : Nat) (player : PlayerId) (quality : CardSubtype)
-    (cause : Option EventCause := none) : GameEvent :=
-  rulesOrUnclassified turn (.player (.beheld player quality)) cause
+    (cause : EventCause) : GameEvent :=
+  rules turn (.player (.beheld player quality)) cause
 
 /-- `player` added `units` of mana to their mana pool (CR 106.4 / 605.3b). -/
 def manaAdded (turn : Nat) (player : PlayerId) (units : Array ManaUnit)
@@ -2261,8 +2255,8 @@ def gameEnded (turn : Nat) (result : GameResult)
 /-- `player` got poison counters (CR 122.1c). -/
 def poisoned (turn : Nat) (player : PlayerId) (n : Nat)
     (byPlayer : Option PlayerId := none)
-    (cause : Option EventCause := none) : GameEvent :=
-  rulesOrUnclassified turn (.permanent (.counters (.player player) .poison (.put n) byPlayer)) cause
+    (cause : EventCause) : GameEvent :=
+  rules turn (.permanent (.counters (.player player) .poison (.put n) byPlayer)) cause
 
 /-- `player` proliferated (CR 701.34 / 610.1). -/
 def proliferated (turn : Nat) (player : PlayerId)
@@ -2299,16 +2293,16 @@ def drawFromEmptyAttempted (turn : Nat) (player : PlayerId)
 
 /-- `object` untapped, or a stun counter replaced that untap (CR 701.26b / 122.1d). -/
 def untapped (turn : Nat) (object : EventObject) (replacedByStun : Bool := false)
-    (cause : Option EventCause := none) : GameEvent :=
+    (cause : EventCause) : GameEvent :=
   if replacedByStun then
-    rulesOrUnclassified turn (.permanent (.counters (.object object) .stun (.removed 1) none)) cause
+    rules turn (.permanent (.counters (.object object) .stun (.removed 1) none)) cause
   else
-    rulesOrUnclassified turn (.permanent (.untapped object)) cause
+    rules turn (.permanent (.untapped object)) cause
 
 /-- `object` was removed from combat (CR 506.4 / 511.3 / 702.26b). -/
 def removedFromCombat (turn : Nat) (object : EventObject)
-    (cause : Option EventCause := none) : GameEvent :=
-  rulesOrUnclassified turn (.combat (.removedFromCombat object)) cause
+    (cause : EventCause) : GameEvent :=
+  rules turn (.combat (.removedFromCombat object)) cause
 
 /-- `player`'s mana pool emptied (CR 500.5 / 703.4q). -/
 def manaEmptied (turn : Nat) (player : PlayerId)
@@ -2332,13 +2326,28 @@ def playerLeftGame (turn : Nat) (player : PlayerId)
 
 /-- A continuous effect begins (CR 611). -/
 def effectCreated (turn : Nat) (id : EffectId) (spec : ContinuousEffectSpec)
-    (cause : Option EventCause := none) : GameEvent :=
-  rulesOrUnclassified turn (.continuousEffect (.created id spec)) cause
+    (cause : EventCause) : GameEvent :=
+  rules turn (.continuousEffect (.created id spec)) cause
 
 /-- A continuous effect ends (CR 611). -/
 def effectExpired (turn : Nat) (id : EffectId) (_spec : Option ContinuousEffectSpec := none)
-    (cause : Option EventCause := none) : GameEvent :=
-  rulesOrUnclassified turn (.continuousEffect (.expired id)) cause
+    (cause : EventCause) : GameEvent :=
+  rules turn (.continuousEffect (.expired id)) cause
+
+/-- Delayed triggered ability `dt` was created (CR 603.7). -/
+def delayedTriggerCreated (turn : Nat) (dt : DelayedTrigger)
+    (cause : EventCause := dt.cause) (batch : BatchId := ⟨0⟩) : GameEvent :=
+  rules turn (.delayedTrigger (.created dt)) cause batch
+
+/-- One-shot delayed triggered ability `dt` triggered and was consumed (CR 603.7b). -/
+def delayedTriggerConsumed (turn : Nat) (dt : DelayedTrigger)
+    (cause : EventCause := .gameRule .triggeredAbility) (batch : BatchId := ⟨0⟩) : GameEvent :=
+  rules turn (.delayedTrigger (.consumed dt)) cause batch
+
+/-- Duration-scoped delayed triggered ability `dt` expired (CR 603.7b / 514.2 / 800.4i). -/
+def delayedTriggerExpired (turn : Nat) (dt : DelayedTrigger)
+    (cause : EventCause) (batch : BatchId := ⟨0⟩) : GameEvent :=
+  rules turn (.delayedTrigger (.expired dt)) cause batch
 
 /-- Same event, sent to `toZone` instead. Used after a zone replacement (CR 614.6). -/
 def withDestination (e : GameEvent) (toZone : Zone) (discarded : Bool) : GameEvent :=
@@ -2355,7 +2364,7 @@ def withDestination (e : GameEvent) (toZone : Zone) (discarded : Bool) : GameEve
       tapped := if toZone == .battlefield then after.tapped else false
       counters := if toZone == .battlefield then after.counters else #[] }
     let entersWith' := if toZone == .battlefield then entersWith else #[]
-    { e with change := .rules (.zone (.moved before after' fromZone toZone verb' actor entersWith' libPos)) }
+    e.withRules (.zone (.moved before after' fromZone toZone verb' actor entersWith' libPos))
   | _ => e
 
 /-- A creature moved from the battlefield to a graveyard (CR 700.4). -/
@@ -2437,7 +2446,7 @@ def watches (e : GameEvent) (watch : ReplacementWatch) : Bool :=
   | .wouldEnterBattlefield => e.enteredBattlefield
   | .wouldCreateToken =>
     match e.change with
-    | .rules (.zone (.created object _)) => object.token
+    | .rules (.zone (.created object _)) => object.zone == .battlefield && object.token
     | _ => false
   | .wouldPutCounter =>
     match e.change with
@@ -2524,63 +2533,63 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : ObjectId)
       this before && before.creature
     | .zone (.moved before _ .battlefield _ _ _ _ _), .leaving => this before
     | .zone (.moved before after _ .battlefield _ _ _ _), .entering => this after || this before
-    | .zone (.created object _), .entering => this object
+    | .zone (.created object _), .entering => object.zone == .battlefield && this object
     | .zone (.moved _ after _ .battlefield _ _ _ _), .landYouControlEnters =>
       yours after && after.land
     | .zone (.created object controller), .landYouControlEnters =>
-      you controller && object.land
+      object.zone == .battlefield && you controller && object.land
     | .zone (.moved _ after _ .battlefield _ _ _ _), .forestYouControlEnters =>
       yours after && after.forest
     | .zone (.created object controller), .forestYouControlEnters =>
-      you controller && object.forest
+      object.zone == .battlefield && you controller && object.forest
     | .zone (.moved _ after _ .battlefield _ _ _ _), .mountainYouControlEnters =>
       yours after && after.mountain
     | .zone (.created object controller), .mountainYouControlEnters =>
-      you controller && object.mountain
+      object.zone == .battlefield && you controller && object.mountain
     | .zone (.moved _ after _ .battlefield _ _ _ _), .artifactYouControlEnters =>
       yours after && after.artifact
     | .zone (.created object controller), .artifactYouControlEnters =>
-      you controller && object.artifact
+      object.zone == .battlefield && you controller && object.artifact
     | .zone (.moved _ after _ .battlefield _ _ _ _), .creatureYouControlEnters =>
       yours after && after.creature
     | .zone (.created object controller), .creatureYouControlEnters =>
-      you controller && object.creature
+      object.zone == .battlefield && you controller && object.creature
     | .zone (.moved _ after _ .battlefield _ _ _ _), .anotherCreatureYouControlEnters =>
       yours after && other after && after.creature
     | .zone (.created object controller), .anotherCreatureYouControlEnters =>
-      you controller && other object && object.creature
+      object.zone == .battlefield && you controller && other object && object.creature
     | .zone (.moved _ after _ .battlefield _ _ _ _), .anotherElfYouControlEnters =>
       yours after && other after && after.elf
     | .zone (.created object controller), .anotherElfYouControlEnters =>
-      you controller && other object && object.elf
+      object.zone == .battlefield && you controller && other object && object.elf
     | .zone (.moved _ after _ .battlefield _ _ _ _), .tokenYouControlEnters =>
       yours after && after.token
     | .zone (.created object controller), .tokenYouControlEnters =>
-      you controller && object.token
+      object.zone == .battlefield && you controller && object.token
     | .zone (.moved _ after _ .battlefield _ _ _ _), .equipmentYouControlEnters =>
       yours after && after.equipment
     | .zone (.created object controller), .equipmentYouControlEnters =>
-      you controller && object.equipment
+      object.zone == .battlefield && you controller && object.equipment
     | .zone (.moved _ after _ .battlefield _ _ _ _), .anotherArtifactEnters =>
       yours after && other after && after.artifact
     | .zone (.created object controller), .anotherArtifactEnters =>
-      you controller && other object && object.artifact
+      object.zone == .battlefield && you controller && other object && object.artifact
     | .zone (.moved _ after _ .battlefield _ _ _ _), .anotherVillainEnters =>
       yours after && other after && after.villain
     | .zone (.created object controller), .anotherVillainEnters =>
-      you controller && other object && object.villain
+      object.zone == .battlefield && you controller && other object && object.villain
     | .zone (.moved _ after _ .battlefield _ _ _ _), .anotherVillainOrArtifactEnters =>
       yours after && other after && (after.villain || after.artifact)
     | .zone (.created object controller), .anotherVillainOrArtifactEnters =>
-      you controller && other object && (object.villain || object.artifact)
+      object.zone == .battlefield && you controller && other object && (object.villain || object.artifact)
     | .zone (.moved _ after _ .battlefield _ _ _ _), .anotherNontokenHeroEnters =>
       yours after && other after && !after.token && after.hero
     | .zone (.created object controller), .anotherNontokenHeroEnters =>
-      you controller && other object && !object.token && object.hero
+      object.zone == .battlefield && you controller && other object && !object.token && object.hero
     | .zone (.moved _ after _ .battlefield _ _ _ _), .anotherNontokenArtifactEnters =>
       yours after && other after && !after.token && after.artifact
     | .zone (.created object controller), .anotherNontokenArtifactEnters =>
-      you controller && other object && !object.token && object.artifact
+      object.zone == .battlefield && you controller && other object && !object.token && object.artifact
     | .zone (.moved before _ .battlefield (.graveyard _) _ _ _ _), .creatureYouControlDies =>
       yours before && before.creature
     | .zone (.moved before _ .battlefield (.graveyard _) _ _ _ _), .nontokenYouControlDies =>
@@ -2605,7 +2614,7 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : ObjectId)
       you p && p == q && (this before || this after)
     | .zone (.moved before after (.hand p) (.graveyard q) .discard _ _ _), .fra .youCycle =>
       you p && p == q && (this before || this after) &&
-        match e.cause with | .costPayment .discard _ _ => true | _ => false
+        match e.cause? with | some (.costPayment .discard _ _) => true | _ => false
     | .zone (.moved _ _ (.hand p) (.graveyard q) .discard _ _ _), .fra .youDiscardOne =>
       you p && p == q
     | .zone (.moved _ _ (.hand p) (.graveyard q) .discard _ _ _), .fra .playerDiscards =>
@@ -2621,30 +2630,30 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : ObjectId)
     | .zone (.moved _ after _ .battlefield _ _ _ _), .subtypeYouControlEnters sub =>
       yours after && after.hasSubtype sub
     | .zone (.created object controller), .subtypeYouControlEnters sub =>
-      you controller && object.hasSubtype sub
+      object.zone == .battlefield && you controller && object.hasSubtype sub
     | .zone (.moved before after _ .battlefield _ _ entersWith _), .sagaChapter =>
       (this after || this before) && entersWith.count .lore > 0
     | .zone (.created object _), .sagaChapter =>
-      this object && object.counters.count .lore > 0
+      object.zone == .battlefield && this object && object.counters.count .lore > 0
     | .zone (.moved before after _ .battlefield _ _ entersWith _), .nthPlanCounter _ =>
       (this after || this before) && entersWith.count .plan > 0
     | .zone (.created object _), .nthPlanCounter _ =>
-      this object && object.counters.count .plan > 0
+      object.zone == .battlefield && this object && object.counters.count .plan > 0
     | .zone (.moved _ after _ .battlefield _ actor entersWith _), .youPutPlusOne =>
       let p := actor.orElse (fun _ => after.controller)
       p.any you && entersWith.count .plusOnePlusOne > 0 && after.creature
     | .zone (.created object controller), .youPutPlusOne =>
-      you controller && object.counters.count .plusOnePlusOne > 0 && object.creature
+      object.zone == .battlefield && you controller && object.counters.count .plusOnePlusOne > 0 && object.creature
     | .zone (.moved _ after _ .battlefield _ actor entersWith _), .youPutCountersOnGoblinOrcArmy =>
       let p := actor.orElse (fun _ => after.controller)
       p.any you && yours after && entersWith.any (fun (_, n) => n > 0) && after.goblinOrcArmy
     | .zone (.created object controller), .youPutCountersOnGoblinOrcArmy =>
-      you controller && yours object && object.counters.any (fun (_, n) => n > 0) && object.goblinOrcArmy
+      object.zone == .battlefield && you controller && yours object && object.counters.any (fun (_, n) => n > 0) && object.goblinOrcArmy
     | .zone (.moved _ after _ .battlefield _ actor entersWith _), .fra .youPutLoyaltyCounters =>
       let p := actor.orElse (fun _ => after.controller)
       p.any you && entersWith.count .loyalty > 0 && after.planeswalker
     | .zone (.created object controller), .fra .youPutLoyaltyCounters =>
-      you controller && object.counters.count .loyalty > 0 && object.planeswalker
+      object.zone == .battlefield && you controller && object.counters.count .loyalty > 0 && object.planeswalker
     | .cast (.spellCast spell p _), .youCastInstantOrSorcery =>
       you p && spell.instantOrSorcery
     | .cast (.spellCast spell p _), .youCastNoncreature =>
@@ -2689,7 +2698,7 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : ObjectId)
     | .permanent (.tapped object during), .creatureYouControlTapped =>
       yours object && object.creature && during
     | .permanent (.tapped object _), .tappedForTeamwork =>
-      this object && match e.cause with | .costPayment .teamwork _ _ => true | _ => false
+      this object && match e.cause? with | some (.costPayment .teamwork _ _) => true | _ => false
     | .player (.scried p _ _ _ asked), .youScry => you p && asked > 0
     | .player (.scried p _ _ _ asked), .youScryOrSurveil => you p && asked > 0
     | .player (.surveilled p _ _ _ asked), .youScryOrSurveil => you p && asked > 0
@@ -2697,7 +2706,7 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : ObjectId)
     | .player (.ringTempted p _ _), .theRingTemptsYou => you p
     | .player (.ringTempted p (some _) _), .youChooseRingBearer => you p
     | .stackObject (.resolved obj nth), .finalSagaChapterResolves =>
-      nth == 0 && yours obj && obj.hasSubtype .saga
+      nth == 0 && yours obj && obj.types.isEmpty && obj.hasSubtype .saga
     | .permanent (.counters (.object object) .plusOnePlusOne (.put n) (some p)), .youPutPlusOne =>
       you p && n > 0 && object.creature
     | .permanent (.counters (.object object) _ (.put n) (some p)), .youPutCountersOnGoblinOrcArmy =>
@@ -2730,7 +2739,8 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : ObjectId)
     | .cast (.abilityActivated _ _ p (.nonMana (some _) ..)), .fra .opponentActivatesLoyaltyAbility => !you p
     | .cast (.targeted _ targets _), .becomesTarget =>
       targets.any (fun t => match t with | .permanent oid => oid == sourceId | _ => false)
-    | .zone (.created object p), .fra .youCreateCreatureTokens => you p && object.creature
+    | .zone (.created object p), .fra .youCreateCreatureTokens =>
+      object.zone == .battlefield && object.token && you p && object.creature
     | _, _ => false
 
 /-- Counters put on objects in `e` (CR 122.1 / 122.6), including counters
@@ -2744,8 +2754,10 @@ def countersPutInEvent (e : GameEvent) : Array (EventObject × CounterKind × Na
     entersWith.foldl (fun acc (kind, n) =>
       if n > 0 then acc.push (after, kind, n, actor.orElse (fun _ => after.controller)) else acc) #[]
   | .rules (.zone (.created object controller)) =>
-    object.counters.foldl (fun acc (kind, n) =>
-      if n > 0 then acc.push (object, kind, n, some controller) else acc) #[]
+    if object.zone != .battlefield then #[]
+    else
+      object.counters.foldl (fun acc (kind, n) =>
+        if n > 0 then acc.push (object, kind, n, some controller) else acc) #[]
   | _ => #[]
 
 /-- All counters put on objects in `events` (CR 122.1 / 122.6), including
@@ -2808,7 +2820,8 @@ def artifactEntered (events : Array GameEvent) (turn : Nat) (p : PlayerId) : Boo
       match e.change with
       | .rules (.zone (.moved _ after _ .battlefield _ _ _ _)) =>
         after.controller == some p && after.artifact
-      | .rules (.zone (.created object q)) => q == p && object.artifact
+      | .rules (.zone (.created object q)) =>
+        object.zone == .battlefield && q == p && object.artifact
       | _ => false
 
 /-- `p` attacked with a permanent of `subtype` on `turn`. -/
@@ -2829,7 +2842,8 @@ def subtypeEntered (events : Array GameEvent) (turn : Nat) (p : PlayerId)
       match e.change with
       | .rules (.zone (.moved _ after _ .battlefield _ _ _ _)) =>
         after.controller == some p && after.hasSubtype subtype
-      | .rules (.zone (.created object q)) => q == p && object.hasSubtype subtype
+      | .rules (.zone (.created object q)) =>
+        object.zone == .battlefield && q == p && object.hasSubtype subtype
       | _ => false
 
 /-- `p` activated a loyalty ability on `turn`. -/
@@ -2853,29 +2867,41 @@ def dealtNoncombat (events : Array GameEvent) (turn : Nat) (p : PlayerId) : Bool
 /-- Mana recorded for `spell` when it was cast, if the log has that payment. -/
 def manaSpentOn (events : Array GameEvent) (spell : ObjectId) : Nat :=
   events.foldl (fun n e =>
-    match e.change, e.cause with
-    | .rules (.player (.manaSpent _ units forObj)), .costPayment .mana _ oid? =>
+    match e.change, e.cause? with
+    | .rules (.player (.manaSpent _ units forObj)), some (.costPayment .mana _ oid?) =>
       if forObj == spell || oid? == some spell then max n units.size else n
     | .rules (.player (.manaSpent _ units forObj)), _ =>
       if forObj == spell then max n units.size else n
     | _, _ => n) 0
 
+/-- Whether `srcId` was recorded as a Treasure permanent when its mana ability was activated. -/
+private def isTreasureSourceInLog (events : Array GameEvent) (srcId : ObjectId) : Bool :=
+  events.any fun e =>
+    match e.change with
+    | .rules (.cast (.abilityActivated id snap _ _)) =>
+      id == srcId && snap.subtypes.contains .treasure
+    | _ => false
+
+/-- Whether `u` came from a Treasure source (via spending restriction or `source` provenance). -/
+private def isTreasureManaUnit (events : Array GameEvent) (u : ManaUnit) : Bool :=
+  u.restriction == some (.fra .fromTreasure) || u.source.any (isTreasureSourceInLog events)
+
 /-- Whether mana from a Treasure was spent to cast `spell` (CR 106.6). -/
 def treasureManaSpentOn (events : Array GameEvent) (spell : ObjectId) : Bool :=
   events.any fun e =>
-    match e.change, e.cause with
-    | .rules (.player (.manaSpent _ units forObj)), .costPayment .mana _ oid? =>
+    match e.change, e.cause? with
+    | .rules (.player (.manaSpent _ units forObj)), some (.costPayment .mana _ oid?) =>
       (forObj == spell || oid? == some spell) &&
-        units.any (·.restriction == some (.fra .fromTreasure))
+        units.any (isTreasureManaUnit events)
     | .rules (.player (.manaSpent _ units forObj)), _ =>
-      forObj == spell && units.any (·.restriction == some (.fra .fromTreasure))
+      forObj == spell && units.any (isTreasureManaUnit events)
     | _, _ => false
 
 /-- Whether legendary-restricted mana (Delighted Halfling) was spent to cast `spell` (CR 106.6). -/
 def legendaryManaSpentOn (events : Array GameEvent) (spell : ObjectId) : Bool :=
   events.any fun e =>
-    match e.change, e.cause with
-    | .rules (.player (.manaSpent _ units forObj)), .costPayment .mana _ oid? =>
+    match e.change, e.cause? with
+    | .rules (.player (.manaSpent _ units forObj)), some (.costPayment .mana _ oid?) =>
       (forObj == spell || oid? == some spell) &&
         units.any (·.restriction == some (.fra .legendarySpell))
     | .rules (.player (.manaSpent _ units forObj)), _ =>
@@ -2886,11 +2912,11 @@ def legendaryManaSpentOn (events : Array GameEvent) (spell : ObjectId) : Bool :=
 def withObjectId (e : GameEvent) (id : ObjectId) : GameEvent :=
   match e.change with
   | .rules (.zone (.moved before after fromZone toZone verb actor entersWith libPos)) =>
-    { e with change := .rules (.zone (.moved before { after with id := some id } fromZone toZone verb actor entersWith libPos)) }
+    e.withRules (.zone (.moved before { after with id := some id } fromZone toZone verb actor entersWith libPos))
   | .rules (.zone (.created object controller)) =>
-    { e with change := .rules (.zone (.created { object with id := some id } controller)) }
+    e.withRules (.zone (.created { object with id := some id } controller))
   | .rules (.stackObject (.copied original copy controller)) =>
-    { e with change := .rules (.stackObject (.copied original { copy with id := some id } controller)) }
+    e.withRules (.stackObject (.copied original { copy with id := some id } controller))
   | _ => e
 
 /-- Creature spells `p` cast on `turn`. -/
@@ -3070,7 +3096,7 @@ def objectEntered (events : Array GameEvent) (turn : Nat) (id : ObjectId) : Bool
     e.turn == turn &&
       match e.change with
       | .rules (.zone (.moved _ after _ .battlefield _ _ _ _)) => after.id == some id
-      | .rules (.zone (.created object _)) => object.id == some id
+      | .rules (.zone (.created object _)) => object.zone == .battlefield && object.id == some id
       | _ => false
 
 /-- If `id` is a permanent that entered the battlefield from the stack (or later
@@ -3221,8 +3247,8 @@ def chosenXOf? (events : Array GameEvent) (id : ObjectId) : Option Nat :=
 /-- Cards exiled from a graveyard to pay the boast activation cost of `abilityId` (MSH 227). -/
 def boastExiledOf (events : Array GameEvent) (abilityId : ObjectId) : Array ObjectId :=
   events.foldl (fun acc e =>
-    match e.change, e.cause with
-    | .rules (.zone (.moved _ after _ .exile ..)), .costPayment .exile _ (some aid) =>
+    match e.change, e.cause? with
+    | .rules (.zone (.moved _ after _ .exile ..)), some (.costPayment .exile _ (some aid)) =>
       if aid == abilityId then
         match after.id with
         | some id => acc.push id
@@ -3264,10 +3290,10 @@ def castForImpending (events : Array GameEvent) (id : ObjectId) : Bool :=
 `EffectId`s, in chronological order (CR 610). -/
 def oneShotEffectsWithId (events : Array GameEvent) : Array (EffectId × RulesEvent) :=
   events.foldl (fun acc e =>
-    match e.cause.oneShotEffectId?, e.change with
+    match e.cause?.bind EventCause.oneShotEffectId?, e.change with
     | some id, .rules r =>
       match r with
-      | .continuousEffect .. => acc
+      | .continuousEffect .. | .delayedTrigger .. => acc
       | _ => acc.push (id, r)
     | _, _ => acc) #[]
 

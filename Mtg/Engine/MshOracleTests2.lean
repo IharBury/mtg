@@ -97,7 +97,7 @@ def grimReaperReflexiveOk : Bool :=
   let unpaid :=
     g.applyTriggeredAbility ⟨0⟩ (.onThisAttack Effect.thisAttackPayReturnAttacking) (some grim.id)
   !unpaid.hasModeledReflexiveOnStack &&
-    (let g := unpaid.changePlayer ⟨0⟩ (.addMana (.colored .black) 4)
+    (let g := unpaid.addMana ⟨0⟩ (.colored .black) 4
      let g := mustApply g ⟨0⟩ .accept
      g.hasModeledReflexiveOnStack &&
        (let gy := namedGraveyardCard g ⟨0⟩ "Grizzly Bears"
@@ -162,7 +162,7 @@ def speedYoungAvengerReflexiveOk : Bool :=
   let unpaid :=
     g.applyModeledTrigger ⟨0⟩ (.onCasting Effect.castingMayPayHasteUnblockable) (some speed.id)
   !unpaid.hasModeledReflexiveOnStack &&
-    (let g := unpaid.changePlayer ⟨0⟩ (.addMana (.colored .red) 1)
+    (let g := unpaid.addMana ⟨0⟩ (.colored .red) 1
      let g := mustApply g ⟨0⟩ .accept
      g.hasModeledReflexiveOnStack &&
        (let speed := namedPermanent g "Speed, Young Avenger"
@@ -184,7 +184,7 @@ def speedYoungAvengerReflexiveOk : Bool :=
 def speedReflexiveHasteOnlyOk : Bool :=
   let g := addPermanent afterDraw speedYoungAvenger ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
-  let g := g.changePlayer ⟨0⟩ (.addMana (.colored .red) 1)
+  let g := g.addMana ⟨0⟩ (.colored .red) 1
   let speed := namedPermanent g "Speed, Young Avenger"
   let g := g.applyModeledTrigger ⟨0⟩ (.onCasting Effect.castingMayPayHasteUnblockable)
     (some speed.id)
@@ -282,7 +282,7 @@ def kingpinExtortAndToughnessOk : Bool :=
        (g.player ⟨0⟩).life == life0) &&
     (let g := addPermanent afterDraw theKingpinOfCrime ⟨0⟩ ⟨0⟩
      let kp := namedPermanent g "The Kingpin of Crime"
-     let g := (g.markAttacking kp.id (some (.player ⟨1⟩))).changeStatus kp.id (.summoningSick false)
+     let g := g.markAttacking kp.id (some (.player ⟨1⟩))
      let kp := namedPermanent g "The Kingpin of Crime"
      let life0 := (g.player ⟨0⟩).life
      let g := g.applyModeledTrigger ⟨0⟩ (.onYouAttacking Effect.youAttackingPay2LifeToughness) (some kp.id)
@@ -311,9 +311,9 @@ def mistyKnightDiscardCountOk : Bool :=
   let (g, _) := g.move bolt.id .exile none
   let (g, _) := g.move growth.id .exile none
   let g := g.record (GameEvent.moved g.turnNumber { id := some ⟨81⟩, owner := ⟨0⟩ }
-    (.hand ⟨0⟩) (.graveyard ⟨0⟩) false true)
+    (.hand ⟨0⟩) (.graveyard ⟨0⟩) false true (cause := .oneShotEffect none none (some ⟨0⟩)))
   let g := g.record (GameEvent.moved g.turnNumber { id := some ⟨82⟩, owner := ⟨0⟩ }
-    (.hand ⟨0⟩) (.graveyard ⟨0⟩) false true)
+    (.hand ⟨0⟩) (.graveyard ⟨0⟩) false true (cause := .oneShotEffect none none (some ⟨0⟩)))
   let misty := namedPermanent g "Misty Knight, Hero for Hire"
   let hand0 := (g.player ⟨0⟩).hand.size
   let g := g.applyAbilityEffect ⟨0⟩ (Effect.drawPerDiscardedThisTurn) #[] (some misty.id)
@@ -643,7 +643,7 @@ def aresAttacksIfAbleOk : Bool :=
     (let g := insertObject afterDraw aresGodOfWar ⟨0⟩ .battlefield
        (some ⟨0⟩) { summoningSick := true }
      !g.mustAttackIfAble (namedPermanent g "Ares, God of War")) &&
-    (let g := g.changeStatus ares.id (.tapped true)
+    (let g := setTapped g ares.id true
      !g.mustAttackIfAble (namedPermanent g "Ares, God of War")) &&
     !g.mustAttackIfAble ares (attackRequiresCost := true) &&
     (mshRuling 483).comment.contains "doesn't have to attack"
@@ -685,7 +685,7 @@ def exilePlayFollowsTimingOk : Bool :=
   let o := g.object! exiled
   g.mayPlayFromExile ⟨0⟩ o &&
     g.canCast ⟨0⟩ o &&
-    (let gCombat := { g with step := .beginningOfCombat }
+    (let gCombat := g.record (GameEvent.stepBegan g.turnNumber .beginningOfCombat ⟨0⟩)
      !gCombat.asSorcery? ⟨0⟩ &&
        !gCombat.canCast ⟨0⟩ (gCombat.object! exiled)) &&
     (mshRuling 388).comment.contains "normal timing rules" &&
@@ -780,7 +780,8 @@ def boastOncePerTurnOk : Bool :=
     (let g := g.markBoastUsed z
      let z := namedPermanent g "Baron Helmut Zemo"
      !g.canActivateBoast z &&
-       (let g := g.record (GameEvent.extraPhaseAdded g.turnNumber .combat)
+       (let g := g.record (GameEvent.extraPhaseAdded g.turnNumber .combat
+          (cause := .oneShotEffect none none (some ⟨0⟩)))
         !g.canActivateBoast (namedPermanent g "Baron Helmut Zemo"))) &&
     (mshRuling 526).comment.contains "only once"
 
@@ -816,7 +817,9 @@ def nickFuryDayEnter : Game :=
   g.enterFromNickFury ⟨0⟩ (g.player ⟨0⟩).library.back!
 
 def nickFuryNightEnter : Game :=
-  let g := addToLibraryTop { afterDraw with isNight := true } nickFuryDayDfc ⟨0⟩
+  let g := addToLibraryTop
+    (afterDraw.record (GameEvent.rules afterDraw.turnNumber (.turn (.dayNightChanged true)) (.gameRule .staticAbility)))
+    nickFuryDayDfc ⟨0⟩
   g.enterFromNickFury ⟨0⟩ (g.player ⟨0⟩).library.back!
 
 #guard (namedPermanent nickFuryDayEnter "Bruce Banner").name == "Bruce Banner"
@@ -897,7 +900,7 @@ characteristics, not counters or tap. -/
 def copyTokenOriginalOk : Bool :=
   let g := addPermanent afterDraw aerialDoombot ⟨0⟩ ⟨0⟩
   let (g, tok) := g.createToken ⟨0⟩ Game.soldier11whiteToken
-  let g := (g.recordPutCounters tok.id .plusOnePlusOne 3).changeStatus tok.id (.tapped true)
+  let g := setTapped (g.recordPutCounters tok.id .plusOnePlusOne 3) tok.id true
   let dest := namedPermanent g "Aerial Doombot"
   let tok := g.object! tok.id
   let g := g.becomeCopyOf dest tok

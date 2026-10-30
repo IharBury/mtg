@@ -80,7 +80,7 @@ def finishScry (g : Game) (p : PlayerId) (top bottom : Array ObjectId) :
   | .scry q count asked =>
     g.checkLookedPiles p q count top bottom "scry" "CR 701.20"
     let looked := g.scryLookedIds p count
-    let cause := g.resolvingOneShotCause p
+    let cause := some (g.resolvingOrRuleCause p)
     let mut g := g
     for id in bottom do
       g := g.logMsg
@@ -102,7 +102,7 @@ def finishSurveil (g : Game) (p : PlayerId) (top graveyard : Array ObjectId) :
   | .surveil q count asked =>
     g.checkLookedPiles p q count top graveyard "surveil" "CR 701.25"
     let looked := g.scryLookedIds p count
-    let cause := g.resolvingOneShotCause p
+    let cause := some (g.resolvingOrRuleCause p)
     let g := (g.logPutOnTop p looked top).withBatch cause fun g => Id.run do
       let mut g := g
       let happened :=
@@ -212,8 +212,9 @@ def finishProliferate (g : Game) (p : PlayerId) (chosen : Array Target) :
       throw s!"Only {(g.player q).name} may proliferate"
     if chosen.toList.eraseDups.length != chosen.size then
       throw "Choose each permanent or player at most once"
-    let cause := g.resolvingOneShotCause p
+    let cause := some (g.resolvingOrRuleCause p)
     let (g0, closeBatch) := g.openBatch cause
+    let effCause := g0.resolveOptionalCause cause (fallbackCtrl := some p)
     let mut g := g0
     let mut permIds : Array ObjectId := #[]
     let mut playerIds : Array PlayerId := #[]
@@ -230,17 +231,17 @@ def finishProliferate (g : Game) (p : PlayerId) (chosen : Array Target) :
           if kind != .plusOnePlusOne then
             let cur := g.object! id
             g := g.record (GameEvent.counters g.turnNumber (some p) cur.asEvent kind 1 false
-              (cause := cause))
-        g := g.syncImpendingNotACreature id (cause := cause)
+              (cause := effCause))
+        g := g.syncImpendingNotACreature id (cause := some effCause)
         let o := g.object! id
-        g := if o.status.plusOnePlusOne > 0 then g.addPlusOnePlusOneTo o 1 (cause := cause) else g
+        g := if o.status.plusOnePlusOne > 0 then g.addPlusOnePlusOneTo o 1 (cause := some effCause) else g
         permIds := permIds.push id
         g := g.logMsg s!"{(g.player p).name} proliferates {o.name}"
       | .player pid =>
         let pl := g.player pid
         if pl.poison == 0 then
           throw s!"{pl.name} has no counters"
-        g := g.record (GameEvent.poisoned g.turnNumber pid 1 (byPlayer := some p) (cause := cause))
+        g := g.record (GameEvent.poisoned g.turnNumber pid 1 (byPlayer := some p) (cause := effCause))
         playerIds := playerIds.push pid
         g := g.logMsg s!"{(g.player p).name} gives {pl.name} another poison counter"
       | .card _ => throw "Only permanents and players can be chosen (CR 701.34a)"
@@ -869,21 +870,21 @@ def putCardsOnBottom (g : Game) (p : PlayerId) (ids : Array ObjectId) : Except S
         throw "no such object"
       if !pl.hand.contains id then
         throw "That card is not in your hand"
-    let (g, newBottom) := g.withBatchReturn (some (.gameRule .mulligan)) fun g => Id.run do
+    let g := g.withBatch (some (.gameRule .mulligan)) fun g => Id.run do
       let mut g := g
-      let mut newBottom : Array ObjectId := #[]
-      for id in ids do
+      for i in [0:ids.size] do
+        let id := ids[i]!
         let card := g.object! id
         let ownerName := (g.player p).name
-        let (g', newId) := g.move id (.library p) (cause := some (.gameRule .mulligan))
+        let libSize := ((g.player p).library.filter (· != id)).size
+        let pos : LibraryPosition :=
+          if i == 0 then .bottom else .fromTop (libSize - Nat.min i libSize)
+        let (g', _) := g.move id (.library p) (libraryPosition := some pos)
+          (cause := some (.gameRule .mulligan))
         g := g'
-        newBottom := newBottom.push newId
         g := g.logMsg s!"{ownerName} puts {card.name} on the bottom of their library"
-      return (g, newBottom)
+      return g
     let mut g := g
-    let plNow := g.player p
-    let without := newBottom.foldl (fun lib id => stripId lib id) plNow.library
-    g := g.changePlayer p (.library (newBottom ++ without))
     if g.mulliganToBottom.isEmpty then
       g := g.change (.pending .none)
       return g.receivePriority g.activePlayer
@@ -899,32 +900,32 @@ def putCardsOnBottom (g : Game) (p : PlayerId) (ids : Array ObjectId) : Except S
 partial def continueOpeningShuffles (g : Game) (next : Nat) : Game :=
   if next >= g.players.size then
     Id.run do
-      let mut g := g.changes #[.afterRandom .none, .pending .none]
+      let mut g := g.changes #[.pregameRandom .none, .pending .none]
       for pl in g.players do
         g := g.draw pl.id (g.player pl.id).startingHandSize
           (cause := some (.gameRule .openingHandDraw))
       return g.beginMulliganRound
   else
     let p : PlayerId := ⟨next⟩
-    let g := g.requestShuffle p (.openingShuffles (next + 1))
+    let g := (g.change (.pregameRandom (.openingShuffles (next + 1)))).shuffleLibrary p
     match g.pendingRandom? with
     | some _ => g
     | none =>
-      let g := g.change (.afterRandom .none)
+      let g := g.change (.pregameRandom .none)
       continueOpeningShuffles g (next + 1)
 
 /-- Run the stored after-action. `grantPriority` is true when the host just
 supplied a `--norandom` result (the original caller is no longer on the
 stack). -/
 partial def finishAfterRandom (g : Game) (grantPriority : Bool) : Game :=
-  let after := g.afterRandom
-  let g := g.change (.afterRandom .none)
-  let g :=
-    match after with
+  if g.pregameRandom != .none then
+    let pre := g.pregameRandom
+    let g := g.change (.pregameRandom .none)
+    match pre with
     | .none => g
-    | .draw p n => g.draw p n
-    | .gainLife p n => g.gainLife p n
     | .openingShuffles next => continueOpeningShuffles g next
+    | .mulliganDraw p n =>
+      g.draw p n (cause := some (.gameRule .mulligan))
     | .mulliganQueue p rest =>
       let g := g.draw p (g.player p).startingHandSize
         (cause := some (.gameRule .mulligan))
@@ -936,23 +937,32 @@ partial def finishAfterRandom (g : Game) (grantPriority : Bool) : Game :=
       let g := g.changes #[.startingPlayer sp, .priority sp]
       let g := g.logMsg s!"Starting player: {(g.player sp).name}"
       continueOpeningShuffles g 0
-    | .revealRandomCreatureThenBottom _ _ => g
-    | .putOnTop p ids => g.putIdsOnTop p ids
-    | .beholdUntap p landId subtype => g.beholdAndMaybeUntap p landId subtype
-    | .plusOne id => g.addPlusOneIfStillCreature id
-    | .discardRandom p =>
-      let hand := (g.player p).hand
-      if hand.isEmpty then g
-      else if hand.size == 1 then g.discardFromHandRandomly p hand[0]!
-      else g.changes #[.pending (.resolveRandom (.chooseObject hand)), .afterRandom (.discardRandom p)]
-  if grantPriority && g.pending == .none && !g.openingHandsPending && !g.over
-      && !g.players.isEmpty then
-    let g := g.resumeTriggerSequence
-    if g.pending != .none || g.over then g
-    else
-      let g := g.promptTriggerTargetsIfNeeded
-      if g.pending != .none || g.over then g else g.receivePriority g.activePlayer
-  else g
+  else
+    let after := g.afterRandom
+    let g := g.change (.afterRandom .none)
+    let g :=
+      match after with
+      | .none => g
+      | .draw p n => g.draw p n
+      | .gainLife p n => g.gainLife p n
+      | .revealRandomCreatureThenBottom _ _ => g
+      | .putOnTop p ids => g.putIdsOnTop p ids
+      | .beholdUntap p landId subtype => g.beholdAndMaybeUntap p landId subtype
+      | .plusOne id => g.addPlusOneIfStillCreature id
+      | .discardRandom p =>
+        let hand := (g.player p).hand
+        if hand.isEmpty then g
+        else if hand.size == 1 then g.discardFromHandRandomly p hand[0]!
+        else g.changes #[.pending (.resolveRandom (.chooseObject hand)), .afterRandom (.discardRandom p)]
+    if grantPriority && g.pending == .none && g.afterRandom == .none &&
+        !g.openingHandsPending && !g.over && !g.players.isEmpty then
+      let g := g.resumeTriggerSequence
+      if g.pending != .none || g.afterRandom != .none || g.over then g
+      else
+        let g := g.completeActiveResolutions
+        if g.pending != .none || g.afterRandom != .none || g.over then g
+        else g.receivePriority g.activePlayer
+    else g
 
 /-- Apply a `--norandom` permutation or chosen object. -/
 def supplyOrder (g : Game) (ids : Array ObjectId) : Except String Game := do
@@ -965,13 +975,10 @@ def supplyOrder (g : Game) (ids : Array ObjectId) : Except String Game := do
       if !isPermutation ids pl.library then
         throw "Shuffle must list each library card once (bottom first), or omit the ids to keep the current order"
       let shuffleCause : EventCause :=
-        match g.afterRandom with
+        match g.pregameRandom with
         | .openingShuffles _ => .gameRule .openingHandDraw
-        | .mulliganQueue _ _ => .gameRule .mulligan
-        | .draw _ _ =>
-          if g.openingHandsPending then .gameRule .mulligan
-          else .oneShotEffect none none (some p)
-        | _ => .oneShotEffect none none (some p)
+        | .mulliganDraw .. | .mulliganQueue .. => .gameRule .mulligan
+        | _ => g.resolvingOrRuleCause p
       let g := g.change (.pending .none)
       let g := g.record (GameEvent.shuffled g.turnNumber p ids (cause := some shuffleCause))
       return g.finishAfterRandom true
@@ -1013,9 +1020,9 @@ def supplyIndex (g : Game) (i : Nat) : Except String Game := do
     if i >= n then
       throw s!"Choose a number from 0 to {n - 1}"
     let g := g.change (.pending .none)
-    match g.afterRandom with
+    match g.pregameRandom with
     | .setStartingPlayer _ =>
-      return finishAfterRandom (g.change (.afterRandom (.setStartingPlayer i))) true
+      return finishAfterRandom (g.change (.pregameRandom (.setStartingPlayer i))) true
     | _ =>
       return g.finishAfterRandom true
   | .resolveRandom _ =>
@@ -1102,6 +1109,8 @@ partial def resumePendingReplacement (g : Game) : PendingReplacement → Game
       g.chainPendingReplacement rest
     else
       g.resumePendingReplacement rest
+  | .shuffleThen p onDone =>
+    g.shuffleThen p onDone
   | .dealDamageToPlayer p n _ source _ unpreventable cause =>
     let srcObj := source.bind (fun s => s.id.bind (fun id =>
       g.findObject? id |>.orElse (fun _ => g.findObject? (g.followMoved id))))
@@ -1155,13 +1164,16 @@ partial def resumePendingReplacement (g : Game) : PendingReplacement → Game
     g.recordPutCounters targetId kind n byPlayer (cause := cause)
   | .move id dest controller _ _ verb actor _ tapped
       attacking attackingTarget transformed returnedAsArtifact onlyFoodArtifact
-      extraEntersWith libraryPosition _ applyHope preBattlefield cause =>
+      extraEntersWith libraryPosition _ applyHope preBattlefield
+      isCopy overridePrinted adventurerCard cause =>
     (g.move id dest controller (tapped := tapped) (applyHope := applyHope)
       (attacking := attacking) (attackingTarget := attackingTarget)
       (returnedAsArtifact := returnedAsArtifact) (onlyFoodArtifact := onlyFoodArtifact)
       (nightBack := transformed) (extraEntersWith := extraEntersWith)
       (verb := verb) (actor := actor) (libraryPosition := libraryPosition)
-      (preBattlefield := preBattlefield) (cause := cause)).1
+      (preBattlefield := preBattlefield) (isCopy := isCopy)
+      (overridePrinted := overridePrinted) (adventurerCard := adventurerCard)
+      (cause := cause)).1
   | .moveSimultaneousToGraveyard ids preBattlefield cause =>
     g.moveSimultaneousToGraveyard ids (preBattlefield := preBattlefield) (cause := cause)
   | .destroyPermanent targetId cause =>
@@ -1245,6 +1257,10 @@ def chooseReplacement (g : Game) (p : PlayerId) (id : ReplacementId) : Except St
       | some cont => g.resumePendingReplacement cont
       | none => g
     let g := if g.pending == .none then g.resumeTriggerSequence else g
+    let g :=
+      if g.pending == .none && g.afterRandom == .none then
+        g.completeActiveResolutions
+      else g
     return g
   | _ =>
     throw "No replacement effect choice is pending"

@@ -14,7 +14,7 @@ namespace Game
 /-- Whether `caster` may target `o` (CR 115.1, 702.11b). -/
 def canBeTargetedBy (g : Game) (caster : PlayerId) (o : GameObject) : Bool :=
   let srcBlocked :=
-    match (g.resolvingSpell.orElse (fun _ => g.proposedSpell.map (·.spellId))).bind g.findObject? with
+    match ((g.proposedSpell.map (·.spellId)).orElse (fun _ => g.resolvingSpell)).bind g.findObject? with
     | some src => g.frcProtectedFrom o src
     | none => false
   (!g.hasHexproof o || g.controlledBy o caster) && !srcBlocked
@@ -61,19 +61,23 @@ def stackSpells (g : Game) (pred : GameObject → Bool := fun _ => true) : Array
       else none
     | none => none)
 
-/-- Legal spell-on-the-stack targets matching `pred` (CR 115.1). -/
-def legalStackSpellTargets (g : Game) (pred : GameObject → Bool) : Array Target :=
-  g.stackSpells pred |>.map (fun o => Target.card o.id)
+/-- Legal spell-on-the-stack targets matching `pred` (CR 115.1 / 115.5). -/
+def legalStackSpellTargets (g : Game) (pred : GameObject → Bool)
+    (excludeId : Option ObjectId := none) : Array Target :=
+  let selfId := excludeId.orElse (fun _ => g.proposedSpell.map (·.spellId))
+  g.stackSpells (fun o => some o.id != selfId && pred o) |>.map (fun o => Target.card o.id)
 
-/-- Stack abilities `caster` controls whose source matches `sourcePred`.
+/-- Stack abilities `caster` controls whose source matches `sourcePred` (CR 115.5).
 Used for Echo and Scientist Supreme (MSH 74 / 87). -/
 def legalStackAbilityTargets (g : Game) (caster : PlayerId)
-    (sourcePred : GameObject → Bool) : Array Target :=
+    (sourcePred : GameObject → Bool)
+    (excludeId : Option ObjectId := none) : Array Target :=
+  let selfId := excludeId.orElse (fun _ => g.proposedSpell.map (·.spellId))
   g.stack.filterMap (fun e =>
     match g.findObject? e.objectId with
     | none => none
     | some o =>
-      if o.zone == .stack && o.controlledBy caster &&
+      if o.zone == .stack && some o.id != selfId && o.controlledBy caster &&
           (o.abilityEffect.isSome || o.triggeredAbility.isSome) then
         match o.sourceId.bind g.findObject? with
         | some src =>
@@ -150,9 +154,9 @@ def legalFilteredTargets (g : Game) (caster : PlayerId) (f : TargetFilter)
   | .yourGraveyard => g.legalGraveyardCardTargets caster ok
   | .anyGraveyard =>
     g.livingPlayers.foldl (fun acc pl => acc ++ g.legalGraveyardCardTargets pl.id ok) #[]
-  | .stack => g.legalStackSpellTargets ok
+  | .stack => g.legalStackSpellTargets ok sourceId
   | .spellOrCreature =>
-    g.legalStackSpellTargets ok ++
+    g.legalStackSpellTargets ok sourceId ++
       g.legalPermanentTargets caster (fun o => o.isOnBattlefield && g.isCreature o && ok o)
   | .anyTarget =>
     g.playerTargets g.livingPlayers ++
@@ -166,15 +170,16 @@ def legalFilteredTargets (g : Game) (caster : PlayerId) (f : TargetFilter)
       | .opponent | .eachOpponent => pl.id != caster
       | .specific idx => pl.id.idx == idx))
 
-/-- Whether the spell being cast or resolved paid its teamwork cost.
-`resolvingSpell` is set after the spell leaves the stack (CR 608). During
-target announcement the proposal or the top stack object still has the flag. -/
+/-- Whether the spell being cast or resolved paid its teamwork cost (CR 601.2 / 608.2).
+Checks an active `proposedSpell` first (including mid-resolution casts), then
+`resolvingSpell`, then the top stack entry. -/
 def spellPaidTeamwork (g : Game) : Bool :=
-  match g.resolvingSpell with
-  | some id => g.teamworkPaid id
+  match g.proposedSpell with
+  | some prop => prop.teamworkPaid || g.teamworkPaid prop.spellId
   | none =>
-    if g.proposedSpell.any (·.teamworkPaid) then true
-    else
+    match g.resolvingSpell with
+    | some id => g.teamworkPaid id
+    | none =>
       match g.stack.back? with
       | some e => g.teamworkPaid e.objectId
       | none => false
@@ -242,14 +247,14 @@ def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTarge
   | .creatureYouControlSubtype subtype =>
     g.legalCreatureTargets caster (fun o => g.controlledBy o caster && g.hasSubtype o subtype)
   | .spell =>
-    g.legalStackSpellTargets (fun _ => true)
+    g.legalStackSpellTargets (fun _ => true) sourceId
   | .creatureSpell =>
-    g.legalStackSpellTargets (·.printed.isCreature)
+    g.legalStackSpellTargets (·.printed.isCreature) sourceId
   | .creatureSpellPTAtMost n =>
     g.legalStackSpellTargets (fun o =>
       o.printed.isCreature &&
         ((o.printed.power.getD 0) <= (n : Int) ||
-          (o.printed.toughness.getD 0) <= (n : Int)))
+          (o.printed.toughness.getD 0) <= (n : Int))) sourceId
   | .defendingPlayerCreature =>
     let defender :=
       match sourceId.bind g.findObject? with
@@ -321,7 +326,7 @@ def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTarge
     g.legalPermanentTargets caster (fun o =>
       o.isOnBattlefield && g.isArtifact o && !g.isCreature o)
   | .stackAbilityFromSource ty =>
-    g.legalStackAbilityTargets caster (fun src => g.hasType src ty)
+    g.legalStackAbilityTargets caster (fun src => g.hasType src ty) sourceId
   | .oppCreaturePowerAtMost n =>
     g.legalCreatureTargets caster (fun o =>
       g.power o <= n &&

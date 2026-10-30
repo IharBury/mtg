@@ -15,7 +15,7 @@ name = "Mtg.Engine"
 [[lean_lib]]
 name = "Mtg.Engine.Card"
 precompileModules = true
-globs = ["Mtg.Engine.Card.*", "Mtg.Engine.Color", "Mtg.Engine.Mana", "Mtg.Engine.TypeLine"]
+globs = ["Mtg.Engine.Card.*", "Mtg.Engine.Color", "Mtg.Engine.Mana", "Mtg.Engine.TypeLine", "Mtg.Engine.Zone"]
 
 # `Mtg.Engine.Catalog` is the root of every `Mtg.Engine.Catalog.*` module.
 # Lake treats those submodules as part of this library, so precompiling it
@@ -38,7 +38,6 @@ globs = [
   "Mtg.Engine.Rng",
   "Mtg.Engine.Rules",
   "Mtg.Engine.Turn",
-  "Mtg.Engine.Zone",
 ]
 
 # Opening hands and other reused test games. One plugin, so `#guard` reads the

@@ -36,9 +36,9 @@ open Mtg.Engine.Tests
 def scarletWitchXManaValueOk : Bool :=
   let g := addPermanent afterDraw theScarletWitch ⟨0⟩ ⟨0⟩
   let (g, spell) := g.allocObject photonBlastBarrage ⟨0⟩ (.hand ⟨0⟩) (some ⟨0⟩)
-  let g := g.changeObject spell.id (.chosenX (some 1))
+  let g := g.record (GameEvent.announced g.turnNumber spell.id (x := some 1))
   let cheap := g.object! spell.id
-  let gCostly := g.changeObject spell.id (.chosenX (some 2))
+  let gCostly := g.record (GameEvent.announced g.turnNumber spell.id (x := some 2))
   let costly := gCostly.object! spell.id
   let start := photonBlastBarrage.manaCost
   let reduced := g.applyCastCostReductions costly photonBlastBarrage start
@@ -128,10 +128,10 @@ def theVoidAttacksIfAbleOk : Bool :=
   let (g, tok) := afterDraw.createToken ⟨0⟩ Game.theVoidToken
   Game.hasAttacksIfAble tok &&
     !g.mustAttackIfAble tok &&
-    (let g := g.changeStatus tok.id (.summoningSick false)
+    (let g := readyControlledForTurn g ⟨0⟩
      let tok := g.object! tok.id
      g.mustAttackIfAble tok &&
-       (let g := g.changeStatus tok.id (.tapped true)
+       (let g := setTapped g tok.id true
         !g.mustAttackIfAble (g.object! tok.id) &&
           !g.mustAttackIfAble tok (attackRequiresCost := true))) &&
     (mshRuling 497).comment.contains "doesn't attack"
@@ -262,7 +262,7 @@ def wreckingCrewModesOnceOk : Bool :=
 def improviseStaticsWhileTappedOk : Bool :=
   let g := addPermanent afterDraw ironheartCleverChampion ⟨0⟩ ⟨0⟩
   let ih := namedPermanent g "Ironheart, Clever Champion"
-  let g := g.changeStatus ih.id (.tapped true)
+  let g := setTapped g ih.id true
   g.spellHasImprovise helicarrierStrike ⟨0⟩ &&
     (namedPermanent g "Ironheart, Clever Champion").status.tapped &&
     (mshRuling 412).comment.contains "won't cause its abilities to stop"

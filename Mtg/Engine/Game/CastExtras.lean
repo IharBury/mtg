@@ -58,15 +58,17 @@ def temptWithTheRing (g : Game) (p : PlayerId) (chosen : Option ObjectId := none
     | some id =>
       if choices.any (fun o => o.id == id) then some id else choices[0]?.map (·.id)
     | none => choices[0]?.map (·.id)
-  let cause := g.resolvingOneShotCause p
-  let g := g.setRingBearer p pick (cause := cause)
-  let g :=
-    match pick with
-    | some id =>
-      g.logMsg s!"{(g.player p).name} chooses {(g.object! id).name} as their Ring-bearer"
-    | none =>
-      g.logMsg s!"{(g.player p).name} controls no creature to become Ring-bearer"
-  g.record (GameEvent.ringTempted g.turnNumber p pick nextAbilities (cause := cause))
+  let cause := some (g.resolvingOrRuleCause p)
+  g.withBatch cause fun g =>
+    let g := if pick.isSome then g.setRingBearer p pick (cause := cause) else g
+    let g :=
+      match pick with
+      | some id =>
+        g.logMsg s!"{(g.player p).name} chooses {(g.object! id).name} as their Ring-bearer"
+      | none =>
+        g.logMsg s!"{(g.player p).name} controls no creature to become Ring-bearer"
+    g.record (GameEvent.ringTempted g.turnNumber p pick nextAbilities
+      (cause := some (g.resolvingOrRuleCause p)))
 
 /-- A targeted spell or ability that would tempt only does so if it resolves. -/
 def resolveTargetedTempt (g : Game) (p : PlayerId) (kind : EffectTargetKind)
@@ -123,7 +125,7 @@ def applyKickerToProposed (g : Game) (kick : Bool) : Except String Game := do
   let face := spell.printed
   match face.morph, face.impending, face.kicker with
   | some alt, _, none =>
-    let g := g.changeStatus spell.id (.faceDown true)
+    let g := g.record (GameEvent.announced g.turnNumber spell.id (costs := #[.morph]))
     let cost := ManaCost.afterReduction alt (g.applyCastCostReductions spell face alt)
     return g.changeProposals #[.kicked true, .kickerAnnounced true, .cost cost]
   | _, some (n, alt), none =>
@@ -300,9 +302,15 @@ def resolveSearchBasicPlainsExile (g : Game) (p : PlayerId)
 
 /-- Target opponent reveals their hand; you discard a nonland of your choice. -/
 def discardNonlandFrom (g : Game) (controller victim : PlayerId) : Game :=
+  let handIds := (g.player victim).hand
   let names :=
-    (g.player victim).hand.filterMap (fun id =>
+    handIds.filterMap (fun id =>
       (g.findObject? id).map (·.name))
+  let g :=
+    if !handIds.isEmpty then
+      g.record (GameEvent.revealed g.turnNumber victim handIds
+        (cause := some (g.resolvingOrRuleCause controller)))
+    else g
   let g :=
     if names.isEmpty then
       g.logMsg s!"{(g.player victim).name} reveals an empty hand"
@@ -329,7 +337,7 @@ def exileUntilNextEndStep (g : Game) (o : GameObject)
     | none => g.allocDelayedCause curCtrl
   let (g, newId) := g.move o.id .exile none (cause := some cause)
   let ctrl := curCtrl.getD o.owner
-  let g := g.change (.pushDelayedTrigger { controller := ctrl, source := some o, kind := .endStepReturn newId, cause })
+  let g := g.registerDelayedTrigger { controller := ctrl, source := some o, kind := .endStepReturn newId, cause }
   g.logMsg s!"{name} is exiled until the beginning of the next end step"
 
 /-- Put a land from `p`'s hand onto the battlefield tapped (H.E.R.B.I.E.). -/

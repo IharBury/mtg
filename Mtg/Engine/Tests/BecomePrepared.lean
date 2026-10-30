@@ -44,11 +44,11 @@ def pid (g : Game) (name : String) : ObjectId :=
 
 def attach (g : Game) (aura host : String) : Game :=
   let a := obj g aura
-  g.changeObject a.id (.attachedTo (some (pid g host)))
+  g.record (GameEvent.attached g.turnNumber a.id (pid g host) (cause := .gameRule .staticAbility))
 
 def markPrepared (g : Game) (name : String) : Game :=
   let o := obj g name
-  g.record (GameEvent.designation g.turnNumber o.asEvent .prepared true)
+  g.record (GameEvent.designation g.turnNumber o.asEvent .prepared true (cause := .gameRule .staticAbility))
 
 def seed : AdventureFace := { name := "Seed" }
 

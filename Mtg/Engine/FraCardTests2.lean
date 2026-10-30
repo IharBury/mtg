@@ -33,7 +33,7 @@ def pendingFra (g : Game) : Option FraChoice :=
   | _ => none
 
 def tapped (g : Game) (name : String) : Game :=
-  g.changeStatus (namedPermanent g name).id (.tapped true)
+  setTapped g (namedPermanent g name).id true
 
 def plusOnes (g : Game) (name : String) (n : Nat) : Game :=
   let o := namedPermanent g name
@@ -528,7 +528,7 @@ value in your graveyard; they annihilate with +1/+1 counters (ruling 885). -/
   let g := addPermanent withBears graftSurgeon me me
   let g := g.recordPutCounters (namedPermanent g "Graft Surgeon").id .minusOneMinusOne 2
   let g := addPermanent g hillGiant me me
-  let g := g.changeStatus (namedPermanent g "Graft Surgeon").id (.damage 5)
+  let g := setMarkedDamage g (namedPermanent g "Graft Surgeon").id 5
   let g := stackTriggers g.checkSBA
   let g := match g.pending with
     | .chooseTargets _ => mustApply g me (tgt g "Hill Giant")
@@ -730,10 +730,10 @@ Master of Barbs pumps your team. -/
   let g := addToGraveyard afterDraw darklightPhoenix me
   let g := (g.record (GameEvent.moved g.turnNumber
       { id := some ⟨51⟩, controller := some me, owner := me, types := #[.creature] }
-      .battlefield (.graveyard me))).record
+      .battlefield (.graveyard me) (cause := .stateBased .lethalDamage))).record
     (GameEvent.moved g.turnNumber
       { id := some ⟨52⟩, controller := some me, owner := me, types := #[.creature] }
-      .battlefield (.graveyard me))
+      .battlefield (.graveyard me) (cause := .stateBased .lethalDamage))
   let g := settle (skipTo g .beginningOfCombat 80)
   onBattlefield g "Darklight Phoenix"
 #guard
