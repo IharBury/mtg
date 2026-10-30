@@ -2547,46 +2547,68 @@ mid-resolution stack residency under 608.2n / 608.3), `AddMana.lean`,
    - Sweep remaining pre-20260925 CR citations across `Mtg/Engine/` and
      `Mtg/Demo/` **by concept/subject rather than blanket digit replacement** so
      current 20260925 citations that share an older rule's number stay intact:
-     Behold comments on `701.62` (`Core.lean`, `Event.lean`) → `701.4`; Counter
-     comments on `701.5` → `701.6`; Destroy comments still on `701.7`
+     Behold comments on `701.62` (`Core.lean`, `Event.lean`, `LibrarySearch.lean`,
+     `Object.lean`, `Tests/Events.lean`) → `701.4`; Counter comments on `701.5`
+     (`ResolutionEffects.lean`) → `701.6`; Destroy comments still on `701.7`
      (`PermanentAction.lean`, `Game.lean`, keeping Create `701.7` on
      `ZoneEvent.created` / `GameEvent.created`) → `701.8`; Fight comments on
-     `701.12` → `701.14`; Mill comments on `701.13` → `701.17`; Play comments on
-     `701.14` → `701.18`; Sacrifice comments still on `701.17`
+     `701.12` (`SpellResolution.lean`) → `701.14`; Mill comments on `701.13`
+     (`SpellResolution.lean`) → `701.17`; Play-from-exile comments on `701.14`
+     (`Demo/Render.lean`, `Choices.lean`, `Event.lean`, `LibrarySearch.lean`,
+     `Object.lean`, `ResolutionHelpers.lean`, `Timing.lean`,
+     `Tests/Activation.lean`, `Tests/Events.lean`, keeping Fight `701.14` in
+     `Damage.lean`) → `701.18`; Sacrifice comments still on `701.17`
      (`ActivatedAbility.lean`, `Game.lean`'s `SacrificeDiscard` blurb, keeping
      Mill `701.17` in `ResolutionHelpers.lean`, `EffectResolution.lean`, and
      `ZoneVerb`) → `701.21`; Scry comments and runtime `throw` strings still on
      `701.20` (`Decisions.lean`, `Demo.lean`, `Demo/Render.lean`,
      `Demo/RenderTests.lean`, `TriggerEvent.lean`, `Object.lean`, `Pending.lean`,
      `Player.lean`, `Game.lean`, `Tests/AttackTriggers.lean`, `Tests/Auras.lean`,
-     keeping Reveal `701.20` on `PlayerEvent.revealed` / `GameEvent.revealed`) →
-     `701.22`; Search comments still on `701.19` (`LibrarySearch.lean`,
-     `Pending.lean`, `Game.lean`, `Tests/Auras.lean`) → `701.23` and
-     `EffectResolution.lean`'s shuffle comment on `701.19` → `701.24` (keeping
-     Regenerate `701.19a` in `Event.lean`); Amass comments on `701.43` →
-     `701.47`; Connive comments on `701.47` / `701.48` → `701.50`; Ring-tempt
-     comments on `701.40` → `701.54` (keeping Manifest `701.40`);
-     `PermanentEvent.turnedFaceUp` / `turnedFaceDown` comments on `701.40b` /
-     `701.40f` → `116.2b` / `708.2a` / `708.8`; Treasure/Food/Clue token comments
-     on `701.42` / `701.34` / `701.55` → `111.10a` / `111.10b` / `111.10f`
-     (keeping Proliferate `701.34`); cease-to-exist comments on `608.2m` / `111.8`
-     in `Attachments.ceaseToExist` and `GameEvent.ceasedToExist` → `608.2n` /
-     `111.7` (keeping `111.8` where token zone-lock applies); poison-counter
-     comments on `122.1c` → `122.1f` (keeping shield counters `122.1c`);
-     life-total effect/event comments (`118.2` life-gain comments in
-     `SpellResolution.lean` / `Game.lean` / `Tests/Elves.lean` and
-     `LifeEvent.gained`'s `119.2` doc in `Event.lean` → `119.3`, `118.3a`
-     life-loss effect comments in `SpellResolution.lean` / `Game.lean` /
-     `Tests/Removal.lean` → `119.3` plus `119.2` on `LifeEvent.lost` for
-     damage-caused life loss, and `118.9` zero-life-loss comment in
-     `Tests/Removal.lean` → `119.9`, keeping live chapter-118 cost rules `118.3`,
-     `118.3a`, `118.3b`, `118.7`, and `118.12`); untap-step comments on `502.2` →
-     `502.3`; end-of-step mana-emptying comments on `500.4` (`Leaving.lean`,
-     `Tests/Turns.lean`, keeping step-begin expiry `500.4` in `Event.lean` and
-     `Object.lean`) → `500.5`; Layer 7a/7b comments on `613.3a` / `613.3b` →
-     `613.4a` / `613.4b`; Cascade comments on `702.84` → `702.85`; Boast comments
-     on `702.111` → `702.142` (keeping Menace `702.111`); and Monarch comments on
-     `722` → `725` (keeping Preparation `722`).
+     keeping Reveal `701.20` on `PlayerEvent.revealed` / `GameEvent.revealed` and
+     moving `Library.lean`'s ordered-zone-placement module doc from `701.20b` to
+     `401.4` / `404.3`, not scry `701.22`) → `701.22`; Search comments still on
+     `701.19` (`LibrarySearch.lean`, `Pending.lean`, `Tests/Auras.lean`, and only
+     `Game.lean`'s Forest-search and `LibrarySearch` lines—leaving Mirkwood Elk's
+     non-search graveyard-return parenthetical in `Game.lean` off `701.23` and
+     dropping its stray `701.19`) → `701.23`, and `EffectResolution.lean`'s
+     shuffle comment on `701.19` → `701.24` (keeping Regenerate `701.19a` in
+     `Event.lean`); Amass comments on `701.43` (`Pumps.lean`) → `701.47`; Connive
+     comments on `701.47` / `701.48` (`Event.lean`, `SpellResolution.lean`) →
+     `701.50`; Ring-tempt comments on `701.40` (`CastExtras.lean`) → `701.54`
+     (keeping Manifest `701.40`); `PermanentEvent.turnedFaceUp` / `turnedFaceDown`
+     comments on `701.40b` / `701.40f` (`Event.lean`) → `116.2b` / `708.2a` /
+     `708.8`; Treasure/Food/Clue token comments on `701.42` / `701.34` / `701.55`
+     (`Catalog.lean`, `Tokens.lean`, `Token.lean`, keeping Proliferate `701.34`) →
+     `111.10a` / `111.10b` / `111.10f`; zone-object cease-to-exist comments in
+     `Attachments.ceaseToExist` (dropping `608.2m` and changing `111.8` → `111.7`
+     alongside `704.5d` / `704.5e`, without attaching resolution rule `608.2n` to
+     zone-object deletion) and `GameEvent.ceasedToExist` (`111.8` → `111.7`
+     alongside `704.5d` / `704.5e`, keeping `111.8` where token zone-lock
+     applies); poison-counter comments on `122.1c` (`GameEvent.poisoned` in
+     `Event.lean`, keeping shield counters `122.1c`) → `122.1f`; “mana of any
+     type can be spent” play-permission comments on `118.12`
+     (`PlayPermission.anyMana` in `Object.lean`, `Game.lean`, and `Timing.lean`)
+     → `118.14` (keeping live chapter-118 cost rules `118.3`, `118.3a`,
+     `118.3b`, and `118.7`); life-total effect/event comments (`118.2` life-gain
+     comments in `SpellResolution.lean` / `Game.lean` including Mirkwood Elk's
+     parenthetical / `Tests/Elves.lean`, `Damage.gainLife`'s `CR 119.2` life-gain
+     doc, and `LifeEvent.gained`'s `119.2` doc in `Event.lean` → `119.3`, keeping
+     `Damage.gainLife`'s 0-life guard on `119.9`; `118.3a` life-loss effect
+     comments in `SpellResolution.lean` / `Game.lean` / `Tests/Removal.lean` →
+     `119.3` plus `119.2` on `LifeEvent.lost` for damage-caused life loss; and
+     the “Losing 0 life does nothing” comments in `Tests/Removal.lean` (`118.9`)
+     and `Damage.loseLife` (`119.9`) → `119.3`, since `119.9` covers gaining 0
+     life rather than losing 0 life); untap-step comments on `502.2`
+     (`Demo/Render.lean`, `Fixture.lean`, `Tests/Turns.lean`, keeping
+     `dayNightCheck` `502.2` in `Object.lean`) → `502.3`; end-of-step
+     mana-emptying comments on `500.4` (`Leaving.lean`, `Tests/Turns.lean`,
+     keeping step-begin expiry `500.4` in `Event.lean` and `Object.lean`) →
+     `500.5`; Layer 7a/7b comments on `613.3a` / `613.3b` (`BasePT.lean`,
+     `Game.lean`, `Tests/AttackTriggers.lean`) → `613.4a` / `613.4b`; Cascade
+     comments on `702.84` (`CastExtras.lean`) → `702.85`; Boast comments on
+     `702.111` (`ActivationCosts.lean`, keeping Menace `702.111`) → `702.142`; and
+     Monarch comments on `722` (`Player.lean`, keeping Preparation `722`) →
+     `725`.
 
 Tests: `Events.lean` (isolation tests verifying deck/emblem/ability
 materialization emits zero `ZoneEvent.created` events, `Game.snapshot`
