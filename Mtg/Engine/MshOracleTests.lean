@@ -431,8 +431,7 @@ def shieldOk : Bool :=
 def landfallPlayOk : Bool :=
   let g := mshEnter afterDraw claimTheKingdom
   let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
-  let g := addPermanent g forest ⟨0⟩ ⟨0⟩
-  let g := settle ((g.afterLandEnters (namedPermanent g "Forest")).receivePriority ⟨0⟩) 24
+  let g := settle (mshEnter g forest) 24
   (namedPermanent g "Claim the Kingdom").status.plan == 1 &&
     (mshRuling 19).comment.contains "doesn't trigger if a permanent already" &&
     (mshRuling 20).comment.contains "triggers whenever a land you control enters"
@@ -1010,7 +1009,7 @@ def twoWonderMenThreeActivationsOk : Bool :=
   let g := addPermanent afterDraw wonderManHollywoodHero ⟨0⟩ ⟨0⟩
   let g := addPermanent g wonderManHollywoodHero ⟨0⟩ ⟨0⟩
   let n :=
-    (g.permanentsOf ⟨0⟩).filter Game.grantsExtraPowerUp |>.size
+    (g.permanentsOf ⟨0⟩).filter g.grantsExtraPowerUp |>.size
   n == 2 &&
     g.powerUpActivationLimit ⟨0⟩ == 3 &&
     (mshRuling 693).comment.contains "two of him"
@@ -1281,8 +1280,7 @@ def returnedIsNewObjectOk : Bool :=
 def landfallEachAbilityOk : Bool :=
   let g := mshEnter afterDraw claimTheKingdom
   let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
-  let g := addPermanent g forest ⟨0⟩ ⟨0⟩
-  let g := settle ((g.afterLandEnters (namedPermanent g "Forest")).receivePriority ⟨0⟩) 24
+  let g := settle (mshEnter g forest) 24
   (namedPermanent g "Claim the Kingdom").status.plan == 1 &&
     (mshRuling 21).comment.contains "each landfall ability"
 
@@ -1294,11 +1292,14 @@ def onceEachTurnConniveWordingOk : Bool :=
   let villainWait (g : Game) : Nat :=
     (g.waitingTriggers.filter (fun (t : WaitingTrigger) =>
       t.event == TriggerEvent.anotherVillainEnters)).size
+  let enterVillain (g : Game) (c : CardDef) : Game :=
+    let (g, obj) := g.allocObject c ⟨0⟩ (.outside ⟨0⟩) none
+    let (g, newId) := g.putOntoBattlefield obj.id ⟨0⟩ (summoningSick := false)
+    g.afterPermanentEnters (g.object! newId)
   let g0 := addPermanent afterDraw baronStruckerHYDRAOverlord ⟨0⟩ ⟨0⟩
   let struckerId := (namedPermanent g0 "Baron Strucker, HYDRA Overlord").id
-  let g := addPermanent g0 redGuardianSuperSoldier ⟨0⟩ ⟨0⟩
+  let g := enterVillain g0 redGuardianSuperSoldier
   let rg := namedPermanent g "Red Guardian, Super-Soldier"
-  let g := g.afterPermanentEnters rg
   let w1 := villainWait g
   let strucker := namedPermanent g "Baron Strucker, HYDRA Overlord"
   w1 == 1 &&
@@ -1312,8 +1313,7 @@ def onceEachTurnConniveWordingOk : Bool :=
           let strucker := namedPermanent gDec "Baron Strucker, HYDRA Overlord"
           !gDec.optionalOnceUsedThisTurn strucker.id &&
             (gDec.player ⟨0⟩).hand.size == (g.player ⟨0⟩).hand.size &&
-            (let g2 := addPermanent gDec baronHelmutZemo ⟨0⟩ ⟨0⟩
-             let g2 := g2.afterPermanentEnters (namedPermanent g2 "Baron Helmut Zemo")
+            (let g2 := enterVillain gDec baronHelmutZemo
              villainWait g2 == w1 + 1))
      | _ => false) &&
     (let hand0 := (g.player ⟨0⟩).hand.size
@@ -1326,8 +1326,7 @@ def onceEachTurnConniveWordingOk : Bool :=
        gYes.optionalOnceUsedThisTurn strucker.id &&
          (gYes.player ⟨0⟩).hand.size == hand0 + 1 &&
          (let wYes := villainWait gYes
-          let g3 := addPermanent gYes baronHelmutZemo ⟨0⟩ ⟨0⟩
-          let g3 := g3.afterPermanentEnters (namedPermanent g3 "Baron Helmut Zemo")
+          let g3 := enterVillain gYes baronHelmutZemo
           villainWait g3 == wYes) &&
          (let gNo := gYes.applyTriggeredAbility ⟨0⟩ (.onWatch Effect.watchVillainConniveOnce)
             (some struckerId) #[Target.permanent rg.id]
@@ -1689,9 +1688,10 @@ def spiderWomanCantUntapOk : Bool :=
 
 def hulklingGreaterStatOk : Bool :=
   let g := mshEnter afterDraw hulklingBurgeoningBruiser
-  let g := addPermanent g hillGiant ⟨0⟩ ⟨0⟩
+  let (g, giantObj) := g.allocObject hillGiant ⟨0⟩ (.outside ⟨0⟩) none
+  let (g, giantId) := g.putOntoBattlefield giantObj.id ⟨0⟩ (summoningSick := false)
+  let g := g.afterPermanentEnters (g.object! giantId)
   let giant := namedPermanent g "Hill Giant"
-  let g := g.afterPermanentEnters giant
   let hulkling := namedPermanent g "Hulkling, Burgeoning Bruiser"
   let fires := g.waitingTriggers.any (fun t =>
     t.source.name == "Hulkling, Burgeoning Bruiser")
@@ -1707,9 +1707,9 @@ def hulklingGreaterStatOk : Bool :=
 
 def hulklingSmallerDoesNotTriggerOk : Bool :=
   let g := mshEnter afterDraw hulklingBurgeoningBruiser
-  let g := addPermanent g aerialDoombot ⟨0⟩ ⟨0⟩
-  let bot := namedPermanent g "Aerial Doombot"
-  let g := g.afterPermanentEnters bot
+  let (g, botObj) := g.allocObject aerialDoombot ⟨0⟩ (.outside ⟨0⟩) none
+  let (g, botId) := g.putOntoBattlefield botObj.id ⟨0⟩ (summoningSick := false)
+  let g := g.afterPermanentEnters (g.object! botId)
   !g.waitingTriggers.any (fun t =>
     t.source.name == "Hulkling, Burgeoning Bruiser") &&
     (mshRuling 684).comment.contains "neither stat"
@@ -2749,9 +2749,7 @@ def ultronMayPayCopyOk : Bool :=
 def blackPantherModeOk : Bool :=
   let g := addPermanent afterDraw blackPantherVanguard ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
-  let g := addPermanent g sheHulkJadeDefender ⟨0⟩ ⟨0⟩
-  let hero := namedPermanent g "She-Hulk, Jade Defender"
-  let g := (g.afterPermanentEnters hero).receivePriority ⟨0⟩
+  let g := mshEnter g sheHulkJadeDefender
   let soldiers (g : Game) :=
     (g.battlefield.filter (fun o => o.printed.isToken && o.hasSubtype .soldier)).size
   match g.pending with
@@ -4353,17 +4351,17 @@ def dainAttackTaxOk : Bool :=
 
 /-- An Unexpected Party asks for a creature type as it enters, and pumps only that type. -/
 def unexpectedPartyChoosesTypeOk : Bool :=
-  let g := addPermanent afterDraw anUnexpectedParty ⟨0⟩ ⟨0⟩
-  let g := addPermanent g lakeshoreApothecary ⟨0⟩ ⟨0⟩
+  let g := addPermanent afterDraw lakeshoreApothecary ⟨0⟩ ⟨0⟩
   let g := addPermanent g grayOgre ⟨0⟩ ⟨0⟩
-  let party := namedPermanent g "An Unexpected Party"
   let bare := g.power (namedPermanent g "Lakeshore Apothecary") == 1 &&
     g.power (namedPermanent g "Gray Ogre") == 2
-  let g := g.afterPermanentEnters party
+  let (g, partyObj) := g.allocObject anUnexpectedParty ⟨0⟩ (.outside ⟨0⟩) none
+  let (g, partyId) := g.putOntoBattlefield partyObj.id ⟨0⟩ (summoningSick := false)
+  let g := g.afterPermanentEnters (g.object! partyId)
   anUnexpectedParty.asEntersChooseCreatureType && bare &&
     match g.pending with
     | .fraChoice ⟨0⟩ (.entersCreatureType id) =>
-      id == party.id &&
+      id == partyId &&
         (let g := mustApply g ⟨0⟩ (.chooseName "Human")
          (namedPermanent g "An Unexpected Party").status.chosenCreatureType == some .human &&
            g.power (namedPermanent g "Lakeshore Apothecary") == 3 &&
@@ -4374,13 +4372,13 @@ def unexpectedPartyChoosesTypeOk : Bool :=
 
 /-- Gollum, Riddle Master chooses odd or even as he enters. -/
 def gollumChoosesParityOk : Bool :=
-  let g := addPermanent afterDraw gollumRiddleMaster ⟨0⟩ ⟨0⟩
-  let gollum := namedPermanent g "Gollum, Riddle Master"
-  let g := g.afterPermanentEnters gollum
+  let (g, gollumObj) := afterDraw.allocObject gollumRiddleMaster ⟨0⟩ (.outside ⟨0⟩) none
+  let (g, gollumId) := g.putOntoBattlefield gollumObj.id ⟨0⟩ (summoningSick := false)
+  let g := g.afterPermanentEnters (g.object! gollumId)
   gollumRiddleMaster.asEntersChooseOddEven &&
     match g.pending with
     | .fraChoice ⟨0⟩ (.entersOddEven id) =>
-      id == gollum.id &&
+      id == gollumId &&
         (let g := mustApply g ⟨0⟩ (.chooseMode 1)
          (namedPermanent g "Gollum, Riddle Master").status.chosenOdd == some true)
     | _ => false

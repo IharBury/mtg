@@ -128,7 +128,7 @@ def FraNext.toResolution : FraNext → Resolution
   | .gainLife n => .gainLife n
   | .returnSourceToHand => .returnSourceToHand
 
-/-- Where cards found by a library search go (CR 701.19). -/
+/-- Where cards found by a library search go (CR 701.23). -/
 inductive SearchDest where
   | battlefield (tapped : Bool)
   | hand
@@ -434,7 +434,7 @@ inductive FraChoice where
   An instant or sorcery is exiled instead of going to the graveyard when
   `exileInstead` is set. -/
   | mayCastCards (eligible : Array ObjectId) (withoutPaying exileInstead : Bool)
-  /-- Search: choose up to `count` of `eligible` (or none, CR 701.19b), send
+  /-- Search: choose up to `count` of `eligible` (or none, CR 701.23b), send
   them to `dest`, shuffle, then do `after`. `kind` is the logged card phrase. -/
   | searchLibrary (eligible : Array ObjectId) (count : Nat) (dest : SearchDest)
     (after : Option FraNext) (kind : String)
@@ -604,7 +604,7 @@ inductive Pending where
   | declareMulligan (player : PlayerId)
   /-- This player puts `count` cards on the bottom after a mulligan (CR 103.5). -/
   | putOnBottom (player : PlayerId) (count : Nat)
-  /-- This player is looking at the top `count` cards of their library (CR 701.20).
+  /-- This player is looking at the top `count` cards of their library (CR 701.22).
   `asked` is the printed scry count before capping at library size. -/
   | scry (player : PlayerId) (count : Nat) (asked : Nat := count)
   /-- This player is looking at the top `count` cards of their library to

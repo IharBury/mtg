@@ -1010,7 +1010,7 @@ def mountainLine (g : Game) : String :=
     s!"zone battlefield (4):\n  Chandra:\n    {objectLine g bears (some (some ⟨0⟩))}\n    {objectLine g land0 (some (some ⟨0⟩))}\n  Nissa:\n    {objectLine g ogre (some (some ⟨1⟩))}\n    {objectLine g land1 (some (some ⟨1⟩))}"
 
 -- Starting a scry does not move library cards, but the demo reprints that
--- library so the scrying player sees the looked-at faces (CR 701.20).
+-- library so the scrying player sees the looked-at faces (CR 701.22).
 #guard (zoneObjectIds giftKnownLib (.library ⟨0⟩)) ==
   (zoneObjectIds giftKnownScrying (.library ⟨0⟩))
 #guard (changedZones giftKnownLib giftKnownScrying).contains (.library ⟨0⟩)

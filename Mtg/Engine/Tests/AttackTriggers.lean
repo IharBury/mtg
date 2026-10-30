@@ -87,7 +87,7 @@ def galionResolved : Game := passBoth galionTargeted
 #guard galionResolved.log.any (fun s =>
   mentions s "base power and toughness become 4/4 until end of turn")
 
-/-- Counters on the target apply after the new base (CR 613.3c–d). -/
+/-- Counters on the target apply after the new base (CR 613.4c–d). -/
 def galionOnCounteredElves : Game :=
   let g := galionAndElves
   let elves := namedPermanent g "Llanowar Elves"
@@ -103,7 +103,7 @@ def galionOnCounteredElves : Game :=
 #guard galionOnCounteredElves.power (namedPermanent galionOnCounteredElves "Llanowar Elves") == 5
 #guard (namedPermanent galionOnCounteredElves "Llanowar Elves").status.plusOnePlusOne == 1
 
-/-- Uses Galion's actual P/T at resolution, including pumps (CR 613.3b ruling). -/
+/-- Uses Galion's actual P/T at resolution, including pumps (CR 613.4b ruling). -/
 def galionPumpedResolved : Game :=
   let g := galionAndElves
   let g := g.applyEffect ⟨0⟩ (Effect.pump 2 2)
@@ -388,7 +388,7 @@ def oliphauntTargetGone : Game :=
 #guard oliphauntTargetGone.log.any (fun s => mentions s "no longer in play")
 #guard !(oliphauntTargetGone.battlefield.any (fun o => o.name == "Gray Ogre"))
 
-/- Lothlórien Lookout: attack trigger scries 1 (CR 508.2 / 701.20). -/
+/- Lothlórien Lookout: attack trigger scries 1 (CR 508.2 / 701.22). -/
 
 #guard lothlorienLookout.triggeredAbilities == #[.onAttackScry 1]
 #guard lothlorienLookout.power == some 1

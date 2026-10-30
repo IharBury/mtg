@@ -56,7 +56,7 @@ structure Player where
   sideboard : Array CardDef := #[]
   /-- Two-Headed Giant teammate (MSH 57 / 236). -/
   teammate : Option PlayerId := none
-  /-- This player is the monarch (CR 722). -/
+  /-- This player is the monarch (CR 725). -/
   isMonarch : Bool := false
   /-- Creature types of this player's commander, for Path of Ancestry. -/
   commanderCreatureTypes : Array CardSubtype := #[]
@@ -162,7 +162,7 @@ inductive Action where
   /-- Put these cards on the bottom after a mulligan, first listed = new bottom. -/
   | putOnBottom (ids : Array ObjectId)
   /-- Finish scrying: `top` (last = new top) go on top of the library in that
-  order; `bottom` (first = new bottom) go to the bottom (CR 701.20). -/
+  order; `bottom` (first = new bottom) go to the bottom (CR 701.22). -/
   | scry (top : Array ObjectId) (bottom : Array ObjectId)
   /-- Finish surveilling: `top` (last = new top) go on top of the library in
   that order; `graveyard` go to the graveyard in that order (CR 701.25). -/

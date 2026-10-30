@@ -306,7 +306,7 @@ where
         g.availableManaExcept p (if ab.cost.tap then some o.id else none)
       let manaCost := g.activationManaCost p ab (some o)
       g.canActivate p o ab &&
-      available.canPay ab.cost.mana (allowElfRestricted := o.hasSubtype .elf) &&
+      available.canPay ab.cost.mana (allowElfRestricted := g.hasSubtype o .elf) &&
       -- Don't pay life that would reduce the player to 0 or less.
       (ab.cost.payLife == 0 || (g.player p).life > (ab.cost.payLife : Int)) &&
       -- Don't spend a once-only X power-up at X = 0.
@@ -315,11 +315,11 @@ where
       !(ab.effect == Effect.attachToTargetCreatureYouControl && o.attachedTo.isSome) &&
       -- Spend {4}{T} on Rogue's Passage only after attackers are declared.
       !(ab.effect == Effect.targetCantBeBlockedThisTurn &&
-        !(g.permanentsOf p).any (fun c => c.isCreature && c.status.attacking)) &&
+        !(g.permanentsOf p).any (fun c => g.isCreature c && c.status.attacking)) &&
       -- Don't typecycle a card you can currently afford to cast.
       !(ab.activateFromHand && g.canCast p o &&
         (g.availableMana p).canPay o.printed.manaCost
-          (allowElfRestricted := o.hasSubtype .elf))
+          (allowElfRestricted := g.hasSubtype o .elf))
     let firstAbility (o : GameObject) : Option Nat :=
       (g.activatedAbilitiesOf o).findIdx? (shouldActivate o)
     let gy := (g.player p).graveyard.filterMap (fun id => g.findObject? id)
@@ -339,8 +339,8 @@ where
       g.canCast p o &&
         ((g.playPermission o).any (·.withoutManaCost) ||
           available.canPay o.printed.manaCost
-            (allowElfRestricted := o.hasSubtype .elf)
-            (allowInstRestricted := o.printed.isInstantOrSorcery)) &&
+            (allowElfRestricted := g.hasSubtype o .elf)
+            (allowInstRestricted := g.isInstantOrSorcery o)) &&
         g.canPayAnnouncedAdditional p o available)
     let adventurePlayable := (g.handObjects p ++ g.exiledPlayable p).filter (fun o =>
       g.canCastAdventure p o &&

@@ -44,7 +44,7 @@ def attacking (g : Game) (name : String) : Game :=
 
 def attach (g : Game) (equip host : String) : Game :=
   let eq := obj g equip
-  g.record (GameEvent.attached g.turnNumber eq.id (pid g host) (cause := .gameRule .staticAbility))
+  g.record (GameEvent.attached g.turnNumber (g.snapshot eq) (pid g host) (cause := .gameRule .staticAbility))
 
 def cast (g : Game) (name : String) : Game :=
   let o := anyObj g name
@@ -101,7 +101,7 @@ left the battlefield does not count. -/
   let rider : CardDef := creature "Rider" ManaCost.empty #[] 2 2
   let g0 := attacking (addPermanent battle rider caster caster) "Rider"
   let riderObj := obj g0 "Rider"
-  let g0 := g0.record (GameEvent.attached g0.turnNumber riderObj.id (pid g0 "Cub")
+  let g0 := g0.record (GameEvent.attached g0.turnNumber (g0.snapshot riderObj) (pid g0 "Cub")
     (cause := .gameRule .staticAbility))
   let g := step g0 doubleStrike
   !strikes g "Rider" && !strikes g "Cub" && !strikes g "Bear"

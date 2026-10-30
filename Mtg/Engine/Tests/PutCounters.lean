@@ -90,7 +90,7 @@ def board : Game :=
 
 def attach (g : Game) (auraName hostName : String) : Game :=
   let a := obj g auraName
-  g.record (GameEvent.attached g.turnNumber a.id (pid g hostName) (cause := .gameRule .staticAbility))
+  g.record (GameEvent.attached g.turnNumber (g.snapshot a) (pid g hostName) (cause := .gameRule .staticAbility))
 
 def leave (g : Game) (name : String) : Game :=
   let o := obj g name
@@ -245,5 +245,28 @@ A hand is not a permanent, so it receives nothing. -/
 #guard phrase (.putCounters (.ofKind .plusOnePlusOne) .eachUpToLastKnown) ==
   "put a +1/+1 counter on each of up to that many target creatures you control"
 #guard phrase (.putCounters (.ofKind .plusOnePlusOne) .hand) == "put counters"
+
+/- Phase 11: Putting loyalty counters on an artifact that gained `.planeswalker`
+in Layer 4 snapshots `.planeswalker` on `PermanentEvent.counters` and triggers
+`.fra .youPutLoyaltyCounters`. -/
+#guard
+  let loyaltyWatcher : CardDef := {
+    name := "Loyalty Watcher"
+    types := #[.enchantment]
+    triggeredAbilities := #[TriggeredAbility.fra (.fra .youPutLoyaltyCounters) "" (.draw 1)]
+  }
+  let g0 := addPermanent board loyaltyWatcher caster caster
+  let rockId := pid g0 "Counter Rock"
+  let g1 := g0.createEffect
+    (.layered (.objects #[rockId]) (.types .add #[.planeswalker] #[.jace] #[]) .untilEndOfTurn)
+  let g2 := g1.withBatch none fun g =>
+    g.recordPutCounters rockId .loyalty 1 (byPlayer := some caster)
+  let snapHasPw := g2.events.any fun e =>
+    match e.change with
+    | .rules (.permanent (.counters (.object eo) .loyalty (.put 1) (some p))) =>
+      eo.id == some rockId && p == caster && eo.types.contains .planeswalker
+    | _ => false
+  snapHasPw &&
+    g2.waitingTriggers.any (·.event == .fra .youPutLoyaltyCounters)
 
 end Mtg.Engine.PutCountersTests

@@ -11,7 +11,7 @@ triggered abilities.
 namespace Mtg.Engine
 namespace Game
 
-/-- Move the source into its owner's library and shuffle (CR 701.19).
+/-- Move the source into its owner's library and shuffle (CR 701.24).
 A following draw is rewritten to that owner so a stolen source still
 draws for the printed owner. -/
 def shuffleSourceIntoLibrary (g : Game) (sourceId : Option ObjectId)
@@ -142,10 +142,7 @@ def applyFraResolution? (g : Game) (controller : PlayerId) (effect : Effect)
       name := "Chandra Emblem", types := #[]
       triggeredAbilities := #[.triggered .youCastSpell
         (Effect.ofTrigger (.onPermanent .playerOrCreature (.dealDamage n)))] }
-    let embCause :=
-      g.resolveOptionalCause none (fallbackSrc := sourceId) (fallbackCtrl := some controller)
-        (defaultCause := .gameRule .spellCast)
-    let (g, _) := g.allocObject emblem controller .command (some controller) (cause := embCause)
+    let (g, _) := g.allocObject emblem controller .command (some controller)
     some (g.logMsg s!"{(g.player controller).name} gets an emblem")
   | .firstDealsStatDamageToSecond useLoyalty =>
     -- Ruling 791: the power or loyalty is checked as the spell resolves; if
@@ -924,7 +921,7 @@ private def branchOnSpellIf (g : Game) (controller : PlayerId) (effect : Effect)
       match g.findObject? (g.followMoved id) with
       | none => g.logMsg "The target is no longer legal"
       | some o =>
-        let mv := o.printed.manaValue + (g.chosenXOf? o.id).getD 0
+        let mv := g.objectManaValue o (includeLkiX := true)
         if mv ≤ n then whenHolds g else whenNot g
     | _ => g.logMsg "The target is no longer legal"
   | .castFromGraveyard =>
@@ -1663,9 +1660,9 @@ def returnSourceFromGraveyard (g : Game) (sourceId : Option ObjectId)
          else s!"{name} returns to the battlefield")
       g.afterPermanentEnters (g.object! newId)
 
-/-- True when `o` has the looked-at type, including an Equipment artifact. -/
-def cardHasLookType (o : GameObject) (t : CardSubtype) : Bool :=
-  o.printed.hasSubtype t || (t == .equipment && o.printed.isEquipment)
+/-- True when `o` has the looked-at type, including an Equipment artifact (CR 205.3 / 702.73a). -/
+def cardHasLookType (g : Game) (o : GameObject) (t : CardSubtype) : Bool :=
+  g.hasSubtype o t || (t == .equipment && g.isEquipment o)
 
 /-- Put `ids` on the bottom. One card needs no order. Two or more are ordered
 by the player, first card on the bottom. -/
@@ -1705,7 +1702,7 @@ def beginLookPutTypes (g : Game) (p : PlayerId) (n : Nat) (types : Array CardSub
   if looked.isEmpty then g
   else
     let eligible := looked.filter (fun id =>
-      (g.findObject? id).any (fun o => types.any (cardHasLookType o)))
+      (g.findObject? id).any (fun o => types.any (g.cardHasLookType o)))
     if eligible.isEmpty then g.putRestOnBottomRandom p looked
     else
       g.beginFraChoice p (.nickFuryPut looked eligible)
@@ -1745,8 +1742,8 @@ def finishPlusOneAfterDiscards (g : Game) : Game :=
     | none => g
 
 /-- Transform the source permanent on the battlefield (CR 701.27a). When `cause`
-is supplied, the printed-static expiration and `PermanentEvent.transformed`
-share that cause; otherwise a fresh `.oneShotEffect` cause is allocated. -/
+is supplied, `PermanentEvent.transformed` uses that cause; otherwise a fresh
+`.oneShotEffect` cause is allocated when resolving. -/
 def transformPermanent (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
     (cause : Option EventCause := none) : Game :=
   g.withSourceOnBattlefield sourceId fun g o =>
@@ -1763,11 +1760,9 @@ def transformPermanent (g : Game) (controller : PlayerId) (sourceId : Option Obj
               .oneShotEffect none (s.orElse (fun _ => some o.id)) (c.orElse (fun _ => some controller)))
         g.withBatch batchCause fun g =>
           let fallback := batchCause.getD (.gameRule .spellCast)
-          let g := g.expirePrintedStaticEffects o (cause := some fallback)
           let g := g.record
             (GameEvent.transformed g.turnNumber (g.snapshot o) (!o.status.transformed)
               (cause := fallback))
-          let g := g.createPrintedStaticEffects (g.object! o.id)
           g.logMsg s!"{oldName} transforms into {face.name}"
 
 /-- Resolve a unified activated-ability `Effect` (CR 608). -/
@@ -2058,7 +2053,7 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
               (pumpPerArtifact := true)
         | none => g.logMsg "The Equipment is no longer in play"
       | .lookAtTopRevealSubtype n subtype =>
-        g.beginLookRevealToHand controller n (fun o => o.printed.hasSubtype subtype) true
+        g.beginLookRevealToHand controller n (fun o => g.hasSubtype o subtype) true
       | .millThenPutSubtypeOrEnchantment n subtype =>
         g.millMayPutSubtypeOrEnchantment controller n subtype
       | .returnFromGyFinalityAttach =>
@@ -2089,11 +2084,7 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
             (types := some types))
           "The source is no longer in play"
       | .nextInstantSorceryCopyIfMvAtMostSourcePower =>
-        let pw :=
-          match sourceId.bind g.findObject? with
-          | some o =>
-            if o.isOnBattlefield then g.power o else o.power
-          | none => (0 : Int)
+        let pw := g.sourcePowerAtResolution sourceId lastKnownPower
         g.createEffect (.pendingLokiCopy controller sourceId pw)
           |>.logMsg s!"The next instant or sorcery with mana value {pw} or less will be copied"
       | .harnessInfinityStone =>

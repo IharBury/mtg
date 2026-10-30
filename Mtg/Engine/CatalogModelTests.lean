@@ -808,13 +808,15 @@ control enters” (Belladonna Took). -/
 card from your graveyard”, and that ability doesn't work on the battlefield. -/
 #guard
   let g := addToGraveyard (addToGraveyard afterDraw attercop me) silvanReveler me
-  let g := addPermanent g forest me me
-  let g := g.putLandYouControlEntersTriggers (namedPermanent g "Forest")
+  let (g, f) := g.allocObject forest me (.outside me) none
+  let (g, newId) := g.putOntoBattlefield f.id me (summoningSick := false)
+  let g := g.putLandYouControlEntersTriggers (g.object! newId)
   g.waitingTriggers.all (·.source.name == "Silvan Reveler") && g.waitingTriggers.size == 1
 #guard
   let g := addPermanent afterDraw silvanReveler me me
-  let g := addPermanent g forest me me
-  let g := g.putLandYouControlEntersTriggers (namedPermanent g "Forest")
+  let (g, f) := g.allocObject forest me (.outside me) none
+  let (g, newId) := g.putOntoBattlefield f.id me (summoningSick := false)
+  let g := g.putLandYouControlEntersTriggers (g.object! newId)
   g.waitingTriggers.isEmpty
 
 /- Getaway Barrel triggers when it's put into a graveyard from the

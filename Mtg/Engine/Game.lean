@@ -67,11 +67,11 @@ and abilities (CR 601.2b / 700.2), announcing a value for `{X}`
 (CR 601.2b) before targets (CR 601.2c), dividing
 damage among those targets (CR 601.2d), then determining and paying costs
 including sacrificing an artifact or creature (CR 601.2f / 601.2h) or paying life (CR 118.3b / 119.4),
-drawing cards and losing life (CR 121 / 118.3a),
+drawing cards and losing life (CR 121 / 119.3),
 and activating mana abilities while
 paying (CR 601.2g), activating non-mana abilities of permanents, cards in hand
 (typecycling, CR 702.29), and graveyard cards (CR 602),
-including destroying permanents (CR 701.7), equip (CR 702.6), and lasting
+including destroying permanents (CR 701.8), equip (CR 702.6), and lasting
 type-changing animations (CR 205.1a / 611.2a), static abilities that grant
 trample, pump other creatures of listed types, pump an enchanted or equipped
 creature, set power and toughness
@@ -81,10 +81,10 @@ two or more (menace, CR 702.111) or N or more creatures, until-end-of-turn
 effects that prevent creatures without flying from blocking, can't-be-blocked
 if power is N or less, and can't-be-blocked
 (CR 509.1b / 611.2a), until-end-of-turn
-layer-7b base P/T setting (CR 613.3b), Aura spells (CR 303.4),
+layer-7b base P/T setting (CR 613.4b), Aura spells (CR 303.4),
 Equipment (CR 301.5), flash (CR 702.8), hexproof (CR 702.11),
 indestructible (CR 702.12), deathtouch (CR 702.2 / 704.5h), lifelink (CR 702.15),
-menace (CR 702.111), scry (CR 701.20),
+menace (CR 702.111), scry (CR 701.22),
 discard (CR 701.9), destroy (CR 701.8), including a target artifact or land or
 creature (and its controller losing life), mass until-end-of-turn P/T changes,
 drawing and losing life, +1/+1 counters (CR 122), until-end-of-turn
@@ -94,10 +94,10 @@ creature's P/T onto another creature you control, giving another creature
 +2/+0 and trample, or gaining life while you control a creature with power 4
 or greater (Ferocious), becomes-blocked triggers
 (CR 509.5c / 603), enters triggers (CR 603.6a), including searching the library
-for a Forest card (CR 701.19 / 305.7), drawing, scrying, optional
+for a Forest card (CR 701.23 / 305.7), drawing, scrying, optional
 discard-to-draw, damage divided as you choose when a creature enters or
 attacks (CR 601.2d), returning an Elf card from your graveyard to gain
-life equal to its power (CR 701.19 / 118.2), each player sacrificing a creature,
+life equal to its power (CR 119.3), each player sacrificing a creature,
 a target opponent sacrificing a creature of their choice, each opponent discarding a card,
 and exiling a card from an opponent's graveyard while opponents lose life,
 another-Elf-enters pumps
@@ -110,7 +110,7 @@ or give an opposing creature -1 / -1, and “whenever one or more other creature
 scry triggers,
 cast triggers that deal damage to each opponent when you cast an instant or
 sorcery (CR 601.2i / 603.3), attack-with-Elves scry triggers and scry pumps
-for each card looked at (CR 508.2 / 701.20 / 603),
+for each card looked at (CR 508.2 / 701.22 / 603),
 vigilance (CR 702.20), `{T}: Add` mana equal to power of any color with an
 Elf-only spending restriction (CR 106.10 / 605),
 activated pumps that last until end of turn (including paying life),
@@ -121,7 +121,7 @@ activations that return the card to the battlefield tapped or to hand
 (CR 404 / 602), including only if you control a legendary creature,
 adventurer cards including casting an Adventure and later the permanent
 (CR 715), playing exiled creature cards with mana of any type
-(CR 118.12 / 400.7), cost reductions if a creature died this turn or if the
+(CR 118.14 / 400.7), cost reductions if a creature died this turn or if the
 target was dealt damage this turn (CR 118.7 / 601.2f), additional costs that
 sacrifice an artifact or creature, discard a card, or pay extra generic mana (announced at
 CR 601.2b, determined and paid at 601.2f–h),
@@ -169,10 +169,10 @@ This module re-exports the `Mtg.Engine.Game.*` files, one per abstraction:
 - `Costs`: Total costs (CR 601.2f–h)
 - `CastSpell`: The casting process (CR 601.2)
 - `Activation`: Activating abilities (CR 602)
-- `SacrificeDiscard`: Sacrifice and discard prompts (CR 701.17 / 701.9)
+- `SacrificeDiscard`: Sacrifice and discard prompts (CR 701.21 / 701.9)
 - `Damage`: Damage, destruction, and life (CR 120 / 119)
 - `Pumps`: Pumps, grants, and counters (CR 613.4c / 122)
-- `LibrarySearch`: Searching the library (CR 701.19)
+- `LibrarySearch`: Searching the library (CR 701.23)
 - `ResolutionHelpers`: Resolution target helpers (CR 608.2b)
 - `ResolutionEffects`: Named resolution effects
 - `ModeledTriggers`: Modeled trigger resolution

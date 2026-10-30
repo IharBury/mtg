@@ -4,7 +4,7 @@ import Mtg.Engine.Game.EffectResolution
 # Optional costs, cascade, and the Ring
 
 Kicker (CR 702.32), gift, and teamwork announcements, cascade
-(CR 702.84), copying spells, the Ring tempts you (CR 701.40), and
+(CR 702.85), copying spells, the Ring tempts you (CR 701.54), and
 related resolution helpers.
 -/
 

@@ -73,12 +73,12 @@ def logPutOnTop (g : Game) (p : PlayerId) (looked top : Array ObjectId) : Game :
     return g
 
 /-- Finish scrying: put `bottom` on the bottom (first = new bottom) and `top`
-on top (last = new top) of the library, each pile in the given order (CR 701.20). -/
+on top (last = new top) of the library, each pile in the given order (CR 701.22). -/
 def finishScry (g : Game) (p : PlayerId) (top bottom : Array ObjectId) :
     Except String Game := do
   match g.pending with
   | .scry q count asked =>
-    g.checkLookedPiles p q count top bottom "scry" "CR 701.20"
+    g.checkLookedPiles p q count top bottom "scry" "CR 701.22"
     let looked := g.scryLookedIds p count
     let cause := some (g.resolvingOrRuleCause p)
     let mut g := g
@@ -92,7 +92,7 @@ def finishScry (g : Game) (p : PlayerId) (top bottom : Array ObjectId) :
     g := g.record happened
     return g.finishLibraryLook
   | .surveil .. => throw "You are surveilling, not scrying; use surveil (CR 701.25)"
-  | _ => throw "Not time to scry (CR 701.20)"
+  | _ => throw "Not time to scry (CR 701.22)"
 
 /-- Finish surveilling: put `graveyard` into the graveyard in that order and
 `top` back on top (last = new top) of the library (CR 701.25). -/
@@ -125,7 +125,7 @@ def finishSurveil (g : Game) (p : PlayerId) (top graveyard : Array ObjectId) :
             g := g'.logMsg s!"{(g.player p).name} puts {card.name} into their hand"
       return g
     return g.finishLibraryLook
-  | .scry .. => throw "You are scrying, not surveilling; use scry (CR 701.20)"
+  | .scry .. => throw "You are scrying, not surveilling; use scry (CR 701.22)"
   | _ => throw "Not time to surveil (CR 701.25)"
 
 /-- Remove one symbol a convoking creature of `colors` can pay: a colored
@@ -230,7 +230,7 @@ def finishProliferate (g : Game) (p : PlayerId) (chosen : Array Target) :
         for (kind, _) in bag do
           if kind != .plusOnePlusOne then
             let cur := g.object! id
-            g := g.record (GameEvent.counters g.turnNumber (some p) cur.asEvent kind 1 false
+            g := g.record (GameEvent.counters g.turnNumber (some p) (g.snapshot cur) kind 1 false
               (cause := effCause))
         g := g.syncImpendingNotACreature id (cause := some effCause)
         let o := g.object! id
@@ -555,8 +555,9 @@ def castExiledAsAbilityResolves (g : Game) (p : PlayerId) (id : ObjectId) :
     if id != cardId then
       throw "That isn't the exiled card"
     let some card := g.findObject? id | throw "no such object"
-    let face := card.printed
-    if face.isLand then
+    let origSnap := g.snapshot card
+    let face := g.baseCard card
+    if g.isLand card then
       throw "An effect that lets you cast a card doesn't let you play a land (ruling 855)"
     if face.requiresTarget && (g.legalCastTargets p face).isEmpty && !face.allowsZeroTargets then
       throw s!"{face.name} requires a target"
@@ -580,6 +581,7 @@ def castExiledAsAbilityResolves (g : Game) (p : PlayerId) (id : ObjectId) :
     if face.requiresTarget then
       let prop : ProposedSpell := {
         caster := p, cost := ManaCost.empty, spellId := newId, original := card
+        originalSnapshot := origSnap
         handBefore := (g.player p).hand, stackBefore, manaBefore := pool }
       return g.changes #[.pending (.chooseTargets p), .proposedSpell (some prop)]
     else

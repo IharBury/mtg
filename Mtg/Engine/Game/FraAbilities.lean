@@ -37,19 +37,16 @@ def beginChooseKeyword (g : Game) (p : PlayerId) (id : ObjectId) (options : Arra
         s!"{(g.player p).name} chooses {names} for {o.name}"
   | none => g
 
-/-- Give `p` an emblem or effect object in the command zone (CR 114). -/
+/-- Give `p` an emblem or effect object in the command zone (CR 114.1–114.5). -/
 def createCommandObject (g : Game) (p : PlayerId) (card : CardDef)
     (untilTurnOf : Option PlayerId := none) : Game :=
-  let batchCause :=
-    g.resolveOptionalCause none (fallbackCtrl := some p) (defaultCause := .gameRule .spellCast)
-  g.withBatch (some batchCause) fun g =>
-    let (g, obj) := g.allocObject card p .command (some p) (cause := batchCause)
-    match untilTurnOf with
-    | some q =>
-      let effCause :=
-        g.resolveOptionalCause none (fallbackCtrl := some p) (defaultCause := .gameRule .spellCast)
-      g.createEffect (.fraEmblemUntilTurnOf obj.id q) (cause := some effCause)
-    | none => g
+  let (g, obj) := g.allocObject card p .command (some p)
+  match untilTurnOf with
+  | some q =>
+    let effCause :=
+      g.resolveOptionalCause none (fallbackCtrl := some p) (defaultCause := .gameRule .spellCast)
+    g.createEffect (.fraEmblemUntilTurnOf obj.id q) (cause := some effCause)
+  | none => g
 
 /-- Each player in APNAP order who controls a creature. -/
 def playersWithCreaturesApnap (g : Game) : Array PlayerId :=

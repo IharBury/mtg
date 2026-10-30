@@ -126,7 +126,7 @@ def thunderboltsHeroTypeOk : Bool :=
 if attacking would require an unpaid cost. -/
 def theVoidAttacksIfAbleOk : Bool :=
   let (g, tok) := afterDraw.createToken ⟨0⟩ Game.theVoidToken
-  Game.hasAttacksIfAble tok &&
+  g.hasAttacksIfAble tok &&
     !g.mustAttackIfAble tok &&
     (let g := readyControlledForTurn g ⟨0⟩
      let tok := g.object! tok.id

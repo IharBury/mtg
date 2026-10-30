@@ -176,7 +176,7 @@ def addAttachedAura (g : Game) (aura : CardDef) (host : GameObject)
     (attachedTo := some host.id)
   g
 
-/-- Keep the looked-at cards on top in their current order (CR 701.20). -/
+/-- Keep the looked-at cards on top in their current order (CR 701.22). -/
 def keepScry (g : Game) : Game :=
   match g.pending with
   | .scry p n _ => mustApply g p (.scry (g.scryLookedIds p n) #[])
@@ -280,7 +280,7 @@ def giftBottomedElves : Game :=
 #guard giftBottomedElves.log.any (fun s =>
   mentions s "puts Llanowar Elves on the bottom of their library")
 
-/-- The rest may be put on top in any order (CR 701.20). -/
+/-- The rest may be put on top in any order (CR 701.22). -/
 def giftReorderedTop : Game :=
   let looked := giftKnownScrying.scryLookedIds ⟨0⟩ 2
   -- Reverse the two looked-at cards: Forest becomes the new top.
@@ -880,7 +880,7 @@ def woodElvesEntered : Game := passBoth paidWoodElves
 #guard woodElvesEntered.log.any (fun s => mentions s "enters the battlefield")
 #guard woodElvesEntered.log.any (fun s => mentions s "enters trigger is put on the stack")
 
-/-- Mountain on top, Forest below: search finds the Forest (CR 701.19). -/
+/-- Mountain on top, Forest below: search finds the Forest (CR 701.23). -/
 def woodElvesKnownLib : Game :=
   addToLibraryTop (addToLibraryTop woodElvesEntered forest ⟨0⟩) mountain ⟨0⟩
 

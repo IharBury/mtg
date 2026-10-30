@@ -22,7 +22,7 @@ inductive TokenKind where
   | birdSoldier
   | wall
   | dragon
-  /-- A Clue artifact token (CR 111 / 701.55). -/
+  /-- A Clue artifact token (CR 111 / 111.10f). -/
   | clue
   /-- A 3/2 white Hero creature token with vigilance. -/
   | hero32vigilance

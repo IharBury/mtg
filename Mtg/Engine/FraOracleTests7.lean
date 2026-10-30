@@ -268,10 +268,14 @@ def canopyTriggered : Game :=
 the other. -/
 #guard
   let g := canopyBoard 4
-  let g := addPermanent (addPermanent g forest ⟨0⟩ ⟨0⟩) forest ⟨0⟩ ⟨0⟩
-  let forests := g.battlefield.filter (fun o => o.name == "Forest")
-  let g := g.afterLandEnters forests[4]!
-  let g := g.afterLandEnters (g.object! forests[5]!.id)
+  let (g, f1) := g.allocObject forest ⟨0⟩ (.outside ⟨0⟩) none
+  let (g, f2) := g.allocObject forest ⟨0⟩ (.outside ⟨0⟩) none
+  let (g, (id1, id2)) := g.withBatchReturn none fun g =>
+    let (g, id1) := g.putOntoBattlefield f1.id ⟨0⟩ (summoningSick := false)
+    let (g, id2) := g.putOntoBattlefield f2.id ⟨0⟩ (summoningSick := false)
+    (g, (id1, id2))
+  let g := g.afterLandEnters (g.object! id1)
+  let g := g.afterLandEnters (g.object! id2)
   let g := resolveStack (g.receivePriority ⟨0⟩) 30
   g.power (namedPermanent g "Grizzly Bears") == 8
 #guard (fraRuling 820).comment.contains "takes into consideration the other Forests that entered at the same time"

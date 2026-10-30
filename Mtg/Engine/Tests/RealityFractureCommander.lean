@@ -152,6 +152,6 @@ def monarchGinger : Game :=
 def windcragEnters : Game :=
   entered windcragSiege |>.1
 
-#guard (findPerm windcragEnters "Windcrag Siege").status.windcragMardu
+#guard (findPerm windcragEnters "Windcrag Siege").status.chosenAnchor == some "Mardu"
 
 end Mtg.Engine.Tests

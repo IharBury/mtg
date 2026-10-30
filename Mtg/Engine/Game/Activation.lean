@@ -165,17 +165,16 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
     Except String Game := do
   let some o := g.findObject? id | throw "no such object"
   if o.status.faceDown then
-    match o.printed.morph with
+    match (g.unmaskedCopiableValues o).morph with
     | some cost =>
       let pl := g.player p
       if !pl.manaPool.canPay cost then
         throw s!"{pl.name} cannot pay {cost}"
       let g ← g.payCost p cost (forObject := some o.id)
       let g := g.record
-        (GameEvent.turnedFaceUp g.turnNumber (g.object! o.id).asEvent
+        (GameEvent.turnedFaceUp g.turnNumber (g.snapshot (g.object! o.id))
           (cause := .specialAction .turnFaceUp p))
-      let g := g.createPrintedStaticEffects (g.object! o.id)
-      return g.logMsg s!"{pl.name} turns {o.name} face up"
+      return g.logMsg s!"{pl.name} turns {(g.object! o.id).name} face up"
     | none => throw s!"{o.name} is face down"
   let abs := g.activatedAbilitiesOf o
   if abs.isEmpty then
@@ -195,6 +194,7 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
   g.validateActivation p o ab
   let loyaltyX := ab.cost.loyalty == some .minusX
   let o := g.object! id
+  let origSnap := g.snapshot o
   let pl := g.player p
   let stackBefore := g.stack
   let manaBefore := pl.manaPool
@@ -215,6 +215,7 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
     cost := manaCost
     spellId := newId
     original := o
+    originalSnapshot := origSnap
     handBefore := pl.hand
     stackBefore := stackBefore
     manaBefore := manaBefore

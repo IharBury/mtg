@@ -39,7 +39,7 @@ def pid (g : Game) (name : String) : ObjectId :=
 
 def attach (g : Game) (aura host : String) : Game :=
   let a := obj g aura
-  g.record (GameEvent.attached g.turnNumber a.id (pid g host) (cause := .gameRule .staticAbility))
+  g.record (GameEvent.attached g.turnNumber (g.snapshot a) (pid g host) (cause := .gameRule .staticAbility))
 
 def withHope (g : Game) (name : String) (n : Nat) : Game :=
   let o := obj g name
@@ -177,7 +177,7 @@ Removing them does not count as removing a hope counter. -/
     (addPermanent (addPermanent afterDraw bear caster caster) grasp caster caster)
     "Grasp" "Bear") "Bear"
   let aura := obj g0 "Grasp"
-  let g0 := g0.record (GameEvent.attached g0.turnNumber aura.id ⟨99999⟩ (cause := .gameRule .staticAbility))
+  let g0 := g0.record (GameEvent.attached g0.turnNumber (g0.snapshot aura) ⟨99999⟩ (cause := .gameRule .staticAbility))
   let g := step g0 allFromEnchanted (some (pid g0 "Grasp"))
   stillLoaded g (obj g "Bear") && g.log == g0.log
 
@@ -191,7 +191,7 @@ Removing them does not count as removing a hope counter. -/
   let (g1, bearId) := g0.move (pid g0 "Bear") (.graveyard caster) none
   let g1 := (setMarkedDamage ((g1.recordPutCounters bearId .plusOnePlusOne 2).recordPutCounters bearId .hope 1) bearId 4).createEffect (.pump bearId 1 2)
   let aura := obj g1 "Grasp"
-  let g1 := g1.record (GameEvent.attached g1.turnNumber aura.id bearId (cause := .gameRule .staticAbility))
+  let g1 := g1.record (GameEvent.attached g1.turnNumber (g1.snapshot aura) bearId (cause := .gameRule .staticAbility))
   let g := step g1 allFromEnchanted (some (pid g1 "Grasp"))
   let host := anyObj g "Bear"
   !Status.hasCounters host.status && host.status.damage == 4 && g.pumpOf host == (1, 2) &&

@@ -256,7 +256,7 @@ def lastPermanent (g : Game) : GameObject :=
   | some o => o
   | none => panic! "expected a permanent on the battlefield"
 
-/-- Untap is a turn-based action (CR 502.2): occupants stay put, but the land
+/-- Untap is a turn-based action (CR 502.3): occupants stay put, but the land
 is no longer tapped. -/
 @[irreducible, noinline] def afterUntapStep : Game := tappedMountain.beginStep .untap
 

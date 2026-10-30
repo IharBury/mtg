@@ -5,7 +5,7 @@ import Mtg.Engine.Game.Damage
 # Pumps, grants, and counters (CR 613.4c / 122)
 
 Until-end-of-turn pumps and keyword grants, +1/+1 counters and amass
-(CR 701.43), finality counters, hand-size effects, improvise
+(CR 701.47), finality counters, hand-size effects, improvise
 (CR 702.126).
 -/
 
@@ -111,7 +111,7 @@ permanent with a stun counter on it would become untapped, instead remove a
 stun counter from it"). Returns `(stunReplaced, cause')`. -/
 def replaceUntap (g : Game) (o : GameObject)
     (cause : Option EventCause := none) : Bool × Option EventCause :=
-  let untap := GameEvent.untapped g.turnNumber o.asEvent false
+  let untap := GameEvent.untapped g.turnNumber (g.snapshot o) false
     (cause := g.resolveOptionalCause cause (fallbackCtrl := g.controllerOf o)
       (defaultCause := .turnBased .untapAll))
   if !o.status.tapped || !untap.watches .wouldUntap then
@@ -367,7 +367,7 @@ def finishAmassOn (g : Game) (controller : PlayerId) (armyId : ObjectId)
           if src.isOnBattlefield then g.attachSourceTo src (g.object! army.id) (cause := cause) else g
         | none => g
 
-/-- Amass `[subtype]` `n` (CR 701.43). If you control no Army, the token
+/-- Amass `[subtype]` `n` (CR 701.47). If you control no Army, the token
 enters as 0/0 and triggers see that power before counters are put on it. If
 you control more than one Army, you choose which one. -/
 def amass (g : Game) (controller : PlayerId) (subtype : CardSubtype) (n : Nat)
@@ -404,17 +404,17 @@ def amass (g : Game) (controller : PlayerId) (subtype : CardSubtype) (n : Nat)
       else g
     g.finishAmassOn controller (g.object! army.id).id subtype n attach (cause := cause)
 
-/-- Amass Goblins `n` (CR 701.43). -/
+/-- Amass Goblins `n` (CR 701.47). -/
 def amassGoblins (g : Game) (controller : PlayerId) (n : Nat)
     (cause : Option EventCause := none) : Game :=
   g.amass controller .goblin n (cause := cause)
 
-/-- Amass Orcs `n` (CR 701.43). -/
+/-- Amass Orcs `n` (CR 701.47). -/
 def amassOrcs (g : Game) (controller : PlayerId) (n : Nat)
     (cause : Option EventCause := none) : Game :=
   g.amass controller .orc n (cause := cause)
 
-/-- Amass Zombies `n` (CR 701.43). -/
+/-- Amass Zombies `n` (CR 701.47). -/
 def amassZombies (g : Game) (controller : PlayerId) (n : Nat)
     (cause : Option EventCause := none) : Game :=
   g.amass controller .zombie n (cause := cause)

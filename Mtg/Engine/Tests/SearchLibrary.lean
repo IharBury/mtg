@@ -439,4 +439,31 @@ what searches. -/
 #guard TriggeredAbility.toNotation .onMountainEntersQuestThenDragon ==
   "Whenever a Mountain you control enters, put a quest counter on this enchantment. If it has six or more quest counters on it, sacrifice it. If you do, search your hand and/or library for a Dragon card and put it onto the battlefield. If you search your library this way, shuffle."
 
+/- CR 702.73a: Off-battlefield changeling creature cards have all creature types
+in library and hand (such as Dragon), and do not have noncreature land subtypes
+(such as Forest). -/
+def changelingCard : CardDef := {
+  name := "Search Changeling"
+  types := #[.creature]
+  subtypes := #["Shapeshifter"]
+  keywords := { changeling := true }
+  power := some 2
+  toughness := some 2
+}
+
+#guard changelingCard.hasSubtype .dragon && !changelingCard.hasSubtype .forest
+
+#guard
+  let gLib0 := onlyLibrary (emptyHand afterDraw caster) caster [mountain, changelingCard]
+  let gLib := takeSearch (step gLib0 (.searchLibrary (.put .dragon)))
+  let gHand0 := putInHand (onlyLibrary (emptyHand afterDraw caster) caster [mountain]) changelingCard caster
+  let gHand := takeSearch (step gHand0 (.searchLibrary (.put .dragon)))
+  let gForest := takeSearch (step gLib0 (.searchLibrary (.put .forest)))
+  onBattlefield gLib "Search Changeling" &&
+    !inLibrary gLib caster "Search Changeling" &&
+    onBattlefield gHand "Search Changeling" &&
+    !inHand gHand caster "Search Changeling" &&
+    !onBattlefield gForest "Search Changeling" &&
+    inLibrary gForest caster "Search Changeling"
+
 end Mtg.Engine.SearchLibraryTests

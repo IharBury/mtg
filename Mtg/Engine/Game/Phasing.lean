@@ -33,7 +33,6 @@ def phaseOut (g : Game) (o : GameObject) (cause : Option EventCause := none) : G
       let g := g.removeFromCombat o (cause := some (stepCause g))
       let o := g.object! o.id
       let oName := g.name o
-      let g := g.expirePrintedStaticEffects o (cause := some (stepCause g))
       let g := g.record (GameEvent.phasedOut g.turnNumber (g.snapshot o) false (cause := stepCause g))
       let g := g.logMsg s!"{oName} phases out"
       (g.attachmentsOf o).foldl (fun acc att =>
@@ -41,7 +40,6 @@ def phaseOut (g : Game) (o : GameObject) (cause : Option EventCause := none) : G
         let acc := acc.removeFromCombat att (cause := some (stepCause acc))
         let att := acc.object! att.id
         let attName := acc.name att
-        let acc := acc.expirePrintedStaticEffects att (cause := some (stepCause acc))
         acc.record (GameEvent.phasedOut acc.turnNumber (acc.snapshot att) true (cause := stepCause acc))
           |>.logMsg s!"{attName} phases out attached to {oName}") g
 
@@ -54,13 +52,11 @@ def phaseIn (g : Game) (o : GameObject) (cause : Option EventCause := none) : Ga
       g.resolveOptionalCause cause (fallbackCtrl := g.controllerOf o)
         (defaultCause := .turnBased .phaseInOut)
     let g := g.record (GameEvent.phasedIn g.turnNumber (g.snapshot o) false (cause := resolvedCause))
-    let g := g.createPrintedStaticEffects (g.object! o.id)
     let oName := g.name (g.object! o.id)
     let g := g.logMsg s!"{oName} phases in"
     g.objects.foldl (fun acc att =>
       if att.status.phasedOut && att.status.phasedWith == some o.id then
         let acc := acc.record (GameEvent.phasedIn acc.turnNumber (acc.snapshot att) true (cause := resolvedCause))
-        let acc := acc.createPrintedStaticEffects (acc.object! att.id)
         acc.logMsg s!"{acc.name (acc.object! att.id)} phases in still attached to {oName}"
       else acc) g
 

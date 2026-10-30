@@ -106,13 +106,13 @@ def applyDamageToKindTarget (g : Game) (controller : PlayerId) (kind : EffectTar
     sourceId missing
 
 /-- Exile creature cards from `fromPlayer`'s graveyard and grant `controller`
-permission to cast them, spending mana as though it were any type (CR 610.1 / 701.14). -/
+permission to cast them, spending mana as though it were any type (CR 610.1 / 701.18). -/
 def exileCreaturesFromGraveyard (g : Game) (controller fromPlayer : PlayerId)
     (ty : CardType := .creature) : Game :=
   let ids :=
     (g.player fromPlayer).graveyard.filter (fun id =>
       match g.findObject? id with
-      | some o => o.printed.hasType ty
+      | some o => g.hasType o ty
       | none => false)
   if ids.isEmpty then g
   else

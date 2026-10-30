@@ -259,7 +259,7 @@ def ogreGrantedMenaceReadyToBlock : Game :=
   | .error msg => mentions msg "can't be blocked except by two or more creatures"
   | .ok _ => false
 
-/- Bilbo's Deadly Slice: destroy target creature (CR 701.8 / 701.7b / 608.2b). -/
+/- Bilbo's Deadly Slice: destroy target creature (CR 701.8 / 608.2b). -/
 
 #guard bilbosDeadlySlice.isInstant
 #guard !bilbosDeadlySlice.hasSorcerySpeed
@@ -386,7 +386,7 @@ def bilbosDeadlySliceTargetGone : Game :=
 #guard !(bilbosDeadlySliceTargetGone.battlefield.any (fun o =>
   o.name == "Grizzly Bears"))
 
--- Destroy does nothing to an indestructible creature (CR 701.7b / 702.12b).
+-- Destroy does nothing to an indestructible creature (CR 702.12b).
 #guard
   let g := addPermanent afterDraw indestructibleBeast ⟨1⟩ ⟨1⟩
   let g := g.applyEffect ⟨0⟩ (Effect.destroyCreature)
@@ -535,7 +535,7 @@ def fogCantAttack : Bool :=
   let g := addPermanent g fogOnTheBarrowDowns ⟨1⟩ ⟨1⟩
   let bears := namedPermanent g "Grizzly Bears"
   let fog := namedPermanent g "Fog on the Barrow-Downs"
-  let g := g.record (GameEvent.attached g.turnNumber fog.id bears.id (cause := .gameRule .staticAbility))
+  let g := g.record (GameEvent.attached g.turnNumber (g.snapshot fog) bears.id (cause := .gameRule .staticAbility))
   !g.canAttack (namedPermanent g "Grizzly Bears")
 
 #guard fogCantAttack
@@ -546,7 +546,7 @@ def fogCantAttack : Bool :=
   let g := addPermanent g fogOnTheBarrowDowns ⟨1⟩ ⟨1⟩
   let bears := namedPermanent g "Grizzly Bears"
   let fog := namedPermanent g "Fog on the Barrow-Downs"
-  let g := g.record (GameEvent.attached g.turnNumber fog.id bears.id (cause := .gameRule .staticAbility))
+  let g := g.record (GameEvent.attached g.turnNumber (g.snapshot fog) bears.id (cause := .gameRule .staticAbility))
   let host := namedPermanent g "Grizzly Bears"
   g.hasSubtype host .spirit && !g.hasSubtype host .bear
 

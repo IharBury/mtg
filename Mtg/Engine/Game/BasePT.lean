@@ -5,7 +5,7 @@ import Mtg.Engine.Game.Phasing
 
 Layer-7a characteristic-defining abilities: power/toughness equal to
 lands you control, cards in hand, creatures you control, or subtype
-counts, and the base P/T they define (CR 613.3a / 208.2a).
+counts, and the base P/T they define (CR 613.4a / 208.2a).
 Defined in `Mtg.Engine.Game.Core` so `matchTriggers` can evaluate P/T
 and intervening-if conditions at batch close.
 -/

@@ -77,10 +77,6 @@ def putTriggeredAbilityOnStack (g : Game) (controller : PlayerId) (source : Game
     (delayedTrigger : Option (DelayedTriggerKind × EventCause) := none) : Game :=
   if (g.player controller).lost then g
   else
-    let (g, obj) := g.putStackAbility source controller
-      (triggeredAbility := some ab)
-      (lastKnownPower := lastKnownPower) (lastKnownToughness := lastKnownToughness)
-      (delayedTrigger := delayedTrigger)
     -- “For each opponent, up to one target … that player controls”: one
     -- optional instance per opponent (CR 601.2c).
     let abilityEffect :=
@@ -93,17 +89,29 @@ def putTriggeredAbilityOnStack (g : Game) (controller : PlayerId) (source : Game
             targeting := .of (.multi fs ((List.range fs.size).toArray)) }
         else none
       | _ => none
-    let g := g.changeObjects obj.id #[
-      .fraCauseId (cause.map (·.id)),
-      .fraCauseController (causeController.orElse (fun _ => cause.bind g.controllerOf)),
-      .fraCausePower (cause.bind (fun c =>
+    let srcSnap : EventObject :=
+      match g.findObject? source.id with
+      | some cur => g.snapshot cur
+      | none => (g.lastKnownBefore? source.id).getD (g.snapshot source)
+    let newId : ObjectId := ⟨g.nextObjectId⟩
+    let spec : StackTriggerSpec := {
+      triggeredAbility := some ab
+      abilityEffect := abilityEffect
+      sourceId := some source.id
+      abilityName := some s!"{source.name}'s ability"
+      delayedTrigger := delayedTrigger
+      lastKnownPower := lastKnownPower
+      lastKnownToughness := lastKnownToughness
+      fraCauseId := cause.map (·.id)
+      fraCauseController := causeController.orElse (fun _ => cause.bind g.controllerOf)
+      fraCausePower := cause.bind (fun c =>
         if (g.findObject? c.id).any (·.isOnBattlefield) then some (g.power (g.object! c.id))
-        else (g.lastKnownPowerOf? c.id).orElse (fun _ => some (g.power c)))),
-      .fraCauseStatus (cause.map (·.status)),
-      .abilityEffect abilityEffect]
-    let obj := g.object! obj.id
-    let g := g.record (GameEvent.triggerPutOnStack g.turnNumber obj.id source.asEvent controller
-      (cause := eventCause))
+        else (g.lastKnownPowerOf? c.id).orElse (fun _ => some (g.power c)))
+      fraCauseStatus := cause.map (·.status)
+    }
+    let g := g.record (GameEvent.triggerPutOnStack g.turnNumber newId srcSnap controller
+      (spec := spec) (cause := eventCause))
+    let obj := g.object! newId
     let g := g.logMsg s!"{g.name source}'s {event} is put on the stack"
     match ab.effect.resolution with
     | .chooseTriggerModes n => g.beginTriggerModeChoice controller obj n
@@ -173,7 +181,7 @@ def queueTrigger (g : Game) (controller : PlayerId) (source : GameObject)
     let mardu :=
       if attackEvent && (g.permanentsOf controller).any (fun o =>
           (g.baseCard o).asEntersChooseMarduOrJeskai && g.retainsPrintedAbilities o &&
-            o.status.windcragMardu) then 1 else 0
+            o.status.chosenAnchor == some "Mardu") then 1 else 0
     let copies := g.extraTriggerCopies controller source + 1 + mardu
     let wt : WaitingTrigger := {
       controller, source, ability := ab, event, lastKnownPower, lastKnownToughness,

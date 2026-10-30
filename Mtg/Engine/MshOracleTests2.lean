@@ -702,19 +702,17 @@ def crossbonesVillainOnceOk : Bool :=
   let villainWait (g : Game) : Nat :=
     (g.waitingTriggers.filter (fun (t : WaitingTrigger) =>
       t.event == TriggerEvent.anotherVillainEnters)).size
-  let g0 := addPermanent afterDraw crossbonesMaliciousMercenary ⟨0⟩ ⟨0⟩
-  let gAlone := g0.afterPermanentEnters
-    (namedPermanent g0 "Crossbones, Malicious Mercenary")
-  villainWait gAlone == 0 &&
-    (let g := addPermanent g0 redGuardianSuperSoldier ⟨0⟩ ⟨0⟩
-     let g := g.afterPermanentEnters
-       (namedPermanent g "Red Guardian, Super-Soldier")
+  let enterVillain (g : Game) (c : CardDef) : Game :=
+    let (g, obj) := g.allocObject c ⟨0⟩ (.outside ⟨0⟩) none
+    let (g, newId) := g.putOntoBattlefield obj.id ⟨0⟩ (summoningSick := false)
+    g.afterPermanentEnters (g.object! newId)
+  let g0 := enterVillain afterDraw crossbonesMaliciousMercenary
+  villainWait g0 == 0 &&
+    (let g := enterVillain g0 redGuardianSuperSoldier
      villainWait g == 1 &&
        (let xb := namedPermanent g "Crossbones, Malicious Mercenary"
         g.loggedSourceTriggeredThisTurn xb.id &&
-          (let g := addPermanent g baronStruckerHYDRAOverlord ⟨0⟩ ⟨0⟩
-           let g := g.afterPermanentEnters
-             (namedPermanent g "Baron Strucker, HYDRA Overlord")
+          (let g := enterVillain g baronStruckerHYDRAOverlord
            villainWait g == 1))) &&
     (let xb := namedPermanent g0 "Crossbones, Malicious Mercenary"
      let g := g0.applyTriggeredAbility ⟨0⟩ (.onWatch Effect.watchVillainPlusOneDamageOnce)
@@ -1112,9 +1110,9 @@ def superHeroCivilWarLeaveOk : Bool :=
 /-- Ruling 504: an artifact Villain entering fires HYDRA Assault Robot once. -/
 def hydraAssaultOnceOk : Bool :=
   let g := addPermanent afterDraw hYDRAAssaultRobot ⟨0⟩ ⟨0⟩
-  let g := addPermanent g ultronDrone ⟨0⟩ ⟨0⟩
-  let drone := namedPermanent g "Ultron Drone"
-  let g := g.afterPermanentEnters drone
+  let (g, droneObj) := g.allocObject ultronDrone ⟨0⟩ (.outside ⟨0⟩) none
+  let (g, droneId) := g.putOntoBattlefield droneObj.id ⟨0⟩ (summoningSick := false)
+  let g := g.afterPermanentEnters (g.object! droneId)
   let n :=
     (g.waitingTriggers.filter (fun (t : WaitingTrigger) =>
       t.source.name == "HYDRA Assault Robot")).size

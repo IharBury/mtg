@@ -199,7 +199,7 @@ def applyCastCostReductions (g : Game) (card : GameObject) (face : CardDef)
     if face.isCreature && g.loggedCreatureSpells caster == 0 then
       let n :=
         (g.permanentsOf caster).foldl (fun acc o =>
-          if g.retainsPrintedAbilities o then acc + o.printed.firstCreatureCostsLess else acc) 0
+          if g.retainsPrintedAbilities o then acc + (g.baseCard o).firstCreatureCostsLess else acc) 0
       afterSpell.reduceGeneric n
     else afterSpell
   let notFromHand :=
@@ -207,7 +207,7 @@ def applyCastCostReductions (g : Game) (card : GameObject) (face : CardDef)
     | .hand _ => 0
     | _ =>
       (g.permanentsOf caster).foldl (fun acc o =>
-        if g.retainsPrintedAbilities o then acc + o.printed.costReductionNotFromHand else acc) 0
+        if g.retainsPrintedAbilities o then acc + (g.baseCard o).costReductionNotFromHand else acc) 0
   let afterNotHand := afterFirst.reduceGeneric notFromHand
   let witchLess :=
     if face.isInstant || face.isSorcery then
@@ -332,23 +332,19 @@ def playsWithoutPayingManaCost (g : Game) (card : GameObject)
   face.manaCost.includesManaPayment && !(g.playManaCost card face).includesManaPayment
 
 /-- Extra lifetime power-up activations granted by Wonder Man (MSH). -/
-def grantsExtraPowerUp (o : GameObject) : Bool :=
-  o.printed.staticAbilities.any (fun ab =>
+def grantsExtraPowerUp (g : Game) (o : GameObject) : Bool :=
+  (g.staticAbilities o).any (fun ab =>
     match ab with
     | .extraPowerUpActivation => true
     | _ => false)
 
 /-- Extra lifetime power-up activations granted by Wonder Man (MSH). -/
 def powerUpActivationLimit (g : Game) (p : PlayerId) : Nat :=
-  1 + ((g.permanentsOf p).filter (fun o =>
-    (g.staticAbilities o).any (fun ab =>
-      match ab with
-      | .extraPowerUpActivation => true
-      | _ => false))).size
+  1 + ((g.permanentsOf p).filter (g.grantsExtraPowerUp ·)).size
 
 /-- True when `o` is Hulk's generic power-up cost reduction. -/
-def grantsHulkPowerUpReduction (o : GameObject) : Bool :=
-  o.printed.staticAbilities.any (fun ab =>
+def grantsHulkPowerUpReduction (g : Game) (o : GameObject) : Bool :=
+  (g.staticAbilities o).any (fun ab =>
     match ab with
     | .otherPowerUpCostsLess _ => true
     | _ => false)

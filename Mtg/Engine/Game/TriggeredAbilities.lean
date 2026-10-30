@@ -644,7 +644,7 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     | some (Target.card id) =>
       match g.findObject? (g.followMoved id) with
       | some o =>
-        let mv := o.printed.manaValue + (g.chosenXOf? o.id).getD 0
+        let mv := g.objectManaValue o (includeLkiX := true)
         (g, mv ≤ n)
       | none => (g, false)
     | _ => (g, false)
@@ -1718,7 +1718,7 @@ def applyExile (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
           fromIds (g.scryLookedIds pid n)
         | .milledSubtype subtype =>
           fromIds (g.milledIdsThisWay.filter fun id =>
-            (g.findObject? id).any (·.printed.hasSubtype subtype))
+            (g.findObject? id).any (g.hasSubtype · subtype))
         | .notedLands => fromIds g.exiledIdsThisWay
         | .discarded | .discardedLand =>
           match g.discardedCardThisWay with
@@ -2531,7 +2531,7 @@ def applyReturnToHand (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       match stashed with
       | some c => (g, some c)
       | none =>
-        if ids.any (fun id => (g.findObject? id).any (·.printed.hasSubtype subtype)) then
+        if ids.any (fun id => (g.findObject? id).any (g.hasSubtype · subtype)) then
           match g.currentResolvingContext? with
           | some (src, ctrl) =>
             let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some controller)) (src.orElse (fun _ => sourceId))
@@ -2542,7 +2542,7 @@ def applyReturnToHand (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       ids.foldl (fun acc id =>
         match acc.findObject? id with
         | some o =>
-          if o.printed.hasSubtype subtype then
+          if acc.hasSubtype o subtype then
             let name := o.name
             let (acc, _) := acc.move id (.hand controller) none (cause := cause?)
             acc.logMsg s!"{name} is put into {(acc.player controller).name}'s hand"
@@ -4196,9 +4196,9 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         match g.findObject? id with
         | some o =>
           types.any (fun t =>
-            (t.toLower == "permanent" && o.printed.isPermanentCard) ||
-              (CardType.ofOracle? t).any o.printed.hasType ||
-              (CardSubtype.ofOracle? t).any o.printed.hasSubtype)
+            (t.toLower == "permanent" && g.isPermanentCard o) ||
+              (CardType.ofOracle? t).any (g.hasType o) ||
+              (CardSubtype.ofOracle? t).any (g.hasSubtype o))
         | none => false)
       g.beginFraChoice controller (.mayRevealToHand ids eligible false)
         s!"{(g.player controller).name} may reveal a card from among them and put it into their hand"
@@ -4233,14 +4233,26 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       | none => 0
     g.resolveCascade controller maxMv
   | .noteResolveThisTurn limit =>
-    let n := g.loggedResolutions controller + 1
-    let g := g.record (GameEvent.resolved g.turnNumber controller n)
+    let abObj? := g.resolvingAbility.bind g.findObject?
+    let ab? := (abObj?.bind (·.triggeredAbility)).orElse (fun _ => some ab)
+    let name :=
+      match sourceId.bind g.findObject? with
+      | some o => if o.isOnBattlefield then g.name o else o.name
+      | none => sourceName
+    let abSnap : EventObject :=
+      match abObj? with
+      | some o => g.snapshot o
+      | none =>
+        { controller := some controller
+          owner := (sourceId.bind g.findObject? |>.map (·.owner)).getD controller
+          name := s!"{name}'s ability"
+          zone := .stack }
+    let n := g.loggedResolutions controller sourceId ab? + 1
+    let g := g.record (GameEvent.resolved g.turnNumber controller n abSnap
+      (sourceId := sourceId) (ability := ab?)
+      (cause := some (.gameRule .abilityFinishedResolving)))
     let g := g.change (.nthResolveThisWay (some n))
     if n > limit then
-      let name :=
-        match sourceId.bind g.findObject? with
-        | some o => if o.isOnBattlefield then g.name o else o.name
-        | none => sourceName
       g.logMsg s!"{name}'s ability has no effect (resolved {n} times this turn)"
     else g
   | .«if» (.atLeast (.count (.othersOfSubtype .hero)) (.fixed 1)) (.dealDamage (.fixed 1) (.player (.target .opponent))) =>

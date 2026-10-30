@@ -130,7 +130,7 @@ def matchesTargetFilter (g : Game) (caster : PlayerId) (f : TargetFilter)
     f.nonTypes.all (fun t => !g.objectHasCardType o t) &&
     (!f.nonAura || !g.isAura o) &&
     (!f.nontoken || !o.printed.isToken) &&
-    (!f.permanentCard || o.printed.isPermanentCard) &&
+    (!f.permanentCard || g.isPermanentCard o) &&
     (f.mvAtLeast.all (mv ≥ ·)) && (f.mvAtMost.all (mv ≤ ·)) &&
     (f.toughnessAtLeast.all (g.toughness o ≥ ·)) &&
     (!f.another || some o.id != sourceId) &&
@@ -213,7 +213,7 @@ def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTarge
   | .creatureOrGyCreatureCard =>
     g.legalCreatureTargets caster (fun _ => true) ++
       g.livingPlayers.foldl (fun acc pl =>
-        acc ++ g.legalGraveyardCardTargets pl.id (fun o => o.printed.isCreature)) #[]
+        acc ++ g.legalGraveyardCardTargets pl.id (g.isCreature ·)) #[]
   | .creatureWithFlying =>
     g.legalCreatureTargets caster (fun o => g.hasFlying o)
   | .artifactOrLand =>
@@ -249,12 +249,12 @@ def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTarge
   | .spell =>
     g.legalStackSpellTargets (fun _ => true) sourceId
   | .creatureSpell =>
-    g.legalStackSpellTargets (·.printed.isCreature) sourceId
+    g.legalStackSpellTargets (g.isCreature ·) sourceId
   | .creatureSpellPTAtMost n =>
     g.legalStackSpellTargets (fun o =>
-      o.printed.isCreature &&
-        ((o.printed.power.getD 0) <= (n : Int) ||
-          (o.printed.toughness.getD 0) <= (n : Int))) sourceId
+      g.isCreature o &&
+        (g.snapshotPower o <= (n : Int) ||
+          g.snapshotToughness o <= (n : Int))) sourceId
   | .defendingPlayerCreature =>
     let defender :=
       match sourceId.bind g.findObject? with
@@ -278,7 +278,7 @@ def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTarge
   | .permanent =>
     g.legalPermanentTargets caster (·.isOnBattlefield)
   | .creatureCardInYourGraveyard =>
-    g.legalGraveyardCardTargets caster (·.printed.isCreature)
+    g.legalGraveyardCardTargets caster (g.isCreature ·)
   | .legendaryCreatureYouControl =>
     g.legalCreatureTargets caster (fun o =>
       g.controlledBy o caster && g.isLegendary o)
@@ -294,7 +294,7 @@ def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTarge
   | .creatureCardInYourGraveyardMvAtMost n =>
     let anyCreature := g.spellPaidTeamwork
     g.legalGraveyardCardTargets caster (fun o =>
-      o.printed.isCreature && (anyCreature || o.printed.manaValue ≤ n))
+      g.isCreature o && (anyCreature || g.objectManaValue o ≤ n))
   | .artifactToken =>
     g.legalPermanentTargets caster (fun o =>
       o.isOnBattlefield && g.isArtifact o && o.printed.isToken)
@@ -339,13 +339,13 @@ def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTarge
     g.legalPermanentTargets caster (fun o =>
       o.isOnBattlefield && !g.isLand o && !o.printed.isToken)
   | .permanentCardInYourGraveyard =>
-    g.legalGraveyardCardTargets caster (fun o => o.printed.isPermanentCard)
+    g.legalGraveyardCardTargets caster (g.isPermanentCard ·)
   | .equipmentInstantOrSorceryInYourGraveyard =>
     g.legalGraveyardCardTargets caster (fun o =>
-      o.printed.isEquipment || o.printed.isInstant || o.printed.isSorcery)
+      g.isEquipment o || g.isInstantOrSorcery o)
   | .artEnchCardInYourGraveyard =>
     g.legalGraveyardCardTargets caster (fun o =>
-      o.printed.isArtifact || o.printed.isEnchantment)
+      g.isArtifact o || g.isEnchantment o)
   | .artifactYouControl =>
     g.legalPermanentTargets caster (fun o =>
       g.controlledBy o caster && o.isOnBattlefield && g.isArtifact o)

@@ -3,7 +3,7 @@ import Mtg.Engine.Game.Status
 /-!
 # Game objects (CR 109)
 
-`PlayPermission` (playing cards from exile, CR 701.14 / 715.3d),
+`PlayPermission` (playing cards from exile, CR 701.18 / 715.3d),
 `GameObject` — an object in the game with printed characteristics, status,
 and stack metadata — `CreatureCombatAssignment` (CR 510.1),
 current-characteristic helpers, and `WaitingTrigger` snapshots of
@@ -15,7 +15,7 @@ namespace Mtg.Engine
 set_option maxRecDepth 2048 in
 deriving instance BEq for CardDef
 
-/-- Permission to play a card from exile (CR 701.14 / 715.3d).
+/-- Permission to play a card from exile (CR 701.18 / 715.3d).
 Duration (`untilEndOfTurn`, `untilEndOfNextTurnOf`, or `whileInZone`) is stored
 on the enclosing `ContinuousEffectSpec.permission`. -/
 structure PlayPermission where
@@ -26,7 +26,7 @@ structure PlayPermission where
   fromAdventure : Bool := false
   /-- Permission lasts while the card remains exiled (e.g. Shadow of the Enemy). -/
   whileExiled : Bool := false
-  /-- Mana of any type can be spent to cast this card (CR 118.12). -/
+  /-- Mana of any type can be spent to cast this card (CR 118.14). -/
   anyMana : Bool := false
   /-- The card may be cast without paying its mana cost. -/
   withoutManaCost : Bool := false
@@ -322,7 +322,7 @@ inductive CostKind where
   | removeCounters      -- 118.3 / 122.1
   | loyalty             -- 606.4 (+N, -N, 0 on a planeswalker)
   | collectEvidence     -- 701.59
-  | behold              -- 701.62
+  | behold              -- 701.4
   | waterbend           -- 701.67
   | convoke             -- 702.51
   | delve               -- 702.66
@@ -456,7 +456,7 @@ deriving Repr, Inhabited, BEq
 player would receive priority (CR 603.3 / 603.3b). `source` is a snapshot of
 the permanent as it existed when the trigger event occurred. `lastKnownPower`
 is last-known power for dies triggers (CR 113.7a) and the number of cards
-looked at for “whenever you scry” (CR 701.20). `lastKnownToughness` is
+looked at for “whenever you scry” (CR 701.22). `lastKnownToughness` is
 last-known toughness for attack triggers that copy P/T (CR 113.7a). -/
 structure WaitingTrigger where
   controller : PlayerId
@@ -482,5 +482,173 @@ structure WaitingTrigger where
   when this was queued. -/
   checked : Bool := false
 deriving Repr, Inhabited, BEq
+
+/-- The object a `GameEvent` is about, as it existed when the change happened
+(CR 113.7a / 613.1). -/
+structure EventObject where
+  id              : Option ObjectId      := none
+  controller      : Option PlayerId      := none
+  owner           : PlayerId             := ⟨0⟩
+  -- characteristics (CR 109.3)
+  name            : String               := ""
+  colors          : ColorSet             := {}
+  manaValue       : Nat                  := 0
+  supertypes      : Array Supertype      := #[]
+  types           : Array CardType       := #[]
+  subtypes        : Array CardSubtype    := #[]
+  power           : Option Int           := none
+  toughness       : Option Int           := none
+  loyalty         : Option Nat           := none
+  keywords        : Keywords             := {}
+  toxic           : Nat                  := 0
+  staticAbilities : Array StaticAbility  := #[]
+  -- status & designations (CR 110.5–110.6)
+  zone            : Zone                 := .battlefield
+  tapped          : Bool                 := false
+  attacking       : Bool                 := false
+  blocking        : Bool                 := false
+  phasedOut       : Bool                 := false
+  faceDown        : Bool                 := false
+  transformed     : Bool                 := false
+  attachedTo      : Option ObjectId      := none
+  counters        : CounterBag           := #[]
+  token              : Bool                        := false
+  isCopy             : Bool                        := false
+  changeling         : Bool                        := false
+  -- Arrival status and printed card carried so `applyZoneEvent` reconstructs
+  -- the `GameObject` without a follow-up `setObject`.
+  summoningSick      : Bool                        := false
+  attackingTarget    : Option AttackTarget         := none
+  printed            : Option CardDef              := none
+  adventurerCard     : Option CardDef              := none
+  chosenX            : Option Nat                  := none
+deriving Repr, Inhabited, BEq
+
+namespace EventObject
+
+/-- Synthesize a `CardDef` from the characteristics in `e` (CR 109.3). -/
+def toCardDef (e : EventObject) : CardDef :=
+  match e.printed with
+  | some p => p
+  | none =>
+    { name := e.name
+      colorIndicator := if e.colors.isColorless then none else some e.colors
+      supertypes := e.supertypes
+      types := e.types
+      subtypes := e.subtypes.map CardSubtype.englishName
+      power := e.power
+      toughness := e.toughness
+      loyalty := e.loyalty.map Int.ofNat
+      keywords := { e.keywords with changeling := e.keywords.changeling || e.changeling }
+      toxic := e.toxic
+      staticAbilities := e.staticAbilities
+      isToken := e.token }
+
+/-- `s` is one of this object's supertypes. -/
+def hasSupertype (o : EventObject) (s : Supertype) : Bool :=
+  o.supertypes.any (· == s)
+
+def legendary (o : EventObject) : Bool :=
+  o.hasSupertype .legendary
+
+def basic (o : EventObject) : Bool :=
+  o.hasSupertype .basic
+
+/-- `t` is one of this object's card types. -/
+def hasType (o : EventObject) (t : CardType) : Bool :=
+  o.types.any (· == t)
+
+def creature (o : EventObject) : Bool :=
+  o.hasType .creature
+
+def artifact (o : EventObject) : Bool :=
+  o.hasType .artifact
+
+def land (o : EventObject) : Bool :=
+  o.hasType .land
+
+def planeswalker (o : EventObject) : Bool :=
+  o.hasType .planeswalker
+
+def instantOrSorcery (o : EventObject) : Bool :=
+  o.types.any CardType.isInstantOrSorcery
+
+/-- `s` is one of this object's types (CR 205.3; changeling creature types
+are expanded into `subtypes` in Layer 4 per CR 613.3 / 702.73a). -/
+def hasSubtype (o : EventObject) (s : CardSubtype) : Bool :=
+  o.subtypes.any (· == s)
+
+def equipment (o : EventObject) : Bool :=
+  o.artifact && o.hasSubtype .equipment
+
+/-- Goblin, Orc, or Army. -/
+def goblinOrcArmy (o : EventObject) : Bool :=
+  o.hasSubtype .goblin || o.hasSubtype .orc || o.hasSubtype .army
+
+/-- Villain. -/
+def villain (o : EventObject) : Bool :=
+  o.hasSubtype .villain
+
+/-- Hero. -/
+def hero (o : EventObject) : Bool :=
+  o.hasSubtype .hero
+
+/-- Elf. -/
+def elf (o : EventObject) : Bool :=
+  o.hasSubtype .elf
+
+/-- Merfolk. -/
+def merfolk (o : EventObject) : Bool :=
+  o.hasSubtype .merfolk
+
+/-- Forest. -/
+def forest (o : EventObject) : Bool :=
+  o.hasSubtype .forest || (o.land && o.subtypes.any (· == .forest))
+
+/-- Mountain. -/
+def mountain (o : EventObject) : Bool :=
+  o.hasSubtype .mountain
+
+end EventObject
+
+/-- This object's printed characteristics as an `EventObject` (CR 113.7a).
+Prefer `Game.snapshot` when `Game` is in scope so Layers 1–7d (CR 613.1) are
+evaluated. -/
+def GameObject.asEvent (o : GameObject) : EventObject :=
+  { id := some o.id
+    controller := o.controller
+    owner := o.owner
+    name := o.printed.name
+    colors := o.printed.colors
+    manaValue := o.printed.manaValue + o.chosenX.getD 0
+    supertypes := o.supertypes
+    types := o.types
+    subtypes :=
+      if o.printed.keywords.changeling && (o.types.contains .creature || o.types.contains .kindred) then
+        CardSubtype.allCreatureSubtypes.foldl (fun acc s => if acc.contains s then acc else acc.push s) o.subtypes
+      else o.subtypes
+    power := if o.isCreature || o.printed.power.isSome then some o.power else none
+    toughness := if o.isCreature || o.printed.toughness.isSome then some o.toughness else none
+    loyalty := o.printed.loyalty.map Int.toNat
+    keywords := o.printedOrUntilEot
+    toxic := o.printed.toxic
+    staticAbilities := o.staticAbilities
+    zone := o.zone
+    tapped := o.status.tapped
+    attacking := o.status.attacking
+    blocking := !o.status.blocking.isEmpty
+    phasedOut := o.status.phasedOut
+    faceDown := o.status.faceDown
+    transformed := o.status.transformed
+    attachedTo := o.attachedTo
+    counters := o.status.toCounterBag
+    token := o.printed.isToken
+    isCopy := o.isCopy
+    changeling := o.printed.keywords.changeling
+    summoningSick := o.status.summoningSick
+    attackingTarget := o.status.attackingTarget
+    printed := some o.printed
+    adventurerCard := o.adventurerCard
+    chosenX := o.chosenX }
 
 end Mtg.Engine

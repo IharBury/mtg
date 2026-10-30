@@ -277,7 +277,7 @@ def exiledBolt (g : Game) : GameObject :=
   | .error _ => true
   | .ok _ => false
 
--- Cast the exiled Lightning Bolt the same turn (CR 701.14).
+-- Cast the exiled Lightning Bolt the same turn (CR 701.18).
 def proposedExiledBolt : Game :=
   proposeTargeted resolvedHunter ⟨0⟩
     (exiledBolt resolvedHunter).id (Target.player ⟨1⟩)

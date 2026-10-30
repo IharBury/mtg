@@ -229,7 +229,7 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
               (g.baseCard o).cantLoseGame && g.retainsPrintedAbilities o) ||
               (g.objects.filter (fun o =>
                 o.zone == .command && g.controlledBy o pl.id)).any (fun o =>
-                  o.printed.cantLoseGame && g.retainsPrintedAbilities o)
+                  (g.baseCard o).cantLoseGame && g.retainsPrintedAbilities o)
           if shielded then
             pure ()
           else if pl.life ≤ 0 then
@@ -273,9 +273,9 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
         let k := Nat.min o.status.plusOnePlusOne o.status.minusOneMinusOne
         if k > 0 then
           let cause := EventCause.stateBased .counterAnnihilation
-          g := g.record (GameEvent.counters g.turnNumber none o.asEvent .plusOnePlusOne k true
+          g := g.record (GameEvent.counters g.turnNumber none (g.snapshot o) .plusOnePlusOne k true
             (cause := cause))
-          g := g.record (GameEvent.counters g.turnNumber none (g.object! o.id).asEvent .minusOneMinusOne k true
+          g := g.record (GameEvent.counters g.turnNumber none (g.snapshot (g.object! o.id)) .minusOneMinusOne k true
             (cause := cause))
           g := g.logMsg s!"{k} +1/+1 and -1/-1 counter pair(s) are removed from {o.name}"
           changed := true

@@ -45,7 +45,7 @@ def handSize (g : Game) : Nat :=
 
 def attach (g : Game) (aura host : String) : Game :=
   let a := obj g aura
-  g.record (GameEvent.attached g.turnNumber a.id (pid g host) (cause := .gameRule .staticAbility))
+  g.record (GameEvent.attached g.turnNumber (g.snapshot a) (pid g host) (cause := .gameRule .staticAbility))
 
 def folk : CardDef := creature "Townsfolk" ManaCost.empty #["Human"] 1 1
 def scout : CardDef := creature "Scout" ManaCost.empty #["Human"] 1 1
@@ -192,7 +192,7 @@ has left is still tapped. An already tapped host stays tapped. -/
     (addPermanent (addPermanent afterDraw bear caster caster) grasp caster caster)
     "Grasp" "Bear"
   let aura := obj g0 "Grasp"
-  let g0 := g0.record (GameEvent.attached g0.turnNumber aura.id ⟨99999⟩ (cause := .gameRule .staticAbility))
+  let g0 := g0.record (GameEvent.attached g0.turnNumber (g0.snapshot aura) ⟨99999⟩ (cause := .gameRule .staticAbility))
   let g := step g0 (.tap .enchanted) (some (pid g0 "Grasp"))
   !(obj g "Bear").status.tapped && logContains g "Nothing is enchanted"
 
@@ -207,7 +207,7 @@ has left is still tapped. An already tapped host stays tapped. -/
     "Grasp" "Bear"
   let (g1, bearId) := g0.move (pid g0 "Bear") (.graveyard caster) none
   let aura := anyObj g1 "Grasp"
-  let g1 := g1.record (GameEvent.attached g1.turnNumber aura.id bearId (cause := .gameRule .staticAbility))
+  let g1 := g1.record (GameEvent.attached g1.turnNumber (g1.snapshot aura) bearId (cause := .gameRule .staticAbility))
   let g := step g1 (.tap .enchanted) (some aura.id)
   (anyObj g "Bear").status.tapped && logContains g "becomes tapped"
 

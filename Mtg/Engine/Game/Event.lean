@@ -17,174 +17,6 @@ it is recorded; a replaced change is not recorded (CR 614.6).
 
 namespace Mtg.Engine
 
-/-- The object a `GameEvent` is about, as it existed when the change happened
-(CR 113.7a / 613.1). -/
-structure EventObject where
-  id              : Option ObjectId      := none
-  controller      : Option PlayerId      := none
-  owner           : PlayerId             := ⟨0⟩
-  -- characteristics (CR 109.3)
-  name            : String               := ""
-  colors          : ColorSet             := {}
-  manaValue       : Nat                  := 0
-  supertypes      : Array Supertype      := #[]
-  types           : Array CardType       := #[]
-  subtypes        : Array CardSubtype    := #[]
-  power           : Option Int           := none
-  toughness       : Option Int           := none
-  loyalty         : Option Nat           := none
-  keywords        : Keywords             := {}
-  toxic           : Nat                  := 0
-  staticAbilities : Array StaticAbility  := #[]
-  -- status & designations (CR 110.5–110.6)
-  zone            : Zone                 := .battlefield
-  tapped          : Bool                 := false
-  attacking       : Bool                 := false
-  blocking        : Bool                 := false
-  phasedOut       : Bool                 := false
-  faceDown        : Bool                 := false
-  transformed     : Bool                 := false
-  attachedTo      : Option ObjectId      := none
-  counters        : CounterBag           := #[]
-  token              : Bool                        := false
-  isCopy             : Bool                        := false
-  changeling         : Bool                        := false
-  -- Arrival status and printed card carried so `applyZoneEvent` reconstructs
-  -- the `GameObject` without a follow-up `setObject`.
-  summoningSick      : Bool                        := false
-  attackingTarget    : Option AttackTarget         := none
-  printed            : Option CardDef              := none
-  adventurerCard     : Option CardDef              := none
-  chosenX            : Option Nat                  := none
-deriving Repr, Inhabited, BEq
-
-namespace EventObject
-
-/-- Synthesize a `CardDef` from the characteristics in `e` (CR 109.3). -/
-def toCardDef (e : EventObject) : CardDef :=
-  match e.printed with
-  | some p => p
-  | none =>
-    { name := e.name
-      colorIndicator := if e.colors.isColorless then none else some e.colors
-      supertypes := e.supertypes
-      types := e.types
-      subtypes := e.subtypes.map CardSubtype.englishName
-      power := e.power
-      toughness := e.toughness
-      loyalty := e.loyalty.map Int.ofNat
-      keywords := { e.keywords with changeling := e.keywords.changeling || e.changeling }
-      toxic := e.toxic
-      staticAbilities := e.staticAbilities
-      isToken := e.token }
-
-/-- `s` is one of this object's supertypes. -/
-def hasSupertype (o : EventObject) (s : Supertype) : Bool :=
-  o.supertypes.any (· == s)
-
-def legendary (o : EventObject) : Bool :=
-  o.hasSupertype .legendary
-
-def basic (o : EventObject) : Bool :=
-  o.hasSupertype .basic
-
-/-- `t` is one of this object's card types. -/
-def hasType (o : EventObject) (t : CardType) : Bool :=
-  o.types.any (· == t)
-
-def creature (o : EventObject) : Bool :=
-  o.hasType .creature
-
-def artifact (o : EventObject) : Bool :=
-  o.hasType .artifact
-
-def land (o : EventObject) : Bool :=
-  o.hasType .land
-
-def planeswalker (o : EventObject) : Bool :=
-  o.hasType .planeswalker
-
-def instantOrSorcery (o : EventObject) : Bool :=
-  o.types.any CardType.isInstantOrSorcery
-
-/-- `s` is one of this object's types (CR 205.3; changeling creature types
-are expanded into `subtypes` in Layer 4 per CR 613.3 / 702.73a). -/
-def hasSubtype (o : EventObject) (s : CardSubtype) : Bool :=
-  o.subtypes.any (· == s)
-
-def equipment (o : EventObject) : Bool :=
-  o.artifact && o.hasSubtype .equipment
-
-/-- Goblin, Orc, or Army. -/
-def goblinOrcArmy (o : EventObject) : Bool :=
-  o.hasSubtype .goblin || o.hasSubtype .orc || o.hasSubtype .army
-
-/-- Villain. -/
-def villain (o : EventObject) : Bool :=
-  o.hasSubtype .villain
-
-/-- Hero. -/
-def hero (o : EventObject) : Bool :=
-  o.hasSubtype .hero
-
-/-- Elf. -/
-def elf (o : EventObject) : Bool :=
-  o.hasSubtype .elf
-
-/-- Merfolk. -/
-def merfolk (o : EventObject) : Bool :=
-  o.hasSubtype .merfolk
-
-/-- Forest. -/
-def forest (o : EventObject) : Bool :=
-  o.hasSubtype .forest || (o.land && o.subtypes.any (· == .forest))
-
-/-- Mountain. -/
-def mountain (o : EventObject) : Bool :=
-  o.hasSubtype .mountain
-
-end EventObject
-
-/-- This object's printed characteristics as an `EventObject` (CR 113.7a).
-Prefer `Game.snapshot` when `Game` is in scope so Layers 1–7d (CR 613.1) are
-evaluated. -/
-def GameObject.asEvent (o : GameObject) : EventObject :=
-  { id := some o.id
-    controller := o.controller
-    owner := o.owner
-    name := o.printed.name
-    colors := o.printed.colors
-    manaValue := o.printed.manaValue + o.chosenX.getD 0
-    supertypes := o.supertypes
-    types := o.types
-    subtypes :=
-      if o.printed.keywords.changeling && (o.types.contains .creature || o.types.contains .kindred) then
-        CardSubtype.allCreatureSubtypes.foldl (fun acc s => if acc.contains s then acc else acc.push s) o.subtypes
-      else o.subtypes
-    power := if o.isCreature || o.printed.power.isSome then some o.power else none
-    toughness := if o.isCreature || o.printed.toughness.isSome then some o.toughness else none
-    loyalty := o.printed.loyalty.map Int.toNat
-    keywords := o.printedOrUntilEot
-    toxic := o.printed.toxic
-    staticAbilities := o.staticAbilities
-    zone := o.zone
-    tapped := o.status.tapped
-    attacking := o.status.attacking
-    blocking := !o.status.blocking.isEmpty
-    phasedOut := o.status.phasedOut
-    faceDown := o.status.faceDown
-    transformed := o.status.transformed
-    attachedTo := o.attachedTo
-    counters := o.status.toCounterBag
-    token := o.printed.isToken
-    isCopy := o.isCopy
-    changeling := o.printed.keywords.changeling
-    summoningSick := o.status.summoningSick
-    attackingTarget := o.status.attackingTarget
-    printed := some o.printed
-    adventurerCard := o.adventurerCard
-    chosenX := o.chosenX }
-
 /-- Later steps of a trigger `sequence`, waiting until the pending choice
 opened by an earlier step finishes. They run before any player receives
 priority, so they stay part of that resolution. -/
@@ -243,7 +75,6 @@ deriving Repr, Inhabited, BEq
 /-- One non-rules engine metadata change on a `GameObject` (CR 109 / 607). -/
 inductive ObjectChange where
   | status (c : StatusChange)
-  | statuses (cs : Array StatusChange)
   | abilityEffect (v : Option Effect)
   | triggeredAbility (v : Option TriggeredAbility)
   | reflexiveResolution (v : Option TriggeredAbility.TriggerResolution)
@@ -273,29 +104,17 @@ deriving Repr, Inhabited, BEq
 inductive ProposalChange where
   | cost (v : ManaCost)
   | addGenericCost (n : Nat)
-  | addManaCost (c : ManaCost)
   | reduceCostBy (c : ManaCost)
-  | substituteX (x : Nat)
   | tapped (v : Array ObjectId)
   | pushTapped (id : ObjectId)
-  | tapSource (v : Bool)
-  | sacrificeSource (v : Bool)
   | needsSacrificeOther (v : Bool)
   | needsDiscardCard (v : Bool)
-  | payLife (v : Nat)
-  | discardSource (v : Bool)
-  | abilityModes (v : Array Effect)
-  | targetKindOverride (v : Option EffectTargetKind)
   | kicked (v : Bool)
   | kickerAnnounced (v : Bool)
   | giftTo (v : Option PlayerId)
   | giftAnnounced (v : Bool)
   | teamworkPaid (v : Bool)
   | teamworkAnnounced (v : Bool)
-  | activation (v : Option ActivatedAbility)
-  | loyaltyX (v : Bool)
-  | removePlusOneX (v : Bool)
-  | sneakAttacker (v : Option ObjectId)
 deriving Repr, Inhabited, BEq
 
 /-- Priority tiers for choosing among multiple applicable replacement or
@@ -528,13 +347,7 @@ deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- Layer 7a characteristic-defining ability or dynamic P/T effect (CR 604.3 / 613.4a). -/
 inductive PtCda where
-  | landsYouControl
-  | graveyardCardTypes
   | cardsInHandPower
-  | powerEqualSubtype (s : CardSubtype)
-  | powerEqualLegendaryCreatures
-  | creaturesYouControlPower
-  | powerEqualsBasicLandTypes
   | pumpPerArtifact
 deriving DecidableEq, Repr, Inhabited, BEq
 
@@ -576,7 +389,6 @@ deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- Continuous rule or restriction effect affecting game rules or objects (CR 611.2c / 613.11). -/
 inductive GameRule where
-  | staticAbility (source : ObjectId) (ability : StaticAbility)
   | creaturesWithoutFlyingCantBlock
   | powerUpsForbidden
   | cantUntap (object : ObjectId) (source : ObjectId)
@@ -587,7 +399,7 @@ inductive GameRule where
   | fraEmblem (object : ObjectId)
 deriving Repr, Inhabited, BEq
 
-/-- Continuous permission to play or cast an object or spend mana on it (CR 611.2 / 701.14). -/
+/-- Continuous permission to play or cast an object or spend mana on it (CR 611.2 / 701.18). -/
 inductive PlayPermissionSpec where
   | playFromExile (object : ObjectId) (perm : PlayPermission)
   | freeCastFromGraveyard (object : ObjectId)
@@ -608,10 +420,6 @@ deriving Repr, Inhabited, BEq
 abbrev ContinuousEffect := ContinuousEffectSpec
 
 namespace ContinuousEffectSpec
-
-/-- A continuous effect generated by a static ability of `source` (CR 611.3). -/
-@[inline] def staticAbility (source : ObjectId) (ability : StaticAbility) : ContinuousEffectSpec :=
-  .gameRule (.staticAbility source ability) (.whileSourceOnBattlefield source)
 
 /-- An Aura's static ability setting `object` to a 5/5 Construct artifact creature (CR 611.3). -/
 @[inline] def auraConstruct55 (object : ObjectId) : ContinuousEffectSpec :=
@@ -763,7 +571,7 @@ namespace ContinuousEffectSpec
 @[inline] def uncounterableThisCast (object : ObjectId) : ContinuousEffectSpec :=
   .gameRule (.uncounterable object) (.whileInZone object .stack)
 
-/-- `object` may be played from exile under `perm` with duration `d` (CR 611.2 / 701.14). -/
+/-- `object` may be played from exile under `perm` with duration `d` (CR 611.2 / 701.18). -/
 @[inline] def playPermission (object : ObjectId) (perm : PlayPermission)
     (turnEnds : Nat := 1)
     (d : EffectDuration :=
@@ -902,8 +710,9 @@ inductive ContinuousEffectEvent where
   | expired (id : EffectId)
 deriving Repr, Inhabited, BEq
 
-/-- Who or what receives or loses counters (CR 122.1). Players in `Mtg.Engine`
-only carry poison counters (`Player.poison`, CR 122.1f). -/
+/-- Who or what receives or loses counters (CR 122.1). Players carry poison
+counters (`Player.poison`, CR 122.1f) as well as other counter kinds
+(`Player.counters`, CR 122.1). -/
 inductive CounterTarget where
   | object (o : EventObject)
   | player (p : PlayerId)
@@ -932,8 +741,8 @@ inductive PermanentEvent where
   | phasedOut (object : EventObject) (indirectly : Bool := false)            -- 702.26b / 702.26g
   | phasedIn (object : EventObject) (indirectly : Bool := false)             -- 702.26c / 702.26g
   | transformed (object : EventObject) (nowBackFace : Bool)                  -- 701.27a / 712.18
-  | turnedFaceUp (object : EventObject)                                      -- 701.40b / 708.8
-  | turnedFaceDown (object : EventObject)                                    -- 701.40f / 708.2
+  | turnedFaceUp (object : EventObject)                                      -- 116.2b / 708.8
+  | turnedFaceDown (object : EventObject)                                    -- 708.2
   | counters
       (target : CounterTarget)
       (kind : CounterKind)
@@ -979,10 +788,10 @@ deriving Repr, Inhabited, BEq
 
 /-- Life gain and life loss events (CR 119.2 / 119.3). -/
 inductive LifeEvent where
-  /-- Result of lifelink (CR 120.3f) or a "gain N life" instruction (CR 119.2):
+  /-- Result of lifelink (CR 120.3f) or a "gain N life" instruction (CR 119.3):
   increases `Player.life`. -/
   | gained (player : PlayerId) (amount : Nat)
-  /-- Result of damage to a player (CR 120.3a), "lose N life" (CR 119.3), or
+  /-- Result of damage to a player (CR 119.2 / 120.3a), "lose N life" (CR 119.3), or
   "pay N life" (CR 119.4): decreases `Player.life`. -/
   | lost (player : PlayerId) (amount : Nat)
       (fromDamage : Bool := false) (combat : Bool := false)
@@ -1046,7 +855,7 @@ inductive LossReason where
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- Player-level actions that don't mutate a single object's zone, status, life,
-or damage (CR 104, 106.4, 500.5, 701.20–25, 701.34, 701.54, 701.62, 702.131, 725, 800.4a). -/
+or damage (CR 104, 106.4, 500.5, 701.4, 701.20–25, 701.34, 701.54, 702.131, 725, 800.4a). -/
 inductive PlayerEvent where
   /-- `player` added `units` of mana to their mana pool (CR 106.4). -/
   | manaAdded (player : PlayerId) (units : Array ManaUnit)
@@ -1082,7 +891,7 @@ inductive PlayerEvent where
       (players : Array PlayerId := #[])
   /-- The Ring tempted `player` at `stage` with `bearer` (CR 701.54). -/
   | ringTempted (player : PlayerId) (bearer : Option ObjectId) (stage : Nat)
-  /-- `player` beheld `quality` (CR 701.62). Later zone changes do not undo it. -/
+  /-- `player` beheld `quality` (CR 701.4). Later zone changes do not undo it. -/
   | beheld (player : PlayerId) (quality : CardSubtype)
   /-- `player` chose to have The Sensational She-Hulk deal damage. Once each turn. -/
   | sheHulkDealtDamage (player : PlayerId)
@@ -1153,11 +962,28 @@ inductive CastEvent where
       (kind : ActivationKind)                                                       -- 602.2b; mana abilities 605.3b
 deriving Repr, Inhabited, BEq
 
+/-- Stack-entry and ability-metadata payload for `TriggerQueueEvent.putOnStack` (CR 603.3 / 603.12). -/
+structure StackTriggerSpec where
+  triggeredAbility : Option TriggeredAbility := none
+  abilityEffect : Option Effect := none
+  reflexiveResolution : Option TriggeredAbility.TriggerResolution := none
+  sourceId : Option ObjectId := none
+  abilityName : Option String := none
+  delayedTrigger : Option (DelayedTriggerKind × EventCause) := none
+  lastKnownPower : Option Int := none
+  lastKnownToughness : Option Int := none
+  fraCauseId : Option ObjectId := none
+  fraCauseController : Option PlayerId := none
+  fraCausePower : Option Int := none
+  fraCauseStatus : Option Status := none
+deriving Repr, Inhabited, BEq
+
 /-- Triggered ability queueing and stack placement events (CR 603.2 / 603.3). -/
 inductive TriggerQueueEvent where
   | triggered (source : EventObject) (controller : PlayerId) (ability : TriggeredAbility)
       (origin : BatchId)                                                            -- 603.2
-  | putOnStack (stackObj : ObjectId) (source : EventObject) (controller : PlayerId) -- 603.3
+  | putOnStack (stackObj : ObjectId) (source : EventObject) (controller : PlayerId)
+      (spec : StackTriggerSpec := {})                                               -- 603.3
   | modeChosen (source : ObjectId) (mode : Nat) (lifetime : Bool := false)          -- 603.3c / 700.2
 deriving Repr, Inhabited, BEq
 
@@ -1165,8 +991,10 @@ deriving Repr, Inhabited, BEq
 inductive StackObjectEvent where
   /-- `original` was copied on the stack as `copy` under `controller`'s control (CR 707.10). -/
   | copied (original : ObjectId) (copy : EventObject) (controller : PlayerId)
-  /-- `obj` resolved (`nth` time this ability resolved for its controller this turn, CR 608.2). -/
+  /-- `obj` resolved (`nth` counted resolution for this ability on `turn`, or `0` for uncounted CR 608.2n / 608.3 stack resolution). -/
   | resolved (obj : EventObject) (nth : Nat := 1)
+      (sourceId : Option ObjectId := none)
+      (ability : Option TriggeredAbility := none)
   /-- `obj` was removed from the stack on resolution because all its targets were illegal (CR 608.2b). -/
   | removedOnResolution (obj : EventObject)
 deriving Repr, Inhabited, BEq
@@ -1462,7 +1290,7 @@ structure ContinuationFrame where
   surveilReturnNoncreatureNonland : Bool := false
   /-- Continuation for an event paused on `Pending.chooseReplacement` (CR 616.1). -/
   pendingReplacement : Option PendingReplacement := none
-  /-- Source of the current connive action, if any (MSH / CR 701.47). -/
+  /-- Source of the current connive action, if any (MSH / CR 701.50). -/
   conniveSource : Option ObjectId := none
   /-- Put a +1/+1 counter on this permanent after the current discard choices finish. -/
   plusOneAfterDiscards : Option ObjectId := none
@@ -1503,7 +1331,6 @@ inductive ContinuationChange where
   | discardedCardThisWay (v : Option (PlayerId × ObjectId))
   | palantirAfterScry (v : Option (PlayerId × PlayerId × ObjectId))
   | recentTokenIds (v : Array ObjectId)
-  | pushRecentTokenId (id : ObjectId)
   | fraAfterLook (v : Option (PlayerId × Option ObjectId × FraNext))
   | pendingFreeCopies (v : Option (PlayerId × Array ObjectId × Nat × Nat))
   | pendingMayCastFromExile (v : Option (PlayerId × Array ObjectId × Nat))
@@ -1521,7 +1348,6 @@ inductive ContinuationChange where
   | amassAmountThisWay (v : Nat)
   | amassYouControlledThisWay (v : Bool)
   | milledIdsThisWay (v : Array ObjectId)
-  | pushMilledIdThisWay (id : ObjectId)
   | revealedIdsThisWay (v : Array ObjectId)
   | opponentsMilledThisWay (v : Bool)
   | palantirChoiceReady (v : Option (PlayerId × PlayerId × ObjectId))
@@ -1593,6 +1419,10 @@ inductive EngineChange where
   | player (p : PlayerId) (c : PlayerChange)
   | playerChanges (p : PlayerId) (cs : Array PlayerChange)
   | players (v : Array Player)
+  /-- Materialize a non-token `GameObject` directly into `g.objects` and its zone
+  (pregame deck/sideboard cards, CR 114 command-zone emblems/effect objects,
+  CR 602.2a proposed stack abilities, and test fixtures). -/
+  | materializeObject (obj : GameObject) (libraryPosition : Option LibraryPosition := none)
   /-- Update an object's non-rules engine metadata. -/
   | object (id : ObjectId) (c : ObjectChange)
   | objectChanges (id : ObjectId) (cs : Array ObjectChange)
@@ -1607,7 +1437,6 @@ inductive EngineChange where
   | proposalChanges (cs : Array ProposalChange)
   | reverseProposal (prop : ProposedSpell)
   /-- Update the continuation frame stack. -/
-  | continuations (frames : Array ContinuationFrame)
   | pushContinuationFrame (frame : ContinuationFrame := {})
   | popContinuationFrame
   | continuation (c : ContinuationChange)
@@ -1656,7 +1485,6 @@ namespace EngineChange
 @[inline] def discardedCardThisWay (v : Option (PlayerId × ObjectId)) : EngineChange := .continuation (.discardedCardThisWay v)
 @[inline] def palantirAfterScry (v : Option (PlayerId × PlayerId × ObjectId)) : EngineChange := .continuation (.palantirAfterScry v)
 @[inline] def recentTokenIds (v : Array ObjectId) : EngineChange := .continuation (.recentTokenIds v)
-@[inline] def pushRecentTokenId (id : ObjectId) : EngineChange := .continuation (.pushRecentTokenId id)
 @[inline] def fraAfterLook (v : Option (PlayerId × Option ObjectId × FraNext)) : EngineChange := .continuation (.fraAfterLook v)
 @[inline] def pendingFreeCopies (v : Option (PlayerId × Array ObjectId × Nat × Nat)) : EngineChange := .continuation (.pendingFreeCopies v)
 @[inline] def pendingMayCastFromExile (v : Option (PlayerId × Array ObjectId × Nat)) : EngineChange := .continuation (.pendingMayCastFromExile v)
@@ -1674,7 +1502,6 @@ namespace EngineChange
 @[inline] def amassAmountThisWay (v : Nat) : EngineChange := .continuation (.amassAmountThisWay v)
 @[inline] def amassYouControlledThisWay (v : Bool) : EngineChange := .continuation (.amassYouControlledThisWay v)
 @[inline] def milledIdsThisWay (v : Array ObjectId) : EngineChange := .continuation (.milledIdsThisWay v)
-@[inline] def pushMilledIdThisWay (id : ObjectId) : EngineChange := .continuation (.pushMilledIdThisWay id)
 @[inline] def revealedIdsThisWay (v : Array ObjectId) : EngineChange := .continuation (.revealedIdsThisWay v)
 @[inline] def opponentsMilledThisWay (v : Bool) : EngineChange := .continuation (.opponentsMilledThisWay v)
 @[inline] def palantirChoiceReady (v : Option (PlayerId × PlayerId × ObjectId)) : EngineChange := .continuation (.palantirChoiceReady v)
@@ -2015,15 +1842,15 @@ def created (turn : Nat) (player : PlayerId) (object : EventObject)
     (cause : EventCause) : GameEvent :=
   rules turn (.zone (.created object player)) cause
 
-/-- `object` ceased to exist (CR 704.5d / 704.5e / 111.8). -/
+/-- `object` ceased to exist (CR 704.5d / 704.5e / 111.7). -/
 def ceasedToExist (turn : Nat) (object : EventObject)
     (cause : EventCause) : GameEvent :=
   rules turn (.zone (.ceasedToExist object)) cause
 
 /-- `object` changed controller from `fromPlayer` to `toPlayer` (CR 110.2 / 613.1b). -/
-def control (turn : Nat) (object : ObjectId) (fromPlayer toPlayer : PlayerId)
+def control (turn : Nat) (object : EventObject) (fromPlayer toPlayer : PlayerId)
     (cause : EventCause) : GameEvent :=
-  rules turn (.permanent (.controlChanged { id := some object } fromPlayer toPlayer)) cause
+  rules turn (.permanent (.controlChanged object fromPlayer toPlayer)) cause
 
 /-- `player` began a turn (CR 500.1 / 500.7). -/
 def turnBegan (turn : Nat) (player : PlayerId) (extra : Bool := false)
@@ -2110,9 +1937,9 @@ def triggered (turn : Nat) (source : EventObject) (controller : PlayerId)
 
 /-- A triggered ability of `source` was put on the stack as `stackObj` (CR 603.3). -/
 def triggerPutOnStack (turn : Nat) (stackObj : ObjectId) (source : EventObject)
-    (controller : PlayerId)
+    (controller : PlayerId) (spec : StackTriggerSpec := {})
     (cause : Option EventCause := none) : GameEvent :=
-  rules turn (.triggerQueue (.putOnStack stackObj source controller))
+  rules turn (.triggerQueue (.putOnStack stackObj source controller spec))
     (cause.getD (.gameRule .triggeredAbility))
 
 /-- Mode `mode` of a modal triggered ability on `source` was chosen (CR 603.3c / 700.2). -/
@@ -2134,19 +1961,21 @@ def removedOnResolution (turn : Nat) (obj : EventObject)
   rules turn (.stackObject (.removedOnResolution obj))
     (cause.getD (.gameRule .abilityFinishedResolving))
 
-/-- The `nth` counted resolution for `player` this turn (CR 608 / 610.1). -/
-def resolved (turn : Nat) (player : PlayerId) (nth : Nat)
-    (id : Option EffectId := none) (obj : Option EventObject := none)
+/-- `obj` resolved (`nth` counted resolution for this ability on `turn`, or `0`
+for uncounted CR 608.2n / 608.3 stack resolution; CR 608 / 610.1). -/
+def resolved (turn : Nat) (player : PlayerId) (nth : Nat) (obj : EventObject)
+    (id : Option EffectId := none)
+    (sourceId : Option ObjectId := none)
+    (ability : Option TriggeredAbility := none)
     (cause : Option EventCause := none) : GameEvent :=
-  let evObj := obj.getD { controller := some player, owner := player, zone := .stack }
-  rules turn (.stackObject (.resolved evObj nth))
-    (cause.getD (.oneShotEffect id evObj.id (some player)))
+  rules turn (.stackObject (.resolved obj nth sourceId ability))
+    (cause.getD (.oneShotEffect id (sourceId.orElse (fun _ => obj.id)) (some player)))
 
-/-- `object` became attached to `host` (CR 701.3a / 303.4 / 301.5). -/
-def attached (turn : Nat) (object host : ObjectId)
+/-- `attachment` became attached to `host` (CR 701.3a / 303.4 / 301.5). -/
+def attached (turn : Nat) (attachment : EventObject) (host : ObjectId)
     (previous : Option ObjectId := none)
     (cause : EventCause) : GameEvent :=
-  rules turn (.permanent (.attached { id := some object } host previous)) cause
+  rules turn (.permanent (.attached attachment host previous)) cause
 
 /-- `attachment` became unattached from `fromHost` (CR 701.3d / 704.5n / 704.5p). -/
 def unattached (turn : Nat) (attachment : EventObject) (fromHost : ObjectId)
@@ -2173,17 +2002,17 @@ def transformed (turn : Nat) (object : EventObject) (nowBackFace : Bool)
     (cause : EventCause) : GameEvent :=
   rules turn (.permanent (.transformed object nowBackFace)) cause
 
-/-- `object` was turned face up (CR 701.40b / 708.8). -/
+/-- `object` was turned face up (CR 116.2b / 708.8). -/
 def turnedFaceUp (turn : Nat) (object : EventObject)
     (cause : EventCause) : GameEvent :=
   rules turn (.permanent (.turnedFaceUp object)) cause
 
-/-- `object` was turned face down (CR 701.40f / 708.2). -/
+/-- `object` was turned face down (CR 708.2). -/
 def turnedFaceDown (turn : Nat) (object : EventObject)
     (cause : EventCause) : GameEvent :=
   rules turn (.permanent (.turnedFaceDown object)) cause
 
-/-- `player` beheld `quality` (CR 701.62). -/
+/-- `player` beheld `quality` (CR 701.4). -/
 def beheld (turn : Nat) (player : PlayerId) (quality : CardSubtype)
     (cause : EventCause) : GameEvent :=
   rules turn (.player (.beheld player quality)) cause
@@ -2252,7 +2081,7 @@ def gameEnded (turn : Nat) (result : GameResult)
   rules turn (.player (.gameEnded result))
     (cause.getD (.gameRule .playerLeftGame))
 
-/-- `player` got poison counters (CR 122.1c). -/
+/-- `player` got poison counters (CR 122.1f). -/
 def poisoned (turn : Nat) (player : PlayerId) (n : Nat)
     (byPlayer : Option PlayerId := none)
     (cause : EventCause) : GameEvent :=
@@ -2705,7 +2534,7 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : ObjectId)
     | .player (.proliferated p _ _), .fra .youProliferate => you p
     | .player (.ringTempted p _ _), .theRingTemptsYou => you p
     | .player (.ringTempted p (some _) _), .youChooseRingBearer => you p
-    | .stackObject (.resolved obj nth), .finalSagaChapterResolves =>
+    | .stackObject (.resolved obj nth _ _), .finalSagaChapterResolves =>
       nth == 0 && yours obj && obj.types.isEmpty && obj.hasSubtype .saga
     | .permanent (.counters (.object object) .plusOnePlusOne (.put n) (some p)), .youPutPlusOne =>
       you p && n > 0 && object.creature
@@ -3002,14 +2831,26 @@ def lifeLost (events : Array GameEvent) (turn : Nat) (p : PlayerId) : Nat :=
       | .rules (.life (.lost q amount _ _)) => if q == p then n + amount else n
       | _ => n) 0
 
-/-- Counted resolutions for `p` on `turn`. -/
-def resolutions (events : Array GameEvent) (turn : Nat) (p : PlayerId) : Nat :=
+/-- Counted resolutions for `p` on `turn` (optionally filtered to a specific
+`sourceId` and/or `ability` for per-ability resolution counting). -/
+def resolutions (events : Array GameEvent) (turn : Nat) (p : PlayerId)
+    (sourceId : Option ObjectId := none)
+    (ability : Option TriggeredAbility := none) : Nat :=
   events.foldl (fun n e =>
     if e.turn != turn then n
     else
       match e.change with
-      | .rules (.stackObject (.resolved obj nth)) =>
-        if nth > 0 && (obj.controller.getD obj.owner) == p then n + 1 else n
+      | .rules (.stackObject (.resolved obj nth sId ab?)) =>
+        let ctrlMatch := (obj.controller.getD obj.owner) == p
+        let srcMatch :=
+          match sourceId with
+          | some sid => sId == some sid
+          | none => true
+        let abMatch :=
+          match ability with
+          | some ab => ab? == some ab
+          | none => true
+        if nth > 0 && ctrlMatch && srcMatch && abMatch then n + 1 else n
       | _ => n) 0
 
 /-- `ab` on `sourceId` has already triggered on `turn` in `events` (CR 603.2h). -/
@@ -3171,6 +3012,23 @@ def isPreparedSpell (events : Array GameEvent) (spell : ObjectId) : Bool :=
     match e.change with
     | .rules (.cast (.proposed obj _ _ (.alternative "prepare"))) => obj == sid || obj == spell
     | _ => false
+
+/-- `spell` was proposed for its flashback cost (`way == .alternative "flashback"`, CR 702.34a). -/
+def castWithFlashback (events : Array GameEvent) (spell : ObjectId) : Bool :=
+  let sid := stackSpellIdOf events spell
+  events.any fun e =>
+    match e.change with
+    | .rules (.cast (.proposed obj _ _ (.alternative "flashback"))) => obj == sid || obj == spell
+    | _ => false
+
+/-- Pre-cast `ObjectId` that moved onto `.stack` to become `spell` (CR 400.7), or `spell` itself. -/
+def castOriginIdOf (events : Array GameEvent) (spell : ObjectId) : ObjectId :=
+  let sid := stackSpellIdOf events spell
+  events.foldr (fun e cur =>
+    match e.change with
+    | .rules (.zone (.moved before after _ .stack ..)) =>
+      if after.id == some cur then before.id.getD cur else cur
+    | _ => cur) sid
 
 /-- `spell` was kicked (or copied from a kicked spell, CR 707.10 / 400.7d). -/
 def wasKicked (events : Array GameEvent) (spell : ObjectId) : Bool :=

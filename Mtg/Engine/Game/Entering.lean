@@ -21,12 +21,12 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
   let g :=
     Id.run do
       let mut g := g
-      for _ in [0:spell.printed.cascade] do
+      for _ in [0:(g.baseCard spell).cascade] do
         g := g.putTriggeredAbilityOnStack caster spell .onCastCascade "cascade trigger"
       return g
   -- Photon Blast Barrage: “When you cast this spell, copy it X times.”
   let copiesSelf :=
-    match spell.printed.spellEffect.map (·.resolution) with
+    match (g.baseCard spell).spellEffect.map (·.resolution) with
     | some (.copyThisSpellXTimesThenDamage _) => !spell.isCopy
     | _ => false
   let g :=
@@ -45,9 +45,9 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
   let g :=
     match g.pendingFreeRGCreature with
     | some p =>
-      if p == caster && spell.printed.isCreature &&
-          (spell.printed.colors.contains .red ||
-            spell.printed.colors.contains .green) then
+      if p == caster && g.isCreature spell &&
+          ((g.colors spell).contains .red ||
+            (g.colors spell).contains .green) then
         g.expireEffect (.pendingFreeRGCreatureThisTurn p) (cause := some (.gameRule .spellCast))
           |>.logMsg s!"World War Hulk's free-cast permission is used on {spell.name}"
       else g
@@ -56,7 +56,7 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
   -- copy has the original's targets, mode, X, and paid-cost effects, but
   -- no costs are paid for it (rulings 843–846).
   let g :=
-    if spell.printed.isInstantOrSorcery && g.copyNextInstantSorceryThisTurn caster > 0 then
+    if g.isInstantOrSorcery spell && g.copyNextInstantSorceryThisTurn caster > 0 then
       let cryoEid? := g.activeEffects.findSome? (fun (eid, eff) =>
         match eff with
         | .playerRule p (.copyNextInstantSorcery _) _ => if p == caster then some eid else none
@@ -82,7 +82,7 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
   -- ≤ Loki's power at cast time (last known if he already left). Each
   -- activation is its own delayed trigger, so every matching pending effect
   -- of the caster copies this spell and then ends under its own `EffectId`.
-  if !spell.printed.isInstantOrSorcery then g
+  if !g.isInstantOrSorcery spell then g
   else
     let matching := g.activeEffects.filterMap (fun (eid, eff) =>
       match eff with
@@ -173,7 +173,7 @@ def enterWithLoyalty (g : Game) (o : GameObject) : Game :=
 /-- “This creature enters with N +1/+1 counters on it” (placed in `entersWith`
 during the zone change). -/
 def enterWithPlusOnes (g : Game) (o : GameObject) : Game :=
-  if o.status.faceDown then g
+  if o.status.faceDown || !g.retainsPrintedAbilities o then g
   else
     let base := (g.baseCard o).entersWithPlusOneCounters
     if base == 0 || o.status.plusOnePlusOne == 0 then g
@@ -185,13 +185,14 @@ def enterWithPlusOnes (g : Game) (o : GameObject) : Game :=
       else g.logMsg s!"{g.name o} enters with {n} +1/+1 counter(s)"
 
 def enterWithIndestructibleCounter (g : Game) (o : GameObject) : Game :=
-  if !o.status.faceDown && (g.baseCard o).entersWithIndestructibleCounter &&
+  if !o.status.faceDown && g.retainsPrintedAbilities o &&
+      (g.baseCard o).entersWithIndestructibleCounter &&
       o.status.indestructibleCounters > 0 then
     g.logMsg s!"{g.name o} enters with an indestructible counter"
   else g
 
 def enterWithShield (g : Game) (o : GameObject) : Game :=
-  if o.status.faceDown then g
+  if o.status.faceDown || !g.retainsPrintedAbilities o then g
   else
     let base := (g.baseCard o).entersWithShield
     if base == 0 || o.status.shield == 0 then g
@@ -211,7 +212,8 @@ def enterWithXPlusOnes (g : Game) (o : GameObject) : Game :=
   else g
 
 def enterWithHope (g : Game) (o : GameObject) : Game :=
-  if !o.status.faceDown && (g.baseCard o).entersWithHopePerCreature && o.status.hope > 0 then
+  if !o.status.faceDown && g.retainsPrintedAbilities o &&
+      (g.baseCard o).entersWithHopePerCreature && o.status.hope > 0 then
     g.logMsg s!"{g.name o} enters with {o.status.hope} hope counter(s)"
   else g
 
@@ -234,28 +236,6 @@ def applyEntersWith (g : Game) (o : GameObject) : Game :=
 triggers (CR 603.6a). -/
 def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
   if (g.findObject? o.id).isNone then g else
-  let g :=
-    if g.loggedEntered o.id then g
-    else
-      let o := g.object! o.id
-      let bag :=
-        if o.status.toCounterBag.isEmpty then
-          g.computeEntersWithCounters o (asOf := o.timestamp)
-        else o.status.toCounterBag
-      let snap := g.snapshot o
-      let enterCause :=
-        g.resolveOptionalCause none (fallbackSrc := some o.id) (fallbackCtrl := g.controllerOf o)
-          (defaultCause := .gameRule .permanentSpellResolved)
-      if o.printed.isToken then
-        g.record (GameEvent.created g.turnNumber ((g.controllerOf o).getD o.owner)
-          { snap with counters := bag } (cause := enterCause))
-      else
-        g.record (GameEvent.moved g.turnNumber
-          { snap with zone := .command }
-          .command .battlefield
-          (after := some { snap with zone := .battlefield, counters := bag })
-          (entersWith := bag)
-          (cause := enterCause))
   let g := g.refreshEnduringStory
   let g := g.refreshCitysBlessing
   let g := g.applyEntersWith (g.object! o.id)
@@ -342,15 +322,25 @@ def enterFromNickFury (g : Game) (controller : PlayerId) (id : ObjectId)
 
 /-- Tom Bombadil is on the battlefield as a final chapter finishes resolving,
 so his last ability triggers (ruling 74). -/
-def finishSagaFinalChapter (g : Game) (controller : PlayerId) : Game :=
+def finishSagaFinalChapter (g : Game) (controller : PlayerId)
+    (snap : Option EventObject := none) (sourceId : Option ObjectId := none)
+    (ability : Option TriggeredAbility := none) (alreadyResolved : Bool := false) : Game :=
   let g := g.logMsg "The final chapter ability is removed from the stack"
   let sagaSnap : EventObject :=
-    { controller := some controller
-      owner := controller
-      zone := .stack
-      subtypes := #[.saga] }
-  let g := g.record (GameEvent.resolved g.turnNumber controller 0 (obj := some sagaSnap)
-    (cause := some (.gameRule .abilityFinishedResolving)))
+    match snap with
+    | some s =>
+      { s with subtypes := if s.subtypes.contains .saga then s.subtypes else s.subtypes.push .saga }
+    | none =>
+      { controller := some controller
+        owner := controller
+        zone := .stack
+        subtypes := #[.saga] }
+  let g :=
+    if alreadyResolved then g
+    else
+      g.record (GameEvent.resolved g.turnNumber controller 0 sagaSnap
+        (sourceId := sourceId) (ability := ability)
+        (cause := some (.gameRule .abilityFinishedResolving)))
   match (g.permanentsOf controller).find? (fun o =>
     (g.baseCard o).hexproofIndestructibleIfLore.isSome) with
   | none => g
@@ -370,7 +360,7 @@ def resolveAuraSpell (g : Game) (entry : StackEntry) (obj : GameObject) : Game :
   | some (Target.permanent hostId) =>
     match g.findObject? hostId with
     | some host =>
-      if g.auraCanEnchant host obj.printed then
+      if g.auraObjCanEnchant host obj then
         let hostName := g.name host
         let (g, newId) := g.putOntoBattlefield obj.id entry.controller
           (attachedTo := some host.id) (verb := some .resolve) (actor := some entry.controller)
@@ -405,6 +395,12 @@ step for one finished `ResolutionFinish`. -/
 def finishOneResolution (g : Game) (fin : ResolutionFinish) : Game :=
   match fin with
   | .ability objId snap controller sourceId sagaChapter =>
+    let ab? := (g.findObject? objId).bind (·.triggeredAbility)
+    let alreadyResolved := g.events.any fun e =>
+      e.turn == g.turnNumber &&
+        match e.change with
+        | .rules (.stackObject (.resolved eo ..)) => eo.id == some objId
+        | _ => false
     let g :=
       match g.findObject? objId with
       | some (cur : GameObject) =>
@@ -423,10 +419,15 @@ def finishOneResolution (g : Game) (fin : ResolutionFinish) : Game :=
         | _, _ => none
       | _, _ => none
     match finalSagaPlayer? with
-    | some p => g.finishSagaFinalChapter p
+    | some p =>
+      g.finishSagaFinalChapter p (snap := some snap) (sourceId := sourceId)
+        (ability := ab?) (alreadyResolved := alreadyResolved)
     | none =>
-      g.record (GameEvent.resolved g.turnNumber controller 0 (obj := some snap)
-        (cause := some (.gameRule .abilityFinishedResolving)))
+      if alreadyResolved then g
+      else
+        g.record (GameEvent.resolved g.turnNumber controller 0 snap
+          (sourceId := sourceId) (ability := ab?)
+          (cause := some (.gameRule .abilityFinishedResolving)))
   | .spell entry snap fromGy =>
     match g.findObject? entry.objectId with
     | none =>
@@ -434,7 +435,7 @@ def finishOneResolution (g : Game) (fin : ResolutionFinish) : Game :=
         if g.stack.any (·.objectId == entry.objectId) then
           g.change (EngineChange.stack (g.stack.filter (·.objectId != entry.objectId)))
         else g
-      g.record (GameEvent.resolved g.turnNumber entry.controller 0 (obj := some snap)
+      g.record (GameEvent.resolved g.turnNumber entry.controller 0 snap
         (cause := some (.gameRule .instantOrSorceryFinishedResolving)))
     | some (obj : GameObject) =>
       if obj.zone != Zone.stack then
@@ -442,20 +443,24 @@ def finishOneResolution (g : Game) (fin : ResolutionFinish) : Game :=
           if g.stack.any (·.objectId == entry.objectId) then
             g.change (EngineChange.stack (g.stack.filter (·.objectId != entry.objectId)))
           else g
-        g.record (GameEvent.resolved g.turnNumber entry.controller 0 (obj := some snap)
+        g.record (GameEvent.resolved g.turnNumber entry.controller 0 snap
           (cause := some (.gameRule .instantOrSorceryFinishedResolving)))
       else
         let finishCause : EventCause :=
           if obj.isAdventureSpell then .gameRule .adventureSpellResolved
-          else if obj.printed.isAura || (obj.printed.isPermanentCard && !obj.printed.isLand) then
+          else if g.isAura obj || (g.isPermanentCard obj && !g.isLand obj) then
             .gameRule .permanentSpellResolved
           else .gameRule .instantOrSorceryFinishedResolving
+        let hasFlashback :=
+          GameEvent.castWithFlashback g.events obj.id || g.flashbackUntilEot obj ||
+            (fromGy && !g.freeCastFromGraveyard obj &&
+              ((g.baseCard obj).flashback.isSome || g.hasFlashbackPermission obj))
         let g :=
           if obj.isAdventureSpell then
             g.resolveAdventureSpell entry obj
-          else if obj.printed.isAura then
+          else if g.isAura obj then
             g.resolveAuraSpell entry obj
-          else if obj.printed.isPermanentCard && !obj.printed.isLand then
+          else if g.isPermanentCard obj && !g.isLand obj then
             let sneak := g.sneakPaid obj.id
             let sneakWhom := g.sneakAttackWhom? obj.id
             let sneakTarget :=
@@ -478,7 +483,7 @@ def finishOneResolution (g : Game) (fin : ResolutionFinish) : Game :=
           else if obj.isCopy then
             (g.ceaseToExist obj.id (cause := some (.stateBased .copyOutsideStackOrBf))).logMsg
               s!"The copy of {obj.name} ceases to exist (CR 704.5e)"
-          else if fromGy then
+          else if hasFlashback then
             let (g, _) := g.move obj.id .exile none
               (verb := some .resolve) (actor := some entry.controller) (cause := some finishCause)
             g.logMsg s!"{obj.name} is exiled (flashback)"
@@ -486,7 +491,7 @@ def finishOneResolution (g : Game) (fin : ResolutionFinish) : Game :=
             g.moveToOwnerGraveyard obj s!"{obj.name} goes to the graveyard"
               (verb := some .resolve) (actor := some entry.controller) (cause := some finishCause)
         if g.pending == .none && g.afterRandom == .none then
-          g.record (GameEvent.resolved g.turnNumber entry.controller 0 (obj := some snap)
+          g.record (GameEvent.resolved g.turnNumber entry.controller 0 snap
             (cause := some finishCause))
         else
           g.change (.pendingResolvedEvent (some (snap, entry.controller, finishCause)))
@@ -523,7 +528,7 @@ partial def completeActiveResolutions (g : Game) : Game :=
         completeActiveResolutions (g.change .popContinuationFrame)
       else if let some (snap, ctrl, fc) := top.pendingResolvedEvent then
         let g := (g.change (.pendingResolvedEvent none)).record
-          (GameEvent.resolved g.turnNumber ctrl 0 (obj := some snap) (cause := some fc))
+          (GameEvent.resolved g.turnNumber ctrl 0 snap (cause := some fc))
         completeActiveResolutions (g.change .popContinuationFrame)
       else if let some fin := top.resolutionFinish then
         let g := g.changes #[
