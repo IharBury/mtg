@@ -71,7 +71,7 @@ def beginDiscardCards (g : Game) (players : Array PlayerId) (count : Nat := 1) :
     Game :=
   let g :=
     if count > 1 && g.continuations.isEmpty then
-      g.change (.pushContinuationFrame { resolvingContext := some (none, players[0]?.getD g.activePlayer) })
+      g.change (.pushContinuationFrame {})
     else g
   let g :=
     if count > 1 then g.change (.pendingDiscardsLeft count) else g
@@ -166,8 +166,7 @@ def applyConnive (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
         g.logMsg "No card is discarded; the conniving creature does not receive a +1/+1 counter"
       else
         g.beginDiscardCards #[controller]
-  if g.continuations.isEmpty then g.withResolvingContext sourceId controller run
-  else run g
+  g.withContinuationFrame run
 
 /-- Finish a pending connive after a card is discarded. -/
 def finishConniveDiscard (g : Game) (discarded : GameObject) : Game :=

@@ -3974,14 +3974,10 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     (resolutionOverride : Option TriggeredAbility.TriggerResolution := none)
     (sequencedCardPower : Option Nat := none) : Game :=
   if resolutionOverride.isNone && g.continuations.isEmpty then
-    let prevDepth := g.continuations.size
-    let g :=
-      (g.change (.pushContinuationFrame {})).applyTriggeredAbility controller ab sourceId
+    g.withContinuationFrame fun g =>
+      g.applyTriggeredAbility controller ab sourceId
         targets dividedDamage lastKnownPower lastKnownToughness sourceName
         resolutionOverride sequencedCardPower
-    if g.pending != .none || g.afterRandom != .none then g
-    else if g.continuations.size > prevDepth then g.change .popContinuationFrame
-    else g
   else if resolutionOverride.isNone && !g.interveningStillHolds controller ab then
     g.logMsg "The intervening condition is no longer true. The ability doesn't resolve."
   else if resolutionOverride.isSome || ab.effect.sharedTrigger.isSome then

@@ -5667,12 +5667,70 @@ continuity, plus `post.snapshot` in `.creatureYouControlDealtDamage` and
     gTs1.hasSummoningSickness tsBear &&
     noOneShotCauses started &&
     noOneShotCauses gTs1
+  -- 8. Round-2 continuation-frame & 0-card `shuffleThen` invariants:
+  --    (a) `requestShuffle` with `after != .none` on a quiet board keeps `afterRandom` without minting `EffectId`
+  --    (b) 0-card remaining library `shuffleThen` behind an as-enters choice waits for the choice before shuffling or running `onDone`
+  --    (c) `applyGainLifeSearchBasicPlusOne` on a quiet board keeps `plusOneAfterSearch` and adds the +1/+1 counter without minting `EffectId`
+  let gEmptyForReq :=
+    quiet ((afterDraw.player me).library.foldl (fun acc id => (acc.move id .exile none (cause := some testCause)).1) afterDraw)
+  let gReq0 := gEmptyForReq.requestShuffle me (.gainLife me 1)
+  let gReqMany := gAct0.requestShuffle me (.gainLife me 1)
+  let gReqManyDone :=
+    match gReqMany.supplyOrder (gReqMany.player me).library with
+    | .ok g' => g'
+    | .error _ => gReqMany
+  let gZeroAfterSearch0 :=
+    let g := addPermanent gEmptyForReq dragonCreatureDef me me
+    quiet (insertObject g roomDef me (.library me))
+  let onlyRoomId := (gZeroAfterSearch0.player me).library[0]!
+  let gZeroMid :=
+    gZeroAfterSearch0.finishLibrarySearch me #[onlyRoomId] (.battlefieldTappedBeholdUntap .dragon) none "land card"
+  let zeroMidDeferred :=
+    (match gZeroMid.pending with | .fraChoice _ (.chooseColor _) => true | _ => false) &&
+    !gZeroMid.events.any (fun e =>
+      match e.change with
+      | .rules (.player (.shuffled ..)) => true
+      | .rules (.player (.beheld ..)) => true
+      | _ => false)
+  let gZeroDone :=
+    match gZeroMid.answerFraChoice me (.mode 1) with
+    | .ok g' => g'
+    | .error _ => gZeroMid
+  let basicPlainsDef : CardDef :=
+    { name := "Plains", types := #[.land], supertypes := #[.basic], subtypes := #["Plains"] }
+  let gRestTech0 :=
+    let g := addPermanent gEmptyForReq bear me me
+    quiet (insertObject g basicPlainsDef me (.library me))
+  let restBear := (gRestTech0.battlefield.filter (·.name == "Event Bear"))[0]!
+  let basicLibId := (gRestTech0.player me).library[0]!
+  let gRestMid :=
+    gRestTech0.applyGainLifeSearchBasicPlusOne me #[.player me, .permanent restBear.id] 2
+  let gRestDone :=
+    match gRestMid.answerFraChoice me (.objects #[basicLibId]) with
+    | .ok g' => g'
+    | .error _ => gRestMid
+  let round2ContinuationOk :=
+    gReq0.afterRandom == .gainLife me 1 &&
+    gReq0.nextEffectId == gEmptyForReq.nextEffectId &&
+    noOneShotCauses gReq0 &&
+    gReqMany.afterRandom == .gainLife me 1 &&
+    gReqManyDone.nextEffectId == gAct0.nextEffectId &&
+    noOneShotCauses gReqManyDone &&
+    zeroMidDeferred &&
+    gZeroDone.events.any (fun e => match e.change with | .rules (.player (.shuffled ..)) => true | _ => false) &&
+    gZeroDone.events.any (fun e => match e.change with | .rules (.player (.beheld _ .dragon)) => true | _ => false) &&
+    gZeroDone.nextEffectId == gZeroMid.nextEffectId &&
+    noOneShotCauses gZeroDone &&
+    (gRestDone.object! restBear.id).status.plusOnePlusOne == 1 &&
+    gRestDone.nextEffectId == gRestTech0.nextEffectId &&
+    noOneShotCauses gRestDone
   painOk &&
     permActionOk &&
     resolvingHelpersOk &&
     shuffleGuardOk &&
     beholdUntapOk &&
     prepAndPhaseOk &&
-    createdTsOk
+    createdTsOk &&
+    round2ContinuationOk
 
 end Mtg.Engine.EventTests

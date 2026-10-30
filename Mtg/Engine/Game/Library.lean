@@ -210,7 +210,7 @@ def shuffleLibrary (g : Game) (p : PlayerId) : Game :=
 game until the host supplies an order. -/
 def requestShuffle (g : Game) (p : PlayerId) (after : AfterRandom := .none) : Game :=
   let run (g : Game) : Game := (g.change (.afterRandom after)).shuffleLibrary p
-  if after != .none && g.continuations.isEmpty then g.withResolvingContext none p run
+  if after != .none then g.withContinuationFrame run
   else run g
 
 /-- Move `ids` into `dest` in this order. For a library, first listed becomes

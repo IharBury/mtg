@@ -154,18 +154,14 @@ host supplies the order. An as-enters or replacement choice already waiting
 completes first and then runs the shuffle via `PendingReplacement.shuffleThen`. -/
 def shuffleThen (g : Game) (p : PlayerId) (onDone : AfterRandom) : Game :=
   if g.pending != .none && g.pendingRandom?.isNone then
-    if (g.player p).library.size ≤ 1 then
-      let g := (g.change (.afterRandom onDone)).shuffleLibrary p
-      let g := g.continueIfShuffled
-      g.applySearchAfter
-    else
-      g.chainPendingReplacement (.shuffleThen p onDone)
+    g.chainPendingReplacement (.shuffleThen p onDone)
   else
-    let g := g.requestShuffle p onDone
-    if g.pendingRandom?.isSome then g
-    else
-      let g := g.continueIfShuffled
-      g.applySearchAfter
+    g.withContinuationFrame fun g =>
+      let g := g.requestShuffle p onDone
+      if g.pendingRandom?.isSome then g
+      else
+        let g := g.continueIfShuffled
+        g.applySearchAfter
 
 /-- The post-shuffle action, including a +1/+1 counter waiting on this search. -/
 def searchDone (g : Game) (p : PlayerId) (after : Option FraNext) : Game × AfterRandom :=

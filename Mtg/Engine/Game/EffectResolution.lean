@@ -331,7 +331,7 @@ def millMayPutSubtypeOrEnchantment (g : Game) (p : PlayerId) (n : Nat) (subtype 
 /-- Target player gains `life`, searches for a basic land tapped, then a
 +1/+1 counter goes on the creature target if it is still legal
 (Restorative Technique). -/
-def applyGainLifeSearchBasicPlusOne (g : Game) (controller : PlayerId)
+def applyGainLifeSearchBasicPlusOne (g : Game) (_controller : PlayerId)
     (targets : Array Target) (life : Nat) : Game :=
   let run (g : Game) : Game :=
     let player? := targets.findSome? (fun t =>
@@ -359,8 +359,7 @@ def applyGainLifeSearchBasicPlusOne (g : Game) (controller : PlayerId)
               else g.logMsg "The target is no longer legal"
             | none => g.logMsg "The target is no longer legal"
         g.beginLibrarySearch pid isBasicLandCard "a basic land card" (.battlefield true)
-  if g.continuations.isEmpty then g.withResolvingContext none controller run
-  else run g
+  g.withContinuationFrame run
 
 /-- You may draw one card for each permanent of type `ty` you control. If you
 do, each opponent draws a card (Armor Wars). -/
@@ -1635,13 +1634,11 @@ def applyEffect (g : Game) (controller : PlayerId) (effect : Effect)
     (targets : Array Target) (castFromGraveyard := false)
     (kicked := false) (giftPromised := false) (chosenX : Nat := 0)
     (sourceId : Option ObjectId := none) : Game :=
-  let run (g : Game) : Game :=
+  g.withContinuationFrame fun g =>
     g.applyUnified controller effect targets
       (castFromGraveyard := castFromGraveyard) (kicked := kicked)
       (giftPromised := giftPromised) (chosenX := chosenX)
       (sourceId := sourceId)
-  if g.continuations.isEmpty then g.withResolvingContext sourceId controller run
-  else run g
 
 /-- Apply `action` if `sourceId` is still on the battlefield. -/
 def applyOnSource (g : Game) (sourceId : Option ObjectId) (action : PermanentAction)
@@ -1760,27 +1757,25 @@ def transformPermanent (g : Game) (controller : PlayerId) (sourceId : Option Obj
       | none => g.logMsg s!"{g.name o} has no other face"
       | some face =>
         let oldName := g.name o
-        let (src, ctrl) :=
-          match g.currentResolvingContext? with
-          | some (s, c) => (s.orElse (fun _ => some o.id), c.orElse (fun _ => some controller))
-          | none => (some o.id, some controller)
-        let (g, transformCause) : Game × EventCause :=
-          match cause with
-          | some c => (g, c)
-          | none => g.allocDelayedCause ctrl src
-        let g := g.expirePrintedStaticEffects o (cause := some transformCause)
-        let g := g.record
-          (GameEvent.transformed g.turnNumber (g.snapshot o) (!o.status.transformed)
-            (cause := transformCause))
-        let g := g.createPrintedStaticEffects (g.object! o.id)
-        g.logMsg s!"{oldName} transforms into {face.name}"
+        let batchCause :=
+          cause.orElse (fun _ =>
+            g.currentResolvingContext?.map fun (s, c) =>
+              .oneShotEffect none (s.orElse (fun _ => some o.id)) (c.orElse (fun _ => some controller)))
+        g.withBatch batchCause fun g =>
+          let fallback := batchCause.getD (.gameRule .spellCast)
+          let g := g.expirePrintedStaticEffects o (cause := some fallback)
+          let g := g.record
+            (GameEvent.transformed g.turnNumber (g.snapshot o) (!o.status.transformed)
+              (cause := fallback))
+          let g := g.createPrintedStaticEffects (g.object! o.id)
+          g.logMsg s!"{oldName} transforms into {face.name}"
 
 /-- Resolve a unified activated-ability `Effect` (CR 608). -/
 partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Effect)
     (targets : Array Target) (sourceId : Option ObjectId := none)
     (lastKnownPower : Option Int := none) (chosenX : Nat := 0) : Game :=
   if g.continuations.isEmpty then
-    g.withResolvingContext sourceId controller fun g =>
+    g.withContinuationFrame fun g =>
       g.applyUnifiedAbility controller effect targets sourceId lastKnownPower chosenX
   else
   match g.applyFraResolution? controller effect targets sourceId (lastKnownPower := lastKnownPower) with

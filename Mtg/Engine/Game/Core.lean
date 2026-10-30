@@ -8625,6 +8625,18 @@ def withResolvingContext (g : Game) (src : Option ObjectId) (ctrl : PlayerId)
   else if g.continuations.size > prevDepth then g.change .popContinuationFrame
   else g
 
+/-- Ensure a `ContinuationFrame` exists for continuation-scoped scratch fields
+without fabricating a `resolvingContext`, popping it if no pending choice or
+`afterRandom` continuation remains open. -/
+def withContinuationFrame (g : Game) (f : Game → Game) : Game :=
+  if !g.continuations.isEmpty then f g
+  else
+    let prevDepth := g.continuations.size
+    let g := f (g.change (.pushContinuationFrame {}))
+    if g.pending != .none || g.afterRandom != .none then g
+    else if g.continuations.size > prevDepth then g.change .popContinuationFrame
+    else g
+
 /-- Resolving one-shot cause for a player action when an active batch or
 resolving spell/ability is present (`none` on a quiet board so non-resolving
 helpers do not allocate an `EffectId`; CR 610.1). -/
