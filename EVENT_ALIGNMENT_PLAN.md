@@ -379,7 +379,7 @@ deriving Repr, Inhabited, BEq
 toughness, colors, and granted abilities depend on the game. To uphold the single-writer invariant (`applyZoneEvent` installing the exact arrival or created `GameObject` without a follow-up `EngineChange.setObject`), Phase 2 also carried arrival, card, cast, effect-mirror, and LKI fields on `EventObject`:
 - `summoningSick`, `attackingTarget` (which replaced `attackingWhom : Option PlayerId` in Phase 5), `printed`, and `chosenX` stay on `EventObject` (`chosenX` stays on the stack `GameObject` per 107.3a and is carried across `moved.after` via `after.chosenX.orElse existing.chosenX`, while `StackObjectEvent.copied` sets `chosenX` to `copy.chosenX.orElse (fun _ => orig.chosenX)` when `original` or `g.followMoved original` is in `g.objects` and `copy.chosenX` otherwise).
 - The 9 copy-only stack fields (`kicked`, `teamworkPaid`, `sneakPaid`, `sneakAttackWhom`, `giftPromisedTo`, `adventurerCard`, `abilityEffect`, `triggeredAbility`, `sourceId`—carried in Phase 2 so `.created` stack copies round-tripped through `applyZoneEvent`) were deleted from `EventObject` in Phase 5 when stack copies migrated from `ZoneEvent.created` to `StackObjectEvent.copied`. In Phase 8 (#584), the cast-choice fields (`kicked`, `giftPromisedTo`, `teamworkPaid`, `sneakPaid`, `sneakAttackWhom`, `sneakAttackTarget`) and LKI fields (`lastKnownPower`, `lastKnownToughness`) were deleted from `GameObject` (with `lastKnownPower` and `lastKnownToughness` moved onto `StackEntry` in [`Stack.lean`](Mtg/Engine/Game/Stack.lean) and copied via `{ origE with objectId := newId, controller := controller }` when `original`'s `StackEntry` is still on `g.stack`, while cast choices are read from `CastEvent.announced` via `GameEvent.rootCopiedSpellId`), leaving `applyStackObjectEvent` to copy `chosenX`, `adventurerCard`, `abilityEffect`, `triggeredAbility`, `reflexiveResolution`, `sourceId`, `fraCauseId`, `fraCauseController`, `fraCausePower`, and `fraCauseStatus` on the stack `GameObject`.
-- The 5 remaining transitional fields carried in Phase 2 (`returnedAsArtifact`, `onlyFoodArtifact`, `wasCast` as 400.7d cast metadata, `lastKnownPower`, and `lastKnownToughness`) were deleted from `EventObject` together with their `GameObject`/`Status` counterparts in Phase 8 step 4 (#584). In Phase 8, `Game.snapshot` (`Core.lean`) switched `colors`, `types`, `supertypes`, `power`, `toughness`, `staticAbilities`, and `keywords` to the layer helpers, while still patching only 7 hardcoded subtypes (`#[.hero, .villain, .goblin, .orc, .army, .elf, .merfolk]`) onto `g.currentSubtypes o` and inheriting `changeling` from `o.asEvent` (`o.printed.keywords.changeling`). In Phase 9 (#586), `Game.snapshot` switched to unified CR 613 Layer 1–7d queries across `controller` (`g.controllerOf o`), `name` (`g.name o`), `manaValue` (`g.objectManaValue o`), `colors`, `types`, `supertypes`, `subtypes` (`g.subtypes o`, including Layer 4 changeling creature-subtype expansion per 613.3 / 702.73a so `EventObject.hasSubtype` checks `o.subtypes.any (· == s)` directly), `changeling` (`curKw.changeling`), `isCopy` (`base.isCopy || g.hasActiveCopy o`), `loyalty` (`(g.baseCard o).loyalty.map Int.toNat`), `toxic` (`if g.retainsPrintedAbilities o then (g.baseCard o).toxic else 0`), `staticAbilities`, and `keywords`, and replaced the remaining battlefield `o.asEvent` trigger/counter snapshots (`matchTriggers`, `becomeTapped`, `addOneLoreRaw`, `dealDamageLoseIndestructibleExileTo`, `addPlusOnePlusOneTo`, `expireGoadedFor`, `beginStep`, `recordPutCounters`, and `recordRemoveCounters`) with `g.snapshot o`.
+- The 5 remaining transitional fields carried in Phase 2 (`returnedAsArtifact`, `onlyFoodArtifact`, `wasCast` as 400.7d cast metadata, `lastKnownPower`, and `lastKnownToughness`) were deleted from `EventObject` together with their `GameObject`/`Status` counterparts in Phase 8 step 4 (#584). In Phase 8, `Game.snapshot` (`Core.lean`) switched `colors`, `types`, `supertypes`, `power`, `toughness`, `staticAbilities`, and `keywords` to the layer helpers, while still patching only 7 hardcoded subtypes (`#[.hero, .villain, .goblin, .orc, .army, .elf, .merfolk]`) onto `g.currentSubtypes o` and inheriting `changeling` from `o.asEvent` (`o.printed.keywords.changeling`). In Phase 9 (#586), `Game.snapshot` switched to unified CR 613 Layer 1–7d queries across `controller` (`g.controllerOf o`, which returns `o.controller` off the battlefield), `name` (`g.name o`), `manaValue` (`g.objectManaValue o`), `colors`, `types`, `supertypes`, `subtypes` (`g.subtypes o`, including Layer 4 changeling creature-subtype expansion per 613.3 / 702.73a so `EventObject.hasSubtype` checks `o.subtypes.any (· == s)` directly), `changeling` (`curKw.changeling`), `isCopy` (`base.isCopy || g.hasActiveCopy o`), `loyalty` (`(g.baseCard o).loyalty.map Int.toNat`), `toxic` (`if g.retainsPrintedAbilities o then (g.baseCard o).toxic else 0`), `staticAbilities`, and `keywords`, and switched `matchTriggers`, `becomeTapped`, `addOneLoreRaw`, `dealDamageLoseIndestructibleExileTo`, `addPlusOnePlusOneTo`, `expireGoadedFor`, `beginStep`, `recordPutCounters`, and `recordRemoveCounters` from `o.asEvent` to `g.snapshot o` (while `StateBasedActions.lean`'s +1/+1 and −1/−1 counter annihilation, `Tokens.empowerJace`'s and `Casting.payLoyaltyCost`'s loyalty counters, `ResolutionEffects.incrementPlanThen`'s plan counters, `Decisions.lean` proliferate for counter kinds other than +1/+1, `Triggers.triggerPutOnStack`'s `source.asEvent`, `Movement.move`'s enter-attacking `becameAttacking`, `Pumps.replaceUntap`'s `.wouldUntap` probe, and `Activation.lean` / `Attachments.lean` / `Combat.lean` / `CastSpell.lean` / `Casting.lean` / `Designations.lean` / `Movement.lean` permanent status/designation events still pass `GameObject.asEvent`).
 
 ### 2.4 Zone changes
 
@@ -1087,10 +1087,12 @@ latter), `LayerEffect.copy` dropped its transitional `restore` field and
 `ZoneEvent.ceasedToExist`), `createEffect` / `expireEffectById` stopped emitting
 secondary `PermanentEvent.controlChanged` mutations on `.control`
 creation/expiry and stopped imperatively expiring/re-creating `.staticAbility`
-effects, Layers 1–7d were unified in [`Core.lean`](Mtg/Engine/Game/Core.lean)
-under CR 613.2 / 613.3 / 613.7 / 613.7a / 613.7c / 613.7e / 613.8 ordering, and
-the remaining battlefield `GameObject.*` and `o.printed.*` characteristic reads
-in `Mtg/Engine/Game/` were routed through `Game.*` layer queries (including CR
+effects (while `createPrintedStaticEffects` / `expirePrintedStaticEffects` still
+journal `.staticAbility` entries from `o.printed.staticAbilities`), Layers 1–7d
+were unified in [`Core.lean`](Mtg/Engine/Game/Core.lean) under CR 613.2 /
+613.3 / 613.7 / 613.7a / 613.7c / 613.7e / 613.8 ordering, and the remaining
+battlefield `GameObject.*` and `o.printed.*` characteristic reads in
+`Mtg/Engine/Game/` were routed through `Game.*` layer queries (including CR
 302.6 `Game.hasSummoningSickness`).
 
 ### 3.4 Replacement and prevention (614–616)
@@ -2058,14 +2060,17 @@ Tests: `Events.lean`, `SetBasePT.lean`, `BecomeArtifact.lean`, `Auras.lean`,
      face-down status such as morph in CR 702.37e—and `Game.copiableValuesWithTs`
      / `copiableValues` / `baseCardWithTs` / `baseCard` adding Layer 1b
      `o.status.faceDown` 2/2 nameless creature masking per CR 613.2c / 708.2),
-     folding post-copy copiable overrides and replacing post-entry `.copy`
-     workarounds ([`Choices.lean`](Mtg/Engine/Game/Choices.lean),
-     [`Costs.lean`](Mtg/Engine/Game/Costs.lean),
-     [`EffectResolution.lean`](Mtg/Engine/Game/EffectResolution.lean),
-     [`ModeledTriggers.lean`](Mtg/Engine/Game/ModeledTriggers.lean),
-     [`ResolutionEffects.lean`](Mtg/Engine/Game/ResolutionEffects.lean), and
+     passing `g.copiableValues` / `isToken := true` directly into token-copy
+     creation (`Choices.copyBattlefieldPermanent`,
+     [`EffectResolution.lean`](Mtg/Engine/Game/EffectResolution.lean), and
      [`TriggeredAbilities.lean`](Mtg/Engine/Game/TriggeredAbilities.lean)) rather
-     than mutating `GameObject.printed` via `ObjectChange.printed`; delete
+     than mutating `GameObject.printed` via `ObjectChange.printed`, and updating
+     `LayerEffect.copy` creation (`ResolutionEffects.becomeCopyOf`, called from
+     [`EffectResolution.lean`](Mtg/Engine/Game/EffectResolution.lean),
+     [`ModeledTriggers.lean`](Mtg/Engine/Game/ModeledTriggers.lean), and
+     [`TriggeredAbilities.lean`](Mtg/Engine/Game/TriggeredAbilities.lean)) while
+     replacing post-entry `.copy` workarounds (`ModeledTriggers.copyEnteredArtifact`
+     and `ResolutionEffects.applyEnterMod`) with Layer 4/6/7b specs; delete
      `LayerEffect.copy`'s `restore` field, `copyRestoreOf?`, and `recomputeCopy`
      in [`Core.lean`](Mtg/Engine/Game/Core.lean); and add
      `EffectDuration.untilSourceLeaves` (`Event.lean`, alongside
@@ -2076,19 +2081,27 @@ Tests: `Events.lean`, `SetBasePT.lean`, `BecomeArtifact.lean`, `Auras.lean`,
    - Evaluate and extend `Game.effectiveControllerWithApplied`,
      `effectiveController?`, `appliedControlEffectIds`, and `controllerOf` in
      Layer 2 across all `ObjectScope` constructors in timestamp and dependency
-     order (613.7 / 613.8) from `initialControllerOf`
-     (`(o.defaultController.orElse (fun _ => o.controller)).getD o.owner`,
-     falling back to `o.controller` when that player has lost) without emitting
-     secondary `PermanentEvent.controlChanged` mutations from `createEffect` or
-     `expireEffectById`, while preserving CR 514.2 / 800.4a / 800.4c / 800.4m
-     control-effect expiry and lost-controller exile handling
+     order (613.7 / 613.8) from `initialControllerOf` (which returns
+     `o.controller` when `o.zone != .battlefield`—with no `defaultController` /
+     `owner` fallback, lost-player check, or applied `LayerEffect.control`
+     specs—and on the battlefield computes
+     `let defP := (o.defaultController.orElse (fun _ => o.controller)).getD o.owner`
+     and returns `some defP` if `defP` has not lost, else `o.controller`) without
+     emitting secondary `PermanentEvent.controlChanged` mutations from
+     `createEffect` or `expireEffectById`, while preserving CR 514.2 / 800.4a /
+     800.4c / 800.4m control-effect expiry and lost-controller exile handling
      (`Leaving.endControlEffectById` / `endControlChangingEffect`,
      `Movement.move`, and `Turns.clearEOT` / `expireFraUntilTurnEffects` /
      `expireUntilNextTurnEffects`).
    - Remove the imperative expiry and re-creation of `.staticAbility` continuous
-     effects inside `createEffect` / `expireEffectById`, deriving whether a
-     permanent's static abilities generate continuous effects from Layer 6
-     (`evalLayer6`) instead.
+     effects inside `createEffect` / `expireEffectById`: runtime Layer 6
+     evaluation (`evalLayer6`) reads `baseCard` and active Layer 6 effects
+     directly without consulting `.gameRule (.staticAbility _)`, while
+     `createPrintedStaticEffects` (`Activation`, `Allocation`,
+     `EffectResolution`, `FrcResolve`, `Movement`, `Phasing`, `Tokens`) and
+     `expirePrintedStaticEffects` (`Phasing`, transform in `EffectResolution` /
+     `FrcResolve`, and `expireEffectsOnLeavingObject`) remain live and still
+     journal `.staticAbility` entries from `o.printed.staticAbilities`.
 2. Unify Layers 3–7d in [`Core.lean`](Mtg/Engine/Game/Core.lean) under one CR 613
    pass with CR 613.7 / 613.7a / 613.7c / 613.7e timestamps and CR 613.8
    dependency ordering:
@@ -2096,7 +2109,8 @@ Tests: `Events.lean`, `SetBasePT.lean`, `BecomeArtifact.lean`, `Auras.lean`,
      and `TextChange.replaceColorWord` (`evalLayer3` and `TextChange.apply*`) in
      timestamp and dependency order across every `ObjectScope` constructor before
      Layer 4, feeding the resulting text substitutions into downstream subtype,
-     color, protection, landwalk, ability, target, and trigger queries.
+     rules-text color (protection, cast-color triggers, target filters),
+     landwalk, ability, target, and trigger queries.
    - **Layer 4 (613.1d / 205.3d / 613.3 / 702.73a):** Fold attached Aura
      type/supertype/subtype effects (`StaticAbility.enchantedOnlySubtype?` and
      `.enchantedCreatureGetsHasAndTypes`, backing `currentSubtypes` /
@@ -2107,13 +2121,21 @@ Tests: `Events.lean`, `SetBasePT.lean`, `BecomeArtifact.lean`, `Auras.lean`,
      later timestamped Layer 4 subtype-setting effect—not just
      `enchantedOnlySubtype?`—can overwrite creature subtypes) into `evalLayer4`;
      remove `evalLayer4`'s Layer 6 keyword look-ahead `baseKw`; and update
-     `Game.snapshot` (and remaining battlefield `o.asEvent` trigger/counter
-     snapshots) plus `EventObject.hasSubtype` to populate and query `EventObject`
+     `Game.snapshot` (plus `matchTriggers`, `becomeTapped`, `addOneLoreRaw`,
+     `dealDamageLoseIndestructibleExileTo`, `addPlusOnePlusOneTo`,
+     `expireGoadedFor`, `beginStep`, `recordPutCounters`, and
+     `recordRemoveCounters`; see §2.3 for the remaining `GameObject.asEvent`
+     callers) and `EventObject.hasSubtype` to populate and query `EventObject`
      with full Layer 4 `subtypes` and Layer 6 `curKw.changeling` instead of
      patching 7 hardcoded subtypes.
-   - **Layer 5 (613.1e):** Evaluate `Game.colors` across all `ObjectScope`
-     constructors in timestamp and dependency order (including text-changed color
-     words from Layer 3 and CDAs first per 613.3).
+   - **Layer 5 (613.1e):** Evaluate `Game.colors`: return `ColorSet.empty` when
+     `o.status.faceDown` and `(g.baseCard o).colors` off the battlefield or when
+     no `LayerEffect.colors` effect is active (mana-cost and color-indicator
+     colors are unaffected by Layer 3 color-word text changes per CR 202.2 /
+     612.1, and there are no color CDAs in the evaluator), and otherwise apply
+     active `LayerEffect.colors` effects across all `ObjectScope` constructors in
+     CR 613.7 timestamp order (`scopeMatchesL5` does not depend on the running
+     `ColorSet`).
    - **Layer 6 (613.1f) and CR 613.7a / 613.7c / 613.7e:** Consolidate the 8
      separate Layer 6 evaluators (`currentKeywords`, `evalStaticAbilitiesAux`,
      `triggeredAbilities`, `prowessTriggers`, `combatDamageCreatesTreasure`, and
@@ -2121,13 +2143,20 @@ Tests: `Events.lean`, `SetBasePT.lean`, `BecomeArtifact.lean`, `Auras.lean`,
      `wardCostsOn` moved from [`Casting.lean`](Mtg/Engine/Game/Casting.lean) into
      [`Core.lean`](Mtg/Engine/Game/Core.lean), and `evalLayer6List` deleted from
      [`Triggers.lean`](Mtg/Engine/Game/Triggers.lean)) onto one shared Layer 6
-     pass (`evalLayer6` / `Layer6State`, also backing `activatedAbilitiesOf` and
-     keeping `retainsPrintedAbilities` / `attachedLosesAbilities` as projections
-     over `evalLayer6` for card-level flags outside `AbilitySet` such as `toxic`,
-     `opponentsCantWin`, `powerPerMountain`, `powerPerUnspentMana`, and
-     `unspentManaBecomesColorless`) with CR 613.8 dependency ordering across
-     ability grants, `AbilityRemoval.all` / `AbilityRemoval.loseIndestructible`,
-     and attached Aura `StaticAbility.enchantedLosesAbilitiesDoesntUntap` /
+     pass (`evalLayer6` / `Layer6State`, also backing `activatedAbilitiesOf`;
+     `attachedLosesAbilities` scans attached battlefield Auras'
+     `g.staticAbilities` for `.enchantedLosesAbilitiesDoesntUntap` /
+     `.enchantedLosesAbilitiesCantUntap`, and `retainsPrintedAbilities` fast-paths
+     to `!o.status.faceDown` when neither a Layer 6 static effect nor a strip
+     Aura applies, uses `(g.evalLayer6 o).retainsBase` when
+     `hasCwStaticLayer6Effect` holds, and otherwise uses
+     `(evalStaticsFast g false 4 o).2`, gating card-level flags outside
+     `AbilitySet` such as `toxic`, `opponentsCantWin`, `powerPerMountain`,
+     `powerPerUnspentMana`, and `Leaving.emptyManaPools`'s
+     `o.printed.unspentManaBecomesColorless`) with CR 613.8 dependency ordering
+     across ability grants, `AbilityRemoval.all` /
+     `AbilityRemoval.loseIndestructible`, and attached Aura
+     `StaticAbility.enchantedLosesAbilitiesDoesntUntap` /
      `StaticAbility.enchantedLosesAbilitiesCantUntap` (at `attachmentTimestamp`),
      and propagating CR 613.7a / 613.7c / 613.7e timestamps (`counterTimestamp`,
      `attachmentTimestamp`, `objectEntryTimestamp`, and `effectTimestamp`, using
@@ -2250,17 +2279,21 @@ timestamp order, and 302.6 animated-land summoning sickness).
      moving summoning-sickness clearing onto `TurnEvent` in `applyTurnEvent` per
      CR 302.6; `Attachments.attachSourceTo`'s `ObjectChange.timestamp`;
      post-move `ObjectChange.isCopy` / `ObjectChange.printed` writes in
-     `CastSpell.lean`, `FraChoices.lean`, `ResolutionEffects.lean`, and
-     `SpellResolution.lean`, folding them onto `ZoneEvent.moved`'s `after`
-     `EventObject`; `EffectResolution.lean`'s `.exchangeControl`
-     `ObjectChange.controller none` fallback arms—where Phase 9 (#586) already
-     switched `ca` and `cb` to `Game.controllerOf`, leaving all-or-nothing CR
-     701.12b exchange when both sides have live controllers; and
-     `Start.materializeSeat` / `Fixture.insertObject`), delete all remaining dead
-     or duplicate constructors on `StatusChange`, `ObjectChange`, `PlayerChange`,
-     and `EngineChange`, and remove the corresponding transitional `.engine`
-     fallback arms in `Core.counterTimestamp`, `attachmentTimestamp`,
-     `objectEntryTimestamp`, and `hasSummoningSickness`.
+     `CastSpell.lean`, `FraChoices.castFreeCopy`, and
+     `ResolutionEffects.castAsPartOfResolution`, folding them onto
+     `ZoneEvent.moved`'s `after` `EventObject`, and pre-move Adventure
+     face-restoration `ObjectChange.printed` writes in
+     `SpellResolution.resolveAdventureSpell` and the all-targets-illegal
+     Adventure path before `move` / `moveToOwnerGraveyard`;
+     `EffectResolution.lean`'s `.exchangeControl` `ObjectChange.controller none`
+     fallback arms—where Phase 9 (#586) already switched `ca` and `cb` to
+     `Game.controllerOf`, leaving all-or-nothing CR 701.12b exchange when both
+     sides have live controllers; and `Start.materializeSeat` /
+     `Fixture.insertObject`), delete all remaining dead or duplicate constructors
+     on `StatusChange`, `ObjectChange`, `PlayerChange`, and `EngineChange`, and
+     remove the corresponding transitional `.engine` fallback arms in
+     `Core.counterTimestamp`, `attachmentTimestamp`, `objectEntryTimestamp`, and
+     `hasSummoningSickness`.
 3. Retire `EventCause.unclassified` and align `DelayedTrigger` registration with
    rules events (§2.2, §3.5):
    - Classify the remaining runtime `.unclassified` rules-event paths outside
