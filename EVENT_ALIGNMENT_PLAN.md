@@ -2548,10 +2548,14 @@ mid-resolution stack residency under 608.2n / 608.3), `AddMana.lean`,
      `Mtg/Demo/` **by concept/subject rather than blanket digit replacement** so
      current 20260925 citations that share an older rule's number stay intact:
      Behold comments on `701.62` (`Core.lean`, `Event.lean`, `LibrarySearch.lean`,
-     `Object.lean`, `Tests/Events.lean`) → `701.4`; Counter comments on `701.5`
-     (`ResolutionEffects.lean`) → `701.6`; Destroy comments still on `701.7`
+     `Object.lean`, `Tests/Events.lean`) → `701.4`; Counter module-doc comment on
+     `701.5` (`ResolutionEffects.lean`, keeping `counterStackSpell`'s free-cast
+     citation on Cast `701.5`) → `701.6`; Destroy action comments still on `701.7`
      (`PermanentAction.lean`, `Game.lean`, keeping Create `701.7` on
-     `ZoneEvent.created` / `GameEvent.created`) → `701.8`; Fight comments on
+     `ZoneEvent.created` / `GameEvent.created`) → `701.8`, while dropping stale
+     `701.7b` from `Tests/Removal.lean` and `Tests/Cycling.lean` (which already
+     cite `702.12b` for indestructible and `701.8` / `608.2b` for Bilbo's Deadly
+     Slice, rather than rewriting `701.7b` to `701.8b`); Fight comments on
      `701.12` (`SpellResolution.lean`) → `701.14`; Mill comments on `701.13`
      (`SpellResolution.lean`) → `701.17`; Play-from-exile comments on `701.14`
      (`Demo/Render.lean`, `Choices.lean`, `Event.lean`, `LibrarySearch.lean`,
@@ -2599,15 +2603,20 @@ mid-resolution stack residency under 608.2n / 608.3), `AddMana.lean`,
      the “Losing 0 life does nothing” comments in `Tests/Removal.lean` (`118.9`)
      and `Damage.loseLife` (`119.9`) → `119.3`, since `119.9` covers gaining 0
      life rather than losing 0 life); untap-step comments on `502.2`
-     (`Demo/Render.lean`, `Fixture.lean`, `Tests/Turns.lean`, keeping
-     `dayNightCheck` `502.2` in `Object.lean`) → `502.3`; end-of-step
-     mana-emptying comments on `500.4` (`Leaving.lean`, `Tests/Turns.lean`,
-     keeping step-begin expiry `500.4` in `Event.lean` and `Object.lean`) →
-     `500.5`; Layer 7a/7b comments on `613.3a` / `613.3b` (`BasePT.lean`,
-     `Game.lean`, `Tests/AttackTriggers.lean`) → `613.4a` / `613.4b`; Cascade
-     comments on `702.84` (`CastExtras.lean`) → `702.85`; Boast comments on
-     `702.111` (`ActivationCosts.lean`, keeping Menace `702.111`) → `702.142`; and
-     Monarch comments on `722` (`Player.lean`, keeping Preparation `722`) →
+     (`Fixture.lean`, `Tests/Turns.lean`, keeping `dayNightCheck` `502.2` in
+     `Object.lean` and updating `Demo/Render.lean`'s tap/untap battlefield-status
+     comment from `110.5` / `502.2` to `110.5` / `701.26` rather than `502.3`) →
+     `502.3`; end-of-step mana-emptying comments on `500.4` (`Leaving.lean`,
+     `Tests/Turns.lean`, keeping step-begin expiry `500.4` in `Event.lean` and
+     `Object.lean`) → `500.5`; Layer 7 comments on `613.3a` (`BasePT.lean`) →
+     `613.4a`, `613.3b` (`Game.lean`'s layer-7b base P/T setting and
+     `Tests/AttackTriggers.lean`'s set-P/T pump ruling) → `613.4b`, `613.3c`
+     (`StaticAbility.hostStatBonus` in `StaticAbility.lean`) → `613.4c`, and
+     `613.3c–d` (`Tests/AttackTriggers.lean`'s counter-application doc) →
+     `613.4c–d` (keeping unlettered `613.3` for CDA ordering within layers 2–6);
+     Cascade comments on `702.84` (`CastExtras.lean`) → `702.85`; Boast comments
+     on `702.111` (`ActivationCosts.lean`, keeping Menace `702.111`) → `702.142`;
+     and Monarch comments on `722` (`Player.lean`, keeping Preparation `722`) →
      `725`.
 
 Tests: `Events.lean` (isolation tests verifying deck/emblem/ability
@@ -2656,9 +2665,10 @@ stack, and CR 702.73a off-battlefield changeling search/behold),
      ensure replaying `.rules` events through `applyChange` deterministically
      advances `nextEffectId` when `.oneShotEffect (some eid) ..` mints `eid`
      (`Core.lean`); and wrap `EffectResolution.lean`'s `.exchangeControl` in one
-     `withBatch` sharing a single one-shot `EventCause` while enforcing
-     all-or-nothing CR 701.12a–b guards (`pa != pb` and neither controller
-     `.lost`).
+     `withBatch` sharing a single one-shot `EventCause` while enforcing the CR
+     701.12b different-controllers guard (`pa != pb`) and CR 701.12a
+     all-or-nothing completion (including checking that neither controller has
+     left the game with `.lost` per CR 104.5 / 800.4a).
 3. Finish combat-damage `TurnEvent`s, `ancestryLandsTapped` removal, and unified
    trigger / ETB replacement routing (§2.7, §2.8, §2.10, §3.4, §3.5):
    - Emit `TurnEvent.stepEnded .combatDamage` and
