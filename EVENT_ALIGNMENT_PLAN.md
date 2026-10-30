@@ -508,9 +508,9 @@ inductive DamageEvent where
   | prevented (source : EventObject) (recipient : DamageRecipient) (amount : Nat)   -- 615
 
 inductive LifeEvent where
-  | gained (player : PlayerId) (amount : Nat)                                       -- 119.2; lifelink 120.3f / 702.15b
+  | gained (player : PlayerId) (amount : Nat)                                       -- 119.3; lifelink 120.3f / 702.15b
   | lost (player : PlayerId) (amount : Nat)
-      (fromDamage : Bool := false) (combat : Bool := false)                         -- 119.3 / 119.4 / 120.3a
+      (fromDamage : Bool := false) (combat : Bool := false)                         -- 119.2 / 119.3 / 119.4 / 120.3a
 ```
 
 One deal-damage instruction commits **one batch**: a `dealt` fact plus one
@@ -943,10 +943,15 @@ def Game.commitBatch (g : Game) (cause : EventCause) (events : Array RulesEvent)
   event is actually recorded); and on a quiet board it returns `none` (paired with
   `resolvingOrRuleCause`, which falls back to a `defaultCause` such as
   `.gameRule .spellCast` without consuming an `EffectId`), while `createEffect` /
-  `createEffects` with `cause := none` reuse `(some bid) bsrc bctrl` from
-  `currentBatch` when present, call `allocDelayedCause` when
-  `currentResolvingContext?` is `some`, and otherwise fall back to
-  `resolveOptionalCause` (`defaultCause := .gameRule .continuousEffect`). For
+  `createEffects` with `cause := none` prefer an open `currentBatch`
+  cause—reusing `.oneShotEffect (some bid) bsrc bctrl` directly, resolving
+  `.oneShotEffect none bsrc bctrl` through `resolveCauseInBatch` (minting the
+  `EffectId` and advancing `nextEffectId`), and reusing any other batch cause
+  `bc`—only calling `allocDelayedCause` when there is no batch cause and
+  `currentResolvingContext?` is `some`, and using the literal
+  `.gameRule .continuousEffect` on a quiet board (whereas `expireEffectById` is
+  the helper that calls `resolveOptionalCause` with
+  `defaultCause := .gameRule .continuousEffect`). For
   delayed spell-copy effects (Way of the Cryomancer and Loki in
   `Entering.putCastTriggersOnStack`), `Game.effectCreatedCause` (`Core.lean`)
   looks up the `EventCause` recorded on
@@ -1198,8 +1203,9 @@ snapshots `pre := g`, sets and clears `currentBatch` locally without touching
 (`Core.lean`, where `abbrev GameSnapshot := Game`), which records
 `PlayerEvent.gainedDesignation` (`enduringStory` / `citysBlessing`) inside
 `batchId` when any event in `batchEvents` is a `ZoneEvent.moved` to
-`.battlefield` or `ZoneEvent.created` (so `extraTriggerCopies` sees the updated
-designations), clears stale `Player.ringBearerId` via
+`.battlefield` or a `ZoneEvent.created` with `object.zone == .battlefield` (so
+`extraTriggerCopies` sees the updated designations), clears stale
+`Player.ringBearerId` via
 `PermanentEvent.designation _ .ringBearer false` when the bearer is no longer on
 the battlefield or is no longer controlled by that player (Phase 10, #588), and
 runs one matcher, replacing Phase 4's
@@ -2411,20 +2417,26 @@ mid-resolution stack residency under 608.2n / 608.3), `AddMana.lean`,
    fallback (§2.1, §2.4):
    - Replace `Allocation.allocObject`'s overloaded `ZoneEvent.created` emission
      ([`Allocation.lean`](Mtg/Engine/Game/Allocation.lean), which Phase 10 #588
-     routed `Start.materializeSeat`, `FraHelpers.materializeSideboard`,
-     `Allocation.allocStackAbility` / `putStackAbility`, emblem creation in
-     `EffectResolution.lean` / `FrcResolve.lean` / `TriggeredAbilities.lean`, and
-     `Fixture.insertObject` / `addPermanent` through—emitting `ZoneEvent.created`
-     with `evTurn := if zone == .battlefield then 0 else g.turnNumber`,
-     `cause := .gameRule .openingHandDraw`, and direct
-     `applySingleRulesEventInBatch` bypassing `closeBatch` on `.battlefield`)
+     routed `Start.materializeSeat`, `FraHelpers.materializeSideboard`, and
+     `Fixture.insertObject` / `addPermanent` through under default
+     `cause := .gameRule .openingHandDraw`, `Allocation.allocStackAbility` /
+     `putStackAbility` through with `.gameRule .triggeredAbility` or
+     `.gameRule .abilityActivated`, and command-zone emblem / effect-object
+     creation in `EffectResolution.emblemCastSpellDamage`,
+     `FrcResolve.elspethEmblem`, and `FraAbilities.createCommandObject` through
+     with `resolveOptionalCause` defaulting to `.gameRule .spellCast`—emitting
+     `ZoneEvent.created` with `evTurn := if zone == .battlefield then 0 else g.turnNumber`
+     and taking `applySingleRulesEventInBatch` directly without `closeBatch` when
+     `zone == .battlefield` while calling `g.record` on non-battlefield zones)
      with dedicated engine-level materialization (`EngineChange` seat/emblem/test
-     object installation for pregame decks, sideboards, command-zone emblems per
-     CR 114.1–114.5, and test fixtures, and stack-ability installation in
-     `CastEvent.abilityActivated` / `TriggerQueueEvent.putOnStack`), keeping
-     `ZoneEvent.created` exclusively for CR 111.1 / 701.7 tokens and CR 707.12 /
-     preparation exile card copies and removing the `eo.printed.isSome`
-     non-token carveouts in `Core.applyZoneEvent` and `Core.hasSummoningSickness`.
+     object installation covering pregame decks, sideboards, command-zone emblems
+     and effect objects in `EffectResolution.lean`, `FrcResolve.lean`, and
+     `FraAbilities.lean` per CR 114.1–114.5, and test fixtures, plus
+     stack-ability installation in `CastEvent.abilityActivated` /
+     `TriggerQueueEvent.putOnStack`), keeping `ZoneEvent.created` exclusively for
+     CR 111.1 / 701.7 tokens and CR 707.12 / preparation exile card copies and
+     removing the `eo.printed.isSome` non-token carveouts in `Core.applyZoneEvent`
+     and `Core.hasSummoningSickness`.
    - Migrate the remaining test callers that invoke `afterPermanentEnters` /
      `afterLandEnters` directly on `addPermanent` fixtures onto
      `putOntoBattlefield` / `playLand` / `createToken` (avoiding the in-place
@@ -2525,28 +2537,56 @@ mid-resolution stack residency under 608.2n / 608.3), `AddMana.lean`,
      `graveyardCardTypes`, `powerEqualSubtype`, `powerEqualLegendaryCreatures`,
      `creaturesYouControlPower`, `powerEqualsBasicLandTypes`), delete dead
      helpers and zero-emitter `*Change` constructors (`Core.modifyStatus`,
-     `Core.modifyObject`, `Core.changeStatuses`, `Core.changePlayers`,
-     `ObjectChange.statuses`, the 12 unused `ProposalChange` constructors,
-     `ContinuationChange.pushRecentTokenId` / `pushMilledIdThisWay`,
-     `EngineChange.playerChanges` / `continuations`, and
-     `PlayerChange.hasCommander` / `commanderColorIdentity`), generalize
-     `Status.windcragMardu` (`Status.lean`) into a non-card-specific choice
-     value, and update `CounterTarget`'s stale doc comment (`Event.lean`, which
-     still claims players only carry poison counters despite `Player.counters`).
+     `Core.modifyObject`, `Core.changeStatuses`, `ObjectChange.statuses`, the 12
+     unused `ProposalChange` constructors,
+     `ContinuationChange.pushRecentTokenId` / `pushMilledIdThisWay`, and
+     `EngineChange.continuations`), generalize `Status.windcragMardu`
+     (`Status.lean`) into a non-card-specific choice value, and update
+     `CounterTarget`'s stale doc comment (`Event.lean`, which still claims
+     players only carry poison counters despite `Player.counters`).
    - Sweep remaining pre-20260925 CR citations across `Mtg/Engine/` and
-     `Mtg/Demo/` (including runtime `throw` strings in `Decisions.lean` and
-     comments for Behold `701.62` → `701.4`, Counter `701.5` → `701.6`, Destroy
-     `701.7` → `701.8`, Fight `701.12` → `701.14`, Mill `701.13` → `701.17`,
-     Play `701.14` → `701.18`, Sacrifice `701.17` / `701.19` → `701.21`, Scry
-     `701.20` → `701.22`, Search `701.19` → `701.23`, Shuffle `701.20` →
-     `701.24`, Amass `701.43` → `701.47`, Connive `701.47` / `701.48` → `701.50`,
-     Ring `701.40` → `701.54`, face-up/face-down `701.40b` / `701.40f` →
-     `116.2b` / `708.2a` / `708.8`, Treasure/Food/Clue `701.42` / `701.34` /
-     `701.55` → `111.10a` / `111.10b` / `111.10f`, cease-to-exist `608.2m` /
-     `111.8` → `608.2n` / `111.7`, poison `122.1c` → `122.1f`, life `118.*` →
-     `119.*`, untap `502.2` → `502.3`, end-of-step `500.4` → `500.5`, Layer 7a
-     `613.3a` → `613.4a`, Cascade `702.84` → `702.85`, Boast `702.111` →
-     `702.142`, and Monarch `722` → `725`).
+     `Mtg/Demo/` **by concept/subject rather than blanket digit replacement** so
+     current 20260925 citations that share an older rule's number stay intact:
+     Behold comments on `701.62` (`Core.lean`, `Event.lean`) → `701.4`; Counter
+     comments on `701.5` → `701.6`; Destroy comments still on `701.7`
+     (`PermanentAction.lean`, `Game.lean`, keeping Create `701.7` on
+     `ZoneEvent.created` / `GameEvent.created`) → `701.8`; Fight comments on
+     `701.12` → `701.14`; Mill comments on `701.13` → `701.17`; Play comments on
+     `701.14` → `701.18`; Sacrifice comments still on `701.17`
+     (`ActivatedAbility.lean`, `Game.lean`'s `SacrificeDiscard` blurb, keeping
+     Mill `701.17` in `ResolutionHelpers.lean`, `EffectResolution.lean`, and
+     `ZoneVerb`) → `701.21`; Scry comments and runtime `throw` strings still on
+     `701.20` (`Decisions.lean`, `Demo.lean`, `Demo/Render.lean`,
+     `Demo/RenderTests.lean`, `TriggerEvent.lean`, `Object.lean`, `Pending.lean`,
+     `Player.lean`, `Game.lean`, `Tests/AttackTriggers.lean`, `Tests/Auras.lean`,
+     keeping Reveal `701.20` on `PlayerEvent.revealed` / `GameEvent.revealed`) →
+     `701.22`; Search comments still on `701.19` (`LibrarySearch.lean`,
+     `Pending.lean`, `Game.lean`, `Tests/Auras.lean`) → `701.23` and
+     `EffectResolution.lean`'s shuffle comment on `701.19` → `701.24` (keeping
+     Regenerate `701.19a` in `Event.lean`); Amass comments on `701.43` →
+     `701.47`; Connive comments on `701.47` / `701.48` → `701.50`; Ring-tempt
+     comments on `701.40` → `701.54` (keeping Manifest `701.40`);
+     `PermanentEvent.turnedFaceUp` / `turnedFaceDown` comments on `701.40b` /
+     `701.40f` → `116.2b` / `708.2a` / `708.8`; Treasure/Food/Clue token comments
+     on `701.42` / `701.34` / `701.55` → `111.10a` / `111.10b` / `111.10f`
+     (keeping Proliferate `701.34`); cease-to-exist comments on `608.2m` / `111.8`
+     in `Attachments.ceaseToExist` and `GameEvent.ceasedToExist` → `608.2n` /
+     `111.7` (keeping `111.8` where token zone-lock applies); poison-counter
+     comments on `122.1c` → `122.1f` (keeping shield counters `122.1c`);
+     life-total effect/event comments (`118.2` life-gain comments in
+     `SpellResolution.lean` / `Game.lean` / `Tests/Elves.lean` and
+     `LifeEvent.gained`'s `119.2` doc in `Event.lean` → `119.3`, `118.3a`
+     life-loss effect comments in `SpellResolution.lean` / `Game.lean` /
+     `Tests/Removal.lean` → `119.3` plus `119.2` on `LifeEvent.lost` for
+     damage-caused life loss, and `118.9` zero-life-loss comment in
+     `Tests/Removal.lean` → `119.9`, keeping live chapter-118 cost rules `118.3`,
+     `118.3a`, `118.3b`, `118.7`, and `118.12`); untap-step comments on `502.2` →
+     `502.3`; end-of-step mana-emptying comments on `500.4` (`Leaving.lean`,
+     `Tests/Turns.lean`, keeping step-begin expiry `500.4` in `Event.lean` and
+     `Object.lean`) → `500.5`; Layer 7a/7b comments on `613.3a` / `613.3b` →
+     `613.4a` / `613.4b`; Cascade comments on `702.84` → `702.85`; Boast comments
+     on `702.111` → `702.142` (keeping Menace `702.111`); and Monarch comments on
+     `722` → `725` (keeping Preparation `722`).
 
 Tests: `Events.lean` (isolation tests verifying deck/emblem/ability
 materialization emits zero `ZoneEvent.created` events, `Game.snapshot`
