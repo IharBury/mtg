@@ -1135,7 +1135,7 @@ inductive LayerEffect where
 inductive ContinuousEffectSpec where
   | layered (scope : ObjectScope) (e : LayerEffect) (d : EffectDuration)
   | playerRule (p : PlayerId) (r : PlayerRule) (d : EffectDuration)    -- 611.2c: can't cast, life can't change, cost reduction, …
-  | gameRule (r : GameRule) (d : EffectDuration)                       -- creatures without flying can't block, legend rule off, …
+  | gameRule (r : GameRule) (d : EffectDuration)                       -- creatures without flying can't block, power-ups forbidden, can't untap, …
   | replacement (r : ReplacementSpec) (d : EffectDuration := .untilEndOfTurn) -- 614 (e.g. exile if it would die)
   | prevention (r : PreventionSpec) (d : EffectDuration := .untilEndOfTurn)   -- 615
   | permission (p : PlayerId) (r : PlayPermissionSpec) (d : EffectDuration)
@@ -1157,7 +1157,9 @@ constructors with `ContinuousEffectSpec` (`abbrev ContinuousEffect := Continuous
 `.loseIndestructible`), `PtCda` (8 constructors, reduced to the 2 live
 constructors `.cardsInHandPower` and `.pumpPerArtifact` in Phase 11, #590),
 `LayerEffect` (10 constructors), `PlayerRule` (17 constructors), `GameRule` (9
-constructors, reduced to 8 in Phase 11, #590, when `.staticAbility` was deleted),
+constructors, reduced to 8 in Phase 11, #590, when continuous-effect
+`GameRule.staticAbility` was deleted while `EventCause`'s
+`GameRuleKind.staticAbility` remained),
 and `PlayPermissionSpec` (4 constructors), deleted `effectUpdated`, and switched the
 mirror-flag readers onto `Game.activeEffects` and `effectiveController?` /
 `evalLayer4` / `colors` / `currentKeywords` / `staticAbilities` /
@@ -2482,7 +2484,7 @@ mid-resolution stack residency under 608.2n / 608.3), `AddMana.lean`,
      (covering pregame decks, sideboards, command-zone emblems and effect objects
      in `EffectResolution.lean`, `FrcResolve.lean`, and `FraAbilities.lean` per
      CR 114.1–114.5, CR 602.2a proposed stack abilities via
-     `Allocation.putStackAbility` while deleting `Allocation.allocStackAbility`,
+     `Allocation.allocStackAbility` / `Allocation.putStackAbility`,
      and test fixtures, plus stack-ability installation in `Core.applyCastEvent`
      on `.abilityActivated` when `!(g.objects.any (·.id == ability))` and in
      `Core.applyTriggerQueueEvent` on `TriggerQueueEvent.putOnStack` via
@@ -2490,9 +2492,16 @@ mid-resolution stack residency under 608.2n / 608.3), `AddMana.lean`,
      `ensurePreparedCopy` from `Movement.lean` to `Allocation.lean` so both
      `Entering.applyEntersWith` and `Tokens.createOneToken` exile preparation
      spell copies on prepared entry per rulings 741/742, and tracking
-     chronological `alive : Bool` liveness across `.materializeObject`,
-     `.putOnStack`, `.abilityActivated`, and transitional `.reverseProposal` in
-     `Core.counterTimestamp`, `attachmentTimestamp`, and `objectEntryTimestamp`),
+     chronological `alive : Bool` liveness across `.moved`, `.created`,
+     `.ceasedToExist` (`alive := false` without clearing `ts?`),
+     `StackObjectEvent.copied`, `TriggerQueueEvent.putOnStack` (`!alive`),
+     `CastEvent.abilityActivated` (`!alive && source.id != some oid` so
+     `ActivationCosts.markBoastUsed` does not restamp the permanent),
+     `.materializeObject`, and transitional `.reverseProposal` in
+     `Core.counterTimestamp`, `attachmentTimestamp`, and `objectEntryTimestamp`,
+     with `.copied` / `.putOnStack` / `.abilityActivated` setting tier-1
+     `ts? := some i` in `objectEntryTimestamp` and `ts? := none` in
+     `counterTimestamp` / `attachmentTimestamp`),
      keeping `ZoneEvent.created` exclusively for CR 111.1 / 701.7 tokens and CR
      707.12 / preparation exile card copies and removing the `eo.printed.isSome`
      non-token carveouts on `.created` in `Core.applyZoneEvent` and
@@ -2727,28 +2736,29 @@ off-battlefield changeling search/behold), `SearchLibrary.lean`, `Targets.lean`,
      `TriggerQueueEvent.triggered`), enqueued `waitingTriggers`, teamwork-tapped
      creatures (`CastExtras.lean`), non-tap mana-ability payments
      (`ManaAbilities.lean`), `.uncounterableThisCast` effects on failed
-     `paySneak` (`Costs.lean`), and `ancestryLandsTapped` live, and clobbers
-     `priority` / `pending` / `continuations` on mid-resolution casts
-     (`ResolutionEffects.lean`, `Decisions.lean`, `FraChoices.lean`)—with a
-     pre-proposal checkpoint and `g.events` truncation (respecting CR 733.1's
-     library irreversibility guard and CR 733.1–733.2 priority/continuation
-     restoration), also moving the two non-`ProposedSpell` activation declines
-     (`.crew` and `.zemoBoastExile` in
-     [`Activation.lean`](Mtg/Engine/Game/Activation.lean) and
-     [`FraChoices.lean`](Mtg/Engine/Game/FraChoices.lean)) off
+     `paySneak` (`Costs.lean`), and `ancestryLandsTapped` live, and overwrites
+     `pending := .none`, `priority := prop.caster`, and `consecutivePasses := 0`
+     across `Casting.reverseProposedSpell`, `Costs.lean`, `FraChoices.lean`
+     (`.costPicks` decline), and mid-resolution casts in
+     `ResolutionEffects.castAsPartOfResolution`—with a pre-proposal checkpoint
+     and `g.events` truncation (respecting CR 733.1's library irreversibility
+     guard and CR 733.1–733.2 priority/continuation restoration), also moving
+     the two non-`ProposedSpell` activation declines (`.crew` and
+     `.zemoBoastExile` in [`Activation.lean`](Mtg/Engine/Game/Activation.lean)
+     and [`FraChoices.lean`](Mtg/Engine/Game/FraChoices.lean)) off
      `ZoneEvent.ceasedToExist` with `.gameRule .reversedActivation` onto
      checkpoint retraction, and deleting `EngineChange.reverseProposal`, the
      three transitional `.engine (.reverseProposal prop)` arms in
      `Core.counterTimestamp`, `attachmentTimestamp`, and `objectEntryTimestamp`
      (`Core.lean`), `ProposedSpell.handBefore` / `stackBefore` / `manaBefore` in
      [`Stack.lean`](Mtg/Engine/Game/Stack.lean) (retaining
-     `ProposedSpell.originalSnapshot` for post-cost LKI in
-     `Casting.becomeActivated` / `completeActivation`), and
-     `GameRuleKind.reversedActivation` (`Object.lean`) so undone casts and
-     activations leave `g.events` replay-exact and neither fire triggers nor
-     pollute `followMoved`, `wasCast`, `becameTappedThisTurn`,
-     `activationsThisTurn`, `beheldQualities`, `manaSpentOn`, or
-     `abilityTriggeredThisTurn`.
+     `ProposedSpell.originalSnapshot`, the pre-cost `g.snapshot` LKI fallback
+     used by `Casting.completeActivation` when `findObject?` misses after
+     `payActivationExtraCosts`), and `GameRuleKind.reversedActivation`
+     (`Object.lean`) so undone casts and activations leave `g.events`
+     replay-exact and neither fire triggers nor pollute `followMoved`,
+     `wasCast`, `becameTappedThisTurn`, `activationsThisTurn`,
+     `beheldQualities`, `manaSpentOn`, or `abilityTriggeredThisTurn`.
 2. Complete `g.events` replay fidelity and consolidate batch / trigger-event /
    dead-`*Change` recording (§2.1 Principles 2 & 4, §3.2, §3.5):
    - Route `Triggers.queueTrigger` and `Triggers.putWaitingTrigger`
@@ -2760,9 +2770,9 @@ off-battlefield changeling search/behold), `SearchLibrary.lean`, `Targets.lean`,
      `.sourceDealtDamage` `lastKnownPower` coalescing via
      `EngineChange.waitingTriggers`; consolidate `Pumps.openBatch`
      ([`Pumps.lean`](Mtg/Engine/Game/Pumps.lean)) onto `Core.withBatchReturn`
-     (and avoid advancing `nextBatchId` when an outermost batch closes with zero
-     `.rules` events); fold full `GameEvent` envelopes during replay
-     (`Game.applyRecordedEvent` / `Game.replay` in
+     (deferring or rolling back the open-time `nextBatchId` bump when an
+     outermost batch closes with zero `.rules` events); fold full `GameEvent`
+     envelopes during replay (`Game.applyRecordedEvent` / `Game.replay` in
      [`Core.lean`](Mtg/Engine/Game/Core.lean), starting from `({} : Game)` to
      match `Start.startWithRng` in [`Start.lean`](Mtg/Engine/Game/Start.lean)) so
      replaying `.rules` events deterministically advances both `nextEffectId`
@@ -2772,10 +2782,14 @@ off-battlefield changeling search/behold), `SearchLibrary.lean`, `Targets.lean`,
      `Mtg/Demo/Check2.lean` and `Check5.lean` to `GameEvent.gameEnded`), dead
      `EngineChange.nextObjectId` / `EngineChange.timestamp` (0 callers after
      Phase 11's `EngineChange.materializeObject`, `CastEvent.abilityActivated`,
-     and `TriggerQueueEvent.putOnStack`), and the unused stack-trigger
-     `ObjectChange` constructors superseded by `StackTriggerSpec` in Phase 11,
-     #590 (`triggeredAbility`, `reflexiveResolution`, `sourceId`, `fraCauseId`,
-     `fraCauseController`, `fraCausePower`, and `fraCauseStatus`); and wrap
+     and `TriggerQueueEvent.putOnStack`), unconstructed
+     `ObjectChange.triggeredAbility` / `ObjectChange.sourceId`, and the
+     stack-trigger `ObjectChange` constructors superseded in production by
+     `StackTriggerSpec` in Phase 11, #590 (`reflexiveResolution`, `fraCauseId`,
+     `fraCauseController`, `fraCausePower`, and `fraCauseStatus`, after migrating
+     their remaining test fixtures in `Tests/Events.lean`, `Tests/Discard.lean`,
+     `Tests/Draw.lean`, `Tests/Casting.lean`, and `MshOracleTests.lean` onto
+     `TriggerQueueEvent.putOnStack` / `StackTriggerSpec`); and wrap
      `EffectResolution.lean`'s `.exchangeControl` in one `withBatch` sharing a
      single one-shot `EventCause` while enforcing the CR 701.12b
      different-controllers guard (`pa != pb`) and CR 701.12a all-or-nothing
@@ -2805,17 +2819,26 @@ off-battlefield changeling search/behold), `SearchLibrary.lean`, `Targets.lean`,
      deleting `Game.ancestryLandsTapped` and
      `EngineChange.ancestryLandsTapped` / `pushAncestryLandTapped`.
    - Move the remaining imperative trigger and ETB replacement hooks onto
-     `matchTriggers` / `WaitingTrigger` / `PendingReplacement`: match self-cast
-     triggers (`.onCastCascade` and Photon Blast Barrage's `copySourceSpellXTimes`,
-     currently put on the stack directly in `Entering.putCastTriggersOnStack`) on
-     `CastEvent.spellCast` and `.youTargetSomething` on targeted
-     `CastEvent.abilityActivated` inside `matchTriggers` while retiring the
-     test-only legacy helpers `CastSpell.queueYouTargetTriggers`
+     `matchTriggers` / `WaitingTrigger` / `PendingReplacement`: move
+     `Entering.putCastTriggersOnStack`'s cascade (`.onCastCascade`) and Photon
+     Blast Barrage (`copySourceSpellXTimes`) self-cast paths onto
+     `CastEvent.spellCast` in `matchTriggers`, add `.youTargetSomething` to
+     `matchTriggers`'s `.cast (.abilityActivated abilityId .. (.nonMana ..))`
+     completion arm when `(post.stackEntry? abilityId)` has non-empty `targets`
+     (`matchTriggers` already queues `.youTargetSomething` and opponent
+     `.becomesTarget` from `CastEvent.targeted` when `proposedSpell` is `none`
+     for stack abilities, plus opponent `.becomesTarget` for copies on
+     `CastEvent.targeted` and spells/activations on `CastEvent.spellCast` /
+     `CastEvent.abilityActivated`), retire the test-only legacy helpers
+     `CastSpell.queueYouTargetTriggers`
      ([`CastSpell.lean`](Mtg/Engine/Game/CastSpell.lean)) and
      `Casting.queueBecomesTargetTriggers`
      ([`Casting.lean`](Mtg/Engine/Game/Casting.lean)), represent Ward (CR
-     702.21a) as triggered abilities matched on `CastEvent.spellCast` /
-     `CastEvent.abilityActivated` / copy `CastEvent.targeted` into
+     702.21a, "becomes the target of a spell or ability") as triggered abilities
+     matched in `matchTriggers` on the completion milestones
+     `CastEvent.spellCast` / `CastEvent.abilityActivated` (reading
+     `StackEntry.targets`) and on `CastEvent.targeted` when `proposedSpell` is
+     `none` (covering triggered abilities and copy/retarget target changes) into
      `WaitingTrigger` / `g.stack` rather than `Game.wardQueue` (`WardObligation`,
      `EngineChange.wardQueue` / `enqueueWard`), and route
      `CardDef.entersTappedUnlessPayLife` through the unified CR 614.12 / 616.1
