@@ -97,7 +97,7 @@ def canPayAnnouncedAdditional (g : Game) (p : PlayerId) (o : GameObject)
     let hasHand :=
       (g.player p).hand.any (fun id =>
         match g.findObject? id with
-        | some card => card.printed.hasSubtype quality
+        | some card => g.hasSubtype card quality
         | none => false)
     hasPerm || hasHand || payExtra n
   | none =>
@@ -154,7 +154,7 @@ def proposedAllowsInstRestricted (g : Game) (prop : ProposedSpell) : Bool :=
   match prop.kind with
   | .spell =>
     match g.findObject? prop.spellId with
-    | some o => o.printed.isInstantOrSorcery
+    | some o => g.isInstantOrSorcery o
     | none => false
   | .activatedAbility => false
 
@@ -392,7 +392,7 @@ def reverseProposedSpell (g : Game) : Game :=
       -- Undo unpreparing the permanent whose prepare-spell copy was proposed.
       match prop.kind, (g.playPermission prop.original |>.bind (·.prepareSource)).bind g.findObject? with
       | .spell, some src =>
-        g := g.record (GameEvent.designation g.turnNumber src.asEvent .prepared true
+        g := g.record (GameEvent.designation g.turnNumber (g.snapshot src) .prepared true
           (cause := .gameRule .spellCast))
       | _, _ => pure ()
       let reversed :=
@@ -604,7 +604,7 @@ def payLoyaltyCost (g : Game) (p : PlayerId) (o : GameObject) (sym : LoyaltySymb
   let oName := g.name o
   let g :=
     if k != 0 then
-      g.record (GameEvent.counters g.turnNumber (some p) o.asEvent .loyalty k.natAbs (k < 0)
+      g.record (GameEvent.counters g.turnNumber (some p) (g.snapshot o) .loyalty k.natAbs (k < 0)
         (cause := .costPayment .loyalty p forObject))
     else g
   if k > 0 then g.logMsg s!"{k} loyalty counter(s) are put on {oName}"
@@ -630,7 +630,7 @@ def becomeActivated (g : Game) (p : PlayerId) (sourceName : String)
   let isEquip := activation.any (·.isEquip)
   let source : EventObject :=
     match (sourceId.bind g.findObject?).map g.snapshot <|> sourceSnapshot <|>
-        g.proposedSpell.map (·.original.asEvent) with
+        g.proposedSpell.map (·.originalSnapshot) with
     | some src => src
     | none =>
       if isEquip then
@@ -638,7 +638,7 @@ def becomeActivated (g : Game) (p : PlayerId) (sourceName : String)
           types := #[.artifact], subtypes := #[.equipment] }
       else
         { id := sourceId, name := sourceName, controller := some p, owner := p }
-  let abilityObjId := abilityId.getD (sourceId.getD ⟨0⟩)
+  let abilityObjId := abilityId.getD ⟨g.nextObjectId⟩
   let loyaltyDelta : Option Int :=
     match activation.bind (·.cost.loyalty) with
     | some (.plus n) => some (n : Int)
@@ -673,7 +673,7 @@ the stack (CR 601.2h–i / 602.2b). -/
 def completeActivation (g : Game) (prop : ProposedSpell) : Except String Game := do
   let some sid := prop.sourceId | throw "The ability has no source"
   let x := ((g.findObject? prop.spellId).bind (·.chosenX)).getD 0
-  let srcSnap := (g.findObject? sid).map g.snapshot |>.orElse (fun _ => some prop.original.asEvent)
+  let srcSnap := (g.findObject? sid).map g.snapshot |>.orElse (fun _ => some prop.originalSnapshot)
   let srcName := (g.findObject? sid).map g.name |>.getD (g.name prop.original)
   let g ← g.payActivationExtraCosts prop.caster sid prop.tapSource prop.sacrificeSource
     prop.payLife prop.discardSource prop.activation (if prop.removePlusOneX then x else 0)
@@ -739,7 +739,7 @@ def proposedNeedsTarget (g : Game) (prop : ProposedSpell) : Bool :=
     | .spell =>
       match g.currentSpellEffect o with
       | some e => e.requiresTarget
-      | none => o.printed.requiresTarget || o.printed.isAura
+      | none => (g.baseCard o).requiresTarget || g.isAura o
     | .activatedAbility =>
       match o.abilityEffect with
       | some e => e.requiresTarget

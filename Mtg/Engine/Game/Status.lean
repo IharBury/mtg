@@ -67,8 +67,8 @@ structure Status where
   /-- Players whose goad designation on this permanent ends as their next turn
   begins (CR 701.15a). -/
   goadedUntilNextTurnOf : Array PlayerId := #[]
-  /-- Windcrag Siege chose Mardu. Jeskai is `false`. -/
-  windcragMardu : Bool := true
+  /-- Anchor word chosen as this permanent entered the battlefield (CR 614.12 / 700.2). -/
+  chosenAnchor : Option String := none
   /-- Card type chosen as this permanent entered (Serra's Emissary). -/
   chosenCardType : Option CardType := none
   /-- This permanent is a commander. -/

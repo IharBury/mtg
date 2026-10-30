@@ -44,7 +44,7 @@ def pid (g : Game) (name : String) : ObjectId :=
 
 def attach (g : Game) (aura host : String) : Game :=
   let a := obj g aura
-  g.record (GameEvent.attached g.turnNumber a.id (pid g host) (cause := .gameRule .staticAbility))
+  g.record (GameEvent.attached g.turnNumber (g.snapshot a) (pid g host) (cause := .gameRule .staticAbility))
 
 def titan : CardDef :=
   creature "Titan" ManaCost.empty #[] 4 4 (keywords := Keyword.indestructible)

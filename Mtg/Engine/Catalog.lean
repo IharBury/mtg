@@ -642,7 +642,7 @@ def chapter (roman effect : String) (e : Effect) : SagaChapter :=
     (entersTappedUnlessPayLife := entersTappedUnlessPayLife)
     (staticAbilities := staticAbilities)
 
-/-- A Treasure token (CR 111 / 701.42). -/
+/-- A Treasure token (CR 111 / 111.10a). -/
 def treasureToken : CardDef :=
   fromOracle [
     "Treasure",

@@ -226,4 +226,35 @@ def meagerMealNoCreatureAfterSkip : Game :=
   let p := ManaPool.empty.add (.colored .red) 2 |>.add .colorless 3
   (p.pay? largeBear.manaCost).isNone
 
+-- Phase 11: `*/*` CR 604.3 / 613.4a CDA creature spells on the stack evaluate
+-- their actual CDA power/toughness for `.creatureSpellPTAtMost`, and Layer 4
+-- type-changing effects feed `TargetFilter` / `objectHasCardType`.
+#guard
+  let cdaCreatureSpell : CardDef := {
+    name := "Lands Avatar"
+    types := #[.creature]
+    subtypes := #["Avatar"]
+    staticAbilities := #[.powerToughnessEqualLandsYouControl]
+  }
+  let landCard : CardDef := { name := "Forest", types := #[.land], subtypes := #["Forest"] }
+  let gTwoLands := addPermanent (addPermanent afterDraw landCard ⟨1⟩ ⟨1⟩) landCard ⟨1⟩ ⟨1⟩
+  let (gTwoStack, spellTwo) := gTwoLands.allocObject cdaCreatureSpell ⟨1⟩ .stack (some ⟨1⟩)
+  let gTwoStack := gTwoStack.change (.pushStack { objectId := spellTwo.id, controller := ⟨1⟩, targets := #[] })
+  let gFourLands := addPermanent (addPermanent gTwoLands landCard ⟨1⟩ ⟨1⟩) landCard ⟨1⟩ ⟨1⟩
+  let (gFourStack, spellFour) := gFourLands.allocObject cdaCreatureSpell ⟨1⟩ .stack (some ⟨1⟩)
+  let gFourStack := gFourStack.change (.pushStack { objectId := spellFour.id, controller := ⟨1⟩, targets := #[] })
+  let rockCard : CardDef := { name := "Target Rock", types := #[.artifact] }
+  let gAnim0 := addPermanent afterDraw rockCard ⟨0⟩ ⟨0⟩
+  let rockObj := namedPermanent gAnim0 "Target Rock"
+  let gAnim := gAnim0.createEffect
+    (.layered (.objects #[rockObj.id]) (.types .add #[.creature] #[.golem] #[]) .untilEndOfTurn)
+  gTwoStack.snapshotPower spellTwo == 2 &&
+    gTwoStack.snapshotToughness spellTwo == 2 &&
+    (gTwoStack.legalTargetsForAtomicKind ⟨0⟩ .creatureSpell none).contains (.card spellTwo.id) &&
+    (gTwoStack.legalTargetsForAtomicKind ⟨0⟩ (.creatureSpellPTAtMost 2) none).contains (.card spellTwo.id) &&
+    gFourStack.snapshotPower spellFour == 4 &&
+    gFourStack.snapshotToughness spellFour == 4 &&
+    !(gFourStack.legalTargetsForAtomicKind ⟨0⟩ (.creatureSpellPTAtMost 2) none).contains (.card spellFour.id) &&
+    (gAnim.legalTargetsForAtomicKind ⟨0⟩ (.creatureYouControlSubtype .golem) none).contains (.permanent rockObj.id)
+
 end Mtg.Engine.Tests

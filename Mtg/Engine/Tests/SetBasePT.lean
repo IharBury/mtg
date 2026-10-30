@@ -49,7 +49,7 @@ def pid (g : Game) (name : String) : ObjectId :=
 
 def attach (g : Game) (aura host : String) : Game :=
   let a := obj g aura
-  g.record (GameEvent.attached g.turnNumber a.id (pid g host) (cause := .gameRule .staticAbility))
+  g.record (GameEvent.attached g.turnNumber (g.snapshot a) (pid g host) (cause := .gameRule .staticAbility))
 
 def titan : CardDef := creature "Titan" ManaCost.empty #[] 4 4
 def bear : CardDef := creature "Bear" ManaCost.empty #[] 2 2
@@ -318,5 +318,31 @@ player, and doubling set nothing. -/
   "When this Equipment enters, attach it to target creature you control. That creature has base power and toughness 2/2 until end of turn."
 #guard TriggeredAbility.toNotation .onAttackSetOtherBasePT ==
   "Whenever this creature attacks, choose up to one other target creature you control. Its base power and toughness become equal to this creature's power and toughness until end of turn."
+
+/- Phase 11: `.setBasePT .equalSourcePower .equalSourceToughness` reads the
+source's Layer-derived power and toughness (including Layer 7a CDA and Layer 7c
+counters), and `attach` snapshots the Aura's characteristics on `GameEvent.attached`. -/
+#guard
+  let cdaAvatar : CardDef := {
+    name := "Lands Source"
+    types := #[.creature]
+    subtypes := #["Avatar"]
+    staticAbilities := #[.powerToughnessEqualLandsYouControl]
+  }
+  let g0 := addPermanent (addPermanent (addPermanent (addPermanent afterDraw land caster caster) land caster caster) cdaAvatar caster caster) ogre caster caster
+  let srcId := pid g0 "Lands Source"
+  let g1 := g0.recordPutCounters srcId .plusOnePlusOne 1
+  let g2 := step g1 equalSource (some srcId) #[Target.permanent (pid g1 "Ogre")]
+    (ab := .onAttackSetOtherBasePT)
+  let gAtt := attach (addPermanent board grasp caster caster) "Grasp" "Titan"
+  let attSnapOk := gAtt.events.any fun e =>
+    match e.change with
+    | .rules (.permanent (.attached eo hid _)) =>
+      eo.name == "Grasp" && eo.types.contains .enchantment && hid == pid gAtt "Titan"
+    | _ => false
+  g1.power (obj g1 "Lands Source") == 3 &&
+    g1.toughness (obj g1 "Lands Source") == 3 &&
+    base g2 "Ogre" == some (3, 3) &&
+    attSnapOk
 
 end Mtg.Engine.SetBasePTTests

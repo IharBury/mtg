@@ -437,14 +437,11 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
   | .elspethDestroy =>
     g.destroyIds (g.battlefield.filter (fun o => g.isCreature o && g.snapshotPower o >= 4) |>.map (·.id))
   | .elspethEmblem =>
-    let embCause :=
-      g.resolveOptionalCause none (fallbackSrc := sourceId) (fallbackCtrl := some controller)
-        (defaultCause := .gameRule .spellCast)
     let (g, emb) := g.allocObject {
         name := "Elspeth emblem"
         types := #[.enchantment]
         grantTeamPlusTwoFlying := true
-      } controller .command (some controller) (cause := embCause)
+      } controller .command (some controller)
     g.logMsg s!"{pl.name} gets an emblem ({emb.name})"
   | .jacePlus =>
     let g := g.draw controller 2
@@ -550,7 +547,7 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
   | .goblin =>
     match g.srcObj? sourceId with
     | some src =>
-      if src.status.windcragMardu then g
+      if src.status.chosenAnchor != some "Jeskai" then g
       else
         let g := g.makeFrc controller .goblin
         match (g.permanentsOf controller).reverse.find? (fun o => g.name o == "Goblin" && o.printed.isToken) with
@@ -702,12 +699,10 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
         | some (s, c) =>
           g.allocDelayedCause (c.orElse (fun _ => some controller)) (s.orElse (fun _ => some o.id))
         | none => (g, .gameRule .spellCast)
-      let g := g.expirePrintedStaticEffects o (cause := some transformCause)
       let g := g.record
         (GameEvent.transformed g.turnNumber (g.snapshot o) (!o.status.transformed)
           (cause := transformCause))
-      g.createPrintedStaticEffects (g.object! o.id)
-        |>.logMsg s!"{oName} transforms into a 0/0 Phyrexian with {counters} +1/+1 counters"
+      g.logMsg s!"{oName} transforms into a 0/0 Phyrexian with {counters} +1/+1 counters"
     | none => g
   | .turnFaceUp =>
     match g.srcObj? sourceId with

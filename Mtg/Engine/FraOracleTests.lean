@@ -308,17 +308,29 @@ def divinerInGraveyard : GameObject :=
 #guard divinerInGraveyard.printed.colors == ColorSet.singleton .blue
 #guard (fraRuling 738).comment.contains "creature card in every zone"
 
-/-- Ruling 739: being prepared isn't copied. A token copy of the prepared
-Angel isn't prepared but has the prepare spell, so it can become prepared. -/
+/-- Ruling 739: being prepared isn't copied. A permanent that becomes a copy
+of the prepared Angel (or a token copy of a prepared creature without "enters
+prepared") isn't prepared, though it has the prepare spell and can become
+prepared later. -/
 def angelTokenCopy : Game × GameObject :=
-  preparedAngel.createToken ⟨0⟩ (namedPermanent preparedAngel "Blossom-Blessed Angel").printed
+  let ogre := namedPermanent preparedAngel "Gray Ogre"
+  let angel := namedPermanent preparedAngel "Blossom-Blessed Angel"
+  let g := preparedAngel.createEffect (.copy ogre.id angel.printed)
+  (g, g.object! ogre.id)
 
 #guard !angelTokenCopy.2.status.prepared
-#guard angelTokenCopy.2.printed.prepareFace.isSome
+#guard (angelTokenCopy.1.baseCard angelTokenCopy.2).prepareFace.isSome
 #guard
-  let (g, tok) := angelTokenCopy
-  let g := g.becomePrepared tok
-  (g.object! tok.id).status.prepared && (exiledCopies g "Seed Suture").size == 2
+  let (g, copyPerm) := angelTokenCopy
+  let g := g.becomePrepared copyPerm
+  (g.object! copyPerm.id).status.prepared && (exiledCopies g "Seed Suture").size == 2
+#guard
+  let g0 := enterPermanent afterDraw bloodlineRecollector ⟨0⟩
+  let g1 := g0.becomePrepared (namedPermanent g0 "Bloodline Recollector")
+  let (g2, tok) := g1.createToken ⟨0⟩ (namedPermanent g1 "Bloodline Recollector").printed
+  !tok.status.prepared && tok.printed.prepareFace.isSome &&
+    let g3 := g2.becomePrepared tok
+    (g3.object! tok.id).status.prepared && (exiledCopies g3 "Ancestral Craving").size == 2
 #guard (fraRuling 739).comment.contains "Being prepared isn't a copiable value"
 
 /-- Ruling 740: a prepared creature that stops being a creature stays

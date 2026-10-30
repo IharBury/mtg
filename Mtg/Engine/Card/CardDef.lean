@@ -410,8 +410,11 @@ def colorIdentity (c : CardDef) : ColorSet :=
 /-- True when `t` is among this card's types. -/
 def hasType (c : CardDef) (t : CardType) : Bool := c.types.any (· == t)
 
-/-- True when `s` is among this card's subtypes. -/
-def hasSubtype (c : CardDef) (s : CardSubtype) : Bool := c.subtypes.any (· == s.englishName)
+/-- True when `s` is among this card's subtypes, including CR 702.73a changeling
+expansion for creature and kindred cards. -/
+def hasSubtype (c : CardDef) (s : CardSubtype) : Bool :=
+  c.subtypes.any (· == s.englishName) ||
+    (c.keywords.changeling && (c.hasType .creature || c.hasType .kindred) && !s.isNoncreature)
 
 /-- True when `s` is among this card's supertypes. -/
 def hasSupertype (c : CardDef) (s : Supertype) : Bool := c.supertypes.any (· == s)

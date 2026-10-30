@@ -279,7 +279,7 @@ def exilePlayManaCost (g : Game) (o : GameObject) : String :=
       toString o.printed.manaCost
   | none => ""
 
-/-- Who may play `o` from exile, if anyone (CR 701.14 / 715.3d), including
+/-- Who may play `o` from exile, if anyone (CR 701.18 / 715.3d), including
 when the permission replaces the mana cost with `{0}`. -/
 def exilePlayPermissionClause (g : Game) (o : GameObject) : String :=
   match g.playPermission o with
@@ -296,7 +296,7 @@ def exileLine (g : Game) (o : GameObject) : String :=
 
 /-- Whether `viewer` may look at card faces in `z` (CR 400.2, 401.2, 402.2).
 `none` is omniscient: public zones and hands are shown, but libraries stay
-face-down even to their owner except for cards they are scrying (CR 701.20). -/
+face-down even to their owner except for cards they are scrying (CR 701.22). -/
 def canSeeZoneFaces (viewer : Option PlayerId) : Zone → Bool
   | .library _ => false
   | .hand p =>
@@ -309,7 +309,7 @@ def canSeeZoneFaces (viewer : Option PlayerId) : Zone → Bool
     | some v => v == p
   | .battlefield | .graveyard _ | .stack | .exile | .command | .ante => true
 
-/-- Whether `viewer` may look at the cards `scrying` is looking at (CR 701.20).
+/-- Whether `viewer` may look at the cards `scrying` is looking at (CR 701.22).
 `none` is omniscient. -/
 def canSeeScry (viewer : Option PlayerId) (scrying : PlayerId) : Bool :=
   match viewer with
@@ -1017,7 +1017,7 @@ def snapshot (g : Game) (viewer : Option PlayerId := none) : String :=
       [stackBlock g, battlefieldBlock g] ++ players ++ exileBlock)
 
 /-- Hide draws and library rearrangements that `viewer` is not allowed to see
-(CR 401.2, 402.2, 103.5, 701.20). Other log lines are public. -/
+(CR 401.2, 402.2, 103.5, 701.22). Other log lines are public. -/
 def redactLogLine (g : Game) (viewer : PlayerId) (line : String) : String :=
   Id.run do
     for pl in g.players do
@@ -1101,11 +1101,11 @@ def stackView (g : Game) : Array String :=
 
 /-- Zones whose occupants, order, visible status, or scry look differ between
 two game states. Tapping or untapping a land does not move it, but it does
-change the battlefield (CR 110.5 / 502.2), so the demo reprints that zone.
+change the battlefield (CR 110.5 / 701.26), so the demo reprints that zone.
 Announcing or changing targets does not move a spell or ability, but it does
 change the stack (CR 115 / 601.2c), so the demo reprints that zone.
 Starting or finishing a scry does not move library cards, but the scrying
-player may look at the top cards (CR 701.20), so the demo reprints that
+player may look at the top cards (CR 701.22), so the demo reprints that
 library. -/
 def changedZones (before after : Game) : Array Zone :=
   (allZones after).filter (fun z =>
@@ -1133,7 +1133,7 @@ def zoneLine (g : Game) (z : Zone) (id : ObjectId) : String :=
 
 /-- Current contents of `z`. Hidden zones show only their size (CR 400.2),
 except that a scrying player (or omniscient view) sees the looked-at library
-cards (CR 701.20). -/
+cards (CR 701.22). -/
 def zoneBlock (g : Game) (z : Zone) (viewer : Option PlayerId := none) : String :=
   let ids := zoneObjectIds g z
   let shown :=

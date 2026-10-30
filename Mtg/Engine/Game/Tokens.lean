@@ -91,7 +91,9 @@ def createOneToken (g : Game) (controller : PlayerId) (printed : CardDef)
         owner := controller, zone := .command })
   else
     g.withBatchReturn cause fun g =>
-      let printed := { printed with isToken := true }
+      let printed := { printed with
+        isToken := true
+        otherFace := printed.otherFace.map (fun f => { f with isToken := true }) }
       let asOf := g.timestamp
       let newId : ObjectId := ⟨g.nextObjectId⟩
       let ts := g.timestamp + 1
@@ -112,6 +114,9 @@ def createOneToken (g : Game) (controller : PlayerId) (printed : CardDef)
           summoningSick := true
           attacking := isAttacking
           attackingTarget := resolvedAttackTarget
+          prepared := printed.entersPrepared
+          chosenCardType := if printed.asEntersChooseCardType then some .creature else none
+          chosenAnchor := if printed.asEntersChooseMarduOrJeskai then some "Mardu" else none
         }
         timestamp := ts
       }
@@ -134,12 +139,12 @@ def createOneToken (g : Game) (controller : PlayerId) (printed : CardDef)
           g.record (GameEvent.becameAttacking g.turnNumber (g.snapshot (g.object! newId)) tgt
             (cause := resolvedEtbCause))
         | none => g
-      let g := g.createPrintedStaticEffects (g.object! newId)
       let g := g.logMsg s!"{(g.player controller).name} creates {g.nameWithToken (g.object! newId)}"
       let g :=
         if etb.weaverBonus > 0 then
           g.logMsg s!"{g.nameWithToken (g.object! newId)} enters with {etb.weaverBonus} additional +1/+1 counter(s)"
         else g
+      let g := g.ensurePreparedCopy (g.object! newId)
       -- Storied is not a trigger; an artifact token can be the third permanent.
       let g := g.refreshEnduringStory
       let g := g.refreshCitysBlessing
@@ -149,24 +154,56 @@ def createOneToken (g : Game) (controller : PlayerId) (printed : CardDef)
         else g
       (g, g.object! newId)
 
+/-- Synthetic off-battlefield token probe reflecting active wildcard
+`entersAsCopy` replacements so `replaceTokenCreationChoice` evaluates the created
+token's own template and changeling subtypes without pulling in battlefield-scoped
+Layer 1–6 effects on permanents `controller` already controls (Draconic Visitor
+ruling 782). -/
+private def tokenBatchProbe (g : Game) (controller : PlayerId) (printed : CardDef) : GameObject :=
+  let initPrinted := { printed with
+    isToken := true
+    otherFace := printed.otherFace.map (fun f => { f with isToken := true }) }
+  let effPrinted := g.activeEffects.foldl (fun cur (_, eff) =>
+    match eff with
+    | .replacement spec d =>
+      if !g.durationActive d then cur
+      else
+        match spec.kind with
+        | .entersAsCopy tid template =>
+          if tid == ⟨0⟩ then
+            { template with
+              isToken := true
+              otherFace := template.otherFace.map (fun f => { f with isToken := true }) }
+          else cur
+        | _ => cur
+    | _ => cur) initPrinted
+  { id := ⟨g.nextObjectId⟩
+    printed := effPrinted
+    owner := controller
+    zone := .command }
+
 /-- True if a proposed token creation of `printed` under `controller` watches
 `.wouldCreateToken`. -/
 private def tokenBatchWatchesCreation (g : Game) (controller : PlayerId) (printed : CardDef) : Bool :=
+  let probe := g.tokenBatchProbe controller printed
   let proposed := GameEvent.created g.turnNumber controller {
     controller := some controller, owner := controller, zone := .battlefield, token := true
-    types := printed.types
-    subtypes :=
-      let baseSubs := CardSubtype.ofSubtypes printed.subtypes
-      if printed.keywords.changeling && (printed.types.contains .creature || printed.types.contains .kindred) then
-        CardSubtype.allCreatureSubtypes.foldl (fun acc s => if acc.contains s then acc else acc.push s) baseSubs
-      else baseSubs
-    changeling := printed.keywords.changeling }
+    types := g.types probe
+    subtypes := g.subtypes probe
+    changeling := (g.currentKeywords probe).changeling }
     (cause := .oneShotEffect none none (some controller))
   proposed.watches .wouldCreateToken
 
-/-- True if `printed` is a Food token as created. -/
-private def tokenBatchIsFood (printed : CardDef) : Bool :=
-  (CardSubtype.ofSubtypes printed.subtypes).contains .food
+/-- True if `printed` under `controller` is created as a Food token (respecting
+`entersAsCopy` and off-battlefield changeling/subtype rules while ignoring
+battlefield-scoped grants). -/
+private def tokenBatchIsFood (g : Game) (controller : PlayerId) (printed : CardDef) : Bool :=
+  g.hasSubtype (g.tokenBatchProbe controller printed) .food
+
+/-- True if `printed` under `controller` is created as an artifact token (respecting
+`entersAsCopy` while ignoring battlefield-scoped effects per ruling 782). -/
+private def tokenBatchIsArtifact (g : Game) (controller : PlayerId) (printed : CardDef) : Bool :=
+  g.isArtifact (g.tokenBatchProbe controller printed)
 
 /-- Run the CR 616.1 replacement loop on a proposed token-creation batch
 (CR 614.1a / 614.5 / 614.6 / 616.1), returning `(batches, applied, choice?)`.
@@ -194,8 +231,8 @@ def replaceTokenCreationChoice (g : Game) (initial : ProposedTokenBatch)
     if !anyWatch then
       fuel := 0
     else
-      let hasFood := batches.any (fun b => tokenBatchIsFood b.printed)
-      let hasArtifact := batches.any (fun b => b.printed.isArtifact)
+      let hasFood := batches.any (fun b => g.tokenBatchIsFood b.controller b.printed)
+      let hasArtifact := batches.any (fun b => g.tokenBatchIsArtifact b.controller b.printed)
       let mut specs : Array ReplacementSpec := #[]
       if includeKindReplacements && hasFood then
         for o in g.permanentsOf ctrl do
@@ -255,9 +292,9 @@ def replaceTokenCreationChoice (g : Game) (initial : ProposedTokenBatch)
           match spec.kind with
           | .createExtraTokenWithFood _ extraCard =>
             let foodCount := batches.foldl (fun acc b =>
-              if tokenBatchIsFood b.printed then acc + b.count else acc) 0
+              if g.tokenBatchIsFood b.controller b.printed then acc + b.count else acc) 0
             batches := batches.map (fun b =>
-              if tokenBatchIsFood b.printed then
+              if g.tokenBatchIsFood b.controller b.printed then
                 { b with cause := g.wrapReplacedCause chosen.id b.cause (some ctrl) }
               else b)
             if foodCount > 0 then
@@ -271,7 +308,7 @@ def replaceTokenCreationChoice (g : Game) (initial : ProposedTokenBatch)
               }
           | .artifactTokensBecome _ newCard =>
             batches := batches.map (fun b =>
-              if b.printed.isArtifact then
+              if g.tokenBatchIsArtifact b.controller b.printed then
                 { b with
                   printed := newCard
                   cause := g.wrapReplacedCause chosen.id b.cause (some ctrl) }
@@ -411,7 +448,7 @@ def orcArmyToken : CardDef := armyToken .orc
 /-- A 0/0 black Zombie Army creature token (amass Zombies). -/
 def zombieArmyToken : CardDef := armyToken .zombie
 
-/-- A Food token (CR 111 / 701.34). -/
+/-- A Food token (CR 111.10b). -/
 def foodToken : CardDef := {
   name := "Food"
   types := #[.artifact]
@@ -466,7 +503,7 @@ def axeToken : CardDef := {
   isToken := true
 }
 
-/-- A Clue artifact token (CR 701.55). -/
+/-- A Clue artifact token (CR 111.10f). -/
 def clueToken : CardDef := {
   name := "Clue"
   types := #[.artifact]
@@ -649,7 +686,7 @@ def empowerJace (g : Game) (controller : PlayerId) (n : Nat)
     let k := g.countersYouPut o n (putter := some controller)
     let g :=
       if k > 0 then
-        g.record (GameEvent.counters g.turnNumber (some controller) o.asEvent .loyalty k
+        g.record (GameEvent.counters g.turnNumber (some controller) (g.snapshot o) .loyalty k
           (cause := g.resolveOptionalCause none (fallbackCtrl := some controller)))
       else g
     g.logMsg s!"Empower Jace {n}: {k} loyalty counter(s) are put on {g.name o}"

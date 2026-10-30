@@ -11,11 +11,6 @@ graveyard, and putting cards onto the battlefield (CR 611.3 / 603.6).
 namespace Mtg.Engine
 namespace Game
 
-/-- The copy of `srcId`'s prepare spell in exile, if any. -/
-def preparedCopyOf? (g : Game) (srcId : ObjectId) : Option GameObject :=
-  g.objects.find? (fun o =>
-    o.zone == .exile && ((g.playPermission o).bind (·.prepareSource)) == some srcId)
-
 /-- The exiled copy of `srcId`'s prepare spell ceases to exist. -/
 def removePreparedCopy (g : Game) (srcId : ObjectId)
     (cause : Option EventCause := some (.stateBased .copyOutsideStackOrBf)) : Game :=
@@ -23,46 +18,13 @@ def removePreparedCopy (g : Game) (srcId : ObjectId)
   | some c => (g.ceaseToExist c.id (cause := cause)).logMsg s!"The copy of {c.name} in exile ceases to exist"
   | none => g
 
-/-- Create the exiled copy of `o`'s prepare spell and grant permission to cast
-it while `o` remains prepared (ruling 742). -/
-def createPreparedCopy (g : Game) (o : GameObject) (face : AdventureFace)
-    (cause : Option EventCause := none) : Game :=
-  let p := (g.controllerOf o).getD o.owner
-  let copyId : ObjectId := ⟨g.nextObjectId⟩
-  let copyTs := g.timestamp + 1
-  let copyObj : GameObject := {
-    id := copyId
-    printed := face.toCardDef
-    owner := p
-    zone := .exile
-    timestamp := copyTs
-  }
-  let resolvedCause := g.resolveOptionalCause cause (fallbackSrc := some o.id) (fallbackCtrl := some p)
-  let g := g.record (GameEvent.created g.turnNumber p (g.snapshot copyObj) (cause := resolvedCause))
-  let g := g.createPrintedStaticEffects (g.object! copyId)
-  g.createEffect (.playPermission copyId {
-    player := p
-    whileExiled := true
-    prepareSource := some o.id }) (cause := some resolvedCause)
-
-/-- Ensure the exiled copy of `o`'s prepare spell exists when `o` enters
-already prepared (CR 614.1c, ruling 742). -/
-def ensurePreparedCopy (g : Game) (o : GameObject) : Game :=
-  if !o.status.prepared || (g.preparedCopyOf? o.id).isSome then g
-  else
-    match o.printed.prepareFace with
-    | none => g
-    | some face =>
-      let g := g.createPreparedCopy o face (cause := some (.gameRule .staticAbility))
-      g.logMsg s!"{o.name} becomes prepared. A copy of {face.name} is exiled"
-
 /-- `o` becomes prepared: its controller creates a copy of its prepare spell
 in exile and may cast that copy while `o` stays prepared (ruling 742). A
 creature without a prepare spell can't become prepared (ruling 747), and a
 prepared creature can't become prepared again (ruling 743). Only the printed
 prepare spell is copied, so copy exceptions on `o` don't apply (ruling 741). -/
 def becomePrepared (g : Game) (o : GameObject) (cause : Option EventCause := none) : Game :=
-  match o.printed.prepareFace with
+  match (g.baseCard o).prepareFace with
   | none => g.logMsg s!"{o.name} has no prepare spell and can't become prepared"
   | some face =>
     if o.status.prepared then g.logMsg s!"{o.name} is already prepared"
@@ -77,7 +39,7 @@ def becomePrepared (g : Game) (o : GameObject) (cause : Option EventCause := non
         let prepCause :=
           g.resolveOptionalCause cause (fallbackSrc := srcFallback) (fallbackCtrl := some p)
             (defaultCause := .gameRule .spellCast)
-        g.record (GameEvent.designation g.turnNumber o.asEvent .prepared true (cause := prepCause))
+        g.record (GameEvent.designation g.turnNumber (g.snapshot o) .prepared true (cause := prepCause))
       g.logMsg s!"{o.name} becomes prepared. A copy of {face.name} is exiled"
 
 /-- `o` stops being prepared and the copy of its prepare spell in exile
@@ -89,7 +51,7 @@ def unprepare (g : Game) (o : GameObject) (cause : Option EventCause := none) : 
     let resolvedCause :=
       g.resolveOptionalCause cause (fallbackSrc := srcFallback) (fallbackCtrl := g.controllerOf o)
         (defaultCause := .gameRule .spellCast)
-    let g := g.record (GameEvent.designation g.turnNumber o.asEvent .prepared false (cause := resolvedCause))
+    let g := g.record (GameEvent.designation g.turnNumber (g.snapshot o) .prepared false (cause := resolvedCause))
     (g.removePreparedCopy o.id).logMsg s!"{o.name} is no longer prepared"
 
 /-- True when `o` replaces an opposing creature dying with exile. -/
@@ -180,8 +142,11 @@ def replaceZoneMove (g : Game) (old : GameObject) (beforeSnap : EventObject)
         (verb := verb) (actor := actor) (libraryPosition := libraryPosition) (cause := proposedCause)
     let mut specs : Array (ReplacementSpec × Option GameObject × Bool) := #[]
     -- CR 702.34a: flashback exiles the spell whenever it would leave the stack for anywhere else.
-    if proposed.watches .wouldLeaveStack && g.castFromGraveyard old.id &&
-        old.printed.flashback.isSome && !old.isCopy && curDest != .exile then
+    let hasFlashback :=
+      GameEvent.castWithFlashback g.events old.id || g.flashbackUntilEot old ||
+        (g.castFromGraveyard old.id && !g.freeCastFromGraveyard old &&
+          ((g.baseCard old).flashback.isSome || g.hasFlashbackPermission old))
+    if proposed.watches .wouldLeaveStack && hasFlashback && !old.isCopy && curDest != .exile then
       specs := specs.push (
         { id := { kind := .flashbackExile, object := some old.id }
           source := some old.id
@@ -190,7 +155,7 @@ def replaceZoneMove (g : Game) (old : GameObject) (beforeSnap : EventObject)
           kind := .exileInsteadOfStackLeave old.id }, none, false)
     -- Bilbo, Thief in the Night: instant/sorcery cast this way is exiled instead of going to graveyard.
     if proposed.watches .wouldEnterGraveyardFromStack && g.exileInstantSorceryInstead old &&
-        !old.isCopy then
+        g.isInstantOrSorcery old && !old.isCopy then
       specs := specs.push (
         { id := { kind := .exileInstantSorceryInstead, object := some old.id }
           source := some old.id
@@ -343,13 +308,19 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
             if leavingPlay && old.status.transformed then
               match old.printed.otherFace with
               | some front =>
-                { front with otherFace := some { old.printed with otherFace := none } }
+                let keepToken := old.printed.isToken
+                { front with
+                  isToken := keepToken
+                  otherFace := some { old.printed with isToken := keepToken, otherFace := none } }
               | none => old.printed
             else old.printed
         else if leavingPlay && old.status.transformed then
           match old.printed.otherFace with
           | some front =>
-            { front with otherFace := some { old.printed with otherFace := none } }
+            let keepToken := old.printed.isToken
+            { front with
+              isToken := keepToken
+              otherFace := some { old.printed with isToken := keepToken, otherFace := none } }
           | none => old.printed
         else old.printed
     let faceDown := targetZone == .battlefield && old.zone == .stack && old.status.faceDown
@@ -359,8 +330,10 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
       if targetZone == .battlefield && !faceDown && printed.asEntersChooseCardType then
         some CardType.creature
       else none
-    let windcragMardu :=
-      targetZone == .battlefield && !faceDown && printed.asEntersChooseMarduOrJeskai
+    let chosenAnchor :=
+      if targetZone == .battlefield && !faceDown && printed.asEntersChooseMarduOrJeskai then
+        some "Mardu"
+      else none
     let prepared :=
       targetZone == .battlefield && !faceDown && printed.entersPrepared
     let impendingNotCreature :=
@@ -374,7 +347,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
           attacking := isAttacking
           attackingTarget := resolvedAttackTarget
           chosenCardType := chosenCardType
-          windcragMardu := windcragMardu
+          chosenAnchor := chosenAnchor
           prepared := prepared }
       else {}
     let candidate : GameObject := {
@@ -466,7 +439,6 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
         buildArrival g dest asOf moveRep.applied moveRep.cause
       let g := g.consumeReplacementOrder allApplied
       let newId := fresh.id
-      let printed := fresh.printed
       let g :=
         if exileInstead then
           g.logMsg s!"{old.name} is exiled instead of dying (CR 614.6)"
@@ -507,7 +479,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
       let g : Game :=
         match (if dest == .battlefield then resolvedAttackTarget else none) with
         | some tgt =>
-          g.record (GameEvent.becameAttacking g.turnNumber (g.object! newId).asEvent tgt
+          g.record (GameEvent.becameAttacking g.turnNumber (g.snapshot (g.object! newId)) tgt
             (cause := baseHappenedCause))
         | none => g
       let g := g.expireEffectsOnLeavingObject old
@@ -529,7 +501,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
         else g
       let g :=
         match g.findObject? newId with
-        | some cur =>
+        | some _ =>
           -- A permanent whose spell was cast for its impending cost enters with
           -- its time counters and isn't a creature while it has one (CR 702.176,
           -- rulings 967 / 970). The spell itself stays a creature spell, so the
@@ -542,11 +514,9 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
             if dest == Zone.battlefield && returnedAsArtifact then
               g.createEffect (.returnedAsArtifact newId) (cause := some baseHappenedCause)
             else g
-          let g : Game :=
-            if dest == Zone.battlefield && onlyFoodArtifact then
-              g.createEffect (.onlyFoodArtifact newId) (cause := some baseHappenedCause)
-            else g
-          g.createPrintedStaticEffects cur
+          if dest == Zone.battlefield && onlyFoodArtifact then
+            g.createEffect (.onlyFoodArtifact newId) (cause := some baseHappenedCause)
+          else g
         | none => g
       -- Loki left: replace his pending copy effect with one holding his last
       -- known power (MSH 109, CR 613.7a).
@@ -561,7 +531,8 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
             else g
           | _ => g) g
       let g :=
-        if dest == .battlefield && !faceDown && printed.asEntersChooseCardType then
+        if dest == .battlefield && !faceDown &&
+            (g.findObject? newId).any (fun placed => (g.baseCard placed).asEntersChooseCardType) then
           g.logMsg s!"{fresh.name} chooses Creature"
         else g
       let g :=
@@ -589,8 +560,8 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
                 g := g'
                 g := g.logMsg s!"{name} returns to {(g.player p).name}'s graveyard"
               | _ =>
-              if o.printed.isAura then
-                match g.battlefield.find? (fun h => g.auraCanEnchant h o.printed) with
+              if g.isAura o then
+                match g.battlefield.find? (fun h => g.auraObjCanEnchant h o) with
                 | none =>
                   g := g.logMsg
                     s!"{name} remains in exile (can't be attached legally; CR 614.6)"
@@ -636,7 +607,7 @@ def moveToOwnerGraveyard (g : Game) (o : GameObject) (reason : String)
     (preBattlefield : Option (Array GameObject) := none)
     (cause : Option EventCause := none) : Game :=
   let reason :=
-    if g.exileInstantSorceryInstead o && o.printed.isInstantOrSorcery then
+    if g.exileInstantSorceryInstead o && g.isInstantOrSorcery o then
       s!"{o.name} is exiled"
     else reason
   let g := g.logMsg reason

@@ -357,7 +357,7 @@ inductive StaticAbility where
   | improvise
   /-- Noncreature spells you cast have improvise. -/
   | noncreatureSpellsHaveImprovise
-  /-- Extort (CR 702.83). -/
+  /-- Extort (CR 702.101). -/
   | extort
   /-- Attacking creature tokens you control have these keywords. -/
   | attackingTokensHave (k : Keywords)
@@ -1254,7 +1254,7 @@ def trampleSubtypes? (ab : StaticAbility) : Option (Array CardSubtype) :=
   ab.shape.spec.trampleSubtypes
 
 /-- Continuous +P/+T this ability grants its enchanted or equipped host
-(CR 613.3c). Other static abilities contribute `(0, 0)` here. -/
+(CR 613.4c). Other static abilities contribute `(0, 0)` here. -/
 def hostStatBonus (ab : StaticAbility) : Int × Int :=
   ab.shape.spec.hostBonus
 

@@ -5,7 +5,7 @@ import Mtg.Engine.Game.StateBasedActions
 
 Multiplayer flags, who has priority, sorcery-speed checks, land-play
 allowances (CR 305.2b), and permission to play cards from exile, the
-graveyard, or the top of the library (CR 118.12 / 400.7).
+graveyard, or the top of the library (CR 118.14 / 400.7).
 -/
 
 namespace Mtg.Engine
@@ -39,7 +39,7 @@ def splitSecondOnStack (g : Game) : Bool :=
     match g.findObject? e.objectId with
     | some o =>
       o.abilityEffect.isNone && o.triggeredAbility.isNone &&
-        o.printed.isInstantOrSorcery &&
+        g.isInstantOrSorcery o &&
         (g.permanentsOf e.controller).any (fun src =>
           (g.staticAbilities src).any (fun
             | .instantSorcerySplitSecond => true
@@ -73,7 +73,7 @@ def extraLandsFromPermanents (g : Game) (p : PlayerId) : Nat :=
   (g.permanentsOf p).foldl (fun acc o =>
     if !g.retainsPrintedAbilities o then acc
     else
-      match o.printed.extraLandIfOtherSubtype with
+      match (g.baseCard o).extraLandIfOtherSubtype with
       | none => acc
       | some t =>
         if (g.permanentsOf p).any (fun other =>
@@ -89,7 +89,7 @@ def landPlaysAllowed (g : Game) (p : PlayerId) : Nat :=
 def canPlayLand (g : Game) (p : PlayerId) : Bool :=
   g.asSorcery? p && g.loggedLandsPlayed p < g.landPlaysAllowed p
 
-/-- Whether `p` may play `o` from exile under a granted permission (CR 701.14 / 715.3d). -/
+/-- Whether `p` may play `o` from exile under a granted permission (CR 701.18 / 715.3d). -/
 def mayPlayFromExile (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
   o.zone == .exile &&
   match g.playPermission o with
@@ -135,13 +135,13 @@ def controlsPlayLandsFromGraveyard (g : Game) (p : PlayerId) : Bool :=
 
 def mayPlayFromGraveyard (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
   o.zone == .graveyard p && o.owner == p &&
-    (o.printed.flashback.isSome || g.flashbackUntilEot o || g.freeCastFromGraveyard o ||
-      (o.printed.isLand && g.controlsPlayLandsFromGraveyard p))
+    ((g.baseCard o).flashback.isSome || g.flashbackUntilEot o || g.freeCastFromGraveyard o ||
+      (g.isLand o && g.controlsPlayLandsFromGraveyard p))
 
 /-- True when `p` controls a permanent that lets them look at the library top. -/
 def controlsLookAtTop (g : Game) (p : PlayerId) : Bool :=
   (g.permanentsOf p).any (fun o =>
-    o.printed.mayLookAtTopAnytime && g.retainsPrintedAbilities o)
+    (g.baseCard o).mayLookAtTopAnytime && g.retainsPrintedAbilities o)
 
 /-- True when `p` may look at the top card of their library right now.
 Elven Chorus does not reveal a new top while a spell from that top is
@@ -153,7 +153,7 @@ def canLookAtLibraryTop (g : Game) (p : PlayerId) : Bool :=
 the top of their library. Does not grant flash or change timing. -/
 def controlsCastCreaturesFromTop (g : Game) (p : PlayerId) : Bool :=
   (g.permanentsOf p).any (fun o =>
-    o.printed.mayCastCreaturesFromTop && g.retainsPrintedAbilities o)
+    (g.baseCard o).mayCastCreaturesFromTop && g.retainsPrintedAbilities o)
 
 /-- The top card of `p`'s library, if any. -/
 def libraryTop? (g : Game) (p : PlayerId) : Option GameObject :=
@@ -163,13 +163,13 @@ def libraryTop? (g : Game) (p : PlayerId) : Option GameObject :=
 a creature spell from there. Timing is still checked by `canCast`. -/
 def controlsPlayLandsFromTop (g : Game) (p : PlayerId) : Bool :=
   (g.permanentsOf p).any (fun o =>
-    o.printed.mayPlayLandsFromTop && g.retainsPrintedAbilities o)
+    (g.baseCard o).mayPlayLandsFromTop && g.retainsPrintedAbilities o)
 
 def mayPlayFromLibraryTop (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
   o.zone == .library p &&
     (g.player p).library.back? == some o.id &&
-    ((o.printed.isCreature && g.controlsCastCreaturesFromTop p) ||
-      (o.printed.isLand && g.controlsPlayLandsFromTop p))
+    ((g.isCreature o && g.controlsCastCreaturesFromTop p) ||
+      (g.isLand o && g.controlsPlayLandsFromTop p))
 
 def mayPlay (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
   (g.player p).hand.contains o.id || g.mayPlayFromExile p o || g.mayCastExiledBySource p o ||

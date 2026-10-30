@@ -5,7 +5,7 @@ import Mtg.Engine.Game.Movement
 
 Deciding a finished game, control-changing effects and their end
 (CR 800.4a / 800.4c), objects and pending decisions of a player who
-leaves a multiplayer game, and emptying mana pools (CR 500.4).
+leaves a multiplayer game, and emptying mana pools (CR 500.5).
 -/
 
 namespace Mtg.Engine
@@ -322,7 +322,7 @@ def emptyManaPools (g : Game) : Game :=
       if !pl.manaPool.isEmpty then
         let colorless :=
           (g.permanentsOf pl.id).any (fun o =>
-            o.printed.unspentManaBecomesColorless && g.retainsPrintedAbilities o)
+            (g.baseCard o).unspentManaBecomesColorless && g.retainsPrintedAbilities o)
         let units := pl.manaPool.toUnits
         if colorless then
           g := g.record (GameEvent.manaEmptied g.turnNumber pl.id units true (cause := cause))

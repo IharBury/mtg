@@ -40,7 +40,7 @@ def afterSilentCleanup : Game := passBoth atEndStep
 #guard !afterSilentCleanup.cleanupGivesPriority
 #guard !afterSilentCleanup.log.any (· == "Players receive priority during cleanup (CR 514.3a)")
 
-/-- Opponent's untap (CR 502.2) does not untap Chandra's land. -/
+/-- Opponent's untap (CR 502.3) does not untap Chandra's land. -/
 def nissaTurn2 : Game := passBoth (skipTo tappedMountain .end 80)
 
 #guard nissaTurn2.turnNumber == 2
@@ -63,7 +63,7 @@ def nissaDraw : Game := passBoth nissaTurn2
 #guard nissaDraw.log.any (fun s => mentions s "Nissa draws")
 
 /-- The pass that ends Nissa's turn also runs Chandra's untap. Occupants are
-unchanged, but the land is now untapped (CR 502.2). -/
+unchanged, but the land is now untapped (CR 502.3). -/
 def nissaEnd : Game := skipTo nissaTurn2 .end 80
 def chandraTurn3 : Game := passBoth nissaEnd
 
@@ -417,7 +417,7 @@ def afterUnblockedDamage : Game :=
 #guard afterUnblockedDamage.log.any (fun s =>
   mentions s "Gray Ogre deals 2 combat damage to Nissa")
 
-/-- Unused mana is emptied as a turn-based action (CR 500.4). -/
+/-- Unused mana is emptied as a turn-based action (CR 500.5). -/
 def emptiedPool : Game := tappedMountain.emptyManaPools
 
 #guard (emptiedPool.player ⟨0⟩).manaPool.isEmpty

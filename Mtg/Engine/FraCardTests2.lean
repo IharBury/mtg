@@ -230,8 +230,9 @@ being illegal stops the whole ability). -/
 #guard
   let g := enterPermanent afterDraw divinerOfVictory me
   let host := namedPermanent g "Diviner of Victory"
-  let (g, aura) := g.allocObject infiniteCoursework me .battlefield (some me) (attachedTo := some host.id)
-  let g := settle (g.afterPermanentEnters aura)
+  let (g, aura) := g.allocObject infiniteCoursework me (.outside me) none
+  let (g, newId) := g.move aura.id .battlefield (some me) (attachedTo := some host.id)
+  let g := settle (g.afterPermanentEnters (g.object! newId))
   let o := namedPermanent g "Diviner of Victory"
   o.status.tapped && !o.status.prepared
 

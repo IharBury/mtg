@@ -1032,7 +1032,7 @@ def isCreatureType (s : String) : Bool :=
   | none => false
 
 /-- A subtype that is not a creature type (CR 205.3g–k, 205.3n–q).
-Changeling grants creature types only (CR 702.72). Unknown words stay
+Changeling grants creature types only (CR 702.73). Unknown words stay
 available to changeling, matching objects whose printed subtype is not in
 the current rules list. -/
 def isNoncreatureSubtype (s : Subtype) : Bool :=

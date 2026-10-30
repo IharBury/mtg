@@ -55,7 +55,7 @@ def resolveDelayedTrigger (g : Game) (controller : PlayerId) (kind : DelayedTrig
           let (g', newId) := g.putOntoBattlefield id owner (cause := some cause)
           let g' := g'.logMsg s!"{name} returns to the battlefield (beginning of end step)"
           let back := g'.object! newId
-          if back.printed.isLand then g'.afterLandEnters back
+          if g'.isLand back then g'.afterLandEnters back
           else g'.afterPermanentEnters back
       else g
   | .endStepExile id =>
@@ -111,7 +111,7 @@ def resolveTop (g : Game) : Game :=
           let t := if tcs.isEmpty then rawT else TextChange.applyTriggeredAbility tcs rawT
           if g.fraAbilityTargetsAllIllegal entry.controller obj t entry.targets then
             let g := g.withResolvingContext ctxSrc entry.controller fun g =>
-              let g := g.record (GameEvent.removedOnResolution g.turnNumber obj.asEvent)
+              let g := g.record (GameEvent.removedOnResolution g.turnNumber (g.snapshot obj))
               let g := entry.targets.foldl (fun (g : Game) (tg : Target) => g.illegalAbilityTarget tg) g
               g.logMsg s!"{obj.name} doesn't resolve because all its targets are illegal (CR 608.2b)"
             g.ceaseToExist obj.id (cause := some (.gameRule .abilityFinishedResolving))
@@ -144,7 +144,7 @@ def resolveTop (g : Game) : Game :=
         let t := if tcs.isEmpty then rawT else TextChange.applyTriggeredAbility tcs rawT
         if g.fraAbilityTargetsAllIllegal entry.controller obj t entry.targets then
           let g := g.withResolvingContext ctxSrc entry.controller fun g =>
-            let g := g.record (GameEvent.removedOnResolution g.turnNumber obj.asEvent)
+            let g := g.record (GameEvent.removedOnResolution g.turnNumber (g.snapshot obj))
             let g := entry.targets.foldl (fun (g : Game) (tg : Target) => g.illegalAbilityTarget tg) g
             g.logMsg s!"{obj.name} doesn't resolve because all its targets are illegal (CR 608.2b)"
           g.ceaseToExist obj.id (cause := some (.gameRule .abilityFinishedResolving))
@@ -191,15 +191,19 @@ def resolveTop (g : Game) : Game :=
             | none => false
         if allTargetsIllegal then
           let finishCause := some (EventCause.gameRule .instantOrSorceryFinishedResolving)
-          let g := g.record (GameEvent.removedOnResolution g.turnNumber obj.asEvent
+          let g := g.record (GameEvent.removedOnResolution g.turnNumber (g.snapshot obj)
             (cause := finishCause))
           let g := entry.targets.foldl (fun g t => g.illegalAbilityTarget t) g
           let g := g.logMsg
             s!"{obj.name} doesn't resolve because all its targets are illegal (CR 608.2b)"
+          let hasFlashback :=
+            GameEvent.castWithFlashback g.events obj.id || g.flashbackUntilEot obj ||
+              (fromGy && !g.freeCastFromGraveyard obj &&
+                ((g.baseCard obj).flashback.isSome || g.hasFlashbackPermission obj))
           if obj.isCopy then
             (g.ceaseToExist obj.id (cause := some (.stateBased .copyOutsideStackOrBf))).logMsg
               s!"The copy of {obj.name} ceases to exist (CR 704.5e)"
-          else if fromGy then
+          else if hasFlashback then
             let (g, _) := g.move obj.id .exile none (cause := finishCause)
             g.logMsg s!"{obj.name} is exiled (flashback)"
           else
@@ -239,7 +243,7 @@ def resolveTop (g : Game) : Game :=
               (chosenX := chosenX)
             (g, rest.extract n rest.size)) (g, entry.targets)
           let g :=
-            match obj.printed.empowerJace with
+            match (g.baseCard obj).empowerJace with
             | some n => g.empowerJace entry.controller n
             | none => g
           g.completeActiveResolutions

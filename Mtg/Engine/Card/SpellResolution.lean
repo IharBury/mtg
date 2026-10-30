@@ -1708,7 +1708,7 @@ inductive TriggerLibraryHow where
   | untilNonland
 deriving Repr, Inhabited, BEq
 
-/-- How many cards `TriggerResolution.revealFromHand` shows (CR 701.16). -/
+/-- How many cards `TriggerResolution.revealFromHand` shows (CR 701.20). -/
 inductive TriggerRevealCount where
   /-- The whole hand. -/
   | hand
@@ -2319,7 +2319,7 @@ inductive Resolution where
   `.may (.createTokens .wall04defender (.fixed 1) false) (.sequence []) .ifYouDo`.
   Declining creates nothing. -/
   | may (action follow : Resolution) (when : TriggerMayWhen := .ifYouDont)
-  /-- You gain life (CR 118.2), as `amount` says.
+  /-- You gain life (CR 119.3), as `amount` says.
   You gain `n` life is `.gainLife (.fixed n)`.
   Life equal to the targeted card's power is `.gainLife .equalToTargetPower`.
   Inside `sequence`, that power is read when the sequence starts, before an
@@ -2737,7 +2737,7 @@ inductive Resolution where
   resolves `thenDo`. A player the selector does not name reveals nothing. -/
   | revealLibrary (how : TriggerLibraryHow) (thenDo : Resolution)
       (who : PlayerSelector := .you)
-  /-- Mill cards (CR 701.13), as `amount` and `who` say. `note` says what a
+  /-- Mill cards (CR 701.17), as `amount` and `who` say. `note` says what a
   later step can read.
   Milling zero cards changes nothing. A library that runs out logs that
   it is empty and mills nothing further.
@@ -2769,7 +2769,7 @@ inductive Resolution where
   | spellsCostLess (which : SpellCostLess) (n : NumberSelector)
   /-- Investigate (create a Clue). -/
   | investigate
-  /-- Connive (CR 701.48). `who` says which creature.
+  /-- Connive (CR 701.50). `who` says which creature.
   The source is `.connive`.
   The announced creature is `.connive .target`. The kind of that target is
   chosen when the ability is put on the stack.
@@ -2792,7 +2792,7 @@ inductive Resolution where
   or deals damage equal to its power when `how` is `.reflexive`. A card or
   a hand fights nothing. -/
   | fight (who : ObjectSelector := .source) (how : TriggerFightHow := .mutual)
-  /-- A player reveals cards from their hand (CR 701.16), as `count` says,
+  /-- A player reveals cards from their hand (CR 701.20), as `count` says,
   then resolves `thenDo`.
   The opponent reveals their hand. You may exile a nonland card from it, or
   the chosen creature, until the source leaves, with
@@ -2826,7 +2826,7 @@ inductive Resolution where
   | additionalCombatPhase
   /-- The target becomes a Bear in addition to its other types. -/
   | becomeBear
-  /-- A player loses life (CR 118.3a), as `amount` and `who` say.
+  /-- A player loses life (CR 119.3), as `amount` and `who` say.
   Losing 0 life does nothing.
   You lose `n` life is `.loseLife (.fixed n)`.
   The announced opponent loses `n` life is
@@ -2884,7 +2884,7 @@ inductive Resolution where
 
   /-- You may play an additional land this turn. -/
   | extraLand
-  /-- The two announced creatures fight (CR 701.12): each deals damage equal
+  /-- The two announced creatures fight (CR 701.14): each deals damage equal
   to its power to the other. Both creatures required is `.mutualFight` (`.both`).
   Up to one other creature is `.mutualFight .upToOne`. Counters and then the
   required fight are
@@ -3176,7 +3176,7 @@ inductive Resolution where
   | harnessInfinityStone
   /-- Target permanent you control of this subtype connives. -/
   | targetSubtypeConnives (subtype : CardSubtype)
-  /-- Mill `n` cards (CR 701.13). -/
+  /-- Mill `n` cards (CR 701.17). -/
   | millSelf (n : Nat)
   /-- You may discard a card. If you do, draw `n` cards. -/
   | mayDiscardDraw (n : Nat)

@@ -123,10 +123,14 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
   -- is not required yet (CR 601.2g). CR 715.3: an adventurer card may be
   -- cast as its Adventure.
   let fromGraveyard := card.zone == .graveyard card.owner
+  let isFreeFromGy := fromGraveyard && g.freeCastFromGraveyard card
+  let hadFlashbackPerm := fromGraveyard && !isFreeFromGy && g.flashbackUntilEot card
+  let isFlashbackCast := fromGraveyard && !isFreeFromGy && (face.flashback.isSome || hadFlashbackPerm)
   let needsSacrifice :=
     face.additionalCostSacrificeCreature ||
       (face.additionalCostSacrificeArtifactOrCreature && face.additionalCostOrPayGeneric.isNone)
   let original := card
+  let origSnap := g.snapshot original
   let handBefore := pl.hand
   let stackBefore := g.stack
   let manaBefore := pl.manaPool
@@ -138,6 +142,10 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
     (overridePrinted := if asAdventure then some face else none)
     (adventurerCard := if asAdventure then some original.printed else none)
     (cause := some (.gameRule .spellCast))
+  let g :=
+    if hadFlashbackPerm then
+      g.createEffect (.flashbackUntilEot newId) (cause := some (.gameRule .spellCast))
+    else g
   -- CR 601.2a / 601.2f: the total cost is determined after the spell is on
   -- the stack (rulings 824 / 874).
   let cost :=
@@ -152,7 +160,7 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
     | some src =>
       match g.findObject? src with
       | some perm =>
-        (g.record (GameEvent.designation g.turnNumber perm.asEvent .prepared false
+        (g.record (GameEvent.designation g.turnNumber (g.snapshot perm) .prepared false
           (cause := .gameRule .spellCast))).logMsg
           s!"{perm.name} is no longer prepared"
       | none => g
@@ -163,8 +171,8 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
     if (origPerm.bind (·.prepareSource)).isSome then .alternative "prepare"
     else if asAdventure then .alternative "adventure"
     else if sneakAttacker.isSome then .alternative "sneak"
-    else if fromGraveyard then .alternative "flashback"
-    else if origPerm.isSome then .alternative "permission"
+    else if isFlashbackCast then .alternative "flashback"
+    else if isFreeFromGy || origPerm.isSome then .alternative "permission"
     else .normal
   let g := g.record (GameEvent.proposed g.turnNumber newId p original.zone way)
   let needsMode := face.isModal
@@ -174,7 +182,7 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
   let needsGift := face.giftTreasure
   let needsTeamwork := face.teamwork.isSome
   -- CR 702.34a: a flashback cost that includes discarding a card.
-  let needsFlashbackDiscard := fromGraveyard && face.flashbackDiscard
+  let needsFlashbackDiscard := isFlashbackCast && face.flashbackDiscard
   if needsFlashbackDiscard && (g.player p).hand.isEmpty then
     throw s!"{face.name}'s flashback cost requires discarding a card"
   if !needsMode && !needsTarget && !cost.includesManaPayment && !cost.containsX &&
@@ -191,6 +199,7 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
     cost := cost
     spellId := newId
     original := original
+    originalSnapshot := origSnap
     handBefore := handBefore
     stackBefore := stackBefore
     manaBefore := manaBefore

@@ -15,14 +15,14 @@ def attachSourceTo (g : Game) (src host : GameObject)
     (cause : Option EventCause := none) : Game :=
   let src := g.object! src.id
   let effCause := g.resolveOptionalCause cause (fallbackSrc := some src.id) (fallbackCtrl := g.controllerOf src)
-  let g := g.record (GameEvent.attached g.turnNumber src.id host.id (cause := effCause))
+  let g := g.record (GameEvent.attached g.turnNumber (g.snapshot src) host.id (previous := src.attachedTo) (cause := effCause))
   g.logMsg s!"{src.name} attaches to {host.name}"
 
 /-- Remove an id from a zone list. -/
 def stripId (ids : Array ObjectId) (id : ObjectId) : Array ObjectId :=
   ids.filter (fun x => x != id)
 
-/-- An object ceases to exist (CR 608.2m / 111.8 / 704.5d / 704.5e).
+/-- An object ceases to exist (CR 111.7 / 704.5d / 704.5e).
 The object is deleted and its id is removed from the zone it occupied, so a
 graveyard, hand, library, or stack keeps nothing of it. -/
 def ceaseToExist (g : Game) (id : ObjectId) (cause : Option EventCause := none) : Game :=
@@ -47,7 +47,7 @@ def unattachFrom (g : Game) (hostId : ObjectId) : Game :=
     let mut g := g
     for o in g.battlefield do
       if o.attachedTo == some hostId then
-        g := g.record (GameEvent.unattached g.turnNumber o.asEvent hostId
+        g := g.record (GameEvent.unattached g.turnNumber (g.snapshot o) hostId
           (cause := .gameRule .unattachOnHostLeave))
         g := g.logMsg s!"{o.name} becomes unattached"
     return g

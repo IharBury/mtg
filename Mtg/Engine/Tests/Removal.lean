@@ -434,7 +434,7 @@ def indestructibleZeroDies : Game :=
 #guard indestructibleZeroDies.log.any (fun s => mentions s "dies (toughness 0)")
 #guard !indestructibleZeroDies.log.any (fun s => mentions s "exiled instead")
 
-/-- Destroy does nothing to an indestructible creature (CR 701.7b / 702.12b). -/
+/-- Destroy does nothing to an indestructible creature (CR 702.12b). -/
 def destroyIndestructibleFlyer : Game :=
   let g := addPermanent afterDraw indestructibleFlyer ⟨1⟩ ⟨1⟩
   g.applyEffect ⟨0⟩ (Effect.destroyCreatureWithFlying)
@@ -879,7 +879,7 @@ def resolvedQuarrelWarg : Game :=
   mentions s "Ravening Warg deals 2 damage to Hill Giant")
 #guard resolvedQuarrelWarg.log.any (fun s => mentions s "Hill Giant dies from deathtouch")
 
-/- Night's Whisper: you draw two cards and lose 2 life (CR 121 / 118.3a). -/
+/- Night's Whisper: you draw two cards and lose 2 life (CR 121 / 119.3). -/
 
 #guard nightsWhisper.isSorcery
 #guard nightsWhisper.hasSorcerySpeed
@@ -904,7 +904,7 @@ def resolvedQuarrelWarg : Game :=
     g.log.any (fun s => mentions s "loses 2 life (18 life)") &&
     !g.log.any (fun s => mentions s "is dealt 2 damage")
 
--- Losing 0 life does nothing (CR 118.9). Drawing 0 cards is a no-op.
+-- Losing 0 life does nothing (CR 119.3). Drawing 0 cards is a no-op.
 #guard
   let g := afterDraw.applyEffect ⟨0⟩ (Effect.drawAndLoseLife 0 0) #[]
   (g.player ⟨0⟩).life == 20 &&

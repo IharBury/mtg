@@ -58,7 +58,7 @@ def resolvingDamageSourceEvent? (g : Game) : Option EventObject :=
   g.resolvingMovedDamageSource?.map g.snapshot
 
 /-- Destroy a permanent (CR 701.8). Indestructible permanents aren't destroyed
-(CR 701.8b / 702.12b). A shield counter replaces destruction with removing a
+(CR 702.12b). A shield counter replaces destruction with removing a
 shield counter via the CR 616.1 replacement loop (CR 122.1c / 614.6). If it
 would die this turn under an exile replacement, `move` sends it to exile instead
 of the graveyard (CR 614.1). -/
@@ -455,7 +455,7 @@ def tomikNoncombatBonus (g : Game) (src : GameObject) (recipient : PlayerId) : I
       (g.staticAbilities o).any (· == .fra .noncombatDamagePlusOne))).size
   | none => 0
 
-/-- Increase `p`'s life total (CR 119.2), running the CR 616.1 replacement loop
+/-- Increase `p`'s life total (CR 119.3), running the CR 616.1 replacement loop
 for any active `.modifyLifeGain` replacement effects. Gaining 0 life does
 nothing (CR 119.9). -/
 def gainLife (g : Game) (p : PlayerId) (n : Nat)
@@ -712,7 +712,7 @@ def fightCreatures (g : Game) (src dest : GameObject)
     | _, _ => g
 
 /-- Decrease `p`'s life total (CR 119.3). Losing 0 life does nothing
-(CR 119.9). Loss of life is not damage (CR 119.3 / 120.3). -/
+(CR 119.3). Loss of life is not damage (CR 119.3 / 120.3). -/
 def loseLife (g : Game) (p : PlayerId) (n : Nat)
     (cause : Option EventCause := none) : Game :=
   if n == 0 then g

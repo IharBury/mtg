@@ -5,7 +5,7 @@ import Mtg.Engine.Game.Leaving
 
 Drawing cards with draw replacements, recruit (MSH), shuffle requests
 answered by outside randomness, and ordered placement of cards into a
-zone (CR 701.20b).
+zone (CR 401.4 / 404.3).
 -/
 
 namespace Mtg.Engine
@@ -72,7 +72,7 @@ partial def drawOneWithReplacements (g : Game) (p : PlayerId)
         let mut acc : Array (ReplacementSpec × Nat) := #[]
         if !firstOfYourDrawStep then
           for o in g.permanentsOf p do
-            if o.printed.drawTwoExceptFirstDrawStep && g.retainsPrintedAbilities o then
+            if (g.baseCard o).drawTwoExceptFirstDrawStep && g.retainsPrintedAbilities o then
               acc := acc.push (
                 { id := { kind := .drawTwoExceptFirstDrawStep, object := some o.id }
                   source := some o.id

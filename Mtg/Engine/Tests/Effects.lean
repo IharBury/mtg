@@ -1105,8 +1105,9 @@ def valleyChapterI : Game :=
 
 def valleyLandfall : Game :=
   let g := addSagaLore valleyChapterI "Down in the Valley"
-  let g := addUntappedLand g forest
-  g.afterLandEnters (namedPermanent g "Forest") |>.receivePriority ⟨0⟩ |> (settle · 24)
+  let (g, f) := g.allocObject forest ⟨0⟩ (.outside ⟨0⟩) none
+  let (g, newId) := g.putOntoBattlefield f.id ⟨0⟩ (summoningSick := false)
+  g.afterLandEnters (g.object! newId) |>.receivePriority ⟨0⟩ |> (settle · 24)
 
 #guard
   valleyLandfall.battlefield.any (fun o =>

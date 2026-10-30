@@ -113,7 +113,7 @@ def beholdQuality (g : Game) (p : PlayerId) (quality : CardSubtype)
   let hasHand :=
     (g.player p).hand.any (fun id =>
       match g.findObject? id with
-      | some o => o.printed.hasSubtype quality
+      | some o => g.hasSubtype o quality
       | none => false)
   if hasPerm || hasHand then
     let effCause := g.resolveOptionalCause cause (fallbackCtrl := some p)
@@ -228,7 +228,7 @@ def supperForSpidersReturn (g : Game) (controller : PlayerId)
         acc.logMsg s!"{o.name} returns as a Food artifact") g
 
 /-- Exile the top `n` cards face down. They may be played while exiled if you
-control `subtype` (CR 610.1 / 701.14). Timing and costs are unchanged. -/
+control `subtype` (CR 610.1 / 701.18). Timing and costs are unchanged. -/
 def exileTopPlayIfYouControlSubtype (g : Game) (p : PlayerId) (n : Nat)
     (subtype : CardSubtype) : Game :=
   Id.run do
@@ -282,7 +282,7 @@ partial def exileUntilInstantOrSorcery (g : Game) (victim : PlayerId)
       g := g'
       let o := g.object! newId
       g := g.logMsg s!"{(g.player victim).name} exiles {name} face up"
-      if o.printed.isInstantOrSorcery then
+      if g.isInstantOrSorcery o then
         found := some newId
       else
         exiled := exiled.push newId
@@ -328,7 +328,7 @@ or sorcery card). -/
 def canPaySarumanWard (g : Game) (p : PlayerId) : Bool :=
   (g.player p).hand.any (fun id =>
     match g.findObject? id with
-    | some o => o.printed.isEnchantment || o.printed.isInstant || o.printed.isSorcery
+    | some o => g.isEnchantment o || g.isInstantOrSorcery o
     | none => false)
 
 /-- Legendary artifacts and creatures `p` may sacrifice to Sauron's ward. -/
@@ -405,8 +405,8 @@ def mustAttackCanDeclineIfOnlyAttackCosts (onlyAttacksRequireCost : Bool) : Bool
   onlyAttacksRequireCost
 
 /-- Ares and similar “attacks each combat if able” statics (MSH 130). -/
-def hasAttacksIfAble (o : GameObject) : Bool :=
-  o.staticAbilities.any (fun
+def hasAttacksIfAble (g : Game) (o : GameObject) : Bool :=
+  (g.staticAbilities o).any (fun
     | .attacksEachCombatIfAble => true
     | _ => false)
 
@@ -431,11 +431,7 @@ def everyAttackCosts (g : Game) (o : GameObject) : Bool :=
 /-- True when `o` must attack this combat. Summoning sickness, being tapped,
 or an unpaid attack cost means it does not have to attack (MSH 130). -/
 def mustAttackIfAble (g : Game) (o : GameObject) (attackRequiresCost := false) : Bool :=
-  let attacksEachCombat :=
-    (g.staticAbilities o).any (fun
-      | .attacksEachCombatIfAble => true
-      | _ => false)
-  (attacksEachCombat || o.status.goaded) && g.canAttack o &&
+  (g.hasAttacksIfAble o || o.status.goaded) && g.canAttack o &&
     !mustAttackCanDeclineIfOnlyAttackCosts (attackRequiresCost || g.everyAttackCosts o)
 
 /-- Failed Adventure from Bilbo's graveyard ability is exiled by Bilbo, not

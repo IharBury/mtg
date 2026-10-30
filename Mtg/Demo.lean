@@ -492,7 +492,7 @@ def helpInteractive (controlAll : Bool := false)
   scry                 Finish scrying; keep looked-at cards on top
   scry top <id>...     Put listed cards on top (last = new top); rest go to the bottom
   scry bottom <id>...  Put listed cards on the bottom (first = new bottom); rest stay on top
-  scry top <id>... bottom <id>...  Choose both piles and their orders (CR 701.20)
+  scry top <id>... bottom <id>...  Choose both piles and their orders (CR 701.22)
   surveil              Finish surveilling; keep looked-at cards on top
   surveil top <id>...  Keep listed cards on top (last = new top); rest go to the graveyard
   surveil graveyard <id>...  Put listed cards into the graveyard in that order; rest stay on top
@@ -1129,7 +1129,7 @@ def applyProliferate (g : Game) (p : PlayerId) (tokens : List String) : Except S
 
 def scryUsage : String := "usage: scry [top <id> ...] [bottom <id> ...]"
 
-/-- Finish a pending scry (CR 701.20). Bare `scry` keeps the looked-at cards
+/-- Finish a pending scry (CR 701.22). Bare `scry` keeps the looked-at cards
 on top in their current order. `scry top <ids>` puts those cards on top
 (last = new top) and the rest on the bottom in their current relative order.
 `scry bottom <ids>` puts those cards on the bottom (first = new bottom) and
@@ -1164,7 +1164,7 @@ def applyScry (g : Game) (p : PlayerId) (tokens : List String) : Except String G
       g.apply p (.scry topIds bottomIds)
     | _ => throw scryUsage
   | .surveil .. => throw "You are surveilling, not scrying; use surveil (CR 701.25)"
-  | _ => throw "Not time to scry (CR 701.20)"
+  | _ => throw "Not time to scry (CR 701.22)"
 
 def surveilUsage : String := "usage: surveil [top <id> ...] [graveyard <id> ...]"
 
@@ -1200,7 +1200,7 @@ def applySurveil (g : Game) (p : PlayerId) (tokens : List String) : Except Strin
           pure ids
       g.apply p (.surveil topIds graveyardIds)
     | _ => throw surveilUsage
-  | .scry .. => throw "You are scrying, not surveilling; use scry (CR 701.20)"
+  | .scry .. => throw "You are scrying, not surveilling; use scry (CR 701.22)"
   | _ => throw "Not time to surveil (CR 701.25)"
 
 def discardUsage : String := "usage: discard <id>"
@@ -2025,11 +2025,11 @@ def hasGameStatePriorityAction (g : Game) (p : PlayerId) : Bool :=
     let available := g.availableMana p
     let playable := g.handObjects p ++ g.exiledPlayable p
     let canPlayLand :=
-      g.canPlayLand p && playable.any (fun o => o.printed.isLand)
+      g.canPlayLand p && playable.any g.isLand
     let canCast := playable.any (fun o =>
       g.canCast p o &&
         available.canPay o.printed.manaCost
-          (allowElfRestricted := o.hasSubtype .elf) &&
+          (allowElfRestricted := g.hasSubtype o .elf) &&
         g.canPayAnnouncedAdditional p o available)
     let canCastAdventure := playable.any (fun o =>
       g.canCastAdventure p o &&
@@ -2040,7 +2040,7 @@ def hasGameStatePriorityAction (g : Game) (p : PlayerId) : Bool :=
       (g.activatedAbilitiesOf o).any (fun ab =>
         g.canActivate p o ab &&
           (g.availableManaExcept p (if ab.cost.tap then some o.id else none)).canPay
-            ab.cost.mana (allowElfRestricted := o.hasSubtype .elf)))
+            ab.cost.mana (allowElfRestricted := g.hasSubtype o .elf)))
     canPlayLand || !(g.manaSources p).isEmpty || canCast || canCastAdventure || canActivate
 
 /-- Whether bit `i` of `mask` is set. -/

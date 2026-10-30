@@ -42,7 +42,7 @@ structure Keywords where
   ascend : Bool := false
   /-- Shadow (CR 702.27): can block or be blocked by only creatures with shadow. -/
   shadow : Bool := false
-  /-- Changeling (CR 702.72): this object has all creature types. -/
+  /-- Changeling (CR 702.73): this object has all creature types. -/
   changeling : Bool := false
   /-- Convoke (CR 702.51): tap creatures to help pay this spell. -/
   convoke : Bool := false

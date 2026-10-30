@@ -69,9 +69,8 @@ def skipToMayHaveVillainConnive (g : Game) : Nat → Game
 def struckerMayConnive : Game :=
   let g := addToHand afterDraw lightningBolt ⟨0⟩
   let g := addPermanent g baronStruckerHYDRAOverlord ⟨0⟩ ⟨0⟩
-  let g := addPermanent g redGuardianSuperSoldier ⟨0⟩ ⟨0⟩
-  let g := g.afterPermanentEnters (namedPermanent g "Red Guardian, Super-Soldier")
-  skipToMayHaveVillainConnive (g.receivePriority ⟨0⟩) 24
+  let g := mshEnter g redGuardianSuperSoldier
+  skipToMayHaveVillainConnive g 24
 
 #guard
   match struckerMayConnive.pending with
@@ -125,8 +124,7 @@ def agentAttacksAlone : Game :=
 def planFromLandfall : Game :=
   let g := mshEnter afterDraw claimTheKingdom
   let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
-  let g := addPermanent g forest ⟨0⟩ ⟨0⟩
-  settle ((g.afterLandEnters (namedPermanent g "Forest")).receivePriority ⟨0⟩) 24
+  settle (mshEnter g forest) 24
 
 #guard (namedPermanent planFromLandfall "Claim the Kingdom").status.plan == 1
 #guard (namedPermanent planFromLandfall "Grizzly Bears").status.plusOnePlusOne == 1

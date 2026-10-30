@@ -44,7 +44,8 @@ def castFreeCopy (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game 
   if p != q then throw s!"Only {(g.player q).name} may cast the copies"
   if !ids.contains id then throw "That isn't one of the copies"
   let some card := g.findObject? id | throw "no such object"
-  let face := card.printed
+  let origSnap := g.snapshot card
+  let face := g.baseCard card
   let mv := g.objectManaValue card
   if mv > budget then
     throw s!"{face.name} has mana value {mv}; only {budget} is left"
@@ -63,6 +64,7 @@ def castFreeCopy (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game 
   let g := g.logMsg s!"{(g.player p).name} casts a copy of {face.name} without paying its mana cost"
   let prop : ProposedSpell := {
     caster := p, cost := ManaCost.empty, spellId := newId, original := card
+    originalSnapshot := origSnap
     handBefore := (g.player p).hand, stackBefore, manaBefore := pool }
   if face.isModal then
     return g.changes #[.pending (.chooseMode p), .proposedSpell (some prop)]
@@ -243,7 +245,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     if ids.size != need || !ids.all ((g.player p).hand.contains ·) ||
         ids.toList.eraseDups.length != ids.size then
       throw s!"Choose {need} different cards from your hand"
-    let nonland := (ids.filter (fun id => !(g.object! id).printed.isLand)).size
+    let nonland := (ids.filter (fun id => !g.isLand (g.object! id))).size
     let g := g.withBatch none fun g =>
       ids.foldl (fun g id => g.discardFromHand p id) g
     let g := g.change (.pending .none)
@@ -353,7 +355,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let hand := (g.player p).hand
     if ids.size != 2 || ids[0]! == ids[1]! || !ids.all hand.contains then
       throw "Choose two different cards from your hand"
-    let nonland := (ids.filter (fun id => !(g.object! id).printed.isLand)).size
+    let nonland := (ids.filter (fun id => !g.isLand (g.object! id))).size
     let g := g.withBatch none fun g =>
       ids.foldl (fun g id => g.discardFromHand p id) g
     return (g.continueDiscardTwo controller rest (if nonland < 2 then draws + 1 else draws)).finishFraChoice
@@ -807,7 +809,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .mayCastInstantSorceryFromHand eligible, .objects #[id] =>
     if !eligible.contains id then throw "That card can't be cast this way"
     let some o := g.findObject? id | throw "no such object"
-    if o.zone != .hand p || !o.printed.isInstantOrSorcery then
+    if o.zone != .hand p || !g.isInstantOrSorcery o then
       throw s!"{o.name} is no longer an instant or sorcery in your hand"
     return (g.castAsPartOfResolution p id).finishFraChoice
   | .mayCastInstantSorceryFromHand _, .decline =>
@@ -816,7 +818,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .mayCastUpToFromExile eligible left, .objects #[id] =>
     if left == 0 || !eligible.contains id then throw "That card can't be cast this way"
     let some o := g.findObject? id | throw "no such object"
-    if o.zone != .exile || o.printed.isLand then
+    if o.zone != .exile || g.isLand o then
       throw s!"{o.name} can't be cast this way"
     let rest := eligible.filter (· != id)
     let g := g.castAsPartOfResolution p id
@@ -932,7 +934,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .mayPutHeroFromHandOrDraw ids, .objects #[id] =>
     if !ids.contains id then throw "That card can't be put onto the battlefield"
     let some o := g.findObject? id | throw "no such object"
-    if o.zone != .hand p || !o.printed.isCreature || !g.hasSubtype o .hero then
+    if o.zone != .hand p || !g.isCreature o || !g.hasSubtype o .hero then
       throw s!"{o.name} is not a Hero creature card in your hand"
     let (g, newId) := g.putOntoBattlefield id p
     return (g.afterPermanentEnters (g.object! newId)).finishFraChoice
@@ -1008,13 +1010,13 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       (g.findObject? id).any (fun o => o.zone == .graveyard controller))
     let mv :=
       milled.foldl (fun acc id =>
-        acc + (g.object! id).printed.manaValue) 0
+        acc + g.objectManaValue (g.object! id)) 0
     return (g.loseLife p mv (cause := cause?)).finishFraChoice
   | .palantirMayDraw .., _ => throw "Have that player draw (accept), or decline"
   | .mayCastCards eligible withoutPaying exileInstead, .objects #[id] =>
     if !eligible.contains id then throw "That card can't be cast this way"
     let some o := g.findObject? id | throw "no such object"
-    if !withoutPaying && !(g.player p).manaPool.canPay (g.playManaCost o o.printed) then
+    if !withoutPaying && !(g.player p).manaPool.canPay (g.playManaCost o (g.baseCard o)) then
       throw s!"{o.name} cannot be cast; add mana first, or decline"
     return (g.castAsPartOfResolution p id (withoutManaCost := withoutPaying)
       (exileInstantSorceryInstead := exileInstead)).finishFraChoice
@@ -1025,9 +1027,9 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     if !eligible.contains id then throw "That card can't be cast this way"
     let some o := g.findObject? id | throw "no such object"
     if o.zone != .graveyard o.owner then throw s!"{o.name} is no longer in the graveyard"
-    if !(o.printed.isArtifact || o.printed.isInstantOrSorcery) then
+    if !(g.isArtifact o || g.isInstantOrSorcery o) then
       throw s!"{o.name} is not an artifact, instant, or sorcery"
-    if !(g.player p).manaPool.canPay (g.playManaCost o o.printed) then
+    if !(g.player p).manaPool.canPay (g.playManaCost o (g.baseCard o)) then
       throw s!"{o.name} cannot be cast; add mana first, or decline"
     return (g.castAsPartOfResolution p id (withoutManaCost := false)
       (exileInstantSorceryInstead := true)).finishFraChoice
@@ -1401,7 +1403,7 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
       (g.findObject? id).any (fun card => (g.colors card).contains col)))
   | .chooseCardName _ =>
     -- Name a nonland card an opponent owns, else any nonland card.
-    let opp := g.objects.find? (fun o => o.owner != p && !o.printed.isLand)
+    let opp := g.objects.find? (fun o => o.owner != p && !g.isLand o)
     let any := g.knownCardFaces.find? (fun c => !c.isLand)
     .chooseName ((opp.map (·.name)).getD ((any.map (·.name)).getD ""))
   | .entersCreatureType _ =>

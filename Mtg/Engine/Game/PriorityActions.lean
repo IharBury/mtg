@@ -42,18 +42,19 @@ def additionalCostChoosesGeneric (g : Game) (p : PlayerId) (prop : ProposedSpell
   match g.findObject? prop.spellId with
   | none => true
   | some spell =>
-    if spell.printed.additionalCostBeholdOrPay.isSome then
-      match spell.printed.additionalCostBeholdOrPay with
+    let face := g.baseCard spell
+    if face.additionalCostBeholdOrPay.isSome then
+      match face.additionalCostBeholdOrPay with
       | some (quality, _) =>
         let hasPerm := (g.permanentsOf p).any (fun o => g.hasSubtype o quality)
         let hasHand :=
           (g.player p).hand.any (fun id =>
             match g.findObject? id with
-            | some card => card.printed.hasSubtype quality
+            | some card => g.hasSubtype card quality
             | none => false)
         !(hasPerm || hasHand)
       | none => true
-    else if spell.printed.additionalCostDiscardOrPayGeneric.isSome then
+    else if face.additionalCostDiscardOrPayGeneric.isSome then
       (g.player p).hand.isEmpty
     else
       (g.sacrificeCreatureOrArtifactChoices p prop.spellId).isEmpty
@@ -71,7 +72,7 @@ def announceAdditionalCost (g : Game) (p : PlayerId) (payGeneric : Bool) :
       | throw "No spell is waiting for an additional cost (CR 601.2b)"
     let some spell := g.findObject? prop.spellId
       | throw "The spell left the stack"
-    match spell.printed.additionalCostBeholdOrPay with
+    match (g.baseCard spell).additionalCostBeholdOrPay with
     | some (quality, n) =>
       if payGeneric then
         let g := g.changeProposals #[

@@ -287,8 +287,9 @@ def canCastSpewFlame : Bool :=
 /-- Ruling 19: a nonland entering does not trigger landfall. -/
 def creatureEtbVsLandfall : Game :=
   let g := addPermanent afterDraw attercop ⟨0⟩ ⟨0⟩
-  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
-  g.afterPermanentEnters (namedPermanent g "Grizzly Bears")
+  let (g, bears) := g.allocObject grizzlyBears ⟨0⟩ (.outside ⟨0⟩) none
+  let (g, newId) := g.putOntoBattlefield bears.id ⟨0⟩ (summoningSick := false)
+  g.afterPermanentEnters (g.object! newId) |>.receivePriority ⟨0⟩
 
 #guard !(creatureEtbVsLandfall.log.any (fun s => mentions s "landfall"))
 
@@ -381,8 +382,9 @@ before SBA; a 0/0 that then dies still leaves the player with the story.
 Storied does not use the stack. -/
 def storyFromZero : Game :=
   let g := started.createTreasureTokens ⟨0⟩ 2
-  let g := addPermanent g zeroStoried ⟨0⟩ ⟨0⟩
-  g.afterPermanentEnters (namedPermanent g "Zero Story")
+  let (g, zero) := g.allocObject zeroStoried ⟨0⟩ (.outside ⟨0⟩) none
+  let (g, newId) := g.putOntoBattlefield zero.id ⟨0⟩ (summoningSick := false)
+  g.afterPermanentEnters (g.object! newId)
 
 #guard storyFromZero.hasEnduringStory ⟨0⟩
 #guard storyFromZero.log.any (fun s => mentions s "has an enduring story")
@@ -1187,8 +1189,9 @@ def nineThenAnduril : Game :=
 before SBA, and it is not a triggered ability. -/
 def tenWithAscend : Game :=
   let g := started.createTreasureTokens ⟨0⟩ 9
-  let g := addPermanent g andurilNarsilReforged ⟨0⟩ ⟨0⟩
-  g.afterPermanentEnters (namedPermanent g "Andúril, Narsil Reforged")
+  let (g, anduril) := g.allocObject andurilNarsilReforged ⟨0⟩ (.outside ⟨0⟩) none
+  let (g, newId) := g.putOntoBattlefield anduril.id ⟨0⟩ (summoningSick := false)
+  g.afterPermanentEnters (g.object! newId)
 
 def tenWithAscendOk : Bool :=
   tenWithAscend.hasCitysBlessing ⟨0⟩ &&
@@ -1204,8 +1207,9 @@ def zeroAscend : CardDef :=
 
 def blessingFromZero : Game :=
   let g := started.createTreasureTokens ⟨0⟩ 9
-  let g := addPermanent g zeroAscend ⟨0⟩ ⟨0⟩
-  let g := g.afterPermanentEnters (namedPermanent g "Zero Blessing")
+  let (g, zero) := g.allocObject zeroAscend ⟨0⟩ (.outside ⟨0⟩) none
+  let (g, newId) := g.putOntoBattlefield zero.id ⟨0⟩ (summoningSick := false)
+  let g := g.afterPermanentEnters (g.object! newId)
   g.checkSBA
 
 #guard blessingFromZero.hasCitysBlessing ⟨0⟩
@@ -1805,8 +1809,7 @@ def bifurEntersAlone : Game := enterPermanent started bifurMelodicRider ⟨0⟩
 /-- Ruling 106: Chief extras another Wolf's trigger; not a copy. -/
 def chiefExtrasWolf : Game :=
   let g := addPermanent started chiefOfTheWilds ⟨0⟩ ⟨0⟩
-  let g := addPermanent g testWolf ⟨0⟩ ⟨0⟩
-  g.afterPermanentEnters (namedPermanent g "Test Wolf")
+  enterPermanent g testWolf ⟨0⟩
 
 def chiefExtraOk : Bool :=
   countWaiting chiefExtrasWolf (.onEnterDraw 1) == 2 &&
@@ -1818,8 +1821,7 @@ def chiefExtraOk : Bool :=
 def twoChiefsExtraWolf : Game :=
   let g := addPermanent started chiefOfTheWilds ⟨0⟩ ⟨0⟩
   let g := addPermanent g chiefOfTheWilds ⟨0⟩ ⟨0⟩
-  let g := addPermanent g testWolf ⟨0⟩ ⟨0⟩
-  g.afterPermanentEnters (namedPermanent g "Test Wolf")
+  enterPermanent g testWolf ⟨0⟩
 
 def twoExtrasOk : Bool :=
   countWaiting twoChiefsExtraWolf (.onEnterDraw 1) == 3 &&
@@ -1830,12 +1832,12 @@ def twoExtrasOk : Bool :=
 /-- Wizard's Staff extras the equipped creature's trigger. -/
 def staffExtrasEquipped : Game :=
   let g := addPermanent started wizardSStaff ⟨0⟩ ⟨0⟩
-  let g := addPermanent g testWolf ⟨0⟩ ⟨0⟩
+  let g := addPermanent g attercop ⟨0⟩ ⟨0⟩
   let g := g.attachSourceTo (namedPermanent g "Wizard's Staff")
-    (namedPermanent g "Test Wolf")
-  g.afterPermanentEnters (namedPermanent g "Test Wolf")
+    (namedPermanent g "Attercop")
+  enterPermanent g forest ⟨0⟩
 
-#guard countWaiting staffExtrasEquipped (.onEnterDraw 1) == 2
+#guard countWaiting staffExtrasEquipped (.onLandYouControlEntersGets 1 1) == 2
 
 /-- Ruling 261: replacements are unaffected by the extra-trigger ability. -/
 def staffDoesNotDoubleTokens : Game :=

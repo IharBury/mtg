@@ -19,7 +19,7 @@ inductive PermanentAction where
   | pump (power toughness : Int)
   /-- Until-end-of-turn +P/+T and trample. -/
   | pumpAndTrample (power toughness : Int)
-  /-- Destroy the permanent (CR 701.7). -/
+  /-- Destroy the permanent (CR 701.8). -/
   | destroy
   /-- Put `n` +1/+1 counters on the permanent (CR 122.1). -/
   | plusOne (n : Nat)

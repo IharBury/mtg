@@ -119,7 +119,7 @@ def applyDaredevilExile (g : Game) (controller : PlayerId) (sourceId : Option Ob
   let top? := (g.player controller).library.back?
   let isHero :=
     match top? with
-    | some top => (g.object! top).hasSubtype .hero
+    | some top => g.hasSubtype (g.object! top) .hero
     | none => false
   let g := g.exileTopPlayThisTurn controller 1
   if isHero then
@@ -294,7 +294,7 @@ def applyBecomeCopy (g : Game) (controller : PlayerId) (sourceId : Option Object
         match g.findObject? id with
         | some tgt =>
           let onBf := tgt.isOnBattlefield && g.isCreature tgt
-          let inGy := tgt.zone == .graveyard tgt.owner && tgt.printed.isCreature
+          let inGy := tgt.zone == .graveyard tgt.owner && g.isCreature tgt
           if onBf || inGy then
             g.becomeCopyOf src tgt (untilNextTurn := true)
               (exceptName := some "Taskmaster, Mercenary Mimic")
@@ -465,13 +465,13 @@ the stack, then a mana value recorded this turn. -/
 def castSpellManaValue (g : Game) (controller : PlayerId)
     (lastKnownPower : Option Int) : Nat :=
   match g.castTriggerSpell? with
-  | some spell => spell.printed.manaValue + (g.chosenXOf? spell.id).getD 0
+  | some spell => g.objectManaValue spell (includeLkiX := true)
   | none =>
     match lastKnownPower with
     | some p => p.toNat
     | none =>
       match g.lastStackSpell? with
-      | some o => o.printed.manaValue + (g.chosenXOf? o.id).getD 0
+      | some o => g.objectManaValue o (includeLkiX := true)
       | none =>
         match (g.loggedCastManaValues controller).back? with
         | some mv => mv
@@ -480,13 +480,13 @@ def castSpellManaValue (g : Game) (controller : PlayerId)
 /-- Blue mana symbols in the spell that caused this cast trigger. -/
 def blueSymbolsInCastSpell (g : Game) (lastKnownPower : Option Int) : Nat :=
   match g.castTriggerSpell? with
-  | some spell => spell.printed.manaCost.symbolsIncludingColor .blue
+  | some spell => (g.copiableValues spell).manaCost.symbolsIncludingColor .blue
   | none =>
     match lastKnownPower with
     | some p => p.toNat
     | none =>
       match g.lastStackSpell? with
-      | some o => o.printed.manaCost.symbolsIncludingColor .blue
+      | some o => (g.copiableValues o).manaCost.symbolsIncludingColor .blue
       | none => 0
 
 /-- Create one 1/1 blue Merfolk for each blue mana symbol in the causing spell. -/

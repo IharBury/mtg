@@ -103,7 +103,7 @@ inductive TriggerEvent where
   | youCastInstantOrSorcery
   /-- You attack with one or more Elves (CR 508.2 / 603.2a). -/
   | youAttackWithElves
-  /-- You scry (CR 701.20 / 603.2). -/
+  /-- You scry (CR 701.22 / 603.2). -/
   | youScry
   /-- Another Elf you control enters (CR 603.6a). -/
   | anotherElfYouControlEnters
@@ -254,7 +254,7 @@ inductive TriggerEvent where
   | youActivateLoyaltyAbility
   /-- The beginning of each player's upkeep. -/
   | eachUpkeep
-  /-- You scry or surveil (CR 701.20 / 701.25). -/
+  /-- You scry or surveil (CR 701.22 / 701.25). -/
   | youScryOrSurveil
   /-- One or more of your opponents are dealt combat damage during your turn. -/
   | opponentsDealtCombatDamageYourTurn

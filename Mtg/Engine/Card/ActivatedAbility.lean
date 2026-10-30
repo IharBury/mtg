@@ -89,7 +89,7 @@ structure ActivationCost where
   ability exactly when this is set. -/
   loyalty : Option LoyaltySymbol := none
   sacrificeSource : Bool := false
-  /-- Sacrifice another creature or artifact you control (CR 701.17). -/
+  /-- Sacrifice another creature or artifact you control (CR 701.21). -/
   sacrificeAnotherCreatureOrArtifact : Bool := false
   /-- Pay this much life (CR 118.3b / 119.4). Payment of life is not damage. -/
   payLife : Nat := 0

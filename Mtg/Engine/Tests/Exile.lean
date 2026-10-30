@@ -49,7 +49,7 @@ def exiled (g : Game) (name : String) : Bool :=
 
 def attach (g : Game) (aura host : String) : Game :=
   let a := obj g aura
-  g.record (GameEvent.attached g.turnNumber a.id (pid g host) (cause := .gameRule .staticAbility))
+  g.record (GameEvent.attached g.turnNumber (g.snapshot a) (pid g host) (cause := .gameRule .staticAbility))
 
 def topName (g : Game) (p : PlayerId) : String :=
   match (g.player p).library.back? with

@@ -38,14 +38,15 @@ def playLand (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game := d
   let some card := g.findObject? id | throw "no such object"
   if !g.mayPlay p card then
     throw (g.playZoneError p card)
-  if !card.printed.isLand then
+  if !g.isLand card then
     throw s!"{card.name} is not a land"
   -- The Black Gate: “As it enters, you may pay N life. If you don't, it
   -- enters tapped.” Choose tapped before moving so the arrival event is
   -- recorded with the final tap status (CR 614.1c).
-  match card.printed.entersTappedUnlessPayLife with
+  let face := g.baseCard card
+  match face.entersTappedUnlessPayLife with
   | some n =>
-    if !card.printed.entersTapped then
+    if !face.entersTapped then
       return (g.change (.pending (.fraChoice p (.payLifeOrEnterTapped id n)))).logMsg
         s!"{(g.player p).name} may pay {n} life, or {card.name} enters tapped"
   | none => pure ()

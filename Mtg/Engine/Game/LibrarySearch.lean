@@ -33,7 +33,7 @@ def shufflesWhenNoneFound : SearchDest → Bool
 def findLibraryCard? (g : Game) (p : PlayerId) (pred : CardDef → Bool) : Option ObjectId :=
   (g.player p).library.find? (fun id =>
     match g.findObject? id with
-    | some o => pred o.printed
+    | some o => pred (g.baseCard o)
     | none => false)
 
 /-- Put `id` onto the battlefield under `p`. Lands can tap immediately. -/
@@ -110,7 +110,7 @@ def exileSearchedLinked (g : Game) (p : PlayerId) (id : ObjectId)
       | none => g
     g.logMsg s!"{(g.player p).name} exiles {name}"
 
-/-- Behold `subtype`. If you do, untap the land this search just found (CR 608.2c / 701.62). -/
+/-- Behold `subtype`. If you do, untap the land this search just found (CR 608.2c / 701.4). -/
 def beholdAndMaybeUntap (g : Game) (p : PlayerId) (landId : ObjectId) (subtype : CardSubtype) : Game :=
   let instrCause (g : Game) (defaultCause : EventCause) : EventCause :=
     match g.currentResolvingContext? with
@@ -273,7 +273,7 @@ search entirely, and then the library is not shuffled. -/
 def beginLibrarySearch (g : Game) (p : PlayerId) (pred : CardDef → Bool) (kind : String)
     (dest : SearchDest) (count : Nat := 1) (after : Option FraNext := none)
     (alsoHand : Bool := false) (optional : Bool := false) : Game :=
-  let keep (id : ObjectId) := (g.findObject? id).any (pred ·.printed)
+  let keep (id : ObjectId) := (g.findObject? id).any (fun o => pred (g.baseCard o))
   let pl := g.player p
   let eligible := (if alsoHand then pl.hand.filter keep else #[]) ++ pl.library.filter keep
   if optional then
@@ -302,18 +302,18 @@ def offerMaySearchBasics (g : Game) (p : PlayerId) (count : Nat := 1) : Game :=
       (optional := true)
 
 /-- Search `p`'s library for a card matching `pred` and put it onto the
-battlefield (tapped if `tapped`), then shuffle (CR 701.19). -/
+battlefield (tapped if `tapped`), then shuffle (CR 701.23). -/
 def resolveSearchLibrary (g : Game) (p : PlayerId) (pred : CardDef → Bool)
     (tapped : Bool) (kind : String) : Game :=
   g.beginLibrarySearch p pred kind (.battlefield tapped)
 
 /-- Search `p`'s library for a basic land card, put it onto the battlefield
-tapped, then shuffle (CR 701.19). -/
+tapped, then shuffle (CR 701.23). -/
 def resolveSearchBasicLandTapped (g : Game) (p : PlayerId) : Game :=
   g.resolveSearchLibrary p isBasicLandCard true "a basic land card"
 
 /-- Search `p`'s library for a Forest card, put it onto the battlefield, then
-shuffle (CR 701.19 / 305.7). -/
+shuffle (CR 701.23 / 305.7). -/
 def resolveSearchForest (g : Game) (p : PlayerId) : Game :=
   g.resolveSearchLibrary p isForestCard false "a Forest card"
 
@@ -324,7 +324,7 @@ def resolveLibrarySearchToHand (g : Game) (p : PlayerId)
   g.beginLibrarySearch p pred kind .hand
 
 /-- Search `p`'s library for a card with land type `landType`, reveal it, put
-it into their hand, then shuffle (CR 701.19 / 702.29). -/
+it into their hand, then shuffle (CR 701.23 / 702.29). -/
 def resolveSearchLandTypeToHand (g : Game) (p : PlayerId) (landType : CardSubtype) : Game :=
   g.resolveLibrarySearchToHand p (fun c => c.hasSubtype landType) s!"{landType} card"
 
@@ -333,7 +333,7 @@ def resolveSearchBasicLandToHand (g : Game) (p : PlayerId) : Game :=
   g.resolveLibrarySearchToHand p isBasicLandCard "basic land card"
 
 /-- Exile the top card of `p`'s library and grant permission to play it until
-the end of that player's next turn (CR 701.14). -/
+the end of that player's next turn (CR 701.18). -/
 def resolveExileTopPlayUntilEndOfNextTurn (g : Game) (p : PlayerId) : Game :=
   let pl := g.player p
   if pl.library.isEmpty then

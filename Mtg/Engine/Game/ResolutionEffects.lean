@@ -4,9 +4,9 @@ import Mtg.Engine.Game.ResolutionHelpers
 # Named resolution effects
 
 Card-specific resolution helpers: casting during resolution (CR 608.2f),
-countering spells (CR 701.5), exile-until-source-leaves (CR 610.3),
+countering spells (CR 701.6), exile-until-source-leaves (CR 610.3),
 named tokens, extort, reflexive triggers (CR 603.12), and copy effects
-(CR 706 / 707).
+(CR 707).
 -/
 
 namespace Mtg.Engine
@@ -116,6 +116,7 @@ def castAsPartOfResolution (g : Game) (p : PlayerId) (id : ObjectId)
     else
       let name := o.name
       let original := o
+      let origSnap := g.snapshot o
       let pl := g.player p
       let handBefore := pl.hand
       let stackBefore := g.stack
@@ -140,6 +141,7 @@ def castAsPartOfResolution (g : Game) (p : PlayerId) (id : ObjectId)
         cost
         spellId := newId
         original
+        originalSnapshot := origSnap
         handBefore
         stackBefore
         manaBefore
@@ -290,11 +292,11 @@ def counterStackSpell (g : Game) (spellId : ObjectId) (exilePermanent := false)
       let cause := some (g.resolvingOrRuleCause controller)
       let g := g.ceaseToExist o.id (cause := cause)
       g.logMsg s!"{name} is countered"
-    else if o.printed.cantBeCountered || g.uncounterableThisCast o then
-      g.logMsg s!"{o.name} can't be countered"
+    else if ((g.baseCard o).cantBeCountered && g.retainsPrintedAbilities o) || g.uncounterableThisCast o then
+      g.logMsg s!"{g.name o} can't be countered"
     else
       let dest :=
-        if exilePermanent && o.printed.isPermanentCard then Zone.exile
+        if exilePermanent && g.isPermanentCard o then Zone.exile
         else Zone.graveyard o.owner
       let name := o.name
       let (g, cause) : Game × EventCause :=
@@ -365,8 +367,8 @@ def returnExiledId (g : Game) (id : ObjectId) : Game :=
         let (g, _) := g.move id (.graveyard p) none
         g.logMsg s!"{name} returns to {(g.player p).name}'s graveyard"
       | _ =>
-        if o.printed.isAura then
-          match g.battlefield.find? (fun h => g.auraCanEnchant h o.printed) with
+        if g.isAura o then
+          match g.battlefield.find? (fun h => g.auraObjCanEnchant h o) with
           | none =>
             g.logMsg s!"{name} remains in exile (can't be attached legally; CR 614.6)"
           | some host =>
@@ -470,7 +472,7 @@ def incrementPlanThen (g : Game) (controller : PlayerId) (sourceId : Option Obje
             for _ in [0:n] do
               match g.findObject? o.id with
               | some cur =>
-                g := g.record (GameEvent.counters g.turnNumber (some controller) cur.asEvent .plan 1
+                g := g.record (GameEvent.counters g.turnNumber (some controller) (g.snapshot cur) .plan 1
                   (cause := g.resolveOptionalCause none (fallbackSrc := sourceId) (fallbackCtrl := some controller)))
               | none => pure ()
             return g
@@ -480,11 +482,12 @@ def incrementPlanThen (g : Game) (controller : PlayerId) (sourceId : Option Obje
 last-known power, falling back to the object's current power. -/
 def sourcePowerAtResolution (g : Game) (sourceId : Option ObjectId)
     (lastKnownPower : Option Int := none) : Int :=
+  let lkp := lastKnownPower.orElse (fun _ => sourceId.bind g.lastKnownPowerOf?)
   match sourceId.bind g.findObject? with
   | some o =>
     if o.isOnBattlefield then g.power o
-    else lastKnownPower.getD (g.power o)
-  | none => lastKnownPower.getD (0 : Int)
+    else lkp.getD (g.snapshotPower o)
+  | none => lkp.getD (0 : Int)
 
 /-- How many Equipment are attached to the source.
 A source still on the battlefield uses those attachments.
@@ -586,12 +589,28 @@ follow-up keeps the targets the original ability already has. -/
 def queueFollowupReflexive (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
     (followup : TriggeredAbility.TriggerResolution) : Game :=
   let src := g.abilitySourceFor controller sourceId
+  let srcSnap : EventObject :=
+    match sourceId.bind g.findObject? with
+    | some o => g.snapshot o
+    | none =>
+      match sourceId.bind g.lastKnownBefore? with
+      | some eo => eo
+      | none =>
+        { id := sourceId, name := src.name, owner := controller,
+          controller := some controller, zone := .battlefield }
   let effect : Effect := {
     resolution := .draw 0
     phrase := "when you do, that ability triggers" }
   let marker : TriggeredAbility := .triggered .enter effect {}
-  let (g, obj) := g.putStackAbility src controller (triggeredAbility := some marker)
-  let g := g.changeObjects obj.id #[.sourceId sourceId, .reflexiveResolution (some followup)]
+  let newId : ObjectId := ⟨g.nextObjectId⟩
+  let spec : StackTriggerSpec := {
+    triggeredAbility := some marker
+    reflexiveResolution := some followup
+    sourceId := sourceId
+    abilityName := some s!"{src.name}'s ability"
+  }
+  let g := g.record (GameEvent.triggerPutOnStack g.turnNumber newId srcSnap controller
+    (spec := spec))
   g.logMsg s!"{src.name}'s reflexive ability is put on the stack"
 
 /-- Put a reflexive triggered ability (“When you do, …”) on the stack with
@@ -604,9 +623,24 @@ def putReflexiveTrigger (g : Game) (controller : PlayerId) (sourceId : Option Ob
       (g.legalTargetsForKind controller effect.targetKind sourceId).isEmpty then
     g.logMsg s!"{src.name}'s reflexive ability has no legal target and is removed (CR 603.3d)"
   else
-    let (g, obj) := g.putStackAbility src controller (abilityEffect := some effect)
-      (triggeredAbility := some marker)
-    let g := g.changeObject obj.id (.sourceId sourceId)
+    let srcSnap : EventObject :=
+      match sourceId.bind g.findObject? with
+      | some o => g.snapshot o
+      | none =>
+        match sourceId.bind g.lastKnownBefore? with
+        | some eo => eo
+        | none =>
+          { id := sourceId, name := src.name, owner := controller,
+            controller := some controller, zone := .battlefield }
+    let newId : ObjectId := ⟨g.nextObjectId⟩
+    let spec : StackTriggerSpec := {
+      triggeredAbility := some marker
+      abilityEffect := some effect
+      sourceId := sourceId
+      abilityName := some s!"{src.name}'s ability"
+    }
+    let g := g.record (GameEvent.triggerPutOnStack g.turnNumber newId srcSnap controller
+      (spec := spec))
     let g := g.logMsg s!"{src.name}'s reflexive ability is put on the stack"
     if g.resolvingAbility.isSome || g.resolvingSpell.isSome then g
     else g.promptTriggerTargetsIfNeeded

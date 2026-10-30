@@ -154,7 +154,7 @@ def agentArchdruidMana : Game :=
   | _ => false
 
 /- Mirkwood Elk: trample and enters-or-attacks return an Elf from the graveyard
-(CR 603.6a / 508.2 / 118.2). -/
+(CR 603.6a / 508.2 / 119.3). -/
 
 #guard mirkwoodElk.triggeredAbilities == #[.onEnterOrAttackReturnElfGainLife]
 #guard mirkwoodElk.keywords.trample
@@ -697,8 +697,9 @@ def weavemasterBearsEntered : Game :=
 
 /-- An opponent's Elf does not trigger the pump. -/
 def weavemasterOppElf : Game :=
-  let g := addPermanent weavemasterReady llanowarElves ⟨1⟩ ⟨1⟩
-  g.putAnotherElfYouControlEntersTriggers (namedPermanent g "Llanowar Elves")
+  let (g, elf) := weavemasterReady.allocObject llanowarElves ⟨1⟩ (.outside ⟨1⟩) none
+  let (g, newId) := g.putOntoBattlefield elf.id ⟨1⟩ (summoningSick := false)
+  (g.putAnotherElfYouControlEntersTriggers (g.object! newId)).receivePriority ⟨0⟩
 
 #guard weavemasterOppElf.stack.isEmpty
 
