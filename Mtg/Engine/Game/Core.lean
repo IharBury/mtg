@@ -362,7 +362,11 @@ def applyPermanentEvent (g : Game) (e : PermanentEvent) : Game :=
       let printed :=
         if o.status.transformed != nowBackFace then
           match o.printed.otherFace with
-          | some face => { face with otherFace := some { o.printed with otherFace := none } }
+          | some face =>
+            let keepToken := o.printed.isToken
+            { face with
+              isToken := keepToken
+              otherFace := some { o.printed with isToken := keepToken, otherFace := none } }
           | none => o.printed
         else o.printed
       { g with objects := g.objects.set! i { o with printed, status := { o.status with transformed := nowBackFace } } }
@@ -649,11 +653,19 @@ def applyZoneEvent (g : Game) (e : ZoneEvent) : Game :=
         | none =>
           if leavingPlay && existing.status.transformed then
             match existing.printed.otherFace with
-            | some front => { front with otherFace := some { existing.printed with otherFace := none } }
+            | some front =>
+              let keepToken := existing.printed.isToken
+              { front with
+                isToken := keepToken
+                otherFace := some { existing.printed with isToken := keepToken, otherFace := none } }
             | none => existing.printed
           else if toZone == .battlefield && after.transformed && !existing.status.transformed then
             match existing.printed.otherFace with
-            | some back => { back with otherFace := some { existing.printed with otherFace := none } }
+            | some back =>
+              let keepToken := existing.printed.isToken
+              { back with
+                isToken := keepToken
+                otherFace := some { existing.printed with isToken := keepToken, otherFace := none } }
             | none => existing.printed
           else existing.printed
       let fresh := materialize printed (some existing)
@@ -694,12 +706,25 @@ def applyZoneEvent (g : Game) (e : ZoneEvent) : Game :=
     let printed := object.toCardDef
     let baseStatus : Status :=
       if object.zone == Zone.battlefield then
+        let faceDown := object.faceDown
+        let chosenCardType :=
+          if !faceDown && printed.asEntersChooseCardType then
+            some CardType.creature
+          else none
+        let chosenAnchor :=
+          if !faceDown && printed.asEntersChooseMarduOrJeskai then
+            some "Mardu"
+          else none
+        let prepared := !faceDown && printed.entersPrepared
         { tapped := object.tapped
           summoningSick := true
           attacking := object.attacking
           attackingTarget := object.attackingTarget
           phasedOut := object.phasedOut
-          faceDown := object.faceDown
+          faceDown := faceDown
+          chosenCardType := chosenCardType
+          chosenAnchor := chosenAnchor
+          prepared := prepared
           transformed := object.transformed }
       else if object.zone == Zone.stack || object.zone == Zone.exile then
         { faceDown := object.faceDown }
@@ -1223,6 +1248,7 @@ def hasTurnBegunSince (g : Game) (eid : EffectId) (p : PlayerId) : Bool :=
 counter of kind `k` on `oid` gives all `k` counters on `oid` that new timestamp. -/
 def counterTimestamp (g : Game) (oid : ObjectId) (k : CounterKind) : Nat × Nat :=
   Id.run do
+    let mut alive := false
     let mut ts? : Option Nat := none
     let mut prevCount? : Option Nat := none
     for i in [0:g.events.size] do
@@ -1242,21 +1268,50 @@ def counterTimestamp (g : Game) (oid : ObjectId) (k : CounterKind) : Nat × Nat 
           let next := base - n
           if next == 0 then ts? := none
           prevCount? := some next
-      | .rules (.zone (.moved _ after _ _ _ _ entersWith _)) =>
+      | .rules (.zone (.moved before after _ _ _ _ entersWith _)) =>
+        if before.id == some oid && after.id != some oid then
+          alive := false
         if after.id == some oid then
+          alive := true
           let c := max (after.counters.count k) (entersWith.count k)
           ts? := if c > 0 then some i else none
           prevCount? := some c
       | .rules (.zone (.created eo _)) =>
         if eo.id == some oid then
+          alive := true
           let c := eo.counters.count k
           ts? := if c > 0 then some i else none
           prevCount? := some c
+      | .rules (.zone (.ceasedToExist eo)) =>
+        if eo.id == some oid then
+          alive := false
+      | .rules (.stackObject (.copied _ copy _)) =>
+        if copy.id == some oid then
+          alive := true
+          ts? := none
+          prevCount? := some 0
+      | .rules (.triggerQueue (.putOnStack stackObj _ _ _)) =>
+        if stackObj == oid && !alive then
+          alive := true
+          ts? := none
+          prevCount? := some 0
+      | .rules (.cast (.abilityActivated ability source _ (.nonMana ..))) =>
+        if ability == oid && !alive && source.id != some oid then
+          alive := true
+          ts? := none
+          prevCount? := some 0
       | .engine (.materializeObject o _) =>
         if o.id == oid then
+          alive := true
           let c := o.status.counters.count k
           ts? := if c > 0 then some i else none
           prevCount? := some c
+      | .engine (.reverseProposal prop) =>
+        if prop.spellId == oid then
+          alive := prop.kind == .spell && prop.original.id == oid
+          if !alive then
+            ts? := none
+            prevCount? := none
       | _ => pure ()
     return match ts? with
       | some idx => (1, idx)
@@ -1265,25 +1320,51 @@ def counterTimestamp (g : Game) (oid : ObjectId) (k : CounterKind) : Nat × Nat 
 /-- Timestamp `(tier, sub)` when `aura` most recently became attached to `hostId` (CR 613.7e). -/
 def attachmentTimestamp (g : Game) (aura : GameObject) (hostId : ObjectId) : Nat × Nat :=
   Id.run do
+    let aid := aura.id
+    let mut alive := false
     let mut ts? : Option Nat := none
     for i in [0:g.events.size] do
       let ev := g.events[i]!
       match ev.change with
       | .rules (.permanent (.attached aEo hid _)) =>
-        if aEo.id == some aura.id then
+        if aEo.id == some aid then
           ts? := if hid == hostId then some i else none
       | .rules (.permanent (.unattached aEo _)) =>
-        if aEo.id == some aura.id then
+        if aEo.id == some aid then
           ts? := none
-      | .rules (.zone (.moved _ after _ .battlefield ..)) =>
-        if after.id == some aura.id then
-          ts? := if after.attachedTo == some hostId then some i else none
+      | .rules (.zone (.moved before after _ toZone ..)) =>
+        if before.id == some aid && after.id != some aid then
+          alive := false
+        if after.id == some aid then
+          alive := true
+          ts? := if toZone == .battlefield && after.attachedTo == some hostId then some i else none
       | .rules (.zone (.created eo _)) =>
-        if eo.id == some aura.id then
+        if eo.id == some aid then
+          alive := true
           ts? := if eo.zone == .battlefield && eo.attachedTo == some hostId then some i else none
+      | .rules (.zone (.ceasedToExist eo)) =>
+        if eo.id == some aid then
+          alive := false
+      | .rules (.stackObject (.copied _ copy _)) =>
+        if copy.id == some aid then
+          alive := true
+          ts? := none
+      | .rules (.triggerQueue (.putOnStack stackObj _ _ _)) =>
+        if stackObj == aid && !alive then
+          alive := true
+          ts? := none
+      | .rules (.cast (.abilityActivated ability source _ (.nonMana ..))) =>
+        if ability == aid && !alive && source.id != some aid then
+          alive := true
+          ts? := none
       | .engine (.materializeObject o _) =>
-        if o.id == aura.id then
+        if o.id == aid then
+          alive := true
           ts? := if o.zone == .battlefield && o.attachedTo == some hostId then some i else none
+      | .engine (.reverseProposal prop) =>
+        if prop.spellId == aid then
+          alive := prop.kind == .spell && prop.original.id == aid
+          if !alive then ts? := none
       | _ => pure ()
     return match ts? with
       | some idx => (1, idx)
@@ -1292,17 +1373,48 @@ def attachmentTimestamp (g : Game) (aura : GameObject) (hostId : ObjectId) : Nat
 /-- Timestamp `(tier, sub)` when `obj` entered its current zone (CR 613.7d). -/
 def objectEntryTimestamp (g : Game) (obj : GameObject) : Nat × Nat :=
   Id.run do
-    for rev in [0:g.events.size] do
-      let i := g.events.size - 1 - rev
+    let oid := obj.id
+    let mut alive := false
+    let mut ts? : Option Nat := none
+    for i in [0:g.events.size] do
       match g.events[i]!.change with
-      | .rules (.zone (.moved _ after ..)) =>
-        if after.id == some obj.id then return (1, i)
+      | .rules (.zone (.moved before after ..)) =>
+        if before.id == some oid && after.id != some oid then
+          alive := false
+        if after.id == some oid then
+          alive := true
+          ts? := some i
       | .rules (.zone (.created eo _)) =>
-        if eo.id == some obj.id then return (1, i)
+        if eo.id == some oid then
+          alive := true
+          ts? := some i
+      | .rules (.zone (.ceasedToExist eo)) =>
+        if eo.id == some oid then
+          alive := false
+      | .rules (.stackObject (.copied _ copy _)) =>
+        if copy.id == some oid then
+          alive := true
+          ts? := some i
+      | .rules (.triggerQueue (.putOnStack stackObj _ _ _)) =>
+        if stackObj == oid && !alive then
+          alive := true
+          ts? := some i
+      | .rules (.cast (.abilityActivated ability source _ (.nonMana ..))) =>
+        if ability == oid && !alive && source.id != some oid then
+          alive := true
+          ts? := some i
       | .engine (.materializeObject o _) =>
-        if o.id == obj.id then return (1, i)
+        if o.id == oid then
+          alive := true
+          ts? := some i
+      | .engine (.reverseProposal prop) =>
+        if prop.spellId == oid then
+          alive := prop.kind == .spell && prop.original.id == oid
+          if !alive then ts? := none
       | _ => pure ()
-    return (0, 2 + obj.timestamp)
+    return match ts? with
+      | some idx => (1, idx)
+      | none => (0, 2 + obj.timestamp)
 
 /-- Timestamp `(tier, sub)` when continuous effect `eid` was created (CR 613.7b). -/
 def effectTimestamp (g : Game) (eid : EffectId) (pos : Nat) : Nat × Nat :=
@@ -6269,6 +6381,10 @@ def applyEtbReplacements (g : Game) (candidate : GameObject)
         | .entersUnderControl _ newCtrl =>
           cur := { cur with controller := some newCtrl, defaultController := some newCtrl }
         | .entersAsCopy _ template =>
+          let keepToken := cur.printed.isToken
+          let newPrinted := { template with
+            isToken := keepToken
+            otherFace := template.otherFace.map (fun f => { f with isToken := keepToken }) }
           let st := cur.status
           let st' :=
             if st.faceDown then st
@@ -6277,11 +6393,14 @@ def applyEtbReplacements (g : Game) (candidate : GameObject)
                 prepared := template.entersPrepared
                 chosenCardType := if template.asEntersChooseCardType then some .creature else none
                 chosenAnchor := if template.asEntersChooseMarduOrJeskai then some "Mardu" else none }
-          cur := { cur with printed := template, status := st' }
+          cur := { cur with printed := newPrinted, status := st' }
         | .entersBackFaceUp _ =>
           match (g.unmaskedCopiableValues curBf).otherFace with
           | some back =>
-            let newPrinted := { back with otherFace := some { cur.printed with otherFace := none } }
+            let keepToken := cur.printed.isToken
+            let newPrinted := { back with
+              isToken := keepToken
+              otherFace := some { cur.printed with isToken := keepToken, otherFace := none } }
             let st := cur.status
             let st' :=
               if st.faceDown then { st with transformed := true }

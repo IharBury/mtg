@@ -62,5 +62,42 @@ def putStackAbility (g : Game) (source : GameObject) (controller : PlayerId)
   let (g, obj) := g.allocStackAbility source controller abilityEffect triggeredAbility
   (g.putStackEntry controller obj.id delayedTrigger lastKnownPower lastKnownToughness, obj)
 
+/-- The copy of `srcId`'s prepare spell in exile, if any. -/
+def preparedCopyOf? (g : Game) (srcId : ObjectId) : Option GameObject :=
+  g.objects.find? (fun o =>
+    o.zone == .exile && ((g.playPermission o).bind (·.prepareSource)) == some srcId)
+
+/-- Create the exiled copy of `o`'s prepare spell and grant permission to cast
+it while `o` remains prepared (ruling 742). -/
+def createPreparedCopy (g : Game) (o : GameObject) (face : AdventureFace)
+    (cause : Option EventCause := none) : Game :=
+  let p := (g.controllerOf o).getD o.owner
+  let copyId : ObjectId := ⟨g.nextObjectId⟩
+  let copyTs := g.timestamp + 1
+  let copyObj : GameObject := {
+    id := copyId
+    printed := face.toCardDef
+    owner := p
+    zone := .exile
+    timestamp := copyTs
+  }
+  let resolvedCause := g.resolveOptionalCause cause (fallbackSrc := some o.id) (fallbackCtrl := some p)
+  let g := g.record (GameEvent.created g.turnNumber p (g.snapshot copyObj) (cause := resolvedCause))
+  g.createEffect (.playPermission copyId {
+    player := p
+    whileExiled := true
+    prepareSource := some o.id }) (cause := some resolvedCause)
+
+/-- Ensure the exiled copy of `o`'s prepare spell exists when `o` enters
+already prepared (CR 614.1c, ruling 742). -/
+def ensurePreparedCopy (g : Game) (o : GameObject) : Game :=
+  if !o.status.prepared || (g.preparedCopyOf? o.id).isSome then g
+  else
+    match (g.baseCard o).prepareFace with
+    | none => g
+    | some face =>
+      let g := g.createPreparedCopy o face (cause := some (.gameRule .staticAbility))
+      g.logMsg s!"{o.name} becomes prepared. A copy of {face.name} is exiled"
+
 end Game
 end Mtg.Engine

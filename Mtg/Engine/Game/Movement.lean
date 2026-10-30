@@ -11,49 +11,12 @@ graveyard, and putting cards onto the battlefield (CR 611.3 / 603.6).
 namespace Mtg.Engine
 namespace Game
 
-/-- The copy of `srcId`'s prepare spell in exile, if any. -/
-def preparedCopyOf? (g : Game) (srcId : ObjectId) : Option GameObject :=
-  g.objects.find? (fun o =>
-    o.zone == .exile && ((g.playPermission o).bind (·.prepareSource)) == some srcId)
-
 /-- The exiled copy of `srcId`'s prepare spell ceases to exist. -/
 def removePreparedCopy (g : Game) (srcId : ObjectId)
     (cause : Option EventCause := some (.stateBased .copyOutsideStackOrBf)) : Game :=
   match g.preparedCopyOf? srcId with
   | some c => (g.ceaseToExist c.id (cause := cause)).logMsg s!"The copy of {c.name} in exile ceases to exist"
   | none => g
-
-/-- Create the exiled copy of `o`'s prepare spell and grant permission to cast
-it while `o` remains prepared (ruling 742). -/
-def createPreparedCopy (g : Game) (o : GameObject) (face : AdventureFace)
-    (cause : Option EventCause := none) : Game :=
-  let p := (g.controllerOf o).getD o.owner
-  let copyId : ObjectId := ⟨g.nextObjectId⟩
-  let copyTs := g.timestamp + 1
-  let copyObj : GameObject := {
-    id := copyId
-    printed := face.toCardDef
-    owner := p
-    zone := .exile
-    timestamp := copyTs
-  }
-  let resolvedCause := g.resolveOptionalCause cause (fallbackSrc := some o.id) (fallbackCtrl := some p)
-  let g := g.record (GameEvent.created g.turnNumber p (g.snapshot copyObj) (cause := resolvedCause))
-  g.createEffect (.playPermission copyId {
-    player := p
-    whileExiled := true
-    prepareSource := some o.id }) (cause := some resolvedCause)
-
-/-- Ensure the exiled copy of `o`'s prepare spell exists when `o` enters
-already prepared (CR 614.1c, ruling 742). -/
-def ensurePreparedCopy (g : Game) (o : GameObject) : Game :=
-  if !o.status.prepared || (g.preparedCopyOf? o.id).isSome then g
-  else
-    match (g.baseCard o).prepareFace with
-    | none => g
-    | some face =>
-      let g := g.createPreparedCopy o face (cause := some (.gameRule .staticAbility))
-      g.logMsg s!"{o.name} becomes prepared. A copy of {face.name} is exiled"
 
 /-- `o` becomes prepared: its controller creates a copy of its prepare spell
 in exile and may cast that copy while `o` stays prepared (ruling 742). A
@@ -345,13 +308,19 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
             if leavingPlay && old.status.transformed then
               match old.printed.otherFace with
               | some front =>
-                { front with otherFace := some { old.printed with otherFace := none } }
+                let keepToken := old.printed.isToken
+                { front with
+                  isToken := keepToken
+                  otherFace := some { old.printed with isToken := keepToken, otherFace := none } }
               | none => old.printed
             else old.printed
         else if leavingPlay && old.status.transformed then
           match old.printed.otherFace with
           | some front =>
-            { front with otherFace := some { old.printed with otherFace := none } }
+            let keepToken := old.printed.isToken
+            { front with
+              isToken := keepToken
+              otherFace := some { old.printed with isToken := keepToken, otherFace := none } }
           | none => old.printed
         else old.printed
     let faceDown := targetZone == .battlefield && old.zone == .stack && old.status.faceDown

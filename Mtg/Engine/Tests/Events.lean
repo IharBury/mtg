@@ -5904,10 +5904,128 @@ continuity, plus `post.snapshot` in `.creatureYouControlDealtDamage` and
     !changelingDef.hasSubtype .equipment &&
     gChDragon.events.any (fun e => match e.change with | .rules (.player (.beheld p .dragon)) => p == me | _ => false) &&
     !gChForest.events.any (fun e => match e.change with | .rules (.player (.beheld ..)) => true | _ => false)
+  -- 6. Off-battlefield token-creation probe (Draconic Visitor ruling 782), CR 707.2
+  --    `isToken` + arrival status preservation across `entersAsCopy` / `entersBackFaceUp`,
+  --    and tier-1 timestamps for `TriggerQueueEvent.putOnStack` / `CastEvent.abilityActivated`.
+  let bilboDef : CardDef := {
+    name := "Phase11 Bilbo"
+    types := #[.enchantment]
+    foodAlsoCreatesTreasure := true
+  }
+  let visitorDef : CardDef := {
+    name := "Phase11 Visitor"
+    types := #[.enchantment]
+    staticAbilities := #[.artifactTokensBecomeDragons]
+  }
+  let foodTemplate : CardDef := {
+    name := "Food"
+    types := #[.artifact]
+    subtypes := #["Food"]
+  }
+  let gProbe0 := quiet (addPermanent (addPermanent afterDraw bilboDef me me) visitorDef me me)
+  let gProbeBfLeaks :=
+    quiet ((gProbe0.createEffect
+      (.layered (.creaturesControlledBy me) (.types .add #[.artifact] #[.food] #[]) .indefinite)).createEffect
+      (.layered (.creaturesControlledBy me) (.copy foodTemplate) .indefinite))
+  let (probeBatchesPlain, probeAppPlain, probeChoicePlain) := gProbeBfLeaks.replaceTokenCreationChoice {
+    controller := me
+    printed := humanSoldierToken
+    count := 1
+  }
+  let gProbeWildcard :=
+    quiet (gProbeBfLeaks.createEffect
+      (.replacement {
+        id := { kind := .entersAsCopy }
+        affectedPlayer := me
+        kind := .entersAsCopy ⟨0⟩ foodTemplate
+      } .untilEndOfTurn))
+  let (_, _, probeChoiceCopy) := gProbeWildcard.replaceTokenCreationChoice {
+    controller := me
+    printed := humanSoldierToken
+    count := 1
+  }
+  let tokenProbeOk :=
+    probeBatchesPlain.size == 1 &&
+    probeBatchesPlain[0]!.printed.name == "Human Soldier" &&
+    probeAppPlain.isEmpty &&
+    probeChoicePlain.isNone &&
+    probeChoiceCopy.any (fun (p, cs) => p == me && cs.size == 2)
+  let dfcNontokenTemplate : CardDef := {
+    name := "Phase11 Siege Front"
+    types := #[.enchantment]
+    asEntersChooseMarduOrJeskai := true
+    asEntersChooseCardType := true
+    entersPrepared := true
+    isToken := false
+    otherFace := some {
+      name := "Phase11 Siege Back"
+      types := #[.creature]
+      power := some 4
+      toughness := some 4
+      asEntersChooseMarduOrJeskai := true
+      entersPrepared := true
+      isToken := false
+    }
+  }
+  let gTokCopy0 := quiet (afterDraw.createEffect
+    (.replacement {
+      id := { kind := .entersAsCopy }
+      affectedPlayer := me
+      kind := .entersAsCopy ⟨0⟩ dfcNontokenTemplate
+    } .untilEndOfTurn))
+  let (gTokCopy1, tokCopied) := gTokCopy0.createOneToken me humanSoldierToken
+  let placedTokCopied := gTokCopy1.object! tokCopied.id
+  let gTokBack0 := quiet (gTokCopy0.createEffect
+    (.replacement {
+      id := { kind := .entersBackFaceUp }
+      affectedPlayer := me
+      kind := .entersBackFaceUp ⟨0⟩
+    } .untilEndOfTurn))
+  let (gTokBack1, tokBack) := gTokBack0.createOneToken me humanSoldierToken
+  let placedTokBack := gTokBack1.object! tokBack.id
+  let tokenCopyStatusOk :=
+    placedTokCopied.printed.isToken &&
+    placedTokCopied.printed.otherFace.all (·.isToken) &&
+    placedTokCopied.status.chosenAnchor == some "Mardu" &&
+    placedTokCopied.status.prepared &&
+    placedTokCopied.status.chosenCardType == some .creature &&
+    gTokCopy1.isCreature placedTokCopied &&
+    placedTokBack.status.transformed &&
+    placedTokBack.printed.name == "Phase11 Siege Back" &&
+    placedTokBack.printed.isToken &&
+    placedTokBack.printed.otherFace.all (·.isToken) &&
+    placedTokBack.status.chosenAnchor == some "Mardu" &&
+    placedTokBack.status.prepared
+  let gTrigBase := addPermanent afterDraw actBearDef me me
+  let trigBear := (gTrigBase.battlefield.filter (·.name == "Event Bear"))[0]!
+  let gTrigTs0 := gTrigBase.createEffect
+    (.layered (.creaturesControlledBy me) (.abilities {} .all) .untilEndOfTurn)
+  let effEid := gTrigTs0.activeEffects.back!.1
+  let effPos := gTrigTs0.activeEffects.size - 1
+  let effTs := gTrigTs0.effectTimestamp effEid effPos
+  let gTrigTs1 := gTrigTs0.putTriggeredAbilityOnStack me (gTrigTs0.object! trigBear.id) (.onEnterDraw 1) "enters"
+  let trigStackObj := gTrigTs1.object! gTrigTs1.stack.back!.objectId
+  let trigTs := gTrigTs1.objectEntryTimestamp trigStackObj
+  let directAbId : ObjectId := ⟨gTrigTs1.nextObjectId⟩
+  let gDirectAct := gTrigTs1.record (GameEvent.abilityActivated gTrigTs1.turnNumber directAbId
+    (gTrigTs1.snapshot (gTrigTs1.object! trigBear.id)) me (.nonMana none false false false (some 0) false))
+  let directActObj := gDirectAct.object! directAbId
+  let directActTs := gDirectAct.objectEntryTimestamp directActObj
+  let bearBeforeBoastTs := gDirectAct.objectEntryTimestamp (gDirectAct.object! trigBear.id)
+  let gAfterBoast := gDirectAct.markBoastUsed (gDirectAct.object! trigBear.id)
+  let bearAfterBoastTs := gAfterBoast.objectEntryTimestamp (gAfterBoast.object! trigBear.id)
+  let stackAbilityTsOk :=
+    effTs.1 == 1 &&
+    trigTs.1 == 1 && trigTs.2 > effTs.2 &&
+    directActTs.1 == 1 && directActTs.2 > trigTs.2 &&
+    bearBeforeBoastTs.1 == 1 && bearAfterBoastTs == bearBeforeBoastTs
   materializeIsolationOk &&
     snapshotAlignmentOk &&
     etbAndFlashbackOk &&
     stackCdaOk &&
-    changelingOffBfOk
+    changelingOffBfOk &&
+    tokenProbeOk &&
+    tokenCopyStatusOk &&
+    stackAbilityTsOk
 
 end Mtg.Engine.EventTests

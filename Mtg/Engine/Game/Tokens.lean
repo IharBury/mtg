@@ -91,7 +91,9 @@ def createOneToken (g : Game) (controller : PlayerId) (printed : CardDef)
         owner := controller, zone := .command })
   else
     g.withBatchReturn cause fun g =>
-      let printed := { printed with isToken := true }
+      let printed := { printed with
+        isToken := true
+        otherFace := printed.otherFace.map (fun f => { f with isToken := true }) }
       let asOf := g.timestamp
       let newId : ObjectId := ⟨g.nextObjectId⟩
       let ts := g.timestamp + 1
@@ -112,6 +114,9 @@ def createOneToken (g : Game) (controller : PlayerId) (printed : CardDef)
           summoningSick := true
           attacking := isAttacking
           attackingTarget := resolvedAttackTarget
+          prepared := printed.entersPrepared
+          chosenCardType := if printed.asEntersChooseCardType then some .creature else none
+          chosenAnchor := if printed.asEntersChooseMarduOrJeskai then some "Mardu" else none
         }
         timestamp := ts
       }
@@ -139,6 +144,7 @@ def createOneToken (g : Game) (controller : PlayerId) (printed : CardDef)
         if etb.weaverBonus > 0 then
           g.logMsg s!"{g.nameWithToken (g.object! newId)} enters with {etb.weaverBonus} additional +1/+1 counter(s)"
         else g
+      let g := g.ensurePreparedCopy (g.object! newId)
       -- Storied is not a trigger; an artifact token can be the third permanent.
       let g := g.refreshEnduringStory
       let g := g.refreshCitysBlessing
@@ -148,11 +154,15 @@ def createOneToken (g : Game) (controller : PlayerId) (printed : CardDef)
         else g
       (g, g.object! newId)
 
-/-- Synthetic token probe object reflecting active wildcard `entersAsCopy`
-replacements so `replaceTokenCreationChoice` sees `entersAsCopy` templates and
-layer-derived subtype/changeling characteristics while keeping card-type checks
-on the token's own created template per Draconic Visitor ruling 782. -/
+/-- Synthetic off-battlefield token probe reflecting active wildcard
+`entersAsCopy` replacements so `replaceTokenCreationChoice` evaluates the created
+token's own template and changeling subtypes without pulling in battlefield-scoped
+Layer 1–6 effects on permanents `controller` already controls (Draconic Visitor
+ruling 782). -/
 private def tokenBatchProbe (g : Game) (controller : PlayerId) (printed : CardDef) : GameObject :=
+  let initPrinted := { printed with
+    isToken := true
+    otherFace := printed.otherFace.map (fun f => { f with isToken := true }) }
   let effPrinted := g.activeEffects.foldl (fun cur (_, eff) =>
     match eff with
     | .replacement spec d =>
@@ -160,15 +170,17 @@ private def tokenBatchProbe (g : Game) (controller : PlayerId) (printed : CardDe
       else
         match spec.kind with
         | .entersAsCopy tid template =>
-          if tid == ⟨0⟩ then { template with isToken := true } else cur
+          if tid == ⟨0⟩ then
+            { template with
+              isToken := true
+              otherFace := template.otherFace.map (fun f => { f with isToken := true }) }
+          else cur
         | _ => cur
-    | _ => cur) { printed with isToken := true }
+    | _ => cur) initPrinted
   { id := ⟨g.nextObjectId⟩
     printed := effPrinted
     owner := controller
-    controller := some controller
-    defaultController := some controller
-    zone := .battlefield }
+    zone := .command }
 
 /-- True if a proposed token creation of `printed` under `controller` watches
 `.wouldCreateToken`. -/
@@ -176,21 +188,22 @@ private def tokenBatchWatchesCreation (g : Game) (controller : PlayerId) (printe
   let probe := g.tokenBatchProbe controller printed
   let proposed := GameEvent.created g.turnNumber controller {
     controller := some controller, owner := controller, zone := .battlefield, token := true
-    types := (g.baseCard probe).types
+    types := g.types probe
     subtypes := g.subtypes probe
     changeling := (g.currentKeywords probe).changeling }
     (cause := .oneShotEffect none none (some controller))
   proposed.watches .wouldCreateToken
 
-/-- True if `printed` under `controller` is a Food token (respecting `entersAsCopy`
-and subtype modifications). -/
+/-- True if `printed` under `controller` is created as a Food token (respecting
+`entersAsCopy` and off-battlefield changeling/subtype rules while ignoring
+battlefield-scoped grants). -/
 private def tokenBatchIsFood (g : Game) (controller : PlayerId) (printed : CardDef) : Bool :=
   g.hasSubtype (g.tokenBatchProbe controller printed) .food
 
 /-- True if `printed` under `controller` is created as an artifact token (respecting
-`entersAsCopy` while ignoring battlefield-only type grants per ruling 782). -/
+`entersAsCopy` while ignoring battlefield-scoped effects per ruling 782). -/
 private def tokenBatchIsArtifact (g : Game) (controller : PlayerId) (printed : CardDef) : Bool :=
-  (g.baseCard (g.tokenBatchProbe controller printed)).isArtifact
+  g.isArtifact (g.tokenBatchProbe controller printed)
 
 /-- Run the CR 616.1 replacement loop on a proposed token-creation batch
 (CR 614.1a / 614.5 / 614.6 / 616.1), returning `(batches, applied, choice?)`.
