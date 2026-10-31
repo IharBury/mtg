@@ -1,7 +1,7 @@
 import Mtg.Engine.Game.CastExtras
 
 /-!
-# Saga chapter resolution (CR 714.3)
+# Saga chapter resolution (CR 714.2)
 
 `applyChapterEffect` for chapter abilities and the intervening-if
 recheck used when their triggers resolve (CR 603.4).
@@ -122,7 +122,7 @@ def gainControlWhileSource (g : Game) (controller : PlayerId)
       | _ => g) g)
     "The Super Hero Civil War has left the battlefield. You won't gain control."
 
-/-- Resolve a printed Saga chapter (CR 714.3 / 608). -/
+/-- Resolve a printed Saga chapter (CR 714.2 / 608). -/
 def applyChapterEffect (g : Game) (controller : PlayerId) (e : Effect)
     (sourceId : Option ObjectId) (targets : Array Target) : Game :=
   match e.asChapter? with
@@ -131,7 +131,7 @@ def applyChapterEffect (g : Game) (controller : PlayerId) (e : Effect)
   match ch with
   | .dealDamageToOppCreature n =>
     g.withLegalKindPermanent controller .oppCreature targets (fun g o =>
-      g.dealDamageToPermanent o n (source := (sourceId.bind g.findObject?).map g.snapshot))
+      g.dealDamageToPermanent o n (source := sourceId.bind g.damageSourceEventById?))
       sourceId (some "The target is no longer legal")
   | .destroyOppArtifact =>
     g.withLegalKindPermanent controller .oppArtifact targets (fun g o =>
@@ -203,7 +203,8 @@ def applyChapterEffect (g : Game) (controller : PlayerId) (e : Effect)
   | .gainControlOfUpToTwoCreaturesTotalMvAtMost _n =>
     g.gainControlWhileSource controller sourceId targets
   | .dealDamageToEachNonSubtypeAndOpponents n subtype =>
-    let src? := sourceId.bind g.findObject?
+    let src? := sourceId.bind g.damageSourceById?
+    let srcSnap? := sourceId.bind g.damageSourceEventById?
     let (g, cause?) : Game × Option EventCause :=
       if n == 0 then (g, none)
       else
@@ -214,12 +215,12 @@ def applyChapterEffect (g : Game) (controller : PlayerId) (e : Effect)
         | none => (g, none)
     let g :=
       g.dealDamageToEachCreatureMatching n (fun o => !g.hasSubtype o subtype)
-        (source := src?.map g.snapshot) (cause := cause?)
+        (source := srcSnap?) (cause := cause?)
     g.dealDamageToEachOpponent controller n (source := src?) (cause := cause?)
   | .dealXDamageToTargetOpponentGreatestArtifactMv =>
     let x := g.greatestManaValueAmong controller (g.isArtifact ·)
     g.withLegalKindPlayer controller .opponent targets
-      (fun g pid => g.dealDamageToPlayer pid x (source := sourceId.bind g.findObject?))
+      (fun g pid => g.dealDamageToPlayer pid x (source := sourceId.bind g.damageSourceById?))
       sourceId (some "The target is no longer legal")
   | .spell s =>
     g.applyEffect controller {

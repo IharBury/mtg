@@ -18,7 +18,7 @@ namespace Mtg.Engine.Tests
 open Mtg.Engine
 open Mtg.Engine.Catalog
 
-/- Inferno Titan: {R} pump and enters-or-attacks divided damage (CR 601.2d / 508.2). -/
+/- Inferno Titan: {R} pump and enters-or-attacks divided damage (CR 601.2d / 508.3a). -/
 
 def titanAbility : ActivatedAbility :=
   infernoTitan.activatedAbilities[0]!

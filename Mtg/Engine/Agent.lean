@@ -13,7 +13,7 @@ open Mtg.Engine
 open Mtg.Engine.Game
 
 /-- During CR 601.2g, tap sources until the locked-in cost is payable, then pay.
-Only mana that can be spent on the pending payment is considered (CR 106.10).
+Only mana that can be spent on the pending payment is considered (CR 106.6).
 Noncreatures are tapped before creatures when both help. Colorless is
 preferred when it can be spent; otherwise colors meet unmet requirements.
 Flexible sources such as Hidden Lair tap for `{U}` or `{B}` when that
@@ -235,15 +235,7 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
     | .fraChoice _ choice =>
       some (g.defaultFraAction p choice)
     | .chooseReplacement _ choices =>
-      let preferred :=
-        choices.find? (fun c =>
-          match c.kind with
-          | .entersUntappedPayLife n => (g.player p).life > (n : Int)
-          | _ => false)
-        |>.orElse (fun _ =>
-          choices.find? (·.kind == .entersTappedDeclinePayLife))
-        |>.orElse (fun _ => choices[0]?)
-      preferred.map Action.chooseReplacement
+      (g.defaultReplacementId p choices (payLifeIfSafe := true)).map Action.chooseReplacement
     | .chooseProliferate _ _ =>
       let own := (g.permanentsOf p).filter (·.status.hasCounters) |>.map (Target.permanent ·.id)
       let opps := (g.livingOpponents p).filter (·.poison > 0) |>.map (Target.player ·.id)

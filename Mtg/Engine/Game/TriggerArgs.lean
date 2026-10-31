@@ -341,9 +341,14 @@ def countNamed (g : Game) (ctx : TriggerRead) (what : TriggeredAbility.ObjectSel
   | .putEquipment =>
     match g.putArtifactThisWay with
     | some (oid, _) =>
-      match g.findObject? oid with
-      | some o => some (if g.isEquipment o then 1 else 0)
-      | none => some 0
+      let isEq : Bool :=
+        match g.findObject? oid with
+        | some o =>
+          if o.isOnBattlefield then g.isEquipment o
+          else ((g.lastKnownBefore? oid).map EventObject.equipment).getD false
+        | none =>
+          ((g.lastKnownBefore? oid).map EventObject.equipment).getD false
+      some (if isEq then 1 else 0)
     | none => some 0
   | _ =>
     (g.permanentsNamed ctx what).map (·.size)

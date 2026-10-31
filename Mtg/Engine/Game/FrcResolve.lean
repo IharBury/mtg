@@ -126,20 +126,16 @@ private def revealUntil (g : Game) (p : PlayerId) (pred : CardDef → Bool) (lim
     let mut hits : Array ObjectId := #[]
     let mut rest : Array ObjectId := #[]
     let mut shown : Array ObjectId := #[]
-    let mut fuel := (g.player p).library.size
-    while hits.size < limit && fuel > 0 do
-      fuel := fuel - 1
-      let lib := (g.player p).library
-      if lib.isEmpty then
-        fuel := 0
-      else
-        let top := lib.back!
-        let card := g.object! top
-        shown := shown.push top
-        let (g', newId) := g.move top .exile none (cause := cause)
-        g := g'.logMsg s!"{(g.player p).name} reveals {card.name}"
-        if pred card.printed then hits := hits.push newId
-        else rest := rest.push newId
+    let lib := (g.player p).library
+    let mut idx := lib.size
+    while hits.size < limit && idx > 0 do
+      idx := idx - 1
+      let cid := lib[idx]!
+      let card := g.object! cid
+      shown := shown.push cid
+      g := g.logMsg s!"{(g.player p).name} reveals {g.name card}"
+      if pred (g.baseCard card) then hits := hits.push cid
+      else rest := rest.push cid
     if !shown.isEmpty then
       g := g.record (GameEvent.revealed g.turnNumber p shown
         (cause := some (cause.getD (g.resolvingOrRuleCause p))))
@@ -158,10 +154,8 @@ private def putHits (g : Game) (p : PlayerId) (hits : Array ObjectId) (haste := 
 
 private def restBottom (g : Game) (p : PlayerId) (rest : Array ObjectId) (shuffle : Bool)
     (cause : Option EventCause := none) : Game :=
-  if rest.isEmpty then if shuffle then g.requestShuffle p else g
-  else if shuffle then
-    let g := g.moveIdsInOrder rest (.library p) (cause := cause)
-    g.requestShuffle p
+  if shuffle then g.requestShuffle p
+  else if rest.isEmpty then g
   else
     g.requestOrderInto rest (.library p)
       s!"{(g.player p).name} puts the rest on the bottom of their library in a random order"
@@ -532,16 +526,10 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
     | some (Target.permanent id) =>
       match g.findObject? id with
       | some src =>
+        let template := g.copiableValues src
         let (g, cause) := g.allocDelayedCause (some controller) sourceId
         g.withBatch (some cause) fun g =>
-          Id.run do
-            let mut g := g
-            for _ in [0:2] do
-              let (g', tok) := g.copyBattlefieldPermanent src controller (cause := some cause)
-              g := g'
-              g := g.createEffect (.keywordsUntilEot tok.id Keyword.haste) (cause := some cause)
-              g := g.registerDelayedTrigger { controller, source := some tok, kind := .endStepSacrifice tok.id, cause }
-            return g.logMsg "The token copies gain haste and are sacrificed at the next end step"
+          g.createPermanentCopyTokens controller template 2 (cause := some cause)
       | none => g
     | _ => g
   | .goblin =>
@@ -589,16 +577,6 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
           let (g, _) := g.move id (.graveyard card.owner) none
           let g := g.changeObject src.id (.linkedExile (src.linkedExile.filter (· != id)))
           if land then g.makeFrc controller .treasure else g.makeFrc controller .rogue
-  | .cursedCopy =>
-    match g.srcObj? sourceId with
-    | none => g
-    | some art =>
-      match g.battlefield.find? (fun o => g.isCreature o && o.id != art.id) with
-      | none => g.logMsg s!"{g.name art} does not become a copy"
-      | some src =>
-        let g := g.becomeCopyOf art src (untilEot := true)
-        g.createEffect (.keywordsUntilEot art.id Keyword.haste)
-          |>.logMsg s!"{g.name (g.object! art.id)} has haste until end of turn"
   | .despair =>
     g.withBatch (g.resolvingBatchCause controller sourceId) fun g =>
       g.forEachOpponent controller fun g pid =>
@@ -640,12 +618,11 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
   | .factOrFiction =>
     let lib := (g.player controller).library
     let n := min 5 lib.size
-    let ids := (List.range n).foldl (fun (acc : Game × Array ObjectId) _ =>
-      let (g, acc) := acc
-      let top := (g.player controller).library.back!
-      let (g, newId) := g.move top .exile none
-      (g, acc.push newId)) (g, #[])
-    let (g, shown) := ids
+    let shown := (List.range n).foldl (fun acc i => acc.push lib[lib.size - 1 - i]!) #[]
+    let revealCause := some (g.resolvingOrRuleCause controller sourceId)
+    let g :=
+      if shown.isEmpty then g
+      else g.record (GameEvent.revealed g.turnNumber controller shown (cause := revealCause))
     let handN := (shown.size + 1) / 2
     let toHand := shown.extract 0 handN
     let toGy := shown.extract handN shown.size

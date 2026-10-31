@@ -400,10 +400,9 @@ def harnessOk : Bool :=
 def infinityInactiveUntilHarnessedOk : Bool :=
   let g := addPermanent afterDraw theMindStone ⟨0⟩ ⟨0⟩
   let o := namedPermanent g "The Mind Stone"
-  let before := g.putMatchingSourceTriggers ⟨0⟩ o .yourEndStep
+  let before := g.record (GameEvent.stepBegan g.turnNumber .end ⟨0⟩)
   let g := g.applyAbilityEffect ⟨0⟩ (Effect.harnessInfinityStone) #[] (some o.id)
-  let o := namedPermanent g "The Mind Stone"
-  let after := g.putMatchingSourceTriggers ⟨0⟩ o .yourEndStep
+  let after := g.record (GameEvent.stepBegan g.turnNumber .end ⟨0⟩)
   before.waitingTriggers.isEmpty && after.waitingTriggers.size > 0
 
 #guard infinityInactiveUntilHarnessedOk
@@ -4362,12 +4361,11 @@ def unexpectedPartyChoosesTypeOk : Bool :=
   let bare := g.power (namedPermanent g "Lakeshore Apothecary") == 1 &&
     g.power (namedPermanent g "Gray Ogre") == 2
   let (g, partyObj) := g.allocObject anUnexpectedParty ⟨0⟩ (.outside ⟨0⟩) none
-  let (g, partyId) := g.putOntoBattlefield partyObj.id ⟨0⟩ (summoningSick := false)
-  let g := g.afterPermanentEnters (g.object! partyId)
+  let (g, _) := g.putOntoBattlefield partyObj.id ⟨0⟩ (summoningSick := false)
   anUnexpectedParty.asEntersChooseCreatureType && bare &&
     match g.pending with
-    | .fraChoice ⟨0⟩ (.entersCreatureType id) =>
-      id == partyId &&
+    | .chooseReplacement ⟨0⟩ choices =>
+      choices.any (fun c => c.object == some ⟨partyObj.id.raw + 1⟩ && c.kind == .asEntersChooseCreatureTypePrompt) &&
         (let g := mustApply g ⟨0⟩ (.chooseName "Human")
          (namedPermanent g "An Unexpected Party").status.chosenCreatureType == some .human &&
            g.power (namedPermanent g "Lakeshore Apothecary") == 3 &&
@@ -4379,12 +4377,11 @@ def unexpectedPartyChoosesTypeOk : Bool :=
 /-- Gollum, Riddle Master chooses odd or even as he enters. -/
 def gollumChoosesParityOk : Bool :=
   let (g, gollumObj) := afterDraw.allocObject gollumRiddleMaster ⟨0⟩ (.outside ⟨0⟩) none
-  let (g, gollumId) := g.putOntoBattlefield gollumObj.id ⟨0⟩ (summoningSick := false)
-  let g := g.afterPermanentEnters (g.object! gollumId)
+  let (g, _) := g.putOntoBattlefield gollumObj.id ⟨0⟩ (summoningSick := false)
   gollumRiddleMaster.asEntersChooseOddEven &&
     match g.pending with
-    | .fraChoice ⟨0⟩ (.entersOddEven id) =>
-      id == gollumId &&
+    | .chooseReplacement ⟨0⟩ choices =>
+      choices.any (fun c => c.object == some ⟨gollumObj.id.raw + 1⟩ && c.kind == .asEntersChooseOdd true) &&
         (let g := mustApply g ⟨0⟩ (.chooseMode 1)
          (namedPermanent g "Gollum, Riddle Master").status.chosenOdd == some true)
     | _ => false
@@ -4464,7 +4461,7 @@ def hostKeywordChecksOk : Bool :=
   let g3 := g3.markAttacking armed.id (some (.player ⟨1⟩))
   let g3 := g3.record (GameEvent.combatDamageAssigned g3.turnNumber true
     #[{ source := armed.id, toPlayer := 3 }])
-  let g3 := g3.dealAssignedCombatDamage
+  let g3 := (g3.dealAssignedCombatDamage.receivePriority ⟨0⟩).resolveTop
   g.hasMenace mail && g.power mail == 3 &&
     g2.hasIndestructible coat &&
     g3.hasTrample (g3.object! armed.id) &&

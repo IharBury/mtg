@@ -18,7 +18,8 @@ def allocObject (g : Game) (printed : CardDef) (owner : PlayerId) (zone : Zone)
     (triggeredAbility : Option TriggeredAbility := none)
     (sourceId : Option ObjectId := none)
     (attachedTo : Option ObjectId := none)
-    (adventurerCard : Option CardDef := none) : Game × GameObject :=
+    (adventurerCard : Option CardDef := none)
+    (isCommander : Bool := false) : Game × GameObject :=
   let id : ObjectId := ⟨g.nextObjectId⟩
   let ts : Nat := g.timestamp + 1
   let obj : GameObject := {
@@ -27,6 +28,7 @@ def allocObject (g : Game) (printed : CardDef) (owner : PlayerId) (zone : Zone)
     abilityEffect, triggeredAbility, sourceId,
     attachedTo := if zone == .battlefield then attachedTo else none,
     adventurerCard,
+    isCommander,
     defaultController := if zone == .battlefield then controller else none
   }
   let g := g.change (.materializeObject obj)

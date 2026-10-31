@@ -31,7 +31,7 @@ def fraAbilityTargetsAllIllegal (g : Game) (controller : PlayerId) (obj : GameOb
 
 /-- Resolve a CR 603.7 delayed triggered ability on the stack. -/
 def resolveDelayedTrigger (g : Game) (controller : PlayerId) (kind : DelayedTriggerKind)
-    (cause : EventCause) : Game :=
+    (cause : EventCause) (causeId : Option ObjectId := none) : Game :=
   match kind with
   | .eaglesBirds n =>
     if n > 0 then
@@ -85,6 +85,17 @@ def resolveDelayedTrigger (g : Game) (controller : PlayerId) (kind : DelayedTrig
     | none => g
   | .endStepSynthetic n =>
     g.applyOneDelayedSynthetic controller n cause
+  | .copyNextInstantSorceryThisTurn
+  | .lokiCopyNextInstantSorceryThisTurn _ _ =>
+    match causeId.bind g.findObject? with
+    | some spell =>
+      if spell.zone == .stack then
+        let (g, copyId?) := g.copyStackSpellWithId spell controller (cause := some cause)
+        match copyId? with
+        | some copyId => g.offerSpellRetarget controller copyId 0
+        | none => g
+      else g
+    | none => g
 
 def resolveTop (g : Game) : Game :=
   if g.stack.isEmpty then g
@@ -101,7 +112,7 @@ def resolveTop (g : Game) : Game :=
           resolvingAbility := some obj.id
           resolutionFinish := some (.ability obj.id snap entry.controller obj.sourceId) })
         let g := g.withBatch (some dtCause) (fun g =>
-          g.resolveDelayedTrigger entry.controller dtKind dtCause)
+          g.resolveDelayedTrigger entry.controller dtKind dtCause obj.fraCauseId)
         g.completeActiveResolutions
       else if let some rawE := obj.abilityEffect then
         let tcs := g.evalLayer3 obj

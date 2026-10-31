@@ -71,8 +71,6 @@ structure Status where
   chosenAnchor : Option String := none
   /-- Card type chosen as this permanent entered (Serra's Emissary). -/
   chosenCardType : Option CardType := none
-  /-- This permanent is a commander. -/
-  isCommander : Bool := false
 deriving Repr, Inhabited, BEq
 
 namespace Status

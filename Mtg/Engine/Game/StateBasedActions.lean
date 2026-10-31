@@ -175,7 +175,7 @@ def finishSbaSweep (g : Game) (moves : Array SbaGraveyardMove)
             if !legal then
               some {
                 objectId := o.id
-                reason := s!"{g.name o} is put into its owner's graveyard (CR 704.5n)"
+                reason := s!"{g.name o} is put into its owner's graveyard (CR 704.5m)"
                 sba := .illegalAura
               }
             else none)

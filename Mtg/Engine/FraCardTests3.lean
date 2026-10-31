@@ -820,7 +820,10 @@ Immovable). -/
 #guard
   let g := addToHand afterDraw roomOfRefuge me
   let g := mustApply g me (.playLand (handObj g me "Room of Refuge").id)
-  let wasPending := (pendingFra g).isSome
+  let wasPending :=
+    match g.pending with
+    | .chooseReplacement p _ => p == me
+    | _ => false
   let g := mustApply g me (.chooseMode 3)
   let room := namedPermanent g "Room of Refuge"
   wasPending && room.status.tapped && room.status.chosenColor == some .red &&

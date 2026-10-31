@@ -18,6 +18,18 @@ def materializeSeat (g : Game) (seatIdx : Nat) (seat : Seat) : Except String Gam
   | .error e => throw s!"{seat.name}: {e}"
   | .ok _ => pure ()
   let pid : PlayerId := ⟨seatIdx⟩
+  let hasCommander := seat.hasCommander || !seat.commanders.isEmpty
+  let commanderColorIdentity :=
+    if seat.commanderColorIdentity != ColorSet.empty then seat.commanderColorIdentity
+    else seat.commanders.foldl (fun acc c => acc.union c.colorIdentity) ColorSet.empty
+  let commanderCreatureTypes :=
+    if !seat.commanderCreatureTypes.isEmpty then seat.commanderCreatureTypes
+    else
+      seat.commanders.foldl (fun acc c =>
+        c.subtypes.foldl (fun acc s =>
+          match (CardSubtype.ofOracle? s).filter CardSubtype.isCreatureType with
+          | some sub => if acc.contains sub then acc else acc.push sub
+          | none => acc) acc) #[]
   -- CR 400.11b: sideboard cards are outside the game. They become objects
   -- only when an effect reaches outside the game.
   let player : Player := {
@@ -25,13 +37,20 @@ def materializeSeat (g : Game) (seatIdx : Nat) (seat : Seat) : Except String Gam
     name := seat.name
     life := 20
     startingLife := 20
+    hasCommander := hasCommander
+    commanderColorIdentity := commanderColorIdentity
+    commanderCreatureTypes := commanderCreatureTypes
     sideboard := seat.sideboard
+    teammate := seat.teammate
   }
   let g := g.change (.players (g.players.push player))
   return Id.run do
     let mut g := g
     for card in seat.deck do
       let (g', _) := g.allocObject card pid (.library pid)
+      g := g'
+    for cmd in seat.commanders do
+      let (g', _) := g.allocObject cmd pid .command (isCommander := true)
       g := g'
     return g
 

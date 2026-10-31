@@ -51,10 +51,12 @@ def applyPalantir (g : Game) (sourceId : ObjectId) (target : Option PlayerId) : 
     | none => g
 
 /-- Copy a spell on the stack, with its modes, targets, X, and paid optional
-costs (CR 707.10). The copy is not cast. -/
-def copyStackSpell (g : Game) (src : GameObject) (controller : PlayerId) : Game :=
+costs (CR 707.10), returning the new copy's `ObjectId` (if created). The copy
+is not cast. -/
+def copyStackSpellWithId (g : Game) (src : GameObject) (controller : PlayerId)
+    (cause : Option EventCause := none) : Game × Option ObjectId :=
   if (g.player controller).lost then
-    g.logMsg s!"{src.name} remains in its current zone (CR 800.4b)"
+    (g.logMsg s!"{src.name} remains in its current zone (CR 800.4b)", none)
   else
     let copyId : ObjectId := ⟨g.nextObjectId⟩
     let copySnap : EventObject := {
@@ -65,97 +67,21 @@ def copyStackSpell (g : Game) (src : GameObject) (controller : PlayerId) : Game 
       zone := .stack
       isCopy := true
     }
+    let resolvedCause :=
+      match cause with
+      | some c => c
+      | none =>
+        g.resolveOptionalCause (g.resolvingOneShotCause controller (some src.id))
+          (fallbackSrc := some src.id) (fallbackCtrl := some controller)
     let g := g.record (GameEvent.stackObjectCopied g.turnNumber src.id copySnap controller
-      (cause := g.resolveOptionalCause (g.resolvingOneShotCause controller (some src.id))
-        (fallbackSrc := some src.id) (fallbackCtrl := some controller)))
-    g.logMsg s!"A copy of {src.name} is created"
+      (cause := resolvedCause))
+    (g.logMsg s!"A copy of {src.name} is created", some copyId)
 
-/-- Announce the modes and targets of a spell cast while an ability resolves
-(CR 601.2b–c), then finish casting it. A spell that needs a target but has
-none can't be cast and returns to where it was (CR 601.2c / 733.1). -/
-def beginResolutionCastTargets (g : Game) (p : PlayerId) (prop : ProposedSpell) :
-    Game :=
-  let face := prop.original.printed
-  let g := g.change (.proposedSpell (some prop))
-  if face.isModal then
-    if !face.spellModes.any (g.spellModeIsChoosable p) && !face.allowsZeroTargets then
-      g.reverseProposedSpell
-    else
-      g.change (.pending (.chooseMode p))
-        |>.logMsg s!"{(g.player p).name} must choose a mode (CR 601.2b)"
-  else if face.requiresTarget || face.isAura then
-    if (g.legalCastTargets p face).isEmpty && !face.allowsZeroTargets then
-      (g.reverseProposedSpell).logMsg s!"{face.name} has no legal target and can't be cast"
-    else
-      let what := if face.isAura then "a target to enchant" else "a target"
-      g.change (.pending (.chooseTargets p))
-        |>.logMsg s!"{(g.player p).name} must choose {what} (CR 601.2c)"
-  else if prop.cost.includesManaPayment || prop.needsSacrificeOther || prop.needsDiscardCard then
-    g.change (.pending (.activateManaAbilities p))
-      |>.logMsg s!"{(g.player p).name} may activate mana abilities (CR 601.2g)"
-  else
-    let g := g.change (.proposedSpell none)
-    g.becomeCast p (g.object! prop.spellId) (grantPriority := false)
-
-/-- Put a card onto the stack as an ability is resolving. Timing may be
-ignored. The permission does not last after this ability finishes.
-An Aura still announces a target to enchant (CR 601.2c / 303.4). -/
-def castAsPartOfResolution (g : Game) (p : PlayerId) (id : ObjectId)
-    (ignoreTiming := true) (withoutManaCost := true)
-    (exileInstantSorceryInstead := false) (callerCheckpoint := false) : Game :=
-  let clearCkpt (g : Game) : Game :=
-    if g.proposalCheckpoint.isSome then g.change .clearProposalCheckpoint else g
-  match g.findObject? id with
-  | none => (clearCkpt g).logMsg "There is no card to cast"
-  | some o =>
-    if g.splitSecondOnStack then
-      (clearCkpt g).logMsg s!"{o.name} can't be cast while a spell with split second is on the stack (ruling 839)"
-    else if !ignoreTiming && !g.timingAllowsCast p o.printed then
-      (clearCkpt g).logMsg s!"{o.name} cannot be cast now (timing)"
-    else if !withoutManaCost &&
-        !(g.player p).manaPool.canPay (g.playManaCost o o.printed) then
-      (clearCkpt g).logMsg s!"{o.name} cannot be cast (costs)"
-    else
-      let name := o.name
-      let original := o
-      let origSnap := g.snapshot o
-      let fromGy := original.zone == .graveyard original.owner
-      let wasCopy := original.isCopy
-      let g :=
-        if callerCheckpoint && g.proposalCheckpoint.isSome then g
-        else g.change .saveProposalCheckpoint
-      let (g, newId) := g.move id .stack (some p) (verb := some .cast) (actor := some p)
-        (isCopy := some wasCopy)
-      let g :=
-        if exileInstantSorceryInstead && fromGy then
-          g.createEffect (.exileInstantSorceryInstead newId)
-        else g
-      let g := g.putStackEntry p newId
-      let way : CastWay :=
-        if withoutManaCost then .alternative "withoutManaCost" else .normal
-      let g := g.record (GameEvent.proposed g.turnNumber newId p original.zone way)
-      let g := g.logMsg s!"{(g.player p).name} casts {name} as the ability resolves"
-      let cost :=
-        if withoutManaCost then ManaCost.empty else g.playManaCost original original.printed
-      g.beginResolutionCastTargets p {
-        caster := p
-        cost
-        spellId := newId
-        original
-        originalSnapshot := origSnap
-      }
-
-/-- Cast the first instant or sorcery card with mana value at most `maxMv`
-from `p`'s hand as part of a resolution, without paying its mana cost. -/
-def castInstantSorceryFromHandMvAtMost (g : Game) (p : PlayerId) (maxMv : Nat) : Game :=
-  match (g.player p).hand.findSome? (fun id =>
-    match g.findObject? id with
-    | some o =>
-      if o.printed.isInstantOrSorcery && o.printed.manaValue <= maxMv then some id
-      else none
-    | none => none) with
-  | none => g.logMsg "No instant or sorcery to cast"
-  | some id => g.castAsPartOfResolution p id
+/-- Copy a spell on the stack, with its modes, targets, X, and paid optional
+costs (CR 707.10). The copy is not cast. -/
+def copyStackSpell (g : Game) (src : GameObject) (controller : PlayerId)
+    (cause : Option EventCause := none) : Game :=
+  (g.copyStackSpellWithId src controller cause).1
 
 /-- Why `id` cannot be cast from a pending Cosmic Cube look, if it cannot. -/
 def mayCastFromLookedError (g : Game) (p : PlayerId) (ids : Array ObjectId)
@@ -191,46 +117,6 @@ def beginMayCastFromLooked (g : Game) (p : PlayerId) (n : Nat) (maxMv : Int) :
       (cause := some (g.resolvingOrRuleCause p)))
     (g.change (.pending (.mayCastFromLooked p ids maxMv))).logMsg
       s!"{(g.player p).name} looks at the top {ids.size} cards. You may cast a spell from among them with mana value {maxMv} or less as this ability resolves"
-
-/-- After the Cosmic Cube choice, put unchosen looked-at cards on the bottom
-in a random order, then grant priority unless another choice is pending
-(for example choosing a target for an Aura just cast). -/
-def finishMayCastFromLooked (g : Game) (p : PlayerId) (rest : Array ObjectId) :
-    Game :=
-  let rest :=
-    rest.filter (fun id =>
-      match g.findObject? id with
-      | some o => o.zone == .library p
-      | none => false)
-  let msg :=
-    s!"{(g.player p).name} puts the rest on the bottom of their library in a random order"
-  let g :=
-    if rest.isEmpty then g
-    else g.requestOrderInto rest (.library p) msg
-  if g.pending != .none then g
-  else g.receivePriority g.activePlayer
-
-/-- Cast one looked-at card as Cosmic Cube resolves, or decline (`none`). -/
-def chooseCastFromLooked (g : Game) (p : PlayerId) (castId : Option ObjectId) :
-    Except String Game := do
-  match g.pending with
-  | .mayCastFromLooked q ids maxMv =>
-    if p != q then
-      throw s!"Only {(g.player q).name} may choose whether to cast a spell"
-    match castId with
-    | none =>
-      let g := g.logMsg s!"{(g.player p).name} declines to cast a spell"
-      return finishMayCastFromLooked (g.change (.pending .none)) p ids
-    | some id =>
-      match g.mayCastFromLookedError p ids maxMv id with
-      | some err => throw err
-      | none =>
-        let g := g.change (.pending .none)
-        let g := g.castAsPartOfResolution p id
-        let cast := (g.findObject? (g.followMoved id)).any (·.zone == .stack)
-        let unchosen := if cast then ids.filter (· != id) else ids
-        return g.finishMayCastFromLooked p unchosen
-  | _ => throw "Not time to choose a spell from among looked-at cards"
 
 /-- Put an artifact from hand onto the battlefield.
 `.«if» (.atLeast (.count .putEquipment) (.fixed 1)) (.attach .putArtifact .notedHost)` attaches it when it is
@@ -577,73 +463,70 @@ def extortDrain (g : Game) (controller : PlayerId) : Game :=
 
 /-- A stack object to stand for `sourceId` as an ability's source. -/
 def abilitySourceFor (g : Game) (controller : PlayerId) (sourceId : Option ObjectId) : GameObject :=
-  match sourceId.bind g.findObject? with
-  | some o => o
+  match sourceId with
+  | some sid =>
+    match g.findObject? sid with
+    | some o => o
+    | none =>
+      match g.lastKnownBefore? sid with
+      | some eo => damageSourceObjectFromLki eo
+      | none =>
+        { id := sid, printed := { name := "The ability", types := #[] }
+          owner := controller, controller := some controller, zone := .battlefield }
   | none =>
-    { id := sourceId.getD ⟨0⟩, printed := { name := "The ability", types := #[] }
+    { id := ⟨1000000000⟩, printed := { name := "The ability", types := #[] }
       owner := controller, controller := some controller, zone := .battlefield }
 
-/-- Put `followup` on the stack as a reflexive triggered ability (CR 603.12).
-Printed MSH reflexes use `putReflexiveTrigger` and choose targets now. This
-follow-up keeps the targets the original ability already has. -/
+/-- Queue `followup` as a reflexive triggered ability via `WaitingTrigger` +
+`recordReflexiveTrigger` (`TriggerQueueEvent.triggered`, CR 603.3c–d / 603.12).
+Flushes immediately only when invoked outside an active resolution/batch with
+`deferToPriority == false`. -/
 def queueFollowupReflexive (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
-    (followup : TriggeredAbility.TriggerResolution) : Game :=
-  let src := g.abilitySourceFor controller sourceId
-  let srcSnap : EventObject :=
-    match sourceId.bind g.findObject? with
-    | some o => g.snapshot o
-    | none =>
-      match sourceId.bind g.lastKnownBefore? with
-      | some eo => eo
-      | none =>
-        { id := sourceId, name := src.name, owner := controller,
-          controller := some controller, zone := .battlefield }
-  let effect : Effect := {
-    resolution := .draw 0
-    phrase := "when you do, that ability triggers" }
-  let marker : TriggeredAbility := .triggered .enter effect {}
-  let newId : ObjectId := ⟨g.nextObjectId⟩
-  let spec : StackTriggerSpec := {
-    triggeredAbility := some marker
-    reflexiveResolution := some followup
-    sourceId := sourceId
-    abilityName := some s!"{src.name}'s ability"
-  }
-  let g := g.record (GameEvent.triggerPutOnStack g.turnNumber newId srcSnap controller
-    (spec := spec))
-  g.logMsg s!"{src.name}'s reflexive ability is put on the stack"
-
-/-- Put a reflexive triggered ability (“When you do, …”) on the stack with
-`effect` (CR 603.12). Its targets are chosen now. -/
-def putReflexiveTrigger (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
-    (effect : Effect) : Game :=
-  let src := g.abilitySourceFor controller sourceId
-  let marker : TriggeredAbility := .triggered .enter effect {}
-  if effect.requiresTarget && !effect.allowsZeroTargets &&
-      (g.legalTargetsForKind controller effect.targetKind sourceId).isEmpty then
-    g.logMsg s!"{src.name}'s reflexive ability has no legal target and is removed (CR 603.3d)"
+    (followup : TriggeredAbility.TriggerResolution)
+    (deferToPriority : Bool := false) : Game :=
+  if (g.player controller).lost || (g.player controller).leftTheGame then g
   else
-    let srcSnap : EventObject :=
-      match sourceId.bind g.findObject? with
-      | some o => g.snapshot o
-      | none =>
-        match sourceId.bind g.lastKnownBefore? with
-        | some eo => eo
-        | none =>
-          { id := sourceId, name := src.name, owner := controller,
-            controller := some controller, zone := .battlefield }
-    let newId : ObjectId := ⟨g.nextObjectId⟩
-    let spec : StackTriggerSpec := {
-      triggeredAbility := some marker
-      abilityEffect := some effect
-      sourceId := sourceId
-      abilityName := some s!"{src.name}'s ability"
+    let src := g.abilitySourceFor controller sourceId
+    let effect : Effect := {
+      resolution := .draw 0
+      phrase := "when you do, that ability triggers" }
+    let marker : TriggeredAbility := .triggered .enter effect {}
+    let eventCause := g.resolveOptionalCause none (fallbackSrc := sourceId) (fallbackCtrl := some controller)
+    let wt : WaitingTrigger := {
+      controller
+      source := src
+      ability := marker
+      event := .leaving
+      checked := true
+      eventCause := eventCause
+      reflexiveResolution := some followup
     }
-    let g := g.record (GameEvent.triggerPutOnStack g.turnNumber newId srcSnap controller
-      (spec := spec))
-    let g := g.logMsg s!"{src.name}'s reflexive ability is put on the stack"
-    if g.resolvingAbility.isSome || g.resolvingSpell.isSome then g
-    else g.promptTriggerTargetsIfNeeded
+    let g := g.recordReflexiveTrigger wt
+    if deferToPriority || g.resolvingAbility.isSome || g.resolvingSpell.isSome || g.currentBatch.isSome then g
+    else g.putTriggerBatch #[wt]
+
+/-- Queue a reflexive triggered ability (“When you do, …”) with `effect` via
+`WaitingTrigger` + `recordReflexiveTrigger` (`TriggerQueueEvent.triggered`,
+CR 603.3c–d / 603.12). Its targets are chosen when put on the stack. -/
+def putReflexiveTrigger (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
+    (effect : Effect) (deferToPriority : Bool := false) : Game :=
+  if (g.player controller).lost || (g.player controller).leftTheGame then g
+  else
+    let src := g.abilitySourceFor controller sourceId
+    let marker : TriggeredAbility := .triggered .enter effect {}
+    let eventCause := g.resolveOptionalCause none (fallbackSrc := sourceId) (fallbackCtrl := some controller)
+    let wt : WaitingTrigger := {
+      controller
+      source := src
+      ability := marker
+      event := .entering
+      checked := true
+      eventCause := eventCause
+      abilityEffect := some effect
+    }
+    let g := g.recordReflexiveTrigger wt
+    if deferToPriority || g.resolvingAbility.isSome || g.resolvingSpell.isSome || g.currentBatch.isSome then g
+    else g.putTriggerBatch #[wt]
 
 /-- The reflexive triggered ability `kind` of an MSH card, with its targets
 (MSH 359–369). -/

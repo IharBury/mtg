@@ -371,7 +371,7 @@ def parseFrcLine (c : CardDef) (line : String) : Option CardDef :=
       else if l.contains "whenever this land attacks, scry" then
         some (pushTrig c .attack (Effect.scry 1) line)
       else if l.contains "as this artifact enters, you may have it become a copy" then
-        some (pushTrig c .enter (frc .cursedCopy line) line)
+        some { c with asEntersMayCopyCreatureHasteUntilEot := true }
       else if l.contains "choose target opponent. until that player's next turn" then
         some (pushSpell c (frc .teferi line (oppPlayer "target opponent")))
       else if l.contains "when venser enters, choose one" ||

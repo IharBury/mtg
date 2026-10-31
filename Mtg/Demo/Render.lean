@@ -158,7 +158,7 @@ def abilityActivator (g : Game) (o : GameObject) : PlayerId :=
   (g.controllerOf o).getD o.owner
 
 /-- Parenthetical when `o` can be played or an ability can be activated
-without paying mana (CR 118.7). Play-from-exile permissions are rendered
+without paying mana (CR 118.9). Play-from-exile permissions are rendered
 separately by `exilePlayPermissionClause`. -/
 def withoutPayingManaClause (g : Game) (o : GameObject) : String :=
   let play :=
@@ -269,7 +269,7 @@ def handLine (g : Game) (id : ObjectId) : String :=
 /-- Printed mana cost to play `o` from exile when someone has permission.
 Lands and other cards with no mana cost omit it rather than printing `{0}`
 (CR 202.1b / 118.6). A granted “without paying its mana cost” permission
-prints `{0}` (CR 107.4d / 118.7). -/
+prints `{0}` (CR 107.4d / 118.5 / 118.9). -/
 def exilePlayManaCost (g : Game) (o : GameObject) : String :=
   match g.playPermission o with
   | some perm =>
@@ -294,7 +294,7 @@ permission if any, and a linked-exile return condition (CR 610.3) if any. -/
 def exileLine (g : Game) (o : GameObject) : String :=
   s!"{printedCardLine o}{exilePlayPermissionClause g o}{exileUntilLeavesClause g o}"
 
-/-- Whether `viewer` may look at card faces in `z` (CR 400.2, 401.2, 402.2).
+/-- Whether `viewer` may look at card faces in `z` (CR 400.2, 401.2, 402.3).
 `none` is omniscient: public zones and hands are shown, but libraries stay
 face-down even to their owner except for cards they are scrying (CR 701.22). -/
 def canSeeZoneFaces (viewer : Option PlayerId) : Zone → Bool
@@ -737,9 +737,9 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
     | .recruitDiscard p =>
       s!" [recruit: discard a card ({g.player p |>.name})]"
     | .chooseKicker p =>
-      s!" [announce kicker (CR 702.32, {g.player p |>.name})]"
+      s!" [announce kicker (CR 702.33, {g.player p |>.name})]"
     | .chooseGift p =>
-      s!" [announce gift (CR 702.185, {g.player p |>.name})]"
+      s!" [announce gift (CR 702.174, {g.player p |>.name})]"
     | .chooseTeamwork p =>
       s!" [announce teamwork (CR 702.194, {g.player p |>.name})]"
     | .chooseTeamworkCreatures p need =>
@@ -801,11 +801,9 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
           let names : List String :=
             (List.range options.size).map (fun i => s!"{i} {fraKeywordName options[i]!}")
           "choose a keyword: " ++ String.intercalate ", " names
-        | .chooseColor _ => "choose a color: 0 white, 1 blue, 2 black, 3 red, 4 green"
         | .sacrificeCreatureEach .. => "sacrifice a creature"
         | .discardTwo .. => "discard two cards"
         | .mayMoveAllCounters .. => "may move all counters (accept or decline)"
-        | .chooseCardName _ => "name a nonland card: name <card name>"
         | .crew _ _ n => s!"choose creatures with total power {n} to crew: choose <id> ..., or decline"
         | .costPicks _ picks paid =>
           let what := (picks[0]?.map CostPick.phrase).getD "pay the cost"
@@ -933,8 +931,6 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
             s!"put any number of creature cards ({creatures.size}): choose <id> ..., or decline"
           else
             s!"may put a creature card ({creatures.size}): choose <id>, or decline"
-        | .entersCreatureType _ => "choose a creature type as it enters: name <type>"
-        | .entersOddEven _ => "choose even (0) or odd (1) as it enters"
         | .chooseEnteringAttackTarget remaining _ _ =>
           let options := match remaining[0]? with | some item => item.options | none => #[]
           let names := (List.range options.size).map (fun i =>
@@ -976,14 +972,28 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
         if n == 2 then " [coin toss (--norandom)]"
         else s!" [random index 0..{n - 1} (--norandom)]"
     | .chooseReplacement p choices =>
-      match choices.findSome? (fun (c : ReplacementId) =>
-          match c.kind with
-          | .entersUntappedPayLife n => some n
-          | _ => none) with
-      | some n =>
-        s!" [pay {n} life (accept), or it enters tapped (decline) ({g.player p |>.name})]"
-      | none =>
-        s!" [choose which replacement effect applies next ({choices.size} choices, CR 616.1, {g.player p |>.name})]"
+      let who := g.player p |>.name
+      if let some n := choices.findSome? (fun (c : ReplacementId) =>
+          match c.kind with | .entersUntappedPayLife n => some n | _ => none) then
+        s!" [pay {n} life (accept), or it enters tapped (decline) ({who})]"
+      else if choices.any (fun (c : ReplacementId) => c.kind == ReplacementEffectKind.entersTappedDeclineBehold) then
+        s!" [behold to enter untapped (choose <id> / accept), or enter tapped (decline) ({who})]"
+      else if choices.any (fun (c : ReplacementId) => c.kind == ReplacementEffectKind.declineEntersAsCopy) then
+        s!" [may enter as a copy of a creature until end of turn (choose <id> / accept), or decline ({who})]"
+      else if choices.any (fun c => match c.kind with | .asEntersChooseColor _ => true | _ => false) then
+        s!" [choose a color as it enters: 0 white, 1 blue, 2 black, 3 red, 4 green ({who})]"
+      else if choices.any (fun (c : ReplacementId) => c.kind == ReplacementEffectKind.asEntersChooseCreatureTypePrompt) then
+        s!" [choose a creature type as it enters: name <type> ({who})]"
+      else if choices.any (fun (c : ReplacementId) => c.kind == ReplacementEffectKind.asEntersChooseCardNamePrompt) then
+        s!" [name a nonland card as it enters: name <card name> ({who})]"
+      else if choices.any (fun c => match c.kind with | .asEntersChooseOdd _ => true | _ => false) then
+        s!" [choose even (0) or odd (1) as it enters ({who})]"
+      else if choices.any (fun c => match c.kind with | .asEntersChooseCardType _ => true | _ => false) then
+        s!" [choose a card type as it enters ({who})]"
+      else if choices.any (fun c => match c.kind with | .asEntersChooseAnchor _ => true | _ => false) then
+        s!" [choose Mardu (0) or Jeskai (1) as it enters ({who})]"
+      else
+        s!" [choose which replacement effect applies next ({choices.size} choices, CR 616.1, {who})]"
   let result :=
     match g.result with
     | none => ""
@@ -1023,7 +1033,7 @@ def snapshot (g : Game) (viewer : Option PlayerId := none) : String :=
       [stackBlock g, battlefieldBlock g] ++ players ++ exileBlock)
 
 /-- Hide draws and library rearrangements that `viewer` is not allowed to see
-(CR 401.2, 402.2, 103.5, 701.22). Other log lines are public. -/
+(CR 401.2, 402.3, 103.5, 701.22). Other log lines are public. -/
 def redactLogLine (g : Game) (viewer : PlayerId) (line : String) : String :=
   Id.run do
     for pl in g.players do

@@ -44,64 +44,6 @@ def paySneak (g : Game) (p : PlayerId) (spellId : ObjectId) (attackerId : Object
     (costs := #[.sneak attackerId atkTarget]) (cause := cause))
   return g.logMsg s!"{(g.player p).name} pays a sneak cost"
 
-/-- Pay the locked-in cost (CR 601.2h / 602.2b). Spells and abilities that still
-need an artifact or creature sacrificed, or a card discarded, wait for
-that action. -/
-def finishProposedSpell (g : Game) : Except String Game := do
-  let some prop := g.proposedSpell | throw "No spell or ability is waiting to be paid for"
-  let allowElf := g.proposedAllowsElfRestricted prop
-  let allowInst := g.proposedAllowsInstRestricted prop
-  let allowHero := g.proposedAllowsHeroRestricted prop
-  let allowVillain := g.proposedAllowsVillainRestricted prop
-  let allowCant := g.proposedAllowsCantNonartifact prop
-  let allowCreature := g.proposedAllowsCreatureRestricted prop
-  let spend := g.proposedManaSpend prop
-  if !(g.player prop.caster).manaPool.canPay prop.cost allowElf allowInst
-        allowHero allowVillain allowCant allowCreature spend ||
-      !g.sourceStillPayable prop ||
-      !g.canPayLife prop.caster prop.payLife then
-    return (← g.reverseProposedSpell? (resumeContinuation := true))
-  if prop.needsSacrificeOther then
-    let excludeId := prop.sourceId.getD prop.spellId
-    if (g.sacrificeCreatureOrArtifactChoices prop.caster excludeId).isEmpty then
-      return (← g.reverseProposedSpell? (resumeContinuation := true))
-  if prop.needsDiscardCard && (g.player prop.caster).hand.isEmpty then
-    return (← g.reverseProposedSpell? (resumeContinuation := true))
-  let count (g : Game) (u : FraManaUse) :=
-    ((g.player prop.caster).manaPool.fraRestricted.filter (·.2 == u)).size
-  let paid ← g.payCost prop.caster prop.cost allowElf allowInst
-    allowHero allowVillain allowCant allowCreature spend (forObject := some prop.spellId)
-  let spent (u : FraManaUse) := count paid u < count g u
-  let g :=
-    match prop.kind, paid.findObject? prop.spellId with
-    | .spell, some o =>
-      if spent .legendarySpell then
-        paid.createEffect (.uncounterableThisCast o.id)
-          |>.logMsg s!"{o.name} can't be countered (Delighted Halfling)"
-      else paid
-    | _, _ => paid
-  if prop.kind == .activatedAbility then
-    return (← g.beginActivationPayment prop)
-  let g ←
-    match prop.sneakAttacker with
-    | some a =>
-      match g.paySneak prop.caster prop.spellId a with
-      | .ok g => pure g
-      | .error _ => return (← g.reverseProposedSpell? (resumeContinuation := true))
-    | none => pure g
-  match prop.kind, prop.needsSacrificeOther, prop.needsDiscardCard with
-  | _, true, _ =>
-    let g := g.changes #[.pending (.sacrificePermanent prop.caster prop.spellId), .consecutivePasses 0]
-    return g.logMsg
-      s!"{(g.player prop.caster).name} must sacrifice an artifact or creature"
-  | _, _, true =>
-    let g := g.changes #[.pending (.discardForAdditionalCost prop.caster), .consecutivePasses 0]
-    return g.logMsg
-      s!"{(g.player prop.caster).name} must discard a card"
-  | _, _, _ =>
-    let g := g.changes #[.pending .none, .proposedSpell none, .consecutivePasses 0]
-    return g.becomeCast prop.caster (g.object! prop.spellId)
-
 /-- Starting mana cost of `face` before increases and reductions (CR 118.7). -/
 def playCostStart (g : Game) (card : GameObject) (face : CardDef) : ManaCost :=
   if g.freeCastFromGraveyard card && card.zone == .graveyard card.owner then
@@ -319,7 +261,7 @@ def playManaCost (g : Game) (card : GameObject) (face : CardDef)
     else cost
   let freeCommander :=
     face.freeCastIfControlCommander &&
-      (g.permanentsOf caster).any (·.status.isCommander)
+      (g.permanentsOf caster).any (·.isCommander)
   let cost :=
     if freeCommander || g.freeCastFromGraveyard card then
       g.applyCastCostReductions card face (ManaCost.empty.addCost increase)

@@ -74,7 +74,7 @@ structure TriggerTiming where
   thisOrAnotherSubtype : Option CardSubtype := none
 deriving Repr, Inhabited, BEq
 
-/-- Targeting and resolution for a printed Saga chapter (CR 714.3).
+/-- Targeting and resolution for a printed Saga chapter (CR 714.2).
 The chapter is still stored as `ChapterResolution`. What resolves is one
 of these `TriggerResolution` constructors. -/
 def chapterTiming (e : ChapterResolution) : TriggerTiming :=

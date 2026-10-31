@@ -4,7 +4,7 @@ import Mtg.Engine.Game.ManaAbilities
 # Playing lands and mana abilities (CR 305 / 605)
 
 Land drops, mana sources and their producible types, tapping for mana
-with spending restrictions (CR 106.10), and available-mana calculation.
+with spending restrictions (CR 106.6), and available-mana calculation.
 -/
 
 namespace Mtg.Engine

@@ -58,7 +58,7 @@ def expandEachOpponentEffect (g : Game) (p : PlayerId) (e : Effect) : Effect :=
     else e
   | _ => e
 
-/-- Shared activation legality (CR 602.3). `canActivate` is this check as a
+/-- Shared activation legality (CR 602.5a / 602.5d). `canActivate` is this check as a
 `Bool`; `activateAbility` reports the first failing reason. -/
 def validateActivation (g : Game) (p : PlayerId) (o : GameObject) (ab : ActivatedAbility) :
     Except String Unit := do
@@ -155,7 +155,7 @@ def validateActivation (g : Game) (p : PlayerId) (o : GameObject) (ab : Activate
   if !g.abilityCanChooseTarget p ab then
     throw s!"{o.name}'s ability requires a target"
 
-/-- Whether `p` may begin activating `ab` of `o` (CR 602.3). Having
+/-- Whether `p` may begin activating `ab` of `o` (CR 602.5). Having
 enough mana in the pool is not required; mana abilities are activated at
 CR 601.2g. Cycling and other hand abilities use `activateFromHand` (CR 702.29). -/
 def canActivate (g : Game) (p : PlayerId) (o : GameObject) (ab : ActivatedAbility) : Bool :=

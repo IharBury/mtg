@@ -141,7 +141,7 @@ def declareBlockers (g : Game) (p : PlayerId) (assignments : Array (ObjectId × 
       let bs := (assignments.filter (·.2 == attackerId)).map (·.1)
       g := g.record (GameEvent.becameBlocked g.turnNumber (g.snapshot a) bs
         (cause := some (.turnBased .declareBlockers)))
-    -- CR 509.1c / 702.111: a menace (or “except by N or more”) creature that is
+    -- CR 509.1b / 702.111: a menace (or “except by N or more”) creature that is
     -- blocked must be blocked by at least that many creatures.
     for o in g.battlefield do
       if o.status.attacking then
@@ -472,19 +472,6 @@ def dealAssignedCombatDamage (g : Game) (appliedSoFar : Array ReplacementId := #
             g := g.chainPendingReplacement (.gainLife pid totalDealt.toNat "" combatCause)
           else
             g := g.gainLife pid totalDealt.toNat (cause := combatCause)
-        | none => pure ()
-      let treasureCount :=
-        if dealtToPw > 0 then dealtToPw.toNat
-        else if dealtToPlayer > 0 && pwTarget?.isNone && !(g.player defn).lost then dealtToPlayer.toNat
-        else 0
-      if treasureCount > 0 then
-        match g.controllerOf src with
-        | some pid =>
-          if g.combatDamageCreatesTreasure src then
-            if let .chooseReplacement .. := g.pending then
-              g := g.chainPendingReplacement (.createTreasureTokens pid treasureCount false combatCause)
-            else
-              g := g.createTreasureTokens pid treasureCount (cause := combatCause)
         | none => pure ()
       if let .chooseReplacement .. := g.pending then
         return g.chainPendingReplacement (.dealAssignedCombatDamage allApplied (i + 1))

@@ -77,7 +77,7 @@ def legalStackAbilityTargets (g : Game) (caster : PlayerId)
     match g.findObject? e.objectId with
     | none => none
     | some o =>
-      if o.zone == .stack && some o.id != selfId && o.controlledBy caster &&
+      if o.zone == .stack && some o.id != selfId && g.controlledBy o caster &&
           (o.abilityEffect.isSome || o.triggeredAbility.isSome) then
         match o.sourceId.bind g.findObject? with
         | some src =>
@@ -88,19 +88,19 @@ def legalStackAbilityTargets (g : Game) (caster : PlayerId)
 /-- Whether this target is a spell on the stack that `p` controls. -/
 def isOwnStackSpellTarget (g : Game) (p : PlayerId) : Target → Bool
   | .card oid =>
-    (g.findObject? oid).any (fun o => o.zone == .stack && o.controlledBy p)
+    (g.findObject? oid).any (fun o => o.zone == .stack && g.controlledBy o p)
   | _ => false
 
 /-- Whether this target is a spell on the stack an opponent of `p` controls. -/
 def isOppStackSpellTarget (g : Game) (p : PlayerId) : Target → Bool
   | .card oid =>
     (g.findObject? oid).any (fun o =>
-      o.zone == .stack && (g.livingOpponents p).any (fun pl => o.controlledBy pl.id))
+      o.zone == .stack && (g.livingOpponents p).any (fun pl => g.controlledBy o pl.id))
   | _ => false
 
 /-- Opponent-controlled spells currently on the stack. -/
 def oppStackSpells (g : Game) (p : PlayerId) : Array GameObject :=
-  g.stackSpells (fun o => (g.livingOpponents p).any (fun pl => o.controlledBy pl.id))
+  g.stackSpells (fun o => (g.livingOpponents p).any (fun pl => g.controlledBy o pl.id))
 
 /-- Whether `o` has card type `t`, counting type-changing effects on
 permanents. -/

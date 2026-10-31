@@ -176,14 +176,7 @@ def applyPermanentAction (g : Game) (o : GameObject) (action : PermanentAction)
       let baseCause :=
         g.resolveOptionalCause none (fallbackSrc := sourceId) (fallbackCtrl := g.controllerOf o)
           (defaultCause := .turnBased .untapAll)
-      let (stunned, cause') := g.replaceUntap o (cause := some baseCause)
-      if stunned then
-        let g := g.record (GameEvent.counters g.turnNumber (g.controllerOf o) (g.snapshot o) .stun 1 true
-          (cause := cause'.getD baseCause))
-        g.logMsg s!"A stun counter is removed from {g.name o} instead of untapping it (CR 122.1d)"
-      else
-        let g := g.record (GameEvent.untapped g.turnNumber (g.snapshot o) false (cause := baseCause))
-        g.logMsg s!"{g.name o} untaps"
+      g.untapPermanent o (cause := some baseCause)
   | .becomeArtifactIndestructible =>
     let g := g.createEffects #[
       .additionalArtifactUntilEot o.id,

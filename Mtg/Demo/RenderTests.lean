@@ -213,7 +213,7 @@ def mountainLine (g : Game) : String :=
 #guard
   let g := insertObject started llanowarElves ⟨0⟩ .battlefield (some ⟨0⟩)
   let o := lastPermanent g
-  o.hasSummoningSickness &&
+  g.hasSummoningSickness o &&
     mentions (objectLine g o) "(summoning sickness)" &&
     mentions (zoneBlock g .battlefield) "(summoning sickness)" &&
     mentions (battlefieldBlock g) "(summoning sickness)" &&
@@ -228,7 +228,7 @@ def mountainLine (g : Game) : String :=
   let g := insertObject started ragingGoblin ⟨0⟩ .battlefield (some ⟨0⟩)
   let o := lastPermanent g
   o.status.summoningSick &&
-    !o.hasSummoningSickness &&
+    !g.hasSummoningSickness o &&
     mentions (objectLine g o) "haste" &&
     !mentions (objectLine g o) "(summoning sickness)"
 
@@ -256,14 +256,14 @@ def mountainLine (g : Game) : String :=
   (zoneObjectIds before .battlefield) == (zoneObjectIds after .battlefield) &&
     battlefieldView before != battlefieldView after &&
     (changedZones before after).contains .battlefield &&
-    !o.hasSummoningSickness &&
+    !after.hasSummoningSickness o &&
     !mentions (objectLine after o) "(summoning sickness)"
 
 -- A creature that entered this turn via the stack prints the marker.
 #guard
   let g := pathmakerEntered
   let o := namedPermanent g "Mirkwood Pathmaker"
-  o.hasSummoningSickness &&
+  g.hasSummoningSickness o &&
     mentions (objectLine g o) "(summoning sickness)" &&
     mentions (zoneBlock g .battlefield) "(summoning sickness)"
 

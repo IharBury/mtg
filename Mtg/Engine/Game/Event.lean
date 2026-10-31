@@ -64,17 +64,8 @@ structure ChooseModesRest where
   how : TriggeredAbility.TriggerModeHow := .oneUnused
 deriving Repr, Inhabited, BEq
 
-/-- One non-rules as-enters choice on a permanent's `Status` (CR 614.12). -/
-inductive StatusChange where
-  | chosenOdd (v : Option Bool)
-  | chosenCreatureType (v : Option CardSubtype)
-  | chosenColor (v : Option Color)
-  | chosenName (v : Option String)
-deriving Repr, Inhabited, BEq
-
 /-- One non-rules engine metadata change on a `GameObject` (CR 109 / 607). -/
 inductive ObjectChange where
-  | status (c : StatusChange)
   | abilityEffect (v : Option Effect)
   | linkedExile (v : Array ObjectId)
   | pushLinkedExile (id : ObjectId)
@@ -87,10 +78,7 @@ deriving Repr, Inhabited, BEq
 inductive PlayerChange where
   | mulligansTaken (v : Nat)
   | keptOpeningHand (v : Bool)
-  | hasCommander (v : Bool)
-  | commanderColorIdentity (v : ColorSet)
   | sideboard (v : Array CardDef)
-  | teammate (v : Option PlayerId)
 deriving Repr, Inhabited, BEq
 
 /-- One change to a `ProposedSpell` (CR 601.2f–h / 602.2b). -/
@@ -142,12 +130,32 @@ inductive ReplacementKind where
   | entersUntappedPayLife (object : ObjectId) (life : Nat)
   /-- CR 616.1a / 614.12: Decline to pay life as `object` enters, so it enters tapped. -/
   | entersTappedDeclinePayLife (object : ObjectId)
+  /-- CR 616.1a / 614.12: Behold `beholdId` of `subtype` as `object` enters so it doesn't enter tapped. -/
+  | entersUntappedBehold (object beholdId : ObjectId) (subtype : CardSubtype)
+  /-- CR 616.1a / 614.12: Decline to behold as `object` enters, so it enters tapped. -/
+  | entersTappedDeclineBehold (object : ObjectId)
+  /-- CR 616.1a / 614.12: Choose `color` as `object` enters. -/
+  | asEntersChooseColor (object : ObjectId) (color : Color)
+  /-- CR 616.1a / 614.12: Choose creature `subtype` as `object` enters. -/
+  | asEntersChooseCreatureType (object : ObjectId) (subtype : CardSubtype)
+  /-- CR 616.1a / 614.12: Choose odd (`true`) or even (`false`) as `object` enters. -/
+  | asEntersChooseOdd (object : ObjectId) (odd : Bool)
+  /-- CR 616.1a / 614.12: Name nonland card `name` as `object` enters. -/
+  | asEntersChooseCardName (object : ObjectId) (name : String)
+  /-- CR 616.1a / 614.12: Choose `cardType` as `object` enters. -/
+  | asEntersChooseCardType (object : ObjectId) (cardType : CardType)
+  /-- CR 616.1a / 614.12: Choose `anchor` as `object` enters. -/
+  | asEntersChooseAnchor (object : ObjectId) (anchor : String)
   /-- CR 616.1a: Intrinsic enters-with-counters replacement on `object`. -/
   | entersWithCountersSelf (object : ObjectId) (kind : CounterKind) (amount : Nat)
   /-- CR 616.1b: Modifies under whose control `object` enters the battlefield. -/
   | entersUnderControl (object : ObjectId) (newController : PlayerId)
   /-- CR 616.1c / 707.5: Makes `object` enter the battlefield as a copy of `template`. -/
   | entersAsCopy (object : ObjectId) (template : CardDef)
+  /-- CR 616.1c / 614.1c / 614.12: Optional enter-as-copy of `targetId` until EOT with haste. -/
+  | entersAsCopyCreatureUntilEot (object targetId : ObjectId)
+  /-- CR 616.1c / 614.1c / 614.12: Decline optional enter-as-copy. -/
+  | declineEntersAsCopy (object : ObjectId)
   /-- CR 616.1d / 702.145b / 712.14: Causes `object` to enter the battlefield with its back face up. -/
   | entersBackFaceUp (object : ObjectId)
   /-- CR 616.1e: External static effect causing `object` to enter the battlefield tapped. -/
@@ -189,10 +197,20 @@ def ReplacementKind.tier : ReplacementKind → ReplacementTier
   | .entersTappedSelf _ => .self
   | .entersUntappedPayLife .. => .self
   | .entersTappedDeclinePayLife _ => .self
+  | .entersUntappedBehold .. => .self
+  | .entersTappedDeclineBehold _ => .self
+  | .asEntersChooseColor .. => .self
+  | .asEntersChooseCreatureType .. => .self
+  | .asEntersChooseOdd .. => .self
+  | .asEntersChooseCardName .. => .self
+  | .asEntersChooseCardType .. => .self
+  | .asEntersChooseAnchor .. => .self
   | .entersWithCountersSelf .. => .self
   | .exileInsteadOfStackLeave _ => .self
   | .entersUnderControl .. => .control
   | .entersAsCopy .. => .copy
+  | .entersAsCopyCreatureUntilEot .. => .copy
+  | .declineEntersAsCopy _ => .copy
   | .entersBackFaceUp _ => .backFaceUp
   | _ => .other
 
@@ -334,7 +352,6 @@ structure AbilitySet where
   staticAbilities : Array StaticAbility := #[]
   triggeredAbilities : Array TriggeredAbility := #[]
   ironFistTapGrants : Nat := 0
-  combatDamageCreatesTreasure : Bool := false
 deriving Repr, Inhabited, BEq
 
 /-- Abilities removed by a Layer 6 effect (CR 613.1f). -/
@@ -376,13 +393,11 @@ inductive PlayerRule where
   | supertypeSpellCostLess (supertype : Supertype) (n : Nat)
   | jaceLoyaltyAtInstantSpeed
   | legendRuleOff
-  | copyNextInstantSorcery (n : Nat := 1)
   | mountainExtraRed (n : Nat := 1)
   | nextSpellCantBeCountered
   | cantAttackJaces
   | assignCombatDamageEqualToughness
   | pendingFreeRGCreature
-  | pendingLokiCopy (source : Option ObjectId) (power : Int)
   | controlsPlayer (controlled : PlayerId) (onNextTurn : Bool := false)
 deriving DecidableEq, Repr, Inhabited, BEq
 
@@ -508,7 +523,8 @@ namespace ContinuousEffectSpec
 
 /-- `object` gains combat-damage-creates-Treasure trigger until end of turn (CR 611.2 / 613.1f). -/
 @[inline] def combatDamageCreatesTreasureUntilEot (object : ObjectId) : ContinuousEffectSpec :=
-  .layered (.objects #[object]) (.abilities { combatDamageCreatesTreasure := true } .none) .untilEndOfTurn
+  grantedTriggered object
+    (.triggered .combatDamageToPlayer (Effect.ofTrigger (.createTokens .treasure 1))) true
 
 /-- `object` loses all abilities until end of turn (CR 611.2 / 613.1f). -/
 @[inline] def losesAbilitiesUntilEot (object : ObjectId) : ContinuousEffectSpec :=
@@ -652,10 +668,6 @@ the battlefield (CR 611.2b / 613.1b / 702.26f). -/
 @[inline] def legendRuleOffThisTurn (player : PlayerId) : ContinuousEffectSpec :=
   .playerRule player .legendRuleOff .untilEndOfTurn
 
-/-- When `player` casts their next instant or sorcery spell this turn, copy it (CR 611.2). -/
-@[inline] def copyNextInstantSorceryThisTurn (player : PlayerId) (n : Nat := 1) : ContinuousEffectSpec :=
-  .playerRule player (.copyNextInstantSorcery n) .untilEndOfTurn
-
 /-- Whenever `player` taps a Mountain for mana this turn, add an additional {R} (CR 611.2). -/
 @[inline] def mountainExtraRedThisTurn (player : PlayerId) (n : Nat := 1) : ContinuousEffectSpec :=
   .playerRule player (.mountainExtraRed n) .untilEndOfTurn
@@ -680,11 +692,7 @@ the battlefield (CR 611.2b / 613.1b / 702.26f). -/
 @[inline] def pendingFreeRGCreatureThisTurn (player : PlayerId) : ContinuousEffectSpec :=
   .playerRule player .pendingFreeRGCreature .untilEndOfTurn
 
-/-- `player`'s next instant or sorcery spell this turn is copied `power` times (CR 611.2). -/
-@[inline] def pendingLokiCopy (player : PlayerId) (source : Option ObjectId) (power : Int) : ContinuousEffectSpec :=
-  .playerRule player (.pendingLokiCopy source power) .untilEndOfTurn
-
-/-- `controller` controls `controlled` during their turn (CR 611.2, 720). -/
+/-- `controller` controls `controlled` during their turn (CR 611.2, 723). -/
 @[inline] def playerControl (controller controlled : PlayerId) (onNextTurn : Bool := false) : ContinuousEffectSpec :=
   .playerRule controller (.controlsPlayer controlled onNextTurn) .indefinite
 
@@ -750,7 +758,6 @@ inductive PermanentEvent where
   | attached (attachment : EventObject) (host : ObjectId)
       (previous : Option ObjectId := none)                                   -- 701.3a / 303.4 / 301.5
   | unattached (attachment : EventObject) (fromHost : ObjectId)              -- 701.3d / 704.5n / 704.5p
-  | controlChanged (object : EventObject) (fromPlayer toPlayer : PlayerId)   -- 110.2 / 613.1b
   | designation (object : EventObject) (d : PermanentDesignation) (gained : Bool)
 deriving Repr, Inhabited, BEq
 
@@ -1076,9 +1083,10 @@ inductive PendingReplacement where
       (source : Option EventObject) (combat : Bool) (unpreventable : Bool)
       (cause : Option EventCause)
   | dealDamageToPlayers (players : Array PlayerId) (n : Nat)
-      (sourceId : Option ObjectId) (cause : Option EventCause)
-  | dealDamageFrom (sourceId targetId : ObjectId) (n : Nat)
-      (combat : Bool) (unpreventable : Bool) (cause : Option EventCause)
+      (source : Option EventObject) (cause : Option EventCause)
+  | dealDamageFrom (sourceName : String) (source : EventObject) (targetId : ObjectId)
+      (n : Nat) (deathtouch : Bool) (combat : Bool) (unpreventable : Bool)
+      (cause : Option EventCause)
   | dealFightDamage (sourceId targetId : ObjectId) (cause : Option EventCause)
   | dealDamageToPermanent (targetId : ObjectId) (n : Nat)
       (source : Option EventObject) (combat : Bool) (unpreventable : Bool)
@@ -1142,10 +1150,39 @@ inductive PendingReplacement where
   | connive (controller : PlayerId) (sourceId : Option ObjectId)
   | finishSbaSweep (moves : Array SbaGraveyardMove) (preBattlefield : Array GameObject)
       (stage : Nat)
+  | untapPermanent (targetId : ObjectId) (cause : Option EventCause)
+  | untapStepPermanents (ids : Array ObjectId)
+  | beginStepAfterUntap
+  | addLoreCounters (sagaId : ObjectId) (n : Nat) (cause : Option EventCause)
+  | addLoreAfterDrawStep (sagaIds : Array ObjectId)
+  | copyNontokenCreatures (controller : PlayerId) (snapshots : Array CardDef)
+      (cause : Option EventCause)
+  | copyPermanentTokens (controller : PlayerId) (card : CardDef) (remaining : Nat)
+      (cause : Option EventCause)
+  | finishArtifactCopyToken (sourceName : String)
+  | finishManaAbilityMountainTrigger (player : PlayerId) (sourceId : ObjectId)
+  | restorePending (p : Pending)
   | closeBatch (batchId : BatchId) (startIdx : Nat)
   | checkSBA
   | receivePriority (p : PlayerId)
 deriving Repr, Inhabited, BEq
+
+/-- Deferred library-bottoming or CR 704.5e copy cleanup run once a mid-resolution
+proposed spell finishes casting (`becomeCast`) or is reversed (`reverseProposedSpell?`). -/
+inductive PostCastCleanup where
+  | cascadeBottom (caster : PlayerId) (cardId : ObjectId) (others : Array ObjectId)
+  | grimaBottom (victim : PlayerId) (cardId : ObjectId) (others : Array ObjectId)
+  | copyCeaseToExist (copyId : ObjectId)
+  | lookedBottom (caster : PlayerId) (cardId : ObjectId) (allLooked : Array ObjectId)
+deriving Repr, Inhabited, BEq
+
+/-- Action boundary marker within a proposal slice so `reverseToProposalCheckpoint?`
+can reverse or retain discrete mana abilities and cost actions as whole CR 733.1
+actions. -/
+inductive ProposalActionKind where
+  | manaAbility (source : Option ObjectId := none)
+  | costAction
+deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- Final CR 608.2n / 608.2p / 608.3 step run when a resolving stack object's
 `ContinuationFrame` completes all `Pending` and `resolveRandom` pauses. -/
@@ -1182,6 +1219,12 @@ structure ContinuationFrame where
   /-- Spells exiled by a resolving ability that may still be cast without
   paying their mana costs, and how many casts remain (Doom Reigns Supreme). -/
   pendingMayCastFromExile : Option (PlayerId × Array ObjectId × Nat) := none
+  /-- Remaining exiled cards queued to be cast one at a time as an ability resolves
+  (Doom Reigns `castExiledAsResolves`). -/
+  pendingCastExiledQueue : Option (PlayerId × Array ObjectId) := none
+  /-- Deferred post-cast cleanup (Cascade / Gríma / Cosmic Cube library bottoming
+  or CR 704.5e copy cease-to-exist) run when the proposed cast completes or reverses. -/
+  postCastCleanup : Option PostCastCleanup := none
   /-- Paying the pending “you may pay” cost also puts a +1/+1 counter on this
   permanent (Proft, Consulting Detective). -/
   mayPayAlsoPlusOneOn : Option ObjectId := none
@@ -1334,6 +1377,8 @@ inductive ContinuationChange where
   | fraAfterLook (v : Option (PlayerId × Option ObjectId × FraNext))
   | pendingFreeCopies (v : Option (PlayerId × Array ObjectId × Nat × Nat))
   | pendingMayCastFromExile (v : Option (PlayerId × Array ObjectId × Nat))
+  | pendingCastExiledQueue (v : Option (PlayerId × Array ObjectId))
+  | postCastCleanup (v : Option PostCastCleanup)
   | mayPayAlsoPlusOneOn (v : Option ObjectId)
   | humansTappedThisWay (v : Nat)
   | permanentsDestroyedThisWay (v : Nat)
@@ -1403,7 +1448,6 @@ inductive ContinuationChange where
   | thirstDiscardType (v : CardType)
   | pendingDiscardsLeft (v : Nat)
   | untapSearchedIfLands (v : Option Nat)
-  | resolvingContext (v : Option (Option ObjectId × PlayerId))
   | stashedCause (v : Option EventCause)
   | resolvingSpell (v : Option ObjectId)
   | resolvingAbility (v : Option ObjectId)
@@ -1417,7 +1461,6 @@ deriving Repr, Inhabited, BEq
 inductive EngineChange where
   /-- Update a player's pregame/format state. -/
   | player (p : PlayerId) (c : PlayerChange)
-  | playerChanges (p : PlayerId) (cs : Array PlayerChange)
   | players (v : Array Player)
   /-- Materialize a non-token `GameObject` directly into `g.objects` and its zone
   (pregame deck/sideboard cards, CR 114 command-zone emblems/effect objects,
@@ -1425,7 +1468,6 @@ inductive EngineChange where
   | materializeObject (obj : GameObject) (libraryPosition : Option LibraryPosition := none)
   /-- Update an object's non-rules engine metadata. -/
   | object (id : ObjectId) (c : ObjectChange)
-  | objectChanges (id : ObjectId) (cs : Array ObjectChange)
   /-- Update the stack. -/
   | stack (v : Array StackEntry)
   | pushStack (e : StackEntry)
@@ -1437,6 +1479,8 @@ inductive EngineChange where
   | proposalChanges (cs : Array ProposalChange)
   | saveProposalCheckpoint
   | clearProposalCheckpoint
+  | beginProposalAction (kind : ProposalActionKind)
+  | endProposalAction
   /-- Journal or clear an open rules-event batch paused on a player choice (CR 616.1). -/
   | pauseBatch (batchId : BatchId) (cause : Option EventCause)
       (objects : Array GameObject) (players : Array Player)
@@ -1466,13 +1510,10 @@ inductive EngineChange where
   | blockersQueue (v : Array PlayerId)
   | waitingTriggers (v : Array WaitingTrigger)
   | enqueueWaitingTriggers (wts : Array WaitingTrigger)
-  | pushWaitingTrigger (wt : WaitingTrigger)
-  | removeWaitingTriggersOf (p : PlayerId)
   | removeWaitingTriggersForEvent (ev : TriggerEvent)
   | replacementOrder (ids : Array ReplacementId)
   | castingFromTop (v : Bool)
   | sbaChecked
-  | clearEvents
 deriving Repr, Inhabited, BEq
 
 namespace EngineChange
@@ -1483,6 +1524,8 @@ namespace EngineChange
 @[inline] def fraAfterLook (v : Option (PlayerId × Option ObjectId × FraNext)) : EngineChange := .continuation (.fraAfterLook v)
 @[inline] def pendingFreeCopies (v : Option (PlayerId × Array ObjectId × Nat × Nat)) : EngineChange := .continuation (.pendingFreeCopies v)
 @[inline] def pendingMayCastFromExile (v : Option (PlayerId × Array ObjectId × Nat)) : EngineChange := .continuation (.pendingMayCastFromExile v)
+@[inline] def pendingCastExiledQueue (v : Option (PlayerId × Array ObjectId)) : EngineChange := .continuation (.pendingCastExiledQueue v)
+@[inline] def postCastCleanup (v : Option PostCastCleanup) : EngineChange := .continuation (.postCastCleanup v)
 @[inline] def mayPayAlsoPlusOneOn (v : Option ObjectId) : EngineChange := .continuation (.mayPayAlsoPlusOneOn v)
 @[inline] def humansTappedThisWay (v : Nat) : EngineChange := .continuation (.humansTappedThisWay v)
 @[inline] def permanentsDestroyedThisWay (v : Nat) : EngineChange := .continuation (.permanentsDestroyedThisWay v)
@@ -1552,7 +1595,6 @@ namespace EngineChange
 @[inline] def thirstDiscardType (v : CardType) : EngineChange := .continuation (.thirstDiscardType v)
 @[inline] def pendingDiscardsLeft (v : Nat) : EngineChange := .continuation (.pendingDiscardsLeft v)
 @[inline] def untapSearchedIfLands (v : Option Nat) : EngineChange := .continuation (.untapSearchedIfLands v)
-@[inline] def resolvingContext (v : Option (Option ObjectId × PlayerId)) : EngineChange := .continuation (.resolvingContext v)
 @[inline] def stashedCause (v : Option EventCause) : EngineChange := .continuation (.stashedCause v)
 @[inline] def resolvingSpell (v : Option ObjectId) : EngineChange := .continuation (.resolvingSpell v)
 @[inline] def resolvingAbility (v : Option ObjectId) : EngineChange := .continuation (.resolvingAbility v)
@@ -1841,11 +1883,6 @@ def created (turn : Nat) (player : PlayerId) (object : EventObject)
 def ceasedToExist (turn : Nat) (object : EventObject)
     (cause : EventCause) : GameEvent :=
   rules turn (.zone (.ceasedToExist object)) cause
-
-/-- `object` changed controller from `fromPlayer` to `toPlayer` (CR 110.2 / 613.1b). -/
-def control (turn : Nat) (object : EventObject) (fromPlayer toPlayer : PlayerId)
-    (cause : EventCause) : GameEvent :=
-  rules turn (.permanent (.controlChanged object fromPlayer toPlayer)) cause
 
 /-- `player` began a turn (CR 500.1 / 500.7). -/
 def turnBegan (turn : Nat) (player : PlayerId) (extra : Bool := false)
@@ -2283,34 +2320,6 @@ def watches (e : GameEvent) (watch : ReplacementWatch) : Bool :=
     | .rules (.permanent (.untapped _)) => true
     | _ => false
 
-/-- Whether `e` is a look-back event under CR 603.10a–f whose trigger matching
-consults the game state `pre` just before the batch rather than `post`:
-- 603.10a(1): an object leaving the battlefield (including dying, CR 603.6c / 700.4)
-- 603.10a(2): a player sacrificing a permanent
-- 603.10a(3): a card leaving a graveyard
-- 603.10a(4): an object that all players can see (battlefield, graveyard, exile, stack, command) being put into a hand or library
-- 603.10b: a permanent phasing out
-- 603.10c: an object becoming unattached
-- 603.10d: a player losing control of a permanent / an opponent gaining control
-- 603.10e: a spell being countered
-- 603.10f: a player losing the game -/
-def isLookBack (e : GameEvent) : Bool :=
-  match e.change with
-  | .rules (.zone (.moved _ _ .battlefield _ _ _ _ _)) => true
-  | .rules (.zone (.moved _ _ (.graveyard _) toZone _ _ _ _)) =>
-    match toZone with | .graveyard _ => false | _ => true
-  | .rules (.zone (.moved _ _ fromZone (.hand _) _ _ _ _))
-  | .rules (.zone (.moved _ _ fromZone (.library _) _ _ _ _)) =>
-    match fromZone with
-    | .battlefield | .graveyard _ | .exile | .stack | .command => true
-    | .hand _ | .library _ | .ante | .outside _ => false
-  | .rules (.zone (.moved _ _ .stack _ .counter _ _ _)) => true
-  | .rules (.permanent (.phasedOut _ _)) => true
-  | .rules (.permanent (.unattached _ _)) => true
-  | .rules (.permanent (.controlChanged _ _ _)) => true
-  | .rules (.player (.lost _)) => true
-  | _ => false
-
 /-- `listener`'s ability on `sourceId` triggers from this change.
 “This” abilities require `sourceId` to be the object that changed.
 “You” abilities require `listener` to be the player who did it.
@@ -2340,6 +2349,13 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : ObjectId)
       pkts.any (fun pkt => match pkt.recipient with | .permanent o => yours o && o.creature | _ => false)
     | .damage (.dealt pkts), .dealsCombatDamageToPlayer =>
       pkts.any (fun pkt => pkt.combat && match pkt.recipient with | .player _ => true | _ => false)
+    | .damage (.dealt pkts), .fra .dealsCombatDamageToPlayerOrPlaneswalker =>
+      pkts.any (fun pkt =>
+        pkt.combat &&
+          match pkt.recipient with
+          | .player _ => true
+          | .permanent o => o.planeswalker
+          | .battle _ => false)
     | .damage (.dealt pkts), .dealsCombatDamageToPlayerOrBattle =>
       pkts.any (fun pkt => pkt.combat && match pkt.recipient with | .player _ | .battle _ => true | _ => false)
     | .damage (.dealt pkts), .combatDamageToYou =>

@@ -40,7 +40,7 @@ structure Keywords where
   prowess : Bool := false
   /-- Ascend (CR 702.131). -/
   ascend : Bool := false
-  /-- Shadow (CR 702.27): can block or be blocked by only creatures with shadow. -/
+  /-- Shadow (CR 702.28): can block or be blocked by only creatures with shadow. -/
   shadow : Bool := false
   /-- Changeling (CR 702.73): this object has all creature types. -/
   changeling : Bool := false

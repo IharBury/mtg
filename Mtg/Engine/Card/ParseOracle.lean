@@ -776,6 +776,14 @@ def parseStructural (c : CardDef) (line : String) : Option CardDef :=
       | "" => none
       | d => some d.toNat!
     life.map fun k => { c with entersTappedUnlessPayLife := some k }
+  else if low.contains "you may behold " && low.contains "if you don't" && low.contains "enters tapped" then
+    let afterBehold := (low.splitOn "you may behold ").getLastD ""
+    let afterArticle :=
+      if afterBehold.startsWith "an " then (afterBehold.drop 3).copy
+      else if afterBehold.startsWith "a " then (afterBehold.drop 2).copy
+      else afterBehold
+    let word := (afterArticle.splitOn ".").headD "" |>.trimAscii.copy
+    CardSubtype.ofOracle? word |>.map fun sub => { c with entersTappedUnlessBehold := some sub }
   else if low == "this land enters tapped." || low == "this land enters tapped" ||
       low == "this artifact enters tapped." || low == "this creature enters tapped." ||
       low.endsWith " enters tapped." || low.endsWith " enters tapped" then

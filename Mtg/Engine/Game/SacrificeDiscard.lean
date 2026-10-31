@@ -1,4 +1,4 @@
-import Mtg.Engine.Game.Activation
+import Mtg.Engine.Game.Costs
 
 /-!
 # Sacrifice and discard prompts (CR 701.21 / 701.9)
@@ -250,9 +250,10 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
     if !g.canSacrificeAsCreatureOrArtifact p sourceId sac then
       throw s!"Can't sacrifice {g.name sac}"
     let forObject := g.proposedSpell.map (·.spellId) <|> some sourceId
-    let g := g.sacrificeToGraveyard sac
-      s!"{(g.player p).name} sacrifices {g.name sac}"
-      (cause := some (.costPayment .sacrifice p forObject))
+    let g := g.withProposalAction .costAction fun g =>
+      g.sacrificeToGraveyard sac
+        s!"{(g.player p).name} sacrifices {g.name sac}"
+        (cause := some (.costPayment .sacrifice p forObject))
     match g.proposedSpell with
     | some prop =>
       let g := g.changes #[.pending .none, .proposedSpell none, .consecutivePasses 0]

@@ -4,7 +4,7 @@ import Mtg.Engine.Game.Library
 # Combat damage assignment (CR 510.1)
 
 Assigned-damage queries, lethal damage remaining (deathtouch-aware,
-CR 702.2c), first-strike rounds (CR 508.4a), and which creatures still
+CR 702.2c), first-strike rounds (CR 510.4 / 702.7b), and which creatures still
 need a combat-damage-assignment choice.
 -/
 

@@ -22,12 +22,6 @@ def searchAfter (p : PlayerId) : Option FraNext → AfterRandom
   | some (.gainLife n) => .gainLife p n
   | _ => .none
 
-/-- True when failing to find still shuffles. Searching only the hand does not
-(Last Light of Durin's Day). -/
-def shufflesWhenNoneFound : SearchDest → Bool
-  | .battlefieldFromHandOrLibrary => false
-  | _ => true
-
 /-- First library card of `p` whose printed characteristics satisfy `pred`
 (bottom of the library first). -/
 def findLibraryCard? (g : Game) (p : PlayerId) (pred : CardDef → Bool) : Option ObjectId :=
@@ -123,14 +117,7 @@ def beholdAndMaybeUntap (g : Game) (p : PlayerId) (landId : ObjectId) (subtype :
     | some o =>
       if o.isOnBattlefield && o.status.tapped && !g.hostCantBecomeUntapped o then
         let untapCause := instrCause g (.turnBased .untapAll)
-        let (stunned, cause') := g.replaceUntap o (cause := some untapCause)
-        if stunned then
-          let g := g.record (GameEvent.counters g.turnNumber (g.controllerOf o) (g.snapshot o) .stun 1 true
-            (cause := cause'.getD untapCause))
-          g.logMsg s!"A stun counter is removed from {g.name o} instead of untapping it (CR 122.1d)"
-        else
-          let g := g.record (GameEvent.untapped g.turnNumber (g.snapshot o) false (cause := untapCause))
-          g.logMsg s!"{g.name o} untaps"
+        g.untapPermanent o (cause := some untapCause)
       else g
     | none => g
 
@@ -192,14 +179,11 @@ def finishLibrarySearch (g : Game) (p : PlayerId) (ids : Array ObjectId)
     | none => (g, .gameRule .spellCast)
   let noun := searchNoun kind
   if ids.isEmpty then
-    let g :=
-      if shufflesWhenNoneFound dest then
-        g.record (GameEvent.searched g.turnNumber p p #[] (cause := some (g.resolvingOrRuleCause p)))
-      else g
+    let g := g.record (GameEvent.searched g.turnNumber p p #[] (cause := some (g.resolvingOrRuleCause p)))
     let g := g.logMsg s!"{(g.player p).name} chooses not to find a {noun}"
     match dest with
     | .handThenDiscardRandom => g.shuffleThen p (.discardRandom p)
-    | _ => if shufflesWhenNoneFound dest then g.shuffleSearch p after else g.applyWaitingPlusOne
+    | _ => g.shuffleSearch p after
   else
     match dest with
     | .battlefield tapped =>

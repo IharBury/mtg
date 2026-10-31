@@ -39,7 +39,7 @@ This module re-exports the `Mtg.Engine.Card.*` files, one per abstraction:
 - `PermanentAction`: shared actions on permanents (CR 608.2b).
 - `SpellResolution` / `AbilityCastKind` / `Chapter`: how spells resolve,
   how the demo agent classifies activated abilities, and Saga chapters
-  (CR 608 / 714.3).
+  (CR 608 / 714.2).
 - `SharedTrigger`: reusable trigger payloads (CR 603).
 - `Effect`: the unified one-shot `Effect` and `Resolution` vocabulary
   (activated-ability leftovers live on `Resolution`).
