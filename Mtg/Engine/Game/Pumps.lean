@@ -177,56 +177,24 @@ def spellHasImprovise (g : Game) (face : CardDef) (caster : PlayerId) : Bool :=
       (g.permanentsOf caster).any (fun o =>
         (g.baseCard o).grantsImproviseToNoncreature && g.retainsPrintedAbilities o))
 
-/-- Open a simultaneous rules-event batch on `g` for use across an `Except`
-`do` block, returning the updated `Game` and a `closeBatch` continuation that
-restores `currentBatch` and evaluates batch-level triggers once (CR 603.2c). -/
-def openBatch (g : Game) (cause : Option EventCause := none) : Game × (Game → Game) :=
-  match g.currentBatch with
-  | some (batchId, prevCause?) =>
-    let mergedCause? := prevCause?.orElse (fun _ => cause)
-    ({ g with currentBatch := some (batchId, mergedCause?) }, id)
-  | none =>
-    let batchId : BatchId := ⟨g.nextBatchId⟩
-    let startIdx := g.events.size
-    ({ g with
-        currentBatch := some (batchId, cause)
-        nextBatchId := max g.nextBatchId (batchId.raw + 1)
-        openBatchObjects := g.objects
-        openBatchPlayers := g.players
-        openBatchEffects := g.activeEffects
-        openBatchPending := g.pending },
-     fun g1 =>
-       let keepOpen :=
-         match g1.pending with
-         | .chooseReplacement ..
-         | .fraChoice _ (.chooseColor _)
-         | .fraChoice _ (.entersCreatureType _)
-         | .fraChoice _ (.entersOddEven _)
-         | .fraChoice _ (.chooseCardName _) => true
-         | _ => g1.pendingReplacement.isSome
-       if keepOpen then
-         g1.chainPendingReplacement (.closeBatch batchId startIdx)
-       else
-         g1.finishOpenBatch batchId startIdx)
-
 /-- Tap untapped artifacts you control for improvise. Each pays {1}. -/
 def tapArtifactsForImprovise (g : Game) (p : PlayerId) (ids : Array ObjectId) :
     Except String Game := do
   let cause := some (EventCause.costPayment .tap p (g.proposedSpell.map (·.spellId)))
-  let (g0, closeBatch) := g.openBatch cause
-  let mut g := g0
-  let mut seen : Array ObjectId := #[]
-  for id in ids do
-    if seen.contains id then
-      throw "An artifact cannot be tapped twice for the same improvise payment"
-    seen := seen.push id
-    let some o := g.findObject? id | throw "no such object"
-    if !(o.isOnBattlefield && g.isArtifact o && g.controlledBy o p) then
-      throw s!"{g.name o} is not an artifact you control"
-    if o.status.tapped then
-      throw s!"{g.name o} is already tapped"
-    g := g.becomeTapped o (cause := cause)
-  g := closeBatch g
+  let g ← g.withBatchM cause fun g => do
+    let mut g := g
+    let mut seen : Array ObjectId := #[]
+    for id in ids do
+      if seen.contains id then
+        throw "An artifact cannot be tapped twice for the same improvise payment"
+      seen := seen.push id
+      let some o := g.findObject? id | throw "no such object"
+      if !(o.isOnBattlefield && g.isArtifact o && g.controlledBy o p) then
+        throw s!"{g.name o} is not an artifact you control"
+      if o.status.tapped then
+        throw s!"{g.name o} is already tapped"
+      g := g.becomeTapped o (cause := cause)
+    return g
   return g.logMsg s!"{(g.player p).name} taps {ids.size} artifact(s) for improvise"
 
 /-- Put a +1/+1 counter on `id` when it is still a creature. -/

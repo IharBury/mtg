@@ -76,17 +76,10 @@ deriving Repr, Inhabited, BEq
 inductive ObjectChange where
   | status (c : StatusChange)
   | abilityEffect (v : Option Effect)
-  | triggeredAbility (v : Option TriggeredAbility)
-  | reflexiveResolution (v : Option TriggeredAbility.TriggerResolution)
-  | sourceId (v : Option ObjectId)
   | linkedExile (v : Array ObjectId)
   | pushLinkedExile (id : ObjectId)
   | returnToZone (v : Option Zone)
   | pushLeaveTriggerExile (id : ObjectId)
-  | fraCauseId (v : Option ObjectId)
-  | fraCauseController (v : Option PlayerId)
-  | fraCausePower (v : Option Int)
-  | fraCauseStatus (v : Option Status)
   | exiledBy (v : Option ObjectId)
 deriving Repr, Inhabited, BEq
 
@@ -145,6 +138,10 @@ def ReplacementTier.rank : ReplacementTier → Nat
 inductive ReplacementKind where
   /-- CR 616.1a: Intrinsic enters-tapped replacement on `object`. -/
   | entersTappedSelf (object : ObjectId)
+  /-- CR 616.1a / 614.12: Pay `life` life as `object` enters so it doesn't enter tapped. -/
+  | entersUntappedPayLife (object : ObjectId) (life : Nat)
+  /-- CR 616.1a / 614.12: Decline to pay life as `object` enters, so it enters tapped. -/
+  | entersTappedDeclinePayLife (object : ObjectId)
   /-- CR 616.1a: Intrinsic enters-with-counters replacement on `object`. -/
   | entersWithCountersSelf (object : ObjectId) (kind : CounterKind) (amount : Nat)
   /-- CR 616.1b: Modifies under whose control `object` enters the battlefield. -/
@@ -190,6 +187,8 @@ deriving Repr, Inhabited, BEq
 /-- Priority tier of a `ReplacementKind` under CR 616.1a–e. -/
 def ReplacementKind.tier : ReplacementKind → ReplacementTier
   | .entersTappedSelf _ => .self
+  | .entersUntappedPayLife .. => .self
+  | .entersTappedDeclinePayLife _ => .self
   | .entersWithCountersSelf .. => .self
   | .exileInsteadOfStackLeave _ => .self
   | .entersUnderControl .. => .control
@@ -724,7 +723,7 @@ inductive CounterDelta where
   | removed (count : Nat)
 deriving DecidableEq, Repr, Inhabited, BEq
 
-/-- Designations a permanent can have on the battlefield (CR 110.6 / 701.15b / 701.54a / 903.3). -/
+/-- Designations a permanent can have on the battlefield (CR 400.7 / 701.15b / 701.54b / 903.3). -/
 inductive PermanentDesignation where
   | ringBearer                 -- 701.54a
   | commander                  -- 903.3
@@ -1131,7 +1130,8 @@ inductive PendingReplacement where
   | finishEnteringAttackCard (newId : Option ObjectId) (effectController : PlayerId)
       (cardName : String) (mods : List TriggeredAbility.TriggerEnterWith)
       (logKind : EnteringAttackLog) (cause : Option EventCause)
-  | afterLastPermanentEnters
+  | afterLastPermanentEnters (fromId : Option ObjectId := none) (isPlayLand : Bool := false)
+  | addExtraCombatDamageStep
   | finishFraChoice
   | shuffleThen (player : PlayerId) (onDone : AfterRandom)
   | draw (p : PlayerId) (n : Nat) (drawStepFirst : Bool) (cause : Option EventCause)
@@ -1431,11 +1431,17 @@ inductive EngineChange where
   | pushStack (e : StackEntry)
   | popStack
   | setStackEntryAt (idx : Nat) (e : StackEntry)
-  /-- Update or reverse the proposed spell or ability (CR 601.2 / 602.2 / 733.1). -/
+  /-- Update or checkpoint the proposed spell or ability (CR 601.2 / 602.2 / 733.1). -/
   | proposedSpell (v : Option ProposedSpell)
   | proposal (c : ProposalChange)
   | proposalChanges (cs : Array ProposalChange)
-  | reverseProposal (prop : ProposedSpell)
+  | saveProposalCheckpoint
+  | clearProposalCheckpoint
+  /-- Journal or clear an open rules-event batch paused on a player choice (CR 616.1). -/
+  | pauseBatch (batchId : BatchId) (cause : Option EventCause)
+      (objects : Array GameObject) (players : Array Player)
+      (effects : Array (EffectId × ContinuousEffectSpec)) (pending : Pending)
+  | clearPausedBatch
   /-- Update the continuation frame stack. -/
   | pushContinuationFrame (frame : ContinuationFrame := {})
   | popContinuationFrame
@@ -1444,11 +1450,8 @@ inductive EngineChange where
   | priority (v : PlayerId)
   | startingPlayer (v : PlayerId)
   | pending (v : Pending)
-  | nextObjectId (v : Nat)
   | nextEffectId (v : Nat)
-  | timestamp (v : Nat)
   | pregameRandom (v : PregameRandom)
-  | result (v : Option GameResult)
   | log (v : Array String)
   | logMsg (msg : String)
   | format (v : Format)
@@ -1466,16 +1469,8 @@ inductive EngineChange where
   | pushWaitingTrigger (wt : WaitingTrigger)
   | removeWaitingTriggersOf (p : PlayerId)
   | removeWaitingTriggersForEvent (ev : TriggerEvent)
-  | firstStrikeDamageDone (v : Bool)
-  | pendingRegularCombatDamage (v : Bool)
-  | firstStrikeAssignedThisCombat (v : Array ObjectId)
-  | clearAssignedCombatDamage
   | replacementOrder (ids : Array ReplacementId)
   | castingFromTop (v : Bool)
-  | wardQueue (v : Array WardObligation)
-  | enqueueWard (ws : Array WardObligation)
-  | ancestryLandsTapped (v : Array ObjectId)
-  | pushAncestryLandTapped (id : ObjectId)
   | sbaChecked
   | clearEvents
 deriving Repr, Inhabited, BEq
@@ -1982,7 +1977,7 @@ def unattached (turn : Nat) (attachment : EventObject) (fromHost : ObjectId)
     (cause : EventCause) : GameEvent :=
   rules turn (.permanent (.unattached attachment fromHost)) cause
 
-/-- `object` gained or lost designation `d` (CR 110.6 / 701.15b / 701.54a / 903.3). -/
+/-- `object` gained or lost designation `d` (CR 400.7 / 701.15b / 701.54b / 903.3). -/
 def designation (turn : Nat) (object : EventObject) (d : PermanentDesignation)
     (gained : Bool := true) (cause : EventCause) : GameEvent :=
   rules turn (.permanent (.designation object d gained)) cause

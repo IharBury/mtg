@@ -369,37 +369,40 @@ def payCost (g : Game) (p : PlayerId) (cost : ManaCost)
       (GameEvent.manaSpent g.turnNumber p spentUnits (forObject.getD ⟨0⟩)
         (cause := some (.costPayment .mana p forObject)))
 
-/-- Undo a proposed spell or ability that could not be paid (CR 601.2 / 602.2 / 733.1). -/
-def reverseProposedSpell (g : Game) : Game :=
+/-- Undo a proposed spell or ability that could not be paid or legally
+completed, restoring the pre-proposal checkpoint and reapplying only CR 733.1
+irreversible library actions (CR 601.2 / 602.2 / 733.1–733.2). -/
+def reverseProposedSpell? (g : Game) (resumeContinuation : Bool := false) :
+    Except String Game := do
   match g.proposedSpell with
-  | none => g
+  | none => return g
   | some prop =>
-    Id.run do
-      let mut g := g
-      let name := (g.player prop.caster).name
-      let origPermSpec? :=
-        g.events.findSomeRev? fun e =>
-          match e.change with
-          | .rules (.continuousEffect (.created _ (.permission p (.playFromExile oid perm) d))) =>
-            if oid == prop.original.id then some (p, perm, d) else none
-          | _ => none
-      g := g.change (.reverseProposal prop)
-      if prop.kind == .spell then
-        if let some (p, perm, d) := origPermSpec? then
-          if (g.playPermission prop.original).isNone then
-            g := g.createEffect (.permission p (.playFromExile prop.original.id perm) d)
-              (cause := some (.gameRule .spellCast))
-      -- Undo unpreparing the permanent whose prepare-spell copy was proposed.
-      match prop.kind, (g.playPermission prop.original |>.bind (·.prepareSource)).bind g.findObject? with
-      | .spell, some src =>
-        g := g.record (GameEvent.designation g.turnNumber (g.snapshot src) .prepared true
-          (cause := .gameRule .spellCast))
-      | _, _ => pure ()
-      let reversed :=
-        match prop.kind with
-        | .spell => "the casting is reversed (CR 601.2 / 733.1)"
-        | .activatedAbility => "the activation is reversed (CR 602.2 / 733.1)"
-      return g.logMsg s!"{name} cannot pay {prop.cost}; {reversed}"
+    let name := (g.player prop.caster).name
+    let baseTriggers := (g.proposalCheckpoint.map (·.waitingTriggers.size)).getD 0
+    let reversed :=
+      match prop.kind with
+      | .spell => "the casting is reversed (CR 601.2 / 733.1)"
+      | .activatedAbility => "the activation is reversed (CR 602.2 / 733.1)"
+    let g ← g.reverseToProposalCheckpoint?
+    let g := g.logMsg s!"{name} cannot pay {prop.cost}; {reversed}"
+    let g :=
+      if g.pending == .none && g.continuations.isEmpty && g.priority != prop.caster then
+        g.change (.priority prop.caster)
+      else g
+    if resumeContinuation && g.pending == .none && !g.continuations.isEmpty then
+      return g.receivePriority g.activePlayer
+    else if g.pending == .none && g.continuations.isEmpty &&
+        g.waitingTriggers.size > baseTriggers then
+      return g.receivePriority prop.caster
+    else
+      return g
+
+/-- Undo a proposed spell or ability, restoring the pre-proposal checkpoint and
+reapplying only CR 733.1 irreversible library actions (CR 601.2 / 602.2 / 733.1). -/
+def reverseProposedSpell (g : Game) (resumeContinuation : Bool := false) : Game :=
+  match g.reverseProposedSpell? (resumeContinuation := resumeContinuation) with
+  | .ok g' => g'
+  | .error msg => g.logMsg msg
 
 /-- Fold `f` over each targeted permanent that still exists. Non-permanent
 targets are skipped. `unique` visits a permanent only once even when it is
@@ -420,79 +423,18 @@ def foldPermanentTargets (g : Game) (targets : Array Target)
       | _ => pure ()
     return g
 
-/-- Queue “becomes the target” triggers once per unique targeted permanent
-(CR 603.2 / 601.2c). A spell or ability that targets the same permanent
-more than once still triggers only once. -/
-def queueBecomesTargetTriggers (g : Game) (caster : PlayerId)
-    (targets : Array Target) : Game :=
-  g.foldPermanentTargets targets (unique := true) (f := fun g o =>
-    match g.controllerOf o with
-    | some c => if c != caster then g.putMatchingSourceTriggers c o .becomesTarget else g
-    | none => g)
-
-/-- Prompt the next queued ward, if any and no other choice is pending. -/
-def promptNextWard (g : Game) : Game :=
-  match g.pending with
-  | .none =>
-    match g.wardQueue[0]? with
-    | none => g
-    | some w =>
-      let rest := g.wardQueue.extract 1 g.wardQueue.size
-      let who := (g.player w.player).name
-      let msg :=
-        match w.cost with
-        | .genericMana n =>
-          s!"{who} may pay \{{n}} or the spell is countered (ward)"
-        | .discardEnchantmentInstantOrSorcery =>
-          s!"{who} may discard an enchantment, instant, or sorcery card or the spell is countered (ward)"
-        | .sacrificeLegendary =>
-          s!"{who} may sacrifice a legendary artifact or creature or the spell is countered (ward)"
-        | .discardOrPay n =>
-          s!"{who} may discard a card or pay \{{n}} or the spell is countered (ward)"
-        | .fivePoison =>
-          s!"{who} may get five poison counters or the spell is countered (ward)"
-        | .discardCard =>
-          s!"{who} may discard a card or the spell is countered (ward)"
-        | .sacrificePermanents n _ =>
-          s!"{who} may sacrifice {n} permanents or the spell is countered (ward)"
-      (g.changes #[.pending (.payWard w.player w.spellId w.cost), .wardQueue rest]).logMsg msg
-  | _ => g
-
-/-- Drop ward obligations whose spell has left the stack, then prompt. -/
+/-- Clear `.payWard` once a ward cost is paid or declined, then continue with
+trigger target announcements or priority (CR 702.21a / 608.2n). -/
 def afterWardResolved (g : Game) : Game :=
-  let kept := g.wardQueue.filter (fun w =>
-    match g.findObject? w.spellId with
-    | some o => o.zone == Zone.stack
-    | none => false)
-  let g := g.changes #[.pending .none, .wardQueue kept]
-  let g := g.promptNextWard
-  if g.pending != .none then g
-  else if g.triggerNeedingTargets.isSome then g.promptTriggerTargetsIfNeeded
+  let g := g.change (.pending .none)
+  if g.triggerNeedingTargets.isSome then g.promptTriggerTargetsIfNeeded
   else g.receivePriority g.activePlayer
-
-/-- Queue ward payments for opponent permanents targeted by this spell
-or ability (CR 702.21). -/
-def beginWardsForTargets (g : Game) (caster : PlayerId) (spellId : ObjectId)
-    (targets : Array Target) : Game :=
-  let g := g.foldPermanentTargets targets (unique := true) (f := fun g o =>
-    if g.controllerOf o != some caster && o.isOnBattlefield then
-      (g.wardCostsOn o).foldl (fun g cost =>
-        g.change (.enqueueWard #[{ player := caster, spellId, cost }])) g
-    else g)
-  g.promptNextWard
 
 def becomeCast (g : Game) (p : PlayerId) (spell : GameObject)
     (grantPriority : Bool := true) : Game :=
+  let g := if g.proposalCheckpoint.isSome then g.change .clearProposalCheckpoint else g
   let g := g.change (.castingFromTop false)
   let g := g.logMsg s!"{(g.player p).name} casts {g.name spell}"
-  let ancestry := g.ancestryLandsTapped
-  let g := g.change (.ancestryLandsTapped #[])
-  let g :=
-    if g.isCreature spell &&
-        ancestry.any (fun id => (g.findObject? id).any (fun l => (g.baseCard l).commanderIdentityScryCreature)) &&
-        (g.subtypes spell).any ((g.player p).commanderCreatureTypes.contains) then
-      g.beginScry p 1
-    else g
   -- Emrakul, the Exigent Doom: the granted mana ability lasts until the card
   -- is cast from exile, so it can help pay for that spell (ruling 729).
   let g := g.battlefield.foldl (fun g land =>
@@ -508,10 +450,18 @@ def becomeCast (g : Game) (p : PlayerId) (spell : GameObject)
         s!"{spell.name} can't be countered"
     else g
   let g := g.putCastTriggersOnStack p spell
+  let liveCmds := g.objects.filter (fun o => o.owner == p && o.status.isCommander)
+  let cmdTypes :=
+    if !liveCmds.isEmpty then
+      liveCmds.foldl (fun acc o => acc ++ (g.subtypes o).filter CardSubtype.isCreatureType) #[]
+    else
+      (g.player p).commanderCreatureTypes
   let g :=
-    match g.stackEntry? spell.id with
-    | some e => g.beginWardsForTargets p spell.id e.targets
-    | none => g
+    if g.isCreature spell &&
+        g.ancestryManaSpentOn spell.id &&
+        (g.subtypes spell).any (fun sub => sub.isCreatureType && cmdTypes.contains sub) then
+      g.beginScry p 1
+    else g
   -- Doom Reigns Supreme: offer another exiled spell after this cast finishes.
   let g : Game :=
     match g.pendingMayCastFromExile with
@@ -659,12 +609,9 @@ def becomeActivated (g : Game) (p : PlayerId) (sourceName : String)
     | some src, some ab => (g.activatedAbilitiesOf src).findIdx? (· == ab)
     | _, _ => none
   let isExhaust : Bool := activation.any (·.exhaust)
+  let g := if g.proposalCheckpoint.isSome then g.change .clearProposalCheckpoint else g
   let g := g.record (GameEvent.abilityActivated g.turnNumber abilityObjId source p
     (.nonMana loyaltyDelta isEquip isPowerUp isBoast abilityIdx isExhaust))
-  let g :=
-    match g.stack.back? with
-    | some e => g.beginWardsForTargets p e.objectId e.targets
-    | none => g
   g.logMsg s!"{(g.player p).name} activates {sourceName}" |>.receivePriority p
 
 /-- Finish paying the proposed activation once its mana is paid and every
@@ -704,7 +651,7 @@ def beginActivationPayment (g : Game) (prop : ProposedSpell) : Except String Gam
     match prop.sourceId with
     | some sid => g.costPicksPayable prop.caster sid picks
     | none => true
-  if !payable then return g.reverseProposedSpell
+  if !payable then return (← g.reverseProposedSpell? (resumeContinuation := true))
   g.continueCostPicks prop picks false
 
 /-- Continue after CR 601.2c: determine the total cost (601.2f), then mana
@@ -724,7 +671,7 @@ def afterTargetsChosen (g : Game) : Game :=
       else if prop.kind == .activatedAbility then
         match g.beginActivationPayment prop with
         | .ok g => g
-        | .error _ => g.reverseProposedSpell
+        | .error _ => g.reverseProposedSpell (resumeContinuation := true)
       else
         let spell := g.object! prop.spellId
         let g := g.changes #[.pending .none, .proposedSpell none, .consecutivePasses 0]

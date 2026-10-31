@@ -65,10 +65,21 @@ def applyAction (g : Game) (p : PlayerId) : Action → Except String Game
   | .decline =>
     match g.pending with
     | .fraChoice .. => g.answerFraChoice p .decline
+    | .chooseReplacement _ choices =>
+      match choices.find? (·.kind == .entersTappedDeclinePayLife) with
+      | some id => g.chooseReplacement p id
+      | none => g.decline p
     | _ => g.decline p
   | .accept =>
     match g.pending with
     | .fraChoice .. => g.answerFraChoice p .accept
+    | .chooseReplacement _ choices =>
+      match choices.find? (fun c =>
+          match c.kind with
+          | .entersUntappedPayLife _ => true
+          | _ => false) with
+      | some id => g.chooseReplacement p id
+      | none => throw "Nothing to accept now"
     | .mayResolve _ => g.acceptMay p
     | _ => throw "Nothing to accept now"
   | .haveVillainConnive => g.haveVillainConnive p

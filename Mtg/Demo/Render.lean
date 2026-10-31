@@ -828,7 +828,6 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
         | .sacrificeLeastPower _ => "choose a creature tied for the least power: choose <id>"
         | .addManaColors left use =>
           s!"choose a color for {left} more mana ({use.label}): 0 white, 1 blue, 2 black, 3 red, 4 green"
-        | .payLifeOrEnterTapped _ n => s!"pay {n} life (accept), or it enters tapped (decline)"
         | .mayPayExtort _ => "extort: pay {W/B} (accept), or decline"
         | .mayDrawThenDiscard n k => s!"may draw {n} cards, then discard {k} (accept or decline)"
         | .sacrificeNontokenEach .. => "sacrifice a nontoken creature: choose <id>"
@@ -977,7 +976,14 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
         if n == 2 then " [coin toss (--norandom)]"
         else s!" [random index 0..{n - 1} (--norandom)]"
     | .chooseReplacement p choices =>
-      s!" [choose which replacement effect applies next ({choices.size} choices, CR 616.1, {g.player p |>.name})]"
+      match choices.findSome? (fun (c : ReplacementId) =>
+          match c.kind with
+          | .entersUntappedPayLife n => some n
+          | _ => none) with
+      | some n =>
+        s!" [pay {n} life (accept), or it enters tapped (decline) ({g.player p |>.name})]"
+      | none =>
+        s!" [choose which replacement effect applies next ({choices.size} choices, CR 616.1, {g.player p |>.name})]"
   let result :=
     match g.result with
     | none => ""

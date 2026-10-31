@@ -10,6 +10,26 @@ When a triggered ability fires, with per-event clause wording and metadata.
 
 namespace Mtg.Engine
 
+/-- Payment a player may make to stop ward from countering their spell or
+ability (CR 702.21). -/
+inductive WardCost where
+  /-- Ward `{n}`. -/
+  | genericMana (n : Nat)
+  /-- Ward — discard an enchantment, instant, or sorcery card. -/
+  | discardEnchantmentInstantOrSorcery
+  /-- Ward — sacrifice a legendary artifact or legendary creature. -/
+  | sacrificeLegendary
+  /-- Ward — discard a card or pay `{n}`. -/
+  | discardOrPay (n : Nat)
+  /-- Ward — get five poison counters. -/
+  | fivePoison
+  /-- Ward — discard a card. -/
+  | discardCard
+  /-- Ward — sacrifice `left` more permanents; `paid` were already
+  sacrificed, so the cost can no longer be declined. -/
+  | sacrificePermanents (left paid : Nat)
+deriving DecidableEq, Repr, Inhabited, BEq
+
 /-- Trigger events first printed in Reality Fracture (FRA). -/
 inductive FraEvent where
   /-- When you cast this spell. -/
@@ -91,7 +111,7 @@ is two events. -/
 inductive TriggerEvent where
   /-- This creature is declared as an attacker (CR 508.2). -/
   | attacking
-  /-- This creature becomes blocked (CR 509.5c). -/
+  /-- This creature becomes blocked (CR 509.3c). -/
   | becomesBlocked
   /-- This permanent enters the battlefield (CR 603.6a). -/
   | entering
@@ -312,6 +332,10 @@ inductive TriggerEvent where
   | sourceBecomesTapped
   /-- Equipped creature becomes tapped. -/
   | equippedBecomesTapped
+  /-- Cascade cast trigger (CR 702.85a). -/
+  | cascade
+  /-- Ward trigger (CR 702.21a). -/
+  | ward
   /-- A Reality Fracture event. -/
   | fra (e : FraEvent)
 deriving Repr, Inhabited, BEq, DecidableEq
@@ -654,6 +678,12 @@ def spec : TriggerEvent → Spec
   | .equippedBecomesTapped =>
     { clause := "equipped creature becomes tapped", label := "equipped-tapped trigger",
       checkTargets := false }
+  | .cascade =>
+    { clause := "you cast this spell", isWhenever := false, label := "cascade trigger",
+      checkTargets := false }
+  | .ward =>
+    { clause := "this permanent becomes the target of a spell or ability an opponent controls",
+      label := "ward trigger", checkTargets := false }
   | .fra e =>
     match e with
     | .castThis => { clause := "you cast this spell", isWhenever := false, label := "cast trigger" }

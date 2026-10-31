@@ -60,13 +60,13 @@ def finishProposedSpell (g : Game) : Except String Game := do
         allowHero allowVillain allowCant allowCreature spend ||
       !g.sourceStillPayable prop ||
       !g.canPayLife prop.caster prop.payLife then
-    return g.reverseProposedSpell
+    return (← g.reverseProposedSpell? (resumeContinuation := true))
   if prop.needsSacrificeOther then
     let excludeId := prop.sourceId.getD prop.spellId
     if (g.sacrificeCreatureOrArtifactChoices prop.caster excludeId).isEmpty then
-      return g.reverseProposedSpell
+      return (← g.reverseProposedSpell? (resumeContinuation := true))
   if prop.needsDiscardCard && (g.player prop.caster).hand.isEmpty then
-    return g.reverseProposedSpell
+    return (← g.reverseProposedSpell? (resumeContinuation := true))
   let count (g : Game) (u : FraManaUse) :=
     ((g.player prop.caster).manaPool.fraRestricted.filter (·.2 == u)).size
   let paid ← g.payCost prop.caster prop.cost allowElf allowInst
@@ -87,7 +87,7 @@ def finishProposedSpell (g : Game) : Except String Game := do
     | some a =>
       match g.paySneak prop.caster prop.spellId a with
       | .ok g => pure g
-      | .error _ => return g.reverseProposedSpell
+      | .error _ => return (← g.reverseProposedSpell? (resumeContinuation := true))
     | none => pure g
   match prop.kind, prop.needsSacrificeOther, prop.needsDiscardCard with
   | _, true, _ =>

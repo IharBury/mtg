@@ -405,6 +405,8 @@ def onCombatMayPutArtifactAttachEquipment : TriggeredAbility :=
   .triggered .yourBeginCombat (Effect.ofTrigger .mayPutArtifactAttachEquipment)
 def onCastCascade : TriggeredAbility :=
   .triggered .cascade (Effect.ofTrigger .cascade)
+def onWard (cost : WardCost) : TriggeredAbility :=
+  .triggered .becomesTarget { resolution := .frc (.ward cost), phrase := "Ward" } {}
 def onTokenYouControlEntersBelladonna : TriggeredAbility :=
   .triggered .tokenYouControlEnters (Effect.ofTrigger .belladonnaTokenReward)
 def onEnterBolgMaySacrifice : TriggeredAbility :=

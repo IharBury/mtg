@@ -18,24 +18,6 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
     if g.castFromGraveyard spell.id then Zone.graveyard spell.owner
     else if g.castFromHand spell.id then Zone.hand spell.owner
     else Zone.exile
-  let g :=
-    Id.run do
-      let mut g := g
-      for _ in [0:(g.baseCard spell).cascade] do
-        g := g.putTriggeredAbilityOnStack caster spell .onCastCascade "cascade trigger"
-      return g
-  -- Photon Blast Barrage: “When you cast this spell, copy it X times.”
-  let copiesSelf :=
-    match (g.baseCard spell).spellEffect.map (·.resolution) with
-    | some (.copyThisSpellXTimesThenDamage _) => !spell.isCopy
-    | _ => false
-  let g :=
-    if copiesSelf then
-      g.putTriggeredAbilityOnStack caster spell
-        (.triggered .enter { resolution := .copySourceSpellXTimes
-                             phrase := "When you cast this spell, copy it X times. You may choose new targets for the copies" } {})
-        "cast trigger"
-    else g
   let happened :=
     GameEvent.spellCast g.turnNumber caster
       { (g.snapshot spell) with manaValue := g.objectManaValue spell }
@@ -235,7 +217,14 @@ def applyEntersWith (g : Game) (o : GameObject) : Game :=
 /-- After a permanent enters, put its enters triggers and “another … enters”
 triggers (CR 603.6a). -/
 def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
-  if (g.findObject? o.id).isNone then g else
+  match g.findObject? o.id with
+  | none => g
+  | some cur =>
+    if !cur.isOnBattlefield then
+      if let .chooseReplacement .. := g.pending then
+        g.chainPendingReplacement (.afterLastPermanentEnters (some o.id))
+      else g
+    else
   let g := g.refreshEnduringStory
   let g := g.refreshCitysBlessing
   let g := g.applyEntersWith (g.object! o.id)
@@ -366,7 +355,7 @@ def resolveAuraSpell (g : Game) (entry : StackEntry) (obj : GameObject) : Game :
           (attachedTo := some host.id) (verb := some .resolve) (actor := some entry.controller)
           (cause := finishCause)
         if let .chooseReplacement .. := g.pending then
-          g.chainPendingReplacement .afterLastPermanentEnters
+          g.chainPendingReplacement (.afterLastPermanentEnters (some obj.id))
         else
           let o := g.object! newId
           let g := g.logMsg s!"{g.name o} enters the battlefield attached to {hostName}"
@@ -475,7 +464,7 @@ def finishOneResolution (g : Game) (fin : ResolutionFinish) : Game :=
               (actor := some entry.controller)
               (cause := some finishCause)
             if let .chooseReplacement .. := g.pending then
-              g.chainPendingReplacement .afterLastPermanentEnters
+              g.chainPendingReplacement (.afterLastPermanentEnters (some obj.id))
             else
               let o := g.object! newId
               let g := g.logMsg s!"{o.name} enters the battlefield"
@@ -582,7 +571,14 @@ partial def receivePriority (g : Game) (p : PlayerId) (recheckSba := true) : Gam
           else receivePriority g p true
       | some q =>
         let mine := g.waitingTriggersOf q
-        if (mine.filter (·.delayedTrigger.isNone)).size ≤ 1 then
+        let nonDelayed := mine.filter (·.delayedTrigger.isNone)
+        let allIdentical :=
+          nonDelayed.size ≤ 1 ||
+            nonDelayed.all (fun w =>
+              w.source.id == nonDelayed[0]!.source.id &&
+                w.ability == nonDelayed[0]!.ability &&
+                w.causeId == nonDelayed[0]!.causeId)
+        if allIdentical then
           let g := g.putTriggerBatch mine
           if g.over || g.pending != .none then g
           else receivePriority g p false

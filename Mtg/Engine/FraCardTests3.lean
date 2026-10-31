@@ -138,6 +138,7 @@ they sacrifice three permanents. -/
   let g := addPermanent afterDraw emrakulTheExigentDoom me me
   let g := mustApply g me .pass
   let g := castFra g shock [tgt g "Emrakul, the Exigent Doom"] opp
+  let g := mustApply (mustApply g opp .pass) me .pass
   match g.pending with
   | .payWard q _ (.sacrificePermanents 3 0) => q == opp
   | _ => false
@@ -146,6 +147,7 @@ they sacrifice three permanents. -/
   let g := [forest, forest, forest].foldl (fun g c => addPermanent g c opp opp) g
   let g := mustApply g me .pass
   let g := castFra g shock [tgt g "Emrakul, the Exigent Doom"] opp
+  let g := mustApply (mustApply g opp .pass) me .pass
   let lands := ((g.permanentsOf opp).filter (·.name == "Forest")).map (·.id)
   let g := lands.foldl (fun g id => mustApply g opp (.sacrifice id)) g
   let g := resolved g
@@ -926,6 +928,7 @@ def attackingPlaneswalkerSetup (withTomik : Bool) : Game :=
   let g := addPermanent afterDraw gideonTheOathless me me
   let g := mustApply g me .pass
   let g := castFra g shock [tgt g "Gideon the Oathless"] opp
+  let g := mustApply (mustApply g opp .pass) me .pass
   match g.pending with
   | .payWard q _ .discardCard => q == opp
   | _ => false

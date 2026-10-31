@@ -190,12 +190,11 @@ def queueTrigger (g : Game) (controller : PlayerId) (source : GameObject)
       match g.currentBatch with
       | some (bid, _) => bid
       | none => ⟨g.nextBatchId⟩
-    let trigEv :=
-      GameEvent.triggered g.turnNumber (g.snapshot source) controller ab originBatch
+    let srcSnap := g.snapshot source
     Id.run do
       let mut g := g
       for _ in [0:copies] do
-        g := { g with events := g.events.push trigEv }
+        g := g.recordTriggeredWithOrigin srcSnap controller ab originBatch
         g := g.enqueueWaitingTriggers #[wt]
       return g
 
@@ -446,13 +445,12 @@ def putWaitingTrigger (g : Game) (wt : WaitingTrigger) (event : TriggerEvent) : 
         match g.currentBatch with
         | some (bid, _) => bid
         | none => ⟨g.nextBatchId⟩
-      let trigEv :=
-        GameEvent.triggered g.turnNumber (g.snapshot wt.source) wt.controller wt.ability originBatch
+      let srcSnap := g.snapshot wt.source
       let copies := g.extraTriggerCopies wt.controller wt.source + 1
       (List.range copies).foldl (fun g _ =>
         let g :=
           if g.loggedTriggeredThisTurn wt.source.id wt.ability then g
-          else { g with events := g.events.push trigEv }
+          else g.recordTriggeredWithOrigin srcSnap wt.controller wt.ability originBatch
         put g) g
 
 /-- Put these waiting triggers on the stack in the given order (CR 603.3 / 603.3d). -/

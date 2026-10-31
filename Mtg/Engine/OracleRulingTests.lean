@@ -2948,7 +2948,10 @@ def bowmastersFirstDrawStepOk : Bool :=
 def spiderDoubleTarget : Game :=
   let g := addPermanent afterDraw oldFatSpider ⟨0⟩ ⟨0⟩
   let sid := (namedPermanent g "Old Fat Spider").id
-  g.queueBecomesTargetTriggers ⟨1⟩
+  let (g, ab) := g.allocObject lightningBolt ⟨1⟩ .stack (some ⟨1⟩)
+  let g := g.changeObject ab.id (.abilityEffect (some (Effect.dealDamageToTargetCreature 1)))
+  let g := g.putStackEntry ⟨1⟩ ab.id
+  g.setStackEntryTargets ab.id
     #[Target.permanent sid, Target.permanent sid]
 
 def spiderDoubleTargetOk : Bool :=
@@ -3476,7 +3479,10 @@ def protectionStillAttackableOk : Bool :=
 def spiderResolvesBeforeSpellOk : Bool :=
   let g := addPermanent afterDraw oldFatSpider ⟨0⟩ ⟨0⟩
   let sid := (namedPermanent g "Old Fat Spider").id
-  let g := g.queueBecomesTargetTriggers ⟨1⟩ #[Target.permanent sid]
+  let (g, ab) := g.allocObject lightningBolt ⟨1⟩ .stack (some ⟨1⟩)
+  let g := g.changeObject ab.id (.abilityEffect (some (Effect.dealDamageToTargetCreature 1)))
+  let g := g.putStackEntry ⟨1⟩ ab.id
+  let g := g.setStackEntryTargets ab.id #[Target.permanent sid]
   g.waitingTriggers.any (fun wt => wt.event == .becomesTarget) &&
     (ruling 240).comment.contains "resolves before the spell or ability"
 

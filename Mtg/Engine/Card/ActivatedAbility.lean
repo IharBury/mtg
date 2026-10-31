@@ -212,10 +212,10 @@ structure ActivatedAbility where
   /-- Frequency restriction “Activate only once each turn”. -/
   onceEachTurn : Bool := false
   /-- This ability can be activated only while the source is in a graveyard
-  (CR 112.6 / 404). -/
+  (CR 113.6 / 404). -/
   activateFromGraveyard : Bool := false
   /-- This ability can be activated only while the source is in your hand
-  (CR 112.6 / 702.29, e.g. cycling). -/
+  (CR 113.6 / 702.29, e.g. cycling). -/
   activateFromHand : Bool := false
   /-- Timing restriction “Activate only if you control a legendary creature”. -/
   onlyIfYouControlLegendary : Bool := false

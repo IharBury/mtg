@@ -552,13 +552,20 @@ def pantherDamagePrevented : Game :=
 #guard (namedPermanent pantherDamagePrevented "Black Panther, Hope Enduring").status.damage == 0
 #guard pantherDamagePrevented.log.any (fun s => mentions s "prevented")
 
-/-- Cast Lightning Bolt at an opponent's permanent and lock in the cost. -/
+/-- Cast Lightning Bolt at an opponent's permanent, lock in the cost, and
+advance until its Ward ability resolves on the stack (CR 702.21a). -/
 def boltAt (g : Game) (name : String) : Game :=
   let g := addToHand g lightningBolt ⟨0⟩
   let g := withRedMana g ⟨0⟩ 1
   let g := proposeTargeted g ⟨0⟩ (handCardNamed g ⟨0⟩ "Lightning Bolt").id
     (Target.permanent (namedPermanent g name).id)
-  mustApply g ⟨0⟩ .pay
+  let g := mustApply g ⟨0⟩ .pay
+  (List.range 8).foldl (fun g _ =>
+    match g.pending with
+    | .payWard .. => g
+    | .chooseTriggerToStack p => mustApply g p (.stackTriggers (g.defaultTriggerSourceIds p))
+    | .none => mustApply g g.priority .pass
+    | _ => g) g
 
 /-- Saruman ward: discard an enchantment, instant, or sorcery or the spell
 is countered. -/

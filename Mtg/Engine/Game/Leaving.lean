@@ -225,7 +225,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
   | .activateManaAbilities q | .chooseMode q | .chooseX q | .chooseTargets q
   | .chooseAdditionalCost q | .chooseKicker q | .chooseGift q
   | .chooseTeamwork q | .chooseTeamworkCreatures q _ =>
-    if q == p then g.changes #[.pending .none, .proposedSpell none] else g
+    if q == p then g.changes #[.pending .none, .proposedSpell none, .clearProposalCheckpoint] else g
   | .sacrificePermanent q _ | .discardForAdditionalCost q
   | .sacrificeCreature q | .scry q .. | .surveil q ..
   | .mayDiscardDraw q _ | .mayAttachEquipment q _
@@ -300,7 +300,7 @@ def playerLeavesGame (g : Game) (p : PlayerId) : Game :=
     let g :=
       match g.proposedSpell with
       | some prop =>
-        if prop.caster == p then g.change (.proposedSpell none) else g
+        if prop.caster == p then g.changes #[.proposedSpell none, .clearProposalCheckpoint] else g
       | none => g
     let g :=
       if g.priority == p then g.change (.priority (g.nextLiving p)) else g

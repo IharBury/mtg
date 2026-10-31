@@ -244,7 +244,6 @@ inductive GameRuleKind where
   | spellCast
   | abilityActivated
   | triggeredAbility      -- 603.3
-  | reversedActivation
   | staticAbility
   | continuousEffect
   | leavingZone
@@ -338,6 +337,8 @@ deriving DecidableEq, Repr, Inhabited, BEq
 /-- The rule or effect kind that a `ReplacementId` identifies (CR 614 / 615). -/
 inductive ReplacementEffectKind where
   | entersTappedSelf                     -- 616.1a
+  | entersUntappedPayLife (life : Nat)   -- 616.1a / 614.12
+  | entersTappedDeclinePayLife           -- 616.1a / 614.12
   | entersWithLoyalty                    -- 306.5b / 616.1a
   | entersWithPlusOneCounters            -- 616.1a
   | entersWithXPlusOne                   -- 616.1a
@@ -501,6 +502,7 @@ structure EventObject where
   loyalty         : Option Nat           := none
   keywords        : Keywords             := {}
   toxic           : Nat                  := 0
+  commanderIdentityScryCreature : Bool   := false
   staticAbilities : Array StaticAbility  := #[]
   -- status & designations (CR 110.5–110.6)
   zone            : Zone                 := .battlefield
@@ -541,6 +543,7 @@ def toCardDef (e : EventObject) : CardDef :=
       loyalty := e.loyalty.map Int.ofNat
       keywords := { e.keywords with changeling := e.keywords.changeling || e.changeling }
       toxic := e.toxic
+      commanderIdentityScryCreature := e.commanderIdentityScryCreature
       staticAbilities := e.staticAbilities
       isToken := e.token }
 
@@ -632,6 +635,7 @@ def GameObject.asEvent (o : GameObject) : EventObject :=
     loyalty := o.printed.loyalty.map Int.toNat
     keywords := o.printedOrUntilEot
     toxic := o.printed.toxic
+    commanderIdentityScryCreature := !o.status.faceDown && o.printed.commanderIdentityScryCreature
     staticAbilities := o.staticAbilities
     zone := o.zone
     tapped := o.status.tapped

@@ -96,7 +96,7 @@ open Mtg.Demo.Render
 
 -- `ignore` is not cancelled when the other player uses `main phase`.
 
-#guard describeCheckResult (Tests.started.change (.result (some (.won ⟨0⟩)))) == "Winner: Chandra"
+#guard describeCheckResult (Tests.started.record (GameEvent.gameEnded Tests.started.turnNumber (.won ⟨0⟩))) == "Winner: Chandra"
 
 #guard shouldWriteOutput false false true "first"
 

@@ -24,7 +24,7 @@ inductive AttackTarget where
   | battle (b : ObjectId)            -- non-goal today (508.1b)
 deriving DecidableEq, Repr, Inhabited, BEq
 
-/-- Permanent status (CR 110.5) and designations (CR 110.6). -/
+/-- Permanent status (CR 110.5) and designations (CR 400.7 / 701.54b). -/
 structure Status where
   tapped : Bool := false
   damage : Int := 0

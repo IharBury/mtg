@@ -131,12 +131,10 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
       (face.additionalCostSacrificeArtifactOrCreature && face.additionalCostOrPayGeneric.isNone)
   let original := card
   let origSnap := g.snapshot original
-  let handBefore := pl.hand
-  let stackBefore := g.stack
-  let manaBefore := pl.manaPool
   let fromTop :=
     original.zone == .library p && (g.player p).library.back? == some id
   let prepSrc := origPerm.bind (·.prepareSource)
+  let g := g.change .saveProposalCheckpoint
   let (g, newId) := g.move id .stack (some p) (verb := some .cast) (actor := some p)
     (isCopy := if prepSrc.isSome then some true else none)
     (overridePrinted := if asAdventure then some face else none)
@@ -200,9 +198,6 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
     spellId := newId
     original := original
     originalSnapshot := origSnap
-    handBefore := handBefore
-    stackBefore := stackBefore
-    manaBefore := manaBefore
     needsSacrificeOther := needsSacrifice
     needsDiscardCard := needsFlashbackDiscard
     payLife := lifeInstead
@@ -329,27 +324,11 @@ def afterTriggerTargetsChosen (g : Game) : Game :=
   | some _ =>
     promptTriggerTargetsIfNeeded (g.change (.pending .none))
   | none =>
-    let g := (g.change (.pending .none)).promptNextWard
-    if g.pending != .none then g
-    else receivePriority g g.activePlayer false
+    receivePriority (g.change (.pending .none)) g.activePlayer false
 
-/-- Loki (MSH 247): when a player or permanent becomes the target of an
-ability you control, those triggers wait on the stack above that ability. -/
-def queueYouTargetTriggers (g : Game) (controller : PlayerId) (obj : GameObject) : Game :=
-  if obj.abilityEffect.isSome || obj.triggeredAbility.isSome then
-    g.putControlledTriggers controller .youTargetSomething
-  else g
-
-/-- After a triggered ability's targets are announced: ward for each targeted
-opponent permanent (CR 702.21a), which is prompted once no other ability needs
-targets. -/
-def finishTriggerTargets (g : Game) (p : PlayerId) (obj : GameObject) : Game :=
-  let targets := ((g.stackEntry? obj.id).map (·.targets)).getD #[]
-  let g := g.foldPermanentTargets targets (unique := true) (f := fun g o =>
-    if g.controllerOf o != some p && o.isOnBattlefield then
-      (g.wardCostsOn o).foldl (fun g cost =>
-        g.change (.enqueueWard #[{ player := p, spellId := obj.id, cost }])) g
-    else g)
+/-- Finish announcing a triggered ability's targets (CR 603.3d); target and
+Ward triggers are matched directly on `CastEvent.targeted` in `matchTriggers`. -/
+def finishTriggerTargets (g : Game) (_p : PlayerId) (_obj : GameObject) : Game :=
   g.afterTriggerTargetsChosen
 
 /-- Announce targets for the current instance of the word “target”

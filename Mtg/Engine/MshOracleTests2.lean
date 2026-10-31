@@ -793,10 +793,11 @@ def okoyeFirstStrikeLossOk : Bool :=
   let g := g.markAttacking tok.id (some (.player ⟨1⟩))
   let tok := g.object! tok.id
   g.hasFirstStrike tok &&
-    (let g := g.changes #[
-        .firstStrikeDamageDone true,
-        .firstStrikeAssignedThisCombat #[tok.id]
-      ]
+    (let g :=
+       (g.record (GameEvent.combatDamageAssigned g.turnNumber true #[{ source := tok.id }]
+         (firstStrike := true))).record
+         (GameEvent.extraStepAdded g.turnNumber .combatDamage .afterCurrent
+           (cause := .gameRule .stepAdvance))
      let (g, _) := g.move (namedPermanent g "Okoye, Dora Milaje Leader").id
        (.graveyard ⟨0⟩) none
      let tok := g.object! tok.id

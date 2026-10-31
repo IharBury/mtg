@@ -196,9 +196,8 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
   let o := g.object! id
   let origSnap := g.snapshot o
   let pl := g.player p
-  let stackBefore := g.stack
-  let manaBefore := pl.manaPool
   let effect := g.expandEachOpponentEffect p ab.effect
+  let g := g.change .saveProposalCheckpoint
   let (g, abilityObj) := g.putStackAbility o p
     (abilityEffect := if ab.isModal then none else some effect)
   let newId := abilityObj.id
@@ -216,9 +215,6 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
     spellId := newId
     original := o
     originalSnapshot := origSnap
-    handBefore := pl.hand
-    stackBefore := stackBefore
-    manaBefore := manaBefore
     kind := .activatedAbility
     sourceId := some id
     tapSource := ab.cost.tap
