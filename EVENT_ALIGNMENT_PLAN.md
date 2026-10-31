@@ -3393,45 +3393,52 @@ spell-copy / combat-Treasure / reflexive `WaitingTrigger` routing, pre-move
      (g'.findObject? prop.spellId).any (·.zone == .stack)`, since open `Pending`
      prompts are still in progress and any targetless reversal inside
      `beginResolutionCastTargets` already called
-     `reverseProposedSpell (resumeContinuation := true)`), and read
+     `reverseProposedSpell (resumeContinuation := true)`), read
      `prop.resolutionCast` before `.proposedSpell none` clears `proposedSpell` in
-     `Decisions.afterTargetsChosen`, `PriorityActions.finishProposedSpell`,
-     `Decisions.discardForDraw` (`.discardForAdditionalCost`), and
-     `SacrificeDiscard.sacrificeForActivation` (`.sacrificePermanent`, which
-     passes `grantPriority := !isResCast` into `Casting.becomeCast` itself while
-     its sole caller `Actions.apply` `.sacrifice` in
-     [`Actions.lean`](Mtg/Engine/Game/Actions.lean)—since `Decisions.lean`
-     transitively imports `SacrificeDiscard.lean` via `Mulligans` → … → `Pumps`
-     so `SacrificeDiscard` cannot import `Decisions` without cycling—checks
-     beforehand whether `g.pending` is `.sacrificePermanent ..` and
+     `Decisions.afterTargetsChosen`, `PriorityActions.finishProposedSpell`, and
+     `Decisions.discardForDraw` (`.discardForAdditionalCost`) so those three
+     sites pass `grantPriority := !isResCast` into `becomeCast` and—when
+     `isResCast` is `true` (and in `Decisions.resumePendingReplacement`
+     `.finishPostCast` when `!grantPriority && !hadOuter` after a deferred
+     scry)—finish with `Decisions.finishFraChoice` rather than
+     `resumeAfterBecomeCast` alone, and in
+     `SacrificeDiscard.sacrificeForActivation` (`.sacrificePermanent`'s `.spell`
+     arm, which returns `g` without calling `finishFraChoice` because
+     `Decisions.lean` transitively imports `SacrificeDiscard.lean` via
+     `Mulligans` → … → `Pumps` so `SacrificeDiscard` cannot import `Decisions`
+     without cycling) read `prop.resolutionCast` before `.proposedSpell none` to
+     pass `grantPriority := !isResCast` into `Casting.becomeCast` while its sole
+     caller `Actions.apply` `.sacrifice` in
+     [`Actions.lean`](Mtg/Engine/Game/Actions.lean) checks beforehand whether
+     `g.pending` is `.sacrificePermanent ..` and
      `g.proposedSpell.any (·.resolutionCast)` is `true`, calling
      `g.finishFraChoice` only for that `.sacrificePermanent` resolution-cast case
      and keeping `if g.mayThenResume then g.acceptMayThen else
      g.resumeAfterBecomeCast` for priority-window `.sacrificePermanent` and all
-     other `.sacrifice` arms) so each site passes `grantPriority := !isResCast`
-     into `becomeCast` and—when `isResCast` is `true` (and in
-     `Decisions.resumePendingReplacement` `.finishPostCast` when
-     `!grantPriority && !hadOuter` after a deferred scry)—finishes with
-     `Decisions.finishFraChoice` rather than `resumeAfterBecomeCast` alone (so
-     `Casting.finishPostCast` does not grant the caster priority inside a
-     resolving ability, while `finishFraChoice` resumes `pendingReplacement`,
-     `advanceCastExiledQueue`, `resumeTriggerSequence`, and
+     other `.sacrifice` arms (so `Casting.finishPostCast` does not grant the
+     caster priority inside a resolving ability, while `finishFraChoice` resumes
+     `pendingReplacement`, `advanceCastExiledQueue`, `resumeTriggerSequence`, and
      `promptTriggerTargetsIfNeeded` before `Entering.receivePriority g.activePlayer`
      runs `completeActiveResolutions`, checks SBAs, and grants priority); drop
      the pre-proposal `manaPool.canPay` gate on paid
      `Decisions.castAsPartOfResolution` (`withoutManaCost := false`), and route
      `Decisions.castExiledAsAbilityResolves` (`Decisions.lean`) unconditionally
-     through `(g.beginResolutionCastTargets p prop).finishFraChoice`—gating its
-     pre-proposal target check on `face.isModal` (`spellModeIsChoosable`) like
-     `CastSpell.castSpell` / `FraChoices.mayCastCards`, removing both its
-     pre-proposal `payUnits?` / `manaSpent` payment and both arms of its
-     `if face.requiresTarget` split (both the `face.requiresTarget` arm that
-     stored `cost := ManaCost.empty` with `.pending (.chooseTargets p)` and the
-     `else` arm that called `(g.becomeCast p (g.object! newId)).resumeAfterBecomeCast`),
-     and building `prop` with `cost := g.playManaCost card face` (instead of
-     `ManaCost.empty`) and `needsSacrificeOther` so it flows through
-     `Pending.chooseX`, modes, `face.announcesAdditionalCost`, optional cost
-     prompts, targets, and `Pending.activateManaAbilities`; extend `ManaAbilities.canActivateManaAbility`
+     through `(g.beginResolutionCastTargets p prop).finishFraChoice`—splitting
+     its pre-move target throw into a modal arm
+     (`if face.isModal && !face.spellModes.any (g.spellModeIsChoosable p) && !face.allowsZeroTargets`)
+     and a non-modal arm
+     (`if !face.isModal && (face.requiresTarget || face.isAura) && (g.legalCastTargets p face).isEmpty && !face.allowsZeroTargets`,
+     matching `FraChoices` `.mayCastCards` so both modal spells with no choosable
+     mode and non-modal spells/Auras with no legal target still throw before
+     moving onto the stack), removing both its pre-proposal `payUnits?` /
+     `manaSpent` payment and both arms of its `if face.requiresTarget` split
+     (both the `face.requiresTarget` arm that stored `cost := ManaCost.empty`
+     with `.pending (.chooseTargets p)` and the `else` arm that called
+     `(g.becomeCast p (g.object! newId)).resumeAfterBecomeCast`), and building
+     `prop` with `cost := g.playManaCost card face` (instead of `ManaCost.empty`)
+     and `needsSacrificeOther` so it flows through `Pending.chooseX`, modes,
+     `face.announcesAdditionalCost`, optional cost prompts, targets, and
+     `Pending.activateManaAbilities`; extend `ManaAbilities.canActivateManaAbility`
      (`ManaAbilities.lean`) to mana-payment prompts (`.mayPaySymbolsThen`,
      `.ultronMayPay`, paid `.mayCastCards` / `.mayCastFromGraveyard` /
      `.mayCastExiledElseDamage`, and taxed `.declareAttackers`, CR 605.3a /
