@@ -382,12 +382,21 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       pure c)
     let total := crew.foldl (fun acc c => acc + (g.power c).toNat) 0
     if total < n then throw s!"Total power {total} is less than {n}"
+    let outerCont? := g.pendingReplacement
+    let hadOpenCont := !g.continuations.isEmpty
+    let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
     let cause := some (EventCause.costPayment .tap p (some abilityId))
     let g := g.withBatch cause fun g =>
       crew.foldl (fun g c =>
         g.becomeTapped (g.object! c.id) (cause := cause)) g
+    let g :=
+      match outerCont? with
+      | some outer => g.chainPendingReplacement outer
+      | none => g
     let g := g.logMsg s!"{(g.player p).name} crews {vName}"
-    return (g.becomeActivated p vName (some vehicleId)).resumeAfterBecomeCast
+    return (g.becomeActivated p vName (some vehicleId)
+      (hadOuterReplacement := outerCont?.isSome)
+      (hadOpenContinuation := hadOpenCont)).resumeAfterBecomeCast
   | .crew _ _ _, .decline =>
     let baseTriggers := (g.proposalCheckpoint.map (·.waitingTriggers.size)).getD 0
     let g ← g.reverseToProposalCheckpoint?
@@ -402,9 +411,29 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .costPicks sourceId picks _, .objects ids =>
     let some prop := g.proposedSpell | throw "No activation is being paid for"
     let some pick := picks[0]? | throw "No cost is left to pay"
-    let g ← g.withProposalActionM .costAction fun g =>
+    let outerCont? := g.pendingReplacement
+    let hadOpenCont := !g.continuations.isEmpty
+    let g0 := if outerCont?.isSome then g.change (.pendingReplacement none) else g
+    let g ← g0.withProposalActionM .costAction fun g =>
       g.payCostPick p prop.spellId sourceId pick ids
-    return (← g.continueCostPicks prop (picks.extract 1 picks.size) true).resumeAfterBecomeCast
+    let restPicks := picks.extract 1 picks.size
+    if restPicks.isEmpty then
+      let g :=
+        match outerCont? with
+        | some outer => g.chainPendingReplacement outer
+        | none => g
+      return (← g.continueCostPicks prop restPicks true
+        (hadOuterReplacement := outerCont?.isSome)
+        (hadOpenContinuation := hadOpenCont)).resumeAfterBecomeCast
+    else
+      let g ← g.continueCostPicks prop restPicks true
+        (hadOuterReplacement := outerCont?.isSome)
+        (hadOpenContinuation := hadOpenCont)
+      let g :=
+        match outerCont? with
+        | some outer => g.chainPendingReplacement outer
+        | none => g
+      return g.resumeAfterBecomeCast
   | .costPicks _ _ false, .decline =>
     g.reverseProposedSpell? (resumeContinuation := true)
   | .costPicks _ _ true, .decline =>
@@ -692,16 +721,25 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       | none => .black
     if !g.canPayZemoBoast p ids col then
       throw "Choose black cards from your graveyard with fifteen or more black mana symbols among their mana costs"
+    let outerCont? := g.pendingReplacement
+    let hadOpenCont := !g.continuations.isEmpty
+    let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
     let (g, exiled) := ids.foldl (fun (acc : Game × Array ObjectId) id =>
       let (g, ex) := acc.1.move id .exile none
         (cause := some (.costPayment .exile p (some abilityId)))
       (g, acc.2.push ex)) (g, #[])
+    let g :=
+      match outerCont? with
+      | some outer => g.chainPendingReplacement outer
+      | none => g
     let g := g.logMsg s!"{(g.player p).name} exiles {exiled.size} card(s) from their graveyard"
     let g := match g.findObject? sourceId with
       | some src => g.logMsg s!"{src.name}'s boast ability is activated"
       | none => g
     let name := ((g.findObject? sourceId).map (·.name)).getD "Baron Helmut Zemo"
-    return (g.becomeActivated p name (some sourceId) (some ActivatedAbility.zemoBoastAbility)).resumeAfterBecomeCast
+    return (g.becomeActivated p name (some sourceId) (some ActivatedAbility.zemoBoastAbility)
+      (hadOuterReplacement := outerCont?.isSome)
+      (hadOpenContinuation := hadOpenCont)).resumeAfterBecomeCast
   | .zemoBoastExile _ _, .decline =>
     let baseTriggers := (g.proposalCheckpoint.map (·.waitingTriggers.size)).getD 0
     let g ← g.reverseToProposalCheckpoint?

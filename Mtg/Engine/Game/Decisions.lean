@@ -248,6 +248,9 @@ partial def beginResolutionCastTargets (g : Game) (p : PlayerId) (prop : Propose
     else
       g.change (.pending (.chooseMode p))
         |>.logMsg s!"{(g.player p).name} must choose a mode (CR 601.2b)"
+  else if face.announcesAdditionalCost then
+    g.change (.pending (.chooseAdditionalCost p))
+      |>.logMsg s!"{(g.player p).name} must choose an additional cost (CR 601.2b)"
   else if face.requiresTarget || face.isAura then
     if (g.legalCastTargets p face).isEmpty && !face.allowsZeroTargets then
       g.reverseProposedSpell (resumeContinuation := true)
@@ -304,12 +307,16 @@ partial def castAsPartOfResolution (g : Game) (p : PlayerId) (id : ObjectId)
       let g := g.logMsg s!"{(g.player p).name} casts {name} as the ability resolves"
       let cost :=
         if withoutManaCost then ManaCost.empty else g.playManaCost original face
+      let needsSacrifice :=
+        face.additionalCostSacrificeCreature ||
+          (face.additionalCostSacrificeArtifactOrCreature && face.additionalCostOrPayGeneric.isNone)
       g.beginResolutionCastTargets p {
         caster := p
         cost
         spellId := newId
         original
         originalSnapshot := origSnap
+        needsSacrificeOther := needsSacrifice
       }
 
 /-- Advance the pending Doom Reigns exile-cast queue one card at a time,
@@ -969,13 +976,24 @@ def discardForDraw (g : Game) (p : PlayerId) (id : ObjectId) : Except String Gam
     return g.receivePriority g.activePlayer
   | .discardForAdditionalCost q =>
     let some prop := g.proposedSpell | throw "No spell is waiting for an additional cost"
-    let g ← g.withProposalActionM .costAction fun g => do
+    let outerCont? := g.pendingReplacement
+    let hadOpenCont := !g.continuations.isEmpty
+    let g0 := if outerCont?.isSome then g.change (.pendingReplacement none) else g
+    let g ← g0.withProposalActionM .costAction fun g => do
       let (g, _) ← g.discardPendingCard p q id
         (cause := some (.costPayment .discard p (some prop.spellId)))
       return g.record (GameEvent.announced g.turnNumber prop.spellId (costs := #[.discard id])
         (cause := some (.costPayment .discard p (some prop.spellId))))
-    let g := g.changes #[.pending .none, .proposedSpell none, .consecutivePasses 0]
-    return (g.becomeCast prop.caster (g.object! prop.spellId)).resumeAfterBecomeCast
+    let g :=
+      match outerCont? with
+      | some outer => g.chainPendingReplacement outer
+      | none => g
+    let clearPending : Array EngineChange :=
+      if let .chooseReplacement .. := g.pending then #[] else #[.pending .none]
+    let g := g.changes (clearPending ++ #[.proposedSpell none, .consecutivePasses 0])
+    return (g.becomeCast prop.caster (g.object! prop.spellId)
+      (hadOuterReplacement := outerCont?.isSome)
+      (hadOpenContinuation := hadOpenCont)).resumeAfterBecomeCast
   | .payWard q spellId cost =>
     if p != q then
       throw s!"Only {(g.player q).name} may discard for ward"

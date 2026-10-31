@@ -49,33 +49,47 @@ def finishProposedSpell (g : Game) : Except String Game := do
       | _, _ => paid
   if prop.kind == .activatedAbility then
     return (← g.beginActivationPayment prop)
+  let outerCont? := g.pendingReplacement
+  let hadOpenCont := !g.continuations.isEmpty
   let g ←
     match prop.sneakAttacker with
     | some a =>
-      match g.withProposalActionM .costAction (fun g => g.paySneak prop.caster prop.spellId a) with
-      | .ok g => pure g
+      let g0 := if outerCont?.isSome then g.change (.pendingReplacement none) else g
+      match g0.withProposalActionM .costAction (fun g => g.paySneak prop.caster prop.spellId a) with
+      | .ok g =>
+        pure (match outerCont? with
+          | some outer => g.chainPendingReplacement outer
+          | none => g)
       | .error _ => return (← g.reverseProposedSpell? (resumeContinuation := true))
     | none => pure g
   match prop.kind, prop.needsSacrificeOther, prop.needsDiscardCard with
   | _, true, _ =>
-    let g := g.changes #[.pending (.sacrificePermanent prop.caster prop.spellId), .consecutivePasses 0]
-    return g.logMsg
-      s!"{(g.player prop.caster).name} must sacrifice an artifact or creature"
-  | _, _, true =>
-    let g := g.changes #[.pending (.discardForAdditionalCost prop.caster), .consecutivePasses 0]
-    return g.logMsg
-      s!"{(g.player prop.caster).name} must discard a card"
-  | _, _, _ =>
-    let g := g.changes #[.pending .none, .proposedSpell none, .consecutivePasses 0]
-    let g := g.becomeCast prop.caster (g.object! prop.spellId)
-    if g.pending == .none && g.pendingReplacement.isSome && !g.over then
-      match g.pendingReplacement with
-      | some cont =>
-        let g := g.change (.pendingReplacement none)
-        return g.resumePendingReplacement cont
-      | none => return g
+    if let .chooseReplacement .. := g.pending then
+      let g := (g.change (.consecutivePasses 0)).chainPendingReplacement
+        (.restorePending (.sacrificePermanent prop.caster prop.spellId))
+      return g.logMsg
+        s!"{(g.player prop.caster).name} must sacrifice an artifact or creature"
     else
-      return g
+      let g := g.changes #[.pending (.sacrificePermanent prop.caster prop.spellId), .consecutivePasses 0]
+      return g.logMsg
+        s!"{(g.player prop.caster).name} must sacrifice an artifact or creature"
+  | _, _, true =>
+    if let .chooseReplacement .. := g.pending then
+      let g := (g.change (.consecutivePasses 0)).chainPendingReplacement
+        (.restorePending (.discardForAdditionalCost prop.caster))
+      return g.logMsg
+        s!"{(g.player prop.caster).name} must discard a card"
+    else
+      let g := g.changes #[.pending (.discardForAdditionalCost prop.caster), .consecutivePasses 0]
+      return g.logMsg
+        s!"{(g.player prop.caster).name} must discard a card"
+  | _, _, _ =>
+    let clearPending : Array EngineChange :=
+      if let .chooseReplacement .. := g.pending then #[] else #[.pending .none]
+    let g := g.changes (clearPending ++ #[.proposedSpell none, .consecutivePasses 0])
+    return (g.becomeCast prop.caster (g.object! prop.spellId)
+      (hadOuterReplacement := outerCont?.isSome)
+      (hadOpenContinuation := hadOpenCont)).resumeAfterBecomeCast
 
 /-- Pay the proposed spell or ability (CR 601.2h / 602.2b). If the cost
 cannot be paid, the action is reversed (CR 733.1). -/

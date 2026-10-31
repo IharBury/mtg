@@ -250,24 +250,38 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
     if !g.canSacrificeAsCreatureOrArtifact p sourceId sac then
       throw s!"Can't sacrifice {g.name sac}"
     let forObject := g.proposedSpell.map (·.spellId) <|> some sourceId
+    let outerCont? := g.pendingReplacement
+    let hadOpenCont := !g.continuations.isEmpty
+    let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
     let g := g.withProposalAction .costAction fun g =>
       g.sacrificeToGraveyard sac
         s!"{(g.player p).name} sacrifices {g.name sac}"
         (cause := some (.costPayment .sacrifice p forObject))
+    let g :=
+      match outerCont? with
+      | some outer => g.chainPendingReplacement outer
+      | none => g
     let clearPending : Array EngineChange :=
       if let .chooseReplacement .. := g.pending then #[] else #[.pending .none]
     match g.proposedSpell with
     | some prop =>
       let g := g.changes (clearPending ++ #[.proposedSpell none, .consecutivePasses 0])
       match prop.kind with
-      | .spell => return g.becomeCast prop.caster (g.object! prop.spellId)
+      | .spell =>
+        return g.becomeCast prop.caster (g.object! prop.spellId)
+          (hadOuterReplacement := outerCont?.isSome)
+          (hadOpenContinuation := hadOpenCont)
       | .activatedAbility =>
         return g.becomeActivated p prop.originalSnapshot.name prop.sourceId prop.activation
           (sourceSnapshot := some prop.originalSnapshot)
           (sourceOriginal := some prop.original)
+          (hadOuterReplacement := outerCont?.isSome)
+          (hadOpenContinuation := hadOpenCont)
     | none =>
       let g := g.changes (clearPending ++ #[.proposedSpell none, .consecutivePasses 0])
       return g.becomeActivated p (g.name (g.object! sourceId)) (some sourceId)
+        (hadOuterReplacement := outerCont?.isSome)
+        (hadOpenContinuation := hadOpenCont)
   | .chooseSacrificeCreature q chosen remaining =>
     if q != p then
       throw s!"Only {(g.player q).name} may sacrifice"

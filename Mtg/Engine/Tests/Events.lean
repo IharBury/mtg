@@ -7843,6 +7843,136 @@ departed-source `lastKnownBefore?` LKI + Step 4 audits. -/
     gOppCrewPrio.stack.size == 1 &&
     Game.replayEvents gOppCrewPrio.events == gOppCrewPrio
 
+  -- Activation and spell costs that pause on `Pending.chooseReplacement` chain
+  -- `.receivePriority caster` outside open continuations (checking SBAs, putting
+  -- waiting triggers on the stack, and preserving non-active activator/caster
+  -- priority per CR 117.3c) and chain `.finishFraChoice` when `triggerSequenceRest`,
+  -- `pendingCastExiledQueue`, or an outer `pendingReplacement` is open:
+  let headHuntDef : CardDef :=
+    { bear with name := "Phase13 Head Hunt", staticAbilities := #[.exileOppDeathCreateWolf] }
+  let zeroToughDef : CardDef :=
+    { bear with name := "Phase13 Zero Tough", power := some 0, toughness := some 0 }
+  let sacSpellDef : CardDef := {
+    name := "Phase13 Altar Bolt"
+    manaCost := ManaCost.empty
+    types := #[.instant]
+    additionalCostSacrificeCreature := true
+    spellEffect := some { resolution := .draw 1, phrase := "Draw a card" }
+  }
+  -- (a) Non-active player `opp` activates `sacOtherActDef` sacrificing a creature
+  -- with competing death replacements (finality counter vs `me`'s `headHuntDef`):
+  let (gOppActRepPaused, gOppActRepDone, oppZeroId) :=
+    let g := addPermanent (addPermanent (addPermanent afterDraw sacOtherActDef opp opp) bear opp opp) headHuntDef me me
+    let g := mustApply g me .pass
+    let engId := (g.battlefield.filter (·.name == "Phase13 Sac Other Engine"))[0]!.id
+    let sacBearId := (g.battlefield.filter (fun o => o.name == "Event Bear" && o.controller == some opp))[0]!.id
+    let headId := (g.battlefield.filter (·.name == "Phase13 Head Hunt"))[0]!.id
+    let idHead : ReplacementId := { kind := .exileOppDeath, object := some headId }
+    let g := g.recordPutCounters sacBearId .finality 1 (some opp) (cause := some testCause)
+    let g := addPermanent g zeroToughDef me me
+    let zeroId := (g.battlefield.filter (·.name == "Phase13 Zero Tough"))[0]!.id
+    let g := mustApply g opp (.activate engId 0)
+    let g := mustApply g opp .pay
+    let gPaused := mustApply g opp (.sacrifice sacBearId)
+    let gDone := mustApply gPaused opp (.chooseReplacement idHead)
+    (gPaused, gDone, zeroId)
+  let oppActRepOk :=
+    (match gOppActRepPaused.pending with | .chooseReplacement p cs => p == opp && cs.size == 2 | _ => false) &&
+    gOppActRepDone.pending == .none &&
+    gOppActRepDone.continuations.isEmpty &&
+    gOppActRepDone.waitingTriggers.isEmpty &&
+    gOppActRepDone.stack.size == 2 &&
+    gOppActRepDone.priority == opp &&
+    (gOppActRepDone.findObject? oppZeroId).all (!·.isOnBattlefield) &&
+    Game.replayEvents gOppActRepPaused.events == gOppActRepPaused &&
+    Game.replayEvents gOppActRepDone.events == gOppActRepDone
+  -- (b) Non-active player `opp` casts an instant with `additionalCostSacrificeCreature`
+  -- whose sacrifice pauses on `Pending.chooseReplacement`:
+  let (gOppSpellRepPaused, gOppSpellRepDone, oppSpellZeroId) :=
+    let g := insertObject (addPermanent (addPermanent afterDraw bear opp opp) headHuntDef me me) sacSpellDef opp (.hand opp)
+    let spellCardId := (g.player opp).hand.back!
+    let g := mustApply g me .pass
+    let sacBearId := (g.battlefield.filter (fun o => o.name == "Event Bear" && o.controller == some opp))[0]!.id
+    let headId := (g.battlefield.filter (·.name == "Phase13 Head Hunt"))[0]!.id
+    let idHead : ReplacementId := { kind := .exileOppDeath, object := some headId }
+    let g := g.recordPutCounters sacBearId .finality 1 (some opp) (cause := some testCause)
+    let g := addPermanent g zeroToughDef me me
+    let zeroId := (g.battlefield.filter (·.name == "Phase13 Zero Tough"))[0]!.id
+    let g := mustApply g opp (.cast spellCardId)
+    let g := mustApply g opp .pay
+    let gPaused := mustApply g opp (.sacrifice sacBearId)
+    let gDone := mustApply gPaused opp (.chooseReplacement idHead)
+    (gPaused, gDone, zeroId)
+  let oppSpellRepOk :=
+    (match gOppSpellRepPaused.pending with | .chooseReplacement p cs => p == opp && cs.size == 2 | _ => false) &&
+    gOppSpellRepDone.pending == .none &&
+    gOppSpellRepDone.continuations.isEmpty &&
+    gOppSpellRepDone.waitingTriggers.isEmpty &&
+    gOppSpellRepDone.stack.size == 2 &&
+    gOppSpellRepDone.priority == opp &&
+    (gOppSpellRepDone.findObject? oppSpellZeroId).all (!·.isOnBattlefield) &&
+    Game.replayEvents gOppSpellRepPaused.events == gOppSpellRepPaused &&
+    Game.replayEvents gOppSpellRepDone.events == gOppSpellRepDone
+  -- (c) Exile-cast queue (`castExiledAsResolves`) + `triggerSequenceRest` across a spell
+  -- sacrifice cost that pauses on `Pending.chooseReplacement`:
+  let (gQueueSpellPaused, gQueueSpellDone) :=
+    let g := addPermanent (addPermanent afterDraw bear me me) headHuntDef opp opp
+    let sacBearId := (g.battlefield.filter (fun o => o.name == "Event Bear" && o.controller == some me))[0]!.id
+    let headId := (g.battlefield.filter (·.name == "Phase13 Head Hunt"))[0]!.id
+    let idHead : ReplacementId := { kind := .exileOppDeath, object := some headId }
+    let g := g.recordPutCounters sacBearId .finality 1 (some me) (cause := some testCause)
+    let g := insertObject (insertObject g sacSpellDef me .exile) freeDrawDef me .exile
+    let exSac := (g.objects.filter (fun o => o.name == "Phase13 Altar Bolt" && o.zone == .exile))[0]!.id
+    let exDraw := (g.objects.filter (fun o => o.name == "Phase13 Free Draw" && o.zone == .exile))[0]!.id
+    let g := (mkSeqFrame g 4).change (.pendingCastExiledQueue (some (me, #[exSac, exDraw])))
+    let g := g.advanceCastExiledQueue
+    let g := mustApply g me .pay
+    let gPaused := mustApply g me (.sacrifice sacBearId)
+    let gDone := mustApply gPaused me (.chooseReplacement idHead)
+    (gPaused, gDone)
+  let queueSpellRepOk :=
+    (match gQueueSpellPaused.pending with | .chooseReplacement p cs => p == me && cs.size == 2 | _ => false) &&
+    gQueueSpellDone.pending == .none &&
+    gQueueSpellDone.pendingCastExiledQueue.isNone &&
+    gQueueSpellDone.triggerSequenceRest.isNone &&
+    gQueueSpellDone.continuations.isEmpty &&
+    gQueueSpellDone.waitingTriggers.isEmpty &&
+    (gQueueSpellDone.player me).life == 24 &&
+    gQueueSpellDone.stack.size == 3 &&
+    Game.replayEvents gQueueSpellPaused.events == gQueueSpellPaused &&
+    Game.replayEvents gQueueSpellDone.events == gQueueSpellDone
+  -- (d) Activation with `.costPicks` (`sacArtEngineDef`) while both `triggerSequenceRest`
+  -- and an outer `pendingReplacement` are open, and the sacrificed artifact creature
+  -- pauses on `Pending.chooseReplacement`:
+  let artBearDef : CardDef :=
+    { bear with name := "Phase13 Clockwork Bear", types := #[.artifact, .creature] }
+  let (gActOuterPaused, gActOuterDone) :=
+    let g := (addPermanent (addPermanent (addPermanent afterDraw sacArtEngineDef me me) artBearDef me me) headHuntDef opp opp).createTreasureTokens me 1 (cause := some testCause)
+    let engId := (g.battlefield.filter (·.name == "Phase13 Sac Artifact Engine"))[0]!.id
+    let artBearId := (g.battlefield.filter (·.name == "Phase13 Clockwork Bear"))[0]!.id
+    let trId := (g.battlefield.filter (·.printed.isToken))[0]!.id
+    let headId := (g.battlefield.filter (·.name == "Phase13 Head Hunt"))[0]!.id
+    let idHead : ReplacementId := { kind := .exileOppDeath, object := some headId }
+    let g := g.recordPutCounters artBearId .finality 1 (some me) (cause := some testCause)
+    let g := (mkSeqFrame g 4).change (.pendingReplacement (some .checkSBA))
+    let g := mustApply g me (.activate engId 0)
+    let g := mustApply g me (.tapForMana trId (.colored .red))
+    let g := mustApply g me .pay
+    let gPaused := mustApply g me (.choosePermanents #[artBearId])
+    let gDone := mustApply gPaused me (.chooseReplacement idHead)
+    (gPaused, gDone)
+  let actOuterRepOk :=
+    (match gActOuterPaused.pending with | .chooseReplacement p cs => p == me && cs.size == 2 | _ => false) &&
+    gActOuterDone.pending == .none &&
+    gActOuterDone.triggerSequenceRest.isNone &&
+    gActOuterDone.continuations.isEmpty &&
+    gActOuterDone.waitingTriggers.isEmpty &&
+    (gActOuterDone.player me).life == 24 &&
+    gActOuterDone.stack.size == 2 &&
+    Game.replayEvents gActOuterPaused.events == gActOuterPaused &&
+    Game.replayEvents gActOuterDone.events == gActOuterDone
+  let reviewRound4ContOk := oppActRepOk && oppSpellRepOk && queueSpellRepOk && actOuterRepOk
+
   let mustHold (label : String) (ok : Bool) : Bool :=
     if ok then true else panic! s!"Phase 13 guard failed: {label}"
   mustHold "actionIrrevOk" actionIrrevOk &&
@@ -7859,6 +7989,7 @@ departed-source `lastKnownBefore?` LKI + Step 4 audits. -/
     mustHold "maxHandTsOk" maxHandTsOk &&
     mustHold "filterCtrlExpOk" filterCtrlExpOk &&
     mustHold "reviewRound2ContOk" reviewRound2ContOk &&
-    mustHold "reviewRound3ContOk" reviewRound3ContOk
+    mustHold "reviewRound3ContOk" reviewRound3ContOk &&
+    mustHold "reviewRound4ContOk" reviewRound4ContOk
 
 end Mtg.Engine.EventTests
