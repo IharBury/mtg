@@ -6218,6 +6218,59 @@ unified CR 614.12 / 616.1 ETB replacement pipeline. -/
       match e.change with
       | .rules (.player (.revealed p ids)) => p == me && ids == #[cid]
       | _ => false)
+  let hasAnyRevealAfter (startIdx : Nat) (g : Game) : Bool :=
+    (g.events.extract startIdx g.events.size).any (fun e =>
+      match e.change with
+      | .rules (.player (.revealed ..)) => true
+      | _ => false)
+  -- Chronological zone-at-reveal checks (CR 733.1):
+  -- (i) Graveyard reveal of a card that is only *later* put into a library (even
+  --     reusing the same `ObjectId` so `g.objects` ends with it in `.library`) is undone.
+  let gPropGy0 := insertObject gPropBase0 bear me (.graveyard me)
+  let gyCardId := (gPropGy0.player me).graveyard.back!
+  let preGyEv := gPropGy0.events.size
+  let gGyThenLibRev :=
+    let g := mustApply gPropGy0 me (.cast spellHandId)
+    let g := g.record (GameEvent.revealed g.turnNumber me #[gyCardId]
+      (cause := some (.gameRule .spellCast)))
+    let gySnap := g.snapshot (g.object! gyCardId)
+    let libAfterSnap : EventObject := { gySnap with id := some gyCardId, zone := .library me }
+    let g := g.record (GameEvent.moved g.turnNumber gySnap (.graveyard me) (.library me)
+      (after := some libAfterSnap) (libraryPosition := some .top) (cause := .gameRule .spellCast))
+    g.reverseProposedSpell
+  -- (ii) Card that started in `.library`, moved to `.hand` earlier in the slice,
+  --      and was then revealed is NOT kept as a library reveal.
+  let gDrawnThenRev :=
+    let g := gProposed.draw me 1
+    let drawnHandId := (g.player me).hand.back!
+    let g := g.record (GameEvent.revealed g.turnNumber me #[topLibId, drawnHandId]
+      (cause := some (.gameRule .spellCast)))
+    g.reverseProposedSpell
+  -- (iii) Top-of-library spell (`.library -> .stack`) revealed after moving to `.stack`
+  --       is NOT kept as a library reveal.
+  let preTopEv := gTop0.events.size
+  let topStackId := gTopProp.stack.back!.objectId
+  let gTopStackRev :=
+    (gTopProp.record (GameEvent.revealed gTopProp.turnNumber me #[topCardId, topStackId]
+      (cause := some (.gameRule .spellCast)))).reverseProposedSpell
+  -- (iv) Card moved into `.library` by an earlier kept move and *then* revealed IS kept.
+  let (gPutLibMid, putLibId) :=
+    gProposed.move handCardId (.library me) none (libraryPosition := some .top)
+      (cause := some (.gameRule .spellCast))
+  let gPutLibThenRev :=
+    (gPutLibMid.record (GameEvent.revealed gPutLibMid.turnNumber me #[putLibId]
+      (cause := some (.gameRule .spellCast)))).reverseProposedSpell
+  let chronoRevealOk :=
+    !hasAnyRevealAfter preGyEv gGyThenLibRev &&
+    (gGyThenLibRev.player me).library.contains gyCardId &&
+    Game.replayEvents gGyThenLibRev.events == gGyThenLibRev &&
+    !hasAnyRevealAfter preEvCount gDrawnThenRev &&
+    Game.replayEvents gDrawnThenRev.events == gDrawnThenRev &&
+    !hasAnyRevealAfter preTopEv gTopStackRev &&
+    (gTopStackRev.player me).library.back? == some topCardId &&
+    Game.replayEvents gTopStackRev.events == gTopStackRev &&
+    hasRevealOf gPutLibThenRev putLibId &&
+    Game.replayEvents gPutLibThenRev.events == gPutLibThenRev
   let libGuardOk :=
     baseRestored gHandRev &&
     !hasRevealOf gHandRev handCardId &&
@@ -6231,7 +6284,8 @@ unified CR 614.12 / 616.1 ETB replacement pipeline. -/
     Game.replayEvents gShuffleRev.events == gShuffleRev &&
     baseRestored gLibRevealRev &&
     hasRevealOf gLibRevealRev libCardId &&
-    Game.replayEvents gLibRevealRev.events == gLibRevealRev
+    Game.replayEvents gLibRevealRev.events == gLibRevealRev &&
+    chronoRevealOk
   -- Failed may-cast (split second on stack) clears caller `proposalCheckpoint`,
   -- and a subsequent `castAsPartOfResolution` takes its own fresh checkpoint
   -- rather than truncating back across events recorded in between.
@@ -6320,6 +6374,32 @@ unified CR 614.12 / 616.1 ETB replacement pipeline. -/
     gExBase.applyEffect me exEffect #[Target.permanent exBear.id, Target.permanent ⟨99999⟩]
   let hasNoCtrlChange (g : Game) : Bool :=
     !g.events.any isCtrlEffectCreated
+  -- Ring-bearer designation on BOTH exchanged permanents shares the exchange's
+  -- single `BatchId` and resolved `.oneShotEffect (some eid)` cause (not `.staticAbility`).
+  let gExRbInit := addPermanent (addPermanent afterDraw bear me me) hero opp opp
+  let exRbBear := (gExRbInit.battlefield.filter (·.name == bear.name))[0]!
+  let exRbHero := (gExRbInit.battlefield.filter (·.name == hero.name))[0]!
+  let gExRb0 :=
+    let g := gExRbInit.setRingBearer me (some exRbBear.id) (cause := some testCause)
+    g.setRingBearer opp (some exRbHero.id) (cause := some testCause)
+  let preExRbIdx := gExRb0.events.size
+  let gExRbDone :=
+    gExRb0.withResolvingContext (some exRbBear.id) me (fun g =>
+      g.applyEffect me exEffect #[Target.permanent exRbBear.id, Target.permanent exRbHero.id]
+        (sourceId := some exRbBear.id))
+  let exRbSlice := gExRbDone.events.extract preExRbIdx gExRbDone.events.size
+  let exRbRules := exRbSlice.filter (fun e =>
+    match e.change with
+    | .rules (.permanent (.designation _ .ringBearer false))
+    | .rules (.continuousEffect (.created _ (.layered _ (.control _) _))) => true
+    | _ => false)
+  let exRbCauseOk :=
+    exRbRules.size == 4 &&
+    exRbRules.all (fun e => e.batch == exRbRules[0]!.batch && e.cause? == exRbRules[0]!.cause?) &&
+    (match exRbRules[0]!.cause? with
+     | some (.oneShotEffect (some _) (some src) (some ctrl)) => src == exRbBear.id && ctrl == me
+     | _ => false) &&
+    Game.replayEvents gExRbDone.events == gExRbDone
   let exchangeAllOk :=
     ctrlEvents.size == 2 &&
     ctrlEvents[0]!.batch == ctrlEvents[1]!.batch &&
@@ -6327,6 +6407,7 @@ unified CR 614.12 / 616.1 ETB replacement pipeline. -/
     (match ctrlEvents[0]!.cause? with | some (.oneShotEffect (some _) _ _) => true | _ => false) &&
     gExDone.controllerOf (gExDone.object! exBear.id) == some opp &&
     gExDone.controllerOf (gExDone.object! exHero.id) == some me &&
+    exRbCauseOk &&
     hasNoCtrlChange gExSame &&
     hasNoCtrlChange gExLost &&
     hasNoCtrlChange gExMissing
@@ -6482,6 +6563,24 @@ unified CR 614.12 / 616.1 ETB replacement pipeline. -/
     let g := g.destroyPermanent (g.object! poaOverwrittenId)
     let g := mustApply g me (.cast elfIdE)
     mustApply g me .pay
+  -- (e) Phased-out Path of Ancestry (CR 702.26d): tapping for `{G}` and phasing out
+  --     before casting the creature spell still resolves the live `.battlefield` object
+  --     (`isBattlefieldObject`) and scries; a phased-out copy overwritten onto Forest does not.
+  let (gPoaPhased0, poaPhasedId, elfIdF) := mkAncestryGame oneGreenElf
+  let gPoaPhased :=
+    let g := mustApply gPoaPhased0 me (.tapForMana poaPhasedId (.colored .green))
+    let g := g.phaseOut (g.object! poaPhasedId)
+    let g := mustApply g me (.cast elfIdF)
+    mustApply g me .pay
+  let (gPoaPhasedCopy0, poaPhasedCopyId, elfIdG) := mkAncestryGame oneGreenElf
+  let gPoaPhasedCopyMiss :=
+    let g := addPermanent gPoaPhasedCopy0 forest me me
+    let fstObj := (g.battlefield.filter (·.name == "Forest"))[0]!
+    let g := g.becomeCopyOf (g.object! poaPhasedCopyId) fstObj
+    let g := mustApply g me (.tapForMana poaPhasedCopyId (.colored .green))
+    let g := g.phaseOut (g.object! poaPhasedCopyId)
+    let g := mustApply g me (.cast elfIdG)
+    mustApply g me .pay
   let hasScryPendingOrQueued (g : Game) : Bool :=
     (match g.pending with | .scry p 1 1 => p == me | _ => false) ||
       g.stack.any (fun e => (g.object! e.objectId).triggeredAbility.any (fun ab =>
@@ -6492,9 +6591,16 @@ unified CR 614.12 / 616.1 ETB replacement pipeline. -/
     !hasScryPendingOrQueued gPoaMiss &&
     hasScryPendingOrQueued gPoaCopyHit &&
     !hasScryPendingOrQueued gPoaCopyMiss &&
+    (gPoaPhased.object! poaPhasedId).status.phasedOut &&
+    !(gPoaPhased.object! poaPhasedId).isOnBattlefield &&
+    (gPoaPhased.object! poaPhasedId).isBattlefieldObject &&
+    hasScryPendingOrQueued gPoaPhased &&
+    !hasScryPendingOrQueued gPoaPhasedCopyMiss &&
     Game.replayEvents gPoaLki.events == gPoaLki &&
     Game.replayEvents gPoaCopyHit.events == gPoaCopyHit &&
-    Game.replayEvents gPoaCopyMiss.events == gPoaCopyMiss
+    Game.replayEvents gPoaCopyMiss.events == gPoaCopyMiss &&
+    Game.replayEvents gPoaPhased.events == gPoaPhased &&
+    Game.replayEvents gPoaPhasedCopyMiss.events == gPoaPhasedCopyMiss
 
   -- 6. `matchTriggers`: `.onCastCascade` + CR 109.2 battlefield-doubler guard,
   --    Photon Blast Barrage `.copySourceSpellXTimes`, `.youTargetSomething` on targeted

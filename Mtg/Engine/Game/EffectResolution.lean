@@ -1124,10 +1124,9 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
               let obName := g.name ob
               let batchCause := some (EventCause.oneShotEffect none sourceId (some controller))
               let g := g.withBatch batchCause fun g =>
-                let g := g.changeControl oa pb
-                let effCause := (g.currentBatch.map Prod.snd).join
+                let g := g.changeControl oa pb (cause := batchCause)
                 match g.findObject? b with
-                | some ob => g.changeControl ob pa (cause := effCause)
+                | some ob => g.changeControl ob pa (cause := batchCause)
                 | none => g
               g.logMsg s!"{oaName} and {obName} exchange control"
           | _, _ =>

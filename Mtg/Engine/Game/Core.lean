@@ -5198,8 +5198,9 @@ def hasFirstStrikeAssignmentInCurrentStep (g : Game) : Bool :=
 
 /-- Whether mana produced by a `commanderIdentityScryCreature` land (Path of
 Ancestry) was spent to cast `spellId`, resolving `ManaUnit.source` on the
-battlefield when still present or via its battlefield `ZoneEvent.moved.before`
-LKI when the land left the battlefield (CR 106.6 / 608.2h / 707.2). -/
+battlefield when still in the battlefield zone (including while phased out,
+CR 702.26d) or via its battlefield `ZoneEvent.moved.before` LKI when the land
+left the battlefield (CR 106.6 / 608.2h / 707.2). -/
 def ancestryManaSpentOn (g : Game) (spellId : ObjectId) : Bool :=
   let fromBattlefieldLki (srcId : ObjectId) : Bool :=
     (g.lastKnownBefore? srcId).any (fun snap =>
@@ -5207,7 +5208,7 @@ def ancestryManaSpentOn (g : Game) (spellId : ObjectId) : Bool :=
   let isAncestrySource (srcId : ObjectId) : Bool :=
     match g.findObject? srcId with
     | some l =>
-      if l.isOnBattlefield then
+      if l.isBattlefieldObject then
         g.retainsPrintedAbilities l && (g.baseCard l).commanderIdentityScryCreature
       else
         fromBattlefieldLki srcId
@@ -9234,15 +9235,25 @@ def reverseToProposalCheckpoint? (g : Game) : Except String Game := do
   let some ckpt := g.proposalCheckpoint
     | throw "No proposal checkpoint to reverse (CR 733.1)"
   let slice := g.events.extract (min ckpt.eventsSize g.events.size) g.events.size
+  let isLibZone : Zone → Bool
+    | .library _ => true
+    | _ => false
   let inLibraryObjs (objs : Array GameObject) (cid : ObjectId) : Bool :=
-    (objs.find? (·.id == cid)).any (fun o =>
-      match o.zone with | .library _ => true | _ => false)
+    (objs.find? (·.id == cid)).any (fun o => isLibZone o.zone)
+  let setInLib (ids : Array ObjectId) (oid : ObjectId) (inLib : Bool) : Array ObjectId :=
+    if inLib then
+      if ids.contains oid then ids else ids.push oid
+    else
+      ids.filter (· != oid)
   let resolveRevId (m : Array (ObjectId × ObjectId)) (oid : ObjectId) : ObjectId :=
-    match m.find? (fun (afterId, _) => afterId == oid) with
-    | some (_, origId) => origId
+    match m.findSomeRev? (fun (afterId, origId) =>
+        if afterId == oid then some origId else none) with
+    | some origId => origId
     | none => oid
   let mut revIdMap : Array (ObjectId × ObjectId) := #[]
-  let mut libMovedIds : Array ObjectId := #[]
+  let mut liveLibIds : Array ObjectId :=
+    ckpt.objects.foldl (fun acc o =>
+      if isLibZone o.zone then acc.push o.id else acc) #[]
   let mut groups : Array (BatchId × Array GameEvent) := #[]
   let pushKept (grps : Array (BatchId × Array GameEvent)) (bid : BatchId) (ev : GameEvent) :
       Array (BatchId × Array GameEvent) :=
@@ -9253,13 +9264,17 @@ def reverseToProposalCheckpoint? (g : Game) : Except String Game := do
     | none => #[(bid, #[ev])]
   for ev in slice do
     match ev with
-    | .rules _ (.zone (.moved _ after _ (.library _) ..)) _ batch =>
-      if let some aid := after.id then
-        libMovedIds := libMovedIds.push aid
+    | .rules _ (.zone (.moved before after _ (.library _) ..)) _ batch =>
+      if let some bid := before.id then
+        liveLibIds := setInLib liveLibIds bid false
+      if let some aid := after.id.orElse (fun _ => before.id) then
+        liveLibIds := setInLib liveLibIds aid true
       groups := pushKept groups batch ev
     | .rules _ (.zone (.moved before after (.library _) toZone ..)) _ batch =>
       if let some bid := before.id then
-        libMovedIds := libMovedIds.push bid
+        liveLibIds := setInLib liveLibIds bid false
+      if let some aid := after.id then
+        liveLibIds := setInLib liveLibIds aid false
       if toZone != .stack then
         groups := pushKept groups batch ev
       else
@@ -9267,20 +9282,27 @@ def reverseToProposalCheckpoint? (g : Game) : Except String Game := do
         | some bid, some aid => revIdMap := revIdMap.push (aid, resolveRevId revIdMap bid)
         | _, _ => pure ()
     | .rules _ (.zone (.moved before after ..)) _ _ =>
+      if let some bid := before.id then
+        liveLibIds := setInLib liveLibIds bid false
+      if let some aid := after.id then
+        liveLibIds := setInLib liveLibIds aid false
       match before.id, after.id with
       | some bid, some aid => revIdMap := revIdMap.push (aid, resolveRevId revIdMap bid)
       | _, _ => pure ()
+    | .rules _ (.zone (.created obj _)) _ _
+    | .rules _ (.zone (.ceasedToExist obj)) _ _ =>
+      if let some oid := obj.id then
+        liveLibIds := setInLib liveLibIds oid false
+    | .engine _ (.materializeObject obj _) =>
+      liveLibIds := setInLib liveLibIds obj.id false
     | .rules _ (.player (.shuffled ..)) _ batch =>
       groups := pushKept groups batch ev
-    | .rules _ (.player (.revealed _ cardIds)) _ batch =>
-      if cardIds.any (fun cid =>
-          inLibraryObjs ckpt.objects cid ||
-          inLibraryObjs g.objects cid ||
-          libMovedIds.contains cid) then
-        groups := pushKept groups batch ev
+    | .rules t (.player (.revealed p cardIds)) cause batch =>
+      let libIds := cardIds.filter liveLibIds.contains
+      if !libIds.isEmpty then
+        groups := pushKept groups batch (.rules t (.player (.revealed p libIds)) cause batch)
     | _ => pure ()
   let finalRevMap := revIdMap
-  let finalLibIds := libMovedIds
   let applyIrrevStep (useRecord : Bool) (gCur : Game) (ev : GameEvent) : Game :=
     let emit (e : GameEvent) : Game :=
       if useRecord then gCur.record e else gCur.replayEvent e
@@ -9305,11 +9327,7 @@ def reverseToProposalCheckpoint? (g : Game) : Except String Game := do
       let missing := curLib.filter (!kept.contains ·)
       emit (.rules t (.player (.shuffled p (kept ++ missing))) cause batch)
     | .rules t (.player (.revealed p cardIds)) cause batch =>
-      let libIds := cardIds.filter (fun cid =>
-        inLibraryObjs gCur.objects cid ||
-        inLibraryObjs ckpt.objects cid ||
-        inLibraryObjs g.objects cid ||
-        finalLibIds.contains cid)
+      let libIds := cardIds.filter (inLibraryObjs gCur.objects ·)
       if libIds.isEmpty then gCur
       else emit (.rules t (.player (.revealed p libIds)) cause batch)
     | _ => gCur
