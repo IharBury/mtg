@@ -59,7 +59,7 @@ def applyAction (g : Game) (p : PlayerId) : Action → Except String Game
   | .pay => g.pay p
   | .sacrifice id => do
     let g ← g.sacrificeForActivation p id
-    return if g.mayThenResume then g.acceptMayThen else g
+    return if g.mayThenResume then g.acceptMayThen else g.resumeAfterBecomeCast
   | .chooseAdditionalCost payGeneric => g.announceAdditionalCost p payGeneric
   | .declareAttackers ids defender each pws => g.declareAttackers p ids defender each pws
   | .declareBlockers as => g.declareBlockers p as

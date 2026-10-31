@@ -217,7 +217,400 @@ partial def resumePendingReplacement (g : Game) : PendingReplacement → Game
       g.chainPendingReplacement (.receivePriority p)
     else if g.pending != .none then g
     else g.receivePriority p
+
+/-- Reverse a proposed spell or activated ability to its pre-proposal checkpoint,
+preserving CR 733.1 irreversible library actions, running any deferred post-cast
+cleanup, and resuming an active continuation via `finishFraChoice` when
+`resumeContinuation == true` (CR 601.2 / 602.2 / 733.1–733.2). -/
+partial def reverseProposedSpell? (g : Game) (resumeContinuation : Bool := false)
+    (extraLog : Option String := none) : Except String Game := do
+  let (g, needsFinish) ← g.reverseProposedSpellCore?
+    (resumeContinuation := resumeContinuation) (extraLog := extraLog)
+  return if needsFinish then g.finishFraChoice else g
+
+/-- Non-monadic wrapper around `reverseProposedSpell?`. -/
+partial def reverseProposedSpell (g : Game) (resumeContinuation : Bool := false)
+    (extraLog : Option String := none) : Game :=
+  match g.reverseProposedSpell? (resumeContinuation := resumeContinuation) (extraLog := extraLog) with
+  | .ok g' => g'
+  | .error msg => g.logMsg msg
+
+/-- Announce the modes and targets of a spell cast while an ability resolves
+(CR 601.2b–c), then finish casting it. A spell that needs a target but has
+none can't be cast and returns to where it was (CR 601.2c / 733.1). -/
+partial def beginResolutionCastTargets (g : Game) (p : PlayerId) (prop : ProposedSpell) :
+    Game :=
+  let face := g.baseCard prop.original
+  let g := g.change (.proposedSpell (some prop))
+  if face.isModal then
+    if !face.spellModes.any (g.spellModeIsChoosable p) && !face.allowsZeroTargets then
+      g.reverseProposedSpell (resumeContinuation := true)
+    else
+      g.change (.pending (.chooseMode p))
+        |>.logMsg s!"{(g.player p).name} must choose a mode (CR 601.2b)"
+  else if face.requiresTarget || face.isAura then
+    if (g.legalCastTargets p face).isEmpty && !face.allowsZeroTargets then
+      g.reverseProposedSpell (resumeContinuation := true)
+        (extraLog := some s!"{face.name} has no legal target and can't be cast")
+    else
+      let what := if face.isAura then "a target to enchant" else "a target"
+      g.change (.pending (.chooseTargets p))
+        |>.logMsg s!"{(g.player p).name} must choose {what} (CR 601.2c)"
+  else if prop.cost.includesManaPayment || prop.needsSacrificeOther || prop.needsDiscardCard then
+    g.change (.pending (.activateManaAbilities p))
+      |>.logMsg s!"{(g.player p).name} may activate mana abilities (CR 601.2g)"
+  else
+    let g := g.change (.proposedSpell none)
+    g.becomeCast p (g.object! prop.spellId) (grantPriority := false)
+
+/-- Put a card onto the stack as an ability is resolving. Timing may be
+ignored. The permission does not last after this ability finishes.
+An Aura still announces a target to enchant (CR 601.2c / 303.4). -/
+partial def castAsPartOfResolution (g : Game) (p : PlayerId) (id : ObjectId)
+    (ignoreTiming := true) (withoutManaCost := true)
+    (exileInstantSorceryInstead := false) (callerCheckpoint := false) : Game :=
+  let clearCkpt (g : Game) : Game :=
+    if g.proposalCheckpoint.isSome then g.change .clearProposalCheckpoint else g
+  match g.findObject? id with
+  | none => (clearCkpt g).logMsg "There is no card to cast"
+  | some o =>
+    let face := g.baseCard o
+    if g.splitSecondOnStack then
+      (clearCkpt g).logMsg s!"{o.name} can't be cast while a spell with split second is on the stack (ruling 839)"
+    else if !ignoreTiming && !g.timingAllowsCast p face then
+      (clearCkpt g).logMsg s!"{o.name} cannot be cast now (timing)"
+    else if !withoutManaCost &&
+        !(g.player p).manaPool.canPay (g.playManaCost o face) then
+      (clearCkpt g).logMsg s!"{o.name} cannot be cast (costs)"
+    else
+      let name := o.name
+      let original := o
+      let origSnap := g.snapshot o
+      let fromGy := original.zone == .graveyard original.owner
+      let wasCopy := original.isCopy
+      let g :=
+        if callerCheckpoint && g.proposalCheckpoint.isSome then g
+        else g.change .saveProposalCheckpoint
+      let (g, newId) := g.move id .stack (some p) (verb := some .cast) (actor := some p)
+        (isCopy := some wasCopy)
+      let g :=
+        if exileInstantSorceryInstead && fromGy then
+          g.createEffect (.exileInstantSorceryInstead newId)
+        else g
+      let g := g.putStackEntry p newId
+      let way : CastWay :=
+        if withoutManaCost then .alternative "withoutManaCost" else .normal
+      let g := g.record (GameEvent.proposed g.turnNumber newId p original.zone way)
+      let g := g.logMsg s!"{(g.player p).name} casts {name} as the ability resolves"
+      let cost :=
+        if withoutManaCost then ManaCost.empty else g.playManaCost original face
+      g.beginResolutionCastTargets p {
+        caster := p
+        cost
+        spellId := newId
+        original
+        originalSnapshot := origSnap
+      }
+
+/-- Advance the pending Doom Reigns exile-cast queue one card at a time,
+pausing whenever a proposed spell requires interactive mode, target, or cost
+choices and resuming after `becomeCast` or `reverseProposedSpell?`. -/
+partial def advanceCastExiledQueue (g : Game) : Game :=
+  if g.pending != .none || g.proposedSpell.isSome then g
+  else
+    match g.pendingCastExiledQueue with
+    | none => g
+    | some (p, ids) =>
+      match ids[0]? with
+      | none => g.change (.pendingCastExiledQueue none)
+      | some id =>
+        let rest := ids.extract 1 ids.size
+        let g :=
+          if rest.isEmpty then g.change (.pendingCastExiledQueue none)
+          else g.change (.pendingCastExiledQueue (some (p, rest)))
+        let g := g.castAsPartOfResolution p id
+        if g.pending != .none || g.proposedSpell.isSome then g
+        else g.advanceCastExiledQueue
 end
+
+/-- Resume any deferred `PendingReplacement` (such as `.finishFraChoice`) queued
+by `becomeCast` once the spell finishes becoming cast without opening a new `Pending`. -/
+def resumeAfterBecomeCast (g : Game) : Game :=
+  if g.pending == .none && g.pendingReplacement.isSome && !g.over then
+    match g.pendingReplacement with
+    | some cont => (g.change (.pendingReplacement none)).resumePendingReplacement cont
+    | none => g
+  else g
+
+/-- Cast the first instant or sorcery card with mana value at most `maxMv`
+from `p`'s hand as part of a resolution, without paying its mana cost. -/
+def castInstantSorceryFromHandMvAtMost (g : Game) (p : PlayerId) (maxMv : Nat) : Game :=
+  match (g.player p).hand.findSome? (fun id =>
+    match g.findObject? id with
+    | some o =>
+      if o.printed.isInstantOrSorcery && o.printed.manaValue <= maxMv then some id
+      else none
+    | none => none) with
+  | none => g.logMsg "No instant or sorcery to cast"
+  | some id => g.castAsPartOfResolution p id
+
+/-- Cast up to `n` cards that currently have a free-cast exile permission,
+one at a time as the ability resolves (Doom Reigns; MSH 357). -/
+def castExiledAsResolves (g : Game) (p : PlayerId) (n : Nat) : Game :=
+  let ids :=
+    (g.objects.filter (fun o =>
+      o.zone == .exile &&
+        match g.playPermission o with
+        | some perm => perm.player == p && perm.withoutManaCost
+        | none => false)).map (·.id)
+  let chosen := ids.take n
+  if chosen.isEmpty then g
+  else
+    let pushedFrame := g.continuations.isEmpty
+    let g := if pushedFrame then g.change (.pushContinuationFrame {}) else g
+    let g := g.change (.pendingCastExiledQueue (some (p, chosen)))
+    let g := g.advanceCastExiledQueue
+    if pushedFrame && !g.continuations.isEmpty && g.pending == .none && g.proposedSpell.isNone &&
+        g.pendingCastExiledQueue.isNone && g.pendingReplacement.isNone then
+      g.change .popContinuationFrame
+    else g
+
+/-- After the Cosmic Cube choice, put unchosen looked-at cards on the bottom
+in a random order, then resume active continuations or grant priority unless
+another choice is pending (for example choosing a target for an Aura just cast). -/
+def finishMayCastFromLooked (g : Game) (p : PlayerId) (rest : Array ObjectId) :
+    Game :=
+  let rest :=
+    rest.filter (fun id =>
+      match g.findObject? id with
+      | some o => o.zone == .library p
+      | none => false)
+  let msg :=
+    s!"{(g.player p).name} puts the rest on the bottom of their library in a random order"
+  let g :=
+    if rest.isEmpty then g
+    else g.requestOrderInto rest (.library p) msg
+  if g.pending != .none then g
+  else g.finishFraChoice
+
+/-- Cast one looked-at card as Cosmic Cube resolves, or decline (`none`). -/
+def chooseCastFromLooked (g : Game) (p : PlayerId) (castId : Option ObjectId) :
+    Except String Game := do
+  match g.pending with
+  | .mayCastFromLooked q ids maxMv =>
+    if p != q then
+      throw s!"Only {(g.player q).name} may choose whether to cast a spell"
+    match castId with
+    | none =>
+      let g := g.logMsg s!"{(g.player p).name} declines to cast a spell"
+      return finishMayCastFromLooked (g.change (.pending .none)) p ids
+    | some id =>
+      match g.mayCastFromLookedError p ids maxMv id with
+      | some err => throw err
+      | none =>
+        let g :=
+          if g.continuations.isEmpty then g.change (.pushContinuationFrame {}) else g
+        let g := g.changes #[
+          .postCastCleanup (some (.lookedBottom p id ids)),
+          .pending .none,
+          .saveProposalCheckpoint
+        ]
+        let g := g.castAsPartOfResolution p id (callerCheckpoint := true)
+        if g.pending != .none then
+          return g
+        else if g.proposedSpell.isNone && g.postCastCleanup.isSome then
+          let g := g.runPostCastCleanup
+          return if g.pending != .none then g else g.finishFraChoice
+        else if (g.findObject? (g.followMoved id)).any (·.zone == .stack) then
+          return g.finishFraChoice
+        else
+          return g
+  | _ => throw "Not time to choose a spell from among looked-at cards"
+
+/-- After a trigger's targets (and any damage division) are fully announced,
+prompt the next trigger that needs targets or continue the CR 603.3b
+process (remaining waiting triggers, then SBAs). -/
+def afterTriggerTargetsChosen (g : Game) : Game :=
+  match g.triggerNeedingTargets with
+  | some _ =>
+    promptTriggerTargetsIfNeeded (g.change (.pending .none))
+  | none =>
+    receivePriority (g.change (.pending .none)) g.activePlayer false
+
+/-- Start paying the proposed activation's costs that need chosen objects,
+reversing it if they can't be paid (CR 601.2h / 733.1). -/
+def beginActivationPayment (g : Game) (prop : ProposedSpell) : Except String Game := do
+  let picks := (prop.activation.map costPicksOf).getD #[]
+  let payable :=
+    match prop.sourceId with
+    | some sid => g.costPicksPayable prop.caster sid picks
+    | none => true
+  if !payable then return (← g.reverseProposedSpell? (resumeContinuation := true))
+  g.continueCostPicks prop picks false
+
+/-- Continue after CR 601.2c: determine the total cost (601.2f), then mana
+abilities (601.2g). Additional-cost *choices* are announced earlier, at 601.2b. -/
+def afterTargetsChosen (g : Game) : Game :=
+  match g.proposedSpell with
+  | none => g
+  | some _ =>
+    let g := g.lockInTargetCostReduction
+    match g.proposedSpell with
+    | none => g
+    | some prop =>
+      if prop.cost.includesManaPayment || prop.needsSacrificeOther ||
+          prop.needsDiscardCard then
+        (g.change (.pending (.activateManaAbilities prop.caster))).logMsg
+          s!"{(g.player prop.caster).name} may activate mana abilities (CR 601.2g)"
+      else if prop.kind == .activatedAbility then
+        match g.beginActivationPayment prop with
+        | .ok g => g
+        | .error _ => g.reverseProposedSpell (resumeContinuation := true)
+      else
+        let spell := g.object! prop.spellId
+        let g := g.changes #[.pending .none, .proposedSpell none, .consecutivePasses 0]
+        (g.becomeCast prop.caster spell).resumeAfterBecomeCast
+
+/-- After CR 601.2b additional-cost announcement, continue to targets (601.2c)
+or cost determination (601.2f). -/
+def afterAdditionalCostAnnounced (g : Game) : Game :=
+  match g.proposedSpell with
+  | none => g
+  | some prop =>
+    if g.proposedNeedsTarget prop then
+      (g.change (.pending (.chooseTargets prop.caster))).logMsg
+        s!"{(g.player prop.caster).name} must choose a target (CR 601.2c)"
+    else
+      g.afterTargetsChosen
+
+/-- After the modes are chosen: additional costs, kicker, gift, and teamwork,
+then targets (CR 601.2b–c). -/
+def afterModesChosen (g : Game) (p : PlayerId) : Game :=
+  match g.proposedSpell, g.proposedSpell.bind (fun prop => g.findObject? prop.spellId) with
+  | some prop, some spell =>
+    let face := g.baseCard spell
+    if face.announcesAdditionalCost then
+      (g.change (.pending (.chooseAdditionalCost p))).logMsg
+        s!"{(g.player p).name} must choose an additional cost (CR 601.2b)"
+    else if face.kicker.isSome && !prop.kickerAnnounced then
+      (g.change (.pending (.chooseKicker p))).logMsg
+        s!"{(g.player p).name} may kick the spell (CR 702.33 / 601.2b)"
+    else if face.giftTreasure && !prop.giftAnnounced then
+      (g.change (.pending (.chooseGift p))).logMsg s!"{(g.player p).name} may promise a gift (CR 702.174)"
+    else if face.teamwork.isSome && !prop.teamworkAnnounced then
+      (g.change (.pending (.chooseTeamwork p))).logMsg
+        s!"{(g.player p).name} may pay a teamwork cost (CR 702.194)"
+    else g.afterAdditionalCostAnnounced
+  | _, _ => g
+
+/-- Continue the proposal window after kicker / gift announcements. -/
+def afterOptionalAdditionalCost (g : Game) (p : PlayerId) : Game :=
+  match g.proposedSpell, g.proposedSpell.bind (fun prop => g.findObject? prop.spellId) with
+  | some prop, some spell =>
+    if spell.printed.giftTreasure && !prop.giftAnnounced then
+      let g := g.change (.pending (.chooseGift p))
+      g.logMsg s!"{(g.player p).name} may promise a gift (CR 702.174)"
+    else if spell.printed.teamwork.isSome && !prop.teamworkAnnounced then
+      let g := g.change (.pending (.chooseTeamwork p))
+      g.logMsg s!"{(g.player p).name} may pay a teamwork cost (CR 702.194)"
+    else
+      g.afterAdditionalCostAnnounced
+  | _, _ => g
+
+def announceKicker (g : Game) (p : PlayerId) (kick : Bool) : Except String Game := do
+  match g.pending with
+  | .chooseKicker caster =>
+    if caster != p then
+      throw s!"Only {(g.player caster).name} may announce kicker"
+    let g ← g.applyKickerToProposed kick
+    let face? := g.proposedSpell.bind (fun prop => g.findObject? prop.spellId) |>.map (·.printed)
+    let g := g.logMsg
+      (if kick && (face?.bind (·.morph)).isSome then s!"{(g.player p).name} casts the spell face down"
+       else if kick && (face?.bind (·.impending)).isSome then s!"{(g.player p).name} casts the spell for its impending cost"
+       else if kick then s!"{(g.player p).name} kicks the spell"
+       else s!"{(g.player p).name} pays the printed cost")
+    return g.afterOptionalAdditionalCost p
+  | _ => throw "Not time to announce kicker"
+
+def announceGift (g : Game) (p : PlayerId) (to : Option PlayerId) : Except String Game := do
+  match g.pending with
+  | .chooseGift caster =>
+    if caster != p then
+      throw s!"Only {(g.player caster).name} may promise a gift"
+    if let some opp := to then
+      if opp == p then throw "You must promise the gift to an opponent"
+    let g ← g.applyGiftToProposed to
+    let g :=
+      match to with
+      | some opp =>
+        g.logMsg s!"{(g.player p).name} promises a gift to {(g.player opp).name}"
+      | none =>
+        g.logMsg s!"{(g.player p).name} does not promise a gift"
+    return g.afterOptionalAdditionalCost p
+  | _ => throw "Not time to promise a gift"
+
+def announceTeamwork (g : Game) (p : PlayerId) (pay : Bool) : Except String Game := do
+  match g.pending with
+  | .chooseTeamwork caster =>
+    if caster != p then
+      throw s!"Only {(g.player caster).name} may announce teamwork"
+    let some prop := g.proposedSpell | throw "No spell is waiting for teamwork"
+    if !pay then
+      let g := g.changeProposals #[.teamworkPaid false, .teamworkAnnounced true]
+      let g := g.logMsg s!"{(g.player p).name} does not pay a teamwork cost"
+      return g.afterOptionalAdditionalCost p
+    match prop.original.printed.teamwork.orElse (fun () =>
+        (g.findObject? prop.spellId).bind (fun o => o.printed.teamwork)) with
+    | none => throw "That spell has no teamwork"
+    | some need =>
+      let g := g.change (.pending (.chooseTeamworkCreatures p need))
+        |>.changeProposal (.teamworkAnnounced true)
+      return g.logMsg
+        s!"{(g.player p).name} chooses creatures to tap for teamwork {need}"
+  | _ => throw "Not time to announce teamwork"
+
+def payTeamworkCreatures (g : Game) (p : PlayerId) (ids : Array ObjectId) :
+    Except String Game := do
+  match g.pending with
+  | .chooseTeamworkCreatures caster need =>
+    if caster != p then
+      throw s!"Only {(g.player caster).name} may tap creatures for teamwork"
+    let some prop := g.proposedSpell | throw "No spell is waiting for teamwork"
+    let mut total : Int := 0
+    let mut seen : Array ObjectId := #[]
+    for id in ids do
+      if seen.contains id then
+        throw "A creature cannot be tapped twice for the same teamwork cost"
+      seen := seen.push id
+      let some o := g.findObject? id | throw "no such object"
+      if !(o.isOnBattlefield && g.isCreature o && g.controlledBy o p) then
+        throw s!"{g.name o} is not a creature you control"
+      if o.status.tapped then
+        throw s!"{g.name o} is already tapped"
+      total := total + g.power o
+    if total < (need : Int) then
+      throw s!"Tapped creatures must have total power {need} or more"
+    let mut g := g
+    for id in ids do
+      match g.findObject? id with
+      | none => pure ()
+      | some o =>
+        g := g.becomeTapped o (cause := some (.costPayment .teamwork p (some prop.spellId)))
+    let some spell := g.findObject? prop.spellId | throw "The spell left the stack"
+    g := g.record (GameEvent.announced g.turnNumber spell.id (costs := #[.teamwork ids])
+      (cause := some (.costPayment .teamwork p (some spell.id))))
+    g := g.change (.pending .none)
+      |>.changeProposals #[.teamworkPaid true, .teamworkAnnounced true]
+    g := g.logMsg s!"{(g.player p).name} pays a teamwork cost"
+    -- “If this spell was cast using teamwork, choose both instead.”
+    if spell.printed.chooseBothIfTeamwork then
+      let chosen := g.chosenModesOf spell
+      for i in [0:spell.printed.spellModes.size] do
+        if !chosen.contains i then
+          g := (if (g.chosenModesOf spell).isEmpty then g.setProposedMode i else g.addProposedExtraMode i)
+      g := g.logMsg s!"{(g.player p).name} chooses both modes (teamwork)"
+    return g.afterOptionalAdditionalCost p
+  | _ => throw "Not time to tap creatures for teamwork"
 
 def uniqueObjectIds (ids : Array ObjectId) : Bool :=
   Id.run do
@@ -581,10 +974,7 @@ def discardForDraw (g : Game) (p : PlayerId) (id : ObjectId) : Except String Gam
       return g.record (GameEvent.announced g.turnNumber prop.spellId (costs := #[.discard id])
         (cause := some (.costPayment .discard p (some prop.spellId))))
     let g := g.changes #[.pending .none, .proposedSpell none, .consecutivePasses 0]
-    let g := g.becomeCast prop.caster (g.object! prop.spellId)
-    return if g.pending == .none && g.pendingReplacement == some .finishFraChoice then
-      g.finishFraChoice
-    else g
+    return (g.becomeCast prop.caster (g.object! prop.spellId)).resumeAfterBecomeCast
   | .payWard q spellId cost =>
     if p != q then
       throw s!"Only {(g.player q).name} may discard for ward"
@@ -795,10 +1185,7 @@ def castExiledAsAbilityResolves (g : Game) (p : PlayerId) (id : ObjectId) :
         originalSnapshot := origSnap }
       return g.changes #[.pending (.chooseTargets p), .proposedSpell (some prop)]
     else
-      let g := g.becomeCast p (g.object! newId)
-      return if g.pending == .none && g.pendingReplacement == some .finishFraChoice then
-        g.finishFraChoice
-      else g
+      return (g.becomeCast p (g.object! newId)).resumeAfterBecomeCast
   | _ => throw "No exiled card may be cast now"
 
 /-- Decline an optional discard (CR 608.2d) or choose no target for an
@@ -1312,21 +1699,6 @@ partial def resolvePendingRandom (g : Game) (rng : Rng) : Rng × Game :=
 (defaulting to seed 1). -/
 def resolveRandom (g : Game) (rng : Rng := Rng.ofSeed 1) : Game :=
   (g.resolvePendingRandom rng).2
-
-/-- Reverse a proposed spell or activated ability to its pre-proposal checkpoint,
-preserving CR 733.1 irreversible library actions, running any deferred post-cast
-cleanup, and resuming an active continuation via `finishFraChoice` when
-`resumeContinuation == true` (CR 601.2 / 602.2 / 733.1–733.2). -/
-def reverseProposedSpell? (g : Game) (resumeContinuation : Bool := false) :
-    Except String Game := do
-  let (g, needsFinish) ← g.reverseProposedSpellCore? (resumeContinuation := resumeContinuation)
-  return if needsFinish then g.finishFraChoice else g
-
-/-- Non-monadic wrapper around `reverseProposedSpell?`. -/
-def reverseProposedSpell (g : Game) (resumeContinuation : Bool := false) : Game :=
-  match g.reverseProposedSpell? (resumeContinuation := resumeContinuation) with
-  | .ok g' => g'
-  | .error msg => g.logMsg msg
 
 /-- Choose which applicable replacement or prevention effect to apply next (CR 616.1). -/
 def chooseReplacement (g : Game) (p : PlayerId) (id : ReplacementId) : Except String Game := do

@@ -392,7 +392,9 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let baseTriggers := (g.proposalCheckpoint.map (·.waitingTriggers.size)).getD 0
     let g ← g.reverseToProposalCheckpoint?
     let g := g.logMsg s!"{(g.player p).name} doesn't crew"
-    if g.pending == .none && g.continuations.isEmpty && g.waitingTriggers.size > baseTriggers then
+    if !g.continuations.isEmpty || g.pendingReplacement.isSome || g.pendingCastExiledQueue.isSome then
+      return g.finishFraChoice
+    else if g.pending == .none && g.continuations.isEmpty && g.waitingTriggers.size > baseTriggers then
       return g.receivePriority p
     else
       return g
@@ -704,7 +706,9 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let baseTriggers := (g.proposalCheckpoint.map (·.waitingTriggers.size)).getD 0
     let g ← g.reverseToProposalCheckpoint?
     let g := g.logMsg s!"{(g.player p).name} doesn't boast"
-    if g.pending == .none && g.continuations.isEmpty && g.waitingTriggers.size > baseTriggers then
+    if !g.continuations.isEmpty || g.pendingReplacement.isSome || g.pendingCastExiledQueue.isSome then
+      return g.finishFraChoice
+    else if g.pending == .none && g.continuations.isEmpty && g.waitingTriggers.size > baseTriggers then
       return g.receivePriority p
     else
       return g

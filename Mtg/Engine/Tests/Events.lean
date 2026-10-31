@@ -7656,6 +7656,103 @@ departed-source `lastKnownBefore?` LKI + Step 4 audits. -/
       | _ => false) &&
     Game.replayEvents gFiltExpired.events == gFiltExpired
 
+  -- Continuation resumption (`finishFraChoice`) across activation cost-pick reversal
+  -- (`beginActivationPayment` / `afterTargetsChosen`) and `chooseCastFromLooked`
+  -- (`beginResolutionCastTargets` illegal mode/target, synchronous cast, and decline):
+  let mkSeqFrame (g : Game) (gain : Nat) : Game :=
+    (g.change (.pushContinuationFrame {})).change (.triggerSequenceRest (some {
+      controller := me
+      ability := TriggeredAbility.fra .youCastNoncreature "" (.draw 1)
+      sourceId := none
+      targets := #[]
+      steps := [.gainLife (.fixed gain)]
+    }))
+  let sacArtEngineDef : CardDef := {
+    name := "Phase13 Sac Artifact Engine"
+    types := #[.artifact]
+    activatedAbilities := #[{
+      cost := { mana := ManaCost.ofGeneric 1, fra := .sacrificeAnotherArtifact }
+      effect := { resolution := .draw 1, phrase := "Draw a card" }
+    }]
+  }
+  let gActPayRev :=
+    let g := (addPermanent afterDraw sacArtEngineDef me me).createTreasureTokens me 1 (cause := some testCause)
+    let engId := (g.battlefield.filter (·.name == "Phase13 Sac Artifact Engine"))[0]!.id
+    let trId := (g.battlefield.filter (·.printed.isToken))[0]!.id
+    let g := mkSeqFrame g 4
+    let gAct := mustApply g me (.activate engId 0)
+    let gMana := mustApply gAct me (.tapForMana trId (.colored .red))
+    (mustApply gMana me .pay, trId)
+  let actPayRevOk :=
+    gActPayRev.1.triggerSequenceRest.isNone &&
+    gActPayRev.1.continuations.isEmpty &&
+    (gActPayRev.1.player me).life == 24 &&
+    (gActPayRev.1.findObject? gActPayRev.2).any (·.isOnBattlefield) &&
+    gActPayRev.1.stack.isEmpty &&
+    Game.replayEvents gActPayRev.1.events == gActPayRev.1
+  let tapTwoTargetedDef : CardDef := {
+    name := "Phase13 Tap Two Targeted Engine"
+    types := #[.creature]
+    subtypes := #["Artificer"]
+    power := some 2
+    toughness := some 2
+    activatedAbilities := #[{
+      cost := { fra := .tapTwoUntappedArtifacts }
+      effect := {
+        targeting := .of .player
+        resolution := .gainLife 1
+        phrase := "Target player gains 1 life"
+      }
+    }]
+  }
+  let gActTargetRev :=
+    let g := (addPermanent afterDraw tapTwoTargetedDef me me).createTreasureTokens me 2 (cause := some testCause)
+    let engId := (g.battlefield.filter (·.name == "Phase13 Tap Two Targeted Engine"))[0]!.id
+    let tr0 := (g.battlefield.filter (·.printed.isToken))[0]!.id
+    let g := mkSeqFrame g 4
+    let gAct := mustApply g me (.activate engId 0)
+    let gTapOne := gAct.becomeTapped (gAct.object! tr0) (cause := some testCause)
+    mustApply gTapOne me (.target (.player me))
+  let actTargetRevOk :=
+    gActTargetRev.triggerSequenceRest.isNone &&
+    gActTargetRev.continuations.isEmpty &&
+    (gActTargetRev.player me).life == 24 &&
+    gActTargetRev.stack.isEmpty &&
+    Game.replayEvents gActTargetRev.events == gActTargetRev
+  let impossibleModalDef : CardDef := {
+    name := "Phase13 Impossible Modal"
+    manaCost := ManaCost.empty
+    types := #[.sorcery]
+    spellModes := #[
+      { targeting := .of .creature, resolution := .destroyTarget, phrase := "Destroy target creature" },
+      { targeting := .of .creature, resolution := .exileTarget, phrase := "Exile target creature" }
+    ]
+  }
+  let mkTopLook1 (d : CardDef) : Game × ObjectId :=
+    let g := insertObject afterDraw d me (.library me)
+    let cid := (g.player me).library.back!
+    let g := mkSeqFrame g 3
+    (g.beginMayCastFromLooked me 1 5, cid)
+  let (gLookNoTgt0, lookNoTgtId) := mkTopLook1 impossibleRemDef
+  let gLookNoTgt := mustApply gLookNoTgt0 me (.cast lookNoTgtId)
+  let (gLookNoMode0, lookNoModeId) := mkTopLook1 impossibleModalDef
+  let gLookNoMode := mustApply gLookNoMode0 me (.cast lookNoModeId)
+  let (gLookSync0, lookSyncId) := mkTopLook1 freeDrawDef
+  let gLookSync := mustApply gLookSync0 me (.cast lookSyncId)
+  let gLookDec := mustApply gLookSync0 me .decline
+  let lookedContAllOk :=
+    gLookNoTgt.triggerSequenceRest.isNone && gLookNoTgt.continuations.isEmpty &&
+    (gLookNoTgt.player me).life == 23 && gLookNoTgt.stack.isEmpty &&
+    gLookNoTgt.log.any (fun s => mentions s "has no legal target and can't be cast") &&
+    gLookNoMode.triggerSequenceRest.isNone && gLookNoMode.continuations.isEmpty &&
+    (gLookNoMode.player me).life == 23 && gLookNoMode.stack.isEmpty &&
+    gLookSync.triggerSequenceRest.isNone && gLookSync.continuations.isEmpty &&
+    (gLookSync.player me).life == 23 && gLookSync.stack.size == 1 &&
+    gLookDec.triggerSequenceRest.isNone && gLookDec.continuations.isEmpty &&
+    (gLookDec.player me).life == 23 && gLookDec.stack.isEmpty &&
+    [gLookNoTgt, gLookNoMode, gLookSync, gLookDec].all (fun g => Game.replayEvents g.events == g)
+  let reviewRound2ContOk := actPayRevOk && actTargetRevOk && lookedContAllOk
+
   let mustHold (label : String) (ok : Bool) : Bool :=
     if ok then true else panic! s!"Phase 13 guard failed: {label}"
   mustHold "actionIrrevOk" actionIrrevOk &&
@@ -7670,6 +7767,7 @@ departed-source `lastKnownBefore?` LKI + Step 4 audits. -/
     mustHold "searchDeclineOk" searchDeclineOk &&
     mustHold "lkiOk" lkiOk &&
     mustHold "maxHandTsOk" maxHandTsOk &&
-    mustHold "filterCtrlExpOk" filterCtrlExpOk
+    mustHold "filterCtrlExpOk" filterCtrlExpOk &&
+    mustHold "reviewRound2ContOk" reviewRound2ContOk
 
 end Mtg.Engine.EventTests

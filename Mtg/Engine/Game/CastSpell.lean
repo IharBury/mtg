@@ -1,4 +1,4 @@
-import Mtg.Engine.Game.Costs
+import Mtg.Engine.Game.Decisions
 
 /-!
 # The casting process (CR 601.2)
@@ -187,7 +187,7 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
   if !needsMode && !needsTarget && !cost.includesManaPayment && !cost.containsX &&
       !needsSacrifice && !needsFlashbackDiscard &&
       !needsAdditionalCostChoice && !needsKicker && !needsGift && !needsTeamwork then
-    return g.becomeCast p (g.object! newId)
+    return (g.becomeCast p (g.object! newId)).resumeAfterBecomeCast
   let lifeInstead :=
     match origPerm with
     | some perm =>
@@ -317,16 +317,6 @@ def announceX (g : Game) (p : PlayerId) (x : Nat) : Except String Game := do
         (needsGift := face.giftTreasure)
         (needsTeamwork := face.teamwork.isSome)
   | _ => throw "Not time to choose X (CR 601.2b)"
-
-/-- After a trigger's targets (and any damage division) are fully announced,
-prompt the next trigger that needs targets or continue the CR 603.3b
-process (remaining waiting triggers, then SBAs). -/
-def afterTriggerTargetsChosen (g : Game) : Game :=
-  match g.triggerNeedingTargets with
-  | some _ =>
-    promptTriggerTargetsIfNeeded (g.change (.pending .none))
-  | none =>
-    receivePriority (g.change (.pending .none)) g.activePlayer false
 
 /-- Finish announcing a triggered ability's targets (CR 603.3d); target and
 Ward triggers are matched directly on `CastEvent.targeted` in `matchTriggers`. -/

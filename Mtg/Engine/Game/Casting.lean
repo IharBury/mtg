@@ -441,8 +441,8 @@ def runPostCastCleanup (g : Game) : Game :=
 irreversible library actions, runs deferred `postCastCleanup`, and reports
 whether `Decisions.finishFraChoice` should resume an active continuation
 (CR 601.2 / 602.2 / 733.1–733.2). -/
-def reverseProposedSpellCore? (g : Game) (resumeContinuation : Bool := false) :
-    Except String (Game × Bool) := do
+def reverseProposedSpellCore? (g : Game) (resumeContinuation : Bool := false)
+    (extraLog : Option String := none) : Except String (Game × Bool) := do
   match g.proposedSpell with
   | none => return (g, false)
   | some prop =>
@@ -454,6 +454,10 @@ def reverseProposedSpellCore? (g : Game) (resumeContinuation : Bool := false) :
       | .activatedAbility => "the activation is reversed (CR 602.2 / 733.1)"
     let g ← g.reverseToProposalCheckpoint?
     let g := g.logMsg s!"{name} cannot pay {prop.cost}; {reversed}"
+    let g :=
+      match extraLog with
+      | some msg => g.logMsg msg
+      | none => g
     let g := g.runPostCastCleanup
     let g :=
       if g.pending == .none && g.continuations.isEmpty && g.pendingCastExiledQueue.isNone &&
@@ -468,13 +472,6 @@ def reverseProposedSpellCore? (g : Game) (resumeContinuation : Bool := false) :
       return (g.receivePriority prop.caster, false)
     else
       return (g, false)
-
-/-- Core proposal reversal without continuation resumption (for pre-`Decisions`
-callers where `continuations` is empty or `resumeContinuation == false`). -/
-def reverseProposedSpellCore (g : Game) (resumeContinuation : Bool := false) : Game :=
-  match g.reverseProposedSpellCore? (resumeContinuation := resumeContinuation) with
-  | .ok (g', _) => g'
-  | .error msg => g.logMsg msg
 
 /-- Fold `f` over each targeted permanent that still exists. Non-permanent
 targets are skipped. `unique` visits a permanent only once even when it is
@@ -719,40 +716,6 @@ def continueCostPicks (g : Game) (prop : ProposedSpell) (picks : Array CostPick)
     return g.logMsg s!"{(g.player prop.caster).name} chooses how to {pick.phrase}"
   | _, _ => g.completeActivation prop
 
-/-- Start paying the proposed activation's costs that need chosen objects,
-reversing it if they can't be paid (CR 601.2h / 733.1). -/
-def beginActivationPayment (g : Game) (prop : ProposedSpell) : Except String Game := do
-  let picks := (prop.activation.map costPicksOf).getD #[]
-  let payable :=
-    match prop.sourceId with
-    | some sid => g.costPicksPayable prop.caster sid picks
-    | none => true
-  if !payable then return (← g.reverseProposedSpellCore? (resumeContinuation := true)).1
-  g.continueCostPicks prop picks false
-
-/-- Continue after CR 601.2c: determine the total cost (601.2f), then mana
-abilities (601.2g). Additional-cost *choices* are announced earlier, at 601.2b. -/
-def afterTargetsChosen (g : Game) : Game :=
-  match g.proposedSpell with
-  | none => g
-  | some _ =>
-    let g := g.lockInTargetCostReduction
-    match g.proposedSpell with
-    | none => g
-    | some prop =>
-      if prop.cost.includesManaPayment || prop.needsSacrificeOther ||
-          prop.needsDiscardCard then
-        (g.change (.pending (.activateManaAbilities prop.caster))).logMsg
-          s!"{(g.player prop.caster).name} may activate mana abilities (CR 601.2g)"
-      else if prop.kind == .activatedAbility then
-        match g.beginActivationPayment prop with
-        | .ok g => g
-        | .error _ => g.reverseProposedSpellCore (resumeContinuation := true)
-      else
-        let spell := g.object! prop.spellId
-        let g := g.changes #[.pending .none, .proposedSpell none, .consecutivePasses 0]
-        g.becomeCast prop.caster spell
-
 /-- Whether the proposed spell or ability still needs targets announced (CR 601.2c). -/
 def proposedNeedsTarget (g : Game) (prop : ProposedSpell) : Bool :=
   match g.findObject? prop.spellId with
@@ -767,18 +730,6 @@ def proposedNeedsTarget (g : Game) (prop : ProposedSpell) : Bool :=
       match o.abilityEffect with
       | some e => e.requiresTarget
       | none => false
-
-/-- After CR 601.2b additional-cost announcement, continue to targets (601.2c)
-or cost determination (601.2f). -/
-def afterAdditionalCostAnnounced (g : Game) : Game :=
-  match g.proposedSpell with
-  | none => g
-  | some prop =>
-    if g.proposedNeedsTarget prop then
-      (g.change (.pending (.chooseTargets prop.caster))).logMsg
-        s!"{(g.player prop.caster).name} must choose a target (CR 601.2c)"
-    else
-      g.afterTargetsChosen
 
 /-- Choose new targets for a spell on the stack (Speedball; MSH 370).
 Each slot that has no new legal target is left unchanged, even if the
@@ -835,26 +786,6 @@ def addProposedExtraMode (g : Game) (mode : Nat) : Game :=
       | some se => se.chosenMode.toArray ++ se.extraModes
       | none => #[]
     g.record (GameEvent.announced g.turnNumber prop.spellId (modes := prev.push mode))
-
-/-- After the modes are chosen: additional costs, kicker, gift, and teamwork,
-then targets (CR 601.2b–c). -/
-def afterModesChosen (g : Game) (p : PlayerId) : Game :=
-  match g.proposedSpell, g.proposedSpell.bind (fun prop => g.findObject? prop.spellId) with
-  | some prop, some spell =>
-    let face := g.baseCard spell
-    if face.announcesAdditionalCost then
-      (g.change (.pending (.chooseAdditionalCost p))).logMsg
-        s!"{(g.player p).name} must choose an additional cost (CR 601.2b)"
-    else if face.kicker.isSome && !prop.kickerAnnounced then
-      (g.change (.pending (.chooseKicker p))).logMsg
-        s!"{(g.player p).name} may kick the spell (CR 702.33 / 601.2b)"
-    else if face.giftTreasure && !prop.giftAnnounced then
-      (g.change (.pending (.chooseGift p))).logMsg s!"{(g.player p).name} may promise a gift (CR 702.174)"
-    else if face.teamwork.isSome && !prop.teamworkAnnounced then
-      (g.change (.pending (.chooseTeamwork p))).logMsg
-        s!"{(g.player p).name} may pay a teamwork cost (CR 702.194)"
-    else g.afterAdditionalCostAnnounced
-  | _, _ => g
 
 /-- Record the chosen mode on the proposed spell's stack entry (CR 700.2). -/
 def setProposedMode (g : Game) (mode : Nat) : Game :=

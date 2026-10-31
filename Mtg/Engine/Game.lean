@@ -27,8 +27,6 @@ import Mtg.Engine.Game.SpellTargets
 import Mtg.Engine.Game.Casting
 import Mtg.Engine.Game.Choices
 import Mtg.Engine.Game.Costs
-import Mtg.Engine.Game.CastSpell
-import Mtg.Engine.Game.Activation
 import Mtg.Engine.Game.SacrificeDiscard
 import Mtg.Engine.Game.Damage
 import Mtg.Engine.Game.Pumps
@@ -48,6 +46,8 @@ import Mtg.Engine.Game.Combat
 import Mtg.Engine.Game.Turns
 import Mtg.Engine.Game.Mulligans
 import Mtg.Engine.Game.Decisions
+import Mtg.Engine.Game.CastSpell
+import Mtg.Engine.Game.Activation
 import Mtg.Engine.Game.PriorityActions
 import Mtg.Engine.Game.FraChoices
 import Mtg.Engine.Game.Actions

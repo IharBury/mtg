@@ -1,4 +1,4 @@
-import Mtg.Engine.Game.Activation
+import Mtg.Engine.Game.Costs
 
 /-!
 # Sacrifice and discard prompts (CR 701.21 / 701.9)

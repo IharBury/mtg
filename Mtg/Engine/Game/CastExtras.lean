@@ -157,72 +157,6 @@ def applyGiftToProposed (g : Game) (to : Option PlayerId) : Except String Game :
     | none => g
   return g.changeProposals #[.giftTo to, .giftAnnounced true]
 
-/-- Continue the proposal window after kicker / gift announcements. -/
-def afterOptionalAdditionalCost (g : Game) (p : PlayerId) : Game :=
-  match g.proposedSpell, g.proposedSpell.bind (fun prop => g.findObject? prop.spellId) with
-  | some prop, some spell =>
-    if spell.printed.giftTreasure && !prop.giftAnnounced then
-      let g := g.change (.pending (.chooseGift p))
-      g.logMsg s!"{(g.player p).name} may promise a gift (CR 702.174)"
-    else if spell.printed.teamwork.isSome && !prop.teamworkAnnounced then
-      let g := g.change (.pending (.chooseTeamwork p))
-      g.logMsg s!"{(g.player p).name} may pay a teamwork cost (CR 702.194)"
-    else
-      g.afterAdditionalCostAnnounced
-  | _, _ => g
-
-def announceKicker (g : Game) (p : PlayerId) (kick : Bool) : Except String Game := do
-  match g.pending with
-  | .chooseKicker caster =>
-    if caster != p then
-      throw s!"Only {(g.player caster).name} may announce kicker"
-    let g ← g.applyKickerToProposed kick
-    let face? := g.proposedSpell.bind (fun prop => g.findObject? prop.spellId) |>.map (·.printed)
-    let g := g.logMsg
-      (if kick && (face?.bind (·.morph)).isSome then s!"{(g.player p).name} casts the spell face down"
-       else if kick && (face?.bind (·.impending)).isSome then s!"{(g.player p).name} casts the spell for its impending cost"
-       else if kick then s!"{(g.player p).name} kicks the spell"
-       else s!"{(g.player p).name} pays the printed cost")
-    return g.afterOptionalAdditionalCost p
-  | _ => throw "Not time to announce kicker"
-
-def announceGift (g : Game) (p : PlayerId) (to : Option PlayerId) : Except String Game := do
-  match g.pending with
-  | .chooseGift caster =>
-    if caster != p then
-      throw s!"Only {(g.player caster).name} may promise a gift"
-    if let some opp := to then
-      if opp == p then throw "You must promise the gift to an opponent"
-    let g ← g.applyGiftToProposed to
-    let g :=
-      match to with
-      | some opp =>
-        g.logMsg s!"{(g.player p).name} promises a gift to {(g.player opp).name}"
-      | none =>
-        g.logMsg s!"{(g.player p).name} does not promise a gift"
-    return g.afterOptionalAdditionalCost p
-  | _ => throw "Not time to promise a gift"
-
-def announceTeamwork (g : Game) (p : PlayerId) (pay : Bool) : Except String Game := do
-  match g.pending with
-  | .chooseTeamwork caster =>
-    if caster != p then
-      throw s!"Only {(g.player caster).name} may announce teamwork"
-    let some prop := g.proposedSpell | throw "No spell is waiting for teamwork"
-    if !pay then
-      let g := g.changeProposals #[.teamworkPaid false, .teamworkAnnounced true]
-      let g := g.logMsg s!"{(g.player p).name} does not pay a teamwork cost"
-      return g.afterOptionalAdditionalCost p
-    match prop.original.printed.teamwork.orElse (fun () =>
-        (g.findObject? prop.spellId).bind (fun o => o.printed.teamwork)) with
-    | none => throw "That spell has no teamwork"
-    | some need =>
-      let g := g.change (.pending (.chooseTeamworkCreatures p need))
-        |>.changeProposal (.teamworkAnnounced true)
-      return g.logMsg
-        s!"{(g.player p).name} chooses creatures to tap for teamwork {need}"
-  | _ => throw "Not time to announce teamwork"
-
 /-- Untapped creatures `p` controls, taken in battlefield order until their
 total power is at least `need` (heuristic / test idle choice). -/
 def pickTeamworkCreatures (g : Game) (p : PlayerId) (need : Nat) : Array ObjectId :=
@@ -236,49 +170,6 @@ def pickTeamworkCreatures (g : Game) (p : PlayerId) (need : Nat) : Array ObjectI
         if o.status.tapped then pick rest acc total
         else pick rest (acc.push o.id) (total + g.power o)
   pick (g.creaturesControlledBy p).toList #[] 0
-
-def payTeamworkCreatures (g : Game) (p : PlayerId) (ids : Array ObjectId) :
-    Except String Game := do
-  match g.pending with
-  | .chooseTeamworkCreatures caster need =>
-    if caster != p then
-      throw s!"Only {(g.player caster).name} may tap creatures for teamwork"
-    let some prop := g.proposedSpell | throw "No spell is waiting for teamwork"
-    let mut total : Int := 0
-    let mut seen : Array ObjectId := #[]
-    for id in ids do
-      if seen.contains id then
-        throw "A creature cannot be tapped twice for the same teamwork cost"
-      seen := seen.push id
-      let some o := g.findObject? id | throw "no such object"
-      if !(o.isOnBattlefield && g.isCreature o && g.controlledBy o p) then
-        throw s!"{g.name o} is not a creature you control"
-      if o.status.tapped then
-        throw s!"{g.name o} is already tapped"
-      total := total + g.power o
-    if total < (need : Int) then
-      throw s!"Tapped creatures must have total power {need} or more"
-    let mut g := g
-    for id in ids do
-      match g.findObject? id with
-      | none => pure ()
-      | some o =>
-        g := g.becomeTapped o (cause := some (.costPayment .teamwork p (some prop.spellId)))
-    let some spell := g.findObject? prop.spellId | throw "The spell left the stack"
-    g := g.record (GameEvent.announced g.turnNumber spell.id (costs := #[.teamwork ids])
-      (cause := some (.costPayment .teamwork p (some spell.id))))
-    g := g.change (.pending .none)
-      |>.changeProposals #[.teamworkPaid true, .teamworkAnnounced true]
-    g := g.logMsg s!"{(g.player p).name} pays a teamwork cost"
-    -- “If this spell was cast using teamwork, choose both instead.”
-    if spell.printed.chooseBothIfTeamwork then
-      let chosen := g.chosenModesOf spell
-      for i in [0:spell.printed.spellModes.size] do
-        if !chosen.contains i then
-          g := (if (g.chosenModesOf spell).isEmpty then g.setProposedMode i else g.addProposedExtraMode i)
-      g := g.logMsg s!"{(g.player p).name} chooses both modes (teamwork)"
-    return g.afterOptionalAdditionalCost p
-  | _ => throw "Not time to tap creatures for teamwork"
 
 def announceRingBearer (g : Game) (p : PlayerId) (id : Option ObjectId) : Except String Game := do
   match g.pending with

@@ -903,47 +903,6 @@ def applyAvengersDisassembled (g : Game) (_controller : PlayerId)
       | none => g
     else g
 
-/-- Advance the pending Doom Reigns exile-cast queue one card at a time,
-pausing whenever a proposed spell requires interactive mode, target, or cost
-choices and resuming after `becomeCast` or `reverseProposedSpell?`. -/
-partial def advanceCastExiledQueue (g : Game) : Game :=
-  if g.pending != .none || g.proposedSpell.isSome then g
-  else
-    match g.pendingCastExiledQueue with
-    | none => g
-    | some (p, ids) =>
-      match ids[0]? with
-      | none => g.change (.pendingCastExiledQueue none)
-      | some id =>
-        let rest := ids.extract 1 ids.size
-        let g :=
-          if rest.isEmpty then g.change (.pendingCastExiledQueue none)
-          else g.change (.pendingCastExiledQueue (some (p, rest)))
-        let g := g.castAsPartOfResolution p id
-        if g.pending != .none || g.proposedSpell.isSome then g
-        else g.advanceCastExiledQueue
-
-/-- Cast up to `n` cards that currently have a free-cast exile permission,
-one at a time as the ability resolves (Doom Reigns; MSH 357). -/
-def castExiledAsResolves (g : Game) (p : PlayerId) (n : Nat) : Game :=
-  let ids :=
-    (g.objects.filter (fun o =>
-      o.zone == .exile &&
-        match g.playPermission o with
-        | some perm => perm.player == p && perm.withoutManaCost
-        | none => false)).map (·.id)
-  let chosen := ids.take n
-  if chosen.isEmpty then g
-  else
-    let pushedFrame := g.continuations.isEmpty
-    let g := if pushedFrame then g.change (.pushContinuationFrame {}) else g
-    let g := g.change (.pendingCastExiledQueue (some (p, chosen)))
-    let g := g.advanceCastExiledQueue
-    if pushedFrame && g.pending == .none && g.proposedSpell.isNone &&
-        g.pendingCastExiledQueue.isNone && g.pendingReplacement.isNone then
-      g.change .popContinuationFrame
-    else g
-
 /-- Whether the resolving stack object paid its teamwork cost. -/
 def resolvingTeamworkPaid (g : Game) : Bool :=
   g.spellPaidTeamwork

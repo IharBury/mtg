@@ -1,4 +1,4 @@
-import Mtg.Engine.Game.Decisions
+import Mtg.Engine.Game.Activation
 
 /-!
 # Passing, paying, and conceding
