@@ -244,7 +244,6 @@ inductive GameRuleKind where
   | spellCast
   | abilityActivated
   | triggeredAbility      -- 603.3
-  | reversedActivation
   | staticAbility
   | continuousEffect
   | leavingZone
@@ -338,6 +337,8 @@ deriving DecidableEq, Repr, Inhabited, BEq
 /-- The rule or effect kind that a `ReplacementId` identifies (CR 614 / 615). -/
 inductive ReplacementEffectKind where
   | entersTappedSelf                     -- 616.1a
+  | entersUntappedPayLife (life : Nat)   -- 616.1a / 614.12
+  | entersTappedDeclinePayLife           -- 616.1a / 614.12
   | entersWithLoyalty                    -- 306.5b / 616.1a
   | entersWithPlusOneCounters            -- 616.1a
   | entersWithXPlusOne                   -- 616.1a

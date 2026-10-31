@@ -85,7 +85,7 @@ def beginResolutionCastTargets (g : Game) (p : PlayerId) (prop : ProposedSpell) 
         |>.logMsg s!"{(g.player p).name} must choose a mode (CR 601.2b)"
   else if face.requiresTarget || face.isAura then
     if (g.legalCastTargets p face).isEmpty && !face.allowsZeroTargets then
-      (g.logMsg s!"{face.name} has no legal target and can't be cast").reverseProposedSpell
+      (g.reverseProposedSpell).logMsg s!"{face.name} has no legal target and can't be cast"
     else
       let what := if face.isAura then "a target to enchant" else "a target"
       g.change (.pending (.chooseTargets p))
@@ -117,12 +117,9 @@ def castAsPartOfResolution (g : Game) (p : PlayerId) (id : ObjectId)
       let name := o.name
       let original := o
       let origSnap := g.snapshot o
-      let pl := g.player p
-      let handBefore := pl.hand
-      let stackBefore := g.stack
-      let manaBefore := pl.manaPool
       let fromGy := original.zone == .graveyard original.owner
       let wasCopy := original.isCopy
+      let g := if g.proposalCheckpoint.isNone then g.change .saveProposalCheckpoint else g
       let (g, newId) := g.move id .stack (some p) (verb := some .cast) (actor := some p)
         (isCopy := some wasCopy)
       let g :=
@@ -142,9 +139,6 @@ def castAsPartOfResolution (g : Game) (p : PlayerId) (id : ObjectId)
         spellId := newId
         original
         originalSnapshot := origSnap
-        handBefore
-        stackBefore
-        manaBefore
       }
 
 /-- Cast the first instant or sorcery card with mana value at most `maxMv`
@@ -229,7 +223,9 @@ def chooseCastFromLooked (g : Game) (p : PlayerId) (castId : Option ObjectId) :
       | none =>
         let g := g.change (.pending .none)
         let g := g.castAsPartOfResolution p id
-        return g.finishMayCastFromLooked p (ids.filter (· != id))
+        let cast := (g.findObject? (g.followMoved id)).any (·.zone == .stack)
+        let unchosen := if cast then ids.filter (· != id) else ids
+        return g.finishMayCastFromLooked p unchosen
   | _ => throw "Not time to choose a spell from among looked-at cards"
 
 /-- Put an artifact from hand onto the battlefield.

@@ -32,15 +32,14 @@ def pebbleOf (g : Game) : GameObject :=
 def withSpent (spent : Nat) : Game :=
   let g := addPermanent afterDraw pebble caster caster
   let src := pebbleOf g
-  let (g, ab) := g.allocStackAbility src caster
   let causeId : ObjectId := ⟨911⟩
   let g := g.record (GameEvent.spentMana g.turnNumber caster spent (forObject := some causeId))
   let g := g.record (GameEvent.cast g.turnNumber caster
     { id := some causeId, controller := some caster, owner := caster } (.hand caster))
-  let g := g.changeObjects ab.id #[
-    .fraCauseId (some causeId),
-    .fraCauseStatus (some {})]
-  g.change (.resolvingAbility (some ab.id))
+  let abId : ObjectId := ⟨g.nextObjectId⟩
+  let g := g.record (GameEvent.triggerPutOnStack g.turnNumber abId (g.snapshot src) caster
+    (spec := { sourceId := some src.id, fraCauseId := some causeId, fraCauseStatus := some {} }))
+  g.change (.resolvingAbility (some abId))
 
 def drawStep (g : Game) (r : TriggeredAbility.TriggerResolution) : Game :=
   g.applyTriggeredAbility caster (.onEnterDraw 1) none

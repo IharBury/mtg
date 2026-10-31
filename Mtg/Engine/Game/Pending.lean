@@ -5,8 +5,7 @@ import Mtg.Engine.Game.Stack
 
 Decisions the game is waiting on: `RandomRequest` / `AfterRandom` for
 randomness supplied from outside the engine (shuffles, coin flips),
-`WardCost` / `WardObligation` (CR 702.21), and the `Pending` prompt a
-player must answer before the game continues.
+and the `Pending` prompt a player must answer before the game continues.
 -/
 
 namespace Mtg.Engine
@@ -59,35 +58,8 @@ inductive AfterRandom where
   | beholdUntap (p : PlayerId) (landId : ObjectId) (subtype : CardSubtype)
   /-- Put a +1/+1 counter on this creature after the shuffle (Restorative Technique). -/
   | plusOne (id : ObjectId)
-  /-- Discard a card at random after the shuffle (Curse-Marred Demon). -/
+/-- Discard a card at random after the shuffle (Curse-Marred Demon). -/
   | discardRandom (p : PlayerId)
-deriving DecidableEq, Repr, Inhabited, BEq
-
-/-- Payment a player may make to stop ward from countering their spell
-(CR 702.21). -/
-inductive WardCost where
-  /-- Ward `{n}`. -/
-  | genericMana (n : Nat)
-  /-- Ward — discard an enchantment, instant, or sorcery card. -/
-  | discardEnchantmentInstantOrSorcery
-  /-- Ward — sacrifice a legendary artifact or legendary creature. -/
-  | sacrificeLegendary
-  /-- Ward — discard a card or pay `{n}`. -/
-  | discardOrPay (n : Nat)
-  /-- Ward — get five poison counters. -/
-  | fivePoison
-  /-- Ward — discard a card. -/
-  | discardCard
-  /-- Ward — sacrifice `left` more permanents; `paid` were already
-  sacrificed, so the cost can no longer be declined. -/
-  | sacrificePermanents (left paid : Nat)
-deriving DecidableEq, Repr, Inhabited, BEq
-
-/-- A queued ward obligation waiting to be announced. -/
-structure WardObligation where
-  player : PlayerId
-  spellId : ObjectId
-  cost : WardCost
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- What happens after a Reality Fracture choice is made. Each one is also a
@@ -398,9 +370,6 @@ inductive FraChoice where
   `use` allows. Answered with `Action.chooseMode` (white, blue, black, red,
   green by index). -/
   | addManaColors (left : Nat) (use : FraManaUse)
-  /-- As `objectId` enters, pay `life` life (accept), or it enters tapped
-  (decline). -/
-  | payLifeOrEnterTapped (objectId : ObjectId) (life : Nat)
   /-- Extort: you may pay {W/B}; if you do, drain each opponent for 1. -/
   | mayPayExtort (sourceId : Option ObjectId)
   /-- You may draw `draw` cards; if you do, discard `discard` cards. -/

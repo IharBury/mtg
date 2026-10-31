@@ -717,6 +717,38 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
       g.createEffect (.cantBeBlockedExceptByHasteUntilEot o.id)
         |>.logMsg s!"{g.name o} can't be blocked this turn except by creatures with haste"
     | none => g
+  | .ward cost =>
+    let abObj? := g.resolvingAbilityObject?
+    let causeId? := abObj?.bind (·.fraCauseId)
+    let payer? :=
+      (abObj?.bind (·.fraCauseController)).orElse (fun _ =>
+        causeId?.bind (fun cid => (g.stackEntry? cid).map (·.controller)))
+    match causeId?, payer? with
+    | some spellId, some payer =>
+      match g.findObject? spellId with
+      | some o =>
+        if o.zone == .stack then
+          let who := (g.player payer).name
+          let msg :=
+            match cost with
+            | .genericMana n =>
+              s!"{who} may pay \{{n}} or the spell is countered (ward)"
+            | .discardEnchantmentInstantOrSorcery =>
+              s!"{who} may discard an enchantment, instant, or sorcery card or the spell is countered (ward)"
+            | .sacrificeLegendary =>
+              s!"{who} may sacrifice a legendary artifact or creature or the spell is countered (ward)"
+            | .discardOrPay n =>
+              s!"{who} may discard a card or pay \{{n}} or the spell is countered (ward)"
+            | .fivePoison =>
+              s!"{who} may get five poison counters or the spell is countered (ward)"
+            | .discardCard =>
+              s!"{who} may discard a card or the spell is countered (ward)"
+            | .sacrificePermanents n _ =>
+              s!"{who} may sacrifice {n} permanents or the spell is countered (ward)"
+          (g.change (.pending (.payWard payer spellId cost))).logMsg msg
+        else g
+      | none => g
+    | _, _ => g
 where
   handDiscardToBottom (g : Game) : Game :=
     match (g.player controller).hand.back? with

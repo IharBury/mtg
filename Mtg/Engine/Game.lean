@@ -93,7 +93,7 @@ dying this turn (CR 614.1 / 614.6 / 700.4), attack triggers (CR 508.2 / 603), in
 creature's P/T onto another creature you control, giving another creature
 +2/+0 and trample, or gaining life while you control a creature with power 4
 or greater (Ferocious), becomes-blocked triggers
-(CR 509.5c / 603), enters triggers (CR 603.6a), including searching the library
+(CR 509.3c / 603), enters triggers (CR 603.6a), including searching the library
 for a Forest card (CR 701.23 / 305.7), drawing, scrying, optional
 discard-to-draw, damage divided as you choose when a creature enters or
 attacks (CR 601.2d), returning an Elf card from your graveyard to gain
@@ -308,6 +308,10 @@ def mustApply (g : Game) (p : PlayerId) (a : Action) : Game :=
     mustApply g p (.targets #[])
   | .fraChoice _ choice, some p =>
     mustApply g p (g.defaultFraAction p choice)
+  | .chooseReplacement p choices, _ =>
+    let chosen :=
+      (choices.find? (·.kind == .entersTappedDeclinePayLife)).getD choices[0]!
+    mustApply g p (.chooseReplacement chosen)
   | .chooseTargets _, some p =>
     match g.objectAwaitingTargets with
     | none => panic! "expected a proposed spell or trigger while choosing targets"

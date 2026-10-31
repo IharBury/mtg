@@ -407,11 +407,7 @@ def activateManaAbility (g : Game) (p : PlayerId) (id : ObjectId) (idx : Nat)
     else g.logMsg s!"{(g.player p).name} {verb} {oname} for {produced}{d.restriction.note}"
   if d.tap then
     g := match g.proposedSpell with
-      | some _ =>
-        let g := g.changeProposal (.pushTapped id)
-        if (g.baseCard o).commanderIdentityScryCreature then
-          g.change (.pushAncestryLandTapped id)
-        else g
+      | some _ => g.changeProposal (.pushTapped id)
       | none => g
   return g.change (.consecutivePasses 0)
 

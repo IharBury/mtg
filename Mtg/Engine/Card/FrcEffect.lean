@@ -1,3 +1,4 @@
+import Mtg.Engine.Card.TriggerEvent
 import Mtg.Engine.TypeLine
 
 /-!
@@ -174,6 +175,9 @@ inductive FrcEffect where
   | turnFaceUp
   /-- This token can't be blocked this turn except by creatures with haste. -/
   | gingerDash
+  /-- Ward: counter the spell or ability that targeted the source unless its
+  controller pays `cost` (CR 702.21a). -/
+  | ward (cost : WardCost)
 deriving Repr, Inhabited, BEq
 
 end Mtg.Engine

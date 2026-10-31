@@ -4,7 +4,7 @@ import Mtg.Engine.Game.TriggerArgs
 # Triggered-ability resolution (CR 603)
 
 `applyTriggeredAbility` — resolving every modeled triggered ability —
-plus attack triggers (CR 508.2) and becomes-blocked triggers (CR 509.5c)
+plus attack triggers (CR 508.2) and becomes-blocked triggers (CR 509.3c)
 going on the stack.
 -/
 

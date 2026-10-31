@@ -748,7 +748,7 @@ it. -/
 /- Ward counters a triggered ability unless its controller pays. -/
 #guard
   let g := addPermanent afterDraw lakeTownMariners opp opp
-  let g := killmongerTargets g "Lake-town Mariners"
+  let g := resolveTop (killmongerTargets g "Lake-town Mariners")
   let warded := match g.pending with
     | .payWard q _ (.genericMana 2) => q == me
     | _ => false

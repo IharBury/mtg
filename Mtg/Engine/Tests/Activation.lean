@@ -690,7 +690,7 @@ def afterGoblinUnblocked : Game :=
 #guard afterGoblinUnblocked.log.any (fun s =>
   mentions s "Battle-Scarred Goblin deals 2 combat damage to Nissa")
 
-/-- CR 509.5c: two blockers still produce one trigger; each takes 1 damage. -/
+/-- CR 509.3c: two blockers still produce one trigger; each takes 1 damage. -/
 def goblinVsTwoElves : Game :=
   let g := addPermanent started battleScarredGoblin ⟨0⟩ ⟨0⟩
   let g := addPermanent g llanowarElves ⟨1⟩ ⟨1⟩

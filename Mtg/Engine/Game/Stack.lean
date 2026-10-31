@@ -64,9 +64,6 @@ structure ProposedSpell where
   /-- Layer-evaluated LKI snapshot of `original` captured via `Game.snapshot`
   when this proposal began, before cost payment can move the source (CR 602.2b / 113.7a). -/
   originalSnapshot : EventObject := {}
-  handBefore : Array ObjectId
-  stackBefore : Array StackEntry
-  manaBefore : ManaPool
   tapped : Array ObjectId := #[]
   kind : ProposalKind := .spell
   /-- Source permanent of an activated ability; unused for spells. -/

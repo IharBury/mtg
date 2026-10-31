@@ -170,32 +170,32 @@ def convoke (g : Game) (p : PlayerId) (ids : Array ObjectId) : Except String Gam
     let hasImprovise := prop.kind == .spell && g.spellHasImprovise spell.printed p
     if !hasConvoke && !hasImprovise then
       throw s!"{spell.name} doesn't have convoke or improvise (CR 702.51 / 702.126)"
-    let (g0, closeBatch) := g.openBatch none
-    let mut g := g0
-    let mut cost := prop.cost
-    let mut tapped := prop.tapped
-    for id in ids do
-      let some o := g.findObject? id | throw "no such object"
-      if !(o.isOnBattlefield && g.controlledBy o p) then
-        throw s!"You don't control {g.name o}"
-      if o.status.tapped then
-        throw s!"{g.name o} is already tapped (ruling 863)"
-      if hasConvoke && g.isCreature o then
-        match convokePayOne cost (g.colors o) with
-        | none => throw s!"{g.name o} can't pay for any of the remaining cost"
-        | some c => cost := c
-        g := g.becomeTapped o (cause := some (.costPayment .convoke p (some prop.spellId)))
-        g := g.logMsg s!"{(g.player p).name} taps {g.name o} to convoke {spell.name}"
-      else if hasImprovise && g.isArtifact o then
-        if cost.genericCount == 0 then
-          throw s!"No generic mana is left for {g.name o} to pay (CR 702.126a)"
-        cost := cost.reduceGeneric 1
-        g := g.becomeTapped o (cause := some (.costPayment .tap p (some prop.spellId)))
-        g := g.logMsg s!"{(g.player p).name} taps {g.name o} for improvise"
-      else
-        throw s!"{g.name o} can't help pay for {spell.name}"
-      tapped := tapped.push id
-    g := closeBatch g
+    let (g, (cost, tapped)) ← g.withBatchExcept none fun g => do
+      let mut g := g
+      let mut cost := prop.cost
+      let mut tapped := prop.tapped
+      for id in ids do
+        let some o := g.findObject? id | throw "no such object"
+        if !(o.isOnBattlefield && g.controlledBy o p) then
+          throw s!"You don't control {g.name o}"
+        if o.status.tapped then
+          throw s!"{g.name o} is already tapped (ruling 863)"
+        if hasConvoke && g.isCreature o then
+          match convokePayOne cost (g.colors o) with
+          | none => throw s!"{g.name o} can't pay for any of the remaining cost"
+          | some c => cost := c
+          g := g.becomeTapped o (cause := some (.costPayment .convoke p (some prop.spellId)))
+          g := g.logMsg s!"{(g.player p).name} taps {g.name o} to convoke {spell.name}"
+        else if hasImprovise && g.isArtifact o then
+          if cost.genericCount == 0 then
+            throw s!"No generic mana is left for {g.name o} to pay (CR 702.126a)"
+          cost := cost.reduceGeneric 1
+          g := g.becomeTapped o (cause := some (.costPayment .tap p (some prop.spellId)))
+          g := g.logMsg s!"{(g.player p).name} taps {g.name o} for improvise"
+        else
+          throw s!"{g.name o} can't help pay for {spell.name}"
+        tapped := tapped.push id
+      return (g, (cost, tapped))
     return g.changeProposals #[.cost cost, .tapped tapped]
   | _, _ => throw "No spell is being paid for (CR 601.2h)"
 
@@ -213,42 +213,42 @@ def finishProliferate (g : Game) (p : PlayerId) (chosen : Array Target) :
     if chosen.toList.eraseDups.length != chosen.size then
       throw "Choose each permanent or player at most once"
     let cause := some (g.resolvingOrRuleCause p)
-    let (g0, closeBatch) := g.openBatch cause
-    let effCause := g0.resolveOptionalCause cause (fallbackCtrl := some p)
-    let mut g := g0
-    let mut permIds : Array ObjectId := #[]
-    let mut playerIds : Array PlayerId := #[]
-    for t in chosen do
-      match t with
-      | .permanent id =>
-        let some o := g.findObject? id | throw "no such object"
-        if !o.isOnBattlefield then
-          throw s!"{o.name} is not a permanent on the battlefield (CR 701.34a)"
-        if !o.status.hasCounters then
-          throw s!"{o.name} has no counters"
-        let bag := o.status.toCounterBag
-        for (kind, _) in bag do
-          if kind != .plusOnePlusOne then
-            let cur := g.object! id
-            g := g.record (GameEvent.counters g.turnNumber (some p) (g.snapshot cur) kind 1 false
-              (cause := effCause))
-        g := g.syncImpendingNotACreature id (cause := some effCause)
-        let o := g.object! id
-        g := if o.status.plusOnePlusOne > 0 then g.addPlusOnePlusOneTo o 1 (cause := some effCause) else g
-        permIds := permIds.push id
-        g := g.logMsg s!"{(g.player p).name} proliferates {o.name}"
-      | .player pid =>
-        let pl := g.player pid
-        if pl.poison == 0 then
-          throw s!"{pl.name} has no counters"
-        g := g.record (GameEvent.poisoned g.turnNumber pid 1 (byPlayer := some p) (cause := effCause))
-        playerIds := playerIds.push pid
-        g := g.logMsg s!"{(g.player p).name} gives {pl.name} another poison counter"
-      | .card _ => throw "Only permanents and players can be chosen (CR 701.34a)"
-    -- “Whenever you proliferate” triggers even if nothing was chosen (ruling 884).
-    g := g.record (GameEvent.proliferated g.turnNumber p
-      (permanents := permIds) (players := playerIds) (cause := cause))
-    g := closeBatch g
+    let g ← g.withBatchM cause fun g0 => do
+      let effCause := g0.resolveOptionalCause cause (fallbackCtrl := some p)
+      let mut g := g0
+      let mut permIds : Array ObjectId := #[]
+      let mut playerIds : Array PlayerId := #[]
+      for t in chosen do
+        match t with
+        | .permanent id =>
+          let some o := g.findObject? id | throw "no such object"
+          if !o.isOnBattlefield then
+            throw s!"{o.name} is not a permanent on the battlefield (CR 701.34a)"
+          if !o.status.hasCounters then
+            throw s!"{o.name} has no counters"
+          let bag := o.status.toCounterBag
+          for (kind, _) in bag do
+            if kind != .plusOnePlusOne then
+              let cur := g.object! id
+              g := g.record (GameEvent.counters g.turnNumber (some p) (g.snapshot cur) kind 1 false
+                (cause := effCause))
+          g := g.syncImpendingNotACreature id (cause := some effCause)
+          let o := g.object! id
+          g := if o.status.plusOnePlusOne > 0 then g.addPlusOnePlusOneTo o 1 (cause := some effCause) else g
+          permIds := permIds.push id
+          g := g.logMsg s!"{(g.player p).name} proliferates {o.name}"
+        | .player pid =>
+          let pl := g.player pid
+          if pl.poison == 0 then
+            throw s!"{pl.name} has no counters"
+          g := g.record (GameEvent.poisoned g.turnNumber pid 1 (byPlayer := some p) (cause := effCause))
+          playerIds := playerIds.push pid
+          g := g.logMsg s!"{(g.player p).name} gives {pl.name} another poison counter"
+        | .card _ => throw "Only permanents and players can be chosen (CR 701.34a)"
+      -- “Whenever you proliferate” triggers even if nothing was chosen (ruling 884).
+      return g.record (GameEvent.proliferated g.turnNumber p
+        (permanents := permIds) (players := playerIds) (cause := cause))
+    let mut g := g
     if chosen.isEmpty then
       g := g.logMsg s!"{(g.player p).name} proliferates, choosing nothing"
     if remaining > 1 then
@@ -524,18 +524,18 @@ def choosePermanents (g : Game) (p : PlayerId) (ids : Array ObjectId) :
       throw s!"Only {(g.player q).name} may tap Humans"
     if !uniqueObjectIds ids then
       throw "Duplicate card"
-    let (g0, closeBatch) := g.openBatch none
-    let mut g := g0
-    let mut n : Nat := 0
-    for id in ids do
-      let some o := g.findObject? id | throw "no such object"
-      if !(o.isOnBattlefield && g.controlledBy o p && g.hasSubtype o .human &&
-          !o.status.tapped) then
-        throw s!"{g.name o} is not an untapped Human you control"
-      g := g.applyPermanentAction o .tap
-      n := n + 1
-    g := closeBatch g
-    g := g.changes #[.pending .none, .humansTappedThisWay n]
+    let (g, n) ← g.withBatchExcept none fun g => do
+      let mut g := g
+      let mut n : Nat := 0
+      for id in ids do
+        let some o := g.findObject? id | throw "no such object"
+        if !(o.isOnBattlefield && g.controlledBy o p && g.hasSubtype o .human &&
+            !o.status.tapped) then
+          throw s!"{g.name o} is not an untapped Human you control"
+        g := g.applyPermanentAction o .tap
+        n := n + 1
+      return (g, n)
+    let mut g := g.changes #[.pending .none, .humansTappedThisWay n]
     g := g.resumeTriggerSequence
     if g.pending != .none then return g
     return g.receivePriority g.activePlayer
@@ -563,9 +563,9 @@ def castExiledAsAbilityResolves (g : Game) (p : PlayerId) (id : ObjectId) :
       throw s!"{face.name} requires a target"
     let cost := g.playManaCost card face
     let pl := g.player p
-    let some (pool, spentUnits) := pl.manaPool.payUnits? cost
+    let some (_, spentUnits) := pl.manaPool.payUnits? cost
       | throw s!"{pl.name} cannot pay {cost}"
-    let stackBefore := g.stack
+    let g := g.change .saveProposalCheckpoint
     let (g, newId) := g.move id .stack (some p) (verb := some .cast) (actor := some p)
       (cause := some (.gameRule .spellCast))
     let g := g.putStackEntry p newId
@@ -581,8 +581,7 @@ def castExiledAsAbilityResolves (g : Game) (p : PlayerId) (id : ObjectId) :
     if face.requiresTarget then
       let prop : ProposedSpell := {
         caster := p, cost := ManaCost.empty, spellId := newId, original := card
-        originalSnapshot := origSnap
-        handBefore := (g.player p).hand, stackBefore, manaBefore := pool }
+        originalSnapshot := origSnap }
       return g.changes #[.pending (.chooseTargets p), .proposedSpell (some prop)]
     else
       return g.becomeCast p (g.object! newId)
@@ -648,13 +647,25 @@ def decline (g : Game) (p : PlayerId) : Except String Game := do
           return g.change (.pending (.chooseTargets p))
         if g.proposedSpell.isSome then
           return g.afterTargetsChosen
-        return (g.markTargetsAnnounced obj.id true).afterTriggerTargetsChosen
+        let g :=
+          match g.stackEntry? obj.id with
+          | some e =>
+            if e.targets.isEmpty then g.markTargetsAnnounced obj.id true
+            else g.setStackEntryTargets obj.id e.targets e.dividedDamage
+          | none => g
+        return g.afterTriggerTargetsChosen
       else if g.canFinishOptionalTargets obj then
         let g := g.logMsg
           s!"{(g.player p).name} finishes choosing targets (CR 601.2c)"
         if g.proposedSpell.isSome then
           return g.afterTargetsChosen
-        return (g.markTargetsAnnounced obj.id true).afterTriggerTargetsChosen
+        let g :=
+          match g.stackEntry? obj.id with
+          | some e =>
+            if e.targets.isEmpty then g.markTargetsAnnounced obj.id true
+            else g.setStackEntryTargets obj.id e.targets e.dividedDamage
+          | none => g
+        return g.afterTriggerTargetsChosen
       throw "That spell requires a target (CR 601.2c)"
   | .mayPayGeneric q _ =>
     let g := g.change (.mayPayAlsoPlusOneOn none)
@@ -685,7 +696,8 @@ def decline (g : Game) (p : PlayerId) : Except String Game := do
     if p != q then
       throw s!"Only {(g.player q).name} may decline to pay ward"
     let g := g.logMsg s!"{(g.player p).name} does not pay ward"
-    let g := g.counterStackSpell spellId
+    let wardCtrl := (g.resolvingAbilityObject?.bind (·.controller)).getD (g.opponent p)
+    let g := g.counterStackSpell spellId (controller := wardCtrl)
     return g.afterWardResolved
   | .mayAttachEquipment q _ =>
     if p != q then
@@ -1210,14 +1222,23 @@ partial def resumePendingReplacement (g : Game) : PendingReplacement → Game
         g.finishEnteringAttackCard entered.id effectController cardName mods logKind (cause := cause)
       else g
     | none => g
-  | .afterLastPermanentEnters =>
-    match g.objects.back? with
+  | .afterLastPermanentEnters fromId isPlayLand =>
+    let target? :=
+      (fromId.map g.followMoved |>.bind g.findObject?).orElse (fun _ => g.objects.back?)
+    match target? with
     | some entered =>
       if entered.isOnBattlefield then
-        let g := g.logMsg s!"{entered.name} enters the battlefield"
-        g.afterPermanentEnters entered
+        if isPlayLand then
+          let g := if entered.status.tapped then g.logMsg s!"{entered.name} enters tapped" else g
+          g.afterLandEnters entered
+        else
+          let g := g.logMsg s!"{entered.name} enters the battlefield"
+          g.afterPermanentEnters entered
       else g
     | none => g
+  | .addExtraCombatDamageStep =>
+    g.record (GameEvent.extraStepAdded g.turnNumber .combatDamage .afterCurrent
+      (cause := .gameRule .stepAdvance))
   | .finishFraChoice =>
     g.finishFraChoice
   | .draw p n _ cause =>
@@ -1251,6 +1272,11 @@ def chooseReplacement (g : Game) (p : PlayerId) (id : ReplacementId) : Except St
       throw s!"Only {(g.player q).name} may choose a replacement effect"
     if !choices.contains id then
       throw "Replacement effect is not among the applicable choices"
+    let g ←
+      match id.kind with
+      | .entersUntappedPayLife n =>
+        g.payLifeCost (id.player.getD q) n (forObject := id.object)
+      | _ => pure g
     let order := (g.replacementOrder.filter (· != id)).push id
     let cont? := g.pendingReplacement
     let g := g.changes #[.replacementOrder order, .pending .none, .pendingReplacement none]

@@ -48,29 +48,26 @@ open Mtg.Engine.Tests
 #guard uniqueMshOracleRulings.all (fun r => r.sets.any (· == "msh"))
 
 /-- Snapshot used to exercise `finishProposedSpell` restricted-mana payment. -/
-def dummyProposal (g : Game) (kind : ProposalKind) (src : GameObject) (cost : ManaCost)
+def dummyProposal (_g : Game) (kind : ProposalKind) (src : GameObject) (cost : ManaCost)
     (discardSource : Bool := false) : ProposedSpell :=
   { caster := ⟨0⟩
     cost
     spellId := src.id
     original := src
-    handBefore := (g.player ⟨0⟩).hand
-    stackBefore := g.stack
-    manaBefore := (g.player ⟨0⟩).manaPool
     kind
     sourceId := if kind == .spell then none else some src.id
     discardSource }
 
 /-- True when the proposed cost is paid (not reversed). -/
 def paidOk (g : Game) (prop : ProposedSpell) : Bool :=
-  let g := g.change (.proposedSpell (some prop))
+  let g := g.changes #[.saveProposalCheckpoint, .proposedSpell (some prop)]
   match g.finishProposedSpell with
   | .error _ => false
   | .ok g' => !g'.log.any (fun s => mentions s "reversed")
 
 /-- True when the engine reverses the proposal for lack of payable mana. -/
 def reversedPay (g : Game) (prop : ProposedSpell) : Bool :=
-  let g := g.change (.proposedSpell (some prop))
+  let g := g.changes #[.saveProposalCheckpoint, .proposedSpell (some prop)]
   match g.finishProposedSpell with
   | .error _ => true
   | .ok g' => g'.log.any (fun s => mentions s "reversed")
@@ -2569,15 +2566,17 @@ def hulklingComparesCauseOk : Bool :=
   let noCause := g.applyTriggeredAbility ⟨0⟩ (.onWatch Effect.watchHulklingCompare)
     (some hulkling.id) #[]
   (namedPermanent noCause "Hulkling, Burgeoning Bruiser").status.plusOnePlusOne == 0 &&
-    (let (g, ab) := g.allocStackAbility hulkling ⟨0⟩
-     let g := g.changeObject ab.id (.fraCauseId (some bot.id))
-     let g := g.change (.pushContinuationFrame { resolvingAbility := some ab.id })
+    (let abId : ObjectId := ⟨g.nextObjectId⟩
+     let g := g.record (GameEvent.triggerPutOnStack g.turnNumber abId (g.snapshot hulkling) ⟨0⟩
+       (spec := { sourceId := some hulkling.id, fraCauseId := some bot.id }))
+     let g := g.change (.pushContinuationFrame { resolvingAbility := some abId })
      let g := g.applyTriggeredAbility ⟨0⟩ (.onWatch Effect.watchHulklingCompare)
        (some hulkling.id) #[]
      (namedPermanent g "Hulkling, Burgeoning Bruiser").status.plusOnePlusOne == 0) &&
-    (let (g, ab) := g.allocStackAbility hulkling ⟨0⟩
-     let g := g.changeObject ab.id (.fraCauseId (some giant.id))
-     let g := g.change (.pushContinuationFrame { resolvingAbility := some ab.id })
+    (let abId : ObjectId := ⟨g.nextObjectId⟩
+     let g := g.record (GameEvent.triggerPutOnStack g.turnNumber abId (g.snapshot hulkling) ⟨0⟩
+       (spec := { sourceId := some hulkling.id, fraCauseId := some giant.id }))
+     let g := g.change (.pushContinuationFrame { resolvingAbility := some abId })
      let g := g.applyTriggeredAbility ⟨0⟩ (.onWatch Effect.watchHulklingCompare)
        (some hulkling.id) #[]
      (namedPermanent g "Hulkling, Burgeoning Bruiser").status.plusOnePlusOne == 1) &&
@@ -2586,9 +2585,10 @@ def hulklingComparesCauseOk : Bool :=
      let (g, _) := g.move giantId (.graveyard ⟨0⟩) none
      let gy := g.object! (g.followMoved giantId)
      g.lastKnownPowerOf? gy.id == some 1 && g.lastKnownToughnessOf? gy.id == some 1 &&
-       (let (g, ab) := g.allocStackAbility hulkling ⟨0⟩
-        let g := g.changeObject ab.id (.fraCauseId (some giantId))
-        let g := g.change (.pushContinuationFrame { resolvingAbility := some ab.id })
+       (let abId : ObjectId := ⟨g.nextObjectId⟩
+        let g := g.record (GameEvent.triggerPutOnStack g.turnNumber abId (g.snapshot hulkling) ⟨0⟩
+          (spec := { sourceId := some hulkling.id, fraCauseId := some giantId }))
+        let g := g.change (.pushContinuationFrame { resolvingAbility := some abId })
         let g := g.applyTriggeredAbility ⟨0⟩ (.onWatch Effect.watchHulklingCompare)
           (some hulkling.id) #[]
         (namedPermanent g "Hulkling, Burgeoning Bruiser").status.plusOnePlusOne == 0))
@@ -2616,9 +2616,10 @@ def capUntapsTriggeringCreatureOk : Bool :=
   let g := g.applyPermanentAction bears .tap
   let g := g.applyPermanentAction giant .tap
   let cap := namedPermanent g "Captain America, Living Legend"
-  let (g, ab) := g.allocStackAbility cap ⟨0⟩
-  let g := g.changeObject ab.id (.fraCauseId (some bears.id))
-  let g := g.change (.pushContinuationFrame { resolvingAbility := some ab.id })
+  let abId : ObjectId := ⟨g.nextObjectId⟩
+  let g := g.record (GameEvent.triggerPutOnStack g.turnNumber abId (g.snapshot cap) ⟨0⟩
+    (spec := { sourceId := some cap.id, fraCauseId := some bears.id }))
+  let g := g.change (.pushContinuationFrame { resolvingAbility := some abId })
   let g := g.applyTriggeredAbility ⟨0⟩ (.onWatch Effect.watchFirstTapUntap)
     (some cap.id) #[]
   before == afterEarly &&
@@ -2722,9 +2723,10 @@ def ultronMayPayCopyOk : Bool :=
   let g := g.addMana ⟨0⟩ .colorless 2
   let ultron := namedPermanent g "Ultron, Artificial Malevolence"
   let stone := namedPermanent g "The Mind Stone"
-  let (g, ab) := g.allocStackAbility ultron ⟨0⟩
-  let g := g.changeObject ab.id (.fraCauseId (some stone.id))
-  let g := g.change (.pushContinuationFrame { resolvingAbility := some ab.id })
+  let abId : ObjectId := ⟨g.nextObjectId⟩
+  let g := g.record (GameEvent.triggerPutOnStack g.turnNumber abId (g.snapshot ultron) ⟨0⟩
+    (spec := { sourceId := some ultron.id, fraCauseId := some stone.id }))
+  let g := g.change (.pushContinuationFrame { resolvingAbility := some abId })
   let g := g.applyTriggeredAbility ⟨0⟩ (.onWatch Effect.watchUltronCopy)
     (some ultron.id) #[]
   let tokens (g : Game) :=
@@ -2900,9 +2902,10 @@ def thorSpellManaValueOk : Bool :=
   let g := g.putStackEntry ⟨0⟩ spell.id
   let (g, bolt) := g.allocObject lightningBolt ⟨0⟩ .stack (some ⟨0⟩)
   let g := g.putStackEntry ⟨0⟩ bolt.id
-  let (g, ab) := g.allocStackAbility thor ⟨0⟩
-  let g := g.changeObject ab.id (.fraCauseId (some spell.id))
-  let g := g.change (.pushContinuationFrame { resolvingAbility := some ab.id })
+  let abId : ObjectId := ⟨g.nextObjectId⟩
+  let g := g.record (GameEvent.triggerPutOnStack g.turnNumber abId (g.snapshot thor) ⟨0⟩
+    (spec := { sourceId := some thor.id, fraCauseId := some spell.id }))
+  let g := g.change (.pushContinuationFrame { resolvingAbility := some abId })
   let life0 := (g.player ⟨1⟩).life
   let g := g.applyModeledTrigger ⟨0⟩ (.onCasting Effect.castingDamageEqualMv)
     (some thor.id) #[Target.player ⟨1⟩]
@@ -2910,9 +2913,10 @@ def thorSpellManaValueOk : Bool :=
     (let (g, _) := g.move spell.id (.graveyard ⟨0⟩) none
      let gy := g.object! (g.followMoved spell.id)
      g.chosenXOf? gy.id == some 3 &&
-       (let (g, ab2) := g.allocStackAbility thor ⟨0⟩
-        let g := g.changeObject ab2.id (.fraCauseId (some spell.id))
-        let g := g.change (.pushContinuationFrame { resolvingAbility := some ab2.id })
+       (let ab2Id : ObjectId := ⟨g.nextObjectId⟩
+        let g := g.record (GameEvent.triggerPutOnStack g.turnNumber ab2Id (g.snapshot thor) ⟨0⟩
+          (spec := { sourceId := some thor.id, fraCauseId := some spell.id }))
+        let g := g.change (.pushContinuationFrame { resolvingAbility := some ab2Id })
         let life1 := (g.player ⟨1⟩).life
         let g := g.applyModeledTrigger ⟨0⟩ (.onCasting Effect.castingDamageEqualMv)
           (some thor.id) #[Target.player ⟨1⟩]
@@ -2931,15 +2935,17 @@ def namorTriggeringSpellOk : Bool :=
   let g := g.putStackEntry ⟨0⟩ bolt.id
   let merfolk (g : Game) :=
     (g.battlefield.filter (fun o => o.printed.isToken && o.hasSubtype .merfolk)).size
-  let (gBlue, ab) := g.allocStackAbility namor ⟨0⟩
-  let gBlue := gBlue.changeObject ab.id (.fraCauseId (some aura.id))
-  let gBlue := gBlue.change (.pushContinuationFrame { resolvingAbility := some ab.id })
+  let abBlueId : ObjectId := ⟨g.nextObjectId⟩
+  let gBlue := g.record (GameEvent.triggerPutOnStack g.turnNumber abBlueId (g.snapshot namor) ⟨0⟩
+    (spec := { sourceId := some namor.id, fraCauseId := some aura.id }))
+  let gBlue := gBlue.change (.pushContinuationFrame { resolvingAbility := some abBlueId })
   let gBlue := gBlue.applyModeledTrigger ⟨0⟩ (.onCasting Effect.castingMerfolkFromBlue)
     (some namor.id)
   merfolk gBlue == 2 &&
-    (let (gRed, ab) := g.allocStackAbility namor ⟨0⟩
-     let gRed := gRed.changeObject ab.id (.fraCauseId (some bolt.id))
-     let gRed := gRed.change (.pushContinuationFrame { resolvingAbility := some ab.id })
+    (let abRedId : ObjectId := ⟨g.nextObjectId⟩
+     let gRed := g.record (GameEvent.triggerPutOnStack g.turnNumber abRedId (g.snapshot namor) ⟨0⟩
+       (spec := { sourceId := some namor.id, fraCauseId := some bolt.id }))
+     let gRed := gRed.change (.pushContinuationFrame { resolvingAbility := some abRedId })
      let gRed := gRed.applyModeledTrigger ⟨0⟩ (.onCasting Effect.castingMerfolkFromBlue)
        (some namor.id)
      merfolk gRed == 0 && logContains gRed "No blue mana symbols")

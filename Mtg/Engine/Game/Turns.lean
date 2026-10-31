@@ -270,6 +270,7 @@ private def isPhaseStartStep : Step → Bool
 turn, and a skipped draw step (CR 103.8a / 500.11) immediately begins
 precombat main; both re-enter `beginStep`. -/
 partial def beginStep (g : Game) (st : Step) : Game :=
+  let g := if g.proposalCheckpoint.isSome then g.change .clearProposalCheckpoint else g
   let g := g.changes #[
     .pending .none,
     .consecutivePasses 0,
@@ -434,7 +435,9 @@ def advanceStep (g : Game) : Game :=
         (cause := some (.gameRule .stepAdvance)))
       g.beginStep .endOfCombat
     else if g.step == .combatDamage && g.pendingRegularCombatDamage then
-      (g.change (.pendingRegularCombatDamage false)).beginCombatDamageAssignment
+      let g := g.record (GameEvent.stepEnded g.turnNumber .combatDamage
+        (cause := some (.gameRule .stepAdvance)))
+      g.beginStep .combatDamage
     else if g.step == .endOfCombat && g.additionalCombatPhases > 0 then
       let g := g.record (GameEvent.stepEnded g.turnNumber .endOfCombat
         (cause := some (.gameRule .stepAdvance)))

@@ -859,7 +859,7 @@ open Mtg.Demo.Render
   | .error _ => false
 
 
-#guard describeCheckResult (Tests.started.change (.result (some .draw))) == "The game is a draw."
+#guard describeCheckResult (Tests.started.record (GameEvent.gameEnded Tests.started.turnNumber .draw)) == "The game is a draw."
 
 #guard shouldWriteOutput false false true "target"
 

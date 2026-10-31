@@ -44,9 +44,10 @@ def withCause (g : Game) (source : GameObject) (spell : CardDef)
   let g :=
     if targets.isEmpty then g
     else g.record (GameEvent.targeted g.turnNumber spellObj.id targets)
-  let (g, ab) := g.allocStackAbility source me
-  let g := g.changeObject ab.id (.fraCauseId (some spellObj.id))
-  g.change (.resolvingAbility (some ab.id))
+  let abId : ObjectId := ⟨g.nextObjectId⟩
+  let g := g.record (GameEvent.triggerPutOnStack g.turnNumber abId (g.snapshot source) me
+    (spec := { sourceId := some source.id, fraCauseId := some spellObj.id }))
+  g.change (.resolvingAbility (some abId))
 
 def casting (e : Effect) : TriggeredAbility :=
   TriggeredAbility.onCasting e

@@ -1104,21 +1104,32 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
       match g.findObject? a, g.findObject? b with
       | some oa, some ob =>
         -- Both must still be nonland permanents that share a card type.
-        -- If either is illegal, the exchange does not happen.
+        -- If either is illegal, the exchange does not happen (CR 701.12a).
         let nonland (o : GameObject) :=
           o.isOnBattlefield && !(g.types o).any (· == .land)
         let share := (g.types oa).any (fun t => (g.types ob).contains t)
         if a != b && nonland oa && nonland ob && share then
           match g.controllerOf oa, g.controllerOf ob with
           | some pa, some pb =>
-            let oaName := g.name oa
-            let obName := g.name ob
-            let g := g.changeControl oa pb
-            let g :=
-              match g.findObject? b with
-              | some ob => g.changeControl ob pa
-              | none => g
-            g.logMsg s!"{oaName} and {obName} exchange control"
+            -- CR 701.12a / 104.5 / 800.4a–b: if the entire exchange can't be
+            -- completed (e.g. a controller has left the game), no part occurs.
+            if (g.player pa).lost || (g.player pb).lost then
+              g.logMsg "The exchange can't be completed (CR 701.12a)."
+            -- CR 701.12b: if both permanents are controlled by the same player,
+            -- the exchange effect does nothing.
+            else if pa == pb then
+              g
+            else
+              let oaName := g.name oa
+              let obName := g.name ob
+              let batchCause := some (EventCause.oneShotEffect none sourceId (some controller))
+              let g := g.withBatch batchCause fun g =>
+                let g := g.changeControl oa pb
+                let effCause := (g.currentBatch.map Prod.snd).join
+                match g.findObject? b with
+                | some ob => g.changeControl ob pa (cause := effCause)
+                | none => g
+              g.logMsg s!"{oaName} and {obName} exchange control"
           | _, _ =>
             g.logMsg "A target is no longer legal. The exchange doesn't happen."
         else

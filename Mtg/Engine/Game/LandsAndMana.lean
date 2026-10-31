@@ -29,8 +29,12 @@ def finishPlayLand (g : Game) (p : PlayerId) (id : ObjectId) (tapped : Bool := f
       (verb := some .playLand) (actor := some p)
       (cause := some (.specialAction .playLand p))
     let g := g.logMsg s!"{(g.player p).name} plays {card.name}"
-    let g := if tapped then g.logMsg s!"{card.name} enters tapped" else g
-    g.afterLandEnters (g.object! newId)
+    if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement (.afterLastPermanentEnters (some id) (isPlayLand := true))
+    else
+      let entered := g.object! newId
+      let g := if entered.status.tapped then g.logMsg s!"{card.name} enters tapped" else g
+      g.afterLandEnters entered
 
 def playLand (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game := do
   if !g.canPlayLand p then
@@ -40,17 +44,9 @@ def playLand (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game := d
     throw (g.playZoneError p card)
   if !g.isLand card then
     throw s!"{card.name} is not a land"
-  -- The Black Gate: “As it enters, you may pay N life. If you don't, it
-  -- enters tapped.” Choose tapped before moving so the arrival event is
-  -- recorded with the final tap status (CR 614.1c).
-  let face := g.baseCard card
-  match face.entersTappedUnlessPayLife with
-  | some n =>
-    if !face.entersTapped then
-      return (g.change (.pending (.fraChoice p (.payLifeOrEnterTapped id n)))).logMsg
-        s!"{(g.player p).name} may pay {n} life, or {card.name} enters tapped"
-  | none => pure ()
   let g := g.finishPlayLand p id
+  if let .chooseReplacement .. := g.pending then
+    return g.chainPendingReplacement (.receivePriority p)
   if g.pending != .none then
     return g
   return g.receivePriority p

@@ -173,7 +173,7 @@ def castTriggerBeforeSpellOk : Bool :=
      let gAb := gAb.changeObject ab.id
        (.abilityEffect (some (Effect.dealDamageToTargetCreature 1)))
      let gAb := gAb.putStackEntry ⟨0⟩ ab.id
-     let gAb := gAb.queueYouTargetTriggers ⟨0⟩ (gAb.object! ab.id)
+     let gAb := gAb.setStackEntryTargets ab.id #[Target.player ⟨1⟩]
      gAb.waitingTriggers.any (fun (t : WaitingTrigger) =>
          t.source.name == "Loki, God of Mischief") &&
        gAb.objects.any (fun o => o.id == ab.id && o.zone == .stack)) &&

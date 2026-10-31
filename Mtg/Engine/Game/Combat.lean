@@ -26,62 +26,63 @@ def declareAttackers (g : Game) (p : PlayerId) (ids : Array ObjectId)
     Except String Game := do
   if g.pending != .declareAttackers || g.priorityInstead g.activePlayer != p then
     throw "Not time to declare attackers"
-  let (g0, closeBatch) := g.openBatch (some (.turnBased .declareAttackers))
-  let mut g := g0
-  let mut decls : Array (EventObject × AttackTarget) := #[]
-  let mut steps : Array (ObjectId × PlayerId × Option GameObject) := #[]
-  for i in [0:ids.size] do
-    let id := ids[i]!
-    let o := g.object! id
-    if !g.canAttack o then
-      throw s!"{g.name o} cannot attack"
-    let want :=
-      match each[i]? with
-      | some (some d) => some d
-      | some none => defender
-      | none => defender
-    let pw? ←
-      match planeswalkers[i]? with
-      | some (some pwId) =>
-        match g.findObject? pwId with
+  let g ← g.withBatchM (some (.turnBased .declareAttackers)) fun g => do
+    let mut g := g
+    let mut decls : Array (EventObject × AttackTarget) := #[]
+    let mut steps : Array (ObjectId × PlayerId × Option GameObject) := #[]
+    for i in [0:ids.size] do
+      let id := ids[i]!
+      let o := g.object! id
+      if !g.canAttack o then
+        throw s!"{g.name o} cannot attack"
+      let want :=
+        match each[i]? with
+        | some (some d) => some d
+        | some none => defender
+        | none => defender
+      let pw? ←
+        match planeswalkers[i]? with
+        | some (some pwId) =>
+          match g.findObject? pwId with
+          | some pw =>
+            if !pw.isOnBattlefield || !g.isPlaneswalker pw then
+              throw s!"{g.name pw} is not a planeswalker on the battlefield"
+            else if !(g.livingOpponents p).any (fun pl => g.controlledBy pw pl.id) then
+              throw s!"{g.name pw} isn't controlled by an opponent (CR 508.1b)"
+            else pure (some pw)
+          | none => throw "no such planeswalker"
+        | _ => pure none
+      if g.cantAttackJaces p then
+        match pw? with
         | some pw =>
-          if !pw.isOnBattlefield || !g.isPlaneswalker pw then
-            throw s!"{g.name pw} is not a planeswalker on the battlefield"
-          else if !(g.livingOpponents p).any (fun pl => g.controlledBy pw pl.id) then
-            throw s!"{g.name pw} isn't controlled by an opponent (CR 508.1b)"
-          else pure (some pw)
-        | none => throw "no such planeswalker"
-      | _ => pure none
-    if g.cantAttackJaces p then
-      match pw? with
-      | some pw =>
-        if (g.name pw).startsWith "Jace" || g.hasSubtype pw .jace then
-          throw s!"{g.name o} can't attack {g.name pw} this turn"
-      | none => pure ()
-    let dest ←
-      match pw? with
-      | some pw => pure ((g.controllerOf pw).getD pw.owner)
-      | none => g.resolveAttackDestination p want
-    if g.hasFlying o && g.leftoverFlyingRestriction dest then
-      throw s!"{g.name o} can't attack {(g.player dest).name}"
-    let target : AttackTarget :=
-      match pw? with
-      | some pw => .planeswalker pw.id
-      | none => .player dest
-    decls := decls.push ({ (g.snapshot o) with attacking := true, attackingTarget := some target }, target)
-    steps := steps.push (id, dest, pw?)
-  if !decls.isEmpty then
-    g := g.record (GameEvent.attackersDeclared g.turnNumber p decls
-      (cause := some (.turnBased .declareAttackers)))
-  for (id, dest, pw?) in steps do
-    let o := g.object! id
-    if !g.hasVigilance o then
-      g := g.becomeTapped o (cause := some (.turnBased .declareAttackers))
-    g := g.logMsg
-      (match pw? with
-       | some pw => s!"{g.player p |>.name} attacks {g.name pw} with {g.name o}"
-       | none => s!"{g.player p |>.name} attacks {(g.player dest).name} with {g.name o}")
-  g := closeBatch g
+          if (g.name pw).startsWith "Jace" || g.hasSubtype pw .jace then
+            throw s!"{g.name o} can't attack {g.name pw} this turn"
+        | none => pure ()
+      let dest ←
+        match pw? with
+        | some pw => pure ((g.controllerOf pw).getD pw.owner)
+        | none => g.resolveAttackDestination p want
+      if g.hasFlying o && g.leftoverFlyingRestriction dest then
+        throw s!"{g.name o} can't attack {(g.player dest).name}"
+      let target : AttackTarget :=
+        match pw? with
+        | some pw => .planeswalker pw.id
+        | none => .player dest
+      decls := decls.push ({ (g.snapshot o) with attacking := true, attackingTarget := some target }, target)
+      steps := steps.push (id, dest, pw?)
+    if !decls.isEmpty then
+      g := g.record (GameEvent.attackersDeclared g.turnNumber p decls
+        (cause := some (.turnBased .declareAttackers)))
+    for (id, dest, pw?) in steps do
+      let o := g.object! id
+      if !g.hasVigilance o then
+        g := g.becomeTapped o (cause := some (.turnBased .declareAttackers))
+      g := g.logMsg
+        (match pw? with
+         | some pw => s!"{g.player p |>.name} attacks {g.name pw} with {g.name o}"
+         | none => s!"{g.player p |>.name} attacks {(g.player dest).name} with {g.name o}")
+    return g
+  let mut g := g
   -- Tomik, Orzhov Lawmage (ruling 834): checked on the whole declaration.
   for pw in g.battlefield do
     if g.isPlaneswalker pw && g.planeswalkerAttackedByOneAtMost pw then
@@ -116,47 +117,48 @@ def declareBlockers (g : Game) (p : PlayerId) (assignments : Array (ObjectId × 
     throw "Not time to declare blockers"
   if p != g.currentBlockersPlayer then
     throw "Only the defending player declares blockers"
-  let (g0, closeBatch) := g.openBatch (some (.turnBased .declareBlockers))
-  let mut g := g0
-  let mut decls : Array (EventObject × ObjectId) := #[]
-  for (blockerId, attackerId) in assignments do
-    let b := g.object! blockerId
-    let a := g.object! attackerId
-    if !g.canBlock b a then
-      throw s!"{b.name} cannot block {a.name}"
-    decls := decls.push (g.snapshot b, attackerId)
-  if !decls.isEmpty then
-    g := g.record (GameEvent.blockersDeclared g.turnNumber p decls
-      (cause := some (.turnBased .declareBlockers)))
-  let mut blockedAttackers : Array ObjectId := #[]
-  for (blockerId, attackerId) in assignments do
-    let b := g.object! blockerId
-    let a := g.object! attackerId
-    if !blockedAttackers.contains attackerId then
-      blockedAttackers := blockedAttackers.push attackerId
-    g := g.logMsg s!"{b.name} blocks {a.name}"
-  for attackerId in blockedAttackers do
-    let a := g.object! attackerId
-    let bs := (assignments.filter (·.2 == attackerId)).map (·.1)
-    g := g.record (GameEvent.becameBlocked g.turnNumber (g.snapshot a) bs
-      (cause := some (.turnBased .declareBlockers)))
-  -- CR 509.1c / 702.111: a menace (or “except by N or more”) creature that is
-  -- blocked must be blocked by at least that many creatures.
-  for o in g.battlefield do
-    if o.status.attacking then
-      let need := g.minBlockersRequired o
-      if need > 1 then
-        let n := (g.blockersOf o.id).size
-        if n > 0 && n < need then
-          let word := if need == 2 then "two" else toString need
-          throw s!"{o.name} can't be blocked except by {word} or more creatures"
-  let rest := g.blockersQueue.extract 1 g.blockersQueue.size
-  if rest.isEmpty then
+  let (g, rest) ← g.withBatchExcept (some (.turnBased .declareBlockers)) fun g => do
+    let mut g := g
+    let mut decls : Array (EventObject × ObjectId) := #[]
+    for (blockerId, attackerId) in assignments do
+      let b := g.object! blockerId
+      let a := g.object! attackerId
+      if !g.canBlock b a then
+        throw s!"{b.name} cannot block {a.name}"
+      decls := decls.push (g.snapshot b, attackerId)
+    if !decls.isEmpty then
+      g := g.record (GameEvent.blockersDeclared g.turnNumber p decls
+        (cause := some (.turnBased .declareBlockers)))
+    let mut blockedAttackers : Array ObjectId := #[]
+    for (blockerId, attackerId) in assignments do
+      let b := g.object! blockerId
+      let a := g.object! attackerId
+      if !blockedAttackers.contains attackerId then
+        blockedAttackers := blockedAttackers.push attackerId
+      g := g.logMsg s!"{b.name} blocks {a.name}"
+    for attackerId in blockedAttackers do
+      let a := g.object! attackerId
+      let bs := (assignments.filter (·.2 == attackerId)).map (·.1)
+      g := g.record (GameEvent.becameBlocked g.turnNumber (g.snapshot a) bs
+        (cause := some (.turnBased .declareBlockers)))
+    -- CR 509.1c / 702.111: a menace (or “except by N or more”) creature that is
+    -- blocked must be blocked by at least that many creatures.
     for o in g.battlefield do
-      if o.status.attacking && !o.status.blocked then
-        g := g.record (GameEvent.remainedUnblocked g.turnNumber (g.snapshot o)
-          (cause := some (.turnBased .declareBlockers)))
-  g := closeBatch g
+      if o.status.attacking then
+        let need := g.minBlockersRequired o
+        if need > 1 then
+          let n := (g.blockersOf o.id).size
+          if n > 0 && n < need then
+            let word := if need == 2 then "two" else toString need
+            throw s!"{o.name} can't be blocked except by {word} or more creatures"
+    let rest := g.blockersQueue.extract 1 g.blockersQueue.size
+    if rest.isEmpty then
+      for o in g.battlefield do
+        if o.status.attacking && !o.status.blocked then
+          g := g.record (GameEvent.remainedUnblocked g.turnNumber (g.snapshot o)
+            (cause := some (.turnBased .declareBlockers)))
+    return (g, rest)
+  let mut g := g
   if assignments.isEmpty then
     g := g.logMsg s!"{g.player p |>.name} does not block"
   if rest.isEmpty then
@@ -299,7 +301,7 @@ def checkCombatAssignmentBatch (g : Game) (forAttackers : Bool)
 /-- Apply assigned combat damage simultaneously (CR 510.2). -/
 def dealAssignedCombatDamage (g : Game) (appliedSoFar : Array ReplacementId := #[])
     (startIdx : Nat := 0) : Game :=
-  let fs := g.combatHasFirstStrike && !g.firstStrikeDamageDone
+  let fs := (g.combatHasFirstStrike || g.hasFirstStrikeAssignmentInCurrentStep) && !g.firstStrikeDamageDone
   let combatCause := some (EventCause.turnBased (.dealCombatDamage fs))
   let isOuterCall := g.currentBatch.isNone
   let g := g.withBatch combatCause fun g => Id.run do
@@ -381,11 +383,6 @@ def dealAssignedCombatDamage (g : Game) (appliedSoFar : Array ReplacementId := #
               return some ch
         return none
       if let some (chooser, choices) := asgnChoice? then
-        let assignedSoFar := (g.assignedCombatDamage.extract startIdx i).map (·.source)
-        let firstStrikeAssigned :=
-          if fs then g.firstStrikeAssignedThisCombat ++ assignedSoFar
-          else g.firstStrikeAssignedThisCombat
-        g := g.change (.firstStrikeAssignedThisCombat firstStrikeAssigned)
         return g.promptChooseReplacement chooser choices (.dealAssignedCombatDamage allApplied i)
       let mut totalDealt : Int := 0
       let recipients :=
@@ -490,29 +487,20 @@ def dealAssignedCombatDamage (g : Game) (appliedSoFar : Array ReplacementId := #
               g := g.createTreasureTokens pid treasureCount (cause := combatCause)
         | none => pure ()
       if let .chooseReplacement .. := g.pending then
-        let assignedSoFar := (g.assignedCombatDamage.extract startIdx (i + 1)).map (·.source)
-        let firstStrikeAssigned :=
-          if fs then g.firstStrikeAssignedThisCombat ++ assignedSoFar
-          else g.firstStrikeAssignedThisCombat
-        g := g.change (.firstStrikeAssignedThisCombat firstStrikeAssigned)
         return g.chainPendingReplacement (.dealAssignedCombatDamage allApplied (i + 1))
     g := g.consumeReplacementOrder allApplied
-    let pendingRegular :=
-      g.combatHasFirstStrike && !g.firstStrikeDamageDone
-    let assignedFs :=
-      if pendingRegular then
-        g.firstStrikeAssignedThisCombat ++ (g.assignedCombatDamage.extract startIdx g.assignedCombatDamage.size).map (·.source)
-      else g.firstStrikeAssignedThisCombat
-    g.changes #[
-      .pending .none,
-      .firstStrikeDamageDone (g.firstStrikeDamageDone || g.combatHasFirstStrike),
-      .pendingRegularCombatDamage pendingRegular,
-      .firstStrikeAssignedThisCombat assignedFs,
-      .clearAssignedCombatDamage ]
+    g.change (.pending .none)
   if let .chooseReplacement .. := g.pending then
-    if isOuterCall then g.chainPendingReplacement (.receivePriority g.activePlayer)
+    if isOuterCall then
+      let g := if fs then g.chainPendingReplacement .addExtraCombatDamageStep else g
+      g.chainPendingReplacement (.receivePriority g.activePlayer)
     else g
   else if isOuterCall then
+    let g :=
+      if fs then
+        g.record (GameEvent.extraStepAdded g.turnNumber .combatDamage .afterCurrent
+          (cause := .gameRule .stepAdvance))
+      else g
     g.receivePriority g.activePlayer
   else g
 
@@ -567,12 +555,7 @@ def announceCombatDamage (g : Game) (p : PlayerId)
 
 def clearCombat (g : Game) : Game :=
   Id.run do
-    let mut g := g.changes #[
-      .firstStrikeDamageDone false,
-      .pendingRegularCombatDamage false,
-      .firstStrikeAssignedThisCombat #[],
-      .blockersQueue #[],
-      .clearAssignedCombatDamage ]
+    let mut g := g.change (.blockersQueue #[])
     let cause := EventCause.turnBased .removeFromCombatAtEndOfCombat
     for o in g.battlefield do
       if o.status.attacking || !o.status.blocking.isEmpty || o.status.blocked then
