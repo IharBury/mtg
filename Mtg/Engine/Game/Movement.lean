@@ -578,13 +578,15 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
       if g.createsWolfOnOppExileDeath? src then
         match g.controllerOf src with
         | some p =>
-          let ab := TriggeredAbility.fra .fromEffect
-            "When you do, create a 2/2 green Wolf creature token."
-            (.createTokens .wolf 1)
-          g.recordReflexiveTrigger {
-              controller := p, source := src, ability := ab,
-              event := .bolgSacrificedForReflexive, checked := true }
-            |>.logMsg s!"{(g.player p).name}'s Wolf trigger is waiting to go on the stack"
+          if (g.player p).lost || (g.player p).leftTheGame then g
+          else
+            let ab := TriggeredAbility.fra .fromEffect
+              "When you do, create a 2/2 green Wolf creature token."
+              (.createTokens .wolf 1)
+            g.recordReflexiveTrigger {
+                controller := p, source := src, ability := ab,
+                event := .bolgSacrificedForReflexive, checked := true }
+              |>.logMsg s!"{(g.player p).name}'s Wolf trigger is waiting to go on the stack"
         | none => g
       else g
     | none => g

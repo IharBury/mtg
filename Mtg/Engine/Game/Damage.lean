@@ -100,6 +100,27 @@ def snapshotDamageSource (g : Game) (src : GameObject) : EventObject :=
   if (g.findObject? src.id).isSome then g.snapshot src
   else (g.lastKnownBefore? src.id).getD (g.snapshot src)
 
+/-- Resolve a stored damage-source `EventObject` snapshot to a `GameObject`:
+returns the live `GameObject` if still at `eo.id`, otherwise reconstructs an
+LKI `GameObject` via `damageSourceObjectFromLki` without calling `followMoved`
+(which would pick up the post-move object and drop battlefield LKI, CR 113.7a /
+608.2h). -/
+def damageSourceFromSnapshot (g : Game) (eo : EventObject) : GameObject :=
+  match eo.id.bind g.findObject? with
+  | some live => live
+  | none => damageSourceObjectFromLki eo
+
+/-- Optional wrapper around `damageSourceFromSnapshot`. -/
+def damageSourceObjFromSnapshot? (g : Game) (source : Option EventObject) : Option GameObject :=
+  source.map g.damageSourceFromSnapshot
+
+/-- Refresh a stored `EventObject` snapshot if its `id` is still live in `g`,
+or keep the frozen LKI snapshot when the original `id` has departed. -/
+def refreshOrKeepDamageSnapshot (g : Game) (eo : EventObject) : EventObject :=
+  match eo.id.bind g.findObject? with
+  | some live => g.snapshot live
+  | none => eo
+
 /-- Source `ObjectId` of the currently resolving ability/continuation when the
 source is no longer at its original `ObjectId`. -/
 private def resolvingDepartedSourceId? (g : Game) : Option ObjectId :=
@@ -200,6 +221,7 @@ to `recipientPerm?` or `recipientPlayer?` (CR 614.1a / 615.1 / 616.1; rulings
 MSH 177–179, 237, 305). -/
 def replaceDamage (g : Game) (n : Int)
     (src? : Option GameObject := none)
+    (srcEvent? : Option EventObject := none)
     (recipientPerm? : Option GameObject := none)
     (recipientPlayer? : Option PlayerId := none)
     (combat : Bool := false)
@@ -215,7 +237,9 @@ def replaceDamage (g : Game) (n : Int)
       |>.orElse (fun _ => src?.bind g.controllerOf)
       |>.getD ⟨0⟩
   let srcEvent : EventObject :=
-    (src?.map g.snapshot).orElse (fun _ => g.resolvingDamageSourceEvent?) |>.getD default
+    srcEvent?.orElse (fun _ => src?.map g.snapshotDamageSource)
+      |>.orElse (fun _ => g.resolvingDamageSourceEvent?)
+      |>.getD default
   let propCause := g.resolveOptionalCause cause (fallbackSrc := srcEvent.id) (fallbackCtrl := some affected)
   let proposed :=
     match recipientPerm?, recipientPlayer? with
@@ -419,17 +443,20 @@ def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
     (applied : Array ReplacementId := #[])
     (consumeOrder : Bool := true)
     (cause : Option EventCause := none) : Game :=
+  let srcSnap :=
+    source.orElse (fun _ => sourceObj.map g.snapshotDamageSource)
+      |>.orElse (fun _ => g.resolvingDamageSourceEvent?)
   let src? :=
-    sourceObj.orElse (fun _ => (source.bind (·.id)).bind g.findObject?)
+    sourceObj.orElse (fun _ => g.damageSourceObjFromSnapshot? srcSnap)
       |>.orElse (fun _ => g.resolvingMovedDamageSource?)
   let rep :=
     replaced.getD
-      (g.replaceDamage n (src? := src?) (recipientPerm? := some o) (combat := combat)
-        (unpreventable := unpreventable) (applied := applied) (cause := cause))
+      (g.replaceDamage n (src? := src?) (srcEvent? := srcSnap) (recipientPerm? := some o)
+        (combat := combat) (unpreventable := unpreventable) (applied := applied) (cause := cause))
   match rep.choice? with
   | some (chooser, choices) =>
     g.promptChooseReplacement chooser choices
-      (.markDamageOn o.id n.toNat msg deathtouch source combat unpreventable cause)
+      (.markDamageOn o.id n.toNat msg deathtouch srcSnap combat unpreventable cause)
   | none =>
   let g := if consumeOrder then g.consumeReplacementOrder rep.applied else g
   if n > 0 && !unpreventable && rep.prevented && !rep.shieldRemoved then
@@ -442,7 +469,7 @@ def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
       else g.currentResolvingContext?.map fun (src, ctrl) => .oneShotEffect none src ctrl)
   g.withBatch defaultCause fun g =>
   let srcEvent : EventObject :=
-    let base := (source.orElse (fun _ => g.resolvingDamageSourceEvent?)).getD default
+    let base := srcSnap.getD default
     { base with keywords := { base.keywords with deathtouch := base.keywords.deathtouch || deathtouch } }
   let healsOther :=
     (g.staticAbilities o).any (fun
@@ -597,14 +624,14 @@ def dealDamageToPermanent (g : Game) (o : GameObject) (n : Int)
     (cause : Option EventCause := none) : Game :=
   let srcEvent? := source.orElse (fun _ => g.resolvingDamageSourceEvent?)
   let srcObj? :=
-    (srcEvent?.bind (·.id)).bind g.findObject?
-      |>.orElse (fun _ => g.resolvingMovedDamageSource?)
+    (g.damageSourceObjFromSnapshot? srcEvent?).orElse (fun _ => g.resolvingMovedDamageSource?)
   let rep :=
-    g.replaceDamage n (src? := srcObj?) (recipientPerm? := some o) (cause := cause)
+    g.replaceDamage n (src? := srcObj?) (srcEvent? := srcEvent?) (recipientPerm? := some o)
+      (cause := cause)
   match rep.choice? with
   | some (chooser, choices) =>
     g.promptChooseReplacement chooser choices
-      (.dealDamageToPermanent o.id n.toNat source false false cause)
+      (.dealDamageToPermanent o.id n.toNat srcEvent? false false cause)
   | none =>
     let g := g.consumeReplacementOrder rep.applied
     let dealtAmt := rep.amount
@@ -629,14 +656,22 @@ def dealDamageToPermanent (g : Game) (o : GameObject) (n : Int)
 /-- Deal `n` damage from a named source (fight, dies trigger, blocked trigger). -/
 def dealDamageFrom (g : Game) (sourceName : String) (o : GameObject) (n : Int)
     (deathtouch := false) (source : Option GameObject := none)
+    (sourceSnap : Option EventObject := none)
     (cause : Option EventCause := none) : Game :=
-  match source.orElse (fun _ => g.resolvingMovedDamageSource?) with
+  let resolvedSrc? :=
+    source.orElse (fun _ => g.damageSourceObjFromSnapshot? sourceSnap)
+      |>.orElse (fun _ => g.resolvingMovedDamageSource?)
+  match resolvedSrc? with
   | some src =>
-    let rep := g.replaceDamage n (src? := some src) (recipientPerm? := some o) (cause := cause)
+    let srcSnap :=
+      (sourceSnap.map g.refreshOrKeepDamageSnapshot).getD (g.snapshotDamageSource src)
+    let rep :=
+      g.replaceDamage n (src? := some src) (srcEvent? := some srcSnap)
+        (recipientPerm? := some o) (cause := cause)
     match rep.choice? with
     | some (chooser, choices) =>
       g.promptChooseReplacement chooser choices
-        (.dealDamageFrom src.id o.id n.toNat false false cause)
+        (.dealDamageFrom sourceName srcSnap o.id n.toNat deathtouch false false cause)
     | none =>
       let g := g.consumeReplacementOrder rep.applied
       if rep.prevented && !rep.shieldRemoved && !g.preventsAllDamageTo o then
@@ -644,16 +679,18 @@ def dealDamageFrom (g : Game) (sourceName : String) (o : GameObject) (n : Int)
       else
         let dealtAmt := rep.amount
         let prevented := rep.prevented || g.preventsAllDamageTo o || o.status.shield > 0
+        let isLive := (g.findObject? src.id).isSome
+        let srcCtrl? := if isLive then g.controllerOf src else srcSnap.controller
         let defaultCause :=
           cause.orElse (fun _ =>
             if dealtAmt <= 0 && !rep.shieldRemoved then none
             else g.currentResolvingContext?.map fun (ctxSrc, ctrl) =>
               .oneShotEffect none
                 (ctxSrc.orElse (fun _ => some src.id))
-                (ctrl.orElse (fun _ => g.controllerOf src)))
+                (ctrl.orElse (fun _ => srcCtrl?)))
         g.withBatch defaultCause fun g =>
-        let srcEvent := g.snapshotDamageSource src
         let isLive := (g.findObject? src.id).isSome
+        let srcEvent := if isLive then g.snapshot src else srcSnap
         let hasDt := if isLive then g.hasDeathtouch src else srcEvent.keywords.deathtouch
         let hasLl := if isLive then g.hasLifelink src else srcEvent.keywords.lifelink
         let ctrl? := if isLive then g.controllerOf src else srcEvent.controller
@@ -672,16 +709,22 @@ def dealDamageFrom (g : Game) (sourceName : String) (o : GameObject) (n : Int)
 /-- Deal `n` damage to a player and log the resulting life total (CR 120). -/
 def dealDamageToPlayer (g : Game) (pid : PlayerId) (n : Int)
     (preventable := true) (source : Option GameObject := none)
+    (sourceSnap : Option EventObject := none)
     (cause : Option EventCause := none) : Game :=
-  let source := source.orElse (fun _ => g.resolvingMovedDamageSource?)
+  let source :=
+    source.orElse (fun _ => g.damageSourceObjFromSnapshot? sourceSnap)
+      |>.orElse (fun _ => g.resolvingMovedDamageSource?)
+  let srcSnap :=
+    (sourceSnap.map g.refreshOrKeepDamageSnapshot)
+      |>.orElse (fun _ => source.map g.snapshotDamageSource)
+      |>.orElse (fun _ => g.resolvingDamageSourceEvent?)
   let pl := g.player pid
   let rep :=
-    g.replaceDamage n (src? := source) (recipientPlayer? := some pid)
+    g.replaceDamage n (src? := source) (srcEvent? := srcSnap) (recipientPlayer? := some pid)
       (unpreventable := !preventable) (cause := cause)
   match rep.choice? with
   | some (chooser, choices) =>
     let msg := s!"{pl.name} is dealt {n} damage"
-    let srcSnap := (source.map g.snapshotDamageSource).orElse (fun _ => g.resolvingDamageSourceEvent?)
     g.promptChooseReplacement chooser choices
       (.dealDamageToPlayer pid n.toNat msg srcSnap false (!preventable) cause)
   | none =>
@@ -699,10 +742,15 @@ def dealDamageToPlayer (g : Game) (pid : PlayerId) (n : Int)
         else g.currentResolvingContext?.map fun (ctxSrc, ctrl) =>
           .oneShotEffect none
             (ctxSrc.orElse (fun _ => source.map (·.id)))
-            (ctrl.orElse (fun _ => source.bind g.controllerOf)))
+            (ctrl.orElse (fun _ =>
+              (source.bind (fun src =>
+                if (g.findObject? src.id).isSome then g.controllerOf src
+                else srcSnap.bind (·.controller))).orElse (fun _ => srcSnap.bind (·.controller)))))
     g.withBatch defaultCause fun g =>
     let srcEvent :=
-      ((source.map g.snapshotDamageSource).orElse (fun _ => g.resolvingDamageSourceEvent?)).getD default
+      ((srcSnap.map g.refreshOrKeepDamageSnapshot)
+        |>.orElse (fun _ => source.map g.snapshotDamageSource)
+        |>.orElse (fun _ => g.resolvingDamageSourceEvent?)).getD default
     let dmgCause :=
       g.resolveOptionalCause rep.cause (fallbackSrc := srcEvent.id)
         (fallbackCtrl := (source.bind (fun src =>
@@ -735,19 +783,27 @@ def dealDamageToPlayer (g : Game) (pid : PlayerId) (n : Int)
 choice opens so the remaining players resume after the choice is answered. -/
 def dealDamageToPlayers (g : Game) (players : Array PlayerId) (n : Int)
     (source : Option GameObject := none)
+    (sourceSnap : Option EventObject := none)
     (cause : Option EventCause := none) : Game :=
+  let source :=
+    source.orElse (fun _ => g.damageSourceObjFromSnapshot? sourceSnap)
+      |>.orElse (fun _ => g.resolvingMovedDamageSource?)
+  let srcSnap :=
+    (sourceSnap.map g.refreshOrKeepDamageSnapshot)
+      |>.orElse (fun _ => source.map g.snapshotDamageSource)
+      |>.orElse (fun _ => g.resolvingDamageSourceEvent?)
   g.withBatch cause fun g => Id.run do
     let mut g := g
     let c := cause.orElse (fun _ => g.currentBatch.bind (·.2))
     for i in [0:players.size] do
       let pid := players[i]!
       if !(g.player pid).lost then
-        g := g.dealDamageToPlayer pid n (source := source) (cause := c)
+        g := g.dealDamageToPlayer pid n (source := source) (sourceSnap := srcSnap) (cause := c)
         if let .chooseReplacement .. := g.pending then
           let rem := players.extract (i + 1) players.size
           if !rem.isEmpty then
             g := g.chainPendingReplacement
-              (.dealDamageToPlayers rem n.toNat (source.map (·.id)) c)
+              (.dealDamageToPlayers rem n.toNat srcSnap c)
           return g
     return g
 
@@ -756,7 +812,7 @@ def dealDamageToPlayers (g : Game) (players : Array PlayerId) (n : Int)
 def dealDamageToEachOpponent (g : Game) (controller : PlayerId) (n : Int)
     (source : Option GameObject := none)
     (cause : Option EventCause := none) : Game :=
-  let source := source.orElse (fun _ => g.resolvingDamageSource?)
+  let source := source.orElse (fun _ => g.resolvingMovedDamageSource?)
   let defaultCause :=
     cause.orElse (fun _ =>
       if n <= 0 || (g.livingOpponents controller).isEmpty then none
@@ -857,7 +913,8 @@ def dealDamageToTarget (g : Game) (t : Target) (n : Int)
     (source : Option GameObject := none)
     (cause : Option EventCause := none) : Game :=
   -- The source is the resolving spell, or the source of the resolving
-  -- ability (CR 609.7 / 113.7).
+  -- ability (CR 609.7 / 113.7); departed sources are resolved via LKI inside
+  -- `dealDamageToPlayer` / `dealDamageToPermanent` (CR 113.7a).
   let src := source.orElse (fun _ => g.resolvingDamageSource?)
   match t with
   | Target.player pid => g.dealDamageToPlayer pid n (source := src) (cause := cause)

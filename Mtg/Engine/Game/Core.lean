@@ -7250,8 +7250,11 @@ def extraTriggerCopies (g : Game) (controller : PlayerId) (source : GameObject) 
         if o.attachedTo == some source.id then acc + 1 else acc
       | _ => acc) acc) 0
 
-/-- Append waiting-trigger snapshots. -/
+/-- Append waiting-trigger snapshots, skipping any controller who has already
+lost or left the game (CR 800.4d). -/
 def enqueueWaitingTriggers (g : Game) (wts : Array WaitingTrigger) : Game :=
+  let wts := wts.filter (fun wt =>
+    !(g.player wt.controller).lost && !(g.player wt.controller).leftTheGame)
   if wts.isEmpty then g
   else
     let e := GameEvent.engine g.turnNumber (.enqueueWaitingTriggers wts)
@@ -8526,25 +8529,26 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
                       (w := waiting) (fs := firedSources)
                   waiting := w; firedSources := fs
               | _, _ => pure ()
-            -- Delayed upkeep triggers (CR 603.7; The Eagles Are Coming!)
+            -- Delayed upkeep triggers (CR 603.7 / 800.4d; The Eagles Are Coming!)
             for dt in post.delayedTriggers do
-              match dt.kind with
-              | .eaglesBirds n =>
-                let src := dt.source.getD
-                  { printed := { name := "The Eagles Are Coming!", types := #[.sorcery] }
-                    id := ⟨0⟩, owner := dt.controller, controller := some dt.controller, zone := .exile }
-                let ab : TriggeredAbility :=
-                  .triggered .eachUpkeep
-                    { phrase := s!"Create {n} 1/1 white Bird Soldier creature token(s) with flying" } {}
-                waiting := waiting.push
-                  { controller := dt.controller
-                    source := src
-                    ability := ab
-                    event := .eachUpkeep
-                    eventCause := some dt.cause
-                    delayedTrigger := some (dt.kind, dt.cause)
-                    checked := true }
-              | _ => pure ()
+              if !(post.player dt.controller).lost && !(post.player dt.controller).leftTheGame then
+                match dt.kind with
+                | .eaglesBirds n =>
+                  let src := dt.source.getD
+                    { printed := { name := "The Eagles Are Coming!", types := #[.sorcery] }
+                      id := ⟨0⟩, owner := dt.controller, controller := some dt.controller, zone := .exile }
+                  let ab : TriggeredAbility :=
+                    .triggered .eachUpkeep
+                      { phrase := s!"Create {n} 1/1 white Bird Soldier creature token(s) with flying" } {}
+                  waiting := waiting.push
+                    { controller := dt.controller
+                      source := src
+                      ability := ab
+                      event := .eachUpkeep
+                      eventCause := some dt.cause
+                      delayedTrigger := some (dt.kind, dt.cause)
+                      checked := true }
+                | _ => pure ()
           | .draw =>
             for opp in post.livingOpponents ap do
               let (w, fs) :=
@@ -8582,30 +8586,31 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
             if e.matchesTrigger ap ⟨0⟩ .yourEndStep then
               let (w, fs) := queueCtrl post ap .yourEndStep (w := waiting) (fs := firedSources)
               waiting := w; firedSources := fs
-            -- Delayed end-step triggers (CR 603.7)
+            -- Delayed end-step triggers (CR 603.7 / 800.4d)
             for dt in post.delayedTriggers do
-              match dt.kind with
-              | .endStepReturn _ | .endStepExile _ | .endStepSacrifice _
-              | .endStepGraveReturn _ _ | .endStepSynthetic _ =>
-                let obj? : Option GameObject :=
-                  match dt.kind with
-                  | .endStepReturn oid | .endStepExile oid | .endStepSacrifice oid
-                  | .endStepGraveReturn oid _ => post.findObject? oid
-                  | _ => none
-                let src := (dt.source.orElse (fun _ => obj?)).getD
-                  { printed := { name := "Delayed Trigger", types := #[] }
-                    id := ⟨0⟩, owner := dt.controller, controller := some dt.controller, zone := .exile }
-                let ab : TriggeredAbility :=
-                  .triggered .eachEndStep { phrase := "At the beginning of the next end step" } {}
-                waiting := waiting.push
-                  { controller := dt.controller
-                    source := src
-                    ability := ab
-                    event := .eachEndStep
-                    eventCause := some dt.cause
-                    delayedTrigger := some (dt.kind, dt.cause)
-                    checked := true }
-              | _ => pure ()
+              if !(post.player dt.controller).lost && !(post.player dt.controller).leftTheGame then
+                match dt.kind with
+                | .endStepReturn _ | .endStepExile _ | .endStepSacrifice _
+                | .endStepGraveReturn _ _ | .endStepSynthetic _ =>
+                  let obj? : Option GameObject :=
+                    match dt.kind with
+                    | .endStepReturn oid | .endStepExile oid | .endStepSacrifice oid
+                    | .endStepGraveReturn oid _ => post.findObject? oid
+                    | _ => none
+                  let src := (dt.source.orElse (fun _ => obj?)).getD
+                    { printed := { name := "Delayed Trigger", types := #[] }
+                      id := ⟨0⟩, owner := dt.controller, controller := some dt.controller, zone := .exile }
+                  let ab : TriggeredAbility :=
+                    .triggered .eachEndStep { phrase := "At the beginning of the next end step" } {}
+                  waiting := waiting.push
+                    { controller := dt.controller
+                      source := src
+                      ability := ab
+                      event := .eachEndStep
+                      eventCause := some dt.cause
+                      delayedTrigger := some (dt.kind, dt.cause)
+                      checked := true }
+                | _ => pure ()
           | _ => pure ()
         | .turn (.turnBegan _ _)
         | .turn (.phaseBegan _)
@@ -8858,10 +8863,11 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
           if e.matchesTrigger caster castObj.id .youCastInstantOrSorcery then
             let (w, fs) := queueCtrl post caster .youCastInstantOrSorcery (w := waiting) (fs := firedSources)
             waiting := w; firedSources := fs
-          -- Delayed spell-copy triggers (CR 603.7): Way of the Cryomancer & Loki Laufeyson
+          -- Delayed spell-copy triggers (CR 603.7 / 800.4d): Way of the Cryomancer & Loki Laufeyson
           if !castObj.isCopy && post.isInstantOrSorcery castObj then
             for dt in post.delayedTriggers do
-              if dt.controller == caster then
+              if dt.controller == caster &&
+                  !(post.player dt.controller).lost && !(post.player dt.controller).leftTheGame then
                 match dt.kind with
                 | .copyNextInstantSorceryThisTurn =>
                   let src := dt.source.getD
@@ -9260,7 +9266,9 @@ def closeBatch (g : Game) (pre : GameSnapshot) (batchId : BatchId)
             else
               pushInBatch g (GameEvent.designation g.turnNumber (g.snapshot o) .ringBearer false
                 (cause := .gameRule .staticAbility))) g
-    let wts := matchTriggers pre g batchEvents
+    let wts :=
+      (matchTriggers pre g batchEvents).filter (fun wt =>
+        !(g.player wt.controller).lost && !(g.player wt.controller).leftTheGame)
     if wts.isEmpty then g
     else
       let firedDelayed := wts.filterMap (fun wt =>
@@ -9303,22 +9311,25 @@ def closeBatch (g : Game) (pre : GameSnapshot) (batchId : BatchId)
 
 /-- Record a reflexive triggered ability when its embedded action occurs during
 resolution (CR 603.12 / 603.3c–d): allocates a fresh `origin : BatchId`, records
-`TriggerQueueEvent.triggered`, and enqueues `wt` onto `g.waitingTriggers`. -/
+`TriggerQueueEvent.triggered`, and enqueues `wt` onto `g.waitingTriggers`.
+Skipped if `wt.controller` has already lost or left the game (CR 800.4d). -/
 def recordReflexiveTrigger (g : Game) (wt : WaitingTrigger) : Game :=
-  let origin : BatchId :=
-    match g.currentBatch with
-    | some (bid, _) => bid
-    | none => ⟨g.nextBatchId⟩
-  let srcSnap : EventObject :=
-    if wt.source.id == ⟨1000000000⟩ then
-      { id := none, name := wt.source.name, owner := wt.controller,
-        controller := some wt.controller, zone := .battlefield }
-    else
-      match g.findObject? wt.source.id with
-      | some cur => g.snapshot cur
-      | none => (g.lastKnownBefore? wt.source.id).getD (g.snapshot wt.source)
-  let g := g.recordTriggeredWithOrigin srcSnap wt.controller wt.ability origin
-  g.enqueueWaitingTriggers #[wt]
+  if (g.player wt.controller).lost || (g.player wt.controller).leftTheGame then g
+  else
+    let origin : BatchId :=
+      match g.currentBatch with
+      | some (bid, _) => bid
+      | none => ⟨g.nextBatchId⟩
+    let srcSnap : EventObject :=
+      if wt.source.id == ⟨1000000000⟩ then
+        { id := none, name := wt.source.name, owner := wt.controller,
+          controller := some wt.controller, zone := .battlefield }
+      else
+        match g.findObject? wt.source.id with
+        | some cur => g.snapshot cur
+        | none => (g.lastKnownBefore? wt.source.id).getD (g.snapshot wt.source)
+    let g := g.recordTriggeredWithOrigin srcSnap wt.controller wt.ability origin
+    g.enqueueWaitingTriggers #[wt]
 
 /-- Resolve `cause` within an active batch `batchCause?`, sharing the batch's
 minted `EffectId` across all one-shot events in the batch (CR 610). -/

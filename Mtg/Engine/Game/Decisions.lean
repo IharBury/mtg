@@ -55,19 +55,20 @@ partial def resumePendingReplacement (g : Game) : PendingReplacement → Game
   | .shuffleThen p onDone =>
     g.shuffleThen p onDone
   | .dealDamageToPlayer p n _ source _ unpreventable cause =>
-    let srcObj := source.bind (fun s => s.id.bind (fun id =>
-      g.findObject? id |>.orElse (fun _ => g.findObject? (g.followMoved id))))
+    let srcObj := g.damageSourceObjFromSnapshot? source
     g.dealDamageToPlayer p (Int.ofNat n) (preventable := !unpreventable)
-      (source := srcObj) (cause := cause)
-  | .dealDamageToPlayers players n sourceId cause =>
-    let srcObj := sourceId.bind (fun id =>
-      g.findObject? id |>.orElse (fun _ => g.findObject? (g.followMoved id)))
-    g.dealDamageToPlayers players (Int.ofNat n) (source := srcObj) (cause := cause)
-  | .dealDamageFrom sourceId targetId n _ _ cause =>
-    match g.findObject? sourceId, g.findObject? targetId with
-    | some src, some tgt =>
-      g.dealDamageFrom src.name tgt (Int.ofNat n) (source := some src) (cause := cause)
-    | _, _ => g
+      (source := srcObj) (sourceSnap := source) (cause := cause)
+  | .dealDamageToPlayers players n source cause =>
+    let srcObj := g.damageSourceObjFromSnapshot? source
+    g.dealDamageToPlayers players (Int.ofNat n) (source := srcObj) (sourceSnap := source)
+      (cause := cause)
+  | .dealDamageFrom sourceName source targetId n deathtouch _ _ cause =>
+    match g.findObject? targetId with
+    | some tgt =>
+      let src := g.damageSourceFromSnapshot source
+      g.dealDamageFrom sourceName tgt (Int.ofNat n) (deathtouch := deathtouch)
+        (source := some src) (sourceSnap := some source) (cause := cause)
+    | none => g
   | .dealFightDamage sourceId targetId cause =>
     match g.findObject? sourceId, g.findObject? targetId with
     | some src, some dest =>
@@ -81,8 +82,7 @@ partial def resumePendingReplacement (g : Game) : PendingReplacement → Game
   | .markDamageOn targetId n msg deathtouch source combat unpreventable cause =>
     match g.findObject? targetId with
     | some tgt =>
-      let srcObj := source.bind (fun s => s.id.bind (fun id =>
-        g.findObject? id |>.orElse (fun _ => g.findObject? (g.followMoved id))))
+      let srcObj := g.damageSourceObjFromSnapshot? source
       g.markDamageOn tgt (Int.ofNat n) msg (deathtouch := deathtouch) (combat := combat)
         (source := source) (sourceObj := srcObj) (unpreventable := unpreventable)
         (cause := cause)

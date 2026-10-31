@@ -620,45 +620,49 @@ Flushes immediately only when invoked outside an active resolution/batch with
 def queueFollowupReflexive (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
     (followup : TriggeredAbility.TriggerResolution)
     (deferToPriority : Bool := false) : Game :=
-  let src := g.abilitySourceFor controller sourceId
-  let effect : Effect := {
-    resolution := .draw 0
-    phrase := "when you do, that ability triggers" }
-  let marker : TriggeredAbility := .triggered .enter effect {}
-  let eventCause := g.resolveOptionalCause none (fallbackSrc := sourceId) (fallbackCtrl := some controller)
-  let wt : WaitingTrigger := {
-    controller
-    source := src
-    ability := marker
-    event := .leaving
-    checked := true
-    eventCause := eventCause
-    reflexiveResolution := some followup
-  }
-  let g := g.recordReflexiveTrigger wt
-  if deferToPriority || g.resolvingAbility.isSome || g.resolvingSpell.isSome || g.currentBatch.isSome then g
-  else g.putTriggerBatch #[wt]
+  if (g.player controller).lost || (g.player controller).leftTheGame then g
+  else
+    let src := g.abilitySourceFor controller sourceId
+    let effect : Effect := {
+      resolution := .draw 0
+      phrase := "when you do, that ability triggers" }
+    let marker : TriggeredAbility := .triggered .enter effect {}
+    let eventCause := g.resolveOptionalCause none (fallbackSrc := sourceId) (fallbackCtrl := some controller)
+    let wt : WaitingTrigger := {
+      controller
+      source := src
+      ability := marker
+      event := .leaving
+      checked := true
+      eventCause := eventCause
+      reflexiveResolution := some followup
+    }
+    let g := g.recordReflexiveTrigger wt
+    if deferToPriority || g.resolvingAbility.isSome || g.resolvingSpell.isSome || g.currentBatch.isSome then g
+    else g.putTriggerBatch #[wt]
 
 /-- Queue a reflexive triggered ability (“When you do, …”) with `effect` via
 `WaitingTrigger` + `recordReflexiveTrigger` (`TriggerQueueEvent.triggered`,
 CR 603.3c–d / 603.12). Its targets are chosen when put on the stack. -/
 def putReflexiveTrigger (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
     (effect : Effect) (deferToPriority : Bool := false) : Game :=
-  let src := g.abilitySourceFor controller sourceId
-  let marker : TriggeredAbility := .triggered .enter effect {}
-  let eventCause := g.resolveOptionalCause none (fallbackSrc := sourceId) (fallbackCtrl := some controller)
-  let wt : WaitingTrigger := {
-    controller
-    source := src
-    ability := marker
-    event := .entering
-    checked := true
-    eventCause := eventCause
-    abilityEffect := some effect
-  }
-  let g := g.recordReflexiveTrigger wt
-  if deferToPriority || g.resolvingAbility.isSome || g.resolvingSpell.isSome || g.currentBatch.isSome then g
-  else g.putTriggerBatch #[wt]
+  if (g.player controller).lost || (g.player controller).leftTheGame then g
+  else
+    let src := g.abilitySourceFor controller sourceId
+    let marker : TriggeredAbility := .triggered .enter effect {}
+    let eventCause := g.resolveOptionalCause none (fallbackSrc := sourceId) (fallbackCtrl := some controller)
+    let wt : WaitingTrigger := {
+      controller
+      source := src
+      ability := marker
+      event := .entering
+      checked := true
+      eventCause := eventCause
+      abilityEffect := some effect
+    }
+    let g := g.recordReflexiveTrigger wt
+    if deferToPriority || g.resolvingAbility.isSome || g.resolvingSpell.isSome || g.currentBatch.isSome then g
+    else g.putTriggerBatch #[wt]
 
 /-- The reflexive triggered ability `kind` of an MSH card, with its targets
 (MSH 359–369). -/

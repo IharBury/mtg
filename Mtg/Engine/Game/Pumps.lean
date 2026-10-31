@@ -161,23 +161,26 @@ def untapPermanent (g : Game) (o : GameObject)
   if !o.isOnBattlefield || !o.status.tapped || g.hostCantBecomeUntapped o then g
   else
     let defaultCause : EventCause :=
-      if duringUntapStep then .turnBased .untapAll
+      if duringUntapStep then cause.getD (.turnBased .untapAll)
       else g.resolveOptionalCause cause (fallbackCtrl := g.controllerOf o)
         (defaultCause := .turnBased .untapAll)
-    let (stunned, applied, cause', choice?) := g.replaceUntap o (cause := some defaultCause)
-    match choice? with
-    | some (chooser, choices) =>
-      g.promptChooseReplacement chooser choices (.untapPermanent o.id (some defaultCause))
-    | none =>
-      let g := g.consumeReplacementOrder applied
-      if stunned then
-        let g := g.record (GameEvent.counters g.turnNumber (g.controllerOf o) (g.snapshot o) .stun 1 true
-          (cause := cause'.getD defaultCause))
-        g.logMsg s!"A stun counter is removed from {g.name o} instead of untapping it (CR 122.1d)"
-      else
-        let g := g.record (GameEvent.untapped g.turnNumber (g.snapshot o) duringUntapStep
-          (cause := defaultCause))
-        if logUntap then g.logMsg s!"{g.name o} untaps" else g
+    let untap := GameEvent.untapped g.turnNumber (g.snapshot o) (replacedByStun := false)
+      (cause := defaultCause)
+    if !untap.watches .wouldUntap then g
+    else
+      let (stunned, applied, cause', choice?) := g.replaceUntap o (cause := some defaultCause)
+      match choice? with
+      | some (chooser, choices) =>
+        g.promptChooseReplacement chooser choices (.untapPermanent o.id (some defaultCause))
+      | none =>
+        let g := g.consumeReplacementOrder applied
+        if stunned then
+          let g := g.record (GameEvent.counters g.turnNumber (g.controllerOf o) (g.snapshot o) .stun 1 true
+            (cause := cause'.getD defaultCause))
+          g.logMsg s!"A stun counter is removed from {g.name o} instead of untapping it (CR 122.1d)"
+        else
+          let g := g.record untap
+          if logUntap then g.logMsg s!"{g.name o} untaps" else g
 
 /-- Timestamp-ordered maximum hand size (CR 613.7a; MSH 184 / 376). `none` is "no maximum". -/
 def effectiveMaxHandSize (g : Game) (p : PlayerId) : Option Nat :=

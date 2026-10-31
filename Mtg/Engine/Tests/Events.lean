@@ -7162,9 +7162,9 @@ departed-source `lastKnownBefore?` LKI + Step 4 audits. -/
     act g1
   let pickRepl (pred : ReplacementEffectKind → Bool) (g : Game) : Game :=
     match g.pending with
-    | .chooseReplacement _ cs =>
+    | .chooseReplacement p cs =>
       match cs.find? (fun c => pred c.kind) with
-      | some rid => mustApply g me (.chooseReplacement rid)
+      | some rid => mustApply g p (.chooseReplacement rid)
       | none => g
     | _ => g
   let gRoom := putAndResolve afterDraw roomDef
@@ -7247,6 +7247,37 @@ departed-source `lastKnownBefore?` LKI + Step 4 audits. -/
       | .rules (.permanent (.counters (.object snap) .stun (.removed 1) _)), some (.replaced rid _) =>
         snap.id == some stunBearId && rid.kind == .stunCounterUntap
       | _, _ => false)
+  -- `untapPermanent` with `duringUntapStep := true` records `PermanentEvent.untapped` (not stun removal)
+  -- and respects an explicit caller `cause` while defaulting `none` to `.turnBased .untapAll`:
+  let gUntapStep0 :=
+    let g := addPermanent afterDraw bear me me
+    let bid := (g.battlefield.filter (·.name == bear.name))[0]!.id
+    (g.becomeTapped (g.object! bid) (cause := some testCause), bid)
+  let preUntapStepIdx := gUntapStep0.1.events.size
+  let gUntapStepDef := gUntapStep0.1.untapPermanent (gUntapStep0.1.object! gUntapStep0.2) (duringUntapStep := true)
+  let gUntapStepExplicit :=
+    gUntapStep0.1.untapPermanent (gUntapStep0.1.object! gUntapStep0.2)
+      (duringUntapStep := true) (cause := some testCause)
+  let untapStepSlice := gUntapStepDef.events.extract preUntapStepIdx gUntapStepDef.events.size
+  let untapStepExplicitSlice := gUntapStepExplicit.events.extract preUntapStepIdx gUntapStepExplicit.events.size
+  let untapStepFlagOk :=
+    !(gUntapStepDef.object! gUntapStep0.2).status.tapped &&
+    untapStepSlice.any (fun e =>
+      match e.change, e.cause? with
+      | .rules (.permanent (.untapped snap)), some (.turnBased .untapAll) =>
+        snap.id == some gUntapStep0.2
+      | _, _ => false) &&
+    !untapStepSlice.any (fun e =>
+      match e.change with
+      | .rules (.permanent (.counters _ .stun _ _)) => true
+      | _ => false) &&
+    untapStepExplicitSlice.any (fun e =>
+      match e.change, e.cause? with
+      | .rules (.permanent (.untapped snap)), some c =>
+        snap.id == some gUntapStep0.2 && c == testCause
+      | _, _ => false) &&
+    Game.replayEvents gUntapStepDef.events == gUntapStepDef &&
+    Game.replayEvents gUntapStepExplicit.events == gUntapStepExplicit
 
   let sagaDef : CardDef := {
     name := "Phase13 Saga"
@@ -7290,6 +7321,7 @@ departed-source `lastKnownBefore?` LKI + Step 4 audits. -/
       | _, _ => false)
   let untapAndSagaOk :=
     untapAsked && stunAfter.status.tapped && stunAfter.status.stun == 1 && untapReplacedCauseOk &&
+    untapStepFlagOk &&
     Game.replayEvents gUntapDone.events == gUntapDone &&
     sagaAsked && (gSagaDone.object! sagaId).status.lore == preLore + 4 && sagaReplacedCauseOk &&
     Game.replayEvents gSagaDone.events == gSagaDone
@@ -7377,13 +7409,33 @@ departed-source `lastKnownBefore?` LKI + Step 4 audits. -/
     let g := gThree0.putReflexiveTrigger ⟨0⟩ none { resolution := .draw 1, phrase := "Draw a card" } (deferToPriority := true)
     g.putReflexiveTrigger ⟨1⟩ none { resolution := .draw 1, phrase := "Draw a card" } (deferToPriority := true)
   let gThreeConceded := gThreeQueued.concede ⟨0⟩
+  -- Simultaneous SBA / leaving-caused reflexive triggers (Head of the Hunt, CR 800.4d):
+  -- when player `⟨0⟩` loses the game in the same SBA sweep where an opponent's creature dies
+  -- under `⟨0⟩`'s Head of the Hunt (or when `putReflexiveTrigger` runs after `⟨0⟩` left),
+  -- no `waitingTriggers` controlled by `⟨0⟩` remain or are enqueued.
+  let headTestDef : CardDef := {
+    bear with
+    name := "Phase13 Head of the Hunt"
+    staticAbilities := #[.exileOppDeathCreateWolf]
+  }
+  let gThreeSba0 :=
+    let g := addPermanent (addPermanent gThree0 headTestDef ⟨0⟩ ⟨0⟩) bear ⟨1⟩ ⟨1⟩
+    let oppBear := (g.battlefield.filter (fun o => o.name == bear.name && o.owner == ⟨1⟩))[0]!
+    let g := g.markDamageOn oppBear 2 "lethal" (cause := some testCause)
+    g.loseLife ⟨0⟩ 20 (cause := some testCause)
+  let gThreeSbaDone :=
+    (gThreeSba0.checkSBA).putReflexiveTrigger ⟨0⟩ none
+      { resolution := .draw 1, phrase := "Draw a card" } (deferToPriority := true)
   let leftGameTriggersOk :=
     gThreeQueued.waitingTriggers.size == 2 &&
     !gThreeConceded.over &&
     !gThreeConceded.waitingTriggers.any (·.controller == ⟨0⟩) &&
     (gThreeConceded.waitingTriggers.any (·.controller == ⟨1⟩) ||
       gThreeConceded.stack.any (·.controller == ⟨1⟩)) &&
-    Game.replayEvents gThreeConceded.events == gThreeConceded
+    Game.replayEvents gThreeConceded.events == gThreeConceded &&
+    (gThreeSbaDone.player ⟨0⟩).leftTheGame &&
+    !gThreeSbaDone.waitingTriggers.any (·.controller == ⟨0⟩) &&
+    Game.replayEvents gThreeSbaDone.events == gThreeSbaDone
 
   -- 8. Delayed spell-copy, combat-Treasure `matchTriggers`, & reflexive `WaitingTrigger` routing.
   let gDt0 :=
@@ -7487,11 +7539,80 @@ departed-source `lastKnownBefore?` LKI + Step 4 audits. -/
   let vampLki? := gLkiLeft.lastKnownBefore? vamp.id
   let gLkiDmg :=
     (gLkiLeft.dealDamageToPermanent wall 1 (source := vampLki?) (cause := some testCause)).checkSBA
+  -- CR 616.1 damage replacement choices on a departed source whose lifelink + deathtouch were
+  -- granted on the battlefield (so `followMoved` to the graveyard card would drop them):
+  let gLkiChoiceBase :=
+    let g := addPermanent (addPermanent afterDraw bear me me) toughBlocker opp opp
+    let bid := (g.battlefield.filter (·.name == bear.name))[0]!.id
+    let g := g.createEffect
+      (.keywordsUntilEot bid (Keywords.merge Keyword.lifelink Keyword.deathtouch))
+      (cause := some testCause)
+    let (g, _) := g.move bid (.graveyard me) none (cause := some testCause)
+    let g := g.createEffect
+      (.replacement { id := { kind := .noncombatDamagePlusOne, grantor := some ⟨8991⟩ },
+                      affectedPlayer := opp, kind := .addNoncombatDamage ⟨0⟩ 1 } .untilEndOfTurn)
+    let g := g.createEffect
+      (.replacement { id := { kind := .equippedDealsDoubleDamage, grantor := some ⟨8992⟩ },
+                      affectedPlayer := opp, kind := .multiplyDamage ⟨0⟩ 2 } .untilEndOfTurn)
+    (g, bid)
+  let depSrc? := gLkiChoiceBase.1.damageSourceById? gLkiChoiceBase.2
+  let depSnap? := gLkiChoiceBase.1.lastKnownBefore? gLkiChoiceBase.2
+  let wallChoiceObj := (gLkiChoiceBase.1.battlefield.filter (·.name == "Phase13 Wall"))[0]!
+  -- (a) `dealDamageToPlayer` paused on `.chooseReplacement`: `(1 + 1) * 2 = 4` damage + 4 lifelink.
+  let gChoicePlPaused :=
+    gLkiChoiceBase.1.dealDamageToPlayer opp 1 (source := depSrc?) (cause := some testCause)
+  let gChoicePlDone :=
+    pickRepl (fun | .noncombatDamagePlusOne => true | _ => false) gChoicePlPaused
+  -- (b) `dealDamageFrom` paused on `.chooseReplacement`: 4 damage (< 5 toughness) kills 0/5 wall via
+  --     departed LKI deathtouch AND gains 4 life via departed LKI lifelink.
+  let gChoiceFromPaused :=
+    gLkiChoiceBase.1.dealDamageFrom bear.name wallChoiceObj 1 (source := depSrc?) (cause := some testCause)
+  let gChoiceFromDone :=
+    (pickRepl (fun | .noncombatDamagePlusOne => true | _ => false) gChoiceFromPaused).checkSBA
+  -- (c) `markDamageOn` paused on `.chooseReplacement`: kills 0/5 wall via departed LKI deathtouch.
+  let gChoiceMarkPaused :=
+    gLkiChoiceBase.1.markDamageOn wallChoiceObj 1 "hit" (source := depSnap?) (cause := some testCause)
+  let gChoiceMarkDone :=
+    (pickRepl (fun | .noncombatDamagePlusOne => true | _ => false) gChoiceMarkPaused).checkSBA
+  -- (d) `dealDamageToPlayers` across two opponents in `gThree0` with competing replacements:
+  let gChoiceMulti0 :=
+    let g := addPermanent gThree0 bear ⟨0⟩ ⟨0⟩
+    let bid := (g.battlefield.filter (·.name == bear.name))[0]!.id
+    let g := g.createEffect
+      (.keywordsUntilEot bid Keyword.lifelink) (cause := some testCause)
+    let (g, _) := g.move bid (.graveyard ⟨0⟩) none (cause := some testCause)
+    let g := g.createEffect
+      (.replacement { id := { kind := .noncombatDamagePlusOne, grantor := some ⟨8993⟩ },
+                      affectedPlayer := ⟨1⟩, kind := .addNoncombatDamage ⟨0⟩ 1 } .untilEndOfTurn)
+    let g := g.createEffect
+      (.replacement { id := { kind := .equippedDealsDoubleDamage, grantor := some ⟨8994⟩ },
+                      affectedPlayer := ⟨1⟩, kind := .multiplyDamage ⟨0⟩ 2 } .untilEndOfTurn)
+    (g, bid)
+  let gChoiceMultiP1 :=
+    gChoiceMulti0.1.dealDamageToPlayers #[⟨1⟩, ⟨2⟩] 1
+      (source := gChoiceMulti0.1.damageSourceById? gChoiceMulti0.2) (cause := some testCause)
+  let gChoiceMultiP2 :=
+    pickRepl (fun | .noncombatDamagePlusOne => true | _ => false) gChoiceMultiP1
+  let gChoiceMultiDone :=
+    pickRepl (fun | .noncombatDamagePlusOne => true | _ => false) gChoiceMultiP2
   let lkiOk :=
     vampLki?.isSome &&
     (gLkiDmg.player me).life == 21 &&
     (gLkiDmg.findObject? wall.id).isNone &&
-    Game.replayEvents gLkiDmg.events == gLkiDmg
+    Game.replayEvents gLkiDmg.events == gLkiDmg &&
+    (match gChoicePlPaused.pending with | .chooseReplacement p cs => p == opp && cs.size == 2 | _ => false) &&
+    (gChoicePlDone.player opp).life == 16 &&
+    (gChoicePlDone.player me).life == 24 &&
+    (match gChoiceFromPaused.pending with | .chooseReplacement p cs => p == opp && cs.size == 2 | _ => false) &&
+    (gChoiceFromDone.findObject? wallChoiceObj.id).isNone &&
+    (gChoiceFromDone.player me).life == 24 &&
+    (match gChoiceMarkPaused.pending with | .chooseReplacement p cs => p == opp && cs.size == 2 | _ => false) &&
+    (gChoiceMarkDone.findObject? wallChoiceObj.id).isNone &&
+    (gChoiceMultiDone.player ⟨1⟩).life == 16 &&
+    (gChoiceMultiDone.player ⟨2⟩).life == 16 &&
+    (gChoiceMultiDone.player ⟨0⟩).life == 28 &&
+    [gChoicePlDone, gChoiceFromDone, gChoiceMarkDone, gChoiceMultiDone].all
+      (fun g => Game.replayEvents g.events == g)
 
   -- CR 613.7a `effectiveMaxHandSize` timestamp ordering:
   let noMaxDef : CardDef := {
