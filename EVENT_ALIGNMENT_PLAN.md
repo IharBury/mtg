@@ -488,7 +488,7 @@ covering both standard CR 701.15a goad and indefinite goad (e.g. Dack Fayden).
 (`PermanentEvent.controlChanged` and `GameEvent.control`, which had zero
 production emitters after Phase 9, #586, moved Layer 2 control changes to
 `ContinuousEffectEvent`, were retired in Phase 13, #594; retiring zero-emitter
-`PermanentDesignation.commander` moves to Phase 14, §4.)
+`PermanentDesignation.commander` moves to Phase 14 step 4.)
 
 **Counter storage.** The 23 counter fields on `Status` (`plusOnePlusOne`,
 `minusOneMinusOne`, `loyaltyCounters`, `shield`, `finality`, `stun`, `hope`,
@@ -766,7 +766,7 @@ under construction (`ProposedSpell`, paired since Phase 12, #592, with
   800.4d `.lost` / `.leftTheGame` controller filters live in `closeBatch`,
   `recordReflexiveTrigger`, and `Core.enqueueWaitingTriggers`—`Triggers.putWaitingTrigger`
   currently calls `recordTriggeredWithOrigin` without a controller check and
-  `putTriggeredAbilityOnStack` returns early only on `.lost`, which Phase 14, §4,
+  `putTriggeredAbilityOnStack` returns early only on `.lost`, which Phase 14 step 3
   tightens—and `extraTriggerCopies`
   guards `if !source.isOnBattlefield then 0` per 109.2 so cast triggers of stack
   spells are not doubled by battlefield static doublers; `putWaitingTrigger`
@@ -1398,7 +1398,7 @@ def matchTriggers (pre : GameSnapshot) (post : Game) (batch : Array GameEvent) :
   and `.endStepSynthetic`), `CombatEvent.attackersDeclared`
   (`.attackPumpPerPlains`; routing `.attackPumpPerPlains` through
   `delayedTrigger := some (dt.kind, dt.cause)` rather than `queueAb` on an
-  arbitrary controlled Saga moves to Phase 14, §4), and (since Phase 13, #594)
+  arbitrary controlled Saga moves to Phase 14 step 3), and (since Phase 13, #594)
   `CastEvent.spellCast` (`.copyNextInstantSorceryThisTurn` and
   `.lokiCopyNextInstantSorceryThisTurn`). In `closeBatch` (updated in Phase 10, #588, to record
   `PlayerEvent.gainedDesignation` for `enduringStory` / `citysBlessing` and
@@ -3291,16 +3291,21 @@ spell-copy / combat-Treasure / reflexive `WaitingTrigger` routing, pre-move
      `sacrificeSource` / `sacrificeSelf` step pauses on
      `Pending.chooseReplacement`, and run `checkSBA` / `receivePriority` when a
      standalone priority `activateManaAbility` (`prevPending == .none`) finishes
-     a `Pending.chooseReplacement` pause (CR 605.3b / 704.3); route
-     `putStunCounterOnSource` (`ActivationCosts.lean`) and
-     `Casting.payLoyaltyCost` ([`Casting.lean`](Mtg/Engine/Game/Casting.lean))
-     through `Core.replaceCountersPutChoice` / `recordPutCounters` (CR 118.11);
-     and reverse via `Decisions.reverseProposedSpell?` /
-     `Casting.reverseProposedSpellCore?` in `FraChoices` `.costPicks`
-     ([`FraChoices.lean`](Mtg/Engine/Game/FraChoices.lean)) and
-     `continueCostPicks` (`Casting.lean` / `Decisions.lean`) when an earlier
-     `CostPick` was paid (`paid == true`) and fewer than `next.count` legal
-     candidates remain for a subsequent `CostPick` (CR 733.1).
+     a `Pending.chooseReplacement` pause (CR 605.3b / 704.3); route the
+     `a.cost.putStunCounterOnSource` branch of
+     `ActivationCosts.payActivationExtraCosts` (`ActivationCosts.lean`, dropping
+     `g.countersYouPut src 1` and passing raw count `1`) and positive loyalty-put
+     costs (`k > 0`, passing raw `k.natAbs` while keeping `k < 0` as counter
+     removals) in `Casting.payLoyaltyCost`
+     ([`Casting.lean`](Mtg/Engine/Game/Casting.lean)) through
+     `Core.replaceCountersPutChoice` / `recordPutCounters` (CR 118.11); and
+     reverse via `Decisions.reverseProposedSpell?` in `FraChoices` `.costPicks`
+     ([`FraChoices.lean`](Mtg/Engine/Game/FraChoices.lean), including its
+     `paid == true` decline path when no legal choice remains) and via
+     `Casting.reverseProposedSpellCore?` in `Casting.continueCostPicks`
+     (`Casting.lean`) when an earlier `CostPick` was paid (`paid == true`) and
+     fewer than `next.count` legal candidates remain for a subsequent `CostPick`
+     (CR 733.1).
    - Tighten `Core.reverseToProposalCheckpoint?` and
      `Casting.reverseProposedSpellCore?` / `Decisions.reverseProposedSpell?`: in
      `Core.reverseToProposalCheckpoint?`, treat `PlayerEvent.lookedAt` (when
@@ -3379,12 +3384,18 @@ spell-copy / combat-Treasure / reflexive `WaitingTrigger` routing, pre-move
      counter count `n'` from `replaceCountersPutChoice` (instead of discarding
      it with `_` and recording raw `n`, skipping 0-counter emissions when
      `n' == 0`), route the remaining direct `GameEvent.counters` put sites
-     (`ResolutionHelpers.lean` `.doubleStrikeCounter` / `.tapAndStun`,
-     `ResolutionEffects.incrementPlanThen`, non-`+1/+1` counter kinds in
-     `Decisions.finishProliferate` and `EffectResolution.proliferateTarget`, and
-     loyalty counters in `Tokens.empowerJace` in
-     [`Tokens.lean`](Mtg/Engine/Game/Tokens.lean)) through
-     `replaceCountersPutChoice` / `recordPutCounters` while dropping pre-multiplied
+     through `replaceCountersPutChoice` / `recordPutCounters` with their
+     unmultiplied counts—`ResolutionHelpers.applyPermanentAction`
+     `.doubleStrikeCounter` (`1`) and `.tapAndStun` (dropping
+     `g.countersYouPut cur 1` and passing `1`),
+     `ResolutionEffects.incrementPlanThen` (dropping `g.countersYouPut o 1` and
+     the `for _ in [0:n]` loop and passing `1`, since `matchTriggers` already
+     walks `for i in [0:n]` on a single `.plan` counter event for
+     `.nthPlanCounter`), non-`+1/+1` counter kinds in
+     `Decisions.finishProliferate` (`1`) and `EffectResolution.proliferateTarget`
+     (dropping `g.docSamsonBonus` and passing `1`), and loyalty counters in
+     `Tokens.empowerJace` ([`Tokens.lean`](Mtg/Engine/Game/Tokens.lean), dropping
+     `g.countersYouPut o n` and passing `n`)—while also dropping pre-multiplied
      `g.countersYouPut` wrappers at existing `recordPutCounters` callers
      (`Designations.putShadowCounter`, `EffectResolution.plusOneAndDoubleStrike`,
      `FraAbilities` `.tapAndStunX`, `FraHelpers.loyaltyOnEachPlaneswalkerOf`,
@@ -3498,8 +3509,10 @@ spell-copy / combat-Treasure / reflexive `WaitingTrigger` routing, pre-move
      (`·.controller != p`) on `PlayerEvent.leftGame p` in `Core.applyPlayerEvent`,
      guard `(g.player controller).lost || (g.player controller).leftTheGame` in
      `Triggers.putWaitingTrigger` and `Triggers.putTriggeredAbilityOnStack`, and
-     drop the inverted `!(g.player dt.controller).lost` guard in
-     `Turns.endOfTurn` (`Turns.lean`, CR 800.4d); clean up paused
+     drop the `!(g.player dt.controller).lost` expiry guard on
+     `.attackPumpPerPlains` and `.copyNextInstantSorceryThisTurn` in
+     `Turns.clearTurnActivations` (`Turns.lean`, called from `startNextTurn`,
+     matching `.lokiCopyNextInstantSorceryThisTurn`, CR 800.4d); clean up paused
      `Pending.chooseReplacement` / `pendingReplacement` / open batches and
      `proposedSpell` in `Leaving.redirectPendingAfterLeave`; and advance
      priority/step/resolution in `PriorityActions.concede` when
