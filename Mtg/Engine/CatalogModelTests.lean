@@ -809,14 +809,12 @@ card from your graveyard”, and that ability doesn't work on the battlefield. -
 #guard
   let g := addToGraveyard (addToGraveyard afterDraw attercop me) silvanReveler me
   let (g, f) := g.allocObject forest me (.outside me) none
-  let (g, newId) := g.putOntoBattlefield f.id me (summoningSick := false)
-  let g := g.putLandYouControlEntersTriggers (g.object! newId)
+  let (g, _) := g.putOntoBattlefield f.id me (summoningSick := false)
   g.waitingTriggers.all (·.source.name == "Silvan Reveler") && g.waitingTriggers.size == 1
 #guard
   let g := addPermanent afterDraw silvanReveler me me
   let (g, f) := g.allocObject forest me (.outside me) none
-  let (g, newId) := g.putOntoBattlefield f.id me (summoningSick := false)
-  let g := g.putLandYouControlEntersTriggers (g.object! newId)
+  let (g, _) := g.putOntoBattlefield f.id me (summoningSick := false)
   g.waitingTriggers.isEmpty
 
 /- Getaway Barrel triggers when it's put into a graveyard from the
@@ -846,7 +844,7 @@ def onlyLib (g : Game) (cards : Array CardDef) : Game :=
 /- Lake-town Toymaker doesn't trigger unless you've drawn two cards. -/
 #guard
   let g := addPermanent (addPermanent afterDraw lakeTownToymaker me me) grizzlyBears me me
-  let g := g.putControlledTriggers me .yourBeginCombat
+  let g := g.record (GameEvent.stepBegan g.turnNumber .beginningOfCombat me)
   !g.waitingTriggers.any (·.source.name == "Lake-town Toymaker")
 /- After two draws, another creature gets +3/+0 and first strike. -/
 #guard
@@ -1014,9 +1012,10 @@ really scries, and the counters are put by the counter action. -/
   let g := applyIdle g
   scried && handSize g me == before + 1
 #guard
-  let g := addPermanent afterDraw gollumRiddleMaster me me
+  let (g, gollumObj) := afterDraw.allocObject gollumRiddleMaster me (.outside me) none
+  let (g, _) := g.putOntoBattlefield gollumObj.id me (summoningSick := false)
+  let g := mustApply g me (.chooseMode 0)
   let sid := (namedPermanent g "Gollum, Riddle Master").id
-  let g := g.chooseGollumParity sid false
   let g := g.applyTriggeredAbility me .onOpponentCastsChosenParityModes (some sid)
   let g := mustApply g me (.chooseMode 1)
   life g opp == 18 && life g me == 22 &&
@@ -1211,11 +1210,17 @@ accepting casts the instant and bottoms only the cards that weren't cast. -/
   let g := g.applyTriggeredAbility me .onCombatDamageImpulseInstantSorcery
     (some (idOf g "Gríma, Saruman's Footman"))
   let g := mustApply g me .accept
-  g.objects.any (fun o => o.name == "Lightning Bolt" && o.zone == .stack) &&
-    g.log.any (fun s => mentions s "as the ability resolves") &&
+  let midProposalOk :=
+    g.objects.any (fun o => o.name == "Lightning Bolt" && o.zone == .stack) &&
+      g.log.any (fun s => mentions s "as the ability resolves") &&
+      inExile g "Mountain" &&
+      (match g.pending with | .chooseTargets _ => true | _ => false)
+  let g := mustApply g me (.target (.player opp))
+  midProposalOk &&
+    g.objects.any (fun o => o.name == "Lightning Bolt" && o.zone == .stack) &&
     (g.object! (g.player opp).library[0]!).name == "Mountain" &&
     !inExile g "Mountain" &&
-    (match g.pending with | .chooseTargets _ => true | _ => false)
+    g.pending == .none
 
 /- Palantír scries, then the targeted opponent chooses the draw. Declining
 mills and loses life equal to the milled cards' mana values. -/

@@ -312,7 +312,7 @@ def giftTargetGone : Game :=
 #guard (giftTargetGone.player ⟨0⟩).graveyard.any (fun id =>
   (giftTargetGone.object! id).name == "Gift of Strands")
 
-/-- If the enchanted creature leaves, the Aura becomes unattached and SBA 704.5n puts it
+/-- If the enchanted creature leaves, the Aura becomes unattached and SBA 704.5m puts it
 in the graveyard. -/
 def afterHostLeaves : Game :=
   let id := (namedPermanent giftScried "Grizzly Bears").id
@@ -320,7 +320,7 @@ def afterHostLeaves : Game :=
   g.checkSBA
 
 #guard afterHostLeaves.log.any (fun s => mentions s "becomes unattached")
-#guard afterHostLeaves.log.any (fun s => mentions s "704.5n")
+#guard afterHostLeaves.log.any (fun s => mentions s "704.5m")
 #guard !(afterHostLeaves.battlefield.any (fun o => o.name == "Gift of Strands"))
 #guard !(afterHostLeaves.battlefield.any (fun o => o.name == "Grizzly Bears"))
 
@@ -480,7 +480,7 @@ def afterLegendKillsEnchanted : Game :=
   | _ => panic! "expected a legend-rule choice"
 
 #guard !(afterLegendKillsEnchanted.battlefield.any (fun o => o.name == "Gift of Strands"))
-#guard afterLegendKillsEnchanted.log.any (fun s => mentions s "704.5n")
+#guard afterLegendKillsEnchanted.log.any (fun s => mentions s "704.5m")
 #guard (afterLegendKillsEnchanted.player ⟨0⟩).graveyard.any (fun id =>
   (afterLegendKillsEnchanted.object! id).name == "Gift of Strands")
 

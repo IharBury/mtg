@@ -1,10 +1,10 @@
-import Mtg.Engine.Game.ActivationCosts
+import Mtg.Engine.Game.Damage
 
 /-!
 # Mana abilities (CR 605)
 
 Every mana ability of a permanent as one definition: its cost, the mana it
-can add, and how that mana may be spent (CR 106.10). Activating one adds
+can add, and how that mana may be spent (CR 106.6). Activating one adds
 the mana immediately, without using the stack (CR 605.3b).
 -/
 
@@ -321,6 +321,15 @@ def canActivateManaAbility (g : Game) (p : PlayerId) : Bool :=
          | _ => false)
     | _ => false
 
+/-- Molten Tide: a triggered mana ability that resolves immediately (CR 605.4a). -/
+def finishManaAbilityMountainTrigger (g : Game) (p : PlayerId) (id : ObjectId) : Game :=
+  let extraRed := g.mountainExtraRedThisTurn p
+  if extraRed > 0 then
+    let extraUnits := Array.replicate extraRed ({ mana := .colored .red, source := some id } : ManaUnit)
+    (g.record (GameEvent.manaAdded g.turnNumber p extraUnits)).logMsg
+      (s!"{(g.player p).name} adds an additional " ++ String.join (List.replicate extraRed "{R}"))
+  else g
+
 /-- Activate mana ability `idx` of `id` (CR 605.3), adding `mana`, paying
 choice costs with `costIds` in order. The mana is added immediately; the
 ability doesn't use the stack (CR 605.3b). -/
@@ -351,8 +360,12 @@ def activateManaAbility (g : Game) (p : PlayerId) (id : ObjectId) (idx : Nat)
   let need := d.picks.foldl (fun acc pick => acc + pick.count) 0
   if costIds.size != need then
     throw s!"Choose what to {String.intercalate " and " (d.picks.map (·.phrase)).toList}"
+  let prevPending := g.pending
+  let isMountain := g.hasSubtype o .mountain && d.tap && !mana.isEmpty
   let pl := g.player p
-  let mut g := g
+  let mut g :=
+    if g.proposalCheckpoint.isSome then g.change (.beginProposalAction (.manaAbility (some id)))
+    else g
   if d.cost.includesManaPayment then
     match pl.manaPool.payUnits? d.cost (g.hasSubtype o .elf) false (g.hasSubtype o .hero)
         (g.hasSubtype o .villain) true (g.isCreature o) with
@@ -376,24 +389,6 @@ def activateManaAbility (g : Game) (p : PlayerId) (id : ObjectId) (idx : Nat)
   let rOpt : Option ManaRestriction := if d.restriction == .none then none else some d.restriction
   let addedUnits := mana.map (fun t => ({ mana := t, source := some id, restriction := rOpt } : ManaUnit))
   g := g.record (GameEvent.manaAdded g.turnNumber p addedUnits)
-  if d.damageYou > 0 then
-    let pl := g.player p
-    g :=
-      if g.lifeLocked p || g.lifeCantChange p then
-        g.logMsg s!"{pl.name}'s life total can't change"
-      else
-        (g.record (GameEvent.life g.turnNumber p d.damageYou false true false
-          (cause := .gameRule .abilityActivated))).logMsg
-          s!"{oname} deals {d.damageYou} damage to {pl.name}"
-  -- Molten Tide: a triggered mana ability that resolves immediately (CR 605.4a).
-  let extraRed :=
-    if g.hasSubtype o .mountain && d.tap && !mana.isEmpty then
-      g.mountainExtraRedThisTurn p
-    else 0
-  if extraRed > 0 then
-    let extraUnits := Array.replicate extraRed ({ mana := .colored .red, source := some id } : ManaUnit)
-    g := (g.record (GameEvent.manaAdded g.turnNumber p extraUnits)).logMsg
-      (s!"{(g.player p).name} adds an additional " ++ String.join (List.replicate extraRed "{R}"))
   let produced :=
     match mana[0]? with
     | some t =>
@@ -409,7 +404,22 @@ def activateManaAbility (g : Game) (p : PlayerId) (id : ObjectId) (idx : Nat)
     g := match g.proposedSpell with
       | some _ => g.changeProposal (.pushTapped id)
       | none => g
-  return g.change (.consecutivePasses 0)
+  g := g.change (.consecutivePasses 0)
+  if d.damageYou > 0 then
+    let dmgSrc := (g.findObject? id).orElse (fun _ => some (damageSourceObjectFromLki srcSnap))
+    g := g.dealDamageToPlayer p d.damageYou (source := dmgSrc)
+      (cause := some (.gameRule .abilityActivated))
+  if let .chooseReplacement .. := g.pending then
+    if isMountain then
+      g := g.chainPendingReplacement (.finishManaAbilityMountainTrigger p id)
+    g := g.chainPendingReplacement (.restorePending prevPending)
+    return g
+  else
+    if isMountain then
+      g := g.finishManaAbilityMountainTrigger p id
+    if g.proposalCheckpoint.isSome then
+      g := g.change .endProposalAction
+    return g
 
 /-- Index of the first mana ability of `o` that can add `mana` by tapping
 alone, or with only mana and life costs when `plainOnly` is false. -/

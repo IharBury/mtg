@@ -103,13 +103,15 @@ inductive FraEvent where
   | sphinxesAttack
   /-- When you cycle this card. X is last-known power. -/
   | youCycle
+  /-- Whenever this creature deals combat damage to a player or planeswalker. -/
+  | dealsCombatDamageToPlayerOrPlaneswalker
 deriving Repr, Inhabited, BEq, DecidableEq
 
 /-- When a triggered ability fires (CR 603). Several printed abilities share
 an event (`scry` on attack, enter, or attack-with-Elves); “enters or attacks”
 is two events. -/
 inductive TriggerEvent where
-  /-- This creature is declared as an attacker (CR 508.2). -/
+  /-- This creature is declared as an attacker (CR 508.3a). -/
   | attacking
   /-- This creature becomes blocked (CR 509.3c). -/
   | becomesBlocked
@@ -121,7 +123,7 @@ inductive TriggerEvent where
   | dying
   /-- You cast an instant or sorcery (CR 601.2i). -/
   | youCastInstantOrSorcery
-  /-- You attack with one or more Elves (CR 508.2 / 603.2a). -/
+  /-- You attack with one or more Elves (CR 508.3c / 603.2a). -/
   | youAttackWithElves
   /-- You scry (CR 701.22 / 603.2). -/
   | youScry
@@ -145,7 +147,7 @@ inductive TriggerEvent where
   | anotherCreatureYouControlEnters
   /-- The beginning of combat on your turn (CR 507.1 / 603.1). -/
   | yourBeginCombat
-  /-- You attack with one or more creatures (CR 508.2). -/
+  /-- You attack with one or more creatures (CR 508.3d). -/
   | youAttack
   /-- You cast a noncreature spell (CR 601.2i / 603.3). -/
   | youCastNoncreature
@@ -191,7 +193,7 @@ inductive TriggerEvent where
   /-- You activate an ability of a creature, including a mana ability
   (CR 605.3b / 603.2). -/
   | youActivateCreatureAbility
-  /-- Equipped creature attacks (CR 508.2). -/
+  /-- Equipped creature attacks (CR 508.3a). -/
   | equippedAttacks
   /-- An opponent draws a card that is not the first card of their draw step. -/
   | opponentDrawsExceptFirstDrawStep
@@ -219,7 +221,7 @@ inductive TriggerEvent where
   | opponentCastsSpell
   /-- An Army you control deals combat damage to a player. -/
   | armyYouControlCombatDamage
-  /-- A lore counter was put on this Saga (CR 714.3). -/
+  /-- A lore counter was put on this Saga (CR 714.2). -/
   | sagaChapter
   /-- The final chapter of a Saga you control resolves. -/
   | finalSagaChapterResolves
@@ -697,6 +699,9 @@ def spec : TriggerEvent → Spec
     | .eachUpkeepFromGraveyard =>
       { clause := "the beginning of each upkeep", isWhenever := false
         label := "upkeep trigger" }
+    | .dealsCombatDamageToPlayerOrPlaneswalker =>
+      { clause := "this creature deals combat damage to a player or planeswalker"
+        label := "combat-damage trigger", checkTargets := false }
     | _ => { clause := "this occurs", label := "triggered ability" }
 
 /-- Oracle “when/whenever” clause after the leading word. -/

@@ -36,7 +36,7 @@ deriving Repr, Inhabited, BEq
 
 namespace SagaChapter
 
-/-- Chapter numbers for triggering (CR 714.3a). -/
+/-- Chapter numbers for triggering (CR 714.2b–c). -/
 def chapterNumbers (ch : SagaChapter) : Array Nat :=
   if ch.numbers.isEmpty then parseChapterNumbers ch.roman else ch.numbers
 
@@ -81,7 +81,7 @@ def finalChapterNumber (s : SagaDef) : Nat :=
   s.chapters.foldl (fun acc ch =>
     ch.chapterNumbers.foldl (fun acc n => max acc n) acc) 0
 
-/-- Chapter lines that trigger when lore becomes `lore` (CR 714.3a). -/
+/-- Chapter lines that trigger when lore becomes `lore` (CR 714.2b–c). -/
 def chaptersForLore (s : SagaDef) (lore : Nat) : Array SagaChapter :=
   s.chapters.filter (fun ch => ch.chapterNumbers.contains lore)
 

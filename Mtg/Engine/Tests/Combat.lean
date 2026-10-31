@@ -41,7 +41,7 @@ def cratermakerAbility : ActivatedAbility :=
 #guard cratermakerReady.canActivate ⟨0⟩ (cratermakerSource cratermakerReady) cratermakerAbility
 #guard !(cratermakerReady.canActivate ⟨1⟩ (cratermakerSource cratermakerReady)
   cratermakerAbility)
-#guard (namedPermanent cratermakerReady "Grizzly Bears").isColorlessNonland == false
+#guard cratermakerReady.isColorlessNonland (namedPermanent cratermakerReady "Grizzly Bears") == false
 #guard (cratermakerSource cratermakerReady).printed.colors.contains .red
 
 -- The heuristic begins activating Cratermaker when {1} is available.
@@ -203,8 +203,8 @@ def cratermakerDestroyReady : Game :=
   let g := addPermanent g wayfarersBauble ⟨1⟩ ⟨1⟩
   g.recordLandPlayed ⟨0⟩
 
-#guard (namedPermanent cratermakerDestroyReady "Wayfarer's Bauble").isColorlessNonland
-#guard !(namedPermanent cratermakerDestroyReady "Goblin Cratermaker").isColorlessNonland
+#guard cratermakerDestroyReady.isColorlessNonland (namedPermanent cratermakerDestroyReady "Wayfarer's Bauble")
+#guard !cratermakerDestroyReady.isColorlessNonland (namedPermanent cratermakerDestroyReady "Goblin Cratermaker")
 
 -- No opposing creature: the heuristic prefers the destroy mode.
 #guard

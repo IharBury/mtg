@@ -115,14 +115,14 @@ def applyFraResolution? (g : Game) (controller : PlayerId) (effect : Effect)
     some (g.withLegalKindPermanent controller effect.targetKind targets (fun g o =>
       let before := o.status.damage
       let g := g.dealDamageToPermanent o n
-        (source := (sourceId.bind g.findObject?).map g.snapshot)
+        (source := (sourceId.bind g.damageSourceById?).map g.snapshotDamageSource)
       let dealt := ((g.object! o.id).status.damage - before).toNat
       let excess := g.excessDamage o dealt
       if excess > 0 then g.empowerJace controller excess
       else g) sourceId (some "The target is no longer legal"))
   | .exileTopMayCastElseDamageOpponents n =>
     let sid := sourceId.orElse (fun _ => g.resolvingSpell)
-    let src? := sid.bind (fun s => g.findObject? (g.followMoved s))
+    let src? := sid.bind g.damageSourceById?
     match (g.player controller).library.back? with
     | none =>
       some (g.dealDamageToEachOpponent controller n (source := src?))
@@ -175,7 +175,14 @@ def applyFraResolution? (g : Game) (controller : PlayerId) (effect : Effect)
       else some (g.logMsg s!"{o.name} is no longer in the graveyard")
     | none => some (g.logMsg "The card is no longer in the graveyard")
   | .copyNextInstantSorceryThisTurn =>
-    let g := g.createEffect (.copyNextInstantSorceryThisTurn controller 1)
+    let (g, cause) := g.allocDelayedCause (some controller) sourceId
+    let src := sourceId.bind g.damageSourceById?
+    let g := g.registerDelayedTrigger {
+      controller
+      source := src
+      kind := .copyNextInstantSorceryThisTurn
+      cause
+    }
     some (g.logMsg s!"When {(g.player controller).name} next casts an instant or sorcery spell this turn, it is copied")
   | .proliferatePlaneswalkerTypesTimes =>
     -- Ruling 878: X is determined once, as the ability resolves.
@@ -221,7 +228,7 @@ def applyFraResolution? (g : Game) (controller : PlayerId) (effect : Effect)
   | .loseLife (.fixed n) .you => some (g.loseLife controller n.toNat)
   | .gainLife (.fixed n) => some (g.gainLife controller n.toNat)
   | .damageEachOpponent n =>
-    let src? := (g.resolvingSpell.bind g.findObject?).orElse (fun _ => sourceId.bind g.findObject?)
+    let src? := (g.resolvingSpell.bind g.damageSourceById?).orElse (fun _ => sourceId.bind g.damageSourceById?)
     some (g.dealDamageToEachOpponent controller n (source := src?))
   | .teamGain k => some (g.grantUntilEotToControlledCreatures controller k k.joinedAnd)
   | .jaceLoyaltyAtInstantSpeed =>
@@ -253,21 +260,33 @@ def exileHandDrawPlayUntilNext (g : Game) (p : PlayerId) : Game :=
     else g.logMsg s!"{(g.player p).name} may play the exiled cards until the end of their next turn"
   g.draw p n (cause := cause?)
 
+/-- Step through `snapshots`, creating a nonlegendary token copy of each source
+under `p` via `createToken` and pausing on `Pending.chooseReplacement`
+(`PendingReplacement.copyNontokenCreatures`) if CR 616.1 choice is required. -/
+partial def copyNontokenCreaturesStep (g : Game) (p : PlayerId)
+    (snapshots : Array CardDef) (cause : Option EventCause := none) : Game :=
+  match snapshots[0]? with
+  | none => g
+  | some printed =>
+    let rem := snapshots.extract 1 snapshots.size
+    let (g, _) := g.createToken p printed (cause := cause)
+    if let .chooseReplacement .. := g.pending then
+      if rem.isEmpty then g
+      else g.chainPendingReplacement (.copyNontokenCreatures p rem cause)
+    else
+      g.copyNontokenCreaturesStep p rem cause
+
 /-- A token copy of each nontoken creature `p` controls, except it isn't
 legendary (Multiversal Incursion; rulings 468 / 508). -/
 def copyNontokenCreaturesYouControl (g : Game) (p : PlayerId) : Game :=
   g.withBatch none fun g =>
-    let ids :=
-      ((g.creaturesControlledBy p).filter (fun o => !o.printed.isToken)).map (·.id)
-    ids.foldl (fun g id =>
-      match g.findObject? id with
-      | none => g
-      | some src =>
+    let snapshots :=
+      ((g.creaturesControlledBy p).filter (fun o => !o.printed.isToken)).map fun src =>
         let cv := g.copiableValues src
-        let printed := { cv with
+        { cv with
           supertypes := cv.supertypes.filter (· != .legendary)
           isToken := true }
-        (g.createOneToken p printed).1) g
+    g.copyNontokenCreaturesStep p snapshots
 
 /-- Gain control of the targeted creature until end of turn, or until the end
 of your next turn when you control a Villain with greater mana value. Untap
@@ -1208,7 +1227,7 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     let n := match amount with
       | .fixed => n
       | .otherSpellsManaValue => g.otherSpellsManaValue controller
-    let srcEvent? := (sourceId.bind (fun s => g.findObject? (g.followMoved s))).map g.snapshot
+    let srcEvent? := (sourceId.bind g.damageSourceById?).map g.snapshotDamageSource
     let g := match which with
       | .each => g.dealDamageToEachCreatureMatching n (source := srcEvent?)
       | .opponentsControl =>
@@ -1419,14 +1438,18 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
         | none => g.logMsg "The target is no longer legal"
       | _ => g.logMsg "The target is no longer legal"
   | .dealDamageToControllerOfTarget n =>
-    let src? := (sourceId.bind (fun s => g.findObject? (g.followMoved s))).orElse (fun _ => g.resolvingMovedDamageSource?)
+    let src? := (sourceId.bind g.damageSourceById?).orElse (fun _ => g.resolvingMovedDamageSource?)
     match targets[0]? with
     | some (Target.permanent id) =>
-      match g.findObject? (g.followMoved id) with
-      | some o =>
-        match g.lastControllerOf? o with
-        | some pid => g.dealDamageToPlayer pid n (source := src?)
-        | none => g
+      let pid? :=
+        match g.findObject? id with
+        | some o =>
+          if o.isOnBattlefield then g.controllerOf o
+          else (g.lastKnownBefore? id).bind (fun eo => eo.controller.orElse (fun _ => some eo.owner))
+        | none =>
+          (g.lastKnownBefore? id).bind (fun eo => eo.controller.orElse (fun _ => some eo.owner))
+      match pid? with
+      | some pid => g.dealDamageToPlayer pid n (source := src?)
       | none => g
     | _ => g
   | .exileCreatureMvAtMostOrAnyIfTeamwork n life =>
@@ -1937,7 +1960,7 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
         g.withLegalKindPermanent controller effect.targetKind targets (fun g o =>
           g.putShadowCounter o) sourceId (some "The target is no longer legal")
       | .damageEachOpponent n =>
-        let src? := sourceId.bind g.findObject?
+        let src? := sourceId.bind g.damageSourceById?
         g.dealDamageToEachOpponent controller n (source := src?)
       | .chooseTwoDestroyRest =>
         let creatures := (g.battlefield.filter (g.isCreature ·)).map (·.id)
@@ -2095,7 +2118,14 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
           "The source is no longer in play"
       | .nextInstantSorceryCopyIfMvAtMostSourcePower =>
         let pw := g.sourcePowerAtResolution sourceId lastKnownPower
-        g.createEffect (.pendingLokiCopy controller sourceId pw)
+        let (g, cause) := g.allocDelayedCause (some controller) sourceId
+        let src := sourceId.bind g.damageSourceById?
+        g.registerDelayedTrigger {
+          controller
+          source := src
+          kind := .lokiCopyNextInstantSorceryThisTurn sourceId pw
+          cause
+        }
           |>.logMsg s!"The next instant or sorcery with mana value {pw} or less will be copied"
       | .harnessInfinityStone =>
         g.withSourceOnBattlefield sourceId (fun g o =>

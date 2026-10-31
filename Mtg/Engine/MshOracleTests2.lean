@@ -402,7 +402,7 @@ def shangChiActivateNotHasteOk : Bool :=
   let g := insertObject afterDraw shangChiMasterOfKungFu ⟨0⟩ .battlefield
     (some ⟨0⟩) { summoningSick := true }
   let shang := namedPermanent g "Shang-Chi, Master of Kung Fu"
-  shang.hasSummoningSickness &&
+  g.hasSummoningSickness shang &&
     !g.canAttack shang &&
     !g.hasHaste shang &&
     (g.tapForMana ⟨0⟩ shang.id (.colored .green)).isOk &&

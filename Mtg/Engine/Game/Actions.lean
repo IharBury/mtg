@@ -32,6 +32,18 @@ def applyAction (g : Game) (p : PlayerId) : Action → Except String Game
   | .chooseMode idx =>
     match g.pending with
     | .fraChoice .. => g.answerFraChoice p (.mode idx)
+    | .chooseReplacement _ choices =>
+      if choices.any (fun c => match c.kind with | .asEntersChooseOdd _ => true | _ => false) then
+        if idx > 1 then throw "Choose even (0) or odd (1)"
+        else
+          let wantOdd := idx == 1
+          match choices.find? (fun c => c.kind == .asEntersChooseOdd wantOdd) with
+          | some id => g.chooseReplacement p id
+          | none => throw "No such choice"
+      else
+        match choices[idx]? with
+        | some id => g.chooseReplacement p id
+        | none => throw "No such choice"
     | .chooseTriggerOr _ => g.chooseTriggerOr p idx
     | .chooseLibraryPlacement _ _ =>
       if g.spellOr.isEmpty then g.announceMode p idx else g.chooseSpellOr p idx
@@ -47,7 +59,7 @@ def applyAction (g : Game) (p : PlayerId) : Action → Except String Game
   | .pay => g.pay p
   | .sacrifice id => do
     let g ← g.sacrificeForActivation p id
-    return if g.mayThenResume then g.acceptMayThen else g
+    return if g.mayThenResume then g.acceptMayThen else g.resumeAfterBecomeCast
   | .chooseAdditionalCost payGeneric => g.announceAdditionalCost p payGeneric
   | .declareAttackers ids defender each pws => g.declareAttackers p ids defender each pws
   | .declareBlockers as => g.declareBlockers p as
@@ -66,7 +78,10 @@ def applyAction (g : Game) (p : PlayerId) : Action → Except String Game
     match g.pending with
     | .fraChoice .. => g.answerFraChoice p .decline
     | .chooseReplacement _ choices =>
-      match choices.find? (·.kind == .entersTappedDeclinePayLife) with
+      match choices.find? (fun c =>
+          match c.kind with
+          | .entersTappedDeclinePayLife | .entersTappedDeclineBehold | .declineEntersAsCopy => true
+          | _ => false) with
       | some id => g.chooseReplacement p id
       | none => g.decline p
     | _ => g.decline p
@@ -76,7 +91,7 @@ def applyAction (g : Game) (p : PlayerId) : Action → Except String Game
     | .chooseReplacement _ choices =>
       match choices.find? (fun c =>
           match c.kind with
-          | .entersUntappedPayLife _ => true
+          | .entersUntappedPayLife _ | .entersUntappedBehold _ _ | .entersAsCopyCreatureUntilEot _ => true
           | _ => false) with
       | some id => g.chooseReplacement p id
       | none => throw "Nothing to accept now"
@@ -98,6 +113,17 @@ def applyAction (g : Game) (p : PlayerId) : Action → Except String Game
   | .choosePermanents ids =>
     match g.pending with
     | .fraChoice .. => g.answerFraChoice p (.objects ids)
+    | .chooseReplacement _ choices =>
+      match ids with
+      | #[tid] =>
+        match choices.find? (fun c =>
+            match c.kind with
+            | .entersAsCopyCreatureUntilEot cid => cid == tid
+            | .entersUntappedBehold bid _ => bid == tid
+            | _ => false) with
+        | some id => g.chooseReplacement p id
+        | none => g.choosePermanents p ids
+      | _ => g.choosePermanents p ids
     | .activateManaAbilities _ => g.convoke p ids
     | _ => g.choosePermanents p ids
   | .announceKicker kick => g.announceKicker p kick
@@ -107,7 +133,22 @@ def applyAction (g : Game) (p : PlayerId) : Action → Except String Game
   | .concede => return g.concede p
   | .supplyOrder ids => g.supplyOrder ids
   | .supplyIndex i => g.supplyIndex i
-  | .chooseName name => g.answerFraChoice p (.name name)
+  | .chooseName name =>
+    match g.pending with
+    | .chooseReplacement _ choices =>
+      match choices.find? (fun c =>
+          c.kind == .asEntersChooseCreatureTypePrompt ||
+            c.kind == .asEntersChooseCardNamePrompt) with
+      | some promptId =>
+        match promptId.kind with
+        | .asEntersChooseCreatureTypePrompt => do
+          let some sub := (CardSubtype.ofOracle? name).filter CardSubtype.isCreatureType
+            | throw s!"{name} is not a creature type"
+          g.chooseReplacement p { promptId with kind := .asEntersChooseCreatureType sub }
+        | _ =>
+          g.chooseReplacement p { promptId with kind := .asEntersChooseCardName name }
+      | none => g.answerFraChoice p (.name name)
+    | _ => g.answerFraChoice p (.name name)
   | .chooseReplacement id => g.chooseReplacement p id
 
 
@@ -115,6 +156,14 @@ def applyAction (g : Game) (p : PlayerId) : Action → Except String Game
 def apply (g : Game) (p : PlayerId) (a : Action) : Except String Game := do
   let beforeWaiting := g.waitingTriggers.size
   let g ← g.applyAction p a
+  let g :=
+    if g.pending == .none && g.pendingReplacement.isSome && !g.over then
+      match g.pendingReplacement with
+      | some cont =>
+        let g := g.change (.pendingReplacement none)
+        g.resumePendingReplacement cont
+      | none => g
+    else g
   let g :=
     if g.pending == .none && g.waitingTriggers.size > beforeWaiting && !g.over then
       g.receivePriority g.priority

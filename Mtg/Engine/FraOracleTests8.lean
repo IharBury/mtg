@@ -74,7 +74,8 @@ def seedSutureCopy (g : Game) : GameObject :=
 /- The Mage's controller names a card as it enters. -/
 #guard
   match mageEntered.pending with
-  | .fraChoice q (.chooseCardName _) => q == opp
+  | .chooseReplacement q choices =>
+    q == opp && choices.any (·.kind == .asEntersChooseCardNamePrompt)
   | _ => false
 
 /- The prepare spell's name may be chosen. It is judged by the prepare

@@ -278,7 +278,7 @@ library still shuffles, as an empty search does. -/
   let before := g0.log.size
   let g := declineSearch (step g0 (.searchLibrary (.put .dragon)))
   !onBattlefield g "Search Dragon" && inLibrary g caster "Search Dragon" &&
-    !shuffledSince before g &&
+    shuffledSince before g &&
     logContains g "chooses not to find a Dragon card"
 
 /- Six quest counters sacrifice the source and search. Fewer than six

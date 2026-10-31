@@ -109,7 +109,8 @@ def costPicksPayable (g : Game) (p : PlayerId) (sourceId : ObjectId) (picks : Ar
 (CR 601.2h). The power of a creature sacrificed for an ability that refers
 to it is recorded on the ability (Tom, Bert, and William). -/
 def payCostPick (g : Game) (p : PlayerId) (abilityId sourceId : ObjectId) (pick : CostPick)
-    (ids : Array ObjectId) : Except String Game := do
+    (ids : Array ObjectId) : Except String Game :=
+  g.withProposalActionM .costAction fun g => do
   if ids.size != pick.count || ids.toList.eraseDups.length != ids.size then
     throw s!"Choose {pick.count} to {pick.phrase}"
   let name := (g.player p).name
@@ -152,7 +153,8 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
     (tapSource sacrificeSource : Bool) (payLife : Nat := 0)
     (discardSource : Bool := false)
     (ab : Option ActivatedAbility := none) (removePlusOnes : Nat := 0) :
-    Except String Game := do
+    Except String Game :=
+  g.withProposalActionM .costAction fun g => do
   let some src := g.findObject? sourceId | throw "The source is no longer in play"
   let forObject := g.proposedSpell.map (·.spellId) <|> some sourceId
   if ab.any (·.cost.fra == .exileSourceFromHand) then

@@ -23,78 +23,15 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
       { (g.snapshot spell) with manaValue := g.objectManaValue spell }
       fromZone
   let g := g.record happened
-  let mv := g.objectManaValue spell
-  let g :=
-    match g.pendingFreeRGCreature with
-    | some p =>
-      if p == caster && g.isCreature spell &&
-          ((g.colors spell).contains .red ||
-            (g.colors spell).contains .green) then
-        g.expireEffect (.pendingFreeRGCreatureThisTurn p) (cause := some (.gameRule .spellCast))
-          |>.logMsg s!"World War Hulk's free-cast permission is used on {spell.name}"
-      else g
-    | none => g
-  -- Way of the Cryomancer: copy the next instant or sorcery this turn. The
-  -- copy has the original's targets, mode, X, and paid-cost effects, but
-  -- no costs are paid for it (rulings 843–846).
-  let g :=
-    if g.isInstantOrSorcery spell && g.copyNextInstantSorceryThisTurn caster > 0 then
-      let cryoEid? := g.activeEffects.findSome? (fun (eid, eff) =>
-        match eff with
-        | .playerRule p (.copyNextInstantSorcery _) _ => if p == caster then some eid else none
-        | _ => none)
-      let copyCause : EventCause :=
-        (cryoEid?.map (fun eid => g.effectCreatedCause eid none caster)).getD (.gameRule .spellCast)
-      let g := g.expireEffect (.copyNextInstantSorceryThisTurn caster 1)
-        (cause := some (.gameRule .spellCast))
-      let copyId : ObjectId := ⟨g.nextObjectId⟩
-      let copySnap : EventObject := {
-        (g.snapshot spell) with
-        id := some copyId
-        owner := caster
-        controller := some caster
-        zone := .stack
-        isCopy := true
-      }
-      let g := g.record (GameEvent.stackObjectCopied g.turnNumber spell.id copySnap caster
-        (cause := copyCause))
-      g.logMsg s!"A copy of {spell.name} is created (Way of the Cryomancer)"
+  match g.pendingFreeRGCreature with
+  | some p =>
+    if p == caster && g.isCreature spell &&
+        ((g.colors spell).contains .red ||
+          (g.colors spell).contains .green) then
+      g.expireEffect (.pendingFreeRGCreatureThisTurn p) (cause := some (.gameRule .spellCast))
+        |>.logMsg s!"World War Hulk's free-cast permission is used on {spell.name}"
     else g
-  -- Loki (MSH 109): copy the next instant or sorcery whose mana value is
-  -- ≤ Loki's power at cast time (last known if he already left). Each
-  -- activation is its own delayed trigger, so every matching pending effect
-  -- of the caster copies this spell and then ends under its own `EffectId`.
-  if !g.isInstantOrSorcery spell then g
-  else
-    let matching := g.activeEffects.filterMap (fun (eid, eff) =>
-      match eff with
-      | .pendingLokiCopy p src fallback =>
-        if p != caster then none
-        else
-          let pw :=
-            match src with
-            | some id =>
-              match g.findObject? id with
-              | some o => if o.isOnBattlefield then g.power o else fallback
-              | none => fallback
-            | none => fallback
-          if Int.ofNat mv <= pw then some (eid, src) else none
-      | _ => none)
-    matching.foldl (fun g (eid, src) =>
-      let copyCause := g.effectCreatedCause eid src caster
-      let copyId : ObjectId := ⟨g.nextObjectId⟩
-      let copySnap : EventObject := {
-        (g.snapshot spell) with
-        id := some copyId
-        owner := caster
-        controller := some caster
-        zone := .stack
-        isCopy := true
-      }
-      let g := g.record (GameEvent.stackObjectCopied g.turnNumber spell.id copySnap caster
-        (cause := copyCause))
-      let g := g.expireEffectById eid (cause := some (.gameRule .spellCast))
-      g.logMsg s!"A copy of {spell.name} is created (Loki)") g
+  | none => g
 
 /-- Karn, Argent Defender: an artifact or creature entering doesn't cause
 abilities to trigger. Checked with the permanent as it exists on the
@@ -229,46 +166,6 @@ def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
   let g := g.refreshCitysBlessing
   let g := g.applyEntersWith (g.object! o.id)
   let o := g.object! o.id
-  -- Room of Refuge: “As it enters, choose a color.”
-  let g :=
-    if (g.staticAbilities o).any (· == .fra .entersTappedChooseColor) && o.status.chosenColor.isNone &&
-        g.pending == .none then
-      match g.controllerOf o with
-      | some p =>
-        (g.change (.pending (.fraChoice p (.chooseColor o.id)))).logMsg
-          s!"{(g.player p).name} chooses a color for {g.name o}"
-      | none => g
-    else g
-  -- An Unexpected Party: “As this enchantment enters, choose a creature type.”
-  let g :=
-    if (g.baseCard o).asEntersChooseCreatureType && g.retainsPrintedAbilities o &&
-        o.status.chosenCreatureType.isNone && g.pending == .none then
-      match g.controllerOf o with
-      | some p =>
-        (g.change (.pending (.fraChoice p (.entersCreatureType o.id)))).logMsg
-          s!"{(g.player p).name} chooses a creature type for {g.name o}"
-      | none => g
-    else g
-  -- Gollum, Riddle Master: “As Gollum enters, choose odd or even.”
-  let g :=
-    if (g.baseCard o).asEntersChooseOddEven && g.retainsPrintedAbilities o &&
-        o.status.chosenOdd.isNone && g.pending == .none then
-      match g.controllerOf o with
-      | some p =>
-        (g.change (.pending (.fraChoice p (.entersOddEven o.id)))).logMsg
-          s!"{(g.player p).name} chooses odd or even for {g.name o}"
-      | none => g
-    else g
-  -- Meddling Mage: “As it enters, choose a nonland card name.”
-  let g :=
-    if (g.staticAbilities o).any (· == .fra .entersChooseNonlandCardName) && o.status.chosenName.isNone &&
-        g.pending == .none then
-      match g.controllerOf o with
-      | some p =>
-        (g.change (.pending (.fraChoice p (.chooseCardName o.id)))).logMsg
-          s!"{(g.player p).name} chooses a nonland card name for {g.name o}"
-      | none => g
-    else g
   let g := g.addLoreAsSagaEnters o
   let o := g.object! o.id
   if g.enteringCausesNoTriggers o then

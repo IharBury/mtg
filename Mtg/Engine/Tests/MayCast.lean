@@ -180,10 +180,16 @@ instant and bottoms only the cards that were not cast. -/
   let g := g.noteCombatDamageTo victim (g.object! (permanentId g "Test Wizard").get!).asEvent
   let g := g.applyTriggeredAbility caster .onCombatDamageImpulseInstantSorcery none
   let g := mustApply g caster .accept
-  onStack g "Lightning Bolt" &&
-    g.log.any (fun s => mentions s "as the ability resolves") &&
+  let midProposalOk :=
+    onStack g "Lightning Bolt" &&
+      g.log.any (fun s => mentions s "as the ability resolves") &&
+      inExile g "Mountain" &&
+      (match g.pending with | .chooseTargets _ => true | _ => false)
+  let g := mustApply g caster (.target (.player victim))
+  midProposalOk &&
+    onStack g "Lightning Bolt" &&
     (g.object! (g.player victim).library[0]!).name == "Mountain" &&
     !inExile g "Mountain" &&
-    (match g.pending with | .chooseTargets _ => true | _ => false)
+    g.pending == .none
 
 end Mtg.Engine.MayCastTests

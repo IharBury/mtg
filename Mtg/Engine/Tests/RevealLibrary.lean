@@ -279,7 +279,8 @@ library changes nothing. -/
 #guard
   let g0 := onlyLibrary afterDraw caster [bolt, plot]
   let g := stepRaw g0 untilCreature
-  (g.player caster).library.isEmpty && inExile g "Reveal Bolt" && inExile g "Reveal Plot" &&
+  inLib g caster "Reveal Bolt" && inLib g caster "Reveal Plot" &&
+    !inExile g "Reveal Bolt" && !inExile g "Reveal Plot" &&
     (match g.pending with
       | .resolveRandom (.orderInto ids (.library p) _) => p == caster && ids.size == 2
       | _ => false)

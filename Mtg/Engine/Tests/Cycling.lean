@@ -142,7 +142,7 @@ def trollCycled : Game :=
     (trollCycleReady.object! id).name == "Troll of Khazad-dûm"
   | _ => false
 
-/- Gollum, Silent Slinker: menace (CR 702.111 / 509.1c). -/
+/- Gollum, Silent Slinker: menace (CR 702.111 / 509.1b). -/
 
 #guard gollumSilentSlinker.keywords.menace
 #guard gollumSilentSlinker.power == some 4
@@ -463,11 +463,8 @@ def fiendHunterReturned : Game :=
 /-- Mentor of the Meek: another small creature entering offers {1} to draw. -/
 def mentorSmallEnters : Game :=
   let g := addPermanent afterDraw mentorOfTheMeek ⟨0⟩ ⟨0⟩
-  let g := addPermanent g llanowarElves ⟨0⟩ ⟨0⟩
-  let mentor := namedPermanent g "Mentor of the Meek"
-  let elves := namedPermanent g "Llanowar Elves"
-  let g := g.putMatchingSourceTriggers ⟨0⟩ mentor .anotherCreatureYouControlEnters
-    (cause := some elves)
+  let (g, elvesObj) := g.allocObject llanowarElves ⟨0⟩ (.outside ⟨0⟩) none
+  let (g, _) := g.putOntoBattlefield elvesObj.id ⟨0⟩ (summoningSick := false)
   g.receivePriority ⟨0⟩
 
 #guard mentorSmallEnters.stack.size == 1
@@ -483,11 +480,8 @@ def mentorMayPay : Game := passBoth mentorSmallEnters
 
 #guard
   let g := addPermanent afterDraw mentorOfTheMeek ⟨0⟩ ⟨0⟩
-  let g := addPermanent g hillGiant ⟨0⟩ ⟨0⟩
-  let mentor := namedPermanent g "Mentor of the Meek"
-  let giant := namedPermanent g "Hill Giant"
-  let g := g.putMatchingSourceTriggers ⟨0⟩ mentor .anotherCreatureYouControlEnters
-    (cause := some giant)
+  let (g, giantObj) := g.allocObject hillGiant ⟨0⟩ (.outside ⟨0⟩) none
+  let (g, _) := g.putOntoBattlefield giantObj.id ⟨0⟩ (summoningSick := false)
   let g := g.receivePriority ⟨0⟩
   g.stack.isEmpty
 
@@ -502,8 +496,7 @@ def dawnWithCreature : Game :=
 #guard dawnWithCreature.log.any (fun s => mentions s "hope counter")
 
 def dawnEndStep : Game :=
-  let dawn := namedPermanent dawnWithCreature "Dawn of a New Age"
-  let g := dawnWithCreature.putMatchingSourceTriggers ⟨0⟩ dawn .yourEndStep
+  let g := dawnWithCreature.record (GameEvent.stepBegan dawnWithCreature.turnNumber .end ⟨0⟩)
   passBoth (g.receivePriority ⟨0⟩)
 
 #guard !(dawnEndStep.battlefield.any (fun o => o.name == "Dawn of a New Age"))

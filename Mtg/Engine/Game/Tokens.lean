@@ -75,6 +75,10 @@ def computeEntersWithCounters (g : Game) (entering : GameObject)
   (g.applyEtbReplacements entering (fromStackTime := fromStackTime)
     (applyHope := applyHope) (asOf := asOf) (extraCounters := extraCounters)).entersWith
 
+private def unreplacedCause : EventCause → EventCause
+  | .replaced _ orig => unreplacedCause orig
+  | other => other
+
 /-- Create one token on the battlefield, running the CR 616.1a–g ETB replacement
 loop for the entering token (CR 111.2 / 608.2c / 614.1c). Callers that must let
 enters-the-battlefield triggers see the token (amass, recruit) invoke
@@ -115,8 +119,6 @@ def createOneToken (g : Game) (controller : PlayerId) (printed : CardDef)
           attacking := isAttacking
           attackingTarget := resolvedAttackTarget
           prepared := printed.entersPrepared
-          chosenCardType := if printed.asEntersChooseCardType then some .creature else none
-          chosenAnchor := if printed.asEntersChooseMarduOrJeskai then some "Mardu" else none
         }
         timestamp := ts
       }
@@ -132,7 +134,33 @@ def createOneToken (g : Game) (controller : PlayerId) (printed : CardDef)
       let g := g.consumeReplacementOrder etb.applied
       let obj := etb.candidate
       let resolvedEtbCause := g.resolveOptionalCause etb.cause (fallbackCtrl := some controller)
-      let g := g.record (GameEvent.created g.turnNumber controller (g.snapshot obj) (cause := resolvedEtbCause))
+      let snapObj : EventObject :=
+        match etb.tempCopyUntilEot with
+        | some (origPrinted, copyCard) =>
+          let origTok := { origPrinted with
+            isToken := true
+            otherFace := origPrinted.otherFace.map (fun f => { f with isToken := true }) }
+          let copyTok := { copyCard with
+            isToken := true
+            otherFace := copyCard.otherFace.map (fun f => { f with isToken := true }) }
+          let gWithCopy :=
+            { g with
+              activeEffects := g.activeEffects.push (⟨g.nextEffectId⟩, .copy newId copyTok (untilEot := true))
+              nextEffectId := g.nextEffectId + 1 }
+          { (gWithCopy.snapshot { obj with printed := copyTok, isCopy := true }) with
+            printed := some origTok }
+        | none => g.snapshot obj
+      let g := g.record (GameEvent.created g.turnNumber controller snapObj (cause := resolvedEtbCause))
+      let happenedCause := (g.events.findSomeRev? (·.cause?)).getD resolvedEtbCause
+      let baseHappenedCause := unreplacedCause happenedCause
+      let g : Game :=
+        match etb.tempCopyUntilEot with
+        | some (_, copyCard) =>
+          let copyTok := { copyCard with
+            isToken := true
+            otherFace := copyCard.otherFace.map (fun f => { f with isToken := true }) }
+          g.createEffect (.copy newId copyTok (untilEot := true)) (cause := some baseHappenedCause)
+        | none => g
       let g : Game :=
         match resolvedAttackTarget with
         | some tgt =>

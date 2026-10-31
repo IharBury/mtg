@@ -146,11 +146,8 @@ def amassOrcMentorSeesZeroOk : Bool :=
 /-- A 3-power creature entering after counters would not trigger Mentor. -/
 def mentorIgnoresGiant : Game :=
   let g := addPermanent started mentorOfTheMeek ⟨0⟩ ⟨0⟩
-  let g := addPermanent g hillGiant ⟨0⟩ ⟨0⟩
-  let mentor := namedPermanent g "Mentor of the Meek"
-  let giant := namedPermanent g "Hill Giant"
-  let g := g.putMatchingSourceTriggers ⟨0⟩ mentor .anotherCreatureYouControlEnters
-    (cause := some giant)
+  let (g, giantObj) := g.allocObject hillGiant ⟨0⟩ (.outside ⟨0⟩) none
+  let (g, _) := g.putOntoBattlefield giantObj.id ⟨0⟩ (summoningSick := false)
   g.receivePriority ⟨0⟩
 
 #guard mentorIgnoresGiant.stack.isEmpty
@@ -1765,7 +1762,10 @@ def enterPermanent (g : Game) (card : CardDef) (p : PlayerId) : Game :=
   let g := addToHand g card p
   let id := (handCardNamed g p card.name).id
   let (g, newId) := g.putOntoBattlefield id p (summoningSick := false)
-  g.afterPermanentEnters (g.object! newId)
+  if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement (.afterLastPermanentEnters (some id) false)
+  else
+    g.afterPermanentEnters (g.object! newId)
 
 /-- Arwen and another creature enter as one event (same `asOf` cutoff). -/
 def enterTogether (g : Game) (a b : CardDef) (p : PlayerId) : Game :=
@@ -1930,9 +1930,21 @@ def signetNoCommanderOk : Bool :=
 
 #guard signetNoCommanderOk
 
+def commanderTestStarted (ci : ColorSet) : Game :=
+  match Start.start {
+    seats := #[
+      { name := "Chandra", deck := testRedDeck, hasCommander := true, commanderColorIdentity := ci },
+      { name := "Nissa", deck := testGreenDeck }
+    ]
+    format := .constructed
+    seed := 1
+    startingPlayer := some 0
+  } with
+  | .ok g => keepOpeningHands g 8
+  | .error e => panic! e
+
 def signetColorlessCommander : Game :=
-  let g := signetOn afterDraw
-  g.changePlayers ⟨0⟩ #[.hasCommander true, .commanderColorIdentity {}]
+  signetOn (commanderTestStarted {})
 
 def signetColorlessOk : Bool :=
   match tapSignet signetColorlessCommander .green with
@@ -1944,10 +1956,7 @@ def signetColorlessOk : Bool :=
 #guard signetColorlessOk
 
 def signetTwoCommanders : Game :=
-  let g := signetOn afterDraw
-  g.changePlayers ⟨0⟩ #[
-    .hasCommander true,
-    .commanderColorIdentity (ColorSet.ofList [.green, .white])]
+  signetOn (commanderTestStarted (ColorSet.ofList [.green, .white]))
 
 def signetTwoOk : Bool :=
   match tapSignet signetTwoCommanders .green, tapSignet signetTwoCommanders .blue with
@@ -2107,9 +2116,8 @@ def whaleAttackTimingOk : Bool :=
 
 /-- Ruling 115: Eagles pump only creatures you control as it resolves. -/
 def eaglesPumpThenLatecomer : Game :=
-  let g := addPermanent afterDraw eaglesOfTheNorth ⟨0⟩ ⟨0⟩
-  let eagles := namedPermanent g "Eagles of the North"
-  let g := g.putMatchingSourceTriggers ⟨0⟩ eagles .entering
+  let (g, obj) := afterDraw.allocObject eaglesOfTheNorth ⟨0⟩ (.outside ⟨0⟩) none
+  let (g, _) := g.putOntoBattlefield obj.id ⟨0⟩ (summoningSick := false)
   let g := g.receivePriority ⟨0⟩
   let g := g.resolveTop
   addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
@@ -2316,7 +2324,9 @@ among the attackers. -/
 def boatRecruitOnAttack : Game :=
   let g := addPermanent afterDraw greatGildedBoat ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
-  g.putControlledTriggers ⟨0⟩ .youAttack
+  let bear := namedPermanent g "Grizzly Bears"
+  g.record (GameEvent.attackersDeclared g.turnNumber ⟨0⟩ #[(g.snapshot bear, .player ⟨1⟩)]
+    (cause := some (.turnBased .declareAttackers)))
 
 def boatRecruitOnAttackOk : Bool :=
   countWaiting boatRecruitOnAttack .onYouAttackRecruit == 1 &&
@@ -3099,14 +3109,13 @@ def galadrielLeavesAndReturnsOk : Bool :=
 
 def thorinTwoDwarfTriggersOk : Bool :=
   let g := addPermanent afterDraw thorinCompanySLeader ⟨0⟩ ⟨0⟩
-  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addPermanent g bofurReliableGuardian ⟨0⟩ ⟨0⟩
   let thorin := namedPermanent g "Thorin, Company's Leader"
-  let g := g.queueTrigger ⟨0⟩ thorin
-    (.onSubtypeYouControlCombatDamageCreateTokens "Dwarf" .treasure 2)
-    .dealsCombatDamageToPlayerOrBattle
-  let g := g.queueTrigger ⟨0⟩ thorin
-    (.onSubtypeYouControlCombatDamageCreateTokens "Dwarf" .treasure 2)
-    .dealsCombatDamageToPlayerOrBattle
+  let bofur := namedPermanent g "Bofur, Reliable Guardian"
+  let g := g.record (GameEvent.rules g.turnNumber (.damage (.dealt #[
+      { source := g.snapshot thorin, recipient := .player ⟨1⟩, amount := 3, combat := true },
+      { source := g.snapshot bofur, recipient := .player ⟨1⟩, amount := 2, combat := true }
+    ])) (.turnBased (.dealCombatDamage false)))
   (g.waitingTriggers.filter (fun wt =>
     wt.ability == .onSubtypeYouControlCombatDamageCreateTokens "Dwarf" .treasure 2)).size
     == 2 &&
@@ -3369,7 +3378,7 @@ def gafferInPlay : Game :=
   addPermanent afterDraw theGaffer ⟨0⟩ ⟨0⟩
 
 def gafferNoLifeNoTrigger : Game :=
-  gafferInPlay.putControlledTriggers ⟨0⟩ .eachEndStep
+  gafferInPlay.record (GameEvent.stepBegan gafferInPlay.turnNumber .end ⟨0⟩)
 
 def gafferNoLifeOk : Bool :=
   !gafferNoLifeNoTrigger.waitingTriggers.any (fun wt =>
@@ -3381,7 +3390,7 @@ def gafferNoLifeOk : Bool :=
 def gafferGainedBeforeEnter : Game :=
   let g := afterDraw.gainLife ⟨0⟩ 3
   let g := addPermanent g theGaffer ⟨0⟩ ⟨0⟩
-  g.putControlledTriggers ⟨0⟩ .eachEndStep
+  g.record (GameEvent.stepBegan g.turnNumber .end ⟨0⟩)
 
 def gafferGainedBeforeEnterOk : Bool :=
   gafferGainedBeforeEnter.waitingTriggers.any (fun wt =>
@@ -3705,9 +3714,10 @@ def beholdAlreadyRevealedOk : Bool :=
 -/
 
 def gollumModesSpent : Game :=
-  let g := addPermanent afterDraw gollumRiddleMaster ⟨0⟩ ⟨0⟩
+  let (g, gollumObj) := afterDraw.allocObject gollumRiddleMaster ⟨0⟩ (.outside ⟨0⟩) none
+  let (g, _) := g.putOntoBattlefield gollumObj.id ⟨0⟩ (summoningSick := false)
+  let g := mustApply g ⟨0⟩ (.chooseMode 0)
   let sid := (namedPermanent g "Gollum, Riddle Master").id
-  let g := g.chooseGollumParity sid false
   let g := g.applyGollumMode sid 0
   let g := g.applyGollumMode sid 1
   g.applyGollumMode sid 2
@@ -3728,9 +3738,9 @@ def gollumModesExhaustedOk : Bool :=
 #guard gollumModesExhaustedOk
 
 def gollumEvenCastTriggersOk : Bool :=
-  let g := addPermanent afterDraw gollumRiddleMaster ⟨1⟩ ⟨1⟩
-  let sid := (namedPermanent g "Gollum, Riddle Master").id
-  let g := g.chooseGollumParity sid false
+  let (g, gollumObj) := afterDraw.allocObject gollumRiddleMaster ⟨1⟩ (.outside ⟨1⟩) none
+  let (g, _) := g.putOntoBattlefield gollumObj.id ⟨1⟩ (summoningSick := false)
+  let g := mustApply g ⟨1⟩ (.chooseMode 0)
   let (g, spell) := g.allocObject grizzlyBears ⟨0⟩ .stack (some ⟨0⟩)
   let g := g.putCastTriggersOnStack ⟨0⟩ spell
   countWaiting g .onOpponentCastsChosenParityModes == 1 &&
@@ -4605,10 +4615,10 @@ def untilLeavesImmediateNoSbaGapOk : Bool :=
 -/
 
 def unexpectedPartyTypeImmediateOk : Bool :=
-  let g := addPermanent afterDraw anUnexpectedParty ⟨0⟩ ⟨0⟩
-  let g := addPermanent g lakeshoreApothecary ⟨0⟩ ⟨0⟩
-  let party := namedPermanent g "An Unexpected Party"
-  let g := g.chooseCreatureTypeAsEnters party.id .human
+  let g := addPermanent afterDraw lakeshoreApothecary ⟨0⟩ ⟨0⟩
+  let (g, partyObj) := g.allocObject anUnexpectedParty ⟨0⟩ (.outside ⟨0⟩) none
+  let (g, _) := g.putOntoBattlefield partyObj.id ⟨0⟩ (summoningSick := false)
+  let g := mustApply g ⟨0⟩ (.chooseName "Human")
   let human := namedPermanent g "Lakeshore Apothecary"
   g.pending == .none &&
     (namedPermanent g "An Unexpected Party").status.chosenCreatureType == some .human &&

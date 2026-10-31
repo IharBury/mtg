@@ -217,6 +217,8 @@ structure CardDef where
   tapPayLifeAddOneOf : Option (Nat × Array ManaType) := none
   /-- As this land enters, you may pay `n` life. If you don't, it enters tapped. -/
   entersTappedUnlessPayLife : Option Nat := none
+  /-- As this land enters, you may behold a `subtype`. If you don't, this land enters tapped. -/
+  entersTappedUnlessBehold : Option CardSubtype := none
   /-- `{T}: Add one mana of any color in your commander's color identity`. -/
   tapAddCommanderIdentity : Bool := false
   /-- Additional cost: sacrifice a creature. -/
@@ -225,7 +227,7 @@ structure CardDef where
   asEntersChooseCreatureType : Bool := false
   /-- Printed Saga chapters (CR 714). -/
   saga : Option SagaDef := none
-  /-- Affinity for this subtype (CR 702.40). -/
+  /-- Affinity for this subtype (CR 702.41). -/
   affinityForSubtype : Option CardSubtype := none
   /-- This spell costs {X} less, where X is the greatest number of artifacts
   an opponent controls. -/
@@ -244,7 +246,7 @@ structure CardDef where
   tapAddColorlessPerSubtype : Option CardSubtype := none
   /-- Cascade printed `n` times (`Cascade, cascade` when `n = 2`). -/
   cascade : Nat := 0
-  /-- Optional kicker cost (CR 702.32). Paid at most once as an additional cost. -/
+  /-- Optional kicker cost (CR 702.33). Paid at most once as an additional cost. -/
   kicker : Option ManaCost := none
   /-- If one or more tokens would be created under your control, twice that
   many of those tokens are created instead (e.g. Bard, King of Dale). -/
@@ -373,6 +375,10 @@ structure CardDef where
   corruptedToxicLifelink : Bool := false
   /-- As this enchantment enters, choose Mardu or Jeskai. -/
   asEntersChooseMarduOrJeskai : Bool := false
+  /-- As this artifact enters, you may have it become a copy of any creature on
+  the battlefield until end of turn, except it has haste (Cursed Mirror, CR
+  614.1c / 614.12). -/
+  asEntersMayCopyCreatureHasteUntilEot : Bool := false
   /-- Toxic `n` (CR 702.164). -/
   toxic : Nat := 0
   /-- This creature can't block. -/
@@ -615,6 +621,16 @@ def empowerLines (c : CardDef) : List String :=
   | some n => [s!"Empower Jace {n}."]
   | none => []
 
+/-- As-enters optional behold or copy-creature lines. -/
+def asEntersSpecialLines (c : CardDef) : List String :=
+  (match c.entersTappedUnlessBehold with
+   | some sub =>
+     [s!"As this land enters, you may behold {indefinite sub.englishName} {sub.englishName}. If you don't, this land enters tapped."]
+   | none => []) ++
+  (if c.asEntersMayCopyCreatureHasteUntilEot then
+     ["As this artifact enters, you may have it become a copy of any creature on the battlefield until end of turn, except it has haste."]
+   else [])
+
 /-- `{T}: Add {U} or {B}.` -/
 def tapAddOneOfLines (c : CardDef) : List String :=
   if c.tapAddOneOf.isEmpty then []
@@ -695,6 +711,7 @@ def structuredAbilityLines (c : CardDef) : List String :=
   c.tapAddAnyColorEqualToPowerLine ++
   c.tapAddAnyColorForInstantOrSorceryLine ++
   c.additionalCostSacrificeArtifactOrCreatureLine ++
+  c.asEntersSpecialLines ++
   c.activatedAbilities.toList.map activatedNotation ++
   c.staticAbilities.toList.map StaticAbility.toNotation ++
   c.triggeredAbilities.toList.map TriggeredAbility.toNotation ++

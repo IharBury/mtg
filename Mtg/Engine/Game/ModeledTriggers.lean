@@ -92,26 +92,67 @@ def grantWidowCast (g : Game) (controller : PlayerId) (exiled : Option ObjectId)
       anyMana := true }) (cause := cause)
       |>.logMsg s!"{(g.player controller).name} may cast {o.name} until end of turn"
 
-/-- Copy the nontoken artifact that entered, then make a noncreature token a
-2/2 Robot Villain after it enters (Ultron; MSH 574 / 656). -/
-def copyEnteredArtifact (g : Game) (controller : PlayerId) (artifactId : ObjectId) : Game :=
-  match g.findObject? (g.followMoved artifactId) with
-  | none => g.logMsg "Ultron has nothing to copy"
-  | some src =>
-    if src.printed.isToken || !g.isArtifact src then
-      g.logMsg "That permanent isn't a nontoken artifact"
-    else
-      let (g, tok) := g.copyBattlefieldPermanent src controller
-      let tok := g.object! tok.id
-      let g := g.afterPermanentEnters tok
-      let tok := g.object! tok.id
-      if g.isCreature tok then g
+/-- Finish entering and animating token(s) recorded in `recentTokenIds` for
+Ultron's artifact-copy trigger (MSH 547 / 574 / 656). -/
+def finishArtifactCopyTokens (g : Game) : Game :=
+  let ids := g.recentTokenIds
+  let g := if g.continuations.isEmpty then g else g.change (.recentTokenIds #[])
+  ids.foldl (fun g tid =>
+    match g.findObject? tid with
+    | none => g
+    | some tok =>
+      if !tok.isOnBattlefield then g
       else
-        let g := g.createEffect
-          (.layered (.objects #[tok.id]) (.types .add #[.creature] #[.robot, .villain] #[]) .indefinite)
-        let g := g.createEffect
-          (.layered (.objects #[tok.id]) (.ptSet 2 2) .indefinite)
-        g.logMsg s!"{g.name tok} becomes a 2/2 Robot Villain creature after it enters"
+        let g := g.afterPermanentEnters tok
+        match g.findObject? tid with
+        | none => g
+        | some tok =>
+          if !tok.isOnBattlefield || g.isCreature tok then g
+          else
+            let g := g.createEffect
+              (.layered (.objects #[tok.id]) (.types .add #[.creature] #[.robot, .villain] #[]) .indefinite)
+            let g := g.createEffect
+              (.layered (.objects #[tok.id]) (.ptSet 2 2) .indefinite)
+            g.logMsg s!"{g.name tok} becomes a 2/2 Robot Villain creature after it enters") g
+
+/-- Copy the nontoken artifact that entered (using `lastKnownBefore?` LKI if it
+has already left the battlefield; CR 608.2h / 707.12 / MSH 547 / 656), then make
+a noncreature token a 2/2 Robot Villain after it enters (MSH 574). -/
+def copyEnteredArtifact (g : Game) (controller : PlayerId) (artifactId : ObjectId) : Game :=
+  let copiableRes : Except String CardDef :=
+    match g.findObject? artifactId with
+    | some src =>
+      if src.isOnBattlefield then
+        if src.printed.isToken || !g.isArtifact src then
+          .error "That permanent isn't a nontoken artifact"
+        else
+          .ok (g.copiableValues src)
+      else
+        match g.lastKnownBefore? artifactId with
+        | some eo =>
+          if eo.token || !eo.artifact then .error "That permanent isn't a nontoken artifact"
+          else .ok (eo.copiable.getD eo.toCardDef)
+        | none => .error "Ultron has nothing to copy"
+    | none =>
+      match g.lastKnownBefore? artifactId with
+      | some eo =>
+        if eo.token || !eo.artifact then .error "That permanent isn't a nontoken artifact"
+        else .ok (eo.copiable.getD eo.toCardDef)
+      | none => .error "Ultron has nothing to copy"
+  match copiableRes with
+  | .error msg => g.logMsg msg
+  | .ok copiable =>
+    let pushedFrame := g.continuations.isEmpty
+    let g := if pushedFrame then g.change (.pushContinuationFrame {}) else g
+    let g := g.change (.recentTokenIds #[])
+    let (g, _) := g.createToken controller copiable (recordRecent := true)
+    if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement (.finishArtifactCopyToken copiable.name)
+    else
+      let g := g.finishArtifactCopyTokens
+      if pushedFrame && g.pending == .none && g.pendingReplacement.isNone then
+        g.change .popContinuationFrame
+      else g
 
 /-- Exile the top card of your library. A Hero card pumps Daredevil. The
 exiled card may be played this turn either way (MSH 685). -/
@@ -170,8 +211,16 @@ def setSpellTargetAt (g : Game) (spellId : ObjectId) (index : Nat) (neu : Target
     match g.findObject? spellId with
     | none => g.logMsg "The spell is no longer on the stack"
     | some spell =>
-      let legal := g.legalTargetsForKind e.controller (g.targetingOf spell).kind (some spellId)
-      if index < e.targets.size && legal.contains neu then
+      let kind := (g.targetingOf spell).kind
+      let slots := kind.spec.slots
+      let legal :=
+        match slots[index]? with
+        | some slotKind => g.legalTargetsForAtomicKind e.controller slotKind (some spellId)
+        | none => g.legalTargetsForKind e.controller kind (some spellId)
+      let distinctOk :=
+        slots.size <= 1 ||
+          (List.range e.targets.size).all (fun j => j == index || e.targets[j]! != neu || !slots.isEmpty)
+      if index < e.targets.size && legal.contains neu && distinctOk then
         g.record (GameEvent.targeted g.turnNumber spellId (e.targets.set! index neu) (division := e.dividedDamage))
           |>.logMsg "A new target is chosen for the spell"
       else
@@ -265,7 +314,7 @@ def applyBecomeCopy (g : Game) (controller : PlayerId) (sourceId : Option Object
       | some (Target.permanent id) => some id
       | _ => none
     let causeId :=
-      ((g.resolvingAbility.bind g.findObject?).bind (·.fraCauseId)).map g.followMoved
+      (g.resolvingAbility.bind g.findObject?).bind (·.fraCauseId)
     match fromTarget.orElse (fun _ => causeId) with
     | none => g.logMsg "Ultron has nothing to copy"
     | some id => g.copyEnteredArtifact controller id
@@ -853,18 +902,6 @@ def applyAvengersDisassembled (g : Game) (_controller : PlayerId)
         g.offerMaySearchBasics owner
       | none => g
     else g
-
-/-- Cast up to `n` cards that currently have a free-cast exile permission,
-as the ability resolves (Doom Reigns; MSH 357). -/
-def castExiledAsResolves (g : Game) (p : PlayerId) (n : Nat) : Game :=
-  let ids :=
-    (g.objects.filter (fun o =>
-      o.zone == .exile &&
-        match g.playPermission o with
-        | some perm => perm.player == p && perm.withoutManaCost
-        | none => false)).map (·.id)
-  ids.take n |>.foldl (fun acc id =>
-    acc.castAsPartOfResolution p id) g
 
 /-- Whether the resolving stack object paid its teamwork cost. -/
 def resolvingTeamworkPaid (g : Game) : Bool :=

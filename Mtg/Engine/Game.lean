@@ -27,8 +27,6 @@ import Mtg.Engine.Game.SpellTargets
 import Mtg.Engine.Game.Casting
 import Mtg.Engine.Game.Choices
 import Mtg.Engine.Game.Costs
-import Mtg.Engine.Game.CastSpell
-import Mtg.Engine.Game.Activation
 import Mtg.Engine.Game.SacrificeDiscard
 import Mtg.Engine.Game.Damage
 import Mtg.Engine.Game.Pumps
@@ -39,7 +37,6 @@ import Mtg.Engine.Game.ModeledTriggers
 import Mtg.Engine.Game.FraHelpers
 import Mtg.Engine.Game.FraAbilities
 import Mtg.Engine.Game.FraResolve
-import Mtg.Engine.Game.FraChoices
 import Mtg.Engine.Game.EffectResolution
 import Mtg.Engine.Game.CastExtras
 import Mtg.Engine.Game.Chapters
@@ -47,9 +44,12 @@ import Mtg.Engine.Game.TriggeredAbilities
 import Mtg.Engine.Game.SpellResolution
 import Mtg.Engine.Game.Combat
 import Mtg.Engine.Game.Turns
-import Mtg.Engine.Game.PriorityActions
 import Mtg.Engine.Game.Mulligans
 import Mtg.Engine.Game.Decisions
+import Mtg.Engine.Game.CastSpell
+import Mtg.Engine.Game.Activation
+import Mtg.Engine.Game.PriorityActions
+import Mtg.Engine.Game.FraChoices
 import Mtg.Engine.Game.Actions
 import Mtg.Engine.Game.Start
 
@@ -89,7 +89,7 @@ discard (CR 701.9), destroy (CR 701.8), including a target artifact or land or
 creature (and its controller losing life), mass until-end-of-turn P/T changes,
 drawing and losing life, +1/+1 counters (CR 122), until-end-of-turn
 keyword grants and losses, replacement effects that exile a creature instead of
-dying this turn (CR 614.1 / 614.6 / 700.4), attack triggers (CR 508.2 / 603), including scrying, copying this
+dying this turn (CR 614.1 / 614.6 / 700.4), attack triggers (CR 508.3a / 603), including scrying, copying this
 creature's P/T onto another creature you control, giving another creature
 +2/+0 and trample, or gaining life while you control a creature with power 4
 or greater (Ferocious), becomes-blocked triggers
@@ -110,9 +110,9 @@ or give an opposing creature -1 / -1, and “whenever one or more other creature
 scry triggers,
 cast triggers that deal damage to each opponent when you cast an instant or
 sorcery (CR 601.2i / 603.3), attack-with-Elves scry triggers and scry pumps
-for each card looked at (CR 508.2 / 701.22 / 603),
+for each card looked at (CR 508.3c / 701.22 / 603),
 vigilance (CR 702.20), `{T}: Add` mana equal to power of any color with an
-Elf-only spending restriction (CR 106.10 / 605),
+Elf-only spending restriction (CR 106.6 / 605),
 activated pumps that last until end of turn (including paying life),
 activated abilities that
 put +1/+1 counters on the source, making a target creature unblockable
@@ -178,7 +178,7 @@ This module re-exports the `Mtg.Engine.Game.*` files, one per abstraction:
 - `ModeledTriggers`: Modeled trigger resolution
 - `EffectResolution`: Unified effect resolution (CR 608)
 - `CastExtras`: Optional costs, cascade, and the Ring
-- `Chapters`: Saga chapter resolution (CR 714.3)
+- `Chapters`: Saga chapter resolution (CR 714.2)
 - `TriggeredAbilities`: Triggered-ability resolution (CR 603)
 - `SpellResolution`: Spell resolution (CR 608)
 - `Combat`: Combat (CR 506–510)
@@ -191,6 +191,38 @@ This module re-exports the `Mtg.Engine.Game.*` files, one per abstraction:
 -/
 
 namespace Mtg.Engine
+
+/-- Resolve a `ReplacementId` for heuristic/idle agents, filling in open-ended
+`*Prompt` replacement kinds with a legal creature type or nonland card name. -/
+def Game.defaultReplacementId (g : Game) (p : PlayerId) (choices : Array ReplacementId)
+    (payLifeIfSafe : Bool := false) : Option ReplacementId :=
+  let base? :=
+    (if payLifeIfSafe then
+      choices.find? (fun c =>
+        match c.kind with
+        | .entersUntappedPayLife n => (g.player p).life > (n : Int)
+        | _ => false)
+     else none)
+    |>.orElse (fun _ =>
+      choices.find? (fun c =>
+        match c.kind with
+        | .entersTappedDeclinePayLife | .entersTappedDeclineBehold | .declineEntersAsCopy => true
+        | _ => false))
+    |>.orElse (fun _ => choices[0]?)
+  base?.map fun c =>
+    match c.kind with
+    | .asEntersChooseCreatureTypePrompt =>
+      let yours :=
+        (g.permanentsOf p).foldl (fun acc o =>
+          (g.subtypes o).foldl (fun acc s =>
+            if s.isCreatureType && !acc.contains s then acc.push s else acc) acc) #[]
+      { c with kind := .asEntersChooseCreatureType (yours[0]?.getD .human) }
+    | .asEntersChooseCardNamePrompt =>
+      let opp := g.objects.find? (fun o => o.owner != p && !g.isLand o)
+      let any := g.knownCardFaces.find? (fun card => !card.isLand)
+      let nm := (opp.map (·.name)).getD ((any.map (·.name)).getD "Grizzly Bears")
+      { c with kind := .asEntersChooseCardName nm }
+    | _ => c
 
 /-- Apply one legal action, or panic with the rules error. -/
 def mustApply (g : Game) (p : PlayerId) (a : Action) : Game :=
@@ -309,8 +341,7 @@ def mustApply (g : Game) (p : PlayerId) (a : Action) : Game :=
   | .fraChoice _ choice, some p =>
     mustApply g p (g.defaultFraAction p choice)
   | .chooseReplacement p choices, _ =>
-    let chosen :=
-      (choices.find? (·.kind == .entersTappedDeclinePayLife)).getD choices[0]!
+    let chosen := (g.defaultReplacementId p choices).getD choices[0]!
     mustApply g p (.chooseReplacement chosen)
   | .chooseTargets _, some p =>
     match g.objectAwaitingTargets with
