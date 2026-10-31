@@ -3345,44 +3345,65 @@ spell-copy / combat-Treasure / reflexive `WaitingTrigger` routing, pre-move
      601.2g mana-ability window (with CR 733.1 reversal and post-action SBA
      check via `receivePriority`) on face-down turn-face-up in
      `Activation.activateAbility`
-     ([`Activation.lean`](Mtg/Engine/Game/Activation.lean)); wire
-     `prop.cost.containsX` (`ManaCost.containsX` → `Pending.chooseX`) and
-     optional cost prompts (`Pending.chooseKicker` gated by
-     `!prop.kickerAnnounced` for `face.kicker.isSome` plus—only when a new
-     alternative-cost flag on `ProposedSpell` is `false` per CR 118.9a, since
-     `ManaCost.empty` also represents `{0}` spells—`face.morph.isSome ||
-     face.impending.isSome`, adding that morph/impending check to
+     ([`Activation.lean`](Mtg/Engine/Game/Activation.lean)); add two distinct
+     flags on `ProposedSpell` ([`Stack.lean`](Mtg/Engine/Game/Stack.lean))—`alternativeCost : Bool := false`
+     for CR 118.9a alternative costs (set by `FraChoices.castFreeCopy` and
+     `Decisions.castAsPartOfResolution (withoutManaCost := true)`, keeping
+     `cost := ManaCost.empty` with X = 0 per CR 107.3b) and
+     `resolutionCast : Bool := false` for mid-resolution casts (set in
+     `Decisions.beginResolutionCastTargets` via
+     `g.change (.proposedSpell (some { prop with resolutionCast := true }))`
+     regardless of `withoutManaCost`, so paid resolution casts such as
+     `.mayCastFromGraveyard` keep morph and impending available while still
+     suppressing caster priority)—wire `prop.cost.containsX`
+     (`ManaCost.containsX` → `Pending.chooseX`), terminal `.pending .none`
+     clearing, and optional cost prompts (`Pending.chooseKicker` gated by
+     `!prop.kickerAnnounced` for `face.kicker.isSome` plus—only when
+     `!prop.alternativeCost` per CR 118.9a, since `ManaCost.empty` also
+     represents `{0}` spells—`face.morph.isSome || face.impending.isSome`,
+     adding that `!prop.alternativeCost` morph/impending check to
      `Decisions.afterModesChosen` for modal priority and paid casts as well;
      `Pending.chooseGift` gated by `face.giftTreasure && !prop.giftAnnounced`;
      and `Pending.chooseTeamwork` gated by
      `face.teamwork.isSome && !prop.teamworkAnnounced` so modal or
      `announcesAdditionalCost` spells are never prompted twice) into
      `Decisions.beginResolutionCastTargets` and `afterAdditionalCostAnnounced`
-     (`Decisions.lean`, shared by `Decisions.castAsPartOfResolution` and
-     `FraChoices.castFreeCopy`, where `face.announcesAdditionalCost`
-     (`CardDef.announcesAdditionalCost`) already enters
-     `Pending.chooseAdditionalCost` and `PriorityActions.announceAdditionalCost`
-     sets `ProposedSpell.needsDiscardCard` when discard is chosen, while
-     `castFreeCopy` and `castAsPartOfResolution (withoutManaCost := true)` set
-     that alternative-cost flag and keep `cost := ManaCost.empty` with X = 0 per
-     CR 107.3b), keep `CastSpell.announceX`'s `.activatedAbility` arm on
+     (`Decisions.lean`, shared by `Decisions.castAsPartOfResolution`,
+     `FraChoices.castFreeCopy`, and `Decisions.castExiledAsAbilityResolves`,
+     where `face.announcesAdditionalCost` (`CardDef.announcesAdditionalCost`)
+     already enters `Pending.chooseAdditionalCost` and
+     `PriorityActions.announceAdditionalCost` sets
+     `ProposedSpell.needsDiscardCard` when discard is chosen); keep
+     `CastSpell.announceX`'s `.activatedAbility` arm on
      `CastSpell.enterProposalWindow` (`CastSpell.lean`) while having its `.spell`
-     arm continue `Decisions.beginResolutionCastTargets` when a mid-resolution
-     flag on `ProposedSpell` is set—and read that `ProposedSpell` flag before
+     arm clear `.pending .none` and return
+     `((g.change (.pending .none)).beginResolutionCastTargets p prop).finishFraChoice`
+     when `prop.resolutionCast` is `true`, and read `prop.resolutionCast` before
      `.proposedSpell none` clears `proposedSpell` in
      `Decisions.afterTargetsChosen`, `PriorityActions.finishProposedSpell`,
-     `SacrificeDiscard.sacrificeForActivation` (`.sacrificePermanent`), and
-     `Decisions.discardForDraw` (`.discardForAdditionalCost`) to pass
-     `grantPriority := false` into `becomeCast` (resuming any paused continuation
-     without granting the caster priority inside a resolving ability)—drop the
-     pre-proposal `manaPool.canPay` gate on paid
+     `Decisions.discardForDraw` (`.discardForAdditionalCost`), and
+     `SacrificeDiscard.sacrificeForActivation` (`.sacrificePermanent`, with its
+     sole caller `Actions.apply` `.sacrifice` in
+     [`Actions.lean`](Mtg/Engine/Game/Actions.lean) reading `g.pending` and
+     `g.proposedSpell` before calling `sacrificeForActivation` since
+     `SacrificeDiscard.lean` is imported below `Decisions.lean`) so each site
+     passes `grantPriority := !isResCast` into `becomeCast` and—when `isResCast`
+     is `true` (and in `Decisions.resumePendingReplacement` `.finishPostCast`
+     when `!grantPriority && !hadOuter` after a deferred scry)—finishes with
+     `Decisions.finishFraChoice` rather than `resumeAfterBecomeCast` alone (so
+     `Casting.finishPostCast` does not grant the caster priority inside a
+     resolving ability, while `finishFraChoice` resumes `pendingReplacement`,
+     `advanceCastExiledQueue`, `resumeTriggerSequence`, and
+     `completeActiveResolutions` before granting priority to `g.activePlayer`);
+     drop the pre-proposal `manaPool.canPay` gate on paid
      `Decisions.castAsPartOfResolution` (`withoutManaCost := false`), and route
-     `Decisions.castExiledAsAbilityResolves` (`Decisions.lean`) through
-     `beginResolutionCastTargets` / normal proposal cost payment (propagating
-     `cost := g.playManaCost card face` and `needsSacrificeOther` through
-     `Pending.chooseX`, modes, `face.announcesAdditionalCost`, optional cost
-     prompts, targets, and `Pending.activateManaAbilities`) rather than
-     pre-spending mana before choices; extend `ManaAbilities.canActivateManaAbility`
+     `Decisions.castExiledAsAbilityResolves` (`Decisions.lean`) unconditionally
+     through `(g.beginResolutionCastTargets p prop).finishFraChoice`—removing
+     both its pre-proposal `payUnits?` / `manaSpent` payment and its direct
+     target/no-target `becomeCast` + `resumeAfterBecomeCast` branch while
+     propagating `cost := g.playManaCost card face` and `needsSacrificeOther`
+     through `Pending.chooseX`, modes, `face.announcesAdditionalCost`, optional
+     cost prompts, targets, and `Pending.activateManaAbilities`; extend `ManaAbilities.canActivateManaAbility`
      (`ManaAbilities.lean`) to mana-payment prompts (`.mayPaySymbolsThen`,
      `.ultronMayPay`, paid `.mayCastCards` / `.mayCastFromGraveyard` /
      `.mayCastExiledElseDamage`, and taxed `.declareAttackers`, CR 605.3a /
