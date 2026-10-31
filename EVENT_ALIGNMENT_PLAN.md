@@ -3356,17 +3356,27 @@ spell-copy / combat-Treasure / reflexive `WaitingTrigger` routing, pre-move
      regardless of `withoutManaCost`, so paid resolution casts such as
      `.mayCastFromGraveyard` keep morph and impending available while still
      suppressing caster priority)—wire `prop.cost.containsX`
-     (`ManaCost.containsX` → `Pending.chooseX`), terminal `.pending .none`
-     clearing, and optional cost prompts (`Pending.chooseKicker` gated by
-     `!prop.kickerAnnounced` for `face.kicker.isSome` plus—only when
-     `!prop.alternativeCost` per CR 118.9a, since `ManaCost.empty` also
-     represents `{0}` spells—`face.morph.isSome || face.impending.isSome`,
-     adding that `!prop.alternativeCost` morph/impending check to
-     `Decisions.afterModesChosen` for modal priority and paid casts as well;
-     `Pending.chooseGift` gated by `face.giftTreasure && !prop.giftAnnounced`;
+     (`ManaCost.containsX` → `Pending.chooseX`, placed **before**
+     `face.isModal` in `Decisions.beginResolutionCastTargets` to match
+     `CastSpell.enterProposalWindow`'s branch order—`containsX` → `isModal` →
+     `announcesAdditionalCost` → optional cost prompts → `requiresTarget || isAura`
+     → `includesManaPayment || needsSacrificeOther || needsDiscardCard` →
+     terminal `becomeCast (grantPriority := false)`—since
+     `Decisions.afterModesChosen` never checks `containsX` whereas
+     `Costs.applyCastCostReductions` substitutes `card.chosenX` once
+     `GameEvent.announced` is recorded so `prop.cost.containsX` is `false` on
+     re-entry and modal `{X}` spells continue at `face.isModal` without asking
+     for modes twice) and terminal `.pending .none` clearing into
+     `Decisions.beginResolutionCastTargets`, and wire optional cost prompts
+     (`Pending.chooseKicker` gated by `!prop.kickerAnnounced` for
+     `face.kicker.isSome` plus—only when `!prop.alternativeCost` per CR 118.9a,
+     since `ManaCost.empty` also represents `{0}` spells—`face.morph.isSome ||
+     face.impending.isSome`, adding that `!prop.alternativeCost` morph/impending
+     check to `Decisions.afterModesChosen` for modal priority and paid casts as
+     well; `Pending.chooseGift` gated by `face.giftTreasure && !prop.giftAnnounced`;
      and `Pending.chooseTeamwork` gated by
      `face.teamwork.isSome && !prop.teamworkAnnounced` so modal or
-     `announcesAdditionalCost` spells are never prompted twice) into
+     `announcesAdditionalCost` spells are never prompted twice) into both
      `Decisions.beginResolutionCastTargets` and `afterAdditionalCostAnnounced`
      (`Decisions.lean`, shared by `Decisions.castAsPartOfResolution`,
      `FraChoices.castFreeCopy`, and `Decisions.castExiledAsAbilityResolves`,
@@ -3376,34 +3386,52 @@ spell-copy / combat-Treasure / reflexive `WaitingTrigger` routing, pre-move
      `ProposedSpell.needsDiscardCard` when discard is chosen); keep
      `CastSpell.announceX`'s `.activatedAbility` arm on
      `CastSpell.enterProposalWindow` (`CastSpell.lean`) while having its `.spell`
-     arm clear `.pending .none` and return
-     `((g.change (.pending .none)).beginResolutionCastTargets p prop).finishFraChoice`
-     when `prop.resolutionCast` is `true`, and read `prop.resolutionCast` before
-     `.proposedSpell none` clears `proposedSpell` in
+     arm—when `prop.resolutionCast` is `true`—run
+     `let g' := (g.change (.pending .none)).beginResolutionCastTargets p prop`
+     and call `g'.finishFraChoice` only when that re-entry actually finished the
+     cast without reversing (`g'.pending == .none &&
+     (g'.findObject? prop.spellId).any (·.zone == .stack)`, since open `Pending`
+     prompts are still in progress and any targetless reversal inside
+     `beginResolutionCastTargets` already called
+     `reverseProposedSpell (resumeContinuation := true)`), and read
+     `prop.resolutionCast` before `.proposedSpell none` clears `proposedSpell` in
      `Decisions.afterTargetsChosen`, `PriorityActions.finishProposedSpell`,
      `Decisions.discardForDraw` (`.discardForAdditionalCost`), and
-     `SacrificeDiscard.sacrificeForActivation` (`.sacrificePermanent`, with its
-     sole caller `Actions.apply` `.sacrifice` in
-     [`Actions.lean`](Mtg/Engine/Game/Actions.lean) reading `g.pending` and
-     `g.proposedSpell` before calling `sacrificeForActivation` since
-     `SacrificeDiscard.lean` is imported below `Decisions.lean`) so each site
-     passes `grantPriority := !isResCast` into `becomeCast` and—when `isResCast`
-     is `true` (and in `Decisions.resumePendingReplacement` `.finishPostCast`
-     when `!grantPriority && !hadOuter` after a deferred scry)—finishes with
+     `SacrificeDiscard.sacrificeForActivation` (`.sacrificePermanent`, which
+     passes `grantPriority := !isResCast` into `Casting.becomeCast` itself while
+     its sole caller `Actions.apply` `.sacrifice` in
+     [`Actions.lean`](Mtg/Engine/Game/Actions.lean)—since `Decisions.lean`
+     transitively imports `SacrificeDiscard.lean` via `Mulligans` → … → `Pumps`
+     so `SacrificeDiscard` cannot import `Decisions` without cycling—checks
+     beforehand whether `g.pending` is `.sacrificePermanent ..` and
+     `g.proposedSpell.any (·.resolutionCast)` is `true`, calling
+     `g.finishFraChoice` only for that `.sacrificePermanent` resolution-cast case
+     and keeping `if g.mayThenResume then g.acceptMayThen else
+     g.resumeAfterBecomeCast` for priority-window `.sacrificePermanent` and all
+     other `.sacrifice` arms) so each site passes `grantPriority := !isResCast`
+     into `becomeCast` and—when `isResCast` is `true` (and in
+     `Decisions.resumePendingReplacement` `.finishPostCast` when
+     `!grantPriority && !hadOuter` after a deferred scry)—finishes with
      `Decisions.finishFraChoice` rather than `resumeAfterBecomeCast` alone (so
      `Casting.finishPostCast` does not grant the caster priority inside a
      resolving ability, while `finishFraChoice` resumes `pendingReplacement`,
      `advanceCastExiledQueue`, `resumeTriggerSequence`, and
-     `completeActiveResolutions` before granting priority to `g.activePlayer`);
-     drop the pre-proposal `manaPool.canPay` gate on paid
+     `promptTriggerTargetsIfNeeded` before `Entering.receivePriority g.activePlayer`
+     runs `completeActiveResolutions`, checks SBAs, and grants priority); drop
+     the pre-proposal `manaPool.canPay` gate on paid
      `Decisions.castAsPartOfResolution` (`withoutManaCost := false`), and route
      `Decisions.castExiledAsAbilityResolves` (`Decisions.lean`) unconditionally
-     through `(g.beginResolutionCastTargets p prop).finishFraChoice`—removing
-     both its pre-proposal `payUnits?` / `manaSpent` payment and its direct
-     target/no-target `becomeCast` + `resumeAfterBecomeCast` branch while
-     propagating `cost := g.playManaCost card face` and `needsSacrificeOther`
-     through `Pending.chooseX`, modes, `face.announcesAdditionalCost`, optional
-     cost prompts, targets, and `Pending.activateManaAbilities`; extend `ManaAbilities.canActivateManaAbility`
+     through `(g.beginResolutionCastTargets p prop).finishFraChoice`—gating its
+     pre-proposal target check on `face.isModal` (`spellModeIsChoosable`) like
+     `CastSpell.castSpell` / `FraChoices.mayCastCards`, removing both its
+     pre-proposal `payUnits?` / `manaSpent` payment and both arms of its
+     `if face.requiresTarget` split (both the `face.requiresTarget` arm that
+     stored `cost := ManaCost.empty` with `.pending (.chooseTargets p)` and the
+     `else` arm that called `(g.becomeCast p (g.object! newId)).resumeAfterBecomeCast`),
+     and building `prop` with `cost := g.playManaCost card face` (instead of
+     `ManaCost.empty`) and `needsSacrificeOther` so it flows through
+     `Pending.chooseX`, modes, `face.announcesAdditionalCost`, optional cost
+     prompts, targets, and `Pending.activateManaAbilities`; extend `ManaAbilities.canActivateManaAbility`
      (`ManaAbilities.lean`) to mana-payment prompts (`.mayPaySymbolsThen`,
      `.ultronMayPay`, paid `.mayCastCards` / `.mayCastFromGraveyard` /
      `.mayCastExiledElseDamage`, and taxed `.declareAttackers`, CR 605.3a /
