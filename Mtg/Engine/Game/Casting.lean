@@ -499,40 +499,22 @@ def afterWardResolved (g : Game) : Game :=
   if g.triggerNeedingTargets.isSome then g.promptTriggerTargetsIfNeeded
   else g.receivePriority g.activePlayer
 
-def becomeCast (g : Game) (p : PlayerId) (spell : GameObject)
+/-- Whether an active resolution or pending choice was already open before the
+current spell or ability proposal began (ignoring any `ContinuationFrame` pushed
+solely by `promptChooseReplacement` during mana abilities or multi-step cost
+payments, CR 117.3c / 601.2 / 602.2). -/
+def proposalHadOpenContinuation (g : Game) (fallback : Option Bool := none) : Bool :=
+  match g.proposalCheckpoint with
+  | some ckpt => !ckpt.continuations.isEmpty || ckpt.pending != .none
+  | none => fallback.getD (!g.continuations.isEmpty)
+
+/-- Run post-cast cleanup, offer any remaining `pendingMayCastFromExile` or
+`pendingFreeCopies` casts, and resume active continuations or grant priority
+(CR 601.2i / 117.3c). -/
+def finishPostCast (g : Game) (p : PlayerId)
     (grantPriority : Bool := true)
     (hadOuterReplacement : Bool := false)
     (hadOpenContinuation : Bool := false) : Game :=
-  let g := if g.proposalCheckpoint.isSome then g.change .clearProposalCheckpoint else g
-  let g := g.change (.castingFromTop false)
-  let g := g.logMsg s!"{(g.player p).name} casts {g.name spell}"
-  -- Emrakul, the Exigent Doom: the granted mana ability lasts until the card
-  -- is cast from exile, so it can help pay for that spell (ruling 729).
-  let g := g.battlefield.foldl (fun g land =>
-    (g.colorlessGrantUntilCast land).foldl (fun g cid =>
-      if g.followMoved cid == spell.id then
-        g.expireEffect (.colorlessGrantUntilCast land.id cid)
-      else g) g) g
-  -- Theorist's Proxy: the next spell this player casts this turn.
-  let g :=
-    if g.nextSpellCantBeCountered p && !spell.isCopy then
-      let g := g.expireEffect (.nextSpellCantBeCounteredThisTurn p)
-      (g.createEffect (.uncounterableThisCast spell.id)).logMsg
-        s!"{spell.name} can't be countered"
-    else g
-  let g := g.putCastTriggersOnStack p spell
-  let liveCmds := g.objects.filter (fun o => o.owner == p && o.isCommander)
-  let cmdTypes :=
-    if !liveCmds.isEmpty then
-      liveCmds.foldl (fun acc o => acc ++ (g.subtypes o).filter CardSubtype.isCreatureType) #[]
-    else
-      (g.player p).commanderCreatureTypes
-  let g :=
-    if g.pending == .none && g.isCreature spell &&
-        g.ancestryManaSpentOn spell.id &&
-        (g.subtypes spell).any (fun sub => sub.isCreatureType && cmdTypes.contains sub) then
-      g.beginScry p 1
-    else g
   let g := g.runPostCastCleanup
   -- Doom Reigns Supreme: offer another exiled spell after this cast finishes.
   let g : Game :=
@@ -572,9 +554,67 @@ def becomeCast (g : Game) (p : PlayerId) (spell : GameObject)
     else
       g.chainPendingReplacement (.receivePriority (if hadOpenContinuation then g.activePlayer else p))
   else if g.pending != .none then g
+  else if hadOuterReplacement && g.pendingReplacement.isNone then
+    g
   else if g.pendingCastExiledQueue.isSome || g.triggerSequenceRest.isSome || g.pendingReplacement.isSome then
     g.chainPendingReplacement .finishFraChoice
-  else g.receivePriority (if g.continuations.isEmpty then p else g.activePlayer)
+  else g.receivePriority (if hadOpenContinuation then g.activePlayer else p)
+
+def becomeCast (g : Game) (p : PlayerId) (spell : GameObject)
+    (grantPriority : Bool := true)
+    (hadOuterReplacement : Bool := false)
+    (hadOpenContinuation : Option Bool := none) : Game :=
+  let openCont := g.proposalHadOpenContinuation hadOpenContinuation
+  if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement (.finishBecomeCast p spell.id grantPriority hadOuterReplacement openCont)
+  else
+    let g := if g.proposalCheckpoint.isSome then g.change .clearProposalCheckpoint else g
+    let g := g.change (.castingFromTop false)
+    let g := g.logMsg s!"{(g.player p).name} casts {g.name spell}"
+    -- Emrakul, the Exigent Doom: the granted mana ability lasts until the card
+    -- is cast from exile, so it can help pay for that spell (ruling 729).
+    let g := g.battlefield.foldl (fun g land =>
+      (g.colorlessGrantUntilCast land).foldl (fun g cid =>
+        if g.followMoved cid == spell.id then
+          g.expireEffect (.colorlessGrantUntilCast land.id cid)
+        else g) g) g
+    -- Theorist's Proxy: the next spell this player casts this turn.
+    let g :=
+      if g.nextSpellCantBeCountered p && !spell.isCopy then
+        let g := g.expireEffect (.nextSpellCantBeCounteredThisTurn p)
+        (g.createEffect (.uncounterableThisCast spell.id)).logMsg
+          s!"{spell.name} can't be countered"
+      else g
+    let g := g.putCastTriggersOnStack p spell
+    let liveCmds := g.objects.filter (fun o => o.owner == p && o.isCommander)
+    let cmdTypes :=
+      if !liveCmds.isEmpty then
+        liveCmds.foldl (fun acc o => acc ++ (g.subtypes o).filter CardSubtype.isCreatureType) #[]
+      else
+        (g.player p).commanderCreatureTypes
+    let g :=
+      if g.pending == .none && g.isCreature spell &&
+          g.ancestryManaSpentOn spell.id &&
+          (g.subtypes spell).any (fun sub => sub.isCreatureType && cmdTypes.contains sub) then
+        g.beginScry p 1
+      else g
+    if let .scry .. := g.pending then
+      let needsDeferredPostCast :=
+        g.postCastCleanup.isSome || g.pendingMayCastFromExile.isSome ||
+          g.pendingFreeCopies.isSome || g.pendingCastExiledQueue.isSome ||
+          g.triggerSequenceRest.isSome || g.pendingReplacement.isSome ||
+          hadOuterReplacement || (grantPriority && !openCont && p != g.activePlayer)
+      if needsDeferredPostCast then
+        let existingOuter? := g.pendingReplacement
+        let g := if existingOuter?.isSome then g.change (.pendingReplacement none) else g
+        let g := g.chainPendingReplacement
+          (.finishPostCast p grantPriority (hadOuterReplacement || existingOuter?.isSome) openCont)
+        match existingOuter? with
+        | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishFra
+        | none => g
+      else g
+    else
+      g.finishPostCast p grantPriority hadOuterReplacement openCont
 
 /-- After targets are announced, reduce the locked-in cost if the spell cares
 about a damaged, tapped, or attacking nontoken target, or the ability about
@@ -644,114 +684,141 @@ def payLoyaltyCost (g : Game) (p : PlayerId) (o : GameObject) (sym : LoyaltySymb
 
 def becomeActivated (g : Game) (p : PlayerId) (sourceName : String)
     (sourceId : Option ObjectId := none) (activation : Option ActivatedAbility := none)
+    (abilityId : Option ObjectId := none)
     (sourceSnapshot : Option EventObject := none)
     (sourceOriginal : Option GameObject := none)
     (hadOuterReplacement : Bool := false)
-    (hadOpenContinuation : Bool := false) : Game :=
+    (hadOpenContinuation : Option Bool := none) : Game :=
+  let openCont := g.proposalHadOpenContinuation hadOpenContinuation
   let activation := activation <|> g.proposedSpell.bind (·.activation)
-  let abilityId := g.proposedSpell.map (·.spellId) <|> g.stack.back?.map (·.objectId)
-  let chosenX :=
-    ((abilityId.bind g.findObject?).bind (·.chosenX)).getD 0
-  let g :=
-    match activation.bind (·.cost.loyalty) with
-    | some sym =>
-      let actualSym := if sym == LoyaltySymbol.minusX then LoyaltySymbol.minus chosenX else sym
-      match sourceId.bind g.findObject? with
-      | some src => g.payLoyaltyCost p src actualSym (forObject := abilityId)
-      | none => g
-    | none => g
-  let isEquip := activation.any (·.isEquip)
-  let source : EventObject :=
-    match (sourceId.bind g.findObject?).map g.snapshot <|> sourceSnapshot <|>
-        g.proposedSpell.map (·.originalSnapshot) with
-    | some src => src
-    | none =>
-      if isEquip then
-        { id := sourceId, name := sourceName, controller := some p, owner := p,
-          types := #[.artifact], subtypes := #[.equipment] }
-      else
-        { id := sourceId, name := sourceName, controller := some p, owner := p }
-  let abilityObjId := abilityId.getD ⟨g.nextObjectId⟩
-  let loyaltyDelta : Option Int :=
-    match activation.bind (·.cost.loyalty) with
-    | some (.plus n) => some (n : Int)
-    | some .plusX => some (chosenX : Int)
-    | some (.minus n) => some (-(n : Int))
-    | some .zero => some 0
-    | some .minusX => some (-(chosenX : Int))
-    | none => none
+  let abilityId := abilityId <|> g.proposedSpell.map (·.spellId) <|> g.stack.back?.map (·.objectId)
+  let sourceSnap :=
+    (sourceId.bind g.findObject?).map g.snapshot <|> sourceSnapshot <|>
+      g.proposedSpell.map (·.originalSnapshot)
   let srcObj? : Option GameObject :=
     (sourceId.bind g.findObject?) <|> sourceOriginal <|> g.proposedSpell.map (·.original)
-  let isPowerUp : Bool :=
-    match activation with
-    | some ab => ab.powerUp
-    | none => srcObj?.any (fun src => (g.baseCard src).activatedAbilities.any (·.powerUp))
-  let isBoast := activation == some ActivatedAbility.zemoBoastAbility
-  let abilityIdx : Option Nat :=
-    match srcObj?, activation with
-    | some src, some ab => (g.activatedAbilitiesOf src).findIdx? (· == ab)
-    | _, _ => none
-  let isExhaust : Bool := activation.any (·.exhaust)
-  let g := if g.proposalCheckpoint.isSome then g.change .clearProposalCheckpoint else g
-  let g := g.record (GameEvent.abilityActivated g.turnNumber abilityObjId source p
-    (.nonMana loyaltyDelta isEquip isPowerUp isBoast abilityIdx isExhaust))
-  let g := g.logMsg s!"{(g.player p).name} activates {sourceName}"
   if let .chooseReplacement .. := g.pending then
-    if g.pendingCastExiledQueue.isSome || g.triggerSequenceRest.isSome || hadOuterReplacement then
+    g.chainPendingReplacement (.finishBecomeActivated p sourceName sourceId activation
+      abilityId sourceSnap srcObj? hadOuterReplacement openCont)
+  else
+    let chosenX :=
+      ((abilityId.bind g.findObject?).bind (·.chosenX)).getD 0
+    let g :=
+      match activation.bind (·.cost.loyalty) with
+      | some sym =>
+        let actualSym := if sym == LoyaltySymbol.minusX then LoyaltySymbol.minus chosenX else sym
+        match sourceId.bind g.findObject? with
+        | some src => g.payLoyaltyCost p src actualSym (forObject := abilityId)
+        | none => g
+      | none => g
+    let isEquip := activation.any (·.isEquip)
+    let source : EventObject :=
+      match (sourceId.bind g.findObject?).map g.snapshot <|> sourceSnap with
+      | some src => src
+      | none =>
+        if isEquip then
+          { id := sourceId, name := sourceName, controller := some p, owner := p,
+            types := #[.artifact], subtypes := #[.equipment] }
+        else
+          { id := sourceId, name := sourceName, controller := some p, owner := p }
+    let abilityObjId := abilityId.getD ⟨g.nextObjectId⟩
+    let loyaltyDelta : Option Int :=
+      match activation.bind (·.cost.loyalty) with
+      | some (.plus n) => some (n : Int)
+      | some .plusX => some (chosenX : Int)
+      | some (.minus n) => some (-(n : Int))
+      | some .zero => some 0
+      | some .minusX => some (-(chosenX : Int))
+      | none => none
+    let isPowerUp : Bool :=
+      match activation with
+      | some ab => ab.powerUp
+      | none => srcObj?.any (fun src => (g.baseCard src).activatedAbilities.any (·.powerUp))
+    let isBoast := activation == some ActivatedAbility.zemoBoastAbility
+    let abilityIdx : Option Nat :=
+      match srcObj?, activation with
+      | some src, some ab => (g.activatedAbilitiesOf src).findIdx? (· == ab)
+      | _, _ => none
+    let isExhaust : Bool := activation.any (·.exhaust)
+    let g := if g.proposalCheckpoint.isSome then g.change .clearProposalCheckpoint else g
+    let g := g.record (GameEvent.abilityActivated g.turnNumber abilityObjId source p
+      (.nonMana loyaltyDelta isEquip isPowerUp isBoast abilityIdx isExhaust))
+    let g := g.logMsg s!"{(g.player p).name} activates {sourceName}"
+    if g.pending != .none then g
+    else if hadOuterReplacement && g.pendingReplacement.isNone then
+      g
+    else if g.pendingCastExiledQueue.isSome || g.triggerSequenceRest.isSome || g.pendingReplacement.isSome then
       g.chainPendingReplacement .finishFraChoice
-    else
-      g.chainPendingReplacement (.receivePriority (if hadOpenContinuation then g.activePlayer else p))
-  else if g.pending != .none then g
-  else if g.pendingCastExiledQueue.isSome || g.triggerSequenceRest.isSome || g.pendingReplacement.isSome then
-    g.chainPendingReplacement .finishFraChoice
-  else g.receivePriority (if g.continuations.isEmpty then p else g.activePlayer)
+    else g.receivePriority (if openCont then g.activePlayer else p)
 
 /-- Finish paying the proposed activation once its mana is paid and every
 chosen cost is paid: tap, life, and the source's own costs, then put it on
 the stack (CR 601.2h–i / 602.2b). -/
 def completeActivation (g : Game) (prop : ProposedSpell)
     (hadOuterReplacement : Bool := false)
-    (hadOpenContinuation : Bool := false) : Except String Game := do
+    (hadOpenContinuation : Option Bool := none) : Except String Game := do
+  let openCont := g.proposalHadOpenContinuation hadOpenContinuation
+  if let .chooseReplacement .. := g.pending then
+    return (g.change (.consecutivePasses 0)).chainPendingReplacement
+      (.completeActivation hadOuterReplacement openCont)
   let some sid := prop.sourceId | throw "The ability has no source"
   let x := ((g.findObject? prop.spellId).bind (·.chosenX)).getD 0
   let srcSnap := (g.findObject? sid).map g.snapshot |>.orElse (fun _ => some prop.originalSnapshot)
   let srcName := (g.findObject? sid).map g.name |>.getD (g.name prop.original)
-  let alreadyPaused := match g.pending with | .chooseReplacement .. => true | _ => false
-  let localOuter? := if alreadyPaused then none else g.pendingReplacement
+  let localOuter? := g.pendingReplacement
   let hadOuter := hadOuterReplacement || localOuter?.isSome
-  let hadOpenCont := hadOpenContinuation || (!alreadyPaused && !g.continuations.isEmpty)
   let g0 := if localOuter?.isSome then g.change (.pendingReplacement none) else g
   let g ← g0.payActivationExtraCosts prop.caster sid prop.tapSource prop.sacrificeSource
     prop.payLife prop.discardSource prop.activation (if prop.removePlusOneX then x else 0)
-  let g :=
-    match localOuter? with
-    | some outer => g.chainPendingReplacement outer
-    | none => g
   if prop.needsSacrificeOther then
     if let .chooseReplacement .. := g.pending then
       let g := (g.change (.consecutivePasses 0)).chainPendingReplacement
         (.restorePending (.sacrificePermanent prop.caster sid))
+      let g :=
+        match localOuter? with
+        | some outer => g.chainPendingReplacement outer
+        | none => g
       return g.logMsg
         s!"{(g.player prop.caster).name} must sacrifice another creature or artifact"
     else
+      let g :=
+        match localOuter? with
+        | some outer => g.chainPendingReplacement outer
+        | none => g
       let g := g.changes #[.pending (.sacrificePermanent prop.caster sid), .consecutivePasses 0]
       return g.logMsg
         s!"{(g.player prop.caster).name} must sacrifice another creature or artifact"
+  let paused := match g.pending with | .chooseReplacement .. => true | _ => false
+  let g :=
+    if !paused then
+      match localOuter? with
+      | some outer => g.chainPendingReplacement outer
+      | none => g
+    else g
   let clearPending : Array EngineChange :=
-    if let .chooseReplacement .. := g.pending then #[] else #[.pending .none]
+    if paused then #[] else #[.pending .none]
   let g := g.changes (clearPending ++ #[.proposedSpell none, .consecutivePasses 0])
-  return g.becomeActivated prop.caster srcName prop.sourceId prop.activation
+  let g := g.becomeActivated prop.caster srcName prop.sourceId prop.activation
+    (abilityId := some prop.spellId)
     (sourceSnapshot := srcSnap)
     (sourceOriginal := some prop.original)
     (hadOuterReplacement := hadOuter)
-    (hadOpenContinuation := hadOpenCont)
+    (hadOpenContinuation := some openCont)
+  let g :=
+    if paused then
+      match localOuter? with
+      | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishFra
+      | none => g
+    else g
+  return g
 
 /-- Ask `p` to choose what pays the first of `picks`, or finish the
 activation when none remain. -/
 def continueCostPicks (g : Game) (prop : ProposedSpell) (picks : Array CostPick) (paid : Bool)
     (hadOuterReplacement : Bool := false)
-    (hadOpenContinuation : Bool := false) :
+    (hadOpenContinuation : Option Bool := none) :
     Except String Game := do
+  let openCont := g.proposalHadOpenContinuation hadOpenContinuation
   match picks[0]?, prop.sourceId with
   | some pick, some sid =>
     if let .chooseReplacement .. := g.pending then
@@ -763,9 +830,13 @@ def continueCostPicks (g : Game) (prop : ProposedSpell) (picks : Array CostPick)
       let g := g.changes #[.pending (.fraChoice prop.caster (.costPicks sid picks paid)), .consecutivePasses 0]
       return g.logMsg s!"{(g.player prop.caster).name} chooses how to {pick.phrase}"
   | _, _ =>
-    g.completeActivation prop
-      (hadOuterReplacement := hadOuterReplacement)
-      (hadOpenContinuation := hadOpenContinuation)
+    if let .chooseReplacement .. := g.pending then
+      return (g.change (.consecutivePasses 0)).chainPendingReplacement
+        (.completeActivation hadOuterReplacement openCont)
+    else
+      g.completeActivation prop
+        (hadOuterReplacement := hadOuterReplacement)
+        (hadOpenContinuation := some openCont)
 
 /-- Whether the proposed spell or ability still needs targets announced (CR 601.2c). -/
 def proposedNeedsTarget (g : Game) (prop : ProposedSpell) : Bool :=

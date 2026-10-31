@@ -50,16 +50,19 @@ def finishProposedSpell (g : Game) : Except String Game := do
   if prop.kind == .activatedAbility then
     return (← g.beginActivationPayment prop)
   let outerCont? := g.pendingReplacement
-  let hadOpenCont := !g.continuations.isEmpty
+  let openCont := g.proposalHadOpenContinuation
   let g ←
     match prop.sneakAttacker with
     | some a =>
       let g0 := if outerCont?.isSome then g.change (.pendingReplacement none) else g
       match g0.withProposalActionM .costAction (fun g => g.paySneak prop.caster prop.spellId a) with
       | .ok g =>
-        pure (match outerCont? with
+        let paused := match g.pending with | .chooseReplacement .. => true | _ => false
+        pure (if !paused then
+          match outerCont? with
           | some outer => g.chainPendingReplacement outer
-          | none => g)
+          | none => g
+        else g)
       | .error _ => return (← g.reverseProposedSpell? (resumeContinuation := true))
     | none => pure g
   match prop.kind, prop.needsSacrificeOther, prop.needsDiscardCard with
@@ -67,6 +70,10 @@ def finishProposedSpell (g : Game) : Except String Game := do
     if let .chooseReplacement .. := g.pending then
       let g := (g.change (.consecutivePasses 0)).chainPendingReplacement
         (.restorePending (.sacrificePermanent prop.caster prop.spellId))
+      let g :=
+        match outerCont? with
+        | some outer => g.chainPendingReplacement outer
+        | none => g
       return g.logMsg
         s!"{(g.player prop.caster).name} must sacrifice an artifact or creature"
     else
@@ -77,6 +84,10 @@ def finishProposedSpell (g : Game) : Except String Game := do
     if let .chooseReplacement .. := g.pending then
       let g := (g.change (.consecutivePasses 0)).chainPendingReplacement
         (.restorePending (.discardForAdditionalCost prop.caster))
+      let g :=
+        match outerCont? with
+        | some outer => g.chainPendingReplacement outer
+        | none => g
       return g.logMsg
         s!"{(g.player prop.caster).name} must discard a card"
     else
@@ -84,12 +95,20 @@ def finishProposedSpell (g : Game) : Except String Game := do
       return g.logMsg
         s!"{(g.player prop.caster).name} must discard a card"
   | _, _, _ =>
+    let paused := match g.pending with | .chooseReplacement .. => true | _ => false
     let clearPending : Array EngineChange :=
-      if let .chooseReplacement .. := g.pending then #[] else #[.pending .none]
+      if paused then #[] else #[.pending .none]
     let g := g.changes (clearPending ++ #[.proposedSpell none, .consecutivePasses 0])
-    return (g.becomeCast prop.caster (g.object! prop.spellId)
+    let g := g.becomeCast prop.caster (g.object! prop.spellId)
       (hadOuterReplacement := outerCont?.isSome)
-      (hadOpenContinuation := hadOpenCont)).resumeAfterBecomeCast
+      (hadOpenContinuation := some openCont)
+    let g :=
+      if paused then
+        match outerCont? with
+        | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishFra
+        | none => g
+      else g
+    return g.resumeAfterBecomeCast
 
 /-- Pay the proposed spell or ability (CR 601.2h / 602.2b). If the cost
 cannot be paid, the action is reversed (CR 733.1). -/

@@ -7992,4 +7992,294 @@ departed-source `lastKnownBefore?` LKI + Step 4 audits. -/
     mustHold "reviewRound3ContOk" reviewRound3ContOk &&
     mustHold "reviewRound4ContOk" reviewRound4ContOk
 
+/- Phase 13 Review Round 5 regressions: dual replacement pauses across
+`CostPick` + `payActivationExtraCosts`, multi-step non-active priority
+preservation via `proposalCheckpoint` (CR 117.3c), and deferred `becomeCast`
+follow-ups (Path of Ancestry scry, `pendingMayCastFromExile`, and
+`pendingFreeCopies`) after a cost pauses on `Pending.chooseReplacement`. -/
+#guard
+  let opp : PlayerId := ⟨1⟩
+  let headHuntDef : CardDef :=
+    { bear with name := "Phase13 Head Hunt", staticAbilities := #[.exileOppDeathCreateWolf] }
+  let sacSpellDef : CardDef := {
+    name := "Phase13 Altar Bolt"
+    manaCost := ManaCost.empty
+    types := #[.instant]
+    additionalCostSacrificeCreature := true
+    spellEffect := some { resolution := .draw 1, phrase := "Draw a card" }
+  }
+  let freeDrawDef : CardDef := {
+    name := "Phase13 Free Draw"
+    manaCost := ManaCost.empty
+    types := #[.sorcery]
+    spellEffect := some { resolution := .draw 1, phrase := "Draw a card" }
+  }
+  -- (a) `{T}, Sacrifice this, Sacrifice a legendary artifact` where BOTH the
+  --     chosen legendary artifact AND the sacrificed source pause on
+  --     `Pending.chooseReplacement` must defer `completeActivation` /
+  --     `payActivationExtraCosts` until the first choice finishes instead of
+  --     overwriting it:
+  let mountDoomEngineDef : CardDef := {
+    bear with
+    name := "Phase13 Mount Doom Engine"
+    activatedAbilities := #[{
+      cost := { tap := true, sacrificeSource := true, sacrificeLegendaryArtifact := true }
+      effect := { resolution := .draw 1, phrase := "Draw a card" }
+    }]
+  }
+  let legArtBearDef : CardDef := {
+    bear with
+    name := "Phase13 Legendary Relic Bear"
+    supertypes := #[.legendary]
+    types := #[.artifact, .creature]
+  }
+  let (gMdPause1, gMdPause2, gMdDone, mdEngId, mdArtId) :=
+    let g := addPermanent (addPermanent (addPermanent afterDraw mountDoomEngineDef me me) legArtBearDef me me) headHuntDef opp opp
+    let engId := (g.battlefield.filter (·.name == "Phase13 Mount Doom Engine"))[0]!.id
+    let artId := (g.battlefield.filter (·.name == "Phase13 Legendary Relic Bear"))[0]!.id
+    let headId := (g.battlefield.filter (·.name == "Phase13 Head Hunt"))[0]!.id
+    let idHead : ReplacementId := { kind := .exileOppDeath, object := some headId }
+    let g := g.recordPutCounters engId .finality 1 (some me) (cause := some testCause)
+    let g := g.recordPutCounters artId .finality 1 (some me) (cause := some testCause)
+    let g := mustApply g me (.activate engId 0)
+    let gP1 := mustApply g me (.choosePermanents #[artId])
+    let gP2 := mustApply gP1 me (.chooseReplacement idHead)
+    let gD := mustApply gP2 me (.chooseReplacement idHead)
+    (gP1, gP2, gD, engId, artId)
+  let mountDoomDualPauseOk :=
+    (match gMdPause1.pending with | .chooseReplacement p cs => p == me && cs.size == 2 | _ => false) &&
+    gMdPause1.proposedSpell.isSome &&
+    (gMdPause1.findObject? mdEngId).any (fun o => o.isOnBattlefield && !o.status.tapped) &&
+    (gMdPause1.findObject? mdArtId).any (·.isOnBattlefield) &&
+    (match gMdPause2.pending with | .chooseReplacement p cs => p == me && cs.size == 2 | _ => false) &&
+    (gMdPause2.findObject? mdArtId).all (!·.isOnBattlefield) &&
+    (gMdPause2.findObject? mdEngId).any (fun o => o.isOnBattlefield && o.status.tapped) &&
+    gMdDone.pending == .none &&
+    gMdDone.continuations.isEmpty &&
+    gMdDone.waitingTriggers.isEmpty &&
+    (gMdDone.findObject? mdArtId).all (!·.isOnBattlefield) &&
+    (gMdDone.findObject? mdEngId).all (!·.isOnBattlefield) &&
+    gMdDone.stack.size == 3 &&
+    gMdDone.priority == me &&
+    Game.replayEvents gMdPause1.events == gMdPause1 &&
+    Game.replayEvents gMdPause2.events == gMdPause2 &&
+    Game.replayEvents gMdDone.events == gMdDone
+
+  -- (b) Multi-step activation costs by non-active player `opp` where step 1 pauses
+  --     on `Pending.chooseReplacement` (pushing a `ContinuationFrame`) and step 2
+  --     does NOT pause must still return priority to `opp` (CR 117.3c) and drain
+  --     `continuations`:
+  let dualSacActDef : CardDef := {
+    bear with
+    name := "Phase13 Dual Sac Engine"
+    activatedAbilities := #[{
+      cost := { sacrificeSource := true, sacrificeAnotherCreatureOrArtifact := true }
+      effect := { resolution := .draw 1, phrase := "Draw a card" }
+    }]
+  }
+  let twoPickActDef : CardDef := {
+    bear with
+    name := "Phase13 Two Pick Engine"
+    activatedAbilities := #[{
+      cost := { sacrificeLegendaryArtifact := true, sacrificeAnotherCreature := true }
+      effect := { resolution := .draw 1, phrase := "Draw a card" }
+    }]
+  }
+  let gOppDualSacDone :=
+    let g := addPermanent (addPermanent (addPermanent afterDraw dualSacActDef opp opp) bear opp opp) headHuntDef me me
+    let g := mustApply g me .pass
+    let engId := (g.battlefield.filter (·.name == "Phase13 Dual Sac Engine"))[0]!.id
+    let plainBearId := (g.battlefield.filter (fun o => o.name == "Event Bear" && o.controller == some opp))[0]!.id
+    let headId := (g.battlefield.filter (·.name == "Phase13 Head Hunt"))[0]!.id
+    let idHead : ReplacementId := { kind := .exileOppDeath, object := some headId }
+    let g := g.recordPutCounters engId .finality 1 (some opp) (cause := some testCause)
+    let g := mustApply g opp (.activate engId 0)
+    let g := mustApply g opp .pay
+    let g := mustApply g opp (.chooseReplacement idHead)
+    mustApply g opp (.sacrifice plainBearId)
+  let gOppTwoPickDone :=
+    let g := addPermanent (addPermanent (addPermanent (addPermanent afterDraw twoPickActDef opp opp) legArtBearDef opp opp) bear opp opp) headHuntDef me me
+    let g := mustApply g me .pass
+    let engId := (g.battlefield.filter (·.name == "Phase13 Two Pick Engine"))[0]!.id
+    let legArtId := (g.battlefield.filter (fun o => o.name == "Phase13 Legendary Relic Bear" && o.controller == some opp))[0]!.id
+    let plainBearId := (g.battlefield.filter (fun o => o.name == "Event Bear" && o.controller == some opp))[0]!.id
+    let headId := (g.battlefield.filter (·.name == "Phase13 Head Hunt"))[0]!.id
+    let idHead : ReplacementId := { kind := .exileOppDeath, object := some headId }
+    let g := g.recordPutCounters legArtId .finality 1 (some opp) (cause := some testCause)
+    let g := mustApply g opp (.activate engId 0)
+    let g := mustApply g opp (.choosePermanents #[legArtId])
+    let g := mustApply g opp (.chooseReplacement idHead)
+    mustApply g opp (.choosePermanents #[plainBearId])
+  let oppMultiStepPrioOk :=
+    gOppDualSacDone.pending == .none &&
+    gOppDualSacDone.continuations.isEmpty &&
+    gOppDualSacDone.priority == opp &&
+    gOppDualSacDone.stack.size == 3 &&
+    Game.replayEvents gOppDualSacDone.events == gOppDualSacDone &&
+    gOppTwoPickDone.pending == .none &&
+    gOppTwoPickDone.continuations.isEmpty &&
+    gOppTwoPickDone.priority == opp &&
+    gOppTwoPickDone.stack.size == 3 &&
+    Game.replayEvents gOppTwoPickDone.events == gOppTwoPickDone
+
+  -- (c) Path of Ancestry scry after a creature spell's sacrifice cost pauses on
+  --     `Pending.chooseReplacement` (for both active `me` and non-active `opp`):
+  let poaDef5 : CardDef := {
+    name := "Phase13 Path of Ancestry"
+    types := #[.land]
+    entersTapped := true
+    tapAddCommanderIdentity := true
+    commanderIdentityScryCreature := true
+  }
+  let elfCmdrDef5 : CardDef := {
+    name := "Phase13 Elf Commander"
+    manaCost := ⟨#[.colored .green]⟩
+    types := #[.creature]
+    supertypes := #[.legendary]
+    subtypes := #["Elf"]
+    power := some 2
+    toughness := some 2
+  }
+  let elfSacCreatureDef : CardDef := {
+    name := "Phase13 Altar Elf"
+    manaCost := ⟨#[.colored .green]⟩
+    types := #[.creature]
+    subtypes := #["Elf"]
+    keywords := { flash := true }
+    power := some 1
+    toughness := some 1
+    additionalCostSacrificeCreature := true
+  }
+  let (gAncPaused, gAncScry, gAncDone) :=
+    let g0 : Game :=
+      match Start.start {
+        seats := #[
+          { name := "Chandra", deck := testRedDeck, commanders := #[elfCmdrDef5] },
+          { name := "Nissa", deck := testGreenDeck }
+        ]
+        format := .constructed
+        seed := 1
+        startingPlayer := some 0
+      } with
+      | .ok g => passBoth (keepOpeningHands g 8)
+      | .error e => panic! e
+    let g := insertObject (addPermanent (addPermanent (addPermanent g0 poaDef5 me me) bear me me) headHuntDef opp opp) elfSacCreatureDef me (.hand me)
+    let poaId := (g.battlefield.filter (fun (o : GameObject) => o.name == "Phase13 Path of Ancestry" && o.controller == some me))[0]!.id
+    let sacBearId := (g.battlefield.filter (fun (o : GameObject) => o.name == "Event Bear" && o.controller == some me))[0]!.id
+    let headId := (g.battlefield.filter (fun (o : GameObject) => o.name == "Phase13 Head Hunt"))[0]!.id
+    let idHead : ReplacementId := { kind := .exileOppDeath, object := some headId }
+    let elfSpellId := (g.player me).hand.back!
+    let g := g.recordPutCounters sacBearId .finality 1 (some me) (cause := some testCause)
+    let g := mustApply g me (.cast elfSpellId)
+    let g := mustApply g me (.tapForMana poaId (.colored .green))
+    let g := mustApply g me .pay
+    let gPaused := mustApply g me (.sacrifice sacBearId)
+    let gScry := mustApply gPaused me (.chooseReplacement idHead)
+    let topId := (gScry.player me).library.back!
+    let gDone := mustApply gScry me (.scry #[topId] #[])
+    (gPaused, gScry, gDone)
+  let gOppAncDone :=
+    let g0 : Game :=
+      match Start.start {
+        seats := #[
+          { name := "Chandra", deck := testRedDeck },
+          { name := "Nissa", deck := testGreenDeck, commanders := #[elfCmdrDef5] }
+        ]
+        format := .constructed
+        seed := 1
+        startingPlayer := some 0
+      } with
+      | .ok g => passBoth (keepOpeningHands g 8)
+      | .error e => panic! e
+    let g := insertObject (addPermanent (addPermanent (addPermanent g0 poaDef5 opp opp) bear opp opp) headHuntDef me me) elfSacCreatureDef opp (.hand opp)
+    let poaId := (g.battlefield.filter (fun (o : GameObject) => o.name == "Phase13 Path of Ancestry" && o.controller == some opp))[0]!.id
+    let sacBearId := (g.battlefield.filter (fun (o : GameObject) => o.name == "Event Bear" && o.controller == some opp))[0]!.id
+    let headId := (g.battlefield.filter (fun (o : GameObject) => o.name == "Phase13 Head Hunt"))[0]!.id
+    let idHead : ReplacementId := { kind := .exileOppDeath, object := some headId }
+    let elfSpellId := (g.player opp).hand.back!
+    let g := g.recordPutCounters sacBearId .finality 1 (some opp) (cause := some testCause)
+    let g := mustApply g me .pass
+    let g := mustApply g opp (.cast elfSpellId)
+    let g := mustApply g opp (.tapForMana poaId (.colored .green))
+    let g := mustApply g opp .pay
+    let g := mustApply g opp (.sacrifice sacBearId)
+    let gScry := mustApply g opp (.chooseReplacement idHead)
+    let topId := (gScry.player opp).library.back!
+    mustApply gScry opp (.scry #[topId] #[])
+  let ancestryAfterCostRepOk :=
+    (match gAncPaused.pending with | .chooseReplacement p cs => p == me && cs.size == 2 | _ => false) &&
+    (match gAncScry.pending with | .scry p 1 1 => p == me | _ => false) &&
+    gAncDone.pending == Pending.none &&
+    gAncDone.continuations.isEmpty &&
+    gAncDone.priority == me &&
+    gAncDone.stack.size == 2 &&
+    gOppAncDone.pending == Pending.none &&
+    gOppAncDone.continuations.isEmpty &&
+    gOppAncDone.priority == opp &&
+    gOppAncDone.stack.size == 2 &&
+    Game.replayEvents gAncPaused.events == gAncPaused &&
+    Game.replayEvents gAncScry.events == gAncScry &&
+    Game.replayEvents gAncDone.events == gAncDone &&
+    Game.replayEvents gOppAncDone.events == gOppAncDone
+
+  -- (d) `pendingMayCastFromExile` and `pendingFreeCopies` offers must still run
+  --     after a cast spell's sacrifice cost pauses on `Pending.chooseReplacement`:
+  let (gMayExNext, gMayExDone) :=
+    let g := addPermanent (addPermanent afterDraw bear me me) headHuntDef opp opp
+    let sacBearId := (g.battlefield.filter (fun o => o.name == "Event Bear" && o.controller == some me))[0]!.id
+    let headId := (g.battlefield.filter (·.name == "Phase13 Head Hunt"))[0]!.id
+    let idHead : ReplacementId := { kind := .exileOppDeath, object := some headId }
+    let g := g.recordPutCounters sacBearId .finality 1 (some me) (cause := some testCause)
+    let g := insertObject (insertObject g sacSpellDef me .exile) freeDrawDef me .exile
+    let exSac := (g.objects.filter (fun o => o.name == "Phase13 Altar Bolt" && o.zone == .exile))[0]!.id
+    let exDraw := (g.objects.filter (fun o => o.name == "Phase13 Free Draw" && o.zone == .exile))[0]!.id
+    let g := (g.change (.pushContinuationFrame {})).change (.pending (.fraChoice me (.mayCastUpToFromExile #[exSac, exDraw] 2)))
+    let g := mustApply g me (.choosePermanents #[exSac])
+    let g := mustApply g me .pay
+    let g := mustApply g me (.sacrifice sacBearId)
+    let gNext := mustApply g me (.chooseReplacement idHead)
+    let gDone := mustApply gNext me (.choosePermanents #[exDraw])
+    (gNext, gDone)
+  let (gCopyNext, gCopyDone) :=
+    let g := addPermanent (addPermanent afterDraw bear me me) headHuntDef opp opp
+    let sacBearId := (g.battlefield.filter (fun o => o.name == "Event Bear" && o.controller == some me))[0]!.id
+    let headId := (g.battlefield.filter (·.name == "Phase13 Head Hunt"))[0]!.id
+    let idHead : ReplacementId := { kind := .exileOppDeath, object := some headId }
+    let g := g.recordPutCounters sacBearId .finality 1 (some me) (cause := some testCause)
+    let g := insertObject (insertObject g sacSpellDef me .exile) freeDrawDef me .exile
+    let cpSac := (g.objects.filter (fun o => o.name == "Phase13 Altar Bolt" && o.zone == .exile))[0]!.id
+    let cpDraw := (g.objects.filter (fun o => o.name == "Phase13 Free Draw" && o.zone == .exile))[0]!.id
+    let g := (g.change (.pushContinuationFrame {})).change (.pending (.fraChoice me (.castCopiesFree #[cpSac, cpDraw] 4 2)))
+    let g := mustApply g me (.cast cpSac)
+    let g := mustApply g me .pay
+    let g := mustApply g me (.sacrifice sacBearId)
+    let gNext := mustApply g me (.chooseReplacement idHead)
+    let gDone := mustApply gNext me (.cast cpDraw)
+    (gNext, gDone)
+  let exileAndCopyOffersAfterCostRepOk :=
+    (match gMayExNext.pending with | .fraChoice p (.mayCastUpToFromExile ids left) => p == me && ids.size == 1 && left == 1 | _ => false) &&
+    gMayExDone.pending == Pending.none &&
+    gMayExDone.pendingMayCastFromExile.isNone &&
+    gMayExDone.continuations.isEmpty &&
+    gMayExDone.stack.size == 3 &&
+    Game.replayEvents gMayExNext.events == gMayExNext &&
+    Game.replayEvents gMayExDone.events == gMayExDone &&
+    (match gCopyNext.pending with | .fraChoice p (.castCopiesFree ids _ left) => p == me && ids.size == 1 && left == 1 | _ => false) &&
+    gCopyDone.pending == Pending.none &&
+    gCopyDone.pendingFreeCopies.isNone &&
+    gCopyDone.continuations.isEmpty &&
+    gCopyDone.stack.size == 3 &&
+    Game.replayEvents gCopyNext.events == gCopyNext &&
+    Game.replayEvents gCopyDone.events == gCopyDone
+  let reviewRound5ContOk :=
+    mountDoomDualPauseOk && oppMultiStepPrioOk && ancestryAfterCostRepOk && exileAndCopyOffersAfterCostRepOk
+
+  let mustHold (label : String) (ok : Bool) : Bool :=
+    if ok then true else panic! s!"Phase 13 Round 5 guard failed: {label}"
+  mustHold "mountDoomDualPauseOk" mountDoomDualPauseOk &&
+    mustHold "oppMultiStepPrioOk" oppMultiStepPrioOk &&
+    mustHold "ancestryAfterCostRepOk" ancestryAfterCostRepOk &&
+    mustHold "exileAndCopyOffersAfterCostRepOk" exileAndCopyOffersAfterCostRepOk &&
+    mustHold "reviewRound5ContOk" reviewRound5ContOk
+
 end Mtg.Engine.EventTests

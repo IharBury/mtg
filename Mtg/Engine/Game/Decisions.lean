@@ -217,6 +217,40 @@ partial def resumePendingReplacement (g : Game) : PendingReplacement → Game
       g.chainPendingReplacement (.receivePriority p)
     else if g.pending != .none then g
     else g.receivePriority p
+  | .completeActivation hadOuter hadOpenCont =>
+    match g.proposedSpell with
+    | none => g
+    | some prop =>
+      match g.completeActivation prop
+          (hadOuterReplacement := hadOuter)
+          (hadOpenContinuation := some hadOpenCont) with
+      | .ok g' =>
+        if hadOuter then g' else resumeAfterBecomeCast g'
+      | .error _ =>
+        g.reverseProposedSpell (resumeContinuation := true)
+  | .finishBecomeActivated caster srcName srcId act abId srcSnap srcOrig hadOuter hadOpenCont =>
+    let g := g.becomeActivated caster srcName srcId act
+      (abilityId := abId)
+      (sourceSnapshot := srcSnap)
+      (sourceOriginal := srcOrig)
+      (hadOuterReplacement := hadOuter)
+      (hadOpenContinuation := some hadOpenCont)
+    if hadOuter then g else resumeAfterBecomeCast g
+  | .finishBecomeCast caster spellId grantPriority hadOuter hadOpenCont =>
+    match g.findObject? spellId with
+    | some spell =>
+      let g := g.becomeCast caster spell
+        (grantPriority := grantPriority)
+        (hadOuterReplacement := hadOuter)
+        (hadOpenContinuation := some hadOpenCont)
+      if hadOuter then g else resumeAfterBecomeCast g
+    | none => g
+  | .finishPostCast caster grantPriority hadOuter hadOpenCont =>
+    let g := g.finishPostCast caster
+      (grantPriority := grantPriority)
+      (hadOuterReplacement := hadOuter)
+      (hadOpenContinuation := hadOpenCont)
+    if hadOuter then g else resumeAfterBecomeCast g
 
 /-- Reverse a proposed spell or activated ability to its pre-proposal checkpoint,
 preserving CR 733.1 irreversible library actions, running any deferred post-cast
@@ -338,17 +372,17 @@ partial def advanceCastExiledQueue (g : Game) : Game :=
         let g := g.castAsPartOfResolution p id
         if g.pending != .none || g.proposedSpell.isSome then g
         else g.advanceCastExiledQueue
-end
 
 /-- Resume any deferred `PendingReplacement` (such as `.finishFraChoice`) queued
 by `becomeCast` or `becomeActivated` once the spell or ability finishes going
 onto the stack without opening a new `Pending`. -/
-def resumeAfterBecomeCast (g : Game) : Game :=
+partial def resumeAfterBecomeCast (g : Game) : Game :=
   if g.pending == .none && g.pendingReplacement.isSome && !g.over then
     match g.pendingReplacement with
     | some cont => (g.change (.pendingReplacement none)).resumePendingReplacement cont
     | none => g
   else g
+end
 
 /-- Cast the first instant or sorcery card with mana value at most `maxMv`
 from `p`'s hand as part of a resolution, without paying its mana cost. -/
@@ -667,8 +701,12 @@ def finishLibraryLook (g : Game) : Game :=
     | some (controller, opp, sid) =>
       (g.change (.palantirAfterScry none)).offerPalantirChoice controller opp sid
     | none =>
-      let g := g.resumeTriggerSequence
-      if g.pending != .none then g else g.receivePriority g.activePlayer
+      match g.pendingReplacement with
+      | some cont =>
+        (g.change (.pendingReplacement none)).resumePendingReplacement cont
+      | none =>
+        let g := g.resumeTriggerSequence
+        if g.pending != .none then g else g.receivePriority g.activePlayer
 
 /-- Log putting `top` back on top, unless they stay in the looked-at order. -/
 def logPutOnTop (g : Game) (p : PlayerId) (looked top : Array ObjectId) : Game :=
@@ -977,23 +1015,33 @@ def discardForDraw (g : Game) (p : PlayerId) (id : ObjectId) : Except String Gam
   | .discardForAdditionalCost q =>
     let some prop := g.proposedSpell | throw "No spell is waiting for an additional cost"
     let outerCont? := g.pendingReplacement
-    let hadOpenCont := !g.continuations.isEmpty
+    let openCont := g.proposalHadOpenContinuation
     let g0 := if outerCont?.isSome then g.change (.pendingReplacement none) else g
     let g ← g0.withProposalActionM .costAction fun g => do
       let (g, _) ← g.discardPendingCard p q id
         (cause := some (.costPayment .discard p (some prop.spellId)))
       return g.record (GameEvent.announced g.turnNumber prop.spellId (costs := #[.discard id])
         (cause := some (.costPayment .discard p (some prop.spellId))))
+    let paused := match g.pending with | .chooseReplacement .. => true | _ => false
     let g :=
-      match outerCont? with
-      | some outer => g.chainPendingReplacement outer
-      | none => g
+      if !paused then
+        match outerCont? with
+        | some outer => g.chainPendingReplacement outer
+        | none => g
+      else g
     let clearPending : Array EngineChange :=
-      if let .chooseReplacement .. := g.pending then #[] else #[.pending .none]
+      if paused then #[] else #[.pending .none]
     let g := g.changes (clearPending ++ #[.proposedSpell none, .consecutivePasses 0])
-    return (g.becomeCast prop.caster (g.object! prop.spellId)
+    let g := g.becomeCast prop.caster (g.object! prop.spellId)
       (hadOuterReplacement := outerCont?.isSome)
-      (hadOpenContinuation := hadOpenCont)).resumeAfterBecomeCast
+      (hadOpenContinuation := some openCont)
+    let g :=
+      if paused then
+        match outerCont? with
+        | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishFra
+        | none => g
+      else g
+    return g.resumeAfterBecomeCast
   | .payWard q spellId cost =>
     if p != q then
       throw s!"Only {(g.player q).name} may discard for ward"

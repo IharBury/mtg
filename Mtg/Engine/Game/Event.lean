@@ -1165,7 +1165,24 @@ inductive PendingReplacement where
   | closeBatch (batchId : BatchId) (startIdx : Nat)
   | checkSBA
   | receivePriority (p : PlayerId)
+  | completeActivation (hadOuterReplacement hadOpenContinuation : Bool)
+  | finishBecomeActivated (caster : PlayerId) (sourceName : String)
+      (sourceId : Option ObjectId) (activation : Option ActivatedAbility)
+      (abilityId : Option ObjectId)
+      (sourceSnapshot : Option EventObject) (sourceOriginal : Option GameObject)
+      (hadOuterReplacement hadOpenContinuation : Bool)
+  | finishBecomeCast (caster : PlayerId) (spellId : ObjectId) (grantPriority : Bool)
+      (hadOuterReplacement hadOpenContinuation : Bool)
+  | finishPostCast (caster : PlayerId) (grantPriority : Bool)
+      (hadOuterReplacement hadOpenContinuation : Bool)
 deriving Repr, Inhabited, BEq
+
+/-- Ensure a `PendingReplacement` continuation ends with `.finishFraChoice`
+without appending a duplicate `.finishFraChoice` when already present. -/
+def PendingReplacement.ensureEndsWithFinishFra : PendingReplacement → PendingReplacement
+  | .finishFraChoice => .finishFraChoice
+  | .seq a b => .seq a b.ensureEndsWithFinishFra
+  | other => .seq other .finishFraChoice
 
 /-- Deferred library-bottoming or CR 704.5e copy cleanup run once a mid-resolution
 proposed spell finishes casting (`becomeCast`) or is reversed (`reverseProposedSpell?`). -/
