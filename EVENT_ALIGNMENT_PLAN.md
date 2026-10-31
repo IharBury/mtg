@@ -3156,12 +3156,12 @@ checks, and CR 614.12 / 616.1 shockland ETB replacements), `Casting.lean`,
      generic-only cost reduction (`Mana.lean`) → `118.7a`; `402.2` hidden-zone
      hand visibility (`Demo/Render.lean`) → `402.3`; `508.2` attack triggers
      (`TriggeredAbilities.lean` module doc & `putAttackTriggersOnStack` →
-     `508.2b`, `Game.lean` overview →
-     `508.1m / 508.2b / 508.3a / 508.3c / 508.3d`, `TriggerEvent.lean`
-     "Whenever [a creature] attacks" & `Tests/AttackTriggers.lean` /
-     `Tests/CastTriggers.lean` / `Tests/Elves.lean` → `508.3a`,
-     `TriggerEvent.lean` "You attack with one or more Elves" → `508.3c`, and
-     `TriggerEvent.lean` "You attack with one or more creatures" → `508.3d`);
+     `508.2b`, `Game.lean` creature-attack-trigger list & `TriggerEvent.lean`
+     `.attacking` / `.equippedAttacks` & `Tests/AttackTriggers.lean` /
+     `Tests/CastTriggers.lean` / `Tests/Elves.lean` → `508.3a`, `Game.lean`
+     attack-with-Elves scry triggers—keeping `701.22`—& `TriggerEvent.lean`
+     `.youAttackWithElves` → `508.3c`, and `TriggerEvent.lean` `.youAttack` →
+     `508.3d`);
      `508.4a` first-strike combat-damage rounds (`CombatAssignment.lean`) →
      `510.4 / 702.7b`; `509.1c` menace blocking restriction (`Combat.lean`,
      `Tests/Cycling.lean`) → `509.1b`; `602.3` activation legality
@@ -3185,10 +3185,10 @@ checks, and CR 614.12 / 616.1 shockland ETB replacements), `Casting.lean`,
      `704.5x–y / 310.11`, `siegeCompleted` `704.5v / 310.7`, `roleLimit`
      `704.5z`); `706` Copying Objects (`Object.lean`) → `707` (`707.10`);
      `714.3` / `714.3a` / `714.3b` / `714.3c` Saga chapters and lore counters
-     (`Object.lean` `sagaLoreOnMain` and `Triggers.lean` `addLoreAfterDrawStep`
-     `714.3b` → `714.3c` keeping `703.4f`, `Triggers.lean` `addLoreCounters`
-     `714.3c` → `714.2b / 614.1a` keeping `MSH 517`, `Saga.lean` `714.3a` →
-     `714.2b–c`, and `Chapter.lean` / `Trigger.lean` / `Card.lean` /
+     (`Object.lean` `sagaLoreOnMain`—keeping `703.4f`—and `Triggers.lean`
+     `addLoreAfterDrawStep` `714.3b` → `714.3c`, `Triggers.lean`
+     `addLoreCounters` `714.3c` → `614.1a` keeping `MSH 517`, `Saga.lean`
+     `714.3a` → `714.2b–c`, and `Chapter.lean` / `Trigger.lean` / `Card.lean` /
      `Chapters.lean` / `Game.lean` / `Triggers.lean` / `TriggerEvent.lean`
      chapter targeting & resolution `714.3` → `714.2`, keeping ETB lore
      `714.3a`); and `720` Controlling Another Player (`Event.lean`) → `723`.
