@@ -3298,14 +3298,19 @@ spell-copy / combat-Treasure / reflexive `WaitingTrigger` routing, pre-move
      costs (`k > 0`, passing raw `k.natAbs` while keeping `k < 0` as counter
      removals) in `Casting.payLoyaltyCost`
      ([`Casting.lean`](Mtg/Engine/Game/Casting.lean)) through
-     `Core.replaceCountersPutChoice` / `recordPutCounters` (CR 118.11); and
-     reverse via `Decisions.reverseProposedSpell?` in `FraChoices` `.costPicks`
-     ([`FraChoices.lean`](Mtg/Engine/Game/FraChoices.lean), including its
-     `paid == true` decline path when no legal choice remains) and via
-     `Casting.reverseProposedSpellCore?` in `Casting.continueCostPicks`
-     (`Casting.lean`) when an earlier `CostPick` was paid (`paid == true`) and
-     fewer than `next.count` legal candidates remain for a subsequent `CostPick`
-     (CR 733.1).
+     `Core.replaceCountersPutChoice` / `recordPutCounters` (CR 118.11); and,
+     since `Decisions.beginActivationPayment` (`Decisions.lean`) checks
+     `ActivationCosts.costPicksPayable` (`cands.size < pick.count`) only once
+     upfront before `continueCostPicks` (`paid := false`), add a candidate-count
+     check `(g.costPickCandidates prop.caster sid pick).size < pick.count` for
+     `some pick := picks[0]?` in `Casting.continueCostPicks` (`Casting.lean`,
+     when `g.pending` is not `.chooseReplacement`) to reverse via
+     `Casting.reverseProposedSpellCore?` when a later `CostPick` (`paid == true`)
+     becomes unpayable, and reverse via `Decisions.reverseProposedSpell?` on the
+     `paid == true` `.decline` arm of `FraChoices` `.costPicks`
+     ([`FraChoices.lean`](Mtg/Engine/Game/FraChoices.lean)) when
+     `(g.costPickCandidates p sourceId pick).size < pick.count` (including after
+     a `Pending.chooseReplacement` pause restores `.costPicks`, CR 733.1).
    - Tighten `Core.reverseToProposalCheckpoint?` and
      `Casting.reverseProposedSpellCore?` / `Decisions.reverseProposedSpell?`: in
      `Core.reverseToProposalCheckpoint?`, treat `PlayerEvent.lookedAt` (when
@@ -3322,11 +3327,23 @@ spell-copy / combat-Treasure / reflexive `WaitingTrigger` routing, pre-move
      check via `receivePriority`) on face-down turn-face-up in
      `Activation.activateAbility`
      ([`Activation.lean`](Mtg/Engine/Game/Activation.lean)); wire
-     `needsDiscardCard`, `announcesAdditionalCost`, and `hasX` on
-     `FraChoices.castFreeCopy` (`FraChoices.lean`) and route
-     `Decisions.castExiledAsAbilityResolves` (`Decisions.lean`) through normal
-     proposal cost payment rather than pre-spending mana before targets, modes,
-     or additional costs; extend `ManaAbilities.canActivateManaAbility`
+     `prop.cost.containsX` (`ManaCost.containsX` → `Pending.chooseX`, substituted
+     by `CastSpell.announceX`) and optional additional-cost prompts
+     (`face.kicker.isSome`, `face.giftTreasure`, `face.teamwork.isSome`) into
+     `Decisions.beginResolutionCastTargets` (`Decisions.lean`, shared by
+     `Decisions.castAsPartOfResolution` and `FraChoices.castFreeCopy`, where
+     `face.announcesAdditionalCost` (`CardDef.announcesAdditionalCost`) already
+     enters `Pending.chooseAdditionalCost` and `PriorityActions.announceAdditionalCost`
+     sets `ProposedSpell.needsDiscardCard` when discard is chosen, while
+     `castFreeCopy` keeps `cost := ManaCost.empty` with X = 0 per CR 107.3b),
+     drop the pre-proposal `manaPool.canPay` gate on paid
+     `Decisions.castAsPartOfResolution` (`withoutManaCost := false`), and route
+     `Decisions.castExiledAsAbilityResolves` (`Decisions.lean`) through
+     `beginResolutionCastTargets` / normal proposal cost payment (propagating
+     `cost := g.playManaCost card face` and `needsSacrificeOther` through
+     `Pending.chooseX`, modes, `face.announcesAdditionalCost`, targets, and
+     `Pending.activateManaAbilities`) rather than pre-spending mana before
+     choices; extend `ManaAbilities.canActivateManaAbility`
      (`ManaAbilities.lean`) to mana-payment prompts (`.mayPaySymbolsThen`,
      `.ultronMayPay`, paid `.mayCastCards` / `.mayCastFromGraveyard` /
      `.mayCastExiledElseDamage`, and taxed `.declareAttackers`, CR 605.3a /
@@ -3441,17 +3458,26 @@ spell-copy / combat-Treasure / reflexive `WaitingTrigger` routing, pre-move
    `DelayedTrigger` fidelity, `followMoved` / LKI & CR 613 layer discipline, and
    multiplayer CR 800.4a/c/d/i/j cleanup (§2.4, §2.7, §2.9, §2.12, §3.1–§3.3,
    §3.5):
-   - Thread `preBattlefield` across simultaneous destruction/sacrifice batches
-     for CR 603.10a / 704.3 look-back: pass `preBattlefield := some preBf` into
-     `StateBasedActions.finishSbaSweep`
-     ([`StateBasedActions.lean`](Mtg/Engine/Game/StateBasedActions.lean),
-     determining creature-dying status for already-collected `.creatureDied` SBA
-     moves from `preBf` rather than re-querying mutated `g.isCreature`),
-     `SacrificeDiscard.finishChosenSacrifices` (`SacrificeDiscard.lean`), and
-     simultaneous multi-destroy loops (`FrcResolve.destroyIds`,
-     `FraAbilities.destroyAllCreatures` in
-     [`FraAbilities.lean`](Mtg/Engine/Game/FraAbilities.lean), and
-     `EffectResolution.lean`) so mid-batch removal of a type- or P/T-granting
+   - Complete simultaneous destruction/sacrifice `preBattlefield` look-back
+     (CR 603.10a / 704.3): in `StateBasedActions.finishSbaSweep`
+     ([`StateBasedActions.lean`](Mtg/Engine/Game/StateBasedActions.lean), which
+     already receives `preBf : Array GameObject` from `checkSBACounted` and
+     passes `preBattlefield := some preBf` to `moveToOwnerGraveyard`), stop
+     re-querying mutated `g.isCreature o` in stage 0's `o.isOnBattlefield &&
+     g.isCreature o` gate for already-collected `.zeroOrLessToughness` /
+     `.lethalDamage` / `.deathtouchDamage` `victims` (checking `preBf` instead);
+     and capture `preBf := g.battlefield` (evaluating pre-batch creature /
+     mana-value predicates before any move) and thread
+     `preBattlefield := some preBf` through `Triggers.sacrificeToGraveyard`
+     (`Triggers.lean`) and `Damage.destroyPermanent` (`Damage.lean`, plus
+     `PendingReplacement.destroyPermanent` in `Event.lean` / `Decisions.lean`)
+     in `SacrificeDiscard.finishChosenSacrifices` (`SacrificeDiscard.lean`),
+     `FraAbilities.continueSacrificeEach` and `FraAbilities.applyFraAbility`
+     `.destroyAllCreatures`
+     ([`FraAbilities.lean`](Mtg/Engine/Game/FraAbilities.lean)),
+     `FrcResolve.destroyIds` (`FrcResolve.lean`), and
+     `EffectResolution.destroyCreaturesByManaParity` / `.keepDestroyRest`
+     (`EffectResolution.lean`) so mid-batch removal of a type- or P/T-granting
      permanent neither skips co-dying animated permanents nor corrupts
      `ZoneEvent.moved.before` snapshots.
    - Fix remaining `Core.matchTriggers`, `CastEvent.abilityActivated`, and
