@@ -3393,12 +3393,17 @@ spell-copy / combat-Treasure / reflexive `WaitingTrigger` routing, pre-move
      (g'.findObject? prop.spellId).any (·.zone == .stack)`, since open `Pending`
      prompts are still in progress and any targetless reversal inside
      `beginResolutionCastTargets` already called
-     `reverseProposedSpell (resumeContinuation := true)`), read
-     `prop.resolutionCast` before `.proposedSpell none` clears `proposedSpell` in
+     `reverseProposedSpell (resumeContinuation := true)`), add
+     `PendingReplacement.endsWithFinishFra`
+     ([`Event.lean`](Mtg/Engine/Game/Event.lean), alongside
+     `ensureEndsWithFinishFra`), read `prop.resolutionCast` before
+     `.proposedSpell none` clears `proposedSpell` in
      `Decisions.afterTargetsChosen`, `PriorityActions.finishProposedSpell`, and
      `Decisions.discardForDraw` (`.discardForAdditionalCost`) so those three
      sites pass `grantPriority := !isResCast` into `becomeCast` and—when
-     `isResCast` is `true` (and in `Decisions.resumePendingReplacement`
+     `isResCast` is `true` (unless `g.pending` is `.chooseReplacement ..` and
+     `g.pendingReplacement.any (·.endsWithFinishFra)` is already `true` from
+     `outer.ensureEndsWithFinishFra`, and in `Decisions.resumePendingReplacement`
      `.finishPostCast` when `!grantPriority && !hadOuter` after a deferred
      scry)—finish with `Decisions.finishFraChoice` rather than
      `resumeAfterBecomeCast` alone, and in
@@ -3408,22 +3413,33 @@ spell-copy / combat-Treasure / reflexive `WaitingTrigger` routing, pre-move
      `Mulligans` → … → `Pumps` so `SacrificeDiscard` cannot import `Decisions`
      without cycling) read `prop.resolutionCast` before `.proposedSpell none` to
      pass `grantPriority := !isResCast` into `Casting.becomeCast` while its sole
-     caller `Actions.apply` `.sacrifice` in
-     [`Actions.lean`](Mtg/Engine/Game/Actions.lean) checks beforehand whether
+     caller `Actions.applyAction` `.sacrifice` in
+     [`Actions.lean`](Mtg/Engine/Game/Actions.lean) snapshots beforehand whether
      `g.pending` is `.sacrificePermanent ..` and
      `g.proposedSpell.any (·.resolutionCast)` is `true`, calling
-     `g.finishFraChoice` only for that `.sacrificePermanent` resolution-cast case
-     and keeping `if g.mayThenResume then g.acceptMayThen else
-     g.resumeAfterBecomeCast` for priority-window `.sacrificePermanent` and all
-     other `.sacrifice` arms (so `Casting.finishPostCast` does not grant the
-     caster priority inside a resolving ability, while `finishFraChoice` resumes
-     `pendingReplacement`, `advanceCastExiledQueue`, `resumeTriggerSequence`, and
+     `g.finishFraChoice` for that `.sacrificePermanent` resolution-cast case
+     unless `g.pending` is `.chooseReplacement ..` and
+     `g.pendingReplacement.any (·.endsWithFinishFra)` is already `true` (so an
+     `outer.ensureEndsWithFinishFra` pause does not chain a duplicate
+     `.finishFraChoice`, while a no-outer `.chooseReplacement` pause still chains
+     one after `.finishBecomeCast`), and keeping `if g.mayThenResume then
+     g.acceptMayThen else g.resumeAfterBecomeCast` for priority-window
+     `.sacrificePermanent` and all other `.sacrifice` arms (so
+     `Casting.finishPostCast` does not grant the caster priority inside a
+     resolving ability, while `finishFraChoice` resumes `pendingReplacement`,
+     `advanceCastExiledQueue`, `resumeTriggerSequence`, and
      `promptTriggerTargetsIfNeeded` before `Entering.receivePriority g.activePlayer`
      runs `completeActiveResolutions`, checks SBAs, and grants priority); drop
      the pre-proposal `manaPool.canPay` gate on paid
      `Decisions.castAsPartOfResolution` (`withoutManaCost := false`), and route
-     `Decisions.castExiledAsAbilityResolves` (`Decisions.lean`) unconditionally
-     through `(g.beginResolutionCastTargets p prop).finishFraChoice`—splitting
+     `Decisions.castExiledAsAbilityResolves` (`Decisions.lean`) through
+     `let g' := g.beginResolutionCastTargets p prop`, calling
+     `g'.finishFraChoice` only when that entry actually finished the cast without
+     reversing (`g'.pending == .none &&
+     (g'.findObject? newId).any (·.zone == .stack)`, matching `announceX` so a
+     post-`move` `copiableValues` check that reverses via
+     `reverseProposedSpell (resumeContinuation := true)` does not run
+     `finishFraChoice` twice while open prompts leave `g'.pending != .none`)—splitting
      its pre-move target throw into a modal arm
      (`if face.isModal && !face.spellModes.any (g.spellModeIsChoosable p) && !face.allowsZeroTargets`)
      and a non-modal arm
