@@ -96,15 +96,6 @@ def applyNextUnusedMode (g : Game) (sourceId : Option ObjectId)
       | none => g.logMsg exhausted
       | some mode => apply g sid mode
 
-/-- As Gollum enters, choose odd (`true`) or even (`false`). Zero is even. -/
-def chooseGollumParity (g : Game) (sourceId : ObjectId) (odd : Bool) : Game :=
-  match g.findObject? sourceId with
-  | none => g
-  | some src =>
-    let g := g.changeStatus sourceId (.chosenOdd (some odd))
-    g.logMsg
-      (if odd then s!"{src.name}: odd is chosen" else s!"{src.name}: even is chosen")
-
 /-- Behold a quality: choose a matching permanent you control or reveal a
 matching card from your hand. Later zone changes do not un-behold (117). -/
 def beholdQuality (g : Game) (p : PlayerId) (quality : CardSubtype)
@@ -125,16 +116,6 @@ def beholdQuality (g : Game) (p : PlayerId) (quality : CardSubtype)
 /-- True when `p` has beheld `quality`, even if the card or permanent later left. -/
 def qualityWasBeheld (g : Game) (p : PlayerId) (quality : CardSubtype) : Bool :=
   (g.beheldQualities p).contains quality
-
-/-- Choose a creature type as this permanent enters. The static pump applies
-immediately; no player may act between the choice and the bonus. -/
-def chooseCreatureTypeAsEnters (g : Game) (sourceId : ObjectId) (creatureType : CardSubtype) :
-    Game :=
-  match g.findObject? sourceId with
-  | none => g
-  | some src =>
-    let g := g.changeStatus sourceId (.chosenCreatureType (some creatureType))
-    g.logMsg s!"{src.name}: {creatureType} is chosen as it enters"
 
 /-- Draw one card for each graveyard with seven or more cards. -/
 def drawPerSevenCardGraveyard (g : Game) (p : PlayerId) : Game :=
@@ -336,19 +317,21 @@ def legendaryWardSacrificeChoices (g : Game) (p : PlayerId) : Array GameObject :
   (g.permanentsOf p).filter (fun o =>
     g.isLegendary o && (g.isCreature o || g.isArtifact o))
 
-/-- Split the top four library cards into a face-up pile and a face-down pile.
-A 4/0 split is legal. The face-down pile is not revealed if it is put into
-hand. -/
-def riddlesInTheDark (g : Game) (p : PlayerId) (faceUpCount : Nat)
-    (chooseFaceDown : Bool) : Game :=
-  let lib := (g.player p).library
-  let n := min 4 lib.size
-  let taken := lib.extract (lib.size - n) lib.size
-  let faceUpN := min faceUpCount taken.size
-  let faceUp := taken.extract (taken.size - faceUpN) taken.size
-  let faceDown := taken.extract 0 (taken.size - faceUpN)
+/-- Put one Riddles pile into `p`'s hand and the other into the graveyard.
+The face-down pile is not revealed when it is the one that goes to hand. -/
+def applyRiddlesPiles (g : Game) (p : PlayerId) (faceUp faceDown : Array ObjectId)
+    (chooseFaceDown : Bool) (alreadyRevealed : Bool := false) : Game :=
   let g := g.logMsg
     s!"{(g.player p).name} separates {faceUp.size} face-up and {faceDown.size} face-down"
+  let g :=
+    if !alreadyRevealed && !faceUp.isEmpty then
+      let g := g.record (GameEvent.revealed g.turnNumber p faceUp
+        (cause := some (g.resolvingOrRuleCause p)))
+      faceUp.foldl (fun acc id =>
+        match acc.findObject? id with
+        | some o => acc.logMsg s!"{(acc.player p).name} reveals {o.name}"
+        | none => acc) g
+    else g
   let toHand := if chooseFaceDown then faceDown else faceUp
   let toGy := if chooseFaceDown then faceUp else faceDown
   let g :=
@@ -363,34 +346,18 @@ def riddlesInTheDark (g : Game) (p : PlayerId) (faceUpCount : Nat)
     toGy.foldl (fun acc id =>
       (acc.move id (.graveyard p) none).1) g
 
-/-- Put one Riddles pile into `p`'s hand and the other into the graveyard.
-The face-down pile is not revealed when it is the one that goes to hand. -/
-def applyRiddlesPiles (g : Game) (p : PlayerId) (faceUp faceDown : Array ObjectId)
-    (chooseFaceDown : Bool) (alreadyRevealed : Bool := false) : Game :=
-  let g := g.logMsg
-    s!"{(g.player p).name} separates {faceUp.size} face-up and {faceDown.size} face-down"
-  let toHand := if chooseFaceDown then faceDown else faceUp
-  let toGy := if chooseFaceDown then faceUp else faceDown
-  let g :=
-    if chooseFaceDown then
-      g.logMsg "The face-down pile is put into hand without being revealed"
-    else
-      let g :=
-        if !alreadyRevealed && !faceUp.isEmpty then
-          g.record (GameEvent.revealed g.turnNumber p faceUp
-            (cause := some (g.resolvingOrRuleCause p)))
-        else g
-      let g := g.logMsg "The face-up pile is put into hand"
-      faceUp.foldl (fun acc id =>
-        match acc.findObject? id with
-        | some o => acc.logMsg s!"{(acc.player p).name} reveals {o.name}"
-        | none => acc) g
-  let g := g.withBatch none fun g =>
-    toHand.foldl (fun acc id =>
-      (acc.move id (.hand p) none).1) g
-  g.withBatch none fun g =>
-    toGy.foldl (fun acc id =>
-      (acc.move id (.graveyard p) none).1) g
+/-- Split the top four library cards into a face-up pile and a face-down pile.
+A 4/0 split is legal. The face-down pile is not revealed if it is put into
+hand. -/
+def riddlesInTheDark (g : Game) (p : PlayerId) (faceUpCount : Nat)
+    (chooseFaceDown : Bool) : Game :=
+  let lib := (g.player p).library
+  let n := min 4 lib.size
+  let taken := lib.extract (lib.size - n) lib.size
+  let faceUpN := min faceUpCount taken.size
+  let faceUp := taken.extract (taken.size - faceUpN) taken.size
+  let faceDown := taken.extract 0 (taken.size - faceUpN)
+  g.applyRiddlesPiles p faceUp faceDown chooseFaceDown
 
 /-- Linked activated abilities last only while the copier still has them. -/
 def linkedAbilitiesStillLinked (stillHasThoseAbilities : Bool) : Bool :=
@@ -448,6 +415,52 @@ def exileFailedAdventureFromBilbo (g : Game) (id : ObjectId) : Game :=
 def copyBattlefieldPermanent (g : Game) (src : GameObject) (controller : PlayerId)
     (cause : Option EventCause := none) : Game × GameObject :=
   g.createToken controller (g.copiableValues src) (cause := cause)
+
+/-- Create `remaining` token copies of `template` under `controller` with haste
+and end-step sacrifice (Venser), pausing on `Pending.chooseReplacement`
+(`PendingReplacement.copyPermanentTokens`) if token creation or ETB choices
+require interactive CR 616.1 selection. -/
+partial def createPermanentCopyTokens (g : Game) (controller : PlayerId) (template : CardDef)
+    (remaining : Nat) (cause : Option EventCause := none) : Game :=
+  let applyRecent (g : Game) : Game :=
+    let ids := g.recentTokenIds
+    let g := if g.continuations.isEmpty then g else g.change (.recentTokenIds #[])
+    ids.foldl (fun g tid =>
+      match g.findObject? tid with
+      | none => g
+      | some tok =>
+        if !tok.isOnBattlefield then g
+        else
+          let g := g.afterPermanentEnters tok
+          match g.findObject? tid with
+          | none => g
+          | some tok =>
+            if !tok.isOnBattlefield then g
+            else
+              let g := g.createEffect (.keywordsUntilEot tok.id Keyword.haste) (cause := cause)
+              g.registerDelayedTrigger {
+                controller
+                source := some tok
+                kind := .endStepSacrifice tok.id
+                cause := cause.getD (.oneShotEffect none none (some controller))
+              }) g
+  let g := applyRecent g
+  if remaining == 0 then
+    g.logMsg "The token copies gain haste and are sacrificed at the next end step"
+  else
+    let pushedFrame := g.continuations.isEmpty
+    let g := if pushedFrame then g.change (.pushContinuationFrame {}) else g
+    let (g, _) := g.createToken controller template (recordRecent := true) (cause := cause)
+    if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement
+        (.copyPermanentTokens controller template (remaining - 1) cause)
+    else
+      let g := applyRecent g
+      let g :=
+        if pushedFrame && g.pending == .none && g.pendingReplacement.isNone && remaining == 1 then
+          g.change .popContinuationFrame
+        else g
+      g.createPermanentCopyTokens controller template (remaining - 1) cause
 
 /-- Whether the source of a proposed activated ability can still pay tap/sacrifice/discard/loyalty. -/
 def sourceStillPayable (g : Game) (prop : ProposedSpell) : Bool :=

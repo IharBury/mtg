@@ -107,7 +107,6 @@ def clearTurnActivations (g : Game) : Game :=
     let mut g := g
     g := g.expireAll .powerUpsForbiddenThisTurn (cause := cause)
     g := g.expireMatching (fun | .playerRule _ .pendingFreeRGCreature .untilEndOfTurn => true | _ => false) (cause := cause)
-    g := g.expireMatching (fun | .playerRule _ (.pendingLokiCopy ..) _ => true | _ => false) (cause := cause)
     -- Stingcaster Mage: flashback granted until end of turn ends.
     g := g.expireMatching (fun
       | .permission _ (.flashback _) .untilEndOfTurn
@@ -121,7 +120,6 @@ def clearTurnActivations (g : Game) : Game :=
       else do
         g := g.expireMatching (fun
           | .playerRule p .jaceLoyaltyAtInstantSpeed .untilEndOfTurn
-          | .playerRule p (.copyNextInstantSorcery _) .untilEndOfTurn
           | .playerRule p (.mountainExtraRed _) .untilEndOfTurn
           | .playerRule p .cantAttackJaces .untilEndOfTurn
           | .playerRule p .cantCastSpells .untilEndOfTurn
@@ -132,7 +130,9 @@ def clearTurnActivations (g : Game) : Game :=
           | _ => false) (cause := cause)
     let expiredDt := g.delayedTriggers.filter (fun dt =>
       match dt.kind with
-      | .attackPumpPerPlains => !(g.player dt.controller).lost
+      | .attackPumpPerPlains
+      | .copyNextInstantSorceryThisTurn => !(g.player dt.controller).lost
+      | .lokiCopyNextInstantSorceryThisTurn _ _ => true
       | _ => false)
     for dt in expiredDt do
       g := g.record (GameEvent.delayedTriggerExpired g.turnNumber dt (.turnBased .cleanupClear))
@@ -193,7 +193,9 @@ def expireUntilNextTurnEffects (g : Game) (p : PlayerId) : Game :=
   let g := g.expirePlayPermissions p (cause := cause)
   let g := g.expireAll (.cantCastSpellsThisTurn p) (cause := cause)
   let expiredDt := g.delayedTriggers.filter (fun dt =>
-    dt.kind == .attackPumpPerPlains && dt.controller == p)
+    (match dt.kind with
+     | .attackPumpPerPlains | .copyNextInstantSorceryThisTurn => true
+     | _ => false) && dt.controller == p)
   expiredDt.foldl (fun g dt =>
     g.record (GameEvent.delayedTriggerExpired g.turnNumber dt (.turnBased .expireAtStepBegin))) g
 
@@ -266,6 +268,53 @@ private def isPhaseStartStep : Step → Bool
   | .untap | .precombatMain | .beginningOfCombat | .postcombatMain | .end => true
   | _ => false
 
+/-- Untap each remaining permanent in `ids` during the active player's untap step
+(CR 502.3), pausing on `Pending.chooseReplacement` (`PendingReplacement.untapStepPermanents`)
+when competing `.stunCounterUntap` replacement effects tie (CR 122.1d / 616.1). -/
+def untapStepPermanents (g : Game) (ids : Array ObjectId) : Game :=
+  let ap := g.activePlayer
+  let apName := (g.player ap).name
+  let baseCause := EventCause.turnBased .untapAll
+  Id.run do
+    let mut g := g
+    let mut idx := 0
+    while idx < ids.size do
+      let oid := ids[idx]!
+      idx := idx + 1
+      match g.findObject? oid with
+      | none => pure ()
+      | some o =>
+        -- CR 502.3: the active player untaps their permanents. Logging each
+        -- previously tapped permanent makes the battlefield status change
+        -- visible in the demo before the zone reprint.
+        let skipUntap :=
+          !o.isOnBattlefield || !g.controlledBy o ap ||
+          ((g.staticAbilities o).any StaticAbility.doesntUntapUnlessEnduringStory? &&
+            !g.hasEnduringStory ap) ||
+          (g.staticAbilities o).any (· == .fra .doesntUntap) ||
+          g.hostCantBecomeUntapped o ||
+          g.hostSkipsUntapStep o
+        if o.status.tapped && !skipUntap then
+          let untap := GameEvent.untapped g.turnNumber (g.snapshot o) false (cause := baseCause)
+          -- CR 122.1d: a stun counter is removed instead of untapping via the CR 616.1 loop.
+          let (stunned, applied, cause', choice?) := g.replaceUntap o (cause := some baseCause)
+          match choice? with
+          | some (chooser, choices) =>
+            let rest := ids.extract (idx - 1) ids.size
+            g := g.promptChooseReplacement chooser choices (.untapStepPermanents rest)
+            idx := ids.size
+          | none =>
+            g := g.consumeReplacementOrder applied
+            if stunned then
+              g := g.logMsg s!"A stun counter is removed from {g.name o} instead of untapping it"
+              g := g.record (GameEvent.counters g.turnNumber (some ap) (g.snapshot o) .stun 1 true
+                (cause := cause'.getD baseCause))
+            else
+              g := g.logMsg s!"{apName} untaps {g.name o}"
+              if untap.watches .wouldUntap then
+                g := g.record untap
+    return g
+
 /-- `partial` because a silent cleanup (CR 514.3) immediately begins the next
 turn, and a skipped draw step (CR 103.8a / 500.11) immediately begins
 precombat main; both re-enter `beginStep`. -/
@@ -290,7 +339,6 @@ partial def beginStep (g : Game) (st : Step) : Game :=
     Id.run do
       let mut g := g
       let ap := g.activePlayer
-      let apName := (g.player ap).name
       g := g.expireGoadedFor ap
       g := g.expireFraUntilTurnEffects ap
       g := g.restoreCopiesUntilNextTurn ap
@@ -298,33 +346,11 @@ partial def beginStep (g : Game) (st : Step) : Game :=
       g := g.phaseInControlled ap
       g := g.expireMatching (fun | .playerRule p (.additionalLands _) _ => p == ap | _ => false)
         (cause := some (.turnBased .expireAtStepBegin))
+      let ids := (g.permanentsOf ap).map (·.id)
       g := g.withBatch (some (.turnBased .untapAll)) fun g =>
-        Id.run do
-          let mut g := g
-          for o in g.permanentsOf ap do
-            -- CR 502.3: the active player untaps their permanents. Logging each
-            -- previously tapped permanent makes the battlefield status change
-            -- visible in the demo before the zone reprint.
-            let skipUntap :=
-              ((g.staticAbilities o).any StaticAbility.doesntUntapUnlessEnduringStory? &&
-                !g.hasEnduringStory ap) ||
-              (g.staticAbilities o).any (· == .fra .doesntUntap) ||
-              g.hostCantBecomeUntapped o ||
-              g.hostSkipsUntapStep o
-            let baseCause := EventCause.turnBased .untapAll
-            let untap := GameEvent.untapped g.turnNumber (g.snapshot o) false (cause := baseCause)
-            -- CR 122.1d: a stun counter is removed instead of untapping via the CR 616.1 loop.
-            if o.status.tapped && !skipUntap then
-              let (stunned, cause') := g.replaceUntap o (cause := some baseCause)
-              if stunned then
-                g := g.logMsg s!"A stun counter is removed from {g.name o} instead of untapping it"
-                g := g.record (GameEvent.counters g.turnNumber (some ap) (g.snapshot o) .stun 1 true
-                  (cause := cause'.getD baseCause))
-              else
-                g := g.logMsg s!"{apName} untaps {g.name o}"
-                if untap.watches .wouldUntap then
-                  g := g.record untap
-          return g
+        g.untapStepPermanents ids
+      if let .chooseReplacement .. := g.pending then
+        return g
       -- No priority (CR 502.4). Immediately continue.
       g := g.record (GameEvent.stepEnded g.turnNumber .untap
         (cause := some (.gameRule .stepAdvance)))
@@ -393,11 +419,18 @@ partial def beginStep (g : Game) (st : Step) : Game :=
         (cause := some (.gameRule .stepAdvance)))
       let g := g.record (GameEvent.phaseEnded g.turnNumber .ending
         (cause := some (.gameRule .stepAdvance)))
-      (g.startNextTurn).beginStep .untap |>.beginStep .upkeep
+      let g := (g.startNextTurn).beginStep .untap
+      if let .chooseReplacement .. := g.pending then
+        g.chainPendingReplacement .beginStepAfterUntap
+      else
+        g.beginStep .upkeep
   | .precombatMain =>
     let ap := g.activePlayer
     let g := g.addLoreAfterDrawStep
-    g.receivePriority ap
+    if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement (.receivePriority ap)
+    else
+      g.receivePriority ap
   | _ =>
     g.receivePriority g.activePlayer
 
@@ -417,7 +450,11 @@ def beginTurn (g : Game) : Game :=
          else s!"{(g.player p).name}'s life total can change again")
     else g
   -- No player receives priority during untap (CR 502.4).
-  (g.beginStep .untap).beginStep .upkeep
+  let g := g.beginStep .untap
+  if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement .beginStepAfterUntap
+  else
+    g.beginStep .upkeep
 
 /-- Advance after both players pass with an empty stack (CR 500.2). -/
 def advanceStep (g : Game) : Game :=

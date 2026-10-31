@@ -154,7 +154,7 @@ def agentArchdruidMana : Game :=
   | _ => false
 
 /- Mirkwood Elk: trample and enters-or-attacks return an Elf from the graveyard
-(CR 603.6a / 508.2 / 119.3). -/
+(CR 603.6a / 508.3a / 119.3). -/
 
 #guard mirkwoodElk.triggeredAbilities == #[.onEnterOrAttackReturnElfGainLife]
 #guard mirkwoodElk.keywords.trample
@@ -698,8 +698,8 @@ def weavemasterBearsEntered : Game :=
 /-- An opponent's Elf does not trigger the pump. -/
 def weavemasterOppElf : Game :=
   let (g, elf) := weavemasterReady.allocObject llanowarElves ⟨1⟩ (.outside ⟨1⟩) none
-  let (g, newId) := g.putOntoBattlefield elf.id ⟨1⟩ (summoningSick := false)
-  (g.putAnotherElfYouControlEntersTriggers (g.object! newId)).receivePriority ⟨0⟩
+  let (g, _) := g.putOntoBattlefield elf.id ⟨1⟩ (summoningSick := false)
+  g.receivePriority ⟨0⟩
 
 #guard weavemasterOppElf.stack.isEmpty
 
@@ -792,7 +792,7 @@ def weavemasterPaysElf : Game :=
 #guard (weavemasterPaysElf.player ⟨0⟩).manaPool.isEmpty
 #guard weavemasterPaysElf.stack.size == 1
 
-/-- Restricted mana cannot pay for a non-Elf spell (CR 106.10). -/
+/-- Restricted mana cannot pay for a non-Elf spell (CR 106.6). -/
 def weavemasterPaysGrowth : Game :=
   let g := addToHand tappedWeavemasterGreen giantGrowth ⟨0⟩
   let g := proposeTargeted g ⟨0⟩ (handCardNamed g ⟨0⟩ "Giant Growth").id

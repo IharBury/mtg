@@ -1,5 +1,5 @@
 import Mtg.Engine.Card.Counter
-import Mtg.Engine.Game.Damage
+import Mtg.Engine.Game.SacrificeDiscard
 
 /-!
 # Pumps, grants, and counters (CR 613.4c / 122)
@@ -106,16 +106,18 @@ def hostSkipsUntapStep (g : Game) (o : GameObject) : Bool :=
         | .enchantedLosesAbilitiesDoesntUntap => true
         | _ => false))
 
-/-- Run the CR 616.1 replacement loop for untapping `o` (CR 122.1d: "If a
+/-- Run one CR 616.1 replacement step for untapping `o` (CR 122.1d: "If a
 permanent with a stun counter on it would become untapped, instead remove a
-stun counter from it"). Returns `(stunReplaced, cause')`. -/
+stun counter from it"). When multiple `.stunCounterUntap` effects apply, returns
+`choice? = some (chooser, choices)` so the controller/affected player chooses. -/
 def replaceUntap (g : Game) (o : GameObject)
-    (cause : Option EventCause := none) : Bool × Option EventCause :=
+    (cause : Option EventCause := none) :
+    Bool × Array ReplacementId × Option EventCause × Option (PlayerId × Array ReplacementId) :=
   let untap := GameEvent.untapped g.turnNumber (g.snapshot o) false
     (cause := g.resolveOptionalCause cause (fallbackCtrl := g.controllerOf o)
       (defaultCause := .turnBased .untapAll))
   if !o.status.tapped || !untap.watches .wouldUntap then
-    (false, cause)
+    (false, #[], cause, none)
   else
     let ctrl := g.controllerOf o
     let affected := ctrl.getD o.owner
@@ -140,31 +142,56 @@ def replaceUntap (g : Game) (o : GameObject)
         | _ => pure ()
       return s
     let candidates := specs.map (fun s => (ReplacementOrPrevention.replacement s).toCandidate)
-    match g.selectNextReplacement candidates #[] with
-    | some chosen =>
-      (true, g.wrapReplacedCause chosen.id cause ctrl (defaultCause := .turnBased .untapAll))
-    | none =>
-      (false, cause)
+    match g.selectNextReplacementStep candidates #[] g.replacementOrder with
+    | .none =>
+      (false, #[], cause, none)
+    | .needChoice chooser choices _ =>
+      (false, #[], cause, some (chooser, choices))
+    | .chosen chosen _ =>
+      (true, #[chosen.id],
+        g.wrapReplacedCause chosen.id cause ctrl (defaultCause := .turnBased .untapAll),
+        none)
 
-/-- Timestamp-ordered maximum hand size (MSH 184 / 376). `none` is "no maximum". -/
+/-- Untap `o` on the battlefield, running `replaceUntap` and pausing on
+`Pending.chooseReplacement` (`PendingReplacement.untapPermanent`) if multiple
+CR 616.1 untap replacements compete (CR 122.1d / 616.1). -/
+def untapPermanent (g : Game) (o : GameObject)
+    (duringUntapStep : Bool := false) (logUntap : Bool := true)
+    (cause : Option EventCause := none) : Game :=
+  if !o.isOnBattlefield || !o.status.tapped || g.hostCantBecomeUntapped o then g
+  else
+    let defaultCause : EventCause :=
+      if duringUntapStep then .turnBased .untapAll
+      else g.resolveOptionalCause cause (fallbackCtrl := g.controllerOf o)
+        (defaultCause := .turnBased .untapAll)
+    let (stunned, applied, cause', choice?) := g.replaceUntap o (cause := some defaultCause)
+    match choice? with
+    | some (chooser, choices) =>
+      g.promptChooseReplacement chooser choices (.untapPermanent o.id (some defaultCause))
+    | none =>
+      let g := g.consumeReplacementOrder applied
+      if stunned then
+        let g := g.record (GameEvent.counters g.turnNumber (g.controllerOf o) (g.snapshot o) .stun 1 true
+          (cause := cause'.getD defaultCause))
+        g.logMsg s!"A stun counter is removed from {g.name o} instead of untapping it (CR 122.1d)"
+      else
+        let g := g.record (GameEvent.untapped g.turnNumber (g.snapshot o) duringUntapStep
+          (cause := defaultCause))
+        if logUntap then g.logMsg s!"{g.name o} untaps" else g
+
+/-- Timestamp-ordered maximum hand size (CR 613.7a; MSH 184 / 376). `none` is "no maximum". -/
 def effectiveMaxHandSize (g : Game) (p : PlayerId) : Option Nat :=
-  let hasNoMax (o : GameObject) : Bool :=
-    (g.staticAbilities o).any (fun
-      | .noMaximumHandSize => true
-      | _ => false)
-  let hasMaxTen (o : GameObject) : Bool :=
-    (g.staticAbilities o).any (fun
-      | .maximumHandSize 10 => true
-      | .maximumHandSize _ => false
-      | _ => false)
-  let effects :=
-    ((g.permanentsOf p).filter (fun o =>
-      hasNoMax o || hasMaxTen o)).qsort
-      (fun a b => decide (a.timestamp < b.timestamp))
-  effects.foldl (fun acc o =>
-    if hasMaxTen o then some 10
-    else if hasNoMax o then none
-    else acc) (g.player p).maxHandSize
+  let entries : Array ((Nat × Nat) × Option Nat) :=
+    (g.permanentsOf p).foldl (fun acc o =>
+      (g.evalLayer6 o).staticsWithTs.foldl (fun acc (ab, ts) =>
+        match ab with
+        | .noMaximumHandSize => acc.push (ts, none)
+        | .maximumHandSize n => acc.push (ts, some n)
+        | _ => acc) acc) #[]
+  let sorted :=
+    entries.qsort (fun a b =>
+      decide (a.1.1 < b.1.1 || (a.1.1 == b.1.1 && a.1.2 < b.1.2)))
+  sorted.foldl (fun _ (_, maxHs) => maxHs) (g.player p).maxHandSize
 
 /-- Reduce generic mana in `cost` by `n` (improvise taps artifacts for {1}). -/
 def improviseReduce (cost : ManaCost) (n : Nat) : ManaCost :=

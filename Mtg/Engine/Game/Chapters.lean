@@ -1,7 +1,7 @@
 import Mtg.Engine.Game.CastExtras
 
 /-!
-# Saga chapter resolution (CR 714.3)
+# Saga chapter resolution (CR 714.2)
 
 `applyChapterEffect` for chapter abilities and the intervening-if
 recheck used when their triggers resolve (CR 603.4).
@@ -122,7 +122,7 @@ def gainControlWhileSource (g : Game) (controller : PlayerId)
       | _ => g) g)
     "The Super Hero Civil War has left the battlefield. You won't gain control."
 
-/-- Resolve a printed Saga chapter (CR 714.3 / 608). -/
+/-- Resolve a printed Saga chapter (CR 714.2 / 608). -/
 def applyChapterEffect (g : Game) (controller : PlayerId) (e : Effect)
     (sourceId : Option ObjectId) (targets : Array Target) : Game :=
   match e.asChapter? with

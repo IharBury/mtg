@@ -55,7 +55,7 @@ def combinedModesEffect (modes : Array Effect) : Option Effect :=
       allowsZeroTargets := modes.all (fun m => !m.requiresTarget || m.allowsZeroTargets)
       maxTargets := modes.foldl (fun acc m => acc + m.maxTargetCount) 0 }
 
-/-- The targets a kicked spell announces instead (CR 702.32 / 601.2c): The
+/-- The targets a kicked spell announces instead (CR 702.33g / 601.2c): The
 Eagles Are Coming! chooses any number of creatures you own, and Galadriel's
 Dismissal targets a player. -/
 def kickedSpellEffect (e : Effect) : Effect :=
@@ -122,11 +122,11 @@ def legalSpellTargets (g : Game) (p : PlayerId) (o : GameObject) : Array Target 
   g.legalTargetsForFace p (g.baseCard o) (g.chosenModeOf o) (g.evalLayer3 o)
 
 /-- True when this mode can be announced: it needs no target, or a legal one
-exists (CR 700.2d). -/
+exists (CR 700.2a). -/
 def spellModeIsChoosable (g : Game) (p : PlayerId) (e : Effect) : Bool :=
   !e.requiresTarget || !(g.legalEffectTargets p e).isEmpty
 
-/-- Legal mode indices for a modal spell (CR 700.2d). Untargeted modes stay
+/-- Legal mode indices for a modal spell (CR 700.2a). Untargeted modes stay
 choosable even when another mode has no legal target. -/
 def legalModes (g : Game) (p : PlayerId) (o : GameObject) : Array Nat :=
   let bc := g.baseCard o

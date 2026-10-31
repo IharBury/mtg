@@ -82,6 +82,16 @@ structure Seat where
   /-- Cards outside the game the player may use, such as a sideboard
   (CR 400.11b). -/
   sideboard : Array CardDef := #[]
+  /-- Commander cards starting in the command zone (CR 903.3 / 903.6). -/
+  commanders : Array CardDef := #[]
+  /-- Whether this seat has a commander in this game (CR 903.3). -/
+  hasCommander : Bool := false
+  /-- Combined color identity of this seat's commander(s) (CR 903.4). -/
+  commanderColorIdentity : ColorSet := {}
+  /-- Creature types of this seat's commander(s), for Path of Ancestry. -/
+  commanderCreatureTypes : Array CardSubtype := #[]
+  /-- Two-Headed Giant teammate (CR 810 / MSH 57 / 236). -/
+  teammate : Option PlayerId := none
 deriving Repr, Inhabited
 
 structure StartConfig where

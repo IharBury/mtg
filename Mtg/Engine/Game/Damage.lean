@@ -1,4 +1,4 @@
-import Mtg.Engine.Game.SacrificeDiscard
+import Mtg.Engine.Game.ActivationCosts
 
 /-!
 # Damage, destruction, and life (CR 120 / 119)
@@ -37,25 +37,93 @@ def resolvingDamageSource? (g : Game) : Option GameObject :=
   | some s => some s
   | none => none
 
-/-- The resolving damage source object, following a source that moved zones
-before its ability resolved (CR 113.7a). -/
+/-- Reconstruct an LKI `GameObject` from an `EventObject` snapshot so damage
+replacement, protection, and lifelink queries on a departed source use its
+last known characteristics and controller (CR 113.7a / 608.2h). -/
+def damageSourceObjectFromLki (eo : EventObject) : GameObject :=
+  let basePrinted := eo.toCardDef
+  let printed : CardDef :=
+    { basePrinted with
+      name := eo.name
+      manaCost :=
+        if basePrinted.manaValue == eo.manaValue then basePrinted.manaCost
+        else ManaCost.ofGeneric eo.manaValue
+      colorIndicator := some eo.colors
+      types := eo.types
+      subtypes := eo.subtypes.map CardSubtype.englishName
+      supertypes := eo.supertypes
+      power := eo.power
+      toughness := eo.toughness
+      keywords := { eo.keywords with changeling := eo.keywords.changeling || eo.changeling }
+      toxic := eo.toxic
+      staticAbilities := eo.staticAbilities
+      isToken := eo.token }
+  { id := eo.id.getD ⟨0⟩
+    printed := printed
+    owner := eo.owner
+    controller := eo.controller
+    defaultController := eo.controller
+    zone := eo.zone
+    status := {
+      tapped := eo.tapped
+      attacking := eo.attacking
+      attackingTarget := eo.attackingTarget
+      phasedOut := eo.phasedOut
+      faceDown := eo.faceDown
+      transformed := eo.transformed
+      chosenOdd := eo.chosenOdd
+      chosenCreatureType := eo.chosenCreatureType
+      chosenColor := eo.chosenColor
+      chosenName := eo.chosenColor.elim eo.chosenName (fun _ => eo.chosenName)
+      chosenCardType := eo.chosenCardType
+      chosenAnchor := eo.chosenAnchor
+    }
+    attachedTo := eo.attachedTo
+    isCopy := eo.isCopy
+    isCommander := eo.isCommander }
+
+/-- Look up a damage source by `id`: live `GameObject` if still at `id`,
+otherwise its `lastKnownBefore?` LKI snapshot (CR 113.7a / 608.2h). -/
+def damageSourceById? (g : Game) (sid : ObjectId) : Option GameObject :=
+  (g.findObject? sid).orElse (fun _ => (g.lastKnownBefore? sid).map damageSourceObjectFromLki)
+
+/-- Snapshot a damage source by `id`: live `g.snapshot` if still at `id`,
+otherwise `g.lastKnownBefore? sid` (CR 113.7a / 608.2h). -/
+def damageSourceEventById? (g : Game) (sid : ObjectId) : Option EventObject :=
+  match g.findObject? sid with
+  | some s => some (g.snapshot s)
+  | none => g.lastKnownBefore? sid
+
+/-- Snapshot a `GameObject` damage source: live `g.snapshot` if still at `src.id`,
+otherwise its frozen `lastKnownBefore?` LKI snapshot (CR 113.7a / 608.2h). -/
+def snapshotDamageSource (g : Game) (src : GameObject) : EventObject :=
+  if (g.findObject? src.id).isSome then g.snapshot src
+  else (g.lastKnownBefore? src.id).getD (g.snapshot src)
+
+/-- Source `ObjectId` of the currently resolving ability/continuation when the
+source is no longer at its original `ObjectId`. -/
+private def resolvingDepartedSourceId? (g : Game) : Option ObjectId :=
+  (g.resolvingAbility.bind g.findObject?).bind (·.sourceId)
+    |>.orElse (fun _ => g.triggerSequenceRest.bind (·.sourceId))
+    |>.orElse (fun _ => g.mayContext.bind (·.sourceId))
+    |>.orElse (fun _ => g.triggerOr.bind (·.sourceId))
+    |>.orElse (fun _ => g.chooseModesRest.bind (·.sourceId))
+    |>.orElse (fun _ => g.fraAfterLook.bind (fun (_, s, _) => s))
+
+/-- The resolving damage source object, using `lastKnownBefore?` LKI if the
+source left its zone before its ability resolved (CR 113.7a / 608.2h). -/
 def resolvingMovedDamageSource? (g : Game) : Option GameObject :=
   match g.resolvingDamageSource? with
   | some s => some s
-  | none =>
-    let sid? :=
-      (g.resolvingAbility.bind g.findObject?).bind (·.sourceId)
-        |>.orElse (fun _ => g.triggerSequenceRest.bind (·.sourceId))
-        |>.orElse (fun _ => g.mayContext.bind (·.sourceId))
-        |>.orElse (fun _ => g.triggerOr.bind (·.sourceId))
-        |>.orElse (fun _ => g.chooseModesRest.bind (·.sourceId))
-        |>.orElse (fun _ => g.fraAfterLook.bind (fun (_, s, _) => s))
-    sid?.bind (fun sid => g.findObject? (g.followMoved sid))
+  | none => g.resolvingDepartedSourceId?.bind g.damageSourceById?
 
-/-- Snapshot the resolving damage source as an `EventObject`, following a
-source that moved zones before its ability resolved (CR 113.7a). -/
+/-- Snapshot the resolving damage source as an `EventObject`, using
+`lastKnownBefore?` LKI if the source left its zone before its ability resolved
+(CR 113.7a / 608.2h). -/
 def resolvingDamageSourceEvent? (g : Game) : Option EventObject :=
-  g.resolvingMovedDamageSource?.map g.snapshot
+  match g.resolvingDamageSource? with
+  | some s => some (g.snapshot s)
+  | none => g.resolvingDepartedSourceId?.bind g.damageSourceEventById?
 
 /-- Destroy a permanent (CR 701.8). Indestructible permanents aren't destroyed
 (CR 702.12b). A shield counter replaces destruction with removing a
@@ -584,14 +652,19 @@ def dealDamageFrom (g : Game) (sourceName : String) (o : GameObject) (n : Int)
                 (ctxSrc.orElse (fun _ => some src.id))
                 (ctrl.orElse (fun _ => g.controllerOf src)))
         g.withBatch defaultCause fun g =>
+        let srcEvent := g.snapshotDamageSource src
+        let isLive := (g.findObject? src.id).isSome
+        let hasDt := if isLive then g.hasDeathtouch src else srcEvent.keywords.deathtouch
+        let hasLl := if isLive then g.hasLifelink src else srcEvent.keywords.lifelink
+        let ctrl? := if isLive then g.controllerOf src else srcEvent.controller
         let g :=
           g.markDamageOn o n s!"{sourceName} deals {dealtAmt} damage to {g.name o}"
-            (deathtouch || g.hasDeathtouch src) (source := some (g.snapshot src))
+            (deathtouch || hasDt) (source := some srcEvent)
             (sourceObj := some src) (replaced := some rep) (cause := rep.cause)
         -- CR 702.15b: damage dealt by a source with lifelink.
-        match g.controllerOf src with
+        match ctrl? with
         | some c =>
-          if dealtAmt > 0 && !prevented && g.hasLifelink src then g.gainLife c dealtAmt.toNat (cause := cause) else g
+          if dealtAmt > 0 && !prevented && hasLl then g.gainLife c dealtAmt.toNat (cause := cause) else g
         | none => g
   | none =>
     g.markDamageOn o n s!"{sourceName} deals {n} damage to {g.name o}" deathtouch (cause := cause)
@@ -600,7 +673,7 @@ def dealDamageFrom (g : Game) (sourceName : String) (o : GameObject) (n : Int)
 def dealDamageToPlayer (g : Game) (pid : PlayerId) (n : Int)
     (preventable := true) (source : Option GameObject := none)
     (cause : Option EventCause := none) : Game :=
-  let source := source.orElse (fun _ => g.resolvingDamageSource?)
+  let source := source.orElse (fun _ => g.resolvingMovedDamageSource?)
   let pl := g.player pid
   let rep :=
     g.replaceDamage n (src? := source) (recipientPlayer? := some pid)
@@ -608,8 +681,9 @@ def dealDamageToPlayer (g : Game) (pid : PlayerId) (n : Int)
   match rep.choice? with
   | some (chooser, choices) =>
     let msg := s!"{pl.name} is dealt {n} damage"
+    let srcSnap := (source.map g.snapshotDamageSource).orElse (fun _ => g.resolvingDamageSourceEvent?)
     g.promptChooseReplacement chooser choices
-      (.dealDamageToPlayer pid n.toNat msg (source.map g.snapshot) false (!preventable) cause)
+      (.dealDamageToPlayer pid n.toNat msg srcSnap false (!preventable) cause)
   | none =>
   let g := g.consumeReplacementOrder rep.applied
   if rep.prevented && preventable && g.protectionFromEverything pid &&
@@ -628,10 +702,12 @@ def dealDamageToPlayer (g : Game) (pid : PlayerId) (n : Int)
             (ctrl.orElse (fun _ => source.bind g.controllerOf)))
     g.withBatch defaultCause fun g =>
     let srcEvent :=
-      ((source.map g.snapshot).orElse (fun _ => g.resolvingDamageSourceEvent?)).getD default
+      ((source.map g.snapshotDamageSource).orElse (fun _ => g.resolvingDamageSourceEvent?)).getD default
     let dmgCause :=
       g.resolveOptionalCause rep.cause (fallbackSrc := srcEvent.id)
-        (fallbackCtrl := source.bind g.controllerOf)
+        (fallbackCtrl := (source.bind (fun src =>
+          if (g.findObject? src.id).isSome then g.controllerOf src else srcEvent.controller)).orElse
+          (fun _ => srcEvent.controller))
     let happened := GameEvent.damagedPlayer g.turnNumber srcEvent pid n.toNat false (cause := dmgCause)
     let g := if n > 0 then g.record happened else g
     let g :=
@@ -642,12 +718,17 @@ def dealDamageToPlayer (g : Game) (pid : PlayerId) (n : Int)
           s!"{pl.name} is dealt {n} damage ({pl.life - n} life)"
       else
         g.logMsg s!"{pl.name} is dealt {n} damage ({pl.life - n} life)"
-    -- CR 702.15b: damage dealt by a source with lifelink.
-    match source with
-    | some src =>
-      match g.controllerOf src with
-      | some c => if n > 0 && g.hasLifelink src then g.gainLife c n.toNat (cause := cause) else g
-      | none => g
+    -- CR 702.15b: damage dealt by a source with lifelink (including departed LKI, CR 113.7a).
+    let lifelinkCtrl? : Option PlayerId :=
+      match source with
+      | some src =>
+        if (g.findObject? src.id).isSome then
+          if g.hasLifelink src then g.controllerOf src else none
+        else
+          if srcEvent.keywords.lifelink then srcEvent.controller else none
+      | none => if srcEvent.keywords.lifelink then srcEvent.controller else none
+    match lifelinkCtrl? with
+    | some c => if n > 0 then g.gainLife c n.toNat (cause := cause) else g
     | none => g
 
 /-- Deal `n` damage to each living player in `players`, stopping if a replacement

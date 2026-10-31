@@ -61,37 +61,39 @@ def spellNameForbidden (g : Game) (name : String) : Bool :=
 pool is not required; mana abilities are activated at CR 601.2g. Additional
 non-mana costs such as sacrificing a permanent must still be payable. -/
 def canCast (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
-  !o.printed.isLand && !g.combatLocksNonManaAbilities && !g.spellNameForbidden o.printed.name &&
+  let bc := { g.baseCard o with keywords := g.currentKeywords o }
+  !g.isLand o && !g.combatLocksNonManaAbilities && !g.spellNameForbidden (g.name o) &&
   !g.cantCastSpellsThisTurn p &&
   g.mayPlay p o &&
   (match g.playPermission o with
-   | some perm => perm.ignoreTiming || g.timingAllowsCast p o.printed
-   | none => g.timingAllowsCast p o.printed) &&
-  (if o.printed.additionalCostSacrificeArtifactOrCreature &&
-      o.printed.additionalCostOrPayGeneric.isNone then
+   | some perm => perm.ignoreTiming || g.timingAllowsCast p bc
+   | none => g.timingAllowsCast p bc) &&
+  (if bc.additionalCostSacrificeArtifactOrCreature &&
+      bc.additionalCostOrPayGeneric.isNone then
     (g.permanentsOf p).any (fun perm =>
       perm.id != o.id && (g.isCreature perm || g.isArtifact perm))
    else true) &&
   -- Untargeted permanents, and untargeted instants/sorceries with a modeled
   -- effect (e.g. Night's Whisper), may be proposed (CR 601.3).
-  if o.printed.requiresTarget then
-    o.printed.allowsZeroTargets || !(g.legalSpellTargets p o |>.isEmpty)
-  else o.printed.isPermanentCard || o.printed.spellEffect.isSome || o.printed.isModal
+  if bc.requiresTarget then
+    bc.allowsZeroTargets || !(g.legalSpellTargets p o |>.isEmpty)
+  else bc.isPermanentCard || bc.spellEffect.isSome || bc.isModal
 
 /-- Whether `p` can pay a mandatory additional cost of `o` from `available`
 (another card to discard, a permanent to sacrifice, or the generic
 alternative). Mana abilities are not activated here. -/
 def canPayAnnouncedAdditional (g : Game) (p : PlayerId) (o : GameObject)
     (available : ManaPool) : Bool :=
+  let bc := g.baseCard o
   let allowElf := g.hasSubtype o .elf
   let free := (g.playPermission o).any (·.withoutManaCost)
   let payExtra (n : Nat) : Bool :=
     if free then
       available.canPay (ManaCost.ofGeneric n) (allowElfRestricted := allowElf)
     else
-      available.canPay (o.printed.manaCost.addGeneric n)
+      available.canPay (bc.manaCost.addGeneric n)
         (allowElfRestricted := allowElf)
-  match o.printed.additionalCostBeholdOrPay with
+  match bc.additionalCostBeholdOrPay with
   | some (quality, n) =>
     let hasPerm := (g.permanentsOf p).any (fun perm => g.hasSubtype perm quality)
     let hasHand :=
@@ -101,11 +103,11 @@ def canPayAnnouncedAdditional (g : Game) (p : PlayerId) (o : GameObject)
         | none => false)
     hasPerm || hasHand || payExtra n
   | none =>
-  match o.printed.additionalCostOrPayGeneric, o.printed.additionalCostDiscardOrPayGeneric with
+  match bc.additionalCostOrPayGeneric, bc.additionalCostDiscardOrPayGeneric with
   | some n, _ =>
     (g.permanentsOf p).any (fun perm =>
       perm.id != o.id &&
-        if o.printed.additionalCostSacrificeCreatureOrPlaneswalker then
+        if bc.additionalCostSacrificeCreatureOrPlaneswalker then
           g.isCreature perm || g.isPlaneswalker perm
         else g.isCreature perm || g.isArtifact perm) || payExtra n
   | none, some n =>
@@ -124,10 +126,13 @@ def legalCastTargets (g : Game) (p : PlayerId) (c : CardDef) : Array Target :=
 
 /-- Whether `p` may begin to cast `o` as an Adventure (CR 715.3). -/
 def canCastAdventure (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
-  match o.printed.adventure with
+  match (g.baseCard o).adventure with
   | none => false
   | some adv =>
     let face := adv.toCardDef
+    !g.combatLocksNonManaAbilities &&
+    !g.spellNameForbidden face.name &&
+    !g.cantCastSpellsThisTurn p &&
     !g.adventureExileForbidsRecast o &&
     g.mayPlay p o &&
     (match g.playPermission o with
@@ -137,7 +142,7 @@ def canCastAdventure (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
     else true
 
 /-- Whether paying this proposed spell or ability may spend Elf-restricted mana
-(CR 106.10): Elf spells, and activated abilities of Elf sources. -/
+(CR 106.6): Elf spells, and activated abilities of Elf sources. -/
 def proposedAllowsElfRestricted (g : Game) (prop : ProposedSpell) : Bool :=
   match prop.kind with
   | .spell =>
@@ -216,7 +221,7 @@ def proposedManaSpend (g : Game) (prop : ProposedSpell) : ManaSpend :=
         subtypes := g.subtypes o }
     | none => {}
 
-/-- Whether mana with restriction `r` may be spent on `prop` (CR 106.10). -/
+/-- Whether mana with restriction `r` may be spent on `prop` (CR 106.6). -/
 def restrictionAllowsProposed (g : Game) (r : ManaRestriction) (prop : ProposedSpell) : Bool :=
   match r with
   | .none => true
@@ -228,7 +233,7 @@ def restrictionAllowsProposed (g : Game) (r : ManaRestriction) (prop : ProposedS
   | .creatureSource => g.proposedAllowsCreatureRestricted prop
   | .fra u => u.allows (g.proposedManaSpend prop)
 
-/-- Mana types `src` can produce that may be spent on `prop` (CR 106.10). -/
+/-- Mana types `src` can produce that may be spent on `prop` (CR 106.6). -/
 def usableManaTypesForProposed (g : Game) (src : GameObject) (types : Array ManaType)
     (prop : ProposedSpell) : Array ManaType :=
   types.filter (fun t => g.restrictionAllowsProposed (g.tapRestrictionOf src t) prop)
@@ -251,7 +256,7 @@ def poolAfterTap (g : Game) (pool : ManaPool) (src : GameObject) (t : ManaType) 
   addRestrictedMana pool (Array.replicate (g.manaFromTap src t) t) (g.tapRestrictionOf src t)
 
 /-- Restricted mana beyond Elf and instant/sorcery mana that may pay a
-cost (CR 106.10). -/
+cost (CR 106.6). -/
 structure ManaAllowances where
   hero : Bool := false
   villain : Bool := false
@@ -369,13 +374,77 @@ def payCost (g : Game) (p : PlayerId) (cost : ManaCost)
       (GameEvent.manaSpent g.turnNumber p spentUnits (forObject.getD ⟨0⟩)
         (cause := some (.costPayment .mana p forObject)))
 
-/-- Undo a proposed spell or ability that could not be paid or legally
-completed, restoring the pre-proposal checkpoint and reapplying only CR 733.1
-irreversible library actions (CR 601.2 / 602.2 / 733.1–733.2). -/
-def reverseProposedSpell? (g : Game) (resumeContinuation : Bool := false) :
-    Except String Game := do
+/-- Run any deferred mid-resolution post-cast cleanup (`PostCastCleanup`) once
+a cast-during-resolution spell finishes casting (`becomeCast`) or reverses
+(`reverseProposedSpellCore?`). -/
+def runPostCastCleanup (g : Game) : Game :=
+  match g.postCastCleanup with
+  | none => g
+  | some cleanup =>
+    let g := g.change (.postCastCleanup none)
+    match cleanup with
+    | .cascadeBottom caster cardId others =>
+      let cause := g.lastMoveCauseOf? cardId
+      let landed := g.followMoved cardId
+      let cast := (g.findObject? landed).any (·.zone == .stack)
+      let bottomed := if cast then others else others.push cardId
+      let msg :=
+        if cast then
+          s!"{(g.player caster).name} puts the other exiled cards on the bottom of their library in a random order"
+        else
+          s!"{(g.player caster).name} puts the exiled cards on the bottom of their library in a random order"
+      g.requestOrderInto bottomed (.library caster) msg (cause := cause)
+    | .grimaBottom victim cardId others =>
+      let cause := g.lastMoveCauseOf? cardId
+      let landed := g.followMoved cardId
+      let cast := (g.findObject? landed).any (·.zone == .stack)
+      let uncast :=
+        if cast then #[]
+        else if (g.findObject? cardId).any (·.zone == .exile) then #[cardId]
+        else if (g.findObject? landed).any (·.zone == .exile) then #[landed]
+        else #[]
+      let pile := others ++ uncast
+      let msg :=
+        s!"{(g.player victim).name} puts the exiled cards that weren't cast on the bottom of their library in a random order"
+      g.requestOrderInto pile (.library victim) msg (cause := cause)
+    | .copyCeaseToExist copyId =>
+      let landed := g.followMoved copyId
+      let onStack :=
+        (g.findObject? landed).any (·.zone == .stack) ||
+          (g.findObject? copyId).any (·.zone == .stack)
+      if onStack then g
+      else
+        let copyCause := some (EventCause.stateBased .copyOutsideStackOrBf)
+        match g.findObject? copyId with
+        | some o =>
+          if o.isCopy then (g.ceaseToExist o.id (cause := copyCause)).logMsg s!"The copy of {o.name} ceases to exist"
+          else g
+        | none =>
+          match g.findObject? landed with
+          | some o =>
+            if o.isCopy then (g.ceaseToExist o.id (cause := copyCause)).logMsg s!"The copy of {o.name} ceases to exist"
+            else g
+          | none => g
+    | .lookedBottom caster cardId allLooked =>
+      let landed := g.followMoved cardId
+      let cast := (g.findObject? landed).any (·.zone == .stack)
+      let unchosen :=
+        (if cast then allLooked.filter (· != cardId) else allLooked).filter (fun id =>
+          (g.findObject? id).any (·.zone == .library caster))
+      if unchosen.isEmpty then g
+      else
+        let msg :=
+          s!"{(g.player caster).name} puts the rest on the bottom of their library in a random order"
+        g.requestOrderInto unchosen (.library caster) msg
+
+/-- Core proposal reversal: restores `proposalCheckpoint`, reapplies CR 733.1
+irreversible library actions, runs deferred `postCastCleanup`, and reports
+whether `Decisions.finishFraChoice` should resume an active continuation
+(CR 601.2 / 602.2 / 733.1–733.2). -/
+def reverseProposedSpellCore? (g : Game) (resumeContinuation : Bool := false) :
+    Except String (Game × Bool) := do
   match g.proposedSpell with
-  | none => return g
+  | none => return (g, false)
   | some prop =>
     let name := (g.player prop.caster).name
     let baseTriggers := (g.proposalCheckpoint.map (·.waitingTriggers.size)).getD 0
@@ -385,23 +454,26 @@ def reverseProposedSpell? (g : Game) (resumeContinuation : Bool := false) :
       | .activatedAbility => "the activation is reversed (CR 602.2 / 733.1)"
     let g ← g.reverseToProposalCheckpoint?
     let g := g.logMsg s!"{name} cannot pay {prop.cost}; {reversed}"
+    let g := g.runPostCastCleanup
     let g :=
-      if g.pending == .none && g.continuations.isEmpty && g.priority != prop.caster then
+      if g.pending == .none && g.continuations.isEmpty && g.pendingCastExiledQueue.isNone &&
+          g.priority != prop.caster then
         g.change (.priority prop.caster)
       else g
-    if resumeContinuation && g.pending == .none && !g.continuations.isEmpty then
-      return g.receivePriority g.activePlayer
+    if resumeContinuation &&
+        (!g.continuations.isEmpty || g.pendingReplacement.isSome || g.pendingCastExiledQueue.isSome) then
+      return (g, true)
     else if g.pending == .none && g.continuations.isEmpty &&
         g.waitingTriggers.size > baseTriggers then
-      return g.receivePriority prop.caster
+      return (g.receivePriority prop.caster, false)
     else
-      return g
+      return (g, false)
 
-/-- Undo a proposed spell or ability, restoring the pre-proposal checkpoint and
-reapplying only CR 733.1 irreversible library actions (CR 601.2 / 602.2 / 733.1). -/
-def reverseProposedSpell (g : Game) (resumeContinuation : Bool := false) : Game :=
-  match g.reverseProposedSpell? (resumeContinuation := resumeContinuation) with
-  | .ok g' => g'
+/-- Core proposal reversal without continuation resumption (for pre-`Decisions`
+callers where `continuations` is empty or `resumeContinuation == false`). -/
+def reverseProposedSpellCore (g : Game) (resumeContinuation : Bool := false) : Game :=
+  match g.reverseProposedSpellCore? (resumeContinuation := resumeContinuation) with
+  | .ok (g', _) => g'
   | .error msg => g.logMsg msg
 
 /-- Fold `f` over each targeted permanent that still exists. Non-permanent
@@ -450,7 +522,7 @@ def becomeCast (g : Game) (p : PlayerId) (spell : GameObject)
         s!"{spell.name} can't be countered"
     else g
   let g := g.putCastTriggersOnStack p spell
-  let liveCmds := g.objects.filter (fun o => o.owner == p && o.status.isCommander)
+  let liveCmds := g.objects.filter (fun o => o.owner == p && o.isCommander)
   let cmdTypes :=
     if !liveCmds.isEmpty then
       liveCmds.foldl (fun acc o => acc ++ (g.subtypes o).filter CardSubtype.isCreatureType) #[]
@@ -462,6 +534,7 @@ def becomeCast (g : Game) (p : PlayerId) (spell : GameObject)
         (g.subtypes spell).any (fun sub => sub.isCreatureType && cmdTypes.contains sub) then
       g.beginScry p 1
     else g
+  let g := g.runPostCastCleanup
   -- Doom Reigns Supreme: offer another exiled spell after this cast finishes.
   let g : Game :=
     match g.pendingMayCastFromExile with
@@ -493,7 +566,10 @@ def becomeCast (g : Game) (p : PlayerId) (spell : GameObject)
         else
           g.change (.pending (.fraChoice q (.castCopiesFree alive budget castsLeft)))
     | none => g
-  if g.pending != .none || !grantPriority then g else g.receivePriority p
+  if g.pending != .none || !grantPriority then g
+  else if g.pendingCastExiledQueue.isSome || g.triggerSequenceRest.isSome || g.pendingReplacement.isSome then
+    g.chainPendingReplacement .finishFraChoice
+  else g.receivePriority (if g.continuations.isEmpty then p else g.activePlayer)
 
 /-- After targets are announced, reduce the locked-in cost if the spell cares
 about a damaged, tapped, or attacking nontoken target, or the ability about
@@ -651,7 +727,7 @@ def beginActivationPayment (g : Game) (prop : ProposedSpell) : Except String Gam
     match prop.sourceId with
     | some sid => g.costPicksPayable prop.caster sid picks
     | none => true
-  if !payable then return (← g.reverseProposedSpell? (resumeContinuation := true))
+  if !payable then return (← g.reverseProposedSpellCore? (resumeContinuation := true)).1
   g.continueCostPicks prop picks false
 
 /-- Continue after CR 601.2c: determine the total cost (601.2f), then mana
@@ -671,7 +747,7 @@ def afterTargetsChosen (g : Game) : Game :=
       else if prop.kind == .activatedAbility then
         match g.beginActivationPayment prop with
         | .ok g => g
-        | .error _ => g.reverseProposedSpell (resumeContinuation := true)
+        | .error _ => g.reverseProposedSpellCore (resumeContinuation := true)
       else
         let spell := g.object! prop.spellId
         let g := g.changes #[.pending .none, .proposedSpell none, .consecutivePasses 0]
@@ -765,15 +841,15 @@ then targets (CR 601.2b–c). -/
 def afterModesChosen (g : Game) (p : PlayerId) : Game :=
   match g.proposedSpell, g.proposedSpell.bind (fun prop => g.findObject? prop.spellId) with
   | some prop, some spell =>
-    let face := spell.printed
+    let face := g.baseCard spell
     if face.announcesAdditionalCost then
       (g.change (.pending (.chooseAdditionalCost p))).logMsg
         s!"{(g.player p).name} must choose an additional cost (CR 601.2b)"
     else if face.kicker.isSome && !prop.kickerAnnounced then
       (g.change (.pending (.chooseKicker p))).logMsg
-        s!"{(g.player p).name} may kick the spell (CR 702.32 / 601.2b)"
+        s!"{(g.player p).name} may kick the spell (CR 702.33 / 601.2b)"
     else if face.giftTreasure && !prop.giftAnnounced then
-      (g.change (.pending (.chooseGift p))).logMsg s!"{(g.player p).name} may promise a gift (CR 702.185)"
+      (g.change (.pending (.chooseGift p))).logMsg s!"{(g.player p).name} may promise a gift (CR 702.174)"
     else if face.teamwork.isSome && !prop.teamworkAnnounced then
       (g.change (.pending (.chooseTeamwork p))).logMsg
         s!"{(g.player p).name} may pay a teamwork cost (CR 702.194)"

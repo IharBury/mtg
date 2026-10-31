@@ -291,7 +291,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
           else none
   let buildArrival (g : Game) (targetZone : Zone) (asOf : Nat)
       (applied : Array ReplacementId := #[]) (curCause : Option EventCause := cause) :
-      GameObject × CounterBag × Nat × Bool × Bool × Array ReplacementId × Option EventCause × Option (PlayerId × Array ReplacementId) :=
+      GameObject × CounterBag × Nat × Bool × Bool × Array ReplacementId × Option EventCause × Option (PlayerId × Array ReplacementId) × Option (CardDef × CardDef) :=
     let newId : ObjectId := ⟨g.nextObjectId⟩
     let ts := g.timestamp + 1
     let leavingPlay :=
@@ -326,14 +326,6 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
     let faceDown := targetZone == .battlefield && old.zone == .stack && old.status.faceDown
     let fromStackTime :=
       if targetZone == .battlefield && old.zone == .stack then old.status.time else 0
-    let chosenCardType :=
-      if targetZone == .battlefield && !faceDown && printed.asEntersChooseCardType then
-        some CardType.creature
-      else none
-    let chosenAnchor :=
-      if targetZone == .battlefield && !faceDown && printed.asEntersChooseMarduOrJeskai then
-        some "Mardu"
-      else none
     let prepared :=
       targetZone == .battlefield && !faceDown && printed.entersPrepared
     let impendingNotCreature :=
@@ -346,8 +338,6 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
           summoningSick := summoningSick
           attacking := isAttacking
           attackingTarget := resolvedAttackTarget
-          chosenCardType := chosenCardType
-          chosenAnchor := chosenAnchor
           prepared := prepared }
       else {}
     let candidate : GameObject := {
@@ -360,6 +350,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
       status := baseStatus
       timestamp := ts
       isCopy := isCopy.getD (if targetZone == .stack then old.isCopy else false)
+      isCommander := old.isCommander
       adventurerCard := if targetZone == .stack then adventurerCard.orElse (fun _ => old.adventurerCard) else none
       attachedTo := if targetZone == .battlefield then attachedTo else none
       chosenX := if targetZone == .stack then old.chosenX else none
@@ -384,9 +375,9 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
           (forceBackFace := nightBack)
           (applied := applied)
           (cause := curCause)
-      (etb.candidate, etb.entersWith, etb.weaverBonus, impendingNotCreature, faceDown, etb.applied, etb.cause, etb.choice?)
+      (etb.candidate, etb.entersWith, etb.weaverBonus, impendingNotCreature, faceDown, etb.applied, etb.cause, etb.choice?, etb.tempCopyUntilEot)
     else
-      (candidate, #[], 0, impendingNotCreature, faceDown, applied, curCause, none)
+      (candidate, #[], 0, impendingNotCreature, faceDown, applied, curCause, none, none)
   -- Run the CR 616.1 replacement loop for leaving/destination replacements (CR 614.6).
   let origDest := dest
   let moveRep :=
@@ -396,7 +387,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
   let dest := moveRep.dest
   let preCheckArrivalChoice? :=
     if moveRep.choice?.isNone && dest == .battlefield then
-      let (_, _, _, _, _, _, _, ch?) := buildArrival g dest g.timestamp moveRep.applied moveRep.cause
+      let (_, _, _, _, _, _, _, ch?, _) := buildArrival g dest g.timestamp moveRep.applied moveRep.cause
       ch?
     else none
   match moveRep.choice?.orElse (fun _ => preCheckArrivalChoice?) with
@@ -435,7 +426,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
       let g :=
         if old.zone == .battlefield then g.removePreparedCopy id else g
       let asOf := g.timestamp
-      let (fresh, entersWith, weaverBonus, impendingNotCreature, faceDown, allApplied, finalCause, _) :=
+      let (fresh, entersWith, weaverBonus, impendingNotCreature, _faceDown, allApplied, finalCause, _, tempCopyUntilEot) :=
         buildArrival g dest asOf moveRep.applied moveRep.cause
       let g := g.consumeReplacementOrder allApplied
       let newId := fresh.id
@@ -443,10 +434,16 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
         if exileInstead then
           g.logMsg s!"{old.name} is exiled instead of dying (CR 614.6)"
         else g
+      let freshForSnap : GameObject :=
+        match tempCopyUntilEot with
+        | some (_, copyCard) => { fresh with printed := copyCard, isCopy := true }
+        | none => fresh
       let gWithFresh : Game := Id.run do
         let mut g' : Game :=
-          { g with objects := g.objects.map (fun (x : GameObject) => if x.id == id then fresh else x) }
+          { g with objects := g.objects.map (fun (x : GameObject) => if x.id == id then freshForSnap else x) }
         if dest == .battlefield then
+          if let some (_, copyCard) := tempCopyUntilEot then
+            g' := { g' with activeEffects := g'.activeEffects.push (⟨g'.nextEffectId⟩, .copy newId copyCard (untilEot := true)), nextEffectId := g'.nextEffectId + 1 }
           if impendingNotCreature then
             g' := { g' with activeEffects := g'.activeEffects.push (⟨g'.nextEffectId⟩, .notACreature newId), nextEffectId := g'.nextEffectId + 1 }
           if returnedAsArtifact then
@@ -454,7 +451,10 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
           if onlyFoodArtifact then
             g' := { g' with activeEffects := g'.activeEffects.push (⟨g'.nextEffectId⟩, .onlyFoodArtifact newId), nextEffectId := g'.nextEffectId + 1 }
         return g'
-      let afterSnap := gWithFresh.snapshot fresh
+      let afterSnap : EventObject :=
+        match tempCopyUntilEot with
+        | some (origPrinted, _) => { gWithFresh.snapshot freshForSnap with printed := some origPrinted }
+        | none => gWithFresh.snapshot freshForSnap
       let finalVerb : Option ZoneVerb :=
         if exileInstead then some .exile else verb
       let resolvedFinalCause :=
@@ -502,6 +502,13 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
       let g :=
         match g.findObject? newId with
         | some _ =>
+          let g : Game :=
+            match tempCopyUntilEot with
+            | some (_, copyCard) =>
+              if dest == Zone.battlefield then
+                g.createEffect (.copy newId copyCard (untilEot := true)) (cause := some baseHappenedCause)
+              else g
+            | none => g
           -- A permanent whose spell was cast for its impending cost enters with
           -- its time counters and isn't a creature while it has one (CR 702.176,
           -- rulings 967 / 970). The spell itself stays a creature spell, so the
@@ -518,26 +525,9 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
             g.createEffect (.onlyFoodArtifact newId) (cause := some baseHappenedCause)
           else g
         | none => g
-      -- Loki left: replace his pending copy effect with one holding his last
-      -- known power (MSH 109, CR 613.7a).
-      let g :=
-        g.activeEffects.foldl (fun g (eid, (e : ContinuousEffectSpec)) =>
-          match e with
-          | .playerRule p (.pendingLokiCopy (some lid) _) _ =>
-            if lid == old.id then
-              let g := g.expireEffectById eid (cause := some baseHappenedCause)
-              g.createEffect (.pendingLokiCopy p none (beforeSnap.power.getD (g.power old)))
-                (cause := some baseHappenedCause)
-            else g
-          | _ => g) g
-      let g :=
-        if dest == .battlefield && !faceDown &&
-            (g.findObject? newId).any (fun placed => (g.baseCard placed).asEntersChooseCardType) then
-          g.logMsg s!"{fresh.name} chooses Creature"
-        else g
       let g :=
         if weaverBonus > 0 then
-          g.logMsg s!"{fresh.nameWithToken} enters with {weaverBonus} additional +1/+1 counter(s)"
+          g.logMsg s!"{freshForSnap.nameWithToken} enters with {weaverBonus} additional +1/+1 counter(s)"
         else g
       (g, newId)
   let g :=
@@ -591,9 +581,9 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
           let ab := TriggeredAbility.fra .fromEffect
             "When you do, create a 2/2 green Wolf creature token."
             (.createTokens .wolf 1)
-          g.change (.pushWaitingTrigger {
+          g.recordReflexiveTrigger {
               controller := p, source := src, ability := ab,
-              event := .bolgSacrificedForReflexive, checked := true })
+              event := .bolgSacrificedForReflexive, checked := true }
             |>.logMsg s!"{(g.player p).name}'s Wolf trigger is waiting to go on the stack"
         | none => g
       else g

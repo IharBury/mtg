@@ -37,7 +37,10 @@ so it gets loyalty counters and enters prepared. -/
 def enterPermanent (g : Game) (card : CardDef) (p : PlayerId) : Game :=
   let (g, obj) := g.allocObject card p (.outside p) none
   let (g, newId) := g.putOntoBattlefield obj.id p (summoningSick := false)
-  g.afterPermanentEnters (g.object! newId)
+  if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement (.afterLastPermanentEnters (some obj.id) false)
+  else
+    g.afterPermanentEnters (g.object! newId)
 
 /-- The first Jace planeswalker token `p` controls. -/
 def jaceTokenOf (g : Game) (p : PlayerId := ⟨0⟩) : GameObject :=

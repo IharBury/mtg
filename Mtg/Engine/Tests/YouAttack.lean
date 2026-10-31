@@ -239,7 +239,9 @@ def cubeDeclines : Game :=
 
 def cubeCasts : Game :=
   match lookedId cubeAttacking "Lightning Bolt" with
-  | some bolt => mustApply cubeAttacking me (.cast bolt)
+  | some bolt =>
+    let g := mustApply cubeAttacking me (.cast bolt)
+    mustApply g me (.target (.player opp))
   | none => cubeAttacking
 
 #guard cubeCasts.objects.any (fun o => o.name == "Lightning Bolt" && o.zone == .stack) &&

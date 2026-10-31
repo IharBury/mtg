@@ -319,9 +319,6 @@ inductive FraChoice where
   (0 trample, 1 hexproof, 2 haste, 3 deathtouch) until end of turn. Answered
   with the index of an option. -/
   | chooseKeyword (objectId : ObjectId) (options : Array Nat)
-  /-- Choose a color for `objectId` as it enters (white, blue, black, red,
-  green by index). -/
-  | chooseColor (objectId : ObjectId)
   /-- Each player sacrifices a creature of their choice; `controller` creates
   a 4/4 Beast if they sacrificed one (Garruk, Veiled Butcher). `chosen` are
   sacrificed together once everyone has chosen. -/
@@ -332,9 +329,6 @@ inductive FraChoice where
   | discardTwo (controller : PlayerId) (rest : Array PlayerId) (draws : Nat)
   /-- You may move all counters from `fromId` onto `toId` (The Ozolith). -/
   | mayMoveAllCounters (fromId toId : ObjectId)
-  /-- Choose a nonland card name for `objectId` as it enters (Meddling
-  Mage). Answered with `Action.chooseName`. -/
-  | chooseCardName (objectId : ObjectId)
   /-- Tap untapped creatures with total power `power` or more to pay the crew
   cost of `vehicleId`'s ability `abilityId` (CR 702.122). Declining cancels
   the activation. -/
@@ -530,10 +524,6 @@ inductive FraChoice where
   /-- Choose a player tied for most life. The creature can't be blocked by
   that player's creatures this turn (The Black Gate). -/
   | blackGatePlayer (creatureId : ObjectId) (players : Array PlayerId)
-  /-- As this permanent enters, choose a creature type (An Unexpected Party). -/
-  | entersCreatureType (objectId : ObjectId)
-  /-- As this permanent enters, choose even (0) or odd (1) (Gollum, Riddle Master). -/
-  | entersOddEven (objectId : ObjectId)
   /-- You may begin the game with the first of these cards on the battlefield
   (Quicksilver). The rest are asked next. -/
   | mayBeginOnBattlefield (ids : Array ObjectId)
@@ -621,9 +611,9 @@ inductive Pending where
   | payWard (player : PlayerId) (spellId : ObjectId) (cost : WardCost)
   /-- Discard a card for recruit; if it is not a land, create a Human Soldier. -/
   | recruitDiscard (player : PlayerId)
-  /-- Announce whether to pay the optional kicker cost (CR 702.32 / 601.2b). -/
+  /-- Announce whether to pay the optional kicker cost (CR 702.33 / 601.2b). -/
   | chooseKicker (player : PlayerId)
-  /-- Announce whether to promise a gift to an opponent (CR 702.185 / 601.2b). -/
+  /-- Announce whether to promise a gift to an opponent (CR 702.174 / 601.2b). -/
   | chooseGift (player : PlayerId)
   /-- Announce whether to pay the optional teamwork cost (CR 702.194 / 601.2b). -/
   | chooseTeamwork (player : PlayerId)

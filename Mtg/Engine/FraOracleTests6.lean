@@ -217,14 +217,16 @@ def grantedJace : Game :=
 def cryomancerReady : Game :=
   resolveStack (mustApply grantedJace ⟨0⟩ (.activate (jaceTokenOf grantedJace).id 2)) 20
 
-#guard cryomancerReady.copyNextInstantSorceryThisTurn ⟨0⟩ == 1
+#guard (cryomancerReady.delayedTriggers.filter (fun dt =>
+  dt.controller == ⟨0⟩ && dt.kind == .copyNextInstantSorceryThisTurn)).size == 1
 
 /- Ruling 844: the copy has the same targets. Shock and its copy each deal
 2 damage to Nissa. Only the next instant or sorcery is copied. -/
 #guard
   let g := castShockAtNissa cryomancerReady
   g.stack.size == 2 && (resolveStack g 20 |>.player ⟨1⟩).life == 16 &&
-    g.copyNextInstantSorceryThisTurn ⟨0⟩ == 0
+    !(g.delayedTriggers.any (fun dt =>
+      dt.controller == ⟨0⟩ && dt.kind == .copyNextInstantSorceryThisTurn))
 #guard (fraRuling 844).comment.contains "The copy will have the same targets"
 
 /-- Ruling 845: the copy has the same value of X. -/
@@ -235,7 +237,7 @@ def testXSorcery : CardDef :=
 #guard
   let g := withWhiteMana (addToHand cryomancerReady testXSorcery ⟨0⟩) ⟨0⟩ 3
   let g := mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Test X Sorcery").id)
-  let g := mustApply (mustApply g ⟨0⟩ (.chooseX 2)) ⟨0⟩ .pay
+  let g := passBoth (mustApply (mustApply g ⟨0⟩ (.chooseX 2)) ⟨0⟩ .pay)
   g.stack.size == 2 && g.stack.all (fun e => (g.object! e.objectId).chosenX == some 2)
 #guard (fraRuling 845).comment.contains "the copy has the same value of X"
 
@@ -260,7 +262,7 @@ counts for it. -/
   let g := mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Shock").id)
   let g := mustApply g ⟨0⟩ (.announceKicker true)
   let g := mustApply g ⟨0⟩ (.target (.player ⟨1⟩))
-  let g := mustApply g ⟨0⟩ .pay
+  let g := mustApply (passBoth (mustApply g ⟨0⟩ .pay)) ⟨0⟩ .decline
   g.stack.size == 2 && g.pending == .none &&
     g.stack.all (fun e => g.wasKicked e.objectId)
 #guard (fraRuling 843).comment.contains "You can't choose to pay any additional costs for a copied spell"

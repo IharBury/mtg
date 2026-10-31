@@ -231,9 +231,10 @@ def castAsResolvesOk : Bool :=
        | .error msg => mentions msg "mana value is greater"
        | .ok _ => false) &&
       (let gCast := mustApply g ⟨0⟩ (.cast bolt)
+       let gCastDone := mustApply gCast ⟨0⟩ (.target (.player ⟨1⟩))
        gCast.objects.any (fun o => o.name == "Lightning Bolt" && o.zone == .stack) &&
-         gCast.log.any (fun s => mentions s "as the ability resolves") &&
-         gCast.log.any (fun s => mentions s "on the bottom")) &&
+         gCastDone.log.any (fun s => mentions s "as the ability resolves") &&
+         gCastDone.log.any (fun s => mentions s "on the bottom")) &&
       (let gDec := mustApply g ⟨0⟩ .decline
        !gDec.objects.any (fun o => o.name == "Lightning Bolt" && o.zone == .stack) &&
          gDec.log.any (fun s => mentions s "declines to cast") &&
@@ -272,9 +273,9 @@ def cosmicCubeCastAuraChoosesEnchantTargetOk : Bool :=
        gCast.actor == some ⟨0⟩ &&
        gCast.objects.any (fun o => o.name == "Super Speed" && o.zone == .stack) &&
        gCast.log.any (fun s => mentions s "must choose a target to enchant") &&
-       gCast.log.any (fun s => mentions s "on the bottom") &&
        (let bears := namedPermanent gCast "Grizzly Bears"
         let gTgt := mustApply gCast ⟨0⟩ (.target (Target.permanent bears.id))
+        gTgt.log.any (fun s => mentions s "on the bottom") &&
         (gTgt.stack.find? (fun e =>
           (gTgt.object! e.objectId).name == "Super Speed")).any (fun e =>
             e.targets == #[Target.permanent bears.id]) &&

@@ -1,4 +1,4 @@
-import Mtg.Engine.Game.Turns
+import Mtg.Engine.Game.Decisions
 
 /-!
 # Passing, paying, and conceding
@@ -9,6 +9,73 @@ costs, `pass` (CR 117.3d), and `concede` (CR 104.3a).
 
 namespace Mtg.Engine
 namespace Game
+
+/-- Pay the locked-in cost (CR 601.2h / 602.2b). Spells and abilities that still
+need an artifact or creature sacrificed, or a card discarded, wait for
+that action. -/
+def finishProposedSpell (g : Game) : Except String Game := do
+  let some prop := g.proposedSpell | throw "No spell or ability is waiting to be paid for"
+  let allowElf := g.proposedAllowsElfRestricted prop
+  let allowInst := g.proposedAllowsInstRestricted prop
+  let allowHero := g.proposedAllowsHeroRestricted prop
+  let allowVillain := g.proposedAllowsVillainRestricted prop
+  let allowCant := g.proposedAllowsCantNonartifact prop
+  let allowCreature := g.proposedAllowsCreatureRestricted prop
+  let spend := g.proposedManaSpend prop
+  if !(g.player prop.caster).manaPool.canPay prop.cost allowElf allowInst
+        allowHero allowVillain allowCant allowCreature spend ||
+      !g.sourceStillPayable prop ||
+      !g.canPayLife prop.caster prop.payLife then
+    return (← g.reverseProposedSpell? (resumeContinuation := true))
+  if prop.needsSacrificeOther then
+    let excludeId := prop.sourceId.getD prop.spellId
+    if (g.sacrificeCreatureOrArtifactChoices prop.caster excludeId).isEmpty then
+      return (← g.reverseProposedSpell? (resumeContinuation := true))
+  if prop.needsDiscardCard && (g.player prop.caster).hand.isEmpty then
+    return (← g.reverseProposedSpell? (resumeContinuation := true))
+  let count (g : Game) (u : FraManaUse) :=
+    ((g.player prop.caster).manaPool.fraRestricted.filter (·.2 == u)).size
+  let g ← g.withProposalActionM .costAction fun g0 => do
+    let paid ← g0.payCost prop.caster prop.cost allowElf allowInst
+      allowHero allowVillain allowCant allowCreature spend (forObject := some prop.spellId)
+    let spent (u : FraManaUse) := count paid u < count g0 u
+    pure <|
+      match prop.kind, paid.findObject? prop.spellId with
+      | .spell, some o =>
+        if spent .legendarySpell then
+          paid.createEffect (.uncounterableThisCast o.id)
+            |>.logMsg s!"{o.name} can't be countered (Delighted Halfling)"
+        else paid
+      | _, _ => paid
+  if prop.kind == .activatedAbility then
+    return (← g.beginActivationPayment prop)
+  let g ←
+    match prop.sneakAttacker with
+    | some a =>
+      match g.withProposalActionM .costAction (fun g => g.paySneak prop.caster prop.spellId a) with
+      | .ok g => pure g
+      | .error _ => return (← g.reverseProposedSpell? (resumeContinuation := true))
+    | none => pure g
+  match prop.kind, prop.needsSacrificeOther, prop.needsDiscardCard with
+  | _, true, _ =>
+    let g := g.changes #[.pending (.sacrificePermanent prop.caster prop.spellId), .consecutivePasses 0]
+    return g.logMsg
+      s!"{(g.player prop.caster).name} must sacrifice an artifact or creature"
+  | _, _, true =>
+    let g := g.changes #[.pending (.discardForAdditionalCost prop.caster), .consecutivePasses 0]
+    return g.logMsg
+      s!"{(g.player prop.caster).name} must discard a card"
+  | _, _, _ =>
+    let g := g.changes #[.pending .none, .proposedSpell none, .consecutivePasses 0]
+    let g := g.becomeCast prop.caster (g.object! prop.spellId)
+    if g.pending == .none && g.pendingReplacement.isSome && !g.over then
+      match g.pendingReplacement with
+      | some cont =>
+        let g := g.change (.pendingReplacement none)
+        return g.resumePendingReplacement cont
+      | none => return g
+    else
+      return g
 
 /-- Pay the proposed spell or ability (CR 601.2h / 602.2b). If the cost
 cannot be paid, the action is reversed (CR 733.1). -/
@@ -83,14 +150,16 @@ def announceAdditionalCost (g : Game) (p : PlayerId) (payGeneric : Bool) :
           s!"{(g.player p).name} chooses to pay \{{n}} as an additional cost (CR 601.2b)"
         return g.afterAdditionalCostAnnounced
       else
-        let g := g.beholdQuality p quality
-          (cause := some (.costPayment .behold p (some prop.spellId)))
+        let g := g.withProposalAction .costAction fun g =>
+          g.beholdQuality p quality
+            (cause := some (.costPayment .behold p (some prop.spellId)))
         if !(g.qualityWasBeheld p quality) then
           throw s!"{spell.name} requires beholding a {quality}"
         return g.afterAdditionalCostAnnounced
     | none =>
-    match spell.printed.additionalCostOrPayGeneric,
-          spell.printed.additionalCostDiscardOrPayGeneric with
+    let face := g.baseCard spell
+    match face.additionalCostOrPayGeneric,
+          face.additionalCostDiscardOrPayGeneric with
     | some n, _ =>
       if payGeneric then
         let g := g.changeProposals #[

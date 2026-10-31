@@ -29,10 +29,10 @@ def enterProposalWindow (g : Game) (p : PlayerId) (pl : Player) (prop : Proposed
     g.logMsg s!"{pl.name} must choose an additional cost (CR 601.2b)"
   else if needsKicker then
     let g := g.changes #[.pending (.chooseKicker p), .proposedSpell (some prop)]
-    g.logMsg s!"{pl.name} may kick the spell (CR 702.32 / 601.2b)"
+    g.logMsg s!"{pl.name} may kick the spell (CR 702.33 / 601.2b)"
   else if needsGift then
     let g := g.changes #[.pending (.chooseGift p), .proposedSpell (some prop)]
-    g.logMsg s!"{pl.name} may promise a gift (CR 702.185 / 601.2b)"
+    g.logMsg s!"{pl.name} may promise a gift (CR 702.174 / 601.2b)"
   else if needsTeamwork then
     let g := g.changes #[.pending (.chooseTeamwork p), .proposedSpell (some prop)]
     g.logMsg s!"{pl.name} may pay a teamwork cost (CR 702.194 / 601.2b)"
@@ -60,15 +60,16 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
   let some card := g.findObject? id | throw "no such object"
   if !g.mayPlay p card then
     throw (g.playZoneError p card)
+  let bc := g.baseCard card
   if asAdventure then
-    if card.printed.adventure.isNone then
-      throw s!"{card.name} has no Adventure"
+    if bc.adventure.isNone then
+      throw s!"{g.name card} has no Adventure"
     if g.adventureExileForbidsRecast card then
       throw "You may not cast that card as an Adventure this way (CR 715.3d)"
   let face :=
-    match asAdventure, card.printed.adventure with
+    match asAdventure, bc.adventure with
     | true, some adv => adv.toCardDef
-    | _, _ => card.printed
+    | _, _ => { bc with keywords := g.currentKeywords card }
   if g.spellNameForbidden face.name then
     throw s!"Spells named {face.name} can't be cast"
   let pl := g.player p
@@ -223,7 +224,7 @@ def announceMode (g : Game) (p : PlayerId) (mode : Nat) : Except String Game := 
       let some chosen := prop.abilityModes[mode]?
         | throw "No such mode (CR 601.2b)"
       if !g.modeIsChoosable p chosen then
-        throw "That mode requires a target (CR 700.2d)"
+        throw "That mode requires a target (CR 700.2a)"
       let some _obj := g.findObject? prop.spellId | throw "The ability left the stack"
       let g := g.changeObject prop.spellId (.abilityEffect (some chosen))
       let g := g.logMsg
@@ -234,11 +235,12 @@ def announceMode (g : Game) (p : PlayerId) (mode : Nat) : Except String Game := 
       return g.afterTargetsChosen
     | .spell =>
       let some spell := g.findObject? prop.spellId | throw "The spell left the stack"
-      if !spell.printed.isModal then
+      let face := g.baseCard spell
+      if !face.isModal then
         throw "That spell is not modal (CR 700.2)"
-      let some effect := spell.printed.spellModes[mode]? | throw "No such mode (CR 700.2)"
+      let some effect := face.spellModes[mode]? | throw "No such mode (CR 700.2)"
       if !g.spellModeIsChoosable p effect then
-        throw "That mode has no legal target (CR 700.2d)"
+        throw "That mode has no legal target (CR 700.2a)"
       let chosen := g.chosenModesOf spell
       if chosen.contains mode then
         throw "That mode was already chosen (CR 700.2)"
@@ -246,9 +248,9 @@ def announceMode (g : Game) (p : PlayerId) (mode : Nat) : Except String Game := 
       let g := g.logMsg
         s!"{(g.player p).name} chooses mode {mode + 1} ({effect.toNotation}) (CR 601.2b)"
       let chosen := chosen.push mode
-      let more := (List.range spell.printed.spellModes.size).any (fun i =>
-        !chosen.contains i && g.spellModeIsChoosable p spell.printed.spellModes[i]!)
-      if chosen.size < g.maxModesFor p spell.printed && more then
+      let more := (List.range face.spellModes.size).any (fun i =>
+        !chosen.contains i && g.spellModeIsChoosable p face.spellModes[i]!)
+      if chosen.size < g.maxModesFor p face && more then
         let g := g.change (.pending (.chooseMode p))
         return g.logMsg s!"{(g.player p).name} may choose another mode, or decline (CR 700.2)"
       return g.afterModesChosen p

@@ -73,8 +73,8 @@ returns nothing. -/
   let src := onBoard g "Test Hunter"
   match bearId, beastId, src with
   | some bearId, some beastId, some src =>
-    let g := g.changeObjects src.id
-      #[.pushLeaveTriggerExile bearId, .linkedExile #[beastId]]
+    let g := (g.changeObject src.id (.pushLeaveTriggerExile bearId)).changeObject src.id
+      (.linkedExile #[beastId])
     let g := g.applyTriggeredAbility caster .onLeaveReturnExiled (some src.id)
     match onBoard g "Test Bear", onBoard g "Costly Beast", onBoard g "Test Hunter" with
     | some bear, some beast, some _ =>

@@ -88,8 +88,10 @@ structure GameObject where
   /-- The permanent that exiled this card, for permissions tied to it (Null
   Summoner). -/
   exiledBy : Option ObjectId := none
-  /-- This object is a copy (CR 706). Copies of spells are not cast. -/
+  /-- This object is a copy (CR 707 / 707.10). Copies of spells are not cast. -/
   isCopy : Bool := false
+  /-- This object is a commander (CR 903.3). Persists across zone changes. -/
+  isCommander : Bool := false
   /-- Value chosen for `{X}` while this spell is on the stack (CR 107.3a).
   Off the stack, `{X}` is 0. -/
   chosenX : Option Nat := none
@@ -197,40 +199,14 @@ removals are evaluated in `Game.staticAbilitiesOf` (CR 613.1f). -/
 def staticAbilities (o : GameObject) : Array StaticAbility :=
   o.printed.staticAbilities
 
-/-- Whether an Aura with card `aura` may enchant this permanent: an artifact
-or non-Aura enchantment for “Enchant artifact or non-Aura enchantment”
-(Puppet Crafting), otherwise a creature (CR 303.4). -/
-def auraCanEnchant (host : GameObject) (aura : CardDef) : Bool :=
-  host.isOnBattlefield &&
-    if aura.staticAbilities.any (· == .fra .enchantArtifactOrNonAuraEnchantment) then
-      host.printed.isArtifact || (host.printed.isEnchantment && !host.printed.isAura)
-    else host.isCreature
-
-/-- Colorless nonland permanent (e.g. a legal Goblin Cratermaker destroy target).
-Prefer `Game.isColorlessNonland` when `Game` is in scope. -/
-def isColorlessNonland (o : GameObject) : Bool :=
-  o.isOnBattlefield && !o.printed.isLand && o.printed.colors.isColorless
-
 /-- Printed keywords of this object. Layer-6 keyword grants and removals are
 evaluated in `Game.currentKeywords` (CR 613.1f). -/
 def printedOrUntilEot (o : GameObject) : Keywords :=
   o.printed.keywords
 
-/-- True when summoning sickness currently prevents tapping or attacking
-(CR 302.6). Haste overrides it; prefer `Game.hasSummoningSickness` when `Game`
-is in scope. -/
-def hasSummoningSickness (o : GameObject) : Bool :=
-  o.isCreature && o.status.summoningSick && !o.printedOrUntilEot.haste
-
 end GameObject
 
-/-- Printed triggers of `source` that fire on `event`. Layer-6 granted triggers
-and ability removals are evaluated in `Game.matchingTriggers` (CR 613.1f). -/
-def GameObject.matchingTriggers (source : GameObject) (event : TriggerEvent) :
-    Array TriggeredAbility :=
-  source.printed.triggeredAbilities.filter (·.firesOn event)
-
-/-- A game rule that causes an event directly (CR 103.5, 303.4h, 304.2, 307.2, 602.2b, 603.3, 608.3, 700.2d, 701.3d, 702.176, 715.3d, 733.1, 800.4a). -/
+/-- A game rule that causes an event directly (CR 103.5, 303.4h, 304.2, 307.2, 602.2b, 603.3, 603.3c, 608.3, 700.2b, 701.3d, 702.176, 715.3d, 733.1, 800.4a). -/
 inductive GameRuleKind where
   | openingHandDraw
   | mulligan
@@ -248,7 +224,7 @@ inductive GameRuleKind where
   | continuousEffect
   | leavingZone
   | impending             -- 702.176
-  | noLegalMode           -- 700.2d
+  | noLegalMode           -- 603.3c / 700.2b
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- A turn-based action (CR 703.4). -/
@@ -257,7 +233,7 @@ inductive TurnBasedAction where
   | dayNightCheck       -- 502.2 / 703.4b
   | untapAll            -- 502.3 / 703.4c
   | drawStepDraw        -- 504.1 / 703.4d
-  | sagaLoreOnMain      -- 714.3b / 703.4f
+  | sagaLoreOnMain      -- 714.3c / 703.4f
   | chooseDefendingPlayer -- 507.1 / 703.4h
   | declareAttackers    -- 508.1 / 703.4i
   | declareBlockers     -- 509.1 / 703.4j
@@ -292,10 +268,10 @@ inductive StateBasedAction where
   | sagaFinalChapter    -- 704.5s / 714.4
   | dungeonCompleted    -- 704.5t
   | spaceSculptor       -- 704.5u
-  | zeroDefenseBattle   -- 704.5v
-  | illegalBattleProtector -- 704.5w
-  | siegeCompleted      -- 704.5x
-  | roleLimit           -- 704.5y
+  | zeroDefenseBattle   -- 704.5w / 310.8
+  | illegalBattleProtector -- 704.5x–y / 310.11
+  | siegeCompleted      -- 704.5v / 310.7
+  | roleLimit           -- 704.5z
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- A special action (CR 116.2). -/
@@ -339,6 +315,16 @@ inductive ReplacementEffectKind where
   | entersTappedSelf                     -- 616.1a
   | entersUntappedPayLife (life : Nat)   -- 616.1a / 614.12
   | entersTappedDeclinePayLife           -- 616.1a / 614.12
+  | entersUntappedBehold (beholdId : ObjectId) (subtype : CardSubtype) -- 616.1a / 614.12
+  | entersTappedDeclineBehold            -- 616.1a / 614.12
+  | asEntersChooseColor (color : Color)  -- 616.1a / 614.12
+  | asEntersChooseCreatureTypePrompt     -- 616.1a / 614.12
+  | asEntersChooseCreatureType (subtype : CardSubtype) -- 616.1a / 614.12
+  | asEntersChooseOdd (odd : Bool)       -- 616.1a / 614.12
+  | asEntersChooseCardNamePrompt         -- 616.1a / 614.12
+  | asEntersChooseCardName (name : String) -- 616.1a / 614.12
+  | asEntersChooseCardType (cardType : CardType) -- 616.1a / 614.12
+  | asEntersChooseAnchor (anchor : String) -- 616.1a / 614.12 / 700.2
   | entersWithLoyalty                    -- 306.5b / 616.1a
   | entersWithPlusOneCounters            -- 616.1a
   | entersWithXPlusOne                   -- 616.1a
@@ -348,6 +334,8 @@ inductive ReplacementEffectKind where
   | entersWithSagaLore                   -- 714.3a / 616.1a
   | entersUnderControl                   -- 616.1b
   | entersAsCopy                         -- 616.1c / 707.5
+  | entersAsCopyCreatureUntilEot (targetId : ObjectId) -- 616.1c / 614.1c / 614.12
+  | declineEntersAsCopy                  -- 616.1c / 614.1c / 614.12
   | entersBackFaceUp                     -- 616.1d / 702.145b / 712.14
   | entersWithExtraCounters              -- 616.1e
   | othersEnterWithPlusOneEqualToughness -- 616.1e (Arwen, Weaver of Hope)
@@ -438,6 +426,10 @@ inductive DelayedTriggerKind where
   | endStepGraveReturn (objectId : ObjectId) (underController : PlayerId)
   /-- Reveal creature cards from `controller`'s library for `count` exiled creatures at the beginning of the next end step (Synthetic Destiny). -/
   | endStepSynthetic (count : Nat)
+  /-- When `controller` casts their next instant or sorcery spell this turn, copy that spell; `controller` may choose new targets for the copy (Way of the Cryomancer, CR 603.7 / Ruling 844). -/
+  | copyNextInstantSorceryThisTurn
+  /-- When `controller` casts their next instant or sorcery spell with mana value X or less this turn, where X is Loki's power, copy that spell; `controller` may choose new targets for the copy (Loki Laufeyson, CR 603.7 / Ruling 560). -/
+  | lokiCopyNextInstantSorceryThisTurn (sourceId : Option ObjectId) (fallbackPower : Int)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- Whether this delayed trigger fires at most once and is removed from `Game.delayedTriggers` when it triggers (CR 603.7b). -/
@@ -479,6 +471,10 @@ structure WaitingTrigger where
   eventCause : Option EventCause := none
   /-- Delayed trigger payload when this waiting trigger came from a CR 603.7 delayed triggered ability. -/
   delayedTrigger : Option (DelayedTriggerKind × EventCause) := none
+  /-- Explicit one-shot `Effect` payload for reflexive triggers (CR 603.12). -/
+  abilityEffect : Option Effect := none
+  /-- Explicit `TriggerResolution` payload for reflexive triggers (CR 603.12). -/
+  reflexiveResolution : Option TriggeredAbility.TriggerResolution := none
   /-- “Only once each turn” and extra trigger copies were already applied
   when this was queued. -/
   checked : Bool := false
@@ -504,7 +500,7 @@ structure EventObject where
   toxic           : Nat                  := 0
   commanderIdentityScryCreature : Bool   := false
   staticAbilities : Array StaticAbility  := #[]
-  -- status & designations (CR 110.5–110.6)
+  -- status & designations (CR 110.5 / 110.5a / 903.3)
   zone            : Zone                 := .battlefield
   tapped          : Bool                 := false
   attacking       : Bool                 := false
@@ -516,12 +512,20 @@ structure EventObject where
   counters        : CounterBag           := #[]
   token              : Bool                        := false
   isCopy             : Bool                        := false
+  isCommander        : Bool                        := false
   changeling         : Bool                        := false
-  -- Arrival status and printed card carried so `applyZoneEvent` reconstructs
-  -- the `GameObject` without a follow-up `setObject`.
+  chosenOdd          : Option Bool                 := none
+  chosenCreatureType : Option CardSubtype          := none
+  chosenColor        : Option Color                := none
+  chosenName         : Option String               := none
+  chosenCardType     : Option CardType             := none
+  chosenAnchor       : Option String               := none
+  -- Arrival status and printed/copiable card carried so `applyZoneEvent`
+  -- reconstructs the `GameObject` and LKI copiable values without live state.
   summoningSick      : Bool                        := false
   attackingTarget    : Option AttackTarget         := none
   printed            : Option CardDef              := none
+  copiable           : Option CardDef              := none
   adventurerCard     : Option CardDef              := none
   chosenX            : Option Nat                  := none
 deriving Repr, Inhabited, BEq
@@ -648,10 +652,18 @@ def GameObject.asEvent (o : GameObject) : EventObject :=
     counters := o.status.toCounterBag
     token := o.printed.isToken
     isCopy := o.isCopy
+    isCommander := o.isCommander
     changeling := o.printed.keywords.changeling
+    chosenOdd := o.status.chosenOdd
+    chosenCreatureType := o.status.chosenCreatureType
+    chosenColor := o.status.chosenColor
+    chosenName := o.status.chosenName
+    chosenCardType := o.status.chosenCardType
+    chosenAnchor := o.status.chosenAnchor
     summoningSick := o.status.summoningSick
     attackingTarget := o.status.attackingTarget
     printed := some o.printed
+    copiable := some o.printed
     adventurerCard := o.adventurerCard
     chosenX := o.chosenX }
 

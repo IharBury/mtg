@@ -34,7 +34,9 @@ def spellFrc (c : CardDef) : Effect × FrcEffect :=
 
 def entered (card : CardDef) : Game × ObjectId :=
   let (g, obj) := afterDraw.allocObject card ⟨0⟩ .exile none
-  g.putOntoBattlefield obj.id ⟨0⟩
+  let (g, id) := g.putOntoBattlefield obj.id ⟨0⟩
+  let g := if let .chooseReplacement .. := g.pending then applyIdle g else g
+  (g, g.followMoved id)
 
 #guard realityFractureCommanderCards.size == 87
 #guard realityFractureCommanderCards.all (·.modellingError?.isNone)

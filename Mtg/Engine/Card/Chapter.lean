@@ -1,7 +1,7 @@
 import Mtg.Engine.Card.SpellResolution
 
 /-!
-# Saga chapter resolutions (CR 714.3)
+# Saga chapter resolutions (CR 714.2)
 
 How a printed Saga chapter resolves, including spell-shaped MSH chapters.
 -/
@@ -17,7 +17,7 @@ structure ChapterSpell where
   resolution : SpellResolution := .extraLand
 deriving Repr, Inhabited, BEq
 
-/-- How a printed Saga chapter resolves (CR 714.3). Each supported catalog
+/-- How a printed Saga chapter resolves (CR 714.2). Each supported catalog
 Saga uses these constructors; `effect` on `SagaChapter` remains the Oracle
 wording. -/
 inductive ChapterResolution where

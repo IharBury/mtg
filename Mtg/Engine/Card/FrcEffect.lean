@@ -135,9 +135,6 @@ inductive FrcEffect where
   /-- Put a card exiled with this artifact into its owner's graveyard, then
   create a Treasure or a 2/2 black Rogue. -/
   | currencyReturn
-  /-- You may have this artifact become a copy of a creature until end of turn
-  with haste. -/
-  | cursedCopy
   /-- Each opponent loses life equal to the life they lost this turn. -/
   | despair
   /-- You lose 1 life and amass Zombies 1. -/

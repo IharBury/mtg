@@ -40,7 +40,7 @@ inductive ManaSymbol where
   | colorless
   /-- A monocolored hybrid symbol `{A/B}` (CR 107.4e). Payable with either color. -/
   | hybrid (a b : Color)
-  /-- A monocolored hybrid with generic mana `{2/C}` (CR 107.4f). Payable with
+  /-- A monocolored hybrid with generic mana `{2/C}` (CR 107.4e). Payable with
   two mana of any type, or one mana of `c`. Mana value is 2. -/
   | twobrid (c : Color)
   /-- The variable symbol `{X}` (CR 107.3). Treated as 0 off the stack (CR 107.3g). -/
@@ -78,7 +78,7 @@ namespace ManaCost
 
 def empty : ManaCost := { symbols := #[] }
 
-/-- The payable zero mana cost `{0}` (CR 107.4d / 118.7). Distinct from
+/-- The payable zero mana cost `{0}` (CR 107.4d / 118.5). Distinct from
 `empty`, which is no mana cost and cannot be paid (CR 202.1b / 118.6). -/
 def zero : ManaCost := { symbols := #[.generic 0] }
 
@@ -178,7 +178,7 @@ def genericCount (cost : ManaCost) : Nat :=
   cost.symbols.foldl (fun acc s => match s with | .generic n => acc + n | _ => acc) 0
 
 /-- Reduce generic mana in this cost by `n`, dropping a `{0}` generic symbol
-(CR 118.7d). Colored symbols are unchanged. -/
+(CR 118.7a). Colored symbols are unchanged. -/
 def reduceGeneric (cost : ManaCost) (n : Nat) : ManaCost :=
   let rec go (syms : List ManaSymbol) (left : Nat) : List ManaSymbol :=
     match syms with

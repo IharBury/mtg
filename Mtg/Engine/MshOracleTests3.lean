@@ -58,7 +58,7 @@ def lokiLastKnownPowerOk : Bool :=
   let (g, _) := g.move loki.id (.graveyard ⟨0⟩) none
   let (g, spell) := g.allocObject lightningBolt ⟨0⟩ .stack (some ⟨0⟩)
   let g := g.putStackEntry ⟨0⟩ spell.id
-  let g := g.putCastTriggersOnStack ⟨0⟩ (g.object! spell.id)
+  let g := (g.putCastTriggersOnStack ⟨0⟩ (g.object! spell.id) |>.receivePriority ⟨0⟩).resolveTop
   let copies := g.objects.filter (fun o =>
     o.zone == .stack && o.isCopy && o.printed.name == "Lightning Bolt")
   copies.size == 1 &&
@@ -282,11 +282,22 @@ def improviseThenSacrificeOk : Bool :=
 
 #guard improviseThenSacrificeOk
 
+def twoHeadedGiantStarted : Game :=
+  match Start.start {
+    seats := #[
+      { name := "Chandra", deck := testRedDeck, teammate := some ⟨1⟩ },
+      { name := "Nissa", deck := testGreenDeck, teammate := some ⟨0⟩ }
+    ]
+    format := .constructed
+    seed := 1
+    startingPlayer := some 0
+  } with
+  | .ok g => keepOpeningHands g 8
+  | .error e => panic! e
+
 /-- Ruling 410: a Two-Headed Giant teammate's life gain is not "you gain life". -/
 def twoHeadedGiantTeammateLifeOk : Bool :=
-  let g := addPermanent afterDraw tigraFelineFury ⟨0⟩ ⟨0⟩
-  let g := g.changePlayer ⟨0⟩ (.teammate (some ⟨1⟩))
-  let g := g.changePlayer ⟨1⟩ (.teammate (some ⟨0⟩))
+  let g := addPermanent twoHeadedGiantStarted tigraFelineFury ⟨0⟩ ⟨0⟩
   let g := g.gainLife ⟨1⟩ 3
   !(g.waitingTriggers.any (fun (t : WaitingTrigger) =>
       t.source.name == "Tigra, Feline Fury")) &&
@@ -296,8 +307,7 @@ def twoHeadedGiantTeammateLifeOk : Bool :=
 
 /-- Ruling 588: controlling a player in Two-Headed Giant controls the team. -/
 def twoHeadedGiantControlTeamOk : Bool :=
-  let g := afterDraw.changePlayer ⟨1⟩ (.teammate (some ⟨0⟩))
-  let g := g.setPlayerControl ⟨0⟩ ⟨1⟩
+  let g := twoHeadedGiantStarted.setPlayerControl ⟨0⟩ ⟨1⟩
   g.controlsPlayer ⟨0⟩ ⟨1⟩ &&
     g.controlsPlayer ⟨0⟩ ⟨0⟩ &&
     (mshRuling 588).comment.contains "gain control of each player"

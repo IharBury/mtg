@@ -136,12 +136,11 @@ def giveControlUntilEot (g : Game) (o : GameObject) (p : PlayerId) : Game :=
 
 /-- Remove `o` from the game. Battlefield permanents use `move` so
 until-leaves one-shots return (CR 610.3 / 800.4a). Ante stays (CR 800.4n). -/
-def objectLeavesTheGame (g : Game) (o : GameObject) (leavingPlayer : PlayerId) : Game :=
+def objectLeavesTheGame (g : Game) (o : GameObject) (_leavingPlayer : PlayerId) : Game :=
   let cause := some (EventCause.gameRule .playerLeftGame)
   if o.zone == .ante then g
   else if o.zone == .battlefield then
     let (g, newId) := g.move o.id .exile none (cause := cause)
-    let g := g.change (.removeWaitingTriggersOf leavingPlayer)
     g.ceaseToExist newId (cause := cause)
   else
     g.ceaseToExist o.id (cause := cause)
@@ -296,7 +295,6 @@ def playerLeavesGame (g : Game) (p : PlayerId) : Game :=
           let name := acc.name o
           let (acc, _) := acc.move o.id .exile none (cause := cause)
           acc.logMsg s!"{name} is exiled (CR 800.4a)") g
-    let g := g.change (.removeWaitingTriggersOf p)
     let g :=
       match g.proposedSpell with
       | some prop =>

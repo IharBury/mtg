@@ -4,10 +4,10 @@ import Mtg.Engine.Game.Targeting
 # Triggered abilities onto the stack (CR 603.3)
 
 Putting triggered abilities on the stack, intervening-if conditions
-(CR 603.4), extra trigger copies, Saga lore counters (CR 714.3),
-battlefield folds and controlled-trigger helpers, `becomeTapped`
-(CR 603.6d), activated- and mana-ability lookups, waiting-trigger
-batches stacked in APNAP order (CR 603.3b), and `receivePriority`.
+(CR 603.4), extra trigger copies, Saga lore counters (CR 714.3a / 714.3c),
+battlefield folds, `becomeTapped` (CR 603.6d), activated- and mana-ability
+lookups, waiting-trigger batches stacked in APNAP order (CR 603.3b), and
+`receivePriority`.
 -/
 
 namespace Mtg.Engine
@@ -51,7 +51,7 @@ def triggerModesOf (g : Game) (obj : GameObject) : Array Effect :=
   if !fra.isEmpty then fra
   else (obj.triggeredAbility.map sharedTriggerModes).getD #[]
 
-/-- Whether `p` may choose this mode of a triggered ability (CR 700.2d). -/
+/-- Whether `p` may choose this mode of a triggered ability (CR 603.3c / 700.2b). -/
 def triggerModeChoosable (g : Game) (p : PlayerId) (obj : GameObject) (e : Effect) : Bool :=
   !e.requiresTarget || e.allowsZeroTargets ||
     !(g.legalTargetsForKind p e.targetKind obj.sourceId).isEmpty
@@ -61,7 +61,7 @@ def beginTriggerModeChoice (g : Game) (p : PlayerId) (obj : GameObject) (count :
   let modes := g.triggerModesOf obj
   if !modes.any (g.triggerModeChoosable p obj) then
     let g := g.ceaseToExist obj.id (cause := some (.gameRule .noLegalMode))
-    g.logMsg s!"{obj.name} has no mode that can be chosen and is removed from the stack (CR 700.2d)"
+    g.logMsg s!"{obj.name} has no mode that can be chosen and is removed from the stack (CR 603.3c / 700.2b)"
   else
     let what := if count == 2 then "two modes" else "a mode"
     (g.change (.pending (.fraChoice p (.triggerModes obj.id count #[])))).logMsg
@@ -74,30 +74,44 @@ def putTriggeredAbilityOnStack (g : Game) (controller : PlayerId) (source : Game
     (lastKnownToughness : Option Int := none) (cause : Option GameObject := none)
     (causeController : Option PlayerId := none)
     (eventCause : Option EventCause := none)
-    (delayedTrigger : Option (DelayedTriggerKind × EventCause) := none) : Game :=
+    (delayedTrigger : Option (DelayedTriggerKind × EventCause) := none)
+    (abilityEffectOverride : Option Effect := none)
+    (reflexiveResolution : Option TriggeredAbility.TriggerResolution := none) : Game :=
   if (g.player controller).lost then g
   else
     -- “For each opponent, up to one target … that player controls”: one
     -- optional instance per opponent (CR 601.2c).
     let abilityEffect :=
-      match ab.effect.targetKind with
-      | .filtered f =>
-        if f.controller == .eachOpponent then
-          let fs := (g.livingOpponents controller).map (fun pl =>
-            { f with controller := .specific pl.id.idx })
-          some { ab.effect with
-            targeting := .of (.multi fs ((List.range fs.size).toArray)) }
-        else none
-      | _ => none
+      abilityEffectOverride.orElse fun _ =>
+        match ab.effect.targetKind with
+        | .filtered f =>
+          if f.controller == .eachOpponent then
+            let fs := (g.livingOpponents controller).map (fun pl =>
+              { f with controller := .specific pl.id.idx })
+            some { ab.effect with
+              targeting := .of (.multi fs ((List.range fs.size).toArray)) }
+          else none
+        | _ => none
+    let srcIdOpt : Option ObjectId :=
+      if source.id == ⟨1000000000⟩ || (source.id == ⟨0⟩ && (g.findObject? source.id).isNone) then none
+      else some source.id
     let srcSnap : EventObject :=
       match g.findObject? source.id with
       | some cur => g.snapshot cur
-      | none => (g.lastKnownBefore? source.id).getD (g.snapshot source)
+      | none =>
+        match srcIdOpt.bind g.lastKnownBefore? with
+        | some eo => eo
+        | none =>
+          if srcIdOpt.isNone then
+            { id := none, name := source.name, owner := controller,
+              controller := some controller, zone := .battlefield }
+          else g.snapshot source
     let newId : ObjectId := ⟨g.nextObjectId⟩
     let spec : StackTriggerSpec := {
       triggeredAbility := some ab
       abilityEffect := abilityEffect
-      sourceId := some source.id
+      reflexiveResolution := reflexiveResolution
+      sourceId := srcIdOpt
       abilityName := some s!"{source.name}'s ability"
       delayedTrigger := delayedTrigger
       lastKnownPower := lastKnownPower
@@ -112,16 +126,25 @@ def putTriggeredAbilityOnStack (g : Game) (controller : PlayerId) (source : Game
     let g := g.record (GameEvent.triggerPutOnStack g.turnNumber newId srcSnap controller
       (spec := spec) (cause := eventCause))
     let obj := g.object! newId
-    let g := g.logMsg s!"{g.name source}'s {event} is put on the stack"
+    let srcLabel := if srcIdOpt.isNone then source.name else g.name source
+    let g := g.logMsg s!"{srcLabel}'s {event} is put on the stack"
     match ab.effect.resolution with
     | .chooseTriggerModes n => g.beginTriggerModeChoice controller obj n
     | _ => if (sharedTriggerModes ab).isEmpty then g else g.beginTriggerModeChoice controller obj 1
 
 /-- True when this trigger would be put on the stack with no legal target (CR 603.3d). -/
 def triggerHasNoLegalTarget (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
-    (sourceId : ObjectId) : Bool :=
-  ab.requiresTarget && !ab.allowsZeroTargets &&
-    (g.legalTriggerTargets controller ab (some sourceId)).isEmpty
+    (sourceId : ObjectId) (abilityEffectOverride : Option Effect := none) : Bool :=
+  let srcIdOpt :=
+    if sourceId == ⟨1000000000⟩ || (sourceId == ⟨0⟩ && (g.findObject? sourceId).isNone) then none
+    else some sourceId
+  match abilityEffectOverride with
+  | some eff =>
+    eff.requiresTarget && !eff.allowsZeroTargets &&
+      (g.legalTargetsForKind controller eff.targetKind srcIdOpt).isEmpty
+  | none =>
+    ab.requiresTarget && !ab.allowsZeroTargets &&
+      (g.legalTriggerTargets controller ab srcIdOpt).isEmpty
 
 /-- Put `ab` on the stack, or log that it is removed for lack of a target (CR 603.3d). -/
 def putTriggerOrFizzle (g : Game) (controller : PlayerId) (source : GameObject)
@@ -129,14 +152,25 @@ def putTriggerOrFizzle (g : Game) (controller : PlayerId) (source : GameObject)
     (lastKnownPower : Option Int := none) (lastKnownToughness : Option Int := none)
     (cause : Option GameObject := none) (causeController : Option PlayerId := none)
     (eventCause : Option EventCause := none)
-    (delayedTrigger : Option (DelayedTriggerKind × EventCause) := none) : Game :=
-  if g.triggerHasNoLegalTarget controller ab source.id then
-    g.logMsg
-      s!"{g.name source}'s {event} is removed from the stack (no legal target) (CR 603.3d)"
+    (delayedTrigger : Option (DelayedTriggerKind × EventCause) := none)
+    (abilityEffectOverride : Option Effect := none)
+    (reflexiveResolution : Option TriggeredAbility.TriggerResolution := none) : Game :=
+  if g.triggerHasNoLegalTarget controller ab source.id abilityEffectOverride then
+    let isRefl := abilityEffectOverride.isSome || reflexiveResolution.isSome
+    let srcLabel :=
+      if source.id == ⟨1000000000⟩ || (source.id == ⟨0⟩ && (g.findObject? source.id).isNone) then source.name
+      else g.name source
+    if isRefl then
+      g.logMsg s!"{srcLabel}'s {event} has no legal target and is removed (CR 603.3d)"
+    else
+      g.logMsg
+        s!"{srcLabel}'s {event} is removed from the stack (no legal target) (CR 603.3d)"
   else
     g.putTriggeredAbilityOnStack controller source ab event lastKnownPower lastKnownToughness
       (cause := cause) (causeController := causeController) (eventCause := eventCause)
       (delayedTrigger := delayedTrigger)
+      (abilityEffectOverride := abilityEffectOverride)
+      (reflexiveResolution := reflexiveResolution)
 
 /-- Put `ab` on the stack for `event`, using that event's spec for the log label
 and CR 603.3d check so a new event is not restated at every queue site. -/
@@ -145,61 +179,31 @@ def putQueuedTrigger (g : Game) (controller : PlayerId) (source : GameObject)
     (lastKnownPower : Option Int := none) (lastKnownToughness : Option Int := none)
     (cause : Option GameObject := none) (causeController : Option PlayerId := none)
     (eventCause : Option EventCause := none)
-    (delayedTrigger : Option (DelayedTriggerKind × EventCause) := none) : Game :=
+    (delayedTrigger : Option (DelayedTriggerKind × EventCause) := none)
+    (abilityEffectOverride : Option Effect := none)
+    (reflexiveResolution : Option TriggeredAbility.TriggerResolution := none) : Game :=
   if (g.player controller).lost then g
   else if !g.triggerConditionHolds controller ab cause (some source) then g
-  else if event.checkTargets then
-    g.putTriggerOrFizzle controller source ab event.label lastKnownPower lastKnownToughness
-      (cause := cause) (causeController := causeController) (eventCause := eventCause)
-      (delayedTrigger := delayedTrigger)
   else
-    g.putTriggeredAbilityOnStack controller source ab event.label
-      lastKnownPower lastKnownToughness (cause := cause) (causeController := causeController)
-      (eventCause := eventCause) (delayedTrigger := delayedTrigger)
+    let label :=
+      if abilityEffectOverride.isSome || reflexiveResolution.isSome then "reflexive ability"
+      else event.label
+    if event.checkTargets || abilityEffectOverride.isSome then
+      g.putTriggerOrFizzle controller source ab label lastKnownPower lastKnownToughness
+        (cause := cause) (causeController := causeController) (eventCause := eventCause)
+        (delayedTrigger := delayedTrigger)
+        (abilityEffectOverride := abilityEffectOverride)
+        (reflexiveResolution := reflexiveResolution)
+    else
+      g.putTriggeredAbilityOnStack controller source ab label
+        lastKnownPower lastKnownToughness (cause := cause) (causeController := causeController)
+        (eventCause := eventCause) (delayedTrigger := delayedTrigger)
+        (abilityEffectOverride := abilityEffectOverride)
+        (reflexiveResolution := reflexiveResolution)
 
-/-- Queue `ab` until a player would receive priority (CR 603.3 / 603.4). The
-intervening condition is checked when the event occurs. -/
-def queueTrigger (g : Game) (controller : PlayerId) (source : GameObject)
-    (ab : TriggeredAbility) (event : TriggerEvent)
-    (lastKnownPower : Option Int := none) (lastKnownToughness : Option Int := none)
-    (cause : Option GameObject := none) (causeController : Option PlayerId := none)
-    (eventCause : Option EventCause := none) : Game :=
-  if (g.player controller).lost then g
-  else if !g.triggerConditionHolds controller ab cause (some source) then g
-  else if ab.onceEachTurn && g.loggedTriggeredThisTurn source.id ab then g
-  else if ab.optionalOnceEachTurn && g.optionalOnceUsedThisTurn source.id then g
-  else
-    let attackEvent :=
-      match event with
-      | .attacking => true
-      | .fra fe =>
-        match fe with
-        | .creatureYouControlAttacks | .creatureYouControlAttacksPlayerAlone
-        | .zombieTokenAttacks | .sphinxesAttack => true
-        | _ => false
-      | _ => false
-    let mardu :=
-      if attackEvent && (g.permanentsOf controller).any (fun o =>
-          (g.baseCard o).asEntersChooseMarduOrJeskai && g.retainsPrintedAbilities o &&
-            o.status.chosenAnchor == some "Mardu") then 1 else 0
-    let copies := g.extraTriggerCopies controller source + 1 + mardu
-    let wt : WaitingTrigger := {
-      controller, source, ability := ab, event, lastKnownPower, lastKnownToughness,
-      causeId := cause.map (·.id), cause, causeController, checked := true, eventCause }
-    let originBatch :=
-      match g.currentBatch with
-      | some (bid, _) => bid
-      | none => ⟨g.nextBatchId⟩
-    let srcSnap := g.snapshot source
-    Id.run do
-      let mut g := g
-      for _ in [0:copies] do
-        g := g.recordTriggeredWithOrigin srcSnap controller ab originBatch
-        g := g.enqueueWaitingTriggers #[wt]
-      return g
-
-/-- Put exactly one lore counter on `saga` and queue that chapter. -/
-def addOneLoreRaw (g : Game) (saga : GameObject) : Game :=
+/-- Put one lore counter on `saga` with explicit `cause` and queue that chapter. -/
+def addOneLoreRaw (g : Game) (saga : GameObject)
+    (cause : EventCause := .turnBased .sagaLoreOnMain) : Game :=
   match g.controllerOf saga, (g.baseCard saga).saga with
   | some p, some _ =>
     match g.findObject? saga.id with
@@ -210,24 +214,46 @@ def addOneLoreRaw (g : Game) (saga : GameObject) : Game :=
         let lore := saga.status.lore + 1
         let sagaName := g.name saga
         let g := g.record (GameEvent.counters g.turnNumber (some p) (g.snapshot saga) .lore 1
-          (cause := .turnBased .sagaLoreOnMain))
+          (cause := cause))
         g.logMsg s!"{sagaName} gets a lore counter ({lore})"
   | _, _ => g
 
-/-- Add `n` lore counters one at a time, plus one per Doc Samson the
-controller has (CR 714.3c / MSH 517). -/
-def addLoreCounters (g : Game) (saga : GameObject) (n : Nat) : Game :=
-  let n := g.countersYouPut saga n
-  Id.run do
-    let mut g := g
-    for _ in [0:n] do
-      match g.findObject? saga.id with
-      | some o => g := g.addOneLoreRaw o
-      | none => pure ()
-    return g
+/-- Add `n` lore counters via `replaceCountersPutChoice`, including Doc Samson's
++1 replacement (CR 614.1a / MSH 517), pausing for CR 616.1 choice when competing
+counter replacements tie and preserving `EventCause.replaced`. -/
+def addLoreCounters (g : Game) (saga : GameObject) (n : Nat)
+    (cause : Option EventCause := some (.turnBased .sagaLoreOnMain)) : Game :=
+  match g.controllerOf saga, (g.baseCard saga).saga with
+  | some p, some _ =>
+    match g.findObject? saga.id with
+    | none => g
+    | some saga =>
+      if !saga.isOnBattlefield || n == 0 then g
+      else
+        let baseCause := cause.getD (.turnBased .sagaLoreOnMain)
+        let propCause := g.resolveOptionalCause (some baseCause) (fallbackCtrl := some p)
+        let proposed := GameEvent.counters g.turnNumber (some p) (g.snapshot saga) .lore n (cause := propCause)
+        let (n', applied, cause', choice?, _) :=
+          if proposed.watches .wouldPutCounter then
+            g.replaceCountersPutChoice saga .lore n (putter := some p) (cause := some baseCause)
+          else (0, #[], some baseCause, none, #[])
+        match choice? with
+        | some (chooser, choices) =>
+          g.promptChooseReplacement chooser choices (.addLoreCounters saga.id n (some baseCause))
+        | none =>
+          let g := g.consumeReplacementOrder applied
+          let finalCause := g.resolveOptionalCause cause' (fallbackCtrl := some p)
+          Id.run do
+            let mut g := g
+            for _ in [0:n'] do
+              match g.findObject? saga.id with
+              | some o => g := g.addOneLoreRaw o (cause := finalCause)
+              | none => pure ()
+            return g
+  | _, _ => g
 
 /-- Put one lore counter on `saga` and queue the matching chapter abilities
-(CR 714.2 / 714.3). Counters are added one at a time. -/
+(CR 714.2). Counters are added one at a time. -/
 def addOneLoreCounter (g : Game) (saga : GameObject) : Game :=
   g.addLoreCounters saga 1
 
@@ -248,29 +274,32 @@ def addLoreAsSagaEnters (g : Game) (o : GameObject) : Game :=
         return g
   | _, _ => g
 
-/-- After the draw step / as first main begins, add a lore counter to each
-Saga the active player controls (CR 714.3b). -/
-def addLoreAfterDrawStep (g : Game) : Game :=
-  (g.permanentsOf g.activePlayer).foldl (fun acc o =>
-    if (acc.baseCard o).saga.isSome then acc.addOneLoreCounter o else acc) g
-
-/-- Queue each printed trigger of `source` that fires on `event` (CR 603.3). -/
-def putMatchingSourceTriggers (g : Game) (controller : PlayerId) (source : GameObject)
-    (event : TriggerEvent)
-    (lastKnownPower : Option Int := none) (lastKnownToughness : Option Int := none)
-    (cause : Option GameObject := none) (keep : TriggeredAbility → Bool := fun _ => true) : Game :=
+/-- Add a lore counter to each Saga in `sagaIds` sequentially, pausing and
+chaining `.addLoreAfterDrawStep rest` if a CR 616.1 replacement choice opens. -/
+def addLoreAfterDrawStepIds (g : Game) (sagaIds : Array ObjectId) : Game :=
   Id.run do
     let mut g := g
-    for ab in (g.matchingTriggers source event ++
-        (g.prowessTriggers source).filter (·.firesOn event)).filter keep do
-      let skipInfinity :=
-        match ab.shared with
-        | .step .harnessedFlicker => !source.status.harnessed
-        | _ => false
-      if !skipInfinity then
-        g := g.queueTrigger controller source ab event lastKnownPower lastKnownToughness
-          cause
+    let mut idx := 0
+    while idx < sagaIds.size do
+      let sid := sagaIds[idx]!
+      idx := idx + 1
+      match g.findObject? sid with
+      | some o =>
+        if o.isOnBattlefield && (g.baseCard o).saga.isSome then
+          g := g.addOneLoreCounter o
+          if let .chooseReplacement .. := g.pending then
+            let rest := sagaIds.extract idx sagaIds.size
+            if !rest.isEmpty then
+              g := g.chainPendingReplacement (.addLoreAfterDrawStep rest)
+            idx := sagaIds.size
+      | none => pure ()
     return g
+
+/-- After the draw step / as first main begins, add a lore counter to each
+Saga the active player controls (CR 714.3c). -/
+def addLoreAfterDrawStep (g : Game) : Game :=
+  let sagaIds := ((g.permanentsOf g.activePlayer).filter (fun o => (g.baseCard o).saga.isSome)).map (·.id)
+  g.addLoreAfterDrawStepIds sagaIds
 
 /-- Apply `f` to each battlefield permanent matching `pred`. -/
 def foldBattlefield (g : Game) (pred : GameObject → Bool)
@@ -311,19 +340,6 @@ def forEachControlledCreature (g : Game) (p : PlayerId)
   g.withBatch none fun g =>
     g.foldControlledPermanents p excludeId fun g o =>
       if g.isCreature o then f g o else g
-
-/-- Put matching triggers of permanents `p` controls that fire on `event`.
-`cause` is the object that made them trigger, when there is one. -/
-def putControlledTriggers (g : Game) (p : PlayerId)
-    (event : TriggerEvent) (excludeId : Option ObjectId := none)
-    (cause : Option GameObject := none)
-    (lastKnownPower : Option Int := none) : Game :=
-  let g := g.foldControlledPermanents p excludeId fun g o =>
-    g.putMatchingSourceTriggers p o event (lastKnownPower := lastKnownPower) (cause := cause)
-  -- Emblems in the command zone trigger too (CR 114.4).
-  (g.objects.filter (fun o => o.zone == .command && g.controlledBy o p)).foldl
-    (fun g e => g.putMatchingSourceTriggers p e event
-      (lastKnownPower := lastKnownPower) (cause := cause)) g
 
 /-- Sacrifice `o` to its owner's graveyard (CR 701.21a). -/
 def sacrificeToGraveyard (g : Game) (o : GameObject) (reason : String)
@@ -413,7 +429,9 @@ def removeWaitingTrigger (g : Game) (wt : WaitingTrigger) : Game :=
   match g.waitingTriggers.findIdx? (fun w =>
     w.controller == wt.controller && w.source.id == wt.source.id &&
       w.ability == wt.ability && w.event == wt.event &&
-      w.causeId == wt.causeId && w.delayedTrigger == wt.delayedTrigger) with
+      w.causeId == wt.causeId && w.delayedTrigger == wt.delayedTrigger &&
+      w.abilityEffect == wt.abilityEffect &&
+      w.reflexiveResolution == wt.reflexiveResolution) with
   | none => g
   | some i => g.change (.waitingTriggers (g.waitingTriggers.eraseIdx! i))
 
@@ -427,7 +445,7 @@ def lastKnownPowerForTrigger (ab : TriggeredAbility) (lastKnownPower : Option In
   | _, _ => lastKnownPower
 
 /-- Put one waiting trigger on the stack. A trigger queued without
-`queueTrigger` is checked here for “only once each turn” (CR 603.2h) and
+`checked := true` is checked here for “only once each turn” (CR 603.2h) and
 gets its extra copies (Chief of the Wilds, Bifur). -/
 def putWaitingTrigger (g : Game) (wt : WaitingTrigger) (event : TriggerEvent) : Game :=
   let put (g : Game) :=
@@ -435,6 +453,8 @@ def putWaitingTrigger (g : Game) (wt : WaitingTrigger) (event : TriggerEvent) : 
       (lastKnownPowerForTrigger wt.ability wt.lastKnownPower wt.causeId)
       wt.lastKnownToughness (cause := wt.cause) (causeController := wt.causeController)
       (eventCause := wt.eventCause) (delayedTrigger := wt.delayedTrigger)
+      (abilityEffectOverride := wt.abilityEffect)
+      (reflexiveResolution := wt.reflexiveResolution)
   if wt.checked then put g
   else
     if wt.ability.onceEachTurn && g.loggedTriggeredThisTurn wt.source.id wt.ability then g
@@ -464,21 +484,8 @@ def putTriggerBatch (g : Game) (wts : Array WaitingTrigger) : Game :=
         g := g.putWaitingTrigger wt wt.event
       return g.promptTriggerTargetsIfNeeded
 
-/-- Put queued triggers for `event` onto the stack (CR 603.3). The event spec
-decides the log label and whether to remove abilities that require a target
-and have none (CR 603.3d). -/
-def flushWaitingTriggers (g : Game) (event : TriggerEvent) : Game :=
-  let waiting := g.waitingFor event
-  if waiting.isEmpty then g
-  else
-    Id.run do
-      let mut g := g.change (.removeWaitingTriggersForEvent event)
-      for wt in waiting do
-        g := g.putWaitingTrigger wt event
-      return g.promptTriggerTargetsIfNeeded
-
 /-- Start scrying `n` as a keyword action (CR 701.22).
-Scry 0 is skipped and does not trigger “whenever you scry” (CR 701.22c). -/
+Scry 0 is skipped and does not trigger “whenever you scry” (CR 701.22b). -/
 def beginScry (g : Game) (p : PlayerId) (n : Nat) : Game :=
   let pl := g.player p
   let count := min n pl.library.size

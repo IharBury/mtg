@@ -3,7 +3,7 @@ import Mtg.Engine.Game.EffectResolution
 /-!
 # Optional costs, cascade, and the Ring
 
-Kicker (CR 702.32), gift, and teamwork announcements, cascade
+Kicker (CR 702.33), gift, and teamwork announcements, cascade
 (CR 702.85), copying spells, the Ring tempts you (CR 701.54), and
 related resolution helpers.
 -/
@@ -163,7 +163,7 @@ def afterOptionalAdditionalCost (g : Game) (p : PlayerId) : Game :=
   | some prop, some spell =>
     if spell.printed.giftTreasure && !prop.giftAnnounced then
       let g := g.change (.pending (.chooseGift p))
-      g.logMsg s!"{(g.player p).name} may promise a gift (CR 702.185)"
+      g.logMsg s!"{(g.player p).name} may promise a gift (CR 702.174)"
     else if spell.printed.teamwork.isSome && !prop.teamworkAnnounced then
       let g := g.change (.pending (.chooseTeamwork p))
       g.logMsg s!"{(g.player p).name} may pay a teamwork cost (CR 702.194)"

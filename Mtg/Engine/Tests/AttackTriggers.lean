@@ -388,7 +388,7 @@ def oliphauntTargetGone : Game :=
 #guard oliphauntTargetGone.log.any (fun s => mentions s "no longer in play")
 #guard !(oliphauntTargetGone.battlefield.any (fun o => o.name == "Gray Ogre"))
 
-/- Lothlórien Lookout: attack trigger scries 1 (CR 508.2 / 701.22). -/
+/- Lothlórien Lookout: attack trigger scries 1 (CR 508.3a / 701.22). -/
 
 #guard lothlorienLookout.triggeredAbilities == #[.onAttackScry 1]
 #guard lothlorienLookout.power == some 1

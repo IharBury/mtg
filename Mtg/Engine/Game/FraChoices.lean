@@ -1,4 +1,4 @@
-import Mtg.Engine.Game.Decisions
+import Mtg.Engine.Game.PriorityActions
 import Mtg.Engine.Game.FraHelpers
 
 /-!
@@ -69,7 +69,7 @@ def castFreeCopy (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game 
   else if face.requiresTarget then
     return g.changes #[.pending (.chooseTargets p), .proposedSpell (some prop)]
   else
-    return g.becomeCast p (g.object! newId)
+    return (g.becomeCast p (g.object! newId)).finishFraChoice
 
 /-- Hawkeye's Trick Arrows with the chosen modes, in printed order. -/
 def hawkeyeArrowsEffect (modes : Array Nat) : Effect :=
@@ -153,7 +153,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       else
         let owner := o.owner
         let oName := g.name o
-        let src? := sid.bind (fun s => g.findObject? (g.followMoved s))
+        let src? := sid.bind g.damageSourceById?
         let pos : LibraryPosition := if answer == .accept then .top else .bottom
         let (g, _) := g.move id (.library owner) none (libraryPosition := some pos)
         if answer == .accept then
@@ -255,6 +255,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
           { targeting := .of (.filtered TargetFilter.creature), maxTargets := nonland
             allowsZeroTargets := true, resolution := .tapAndStunPerOpponent
             phrase := "Tap up to that many target creatures and put a stun counter on each of them" }
+          (deferToPriority := true)
     return g.finishFraChoice
   | .discardThenStun .., _ => throw "Choose the cards to discard"
   | .maySacrificeThen types next sourceId, .objects #[id] =>
@@ -309,9 +310,9 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let some obj := g.findObject? objId | return g.finishFraChoice
     let modes := g.triggerModesOf obj
     let some e := modes[idx]? | throw "No such mode (CR 700.2)"
-    if chosen.contains idx then throw "That mode was already chosen (CR 700.2)"
+    if chosen.contains idx then throw "That mode was already chosen (CR 700.2d)"
     if !g.triggerModeChoosable p obj e then
-      throw "That mode has no legal target (CR 700.2d)"
+      throw "That mode has no legal target (CR 603.3c / 700.2b)"
     let g := g.logMsg s!"{(g.player p).name} chooses mode {idx + 1} ({e.phrase})"
     let chosen := chosen.push idx
     let left := remaining - 1
@@ -335,14 +336,6 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       else return g.finishFraChoice
     | none => return g.finishFraChoice
   | .chooseKeyword .., _ => throw "Choose one of the keywords"
-  | .chooseColor id, .mode idx =>
-    let some c := Color.all[idx]? | throw "Choose white, blue, black, red, or green (0-4)"
-    match g.findObject? id with
-    | some o =>
-      let g := g.changeStatus o.id (.chosenColor (some c))
-      return (g.logMsg s!"{(g.player p).name} chooses {c.englishName} for {g.name o}").finishFraChoice
-    | none => return g.finishFraChoice
-  | .chooseColor _, _ => throw "Choose a color"
   | .sacrificeCreatureEach controller rest chosen, .objects #[id] =>
     let some o := g.findObject? id | throw "no such object"
     if !o.isOnBattlefield || !g.isCreature o || !g.controlledBy o p then
@@ -378,15 +371,6 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     | _, _ => return g.finishFraChoice
   | .mayMoveAllCounters .., .decline => return g.finishFraChoice
   | .mayMoveAllCounters .., _ => throw "Answer accept or decline"
-  | .chooseCardName id, .name nm =>
-    if !g.isNonlandCardName nm then
-      throw s!"{nm} isn't the name of a nonland card (CR 201.3)"
-    match g.findObject? id with
-    | some o =>
-      let g := g.changeStatus o.id (.chosenName (some nm))
-      return (g.logMsg s!"{(g.player p).name} chooses {nm} for {g.name o}").finishFraChoice
-    | none => return g.finishFraChoice
-  | .chooseCardName _, _ => throw "Name a nonland card"
   | .crew abilityId vehicleId n, .objects ids =>
     let some vehicle := g.findObject? vehicleId | throw "The Vehicle is gone"
     let vName := g.name vehicle
@@ -416,14 +400,11 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .costPicks sourceId picks _, .objects ids =>
     let some prop := g.proposedSpell | throw "No activation is being paid for"
     let some pick := picks[0]? | throw "No cost is left to pay"
-    let g ← g.payCostPick p prop.spellId sourceId pick ids
+    let g ← g.withProposalActionM .costAction fun g =>
+      g.payCostPick p prop.spellId sourceId pick ids
     return (← g.continueCostPicks prop (picks.extract 1 picks.size) true).finishFraChoice
   | .costPicks _ _ false, .decline =>
-    let g ← g.reverseProposedSpell? (resumeContinuation := false)
-    if g.pending == .none && !g.continuations.isEmpty then
-      return g.finishFraChoice
-    else
-      return g
+    g.reverseProposedSpell? (resumeContinuation := true)
   | .costPicks _ _ true, .decline =>
     throw "Part of the cost is already paid; the activation can't be cancelled"
   | .costPicks .., _ => throw "Choose what to pay the cost with, or decline to cancel"
@@ -692,10 +673,10 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let chosen := chosen.push idx
     if chosen.size < left && chosen.size < 3 then
       return g.change (.pending (.fraChoice p (.hawkeyeModes left chosen sourceId)))
-    return (g.putReflexiveTrigger p sourceId (hawkeyeArrowsEffect chosen)).finishFraChoice
+    return (g.putReflexiveTrigger p sourceId (hawkeyeArrowsEffect chosen) (deferToPriority := true)).finishFraChoice
   | .hawkeyeModes _ chosen sourceId, .decline =>
     if chosen.isEmpty then return g.finishFraChoice
-    return (g.putReflexiveTrigger p sourceId (hawkeyeArrowsEffect chosen)).finishFraChoice
+    return (g.putReflexiveTrigger p sourceId (hawkeyeArrowsEffect chosen) (deferToPriority := true)).finishFraChoice
   | .hawkeyeModes .., _ => throw "Choose a mode, or decline to stop"
   | .discardThenDraw, .objects #[id] =>
     if !(g.player p).hand.contains id then throw "That card is not in your hand"
@@ -729,16 +710,18 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       return g
   | .zemoBoastExile .., _ => throw "Choose the cards to exile, or decline"
   | .mayCastCascade cardId others, .accept =>
-    let cause := g.lastMoveCauseOf? cardId
-    let g := g.castAsPartOfResolution p cardId
-    let cast := (g.findObject? (g.followMoved cardId)).any (·.zone == .stack)
-    let bottomed := if cast then others else others.push cardId
-    let msg :=
-      if cast then
-        s!"{(g.player p).name} puts the other exiled cards on the bottom of their library in a random order"
-      else
-        s!"{(g.player p).name} puts the exiled cards on the bottom of their library in a random order"
-    let g := g.requestOrderInto bottomed (.library p) msg (cause := cause)
+    let g :=
+      if g.continuations.isEmpty then g.change (.pushContinuationFrame {}) else g
+    let g := g.changes #[
+      .postCastCleanup (some (.cascadeBottom p cardId others)),
+      .pending .none,
+      .saveProposalCheckpoint
+    ]
+    let g := g.castAsPartOfResolution p cardId (callerCheckpoint := true)
+    let g :=
+      if g.proposedSpell.isNone && g.postCastCleanup.isSome then
+        g.runPostCastCleanup
+      else g
     return g.finishFraChoice
   | .mayCastCascade cardId others, .decline =>
     let cause := g.lastMoveCauseOf? cardId
@@ -747,19 +730,18 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       (cause := cause)).finishFraChoice
   | .mayCastCascade .., _ => throw "Cast it (accept), or decline"
   | .mayCastGrima cardId others victim, .accept =>
-    let cause := g.lastMoveCauseOf? cardId
-    let g := g.castAsPartOfResolution p cardId
-    let landed := g.followMoved cardId
-    let cast := (g.findObject? landed).any (·.zone == .stack)
-    let uncast :=
-      if cast then #[]
-      else if (g.findObject? cardId).any (·.zone == .exile) then #[cardId]
-      else if (g.findObject? landed).any (·.zone == .exile) then #[landed]
-      else #[]
-    let pile := others ++ uncast
-    let msg :=
-      s!"{(g.player victim).name} puts the exiled cards that weren't cast on the bottom of their library in a random order"
-    let g := g.requestOrderInto pile (.library victim) msg (cause := cause)
+    let g :=
+      if g.continuations.isEmpty then g.change (.pushContinuationFrame {}) else g
+    let g := g.changes #[
+      .postCastCleanup (some (.grimaBottom victim cardId others)),
+      .pending .none,
+      .saveProposalCheckpoint
+    ]
+    let g := g.castAsPartOfResolution p cardId (callerCheckpoint := true)
+    let g :=
+      if g.proposedSpell.isNone && g.postCastCleanup.isSome then
+        g.runPostCastCleanup
+      else g
     return g.finishFraChoice
   | .mayCastGrima cardId others victim, .decline =>
     let cause := g.lastMoveCauseOf? cardId
@@ -768,22 +750,19 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       (cause := cause)).finishFraChoice
   | .mayCastGrima .., _ => throw "Cast it (accept), or decline"
   | .mayCastCopy copyId, .accept =>
-    let g := g.castAsPartOfResolution p copyId
-    let landed := g.followMoved copyId
-    let onStack :=
-      (g.findObject? landed).any (·.zone == .stack) ||
-        (g.findObject? copyId).any (·.zone == .stack)
-    if onStack then return g.finishFraChoice
-    else
-      let copyCause := some (EventCause.stateBased .copyOutsideStackOrBf)
-      let gone :=
-        match g.findObject? copyId with
-        | some o => if o.isCopy then (g.ceaseToExist o.id (cause := copyCause)).logMsg s!"The copy of {o.name} ceases to exist" else g
-        | none =>
-          match g.findObject? landed with
-          | some o => if o.isCopy then (g.ceaseToExist o.id (cause := copyCause)).logMsg s!"The copy of {o.name} ceases to exist" else g
-          | none => g
-      return gone.finishFraChoice
+    let g :=
+      if g.continuations.isEmpty then g.change (.pushContinuationFrame {}) else g
+    let g := g.changes #[
+      .postCastCleanup (some (.copyCeaseToExist copyId)),
+      .pending .none,
+      .saveProposalCheckpoint
+    ]
+    let g := g.castAsPartOfResolution p copyId (callerCheckpoint := true)
+    let g :=
+      if g.proposedSpell.isNone && g.postCastCleanup.isSome then
+        g.runPostCastCleanup
+      else g
+    return g.finishFraChoice
   | .mayCastCopy copyId, .decline =>
     let g :=
       match g.findObject? copyId with
@@ -840,14 +819,17 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     if o.zone != .exile || g.isLand o then
       throw s!"{o.name} can't be cast this way"
     let rest := eligible.filter (· != id)
-    let g := g.castAsPartOfResolution p id
-    let cast := (g.findObject? (g.followMoved id)).any (·.zone == .stack)
-    if !cast || left <= 1 || rest.isEmpty then
-      return (g.change (.pendingMayCastFromExile none)).finishFraChoice
-    else if g.pending != .none then
-      return (g.change (.pendingMayCastFromExile (some (p, rest, left - 1)))).finishFraChoice
-    else
-      return g.change (.pending (.fraChoice p (.mayCastUpToFromExile rest (left - 1))))
+    let g := (gPre.change .saveProposalCheckpoint).changes #[
+      .pending .none,
+      .pendingMayCastFromExile (if left > 1 && !rest.isEmpty then some (p, rest, left - 1) else none)
+    ]
+    let g := g.castAsPartOfResolution p id (callerCheckpoint := true)
+    let g :=
+      if g.pending == .none && g.proposedSpell.isNone &&
+          !(g.findObject? (g.followMoved id)).any (·.zone == .stack) then
+        g.change (.pendingMayCastFromExile none)
+      else g
+    return g.finishFraChoice
   | .mayCastUpToFromExile _ _, .decline =>
     return ((g.change (.pendingMayCastFromExile none))
       |>.logMsg s!"{(g.player p).name} declines to cast a spell").finishFraChoice
@@ -1000,7 +982,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let g := g.record (GameEvent.sheHulkDealtDamage g.turnNumber p)
     let g :=
       g.withLegalKindTarget p .playerOrCreature #[target]
-        (fun g tgt => g.dealDamageToTarget tgt amount (source := sourceId.bind g.findObject?))
+        (fun g tgt => g.dealDamageToTarget tgt amount (source := sourceId.bind g.damageSourceById?))
         sourceId none
     return (g.logMsg "The Sensational She-Hulk deals damage (only once each turn)").finishFraChoice
   | .sheHulkMayDamage .., .decline =>
@@ -1172,16 +1154,6 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     if rest.isEmpty then return g.finishFraChoice
     return g.change (.pending (.fraChoice p (.newTargetsForCopies rest)))
   | .newTargetsForCopies .., _ => throw "Choose a new target for the copy, or decline to keep it"
-  | .entersCreatureType id, .name t =>
-    let some sub := (CardSubtype.ofOracle? t).filter CardSubtype.isCreatureType
-      | throw s!"{t} is not a creature type"
-    return (g.chooseCreatureTypeAsEnters id sub).finishFraChoice
-  | .entersCreatureType _, _ => throw "Name a creature type"
-  | .entersOddEven id, .mode 0 =>
-    return (g.chooseGollumParity id false).finishFraChoice
-  | .entersOddEven id, .mode 1 =>
-    return (g.chooseGollumParity id true).finishFraChoice
-  | .entersOddEven _, _ => throw "Choose even (0) or odd (1)"
   | .chooseEnteringAttackTarget remaining chosen cause, ans =>
     let some item := remaining[0]?
       | return (g.commitEnteringAttackItems chosen cause).finishFraChoice
@@ -1290,7 +1262,6 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
       | some i => .chooseMode i
       | none => .decline
   | .chooseKeyword .. => .chooseMode 0
-  | .chooseColor _ => .chooseMode 0
   | .sacrificeCreatureEach .. =>
     .choosePermanents (((g.creaturesControlledBy p).map (·.id)).extract 0 1)
   | .discardTwo .. => .choosePermanents ((g.player p).hand.extract 0 2)
@@ -1440,18 +1411,6 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
       | none => .black
     .choosePermanents ((g.player p).graveyard.filter (fun id =>
       (g.findObject? id).any (fun card => (g.colors card).contains col)))
-  | .chooseCardName _ =>
-    -- Name a nonland card an opponent owns, else any nonland card.
-    let opp := g.objects.find? (fun o => o.owner != p && !g.isLand o)
-    let any := g.knownCardFaces.find? (fun c => !c.isLand)
-    .chooseName ((opp.map (·.name)).getD ((any.map (·.name)).getD ""))
-  | .entersCreatureType _ =>
-    let yours :=
-      (g.permanentsOf p).foldl (fun acc o =>
-        (g.subtypes o).foldl (fun acc s =>
-          if s.isCreatureType && !acc.contains s then acc.push s else acc) acc) #[]
-    .chooseName (yours[0]?.getD CardSubtype.human).englishName
-  | .entersOddEven _ => .chooseMode 0
   | .chooseEnteringAttackTarget .. => .chooseMode 0
   | .mayBeginOnBattlefield _ => .decline
 
