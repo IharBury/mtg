@@ -3404,8 +3404,13 @@ spell-copy / combat-Treasure / reflexive `WaitingTrigger` routing, pre-move
      `isResCast` is `true` (unless `g.pending` is `.chooseReplacement ..` and
      `g.pendingReplacement.any (·.endsWithFinishFra)` is already `true` from
      `outer.ensureEndsWithFinishFra`, and in `Decisions.resumePendingReplacement`
-     `.finishPostCast` when `!grantPriority && !hadOuter` after a deferred
-     scry)—finish with `Decisions.finishFraChoice` rather than
+     `.finishPostCast`—with `.seq first rest` threading
+     `followedByFinishFra := followedByFinishFra || rest.endsWithFinishFra` into
+     `first`—only when `!grantPriority && !hadOuter && !followedByFinishFra` so
+     a bare deferred ancestry scry resumes via `finishFraChoice` while a
+     `.seq .finishPostCast .finishFraChoice` left by a no-outer
+     `.chooseReplacement` pause does not run `finishFraChoice` twice)—finish
+     with `Decisions.finishFraChoice` rather than
      `resumeAfterBecomeCast` alone, and in
      `SacrificeDiscard.sacrificeForActivation` (`.sacrificePermanent`'s `.spell`
      arm, which returns `g` without calling `finishFraChoice` because
