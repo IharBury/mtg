@@ -3304,25 +3304,32 @@ spell-copy / combat-Treasure / reflexive `WaitingTrigger` routing, pre-move
      upfront before `continueCostPicks` (`paid := false`), check
      `(g.costPickCandidates caster sid pick).size < pick.count` for
      `some pick := picks[0]?` across subsequent picks (`paid == true`, CR 733.1):
-     in `Casting.continueCostPicks` (`Casting.lean`, when `g.pending` is not
-     `.chooseReplacement`), call
-     `Casting.reverseProposedSpellCore? (resumeContinuation := true)` and chain
-     `.finishFraChoice` onto `pendingReplacement` when `needsFinish` is `true` so
-     callers' `.resumeAfterBecomeCast` runs `finishFraChoice` (skipping
-     `outerCont?` re-chaining in `FraChoices` `.costPicks` when
-     `g.proposedSpell.isNone`); in `Decisions.resumePendingReplacement`
-     `.restorePending` (`Decisions.lean`, when `continueCostPicks`'s
-     `.chooseReplacement` branch queued
-     `.restorePending (.fraChoice caster (.costPicks sid picks paid))`), check
-     `picks[0]?` before restoring `.costPicks` and reverse via
-     `Decisions.reverseProposedSpell (resumeContinuation := true)`; and in
-     `FraChoices` `.costPicks`
-     ([`FraChoices.lean`](Mtg/Engine/Game/FraChoices.lean)), reverse via
-     `Decisions.reverseProposedSpell? (resumeContinuation := true)` both on the
-     `.objects` arm before `payCostPick` (where `autoAnswer` sends a short
-     candidate slice rather than `.decline`) and on the `paid == true` `.decline`
-     arm (binding `sourceId` and `picks` instead of `_ _` and matching
-     `some pick := picks[0]?`).
+     move `continueCostPicks` into `Decisions.lean` (its only callers are
+     `Decisions.beginActivationPayment` and `FraChoices` `.costPicks`) so when
+     `g.pending` is not `.chooseReplacement` and `cands.size < pick.count` it
+     calls `Decisions.reverseProposedSpell? (resumeContinuation := true)` and
+     returns directly, while both callers (`Decisions.beginActivationPayment` and
+     both `continueCostPicks` branches of the `.objects` arm in `FraChoices`
+     `.costPicks`, [`FraChoices.lean`](Mtg/Engine/Game/FraChoices.lean)) return
+     `g` directly without running `chainPendingReplacement` or
+     `resumeAfterBecomeCast` once the proposal was reversed; in
+     `Decisions.resumePendingReplacement` (`Decisions.lean`), when `.seq first
+     rest` runs `.restorePending (.fraChoice caster (.costPicks sid picks paid))`
+     and `picks[0]?` has `cands.size < pick.count`, reverse via
+     `Decisions.reverseProposedSpell (resumeContinuation := true)` and drop the
+     remaining `rest` tail (`outerCont?` / `ensureEndsWithFinishFra`) rather than
+     re-running it on `g.pending == .none`; and in `FraChoices` `.costPicks`,
+     reverse via `Decisions.reverseProposedSpell? (resumeContinuation := true)`
+     before `payCostPick` on the `.objects` arm (reached when
+     `FraChoices.defaultFraAction` + `Actions.apply` sends a short
+     `.choosePermanents` slice) only when
+     `(g.costPickCandidates p sourceId pick).size < pick.count` (still calling
+     `payCostPick` otherwise), and on `| .costPicks sourceId picks true,
+     .decline |` bind `sourceId` and `picks` (`some pick := picks[0]?`) to
+     reverse via `Decisions.reverseProposedSpell? (resumeContinuation := true)`
+     only when `(g.costPickCandidates p sourceId pick).size < pick.count` while
+     continuing to throw `"Part of the cost is already paid; the activation
+     can't be cancelled"` when the pick remains payable.
    - Tighten `Core.reverseToProposalCheckpoint?` and
      `Casting.reverseProposedSpellCore?` / `Decisions.reverseProposedSpell?`: in
      `Core.reverseToProposalCheckpoint?`, treat `PlayerEvent.lookedAt` (when
@@ -3340,27 +3347,37 @@ spell-copy / combat-Treasure / reflexive `WaitingTrigger` routing, pre-move
      `Activation.activateAbility`
      ([`Activation.lean`](Mtg/Engine/Game/Activation.lean)); wire
      `prop.cost.containsX` (`ManaCost.containsX` → `Pending.chooseX`) and
-     optional cost prompts (`Pending.chooseKicker` for
-     `face.kicker.isSome || face.morph.isSome || face.impending.isSome`—adding
-     `face.morph.isSome || face.impending.isSome` to `Decisions.afterModesChosen`
-     as well, while gating alternative-cost morph/impending off `withoutManaCost`
-     casts per CR 118.9a—plus `Pending.chooseGift` for `face.giftTreasure` and
-     `Pending.chooseTeamwork` for `face.teamwork.isSome`) into
+     optional cost prompts (`Pending.chooseKicker` gated by
+     `!prop.kickerAnnounced` for `face.kicker.isSome` plus—only when a new
+     alternative-cost flag on `ProposedSpell` is `false` per CR 118.9a, since
+     `ManaCost.empty` also represents `{0}` spells—`face.morph.isSome ||
+     face.impending.isSome`, adding that morph/impending check to
+     `Decisions.afterModesChosen` for modal priority and paid casts as well;
+     `Pending.chooseGift` gated by `face.giftTreasure && !prop.giftAnnounced`;
+     and `Pending.chooseTeamwork` gated by
+     `face.teamwork.isSome && !prop.teamworkAnnounced` so modal or
+     `announcesAdditionalCost` spells are never prompted twice) into
      `Decisions.beginResolutionCastTargets` and `afterAdditionalCostAnnounced`
      (`Decisions.lean`, shared by `Decisions.castAsPartOfResolution` and
      `FraChoices.castFreeCopy`, where `face.announcesAdditionalCost`
      (`CardDef.announcesAdditionalCost`) already enters
      `Pending.chooseAdditionalCost` and `PriorityActions.announceAdditionalCost`
      sets `ProposedSpell.needsDiscardCard` when discard is chosen, while
-     `castFreeCopy` keeps `cost := ManaCost.empty` with X = 0 per CR 107.3b),
-     have `CastSpell.announceX` (`CastSpell.lean`) continue
-     `Decisions.beginResolutionCastTargets` on mid-resolution casts (tracking a
-     mid-resolution flag on `ProposedSpell` so `announceX` and post-pause
-     completion preserve `grantPriority := false` / continuation resumption
-     instead of calling `CastSpell.enterProposalWindow` and granting priority
-     inside a resolving ability), drop the pre-proposal `manaPool.canPay` gate on
-     paid `Decisions.castAsPartOfResolution` (`withoutManaCost := false`), and
-     route `Decisions.castExiledAsAbilityResolves` (`Decisions.lean`) through
+     `castFreeCopy` and `castAsPartOfResolution (withoutManaCost := true)` set
+     that alternative-cost flag and keep `cost := ManaCost.empty` with X = 0 per
+     CR 107.3b), keep `CastSpell.announceX`'s `.activatedAbility` arm on
+     `CastSpell.enterProposalWindow` (`CastSpell.lean`) while having its `.spell`
+     arm continue `Decisions.beginResolutionCastTargets` when a mid-resolution
+     flag on `ProposedSpell` is set—and read that `ProposedSpell` flag before
+     `.proposedSpell none` clears `proposedSpell` in
+     `Decisions.afterTargetsChosen`, `PriorityActions.finishProposedSpell`,
+     `SacrificeDiscard.sacrificeForActivation` (`.sacrificePermanent`), and
+     `Decisions.discardForDraw` (`.discardForAdditionalCost`) to pass
+     `grantPriority := false` into `becomeCast` (resuming any paused continuation
+     without granting the caster priority inside a resolving ability)—drop the
+     pre-proposal `manaPool.canPay` gate on paid
+     `Decisions.castAsPartOfResolution` (`withoutManaCost := false`), and route
+     `Decisions.castExiledAsAbilityResolves` (`Decisions.lean`) through
      `beginResolutionCastTargets` / normal proposal cost payment (propagating
      `cost := g.playManaCost card face` and `needsSacrificeOther` through
      `Pending.chooseX`, modes, `face.announcesAdditionalCost`, optional cost
