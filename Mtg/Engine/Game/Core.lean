@@ -1864,33 +1864,6 @@ def restoreProposalCheckpoint (g : Game) (ckpt : ProposalCheckpoint) : Game :=
     additionalCombatPhases := ckpt.additionalCombatPhases
     events := g.events.extract 0 (min ckpt.eventsSize g.events.size) }
 
-/-- Whether any rules event recorded since `ckpt` makes reversal illegal under
-CR 733.1 (moved cards to a library, moved cards from a library to any zone other
-than `.stack`, shuffled a library, or revealed cards from a library). -/
-def hasIrreversibleLibraryEventSince (g : Game) (ckpt : ProposalCheckpoint) : Bool :=
-  let slice := g.events.extract (min ckpt.eventsSize g.events.size) g.events.size
-  let inLibrary (cid : ObjectId) : Bool :=
-    let checkObjs (objs : Array GameObject) :=
-      (objs.find? (·.id == cid)).any (fun o =>
-        match o.zone with | .library _ => true | _ => false)
-    checkObjs ckpt.objects || checkObjs g.objects
-  slice.any fun ev =>
-    match ev.change with
-    | .rules (.zone (.moved _ _ _ (.library _) ..)) => true
-    | .rules (.zone (.moved _ _ (.library _) toZone ..)) => toZone != .stack
-    | .rules (.player (.shuffled ..)) => true
-    | .rules (.player (.revealed _ cardIds)) => cardIds.any inLibrary
-    | _ => false
-
-/-- Reverse `g` to its saved `proposalCheckpoint`, failing when CR 733.1 forbids
-reversing after a library action or library-card reveal. -/
-def reverseToProposalCheckpoint? (g : Game) : Except String Game := do
-  let some ckpt := g.proposalCheckpoint
-    | throw "No proposal checkpoint to reverse (CR 733.1)"
-  if g.hasIrreversibleLibraryEventSince ckpt then
-    throw "Cannot reverse proposal after a library action or library reveal (CR 733.1)"
-  return g.restoreProposalCheckpoint ckpt
-
 /-- Process one `EngineChange` in isolation. -/
 def applyEngineChange (g : Game) (c : EngineChange) : Game :=
   match c with
@@ -5224,23 +5197,22 @@ def hasFirstStrikeAssignmentInCurrentStep (g : Game) : Bool :=
     return false
 
 /-- Whether mana produced by a `commanderIdentityScryCreature` land (Path of
-Ancestry) was spent to cast `spellId`, resolving `ManaUnit.source` in
-`g.objects` or via `ZoneEvent.moved.before` LKI when the land left the
-battlefield (CR 106.6 / 608.2h). -/
+Ancestry) was spent to cast `spellId`, resolving `ManaUnit.source` on the
+battlefield when still present or via its battlefield `ZoneEvent.moved.before`
+LKI when the land left the battlefield (CR 106.6 / 608.2h / 707.2). -/
 def ancestryManaSpentOn (g : Game) (spellId : ObjectId) : Bool :=
+  let fromBattlefieldLki (srcId : ObjectId) : Bool :=
+    (g.lastKnownBefore? srcId).any (fun snap =>
+      snap.zone == .battlefield && snap.commanderIdentityScryCreature)
   let isAncestrySource (srcId : ObjectId) : Bool :=
     match g.findObject? srcId with
     | some l =>
-      (g.baseCard l).commanderIdentityScryCreature || l.printed.commanderIdentityScryCreature
+      if l.isOnBattlefield then
+        g.retainsPrintedAbilities l && (g.baseCard l).commanderIdentityScryCreature
+      else
+        fromBattlefieldLki srcId
     | none =>
-      (g.lastKnownBefore? srcId).any (fun snap =>
-        snap.printed.any (·.commanderIdentityScryCreature) || snap.name == "Path of Ancestry") ||
-      g.events.any (fun ev =>
-        match ev.change with
-        | .rules (.cast (.abilityActivated _ srcSnap _ _)) =>
-          srcSnap.id == some srcId &&
-            (srcSnap.printed.any (·.commanderIdentityScryCreature) || srcSnap.name == "Path of Ancestry")
-        | _ => false)
+      fromBattlefieldLki srcId
   g.events.any fun e =>
     match e.change, e.cause? with
     | .rules (.player (.manaSpent _ units forObj)), some (.costPayment .mana _ oid?) =>
@@ -6978,6 +6950,7 @@ def snapshot (g : Game) (o : GameObject) : EventObject :=
     toughness := tg
     loyalty := bc.loyalty.map Int.toNat
     toxic := if g.retainsPrintedAbilities o then bc.toxic else 0
+    commanderIdentityScryCreature := g.retainsPrintedAbilities o && bc.commanderIdentityScryCreature
     staticAbilities := g.staticAbilities o
     keywords := { curKw with
       haste := g.hasHaste o
@@ -8805,8 +8778,10 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
                   let (w, fs) :=
                     queueCtrl post ctrl .youTargetSomething (w := waiting) (fs := firedSources)
                   waiting := w; firedSources := fs
-                let perms := uniquePermTargets post se.targets
-                for o in perms do
+                let prevPermIds := (uniquePermTargets post prevTargets).map (·.id)
+                let newlyTargeted :=
+                  (uniquePermTargets post se.targets).filter (fun o => !prevPermIds.contains o.id)
+                for o in newlyTargeted do
                   match post.controllerOf o with
                   | some c =>
                     if c != ctrl then
@@ -8816,7 +8791,7 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
                       waiting := w; firedSources := fs
                   | none => pure ()
                 let (w, fs) :=
-                  queueWardsFor post ctrl obj perms (w := waiting) (fs := firedSources)
+                  queueWardsFor post ctrl obj newlyTargeted (w := waiting) (fs := firedSources)
                 waiting := w; firedSources := fs
               else if isAbility then
                 let targeting :=
@@ -9250,6 +9225,101 @@ rules-event batch and closes the batch on `.ok`. -/
 def withBatchM {ε : Type} (g : Game) (cause : Option EventCause := none)
     (f : Game → Except ε Game) : Except ε Game :=
   (g.withBatchExcept cause fun g0 => do return (← f g0, ())).map Prod.fst
+
+/-- Restore `g` to its saved `proposalCheckpoint`, then reapply only the CR 733.1
+irreversible library events from the undone proposal slice (moving cards to a
+library, moving cards from a library to any zone other than `.stack`, shuffling
+a library, or revealing cards from a library). -/
+def reverseToProposalCheckpoint? (g : Game) : Except String Game := do
+  let some ckpt := g.proposalCheckpoint
+    | throw "No proposal checkpoint to reverse (CR 733.1)"
+  let slice := g.events.extract (min ckpt.eventsSize g.events.size) g.events.size
+  let inLibraryObjs (objs : Array GameObject) (cid : ObjectId) : Bool :=
+    (objs.find? (·.id == cid)).any (fun o =>
+      match o.zone with | .library _ => true | _ => false)
+  let resolveRevId (m : Array (ObjectId × ObjectId)) (oid : ObjectId) : ObjectId :=
+    match m.find? (fun (afterId, _) => afterId == oid) with
+    | some (_, origId) => origId
+    | none => oid
+  let mut revIdMap : Array (ObjectId × ObjectId) := #[]
+  let mut libMovedIds : Array ObjectId := #[]
+  let mut groups : Array (BatchId × Array GameEvent) := #[]
+  let pushKept (grps : Array (BatchId × Array GameEvent)) (bid : BatchId) (ev : GameEvent) :
+      Array (BatchId × Array GameEvent) :=
+    match grps.back? with
+    | some (lastBid, lastEvs) =>
+      if lastBid == bid then grps.pop.push (lastBid, lastEvs.push ev)
+      else grps.push (bid, #[ev])
+    | none => #[(bid, #[ev])]
+  for ev in slice do
+    match ev with
+    | .rules _ (.zone (.moved _ after _ (.library _) ..)) _ batch =>
+      if let some aid := after.id then
+        libMovedIds := libMovedIds.push aid
+      groups := pushKept groups batch ev
+    | .rules _ (.zone (.moved before after (.library _) toZone ..)) _ batch =>
+      if let some bid := before.id then
+        libMovedIds := libMovedIds.push bid
+      if toZone != .stack then
+        groups := pushKept groups batch ev
+      else
+        match before.id, after.id with
+        | some bid, some aid => revIdMap := revIdMap.push (aid, resolveRevId revIdMap bid)
+        | _, _ => pure ()
+    | .rules _ (.zone (.moved before after ..)) _ _ =>
+      match before.id, after.id with
+      | some bid, some aid => revIdMap := revIdMap.push (aid, resolveRevId revIdMap bid)
+      | _, _ => pure ()
+    | .rules _ (.player (.shuffled ..)) _ batch =>
+      groups := pushKept groups batch ev
+    | .rules _ (.player (.revealed _ cardIds)) _ batch =>
+      if cardIds.any (fun cid =>
+          inLibraryObjs ckpt.objects cid ||
+          inLibraryObjs g.objects cid ||
+          libMovedIds.contains cid) then
+        groups := pushKept groups batch ev
+    | _ => pure ()
+  let finalRevMap := revIdMap
+  let finalLibIds := libMovedIds
+  let applyIrrevStep (useRecord : Bool) (gCur : Game) (ev : GameEvent) : Game :=
+    let emit (e : GameEvent) : Game :=
+      if useRecord then gCur.record e else gCur.replayEvent e
+    match ev with
+    | .rules t (.zone (.moved before after _ (.library libP) verb actor entersWith libPos)) cause batch =>
+      let b' :=
+        match before.id with
+        | some bid =>
+          let origId := resolveRevId finalRevMap bid
+          if origId == bid then before
+          else
+            match gCur.findObject? origId with
+            | some origObj => { before with id := some origId, zone := origObj.zone }
+            | none => { before with id := some origId }
+        | none => before
+      emit (.rules t (.zone (.moved b' after b'.zone (.library libP) verb actor entersWith libPos)) cause batch)
+    | .rules _ (.zone (.moved _ _ (.library _) _ ..)) _ _ =>
+      emit ev
+    | .rules t (.player (.shuffled p newOrder)) cause batch =>
+      let curLib := (gCur.player p).library
+      let kept := newOrder.filter curLib.contains
+      let missing := curLib.filter (!kept.contains ·)
+      emit (.rules t (.player (.shuffled p (kept ++ missing))) cause batch)
+    | .rules t (.player (.revealed p cardIds)) cause batch =>
+      let libIds := cardIds.filter (fun cid =>
+        inLibraryObjs gCur.objects cid ||
+        inLibraryObjs ckpt.objects cid ||
+        inLibraryObjs g.objects cid ||
+        finalLibIds.contains cid)
+      if libIds.isEmpty then gCur
+      else emit (.rules t (.player (.revealed p libIds)) cause batch)
+    | _ => gCur
+  let mut gAcc := g.restoreProposalCheckpoint ckpt
+  for (_, grp) in groups do
+    if gAcc.currentBatch.isSome then
+      gAcc := grp.foldl (applyIrrevStep false) gAcc
+    else
+      gAcc := gAcc.withBatch none (fun g0 => grp.foldl (applyIrrevStep true) g0)
+  return gAcc
 
 /-- Commit a batch of simultaneous rules events with explicit per-event causes
 under a single `BatchId`, then evaluate batch-level triggers once (CR 603.2c / 704.3). -/

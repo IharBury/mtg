@@ -102,24 +102,28 @@ ignored. The permission does not last after this ability finishes.
 An Aura still announces a target to enchant (CR 601.2c / 303.4). -/
 def castAsPartOfResolution (g : Game) (p : PlayerId) (id : ObjectId)
     (ignoreTiming := true) (withoutManaCost := true)
-    (exileInstantSorceryInstead := false) : Game :=
+    (exileInstantSorceryInstead := false) (callerCheckpoint := false) : Game :=
+  let clearCkpt (g : Game) : Game :=
+    if g.proposalCheckpoint.isSome then g.change .clearProposalCheckpoint else g
   match g.findObject? id with
-  | none => g.logMsg "There is no card to cast"
+  | none => (clearCkpt g).logMsg "There is no card to cast"
   | some o =>
     if g.splitSecondOnStack then
-      g.logMsg s!"{o.name} can't be cast while a spell with split second is on the stack (ruling 839)"
+      (clearCkpt g).logMsg s!"{o.name} can't be cast while a spell with split second is on the stack (ruling 839)"
     else if !ignoreTiming && !g.timingAllowsCast p o.printed then
-      g.logMsg s!"{o.name} cannot be cast now (timing)"
+      (clearCkpt g).logMsg s!"{o.name} cannot be cast now (timing)"
     else if !withoutManaCost &&
         !(g.player p).manaPool.canPay (g.playManaCost o o.printed) then
-      g.logMsg s!"{o.name} cannot be cast (costs)"
+      (clearCkpt g).logMsg s!"{o.name} cannot be cast (costs)"
     else
       let name := o.name
       let original := o
       let origSnap := g.snapshot o
       let fromGy := original.zone == .graveyard original.owner
       let wasCopy := original.isCopy
-      let g := if g.proposalCheckpoint.isNone then g.change .saveProposalCheckpoint else g
+      let g :=
+        if callerCheckpoint && g.proposalCheckpoint.isSome then g
+        else g.change .saveProposalCheckpoint
       let (g, newId) := g.move id .stack (some p) (verb := some .cast) (actor := some p)
         (isCopy := some wasCopy)
       let g :=

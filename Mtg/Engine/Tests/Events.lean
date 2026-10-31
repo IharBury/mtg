@@ -6190,24 +6190,96 @@ unified CR 614.12 / 616.1 ETB replacement pipeline. -/
     (gChandraRev.object! boltExId).zone == .exile &&
     gChandraRev.followMoved boltExId == boltExId &&
     Game.replayEvents gChandraRev.events == gChandraRev
-  -- CR 733.1 library-visibility irreversibility guard: hand reveal allows reversal;
-  -- mill, shuffle, and library-card reveal each forbid reversal.
+  -- CR 733.1–733.2 library-event preservation: reversing an illegal cast still
+  -- reverses the spell and restores priority, undoing hand reveals while
+  -- keeping mill, library shuffle, and library-card reveal events.
   let handCardId := (gProposed.player me).hand[0]!
+  let topLibId := (gProposed.player me).library.back!
   let libCardId := (gProposed.player me).library[0]!
+  let shuffledOrder := (gProposed.player me).library.reverse
   let gHandRev :=
     (gProposed.record (GameEvent.revealed gProposed.turnNumber me #[handCardId]
-      (cause := some (.gameRule .spellCast)))).reverseProposedSpell?
-  let gMillBlocked := (gProposed.mill me 1).reverseProposedSpell?
-  let gShuffleBlocked :=
-    (gProposed.record (GameEvent.shuffled gProposed.turnNumber me (gProposed.player me).library
-      (cause := some (.gameRule .spellCast)))).reverseProposedSpell?
-  let gLibRevealBlocked :=
+      (cause := some (.gameRule .spellCast)))).reverseProposedSpell
+  let gMillRev := (gProposed.mill me 1).reverseProposedSpell
+  let gShuffleRev :=
+    (gProposed.record (GameEvent.shuffled gProposed.turnNumber me shuffledOrder
+      (cause := some (.gameRule .spellCast)))).reverseProposedSpell
+  let gLibRevealRev :=
     (gProposed.record (GameEvent.revealed gProposed.turnNumber me #[libCardId]
-      (cause := some (.gameRule .spellCast)))).reverseProposedSpell?
+      (cause := some (.gameRule .spellCast)))).reverseProposedSpell
+  let baseRestored (g : Game) : Bool :=
+    g.proposalCheckpoint.isNone &&
+    g.proposedSpell.isNone &&
+    g.stack.isEmpty &&
+    g.priority == me &&
+    (g.player me).hand.contains spellHandId
+  let hasRevealOf (g : Game) (cid : ObjectId) : Bool :=
+    (g.events.extract preEvCount g.events.size).any (fun e =>
+      match e.change with
+      | .rules (.player (.revealed p ids)) => p == me && ids == #[cid]
+      | _ => false)
   let libGuardOk :=
-    gHandRev.isOk && !gMillBlocked.isOk && !gShuffleBlocked.isOk && !gLibRevealBlocked.isOk
+    baseRestored gHandRev &&
+    !hasRevealOf gHandRev handCardId &&
+    Game.replayEvents gHandRev.events == gHandRev &&
+    baseRestored gMillRev &&
+    (gMillRev.object! (gMillRev.followMoved topLibId)).zone == .graveyard me &&
+    (gMillRev.player me).graveyard.size == (gPropBase0.player me).graveyard.size + 1 &&
+    Game.replayEvents gMillRev.events == gMillRev &&
+    baseRestored gShuffleRev &&
+    (gShuffleRev.player me).library == shuffledOrder &&
+    Game.replayEvents gShuffleRev.events == gShuffleRev &&
+    baseRestored gLibRevealRev &&
+    hasRevealOf gLibRevealRev libCardId &&
+    Game.replayEvents gLibRevealRev.events == gLibRevealRev
+  -- Failed may-cast (split second on stack) clears caller `proposalCheckpoint`,
+  -- and a subsequent `castAsPartOfResolution` takes its own fresh checkpoint
+  -- rather than truncating back across events recorded in between.
+  let splitSecondGranter : CardDef := {
+    name := "Phase12 Split Granter"
+    types := #[.enchantment]
+    staticAbilities := #[.instantSorcerySplitSecond]
+  }
+  let targetCreatureSorcery : CardDef := {
+    name := "Phase12 Impossible Removal"
+    manaCost := ManaCost.empty
+    types := #[.sorcery]
+    spellEffect := some {
+      targeting := .of .creature
+      resolution := .destroyTarget
+      phrase := "Destroy target creature"
+    }
+  }
+  let gMayCastCkpt :=
+    let g := addPermanent afterDraw splitSecondGranter opp opp
+    let g := insertObject g lightningBolt opp (.hand opp)
+    let ssHandId := ((g.player opp).hand.filter (fun id => (g.object! id).name == "Lightning Bolt"))[0]!
+    let (g, ssStackId) := g.move ssHandId .stack (some opp) (verb := some .cast) (actor := some opp)
+      (cause := some (.gameRule .spellCast))
+    let g := g.putStackEntry opp ssStackId
+    let g := insertObject g lightningBolt me (.hand me)
+    let g := insertObject g targetCreatureSorcery me (.hand me)
+    let boltH := ((g.player me).hand.filter (fun id => (g.object! id).name == "Lightning Bolt"))[0]!
+    let remH := ((g.player me).hand.filter (fun id => (g.object! id).name == "Phase12 Impossible Removal"))[0]!
+    let g := g.change (.pending (.fraChoice me (.mayCastInstantSorceryFromHand #[boltH])))
+    let gBlocked :=
+      match g.answerFraChoice me (.objects #[boltH]) with
+      | .ok g' => g'
+      | .error _ => g
+    let clearedOnFail := gBlocked.proposalCheckpoint.isNone
+    let (gMid, _) := gBlocked.move ssStackId (.graveyard opp) none (cause := some testCause)
+    let gMid := gMid.gainLife me 5
+    let gSecondRev := gMid.castAsPartOfResolution me remH
+    (clearedOnFail, gSecondRev, remH)
+  let mayCastCkptOk :=
+    gMayCastCkpt.1 &&
+    gMayCastCkpt.2.1.proposalCheckpoint.isNone &&
+    gMayCastCkpt.2.1.proposedSpell.isNone &&
+    (gMayCastCkpt.2.1.player me).life == (25 : Int) &&
+    ((gMayCastCkpt.2.1.player me).hand.contains gMayCastCkpt.2.2) &&
+    Game.replayEvents gMayCastCkpt.2.1.events == gMayCastCkpt.2.1
   let reversalAllOk :=
-    spellRevOk && topRevOk && crewRevOk && zemoRevOk && chandraRevOk && libGuardOk
+    spellRevOk && topRevOk && crewRevOk && zemoRevOk && chandraRevOk && libGuardOk && mayCastCkptOk
 
   -- 2. Full-game `Game.replayEvents g.events == g` from `({} : Game)` and empty `withBatch` non-bump
   let gFull := Agent.play drawnHands 400
@@ -6389,6 +6461,27 @@ unified CR 614.12 / 616.1 ETB replacement pipeline. -/
     let g := mustApply gPoaMiss0 me (.tapForMana poaIdC (.colored .green))
     let g := mustApply g me (.cast gobIdC)
     mustApply g me .pay
+  -- (d) Copy-land LKI (CR 707.2 / 608.2h): a Forest copying `poaDef` under an
+  --     exception name (`"Thespian's Stage"`) scries after dying, whereas a
+  --     printed `poaDef` copying a basic Forest does NOT scry after dying.
+  let (gPoaCopyHit0, poaTemplateId, elfIdD) := mkAncestryGame oneGreenElf
+  let gPoaCopyHit :=
+    let g := addPermanent gPoaCopyHit0 forest me me
+    let fstObj := (g.battlefield.filter (·.name == "Forest"))[0]!
+    let g := g.becomeCopyOf fstObj (g.object! poaTemplateId) (exceptName := some "Thespian's Stage")
+    let g := mustApply g me (.tapForMana fstObj.id (.colored .green))
+    let g := g.destroyPermanent (g.object! fstObj.id)
+    let g := mustApply g me (.cast elfIdD)
+    mustApply g me .pay
+  let (gPoaCopyMiss0, poaOverwrittenId, elfIdE) := mkAncestryGame oneGreenElf
+  let gPoaCopyMiss :=
+    let g := addPermanent gPoaCopyMiss0 forest me me
+    let fstObj := (g.battlefield.filter (·.name == "Forest"))[0]!
+    let g := g.becomeCopyOf (g.object! poaOverwrittenId) fstObj
+    let g := mustApply g me (.tapForMana poaOverwrittenId (.colored .green))
+    let g := g.destroyPermanent (g.object! poaOverwrittenId)
+    let g := mustApply g me (.cast elfIdE)
+    mustApply g me .pay
   let hasScryPendingOrQueued (g : Game) : Bool :=
     (match g.pending with | .scry p 1 1 => p == me | _ => false) ||
       g.stack.any (fun e => (g.object! e.objectId).triggeredAbility.any (fun ab =>
@@ -6397,7 +6490,11 @@ unified CR 614.12 / 616.1 ETB replacement pipeline. -/
     hasScryPendingOrQueued gPoaDuring &&
     hasScryPendingOrQueued gPoaLki &&
     !hasScryPendingOrQueued gPoaMiss &&
-    Game.replayEvents gPoaLki.events == gPoaLki
+    hasScryPendingOrQueued gPoaCopyHit &&
+    !hasScryPendingOrQueued gPoaCopyMiss &&
+    Game.replayEvents gPoaLki.events == gPoaLki &&
+    Game.replayEvents gPoaCopyHit.events == gPoaCopyHit &&
+    Game.replayEvents gPoaCopyMiss.events == gPoaCopyMiss
 
   -- 6. `matchTriggers`: `.onCastCascade` + CR 109.2 battlefield-doubler guard,
   --    Photon Blast Barrage `.copySourceSpellXTimes`, `.youTargetSomething` on targeted
@@ -6506,6 +6603,41 @@ unified CR 614.12 / 616.1 ETB replacement pipeline. -/
   let retargetSpellId := gWardRetarget0.stack.back!.objectId
   let gWardRetarget1 := gWardRetarget0.retargetStackSpell retargetSpellId #[.permanent wardBearId]
   let wardRetargetQueued := gWardRetarget1.waitingTriggers.any (·.ability == .onWard (.genericMana 2))
+  -- (c2) Retargeting one slot of a copied two-target spell does not re-ward a
+  --      permanent that was already targeted on the copy (CR 702.21a / 603.2).
+  let twoTargetTap : CardDef := {
+    name := "Phase12 Twin Frost"
+    manaCost := ManaCost.empty
+    types := #[.instant]
+    spellEffect := some {
+      targeting := .of (.pair .creature .creature)
+      resolution := .tapTargets
+      phrase := "Tap two target creatures"
+    }
+  }
+  let wardBear2Def : CardDef := { bear with name := "Phase12 Ward Bear Two", ward := some 3 }
+  let gCopyDelta :=
+    let g := addPermanent (addPermanent (addPermanent gWardBase hero opp opp) bear opp opp) wardBear2Def opp opp
+    let oppHeroId := (g.battlefield.filter (·.name == hero.name))[0]!.id
+    let oppBearId := (g.battlefield.filter (·.name == bear.name))[0]!.id
+    let wardBear2Id := (g.battlefield.filter (·.name == "Phase12 Ward Bear Two"))[0]!.id
+    let g := insertObject g twoTargetTap me (.hand me)
+    let twinId := ((g.player me).hand.filter (fun id => (g.object! id).name == "Phase12 Twin Frost"))[0]!
+    let g := mustApply g me (.cast twinId)
+    let g := mustApply g me (.target (.permanent wardBearId))
+    let g := mustApply g me (.target (.permanent oppHeroId))
+    -- Clear initial cast Ward trigger so we measure only the copy's retarget delta
+    let g := g.change (.waitingTriggers #[])
+    let origStackId := (g.stack.filter (fun se => (g.object! se.objectId).name == "Phase12 Twin Frost"))[0]!.objectId
+    let gCopied := g.copyStackSpell (g.object! origStackId) me
+    let copyId := gCopied.stack.back!.objectId
+    let gRetargetNonWard := gCopied.setSpellTargetAt copyId 1 (.permanent oppBearId)
+    let gRetargetSecondWard := gCopied.setSpellTargetAt copyId 1 (.permanent wardBear2Id)
+    (gRetargetNonWard.waitingTriggers, gRetargetSecondWard.waitingTriggers)
+  let copyRetargetDeltaOk :=
+    gCopyDelta.1.isEmpty &&
+    gCopyDelta.2.size == 1 &&
+    gCopyDelta.2[0]!.ability == .onWard (.genericMana 3)
   -- (d) Spell leaves stack before Ward resolves -> Ward resolves as no-op;
   --     Declining Ward counters with `.oneShotEffect` cause;
   --     Uncounterable spell still prompts `.payWard` and survives decline.
@@ -6549,6 +6681,7 @@ unified CR 614.12 / 616.1 ETB replacement pipeline. -/
     wardActOnStack &&
     wardTrigQueued &&
     wardRetargetQueued &&
+    copyRetargetDeltaOk &&
     wardFizzledOk &&
     wardCounterCauseOk &&
     wardUncPrompted &&

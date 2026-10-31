@@ -502,6 +502,7 @@ structure EventObject where
   loyalty         : Option Nat           := none
   keywords        : Keywords             := {}
   toxic           : Nat                  := 0
+  commanderIdentityScryCreature : Bool   := false
   staticAbilities : Array StaticAbility  := #[]
   -- status & designations (CR 110.5–110.6)
   zone            : Zone                 := .battlefield
@@ -542,6 +543,7 @@ def toCardDef (e : EventObject) : CardDef :=
       loyalty := e.loyalty.map Int.ofNat
       keywords := { e.keywords with changeling := e.keywords.changeling || e.changeling }
       toxic := e.toxic
+      commanderIdentityScryCreature := e.commanderIdentityScryCreature
       staticAbilities := e.staticAbilities
       isToken := e.token }
 
@@ -633,6 +635,7 @@ def GameObject.asEvent (o : GameObject) : EventObject :=
     loyalty := o.printed.loyalty.map Int.toNat
     keywords := o.printedOrUntilEot
     toxic := o.printed.toxic
+    commanderIdentityScryCreature := !o.status.faceDown && o.printed.commanderIdentityScryCreature
     staticAbilities := o.staticAbilities
     zone := o.zone
     tapped := o.status.tapped

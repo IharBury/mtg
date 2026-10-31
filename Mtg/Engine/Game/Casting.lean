@@ -370,27 +370,35 @@ def payCost (g : Game) (p : PlayerId) (cost : ManaCost)
         (cause := some (.costPayment .mana p forObject)))
 
 /-- Undo a proposed spell or ability that could not be paid or legally
-completed, restoring the pre-proposal checkpoint unless CR 733.1 forbids
-reversing after a library action or library reveal (CR 601.2 / 602.2 / 733.1). -/
+completed, restoring the pre-proposal checkpoint and reapplying only CR 733.1
+irreversible library actions (CR 601.2 / 602.2 / 733.1–733.2). -/
 def reverseProposedSpell? (g : Game) (resumeContinuation : Bool := false) :
     Except String Game := do
   match g.proposedSpell with
   | none => return g
   | some prop =>
     let name := (g.player prop.caster).name
+    let baseTriggers := (g.proposalCheckpoint.map (·.waitingTriggers.size)).getD 0
     let reversed :=
       match prop.kind with
       | .spell => "the casting is reversed (CR 601.2 / 733.1)"
       | .activatedAbility => "the activation is reversed (CR 602.2 / 733.1)"
     let g ← g.reverseToProposalCheckpoint?
     let g := g.logMsg s!"{name} cannot pay {prop.cost}; {reversed}"
+    let g :=
+      if g.pending == .none && g.continuations.isEmpty && g.priority != prop.caster then
+        g.change (.priority prop.caster)
+      else g
     if resumeContinuation && g.pending == .none && !g.continuations.isEmpty then
       return g.receivePriority g.activePlayer
+    else if g.pending == .none && g.continuations.isEmpty &&
+        g.waitingTriggers.size > baseTriggers then
+      return g.receivePriority prop.caster
     else
       return g
 
-/-- Undo a proposed spell or ability when no irreversible library action is possible,
-or leave `g` unchanged if reversal fails (CR 601.2 / 602.2 / 733.1). -/
+/-- Undo a proposed spell or ability, restoring the pre-proposal checkpoint and
+reapplying only CR 733.1 irreversible library actions (CR 601.2 / 602.2 / 733.1). -/
 def reverseProposedSpell (g : Game) (resumeContinuation : Bool := false) : Game :=
   match g.reverseProposedSpell? (resumeContinuation := resumeContinuation) with
   | .ok g' => g'

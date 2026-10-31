@@ -405,8 +405,13 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let g := g.logMsg s!"{(g.player p).name} crews {vName}"
     return (g.becomeActivated p vName (some vehicleId)).finishFraChoice
   | .crew _ _ _, .decline =>
+    let baseTriggers := (g.proposalCheckpoint.map (·.waitingTriggers.size)).getD 0
     let g ← g.reverseToProposalCheckpoint?
-    return g.logMsg s!"{(g.player p).name} doesn't crew"
+    let g := g.logMsg s!"{(g.player p).name} doesn't crew"
+    if g.pending == .none && g.continuations.isEmpty && g.waitingTriggers.size > baseTriggers then
+      return g.receivePriority p
+    else
+      return g
   | .crew .., _ => throw "Choose creatures to tap, or decline"
   | .costPicks sourceId picks _, .objects ids =>
     let some prop := g.proposedSpell | throw "No activation is being paid for"
@@ -715,8 +720,13 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let name := ((g.findObject? sourceId).map (·.name)).getD "Baron Helmut Zemo"
     return (g.becomeActivated p name (some sourceId) (some ActivatedAbility.zemoBoastAbility)).finishFraChoice
   | .zemoBoastExile _ _, .decline =>
+    let baseTriggers := (g.proposalCheckpoint.map (·.waitingTriggers.size)).getD 0
     let g ← g.reverseToProposalCheckpoint?
-    return g.logMsg s!"{(g.player p).name} doesn't boast"
+    let g := g.logMsg s!"{(g.player p).name} doesn't boast"
+    if g.pending == .none && g.continuations.isEmpty && g.waitingTriggers.size > baseTriggers then
+      return g.receivePriority p
+    else
+      return g
   | .zemoBoastExile .., _ => throw "Choose the cards to exile, or decline"
   | .mayCastCascade cardId others, .accept =>
     let cause := g.lastMoveCauseOf? cardId
@@ -820,7 +830,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
         (g.legalCastTargets p face).isEmpty && !face.allowsZeroTargets then
       throw s!"{face.name} has no legal target"
     let g := (gPre.change .saveProposalCheckpoint).change (.pending .none)
-    return (g.castAsPartOfResolution p id).finishFraChoice
+    return (g.castAsPartOfResolution p id (callerCheckpoint := true)).finishFraChoice
   | .mayCastInstantSorceryFromHand _, .decline =>
     return (g.logMsg s!"{(g.player p).name} declines to cast a spell").finishFraChoice
   | .mayCastInstantSorceryFromHand _, _ => throw "Choose a spell to cast, or decline"
@@ -1035,7 +1045,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       throw s!"{o.name} cannot be cast; add mana first, or decline"
     let g := (gPre.change .saveProposalCheckpoint).change (.pending .none)
     return (g.castAsPartOfResolution p id (withoutManaCost := withoutPaying)
-      (exileInstantSorceryInstead := exileInstead)).finishFraChoice
+      (exileInstantSorceryInstead := exileInstead) (callerCheckpoint := true)).finishFraChoice
   | .mayCastCards _ _ _, .decline =>
     return (g.logMsg s!"{(g.player p).name} declines to cast a spell").finishFraChoice
   | .mayCastCards _ _ _, _ => throw "Choose a spell to cast, or decline"
@@ -1055,7 +1065,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       throw s!"{o.name} cannot be cast; add mana first, or decline"
     let g := (gPre.change .saveProposalCheckpoint).change (.pending .none)
     return (g.castAsPartOfResolution p id (withoutManaCost := false)
-      (exileInstantSorceryInstead := true)).finishFraChoice
+      (exileInstantSorceryInstead := true) (callerCheckpoint := true)).finishFraChoice
   | .mayCastFromGraveyard _, .decline =>
     return (g.logMsg s!"{(g.player p).name} declines to cast a spell").finishFraChoice
   | .mayCastFromGraveyard _, _ => throw "Choose a card to cast, or decline"
