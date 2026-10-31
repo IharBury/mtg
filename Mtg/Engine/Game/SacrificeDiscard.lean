@@ -254,9 +254,11 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
       g.sacrificeToGraveyard sac
         s!"{(g.player p).name} sacrifices {g.name sac}"
         (cause := some (.costPayment .sacrifice p forObject))
+    let clearPending : Array EngineChange :=
+      if let .chooseReplacement .. := g.pending then #[] else #[.pending .none]
     match g.proposedSpell with
     | some prop =>
-      let g := g.changes #[.pending .none, .proposedSpell none, .consecutivePasses 0]
+      let g := g.changes (clearPending ++ #[.proposedSpell none, .consecutivePasses 0])
       match prop.kind with
       | .spell => return g.becomeCast prop.caster (g.object! prop.spellId)
       | .activatedAbility =>
@@ -264,7 +266,7 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
           (sourceSnapshot := some prop.originalSnapshot)
           (sourceOriginal := some prop.original)
     | none =>
-      let g := g.changes #[.pending .none, .proposedSpell none, .consecutivePasses 0]
+      let g := g.changes (clearPending ++ #[.proposedSpell none, .consecutivePasses 0])
       return g.becomeActivated p (g.name (g.object! sourceId)) (some sourceId)
   | .chooseSacrificeCreature q chosen remaining =>
     if q != p then

@@ -334,7 +334,8 @@ partial def advanceCastExiledQueue (g : Game) : Game :=
 end
 
 /-- Resume any deferred `PendingReplacement` (such as `.finishFraChoice`) queued
-by `becomeCast` once the spell finishes becoming cast without opening a new `Pending`. -/
+by `becomeCast` or `becomeActivated` once the spell or ability finishes going
+onto the stack without opening a new `Pending`. -/
 def resumeAfterBecomeCast (g : Game) : Game :=
   if g.pending == .none && g.pendingReplacement.isSome && !g.over then
     match g.pendingReplacement with
@@ -446,7 +447,7 @@ def beginActivationPayment (g : Game) (prop : ProposedSpell) : Except String Gam
     | some sid => g.costPicksPayable prop.caster sid picks
     | none => true
   if !payable then return (← g.reverseProposedSpell? (resumeContinuation := true))
-  g.continueCostPicks prop picks false
+  return (← g.continueCostPicks prop picks false).resumeAfterBecomeCast
 
 /-- Continue after CR 601.2c: determine the total cost (601.2f), then mana
 abilities (601.2g). Additional-cost *choices* are announced earlier, at 601.2b. -/

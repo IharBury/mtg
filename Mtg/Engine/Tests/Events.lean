@@ -7753,6 +7753,96 @@ departed-source `lastKnownBefore?` LKI + Step 4 audits. -/
     [gLookNoTgt, gLookNoMode, gLookSync, gLookDec].all (fun g => Game.replayEvents g.events == g)
   let reviewRound2ContOk := actPayRevOk && actTargetRevOk && lookedContAllOk
 
+  -- Successful ability activations (`becomeActivated`) preserve and resume open
+  -- continuations across immediate, mana-paid, `.costPicks`, `.sacrificePermanent`,
+  -- and `.crew` accept paths, while preserving CR 117.3c priority outside continuations:
+  let freeActDef : CardDef := {
+    name := "Phase13 Free Engine"
+    types := #[.artifact]
+    activatedAbilities := #[{
+      cost := {}
+      effect := { resolution := .draw 1, phrase := "Draw a card" }
+    }]
+  }
+  let manaActDef : CardDef := {
+    name := "Phase13 Mana Engine"
+    types := #[.artifact]
+    activatedAbilities := #[{
+      cost := { mana := ManaCost.ofGeneric 1 }
+      effect := { resolution := .draw 1, phrase := "Draw a card" }
+    }]
+  }
+  let sacOtherActDef : CardDef := {
+    name := "Phase13 Sac Other Engine"
+    types := #[.artifact]
+    activatedAbilities := #[{
+      cost := { sacrificeAnotherCreatureOrArtifact := true }
+      effect := { resolution := .draw 1, phrase := "Draw a card" }
+    }]
+  }
+  let crewVehDef : CardDef := {
+    name := "Phase13 Crew Skiff"
+    types := #[.artifact]
+    subtypes := #["Vehicle"]
+    power := some 3
+    toughness := some 3
+    crew := some 2
+  }
+  let gFreeActPaid :=
+    let g := addPermanent afterDraw freeActDef me me
+    let engId := (g.battlefield.filter (·.name == "Phase13 Free Engine"))[0]!.id
+    mustApply (mkSeqFrame g 4) me (.activate engId 0)
+  let gManaActPaid :=
+    let g := (addPermanent afterDraw manaActDef me me).createTreasureTokens me 1 (cause := some testCause)
+    let engId := (g.battlefield.filter (·.name == "Phase13 Mana Engine"))[0]!.id
+    let trId := (g.battlefield.filter (·.printed.isToken))[0]!.id
+    let g := mkSeqFrame g 4
+    let g := mustApply g me (.activate engId 0)
+    let g := mustApply g me (.tapForMana trId (.colored .red))
+    mustApply g me .pay
+  let gCostPicksPaid :=
+    let g := (addPermanent afterDraw sacArtEngineDef me me).createTreasureTokens me 2 (cause := some testCause)
+    let engId := (g.battlefield.filter (·.name == "Phase13 Sac Artifact Engine"))[0]!.id
+    let trs := (g.battlefield.filter (·.printed.isToken)).map (·.id)
+    let g := mkSeqFrame g 4
+    let g := mustApply g me (.activate engId 0)
+    let g := mustApply g me (.tapForMana trs[0]! (.colored .red))
+    let g := mustApply g me .pay
+    mustApply g me (.choosePermanents #[trs[1]!])
+  let gSacOtherPaid :=
+    let g := (addPermanent afterDraw sacOtherActDef me me).createTreasureTokens me 1 (cause := some testCause)
+    let engId := (g.battlefield.filter (·.name == "Phase13 Sac Other Engine"))[0]!.id
+    let trId := (g.battlefield.filter (·.printed.isToken))[0]!.id
+    let g := mkSeqFrame g 4
+    let g := mustApply g me (.activate engId 0)
+    let g := mustApply g me .pay
+    mustApply g me (.sacrifice trId)
+  let gCrewPaid :=
+    let g := addPermanent (addPermanent afterDraw crewVehDef me me) tapTwoTargetedDef me me
+    let vehId := (g.battlefield.filter (·.name == "Phase13 Crew Skiff"))[0]!.id
+    let pilotId := (g.battlefield.filter (·.name == "Phase13 Tap Two Targeted Engine"))[0]!.id
+    let g := mkSeqFrame g 4
+    let g := mustApply g me (.activate vehId 0)
+    mustApply g me (.choosePermanents #[pilotId])
+  let gOppCrewPrio :=
+    let g := addPermanent (addPermanent afterDraw crewVehDef opp opp) tapTwoTargetedDef opp opp
+    let g := mustApply g me .pass
+    let vehId := (g.battlefield.filter (·.name == "Phase13 Crew Skiff"))[0]!.id
+    let pilotId := (g.battlefield.filter (·.name == "Phase13 Tap Two Targeted Engine"))[0]!.id
+    let g := mustApply g opp (.activate vehId 0)
+    mustApply g opp (.choosePermanents #[pilotId])
+  let paidActStates := [gFreeActPaid, gManaActPaid, gCostPicksPaid, gSacOtherPaid, gCrewPaid]
+  let reviewRound3ContOk :=
+    paidActStates.all (fun g =>
+      g.triggerSequenceRest.isNone &&
+      g.continuations.isEmpty &&
+      (g.player me).life == 24 &&
+      g.stack.size == 1 &&
+      Game.replayEvents g.events == g) &&
+    gOppCrewPrio.priority == opp &&
+    gOppCrewPrio.stack.size == 1 &&
+    Game.replayEvents gOppCrewPrio.events == gOppCrewPrio
+
   let mustHold (label : String) (ok : Bool) : Bool :=
     if ok then true else panic! s!"Phase 13 guard failed: {label}"
   mustHold "actionIrrevOk" actionIrrevOk &&
@@ -7768,6 +7858,7 @@ departed-source `lastKnownBefore?` LKI + Step 4 audits. -/
     mustHold "lkiOk" lkiOk &&
     mustHold "maxHandTsOk" maxHandTsOk &&
     mustHold "filterCtrlExpOk" filterCtrlExpOk &&
-    mustHold "reviewRound2ContOk" reviewRound2ContOk
+    mustHold "reviewRound2ContOk" reviewRound2ContOk &&
+    mustHold "reviewRound3ContOk" reviewRound3ContOk
 
 end Mtg.Engine.EventTests

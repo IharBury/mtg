@@ -387,7 +387,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       crew.foldl (fun g c =>
         g.becomeTapped (g.object! c.id) (cause := cause)) g
     let g := g.logMsg s!"{(g.player p).name} crews {vName}"
-    return (g.becomeActivated p vName (some vehicleId)).finishFraChoice
+    return (g.becomeActivated p vName (some vehicleId)).resumeAfterBecomeCast
   | .crew _ _ _, .decline =>
     let baseTriggers := (g.proposalCheckpoint.map (·.waitingTriggers.size)).getD 0
     let g ← g.reverseToProposalCheckpoint?
@@ -404,7 +404,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let some pick := picks[0]? | throw "No cost is left to pay"
     let g ← g.withProposalActionM .costAction fun g =>
       g.payCostPick p prop.spellId sourceId pick ids
-    return (← g.continueCostPicks prop (picks.extract 1 picks.size) true).finishFraChoice
+    return (← g.continueCostPicks prop (picks.extract 1 picks.size) true).resumeAfterBecomeCast
   | .costPicks _ _ false, .decline =>
     g.reverseProposedSpell? (resumeContinuation := true)
   | .costPicks _ _ true, .decline =>
@@ -701,7 +701,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       | some src => g.logMsg s!"{src.name}'s boast ability is activated"
       | none => g
     let name := ((g.findObject? sourceId).map (·.name)).getD "Baron Helmut Zemo"
-    return (g.becomeActivated p name (some sourceId) (some ActivatedAbility.zemoBoastAbility)).finishFraChoice
+    return (g.becomeActivated p name (some sourceId) (some ActivatedAbility.zemoBoastAbility)).resumeAfterBecomeCast
   | .zemoBoastExile _ _, .decline =>
     let baseTriggers := (g.proposalCheckpoint.map (·.waitingTriggers.size)).getD 0
     let g ← g.reverseToProposalCheckpoint?

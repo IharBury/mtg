@@ -685,7 +685,15 @@ def becomeActivated (g : Game) (p : PlayerId) (sourceName : String)
   let g := if g.proposalCheckpoint.isSome then g.change .clearProposalCheckpoint else g
   let g := g.record (GameEvent.abilityActivated g.turnNumber abilityObjId source p
     (.nonMana loyaltyDelta isEquip isPowerUp isBoast abilityIdx isExhaust))
-  g.logMsg s!"{(g.player p).name} activates {sourceName}" |>.receivePriority p
+  let g := g.logMsg s!"{(g.player p).name} activates {sourceName}"
+  if let .chooseReplacement .. := g.pending then
+    if g.pendingCastExiledQueue.isSome || g.triggerSequenceRest.isSome then
+      g.chainPendingReplacement .finishFraChoice
+    else g
+  else if g.pending != .none then g
+  else if g.pendingCastExiledQueue.isSome || g.triggerSequenceRest.isSome || g.pendingReplacement.isSome then
+    g.chainPendingReplacement .finishFraChoice
+  else g.receivePriority (if g.continuations.isEmpty then p else g.activePlayer)
 
 /-- Finish paying the proposed activation once its mana is paid and every
 chosen cost is paid: tap, life, and the source's own costs, then put it on
@@ -701,7 +709,9 @@ def completeActivation (g : Game) (prop : ProposedSpell) : Except String Game :=
     let g := g.changes #[.pending (.sacrificePermanent prop.caster sid), .consecutivePasses 0]
     return g.logMsg
       s!"{(g.player prop.caster).name} must sacrifice another creature or artifact"
-  let g := g.changes #[.pending .none, .proposedSpell none, .consecutivePasses 0]
+  let clearPending : Array EngineChange :=
+    if let .chooseReplacement .. := g.pending then #[] else #[.pending .none]
+  let g := g.changes (clearPending ++ #[.proposedSpell none, .consecutivePasses 0])
   return g.becomeActivated prop.caster srcName prop.sourceId prop.activation
     (sourceSnapshot := srcSnap)
     (sourceOriginal := some prop.original)
