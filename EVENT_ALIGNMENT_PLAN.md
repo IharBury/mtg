@@ -378,12 +378,12 @@ structure EventObject where
   chosenName : Option String := none
   chosenCardType : Option CardType := none
   chosenAnchor : Option String := none
-  -- arrival status and printed/copiable card carried so `applyZoneEvent`
-  -- reconstructs the `GameObject` and LKI copiable values without live state
+  -- arrival status and printed card carried so `applyZoneEvent` reconstructs
+  -- the `GameObject` without a follow-up `setObject`, plus LKI `copiable`
   summoningSick : Bool := false
   attackingTarget : Option AttackTarget := none -- folded `Status.attackingWhom` and `Status.attackingPlaneswalker` in Phase 5
-  printed : Option CardDef := none              -- preserves full printed card definition across `moved`/`created`
-  copiable : Option CardDef := none             -- preserves Layer 1 copiable values (707.2) across `moved`/`created` and LKI snapshots
+  printed : Option CardDef := none              -- preserves full printed card definition across `moved`/`created` (`toCardDef` / `applyZoneEvent`)
+  copiable : Option CardDef := none             -- set by `asEvent` (`some o.printed`) and `Core.snapshot` (`some (g.copiableValues o)`) for LKI Layer 1 readers (707.2); not written back by `applyZoneEvent`
   adventurerCard : Option CardDef := none       -- re-added in Phase 10 (#588) so Adventure casts reconstruct `GameObject.adventurerCard` in `applyZoneEvent`
   chosenX : Option Nat := none                  -- stays on stack `GameObject` (107.3a) and `EventObject` (`after.chosenX.orElse existing.chosenX`); off-stack readers use `CastEvent.announced` in Phase 8
 deriving Repr, Inhabited, BEq
@@ -392,7 +392,7 @@ deriving Repr, Inhabited, BEq
 `owner`, `controller`, `keywords`, and `toxic` already exist, and `id` is `Option ObjectId` (`GameObject.asEvent` populates `some o.id` and `Game.damageSourceEvent` extends it for damage sources, while `none` is used for proposed objects that do not have an id yet—`Game.entersTapped`, `Game.createToken`—and the `default` `EventObject` when damage has no source). In Phase 2 step 4, the builder becomes
 `Game.snapshot (g : Game) (o : GameObject) : EventObject` (folding `Game.damageSourceEvent` into it), because power,
 toughness, colors, and granted abilities depend on the game. To uphold the single-writer invariant (`applyZoneEvent` installing the exact arrival or created `GameObject` without a follow-up `EngineChange.setObject`), Phase 2 also carried arrival, card, cast, effect-mirror, and LKI fields on `EventObject`:
-- `summoningSick`, `attackingTarget` (which replaced `attackingWhom : Option PlayerId` in Phase 5), `printed`, `copiable` (added in Phase 13, #594, so Layer 1 copiable values under 707.2 round-trip across LKI snapshots without live state), `adventurerCard` (deleted in Phase 5 when stack copies moved to `StackObjectEvent.copied`, then re-added in Phase 10, #588, so Adventure spells moving onto `.stack` reconstruct `GameObject.adventurerCard` inside `applyZoneEvent` without a post-move `ObjectChange`), and `chosenX` stay on `EventObject` (`chosenX` stays on the stack `GameObject` per 107.3a and is carried across `moved.after` via `after.chosenX.orElse existing.chosenX`, while `StackObjectEvent.copied` sets `chosenX` to `copy.chosenX.orElse (fun _ => orig.chosenX)` when `original` or `g.followMoved original` is in `g.objects` and `copy.chosenX` otherwise).
+- `summoningSick`, `attackingTarget` (which replaced `attackingWhom : Option PlayerId` in Phase 5), `printed`, `copiable` (added in Phase 13, #594: `GameObject.asEvent` sets `some o.printed` and `Core.snapshot` overwrites it with `some (g.copiableValues o)` so LKI readers such as `ModeledTriggers.copyEnteredArtifact` read Layer 1 copiable values under 707.2 via `eo.copiable.getD eo.toCardDef` without live state, while `applyZoneEvent` and `EventObject.toCardDef` read `printed` and never write `copiable` back onto `GameObject`), `adventurerCard` (deleted in Phase 5 when stack copies moved to `StackObjectEvent.copied`, then re-added in Phase 10, #588, so Adventure spells moving onto `.stack` reconstruct `GameObject.adventurerCard` inside `applyZoneEvent` without a post-move `ObjectChange`), and `chosenX` stay on `EventObject` (`chosenX` stays on the stack `GameObject` per 107.3a and is carried across `moved.after` via `after.chosenX.orElse existing.chosenX`, while `StackObjectEvent.copied` sets `chosenX` to `copy.chosenX.orElse (fun _ => orig.chosenX)` when `original` or `g.followMoved original` is in `g.objects` and `copy.chosenX` otherwise).
 - The 9 copy-only stack fields (`kicked`, `teamworkPaid`, `sneakPaid`, `sneakAttackWhom`, `giftPromisedTo`, `adventurerCard`, `abilityEffect`, `triggeredAbility`, `sourceId`—carried in Phase 2 so `.created` stack copies round-tripped through `applyZoneEvent`) were deleted from `EventObject` in Phase 5 when stack copies migrated from `ZoneEvent.created` to `StackObjectEvent.copied`. In Phase 8 (#584), the cast-choice fields (`kicked`, `giftPromisedTo`, `teamworkPaid`, `sneakPaid`, `sneakAttackWhom`, `sneakAttackTarget`) and LKI fields (`lastKnownPower`, `lastKnownToughness`) were deleted from `GameObject` (with `lastKnownPower` and `lastKnownToughness` moved onto `StackEntry` in [`Stack.lean`](Mtg/Engine/Game/Stack.lean) and copied via `{ origE with objectId := newId, controller := controller }` when `original`'s `StackEntry` is still on `g.stack`, while cast choices are read from `CastEvent.announced` via `GameEvent.rootCopiedSpellId`), leaving `applyStackObjectEvent` to copy `chosenX`, `adventurerCard`, `abilityEffect`, `triggeredAbility`, `reflexiveResolution`, `sourceId`, `fraCauseId`, `fraCauseController`, `fraCausePower`, and `fraCauseStatus` on the stack `GameObject`.
 - The 5 remaining transitional fields carried in Phase 2 (`returnedAsArtifact`, `onlyFoodArtifact`, `wasCast` as 400.7d cast metadata, `lastKnownPower`, and `lastKnownToughness`) were deleted from `EventObject` together with their `GameObject`/`Status` counterparts in Phase 8 step 4 (#584). In Phase 8, `Game.snapshot` (`Core.lean`) switched `colors`, `types`, `supertypes`, `power`, `toughness`, `staticAbilities`, and `keywords` to the layer helpers, while still patching only 7 hardcoded subtypes (`#[.hero, .villain, .goblin, .orc, .army, .elf, .merfolk]`) onto `g.currentSubtypes o` and inheriting `changeling` from `o.asEvent` (`o.printed.keywords.changeling`). In Phase 9 (#586), `Game.snapshot` switched to unified CR 613 Layer 1–7d queries across `controller` (`g.controllerOf o`, which returns `o.controller` off the battlefield), `name` (`g.name o`), `manaValue` (`g.objectManaValue o`), `colors`, `types`, `supertypes`, `subtypes` (`g.subtypes o`, including Layer 4 changeling creature-subtype expansion per 613.3 / 702.73a so `EventObject.hasSubtype` checks `o.subtypes.any (· == s)` directly), `changeling` (`curKw.changeling`), `isCopy` (`base.isCopy || g.hasActiveCopy o`), `loyalty` (`(g.baseCard o).loyalty.map Int.toNat`), `toxic` (`if g.retainsPrintedAbilities o then (g.baseCard o).toxic else 0`), `staticAbilities`, and `keywords`, and switched `matchTriggers`, `becomeTapped`, `addOneLoreRaw`, `dealDamageLoseIndestructibleExileTo`, `addPlusOnePlusOneTo`, `expireGoadedFor`, `beginStep`, `recordPutCounters`, and `recordRemoveCounters` from `o.asEvent` to `g.snapshot o` (with `Designations.lean` also switching to `g.snapshot` in Phase 10, #588; Phase 11, #590, moved `EventObject` and `GameObject.asEvent` to [`Object.lean`](Mtg/Engine/Game/Object.lean), migrated all 22 remaining production non-`snapshot` `GameObject.asEvent` call sites across `Mtg/Engine/Game/`, added `ProposedSpell.originalSnapshot : EventObject := {}` in [`Stack.lean`](Mtg/Engine/Game/Stack.lean) for pre-cost activation LKI, and replaced the stub `EventObject`s in `GameEvent.attached`, `GameEvent.control`, and `GameEvent.resolved`, leaving `Core.snapshot` as the sole production caller of `GameObject.asEvent` under `Mtg/Engine/Game/`; Phase 12, #592, added `commanderIdentityScryCreature := g.retainsPrintedAbilities o && bc.commanderIdentityScryCreature` to `EventObject` and `Core.snapshot` so `Core.ancestryManaSpentOn` evaluates Path of Ancestry's Layer 1/6 ability state across `ZoneEvent.moved.before` LKI; and Phase 13, #594, added `isCommander` per 903.3, all six CR 614.12 as-enters `chosen*` fields, and `copiable` (`some (g.copiableValues o)`) to `EventObject` and `Core.snapshot` while retiring `GameEvent.control`).
 
@@ -756,13 +756,18 @@ under construction (`ProposedSpell`, paired since Phase 12, #592, with
   `matchTriggers` (where `matchTriggers` builds every waiting trigger with
   `checked := true` so `putWaitingTrigger` does not record a second
   `TriggerQueueEvent.triggered` when putting it on the stack; since Phase 12,
-  #592, and Phase 13, #594, `closeBatch`, `Triggers.putWaitingTrigger`, and CR
-  603.12 reflexive trigger queuing (`putReflexiveTrigger`,
-  `queueFollowupReflexive`, and Head of the Hunt in `Movement.lean`) all route
-  through `Core.recordTriggeredWithOrigin`—which refuses lost/departed
-  controllers per 800.4d alongside `Core.enqueueWaitingTriggers`—stamping both
-  payload `origin` and envelope `.withBatch origin` and advancing
-  `nextBatchId := max g.nextBatchId (origin.raw + 1)`, while `extraTriggerCopies`
+  #592, and Phase 13, #594, `closeBatch`, `Triggers.putWaitingTrigger`, and
+  `Core.recordReflexiveTrigger`—called by CR 603.12 reflexive trigger queuing in
+  `putReflexiveTrigger`, `queueFollowupReflexive`, and Head of the Hunt in
+  `Movement.lean`—all record `TriggerQueueEvent.triggered` through
+  `Core.recordTriggeredWithOrigin`, which unconditionally pushes and applies the
+  event stamped with both payload `origin` and envelope `.withBatch origin` and
+  advances `nextBatchId := max g.nextBatchId (origin.raw + 1)`, while the CR
+  800.4d `.lost` / `.leftTheGame` controller filters live in `closeBatch`,
+  `recordReflexiveTrigger`, and `Core.enqueueWaitingTriggers`—`Triggers.putWaitingTrigger`
+  currently calls `recordTriggeredWithOrigin` without a controller check and
+  `putTriggeredAbilityOnStack` returns early only on `.lost`, which Phase 14, §4,
+  tightens—and `extraTriggerCopies`
   guards `if !source.isOnBattlefield then 0` per 109.2 so cast triggers of stack
   spells are not doubled by battlefield static doublers; `putWaitingTrigger`
   still records `GameEvent.triggered` only when `!wt.checked` and only for the
@@ -1417,7 +1422,7 @@ def matchTriggers (pre : GameSnapshot) (post : Game) (batch : Array GameEvent) :
   `StackEntry.targets`—into `matchTriggers`, and Phase 13, #594, migrated Way of
   the Cryomancer / Loki delayed-cast copies, combat-damage Treasure triggers, and
   CR 603.12 reflexive triggers onto `matchTriggers` / `WaitingTrigger` +
-  `recordTriggeredWithOrigin`; Phase 6's `enrageGrantsAdditionalCombat`
+  `recordReflexiveTrigger` / `recordTriggeredWithOrigin`; Phase 6's `enrageGrantsAdditionalCombat`
   queue-time counter was deleted in Phase 8 in favor of a live resolution-time
   attacking check) and is enqueued via `enqueueWaitingTriggers`. "Once each
   turn" is gated by the log query `Game.loggedTriggeredThisTurn`
@@ -3005,10 +3010,13 @@ checks, and CR 614.12 / 616.1 shockland ETB replacements), `Casting.lean`,
      [`FraChoices.lean`](Mtg/Engine/Game/FraChoices.lean),
      [`ResolutionEffects.lean`](Mtg/Engine/Game/ResolutionEffects.lean), and
      [`ModeledTriggers.lean`](Mtg/Engine/Game/ModeledTriggers.lean): move
-     `castAsPartOfResolution`, `beginResolutionCastTargets`,
-     `chooseCastFromLooked`, `finishMayCastFromLooked`, `castExiledAsResolves`,
-     and `advanceCastExiledQueue` into `Decisions.lean`, route
-     `Casting.reverseProposedSpell?`'s `resumeContinuation` branch (plus
+     `reverseProposedSpell?`, `reverseProposedSpell`, `castAsPartOfResolution`,
+     `beginResolutionCastTargets`, `chooseCastFromLooked`,
+     `finishMayCastFromLooked`, `castExiledAsResolves`, and
+     `advanceCastExiledQueue` into `Decisions.lean` (splitting
+     `Casting.reverseProposedSpellCore?` in `Casting.lean`), route
+     `Decisions.reverseProposedSpell?`'s `resumeContinuation` branch (when
+     `Casting.reverseProposedSpellCore?` returns `needsFinish == true`, plus
      `.costPicks` activation declines in `FraChoices.lean`) through
      `Decisions.finishFraChoice` (`resumePendingReplacement` →
      `resumeTriggerSequence` → `promptTriggerTargetsIfNeeded` →
@@ -3030,15 +3038,19 @@ checks, and CR 614.12 / 616.1 shockland ETB replacements), `Casting.lean`,
      (`ContinuationFrame.postCastCleanup`) in `.mayCastCascade`,
      `.mayCastGrima`, `.mayCastCopy` (`FraChoices.lean`), and
      `Decisions.chooseCastFromLooked` until the proposed cast completes
-     (`Casting.becomeCast`) or reverses (`Casting.reverseProposedSpell?`).
+     (`Casting.becomeCast`) or reverses (`Decisions.reverseProposedSpell?` /
+     `Casting.reverseProposedSpellCore?`).
 2. Unify interactive CR 614.1c / 614.12 as-enters choices, remaining non-pausing
    CR 616.1 replacement helpers, pain-land self-damage, CR 903.3 commander
    persistence, and CR 800.4d `leftGame` single-writer (§2.1, §2.3–§2.7, §3.4,
    §3.8):
    - Carry `chosenOdd`, `chosenCreatureType`, `chosenColor`, `chosenName`,
-     `chosenCardType`, `chosenAnchor`, and `copiable` on `EventObject`
+     `chosenCardType`, and `chosenAnchor` on `EventObject`
      ([`Object.lean`](Mtg/Engine/Game/Object.lean), `Core.snapshot`,
-     `GameObject.asEvent`, `Core.applyZoneEvent`, and `Core.findEventObj`) and
+     `GameObject.asEvent`, `Core.applyZoneEvent`, and `matchTriggers`'s
+     `findEventObj`), plus `copiable` on `EventObject` (`GameObject.asEvent` and
+     `Core.snapshot` for LKI Layer 1 copiable-value readers such as
+     `ModeledTriggers.copyEnteredArtifact`), and
      move interactive as-enters choices (`.fra .entersTappedChooseColor` Room of
      Refuge, `CardDef.asEntersChooseCreatureType` An Unexpected Party,
      `CardDef.asEntersChooseOddEven` Gollum, `.fra .entersChooseNonlandCardName`
@@ -3092,9 +3104,10 @@ checks, and CR 614.12 / 616.1 shockland ETB replacements), `Casting.lean`,
      `Seat` ([`Player.lean`](Mtg/Engine/Game/Player.lean)) and
      `Start.materializeSeat` ([`Start.lean`](Mtg/Engine/Game/Start.lean)).
    - Filter `g.waitingTriggers` (`·.controller != p`) inside
-     `Core.applyPlayerEvent` on `.leftGame p` (and refuse lost/departed
-     controllers in `Core.enqueueWaitingTriggers` and
-     `Core.recordTriggeredWithOrigin`, CR 800.4d) and delete duplicate
+     `Core.applyPlayerEvent` on `.leftGame p` (and refuse `.lost` /
+     `.leftTheGame` controllers in `Core.closeBatch`,
+     `Core.recordReflexiveTrigger`, and `Core.enqueueWaitingTriggers`, CR
+     800.4d) and delete duplicate
      `EngineChange.removeWaitingTriggersOf` (`Leaving.lean`, `Event.lean`,
      `Core.lean`).
 3. Complete trigger pipeline unification, library reveal/search event ordering,
@@ -3118,8 +3131,9 @@ checks, and CR 614.12 / 616.1 shockland ETB replacements), `Casting.lean`,
      (`ResolutionEffects.putReflexiveTrigger`, `queueFollowupReflexive`, and Head
      of the Hunt in [`Movement.lean`](Mtg/Engine/Game/Movement.lean)) through
      `WaitingTrigger` (`abilityEffect`, `reflexiveResolution`) +
-     `Core.recordTriggeredWithOrigin` (`TriggerQueueEvent.triggered`, CR
-     603.3c–d / 603.12) and delete `EngineChange.pushWaitingTrigger`; use
+     `Core.recordReflexiveTrigger` / `Core.recordTriggeredWithOrigin`
+     (`TriggerQueueEvent.triggered`, CR 603.3c–d / 603.12) and delete
+     `EngineChange.pushWaitingTrigger`; use
      `before.creature` (rather than `beforeObj.printed.isCreature || before.creature`)
      in `matchTriggers`'s `.creatureCardLeavesYourGy` arm (`Core.lean`); and
      migrate the 13 legacy test call lines of `Triggers.queueTrigger`,
@@ -3281,19 +3295,21 @@ spell-copy / combat-Treasure / reflexive `WaitingTrigger` routing, pre-move
      `putStunCounterOnSource` (`ActivationCosts.lean`) and
      `Casting.payLoyaltyCost` ([`Casting.lean`](Mtg/Engine/Game/Casting.lean))
      through `Core.replaceCountersPutChoice` / `recordPutCounters` (CR 118.11);
-     and reverse via `Casting.reverseProposedSpell?` in `FraChoices` `.costPicks`
+     and reverse via `Decisions.reverseProposedSpell?` /
+     `Casting.reverseProposedSpellCore?` in `FraChoices` `.costPicks`
      ([`FraChoices.lean`](Mtg/Engine/Game/FraChoices.lean)) and
-     `Casting.continueCostPicks` when an earlier `CostPick` was paid
-     (`paid == true`) and fewer than `next.count` legal candidates remain for a
-     subsequent `CostPick` (CR 733.1).
+     `continueCostPicks` (`Casting.lean` / `Decisions.lean`) when an earlier
+     `CostPick` was paid (`paid == true`) and fewer than `next.count` legal
+     candidates remain for a subsequent `CostPick` (CR 733.1).
    - Tighten `Core.reverseToProposalCheckpoint?` and
-     `Casting.reverseProposedSpell?`: treat `PlayerEvent.lookedAt` (when `cards`
-     intersect `liveLibIds`), `PlayerEvent.searched`, and
+     `Casting.reverseProposedSpellCore?` / `Decisions.reverseProposedSpell?`: in
+     `Core.reverseToProposalCheckpoint?`, treat `PlayerEvent.lookedAt` (when
+     `cards` intersect `liveLibIds`), `PlayerEvent.searched`, and
      `PlayerEvent.drawFromEmptyAttempted` as CR 733.1 irreversible library
      actions (so an empty-library mana-ability draw attempt cannot be undone to
-     escape CR 704.5b), and run `checkSBA` / `receivePriority` after proposal
-     reversal whenever unreversed actions remain even if
-     `waitingTriggers.size == baseTriggers`.
+     escape CR 704.5b); and in `Casting.reverseProposedSpellCore?`, run
+     `checkSBA` / `receivePriority` on standalone priority reversals whenever
+     unreversed actions remain even if `waitingTriggers.size == baseTriggers`.
    - Align CR 116.2b / 702.37e morph turn-face-up and mid-resolution /
      mana-payment windows: enforce `hasPriority`, `o.isOnBattlefield`,
      `g.controlledBy o p`, `consecutivePasses := 0`, `ProposalCheckpoint` / CR
@@ -3329,10 +3345,9 @@ spell-copy / combat-Treasure / reflexive `WaitingTrigger` routing, pre-move
      ([`EffectResolution.lean`](Mtg/Engine/Game/EffectResolution.lean)), and
      `ResolutionEffects.enterModsExtraCounters` / `finishEnteringAttackCard`
      ([`ResolutionEffects.lean`](Mtg/Engine/Game/ResolutionEffects.lean)); pass
-     `extraEntersWith := #[(.finality, 1)]` directly to `putOntoBattlefield` in
-     `EffectResolution.lean` (`.returnFromGraveyard` with finality) and
-     `extraCounters := #[(.loyalty, n)]` to `createToken` in
-     `Tokens.empowerJace` ([`Tokens.lean`](Mtg/Engine/Game/Tokens.lean));
+     `extraEntersWith := #[(.finality, 1)]` directly to `putOntoBattlefield`
+     (removing the post-entry `addFinalityTo` call) in `EffectResolution`
+     `.returnFromGyWithFinality` (`EffectResolution.lean`);
      pre-seed `EnterMod.loseAllAbilities` / `.keywords` / `.additionalSubtype`
      before `applyEtbReplacements` and `afterSnap` in `Movement.move`
      ([`Movement.lean`](Mtg/Engine/Game/Movement.lean)), matching
@@ -3363,26 +3378,39 @@ spell-copy / combat-Treasure / reflexive `WaitingTrigger` routing, pre-move
    - Fix `Core.recordPutCounters` (`Core.lean`) to bind and record the replaced
      counter count `n'` from `replaceCountersPutChoice` (instead of discarding
      it with `_` and recording raw `n`, skipping 0-counter emissions when
-     `n' == 0`), route remaining `countersYouPut` / direct `GameEvent.counters`
-     put sites (`ResolutionHelpers.lean`, `ResolutionEffects.lean`,
-     `Decisions.finishProliferate`, `EffectResolution.proliferateTarget`,
-     `TriggeredAbilities.lean`, `ModeledTriggers.lean`) through
-     `replaceCountersPutChoice` / `recordPutCounters`, route
+     `n' == 0`), route the remaining direct `GameEvent.counters` put sites
+     (`ResolutionHelpers.lean` `.doubleStrikeCounter` / `.tapAndStun`,
+     `ResolutionEffects.incrementPlanThen`, non-`+1/+1` counter kinds in
+     `Decisions.finishProliferate` and `EffectResolution.proliferateTarget`, and
+     loyalty counters in `Tokens.empowerJace` in
+     [`Tokens.lean`](Mtg/Engine/Game/Tokens.lean)) through
+     `replaceCountersPutChoice` / `recordPutCounters` while dropping pre-multiplied
+     `g.countersYouPut` wrappers at existing `recordPutCounters` callers
+     (`Designations.putShadowCounter`, `EffectResolution.plusOneAndDoubleStrike`,
+     `FraAbilities` `.tapAndStunX`, `FraHelpers.loyaltyOnEachPlaneswalkerOf`,
+     `FraResolve` `-1/-1` counters, `FrcResolve` `.tamiyoStun`,
+     `ResolutionEffects.putPalantirInfluence`, and `TriggeredAbilities.lean`) so
+     counter replacements are not applied twice, route
      `Pumps.dealDamageLoseIndestructibleExileTo`
      ([`Pumps.lean`](Mtg/Engine/Game/Pumps.lean)) through `Damage.markDamageOn`,
      route life-increasing `Core.setLife` (`life > pl.life`, CR 119.5) through
      `Damage.gainLife`, route `LibrarySearch.placeSearched` untap
      ([`LibrarySearch.lean`](Mtg/Engine/Game/LibrarySearch.lean)) through
-     `Pumps.untapPermanent`, and chain `PendingReplacement` continuations
-     instead of clobbering `Pending.chooseReplacement` or calling `g.object! ⟨0⟩`
-     in `Decisions.finishSurveil` / `finishLibraryLook` / `finishProliferate` /
-     `discardForDraw` (`Decisions.lean`), `SacrificeDiscard.applyConnive` /
-     `drawThenBeginDiscard`
-     ([`SacrificeDiscard.lean`](Mtg/Engine/Game/SacrificeDiscard.lean)),
-     `Library.beginRecruit` ([`Library.lean`](Mtg/Engine/Game/Library.lean)),
-     `FraChoices` `.mayBeginOnBattlefield`, `Pumps.amass`,
-     `LibrarySearch.placeSearched`, and `CastExtras.putLandFromHandTapped`
-     ([`CastExtras.lean`](Mtg/Engine/Game/CastExtras.lean)).
+     `Pumps.untapPermanent`, eliminate the `g.object! ⟨0⟩` fallback in
+     `Tokens.lean` and placeholder `{ id := ⟨0⟩, … }` dereference on paused
+     `createToken` in `Pumps.amass`, and chain `PendingReplacement` continuations
+     instead of overwriting `Pending.chooseReplacement` (`Decisions.finishLibraryLook`
+     called by `finishSurveil` / `finishScry`, `Decisions.finishProliferate`,
+     `Decisions.discardForDraw`, `SacrificeDiscard.drawThenBeginDiscard` and
+     `applyConnive` in
+     [`SacrificeDiscard.lean`](Mtg/Engine/Game/SacrificeDiscard.lean),
+     `Library.beginRecruit` in [`Library.lean`](Mtg/Engine/Game/Library.lean), and
+     `CastExtras.putLandFromHandTapped` in
+     [`CastExtras.lean`](Mtg/Engine/Game/CastExtras.lean)) or dropping/mis-ordering
+     post-pause steps (`FraChoices` `.mayBeginOnBattlefield` returning early on
+     `pending != .none` without `continueOpeningBegin`, and
+     `LibrarySearch.placeSearched` running post-entry steps synchronously on the
+     pre-move `id`).
    - Fix CR 615 / 616.1 / 120.3c combat and noncombat damage
      replacement/prevention in [`Combat.lean`](Mtg/Engine/Game/Combat.lean) and
      [`Damage.lean`](Mtg/Engine/Game/Damage.lean): remove the recipient-less
@@ -3452,12 +3480,11 @@ spell-copy / combat-Treasure / reflexive `WaitingTrigger` routing, pre-move
      `FraResolve.lean` `.copyTokenOfSourceIfNotToken`, `EffectResolution.lean`,
      `TriggerArgs.lean`, `SacrificeDiscard.lean`) through `g.baseCard` /
      `g.colors` / `g.staticAbilities` / `g.isCreature` / `g.isLand` /
-     `g.subtypes` / `g.copiableValues`; record `PlayerEvent.lookedAt` in
-     `Choices.riddlesInTheDark` (`Choices.lean`); and restrict partial hand
-     `PlayerEvent.revealed` emissions in `TriggeredAbilities.lean` to `shownIds`
-     rather than the entire hand.
+     `g.subtypes` / `g.copiableValues`; and record `PlayerEvent.lookedAt` in
+     `Choices.riddlesInTheDark` (`Choices.lean`).
    - Complete multiplayer CR 800.4a/c/d/i/j cleanup (`Leaving.lean`,
-     `Core.lean`, `Turns.lean`, `PriorityActions.lean`): remove departed-owner
+     `Core.lean`, `Triggers.lean`, `Turns.lean`, `PriorityActions.lean`): remove
+     departed-owner
      permanents in `Leaving.objectLeavesTheGame` via `unattachFrom` +
      `removePreparedCopy` + `ceaseToExist` + CR 610.3 `linkedExile` return (and
      CR 603.10a leaves-the-battlefield look-back for remaining players) rather
@@ -3468,8 +3495,10 @@ spell-copy / combat-Treasure / reflexive `WaitingTrigger` routing, pre-move
      (`Leaving.playerLeavesGame`, CR 800.4a); prevent `Core.initialControllerOf`
      from falling back to `o.controller` when that player has lost so CR 800.4c
      exiles the permanent when a control effect ends; filter `g.delayedTriggers`
-     (`·.controller != p`) on `PlayerEvent.leftGame p` in `Core.applyPlayerEvent`
-     and drop the inverted `!(g.player dt.controller).lost` guard in
+     (`·.controller != p`) on `PlayerEvent.leftGame p` in `Core.applyPlayerEvent`,
+     guard `(g.player controller).lost || (g.player controller).leftTheGame` in
+     `Triggers.putWaitingTrigger` and `Triggers.putTriggeredAbilityOnStack`, and
+     drop the inverted `!(g.player dt.controller).lost` guard in
      `Turns.endOfTurn` (`Turns.lean`, CR 800.4d); clean up paused
      `Pending.chooseReplacement` / `pendingReplacement` / open batches and
      `proposedSpell` in `Leaving.redirectPendingAfterLeave`; and advance
@@ -3493,7 +3522,7 @@ spell-copy / combat-Treasure / reflexive `WaitingTrigger` routing, pre-move
      `Damage.replacedDamageAmount`, `Damage.tomikNoncombatBonus`,
      `Movement.exileInsteadController?`, `Movement.wouldExileInsteadOfDying`,
      `Entering.putLandYouControlEntersTriggers`, and
-     `Entering.putAnotherElfYouControlEntersTriggers`), migrate the 16 test call
+     `Entering.putAnotherElfYouControlEntersTriggers`), migrate the 17 test call
      lines of `ResolutionEffects.applyModeledReflexive`
      (`CatalogModelTests.lean`, `MshOracleTests.lean`, `MshOracleTests2.lean`,
      `MshOracleTests4.lean`, `Tests/Casting.lean`, `Tests/ThisAttack.lean`) onto
