@@ -322,15 +322,20 @@ inductive GameChange where
 deriving Repr, Inhabited, BEq
 
 inductive GameEvent where
-  | rules (turn : Nat) (e : RulesEvent) (cause : EventCause) (batch : BatchId := ⟨0⟩)
-  | engine (turn : Nat) (c : EngineChange) (batch : BatchId := ⟨0⟩)
+  | rules (turn : Nat) (e : RulesEvent) (cause : EventCause) (batch : Option BatchId := none)
+  | engine (turn : Nat) (c : EngineChange) (batch : Option BatchId := none)
 deriving Repr, Inhabited, BEq
 ```
 
 Every `.rules` event carries a mandatory `EventCause` (the migration-only
 `EventCause.unclassified` constructor was deleted in Phase 10, #588), while
 `.engine` changes are cause-free (`GameEvent.cause?` returns `some cause` on
-`.rules` and `none` on `.engine`).
+`.rules` and `none` on `.engine`); replacing the `BatchId ⟨0⟩` sentinel default
+on `GameEvent.rules` / `GameEvent.engine` (and `delayedTriggerCreated` /
+`delayedTriggerConsumed` / `delayedTriggerExpired`) with
+`Option BatchId := none`—so unbatched/proposed events and unstamped `.engine`
+changes carry `none` while real batches start cleanly at `BatchId ⟨0⟩`—moves to
+Phase 16 step 4.
 
 ### 2.3 Object snapshot
 
@@ -1560,7 +1565,7 @@ Each field is put in exactly one category. "Log" means a query over
 
 | Category | Fields (type) | Target |
 | :--- | :--- | :--- |
-| **Core & turn/combat state — stays** | `players : Array Player`, `objects : Array GameObject`, `stack : Array StackEntry`, `activePlayer : PlayerId`, `priority : PlayerId`, `step : Step`, `turnNumber : Nat`, `startingPlayer : PlayerId`, `isFirstTurn : Bool`, `nextObjectId : Nat`, `nextEffectId : Nat`, `activeEffects : Array (EffectId × ContinuousEffectSpec)` (updated from `ContinuousEffect` in Phase 8), `timestamp : Nat`, `result : Option GameResult`, `log : Array String`, `format : Format`, `brawl : Bool`, `consecutivePasses : Nat`, `cleanupGivesPriority : Bool`, `isNight : Bool`, `extraTurns : Array PlayerId` (paired with `extraTurnCauses : Array EventCause` in Phase 3; `extraTurnCauses` was replaced when `TurnEvent.extraTurnAdded` wrote `extraTurns` in Phase 5), `additionalCombatPhases : Nat`, `assignedCombatDamage : Array CreatureCombatAssignment` (cleared by `TurnEvent.stepBegan`, `TurnEvent.stepEnded .combatDamage`, `TurnEvent.phaseEnded .combat`, and `TurnEvent.extraStepAdded .combatDamage .afterCurrent` in `applyTurnEvent` since Phase 12, #592), `pendingBlockerAssignments : Array CreatureCombatAssignment` (added in Phase 15, #598, via `EngineChange.pendingBlockerAssignments` for multi-defender APNAP blocker combat-damage assignment per 510.1d / 802.5), `events : Array GameEvent` (plus `nextBatchId : Nat` and `currentBatch : Option (BatchId × Option EventCause)` in Phase 4—initializing `nextBatchId : Nat := 1` so real batches do not collide with `BatchId ⟨0⟩` moves to Phase 16 step 4—and `openBatchObjects : Array GameObject`, `openBatchPlayers : Array Player`, `openBatchEffects : Array (EffectId × ContinuousEffectSpec)`—updated in Phase 8—`openBatchPending : Pending` in Phase 7, and `openBatchStack : Array StackEntry` in Phase 15, #598) | Written by `RulesEvent`s (`TurnEvent`, `CombatEvent`, `ContinuousEffectEvent`, `DelayedTriggerEvent`, …) or `EngineChange` (`priority`, `consecutivePasses`, `cleanupGivesPriority`, `log`, plus `addPlayer` and `removeStackEntry` replacing bulk `EngineChange.players` and `EngineChange.stack` in Phase 14, #596, and `EngineChange.stackEntry (objectId : ObjectId) (c : StackEntryChange)` replacing `EngineChange.setStackEntryAt` in Phase 15, #598); since Phase 12 (#592), `nextBatchId` is bumped in `applySingleRulesEventInBatch`, `closeBatch`'s `pushInBatch` (for `.rules` events `closeBatch` pushes itself), `recordTriggeredWithOrigin`, `EngineChange.pauseBatch`, and `replayEvent` (`EngineChange.nextBatchId` was deleted in Phase 10, #588); `currentBatch` and `openBatchObjects` / `openBatchPlayers` / `openBatchEffects` / `openBatchPending` / `openBatchStack` are transient pre-batch snapshot fields written in memory by the outermost arm (`currentBatch == none`) of `withBatchReturn` and cleared in memory by `finishOpenBatchSync` when the batch finishes synchronously, or journaled via `EngineChange.pauseBatch` and cleared via `EngineChange.clearPausedBatch` in `finishOpenBatch` when the batch pauses (standalone `applyEvent` sets and clears `currentBatch` locally without touching `openBatch*`). |
+| **Core & turn/combat state — stays** | `players : Array Player`, `objects : Array GameObject`, `stack : Array StackEntry`, `activePlayer : PlayerId`, `priority : PlayerId`, `step : Step`, `turnNumber : Nat`, `startingPlayer : PlayerId`, `isFirstTurn : Bool`, `nextObjectId : Nat`, `nextEffectId : Nat`, `activeEffects : Array (EffectId × ContinuousEffectSpec)` (updated from `ContinuousEffect` in Phase 8), `timestamp : Nat`, `result : Option GameResult`, `log : Array String`, `format : Format`, `brawl : Bool`, `consecutivePasses : Nat`, `cleanupGivesPriority : Bool`, `isNight : Bool`, `extraTurns : Array PlayerId` (paired with `extraTurnCauses : Array EventCause` in Phase 3; `extraTurnCauses` was replaced when `TurnEvent.extraTurnAdded` wrote `extraTurns` in Phase 5), `additionalCombatPhases : Nat`, `assignedCombatDamage : Array CreatureCombatAssignment` (cleared by `TurnEvent.stepBegan`, `TurnEvent.stepEnded .combatDamage`, `TurnEvent.phaseEnded .combat`, and `TurnEvent.extraStepAdded .combatDamage .afterCurrent` in `applyTurnEvent` since Phase 12, #592), `pendingBlockerAssignments : Array CreatureCombatAssignment` (added in Phase 15, #598, via `EngineChange.pendingBlockerAssignments` for multi-defender APNAP blocker combat-damage assignment per 510.1d / 802.5), `events : Array GameEvent` (plus `nextBatchId : Nat` and `currentBatch : Option (BatchId × Option EventCause)` in Phase 4, and `openBatchObjects : Array GameObject`, `openBatchPlayers : Array Player`, `openBatchEffects : Array (EffectId × ContinuousEffectSpec)`—updated in Phase 8—`openBatchPending : Pending` in Phase 7, and `openBatchStack : Array StackEntry` in Phase 15, #598) | Written by `RulesEvent`s (`TurnEvent`, `CombatEvent`, `ContinuousEffectEvent`, `DelayedTriggerEvent`, …) or `EngineChange` (`priority`, `consecutivePasses`, `cleanupGivesPriority`, `log`, plus `addPlayer` and `removeStackEntry` replacing bulk `EngineChange.players` and `EngineChange.stack` in Phase 14, #596, and `EngineChange.stackEntry (objectId : ObjectId) (c : StackEntryChange)` replacing `EngineChange.setStackEntryAt` in Phase 15, #598); since Phase 12 (#592), `nextBatchId` is bumped in `applySingleRulesEventInBatch`, `closeBatch`'s `pushInBatch` (for `.rules` events `closeBatch` pushes itself), `recordTriggeredWithOrigin`, `EngineChange.pauseBatch`, and `replayEvent` (`EngineChange.nextBatchId` was deleted in Phase 10, #588); `currentBatch` and `openBatchObjects` / `openBatchPlayers` / `openBatchEffects` / `openBatchPending` / `openBatchStack` are transient pre-batch snapshot fields written in memory by the outermost arm (`currentBatch == none`) of `withBatchReturn` and cleared in memory by `finishOpenBatchSync` when the batch finishes synchronously, or journaled via `EngineChange.pauseBatch` and cleared via `EngineChange.clearPausedBatch` in `finishOpenBatch` when the batch pauses (standalone `applyEvent` sets and clears `currentBatch` locally without touching `openBatch*`). |
 | **Engine prompt / queue state — stays (`EngineChange`)** | `pending : Pending`, `pendingPriority : Option PlayerId` (added in Phase 15, #598, via `EngineChange.pendingPriority` to retain the CR 117.3c priority recipient across intermediate SBA/trigger prompts), `pregameRandom : PregameRandom` (added in Phase 10, #588, for pregame/mulligan `--norandom` shuffle continuations in [`Pending.lean`](Mtg/Engine/Game/Pending.lean)), `proposedSpell : Option ProposedSpell` (`ProposedSpell` in [`Stack.lean`](Mtg/Engine/Game/Stack.lean) gained `originalSnapshot : EventObject := {}` in Phase 11, #590, dropped `handBefore`, `stackBefore`, and `manaBefore` in Phase 12, #592, gained `alternativeCost : Bool := false` and `resolutionCast : Bool := false` alongside `ProposalKind.turnFaceUp` in Phase 14, #596, and gained `teamworkCreatures : Array ObjectId := #[]` via `ProposalChange.teamworkCreatures` in Phase 15, #598), `proposalCheckpoint : Option ProposalCheckpoint` and `outerProposalCheckpoints : Array ProposalCheckpoint` (added in Phase 12, #592, via `EngineChange.saveProposalCheckpoint` / `clearProposalCheckpoint` for CR 733.1 proposal reversal, extended with `currentBatch` / `openBatch*` alongside `ProposalActionKind` `EngineChange.beginProposalAction` / `endProposalAction` in Phase 13, #594, paired with `PendingReplacement.endProposalAction` / `endsWithFinishFra` / `finishProliferateEachKind` in Phase 14, #596, and extended with `openBatchStack` and `outerProposalCheckpoints` in Phase 15, #598), `continuations : Array ContinuationFrame` (added in Phase 8, expanded to 81 fields in Phase 10, #588, when `resolvingSpell`, `resolvingAbility`, `resolvingDivision`, `afterRandom`, `resolutionFinish`, and `pendingResolvedEvent` moved onto `ContinuationFrame`, expanded to 83 fields in Phase 13, #594, with `pendingCastExiledQueue` and `postCastCleanup` while test-only `ContinuationChange.resolvingContext` was deleted, and kept at 83 fields in Phase 15, #598, when write-only `amassControllerThisWay` was retired and `outerPendingReplacements : Array PendingReplacement := #[]` was added via `ContinuationChange.pushOuterPendingReplacement` / `popOuterPendingReplacement`; bulk setter `EngineChange.continuations` deleted in Phase 11, #590; retiring unreachable `pendingCastExiledQueue` moves to Phase 16 step 4), `awaitingOpeningBegin : Bool`, `mulliganToDeclare : Array PlayerId`, `willMulligan : Array PlayerId`, `mulliganToBottom : Array PlayerId`, `blockersQueue : Array PlayerId`, `waitingTriggers : Array WaitingTrigger` (`WaitingTrigger.ordered : Bool := false` added in Phase 15, #598), `castingFromTop : Bool`, `replacementOrder : Array ReplacementId` (added in Phase 7 for player-chosen CR 616.1 ordering) | Updated by `EngineChange` while choices, casts, or abilities are in progress. |
 | **Combat / Ward / Path of Ancestry bookkeeping — deleted in Phase 12** | `firstStrikeDamageDone : Bool`, `pendingRegularCombatDamage : Bool`, `firstStrikeAssignedThisCombat : Array ObjectId`, `wardQueue : Array WardObligation`, `ancestryLandsTapped : Array ObjectId` | Deleted in Phase 12 (#592): `firstStrikeDamageDone`, `pendingRegularCombatDamage`, and `firstStrikeAssignedThisCombat` (plus `hasFirstStrikeAssignmentInCurrentStep`) are derived from `TurnEvent.extraStepAdded .combatDamage .afterCurrent` (`PendingReplacement.addExtraCombatDamageStep`), `TurnEvent.stepBegan .combatDamage`, and `CombatEvent.damageAssigned` in the current combat phase; Ward (`TriggeredAbility.onWard` / `FrcEffect.ward`) is matched in `matchTriggers` into `WaitingTrigger` / `g.stack` per 702.21a; and Path of Ancestry's scry check (`Game.ancestryManaSpentOn`) reads `PlayerEvent.manaSpent` `ManaUnit.source` against live `isBattlefieldObject` + `EventObject.commanderIdentityScryCreature` LKI. |
 | **Delayed triggers → delayed-trigger table (603.7, Phase 8 / 10)** | `delayedEndStepReturns : Array (ObjectId × EventCause)`, `delayedEndStepExiles : Array (ObjectId × EventCause)`, `delayedEndStepSacrifices : Array (ObjectId × EventCause)`, `delayedGraveReturns : Array (ObjectId × PlayerId × EventCause)`, `delayedSynthetic : Array (PlayerId × Nat × EventCause)`, `eaglesBirdsCauses : Array (PlayerId × Nat × EventCause)` (added in Phase 3 alongside `Player.eaglesBirdsNextUpkeep : Nat`) | Replaced in Phase 8 (#584) by `Game.delayedTriggers : Array DelayedTrigger := #[]` (`DelayedTriggerKind` in [`Object.lean`](Mtg/Engine/Game/Object.lean)), matched by `matchTriggers` (603.2) and put on the stack via `TriggerQueueEvent.putOnStack` (603.3), with creation, one-shot consumption, and EOT expiry journaled via `DelayedTriggerEvent` (§2.12) in Phase 10 (#588). |
@@ -1596,7 +1601,7 @@ flowchart TD
   P12 --> P13["Phase 13: Action-level CR 733.1/733.2 reversal & batch checkpoints,\nCR 614.12/616.1/903.3/800.4d completion, trigger/reveal/LKI & CR sweep"]
   P13 --> P14["Phase 14: Paused proposal-action & cost/morph alignment,\nsingle-writer ETB/copy/counter/damage fixes, batch look-back/LKI/CR 800.4 & final sweep"]
   P14 --> P15["Phase 15: Pause-safe resolution combinators & replacement loops,\nCR 117.3c/601.2/603.3b/batch-stack fidelity, simultaneous LKI/SBA/combat/cleanup, ObjectId 0 & scaffolding cleanup"]
-  P15 --> P16["Phase 16: Remaining replacement/reveal/mill pause-safety & parity,\nCR 603.3b/603.4/608.2a-b/702.176a stack & target lifecycle, CR 704.3/704.8/111.8/701.17c/800.4 batches, BatchId 0 & scaffolding cleanup"]
+  P15 --> P16["Phase 16: Remaining replacement/reveal/mill pause-safety & parity,\nCR 603.3b/603.4/608.2a-b/702.176a stack & target lifecycle, CR 704.3/704.8/111.8/701.17c/800.4 batches, Option BatchId & scaffolding cleanup"]
 ```
 
 ### Phase 1 — Envelope and durable single-writer constructors
@@ -4188,7 +4193,7 @@ parity, and `EngineChange.stackEntry` replay), `Casting.lean`, `Activation.lean`
 `Removal.lean`, `ThisAttack.lean`, `MshOracleTests.lean`, `MshOracleTests2.lean`,
 `MshOracleTests4.lean`, `CatalogModelTests.lean`.
 
-### Phase 16 — Remaining replacement / reveal / mill pause-safety & parity, CR 603.3b / 603.4 / 608.2a–b / 702.176a stack & target lifecycle, CR 704.3 / 704.8 / 111.8 / 701.17c / 800.4 batches, and `BatchId ⟨0⟩` & scaffolding cleanup
+### Phase 16 — Remaining replacement / reveal / mill pause-safety & parity, CR 603.3b / 603.4 / 608.2a–b / 702.176a stack & target lifecycle, CR 704.3 / 704.8 / 111.8 / 701.17c / 800.4 batches, and `Option BatchId` & scaffolding cleanup
 
 1. Close remaining `Pending.chooseReplacement` / `--norandom` pause-safety gaps,
    `mayThen` / `chooseTriggerOr` / `turnFaceUp` continuation ordering bugs, and
@@ -4377,8 +4382,9 @@ parity, and `EngineChange.stackEntry` replay), `Casting.lean`, `Activation.lean`
      `pendingReplacement := none` when `q == p` leaves during
      `.chooseReplacement`.
 4. Consolidate `PlayerEvent.gainedDesignation` (`enduringStory` /
-   `citysBlessing`), separate `BatchId ⟨0⟩` from real batches, and prune
-   remaining dead legacy scaffolding (§0.1, §2.1, §2.7, §3.2, §3.8):
+   `citysBlessing`), replace the `BatchId ⟨0⟩` sentinel default with
+   `Option BatchId`, and prune remaining dead legacy scaffolding (§0.1, §2.1,
+   §2.2, §2.7, §3.2, §3.8):
    - Consolidate automatic `PlayerEvent.gainedDesignation` (`enduringStory` /
      `citysBlessing`) evaluation onto `Core.closeBatch` (`Core.lean`: checking
      permanent `controlsStoried` / permanent `controlsAscend` across any
@@ -4388,9 +4394,17 @@ parity, and `EngineChange.stackEntry` replay), `Casting.lean`, `Activation.lean`
      in `Core.controlsAscend`, and removing the redundant mid-batch
      `refreshEnduringStory` / `refreshCitysBlessing` calls in
      `Tokens.createOneToken` and `Entering.afterPermanentEnters`).
-   - Initialize `Game.nextBatchId : Nat := 1` (`Core.lean`, `ProposalCheckpoint`)
-     so real rule batches never collide with the `BatchId ⟨0⟩` unbatched/engine
-     default (`Event.lean`).
+   - Replace the `BatchId ⟨0⟩` special-case default with
+     `Option BatchId := none` across `GameEvent.rules` and `GameEvent.engine`,
+     `GameEvent.batch : GameEvent → Option BatchId`, `GameEvent.withBatch`, and
+     `GameEvent.delayedTriggerCreated` / `delayedTriggerConsumed` /
+     `delayedTriggerExpired` (`Event.lean`), together with batch stamping and
+     comparisons in `Core.applySingleRulesEventInBatch`,
+     `Core.finishOpenBatchSync`, `Core.finishOpenBatch`, `Core.closeBatch`,
+     `Core.replayEvent`, and `Core.reverseToProposalCheckpoint?` (`Core.lean`)
+     plus test assertions in `Tests/Events.lean`, so unbatched/proposed events
+     and unstamped `.engine` changes carry `batch := none` rather than using
+     `BatchId ⟨0⟩` as a sentinel (keeping `Game.nextBatchId : Nat := 0`).
    - Prune remaining dead legacy scaffolding (while keeping intentional §2 / §3
      target-architecture enum constructors): unreachable
      `Pending.chooseRingBearer` / `Action.chooseRingBearer` /
@@ -4423,7 +4437,7 @@ target legality, CR 704.3 / 704.8 pre-704.5q SBA LKI & single-batch
 `chooseLegend`, CR 111.8 token-flicker prohibition & simultaneous multi-target
 flicker, CR 603.6c `.creatureCardsPutIntoYourGy` & CR 701.17c `ZoneVerb.mill`,
 CR 800.4a/h leave-game continuation handling, CR 702.131a/b/d `citysBlessing` /
-`enduringStory` batch evaluation, and `BatchId ⟨0⟩` separation), `Casting.lean`,
+`enduringStory` batch evaluation, and `Option BatchId` envelope fidelity), `Casting.lean`,
 `Activation.lean`, `Combat.lean`, `Damage.lean`, `Destroy.lean`, `Leaving.lean`,
 `Turns.lean`, `Abilities.lean`, `Cant.lean`, `Chapter.lean`, `Effects.lean`,
 `Marvel.lean`, `Removal.lean`, `SearchLibrary.lean`, `ThisAttack.lean`,
@@ -4432,8 +4446,9 @@ CR 800.4a/h leave-game continuation handling, CR 702.131a/b/d `citysBlessing` /
 
 Final check (after Phase 16): `lake build`, `lake exe mtg-demo`,
 `lake exe oracle-roundtrip`, no `EventCause.unclassified` constructor, no
-`ObjectId ⟨0⟩` wildcard or sentinel collisions, no real rule batch using
-`BatchId ⟨0⟩`, no `GameObject.asEvent` helper (only `Core.snapshot`),
+`ObjectId ⟨0⟩` or `BatchId ⟨0⟩` wildcard/sentinel defaults (unbatched/proposed
+events and unstamped `.engine` changes carry `batch := none` via
+`Option BatchId`), no `GameObject.asEvent` helper (only `Core.snapshot`),
 no `ZoneEvent.created` emissions for non-token cards/abilities/emblems/fixtures,
 no `StatusChange` type or post-entry `chosen*` `ObjectChange` mutators, no
 duplicate post-entry `entersWith` counter events, no duplicate raw state writers
