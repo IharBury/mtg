@@ -3795,7 +3795,7 @@ leave-game cleanup), `Casting.lean`, `Activation.lean`, `Combat.lean`, `Damage.l
      `PendingReplacement` continuations across the remaining unguarded mutators
      and multi-object / multi-player loops:
      - Guard `Damage.destroyPermanent` (also checking `g.hasIndestructible o`
-       *before* `.shieldCounterDestroy` per CR 122.1c / 614.7 / 702.12b so an
+       *before* `.shieldCounterDestroy` per CR 122.1c / 614.17c / 702.12b so an
        indestructible permanent does not lose a shield counter),
        `Damage.markDamageOn`, `Damage.gainLife`, `Damage.dealDamageToPermanent`,
        `Damage.dealDamageFrom`, `Damage.dealDamageToPlayer`,
@@ -3945,7 +3945,7 @@ leave-game cleanup), `Casting.lean`, `Activation.lean`, `Combat.lean`, `Damage.l
      `CastExtras.applyKickerToProposed`
      ([`CastExtras.lean`](Mtg/Engine/Game/CastExtras.lean)) and
      `Casting.lockInTargetCostReduction` (`Casting.lean`), plus `g.isEquipment` /
-     `g.isArtifact` in [`Agent.lean`](Mtg/Engine/Game/Agent.lean).
+     `g.isArtifact` in [`Agent.lean`](Mtg/Engine/Agent.lean).
    - Complete CR 603.3b trigger ordering: in `Entering.receivePriority`
      (`Entering.lean`), stop filtering out delayed triggers
      (`mine.filter (·.delayedTrigger.isNone)`) and extend `allIdentical` beyond
