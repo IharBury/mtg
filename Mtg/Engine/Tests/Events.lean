@@ -3343,7 +3343,7 @@ trigger, and the modified event carries `EventCause.replaced`. -/
     | _ => false)
   let finExileMoves := gFin2.events.filter (fun e =>
     match e.change with
-    | .rules (.zone (.moved before _ .battlefield .exile .exile _ _ _)) =>
+    | .rules (.zone (.moved before _ .battlefield .exile .destroy _ _ _)) =>
       before.id == some finBear0.id
     | _ => false)
   let finalityId : ReplacementId := { kind := .finalityCounterExile, object := some finBear0.id }
@@ -9661,6 +9661,66 @@ follow-ups (Path of Ancestry scry, `pendingMayCastFromExile`, and
     Game.replayEvents gZeroIdAndStack.events == gZeroIdAndStack &&
     allRulesEventsClassified gZeroIdAndStack
 
+  -- ==========================================================================
+  -- 12. `wasPermanentDestroyed` / `destroyPermanentsLoop` tally (CR 701.8a-c,
+  --     CR 800.4c non-destroy exile exclusion, WotC Ruling 80 `ZoneVerb.destroy`
+  --     preservation across graveyard-redirect replacements)
+  -- ==========================================================================
+  let destroyedTallyAllOk : Bool := Id.run do
+    let threeCfg12 : StartConfig := {
+      seats := #[
+        { name := "Chandra", deck := testRedDeck },
+        { name := "Nissa", deck := testGreenDeck },
+        { name := "Liliana", deck := testRedDeck }
+      ]
+      format := .constructed
+      seed := 12
+      startingPlayer := some 0
+    }
+    let g0 :=
+      match Start.start threeCfg12 with
+      | .ok g => keepOpeningHands g 12
+      | .error e => panic! e
+    let indRelicDef : CardDef :=
+      { name := "Phase15 Indestructible Relic", manaCost := ManaCost.empty,
+        types := #[.artifact], keywords := { indestructible := true } }
+    let shdRelicDef : CardDef :=
+      { name := "Phase15 Shield Relic", manaCost := ManaCost.empty, types := #[.artifact] }
+    let finRelicDef : CardDef :=
+      { name := "Phase15 Finality Relic", manaCost := ManaCost.empty, types := #[.artifact] }
+    let g0 := addPermanent g0 bear ⟨1⟩ ⟨1⟩
+    let ctrlSrcId := (g0.battlefield.filter (·.name == bear.name))[0]!.id
+    let g0 := addPermanent g0 hero ⟨2⟩ ⟨2⟩
+    let stolenId := (g0.battlefield.filter (·.name == hero.name))[0]!.id
+    let g0 := g0.changeControl (g0.object! stolenId) ⟨1⟩ (untilSourceLeaves := some ctrlSrcId) (cause := some testCause)
+    let g0 := g0.concede ⟨2⟩
+    let g0 := addPermanent g0 indRelicDef ⟨1⟩ ⟨1⟩
+    let indId := (g0.battlefield.filter (·.name == "Phase15 Indestructible Relic"))[0]!.id
+    let g0 := addPermanent g0 shdRelicDef ⟨1⟩ ⟨1⟩
+    let shdId := (g0.battlefield.filter (·.name == "Phase15 Shield Relic"))[0]!.id
+    let g0 := g0.recordPutCounters shdId .shield 1 (some ⟨1⟩) (cause := some testCause)
+    let g0 := addPermanent g0 finRelicDef ⟨1⟩ ⟨1⟩
+    let finId := (g0.battlefield.filter (·.name == "Phase15 Finality Relic"))[0]!.id
+    let g0 := g0.recordPutCounters finId .finality 1 (some ⟨1⟩) (cause := some testCause)
+    let cands := #[ctrlSrcId, stolenId, indId, shdId, finId]
+    let gOut :=
+      g0.withContinuationFrame fun g =>
+        g.withBatch (some testCause) fun g =>
+          g.destroyPermanentsLoop cands (allCandidates := cands) (countNote := true)
+            (obGainLifeFor := some ⟨0⟩) (preBattlefield := some g.battlefield) (cause := some testCause)
+    gOut.wasPermanentDestroyed ctrlSrcId &&
+    !gOut.wasPermanentDestroyed stolenId &&
+    !gOut.wasPermanentDestroyed indId &&
+    !gOut.wasPermanentDestroyed shdId &&
+    gOut.wasPermanentDestroyed finId &&
+    (gOut.player ⟨0⟩).life == 22 &&
+    !(gOut.findObject? stolenId).any (·.isOnBattlefield) &&
+    (gOut.findObject? indId).any (·.isOnBattlefield) &&
+    (gOut.findObject? shdId).any (fun o => o.isOnBattlefield && o.status.shield == 0) &&
+    gOut.objects.any (fun o => o.name == "Phase15 Finality Relic" && o.zone == .exile) &&
+    Game.replayEvents gOut.events == gOut &&
+    allRulesEventsClassified gOut
+
   let mustHold15 (label : String) (ok : Bool) : Bool :=
     if ok then true else panic! s!"Phase 15 guard failed: {label}"
 
@@ -9674,6 +9734,7 @@ follow-ups (Path of Ancestry scry, `pendingMayCastFromExile`, and
     mustHold15 "cleanupAllOk" cleanupAllOk,
     mustHold15 "leaveTransitionsAllOk" leaveTransitionsAllOk,
     mustHold15 "chosenTypeAndLkiAllOk" chosenTypeAndLkiAllOk,
-    mustHold15 "zeroParityAndStackAllOk" zeroParityAndStackAllOk ].all id
+    mustHold15 "zeroParityAndStackAllOk" zeroParityAndStackAllOk,
+    mustHold15 "destroyedTallyAllOk" destroyedTallyAllOk ].all id
 
 end Mtg.Engine.EventTests

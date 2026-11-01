@@ -342,6 +342,25 @@ def dealDamageToEachNonDragon (g : Game) (n : Nat) (subtype : CardSubtype := .dr
     g.dealDamageToEachCreatureMatchingIds ids n (onlyNonSubtype := some subtype)
       (source := source) (cause := defaultCause)
 
+/-- True when permanent `id` was actually destroyed (CR 701.8a–c): its departure
+`ZoneEvent.moved` moved it from `.battlefield` with verb `.destroy`. Indestructible
+permanents (CR 702.12b), shield-counter replacements (CR 122.1c), and non-destroy
+battlefield departures (CR 701.8b, such as CR 800.4c control-loss exile or sacrifice)
+do not emit `.destroy`; graveyard-redirect replacements (finality counters CR 122.1h,
+`untilEotExileIfDies`, `.exileInsteadOfGraveyard`) preserve `ZoneVerb.destroy` into
+`.exile` so `.dies` does not trigger (CR 700.4) while `"destroyed this way"` still
+counts them per WotC Judge Ruling 80 (`OracleData.lean`). -/
+def wasPermanentDestroyed (g : Game) (id : ObjectId) : Bool :=
+  match g.events.findSomeRev? (fun e =>
+    match e.change with
+    | .rules (.zone (.moved before _ fromZone _ verb _ _ _)) =>
+      if before.id == some id && fromZone == .battlefield then
+        some (verb == .destroy)
+      else none
+    | _ => none) with
+  | some b => b
+  | none => false
+
 /-- Destroy each permanent in `remainingIds` sequentially inside an open or
 standalone batch, pausing on `Pending.chooseReplacement` and optionally
 recording `destroyedCountThisWay` (`countNote`), gaining life per destroyed
@@ -379,7 +398,7 @@ def destroyPermanentsLoop (g : Game) (remainingIds : Array ObjectId)
   let destroyedCount :=
     if countNote || obGainLifeFor.isSome then
       allCands.foldl (fun acc id =>
-        if !(g.findObject? id).any (·.isOnBattlefield) then acc + 1 else acc) 0
+        if g.wasPermanentDestroyed id then acc + 1 else acc) 0
     else 0
   if countNote then
     g := g.change (.permanentsDestroyedThisWay destroyedCount)

@@ -513,6 +513,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
         if verb == some .sacrifice then some .sacrifice
         else if finalDiscarded || verb == some .discard then some .discard
         else if verb == some .mill then some .mill
+        else if verb == some .destroy then some .destroy
         else if exileInstead then some .exile
         else verb
       let resolvedFinalCause :=
