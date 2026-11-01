@@ -10,77 +10,6 @@ connive (CR 701.50), and sacrifices paid for activations.
 namespace Mtg.Engine
 namespace Game
 
-/-- First player in `players` who satisfies `pred`, plus those after them. -/
-def nextActorWhere (_g : Game) (players : Array PlayerId) (pred : PlayerId → Bool) :
-    Option (PlayerId × Array PlayerId) :=
-  Id.run do
-    for i in [0:players.size] do
-      let p := players[i]!
-      if pred p then
-        return some (p, players.extract (i + 1) players.size)
-    return none
-
-/-- First player in `players` who controls a creature, plus those after them. -/
-def nextActorWithCreatures (g : Game) (players : Array PlayerId) :
-    Option (PlayerId × Array PlayerId) :=
-  g.nextActorWhere players (fun p =>
-    g.stillInGame p && !(g.creaturesControlledBy p).isEmpty)
-
-/-- First player in `players` who has a card in hand, plus those after them. -/
-def nextActorWithHandCard (g : Game) (players : Array PlayerId) :
-    Option (PlayerId × Array PlayerId) :=
-  g.nextActorWhere players (fun p =>
-    g.stillInGame p && !(g.player p).hand.isEmpty)
-
-/-- Sacrifice each `(actor, oid)` in `remaining` sequentially inside an open or
-standalone batch, pausing on `Pending.chooseReplacement` and optionally creating
-a 4/4 Beast token if `createBeastFor` is set. -/
-def sacrificePermanentsLoop (g : Game) (remaining : Array (PlayerId × ObjectId))
-    (preBattlefield : Option (Array GameObject) := none)
-    (cause : Option EventCause := none)
-    (createBeastFor : Option PlayerId := none) : Game := Id.run do
-  if let .chooseReplacement .. := g.pending then
-    return g.chainPendingReplacement
-      (.sacrificePermanentsLoop remaining preBattlefield cause createBeastFor)
-  let mut g := g
-  let preBf := preBattlefield.getD g.battlefield
-  for i in [0:remaining.size] do
-    let (who, id) := remaining[i]!
-    match g.findObject? id with
-    | some o =>
-      if o.isOnBattlefield then
-        g := g.sacrificeToGraveyard o
-          s!"{(g.player who).name} sacrifices {g.name o}"
-          (cause := cause) (preBattlefield := some preBf)
-        if let .chooseReplacement .. := g.pending then
-          let rem := remaining.extract (i + 1) remaining.size
-          if !rem.isEmpty || createBeastFor.isSome then
-            g := g.chainPendingReplacement
-              (.sacrificePermanentsLoop rem (some preBf) cause createBeastFor)
-          return g
-    | none => pure ()
-  if let some ctrl := createBeastFor then
-    g := g.createKindTokens ctrl .beast44trample 1 (cause := cause)
-  return g
-
-/-- Sacrifice the chosen creatures simultaneously. -/
-def finishChosenSacrifices (g : Game) (chosen : Array ObjectId) : Game :=
-  let pairs := chosen.filterMap (fun id =>
-    match g.findObject? id with
-    | some o =>
-      if o.isOnBattlefield && g.isCreature o then
-        some ((g.controllerOf o).getD o.owner, id)
-      else none
-    | none => none)
-  let preBf := g.battlefield
-  let g := g.change (.pending .none)
-  g.withBatch none fun g =>
-    g.sacrificePermanentsLoop pairs (preBattlefield := some preBf)
-
-/-- Log `msg` for each player in `ps`. -/
-def logForPlayers (g : Game) (ps : Array PlayerId) (msg : PlayerId → String) : Game :=
-  ps.foldl (fun g p => g.logMsg (msg p)) g
-
 /-- Ask the next player who can sacrifice a creature, or finish if none remain. -/
 def beginSacrificeCreatures (g : Game) (players : Array PlayerId)
     (chosen : Array ObjectId := #[]) : Game :=
@@ -285,12 +214,16 @@ def haveVillainConnive (g : Game) (p : PlayerId) : Except String Game := do
   | _ => throw "Not time to have a Villain connive"
 
 /-- After paying K'un-Lun's optional cost, draw a card. Inside `mayThen` the
-conditional does the draw, so this only records that the cost was paid. -/
+conditional does the draw, so this records or chains `acceptMayThen` before any
+outer continuation resumes. -/
 def finishSacArtifactOrDiscardDraw (g : Game) (p : PlayerId) (n : Nat) : Game :=
-  if let .chooseReplacement .. := g.pending then
+  if g.mayThenDrop > 0 then
+    if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement .acceptMayThen
+    else
+      g.changes #[.pending .none, .mayThenResume true]
+  else if let .chooseReplacement .. := g.pending then
     g.chainPendingReplacement (.finishSacArtifactOrDiscardDraw p n)
-  else if g.mayThenDrop > 0 then
-    g.changes #[.pending .none, .mayThenResume true]
   else
     (g.change (.pending .none)).draw p n
 
@@ -323,22 +256,26 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
     let g :=
       match g.proposedSpell with
       | some prop =>
-        let isResCast := prop.resolutionCast
-        let g := g.changes (clearPending ++ #[.proposedSpell none, .consecutivePasses 0])
-        match prop.kind with
-        | .spell =>
-          g.becomeCast prop.caster (g.object! prop.spellId)
-            (grantPriority := !isResCast)
+        if prop.kind == .turnFaceUp then
+          g.completeTurnFaceUp prop.caster prop.spellId
             (hadOuterReplacement := outerCont?.isSome)
-            (hadOpenContinuation := some openCont)
-        | .activatedAbility =>
-          g.becomeActivated p prop.originalSnapshot.name prop.sourceId prop.activation
-            (abilityId := some prop.spellId)
-            (sourceSnapshot := some prop.originalSnapshot)
-            (sourceOriginal := some prop.original)
-            (hadOuterReplacement := outerCont?.isSome)
-            (hadOpenContinuation := some openCont)
-        | .turnFaceUp => g
+        else
+          let isResCast := prop.resolutionCast
+          let g := g.changes (clearPending ++ #[.proposedSpell none, .consecutivePasses 0])
+          match prop.kind with
+          | .spell =>
+            g.becomeCast prop.caster (g.object! prop.spellId)
+              (grantPriority := !isResCast)
+              (hadOuterReplacement := outerCont?.isSome)
+              (hadOpenContinuation := some openCont)
+          | .activatedAbility =>
+            g.becomeActivated p prop.originalSnapshot.name prop.sourceId prop.activation
+              (abilityId := some prop.spellId)
+              (sourceSnapshot := some prop.originalSnapshot)
+              (sourceOriginal := some prop.original)
+              (hadOuterReplacement := outerCont?.isSome)
+              (hadOpenContinuation := some openCont)
+          | .turnFaceUp => g
       | none =>
         let g := g.changes (clearPending ++ #[.proposedSpell none, .consecutivePasses 0])
         g.becomeActivated p (g.name (g.object! sourceId)) (some sourceId)

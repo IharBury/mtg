@@ -614,7 +614,7 @@ def merfolk (o : EventObject) : Bool :=
 
 /-- Forest. -/
 def forest (o : EventObject) : Bool :=
-  o.hasSubtype .forest || (o.land && o.subtypes.any (· == .forest))
+  o.hasSubtype .forest
 
 /-- Mountain. -/
 def mountain (o : EventObject) : Bool :=

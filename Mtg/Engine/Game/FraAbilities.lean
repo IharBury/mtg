@@ -139,6 +139,60 @@ def runHawkeyeArrows (g : Game) (controller : PlayerId) (modes : Array Nat)
       return g
   return g
 
+/-- Run the library-reveal, put-onto-battlefield, and bottoming tail of
+`.identityEcho` once the target permanent's exile completes. -/
+def finishIdentityEchoAfterExile (g : Game) (controller : PlayerId)
+    (sourceId : Option ObjectId) (oName : String) : Game :=
+  let g := g.logMsg s!"{oName} is exiled"
+  let lib := (g.player controller).library
+  let (revealed, hit) := Id.run do
+    let mut revealed : Array ObjectId := #[]
+    for i in [0:lib.size] do
+      let id := lib[lib.size - 1 - i]!
+      let c := g.object! id
+      if g.isCreature c || g.isPlaneswalker c then
+        return (revealed, some id)
+      revealed := revealed.push id
+    return (revealed, none)
+  let allRevealed := revealed ++ hit.toArray
+  let (g, revealCause?) : Game × Option EventCause :=
+    if !allRevealed.isEmpty then
+      let (g, c) := g.allocDelayedCause (some controller) sourceId
+      (g, some c)
+    else (g, none)
+  let g :=
+    if allRevealed.isEmpty then g
+    else g.record (GameEvent.revealed g.turnNumber controller allRevealed (cause := revealCause?))
+  let g := allRevealed.foldl (fun g id =>
+    g.logMsg s!"{(g.player controller).name} reveals {(g.object! id).name}") g
+  match hit with
+  | some id =>
+    let (g, newId) := g.putOntoBattlefield id controller (cause := revealCause?)
+    if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement
+        (.finishPostStep 11 controller 0 none (some id) (ids := revealed) (cause := revealCause?))
+    else
+      let g :=
+        match g.findObject? newId with
+        | some entered =>
+          if entered.isOnBattlefield then
+            let g := g.logMsg s!"{entered.name} enters the battlefield"
+            g.afterPermanentEnters entered
+          else g
+        | none => g
+      if revealed.isEmpty then g
+      else
+        g.requestOrderInto revealed (.library controller)
+          s!"{(g.player controller).name} puts the rest on the bottom of their library in a random order"
+          (cause := revealCause?)
+  | none =>
+    let g := g.logMsg "No creature or planeswalker card is revealed"
+    if revealed.isEmpty then g
+    else
+      g.requestOrderInto revealed (.library controller)
+        s!"{(g.player controller).name} puts the rest on the bottom of their library in a random order"
+        (cause := revealCause?)
+
 /-- Resolve an FRA activated or loyalty ability resolution. -/
 def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Resolution)
     (targets : Array Target) (sourceId : Option ObjectId) : Game :=
@@ -174,49 +228,11 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
       let oName := g.name o
       let (g, exileCause) := g.allocDelayedCause (some controller) sourceId
       let (g, _) := g.move o.id .exile none (cause := some exileCause)
-      let g := g.logMsg s!"{oName} is exiled"
-      let lib := (g.player controller).library
-      let (revealed, hit) := Id.run do
-        let mut revealed : Array ObjectId := #[]
-        for i in [0:lib.size] do
-          let id := lib[lib.size - 1 - i]!
-          let c := g.object! id
-          if g.isCreature c || g.isPlaneswalker c then
-            return (revealed, some id)
-          revealed := revealed.push id
-        return (revealed, none)
-      let allRevealed := revealed ++ hit.toArray
-      let (g, revealCause?) : Game × Option EventCause :=
-        if !allRevealed.isEmpty then
-          let (g, c) := g.allocDelayedCause (some controller) sourceId
-          (g, some c)
-        else (g, none)
-      let g :=
-        if allRevealed.isEmpty then g
-        else g.record (GameEvent.revealed g.turnNumber controller allRevealed (cause := revealCause?))
-      let g := allRevealed.foldl (fun g id =>
-        g.logMsg s!"{(g.player controller).name} reveals {(g.object! id).name}") g
-      match hit with
-      | some id =>
-        let (g, newId) := g.putOntoBattlefield id controller (cause := revealCause?)
-        if let .chooseReplacement .. := g.pending then
-          g.chainPendingReplacement
-            (.finishPostStep 11 controller 0 none (some id) (ids := revealed) (cause := revealCause?))
-        else
-          let g := g.logMsg s!"{(g.object! newId).name} enters the battlefield"
-          let g := g.afterPermanentEnters (g.object! newId)
-          if revealed.isEmpty then g
-          else
-            g.requestOrderInto revealed (.library controller)
-              s!"{(g.player controller).name} puts the rest on the bottom of their library in a random order"
-              (cause := revealCause?)
-      | none =>
-        let g := g.logMsg "No creature or planeswalker card is revealed"
-        if revealed.isEmpty then g
-        else
-          g.requestOrderInto revealed (.library controller)
-            s!"{(g.player controller).name} puts the rest on the bottom of their library in a random order"
-            (cause := revealCause?))
+      if let .chooseReplacement .. := g.pending then
+        g.chainPendingReplacement
+          (.finishPostStep 62 controller (sourceId := sourceId) (cardId := some o.id))
+      else
+        g.finishIdentityEchoAfterExile controller sourceId oName)
       sourceId illegal
   | .destroyDrawIfLegendaryEnchantment =>
     g.withLegalKindPermanent controller kind targets (fun g o =>
@@ -240,11 +256,15 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
       g.destroyPermanentsLoop doomed (preBattlefield := some preBf)
   | .ownerShufflesIntoLibrary =>
     g.withLegalKindPermanent controller kind targets (fun g o =>
+      let owner := o.owner
       let oName := g.name o
-      let (g, _) := g.move o.id (.library o.owner) none
+      let (g, _) := g.move o.id (.library owner) none
         (verb := some .shuffleIntoLibrary) (libraryPosition := some .shuffledIn)
-      let g := g.logMsg s!"{(g.player o.owner).name} shuffles {oName} into their library"
-      g.shuffleLibrary o.owner) sourceId illegal
+      if let .chooseReplacement .. := g.pending then
+        g.chainPendingReplacement (.finishPostStep 63 owner (cardId := some o.id))
+      else
+        let g := g.logMsg s!"{(g.player owner).name} shuffles {oName} into their library"
+        g.shuffleThen owner .none) sourceId illegal
   | .grantCombatDamageDrawTwo =>
     onSource (fun g o =>
       let ab := TriggeredAbility.fra .combatDamageToPlayer

@@ -34,7 +34,7 @@ def withSpent (spent : Nat) : Game :=
   let src := pebbleOf g
   let causeId : ObjectId := ⟨911⟩
   let g := g.record (GameEvent.manaSpent g.turnNumber caster (Array.replicate spent { mana := .colorless }) (forObject := some causeId))
-  let g := g.record (GameEvent.cast g.turnNumber caster
+  let g := g.record (GameEvent.spellCast g.turnNumber caster
     { id := some causeId, controller := some caster, owner := caster } (.hand caster))
   let abId : ObjectId := ⟨g.nextObjectId⟩
   let g := g.record (GameEvent.triggerPutOnStack g.turnNumber abId (g.snapshot src) caster

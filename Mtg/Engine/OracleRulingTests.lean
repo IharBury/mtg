@@ -2734,8 +2734,7 @@ def wereWormTenPowerOk : Bool :=
 def wereWormTenAttacks : Game :=
   let g := wereWormTenPower
   let w := namedPermanent g "Desert Were-Worm"
-  let g := g.markAttacking w.id
-  g.putAttackTriggersOnStack ⟨0⟩ #[(namedPermanent g "Desert Were-Worm").id]
+  g.record (GameEvent.attackersDeclared g.turnNumber ⟨0⟩ #[(g.snapshot w, .player ⟨1⟩)])
 
 def wereWormTenAttacksOk : Bool :=
   !wereWormTenAttacks.waitingTriggers.any (fun wt =>
@@ -2747,8 +2746,7 @@ def wereWormTenAttacksOk : Bool :=
 def wereWormTwelveAttacks : Game :=
   let g := wereWormMountains 6
   let w := namedPermanent g "Desert Were-Worm"
-  let g := g.markAttacking w.id
-  g.putAttackTriggersOnStack ⟨0⟩ #[(namedPermanent g "Desert Were-Worm").id]
+  g.record (GameEvent.attackersDeclared g.turnNumber ⟨0⟩ #[(g.snapshot w, .player ⟨1⟩)])
 
 def wereWormTwelveAttacksOk : Bool :=
   wereWormTwelveAttacks.power
@@ -2847,8 +2845,7 @@ def andurilOnOppLegend : Game :=
   let g := g.attachSourceTo (namedPermanent g "Andúril, Flame of the West")
     (namedPermanent g "Tom Bombadil")
   let tom := namedPermanent g "Tom Bombadil"
-  let g := g.markAttacking tom.id
-  g.putAttackTriggersOnStack ⟨1⟩ #[(namedPermanent g "Tom Bombadil").id]
+  g.record (GameEvent.attackersDeclared g.turnNumber ⟨1⟩ #[(g.snapshot tom, .player ⟨0⟩)])
 
 def andurilOnOppLegendOk : Bool :=
   andurilOnOppLegend.waitingTriggers.any (fun wt =>
@@ -2879,8 +2876,7 @@ def andurilOnOwnLegend : Game :=
   let g := g.attachSourceTo (namedPermanent g "Andúril, Flame of the West")
     (namedPermanent g "Tom Bombadil")
   let tom := namedPermanent g "Tom Bombadil"
-  let g := g.markAttacking tom.id
-  let g := g.putAttackTriggersOnStack ⟨0⟩ #[(namedPermanent g "Tom Bombadil").id]
+  let g := g.record (GameEvent.attackersDeclared g.turnNumber ⟨0⟩ #[(g.snapshot tom, .player ⟨1⟩)])
   g.applyTriggeredAbility ⟨0⟩ .onEquippedAttacksCreateSpirits
     (some (namedPermanent g "Andúril, Flame of the West").id)
 
@@ -2899,7 +2895,7 @@ def andurilOnOwnLegendOk : Bool :=
 
 def queenAfterFirstNoncreature : Game :=
   let g := addPermanent afterDraw theQueenOfDale ⟨0⟩ ⟨0⟩
-  let g := g.record (GameEvent.cast g.turnNumber ⟨1⟩
+  let g := g.record (GameEvent.spellCast g.turnNumber ⟨1⟩
     { id := some ⟨71⟩, controller := some ⟨1⟩, owner := ⟨1⟩, types := #[.instant] }
     (.hand ⟨1⟩))
   let g := addToHand g lightningBolt ⟨1⟩
@@ -3248,7 +3244,7 @@ def radagastXChosenBeforeReductionOk : Bool :=
 def radagastCastIsFirstOk : Bool :=
   let g := addToHand radagastInPlay grizzlyBears ⟨0⟩
   let card := handCardNamed g ⟨0⟩ "Grizzly Bears"
-  let g := g.record (GameEvent.cast g.turnNumber ⟨0⟩
+  let g := g.record (GameEvent.spellCast g.turnNumber ⟨0⟩
     { id := some ⟨72⟩, controller := some ⟨0⟩, owner := ⟨0⟩, types := #[.creature] }
     (.hand ⟨0⟩))
   let cost := g.playManaCost card grizzlyBears
@@ -3997,7 +3993,7 @@ def mirkwoodElkZeroPowerOk : Bool :=
 -/
 
 def spellsBeforeLothoCountOk : Bool :=
-  let g := afterDraw.record (GameEvent.cast afterDraw.turnNumber ⟨0⟩
+  let g := afterDraw.record (GameEvent.spellCast afterDraw.turnNumber ⟨0⟩
     { id := some ⟨71⟩, controller := some ⟨0⟩, owner := ⟨0⟩ } (.hand ⟨0⟩))
   g.loggedSpellsCast ⟨0⟩ == 1 &&
     (ruling 267).comment.contains "Spells that were cast before Lotho"

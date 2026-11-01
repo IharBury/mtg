@@ -152,7 +152,7 @@ def validateActivation (g : Game) (p : PlayerId) (o : GameObject) (ab : Activate
         | none => false) |>.size
     if gy < ab.onlyIfGyCreaturesAtLeast then
       throw s!"{o.name}'s ability can be activated only if there are {ab.onlyIfGyCreaturesAtLeast} or more creature cards in your graveyard"
-  if !g.abilityCanChooseTarget p ab then
+  if !g.abilityCanChooseTarget p ab (sourceId := some o.id) then
     throw s!"{o.name}'s ability requires a target"
 
 /-- Whether `p` may begin activating `ab` of `o` (CR 602.5). Having

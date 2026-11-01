@@ -173,7 +173,7 @@ def objectLeavesTheGame (g : Game) (o : GameObject) (_leavingPlayer : PlayerId) 
               let (acc, _) := acc.move tid .exile none (cause := cause)
               acc.logMsg s!"{name} is exiled (CR 800.4c)"
             else acc) g
-    if !o.linkedExile.isEmpty then
+    if !o.linkedExile.isEmpty && g.currentBatch.isNone then
       g.returnLinkedExileMoves o.linkedExile
     else g
   else
@@ -183,6 +183,44 @@ private def findPausedCloseBatch? : PendingReplacement → Option (BatchId × Na
   | .closeBatch b s => some (b, s)
   | .seq a b => findPausedCloseBatch? a <|> findPausedCloseBatch? b
   | _ => none
+
+private def filterLivingAttackTargets (g : Game) (opts : Array AttackTarget) : Array AttackTarget :=
+  opts.filter fun
+    | .player pid => g.stillInGame pid
+    | .planeswalker oid | .battle oid => (g.findObject? oid).any (·.isOnBattlefield)
+
+private def sanitizeEnteringAttackItem (g : Game) : EnteringAttackItem → Option EnteringAttackItem
+  | .token c kind tapped opts =>
+    if !g.stillInGame c then none
+    else some (.token c kind tapped (filterLivingAttackTargets g opts))
+  | .card cid c effCtrl tapped retArt extra mods logKind opts =>
+    if !g.stillInGame c || (g.findObject? cid).isNone then none
+    else some (.card cid c effCtrl tapped retArt extra mods logKind (filterLivingAttackTargets g opts))
+
+private partial def advanceSacDamagersAfterLeave (g : Game) (controller : PlayerId)
+    (opponents : Array PlayerId) (chosen : Array (PlayerId × ObjectId)) : Game :=
+  let living := opponents.filter g.stillInGame
+  match living[0]? with
+  | none =>
+    let g := g.change (.pending .none)
+    if chosen.isEmpty then g
+    else
+      let preBf := g.battlefield
+      g.withBatch none fun g =>
+        g.sacrificePermanentsLoop chosen (preBattlefield := some preBf)
+  | some r =>
+    let rest := living.extract 1 living.size
+    let ids :=
+      ((g.creaturesControlledBy r).filter (fun o =>
+        (g.combatDamageToPlayers o.id).contains controller)).map (·.id)
+    if ids.isEmpty then
+      let g := g.logMsg s!"{(g.player r).name} controls no creature that dealt combat damage this turn"
+      advanceSacDamagersAfterLeave g controller rest chosen
+    else if ids.size == 1 then
+      advanceSacDamagersAfterLeave g controller rest (chosen.push (r, ids[0]!))
+    else
+      (g.change (.pending (.fraChoice r (.sacrificeDamager ids rest controller chosen)))).logMsg
+        s!"{(g.player r).name} chooses a creature that dealt combat damage to sacrifice"
 
 /-- After `p` leaves, pending costs they would pay are not paid (CR 800.4f)
 and other pending choices they would make are skipped or passed on
@@ -241,37 +279,64 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
         |>.logMsg s!"{(g.player p).name} does not pay (CR 800.4f)"
     else g
   | .chooseSacrificeCreature q chosen remaining =>
-    if q != p then g
+    let livingRem := remaining.filter g.stillInGame
+    if q != p then
+      if livingRem != remaining then
+        g.change (.pending (.chooseSacrificeCreature q chosen livingRem))
+      else g
     else
-      match remaining.find? (fun r => g.stillInGame r) with
-      | none => g.change (.pending .none)
-      | some np =>
-        g.change (.pending (.chooseSacrificeCreature np chosen
-          (remaining.filter (fun r => r != np && g.stillInGame r))))
+      match g.nextActorWithCreatures livingRem with
+      | none =>
+        let skipped := livingRem.filter (fun r => (g.creaturesControlledBy r).isEmpty)
+        let g := g.logForPlayers skipped (fun r =>
+          s!"{(g.player r).name} has no creature to sacrifice")
+        g.finishChosenSacrifices chosen
+      | some (np, rest) =>
+        let prefixIdx := livingRem.findIdx? (· == np) |>.getD 0
+        let skipped := (livingRem.extract 0 prefixIdx).filter (fun r => (g.creaturesControlledBy r).isEmpty)
+        let g := g.logForPlayers skipped (fun r =>
+          s!"{(g.player r).name} has no creature to sacrifice")
+        (g.change (.pending (.chooseSacrificeCreature np chosen (rest.filter g.stillInGame)))).logMsg
+          s!"{(g.player np).name} must sacrifice a creature"
   | .chooseDiscardCard q remaining =>
-    if q != p then g
+    let livingRem := remaining.filter g.stillInGame
+    if q != p then
+      if livingRem != remaining then
+        g.change (.pending (.chooseDiscardCard q livingRem))
+      else g
     else
-      match remaining.find? (fun r => g.stillInGame r) with
-      | none => g.changes #[.pending .none, .pendingDiscardsLeft 0]
-      | some np =>
-        g.changes #[
+      match g.nextActorWithHandCard livingRem with
+      | none =>
+        let skipped := livingRem.filter (fun r => (g.player r).hand.isEmpty)
+        let g := g.logForPlayers skipped (fun r =>
+          s!"{(g.player r).name} has no card to discard")
+        g.changes #[.pending .none, .pendingDiscardsLeft 0]
+      | some (np, rest) =>
+        let prefixIdx := livingRem.findIdx? (· == np) |>.getD 0
+        let skipped := (livingRem.extract 0 prefixIdx).filter (fun r => (g.player r).hand.isEmpty)
+        let g := g.logForPlayers skipped (fun r =>
+          s!"{(g.player r).name} has no card to discard")
+        (g.changes #[
           .pendingDiscardsLeft 0,
-          .pending (.chooseDiscardCard np
-            (remaining.filter (fun r => r != np && g.stillInGame r)))]
+          .pending (.chooseDiscardCard np (rest.filter g.stillInGame))]).logMsg
+          s!"{(g.player np).name} must discard a card"
   | .chooseTriggerToStack q =>
     if q == p then g.change (.pending .none) else g
   | .chooseLegend q _ _ =>
     if q == p then g.change (.pending .none) else g
   | .chooseReplacement q _ =>
     if q == p then
-      let closeInfo? := g.pendingReplacement.bind findPausedCloseBatch?
-      let clearProp : Array EngineChange :=
-        if g.proposedSpell.any (·.caster == p) then #[.proposedSpell none, .clearProposalCheckpoint]
-        else #[]
-      let g := g.changes (#[.pending .none, .pendingReplacement none] ++ clearProp)
-      match closeInfo? with
-      | some (batchId, startIdx) => g.finishOpenBatch batchId startIdx
-      | none => if g.currentBatch.isSome then g.change .clearPausedBatch else g
+      if g.proposedSpell.any (·.caster == p) then
+        let closeInfo? := g.pendingReplacement.bind findPausedCloseBatch?
+        let g := g.changes #[.pending .none, .pendingReplacement none, .proposedSpell none, .clearProposalCheckpoint]
+        match closeInfo? with
+        | some (batchId, startIdx) => g.finishOpenBatch batchId startIdx
+        | none => if g.currentBatch.isSome then g.change .clearPausedBatch else g
+      else
+        -- CR 800.4h: keep `pendingReplacement` and any enclosing open batch intact so
+        -- draining continuations transfers the replacement choice to the next living
+        -- player (via `selectNextReplacementStep`) or finishes the event cleanly.
+        g.change (.pending .none)
     else g
   | .assignCombatDamage q forAttackers =>
     if q == p then
@@ -296,15 +361,158 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
   | .chooseAdditionalCost q | .chooseKicker q | .chooseGift q
   | .chooseTeamwork q | .chooseTeamworkCreatures q _
   | .sacrificePermanent q _ | .discardForAdditionalCost q =>
-    if q == p then g.changes #[.pending .none, .proposedSpell none, .clearProposalCheckpoint] else g
+    if q == p then
+      let clearProp : Array EngineChange :=
+        if g.proposedSpell.any (·.caster == p) then #[.proposedSpell none, .clearProposalCheckpoint]
+        else #[]
+      g.changes (#[.pending .none] ++ clearProp)
+    else g
+  | .fraChoice q choice =>
+    let clearProp : Array EngineChange :=
+      if q == p && g.proposedSpell.any (·.caster == p) then #[.proposedSpell none, .clearProposalCheckpoint]
+      else #[]
+    match choice with
+    | .mayWheel n rest =>
+      let living := rest.filter g.stillInGame
+      if q != p then
+        if living != rest then g.change (.pending (.fraChoice q (.mayWheel n living))) else g
+      else
+        let g := g.changes (#[.chooseModesRest none] ++ clearProp)
+        match living[0]? with
+        | none => g.change (.pending .none)
+        | some next =>
+          (g.change (.pending (.fraChoice next (.mayWheel n (living.extract 1 living.size))))).logMsg
+            s!"{(g.player next).name} may discard their hand and draw {n} cards"
+    | .sacrificeCreatureEach controller rest chosen =>
+      let living := rest.filter (fun r => g.stillInGame r && !(g.creaturesControlledBy r).isEmpty)
+      if q != p then
+        if living != rest then g.change (.pending (.fraChoice q (.sacrificeCreatureEach controller living chosen))) else g
+      else
+        let g := g.changes (#[.chooseModesRest none] ++ clearProp)
+        match living[0]? with
+        | some next =>
+          (g.change (.pending (.fraChoice next (.sacrificeCreatureEach controller (living.extract 1 living.size) chosen)))).logMsg
+            s!"{(g.player next).name} sacrifices a creature"
+        | none =>
+          let youSacrificed :=
+            g.stillInGame controller &&
+              chosen.any (fun id => (g.findObject? id).any (fun o => o.isOnBattlefield && g.controlledBy o controller))
+          let pairs := chosen.filterMap (fun id =>
+            match g.findObject? id with
+            | some o => if o.isOnBattlefield then some ((g.controllerOf o).getD o.owner, id) else none
+            | none => none)
+          let preBf := g.battlefield
+          let g := g.change (.pending .none)
+          g.withBatch none fun g =>
+            g.sacrificePermanentsLoop pairs (preBattlefield := some preBf)
+              (createBeastFor := if youSacrificed then some controller else none)
+    | .sacrificeNontokenEach rest chosen =>
+      let hasNontoken (r : PlayerId) :=
+        g.stillInGame r && (g.permanentsOf r).any (fun o => g.isCreature o && !o.printed.isToken)
+      let living := rest.filter hasNontoken
+      if q != p then
+        if living != rest then g.change (.pending (.fraChoice q (.sacrificeNontokenEach living chosen))) else g
+      else
+        let g := g.changes (#[.chooseModesRest none] ++ clearProp)
+        match living[0]? with
+        | some next =>
+          (g.change (.pending (.fraChoice next (.sacrificeNontokenEach (living.extract 1 living.size) chosen)))).logMsg
+            s!"{(g.player next).name} sacrifices a nontoken creature"
+        | none =>
+          let pairs := chosen.filterMap (fun id =>
+            match g.findObject? id with
+            | some o => if o.isOnBattlefield then some ((g.controllerOf o).getD o.owner, id) else none
+            | none => none)
+          let preBf := g.battlefield
+          let g := g.change (.pending .none)
+          g.withBatch none fun g =>
+            g.sacrificePermanentsLoop pairs (preBattlefield := some preBf)
+    | .sacrificeDamager ids rest controller chosen =>
+      let living := rest.filter g.stillInGame
+      if q != p then
+        if living != rest then g.change (.pending (.fraChoice q (.sacrificeDamager ids living controller chosen))) else g
+      else
+        let g := g.changes (#[.chooseModesRest none] ++ clearProp)
+        advanceSacDamagersAfterLeave g controller living chosen
+    | .discardTwo controller rest draws =>
+      let living := rest.filter g.stillInGame
+      if q != p then
+        if living != rest then g.change (.pending (.fraChoice q (.discardTwo controller living draws))) else g
+      else
+        let nextDraws := draws + 1
+        let g := g.changes (#[.pending .none, .chooseModesRest none] ++ clearProp)
+        match living[0]? with
+        | some next =>
+          if (g.player next).hand.size > 2 then
+            (g.change (.pending (.fraChoice next (.discardTwo controller (living.extract 1 living.size) nextDraws)))).logMsg
+              s!"{(g.player next).name} discards two cards"
+          else
+            g.chainPendingReplacement
+              (.finishPostStep 10 controller (n := nextDraws) (modes := living.map (·.idx)))
+        | none =>
+          if g.stillInGame controller then
+            g.chainPendingReplacement (.finishPostStep 10 controller (n := nextDraws) (modes := #[]))
+          else g
+    | .worldsPutCreatures eligible rest exiled chosen sourceId =>
+      let living := rest.filter g.stillInGame
+      if q != p then
+        if living != rest then
+          g.change (.pending (.fraChoice q (.worldsPutCreatures eligible living exiled chosen sourceId)))
+        else g
+      else
+        let g := g.changes (#[.chooseModesRest none] ++ clearProp)
+        let rec offerNext : List PlayerId → Game
+          | [] =>
+            (g.change (.pending .none)).chainPendingReplacement
+              (.finishPostStep 67 g.activePlayer (sourceId := sourceId) (ids := exiled)
+                (targets := chosen.map Target.card))
+          | r :: more =>
+            let elig := (g.player r).hand.filter (fun id => (g.findObject? id).any g.isCreature)
+            if elig.isEmpty then offerNext more
+            else
+              (g.change (.pending (.fraChoice r (.worldsPutCreatures elig more.toArray exiled chosen sourceId)))).logMsg
+                s!"{(g.player r).name} may put any number of creature cards from their hand onto the battlefield"
+        offerNext living.toList
+    | .chooseEnteringAttackTarget remaining chosen cause =>
+      let chosenClean := chosen.filterMap fun (item, tgt?) =>
+        match sanitizeEnteringAttackItem g item with
+        | none => none
+        | some item' =>
+          let validTgt? := tgt?.filter (fun t => (filterLivingAttackTargets g #[t]).size == 1)
+          some (item', validTgt?.orElse (fun _ => item'.options[0]?))
+      if q != p then
+        let remClean := remaining.filterMap (sanitizeEnteringAttackItem g)
+        if remClean.isEmpty then
+          (g.change (.pending .none)).chainPendingReplacement
+            (.commitEnteringAttackItems chosenClean cause true)
+        else if remClean != remaining || chosenClean != chosen then
+          let nextCtrl := remClean[0]!.controller
+          g.change (.pending (.fraChoice nextCtrl (.chooseEnteringAttackTarget remClean chosenClean cause)))
+        else g
+      else
+        let remTail := (remaining.extract 1 remaining.size).filterMap (sanitizeEnteringAttackItem g)
+        let (restAfter, chosen') := advanceFixedEnteringAttackItems remTail chosenClean
+        let g := g.changes (#[.chooseModesRest none] ++ clearProp)
+        match restAfter[0]? with
+        | some nextItem =>
+          let nextCtrl := nextItem.controller
+          let nextNm := g.enteringAttackItemName nextItem
+          (g.change (.pending (.fraChoice nextCtrl (.chooseEnteringAttackTarget restAfter chosen' cause)))).logMsg
+            s!"{(g.player nextCtrl).name} chooses what {nextNm} enters attacking"
+        | none =>
+          (g.change (.pending .none)).chainPendingReplacement
+            (.commitEnteringAttackItems chosen' cause true)
+    | _ =>
+      if q == p then
+        g.changes (#[.pending .none, .chooseModesRest none] ++ clearProp)
+      else g
   | .sacrificeCreature q | .scry q .. | .surveil q ..
   | .mayDiscardDraw q _ | .mayAttachEquipment q _
-  | .recruitDiscard q | .chooseRingBearer q
+  | .recruitDiscard q
   | .maySacrificeAnotherBolg q _ | .mayCastFromLooked q _ _ | .putOnBottom q _
   | .mayPutLandFromHand q
   | .maySacArtifactOrDiscard q _
-  | .mayHaveVillainConnive q _ _ | .declareMulligan q | .chooseProliferate q _
-  | .fraChoice q _ =>
+  | .mayHaveVillainConnive q _ _ | .declareMulligan q | .chooseProliferate q _ =>
     if q == p then
       let clearProp : Array EngineChange :=
         if g.proposedSpell.any (·.caster == p) then #[.proposedSpell none, .clearProposalCheckpoint]
@@ -343,32 +551,34 @@ def playerLeavesGame (g : Game) (p : PlayerId) : Game :=
   if (g.player p).leftTheGame then g
   else
     let cause := some (EventCause.gameRule .playerLeftGame)
-    let g := g.record (GameEvent.playerLeftGame g.turnNumber p (cause := cause))
-    let g := g.logMsg s!"{(g.player p).name} leaves the game"
     let owned := g.objects.filter (fun o => o.owner == p && o.zone != .ante)
-    let g :=
-      owned.foldl (fun acc o =>
-        match acc.findObject? o.id with
-        | none => acc
-        | some o => acc.objectLeavesTheGame o p) g
-    let g :=
-      g.activeEffects.foldl (fun acc (eid, e) =>
-        match e with
-        | .layered _ (.control c) _ =>
-          if c == p then acc.endControlEffectById eid (cause := cause) else acc
-        | .playerRule you (.controlsPlayer them _) _ =>
-          if you == p || them == p then acc.expireEffectById eid (cause := cause) else acc
-        | _ => acc) g
-    let g :=
-      g.objects.foldl (fun acc o =>
-        if o.zone == .stack && acc.controlledBy o p && !representedByCard o then
-          acc.ceaseToExist o.id (cause := cause)
-        else acc) g
-    let still := g.objects.filter (fun o =>
-      g.controlledBy o p ||
-        (o.zone == .battlefield && (g.appliedControlEffectIds o).isEmpty &&
-          ((o.defaultController.orElse (fun _ => o.controller)).getD o.owner) == p))
-    let g :=
+    let linkedExileIds := owned.foldl (fun acc o =>
+      if o.zone == .battlefield then acc ++ o.linkedExile else acc) #[]
+    let g := g.withBatch cause fun g =>
+      let g := g.record (GameEvent.playerLeftGame g.turnNumber p (cause := cause))
+      let g := g.logMsg s!"{(g.player p).name} leaves the game"
+      let g :=
+        owned.foldl (fun acc o =>
+          match acc.findObject? o.id with
+          | none => acc
+          | some o => acc.objectLeavesTheGame o p) g
+      let g :=
+        g.activeEffects.foldl (fun acc (eid, e) =>
+          match e with
+          | .layered _ (.control c) _ =>
+            if c == p then acc.endControlEffectById eid (cause := cause) else acc
+          | .playerRule you (.controlsPlayer them _) _ =>
+            if you == p || them == p then acc.expireEffectById eid (cause := cause) else acc
+          | _ => acc) g
+      let g :=
+        g.objects.foldl (fun acc o =>
+          if o.zone == .stack && acc.controlledBy o p && !representedByCard o then
+            acc.ceaseToExist o.id (cause := cause)
+          else acc) g
+      let still := g.objects.filter (fun o =>
+        g.controlledBy o p ||
+          (o.zone == .battlefield && (g.appliedControlEffectIds o).isEmpty &&
+            ((o.defaultController.orElse (fun _ => o.controller)).getD o.owner) == p))
       still.foldl (fun acc o =>
         match acc.findObject? o.id with
         | none => acc
@@ -377,15 +587,28 @@ def playerLeavesGame (g : Game) (p : PlayerId) : Game :=
           let (acc, _) := acc.move o.id .exile none (cause := cause)
           acc.logMsg s!"{name} is exiled (CR 800.4a)") g
     let g :=
-      match g.proposedSpell with
-      | some prop =>
-        if prop.caster == p then g.changes #[.proposedSpell none, .clearProposalCheckpoint] else g
-      | none => g
-    let g :=
       if g.priority == p then g.change (.priority (g.nextLiving p)) else g
     let g :=
       if g.pendingPriority == some p then g.change (.pendingPriority (some (g.nextLiving p))) else g
-    g.redirectPendingAfterLeave p
+    let g := g.redirectPendingAfterLeave p
+    let g :=
+      if g.proposedSpell.any (·.caster == p) then
+        g.changes #[.proposedSpell none, .clearProposalCheckpoint]
+      else g
+    if linkedExileIds.isEmpty then g
+    else if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement (.finishLinkedExileMove linkedExileIds)
+    else if g.pending != .none then
+      let saved := g.pending
+      let g := (g.change (.pending .none)).returnLinkedExileMoves linkedExileIds
+      if let .chooseReplacement .. := g.pending then
+        g.chainPendingReplacement (.restorePending saved)
+      else
+        g.change (.pending saved)
+    else if g.pendingReplacement.isSome then
+      g.chainPendingReplacement (.finishLinkedExileMove linkedExileIds)
+    else
+      g.returnLinkedExileMoves linkedExileIds
 
 /-- Perform CR 800.4a for every player who has lost but has not yet left.
 Skipped when the game has already ended (two-player games, CR 104.2a). -/

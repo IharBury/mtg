@@ -467,12 +467,12 @@ def reverseProposedSpellCore? (g : Game) (resumeContinuation : Bool := false)
       | none => g
     let g := g.runPostCastCleanup
     let g :=
-      if g.pending == .none && g.continuations.isEmpty && g.pendingCastExiledQueue.isNone &&
+      if g.pending == .none && g.continuations.isEmpty &&
           g.priority != prop.caster then
         g.change (.priority prop.caster)
       else g
     if resumeContinuation &&
-        (!g.continuations.isEmpty || g.pendingReplacement.isSome || g.pendingCastExiledQueue.isSome) then
+        (!g.continuations.isEmpty || g.pendingReplacement.isSome) then
       return (g, true)
     else if g.pending == .none && g.continuations.isEmpty &&
         (g.waitingTriggers.size > baseTriggers || hasUnreversedActions) then
@@ -561,14 +561,14 @@ def finishPostCast (g : Game) (p : PlayerId)
     | none => g
   if !grantPriority then g
   else if let .chooseReplacement .. := g.pending then
-    if g.pendingCastExiledQueue.isSome || g.triggerSequenceRest.isSome || hadOuterReplacement then
+    if g.triggerSequenceRest.isSome || hadOuterReplacement then
       g.chainPendingReplacement .finishFraChoice
     else
       g.chainPendingReplacement (.receivePriority (if hadOpenContinuation then g.activePlayer else p))
   else if g.pending != .none then g
   else if hadOuterReplacement && g.pendingReplacement.isNone then
     g
-  else if g.pendingCastExiledQueue.isSome || g.triggerSequenceRest.isSome || g.pendingReplacement.isSome then
+  else if g.triggerSequenceRest.isSome || g.pendingReplacement.isSome then
     g.chainPendingReplacement .finishFraChoice
   else g.receivePriority (if hadOpenContinuation then g.activePlayer else p)
 
@@ -613,7 +613,7 @@ def becomeCast (g : Game) (p : PlayerId) (spell : GameObject)
     if let .scry .. := g.pending then
       let needsDeferredPostCast :=
         g.postCastCleanup.isSome || g.pendingMayCastFromExile.isSome ||
-          g.pendingFreeCopies.isSome || g.pendingCastExiledQueue.isSome ||
+          g.pendingFreeCopies.isSome ||
           g.triggerSequenceRest.isSome || g.pendingReplacement.isSome ||
           hadOuterReplacement || !grantPriority ||
           (grantPriority && !openCont && p != g.activePlayer)
@@ -742,9 +742,37 @@ def finishPostLoyaltyActivated (g : Game) (p : PlayerId) (sourceName : String)
   if g.pending != .none then g
   else if hadOuterReplacement && g.pendingReplacement.isNone then
     g
-  else if g.pendingCastExiledQueue.isSome || g.triggerSequenceRest.isSome || g.pendingReplacement.isSome then
+  else if g.triggerSequenceRest.isSome || g.pendingReplacement.isSome then
     g.chainPendingReplacement .finishFraChoice
   else g.receivePriority (if openCont then g.activePlayer else p)
+
+/-- Finish turning a face-down permanent face up once all morph/megamorph/disguise
+costs have been paid, deferring `GameEvent.turnedFaceUp`, clearing proposal state,
+and granting priority across `Pending.chooseReplacement` (CR 116.2b / 708.8). -/
+def completeTurnFaceUp (g : Game) (caster : PlayerId) (spellId : ObjectId)
+    (hadOuterReplacement : Bool := false) : Game :=
+  if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement (.finishTurnFaceUp caster spellId hadOuterReplacement)
+  else
+    let clearCkpt : Array EngineChange :=
+      if g.proposalCheckpoint.isSome then #[.clearProposalCheckpoint] else #[]
+    let g := g.changes (#[.pending .none, .proposedSpell none, .consecutivePasses 0] ++ clearCkpt)
+    let g :=
+      match g.findObject? spellId with
+      | some o =>
+        if o.isOnBattlefield && o.status.faceDown then
+          let g := g.record
+            (GameEvent.turnedFaceUp g.turnNumber (g.snapshot o)
+              (cause := .specialAction .turnFaceUp caster))
+          g.logMsg s!"{(g.player caster).name} turns {(g.object! spellId).name} face up"
+        else g
+      | none => g
+    if g.pending != .none then g
+    else if hadOuterReplacement && g.pendingReplacement.isNone then g
+    else if g.triggerSequenceRest.isSome || g.pendingReplacement.isSome then
+      g.chainPendingReplacement .finishFraChoice
+    else
+      g.receivePriority caster
 
 def becomeActivated (g : Game) (p : PlayerId) (sourceName : String)
     (sourceId : Option ObjectId := none) (activation : Option ActivatedAbility := none)
@@ -891,13 +919,16 @@ def retargetStackSpell (g : Game) (spellId : ObjectId) (newTargets : Array Targe
             if legal.any (fun t => t == neu) then
               out := out.set! j neu
           return out
-      (g.record (GameEvent.targeted g.turnNumber spellId merged (division := e.dividedDamage))).logMsg
+      (g.record (GameEvent.targeted g.turnNumber spellId merged (division := e.dividedDamage)
+        (skippedOptionalSlots := e.skippedOptionalSlots))).logMsg
         "New targets are chosen for the spell"
 
 /-- Write `targets` (and optional damage division) onto the stack entry. -/
 def setStackEntryTargets (g : Game) (objectId : ObjectId) (targets : Array Target)
     (dividedDamage : Array Nat := #[]) : Game :=
-  g.record (GameEvent.targeted g.turnNumber objectId targets (division := dividedDamage))
+  let skipped := (g.stackEntry? objectId).map (·.skippedOptionalSlots) |>.getD #[]
+  g.record (GameEvent.targeted g.turnNumber objectId targets
+    (division := dividedDamage) (skippedOptionalSlots := skipped))
 
 /-- Write `targets` onto the stack entry for the proposed spell. -/
 def setProposedTargets (g : Game) (targets : Array Target) : Game :=
