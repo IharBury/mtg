@@ -538,6 +538,37 @@ def returnFromGyFinalityAttach (g : Game) (controller : PlayerId)
           |>.logMsg s!"{(g.player controller).name} may attach an Equipment to {name}"
       else g
 
+/-- Put remaining counter kinds and any `+1/+1` counter on `targetId` during
+`proliferateTarget`, chaining `.finishProliferateEachKind` on
+`Pending.chooseReplacement` and recording `GameEvent.proliferated` only after
+all counter puts finish (CR 701.34a / 616.1). -/
+partial def finishProliferateEachKind (g : Game) (controller : PlayerId)
+    (targetId : ObjectId) (remainingKinds : Array CounterKind)
+    (hasPlusOne : Bool) (effCause : EventCause) : Game :=
+  if hasPlusOne then
+    let g :=
+      match g.findObject? targetId with
+      | some o => g.addPlusOnePlusOneTo o 1 (byPlayer := some controller) (cause := some effCause)
+      | none => g
+    if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement (.finishProliferateEachKind controller targetId remainingKinds false effCause)
+    else
+      g.finishProliferateEachKind controller targetId remainingKinds false effCause
+  else
+    match remainingKinds[0]? with
+    | some kind =>
+      let restKinds := remainingKinds.extract 1 remainingKinds.size
+      let g := g.recordPutCounters targetId kind 1 (byPlayer := some controller) (cause := some effCause)
+      if let .chooseReplacement .. := g.pending then
+        g.chainPendingReplacement (.finishProliferateEachKind controller targetId restKinds false effCause)
+      else
+        g.finishProliferateEachKind controller targetId restKinds false effCause
+    | none =>
+      let g := g.syncImpendingNotACreature targetId (cause := some effCause)
+      let oName := ((g.findObject? targetId).map g.name).getD "permanent"
+      (g.record (GameEvent.proliferated g.turnNumber controller (permanents := #[targetId]) (cause := some effCause))).logMsg
+        s!"{oName} gets another counter of each kind"
+
 /-- One more counter of each kind already on the target (Powerful Broker). -/
 def proliferateTarget (g : Game) (controller : PlayerId) (targets : Array Target) : Game :=
   g.withLegalKindTarget controller .permanentOrPlayer targets (fun g t =>
@@ -549,20 +580,11 @@ def proliferateTarget (g : Game) (controller : PlayerId) (targets : Array Target
         match g.findObject? id with
         | some o =>
           if o.isOnBattlefield && o.status.hasCounters then
-            let plus := o.status.plusOnePlusOne
-            let bag := o.status.toCounterBag
-            let g :=
-              if plus > 0 then
-                g.addPlusOnePlusOneTo o 1 (byPlayer := some controller) (cause := some effCause)
-              else g
-            let g :=
-              bag.foldl (fun g (kind, _) =>
-                if kind == .plusOnePlusOne then g
-                else
-                  g.recordPutCounters id kind 1 (byPlayer := some controller) (cause := some effCause)) g
-            let g := g.syncImpendingNotACreature id (cause := some effCause)
-            (g.record (GameEvent.proliferated g.turnNumber controller (permanents := #[id]) (cause := some effCause))).logMsg
-              s!"{g.name o} gets another counter of each kind"
+            let hasPlusOne := o.status.plusOnePlusOne > 0
+            let nonPlusKinds :=
+              o.status.toCounterBag.filterMap (fun (kind, _) =>
+                if kind == .plusOnePlusOne then none else some kind)
+            g.finishProliferateEachKind controller id nonPlusKinds hasPlusOne effCause
           else g.logMsg s!"{g.name o} has no counters"
         | none => g.logMsg "The target is no longer legal"
       | Target.player pid =>
@@ -1396,7 +1418,7 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
             g := g'.logMsg s!"{name} is returned to {(g'.player owner).name}'s hand"
             n := n + 1
       if n > 0 then
-        let src := sourceId.bind g.findObject?
+        let src := sourceId.bind g.damageSourceById?
         g := g.registerDelayedTrigger { controller, source := src, kind := .eaglesBirds n, cause }
         g := g.logMsg
           s!"At the beginning of the next upkeep, {n} Bird Soldier token(s) will be created"

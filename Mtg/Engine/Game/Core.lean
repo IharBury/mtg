@@ -8552,7 +8552,7 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
                 | .eaglesBirds n =>
                   let src := dt.source.getD
                     { printed := { name := "The Eagles Are Coming!", types := #[.sorcery] }
-                      id := ⟨0⟩, owner := dt.controller, controller := some dt.controller, zone := .exile }
+                      id := ⟨1000000000⟩, owner := dt.controller, controller := some dt.controller, zone := .exile }
                   let ab : TriggeredAbility :=
                     .triggered .eachUpkeep
                       { phrase := s!"Create {n} 1/1 white Bird Soldier creature token(s) with flying" } {}
@@ -8615,7 +8615,7 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
                     | _ => none
                   let src := (dt.source.orElse (fun _ => obj?)).getD
                     { printed := { name := "Delayed Trigger", types := #[] }
-                      id := ⟨0⟩, owner := dt.controller, controller := some dt.controller, zone := .exile }
+                      id := ⟨1000000000⟩, owner := dt.controller, controller := some dt.controller, zone := .exile }
                   let ab : TriggeredAbility :=
                     .triggered .eachEndStep { phrase := "At the beginning of the next end step" } {}
                   waiting := waiting.push
@@ -8754,7 +8754,7 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
                   !(post.player dt.controller).lost && !(post.player dt.controller).leftTheGame then
                 let src := dt.source.getD
                   { printed := { name := "Roads Go Ever, Ever On", types := #[.enchantment], subtypes := #["Saga"] }
-                    id := ⟨0⟩, owner := activePlayer, controller := some activePlayer, zone := .graveyard activePlayer }
+                    id := ⟨1000000000⟩, owner := activePlayer, controller := some activePlayer, zone := .graveyard activePlayer }
                 waiting := waiting.push
                   { controller := activePlayer
                     source := src
@@ -8889,7 +8889,7 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
                 | .copyNextInstantSorceryThisTurn =>
                   let src := dt.source.getD
                     { printed := { name := "Way of the Cryomancer", types := #[.sorcery] }
-                      id := ⟨0⟩, owner := dt.controller, controller := some dt.controller, zone := .exile }
+                      id := ⟨1000000000⟩, owner := dt.controller, controller := some dt.controller, zone := .exile }
                   let ab : TriggeredAbility :=
                     .triggered .youCastInstantOrSorcery
                       { phrase := "Copy that spell. You may choose new targets for the copy" } {}
@@ -8916,7 +8916,7 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
                   if (mvCast : Int) ≤ lokiPw then
                     let src := (srcId?.bind post.findObject?).orElse (fun _ => dt.source) |>.getD
                       { printed := { name := "Loki Laufeyson", types := #[.creature] }
-                        id := srcId?.getD ⟨0⟩, owner := dt.controller, controller := some dt.controller, zone := .exile }
+                        id := srcId?.getD ⟨1000000000⟩, owner := dt.controller, controller := some dt.controller, zone := .exile }
                     let ab : TriggeredAbility :=
                       .triggered .youCastInstantOrSorcery
                         { phrase := "Copy that spell. You may choose new targets for the copy" } {}
@@ -9321,8 +9321,17 @@ def closeBatch (g : Game) (pre : GameSnapshot) (batchId : BatchId)
               let acc := pushInBatch acc (GameEvent.engine acc.turnNumber (.waitingTriggers wt'))
               (acc, q, coalesced.push key)
           else
+            let srcSnap : EventObject :=
+              if wt.source.id == ⟨1000000000⟩ then
+                { (acc.snapshot wt.source) with
+                  id := none
+                  controller := wt.source.controller.orElse (fun _ => some wt.controller) }
+              else
+                match acc.findObject? wt.source.id with
+                | some cur => acc.snapshot cur
+                | none => (acc.lastKnownBefore? wt.source.id).getD (acc.snapshot wt.source)
             let acc :=
-              acc.recordTriggeredWithOrigin (acc.snapshot wt.source) wt.controller wt.ability batchId
+              acc.recordTriggeredWithOrigin srcSnap wt.controller wt.ability batchId
             (acc, q.push wt, coalesced))
         (g, #[], (#[] : Array (ObjectId × TriggeredAbility)))
       if toEnqueue.isEmpty then g else g.enqueueWaitingTriggers toEnqueue
@@ -9340,8 +9349,9 @@ def recordReflexiveTrigger (g : Game) (wt : WaitingTrigger) : Game :=
       | none => ⟨g.nextBatchId⟩
     let srcSnap : EventObject :=
       if wt.source.id == ⟨1000000000⟩ then
-        { id := none, name := wt.source.name, owner := wt.controller,
-          controller := some wt.controller, zone := .battlefield }
+        { (g.snapshot wt.source) with
+          id := none
+          controller := wt.source.controller.orElse (fun _ => some wt.controller) }
       else
         match g.findObject? wt.source.id with
         | some cur => g.snapshot cur
@@ -10466,6 +10476,8 @@ def setPlayerControl (g : Game) (you them : PlayerId) (onNextTurn : Bool := fals
 def recordPutCounters (g : Game) (id : ObjectId) (kind : CounterKind) (n : Nat)
     (byPlayer : Option PlayerId := none) (cause : Option EventCause := none) : Game :=
   if n == 0 then g
+  else if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement (.recordPutCounters id kind n byPlayer cause)
   else
     match g.findObject? id with
     | none => g

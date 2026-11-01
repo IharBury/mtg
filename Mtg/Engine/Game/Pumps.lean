@@ -247,6 +247,9 @@ def newestArmy? (g : Game) (controller : PlayerId) : Option GameObject :=
 def addIndestructibleCounter (g : Game) (o : GameObject) (n : Nat := 1)
     (byPlayer : Option PlayerId := none)
     (cause : Option EventCause := none) : Game :=
+  if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement (.addCounters o.id .indestructible n false byPlayer cause)
+  else
   let (n', applied, cause', choice?, _) :=
     g.replaceCountersPutChoice o .indestructible n (putter := byPlayer) (cause := cause)
   match choice? with
@@ -267,6 +270,9 @@ def addIndestructibleCounter (g : Game) (o : GameObject) (n : Nat := 1)
 def addLifelinkCounter (g : Game) (o : GameObject) (n : Nat := 1)
     (byPlayer : Option PlayerId := none)
     (cause : Option EventCause := none) : Game :=
+  if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement (.addCounters o.id .lifelink n false byPlayer cause)
+  else
   let (n', applied, cause', choice?, _) :=
     g.replaceCountersPutChoice o .lifelink n (putter := byPlayer) (cause := cause)
   match choice? with
@@ -287,6 +293,9 @@ def addLifelinkCounter (g : Game) (o : GameObject) (n : Nat := 1)
 def addBurdenCounter (g : Game) (o : GameObject) (n : Nat := 1)
     (byPlayer : Option PlayerId := none)
     (cause : Option EventCause := none) : Game :=
+  if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement (.addCounters o.id .burden n false byPlayer cause)
+  else
   let (n', applied, cause', choice?, _) :=
     g.replaceCountersPutChoice o .burden n (putter := byPlayer) (cause := cause)
   match choice? with
@@ -315,7 +324,10 @@ def addCounters (g : Game) (o : GameObject) (kind : CounterKind) (n : Nat := 1)
     g.addPlusOnePlusOneTo o n (entersWith := entersWith) (byPlayer := byPlayer) (cause := cause)
   | .burden => g.addBurdenCounter o n (byPlayer := byPlayer) (cause := cause)
   | kind =>
-    let (n', applied, cause', choice?, _) :=
+    if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement (.addCounters o.id kind n entersWith byPlayer cause)
+    else
+      let (n', applied, cause', choice?, _) :=
       g.replaceCountersPutChoice o kind n (putter := byPlayer)
         (entersWith := entersWith) (cause := cause)
     match choice? with

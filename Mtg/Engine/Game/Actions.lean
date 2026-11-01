@@ -267,7 +267,8 @@ def returnOwnedCreaturesScheduleBirds (g : Game) (p : PlayerId)
           g := g'.logMsg s!"{name} is returned to {(g'.player owner).name}'s hand"
           n := n + 1
     if n > 0 then
-      g := g.registerDelayedTrigger { controller := p, kind := .eaglesBirds n, cause }
+      let src := (g.currentResolvingContext?.bind Prod.fst).bind g.damageSourceById?
+      g := g.registerDelayedTrigger { controller := p, source := src, kind := .eaglesBirds n, cause }
       g := g.logMsg
         s!"At the beginning of the next upkeep, {n} Bird Soldier token(s) will be created"
     return g

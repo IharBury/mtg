@@ -1215,6 +1215,9 @@ inductive PendingReplacement where
   | finishSurveilPostMove (p : PlayerId) (card : GameObject) (fromId : ObjectId)
       (remainingGy : Array ObjectId) (cause : Option EventCause)
   | finishLibraryLook
+  | finishProliferateEachKind (controller : PlayerId) (targetId : ObjectId)
+      (remainingKinds : Array CounterKind) (hasPlusOne : Bool)
+      (effCause : EventCause)
   | finishProliferateTarget (p : PlayerId) (targetId : ObjectId)
       (remainingKinds : Array CounterKind) (hasPlusOne : Bool)
       (remainingTargets : Array Target) (permIds : Array ObjectId)

@@ -50,6 +50,9 @@ triggers are evaluated from the recorded event batch in `matchTriggers`. -/
 def addPlusOnePlusOneTo (g : Game) (o : GameObject) (n : Nat := 1)
     (entersWith := false) (byPlayer : Option PlayerId := none)
     (cause : Option EventCause := none) : Game :=
+  if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement (.addPlusOnePlusOneTo o.id n entersWith byPlayer cause)
+  else
   let putter0 := byPlayer.orElse (fun _ => g.counterPutter (g.controllerOf o))
   let propCause := g.resolveOptionalCause cause (fallbackCtrl := putter0)
   let proposed :=

@@ -96,15 +96,16 @@ def putTriggeredAbilityOnStack (g : Game) (controller : PlayerId) (source : Game
       if source.id == ⟨1000000000⟩ || (source.id == ⟨0⟩ && (g.findObject? source.id).isNone) then none
       else some source.id
     let srcSnap : EventObject :=
-      match g.findObject? source.id with
+      match srcIdOpt.bind g.findObject? with
       | some cur => g.snapshot cur
       | none =>
         match srcIdOpt.bind g.lastKnownBefore? with
         | some eo => eo
         | none =>
           if srcIdOpt.isNone then
-            { id := none, name := source.name, owner := controller,
-              controller := some controller, zone := .battlefield }
+            { (g.snapshot source) with
+              id := none
+              controller := source.controller.orElse (fun _ => some controller) }
           else g.snapshot source
     let newId : ObjectId := ⟨g.nextObjectId⟩
     let spec : StackTriggerSpec := {
@@ -454,7 +455,15 @@ def putWaitingTrigger (g : Game) (wt : WaitingTrigger) (event : TriggerEvent) : 
         match g.currentBatch with
         | some (bid, _) => bid
         | none => ⟨g.nextBatchId⟩
-      let srcSnap := g.snapshot wt.source
+      let srcSnap : EventObject :=
+        if wt.source.id == ⟨1000000000⟩ then
+          { (g.snapshot wt.source) with
+            id := none
+            controller := wt.source.controller.orElse (fun _ => some wt.controller) }
+        else
+          match g.findObject? wt.source.id with
+          | some cur => g.snapshot cur
+          | none => (g.lastKnownBefore? wt.source.id).getD (g.snapshot wt.source)
       let copies := g.extraTriggerCopies wt.controller wt.source + 1
       (List.range copies).foldl (fun g _ =>
         let g :=

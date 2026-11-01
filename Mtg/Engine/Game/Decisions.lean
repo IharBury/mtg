@@ -354,6 +354,8 @@ partial def resumePendingReplacement (g : Game) (pr : PendingReplacement)
     g.finishSurveilPostMove p card fromId remainingGy cause
   | .finishLibraryLook =>
     g.finishLibraryLook
+  | .finishProliferateEachKind controller targetId remainingKinds hasPlusOne effCause =>
+    g.finishProliferateEachKind controller targetId remainingKinds hasPlusOne effCause
   | .finishProliferateTarget p targetId remainingKinds hasPlusOne remainingTargets permIds playerIds chosenEmpty remainingRounds cause =>
     g.finishProliferateTarget p targetId remainingKinds hasPlusOne remainingTargets permIds playerIds chosenEmpty remainingRounds cause
   | .finishProliferateLoop p remainingTargets permIds playerIds chosenEmpty remainingRounds cause =>

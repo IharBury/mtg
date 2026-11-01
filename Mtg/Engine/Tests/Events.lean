@@ -8704,13 +8704,26 @@ follow-ups (Path of Ancestry scry, `pendingMayCastFromExile`, and
       let g := g.destroyPermanent (g.object! w1) (cause := some testCause) (preBattlefield := some preBf)
       g.destroyPermanent (g.object! w2) (cause := some testCause) (preBattlefield := some preBf)
     (g1, g1.waitingTriggers.size == 2)
-  let (gDtFizzle, dtFizzleOk) :=
+  let (gDtFizzle, gDtLki, dtFizzleOk) :=
     let g0 := addPermanent afterDraw bear me me
+    let card0Present := (g0.findObject? ⟨0⟩).isSome
     let bId := (g0.battlefield.filter (fun (o : GameObject) => o.name == "Event Bear"))[0]!.id
     let g1 := g0.attackPumpPerPlains me
-    let regOk := g1.delayedTriggers.any (fun (dt : DelayedTrigger) => dt.kind == DelayedTriggerKind.attackPumpPerPlains)
+    let regOk := g1.delayedTriggers.any (fun (dt : DelayedTrigger) =>
+      dt.kind == DelayedTriggerKind.attackPumpPerPlains && dt.source.isNone)
     let g2 := g1.record (GameEvent.attackersDeclared g1.turnNumber me #[(g1.snapshot (g1.object! bId), .player opp)])
     let g2 := g2.receivePriority me
+    let sourcelessOk :=
+      card0Present &&
+      (match g2.stack.back?.bind (fun se => g2.findObject? se.objectId) with
+       | some stObj => stObj.sourceId.isNone && stObj.name == "Roads Go Ever, Ever On's ability"
+       | none => false) &&
+      g2.events.any (fun e =>
+        match e.change with
+        | .rules (.triggerQueue (.triggered src _ ab _)) =>
+          ab == TriggeredAbility.onYouAttackPumpTargetPerPlains &&
+          src.id.isNone && src.name == "Roads Go Ever, Ever On"
+        | _ => false)
     let g3 := mustApply g2 me (.target (Target.permanent bId))
     let (g4, _) := g3.move bId (.graveyard me) none (cause := some testCause)
     let preRes := g4.events.size
@@ -8721,7 +8734,30 @@ follow-ups (Path of Ancestry scry, `pendingMayCastFromExile`, and
         match e.change with
         | .rules (.stackObject (.removedOnResolution _)) => true
         | _ => false)
-    (g5, regOk && fizzled)
+    -- Also verify stored Saga LKI (`dt.source == some sagaLki`) preserves `sourceId == some sagaId`.
+    let sagaPlaceholderDef : CardDef := {
+      name := "Roads Go Ever, Ever On"
+      types := #[.enchantment]
+      subtypes := #["Saga"]
+    }
+    let gS0 := addPermanent (addPermanent afterDraw bear me me) sagaPlaceholderDef me me
+    let sbId := (gS0.battlefield.filter (fun (o : GameObject) => o.name == "Event Bear"))[0]!.id
+    let sagaId := (gS0.battlefield.filter (fun (o : GameObject) => o.name == "Roads Go Ever, Ever On"))[0]!.id
+    let (gS1, _) := gS0.move sagaId (.graveyard me) none (cause := some testCause)
+    let (gS1, dtCauseS) := gS1.allocDelayedCause (some me) (some sagaId)
+    let gS1 := gS1.registerDelayedTrigger {
+      controller := me
+      source := gS1.damageSourceById? sagaId
+      kind := .attackPumpPerPlains
+      cause := dtCauseS
+    }
+    let gS2 := (gS1.record (GameEvent.attackersDeclared gS1.turnNumber me
+      #[(gS1.snapshot (gS1.object! sbId), .player opp)])).receivePriority me
+    let lkiSourceOk :=
+      match gS2.stack.back?.bind (fun se => gS2.findObject? se.objectId) with
+      | some stObj => stObj.sourceId == some sagaId && stObj.name == "Roads Go Ever, Ever On's ability"
+      | none => false
+    (g5, gS2, regOk && sourcelessOk && fizzled && lkiSourceOk)
   let (gReflFizzle, reflFizzleOk) :=
     let g0 := addPermanent (addPermanent afterDraw planDef14 me me) bear opp opp
     let planId := (g0.battlefield.filter (fun (o : GameObject) => o.name == "Phase14 Plan"))[0]!.id
@@ -8750,7 +8786,7 @@ follow-ups (Path of Ancestry scry, `pendingMayCastFromExile`, and
     (g2, ok)
   let batchLookbackAndFlickerOk :=
     simDiesOk && dtFizzleOk && reflFizzleOk && flickerIsoOk &&
-    [gSimDies, gDtFizzle, gReflFizzle, gFlickerIso].all (fun g =>
+    [gSimDies, gDtFizzle, gDtLki, gReflFizzle, gFlickerIso].all (fun g =>
       Game.replayEvents g.events == g && allRulesEventsClassified g)
 
   -- 8. CR 800.4a/c/d/i/j multiplayer `concede` cleanup & replay determinism.
@@ -8792,8 +8828,70 @@ follow-ups (Path of Ancestry scry, `pendingMayCastFromExile`, and
     Game.replayEvents gConcedeAfter.events == gConcedeAfter &&
     allRulesEventsClassified gConcedeAfter
 
+  -- 9. Multi-kind `proliferateTarget` CR 616.1 pause chaining & deferred `.proliferated` event.
+  let prolifWatcherDef : CardDef := {
+    bear with
+    name := "Phase14 Prolif Watcher"
+    triggeredAbilities := #[
+      TriggeredAbility.fra (.fra .youProliferate)
+        "Whenever you proliferate, you gain 1 life."
+        (.gainLife 1)
+    ]
+  }
+  let (gProlifP1, gProlifP2, gProlifDone, prolifSubOk) :=
+    let g0 := addPermanent (addPermanent (addPermanent afterDraw bear me me) samsonDef14 me me) prolifWatcherDef me me
+    let bId := (g0.battlefield.filter (fun (o : GameObject) => o.name == "Event Bear"))[0]!.id
+    let docId := (g0.battlefield.filter (fun (o : GameObject) => o.name == "Phase14 Doc Samson"))[0]!.id
+    let g0 := g0.record (GameEvent.counters g0.turnNumber (some me) (g0.snapshot (g0.object! bId)) .plusOnePlusOne 1 (cause := testCause))
+    let g0 := g0.record (GameEvent.counters g0.turnNumber (some me) (g0.snapshot (g0.object! bId)) .shield 1 (cause := testCause))
+    let idDocPlus : ReplacementId := { kind := .extraCounterOnPermanents, object := some docId, counterKind := some .plusOnePlusOne }
+    let idDbl : ReplacementId := { kind := .multiplyCountersPut, object := some docId }
+    let dblSpec : ReplacementSpec := {
+      id := idDbl
+      source := some docId
+      controller := some me
+      affectedPlayer := me
+      kind := .modifyCountersPut bId none 0 2
+    }
+    let g0 := g0.createEffect (.replacement dblSpec) (cause := some testCause)
+    let preEvIdx := g0.events.size
+    let hasProlifSince (g : Game) : Bool :=
+      (g.events.extract preEvIdx g.events.size).any (fun e =>
+        match e.change with
+        | .rules (.player (.proliferated ..)) => true
+        | _ => false)
+    let gP1 := g0.proliferateTarget me #[Target.permanent bId]
+    -- Prompt 1 (+1/+1): choose Doc Samson (+1) first, then *2 => (1 + 1) * 2 = 4 added (total 5).
+    let gP2 := mustApply gP1 me (.chooseReplacement idDocPlus)
+    -- Prompt 2 (.shield): choose *2 first, then Doc Samson (+1) => (1 * 2) + 1 = 3 added (total 4).
+    let gDone := mustApply gP2 me (.chooseReplacement idDbl)
+    let ok :=
+      (match gP1.pending with | Pending.chooseReplacement p cs => p == me && cs.size == 2 | _ => false) &&
+      !hasProlifSince gP1 &&
+      gP1.waitingTriggers.isEmpty &&
+      gP1.stack.isEmpty &&
+      (gP1.object! bId).status.plusOnePlusOne == 1 &&
+      (gP1.object! bId).status.shield == 1 &&
+      (match gP2.pending with | Pending.chooseReplacement p cs => p == me && cs.size == 2 | _ => false) &&
+      !hasProlifSince gP2 &&
+      gP2.waitingTriggers.isEmpty &&
+      gP2.stack.isEmpty &&
+      (gP2.object! bId).status.plusOnePlusOne == 5 &&
+      (gP2.object! bId).status.shield == 1 &&
+      gDone.pending == .none &&
+      hasProlifSince gDone &&
+      (gDone.object! bId).status.plusOnePlusOne == 5 &&
+      (gDone.object! bId).status.shield == 4 &&
+      gDone.stack.size == 1
+    (gP1, gP2, gDone, ok)
+  let proliferateTargetPauseOk :=
+    prolifSubOk &&
+    [gProlifP1, gProlifP2, gProlifDone].all (fun g =>
+      Game.replayEvents g.events == g && allRulesEventsClassified g)
+
   let mustHold14 (label : String) (ok : Bool) : Bool :=
     if ok then true else panic! s!"Phase 14 guard failed: {label}"
+
   [ mustHold14 "painLandBracketOk" painLandBracketOk,
     mustHold14 "costPickAndLoyaltyOk" costPickAndLoyaltyOk,
     mustHold14 "irrevProposalEventsOk" irrevProposalEventsOk,
@@ -8801,6 +8899,7 @@ follow-ups (Path of Ancestry scry, `pendingMayCastFromExile`, and
     mustHold14 "singleWriterAndMirrorOk" singleWriterAndMirrorOk,
     mustHold14 "combatDmgAndShieldPwOk" combatDmgAndShieldPwOk,
     mustHold14 "batchLookbackAndFlickerOk" batchLookbackAndFlickerOk,
-    mustHold14 "concedeCleanupOk" concedeCleanupOk ].all id
+    mustHold14 "concedeCleanupOk" concedeCleanupOk,
+    mustHold14 "proliferateTargetPauseOk" proliferateTargetPauseOk ].all id
 
 end Mtg.Engine.EventTests
