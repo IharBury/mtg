@@ -151,7 +151,7 @@ def noteHit (g : Game) (p : PlayerId) : Game :=
   let g :=
     if onBattlefield g "Widow Source" then g
     else addPermanent g spy caster caster
-  g.noteCombatDamageTo p (g.object! (spyId g)).asEvent
+  g.noteCombatDamageTo p (g.snapshot (g.object! (spyId g)))
 
 /- The only revealed creature enters. Cards under the window stay above the
 card that goes on the bottom. The opponent's library stays put. -/

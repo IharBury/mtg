@@ -382,7 +382,7 @@ def avengersAssembleHeroLeftOk : Bool :=
   let g := addPermanent afterDraw avengersAssemble ⟨0⟩ ⟨0⟩
   let g := addPermanent g mistyKnightHeroForHire ⟨0⟩ ⟨0⟩
   let hero := namedPermanent g "Misty Knight, Hero for Hire"
-  let g := g.record (GameEvent.attacked g.turnNumber ⟨0⟩ hero.asEvent ⟨1⟩)
+  let g := g.record (GameEvent.attacked g.turnNumber ⟨0⟩ (g.snapshot hero) ⟨1⟩)
   let (g, _) := g.move hero.id (.graveyard ⟨0⟩) none
   let assem := namedPermanent g "Avengers Assemble!"
   let hand0 := (g.player ⟨0⟩).hand.size
@@ -771,7 +771,7 @@ combat. -/
 def boastOncePerTurnOk : Bool :=
   let g := addPermanent afterDraw baronHelmutZemo ⟨0⟩ ⟨0⟩
   let z := namedPermanent g "Baron Helmut Zemo"
-  let g := g.record (GameEvent.attackersDeclared g.turnNumber ⟨0⟩ #[(z.asEvent, .player ⟨1⟩)])
+  let g := g.record (GameEvent.attackersDeclared g.turnNumber ⟨0⟩ #[(g.snapshot z, .player ⟨1⟩)])
   let z := namedPermanent g "Baron Helmut Zemo"
   g.canActivateBoast z &&
     (let g := g.markBoastUsed z
@@ -945,7 +945,7 @@ def copyTokenEntersAbilitiesOk : Bool :=
   let g := addPermanent afterDraw futuristForge ⟨0⟩ ⟨0⟩
   let src := namedPermanent g "Futurist Forge"
   let before := g.waitingTriggers.size
-  let (g, tok) := g.copyBattlefieldPermanent src ⟨0⟩
+  let (g, tok) := g.createToken ⟨0⟩ (g.copiableValues src)
   let g := g.afterPermanentEnters tok
   !tok.status.tapped &&
     tok.status.plusOnePlusOne == 0 &&
@@ -1033,7 +1033,7 @@ def doctorDoomDamageTrackedOk : Bool :=
   let doom := namedPermanent g "Doctor Doom"
   let g := g.createEffect (.keywordsUntilEot doom.id Keyword.indestructible)
   let doom := namedPermanent g "Doctor Doom"
-  let g := g.markDamageOn doom 3 "Doctor Doom is dealt 3" (source := some doom.asEvent)
+  let g := g.markDamageOn doom 3 "Doctor Doom is dealt 3" (source := some (g.snapshot doom))
   let g := g.checkSBA
   onBattlefield g "Doctor Doom" &&
     (namedPermanent g "Doctor Doom").status.damage == 3 &&
@@ -1045,7 +1045,7 @@ def doctorDoomDamageTrackedOk : Bool :=
      let doom := namedPermanent g "Doctor Doom"
      let g := g.createEffect (.keywordsUntilEot doom.id Keyword.indestructible)
      let doom := namedPermanent g "Doctor Doom"
-     let g := g.markDamageOn doom 1 "deathtouch" (deathtouch := true) (source := some doom.asEvent)
+     let g := g.markDamageOn doom 1 "deathtouch" (deathtouch := true) (source := some (g.snapshot doom))
      let g := g.checkSBA
      onBattlefield g "Doctor Doom" &&
        !(g.deathtouchDealtSinceLastSba (namedPermanent g "Doctor Doom").id) &&

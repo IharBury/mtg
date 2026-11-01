@@ -131,6 +131,31 @@ def drawPerSevenCardGraveyard (g : Game) (p : PlayerId) : Game :=
   else
     g.draw p n
 
+/-- Pause-safe loop discarding `ids` from `p`'s hand inside an open batch. -/
+def discardHandIdsLoop (g : Game) (p : PlayerId) (ids : Array ObjectId)
+    (logEach : Bool := false) (cause : Option EventCause := none) : Game := Id.run do
+  if let .chooseReplacement .. := g.pending then
+    return g.chainPendingReplacement
+      (.finishPostStep 55 p (n := if logEach then 1 else 0) (ids := ids) (cause := cause))
+  let mut g := g
+  for i in [0:ids.size] do
+    let id := ids[i]!
+    match g.findObject? id with
+    | none => pure ()
+    | some o =>
+      if o.zone == .hand p then
+        let g0 := if logEach then g.logMsg s!"{(g.player p).name} discards {o.name}" else g
+        let (g', _) := g0.move id (.graveyard o.owner) none (verb := some .discard)
+          (actor := some p) (cause := cause)
+        g := g'
+        if let .chooseReplacement .. := g.pending then
+          let rem := ids.extract (i + 1) ids.size
+          if !rem.isEmpty then
+            g := g.chainPendingReplacement
+              (.finishPostStep 55 p (n := if logEach then 1 else 0) (ids := rem) (cause := cause))
+          return g
+  return g
+
 /-- Discard every card in `p`'s hand. Zero cards is a legal discard and is
 logged (Sauron, the Dark Lord). -/
 def discardEntireHand (g : Game) (p : PlayerId) (cause : Option EventCause := none) : Game :=
@@ -148,13 +173,7 @@ def discardEntireHand (g : Game) (p : PlayerId) (cause : Option EventCause := no
           (g, some c)
         | none => (g, none)
   let g := g.withBatch cause? fun g =>
-    ids.foldl (fun acc id =>
-      match acc.findObject? id with
-      | none => acc
-      | some o =>
-        let (acc, _) := acc.move id (.graveyard o.owner) none (verb := some .discard)
-          (actor := some p) (cause := cause?)
-        acc) g
+    g.discardHandIdsLoop p ids (logEach := false) (cause := cause?)
   g.logMsg s!"{(g.player p).name} discards {discarded} card(s)"
 
 /-- Discard the hand (zero cards is legal) and draw that many. The choice is
@@ -199,21 +218,67 @@ def applyBlackGateUnblockable (g : Game) (attackerId : ObjectId)
         g.logMsg
           s!"{o.name} can't be blocked by creatures {(g.player chosen).name} controls this turn"
 
+/-- Move or put each card in `remainingIds` onto the battlefield sequentially,
+pausing on `Pending.chooseReplacement` (`PendingReplacement.putToBattlefieldLoop`)
+and running `afterPermanentEnters` / `afterLandEnters` (plus optional haste or
+Food-artifact log) only after all cards have finished entering. -/
+def putToBattlefieldLoop (g : Game) (controller : PlayerId)
+    (remainingIds : Array ObjectId)
+    (enteredFromIds : Array ObjectId := #[])
+    (useCardOwner : Bool := false)
+    (haste : Bool := false)
+    (tapped : Bool := false)
+    (isLandEnters : Bool := false)
+    (onlyFoodArtifact : Bool := false)
+    (cause : Option EventCause := none) : Game := Id.run do
+  if let .chooseReplacement .. := g.pending then
+    return g.chainPendingReplacement
+      (.putToBattlefieldLoop controller remainingIds enteredFromIds
+        useCardOwner haste tapped isLandEnters onlyFoodArtifact cause)
+  let mut g := g
+  let mut entered := enteredFromIds
+  for i in [0:remainingIds.size] do
+    let id := remainingIds[i]!
+    match g.findObject? id with
+    | none => pure ()
+    | some o =>
+      if onlyFoodArtifact && o.zone != .graveyard o.owner then
+        pure ()
+      else
+        let ctrl := if useCardOwner then o.owner else controller
+        let (g', _) :=
+          if onlyFoodArtifact then
+            g.move id .battlefield (some ctrl)
+              (summoningSick := true) (applyHope := false)
+              (onlyFoodArtifact := true) (cause := cause)
+          else
+            g.putOntoBattlefield id ctrl (tapped := tapped) (cause := cause)
+        g := g'
+        entered := entered.push id
+        if let .chooseReplacement .. := g.pending then
+          let rem := remainingIds.extract (i + 1) remainingIds.size
+          return g.chainPendingReplacement
+            (.putToBattlefieldLoop controller rem entered
+              useCardOwner haste tapped isLandEnters onlyFoodArtifact cause)
+  for fromId in entered do
+    match g.followMovedToZone? fromId (· == .battlefield) with
+    | none => pure ()
+    | some enteredObj =>
+      if haste then
+        g := g.createEffect (.keywordsUntilEot enteredObj.id { haste := true }) (cause := cause)
+      g :=
+        if isLandEnters then g.afterLandEnters (g.object! enteredObj.id)
+        else g.afterPermanentEnters (g.object! enteredObj.id)
+      if onlyFoodArtifact then
+        if let some cur := g.findObject? enteredObj.id then
+          g := g.logMsg s!"{cur.name} returns as a Food artifact"
+  return g
+
 /-- Put the returned cards onto the battlefield as Food artifacts only.
 They keep name, mana cost, mana value, abilities, and legendary. -/
 def supperForSpidersReturn (g : Game) (controller : PlayerId)
     (ids : Array ObjectId) : Game :=
-  ids.foldl (fun acc id =>
-    match acc.findObject? id with
-    | none => acc
-    | some o =>
-      if o.zone != .graveyard o.owner then acc
-      else
-        let (acc, newId) := acc.move id .battlefield (some controller)
-          (summoningSick := true) (applyHope := false) (onlyFoodArtifact := true)
-        let acc := acc.afterPermanentEnters (acc.object! newId)
-        let o := acc.object! newId
-        acc.logMsg s!"{o.name} returns as a Food artifact") g
+  g.putToBattlefieldLoop controller ids (onlyFoodArtifact := true)
 
 /-- Exile the top `n` cards face down. They may be played while exiled if you
 control `subtype` (CR 610.1 / 701.18). Timing and costs are unchanged. -/
@@ -411,11 +476,6 @@ def exileFailedAdventureFromBilbo (g : Game) (id : ObjectId) : Game :=
     let name := o.name
     let (g, _) := g.move id .exile none
     g.logMsg s!"{name} is exiled (Bilbo's replacement). It cannot be cast as a permanent"
-
-/-- A token copy of a battlefield permanent. The copy is not kicked. -/
-def copyBattlefieldPermanent (g : Game) (src : GameObject) (controller : PlayerId)
-    (cause : Option EventCause := none) : Game × GameObject :=
-  g.createToken controller (g.copiableValues src) (cause := cause)
 
 /-- Create `remaining` token copies of `template` under `controller` with haste
 and end-step sacrifice (Venser), pausing on `Pending.chooseReplacement`

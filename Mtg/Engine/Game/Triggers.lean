@@ -93,7 +93,7 @@ def putTriggeredAbilityOnStack (g : Game) (controller : PlayerId) (source : Game
           else none
         | _ => none
     let srcIdOpt : Option ObjectId :=
-      if source.id == ⟨1000000000⟩ || (source.id == ⟨0⟩ && (g.findObject? source.id).isNone) then none
+      if source.id == noSourceSentinelId then none
       else some source.id
     let srcSnap : EventObject :=
       match srcIdOpt.bind g.findObject? with
@@ -137,7 +137,7 @@ def putTriggeredAbilityOnStack (g : Game) (controller : PlayerId) (source : Game
 def triggerHasNoLegalTarget (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : ObjectId) (abilityEffectOverride : Option Effect := none) : Bool :=
   let srcIdOpt :=
-    if sourceId == ⟨1000000000⟩ || (sourceId == ⟨0⟩ && (g.findObject? sourceId).isNone) then none
+    if sourceId == noSourceSentinelId then none
     else some sourceId
   match abilityEffectOverride with
   | some eff =>
@@ -159,7 +159,7 @@ def putTriggerOrFizzle (g : Game) (controller : PlayerId) (source : GameObject)
   if g.triggerHasNoLegalTarget controller ab source.id abilityEffectOverride then
     let isRefl := abilityEffectOverride.isSome || reflexiveResolution.isSome
     let srcLabel :=
-      if source.id == ⟨1000000000⟩ || (source.id == ⟨0⟩ && (g.findObject? source.id).isNone) then source.name
+      if source.id == noSourceSentinelId then source.name
       else g.name source
     if isRefl then
       g.logMsg s!"{srcLabel}'s {event} has no legal target and is removed (CR 603.3d)"
@@ -224,6 +224,10 @@ def addOneLoreRaw (g : Game) (saga : GameObject)
 counter replacements tie and preserving `EventCause.replaced`. -/
 def addLoreCounters (g : Game) (saga : GameObject) (n : Nat)
     (cause : Option EventCause := some (.turnBased .sagaLoreOnMain)) : Game :=
+  if let .chooseReplacement .. := g.pending then
+    let baseCause := cause.getD (.turnBased .sagaLoreOnMain)
+    g.chainPendingReplacement (.addLoreCounters saga.id n (some baseCause))
+  else
   match g.controllerOf saga, (g.baseCard saga).saga with
   | some p, some _ =>
     match g.findObject? saga.id with
@@ -374,8 +378,7 @@ def fraManaAbilities (g : Game) (o : GameObject) : Array ManaType :=
 def promptTriggerTargetsIfNeeded (g : Game) : Game :=
   match g.triggerNeedingTargets with
   | some e =>
-    if g.pending == .chooseTargets e.controller then g
-    else if (match g.pending with | .fraChoice .. => true | _ => false) then g
+    if g.pending != .none then g
     else
       let msg :=
         match (g.findObject? e.objectId).bind (fun o =>
@@ -402,9 +405,9 @@ def currentTriggerBatch (g : Game) : Array WaitingTrigger :=
 def waitingTriggersOf (g : Game) (p : PlayerId) : Array WaitingTrigger :=
   g.currentTriggerBatch.filter (·.controller == p)
 
-/-- Source ids of `p`'s current batch, oldest first (the default order). -/
-def defaultTriggerSourceIds (g : Game) (p : PlayerId) : Array ObjectId :=
-  (g.waitingTriggersOf p).map (·.source.id)
+/-- Candidate indices (`0 .. n - 1`) of `p`'s current batch, oldest first (the default order). -/
+def defaultTriggerSourceIds (g : Game) (p : PlayerId) : Array Nat :=
+  Array.range (g.waitingTriggersOf p).size
 
 /-- Next player in APNAP order who has a waiting trigger in this part
 (CR 603.3b / 101.4). -/
@@ -417,7 +420,8 @@ def removeWaitingTrigger (g : Game) (wt : WaitingTrigger) : Game :=
   match g.waitingTriggers.findIdx? (fun w =>
     w.controller == wt.controller && w.source.id == wt.source.id &&
       w.ability == wt.ability && w.event == wt.event &&
-      w.causeId == wt.causeId && w.delayedTrigger == wt.delayedTrigger &&
+      w.causeId == wt.causeId && w.causeController == wt.causeController &&
+      w.delayedTrigger == wt.delayedTrigger &&
       w.abilityEffect == wt.abilityEffect &&
       w.reflexiveResolution == wt.reflexiveResolution) with
   | none => g
@@ -456,7 +460,7 @@ def putWaitingTrigger (g : Game) (wt : WaitingTrigger) (event : TriggerEvent) : 
         | some (bid, _) => bid
         | none => ⟨g.nextBatchId⟩
       let srcSnap : EventObject :=
-        if wt.source.id == ⟨1000000000⟩ then
+        if wt.source.id == noSourceSentinelId then
           { (g.snapshot wt.source) with
             id := none
             controller := wt.source.controller.orElse (fun _ => some wt.controller) }
@@ -471,15 +475,17 @@ def putWaitingTrigger (g : Game) (wt : WaitingTrigger) (event : TriggerEvent) : 
           else g.recordTriggeredWithOrigin srcSnap wt.controller wt.ability originBatch
         put g) g
 
-/-- Put these waiting triggers on the stack in the given order (CR 603.3 / 603.3d). -/
+/-- Put these waiting triggers on the stack in the given order (CR 603.3 / 603.3d),
+stopping early if a modal triggered ability pauses on mode selection (CR 603.3c). -/
 def putTriggerBatch (g : Game) (wts : Array WaitingTrigger) : Game :=
   if wts.isEmpty then g
   else
     Id.run do
       let mut g := g
       for wt in wts do
-        g := g.removeWaitingTrigger wt
-        g := g.putWaitingTrigger wt wt.event
+        if g.pending == .none then
+          g := g.removeWaitingTrigger wt
+          g := g.putWaitingTrigger wt wt.event
       return g.promptTriggerTargetsIfNeeded
 
 /-- Start scrying `n` as a keyword action (CR 701.22).

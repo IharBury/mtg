@@ -70,11 +70,6 @@ def chooseCreatureTypeFor (g : Game) (p : PlayerId) : CardSubtype :=
     | none => some c
     | some b => if c.2 > b.2 then some c else best) none).map (·.1) |>.getD .human
 
-/-- Create one token of `kind` for `controller` and return it. -/
-def createOneKindToken (g : Game) (controller : PlayerId) (kind : TokenKind) :
-    Game × GameObject :=
-  g.createToken controller (tokenPrinted kind)
-
 /-- Begin a `FraChoice` for `p`. -/
 def beginFraChoice (g : Game) (p : PlayerId) (choice : FraChoice) (msg : String) : Game :=
   let g :=

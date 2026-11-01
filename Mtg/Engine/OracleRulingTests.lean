@@ -2314,7 +2314,9 @@ def elrondManaAbilityOk : Bool :=
   match elrondManaAbility with
   | .error _ => false
   | .ok g =>
-    countWaiting g .onActivateCreatureAbilityDrawOnce == 1 &&
+    countWaiting g .onActivateCreatureAbilityDrawOnce == 0 &&
+      g.stack.any (fun e =>
+        (g.object! e.objectId).triggeredAbility == some .onActivateCreatureAbilityDrawOnce) &&
       (ruling 75).comment.contains "mana ability"
 
 #guard elrondManaAbilityOk
@@ -2475,7 +2477,7 @@ def garrisonTapsSelfOk : Bool :=
 def smiteZeroDamage : Game :=
   let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
   let b := namedPermanent g "Grizzly Bears"
-  g.dealDamageLoseIndestructibleExileTo b 0 b.asEvent
+  g.dealDamageLoseIndestructibleExileTo b 0 (g.snapshot b)
 
 def smiteZeroDamageOk : Bool :=
   let b := namedPermanent smiteZeroDamage "Grizzly Bears"
@@ -2697,7 +2699,7 @@ def cavernHoardResolveCount : Game :=
   let g := addPermanent afterDraw cavernHoardDragon ⟨0⟩ ⟨0⟩
   let (g, _) := g.createToken ⟨1⟩ Game.treasureToken
   let (g, _) := g.createToken ⟨1⟩ Game.treasureToken
-  let g := g.noteCombatDamageTo ⟨1⟩ (namedPermanent g "Cavern-Hoard Dragon").asEvent
+  let g := g.noteCombatDamageTo ⟨1⟩ (g.snapshot (namedPermanent g "Cavern-Hoard Dragon"))
   let t := namedPermanent g "Treasure"
   let g := (g.move t.id (.graveyard ⟨1⟩) none).1
   g.applyTriggeredAbility ⟨0⟩
@@ -3037,7 +3039,7 @@ def copyOfKickedPermanentOk : Bool :=
   let bear := namedPermanent g "Grizzly Bears"
   let g := g.record (GameEvent.announced g.turnNumber bear.id (costs := #[.kicker]))
   let src := namedPermanent g "Grizzly Bears"
-  let (g, tok) := g.copyBattlefieldPermanent src ⟨0⟩
+  let (g, tok) := g.createToken ⟨0⟩ (g.copiableValues src)
   g.wasKicked src.id && !g.wasKicked tok.id && tok.printed.isToken &&
     (ruling 147).comment.contains "isn't kicked"
 
@@ -3541,7 +3543,7 @@ def lordOfEaglesGenericOnlyOk : Bool :=
 def smiteExileAnyDeathOk : Bool :=
   let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
   let b := namedPermanent g "Grizzly Bears"
-  let g := g.dealDamageLoseIndestructibleExileTo b 0 b.asEvent
+  let g := g.dealDamageLoseIndestructibleExileTo b 0 (g.snapshot b)
   g.untilEotExileIfDies (namedPermanent g "Grizzly Bears") &&
     (ruling 285).comment.contains "not just if it dies due to damage" &&
     (ruling 332).comment.contains "doesn't have indestructible"

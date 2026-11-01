@@ -211,7 +211,7 @@ def hydePlusOne : Game :=
 does not. A land is not a legal object to blink. -/
 def harness (g : Game) : Game :=
   let stone := named g "The Mind Stone"
-  g.record (GameEvent.designation g.turnNumber stone.asEvent .harnessed true
+  g.record (GameEvent.designation g.turnNumber (g.snapshot stone) .harnessed true
     (cause := .gameRule .staticAbility))
 
 def blinked : Game :=

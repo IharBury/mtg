@@ -203,6 +203,6 @@ def luke : Game :=
     (some (named g "Luke Cage, Power Man").id)
 
 #guard luke.pumpOf (named luke "Luke Cage, Power Man") == (2, 0) &&
-  (luke.untilEotKeywords (named luke "Luke Cage, Power Man")).indestructible
+  (luke.currentKeywords (named luke "Luke Cage, Power Man")).indestructible
 
 end Mtg.Engine.ThisAttackTests

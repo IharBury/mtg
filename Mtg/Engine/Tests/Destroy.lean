@@ -162,8 +162,7 @@ The printed `.none` note is what clears the mark. -/
     (.destroy .permanentDealtDamage (note := .forAmass))
   !onBoard g "Wyrm" && buried g "Wyrm" &&
     g.permanentDealtDamageThisWay == some id &&
-    g.destroyedForAmassThisWay && g.amassAmountThisWay == 4 &&
-    g.amassControllerThisWay == some opp
+    g.destroyedForAmassThisWay && g.amassAmountThisWay == 4
 
 /- Damage, then destroy only when that damage marked a Dragon.
 The ability's target kind is what makes the permanent a legal target. -/
@@ -190,7 +189,7 @@ controller still amasses when the creature is indestructible. -/
   let id := pid g0 "Ogre"
   let g := step g0 notedDestroy (targets := #[Target.permanent id]) (lastKnownPower := some 5)
   !onBoard g "Ogre" && buried g "Ogre" &&
-    g.destroyedForAmassThisWay && g.amassControllerThisWay == some opp &&
+    g.destroyedForAmassThisWay &&
     g.amassAmountThisWay == 5 && !g.amassYouControlledThisWay
 
 #guard
@@ -202,7 +201,7 @@ controller still amasses when the creature is indestructible. -/
     onBoard g "Goblin Army" && (obj g "Goblin Army").controlledBy caster &&
     (obj g "Goblin Army").status.plusOnePlusOne == 3 &&
     (g.player caster).hand.size == before + 1 &&
-    !g.destroyedForAmassThisWay && g.amassControllerThisWay.isNone &&
+    !g.destroyedForAmassThisWay &&
     g.amassAmountThisWay == 0 && !g.amassYouControlledThisWay
 
 #guard
@@ -220,13 +219,12 @@ controller still amasses when the creature is indestructible. -/
   let g0 := addPermanent afterDraw (creature "Tiny" ManaCost.empty #[] 0 1) opp opp
   let id := pid g0 "Tiny"
   let g := step g0 notedDestroy (targets := #[Target.permanent id]) (lastKnownPower := some (-2))
-  !onBoard g "Tiny" && g.destroyedForAmassThisWay && g.amassAmountThisWay == 0 &&
-    g.amassControllerThisWay == some opp
+  !onBoard g "Tiny" && g.destroyedForAmassThisWay && g.amassAmountThisWay == 0
 
 #guard
   let before := afterDraw.log.size
   let g := step afterDraw notedDestroy
-  !g.destroyedForAmassThisWay && g.amassControllerThisWay.isNone &&
+  !g.destroyedForAmassThisWay &&
     g.amassAmountThisWay == 0 &&
     logContains g "no player amasses" &&
     !(g.battlefield.any (fun o => g.hasSubtype o .army)) &&

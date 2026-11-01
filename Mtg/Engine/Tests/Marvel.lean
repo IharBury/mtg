@@ -129,8 +129,8 @@ def planFromLandfall : Game :=
 #guard (namedPermanent planFromLandfall "Claim the Kingdom").status.plan == 1
 #guard (namedPermanent planFromLandfall "Grizzly Bears").status.plusOnePlusOne == 1
 
-/-- Helicarrier Strike announces teamwork and taps a creature of enough power. -/
-def teamworkPaidStrike : Game :=
+/-- Helicarrier Strike announces teamwork (CR 601.2b) and taps the creature at CR 601.2h. -/
+def teamworkAnnouncedStrike : Game :=
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
   let g := insertObject g grayOgre ⟨1⟩ .battlefield (some ⟨1⟩)
     { attacking := true, summoningSick := false }
@@ -139,6 +139,14 @@ def teamworkPaidStrike : Game :=
   let g := mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Helicarrier Strike").id)
   let g := mustApply g ⟨0⟩ (.announceTeamwork true)
   mustApply g ⟨0⟩ (.choosePermanents #[(namedPermanent g "Grizzly Bears").id])
+
+#guard !(namedPermanent teamworkAnnouncedStrike "Grizzly Bears").status.tapped
+#guard teamworkAnnouncedStrike.log.any (fun s => mentions s "announces teamwork")
+
+def teamworkPaidStrike : Game :=
+  let g := mustApply teamworkAnnouncedStrike ⟨0⟩
+    (.target (.permanent (namedPermanent teamworkAnnouncedStrike "Gray Ogre").id))
+  mustApply g ⟨0⟩ .pay
 
 #guard (namedPermanent teamworkPaidStrike "Grizzly Bears").status.tapped
 #guard teamworkPaidStrike.log.any (fun s => mentions s "pays a teamwork cost")
@@ -547,7 +555,7 @@ def myPreciousEquipped : Game :=
 def pantherDamagePrevented : Game :=
   let g := addPermanent afterDraw blackPantherHopeEnduring ⟨0⟩ ⟨0⟩
   let p := namedPermanent g "Black Panther, Hope Enduring"
-  g.dealDamageToPermanent p 3 (source := some p.asEvent)
+  g.dealDamageToPermanent p 3 (source := some (g.snapshot p))
 
 #guard (namedPermanent pantherDamagePrevented "Black Panther, Hope Enduring").status.damage == 0
 #guard pantherDamagePrevented.log.any (fun s => mentions s "prevented")
@@ -856,7 +864,7 @@ def lukeCageAttacksAlone : Game :=
     (some src.id)
 
 #guard lukeCageAttacksAlone.pumpOf (namedPermanent lukeCageAttacksAlone "Luke Cage, Power Man") == (2, 0)
-#guard (lukeCageAttacksAlone.untilEotKeywords (namedPermanent lukeCageAttacksAlone "Luke Cage, Power Man")).indestructible
+#guard (lukeCageAttacksAlone.currentKeywords (namedPermanent lukeCageAttacksAlone "Luke Cage, Power Man")).indestructible
 
 /-- Mockingbird's leftover constructor puts a +1/+1 on the source. -/
 def mockingbirdPlusOneThis : Game :=
@@ -1007,8 +1015,8 @@ def hawkeyeBowManaTap : Game :=
 
 #guard (namedPermanent hawkeyeBowManaTap "Llanowar Elves").status.tapped
 #guard (hawkeyeBowManaTap.player ⟨0⟩).manaPool.green == 1
-#guard hawkeyeBowManaTap.waitingTriggers.any (fun t =>
-  t.source.name == "Hawkeye's Bow")
+#guard hawkeyeBowManaTap.stack.any (fun e =>
+  mentions (hawkeyeBowManaTap.object! e.objectId).name "Hawkeye's Bow")
 
 -- Vigilance means attacking does not tap, so the Bow does not trigger.
 #guard

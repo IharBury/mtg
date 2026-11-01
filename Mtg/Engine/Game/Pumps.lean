@@ -65,13 +65,16 @@ def setUntilEotForm (g : Game) (o : GameObject) (pt : Int × Int)
 def addFinalityTo (g : Game) (o : GameObject) (n : Nat := 1)
     (byPlayer : Option PlayerId := none) (entersWith := false)
     (cause : Option EventCause := none) : Game :=
+  if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement (.addFinalityTo o.id n byPlayer entersWith true cause)
+  else
   let (n', applied, cause', choice?, _) :=
     g.replaceCountersPutChoice o .finality n (putter := byPlayer)
       (entersWith := entersWith) (cause := cause)
   match choice? with
   | some (chooser, choices) =>
     g.promptChooseReplacement chooser choices
-      (.addCounters o.id .finality n entersWith byPlayer cause)
+      (.addFinalityTo o.id n byPlayer entersWith true cause)
   | none =>
     let g := g.consumeReplacementOrder applied
     let putter := byPlayer.orElse (fun _ => g.controllerOf o)
@@ -158,7 +161,9 @@ CR 616.1 untap replacements compete (CR 122.1d / 616.1). -/
 def untapPermanent (g : Game) (o : GameObject)
     (duringUntapStep : Bool := false) (logUntap : Bool := true)
     (cause : Option EventCause := none) : Game :=
-  if !o.isOnBattlefield || !o.status.tapped || g.hostCantBecomeUntapped o then g
+  if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement (.untapPermanent o.id duringUntapStep logUntap cause)
+  else if !o.isOnBattlefield || !o.status.tapped || g.hostCantBecomeUntapped o then g
   else
     let defaultCause : EventCause :=
       if duringUntapStep then cause.getD (.turnBased .untapAll)
@@ -171,7 +176,8 @@ def untapPermanent (g : Game) (o : GameObject)
       let (stunned, applied, cause', choice?) := g.replaceUntap o (cause := some defaultCause)
       match choice? with
       | some (chooser, choices) =>
-        g.promptChooseReplacement chooser choices (.untapPermanent o.id (some defaultCause))
+        g.promptChooseReplacement chooser choices
+          (.untapPermanent o.id duringUntapStep logUntap (some defaultCause))
       | none =>
         let g := g.consumeReplacementOrder applied
         if stunned then
@@ -181,6 +187,27 @@ def untapPermanent (g : Game) (o : GameObject)
         else
           let g := g.record untap
           if logUntap then g.logMsg s!"{g.name o} untaps" else g
+
+/-- Untap each permanent in `ids` sequentially inside an open or standalone
+batch, pausing on `Pending.chooseReplacement` when stun-counter replacements tie. -/
+def untapPermanentsLoop (g : Game) (ids : Array ObjectId)
+    (cause : Option EventCause := none) : Game := Id.run do
+  if let .chooseReplacement .. := g.pending then
+    return g.chainPendingReplacement (.untapPermanentsLoop ids cause)
+  let mut g := g
+  for i in [0:ids.size] do
+    let id := ids[i]!
+    match g.findObject? id with
+    | some o =>
+      if o.isOnBattlefield then
+        g := g.untapPermanent o (cause := cause)
+        if let .chooseReplacement .. := g.pending then
+          let rem := ids.extract (i + 1) ids.size
+          if !rem.isEmpty then
+            g := g.chainPendingReplacement (.untapPermanentsLoop rem cause)
+          return g
+    | none => pure ()
+  return g
 
 /-- Timestamp-ordered maximum hand size (CR 613.7a; MSH 184 / 376). `none` is "no maximum". -/
 def effectiveMaxHandSize (g : Game) (p : PlayerId) : Option Nat :=

@@ -15,6 +15,11 @@ namespace Mtg.Engine
 set_option maxRecDepth 2048 in
 deriving instance BEq for CardDef
 
+/-- Sentinel `ObjectId` used only for source-less waiting triggers (such as
+delayed triggers created by game rules or player actions without a source
+object) outside the object allocation range (CR 603.7). -/
+def noSourceSentinelId : ObjectId := ⟨1000000000⟩
+
 /-- Permission to play a card from exile (CR 701.18 / 715.3d).
 Duration (`untilEndOfTurn`, `untilEndOfNextTurnOf`, or `whileInZone`) is stored
 on the enclosing `ContinuousEffectSpec.permission`. -/
@@ -198,11 +203,6 @@ def hasSubtype (o : GameObject) (s : CardSubtype) : Bool :=
 removals are evaluated in `Game.staticAbilitiesOf` (CR 613.1f). -/
 def staticAbilities (o : GameObject) : Array StaticAbility :=
   o.printed.staticAbilities
-
-/-- Printed keywords of this object. Layer-6 keyword grants and removals are
-evaluated in `Game.currentKeywords` (CR 613.1f). -/
-def printedOrUntilEot (o : GameObject) : Keywords :=
-  o.printed.keywords
 
 end GameObject
 
@@ -479,6 +479,9 @@ structure WaitingTrigger where
   /-- “Only once each turn” and extra trigger copies were already applied
   when this was queued. -/
   checked : Bool := false
+  /-- True once the controller has chosen the relative stack order for this
+  trigger in the current APNAP batch (CR 603.3b). -/
+  ordered : Bool := false
 deriving Repr, Inhabited, BEq
 
 /-- The object a `GameEvent` is about, as it existed when the change happened
@@ -618,54 +621,5 @@ def mountain (o : EventObject) : Bool :=
   o.hasSubtype .mountain
 
 end EventObject
-
-/-- This object's printed characteristics as an `EventObject` (CR 113.7a).
-Prefer `Game.snapshot` when `Game` is in scope so Layers 1–7d (CR 613.1) are
-evaluated. -/
-def GameObject.asEvent (o : GameObject) : EventObject :=
-  { id := some o.id
-    controller := o.controller
-    owner := o.owner
-    name := o.printed.name
-    colors := o.printed.colors
-    manaValue := o.printed.manaValue + o.chosenX.getD 0
-    supertypes := o.supertypes
-    types := o.types
-    subtypes :=
-      if o.printed.keywords.changeling && (o.types.contains .creature || o.types.contains .kindred) then
-        CardSubtype.allCreatureSubtypes.foldl (fun acc s => if acc.contains s then acc else acc.push s) o.subtypes
-      else o.subtypes
-    power := if o.isCreature || o.printed.power.isSome then some o.power else none
-    toughness := if o.isCreature || o.printed.toughness.isSome then some o.toughness else none
-    loyalty := o.printed.loyalty.map Int.toNat
-    keywords := o.printedOrUntilEot
-    toxic := o.printed.toxic
-    commanderIdentityScryCreature := !o.status.faceDown && o.printed.commanderIdentityScryCreature
-    staticAbilities := o.staticAbilities
-    zone := o.zone
-    tapped := o.status.tapped
-    attacking := o.status.attacking
-    blocking := !o.status.blocking.isEmpty
-    phasedOut := o.status.phasedOut
-    faceDown := o.status.faceDown
-    transformed := o.status.transformed
-    attachedTo := o.attachedTo
-    counters := o.status.toCounterBag
-    token := o.printed.isToken
-    isCopy := o.isCopy
-    isCommander := o.isCommander
-    changeling := o.printed.keywords.changeling
-    chosenOdd := o.status.chosenOdd
-    chosenCreatureType := o.status.chosenCreatureType
-    chosenColor := o.status.chosenColor
-    chosenName := o.status.chosenName
-    chosenCardType := o.status.chosenCardType
-    chosenAnchor := o.status.chosenAnchor
-    summoningSick := o.status.summoningSick
-    attackingTarget := o.status.attackingTarget
-    printed := some o.printed
-    copiable := some o.printed
-    adventurerCard := o.adventurerCard
-    chosenX := o.chosenX }
 
 end Mtg.Engine

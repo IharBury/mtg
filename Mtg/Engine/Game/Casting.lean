@@ -247,7 +247,8 @@ ability, are omitted. -/
 def manaSourcesForProposed (g : Game) (p : PlayerId) (prop : ProposedSpell) :
     Array (GameObject × Array ManaType) :=
   (g.manaSources p).filterMap (fun (src, types) =>
-    if prop.tapSource && prop.sourceId == some src.id then none
+    if (prop.tapSource && prop.sourceId == some src.id) || prop.teamworkCreatures.contains src.id then
+      none
     else
       let usable := g.usableManaTypesForProposed src types prop
       if usable.isEmpty then none
@@ -374,7 +375,7 @@ def payCost (g : Game) (p : PlayerId) (cost : ManaCost)
   | none => throw s!"{pl.name} cannot pay {cost}"
   | some (_, spentUnits) =>
     return g.record
-      (GameEvent.manaSpent g.turnNumber p spentUnits (forObject.getD ⟨0⟩)
+      (GameEvent.manaSpent g.turnNumber p spentUnits forObject
         (cause := some (.costPayment .mana p forObject)))
 
 /-- Run any deferred mid-resolution post-cast cleanup (`PostCastCleanup`) once
@@ -506,7 +507,9 @@ def afterWardResolved (g : Game) : Game :=
   else
     let g := g.change (.pending .none)
     if g.triggerNeedingTargets.isSome then g.promptTriggerTargetsIfNeeded
-    else g.receivePriority g.activePlayer
+    else
+      let prio := g.pendingPriority.getD g.activePlayer
+      g.receivePriority prio
 
 /-- Whether an active resolution or pending choice was already open before the
 current spell or ability proposal began (ignoring any `ContinuationFrame` pushed
@@ -612,7 +615,8 @@ def becomeCast (g : Game) (p : PlayerId) (spell : GameObject)
         g.postCastCleanup.isSome || g.pendingMayCastFromExile.isSome ||
           g.pendingFreeCopies.isSome || g.pendingCastExiledQueue.isSome ||
           g.triggerSequenceRest.isSome || g.pendingReplacement.isSome ||
-          hadOuterReplacement || (grantPriority && !openCont && p != g.activePlayer)
+          hadOuterReplacement || !grantPriority ||
+          (grantPriority && !openCont && p != g.activePlayer)
       if needsDeferredPostCast then
         let existingOuter? := g.pendingReplacement
         let g := if existingOuter?.isSome then g.change (.pendingReplacement none) else g
@@ -635,10 +639,7 @@ def lockInTargetCostReduction (g : Game) : Game :=
     match g.findObject? prop.spellId with
     | none => g
     | some spell =>
-      let face :=
-        match spell.adventurerCard with
-        | some _ => spell.printed
-        | none => spell.printed
+      let face := g.baseCard spell
       match (g.stackEntry? spell.id).bind (fun e => e.targets[0]?) with
       | some (Target.permanent oid) =>
         match g.findObject? oid with

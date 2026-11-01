@@ -251,7 +251,7 @@ Choosing no creature for prevention changes nothing. -/
 #guard
   let g := step withSaga Effect.chapterGainLandfallCreateElf
     (sourceId := some (pid withSaga "Saga"))
-  (g.grantedTriggeredAbilities (obj g "Saga")).size == 1 &&
+  (g.triggeredAbilities (obj g "Saga")).size == 1 &&
     logContains g "gains landfall"
 
 #guard

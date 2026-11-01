@@ -69,7 +69,7 @@ def sculptorEntered : Game := enterPermanent afterDraw jaceRealitySculptor ‚ü®0‚
 #guard (namedPermanent sculptorEntered "Jace, Reality Sculptor").status.loyaltyCounters == 5
 #guard
   let j := namedPermanent sculptorEntered "Jace, Reality Sculptor"
-  let g := sculptorEntered.dealDamageToPermanent j 3 (source := some j.asEvent)
+  let g := sculptorEntered.dealDamageToPermanent j 3 (source := some (sculptorEntered.snapshot j))
   (namedPermanent g "Jace, Reality Sculptor").status.loyaltyCounters == 2
 
 /-- A planeswalker with no loyalty counters is put into its owner's

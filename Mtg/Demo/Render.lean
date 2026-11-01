@@ -609,8 +609,10 @@ on the stack in an order they choose (CR 603.3b). -/
 def triggerOrderBlock (g : Game) : Option String :=
   match g.pending with
   | .chooseTriggerToStack p =>
+    let wts := g.waitingTriggersOf p
     let lines :=
-      (g.waitingTriggersOf p).toList.map (fun wt => s!"  {waitingTriggerLine wt}")
+      (Array.range wts.size).toList.map (fun idx =>
+        s!"  [{idx}] {waitingTriggerLine wts[idx]!}")
     if lines.isEmpty then none
     else
       some <|

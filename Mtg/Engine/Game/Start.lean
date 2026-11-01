@@ -36,7 +36,6 @@ def materializeSeat (g : Game) (seatIdx : Nat) (seat : Seat) : Except String Gam
     id := pid
     name := seat.name
     life := 20
-    startingLife := 20
     hasCommander := hasCommander
     commanderColorIdentity := commanderColorIdentity
     commanderCreatureTypes := commanderCreatureTypes

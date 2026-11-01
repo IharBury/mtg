@@ -246,7 +246,7 @@ def zemoBoastThisActivationOk : Bool :=
   let g := addToGraveyard (addToGraveyard g heavyWhisper ⟨0⟩) heavyWhisper ⟨0⟩
   let g := addToGraveyard g nightsWhisper ⟨0⟩
   let zemo := namedPermanent g "Baron Helmut Zemo"
-  let g := g.record (GameEvent.attackersDeclared g.turnNumber ⟨0⟩ #[(zemo.asEvent, .player ⟨1⟩)])
+  let g := g.record (GameEvent.attackersDeclared g.turnNumber ⟨0⟩ #[(g.snapshot zemo, .player ⟨1⟩)])
   let gy := (g.player ⟨0⟩).graveyard.filter (fun id => (g.object! id).printed.manaCost.symbols.size == 8)
   let idx := (g.activatedAbilitiesOf zemo).size - 1
   let g := mustApply g ⟨0⟩ (.activate zemo.id idx)

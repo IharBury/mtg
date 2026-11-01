@@ -63,8 +63,9 @@ partial def drawOneWithReplacements (g : Game) (p : PlayerId)
       else if firstOfYourDrawStep then
         some (.turnBased .drawStepDraw)
       else none)
+    let topId := pl.library.back?.getD noSourceSentinelId
     let proposed :=
-      GameEvent.drew g.turnNumber p ⟨0⟩ (GameEvent.draws g.events g.turnNumber p + 1)
+      GameEvent.drew g.turnNumber p topId (GameEvent.draws g.events g.turnNumber p + 1)
         firstOfYourDrawStep (cause := g.resolveOptionalCause cause (fallbackCtrl := some p))
     let specs : Array (ReplacementSpec × Nat) :=
       if !pl.keptOpeningHand || !proposed.watches .wouldDraw then #[]
@@ -126,6 +127,9 @@ end
 
 def draw (g : Game) (p : PlayerId) (n : Nat := 1)
     (cause : Option EventCause := none) : Game :=
+  if let .chooseReplacement .. := g.pending then
+    if n == 0 then g else g.chainPendingReplacement (.draw p n false cause)
+  else
   let (g0, cause?) : Game × Option EventCause :=
     match cause with
     | some c => (g, some c)

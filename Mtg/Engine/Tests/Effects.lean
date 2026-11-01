@@ -422,9 +422,9 @@ def plusOneAndGrantResolved : Game :=
 
 #guard
   (namedPermanent plusOneAndGrantResolved "Gray Ogre").status.plusOnePlusOne == 1 &&
-    (plusOneAndGrantResolved.untilEotKeywords (namedPermanent plusOneAndGrantResolved "Gray Ogre")).vigilance &&
-    (plusOneAndGrantResolved.untilEotKeywords (namedPermanent plusOneAndGrantResolved "Gray Ogre")).indestructible &&
-    (plusOneAndGrantResolved.untilEotKeywords (namedPermanent plusOneAndGrantResolved "Gray Ogre")).haste
+    (plusOneAndGrantResolved.currentKeywords (namedPermanent plusOneAndGrantResolved "Gray Ogre")).vigilance &&
+    (plusOneAndGrantResolved.currentKeywords (namedPermanent plusOneAndGrantResolved "Gray Ogre")).indestructible &&
+    (plusOneAndGrantResolved.currentKeywords (namedPermanent plusOneAndGrantResolved "Gray Ogre")).haste
 
 /-- `destroyUpToOneThenPlusOne` still plus-ones with no target. -/
 def destroyUpToOneThenPlusOneNoTarget : Game :=
@@ -473,9 +473,9 @@ def subtypesGainMenaceResolved : Game :=
     (Effect.subtypesGainMenace #["Goblin", "Orc"]) #[]
 
 #guard
-  (subtypesGainMenaceResolved.untilEotKeywords (namedPermanent subtypesGainMenaceResolved "Raging Goblin")).menace &&
-    (subtypesGainMenaceResolved.untilEotKeywords (namedPermanent subtypesGainMenaceResolved "Orcish Siegemaster")).menace &&
-    !(subtypesGainMenaceResolved.untilEotKeywords (namedPermanent subtypesGainMenaceResolved "Gray Ogre")).menace &&
+  (subtypesGainMenaceResolved.currentKeywords (namedPermanent subtypesGainMenaceResolved "Raging Goblin")).menace &&
+    (subtypesGainMenaceResolved.currentKeywords (namedPermanent subtypesGainMenaceResolved "Orcish Siegemaster")).menace &&
+    !(subtypesGainMenaceResolved.currentKeywords (namedPermanent subtypesGainMenaceResolved "Gray Ogre")).menace &&
     subtypesGainMenaceResolved.log.any (fun s => mentions s "Raging Goblin gains menace") &&
     subtypesGainMenaceResolved.log.any (fun s => mentions s "Orcish Siegemaster gains menace") &&
     !subtypesGainMenaceResolved.log.any (fun s => mentions s "Gray Ogre gains menace")
@@ -486,8 +486,8 @@ def elvesGainMenaceResolved : Game :=
     |>.applyAbilityEffect ⟨0⟩ (Effect.subtypesGainMenace #["Elf"]) #[]
 
 #guard
-  (elvesGainMenaceResolved.untilEotKeywords (namedPermanent elvesGainMenaceResolved "Llanowar Elves")).menace &&
-    !(elvesGainMenaceResolved.untilEotKeywords (namedPermanent elvesGainMenaceResolved "Raging Goblin")).menace
+  (elvesGainMenaceResolved.currentKeywords (namedPermanent elvesGainMenaceResolved "Llanowar Elves")).menace &&
+    !(elvesGainMenaceResolved.currentKeywords (namedPermanent elvesGainMenaceResolved "Raging Goblin")).menace
 
 /-- `teamGain` grants the given keyword to every creature you control. -/
 def teamGainMenaceResolved : Game :=
@@ -495,8 +495,8 @@ def teamGainMenaceResolved : Game :=
     |>.applyAbilityEffect ⟨0⟩ (Effect.teamGain Keyword.menace) #[]
 
 #guard
-  (teamGainMenaceResolved.untilEotKeywords (namedPermanent teamGainMenaceResolved "Raging Goblin")).menace &&
-    (teamGainMenaceResolved.untilEotKeywords (namedPermanent teamGainMenaceResolved "Gray Ogre")).menace
+  (teamGainMenaceResolved.currentKeywords (namedPermanent teamGainMenaceResolved "Raging Goblin")).menace &&
+    (teamGainMenaceResolved.currentKeywords (namedPermanent teamGainMenaceResolved "Gray Ogre")).menace
 
 /-- `becomeSubtypeWithLandsPT` grants the given type, not only Bear. -/
 def becomeWolfWithLandsPT : Game :=
@@ -1112,7 +1112,8 @@ def valleyLandfall : Game :=
 #guard
   valleyLandfall.battlefield.any (fun o =>
     o.name == "Elf" && o.printed.isToken) &&
-    (valleyLandfall.grantedTriggeredAbilities (namedPermanent valleyLandfall "Down in the Valley")).size == 1
+    (valleyLandfall.triggeredAbilities (namedPermanent valleyLandfall "Down in the Valley")).size ==
+      downInTheValley.triggeredAbilities.size + 1
 
 def valleyElvesPumped : Game :=
   let g := addPermanent valleyLandfall llanowarElves ⟨0⟩ ⟨0⟩

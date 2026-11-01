@@ -34,39 +34,58 @@ def lethalRemaining (g : Game) (o : GameObject) (already : Array CreatureCombatA
   else if fromDeathtouch then 1
   else remaining
 
-/-- True when any attacking or blocking creature has first strike (CR 702.7b). -/
+/-- True when any attacking or blocking creature has first strike or double
+strike (CR 510.4 / 702.7b). -/
 def combatHasFirstStrike (g : Game) : Bool :=
   g.battlefield.any (fun o =>
-    g.hasFirstStrike o && (o.status.attacking || !o.status.blocking.isEmpty))
+    g.isCreature o && (g.hasFirstStrike o || g.hasDoubleStrike o) &&
+      (o.status.attacking || !o.status.blocking.isEmpty))
 
 /-- Creatures that assign combat damage in the current half of CR 510.1.
-A first-strike combat damage step includes only first strikers; the regular
-step includes only creatures without first strike (CR 702.7b). -/
+A first-strike combat damage step includes only creatures with first strike or
+double strike; the second step includes remaining creatures that had neither as
+the first step began plus creatures with double strike (CR 510.4 / 702.7b–c). -/
 def creaturesAssigningCombatDamage (g : Game) (forAttackers : Bool) : Array GameObject :=
   let all :=
     if forAttackers then
-      g.battlefield.filter (·.status.attacking)
+      g.battlefield.filter (fun o => g.isCreature o && o.status.attacking)
     else
-      g.battlefield.filter (fun o => !o.status.blocking.isEmpty)
+      g.battlefield.filter (fun o => g.isCreature o && !o.status.blocking.isEmpty)
   if !g.combatHasFirstStrike && g.firstStrikeAssignedThisCombat.isEmpty then all
-  else if !g.firstStrikeDamageDone then all.filter (g.hasFirstStrike)
+  else if !g.firstStrikeDamageDone then
+    all.filter (fun o => g.hasFirstStrike o || g.hasDoubleStrike o)
   else
     all.filter (fun o =>
       if g.firstStrikeAssignedThisCombat.any (· == o.id) then
         g.hasDoubleStrike o
       else
-        !g.hasFirstStrike o || g.hasDoubleStrike o)
+        true)
 
 /-- Legal creature recipients for `source`'s combat damage (CR 510.1c–d). -/
 def legalCombatDamageRecipients (g : Game) (source : GameObject) (forAttackers : Bool) :
     Array GameObject :=
   if forAttackers then g.blockersOf source.id else g.creaturesBlockedBy source
 
-/-- True when leftover combat damage may be assigned to the defending player
-(unblocked, or trample; CR 510.1a / 702.19). -/
+/-- True when the player, planeswalker, or battle `source` is attacking is still
+in combat as a valid attack destination (CR 506.4 / 506.4c / 800.4e). -/
+def hasLiveAttackDestination (g : Game) (source : GameObject) : Bool :=
+  match source.status.attackingTarget with
+  | some (.player p) => !(g.player p).lost
+  | some (.planeswalker pwId) =>
+    !g.removedFromCombatThisCombat pwId &&
+      (g.findObject? pwId).any (fun pw => pw.isOnBattlefield && g.isPlaneswalker pw)
+  | some (.battle bId) =>
+    !g.removedFromCombatThisCombat bId &&
+      (g.findObject? bId).any (·.isOnBattlefield)
+  | none => !(g.player (g.defendingPlayerOf source)).lost
+
+/-- True when leftover combat damage may be assigned to the player or
+planeswalker `source` is attacking (unblocked, or trample while that attack
+destination remains in combat; CR 506.4c / 510.1a / 702.19b / 702.19f). -/
 def canAssignCombatDamageToDefendingPlayer (g : Game) (source : GameObject)
     (forAttackers : Bool) : Bool :=
-  forAttackers && (!source.status.blocked || g.hasTrample source)
+  forAttackers && g.hasLiveAttackDestination source &&
+    (!source.status.blocked || g.hasTrample source)
 
 /-- Combat damage `source` assigns before any recipient checks (CR 510.1a):
 its power, or its toughness while Ghalta, the Immovable (or a similar
@@ -102,8 +121,15 @@ def combatDamageToAssign (g : Game) (source : GameObject) (forAttackers : Bool) 
     0
   else g.combatDamageAmount source
 
-/-- True when a creature this player controls has two or more creature
-recipients, so the controller must divide combat damage (CR 510.1c–d). -/
+/-- True when a creature `p` controls has two or more creature recipients, so
+`p` must divide combat damage (CR 510.1c–d). -/
+def playerNeedsCombatDamageChoice (g : Game) (p : PlayerId) (forAttackers : Bool) : Bool :=
+  (g.creaturesAssigningCombatDamage forAttackers).any (fun o =>
+    g.controlledBy o p &&
+      (g.legalCombatDamageRecipients o forAttackers).size ≥ 2 && g.combatDamageAmount o > 0)
+
+/-- True when any creature in this half has two or more creature recipients, so
+its controller must divide combat damage (CR 510.1c–d). -/
 def needsCombatDamageChoice (g : Game) (forAttackers : Bool) : Bool :=
   (g.creaturesAssigningCombatDamage forAttackers).any (fun o =>
     (g.legalCombatDamageRecipients o forAttackers).size ≥ 2 && g.combatDamageAmount o > 0)

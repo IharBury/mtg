@@ -33,6 +33,12 @@ def finishProposedSpell (g : Game) : Except String Game := do
       return (← g.reverseProposedSpell? (resumeContinuation := true))
   if prop.needsDiscardCard && (g.player prop.caster).hand.isEmpty then
     return (← g.reverseProposedSpell? (resumeContinuation := true))
+  if prop.teamworkPaid && !prop.teamworkCreatures.isEmpty then
+    let teamworkOk := prop.teamworkCreatures.all fun id =>
+      (g.findObject? id).any fun o =>
+        o.isOnBattlefield && g.isCreature o && g.controlledBy o prop.caster && !o.status.tapped
+    if !teamworkOk then
+      return (← g.reverseProposedSpell? (resumeContinuation := true))
   let count (g : Game) (u : FraManaUse) :=
     ((g.player prop.caster).manaPool.fraRestricted.filter (·.2 == u)).size
   let g ← g.withProposalActionM .costAction fun g0 => do
@@ -62,6 +68,20 @@ def finishProposedSpell (g : Game) : Except String Game := do
     return (← g.beginActivationPayment prop)
   let outerCont? := g.pendingReplacement
   let openCont := g.proposalHadOpenContinuation
+  let g ←
+    if prop.teamworkPaid && !prop.teamworkCreatures.isEmpty then
+      let g0 := if outerCont?.isSome then g.change (.pendingReplacement none) else g
+      match g0.tapTeamworkCreaturesForProposed prop with
+      | .ok g =>
+        let paused := match g.pending with | .chooseReplacement .. => true | _ => false
+        pure (if !paused then
+          match outerCont? with
+          | some outer => g.chainPendingReplacement outer
+          | none => g
+        else g)
+      | .error _ => return (← g.reverseProposedSpell? (resumeContinuation := true))
+    else pure g
+  let outerCont? := g.pendingReplacement
   let g ←
     match prop.sneakAttacker with
     | some a =>
@@ -291,10 +311,16 @@ def concede (g : Game) (p : PlayerId) : Game :=
     match g.decideGameIfFinished with
     | some finished => finished
     | none =>
+      let wasAssigningCombatDamage : Option Bool :=
+        match g.pending with
+        | .assignCombatDamage _ fa => some fa
+        | _ => none
       let g := g.playerLeavesGame p |>.checkSBA
       if g.unlessPaysDue then
         g.flushUnlessPays
       else if g.over || g.pending != .none then g
+      else if let some fa := wasAssigningCombatDamage then
+        if fa then g.beginCombatDamageAssignment else g.continueBlockerCombatAssignment
       else if !g.continuations.isEmpty || g.pendingReplacement.isSome ||
           g.pendingCastExiledQueue.isSome || g.triggerSequenceRest.isSome then
         g.finishFraChoice

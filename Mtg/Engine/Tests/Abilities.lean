@@ -803,7 +803,7 @@ def superSpeedFirstStrikeOk : Bool :=
   let g := g.attachSourceTo aura host
   let g := g.applyTriggeredAbility ⟨0⟩
     (.onEnterEnchanted (.grantKeywords Keyword.firstStrike)) (some aura.id)
-  (g.untilEotKeywords (g.object! host.id)).firstStrike
+  (g.currentKeywords (g.object! host.id)).firstStrike
 
 #guard superSpeedFirstStrikeOk
 
@@ -842,7 +842,7 @@ def stolenStarkIndestructibleOk : Bool :=
   let g := g.applyTriggeredAbility ⟨0⟩
     (.onEnterAttachThen (.grantKeywords Keyword.indestructible))
     (some eq.id) #[Target.permanent host.id]
-  (g.untilEotKeywords (g.object! host.id)).indestructible &&
+  (g.currentKeywords (g.object! host.id)).indestructible &&
     (g.object! eq.id).attachedTo == some host.id
 
 #guard stolenStarkIndestructibleOk

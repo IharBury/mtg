@@ -62,18 +62,17 @@ def continueSacrificeEach (g : Game) (controller : PlayerId) (players : Array Pl
       s!"{(g.player p).name} sacrifices a creature"
   | [] =>
     let youSacrificed := chosen.any (fun id =>
-      (g.findObject? id).any (fun o => g.controlledBy o controller))
+      (g.findObject? id).any (fun o => o.isOnBattlefield && g.controlledBy o controller))
+    let pairs := chosen.filterMap (fun id =>
+      match g.findObject? id with
+      | some o =>
+        if o.isOnBattlefield then some ((g.controllerOf o).getD o.owner, id)
+        else none
+      | none => none)
     let preBf := g.battlefield
-    let g := g.withBatch none fun g =>
-      chosen.foldl (fun g id =>
-        match g.findObject? id with
-        | some o =>
-          if o.isOnBattlefield then
-            g.sacrificeToGraveyard o s!"{(g.player ((g.controllerOf o).getD o.owner)).name} sacrifices {g.name o}"
-              (preBattlefield := some preBf)
-          else g
-        | none => g) g
-    if youSacrificed then g.createKindTokens controller .beast44trample 1 else g
+    g.withBatch none fun g =>
+      g.sacrificePermanentsLoop pairs (preBattlefield := some preBf)
+        (createBeastFor := if youSacrificed then some controller else none)
 
 /-- Ask the next opponent in `players` to discard two cards for Garruk,
 Veiled Butcher, or draw `draws` cards for `controller` and finish. -/
@@ -85,11 +84,16 @@ partial def continueDiscardTwo (g : Game) (controller : PlayerId) (players : Arr
     let hand := (g.player p).hand
     if hand.size ≤ 2 then
       let nonland := (hand.filter (fun id => !g.isLand (g.object! id))).size
+      let nextDraws := if nonland < 2 then draws + 1 else draws
       let g := g.withBatch none fun g =>
         hand.foldl (fun g id => g.discardFromHand p id) g
       let g :=
         if hand.isEmpty then g.logMsg s!"{(g.player p).name} has no cards to discard" else g
-      g.continueDiscardTwo controller rest.toArray (if nonland < 2 then draws + 1 else draws)
+      if let .chooseReplacement .. := g.pending then
+        g.chainPendingReplacement
+          (.finishPostStep 10 controller nextDraws (modes := rest.toArray.map (·.idx)))
+      else
+        g.continueDiscardTwo controller rest.toArray nextDraws
     else
       g.beginFraChoice p (.discardTwo controller rest.toArray draws)
         s!"{(g.player p).name} discards two cards"
@@ -98,6 +102,42 @@ partial def continueDiscardTwo (g : Game) (controller : PlayerId) (players : Arr
 def creaturesAttackingPlayer (g : Game) (p : PlayerId) : Array GameObject :=
   g.battlefield.filter (fun o =>
     g.isCreature o && o.status.attacking && o.status.attackingTarget == some (.player p))
+
+/-- Run Hawkeye's Trick Arrows modes starting at `targetIdx`, pausing on
+`Pending.chooseReplacement` so mode 2's choice or later modes do not clobber it. -/
+def runHawkeyeArrows (g : Game) (controller : PlayerId) (modes : Array Nat)
+    (targets : Array Target) (targetIdx : Nat) (sourceId : Option ObjectId) : Game := Id.run do
+  let src := sourceId.bind g.damageSourceById?
+  let illegal := some "The target is no longer legal"
+  let mut g := g
+  let mut idx := targetIdx
+  for k in [0:modes.size] do
+    let m := modes[k]!
+    let slice := targets.extract idx (idx + 1)
+    match m with
+    | 0 =>
+      g := g.withLegalKindPermanent controller .creature slice (fun g o =>
+        (g.createEffect (.cantBlockUntilEot o.id)).logMsg
+          s!"{o.name} can't block this turn") sourceId illegal
+      idx := idx + 1
+    | 1 =>
+      g := g.withLegalKindPlayer controller .player slice
+        (fun g pid => g.dealDamageToPlayer pid 2 (source := src)) sourceId illegal
+      idx := idx + 1
+    | _ =>
+      if (g.player controller).hand.isEmpty then
+        g := g.draw controller 1
+      else
+        g := g.beginFraChoice controller .discardThenDraw
+          s!"{(g.player controller).name} discards a card, then draws a card"
+    if let .chooseReplacement .. := g.pending then
+      let rem := modes.extract (k + 1) modes.size
+      if !rem.isEmpty then
+        g := g.chainPendingReplacement
+          (.finishPostStep 12 controller idx (sourceId := sourceId)
+            (targets := targets) (modes := rem))
+      return g
+  return g
 
 /-- Resolve an FRA activated or loyalty ability resolution. -/
 def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Resolution)
@@ -156,18 +196,27 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
         else g.record (GameEvent.revealed g.turnNumber controller allRevealed (cause := revealCause?))
       let g := allRevealed.foldl (fun g id =>
         g.logMsg s!"{(g.player controller).name} reveals {(g.object! id).name}") g
-      let g :=
-        match hit with
-        | some id =>
-          let (g, newId) := g.putOntoBattlefield id controller (cause := revealCause?)
+      match hit with
+      | some id =>
+        let (g, newId) := g.putOntoBattlefield id controller (cause := revealCause?)
+        if let .chooseReplacement .. := g.pending then
+          g.chainPendingReplacement
+            (.finishPostStep 11 controller 0 none (some id) (ids := revealed) (cause := revealCause?))
+        else
           let g := g.logMsg s!"{(g.object! newId).name} enters the battlefield"
-          g.afterPermanentEnters (g.object! newId)
-        | none => g.logMsg "No creature or planeswalker card is revealed"
-      if revealed.isEmpty then g
-      else
-        g.requestOrderInto revealed (.library controller)
-          s!"{(g.player controller).name} puts the rest on the bottom of their library in a random order"
-          (cause := revealCause?))
+          let g := g.afterPermanentEnters (g.object! newId)
+          if revealed.isEmpty then g
+          else
+            g.requestOrderInto revealed (.library controller)
+              s!"{(g.player controller).name} puts the rest on the bottom of their library in a random order"
+              (cause := revealCause?)
+      | none =>
+        let g := g.logMsg "No creature or planeswalker card is revealed"
+        if revealed.isEmpty then g
+        else
+          g.requestOrderInto revealed (.library controller)
+            s!"{(g.player controller).name} puts the rest on the bottom of their library in a random order"
+            (cause := revealCause?))
       sourceId illegal
   | .destroyDrawIfLegendaryEnchantment =>
     g.withLegalKindPermanent controller kind targets (fun g o =>
@@ -186,13 +235,9 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
       | _ => g) sourceId illegal
   | .destroyAllCreatures =>
     let preBf := g.battlefield
-    let doomed := preBf.filter (g.isCreature ·)
+    let doomed := (preBf.filter (g.isCreature ·)).map (·.id)
     g.withBatch none fun g =>
-      doomed.foldl (fun g o =>
-        match g.findObject? o.id with
-        | some o =>
-          if o.isOnBattlefield then g.destroyPermanent o (preBattlefield := some preBf) else g
-        | none => g) g
+      g.destroyPermanentsLoop doomed (preBattlefield := some preBf)
   | .ownerShufflesIntoLibrary =>
     g.withLegalKindPermanent controller kind targets (fun g o =>
       let oName := g.name o
@@ -389,25 +434,7 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
   | .mshReflexive kind paid =>
     g.resolveModeledReflexive controller sourceId kind paid targets g.resolvingDivision
   | .hawkeyeArrows modes =>
-    let src := sourceId.bind g.damageSourceById?
-    let illegal := some "The target is no longer legal"
-    let (g, _) := modes.foldl (fun (acc : Game × Nat) m =>
-      let (g, i) := acc
-      let slice := targets.extract i (i + 1)
-      match m with
-      | 0 =>
-        (g.withLegalKindPermanent controller .creature slice (fun g o =>
-          (g.createEffect (.cantBlockUntilEot o.id)).logMsg
-            s!"{o.name} can't block this turn") sourceId illegal, i + 1)
-      | 1 =>
-        (g.withLegalKindPlayer controller .player slice
-          (fun g pid => g.dealDamageToPlayer pid 2 (source := src)) sourceId illegal, i + 1)
-      | _ =>
-        if (g.player controller).hand.isEmpty then (g.draw controller 1, i)
-        else
-          (g.beginFraChoice controller .discardThenDraw
-            s!"{(g.player controller).name} discards a card, then draws a card", i)) (g, 0)
-    g
+    g.runHawkeyeArrows controller modes.toArray targets 0 sourceId
   | .copySourceSpellXTimes =>
     match sourceId.bind g.findObject? with
     | some spell =>

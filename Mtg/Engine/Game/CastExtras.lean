@@ -122,7 +122,7 @@ def applyKickerToProposed (g : Game) (kick : Bool) : Except String Game := do
   if !kick then
     return g.changeProposals #[.kicked false, .kickerAnnounced true]
   let some spell := g.findObject? prop.spellId | throw "The spell left the stack"
-  let face := spell.printed
+  let face := g.baseCard spell
   match face.morph, face.impending, face.kicker with
   | some alt, _, none =>
     let g := g.record (GameEvent.announced g.turnNumber spell.id (costs := #[.morph]))
@@ -233,11 +233,9 @@ def exileUntilNextEndStep (g : Game) (o : GameObject)
 
 /-- Post-entry continuation for `putLandFromHandTapped`. -/
 def finishPutLandFromHand (g : Game) (fromId : ObjectId) : Game :=
-  let g :=
-    match g.followMovedToZone? fromId (· == Zone.battlefield) with
-    | some land => g.afterLandEnters land
-    | none => g
-  g.receivePriority g.activePlayer
+  match g.followMovedToZone? fromId (· == Zone.battlefield) with
+  | some land => g.afterLandEnters land
+  | none => g
 
 /-- Put a land from `p`'s hand onto the battlefield tapped (H.E.R.B.I.E.). -/
 def putLandFromHandTapped (g : Game) (p : PlayerId) (id : ObjectId) :
@@ -252,11 +250,18 @@ def putLandFromHandTapped (g : Game) (p : PlayerId) (id : ObjectId) :
     let some land := g.findObject? id | throw "no such object"
     if !g.isLand land then
       throw s!"{land.name} is not a land card"
+    let outerCont? := g.pendingReplacement
+    let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
     let g := g.change (.pending .none)
     let (g, _) := g.putOntoBattlefield id p (tapped := true)
-    if g.pending != .none then
-      return g.chainPendingReplacement (.finishPutLandFromHand id)
-    return g.finishPutLandFromHand id
+    let g :=
+      if g.pending != .none then
+        g.chainPendingReplacement (.finishPutLandFromHand id)
+      else
+        g.finishPutLandFromHand id
+    return match outerCont? with
+      | some outer => g.chainPendingReplacement outer
+      | none => g
   | _ => throw "Not time to put a land from hand onto the battlefield"
 
 end Game

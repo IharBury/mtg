@@ -442,7 +442,7 @@ inductive FraChoice where
   other opponents in `rest` choose next, then the Ring tempts `controller`
   (Witch-king of Angmar). -/
   | sacrificeDamager (ids : Array ObjectId) (rest : Array PlayerId)
-    (controller : PlayerId)
+    (controller : PlayerId) (chosen : Array (PlayerId × ObjectId) := #[])
   /-- You may cast one of these instant or sorcery cards from your hand
   without paying its mana cost (Gandalf, Party Guest; Glamdring). -/
   | mayCastInstantSorceryFromHand (eligible : Array ObjectId)

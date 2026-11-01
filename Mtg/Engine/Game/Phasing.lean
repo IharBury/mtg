@@ -10,14 +10,6 @@ phasing out and in, including phasing attachments with their host.
 namespace Mtg.Engine
 namespace Game
 
-/-- Remove `o` from combat (CR 506.4). -/
-def removeFromCombat (g : Game) (o : GameObject) (cause : Option EventCause := none) : Game :=
-  if o.status.attacking || !o.status.blocking.isEmpty || o.status.blocked ||
-      g.objects.any (fun x => x.status.blocking.any (· == o.id)) then
-    g.record (GameEvent.removedFromCombat g.turnNumber (g.snapshot o)
-      (cause := g.resolveOptionalCause cause (fallbackCtrl := g.controllerOf o)))
-  else g
-
 /-- Phase `o` out, along with Auras and Equipment attached to it. Does not
 trigger leaves-the-battlefield abilities (CR 702.26b / 702.26d / 702.26g). -/
 def phaseOut (g : Game) (o : GameObject) (cause : Option EventCause := none) : Game :=
@@ -27,6 +19,7 @@ def phaseOut (g : Game) (o : GameObject) (cause : Option EventCause := none) : G
       g.resolveOptionalCause cause (fallbackCtrl := g.controllerOf o)
         (defaultCause := .turnBased .phaseInOut)
     g.withBatch (some batchCause) fun g =>
+      let pre := g
       let stepCause (g : Game) : EventCause :=
         g.resolveOptionalCause cause (fallbackCtrl := g.controllerOf o)
           (defaultCause := .turnBased .phaseInOut)
@@ -35,30 +28,35 @@ def phaseOut (g : Game) (o : GameObject) (cause : Option EventCause := none) : G
       let oName := g.name o
       let g := g.record (GameEvent.phasedOut g.turnNumber (g.snapshot o) false (cause := stepCause g))
       let g := g.logMsg s!"{oName} phases out"
-      (g.attachmentsOf o).foldl (fun acc att =>
-        let att := acc.object! att.id
-        let acc := acc.removeFromCombat att (cause := some (stepCause acc))
-        let att := acc.object! att.id
-        let attName := acc.name att
-        acc.record (GameEvent.phasedOut acc.turnNumber (acc.snapshot att) true (cause := stepCause acc))
-          |>.logMsg s!"{attName} phases out attached to {oName}") g
+      let g :=
+        (g.attachmentsOf o).foldl (fun acc att =>
+          let att := acc.object! att.id
+          let acc := acc.removeFromCombat att (cause := some (stepCause acc))
+          let att := acc.object! att.id
+          let attName := acc.name att
+          acc.record (GameEvent.phasedOut acc.turnNumber (acc.snapshot att) true (cause := stepCause acc))
+            |>.logMsg s!"{attName} phases out attached to {oName}") g
+      removeFromCombatOnControlChange pre g (cause := some (stepCause g))
 
 /-- Phase `o` in, along with anything that phased out attached to it.
 Counters and “as this enters” choices are kept. Does not trigger enters (CR 702.26c / 702.26g). -/
 def phaseIn (g : Game) (o : GameObject) (cause : Option EventCause := none) : Game :=
   if !o.status.phasedOut then g
   else
+    let pre := g
     let resolvedCause :=
       g.resolveOptionalCause cause (fallbackCtrl := g.controllerOf o)
         (defaultCause := .turnBased .phaseInOut)
     let g := g.record (GameEvent.phasedIn g.turnNumber (g.snapshot o) false (cause := resolvedCause))
     let oName := g.name (g.object! o.id)
     let g := g.logMsg s!"{oName} phases in"
-    g.objects.foldl (fun acc att =>
-      if att.status.phasedOut && att.status.phasedWith == some o.id then
-        let acc := acc.record (GameEvent.phasedIn acc.turnNumber (acc.snapshot att) true (cause := resolvedCause))
-        acc.logMsg s!"{acc.name (acc.object! att.id)} phases in still attached to {oName}"
-      else acc) g
+    let g :=
+      g.objects.foldl (fun acc att =>
+        if att.status.phasedOut && att.status.phasedWith == some o.id then
+          let acc := acc.record (GameEvent.phasedIn acc.turnNumber (acc.snapshot att) true (cause := resolvedCause))
+          acc.logMsg s!"{acc.name (acc.object! att.id)} phases in still attached to {oName}"
+        else acc) g
+    removeFromCombatOnControlChange pre g (cause := some resolvedCause)
 
 /-- Phase in every phased-out permanent `p` controls (CR 502.1 / 703.4a). -/
 def phaseInControlled (g : Game) (p : PlayerId) : Game :=

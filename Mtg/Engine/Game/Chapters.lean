@@ -85,11 +85,25 @@ def attackPumpPerPlains (g : Game) (controller : PlayerId) : Game :=
     |>.logMsg
       s!"Whenever {(g.player controller).name} attacks this turn, a creature they control gets +1/+1 for each Plains they control"
 
-/-- Create a Treasure. Then if the controller has four or more, sacrifice
-the source and create a 6/6 red Dragon with flying. -/
-def treasureThenDragon (g : Game) (controller : PlayerId)
+/-- Create the 6/6 Dragon token for `treasureThenDragon`, guarding CR 616.1
+choices and prevented token creation. -/
+def treasureThenDragonCreateDragon (g : Game) (controller : PlayerId) : Game :=
+  let g := g.change (.recentTokenIds #[])
+  let (g, _) := g.createToken controller dragonToken (recordRecent := true)
+  if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement (.finishPostStep 32 controller)
+  else
+    g.recentTokenIds.foldl (fun g tid =>
+      match g.findObject? tid with
+      | some entered =>
+        if entered.isOnBattlefield then
+          (g.logMsg s!"{entered.name} enters the battlefield").afterPermanentEnters entered
+        else g
+      | none => g) g
+
+/-- Finish `treasureThenDragon` once the Treasure token creation completes. -/
+def treasureThenDragonAfterCreate (g : Game) (controller : PlayerId)
     (sourceId : Option ObjectId) : Game :=
-  let g := g.createTreasureTokens controller 1
   match sourceId.bind g.findObject? with
   | none => g
   | some src =>
@@ -98,8 +112,20 @@ def treasureThenDragon (g : Game) (controller : PlayerId)
     else
       let name := src.name
       let g := g.sacrificeToGraveyard src s!"{name} is sacrificed"
-      let (g, tok) := g.createToken controller dragonToken
-      g.logMsg s!"{tok.name} enters the battlefield" |>.afterPermanentEnters (g.object! tok.id)
+      if let .chooseReplacement .. := g.pending then
+        g.chainPendingReplacement (.finishPostStep 31 controller)
+      else
+        g.treasureThenDragonCreateDragon controller
+
+/-- Create a Treasure. Then if the controller has four or more, sacrifice
+the source and create a 6/6 red Dragon with flying. -/
+def treasureThenDragon (g : Game) (controller : PlayerId)
+    (sourceId : Option ObjectId) : Game :=
+  let g := g.createTreasureTokens controller 1
+  if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement (.finishPostStep 30 controller 0 sourceId)
+  else
+    g.treasureThenDragonAfterCreate controller sourceId
 
 /-- Gain control of the announced creatures while the source remains. -/
 def gainControlWhileSource (g : Game) (controller : PlayerId)
@@ -193,8 +219,11 @@ def applyChapterEffect (g : Game) (controller : PlayerId) (e : Effect)
           | some o =>
             let name := o.name
             let (g, newId) := g.putOntoBattlefield oid controller
-            g.logMsg s!"{name} returns to the battlefield"
-              |>.afterPermanentEnters (g.object! newId)
+            let g := g.logMsg s!"{name} returns to the battlefield"
+            if let .chooseReplacement .. := g.pending then
+              g.chainPendingReplacement (.finishPostStep 20 controller 0 none (some oid) (shuffle := false))
+            else
+              g.afterPermanentEnters (g.object! newId)
         | _ => g.logMsg "The target is no longer legal")
       sourceId (some "The target is no longer legal")
   | .plusOneUpToOne =>
@@ -216,7 +245,10 @@ def applyChapterEffect (g : Game) (controller : PlayerId) (e : Effect)
     let g :=
       g.dealDamageToEachCreatureMatching n (fun o => !g.hasSubtype o subtype)
         (source := srcSnap?) (cause := cause?)
-    g.dealDamageToEachOpponent controller n (source := src?) (cause := cause?)
+    if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement (.finishPostStep 33 controller n sourceId (cause := cause?))
+    else
+      g.dealDamageToEachOpponent controller n (source := src?) (cause := cause?)
   | .dealXDamageToTargetOpponentGreatestArtifactMv =>
     let x := g.greatestManaValueAmong controller (g.isArtifact ·)
     g.withLegalKindPlayer controller .opponent targets

@@ -182,7 +182,7 @@ A harnessed source is reported when it is not. -/
   let (g, attacking) := holds g (.atLeast (.count (.intersection [.source, .attackingCreatures])) (.fixed 1)) (some src.id)
   let (g, unharnessed) := holds g (.atLeast (.count .harnessedSource) (.fixed 1)) (some src.id)
   let cBear := named g "Count Bear"
-  let g := g.record (GameEvent.designation g.turnNumber cBear.asEvent .harnessed true
+  let g := g.record (GameEvent.designation g.turnNumber (g.snapshot cBear) .harnessed true
     (cause := .gameRule .staticAbility))
   let (g, harnessed) := holds g (.atLeast (.count .harnessedSource) (.fixed 1)) (some src.id)
   let (_, gone) := holds g (.atLeast (.count (.intersection [.source, .attackingCreatures])) (.fixed 1)) none
