@@ -3781,10 +3781,12 @@ leave-game cleanup), `Casting.lean`, `Activation.lean`, `Combat.lean`, `Damage.l
      700.2 / 616.1): `EffectResolution.applyUnified` `.sequence` and
      `EffectResolution.applyUnifiedAbility` `.sequence`
      ([`EffectResolution.lean`](Mtg/Engine/Game/EffectResolution.lean)),
-     `TriggeredAbilities.applyTriggeredAbility` `.sequence`,
-     `TriggeredAbilities.applyActionStep` `.chooseModes _ .alreadyChosen`, and
-     `TriggeredAbilities.runSteps` `.loseLife :: .gainLife` (checking
-     `g.pending != .none` after `applyGainLife`,
+     `TriggeredAbilities.applyTriggeredAbility`'s `ab.effect.resolution`
+     `.sequence` and `TriggerResolution` `.chooseModes _ .alreadyChosen`
+     `foldl` arms plus the `.loseLife :: .gainLife :: tail` arm of `runSteps`
+     (which currently runs `applyGainLife` and continues into `tail` without the
+     `g.pending != pendingBefore && g.pending != .none` check that general
+     `runSteps` steps perform,
      [`TriggeredAbilities.lean`](Mtg/Engine/Game/TriggeredAbilities.lean)), and
      `SpellResolution.resolveTop` modal `modeEffects` plus post-mode
      `empowerJace`
@@ -3863,12 +3865,12 @@ leave-game cleanup), `Casting.lean`, `Activation.lean`, `Combat.lean`, `Damage.l
        and `.sacrificeDamager` in `FraChoices.lean`), `FraResolve`
        (`.drawTwoDiscardTwoStun` in `FraResolve.lean`), `EffectResolution`
        (`applyGainLifeSearchBasicPlusOne`, `finishVisionQuest`,
-       `finishChooseCards` `.landsTappedGainLife`,
-       `.drawEqualToughnessThenPutCreatures`, and `.plusOneScry` in
-       `EffectResolution.lean`), `FrcResolve` (`putHits` + `restBottom` in
+       `finishChooseCards` `.landsTappedGainLife`, and
+       `.drawEqualToughnessThenPutCreatures` in `EffectResolution.lean`),
+       `FrcResolve` (`putHits` + `restBottom` in
        `.massPolymorph` / `.proteus` / `.dack` / `.jhoira` / `.nissa` /
        `.jaceMinus` / `applyOneDelayedSynthetic` in `FrcResolve.lean`),
-       `ModeledTriggers` (`.plusOneScry`, `.copyIfArtifactOrLand`, and
+       `ModeledTriggers` (`.casting .plusOneScry`, `.copyIfArtifactOrLand`, and
        `applyAvengersDisassembled` in `ModeledTriggers.lean`), and
        `Triggers.promptTriggerTargetsIfNeeded` (`Triggers.lean`).
      - Defer post-action state inspections until paused
@@ -3882,17 +3884,19 @@ leave-game cleanup), `Casting.lean`, `Activation.lean`, `Combat.lean`, `Damage.l
        (`FraResolve.lean`), `Chapters.treasureThenDragon` (`Chapters.lean`),
        `TriggeredAbilities` `.countDestroyed` and `FrcResolve` `.obEnter`
        (`TriggeredAbilities.lean`, `FrcResolve.lean`, counting only permanents
-       actually destroyed per CR 701.8b), `FrcResolve.putHits` (`FrcResolve.lean`,
-       granting haste to the post-move battlefield `ObjectId` rather than the
-       pre-move library `id`), `FrcResolve` (`drawPutOnTop`, `.occult`,
+       actually destroyed per CR 701.8b), `FrcResolve` (`drawPutOnTop`, `.occult`,
        `.jacePlus`, `.goblin`, and `.currencyLoot` in `FrcResolve.lean`), and
        `ModeledTriggers.lean` (post-create / post-draw / post-discard steps).
-     - Preserve `mayThenDrop` / `mayThenResume` across paused cost sacrifices in
-       `Decisions.chooseReplacement` (`Decisions.lean`),
-       `SacrificeDiscard.finishSacArtifactOrDiscardDraw`
-       (`SacrificeDiscard.lean`), and `FraChoices` (`.maySacrificeForCards`,
-       `.maySacrificePermanent`, `.maySacrificeThese`, and `.mayCostPicks` in
-       `FraChoices.lean`), and chain `.receivePriority g.activePlayer` when
+     - Chain an open `Pending.chooseReplacement` before calling
+       `Decisions.acceptMayThen` (which sets `.pending .none` and
+       `mayThenDrop := 0`) or `finishFraChoice` in `FraChoices`
+       (`.maySacrificeAnotherCreatureForPower`,
+       `.maySacrificeAnotherForDrawTreasure`, `.maySacrificeThese`,
+       `.mayDiscardThese`, and `.mayPayPickThen` in `FraChoices.lean`), dispatch
+       `g.acceptMayThen` in `Decisions.chooseReplacement` (`Decisions.lean`)
+       when a resumed `.finishSacArtifactOrDiscardDraw`
+       (`SacrificeDiscard.lean`) sets `g.mayThenResume` with
+       `g.pending == .none`, and chain `.receivePriority g.activePlayer` when
        terminal decision handlers (`Decisions.acceptMay`, `chooseSpellOr`,
        `choosePermanents` `.tapHumans`, `decline` `.mayResolve` / `.tapHumans`,
        `finishAfterRandom`, `TriggeredAbilities.chooseTriggerOr`, and
@@ -3917,10 +3921,13 @@ leave-game cleanup), `Casting.lean`, `Activation.lean`, `Combat.lean`, `Damage.l
      non-active caster or activator retains priority afterward per CR 117.3c
      rather than losing priority to `g.activePlayer`.
    - Align CR 601.2b/f/h teamwork cost payment, paid resolution-cast prompts,
-     and stack Layer-1 cost queries: announce teamwork intent at CR 601.2b while
-     deferring the batched `withProposalAction .costAction` creature taps in
-     `Decisions.payTeamworkCreatures` (`Decisions.lean`) to CR 601.2h (after CR
-     601.2c target selection and CR 601.2f `Casting.lockInTargetCostReduction`);
+     and stack Layer-1 cost queries: announce teamwork at CR 601.2b
+     (`Pending.chooseTeamworkCreatures` in `Decisions.payTeamworkCreatures`,
+     `Decisions.lean`, CR 702.194a) while deferring its `becomeTapped`
+     (`cause := .costPayment .teamwork`) creature taps—wrapped in
+     `withProposalAction .costAction` / `withBatch`—from `payTeamworkCreatures`
+     to CR 601.2h (after CR 601.2c target selection and CR 601.2f
+     `Casting.lockInTargetCostReduction`);
      drop the residual pre-proposal `manaPool.canPay` gates on paid
      `.mayCastCards` and `.mayCastFromGraveyard` in `FraChoices.lean` so CR
      601.2g `Pending.activateManaAbilities`, Convoke, Improvise, `{X}`, and
@@ -3934,18 +3941,21 @@ leave-game cleanup), `Casting.lean`, `Activation.lean`, `Combat.lean`, `Damage.l
      `Casting.lockInTargetCostReduction`
      ([`Casting.lean`](Mtg/Engine/Game/Casting.lean)), plus `g.isEquipment` /
      `g.isArtifact` in [`Agent.lean`](Mtg/Engine/Game/Agent.lean).
-   - Complete CR 603.3b trigger ordering in `Entering.receivePriority`
-     (`Entering.lean`), `Triggers.defaultTriggerSourceIds` /
-     `removeWaitingTrigger` (`Triggers.lean`), and `Decisions.stackTriggers`
-     (`Decisions.lean`, [`Player.lean`](Mtg/Engine/Game/Player.lean)): stop
-     filtering out delayed triggers (`mine.filter (·.delayedTrigger.isNone)`)
-     and compare `delayedTrigger`, `abilityEffect`, `reflexiveResolution`, and
-     `causeController` in `allIdentical` so 2+ delayed triggers, mixed regular +
-     delayed triggers, and distinct `queueFollowupReflexive` triggers prompt
-     `.chooseTriggerToStack`, and allow `stackTriggers` to address individual
-     waiting triggers even when multiple triggers share `wt.source.id` (e.g.,
-     two abilities on one permanent, one ability firing for multiple `causeId`s,
-     or two sourceless delayed/reflexive triggers).
+   - Complete CR 603.3b trigger ordering: in `Entering.receivePriority`
+     (`Entering.lean`), stop filtering out delayed triggers
+     (`mine.filter (·.delayedTrigger.isNone)`) and extend `allIdentical` beyond
+     `(source.id, ability, causeId)` to compare `delayedTrigger`,
+     `abilityEffect`, `reflexiveResolution`, and `causeController` so 2+ delayed
+     triggers, mixed regular + delayed triggers, and distinct
+     `queueFollowupReflexive` triggers prompt `.chooseTriggerToStack` (and add
+     `causeController` to `Triggers.removeWaitingTrigger` in `Triggers.lean`);
+     and update `Decisions.stackTriggers` (`Decisions.lean`),
+     `Triggers.defaultTriggerSourceIds` (`Triggers.lean`), and
+     `Action.stackTriggers` ([`Player.lean`](Mtg/Engine/Game/Player.lean)) so
+     multiple waiting triggers sharing `wt.source.id` (e.g., two abilities on
+     one permanent, one ability firing for multiple `causeId`s, or two
+     sourceless delayed/reflexive triggers) can be ordered individually rather
+     than collapsing via `findIdx? (·.source.id == id)`.
    - Capture `openBatchStack : Array StackEntry` alongside `openBatchObjects` /
      `openBatchPlayers` / `openBatchEffects` / `openBatchPending` (and inside
      `EngineChange.pauseBatch` and `ProposalCheckpoint` in `Event.lean` and
@@ -3956,9 +3966,9 @@ leave-game cleanup), `Casting.lean`, `Activation.lean`, `Combat.lean`, `Damage.l
      `EngineChange.saveProposalCheckpoint` / `restoreProposalCheckpoint` so
      `Game.replayEvents g.events == g` holds under nested checkpoints.
 3. Align simultaneous-batch LKI (`ZoneEvent.moved.before`) & CR 704.3 / 704.8
-   SBA passes, combat CR 506.4 / 510.1–510.4 / 122.1c / 702.7c / 702.19c,
-   cleanup CR 514.2 / 305.2b, Layer-7c / LKI / CR 400.7 single-hop tracking, and
-   multiplayer CR 800.4f/h/j (§2.3–§2.6, §2.8, §2.10, §3.1–§3.6):
+   SBA passes, combat CR 506.4 / 510.1–510.4 / 122.1c / 702.7c / 702.19b–f /
+   802.5, cleanup CR 514.2 / 305.2b, Layer-7c / LKI / CR 400.7 single-hop
+   tracking, and multiplayer CR 800.4f/j (§2.3–§2.6, §2.8, §2.10, §3.1–§3.6):
    - Preserve pre-batch LKI and pre-instruction characteristics across
      simultaneous moves, board wipes, multi-player sacrifices, and SBAs (CR
      603.10a / 608.2f / 608.2h / 704.3 / 704.8 / 101.4): compute
@@ -3982,30 +3992,34 @@ leave-game cleanup), `Casting.lean`, `Activation.lean`, `Combat.lean`, `Damage.l
      `Actions.returnOwnedCreaturesScheduleBirds` (`Actions.lean`) in `withBatch`
      with upfront `g.isCreature` filtering.
    - Align combat damage, shield counters, trample, and combat removal (CR
-     506.4 / 510.1–510.4 / 603.2c / 122.1c / 702.7c / 702.19c / 802.4b): track
-     which creatures had first strike or double strike as the first combat
+     506.4 / 510.1–510.4 / 603.2c / 122.1c / 702.7c / 702.19b / 702.19f / 802.5):
+     track which creatures had first strike or double strike as the first combat
      damage step began in `CombatAssignment.creaturesAssigningCombatDamage`
      ([`CombatAssignment.lean`](Mtg/Engine/Game/CombatAssignment.lean),
      alongside checking `g.isCreature o`) so a creature gaining first strike
      afterward still assigns damage in the second step per CR 510.4 / 702.7c;
-     treat simultaneous multi-source combat damage to a permanent in one combat
-     damage step as one damage event for CR 122.1c `.shield` counters
-     (`Combat.dealAssignedCombatDamage` / `Damage.markDamageOn` in
-     [`Combat.lean`](Mtg/Engine/Game/Combat.lean) and `Damage.lean`) and
-     deduplicate + sum `batchTotal` on `.creatureYouControlDealtDamage` in
-     `Core.matchTriggers` (`Core.lean`, CR 510.2 / 603.2c); require blocked
-     tramplers attacking a planeswalker that left the battlefield to assign all
-     combat damage among blockers rather than dropping excess into `toPlayer`
-     (`Combat.lean`, CR 702.19c); prompt each defending player with
-     multi-attacker blockers in APNAP order in
+     prevent simultaneous multi-source combat damage to a permanent in one
+     combat damage step while removing a single `.shield` counter per CR 122.1c /
+     510.2 (`Combat.dealAssignedCombatDamage` / `Damage.markDamageOn` in
+     [`Combat.lean`](Mtg/Engine/Game/Combat.lean) and `Damage.lean`, keeping
+     per-source prevention/damage accounting intact rather than removing a
+     shield counter per source step) and deduplicate + sum `batchTotal` on
+     `.creatureYouControlDealtDamage` in `Core.matchTriggers` (`Core.lean`, CR
+     510.2 / 603.2c); forbid blocked tramplers without trample-over-planeswalkers
+     from assigning combat damage to the defending player when attacking a
+     planeswalker—including after that planeswalker leaves combat—so all combat
+     damage is assigned among blockers rather than `defaultCombatAssignment` /
+     `checkCombatAssignment` putting excess into `toPlayer` and `.toPlayerOrPw`
+     dropping it (`Combat.lean`, CR 702.19b / 702.19f / 506.4c); prompt each
+     defending player who controls multi-attacker blockers in APNAP order in
      `Combat.finishAttackerCombatAssignment` (`Combat.lean`) rather than using
-     single `g.defendingPlayer` (CR 510.1d / 802.4b); and call
+     single `g.defendingPlayer` (CR 510.1 / 510.1d / 802.5); and call
      `Phasing.removeFromCombat` when a permanent's controller changes
      (`Leaving.changeControl`, `Leaving.endControlEffectById`, and Layer-2
      `.control` continuous-effect transitions, CR 506.4).
    - Fix cleanup step expiry & phased-out damage clearing (CR 305.2b / 514.2 /
-     514.3a / 702.26d) and multiplayer CR 800.4f/h/j leave-game transitions
-     (`Turns.lean`, `Leaving.lean`, `Combat.lean`): clear marked damage on
+     514.3a / 702.26d) and multiplayer CR 800.4f/j leave-game transitions
+     (`Turns.lean`, `Leaving.lean`): clear marked damage on
      phased-out permanents as well as `g.battlefield` in `Turns.clearEOT`
      (`Turns.lean`), and move `"until end of turn"` / `"this turn"` permission,
      player-rule, `.additionalLands` (changing
@@ -4017,13 +4031,11 @@ leave-game cleanup), `Casting.lean`, `Activation.lean`, `Combat.lean`, `Damage.l
      during `.cleanup`; skip `.declareAttackers` when `g.activePlayer` has
      already left the game (`Turns.lean`, CR 800.4j); emit
      `CombatEvent.remainedUnblocked` when the last player in `blockersQueue`
-     leaves during `.declareBlockers` (`Leaving.lean`, CR 509.1h / 800.4j);
-     auto-complete default combat-damage assignments for a player leaving during
-     `.assignCombatDamage` instead of handing assignment to `g.nextLiving p`
-     (`Leaving.lean`, CR 800.4h); and counter living owners' stack spells via
-     `counterStackSpell` (without calling `ceaseToExist` on already-exiled
-     non-token cards) when `p` leaves during `.payOrLetCounter` / `.payWard`
-     (`Leaving.lean`, CR 800.4a / 800.4f / 701.6a).
+     leaves during `.declareBlockers` (`Leaving.lean`, CR 509.1h / 800.4j); and
+     counter living owners' stack spells via `counterStackSpell` (without
+     calling `ceaseToExist` on already-exiled non-token cards) when `p` leaves
+     during `.payOrLetCounter` / `.payWard` (`Leaving.lean`, CR 800.4a /
+     800.4f / 701.6a).
    - Fix Layer-7c `chosenCreatureType` bleed, stack-copy LKI, `lastKnownBefore?`
      scoping, and CR 400.7 single-hop tracking: stop overriding fixed-subtype
      lords and team anthems with `src.status.chosenCreatureType` in
@@ -4048,17 +4060,19 @@ leave-game cleanup), `Casting.lean`, `Activation.lean`, `Combat.lean`, `Damage.l
      400.7).
 4. Eliminate `ObjectId ⟨0⟩` wildcard/sentinel collisions, replace
    `EngineChange.setStackEntryAt`, prune remaining dead scaffolding, and fix the
-   3 residual CR 20260925 citations (§0.1, §2.1, §2.3–§2.5, §2.7, §3.8):
+   residual `CR 614.13` citation (§0.1, §2.1, §2.3–§2.5, §2.7, §3.8):
    - Eliminate all `ObjectId ⟨0⟩` wildcard/fallback collisions with Seat 0's
      first allocated object (`Game.nextObjectId` starts at `0`) and centralize
      the sourceless sentinel (`Object.noSourceSentinelId` or `Option ObjectId`):
      replace `tid == ⟨0⟩` / `sid == ⟨0⟩` wildcards in
      `Core.replaceCountersPutChoice` and `Core.applyEtbReplacements`
      (`Core.lean`), `Movement.replaceZoneMove` (`Movement.lean`),
-     `Damage.applyDamageReplacements` (`Damage.lean`), and
-     `Tokens.tokenBatchProbe` (`Tokens.lean`); make `PlayerEvent.manaSpent`'s
-     `forObject` optional (`Option ObjectId := none` instead of
-     `forObject.getD ⟨0⟩` in `Casting.lean`, `Event.lean`, and `Core.lean`);
+     `Damage.replaceDamage` (`.addNoncombatDamage` / `.multiplyDamage` in
+     `Damage.lean`), and `Tokens.tokenBatchProbe` (`Tokens.lean`); make
+     `PlayerEvent.manaSpent`'s `forObject` optional (`Option ObjectId := none`
+     in `Event.lean`, dropping the `:= ⟨0⟩` default on `GameEvent.manaSpent` in
+     `Event.lean` and `forObject.getD ⟨0⟩` in `Casting.lean` while updating
+     `manaSpent` readers in `Event.lean` and `Core.lean`);
      drop the `(source.id == ⟨0⟩ && (g.findObject? source.id).isNone)` heuristic
      in `Triggers.lean` so real `ObjectId ⟨0⟩` preserves `sourceId` and
      `lastKnownBefore?` LKI after leaving its zone; eliminate
@@ -4081,22 +4095,22 @@ leave-game cleanup), `Casting.lean`, `Activation.lean`, `Combat.lean`, `Damage.l
      `EngineChange.amassControllerThisWay` / `Game.amassControllerThisWay`
      (`Event.lean`, `Core.lean`, `TriggeredAbilities.lean`,
      `Tests/Destroy.lean`), unread `Player.startingLife` (`Player.lean`,
-     `Start.lean`) and `EtbReplacementResult.choice` (`Core.lean`), and
-     zero-production-caller helpers `GameEvent.withDestination` (`Event.lean`),
-     `GameEvent.spentMana` (`Event.lean`), `Game.createOneKindToken`
-     (`FraHelpers.lean`), `Game.copyBattlefieldPermanent` (`Choices.lean`),
-     `Game.auraCanEnchant` (`Core.lean`), `GameObject.printedOrUntilEot`
-     (`Object.lean`), and the 6 dead pre-Phase-8 layer shim helpers
+     `Start.lean`), and zero-production-caller helpers
+     `GameEvent.withDestination` (`Event.lean`), `GameEvent.spentMana`
+     (`Event.lean`), `Game.createOneKindToken` (`FraHelpers.lean`),
+     `Game.copyBattlefieldPermanent` (`Choices.lean`), `Game.auraCanEnchant`
+     (`Core.lean`), and the 6 dead pre-Phase-8 layer shim helpers
      (`Game.grantedStaticAbilities`, `Game.grantedTriggeredAbilities`,
      `Game.grantedTriggersUntilEot`, `Game.untilEotKeywords`,
      `Game.printedOrUntilEot`, and `Game.hasPrintedOrEot` in `Core.lean`,
      migrating test assertions onto `g.currentKeywords` / `g.triggeredAbilities`).
-   - Fix the 3 remaining inaccurate CR citations in `Mtg/Engine/Game/` against
-     the 25 September 2026 Comprehensive Rules: `CR 701.5` → `CR 701.6` on
-     `Game.counterStackSpell` (`ResolutionEffects.lean`), `CR 511.2` →
-     `CR 500.5a` on `EffectDuration.untilEndOfCombat` (`Event.lean`), and
-     `CR 614.13` → `CR 614.1c / 614.12 / 122.6` in the module header of
-     `Entering.lean`.
+   - Fix the remaining inaccurate CR citation in `Mtg/Engine/Game/` against the
+     25 September 2026 Comprehensive Rules: `CR 614.13` → `CR 614.1c / 122.6`
+     on "counters added as a permanent enters" in the module header of
+     `Entering.lean` (while `CR 701.5` Cast on `counterStackSpell`'s free-cast
+     doc in `ResolutionEffects.lean` and `CR 511.2`—optionally paired with
+     `CR 500.5a`—on `EffectDuration.untilEndOfCombat` in `Event.lean` already
+     match the 25 September 2026 rules).
 
 Tests: `Events.lean` (isolation tests for pause-safe `.sequence` / modal
 resolution & multi-object `chooseReplacement` loops, CR 117.3c standalone
@@ -4105,8 +4119,8 @@ CR 601.2b/f/h teamwork tap ordering & paid `.mayCastCards` /
 `.mayCastFromGraveyard`, CR 603.3b delayed & shared-source trigger ordering,
 `openBatchStack` Ward `newlyTargeted` & nested `ProposalCheckpoint` replay,
 simultaneous-batch `moved.before` LKI & multi-pass SBAs, CR 510.4 / 122.1c /
-702.19c / 506.4 combat alignment, CR 514.2 cleanup expiry & phased-out damage
-clearing, CR 800.4f/h/j leave-game combat/ward transitions, Layer-7c
+702.19b–f / 802.5 / 506.4 combat alignment, CR 514.2 cleanup expiry & phased-out
+damage clearing, CR 800.4f/j leave-game combat/ward transitions, Layer-7c
 `chosenCreatureType` scoping & `lastKnownBefore?` single-life LKI, `ObjectId ⟨0⟩`
 parity, and `EngineChange.stackEntry` replay), `Casting.lean`, `Activation.lean`,
 `Combat.lean`, `Damage.lean`, `Destroy.lean`, `Leaving.lean`, `Turns.lean`,
