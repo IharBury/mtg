@@ -3887,19 +3887,21 @@ leave-game cleanup), `Casting.lean`, `Activation.lean`, `Combat.lean`, `Damage.l
        actually destroyed per CR 701.8b), `FrcResolve` (`drawPutOnTop`, `.occult`,
        `.jacePlus`, `.goblin`, and `.currencyLoot` in `FrcResolve.lean`), and
        `ModeledTriggers.lean` (post-create / post-draw / post-discard steps).
-     - Chain an open `Pending.chooseReplacement` before calling
-       `Decisions.acceptMayThen` (which sets `.pending .none` and
-       `mayThenDrop := 0`) or `finishFraChoice` in `FraChoices`
+     - Chain an open `Pending.chooseReplacement` on the `mayThenDrop > 0`
+       paths before calling `Decisions.acceptMayThen` (which sets
+       `.pending .none` and `mayThenDrop := 0`) in `FraChoices`
        (`.maySacrificeAnotherCreatureForPower`,
        `.maySacrificeAnotherForDrawTreasure`, `.maySacrificeThese`,
-       `.mayDiscardThese`, and `.mayPayPickThen` in `FraChoices.lean`), dispatch
-       `g.acceptMayThen` in `Decisions.chooseReplacement` (`Decisions.lean`)
-       when a resumed `.finishSacArtifactOrDiscardDraw`
-       (`SacrificeDiscard.lean`) sets `g.mayThenResume` with
-       `g.pending == .none`, and chain `.receivePriority g.activePlayer` when
-       terminal decision handlers (`Decisions.acceptMay`, `chooseSpellOr`,
-       `choosePermanents` `.tapHumans`, `decline` `.mayResolve` / `.tapHumans`,
-       `finishAfterRandom`, `TriggeredAbilities.chooseTriggerOr`, and
+       `.mayDiscardThese`, and `.mayPayPickThen` in `FraChoices.lean`;
+       `finishFraChoice` on the `mayThenDrop == 0` paths already chains
+       `.finishFraChoice`), dispatch `g.acceptMayThen` in
+       `Decisions.chooseReplacement` (`Decisions.lean`) when a resumed
+       `.finishSacArtifactOrDiscardDraw` (`SacrificeDiscard.lean`) sets
+       `g.mayThenResume` with `g.pending == .none`, and chain
+       `.receivePriority g.activePlayer` when terminal decision handlers
+       (`Decisions.acceptMay`, `chooseSpellOr`, `choosePermanents` `.tapHumans`,
+       `decline` `.mayResolve` / `.tapHumans`, `finishAfterRandom`,
+       `TriggeredAbilities.chooseTriggerOr`, and
        `EffectResolution.flushUnlessPays`) open `Pending.chooseReplacement` at
        the end of a resolution (CR 117.3b / 704.3).
 2. Complete CR 117.3c priority preservation & standalone mana-ability SBAs, CR
@@ -3932,14 +3934,17 @@ leave-game cleanup), `Casting.lean`, `Activation.lean`, `Combat.lean`, `Damage.l
      `.mayCastCards` and `.mayCastFromGraveyard` in `FraChoices.lean` so CR
      601.2g `Pending.activateManaAbilities`, Convoke, Improvise, `{X}`, and
      target cost reductions work consistently with
-     `Decisions.castAsPartOfResolution`; chain `.finishFraChoice` in
-     `Decisions.castExiledAsAbilityResolves` (`Decisions.lean`) when terminal
-     `becomeCast` pauses on `Pending.chooseReplacement`; and read
+     `Decisions.castAsPartOfResolution`; include `!grantPriority` in
+     `needsDeferredPostCast` on Path of Ancestry's `beginScry` pause inside
+     `Casting.becomeCast` ([`Casting.lean`](Mtg/Engine/Game/Casting.lean)) so a
+     mid-resolution cast (`grantPriority := false`) without an outer
+     `pendingReplacement` or `postCastCleanup` / queue / `triggerSequenceRest`
+     still chains `.finishPostCast` (which resumes via `finishFraChoice` and
+     `promptTriggerTargetsIfNeeded`); and read
      `g.baseCard spell` rather than `spell.printed` in
      `CastExtras.applyKickerToProposed`
      ([`CastExtras.lean`](Mtg/Engine/Game/CastExtras.lean)) and
-     `Casting.lockInTargetCostReduction`
-     ([`Casting.lean`](Mtg/Engine/Game/Casting.lean)), plus `g.isEquipment` /
+     `Casting.lockInTargetCostReduction` (`Casting.lean`), plus `g.isEquipment` /
      `g.isArtifact` in [`Agent.lean`](Mtg/Engine/Game/Agent.lean).
    - Complete CR 603.3b trigger ordering: in `Entering.receivePriority`
      (`Entering.lean`), stop filtering out delayed triggers
@@ -4049,15 +4054,12 @@ leave-game cleanup), `Casting.lean`, `Activation.lean`, `Combat.lean`, `Damage.l
      `after.id == some id` (CR 113.7a / 400.7 / 608.2h); thread explicit
      pre-move `ObjectId`s instead of falling back to `g.objects.back?` in
      `ResolutionEffects.commitEnteringAttackItems` (`ResolutionEffects.lean`)
-     and `Decisions.resumePendingReplacement` (`Decisions.lean`); check
-     `o.status.token` rather than `o.printed.isToken` in `TriggeredAbilities`
-     `.chosenToken` (`TriggeredAbilities.lean`) and `StateBasedActions`
-     (`StateBasedActions.lean`), and align `GameEvent.matchesTrigger` `.dying`
-     (`Event.lean`) with `Core.matchTriggers` and CR 700.4 for noncreature
-     battlefield-to-graveyard dies triggers; and replace multi-hop
-     `g.followMoved` with `g.followMovedToZone?` on discard/mill tracking in
-     `Decisions.lean`, `FraChoices.lean`, and `ResolutionHelpers.lean` (CR
-     400.7).
+     and `Decisions.resumePendingReplacement` (`Decisions.lean`); align
+     `GameEvent.matchesTrigger` `.dying` (`Event.lean`) with `Core.matchTriggers`
+     and CR 700.4 for noncreature battlefield-to-graveyard dies triggers; and
+     replace multi-hop `g.followMoved` with `g.followMovedToZone?` on
+     discard/mill tracking in `Decisions.lean`, `FraChoices.lean`, and
+     `ResolutionHelpers.lean` (CR 400.7).
 4. Eliminate `ObjectId ⟨0⟩` wildcard/sentinel collisions, replace
    `EngineChange.setStackEntryAt`, prune remaining dead scaffolding, and fix the
    residual `CR 614.13` citation (§0.1, §2.1, §2.3–§2.5, §2.7, §3.8):
@@ -4071,8 +4073,11 @@ leave-game cleanup), `Casting.lean`, `Activation.lean`, `Combat.lean`, `Damage.l
      `Damage.lean`), and `Tokens.tokenBatchProbe` (`Tokens.lean`); make
      `PlayerEvent.manaSpent`'s `forObject` optional (`Option ObjectId := none`
      in `Event.lean`, dropping the `:= ⟨0⟩` default on `GameEvent.manaSpent` in
-     `Event.lean` and `forObject.getD ⟨0⟩` in `Casting.lean` while updating
-     `manaSpent` readers in `Event.lean` and `Core.lean`);
+     `Event.lean`, removing `GameEvent.spentMana` with its `forObject.getD ⟨0⟩`
+     write in `Event.lean` per the next bullet, and dropping `forObject.getD ⟨0⟩`
+     in `Casting.payCost` in `Casting.lean` while updating
+     `Core.ancestryManaSpentOn` in `Core.lean` and `GameEvent.manaSpentOn` /
+     `treasureManaSpentOn` / `legendaryManaSpentOn` in `Event.lean`);
      drop the `(source.id == ⟨0⟩ && (g.findObject? source.id).isNone)` heuristic
      in `Triggers.lean` so real `ObjectId ⟨0⟩` preserves `sourceId` and
      `lastKnownBefore?` LKI after leaving its zone; eliminate
