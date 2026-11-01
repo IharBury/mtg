@@ -71,16 +71,16 @@ def continueNontokenSacrifices (g : Game) (players : Array PlayerId) (chosen : A
     (g.change (.pending (.fraChoice p (.sacrificeNontokenEach rest.toArray chosen)))).logMsg
       s!"{(g.player p).name} sacrifices a nontoken creature"
   | [] =>
+    let pairs := chosen.filterMap (fun id =>
+      match g.findObject? id with
+      | some o =>
+        if o.isOnBattlefield then
+          some ((g.controllerOf o).getD o.owner, id)
+        else none
+      | none => none)
     let preBf := g.battlefield
     g.withBatch none fun g =>
-      chosen.foldl (fun g id =>
-        match g.findObject? id with
-        | some o =>
-          if o.isOnBattlefield then
-            g.sacrificeToGraveyard o s!"{(g.player ((g.controllerOf o).getD o.owner)).name} sacrifices {g.name o}"
-              (preBattlefield := some preBf)
-          else g
-        | none => g) g
+      g.sacrificePermanentsLoop pairs (preBattlefield := some preBf)
 
 /-- Let `controller` cast the exiled nonland with any type of mana until end of turn. -/
 def grantWidowCast (g : Game) (controller : PlayerId) (exiled : Option ObjectId)
@@ -121,6 +121,9 @@ def finishArtifactCopyTokens (g : Game) : Game :=
 has already left the battlefield; CR 608.2h / 707.12 / MSH 547 / 656), then make
 a noncreature token a 2/2 Robot Villain after it enters (MSH 574). -/
 def copyEnteredArtifact (g : Game) (controller : PlayerId) (artifactId : ObjectId) : Game :=
+  if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement (.finishPostStep 3 controller (cardId := some artifactId))
+  else
   let copiableRes : Except String CardDef :=
     match g.findObject? artifactId with
     | some src =>
@@ -282,7 +285,7 @@ def drawUpToHandSize (g : Game) (controller : PlayerId) (n : Nat) : Game :=
 /-- Ask the controller to put a +1/+1 counter on the source, or to remove a
 counter from a creature they control and draw. -/
 def offerHydeChoice (g : Game) (controller : PlayerId) (sourceId : Option ObjectId) : Game :=
-  g.change (.pending (.fraChoice controller (.hydeMode (sourceId.getD ⟨0⟩))))
+  g.change (.pending (.fraChoice controller (.hydeMode (sourceId.getD noSourceSentinelId))))
     |>.logMsg s!"{(g.player controller).name} chooses one — 0 put a +1/+1 counter, 1 remove a counter and draw"
 
 /-- Something becomes a copy, as `of` says. The source copies an announced
@@ -326,7 +329,7 @@ def applyBecomeCopy (g : Game) (controller : PlayerId) (sourceId : Option Object
           let ok := tgt.isOnBattlefield && !g.isAura tgt &&
             (g.isArtifact tgt || g.isEnchantment tgt || g.isLand tgt)
           if ok then
-            g.becomeCopyOf src tgt (untilNextTurn := true)
+            g.becomeCopyOf src tgt (untilNextTurn := true) (nextTurnOf := some controller)
               (exceptName := some "Absorbing Man")
               (addSupertypes := #[.legendary]) (addTypes := #[.creature])
               (addSubtypes := #[.human, .villain])
@@ -344,7 +347,7 @@ def applyBecomeCopy (g : Game) (controller : PlayerId) (sourceId : Option Object
           let onBf := tgt.isOnBattlefield && g.isCreature tgt
           let inGy := tgt.zone == .graveyard tgt.owner && g.isCreature tgt
           if onBf || inGy then
-            g.becomeCopyOf src tgt (untilNextTurn := true)
+            g.becomeCopyOf src tgt (untilNextTurn := true) (nextTurnOf := some controller)
               (exceptName := some "Taskmaster, Mercenary Mimic")
               (addSupertypes := #[.legendary]) (addTypes := #[.creature])
               (addSubtypes := #[.human, .mercenary, .villain])
@@ -374,8 +377,11 @@ def flickerChosenNonland (g : Game) (controller : PlayerId) (sourceId : Option O
         let (g, cause) := g.allocDelayedCause (some controller) sourceId
         let (g, exId) := g.move o.id .exile none (cause := some cause)
         let (g, retId) := g.move exId .battlefield (some owner) (cause := some cause)
-        g.afterPermanentEnters (g.object! retId)
-          |>.logMsg s!"{name} is exiled, then returned"
+        if let .chooseReplacement .. := g.pending then
+          g.chainPendingReplacement (.afterLastPermanentEnters (some exId))
+        else
+          g.afterPermanentEnters (g.object! retId)
+            |>.logMsg s!"{name} is exiled, then returned"
       else g.logMsg "The target is no longer legal"
     | none => g.logMsg "The target is no longer legal"
   | _ => g
@@ -397,8 +403,11 @@ def returnNontokenTapped (g : Game) (targets : Array Target) : Game :=
         let (g, newId) := g.move o.id .exile none (cause := some cause)
         let (g, retId) := g.move newId .battlefield (some owner)
           (tapped := true) (cause := some cause)
-        g.afterPermanentEnters (g.object! retId)
-          |>.logMsg s!"{name} is exiled, then returned tapped"
+        if let .chooseReplacement .. := g.pending then
+          g.chainPendingReplacement (.afterLastPermanentEnters (some newId))
+        else
+          g.afterPermanentEnters (g.object! retId)
+            |>.logMsg s!"{name} is exiled, then returned tapped"
       else g.logMsg "The target is no longer legal"
     | none => g.logMsg "The target is no longer legal"
   | _ => g
@@ -721,7 +730,11 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
   | (.casting .ironFistTap) =>
     g.grantIronFistTap sourceId
   | (.casting .drawPowerEqualHand) =>
-    (g.draw controller 1).grantHandSizePower sourceId
+    let g := g.draw controller 1
+    if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement (.finishPostStep 4 controller (sourceId := sourceId))
+    else
+      g.grantHandSizePower sourceId
   | (.step .hydeChoose) =>
     match lastKnownPower with
     | none => g.offerHydeChoice controller sourceId
@@ -775,13 +788,19 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
     let g :=
       g.withSourceOnBattlefield sourceId (fun g o => g.addPlusOnePlusOneTo o 1)
         "The source is no longer in play"
-    g.beginScry controller 1
+    if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement (.finishPostStep 5 controller)
+    else
+      g.beginScry controller 1
   | (.casting .targetsGainFlying) =>
     g.grantKeywordsToSpellCreatureTargets Keyword.flying
   | (.casting .copyIfArtifactOrLand) =>
     let g := g.withSourceOnBattlefield sourceId (fun g o => g.addPlusOnePlusOneTo o 2)
       "The source is no longer in play"
-    g.copyCastTriggerSpell controller
+    if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement (.finishPostStep 6 controller)
+    else
+      g.copyCastTriggerSpell controller
   | (.casting .tapCreatureOrLand) =>
     let kind := EffectTargetKind.filtered {
       noun := "target creature or land",
@@ -815,8 +834,11 @@ def applyLeftoverTextEffect (g : Game) (controller : PlayerId) (text : String)
       if o.zone == .graveyard o.owner then
         let (g, newId) := g.putOntoBattlefield o.id controller
           (extraEntersWith := #[(.finality, 1)])
-        let g := g.logMsg s!"{o.name} returns to the battlefield"
-        g.afterPermanentEnters (g.object! newId)
+        if let .chooseReplacement .. := g.pending then
+          g.chainPendingReplacement (.afterLastPermanentEnters (some o.id))
+        else
+          let g := g.logMsg s!"{o.name} returns to the battlefield"
+          g.afterPermanentEnters (g.object! newId)
       else g
     | none => g
   else if text.contains "connive" then
@@ -841,7 +863,10 @@ def applyLeftoverTextEffect (g : Game) (controller : PlayerId) (text : String)
     g.createKindTokens controller .villain21menace 2
   else if text.contains "2/1 black Villain" && text.contains "+1/+0" then
     let g := g.createKindTokens controller .villain21menace 1
-    g.pumpControlledCreatures controller 1 0
+    if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement (.finishPostStep 7 controller)
+    else
+      g.pumpControlledCreatures controller 1 0
   else if text.contains "Treasure token" then
     g.createKindTokens controller .treasure 1
   else if text.contains "0/4 colorless Wall" then
@@ -908,12 +933,18 @@ def applyAvengersDisassembled (g : Game) (_controller : PlayerId)
         g.dealDamageToEachCreatureMatching 3
       else g
     if choseLand then
-      match landId.bind g.findObject? with
-      | some o =>
-        let owner := o.owner
-        let g := g.destroyPermanent o
-        g.offerMaySearchBasics owner
-      | none => g
+      if let .chooseReplacement .. := g.pending then
+        g.chainPendingReplacement (.finishPostStep 8 _controller (cardId := landId))
+      else
+        match landId.bind g.findObject? with
+        | some o =>
+          let owner := o.owner
+          let g := g.destroyPermanent o
+          if let .chooseReplacement .. := g.pending then
+            g.chainPendingReplacement (.finishPostStep 9 owner)
+          else
+            g.offerMaySearchBasics owner
+        | none => g
     else g
 
 /-- Whether the resolving stack object paid its teamwork cost. -/
@@ -1005,9 +1036,12 @@ def exileThenReturn (g : Game) (o : GameObject) (logText : String)
     else g
   let (g, retId) := g.move newId .battlefield (some owner)
     (tapped := land && tapped) (cause := cause)
-  let g := g.logMsg s!"{name} {logText}"
-  if land then g.afterLandEnters (g.object! retId)
-  else g.afterPermanentEnters (g.object! retId)
+  if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement (.afterLastPermanentEnters (some newId) land)
+  else
+    let g := g.logMsg s!"{name} {logText}"
+    if land then g.afterLandEnters (g.object! retId)
+    else g.afterPermanentEnters (g.object! retId)
 
 end Game
 end Mtg.Engine

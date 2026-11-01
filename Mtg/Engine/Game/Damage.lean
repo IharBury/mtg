@@ -58,7 +58,7 @@ def damageSourceObjectFromLki (eo : EventObject) : GameObject :=
       toxic := eo.toxic
       staticAbilities := eo.staticAbilities
       isToken := eo.token }
-  { id := eo.id.getD ⟨1000000000⟩
+  { id := eo.id.getD noSourceSentinelId
     printed := printed
     owner := eo.owner
     controller := eo.controller
@@ -146,6 +146,22 @@ def resolvingDamageSourceEvent? (g : Game) : Option EventObject :=
   | some s => some (g.snapshot s)
   | none => g.resolvingDepartedSourceId?.bind g.damageSourceEventById?
 
+/-- Reconstruct the pre-batch board state when `o.id` already existed on the
+battlefield at the start of an enclosing simultaneous batch (CR 608.2c / 701.8b). -/
+private def preBatchDestroyCheck (g : Game) (o : GameObject) : Game × GameObject :=
+  if g.currentBatch.isSome && !g.openBatchObjects.isEmpty then
+    let preG : Game :=
+      { g with
+        objects := g.openBatchObjects
+        players := g.openBatchPlayers
+        activeEffects := g.openBatchEffects
+        stack := g.openBatchStack }
+    match preG.findObject? o.id with
+    | some preO =>
+      if preO.isOnBattlefield then (preG, preO) else (g, o)
+    | none => (g, o)
+  else (g, o)
+
 /-- Destroy a permanent (CR 701.8). Indestructible permanents aren't destroyed
 (CR 702.12b). A shield counter replaces destruction with removing a
 shield counter via the CR 616.1 replacement loop (CR 122.1c / 614.6). If it
@@ -154,6 +170,13 @@ of the graveyard (CR 614.1). -/
 def destroyPermanent (g : Game) (o : GameObject)
     (cause : Option EventCause := none)
     (preBattlefield : Option (Array GameObject) := none) : Game :=
+  if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement (.destroyPermanent o.id cause preBattlefield)
+  else
+  let (checkG, checkO) := g.preBatchDestroyCheck o
+  if checkG.hasIndestructible checkO then
+    g.logMsg s!"{g.name o} is indestructible and isn't destroyed"
+  else
   let ctrl := g.controllerOf o
   let affected := ctrl.getD o.owner
   let mutSpecs : Array ReplacementSpec := Id.run do
@@ -188,11 +211,8 @@ def destroyPermanent (g : Game) (o : GameObject)
     let g := g.record (GameEvent.counters g.turnNumber ctrl (g.snapshot o) .shield 1 true (cause := finalCause))
     g.logMsg s!"A shield counter is removed from {oName} instead of destroying it"
   | .none =>
-    if g.hasIndestructible o then
-      g.logMsg s!"{g.name o} is indestructible and isn't destroyed"
-    else
-      g.moveToOwnerGraveyard o s!"{g.name o} is destroyed" (verb := some .destroy)
-        (preBattlefield := preBattlefield) (cause := cause)
+    g.moveToOwnerGraveyard o s!"{g.name o} is destroyed" (verb := some .destroy)
+      (preBattlefield := preBattlefield) (cause := cause)
 
 /-- True when all damage that would be dealt to `o` is prevented. -/
 def preventsAllDamageTo (g : Game) (o : GameObject) : Bool :=
@@ -219,6 +239,19 @@ structure DamageReplacementResult where
   choice? : Option (PlayerId × Array ReplacementId) := none
 deriving Repr, Inhabited, BEq
 
+/-- True when a `.shield` counter was already removed from `oid` earlier in the
+currently open combat-damage batch (CR 510.2 / 122.1c). -/
+def shieldRemovedInCurrentCombatBatch (g : Game) (oid : ObjectId) : Bool :=
+  match g.currentBatch with
+  | some (bid, _) =>
+    g.events.any (fun e =>
+      e.batch == some bid &&
+        match e.change with
+        | .rules (.permanent (.counters (.object eo) .shield (.removed _) _)) =>
+          eo.id == some oid
+        | _ => false)
+  | none => false
+
 /-- Run the CR 616.1 replacement and prevention loop on `n` damage from `src?`
 to `recipientPerm?` or `recipientPlayer?` (CR 614.1a / 615.1 / 616.1; rulings
 MSH 177–179, 237, 305). -/
@@ -238,7 +271,7 @@ def replaceDamage (g : Game) (n : Int)
   let affected : PlayerId :=
     recipientCtrl?.orElse (fun _ => recipientPerm?.map (·.owner))
       |>.orElse (fun _ => src?.bind g.controllerOf)
-      |>.getD ⟨0⟩
+      |>.getD g.activePlayer
   let srcEvent : EventObject :=
     srcEvent?.orElse (fun _ => src?.map g.snapshotDamageSource)
       |>.orElse (fun _ => g.resolvingDamageSourceEvent?)
@@ -253,6 +286,11 @@ def replaceDamage (g : Game) (n : Int)
     return { amount := 0, prevented := true, applied := applied, cause := cause }
   -- Unpreventable damage to a permanent with a shield counter still removes a
   -- shield counter via its replacement effect without preventing the damage (CR 122.1c).
+  -- In a simultaneous combat-damage batch (CR 510.2 / 122.1c), a single shield
+  -- counter removed earlier in the batch prevents all remaining preventable
+  -- combat damage to that permanent without removing a second shield counter.
+  let alreadyRemovedShield : Bool :=
+    combat && recipientPerm?.any (fun o => g.shieldRemovedInCurrentCombatBatch o.id)
   let mut shieldRemoved := false
   let mut shieldRemoveCause : Option EventCause := none
   let mut curAmount := n
@@ -264,7 +302,7 @@ def replaceDamage (g : Game) (n : Int)
   let mut preventedAmt : Nat := 0
   if unpreventable then
     if let some o := recipientPerm? then
-      if o.status.shield > 0 then
+      if o.status.shield > 0 && !alreadyRemovedShield then
         let sid : ReplacementId := { kind := .shieldCounterPreventDamage, object := some o.id }
         curApplied := curApplied.push sid
         shieldRemoved := true
@@ -307,9 +345,11 @@ def replaceDamage (g : Game) (n : Int)
               affectedPlayer := affected
               kind := .preventAllDamageToPermanent o.id
             })
-          if o.status.shield > 0 && !shieldRemoved then
+          let shieldId : ReplacementId := { kind := .shieldCounterPreventDamage, object := some o.id }
+          if (o.status.shield > 0 || alreadyRemovedShield) && !shieldRemoved &&
+              !curApplied.contains shieldId then
             items := items.push (.prevention {
-              id := { kind := .shieldCounterPreventDamage, object := some o.id }
+              id := shieldId
               source := some o.id
               controller := g.controllerOf o
               affectedPlayer := affected
@@ -338,7 +378,8 @@ def replaceDamage (g : Game) (n : Int)
               | .protectionFromEverythingPlayer pid =>
                 recipientPlayer? == some pid
               | .shieldCounterPreventDamage tid =>
-                recipientPerm?.any (fun o => o.id == tid && o.status.shield > 0) && !shieldRemoved
+                recipientPerm?.any (fun o => o.id == tid && (o.status.shield > 0 || alreadyRemovedShield)) &&
+                  !shieldRemoved && !curApplied.contains spec.id
             if matchesTarget then
               items := items.push (.prevention { spec with affectedPlayer := affected })
           | _ => pure ()
@@ -358,7 +399,7 @@ def replaceDamage (g : Game) (n : Int)
                       source := some o.id
                       controller := some p
                       affectedPlayer := affected
-                      kind := .addNoncombatDamage src.id bonus
+                      kind := .addNoncombatDamage (some src.id) bonus
                     })
           | _, _ => pure ()
         -- Mjölnir (`.equippedDealsDoubleDamage`)
@@ -370,7 +411,7 @@ def replaceDamage (g : Game) (n : Int)
               source := some eq.id
               controller := g.controllerOf eq
               affectedPlayer := affected
-              kind := .multiplyDamage src.id 2
+              kind := .multiplyDamage (some src.id) 2
             })
         -- Tomik, Izzet Sparkmage (`.fra .noncombatDamagePlusOne`)
         if !combat then
@@ -384,7 +425,7 @@ def replaceDamage (g : Game) (n : Int)
                     source := some o.id
                     controller := some p
                     affectedPlayer := affected
-                    kind := .addNoncombatDamage src.id 1
+                    kind := .addNoncombatDamage (some src.id) 1
                   })
           | _, _ => pure ()
       for (_, eff) in g.activeEffects do
@@ -392,10 +433,10 @@ def replaceDamage (g : Game) (n : Int)
         | .replacement spec _ =>
           match spec.kind with
           | .addNoncombatDamage sid bonus =>
-            if !combat && (src?.any (·.id == sid) || sid == ⟨0⟩) && bonus > 0 then
+            if !combat && (sid.isNone || src?.any (fun s => some s.id == sid)) && bonus > 0 then
               items := items.push (.replacement { spec with affectedPlayer := affected })
           | .multiplyDamage sid _ =>
-            if src?.any (·.id == sid) || sid == ⟨0⟩ then
+            if sid.isNone || src?.any (fun s => some s.id == sid) then
               items := items.push (.replacement { spec with affectedPlayer := affected })
           | _ => pure ()
         | _ => pure ()
@@ -419,8 +460,9 @@ def replaceDamage (g : Game) (n : Int)
           prevented := true
           match pspec.kind with
           | .shieldCounterPreventDamage _ =>
-            shieldRemoved := true
-            shieldRemoveCause := curCause
+            if !alreadyRemovedShield then
+              shieldRemoved := true
+              shieldRemoveCause := curCause
           | _ => pure ()
         | some (.replacement rspec) =>
           curApplied := curApplied.push chosen.id
@@ -453,6 +495,10 @@ def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
   let srcSnap :=
     source.orElse (fun _ => sourceObj.map g.snapshotDamageSource)
       |>.orElse (fun _ => g.resolvingDamageSourceEvent?)
+  if replaced.isNone && (match g.pending with | .chooseReplacement .. => true | _ => false) then
+    g.chainPendingReplacement
+      (.markDamageOn o.id n.toNat msg deathtouch srcSnap combat unpreventable cause)
+  else
   let src? :=
     sourceObj.orElse (fun _ => g.damageSourceObjFromSnapshot? srcSnap)
       |>.orElse (fun _ => g.resolvingMovedDamageSource?)
@@ -544,6 +590,9 @@ for any active `.modifyLifeGain` replacement effects. Gaining 0 life does
 nothing (CR 119.9). -/
 def gainLife (g : Game) (p : PlayerId) (n : Nat)
     (cause : Option EventCause := none) : Game :=
+  if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement (.gainLife p n "" cause)
+  else
   let propCause := g.resolveOptionalCause cause (fallbackCtrl := some p)
   let proposed := GameEvent.life g.turnNumber p n true (cause := propCause)
   if n == 0 || !proposed.watches .wouldGainLife then g
@@ -612,6 +661,10 @@ def dealDamageToPermanent (g : Game) (o : GameObject) (n : Int)
     (source : Option EventObject := none)
     (cause : Option EventCause := none) : Game :=
   let srcEvent? := source.orElse (fun _ => g.resolvingDamageSourceEvent?)
+  if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement
+      (.dealDamageToPermanent o.id n.toNat srcEvent? false false cause)
+  else
   let srcObj? :=
     (g.damageSourceObjFromSnapshot? srcEvent?).orElse (fun _ => g.resolvingMovedDamageSource?)
   let rep :=
@@ -650,6 +703,14 @@ def dealDamageFrom (g : Game) (sourceName : String) (o : GameObject) (n : Int)
   let resolvedSrc? :=
     source.orElse (fun _ => g.damageSourceObjFromSnapshot? sourceSnap)
       |>.orElse (fun _ => g.resolvingMovedDamageSource?)
+  if let .chooseReplacement .. := g.pending then
+    let srcEvent :=
+      (sourceSnap.map g.refreshOrKeepDamageSnapshot)
+        |>.orElse (fun _ => resolvedSrc?.map g.snapshotDamageSource)
+        |>.getD default
+    g.chainPendingReplacement
+      (.dealDamageFrom sourceName srcEvent o.id n.toNat deathtouch false false cause)
+  else
   match resolvedSrc? with
   | some src =>
     let srcSnap :=
@@ -718,6 +779,11 @@ def dealDamageToPlayer (g : Game) (pid : PlayerId) (n : Int)
       |>.orElse (fun _ => source.map g.snapshotDamageSource)
       |>.orElse (fun _ => g.resolvingDamageSourceEvent?)
   let pl := g.player pid
+  if let .chooseReplacement .. := g.pending then
+    let msg := s!"{pl.name} is dealt {n} damage"
+    g.chainPendingReplacement
+      (.dealDamageToPlayer pid n.toNat msg srcSnap false (!preventable) cause)
+  else
   let rep :=
     g.replaceDamage n (src? := source) (srcEvent? := srcSnap) (recipientPlayer? := some pid)
       (unpreventable := !preventable) (cause := cause)
@@ -807,6 +873,9 @@ def dealDamageToPlayers (g : Game) (players : Array PlayerId) (n : Int)
     (sourceSnap.map g.refreshOrKeepDamageSnapshot)
       |>.orElse (fun _ => source.map g.snapshotDamageSource)
       |>.orElse (fun _ => g.resolvingDamageSourceEvent?)
+  if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement (.dealDamageToPlayers players n.toNat srcSnap cause)
+  else
   g.withBatch cause fun g => Id.run do
     let mut g := g
     let c := cause.orElse (fun _ => g.currentBatch.bind (·.2))
@@ -923,8 +992,16 @@ def drawThenLoseLife (g : Game) (p : PlayerId) (cards life : Nat) : Game :=
   let defaultCause :=
     g.currentResolvingContext?.map fun (src, ctrl) =>
       .oneShotEffect none src (ctrl.orElse (fun _ => some p))
-  g.withBatch defaultCause fun g =>
-  (g.draw p cards).loseLife p life
+  if let .chooseReplacement .. := g.pending then
+    let g := g.chainPendingReplacement (.draw p cards false defaultCause)
+    g.chainPendingReplacement (.loseLifeAfterDraw p life defaultCause)
+  else
+    g.withBatch defaultCause fun g =>
+      let g := g.draw p cards (cause := defaultCause)
+      if let .chooseReplacement .. := g.pending then
+        g.chainPendingReplacement (.loseLifeAfterDraw p life defaultCause)
+      else
+        g.loseLife p life (cause := defaultCause)
 
 /-- If a shuffle is waiting for a `--norandom` result, leave it. Otherwise
 run a stored draw or life-gain after-action. -/
@@ -957,6 +1034,28 @@ def dealDamageToTarget (g : Game) (t : Target) (n : Int)
       | none => g.dealDamageToPermanent o n (cause := cause)
     | none => g.logMsg "The target is no longer in play"
   | Target.card _ => g.logMsg "The target is no longer legal"
+
+/-- Total damage dealt to permanent `oid` recorded in `g.events[startIdx:]`
+(CR 120.2 / 120.10). -/
+def damageDealtToPermanentSince (g : Game) (oid : ObjectId) (startIdx : Nat) : Nat := Id.run do
+  let mut total : Nat := 0
+  for i in [startIdx : g.events.size] do
+    if let .rules (.damage (.dealt pkts)) := g.events[i]!.change then
+      for pkt in pkts do
+        match pkt.recipient with
+        | .permanent eo | .battle eo =>
+          if eo.id == some oid then total := total + pkt.amount
+        | .player _ => pure ()
+  return total
+
+/-- Lethal damage threshold of `o` before dealing damage (CR 120.4a; ruling 790):
+remaining toughness for a creature, loyalty for a planeswalker, and the greater
+of the two when it is both. -/
+def lethalDamageThreshold (g : Game) (o : GameObject) : Nat :=
+  let creatureLethal :=
+    if g.isCreature o then (g.toughness o - o.status.damage).toNat else 0
+  let loyalty := if g.isPlaneswalker o then o.status.loyaltyCounters else 0
+  Nat.max creatureLethal loyalty
 
 end Game
 end Mtg.Engine

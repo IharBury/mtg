@@ -235,21 +235,17 @@ def currentTargetSlot (g : Game) (obj : GameObject) : Nat :=
 /-- Skip the current optional “up to one” instance without announcing a
 target (CR 115.1c / 601.2c). -/
 def skipOptionalTargetSlot (g : Game) (objectId : ObjectId) : Game :=
-  match g.stack.findIdx? (fun e => e.objectId == objectId) with
-  | some i =>
-    let e := g.stack[i]!
-    g.change (.setStackEntryAt i { e with skippedOptionalSlots := e.skippedOptionalSlots + 1 })
-  | none => g
+  if g.stack.any (fun e => e.objectId == objectId) then
+    g.change (.stackEntry objectId .skipOptionalSlot)
+  else g
 
 /-- Record whether every instance of “target” on this stack object has been
 announced. A triggered ability with several instances stays unfinished until
 the last one is chosen or skipped (CR 603.3d). -/
 def markTargetsAnnounced (g : Game) (objectId : ObjectId) (done : Bool) : Game :=
-  match g.stack.findIdx? (fun e => e.objectId == objectId) with
-  | some i =>
-    let e := g.stack[i]!
-    g.change (.setStackEntryAt i { e with targetsAnnounced := done })
-  | none => g
+  if g.stack.any (fun e => e.objectId == objectId) then
+    g.change (.stackEntry objectId (.targetsAnnounced done))
+  else g
 
 /-- True when the current instance of “target” is optional (“up to one”). -/
 def canSkipCurrentOptionalSlot (g : Game) (obj : GameObject) : Bool :=

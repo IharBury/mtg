@@ -169,7 +169,12 @@ def applyPermanentAction (g : Game) (o : GameObject) (action : PermanentAction)
   | .burdenCounter => g.addBurdenCounter o
   | .tap => g.becomeTapped o
   | .untap =>
-    if g.hostCantBecomeUntapped o then
+    if let .chooseReplacement .. := g.pending then
+      let baseCause :=
+        g.resolveOptionalCause none (fallbackSrc := sourceId) (fallbackCtrl := g.controllerOf o)
+          (defaultCause := .turnBased .untapAll)
+      g.chainPendingReplacement (.untapPermanent o.id false true (some baseCause))
+    else if g.hostCantBecomeUntapped o then
       g.logMsg s!"{g.name o} can't become untapped"
     else if !o.status.tapped then
       g.logMsg s!"{g.name o} is already untapped"
@@ -237,17 +242,19 @@ def mill (g : Game) (p : PlayerId) (n : Nat) (cause : Option EventCause := none)
       else g.currentResolvingContext?.map fun (src, ctrl) =>
         .oneShotEffect none src (ctrl.orElse (fun _ => some p)))
   g.withBatch defaultCause fun g => Id.run do
+    let pl := g.player p
+    if n > 0 && pl.library.isEmpty then
+      return g.logMsg s!"{pl.name} mills nothing (empty library)"
+    let count := min n pl.library.size
+    let tops := (pl.library.extract (pl.library.size - count) pl.library.size).reverse
     let mut g := g
-    for _ in [0:n] do
-      let pl := g.player p
-      if pl.library.isEmpty then
-        return g.logMsg s!"{pl.name} mills nothing (empty library)"
-      else
-        let top := pl.library.back!
-        let name := (g.object! top).name
-        let (g', _) := g.move top (.graveyard p) none (verb := some .mill) (actor := some p)
-          (cause := cause)
-        g := g'.logMsg s!"{pl.name} mills {name}"
+    for top in tops do
+      let name := (g.object! top).name
+      let (g', _) := g.move top (.graveyard p) none (verb := some .mill) (actor := some p)
+        (cause := cause)
+      g := g'.logMsg s!"{(g'.player p).name} mills {name}"
+    if count < n then
+      g := g.logMsg s!"{(g.player p).name} mills nothing (empty library)"
     return g
 
 /-- Mill `n`, then put matching milled cards from the graveyard into hand.
@@ -266,7 +273,7 @@ def millThenPutFromGy (g : Game) (p : PlayerId) (n : Nat)
         (g, some c)
       | none => (g, none)
   let g := g.mill p n (cause := cause?)
-  let milled := tops.map (fun id => g.followMoved id)
+  let milled := tops.filterMap (fun id => (g.followMovedToZone? id (· == .graveyard p)).map (·.id))
   g.withBatch cause? fun g => Id.run do
     let mut g := g
     let mut left := maxPut.getD milled.size
@@ -281,6 +288,34 @@ def millThenPutFromGy (g : Game) (p : PlayerId) (n : Nat)
       | none => pure ()
     return g
 
+/-- Deal `n` damage to each still-matching creature in `remainingIds`, pausing
+and chaining `.dealDamageToEachCreatureMatching` if a CR 616.1 choice opens. -/
+def dealDamageToEachCreatureMatchingIds (g : Game) (remainingIds : Array ObjectId) (n : Nat)
+    (onlyNonSubtype : Option CardSubtype := none)
+    (exceptControllerTokens : Option PlayerId := none)
+    (source : Option EventObject := none)
+    (cause : Option EventCause := none) : Game := Id.run do
+  if let .chooseReplacement .. := g.pending then
+    return g.chainPendingReplacement
+      (.dealDamageToEachCreatureMatching remainingIds n onlyNonSubtype exceptControllerTokens source cause)
+  let mut g := g
+  for i in [0:remainingIds.size] do
+    let id := remainingIds[i]!
+    match g.findObject? id with
+    | some o =>
+      if o.isOnBattlefield && g.isCreature o &&
+          (onlyNonSubtype.all (fun s => !g.hasSubtype o s)) &&
+          (exceptControllerTokens.all (fun p => !(o.printed.isToken && g.controlledBy o p))) then
+        g := g.dealDamageToPermanent o n (source := source) (cause := cause)
+        if let .chooseReplacement .. := g.pending then
+          let rem := remainingIds.extract (i + 1) remainingIds.size
+          if !rem.isEmpty then
+            g := g.chainPendingReplacement
+              (.dealDamageToEachCreatureMatching rem n onlyNonSubtype exceptControllerTokens source cause)
+          return g
+    | none => pure ()
+  return g
+
 /-- Deal `n` damage to each creature matching `pred`. -/
 def dealDamageToEachCreatureMatching (g : Game) (n : Nat)
     (pred : GameObject → Bool := fun _ => true)
@@ -290,15 +325,89 @@ def dealDamageToEachCreatureMatching (g : Game) (n : Nat)
     cause.orElse (fun _ =>
       if n == 0 then none
       else g.currentResolvingContext?.map fun (src, ctrl) => .oneShotEffect none src ctrl)
+  let ids := (g.battlefield.filter (fun o => g.isCreature o && pred o)).map (·.id)
   g.withBatch defaultCause fun g =>
-  g.foldBattlefield (fun o => g.isCreature o && pred o)
-    (fun g o => g.dealDamageToPermanent o n (source := source) (cause := cause))
+    g.dealDamageToEachCreatureMatchingIds ids n (source := source) (cause := defaultCause)
 
 /-- Deal `n` damage to each creature that is not `subtype`. -/
 def dealDamageToEachNonDragon (g : Game) (n : Nat) (subtype : CardSubtype := .dragon)
     (source : Option EventObject := none)
     (cause : Option EventCause := none) : Game :=
-  g.dealDamageToEachCreatureMatching n (fun o => !g.hasSubtype o subtype) (source := source) (cause := cause)
+  let defaultCause :=
+    cause.orElse (fun _ =>
+      if n == 0 then none
+      else g.currentResolvingContext?.map fun (src, ctrl) => .oneShotEffect none src ctrl)
+  let ids := (g.battlefield.filter (fun o => g.isCreature o && !g.hasSubtype o subtype)).map (·.id)
+  g.withBatch defaultCause fun g =>
+    g.dealDamageToEachCreatureMatchingIds ids n (onlyNonSubtype := some subtype)
+      (source := source) (cause := defaultCause)
+
+/-- True when permanent `id` was actually destroyed (CR 701.8a–c): its departure
+`ZoneEvent.moved` moved it from `.battlefield` with verb `.destroy`. Indestructible
+permanents (CR 702.12b), shield-counter replacements (CR 122.1c), and non-destroy
+battlefield departures (CR 701.8b, such as CR 800.4c control-loss exile or sacrifice)
+do not emit `.destroy`; graveyard-redirect replacements (finality counters CR 122.1h,
+`untilEotExileIfDies`, `.exileInsteadOfGraveyard`) preserve `ZoneVerb.destroy` into
+`.exile` so `.dies` does not trigger (CR 700.4) while `"destroyed this way"` still
+counts them per WotC Judge Ruling 80 (`OracleData.lean`). -/
+def wasPermanentDestroyed (g : Game) (id : ObjectId) : Bool :=
+  match g.events.findSomeRev? (fun e =>
+    match e.change with
+    | .rules (.zone (.moved before _ fromZone _ verb _ _ _)) =>
+      if before.id == some id && fromZone == .battlefield then
+        some (verb == .destroy)
+      else none
+    | _ => none) with
+  | some b => b
+  | none => false
+
+/-- Destroy each permanent in `remainingIds` sequentially inside an open or
+standalone batch, pausing on `Pending.chooseReplacement` and optionally
+recording `destroyedCountThisWay` (`countNote`), gaining life per destroyed
+permanent (`obGainLifeFor`), or logging `logMsgAfter` once all finish. -/
+def destroyPermanentsLoop (g : Game) (remainingIds : Array ObjectId)
+    (allCandidates : Array ObjectId := #[])
+    (countNote : Bool := false)
+    (obGainLifeFor : Option PlayerId := none)
+    (logMsgAfter : Option String := none)
+    (preBattlefield : Option (Array GameObject) := none)
+    (cause : Option EventCause := none) : Game := Id.run do
+  if let .chooseReplacement .. := g.pending then
+    return g.chainPendingReplacement
+      (.destroyPermanentsLoop remainingIds allCandidates countNote
+        obGainLifeFor logMsgAfter preBattlefield cause)
+  let mut g := g
+  let preBf := preBattlefield.getD g.battlefield
+  let allCands :=
+    if allCandidates.isEmpty && (countNote || obGainLifeFor.isSome) then remainingIds
+    else allCandidates
+  for i in [0:remainingIds.size] do
+    let id := remainingIds[i]!
+    match g.findObject? id with
+    | some o =>
+      if o.isOnBattlefield then
+        g := g.destroyPermanent o (cause := cause) (preBattlefield := some preBf)
+        if let .chooseReplacement .. := g.pending then
+          let rem := remainingIds.extract (i + 1) remainingIds.size
+          if !rem.isEmpty || countNote || obGainLifeFor.isSome || logMsgAfter.isSome then
+            g := g.chainPendingReplacement
+              (.destroyPermanentsLoop rem allCands countNote
+                obGainLifeFor logMsgAfter (some preBf) cause)
+          return g
+    | none => pure ()
+  let destroyedCount :=
+    if countNote || obGainLifeFor.isSome then
+      allCands.foldl (fun acc id =>
+        if g.wasPermanentDestroyed id then acc + 1 else acc) 0
+    else 0
+  if countNote then
+    g := g.change (.permanentsDestroyedThisWay destroyedCount)
+  if let some pid := obGainLifeFor then
+    if destroyedCount > 0 then
+      g := g.gainLife pid destroyedCount (cause := cause)
+  if let some msg := logMsgAfter then
+    g := g.logMsg msg
+  return g
 
 end Game
 end Mtg.Engine

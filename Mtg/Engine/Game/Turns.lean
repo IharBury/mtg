@@ -17,7 +17,7 @@ def expirePlayPermissions (g : Game) (endingPlayer : PlayerId)
   g.activeEffects.foldl (fun g (eid, e) =>
     match e with
     | .permission p (.playFromExile oid perm) d =>
-      if perm.fromAdventure || perm.whileExiled || p != endingPlayer then g
+      if perm.fromAdventure || perm.whileExiled || p != some endingPlayer then g
       else
         let expires :=
           d == .untilEndOfTurn ||
@@ -32,6 +32,47 @@ def expirePlayPermissions (g : Game) (endingPlayer : PlayerId)
           | none => g
         else g
     | _ => g) g
+
+/-- Clear “once each turn” activation counts and `"this turn"` / `"until end of turn"`
+player rules, permissions, and delayed triggers as a turn ends (CR 514.2). -/
+def clearTurnActivations (g : Game) : Game :=
+  let cause := some (EventCause.turnBased .cleanupClear)
+  Id.run do
+    let mut g := g
+    g := g.expireAll .powerUpsForbiddenThisTurn (cause := cause)
+    g := g.expireMatching (fun | .playerRule _ .pendingFreeRGCreature .untilEndOfTurn => true | _ => false) (cause := cause)
+    -- Stingcaster Mage: flashback granted until end of turn ends.
+    g := g.expireMatching (fun
+      | .permission _ (.flashback _) .untilEndOfTurn
+      | .permission _ (.freeCastFromGraveyard _) .untilEndOfTurn => true
+      | _ => false) (cause := cause)
+    for pl in g.players do
+      if pl.lost then
+        -- Keep last-known this-turn info until that turn would have begun
+        -- (CR 800.4i).
+        pure ()
+      else do
+        g := g.expireMatching (fun
+          | .playerRule p (.additionalLands _) .untilEndOfTurn
+          | .playerRule p .jaceLoyaltyAtInstantSpeed .untilEndOfTurn
+          | .playerRule p (.mountainExtraRed _) .untilEndOfTurn
+          | .playerRule p .cantAttackJaces .untilEndOfTurn
+          | .playerRule p .cantCastSpells .untilEndOfTurn
+          | .playerRule p .nextSpellCantBeCountered .untilEndOfTurn
+          | .playerRule p .lifeLocked .untilEndOfTurn
+          | .playerRule p (.typeSpellCostLess _ _) .untilEndOfTurn
+          | .playerRule p (.supertypeSpellCostLess _ _) .untilEndOfTurn => p == pl.id
+          | _ => false) (cause := cause)
+    let expiredDt := g.delayedTriggers.filter (fun dt =>
+      !(g.player dt.controller).lost &&
+      (match dt.kind with
+       | .attackPumpPerPlains
+       | .copyNextInstantSorceryThisTurn
+       | .lokiCopyNextInstantSorceryThisTurn _ _ => true
+       | _ => false))
+    for dt in expiredDt do
+      g := g.record (GameEvent.delayedTriggerExpired g.turnNumber dt (.turnBased .cleanupClear))
+    return g
 
 def clearEOT (g : Game) : Game :=
   let cause := some (EventCause.turnBased .cleanupClear)
@@ -61,6 +102,21 @@ def clearEOT (g : Game) : Game :=
           g := g.endControlEffectById eid (cause := cause)
       | _ => pure ()
     g := g.expirePlayPermissions g.activePlayer (cause := cause)
+    for pl in g.players do
+      if pl.id != g.activePlayer && !pl.lost then
+        g := g.activeEffects.foldl (fun g (eid, e) =>
+          match e with
+          | .permission p (.playFromExile oid perm) .untilEndOfTurn =>
+            if perm.fromAdventure || perm.whileExiled || p != some pl.id then g
+            else
+              let g := g.expireEffectById eid (cause := cause)
+              match g.findObject? oid with
+              | some o =>
+                if o.zone == .exile then g.logMsg s!"{o.name} can no longer be played from exile"
+                else g
+              | none => g
+          | _ => g) g
+    g := g.clearTurnActivations
     for o in g.battlefield do
       -- Ending a control effect can exile the permanent (CR 800.4c).
       match g.findObject? o.id with
@@ -71,12 +127,34 @@ def clearEOT (g : Game) : Game :=
       | .layered _ (.copy ..) _ | .layered _ (.control _) _ => false
       | .layered _ _ .untilEndOfTurn | .gameRule _ .untilEndOfTurn => true
       | _ => false) (cause := cause)
+    -- CR 514.2 / 702.26d: remove marked damage from all permanents, including phased-out ones.
     let damagedIds :=
-      (g.battlefield.filter (fun o => o.status.damage != 0)).map (·.id)
+      (g.objects.filter (fun o => o.zone == .battlefield && o.status.damage != 0)).map (·.id)
     if !damagedIds.isEmpty then
       g := g.record (GameEvent.damageMarkedCleared g.turnNumber damagedIds
         (cause := .turnBased .cleanupClear))
     return g
+
+/-- Discard `ids` during cleanup (CR 514.1), pausing and chaining `.finishPostStep 38`
+if a discard replacement opens `Pending.chooseReplacement`. -/
+def discardCleanupIds (g : Game) (p : PlayerId) (ids : Array ObjectId) : Game := Id.run do
+  if let .chooseReplacement .. := g.pending then
+    return g.chainPendingReplacement (.finishPostStep 38 p 0 (ids := ids))
+  let mut g := g
+  for i in [0:ids.size] do
+    let id := ids[i]!
+    let pl := g.player p
+    if pl.hand.contains id then
+      let name := (g.object! id).name
+      let (g', _) := g.move id (.graveyard p) none (verb := some .discard)
+        (cause := some (.turnBased .cleanupDiscard))
+      g := g'.logMsg s!"{pl.name} discards {name} (cleanup)"
+      if let .chooseReplacement .. := g.pending then
+        let rem := ids.extract (i + 1) ids.size
+        if !rem.isEmpty then
+          g := g.chainPendingReplacement (.finishPostStep 38 p 0 (ids := rem))
+        return g
+  return g
 
 /-- Discard down to maximum hand size (CR 514.1). This turn-based action does
 not use the stack; the engine discards from the back of the hand array. -/
@@ -88,55 +166,9 @@ def discardToMaxHandSize (g : Game) : Game :=
     | none => 0
   if extra == 0 then g
   else
+    let ids := (pl.hand.extract (pl.hand.size - extra) pl.hand.size).reverse
     g.withBatch (some (.turnBased .cleanupDiscard)) fun g =>
-      Id.run do
-        let mut g := g
-        for _ in [0:extra] do
-          let pl := g.player g.activePlayer
-          if let some last := pl.hand.back? then
-            let card := g.object! last
-            let (g', _) := g.move last (.graveyard pl.id) none (verb := some .discard)
-              (cause := some (.turnBased .cleanupDiscard))
-            g := g'.logMsg s!"{pl.name} discards {card.name} (cleanup)"
-        return g
-
-/-- Clear “once each turn” activation counts as a turn ends. -/
-def clearTurnActivations (g : Game) : Game :=
-  let cause := some (EventCause.turnBased .cleanupClear)
-  Id.run do
-    let mut g := g
-    g := g.expireAll .powerUpsForbiddenThisTurn (cause := cause)
-    g := g.expireMatching (fun | .playerRule _ .pendingFreeRGCreature .untilEndOfTurn => true | _ => false) (cause := cause)
-    -- Stingcaster Mage: flashback granted until end of turn ends.
-    g := g.expireMatching (fun
-      | .permission _ (.flashback _) .untilEndOfTurn
-      | .permission _ (.freeCastFromGraveyard _) .untilEndOfTurn => true
-      | _ => false) (cause := cause)
-    for pl in g.players do
-      if pl.lost then
-        -- Keep last-known this-turn info until that turn would have begun
-        -- (CR 800.4i).
-        pure ()
-      else do
-        g := g.expireMatching (fun
-          | .playerRule p .jaceLoyaltyAtInstantSpeed .untilEndOfTurn
-          | .playerRule p (.mountainExtraRed _) .untilEndOfTurn
-          | .playerRule p .cantAttackJaces .untilEndOfTurn
-          | .playerRule p .cantCastSpells .untilEndOfTurn
-          | .playerRule p .nextSpellCantBeCountered .untilEndOfTurn
-          | .playerRule p .lifeLocked .untilEndOfTurn
-          | .playerRule p (.typeSpellCostLess _ _) .untilEndOfTurn
-          | .playerRule p (.supertypeSpellCostLess _ _) .untilEndOfTurn => p == pl.id
-          | _ => false) (cause := cause)
-    let expiredDt := g.delayedTriggers.filter (fun dt =>
-      match dt.kind with
-      | .attackPumpPerPlains
-      | .copyNextInstantSorceryThisTurn
-      | .lokiCopyNextInstantSorceryThisTurn _ _ => true
-      | _ => false)
-    for dt in expiredDt do
-      g := g.record (GameEvent.delayedTriggerExpired g.turnNumber dt (.turnBased .cleanupClear))
-    return g
+      g.discardCleanupIds g.activePlayer ids
 
 /-- End goad designations placed by `p` as `p`'s next turn begins (CR 701.15a). -/
 def expireGoadedFor (g : Game) (p : PlayerId) : Game :=
@@ -194,7 +226,9 @@ def expireUntilNextTurnEffects (g : Game) (p : PlayerId) : Game :=
   let g := g.expireAll (.cantCastSpellsThisTurn p) (cause := cause)
   let expiredDt := g.delayedTriggers.filter (fun dt =>
     (match dt.kind with
-     | .attackPumpPerPlains | .copyNextInstantSorceryThisTurn => true
+     | .attackPumpPerPlains
+     | .copyNextInstantSorceryThisTurn
+     | .lokiCopyNextInstantSorceryThisTurn _ _ => true
      | _ => false) && dt.controller == p)
   expiredDt.foldl (fun g dt =>
     g.record (GameEvent.delayedTriggerExpired g.turnNumber dt (.turnBased .expireAtStepBegin))) g
@@ -315,11 +349,50 @@ def untapStepPermanents (g : Game) (ids : Array ObjectId) : Game :=
                 g := g.record untap
     return g
 
+mutual
+
+/-- Complete `.cleanup` once `checkSBACountedWithLeaves` has finished (CR 514.3 / 514.3a). -/
+partial def finishPostSbaCleanup (g : Game) (sba : Bool) : Game :=
+  if g.over then g
+  else if sba || g.hasWaitingTriggers then
+    let g := g.change (.cleanupGivesPriority true)
+    let g := g.logMsg "Players receive priority during cleanup (CR 514.3a)"
+    g.receivePriority g.activePlayer
+  else
+    -- The cleanup step ends (CR 500.3) and the turn ends.
+    let g := g.emptyManaPools
+    let g := g.record (GameEvent.stepEnded g.turnNumber .cleanup
+      (cause := some (.gameRule .stepAdvance)))
+    let g := g.record (GameEvent.phaseEnded g.turnNumber .ending
+      (cause := some (.gameRule .stepAdvance)))
+    let g := (g.startNextTurn).beginStep .untap
+    if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement .beginStepAfterUntap
+    else
+      g.beginStep .upkeep
+
+/-- Run `clearEOT` and cleanup SBAs once `discardToMaxHandSize` finishes (CR 514.2–514.3). -/
+partial def finishCleanupStepAfterDiscard (g : Game) : Game :=
+  let g := g.clearEOT
+  -- CR 514.3 / 514.3a / 704.3: normally no priority. If state-based actions
+  -- would be performed or triggered abilities are waiting, perform them,
+  -- put the triggers on the stack, and the active player receives priority.
+  let (g, sba) := g.checkSBACountedWithLeaves
+  if g.over then g
+  else if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement (.finishPostStep 39 g.activePlayer (if sba then 1 else 0))
+  else
+    g.finishPostSbaCleanup sba
+
 /-- `partial` because a silent cleanup (CR 514.3) immediately begins the next
 turn, and a skipped draw step (CR 103.8a / 500.11) immediately begins
 precombat main; both re-enter `beginStep`. -/
 partial def beginStep (g : Game) (st : Step) : Game :=
-  let g := if g.proposalCheckpoint.isSome then g.change .clearProposalCheckpoint else g
+  let g := Id.run do
+    let mut g := g
+    while g.proposalCheckpoint.isSome do
+      g := g.change .clearProposalCheckpoint
+    return g
   let g := g.changes #[
     .pending .none,
     .consecutivePasses 0,
@@ -344,8 +417,6 @@ partial def beginStep (g : Game) (st : Step) : Game :=
       g := g.restoreCopiesUntilNextTurn ap
       -- CR 502.1: phased-out permanents phase in before the player untaps.
       g := g.phaseInControlled ap
-      g := g.expireMatching (fun | .playerRule p (.additionalLands _) _ => p == ap | _ => false)
-        (cause := some (.turnBased .expireAtStepBegin))
       let ids := (g.permanentsOf ap).map (·.id)
       g := g.withBatch (some (.turnBased .untapAll)) fun g =>
         g.untapStepPermanents ids
@@ -367,9 +438,15 @@ partial def beginStep (g : Game) (st : Step) : Game :=
     else
       -- The turn-based draw happens before triggers (ruling 770).
       let g := g.draw g.activePlayer 1 (cause := some (.turnBased .drawStepDraw))
-      g.receivePriority g.activePlayer
+      if let .chooseReplacement .. := g.pending then
+        g.chainPendingReplacement (.receivePriority g.activePlayer)
+      else
+        g.receivePriority g.activePlayer
   | .declareAttackers =>
-    g.change (.pending .declareAttackers)
+    if (g.player g.activePlayer).lost then
+      g.receivePriority g.activePlayer
+    else
+      g.change (.pending .declareAttackers)
   | .declareBlockers =>
     if (g.battlefield.filter (·.status.attacking)).isEmpty then
       g.logMsg "No attackers; skipping declare blockers and combat damage (CR 508.8)"
@@ -402,28 +479,10 @@ partial def beginStep (g : Game) (st : Step) : Game :=
   | .cleanup =>
     -- CR 514.1–514.3.
     let g := g.discardToMaxHandSize
-    let g := g.clearEOT
-    -- CR 514.3 / 514.3a / 704.3: normally no priority. If state-based actions
-    -- would be performed or triggered abilities are waiting, perform them,
-    -- put the triggers on the stack, and the active player receives priority.
-    let (g, sba) := g.checkSBACounted
-    if g.over then g
-    else if sba || g.hasWaitingTriggers then
-      let g := g.change (.cleanupGivesPriority true)
-      let g := g.logMsg "Players receive priority during cleanup (CR 514.3a)"
-      g.receivePriority g.activePlayer
+    if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement (.finishPostStep 40 g.activePlayer)
     else
-      -- The cleanup step ends (CR 500.3) and the turn ends.
-      let g := g.emptyManaPools
-      let g := g.record (GameEvent.stepEnded g.turnNumber .cleanup
-        (cause := some (.gameRule .stepAdvance)))
-      let g := g.record (GameEvent.phaseEnded g.turnNumber .ending
-        (cause := some (.gameRule .stepAdvance)))
-      let g := (g.startNextTurn).beginStep .untap
-      if let .chooseReplacement .. := g.pending then
-        g.chainPendingReplacement .beginStepAfterUntap
-      else
-        g.beginStep .upkeep
+      g.finishCleanupStepAfterDiscard
   | .precombatMain =>
     let ap := g.activePlayer
     let g := g.addLoreAfterDrawStep
@@ -433,6 +492,8 @@ partial def beginStep (g : Game) (st : Step) : Game :=
       g.receivePriority ap
   | _ =>
     g.receivePriority g.activePlayer
+
+end
 
 def beginTurn (g : Game) : Game :=
   let p := g.activePlayer

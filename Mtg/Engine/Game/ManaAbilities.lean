@@ -385,11 +385,11 @@ def finishActivateManaAbilityPostSac (g : Game) (p : PlayerId) (id : ObjectId) (
       g := g.finishManaAbilityMountainTrigger p id
     if g.proposalCheckpoint.isSome then
       g := g.change .endProposalAction
-    if wasPaused then
-      if prevPending == .none then
+    if prevPending == .none then
+      if g.pending == .none then
         g := g.receivePriority p
-      else
-        g := g.change (.pending prevPending)
+    else if wasPaused then
+      g := g.change (.pending prevPending)
     return g
 
 /-- Execute the remaining `picks`, `{T}`, and `sacrificeSelf` steps of a mana
@@ -453,6 +453,10 @@ def activateManaAbility (g : Game) (p : PlayerId) (id : ObjectId) (idx : Nat)
         | some prop => prop.tapSource && prop.sourceId == some id
         | none => false) then
       throw s!"{oname} is needed to pay \{T}"
+    if (match g.proposedSpell with
+        | some prop => prop.teamworkCreatures.contains id
+        | none => false) then
+      throw s!"{oname} is already chosen to tap for teamwork"
     if g.hasSummoningSickness o && !(g.isCreature o && g.activatesAsThoughHaste p) then
       throw s!"{oname} has summoning sickness (CR 302.6)"
   if d.onceEachTurn && d.activatedIdx.any (g.abilitiesActivatedThisTurn o.id).contains then
@@ -487,7 +491,7 @@ def activateManaAbility (g : Game) (p : PlayerId) (id : ObjectId) (idx : Nat)
   if g.proposalCheckpoint.isSome then
     g := g.change (.beginProposalAction (.manaAbility (some id)))
   if let some spentUnits := spentUnits? then
-    g := g.record (GameEvent.manaSpent g.turnNumber p spentUnits id
+    g := g.record (GameEvent.manaSpent g.turnNumber p spentUnits (some id)
       (cause := some (.costPayment .mana p (some id))))
   g ← g.payLifeCost p d.payLife
   g := g.finishActivateManaAbilityPicks p id oname mana d.picks costIds d.tap d.sacrificeSelf

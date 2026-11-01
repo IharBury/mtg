@@ -714,7 +714,7 @@ Master of Barbs pumps your team. -/
   let g := addPermanent afterDraw hexhavenInvigorator me me
   let lands := ((afterDraw.permanentsOf me).filter (·.printed.isLand)).size
   let inv := namedPermanent g "Hexhaven Invigorator"
-  let g := resolveTop (stackTriggers (g.dealDamageToPermanent inv 2 (source := some inv.asEvent)))
+  let g := resolveTop (stackTriggers (g.dealDamageToPermanent inv 2 (source := some (g.snapshot inv))))
   let g := mustApply g me .accept
   let g := applyIdle g
   ((g.permanentsOf me).filter (·.printed.isLand)).size == lands + 2

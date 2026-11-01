@@ -18,7 +18,9 @@ def applyAction (g : Game) (p : PlayerId) : Action → Except String Game
   | .cast id =>
     match g.pending with
     | .mayCastFromLooked .. => g.chooseCastFromLooked p (some id)
-    | .mayPutLandFromHand _ => g.putLandFromHandTapped p id
+    | .mayPutLandFromHand _ => do
+      let g ← g.putLandFromHandTapped p id
+      return g.finishAndGrantPriority
     | .mayPutArtifactFromHand .. => do
       let g ← g.choosePutArtifactFromHand p id
       return g.resumeSequenceThenPriority
@@ -58,6 +60,10 @@ def applyAction (g : Game) (p : PlayerId) : Action → Except String Game
   | .activate id idx => g.activateAbility p id idx
   | .pay => g.pay p
   | .sacrifice id => do
+    let wasPropOrWard :=
+      match g.pending with
+      | .sacrificePermanent .. | .payWard .. => true
+      | _ => false
     let isResCastSac :=
       (match g.pending with | .sacrificePermanent .. => true | _ => false) &&
         g.proposedSpell.any (·.resolutionCast)
@@ -68,8 +74,10 @@ def applyAction (g : Game) (p : PlayerId) : Action → Except String Game
         return g
       else
         return g.finishFraChoice
+    else if wasPropOrWard then
+      return g.resumeAfterBecomeCast
     else
-      return if g.mayThenResume then g.acceptMayThen else g.resumeAfterBecomeCast
+      return if g.mayThenResume then g.acceptMayThen else g.finishAndGrantPriority
   | .chooseAdditionalCost payGeneric => g.announceAdditionalCost p payGeneric
   | .declareAttackers ids defender each pws => g.declareAttackers p ids defender each pws
   | .declareBlockers as => g.declareBlockers p as
@@ -107,7 +115,9 @@ def applyAction (g : Game) (p : PlayerId) : Action → Except String Game
       | none => throw "Nothing to accept now"
     | .mayResolve _ => g.acceptMay p
     | _ => throw "Nothing to accept now"
-  | .haveVillainConnive => g.haveVillainConnive p
+  | .haveVillainConnive => do
+    let g ← g.haveVillainConnive p
+    return g.finishAndGrantPriority
   | .payGeneric =>
     match g.pending with
     | .fraChoice _ (.mayPayThen ..) => g.answerFraChoice p .accept
@@ -167,12 +177,9 @@ def apply (g : Game) (p : PlayerId) (a : Action) : Except String Game := do
   let beforeWaiting := g.waitingTriggers.size
   let g ← g.applyAction p a
   let g :=
-    if g.pending == .none && g.pendingReplacement.isSome && !g.over then
-      match g.pendingReplacement with
-      | some cont =>
-        let g := g.change (.pendingReplacement none)
-        g.resumePendingReplacement cont
-      | none => g
+    if g.pending == .none &&
+        (g.pendingReplacement.isSome || !g.outerPendingReplacements.isEmpty) && !g.over then
+      g.drainPendingContinuations
     else g
   let g :=
     if g.pending == .none && g.waitingTriggers.size > beforeWaiting && !g.over then
@@ -252,38 +259,24 @@ for the next upkeep (The Eagles Are Coming!). Tokens returned this way
 are counted; they later cease in hand (CR 704.5d). -/
 def returnOwnedCreaturesScheduleBirds (g : Game) (p : PlayerId)
     (ids : Array ObjectId) : Game :=
-  Id.run do
-    let (g, cause) := g.allocDelayedCause (some p)
-    let mut g := g
-    let mut n : Nat := 0
-    for id in ids do
-      match g.findObject? id with
-      | none => pure ()
-      | some o =>
-        if o.isOnBattlefield && g.isCreature o && o.owner == p then
-          let name := g.name o
-          let owner := o.owner
-          let (g', _) := g.move o.id (.hand owner) none (cause := some cause)
-          g := g'.logMsg s!"{name} is returned to {(g'.player owner).name}'s hand"
-          n := n + 1
-    if n > 0 then
-      let src := (g.currentResolvingContext?.bind Prod.fst).bind g.damageSourceById?
-      g := g.registerDelayedTrigger { controller := p, source := src, kind := .eaglesBirds n, cause }
-      g := g.logMsg
-        s!"At the beginning of the next upkeep, {n} Bird Soldier token(s) will be created"
-    return g
+  let eligible := ids.filter (fun id =>
+    (g.findObject? id).any (fun o => o.isOnBattlefield && g.isCreature o && o.owner == p))
+  if eligible.isEmpty then g
+  else
+    let srcId := g.currentResolvingContext?.bind Prod.fst
+    let (g, cause) := g.allocDelayedCause (some p) srcId
+    g.withBatch (some cause) fun g =>
+      g.runPostStep 52 p (n := 0) (sourceId := srcId) (ids := eligible) (cause := some cause)
 
 /-- Choose up to two creatures (they are not targets) and destroy the rest
 (Mount Doom). Shroud and hexproof do not stop the choice. -/
 def chooseCreaturesDestroyRest (g : Game) (keep : Array ObjectId) : Game :=
   let preBf := g.battlefield
   let doomed := (g.battlefield.filter (fun o => g.isCreature o && !keep.contains o.id)).map (·.id)
-  let g := g.withBatch none fun g =>
-    doomed.foldl (fun g id =>
-      match g.findObject? id with
-      | some o => g.destroyPermanent o (preBattlefield := some preBf)
-      | none => g) g
-  g.logMsg "Chosen creatures are kept; the rest are destroyed"
+  g.withBatch none fun g =>
+    g.destroyPermanentsLoop doomed
+      (logMsgAfter := some "Chosen creatures are kept; the rest are destroyed")
+      (preBattlefield := some preBf)
 
 /-- Two different players each draw a card (Gleaming Splendor). The same
 player cannot be chosen twice. -/

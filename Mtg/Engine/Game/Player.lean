@@ -19,7 +19,6 @@ structure Player where
   id : PlayerId
   name : String
   life : Int := 20
-  startingLife : Int := 20
   maxHandSize : Option Nat := some 7
   /-- Cards drawn as the game begins (CR 103.5); normally seven. -/
   startingHandSize : Nat := 7
@@ -163,9 +162,10 @@ inductive Action where
   | keep
   /-- Choose which legendary permanent to keep under the legend rule (CR 704.5j). -/
   | keepLegend (id : ObjectId)
-  /-- Put waiting triggered abilities on the stack in this source order
-  (first listed is put first, so it is farthest from the top) (CR 603.3b). -/
-  | stackTriggers (ids : Array ObjectId)
+  /-- Put waiting triggered abilities on the stack in this candidate index order
+  (0-based indices into the controller's waiting trigger batch; first listed is
+  put first, so it is farthest from the top) (CR 603.3b). -/
+  | stackTriggers (order : Array Nat)
   /-- Declare a London mulligan; it is taken after every remaining player has
   declared (CR 103.5). -/
   | takeMulligan

@@ -826,11 +826,32 @@ def applyAssign (g : Game) (p : PlayerId) (tokens : List String) : Except String
 
 def stackUsage : String := "usage: stack <id> [id...]"
 
-/-- Put waiting triggered abilities on the stack in the listed source order
-(CR 603.3b). -/
+/-- Put waiting triggered abilities on the stack in the listed order
+(CR 603.3b), accepting 0-based trigger indices or `#<id>` source ids. -/
 def applyStack (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
-  let ids ← parseObjectIds tokens stackUsage
-  g.apply p (.stackTriggers ids)
+  let toks := commandTokens tokens
+  let ids ← parseObjectIds toks stackUsage
+  let mine := g.waitingTriggersOf p
+  let allPlainIndices :=
+    !toks.any (·.startsWith "#") && ids.all (·.raw < mine.size)
+  let order : Array Nat :=
+    if allPlainIndices then ids.map (·.raw)
+    else Id.run do
+      let mut used : Array Nat := #[]
+      let mut out : Array Nat := #[]
+      for id in ids do
+        let mut found : Option Nat := none
+        for i in [0:mine.size] do
+          if found.isNone && !used.contains i && mine[i]!.source.id == id then
+            found := some i
+        match found with
+        | some i =>
+          used := used.push i
+          out := out.push i
+        | none =>
+          out := out.push mine.size
+      return out
+  g.apply p (.stackTriggers order)
 
 def bottomUsage : String := "usage: bottom <id> [id ...]"
 

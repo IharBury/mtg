@@ -160,7 +160,7 @@ instant and bottoms only the cards that were not cast. -/
 #guard
   let g := addPermanent (putOnLibrary (putOnLibrary afterDraw lightningBolt victim) mountain victim)
     wizard caster caster
-  let g := g.noteCombatDamageTo victim (g.object! (permanentId g "Test Wizard").get!).asEvent
+  let g := g.noteCombatDamageTo victim (g.snapshot (g.object! (permanentId g "Test Wizard").get!))
   let g := g.applyTriggeredAbility caster .onCombatDamageImpulseInstantSorcery none
   let offered :=
     match g.pending with
@@ -177,7 +177,7 @@ instant and bottoms only the cards that were not cast. -/
 #guard
   let g := addPermanent (putOnLibrary (putOnLibrary afterDraw lightningBolt victim) mountain victim)
     wizard caster caster
-  let g := g.noteCombatDamageTo victim (g.object! (permanentId g "Test Wizard").get!).asEvent
+  let g := g.noteCombatDamageTo victim (g.snapshot (g.object! (permanentId g "Test Wizard").get!))
   let g := g.applyTriggeredAbility caster .onCombatDamageImpulseInstantSorcery none
   let g := mustApply g caster .accept
   let midProposalOk :=

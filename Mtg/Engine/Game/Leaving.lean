@@ -174,37 +174,7 @@ def objectLeavesTheGame (g : Game) (o : GameObject) (_leavingPlayer : PlayerId) 
               acc.logMsg s!"{name} is exiled (CR 800.4c)"
             else acc) g
     if !o.linkedExile.isEmpty then
-      Id.run do
-        let mut g := g
-        for exId in o.linkedExile do
-          match g.findObject? exId with
-          | some exObj =>
-            if exObj.zone == .exile then
-              let name := exObj.name
-              let linkCause := g.lastMoveCauseOf? exObj.id
-              match exObj.returnToZone with
-              | some (.hand hp) =>
-                let (g', _) := g.move exObj.id (.hand hp) none (cause := linkCause)
-                g := g'.logMsg s!"{name} returns to {(g'.player hp).name}'s hand"
-              | some (.graveyard gp) =>
-                let (g', _) := g.move exObj.id (.graveyard gp) none (cause := linkCause)
-                g := g'.logMsg s!"{name} returns to {(g'.player gp).name}'s graveyard"
-              | _ =>
-                if g.isAura exObj then
-                  match g.battlefield.find? (fun h => g.auraObjCanEnchant h exObj) with
-                  | none =>
-                    g := g.logMsg s!"{name} remains in exile (can't be attached legally; CR 614.6)"
-                  | some host =>
-                    let hostId := host.id
-                    let hostName := g.name host
-                    let (g', _) := g.move exObj.id .battlefield (some exObj.owner)
-                      (attachedTo := some hostId) (cause := linkCause)
-                    g := g'.logMsg s!"{name} returns attached to {hostName} (does not target)"
-                else
-                  let (g', _) := g.move exObj.id .battlefield (some exObj.owner) (cause := linkCause)
-                  g := g'.logMsg s!"{name} returns to the battlefield"
-          | none => pure ()
-        return g
+      g.returnLinkedExileMoves o.linkedExile
     else g
   else
     g.ceaseToExist o.id (cause := cause)
@@ -226,13 +196,21 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
         |>.logMsg "no active player declares attackers (CR 800.4j)"
     else g
   | .declareBlockers =>
+    let filtered := g.blockersQueue.filter (· != p)
     if g.currentBlockersPlayer == p then
-      let rest := g.blockersQueue.extract 1 g.blockersQueue.size
-      if rest.isEmpty then
-        g.changes #[.pending .none, .blockersQueue #[]]
-          |>.logMsg "no active player remains to declare blockers (CR 800.4j)"
+      if filtered.isEmpty then
+        let g := g.changes #[.pending .none, .blockersQueue #[]]
+        let g := g.withBatch (some (.turnBased .declareBlockers)) fun g =>
+          g.battlefield.foldl (fun acc o =>
+            if o.status.attacking && !o.status.blocked then
+              acc.record (GameEvent.remainedUnblocked acc.turnNumber (acc.snapshot o)
+                (cause := some (.turnBased .declareBlockers)))
+            else acc) g
+        g.logMsg "no active player remains to declare blockers (CR 800.4j)"
       else
-        g.changes #[.pending .declareBlockers, .blockersQueue rest]
+        g.changes #[.pending .declareBlockers, .blockersQueue filtered]
+    else if filtered != g.blockersQueue then
+      g.change (.blockersQueue filtered)
     else g
   | .payOrLetCounter q _ spellId =>
     if q == p then
@@ -241,21 +219,21 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
       if g.unlessPaysInstead.isSome then
         g.change (.unlessPaysDue true)
       else
-        match g.findObject? spellId with
+        let caster := g.unlessPaysController
+        let g := g.clearUnlessPays
+        match (g.findObject? spellId).filter (·.zone == .stack) with
         | none => g
-        | some o =>
-          let g := g.ceaseToExist o.id (cause := some (.gameRule .playerLeftGame))
-          g.logMsg s!"{o.name} is countered"
+        | some _ => g.counterStackSpell spellId (controller := some caster)
     else g
   | .payWard q spellId _ =>
     if q == p then
       let g := g.change (.pending .none)
       let g := g.logMsg s!"{(g.player p).name} does not pay (CR 800.4f)"
-      match g.findObject? spellId with
+      match (g.findObject? spellId).filter (·.zone == .stack) with
       | none => g
-      | some o =>
-        let g := g.ceaseToExist o.id (cause := some (.gameRule .playerLeftGame))
-        g.logMsg s!"{o.name} is countered"
+      | some _ =>
+        let wardCtrl := ((g.resolvingAbility.bind g.findObject?).bind (·.controller)).getD (g.opponent p)
+        g.counterStackSpell spellId (controller := some wardCtrl)
     else g
   | .mayPayGeneric q _ =>
     if q == p then
@@ -297,9 +275,22 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
     else g
   | .assignCombatDamage q forAttackers =>
     if q == p then
-      g.change (.pending (.assignCombatDamage (g.nextLiving p) forAttackers))
-        |>.logMsg
-          s!"{(g.player (g.nextLiving p)).name} assigns combat damage (CR 800.4h)"
+      if forAttackers then
+        g.changes #[.pending .none, .pendingBlockerAssignments #[]]
+          |>.logMsg "no active player assigns combat damage (CR 800.4j)"
+      else
+        let already := g.pendingBlockerAssignments.map (·.source)
+        let nextP? := g.apnapPlayers.find? (fun r =>
+          r != p && r != g.activePlayer && g.stillInGame r &&
+            g.battlefield.any (fun o =>
+              g.isCreature o && g.controlledBy o r && !already.contains o.id &&
+                o.status.blocking.size ≥ 2 && (g.power o) > 0))
+        match nextP? with
+        | some nextP =>
+          g.change (.pending (.assignCombatDamage nextP false))
+            |>.logMsg s!"{(g.player nextP).name} assigns combat damage (CR 800.4h)"
+        | none =>
+          g.change (.pending .none)
     else g
   | .activateManaAbilities q | .chooseMode q | .chooseX q | .chooseTargets q
   | .chooseAdditionalCost q | .chooseKicker q | .chooseGift q
@@ -392,6 +383,8 @@ def playerLeavesGame (g : Game) (p : PlayerId) : Game :=
       | none => g
     let g :=
       if g.priority == p then g.change (.priority (g.nextLiving p)) else g
+    let g :=
+      if g.pendingPriority == some p then g.change (.pendingPriority (some (g.nextLiving p))) else g
     g.redirectPendingAfterLeave p
 
 /-- Perform CR 800.4a for every player who has lost but has not yet left.

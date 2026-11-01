@@ -33,7 +33,7 @@ def withSpent (spent : Nat) : Game :=
   let g := addPermanent afterDraw pebble caster caster
   let src := pebbleOf g
   let causeId : ObjectId := ⟨911⟩
-  let g := g.record (GameEvent.spentMana g.turnNumber caster spent (forObject := some causeId))
+  let g := g.record (GameEvent.manaSpent g.turnNumber caster (Array.replicate spent { mana := .colorless }) (forObject := some causeId))
   let g := g.record (GameEvent.cast g.turnNumber caster
     { id := some causeId, controller := some caster, owner := caster } (.hand caster))
   let abId : ObjectId := ⟨g.nextObjectId⟩

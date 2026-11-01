@@ -137,7 +137,7 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
       some .chooseBottom
     | .mayAttachEquipment _ hostId =>
       match (g.permanentsOf p).find? (fun o =>
-        o.printed.isEquipment && o.attachedTo != some hostId) with
+        g.isEquipment o && o.attachedTo != some hostId) with
       | some eq => some (.choosePermanents #[eq.id])
       | none => some .decline
     | .mayResolve _ =>
@@ -166,7 +166,7 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
         match (g.player p).hand.find? (fun id =>
           match g.findObject? id with
           | some o =>
-            o.printed.isEnchantment || o.printed.isInstant || o.printed.isSorcery
+            g.isEnchantment o || g.isInstantOrSorcery o
           | none => false) with
         | some id => some (.discard id)
         | none => some .decline
@@ -201,7 +201,7 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
       | some o => some (.chooseRingBearer (some o.id))
       | none => some (.chooseRingBearer none)
     | .maySacrificeAnotherBolg _ bolgId =>
-      match (g.permanentsOf p).find? (fun o => o.isCreature && o.id != bolgId) with
+      match (g.permanentsOf p).find? (fun o => g.isCreature o && o.id != bolgId) with
       | some o => some (.sacrifice o.id)
       | none => some .decline
     | .mayCastFromLooked _ ids maxMv =>
@@ -212,18 +212,18 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
     | .mayPutLandFromHand _ =>
       match (g.player p).hand.findSome? (fun id =>
         match g.findObject? id with
-        | some o => if o.printed.isLand then some id else none
+        | some o => if g.isLand o then some id else none
         | none => none) with
       | some id => some (.cast id)
       | none => some .decline
     | .chooseTriggerOr _ =>
       some (.chooseMode 0)
     | .maySacArtifactOrDiscard _ _ =>
-      match (g.permanentsOf p).find? (fun o => o.printed.isArtifact) with
+      match (g.permanentsOf p).find? (fun o => g.isArtifact o) with
       | some o => some (.sacrifice o.id)
       | none => discardBackOrDecline g p
     | .mayPutArtifactFromHand _ _ =>
-      match (g.handObjects p).find? (fun o => o.printed.isArtifact) with
+      match (g.handObjects p).find? (fun o => g.isArtifact o) with
       | some o => some (.cast o.id)
       | none => some .decline
     | .mayHaveVillainConnive _ _ _ =>
@@ -255,8 +255,8 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
     | .none =>
       -- Play a land if possible (from hand or from exile under a permission).
       let lands :=
-        (g.handObjects p).filter (·.printed.isLand) ++
-        (g.exiledPlayable p).filter (·.printed.isLand)
+        (g.handObjects p).filter g.isLand ++
+        (g.exiledPlayable p).filter g.isLand
       if g.canPlayLand p then
         match lands[0]? with
         | some land => some (.playLand land.id)
@@ -327,7 +327,7 @@ where
         !(g.permanentsOf p).any (fun c => g.isCreature c && c.status.attacking)) &&
       -- Don't typecycle a card you can currently afford to cast.
       !(ab.activateFromHand && g.canCast p o &&
-        (g.availableMana p).canPay o.printed.manaCost
+        (g.availableMana p).canPay (g.baseCard o).manaCost
           (allowElfRestricted := g.hasSubtype o .elf))
     let firstAbility (o : GameObject) : Option Nat :=
       (g.activatedAbilitiesOf o).findIdx? (shouldActivate o)
@@ -347,13 +347,13 @@ where
     let playable := (g.handObjects p ++ g.exiledPlayable p).filter (fun o =>
       g.canCast p o &&
         ((g.playPermission o).any (·.withoutManaCost) ||
-          available.canPay o.printed.manaCost
+          available.canPay (g.baseCard o).manaCost
             (allowElfRestricted := g.hasSubtype o .elf)
             (allowInstRestricted := g.isInstantOrSorcery o)) &&
         g.canPayAnnouncedAdditional p o available)
     let adventurePlayable := (g.handObjects p ++ g.exiledPlayable p).filter (fun o =>
       g.canCastAdventure p o &&
-        match o.printed.adventure with
+        match (g.baseCard o).adventure with
         | some adv =>
           available.canPay adv.manaCost
             (allowInstRestricted := adv.types.any CardType.isInstantOrSorcery)
@@ -361,11 +361,11 @@ where
     let oppHasCreature := !(g.creaturesControlledBy (g.opponent p)).isEmpty
     let ownCreature := (g.creaturesControlledBy p).back?
     let spellKind (o : GameObject) (k : SpellCastKind) : Bool :=
-      o.printed.hasCastKind k
+      (g.baseCard o).hasCastKind k
     let adventureKind (o : GameObject) (k : SpellCastKind) : Bool :=
-      o.printed.adventure.any (fun a => a.hasCastKind k)
+      (g.baseCard o).adventure.any (fun a => a.hasCastKind k)
     let modeKind (o : GameObject) (k : SpellCastKind) : Bool :=
-      o.printed.hasModeCastKind k
+      (g.baseCard o).hasModeCastKind k
     let hasLegalKind (k : EffectTargetKind) : Bool :=
       !(g.legalTargetsForKind p k).isEmpty
     let adventureRemoval :=
@@ -381,7 +381,7 @@ where
     let fight := playable.find? (fun o => spellKind o .fight)
     let draw := playable.find? (fun o =>
       (spellKind o .draw || modeKind o .draw) &&
-        match o.printed.spellEffect with
+        match (g.baseCard o).spellEffect with
         | some e =>
           match e.spellResolution with
           | .sequence [.draw (.fixed cards) .you, .loseLife (.fixed life) .you] =>
@@ -398,30 +398,30 @@ where
       (hasLegalKind .artifactOrLand && spellKind o .destroyArtifactOrLand))
     let massPump := playable.find? (fun o =>
       spellKind o .massPump || modeKind o .massPump)
-    let creature := playable.find? (fun o => o.printed.isCreature)
+    let creature := playable.find? (fun o => g.isCreature o)
     let artifact := playable.find? (fun o =>
-      o.printed.isArtifact &&
-        (!o.printed.activatedAbilities.isEmpty || o.printed.isEquipment))
+      g.isArtifact o &&
+        (!(g.baseCard o).activatedAbilities.isEmpty || g.isEquipment o))
     let pump :=
       if ownCreature.isSome then
         playable.find? (fun o =>
           spellKind o .pump ||
-            o.printed.spellModes.any (fun e =>
+            (g.baseCard o).spellModes.any (fun e =>
               e.castKind == .pump && !(g.legalTargetsForKind p e.targetKind).isEmpty))
       else none
     let aura :=
       if ownCreature.isSome then
-        playable.find? (fun o => o.printed.isAura)
+        playable.find? (fun o => g.isAura o)
       else none
     let extraLandAdventure :=
       adventurePlayable.find? (fun o => adventureKind o .extraLand)
     let isSpellCounter (o : GameObject) : Bool :=
-      o.printed.spellEffect.any (fun e => e.targetKind.targetsStackSpell) ||
-        o.printed.spellModes.any (fun e => e.targetKind.targetsStackSpell)
+      (g.baseCard o).spellEffect.any (fun e => e.targetKind.targetsStackSpell) ||
+        (g.baseCard o).spellModes.any (fun e => e.targetKind.targetsStackSpell)
     let hasOppSpellTarget (o : GameObject) : Bool :=
-      match o.printed.spellEffect with
+      match (g.baseCard o).spellEffect with
       | some e => g.effectHasOppSpellTarget p e
-      | none => o.printed.spellModes.any (g.effectHasOppSpellTarget p)
+      | none => (g.baseCard o).spellModes.any (g.effectHasOppSpellTarget p)
     -- Cast a counter only when an opponent's spell is a legal target.
     let counter :=
       playable.find? (fun o =>

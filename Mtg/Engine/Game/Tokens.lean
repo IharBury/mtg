@@ -71,6 +71,15 @@ private def unreplacedCause : EventCause → EventCause
   | .replaced _ orig => unreplacedCause orig
   | other => other
 
+/-- Off-battlefield placeholder returned when token creation produces 0 tokens,
+pauses on `Pending.chooseReplacement`, or is skipped under CR 800.4b. Uses
+`noSourceSentinelId` so it can never collide with a real `ObjectId` (including `⟨0⟩`). -/
+private def noTokenCreated (owner : PlayerId) (printed : CardDef) : GameObject :=
+  { id := noSourceSentinelId
+    printed := { printed with isToken := true }
+    owner := owner
+    zone := .command }
+
 /-- Create one token on the battlefield, running the CR 616.1a–g ETB replacement
 loop for the entering token (CR 111.2 / 608.2c / 614.1c). Callers that must let
 enters-the-battlefield triggers see the token (amass, recruit) invoke
@@ -81,10 +90,15 @@ def createOneToken (g : Game) (controller : PlayerId) (printed : CardDef)
     (extraCounters : CounterBag := #[])
     (recordRecent : Bool := false)
     (cause : Option EventCause := none) : Game × GameObject :=
-  if (g.player controller).lost then
-    (g.logMsg "no token is created (CR 800.4b)",
-      { id := ⟨0⟩, printed := { printed with isToken := true },
-        owner := controller, zone := .command })
+  if let .chooseReplacement .. := g.pending then
+    let isAttacking := attacking || attackingTarget.isSome
+    let resolvedAttackTarget : Option AttackTarget :=
+      if isAttacking then some (attackingTarget.getD (.player g.defendingPlayer)) else none
+    (g.chainPendingReplacement
+      (.createToken controller printed tapped isAttacking resolvedAttackTarget false extraCounters recordRecent cause),
+     noTokenCreated controller printed)
+  else if (g.player controller).lost then
+    (g.logMsg "no token is created (CR 800.4b)", noTokenCreated controller printed)
   else
     g.withBatchReturn cause fun g =>
       let printed := { printed with
@@ -121,7 +135,7 @@ def createOneToken (g : Game) (controller : PlayerId) (printed : CardDef)
       | some (chooser, choices) =>
         (g.promptChooseReplacement chooser choices
           (.createToken controller printed tapped isAttacking resolvedAttackTarget false extraCounters recordRecent cause),
-         baseObj)
+         noTokenCreated controller printed)
       | none =>
       let g := g.consumeReplacementOrder etb.applied
       let obj := etb.candidate
@@ -191,7 +205,7 @@ private def tokenBatchProbe (g : Game) (controller : PlayerId) (printed : CardDe
       else
         match spec.kind with
         | .entersAsCopy tid template =>
-          if tid == ⟨0⟩ then
+          if tid.isNone then
             { template with
               isToken := true
               otherFace := template.otherFace.map (fun f => { f with isToken := true }) }
@@ -374,10 +388,11 @@ def createTokenBatches (g : Game) (batches : Array ProposedTokenBatch)
         (extraCounters := b.extraCounters) (recordRecent := recordRecent && isPrimary)
         (cause := b.cause)
       g := g'
-      if isPrimary then
-        last := some obj
-      else if last.isNone then
-        last := some obj
+      if obj.zone == .battlefield then
+        if isPrimary then
+          last := some obj
+        else if last.isNone then
+          last := some obj
       if let .chooseReplacement .. := g.pending then
         let rem := batches.extract (i + 1) batches.size
         if !rem.isEmpty then
@@ -389,8 +404,7 @@ def createTokenBatches (g : Game) (batches : Array ProposedTokenBatch)
     | none =>
       let fallbackCtrl := (batches[0]?.map (·.controller)).getD g.activePlayer
       let fallbackCard := (batches[0]?.map (·.printed)).getD { name := "", types := #[], isToken := true }
-      (g, { id := ⟨0⟩, printed := { fallbackCard with isToken := true },
-            owner := fallbackCtrl, zone := .command })
+      (g, noTokenCreated fallbackCtrl fallbackCard)
 
 /-- Create a token under `controller`, running the CR 616.1 token-creation
 replacement loop (Food/Treasure, Draconic Visitor, token-doubling). -/
@@ -401,7 +415,11 @@ def createToken (g : Game) (controller : PlayerId) (printed : CardDef)
     (extraCounters : CounterBag := #[])
     (recordRecent : Bool := false)
     (cause : Option EventCause := none) : Game × GameObject :=
-  if (g.player controller).lost || !applyFoodBonus then
+  if let .chooseReplacement .. := g.pending then
+    (g.chainPendingReplacement
+      (.createToken controller printed tapped attacking attackingTarget applyFoodBonus extraCounters recordRecent cause),
+     noTokenCreated controller printed)
+  else if (g.player controller).lost || !applyFoodBonus then
     g.createOneToken controller printed (tapped := tapped)
       (attacking := attacking)
       (attackingTarget := attackingTarget)
@@ -421,8 +439,7 @@ def createToken (g : Game) (controller : PlayerId) (printed : CardDef)
     | some (chooser, choices) =>
       (g.promptChooseReplacement chooser choices
         (.createToken controller printed tapped attacking attackingTarget true extraCounters recordRecent cause),
-       { id := ⟨0⟩, printed := { printed with isToken := true },
-         owner := controller, zone := .command })
+       noTokenCreated controller printed)
     | none =>
     let g := g.consumeReplacementOrder applied
     let expanded := batches.foldl (fun acc b =>
@@ -438,7 +455,10 @@ def createToken (g : Game) (controller : PlayerId) (printed : CardDef)
 /-- Create `n` Treasure tokens, optionally tapped. -/
 def createTreasureTokens (g : Game) (controller : PlayerId) (n : Nat)
     (tapped := false) (cause : Option EventCause := none) : Game :=
-  if (g.player controller).lost then
+  if let .chooseReplacement .. := g.pending then
+    if n == 0 then g
+    else g.chainPendingReplacement (.createTreasureTokens controller n tapped cause)
+  else if (g.player controller).lost then
     if n == 0 then g else g.logMsg "no token is created (CR 800.4b)"
   else
     g.withBatch cause fun g => Id.run do
@@ -684,36 +704,71 @@ def jacePlaneswalkerTokens (g : Game) (controller : PlayerId) : Array GameObject
   (g.permanentsOf controller).filter (fun o =>
     g.isPlaneswalker o && g.hasSubtype o .jace && o.printed.isToken)
 
+/-- Stepwise resumption helper for `empowerJace` across token-creation and
+loyalty-counter `Pending.chooseReplacement` pauses (`stage == 0` initial,
+`stage == 1` post-token-create, `stage >= 2` post-counter-put with
+`prevLoyalty := stage - 2`). -/
+def empowerJaceStep (g : Game) (controller : PlayerId) (n : Nat)
+    (stage : Nat := 0) (chosen : Option ObjectId := none)
+    (cause : Option EventCause := none) : Game :=
+  if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement (.empowerJace controller n stage chosen cause)
+  else if stage >= 2 then
+    let prevLoyalty := stage - 2
+    match chosen.bind g.findObject? with
+    | some o =>
+      let added := o.status.loyaltyCounters - prevLoyalty
+      g.logMsg s!"Empower Jace {n}: {added} loyalty counter(s) are put on {g.name o}"
+    | none =>
+      g.logMsg s!"Empower Jace {n}: {n} loyalty counter(s) are put on Jace"
+  else
+    let (g, justCreated) : Game × Bool :=
+      if stage == 1 then
+        let hasNow := !(g.jacePlaneswalkerTokens controller).isEmpty
+        (if hasNow then
+           g.logMsg s!"{(g.player controller).name} creates a Jace planeswalker token"
+         else g, false)
+      else if (g.jacePlaneswalkerTokens controller).isEmpty then
+        let (g, _) := g.createToken controller jacePlaneswalkerToken (cause := cause)
+        if let .chooseReplacement .. := g.pending then
+          (g.chainPendingReplacement (.empowerJace controller n 1 chosen cause), true)
+        else
+          let hasNow := !(g.jacePlaneswalkerTokens controller).isEmpty
+          (if hasNow then
+             g.logMsg s!"{(g.player controller).name} creates a Jace planeswalker token"
+           else g, false)
+      else (g, false)
+    if justCreated then g
+    else
+      let tokens := g.jacePlaneswalkerTokens controller
+      let pick :=
+        match chosen.bind (fun id => tokens.find? (·.id == id)) with
+        | some o => some o
+        | none =>
+          tokens.foldl (fun (best : Option GameObject) (o : GameObject) =>
+            match best with
+            | some b => if o.timestamp ≥ b.timestamp then some o else best
+            | none => some o) none
+      match pick with
+      | none => g.logMsg "Empower Jace creates no token"
+      | some o =>
+        let oName := g.name o
+        let prevLoyalty := o.status.loyaltyCounters
+        let g := g.recordPutCounters o.id .loyalty n (byPlayer := some controller) (cause := cause)
+        if let .chooseReplacement .. := g.pending then
+          g.chainPendingReplacement (.empowerJace controller n (prevLoyalty + 2) (some o.id) cause)
+        else
+          let added := ((g.findObject? o.id).map (·.status.loyaltyCounters)).getD prevLoyalty - prevLoyalty
+          g.logMsg s!"Empower Jace {n}: {added} loyalty counter(s) are put on {oName}"
+
 /-- Empower Jace `n` (Reality Fracture, ruling 732). If you don't control a
 Jace planeswalker token, create one with 0 loyalty. Then put `n` loyalty
 counters on a Jace planeswalker token you control. You can't create a new
 token while you control one; with several, `chosen` picks which (ruling
 731), defaulting to the one that entered most recently. -/
 def empowerJace (g : Game) (controller : PlayerId) (n : Nat)
-    (chosen : Option ObjectId := none) : Game :=
-  let g :=
-    if (g.jacePlaneswalkerTokens controller).isEmpty then
-      let (g, _) := g.createToken controller jacePlaneswalkerToken
-      g.logMsg s!"{(g.player controller).name} creates a Jace planeswalker token"
-    else g
-  let tokens := g.jacePlaneswalkerTokens controller
-  let pick :=
-    match chosen.bind (fun id => tokens.find? (·.id == id)) with
-    | some o => some o
-    | none =>
-      tokens.foldl (fun (best : Option GameObject) (o : GameObject) =>
-        match best with
-        | some b => if o.timestamp ≥ b.timestamp then some o else best
-        | none => some o) none
-  match pick with
-  | none => g.logMsg "Empower Jace creates no token"
-  | some o =>
-    let oName := g.name o
-    let prevLoyalty := o.status.loyaltyCounters
-    let g := g.recordPutCounters o.id .loyalty n (byPlayer := some controller)
-    let added := ((g.findObject? o.id).map (·.status.loyaltyCounters)).getD prevLoyalty - prevLoyalty
-    let shown := if g.pending != .none then n else added
-    g.logMsg s!"Empower Jace {n}: {shown} loyalty counter(s) are put on {oName}"
+    (chosen : Option ObjectId := none) (cause : Option EventCause := none) : Game :=
+  g.empowerJaceStep controller n 0 chosen cause
 
 /-- Printed characteristics for a `TokenKind`. -/
 def tokenPrinted (k : TokenKind) : CardDef :=
@@ -765,7 +820,12 @@ def createKindTokens (g : Game) (controller : PlayerId) (kind : TokenKind)
     (attackingTarget : Option AttackTarget := none)
     (resetRecent : Bool := true)
     (cause : Option EventCause := none) : Game :=
-  if (g.player controller).lost then
+  if let .chooseReplacement .. := g.pending then
+    if n == 0 then g
+    else
+      g.chainPendingReplacement
+        (.createKindTokens controller kind n tapped attacking attackingTarget resetRecent cause)
+  else if (g.player controller).lost then
     let g := if resetRecent then g.change (.recentTokenIds #[]) else g
     if n == 0 then g
     else g.logMsg "no token is created (CR 800.4b)"

@@ -134,10 +134,21 @@ def choosePutArtifactFromHand (g : Game) (p : PlayerId) (cardId : ObjectId) :
     if !g.isArtifact o then
       throw s!"{o.name} is not an artifact card"
     let name := o.name
+    let outerCont? := g.pendingReplacement
+    let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
+    let g := g.change (.pending .none)
     let (g, newId) := g.putOntoBattlefield cardId p
-    let g := g.logMsg s!"{(g.player p).name} puts {name} onto the battlefield"
-    let g := g.afterPermanentEnters (g.object! newId)
-    return g.changes #[.pending .none, .putArtifactThisWay (some (newId, hostId))]
+    let g :=
+      if let .chooseReplacement .. := g.pending then
+        g.chainPendingReplacement
+          (.finishPostStep 1 p (sourceId := some hostId) (cardId := some cardId))
+      else
+        let g := g.logMsg s!"{(g.player p).name} puts {name} onto the battlefield"
+        let g := g.afterPermanentEnters (g.object! newId)
+        g.change (.putArtifactThisWay (some (newId, hostId)))
+    return match outerCont? with
+      | some outer => g.chainPendingReplacement outer
+      | none => g
   | _ => throw "Not time to put an artifact from your hand"
 
 /-- Mill opponents, then a reflexive trigger exists only if cards were milled. -/
@@ -164,43 +175,6 @@ def applyBardBowman (g : Game) (targetId : ObjectId) : Game :=
       let g := g.addPlusOnePlusOneTo o 1
       let g := g.createEffect (.keywordsUntilEot o.id Keyword.lifelink)
       g.logMsg s!"{nm} gains lifelink until end of turn"
-
-/-- Counter a spell on the stack. `exile` puts a permanent spell into exile
-and may grant a free cast (CR 701.5 / Thranduil's Decree). -/
-def counterStackSpell (g : Game) (spellId : ObjectId) (exilePermanent := false)
-    (grantFreeCast := false) (controller : PlayerId := ⟨0⟩) : Game :=
-  match g.findObject? spellId with
-  | none => g.logMsg "The spell is no longer on the stack"
-  | some o =>
-    if o.zone != .stack then
-      g.logMsg s!"{o.name} is no longer on the stack"
-    else if o.abilityEffect.isSome || o.triggeredAbility.isSome then
-      let name := o.name
-      let cause := some (g.resolvingOrRuleCause controller)
-      let g := g.ceaseToExist o.id (cause := cause)
-      g.logMsg s!"{name} is countered"
-    else if ((g.baseCard o).cantBeCountered && g.retainsPrintedAbilities o) || g.uncounterableThisCast o then
-      g.logMsg s!"{g.name o} can't be countered"
-    else
-      let dest :=
-        if exilePermanent && g.isPermanentCard o then Zone.exile
-        else Zone.graveyard o.owner
-      let name := o.name
-      let (g, cause) : Game × EventCause :=
-        match g.currentResolvingContext? with
-        | some _ => g.allocDelayedCause (some controller)
-        | none => (g, .gameRule .spellCast)
-      let (g, newId) := g.move spellId dest none
-        (verb := some .counter) (actor := some controller) (cause := some cause)
-      let g :=
-        if dest == .exile && grantFreeCast then
-          g.createEffect (.playPermission newId {
-            player := controller
-            whileExiled := true
-            withoutManaCost := true }) (cause := some cause)
-        else g
-      let destNote := if dest == .exile then "exiled" else "countered"
-      g.logMsg s!"{name} is {destNote}"
 
 /-- Exile `o` until `source` leaves the battlefield, linking the new exile id
 and storing the exiling one-shot `EventCause` for the return (CR 610.3). -/
@@ -238,7 +212,11 @@ def exileForLeaveTrigger (g : Game) (sourceId : Option ObjectId) (o : GameObject
 
 /-- Return one exiled id to the battlefield under its owner. Auras attach
 without targeting; if they cannot attach, they remain in exile. -/
-def returnExiledId (g : Game) (id : ObjectId) : Game :=
+def returnExiledId (g : Game) (id : ObjectId)
+    (cause : Option EventCause := none) : Game :=
+  if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement (.returnLinkedExileLoop #[id] cause)
+  else
   match g.findObject? id with
   | none => g
   | some o =>
@@ -248,11 +226,12 @@ def returnExiledId (g : Game) (id : ObjectId) : Game :=
       let owner := o.owner
       match o.returnToZone with
       | some (.hand p) =>
-        let (g, _) := g.move id (.hand p) none
+        let (g, _) := g.move id (.hand p) none (cause := cause)
         g.logMsg s!"{name} returns to {(g.player p).name}'s hand"
       | some (.graveyard p) =>
-        let (g, _) := g.move id (.graveyard p) none
-        g.logMsg s!"{name} returns to {(g.player p).name}'s graveyard"
+        let (g, _) := g.move id (.graveyard p) none (cause := cause)
+        if let .chooseReplacement .. := g.pending then g
+        else g.logMsg s!"{name} returns to {(g.player p).name}'s graveyard"
       | _ =>
         if g.isAura o then
           match g.battlefield.find? (fun h => g.auraObjCanEnchant h o) with
@@ -262,20 +241,40 @@ def returnExiledId (g : Game) (id : ObjectId) : Game :=
             let hostId := host.id
             let hostName := g.name host
             let (g, newId) := g.move id .battlefield (some owner)
-              (attachedTo := some hostId)
-            let g := g.logMsg s!"{name} returns attached to {hostName} (does not target)"
-            g.afterPermanentEnters (g.object! newId)
+              (attachedTo := some hostId) (cause := cause)
+            if let .chooseReplacement .. := g.pending then
+              g.chainPendingReplacement (.afterLastPermanentEnters (some id))
+            else
+              let g := g.logMsg s!"{name} returns attached to {hostName} (does not target)"
+              g.afterPermanentEnters (g.object! newId)
         else
-          let (g, newId) := g.move id .battlefield (some owner)
-          let g := g.logMsg s!"{name} returns to the battlefield"
-          g.afterPermanentEnters (g.object! newId)
+          let (g, newId) := g.move id .battlefield (some owner) (cause := cause)
+          if let .chooseReplacement .. := g.pending then
+            g.chainPendingReplacement (.afterLastPermanentEnters (some id))
+          else
+            let g := g.logMsg s!"{name} returns to the battlefield"
+            g.afterPermanentEnters (g.object! newId)
+
+/-- Return each exiled id in `ids` sequentially, pausing on `Pending.chooseReplacement`. -/
+def returnLinkedExileLoop (g : Game) (ids : Array ObjectId)
+    (cause : Option EventCause := none) : Game := Id.run do
+  if let .chooseReplacement .. := g.pending then
+    return g.chainPendingReplacement (.returnLinkedExileLoop ids cause)
+  let mut g := g
+  for i in [0:ids.size] do
+    g := g.returnExiledId ids[i]! (cause := cause)
+    if let .chooseReplacement .. := g.pending then
+      let rem := ids.extract (i + 1) ids.size
+      if !rem.isEmpty then
+        g := g.chainPendingReplacement (.returnLinkedExileLoop rem cause)
+      return g
+  return g
 
 /-- Return cards linked-exiled by `source` (leave-trigger list first, then
 until-leaves). -/
 def returnLinkedExile (g : Game) (source : GameObject) : Game :=
   g.withBatch none fun g =>
-    (source.leaveTriggerExile ++ source.linkedExile).foldl
-      (fun acc id => acc.returnExiledId id) g
+    g.returnLinkedExileLoop (source.leaveTriggerExile ++ source.linkedExile)
 
 /-- Named MSH tokens that carry extra rules text. -/
 def zabuToken : CardDef :=
@@ -466,7 +465,7 @@ def abilitySourceFor (g : Game) (controller : PlayerId) (sourceId : Option Objec
         { id := sid, printed := { name := "The ability", types := #[] }
           owner := controller, controller := some controller, zone := .battlefield }
   | none =>
-    { id := ⟨1000000000⟩, printed := { name := "The ability", types := #[] }
+    { id := noSourceSentinelId, printed := { name := "The ability", types := #[] }
       owner := controller, controller := some controller, zone := .battlefield }
 
 /-- Queue `followup` as a reflexive triggered ability via `WaitingTrigger` +
@@ -837,7 +836,7 @@ def commitEnteringAttackItems (g : Game)
               g := g'
               if let .chooseReplacement .. := g.pending then
                 g := g.chainPendingReplacement
-                  (.finishEnteringAttackCard none effectController o.name mods logKind cause)
+                  (.finishEnteringAttackCard (some newId) effectController o.name mods logKind cause)
                 let rem := chosen.extract (i + 1) chosen.size
                 if !rem.isEmpty then
                   g := g.chainPendingReplacement (.commitEnteringAttackItems rem cause false)
@@ -977,6 +976,7 @@ copies whatever `src` copied (MSH 194 / 198 / 199 / 201). -/
 def becomeCopyOf (g : Game) (o : GameObject) (src : GameObject)
     (untilEot := false) (untilNextTurn := false)
     (untilSourceLeaves : Option ObjectId := none)
+    (nextTurnOf : Option PlayerId := none)
     (exceptName : Option String := none)
     (addSupertypes : Array Supertype := #[])
     (removeSupertypes : Array Supertype := #[])
@@ -1016,7 +1016,10 @@ def becomeCopyOf (g : Game) (o : GameObject) (src : GameObject)
       keywords :=
         if addVigilance then Keywords.merge printed0.keywords Keyword.vigilance
         else printed0.keywords }
-  let g := g.createEffect (.copy o.id printed untilEot untilNextTurn untilSourceLeaves)
+  let turnPlayer :=
+    nextTurnOf.orElse (fun _ =>
+      if untilNextTurn then (g.controllerOf o).orElse (fun _ => some o.owner) else none)
+  let g := g.createEffect (.copy o.id printed untilEot untilNextTurn untilSourceLeaves turnPlayer)
   g.logMsg s!"{origName} becomes a copy of {printed0.name}"
 
 /-- Copy an activated or triggered ability on the stack. The copy is not
@@ -1056,44 +1059,44 @@ def revealHand (g : Game) (p : PlayerId) (recordEvent : Bool := true) : Game :=
       | none => acc) ""
   g.logMsg s!"{(g.player p).name} reveals their hand ({names})"
 
+/-- Return exiled cards to their owners' hands and exile `sourceId` at the end
+of `finishWorldsWithinWorlds`. -/
+def finishWorldsWithinWorldsTail (g : Game) (exiled : Array ObjectId)
+    (sourceId : Option ObjectId) : Game := Id.run do
+  let mut g := g
+  for nid in exiled do
+    match g.findObject? nid with
+    | some o =>
+      if o.zone == .exile then
+        let (g', _) := g.move o.id (.hand o.owner) none
+        g := g'.logMsg s!"{o.name} is returned to its owner's hand"
+      else pure ()
+    | none => pure ()
+  match sourceId.bind g.findObject? with
+  | some src =>
+    if src.zone == .exile then return g
+    else
+      let (g', _) := g.move src.id .exile none
+      return g'.logMsg s!"{src.name} is exiled"
+  | none => return g
+
 /-- After every player has chosen, the chosen creature cards enter together,
 the exiled cards return to their owners' hands, and the spell is exiled. -/
 def finishWorldsWithinWorlds (g : Game) (exiled chosen : Array ObjectId)
     (sourceId : Option ObjectId) : Game :=
   g.withBatch none fun g =>
-    Id.run do
-      let mut g := g
-      let mut entered : Array ObjectId := #[]
-      for id in chosen do
-        match g.findObject? id with
-        | some o =>
-          if o.zone == .hand o.owner && g.isCreature o then
-            let pid := o.owner
-            let (g', newId) := g.putOntoBattlefield id pid
-            g := g'
-            entered := entered.push newId
-            g := g.logMsg s!"{(g.player pid).name} puts {o.name} onto the battlefield"
-          else pure ()
-        | none => pure ()
-      for id in entered do
-        match g.findObject? id with
-        | some o => g := g.afterPermanentEnters o
-        | none => pure ()
-      for nid in exiled do
-        match g.findObject? nid with
-        | some o =>
-          if o.zone == .exile then
-            let (g', _) := g.move o.id (.hand o.owner) none
-            g := g'.logMsg s!"{o.name} is returned to its owner's hand"
-          else pure ()
-        | none => pure ()
-      match sourceId.bind g.findObject? with
-      | some src =>
-        if src.zone == .exile then return g
-        else
-          let (g', _) := g.move src.id .exile none
-          return g'.logMsg s!"{src.name} is exiled"
-      | none => return g
+    let validChosen := chosen.filter (fun id =>
+      (g.findObject? id).any (fun o => o.zone == .hand o.owner && g.isCreature o))
+    let g := validChosen.foldl (fun g id =>
+      match g.findObject? id with
+      | some o => g.logMsg s!"{(g.player o.owner).name} puts {o.name} onto the battlefield"
+      | none => g) g
+    let g := g.putToBattlefieldLoop g.activePlayer validChosen (useCardOwner := true)
+    if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement
+        (.finishPostStep 2 g.activePlayer (sourceId := sourceId) (ids := exiled))
+    else
+      g.finishWorldsWithinWorldsTail exiled sourceId
 
 /-- Ask the next player who has a creature card in hand, in the order given. -/
 def offerWorldsCreatures (g : Game) (rest : List PlayerId)

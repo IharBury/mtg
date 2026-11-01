@@ -1189,7 +1189,7 @@ accepting casts the instant and bottoms only the cards that weren't cast. -/
 #guard
   let g := addPermanent afterDraw grimaSarumanSFootman me me
   let g := addToLibraryTop (addToLibraryTop g lightningBolt opp) mountain opp
-  let g := g.noteCombatDamageTo opp (namedPermanent g "Gríma, Saruman's Footman").asEvent
+  let g := g.noteCombatDamageTo opp (g.snapshot (namedPermanent g "Gríma, Saruman's Footman"))
   let g := g.applyTriggeredAbility me .onCombatDamageImpulseInstantSorcery
     (some (idOf g "Gríma, Saruman's Footman"))
   let offered :=
@@ -1206,7 +1206,7 @@ accepting casts the instant and bottoms only the cards that weren't cast. -/
 #guard
   let g := addPermanent afterDraw grimaSarumanSFootman me me
   let g := addToLibraryTop (addToLibraryTop g lightningBolt opp) mountain opp
-  let g := g.noteCombatDamageTo opp (namedPermanent g "Gríma, Saruman's Footman").asEvent
+  let g := g.noteCombatDamageTo opp (g.snapshot (namedPermanent g "Gríma, Saruman's Footman"))
   let g := g.applyTriggeredAbility me .onCombatDamageImpulseInstantSorcery
     (some (idOf g "Gríma, Saruman's Footman"))
   let g := mustApply g me .accept
@@ -1359,7 +1359,7 @@ to you, then the Ring tempts you. -/
   let g := addPermanent afterDraw witchKingOfAngmar me me
   let g := addPermanent (addPermanent g grizzlyBears opp opp) grayOgre opp opp
   let bears := namedPermanent g "Grizzly Bears"
-  let g := g.record (GameEvent.damagedPlayer g.turnNumber bears.asEvent me 2 true
+  let g := g.record (GameEvent.damagedPlayer g.turnNumber (g.snapshot bears) me 2 true
     (cause := .turnBased (.dealCombatDamage false)))
   let g := g.applyTriggeredAbility me .onCombatDamageToYouSacRingTempts
     (some (idOf g "Witch-king of Angmar"))
@@ -1370,15 +1370,15 @@ to you, then the Ring tempts you. -/
   let g := addPermanent (addPermanent g grizzlyBears opp opp) grayOgre opp opp
   let bears := namedPermanent g "Grizzly Bears"
   let ogre := namedPermanent g "Gray Ogre"
-  let g := g.record (GameEvent.damagedPlayer g.turnNumber bears.asEvent me 2 true
+  let g := g.record (GameEvent.damagedPlayer g.turnNumber (g.snapshot bears) me 2 true
     (cause := .turnBased (.dealCombatDamage false)))
-  let g := g.record (GameEvent.damagedPlayer g.turnNumber ogre.asEvent me 2 true
+  let g := g.record (GameEvent.damagedPlayer g.turnNumber (g.snapshot ogre) me 2 true
     (cause := .turnBased (.dealCombatDamage false)))
   let g := g.applyTriggeredAbility me .onCombatDamageToYouSacRingTempts
     (some (idOf g "Witch-king of Angmar"))
   let choosing :=
     match g.pending with
-    | .fraChoice p (.sacrificeDamager ids _ c) =>
+    | .fraChoice p (.sacrificeDamager ids _ c _) =>
       p == opp && c == me && ids.contains (idOf g "Grizzly Bears") &&
         ids.contains (idOf g "Gray Ogre")
     | _ => false
@@ -1595,7 +1595,7 @@ line is Human Mercenary Villain. -/
 #guard
   let g := addPermanent afterDraw theMindStone me me
   let stone := namedPermanent g "The Mind Stone"
-  let g := g.record (GameEvent.designation g.turnNumber stone.asEvent .harnessed true
+  let g := g.record (GameEvent.designation g.turnNumber (g.snapshot stone) .harnessed true
     (cause := .oneShotEffect none (some stone.id) (some me)))
   let g := addPermanent (addPermanent g forest me me) grizzlyBears me me
   let legal := g.legalTargetsForKind me

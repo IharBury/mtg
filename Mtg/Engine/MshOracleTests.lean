@@ -112,7 +112,7 @@ def powerUpOnceOk : Bool :=
   let g := mshEnter afterDraw braveBrawler
   let o := namedPermanent g "Brave Brawler"
   let ab := o.printed.activatedAbilities[0]!
-  let g := g.record (GameEvent.abilityActivated g.turnNumber o.id o.asEvent ⟨0⟩
+  let g := g.record (GameEvent.abilityActivated g.turnNumber o.id (g.snapshot o) ⟨0⟩
     (.nonMana none false true false))
   let o := namedPermanent g "Brave Brawler"
   !g.canActivate ⟨0⟩ o ab &&
@@ -135,7 +135,11 @@ def teamworkPaidOk : Bool :=
   let g := mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Helicarrier Strike").id)
   let g := mustApply g ⟨0⟩ (.announceTeamwork true)
   let g := mustApply g ⟨0⟩ (.choosePermanents #[(namedPermanent g "Grizzly Bears").id])
-  (namedPermanent g "Grizzly Bears").status.tapped &&
+  let untappedAt6012b := !(namedPermanent g "Grizzly Bears").status.tapped
+  let g := mustApply g ⟨0⟩ (.target (Target.permanent (namedPermanent g "Gray Ogre").id))
+  let g := mustApply g ⟨0⟩ .pay
+  untappedAt6012b &&
+    (namedPermanent g "Grizzly Bears").status.tapped &&
     (namedPermanent g "Grizzly Bears").status.attacking &&
     g.log.any (fun s => mentions s "pays a teamwork cost") &&
     (mshRuling 363).comment.contains "cast using teamwork" &&
@@ -190,7 +194,12 @@ def teamworkOptionalOnFreeCastOk : Bool :=
     (let g := mustApply g ⟨0⟩ (.cast card.id)
      let g := mustApply g ⟨0⟩ (.announceTeamwork true)
      let g := mustApply g ⟨0⟩ (.choosePermanents #[(namedPermanent g "Grizzly Bears").id])
-     (namedPermanent g "Grizzly Bears").status.tapped &&
+     let untappedAtAnnounce :=
+       !(namedPermanent g "Grizzly Bears").status.tapped &&
+         g.log.any (fun s => mentions s "announces teamwork")
+     let g := mustApply g ⟨0⟩ (.target (.permanent (namedPermanent g "Grizzly Bears").id))
+     untappedAtAnnounce &&
+       (namedPermanent g "Grizzly Bears").status.tapped &&
        g.log.any (fun s => mentions s "pays a teamwork cost")) &&
     (mshRuling 364).comment.contains "without paying its mana cost" &&
     helicarrierStrike.teamwork.isSome &&
@@ -463,7 +472,7 @@ def hulkEnrageOnce : Game :=
   let o := namedPermanent g "The Incredible Hulk"
   let g := g.markAttacking o.id
   let o := namedPermanent g "The Incredible Hulk"
-  let g := g.dealDamageToPermanent o 1 (source := some o.asEvent)
+  let g := g.dealDamageToPermanent o 1 (source := some (g.snapshot o))
   settle g 24
 
 def enrageOnceOk : Bool :=
@@ -481,9 +490,9 @@ def enrageSimultaneous : Game :=
   let o := namedPermanent g "The Incredible Hulk"
   let g := g.markAttacking o.id
   let o := namedPermanent g "The Incredible Hulk"
-  let g := g.dealDamageToPermanent o 1 (source := some o.asEvent)
+  let g := g.dealDamageToPermanent o 1 (source := some (g.snapshot o))
   let o := namedPermanent g "The Incredible Hulk"
-  let g := g.dealDamageToPermanent o 1 (source := some o.asEvent)
+  let g := g.dealDamageToPermanent o 1 (source := some (g.snapshot o))
   settle g 24
 
 #guard (namedPermanent enrageSimultaneous "The Incredible Hulk").status.plusOnePlusOne == 1
@@ -494,7 +503,7 @@ def enrageLethalExtraCombatOk : Bool :=
   let o := namedPermanent g "The Incredible Hulk"
   let g := g.markAttacking o.id
   let o := namedPermanent g "The Incredible Hulk"
-  let g := g.dealDamageToPermanent o 8 (source := some o.asEvent)
+  let g := g.dealDamageToPermanent o 8 (source := some (g.snapshot o))
   let g := settle g 24
   !g.battlefield.any (fun x => x.name == "The Incredible Hulk") &&
     g.additionalCombatPhases == 1 &&
@@ -768,7 +777,7 @@ def boastWindowOk : Bool :=
     let g := addPermanent afterDraw baronHelmutZemo ⟨0⟩ ⟨0⟩
     let o := namedPermanent g "Baron Helmut Zemo"
     !g.canActivateBoast o &&
-      (let g := g.record (GameEvent.attackersDeclared g.turnNumber ⟨0⟩ #[(o.asEvent, .player ⟨1⟩)])
+      (let g := g.record (GameEvent.attackersDeclared g.turnNumber ⟨0⟩ #[(g.snapshot o, .player ⟨1⟩)])
        let o := namedPermanent g "Baron Helmut Zemo"
        g.canActivateBoast o &&
          (let g := g.markBoastUsed o
@@ -988,11 +997,11 @@ def wonderManExtraPowerUpOk : Bool :=
   let ab := o.printed.activatedAbilities[0]!
   g.powerUpActivationLimit ⟨0⟩ == 2 &&
     g.canActivate ⟨0⟩ o ab &&
-    (let g := g.record (GameEvent.abilityActivated g.turnNumber o.id o.asEvent ⟨0⟩
+    (let g := g.record (GameEvent.abilityActivated g.turnNumber o.id (g.snapshot o) ⟨0⟩
        (.nonMana none false true false))
      let o := namedPermanent g "Wonder Man, Hollywood Hero"
      g.canActivate ⟨0⟩ o ab &&
-       (let g := g.record (GameEvent.abilityActivated g.turnNumber o.id o.asEvent ⟨0⟩
+       (let g := g.record (GameEvent.abilityActivated g.turnNumber o.id (g.snapshot o) ⟨0⟩
           (.nonMana none false true false))
         !g.canActivate ⟨0⟩ (namedPermanent g "Wonder Man, Hollywood Hero") ab)) &&
     (mshRuling 689).comment.contains "twice rather than once" &&
@@ -1717,7 +1726,7 @@ def wolverineHealsOtherDamageOk : Bool :=
   let o := namedPermanent g "Wolverine, Fierce Fighter"
   let g := setMarkedDamage g o.id 3
   let o := namedPermanent g "Wolverine, Fierce Fighter"
-  let g := g.markDamageOn o 2 "Wolverine is dealt 2 damage" (source := some o.asEvent)
+  let g := g.markDamageOn o 2 "Wolverine is dealt 2 damage" (source := some (g.snapshot o))
   (namedPermanent g "Wolverine, Fierce Fighter").status.damage == 2 &&
     (mshRuling 668).comment.contains "remove all damage" &&
     (mshRuling 692).comment.contains "replacement effect"
@@ -1729,7 +1738,7 @@ def shieldRemovesOneOk : Bool :=
   let o := namedPermanent g "Captain America, Super-Soldier"
   let g := g.recordPutCounters o.id .shield 2
   let o := namedPermanent g "Captain America, Super-Soldier"
-  let g := g.markDamageOn o 5 "Cap is dealt 5 damage" (source := some o.asEvent)
+  let g := g.markDamageOn o 5 "Cap is dealt 5 damage" (source := some (g.snapshot o))
   let o := namedPermanent g "Captain America, Super-Soldier"
   o.status.shield == 1 && o.status.damage == 0 &&
     (mshRuling 515).comment.contains "only one shield counter" &&
@@ -1744,7 +1753,7 @@ def shieldUnpreventableStillRemovesOk : Bool :=
   let o := namedPermanent g "Captain America, Super-Soldier"
   let g := g.recordPutCounters o.id .shield 1
   let o := namedPermanent g "Captain America, Super-Soldier"
-  let g := g.markDamageOn o 3 "unpreventable" (unpreventable := true) (source := some o.asEvent)
+  let g := g.markDamageOn o 3 "unpreventable" (unpreventable := true) (source := some (g.snapshot o))
   let o := namedPermanent g "Captain America, Super-Soldier"
   o.status.shield == 0 && o.status.damage == 3 &&
     (mshRuling 516).comment.contains "unpreventable damage" &&
@@ -2074,7 +2083,7 @@ def sheHulkDamageOnceOk : Bool :=
   let giant := namedPermanent g "Hill Giant"
   let g := g.recordPutCounters giant.id .indestructible 1
   let giant := namedPermanent g "Hill Giant"
-  let g := g.markDamageOn bears 3 "Bears are dealt 3 damage" (source := some giant.asEvent)
+  let g := g.markDamageOn bears 3 "Bears are dealt 3 damage" (source := some (g.snapshot giant))
   g.waitingTriggers.any (fun t =>
     t.source.name == "The Sensational She-Hulk") &&
     (let (g, _) := g.move she.id (.graveyard ⟨0⟩) none
@@ -2398,7 +2407,7 @@ def mshReflexiveNoTargetFirstOk : Bool :=
        g.hasModeledReflexiveOnStack &&
        (let bears := namedPermanent g "Grizzly Bears"
         let g := passBoth (mustApply g ⟨0⟩ (.target (Target.permanent bears.id)))
-        (g.untilEotKeywords (namedPermanent g "Grizzly Bears")).indestructible)) &&
+        (g.currentKeywords (namedPermanent g "Grizzly Bears")).indestructible)) &&
     (mshRuling 711).comment.contains "reflexive" &&
     (mshRuling 719).comment.contains "reflexive"
 
@@ -2433,7 +2442,7 @@ def sheHulkMayDeclineOk : Bool :=
   let she := namedPermanent g "The Sensational She-Hulk"
   let bears := namedPermanent g "Grizzly Bears"
   let giant := namedPermanent g "Hill Giant"
-  let g := g.markDamageOn bears 1 "Bears are dealt 1 damage" (source := some giant.asEvent)
+  let g := g.markDamageOn bears 1 "Bears are dealt 1 damage" (source := some (g.snapshot giant))
   let queued := (g.waitingTriggers.filter (fun t =>
     t.source.name == "The Sensational She-Hulk")).size
   let g := g.applyTriggeredAbility ⟨0⟩ (.onWatch Effect.watchSheHulkRedirectOnce)
@@ -2445,7 +2454,7 @@ def sheHulkMayDeclineOk : Bool :=
     let n := (declined.waitingTriggers.filter (fun t =>
       t.source.name == "The Sensational She-Hulk")).size
     let again := declined.markDamageOn (namedPermanent declined "Grizzly Bears") 1
-      "Bears are dealt 1 damage" (source := some giant.asEvent)
+      "Bears are dealt 1 damage" (source := some (declined.snapshot giant))
     (namedPermanent declined "Hill Giant").status.damage == 0 &&
       !declined.loggedSheHulkDealtDamage &&
       queued == 1 &&
@@ -2455,7 +2464,7 @@ def sheHulkMayDeclineOk : Bool :=
        let nAcc := (accepted.waitingTriggers.filter (fun t =>
          t.source.name == "The Sensational She-Hulk")).size
        let later := accepted.markDamageOn (namedPermanent accepted "Grizzly Bears") 1
-         "Bears are dealt 1 damage" (source := some giant.asEvent)
+         "Bears are dealt 1 damage" (source := some (accepted.snapshot giant))
        accepted.loggedSheHulkDealtDamage &&
          (namedPermanent accepted "Hill Giant").status.damage == 1 &&
          (later.waitingTriggers.filter (fun t =>
@@ -2583,7 +2592,8 @@ def hulklingComparesCauseOk : Bool :=
      let g := g.createEffect (.pump giant.id (-2) (-2))
      let (g, _) := g.move giantId (.graveyard ⟨0⟩) none
      let gy := g.object! (g.followMoved giantId)
-     g.lastKnownPowerOf? gy.id == some 1 && g.lastKnownToughnessOf? gy.id == some 1 &&
+     g.lastKnownPowerOf? giantId == some 1 && g.lastKnownToughnessOf? giantId == some 1 &&
+       (g.lastKnownPowerOf? gy.id).isNone &&
        (let abId : ObjectId := ⟨g.nextObjectId⟩
         let g := g.record (GameEvent.triggerPutOnStack g.turnNumber abId (g.snapshot hulkling) ⟨0⟩
           (spec := { sourceId := some hulkling.id, fraCauseId := some giantId }))

@@ -32,24 +32,50 @@ def nextActorWithHandCard (g : Game) (players : Array PlayerId) :
   g.nextActorWhere players (fun p =>
     g.stillInGame p && !(g.player p).hand.isEmpty)
 
-/-- Sacrifice the chosen creatures simultaneously, then give priority. -/
+/-- Sacrifice each `(actor, oid)` in `remaining` sequentially inside an open or
+standalone batch, pausing on `Pending.chooseReplacement` and optionally creating
+a 4/4 Beast token if `createBeastFor` is set. -/
+def sacrificePermanentsLoop (g : Game) (remaining : Array (PlayerId × ObjectId))
+    (preBattlefield : Option (Array GameObject) := none)
+    (cause : Option EventCause := none)
+    (createBeastFor : Option PlayerId := none) : Game := Id.run do
+  if let .chooseReplacement .. := g.pending then
+    return g.chainPendingReplacement
+      (.sacrificePermanentsLoop remaining preBattlefield cause createBeastFor)
+  let mut g := g
+  let preBf := preBattlefield.getD g.battlefield
+  for i in [0:remaining.size] do
+    let (who, id) := remaining[i]!
+    match g.findObject? id with
+    | some o =>
+      if o.isOnBattlefield then
+        g := g.sacrificeToGraveyard o
+          s!"{(g.player who).name} sacrifices {g.name o}"
+          (cause := cause) (preBattlefield := some preBf)
+        if let .chooseReplacement .. := g.pending then
+          let rem := remaining.extract (i + 1) remaining.size
+          if !rem.isEmpty || createBeastFor.isSome then
+            g := g.chainPendingReplacement
+              (.sacrificePermanentsLoop rem (some preBf) cause createBeastFor)
+          return g
+    | none => pure ()
+  if let some ctrl := createBeastFor then
+    g := g.createKindTokens ctrl .beast44trample 1 (cause := cause)
+  return g
+
+/-- Sacrifice the chosen creatures simultaneously. -/
 def finishChosenSacrifices (g : Game) (chosen : Array ObjectId) : Game :=
-  let validIds := chosen.filter (fun id =>
-    (g.findObject? id).any (fun o => o.isOnBattlefield && g.isCreature o))
+  let pairs := chosen.filterMap (fun id =>
+    match g.findObject? id with
+    | some o =>
+      if o.isOnBattlefield && g.isCreature o then
+        some ((g.controllerOf o).getD o.owner, id)
+      else none
+    | none => none)
   let preBf := g.battlefield
-  let g := g.withBatch none fun g => Id.run do
-    let mut g := g.change (.pending .none)
-    for id in validIds do
-      match g.findObject? id with
-      | some o =>
-        if o.isOnBattlefield then
-          let who := (g.controllerOf o).getD o.owner
-          g := g.sacrificeToGraveyard o
-            s!"{(g.player who).name} sacrifices {g.name o}"
-            (preBattlefield := some preBf)
-      | none => pure ()
-    return g
-  g.receivePriority g.activePlayer
+  let g := g.change (.pending .none)
+  g.withBatch none fun g =>
+    g.sacrificePermanentsLoop pairs (preBattlefield := some preBf)
 
 /-- Log `msg` for each player in `ps`. -/
 def logForPlayers (g : Game) (ps : Array PlayerId) (msg : PlayerId → String) : Game :=
@@ -90,10 +116,7 @@ def beginDiscardCards (g : Game) (players : Array PlayerId) (count : Nat := 1) :
           "No card is discarded; the conniving creature does not receive a +1/+1 counter"
       else g
     let g := g.changes #[.pending .none, .thirstDiscardsLeft 0, .pendingDiscardsLeft 0]
-    -- A following +1/+1 counter, or the rest of a trigger sequence, waits
-    -- until the caller finishes the discards.
-    if g.plusOneAfterDiscards.isSome || g.triggerSequenceRest.isSome then g
-    else g.receivePriority g.activePlayer
+    g
   | some (p, rest) =>
     (g.change (.pending (.chooseDiscardCard p rest))).logMsg
       s!"{(g.player p).name} must discard a card"
@@ -136,6 +159,9 @@ def finishConniveDraws (g : Game) (controller : PlayerId)
 the battlefield, put a +1/+1 counter on it. The creature still connives if it
 has left (MSH / CR 701.50). -/
 def applyConnive (g : Game) (controller : PlayerId) (sourceId : Option ObjectId) : Game :=
+  if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement (.connive controller sourceId)
+  else
   let run (g : Game) : Game :=
     -- CR 616.1 replacement loop for Leader's `.extraDrawOnConnive` ("If a
     -- creature you control would connive, draw a card, then that creature
@@ -244,6 +270,8 @@ def haveVillainConnive (g : Game) (p : PlayerId) : Except String Game := do
   | .mayHaveVillainConnive q sourceId villainId =>
     if p != q then
       throw s!"Only {(g.player q).name} may have the Villain connive"
+    let outerCont? := g.pendingReplacement
+    let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
     let g := g.change (.pending .none)
     let g :=
       if (g.findObject? sourceId).isSome then
@@ -251,7 +279,9 @@ def haveVillainConnive (g : Game) (p : PlayerId) : Except String Game := do
           (cause := some (.oneShotEffect none (some sourceId) (some p))))
       else g
     let g := g.applyConnive p (some villainId)
-    return g.receivePriority g.activePlayer
+    return match outerCont? with
+      | some outer => g.chainPendingReplacement outer
+      | none => g
   | _ => throw "Not time to have a Villain connive"
 
 /-- After paying K'un-Lun's optional cost, draw a card. Inside `mayThen` the
@@ -262,8 +292,7 @@ def finishSacArtifactOrDiscardDraw (g : Game) (p : PlayerId) (n : Nat) : Game :=
   else if g.mayThenDrop > 0 then
     g.changes #[.pending .none, .mayThenResume true]
   else
-    let g := g.change (.pending .none)
-    g.draw p n |>.receivePriority g.activePlayer
+    (g.change (.pending .none)).draw p n
 
 /-- After mana is paid, sacrifice an artifact or creature (CR 601.2h / 602.2b), or sacrifice a creature a resolved trigger requires (CR 608.2d / 701.21). -/
 def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game := do
@@ -328,19 +357,25 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
     let some sac := g.findObject? id | throw "no such object"
     if !sac.isOnBattlefield || !g.isCreature sac || !g.controlledBy sac p then
       throw s!"Can't sacrifice {g.name sac}"
-    return g.beginSacrificeCreatures remaining (chosen.push id)
+    let outerCont? := g.pendingReplacement
+    let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
+    let g := g.beginSacrificeCreatures remaining (chosen.push id)
+    return match outerCont? with
+      | some outer => g.chainPendingReplacement outer
+      | none => g
   | .sacrificeCreature q =>
     if p != q then
       throw s!"Only {(g.player q).name} may sacrifice"
     let some sac := g.findObject? id | throw "no such object"
     if !g.canSacrificeCreature p sac then
       throw s!"Can't sacrifice {g.name sac}"
+    let outerCont? := g.pendingReplacement
+    let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
     let g := (g.change (.pending .none)).sacrificeToGraveyard sac
       s!"{(g.player p).name} sacrifices {g.name sac}"
-    if let .chooseReplacement .. := g.pending then
-      return g.chainPendingReplacement (.receivePriority g.activePlayer)
-    else
-      return g.receivePriority g.activePlayer
+    return match outerCont? with
+      | some outer => g.chainPendingReplacement outer
+      | none => g
   | .maySacrificeAnotherBolg q bolgId =>
     if p != q then
       throw s!"Only {(g.player q).name} may sacrifice"
@@ -348,12 +383,18 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
     if !sac.isOnBattlefield || !g.isCreature sac || !g.controlledBy sac p ||
         sac.id == bolgId then
       throw s!"Can't sacrifice {g.name sac} to Bolg"
-    let g := g.sacrificeToGraveyard sac
-      s!"{(g.player p).name} sacrifices {g.name sac} (Bolg)"
-    if let .chooseReplacement .. := g.pending then
-      return g.chainPendingReplacement (.receivePriority g.activePlayer)
-    else
-      return (g.change (.pending .none)).receivePriority g.activePlayer
+    let outerCont? := g.pendingReplacement
+    let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
+    let bolgCause := some (EventCause.oneShotEffect none (some bolgId) (some p))
+    let g := g.withBatch bolgCause fun g =>
+      let g := g.sacrificeToGraveyard sac
+        s!"{(g.player p).name} sacrifices {g.name sac} (Bolg)"
+        (cause := bolgCause)
+      if let .chooseReplacement .. := g.pending then g
+      else g.change (.pending .none)
+    return match outerCont? with
+      | some outer => g.chainPendingReplacement outer
+      | none => g
   | .payWard q spellId (.sacrificePermanents left paid) =>
     if p != q then
       throw s!"Only {(g.player q).name} may sacrifice for ward"
@@ -388,9 +429,14 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
     let some sac := g.findObject? id | throw "no such object"
     if !sac.isOnBattlefield || !g.isArtifact sac || !g.controlledBy sac p then
       throw s!"Can't sacrifice {g.name sac}"
+    let outerCont? := g.pendingReplacement
+    let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
     let g := (g.change (.pending .none)).sacrificeToGraveyard sac
       s!"{(g.player p).name} sacrifices {g.name sac}"
-    return g.finishSacArtifactOrDiscardDraw p n
+    let g := g.finishSacArtifactOrDiscardDraw p n
+    return match outerCont? with
+      | some outer => g.chainPendingReplacement outer
+      | none => g
   | _ => throw "Not time to sacrifice a permanent"
 
 /-- `p` discards `id` from their hand (CR 701.9). -/

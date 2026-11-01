@@ -556,11 +556,11 @@ def twoAttercopsReversed : Game :=
 #guard twoAttercopsReversed.waitingTriggers.isEmpty
 #guard twoAttercopsReversed.hasPriority ⟨0⟩
 #guard
-  let ids := twoAttercopsLandPending.defaultTriggerSourceIds ⟨0⟩
+  let wts := twoAttercopsLandPending.waitingTriggersOf ⟨0⟩
   (twoAttercopsReversed.object! twoAttercopsReversed.stack[0]!.objectId).sourceId ==
-    some ids[1]! &&
+    some wts[1]!.source.id &&
     (twoAttercopsReversed.object! twoAttercopsReversed.stack.back!.objectId).sourceId ==
-      some ids[0]!
+      some wts[0]!.source.id
 #guard twoAttercopsReversed.log.any (fun s =>
   mentions s "chooses the order of triggered abilities")
 

@@ -4,7 +4,7 @@ import Mtg.Engine.Game.Triggers
 # Cast and enters triggers (CR 601.2i / 603.6a)
 
 Cast triggers, another-creature-enters triggers, counters added as a
-permanent enters (CR 614.13), and everything that happens after a
+permanent enters (CR 614.1c / 122.6), and everything that happens after a
 permanent or land enters the battlefield.
 -/
 
@@ -193,12 +193,15 @@ def enterFromNickFury (g : Game) (controller : PlayerId) (id : ObjectId)
   | some o =>
     let nightBack := g.isNight && o.printed.daybound && o.printed.otherFace.isSome
     let (g, newId) := g.putOntoBattlefield id controller (nightBack := nightBack) (cause := cause)
-    let o := g.object! newId
-    let g :=
-      if nightBack then
-        g.logMsg s!"{o.name} enters back face up (night / daybound)"
-      else g
-    g.afterPermanentEnters (g.object! newId)
+    if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement (.afterLastPermanentEnters (some id))
+    else
+      let o := g.object! newId
+      let g :=
+        if nightBack then
+          g.logMsg s!"{o.name} enters back face up (night / daybound)"
+        else g
+      g.afterPermanentEnters (g.object! newId)
 
 /-- Tom Bombadil is on the battlefield as a final chapter finishes resolving,
 so his last ability triggers (ruling 74). -/
@@ -380,7 +383,9 @@ def finishOneResolution (g : Game) (fin : ResolutionFinish) : Game :=
 batch continuations have finished, running deferred CR 608.2n / 608.2p / 608.3
 stack-exit actions and popping frames back to `#[]`. -/
 partial def completeActiveResolutions (g : Game) : Game :=
-  if g.pending != .none || g.afterRandom != .none || g.currentBatch.isSome then g
+  if !g.over && (g.pending != .none || g.afterRandom != .none || g.currentBatch.isSome ||
+      g.pendingReplacement.isSome || !g.outerPendingReplacements.isEmpty ||
+      g.triggerSequenceRest.isSome || g.pendingCastExiledQueue.isSome) then g
   else
     match g.continuations.back? with
     | none => if g.over then g else g.promptTriggerTargetsIfNeeded
@@ -429,51 +434,68 @@ again. Repeat until idle, then `p` receives priority. `recheckSba` is false
 while still placing the current batch (targets or the next player's triggers). -/
 partial def receivePriority (g : Game) (p : PlayerId) (recheckSba := true) : Game :=
   let p := g.priorityInstead p
+  let savePendingP (g : Game) : Game :=
+    if g.pendingPriority == some p then g else g.change (.pendingPriority (some p))
+  let hadEntryPending := g.pending != .none
   let g :=
     if g.pending == .none && g.afterRandom == .none then
       g.completeActiveResolutions
     else g
   if g.over then g
-  else if g.legendChoicePending? then g
+  else if g.legendChoicePending? then
+    if hadEntryPending then g else savePendingP g
   else if let .chooseReplacement .. := g.pending then
     g.chainPendingReplacement (.receivePriority p)
-  else if g.pending != .none then g
+  else if g.pending != .none then
+    if hadEntryPending then g else savePendingP g
   else
     let g := if recheckSba then g.checkSBA else g
     if g.over then g
     -- CR 704.3 / 704.5j: a required legend-rule choice is part of performing
     -- the SBA. Do not put triggers on the stack or grant priority yet.
-    else if g.legendChoicePending? then g
+    else if g.legendChoicePending? then savePendingP g
     else if let .chooseReplacement .. := g.pending then
       g.chainPendingReplacement (.receivePriority p)
-    else if g.pending != .none then g
+    else if g.pending != .none then savePendingP g
     else
       match g.nextTriggerStackingPlayer? with
       | none =>
         if g.waitingTriggers.isEmpty then
           if recheckSba then
-            g.changes #[.priority p, .consecutivePasses 0]
+            if g.pendingPriority.isSome then
+              g.changes #[.priority p, .consecutivePasses 0, .pendingPriority none]
+            else
+              g.changes #[.priority p, .consecutivePasses 0]
           else
             -- Finished this CR 603.3b pass; check SBAs and any new triggers.
             receivePriority g p true
         else
           let g := g.putTriggerBatch g.currentTriggerBatch
-          if g.over || g.pending != .none then g
+          if g.over then g
+          else if g.pending != .none then savePendingP g
           else receivePriority g p true
       | some q =>
         let mine := g.waitingTriggersOf q
-        let nonDelayed := mine.filter (·.delayedTrigger.isNone)
         let allIdentical :=
-          nonDelayed.size ≤ 1 ||
-            nonDelayed.all (fun w =>
-              w.source.id == nonDelayed[0]!.source.id &&
-                w.ability == nonDelayed[0]!.ability &&
-                w.causeId == nonDelayed[0]!.causeId)
+          mine.size ≤ 1 ||
+            mine.all (fun w =>
+              w.source.id == mine[0]!.source.id &&
+                w.ability == mine[0]!.ability &&
+                w.event == mine[0]!.event &&
+                w.causeId == mine[0]!.causeId &&
+                w.causeController == mine[0]!.causeController &&
+                w.lastKnownPower == mine[0]!.lastKnownPower &&
+                w.lastKnownToughness == mine[0]!.lastKnownToughness &&
+                w.delayedTrigger == mine[0]!.delayedTrigger &&
+                w.abilityEffect == mine[0]!.abilityEffect &&
+                w.reflexiveResolution == mine[0]!.reflexiveResolution)
         if allIdentical then
           let g := g.putTriggerBatch mine
-          if g.over || g.pending != .none then g
+          if g.over then g
+          else if g.pending != .none then savePendingP g
           else receivePriority g p false
         else
+          let g := savePendingP g
           (g.change (.pending (.chooseTriggerToStack q))).logMsg
             s!"{(g.player q).name} chooses the order of triggered abilities (CR 603.3b)"
 

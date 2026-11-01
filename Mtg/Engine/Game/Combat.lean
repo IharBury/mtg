@@ -177,12 +177,12 @@ blocker before leftover goes to the defending player. -/
 def defaultCombatAssignment (g : Game) (source : GameObject) (forAttackers : Bool)
     (already : Array CreatureCombatAssignment) : CreatureCombatAssignment :=
   let dmg := g.combatDamageAmount source
-  let defender := g.defendingPlayerOf source
-  let playerDmg := if (g.player defender).lost then 0 else dmg
+  let liveDest := g.hasLiveAttackDestination source
+  let playerDmg := if !liveDest then 0 else dmg
   if forAttackers then
     let blockers := g.blockersOf source.id
     if blockers.isEmpty then
-      if source.status.blocked && !g.hasTrample source then
+      if (source.status.blocked && !g.hasTrample source) || !liveDest then
         { source := source.id }
       else
         { source := source.id, toPlayer := playerDmg }
@@ -197,8 +197,15 @@ def defaultCombatAssignment (g : Game) (source : GameObject) (forAttackers : Boo
           toCreatures := toCreatures.push (b.id, amt)
           already := already.push { source := source.id, toCreatures := #[(b.id, amt)] }
           remaining := remaining - amt
-        let toPlayer := if (g.player defender).lost then 0 else remaining
-        return { source := source.id, toCreatures := toCreatures, toPlayer := toPlayer }
+        if liveDest then
+          return { source := source.id, toCreatures := toCreatures, toPlayer := remaining }
+        else
+          let (b0, amt0) := toCreatures[0]!
+          return {
+            source := source.id
+            toCreatures := toCreatures.set! 0 (b0, amt0 + remaining)
+            toPlayer := 0
+          }
     else
       { source := source.id, toCreatures := #[(blockers[0]!.id, dmg)] }
   else
@@ -251,6 +258,7 @@ def checkCombatAssignment (g : Game) (asgn : CreatureCombatAssignment) (forAttac
       else
         throw s!"{src.name} must assign combat damage to the creatures it's blocking (CR 510.1d)"
   let toCreatures := creatureDamageTotal asgn
+  let liveDest := g.hasLiveAttackDestination src
   if forAttackers then
     if !src.status.attacking then
       throw s!"{src.name} is not attacking"
@@ -260,16 +268,22 @@ def checkCombatAssignment (g : Game) (asgn : CreatureCombatAssignment) (forAttac
       if src.status.blocked && !g.hasTrample src then
         if asgn.toPlayer != 0 then
           throw s!"{src.name} is blocked with no remaining blockers and assigns no combat damage (CR 510.1c)"
-      else if (g.player defender).lost then
+      else if !liveDest then
         if asgn.toPlayer != 0 then
-          throw s!"combat damage isn't assigned to a player who has left the game (CR 800.4e)"
+          if (g.player defender).lost then
+            throw s!"combat damage isn't assigned to a player who has left the game (CR 800.4e)"
+          else
+            throw s!"{src.name} has no remaining player, planeswalker, or battle in combat to assign damage to (CR 506.4c / 702.19f)"
       else if asgn.toPlayer != dmg then
         throw s!"{src.name} must assign combat damage equal to its power (CR 510.1a)"
     else
-      if (g.player defender).lost then
+      if !liveDest then
         if asgn.toPlayer != 0 then
-          throw s!"combat damage isn't assigned to a player who has left the game (CR 800.4e)"
-        if toCreatures > dmg then
+          if (g.player defender).lost then
+            throw s!"combat damage isn't assigned to a player who has left the game (CR 800.4e)"
+          else
+            throw s!"{src.name} cannot assign combat damage to the defending player when the planeswalker it was attacking left combat (CR 702.19b / 702.19f)"
+        if toCreatures != dmg then
           throw s!"{src.name} must assign combat damage equal to its power (CR 510.1a)"
       else if toCreatures + asgn.toPlayer != dmg then
         throw s!"{src.name} must assign combat damage equal to its power (CR 510.1a)"
@@ -464,21 +478,38 @@ def storeCombatAssignments (g : Game) (forAttackers : Bool)
   let fs := g.combatHasFirstStrike && !g.firstStrikeDamageDone
   return g.record (GameEvent.combatDamageAssigned g.turnNumber forAttackers batch (firstStrike := fs))
 
-/-- After attackers have assigned, the defending player assigns (CR 510.1d)
-or damage is dealt if they have no division to announce. -/
-def finishAttackerCombatAssignment (g : Game) : Game :=
-  let defender := g.defendingPlayer
-  if g.needsCombatDamageChoice false then
-    g.change (.pending (.assignCombatDamage defender false))
-      |>.logMsg s!"{(g.player defender).name} assigns combat damage (CR 510.1d)"
-  else
-    match g.storeCombatAssignments false #[] with
+/-- Prompt the next defending player in APNAP order who controls a multi-attacker
+blocking creature, or finalize blocker assignments and deal combat damage once
+all defending players have chosen (CR 510.1d / 802.5). -/
+def continueBlockerCombatAssignment (g : Game) : Game :=
+  let already := g.pendingBlockerAssignments.map (·.source)
+  let assigning := g.creaturesAssigningCombatDamage false
+  let nextP? := g.apnapOrder.find? (fun p =>
+    p != g.activePlayer && g.stillInGame p &&
+      assigning.any (fun o =>
+        g.controlledBy o p && !already.contains o.id &&
+          (g.legalCombatDamageRecipients o false).size ≥ 2 && g.combatDamageAmount o > 0))
+  match nextP? with
+  | some nextP =>
+    g.change (.pending (.assignCombatDamage nextP false))
+      |>.logMsg s!"{(g.player nextP).name} assigns combat damage (CR 510.1d)"
+  | none =>
+    let accum := g.pendingBlockerAssignments.filter (fun a =>
+      assigning.any (·.id == a.source))
+    let g := g.change (.pendingBlockerAssignments #[])
+    match g.storeCombatAssignments false accum with
     | .ok g' => g'.dealAssignedCombatDamage
     | .error e => g.logMsg s!"Combat damage assignment failed: {e}"
 
+/-- After attackers have assigned, each defending player in APNAP order assigns
+blocking creatures (CR 510.1d / 802.5) or damage is dealt if none have a
+division to announce. -/
+def finishAttackerCombatAssignment (g : Game) : Game :=
+  (g.change (.pendingBlockerAssignments #[])).continueBlockerCombatAssignment
+
 /-- Start CR 510.1: the active player assigns attacking creatures first. -/
 def beginCombatDamageAssignment (g : Game) : Game :=
-  let g := g.change (.pending .none)
+  let g := g.changes #[.pending .none, .pendingBlockerAssignments #[]]
   if g.needsCombatDamageChoice true then
     g.change (.pending (.assignCombatDamage g.activePlayer true))
       |>.logMsg s!"{(g.player g.activePlayer).name} assigns combat damage (CR 510.1c)"
@@ -498,11 +529,35 @@ def announceCombatDamage (g : Game) (p : PlayerId)
   | .assignCombatDamage q forAttackers =>
     if p != q then
       throw s!"Only {(g.player q).name} may assign combat damage (CR 510.1)"
-    let g ← g.storeCombatAssignments forAttackers listed
     if forAttackers then
+      let g ← g.storeCombatAssignments true listed
       return g.finishAttackerCombatAssignment
     else
-      return g.dealAssignedCombatDamage
+      let assigning := g.creaturesAssigningCombatDamage false
+      let mine := assigning.filter (g.controlledBy · p)
+      let mut seen : Array ObjectId := #[]
+      let mut acc := g.pendingBlockerAssignments.filter (fun a =>
+        !mine.any (·.id == a.source))
+      for a in listed do
+        if seen.contains a.source then
+          throw "Duplicate combat damage source"
+        if !mine.any (·.id == a.source) then
+          if assigning.any (·.id == a.source) then
+            throw "You do not control that blocking creature"
+          else
+            throw "That creature does not assign combat damage now"
+        seen := seen.push a.source
+        acc := acc.push a
+      for o in mine do
+        if !seen.contains o.id then
+          let asgn := g.defaultCombatAssignment o false acc
+          acc := acc.push asgn
+          seen := seen.push o.id
+      for a in acc do
+        if mine.any (·.id == a.source) then
+          let _ ← checkCombatAssignment g a false acc
+      let g := g.change (.pendingBlockerAssignments acc)
+      return g.continueBlockerCombatAssignment
   | _ => throw "Not time to assign combat damage (CR 510.1)"
 
 def clearCombat (g : Game) : Game :=

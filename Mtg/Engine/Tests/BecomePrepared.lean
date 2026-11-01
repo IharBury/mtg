@@ -48,7 +48,7 @@ def attach (g : Game) (aura host : String) : Game :=
 
 def markPrepared (g : Game) (name : String) : Game :=
   let o := obj g name
-  g.record (GameEvent.designation g.turnNumber o.asEvent .prepared true (cause := .gameRule .staticAbility))
+  g.record (GameEvent.designation g.turnNumber (g.snapshot o) .prepared true (cause := .gameRule .staticAbility))
 
 def seed : AdventureFace := { name := "Seed" }
 

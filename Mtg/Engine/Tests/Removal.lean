@@ -129,13 +129,13 @@ def paidPassage : Game := mustApply targetedPassage ⟨0⟩ .pay
 #guard paidPassage.hasPriority ⟨0⟩
 #guard paidPassage.stack.size == 1
 #guard (namedPermanent paidPassage "Rogue's Passage").status.tapped
-#guard !(paidPassage.untilEotKeywords (namedPermanent paidPassage "Gray Ogre")).cantBeBlocked
+#guard !(paidPassage.currentKeywords (namedPermanent paidPassage "Gray Ogre")).cantBeBlocked
 #guard paidPassage.log.any (fun s => mentions s "activates Rogue's Passage")
 
 def passageResolved : Game := passBoth paidPassage
 
 #guard passageResolved.stack.isEmpty
-#guard (passageResolved.untilEotKeywords (namedPermanent passageResolved "Gray Ogre")).cantBeBlocked
+#guard (passageResolved.currentKeywords (namedPermanent passageResolved "Gray Ogre")).cantBeBlocked
 #guard passageResolved.hasCantBeBlocked (namedPermanent passageResolved "Gray Ogre")
 #guard !passageResolved.hasCantBeBlocked (namedPermanent passageResolved "Grizzly Bears")
 #guard passageResolved.log.any (fun s => mentions s "Gray Ogre can't be blocked this turn")
@@ -169,7 +169,7 @@ def passageTargetGone : Game :=
 def afterPassageCleanup : Game :=
   passBoth (skipTo passageResolved .end 80)
 
-#guard !(afterPassageCleanup.untilEotKeywords (namedPermanent afterPassageCleanup "Gray Ogre")).cantBeBlocked
+#guard !(afterPassageCleanup.currentKeywords (namedPermanent afterPassageCleanup "Gray Ogre")).cantBeBlocked
 #guard !afterPassageCleanup.hasCantBeBlocked
   (namedPermanent afterPassageCleanup "Gray Ogre")
 

@@ -473,7 +473,8 @@ def spawnFace (g : Game) (pids : Array PlayerId) (face : CardDef) (n : Nat)
           for _ in [0:n] do
             let (g', tok) := g.createToken pid face (tapped := tapped)
             g := g'
-            last := some tok.id
+            if tok.zone == .battlefield then
+              last := some tok.id
         return (g, last)
 
 /-- Recipients of a created token. The Void with no announced opponent is

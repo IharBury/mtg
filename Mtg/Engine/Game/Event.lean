@@ -96,6 +96,7 @@ inductive ProposalChange where
   | giftAnnounced (v : Bool)
   | teamworkPaid (v : Bool)
   | teamworkAnnounced (v : Bool)
+  | teamworkCreatures (v : Array ObjectId)
 deriving Repr, Inhabited, BEq
 
 /-- Priority tiers for choosing among multiple applicable replacement or
@@ -149,25 +150,23 @@ inductive ReplacementKind where
   /-- CR 616.1a: Intrinsic enters-with-counters replacement on `object`. -/
   | entersWithCountersSelf (object : ObjectId) (kind : CounterKind) (amount : Nat)
   /-- CR 616.1b: Modifies under whose control `object` enters the battlefield. -/
-  | entersUnderControl (object : ObjectId) (newController : PlayerId)
+  | entersUnderControl (object : Option ObjectId) (newController : PlayerId)
   /-- CR 616.1c / 707.5: Makes `object` enter the battlefield as a copy of `template`. -/
-  | entersAsCopy (object : ObjectId) (template : CardDef)
+  | entersAsCopy (object : Option ObjectId) (template : CardDef)
   /-- CR 616.1c / 614.1c / 614.12: Optional enter-as-copy of `targetId` until EOT with haste. -/
   | entersAsCopyCreatureUntilEot (object targetId : ObjectId)
   /-- CR 616.1c / 614.1c / 614.12: Decline optional enter-as-copy. -/
   | declineEntersAsCopy (object : ObjectId)
   /-- CR 616.1d / 702.145b / 712.14: Causes `object` to enter the battlefield with its back face up. -/
-  | entersBackFaceUp (object : ObjectId)
-  /-- CR 616.1e: External static effect causing `object` to enter the battlefield tapped. -/
-  | entersTappedExternal (object : ObjectId)
+  | entersBackFaceUp (object : Option ObjectId)
   /-- CR 616.1e: External effect causing `object` to enter with additional `kind` counters. -/
-  | entersWithExtraCounters (object : ObjectId) (kind : CounterKind) (amount : Nat)
+  | entersWithExtraCounters (object : Option ObjectId) (kind : CounterKind) (amount : Nat)
   /-- CR 616.1e / 122.6: Modifies the number of counters put on `object` (`count * mult + add`). -/
-  | modifyCountersPut (object : ObjectId) (kind : Option CounterKind) (add : Nat := 0) (mult : Nat := 1)
+  | modifyCountersPut (object : Option ObjectId) (kind : Option CounterKind) (add : Nat := 0) (mult : Nat := 1)
   /-- CR 616.1a / 702.34a: Exiles `object` when leaving the stack instead of going elsewhere. -/
-  | exileInsteadOfStackLeave (object : ObjectId)
+  | exileInsteadOfStackLeave (object : Option ObjectId)
   /-- CR 616.1e / 614.1a: Exiles `object` instead of putting it into a graveyard (optionally queueing a reflexive Wolf trigger). -/
-  | exileInsteadOfGraveyard (object : ObjectId) (createsWolf : Bool := false)
+  | exileInsteadOfGraveyard (object : Option ObjectId) (createsWolf : Bool := false)
   /-- CR 616.1e / 122.1c: Removes a shield counter from `object` instead of destroying it. -/
   | shieldCounterDestroy (object : ObjectId)
   /-- CR 616.1e / 121.2: Replaces a card draw by `player` with `factor` card draws. -/
@@ -175,9 +174,9 @@ inductive ReplacementKind where
   /-- CR 616.1e / 701.50: Replaces connive by `player`'s creature with drawing `n` cards, then conniving. -/
   | extraDrawOnConnive (player : PlayerId) (n : Nat := 1)
   /-- CR 616.1e / 614.1a: Adds `bonus` to noncombat damage dealt by `source`. -/
-  | addNoncombatDamage (source : ObjectId) (bonus : Nat)
+  | addNoncombatDamage (source : Option ObjectId) (bonus : Nat)
   /-- CR 616.1e / 614.1a: Multiplies damage dealt by `source` by `factor`. -/
-  | multiplyDamage (source : ObjectId) (factor : Nat := 2)
+  | multiplyDamage (source : Option ObjectId) (factor : Nat := 2)
   /-- CR 616.1e / 119: Modifies life gained by `player` (`amount * mult + add`). -/
   | modifyLifeGain (player : PlayerId) (add : Nat := 0) (mult : Nat := 1)
   /-- CR 616.1e / 111: Creates an extra `extraToken` alongside each Food token created by `player`. -/
@@ -426,7 +425,7 @@ inductive ContinuousEffectSpec where
   | gameRule (r : GameRule) (d : EffectDuration)
   | replacement (r : ReplacementSpec) (d : EffectDuration := .untilEndOfTurn)
   | prevention (r : PreventionSpec) (d : EffectDuration := .untilEndOfTurn)
-  | permission (p : PlayerId) (r : PlayPermissionSpec) (d : EffectDuration)
+  | permission (p : Option PlayerId) (r : PlayPermissionSpec) (d : EffectDuration)
 deriving Repr, Inhabited, BEq
 
 abbrev ContinuousEffect := ContinuousEffectSpec
@@ -466,7 +465,7 @@ namespace ContinuousEffectSpec
   .replacement
     { id := { kind := .untilEotExileIfDies, object := some object }
       source := some object
-      kind := .exileInsteadOfGraveyard object false }
+      kind := .exileInsteadOfGraveyard (some object) false }
     .untilEndOfTurn
 
 /-- `object` has base power and toughness `pt` until end of turn (CR 611.2 / 613.4b). -/
@@ -562,22 +561,22 @@ namespace ContinuousEffectSpec
 
 /-- `object` gains `{T}: Add {C}{C}` until `card` is cast from exile (CR 611.2, ruling 729). -/
 @[inline] def colorlessGrantUntilCast (object : ObjectId) (card : ObjectId) : ContinuousEffectSpec :=
-  .permission ⟨0⟩ (.colorlessGrant object card) .indefinite
+  .permission none (.colorlessGrant object card) .indefinite
 
 /-- `object` may be cast from the graveyard without paying its mana cost this turn (CR 611.2). -/
 @[inline] def freeCastFromGraveyardUntilEot (object : ObjectId) : ContinuousEffectSpec :=
-  .permission ⟨0⟩ (.freeCastFromGraveyard object) .untilEndOfTurn
+  .permission none (.freeCastFromGraveyard object) .untilEndOfTurn
 
 /-- `object` gains flashback until end of turn (CR 611.2). -/
 @[inline] def flashbackUntilEot (object : ObjectId) : ContinuousEffectSpec :=
-  .permission ⟨0⟩ (.flashback object) .untilEndOfTurn
+  .permission none (.flashback object) .untilEndOfTurn
 
 /-- If `object` would be put into a graveyard from the stack, exile it instead (CR 611.2 / 614.1a). -/
 @[inline] def exileInstantSorceryInstead (object : ObjectId) : ContinuousEffectSpec :=
   .replacement
     { id := { kind := .exileInstantSorceryInstead, object := some object }
       source := some object
-      kind := .exileInsteadOfGraveyard object false }
+      kind := .exileInsteadOfGraveyard (some object) false }
     (.whileInZone object .stack)
 
 /-- `object` can't be countered as a spell (CR 611.2). -/
@@ -591,7 +590,7 @@ namespace ContinuousEffectSpec
       if perm.fromAdventure || perm.whileExiled || turnEnds == 0 then .whileInZone object .exile
       else if turnEnds >= 2 then .untilEndOfNextTurnOf perm.player
       else .untilEndOfTurn) : ContinuousEffectSpec :=
-  .permission perm.player (.playFromExile object perm) d
+  .permission (some perm.player) (.playFromExile object perm) d
 
 /-- `object` (an emblem) lasts until `player`'s next turn (CR 611.2). -/
 @[inline] def fraEmblemUntilTurnOf (object : ObjectId) (player : PlayerId) : ContinuousEffectSpec :=
@@ -607,7 +606,10 @@ namespace ContinuousEffectSpec
     | some src => .untilSourceLeaves src
     | none =>
       if untilEot then .untilEndOfTurn
-      else if untilNextTurn then .untilNextTurnOf (nextTurnOf.getD ⟨0⟩)
+      else if untilNextTurn then
+        match nextTurnOf with
+        | some p => .untilNextTurnOf p
+        | none => .untilEndOfTurn
       else .indefinite
   .layered (.objects #[object]) (.copy printed) d
 
@@ -632,7 +634,7 @@ the battlefield (CR 611.2b / 613.1b / 702.26f). -/
 
 /-- `player` may play `n` additional lands this turn (CR 611.2). -/
 @[inline] def additionalLandsThisTurn (player : PlayerId) (n : Nat := 1) : ContinuousEffectSpec :=
-  .playerRule player (.additionalLands n) (.untilStepOrPhase (.step .untap))
+  .playerRule player (.additionalLands n) .untilEndOfTurn
 
 /-- `player` has protection from everything until their next turn (CR 611.2 / 702.16j). -/
 @[inline] def protectionFromEverything (player : PlayerId) : ContinuousEffectSpec :=
@@ -863,7 +865,7 @@ inductive PlayerEvent where
   /-- `player` added `units` of mana to their mana pool (CR 106.4). -/
   | manaAdded (player : PlayerId) (units : Array ManaUnit)
   /-- `player` spent `units` of mana for `forObject` (CR 118.3 / 601.2h). -/
-  | manaSpent (player : PlayerId) (units : Array ManaUnit) (forObject : ObjectId)
+  | manaSpent (player : PlayerId) (units : Array ManaUnit) (forObject : Option ObjectId)
   /-- `player`'s mana pool emptied (CR 500.5 / 703.4q). `units` is the mana
   that was in the pool; `keptColorless` is true when unspent mana became
   colorless instead of emptying. -/
@@ -1150,8 +1152,15 @@ inductive PendingReplacement where
       (cause : Option EventCause)
   | connive (controller : PlayerId) (sourceId : Option ObjectId)
   | finishSbaSweep (moves : Array SbaGraveyardMove) (preBattlefield : Array GameObject)
-      (stage : Nat)
-  | untapPermanent (targetId : ObjectId) (cause : Option EventCause)
+      (stage : Nat) (pwMoves : Array SbaGraveyardMove := #[])
+      (sagaMoves : Array SbaGraveyardMove := #[])
+      (tokensOutsideBf : Array ObjectId := #[])
+      (copiesOutside : Array ObjectId := #[])
+      (illegalAuras : Array ObjectId := #[])
+      (illegalEquips : Array (ObjectId × ObjectId) := #[])
+      (illegalCreatureAtts : Array (ObjectId × ObjectId) := #[])
+  | untapPermanent (targetId : ObjectId) (duringUntapStep : Bool := false)
+      (logUntap : Bool := true) (cause : Option EventCause := none)
   | untapStepPermanents (ids : Array ObjectId)
   | beginStepAfterUntap
   | addLoreCounters (sagaId : ObjectId) (n : Nat) (cause : Option EventCause)
@@ -1233,6 +1242,71 @@ inductive PendingReplacement where
   | finishRecruitDiscard (p : PlayerId) (isLand : Bool)
   | finishPutLandFromHand (fromId : ObjectId)
   | finishBeginOnBattlefield (fromId : ObjectId) (remainingIds : Array ObjectId)
+  | addFinalityTo (targetId : ObjectId) (n : Nat) (byPlayer : Option PlayerId)
+      (entersWith : Bool) (logAfter : Bool) (cause : Option EventCause)
+  | loseLifeAfterDraw (p : PlayerId) (life : Nat) (cause : Option EventCause)
+  | continueUnified (controller : PlayerId) (effect : Effect)
+      (steps : Array Resolution) (targets : Array Target)
+      (castFromGraveyard kicked giftPromised : Bool) (chosenX : Nat)
+      (sourceId : Option ObjectId)
+  | continueUnifiedAbility (controller : PlayerId) (effect : Effect)
+      (steps : Array Resolution) (targets : Array Target)
+      (sourceId : Option ObjectId) (lastKnownPower : Option Int) (chosenX : Nat)
+  | continueSpellModes (controller : PlayerId) (modeEffects : Array Effect)
+      (remainingTargets : Array Target)
+      (castFromGraveyard kicked giftPromised : Bool) (chosenX : Nat)
+      (sourceId : Option ObjectId) (empowerJaceN : Option Nat)
+  | empowerJace (controller : PlayerId) (n : Nat) (stage : Nat := 0)
+      (targetId : Option ObjectId := none) (cause : Option EventCause := none)
+  | continueTriggeredSequence (controller : PlayerId) (steps : Array TriggeredAbility)
+      (sourceId : Option ObjectId) (targets : Array Target)
+      (dividedDamage : Array Nat) (lastKnownPower lastKnownToughness : Option Int)
+      (sourceName : String)
+  | continueTriggeredModes (controller : PlayerId) (ab : TriggeredAbility)
+      (remainingModes : Array (Nat × TriggeredAbility.TriggerResolution))
+      (sourceId : Option ObjectId) (targets : Array Target)
+      (dividedDamage : Array Nat) (lastKnownPower lastKnownToughness : Option Int)
+      (sourceName : String)
+  | continueConnives (controller : PlayerId) (remainingIds : Array ObjectId)
+  | dealDamageToEachCreatureMatching (remainingIds : Array ObjectId) (n : Nat)
+      (onlyNonSubtype : Option CardSubtype := none)
+      (exceptControllerTokens : Option PlayerId := none)
+      (source : Option EventObject := none) (cause : Option EventCause := none)
+  | destroyPermanentsLoop (remainingIds : Array ObjectId)
+      (allCandidates : Array ObjectId := #[]) (countNote : Bool := false)
+      (obGainLifeFor : Option PlayerId := none)
+      (logMsgAfter : Option String := none)
+      (preBattlefield : Option (Array GameObject) := none)
+      (cause : Option EventCause := none)
+  | sacrificePermanentsLoop (remaining : Array (PlayerId × ObjectId))
+      (preBattlefield : Option (Array GameObject) := none)
+      (cause : Option EventCause := none)
+      (createBeastFor : Option PlayerId := none)
+  | putToBattlefieldLoop (controller : PlayerId) (remainingIds : Array ObjectId)
+      (enteredFromIds : Array ObjectId := #[]) (useCardOwner : Bool := false)
+      (haste : Bool := false) (tapped : Bool := false)
+      (isLandEnters : Bool := false) (onlyFoodArtifact : Bool := false)
+      (cause : Option EventCause := none)
+  | returnLinkedExileLoop (remainingIds : Array ObjectId)
+      (cause : Option EventCause := none)
+  | finishLinkedExileMove
+      (remaining : Array (ObjectId × Zone × Option PlayerId × Bool × Option EventCause))
+  | untapPermanentsLoop (remainingIds : Array ObjectId)
+      (cause : Option EventCause := none)
+  | makeFrcLoop (p : PlayerId) (kind : FrcToken) (remaining : Nat) (x : Nat)
+      (extraCounters : CounterBag) (cause : Option EventCause)
+  | finishFrcRestBottom (p : PlayerId) (rest : Array ObjectId) (shuffle : Bool := false)
+      (cause : Option EventCause := none)
+      (dackTargets : Array ObjectId := #[]) (jhoiraLife : Nat := 0)
+  | finishFrcPostStep (tag : Nat) (p : PlayerId) (n1 : Nat := 0) (n2 : Nat := 0)
+      (cardId : Option ObjectId := none) (shuffle : Bool := false)
+      (cause : Option EventCause := none)
+  | finishPostStep (tag : Nat) (p : PlayerId) (n : Nat := 0)
+      (sourceId : Option ObjectId := none) (cardId : Option ObjectId := none)
+      (ids : Array ObjectId := #[]) (targets : Array Target := #[])
+      (modes : Array Nat := #[]) (shuffle : Bool := false)
+      (cause : Option EventCause := none)
+  | acceptMayThen
 deriving Repr, Inhabited, BEq
 
 /-- Whether a `PendingReplacement` continuation ends with `.finishFraChoice`. -/
@@ -1327,7 +1401,6 @@ structure ContinuationFrame where
   excessDamageThisWay : Nat := 0
   /-- `.destroy .target (note := .forAmass)` chose a legal target. -/
   destroyedForAmassThisWay : Bool := false
-  amassControllerThisWay : Option PlayerId := none
   amassAmountThisWay : Nat := 0
   amassYouControlledThisWay : Bool := false
   /-- Cards milled by `.mill` when it notes `.milledCards`. -/
@@ -1414,6 +1487,9 @@ structure ContinuationFrame where
   surveilReturnNoncreatureNonland : Bool := false
   /-- Continuation for an event paused on `Pending.chooseReplacement` (CR 616.1). -/
   pendingReplacement : Option PendingReplacement := none
+  /-- Outer `pendingReplacement` continuations saved while an interactive choice
+  handler runs so inner CR 616.1 pauses cannot overwrite them. -/
+  outerPendingReplacements : Array PendingReplacement := #[]
   /-- Source of the current connive action, if any (MSH / CR 701.50). -/
   conniveSource : Option ObjectId := none
   /-- Put a +1/+1 counter on this permanent after the current discard choices finish. -/
@@ -1470,7 +1546,6 @@ inductive ContinuationChange where
   | skipTriggerSequenceRest (v : Bool)
   | excessDamageThisWay (v : Nat)
   | destroyedForAmassThisWay (v : Bool)
-  | amassControllerThisWay (v : Option PlayerId)
   | amassAmountThisWay (v : Nat)
   | amassYouControlledThisWay (v : Bool)
   | milledIdsThisWay (v : Array ObjectId)
@@ -1522,6 +1597,8 @@ inductive ContinuationChange where
   | surveilReturnMvAtMost (v : Option Nat)
   | surveilReturnNoncreatureNonland (v : Bool)
   | pendingReplacement (v : Option PendingReplacement)
+  | pushOuterPendingReplacement (v : PendingReplacement)
+  | popOuterPendingReplacement
   | conniveSource (v : Option ObjectId)
   | plusOneAfterDiscards (v : Option ObjectId)
   | plusOneAfterSearch (v : Option ObjectId)
@@ -1536,6 +1613,13 @@ inductive ContinuationChange where
   | afterRandom (v : AfterRandom)
   | resolutionFinish (v : Option ResolutionFinish)
   | pendingResolvedEvent (v : Option (EventObject × PlayerId × EventCause))
+deriving Repr, Inhabited, BEq
+
+/-- Structured mutation to a `StackEntry` identified by `objectId`. -/
+inductive StackEntryChange where
+  | skipOptionalSlot
+  | targetsAnnounced (done : Bool)
+  | lastKnownPT (power toughness : Option Int)
 deriving Repr, Inhabited, BEq
 
 /-- Internal engine state mutations that are not rules-level occurrences. -/
@@ -1553,7 +1637,7 @@ inductive EngineChange where
   | removeStackEntry (objectId : ObjectId)
   | pushStack (e : StackEntry)
   | popStack
-  | setStackEntryAt (idx : Nat) (e : StackEntry)
+  | stackEntry (objectId : ObjectId) (c : StackEntryChange)
   /-- Update or checkpoint the proposed spell or ability (CR 601.2 / 602.2 / 733.1). -/
   | proposedSpell (v : Option ProposedSpell)
   | proposal (c : ProposalChange)
@@ -1566,6 +1650,7 @@ inductive EngineChange where
   | pauseBatch (batchId : BatchId) (cause : Option EventCause)
       (objects : Array GameObject) (players : Array Player)
       (effects : Array (EffectId × ContinuousEffectSpec)) (pending : Pending)
+      (stack : Array StackEntry := #[])
   | clearPausedBatch
   /-- Update the continuation frame stack. -/
   | pushContinuationFrame (frame : ContinuationFrame := {})
@@ -1573,6 +1658,8 @@ inductive EngineChange where
   | continuation (c : ContinuationChange)
   /-- Update game fields. -/
   | priority (v : PlayerId)
+  | pendingPriority (v : Option PlayerId)
+  | pendingBlockerAssignments (v : Array CreatureCombatAssignment)
   | startingPlayer (v : PlayerId)
   | pending (v : Pending)
   | nextEffectId (v : Nat)
@@ -1616,7 +1703,6 @@ namespace EngineChange
 @[inline] def skipTriggerSequenceRest (v : Bool) : EngineChange := .continuation (.skipTriggerSequenceRest v)
 @[inline] def excessDamageThisWay (v : Nat) : EngineChange := .continuation (.excessDamageThisWay v)
 @[inline] def destroyedForAmassThisWay (v : Bool) : EngineChange := .continuation (.destroyedForAmassThisWay v)
-@[inline] def amassControllerThisWay (v : Option PlayerId) : EngineChange := .continuation (.amassControllerThisWay v)
 @[inline] def amassAmountThisWay (v : Nat) : EngineChange := .continuation (.amassAmountThisWay v)
 @[inline] def amassYouControlledThisWay (v : Bool) : EngineChange := .continuation (.amassYouControlledThisWay v)
 @[inline] def milledIdsThisWay (v : Array ObjectId) : EngineChange := .continuation (.milledIdsThisWay v)
@@ -1668,6 +1754,8 @@ namespace EngineChange
 @[inline] def surveilReturnMvAtMost (v : Option Nat) : EngineChange := .continuation (.surveilReturnMvAtMost v)
 @[inline] def surveilReturnNoncreatureNonland (v : Bool) : EngineChange := .continuation (.surveilReturnNoncreatureNonland v)
 @[inline] def pendingReplacement (v : Option PendingReplacement) : EngineChange := .continuation (.pendingReplacement v)
+@[inline] def pushOuterPendingReplacement (v : PendingReplacement) : EngineChange := .continuation (.pushOuterPendingReplacement v)
+@[inline] def popOuterPendingReplacement : EngineChange := .continuation .popOuterPendingReplacement
 @[inline] def conniveSource (v : Option ObjectId) : EngineChange := .continuation (.conniveSource v)
 @[inline] def plusOneAfterDiscards (v : Option ObjectId) : EngineChange := .continuation (.plusOneAfterDiscards v)
 @[inline] def plusOneAfterSearch (v : Option ObjectId) : EngineChange := .continuation (.plusOneAfterSearch v)
@@ -2027,19 +2115,6 @@ def abilityActivated (turn : Nat) (ability : ObjectId) (source : EventObject)
   rules turn (.cast (.abilityActivated ability source player kind))
     (cause.getD (.gameRule .abilityActivated))
 
-/-- `player` activated an ability of `source` (CR 602.2). `equip` is set when the
-activation has been completed, so a proposal still being paid does not count. -/
-def activated (turn : Nat) (player : PlayerId) (source : EventObject)
-    (loyalty : Bool := false) (equip : Bool := false)
-    (ability : ObjectId := source.id.getD ⟨0⟩)
-    (loyaltyDelta : Option Int := if loyalty then some 0 else none)
-    (powerUp : Bool := false) (boast : Bool := false)
-    (abilityIdx : Option Nat := none) (exhaust : Bool := false)
-    (cause : Option EventCause := none) : GameEvent :=
-  rules turn (.cast (.abilityActivated ability source player
-      (.nonMana loyaltyDelta equip powerUp boast abilityIdx exhaust)))
-    (cause.getD (.gameRule .abilityActivated))
-
 /-- `ability` on `source` triggered for `controller` from batch `origin` (CR 603.2). -/
 def triggered (turn : Nat) (source : EventObject) (controller : PlayerId)
     (ability : TriggeredAbility) (origin : BatchId)
@@ -2137,17 +2212,9 @@ def manaAdded (turn : Nat) (player : PlayerId) (units : Array ManaUnit)
 
 /-- `player` spent `units` of mana for `forObject` (CR 118.3 / 601.2h). -/
 def manaSpent (turn : Nat) (player : PlayerId) (units : Array ManaUnit)
-    (forObject : ObjectId := ⟨0⟩)
-    (cause : Option EventCause := none) : GameEvent :=
-  rules turn (.player (.manaSpent player units forObject))
-    (cause.getD (.costPayment .mana player (some forObject)))
-
-/-- `player` spent mana (CR 118.3). -/
-def spentMana (turn : Nat) (player : PlayerId) (amount : Nat)
     (forObject : Option ObjectId := none)
     (cause : Option EventCause := none) : GameEvent :=
-  rules turn
-    (.player (.manaSpent player (Array.replicate amount { mana := .colorless }) (forObject.getD ⟨0⟩)))
+  rules turn (.player (.manaSpent player units forObject))
     (cause.getD (.costPayment .mana player forObject))
 
 /-- `player` looked at `cards`. -/
@@ -2286,25 +2353,6 @@ def delayedTriggerExpired (turn : Nat) (dt : DelayedTrigger)
     (cause : EventCause) (batch : BatchId := ⟨0⟩) : GameEvent :=
   rules turn (.delayedTrigger (.expired dt)) cause batch
 
-/-- Same event, sent to `toZone` instead. Used after a zone replacement (CR 614.6). -/
-def withDestination (e : GameEvent) (toZone : Zone) (discarded : Bool) : GameEvent :=
-  match e.change with
-  | .rules (.zone (.moved before after fromZone origTo verb actor entersWith libPos)) =>
-    let verb' :=
-      if verb == .sacrifice then .sacrifice
-      else if discarded || verb == .discard then .discard
-      else if verb == .mill then .mill
-      else if toZone != origTo && toZone == .exile then .exile
-      else verb
-    let after' := { after with
-      zone := toZone
-      controller := if toZone == .battlefield || toZone == .stack then after.controller else none
-      tapped := if toZone == .battlefield then after.tapped else false
-      counters := if toZone == .battlefield then after.counters else #[] }
-    let entersWith' := if toZone == .battlefield then entersWith else #[]
-    e.withRules (.zone (.moved before after' fromZone toZone verb' actor entersWith' libPos))
-  | _ => e
-
 /-- A creature moved from the battlefield to a graveyard (CR 700.4). -/
 def isCreatureToGraveyard (e : GameEvent) : Bool :=
   match e.change with
@@ -2398,15 +2446,18 @@ def watches (e : GameEvent) (watch : ReplacementWatch) : Bool :=
     | _ => false
 
 /-- `listener`'s ability on `sourceId` triggers from this change.
-“This” abilities require `sourceId` to be the object that changed.
+“This” abilities require `sourceId` to be `some` of the object that changed.
 “You” abilities require `listener` to be the player who did it.
 An event this change does not describe does not match. -/
-def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : ObjectId)
+def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : Option ObjectId := none)
     (te : TriggerEvent) : Bool :=
   let you (p : PlayerId) : Bool := p == listener
-  let this (o : EventObject) : Bool := o.id == some sourceId
+  let this (o : EventObject) : Bool := sourceId.isSome && o.id == sourceId
   let yours (o : EventObject) : Bool := o.controller == some listener
-  let other (o : EventObject) : Bool := o.id.any (· != sourceId)
+  let other (o : EventObject) : Bool :=
+    match sourceId with
+    | some sid => o.id.any (· != sid)
+    | none => true
   match e.change with
   | .engine _ => false
   | .rules r =>
@@ -2447,7 +2498,7 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : ObjectId)
         | .player _ => yours pkt.source && pkt.source.hero
         | _ => false)
     | .zone (.moved before _ .battlefield (.graveyard _) _ _ _ _), .dying =>
-      this before && before.creature
+      this before
     | .zone (.moved before _ .battlefield _ _ _ _ _), .leaving => this before
     | .zone (.ceasedToExist before), .leaving => before.zone == .battlefield && this before
     | .zone (.moved before after _ .battlefield _ _ _ _), .entering => this after || this before
@@ -2658,7 +2709,7 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : ObjectId)
       you p && source.creature
     | .cast (.abilityActivated _ _ p (.nonMana (some _) ..)), .fra .opponentActivatesLoyaltyAbility => !you p
     | .cast (.targeted _ targets _), .becomesTarget =>
-      targets.any (fun t => match t with | .permanent oid => oid == sourceId | _ => false)
+      targets.any (fun t => match t with | .permanent oid => some oid == sourceId | _ => false)
     | .zone (.created object p), .fra .youCreateCreatureTokens =>
       object.zone == .battlefield && object.token && you p && object.creature
     | _, _ => false
@@ -2789,9 +2840,9 @@ def manaSpentOn (events : Array GameEvent) (spell : ObjectId) : Nat :=
   events.foldl (fun n e =>
     match e.change, e.cause? with
     | .rules (.player (.manaSpent _ units forObj)), some (.costPayment .mana _ oid?) =>
-      if forObj == spell || oid? == some spell then max n units.size else n
+      if forObj == some spell || oid? == some spell then max n units.size else n
     | .rules (.player (.manaSpent _ units forObj)), _ =>
-      if forObj == spell then max n units.size else n
+      if forObj == some spell then max n units.size else n
     | _, _ => n) 0
 
 /-- Whether `srcId` was recorded as a Treasure permanent when its mana ability was activated. -/
@@ -2811,10 +2862,10 @@ def treasureManaSpentOn (events : Array GameEvent) (spell : ObjectId) : Bool :=
   events.any fun e =>
     match e.change, e.cause? with
     | .rules (.player (.manaSpent _ units forObj)), some (.costPayment .mana _ oid?) =>
-      (forObj == spell || oid? == some spell) &&
+      (forObj == some spell || oid? == some spell) &&
         units.any (isTreasureManaUnit events)
     | .rules (.player (.manaSpent _ units forObj)), _ =>
-      forObj == spell && units.any (isTreasureManaUnit events)
+      forObj == some spell && units.any (isTreasureManaUnit events)
     | _, _ => false
 
 /-- Whether legendary-restricted mana (Delighted Halfling) was spent to cast `spell` (CR 106.6). -/
@@ -2822,10 +2873,10 @@ def legendaryManaSpentOn (events : Array GameEvent) (spell : ObjectId) : Bool :=
   events.any fun e =>
     match e.change, e.cause? with
     | .rules (.player (.manaSpent _ units forObj)), some (.costPayment .mana _ oid?) =>
-      (forObj == spell || oid? == some spell) &&
+      (forObj == some spell || oid? == some spell) &&
         units.any (·.restriction == some (.fra .legendarySpell))
     | .rules (.player (.manaSpent _ units forObj)), _ =>
-      forObj == spell && units.any (·.restriction == some (.fra .legendarySpell))
+      forObj == some spell && units.any (·.restriction == some (.fra .legendarySpell))
     | _, _ => false
 
 /-- Creature spells `p` cast on `turn`. -/
@@ -3193,27 +3244,18 @@ def boastExiledOf (events : Array GameEvent) (abilityId : ObjectId) : Array Obje
       else acc
     | _, _ => acc) #[]
 
-/-- Last-known `before` snapshot for `id` from `ZoneEvent.moved` (CR 113.7a / 608.2h).
-Traces non-battlefield moves backward to find the snapshot when the object left `.battlefield`. -/
+/-- Last-known `before` snapshot for `id` from `ZoneEvent.moved` or
+`ZoneEvent.ceasedToExist` (CR 113.7a / 608.2h). Matches `before.id == some id`
+only so post-departure moves under a new `ObjectId` never overwrite an earlier
+life's departure snapshot (CR 400.7). -/
 def lastKnownBefore? (events : Array GameEvent) (id : ObjectId) : Option EventObject :=
-  let bfId :=
-    events.foldr (fun e cur =>
-      match e.change with
-      | .rules (.zone (.moved before after fromZone _ ..)) =>
-        if fromZone != .battlefield && after.id == some cur then before.id.getD cur else cur
-      | _ => cur) id
-  (events.findSomeRev? fun e =>
+  events.findSomeRev? fun e =>
     match e.change with
-    | .rules (.zone (.moved before after .battlefield _ ..)) =>
-      if before.id == some bfId || after.id == some bfId || before.id == some id || after.id == some id then
-        some before
-      else none
-    | _ => none).orElse fun _ =>
-    events.findSomeRev? fun e =>
-      match e.change with
-      | .rules (.zone (.moved before after ..)) =>
-        if before.id == some id || after.id == some id then some before else none
-      | _ => none
+    | .rules (.zone (.moved before _ ..)) =>
+      if before.id == some id then some before else none
+    | .rules (.zone (.ceasedToExist before)) =>
+      if before.id == some id then some before else none
+    | _ => none
 
 /-- `id` entered from a spell cast for its impending cost (CR 702.176,
 ruling 970). -/

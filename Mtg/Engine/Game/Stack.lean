@@ -98,6 +98,8 @@ structure ProposedSpell where
   teamworkPaid : Bool := false
   /-- Teamwork has been announced (paid or declined). -/
   teamworkAnnounced : Bool := false
+  /-- Creatures reserved during cost choice to tap for teamwork at CR 601.2h. -/
+  teamworkCreatures : Array ObjectId := #[]
   /-- Activated ability being paid, for extra costs. -/
   activation : Option ActivatedAbility := none
   /-- The ability's cost is −X loyalty; X is announced before targets and
