@@ -4093,11 +4093,11 @@ leave-game cleanup), `Casting.lean`, `Activation.lean`, `Combat.lean`, `Damage.l
      `.plusOneOnEachOtherSubtype` (`EffectResolution.lean`, comparing
      `sourceId != some o.id` so `sourceId == none` does not skip real
      `ObjectId ⟨0⟩`), replace `eo.id.getD ⟨0⟩` in `Core.matchTriggers`'s
-     `findEventObj` and `.attackersDeclared` arm (`decls.filterMap (·.1.id)` in
-     `Core.lean`) plus dummy `sourceId := ⟨0⟩` on player-wide
-     `e.matchesTrigger` calls in `Core.matchTriggers` (`Core.lean`),
-     `Library.draw`'s `proposed` probe (`Library.lean`), and
-     `o.attachedTo.getD ⟨0⟩` in `StateBasedActions.lean` (plus dummy
+     `findEventObj` and `.attackersDeclared` arm (replacing
+     `decls.map (fun (eo, _) => eo.id.getD ⟨0⟩)` with `decls.filterMap (·.1.id)`
+     in `Core.lean`) plus dummy `sourceId := ⟨0⟩` on player-wide
+     `e.matchesTrigger` calls in `Core.matchTriggers` (`Core.lean`) and
+     `Library.draw`'s `proposed` probe (`Library.lean`) (plus dummy
      `PlayerId ⟨0⟩` on object-scoped permissions in `Event.lean`); and make
      `GameObject.asEvent` (`Object.lean`) `private` or migrate test callers
      onto `g.snapshot`.
