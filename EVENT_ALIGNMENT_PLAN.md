@@ -4051,10 +4051,13 @@ leave-game cleanup), `Casting.lean`, `Activation.lean`, `Combat.lean`, `Damage.l
      608.2h / 707.10); scope `GameEvent.lastKnownBefore?` (`Event.lean`,
      including `ZoneEvent.ceasedToExist` snapshots) to the queried `id`'s own
      departure rather than folding across earlier zone-change lives or matching
-     `after.id == some id` (CR 113.7a / 400.7 / 608.2h); thread explicit
-     pre-move `ObjectId`s instead of falling back to `g.objects.back?` in
+     `after.id == some id` (CR 113.7a / 400.7 / 608.2h); thread the `newId`
+     returned by `putOntoBattlefield` into `.finishEnteringAttackCard` in
      `ResolutionEffects.commitEnteringAttackItems` (`ResolutionEffects.lean`)
-     and `Decisions.resumePendingReplacement` (`Decisions.lean`); align
+     and drop the `g.objects.back?` fallbacks in
+     `Decisions.resumePendingReplacement`'s `.finishEnteringAttackCard` and
+     `.afterLastPermanentEnters` arms (`Decisions.lean`, resolving the entered
+     permanent via `followMovedToZone?` / `followMoved`); align
      `GameEvent.matchesTrigger` `.dying` (`Event.lean`) with `Core.matchTriggers`
      and CR 700.4 for noncreature battlefield-to-graveyard dies triggers; and
      replace multi-hop `g.followMoved` with `g.followMovedToZone?` on
@@ -4085,10 +4088,19 @@ leave-game cleanup), `Casting.lean`, `Activation.lean`, `Combat.lean`, `Damage.l
      `createTokenBatches` / `createToken` (`Tokens.lean`) and guard callers
      (`Chapters.treasureThenDragon`, `EffectResolution.lean`, `FrcResolve.lean`,
      `TriggerArgs.spawnFace`, `TriggeredAbilities.lean`); replace
-     `sourceId.getD ⟨0⟩` fallbacks in `TriggeredAbilities.lean` and
-     `ModeledTriggers.lean` (and dummy `PlayerId ⟨0⟩` on object-scoped
-     permissions in `Event.lean`); and make `GameObject.asEvent` (`Object.lean`)
-     `private` or migrate test callers onto `g.snapshot`.
+     `sourceId.getD ⟨0⟩` fallbacks in `TriggeredAbilities.lean`,
+     `ModeledTriggers.lean`, and `EffectResolution`
+     `.plusOneOnEachOtherSubtype` (`EffectResolution.lean`, comparing
+     `sourceId != some o.id` so `sourceId == none` does not skip real
+     `ObjectId ⟨0⟩`), replace `eo.id.getD ⟨0⟩` in `Core.matchTriggers`'s
+     `findEventObj` and `.attackersDeclared` arm (`decls.filterMap (·.1.id)` in
+     `Core.lean`) plus dummy `sourceId := ⟨0⟩` on player-wide
+     `e.matchesTrigger` calls in `Core.matchTriggers` (`Core.lean`),
+     `Library.draw`'s `proposed` probe (`Library.lean`), and
+     `o.attachedTo.getD ⟨0⟩` in `StateBasedActions.lean` (plus dummy
+     `PlayerId ⟨0⟩` on object-scoped permissions in `Event.lean`); and make
+     `GameObject.asEvent` (`Object.lean`) `private` or migrate test callers
+     onto `g.snapshot`.
    - Replace whole-entry `EngineChange.setStackEntryAt (idx : Nat) (e : StackEntry)`
      (`Event.lean`, `Core.lean`,
      [`SpellTargets.lean`](Mtg/Engine/Game/SpellTargets.lean)) with granular
@@ -4102,7 +4114,9 @@ leave-game cleanup), `Casting.lean`, `Activation.lean`, `Combat.lean`, `Damage.l
      `Tests/Destroy.lean`), unread `Player.startingLife` (`Player.lean`,
      `Start.lean`), and zero-production-caller helpers
      `GameEvent.withDestination` (`Event.lean`), `GameEvent.spentMana`
-     (`Event.lean`), `Game.createOneKindToken` (`FraHelpers.lean`),
+     (`Event.lean`), `GameEvent.activated` (`Event.lean`, which also defaults
+     `ability := source.id.getD ⟨0⟩`), `Game.createOneKindToken`
+     (`FraHelpers.lean`),
      `Game.copyBattlefieldPermanent` (`Choices.lean`), `Game.auraCanEnchant`
      (`Core.lean`), and the 6 dead pre-Phase-8 layer shim helpers
      (`Game.grantedStaticAbilities`, `Game.grantedTriggeredAbilities`,
