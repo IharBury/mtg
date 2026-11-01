@@ -63,12 +63,14 @@ def continueSacrificeEach (g : Game) (controller : PlayerId) (players : Array Pl
   | [] =>
     let youSacrificed := chosen.any (fun id =>
       (g.findObject? id).any (fun o => g.controlledBy o controller))
+    let preBf := g.battlefield
     let g := g.withBatch none fun g =>
       chosen.foldl (fun g id =>
         match g.findObject? id with
         | some o =>
           if o.isOnBattlefield then
             g.sacrificeToGraveyard o s!"{(g.player ((g.controllerOf o).getD o.owner)).name} sacrifices {g.name o}"
+              (preBattlefield := some preBf)
           else g
         | none => g) g
     if youSacrificed then g.createKindTokens controller .beast44trample 1 else g
@@ -82,7 +84,7 @@ partial def continueDiscardTwo (g : Game) (controller : PlayerId) (players : Arr
   | p :: rest =>
     let hand := (g.player p).hand
     if hand.size ≤ 2 then
-      let nonland := (hand.filter (fun id => !(g.object! id).printed.isLand)).size
+      let nonland := (hand.filter (fun id => !g.isLand (g.object! id))).size
       let g := g.withBatch none fun g =>
         hand.foldl (fun g id => g.discardFromHand p id) g
       let g :=
@@ -103,9 +105,9 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
   let kind := effect.targetKind
   let illegal := some "The target is no longer legal"
   let srcName := g.fraSourceName sourceId
-  let src? := (g.resolvingSpell.bind g.findObject?).orElse (fun _ => sourceId.bind g.findObject?)
+  let src? := (g.resolvingSpell.bind g.damageSourceById?).orElse (fun _ => sourceId.bind g.damageSourceById?)
   let source? : Option GameObject :=
-    (sourceId.map g.followMoved).bind g.findObject?
+    sourceId.bind g.findObject?
   let onSource (f : Game → GameObject → Game) : Game :=
     match source? with
     | some o => if o.isOnBattlefield then f g o else g
@@ -113,16 +115,13 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
   let chosenX := (g.resolvingAbility.bind g.chosenXOf?).getD 0
   match r with
   | .emrakulGrantMana =>
-    match source? with
+    match sourceId.bind (fun id => g.followMovedToZone? id (· == Zone.exile)) with
     | none => g
     | some card =>
-      let g :=
-        if card.zone == .exile then
-          let perm : PlayPermission :=
-            { player := controller, whileExiled := true }
-          (g.createEffect (.playPermission card.id perm)).logMsg
-            s!"{(g.player controller).name} may cast {card.name} for as long as it remains exiled"
-        else g
+      let perm : PlayPermission :=
+        { player := controller, whileExiled := true }
+      let g := (g.createEffect (.playPermission card.id perm)).logMsg
+        s!"{(g.player controller).name} may cast {card.name} for as long as it remains exiled"
       g.withLegalKindPermanent controller kind targets (fun g land =>
         let g := g.createEffect (.colorlessGrantUntilCast land.id card.id)
         g.logMsg s!"{g.name land} gains \"\{T}: Add \{C}\{C}\" until {card.name} is cast from exile")
@@ -142,7 +141,7 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
         for i in [0:lib.size] do
           let id := lib[lib.size - 1 - i]!
           let c := g.object! id
-          if c.printed.isCreature || c.printed.isPlaneswalker then
+          if g.isCreature c || g.isPlaneswalker c then
             return (revealed, some id)
           revealed := revealed.push id
         return (revealed, none)
@@ -186,10 +185,13 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
           s!"{card.name} is put on the bottom of {(g.player card.owner).name}'s library"
       | _ => g) sourceId illegal
   | .destroyAllCreatures =>
+    let preBf := g.battlefield
+    let doomed := preBf.filter (g.isCreature ·)
     g.withBatch none fun g =>
-      (g.battlefield.filter (g.isCreature ·)).foldl (fun g o =>
+      doomed.foldl (fun g o =>
         match g.findObject? o.id with
-        | some o => if o.isOnBattlefield then g.destroyPermanent o else g
+        | some o =>
+          if o.isOnBattlefield then g.destroyPermanent o (preBattlefield := some preBf) else g
         | none => g) g
   | .ownerShufflesIntoLibrary =>
     g.withLegalKindPermanent controller kind targets (fun g o =>
@@ -245,9 +247,8 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
       let g := if o.status.tapped then g else g.becomeTapped o
       if chosenX == 0 then g
       else
-        let n := g.countersYouPut (g.object! o.id) chosenX (putter := some controller)
-        (g.recordPutCounters o.id .stun n (byPlayer := some controller)).logMsg
-          s!"{n} stun counter(s) are put on {g.name o}") sourceId illegal
+        (g.recordPutCounters o.id .stun chosenX (byPlayer := some controller)).logMsg
+          s!"{chosenX} stun counter(s) are put on {g.name o}") sourceId illegal
   | .emblemDrawOnCast =>
     let emblem : CardDef := {
       name := "Chandra, Chill of Compliance Emblem", types := #[]
@@ -388,7 +389,7 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
   | .mshReflexive kind paid =>
     g.resolveModeledReflexive controller sourceId kind paid targets g.resolvingDivision
   | .hawkeyeArrows modes =>
-    let src := sourceId.bind g.findObject?
+    let src := sourceId.bind g.damageSourceById?
     let illegal := some "The target is no longer legal"
     let (g, _) := modes.foldl (fun (acc : Game × Nat) m =>
       let (g, i) := acc
@@ -423,16 +424,20 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
             s!"{(g.player controller).name} may choose new targets for the copies"
     | none => g
   | .damageEqualSourcePower =>
+    let src := sourceId.bind g.damageSourceById?
     let n :=
       match sourceId.bind g.findObject? with
       | some o => (g.power o).toNat
-      | none => 0
-    let srcName := (sourceId.bind g.findObject?).map (·.name) |>.getD "The creature"
+      | none =>
+        match sourceId.bind g.lastKnownBefore? with
+        | some eo => (eo.power.getD 0).toNat
+        | none => 0
+    let srcName := (src.map g.name).getD "The creature"
     g.withLegalKindPermanent controller .creature targets (fun g o =>
-      g.dealDamageFrom srcName o n (source := sourceId.bind g.findObject?))
+      g.dealDamageFrom srcName o n (source := src))
       sourceId (some "The target is no longer legal")
   | .returnSourceToHand =>
-    match sourceId.bind g.findObject? with
+    match sourceId.bind (fun id => g.followMovedToZone? id (fun | .graveyard _ => true | _ => false)) with
     | some o =>
       if o.zone == .graveyard o.owner then g.returnToHand o.id o.owner
       else g.logMsg s!"{o.name} is no longer in the graveyard"
@@ -444,18 +449,19 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
         match g.findObject? id with
         | some o =>
           if !(o.zone == .graveyard o.owner) ||
-              !(o.printed.isEnchantment || o.printed.isInstantOrSorcery) then
+              !(g.isEnchantment o || g.isInstantOrSorcery o) then
             g.logMsg "The target is no longer legal"
           else
-            let name := o.name
+            let name := g.name o
             let (g, exId) := g.move id .exile none
             let g := g.logMsg s!"{name} is exiled"
             let card := g.object! exId
+            let base := g.copiableValues card
             let copyId : ObjectId := ⟨g.nextObjectId⟩
             let copyTs := g.timestamp + 1
             let copyObj : GameObject := {
               id := copyId
-              printed := card.printed
+              printed := base
               owner := controller
               controller := some controller
               zone := .exile
@@ -482,11 +488,12 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
         | some card =>
           if card.zone != .exile then (g, cs)
           else
+            let base := g.copiableValues card
             let copyId : ObjectId := ⟨g.nextObjectId⟩
             let copyTs := g.timestamp + 1
             let copyObj : GameObject := {
               id := copyId
-              printed := { card.printed with isToken := card.printed.isPermanentCard }
+              printed := { base with isToken := base.isPermanentCard }
               owner := controller
               controller := some controller
               zone := .exile

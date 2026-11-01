@@ -308,6 +308,7 @@ inductive CostKind where
   | teamwork            -- set mechanic (tap two untapped teammates)
   | returnToHand        -- 118.3 / 702.190a (sneak / return permanent to hand)
   | putCounters         -- 118.3 / 122.1
+  | cycle               -- 702.29
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- The rule or effect kind that a `ReplacementId` identifies (CR 614 / 615). -/

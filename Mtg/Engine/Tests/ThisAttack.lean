@@ -89,7 +89,7 @@ def antManDeclines : Game :=
 def antManPays : Game :=
   let g := antManOffer.addMana me (.colored .green) 1
   let g := mustApply g me .accept
-  g.applyModeledReflexive #[Target.permanent (named g "Ant-Man, Colony Commander").id]
+  passBoth (mustApply g me (.target (Target.permanent (named g "Ant-Man, Colony Commander").id)))
 
 #guard antManPays.hasModeledReflexiveOnStack == false &&
   (named antManPays "Ant-Man, Colony Commander").status.plusOnePlusOne == 1

@@ -184,7 +184,7 @@ This module re-exports the `Mtg.Engine.Game.*` files, one per abstraction:
 - `Combat`: Combat (CR 506–510)
 - `Turns`: Turn structure (CR 500 / 514)
 - `PriorityActions`: Passing, paying, and conceding
-- `Mulligans`: Opening hands and mulligans (CR 103.4–5)
+- `Mulligans`: Opening hands and mulligans (CR 103.5)
 - `Decisions`: Decision handlers
 - `Actions`: Applying player actions
 - `Start`: Starting a game (CR 103)
@@ -294,6 +294,7 @@ def mustApply (g : Game) (p : PlayerId) (a : Action) : Game :=
           match g.defaultMode p spell with
           | none => panic! "no legal mode (CR 601.2b)"
           | some i => mustApply g p (.chooseMode i)
+      | .turnFaceUp => panic! "unexpected mode choice for turnFaceUp"
   | .chooseX _, some p =>
     mustApply g p (.chooseX 0)
   | .assignCombatDamage _ _, some p =>

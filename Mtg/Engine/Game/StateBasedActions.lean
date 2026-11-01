@@ -75,7 +75,7 @@ def finishSbaSweep (g : Game) (moves : Array SbaGraveyardMove)
       let m := moves[i]!
       match g.findObject? m.objectId with
       | some o =>
-        if o.isOnBattlefield && g.isCreature o then
+        if o.isOnBattlefield then
           g := g.moveToOwnerGraveyard o m.reason (verb := m.verb) (actor := m.actor)
             (preBattlefield := some preBf)
             (cause := some (.stateBased m.sba))

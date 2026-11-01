@@ -43,7 +43,7 @@ def materializeSeat (g : Game) (seatIdx : Nat) (seat : Seat) : Except String Gam
     sideboard := seat.sideboard
     teammate := seat.teammate
   }
-  let g := g.change (.players (g.players.push player))
+  let g := g.change (.addPlayer player)
   return Id.run do
     let mut g := g
     for card in seat.deck do

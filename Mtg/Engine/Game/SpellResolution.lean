@@ -31,7 +31,8 @@ def fraAbilityTargetsAllIllegal (g : Game) (controller : PlayerId) (obj : GameOb
 
 /-- Resolve a CR 603.7 delayed triggered ability on the stack. -/
 def resolveDelayedTrigger (g : Game) (controller : PlayerId) (kind : DelayedTriggerKind)
-    (cause : EventCause) (causeId : Option ObjectId := none) : Game :=
+    (cause : EventCause) (causeId : Option ObjectId := none)
+    (sourceId : Option ObjectId := none) (targets : Array Target := #[]) : Game :=
   match kind with
   | .eaglesBirds n =>
     if n > 0 then
@@ -41,7 +42,11 @@ def resolveDelayedTrigger (g : Game) (controller : PlayerId) (kind : DelayedTrig
         else g
       g.logMsg s!"{(g.player controller).name}'s delayed triggered ability creates {n} Bird Soldier token(s)"
     else g
-  | .attackPumpPerPlains => g
+  | .attackPumpPerPlains =>
+    let n : Int := g.countSubtype controller .plains
+    g.withLegalKindPermanent controller .creatureYouControl targets
+      (fun g o => g.pumpPermanent o n n)
+      sourceId (some "No target was chosen")
   | .endStepReturn id =>
     match g.findObject? id with
     | none => g
@@ -106,14 +111,22 @@ def resolveTop (g : Game) : Game :=
     | some obj =>
       let ctxSrc := obj.sourceId.orElse (fun _ => some obj.id)
       if let some (dtKind, dtCause) := entry.delayedTrigger then
-        let snap := g.snapshot obj
-        let g := g.change (.pushContinuationFrame {
-          resolvingContext := some (ctxSrc, entry.controller)
-          resolvingAbility := some obj.id
-          resolutionFinish := some (.ability obj.id snap entry.controller obj.sourceId) })
-        let g := g.withBatch (some dtCause) (fun g =>
-          g.resolveDelayedTrigger entry.controller dtKind dtCause obj.fraCauseId)
-        g.completeActiveResolutions
+        if dtKind == .attackPumpPerPlains && !entry.targets.isEmpty &&
+            !(g.legalTargetsForKind entry.controller .creatureYouControl obj.sourceId).contains entry.targets[0]! then
+          let g := g.withResolvingContext ctxSrc entry.controller fun g =>
+            let g := g.record (GameEvent.removedOnResolution g.turnNumber (g.snapshot obj))
+            let g := entry.targets.foldl (fun (g : Game) (tg : Target) => g.illegalAbilityTarget tg) g
+            g.logMsg s!"{obj.name} doesn't resolve because all its targets are illegal (CR 608.2b)"
+          g.ceaseToExist obj.id (cause := some (.gameRule .abilityFinishedResolving))
+        else
+          let snap := g.snapshot obj
+          let g := g.change (.pushContinuationFrame {
+            resolvingContext := some (ctxSrc, entry.controller)
+            resolvingAbility := some obj.id
+            resolutionFinish := some (.ability obj.id snap entry.controller obj.sourceId) })
+          let g := g.withBatch (some dtCause) (fun g =>
+            g.resolveDelayedTrigger entry.controller dtKind dtCause obj.fraCauseId obj.sourceId entry.targets)
+          g.completeActiveResolutions
       else if let some rawE := obj.abilityEffect then
         let tcs := g.evalLayer3 obj
         let e := if tcs.isEmpty then rawE else TextChange.applyEffect tcs rawE

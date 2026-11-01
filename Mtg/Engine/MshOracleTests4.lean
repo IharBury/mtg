@@ -206,8 +206,9 @@ def deathToOurEnemiesDivisionOk : Bool :=
   let plan := namedPermanent g "Death to Our Enemies"
   let bears := namedPermanent g "Grizzly Bears"
   let g := g.queueModeledReflexive ⟨0⟩ (some plan.id) 10 7
+  let g := mustApply g ⟨0⟩ (.divideDamage #[(Target.player ⟨1⟩, 4), (Target.permanent bears.id, 3)])
   let (gGone, _) := g.move bears.id (.graveyard ⟨1⟩) none
-  let gGone := gGone.applyModeledReflexive #[Target.player ⟨1⟩, Target.permanent bears.id]
+  let gGone := passBoth gGone
   (gGone.player ⟨1⟩).life == 16 &&
     (mshRuling 578).comment.contains "no damage is dealt to the illegal target"
 
@@ -222,13 +223,13 @@ def deathToOurEnemiesEachTargetAtLeastOneOk : Bool :=
   let bears := namedPermanent g "Grizzly Bears"
   let g := g.queueModeledReflexive ⟨0⟩ (some plan.id) 10
   let life0 := (g.player ⟨1⟩).life
-  let gZero := g.applyModeledReflexive
-    #[Target.player ⟨1⟩, Target.permanent bears.id] #[0, 7]
-  let gOk := g.applyModeledReflexive
-    #[Target.player ⟨1⟩, Target.permanent bears.id] #[1, 6]
-  (gZero.player ⟨1⟩).life == life0 &&
-    (namedPermanent gZero "Grizzly Bears").status.damage == 0 &&
-    gZero.log.any (fun s => mentions s "at least 1 damage") &&
+  let zeroRejected :=
+    match g.apply ⟨0⟩ (.divideDamage #[(Target.player ⟨1⟩, 0), (Target.permanent bears.id, 7)]) with
+    | .error msg => mentions msg "at least 1 damage"
+    | .ok _ => false
+  let gOk :=
+    (mustApply g ⟨0⟩ (.divideDamage #[(Target.player ⟨1⟩, 1), (Target.permanent bears.id, 6)])).resolveTop
+  zeroRejected &&
     (gOk.player ⟨1⟩).life == life0 - 1 &&
     (namedPermanent gOk "Grizzly Bears").status.damage == 6 &&
     (mshRuling 706).comment.contains "Each target must receive at least 1 damage"

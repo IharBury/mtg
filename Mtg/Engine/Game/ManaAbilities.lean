@@ -303,7 +303,7 @@ def activatesAsThoughHaste (g : Game) (p : PlayerId) : Bool :=
       | _ => false))
 
 /-- A player may activate mana abilities with priority, or while paying a
-spell they are casting (CR 605.3a / 601.2g). -/
+spell they are casting or another mana payment prompt (CR 605.3a / 601.2g / 608.2g). -/
 def canActivateManaAbility (g : Game) (p : PlayerId) : Bool :=
   if g.over then false
   else if g.hasPriority p then true
@@ -312,7 +312,15 @@ def canActivateManaAbility (g : Game) (p : PlayerId) : Bool :=
     | .activateManaAbilities caster => caster == p
     | .mayPayGeneric q _ => q == p
     | .fraChoice q (.mayPayThen ..) | .fraChoice q (.mayPayExtort _)
-    | .fraChoice q (.mayPayManaForReflexive ..) => q == p
+    | .fraChoice q (.mayPayManaForReflexive ..)
+    | .fraChoice q (.mayPaySymbolsThen ..)
+    | .fraChoice q (.ultronMayPay ..) => q == p
+    | .fraChoice q (.mayCastCards _ withoutPaying _) => q == p && !withoutPaying
+    | .fraChoice q (.mayCastFromGraveyard _) => q == p
+    | .mayCastExiledElseDamage q .. => q == p
+    | .declareAttackers =>
+      g.activePlayer == p &&
+        (g.livingOpponents p).any (fun opp => g.attackTaxPerCreature opp.id > 0)
     | .payOrLetCounter q _ _ => q == p
     | .payWard q _ cost =>
       q == p &&
@@ -329,6 +337,100 @@ def finishManaAbilityMountainTrigger (g : Game) (p : PlayerId) (id : ObjectId) :
     (g.record (GameEvent.manaAdded g.turnNumber p extraUnits)).logMsg
       (s!"{(g.player p).name} adds an additional " ++ String.join (List.replicate extraRed "{R}"))
   else g
+
+/-- Finish the post-sacrifice steps (`abilityActivated`, `manaAdded`, pain-land
+damage, Mountain extra mana, and CR 733.1 / priority cleanup) of a mana ability. -/
+def finishActivateManaAbilityPostSac (g : Game) (p : PlayerId) (id : ObjectId) (oname : String)
+    (srcSnap : EventObject) (mana : Array ManaType) (tap : Bool)
+    (activatedIdx : Option Nat) (restriction : ManaRestriction)
+    (damageYou : Nat) (isMountain : Bool) (prevPending : Pending)
+    (wasPaused : Bool := true) : Game := Id.run do
+  let mut g := g
+  g := g.record (GameEvent.abilityActivated g.turnNumber id srcSnap p (.mana activatedIdx))
+  let rOpt : Option ManaRestriction := if restriction == .none then none else some restriction
+  let addedUnits := mana.map (fun t => ({ mana := t, source := some id, restriction := rOpt } : ManaUnit))
+  g := g.record (GameEvent.manaAdded g.turnNumber p addedUnits)
+  let produced :=
+    match mana[0]? with
+    | some t =>
+      if !mana.all (· == t) then String.intercalate ", " (mana.toList.map toString)
+      else if mana.size == 1 then toString t
+      else s!"{t} ×{mana.size}"
+    | none => ""
+  let verb := if tap then "taps" else "activates"
+  g :=
+    if mana.isEmpty then g.logMsg s!"{(g.player p).name} {verb} {oname} but adds no mana"
+    else g.logMsg s!"{(g.player p).name} {verb} {oname} for {produced}{restriction.note}"
+  if tap then
+    g := match g.proposedSpell with
+      | some _ => g.changeProposal (.pushTapped id)
+      | none => g
+  g := g.change (.consecutivePasses 0)
+  if damageYou > 0 then
+    let dmgSrc := (g.findObject? id).orElse (fun _ => some (damageSourceObjectFromLki srcSnap))
+    g := g.dealDamageToPlayer p damageYou (source := dmgSrc)
+      (cause := some (.gameRule .abilityActivated))
+  if let .chooseReplacement .. := g.pending then
+    if isMountain then
+      g := g.chainPendingReplacement (.finishManaAbilityMountainTrigger p id)
+    if g.proposalCheckpoint.isSome then
+      g := g.chainPendingReplacement .endProposalAction
+    if prevPending == .none then
+      g := g.chainPendingReplacement (.receivePriority p)
+    else
+      g := g.chainPendingReplacement (.restorePending prevPending)
+    return g
+  else
+    if isMountain then
+      g := g.finishManaAbilityMountainTrigger p id
+    if g.proposalCheckpoint.isSome then
+      g := g.change .endProposalAction
+    if wasPaused then
+      if prevPending == .none then
+        g := g.receivePriority p
+      else
+        g := g.change (.pending prevPending)
+    return g
+
+/-- Execute the remaining `picks`, `{T}`, and `sacrificeSelf` steps of a mana
+ability before `finishActivateManaAbilityPostSac`, chaining continuations if any
+cost step pauses on `Pending.chooseReplacement`. -/
+def finishActivateManaAbilityPicks (g : Game) (p : PlayerId) (id : ObjectId) (oname : String)
+    (mana : Array ManaType) (picks : Array CostPick) (costIds : Array ObjectId)
+    (tap sacrificeSelf : Bool) (activatedIdx : Option Nat) (restriction : ManaRestriction)
+    (damageYou : Nat) (isMountain : Bool) (prevPending : Pending)
+    (wasPaused : Bool := true) : Game := Id.run do
+  let mut g := g
+  let mut rest := costIds
+  for i in [0:picks.size] do
+    let pick := picks[i]!
+    let slice := rest.extract 0 pick.count
+    rest := rest.extract pick.count rest.size
+    g := g.payCostPickItems p id id pick slice
+    if let .chooseReplacement .. := g.pending then
+      let remPicks := picks.extract (i + 1) picks.size
+      g := g.chainPendingReplacement
+        (.finishActivateManaAbilityPicks p id oname mana remPicks rest tap sacrificeSelf
+          activatedIdx restriction damageYou isMountain prevPending)
+      return g
+  if tap then
+    if let some cur := g.findObject? id then
+      g := g.becomeTapped cur (cause := some (.costPayment .tap p (some id)))
+  let srcSnap : EventObject :=
+    match g.findObject? id with
+    | some src => g.snapshot src
+    | none => (g.lastKnownBefore? id).getD default
+  if sacrificeSelf then
+    if let some src := g.findObject? id then
+      g := g.sacrificeToGraveyard src s!"{(g.player p).name} sacrifices {g.name src}"
+        (cause := some (.costPayment .sacrifice p (some id)))
+      if let .chooseReplacement .. := g.pending then
+        g := g.chainPendingReplacement
+          (.finishActivateManaAbilityPostSac p id oname srcSnap mana tap activatedIdx
+            restriction damageYou isMountain prevPending)
+        return g
+  return g.finishActivateManaAbilityPostSac p id oname srcSnap mana tap activatedIdx
+    restriction damageYou isMountain prevPending (wasPaused := wasPaused)
 
 /-- Activate mana ability `idx` of `id` (CR 605.3), adding `mana`, paying
 choice costs with `costIds` in order. The mana is added immediately; the
@@ -358,68 +460,41 @@ def activateManaAbility (g : Game) (p : PlayerId) (id : ObjectId) (idx : Nat)
   if !g.costPicksPayable p id d.picks then
     throw s!"{oname}'s ability has a cost that can't be paid"
   let need := d.picks.foldl (fun acc pick => acc + pick.count) 0
-  if costIds.size != need then
+  if costIds.size != need || costIds.toList.eraseDups.length != costIds.size then
     throw s!"Choose what to {String.intercalate " and " (d.picks.map (·.phrase)).toList}"
-  let prevPending := g.pending
-  let isMountain := g.hasSubtype o .mountain && d.tap && !mana.isEmpty
-  let pl := g.player p
-  let mut g :=
-    if g.proposalCheckpoint.isSome then g.change (.beginProposalAction (.manaAbility (some id)))
-    else g
-  if d.cost.includesManaPayment then
-    match pl.manaPool.payUnits? d.cost (g.hasSubtype o .elf) false (g.hasSubtype o .hero)
-        (g.hasSubtype o .villain) true (g.isCreature o) with
-    | some (_, spentUnits) =>
-      g := g.record (GameEvent.manaSpent g.turnNumber p spentUnits id
-        (cause := some (.costPayment .mana p (some id))))
-    | none => throw s!"{pl.name} cannot pay {d.cost}"
-  g ← g.payLifeCost p d.payLife
-  let mut rest := costIds
+  let mut checkRest := costIds
   for pick in d.picks do
-    g ← g.payCostPick p id id pick (rest.extract 0 pick.count)
-    rest := rest.extract pick.count rest.size
-  if d.tap then
-    g := g.becomeTapped (g.object! id) (cause := some (.costPayment .tap p (some id)))
-  let src := g.object! id
-  let srcSnap := g.snapshot src
-  if d.sacrificeSelf then
-    g := g.sacrificeToGraveyard src s!"{(g.player p).name} sacrifices {g.name src}"
-      (cause := some (.costPayment .sacrifice p (some id)))
-  g := g.record (GameEvent.abilityActivated g.turnNumber id srcSnap p (.mana d.activatedIdx))
-  let rOpt : Option ManaRestriction := if d.restriction == .none then none else some d.restriction
-  let addedUnits := mana.map (fun t => ({ mana := t, source := some id, restriction := rOpt } : ManaUnit))
-  g := g.record (GameEvent.manaAdded g.turnNumber p addedUnits)
-  let produced :=
-    match mana[0]? with
-    | some t =>
-      if !mana.all (· == t) then String.intercalate ", " (mana.toList.map toString)
-      else if mana.size == 1 then toString t
-      else s!"{t} ×{mana.size}"
-    | none => ""
-  let verb := if d.tap then "taps" else "activates"
-  g :=
-    if mana.isEmpty then g.logMsg s!"{(g.player p).name} {verb} {oname} but adds no mana"
-    else g.logMsg s!"{(g.player p).name} {verb} {oname} for {produced}{d.restriction.note}"
-  if d.tap then
-    g := match g.proposedSpell with
-      | some _ => g.changeProposal (.pushTapped id)
-      | none => g
-  g := g.change (.consecutivePasses 0)
-  if d.damageYou > 0 then
-    let dmgSrc := (g.findObject? id).orElse (fun _ => some (damageSourceObjectFromLki srcSnap))
-    g := g.dealDamageToPlayer p d.damageYou (source := dmgSrc)
-      (cause := some (.gameRule .abilityActivated))
-  if let .chooseReplacement .. := g.pending then
-    if isMountain then
-      g := g.chainPendingReplacement (.finishManaAbilityMountainTrigger p id)
-    g := g.chainPendingReplacement (.restorePending prevPending)
-    return g
-  else
-    if isMountain then
-      g := g.finishManaAbilityMountainTrigger p id
-    if g.proposalCheckpoint.isSome then
-      g := g.change .endProposalAction
-    return g
+    let slice := checkRest.extract 0 pick.count
+    for cid in slice do
+      let some co := g.findObject? cid | throw "no such object"
+      if !g.costPickAllows p id pick co then
+        throw s!"{g.name co} can't be used to {pick.phrase}"
+    checkRest := checkRest.extract pick.count checkRest.size
+  let pl := g.player p
+  let spentUnits? ←
+    if d.cost.includesManaPayment then
+      match pl.manaPool.payUnits? d.cost (g.hasSubtype o .elf) false (g.hasSubtype o .hero)
+          (g.hasSubtype o .villain) true (g.isCreature o) with
+      | some (_, spentUnits) => pure (some spentUnits)
+      | none => throw s!"{pl.name} cannot pay {d.cost}"
+    else pure none
+  if !g.canPayLife p d.payLife then
+    throw s!"{pl.name} cannot pay {d.payLife} life"
+  let prevPending := g.pending
+  let outerCont? := g.pendingReplacement
+  let isMountain := g.hasSubtype o .mountain && d.tap && !mana.isEmpty
+  let mut g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
+  if g.proposalCheckpoint.isSome then
+    g := g.change (.beginProposalAction (.manaAbility (some id)))
+  if let some spentUnits := spentUnits? then
+    g := g.record (GameEvent.manaSpent g.turnNumber p spentUnits id
+      (cause := some (.costPayment .mana p (some id))))
+  g ← g.payLifeCost p d.payLife
+  g := g.finishActivateManaAbilityPicks p id oname mana d.picks costIds d.tap d.sacrificeSelf
+    d.activatedIdx d.restriction d.damageYou isMountain prevPending (wasPaused := false)
+  if let some outer := outerCont? then
+    g := g.chainPendingReplacement outer
+  return g
 
 /-- Index of the first mana ability of `o` that can add `mana` by tapping
 alone, or with only mana and life costs when `plainOnly` is false. -/

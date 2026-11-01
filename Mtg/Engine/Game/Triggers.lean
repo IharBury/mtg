@@ -5,7 +5,7 @@ import Mtg.Engine.Game.Targeting
 
 Putting triggered abilities on the stack, intervening-if conditions
 (CR 603.4), extra trigger copies, Saga lore counters (CR 714.3a / 714.3c),
-battlefield folds, `becomeTapped` (CR 603.6d), activated- and mana-ability
+battlefield folds, `becomeTapped` (CR 603.2e), activated- and mana-ability
 lookups, waiting-trigger batches stacked in APNAP order (CR 603.3b), and
 `receivePriority`.
 -/
@@ -77,7 +77,7 @@ def putTriggeredAbilityOnStack (g : Game) (controller : PlayerId) (source : Game
     (delayedTrigger : Option (DelayedTriggerKind × EventCause) := none)
     (abilityEffectOverride : Option Effect := none)
     (reflexiveResolution : Option TriggeredAbility.TriggerResolution := none) : Game :=
-  if (g.player controller).lost then g
+  if (g.player controller).lost || (g.player controller).leftTheGame then g
   else
     -- “For each opponent, up to one target … that player controls”: one
     -- optional instance per opponent (CR 601.2c).
@@ -96,15 +96,16 @@ def putTriggeredAbilityOnStack (g : Game) (controller : PlayerId) (source : Game
       if source.id == ⟨1000000000⟩ || (source.id == ⟨0⟩ && (g.findObject? source.id).isNone) then none
       else some source.id
     let srcSnap : EventObject :=
-      match g.findObject? source.id with
+      match srcIdOpt.bind g.findObject? with
       | some cur => g.snapshot cur
       | none =>
         match srcIdOpt.bind g.lastKnownBefore? with
         | some eo => eo
         | none =>
           if srcIdOpt.isNone then
-            { id := none, name := source.name, owner := controller,
-              controller := some controller, zone := .battlefield }
+            { (g.snapshot source) with
+              id := none
+              controller := source.controller.orElse (fun _ => some controller) }
           else g.snapshot source
     let newId : ObjectId := ⟨g.nextObjectId⟩
     let spec : StackTriggerSpec := {
@@ -182,7 +183,7 @@ def putQueuedTrigger (g : Game) (controller : PlayerId) (source : GameObject)
     (delayedTrigger : Option (DelayedTriggerKind × EventCause) := none)
     (abilityEffectOverride : Option Effect := none)
     (reflexiveResolution : Option TriggeredAbility.TriggerResolution := none) : Game :=
-  if (g.player controller).lost then g
+  if (g.player controller).lost || (g.player controller).leftTheGame then g
   else if !g.triggerConditionHolds controller ab cause (some source) then g
   else
     let label :=
@@ -316,7 +317,7 @@ def foldControlledPermanents (g : Game) (p : PlayerId)
     (excludeId : Option ObjectId := none) (f : Game → GameObject → Game) : Game :=
   g.foldBattlefield (fun o => g.controlledBy o p && excludeId != some o.id) f
 
-/-- Tap an untapped permanent and queue becomes-tapped triggers (CR 603.6d).
+/-- Tap an untapped permanent and queue becomes-tapped triggers (CR 603.2e).
 Entering the battlefield tapped is not becoming tapped; only a change from
 untapped to tapped fires these abilities (Hawkeye's Bow, Trick Arrows,
 Captain America, Living Legend). -/
@@ -343,10 +344,11 @@ def forEachControlledCreature (g : Game) (p : PlayerId)
 
 /-- Sacrifice `o` to its owner's graveyard (CR 701.21a). -/
 def sacrificeToGraveyard (g : Game) (o : GameObject) (reason : String)
-    (cause : Option EventCause := none) : Game :=
+    (cause : Option EventCause := none)
+    (preBattlefield : Option (Array GameObject) := none) : Game :=
   let actor := (g.controllerOf o).getD o.owner
   g.moveToOwnerGraveyard o reason (verb := some .sacrifice) (actor := some actor)
-    (cause := cause)
+    (preBattlefield := preBattlefield) (cause := cause)
 
 /-- Mana types Reality Fracture mana abilities of `o` produce, including the
 `{T}: Add {C}{C}` Emrakul, the Exigent Doom grants a land. -/
@@ -367,17 +369,6 @@ def fraManaAbilities (g : Game) (o : GameObject) : Array ManaType :=
     own.push .colorless
   else own
 
-/-- The spending restriction on mana `o` adds when tapped for `mana`. -/
-def fraManaUseOf (g : Game) (o : GameObject) (mana : ManaType) : Option FraManaUse :=
-  if mana == .colorless && g.hasActiveColorlessGrant o then none
-  else
-    match (g.staticAbilities o).findSome? (fun ab =>
-        match ab with
-        | .fra s => s.manaUse?
-        | _ => none) with
-    | some u => some u
-    | none => if g.hasSubtype o .treasure then some .fromTreasure else none
-
 /-- If a stacked triggered ability still needs targets, prompt its controller
 (CR 603.3d / 601.2c). -/
 def promptTriggerTargetsIfNeeded (g : Game) : Game :=
@@ -388,17 +379,14 @@ def promptTriggerTargetsIfNeeded (g : Game) : Game :=
     else
       let msg :=
         match (g.findObject? e.objectId).bind (fun o =>
-            o.triggeredAbility.bind TriggeredAbility.dividedDamage?) with
+            o.abilityEffect.bind (·.dividedDamage) <|>
+              o.triggeredAbility.bind TriggeredAbility.dividedDamage?) with
         | some (n, maxTargets) =>
           s!"{(g.player e.controller).name} must divide {n} damage among one to {maxTargets} targets (CR 603.3d / 601.2d)"
         | none =>
           s!"{(g.player e.controller).name} must choose a target (CR 603.3d / 601.2c)"
       (g.change (.pending (.chooseTargets e.controller))).logMsg msg
   | none => g
-
-/-- Triggers waiting to be put on the stack for `event`. -/
-def waitingFor (g : Game) (event : TriggerEvent) : Array WaitingTrigger :=
-  g.waitingTriggers.filter (·.event == event)
 
 /-- CR 603.3b: part 1 is every waiting trigger whose condition is not another
 ability triggering; part 2 is the remainder. -/
@@ -448,6 +436,8 @@ def lastKnownPowerForTrigger (ab : TriggeredAbility) (lastKnownPower : Option In
 `checked := true` is checked here for “only once each turn” (CR 603.2h) and
 gets its extra copies (Chief of the Wilds, Bifur). -/
 def putWaitingTrigger (g : Game) (wt : WaitingTrigger) (event : TriggerEvent) : Game :=
+  if (g.player wt.controller).lost || (g.player wt.controller).leftTheGame then g
+  else
   let put (g : Game) :=
     g.putQueuedTrigger wt.controller wt.source wt.ability event
       (lastKnownPowerForTrigger wt.ability wt.lastKnownPower wt.causeId)
@@ -465,7 +455,15 @@ def putWaitingTrigger (g : Game) (wt : WaitingTrigger) (event : TriggerEvent) : 
         match g.currentBatch with
         | some (bid, _) => bid
         | none => ⟨g.nextBatchId⟩
-      let srcSnap := g.snapshot wt.source
+      let srcSnap : EventObject :=
+        if wt.source.id == ⟨1000000000⟩ then
+          { (g.snapshot wt.source) with
+            id := none
+            controller := wt.source.controller.orElse (fun _ => some wt.controller) }
+        else
+          match g.findObject? wt.source.id with
+          | some cur => g.snapshot cur
+          | none => (g.lastKnownBefore? wt.source.id).getD (g.snapshot wt.source)
       let copies := g.extraTriggerCopies wt.controller wt.source + 1
       (List.range copies).foldl (fun g _ =>
         let g :=

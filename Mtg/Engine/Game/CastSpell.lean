@@ -174,10 +174,14 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
     else if isFreeFromGy || origPerm.isSome then .alternative "permission"
     else .normal
   let g := g.record (GameEvent.proposed g.turnNumber newId p original.zone way)
+  let altCost :=
+    sneakCost.isSome || isFlashbackCast || isFreeFromGy ||
+      origPerm.any (fun pm => pm.withoutManaCost || pm.payLifeEqualManaValue)
   let needsMode := face.isModal
   let needsTarget := face.requiresTarget && !needsMode
   let needsAdditionalCostChoice := face.announcesAdditionalCost
-  let needsKicker := face.kicker.isSome || face.morph.isSome || face.impending.isSome
+  let needsKicker :=
+    face.kicker.isSome || (!altCost && (face.morph.isSome || face.impending.isSome))
   let needsGift := face.giftTreasure
   let needsTeamwork := face.teamwork.isSome
   -- CR 702.34a: a flashback cost that includes discarding a card.
@@ -203,6 +207,7 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
     needsDiscardCard := needsFlashbackDiscard
     payLife := lifeInstead
     sneakAttacker
+    alternativeCost := altCost
   }
   let g := g.logMsg s!"{pl.name} begins casting {face.name}"
   return g.enterProposalWindow p pl prop needsMode needsTarget "CR 601.2b / 700.2"
@@ -254,6 +259,7 @@ def announceMode (g : Game) (p : PlayerId) (mode : Nat) : Except String Game := 
         let g := g.change (.pending (.chooseMode p))
         return g.logMsg s!"{(g.player p).name} may choose another mode, or decline (CR 700.2)"
       return g.afterModesChosen p
+    | .turnFaceUp => throw "Not time to choose a mode (CR 601.2b)"
   | _ => throw "Not time to choose a mode (CR 601.2b)"
 
 /-- Announce the value of `{X}` for a proposed spell or ability
@@ -289,7 +295,7 @@ def announceX (g : Game) (p : PlayerId) (x : Nat) : Except String Game := do
         g.activationManaCost p ab (source := src) (chosenX := some x)
       | .spell, _, _ =>
         let spell := g.object! prop.spellId
-        g.playManaCost spell spell.printed
+        g.playManaCost spell (g.baseCard spell)
       | _, _, _ => prop.cost.substituteX x
     let g := g.changeProposal (.cost cost)
     let prop := g.proposedSpell.getD prop
@@ -308,14 +314,22 @@ def announceX (g : Game) (p : PlayerId) (x : Nat) : Except String Game := do
         | none => false
       return g.enterProposalWindow p pl prop needsMode needsTarget "CR 601.2b"
     | .spell =>
-      let spell := g.object! prop.spellId
-      let face := spell.printed
-      return g.enterProposalWindow p pl prop face.isModal
-        (face.requiresTarget && !face.isModal) "CR 601.2b / 700.2"
-        (needsAdditionalCost := face.announcesAdditionalCost)
-        (needsKicker := face.kicker.isSome || face.morph.isSome || face.impending.isSome)
-        (needsGift := face.giftTreasure)
-        (needsTeamwork := face.teamwork.isSome)
+      if prop.resolutionCast then
+        let g' := (g.change (.pending .none)).beginResolutionCastTargets p prop
+        return if g'.pending == .none && (g'.findObject? prop.spellId).any (·.zone == .stack) then
+          g'.finishFraChoice
+        else g'
+      else
+        let spell := g.object! prop.spellId
+        let face := g.baseCard spell
+        return g.enterProposalWindow p pl prop face.isModal
+          (face.requiresTarget && !face.isModal) "CR 601.2b / 700.2"
+          (needsAdditionalCost := face.announcesAdditionalCost)
+          (needsKicker := face.kicker.isSome || (!prop.alternativeCost && (face.morph.isSome || face.impending.isSome)))
+          (needsGift := face.giftTreasure)
+          (needsTeamwork := face.teamwork.isSome)
+    | .turnFaceUp =>
+      throw "Not time to choose X (CR 601.2b)"
   | _ => throw "Not time to choose X (CR 601.2b)"
 
 /-- Finish announcing a triggered ability's targets (CR 603.3d); target and

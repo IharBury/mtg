@@ -1580,10 +1580,10 @@ def docSamsonYouPutAllKindsOk : Bool :=
   let gCap := gCap.afterPermanentEnters (gCap.object! capId)
   let shieldOk :=
     (namedPermanent gCap "Captain America, Super-Soldier").status.shield == 2
-  let gPro := addPermanent afterDraw docSamsonSuperPsychiatrist ⟨0⟩ ⟨0⟩
-  let gPro := addPermanent gPro grizzlyBears ⟨0⟩ ⟨0⟩
+  let gPro := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
   let bear := namedPermanent gPro "Grizzly Bears"
   let gPro := (gPro.recordPutCounters bear.id .plusOnePlusOne 1).recordPutCounters bear.id .stun 2
+  let gPro := addPermanent gPro docSamsonSuperPsychiatrist ⟨0⟩ ⟨0⟩
   let gPro := gPro.proliferateTarget ⟨0⟩ #[Target.permanent bear.id]
   let grown := gPro.object! bear.id
   let proliferateOk := grown.status.plusOnePlusOne == 3 && grown.status.stun == 4
@@ -2397,7 +2397,7 @@ def mshReflexiveNoTargetFirstOk : Bool :=
      (namedPermanent g "Spider-Man, To the Rescue").status.tapped &&
        g.hasModeledReflexiveOnStack &&
        (let bears := namedPermanent g "Grizzly Bears"
-        let g := g.applyModeledReflexive #[Target.permanent bears.id]
+        let g := passBoth (mustApply g ⟨0⟩ (.target (Target.permanent bears.id)))
         (g.untilEotKeywords (namedPermanent g "Grizzly Bears")).indestructible)) &&
     (mshRuling 711).comment.contains "reflexive" &&
     (mshRuling 719).comment.contains "reflexive"
@@ -2768,7 +2768,7 @@ def blackPantherModeOk : Bool :=
 defending player controls, not a creature controlled by another opponent. -/
 def shieldTapsDefendingPlayerOk : Bool :=
   let liliana : Player := { id := ⟨2⟩, name := "Liliana" }
-  let g := afterDraw.change (.players (afterDraw.players.push liliana))
+  let g := afterDraw.change (.addPlayer liliana)
   let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
   let g := addPermanent g captainAmericaSShield ⟨0⟩ ⟨0⟩
   let g := addPermanent g hillGiant ⟨1⟩ ⟨1⟩

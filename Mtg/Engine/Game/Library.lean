@@ -27,7 +27,7 @@ def drawOneCard (g : Game) (p : PlayerId)
       firstOfTheirDrawStep?.getD
         (g.step == .draw && g.activePlayer == p &&
           !GameEvent.drewFirstOfDrawStep g.events g.turnNumber p)
-    -- Opening hands are drawn before anyone keeps (CR 103.4). They are not
+    -- Opening hands are drawn before anyone keeps (CR 103.5). They are not
     -- “cards drawn this turn” once that counter is cleared for the first turn.
     let verb : Option ZoneVerb :=
       if pl.keptOpeningHand then some (.draw nth firstOfTheirDrawStep) else some .put
@@ -160,15 +160,22 @@ def draw (g : Game) (p : PlayerId) (n : Nat := 1)
         return g
     return g
 
-/-- Draw, then discard; if the discarded card is not a land, create a
-1/1 white Human Soldier (the Recruit keyword action). -/
-def beginRecruit (g : Game) (p : PlayerId) : Game :=
-  let g := g.draw p 1
+/-- Finish the post-draw discard prompt of `beginRecruit`. -/
+def finishBeginRecruit (g : Game) (p : PlayerId) : Game :=
   if (g.player p).hand.isEmpty then
     g.logMsg s!"{(g.player p).name} has no card to discard"
   else
     g.change (.pending (.recruitDiscard p)) |>.logMsg
       s!"{(g.player p).name} discards a card. If it is not a land, they create a Human Soldier token"
+
+/-- Draw, then discard; if the discarded card is not a land, create a
+1/1 white Human Soldier (the Recruit keyword action). -/
+def beginRecruit (g : Game) (p : PlayerId) : Game :=
+  let g := g.draw p 1
+  if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement (.finishBeginRecruit p)
+  else
+    g.finishBeginRecruit p
 
 /-- Return a spell on the stack to its owner's hand. -/
 def returnStackSpell (g : Game) (spellId : ObjectId) : Game :=

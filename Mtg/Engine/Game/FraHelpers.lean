@@ -87,7 +87,7 @@ def revealedHandChoices (g : Game) (p : PlayerId) (permanentOnly : Bool) : Array
   (g.player p).hand.filter (fun id =>
     match g.findObject? id with
     | some o =>
-      !o.printed.isLand && (!permanentOnly || o.printed.isPermanentCard)
+      !g.isLand o && (!permanentOnly || g.isPermanentCard o)
     | none => false)
 
 /-- `victim` reveals their hand and `chooser` picks a card for them to discard. -/
@@ -156,9 +156,10 @@ def removeUpToCountersFrom (g : Game) (controller : PlayerId) (o : GameObject) (
 def resolvingAbilityObject? (g : Game) : Option GameObject :=
   g.resolvingAbility.bind g.findObject?
 
-/-- The object that caused the resolving triggered ability, where it is now. -/
+/-- The object that caused the resolving triggered ability, if still at its
+recorded `ObjectId` (CR 400.7). -/
 def fraCause? (g : Game) : Option GameObject :=
-  (g.resolvingAbilityObject?.bind (·.fraCauseId)).bind (fun id => g.findObject? (g.followMoved id))
+  (g.resolvingAbilityObject?.bind (·.fraCauseId)).bind g.findObject?
 
 /-- The controller of the object that caused the resolving triggered ability,
 as it last existed. -/
@@ -183,8 +184,7 @@ def loyaltyOnEachPlaneswalkerOf (g : Game) (p : PlayerId) : Game :=
   else
     g.withBatch none fun g =>
       pws.foldl (fun g o =>
-        let n := g.countersYouPut (g.object! o.id) 1 (putter := some p)
-        (g.recordPutCounters o.id .loyalty n (byPlayer := some p)).logMsg
+        (g.recordPutCounters o.id .loyalty 1 (byPlayer := some p)).logMsg
           s!"A loyalty counter is put on {g.name o}") g
 
 end Game

@@ -229,9 +229,18 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
     | .mayHaveVillainConnive _ _ _ =>
       some .haveVillainConnive
     | .mayCastExiledElseDamage _ cardId .. =>
-      match (g.apply p (.cast cardId)) with
-      | .ok _ => some (.cast cardId)
-      | .error _ => some .decline
+      let affordable :=
+        (g.findObject? cardId).any (fun o =>
+          let available := g.availableMana p
+          available.canPay (g.playManaCost o (g.baseCard o))
+            (allowElfRestricted := g.hasSubtype o .elf)
+            (allowInstRestricted := g.isInstantOrSorcery o) &&
+            g.canPayAnnouncedAdditional p o available)
+      if !affordable then some .decline
+      else
+        match (g.apply p (.cast cardId)) with
+        | .ok _ => some (.cast cardId)
+        | .error _ => some .decline
     | .fraChoice _ choice =>
       some (g.defaultFraAction p choice)
     | .chooseReplacement _ choices =>

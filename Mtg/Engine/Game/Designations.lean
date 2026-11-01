@@ -89,8 +89,7 @@ def refreshCitysBlessing (g : Game) : Game :=
 
 /-- Put a shadow counter on `o`. It has shadow and is a Wraith. -/
 def putShadowCounter (g : Game) (o : GameObject) : Game :=
-  let n := g.countersYouPut o 1
-  let g := g.recordPutCounters o.id .shadow n (byPlayer := g.controllerOf o)
+  let g := g.recordPutCounters o.id .shadow 1 (byPlayer := g.controllerOf o)
   let g := g.createEffect (.additionalSubtype o.id .wraith true)
   g.logMsg s!"{g.name o} gets a shadow counter"
 

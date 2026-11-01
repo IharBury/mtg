@@ -47,6 +47,17 @@ def finishProposedSpell (g : Game) : Except String Game := do
             |>.logMsg s!"{o.name} can't be countered (Delighted Halfling)"
         else paid
       | _, _ => paid
+  if prop.kind == .turnFaceUp then
+    let paused := match g.pending with | .chooseReplacement .. => true | _ => false
+    let clearPending : Array EngineChange :=
+      if paused then #[] else #[.pending .none]
+    let g := g.changes (clearPending ++ #[.proposedSpell none, .clearProposalCheckpoint, .consecutivePasses 0])
+    let g := g.record
+      (GameEvent.turnedFaceUp g.turnNumber (g.snapshot (g.object! prop.spellId))
+        (cause := .specialAction .turnFaceUp prop.caster))
+    let g := g.logMsg s!"{(g.player prop.caster).name} turns {(g.object! prop.spellId).name} face up"
+    return if paused then g.chainPendingReplacement (.receivePriority prop.caster)
+      else g.receivePriority prop.caster
   if prop.kind == .activatedAbility then
     return (← g.beginActivationPayment prop)
   let outerCont? := g.pendingReplacement
@@ -95,20 +106,29 @@ def finishProposedSpell (g : Game) : Except String Game := do
       return g.logMsg
         s!"{(g.player prop.caster).name} must discard a card"
   | _, _, _ =>
+    let isResCast := prop.resolutionCast
     let paused := match g.pending with | .chooseReplacement .. => true | _ => false
     let clearPending : Array EngineChange :=
       if paused then #[] else #[.pending .none]
     let g := g.changes (clearPending ++ #[.proposedSpell none, .consecutivePasses 0])
     let g := g.becomeCast prop.caster (g.object! prop.spellId)
+      (grantPriority := !isResCast)
       (hadOuterReplacement := outerCont?.isSome)
       (hadOpenContinuation := some openCont)
     let g :=
       if paused then
         match outerCont? with
         | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishFra
-        | none => g
+        | none => if isResCast then g.chainPendingReplacement .finishFraChoice else g
       else g
-    return g.resumeAfterBecomeCast
+    if isResCast then
+      if (match g.pending with | .chooseReplacement .. => true | _ => false) &&
+          g.pendingReplacement.any (·.endsWithFinishFra) then
+        return g
+      else
+        return g.finishFraChoice
+    else
+      return g.resumeAfterBecomeCast
 
 /-- Pay the proposed spell or ability (CR 601.2h / 602.2b). If the cost
 cannot be paid, the action is reversed (CR 733.1). -/
@@ -183,10 +203,16 @@ def announceAdditionalCost (g : Game) (p : PlayerId) (payGeneric : Bool) :
           s!"{(g.player p).name} chooses to pay \{{n}} as an additional cost (CR 601.2b)"
         return g.afterAdditionalCostAnnounced
       else
+        let beforeEvents := g.events.size
         let g := g.withProposalAction .costAction fun g =>
           g.beholdQuality p quality
             (cause := some (.costPayment .behold p (some prop.spellId)))
-        if !(g.qualityWasBeheld p quality) then
+        let beheldNow :=
+          (g.events.extract beforeEvents g.events.size).any fun e =>
+            match e.change with
+            | .rules (.player (.beheld who q)) => who == p && q == quality
+            | _ => false
+        if !beheldNow then
           throw s!"{spell.name} requires beholding a {quality}"
         return g.afterAdditionalCostAnnounced
     | none =>
@@ -264,7 +290,26 @@ def concede (g : Game) (p : PlayerId) : Game :=
     let g := g.logMsg s!"{pl.name} concedes (CR 104.3a)"
     match g.decideGameIfFinished with
     | some finished => finished
-    | none => g.playerLeavesGame p |>.checkSBA
+    | none =>
+      let g := g.playerLeavesGame p |>.checkSBA
+      if g.unlessPaysDue then
+        g.flushUnlessPays
+      else if g.over || g.pending != .none then g
+      else if !g.continuations.isEmpty || g.pendingReplacement.isSome ||
+          g.pendingCastExiledQueue.isSome || g.triggerSequenceRest.isSome then
+        g.finishFraChoice
+      else if g.playersReceivePriority && g.consecutivePasses ≥ g.livingPlayers.size then
+        if !g.stack.isEmpty then
+          let g := g.resolveTop
+          if let .chooseReplacement .. := g.pending then
+            g.chainPendingReplacement (.receivePriority g.activePlayer)
+          else if g.pending != .none then g
+          else g.receivePriority g.activePlayer
+        else
+          g.advanceStep
+      else if g.playersReceivePriority then
+        g.receivePriority g.priority
+      else g
 
 end Game
 end Mtg.Engine

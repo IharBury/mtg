@@ -138,7 +138,7 @@ def setTapped (g : Game) (id : ObjectId) (v : Bool) : Game :=
   | some o =>
     let c := EventCause.gameRule .staticAbility
     if v then g.record (GameEvent.tapped g.turnNumber (g.snapshot o) (cause := c))
-    else g.record (GameEvent.untapped g.turnNumber (g.snapshot o) false (cause := c))
+    else g.record (GameEvent.untapped g.turnNumber (g.snapshot o) (cause := c))
 
 /-- Set `id`'s marked damage through `DamageEvent` in test fixtures. -/
 def setMarkedDamage (g : Game) (id : ObjectId) (amt : Nat) : Game :=

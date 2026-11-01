@@ -50,8 +50,10 @@ def castFreeCopy (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game 
   if mv > budget then
     throw s!"{face.name} has mana value {mv}; only {budget} is left"
   if face.isLand then throw "A land can't be cast"
-  if !face.isModal && face.requiresTarget && (g.legalCastTargets p face).isEmpty &&
-      !face.allowsZeroTargets then
+  if face.isModal && !face.spellModes.any (g.spellModeIsChoosable p) && !face.allowsZeroTargets then
+    throw s!"{face.name} requires a target"
+  if !face.isModal && (face.requiresTarget || face.isAura) &&
+      (g.legalCastTargets p face).isEmpty && !face.allowsZeroTargets then
     throw s!"{face.name} requires a target"
   let rest := ids.filter (· != id)
   let g := g.change .saveProposalCheckpoint
@@ -66,8 +68,12 @@ def castFreeCopy (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game 
       (face.additionalCostSacrificeArtifactOrCreature && face.additionalCostOrPayGeneric.isNone)
   let prop : ProposedSpell := {
     caster := p, cost := ManaCost.empty, spellId := newId, original := card
-    originalSnapshot := origSnap, needsSacrificeOther := needsSacrifice }
-  return (g.beginResolutionCastTargets p prop).finishFraChoice
+    originalSnapshot := origSnap, needsSacrificeOther := needsSacrifice
+    alternativeCost := true, resolutionCast := true }
+  let g' := g.beginResolutionCastTargets p prop
+  return if g'.pending == .none && (g'.findObject? newId).any (·.zone == .stack) then
+    g'.finishFraChoice
+  else g'
 
 /-- Hawkeye's Trick Arrows with the chosen modes, in printed order. -/
 def hawkeyeArrowsEffect (modes : Array Nat) : Effect :=
@@ -232,7 +238,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let g := g.draw p 1
     let n := g.loggedDiscards p
     let g :=
-      match causeId.bind (fun c => g.findObject? (g.followMoved c)) with
+      match causeId.bind g.findObject? with
       | some o => if o.isOnBattlefield && n > 0 then g.addPlusOnePlusOneTo o n else g
       | none => g
     return g.finishFraChoice
@@ -420,6 +426,8 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .costPicks sourceId picks _, .objects ids =>
     let some prop := g.proposedSpell | throw "No activation is being paid for"
     let some pick := picks[0]? | throw "No cost is left to pay"
+    if (gPre.costPickCandidates p sourceId pick).size < pick.count then
+      return (← gPre.reverseProposedSpell? (resumeContinuation := true))
     let outerCont? := g.pendingReplacement
     let openCont := g.proposalHadOpenContinuation
     let g0 := if outerCont?.isSome then g.change (.pendingReplacement none) else g
@@ -432,13 +440,18 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
         match outerCont? with
         | some outer => g.chainPendingReplacement outer
         | none => g
-      return (← g.continueCostPicks prop restPicks true
+      let g ← g.continueCostPicks prop restPicks true
         (hadOuterReplacement := outerCont?.isSome)
-        (hadOpenContinuation := some openCont)).resumeAfterBecomeCast
+        (hadOpenContinuation := some openCont)
+      if g.proposedSpell.isNone && !(g.findObject? prop.spellId).any (·.zone == .stack) then
+        return g
+      return g.resumeAfterBecomeCast
     else
       let g ← g.continueCostPicks prop restPicks true
         (hadOuterReplacement := outerCont?.isSome)
         (hadOpenContinuation := some openCont)
+      if g.proposedSpell.isNone && !(g.findObject? prop.spellId).any (·.zone == .stack) then
+        return g
       let g :=
         match outerCont? with
         | some outer =>
@@ -448,7 +461,10 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       return g.resumeAfterBecomeCast
   | .costPicks _ _ false, .decline =>
     g.reverseProposedSpell? (resumeContinuation := true)
-  | .costPicks _ _ true, .decline =>
+  | .costPicks sourceId picks true, .decline =>
+    if let some pick := picks[0]? then
+      if (gPre.costPickCandidates p sourceId pick).size < pick.count then
+        return (← gPre.reverseProposedSpell? (resumeContinuation := true))
     throw "Part of the cost is already paid; the activation can't be cancelled"
   | .costPicks .., _ => throw "Choose what to pay the cost with, or decline to cancel"
   | .chooseCreatureType types, .mode idx =>
@@ -1252,23 +1268,26 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       let g := g.commitEnteringAttackItems chosen' cause
       return g.finishFraChoice
   | .mayBeginOnBattlefield ids, .accept =>
-    let g ←
-      match ids[0]? with
-      | some id =>
-        match g.findObject? id with
-        | some o =>
-          if o.zone != .hand o.owner then pure g
-          else
-            let name := o.name
-            let (g, newId) := g.move id .battlefield (some o.owner)
-              (cause := some (.gameRule .staticAbility))
-            let g := g.logMsg s!"{name} begins the game on the battlefield"
-            if g.pending != .none then pure g
-            else pure (g.afterPermanentEnters (g.object! newId))
-        | none => pure g
-      | none => pure g
-    if g.pending != .none then return g
-    return (g.continueOpeningBegin (ids.extract 1 ids.size)).finishFraChoice
+    let rest := ids.extract 1 ids.size
+    match ids[0]? with
+    | some id =>
+      match g.findObject? id with
+      | some o =>
+        if o.zone != .hand o.owner then
+          return (g.continueOpeningBegin rest).finishFraChoice
+        else
+          let name := o.name
+          let (g, _) := g.move id .battlefield (some o.owner)
+            (cause := some (.gameRule .staticAbility))
+          let g := g.logMsg s!"{name} begins the game on the battlefield"
+          let g :=
+            if let .chooseReplacement .. := g.pending then
+              g.chainPendingReplacement (.finishBeginOnBattlefield id rest)
+            else
+              g.finishBeginOnBattlefield id rest
+          return g.finishFraChoice
+      | none => return (g.continueOpeningBegin rest).finishFraChoice
+    | none => return (g.continueOpeningBegin rest).finishFraChoice
   | .mayBeginOnBattlefield ids, .decline =>
     let g :=
       match ids[0]? with

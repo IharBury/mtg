@@ -101,7 +101,7 @@ def resolveCascade (g : Game) (p : PlayerId) (maxMv : Nat) : Game :=
         g := g'
         exiled := exiled.push newId
         let card := g.object! newId
-        if !card.printed.isLand && card.printed.manaCost.manaValue < maxMv then
+        if !g.isLand card && g.objectManaValue card < maxMv then
           found := some card
     g := g.logMsg s!"{(g.player p).name} exiles cards for cascade (less than {maxMv})"
     match found with
@@ -210,11 +210,11 @@ def discardNonlandFrom (g : Game) (controller victim : PlayerId) : Game :=
         s!"{(g.player victim).name} reveals {String.intercalate ", " names.toList}"
   match (g.player victim).hand.findSome? (fun id =>
       match g.findObject? id with
-      | some o => if !o.printed.isLand then some o else none
+      | some o => if !g.isLand o then some o else none
       | none => none) with
   | none => g.logMsg s!"{(g.player victim).name} has no nonland card to discard"
   | some o =>
-    let (g, _) := g.move o.id (.graveyard o.owner) none
+    let (g, _) := g.move o.id (.graveyard o.owner) none (verb := some .discard)
     g.logMsg s!"{(g.player controller).name} chooses {o.name}. {(g.player victim).name} discards it"
 
 /-- Exile `o` and return it at the beginning of the next end step. -/
@@ -231,6 +231,14 @@ def exileUntilNextEndStep (g : Game) (o : GameObject)
   let g := g.registerDelayedTrigger { controller := ctrl, source := some o, kind := .endStepReturn newId, cause }
   g.logMsg s!"{name} is exiled until the beginning of the next end step"
 
+/-- Post-entry continuation for `putLandFromHandTapped`. -/
+def finishPutLandFromHand (g : Game) (fromId : ObjectId) : Game :=
+  let g :=
+    match g.followMovedToZone? fromId (· == Zone.battlefield) with
+    | some land => g.afterLandEnters land
+    | none => g
+  g.receivePriority g.activePlayer
+
 /-- Put a land from `p`'s hand onto the battlefield tapped (H.E.R.B.I.E.). -/
 def putLandFromHandTapped (g : Game) (p : PlayerId) (id : ObjectId) :
     Except String Game := do
@@ -242,11 +250,13 @@ def putLandFromHandTapped (g : Game) (p : PlayerId) (id : ObjectId) :
     if !pl.hand.contains id then
       throw "That card is not in your hand"
     let some land := g.findObject? id | throw "no such object"
-    if !land.printed.isLand then
+    if !g.isLand land then
       throw s!"{land.name} is not a land card"
-    let (g, newId) := g.putOntoBattlefield id p (tapped := true)
     let g := g.change (.pending .none)
-    return g.afterLandEnters (g.object! newId) |>.receivePriority g.activePlayer
+    let (g, _) := g.putOntoBattlefield id p (tapped := true)
+    if g.pending != .none then
+      return g.chainPendingReplacement (.finishPutLandFromHand id)
+    return g.finishPutLandFromHand id
   | _ => throw "Not time to put a land from hand onto the battlefield"
 
 end Game

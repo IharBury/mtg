@@ -101,13 +101,19 @@ matching card from your hand. Later zone changes do not un-behold (117). -/
 def beholdQuality (g : Game) (p : PlayerId) (quality : CardSubtype)
     (cause : Option EventCause := none) : Game :=
   let hasPerm := (g.permanentsOf p).any (fun o => g.hasSubtype o quality)
-  let hasHand :=
-    (g.player p).hand.any (fun id =>
+  let handMatch? :=
+    (g.player p).hand.find? (fun id =>
       match g.findObject? id with
       | some o => g.hasSubtype o quality
       | none => false)
-  if hasPerm || hasHand then
+  if hasPerm || handMatch?.isSome then
     let effCause := g.resolveOptionalCause cause (fallbackCtrl := some p)
+    let g :=
+      if !hasPerm then
+        match handMatch? with
+        | some hid => g.record (GameEvent.revealed g.turnNumber p #[hid] (cause := some effCause))
+        | none => g
+      else g
     let g := g.record (GameEvent.beheld g.turnNumber p quality (cause := effCause))
     g.logMsg s!"{(g.player p).name} beholds a {quality}"
   else
@@ -146,7 +152,8 @@ def discardEntireHand (g : Game) (p : PlayerId) (cause : Option EventCause := no
       match acc.findObject? id with
       | none => acc
       | some o =>
-        let (acc, _) := acc.move id (.graveyard o.owner) none (cause := cause?)
+        let (acc, _) := acc.move id (.graveyard o.owner) none (verb := some .discard)
+          (actor := some p) (cause := cause?)
         acc) g
   g.logMsg s!"{(g.player p).name} discards {discarded} card(s)"
 
@@ -354,6 +361,10 @@ def riddlesInTheDark (g : Game) (p : PlayerId) (faceUpCount : Nat)
   let lib := (g.player p).library
   let n := min 4 lib.size
   let taken := lib.extract (lib.size - n) lib.size
+  let g :=
+    if !taken.isEmpty then
+      g.record (GameEvent.lookedAt g.turnNumber p taken (cause := some (g.resolvingOrRuleCause p)))
+    else g
   let faceUpN := min faceUpCount taken.size
   let faceUp := taken.extract (taken.size - faceUpN) taken.size
   let faceDown := taken.extract 0 (taken.size - faceUpN)
@@ -376,16 +387,6 @@ def hasAttacksIfAble (g : Game) (o : GameObject) : Bool :=
   (g.staticAbilities o).any (fun
     | .attacksEachCombatIfAble => true
     | _ => false)
-
-/-- Generic mana each creature must pay to attack `defender` (Dáin). -/
-def attackTaxPerCreature (g : Game) (defender : PlayerId) : Nat :=
-  if !g.hasEnduringStory defender then 0
-  else
-    (g.permanentsOf defender).foldl (fun acc src =>
-      (g.staticAbilities src).foldl (fun acc ab =>
-        match ab.attackTaxIfEnduringStory? with
-        | some n => acc + n
-        | none => acc) acc) 0
 
 /-- Every legal defending player charges a cost to be attacked. -/
 def everyAttackCosts (g : Game) (o : GameObject) : Bool :=
@@ -470,6 +471,9 @@ def sourceStillPayable (g : Game) (prop : ProposedSpell) : Bool :=
     match g.findObject? sid with
     | none => false
     | some src =>
+      if prop.kind == .turnFaceUp then
+        src.isOnBattlefield && g.controlledBy src prop.caster && src.status.faceDown
+      else
       let loyaltyPayable :=
         match prop.activation.bind (·.cost.loyalty) with
         | none => true

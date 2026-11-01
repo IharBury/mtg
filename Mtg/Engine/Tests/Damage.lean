@@ -419,7 +419,7 @@ def pumpedProwler : Game := passBoth activatedProwler
 #guard pumpedProwler.log.any (fun s =>
   mentions s "Desolation Prowler gets +2/+2 until end of turn")
 
--- Only once each turn (CR 602.2b).
+-- Only once each turn (CR 602.5b).
 #guard !(pumpedProwler.canActivate ⟨0⟩ (prowlerSource pumpedProwler) prowlerAbility)
 #guard
   match pumpedProwler.activateAbility ⟨0⟩ (prowlerSource pumpedProwler).id 0 with

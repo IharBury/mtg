@@ -67,14 +67,6 @@ def applyHopeEnterCounters (g : Game) (o : GameObject) (asOf : Nat) : Game :=
     let g := g.recordPutCounters o.id .plusOnePlusOne n (byPlayer := g.controllerOf o)
     g.logMsg s!"{g.nameWithToken o} enters with {n} additional +1/+1 counter(s)"
 
-/-- Counters placed on `entering` as it enters the battlefield from replacement
-effects (CR 614.1c / 614.12 / 306.5b / 714.3a). -/
-def computeEntersWithCounters (g : Game) (entering : GameObject)
-    (fromStackTime : Nat := 0) (applyHope : Bool := true)
-    (asOf : Nat := g.timestamp) (extraCounters : CounterBag := #[]) : CounterBag :=
-  (g.applyEtbReplacements entering (fromStackTime := fromStackTime)
-    (applyHope := applyHope) (asOf := asOf) (extraCounters := extraCounters)).entersWith
-
 private def unreplacedCause : EventCause → EventCause
   | .replaced _ orig => unreplacedCause orig
   | other => other
@@ -147,8 +139,9 @@ def createOneToken (g : Game) (controller : PlayerId) (printed : CardDef)
             { g with
               activeEffects := g.activeEffects.push (⟨g.nextEffectId⟩, .copy newId copyTok (untilEot := true))
               nextEffectId := g.nextEffectId + 1 }
-          { (gWithCopy.snapshot { obj with printed := copyTok, isCopy := true }) with
-            printed := some origTok }
+          { (gWithCopy.snapshot { obj with printed := copyTok }) with
+            printed := some origTok
+            isCopy := obj.isCopy }
         | none => g.snapshot obj
       let g := g.record (GameEvent.created g.turnNumber controller snapObj (cause := resolvedEtbCause))
       let happenedCause := (g.events.findSomeRev? (·.cause?)).getD resolvedEtbCause
@@ -392,8 +385,12 @@ def createTokenBatches (g : Game) (batches : Array ProposedTokenBatch)
             (.createTokenBatches rem attacking attackingTarget extraCounters recordRecent cause)
         return (g, obj)
     match last with
-    | some obj => (g, g.object! obj.id)
-    | none => (g, g.object! ⟨0⟩)
+    | some obj => (g, (g.findObject? obj.id).getD obj)
+    | none =>
+      let fallbackCtrl := (batches[0]?.map (·.controller)).getD g.activePlayer
+      let fallbackCard := (batches[0]?.map (·.printed)).getD { name := "", types := #[], isToken := true }
+      (g, { id := ⟨0⟩, printed := { fallbackCard with isToken := true },
+            owner := fallbackCtrl, zone := .command })
 
 /-- Create a token under `controller`, running the CR 616.1 token-creation
 replacement loop (Food/Treasure, Draconic Visitor, token-doubling). -/
@@ -711,13 +708,12 @@ def empowerJace (g : Game) (controller : PlayerId) (n : Nat)
   match pick with
   | none => g.logMsg "Empower Jace creates no token"
   | some o =>
-    let k := g.countersYouPut o n (putter := some controller)
-    let g :=
-      if k > 0 then
-        g.record (GameEvent.counters g.turnNumber (some controller) (g.snapshot o) .loyalty k
-          (cause := g.resolveOptionalCause none (fallbackCtrl := some controller)))
-      else g
-    g.logMsg s!"Empower Jace {n}: {k} loyalty counter(s) are put on {g.name o}"
+    let oName := g.name o
+    let prevLoyalty := o.status.loyaltyCounters
+    let g := g.recordPutCounters o.id .loyalty n (byPlayer := some controller)
+    let added := ((g.findObject? o.id).map (·.status.loyaltyCounters)).getD prevLoyalty - prevLoyalty
+    let shown := if g.pending != .none then n else added
+    g.logMsg s!"Empower Jace {n}: {shown} loyalty counter(s) are put on {oName}"
 
 /-- Printed characteristics for a `TokenKind`. -/
 def tokenPrinted (k : TokenKind) : CardDef :=

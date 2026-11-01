@@ -95,7 +95,7 @@ def discardToMaxHandSize (g : Game) : Game :=
           let pl := g.player g.activePlayer
           if let some last := pl.hand.back? then
             let card := g.object! last
-            let (g', _) := g.move last (.graveyard pl.id) none
+            let (g', _) := g.move last (.graveyard pl.id) none (verb := some .discard)
               (cause := some (.turnBased .cleanupDiscard))
             g := g'.logMsg s!"{pl.name} discards {card.name} (cleanup)"
         return g
@@ -131,7 +131,7 @@ def clearTurnActivations (g : Game) : Game :=
     let expiredDt := g.delayedTriggers.filter (fun dt =>
       match dt.kind with
       | .attackPumpPerPlains
-      | .copyNextInstantSorceryThisTurn => !(g.player dt.controller).lost
+      | .copyNextInstantSorceryThisTurn
       | .lokiCopyNextInstantSorceryThisTurn _ _ => true
       | _ => false)
     for dt in expiredDt do
@@ -220,8 +220,8 @@ def startNextTurn (g : Game) : Game :=
         match e.change with
         | .rules (.player (.lost p _)) | .rules (.player (.leftGame p)) =>
           (stk, updateLost lost p true)
-        | .engine (.players pls) =>
-          (stk, pls.foldl (fun acc pl => updateLost acc pl.id pl.lost) #[])
+        | .engine (.addPlayer pl) =>
+          (stk, updateLost lost pl.id pl.lost)
         | .rules (.turn (.extraTurnAdded p _)) =>
           match e.cause? with
           | some c => (#[(p, c)] ++ stk, lost)
@@ -295,7 +295,7 @@ def untapStepPermanents (g : Game) (ids : Array ObjectId) : Game :=
           g.hostCantBecomeUntapped o ||
           g.hostSkipsUntapStep o
         if o.status.tapped && !skipUntap then
-          let untap := GameEvent.untapped g.turnNumber (g.snapshot o) false (cause := baseCause)
+          let untap := GameEvent.untapped g.turnNumber (g.snapshot o) (cause := baseCause)
           -- CR 122.1d: a stun counter is removed instead of untapping via the CR 616.1 loop.
           let (stunned, applied, cause', choice?) := g.replaceUntap o (cause := some baseCause)
           match choice? with

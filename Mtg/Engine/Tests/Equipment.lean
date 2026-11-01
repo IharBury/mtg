@@ -119,7 +119,8 @@ def spearDiscardedForest : Game :=
 
 /-- An empty hand skips the optional discard; no draw. -/
 def spearEmptyHand : Game :=
-  let g := spearEntered.changes #[.pending .none, .stack #[]]
+  let g := spearEntered.stack.foldl (fun g e => g.change (.removeStackEntry e.objectId))
+    (spearEntered.change (.pending .none))
   let g := emptyHand g ⟨0⟩
   g.beginMayDiscardDraw ⟨0⟩ 2
 

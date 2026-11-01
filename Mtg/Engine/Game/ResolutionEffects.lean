@@ -3,7 +3,7 @@ import Mtg.Engine.Game.ResolutionHelpers
 /-!
 # Named resolution effects
 
-Card-specific resolution helpers: casting during resolution (CR 608.2f),
+Card-specific resolution helpers: casting during resolution (CR 608.2g),
 countering spells (CR 701.6), exile-until-source-leaves (CR 610.3),
 named tokens, extort, reflexive triggers (CR 603.12), and copy effects
 (CR 707).
@@ -33,8 +33,7 @@ def putPalantirInfluence (g : Game) (sourceId : ObjectId) (target : Option Playe
         if !src.isOnBattlefield || pid == g.you src then refuse
         else
           let before := src.status.influence
-          let n := g.countersYouPut src 1 (putter := g.controllerOf src)
-          let g := g.recordPutCounters src.id .influence n (byPlayer := g.controllerOf src)
+          let g := g.recordPutCounters src.id .influence 1 (byPlayer := g.controllerOf src)
           let g := g.logMsg s!"{g.name src} gets an influence counter"
           let after := ((g.findObject? sourceId).map (·.status.influence)).getD before
           (g, some (after > before))
@@ -56,7 +55,7 @@ is not cast. -/
 def copyStackSpellWithId (g : Game) (src : GameObject) (controller : PlayerId)
     (cause : Option EventCause := none) : Game × Option ObjectId :=
   if (g.player controller).lost then
-    (g.logMsg s!"{src.name} remains in its current zone (CR 800.4b)", none)
+    (g.logMsg s!"A copy of {src.name} is not created (CR 800.4d)", none)
   else
     let copyId : ObjectId := ⟨g.nextObjectId⟩
     let copySnap : EventObject := {
@@ -66,6 +65,7 @@ def copyStackSpellWithId (g : Game) (src : GameObject) (controller : PlayerId)
       controller := some controller
       zone := .stack
       isCopy := true
+      isCommander := false
     }
     let resolvedCause :=
       match cause with
@@ -92,14 +92,15 @@ def mayCastFromLookedError (g : Game) (p : PlayerId) (ids : Array ObjectId)
     match g.findObject? id with
     | none => some "There is no card to cast"
     | some o =>
+      let bc := g.baseCard o
       if o.zone != .library p then
         some s!"{o.name} is no longer among the cards you looked at"
-      else if o.printed.isLand then
+      else if g.isLand o then
         some "A land cannot be cast"
-      else if (o.printed.manaValue : Int) > maxMv then
+      else if (g.objectManaValue o : Int) > maxMv then
         some s!"{o.name}'s mana value is greater than the greatest power among attacking creatures you control"
-      else if o.printed.isAura && !o.printed.allowsZeroTargets &&
-          (g.legalCastTargets p o.printed).isEmpty then
+      else if g.isAura o && !bc.allowsZeroTargets &&
+          (g.legalCastTargets p bc).isEmpty then
         some s!"{o.name} requires a target to enchant"
       else none
 
@@ -130,7 +131,7 @@ def choosePutArtifactFromHand (g : Game) (p : PlayerId) (cardId : ObjectId) :
     let some o := g.findObject? cardId | throw "no such object"
     if o.zone != .hand p then
       throw s!"{o.name} is not in your hand"
-    if !o.printed.isArtifact then
+    if !g.isArtifact o then
       throw s!"{o.name} is not an artifact card"
     let name := o.name
     let (g, newId) := g.putOntoBattlefield cardId p
@@ -348,21 +349,12 @@ then run `k`. -/
 def incrementPlanThen (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
     (k : Game → GameObject → Game) : Game :=
   g.withSourceOnBattlefield sourceId fun g o =>
-    let n := g.countersYouPut o 1 (putter := some controller)
-    let g :=
-      if n == 0 then g
-      else
-        g.withBatch (g.resolvingBatchCause controller sourceId) fun g =>
-          Id.run do
-            let mut g := g
-            for _ in [0:n] do
-              match g.findObject? o.id with
-              | some cur =>
-                g := g.record (GameEvent.counters g.turnNumber (some controller) (g.snapshot cur) .plan 1
-                  (cause := g.resolveOptionalCause none (fallbackSrc := sourceId) (fallbackCtrl := some controller)))
-              | none => pure ()
-            return g
-    k g (g.object! o.id)
+    let cause := g.resolveOptionalCause none (fallbackSrc := sourceId) (fallbackCtrl := some controller)
+    let g := g.withBatch (g.resolvingBatchCause controller sourceId) fun g =>
+      g.recordPutCounters o.id .plan 1 (byPlayer := some controller) (cause := some cause)
+    match g.findObject? o.id with
+    | some cur => k g cur
+    | none => g
 
 /-- Current power of `sourceId` if it is still on the battlefield; otherwise
 last-known power, falling back to the object's current power. -/
@@ -656,7 +648,7 @@ def exileTopMayCastUpTo (g : Game) (fromPlayer caster : PlayerId) (n casts : Nat
           g := g.logMsg s!"{pl.name} exiles {name}"
       return (g, ids)
   let spells := ids.filter (fun id =>
-    (g.findObject? id).any (fun o => !o.printed.isLand))
+    (g.findObject? id).any (fun o => !g.isLand o))
   if spells.isEmpty || casts == 0 then g
   else g.offerExileCasts caster spells casts
 
@@ -691,7 +683,9 @@ def enterModsAttackOptions (g : Game) (enteringController : PlayerId)
     g.legalEnteringAttackTargets enteringController
   else #[]
 
-/-- Apply one enters-with change to the permanent `id`. -/
+/-- Apply one post-entry counter change to the permanent `id` (enters-with
+effects and counters were already pre-seeded and recorded on arrival by
+`Movement.move`, CR 122.6 / 614.1c). -/
 def applyEnterMod (g : Game) (controller : PlayerId) (id : ObjectId)
     (mod : TriggeredAbility.TriggerEnterWith)
     (cause : Option EventCause := none) : Game :=
@@ -699,29 +693,17 @@ def applyEnterMod (g : Game) (controller : PlayerId) (id : ObjectId)
   | none => g
   | some o =>
     match mod with
-    | .loseAllAbilities =>
-      g.createEffect (.layered (.objects #[id]) (.abilities {} .all) .indefinite)
-        (cause := cause)
-    | .keywords k =>
-      g.createEffect (.layered (.objects #[id]) (.abilities { keywords := k } .none) .indefinite)
-        (cause := cause)
-    | .additionalSubtype subtype =>
-      if g.hasSubtype o subtype then g
-      else
-        g.createEffect (.additionalSubtype id subtype (dedup := true))
-          (cause := cause)
-    | .counter kind n asEnters =>
-      let o := g.object! id
-      match kind, asEnters with
-      | .plusOnePlusOne, true =>
-        g.addPlusOnePlusOneTo o n (entersWith := true) (cause := cause)
-      | .plusOnePlusOne, false =>
-        g.addPlusOnePlusOneTo o n (byPlayer := some controller) (cause := cause)
-      | .finality, _ =>
-        g.addFinalityTo o n (byPlayer := some controller) (entersWith := true) (cause := cause)
-      | kind, asEnters =>
-        g.addCounters o kind n (entersWith := asEnters) (byPlayer := some controller) (cause := cause)
-    | .attacking => g
+    | .loseAllAbilities | .keywords _ | .additionalSubtype _ | .attacking => g
+    | .counter .finality _ _ =>
+      g.logMsg s!"{g.name o} gets a finality counter"
+    | .counter .plusOnePlusOne _ true =>
+      g.logMsg s!"{g.name o} enters with {plusOnePlusOneCountersPhrase o.status.plusOnePlusOne}"
+    | .counter kind _ true =>
+      g.logMsg s!"{g.name o} gets {kind.countersPhrase (o.status.counterCount kind)}"
+    | .counter .plusOnePlusOne n false =>
+      g.addPlusOnePlusOneTo o n (byPlayer := some controller) (cause := cause)
+    | .counter kind n false =>
+      g.addCounters o kind n (entersWith := false) (byPlayer := some controller) (cause := cause)
 
 /-- Display name for an `EnteringAttackItem` in choice logs. -/
 def enteringAttackItemName (g : Game) : EnteringAttackItem → String
@@ -850,6 +832,7 @@ def commitEnteringAttackItems (g : Game)
                 (attacking := atkTgt.isSome) (attackingTarget := atkTgt)
                 (returnedAsArtifact := returnedAsArtifact)
                 (extraEntersWith := extraEntersWith)
+                (enterMods := mods.toArray)
                 (cause := cause)
               g := g'
               if let .chooseReplacement .. := g.pending then
@@ -896,7 +879,7 @@ def returnFromGyTappedAttackingFinality (g : Game) (controller : PlayerId)
   match g.findObject? cardId with
   | none => g.logMsg "The target is no longer in the graveyard"
   | some o =>
-    if !(o.printed.isCreature && o.zone == .graveyard controller) then
+    if !(g.isCreature o && o.zone == .graveyard controller) then
       g.logMsg "The target is no longer a creature card in your graveyard"
     else
       let options :=
@@ -983,34 +966,6 @@ def hasModeledReflexiveOnStack (g : Game) : Bool :=
     | some (Resolution.mshReflexive _ _) => true
     | _ => false)
 
-/-- Resolve the newest MSH reflexive ability on the stack with `targets`
-(and `division` for divided damage), as if they had been announced. -/
-def applyModeledReflexive (g : Game) (targets : Array Target := #[])
-    (division : Array Nat := #[]) : Game :=
-  let found := g.stack.reverse.findSome? (fun e =>
-    match ((g.findObject? e.objectId).bind (·.abilityEffect)).map Effect.resolution with
-    | some (Resolution.mshReflexive kind paid) =>
-      some (e.objectId, e.controller, kind, paid)
-    | _ => none)
-  match found with
-  | none => g.logMsg "No reflexive triggered ability is on the stack"
-  | some (id, controller, kind, paid) =>
-    let sourceId := (g.findObject? id).bind (·.sourceId)
-    let g := (g.ceaseToExist id (cause := some (.gameRule .abilityFinishedResolving))).change (.pending .none)
-    g.withResolvingContext sourceId controller (fun g =>
-      if kind == 10 then
-        let division :=
-          if !division.isEmpty then division
-          else if targets.size == 1 then #[7] else #[4, 3]
-        if targets.isEmpty || targets.size > 2 || division.size != targets.size then
-          g.logMsg "Choose one or two targets, each assigned a damage amount (CR 601.2d)"
-        else if division.any (· == 0) then
-          g.logMsg "Each target must receive at least 1 damage (CR 601.2d)"
-        else if division.foldl (· + ·) 0 != 7 then
-          g.logMsg "Must assign all 7 damage among the chosen targets (CR 601.2d)"
-        else g.resolveModeledReflexive controller sourceId kind paid targets division
-      else g.resolveModeledReflexive controller sourceId kind paid targets division)
-
 /-- Merge subtype names without duplicates. -/
 def mergeSubtypes (xs : Array String) (ys : Array CardSubtype) : Array String :=
   ys.foldl (fun acc y => if acc.any (· == y.englishName) then acc else acc.push y.englishName) xs
@@ -1069,7 +1024,7 @@ cast or activated (MSH 34 / 40 / 66) and uses the same source and X
 (MSH 47 / 302 / 303). -/
 def copyStackAbility (g : Game) (src : GameObject) (controller : PlayerId) : Game :=
   if (g.player controller).lost then
-    g.logMsg s!"{src.name} remains in its current zone (CR 800.4b)"
+    g.logMsg s!"A copy of {src.name} is not created (CR 800.4d)"
   else
     let copyId : ObjectId := ⟨g.nextObjectId⟩
     let copySnap : EventObject := {
@@ -1079,6 +1034,7 @@ def copyStackAbility (g : Game) (src : GameObject) (controller : PlayerId) : Gam
       controller := some controller
       zone := .stack
       isCopy := true
+      isCommander := false
     }
     let g := g.record (GameEvent.stackObjectCopied g.turnNumber src.id copySnap controller
       (cause := g.resolveOptionalCause (g.resolvingOneShotCause controller (some src.id))
@@ -1111,7 +1067,7 @@ def finishWorldsWithinWorlds (g : Game) (exiled chosen : Array ObjectId)
       for id in chosen do
         match g.findObject? id with
         | some o =>
-          if o.zone == .hand o.owner && o.printed.isCreature then
+          if o.zone == .hand o.owner && g.isCreature o then
             let pid := o.owner
             let (g', newId) := g.putOntoBattlefield id pid
             g := g'
@@ -1147,7 +1103,7 @@ def offerWorldsCreatures (g : Game) (rest : List PlayerId)
   | pid :: more =>
     let eligible :=
       (g.player pid).hand.filter (fun id =>
-        (g.findObject? id).any (·.printed.isCreature))
+        (g.findObject? id).any g.isCreature)
     if eligible.isEmpty then
       g.offerWorldsCreatures more exiled chosen sourceId
     else

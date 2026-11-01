@@ -47,7 +47,7 @@ def knownCardFaces (g : Game) : Array CardDef :=
   let fromObjects := g.objects.foldl (fun acc o => acc ++ faces o.printed) #[]
   g.players.foldl (fun acc pl => pl.sideboard.foldl (fun acc c => acc ++ faces c) acc) fromObjects
 
-/-- Whether `name` is the name of a nonland card (CR 201.3). -/
+/-- Whether `name` is the name of a nonland card (CR 201.4a). -/
 def isNonlandCardName (g : Game) (name : String) : Bool :=
   g.knownCardFaces.any (fun c => c.name == name && !c.isLand)
 
@@ -153,6 +153,7 @@ def proposedAllowsElfRestricted (g : Game) (prop : ProposedSpell) : Bool :=
     match prop.sourceId.bind g.findObject? with
     | some src => g.hasSubtype src .elf
     | none => g.hasSubtype prop.original .elf
+  | .turnFaceUp => false
 
 /-- Whether paying this proposed spell may spend instant/sorcery-restricted mana. -/
 def proposedAllowsInstRestricted (g : Game) (prop : ProposedSpell) : Bool :=
@@ -161,7 +162,7 @@ def proposedAllowsInstRestricted (g : Game) (prop : ProposedSpell) : Bool :=
     match g.findObject? prop.spellId with
     | some o => g.isInstantOrSorcery o
     | none => false
-  | .activatedAbility => false
+  | .activatedAbility | .turnFaceUp => false
 
 /-- Object whose types decide Hero / Villain / creature-source restrictions. -/
 def proposedRestrictionSource (g : Game) (prop : ProposedSpell) : Option GameObject :=
@@ -171,6 +172,7 @@ def proposedRestrictionSource (g : Game) (prop : ProposedSpell) : Option GameObj
     match prop.sourceId.bind g.findObject? with
     | some src => some src
     | none => some prop.original
+  | .turnFaceUp => none
 
 /-- Whether paying this proposed spell or ability may spend Hero-restricted
 mana (MSH 72): Hero spells, and activated abilities of Hero sources
@@ -191,7 +193,7 @@ def proposedAllowsVillainRestricted (g : Game) (prop : ProposedSpell) : Bool :=
 (MSH 75). Casting a creature spell does not qualify. -/
 def proposedAllowsCreatureRestricted (g : Game) (prop : ProposedSpell) : Bool :=
   match prop.kind with
-  | .spell => false
+  | .spell | .turnFaceUp => false
   | .activatedAbility =>
     match g.proposedRestrictionSource prop with
     | some o => g.isCreature o
@@ -202,7 +204,7 @@ nonartifact spell” mana (MSH 345 / 347): artifact spells, and any
 activated ability. -/
 def proposedAllowsCantNonartifact (g : Game) (prop : ProposedSpell) : Bool :=
   match prop.kind with
-  | .activatedAbility => true
+  | .activatedAbility | .turnFaceUp => true
   | .spell =>
     match g.findObject? prop.spellId with
     | some o => g.isArtifact o
@@ -212,6 +214,7 @@ def proposedAllowsCantNonartifact (g : Game) (prop : ProposedSpell) : Bool :=
 def proposedManaSpend (g : Game) (prop : ProposedSpell) : ManaSpend :=
   match prop.kind with
   | .activatedAbility => { equip := prop.activation.any (·.isEquip) }
+  | .turnFaceUp => {}
   | .spell =>
     match g.findObject? prop.spellId with
     | some o =>
@@ -448,11 +451,14 @@ def reverseProposedSpellCore? (g : Game) (resumeContinuation : Bool := false)
   | some prop =>
     let name := (g.player prop.caster).name
     let baseTriggers := (g.proposalCheckpoint.map (·.waitingTriggers.size)).getD 0
+    let baseEventSize := (g.proposalCheckpoint.map (·.eventsSize)).getD g.events.size
     let reversed :=
       match prop.kind with
       | .spell => "the casting is reversed (CR 601.2 / 733.1)"
       | .activatedAbility => "the activation is reversed (CR 602.2 / 733.1)"
+      | .turnFaceUp => "turning it face up is reversed (CR 116.2b / 702.37e / 733.1)"
     let g ← g.reverseToProposalCheckpoint?
+    let hasUnreversedActions := g.events.size > baseEventSize
     let g := g.logMsg s!"{name} cannot pay {prop.cost}; {reversed}"
     let g :=
       match extraLog with
@@ -468,7 +474,7 @@ def reverseProposedSpellCore? (g : Game) (resumeContinuation : Bool := false)
         (!g.continuations.isEmpty || g.pendingReplacement.isSome || g.pendingCastExiledQueue.isSome) then
       return (g, true)
     else if g.pending == .none && g.continuations.isEmpty &&
-        g.waitingTriggers.size > baseTriggers then
+        (g.waitingTriggers.size > baseTriggers || hasUnreversedActions) then
       return (g.receivePriority prop.caster, false)
     else
       return (g, false)
@@ -495,9 +501,12 @@ def foldPermanentTargets (g : Game) (targets : Array Target)
 /-- Clear `.payWard` once a ward cost is paid or declined, then continue with
 trigger target announcements or priority (CR 702.21a / 608.2n). -/
 def afterWardResolved (g : Game) : Game :=
-  let g := g.change (.pending .none)
-  if g.triggerNeedingTargets.isSome then g.promptTriggerTargetsIfNeeded
-  else g.receivePriority g.activePlayer
+  if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement .finishFraChoice
+  else
+    let g := g.change (.pending .none)
+    if g.triggerNeedingTargets.isSome then g.promptTriggerTargetsIfNeeded
+    else g.receivePriority g.activePlayer
 
 /-- Whether an active resolution or pending choice was already open before the
 current spell or ability proposal began (ignoring any `ContinuationFrame` pushed
@@ -524,7 +533,7 @@ def finishPostCast (g : Game) (p : PlayerId)
       else
         let alive := ids.filter (fun id =>
           (g.findObject? id).any (fun (o : GameObject) =>
-            o.zone == Zone.exile && !o.printed.isLand))
+            o.zone == Zone.exile && !g.isLand o))
         let g := g.change (.pendingMayCastFromExile none)
         if q != p || alive.isEmpty || left == 0 then g
         else
@@ -668,19 +677,73 @@ def lockInTargetCostReduction (g : Game) : Game :=
         | none => g
       | _ => g
 
-/-- Pay a loyalty cost: put or remove loyalty counters on the source (CR 606.3 / 606.4). -/
+/-- Pay a loyalty cost: put or remove loyalty counters on the source (CR 606.3 / 606.4 / 118.11). -/
 def payLoyaltyCost (g : Game) (p : PlayerId) (o : GameObject) (sym : LoyaltySymbol)
     (forObject : Option ObjectId := none) : Game :=
   let k := (sym.counters).getD 0
   let oName := g.name o
-  let g :=
-    if k != 0 then
-      g.record (GameEvent.counters g.turnNumber (some p) (g.snapshot o) .loyalty k.natAbs (k < 0)
+  if k > 0 then
+    let g := g.withProposalAction .costAction fun g =>
+      g.recordPutCounters o.id .loyalty k.natAbs (byPlayer := some p)
+        (cause := some (.costPayment .loyalty p forObject))
+    g.logMsg s!"{k} loyalty counter(s) are put on {oName}"
+  else if k < 0 then
+    let g := g.withProposalAction .costAction fun g =>
+      g.record (GameEvent.counters g.turnNumber (some p) (g.snapshot o) .loyalty k.natAbs true
         (cause := .costPayment .loyalty p forObject))
-    else g
-  if k > 0 then g.logMsg s!"{k} loyalty counter(s) are put on {oName}"
-  else if k < 0 then g.logMsg s!"{-k} loyalty counter(s) are removed from {oName}"
+    g.logMsg s!"{-k} loyalty counter(s) are removed from {oName}"
   else g
+
+/-- Finish the post-loyalty steps (`clearProposalCheckpoint`, `abilityActivated`,
+and priority / continuation resumption) of `becomeActivated`. -/
+def finishPostLoyaltyActivated (g : Game) (p : PlayerId) (sourceName : String)
+    (sourceId : Option ObjectId := none) (activation : Option ActivatedAbility := none)
+    (abilityId : Option ObjectId := none)
+    (sourceSnap : Option EventObject := none)
+    (srcObj? : Option GameObject := none)
+    (hadOuterReplacement : Bool := false)
+    (openCont : Bool := false) : Game :=
+  let chosenX :=
+    ((abilityId.bind g.findObject?).bind (·.chosenX)).getD 0
+  let isEquip := activation.any (·.isEquip)
+  let source : EventObject :=
+    match (sourceId.bind g.findObject?).map g.snapshot <|> sourceSnap with
+    | some src => src
+    | none =>
+      if isEquip then
+        { id := sourceId, name := sourceName, controller := some p, owner := p,
+          types := #[.artifact], subtypes := #[.equipment] }
+      else
+        { id := sourceId, name := sourceName, controller := some p, owner := p }
+  let abilityObjId := abilityId.getD ⟨g.nextObjectId⟩
+  let loyaltyDelta : Option Int :=
+    match activation.bind (·.cost.loyalty) with
+    | some (.plus n) => some (n : Int)
+    | some .plusX => some (chosenX : Int)
+    | some (.minus n) => some (-(n : Int))
+    | some .zero => some 0
+    | some .minusX => some (-(chosenX : Int))
+    | none => none
+  let isPowerUp : Bool :=
+    match activation with
+    | some ab => ab.powerUp
+    | none => srcObj?.any (fun src => (g.baseCard src).activatedAbilities.any (·.powerUp))
+  let isBoast := activation == some ActivatedAbility.zemoBoastAbility
+  let abilityIdx : Option Nat :=
+    match srcObj?, activation with
+    | some src, some ab => (g.activatedAbilitiesOf src).findIdx? (· == ab)
+    | _, _ => none
+  let isExhaust : Bool := activation.any (·.exhaust)
+  let g := if g.proposalCheckpoint.isSome then g.change .clearProposalCheckpoint else g
+  let g := g.record (GameEvent.abilityActivated g.turnNumber abilityObjId source p
+    (.nonMana loyaltyDelta isEquip isPowerUp isBoast abilityIdx isExhaust))
+  let g := g.logMsg s!"{(g.player p).name} activates {sourceName}"
+  if g.pending != .none then g
+  else if hadOuterReplacement && g.pendingReplacement.isNone then
+    g
+  else if g.pendingCastExiledQueue.isSome || g.triggerSequenceRest.isSome || g.pendingReplacement.isSome then
+    g.chainPendingReplacement .finishFraChoice
+  else g.receivePriority (if openCont then g.activePlayer else p)
 
 def becomeActivated (g : Game) (p : PlayerId) (sourceName : String)
     (sourceId : Option ObjectId := none) (activation : Option ActivatedAbility := none)
@@ -703,6 +766,9 @@ def becomeActivated (g : Game) (p : PlayerId) (sourceName : String)
   else
     let chosenX :=
       ((abilityId.bind g.findObject?).bind (·.chosenX)).getD 0
+    let localOuter? := g.pendingReplacement
+    let hadOuter := hadOuterReplacement || localOuter?.isSome
+    let g := if localOuter?.isSome then g.change (.pendingReplacement none) else g
     let g :=
       match activation.bind (·.cost.loyalty) with
       | some sym =>
@@ -711,45 +777,19 @@ def becomeActivated (g : Game) (p : PlayerId) (sourceName : String)
         | some src => g.payLoyaltyCost p src actualSym (forObject := abilityId)
         | none => g
       | none => g
-    let isEquip := activation.any (·.isEquip)
-    let source : EventObject :=
-      match (sourceId.bind g.findObject?).map g.snapshot <|> sourceSnap with
-      | some src => src
-      | none =>
-        if isEquip then
-          { id := sourceId, name := sourceName, controller := some p, owner := p,
-            types := #[.artifact], subtypes := #[.equipment] }
-        else
-          { id := sourceId, name := sourceName, controller := some p, owner := p }
-    let abilityObjId := abilityId.getD ⟨g.nextObjectId⟩
-    let loyaltyDelta : Option Int :=
-      match activation.bind (·.cost.loyalty) with
-      | some (.plus n) => some (n : Int)
-      | some .plusX => some (chosenX : Int)
-      | some (.minus n) => some (-(n : Int))
-      | some .zero => some 0
-      | some .minusX => some (-(chosenX : Int))
-      | none => none
-    let isPowerUp : Bool :=
-      match activation with
-      | some ab => ab.powerUp
-      | none => srcObj?.any (fun src => (g.baseCard src).activatedAbilities.any (·.powerUp))
-    let isBoast := activation == some ActivatedAbility.zemoBoastAbility
-    let abilityIdx : Option Nat :=
-      match srcObj?, activation with
-      | some src, some ab => (g.activatedAbilitiesOf src).findIdx? (· == ab)
-      | _, _ => none
-    let isExhaust : Bool := activation.any (·.exhaust)
-    let g := if g.proposalCheckpoint.isSome then g.change .clearProposalCheckpoint else g
-    let g := g.record (GameEvent.abilityActivated g.turnNumber abilityObjId source p
-      (.nonMana loyaltyDelta isEquip isPowerUp isBoast abilityIdx isExhaust))
-    let g := g.logMsg s!"{(g.player p).name} activates {sourceName}"
-    if g.pending != .none then g
-    else if hadOuterReplacement && g.pendingReplacement.isNone then
-      g
-    else if g.pendingCastExiledQueue.isSome || g.triggerSequenceRest.isSome || g.pendingReplacement.isSome then
-      g.chainPendingReplacement .finishFraChoice
-    else g.receivePriority (if openCont then g.activePlayer else p)
+    if let .chooseReplacement .. := g.pending then
+      let g := g.chainPendingReplacement (.finishPostLoyaltyActivated p sourceName sourceId
+        activation abilityId sourceSnap srcObj? hadOuter openCont)
+      match localOuter? with
+      | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishFra
+      | none => g
+    else
+      let g :=
+        match localOuter? with
+        | some outer => g.chainPendingReplacement outer
+        | none => g
+      g.finishPostLoyaltyActivated p sourceName sourceId activation abilityId sourceSnap
+        srcObj? hadOuter openCont
 
 /-- Finish paying the proposed activation once its mana is paid and every
 chosen cost is paid: tap, life, and the source's own costs, then put it on
@@ -812,32 +852,6 @@ def completeActivation (g : Game) (prop : ProposedSpell)
     else g
   return g
 
-/-- Ask `p` to choose what pays the first of `picks`, or finish the
-activation when none remain. -/
-def continueCostPicks (g : Game) (prop : ProposedSpell) (picks : Array CostPick) (paid : Bool)
-    (hadOuterReplacement : Bool := false)
-    (hadOpenContinuation : Option Bool := none) :
-    Except String Game := do
-  let openCont := g.proposalHadOpenContinuation hadOpenContinuation
-  match picks[0]?, prop.sourceId with
-  | some pick, some sid =>
-    if let .chooseReplacement .. := g.pending then
-      let nextPending := Pending.fraChoice prop.caster (.costPicks sid picks paid)
-      let g := (g.change (.consecutivePasses 0)).chainPendingReplacement
-        (.restorePending nextPending)
-      return g.logMsg s!"{(g.player prop.caster).name} chooses how to {pick.phrase}"
-    else
-      let g := g.changes #[.pending (.fraChoice prop.caster (.costPicks sid picks paid)), .consecutivePasses 0]
-      return g.logMsg s!"{(g.player prop.caster).name} chooses how to {pick.phrase}"
-  | _, _ =>
-    if let .chooseReplacement .. := g.pending then
-      return (g.change (.consecutivePasses 0)).chainPendingReplacement
-        (.completeActivation hadOuterReplacement openCont)
-    else
-      g.completeActivation prop
-        (hadOuterReplacement := hadOuterReplacement)
-        (hadOpenContinuation := some openCont)
-
 /-- Whether the proposed spell or ability still needs targets announced (CR 601.2c). -/
 def proposedNeedsTarget (g : Game) (prop : ProposedSpell) : Bool :=
   match g.findObject? prop.spellId with
@@ -852,6 +866,7 @@ def proposedNeedsTarget (g : Game) (prop : ProposedSpell) : Bool :=
       match o.abilityEffect with
       | some e => e.requiresTarget
       | none => false
+    | .turnFaceUp => false
 
 /-- Choose new targets for a spell on the stack (Speedball; MSH 370).
 Each slot that has no new legal target is left unchanged, even if the

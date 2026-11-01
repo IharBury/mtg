@@ -348,7 +348,7 @@ def twoGuttersnipesResolved : Game :=
 #guard (twoGuttersnipesResolved.player ⟨1⟩).life == 13
 
 /-- The trigger still deals damage if Guttersnipe leaves before it resolves
-(CR 113.7 / 608.2g). -/
+(CR 113.7 / 608.2h). -/
 def guttersnipeGoneResolved : Game :=
   let id := (namedPermanent paidGuttersnipeBolt "Guttersnipe").id
   let (g, _) := paidGuttersnipeBolt.move id (.graveyard ⟨0⟩) none

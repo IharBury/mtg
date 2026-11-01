@@ -45,7 +45,7 @@ def claimTheKingdomReflexiveOk : Bool :=
   !g.battlefield.any (fun o => o.name == "Claim the Kingdom") &&
     (namedPermanent g "Grizzly Bears").status.indestructibleCounters == 0 &&
     g.hasModeledReflexiveOnStack &&
-    (let g := g.applyModeledReflexive #[Target.permanent bears.id]
+    (let g := passBoth (mustApply g ⟨0⟩ (.target (Target.permanent bears.id)))
      (namedPermanent g "Grizzly Bears").status.indestructibleCounters == 1) &&
     (let g := addPermanent afterDraw claimTheKingdom ⟨0⟩ ⟨0⟩
      let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
@@ -65,7 +65,7 @@ def constructACosmicCubeReflexiveOk : Bool :=
   let g := g.applyTriggeredAbility ⟨0⟩ .onSeventhPlanControlOpponent (some plan.id)
   !g.battlefield.any (fun o => o.name == "Construct a Cosmic Cube") &&
     g.hasModeledReflexiveOnStack &&
-    (let g := g.applyModeledReflexive #[Target.player ⟨1⟩]
+    (let g := passBoth (mustApply g ⟨0⟩ (.target (Target.player ⟨1⟩)))
      g.controlsPlayer ⟨0⟩ ⟨1⟩ && !(g.controlOnNextTakenTurn).isEmpty) &&
     (mshRuling 713).comment.contains "reflexive"
 
@@ -80,7 +80,7 @@ def doomReignsSupremeReflexiveOk : Bool :=
   let g := g.applyTriggeredAbility ⟨0⟩ .onFifthPlanExileTopCast (some plan.id)
   (g.player ⟨1⟩).library.size == lib0 &&
     g.hasModeledReflexiveOnStack &&
-    (let g := g.applyModeledReflexive #[Target.player ⟨1⟩]
+    (let g := passBoth (mustApply g ⟨0⟩ (.target (Target.player ⟨1⟩)))
      (g.player ⟨1⟩).library.size == lib0 - 5 &&
        (g.objects.filter (fun o => o.zone == .exile)).size >= 5 &&
        !(g.objects.any (fun o => o.zone == .exile && (g.playPermission o).isSome))) &&
@@ -101,7 +101,7 @@ def grimReaperReflexiveOk : Bool :=
      let g := mustApply g ⟨0⟩ .accept
      g.hasModeledReflexiveOnStack &&
        (let gy := namedGraveyardCard g ⟨0⟩ "Grizzly Bears"
-        let g := g.applyModeledReflexive #[Target.card gy.id]
+        let g := passBoth (mustApply g ⟨0⟩ (.target (Target.card gy.id)))
         let bears := namedPermanent g "Grizzly Bears"
         bears.status.tapped && bears.status.attacking &&
           bears.status.finality ≥ 1)) &&
@@ -122,7 +122,7 @@ def killmongerReflexiveOk : Bool :=
   !g.battlefield.any (fun o => o.name == "Grizzly Bears") &&
     g.hasModeledReflexiveOnStack &&
     g.battlefield.any (fun o => o.name == "Gray Ogre") &&
-    (let g := g.applyModeledReflexive #[Target.permanent ogre.id]
+    (let g := passBoth (mustApply g ⟨0⟩ (.target (Target.permanent ogre.id)))
      !g.battlefield.any (fun o => o.name == "Gray Ogre")) &&
     (let g := addPermanent afterDraw killmongerScourgeOfWakanda ⟨0⟩ ⟨0⟩
      let km := namedPermanent g "Killmonger, Scourge of Wakanda"
@@ -142,7 +142,7 @@ def redHulkReflexiveOk : Bool :=
   (namedPermanent g "Red Hulk").status.plusOnePlusOne == 1 &&
     g.hasModeledReflexiveOnStack &&
     (let bears := namedPermanent g "Grizzly Bears"
-     let g := g.applyModeledReflexive #[Target.permanent bears.id]
+     let g := passBoth (mustApply g ⟨0⟩ (.target (Target.permanent bears.id)))
      (namedPermanent g "Grizzly Bears").status.damage == 1) &&
     (let g := addPermanent afterDraw redHulk ⟨0⟩ ⟨0⟩
      let hulk := namedPermanent g "Red Hulk"
@@ -166,7 +166,7 @@ def speedYoungAvengerReflexiveOk : Bool :=
      let g := mustApply g ⟨0⟩ .accept
      g.hasModeledReflexiveOnStack &&
        (let speed := namedPermanent g "Speed, Young Avenger"
-        let g := g.applyModeledReflexive #[Target.permanent speed.id]
+        let g := passBoth (mustApply g ⟨0⟩ (.target (Target.permanent speed.id)))
         let speed := namedPermanent g "Speed, Young Avenger"
         let g := g.markAttacking speed.id (some (.player ⟨1⟩))
         let speed := namedPermanent g "Speed, Young Avenger"
@@ -194,8 +194,7 @@ def speedReflexiveHasteOnlyOk : Bool :=
   let bears := namedPermanent g "Grizzly Bears"
   legal.contains (Target.permanent speed.id) &&
     !legal.contains (Target.permanent bears.id) &&
-    (let gMiss := g.applyModeledReflexive #[Target.permanent bears.id]
-     !gMiss.cantBeBlockedExceptByHasteUntilEot (namedPermanent gMiss "Grizzly Bears"))
+    !(g.apply ⟨0⟩ (.target (Target.permanent bears.id))).isOk
 
 #guard speedReflexiveHasteOnlyOk
 
@@ -207,7 +206,7 @@ def deathToOurEnemiesReflexiveOk : Bool :=
   let g := g.applyTriggeredAbility ⟨0⟩ .onFourthPlanDividedDamage (some plan.id)
   (g.player ⟨1⟩).life == life0 &&
     g.hasModeledReflexiveOnStack &&
-    (let g := g.applyModeledReflexive #[Target.player ⟨1⟩]
+    (let g := passBoth (mustApply g ⟨0⟩ (.target (Target.player ⟨1⟩)))
      (g.player ⟨1⟩).life + 7 == life0) &&
     (mshRuling 720).comment.contains "reflexive"
 
@@ -226,7 +225,7 @@ def rewriteHistoryReflexiveOk : Bool :=
   let g := g.applyTriggeredAbility ⟨0⟩ .onFourthPlanReturnInstants (some plan.id)
   (g.player ⟨0⟩).hand.size == hand0 &&
     g.hasModeledReflexiveOnStack &&
-    (let g := g.applyModeledReflexive #[Target.card inst.id, Target.card sorc.id]
+    (let g := passBoth (mustApply g ⟨0⟩ (.targets #[Target.card inst.id, Target.card sorc.id]))
      (g.player ⟨0⟩).hand.size == hand0 + 2 &&
        (g.handObjects ⟨0⟩).any (fun o => o.name == "Helicarrier Strike") &&
        (g.handObjects ⟨0⟩).any (fun o => o.name == "Hour of Defeat")) &&
@@ -359,7 +358,7 @@ def attumaMerfolkOncePerPlayerOk : Bool :=
       t.event == TriggerEvent.merfolkAttackPlayer)).size
   merfolkWaits one == 1 &&
     (let gimli : Player := { id := ⟨2⟩, name := "Gimli" }
-     let g := afterDraw.change (.players (afterDraw.players.push gimli))
+     let g := afterDraw.change (.addPlayer gimli)
      let g := addPermanent g attumaAtlanteanWarlord ⟨0⟩ ⟨0⟩
      let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
      let g :=

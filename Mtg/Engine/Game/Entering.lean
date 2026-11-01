@@ -50,6 +50,9 @@ triggers are evaluated from the recorded event batch in `matchTriggers`. -/
 def addPlusOnePlusOneTo (g : Game) (o : GameObject) (n : Nat := 1)
     (entersWith := false) (byPlayer : Option PlayerId := none)
     (cause : Option EventCause := none) : Game :=
+  if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement (.addPlusOnePlusOneTo o.id n entersWith byPlayer cause)
+  else
   let putter0 := byPlayer.orElse (fun _ => g.counterPutter (g.controllerOf o))
   let propCause := g.resolveOptionalCause cause (fallbackCtrl := putter0)
   let proposed :=
@@ -178,15 +181,6 @@ def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
 def afterLandEnters (g : Game) (land : GameObject) : Game :=
   g.afterPermanentEnters land
 
-/-- Put “whenever a land you control enters” triggers (CR 603.6a). -/
-def putLandYouControlEntersTriggers (g : Game) (land : GameObject) : Game :=
-  g.afterPermanentEnters land
-
-/-- Put “whenever another Elf you control enters” triggers onto the stack
-(CR 603.6a). The entering permanent itself does not trigger. -/
-def putAnotherElfYouControlEntersTriggers (g : Game) (entering : GameObject) : Game :=
-  g.afterPermanentEnters entering
-
 /-- Nick Fury power-up: put a Hero, Equipment, or Vehicle onto the battlefield.
 A daybound front face enters back-face-up at night and cannot transform
 (MSH 191). Otherwise it enters front-face-up; you may then transform a DFC
@@ -295,7 +289,7 @@ def finishOneResolution (g : Game) (fin : ResolutionFinish) : Game :=
         else g
       | none =>
         if g.stack.any (·.objectId == objId) then
-          g.change (EngineChange.stack (g.stack.filter (·.objectId != objId)))
+          g.change (.removeStackEntry objId)
         else g
     let finalSagaPlayer? :=
       match sagaChapter, sourceId.bind g.findObject? with
@@ -319,7 +313,7 @@ def finishOneResolution (g : Game) (fin : ResolutionFinish) : Game :=
     | none =>
       let g :=
         if g.stack.any (·.objectId == entry.objectId) then
-          g.change (EngineChange.stack (g.stack.filter (·.objectId != entry.objectId)))
+          g.change (.removeStackEntry entry.objectId)
         else g
       g.record (GameEvent.resolved g.turnNumber entry.controller 0 snap
         (cause := some (.gameRule .instantOrSorceryFinishedResolving)))
@@ -327,7 +321,7 @@ def finishOneResolution (g : Game) (fin : ResolutionFinish) : Game :=
       if obj.zone != Zone.stack then
         let g :=
           if g.stack.any (·.objectId == entry.objectId) then
-            g.change (EngineChange.stack (g.stack.filter (·.objectId != entry.objectId)))
+            g.change (.removeStackEntry entry.objectId)
           else g
         g.record (GameEvent.resolved g.turnNumber entry.controller 0 snap
           (cause := some (.gameRule .instantOrSorceryFinishedResolving)))
@@ -399,7 +393,7 @@ partial def completeActiveResolutions (g : Game) : Game :=
           | some (.ability objId ..) =>
             let g :=
               if g.stack.any (·.objectId == objId) then
-                g.change (EngineChange.stack (g.stack.filter (·.objectId != objId)))
+                g.change (.removeStackEntry objId)
               else g
             match g.findObject? objId with
             | some (o : GameObject) =>
@@ -408,7 +402,7 @@ partial def completeActiveResolutions (g : Game) : Game :=
             | none => g
           | some (.spell entry ..) =>
             if g.stack.any (·.objectId == entry.objectId) then
-              g.change (EngineChange.stack (g.stack.filter (·.objectId != entry.objectId)))
+              g.change (.removeStackEntry entry.objectId)
             else g
           | none => g
         completeActiveResolutions (g.change .popContinuationFrame)
