@@ -717,7 +717,7 @@ inductive StackObjectEvent where
   | resolved (obj : EventObject) (nth : Nat := 1)
       (sourceId : Option ObjectId := none)
       (ability : Option TriggeredAbility := none)                                   -- 608.2 (added in Phase 3; sourceId/ability in Phase 11)
-  | removedOnResolution (obj : EventObject)                                         -- 608.2b, all targets illegal
+  | removedOnResolution (obj : EventObject)                                         -- 608.2a–b, failed intervening "if" or all targets illegal
 ```
 
 Countering is a `ZoneEvent.moved` with `verb := .counter` (701.6). The proposal
@@ -1121,31 +1121,39 @@ def Game.commitBatch (g : Game) (cause : EventCause) (events : Array RulesEvent)
   `chainPendingReplacement` so `finishOpenBatch` clears the paused state via
   `EngineChange.clearPausedBatch` and evaluates `closeBatch` once after all
   paused replacement and as-enters choices in the batch finish. Likewise, in Phase 7
-  (expanded in Phase 15, #598, to capture start-of-pass SBA candidates in
-  `SbaPassCandidates` across stages 0–7 so dependent SBAs run in subsequent CR
-  704.3 passes and `checkSBA` / `Turns.beginStep .cleanup` iterate
-  `checkSBACounted` + `leavePlayersWhoLost` to fixpoint)
-  `checkSBACounted` (`StateBasedActions.lean`) runs player-loss checks
-  (704.5a–c) and +1/+1 / -1/-1 counter annihilation (704.5q; evaluating
+  (expanded in Phase 15, #598, to capture start-of-pass SBA candidate arrays
+  `victims`, `pwMoves`, `tokensOutsideBf`, `copiesOutside`, `sagaMoves`,
+  `illegalAuras`, `illegalEquips`, and `illegalCreatureAtts` against `preBf` so
+  dependent SBAs run in subsequent CR 704.3 passes and `checkSBA` /
+  `Turns.beginStep .cleanup` iterate `checkSBACounted` + `leavePlayersWhoLost`
+  to fixpoint) `checkSBACounted` (`StateBasedActions.lean`) runs player-loss
+  checks (704.5a–c) and +1/+1 / -1/-1 counter annihilation (704.5q; evaluating
   704.5a–p and capturing `preBf` *before* 704.5q counter annihilation moves to
-  Phase 16 step 3) inside the initial
-  `withBatchReturn none` body ahead of `finishSbaSweep moves cands preBf stage`
-  (`stage` 0–7: `0` = dying creatures followed by `EngineChange.sbaChecked`;
-  `≤ 1` = 0-loyalty planeswalkers 704.5i unless Sanctum Lurker; `≤ 2` = the
-  legend rule 704.5j—which pauses on `Pending.chooseLegend`, not a
-  `PendingReplacement` step, so `keepLegend` resumes SBAs while integrating
-  `.chooseLegend` into `withBatchReturn`'s single SBA batch moves to Phase 16
-  step 3; `≤ 3` = tokens outside `.battlefield` 704.5d and non-stack spell/ability
-  copies 704.5e; `≤ 4` = final-chapter Sagas 714.4 / 704.5s; `≤ 5` = illegal
-  Auras put into their owner's graveyard 704.5m; `≤ 6` = illegal
-  Equipment/Fortifications unattached 704.5n including CR 702.16d protection;
-  `≤ 7` = attached creatures or unconfigured attachments unattached 704.5p). If a
-  graveyard move in stage `s` pauses on `Pending.chooseReplacement`,
-  `finishSbaSweep` chains `PendingReplacement.finishSbaSweep rem cands preBf s`
-  for the remainder of that same stage `s` (which then continues through stages
-  `> s` using the start-of-pass `cands` without re-evaluating earlier stages or
-  sweeping newly stranded hosts until the next CR 704.3 pass), `withBatchReturn`
-  appends `PendingReplacement.closeBatch batchId startIdx`, and `checkSBACounted`
+  Phase 16 step 3) inside the initial `withBatchReturn none` body ahead of
+  `finishSbaSweep moves preBf stage pwMoves sagaMoves tokensOutsideBf copiesOutside illegalAuras illegalEquips illegalCreatureAtts`
+  (`stage == 0`: dying creatures followed by `EngineChange.sbaChecked`;
+  `stage <= 1`: 0-loyalty planeswalkers 704.5i unless
+  `planeswalkersSurviveZeroLoyalty`, then the legend-rule prompt 704.5j—which
+  sets `Pending.chooseLegend` and returns early from inside `stage <= 1` before
+  the rest of the sweep, with `Decisions.keepLegend` currently putting unkept
+  permanents into a separate `withBatch (some (.stateBased .legendRule))` and
+  re-entering `checkSBA` via `finishAndGrantPriority` without resuming
+  `finishSbaSweep`, while keeping the enclosing SBA batch open across
+  `Pending.chooseLegend` and resuming the skipped tail moves to Phase 16 step
+  3—then tokens outside `.battlefield` 704.5d and non-token copies outside
+  `.stack` and `.battlefield` 704.5e; `stage <= 2`: final-chapter Sagas 714.4 /
+  704.5s; `stage <= 3`: illegal Auras put into their owner's graveyard 704.5m;
+  followed by an ungated tail for illegal Equipment unattachment 704.5n
+  including CR 702.16d protection and illegal creature, battle, or
+  non-Aura/non-Equipment attachment unattachment 704.5p). If a graveyard move
+  in stage `s` (`0..3`) pauses on `Pending.chooseReplacement`, `finishSbaSweep`
+  chains
+  `PendingReplacement.finishSbaSweep rem preBf s pwMoves sagaMoves tokensOutsideBf copiesOutside illegalAuras illegalEquips illegalCreatureAtts`
+  (passing `#[]` for already-completed candidate arrays) for the remainder of
+  stage `s` and the rest of the sweep using the start-of-pass candidate arrays
+  without re-evaluating earlier stages or sweeping newly stranded hosts until
+  the next CR 704.3 pass, `withBatchReturn` appends
+  `PendingReplacement.closeBatch batchId startIdx`, and `checkSBACounted`
   appends `PendingReplacement.checkSBA` (which resumes `Game.checkSBA`'s
   `checkSBACounted` + `leavePlayersWhoLost` fixpoint loop).
 - An instruction such as "destroy all creatures", "create N tokens",
@@ -1601,7 +1609,7 @@ flowchart TD
   P12 --> P13["Phase 13: Action-level CR 733.1/733.2 reversal & batch checkpoints,\nCR 614.12/616.1/903.3/800.4d completion, trigger/reveal/LKI & CR sweep"]
   P13 --> P14["Phase 14: Paused proposal-action & cost/morph alignment,\nsingle-writer ETB/copy/counter/damage fixes, batch look-back/LKI/CR 800.4 & final sweep"]
   P14 --> P15["Phase 15: Pause-safe resolution combinators & replacement loops,\nCR 117.3c/601.2/603.3b/batch-stack fidelity, simultaneous LKI/SBA/combat/cleanup, ObjectId 0 & scaffolding cleanup"]
-  P15 --> P16["Phase 16: Remaining replacement/reveal/mill pause-safety & parity,\nCR 603.3b/603.4/608.2a-b/702.176a stack & target lifecycle, CR 704.3/704.8/111.8/701.17c/800.4 batches, Option BatchId & scaffolding cleanup"]
+  P15 --> P16["Phase 16: Remaining replacement/reveal/mill pause-safety & parity,\nCR 603.2/603.4/608.2a-b/702.176a stack & target lifecycle, CR 704.3/704.8/111.8/603.10/701.17c/800.4 batches, Option BatchId & scaffolding cleanup"]
 ```
 
 ### Phase 1 — Envelope and durable single-writer constructors
@@ -4028,14 +4036,18 @@ leave-game cleanup), `Casting.lean`, `Activation.lean`, `Combat.lean`, `Damage.l
      the pre-batch game state before co-departing lords, type-changing
      animators, or control effects mutate `g`; separate dependent SBAs in
      `StateBasedActions.checkSBACounted` / `finishSbaSweep`
-     ([`StateBasedActions.lean`](Mtg/Engine/Game/StateBasedActions.lean), via
-     `SbaPassCandidates` across stages 0–7) across CR 704.3 passes (so tokens
-     and non-stack spell/ability copies 704.5d–e that left in pass 1 cease in
-     pass 2, Auras/Equipment on just-departed hosts are processed in pass 2, CR
-     704.5p `StateBasedAction.illegalCreatureAttachment` and CR 702.16d / 704.5n
-     protection unattachment are enforced, and `checkSBA` / `Turns.beginStep
-     .cleanup` iterate `leavePlayersWhoLost` + `checkSBACounted` to fixpoint per
-     CR 104.5 / 800.4a); collect all opponents' choices in APNAP order before
+     ([`StateBasedActions.lean`](Mtg/Engine/Game/StateBasedActions.lean),
+     capturing start-of-pass candidate arrays `victims`, `pwMoves`,
+     `tokensOutsideBf`, `copiesOutside`, `sagaMoves`, `illegalAuras`,
+     `illegalEquips`, and `illegalCreatureAtts` across `finishSbaSweep` stages
+     0–3 plus the ungated 704.5n/704.5p unattachment tail) across CR 704.3
+     passes (so tokens and non-stack spell/ability copies 704.5d–e that left in
+     pass 1 cease in pass 2, Auras/Equipment on just-departed hosts are
+     processed in pass 2, CR 704.5p `StateBasedAction.illegalCreatureAttachment`
+     and CR 702.16d / 704.5n protection unattachment are enforced, and
+     `checkSBA` / `Turns.beginStep .cleanup` iterate `leavePlayersWhoLost` +
+     `checkSBACounted` to fixpoint per CR 104.5 / 800.4a); collect all
+     opponents' choices in APNAP order before
      sacrificing simultaneously in one batch in
      `TriggeredAbilities.beginSacDamagers` / `FraChoices` `.sacrificeDamager`
      (`TriggeredAbilities.lean`, `FraChoices.lean`); and wrap
@@ -4193,7 +4205,7 @@ parity, and `EngineChange.stackEntry` replay), `Casting.lean`, `Activation.lean`
 `Removal.lean`, `ThisAttack.lean`, `MshOracleTests.lean`, `MshOracleTests2.lean`,
 `MshOracleTests4.lean`, `CatalogModelTests.lean`.
 
-### Phase 16 — Remaining replacement / reveal / mill pause-safety & parity, CR 603.3b / 603.4 / 608.2a–b / 702.176a stack & target lifecycle, CR 704.3 / 704.8 / 111.8 / 701.17c / 800.4 batches, and `Option BatchId` & scaffolding cleanup
+### Phase 16 — Remaining replacement / reveal / mill pause-safety & parity, CR 603.2 / 603.4 / 608.2a–b / 702.176a stack & target lifecycle, CR 704.3 / 704.8 / 111.8 / 603.10 / 701.17c / 800.4 batches, and `Option BatchId` & scaffolding cleanup
 
 1. Close remaining `Pending.chooseReplacement` / `--norandom` pause-safety gaps,
    `mayThen` / `chooseTriggerOr` / `turnFaceUp` continuation ordering bugs, and
@@ -4252,11 +4264,20 @@ parity, and `EngineChange.stackEntry` replay), `Casting.lean`, `Activation.lean`
      `outerCont?` or calling `finishAndGrantPriority` so
      `drainPendingContinuations` does not pop the `ContinuationFrame` before
      `mayThenResume` runs in the synchronous case and `.acceptMayThen` is not
-     ordered after `outerCont?` / `.receivePriority` in the paused case; and
-     defer `PriorityActions.finishProposedSpell` `.turnFaceUp` completion
-     ([`PriorityActions.lean`](Mtg/Engine/Game/PriorityActions.lean) and
-     `SacrificeDiscard.sacrificeForActivation` `.turnFaceUp` in
-     `SacrificeDiscard.lean`) across `Pending.chooseReplacement` cost pauses.
+     ordered after `outerCont?` / `.receivePriority` in the paused case; in
+     `PriorityActions.finishProposedSpell` `.turnFaceUp`
+     ([`PriorityActions.lean`](Mtg/Engine/Game/PriorityActions.lean)), defer
+     recording `GameEvent.turnedFaceUp` (and clearing `proposedSpell` /
+     `clearProposalCheckpoint`) across `Pending.chooseReplacement` when
+     `payCost` pauses rather than recording `turnedFaceUp` immediately and only
+     chaining `.receivePriority` (CR 708.8); and in
+     `SacrificeDiscard.sacrificeForActivation` `.turnFaceUp`
+     (`SacrificeDiscard.lean`, whose `.turnFaceUp` arm currently clears
+     `proposedSpell` and returns `g` without recording `GameEvent.turnedFaceUp`,
+     `.clearProposalCheckpoint`, or granting priority), record
+     `GameEvent.turnedFaceUp`, clear the proposal checkpoint, and grant priority
+     after the sacrifice cost finishes—deferring that completion across
+     `Pending.chooseReplacement` when the sacrifice pauses.
    - Close sync-vs-paused replacement parity divergences: check
      `.isOnBattlefield` before logging `"enters the battlefield"`, calling
      `afterPermanentEnters`, or running `finishEnteringAttackCard` when a
@@ -4272,40 +4293,52 @@ parity, and `EngineChange.stackEntry` replay), `Casting.lean`, `Activation.lean`
      `addBurdenCounter`, and `addCounters` (`Pumps.lean`); thread `cause`
      through `PendingReplacement.createAndMarkTokensAttacking` (`Event.lean`,
      `Decisions.lean`, `TriggeredAbilities.lean`) so paused token creation does
-     not double-advance `nextEffectId`; preserve the final log line when the
+     not double-advance `nextEffectId`; and preserve the final log line when the
      last token batch in `ResolutionEffects.commitEnteringAttackItems` pauses
-     (`ResolutionEffects.lean`); and handle `o.reflexiveResolution.isSome` and
-     `StackEntry.delayedTrigger.isSome` stack abilities in
-     `Movement.counterStackSpell`
-     ([`Movement.lean`](Mtg/Engine/Game/Movement.lean), CR 701.6a).
-2. Complete CR 603.3b / 603.4 / 608.2a intervening-`"if"` & CR 702.176a
-   impending trigger lifecycle and CR 115.1c / 608.2b / 702.16b target legality
-   (§2.5, §2.9, §3.5):
-   - Remove the duplicate stack-placement `g.triggerConditionHolds` check in
+     (`ResolutionEffects.lean`).
+2. Complete CR 603.2 / 603.4 / 608.2a trigger & intervening-`"if"` checks, CR
+   702.176a impending trigger lifecycle, and CR 115.1c / 608.2b / 702.16b target
+   legality (§2.5, §2.9, §3.5):
+   - Remove the duplicate `g.triggerConditionHolds` check in
      `Triggers.putQueuedTrigger`
-     ([`Triggers.lean`](Mtg/Engine/Game/Triggers.lean), where
-     `Triggers.putWaitingTrigger` already checks `!wt.checked`) so
+     ([`Triggers.lean`](Mtg/Engine/Game/Triggers.lean); its sole caller
+     `Triggers.putWaitingTrigger` already skips `triggerConditionHolds` when
+     `wt.checked` is true and runs it only on the `!wt.checked` branch) so
      already-triggered `WaitingTrigger`s (`wt.checked == true`) are not
-     re-evaluated or dropped at CR 603.3b against post-event live state (CR
-     603.3b / 603.4).
-   - Consolidate CR 603.4 / 608.2a resolution-time intervening-`"if"` re-checks
-     in `SpellResolution.resolveTop`
+     re-evaluated or dropped against post-event live state while being put onto
+     the stack (CR 603.2 / 603.3 / 603.4; intervening `"if"` clauses are
+     rechecked only on resolution per CR 603.4 / 608.2a).
+   - Complete CR 603.4 / 608.2a resolution-time intervening-`"if"` re-checks in
+     `SpellResolution.resolveTop`
      ([`SpellResolution.lean`](Mtg/Engine/Game/SpellResolution.lean)) *before*
-     pushing `resolutionFinish := some (.ability …)`
-     (`Chapters.interveningStillHolds`, `Core.fraInterveningHolds`,
-     `Core.fraConditionHolds`, `.beginCombatIfDrawnTwoPump`, `.thisAttack
-     .equippedDrain`, `.thisAttack .ifArtifactEnteredDraw`, `.resource
-     .drawIfAnotherHeroDamage`, `.step .drawToTen`, and `.watch
-     .hulklingCompare`—keeping non-intervening `"while you control"` attack
-     triggers and CR 702.186 `∞` `harnessedFlicker` excluded) so triggered
-     abilities whose intervening `"if"` clause is false on resolution are
-     removed from the stack without emitting `StackObjectEvent.resolved` (CR
-     603.4 / 608.2a); and route CR 702.176a Impending's fourth ability (`"At
-     the beginning of your end step, if this permanent's impending cost was paid
-     and it has a time counter on it, remove a time counter from it"`) through
-     `TurnEvent.stepBegan .end` / `Core.matchTriggers` onto the stack with its
-     CR 603.4 intervening `"if"` check rather than removing time counters inline
-     as a turn-based action in `Turns.beginStep .end`
+     pushing `resolutionFinish := some (.ability …)`: move
+     `Chapters.interveningStillHolds` (`timing.gainedLifeAtLeast` and
+     begin-combat ferocious `youControlCreatureWithPower`) out of
+     `TriggeredAbilities.applyTriggeredAbility` (`TriggeredAbilities.lean`,
+     where it currently runs after `resolutionFinish` is pushed so failure only
+     logs while `completeActiveResolutions` still records
+     `StackObjectEvent.resolved`) into `SpellResolution.resolveTop`; add
+     resolution-time re-checks in `SpellResolution.resolveTop` for the
+     intervening-`"if"` clauses that currently exist only inside
+     `Core.triggerConditionHolds` (`Core.fraInterveningHolds`,
+     `.beginCombatIfDrawnTwoPump`, `.thisAttack .equippedDrain`,
+     `.thisAttack .ifArtifactEnteredDraw`, `.resource .drawIfAnotherHeroDamage`,
+     `.step .drawToTen`, and `.watch .hulklingCompare`, while leaving
+     non-intervening trigger-time conditions in `triggerConditionHolds`—such as
+     `"while you control"` attack ferocious and CR 702.186 `∞`
+     `.step .harnessedFlicker`—unrechecked on resolution); have all failed CR
+     603.4 / 608.2a checks in `SpellResolution.resolveTop` (including the
+     existing `Core.fraConditionHolds` branches, which already run before
+     `resolutionFinish` and `ceaseToExist` without `StackObjectEvent.resolved`
+     but currently omit `removedOnResolution`) record
+     `StackObjectEvent.removedOnResolution` and `ceaseToExist` without emitting
+     `StackObjectEvent.resolved` (CR 603.4 / 608.2a); and route CR 702.176a
+     Impending's fourth ability (`"At the beginning of your end step, if this
+     permanent's impending cost was paid and it has a time counter on it, remove
+     a time counter from it"`) through `TurnEvent.stepBegan .end` /
+     `Core.matchTriggers` onto the stack with its CR 603.4 intervening `"if"`
+     check rather than removing time counters inline as a turn-based action in
+     `Turns.beginStep .end`
      ([`Turns.lean`](Mtg/Engine/Game/Turns.lean), CR 513.1 / 702.176a / 603.4).
    - Complete CR 608.2b / 115.1c / 702.16b target validation: enforce CR 608.2b
      all-targets-illegal removal (`StackObjectEvent.removedOnResolution`) for
@@ -4324,7 +4357,7 @@ parity, and `EngineChange.stackEntry` replay), `Casting.lean`, `Activation.lean`
      `sourceId` / LKI) in `Targeting.canBeTargetedBy`'s CR 702.16b protection
      check ([`Targeting.lean`](Mtg/Engine/Game/Targeting.lean)).
 3. Complete CR 704.3 / 704.8 SBA & legend-rule batching, CR 111.8 flicker &
-   simultaneous zone-move batches, CR 603.6c / 701.17c event queries, and CR
+   simultaneous zone-move batches, CR 603.10 / 701.17c event queries, and CR
    800.4 leaving-game integrity (§2.4, §3.2, §3.5, §3.7):
    - Evaluate all CR 704.5a–p SBA conditions and capture `preBf` *before*
      applying CR 704.5q `+1/+1` / `-1/-1` counter annihilation in
@@ -4332,11 +4365,16 @@ parity, and `EngineChange.stackEntry` replay), `Casting.lean`, `Activation.lean`
      ([`StateBasedActions.lean`](Mtg/Engine/Game/StateBasedActions.lean), CR
      704.3 / 704.8 so simultaneous 0-toughness death LKI retains
      pre-annihilation counters), keep the enclosing SBA batch open across
-     `Pending.chooseLegend` (`Core.withBatchReturn`,
-     `StateBasedActions.finishSbaSweep`, and `Decisions.keepLegend`, CR 704.3 /
-     704.5j / 603.2c) so Stage 0 deaths, legend-rule graveyard moves, and Stages
-     3–7 commit under one `BatchId` and one start-of-pass `preBf` snapshot, and
-     restore `stack := g.openBatchStack` in `Movement.preBatchBoardFor`
+     `Pending.chooseLegend` and resume `finishSbaSweep` from
+     `Decisions.keepLegend` (`Core.withBatchReturn`—adding `.chooseLegend` as a
+     keep-open arm—`StateBasedActions.finishSbaSweep`, and
+     `Decisions.keepLegend`, CR 704.3 / 704.5j / 603.2c) so `stage == 0` deaths,
+     0-loyalty planeswalkers, legend-rule graveyard moves, and the rest of the
+     pass that `finishSbaSweep`'s early return inside `stage <= 1` currently
+     skips (tokens 704.5d, copies 704.5e, `stage <= 2` Sagas 714.4 / 704.5s,
+     `stage <= 3` Auras 704.5m, and the ungated 704.5n / 704.5p unattachment
+     tail) commit under one `BatchId` and one start-of-pass `preBf` snapshot,
+     and restore `stack := g.openBatchStack` in `Movement.preBatchBoardFor`
      (`Movement.lean`).
    - Enforce CR 111.8 in `Movement.move` (`Movement.lean`: a token that has left
      the battlefield cannot move to another zone or return to the battlefield),
@@ -4350,8 +4388,10 @@ parity, and `EngineChange.stackEntry` replay), `Casting.lean`, `Activation.lean`
      premature `afterPermanentEnters`.
    - Align batch triggers, mill/exile event queries, and simultaneous zone/phase
      batches: fix `GameEvent.matchesTrigger` `.creatureCardsPutIntoYourGy`
-     (`Event.lean`) to check `after.creature && !after.token` rather than
-     `before.creature` (CR 603.6c / 603.10); key `GameEvent.milled`
+     (`Event.lean`) to bind `after` and check `after.creature && !after.token`
+     rather than `before.creature && !before.token` (CR 603.10; `"from
+     anywhere"` graveyard-arrival triggers are outside CR 603.6c / 603.10a's
+     leaves-the-battlefield look-back); key `GameEvent.milled`
      (`Event.lean`), `ResolutionEffects.millThenReflexive`
      (`ResolutionEffects.lean`), and `"milled cards"` / `"milled this way"`
      lookups off `ZoneVerb.mill` in public zones (CR 701.17a / 701.17c, rather
@@ -4423,19 +4463,21 @@ parity, and `EngineChange.stackEntry` replay), `Casting.lean`, `Activation.lean`
      migrating tests to `declareAttackers` / `GameEvent.attackersDeclared`),
      unused ignored fields on `PendingReplacement` constructors (`Event.lean`,
      `Decisions.lean`), duplicate clause in `EventObject.forest` (`Object.lean`),
-     and stale docstrings (`Decisions.runPostStep` tag range in `Decisions.lean`
-     and `Movement.counterStackSpell` `exilePermanent` / `CR 701.6` Counter +
-     `CR 701.5` Cast in `Movement.lean`).
+     and stale docstrings (`Decisions.runPostStep` tag range in `Decisions.lean`,
+     and `Movement.counterStackSpell` in `Movement.lean`, whose docstring
+     currently names `exile` instead of `exilePermanent` and cites `CR 701.5`
+     instead of `CR 701.6` Counter / `CR 701.5` Cast).
 
 Tests: `Events.lean` (isolation tests for pause-safe `amass` / library-reveal /
 mill-then-choose / `mayThen` `.maySacArtifactOrDiscard` / `chooseTriggerOr` /
 `turnFaceUp`, sync-vs-paused replacement parity on Aura/permanent exile
-redirects & `Pumps` counter putters, CR 603.3b `putQueuedTrigger` & CR 603.4 /
-608.2a resolution removal without `StackObjectEvent.resolved`, CR 702.176a
-impending end-step trigger, CR 608.2b / 115.1c / 702.16b multi-slot & ability
-target legality, CR 704.3 / 704.8 pre-704.5q SBA LKI & single-batch
-`chooseLegend`, CR 111.8 token-flicker prohibition & simultaneous multi-target
-flicker, CR 603.6c `.creatureCardsPutIntoYourGy` & CR 701.17c `ZoneVerb.mill`,
+redirects & `Pumps` counter putters, CR 603.2 / 603.4 `putQueuedTrigger` & CR
+603.4 / 608.2a resolution removal without `StackObjectEvent.resolved`, CR
+702.176a impending end-step trigger, CR 608.2b / 115.1c / 702.16b multi-slot &
+ability target legality, CR 704.3 / 704.8 pre-704.5q SBA LKI & single-batch
+`chooseLegend` resuming `finishSbaSweep`, CR 111.8 token-flicker prohibition &
+simultaneous multi-target flicker, CR 603.10 `.creatureCardsPutIntoYourGy` & CR
+701.17c `ZoneVerb.mill`,
 CR 800.4a/h leave-game continuation handling, CR 702.131a/b/d `citysBlessing` /
 `enduringStory` batch evaluation, and `Option BatchId` envelope fidelity), `Casting.lean`,
 `Activation.lean`, `Combat.lean`, `Damage.lean`, `Destroy.lean`, `Leaving.lean`,
