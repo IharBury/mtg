@@ -22,7 +22,7 @@ structure TriggerRead where
 
 /-- Object id recorded as the cause of the ability now resolving. -/
 private def recordedCauseId (g : Game) : Option ObjectId :=
-  ((g.resolvingAbility.bind g.findObject?).bind (·.fraCauseId)).map g.followMoved
+  (g.resolvingAbility.bind g.findObject?).bind (·.fraCauseId)
 
 /-- Objects of `xs` that also occur in `ys`, in the order of `xs`. -/
 def intersectObjects (xs ys : Array GameObject) : Array GameObject :=
@@ -162,7 +162,7 @@ def permanentsNamed (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.Objec
   | .equippedAttackers =>
     some (g.battlefield.filter fun o =>
       g.isCreature o && o.status.attacking &&
-        g.battlefield.any (fun eq => eq.attachedTo == some o.id))
+        g.battlefield.any (fun eq => eq.attachedTo == some o.id && g.isEquipment eq))
   | .attackingAlone =>
     match g.attackingAlone? controller with
     | some o => some #[o]
@@ -272,11 +272,16 @@ def controllersNamed (g : Game) (ctx : TriggerRead) (what : TriggeredAbility.Obj
     | none => none
   | .any | .target .any | .permanent _ =>
     let ids := ctx.targets.filterMap fun
-      | Target.permanent oid => some (g.followMoved oid)
+      | Target.permanent oid => some oid
       | _ => none
     if ids.isEmpty then none
     else
-      let pids := distinct (ids.filterMap fun oid => (g.findObject? oid).map controlling)
+      let pids := distinct (ids.filterMap fun oid =>
+        match (g.findObject? oid).filter (·.isOnBattlefield) with
+        | some o => some ((g.controllerOf o).getD o.owner)
+        | none =>
+          (g.lastKnownBefore? oid).bind fun eo =>
+            eo.controller.orElse (fun _ => some eo.owner))
       if pids.isEmpty then none else some pids
   | what =>
     match g.permanentsNamed ctx what with
@@ -333,7 +338,7 @@ def countNamed (g : Game) (ctx : TriggerRead) (what : TriggeredAbility.ObjectSel
     | none => none
   | .creatureCardsInGraveyard =>
     some ((g.player ctx.controller).graveyard.filter (fun id =>
-      (g.object! id).printed.isCreature)).size
+      g.isCreature (g.object! id))).size
   | .harnessedSource =>
     match sourceId.bind g.findObject? with
     | some src => some (if src.status.harnessed then 1 else 0)
@@ -507,8 +512,8 @@ def millCollected (g : Game) (controller : PlayerId) (pids : Array PlayerId) (n 
       acc ++ (lib.extract (lib.size - count) lib.size).reverse) #[]
     let g := g.withBatch cause? fun g =>
       pids.foldl (fun g pid => g.mill pid n (cause := cause?)) g
-    let milled := (tops.map g.followMoved).filter (fun id =>
-      (g.findObject? id).any (fun o => o.zone == .graveyard o.owner))
+    let milled := tops.filterMap (fun id =>
+      (g.followMovedToZone? id (fun | .graveyard _ => true | _ => false)).map (·.id))
     g.change (.milledIdsThisWay milled)
   | .opponentsMilled =>
     let opps := pids.filter (· != controller)

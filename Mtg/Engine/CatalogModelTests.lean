@@ -1168,7 +1168,7 @@ counter is removed. -/
 /-- Three seats. Witch-king attacks Liliana, who is not the seat opponent. -/
 def witchKingAttacksLiliana : Game :=
   let liliana : Player := { id := ⟨2⟩, name := "Liliana" }
-  let g := afterDraw.change (.players (afterDraw.players.push liliana))
+  let g := afterDraw.change (.addPlayer liliana)
   let g := addPermanent g witchKingBringerOfRuin ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
   let g := addPermanent g grayOgre ⟨2⟩ ⟨2⟩
@@ -1429,7 +1429,7 @@ combat damage. -/
 /-- Aragorn's red-spell trigger aimed at a third player. -/
 def aragornDamagesLiliana : Game :=
   let liliana : Player := { id := ⟨2⟩, name := "Liliana" }
-  let g := afterDraw.change (.players (afterDraw.players.push liliana))
+  let g := afterDraw.change (.addPlayer liliana)
   let g := addPermanent g aragornTheUniter ⟨0⟩ ⟨0⟩
   g.applyTriggeredAbility ⟨0⟩ (.onCastColorDamageOpponent .red 3)
     (some (idOf g "Aragorn, the Uniter")) #[Target.player ⟨2⟩]
@@ -1527,7 +1527,7 @@ ability may cast up to two of the exiled cards. -/
   let g := addToLibraryTop g shock opp
   let g := g.applyTriggeredAbility me .onFifthPlanExileTopCast
     (some (idOf g "Doom Reigns Supreme"))
-  let g := g.applyModeledReflexive #[Target.player opp]
+  let g := passBoth (mustApply g me (.target (Target.player opp)))
   let shock := g.objects.find? (fun o => o.zone == .exile && o.name == "Shock")
   let offered :=
     match shock, g.pending with

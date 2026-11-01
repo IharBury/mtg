@@ -18,7 +18,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
   let kind := effect.targetKind
   let illegal := some "The target is no longer legal"
   let srcName := g.fraSourceName sourceId
-  let src? := (g.resolvingSpell.bind g.findObject?).orElse (fun _ => sourceId.bind g.findObject?)
+  let src? := (g.resolvingSpell.bind g.damageSourceById?).orElse (fun _ => sourceId.bind g.damageSourceById?)
   match r with
   | .frc e => g.applyFrc controller effect e targets sourceId (lastKnownPower := lastKnownPower)
   | .bounce =>
@@ -82,11 +82,13 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
   | .destroyAllNotChosenType =>
     let chosen := g.chooseCreatureTypeFor controller
     let g := g.logMsg s!"{(g.player controller).name} chooses {chosen}"
-    let doomed := g.battlefield.filter (fun o => g.isCreature o && !g.hasSubtype o chosen)
+    let preBf := g.battlefield
+    let doomed := preBf.filter (fun o => g.isCreature o && !g.hasSubtype o chosen)
     g.withBatch none fun g =>
       doomed.foldl (fun g o =>
         match g.findObject? o.id with
-        | some o => g.destroyPermanent o
+        | some o =>
+          if o.isOnBattlefield then g.destroyPermanent o (preBattlefield := some preBf) else g
         | none => g) g
   | .searchPlaneswalkerToTop =>
     g.beginLibrarySearch controller (·.isPlaneswalker) "a planeswalker card" .topAfterShuffle
@@ -102,7 +104,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
   | .returnAllNonlandPermanentsFromGy =>
     let ids := (g.player controller).graveyard.filter (fun id =>
       (g.findObject? id).any (fun o =>
-        o.printed.isPermanentCard && !o.printed.isLand && !o.printed.isAura))
+        g.isPermanentCard o && !g.isLand o && !g.isAura o))
     g.withBatch none fun g =>
       let (g, newIds) := ids.foldl (fun (acc : Game × Array ObjectId) id =>
         let (g, newId) := acc.1.returnCardToBattlefield controller id
@@ -274,7 +276,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     let g := g.mill controller n
     let gy := (g.player controller).graveyard
     let milled := gy.extract before gy.size
-    let choices := milled.filter (fun id => (g.findObject? id).any (·.printed.isPermanentCard))
+    let choices := milled.filter (fun id => (g.findObject? id).any (g.isPermanentCard ·))
     if choices.isEmpty then g.gainLife controller life
     else
       g.beginFraChoice controller (.mayPutMilledPermanent choices life)
@@ -324,11 +326,26 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     match sourceId with
     | none => g
     | some id =>
-      match g.findObject? (g.followMoved id) with
-      | some card =>
-        let (g, tok) := g.createToken controller { card.printed with isToken := true }
-        let g := g.logMsg s!"{(g.player controller).name} creates a token copy of {card.name}"
-        g.afterPermanentEnters (g.object! tok.id)
+      let copiable? : Option (CardDef × Bool) :=
+        match g.findObject? id with
+        | some card => some (g.copiableValues card, card.printed.isToken)
+        | none =>
+          match g.lastKnownBefore? id with
+          | some eo => some (eo.copiable.getD eo.toCardDef, eo.token)
+          | none =>
+            match g.followMovedToZone? id (fun | .graveyard _ => true | _ => false) with
+            | some card => some (g.copiableValues card, card.printed.isToken)
+            | none => none
+      match copiable? with
+      | some (base, false) =>
+        let (g, tok) := g.createToken controller { base with isToken := true }
+        let g := g.logMsg s!"{(g.player controller).name} creates a token copy of {base.name}"
+        if tok.zone == .battlefield then
+          match g.findObject? tok.id with
+          | some entered => g.afterPermanentEnters entered
+          | none => g
+        else g
+      | some (_, true) => g
       | none => g.logMsg "The card can't be found"
   | .returnSourceFromGy toHand tapped plusOnes =>
     match sourceId.bind g.findObject? with
@@ -390,7 +407,8 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     g.beginFraChoice controller (.mayThen .searchBasicLandTapped sourceId)
       s!"{(g.player controller).name} may search for a basic land card"
   | .returnCauseTapped =>
-    match g.fraCause? with
+    match (g.resolvingAbilityObject?.bind (·.fraCauseId)).bind
+        (fun id => g.followMovedToZone? id (fun | .graveyard _ => true | _ => false)) with
     | some card =>
       if card.zone == .graveyard card.owner then
         let (g, newId) := g.putOntoBattlefield card.id card.owner (tapped := true)
@@ -405,8 +423,8 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
       else g
     | none => g
   | .causeDealsDamageToEachOpponent n =>
-    let cause := g.fraCause?
-    let name := (cause.map (·.name)).getD "The creature"
+    let cause := (g.resolvingAbilityObject?.bind (·.fraCauseId)).bind g.damageSourceById?
+    let name := (cause.map g.name).getD "The creature"
     if n == 0 then g
     else
       g.withBatch (g.resolvingBatchCause controller sourceId) fun g =>
@@ -438,9 +456,9 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
       | Target.card id =>
         match g.findObject? id with
         | some o =>
-          if ids.contains id || o.zone != .graveyard controller || o.printed.isLand then acc
+          if ids.contains id || o.zone != .graveyard controller || g.isLand o then acc
           else
-            match o.printed.types.find? (fun ty => !used.contains ty) with
+            match (g.types o).find? (fun ty => !used.contains ty) with
             | some ty => (ids.push id, used.push ty)
             | none => acc
         | none => acc
@@ -455,7 +473,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
       let card := g.object! id
       let (g, ex) := g.move id .exile none (cause := cause?)
       let g := g.logMsg s!"{card.name} is exiled"
-      let printed := (g.object! ex).printed
+      let printed := g.copiableValues (g.object! ex)
       -- Permanent spells cast this way become tokens.
       let copyId : ObjectId := ⟨g.nextObjectId⟩
       let copyTs := g.timestamp + 1
@@ -490,24 +508,27 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
           g.logMsg s!"{name} is exiled"
         | _ => g) sourceId illegal
   | .copyCauseSpell =>
-    match g.fraCause? with
-    | some spell =>
-      if spell.zone != .stack then g.logMsg s!"{spell.name} is no longer on the stack"
-      else
-        let copyId : ObjectId := ⟨g.nextObjectId⟩
-        let copySnap : EventObject := {
-          (g.snapshot spell) with
-          id := some copyId
-          owner := controller
-          controller := some controller
-          zone := .stack
-          isCopy := true
-        }
-        let g := g.record (GameEvent.stackObjectCopied g.turnNumber spell.id copySnap controller
-          (cause := g.resolveOptionalCause (g.resolvingOneShotCause controller sourceId)
-            (fallbackSrc := sourceId) (fallbackCtrl := some controller)))
-        g.logMsg s!"A copy of {spell.name} is created"
-    | none => g.logMsg "The spell is no longer on the stack"
+    if (g.player controller).lost then g
+    else
+      match g.fraCause? with
+      | some spell =>
+        if spell.zone != .stack then g.logMsg s!"{spell.name} is no longer on the stack"
+        else
+          let copyId : ObjectId := ⟨g.nextObjectId⟩
+          let copySnap : EventObject := {
+            (g.snapshot spell) with
+            id := some copyId
+            owner := controller
+            controller := some controller
+            zone := .stack
+            isCopy := true
+            isCommander := false
+          }
+          let g := g.record (GameEvent.stackObjectCopied g.turnNumber spell.id copySnap controller
+            (cause := g.resolveOptionalCause (g.resolvingOneShotCause controller sourceId)
+              (fallbackSrc := sourceId) (fallbackCtrl := some controller)))
+          g.logMsg s!"A copy of {spell.name} is created"
+      | none => g.logMsg "The spell is no longer on the stack"
   | .eyeOfJace =>
     let g := g.beginSurveil controller 1
     match g.pending with
@@ -588,12 +609,16 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     | none => g
   | .kothGeomancer =>
     let g := g.dealDamageToEachOpponent controller 1 (source := src?)
-    match g.fraCause? with
-    | some land =>
-      if g.hasSubtype land .mountain then
-        g.addManaLogged controller #[.colored .red] (source := sourceId)
-      else g
-    | none => g
+    let isMtn :=
+      match g.fraCause? with
+      | some land => g.hasSubtype land .mountain
+      | none =>
+        match (g.resolvingAbilityObject?.bind (·.fraCauseId)).bind g.lastKnownBefore? with
+        | some eo => eo.subtypes.contains .mountain || eo.changeling
+        | none => false
+    if isMtn then
+      g.addManaLogged controller #[.colored .red] (source := sourceId)
+    else g
   | .fblthpSearch =>
     let x := (sourceId.bind g.chosenXOf?).getD 0
     let (pickedIds, _) := (g.player controller).library.foldl
@@ -603,8 +628,8 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
         else
           match g.findObject? id with
           | some o =>
-            if isBasicLandCard o.printed && !names.contains o.name then
-              (picked.push id, names.push o.name)
+            if isBasicLandCard (g.baseCard o) && !names.contains (g.name o) then
+              (picked.push id, names.push (g.name o))
             else acc
           | none => acc) (#[], #[])
     let (g, cause) := g.allocDelayedCause (some controller) sourceId
@@ -653,9 +678,8 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
               | none => false
             if o.isOnBattlefield && g.isCreature o && g.canBeTargetedBy controller o && x > 0 &&
                 !shielded then
-              let n := g.countersYouPut o x (putter := some controller)
-              (g.recordPutCounters o.id .minusOneMinusOne n (byPlayer := some controller)).logMsg
-                s!"{n} -1/-1 counter(s) are put on {g.name o}"
+              (g.recordPutCounters o.id .minusOneMinusOne x (byPlayer := some controller)).logMsg
+                s!"{x} -1/-1 counter(s) are put on {g.name o}"
             else g
           | none => g
         | _ => g) g

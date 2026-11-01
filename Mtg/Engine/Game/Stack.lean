@@ -48,10 +48,12 @@ structure StackEntry where
   lastKnownToughness : Option Int := none
 deriving Repr, Inhabited, BEq
 
-/-- Whether a proposed payment is for a spell (CR 601) or an activated ability (CR 602). -/
+/-- Whether a proposed payment is for a spell (CR 601), an activated ability (CR 602),
+or turning a face-down permanent face up via morph (CR 116.2b / 702.37e). -/
 inductive ProposalKind where
   | spell
   | activatedAbility
+  | turnFaceUp
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- Snapshot of a spell or activated ability whose total cost is being paid
@@ -107,6 +109,10 @@ structure ProposedSpell where
   /-- The spell is cast for its sneak cost; this unblocked attacker returns
   to hand as the cost is paid (MSH sneak). -/
   sneakAttacker : Option ObjectId := none
+  /-- Cast for an alternative cost such as "without paying its mana cost" (CR 118.9a). -/
+  alternativeCost : Bool := false
+  /-- Cast as part of a resolving spell or ability (CR 608.2g). -/
+  resolutionCast : Bool := false
 deriving Repr, Inhabited, BEq
 
 end Mtg.Engine

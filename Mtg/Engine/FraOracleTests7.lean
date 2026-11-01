@@ -65,7 +65,8 @@ opponent. -/
 creature's sorcery timing, and Chandra pays its costs. -/
 def chandraCastsGiant : Game :=
   let g := withRedMana (chandraExileTop (chandraBoard afterDraw hillGiant)) ⟨0⟩ 4
-  mustApply g ⟨0⟩ (.cast (exiledNamed g "Hill Giant").id)
+  let g := mustApply g ⟨0⟩ (.cast (exiledNamed g "Hill Giant").id)
+  mustApply g ⟨0⟩ .pay
 
 #guard topOfStack chandraCastsGiant == "Hill Giant"
 #guard (chandraCastsGiant.player ⟨0⟩).manaPool.total == 0
@@ -73,7 +74,11 @@ def chandraCastsGiant : Game :=
 #guard (passBoth chandraCastsGiant).battlefield.any (fun o => o.name == "Hill Giant")
 #guard
   let g := chandraExileTop (chandraBoard afterDraw hillGiant)
-  rejects g ⟨0⟩ (.cast (exiledNamed g "Hill Giant").id) "cannot pay"
+  let giantId := (exiledNamed g "Hill Giant").id
+  let g := mustApply g ⟨0⟩ (.cast giantId)
+  let g := mustApply g ⟨0⟩ .pay
+  g.stack.size == 1 && topOfStack g != "Hill Giant" && (g.object! giantId).zone == .exile &&
+    (match g.pending with | .mayCastExiledElseDamage ⟨0⟩ id 2 _ => id == giantId | _ => false)
 #guard (fraRuling 857).comment.contains "You pay the costs for the exiled card"
 #guard (fraRuling 859).comment.contains "Timing permissions based on the card's type are ignored"
 
@@ -82,6 +87,7 @@ def chandraCastsGiant : Game :=
   let g := withRedMana (chandraExileTop (chandraBoard afterDraw shock)) ⟨0⟩ 1
   let g := mustApply g ⟨0⟩ (.cast (exiledNamed g "Shock").id)
   let g := mustApply g ⟨0⟩ (.target (.player ⟨1⟩))
+  let g := mustApply g ⟨0⟩ .pay
   (passBoth g |>.player ⟨1⟩).life == 18
 
 /- Ruling 856: Chandra's “+1: Add {R}{R}.” isn't a mana ability; it uses

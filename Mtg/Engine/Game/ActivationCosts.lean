@@ -74,15 +74,15 @@ def costPickAllows (g : Game) (p : PlayerId) (sourceId : ObjectId) (pick : CostP
   | .sacrificeEquipmentAttachedToSource =>
     perm && g.isEquipment o && o.attachedTo == some sourceId
   | .sacrificeArtifactOrDiscardNonland =>
-    (perm && artifact) || (inHand && !o.printed.isLand)
+    (perm && artifact) || (inHand && !g.isLand o)
   | .discardACard => inHand
-  | .discardNonland => inHand && !o.printed.isLand
+  | .discardNonland => inHand && !g.isLand o
   | .discardLegendaryCard => inHand && o.isLegendary
   | .discardLegendarySameName =>
     inHand && o.isLegendary &&
       (g.permanentsOf p).any (fun x => g.isLegendary x && g.name x == o.name)
   | .exileAnotherCreatureCardFromGraveyard =>
-    other && o.owner == p && o.zone == .graveyard p && o.printed.isCreature
+    other && o.owner == p && o.zone == .graveyard p && g.isCreature o
   | .tapUntappedCreature => perm && g.isCreature o && !o.status.tapped
   | .tapTwoUntappedArtifacts => perm && artifact && !o.status.tapped
 
@@ -105,6 +105,48 @@ def costPicksPayable (g : Game) (p : PlayerId) (sourceId : ObjectId) (picks : Ar
     else (acc.1, acc.2 ++ cands.extract 0 pick.count)) (true, #[])
   ok
 
+/-- Pay one or more already-validated `ids` for `pick` on `abilityId` / `sourceId`,
+chaining `.payCostPickItems` if an earlier move or sacrifice pauses on
+`Pending.chooseReplacement` (`pick.count >= 2`). -/
+def payCostPickItems (g : Game) (p : PlayerId) (abilityId sourceId : ObjectId) (pick : CostPick)
+    (ids : Array ObjectId) : Game := Id.run do
+  let name := (g.player p).name
+  let mut g := g
+  for i in [0:ids.size] do
+    let id := ids[i]!
+    if let some o := g.findObject? id then
+      match pick with
+      | .tapUntappedCreature | .tapTwoUntappedArtifacts =>
+        let oName := g.name o
+        g := (g.becomeTapped o (cause := some (.costPayment .tap p (some abilityId)))).logMsg
+          s!"{name} taps {oName} to pay a cost"
+      | .exileAnotherCreatureCardFromGraveyard =>
+        g := (g.move id .exile none (cause := some (.costPayment .exile p (some abilityId)))).1.logMsg
+          s!"{name} exiles {o.name} from their graveyard"
+      | _ =>
+        if o.isOnBattlefield then
+          let records :=
+            g.isCreature o && (g.findObject? abilityId).any (fun ab =>
+              (ab.abilityEffect.map (·.resolution)) ==
+                some (.sequence [.drawEqualToLastKnownPower, .discard (.cards 1)]))
+          let pw := g.power o
+          let oName := g.name o
+          g := g.sacrificeToGraveyard o s!"{name} sacrifices {oName}"
+            (cause := some (.costPayment .sacrifice p (some abilityId)))
+          if records then
+            if (g.findObject? abilityId).isSome then
+              g := g.setStackEntryLastKnown abilityId (lastKnownPower := some pw)
+        else
+          g := (g.move id (.graveyard o.owner) none (verb := some .discard) (actor := some p)
+            (cause := some (.costPayment .discard p (some abilityId)))).1.logMsg
+            s!"{name} discards {o.name}"
+      if let .chooseReplacement .. := g.pending then
+        let rem := ids.extract (i + 1) ids.size
+        if !rem.isEmpty then
+          g := g.chainPendingReplacement (.payCostPickItems p abilityId sourceId pick rem)
+        return g
+  return g
+
 /-- Pay `pick` with `ids` for the ability `abilityId` of `sourceId`
 (CR 601.2h). The power of a creature sacrificed for an ability that refers
 to it is recorded on the ability (Tom, Bert, and William). -/
@@ -113,37 +155,50 @@ def payCostPick (g : Game) (p : PlayerId) (abilityId sourceId : ObjectId) (pick 
   g.withProposalActionM .costAction fun g => do
   if ids.size != pick.count || ids.toList.eraseDups.length != ids.size then
     throw s!"Choose {pick.count} to {pick.phrase}"
-  let name := (g.player p).name
-  let mut g := g
   for id in ids do
     let some o := g.findObject? id | throw "no such object"
     if !g.costPickAllows p sourceId pick o then
       throw s!"{g.name o} can't be used to {pick.phrase}"
-    match pick with
-    | .tapUntappedCreature | .tapTwoUntappedArtifacts =>
-      let oName := g.name o
-      g := (g.becomeTapped o (cause := some (.costPayment .tap p (some abilityId)))).logMsg
-        s!"{name} taps {oName} to pay a cost"
-    | .exileAnotherCreatureCardFromGraveyard =>
-      g := (g.move id .exile none (cause := some (.costPayment .exile p (some abilityId)))).1.logMsg
-        s!"{name} exiles {o.name} from their graveyard"
-    | _ =>
-      if o.isOnBattlefield then
-        let records :=
-          g.isCreature o && (g.findObject? abilityId).any (fun ab =>
-            (ab.abilityEffect.map (·.resolution)) ==
-              some (.sequence [.drawEqualToLastKnownPower, .discard (.cards 1)]))
-        let pw := g.power o
-        let oName := g.name o
-        g := g.sacrificeToGraveyard o s!"{name} sacrifices {oName}"
-          (cause := some (.costPayment .sacrifice p (some abilityId)))
-        if records then
-          if (g.findObject? abilityId).isSome then
-            g := g.setStackEntryLastKnown abilityId (lastKnownPower := some pw)
-      else
-        g := (g.move id (.graveyard o.owner) none
-          (cause := some (.costPayment .discard p (some abilityId)))).1.logMsg
-          s!"{name} discards {o.name}"
+  let outer? := g.pendingReplacement
+  let g := if outer?.isSome then g.change (.pendingReplacement none) else g
+  let g := g.payCostPickItems p abilityId sourceId pick ids
+  return match outer? with
+    | some outer => g.chainPendingReplacement outer
+    | none => g
+
+/-- Finish the remaining steps of `payActivationExtraCosts` after an earlier
+counter or sacrifice step paused on `Pending.chooseReplacement` (`stage` 0 =
+optional `+1/+1` counter removal + sacrifice + exile, 1 = sacrifice + exile,
+2 = exile). -/
+def finishActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
+    (forObject : Option ObjectId) (removePlusOnes : Nat)
+    (sacrificeSource exileSource : Bool) (stage : Nat := 0) : Game := Id.run do
+  let mut g := g
+  if stage == 0 && removePlusOnes > 0 then
+    if let some src := g.findObject? sourceId then
+      if src.status.plusOnePlusOne >= removePlusOnes then
+        let srcName := g.name src
+        g := (g.record (GameEvent.counters g.turnNumber (some p) (g.snapshot src)
+          .plusOnePlusOne removePlusOnes true
+          (cause := .costPayment .removeCounters p forObject))).logMsg
+          s!"{(g.player p).name} removes {removePlusOnes} +1/+1 counters from {srcName}"
+  if stage <= 1 && sacrificeSource then
+    if let some src := g.findObject? sourceId then
+      g := g.sacrificeToGraveyard src
+        s!"{(g.player p).name} sacrifices {g.name src}"
+        (cause := some (.costPayment .sacrifice p forObject))
+      if let .chooseReplacement .. := g.pending then
+        if exileSource then
+          g := g.chainPendingReplacement
+            (.finishActivationExtraCosts p sourceId forObject 0 false exileSource 2)
+        return g
+  if exileSource then
+    if let some src := g.findObject? sourceId then
+      if src.isOnBattlefield then
+        let srcName := g.name src
+        g := (g.move sourceId .exile none
+          (cause := some (.costPayment .exile p forObject))).1.logMsg
+          s!"{(g.player p).name} exiles {srcName}"
   return g
 
 /-- Pay `{T}`, life, discard, and/or sacrifice the source, and the source's
@@ -161,64 +216,69 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
     if !(src.zone == .hand src.owner && src.owner == p) then
       throw s!"{src.name} is not in your hand"
     let g ← g.payLifeCost p payLife
+    let outer? := g.pendingReplacement
+    let g := if outer?.isSome then g.change (.pendingReplacement none) else g
     let g := g.logMsg s!"{(g.player p).name} exiles {src.name} from their hand"
-    return (g.move sourceId .exile none (cause := some (.costPayment .exile p forObject))).1
+    let g := (g.move sourceId .exile none (cause := some (.costPayment .exile p forObject))).1
+    return match outer? with | some outer => g.chainPendingReplacement outer | none => g
   if discardSource then
     if !(src.zone == .hand src.owner && src.owner == p) then
       throw s!"{src.name} is not in your hand"
     let g ← g.payLifeCost p payLife
     let src := g.object! sourceId
+    let outer? := g.pendingReplacement
+    let g := if outer?.isSome then g.change (.pendingReplacement none) else g
     let g := g.logMsg s!"{(g.player p).name} discards {src.name}"
-    let (g, _) := g.move sourceId (.graveyard src.owner) none
-      (cause := some (.costPayment .discard p forObject))
-    return g
+    let costKind : CostKind := if ab.any (·.isCycling) then .cycle else .discard
+    let (g, _) := g.move sourceId (.graveyard src.owner) none (verb := some .discard)
+      (actor := some p) (cause := some (.costPayment costKind p forObject))
+    return match outer? with | some outer => g.chainPendingReplacement outer | none => g
   let fromGraveyard :=
     src.zone == .graveyard src.owner && src.owner == p &&
       !ab.any (·.cost.loyalty.isSome)
   if fromGraveyard && !tapSource && !sacrificeSource then
     let g ← g.payLifeCost p payLife
     if ab.any (·.cost.exileSourceFromGraveyard) then
+      let outer? := g.pendingReplacement
+      let g := if outer?.isSome then g.change (.pendingReplacement none) else g
       let g := g.logMsg s!"{(g.player p).name} exiles {src.name} from their graveyard"
-      return (g.move sourceId .exile none (cause := some (.costPayment .exile p forObject))).1
+      let g := (g.move sourceId .exile none (cause := some (.costPayment .exile p forObject))).1
+      return match outer? with | some outer => g.chainPendingReplacement outer | none => g
     return g
   if !src.isOnBattlefield then
     throw "The source is no longer on the battlefield"
   if !g.controlledBy src p then
     throw "You don't control that permanent"
-  let mut g := g
+  if tapSource && src.status.tapped then
+    throw s!"{g.name src} is already tapped"
+  if !g.canPayLife p payLife then
+    throw s!"{(g.player p).name} cannot pay {payLife} life"
+  if let some a := ab then
+    if a.cost.removeStoryCounter && src.status.story == 0 then
+      throw s!"{g.name src} has no story counter"
+    if a.cost.removeIndestructibleCounter && src.status.indestructibleCounters == 0 then
+      throw s!"{g.name src} has no indestructible counter"
+    if a.cost.removeAnyNumberPlusOne && src.status.plusOnePlusOne < removePlusOnes then
+      throw s!"{g.name src} doesn't have {removePlusOnes} +1/+1 counters"
+  let exileSource := ab.any (·.cost.fra == .exileSource)
+  let outer? := g.pendingReplacement
+  let mut g := if outer?.isSome then g.change (.pendingReplacement none) else g
   if tapSource then
-    let src := g.object! sourceId
-    if src.status.tapped then
-      throw s!"{g.name src} is already tapped"
-    g := g.becomeTapped src (cause := some (.costPayment .tap p forObject))
+    g := g.becomeTapped (g.object! sourceId) (cause := some (.costPayment .tap p forObject))
   g := (← g.payLifeCost p payLife)
   match ab with
   | some a =>
     if a.cost.removeStoryCounter then
       let src := g.object! sourceId
-      if src.status.story == 0 then
-        throw s!"{g.name src} has no story counter"
       let srcName := g.name src
       g := g.record (GameEvent.counters g.turnNumber (some p) (g.snapshot src) .story 1 true
         (cause := .costPayment .removeCounters p forObject))
       g := g.logMsg s!"{(g.player p).name} removes a story counter from {srcName}"
     if a.cost.removeIndestructibleCounter then
       g := (← g.payRemoveIndestructibleCounter (g.object! sourceId) forObject)
-    if a.cost.putStunCounterOnSource then
-      let src := g.object! sourceId
-      let srcName := g.name src
-      let n := g.countersYouPut src 1 (putter := some p)
-      let g' :=
-        if n > 0 then
-          g.record (GameEvent.counters g.turnNumber (some p) (g.snapshot src) .stun n
-            (cause := .costPayment .putCounters p forObject))
-        else g
-      g := g'.logMsg s!"{(g.player p).name} puts a stun counter on {srcName}"
     if a.cost.removeAnyNumberPlusOne then
       let src := g.object! sourceId
       let srcName := g.name src
-      if src.status.plusOnePlusOne < removePlusOnes then
-        throw s!"{srcName} doesn't have {removePlusOnes} +1/+1 counters"
       let g' :=
         if removePlusOnes > 0 then
           g.record (GameEvent.counters g.turnNumber (some p) (g.snapshot src) .plusOnePlusOne removePlusOnes true
@@ -226,23 +286,23 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
         else g
       g := g'.logMsg
         s!"{(g.player p).name} removes {removePlusOnes} +1/+1 counters from {srcName}"
+    if a.cost.putStunCounterOnSource then
+      let src := g.object! sourceId
+      let srcName := g.name src
+      g := g.recordPutCounters sourceId .stun 1 (byPlayer := some p)
+        (cause := some (.costPayment .putCounters p forObject))
+      g := g.logMsg s!"{(g.player p).name} puts a stun counter on {srcName}"
+      if let .chooseReplacement .. := g.pending then
+        if sacrificeSource || exileSource then
+          g := g.chainPendingReplacement
+            (.finishActivationExtraCosts p sourceId forObject 0 sacrificeSource exileSource 1)
+        if let some outer := outer? then
+          g := g.chainPendingReplacement outer
+        return g
   | none => pure ()
-  if sacrificeSource then
-    match g.findObject? sourceId with
-    | none => pure ()
-    | some src =>
-      g := g.sacrificeToGraveyard src
-        s!"{(g.player p).name} sacrifices {g.name src}"
-        (cause := some (.costPayment .sacrifice p forObject))
-  if ab.any (·.cost.fra == .exileSource) then
-    match g.findObject? sourceId with
-    | some src =>
-      if src.isOnBattlefield then
-        let srcName := g.name src
-        g := (g.move sourceId .exile none
-          (cause := some (.costPayment .exile p forObject))).1.logMsg
-          s!"{(g.player p).name} exiles {srcName}"
-    | none => pure ()
+  g := g.finishActivationExtraCosts p sourceId forObject 0 sacrificeSource exileSource 1
+  if let some outer := outer? then
+    g := g.chainPendingReplacement outer
   return g
 
 /-- Colored mana symbols of `col` among `ids` for Zemo's boast, counting hybrid

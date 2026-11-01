@@ -86,18 +86,6 @@ def exileInsteadSource? (g : Game) (dying : GameObject)
       | some p, some q => p != q
       | _, _ => false)
 
-/-- Controller of a Head-of-the-Hunt-style replacement, if `dying` is an
-opposing creature that would go to a graveyard. -/
-def exileInsteadController? (g : Game) (dying : GameObject)
-    (preBattlefield : Option (Array GameObject) := none) : Option PlayerId :=
-  (g.exileInsteadSource? dying preBattlefield).bind g.controllerOf
-
-/-- CR 614.6: if this death would be replaced with exile, the die event
-never happens. -/
-def wouldExileInsteadOfDying (g : Game) (dying : GameObject)
-    (preBattlefield : Option (Array GameObject) := none) : Bool :=
-  g.untilEotExileIfDies dying || (g.exileInsteadSource? dying preBattlefield).isSome
-
 /-- Result of running the CR 616.1 replacement loop on a proposed zone move. -/
 structure ZoneMoveReplacementResult where
   dest : Zone
@@ -133,9 +121,10 @@ def replaceZoneMove (g : Game) (old : GameObject) (beforeSnap : EventObject)
   while fuel > 0 do
     fuel := fuel - 1
     let discarded :=
-      match old.zone, curDest with
-      | .hand p, .graveyard q => p == q
-      | _, _ => false
+      verb == some .discard ||
+        match old.zone, curDest with
+        | .hand p, .graveyard q => p == q
+        | _, _ => false
     let proposedCause := g.resolveOptionalCause curCause (fallbackCtrl := some affected)
     let proposed :=
       GameEvent.moved g.turnNumber beforeSnap old.zone curDest (discarded := discarded)
@@ -210,10 +199,6 @@ def replaceZoneMove (g : Game) (old : GameObject) (beforeSnap : EventObject)
                 proposed.watches .wouldDie) && curDest != .exile then
             let srcObj := if wolf then spec.source.bind g.findObject? else none
             specs := specs.push ({ spec with affectedPlayer := affected }, srcObj, false)
-        | .commanderToCommandZone tid =>
-          if tid == old.id && curDest != .command &&
-              (curDest == .exile || curDest == .graveyard old.owner) then
-            specs := specs.push ({ spec with affectedPlayer := old.owner }, none, false)
         | _ => pure ()
       | _ => pure ()
     let candidates := specs.map (fun (s, _, _) => (ReplacementOrPrevention.replacement s).toCandidate)
@@ -236,8 +221,6 @@ def replaceZoneMove (g : Game) (old : GameObject) (beforeSnap : EventObject)
           exileInstead := true
           if isFinality then finalityExile := true
           if hSrc.isSome then headSource := hSrc
-        | .commanderToCommandZone _ =>
-          curDest := .command
         | _ => pure ()
   return {
     dest := curDest
@@ -265,6 +248,9 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
     (isCopy : Option Bool := none)
     (overridePrinted : Option CardDef := none)
     (adventurerCard : Option CardDef := none)
+    (faceDown? : Option Bool := none)
+    (fromStackTime? : Option Nat := none)
+    (enterMods : Array TriggeredAbility.TriggerEnterWith := #[])
     (cause : Option EventCause := none) : Game × ObjectId :=
   let old := g.object! id
   let isAttacking := attacking || attackingTarget.isSome
@@ -323,13 +309,13 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
               otherFace := some { old.printed with isToken := keepToken, otherFace := none } }
           | none => old.printed
         else old.printed
-    let faceDown := targetZone == .battlefield && old.zone == .stack && old.status.faceDown
+    let faceDown := faceDown?.getD (targetZone == .battlefield && old.zone == .stack && old.status.faceDown)
     let fromStackTime :=
-      if targetZone == .battlefield && old.zone == .stack then old.status.time else 0
+      fromStackTime?.getD (if targetZone == .battlefield && old.zone == .stack then old.status.time else 0)
     let prepared :=
       targetZone == .battlefield && !faceDown && printed.entersPrepared
     let impendingNotCreature :=
-      old.zone == .stack && targetZone == .battlefield &&
+      (old.zone == .stack || fromStackTime?.isSome) && targetZone == .battlefield &&
         printed.impending.isSome && fromStackTime > 0
     let baseStatus : Status :=
       if targetZone == .battlefield then
@@ -364,6 +350,15 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
           g' := { g' with activeEffects := g'.activeEffects.push (⟨g'.nextEffectId⟩, .returnedAsArtifact newId), nextEffectId := g'.nextEffectId + 1 }
         if onlyFoodArtifact then
           g' := { g' with activeEffects := g'.activeEffects.push (⟨g'.nextEffectId⟩, .onlyFoodArtifact newId), nextEffectId := g'.nextEffectId + 1 }
+        for m in enterMods do
+          match m with
+          | .loseAllAbilities =>
+            g' := { g' with activeEffects := g'.activeEffects.push (⟨g'.nextEffectId⟩, .layered (.objects #[newId]) (.abilities {} .all) .indefinite), nextEffectId := g'.nextEffectId + 1 }
+          | .keywords k =>
+            g' := { g' with activeEffects := g'.activeEffects.push (⟨g'.nextEffectId⟩, .layered (.objects #[newId]) (.abilities { keywords := k } .none) .indefinite), nextEffectId := g'.nextEffectId + 1 }
+          | .additionalSubtype subtype =>
+            g' := { g' with activeEffects := g'.activeEffects.push (⟨g'.nextEffectId⟩, .additionalSubtype newId subtype (dedup := true)), nextEffectId := g'.nextEffectId + 1 }
+          | _ => pure ()
         return g'
       let etb :=
         gForArrival.applyEtbReplacements candidate
@@ -394,25 +389,27 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
   | some (chooser, choices) =>
     let sacrificed := verb == some .sacrifice
     let discarded :=
-      match old.zone, origDest with
-      | .hand p, .graveyard q => p == q
-      | _, _ => false
-    let faceDown := origDest == .battlefield && old.zone == .stack && old.status.faceDown
-    let fromStackTime := if origDest == .battlefield && old.zone == .stack then old.status.time else 0
+      verb == some .discard ||
+        match old.zone, origDest with
+        | .hand p, .graveyard q => p == q
+        | _, _ => false
+    let faceDown := faceDown?.getD (origDest == .battlefield && old.zone == .stack && old.status.faceDown)
+    let fromStackTime := fromStackTime?.getD (if origDest == .battlefield && old.zone == .stack then old.status.time else 0)
     (g.promptChooseReplacement chooser choices
       (.move id origDest controller sacrificed discarded verb actor faceDown tapped
         isAttacking resolvedAttackTarget nightBack returnedAsArtifact onlyFoodArtifact
         extraEntersWith libraryPosition fromStackTime applyHope preBattlefield
-        isCopy overridePrinted adventurerCard cause),
+        isCopy overridePrinted adventurerCard summoningSick attachedTo enterMods cause),
      id)
   | none =>
   let exileInstead := moveRep.exileInstead
   let finalityExile := moveRep.finalityExile
   let headSource := moveRep.headSource
   let finalDiscarded :=
-    match old.zone, dest with
-    | .hand p, .graveyard q => p == q
-    | _, _ => false
+    verb == some .discard ||
+      match old.zone, origDest with
+      | .hand p, .graveyard q => p == q
+      | _, _ => false
   let (g, newId) :=
     g.withBatchReturn cause fun g =>
       let g :=
@@ -436,7 +433,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
         else g
       let freshForSnap : GameObject :=
         match tempCopyUntilEot with
-        | some (_, copyCard) => { fresh with printed := copyCard, isCopy := true }
+        | some (_, copyCard) => { fresh with printed := copyCard }
         | none => fresh
       let gWithFresh : Game := Id.run do
         let mut g' : Game :=
@@ -450,13 +447,30 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
             g' := { g' with activeEffects := g'.activeEffects.push (⟨g'.nextEffectId⟩, .returnedAsArtifact newId), nextEffectId := g'.nextEffectId + 1 }
           if onlyFoodArtifact then
             g' := { g' with activeEffects := g'.activeEffects.push (⟨g'.nextEffectId⟩, .onlyFoodArtifact newId), nextEffectId := g'.nextEffectId + 1 }
+          for m in enterMods do
+            match m with
+            | .loseAllAbilities =>
+              g' := { g' with activeEffects := g'.activeEffects.push (⟨g'.nextEffectId⟩, .layered (.objects #[newId]) (.abilities {} .all) .indefinite), nextEffectId := g'.nextEffectId + 1 }
+            | .keywords k =>
+              g' := { g' with activeEffects := g'.activeEffects.push (⟨g'.nextEffectId⟩, .layered (.objects #[newId]) (.abilities { keywords := k } .none) .indefinite), nextEffectId := g'.nextEffectId + 1 }
+            | .additionalSubtype subtype =>
+              if !g'.hasSubtype freshForSnap subtype then
+                g' := { g' with activeEffects := g'.activeEffects.push (⟨g'.nextEffectId⟩, .additionalSubtype newId subtype (dedup := true)), nextEffectId := g'.nextEffectId + 1 }
+            | _ => pure ()
         return g'
       let afterSnap : EventObject :=
         match tempCopyUntilEot with
-        | some (origPrinted, _) => { gWithFresh.snapshot freshForSnap with printed := some origPrinted }
+        | some (origPrinted, _) =>
+          { gWithFresh.snapshot freshForSnap with
+            printed := some origPrinted
+            isCopy := fresh.isCopy }
         | none => gWithFresh.snapshot freshForSnap
       let finalVerb : Option ZoneVerb :=
-        if exileInstead then some .exile else verb
+        if verb == some .sacrifice then some .sacrifice
+        else if finalDiscarded || verb == some .discard then some .discard
+        else if verb == some .mill then some .mill
+        else if exileInstead then some .exile
+        else verb
       let resolvedFinalCause :=
         g.resolveOptionalCause finalCause
           (fallbackCtrl := actor.orElse (fun _ =>
@@ -521,8 +535,28 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
             if dest == Zone.battlefield && returnedAsArtifact then
               g.createEffect (.returnedAsArtifact newId) (cause := some baseHappenedCause)
             else g
-          if dest == Zone.battlefield && onlyFoodArtifact then
-            g.createEffect (.onlyFoodArtifact newId) (cause := some baseHappenedCause)
+          let g : Game :=
+            if dest == Zone.battlefield && onlyFoodArtifact then
+              g.createEffect (.onlyFoodArtifact newId) (cause := some baseHappenedCause)
+            else g
+          if dest == Zone.battlefield then
+            enterMods.foldl (fun acc m =>
+              match m with
+              | .loseAllAbilities =>
+                acc.createEffect (.layered (.objects #[newId]) (.abilities {} .all) .indefinite)
+                  (cause := some baseHappenedCause)
+              | .keywords k =>
+                acc.createEffect (.layered (.objects #[newId]) (.abilities { keywords := k } .none) .indefinite)
+                  (cause := some baseHappenedCause)
+              | .additionalSubtype subtype =>
+                match acc.findObject? newId with
+                | some cur =>
+                  if acc.hasSubtype cur subtype then acc
+                  else
+                    acc.createEffect (.additionalSubtype newId subtype (dedup := true))
+                      (cause := some baseHappenedCause)
+                | none => acc
+              | _ => acc) g
           else g
         | none => g
       let g :=
@@ -640,6 +674,7 @@ def putOntoBattlefield (g : Game) (id : ObjectId) (controller : PlayerId)
     (returnedAsArtifact := false) (onlyFoodArtifact := false)
     (nightBack := false)
     (extraEntersWith : CounterBag := #[])
+    (enterMods : Array TriggeredAbility.TriggerEnterWith := #[])
     (verb : Option ZoneVerb := none) (actor : Option PlayerId := none)
     (cause : Option EventCause := none) : Game × ObjectId :=
   if (g.player controller).lost then
@@ -654,6 +689,7 @@ def putOntoBattlefield (g : Game) (id : ObjectId) (controller : PlayerId)
       (returnedAsArtifact := returnedAsArtifact) (onlyFoodArtifact := onlyFoodArtifact)
       (nightBack := nightBack)
       (extraEntersWith := extraEntersWith)
+      (enterMods := enterMods)
       (verb := verb) (actor := actor) (cause := cause)
 
 end Game

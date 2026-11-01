@@ -113,7 +113,7 @@ stun counter from it"). When multiple `.stunCounterUntap` effects apply, returns
 def replaceUntap (g : Game) (o : GameObject)
     (cause : Option EventCause := none) :
     Bool × Array ReplacementId × Option EventCause × Option (PlayerId × Array ReplacementId) :=
-  let untap := GameEvent.untapped g.turnNumber (g.snapshot o) false
+  let untap := GameEvent.untapped g.turnNumber (g.snapshot o)
     (cause := g.resolveOptionalCause cause (fallbackCtrl := g.controllerOf o)
       (defaultCause := .turnBased .untapAll))
   if !o.status.tapped || !untap.watches .wouldUntap then
@@ -164,7 +164,7 @@ def untapPermanent (g : Game) (o : GameObject)
       if duringUntapStep then cause.getD (.turnBased .untapAll)
       else g.resolveOptionalCause cause (fallbackCtrl := g.controllerOf o)
         (defaultCause := .turnBased .untapAll)
-    let untap := GameEvent.untapped g.turnNumber (g.snapshot o) (replacedByStun := false)
+    let untap := GameEvent.untapped g.turnNumber (g.snapshot o)
       (cause := defaultCause)
     if !untap.watches .wouldUntap then g
     else
@@ -365,9 +365,19 @@ def finishAmassOn (g : Game) (controller : PlayerId) (armyId : ObjectId)
           if src.isOnBattlefield then g.attachSourceTo src (g.object! army.id) (cause := cause) else g
         | none => g
 
-/-- Amass `[subtype]` `n` (CR 701.47). If you control no Army, the token
-enters as 0/0 and triggers see that power before counters are put on it. If
-you control more than one Army, you choose which one. -/
+/-- Finish a freshly-created Army amass once `createToken` completes after a
+`Pending.chooseReplacement` pause. -/
+def finishFreshAmass (g : Game) (controller : PlayerId) (subtype : CardSubtype)
+    (n : Nat) (attach : Option ObjectId) (cause : Option EventCause := none) : Game :=
+  match ((g.permanentsOf controller).filter (fun o => o.printed.isToken && g.hasSubtype o .army)).back? with
+  | some army =>
+    let g := g.afterPermanentEnters army
+    let g := g.logMsg s!"the amassed Army entered as a 0/0 creature"
+    g.finishAmassOn controller army.id subtype n attach (cause := cause)
+  | none => g
+
+/-- Amass `subtype` `n`, choosing which Army when `controller` controls more
+than one (CR 701.47). -/
 def amass (g : Game) (controller : PlayerId) (subtype : CardSubtype) (n : Nat)
     (attach : Option ObjectId := none)
     (cause : Option EventCause := none) : Game :=
@@ -390,17 +400,23 @@ def amass (g : Game) (controller : PlayerId) (subtype : CardSubtype) (n : Nat)
     (g.change (.pending (.fraChoice controller (.chooseCards ids 1 (.amassArmy subtype n attach))))).logMsg
       s!"{(g.player controller).name} chooses an Army to amass"
   else
-    let createdFresh := armies.isEmpty
-    let (g, army) :=
-      match armies[0]? with
-      | none => g.createToken controller (armyToken subtype) (cause := cause)
-      | some army => (g, army)
-    let g :=
-      if createdFresh then
-        let g := g.afterPermanentEnters (g.object! army.id)
-        g.logMsg s!"the amassed Army entered as a 0/0 creature"
+    match armies[0]? with
+    | some army =>
+      g.finishAmassOn controller army.id subtype n attach (cause := cause)
+    | none =>
+      let (g, army) := g.createToken controller (armyToken subtype) (cause := cause)
+      if let .chooseReplacement .. := g.pending then
+        g.chainPendingReplacement (.finishFreshAmass controller subtype n attach cause)
+      else if army.zone == .battlefield then
+        match g.findObject? army.id with
+        | some entered =>
+          if entered.isOnBattlefield then
+            let g := g.afterPermanentEnters entered
+            let g := g.logMsg s!"the amassed Army entered as a 0/0 creature"
+            g.finishAmassOn controller entered.id subtype n attach (cause := cause)
+          else g
+        | none => g
       else g
-    g.finishAmassOn controller (g.object! army.id).id subtype n attach (cause := cause)
 
 /-- Amass Goblins `n` (CR 701.47). -/
 def amassGoblins (g : Game) (controller : PlayerId) (n : Nat)
@@ -417,16 +433,29 @@ def amassZombies (g : Game) (controller : PlayerId) (n : Nat)
     (cause : Option EventCause := none) : Game :=
   g.amass controller .zombie n (cause := cause)
 
+/-- Finish the until-EOT lose-indestructible and exile-if-dies effects of
+`dealDamageLoseIndestructibleExileTo` once `markDamageOn` finishes. -/
+def finishDealDamageLoseIndestructibleExile (g : Game) (targetId : ObjectId)
+    (targetName : String) (n : Nat) (cause : EventCause) : Game :=
+  let name := (g.findObject? targetId).map g.name |>.getD targetName
+  let g := g.createEffects #[.loseIndestructibleUntilEot targetId, .exileIfDiesUntilEot targetId]
+    (cause := some cause)
+  g.logMsg
+    s!"{name} is dealt {n} damage, loses indestructible until end of turn, and will be exiled if it would die this turn"
+
 /-- Damage plus until-EOT lose-indestructible and exile-if-dies (e.g. Smite).
 Spells apply those three steps in order. This sets the same flags at once. -/
 def dealDamageLoseIndestructibleExileTo (g : Game) (o : GameObject) (n : Nat)
     (source : EventObject) : Game :=
   let (g, cause) := g.allocDelayedCause source.controller source.id
-  let g := if n > 0 then g.record (GameEvent.damaged g.turnNumber source (g.snapshot o) n (cause := cause)) else g
-  let g := g.record (GameEvent.damageMarked g.turnNumber o.id n (cause := cause))
-  let g := g.createEffects #[.loseIndestructibleUntilEot o.id, .exileIfDiesUntilEot o.id] (cause := some cause)
-  g.logMsg
-    s!"{o.name} is dealt {n} damage, loses indestructible until end of turn, and will be exiled if it would die this turn"
+  let srcObj := g.damageSourceObjFromSnapshot? (some source)
+  let oName := g.name o
+  let g := g.markDamageOn o (Int.ofNat n) s!"{oName} is dealt {n} damage"
+    (source := some source) (sourceObj := srcObj) (cause := some cause)
+  if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement (.finishDealDamageLoseIndestructibleExile o.id oName n cause)
+  else
+    g.finishDealDamageLoseIndestructibleExile o.id oName n cause
 
 /-- Until-end-of-turn “can't be blocked” (CR 509.1b / 611.2a). -/
 def grantCantBeBlockedThisTurn (g : Game) (o : GameObject) : Game :=

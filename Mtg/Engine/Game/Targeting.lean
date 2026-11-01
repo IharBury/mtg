@@ -435,8 +435,11 @@ def triggerNeedingTargets (g : Game) : Option StackEntry :=
       match o.triggeredAbility, o.abilityEffect with
       | some _, some eff =>
         -- A modal trigger whose modes were chosen (CR 603.3c).
-        if eff.allowsZeroTargets || eff.targetKind.spec.slots.size > 1 then !e.targetsAnnounced
-        else eff.requiresTarget && e.targets.isEmpty
+        match eff.dividedDamage with
+        | some (amount, _) => assignedDividedDamage e < amount
+        | none =>
+          if eff.allowsZeroTargets || eff.targetKind.spec.slots.size > 1 then !e.targetsAnnounced
+          else eff.requiresTarget && e.targets.isEmpty
       | some ab, none =>
         match ab.effect.resolution with
         | .chooseTriggerModes _ => false

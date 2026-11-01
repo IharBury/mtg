@@ -134,16 +134,85 @@ def giveControlUntilEot (g : Game) (o : GameObject) (p : PlayerId) : Game :=
   else
     g.changeControl o p (untilEot := true)
 
-/-- Remove `o` from the game. Battlefield permanents use `move` so
-until-leaves one-shots return (CR 610.3 / 800.4a). Ante stays (CR 800.4n). -/
+/-- Remove `o` from the game directly via `ceaseToExist` (without routing
+through `move` to `.exile`), unattaching attachments, cleaning up prepared exile
+copies, evaluating CR 603.10a leaves-the-battlefield look-back triggers for
+remaining players, and returning CR 610.3 linked-exile cards (CR 800.4a).
+Ante stays (CR 800.4n). -/
 def objectLeavesTheGame (g : Game) (o : GameObject) (_leavingPlayer : PlayerId) : Game :=
   let cause := some (EventCause.gameRule .playerLeftGame)
   if o.zone == .ante then g
   else if o.zone == .battlefield then
-    let (g, newId) := g.move o.id .exile none (cause := cause)
-    g.ceaseToExist newId (cause := cause)
+    let sourceCtrlTargets : Array ObjectId :=
+      let sourceCtrlIds := g.activeEffects.filterMap fun (eid, e) =>
+        match e with
+        | .layered _ (.control _) (.whileSourceOnBattlefield s)
+        | .layered _ (.control _) (.untilSourceLeaves s) =>
+          if s == o.id then some eid else none
+        | _ => none
+      if sourceCtrlIds.isEmpty then #[]
+      else
+        g.battlefield.filterMap fun pObj =>
+          if pObj.id != o.id &&
+              (g.appliedControlEffectIds pObj).any (fun eid => sourceCtrlIds.contains eid) then
+            some pObj.id
+          else none
+    let g := g.withBatch cause fun g =>
+      let g := g.unattachFrom o.id
+      let g := g.removePreparedCopy o.id
+      let g := g.ceaseToExist o.id (cause := cause)
+      sourceCtrlTargets.foldl (fun acc tid =>
+        match acc.findObject? tid with
+        | none => acc
+        | some cur =>
+          if !cur.isOnBattlefield || !(acc.appliedControlEffectIds cur).isEmpty then acc
+          else
+            let destP := (acc.controllerOf cur).getD (cur.defaultController.getD cur.owner)
+            if (acc.player destP).lost then
+              let name := acc.name cur
+              let (acc, _) := acc.move tid .exile none (cause := cause)
+              acc.logMsg s!"{name} is exiled (CR 800.4c)"
+            else acc) g
+    if !o.linkedExile.isEmpty then
+      Id.run do
+        let mut g := g
+        for exId in o.linkedExile do
+          match g.findObject? exId with
+          | some exObj =>
+            if exObj.zone == .exile then
+              let name := exObj.name
+              let linkCause := g.lastMoveCauseOf? exObj.id
+              match exObj.returnToZone with
+              | some (.hand hp) =>
+                let (g', _) := g.move exObj.id (.hand hp) none (cause := linkCause)
+                g := g'.logMsg s!"{name} returns to {(g'.player hp).name}'s hand"
+              | some (.graveyard gp) =>
+                let (g', _) := g.move exObj.id (.graveyard gp) none (cause := linkCause)
+                g := g'.logMsg s!"{name} returns to {(g'.player gp).name}'s graveyard"
+              | _ =>
+                if g.isAura exObj then
+                  match g.battlefield.find? (fun h => g.auraObjCanEnchant h exObj) with
+                  | none =>
+                    g := g.logMsg s!"{name} remains in exile (can't be attached legally; CR 614.6)"
+                  | some host =>
+                    let hostId := host.id
+                    let hostName := g.name host
+                    let (g', _) := g.move exObj.id .battlefield (some exObj.owner)
+                      (attachedTo := some hostId) (cause := linkCause)
+                    g := g'.logMsg s!"{name} returns attached to {hostName} (does not target)"
+                else
+                  let (g', _) := g.move exObj.id .battlefield (some exObj.owner) (cause := linkCause)
+                  g := g'.logMsg s!"{name} returns to the battlefield"
+          | none => pure ()
+        return g
+    else g
   else
     g.ceaseToExist o.id (cause := cause)
+
+private def findPausedCloseBatch? : PendingReplacement → Option (BatchId × Nat)
+  | .closeBatch b s => some (b, s)
+  | .seq a b => findPausedCloseBatch? a <|> findPausedCloseBatch? b
+  | _ => none
 
 /-- After `p` leaves, pending costs they would pay are not paid (CR 800.4f)
 and other pending choices they would make are skipped or passed on
@@ -213,8 +282,19 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
             (remaining.filter (fun r => r != np && g.stillInGame r)))]
   | .chooseTriggerToStack q =>
     if q == p then g.change (.pending .none) else g
-  | .chooseLegend q _ _ | .chooseReplacement q _ =>
+  | .chooseLegend q _ _ =>
     if q == p then g.change (.pending .none) else g
+  | .chooseReplacement q _ =>
+    if q == p then
+      let closeInfo? := g.pendingReplacement.bind findPausedCloseBatch?
+      let clearProp : Array EngineChange :=
+        if g.proposedSpell.any (·.caster == p) then #[.proposedSpell none, .clearProposalCheckpoint]
+        else #[]
+      let g := g.changes (#[.pending .none, .pendingReplacement none] ++ clearProp)
+      match closeInfo? with
+      | some (batchId, startIdx) => g.finishOpenBatch batchId startIdx
+      | none => if g.currentBatch.isSome then g.change .clearPausedBatch else g
+    else g
   | .assignCombatDamage q forAttackers =>
     if q == p then
       g.change (.pending (.assignCombatDamage (g.nextLiving p) forAttackers))
@@ -223,9 +303,9 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
     else g
   | .activateManaAbilities q | .chooseMode q | .chooseX q | .chooseTargets q
   | .chooseAdditionalCost q | .chooseKicker q | .chooseGift q
-  | .chooseTeamwork q | .chooseTeamworkCreatures q _ =>
+  | .chooseTeamwork q | .chooseTeamworkCreatures q _
+  | .sacrificePermanent q _ | .discardForAdditionalCost q =>
     if q == p then g.changes #[.pending .none, .proposedSpell none, .clearProposalCheckpoint] else g
-  | .sacrificePermanent q _ | .discardForAdditionalCost q
   | .sacrificeCreature q | .scry q .. | .surveil q ..
   | .mayDiscardDraw q _ | .mayAttachEquipment q _
   | .recruitDiscard q | .chooseRingBearer q
@@ -234,7 +314,12 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
   | .maySacArtifactOrDiscard q _
   | .mayHaveVillainConnive q _ _ | .declareMulligan q | .chooseProliferate q _
   | .fraChoice q _ =>
-    if q == p then g.changes #[.pending .none, .chooseModesRest none] else g
+    if q == p then
+      let clearProp : Array EngineChange :=
+        if g.proposedSpell.any (·.caster == p) then #[.proposedSpell none, .clearProposalCheckpoint]
+        else #[]
+      g.changes (#[.pending .none, .chooseModesRest none] ++ clearProp)
+    else g
   | .mayCastExiledElseDamage q .. =>
     if q == p then g.change (.pending .none) else g
   | .chooseTriggerOr q =>
@@ -280,13 +365,18 @@ def playerLeavesGame (g : Game) (p : PlayerId) : Game :=
         match e with
         | .layered _ (.control c) _ =>
           if c == p then acc.endControlEffectById eid (cause := cause) else acc
+        | .playerRule you (.controlsPlayer them _) _ =>
+          if you == p || them == p then acc.expireEffectById eid (cause := cause) else acc
         | _ => acc) g
     let g :=
       g.objects.foldl (fun acc o =>
         if o.zone == .stack && acc.controlledBy o p && !representedByCard o then
           acc.ceaseToExist o.id (cause := cause)
         else acc) g
-    let still := g.objects.filter (fun o => g.controlledBy o p)
+    let still := g.objects.filter (fun o =>
+      g.controlledBy o p ||
+        (o.zone == .battlefield && (g.appliedControlEffectIds o).isEmpty &&
+          ((o.defaultController.orElse (fun _ => o.controller)).getD o.owner) == p))
     let g :=
       still.foldl (fun acc o =>
         match acc.findObject? o.id with

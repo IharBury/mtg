@@ -169,7 +169,7 @@ def speedDeclines : Game :=
 def speedPays : Game :=
   let g := speedOffer.addMana me (.colored .green) 1
   let g := mustApply g me .accept
-  g.applyModeledReflexive #[Target.permanent (named g "Volcanic Villain").id]
+  passBoth (mustApply g me (.target (Target.permanent (named g "Volcanic Villain").id)))
 
 #guard
   let villain := named speedPays "Volcanic Villain"

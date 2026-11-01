@@ -79,7 +79,7 @@ def attackPumpPerPlains (g : Game) (controller : PlayerId) : Game :=
   let (g, cause) := g.allocDelayedCause (some controller)
   let src :=
     match g.currentResolvingContext? with
-    | some (some sid, _) => g.findObject? sid
+    | some (some sid, _) => g.damageSourceById? sid
     | _ => none
   g.registerDelayedTrigger { controller, source := src, kind := .attackPumpPerPlains, cause }
     |>.logMsg

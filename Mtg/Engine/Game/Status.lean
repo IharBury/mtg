@@ -124,10 +124,6 @@ def toCounterBag (s : Status) : CounterBag :=
 def withCounterBag (s : Status) (bag : CounterBag) : Status :=
   { s with counters := bag.canonical }
 
-/-- Add all counters in `bag` to `s` (CR 122.1). -/
-def addCounterBag (s : Status) (bag : CounterBag) : Status :=
-  { s with counters := s.counters.merge bag }
-
 /-- The planeswalker `s` is attacking, if any (CR 506.3 / 508.1b). -/
 def attackingPlaneswalker? (s : Status) : Option ObjectId :=
   match s.attackingTarget with

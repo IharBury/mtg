@@ -82,7 +82,7 @@ def applyCastCostReductions (g : Game) (card : GameObject) (face : CardDef)
       let gy :=
         (g.player caster).graveyard.filter (fun id =>
           match g.findObject? id with
-          | some c => c.printed.isCreature
+          | some c => g.isCreature c
           | none => false) |>.size
       if gy >= min then afterControl.reduceGeneric n else afterControl
     | none => afterControl

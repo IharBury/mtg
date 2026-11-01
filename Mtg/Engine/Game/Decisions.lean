@@ -12,6 +12,51 @@ and supplying outside randomness.
 namespace Mtg.Engine
 namespace Game
 
+/-- Run trigger-sequence steps that waited on this discard, then give
+priority when nothing else is pending. -/
+def resumeSequenceThenPriority (g : Game) : Game :=
+  let g := g.resumeTriggerSequence
+  if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement (.receivePriority g.activePlayer)
+  else if g.pending != .none then g
+  else g.receivePriority g.activePlayer
+
+/-- The optional action of `mayThen` was performed. Run its conditional. -/
+def acceptMayThen (g : Game) : Game :=
+  let g := g.changes #[
+    .pending .none,
+    .mayThenDrop 0,
+    .mayThenConditional none,
+    .mayThenResume false ]
+  g.resumeSequenceThenPriority
+
+/-- The optional action of `mayThen` was declined. Skip its conditional and
+continue any later sequence steps. -/
+def declineMayThen (g : Game) : Game :=
+  let n := g.mayThenDrop
+  let g := g.changes #[
+    .pending .none,
+    .mayThenDrop 0,
+    .mayThenConditional none,
+    .sacrificedPowerThisWay none,
+    .mayThenResume false ]
+  let g :=
+    match g.triggerSequenceRest with
+    | none => g
+    | some rest => g.change (.setTriggerSequenceRestSteps (rest.steps.drop n))
+  g.resumeSequenceThenPriority
+
+/-- Continue a discard chain. When no one is left to discard, put the waiting
++1/+1 counter (Ninja of the Hand) and finish a paused trigger sequence. -/
+def continueAfterDiscard (g : Game) (players : Array PlayerId) : Game :=
+  let waiting := g.triggerSequenceRest.isSome || g.plusOneAfterDiscards.isSome
+  let g := g.beginDiscardCards players
+  if g.pending != .none || !waiting then g
+  else
+    let g :=
+      if g.plusOneAfterDiscards.isSome then g.finishPlusOneAfterDiscards else g
+    g.resumeSequenceThenPriority
+
 mutual
 /-- Clear a finished Reality Fracture choice and let the game continue. Any
 pending replacement/batch continuation runs first, then pending exile-cast
@@ -45,13 +90,26 @@ partial def finishFraChoice (g : Game) : Game :=
           if g.pending == .none then g.receivePriority g.activePlayer else g
 
 /-- Resume the rules event that paused on `Pending.chooseReplacement` (CR 616.1). -/
-partial def resumePendingReplacement (g : Game) : PendingReplacement → Game
+partial def resumePendingReplacement (g : Game) (pr : PendingReplacement)
+    (followedByFinishFra : Bool := false) : Game :=
+  match pr with
   | .seq first rest =>
+    let checkReversal : Bool :=
+      match first with
+      | .restorePending (.fraChoice _ (.costPicks ..)) | .completeActivation .. =>
+        g.proposedSpell.isSome
+      | _ => false
+    let spellId? := g.proposedSpell.map (·.spellId)
     let g := g.resumePendingReplacement first
-    if g.pending != .none then
+      (followedByFinishFra := followedByFinishFra || rest.endsWithFinishFra)
+    let reversed :=
+      checkReversal && g.proposedSpell.isNone &&
+        !spellId?.any (fun sid => (g.findObject? sid).any (·.zone == .stack))
+    if reversed then g
+    else if g.pending != .none then
       g.chainPendingReplacement rest
     else
-      g.resumePendingReplacement rest
+      g.resumePendingReplacement rest (followedByFinishFra := followedByFinishFra)
   | .shuffleThen p onDone =>
     g.shuffleThen p onDone
   | .dealDamageToPlayer p n _ source _ unpreventable cause =>
@@ -105,23 +163,25 @@ partial def resumePendingReplacement (g : Game) : PendingReplacement → Game
     | none => g
   | .recordPutCounters targetId kind n byPlayer cause =>
     g.recordPutCounters targetId kind n byPlayer (cause := cause)
-  | .move id dest controller _ _ verb actor _ tapped
+  | .move id dest controller _ _ verb actor faceDown tapped
       attacking attackingTarget transformed returnedAsArtifact onlyFoodArtifact
-      extraEntersWith libraryPosition _ applyHope preBattlefield
-      isCopy overridePrinted adventurerCard cause =>
-    (g.move id dest controller (tapped := tapped) (applyHope := applyHope)
+      extraEntersWith libraryPosition fromStackTime applyHope preBattlefield
+      isCopy overridePrinted adventurerCard summoningSick attachedTo enterMods cause =>
+    (g.move id dest controller (tapped := tapped) (summoningSick := summoningSick)
+      (attachedTo := attachedTo) (applyHope := applyHope)
       (attacking := attacking) (attackingTarget := attackingTarget)
       (returnedAsArtifact := returnedAsArtifact) (onlyFoodArtifact := onlyFoodArtifact)
       (nightBack := transformed) (extraEntersWith := extraEntersWith)
       (verb := verb) (actor := actor) (libraryPosition := libraryPosition)
       (preBattlefield := preBattlefield) (isCopy := isCopy)
       (overridePrinted := overridePrinted) (adventurerCard := adventurerCard)
-      (cause := cause)).1
+      (faceDown? := some faceDown) (fromStackTime? := some fromStackTime)
+      (enterMods := enterMods) (cause := cause)).1
   | .moveSimultaneousToGraveyard ids preBattlefield cause =>
     g.moveSimultaneousToGraveyard ids (preBattlefield := preBattlefield) (cause := cause)
-  | .destroyPermanent targetId cause =>
+  | .destroyPermanent targetId cause preBattlefield =>
     match g.findObject? targetId with
-    | some tgt => g.destroyPermanent tgt (cause := cause)
+    | some tgt => g.destroyPermanent tgt (preBattlefield := preBattlefield) (cause := cause)
     | none => g
   | .createToken controller card tapped attacking attackingTarget applyFoodBonus extraCounters recordRecent cause =>
     (g.createToken controller card (tapped := tapped) (attacking := attacking)
@@ -205,8 +265,16 @@ partial def resumePendingReplacement (g : Game) : PendingReplacement → Game
   | .finishManaAbilityMountainTrigger player sourceId =>
     g.finishManaAbilityMountainTrigger player sourceId
   | .restorePending p =>
-    let g := if g.proposalCheckpoint.isSome then g.change .endProposalAction else g
-    g.change (.pending p)
+    match p with
+    | .fraChoice caster (.costPicks sid picks _) =>
+      match picks[0]? with
+      | some pick =>
+        if (g.costPickCandidates caster sid pick).size < pick.count then
+          g.reverseProposedSpell (resumeContinuation := true)
+        else
+          g.change (.pending p)
+      | none => g.change (.pending p)
+    | _ => g.change (.pending p)
   | .closeBatch batchId startIdx =>
     g.finishOpenBatch batchId startIdx
   | .checkSBA =>
@@ -250,7 +318,295 @@ partial def resumePendingReplacement (g : Game) : PendingReplacement → Game
       (grantPriority := grantPriority)
       (hadOuterReplacement := hadOuter)
       (hadOpenContinuation := hadOpenCont)
+    if hadOuter then g
+    else if !grantPriority && !followedByFinishFra then g.finishFraChoice
+    else resumeAfterBecomeCast g
+  | .endProposalAction =>
+    if g.proposalCheckpoint.isSome then g.change .endProposalAction else g
+  | .payCostPickItems p abilityId sourceId pick remainingIds =>
+    g.payCostPickItems p abilityId sourceId pick remainingIds
+  | .finishActivationExtraCosts p sourceId forObject removePlusOnes sacrificeSource exileSource stage =>
+    g.finishActivationExtraCosts p sourceId forObject removePlusOnes sacrificeSource exileSource stage
+  | .finishPostLoyaltyActivated caster srcName srcId act abId srcSnap srcOrig hadOuter hadOpenCont =>
+    let g := g.finishPostLoyaltyActivated caster srcName srcId act abId srcSnap srcOrig hadOuter hadOpenCont
     if hadOuter then g else resumeAfterBecomeCast g
+  | .finishActivateManaAbilityPicks p id oname mana remainingPicks remainingCostIds tap sacrificeSelf activatedIdx restriction damageYou isMountain prevPending =>
+    g.finishActivateManaAbilityPicks p id oname mana remainingPicks remainingCostIds tap sacrificeSelf activatedIdx restriction damageYou isMountain prevPending
+  | .finishActivateManaAbilityPostSac p id oname srcSnap mana tap activatedIdx restriction damageYou isMountain prevPending =>
+    g.finishActivateManaAbilityPostSac p id oname srcSnap mana tap activatedIdx restriction damageYou isMountain prevPending
+  | .finishBeginRecruit p =>
+    g.finishBeginRecruit p
+  | .finishDrawThenBeginDiscard p discardRounds =>
+    g.beginDiscardCards #[p] discardRounds
+  | .finishConniveDraws controller extraDraws conniveDrawCause stage =>
+    g.finishConniveDraws controller extraDraws conniveDrawCause stage
+  | .finishFreshAmass controller subtype n attach cause =>
+    g.finishFreshAmass controller subtype n attach (cause := cause)
+  | .finishDealDamageLoseIndestructibleExile targetId targetName n cause =>
+    g.finishDealDamageLoseIndestructibleExile targetId targetName n cause
+  | .finishPlaceSearched p fromId name tapped cause =>
+    g.finishPlaceSearched p fromId name tapped (cause := cause)
+  | .placeSearchedBatch p remainingIds tapped cause =>
+    g.placeSearchedBatch p remainingIds tapped (cause := cause)
+  | .finishSearchAfterPlace p fromId dest after fromLibrary handRest cause =>
+    g.finishSearchAfterPlace p fromId dest after fromLibrary handRest cause
+  | .finishSurveilPostMove p card fromId remainingGy cause =>
+    g.finishSurveilPostMove p card fromId remainingGy cause
+  | .finishLibraryLook =>
+    g.finishLibraryLook
+  | .finishProliferateTarget p targetId remainingKinds hasPlusOne remainingTargets permIds playerIds chosenEmpty remainingRounds cause =>
+    g.finishProliferateTarget p targetId remainingKinds hasPlusOne remainingTargets permIds playerIds chosenEmpty remainingRounds cause
+  | .finishProliferateLoop p remainingTargets permIds playerIds chosenEmpty remainingRounds cause =>
+    g.finishProliferateLoop p remainingTargets permIds playerIds chosenEmpty remainingRounds cause
+  | .finishDiscardForDrawMay p n =>
+    g.finishDiscardForDrawMay p n
+  | .finishSacArtifactOrDiscardDraw p n =>
+    g.finishSacArtifactOrDiscardDraw p n
+  | .finishChooseDiscardCard p card remaining =>
+    g.finishChooseDiscardCard p card remaining
+  | .finishRecruitDiscard p isLand =>
+    g.finishRecruitDiscard p isLand
+  | .finishPutLandFromHand fromId =>
+    g.finishPutLandFromHand fromId
+  | .finishBeginOnBattlefield fromId remainingIds =>
+    g.finishBeginOnBattlefield fromId remainingIds
+
+/-- Ask `prop.caster` to choose what pays the first of `picks` (reversing under
+CR 733.1 if `cands.size < pick.count`), or finish the activation when none remain. -/
+partial def continueCostPicks (g : Game) (prop : ProposedSpell) (picks : Array CostPick)
+    (paid : Bool) (hadOuterReplacement : Bool := false)
+    (hadOpenContinuation : Option Bool := none) :
+    Except String Game := do
+  let openCont := g.proposalHadOpenContinuation hadOpenContinuation
+  match picks[0]?, prop.sourceId with
+  | some pick, some sid =>
+    if let .chooseReplacement .. := g.pending then
+      let nextPending := Pending.fraChoice prop.caster (.costPicks sid picks paid)
+      let g := (g.change (.consecutivePasses 0)).chainPendingReplacement
+        (.restorePending nextPending)
+      return g.logMsg s!"{(g.player prop.caster).name} chooses how to {pick.phrase}"
+    else if (g.costPickCandidates prop.caster sid pick).size < pick.count then
+      g.reverseProposedSpell? (resumeContinuation := true)
+    else
+      let g := g.changes #[.pending (.fraChoice prop.caster (.costPicks sid picks paid)), .consecutivePasses 0]
+      return g.logMsg s!"{(g.player prop.caster).name} chooses how to {pick.phrase}"
+  | _, _ =>
+    if let .chooseReplacement .. := g.pending then
+      return (g.change (.consecutivePasses 0)).chainPendingReplacement
+        (.completeActivation hadOuterReplacement openCont)
+    else
+      g.completeActivation prop
+        (hadOuterReplacement := hadOuterReplacement)
+        (hadOpenContinuation := some openCont)
+
+/-- Clear the finished scry or surveil, draw any follow-up cards, offer
+Palantír's opponent their choice, and give the active player priority. -/
+partial def finishLibraryLook (g : Game) : Game :=
+  if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement .finishLibraryLook
+  else
+    let g := g.changes #[
+      .pending .none,
+      .surveilReturnMvAtMost none,
+      .surveilReturnNoncreatureNonland false ]
+    let g :=
+      match g.fraAfterLook with
+      | some (c, src, next) =>
+        (g.change (.fraAfterLook none)).applyFra c default next.toResolution #[] src
+      | none => g
+    if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement .finishLibraryLook
+    else
+      let g :=
+        match g.pendingDrawAfterScry with
+        | some (q, n) =>
+          let g := g.change (.pendingDrawAfterScry none)
+          g.draw q n
+        | none => g
+      if let .chooseReplacement .. := g.pending then
+        g.chainPendingReplacement .finishLibraryLook
+      else if g.pending != .none then g
+      else
+        match g.palantirAfterScry with
+        | some (controller, opp, sid) =>
+          (g.change (.palantirAfterScry none)).offerPalantirChoice controller opp sid
+        | none =>
+          match g.pendingReplacement with
+          | some cont =>
+            (g.change (.pendingReplacement none)).resumePendingReplacement cont
+          | none =>
+            let g := g.resumeTriggerSequence
+            if let .chooseReplacement .. := g.pending then
+              g.chainPendingReplacement (.receivePriority g.activePlayer)
+            else if g.pending != .none then g
+            else g.receivePriority g.activePlayer
+
+/-- Move remaining surveil graveyard cards sequentially, chaining
+`finishSurveilPostMove` whenever a move pauses on `Pending.chooseReplacement`. -/
+partial def surveilMoveLoop (g : Game) (p : PlayerId) (remainingGy : Array ObjectId)
+    (cause : Option EventCause) : Game :=
+  match remainingGy[0]? with
+  | none => g
+  | some id =>
+    let rest := remainingGy.extract 1 remainingGy.size
+    let card := g.object! id
+    let (g, _) := g.move id (.graveyard p) none (cause := cause)
+    let g := g.logMsg s!"{(g.player p).name} puts {card.name} into their graveyard (surveil)"
+    if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement (.finishSurveilPostMove p card id rest cause)
+    else
+      g.finishSurveilPostMove p card id rest cause
+
+/-- Run post-graveyard-move surveil-to-hand checks and continue `surveilMoveLoop`. -/
+partial def finishSurveilPostMove (g : Game) (p : PlayerId) (card : GameObject)
+    (fromId : ObjectId) (remainingGy : Array ObjectId) (cause : Option EventCause) : Game :=
+  let g :=
+    match g.followMovedToZone? fromId (· == Zone.graveyard p) with
+    | none => g
+    | some gyObj =>
+      match g.surveilReturnMvAtMost with
+      | some n =>
+        if g.objectManaValue card ≤ n then
+          let (g', _) := g.move gyObj.id (.hand p) none (cause := cause)
+          g'.logMsg s!"{(g.player p).name} puts {card.name} into their hand"
+        else g
+      | none =>
+        if g.surveilReturnNoncreatureNonland && !g.isCreature card && !g.isLand card then
+          let (g', _) := g.move gyObj.id (.hand p) none (cause := cause)
+          g'.logMsg s!"{(g.player p).name} puts {card.name} into their hand"
+        else g
+  if let .chooseReplacement .. := g.pending then
+    if remainingGy.isEmpty then g
+    else g.chainPendingReplacement (.finishSurveilPostMove p card ⟨g.nextObjectId⟩ remainingGy cause)
+  else
+    g.surveilMoveLoop p remainingGy cause
+
+/-- Put remaining counter kinds and any `+1/+1` counter on `targetId` during
+proliferate, chaining `.finishProliferateTarget` on `Pending.chooseReplacement`. -/
+partial def finishProliferateTarget (g : Game) (p : PlayerId) (targetId : ObjectId)
+    (remainingKinds : Array CounterKind) (hasPlusOne : Bool)
+    (remainingTargets : Array Target) (permIds : Array ObjectId)
+    (playerIds : Array PlayerId) (chosenEmpty : Bool)
+    (remainingRounds : Nat) (cause : Option EventCause) : Game :=
+  let effCause := g.resolveOptionalCause cause (fallbackCtrl := some p)
+  match remainingKinds[0]? with
+  | some kind =>
+    let restKinds := remainingKinds.extract 1 remainingKinds.size
+    let g := g.recordPutCounters targetId kind 1 (byPlayer := some p) (cause := some effCause)
+    if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement (.finishProliferateTarget p targetId restKinds hasPlusOne
+        remainingTargets permIds playerIds chosenEmpty remainingRounds cause)
+    else
+      g.finishProliferateTarget p targetId restKinds hasPlusOne
+        remainingTargets permIds playerIds chosenEmpty remainingRounds cause
+  | none =>
+    let g := g.syncImpendingNotACreature targetId (cause := some effCause)
+    if hasPlusOne then
+      let g :=
+        match g.findObject? targetId with
+        | some o => g.addPlusOnePlusOneTo o 1 (byPlayer := some p) (cause := some effCause)
+        | none => g
+      if let .chooseReplacement .. := g.pending then
+        g.chainPendingReplacement (.finishProliferateTarget p targetId #[] false
+          remainingTargets permIds playerIds chosenEmpty remainingRounds cause)
+      else
+        let oName := ((g.findObject? targetId).map (·.name)).getD "permanent"
+        let g := g.logMsg s!"{(g.player p).name} proliferates {oName}"
+        g.finishProliferateLoop p remainingTargets (permIds.push targetId) playerIds
+          chosenEmpty remainingRounds cause
+    else
+      let oName := ((g.findObject? targetId).map (·.name)).getD "permanent"
+      let g := g.logMsg s!"{(g.player p).name} proliferates {oName}"
+      g.finishProliferateLoop p remainingTargets (permIds.push targetId) playerIds
+        chosenEmpty remainingRounds cause
+
+/-- Process remaining proliferate targets and emit `GameEvent.proliferated`. -/
+partial def finishProliferateLoop (g : Game) (p : PlayerId)
+    (remainingTargets : Array Target) (permIds : Array ObjectId)
+    (playerIds : Array PlayerId) (chosenEmpty : Bool)
+    (remainingRounds : Nat) (cause : Option EventCause) : Game :=
+  let effCause := g.resolveOptionalCause cause (fallbackCtrl := some p)
+  match (remainingTargets[0]? : Option Target) with
+  | some (Target.permanent id) =>
+    let restTargets := remainingTargets.extract 1 remainingTargets.size
+    match g.findObject? id with
+    | some o =>
+      if !o.isOnBattlefield then
+        g.finishProliferateLoop p restTargets permIds playerIds chosenEmpty remainingRounds cause
+      else
+        let bag := o.status.toCounterBag
+        let nonPlusKinds := bag.filterMap (fun (k, _) => if k != .plusOnePlusOne then some k else none)
+        let hasPlusOne := o.status.plusOnePlusOne > 0
+        g.finishProliferateTarget p id nonPlusKinds hasPlusOne restTargets permIds playerIds
+          chosenEmpty remainingRounds cause
+    | none =>
+      g.finishProliferateLoop p restTargets permIds playerIds chosenEmpty remainingRounds cause
+  | some (.player pid) =>
+    let restTargets := remainingTargets.extract 1 remainingTargets.size
+    let pl := g.player pid
+    let g := g.record (GameEvent.poisoned g.turnNumber pid 1 (byPlayer := some p) (cause := effCause))
+    let g := g.logMsg s!"{(g.player p).name} gives {pl.name} another poison counter"
+    g.finishProliferateLoop p restTargets permIds (playerIds.push pid) chosenEmpty
+      remainingRounds cause
+  | some (.card _) =>
+    let restTargets := remainingTargets.extract 1 remainingTargets.size
+    g.finishProliferateLoop p restTargets permIds playerIds chosenEmpty remainingRounds cause
+  | none =>
+    let g := g.record (GameEvent.proliferated g.turnNumber p
+      (permanents := permIds) (players := playerIds) (cause := cause))
+    if chosenEmpty then
+      g.logMsg s!"{(g.player p).name} proliferates, choosing nothing"
+    else g
+
+/-- Finish the post-discard steps of `.mayDiscardDraw`. -/
+partial def finishDiscardForDrawMay (g : Game) (p : PlayerId) (n : Nat) : Game :=
+  if g.mayThenDrop > 0 then
+    g.acceptMayThen
+  else
+    let g := g.draw p n
+    if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement (.receivePriority g.activePlayer)
+    else if g.pending != .none then g
+    else g.receivePriority g.activePlayer
+
+/-- Finish the post-discard steps of `.chooseDiscardCard`. -/
+partial def finishChooseDiscardCard (g : Game) (p : PlayerId) (card : GameObject)
+    (remaining : Array PlayerId) : Game :=
+  let g := g.finishConniveDiscard card
+  let g : Game :=
+    match g.triggerSequenceRest with
+    | some rest =>
+      if rest.steps.any (· == .put .discardedLand (how := .tapped)) then
+        g.change (.discardedCardThisWay (some (p, g.followMoved card.id)))
+      else g
+    | none => g
+  if g.thirstDiscardsLeft > 0 then
+    let left :=
+      if g.hasType card g.thirstDiscardType then 0 else g.thirstDiscardsLeft - 1
+    let g := g.change (.thirstDiscardsLeft left)
+    if left == 0 then
+      (g.change (.pending .none)).resumeSequenceThenPriority
+    else
+      g.beginDiscardCards #[p]
+  else if g.pendingDiscardsLeft > 0 then
+    let left := g.pendingDiscardsLeft - 1
+    let g := g.change (.pendingDiscardsLeft left)
+    if left == 0 then
+      g.continueAfterDiscard remaining
+    else
+      g.continueAfterDiscard #[p]
+  else
+    g.continueAfterDiscard remaining
+
+/-- Finish the post-discard token creation of `.recruitDiscard`. -/
+partial def finishRecruitDiscard (g : Game) (p : PlayerId) (isLand : Bool) : Game :=
+  let g :=
+    if isLand then g
+    else (g.createToken p humanSoldierToken).1
+  if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement (.receivePriority g.activePlayer)
+  else if g.pending != .none then g
+  else g.receivePriority g.activePlayer
 
 /-- Reverse a proposed spell or activated ability to its pre-proposal checkpoint,
 preserving CR 733.1 irreversible library actions, running any deferred post-cast
@@ -269,14 +625,23 @@ partial def reverseProposedSpell (g : Game) (resumeContinuation : Bool := false)
   | .ok g' => g'
   | .error msg => g.logMsg msg
 
-/-- Announce the modes and targets of a spell cast while an ability resolves
-(CR 601.2b–c), then finish casting it. A spell that needs a target but has
-none can't be cast and returns to where it was (CR 601.2c / 733.1). -/
+/-- Announce `{X}`, modes, additional/optional costs, and targets of a spell
+cast while an ability resolves (CR 601.2b–c), then finish casting it. A spell
+that needs a target but has none can't be cast and returns to where it was
+(CR 601.2c / 733.1). -/
 partial def beginResolutionCastTargets (g : Game) (p : PlayerId) (prop : ProposedSpell) :
     Game :=
-  let face := g.baseCard prop.original
+  let prop := { prop with resolutionCast := true }
   let g := g.change (.proposedSpell (some prop))
-  if face.isModal then
+  let spell := g.object! prop.spellId
+  let face := g.baseCard spell
+  let needsKicker :=
+    !prop.kickerAnnounced &&
+      (face.kicker.isSome || (!prop.alternativeCost && (face.morph.isSome || face.impending.isSome)))
+  if prop.cost.containsX then
+    g.change (.pending (.chooseX p))
+      |>.logMsg s!"{(g.player p).name} must choose a value for X (CR 107.3a / 601.2b)"
+  else if face.isModal then
     if !face.spellModes.any (g.spellModeIsChoosable p) && !face.allowsZeroTargets then
       g.reverseProposedSpell (resumeContinuation := true)
     else
@@ -285,19 +650,28 @@ partial def beginResolutionCastTargets (g : Game) (p : PlayerId) (prop : Propose
   else if face.announcesAdditionalCost then
     g.change (.pending (.chooseAdditionalCost p))
       |>.logMsg s!"{(g.player p).name} must choose an additional cost (CR 601.2b)"
-  else if face.requiresTarget || face.isAura then
+  else if needsKicker then
+    g.change (.pending (.chooseKicker p))
+      |>.logMsg s!"{(g.player p).name} may kick the spell (CR 702.33 / 601.2b)"
+  else if face.giftTreasure && !prop.giftAnnounced then
+    g.change (.pending (.chooseGift p))
+      |>.logMsg s!"{(g.player p).name} may promise a gift (CR 702.174)"
+  else if face.teamwork.isSome && !prop.teamworkAnnounced then
+    g.change (.pending (.chooseTeamwork p))
+      |>.logMsg s!"{(g.player p).name} may pay a teamwork cost (CR 702.194)"
+  else if g.proposedNeedsTarget prop then
     if (g.legalCastTargets p face).isEmpty && !face.allowsZeroTargets then
       g.reverseProposedSpell (resumeContinuation := true)
         (extraLog := some s!"{face.name} has no legal target and can't be cast")
     else
-      let what := if face.isAura then "a target to enchant" else "a target"
+      let what := if g.isAura spell then "a target to enchant" else "a target"
       g.change (.pending (.chooseTargets p))
         |>.logMsg s!"{(g.player p).name} must choose {what} (CR 601.2c)"
   else if prop.cost.includesManaPayment || prop.needsSacrificeOther || prop.needsDiscardCard then
     g.change (.pending (.activateManaAbilities p))
       |>.logMsg s!"{(g.player p).name} may activate mana abilities (CR 601.2g)"
   else
-    let g := g.change (.proposedSpell none)
+    let g := g.changes #[.pending .none, .proposedSpell none]
     g.becomeCast p (g.object! prop.spellId) (grantPriority := false)
 
 /-- Put a card onto the stack as an ability is resolving. Timing may be
@@ -316,9 +690,6 @@ partial def castAsPartOfResolution (g : Game) (p : PlayerId) (id : ObjectId)
       (clearCkpt g).logMsg s!"{o.name} can't be cast while a spell with split second is on the stack (ruling 839)"
     else if !ignoreTiming && !g.timingAllowsCast p face then
       (clearCkpt g).logMsg s!"{o.name} cannot be cast now (timing)"
-    else if !withoutManaCost &&
-        !(g.player p).manaPool.canPay (g.playManaCost o face) then
-      (clearCkpt g).logMsg s!"{o.name} cannot be cast (costs)"
     else
       let name := o.name
       let original := o
@@ -334,16 +705,18 @@ partial def castAsPartOfResolution (g : Game) (p : PlayerId) (id : ObjectId)
         if exileInstantSorceryInstead && fromGy then
           g.createEffect (.exileInstantSorceryInstead newId)
         else g
+      let spellObj := g.object! newId
+      let stackFace := g.baseCard spellObj
       let g := g.putStackEntry p newId
       let way : CastWay :=
         if withoutManaCost then .alternative "withoutManaCost" else .normal
       let g := g.record (GameEvent.proposed g.turnNumber newId p original.zone way)
       let g := g.logMsg s!"{(g.player p).name} casts {name} as the ability resolves"
       let cost :=
-        if withoutManaCost then ManaCost.empty else g.playManaCost original face
+        if withoutManaCost then ManaCost.empty else g.playManaCost spellObj stackFace
       let needsSacrifice :=
-        face.additionalCostSacrificeCreature ||
-          (face.additionalCostSacrificeArtifactOrCreature && face.additionalCostOrPayGeneric.isNone)
+        stackFace.additionalCostSacrificeCreature ||
+          (stackFace.additionalCostSacrificeArtifactOrCreature && stackFace.additionalCostOrPayGeneric.isNone)
       g.beginResolutionCastTargets p {
         caster := p
         cost
@@ -351,6 +724,8 @@ partial def castAsPartOfResolution (g : Game) (p : PlayerId) (id : ObjectId)
         original
         originalSnapshot := origSnap
         needsSacrificeOther := needsSacrifice
+        alternativeCost := withoutManaCost
+        resolutionCast := true
       }
 
 /-- Advance the pending Doom Reigns exile-cast queue one card at a time,
@@ -390,7 +765,7 @@ def castInstantSorceryFromHandMvAtMost (g : Game) (p : PlayerId) (maxMv : Nat) :
   match (g.player p).hand.findSome? (fun id =>
     match g.findObject? id with
     | some o =>
-      if o.printed.isInstantOrSorcery && o.printed.manaValue <= maxMv then some id
+      if g.isInstantOrSorcery o && g.objectManaValue o <= maxMv then some id
       else none
     | none => none) with
   | none => g.logMsg "No instant or sorcery to cast"
@@ -488,7 +863,10 @@ def beginActivationPayment (g : Game) (prop : ProposedSpell) : Except String Gam
     | some sid => g.costPicksPayable prop.caster sid picks
     | none => true
   if !payable then return (← g.reverseProposedSpell? (resumeContinuation := true))
-  return (← g.continueCostPicks prop picks false).resumeAfterBecomeCast
+  let g ← g.continueCostPicks prop picks false
+  if g.proposedSpell.isNone && !(g.findObject? prop.spellId).any (·.zone == .stack) then
+    return g
+  return g.resumeAfterBecomeCast
 
 /-- Continue after CR 601.2c: determine the total cost (601.2f), then mana
 abilities (601.2g). Additional-cost *choices* are announced earlier, at 601.2b. -/
@@ -509,21 +887,53 @@ def afterTargetsChosen (g : Game) : Game :=
         | .ok g => g
         | .error _ => g.reverseProposedSpell (resumeContinuation := true)
       else
+        let isResCast := prop.resolutionCast
         let spell := g.object! prop.spellId
         let g := g.changes #[.pending .none, .proposedSpell none, .consecutivePasses 0]
-        (g.becomeCast prop.caster spell).resumeAfterBecomeCast
+        let g := g.becomeCast prop.caster spell (grantPriority := !isResCast)
+        if isResCast then
+          if (match g.pending with | .chooseReplacement .. => true | _ => false) &&
+              g.pendingReplacement.any (·.endsWithFinishFra) then g
+          else g.finishFraChoice
+        else g.resumeAfterBecomeCast
 
-/-- After CR 601.2b additional-cost announcement, continue to targets (601.2c)
-or cost determination (601.2f). -/
+/-- After CR 601.2b additional-cost announcement, continue through optional
+costs (kicker, gift, teamwork), then targets (601.2c) or cost determination (601.2f). -/
 def afterAdditionalCostAnnounced (g : Game) : Game :=
-  match g.proposedSpell with
-  | none => g
-  | some prop =>
+  match g.proposedSpell, g.proposedSpell.bind (fun prop => g.findObject? prop.spellId) with
+  | some prop, some spell =>
+    let p := prop.caster
+    let face := g.baseCard spell
+    let needsKicker :=
+      !prop.kickerAnnounced &&
+        (face.kicker.isSome || (!prop.alternativeCost && (face.morph.isSome || face.impending.isSome)))
+    if needsKicker then
+      (g.change (.pending (.chooseKicker p))).logMsg
+        s!"{(g.player p).name} may kick the spell (CR 702.33 / 601.2b)"
+    else if face.giftTreasure && !prop.giftAnnounced then
+      (g.change (.pending (.chooseGift p))).logMsg
+        s!"{(g.player p).name} may promise a gift (CR 702.174)"
+    else if face.teamwork.isSome && !prop.teamworkAnnounced then
+      (g.change (.pending (.chooseTeamwork p))).logMsg
+        s!"{(g.player p).name} may pay a teamwork cost (CR 702.194)"
+    else if g.proposedNeedsTarget prop then
+      if prop.resolutionCast &&
+          (g.legalCastTargets p face).isEmpty && !face.allowsZeroTargets then
+        g.reverseProposedSpell (resumeContinuation := true)
+          (extraLog := some s!"{face.name} has no legal target and can't be cast")
+      else
+        let what := if g.isAura spell then "a target to enchant" else "a target"
+        (g.change (.pending (.chooseTargets p))).logMsg
+          s!"{(g.player p).name} must choose {what} (CR 601.2c)"
+    else
+      g.afterTargetsChosen
+  | some prop, none =>
     if g.proposedNeedsTarget prop then
       (g.change (.pending (.chooseTargets prop.caster))).logMsg
         s!"{(g.player prop.caster).name} must choose a target (CR 601.2c)"
     else
       g.afterTargetsChosen
+  | none, _ => g
 
 /-- After the modes are chosen: additional costs, kicker, gift, and teamwork,
 then targets (CR 601.2b–c). -/
@@ -531,10 +941,13 @@ def afterModesChosen (g : Game) (p : PlayerId) : Game :=
   match g.proposedSpell, g.proposedSpell.bind (fun prop => g.findObject? prop.spellId) with
   | some prop, some spell =>
     let face := g.baseCard spell
+    let needsKicker :=
+      !prop.kickerAnnounced &&
+        (face.kicker.isSome || (!prop.alternativeCost && (face.morph.isSome || face.impending.isSome)))
     if face.announcesAdditionalCost then
       (g.change (.pending (.chooseAdditionalCost p))).logMsg
         s!"{(g.player p).name} must choose an additional cost (CR 601.2b)"
-    else if face.kicker.isSome && !prop.kickerAnnounced then
+    else if needsKicker then
       (g.change (.pending (.chooseKicker p))).logMsg
         s!"{(g.player p).name} may kick the spell (CR 702.33 / 601.2b)"
     else if face.giftTreasure && !prop.giftAnnounced then
@@ -549,10 +962,11 @@ def afterModesChosen (g : Game) (p : PlayerId) : Game :=
 def afterOptionalAdditionalCost (g : Game) (p : PlayerId) : Game :=
   match g.proposedSpell, g.proposedSpell.bind (fun prop => g.findObject? prop.spellId) with
   | some prop, some spell =>
-    if spell.printed.giftTreasure && !prop.giftAnnounced then
+    let face := g.baseCard spell
+    if face.giftTreasure && !prop.giftAnnounced then
       let g := g.change (.pending (.chooseGift p))
       g.logMsg s!"{(g.player p).name} may promise a gift (CR 702.174)"
-    else if spell.printed.teamwork.isSome && !prop.teamworkAnnounced then
+    else if face.teamwork.isSome && !prop.teamworkAnnounced then
       let g := g.change (.pending (.chooseTeamwork p))
       g.logMsg s!"{(g.player p).name} may pay a teamwork cost (CR 702.194)"
     else
@@ -564,11 +978,12 @@ def announceKicker (g : Game) (p : PlayerId) (kick : Bool) : Except String Game 
   | .chooseKicker caster =>
     if caster != p then
       throw s!"Only {(g.player caster).name} may announce kicker"
+    let origFace? :=
+      g.proposedSpell.bind (fun prop => g.findObject? prop.spellId) |>.map g.baseCard
     let g ← g.applyKickerToProposed kick
-    let face? := g.proposedSpell.bind (fun prop => g.findObject? prop.spellId) |>.map (·.printed)
     let g := g.logMsg
-      (if kick && (face?.bind (·.morph)).isSome then s!"{(g.player p).name} casts the spell face down"
-       else if kick && (face?.bind (·.impending)).isSome then s!"{(g.player p).name} casts the spell for its impending cost"
+      (if kick && (origFace?.bind (·.morph)).isSome then s!"{(g.player p).name} casts the spell face down"
+       else if kick && (origFace?.bind (·.impending)).isSome then s!"{(g.player p).name} casts the spell for its impending cost"
        else if kick then s!"{(g.player p).name} kicks the spell"
        else s!"{(g.player p).name} pays the printed cost")
     return g.afterOptionalAdditionalCost p
@@ -601,8 +1016,8 @@ def announceTeamwork (g : Game) (p : PlayerId) (pay : Bool) : Except String Game
       let g := g.changeProposals #[.teamworkPaid false, .teamworkAnnounced true]
       let g := g.logMsg s!"{(g.player p).name} does not pay a teamwork cost"
       return g.afterOptionalAdditionalCost p
-    match prop.original.printed.teamwork.orElse (fun () =>
-        (g.findObject? prop.spellId).bind (fun o => o.printed.teamwork)) with
+    match (g.baseCard prop.original).teamwork.orElse (fun () =>
+        (g.findObject? prop.spellId).bind (fun o => (g.baseCard o).teamwork)) with
     | none => throw "That spell has no teamwork"
     | some need =>
       let g := g.change (.pending (.chooseTeamworkCreatures p need))
@@ -639,15 +1054,16 @@ def payTeamworkCreatures (g : Game) (p : PlayerId) (ids : Array ObjectId) :
       | some o =>
         g := g.becomeTapped o (cause := some (.costPayment .teamwork p (some prop.spellId)))
     let some spell := g.findObject? prop.spellId | throw "The spell left the stack"
+    let face := g.baseCard spell
     g := g.record (GameEvent.announced g.turnNumber spell.id (costs := #[.teamwork ids])
       (cause := some (.costPayment .teamwork p (some spell.id))))
     g := g.change (.pending .none)
       |>.changeProposals #[.teamworkPaid true, .teamworkAnnounced true]
     g := g.logMsg s!"{(g.player p).name} pays a teamwork cost"
     -- “If this spell was cast using teamwork, choose both instead.”
-    if spell.printed.chooseBothIfTeamwork then
+    if face.chooseBothIfTeamwork then
       let chosen := g.chosenModesOf spell
-      for i in [0:spell.printed.spellModes.size] do
+      for i in [0:face.spellModes.size] do
         if !chosen.contains i then
           g := (if (g.chosenModesOf spell).isEmpty then g.setProposedMode i else g.addProposedExtraMode i)
       g := g.logMsg s!"{(g.player p).name} chooses both modes (teamwork)"
@@ -677,37 +1093,6 @@ def checkLookedPiles (g : Game) (p q : PlayerId) (count : Nat)
   if !isPermutation (top ++ rest) (g.scryLookedIds p count) then
     throw s!"{verb.capitalize} must rearrange the cards you looked at ({rule})"
 
-/-- Clear the finished scry or surveil, draw any follow-up cards, offer
-Palantír's opponent their choice, and give the active player priority. -/
-def finishLibraryLook (g : Game) : Game :=
-  let g := g.changes #[
-    .pending .none,
-    .surveilReturnMvAtMost none,
-    .surveilReturnNoncreatureNonland false ]
-  let g :=
-    match g.fraAfterLook with
-    | some (c, src, next) =>
-      (g.change (.fraAfterLook none)).applyFra c default next.toResolution #[] src
-    | none => g
-  let g :=
-    match g.pendingDrawAfterScry with
-    | some (q, n) =>
-      let g := g.change (.pendingDrawAfterScry none)
-      g.draw q n
-    | none => g
-  if g.pending != .none then g
-  else
-    match g.palantirAfterScry with
-    | some (controller, opp, sid) =>
-      (g.change (.palantirAfterScry none)).offerPalantirChoice controller opp sid
-    | none =>
-      match g.pendingReplacement with
-      | some cont =>
-        (g.change (.pendingReplacement none)).resumePendingReplacement cont
-      | none =>
-        let g := g.resumeTriggerSequence
-        if g.pending != .none then g else g.receivePriority g.activePlayer
-
 /-- Log putting `top` back on top, unless they stay in the looked-at order. -/
 def logPutOnTop (g : Game) (p : PlayerId) (looked top : Array ObjectId) : Game :=
   Id.run do
@@ -727,7 +1112,7 @@ def finishScry (g : Game) (p : PlayerId) (top bottom : Array ObjectId) :
     g.checkLookedPiles p q count top bottom "scry" "CR 701.22"
     let looked := g.scryLookedIds p count
     let cause := some (g.resolvingOrRuleCause p)
-    let mut g := g
+    let mut g := g.change (.pending .none)
     for id in bottom do
       g := g.logMsg
         s!"{(g.player p).name} puts {(g.object! id).name} on the bottom of their library"
@@ -749,27 +1134,11 @@ def finishSurveil (g : Game) (p : PlayerId) (top graveyard : Array ObjectId) :
     g.checkLookedPiles p q count top graveyard "surveil" "CR 701.25"
     let looked := g.scryLookedIds p count
     let cause := some (g.resolvingOrRuleCause p)
-    let g := (g.logPutOnTop p looked top).withBatch cause fun g => Id.run do
-      let mut g := g
+    let g := ((g.change (.pending .none)).logPutOnTop p looked top).withBatch cause fun g =>
       let happened :=
         GameEvent.looked g.turnNumber p count true asked
           (top := top) (rest := graveyard) (cause := cause)
-      g := g.record happened
-      for id in graveyard do
-        let card := g.object! id
-        let (g', newId) := g.move id (.graveyard p) none (cause := cause)
-        g := g'.logMsg s!"{(g.player p).name} puts {card.name} into their graveyard (surveil)"
-        match g.surveilReturnMvAtMost with
-        | some n =>
-          if g.objectManaValue card ≤ n then
-            let (g', _) := g.move newId (.hand p) none (cause := cause)
-            g := g'.logMsg s!"{(g.player p).name} puts {card.name} into their hand"
-        | none =>
-          if g.surveilReturnNoncreatureNonland && !card.printed.isCreature &&
-              !card.printed.isLand then
-            let (g', _) := g.move newId (.hand p) none (cause := cause)
-            g := g'.logMsg s!"{(g.player p).name} puts {card.name} into their hand"
-      return g
+      (g.record happened).surveilMoveLoop p graveyard cause
     return g.finishLibraryLook
   | .scry .. => throw "You are scrying, not surveilling; use scry (CR 701.22)"
   | _ => throw "Not time to surveil (CR 701.25)"
@@ -859,49 +1228,32 @@ def finishProliferate (g : Game) (p : PlayerId) (chosen : Array Target) :
       throw s!"Only {(g.player q).name} may proliferate"
     if chosen.toList.eraseDups.length != chosen.size then
       throw "Choose each permanent or player at most once"
+    for t in chosen do
+      match t with
+      | .permanent id =>
+        let some o := g.findObject? id | throw "no such object"
+        if !o.isOnBattlefield then
+          throw s!"{o.name} is not a permanent on the battlefield (CR 701.34a)"
+        if !o.status.hasCounters then
+          throw s!"{o.name} has no counters"
+      | .player pid =>
+        let pl := g.player pid
+        if pl.poison == 0 then
+          throw s!"{pl.name} has no counters"
+      | .card _ =>
+        throw "Only permanents and players can be chosen (CR 701.34a)"
     let cause := some (g.resolvingOrRuleCause p)
-    let g ← g.withBatchM cause fun g0 => do
-      let effCause := g0.resolveOptionalCause cause (fallbackCtrl := some p)
-      let mut g := g0
-      let mut permIds : Array ObjectId := #[]
-      let mut playerIds : Array PlayerId := #[]
-      for t in chosen do
-        match t with
-        | .permanent id =>
-          let some o := g.findObject? id | throw "no such object"
-          if !o.isOnBattlefield then
-            throw s!"{o.name} is not a permanent on the battlefield (CR 701.34a)"
-          if !o.status.hasCounters then
-            throw s!"{o.name} has no counters"
-          let bag := o.status.toCounterBag
-          for (kind, _) in bag do
-            if kind != .plusOnePlusOne then
-              let cur := g.object! id
-              g := g.record (GameEvent.counters g.turnNumber (some p) (g.snapshot cur) kind 1 false
-                (cause := effCause))
-          g := g.syncImpendingNotACreature id (cause := some effCause)
-          let o := g.object! id
-          g := if o.status.plusOnePlusOne > 0 then g.addPlusOnePlusOneTo o 1 (cause := some effCause) else g
-          permIds := permIds.push id
-          g := g.logMsg s!"{(g.player p).name} proliferates {o.name}"
-        | .player pid =>
-          let pl := g.player pid
-          if pl.poison == 0 then
-            throw s!"{pl.name} has no counters"
-          g := g.record (GameEvent.poisoned g.turnNumber pid 1 (byPlayer := some p) (cause := effCause))
-          playerIds := playerIds.push pid
-          g := g.logMsg s!"{(g.player p).name} gives {pl.name} another poison counter"
-        | .card _ => throw "Only permanents and players can be chosen (CR 701.34a)"
-      -- “Whenever you proliferate” triggers even if nothing was chosen (ruling 884).
-      return g.record (GameEvent.proliferated g.turnNumber p
-        (permanents := permIds) (players := playerIds) (cause := cause))
-    let mut g := g
-    if chosen.isEmpty then
-      g := g.logMsg s!"{(g.player p).name} proliferates, choosing nothing"
-    if remaining > 1 then
+    let g := (g.change (.pending .none)).withBatch cause fun g =>
+      g.finishProliferateLoop p chosen #[] #[] chosen.isEmpty 0 cause
+    if let .chooseReplacement .. := g.pending then
+      if remaining > 1 then
+        return g.chainPendingReplacement (.restorePending (.chooseProliferate p (remaining - 1)))
+      else
+        return g.chainPendingReplacement .finishFraChoice
+    else if remaining > 1 then
       return g.change (.pending (.chooseProliferate p (remaining - 1)))
     else
-      return (g.change (.pending .none)).receivePriority g.activePlayer
+      return g.finishFraChoice
   | _ => throw "Not time to proliferate (CR 701.34)"
 
 /-- Shared pending-discard core (CR 701.9): `p` must be the pending player
@@ -916,50 +1268,10 @@ def discardPendingCard (g : Game) (p q : PlayerId) (id : ObjectId)
   if !(g.player p).hand.contains id then
     throw "That card is not in your hand"
   let some card := g.findObject? id | throw "no such object"
-  let g := g.logMsg s!"{(g.player p).name} discards {card.name}{logSuffix}"
-  let (g, _) := g.move id (.graveyard card.owner) none (cause := cause)
+  let g := (g.change (.pending .none)).logMsg s!"{(g.player p).name} discards {card.name}{logSuffix}"
+  let (g, _) := g.move id (.graveyard card.owner) none (verb := some .discard)
+    (actor := some p) (cause := cause)
   return (g, card)
-
-/-- Run trigger-sequence steps that waited on this discard, then give
-priority when nothing else is pending. -/
-def resumeSequenceThenPriority (g : Game) : Game :=
-  let g := g.resumeTriggerSequence
-  if g.pending != .none then g else g.receivePriority g.activePlayer
-
-/-- The optional action of `mayThen` was performed. Run its conditional. -/
-def acceptMayThen (g : Game) : Game :=
-  let g := g.changes #[
-    .pending .none,
-    .mayThenDrop 0,
-    .mayThenConditional none,
-    .mayThenResume false ]
-  g.resumeSequenceThenPriority
-
-/-- The optional action of `mayThen` was declined. Skip its conditional and
-continue any later sequence steps. -/
-def declineMayThen (g : Game) : Game :=
-  let n := g.mayThenDrop
-  let g := g.changes #[
-    .pending .none,
-    .mayThenDrop 0,
-    .mayThenConditional none,
-    .sacrificedPowerThisWay none,
-    .mayThenResume false ]
-  let g :=
-    match g.triggerSequenceRest with
-    | none => g
-    | some rest => g.change (.setTriggerSequenceRestSteps (rest.steps.drop n))
-  g.resumeSequenceThenPriority
-
-/-- Continue a discard chain. When no one is left to discard, put the waiting
-+1/+1 counter (Ninja of the Hand) and finish a paused trigger sequence. -/
-def continueAfterDiscard (g : Game) (players : Array PlayerId) : Except String Game := do
-  let waiting := g.triggerSequenceRest.isSome || g.plusOneAfterDiscards.isSome
-  let g := g.beginDiscardCards players
-  if g.pending != .none || !waiting then return g
-  let g :=
-    if g.plusOneAfterDiscards.isSome then g.finishPlusOneAfterDiscards else g
-  return g.resumeSequenceThenPriority
 
 /-- Discard `id` from hand; if this finishes a pending “may discard, then draw”,
 draw that many cards (CR 701.9). -/
@@ -967,53 +1279,29 @@ def discardForDraw (g : Game) (p : PlayerId) (id : ObjectId) : Except String Gam
   match g.pending with
   | .mayDiscardDraw q n =>
     let (g, _) ← g.discardPendingCard p q id
-    if g.mayThenDrop > 0 then
-      return g.acceptMayThen
+    if let .chooseReplacement .. := g.pending then
+      return g.chainPendingReplacement (.finishDiscardForDrawMay p n)
     else
-      let g := g.draw p n
-      let g := g.change (.pending .none)
-      return g.receivePriority g.activePlayer
+      return g.finishDiscardForDrawMay p n
   | .maySacArtifactOrDiscard q n =>
     let (g, _) ← g.discardPendingCard p q id
     return g.finishSacArtifactOrDiscardDraw p n
   | .chooseDiscardCard q remaining =>
     let (g, card) ← g.discardPendingCard p q id
-    let g := g.finishConniveDiscard card
-    let g : Game :=
-      match g.triggerSequenceRest with
-      | some rest =>
-        if rest.steps.any (· == .put .discardedLand (how := .tapped)) then
-          g.change (.discardedCardThisWay (some (q, g.followMoved card.id)))
-        else g
-      | none => g
-    if g.thirstDiscardsLeft > 0 then
-      let left :=
-        if card.printed.hasType g.thirstDiscardType then 0 else g.thirstDiscardsLeft - 1
-      let g := g.change (.thirstDiscardsLeft left)
-      if left == 0 then
-        return (g.change (.pending .none)).resumeSequenceThenPriority
-      else
-        return g.beginDiscardCards #[p]
-    if g.pendingDiscardsLeft > 0 then
-      let left := g.pendingDiscardsLeft - 1
-      let g := g.change (.pendingDiscardsLeft left)
-      if left == 0 then
-        g.continueAfterDiscard remaining
-      else
-        g.continueAfterDiscard #[p]
+    if let .chooseReplacement .. := g.pending then
+      return g.chainPendingReplacement (.finishChooseDiscardCard p card remaining)
     else
-      g.continueAfterDiscard remaining
+      return g.finishChooseDiscardCard p card remaining
   | .recruitDiscard q =>
     let (g, card) ← g.discardPendingCard p q id
-    let g := g.change (.pending .none)
-    let g :=
-      if card.printed.isLand then g
-      else
-        let (g, _) := g.createToken p humanSoldierToken
-        g
-    return g.receivePriority g.activePlayer
+    let isLand := g.isLand card
+    if let .chooseReplacement .. := g.pending then
+      return g.chainPendingReplacement (.finishRecruitDiscard p isLand)
+    else
+      return g.finishRecruitDiscard p isLand
   | .discardForAdditionalCost q =>
     let some prop := g.proposedSpell | throw "No spell is waiting for an additional cost"
+    let isResCast := prop.resolutionCast
     let outerCont? := g.pendingReplacement
     let openCont := g.proposalHadOpenContinuation
     let g0 := if outerCont?.isSome then g.change (.pendingReplacement none) else g
@@ -1033,15 +1321,23 @@ def discardForDraw (g : Game) (p : PlayerId) (id : ObjectId) : Except String Gam
       if paused then #[] else #[.pending .none]
     let g := g.changes (clearPending ++ #[.proposedSpell none, .consecutivePasses 0])
     let g := g.becomeCast prop.caster (g.object! prop.spellId)
+      (grantPriority := !isResCast)
       (hadOuterReplacement := outerCont?.isSome)
       (hadOpenContinuation := some openCont)
     let g :=
       if paused then
         match outerCont? with
         | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishFra
-        | none => g
+        | none => if isResCast then g.chainPendingReplacement .finishFraChoice else g
       else g
-    return g.resumeAfterBecomeCast
+    if isResCast then
+      if (match g.pending with | .chooseReplacement .. => true | _ => false) &&
+          g.pendingReplacement.any (·.endsWithFinishFra) then
+        return g
+      else
+        return g.finishFraChoice
+    else
+      return g.resumeAfterBecomeCast
   | .payWard q spellId cost =>
     if p != q then
       throw s!"Only {(g.player q).name} may discard for ward"
@@ -1050,7 +1346,7 @@ def discardForDraw (g : Game) (p : PlayerId) (id : ObjectId) : Except String Gam
       | .discardEnchantmentInstantOrSorcery =>
         match g.findObject? id with
         | some o =>
-          o.printed.isEnchantment || o.printed.isInstant || o.printed.isSorcery
+          g.isEnchantment o || g.isInstantOrSorcery o
         | none => false
       | .discardOrPay _ => true
       | .discardCard => true
@@ -1226,33 +1522,37 @@ def castExiledAsAbilityResolves (g : Game) (p : PlayerId) (id : ObjectId) :
     let face := g.baseCard card
     if g.isLand card then
       throw "An effect that lets you cast a card doesn't let you play a land (ruling 855)"
-    if face.requiresTarget && (g.legalCastTargets p face).isEmpty && !face.allowsZeroTargets then
+    if face.isModal && !face.spellModes.any (g.spellModeIsChoosable p) && !face.allowsZeroTargets then
+      throw s!"{face.name} has no mode with a legal target"
+    if !face.isModal && (face.requiresTarget || face.isAura) &&
+        (g.legalCastTargets p face).isEmpty && !face.allowsZeroTargets then
       throw s!"{face.name} requires a target"
-    let cost := g.playManaCost card face
-    let pl := g.player p
-    let some (_, spentUnits) := pl.manaPool.payUnits? cost
-      | throw s!"{pl.name} cannot pay {cost}"
-    let g := g.change .saveProposalCheckpoint
+    let g := (g.change .saveProposalCheckpoint).change (.pending .none)
     let (g, newId) := g.move id .stack (some p) (verb := some .cast) (actor := some p)
       (cause := some (.gameRule .spellCast))
+    let spellObj := g.object! newId
+    let stackFace := g.baseCard spellObj
     let g := g.putStackEntry p newId
     let g := g.record (GameEvent.proposed g.turnNumber newId p card.zone
       (.alternative "permission"))
-    let g :=
-      if spentUnits.isEmpty && !cost.includesManaPayment then g
-      else
-        g.withProposalAction .costAction fun g =>
-          g.record (GameEvent.manaSpent g.turnNumber p spentUnits newId
-            (cause := some (.costPayment .mana p (some newId))))
-    let g := g.change (.pending .none)
-    let g := g.logMsg s!"{(g.player p).name} casts {face.name} as the ability resolves"
-    if face.requiresTarget then
-      let prop : ProposedSpell := {
-        caster := p, cost := ManaCost.empty, spellId := newId, original := card
-        originalSnapshot := origSnap }
-      return g.changes #[.pending (.chooseTargets p), .proposedSpell (some prop)]
-    else
-      return (g.becomeCast p (g.object! newId)).resumeAfterBecomeCast
+    let g := g.logMsg s!"{(g.player p).name} casts {stackFace.name} as the ability resolves"
+    let cost := g.playManaCost spellObj stackFace
+    let needsSacrifice :=
+      stackFace.additionalCostSacrificeCreature ||
+        (stackFace.additionalCostSacrificeArtifactOrCreature && stackFace.additionalCostOrPayGeneric.isNone)
+    let prop : ProposedSpell := {
+      caster := p
+      cost
+      spellId := newId
+      original := card
+      originalSnapshot := origSnap
+      needsSacrificeOther := needsSacrifice
+      resolutionCast := true
+    }
+    let g' := g.beginResolutionCastTargets p prop
+    return if g'.pending == .none && (g'.findObject? newId).any (·.zone == .stack) then
+      g'.finishFraChoice
+    else g'
   | _ => throw "No exiled card may be cast now"
 
 /-- Decline an optional discard (CR 608.2d) or choose no target for an
@@ -1785,7 +2085,7 @@ def chooseReplacement (g : Game) (p : PlayerId) (id : ReplacementId) : Except St
         pure (choices.contains { id with kind := .asEntersChooseCreatureTypePrompt })
       | .asEntersChooseCardName nm =>
         if !g.isNonlandCardName nm then
-          throw s!"{nm} isn't the name of a nonland card (CR 201.3)"
+          throw s!"{nm} isn't the name of a nonland card (CR 201.4a)"
         pure (choices.contains { id with kind := .asEntersChooseCardNamePrompt })
       | _ => pure false
     if !choices.contains id && !validOpenPrompt then

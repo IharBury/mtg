@@ -168,8 +168,6 @@ inductive ReplacementKind where
   | exileInsteadOfStackLeave (object : ObjectId)
   /-- CR 616.1e / 614.1a: Exiles `object` instead of putting it into a graveyard (optionally queueing a reflexive Wolf trigger). -/
   | exileInsteadOfGraveyard (object : ObjectId) (createsWolf : Bool := false)
-  /-- CR 616.1e / 903.9b: Moves commander `object` to the command zone instead. -/
-  | commanderToCommandZone (object : ObjectId)
   /-- CR 616.1e / 122.1c: Removes a shield counter from `object` instead of destroying it. -/
   | shieldCounterDestroy (object : ObjectId)
   /-- CR 616.1e / 121.2: Replaces a card draw by `player` with `factor` card draws. -/
@@ -731,10 +729,9 @@ inductive CounterDelta where
   | removed (count : Nat)
 deriving DecidableEq, Repr, Inhabited, BEq
 
-/-- Designations a permanent can have on the battlefield (CR 400.7 / 701.15b / 701.54b / 903.3). -/
+/-- Designations a permanent can have on the battlefield (CR 400.7 / 701.15b / 701.54b). -/
 inductive PermanentDesignation where
   | ringBearer                 -- 701.54a
-  | commander                  -- 903.3
   | goaded (byPlayer : PlayerId) (untilNextTurn : Bool := true) -- 701.15b
   | prepared                   -- set mechanic
   | harnessed                  -- set mechanic
@@ -1113,11 +1110,15 @@ inductive PendingReplacement where
       (isCopy : Option Bool := none)
       (overridePrinted : Option CardDef := none)
       (adventurerCard : Option CardDef := none)
+      (summoningSick : Bool := true)
+      (attachedTo : Option ObjectId := none)
+      (enterMods : Array TriggeredAbility.TriggerEnterWith := #[])
       (cause : Option EventCause)
   | moveSimultaneousToGraveyard (ids : Array ObjectId)
       (preBattlefield : Option (Array GameObject))
       (cause : Option EventCause)
   | destroyPermanent (targetId : ObjectId) (cause : Option EventCause)
+      (preBattlefield : Option (Array GameObject) := none)
   | createToken (controller : PlayerId) (card : CardDef) (tapped : Bool)
       (attacking : Bool) (attackingTarget : Option AttackTarget)
       (applyFoodBonus : Bool) (extraCounters : CounterBag)
@@ -1175,7 +1176,67 @@ inductive PendingReplacement where
       (hadOuterReplacement hadOpenContinuation : Bool)
   | finishPostCast (caster : PlayerId) (grantPriority : Bool)
       (hadOuterReplacement hadOpenContinuation : Bool)
+  | endProposalAction
+  | payCostPickItems (p : PlayerId) (abilityId sourceId : ObjectId) (pick : CostPick)
+      (remainingIds : Array ObjectId)
+  | finishActivationExtraCosts (p : PlayerId) (sourceId : ObjectId)
+      (forObject : Option ObjectId) (removePlusOnes : Nat)
+      (sacrificeSource exileSource : Bool) (stage : Nat := 0)
+  | finishPostLoyaltyActivated (caster : PlayerId) (sourceName : String)
+      (sourceId : Option ObjectId) (activation : Option ActivatedAbility)
+      (abilityId : Option ObjectId)
+      (sourceSnapshot : Option EventObject) (sourceOriginal : Option GameObject)
+      (hadOuterReplacement hadOpenContinuation : Bool)
+  | finishActivateManaAbilityPicks (p : PlayerId) (id : ObjectId) (oname : String)
+      (mana : Array ManaType) (remainingPicks : Array CostPick)
+      (remainingCostIds : Array ObjectId) (tap sacrificeSelf : Bool)
+      (activatedIdx : Option Nat) (restriction : ManaRestriction)
+      (damageYou : Nat) (isMountain : Bool) (prevPending : Pending)
+  | finishActivateManaAbilityPostSac (p : PlayerId) (id : ObjectId) (oname : String)
+      (srcSnap : EventObject) (mana : Array ManaType) (tap : Bool)
+      (activatedIdx : Option Nat) (restriction : ManaRestriction)
+      (damageYou : Nat) (isMountain : Bool) (prevPending : Pending)
+  | finishBeginRecruit (p : PlayerId)
+  | finishDrawThenBeginDiscard (p : PlayerId) (discardRounds : Nat)
+  | finishConniveDraws (controller : PlayerId)
+      (extraDraws : Array (Nat × ReplacementId))
+      (conniveDrawCause : Option EventCause) (stage : Nat := 0)
+  | finishFreshAmass (controller : PlayerId) (subtype : CardSubtype) (n : Nat)
+      (attach : Option ObjectId) (cause : Option EventCause)
+  | finishDealDamageLoseIndestructibleExile (targetId : ObjectId) (targetName : String)
+      (n : Nat) (cause : EventCause)
+  | finishPlaceSearched (p : PlayerId) (fromId : ObjectId) (name : String)
+      (tapped : Bool) (cause : Option EventCause)
+  | placeSearchedBatch (p : PlayerId) (remainingIds : Array ObjectId) (tapped : Bool)
+      (cause : Option EventCause)
+  | finishSearchAfterPlace (p : PlayerId) (fromId : Option ObjectId)
+      (dest : SearchDest) (after : Option FraNext) (fromLibrary : Bool)
+      (handRest : Array ObjectId := #[]) (cause : Option EventCause := none)
+  | finishSurveilPostMove (p : PlayerId) (card : GameObject) (fromId : ObjectId)
+      (remainingGy : Array ObjectId) (cause : Option EventCause)
+  | finishLibraryLook
+  | finishProliferateTarget (p : PlayerId) (targetId : ObjectId)
+      (remainingKinds : Array CounterKind) (hasPlusOne : Bool)
+      (remainingTargets : Array Target) (permIds : Array ObjectId)
+      (playerIds : Array PlayerId) (chosenEmpty : Bool)
+      (remainingRounds : Nat) (cause : Option EventCause)
+  | finishProliferateLoop (p : PlayerId) (remainingTargets : Array Target)
+      (permIds : Array ObjectId) (playerIds : Array PlayerId)
+      (chosenEmpty : Bool) (remainingRounds : Nat) (cause : Option EventCause)
+  | finishDiscardForDrawMay (p : PlayerId) (n : Nat)
+  | finishSacArtifactOrDiscardDraw (p : PlayerId) (n : Nat)
+  | finishChooseDiscardCard (p : PlayerId) (card : GameObject)
+      (remaining : Array PlayerId)
+  | finishRecruitDiscard (p : PlayerId) (isLand : Bool)
+  | finishPutLandFromHand (fromId : ObjectId)
+  | finishBeginOnBattlefield (fromId : ObjectId) (remainingIds : Array ObjectId)
 deriving Repr, Inhabited, BEq
+
+/-- Whether a `PendingReplacement` continuation ends with `.finishFraChoice`. -/
+def PendingReplacement.endsWithFinishFra : PendingReplacement → Bool
+  | .finishFraChoice => true
+  | .seq _ b => b.endsWithFinishFra
+  | _ => false
 
 /-- Ensure a `PendingReplacement` continuation ends with `.finishFraChoice`
 without appending a duplicate `.finishFraChoice` when already present. -/
@@ -1478,7 +1539,7 @@ deriving Repr, Inhabited, BEq
 inductive EngineChange where
   /-- Update a player's pregame/format state. -/
   | player (p : PlayerId) (c : PlayerChange)
-  | players (v : Array Player)
+  | addPlayer (pl : Player)
   /-- Materialize a non-token `GameObject` directly into `g.objects` and its zone
   (pregame deck/sideboard cards, CR 114 command-zone emblems/effect objects,
   CR 602.2a proposed stack abilities, and test fixtures). -/
@@ -1486,7 +1547,7 @@ inductive EngineChange where
   /-- Update an object's non-rules engine metadata. -/
   | object (id : ObjectId) (c : ObjectChange)
   /-- Update the stack. -/
-  | stack (v : Array StackEntry)
+  | removeStackEntry (objectId : ObjectId)
   | pushStack (e : StackEntry)
   | popStack
   | setStackEntryAt (idx : Nat) (e : StackEntry)
@@ -1527,7 +1588,6 @@ inductive EngineChange where
   | blockersQueue (v : Array PlayerId)
   | waitingTriggers (v : Array WaitingTrigger)
   | enqueueWaitingTriggers (wts : Array WaitingTrigger)
-  | removeWaitingTriggersForEvent (ev : TriggerEvent)
   | replacementOrder (ids : Array ReplacementId)
   | castingFromTop (v : Bool)
   | sbaChecked
@@ -1708,8 +1768,8 @@ def moved (turn : Nat) (before : EventObject) (fromZone toZone : Zone)
     match actor with
     | some a => some a
     | none =>
-      if sacrificed then before.controller.orElse (fun _ => some before.owner)
-      else if discarded then
+      if sacrificed || v == .sacrifice then before.controller.orElse (fun _ => some before.owner)
+      else if discarded || v == .discard then
         match fromZone with
         | .hand p => some p
         | _ => some before.owner
@@ -2169,13 +2229,9 @@ def drawFromEmptyAttempted (turn : Nat) (player : PlayerId)
   rules turn (.player (.drawFromEmptyAttempted player))
     (cause.getD (.turnBased .drawStepDraw))
 
-/-- `object` untapped, or a stun counter replaced that untap (CR 701.26b / 122.1d). -/
-def untapped (turn : Nat) (object : EventObject) (replacedByStun : Bool := false)
-    (cause : EventCause) : GameEvent :=
-  if replacedByStun then
-    rules turn (.permanent (.counters (.object object) .stun (.removed 1) none)) cause
-  else
-    rules turn (.permanent (.untapped object)) cause
+/-- `object` untapped (CR 701.26b). -/
+def untapped (turn : Nat) (object : EventObject) (cause : EventCause) : GameEvent :=
+  rules turn (.permanent (.untapped object)) cause
 
 /-- `object` was removed from combat (CR 506.4 / 511.3 / 702.26b). -/
 def removedFromCombat (turn : Nat) (object : EventObject)
@@ -2232,9 +2288,10 @@ def withDestination (e : GameEvent) (toZone : Zone) (discarded : Bool) : GameEve
   match e.change with
   | .rules (.zone (.moved before after fromZone origTo verb actor entersWith libPos)) =>
     let verb' :=
-      if toZone != origTo && toZone == .exile then .exile
-      else if discarded then .discard
-      else if verb == .discard && !discarded then .put
+      if verb == .sacrifice then .sacrifice
+      else if discarded || verb == .discard then .discard
+      else if verb == .mill then .mill
+      else if toZone != origTo && toZone == .exile then .exile
       else verb
     let after' := { after with
       zone := toZone
@@ -2389,6 +2446,7 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : ObjectId)
     | .zone (.moved before _ .battlefield (.graveyard _) _ _ _ _), .dying =>
       this before && before.creature
     | .zone (.moved before _ .battlefield _ _ _ _ _), .leaving => this before
+    | .zone (.ceasedToExist before), .leaving => before.zone == .battlefield && this before
     | .zone (.moved before after _ .battlefield _ _ _ _), .entering => this after || this before
     | .zone (.created object _), .entering => object.zone == .battlefield && this object
     | .zone (.moved _ after _ .battlefield _ _ _ _), .landYouControlEnters =>
@@ -2465,17 +2523,17 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : ObjectId)
       you owner && before.creature
     | .zone (.moved before _ _ (.graveyard owner) _ _ _ _), .creatureCardsPutIntoYourGy =>
       you owner && before.creature && !before.token
-    | .zone (.moved _ _ (.hand p) (.graveyard q) .discard _ _ _), .youDiscard =>
-      you p && p == q
-    | .zone (.moved before after (.hand p) (.graveyard q) .discard _ _ _), .fra .youDiscardThis =>
-      you p && p == q && (this before || this after)
-    | .zone (.moved before after (.hand p) (.graveyard q) .discard _ _ _), .fra .youCycle =>
-      you p && p == q && (this before || this after) &&
-        match e.cause? with | some (.costPayment .discard _ _) => true | _ => false
-    | .zone (.moved _ _ (.hand p) (.graveyard q) .discard _ _ _), .fra .youDiscardOne =>
-      you p && p == q
-    | .zone (.moved _ _ (.hand p) (.graveyard q) .discard _ _ _), .fra .playerDiscards =>
-      p == q
+    | .zone (.moved _ _ (.hand p) toZone .discard _ _ _), .youDiscard =>
+      you p && toZone != .hand p
+    | .zone (.moved before after (.hand p) toZone .discard _ _ _), .fra .youDiscardThis =>
+      you p && toZone != .hand p && (this before || this after)
+    | .zone (.moved before after (.hand p) toZone .discard _ _ _), .fra .youCycle =>
+      you p && toZone != .hand p && (this before || this after) &&
+        match e.cause? with | some (.costPayment .cycle _ _) => true | _ => false
+    | .zone (.moved _ _ (.hand p) toZone .discard _ _ _), .fra .youDiscardOne =>
+      you p && toZone != .hand p
+    | .zone (.moved _ _ (.hand p) toZone .discard _ _ _), .fra .playerDiscards =>
+      toZone != .hand p
     | .zone (.moved before _ .battlefield (.graveyard _) _ _ _ _), .fra .enchantedDies =>
       before.creature
     | .zone (.moved before _ .battlefield (.graveyard _) _ _ _ _), .fra .nontokenCreatureYouControlDies =>
@@ -2484,6 +2542,8 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : ObjectId)
       yours before && other before && (before.creature || before.planeswalker)
     | .zone (.moved before _ .battlefield _ _ _ _ _), .fra .creatureYouControlLeaves =>
       yours before && other before && before.creature
+    | .zone (.ceasedToExist before), .fra .creatureYouControlLeaves =>
+      before.zone == .battlefield && yours before && other before && before.creature
     | .zone (.moved _ after _ .battlefield _ _ _ _), .subtypeYouControlEnters sub =>
       yours after && after.hasSubtype sub
     | .zone (.created object controller), .subtypeYouControlEnters sub =>
@@ -2587,9 +2647,9 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : ObjectId)
     | .turn (.stepBegan .draw active), .eachOpponentDrawStep => !you active
     | .turn (.stepBegan .upkeep _), .eaglesCreateBirds => true
     | .turn (.stepBegan .upkeep active), .enchantedControllerUpkeep => you active
-    | .zone (.moved before _ .battlefield (.graveyard owner) .sacrifice actor _ _), .youSacrificeToken =>
+    | .zone (.moved before _ .battlefield toZone .sacrifice actor _ _), .youSacrificeToken =>
       let p := actor.getD (before.controller.getD before.owner)
-      you p && before.token && owner == before.owner
+      you p && before.token && toZone != .battlefield
     | .cast (.abilityActivated _ _ p (.nonMana (some _) ..)), .youActivateLoyaltyAbility => you p
     | .cast (.abilityActivated _ source p _), .youActivateCreatureAbility =>
       you p && source.creature
@@ -2765,17 +2825,6 @@ def legendaryManaSpentOn (events : Array GameEvent) (spell : ObjectId) : Bool :=
       forObj == spell && units.any (·.restriction == some (.fra .legendarySpell))
     | _, _ => false
 
-/-- Same event, naming the object id it has after the zone change or copy (CR 400.7 / 707.10). -/
-def withObjectId (e : GameEvent) (id : ObjectId) : GameEvent :=
-  match e.change with
-  | .rules (.zone (.moved before after fromZone toZone verb actor entersWith libPos)) =>
-    e.withRules (.zone (.moved before { after with id := some id } fromZone toZone verb actor entersWith libPos))
-  | .rules (.zone (.created object controller)) =>
-    e.withRules (.zone (.created { object with id := some id } controller))
-  | .rules (.stackObject (.copied original copy controller)) =>
-    e.withRules (.stackObject (.copied original { copy with id := some id } controller))
-  | _ => e
-
 /-- Creature spells `p` cast on `turn`. -/
 def creatureSpells (events : Array GameEvent) (turn : Nat) (p : PlayerId) : Nat :=
   events.foldl (fun n e =>
@@ -2839,15 +2888,14 @@ def castManaValues (events : Array GameEvent) (turn : Nat) (p : PlayerId) : Arra
       | .rules (.cast (.spellCast spell q _)) => if q == p then acc.push spell.manaValue else acc
       | _ => acc) #[]
 
-/-- Cards `p` discarded on `turn`. A discard is a card moving from that
-player's hand to their graveyard. -/
+/-- Cards `p` discarded on `turn` (CR 701.9c, including replacement redirects). -/
 def discards (events : Array GameEvent) (turn : Nat) (p : PlayerId) : Nat :=
   events.foldl (fun n e =>
     if e.turn != turn then n
     else
       match e.change with
-      | .rules (.zone (.moved _ _ (.hand q) (.graveyard r) .discard _ _ _)) =>
-        if q == p && q == r then n + 1 else n
+      | .rules (.zone (.moved _ _ (.hand q) toZone .discard _ _ _)) =>
+        if q == p && toZone != .hand q then n + 1 else n
       | _ => n) 0
 
 /-- Life `p` lost on `turn`, including life lost to damage. -/

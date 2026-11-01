@@ -162,8 +162,9 @@ def applyPermanentAction (g : Game) (o : GameObject) (action : PermanentAction)
     g.grantUntilEotLogged o k
   | .indestructibleCounter => g.addIndestructibleCounter o
   | .doubleStrikeCounter =>
-    let g := g.record (GameEvent.counters g.turnNumber (g.controllerOf o) (g.snapshot o) .doubleStrike 1
-      (cause := g.resolveOptionalCause none (fallbackSrc := sourceId) (fallbackCtrl := g.controllerOf o)))
+    let cause := g.resolveOptionalCause none (fallbackSrc := sourceId) (fallbackCtrl := g.controllerOf o)
+    let g := g.recordPutCounters o.id .doubleStrike 1 (byPlayer := g.controllerOf o)
+      (cause := some cause)
     g.logMsg s!"{g.name o} gets a double strike counter"
   | .burdenCounter => g.addBurdenCounter o
   | .tap => g.becomeTapped o
@@ -188,12 +189,9 @@ def applyPermanentAction (g : Game) (o : GameObject) (action : PermanentAction)
     -- Ruling 764: an already tapped creature still gets the stun counter.
     let g := if o.status.tapped then g else g.becomeTapped o
     let cur := g.object! o.id
-    let n := g.countersYouPut cur 1
-    let g :=
-      if n > 0 then
-        g.record (GameEvent.counters g.turnNumber (g.controllerOf cur) (g.snapshot cur) .stun n
-          (cause := g.resolveOptionalCause none (fallbackSrc := sourceId) (fallbackCtrl := g.controllerOf cur)))
-      else g
+    let cause := g.resolveOptionalCause none (fallbackSrc := sourceId) (fallbackCtrl := g.controllerOf cur)
+    let g := g.recordPutCounters cur.id .stun 1 (byPlayer := g.controllerOf cur)
+      (cause := some cause)
     g.logMsg s!"A stun counter is put on {g.name cur}"
   | .setBasePT pw tw =>
     let g := g.createEffect (.setBasePTUntilEot o.id (pw, tw))

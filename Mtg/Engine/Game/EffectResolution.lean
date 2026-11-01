@@ -92,11 +92,15 @@ def applyFraResolution? (g : Game) (controller : PlayerId) (effect : Effect)
   | .controllerOfTargetLosesLife n =>
     some (match targets[0]? with
       | some (Target.permanent id) =>
-        match g.findObject? (g.followMoved id) with
-        | some o =>
-          match g.lastControllerOf? o with
-          | some pid => g.loseLife pid n
-          | none => g
+        let pid? :=
+          match g.findObject? id with
+          | some o =>
+            if o.isOnBattlefield then g.controllerOf o
+            else (g.lastKnownBefore? id).bind (fun eo => eo.controller.orElse (fun _ => some eo.owner))
+          | none =>
+            (g.lastKnownBefore? id).bind (fun eo => eo.controller.orElse (fun _ => some eo.owner))
+        match pid? with
+        | some pid => g.loseLife pid n
         | none => g
       | _ => g)
   | .returnTargetSpell =>
@@ -130,7 +134,7 @@ def applyFraResolution? (g : Game) (controller : PlayerId) (effect : Effect)
       let (g, id) := g.move top .exile none
       let card := g.object! id
       let g := g.logMsg s!"{(g.player controller).name} exiles {card.name}"
-      if card.printed.isLand then
+      if g.isLand card then
         -- Ruling 855: a land can't be cast, so the damage is dealt.
         some (g.dealDamageToEachOpponent controller n (source := src?))
       else
@@ -169,8 +173,8 @@ def applyFraResolution? (g : Game) (controller : PlayerId) (effect : Effect)
     | some o =>
       if o.zone == .graveyard o.owner then
         let (g, newId) := g.putOntoBattlefield o.id controller
+          (extraEntersWith := #[(.finality, 1)])
         let g := g.logMsg s!"{o.name} returns to the battlefield"
-        let g := g.addFinalityTo (g.object! newId) 1
         some (g.afterPermanentEnters (g.object! newId))
       else some (g.logMsg s!"{o.name} is no longer in the graveyard")
     | none => some (g.logMsg "The card is no longer in the graveyard")
@@ -317,10 +321,10 @@ def millMayPutPermanentGainLife (g : Game) (p : PlayerId) (n life : Nat) : Game 
   let count := min n lib.size
   let tops := lib.extract (lib.size - count) lib.size
   let g := g.mill p n
-  let milled := tops.map (fun id => g.followMoved id)
-  let permanents := milled.filter (fun id =>
-    (g.findObject? id).any (fun o =>
-      o.zone == .graveyard p && o.printed.isPermanentCard))
+  let permanents := tops.filterMap (fun id =>
+    match g.followMovedToZone? id (· == Zone.graveyard p) with
+    | some o => if g.isPermanentCard o then some o.id else none
+    | none => none)
   if permanents.isEmpty then g.gainLife p life
   else
     g.change (.pending (.fraChoice p (.mayTakeMilled permanents life)))
@@ -333,11 +337,11 @@ def millMayPutSubtypeOrEnchantment (g : Game) (p : PlayerId) (n : Nat) (subtype 
   let count := min n lib.size
   let tops := lib.extract (lib.size - count) lib.size
   let g := g.mill p n
-  let milled := tops.map (fun id => g.followMoved id)
-  let eligible := milled.filter (fun id =>
-    (g.findObject? id).any (fun o =>
-      o.zone == .graveyard p &&
-        (g.hasSubtype o subtype || o.printed.isEnchantment)))
+  let eligible := tops.filterMap (fun id =>
+    match g.followMovedToZone? id (· == Zone.graveyard p) with
+    | some o =>
+      if g.hasSubtype o subtype || g.isEnchantment o then some o.id else none
+    | none => none)
   if eligible.isEmpty then
     g.logMsg s!"{(g.player p).name} has no {subtype} or enchantment card among the milled cards"
   else
@@ -395,7 +399,7 @@ def mayPutHeroOrDraw (g : Game) (p : PlayerId) (maxMv : Nat)
     (subtype : CardSubtype := .hero) : Game :=
   let ids := (g.player p).hand.filter (fun id =>
     (g.findObject? id).any (fun o =>
-      o.printed.isCreature && g.hasSubtype o subtype && o.printed.manaValue ≤ maxMv))
+      g.isCreature o && g.hasSubtype o subtype && g.objectManaValue o ≤ maxMv))
   if ids.isEmpty then g.draw p 1
   else
     g.change (.pending (.fraChoice p (.mayPutHeroFromHandOrDraw ids)))
@@ -446,7 +450,7 @@ def plusOneAndDoubleStrike (g : Game) (sourceId : Option ObjectId) : Game :=
   g.withSourceOnBattlefield sourceId (fun g o =>
     g.withBatch none fun g =>
       let g := g.addPlusOnePlusOneTo o 1
-      let g := g.recordPutCounters o.id .doubleStrike (g.countersYouPut (g.object! o.id) 1)
+      let g := g.recordPutCounters o.id .doubleStrike 1
         (byPlayer := g.controllerOf o)
       g.logMsg s!"{g.name o} gets a double strike counter")
     "The source is no longer in play"
@@ -462,7 +466,7 @@ def plusOneThenFight (g : Game) (controller : PlayerId) (sourceId : Option Objec
   | none => g
   | some _ =>
     g.withLegalKindPermanent controller .oppCreature targets (fun g tgt =>
-      match (sourceId.map g.followMoved).bind g.findObject? with
+      match sourceId.bind g.findObject? with
       | some src =>
         if src.isOnBattlefield && g.isCreature src then g.fightCreatures src tgt
         else g.logMsg "The source is no longer in play"
@@ -472,21 +476,18 @@ def plusOneThenFight (g : Game) (controller : PlayerId) (sourceId : Option Objec
 /-- Destroy each creature other than `sourceId` whose mana value is even
 (`even := true`) or odd. Zero is even (Thanos). -/
 def destroyCreaturesByManaParity (g : Game) (sourceId : Option ObjectId) (even : Bool) : Game :=
-  let self := sourceId.map g.followMoved
-  let ids := (g.battlefield.filter (g.isCreature ·)).map (·.id)
+  let preBf := g.battlefield
+  let ids := (preBf.filter (fun o =>
+    some o.id != sourceId && g.isCreature o &&
+      ((g.objectManaValue o % 2 == 0) == even))).map (·.id)
   let quality := if even then "even" else "odd"
   let g := g.logMsg s!"Destroy each other creature with {quality} mana value"
   g.withBatch none fun g =>
     ids.foldl (fun g id =>
-      if self == some id then g
-      else
-        match g.findObject? id with
-        | some o =>
-          if o.isOnBattlefield && g.isCreature o &&
-              ((g.objectManaValue o % 2 == 0) == even) then
-            g.destroyPermanent o
-          else g
-        | none => g) g
+      match g.findObject? id with
+      | some o =>
+        if o.isOnBattlefield then g.destroyPermanent o (preBattlefield := some preBf) else g
+      | none => g) g
 
 /-- Reveal the top card. Draw it when it is an artifact (Iron Lad). -/
 def revealTopDrawIfArtifact (g : Game) (p : PlayerId) : Game :=
@@ -497,7 +498,7 @@ def revealTopDrawIfArtifact (g : Game) (p : PlayerId) : Game :=
     let g := g.record (GameEvent.revealed g.turnNumber p #[id]
       (cause := some (g.resolvingOrRuleCause p)))
     let g := g.logMsg s!"{(g.player p).name} reveals {o.name}"
-    if o.printed.isArtifact then g.draw p 1 else g
+    if g.isArtifact o then g.draw p 1 else g
 
 /-- Return up to one creature card from your graveyard, then put `n` +1/+1
 counters on the source (Unliving Legionnaire). -/
@@ -509,7 +510,7 @@ def returnGyCreatureThenPlusOne (g : Game) (controller : PlayerId)
     | some (Target.card id) =>
       match g.findObject? id with
       | some o =>
-        if o.zone == Zone.graveyard controller && o.printed.isCreature then
+        if o.zone == Zone.graveyard controller && g.isCreature o then
           g.returnToHand o.id o.owner
         else g.logMsg "The target is no longer legal"
       | none => g.logMsg "The target is no longer legal"
@@ -530,7 +531,6 @@ def returnFromGyFinalityAttach (g : Game) (controller : PlayerId)
       let name := o.name
       let (g, newId) := g.putOntoBattlefield o.id controller
         (extraEntersWith := #[(.finality, 1)])
-      let g := g.addFinalityTo (g.object! newId) 1 (entersWith := true)
       let g := g.afterPermanentEnters (g.object! newId)
       if g.pending != .none then g
       else if (g.permanentsOf controller).any (fun eq => g.isEquipment eq) then
@@ -550,7 +550,6 @@ def proliferateTarget (g : Game) (controller : PlayerId) (targets : Array Target
         | some o =>
           if o.isOnBattlefield && o.status.hasCounters then
             let plus := o.status.plusOnePlusOne
-            let extra := g.docSamsonBonus (some controller) (g.controllerOf o)
             let bag := o.status.toCounterBag
             let g :=
               if plus > 0 then
@@ -560,9 +559,7 @@ def proliferateTarget (g : Game) (controller : PlayerId) (targets : Array Target
               bag.foldl (fun g (kind, _) =>
                 if kind == .plusOnePlusOne then g
                 else
-                  let cur := g.object! id
-                  g.record (GameEvent.counters g.turnNumber (some controller) (g.snapshot cur) kind
-                    (1 + extra) false (cause := effCause))) g
+                  g.recordPutCounters id kind 1 (byPlayer := some controller) (cause := some effCause)) g
             let g := g.syncImpendingNotACreature id (cause := some effCause)
             (g.record (GameEvent.proliferated g.turnNumber controller (permanents := #[id]) (cause := some effCause))).logMsg
               s!"{g.name o} gets another counter of each kind"
@@ -588,8 +585,8 @@ def finishVisionQuest (g : Game) (p : PlayerId) (id? : Option ObjectId)
         match id? with
         | some id =>
           if (g.findObject? id).any (fun o =>
-              o.zone == .library p && o.printed.isArtifact && o.printed.isCreature &&
-                o.printed.manaValue ≤ x) then #[id]
+              o.zone == .library p && g.isArtifact o && g.isCreature o &&
+                g.objectManaValue o ≤ x) then #[id]
           else #[]
         | none => #[]
       g.record (GameEvent.searched g.turnNumber p p foundFromLib
@@ -602,15 +599,11 @@ def finishVisionQuest (g : Game) (p : PlayerId) (id? : Option ObjectId)
       match g.findObject? id with
       | some o =>
         if (o.zone == .library p || o.zone == .graveyard p) &&
-            o.printed.isArtifact && o.printed.isCreature &&
-            o.printed.manaValue ≤ x then
+            g.isArtifact o && g.isCreature o &&
+            g.objectManaValue o ≤ x then
           let name := o.name
           let (g, newId) := g.putOntoBattlefield id p
             (extraEntersWith := if x > 0 then #[(.plusOnePlusOne, x)] else #[])
-          let g :=
-            if x > 0 then
-              g.addPlusOnePlusOneTo (g.object! newId) x (entersWith := true)
-            else g
           let g := g.afterPermanentEnters (g.object! newId)
           let g :=
             if x ≥ 4 then g.grantUntilEotLogged (g.object! newId) Keyword.haste else g
@@ -623,7 +616,7 @@ def finishVisionQuest (g : Game) (p : PlayerId) (id? : Option ObjectId)
 value `x` or less (Vision Quest). -/
 def beginVisionQuest (g : Game) (p : PlayerId) (x : Nat) : Game :=
   let ok (o : GameObject) : Bool :=
-    o.printed.isArtifact && o.printed.isCreature && o.printed.manaValue ≤ x
+    g.isArtifact o && g.isCreature o && g.objectManaValue o ≤ x
   let lib := (g.player p).library.filter (fun id => (g.findObject? id).any ok)
   let gy := (g.player p).graveyard.filter (fun id => (g.findObject? id).any ok)
   if lib.isEmpty && gy.isEmpty then
@@ -688,7 +681,7 @@ def finishRevealPutCreatures (g : Game) (p : PlayerId) (looked put : Array Objec
     for id in looked do
       match g.findObject? id with
       | some o =>
-        if put.contains id && o.printed.isCreature && o.zone == .library p then
+        if put.contains id && g.isCreature o && o.zone == .library p then
           let (g', newId) := g.putOntoBattlefield id p (cause := cause?)
           g := g'
           entered := entered.push newId
@@ -743,7 +736,7 @@ def finishChooseCards (g : Game) (p : PlayerId) (chosen : Array ObjectId)
       chosen.foldl (fun g id =>
         match g.findObject? id with
         | some o =>
-          if o.zone == .hand o.owner && o.printed.isCreature then
+          if o.zone == .hand o.owner && g.isCreature o then
             let (g, newId) := g.putOntoBattlefield id p (cause := cause?)
             let g := g.logMsg s!"{o.name} enters the battlefield"
             g.afterPermanentEnters (g.object! newId)
@@ -760,7 +753,7 @@ def finishChooseCards (g : Game) (p : PlayerId) (chosen : Array ObjectId)
       chosen.foldl (fun g id =>
         match g.findObject? id with
         | some o =>
-          if o.printed.isLand && o.zone == .library o.owner then
+          if g.isLand o && o.zone == .library o.owner then
             let name := o.name
             let (g, newId) := g.putOntoBattlefield id p (tapped := true) (cause := cause?)
             let g := g.logMsg s!"{name} enters tapped"
@@ -770,19 +763,20 @@ def finishChooseCards (g : Game) (p : PlayerId) (chosen : Array ObjectId)
     let g := g.requestShuffle p (.gainLife p life)
     g.continueIfShuffled
   | .keepDestroyRest =>
+    let preBf := g.battlefield
+    let doomed := (preBf.filter (fun o => g.isCreature o && !chosen.contains o.id)).map (·.id)
     let (g, cause?) : Game × Option EventCause :=
-      if g.battlefield.any (fun o => g.isCreature o && !chosen.contains o.id) then
+      if !doomed.isEmpty then
         match stashed with
         | some c => (g, some c)
         | none => allocIfResolving g
       else (g, none)
     g.withBatch cause? fun g =>
-      g.battlefield.foldl (fun g o =>
-        if g.isCreature o && !chosen.contains o.id then
-          match g.findObject? o.id with
-          | some o => g.destroyPermanent o (cause := cause?)
-          | none => g
-        else g) g
+      doomed.foldl (fun g id =>
+        match g.findObject? id with
+        | some o =>
+          if o.isOnBattlefield then g.destroyPermanent o (cause := cause?) (preBattlefield := some preBf) else g
+        | none => g) g
         |>.logMsg "Chosen creatures are kept; the rest are destroyed"
   | .amassArmy subtype n attach =>
     match chosen[0]? with
@@ -816,9 +810,10 @@ def millThenChooseForHand (g : Game) (p : PlayerId) (n : Nat)
         (g, some c)
       | none => (g, none)
   let g := g.mill p n (cause := cause?)
-  let milled := tops.map (fun id => g.followMoved id)
-  let eligible := milled.filter (fun id =>
-    (g.findObject? id).any (fun o => o.zone == .graveyard p && pred o))
+  let eligible := tops.filterMap (fun id =>
+    match g.followMovedToZone? id (· == Zone.graveyard p) with
+    | some o => if pred o then some o.id else none
+    | none => none)
   if eligible.isEmpty then g
   else if mustOne && eligible.size == 1 then
     g.finishChooseCards p eligible (.toHand true) (cause := cause?)
@@ -937,10 +932,13 @@ private def branchOnSpellIf (g : Game) (controller : PlayerId) (effect : Effect)
     | some (Target.card id) =>
       -- `{X}` remains after the spell leaves the stack. That announced
       -- value is the mana value the spell had (CR 202.3e).
-      match g.findObject? (g.followMoved id) with
+      let mv? : Option Nat :=
+        match g.findObject? id with
+        | some o => some (g.objectManaValue o (includeLkiX := true))
+        | none => (g.lastKnownBefore? id).map (·.manaValue)
+      match mv? with
       | none => g.logMsg "The target is no longer legal"
-      | some o =>
-        let mv := g.objectManaValue o (includeLkiX := true)
+      | some mv =>
         if mv ≤ n then whenHolds g else whenNot g
     | _ => g.logMsg "The target is no longer legal"
   | .castFromGraveyard =>
@@ -1218,9 +1216,12 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     | .ownerMayToBattlefield =>
       match targets[0]? with
       | some (Target.permanent id) =>
-        match g.findObject? (g.followMoved id) with
-        | some o =>
-          g.beginLibrarySearch o.owner pred s!"a {card}" (.battlefield true) (optional := true)
+        let owner? :=
+          (g.findObject? id).map (·.owner) |>.orElse
+            (fun _ => (g.lastKnownBefore? id).map (·.owner))
+        match owner? with
+        | some owner =>
+          g.beginLibrarySearch owner pred s!"a {card}" (.battlefield true) (optional := true)
         | none => g
       | _ => g
   | .dealDamageToEachCreature n which amount =>
@@ -1268,7 +1269,7 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     let g := g.draw controller greatest (cause := cause?)
     let creatures :=
       (g.player controller).hand.filter (fun id =>
-        (g.findObject? id).any (·.printed.isCreature))
+        (g.findObject? id).any (g.isCreature ·))
     g.offerCardChoice controller creatures creatures.size .creaturesToBattlefield
       s!"{(g.player controller).name} may put any number of creature cards from their hand onto the battlefield"
       (cause := cause?)
@@ -1276,12 +1277,12 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     match which with
     | .oneOf a b =>
       g.millThenChooseForHand controller n
-        (fun o => o.printed.hasType a || o.printed.hasType b) 1 true
+        (fun o => g.hasType o a || g.hasType o b) 1 true
     | .upTo max ty =>
-      g.millThenChooseForHand controller n (fun o => o.printed.hasType ty) max false
+      g.millThenChooseForHand controller n (fun o => g.hasType o ty) max false
     | .allOf a b =>
       g.millThenPutFromGy controller n
-        (fun o => o.printed.hasType a || o.printed.hasType b)
+        (fun o => g.hasType o a || g.hasType o b)
   | .addFourManaDragonSpells n subtype =>
     g.beginFraChoice controller (.addManaColors n (.forSubtype subtype))
       s!"{(g.player controller).name} chooses the colors of {englishNumber n} mana that can be spent only on {subtype} spells"
@@ -1403,7 +1404,7 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
   | .lookAtTopLandsGainLife n life =>
     let ids := g.scryLookedIds controller n
     let g := g.logLookAtTop controller ids.size ids sourceId
-    let lands := ids.filter (fun id => (g.findObject? id).any (·.printed.isLand))
+    let lands := ids.filter (fun id => (g.findObject? id).any (g.isLand ·))
     if lands.isEmpty then
       let g := g.requestShuffle controller (.gainLife controller life)
       g.continueIfShuffled
@@ -1473,8 +1474,8 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
       match g.findObject? id with
       | some o =>
         let teamwork := g.resolvingTeamworkPaid
-        if o.zone == Zone.graveyard controller && o.printed.isCreature &&
-            (teamwork || o.printed.manaValue ≤ n) then
+        if o.zone == Zone.graveyard controller && g.isCreature o &&
+            (teamwork || g.objectManaValue o ≤ n) then
           let (g, newId) := g.putOntoBattlefield id controller
           g.afterPermanentEnters (g.object! newId)
         else g.logMsg "The target is no longer legal"
@@ -1492,7 +1493,7 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
         | some o => g.logMsg s!"{(g.player controller).name} reveals {o.name}"
         | none => g) g
     let creatures :=
-      top.filter (fun id => (g.findObject? id).any (·.printed.isCreature))
+      top.filter (fun id => (g.findObject? id).any (g.isCreature ·))
     if creatures.isEmpty then
       g.finishRevealPutCreatures controller top #[]
     else
@@ -1769,7 +1770,7 @@ def finishPlusOneAfterDiscards (g : Game) : Game :=
   | none => g
   | some id =>
     let g := g.change (.plusOneAfterDiscards none)
-    match g.findObject? (g.followMoved id) with
+    match g.findObject? id with
     | some o =>
       if o.isOnBattlefield then g.addPlusOnePlusOneTo o 1 else g
     | none => g
@@ -2004,7 +2005,7 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
       | .drawX =>
         g.draw controller chosenX
       | .lookAtTopRevealArtifact n =>
-        g.beginLookRevealToHand controller n (fun o => o.printed.isArtifact) false
+        g.beginLookRevealToHand controller n (fun o => g.isArtifact o) false
       | .addAnyColorSpendOnlySubtype subtype =>
         match subtype with
         | .hero =>

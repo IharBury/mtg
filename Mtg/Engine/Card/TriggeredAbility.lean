@@ -32,6 +32,7 @@ def timing : TriggeredAbility → TriggerTiming
       gainedLifeAtLeast := opts.gainedLifeAtLeast
       anotherCreaturePowerAtMost := opts.anotherCreaturePowerAtMost
       targeting := if opts.untargeted then {} else e.targeting
+      dividedDamage := if opts.untargeted then none else e.dividedDamage.orElse (fun _ => t.dividedDamage)
       allowsZeroTargets := e.allowsZeroTargets || opts.allowsZeroTargets }
 
 /-- Unified effect this trigger resolves. -/

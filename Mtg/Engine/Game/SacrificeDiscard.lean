@@ -34,15 +34,19 @@ def nextActorWithHandCard (g : Game) (players : Array PlayerId) :
 
 /-- Sacrifice the chosen creatures simultaneously, then give priority. -/
 def finishChosenSacrifices (g : Game) (chosen : Array ObjectId) : Game :=
+  let validIds := chosen.filter (fun id =>
+    (g.findObject? id).any (fun o => o.isOnBattlefield && g.isCreature o))
+  let preBf := g.battlefield
   let g := g.withBatch none fun g => Id.run do
     let mut g := g.change (.pending .none)
-    for id in chosen do
+    for id in validIds do
       match g.findObject? id with
       | some o =>
-        if o.isOnBattlefield && g.isCreature o then
+        if o.isOnBattlefield then
           let who := (g.controllerOf o).getD o.owner
           g := g.sacrificeToGraveyard o
             s!"{(g.player who).name} sacrifices {g.name o}"
+            (preBattlefield := some preBf)
       | none => pure ()
     return g
   g.receivePriority g.activePlayer
@@ -97,7 +101,36 @@ def beginDiscardCards (g : Game) (players : Array PlayerId) (count : Nat := 1) :
 /-- Draw `cards`, then start `discardRounds` discard choices for `p`. -/
 def drawThenBeginDiscard (g : Game) (p : PlayerId) (cards : Nat := 1)
     (discardRounds : Nat := 1) : Game :=
-  (g.draw p cards).beginDiscardCards #[p] discardRounds
+  let g := g.draw p cards
+  if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement (.finishDrawThenBeginDiscard p discardRounds)
+  else
+    g.beginDiscardCards #[p] discardRounds
+
+/-- Execute the remaining `extraDraws`, connive draw, and discard prompt of
+`applyConnive` (`stage` 0 = extra draws + connive draw + discard, 1 = connive
+draw + discard, 2 = discard). -/
+def finishConniveDraws (g : Game) (controller : PlayerId)
+    (extraDraws : Array (Nat × ReplacementId))
+    (conniveDrawCause : Option EventCause) (stage : Nat := 0) : Game := Id.run do
+  let mut g := g
+  if stage == 0 then
+    for i in [0:extraDraws.size] do
+      let (n, rid) := extraDraws[i]!
+      let c := g.wrapReplacedCause rid none (some controller)
+      g := g.draw controller n (cause := c)
+      if let .chooseReplacement .. := g.pending then
+        let rem := extraDraws.extract (i + 1) extraDraws.size
+        return g.chainPendingReplacement (.finishConniveDraws controller rem conniveDrawCause 0)
+  if stage <= 1 then
+    g := g.draw controller 1 (cause := conniveDrawCause)
+    if let .chooseReplacement .. := g.pending then
+      return g.chainPendingReplacement (.finishConniveDraws controller #[] conniveDrawCause 2)
+  if (g.player controller).hand.isEmpty then
+    g := g.change (.conniveSource none)
+    return g.logMsg "No card is discarded; the conniving creature does not receive a +1/+1 counter"
+  else
+    return g.beginDiscardCards #[controller]
 
 /-- Draw, then discard. If a nonland is discarded and the source is still on
 the battlefield, put a +1/+1 counter on it. The creature still connives if it
@@ -152,20 +185,10 @@ def applyConnive (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
       let g := g.consumeReplacementOrder curApplied
       let g := g.change (.conniveSource sourceId)
       let g := g.logMsg s!"{(g.player controller).name}'s creature connives"
-      -- Each Leader replaces the connive with a draw, then that connive.
-      let g :=
-        extraDraws.foldl (fun acc (n, rid) =>
-          let c := acc.wrapReplacedCause rid none (some controller)
-          acc.draw controller n (cause := c)) g
       let conniveDrawCause :=
         extraDraws.foldl (fun acc (_, rid) =>
           g.wrapReplacedCause rid acc (some controller)) none
-      let g := g.draw controller 1 (cause := conniveDrawCause)
-      if (g.player controller).hand.isEmpty then
-        let g := g.change (.conniveSource none)
-        g.logMsg "No card is discarded; the conniving creature does not receive a +1/+1 counter"
-      else
-        g.beginDiscardCards #[controller]
+      g.finishConniveDraws controller extraDraws conniveDrawCause 0
   g.withContinuationFrame run
 
 /-- Finish a pending connive after a card is discarded. -/
@@ -174,7 +197,7 @@ def finishConniveDiscard (g : Game) (discarded : GameObject) : Game :=
   | none => g
   | some sid =>
     let g := g.change (.conniveSource none)
-    if discarded.printed.isLand then
+    if g.isLand discarded then
       g.logMsg "A land was discarded; the conniving creature does not receive a +1/+1 counter"
     else
       match g.findObject? sid with
@@ -234,7 +257,9 @@ def haveVillainConnive (g : Game) (p : PlayerId) : Except String Game := do
 /-- After paying K'un-Lun's optional cost, draw a card. Inside `mayThen` the
 conditional does the draw, so this only records that the cost was paid. -/
 def finishSacArtifactOrDiscardDraw (g : Game) (p : PlayerId) (n : Nat) : Game :=
-  if g.mayThenDrop > 0 then
+  if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement (.finishSacArtifactOrDiscardDraw p n)
+  else if g.mayThenDrop > 0 then
     g.changes #[.pending .none, .mayThenResume true]
   else
     let g := g.change (.pending .none)
@@ -269,10 +294,12 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
     let g :=
       match g.proposedSpell with
       | some prop =>
+        let isResCast := prop.resolutionCast
         let g := g.changes (clearPending ++ #[.proposedSpell none, .consecutivePasses 0])
         match prop.kind with
         | .spell =>
           g.becomeCast prop.caster (g.object! prop.spellId)
+            (grantPriority := !isResCast)
             (hadOuterReplacement := outerCont?.isSome)
             (hadOpenContinuation := some openCont)
         | .activatedAbility =>
@@ -282,6 +309,7 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
             (sourceOriginal := some prop.original)
             (hadOuterReplacement := outerCont?.isSome)
             (hadOpenContinuation := some openCont)
+        | .turnFaceUp => g
       | none =>
         let g := g.changes (clearPending ++ #[.proposedSpell none, .consecutivePasses 0])
         g.becomeActivated p (g.name (g.object! sourceId)) (some sourceId)
@@ -307,10 +335,12 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
     let some sac := g.findObject? id | throw "no such object"
     if !g.canSacrificeCreature p sac then
       throw s!"Can't sacrifice {g.name sac}"
-    let g := g.sacrificeToGraveyard sac
+    let g := (g.change (.pending .none)).sacrificeToGraveyard sac
       s!"{(g.player p).name} sacrifices {g.name sac}"
-    let g := g.change (.pending .none)
-    return g.receivePriority g.activePlayer
+    if let .chooseReplacement .. := g.pending then
+      return g.chainPendingReplacement (.receivePriority g.activePlayer)
+    else
+      return g.receivePriority g.activePlayer
   | .maySacrificeAnotherBolg q bolgId =>
     if p != q then
       throw s!"Only {(g.player q).name} may sacrifice"
@@ -320,8 +350,10 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
       throw s!"Can't sacrifice {g.name sac} to Bolg"
     let g := g.sacrificeToGraveyard sac
       s!"{(g.player p).name} sacrifices {g.name sac} (Bolg)"
-    let g := g.change (.pending .none)
-    return g.receivePriority g.activePlayer
+    if let .chooseReplacement .. := g.pending then
+      return g.chainPendingReplacement (.receivePriority g.activePlayer)
+    else
+      return (g.change (.pending .none)).receivePriority g.activePlayer
   | .payWard q spellId (.sacrificePermanents left paid) =>
     if p != q then
       throw s!"Only {(g.player q).name} may sacrifice for ward"
@@ -330,18 +362,23 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
       throw s!"Can't sacrifice {g.name sac} to pay ward"
     if paid == 0 && (g.permanentsOf p).size < left then
       throw s!"{(g.player p).name} can't sacrifice {left} permanents"
-    let g := g.sacrificeToGraveyard sac
+    let g := (g.change (.pending .none)).sacrificeToGraveyard sac
       s!"{(g.player p).name} sacrifices {g.name sac} (ward)"
       (cause := some (.costPayment .ward p (some spellId)))
     if left ≤ 1 then return g.afterWardResolved
-    else return g.change (.pending (.payWard q spellId (.sacrificePermanents (left - 1) (paid + 1))))
+    else
+      let nextP := Pending.payWard q spellId (.sacrificePermanents (left - 1) (paid + 1))
+      if let .chooseReplacement .. := g.pending then
+        return g.chainPendingReplacement (.restorePending nextP)
+      else
+        return g.change (.pending nextP)
   | .payWard q spellId .sacrificeLegendary =>
     if p != q then
       throw s!"Only {(g.player q).name} may sacrifice for ward"
     let some sac := g.findObject? id | throw "no such object"
     if !(g.legendaryWardSacrificeChoices p).any (fun o => o.id == id) then
       throw s!"Can't sacrifice {g.name sac} to pay ward"
-    let g := g.sacrificeToGraveyard sac
+    let g := (g.change (.pending .none)).sacrificeToGraveyard sac
       s!"{(g.player p).name} sacrifices {g.name sac} (ward)"
       (cause := some (.costPayment .ward p (some spellId)))
     return g.afterWardResolved
@@ -351,7 +388,7 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
     let some sac := g.findObject? id | throw "no such object"
     if !sac.isOnBattlefield || !g.isArtifact sac || !g.controlledBy sac p then
       throw s!"Can't sacrifice {g.name sac}"
-    let g := g.sacrificeToGraveyard sac
+    let g := (g.change (.pending .none)).sacrificeToGraveyard sac
       s!"{(g.player p).name} sacrifices {g.name sac}"
     return g.finishSacArtifactOrDiscardDraw p n
   | _ => throw "Not time to sacrifice a permanent"
@@ -365,7 +402,8 @@ def discardFromHand (g : Game) (p : PlayerId) (id : ObjectId) (chooser : Option 
     match chooser with
     | some c => g.logMsg s!"{(g.player c).name} chooses {card.name}. {(g.player p).name} discards it"
     | none => g.logMsg s!"{(g.player p).name} discards {card.name}"
-  let (g, _) := g.move id (.graveyard card.owner) none (cause := cause)
+  let (g, _) := g.move id (.graveyard card.owner) none (verb := some .discard)
+    (actor := some p) (cause := cause)
   g
 
 /-- `p` discards `id`, chosen at random (CR 701.9). -/

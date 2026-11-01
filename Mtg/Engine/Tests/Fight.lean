@@ -363,7 +363,7 @@ def resolvedQuarrelLethal : Game :=
 #guard resolvedQuarrelLethal.log.any (fun s => mentions s "Hill Giant deals 3 damage to Grizzly Bears")
 #guard resolvedQuarrelLethal.log.any (fun s => mentions s "Grizzly Bears dies from lethal damage")
 
-/-- Pumping the source after targeting uses the new power (CR 608.2g / 611.3a). -/
+/-- Pumping the source after targeting uses the new power (CR 608.2h / 611.3a). -/
 def quarrelPumpedSource : Game :=
   let g := addToHand paidQuarrel giantGrowth ⟨0⟩
   let g := withGreenMana g ⟨0⟩ 1

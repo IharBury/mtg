@@ -269,7 +269,7 @@ do not mint `EffectId`s. -/
     (cause := .costPayment .removeCounters me))
   let g5 := g4.record (GameEvent.tapped g4.turnNumber b.asEvent true true
     (cause := .costPayment .tap me))
-  let g6 := g5.record (GameEvent.untapped g5.turnNumber b.asEvent false
+  let g6 := g5.record (GameEvent.untapped g5.turnNumber b.asEvent
     (cause := .turnBased .untapAll))
   let g7 := g6.withResolvingContext (some b.id) me (fun g => g.createTreasureTokens me 1)
   let g8 := ((g7.record (GameEvent.looked g7.turnNumber me 2)).record
@@ -916,8 +916,8 @@ both `PermanentEvent.counters` and `ZoneEvent.moved.entersWith` (CR 122.6 /
 are pure queries over `ZoneEvent.moved` in `g.events`, and `Game.snapshot`
 populates characteristics and status on `before` when a permanent leaves the
 battlefield (CR 400.7 / 113.7a / 608.2h). Also verifies that a sacrifice
-replaced by exile (CR 614.6) is journaled with `verb == .exile` rather than
-`.sacrifice`. -/
+redirected to exile by a replacement effect (CR 614.6 / 701.21a) preserves
+`verb == .sacrifice` on the `.exile` move. -/
 #guard
   let g0 := quiet (addPermanent afterDraw bear me me)
   let b := (g0.battlefield.filter (·.name == "Event Bear"))[0]!
@@ -944,12 +944,12 @@ replaced by exile (CR 614.6) is journaled with `verb == .exile` rather than
       | _ => false) &&
     g5.events.any (fun e =>
       match e.change with
-      | .rules (.zone (.moved before _ .battlefield .exile .exile _ _ _)) =>
+      | .rules (.zone (.moved before _ .battlefield .exile .sacrifice _ _ _)) =>
         before.id == some tok.id
       | _ => false) &&
     !g5.events.any (fun e =>
       match e.change with
-      | .rules (.zone (.moved _ _ .battlefield _ .sacrifice _ _ _)) => true
+      | .rules (.zone (.moved _ _ .battlefield (.graveyard _) _ _ _ _)) => true
       | _ => false)
 
 /- Phase 2 isolation: `ZoneEvent.moved` and `ZoneEvent.created` are the sole
@@ -3398,9 +3398,13 @@ trigger, and the modified event carries `EventCause.replaced`. -/
   let gPrev2 :=
     (quiet gPrev1).dealDamageToPermanent (gPrev1.object! prevBear.id) 3
       (source := some prevBear.asEvent) (cause := some prevCause)
-  let prevDamageEvents := gPrev2.events.filter (fun e =>
+  let prevDealtEvents := gPrev2.events.filter (fun e =>
     match e.change with
-    | .rules (.damage _) => true
+    | .rules (.damage (.dealt ..)) => true
+    | _ => false)
+  let prevPreventedEvents := gPrev2.events.filter (fun e =>
+    match e.change with
+    | .rules (.damage (.prevented _ (.permanent p) 3)) => p.id == prevBear.id
     | _ => false)
   !finHasGyMove &&
     gFin2.waitingTriggers.isEmpty &&
@@ -3421,7 +3425,9 @@ trigger, and the modified event carries `EventCause.replaced`. -/
     stunRemovedEvents[0]!.cause? == some (.replaced stunId (.turnBased .untapAll)) &&
     drwMoves.size == 2 &&
     drwMoves.all (fun e => e.cause? == some (.replaced drwRepId drwCause)) &&
-    prevDamageEvents.isEmpty &&
+    prevDealtEvents.isEmpty &&
+    prevPreventedEvents.size == 1 &&
+    prevPreventedEvents[0]!.cause? == some (.replaced prevSpec.id prevCause) &&
     (gPrev2.object! prevBear.id).status.damage == 0 &&
     allRulesEventsClassified gFin2 &&
     allRulesEventsClassified gShd2 &&
@@ -3825,7 +3831,7 @@ and Arwen + Doc Samson ETB counter replacement. -/
     gFraEntDone.pending == .none &&
     (gFraEntDone.object! entered2Id).status.chosenOdd == some true &&
     entAtkFraBatches.size == 2 && entAtkFraBatches[0]! == entAtkFraBatches[1]!
-  -- `dealAssignedCombatDamage` preserves `replacementOrder` across a mid-step lifelink `.chooseReplacement` pause and consumes `allApplied` once at the end.
+  -- `dealAssignedCombatDamage` consumes `replacementOrder` per damage packet rather than leaking across blockers (CR 616.1).
   let cbtLifelinkDef : CardDef :=
     { bear with name := "Lifelink Striker", keywords := { lifelink := true } }
   let idCbtMul : ReplacementId := { kind := .multiplyDamage }
@@ -3840,6 +3846,7 @@ and Arwen + Doc Samson ETB counter replacement. -/
   let cbtAtk1 := (gCbt0.battlefield.filter (·.name == "Lifelink Striker"))[0]!
   let cbtAtk2 := (gCbt0.battlefield.filter (·.name == "Second Striker"))[0]!
   let cbtBlk := (gCbt0.battlefield.filter (·.name == "Shield Blocker"))[0]!
+  let idCbtBlkShield : ReplacementId := { kind := .shieldCounterPreventDamage, object := some cbtBlk.id }
   let gCbt1 :=
     { ((((gCbt0.recordPutCounters cbtBlk.id .shield 1 (some opp)
           (cause := some (.oneShotEffect (some ⟨720⟩) none (some opp)))).createEffect
@@ -3860,11 +3867,14 @@ and Arwen + Doc Samson ETB counter replacement. -/
         { source := cbtAtk2.id, toCreatures := #[(cbtBlk.id, 2)], toPlayer := 0 }
       ] }
   let gCbtPaused := (quiet gCbt1).dealAssignedCombatDamage
-  let gCbtDone :=
+  let gCbtAfterLife :=
     (gCbtPaused.apply me (.chooseReplacement idCbtLifeAdd)).toOption.getD gCbtPaused
+  let gCbtDone :=
+    (gCbtAfterLife.apply opp (.chooseReplacement idCbtMul)).toOption.getD gCbtAfterLife
   let cbtLifelinkOrderOk :=
     gCbtPaused.pending == .chooseReplacement me #[idCbtLifeAdd, idCbtLifeMul] &&
-    gCbtPaused.replacementOrder == #[idCbtMul] &&
+    gCbtPaused.replacementOrder.isEmpty &&
+    gCbtAfterLife.pending == .chooseReplacement opp #[idCbtBlkShield, idCbtMul] &&
     gCbtDone.pending == .none &&
     gCbtDone.replacementOrder.isEmpty &&
     (gCbt1.player opp).life - (gCbtDone.player opp).life == 4 &&
@@ -8281,5 +8291,516 @@ follow-ups (Path of Ancestry scry, `pendingMayCastFromExile`, and
     mustHold "ancestryAfterCostRepOk" ancestryAfterCostRepOk &&
     mustHold "exileAndCopyOffersAfterCostRepOk" exileAndCopyOffersAfterCostRepOk &&
     mustHold "reviewRound5ContOk" reviewRound5ContOk
+
+/- Phase 14 isolation & replay tests:
+   1. Paused `withProposalAction` / `activateManaAbility` CR 733.1 bracketing.
+   2. Multi-step `payCostPickItems` `chooseReplacement` chaining & loyalty `+N`
+      activation cost replacement (CR 118.11).
+   3. Irreversible `lookedAt`, `searched`, and `drawFromEmptyAttempted` during
+      CR 733.1 proposal reversal (plus SBA empty-library loss).
+   4. Face-down morph `turnFaceUp` (`ProposalKind.turnFaceUp`, priority/control
+      gates, CR 733.1 reversal, post-turn-face-up SBA) & mid-resolution `{X}`
+      `castExiledAsAbilityResolves` (`resolutionCast := true`).
+   5. Single-writer `entersWith` without duplicate post-entry counter events,
+      Cursed Mirror EOT `isCopy == false`, `PendingReplacement.move` `attachedTo`
+      preservation, replaced `ZoneVerb.discard` / `.sacrifice`,
+      `recordPutCounters` replaced count `n'` (no double-multiply on
+      `.tapAndStun` / `empowerJace`), and CR 119.5 `setLife` life gain.
+   6. Combat `replaceDamage` CR 616.1 chooser, `DamageEvent.prevented`, and
+      unpreventable shield + loyalty removal on planeswalkers (CR 120.3c / 122.1c).
+   7. Simultaneous batch `preBattlefield` look-back, `.attackPumpPerPlains`
+      `DelayedTrigger` routing & CR 608.2b fizzle, reflexive trigger CR 608.2b
+      fizzle, and flicker `followMovedToZone?` isolation across a 2nd move.
+   8. CR 800.4a/c/d/i/j multiplayer `concede` cleanup & replay determinism. -/
+#guard
+  let opp : PlayerId := ⟨1⟩
+  let headHuntDef : CardDef :=
+    { bear with name := "Phase14 Head Hunt", staticAbilities := #[.exileOppDeathCreateWolf] }
+  let samsonDef14 : CardDef :=
+    { bear with name := "Phase14 Doc Samson", staticAbilities := #[.extraCounterOnPermanents] }
+  let pwPlusDef14 : CardDef := {
+    name := "Phase14 Plus PW"
+    supertypes := #[.legendary]
+    types := #[.planeswalker]
+    subtypes := #["Chandra"]
+    loyalty := some 4
+    activatedAbilities := #[{
+      cost := { loyalty := some (.plus 1) }
+      effect := { resolution := .draw 1, phrase := "Draw a card" }
+    }]
+  }
+  let planDef14 : CardDef := {
+    name := "Phase14 Plan"
+    types := #[.enchantment]
+  }
+  let openProposalActionDepth (g : Game) : Nat :=
+    g.events.foldl (fun d e =>
+      match e.change with
+      | .engine (.beginProposalAction _) => d + 1
+      | .engine .endProposalAction => d - 1
+      | _ => d) 0
+
+  -- 1. Paused `activateManaAbility` CR 733.1 bracketing (pain land + damage choice + reversal).
+  let rgSpellDef : CardDef := {
+    name := "Phase14 RG Spell"
+    manaCost := ⟨#[.colored .red, .colored .green]⟩
+    types := #[.instant]
+    spellEffect := some { resolution := .draw 1, phrase := "Draw a card" }
+  }
+  let painLandDef : CardDef := {
+    name := "Phase14 Pain Land"
+    types := #[.land]
+    tapAddOneOfDealsDamage := some (#[.colored .red], 1)
+  }
+  let (gPainPaused, gPainResumed, gPainRev, painSpellId, painLandId) :=
+    let g := addPermanent (addPermanent afterDraw bear opp opp) painLandDef me me
+    let g := insertObject g rgSpellDef me (.hand me)
+    let oppBearId := (g.battlefield.filter (fun o => o.name == "Event Bear" && o.controller == some opp))[0]!.id
+    let landId := (g.battlefield.filter (·.name == "Phase14 Pain Land"))[0]!.id
+    let spellId := (g.player me).hand.back!
+    let idAddMe : ReplacementId := { kind := .addNoncombatDamage, object := some oppBearId }
+    let idMulMe : ReplacementId := { kind := .multiplyDamage, object := some oppBearId }
+    let g := (g.createEffect (.replacement {
+      id := idAddMe, source := some oppBearId, controller := some opp,
+      affectedPlayer := me, kind := .addNoncombatDamage landId 2
+    }) (cause := some testCause)).createEffect (.replacement {
+      id := idMulMe, source := some oppBearId, controller := some opp,
+      affectedPlayer := me, kind := .multiplyDamage landId 2
+    }) (cause := some testCause)
+    let g := mustApply g me (.cast spellId)
+    let gPaused := mustApply g me (.tapForMana landId (.colored .red))
+    let gResumed := mustApply gPaused me (.chooseReplacement idAddMe)
+    let gRev := mustApply gResumed me .pay
+    (gPaused, gResumed, gRev, spellId, landId)
+  let painLandBracketOk :=
+    (match gPainPaused.pending with | .chooseReplacement p cs => p == me && cs.size == 2 | _ => false) &&
+    openProposalActionDepth gPainPaused == 1 &&
+    openProposalActionDepth gPainResumed == 0 &&
+    gPainResumed.pending == .activateManaAbilities me &&
+    (gPainResumed.player me).manaPool.red == 1 &&
+    (gPainResumed.player me).life == 14 &&
+    gPainRev.pending == .none &&
+    gPainRev.proposedSpell.isNone &&
+    gPainRev.proposalCheckpoint.isNone &&
+    gPainRev.stack.isEmpty &&
+    (gPainRev.player me).hand.contains painSpellId &&
+    !(gPainRev.object! painLandId).status.tapped &&
+    (gPainRev.player me).manaPool.total == 0 &&
+    (gPainRev.player me).life == 20 &&
+    [gPainPaused, gPainResumed, gPainRev].all (fun g =>
+      Game.replayEvents g.events == g && allRulesEventsClassified g)
+
+  -- 2. Multi-item `payCostPickItems` `chooseReplacement` chaining & loyalty `+N` replacement.
+  let (gPickP1, gPickP2, gPickDone, pickB1, pickB2) :=
+    let g := addPermanent (addPermanent (addPermanent afterDraw bear me me) hero me me) headHuntDef opp opp
+    let b1 := (g.battlefield.filter (fun o => o.name == "Event Bear" && o.controller == some me))[0]!.id
+    let b2 := (g.battlefield.filter (fun o => o.name == "Event Hero" && o.controller == some me))[0]!.id
+    let headId := (g.battlefield.filter (·.name == "Phase14 Head Hunt"))[0]!.id
+    let idHead : ReplacementId := { kind := .exileOppDeath, object := some headId }
+    let g := g.recordPutCounters b1 .finality 1 (some me) (cause := some testCause)
+    let g := g.recordPutCounters b2 .finality 1 (some me) (cause := some testCause)
+    let gP1 := g.payCostPickItems me b1 b1 .sacrificeArtifactOrCreature #[b1, b2]
+    let gP2 := mustApply gP1 me (.chooseReplacement idHead)
+    let gD := mustApply gP2 me (.chooseReplacement idHead)
+    (gP1, gP2, gD, b1, b2)
+  let gLoyaltyPlus :=
+    let g := addPermanent (addPermanent afterDraw samsonDef14 me me) pwPlusDef14 me me
+    let pwId := (g.battlefield.filter (fun (o : GameObject) => o.name == "Phase14 Plus PW"))[0]!.id
+    let g := g.recordPutCounters pwId .loyalty 2 (some me) (cause := some testCause)
+    mustApply g me (.activate pwId 0)
+  let chandraLoyaltyAfter :=
+    (gLoyaltyPlus.battlefield.filter (fun (o : GameObject) => o.name == "Phase14 Plus PW"))[0]!.status.loyaltyCounters
+  let costPickAndLoyaltyOk :=
+    (match gPickP1.pending with | .chooseReplacement p cs => p == me && cs.size == 2 | _ => false) &&
+    (gPickP1.findObject? pickB1).any (·.isOnBattlefield) &&
+    (gPickP1.findObject? pickB2).any (·.isOnBattlefield) &&
+    (match gPickP2.pending with | .chooseReplacement p cs => p == me && cs.size == 2 | _ => false) &&
+    (gPickP2.findObject? pickB1).all (!·.isOnBattlefield) &&
+    (gPickP2.findObject? pickB2).any (·.isOnBattlefield) &&
+    (gPickDone.findObject? pickB2).all (!·.isOnBattlefield) &&
+    gPickDone.pending == .none &&
+    chandraLoyaltyAfter == 5 &&
+    [gPickP1, gPickP2, gPickDone, gLoyaltyPlus].all (fun g =>
+      Game.replayEvents g.events == g && allRulesEventsClassified g)
+
+  -- 3. Irreversible `lookedAt`, `searched`, and `drawFromEmptyAttempted` across CR 733.1 reversal.
+  let (gIrrevKeep, gEmptyDrawSba, libPeekId) :=
+    let g0 := insertObject afterDraw rgSpellDef me (.hand me)
+    let spId := (g0.player me).hand.back!
+    let peekId := (g0.player me).library.back!
+    let gProp := mustApply g0 me (.cast spId)
+    let g1 := ((gProp.change (.beginProposalAction (.manaAbility none))).record
+      (GameEvent.lookedAt gProp.turnNumber me #[peekId] (cause := some testCause))).record
+      (GameEvent.searched gProp.turnNumber me me #[peekId] (cause := some testCause))
+      |>.change .endProposalAction
+    let gRev1 := mustApply g1 me .pay
+    let g2 := ((gProp.change (.beginProposalAction (.manaAbility none))).record
+      (GameEvent.drawFromEmptyAttempted gProp.turnNumber me (cause := some (.gameRule .abilityActivated))))
+      |>.change .endProposalAction
+    let gRev2 := (mustApply g2 me .pay).checkSBA
+    (gRev1, gRev2, peekId)
+  let irrevProposalEventsOk :=
+    gIrrevKeep.stack.isEmpty &&
+    gIrrevKeep.events.any (fun e =>
+      match e.change with
+      | .rules (.player (.lookedAt p ids)) => p == me && ids == #[libPeekId]
+      | _ => false) &&
+    gIrrevKeep.events.any (fun e =>
+      match e.change with
+      | .rules (.player (.searched p owner found)) => p == me && owner == me && found == #[libPeekId]
+      | _ => false) &&
+    gEmptyDrawSba.events.any (fun e =>
+      match e.change with
+      | .rules (.player (.drawFromEmptyAttempted p)) => p == me
+      | _ => false) &&
+    (gEmptyDrawSba.player me).lost &&
+    [gIrrevKeep, gEmptyDrawSba].all (fun g =>
+      Game.replayEvents g.events == g && allRulesEventsClassified g)
+
+  -- 4. Face-down morph `turnFaceUp` & mid-resolution `{X}` `castExiledAsAbilityResolves`.
+  let morphZeroDef : CardDef := {
+    creature "Phase14 Fragile Morph" { symbols := #[.colored .blue] } #["Illusion"] 0 0 with
+    morph := some ⟨#[.colored .blue]⟩
+  }
+  let islandDef : CardDef := {
+    name := "Phase14 Island"
+    types := #[.land]
+    subtypes := #["Island"]
+    tapAddOneOf := #[.colored .blue]
+  }
+  let redLandDef : CardDef := {
+    name := "Phase14 Mountain"
+    types := #[.land]
+    subtypes := #["Mountain"]
+    tapAddOneOf := #[.colored .red]
+  }
+  let (morphGatesOk, gMorphRev, gMorphTurned, morphId0, morphLandId) :=
+    let g := addPermanent (addPermanent afterDraw morphZeroDef me me) redLandDef me me
+    let g := addPermanent g islandDef me me
+    let mId := (g.battlefield.filter (·.name == "Phase14 Fragile Morph"))[0]!.id
+    let rLand := (g.battlefield.filter (·.name == "Phase14 Mountain"))[0]!.id
+    let uLand := (g.battlefield.filter (·.name == "Phase14 Island"))[0]!.id
+    let g := setFaceDown g mId true
+    let oppCtrlRej := (g.apply opp (.activate mId 0)).isOk == false
+    let gOppPrio := mustApply g me .pass
+    let noPrioRej := (gOppPrio.apply me (.activate mId 0)).isOk == false
+    let gProp := mustApply g me (.activate mId 0)
+    let propKindOk := gProp.proposedSpell.any (·.kind == .turnFaceUp) && gProp.pending == .activateManaAbilities me
+    let gTappedWrong := mustApply gProp me (.tapForMana rLand (.colored .red))
+    let gRev := mustApply gTappedWrong me .pay
+    let gProp2 := mustApply gRev me (.activate mId 0)
+    let gPaid := mustApply (mustApply gProp2 me (.tapForMana uLand (.colored .blue))) me .pay
+    (oppCtrlRej && noPrioRej && propKindOk, gRev, gPaid, mId, rLand)
+  let xBurnDef : CardDef := {
+    name := "Phase14 X Burn"
+    manaCost := ⟨#[.x, .colored .red]⟩
+    types := #[.sorcery]
+    spellEffect := some { resolution := .draw 1, phrase := "Draw a card" }
+  }
+  let gResXDone :=
+    let g := insertObject afterDraw xBurnDef opp .exile
+    let exId := (g.objects.filter (fun o => o.name == "Phase14 X Burn" && o.zone == .exile))[0]!.id
+    let g := g.addMana opp (.colored .red) 3
+    let g := ((g.change (.priority opp)).change (.pushContinuationFrame {})).change
+      (.pending (.mayCastExiledElseDamage opp exId 2 none))
+    let g := mustApply g opp (.cast exId)
+    let g := mustApply g opp (.chooseX 2)
+    mustApply g opp .pay
+  let morphAndResCastOk :=
+    morphGatesOk &&
+    (gMorphRev.object! morphId0).status.faceDown &&
+    !(gMorphRev.object! morphLandId).status.tapped &&
+    gMorphRev.priority == me &&
+    (gMorphTurned.findObject? morphId0).all (!·.isOnBattlefield) &&
+    gMorphTurned.events.any (fun e =>
+      match e.change with
+      | .rules (.permanent (.turnedFaceUp snap)) => snap.id == some morphId0
+      | _ => false) &&
+    gResXDone.pending == .none &&
+    gResXDone.continuations.isEmpty &&
+    gResXDone.stack.size == 1 &&
+    gResXDone.priority == me &&
+    (gResXDone.player opp).manaPool.total == 0 &&
+    [gMorphRev, gMorphTurned, gResXDone].all (fun g =>
+      Game.replayEvents g.events == g && allRulesEventsClassified g)
+
+  -- 5. Single-writer `entersWith`, Cursed Mirror EOT `isCopy == false`, `PendingReplacement.move`
+  --    `attachedTo` preservation, replaced `ZoneVerb.discard` / `.sacrifice`,
+  --    `recordPutCounters` replaced count `n'`, and CR 119.5 `setLife` life gain.
+  let (gSingleWriter, swStartIdx, swNewId) :=
+    let g := addPermanent afterDraw samsonDef14 me me
+    let g := insertObject g pwPlusDef14 me (.hand me)
+    let cid := (g.player me).hand.back!
+    let preIdx := g.events.size
+    let (g1, nid) := g.putOntoBattlefield cid me (cause := some testCause)
+    let g1 := g1.afterPermanentEnters (g1.object! nid)
+    (g1, preIdx, nid)
+  let swSlice := gSingleWriter.events.extract swStartIdx gSingleWriter.events.size
+  let swHasLoyalty5 :=
+    swSlice.any (fun e =>
+      match e.change with
+      | .rules (.zone (.moved _ _ _ .battlefield _ _ ew _)) => ew.contains (.loyalty, 5)
+      | _ => false)
+  let swZeroCounterEvents :=
+    !swSlice.any (fun e =>
+      match e.change with
+      | .rules (.permanent (.counters ..)) => true
+      | _ => false)
+  let mirrorDef14 : CardDef := {
+    name := "Phase14 Cursed Mirror"
+    types := #[.artifact]
+    asEntersMayCopyCreatureHasteUntilEot := true
+  }
+  let (gMirrorCopy14, gMirrorClean14, mirrorPermId) :=
+    let g0 := addPermanent afterDraw hero opp opp
+    let hId := (g0.battlefield.filter (fun (o : GameObject) => o.name == hero.name))[0]!.id
+    let g0 := insertObject g0 mirrorDef14 me (.hand me)
+    let mHand := (g0.player me).hand.back!
+    let (g1, _) := g0.putOntoBattlefield mHand me (cause := some testCause)
+    let rid :=
+      match g1.pending with
+      | .chooseReplacement _ cs =>
+        (cs.find? (fun (c : ReplacementId) => c.kind == ReplacementEffectKind.entersAsCopyCreatureUntilEot hId)).get!
+      | _ => panic! "expected mirror replacement choice"
+    let gCopy := mustApply g1 me (.chooseReplacement rid)
+    let mPerm := (gCopy.battlefield.filter (fun (o : GameObject) => o.printed.name == "Phase14 Cursed Mirror"))[0]!.id
+    let gClean := gCopy.clearEOT
+    (gCopy, gClean, mPerm)
+  let auraOddEvenDef : CardDef := {
+    name := "Phase14 Parity Aura"
+    types := #[.enchantment]
+    subtypes := #["Aura"]
+    asEntersChooseOddEven := true
+  }
+  let (gAuraPaused, gAuraAttached, auraHostId, auraPermId) :=
+    let g0 := addPermanent afterDraw bear me me
+    let hostId := (g0.battlefield.filter (fun (o : GameObject) => o.name == "Event Bear"))[0]!.id
+    let g0 := insertObject g0 auraOddEvenDef me (.hand me)
+    let aHand := (g0.player me).hand.back!
+    let (gP, _) := g0.move aHand .battlefield (some me) (attachedTo := some hostId) (cause := some testCause)
+    let gA := mustApply gP me (.chooseMode 1)
+    let aPerm := (gA.battlefield.filter (fun (o : GameObject) => o.name == "Phase14 Parity Aura"))[0]!.id
+    (gP, gA, hostId, aPerm)
+  let discardVerbPreserved :=
+    let ev := GameEvent.moved 1 { id := some ⟨42⟩, owner := me } (.hand me) (.graveyard me)
+      (discarded := true) (cause := testCause)
+    match (ev.withDestination .exile false).change with
+    | .rules (.zone (.moved _ _ (.hand _) .exile ZoneVerb.discard _ _ _)) => true
+    | _ => false
+  let (gSacExile, sacExileVerbOk) :=
+    let g0 := addPermanent afterDraw bear me me
+    let bid := (g0.battlefield.filter (fun (o : GameObject) => o.name == "Event Bear"))[0]!.id
+    let g0 := g0.recordPutCounters bid .finality 1 (some me) (cause := some testCause)
+    let preIdx := g0.events.size
+    let g1 := g0.sacrificeToGraveyard (g0.object! bid) "sacrifice bear" (cause := some testCause)
+    let ok :=
+      (g1.events.extract preIdx g1.events.size).any (fun e =>
+        match e.change with
+        | .rules (.zone (.moved _ _ .battlefield .exile ZoneVerb.sacrifice _ _ _)) => true
+        | _ => false)
+    (g1, ok)
+  let (gCountersAndLife, countersAndLifeSubOk) :=
+    let g0 := addPermanent (addPermanent afterDraw samsonDef14 me me) bear me me
+    let bid := (g0.battlefield.filter (fun (o : GameObject) => o.name == "Event Bear"))[0]!.id
+    let g1 := g0.applyPermanentAction (g0.object! bid) .tapAndStun
+    let g2 := (g1.empowerJace me 2).empowerJace me 2
+    let jaceLoyalty :=
+      ((g2.battlefield.filter (fun (o : GameObject) => g2.hasSubtype o .jace))[0]!).status.loyaltyCounters
+    let g3 := g2.setLife me 25 "set life to 25" (cause := some testCause)
+    let ok :=
+      (g3.object! bid).status.stun == 2 &&
+      jaceLoyalty == 6 &&
+      (g3.player me).life == 25 &&
+      g3.loggedLifeGained me == 5
+    (g3, ok)
+  let singleWriterAndMirrorOk :=
+    (gSingleWriter.object! swNewId).status.loyaltyCounters == 5 &&
+    swHasLoyalty5 && swZeroCounterEvents &&
+    (gMirrorCopy14.snapshot (gMirrorCopy14.object! mirrorPermId)).isCopy &&
+    gMirrorCopy14.name (gMirrorCopy14.object! mirrorPermId) == hero.name &&
+    !(gMirrorClean14.snapshot (gMirrorClean14.object! mirrorPermId)).isCopy &&
+    gMirrorClean14.name (gMirrorClean14.object! mirrorPermId) == "Phase14 Cursed Mirror" &&
+    (match gAuraPaused.pending with | Pending.chooseReplacement p _ => p == me | _ => false) &&
+    (gAuraAttached.object! auraPermId).attachedTo == some auraHostId &&
+    (gAuraAttached.object! auraPermId).status.chosenOdd == some true &&
+    discardVerbPreserved && sacExileVerbOk && countersAndLifeSubOk &&
+    [gSingleWriter, gMirrorCopy14, gMirrorClean14, gAuraPaused, gAuraAttached, gSacExile, gCountersAndLife].all
+      (fun g => Game.replayEvents g.events == g && allRulesEventsClassified g)
+
+  -- 6. Combat `replaceDamage` CR 616.1 chooser, `DamageEvent.prevented`, and planeswalker shield + loyalty.
+  let (gCbtPrompt, gCbtResolved, cbtBlkId, idShieldCbt, cbtPrev6Ok) :=
+    let g0 := addPermanent (addPermanent afterDraw { bear with power := some 3 } me me) { hero with toughness := some 4 } opp opp
+    let atkId := (g0.battlefield.filter (fun (o : GameObject) => o.name == "Event Bear"))[0]!.id
+    let blkId := (g0.battlefield.filter (fun (o : GameObject) => o.name == hero.name))[0]!.id
+    let g0 := g0.recordPutCounters blkId .shield 1 (some opp) (cause := some testCause)
+    let idShield : ReplacementId := { kind := .shieldCounterPreventDamage, object := some blkId }
+    let idMul : ReplacementId := { kind := .multiplyDamage, object := some atkId }
+    let g1 := ((g0.createEffect
+      (.replacement {
+        id := idMul, source := some atkId, controller := some me,
+        affectedPlayer := me, kind := .multiplyDamage atkId 2
+      }) (cause := some testCause)).record
+      (GameEvent.attackersDeclared g0.turnNumber me #[(g0.snapshot (g0.object! atkId), .player opp)])).record
+      (GameEvent.combatDamageAssigned g0.turnNumber true #[{ source := atkId, toCreatures := #[(blkId, 3)], toPlayer := 0 }])
+    let preIdx := g1.events.size
+    let gP := g1.dealAssignedCombatDamage
+    let gR := mustApply gP opp (.chooseReplacement idMul)
+    let prev6 :=
+      (gR.events.extract preIdx gR.events.size).any (fun e =>
+        match e.change with
+        | .rules (.damage (.prevented _ (.permanent snap) 6)) => snap.id == some blkId
+        | _ => false)
+    (gP, gR, blkId, idShield, prev6)
+  let (gPrevEv, prevEvOk) :=
+    let protDef : CardDef := { bear with name := "Phase14 Protected Bear", staticAbilities := #[.preventAllDamageToThis] }
+    let g0 := addPermanent (addPermanent afterDraw bear me me) protDef opp opp
+    let src := (g0.battlefield.filter (fun (o : GameObject) => o.name == "Event Bear" && o.controller == some me))[0]!
+    let tgt := (g0.battlefield.filter (fun (o : GameObject) => o.name == "Phase14 Protected Bear"))[0]!
+    let preIdx := g0.events.size
+    let g1 := g0.dealDamageFrom "Event Bear" tgt 3 (source := some src) (cause := some testCause)
+    let ok :=
+      (g1.object! tgt.id).status.damage == 0 &&
+      (g1.events.extract preIdx g1.events.size).any (fun e =>
+        match e.change with
+        | .rules (.damage (.prevented _ _ 3)) => true
+        | _ => false)
+    (g1, ok)
+  let (gPwShield, pwShieldOk) :=
+    let g0 := addPermanent (addPermanent afterDraw bear me me) pwPlusDef14 opp opp
+    let src := (g0.battlefield.filter (fun (o : GameObject) => o.name == "Event Bear" && o.controller == some me))[0]!
+    let pwId := (g0.battlefield.filter (fun (o : GameObject) => o.name == "Phase14 Plus PW"))[0]!.id
+    let g0 := g0.recordPutCounters pwId .loyalty 4 (some opp) (cause := some testCause)
+    let g0 := g0.recordPutCounters pwId .shield 1 (some opp) (cause := some testCause)
+    let g1 := g0.markDamageOn (g0.object! pwId) 2 "Event Bear deals 2 damage"
+      (source := some (g0.snapshot src)) (sourceObj := some src)
+      (unpreventable := true) (cause := some testCause)
+    let pwAfter := g1.object! pwId
+    (g1, pwAfter.status.shield == 0 && pwAfter.status.loyaltyCounters == 2)
+  let combatDmgAndShieldPwOk :=
+    (match gCbtPrompt.pending with | Pending.chooseReplacement p cs => p == opp && cs.contains idShieldCbt | _ => false) &&
+    (gCbtResolved.object! cbtBlkId).status.shield == 0 &&
+    (gCbtResolved.object! cbtBlkId).status.damage == 0 &&
+    cbtPrev6Ok && prevEvOk && pwShieldOk &&
+    [gCbtPrompt, gCbtResolved, gPrevEv, gPwShield].all (fun g =>
+      Game.replayEvents g.events == g && allRulesEventsClassified g)
+
+  -- 7. Simultaneous batch `preBattlefield` look-back, `.attackPumpPerPlains` `DelayedTrigger`
+  --    & CR 608.2b fizzle, reflexive trigger CR 608.2b fizzle, and flicker `followMovedToZone?`.
+  let diesWatcherDef : CardDef := {
+    bear with
+    name := "Phase14 Dies Watcher"
+    triggeredAbilities := #[
+      TriggeredAbility.fra (.fra .anotherCreatureOrPlaneswalkerYouControlDies)
+        "Whenever another creature or planeswalker you control dies, you gain 1 life."
+        (.gainLife 1)
+    ]
+  }
+  let (gSimDies, simDiesOk) :=
+    let g0 := addPermanent (addPermanent afterDraw diesWatcherDef me me) diesWatcherDef me me
+    let w1 := (g0.battlefield.filter (fun (o : GameObject) => o.name == "Phase14 Dies Watcher"))[0]!.id
+    let w2 := (g0.battlefield.filter (fun (o : GameObject) => o.name == "Phase14 Dies Watcher"))[1]!.id
+    let preBf := g0.battlefield
+    let g1 := g0.withBatch (some testCause) fun g =>
+      let g := g.destroyPermanent (g.object! w1) (cause := some testCause) (preBattlefield := some preBf)
+      g.destroyPermanent (g.object! w2) (cause := some testCause) (preBattlefield := some preBf)
+    (g1, g1.waitingTriggers.size == 2)
+  let (gDtFizzle, dtFizzleOk) :=
+    let g0 := addPermanent afterDraw bear me me
+    let bId := (g0.battlefield.filter (fun (o : GameObject) => o.name == "Event Bear"))[0]!.id
+    let g1 := g0.attackPumpPerPlains me
+    let regOk := g1.delayedTriggers.any (fun (dt : DelayedTrigger) => dt.kind == DelayedTriggerKind.attackPumpPerPlains)
+    let g2 := g1.record (GameEvent.attackersDeclared g1.turnNumber me #[(g1.snapshot (g1.object! bId), .player opp)])
+    let g2 := g2.receivePriority me
+    let g3 := mustApply g2 me (.target (Target.permanent bId))
+    let (g4, _) := g3.move bId (.graveyard me) none (cause := some testCause)
+    let preRes := g4.events.size
+    let g5 := g4.resolveTop
+    let fizzled :=
+      g5.stack.isEmpty &&
+      (g5.events.extract preRes g5.events.size).any (fun e =>
+        match e.change with
+        | .rules (.stackObject (.removedOnResolution _)) => true
+        | _ => false)
+    (g5, regOk && fizzled)
+  let (gReflFizzle, reflFizzleOk) :=
+    let g0 := addPermanent (addPermanent afterDraw planDef14 me me) bear opp opp
+    let planId := (g0.battlefield.filter (fun (o : GameObject) => o.name == "Phase14 Plan"))[0]!.id
+    let bId := (g0.battlefield.filter (fun (o : GameObject) => o.name == "Event Bear" && o.controller == some opp))[0]!.id
+    let g1 := mustApply (g0.queueModeledReflexive me (some planId) 10) me
+      (.divideDamage #[(Target.permanent bId, 7)])
+    let (g2, _) := g1.move bId .exile none (cause := some testCause)
+    let preRes := g2.events.size
+    let g3 := g2.resolveTop
+    let fizzled :=
+      g3.stack.isEmpty &&
+      (g3.events.extract preRes g3.events.size).any (fun e =>
+        match e.change with
+        | .rules (.stackObject (.removedOnResolution _)) => true
+        | _ => false)
+    (g3, fizzled)
+  let (gFlickerIso, flickerIsoOk) :=
+    let g0 := addPermanent afterDraw bear me me
+    let origId := (g0.battlefield.filter (fun (o : GameObject) => o.name == "Event Bear"))[0]!.id
+    let (g1, exId) := g0.move origId .exile none (cause := some testCause)
+    let (g2, handId) := g1.move exId (.hand me) none (cause := some testCause)
+    let ok :=
+      (g1.followMovedToZone? origId (fun (z : Zone) => z == Zone.exile)).map (fun (o : GameObject) => o.id) == some exId &&
+      (g2.followMovedToZone? origId (fun (z : Zone) => z == Zone.exile)).isNone &&
+      (g2.followMovedToZone? exId (fun (z : Zone) => z == Zone.hand me)).map (fun (o : GameObject) => o.id) == some handId
+    (g2, ok)
+  let batchLookbackAndFlickerOk :=
+    simDiesOk && dtFizzleOk && reflFizzleOk && flickerIsoOk &&
+    [gSimDies, gDtFizzle, gReflFizzle, gFlickerIso].all (fun g =>
+      Game.replayEvents g.events == g && allRulesEventsClassified g)
+
+  -- 8. CR 800.4a/c/d/i/j multiplayer `concede` cleanup & replay determinism.
+  let (gConcedeAfter, concedeSubOk) :=
+    let p0 : PlayerId := ⟨0⟩
+    let p1 : PlayerId := ⟨1⟩
+    let p2 : PlayerId := ⟨2⟩
+    let g0 : Game :=
+      match Start.start {
+        seats := #[
+          { name := "Chandra", deck := testRedDeck },
+          { name := "Nissa", deck := testGreenDeck },
+          { name := "Liliana", deck := testRedDeck }
+        ]
+        format := .constructed
+        seed := 3
+        startingPlayer := some 0
+      } with
+      | .ok g => keepOpeningHands g 16
+      | .error e => panic! e
+    let g := addPermanent (addPermanent (addPermanent g0 bear p1 p1) hero p0 p0) { bear with name := "Phase14 Bribed Bear" } p2 p1
+    let p1OwnId := (g.battlefield.filter (fun (o : GameObject) => o.name == "Event Bear" && o.owner == p1))[0]!.id
+    let p0HeroId := (g.battlefield.filter (fun (o : GameObject) => o.name == "Event Hero" && o.owner == p0))[0]!.id
+    let p2BribedId := (g.battlefield.filter (fun (o : GameObject) => o.name == "Phase14 Bribed Bear"))[0]!.id
+    let g := g.createEffect (.control p0HeroId p1 (untilSourceLeaves := some p1OwnId)) (cause := some testCause)
+    let g := g.registerDelayedTrigger { controller := p1, source := none, kind := .attackPumpPerPlains, cause := testCause }
+    let gAfter := mustApply g p1 .concede
+    let ok :=
+      (gAfter.player p1).lost &&
+      (gAfter.player p1).leftTheGame &&
+      !gAfter.over &&
+      (gAfter.findObject? p1OwnId).all (fun (o : GameObject) => !o.isOnBattlefield) &&
+      (gAfter.findObject? p0HeroId).any (fun (o : GameObject) => o.isOnBattlefield && gAfter.controllerOf o == some p0) &&
+      (gAfter.findObject? (gAfter.followMoved p2BribedId)).any (fun (o : GameObject) => o.zone == Zone.exile) &&
+      !gAfter.delayedTriggers.any (fun (dt : DelayedTrigger) => dt.controller == p1)
+    (gAfter, ok)
+  let concedeCleanupOk :=
+    concedeSubOk &&
+    Game.replayEvents gConcedeAfter.events == gConcedeAfter &&
+    allRulesEventsClassified gConcedeAfter
+
+  let mustHold14 (label : String) (ok : Bool) : Bool :=
+    if ok then true else panic! s!"Phase 14 guard failed: {label}"
+  [ mustHold14 "painLandBracketOk" painLandBracketOk,
+    mustHold14 "costPickAndLoyaltyOk" costPickAndLoyaltyOk,
+    mustHold14 "irrevProposalEventsOk" irrevProposalEventsOk,
+    mustHold14 "morphAndResCastOk" morphAndResCastOk,
+    mustHold14 "singleWriterAndMirrorOk" singleWriterAndMirrorOk,
+    mustHold14 "combatDmgAndShieldPwOk" combatDmgAndShieldPwOk,
+    mustHold14 "batchLookbackAndFlickerOk" batchLookbackAndFlickerOk,
+    mustHold14 "concedeCleanupOk" concedeCleanupOk ].all id
 
 end Mtg.Engine.EventTests

@@ -19,10 +19,10 @@ def attackingAlone? (g : Game) (p : PlayerId) : Option GameObject :=
 def attachedHost? (g : Game) (sourceId : Option ObjectId) : Option GameObject :=
   sourceId.bind g.findObject? |>.bind (fun src => src.attachedTo.bind g.findObject?)
 
-/-- The spell that caused the resolving cast trigger. -/
+/-- The spell that caused the resolving cast trigger, if still on the stack. -/
 def castTriggerSpell? (g : Game) : Option GameObject :=
   ((g.resolvingAbility.bind g.findObject?).bind (·.fraCauseId)).bind
-    (fun id => g.findObject? (g.followMoved id))
+    (fun id => (g.findObject? id).filter (·.zone == .stack))
 
 /-- Newest non-ability object on the stack (the spell that caused a cast trigger). -/
 def lastStackSpell? (g : Game) : Option GameObject :=
@@ -58,7 +58,7 @@ def exileLibraryUntilNonland (g : Game) (pid : PlayerId)
         g := g'
         let o := g.object! newId
         g := g.logMsg s!"{(g.player pid).name} exiles {o.name}"
-        if !o.printed.isLand then found := some newId
+        if !g.isLand o then found := some newId
     return (g, found)
 
 /-- Ask the next player in `players` with a nontoken creature to choose one
@@ -71,12 +71,14 @@ def continueNontokenSacrifices (g : Game) (players : Array PlayerId) (chosen : A
     (g.change (.pending (.fraChoice p (.sacrificeNontokenEach rest.toArray chosen)))).logMsg
       s!"{(g.player p).name} sacrifices a nontoken creature"
   | [] =>
+    let preBf := g.battlefield
     g.withBatch none fun g =>
       chosen.foldl (fun g id =>
         match g.findObject? id with
         | some o =>
           if o.isOnBattlefield then
             g.sacrificeToGraveyard o s!"{(g.player ((g.controllerOf o).getD o.owner)).name} sacrifices {g.name o}"
+              (preBattlefield := some preBf)
           else g
         | none => g) g
 
@@ -171,18 +173,15 @@ def applyDaredevilExile (g : Game) (controller : PlayerId) (sourceId : Option Ob
 /-- The Vision's chosen mode that hasn't been chosen yet this turn.
 0 double strike, 1 indestructible, 2 draw. -/
 def applyVisionMode (g : Game) (controller : PlayerId) (sourceId : ObjectId) (mode : Nat) : Game :=
-  match g.findObject? (g.followMoved sourceId) with
-  | none =>
-    if mode == 2 then g.draw controller 1
-    else g.logMsg "The Vision is no longer in play"
-  | some src =>
-    let chosen := g.modesChosenThisTurn src.id
-    if chosen.contains mode || chosen.size >= 3 then
-      g.logMsg "The Vision's ability is removed from the stack with no effect"
-    else if !src.isOnBattlefield then
+  let chosen := g.modesChosenThisTurn sourceId
+  if chosen.contains mode || chosen.size >= 3 then
+    g.logMsg "The Vision's ability is removed from the stack with no effect"
+  else
+    match (g.findObject? sourceId).filter (·.isOnBattlefield) with
+    | none =>
       if mode == 2 then g.draw controller 1
       else g.logMsg "The Vision is no longer in play"
-    else
+    | some src =>
       let g := g.record (GameEvent.triggerModeChosen g.turnNumber src.id mode)
       if mode == 0 then
         g.createEffect (.keywordsUntilEot src.id Keyword.doubleStrike)
@@ -422,24 +421,25 @@ def returnSourceUnderOwner (g : Game) (controller : PlayerId)
   let missing :=
     if hellcat then "Hellcat is no longer in the graveyard"
     else "The ability's source is no longer in the graveyard"
-  match (sourceId.map g.followMoved).bind g.findObject? with
+  match sourceId.bind (fun id => g.followMovedToZone? id (fun | .graveyard _ => true | _ => false)) with
   | none => g.logMsg missing
   | some o =>
     if o.zone != .graveyard o.owner then g.logMsg missing
     else g.enterFromOwnerGraveyard controller o mods
 
-/-- The announced card or permanent, or the recorded cause. -/
-def announcedOrCauseId? (g : Game) (targets : Array Target) : Option ObjectId :=
+/-- The announced card or permanent, or the recorded cause in a graveyard. -/
+def announcedOrCauseGraveyardObj? (g : Game) (targets : Array Target) : Option GameObject :=
   match targets[0]? with
-  | some (Target.card id) | some (Target.permanent id) => some id
+  | some (Target.card id) | some (Target.permanent id) => g.findObject? id
   | _ =>
-    ((g.resolvingAbility.bind g.findObject?).bind (·.fraCauseId)).map g.followMoved
+    ((g.resolvingAbility.bind g.findObject?).bind (·.fraCauseId)).bind
+      (fun id => g.followMovedToZone? id (fun | .graveyard _ => true | _ => false))
 
 /-- Return the cause from its owner's graveyard under its owner's control.
 `subtype`, when set, requires that subtype. A missing cause puts nothing. -/
 def returnCauseUnderOwner (g : Game) (controller : PlayerId) (targets : Array Target)
     (subtype : Option CardSubtype) (mods : List TriggeredAbility.TriggerEnterWith) : Game :=
-  match (g.announcedOrCauseId? targets).bind g.findObject? with
+  match g.announcedOrCauseGraveyardObj? targets with
   | some o =>
     let ok :=
       match subtype with
@@ -451,21 +451,23 @@ def returnCauseUnderOwner (g : Game) (controller : PlayerId) (targets : Array Ta
   | none => g
 
 /-- The announced card, the recorded cause, or the last attacking creature
-that died. -/
-def diedCardId? (g : Game) (targets : Array Target) : Option ObjectId :=
+that died, if still in a graveyard. -/
+def diedCardObj? (g : Game) (targets : Array Target) : Option GameObject :=
+  let inGy : Zone → Bool := fun | .graveyard _ => true | _ => false
   let fromTarget :=
     match targets[0]? with
-    | some (Target.card id) | some (Target.permanent id) => some id
+    | some (Target.card id) | some (Target.permanent id) => g.findObject? id
     | _ => none
   let fromCause :=
-    ((g.resolvingAbility.bind g.findObject?).bind (·.fraCauseId)).map g.followMoved
-  let fromAttacker := g.loggedLastDiedAttacker.map g.followMoved
+    ((g.resolvingAbility.bind g.findObject?).bind (·.fraCauseId)).bind
+      (fun id => g.followMovedToZone? id inGy)
+  let fromAttacker := g.loggedLastDiedAttacker.bind (fun id => g.followMovedToZone? id inGy)
   (fromTarget.orElse (fun _ => fromCause)).orElse (fun _ => fromAttacker)
 
 /-- Return the card that caused this trigger to its owner's hand.
 A token ceases to exist. A card that has left is reported. -/
 def returnCauseToOwnerHand (g : Game) (targets : Array Target) : Game :=
-  match (g.diedCardId? targets).bind g.findObject? with
+  match g.diedCardObj? targets with
   | none => g.logMsg "The attacking creature is no longer in the graveyard"
   | some o =>
     if o.printed.isToken then
@@ -516,27 +518,33 @@ def castSpellManaValue (g : Game) (controller : PlayerId)
   match g.castTriggerSpell? with
   | some spell => g.objectManaValue spell (includeLkiX := true)
   | none =>
-    match lastKnownPower with
-    | some p => p.toNat
+    match ((g.resolvingAbility.bind g.findObject?).bind (·.fraCauseId)).bind g.lastKnownBefore? with
+    | some eo => eo.manaValue
     | none =>
-      match g.lastStackSpell? with
-      | some o => g.objectManaValue o (includeLkiX := true)
+      match lastKnownPower with
+      | some p => p.toNat
       | none =>
-        match (g.loggedCastManaValues controller).back? with
-        | some mv => mv
-        | none => 0
+        match g.lastStackSpell? with
+        | some o => g.objectManaValue o (includeLkiX := true)
+        | none =>
+          match (g.loggedCastManaValues controller).back? with
+          | some mv => mv
+          | none => 0
 
 /-- Blue mana symbols in the spell that caused this cast trigger. -/
 def blueSymbolsInCastSpell (g : Game) (lastKnownPower : Option Int) : Nat :=
   match g.castTriggerSpell? with
   | some spell => (g.copiableValues spell).manaCost.symbolsIncludingColor .blue
   | none =>
-    match lastKnownPower with
-    | some p => p.toNat
+    match ((g.resolvingAbility.bind g.findObject?).bind (·.fraCauseId)).bind g.lastKnownBefore? with
+    | some eo => (eo.copiable.getD eo.toCardDef).manaCost.symbolsIncludingColor .blue
     | none =>
-      match g.lastStackSpell? with
-      | some o => (g.copiableValues o).manaCost.symbolsIncludingColor .blue
-      | none => 0
+      match lastKnownPower with
+      | some p => p.toNat
+      | none =>
+        match g.lastStackSpell? with
+        | some o => (g.copiableValues o).manaCost.symbolsIncludingColor .blue
+        | none => 0
 
 /-- Create one 1/1 blue Merfolk for each blue mana symbol in the causing spell. -/
 def createMerfolkForBlueSymbols (g : Game) (controller : PlayerId)
@@ -558,26 +566,29 @@ resolution is `TriggerResolution.visionModes`. -/
 def offerVisionModes (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target := #[])
     (lastKnownPower : Option Int := none) (sourceName : String := "This creature") : Game :=
-  match sourceId.bind (fun id => g.findObject? (g.followMoved id)) with
-  | some src =>
-    let chosen := g.modesChosenThisTurn src.id
-    let available :=
-      #[0, 1, 2].filter (fun m => !chosen.contains m)
-    if available.isEmpty then
-      g.logMsg "The Vision's ability is removed from the stack with no effect"
+  match sourceId with
+  | some sid =>
+    if (g.findObject? sid).isNone && (g.lastKnownBefore? sid).isNone then
+      g.logMsg "The Vision is no longer in play"
     else
-      g.changes #[
-        .pending (.fraChoice controller (.visionMode src.id available)),
-        .chooseModesRest (some {
-          controller
-          ability := ab
-          sourceId
-          targets
-          lastKnownPower
-          sourceName
-          modes := TriggeredAbility.TriggerResolution.visionModes
-          how := .vision })]
-        |>.logMsg "Choose one that hasn't been chosen this turn"
+      let chosen := g.modesChosenThisTurn sid
+      let available :=
+        #[0, 1, 2].filter (fun m => !chosen.contains m)
+      if available.isEmpty then
+        g.logMsg "The Vision's ability is removed from the stack with no effect"
+      else
+        g.changes #[
+          .pending (.fraChoice controller (.visionMode sid available)),
+          .chooseModesRest (some {
+            controller
+            ability := ab
+            sourceId
+            targets
+            lastKnownPower
+            sourceName
+            modes := TriggeredAbility.TriggerResolution.visionModes
+            how := .vision })]
+          |>.logMsg "Choose one that hasn't been chosen this turn"
   | none =>
     g.logMsg "The Vision is no longer in play"
 
@@ -633,19 +644,20 @@ def copyCastTriggerSpell (g : Game) (controller : PlayerId) : Game :=
 it until the end of your next turn. -/
 def offerMayExileDiscarded (g : Game) (controller : PlayerId)
     (lastKnownPower : Option Int) : Game :=
-  let id? :=
+  let obj? :=
     match lastKnownPower with
     | some n =>
-      if n ≥ 0 then some (g.followMoved ⟨n.toNat⟩) else none
+      if n ≥ 0 then g.followMovedToZone? ⟨n.toNat⟩ (· == Zone.graveyard controller) else none
     | none => none
-  match id?.bind g.findObject? with
+  match obj? with
   | some o =>
-    if o.zone == .graveyard controller then
-      g.change (.pending (.fraChoice controller (.moonstoneMayExile o.id)))
-        |>.logMsg s!"You may exile {o.name} from your graveyard"
-    else
+    g.change (.pending (.fraChoice controller (.moonstoneMayExile o.id)))
+      |>.logMsg s!"You may exile {o.name} from your graveyard"
+  | none =>
+    if lastKnownPower.isSome then
       g.logMsg "The discarded card is no longer in your graveyard"
-  | none => g.logMsg "No discarded card is in the graveyard"
+    else
+      g.logMsg "No discarded card is in the graveyard"
 
 /-- You may create a 0/4 Wall creature token with defender. -/
 def offerMayCreateWall (g : Game) (controller : PlayerId) : Game :=
@@ -802,8 +814,9 @@ def applyLeftoverTextEffect (g : Game) (controller : PlayerId) (text : String)
     | some o =>
       if o.zone == .graveyard o.owner then
         let (g, newId) := g.putOntoBattlefield o.id controller
+          (extraEntersWith := #[(.finality, 1)])
         let g := g.logMsg s!"{o.name} returns to the battlefield"
-        g.addFinalityTo (g.object! newId) 1
+        g.afterPermanentEnters (g.object! newId)
       else g
     | none => g
   else if text.contains "connive" then

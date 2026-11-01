@@ -1,7 +1,7 @@
 import Mtg.Engine.Game.Turns
 
 /-!
-# Opening hands and mulligans (CR 103.4–5)
+# Opening hands and mulligans (CR 103.5)
 
 The London mulligan including the free first mulligan in multiplayer and
 Brawl (CR 103.5c), opening-hand actions, mulligan rounds, and bottoming
@@ -81,6 +81,18 @@ partial def continueOpeningBegin (g : Game) (rest : Array ObjectId) : Game :=
       g.change (.pending (.fraChoice o.owner (.mayBeginOnBattlefield rest)))
         |>.logMsg s!"{(g.player o.owner).name} may begin the game with {o.name} on the battlefield"
     | none => g.continueOpeningBegin (rest.extract 1 rest.size)
+
+/-- Finish putting an opening-hand card onto the battlefield (`fromId`), then
+advance to `continueOpeningBegin remainingIds` (CR 103.6 / MSH 84). -/
+def finishBeginOnBattlefield (g : Game) (fromId : ObjectId) (remainingIds : Array ObjectId) : Game :=
+  let g :=
+    match g.followMovedToZone? fromId (· == Zone.battlefield) with
+    | some newObj => g.afterPermanentEnters newObj
+    | none => g
+  if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement (.finishBeginOnBattlefield ⟨g.nextObjectId⟩ remainingIds)
+  else
+    g.continueOpeningBegin remainingIds
 
 /-- After mulligans, the starting player takes opening-hand actions first,
 then each other player in turn order (MSH 84). -/

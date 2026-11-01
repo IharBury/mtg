@@ -611,7 +611,8 @@ def agentGiftOnly : Game :=
 
 /-- Scrying 2 with one card looks at that card; an empty library still scries. -/
 def scryOneCard : Game :=
-  let g := giftEntered.changes #[.pending .none, .stack #[]]
+  let g := giftEntered.stack.foldl (fun g e => g.change (.removeStackEntry e.objectId))
+    (giftEntered.change (.pending .none))
   let lib := (g.player ⟨0⟩).library
   let g := retainLibrary g ⟨0⟩ (lib.extract (lib.size - 1) lib.size)
   g.beginScry ⟨0⟩ 2
@@ -622,7 +623,8 @@ def scryOneCard : Game :=
   | _ => false
 
 def scryEmpty : Game :=
-  let g := giftEntered.changes #[.pending .none, .stack #[]]
+  let g := giftEntered.stack.foldl (fun g e => g.change (.removeStackEntry e.objectId))
+    (giftEntered.change (.pending .none))
   let g := emptyLibrary g ⟨0⟩
   g.beginScry ⟨0⟩ 2
 

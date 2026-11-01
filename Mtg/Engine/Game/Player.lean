@@ -209,7 +209,7 @@ inductive Action where
   | supplyOrder (ids : Array ObjectId)
   /-- Supply an index for a pending `chooseIndex` random event (`--norandom`). -/
   | supplyIndex (i : Nat)
-  /-- Name a card (CR 201.3), e.g. for Meddling Mage. -/
+  /-- Name a card (CR 201.4), e.g. for Meddling Mage. -/
   | chooseName (name : String)
   /-- Choose which applicable replacement or prevention effect to apply next (CR 616.1). -/
   | chooseReplacement (id : ReplacementId)

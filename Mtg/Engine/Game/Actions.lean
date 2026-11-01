@@ -58,8 +58,18 @@ def applyAction (g : Game) (p : PlayerId) : Action → Except String Game
   | .activate id idx => g.activateAbility p id idx
   | .pay => g.pay p
   | .sacrifice id => do
+    let isResCastSac :=
+      (match g.pending with | .sacrificePermanent .. => true | _ => false) &&
+        g.proposedSpell.any (·.resolutionCast)
     let g ← g.sacrificeForActivation p id
-    return if g.mayThenResume then g.acceptMayThen else g.resumeAfterBecomeCast
+    if isResCastSac then
+      if (match g.pending with | .chooseReplacement .. => true | _ => false) &&
+          g.pendingReplacement.any (·.endsWithFinishFra) then
+        return g
+      else
+        return g.finishFraChoice
+    else
+      return if g.mayThenResume then g.acceptMayThen else g.resumeAfterBecomeCast
   | .chooseAdditionalCost payGeneric => g.announceAdditionalCost p payGeneric
   | .declareAttackers ids defender each pws => g.declareAttackers p ids defender each pws
   | .declareBlockers as => g.declareBlockers p as
@@ -265,12 +275,14 @@ def returnOwnedCreaturesScheduleBirds (g : Game) (p : PlayerId)
 /-- Choose up to two creatures (they are not targets) and destroy the rest
 (Mount Doom). Shroud and hexproof do not stop the choice. -/
 def chooseCreaturesDestroyRest (g : Game) (keep : Array ObjectId) : Game :=
-  Id.run do
-    let mut g := g
-    for o in g.battlefield do
-      if g.isCreature o && !keep.contains o.id then
-        g := g.destroyPermanent o
-    return g.logMsg "Chosen creatures are kept; the rest are destroyed"
+  let preBf := g.battlefield
+  let doomed := (g.battlefield.filter (fun o => g.isCreature o && !keep.contains o.id)).map (·.id)
+  let g := g.withBatch none fun g =>
+    doomed.foldl (fun g id =>
+      match g.findObject? id with
+      | some o => g.destroyPermanent o (preBattlefield := some preBf)
+      | none => g) g
+  g.logMsg "Chosen creatures are kept; the rest are destroyed"
 
 /-- Two different players each draw a card (Gleaming Splendor). The same
 player cannot be chosen twice. -/

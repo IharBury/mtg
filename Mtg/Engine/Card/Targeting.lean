@@ -60,7 +60,7 @@ structure TargetFilter where
   nonTypes : Array CardType := #[]
   /-- Not an Aura (“non-Aura enchantment”). -/
   nonAura : Bool := false
-  /-- A permanent card (CR 110.4b). -/
+  /-- A permanent card (CR 110.4a). -/
   permanentCard : Bool := false
   nontoken : Bool := false
   controller : TargetController := .any

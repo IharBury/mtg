@@ -148,7 +148,7 @@ def validateActivation (g : Game) (p : PlayerId) (o : GameObject) (ab : Activate
     let gy :=
       (g.player p).graveyard.filter (fun id =>
         match g.findObject? id with
-        | some c => c.printed.isCreature
+        | some c => g.isCreature c
         | none => false) |>.size
     if gy < ab.onlyIfGyCreaturesAtLeast then
       throw s!"{o.name}'s ability can be activated only if there are {ab.onlyIfGyCreaturesAtLeast} or more creature cards in your graveyard"
@@ -165,16 +165,35 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
     Except String Game := do
   let some o := g.findObject? id | throw "no such object"
   if o.status.faceDown then
+    if !g.hasPriority p then
+      throw "You don't have priority"
+    if !o.isOnBattlefield then
+      throw s!"{g.name o} is not on the battlefield"
+    if !g.controlledBy o p then
+      throw "You don't control that permanent"
     match (g.unmaskedCopiableValues o).morph with
     | some cost =>
       let pl := g.player p
-      if !pl.manaPool.canPay cost then
-        throw s!"{pl.name} cannot pay {cost}"
-      let g ← g.payCost p cost (forObject := some o.id)
-      let g := g.record
-        (GameEvent.turnedFaceUp g.turnNumber (g.snapshot (g.object! o.id))
-          (cause := .specialAction .turnFaceUp p))
-      return g.logMsg s!"{pl.name} turns {(g.object! o.id).name} face up"
+      let g := g.changes #[.saveProposalCheckpoint, .consecutivePasses 0]
+      if cost.includesManaPayment then
+        let prop : ProposedSpell := {
+          caster := p
+          cost
+          spellId := o.id
+          sourceId := some o.id
+          original := o
+          originalSnapshot := g.snapshot o
+          kind := .turnFaceUp
+        }
+        let g := g.changes #[.pending (.activateManaAbilities p), .proposedSpell (some prop)]
+        return g.logMsg s!"{pl.name} may activate mana abilities to turn {g.name o} face up (CR 601.2g / 702.37e)"
+      else
+        let g := g.change .clearProposalCheckpoint
+        let g := g.record
+          (GameEvent.turnedFaceUp g.turnNumber (g.snapshot (g.object! o.id))
+            (cause := .specialAction .turnFaceUp p))
+        let g := g.logMsg s!"{pl.name} turns {(g.object! o.id).name} face up"
+        return g.receivePriority p
     | none => throw s!"{o.name} is face down"
   let abs := g.activatedAbilitiesOf o
   if abs.isEmpty then
