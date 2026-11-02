@@ -815,9 +815,12 @@ prompts) are **engine state** updated by
   first copy via `loggedTriggeredThisTurn`, Phase 16, #600, removed the
   duplicate stack-placement `triggerConditionHolds` check in
   `Triggers.putQueuedTrigger` and retired dead `Triggers.sacrificeToGraveyard`,
-  Phase 17, #602, routed `Triggers.putQueuedTrigger` through
-  `putTriggerOrFizzle` whenever `ab.requiresTarget && !ab.allowsZeroTargets` per
-  603.3d and moved mode announcement for `.chooseUpToXModes`, `.vision`,
+  Phase 17, #602, extended `Triggers.putQueuedTrigger`'s `putTriggerOrFizzle`
+  condition to
+  `event.checkTargets || abilityEffectOverride.isSome || (ab.requiresTarget && !ab.allowsZeroTargets)`
+  (with `triggerHasNoLegalTarget` still requiring
+  `requiresTarget && !allowsZeroTargets` before removing the ability per
+  603.3d) and moved mode announcement for `.chooseUpToXModes`, `.vision`,
   `.plusOneOrRemoveCounter`, `.oneUnused`, and `.oneUnusedThisTurn` to stack
   placement via `ContinuationFrame.resolvingModes` per 603.3c / 700.2b,g—while
   sequential multi-copy modal stack placement in `putWaitingTrigger`, mandatory
@@ -4921,9 +4924,14 @@ silent cleanup `beginTurn` & step/phase `EffectDuration` expiry), `Auras.lean`,
      `actor := some victim` and deferring its discard log across
      `Pending.chooseReplacement`), and `SpellResolution.resolveDelayedTrigger`
      `.endStepReturn` / `.endStepGraveReturn`
-     ([`SpellResolution.lean`](Mtg/Engine/Game/SpellResolution.lean), avoiding
-     duplicate pre/post-pause logs, checking `isOnBattlefield` per CR 800.4b,
-     and calling `afterLandEnters` for lands in `.endStepGraveReturn`), and
+     ([`SpellResolution.lean`](Mtg/Engine/Game/SpellResolution.lean) and
+     `Decisions` `finishPostStep` tag `20` in `Decisions.lean`, deferring the
+     premature pre-pause `"returns to the battlefield"` log until
+     `followMovedToZone?` confirms arrival on `.battlefield`, guarding the
+     synchronous `else` branches with `followMovedToZone?` when a replacement
+     redirects the move elsewhere, and calling `afterLandEnters` for lands on
+     the synchronous `.endStepGraveReturn` `else` branch to match
+     `.endStepReturn` and tag `20`), and
      guard `entered.isOnBattlefield` before `afterPermanentEnters` /
      `afterLandEnters` at single-card `putOntoBattlefield` callers
      (`ResolutionEffects.lean`, [`Chapters.lean`](Mtg/Engine/Game/Chapters.lean),
@@ -4971,14 +4979,18 @@ silent cleanup `beginTurn` & step/phase `EffectDuration` expiry), `Auras.lean`,
      mode/target announcement (checking `triggerModeChoosable` per CR 700.2b,
      putting 0-mode choices onto the stack per CR 603.3c, and recording
      `CastEvent.announced`, CR 603.12 / 603.3b–c); and preserve
-     `allowsZeroTargets`, `maxTargets`, and per-slot `optionalSlots` when
+     `allowsZeroTargets` and `maxTargets` across all chosen modes (rather than
+     reading them only from `es.head!`; `EffectTargetKind.pair` already
+     concatenates per-slot `optionalSlots`) when
      `FraChoices.combineTriggerModes` (`FraChoices.lean`) combines two or more
      chosen modes while threading `entry.lastKnownPower` into
      `SpellResolution.runSpellModesAndEmpower` (`SpellResolution.lean`).
-   - Close trigger-event and intervening-`"if"` LKI gaps: check attacking-alone
-     (`(post.battlefield.filter (·.status.attacking)).size == 1`, CR 506.5 /
-     603.2) at trigger time for
-     `SharedTrigger.thisAttack .attacksAlonePlus2Indestructible` (`Core.lean`);
+   - Close trigger-event and intervening-`"if"` LKI gaps: gate
+     `SharedTrigger.thisAttack .attacksAlonePlus2Indestructible` on
+     `attackers.size == 1` against the declared attacker list on
+     `.combat (.attackersDeclared _ decls)` in `matchTriggers` (`Core.lean`, CR
+     506.5 / 603.2, checking whether it was the sole creature declared as an
+     attacker rather than counting live `status.attacking`);
      fall back to `o.status` on the passed LKI-reconstructed `source` when
      `cur.isOnBattlefield` is `false` (departed or phased out) in
      `Core.fraConditionHolds` (`.sourceHasCounters` and
@@ -5153,11 +5165,18 @@ silent cleanup `beginTurn` & step/phase `EffectDuration` expiry), `Auras.lean`,
      `.battlefield` in `Core.expireWhileSourceEffects`, and when `o` leaves `z`
      for any spec with `.whileInZone o.id z` in
      `Core.expireEffectsOnLeavingObject` (`Core.lean`, CR 611.2a–b).
-   - Delete zero-caller pre-Phase-7 post-entry counter helper
-     `Tokens.applyHopeEnterCounters` (`Tokens.lean`), and fix the two remaining
-     stale CR citations in `TriggeredAbilities.lean` (`CR 508.2b` → `CR 508.3a`
-     for attack triggers) and
-     [`Designations.lean`](Mtg/Engine/Game/Designations.lean)
+   - Gate the *Arwen, Weaver of Hope* (`othersEnterWithPlusOneEqualToughness`)
+     branch in `Core.applyEtbReplacements` (`Core.lean`) on `preBfOk weaver`
+     (CR 614.12) so simultaneously entering creatures inside one `withBatch` do
+     not count a co-entering weaver, migrate `OracleRulingTests.enterTogether`
+     ([`OracleRulingTests.lean`](Mtg/Engine/OracleRulingTests.lean)) from
+     `applyHope := false` + `Tokens.applyHopeEnterCounters` onto a single
+     `withBatch` of production `putOntoBattlefield` calls, delete the resulting
+     zero-caller pre-Phase-7 post-entry counter helpers
+     `Tokens.hopeCountersOnEnter` and `Tokens.applyHopeEnterCounters`
+     (`Tokens.lean`), and fix the two remaining stale CR citations in
+     `TriggeredAbilities.lean` (`CR 508.2b` → `CR 508.3a` for attack triggers)
+     and [`Designations.lean`](Mtg/Engine/Game/Designations.lean)
      (`CR 701.54a / 701.54c` → `CR 701.54a / 701.54e` on `isRingBearer`).
 
 Tests: `Events.lean` (isolation tests for nested-batch `currentBatch` cause
@@ -5195,7 +5214,7 @@ duplicate post-entry `entersWith` counter events, no duplicate raw state writers
 `EngineChange.setStackEntryAt`, `PermanentDesignation.commander`,
 `ReplacementKind.entersTappedExternal`, `Player.startingLife`,
 `Pending.chooseRingBearer`, `ContinuationFrame.pendingCastExiledQueue`,
-`Tokens.applyHopeEnterCounters`, and `GameEvent.cast`) or
+`Tokens.hopeCountersOnEnter`, `Tokens.applyHopeEnterCounters`, and `GameEvent.cast`) or
 unjournaled `{ g with … }` writes outside `applyChange` (and the Phase 12
 `GameEvent` replay applier), full deterministic replay of `g.events` from
 `({} : Game)` (`Game.replayEvents g.events == g`), zero stale pre-20260925 CR
