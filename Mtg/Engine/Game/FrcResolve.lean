@@ -716,10 +716,25 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
         | none => acc) g
   | .venserSpell =>
     match targets[0]? with
-    | some (Target.card id) =>
-      match g.findObject? id with
-      | some spell => (g.copyStackSpell spell controller).copyStackSpell spell controller
-      | none => g
+    | some t@(Target.card id) =>
+      if !g.targetLegalAt controller _effect.targetKind 0 t sourceId then
+        g.illegalAbilityTarget t
+      else
+        match g.findObject? id with
+        | some spell =>
+          if spell.zone != .stack then
+            g.illegalAbilityTarget t
+          else
+            let (g, cause) := g.allocDelayedCause (some controller) sourceId
+            let (g, c1) := g.copyStackSpellWithId spell controller (some cause)
+            let (g, c2) := g.copyStackSpellWithId spell controller (some cause)
+            let copies := #[c1, c2].filterMap (·)
+            let targeted := copies.any (fun cid => ((g.stackEntry? cid).map (!·.targets.isEmpty)).getD false)
+            if copies.isEmpty || !targeted then g
+            else
+              g.beginFraChoice controller (.newTargetsForCopies copies)
+                s!"{(g.player controller).name} may choose new targets for the copies"
+        | none => g.illegalAbilityTarget t
     | _ => g
   | .venserPerm =>
     match targets[0]? with

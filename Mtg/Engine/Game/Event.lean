@@ -1177,7 +1177,7 @@ inductive PendingReplacement where
   | copyNontokenCreatures (controller : PlayerId) (snapshots : Array CardDef)
       (cause : Option EventCause)
   | copyPermanentTokens (controller : PlayerId) (card : CardDef) (remaining : Nat)
-      (cause : Option EventCause) (priorRecentCount : Nat := 0)
+      (cause : Option EventCause) (priorRecentCount : Nat := 0) (pushedFrame : Bool := false)
   | finishArtifactCopyToken
   | finishManaAbilityMountainTrigger (player : PlayerId) (sourceId : ObjectId)
   | restorePending (p : Pending)
@@ -1273,6 +1273,7 @@ inductive PendingReplacement where
       (castFromGraveyard kicked giftPromised : Bool) (chosenX : Nat)
       (sourceId : Option ObjectId) (empowerJaceN : Option Nat)
       (skippedOptionalSlots : Array Nat := #[])
+      (lastKnownPower : Option Int := none)
   | empowerJace (controller : PlayerId) (n : Nat) (stage : Nat := 0)
       (targetId : Option ObjectId := none) (cause : Option EventCause := none)
   | continueTriggeredSequence (controller : PlayerId) (steps : Array TriggeredAbility)
@@ -1316,6 +1317,7 @@ inductive PendingReplacement where
   | finishLinkedExileMove (remainingIds : Array ObjectId)
       (preBattlefield : Option (Array GameObject) := none)
       (pendingLog : Option (ObjectId × Zone) := none)
+      (enteredFromIds : Array ObjectId := #[])
   | untapPermanentsLoop (remainingIds : Array ObjectId)
       (cause : Option EventCause := none)
   | millCardsLoop (p : PlayerId) (remainingIds : Array ObjectId)
@@ -1329,6 +1331,7 @@ inductive PendingReplacement where
       (logText : String := "is exiled, then returned to the battlefield")
       (stage : Nat := 0) (tapped : Bool := false) (onlyLandTapped : Bool := false)
       (clearExileFields : Bool := false) (cause : Option EventCause := none)
+      (preBattlefield : Option (Array GameObject) := none)
   | finishMillSubtypeOrEnchantment (p : PlayerId) (preIds : Array ObjectId)
       (subtype : CardSubtype)
   | finishMillChooseForHand (p : PlayerId) (preIds : Array ObjectId)
@@ -1349,6 +1352,22 @@ inductive PendingReplacement where
       (modes : Array Nat := #[]) (shuffle : Bool := false)
       (cause : Option EventCause := none)
   | acceptMayThen
+  | setLife (p : PlayerId) (life : Int) (msg : String) (cause : Option EventCause)
+  | logMessage (msg : String)
+  | counterStackSpell (spellId : ObjectId) (exilePermanent grantFreeCast : Bool)
+      (ctrl : Option PlayerId) (cause : Option EventCause)
+      (postMove : Bool := false) (name : String := "")
+  | returnStackSpell (spellId : ObjectId) (owner : PlayerId) (name : String)
+      (postMove : Bool := false)
+  | leavePlayersWhoLost
+  | endControlExileLoop (remaining : Array (ObjectId × String))
+      (cause : Option EventCause := none)
+      (pendingLog : Option (ObjectId × String) := none)
+  | beginStepCont (step : Step)
+  | finishCleanupAfterClearEot
+  | continueStartNextTurn (nextP : PlayerId) (remainingDeparted : Array PlayerId)
+      (runBeginTurn : Bool := false)
+  | beginTurnAfterStartExpiry
 deriving Repr, Inhabited, BEq
 
 /-- Whether a `PendingReplacement` continuation ends with `.finishFraChoice`. -/
@@ -1358,11 +1377,13 @@ def PendingReplacement.endsWithFinishFra : PendingReplacement → Bool
   | _ => false
 
 /-- Whether a `PendingReplacement` continuation already ends by granting
-priority (`.receivePriority` / `.finishFraChoice` / `.finishPostCast` with
-`grantPriority == true`). -/
+priority (`.receivePriority` / `.finishFraChoice` / `.finishPostCast` /
+`.finishBecomeCast` with `grantPriority == true`). -/
 def PendingReplacement.endsWithPriorityGrant : PendingReplacement → Bool
   | .receivePriority _ | .finishFraChoice => true
-  | .finishPostCast _ _ hadOuter _ => !hadOuter
+  | .finishPostCast _ grantPriority hadOuter _ => grantPriority && !hadOuter
+  | .finishBecomeCast _ _ grantPriority hadOuter openCont =>
+    grantPriority && !hadOuter && !openCont
   | .seq _ b => b.endsWithPriorityGrant
   | _ => false
 
@@ -1566,6 +1587,8 @@ structure ContinuationFrame where
   resolvingModes : Option (Array Nat) := none
   /-- Damage assigned to each target of the resolving divided-damage ability (CR 601.2d). -/
   resolvingDivision : Array Nat := #[]
+  /-- Optional target-slot indices skipped when announcing the resolving spell or ability (CR 601.2c / 608.2b). -/
+  resolvingSkippedSlots : Array Nat := #[]
   /-- Resolution-scoped continuation after a `--norandom` result is applied. -/
   afterRandom : AfterRandom := .none
   /-- Deferred CR 608.2n / 608.2p / 608.3 completion step for the resolving stack object. -/
@@ -1660,6 +1683,7 @@ inductive ContinuationChange where
   | resolvingAbility (v : Option ObjectId)
   | resolvingModes (v : Option (Array Nat))
   | resolvingDivision (v : Array Nat)
+  | resolvingSkippedSlots (v : Array Nat)
   | afterRandom (v : AfterRandom)
   | resolutionFinish (v : Option ResolutionFinish)
   | pendingResolvedEvent (v : Option (EventObject × PlayerId × EventCause))
@@ -1701,6 +1725,7 @@ inductive EngineChange where
       (objects : Array GameObject) (players : Array Player)
       (effects : Array (EffectId × ContinuousEffectSpec)) (pending : Pending)
       (stack : Array StackEntry := #[])
+  | setPausedBatchCause (cause : Option EventCause)
   | clearPausedBatch
   /-- Update the continuation frame stack. -/
   | pushContinuationFrame (frame : ContinuationFrame := {})

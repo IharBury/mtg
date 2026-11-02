@@ -11,10 +11,25 @@ namespace Mtg.Engine
 namespace Game
 
 /-- Whether `t` is still a legal target for the `i`th instance of “target”
-of `kind` (CR 608.2b). -/
+of `kind` (CR 608.2b), accounting for `g.resolvingSkippedSlots` when optional
+slots were skipped at announcement. -/
 def targetLegalAt (g : Game) (controller : PlayerId) (kind : EffectTargetKind) (i : Nat)
     (t : Target) (sourceId : Option ObjectId) : Bool :=
-  (g.legalTargetsForAtomicKind controller (kind.slotKind i) sourceId).contains t
+  let slot :=
+    if g.resolvingSkippedSlots.isEmpty || kind.spec.slots.isEmpty then i
+    else Id.run do
+      let mut s := 0
+      let mut rem := i
+      while s < kind.spec.slots.size do
+        if g.resolvingSkippedSlots.contains s then
+          s := s + 1
+        else if rem == 0 then
+          return s
+        else
+          rem := rem - 1
+          s := s + 1
+      return s
+  (g.legalTargetsForAtomicKind controller (kind.slotKind slot) sourceId).contains t
 
 /-- The permanent announced as the `i`th target, if it is still legal. -/
 def legalPermanentAt? (g : Game) (controller : PlayerId) (kind : EffectTargetKind)
@@ -116,13 +131,18 @@ player (CR 101.4). -/
 def apnapFrom (g : Game) : Array PlayerId := g.apnapOrder
 
 /-- Put `id` from a graveyard onto the battlefield under `controller`'s
-control with `plusOnes` +1/+1 counters, and run its enters handling. -/
+control with `plusOnes` +1/+1 counters, logging arrival only when synchronous
+entry onto `.battlefield` succeeded (CR 800.4b / 616.1). -/
 def returnCardToBattlefield (g : Game) (controller : PlayerId) (id : ObjectId)
     (plusOnes : Nat := 0) (tapped := false) : Game × ObjectId :=
   let name := (g.object! id).name
   let (g, newId) := g.putOntoBattlefield id controller (tapped := tapped)
     (extraEntersWith := if plusOnes > 0 then #[(.plusOnePlusOne, plusOnes)] else #[])
-  let g := g.logMsg s!"{name} returns to the battlefield"
+  let paused := match g.pending with | .chooseReplacement .. => true | _ => false
+  let g :=
+    if !paused && (g.findObject? newId).any (·.isOnBattlefield) then
+      g.logMsg s!"{name} returns to the battlefield"
+    else g
   (g, newId)
 
 /-- Remove up to `n` counters from `o` (Mabel, Bitter Recluse). The controller

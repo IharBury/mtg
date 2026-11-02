@@ -33,16 +33,6 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
     else g
   | none => g
 
-/-- Karn, Argent Defender: an artifact or creature entering doesn't cause
-abilities to trigger. Checked with the permanent as it exists on the
-battlefield (rulings 891–893). Replacement effects still apply (ruling 890). -/
-def enteringCausesNoTriggers (g : Game) (o : GameObject) : Bool :=
-  (g.isCreature o || (g.types o).contains .artifact) &&
-    g.battlefield.any (fun src =>
-      (g.staticAbilities src).any (fun
-        | .enteringArtifactsCreaturesDontTrigger => true
-        | _ => false))
-
 /-- Put `n` +1/+1 counters on `o` (CR 122.1). When `entersWith` is true, the
 counters have already been placed in `o`'s arrival `ZoneEvent.moved` via
 `extraEntersWith` or `ZoneEvent.created` (CR 614.1c); `.youPutPlusOne`
@@ -81,102 +71,16 @@ def addPlusOnePlusOneTo (g : Game) (o : GameObject) (n : Nat := 1)
         else s!"{g.name o} gets {plusOnePlusOneCountersPhrase n'}"
       g.logMsg phrase
 
-/-- CR 306.5b: a planeswalker enters with loyalty counters equal to its
-printed loyalty (placed in `entersWith` during the zone change). -/
-def enterWithLoyalty (g : Game) (o : GameObject) : Game :=
-  if o.status.faceDown then g
-  else
-    let bc := g.baseCard o
-    match g.isPlaneswalker o, bc.loyalty with
-    | true, some n =>
-      if n > 0 && o.status.loyaltyCounters > 0 then
-        let k := o.status.loyaltyCounters
-        g.logMsg s!"{g.name o} enters with {k} loyalty counter(s)"
-      else g
-    | _, _ => g
-
-/-- “This creature enters with N +1/+1 counters on it” (placed in `entersWith`
-during the zone change). -/
-def enterWithPlusOnes (g : Game) (o : GameObject) : Game :=
-  if o.status.faceDown || !g.retainsPrintedAbilities o then g
-  else
-    let base := (g.baseCard o).entersWithPlusOneCounters
-    if base == 0 || o.status.plusOnePlusOne == 0 then g
-    else
-      let (n, _, _) :=
-        g.replaceCountersPut o .plusOnePlusOne base (putter := g.controllerOf o)
-          (entersWith := true) (entering := some o)
-      if n == 0 then g
-      else g.logMsg s!"{g.name o} enters with {n} +1/+1 counter(s)"
-
-def enterWithIndestructibleCounter (g : Game) (o : GameObject) : Game :=
-  if !o.status.faceDown && g.retainsPrintedAbilities o &&
-      (g.baseCard o).entersWithIndestructibleCounter &&
-      o.status.indestructibleCounters > 0 then
-    g.logMsg s!"{g.name o} enters with an indestructible counter"
-  else g
-
-def enterWithShield (g : Game) (o : GameObject) : Game :=
-  if o.status.faceDown || !g.retainsPrintedAbilities o then g
-  else
-    let base := (g.baseCard o).entersWithShield
-    if base == 0 || o.status.shield == 0 then g
-    else
-      let n := o.status.shield
-      g.logMsg s!"{g.name o} enters with {n} shield counter(s)"
-
-def enterWithXPlusOnes (g : Game) (o : GameObject) : Game :=
-  if !o.status.faceDown && (g.staticAbilities o).any (fun
-      | .entersWithXPlusOne => true
-      | _ => false) && o.status.plusOnePlusOne > 0 then
-    let (n, _, _) :=
-      g.replaceCountersPut o .plusOnePlusOne ((g.chosenXOf? o.id).getD 0) (putter := g.controllerOf o)
-        (entersWith := true) (entering := some o)
-    if n == 0 then g
-    else g.logMsg s!"{g.name o} enters with {n} +1/+1 counter(s)"
-  else g
-
-def enterWithHope (g : Game) (o : GameObject) : Game :=
-  if !o.status.faceDown && g.retainsPrintedAbilities o &&
-      (g.baseCard o).entersWithHopePerCreature && o.status.hope > 0 then
-    g.logMsg s!"{g.name o} enters with {o.status.hope} hope counter(s)"
-  else g
-
-/-- Counters and statuses a permanent enters with (CR 614.1c / 614.12):
-loyalty, +1/+1, indestructible, shield, X +1/+1, prepared, and hope. The
-counters and `prepared` status are placed in `moved.after` / `created.object`
-and `entersWith` during the atomic zone change; this step logs the entry
-effects, queues loyalty-put triggers, and creates the exiled prepare copy. -/
-def applyEntersWith (g : Game) (o : GameObject) : Game :=
-  let id := o.id
-  let g := g.enterWithLoyalty (g.object! id)
-  let g := g.enterWithPlusOnes (g.object! id)
-  let g := g.enterWithIndestructibleCounter (g.object! id)
-  let g := g.enterWithShield (g.object! id)
-  let g := g.enterWithXPlusOnes (g.object! id)
-  let g := g.ensurePreparedCopy (g.object! id)
-  g.enterWithHope (g.object! id)
-
 /-- After a permanent enters, put its enters triggers and “another … enters”
 triggers (CR 603.6a). -/
 def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
+  let g := g.afterPermanentEntersInBatch o
   match g.findObject? o.id with
-  | none => g
   | some cur =>
-    if !cur.isOnBattlefield then
-      if let .chooseReplacement .. := g.pending then
-        g.chainPendingReplacement (.afterLastPermanentEnters (some o.id))
-      else g
-    else
-  let g := g.applyEntersWith (g.object! o.id)
-  let o := g.object! o.id
-  let g := g.addLoreAsSagaEnters o
-  let o := g.object! o.id
-  if g.enteringCausesNoTriggers o then
-    g.logMsg s!"{g.name o} entering doesn't cause abilities to trigger"
-  else if g.currentBatch.isNone then
-    g.promptTriggerTargetsIfNeeded
-  else g
+    if cur.isOnBattlefield && !g.enteringCausesNoTriggers cur && g.currentBatch.isNone then
+      g.promptTriggerTargetsIfNeeded
+    else g
+  | none => g
 
 /-- After a land enters, put its enters triggers, Elf-enters triggers, and landfall. -/
 def afterLandEnters (g : Game) (land : GameObject) : Game :=
@@ -197,12 +101,16 @@ def enterFromNickFury (g : Game) (controller : PlayerId) (id : ObjectId)
     if let .chooseReplacement .. := g.pending then
       g.chainPendingReplacement (.afterLastPermanentEnters (some id))
     else
-      let o := g.object! newId
-      let g :=
-        if nightBack then
-          g.logMsg s!"{o.name} enters back face up (night / daybound)"
-        else g
-      g.afterPermanentEnters (g.object! newId)
+      match g.findObject? newId with
+      | some entered =>
+        if !entered.isOnBattlefield then g
+        else
+          let g :=
+            if nightBack then
+              g.logMsg s!"{entered.name} enters back face up (night / daybound)"
+            else g
+          g.afterPermanentEnters (g.object! newId)
+      | none => g
 
 /-- Tom Bombadil is on the battlefield as a final chapter finishes resolving,
 so his last ability triggers (ruling 74). -/
@@ -509,7 +417,7 @@ partial def receivePriority (g : Game) (p : PlayerId) (recheckSba := true) : Gam
                 w.delayedTrigger == mine[0]!.delayedTrigger &&
                 w.abilityEffect == mine[0]!.abilityEffect &&
                 w.reflexiveResolution == mine[0]!.reflexiveResolution)
-        if allIdentical then
+        if allIdentical || mine.all (·.ordered) then
           let g := g.putTriggerBatch mine
           if g.over then g
           else if g.pending != .none then savePendingP g

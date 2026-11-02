@@ -203,19 +203,20 @@ def replaceZoneMove (g : Game) (old : GameObject) (beforeSnap : EventObject)
     -- Active `ContinuousEffect.replacement` effects for zone moves.
     for (_, eff) in g.activeEffects do
       match eff with
-      | .replacement spec _ =>
-        match spec.kind with
-        | .exileInsteadOfStackLeave tid =>
-          if (tid.isNone || tid == some old.id) && proposed.watches .wouldLeaveStack && curDest != .exile then
-            specs := specs.push ({ spec with affectedPlayer := affected }, none, false)
-        | .exileInsteadOfGraveyard tid wolf =>
-          if spec.id.kind != .exileInstantSorceryInstead &&
-              spec.id.kind != .untilEotExileIfDies &&
-              (tid.isNone || tid == some old.id) &&
-              (match curDest with | .graveyard _ => true | _ => false) && curDest != .exile then
-            let srcObj := if wolf then spec.source.bind board.findObject? else none
-            specs := specs.push ({ spec with affectedPlayer := affected }, srcObj, false)
-        | _ => pure ()
+      | .replacement spec d =>
+        if g.durationActive d then
+          match spec.kind with
+          | .exileInsteadOfStackLeave tid =>
+            if (tid.isNone || tid == some old.id) && proposed.watches .wouldLeaveStack && curDest != .exile then
+              specs := specs.push ({ spec with affectedPlayer := affected }, none, false)
+          | .exileInsteadOfGraveyard tid wolf =>
+            if spec.id.kind != .exileInstantSorceryInstead &&
+                spec.id.kind != .untilEotExileIfDies &&
+                (tid.isNone || tid == some old.id) &&
+                (match curDest with | .graveyard _ => true | _ => false) && curDest != .exile then
+              let srcObj := if wolf then spec.source.bind board.findObject? else none
+              specs := specs.push ({ spec with affectedPlayer := affected }, srcObj, false)
+          | _ => pure ()
       | _ => pure ()
     let candidates := specs.map (fun (s, _, _) => (ReplacementOrPrevention.replacement s).toCandidate)
     match g.selectNextReplacementStep candidates curApplied curOrder with
@@ -292,7 +293,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
   | some old =>
   -- CR 111.8: a token that has left the battlefield can't move to another zone
   -- or come back onto the battlefield.
-  if old.printed.isToken && !old.isCopy && old.zone != .battlefield then
+  if old.printed.isToken && old.zone != .battlefield then
     (g, id)
   else
   let (board, boardOld) := preBatchBoardFor g old
@@ -308,13 +309,14 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
       let sourceCtrlIds := g.activeEffects.filterMap fun (eid, e) =>
         match e with
         | .layered _ (.control _) (.whileSourceOnBattlefield s)
-        | .layered _ (.control _) (.untilSourceLeaves s) =>
+        | .layered _ (.control _) (.untilSourceLeaves s)
+        | .layered _ (.control _) (.whileSourceHasCounter s _) =>
           if s == old.id then some eid else none
         | _ => none
       if sourceCtrlIds.isEmpty then #[]
       else
-        g.battlefield.filterMap fun pObj =>
-          if pObj.id != old.id &&
+        g.objects.filterMap fun pObj =>
+          if pObj.isBattlefieldObject && pObj.id != old.id &&
               (g.appliedControlEffectIds pObj).any (fun eid => sourceCtrlIds.contains eid) then
             some pObj.id
           else none
@@ -553,18 +555,31 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
       let g :=
         if old.zone == .battlefield then
           let g := g.expireWhileSourceEffects old.id
-          sourceCtrlTargets.foldl (fun acc tid =>
-            match acc.findObject? tid with
-            | none => acc
-            | some cur =>
-              if !cur.isOnBattlefield || !(acc.appliedControlEffectIds cur).isEmpty then acc
-              else
-                let destP := (acc.controllerOf cur).getD (cur.defaultController.getD cur.owner)
-                if (acc.player destP).lost then
-                  let name := acc.name cur
-                  let (acc, _) := acc.move tid .exile none (cause := some (.gameRule .playerLeftGame))
-                  acc.logMsg s!"{name} is exiled (CR 800.4c)"
-                else acc) g
+          Id.run do
+            let mut acc := g
+            for i in [0:sourceCtrlTargets.size] do
+              let tid := sourceCtrlTargets[i]!
+              if let some cur := acc.findObject? tid then
+                if cur.isBattlefieldObject && (acc.appliedControlEffectIds cur).isEmpty then
+                  let destP := (acc.controllerOf cur).getD (cur.defaultController.getD cur.owner)
+                  if (acc.player destP).lost then
+                    let name := acc.name cur
+                    let (acc', _) := acc.move tid .exile none (cause := some (.gameRule .playerLeftGame))
+                    acc := acc'
+                    if let .chooseReplacement .. := acc.pending then
+                      let rem := (sourceCtrlTargets.extract (i + 1) sourceCtrlTargets.size).filterMap fun rid =>
+                        (acc.findObject? rid).bind fun ro =>
+                          if ro.isBattlefieldObject && (acc.appliedControlEffectIds ro).isEmpty then
+                            let dp := (acc.controllerOf ro).getD (ro.defaultController.getD ro.owner)
+                            if (acc.player dp).lost then some (rid, s!"{acc.name ro} is exiled (CR 800.4c)") else none
+                          else none
+                      acc := acc.chainPendingReplacement
+                        (.endControlExileLoop rem (some (.gameRule .playerLeftGame))
+                          (some (tid, s!"{name} is exiled (CR 800.4c)")))
+                      return acc
+                    if !(acc.findObject? tid).any (·.isBattlefieldObject) then
+                      acc := acc.logMsg s!"{name} is exiled (CR 800.4c)"
+            return acc
         else g
       let g :=
         match g.findObject? newId with
@@ -668,13 +683,15 @@ batch, checking returning Auras against `preBattlefield` (CR 303.4f) and pausing
 via `PendingReplacement.finishLinkedExileMove` if a return opens a choice. -/
 partial def runLinkedExileBatch (g : Game) (ids : Array ObjectId)
     (preBattlefield : Option (Array GameObject) := none)
-    (pendingLog : Option (ObjectId × Zone) := none) : Game :=
-  if ids.isEmpty && pendingLog.isNone then g
+    (pendingLog : Option (ObjectId × Zone) := none)
+    (enteredFromIds : Array ObjectId := #[]) : Game :=
+  if ids.isEmpty && pendingLog.isNone && enteredFromIds.isEmpty then g
   else if match g.pending with | .chooseReplacement .. | .chooseLegend .. => true | _ => false then
-    g.chainPendingReplacement (.finishLinkedExileMove ids preBattlefield pendingLog)
+    g.chainPendingReplacement (.finishLinkedExileMove ids preBattlefield pendingLog enteredFromIds)
   else Id.run do
     let preBf := preBattlefield.getD g.battlefield
     let mut g := g
+    let mut entered := enteredFromIds
     if let some (fromId, dest) := pendingLog then
       g := logLinkedExileReturn g fromId dest
     for i in [0:ids.size] do
@@ -697,13 +714,7 @@ partial def runLinkedExileBatch (g : Game) (ids : Array ObjectId)
                 (g.logMsg s!"{name} remains in its current zone (CR 800.4b)", none)
               else if g.isAura o then
                 let auraWithCtrl := { o with controller := some o.owner }
-                let host? :=
-                  preBf.findSome? fun h =>
-                    match g.findObject? h.id with
-                    | some cur =>
-                      if cur.isOnBattlefield && g.auraObjCanEnchant cur auraWithCtrl then some cur
-                      else none
-                    | none => none
+                let host? := g.findPreBatchAuraHost? preBf auraWithCtrl
                 match host? with
                 | none =>
                   (g.logMsg s!"{name} remains in exile (can't be attached legally; CR 614.6)", none)
@@ -715,15 +726,20 @@ partial def runLinkedExileBatch (g : Game) (ids : Array ObjectId)
                 let (g', _) := g.move o.id .battlefield (some o.owner) (cause := linkCause)
                 (g', some .battlefield)
           g := g'
+          if movedDest? == some .battlefield then
+            entered := entered.push o.id
           if match g.pending with | .chooseReplacement .. | .chooseLegend .. => true | _ => false then
             let rem := ids.extract (i + 1) ids.size
             let logItem := movedDest?.map (fun d => (o.id, d))
-            if !rem.isEmpty || logItem.isSome then
-              g := g.chainPendingReplacement (.finishLinkedExileMove rem (some preBf) logItem)
+            if !rem.isEmpty || logItem.isSome || !entered.isEmpty then
+              g := g.chainPendingReplacement (.finishLinkedExileMove rem (some preBf) logItem entered)
             return g
           if let some dest := movedDest? then
             g := logLinkedExileReturn g o.id dest
       | none => pure ()
+    for fromId in entered do
+      if let some enteredObj := g.followMovedToZone? fromId (· == .battlefield) then
+        g := g.afterPermanentEntersInBatch enteredObj
     return g
 
 /-- Flush any CR 610.3 `linkedExile` returns queued while an enclosing departure
@@ -776,6 +792,11 @@ def withBatchExcept {ε α : Type} (g : Game) (cause : Option EventCause := none
 def withBatchM {ε : Type} (g : Game) (cause : Option EventCause := none)
     (f : Game → Except ε Game) : Except ε Game :=
   (g.withBatchExcept cause fun g0 => do return (← f g0, ())).map Prod.fst
+
+/-- Reverse to the saved CR 733.1–733.2 proposal checkpoint, re-running batches
+and flushing any CR 610.3 `linkedExile` returns from kept irreversible moves. -/
+def reverseToProposalCheckpoint? (g : Game) : Except String Game :=
+  g.reverseToProposalCheckpointCore? (fun g0 f => g0.withBatch none f)
 
 /-- Close a paused batch (`Core.finishOpenBatch`) and flush any CR 610.3
 `linkedExile` returns once the outermost batch closes. -/
@@ -848,12 +869,35 @@ def putOntoBattlefield (g : Game) (id : ObjectId) (controller : PlayerId)
       (enterMods := enterMods)
       (verb := verb) (actor := actor) (cause := cause)
 
+/-- Complete the post-move permission and log step of `counterStackSpell` once
+any CR 616.1 replacement choice on the stack-leave move has resolved. -/
+def finishCounterStackSpell (g : Game) (spellId : ObjectId) (grantFreeCast : Bool)
+    (ctrl : Option PlayerId) (cause : EventCause) (name : String) : Game :=
+  let arrived? := g.followMovedToZone? spellId (· != .stack)
+  let inExile := arrived?.any (·.zone == .exile)
+  let g :=
+    match ctrl, arrived? with
+    | some c, some arrived =>
+      if inExile && grantFreeCast then
+        g.createEffect (.playPermission arrived.id {
+          player := c
+          whileExiled := true
+          withoutManaCost := true }) (cause := some cause)
+      else g
+    | _, _ => g
+  let destNote := if inExile then "exiled" else "countered"
+  g.logMsg s!"{name} is {destNote}"
+
 /-- Counter a spell on the stack (CR 701.6). `exilePermanent` puts a permanent
 spell into exile and `grantFreeCast` may grant a free cast (CR 701.5 /
 Thranduil's Decree). -/
 def counterStackSpell (g : Game) (spellId : ObjectId) (exilePermanent := false)
     (grantFreeCast := false) (controller : Option PlayerId := none) : Game :=
   let ctrl := controller.orElse (fun _ => g.currentResolvingContext?.bind Prod.snd)
+  if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement
+      (.counterStackSpell spellId exilePermanent grantFreeCast ctrl none false "")
+  else
   match g.findObject? spellId with
   | none => g.logMsg "The spell is no longer on the stack"
   | some o =>
@@ -878,20 +922,13 @@ def counterStackSpell (g : Game) (spellId : ObjectId) (exilePermanent := false)
         match g.currentResolvingContext? with
         | some _ => g.allocDelayedCause ctrl
         | none => (g, .gameRule .spellCast)
-      let (g, newId) := g.move spellId dest none
+      let (g, _) := g.move spellId dest none
         (verb := some .counter) (actor := ctrl) (cause := some cause)
-      let g :=
-        match ctrl with
-        | some c =>
-          if dest == Zone.exile && grantFreeCast then
-            g.createEffect (.playPermission newId {
-              player := c
-              whileExiled := true
-              withoutManaCost := true }) (cause := some cause)
-          else g
-        | none => g
-      let destNote := if dest == Zone.exile then "exiled" else "countered"
-      g.logMsg s!"{name} is {destNote}"
+      if let .chooseReplacement .. := g.pending then
+        g.chainPendingReplacement
+          (.counterStackSpell spellId exilePermanent grantFreeCast ctrl (some cause) true name)
+      else
+        g.finishCounterStackSpell spellId grantFreeCast ctrl cause name
 
 /-- Sacrifice `o` to its owner's graveyard (CR 701.21a). -/
 def sacrificeToGraveyard (g : Game) (o : GameObject) (reason : String)

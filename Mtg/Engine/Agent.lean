@@ -49,11 +49,12 @@ def payGenericOrTapFirstSource (g : Game) (p : PlayerId) (n : Nat) : Option Acti
       | none => some .decline
     | none => some .decline
 
-/-- Choose a single legal action for `p`, or `none` if that player is not to act. -/
-def choose (g : Game) (p : PlayerId) : Option Action :=
+/-- Choose a single legal action for `actor`, or `none` if that player is not to act. -/
+def choose (g : Game) (actor : PlayerId) : Option Action :=
   if g.over then none
-  else if g.actor != some p then none
+  else if g.actor != some actor then none
   else
+    let p := g.rawActor.getD actor
     match g.pending with
     | .declareAttackers =>
       let attackers := g.battlefield.filter (g.canAttack)
@@ -234,7 +235,7 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
             g.canPayAnnouncedAdditional p o available)
       if !affordable then some .decline
       else
-        match (g.apply p (.cast cardId)) with
+        match (g.apply actor (.cast cardId)) with
         | .ok _ => some (.cast cardId)
         | .error _ => some .decline
     | .fraChoice _ choice =>

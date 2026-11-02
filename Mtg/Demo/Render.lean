@@ -868,7 +868,7 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
         | .discardThenDraw => "discard a card, then draw: choose <id>"
         | .newTargetsForCopies copies =>
           s!"choose a new target for the copy ({copies.size} left): choose <id>, or decline to keep it"
-        | .newTargetsForCopySlot copies slotIdx =>
+        | .newTargetsForCopySlot copies slotIdx _ =>
           s!"choose a new target for slot {slotIdx + 1} of the copy ({copies.size} left): choose <id>, or decline to keep it"
         | .mayCastCascade .. => "cascade: cast the exiled card without paying its mana cost (accept), or decline"
         | .mayCastGrima .. => "may cast the exiled instant or sorcery without paying its mana cost (accept), or decline"

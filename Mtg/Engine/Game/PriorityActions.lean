@@ -318,6 +318,7 @@ def concede (g : Game) (p : PlayerId) : Game :=
         | _ => none
       let midResolutionOrBatch :=
         g.currentBatch.isSome || g.pendingReplacement.isSome ||
+          !g.outerPendingReplacements.isEmpty ||
           !g.continuations.isEmpty || g.triggerSequenceRest.isSome
       let g := g.playerLeavesGame p
       let g := if midResolutionOrBatch || wasPregame then g else g.checkSBA
@@ -340,6 +341,7 @@ def concede (g : Game) (p : PlayerId) : Game :=
       else if let some fa := wasAssigningCombatDamage then
         if fa then g.beginCombatDamageAssignment else g.continueBlockerCombatAssignment
       else if !g.continuations.isEmpty || g.pendingReplacement.isSome ||
+          !g.outerPendingReplacements.isEmpty ||
           g.triggerSequenceRest.isSome then
         g.finishFraChoice
       else if wasIdlePriority && g.playersReceivePriority && g.consecutivePasses ≥ g.livingPlayers.size then

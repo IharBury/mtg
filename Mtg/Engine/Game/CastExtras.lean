@@ -81,8 +81,10 @@ def resolveTargetedTempt (g : Game) (p : PlayerId) (kind : EffectTargetKind)
 
 /-- Give the promised gift (a Treasure) to `to` before other effects. -/
 def givePromisedGift (g : Game) (to : PlayerId) : Game :=
-  let (g, _) := g.createToken to treasureToken
-  g.logMsg s!"{(g.player to).name} is given a Treasure (gift)"
+  if !g.stillInGame to then g
+  else
+    let (g, _) := g.createToken to treasureToken
+    g.logMsg s!"{(g.player to).name} is given a Treasure (gift)"
 
 /-- Cascade (CR 702.85a): exile from the top until a nonland card with mana
 value less than `maxMv`. The player may cast it without paying its mana
@@ -202,8 +204,14 @@ def discardNonlandFrom (g : Game) (controller victim : PlayerId) : Game :=
       | none => none) with
   | none => g.logMsg s!"{(g.player victim).name} has no nonland card to discard"
   | some o =>
-    let (g, _) := g.move o.id (.graveyard o.owner) none (verb := some .discard)
-    g.logMsg s!"{(g.player controller).name} chooses {o.name}. {(g.player victim).name} discards it"
+    let cardName := o.name
+    let (g, _) := g.move o.id (.graveyard o.owner) none (verb := some .discard) (actor := some victim)
+    let logLine := s!"{(g.player controller).name} chooses {cardName}. {(g.player victim).name} discards it"
+    if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement (.finishPostStep 96 controller (n := victim.idx) (cardId := some o.id))
+    else if !(g.findObject? o.id).any (·.zone == .hand victim) then
+      g.logMsg logLine
+    else g
 
 /-- Exile `o` and return it at the beginning of the next end step. -/
 def exileUntilNextEndStep (g : Game) (o : GameObject)

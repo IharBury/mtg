@@ -193,15 +193,68 @@ def applyVisionMode (g : Game) (controller : PlayerId) (sourceId : ObjectId) (mo
       else
         g.draw controller 1
 
-/-- Ask to change the spell's target at `index`, then the later slots. -/
-def offerSpellRetarget (g : Game) (controller : PlayerId) (spellId : ObjectId) (index : Nat) : Game :=
+/-- Commit staged multi-slot retarget choices on `spellId` after all slots have
+been answered (CR 115.3 / 115.7d / MSH 722). -/
+def commitStagedSpellTargets (g : Game) (spellId : ObjectId) (staged : Array Target) : Game :=
+  if staged.isEmpty then g
+  else
+    match g.stack.findIdx? (fun e => e.objectId == spellId), g.findObject? spellId with
+    | some i, some spell =>
+      let e := g.stack[i]!
+      if staged == e.targets then g
+      else
+        let kind := (g.targetingOf spell).kind
+        if g.validTargetArrayForEntry e spell kind staged (allowUnchangedIllegal := true) then
+          g.setStackEntryTargets spellId staged (dividedDamage := e.dividedDamage)
+            |>.logMsg "A new target is chosen for the spell"
+        else
+          g.logMsg "That target stays unchanged"
+    | _, _ => g.logMsg "The spell is no longer on the stack"
+
+/-- Ask to change the spell's target at `index`, then the later slots, staging
+choices across slots before committing (CR 115.3 / 115.7d). -/
+def offerSpellRetarget (g : Game) (controller : PlayerId) (spellId : ObjectId)
+    (index : Nat) (staged : Array Target := #[]) : Game :=
   match g.stackEntry? spellId with
   | none => g
   | some e =>
     if index < e.targets.size then
-      g.change (.pending (.fraChoice controller (.mayChangeSpellTarget spellId index)))
+      let curStaged := if staged.isEmpty then e.targets else staged
+      g.change (.pending (.fraChoice controller (.mayChangeSpellTarget spellId index curStaged)))
         |>.logMsg "You may choose a new target for the spell"
-    else g
+    else
+      g.commitStagedSpellTargets spellId staged
+
+/-- Stage one slot of a `mayChangeSpellTarget` prompt (`index`), validating
+atomic slot legality now and cross-slot constraints on final commit (CR 115.3 /
+115.7d / MSH 722). -/
+def stageSpellTargetAt (g : Game) (spellId : ObjectId) (index : Nat)
+    (neu : Target) (staged : Array Target) : Game × Array Target :=
+  match g.stack.findIdx? (fun e => e.objectId == spellId), g.findObject? spellId with
+  | some i, some spell =>
+    let e := g.stack[i]!
+    let base := if staged.isEmpty then e.targets else staged
+    if index >= e.targets.size then
+      (g.logMsg "That target stays unchanged", base)
+    else
+      let kind := (g.targetingOf spell).kind
+      let selfSource := spell.sourceId.orElse (fun _ => if spell.zone == .stack then some spell.id else none)
+      let totalSlots := e.targets.size + e.skippedOptionalSlots.size
+      let slotIndices : Array Nat :=
+        if e.skippedOptionalSlots.isEmpty then (List.range e.targets.size).toArray
+        else ((List.range totalSlots).filter (fun s => !e.skippedOptionalSlots.contains s)).toArray
+      let actualSlot := slotIndices[index]?.getD index
+      if !(g.legalTargetsForAtomicKind e.controller (kind.slotKind actualSlot) selfSource).contains neu then
+        (g.logMsg "That target stays unchanged", base)
+      else
+        let cand := base.set! index neu
+        if index + 1 < e.targets.size then
+          (g, cand)
+        else if g.validTargetArrayForEntry e spell kind cand (allowUnchangedIllegal := true) then
+          (g, cand)
+        else
+          (g.logMsg "That target stays unchanged", base)
+  | _, _ => (g.logMsg "The spell is no longer on the stack", staged)
 
 /-- Replace one target of a spell when the replacement is legal. An illegal
 choice leaves that target unchanged (MSH 722). -/
@@ -217,8 +270,7 @@ def setSpellTargetAt (g : Game) (spellId : ObjectId) (index : Nat) (neu : Target
         let kind := (g.targetingOf spell).kind
         let cand := e.targets.set! index neu
         if cand != e.targets && g.validTargetArrayForEntry e spell kind cand (allowUnchangedIllegal := true) then
-          g.record (GameEvent.targeted g.turnNumber spellId cand
-            (division := e.dividedDamage) (skippedOptionalSlots := e.skippedOptionalSlots))
+          g.setStackEntryTargets spellId cand (dividedDamage := e.dividedDamage)
             |>.logMsg "A new target is chosen for the spell"
         else
           g.logMsg "That target stays unchanged"
@@ -820,8 +872,11 @@ def applyLeftoverTextEffect (g : Game) (controller : PlayerId) (text : String)
         if let .chooseReplacement .. := g.pending then
           g.chainPendingReplacement (.afterLastPermanentEnters (some o.id))
         else
-          let g := g.logMsg s!"{o.name} returns to the battlefield"
-          g.afterPermanentEnters (g.object! newId)
+          let entered := g.object! newId
+          if entered.isOnBattlefield then
+            let g := g.logMsg s!"{o.name} returns to the battlefield"
+            g.afterPermanentEnters entered
+          else g
       else g
     | none => g
   else if text.contains "connive" then
@@ -857,15 +912,45 @@ def applyLeftoverTextEffect (g : Game) (controller : PlayerId) (text : String)
   else if text.contains "each opponent loses" then
     g.loseLifeEachOpponent controller 2
   else if text.contains "fights" then
+    let kind? :=
+      ((g.resolvingSpell.orElse (fun _ => g.resolvingAbility)).bind g.findObject?).map
+        (fun o => (g.targetingOf o).kind)
+    let legalSlot (idx : Nat) (id : ObjectId) : Bool :=
+      match kind? with
+      | some k =>
+        if !k.spec.slots.isEmpty then
+          (g.legalTargetsForAtomicKind controller (k.slotKind idx) sourceId).contains (Target.permanent id)
+        else
+          match g.findObject? id with
+          | some o =>
+            o.isOnBattlefield && g.isCreature o && g.canBeTargetedBy controller o sourceId &&
+              (if idx == 0 && text.contains "you control" then g.controlledBy o controller else true) &&
+              (if idx == 1 && text.contains "opponent controls" then
+                (g.livingOpponents controller).any (fun opp => g.controlledBy o opp.id)
+               else if idx == 1 && text.contains "don't control" then !g.controlledBy o controller
+               else true)
+          | none => false
+      | none =>
+        match g.findObject? id with
+        | some o =>
+          o.isOnBattlefield && g.isCreature o && g.canBeTargetedBy controller o sourceId &&
+            (if idx == 0 && text.contains "you control" then g.controlledBy o controller else true) &&
+            (if idx == 1 && text.contains "opponent controls" then
+              (g.livingOpponents controller).any (fun opp => g.controlledBy o opp.id)
+             else if idx == 1 && text.contains "don't control" then !g.controlledBy o controller
+             else true)
+        | none => false
     match targets[0]?, targets[1]? with
-    | some (Target.permanent a), some (Target.permanent b) =>
-      match g.findObject? a, g.findObject? b with
-      | some oa, some ob =>
-        if oa.isOnBattlefield && ob.isOnBattlefield && g.isCreature oa && g.isCreature ob &&
-            g.canBeTargetedBy controller oa sourceId && g.canBeTargetedBy controller ob sourceId then
-          g.dealFightDamage oa ob
-        else g.logMsg "The target is no longer legal"
-      | _, _ => g.logMsg "The target is no longer legal"
+    | some t0@(Target.permanent a), some t1@(Target.permanent b) =>
+      let ok0 := legalSlot 0 a
+      let ok1 := legalSlot 1 b && (!text.contains "another" || a != b)
+      if ok0 && ok1 then
+        g.fightCreatures (g.object! a) (g.object! b)
+      else
+        let g := if !ok0 then g.illegalAbilityTarget t0 else g
+        if !ok1 then g.illegalAbilityTarget t1 else g
+    | some t0@(Target.permanent a), none =>
+      if !legalSlot 0 a then g.illegalAbilityTarget t0 else g
     | _, _ => g
   else if text.contains "draw" && text.contains "lose" then
     g.drawThenLoseLife controller 2 2

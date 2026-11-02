@@ -214,14 +214,14 @@ left are left alone. -/
   g.cantUntapGrantedBy (anyObj g "Bear") == #[] &&
     logContains g "The target is no longer in play"
 
-/- A source that has already left still records the restriction. It does
-not apply while that object is off the battlefield. -/
+/- CR 611.2b: if the source has already left before the effect would first be
+created, a `.whileYouControl` continuous effect does not start at all. -/
 #guard
   let id := pid board "Titan"
   let (g0, newId) := board.move id (.graveyard caster) none
   let g := step g0 frozen (some newId) #[Target.permanent (pid g0 "Bear")]
     (ab := spider)
-  g.cantUntapGrantedBy (obj g "Bear") == #[newId] &&
+  g.cantUntapGrantedBy (obj g "Bear") == #[] &&
     !g.hostCantBecomeUntapped (obj g "Bear")
 
 /- Moving the source off the battlefield ends the restriction. -/

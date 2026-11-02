@@ -219,11 +219,13 @@ def applyChapterEffect (g : Game) (controller : PlayerId) (e : Effect)
           | some o =>
             let name := o.name
             let (g, newId) := g.putOntoBattlefield oid controller
-            let g := g.logMsg s!"{name} returns to the battlefield"
             if let .chooseReplacement .. := g.pending then
-              g.chainPendingReplacement (.finishPostStep 20 controller 0 none (some oid) (shuffle := false))
+              g.chainPendingReplacement (.finishPostStep 20 controller 2 none (some oid) (shuffle := false))
             else
-              g.afterPermanentEnters (g.object! newId)
+              let entered := g.object! newId
+              if entered.isOnBattlefield then
+                (g.logMsg s!"{name} returns to the battlefield").afterPermanentEnters entered
+              else g
         | _ => g.logMsg "The target is no longer legal")
       sourceId (some "The target is no longer legal")
   | .plusOneUpToOne =>

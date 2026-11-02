@@ -93,17 +93,35 @@ def resolveDelayedTrigger (g : Game) (controller : PlayerId) (kind : DelayedTrig
         let owner := o.owner
         if (g.player owner).lost then
           g.logMsg s!"{o.name} remains in its current zone (CR 800.4b)"
+        else if g.isAura o then
+          let auraProbe := { o with controller := some owner }
+          match g.findPreBatchAuraHost? g.battlefield auraProbe with
+          | none =>
+            g.logMsg s!"{o.name} remains in exile (can't be attached legally; CR 303.4g)"
+          | some host =>
+            let isLand := g.isLand o
+            let (g', _) := g.putOntoBattlefield id owner
+              (attachedTo := some host.id) (cause := some cause)
+            if let .chooseReplacement .. := g'.pending then
+              g'.chainPendingReplacement (.finishPostStep 20 owner 1 none (some id) (shuffle := isLand))
+            else
+              match g'.followMovedToZone? id (· == .battlefield) with
+              | some back =>
+                let hostName := (g'.findObject? host.id).map g'.name |>.getD "permanent"
+                let g' := g'.logMsg s!"{back.name} returns to the battlefield attached to {hostName} (beginning of end step)"
+                if g'.isLand back then g'.afterLandEnters back else g'.afterPermanentEnters back
+              | none => g'
         else
-          let name := o.name
           let isLand := g.isLand o
-          let (g', newId) := g.putOntoBattlefield id owner (cause := some cause)
-          let g' := g'.logMsg s!"{name} returns to the battlefield (beginning of end step)"
+          let (g', _) := g.putOntoBattlefield id owner (cause := some cause)
           if let .chooseReplacement .. := g'.pending then
-            g'.chainPendingReplacement (.finishPostStep 20 owner 0 none (some id) (shuffle := isLand))
+            g'.chainPendingReplacement (.finishPostStep 20 owner 1 none (some id) (shuffle := isLand))
           else
-            let back := g'.object! newId
-            if g'.isLand back then g'.afterLandEnters back
-            else g'.afterPermanentEnters back
+            match g'.followMovedToZone? id (· == .battlefield) with
+            | some back =>
+              let g' := g'.logMsg s!"{back.name} returns to the battlefield (beginning of end step)"
+              if g'.isLand back then g'.afterLandEnters back else g'.afterPermanentEnters back
+            | none => g'
       else g
   | .endStepExile id =>
     match g.findObject? id with
@@ -124,14 +142,35 @@ def resolveDelayedTrigger (g : Game) (controller : PlayerId) (kind : DelayedTrig
     match g.findObject? id with
     | some o =>
       if o.zone == .graveyard o.owner && !(g.player who).lost then
-        let name := o.name
-        let isLand := g.isLand o
-        let (g', newId) := g.putOntoBattlefield id who (cause := some cause)
-        let g' := g'.logMsg s!"{name} returns to the battlefield"
-        if let .chooseReplacement .. := g'.pending then
-          g'.chainPendingReplacement (.finishPostStep 20 who 0 none (some id) (shuffle := isLand))
+        if g.isAura o then
+          let auraProbe := { o with controller := some who }
+          match g.findPreBatchAuraHost? g.battlefield auraProbe with
+          | none =>
+            g.logMsg s!"{o.name} remains in the graveyard (can't be attached legally; CR 303.4f)"
+          | some host =>
+            let isLand := g.isLand o
+            let (g', _) := g.putOntoBattlefield id who
+              (attachedTo := some host.id) (cause := some cause)
+            if let .chooseReplacement .. := g'.pending then
+              g'.chainPendingReplacement (.finishPostStep 20 who 2 none (some id) (shuffle := isLand))
+            else
+              match g'.followMovedToZone? id (· == .battlefield) with
+              | some back =>
+                let hostName := (g'.findObject? host.id).map g'.name |>.getD "permanent"
+                let g' := g'.logMsg s!"{back.name} returns to the battlefield attached to {hostName}"
+                if g'.isLand back then g'.afterLandEnters back else g'.afterPermanentEnters back
+              | none => g'
         else
-          g'.afterPermanentEnters (g'.object! newId)
+          let isLand := g.isLand o
+          let (g', _) := g.putOntoBattlefield id who (cause := some cause)
+          if let .chooseReplacement .. := g'.pending then
+            g'.chainPendingReplacement (.finishPostStep 20 who 2 none (some id) (shuffle := isLand))
+          else
+            match g'.followMovedToZone? id (· == .battlefield) with
+            | some back =>
+              let g' := g'.logMsg s!"{back.name} returns to the battlefield"
+              if g'.isLand back then g'.afterLandEnters back else g'.afterPermanentEnters back
+            | none => g'
       else g
     | none => g
   | .endStepSynthetic n =>
@@ -155,7 +194,8 @@ partial def runSpellModesAndEmpower (g : Game) (controller : PlayerId)
     (modeEffects : Array Effect) (remainingTargets : Array Target)
     (castFromGraveyard kicked giftPromised : Bool) (chosenX : Nat)
     (sourceId : Option ObjectId) (empowerJaceN : Option Nat)
-    (skippedOptionalSlots : Array Nat := #[]) : Game :=
+    (skippedOptionalSlots : Array Nat := #[])
+    (lastKnownPower : Option Int := none) : Game :=
   match modeEffects[0]? with
   | none =>
     match empowerJaceN with
@@ -166,18 +206,22 @@ partial def runSpellModesAndEmpower (g : Game) (controller : PlayerId)
     let modeSlots :=
       if e.targetKind.spec.slots.isEmpty then e.targetKind.targetCount
       else e.targetKind.spec.slots.size
-    let skippedHere := skippedOptionalSlots.filter (· < modeSlots) |>.size
+    let curSkipped := skippedOptionalSlots.filter (· < modeSlots)
+    let skippedHere := curSkipped.size
     let restSkipped :=
       skippedOptionalSlots.filterMap (fun s => if s >= modeSlots then some (s - modeSlots) else none)
     let n := Nat.min remainingTargets.size (modeSlots - skippedHere)
     let n := if restModes.isEmpty then remainingTargets.size else n
     let curTargets := remainingTargets.extract 0 n
     let restTargets := remainingTargets.extract n remainingTargets.size
+    let g :=
+      if g.continuations.isEmpty then g
+      else g.change (.continuation (.resolvingSkippedSlots curSkipped))
     let pendingBefore := g.pending
     let randomBefore := g.afterRandom
     let g :=
       if g.resolvingAbility.isSome then
-        g.applyUnifiedAbility controller e curTargets sourceId (chosenX := chosenX)
+        g.applyUnifiedAbility controller e curTargets sourceId lastKnownPower (chosenX := chosenX)
       else
         g.applyUnified controller e curTargets
           (castFromGraveyard := castFromGraveyard)
@@ -190,10 +234,10 @@ partial def runSpellModesAndEmpower (g : Game) (controller : PlayerId)
         (g.afterRandom != randomBefore && g.afterRandom != .none) then
       g.chainPendingReplacement
         (.continueSpellModes controller restModes restTargets
-          castFromGraveyard kicked giftPromised chosenX sourceId empowerJaceN restSkipped)
+          castFromGraveyard kicked giftPromised chosenX sourceId empowerJaceN restSkipped lastKnownPower)
     else
       g.runSpellModesAndEmpower controller restModes restTargets
-        castFromGraveyard kicked giftPromised chosenX sourceId empowerJaceN restSkipped
+        castFromGraveyard kicked giftPromised chosenX sourceId empowerJaceN restSkipped lastKnownPower
 
 def resolveTop (g : Game) : Game :=
   if g.stack.isEmpty then g
@@ -219,6 +263,7 @@ def resolveTop (g : Game) : Game :=
           let g := g.change (.pushContinuationFrame {
             resolvingContext := some (ctxSrc, entry.controller)
             resolvingAbility := some obj.id
+            resolvingSkippedSlots := entry.skippedOptionalSlots
             resolvingModes := resolvingModes?
             resolutionFinish := some (.ability obj.id snap entry.controller obj.sourceId) })
           let g := g.withBatch (some dtCause) (fun g =>
@@ -237,6 +282,7 @@ def resolveTop (g : Game) : Game :=
                   if tcs.isEmpty then mEff else TextChange.applyEffect tcs mEff
             g.runSpellModesAndEmpower entry.controller modeEffects entry.targets
               false false false chosenX obj.sourceId none entry.skippedOptionalSlots
+              entry.lastKnownPower
           else
             g.applyUnifiedAbility entry.controller e entry.targets obj.sourceId
               entry.lastKnownPower chosenX
@@ -263,6 +309,7 @@ def resolveTop (g : Game) : Game :=
               resolvingContext := some (ctxSrc, entry.controller)
               resolvingAbility := some obj.id
               resolvingDivision := entry.dividedDamage
+              resolvingSkippedSlots := entry.skippedOptionalSlots
               resolvingModes := resolvingModes?
               resolutionFinish := some (.ability obj.id snap entry.controller obj.sourceId) })
             let g := runAbilityBody g
@@ -281,6 +328,7 @@ def resolveTop (g : Game) : Game :=
               resolvingContext := some (ctxSrc, entry.controller)
               resolvingAbility := some obj.id
               resolvingDivision := entry.dividedDamage
+              resolvingSkippedSlots := entry.skippedOptionalSlots
               resolvingModes := resolvingModes?
               resolutionFinish := some (.ability obj.id snap entry.controller obj.sourceId) })
             let g := runAbilityBody g
@@ -313,6 +361,7 @@ def resolveTop (g : Game) : Game :=
             resolvingContext := some (ctxSrc, entry.controller)
             resolvingAbility := some obj.id
             resolvingDivision := entry.dividedDamage
+            resolvingSkippedSlots := entry.skippedOptionalSlots
             resolvingModes := resolvingModes?
             resolutionFinish := some (.ability obj.id snap entry.controller obj.sourceId sagaChapter) })
           let g := g.applyTriggeredAbility entry.controller t obj.sourceId
@@ -386,6 +435,7 @@ def resolveTop (g : Game) : Game :=
           let g := g.change (.pushContinuationFrame {
             resolvingContext := some (ctxSrc, entry.controller)
             resolvingSpell := some obj.id
+            resolvingSkippedSlots := entry.skippedOptionalSlots
             resolutionFinish := some (.spell entry snap fromGy) })
           let bc := g.baseCard obj
           let tcs := g.evalLayer3 obj
@@ -413,12 +463,12 @@ def resolveTop (g : Game) : Game :=
                 g.chainPendingReplacement
                   (.continueSpellModes entry.controller modeEffects entry.targets
                     fromGy kicked giftTo.isSome chosenX (some obj.id) empowerJaceN
-                    entry.skippedOptionalSlots)
+                    entry.skippedOptionalSlots entry.lastKnownPower)
               else g
             else
               g.runSpellModesAndEmpower entry.controller modeEffects entry.targets
                 fromGy kicked giftTo.isSome chosenX (some obj.id) empowerJaceN
-                entry.skippedOptionalSlots
+                entry.skippedOptionalSlots entry.lastKnownPower
           g.completeActiveResolutions
 
 end Game

@@ -45,7 +45,9 @@ def legalCreatureYouControlTargets (g : Game) (caster : PlayerId)
 /-- Creatures an opponent of `caster` controls that `caster` may target. -/
 def legalOppCreatureTargets (g : Game) (caster : PlayerId)
     (sourceId : Option ObjectId := none) : Array Target :=
-  g.legalCreatureTargets caster (fun o => g.controlledBy o (g.opponent caster)) sourceId
+  g.legalCreatureTargets caster
+    (fun o => (g.livingOpponents caster).any (fun pl => g.controlledBy o pl.id))
+    sourceId
 
 /-- Cards in `p`'s graveyard matching `pred` (CR 404 / 115.1). Hexproof does
 not apply off the battlefield (CR 702.11b). -/
@@ -125,7 +127,7 @@ def matchesTargetFilter (g : Game) (caster : PlayerId) (f : TargetFilter)
     match f.controller with
     | .any => true
     | .you => who == caster
-    | .opponent | .eachOpponent => who != caster
+    | .opponent | .eachOpponent => (g.livingOpponents caster).any (·.id == who)
     | .specific idx => who.idx == idx
   let mv := g.objectManaValue o
   let subtypeOk := f.subtypes.isEmpty || f.subtypes.any (fun s => g.hasSubtype o s)
