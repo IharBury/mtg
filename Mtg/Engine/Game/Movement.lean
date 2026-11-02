@@ -106,7 +106,8 @@ private def preBatchBoardFor (g : Game) (old : GameObject) : Game × GameObject 
       { g with
         objects := g.openBatchObjects
         players := g.openBatchPlayers
-        activeEffects := g.openBatchEffects }
+        activeEffects := g.openBatchEffects
+        stack := g.openBatchStack }
     match preG.findObject? old.id with
     | some preOld =>
       if preOld.zone == old.zone then (preG, preOld) else (g, old)
@@ -271,15 +272,6 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
     (cause : Option EventCause := none) : Game × ObjectId :=
   if let .chooseReplacement .. := g.pending then
     let old? := g.findObject? id
-    let sacrificed := verb == some .sacrifice
-    let discarded :=
-      verb == some .discard ||
-        match old? with
-        | some o =>
-          match o.zone, dest with
-          | .hand p, .graveyard q => p == q
-          | _, _ => false
-        | none => false
     let faceDown :=
       faceDown?.getD (dest == .battlefield && old?.any (fun o => o.zone == .stack && o.status.faceDown))
     let fromStackTime :=
@@ -289,13 +281,20 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
     let resolvedAttackTarget : Option AttackTarget :=
       if isAttacking then some (attackingTarget.getD (.player g.defendingPlayer)) else none
     (g.chainPendingReplacement
-      (.move id dest controller sacrificed discarded verb actor faceDown tapped
+      (.move id dest controller verb actor faceDown tapped
         isAttacking resolvedAttackTarget nightBack returnedAsArtifact onlyFoodArtifact
         extraEntersWith libraryPosition fromStackTime applyHope preBattlefield
         isCopy overridePrinted adventurerCard summoningSick attachedTo enterMods cause),
      id)
   else
-  let old := g.object! id
+  match g.findObject? id with
+  | none => (g, id)
+  | some old =>
+  -- CR 111.8: a token that has left the battlefield can't move to another zone
+  -- or come back onto the battlefield.
+  if old.printed.isToken && !old.isCopy && old.zone != .battlefield then
+    (g, id)
+  else
   let (board, boardOld) := preBatchBoardFor g old
   let isAttacking := attacking || attackingTarget.isSome
   let resolvedAttackTarget : Option AttackTarget :=
@@ -431,16 +430,10 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
     else none
   match moveRep.choice?.orElse (fun _ => preCheckArrivalChoice?) with
   | some (chooser, choices) =>
-    let sacrificed := verb == some .sacrifice
-    let discarded :=
-      verb == some .discard ||
-        match old.zone, origDest with
-        | .hand p, .graveyard q => p == q
-        | _, _ => false
     let faceDown := faceDown?.getD (origDest == .battlefield && old.zone == .stack && old.status.faceDown)
     let fromStackTime := fromStackTime?.getD (if origDest == .battlefield && old.zone == .stack then old.status.time else 0)
     (g.promptChooseReplacement chooser choices
-      (.move id origDest controller sacrificed discarded verb actor faceDown tapped
+      (.move id origDest controller verb actor faceDown tapped
         isAttacking resolvedAttackTarget nightBack returnedAsArtifact onlyFoodArtifact
         extraEntersWith libraryPosition fromStackTime applyHope preBattlefield
         isCopy overridePrinted adventurerCard summoningSick attachedTo enterMods cause),
@@ -640,8 +633,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
 partial def returnLinkedExileMoves (g : Game) (ids : Array ObjectId) : Game :=
   if ids.isEmpty then g
   else if let .chooseReplacement .. := g.pending then
-    g.chainPendingReplacement
-      (.finishLinkedExileMove (ids.map (fun eid => (eid, .exile, none, false, none))))
+    g.chainPendingReplacement (.finishLinkedExileMove ids)
   else Id.run do
     let mut g := g
     for i in [0:ids.size] do
@@ -675,8 +667,7 @@ partial def returnLinkedExileMoves (g : Game) (ids : Array ObjectId) : Game :=
           if let .chooseReplacement .. := g.pending then
             let rem := ids.extract (i + 1) ids.size
             if !rem.isEmpty then
-              g := g.chainPendingReplacement
-                (.finishLinkedExileMove (rem.map (fun eid => (eid, .exile, none, false, none))))
+              g := g.chainPendingReplacement (.finishLinkedExileMove rem)
             return g
       | none => pure ()
     return g
@@ -749,8 +740,9 @@ def putOntoBattlefield (g : Game) (id : ObjectId) (controller : PlayerId)
       (enterMods := enterMods)
       (verb := verb) (actor := actor) (cause := cause)
 
-/-- Counter a spell on the stack. `exile` puts a permanent spell into exile
-and may grant a free cast (CR 701.5 / Thranduil's Decree). -/
+/-- Counter a spell on the stack (CR 701.6). `exilePermanent` puts a permanent
+spell into exile and `grantFreeCast` may grant a free cast (CR 701.5 /
+Thranduil's Decree). -/
 def counterStackSpell (g : Game) (spellId : ObjectId) (exilePermanent := false)
     (grantFreeCast := false) (controller : Option PlayerId := none) : Game :=
   let ctrl := controller.orElse (fun _ => g.currentResolvingContext?.bind Prod.snd)
@@ -792,6 +784,107 @@ def counterStackSpell (g : Game) (spellId : ObjectId) (exilePermanent := false)
         | none => g
       let destNote := if dest == Zone.exile then "exiled" else "countered"
       g.logMsg s!"{name} is {destNote}"
+
+/-- Sacrifice `o` to its owner's graveyard (CR 701.21a). -/
+def sacrificeToGraveyard (g : Game) (o : GameObject) (reason : String)
+    (cause : Option EventCause := none)
+    (preBattlefield : Option (Array GameObject) := none) : Game :=
+  let actor := (g.controllerOf o).getD o.owner
+  g.moveToOwnerGraveyard o reason (verb := some .sacrifice) (actor := some actor)
+    (preBattlefield := preBattlefield) (cause := cause)
+
+/-- First player in `players` who satisfies `pred`, plus those after them. -/
+def nextActorWhere (_g : Game) (players : Array PlayerId) (pred : PlayerId → Bool) :
+    Option (PlayerId × Array PlayerId) :=
+  Id.run do
+    for i in [0:players.size] do
+      let p := players[i]!
+      if pred p then
+        return some (p, players.extract (i + 1) players.size)
+    return none
+
+/-- First player in `players` who controls a creature, plus those after them. -/
+def nextActorWithCreatures (g : Game) (players : Array PlayerId) :
+    Option (PlayerId × Array PlayerId) :=
+  g.nextActorWhere players (fun p =>
+    g.stillInGame p && !(g.creaturesControlledBy p).isEmpty)
+
+/-- First player in `players` who has a card in hand, plus those after them. -/
+def nextActorWithHandCard (g : Game) (players : Array PlayerId) :
+    Option (PlayerId × Array PlayerId) :=
+  g.nextActorWhere players (fun p =>
+    g.stillInGame p && !(g.player p).hand.isEmpty)
+
+/-- Sacrifice each `(actor, oid)` in `remaining` sequentially inside an open or
+standalone batch, pausing on `Pending.chooseReplacement` and optionally creating
+a 4/4 Beast token if `createBeastFor` is set. -/
+def sacrificePermanentsLoop (g : Game) (remaining : Array (PlayerId × ObjectId))
+    (preBattlefield : Option (Array GameObject) := none)
+    (cause : Option EventCause := none)
+    (createBeastFor : Option PlayerId := none) : Game := Id.run do
+  if let .chooseReplacement .. := g.pending then
+    return g.chainPendingReplacement
+      (.sacrificePermanentsLoop remaining preBattlefield cause createBeastFor)
+  let mut g := g
+  let preBf := preBattlefield.getD g.battlefield
+  for i in [0:remaining.size] do
+    let (who, id) := remaining[i]!
+    match g.findObject? id with
+    | some o =>
+      if o.isOnBattlefield then
+        g := g.sacrificeToGraveyard o
+          s!"{(g.player who).name} sacrifices {g.name o}"
+          (cause := cause) (preBattlefield := some preBf)
+        if let .chooseReplacement .. := g.pending then
+          let rem := remaining.extract (i + 1) remaining.size
+          if !rem.isEmpty || createBeastFor.isSome then
+            g := g.chainPendingReplacement
+              (.sacrificePermanentsLoop rem (some preBf) cause createBeastFor)
+          return g
+    | none => pure ()
+  if let some ctrl := createBeastFor then
+    g := g.createKindTokens ctrl .beast44trample 1 (cause := cause)
+  return g
+
+/-- Sacrifice the chosen creatures simultaneously. -/
+def finishChosenSacrifices (g : Game) (chosen : Array ObjectId) : Game :=
+  let pairs := chosen.filterMap (fun id =>
+    match g.findObject? id with
+    | some o =>
+      if o.isOnBattlefield && g.isCreature o then
+        some ((g.controllerOf o).getD o.owner, id)
+      else none
+    | none => none)
+  let preBf := g.battlefield
+  let g := g.change (.pending .none)
+  g.withBatch none fun g =>
+    g.sacrificePermanentsLoop pairs (preBattlefield := some preBf)
+
+/-- Log `msg` for each player in `ps`. -/
+def logForPlayers (g : Game) (ps : Array PlayerId) (msg : PlayerId → String) : Game :=
+  ps.foldl (fun g p => g.logMsg (msg p)) g
+
+/-- Display name for an `EnteringAttackItem` in choice logs. -/
+def enteringAttackItemName (g : Game) : EnteringAttackItem → String
+  | .token _ kind _ _ => (tokenPrinted kind).name
+  | .card cardId .. =>
+    match g.findObject? cardId with
+    | some o => o.name
+    | none => "the creature"
+
+/-- Advance `remaining` past any items whose attack target is already fixed
+(`options.size <= 1`), appending `(item, item.options[0]?)` to `chosen`. -/
+def advanceFixedEnteringAttackItems
+    (remaining : Array EnteringAttackItem)
+    (chosen : Array (EnteringAttackItem × Option AttackTarget)) :
+    Array EnteringAttackItem × Array (EnteringAttackItem × Option AttackTarget) := Id.run do
+  let mut idx := 0
+  let mut acc := chosen
+  while idx < remaining.size && remaining[idx]!.options.size <= 1 do
+    let item := remaining[idx]!
+    acc := acc.push (item, item.options[0]?)
+    idx := idx + 1
+  return (remaining.extract idx remaining.size, acc)
 
 end Game
 end Mtg.Engine

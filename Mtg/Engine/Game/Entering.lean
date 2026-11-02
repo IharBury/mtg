@@ -165,8 +165,6 @@ def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
         g.chainPendingReplacement (.afterLastPermanentEnters (some o.id))
       else g
     else
-  let g := g.refreshEnduringStory
-  let g := g.refreshCitysBlessing
   let g := g.applyEntersWith (g.object! o.id)
   let o := g.object! o.id
   let g := g.addLoreAsSagaEnters o
@@ -249,11 +247,16 @@ def resolveAuraSpell (g : Game) (entry : StackEntry) (obj : GameObject) : Game :
           (attachedTo := some host.id) (verb := some .resolve) (actor := some entry.controller)
           (cause := finishCause)
         if let .chooseReplacement .. := g.pending then
-          g.chainPendingReplacement (.afterLastPermanentEnters (some obj.id))
+          g.chainPendingReplacement
+            (.afterLastPermanentEnters (some obj.id) (attachedToHost := some host.id))
         else
-          let o := g.object! newId
-          let g := g.logMsg s!"{g.name o} enters the battlefield attached to {hostName}"
-          g.afterPermanentEnters (g.object! newId)
+          match g.findObject? newId with
+          | some o =>
+            if o.isOnBattlefield then
+              let g := g.logMsg s!"{g.name o} enters the battlefield attached to {hostName}"
+              g.afterPermanentEnters (g.object! newId)
+            else g
+          | none => g
       else
         toGraveyard g
     | none => toGraveyard g
@@ -360,9 +363,13 @@ def finishOneResolution (g : Game) (fin : ResolutionFinish) : Game :=
             if let .chooseReplacement .. := g.pending then
               g.chainPendingReplacement (.afterLastPermanentEnters (some obj.id))
             else
-              let o := g.object! newId
-              let g := g.logMsg s!"{o.name} enters the battlefield"
-              g.afterPermanentEnters (g.object! newId)
+              match g.findObject? newId with
+              | some o =>
+                if o.isOnBattlefield then
+                  let g := g.logMsg s!"{o.name} enters the battlefield"
+                  g.afterPermanentEnters (g.object! newId)
+                else g
+              | none => g
           else if obj.isCopy then
             (g.ceaseToExist obj.id (cause := some (.stateBased .copyOutsideStackOrBf))).logMsg
               s!"The copy of {obj.name} ceases to exist (CR 704.5e)"
@@ -385,7 +392,7 @@ stack-exit actions and popping frames back to `#[]`. -/
 partial def completeActiveResolutions (g : Game) : Game :=
   if !g.over && (g.pending != .none || g.afterRandom != .none || g.currentBatch.isSome ||
       g.pendingReplacement.isSome || !g.outerPendingReplacements.isEmpty ||
-      g.triggerSequenceRest.isSome || g.pendingCastExiledQueue.isSome) then g
+      g.triggerSequenceRest.isSome) then g
   else
     match g.continuations.back? with
     | none => if g.over then g else g.promptTriggerTargetsIfNeeded

@@ -1692,6 +1692,8 @@ inductive TriggerRemoveWhat where
   | hope
   /-- Every counter on that permanent. -/
   | all
+  /-- One time counter (CR 702.176a impending). -/
+  | time
 deriving Repr, Inhabited, BEq
 
 /-- How far `TriggerResolution.revealLibrary` looks from the top of a library. -/

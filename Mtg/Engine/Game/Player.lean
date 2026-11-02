@@ -201,8 +201,6 @@ inductive Action where
   | announceGift (to : Option PlayerId)
   /-- Pay (`true`) or decline (`false`) the optional teamwork cost. -/
   | announceTeamwork (pay : Bool)
-  /-- Choose this creature as your Ring-bearer, or `none` if you control none. -/
-  | chooseRingBearer (id : Option ObjectId)
   | concede
   /-- Supply the order or chosen object for a pending random event
   (`--norandom`). An empty list keeps the current order of a shuffle. -/

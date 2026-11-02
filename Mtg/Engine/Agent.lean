@@ -196,10 +196,6 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
       some (.announceTeamwork false)
     | .chooseTeamworkCreatures _ need =>
       some (.choosePermanents (g.pickTeamworkCreatures p need))
-    | .chooseRingBearer _ =>
-      match (g.ringBearerChoices p)[0]? with
-      | some o => some (.chooseRingBearer (some o.id))
-      | none => some (.chooseRingBearer none)
     | .maySacrificeAnotherBolg _ bolgId =>
       match (g.permanentsOf p).find? (fun o => g.isCreature o && o.id != bolgId) with
       | some o => some (.sacrifice o.id)

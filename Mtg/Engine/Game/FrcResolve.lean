@@ -164,7 +164,7 @@ private def putHits (g : Game) (p : PlayerId) (hits : Array ObjectId) (haste := 
 
 private def restBottom (g : Game) (p : PlayerId) (rest : Array ObjectId) (shuffle : Bool)
     (cause : Option EventCause := none) : Game :=
-  if shuffle then g.requestShuffle p
+  if shuffle then g.shuffleThen p .none
   else if rest.isEmpty then g
   else
     g.requestOrderInto rest (.library p)
@@ -332,44 +332,56 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
       else
         g.createKindTokens controller .spirit types.size
   | .sunfall =>
+    let startIdx := g.events.size
     let ids := (g.battlefield.filter (g.isCreature ·)).map (·.id)
     let (g, exileCause) := g.allocDelayedCause (some controller) sourceId
     let g := g.withBatch (some exileCause) fun g =>
-      ids.foldl (fun g id => g.exileId id (cause := some exileCause)) g
+      g.exilePermanentsLoop ids (logExile := true) (cause := some exileCause)
     let (g, incubateCause) := g.allocDelayedCause (some controller) sourceId
     if let .chooseReplacement .. := g.pending then
-      g.chainPendingReplacement (.finishFrcPostStep 9 controller ids.size (cause := some incubateCause))
+      g.chainPendingReplacement
+        (.finishFrcPostStep 9 controller startIdx (cause := some incubateCause) (ids := ids))
     else
+      let count := ids.foldl (fun acc id =>
+        if g.wasPermanentExiled id startIdx then acc + 1 else acc) 0
       let extra : CounterBag :=
-        if ids.size > 0 then #[(.plusOnePlusOne, ids.size)] else #[]
+        if count > 0 then #[(.plusOnePlusOne, count)] else #[]
       g.withBatch (some incubateCause) fun g =>
         g.makeFrc controller .incubator 1 0
           (extraCounters := extra) (cause := some incubateCause)
   | .massPolymorph =>
+    let startIdx := g.events.size
     let yours := (g.permanentsOf controller).filter (g.isCreature ·) |>.map (·.id)
     let (g, exileCause) := g.allocDelayedCause (some controller) sourceId
     let g := g.withBatch (some exileCause) fun g =>
-      yours.foldl (fun g id => g.exileId id (cause := some exileCause)) g
+      g.exilePermanentsLoop yours (logExile := true) (cause := some exileCause)
     if let .chooseReplacement .. := g.pending then
-      g.chainPendingReplacement (.finishFrcPostStep 10 controller yours.size (cardId := sourceId))
+      g.chainPendingReplacement
+        (.finishFrcPostStep 10 controller startIdx (cardId := sourceId) (ids := yours))
     else
+      let count := yours.foldl (fun acc id =>
+        if g.wasPermanentExiled id startIdx then acc + 1 else acc) 0
       let (g, revealCause) := g.allocDelayedCause (some controller) sourceId
-      let (g, hits, rest) := g.revealUntil controller (·.isCreature) yours.size (cause := some revealCause)
+      let (g, hits, rest) := g.revealUntil controller (·.isCreature) count (cause := some revealCause)
       let g := g.putHits controller hits (cause := some revealCause)
       if let .chooseReplacement .. := g.pending then
         g.chainPendingReplacement (.finishFrcRestBottom controller rest true (some revealCause))
       else
         g.restBottom controller rest true (cause := some revealCause)
   | .syntheticDestiny =>
+    let startIdx := g.events.size
     let yours := (g.permanentsOf controller).filter (g.isCreature ·) |>.map (·.id)
     let (g, cause) := g.allocDelayedCause (some controller) sourceId
     let src := sourceId.bind g.findObject?
     let g := g.withBatch (some cause) fun g =>
-      yours.foldl (fun g id => g.exileId id (cause := some cause)) g
+      g.exilePermanentsLoop yours (logExile := true) (cause := some cause)
     if let .chooseReplacement .. := g.pending then
-      g.chainPendingReplacement (.finishFrcPostStep 11 controller yours.size (cardId := sourceId) (cause := some cause))
+      g.chainPendingReplacement
+        (.finishFrcPostStep 11 controller startIdx (cardId := sourceId) (cause := some cause) (ids := yours))
     else
-      g.registerDelayedTrigger { controller, source := src, kind := .endStepSynthetic yours.size, cause }
+      let count := yours.foldl (fun acc id =>
+        if g.wasPermanentExiled id startIdx then acc + 1 else acc) 0
+      g.registerDelayedTrigger { controller, source := src, kind := .endStepSynthetic count, cause }
         |>.logMsg "Those creatures return as revealed cards at the next end step"
   | .searchBasics kinds untapAt =>
     let g := if untapAt == 0 then g else g.change (.untapSearchedIfLands (some untapAt))
@@ -473,7 +485,7 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
   | .nissa =>
     let g := g.draw controller
     if let .chooseReplacement .. := g.pending then
-      g.chainPendingReplacement (.finishFrcPostStep 15 controller 0 0 sourceId)
+      g.chainPendingReplacement (.finishFrcPostStep 15 controller 0 sourceId)
     else
       match g.srcObj? sourceId with
       | some src =>
@@ -539,7 +551,7 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
       let (g, exileCause) := g.allocDelayedCause (some controller) sourceId
       let g := g.exileId id (cause := some exileCause)
       if let .chooseReplacement .. := g.pending then
-        g.chainPendingReplacement (.finishFrcPostStep 17 controller 0 0 sourceId)
+        g.chainPendingReplacement (.finishFrcPostStep 17 controller 0 sourceId)
       else
         let (g, revealCause) := g.allocDelayedCause (some controller) sourceId
         let (g, hits, rest) := g.revealUntil controller creatureOrWalker 1 (cause := some revealCause)
@@ -594,24 +606,20 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
     | _ => g
   | .urSphinx =>
     let n := nKnown
-    g.withBatch none fun g =>
-      g.livingPlayers.foldl (fun g q =>
-        Id.run do
-          let mut g := g
-          for _ in [0:n] do
-            let lib := (g.player q.id).library
-            if lib.isEmpty then
-              g := g.logMsg s!"{q.name} mills nothing (empty library)"
-            else
-              let top := lib.back!
-              let name := (g.object! top).name
-              let (g', newId) := g.move top (.graveyard q.id) none (verb := some .mill)
-              g := g'.logMsg s!"{q.name} mills {name}"
-              match g.findObject? newId with
-              | some card =>
-                g := g.createEffect (.freeCastFromGraveyardUntilEot card.id)
-              | none => pure ()
-          return g) g
+    let preIds := g.livingPlayers.foldl (fun acc q =>
+      let lib := (g.player q.id).library
+      let count := min n lib.size
+      acc ++ (lib.extract (lib.size - count) lib.size).reverse) #[]
+    let g := g.withBatch none fun g =>
+      g.livingPlayers.foldl (fun g q => g.mill q.id n) g
+    if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement
+        (.finishFrcPostStep 21 controller 0 none false none preIds)
+    else
+      preIds.foldl (fun acc id =>
+        match acc.followMilledPublic? id with
+        | some card => acc.createEffect (.freeCastFromGraveyardUntilEot card.id)
+        | none => acc) g
   | .venserSpell =>
     match targets[0]? with
     | some (Target.card id) =>
@@ -684,7 +692,7 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
           let land := g.isLand card
           let (g, _) := g.move id (.graveyard card.owner) none
           if let .chooseReplacement .. := g.pending then
-            g.chainPendingReplacement (.finishFrcPostStep 20 controller id.raw 0 (some src.id) land)
+            g.chainPendingReplacement (.finishFrcPostStep 20 controller id.raw (some src.id) land)
           else
             let g := g.changeObject src.id (.linkedExile (src.linkedExile.filter (· != id)))
             if land then g.makeFrc controller .treasure else g.makeFrc controller .rogue
@@ -845,9 +853,9 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
     | _, _ => g
 
 /-- Resume a deferred FRC post-step after a `Pending.chooseReplacement` pause. -/
-partial def runFrcPostStep (g : Game) (tag : Nat) (p : PlayerId) (n1 : Nat := 0) (_n2 : Nat := 0)
+partial def runFrcPostStep (g : Game) (tag : Nat) (p : PlayerId) (n1 : Nat := 0)
     (cardId : Option ObjectId := none) (shuffle : Bool := false)
-    (cause : Option EventCause := none) : Game :=
+    (cause : Option EventCause := none) (ids : Array ObjectId := #[]) : Game :=
   match tag with
   | 1 =>
     let hand := (g.player p).hand
@@ -892,22 +900,31 @@ partial def runFrcPostStep (g : Game) (tag : Nat) (p : PlayerId) (n1 : Nat := 0)
       g.createKindTokens p .spirit types.size
   | 8 => g.createKindTokens p .spirit n1
   | 9 =>
+    let count :=
+      if ids.isEmpty then n1
+      else ids.foldl (fun acc id => if g.wasPermanentExiled id n1 then acc + 1 else acc) 0
     let extra : CounterBag :=
-      if n1 > 0 then #[(.plusOnePlusOne, n1)] else #[]
+      if count > 0 then #[(.plusOnePlusOne, count)] else #[]
     g.withBatch cause fun g =>
       g.makeFrc p .incubator 1 0 (extraCounters := extra) (cause := cause)
   | 10 =>
+    let count :=
+      if ids.isEmpty then n1
+      else ids.foldl (fun acc id => if g.wasPermanentExiled id n1 then acc + 1 else acc) 0
     let (g, revealCause) := g.allocDelayedCause (some p) cardId
-    let (g, hits, rest) := g.revealUntil p (·.isCreature) n1 (cause := some revealCause)
+    let (g, hits, rest) := g.revealUntil p (·.isCreature) count (cause := some revealCause)
     let g := g.putHits p hits (cause := some revealCause)
     if let .chooseReplacement .. := g.pending then
       g.chainPendingReplacement (.finishFrcRestBottom p rest true (some revealCause))
     else
       g.restBottom p rest true (cause := some revealCause)
   | 11 =>
+    let count :=
+      if ids.isEmpty then n1
+      else ids.foldl (fun acc id => if g.wasPermanentExiled id n1 then acc + 1 else acc) 0
     let src := cardId.bind g.findObject?
     g.registerDelayedTrigger
-      { controller := p, source := src, kind := .endStepSynthetic n1
+      { controller := p, source := src, kind := .endStepSynthetic count
         cause := cause.getD (.gameRule .spellCast) }
       |>.logMsg "Those creatures return as revealed cards at the next end step"
   | 12 =>
@@ -969,6 +986,11 @@ partial def runFrcPostStep (g : Game) (tag : Nat) (p : PlayerId) (n1 : Nat := 0)
       | some src => g.changeObject src.id (.linkedExile (src.linkedExile.filter (· != exiledId)))
       | none => g
     if shuffle then g.makeFrc p .treasure else g.makeFrc p .rogue
+  | 21 =>
+    ids.foldl (fun acc id =>
+      match acc.followMilledPublic? id with
+      | some card => acc.createEffect (.freeCastFromGraveyardUntilEot card.id)
+      | none => acc) g
   | _ => g
 
 /-- Reveal creature cards exiled by Synthetic Destiny at the end step. -/

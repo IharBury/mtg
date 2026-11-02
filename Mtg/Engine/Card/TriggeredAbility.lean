@@ -1362,6 +1362,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     match what, who with
     | .hope, .source =>
       "remove a hope counter from this"
+    | .time, .source =>
+      "remove a time counter from it"
     | .all, .enchanted =>
       "remove all counters from enchanted creature"
     | _, _ =>

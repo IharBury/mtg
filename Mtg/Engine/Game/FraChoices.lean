@@ -232,6 +232,8 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .extrapolatePick .., _ => throw "Choose one of the revealed cards"
   | .mayPutMilledPermanent ids life, .objects #[id] =>
     if !ids.contains id then throw "Choose a permanent card milled this way"
+    let some o := g.findObject? id | throw "no such object"
+    if !isPublicZone o.zone then throw s!"{o.name} is no longer in a public zone"
     let g := g.returnToHand id p
     return (g.gainLife p life).finishFraChoice
   | .mayPutMilledPermanent _ life, .decline =>
@@ -450,7 +452,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let baseTriggers := (g.proposalCheckpoint.map (·.waitingTriggers.size)).getD 0
     let g ← g.reverseToProposalCheckpoint?
     let g := g.logMsg s!"{(g.player p).name} doesn't crew"
-    if !g.continuations.isEmpty || g.pendingReplacement.isSome || g.pendingCastExiledQueue.isSome then
+    if !g.continuations.isEmpty || g.pendingReplacement.isSome then
       return g.finishFraChoice
     else if g.pending == .none && g.continuations.isEmpty && g.waitingTriggers.size > baseTriggers then
       return g.receivePriority p
@@ -823,7 +825,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let baseTriggers := (g.proposalCheckpoint.map (·.waitingTriggers.size)).getD 0
     let g ← g.reverseToProposalCheckpoint?
     let g := g.logMsg s!"{(g.player p).name} doesn't boast"
-    if !g.continuations.isEmpty || g.pendingReplacement.isSome || g.pendingCastExiledQueue.isSome then
+    if !g.continuations.isEmpty || g.pendingReplacement.isSome then
       return g.finishFraChoice
     else if g.pending == .none && g.continuations.isEmpty && g.waitingTriggers.size > baseTriggers then
       return g.receivePriority p
@@ -1035,7 +1037,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .mayTakeMilled ids life, .objects #[id] =>
     if !ids.contains id then throw "That card wasn't milled"
     let some o := g.findObject? id | throw "no such object"
-    if o.zone != .graveyard p then throw s!"{o.name} is no longer in your graveyard"
+    if !isPublicZone o.zone then throw s!"{o.name} is no longer in a public zone"
     let g := g.returnToHand o.id p
     return (g.gainLife p life).finishFraChoice
   | .mayTakeMilled _ life, .decline =>

@@ -278,5 +278,77 @@ def interveningStillHolds (g : Game) (controller : PlayerId)
     | _ => true
   lifeOk && beginCombatFerocious
 
+/-- All CR 603.4 / 608.2a intervening-“if” conditions rechecked on trigger
+resolution before pushing `resolutionFinish`. Non-intervening trigger-time
+conditions (such as “while you control” attack ferocious and CR 702.186 `∞`
+`.step .harnessedFlicker`) are not rechecked here. -/
+def triggerInterveningHolds (g : Game) (controller : PlayerId)
+    (ab : TriggeredAbility) (sourceId : Option ObjectId)
+    (targets : Array Target := #[]) (lastKnownPower : Option Int := none)
+    (fraCauseId : Option ObjectId := none)
+    (fraCauseStatus : Option Status := none) : Bool :=
+  let src := sourceId.bind g.damageSourceById?
+  let cause := fraCauseId.bind g.damageSourceById?
+  let hulklingOk :=
+    match ab.shared with
+    | .watch .hulklingCompare =>
+      match sourceId with
+      | none => false
+      | some sid =>
+        let srcPT? : Option (Int × Int) :=
+          match g.findObject? sid with
+          | some s =>
+            if s.isOnBattlefield then some (g.power s, g.toughness s)
+            else
+              match g.lastKnownPowerOf? sid, g.lastKnownToughnessOf? sid with
+              | some hp, some ht => some (hp, ht)
+              | _, _ => none
+          | none =>
+            match g.lastKnownPowerOf? sid, g.lastKnownToughnessOf? sid with
+            | some hp, some ht => some (hp, ht)
+            | _, _ => none
+        let cid? :=
+          match targets[0]? with
+          | some (Target.permanent id) | some (Target.card id) => some id
+          | _ => fraCauseId
+        let causePT? : Option (Int × Int) :=
+          match cid? with
+          | none => none
+          | some cid =>
+            if cid == sid then none
+            else
+              match g.findObject? cid with
+              | some other =>
+                if other.isOnBattlefield then some (g.power other, g.toughness other)
+                else
+                  match g.lastKnownPowerOf? cid, g.lastKnownToughnessOf? cid with
+                  | some op, some ot => some (op, ot)
+                  | _, _ => some (g.power other, g.toughness other)
+              | none =>
+                match g.lastKnownPowerOf? cid, g.lastKnownToughnessOf? cid with
+                | some op, some ot => some (op, ot)
+                | _, _ => none
+        match causePT?, srcPT? with
+        | some (op, ot), some (hp, ht) => op > hp || ot > ht
+        | _, _ => false
+    | _ => true
+  let sharedInterveningOk :=
+    match ab.shared with
+    | .beginCombatIfDrawnTwoPump => g.loggedDraws controller ≥ 2
+    | .thisAttack .equippedDrain =>
+      g.attachedEquipmentAtResolution sourceId lastKnownPower > 0
+    | .thisAttack .ifArtifactEnteredDraw =>
+      g.loggedArtifactEntered controller
+    | .resource .drawIfAnotherHeroDamage =>
+      (g.permanentsOf controller).any (fun o => g.hasSubtype o .hero && some o.id != sourceId)
+    | .step .drawToTen => (g.player controller).hand.size < 10
+    | .protectionEverything => src.any (fun s => g.wasCast s.id)
+    | _ => true
+  g.interveningStillHolds controller ab &&
+    hulklingOk &&
+    sharedInterveningOk &&
+    g.fraInterveningHolds controller ab src cause &&
+    g.fraConditionHolds controller ab.opts.fraCondition src fraCauseStatus
+
 end Game
 end Mtg.Engine

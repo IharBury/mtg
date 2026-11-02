@@ -36,10 +36,9 @@ structure StackEntry where
   chosenMode : Option Nat := none
   /-- Further modes chosen with `chosenMode` (“choose one or both”). -/
   extraModes : Array Nat := #[]
-  /-- Optional “up to one” slots that were skipped while announcing
-  (CR 115.1c / 601.2c). The current instance index is
-  `targets.size + skippedOptionalSlots`. -/
-  skippedOptionalSlots : Nat := 0
+  /-- Optional “up to one” slot indices that were skipped while announcing
+  (CR 115.1c / 601.2c). -/
+  skippedOptionalSlots : Array Nat := #[]
   /-- Delayed trigger payload when this stack entry is a CR 603.7 delayed triggered ability. -/
   delayedTrigger : Option (DelayedTriggerKind × EventCause) := none
   /-- Trigger or activation parameter / last-known power carried by this stack entry (CR 113.7a / 608.2h). -/

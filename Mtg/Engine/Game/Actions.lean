@@ -149,7 +149,6 @@ def applyAction (g : Game) (p : PlayerId) : Action → Except String Game
   | .announceKicker kick => g.announceKicker p kick
   | .announceGift to => g.announceGift p to
   | .announceTeamwork pay => g.announceTeamwork p pay
-  | .chooseRingBearer id => g.announceRingBearer p id
   | .concede => return g.concede p
   | .supplyOrder ids => g.supplyOrder ids
   | .supplyIndex i => g.supplyIndex i
@@ -229,7 +228,6 @@ def actor (g : Game) : Option PlayerId :=
     | .chooseGift p => who p
     | .chooseTeamwork p => who p
     | .chooseTeamworkCreatures p _ => who p
-    | .chooseRingBearer p => who p
     | .maySacrificeAnotherBolg p _ => who p
     | .mayCastFromLooked p _ _ => who p
     | .mayPutLandFromHand p => who p

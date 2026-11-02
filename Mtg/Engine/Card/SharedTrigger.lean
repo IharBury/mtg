@@ -1105,6 +1105,8 @@ inductive FraCondition where
   | causeHadCounters
   /-- “if this has counters on it”. -/
   | sourceHasCounters
+  /-- “if this permanent's impending cost was paid and it has a time counter on it” (CR 702.176a). -/
+  | impendingCostPaidWithTimeCounter
 deriving Repr, Inhabited, BEq, DecidableEq
 
 /-- Optional intervening conditions and wording filters for `triggered`. -/

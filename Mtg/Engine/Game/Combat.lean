@@ -561,13 +561,15 @@ def announceCombatDamage (g : Game) (p : PlayerId)
   | _ => throw "Not time to assign combat damage (CR 510.1)"
 
 def clearCombat (g : Game) : Game :=
-  Id.run do
-    let mut g := g.change (.blockersQueue #[])
+  let g := g.change (.blockersQueue #[])
+  let inCombat := g.battlefield.filter (fun o =>
+    o.status.attacking || !o.status.blocking.isEmpty || o.status.blocked)
+  if inCombat.isEmpty then g
+  else
     let cause := EventCause.turnBased .removeFromCombatAtEndOfCombat
-    for o in g.battlefield do
-      if o.status.attacking || !o.status.blocking.isEmpty || o.status.blocked then
-        g := g.record (GameEvent.removedFromCombat g.turnNumber (g.snapshot o) (cause := cause))
-    return g
+    g.withBatch (some cause) fun g =>
+      inCombat.foldl (fun g o =>
+        g.record (GameEvent.removedFromCombat g.turnNumber (g.snapshot o) (cause := cause))) g
 
 end Game
 end Mtg.Engine

@@ -37,56 +37,6 @@ def resolvingDamageSource? (g : Game) : Option GameObject :=
   | some s => some s
   | none => none
 
-/-- Reconstruct an LKI `GameObject` from an `EventObject` snapshot so damage
-replacement, protection, and lifelink queries on a departed source use its
-last known characteristics and controller (CR 113.7a / 608.2h). -/
-def damageSourceObjectFromLki (eo : EventObject) : GameObject :=
-  let basePrinted := eo.toCardDef
-  let printed : CardDef :=
-    { basePrinted with
-      name := eo.name
-      manaCost :=
-        if basePrinted.manaValue == eo.manaValue then basePrinted.manaCost
-        else ManaCost.ofGeneric eo.manaValue
-      colorIndicator := some eo.colors
-      types := eo.types
-      subtypes := eo.subtypes.map CardSubtype.englishName
-      supertypes := eo.supertypes
-      power := eo.power
-      toughness := eo.toughness
-      keywords := { eo.keywords with changeling := eo.keywords.changeling || eo.changeling }
-      toxic := eo.toxic
-      staticAbilities := eo.staticAbilities
-      isToken := eo.token }
-  { id := eo.id.getD noSourceSentinelId
-    printed := printed
-    owner := eo.owner
-    controller := eo.controller
-    defaultController := eo.controller
-    zone := eo.zone
-    status := {
-      tapped := eo.tapped
-      attacking := eo.attacking
-      attackingTarget := eo.attackingTarget
-      phasedOut := eo.phasedOut
-      faceDown := eo.faceDown
-      transformed := eo.transformed
-      chosenOdd := eo.chosenOdd
-      chosenCreatureType := eo.chosenCreatureType
-      chosenColor := eo.chosenColor
-      chosenName := eo.chosenColor.elim eo.chosenName (fun _ => eo.chosenName)
-      chosenCardType := eo.chosenCardType
-      chosenAnchor := eo.chosenAnchor
-    }
-    attachedTo := eo.attachedTo
-    isCopy := eo.isCopy
-    isCommander := eo.isCommander }
-
-/-- Look up a damage source by `id`: live `GameObject` if still at `id`,
-otherwise its `lastKnownBefore?` LKI snapshot (CR 113.7a / 608.2h). -/
-def damageSourceById? (g : Game) (sid : ObjectId) : Option GameObject :=
-  (g.findObject? sid).orElse (fun _ => (g.lastKnownBefore? sid).map damageSourceObjectFromLki)
-
 /-- Snapshot a damage source by `id`: live `g.snapshot` if still at `id`,
 otherwise `g.lastKnownBefore? sid` (CR 113.7a / 608.2h). -/
 def damageSourceEventById? (g : Game) (sid : ObjectId) : Option EventObject :=
@@ -591,7 +541,7 @@ nothing (CR 119.9). -/
 def gainLife (g : Game) (p : PlayerId) (n : Nat)
     (cause : Option EventCause := none) : Game :=
   if let .chooseReplacement .. := g.pending then
-    g.chainPendingReplacement (.gainLife p n "" cause)
+    g.chainPendingReplacement (.gainLife p n cause)
   else
   let propCause := g.resolveOptionalCause cause (fallbackCtrl := some p)
   let proposed := GameEvent.life g.turnNumber p n true (cause := propCause)
@@ -645,7 +595,7 @@ def gainLife (g : Game) (p : PlayerId) (n : Nat)
         return (curN, curApplied, curCause, choice?)
       match choice? with
       | some (chooser, choices) =>
-        g.promptChooseReplacement chooser choices (.gainLife p n "" cause)
+        g.promptChooseReplacement chooser choices (.gainLife p n cause)
       | none =>
         let g := g.consumeReplacementOrder applied
         if n == 0 then g
@@ -663,7 +613,7 @@ def dealDamageToPermanent (g : Game) (o : GameObject) (n : Int)
   let srcEvent? := source.orElse (fun _ => g.resolvingDamageSourceEvent?)
   if let .chooseReplacement .. := g.pending then
     g.chainPendingReplacement
-      (.dealDamageToPermanent o.id n.toNat srcEvent? false false cause)
+      (.dealDamageToPermanent o.id n.toNat srcEvent? cause)
   else
   let srcObj? :=
     (g.damageSourceObjFromSnapshot? srcEvent?).orElse (fun _ => g.resolvingMovedDamageSource?)
@@ -673,7 +623,7 @@ def dealDamageToPermanent (g : Game) (o : GameObject) (n : Int)
   match rep.choice? with
   | some (chooser, choices) =>
     g.promptChooseReplacement chooser choices
-      (.dealDamageToPermanent o.id n.toNat srcEvent? false false cause)
+      (.dealDamageToPermanent o.id n.toNat srcEvent? cause)
   | none =>
     let g := g.consumeReplacementOrder rep.applied
     let dealtAmt := rep.amount
@@ -709,7 +659,7 @@ def dealDamageFrom (g : Game) (sourceName : String) (o : GameObject) (n : Int)
         |>.orElse (fun _ => resolvedSrc?.map g.snapshotDamageSource)
         |>.getD default
     g.chainPendingReplacement
-      (.dealDamageFrom sourceName srcEvent o.id n.toNat deathtouch false false cause)
+      (.dealDamageFrom sourceName srcEvent o.id n.toNat deathtouch cause)
   else
   match resolvedSrc? with
   | some src =>
@@ -721,7 +671,7 @@ def dealDamageFrom (g : Game) (sourceName : String) (o : GameObject) (n : Int)
     match rep.choice? with
     | some (chooser, choices) =>
       g.promptChooseReplacement chooser choices
-        (.dealDamageFrom sourceName srcSnap o.id n.toNat deathtouch false false cause)
+        (.dealDamageFrom sourceName srcSnap o.id n.toNat deathtouch cause)
     | none =>
       let g := g.consumeReplacementOrder rep.applied
       if rep.prevented && !rep.shieldRemoved && !g.preventsAllDamageTo o then
@@ -780,18 +730,16 @@ def dealDamageToPlayer (g : Game) (pid : PlayerId) (n : Int)
       |>.orElse (fun _ => g.resolvingDamageSourceEvent?)
   let pl := g.player pid
   if let .chooseReplacement .. := g.pending then
-    let msg := s!"{pl.name} is dealt {n} damage"
     g.chainPendingReplacement
-      (.dealDamageToPlayer pid n.toNat msg srcSnap false (!preventable) cause)
+      (.dealDamageToPlayer pid n.toNat srcSnap (!preventable) cause)
   else
   let rep :=
     g.replaceDamage n (src? := source) (srcEvent? := srcSnap) (recipientPlayer? := some pid)
       (unpreventable := !preventable) (cause := cause)
   match rep.choice? with
   | some (chooser, choices) =>
-    let msg := s!"{pl.name} is dealt {n} damage"
     g.promptChooseReplacement chooser choices
-      (.dealDamageToPlayer pid n.toNat msg srcSnap false (!preventable) cause)
+      (.dealDamageToPlayer pid n.toNat srcSnap (!preventable) cause)
   | none =>
   let g := g.consumeReplacementOrder rep.applied
   let recordPlayerPrevented (g : Game) : Game :=
@@ -993,7 +941,7 @@ def drawThenLoseLife (g : Game) (p : PlayerId) (cards life : Nat) : Game :=
     g.currentResolvingContext?.map fun (src, ctrl) =>
       .oneShotEffect none src (ctrl.orElse (fun _ => some p))
   if let .chooseReplacement .. := g.pending then
-    let g := g.chainPendingReplacement (.draw p cards false defaultCause)
+    let g := g.chainPendingReplacement (.draw p cards defaultCause)
     g.chainPendingReplacement (.loseLifeAfterDraw p life defaultCause)
   else
     g.withBatch defaultCause fun g =>

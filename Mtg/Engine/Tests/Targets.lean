@@ -151,7 +151,7 @@ def meagerMealDeclinedCreature : Game :=
 
 #guard meagerMealDeclinedCreature.pending == .chooseTargets ⟨0⟩
 #guard meagerMealDeclinedCreature.stack.back!.targets.isEmpty
-#guard meagerMealDeclinedCreature.stack.back!.skippedOptionalSlots == 1
+#guard meagerMealDeclinedCreature.stack.back!.skippedOptionalSlots == #[0]
 #guard meagerMealDeclinedCreature.currentTargetSlot
   (meagerMealDeclinedCreature.object! meagerMealDeclinedCreature.stack.back!.objectId) == 1
 #guard meagerMealDeclinedCreature.log.any (fun s =>

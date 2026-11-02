@@ -3643,21 +3643,21 @@ def callForthCountsOtherSpellsOk : Bool :=
   let g := addPermanent g hillGiant ⟨1⟩ ⟨1⟩
   let (g, spell) := g.allocObject callForthTheTempest ⟨0⟩ .stack (some ⟨0⟩)
   let g := #[2, 8, 1].foldl (fun g mv =>
-    g.record (GameEvent.cast g.turnNumber ⟨0⟩ {} (.hand ⟨0⟩) mv)) g
+    g.record (GameEvent.spellCast g.turnNumber ⟨0⟩ { manaValue := mv } (.hand ⟨0⟩))) g
   let g := g.change (.pushContinuationFrame { resolvingSpell := some spell.id })
   let dealt := g.applyEffect ⟨0⟩ Effect.damageOppCreaturesEqualOtherSpellsMv #[]
   (namedPermanent dealt "Hill Giant").status.damage == 3 &&
     (namedPermanent dealt "Grizzly Bears").status.damage == 0 &&
     (let (g0, spell0) :=
         (addPermanent afterDraw hillGiant ⟨1⟩ ⟨1⟩).allocObject callForthTheTempest ⟨0⟩ .stack (some ⟨0⟩)
-     let g0 := g0.record (GameEvent.cast g0.turnNumber ⟨0⟩ {} (.hand ⟨0⟩) 8)
+     let g0 := g0.record (GameEvent.spellCast g0.turnNumber ⟨0⟩ { manaValue := 8 } (.hand ⟨0⟩))
      let g0 := g0.change (.pushContinuationFrame { resolvingSpell := some spell0.id })
      let dealt0 := g0.applyEffect ⟨0⟩ Effect.damageOppCreaturesEqualOtherSpellsMv #[]
      (namedPermanent dealt0 "Hill Giant").status.damage == 0) &&
     (let gCopy := addPermanent afterDraw hillGiant ⟨1⟩ ⟨1⟩
      let (gCopy, spellC) := gCopy.allocObject callForthTheTempest ⟨0⟩ (.outside ⟨0⟩) none
      let (gCopy, spellCId) := gCopy.move spellC.id .stack (some ⟨0⟩) (isCopy := some true)
-     let gCopy := gCopy.record (GameEvent.cast gCopy.turnNumber ⟨0⟩ {} (.hand ⟨0⟩) 2)
+     let gCopy := gCopy.record (GameEvent.spellCast gCopy.turnNumber ⟨0⟩ { manaValue := 2 } (.hand ⟨0⟩))
      let gCopy := gCopy.change (.pushContinuationFrame { resolvingSpell := some spellCId })
      let dealtC := gCopy.applyEffect ⟨0⟩ Effect.damageOppCreaturesEqualOtherSpellsMv #[]
      (namedPermanent dealtC "Hill Giant").status.damage == 2)

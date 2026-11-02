@@ -37,7 +37,7 @@ entered this turn, even if it already left. -/
 def ironManArtifactEnteredOk : Bool :=
   let g := addPermanent afterDraw ironManMasterOfMachines ⟨0⟩ ⟨0⟩
   let iron := namedPermanent g "Iron Man, Master of Machines"
-  let gNo := g.putAttackTriggersOnStack ⟨0⟩ #[iron.id]
+  let gNo := g.record (GameEvent.attackersDeclared g.turnNumber ⟨0⟩ #[(g.snapshot iron, .player ⟨1⟩)])
   !(gNo.waitingTriggers.any (fun (t : WaitingTrigger) =>
       t.source.name == "Iron Man, Master of Machines")) &&
     (let (g, stoneObj) := g.allocObject theMindStone ⟨0⟩ (.outside ⟨0⟩) none
@@ -47,7 +47,7 @@ def ironManArtifactEnteredOk : Bool :=
      let (g, _) := g.move stone.id (.graveyard ⟨0⟩) none
      g.loggedArtifactEntered ⟨0⟩ &&
        (let iron := namedPermanent g "Iron Man, Master of Machines"
-        let g := g.putAttackTriggersOnStack ⟨0⟩ #[iron.id]
+        let g := g.record (GameEvent.attackersDeclared g.turnNumber ⟨0⟩ #[(g.snapshot iron, .player ⟨1⟩)])
         g.waitingTriggers.any (fun (t : WaitingTrigger) =>
           t.source.name == "Iron Man, Master of Machines"))) &&
     (mshRuling 594).comment.contains "artifact entered" &&
@@ -215,9 +215,8 @@ def castAsResolvesOk : Bool :=
   let giant := cosmicCubeLookedNamed g "Hill Giant"
   let land := cosmicCubeLookedNamed g "Mountain"
   let (gEx, card) := afterDraw.allocObject nightsWhisper ⟨1⟩ .exile none
-  let gEx := gEx.createEffect (.playPermission card.id {
-    player := ⟨0⟩, withoutManaCost := true } 1)
-  let gEx := gEx.castExiledAsResolves ⟨0⟩ 1
+  let gEx := gEx.beginFraChoice ⟨0⟩ (.mayCastUpToFromExile #[card.id] 1) "cast exiled"
+  let gEx := mustApply gEx ⟨0⟩ (.choosePermanents #[card.id])
   match g.pending with
   | .mayCastFromLooked p ids maxMv =>
     p == ⟨0⟩ && maxMv == 2 && ids.size == 6 &&

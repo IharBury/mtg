@@ -600,12 +600,14 @@ still triggers when Shock is cast. -/
 spell with split second is on the stack. -/
 #guard
   let g := addToHand (emptyHand samutShock ⟨0⟩) lightningBolt ⟨0⟩
-  let g := g.castInstantSorceryFromHandMvAtMost ⟨0⟩ 3
+  let bolt := handCardNamed g ⟨0⟩ "Lightning Bolt"
+  let g := g.castAsPartOfResolution ⟨0⟩ bolt.id
   (g.player ⟨0⟩).hand.any (fun id => (g.object! id).name == "Lightning Bolt") &&
     g.stack.size == 1
 #guard
   let g := addToHand (emptyHand afterDraw ⟨0⟩) lightningBolt ⟨0⟩
-  let g := g.castInstantSorceryFromHandMvAtMost ⟨0⟩ 3
+  let bolt := handCardNamed g ⟨0⟩ "Lightning Bolt"
+  let g := g.castAsPartOfResolution ⟨0⟩ bolt.id
   g.stack.size == 1 && !(g.player ⟨0⟩).hand.any (fun id => (g.object! id).name == "Lightning Bolt")
 #guard (fraRuling 839).comment.contains "that spell can't be cast if a spell with split second is on the stack"
 

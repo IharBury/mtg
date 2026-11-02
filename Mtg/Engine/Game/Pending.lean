@@ -619,8 +619,6 @@ inductive Pending where
   | chooseTeamwork (player : PlayerId)
   /-- Choose creatures to tap for a teamwork cost (CR 702.194). -/
   | chooseTeamworkCreatures (player : PlayerId) (need : Nat)
-  /-- Choose a creature you control as your Ring-bearer. -/
-  | chooseRingBearer (player : PlayerId)
   /-- You may sacrifice another creature to Bolg's enters instruction. -/
   | maySacrificeAnotherBolg (player : PlayerId) (bolgId : ObjectId)
   /-- You may cast one of these looked-at library cards without paying its

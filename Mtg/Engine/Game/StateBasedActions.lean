@@ -20,11 +20,17 @@ def legendaryPermanentsOf (g : Game) (p : PlayerId) : Array GameObject :=
 
 /-- First legend-rule group that needs a choice (CR 704.5j / 201.2a): two or
 more legendary permanents with the same name controlled by the same player,
-taking players in APNAP order. -/
-def firstLegendRuleChoice? (g : Game) : Option (PlayerId × String × Array ObjectId) :=
+taking players in APNAP order. When `onlyIds` is supplied, restricts candidate
+permanents to those present at the start of the SBA pass (CR 704.3). -/
+def firstLegendRuleChoice? (g : Game)
+    (onlyIds : Option (Array ObjectId) := none) :
+    Option (PlayerId × String × Array ObjectId) :=
   Id.run do
     for p in g.apnapPlayers.filter (fun p => !g.legendRuleOffThisTurn p) do
-      let legs := g.legendaryPermanentsOf p
+      let legs := (g.legendaryPermanentsOf p).filter (fun o =>
+        match onlyIds with
+        | some ids => ids.contains o.id
+        | none => true)
       let mut seen : Array String := #[]
       for o in legs do
         let nm := g.name o
@@ -115,12 +121,17 @@ def finishSbaSweep (g : Game) (moves : Array SbaGraveyardMove)
               #[] sagaMoves tokensOutsideBf copiesOutside illegalAuras
               illegalEquips illegalCreatureAtts), (true, true))
       | none => pure ()
-    -- Legend rule (CR 704.5j): pause so the controller chooses one to keep.
-    match g.firstLegendRuleChoice? with
+    -- Legend rule (CR 704.5j): pause so the controller chooses one to keep,
+    -- chaining the rest of this SBA pass so `keepLegend` finishes the pass in
+    -- the same batch before Pass 2 runs (CR 704.3 / 603.2c).
+    match g.firstLegendRuleChoice? (some (preBf.map (·.id))) with
     | some (p, name, ids) =>
       g := g.change (.pending (.chooseLegend p name ids))
       g := g.logMsg
         s!"{(g.player p).name} chooses which {name} to keep (legend rule, CR 704.5j)"
+      g := g.chainPendingReplacement (.finishSbaSweep #[] preBf 1
+        #[] sagaMoves tokensOutsideBf copiesOutside illegalAuras
+        illegalEquips illegalCreatureAtts)
       return (g, (true, true))
     | none => pure ()
     -- Tokens in zones other than the battlefield at start of pass cease to exist (CR 704.5d).
@@ -271,21 +282,11 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
         else
           g := g.change (.pending .none)
       | _ => pure ()
-      -- CR 704.5q: +1/+1 and -1/-1 counters on one permanent are removed in
-      -- pairs.
-      for o in g.battlefield do
-        let k := Nat.min o.status.plusOnePlusOne o.status.minusOneMinusOne
-        if k > 0 then
-          let cause := EventCause.stateBased .counterAnnihilation
-          g := g.record (GameEvent.counters g.turnNumber none (g.snapshot o) .plusOnePlusOne k true
-            (cause := cause))
-          g := g.record (GameEvent.counters g.turnNumber none (g.snapshot (g.object! o.id)) .minusOneMinusOne k true
-            (cause := cause))
-          g := g.logMsg s!"{k} +1/+1 and -1/-1 counter pair(s) are removed from {o.name}"
-          changed := true
       -- Capture all applicable CR 704.5 state-based actions simultaneously
-      -- against the start-of-pass state so Pass 1 does not sweep newly dead
-      -- tokens or newly unattached Auras/Equipment until Pass 2 (CR 704.3 / 704.8).
+      -- against the start-of-pass state BEFORE applying CR 704.5q counter
+      -- annihilation so simultaneous 0-toughness death LKI retains its
+      -- pre-annihilation counters and Pass 1 does not sweep newly dead tokens
+      -- or newly unattached Auras/Equipment until Pass 2 (CR 704.3 / 704.8).
       let preBf := g.battlefield
       let victims : Array SbaGraveyardMove :=
         preBf.filterMap (fun o =>
@@ -377,16 +378,30 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
             if g.isCreature o || g.isBattle o || (!g.isAura o && !g.isEquipment o) then
               some (o.id, hostId)
             else none)
+      -- CR 704.5q: +1/+1 and -1/-1 counters on one permanent are removed in
+      -- pairs.
+      for o in preBf do
+        let k := Nat.min o.status.plusOnePlusOne o.status.minusOneMinusOne
+        if k > 0 then
+          let cause := EventCause.stateBased .counterAnnihilation
+          g := g.record (GameEvent.counters g.turnNumber none (g.snapshot o) .plusOnePlusOne k true
+            (cause := cause))
+          g := g.record (GameEvent.counters g.turnNumber none (g.snapshot (g.object! o.id)) .minusOneMinusOne k true
+            (cause := cause))
+          g := g.logMsg s!"{k} +1/+1 and -1/-1 counter pair(s) are removed from {o.name}"
+          changed := true
       return g.finishSbaSweep victims preBf 0 pwMoves sagaMoves tokensOutsideBf
         copiesOutside illegalAuras illegalEquips illegalCreatureAtts
         (changedIn := changed)
-    if let .chooseReplacement .. := g.pending then
+    match g.pending with
+    | .chooseReplacement .. | .chooseLegend .. =>
       (g.chainPendingReplacement .checkSBA, true)
-    else if paused then (g, changed)
-    else if changed then
-      let (g', _) := checkSBACounted g
-      (g', true)
-    else (g, false)
+    | _ =>
+      if paused then (g, changed)
+      else if changed then
+        let (g', _) := checkSBACounted g
+        (g', true)
+      else (g, false)
 
 /-- Repeat `checkSBACounted` and `leavePlayersWhoLost` until neither performs an
 action or the game ends / pauses on a pending choice (CR 704.3 / 800.4a). -/

@@ -180,9 +180,6 @@ def createOneToken (g : Game) (controller : PlayerId) (printed : CardDef)
           g.logMsg s!"{g.nameWithToken (g.object! newId)} enters with {etb.weaverBonus} additional +1/+1 counter(s)"
         else g
       let g := g.ensurePreparedCopy (g.object! newId)
-      -- Storied is not a trigger; an artifact token can be the third permanent.
-      let g := g.refreshEnduringStory
-      let g := g.refreshCitysBlessing
       let g :=
         if recordRecent && !g.continuations.isEmpty then
           g.change (.recentTokenIds (g.recentTokenIds.push newId))

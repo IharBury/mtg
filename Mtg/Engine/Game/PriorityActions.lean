@@ -53,17 +53,8 @@ def finishProposedSpell (g : Game) : Except String Game := do
             |>.logMsg s!"{o.name} can't be countered (Delighted Halfling)"
         else paid
       | _, _ => paid
-  if prop.kind == .turnFaceUp then
-    let paused := match g.pending with | .chooseReplacement .. => true | _ => false
-    let clearPending : Array EngineChange :=
-      if paused then #[] else #[.pending .none]
-    let g := g.changes (clearPending ++ #[.proposedSpell none, .clearProposalCheckpoint, .consecutivePasses 0])
-    let g := g.record
-      (GameEvent.turnedFaceUp g.turnNumber (g.snapshot (g.object! prop.spellId))
-        (cause := .specialAction .turnFaceUp prop.caster))
-    let g := g.logMsg s!"{(g.player prop.caster).name} turns {(g.object! prop.spellId).name} face up"
-    return if paused then g.chainPendingReplacement (.receivePriority prop.caster)
-      else g.receivePriority prop.caster
+  if prop.kind == .turnFaceUp && !prop.needsSacrificeOther && !prop.needsDiscardCard then
+    return g.completeTurnFaceUp prop.caster prop.spellId
   if prop.kind == .activatedAbility then
     return (← g.beginActivationPayment prop)
   let outerCont? := g.pendingReplacement
@@ -315,14 +306,18 @@ def concede (g : Game) (p : PlayerId) : Game :=
         match g.pending with
         | .assignCombatDamage _ fa => some fa
         | _ => none
-      let g := g.playerLeavesGame p |>.checkSBA
+      let midResolutionOrBatch :=
+        g.currentBatch.isSome || g.pendingReplacement.isSome ||
+          !g.continuations.isEmpty || g.triggerSequenceRest.isSome
+      let g := g.playerLeavesGame p
+      let g := if midResolutionOrBatch then g else g.checkSBA
       if g.unlessPaysDue then
         g.flushUnlessPays
       else if g.over || g.pending != .none then g
       else if let some fa := wasAssigningCombatDamage then
         if fa then g.beginCombatDamageAssignment else g.continueBlockerCombatAssignment
       else if !g.continuations.isEmpty || g.pendingReplacement.isSome ||
-          g.pendingCastExiledQueue.isSome || g.triggerSequenceRest.isSome then
+          g.triggerSequenceRest.isSome then
         g.finishFraChoice
       else if g.playersReceivePriority && g.consecutivePasses ≥ g.livingPlayers.size then
         if !g.stack.isEmpty then

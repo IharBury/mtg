@@ -179,7 +179,6 @@ namespace Game
 @[inline] def fraAfterLook (g : Game) := g.topFrame.fraAfterLook
 @[inline] def pendingFreeCopies (g : Game) := g.topFrame.pendingFreeCopies
 @[inline] def pendingMayCastFromExile (g : Game) := g.topFrame.pendingMayCastFromExile
-@[inline] def pendingCastExiledQueue (g : Game) := g.topFrame.pendingCastExiledQueue
 @[inline] def postCastCleanup (g : Game) := g.topFrame.postCastCleanup
 @[inline] def mayPayAlsoPlusOneOn (g : Game) := g.topFrame.mayPayAlsoPlusOneOn
 @[inline] def humansTappedThisWay (g : Game) := g.topFrame.humansTappedThisWay
@@ -944,6 +943,24 @@ def followMovedToZone? (g : Game) (id : ObjectId) (expectedZone : Zone → Bool)
       else (g.objects.find? (·.id == afterId)).filter (·.zone == toZone)
     | none => none
 
+/-- Whether `z` is a public zone (CR 400.2). -/
+@[inline] def isPublicZone (z : Zone) : Bool :=
+  z.isPublic
+
+/-- CR 701.17c: find the object resulting from milling `preId` (`ZoneVerb.mill`)
+if it moved from a library into a public zone and is still live in that zone. -/
+def followMilledPublic? (g : Game) (preId : ObjectId) : Option GameObject :=
+  match g.events.reverse.findSome? (fun e =>
+    match e.change with
+    | .rules (.zone (.moved before after (.library _) toZone .mill _ _ _)) =>
+      if before.id == some preId && isPublicZone toZone then
+        after.id.map (·, toZone)
+      else none
+    | _ => none) with
+  | some (afterId, toZone) =>
+    (g.objects.find? (·.id == afterId)).filter (·.zone == toZone)
+  | none => none
+
 /-- Apply a `StackObjectEvent` to `g` (CR 608 / 707.10). -/
 def applyStackObjectEvent (g : Game) (e : StackObjectEvent) : Game :=
   match e with
@@ -1007,16 +1024,20 @@ def applyStackObjectEvent (g : Game) (e : StackObjectEvent) : Game :=
             | .rules (.cast (.announced oid ms _ _)) =>
               if oid == original && !ms.isEmpty then ms else acc
             | _ => acc) #[]
-        let (tgts, div) :=
+        let (tgts, div, skipped) :=
           g.events.foldl (fun acc ev =>
             match ev.change with
-            | .rules (.cast (.targeted oid ts dv)) =>
-              if oid == original then (ts, if dv.isEmpty then acc.2 else dv) else acc
-            | _ => acc) (#[], #[])
+            | .rules (.cast (.targeted oid ts dv sk)) =>
+              if oid == original then
+                let ( _, prevDiv, prevSk ) := acc
+                (ts, if dv.isEmpty then prevDiv else dv, if sk.isEmpty then prevSk else sk)
+              else acc
+            | _ => acc) (#[], #[], #[])
         { objectId := newId
           controller := controller
           targets := tgts
           dividedDamage := div
+          skippedOptionalSlots := skipped
           chosenMode := modes[0]?
           extraModes := if modes.size > 1 then modes.extract 1 modes.size else #[]
           targetsAnnounced := true }
@@ -1846,7 +1867,9 @@ def applyEngineChange (g : Game) (c : EngineChange) : Game :=
       let e := g.stack[i]!
       let e' :=
         match sc with
-        | .skipOptionalSlot => { e with skippedOptionalSlots := e.skippedOptionalSlots + 1 }
+        | .skipOptionalSlot slot =>
+          if e.skippedOptionalSlots.contains slot then e
+          else { e with skippedOptionalSlots := e.skippedOptionalSlots.push slot }
         | .targetsAnnounced done => { e with targetsAnnounced := done }
         | .lastKnownPT pw tg =>
           { e with
@@ -1905,7 +1928,6 @@ def applyEngineChange (g : Game) (c : EngineChange) : Game :=
       | .fraAfterLook v => { f with fraAfterLook := v }
       | .pendingFreeCopies v => { f with pendingFreeCopies := v }
       | .pendingMayCastFromExile v => { f with pendingMayCastFromExile := v }
-      | .pendingCastExiledQueue v => { f with pendingCastExiledQueue := v }
       | .postCastCleanup v => { f with postCastCleanup := v }
       | .mayPayAlsoPlusOneOn v => { f with mayPayAlsoPlusOneOn := v }
       | .humansTappedThisWay v => { f with humansTappedThisWay := v }
@@ -3882,12 +3904,19 @@ private def evalLayer6Aux (g : Game) (needStaticsTs kwOnly : Bool) : Nat → Gam
             if oIsCreature && ctrl?.isSome && bc.grantCreaturesTapAddAnyColor then anyColorMana else #[]
           let ownLantern : Bool :=
             oIsLand && ctrl?.isSome && bc.grantLandsTapAnyColor
+          let impTrig : Array TriggeredAbility :=
+            if bc.impending.isSome then
+              #[TriggeredAbility.fra .yourEndStep
+                  "At the beginning of your end step, if this permanent's impending cost was paid and it has a time counter on it, remove a time counter from it."
+                  (.removeCounters .time .source)
+                  (cond := .impendingCostPaidWithTimeCounter)]
+            else #[]
           { retainsBase := true
             kw := initKw
             staticsWithTs := if mappedOwnStatics.isEmpty then #[] else mappedOwnStatics.map (·, initBaseTs)
             triggers :=
-              if oTcs.isEmpty then bc.triggeredAbilities
-              else bc.triggeredAbilities.map (TextChange.applyTriggeredAbility oTcs)
+              (if oTcs.isEmpty then bc.triggeredAbilities
+               else bc.triggeredAbilities.map (TextChange.applyTriggeredAbility oTcs)) ++ impTrig
             activated :=
               ownAct ++
                 copiedFromStatics mappedOwnStatics ++
@@ -4732,11 +4761,20 @@ def triggeredAbilities (g : Game) (o : GameObject) : Array TriggeredAbility :=
     if o.status.faceDown then #[]
     else
       let bc := g.baseCard o
-      if bc.triggeredAbilities.isEmpty then #[]
+      let impTrig : Array TriggeredAbility :=
+        if bc.impending.isSome then
+          #[TriggeredAbility.fra .yourEndStep
+              "At the beginning of your end step, if this permanent's impending cost was paid and it has a time counter on it, remove a time counter from it."
+              (.removeCounters .time .source)
+              (cond := .impendingCostPaidWithTimeCounter)]
+        else #[]
+      if bc.triggeredAbilities.isEmpty then impTrig
       else
         let tcs := g.evalLayer3 o
-        if tcs.isEmpty then bc.triggeredAbilities
-        else bc.triggeredAbilities.map (TextChange.applyTriggeredAbility tcs)
+        let base :=
+          if tcs.isEmpty then bc.triggeredAbilities
+          else bc.triggeredAbilities.map (TextChange.applyTriggeredAbility tcs)
+        base ++ impTrig
   else
     (g.evalLayer6Fast o).triggers
 
@@ -4838,13 +4876,15 @@ def applyCastEvent (g : Game) (e : CastEvent) : Game :=
             chosenMode := some modes[0]!
             extraModes := modes.extract 1 modes.size } }
       | none => g
-  | .targeted obj targets division =>
+  | .targeted obj targets division skipped =>
     match g.stack.findIdx? (·.objectId == obj) with
     | some i =>
       let se := g.stack[i]!
       { g with stack := g.stack.set! i { se with
           targets := targets
           dividedDamage := division
+          skippedOptionalSlots :=
+            if skipped.isEmpty then se.skippedOptionalSlots else skipped
           targetsAnnounced := true } }
     | none => g
   | .spellCast .. => g
@@ -5004,16 +5044,9 @@ def hasActiveColorlessGrant (g : Game) (o : GameObject) : Bool :=
 def controlsStoried (g : Game) (p : PlayerId) : Bool :=
   (g.permanentsOf p).any (fun o => g.hasKeyword o (·.storied))
 
-/-- Whether `p` controls a permanent with ascend, or a resolving spell with
-ascend on the stack. -/
+/-- Whether `p` controls a permanent with ascend in Layer 6 (CR 702.131b). -/
 def controlsAscend (g : Game) (p : PlayerId) : Bool :=
-  (g.permanentsOf p).any (fun o => g.hasKeyword o (·.ascend)) ||
-    g.stack.any (fun e =>
-      match g.findObject? e.objectId with
-      | some o =>
-        g.controllerOf o == some p && (g.currentKeywords o).ascend &&
-          o.triggeredAbility.isNone && o.abilityEffect.isNone
-      | none => false)
+  (g.permanentsOf p).any (fun o => g.hasKeyword o (·.ascend))
 
 /-- Apply `f` to each living opponent of `controller`. -/
 def forEachOpponent (g : Game) (controller : PlayerId) (f : Game → PlayerId → Game) :
@@ -5384,8 +5417,10 @@ def lastKnownCounterStatus? (g : Game) (id : ObjectId) : Option Status :=
 /-- Player putting counters: the resolving spell or ability's controller,
 or `fallback` when none is resolving. -/
 def counterPutter (g : Game) (fallback : Option PlayerId) : Option PlayerId :=
-  ((g.resolvingSpell.orElse (fun _ => g.resolvingAbility)).bind g.findObject?).bind
-    (g.controllerOf ·) |>.orElse (fun _ => fallback)
+  (((g.resolvingSpell.orElse (fun _ => g.resolvingAbility)).bind g.findObject?).bind
+    (g.controllerOf ·))
+    |>.orElse (fun _ => g.currentResolvingContext?.bind Prod.snd)
+    |>.orElse (fun _ => fallback)
 
 /-- Living players in APNAP order (CR 101.4), starting from `g.activePlayer`. -/
 def apnapPlayers (g : Game) : Array PlayerId :=
@@ -5514,12 +5549,15 @@ def selectNextReplacementStep (g : Game) (candidates : Array ReplacementCandidat
   else
     let minRank := unapplied.foldl (fun m (c : ReplacementCandidate) => min m c.tier.rank) 100
     let inTier := unapplied.filter (fun (c : ReplacementCandidate) => c.tier.rank == minRank)
+    let effectivePlayer (c : ReplacementCandidate) : PlayerId :=
+      if g.stillInGame c.affectedPlayer then c.affectedPlayer
+      else g.nextLiving c.affectedPlayer
     let apnap := g.apnapPlayers
-    let chooser? := apnap.find? (fun p => inTier.any (fun (c : ReplacementCandidate) => c.affectedPlayer == p))
-    let chooser := chooser?.getD (inTier[0]!.affectedPlayer)
+    let chooser? := apnap.find? (fun p => inTier.any (fun (c : ReplacementCandidate) => effectivePlayer c == p))
+    let chooser := chooser?.getD (effectivePlayer inTier[0]!)
     let pool :=
       match chooser? with
-      | some p => inTier.filter (fun (c : ReplacementCandidate) => c.affectedPlayer == p)
+      | some p => inTier.filter (fun (c : ReplacementCandidate) => effectivePlayer c == p)
       | none => inTier
     match order.findSome? (fun prefId => pool.find? (fun (c : ReplacementCandidate) => c.id == prefId)) with
     | some c => .chosen c (order.filter (· != c.id))
@@ -7084,10 +7122,116 @@ def auraObjCanEnchant (g : Game) (host auraObj : GameObject) : Bool :=
       g.isArtifact host || (g.isEnchantment host && !g.isAura host)
     else g.isCreature host
 
+/-- Whether `sid` last held `.prepared` designation before leaving the battlefield. -/
+def wasPreparedAtDeparture (g : Game) (sid : ObjectId) : Bool :=
+  g.events.foldl (fun acc ev =>
+    match ev.change with
+    | .rules (.permanent (.designation eo .prepared gained)) =>
+      if eo.id == some sid then gained else acc
+    | _ => acc) false
+
+/-- Reconstruct an LKI `GameObject` from an `EventObject` snapshot so damage
+replacement, protection, targeting, and lifelink queries on a departed source
+use its last known characteristics and controller (CR 113.7a / 608.2h). -/
+def damageSourceObjectFromLki (eo : EventObject) (prepared : Bool := false) : GameObject :=
+  let basePrinted := eo.toCardDef
+  let printed : CardDef :=
+    { basePrinted with
+      name := eo.name
+      manaCost :=
+        if basePrinted.manaValue == eo.manaValue then basePrinted.manaCost
+        else ManaCost.ofGeneric eo.manaValue
+      colorIndicator := some eo.colors
+      types := eo.types
+      subtypes := eo.subtypes.map CardSubtype.englishName
+      supertypes := eo.supertypes
+      power := eo.power
+      toughness := eo.toughness
+      keywords := { eo.keywords with changeling := eo.keywords.changeling || eo.changeling }
+      toxic := eo.toxic
+      staticAbilities := eo.staticAbilities
+      isToken := eo.token }
+  { id := eo.id.getD noSourceSentinelId
+    printed := printed
+    owner := eo.owner
+    controller := eo.controller
+    defaultController := eo.controller
+    zone := eo.zone
+    status := {
+      tapped := eo.tapped
+      attacking := eo.attacking
+      attackingTarget := eo.attackingTarget
+      blocking := if eo.blocking then #[noSourceSentinelId] else #[]
+      phasedOut := eo.phasedOut
+      faceDown := eo.faceDown
+      transformed := eo.transformed
+      counters := eo.counters
+      prepared := prepared
+      chosenOdd := eo.chosenOdd
+      chosenCreatureType := eo.chosenCreatureType
+      chosenColor := eo.chosenColor
+      chosenName := eo.chosenName
+      chosenCardType := eo.chosenCardType
+      chosenAnchor := eo.chosenAnchor
+    }
+    attachedTo := eo.attachedTo
+    isCopy := eo.isCopy
+    isCommander := eo.isCommander }
+
+/-- Look up a damage or ability source by `id`: live `GameObject` if still at
+`id`, otherwise its `lastKnownBefore?` LKI snapshot (CR 113.7a / 608.2h). -/
+def damageSourceById? (g : Game) (sid : ObjectId) : Option GameObject :=
+  (g.findObject? sid).orElse (fun _ =>
+    (g.lastKnownBefore? sid).map (fun eo =>
+      damageSourceObjectFromLki eo (prepared := g.wasPreparedAtDeparture sid)))
+
+/-- Resolve the spell or ability source `GameObject` (live or LKI) for CR 702.16b
+protection checks during target announcement and resolution. -/
+def targetingSourceObject? (g : Game) (sourceId : Option ObjectId := none) : Option GameObject :=
+  match sourceId with
+  | some sid =>
+    match g.findObject? sid with
+    | some o =>
+      if o.zone == .stack && (o.abilityEffect.isSome || o.triggeredAbility.isSome) then
+        o.sourceId.bind g.damageSourceById?
+      else some o
+    | none => g.damageSourceById? sid
+  | none =>
+    match g.proposedSpell with
+    | some prop =>
+      if prop.kind == .spell then g.findObject? prop.spellId
+      else prop.sourceId.bind g.damageSourceById?
+    | none =>
+      match g.resolvingSpell with
+      | some spId => g.damageSourceById? spId
+      | none =>
+        match g.resolvingAbility with
+        | some abId =>
+          match g.findObject? abId with
+          | some abObj => abObj.sourceId.bind g.damageSourceById?
+          | none => g.currentResolvingContext?.bind (fun (src?, _) => src?.bind g.damageSourceById?)
+        | none =>
+          match g.currentResolvingContext? with
+          | some (some sid, _) => g.damageSourceById? sid
+          | _ =>
+            match g.pending with
+            | .chooseTargets _ =>
+              g.stack.findSome? fun e =>
+                if e.targetsAnnounced then none
+                else
+                  match g.findObject? e.objectId with
+                  | some o =>
+                    if o.triggeredAbility.isSome || o.abilityEffect.isSome then
+                      o.sourceId.bind g.damageSourceById?
+                    else none
+                  | none => none
+            | _ => none
+
 /-- Hexproof stops an opponent from targeting that player (CR 702.11c). -/
-def playerCanBeTargetedBy (g : Game) (caster target : PlayerId) : Bool :=
+def playerCanBeTargetedBy (g : Game) (caster target : PlayerId)
+    (sourceId : Option ObjectId := none) : Bool :=
   let typeBlock :=
-    match ((g.proposedSpell.map (·.spellId)).orElse (fun _ => g.resolvingSpell)).bind g.findObject? with
+    match g.targetingSourceObject? sourceId with
     | none => false
     | some src =>
       (g.permanentsOf target).any (fun em =>
@@ -7321,7 +7465,12 @@ def fraConditionHolds (g : Game) (controller : PlayerId) (cond : FraCondition)
   | .sourceWasCast => source.any (fun s => g.wasCast s.id)
   | .causeHadCounters => causeStatus.any (·.hasCounters)
   | .sourceHasCounters =>
-    source.any (fun o => ((g.findObject? o.id).getD o).status.hasCounters)
+    source.any (fun o =>
+      (g.findObject? o.id).any (fun cur => cur.isOnBattlefield && cur.status.hasCounters))
+  | .impendingCostPaidWithTimeCounter =>
+    source.any (fun o =>
+      (g.findObject? o.id).any (fun cur =>
+        cur.isOnBattlefield && GameEvent.castForImpending g.events o.id && cur.status.time > 0))
 
 /-- Reality Fracture intervening “if” clauses, checked when the ability would
 trigger and again as it resolves (rulings 743 / 889). -/
@@ -8690,7 +8839,7 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
                   (lastKnownPower := some (Int.ofNat sphinxes))
                   (w := waiting) (fs := firedSources)
               waiting := w; firedSources := fs
-            -- Per-attacker triggers (from putAttackTriggersOnStack)
+            -- Per-attacker triggers (CR 508.1m / 508.3a)
             for a in attackers do
               let whom := post.defendingPlayerOf a
               if e.matchesTrigger activePlayer (some a.id) .attacking then
@@ -9149,7 +9298,7 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
                 queueCtrl post controller .youActivateCreatureAbility
                   (w := waiting) (fs := firedSources)
               waiting := w; firedSources := fs
-        | .cast (.targeted objId rawTargets _) =>
+        | .cast (.targeted objId rawTargets ..) =>
           if post.proposedSpell.isNone && !rawTargets.isEmpty then
             match post.findObject? objId, post.stackEntry? objId with
             | some obj, some se =>
@@ -9184,8 +9333,8 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
                 let totalSlots := targeting.kind.spec.slots.size
                 let prevDone :=
                   prevEntry?.any (fun pe =>
-                    !pe.targets.isEmpty && pe.targets.size + pe.skippedOptionalSlots ≥ totalSlots)
-                if !prevDone && se.targets.size + se.skippedOptionalSlots ≥ totalSlots then
+                    !pe.targets.isEmpty && pe.targets.size + pe.skippedOptionalSlots.size ≥ totalSlots)
+                if !prevDone && se.targets.size + se.skippedOptionalSlots.size ≥ totalSlots then
                   let (w, fs) :=
                     queueCtrl post ctrl .youTargetSomething (w := waiting) (fs := firedSources)
                   waiting := w; firedSources := fs
@@ -9273,36 +9422,28 @@ def closeBatch (g : Game) (pre : GameSnapshot) (batchId : BatchId)
     (batchEvents : Array GameEvent) : Game :=
   if batchEvents.isEmpty then g
   else
-    let anyEntered := batchEvents.any fun ev =>
-      match ev.change with
-      | .rules (.zone (.moved _ _ _ .battlefield _ _ _ _)) => true
-      | .rules (.zone (.created obj _)) => obj.zone == .battlefield
-      | _ => false
     let pushInBatch (g : Game) (ev : GameEvent) : Game :=
-      let ev := ev.withBatch batchId
-      let nextBatch :=
+      let (ev, nextBatch) :=
         match ev with
-        | .rules .. => max g.nextBatchId (batchId.raw + 1)
-        | .engine .. => g.nextBatchId
+        | .rules .. => (ev.withBatch batchId, max g.nextBatchId (batchId.raw + 1))
+        | .engine .. => (ev, g.nextBatchId)
       ({ g with events := g.events.push ev, nextBatchId := nextBatch }).applyChange ev.change
     let g :=
-      if !anyEntered then g
-      else
-        g.players.foldl (fun g pl =>
-          let p := pl.id
-          let g :=
-            if !g.hasEnduringStory p && g.controlsStoried p && g.storiedPermanentCount p ≥ 3 then
-              let g := pushInBatch g (GameEvent.gainedDesignation g.turnNumber p .enduringStory
-                (cause := some (.gameRule .staticAbility)))
-              pushInBatch g (GameEvent.engine g.turnNumber
-                (.logMsg s!"{(g.player p).name} has an enduring story"))
-            else g
-          if !g.hasCitysBlessing p && g.controlsAscend p && g.permanentCount p ≥ 10 then
-            let g := pushInBatch g (GameEvent.gainedDesignation g.turnNumber p .citysBlessing
+      g.players.foldl (fun g pl =>
+        let p := pl.id
+        let g :=
+          if !g.hasEnduringStory p && g.controlsStoried p && g.storiedPermanentCount p ≥ 3 then
+            let g := pushInBatch g (GameEvent.gainedDesignation g.turnNumber p .enduringStory
               (cause := some (.gameRule .staticAbility)))
             pushInBatch g (GameEvent.engine g.turnNumber
-              (.logMsg s!"{(g.player p).name} has the city's blessing"))
-          else g) g
+              (.logMsg s!"{(g.player p).name} has an enduring story"))
+          else g
+        if !g.hasCitysBlessing p && g.controlsAscend p && g.permanentCount p ≥ 10 then
+          let g := pushInBatch g (GameEvent.gainedDesignation g.turnNumber p .citysBlessing
+            (cause := some (.gameRule .staticAbility)))
+          pushInBatch g (GameEvent.engine g.turnNumber
+            (.logMsg s!"{(g.player p).name} has the city's blessing"))
+        else g) g
     let g :=
       g.players.foldl (fun g pl =>
         match pl.ringBearerId with
@@ -9451,7 +9592,7 @@ def applySingleRulesEventInBatch (g : Game) (batchId : BatchId) (e : GameEvent) 
           .stackObject (.copied original { copy with id := some newId } controller)
         else r
       | _ => r
-    let e' : GameEvent := .rules t r' cause' batchId
+    let e' : GameEvent := .rules t r' cause' (some batchId)
     let g : Game :=
       { g with
         events := g.events.push e'
@@ -9513,11 +9654,15 @@ def replayEvent (g : Game) (e : GameEvent) : Game :=
   match e with
   | .engine .. => g
   | .rules _ r cause batch =>
+    let batchBump :=
+      match batch with
+      | some b => b.raw + 1
+      | none => 0
     let extraBatch :=
       match r with
       | .triggerQueue (.triggered _ _ _ origin) => origin.raw + 1
       | _ => 0
-    let nextBatch := max g.nextBatchId (max (batch.raw + 1) extraBatch)
+    let nextBatch := max g.nextBatchId (max batchBump extraBatch)
     let nextEff :=
       match cause.oneShotEffectId? with
       | some eid => max g.nextEffectId (eid.raw + 1)
@@ -9525,7 +9670,7 @@ def replayEvent (g : Game) (e : GameEvent) : Game :=
     let curBatch :=
       match g.currentBatch with
       | some (bid, prevCause?) =>
-        if bid == batch then
+        if batch == some bid then
           let (_, _, nextBatchCause?) := g.resolveCauseInBatch prevCause? cause
           some (bid, nextBatchCause?)
         else some (bid, prevCause?)
@@ -9563,7 +9708,7 @@ private def finishOpenBatchSync (g : Game) (batchId : BatchId) (startIdx : Nat) 
   let slice := g2.events.extract (min startIdx g2.events.size) g2.events.size
   let batchEvents := slice.filter (fun ev =>
     match ev.change with
-    | .rules _ => ev.batch == batchId
+    | .rules _ => ev.batch == some batchId
     | .engine _ => false)
   if batchEvents.isEmpty then g2
   else g2.closeBatch pre batchId batchEvents
@@ -9584,7 +9729,7 @@ def finishOpenBatch (g : Game) (batchId : BatchId) (startIdx : Nat) : Game :=
   let slice := g2.events.extract (min startIdx g2.events.size) g2.events.size
   let batchEvents := slice.filter (fun ev =>
     match ev.change with
-    | .rules _ => ev.batch == batchId
+    | .rules _ => ev.batch == some batchId
     | .engine _ => false)
   if batchEvents.isEmpty then g2
   else g2.closeBatch pre batchId batchEvents
@@ -9624,7 +9769,7 @@ def withBatchReturn {α : Type} (g : Game) (cause : Option EventCause := none)
     let (g1, res) := f g0
     let keepOpen :=
       match g1.pending with
-      | .chooseReplacement .. => true
+      | .chooseReplacement .. | .chooseLegend .. => true
       | _ => g1.pendingReplacement.isSome
     if keepOpen then
       let batchCause? := (g1.currentBatch.map Prod.snd).join
@@ -9949,21 +10094,25 @@ def reverseToProposalCheckpoint? (g : Game) : Except String Game := do
     | .engine .. =>
       gAcc := applyKeptEvent fromAct0 gAcc ev0
       idx := idx + 1
-    | .rules _ _ _ bid =>
+    | .rules _ _ _ none =>
+      gAcc := gAcc.withBatch none (fun g0 => applyKeptEvent fromAct0 g0 ev0)
+      idx := idx + 1
+    | .rules _ _ _ (some bid) =>
       let mut grp : Array (Bool × GameEvent) := #[(fromAct0, ev0)]
       idx := idx + 1
       while idx < keptStream.size do
         let (fa, nextEv) := keptStream[idx]!
         match nextEv with
-        | .rules _ _ _ bid2 =>
+        | .rules _ _ _ (some bid2) =>
           if bid2 == bid then
             grp := grp.push (fa, nextEv)
             idx := idx + 1
           else break
+        | .rules _ _ _ none => break
         | .engine .. =>
-          -- Keep interleaved log/engine changes inside the batch if the next rules event has `bid`.
+          -- Keep interleaved log/engine changes inside the batch if the next rules event has `some bid`.
           if idx + 1 < keptStream.size &&
-              (match keptStream[idx + 1]!.2 with | .rules _ _ _ bid2 => bid2 == bid | _ => false) then
+              (match keptStream[idx + 1]!.2 with | .rules _ _ _ (some bid2) => bid2 == bid | _ => false) then
             grp := grp.push (fa, nextEv)
             idx := idx + 1
           else break

@@ -185,13 +185,17 @@ def whipEquipped : Bool :=
 #guard whipEquipped
 
 def whipLeft : Bool :=
-  let g := addPermanent afterDraw whiplashVengefulEngineer me me
+  let g := addPermanent (addPermanent (addPermanent afterDraw whiplashVengefulEngineer me me)
+    captainAmericaSShield me me) falconSWingHarness me me
   let whip := named g "Whiplash, Vengeful Engineer"
+  let eq1 := named g "Captain America's Shield"
+  let eq2 := named g "Falcon's Wing Harness"
+  let g := (g.attachSourceTo eq1 whip).attachSourceTo (g.object! eq2.id) (g.object! whip.id)
   let life := (g.player opp).life
   let you := (g.player me).life
   let (g, _) := g.move whip.id (.graveyard me) none
   let g := resolve g (TriggeredAbility.onThisAttack Effect.thisAttackEquippedDrain)
-    (some whip.id) #[] (some 2)
+    (some whip.id)
   (g.player opp).life + 2 == life && (g.player me).life == you + 2
 
 #guard whipLeft

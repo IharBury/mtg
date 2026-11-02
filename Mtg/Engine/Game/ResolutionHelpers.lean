@@ -234,6 +234,45 @@ def beginSurveil (g : Game) (p : PlayerId) (n : Nat) : Game :=
     (g.change (.pending (.surveil p count n))).logMsg
       s!"{pl.name} surveils {n}"
 
+/-- Mill each card in `remainingIds` (or `freshCount` top cards when resuming a
+deferred player mill) sequentially inside an open or standalone batch, pausing
+on `Pending.chooseReplacement` (CR 701.17 / 616.1). -/
+def millCardsLoop (g : Game) (p : PlayerId) (remainingIds : Array ObjectId)
+    (emptyTail : Bool := false) (cause : Option EventCause := none)
+    (logCard : Option String := none) (freshCount : Option Nat := none) : Game := Id.run do
+  if let .chooseReplacement .. := g.pending then
+    return g.chainPendingReplacement
+      (.millCardsLoop p remainingIds emptyTail cause logCard freshCount)
+  let mut g := g
+  if let some name := logCard then
+    g := g.logMsg s!"{(g.player p).name} mills {name}"
+  let mut ids := remainingIds
+  let mut tail := emptyTail
+  if let some n := freshCount then
+    let pl := g.player p
+    if n > 0 && pl.library.isEmpty then
+      return g.logMsg s!"{pl.name} mills nothing (empty library)"
+    let count := min n pl.library.size
+    ids := (pl.library.extract (pl.library.size - count) pl.library.size).reverse
+    tail := count < n
+  for i in [0:ids.size] do
+    let top := ids[i]!
+    match g.findObject? top with
+    | some o =>
+      if o.zone == .library p then
+        let name := o.name
+        let (g', _) := g.move top (.graveyard p) none (verb := some .mill) (actor := some p)
+          (cause := cause)
+        g := g'
+        if let .chooseReplacement .. := g.pending then
+          let rem := ids.extract (i + 1) ids.size
+          return g.chainPendingReplacement (.millCardsLoop p rem tail cause (some name) none)
+        g := g.logMsg s!"{(g.player p).name} mills {name}"
+    | none => pure ()
+  if tail then
+    g := g.logMsg s!"{(g.player p).name} mills nothing (empty library)"
+  return g
+
 /-- Put the top `n` cards of `p`'s library into their graveyard (CR 701.17). -/
 def mill (g : Game) (p : PlayerId) (n : Nat) (cause : Option EventCause := none) : Game :=
   let defaultCause :=
@@ -241,26 +280,45 @@ def mill (g : Game) (p : PlayerId) (n : Nat) (cause : Option EventCause := none)
       if n == 0 || (g.player p).library.isEmpty then none
       else g.currentResolvingContext?.map fun (src, ctrl) =>
         .oneShotEffect none src (ctrl.orElse (fun _ => some p)))
-  g.withBatch defaultCause fun g => Id.run do
-    let pl := g.player p
-    if n > 0 && pl.library.isEmpty then
-      return g.logMsg s!"{pl.name} mills nothing (empty library)"
-    let count := min n pl.library.size
-    let tops := (pl.library.extract (pl.library.size - count) pl.library.size).reverse
+  if let .chooseReplacement .. := g.pending then
+    if n == 0 then g
+    else g.chainPendingReplacement (.millCardsLoop p #[] false defaultCause none (some n))
+  else
+    g.withBatch defaultCause fun g =>
+      let pl := g.player p
+      if n > 0 && pl.library.isEmpty then
+        g.logMsg s!"{pl.name} mills nothing (empty library)"
+      else
+        let count := min n pl.library.size
+        let tops := (pl.library.extract (pl.library.size - count) pl.library.size).reverse
+        g.millCardsLoop p tops (emptyTail := count < n) (cause := defaultCause)
+
+/-- Move milled cards matching `pred` from the public zone they entered into
+`p`'s hand (CR 701.17c). -/
+def finishMillThenPutFromPublic (g : Game) (p : PlayerId) (preIds : Array ObjectId)
+    (pred : GameObject → Bool) (maxPut : Option Nat := none)
+    (cause : Option EventCause := none) : Game :=
+  let milled := preIds.filterMap (fun id => (g.followMilledPublic? id).map (·.id))
+  g.withBatch cause fun g => Id.run do
     let mut g := g
-    for top in tops do
-      let name := (g.object! top).name
-      let (g', _) := g.move top (.graveyard p) none (verb := some .mill) (actor := some p)
-        (cause := cause)
-      g := g'.logMsg s!"{(g'.player p).name} mills {name}"
-    if count < n then
-      g := g.logMsg s!"{(g.player p).name} mills nothing (empty library)"
+    let mut left := maxPut.getD milled.size
+    for id in milled do
+      match g.findObject? id with
+      | some o =>
+        if left > 0 && isPublicZone o.zone && pred o then
+          let name := o.name
+          let (g', _) := g.move id (.hand p) none (cause := cause)
+          g := g'.logMsg s!"{(g.player p).name} puts {name} into their hand"
+          left := left - 1
+      | none => pure ()
     return g
 
-/-- Mill `n`, then put matching milled cards from the graveyard into hand.
-`maxPut` limits how many are returned (`none` means all matches). -/
+/-- Mill `n`, then put matching milled cards from the public zone they entered
+into hand (CR 701.17c). `maxPut` limits how many are returned (`none` means all
+matches). -/
 def millThenPutFromGy (g : Game) (p : PlayerId) (n : Nat)
-    (pred : GameObject → Bool) (maxPut : Option Nat := none) : Game :=
+    (pred : GameObject → Bool) (maxPut : Option Nat := none)
+    (types : Array CardType := #[]) : Game :=
   let lib := (g.player p).library
   let count := min n lib.size
   let tops := (lib.extract (lib.size - count) lib.size).reverse
@@ -273,20 +331,11 @@ def millThenPutFromGy (g : Game) (p : PlayerId) (n : Nat)
         (g, some c)
       | none => (g, none)
   let g := g.mill p n (cause := cause?)
-  let milled := tops.filterMap (fun id => (g.followMovedToZone? id (· == .graveyard p)).map (·.id))
-  g.withBatch cause? fun g => Id.run do
-    let mut g := g
-    let mut left := maxPut.getD milled.size
-    for id in milled do
-      match g.findObject? id with
-      | some o =>
-        if left > 0 && o.zone == .graveyard p && pred o then
-          let name := o.name
-          let (g', _) := g.move id (.hand p) none (cause := cause?)
-          g := g'.logMsg s!"{(g.player p).name} puts {name} into their hand"
-          left := left - 1
-      | none => pure ()
-    return g
+  if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement
+      (.finishMillChooseForHand p tops types #[] 0 false true maxPut cause?)
+  else
+    g.finishMillThenPutFromPublic p tops pred maxPut cause?
 
 /-- Deal `n` damage to each still-matching creature in `remainingIds`, pausing
 and chaining `.dealDamageToEachCreatureMatching` if a CR 616.1 choice opens. -/
@@ -408,6 +457,192 @@ def destroyPermanentsLoop (g : Game) (remainingIds : Array ObjectId)
   if let some msg := logMsgAfter then
     g := g.logMsg msg
   return g
+
+/-- True when permanent `id` was actually exiled from the battlefield by the
+effect since `startIdx` (excluding CR 800.4c control-loss departures). -/
+def wasPermanentExiled (g : Game) (id : ObjectId) (startIdx : Nat := 0) : Bool :=
+  Id.run do
+    for i in [startIdx : g.events.size] do
+      let idx := g.events.size - 1 - (i - startIdx)
+      let e := g.events[idx]!
+      match e.change with
+      | .rules (.zone (.moved before _ .battlefield toZone _ _ _ _)) =>
+        if before.id == some id then
+          return toZone == .exile && e.cause? != some (.gameRule .playerLeftGame)
+      | _ => pure ()
+    return false
+
+/-- Exile each still-present permanent in `remainingIds` sequentially inside an
+open or standalone batch, pausing on `Pending.chooseReplacement`. -/
+def exilePermanentsLoop (g : Game) (remainingIds : Array ObjectId)
+    (logExile : Bool := true) (cause : Option EventCause := none)
+    (logCard : Option String := none) : Game := Id.run do
+  if let .chooseReplacement .. := g.pending then
+    return g.chainPendingReplacement
+      (.exilePermanentsLoop remainingIds logExile cause logCard)
+  let mut g := g
+  if let some name := logCard then
+    if logExile then
+      g := g.logMsg s!"{name} is exiled"
+  for i in [0:remainingIds.size] do
+    let id := remainingIds[i]!
+    match g.findObject? id with
+    | some o =>
+      if o.isOnBattlefield then
+        let name := g.name o
+        let (g', _) := g.move id .exile none (cause := cause)
+        g := g'
+        if let .chooseReplacement .. := g.pending then
+          let rem := remainingIds.extract (i + 1) remainingIds.size
+          if !rem.isEmpty || logExile then
+            g := g.chainPendingReplacement
+              (.exilePermanentsLoop rem logExile cause (if logExile then some name else none))
+          return g
+        if logExile then
+          g := g.logMsg s!"{name} is exiled"
+    | none => pure ()
+  return g
+
+/-- Stage 3 of `flickerPermanents`: log and run `afterPermanentEnters` for each
+exiled card in `enteredFromIds` that returned to the battlefield. -/
+private def flickerPostReturn (g : Game) (enteredFromIds : Array ObjectId)
+    (logText : String) : Game :=
+  enteredFromIds.foldl (fun acc eid =>
+    match acc.followMovedToZone? eid (· == .battlefield) with
+    | some retObj =>
+      let acc := acc.logMsg s!"{retObj.name} {logText}"
+      acc.afterPermanentEnters retObj
+    | none => acc) g
+
+/-- Stage 2 of `flickerPermanents`: inside the return batch, move each exiled
+card in `remainingIds` back to the battlefield under its owner's control. -/
+private def flickerReturnBatchLoop (g : Game) (remainingIds : Array ObjectId)
+    (exiledPreIds : Array ObjectId) (enteredFromIds : Array ObjectId)
+    (logText : String) (tapped : Bool) (onlyLandTapped : Bool)
+    (clearExileFields : Bool) (cause : Option EventCause) : Game := Id.run do
+  let mut g := g
+  for i in [0:remainingIds.size] do
+    let eid := remainingIds[i]!
+    match g.findObject? eid with
+    | some o =>
+      if o.zone == .exile && (!o.printed.isToken || o.isCopy) then
+        if clearExileFields then
+          g := g.changeObject eid (.linkedExile #[])
+        let enterTapped := tapped || (onlyLandTapped && g.isLand o)
+        if g.isAura o then
+          match g.battlefield.find? (fun h => g.auraObjCanEnchant h o) with
+          | none =>
+            g := g.logMsg s!"{o.name} remains in exile (can't be attached legally; CR 303.4g)"
+          | some host =>
+            let (g', _) := g.move eid .battlefield (some o.owner)
+              (tapped := enterTapped) (attachedTo := some host.id) (cause := cause)
+            g := g'
+        else
+          let (g', _) := g.move eid .battlefield (some o.owner)
+            (tapped := enterTapped) (cause := cause)
+          g := g'
+        if let .chooseReplacement .. := g.pending then
+          let rem := remainingIds.extract (i + 1) remainingIds.size
+          if !rem.isEmpty then
+            g := g.chainPendingReplacement
+              (.flickerLoop rem exiledPreIds enteredFromIds logText 2 tapped onlyLandTapped clearExileFields cause)
+          return g
+    | none => pure ()
+  return g
+
+/-- Stage 1 of `flickerPermanents`: after the exile batch closes, return all
+nontoken exiled cards simultaneously in a second batch (CR 111.8 / 400.7 / 603.6a). -/
+private def flickerStartReturnBatch (g : Game) (exiledPreIds : Array ObjectId)
+    (logText : String) (tapped : Bool) (onlyLandTapped : Bool)
+    (clearExileFields : Bool) (cause : Option EventCause) : Game :=
+  let exiledObjs := exiledPreIds.filterMap (fun id => g.followMovedToZone? id (· == .exile))
+  let g :=
+    exiledObjs.foldl (fun acc o =>
+      if o.printed.isToken && !o.isCopy then acc.logMsg s!"{o.name} is exiled" else acc) g
+  let returnableIds := (exiledObjs.filter (fun o => !o.printed.isToken || o.isCopy)).map (·.id)
+  if returnableIds.isEmpty then g
+  else
+    let g := g.withBatch cause fun g =>
+      g.flickerReturnBatchLoop returnableIds exiledPreIds returnableIds logText
+        tapped onlyLandTapped clearExileFields cause
+    if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement
+        (.flickerLoop #[] exiledPreIds returnableIds logText 3 tapped onlyLandTapped clearExileFields cause)
+    else
+      g.flickerPostReturn returnableIds logText
+
+/-- Stage 0 of `flickerPermanents`: inside the exile batch, move each target in
+`remainingIds` to `.exile`. -/
+private def flickerExileBatchLoop (g : Game) (remainingIds : Array ObjectId)
+    (exiledPreIds : Array ObjectId) (logText : String) (tapped : Bool)
+    (onlyLandTapped : Bool) (clearExileFields : Bool)
+    (cause : Option EventCause) : Game := Id.run do
+  let mut g := g
+  for i in [0:remainingIds.size] do
+    let id := remainingIds[i]!
+    match g.findObject? id with
+    | some o =>
+      if o.zone != .exile then
+        let (g', _) := g.move id .exile none (cause := cause)
+        g := g'
+        if let .chooseReplacement .. := g.pending then
+          let rem := remainingIds.extract (i + 1) remainingIds.size
+          if !rem.isEmpty then
+            g := g.chainPendingReplacement
+              (.flickerLoop rem exiledPreIds #[] logText 0 tapped onlyLandTapped clearExileFields cause)
+          return g
+    | none => pure ()
+  return g
+
+/-- Exile all permanents in `targetIds` in one simultaneous batch, then return
+all exiled nontoken cards to the battlefield under their owners' control in a
+second simultaneous batch (CR 111.8 / 400.7 / 603.6a / 616.1). -/
+def flickerPermanents (g : Game) (targetIds : Array ObjectId)
+    (logText : String := "is exiled, then returned to the battlefield")
+    (tapped : Bool := false) (onlyLandTapped : Bool := false)
+    (clearExileFields : Bool := false) (cause : Option EventCause := none) : Game :=
+  if targetIds.isEmpty then g
+  else
+    let (g, cause) : Game × Option EventCause :=
+      match cause with
+      | some c => (g, some c)
+      | none =>
+        match g.currentResolvingContext? with
+        | some (src, ctrl) =>
+          let (g, c) := g.allocDelayedCause ctrl src
+          (g, some c)
+        | none => (g, none)
+    if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement
+        (.flickerLoop targetIds targetIds #[] logText 4 tapped onlyLandTapped clearExileFields cause)
+    else
+      let g := g.withBatch cause fun g =>
+        g.flickerExileBatchLoop targetIds targetIds logText tapped onlyLandTapped clearExileFields cause
+      if let .chooseReplacement .. := g.pending then
+        g.chainPendingReplacement
+          (.flickerLoop #[] targetIds #[] logText 1 tapped onlyLandTapped clearExileFields cause)
+      else
+        g.flickerStartReturnBatch targetIds logText tapped onlyLandTapped clearExileFields cause
+
+/-- Resume a paused `PendingReplacement.flickerLoop` stage. -/
+def resumeFlickerLoop (g : Game) (remainingIds : Array ObjectId)
+    (exiledPreIds : Array ObjectId := #[])
+    (enteredFromIds : Array ObjectId := #[])
+    (logText : String := "is exiled, then returned to the battlefield")
+    (stage : Nat := 0) (tapped : Bool := false) (onlyLandTapped : Bool := false)
+    (clearExileFields : Bool := false) (cause : Option EventCause := none) : Game :=
+  if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement
+      (.flickerLoop remainingIds exiledPreIds enteredFromIds logText stage tapped onlyLandTapped clearExileFields cause)
+  else
+    match stage with
+    | 0 => g.flickerExileBatchLoop remainingIds exiledPreIds logText tapped onlyLandTapped clearExileFields cause
+    | 1 => g.flickerStartReturnBatch exiledPreIds logText tapped onlyLandTapped clearExileFields cause
+    | 2 => g.flickerReturnBatchLoop remainingIds exiledPreIds enteredFromIds logText tapped onlyLandTapped clearExileFields cause
+    | 3 => g.flickerPostReturn enteredFromIds logText
+    | _ =>
+      g.flickerPermanents remainingIds (logText := logText) (tapped := tapped)
+        (onlyLandTapped := onlyLandTapped) (clearExileFields := clearExileFields) (cause := cause)
 
 end Game
 end Mtg.Engine

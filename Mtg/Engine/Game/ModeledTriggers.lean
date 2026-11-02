@@ -152,7 +152,7 @@ def copyEnteredArtifact (g : Game) (controller : PlayerId) (artifactId : ObjectI
     let g := g.change (.recentTokenIds #[])
     let (g, _) := g.createToken controller copiable (recordRecent := true)
     if let .chooseReplacement .. := g.pending then
-      g.chainPendingReplacement (.finishArtifactCopyToken copiable.name)
+      g.chainPendingReplacement .finishArtifactCopyToken
     else
       let g := g.finishArtifactCopyTokens
       if pushedFrame && g.pending == .none && g.pendingReplacement.isNone then
@@ -223,7 +223,8 @@ def setSpellTargetAt (g : Game) (spellId : ObjectId) (index : Nat) (neu : Target
         slots.size <= 1 ||
           (List.range e.targets.size).all (fun j => j == index || e.targets[j]! != neu || !slots.isEmpty)
       if index < e.targets.size && legal.contains neu && distinctOk then
-        g.record (GameEvent.targeted g.turnNumber spellId (e.targets.set! index neu) (division := e.dividedDamage))
+        g.record (GameEvent.targeted g.turnNumber spellId (e.targets.set! index neu)
+          (division := e.dividedDamage) (skippedOptionalSlots := e.skippedOptionalSlots))
           |>.logMsg "A new target is chosen for the spell"
       else
         g.logMsg "That target stays unchanged"
@@ -372,16 +373,8 @@ def flickerChosenNonland (g : Game) (controller : PlayerId) (sourceId : Option O
         | some sid => o.id != sid
         | none => true
       if o.isOnBattlefield && g.controlledBy o controller && !g.isLand o && other then
-        let owner := o.owner
-        let name := g.name o
         let (g, cause) := g.allocDelayedCause (some controller) sourceId
-        let (g, exId) := g.move o.id .exile none (cause := some cause)
-        let (g, retId) := g.move exId .battlefield (some owner) (cause := some cause)
-        if let .chooseReplacement .. := g.pending then
-          g.chainPendingReplacement (.afterLastPermanentEnters (some exId))
-        else
-          g.afterPermanentEnters (g.object! retId)
-            |>.logMsg s!"{name} is exiled, then returned"
+        g.flickerPermanents #[o.id] (logText := "is exiled, then returned") (cause := some cause)
       else g.logMsg "The target is no longer legal"
     | none => g.logMsg "The target is no longer legal"
   | _ => g
@@ -397,17 +390,9 @@ def returnNontokenTapped (g : Game) (targets : Array Target) : Game :=
     | some o =>
       if o.isOnBattlefield && !o.printed.isToken &&
           (g.isArtifact o || g.isCreature o) then
-        let owner := o.owner
-        let name := g.name o
         let (g, cause) := g.allocDelayedCause (g.controllerOf o)
-        let (g, newId) := g.move o.id .exile none (cause := some cause)
-        let (g, retId) := g.move newId .battlefield (some owner)
+        g.flickerPermanents #[o.id] (logText := "is exiled, then returned tapped")
           (tapped := true) (cause := some cause)
-        if let .chooseReplacement .. := g.pending then
-          g.chainPendingReplacement (.afterLastPermanentEnters (some newId))
-        else
-          g.afterPermanentEnters (g.object! retId)
-            |>.logMsg s!"{name} is exiled, then returned tapped"
       else g.logMsg "The target is no longer legal"
     | none => g.logMsg "The target is no longer legal"
   | _ => g
@@ -1018,30 +1003,8 @@ it returns tapped when `tapped` is set and `afterLandEnters` runs. -/
 def exileThenReturn (g : Game) (o : GameObject) (logText : String)
     (clearExileFields := false) (tapped := false) (land := false)
     (cause : Option EventCause := none) : Game :=
-  let (g, cause) : Game × Option EventCause :=
-    match cause with
-    | some c => (g, some c)
-    | none =>
-      match g.currentResolvingContext? with
-      | some (src, ctrl) =>
-        let (g, c) := g.allocDelayedCause ctrl src
-        (g, some c)
-      | none => (g, none)
-  let owner := o.owner
-  let name := o.name
-  let (g, newId) := g.move o.id .exile none (cause := cause)
-  let g :=
-    if clearExileFields then
-      g.changeObject newId (.linkedExile #[])
-    else g
-  let (g, retId) := g.move newId .battlefield (some owner)
-    (tapped := land && tapped) (cause := cause)
-  if let .chooseReplacement .. := g.pending then
-    g.chainPendingReplacement (.afterLastPermanentEnters (some newId) land)
-  else
-    let g := g.logMsg s!"{name} {logText}"
-    if land then g.afterLandEnters (g.object! retId)
-    else g.afterPermanentEnters (g.object! retId)
+  g.flickerPermanents #[o.id] (logText := logText)
+    (tapped := land && tapped) (clearExileFields := clearExileFields) (cause := cause)
 
 end Game
 end Mtg.Engine

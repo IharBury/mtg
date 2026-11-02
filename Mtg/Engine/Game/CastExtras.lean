@@ -171,18 +171,6 @@ def pickTeamworkCreatures (g : Game) (p : PlayerId) (need : Nat) : Array ObjectI
         else pick rest (acc.push o.id) (total + g.power o)
   pick (g.creaturesControlledBy p).toList #[] 0
 
-def announceRingBearer (g : Game) (p : PlayerId) (id : Option ObjectId) : Except String Game := do
-  match g.pending with
-  | .chooseRingBearer caster =>
-    if caster != p then
-      throw s!"Only {(g.player caster).name} may choose a Ring-bearer"
-    let choices := g.ringBearerChoices p
-    if id.isNone && !choices.isEmpty then
-      throw "You must choose a creature if you control one"
-    let g := g.change (.pending .none)
-    return g.temptWithTheRing p id
-  | _ => throw "Not time to choose a Ring-bearer"
-
 /-- Search for up to `max` basic Plains, exile them linked to `sourceId`,
 shuffle, and gain `life`. -/
 def resolveSearchBasicPlainsExile (g : Game) (p : PlayerId)
