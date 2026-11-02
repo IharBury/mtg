@@ -83,7 +83,7 @@ def exileInsteadSource? (g : Game) (dying : GameObject)
   (bf.filter g.exilesOppDeath?).find? (fun o =>
     o.id != dying.id &&
       match g.controllerOf o, g.controllerOf dying with
-      | some p, some q => p != q
+      | some p, some q => p != q && !g.areTeammates p q
       | _, _ => false)
 
 /-- Result of running the CR 616.1 replacement loop on a proposed zone move. -/
@@ -191,7 +191,7 @@ def replaceZoneMove (g : Game) (old : GameObject) (beforeSnap : EventObject)
         if src.id != old.id then
           match board.controllerOf src, oldCtrl with
           | some p, some q =>
-            if p != q then
+            if p != q && !board.areTeammates p q then
               specs := specs.push (
                 { id := { kind := .exileOppDeath, object := some src.id }
                   source := some src.id
@@ -324,7 +324,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
           else none
   let buildArrival (g : Game) (targetZone : Zone) (asOf : Nat)
       (applied : Array ReplacementId := #[]) (curCause : Option EventCause := cause) :
-      GameObject × CounterBag × Nat × Bool × Bool × Array ReplacementId × Option EventCause × Option (PlayerId × Array ReplacementId) × Option (CardDef × CardDef) :=
+      GameObject × CounterBag × Nat × Bool × Bool × Array ReplacementId × Option EventCause × Option (PlayerId × Array ReplacementId) × Option (CardDef × CardDef) × Bool :=
     let newId : ObjectId := ⟨g.nextObjectId⟩
     let ts := g.timestamp + 1
     let leavingPlay :=
@@ -356,10 +356,10 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
               otherFace := some { old.printed with isToken := keepToken, otherFace := none } }
           | none => old.printed
         else old.printed
-    -- CR 608.3f / 707.10f: a resolving copy of a permanent spell becomes a token
-    -- as it enters the battlefield.
+    -- CR 608.3f / 707.10f: a resolving or entering copy of a permanent becomes
+    -- a token as it enters the battlefield.
     let printed :=
-      if old.zone == .stack && old.isCopy && targetZone == .battlefield && !printed0.isToken then
+      if (isCopy.getD old.isCopy) && targetZone == .battlefield && !printed0.isToken then
         { printed0 with
           isToken := true
           otherFace := printed0.otherFace.map fun f => { f with isToken := true } }
@@ -390,12 +390,12 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
       zone := targetZone
       status := baseStatus
       timestamp := ts
-      -- CR 704.5e / 707.10a: preserve `isCopy` when a spell copy moves from the
-      -- stack to a non-battlefield zone so SBAs cease it via `ceasedToExist`.
+      -- CR 704.5e / 707.10a / 707.12: preserve `isCopy` across any non-battlefield
+      -- zone transition so countered/bounced copies moved again before SBAs run
+      -- still cease to exist via `ceasedToExist`, while playable exiled card copies
+      -- remain copies on `.exile → .stack` and become tokens on `.battlefield`.
       isCopy := isCopy.getD
-        (if targetZone == .stack || (old.zone == .stack && targetZone != .battlefield) then
-           old.isCopy
-         else false)
+        (if targetZone != .battlefield then old.isCopy else false)
       isCommander := old.isCommander
       adventurerCard := if targetZone == .stack then adventurerCard.orElse (fun _ => old.adventurerCard) else none
       attachedTo := if targetZone == .battlefield then attachedTo else none
@@ -430,9 +430,11 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
           (forceBackFace := nightBack)
           (applied := applied)
           (cause := curCause)
-      (etb.candidate, etb.entersWith, etb.weaverBonus, impendingNotCreature, faceDown, etb.applied, etb.cause, etb.choice?, etb.tempCopyUntilEot)
+          (nonCastBattlefield := old.zone != .stack)
+          (preBattlefield := preBattlefield)
+      (etb.candidate, etb.entersWith, etb.weaverBonus, impendingNotCreature, faceDown, etb.applied, etb.cause, etb.choice?, etb.tempCopyUntilEot, etb.stayInOriginNoAuraHost)
     else
-      (candidate, #[], 0, impendingNotCreature, faceDown, applied, curCause, none, none)
+      (candidate, #[], 0, impendingNotCreature, faceDown, applied, curCause, none, none, false)
   -- Run the CR 616.1 replacement loop for leaving/destination replacements (CR 614.6).
   let origDest := dest
   let moveRep :=
@@ -440,11 +442,11 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
       (libraryPosition := libraryPosition) (preBattlefield := preBattlefield)
       (cause := cause)
   let dest := moveRep.dest
-  let preCheckArrivalChoice? :=
+  let (preCheckArrivalChoice?, preCheckStayNoAuraHost, preCheckAllApplied) :=
     if moveRep.choice?.isNone && dest == .battlefield then
-      let (_, _, _, _, _, _, _, ch?, _) := buildArrival g dest g.timestamp moveRep.applied moveRep.cause
-      ch?
-    else none
+      let (_, _, _, _, _, app, _, ch?, _, stayNoHost) := buildArrival g dest g.timestamp moveRep.applied moveRep.cause
+      (ch?, stayNoHost, app)
+    else (none, false, moveRep.applied)
   match moveRep.choice?.orElse (fun _ => preCheckArrivalChoice?) with
   | some (chooser, choices) =>
     let faceDown := faceDown?.getD (origDest == .battlefield && old.zone == .stack && old.status.faceDown)
@@ -456,6 +458,10 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
         isCopy overridePrinted adventurerCard summoningSick attachedTo enterMods cause),
      id)
   | none =>
+  if preCheckStayNoAuraHost then
+    let g := g.consumeReplacementOrder preCheckAllApplied
+    (g.logMsg s!"{old.name} remains in its current zone (can't be attached legally; CR 303.4f)", id)
+  else
   let exileInstead := moveRep.exileInstead
   let finalityExile := moveRep.finalityExile
   let headSource := moveRep.headSource
@@ -477,7 +483,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
       let g :=
         if old.zone == .battlefield then g.removePreparedCopy id else g
       let asOf := g.timestamp
-      let (fresh, entersWith, weaverBonus, impendingNotCreature, _faceDown, allApplied, finalCause, _, tempCopyUntilEot) :=
+      let (fresh, entersWith, weaverBonus, impendingNotCreature, _faceDown, allApplied, finalCause, _, tempCopyUntilEot, _) :=
         buildArrival g dest asOf moveRep.applied moveRep.cause
       let g := g.consumeReplacementOrder allApplied
       let newId := fresh.id
@@ -1035,6 +1041,28 @@ def advanceFixedEnteringAttackItems
     acc := acc.push (item, item.options[0]?)
     idx := idx + 1
   return (remaining.extract idx remaining.size, acc)
+
+/-- Move each card in `ids` sequentially into its owner's graveyard, pausing
+via `PendingReplacement.moveCardsToGraveyardLoop` if any card opens a CR 616.1
+`Pending.chooseReplacement` choice. -/
+def moveCardsToGraveyardLoop (g : Game) (ids : Array ObjectId)
+    (cause : Option EventCause := none) : Game :=
+  if ids.isEmpty then g
+  else if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement (.moveCardsToGraveyardLoop ids cause)
+  else
+    Id.run do
+      let mut g := g
+      for i in [0:ids.size] do
+        let id := ids[i]!
+        if let some o := g.findObject? id then
+          g := (g.move id (.graveyard o.owner) none (cause := cause)).1
+          if let .chooseReplacement .. := g.pending then
+            let rem := ids.extract (i + 1) ids.size
+            if !rem.isEmpty then
+              g := g.chainPendingReplacement (.moveCardsToGraveyardLoop rem cause)
+            return g
+      return g
 
 end Game
 end Mtg.Engine

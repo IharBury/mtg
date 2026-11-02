@@ -44,6 +44,9 @@ def finishProposedSpell (g : Game) : Except String Game := do
   let g ← g.withProposalActionM .costAction fun g0 => do
     let paid ← g0.payCost prop.caster prop.cost allowElf allowInst
       allowHero allowVillain allowCant allowCreature spend (forObject := some prop.spellId)
+    let paid ←
+      if prop.kind == .activatedAbility then pure paid
+      else paid.payLifeCost prop.caster prop.payLife (forObject := some prop.spellId)
     let spent (u : FraManaUse) := count paid u < count g0 u
     pure <|
       match prop.kind, paid.findObject? prop.spellId with
@@ -157,11 +160,11 @@ def pay (g : Game) (p : PlayerId) : Except String Game := do
     throw "Choose a target first (CR 601.2c)"
   | .chooseAdditionalCost _ =>
     throw "Choose an additional cost first (CR 601.2b)"
-  | .payWard q _ .fivePoison =>
+  | .payWard q spellId .fivePoison =>
     if p != q then
       throw s!"Only {(g.player q).name} may pay ward"
     let g := g.record
-      (GameEvent.poisoned g.turnNumber p 5 (cause := .costPayment .ward p))
+      (GameEvent.poisoned g.turnNumber p 5 (cause := .costPayment .ward p (some spellId)))
     let g := g.logMsg s!"{(g.player p).name} gets five poison counters (ward)"
     return g.afterWardResolved
   | _ => throw "No spell or ability is waiting to be paid for (CR 601.2h)"
@@ -324,7 +327,11 @@ def concede (g : Game) (p : PlayerId) : Game :=
       let g := if midResolutionOrBatch || wasPregame then g else g.checkSBA
       if g.unlessPaysDue then
         g.flushUnlessPays
-      else if g.over || g.pending != .none then g
+      else if g.over then g
+      else if !midResolutionOrBatch && !wasPregame && g.sbaPaused then
+        g.chainPendingReplacement
+          (.finishConcede wasIdlePriority savedPendingPrio wasAssigningCombatDamage)
+      else if g.pending != .none then g
       else if wasPregame then
         if g.pregameRandom != .none then
           g.finishAfterRandom true
@@ -338,27 +345,8 @@ def concede (g : Game) (p : PlayerId) : Game :=
           g.continueOpeningBegin #[]
         else
           g.beginMulliganRound
-      else if let some fa := wasAssigningCombatDamage then
-        if fa then g.beginCombatDamageAssignment else g.continueBlockerCombatAssignment
-      else if !g.continuations.isEmpty || g.pendingReplacement.isSome ||
-          !g.outerPendingReplacements.isEmpty ||
-          g.triggerSequenceRest.isSome then
-        g.finishFraChoice
-      else if wasIdlePriority && g.playersReceivePriority && g.consecutivePasses ≥ g.livingPlayers.size then
-        let g := g.change (.consecutivePasses 0)
-        if !g.stack.isEmpty then
-          let g := g.resolveTop
-          if let .chooseReplacement .. := g.pending then
-            g.chainPendingReplacement (.receivePriority g.activePlayer)
-          else if g.pending != .none then g
-          else g.receivePriority g.activePlayer
-        else
-          g.advanceStep
-      else if g.playersReceivePriority then
-        let rawPrio := savedPendingPrio.getD g.priority
-        let nextP := if g.stillInGame rawPrio then rawPrio else g.nextLiving rawPrio
-        g.receivePriority nextP
-      else g
+      else
+        g.finishConcedePriority wasIdlePriority savedPendingPrio wasAssigningCombatDamage
 
 end Game
 end Mtg.Engine

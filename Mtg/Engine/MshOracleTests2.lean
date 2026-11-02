@@ -66,7 +66,11 @@ def constructACosmicCubeReflexiveOk : Bool :=
   !g.battlefield.any (fun o => o.name == "Construct a Cosmic Cube") &&
     g.hasModeledReflexiveOnStack &&
     (let g := passBoth (mustApply g ⟨0⟩ (.target (Target.player ⟨1⟩)))
-     g.controlsPlayer ⟨0⟩ ⟨1⟩ && !(g.controlOnNextTakenTurn).isEmpty) &&
+     let gOppTurn := g.startNextTurnAndBegin
+     let gAfter := gOppTurn.startNextTurnAndBegin
+     !g.controlsPlayer ⟨0⟩ ⟨1⟩ && !g.controlOnNextTakenTurn.isEmpty &&
+       gOppTurn.controlsPlayer ⟨0⟩ ⟨1⟩ &&
+       !gAfter.controlsPlayer ⟨0⟩ ⟨1⟩ && gAfter.controlOnNextTakenTurn.isEmpty) &&
     (mshRuling 713).comment.contains "reflexive"
 
 #guard constructACosmicCubeReflexiveOk
@@ -438,8 +442,12 @@ def controlAnotherPlayerOk : Bool :=
     g.activePlayer == ⟨0⟩ &&
     (namedPermanent g "Grizzly Bears").controlledBy ⟨1⟩ &&
     g.resourcesFor ⟨1⟩ == ⟨1⟩ &&
-    (let g := g.createEffect (.playerControl ⟨0⟩ ⟨1⟩ true)
-     g.controlsPlayer ⟨0⟩ ⟨1⟩ && !(g.controlOnNextTakenTurn).isEmpty) &&
+    (let gNext := afterDraw.createEffect (.playerControl ⟨0⟩ ⟨1⟩ true)
+     let gOppTurn := gNext.startNextTurnAndBegin
+     let gAfter := gOppTurn.startNextTurnAndBegin
+     !gNext.controlsPlayer ⟨0⟩ ⟨1⟩ && !gNext.controlOnNextTakenTurn.isEmpty &&
+       gOppTurn.controlsPlayer ⟨0⟩ ⟨1⟩ &&
+       !gAfter.controlsPlayer ⟨0⟩ ⟨1⟩ && gAfter.controlOnNextTakenTurn.isEmpty) &&
     (mshRuling 573).comment.contains "next turn they actually take" &&
     (mshRuling 611).comment.contains "overwrite each other" &&
     (mshRuling 652).comment.contains "still the active player" &&

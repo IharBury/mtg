@@ -166,7 +166,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
       g.beginRevealDiscard controller pid permanentOnly) sourceId illegal
   | .discardHand =>
     g.withBatch none fun g =>
-      (g.player controller).hand.foldl (fun g id => g.discardFromHand controller id) g
+      g.discardHandIdsLoop controller (g.player controller).hand (logEach := true)
   | .drawPerCreatureYouControl =>
     g.draw controller (g.creaturesControlledBy controller).size
   | .extrapolate =>
@@ -195,8 +195,8 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
         else g) g
   | .damageEachOppCreatureAndPlaneswalker n =>
     let victims := g.battlefield.filter (fun o =>
-      (g.isCreature o || g.isPlaneswalker o) && (g.controllerOf o).isSome &&
-        !g.controlledBy o controller)
+      (g.isCreature o || g.isPlaneswalker o) &&
+        (g.controllerOf o).any (g.isLivingOpponentOf controller ·))
     if n == 0 || victims.isEmpty then g
     else
       g.withBatch (g.resolvingBatchCause controller sourceId) fun g =>

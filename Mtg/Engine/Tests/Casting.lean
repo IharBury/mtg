@@ -382,8 +382,8 @@ def foomBoard : Game :=
 
 def foomCopy : Game :=
   let src := named foomBoard "Fin Fang Foom"
-  resolve (withCause foomBoard src lightningBolt) (casting Effect.castingCopyIfArtifactOrLand)
-    (some src.id)
+  resolve (withCause foomBoard src lightningBolt #[Target.player opp])
+    (casting Effect.castingCopyIfArtifactOrLand) (some src.id)
 
 #guard
   match foomCopy.pending with
@@ -394,8 +394,8 @@ def foomCopy : Game :=
 def foomLeft : Game :=
   let src := named foomBoard "Fin Fang Foom"
   let g := (foomBoard.move src.id (.graveyard me) none).1
-  resolve (withCause g src lightningBolt) (casting Effect.castingCopyIfArtifactOrLand)
-    (some src.id)
+  resolve (withCause g src lightningBolt #[Target.player opp])
+    (casting Effect.castingCopyIfArtifactOrLand) (some src.id)
 
 #guard
   match foomLeft.pending with

@@ -493,7 +493,7 @@ def activateManaAbility (g : Game) (p : PlayerId) (id : ObjectId) (idx : Nat)
   if let some spentUnits := spentUnits? then
     g := g.record (GameEvent.manaSpent g.turnNumber p spentUnits (some id)
       (cause := some (.costPayment .mana p (some id))))
-  g ← g.payLifeCost p d.payLife
+  g ← g.payLifeCost p d.payLife (forObject := some id)
   g := g.finishActivateManaAbilityPicks p id oname mana d.picks costIds d.tap d.sacrificeSelf
     d.activatedIdx d.restriction d.damageYou isMountain prevPending (wasPaused := false)
   if let some outer := outerCont? then

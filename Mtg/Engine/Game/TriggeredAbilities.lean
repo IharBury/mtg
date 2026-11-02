@@ -951,7 +951,8 @@ def applyTriggerPump (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         pumpOne
   | .opponentsCreatures =>
     g.withBatch none fun g =>
-      g.foldBattlefield (fun o => g.isCreature o && !g.controlledBy o controller) pumpOne
+      g.foldBattlefield (fun o =>
+        g.isCreature o && (g.controllerOf o).any (g.isLivingOpponentOf controller ·)) pumpOne
   | who =>
     match g.permanentsNamed ctx who with
     | some objs => g.withBatch none fun g => objs.foldl (fun game o => pumpOne game o) g
@@ -1977,7 +1978,7 @@ def applySacrifice (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         | _ => none
       g.sacrificeLeastPowerCreature defn chosen
   | .combatDamager, .none =>
-    g.beginSacDamagers controller (g.apnapOrder.filter (fun p => p != controller && g.stillInGame p))
+    g.beginSacDamagers controller (g.apnapOrder.filter (g.isLivingOpponentOf controller ·))
   | .chosenNontokenCreature, .none =>
     g.continueNontokenSacrifices ((g.livingOpponents controller).map (·.id)) #[]
   | .source, .noted =>
@@ -2403,7 +2404,7 @@ def applyDiscard (g : Game) (controller : PlayerId)
       let g := g.change (.discardedCardThisWay none)
       g.beginDiscardCards #[controller] n
   | .cards n .eachOpponent =>
-    g.beginDiscardCards (g.apnapOrder.filter (· != controller)) n
+    g.beginDiscardCards (g.apnapOrder.filter (g.isLivingOpponentOf controller ·)) n
   | .chosenNonland =>
     g.withLegalKindPlayer controller .opponent targets
       (fun g pid => g.discardNonlandFrom controller pid)
@@ -2443,7 +2444,7 @@ def applyDestroy (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
   match what, note with
   | .oppArtifactsEnchantments, .countDestroyed =>
     let doomed := g.battlefield.filter fun o =>
-      o.isOnBattlefield && !g.controlledBy o controller &&
+      o.isOnBattlefield && (g.controllerOf o).any (g.isLivingOpponentOf controller ·) &&
         (g.isArtifact o || g.isEnchantment o)
     let ids := doomed.map (·.id)
     let preBf := g.battlefield
@@ -3016,10 +3017,25 @@ def applyPut (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     let cards : Array GameObject :=
       match what with
       | .graveyardCard | .graveyardPermanent | .creatureCard =>
-        targets.filterMap fun
+        let legalSet? : Option (Array Target) :=
+          if ab.targetKind == .none then none
+          else some (g.legalTargetsForKind controller ab.targetKind sourceId)
+        targets.filterMap fun t =>
+          match t with
           | Target.card id | Target.permanent id =>
+            let kindOk :=
+              match legalSet? with
+              | some legal => legal.contains (Target.card id) || legal.contains t
+              | none => (g.findObject? id).any (fun o => o.zone == .graveyard controller)
             match g.findObject? id with
-            | some o => if inGraveyard o then some o else none
+            | some o =>
+              let whatOk :=
+                inGraveyard o && kindOk &&
+                  match what with
+                  | .creatureCard => g.isCreature o
+                  | .graveyardPermanent => g.isPermanentCard o
+                  | _ => true
+              if whatOk then some o else none
             | none => none
           | _ => none
       | .top =>
@@ -4116,7 +4132,8 @@ def applyCant (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     | some objs =>
       g.withBatch none fun g =>
         objs.foldl (fun g o =>
-          if g.controlledBy o controller then g
+          if g.controlledBy o controller ||
+              (g.controllerOf o).any (g.areTeammates controller ·) then g
           else if let some sid := sourceId then
             g.createEffect (.cantUntapWhileSource o.id sid)
           else g) g
@@ -4618,10 +4635,14 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
           else
             g.createEffect (.keywordsUntilEot o.id Keyword.haste) (cause := g.currentBatch.bind (·.2)))
     | .whileSourceRemains =>
-      g.gainControlWhileSource controller sourceId targets
+      let maxTotalMv :=
+        match ab.targetKind with
+        | .upToTwoCreaturesTotalMvAtMost n => some n
+        | _ => none
+      g.gainControlWhileSource controller sourceId targets (maxTotalMv := maxTotalMv)
     | .duringNextTurn =>
       g.withLegalKindPlayer controller .opponent targets (fun g pid =>
-        g.setPlayerControl controller pid)
+        g.setPlayerControl controller pid (onNextTurn := true))
         sourceId (some "The target is no longer legal")
   | .honeEachEquipment =>
     let eqs :=

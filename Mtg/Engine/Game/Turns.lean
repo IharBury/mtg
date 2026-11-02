@@ -137,6 +137,7 @@ def clearTurnActivations (g : Game) : Game :=
           | .playerRule p .cantCastSpells .untilEndOfTurn
           | .playerRule p .nextSpellCantBeCountered .untilEndOfTurn
           | .playerRule p .lifeLocked .untilEndOfTurn
+          | .playerRule p (.controlsPlayer _ false) .untilEndOfTurn
           | .playerRule p (.typeSpellCostLess _ _) .untilEndOfTurn
           | .playerRule p (.supertypeSpellCostLess _ _) .untilEndOfTurn => p == pl.id
           | _ => false) (cause := cause)
@@ -324,6 +325,8 @@ def expireUntilNextTurnEffects (g : Game) (p : PlayerId) : Game :=
       | .playerRule q .lifeLocked .untilEndOfTurn
       | .playerRule q (.typeSpellCostLess _ _) .untilEndOfTurn
       | .playerRule q (.supertypeSpellCostLess _ _) .untilEndOfTurn => q == p
+      | .playerRule q (.controlsPlayer them false) .untilEndOfTurn => q == p || them == p
+      | .playerRule q (.controlsPlayer them true) _ => q == p || them == p
       | _ => false) (cause := cause)
     let expiredDt := g.delayedTriggers.filter (fun dt =>
       (match dt.kind with
@@ -577,7 +580,10 @@ partial def beginStepBody (g : Game) (st : Step) : Game :=
   | .declareBlockers =>
     let attackers := g.battlefield.filter (·.status.attacking)
     if attackers.isEmpty then
-      g.logMsg "No attackers; skipping declare blockers and combat damage (CR 508.8)"
+      -- CR 509.1 / 508.8: declare blockers step began because creatures attacked
+      -- earlier this combat even though none remain attacking; skip blocker
+      -- declaration and grant priority.
+      (g.change (.blockersQueue #[])).receivePriority g.activePlayer
     else
       let ps := g.defendingPlayers
       if ps.isEmpty then
@@ -677,6 +683,11 @@ partial def beginTurn (g : Game) : Game :=
   -- CR 500.4 / 611.2a: effects lasting until `p`'s next turn expire as the turn
   -- begins, before `TurnEvent.phaseBegan .beginning` / `TurnEvent.stepBegan .untap`.
   let g := g.withBatch none fun g =>
+    let expiredCtrl := g.activeEffects.filter fun (eid, e) =>
+      match e with
+      | .playerRule _ (.controlsPlayer them true) _ => g.hasTurnAfterBegunSince eid them
+      | _ => false
+    let g := expiredCtrl.foldl (fun acc (eid, _) => acc.expireEffectById eid (cause := cause)) g
     let g := g.expireGoadedFor p
     let g := g.expireFraUntilTurnEffects p
     let g := g.restoreCopiesUntilNextTurn p
@@ -708,15 +719,36 @@ def advanceStep (g : Game) : Game :=
   let g := g.emptyManaPools
   match g.step.next? with
   | some st =>
-    -- Skip declare blockers / combat damage when no attackers.
+    -- CR 508.8: skip declare blockers and combat damage only if no creature was
+    -- declared as an attacker or put onto the battlefield attacking this combat.
     let attackers := g.battlefield.filter (·.status.attacking)
-    if g.step == .declareAttackers && attackers.isEmpty then
-      let g := g.recordStepEnded g.step
-      if let .chooseReplacement .. := g.pending then
-        g.chainPendingReplacement (.beginStepCont .endOfCombat)
+    let hadAttackersThisCombat : Bool :=
+      if g.step != .declareAttackers then true
       else
-        g.beginStep .endOfCombat
-    else if g.step == .declareBlockers && attackers.isEmpty then
+        let stepStartIdx? :=
+          (List.range g.events.size).reverse.find? fun idx =>
+            let e := g.events[idx]!
+            e.turn == g.turnNumber &&
+              match e.change with
+              | .rules (.turn (.stepBegan .declareAttackers _)) => true
+              | _ => false
+        match stepStartIdx? with
+        | some startIdx =>
+          !attackers.isEmpty ||
+            (g.events.extract (startIdx + 1) g.events.size).any fun e =>
+              match e.change with
+              | .rules (.combat (.attackersDeclared _ decls)) => !decls.isEmpty
+              | .rules (.combat (.becameAttacking ..)) => true
+              | _ => false
+        | none =>
+          !attackers.isEmpty ||
+            g.events.any fun e =>
+              e.turn == g.turnNumber &&
+                match e.change with
+                | .rules (.combat (.attackersDeclared _ decls)) => !decls.isEmpty
+                | .rules (.combat (.becameAttacking ..)) => true
+                | _ => false
+    if g.step == .declareAttackers && !hadAttackersThisCombat then
       let g := g.recordStepEnded g.step
       if let .chooseReplacement .. := g.pending then
         g.chainPendingReplacement (.beginStepCont .endOfCombat)

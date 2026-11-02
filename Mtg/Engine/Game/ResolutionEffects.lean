@@ -31,7 +31,9 @@ def putPalantirInfluence (g : Game) (sourceId : ObjectId) (target : Option Playe
       match g.findObject? sourceId with
       | none => refuse
       | some src =>
-        if !src.isOnBattlefield || pid == g.you src then refuse
+        let ctrl := g.you src
+        if !src.isOnBattlefield || !g.isLivingOpponentOf ctrl pid ||
+            !g.playerCanBeTargetedBy ctrl pid (some sourceId) then refuse
         else
           let before := src.status.influence
           let g := g.recordPutCounters src.id .influence 1 (byPlayer := g.controllerOf src)
@@ -1140,12 +1142,14 @@ def becomeCopyOf (g : Game) (o : GameObject) (src : GameObject)
   let g := g.createEffect (.copy o.id printed untilEot untilNextTurn untilSourceLeaves turnPlayer)
   g.logMsg s!"{origName} becomes a copy of {printed0.name}"
 
-/-- Copy an activated or triggered ability on the stack. The copy is not
-cast or activated (MSH 34 / 40 / 66) and uses the same source and X
+/-- Copy an activated or triggered ability on the stack, returning the new
+copy's `ObjectId` if created (CR 707.10 / 800.4d). The copy is not cast or
+activated (MSH 34 / 40 / 66) and uses the same source and X
 (MSH 47 / 302 / 303). -/
-def copyStackAbility (g : Game) (src : GameObject) (controller : PlayerId) : Game :=
+def copyStackAbilityWithId (g : Game) (src : GameObject) (controller : PlayerId) :
+    Game × Option ObjectId :=
   if (g.player controller).lost then
-    g.logMsg s!"A copy of {src.name} is not created (CR 800.4d)"
+    (g.logMsg s!"A copy of {src.name} is not created (CR 800.4d)", none)
   else
     let copyId : ObjectId := ⟨g.nextObjectId⟩
     let copySnap : EventObject := {
@@ -1160,7 +1164,11 @@ def copyStackAbility (g : Game) (src : GameObject) (controller : PlayerId) : Gam
     let g := g.record (GameEvent.stackObjectCopied g.turnNumber src.id copySnap controller
       (cause := g.resolveOptionalCause (g.resolvingOneShotCause controller (some src.id))
         (fallbackSrc := some src.id) (fallbackCtrl := some controller)))
-    g.logMsg s!"A copy of {src.name} is created"
+    (g.logMsg s!"A copy of {src.name} is created", some copyId)
+
+/-- Copy an activated or triggered ability on the stack. -/
+def copyStackAbility (g : Game) (src : GameObject) (controller : PlayerId) : Game :=
+  (g.copyStackAbilityWithId src controller).1
 
 /-- Reveal `p`'s hand (Cloak and Dagger; MSH 132 / 225). -/
 def revealHand (g : Game) (p : PlayerId) (recordEvent : Bool := true) : Game :=

@@ -57,16 +57,39 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
     let p := g.rawActor.getD actor
     match g.pending with
     | .declareAttackers =>
-      let attackers := g.battlefield.filter (g.canAttack)
-      let dest := g.opponent p
-      let rate := g.attackTaxPerCreature dest
-      let n :=
-        if rate == 0 then attackers.size
+      let defaultDest := g.opponent p
+      let opps := g.livingOpponents p
+      let freeOpps := opps.filter (fun pl => g.attackTaxPerCreature pl.id == 0)
+      let pickDestFor (o : GameObject) : Option PlayerId :=
+        let maxSat :=
+          if o.status.goadedBy.isEmpty then 0
+          else
+            freeOpps.foldl (fun best pl =>
+              if g.hasFlying o && g.leftoverFlyingRestriction pl.id then best
+              else max best (o.status.goadedBy.filter (· != pl.id)).size) 0
+        let okFor (d : PlayerId) : Bool :=
+          !(g.hasFlying o && g.leftoverFlyingRestriction d) &&
+            (o.status.goadedBy.isEmpty ||
+              (o.status.goadedBy.filter (· != d)).size >= maxSat)
+        if opps.any (·.id == defaultDest) && okFor defaultDest then
+          some defaultDest
         else
-          (List.range (attackers.size + 1)).foldl (fun best k =>
-            if (g.player p).manaPool.canPay (ManaCost.ofGeneric (k * rate)) then k
-            else best) 0
-      some (.declareAttackers ((attackers.extract 0 n).map (·.id)))
+          (freeOpps.find? (fun pl => okFor pl.id)).orElse
+            (fun _ => opps.find? (fun pl => okFor pl.id))
+            |>.map (·.id)
+      let candPairs := g.battlefield.filterMap fun o =>
+        if g.canAttack o then (pickDestFor o).map (o, ·) else none
+      let (chosen, _) := candPairs.foldl
+        (fun (acc : Array (GameObject × PlayerId) × Nat) (o, d) =>
+          let nextTax := acc.2 + g.attackTaxPerCreature d
+          if nextTax == 0 || (g.player p).manaPool.canPay (ManaCost.ofGeneric nextTax) then
+            (acc.1.push (o, d), nextTax)
+          else acc) (#[], 0)
+      let ids := chosen.map (·.1.id)
+      if chosen.all (·.2 == defaultDest) then
+        some (.declareAttackers ids)
+      else
+        some (.declareAttackers ids (each := chosen.map (some ·.2)))
     | .declareBlockers =>
       -- Naive: don't block. The demo still exercises the declare-blockers step.
       some (.declareBlockers #[])

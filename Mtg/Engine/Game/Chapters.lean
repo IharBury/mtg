@@ -55,6 +55,40 @@ def preventDamageWhileSource (g : Game) (controller : PlayerId)
       g.logMsg s!"damage that would be dealt by {o.name} is prevented while the Saga remains")
       sourceId none
 
+/-- Finish or run sequential exile-to-hand moves for `returnLinkedExileToHand`,
+deferring `linkedExile` removal and the hand-arrival log across
+`Pending.chooseReplacement` and checking `followMovedToZone?`. -/
+def returnLinkedExileToHandLoop (g : Game) (srcId : ObjectId) (ids : Array ObjectId)
+    (pendingItem : Option (ObjectId × PlayerId × String) := none) : Game := Id.run do
+  if let .chooseReplacement .. := g.pending then
+    return g.chainPendingReplacement (.returnLinkedExileToHandLoop srcId ids pendingItem)
+  let mut g := g
+  if let some (eid, owner, name) := pendingItem then
+    if let some srcNow := g.findObject? srcId then
+      if (g.followMovedToZone? eid (· != .exile)).isSome then
+        g := g.changeObject srcId (.linkedExile (srcNow.linkedExile.filter (· != eid)))
+    if (g.followMovedToZone? eid (· == .hand owner)).isSome then
+      g := g.logMsg s!"{name} is put into {(g.player owner).name}'s hand"
+  for i in [0:ids.size] do
+    let eid := ids[i]!
+    match g.findObject? eid with
+    | none => pure ()
+    | some card =>
+      let owner := card.owner
+      let name := card.name
+      let (g', _) := g.move eid (.hand owner) none
+      g := g'
+      if let .chooseReplacement .. := g.pending then
+        let rem := ids.extract (i + 1) ids.size
+        return g.chainPendingReplacement
+          (.returnLinkedExileToHandLoop srcId rem (some (eid, owner, name)))
+      if let some srcNow := g.findObject? srcId then
+        if (g.followMovedToZone? eid (· != .exile)).isSome then
+          g := g.changeObject srcId (.linkedExile (srcNow.linkedExile.filter (· != eid)))
+      if (g.followMovedToZone? eid (· == .hand owner)).isSome then
+        g := g.logMsg s!"{name} is put into {(g.player owner).name}'s hand"
+  return g
+
 /-- A card the source exiled returns to its owner's hand. -/
 def returnLinkedExileToHand (g : Game) (sourceId : Option ObjectId) : Game :=
   match sourceId.bind g.findObject? with
@@ -63,15 +97,10 @@ def returnLinkedExileToHand (g : Game) (sourceId : Option ObjectId) : Game :=
     match src.linkedExile[0]? with
     | none => g.logMsg "No card is exiled with this Saga"
     | some eid =>
-      match g.findObject? eid with
-      | none => g.logMsg "The exiled card is no longer there"
-      | some card =>
-        let owner := card.owner
-        let name := card.name
-        let (g, _) := g.move eid (.hand owner) none
-        let srcNow := g.object! src.id
-        let g := g.changeObject src.id (.linkedExile (srcNow.linkedExile.filter (· != eid)))
-        g.logMsg s!"{name} is put into {(g.player owner).name}'s hand"
+      if (g.findObject? eid).isNone then
+        g.logMsg "The exiled card is no longer there"
+      else
+        g.returnLinkedExileToHandLoop src.id #[eid]
 
 /-- Whenever the controller attacks this turn, a creature they control
 gets +1/+1 for each Plains they control. -/
@@ -127,25 +156,40 @@ def treasureThenDragon (g : Game) (controller : PlayerId)
   else
     g.treasureThenDragonAfterCreate controller sourceId
 
-/-- Gain control of the announced creatures while the source remains. -/
+/-- Gain control of the announced creatures while the source remains
+(CR 608.2b / 611.2b / 613.7). -/
 def gainControlWhileSource (g : Game) (controller : PlayerId)
-    (sourceId : Option ObjectId) (targets : Array Target) : Game :=
+    (sourceId : Option ObjectId) (targets : Array Target)
+    (maxTotalMv : Option Nat := none) : Game :=
   g.withSourceStillOnBattlefield sourceId (fun g src =>
-    targets.foldl (fun (g : Game) (t : Target) =>
-      match t with
-      | Target.permanent id =>
-        match g.findObject? id with
-        | some o =>
-          if o.isOnBattlefield && g.isCreature o && g.canBeTargetedBy controller o sourceId then
-            let g :=
-              if (g.player controller).lost then
-                g.logMsg s!"{o.name} does not change control (CR 800.4b)"
-              else
-                g.createEffect (.controlWhileSource o.id controller src.id)
-            g.logMsg s!"{(g.player controller).name} gains control of {o.name}"
-          else g
-        | none => g
-      | _ => g) g)
+    let legalIds : Array ObjectId := Id.run do
+      let mut ids : Array ObjectId := #[]
+      for t in targets do
+        if let Target.permanent id := t then
+          if !ids.contains id then
+            if let some o := g.findObject? id then
+              let mvOk := maxTotalMv.all (g.objectManaValue o ≤ ·)
+              if o.isOnBattlefield && g.isCreature o &&
+                  g.canBeTargetedBy controller o sourceId && mvOk then
+                ids := ids.push id
+      return ids
+    let totalMv := legalIds.foldl (fun acc id =>
+      match g.findObject? id with
+      | some o => acc + g.objectManaValue o
+      | none => acc) 0
+    if !targets.isEmpty && (legalIds.isEmpty || !maxTotalMv.all (totalMv ≤ ·)) then
+      g.logMsg "The target is no longer legal"
+    else
+      g.withBatch none fun g =>
+        legalIds.foldl (fun (g : Game) id =>
+          match g.findObject? id with
+          | some o =>
+            if (g.player controller).lost then
+              g.logMsg s!"{o.name} does not change control (CR 800.4b)"
+            else
+              g.createEffect (.controlWhileSource o.id controller src.id)
+                |>.logMsg s!"{(g.player controller).name} gains control of {o.name}"
+          | none => g) g)
     "The Super Hero Civil War has left the battlefield. You won't gain control."
 
 /-- Resolve a printed Saga chapter (CR 714.2 / 608). -/
@@ -231,8 +275,8 @@ def applyChapterEffect (g : Game) (controller : PlayerId) (e : Effect)
   | .plusOneUpToOne =>
     g.withLegalKindPermanent controller .creature targets (fun g o =>
       g.addPlusOnePlusOneTo o 1) sourceId none
-  | .gainControlOfUpToTwoCreaturesTotalMvAtMost _n =>
-    g.gainControlWhileSource controller sourceId targets
+  | .gainControlOfUpToTwoCreaturesTotalMvAtMost n =>
+    g.gainControlWhileSource controller sourceId targets (maxTotalMv := some n)
   | .dealDamageToEachNonSubtypeAndOpponents n subtype =>
     let src? := sourceId.bind g.damageSourceById?
     let srcSnap? := sourceId.bind g.damageSourceEventById?

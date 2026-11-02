@@ -86,7 +86,7 @@ partial def continueDiscardTwo (g : Game) (controller : PlayerId) (players : Arr
       let nonland := (hand.filter (fun id => !g.isLand (g.object! id))).size
       let nextDraws := if nonland < 2 then draws + 1 else draws
       let g := g.withBatch none fun g =>
-        hand.foldl (fun g id => g.discardFromHand p id) g
+        g.discardHandIdsLoop p hand (logEach := true)
       let g :=
         if hand.isEmpty then g.logMsg s!"{(g.player p).name} has no cards to discard" else g
       if let .chooseReplacement .. := g.pending then
@@ -349,7 +349,7 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
   | .eachPlayerSacrificesThenBeast =>
     g.continueSacrificeEach controller g.apnapOrder #[]
   | .eachOpponentDiscardsTwoDrawPerShort =>
-    g.continueDiscardTwo controller (g.apnapOrder.filter (· != controller)) 0
+    g.continueDiscardTwo controller (g.apnapOrder.filter (g.isLivingOpponentOf controller ·)) 0
   | .damageEachCreatureExceptYourTokens n =>
     let victims := g.battlefield.filter (fun o =>
       g.isCreature o && !(o.printed.isToken && g.controlledBy o controller))

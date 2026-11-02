@@ -62,8 +62,19 @@ def declareAttackers (g : Game) (p : PlayerId) (ids : Array ObjectId)
         match pw? with
         | some pw => pure ((g.controllerOf pw).getD pw.owner)
         | none => g.resolveAttackDestination p want
-      if g.hasFlying o && g.leftoverFlyingRestriction dest then
+      if pw?.isNone && g.hasFlying o && g.leftoverFlyingRestriction dest then
         throw s!"{g.name o} can't attack {(g.player dest).name}"
+      if !o.status.goadedBy.isEmpty then
+        let satisfied :=
+          if pw?.isNone then (o.status.goadedBy.filter (· != dest)).size else 0
+        let maxSatisfiable :=
+          (g.livingOpponents p).foldl (fun best opp =>
+            if g.attackTaxPerCreature opp.id == 0 &&
+                !(g.hasFlying o && g.leftoverFlyingRestriction opp.id) then
+              max best (o.status.goadedBy.filter (· != opp.id)).size
+            else best) 0
+        if satisfied < maxSatisfiable then
+          throw s!"{g.name o} is goaded and must attack a player other than its goader if able (CR 701.15b)"
       let target : AttackTarget :=
         match pw? with
         | some pw => .planeswalker pw.id
@@ -92,7 +103,18 @@ def declareAttackers (g : Game) (p : PlayerId) (ids : Array ObjectId)
         throw s!"No more than one creature can attack {g.name pw} each combat"
   for o in g.permanentsOf p do
     if g.mustAttackIfAble o && !ids.contains o.id then
-      throw s!"{g.name o} must attack if able"
+      let onlyBlockedByTomik :=
+        !(g.livingOpponents p).any fun pl =>
+          g.attackTaxPerCreature pl.id == 0 &&
+            (!(g.hasFlying o && g.leftoverFlyingRestriction pl.id) ||
+              (g.permanentsOf pl.id).any fun pw =>
+                g.isPlaneswalker pw &&
+                  !(g.cantAttackJaces p && ((g.name pw).startsWith "Jace" || g.hasSubtype pw .jace)) &&
+                  !(g.planeswalkerAttackedByOneAtMost pw &&
+                    g.battlefield.any (fun a =>
+                      a.status.attacking && a.status.attackingPlaneswalker? == some pw.id)))
+      if !onlyBlockedByTomik then
+        throw s!"{g.name o} must attack if able"
   let tax := ids.foldl (fun acc id =>
     let o := g.object! id
     if o.status.attackingTarget.isSome then
@@ -512,7 +534,9 @@ def finishAttackerCombatAssignment (g : Game) : Game :=
 /-- Start CR 510.1: the active player assigns attacking creatures first. -/
 def beginCombatDamageAssignment (g : Game) : Game :=
   let g := g.changes #[.pending .none, .pendingBlockerAssignments #[]]
-  if g.needsCombatDamageChoice true then
+  if !g.battlefield.any (fun o => o.status.attacking || !o.status.blocking.isEmpty) then
+    g.receivePriority g.activePlayer
+  else if g.needsCombatDamageChoice true then
     g.change (.pending (.assignCombatDamage g.activePlayer true))
       |>.logMsg s!"{(g.player g.activePlayer).name} assigns combat damage (CR 510.1c)"
   else

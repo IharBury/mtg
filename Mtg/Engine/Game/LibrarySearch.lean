@@ -105,15 +105,39 @@ def placeSearchedHand (g : Game) (p : PlayerId) (id : ObjectId)
     let (g, _) := g.move id (.hand p) none (cause := cause)
     g.logMsg s!"{(g.player p).name} reveals {name} and puts it into their hand"
 
+/-- Put `ids` into their owners' graveyards sequentially inside an open batch,
+deferring each `"is put into ...'s graveyard"` log across `Pending.chooseReplacement`
+and emitting it only if the card actually arrived in `.graveyard owner`. -/
+def placeSearchedGraveyardLoop (g : Game) (ids : Array ObjectId)
+    (cause : Option EventCause := none)
+    (pendingLog : Option (ObjectId × PlayerId × String) := none) : Game := Id.run do
+  if let .chooseReplacement .. := g.pending then
+    return g.chainPendingReplacement (.placeSearchedGraveyardLoop ids cause pendingLog)
+  let mut g := g
+  if let some (fromId, owner, name) := pendingLog then
+    if (g.followMovedToZone? fromId (· == .graveyard owner)).isSome then
+      g := g.logMsg s!"{name} is put into {(g.player owner).name}'s graveyard"
+  for i in [0:ids.size] do
+    let id := ids[i]!
+    match g.findObject? id with
+    | none => pure ()
+    | some o =>
+      let name := o.name
+      let owner := o.owner
+      let (g', _) := g.move id (.graveyard owner) none (cause := cause)
+      g := g'
+      if let .chooseReplacement .. := g.pending then
+        let rem := ids.extract (i + 1) ids.size
+        return g.chainPendingReplacement
+          (.placeSearchedGraveyardLoop rem cause (some (id, owner, name)))
+      if (g.followMovedToZone? id (· == .graveyard owner)).isSome then
+        g := g.logMsg s!"{name} is put into {(g.player owner).name}'s graveyard"
+  return g
+
 /-- Put `id` into its owner's graveyard. -/
 def placeSearchedGraveyard (g : Game) (id : ObjectId)
     (cause : Option EventCause := none) : Game :=
-  match g.findObject? id with
-  | none => g
-  | some o =>
-    let name := o.name
-    let (g, _) := g.move id (.graveyard o.owner) none (cause := cause)
-    g.logMsg s!"{name} is put into {(g.player o.owner).name}'s graveyard"
+  g.placeSearchedGraveyardLoop #[id] cause
 
 /-- Exile `id` and link the exiled card to `source` (CR 610.3). -/
 def exileSearchedLinked (g : Game) (p : PlayerId) (id : ObjectId)
@@ -160,7 +184,7 @@ def applySearchAfter (g : Game) : Game :=
   match after with
   | .putOnTop p ids => g.putIdsOnTop p ids
   | .beholdUntap p landId subtype => g.beholdAndMaybeUntap p landId subtype
-  | .plusOne id => g.addPlusOneIfStillCreature id
+  | .plusOne id ctrl srcId => g.addPlusOneIfStillCreature id ctrl srcId
   | .discardRandom p =>
     let hand := (g.player p).hand
     if hand.isEmpty then g
@@ -185,7 +209,7 @@ def shuffleThen (g : Game) (p : PlayerId) (onDone : AfterRandom) : Game :=
 /-- The post-shuffle action, including a +1/+1 counter waiting on this search. -/
 def searchDone (g : Game) (p : PlayerId) (after : Option FraNext) : Game × AfterRandom :=
   match g.plusOneAfterSearch with
-  | some id => (g.change (.plusOneAfterSearch none), .plusOne id)
+  | some (id, ctrl, srcId) => (g.change (.plusOneAfterSearch none), .plusOne id ctrl srcId)
   | none => (g, searchAfter p after)
 
 /-- Shuffle, then run the search's after-action. -/
@@ -198,8 +222,8 @@ def shuffleSearch (g : Game) (p : PlayerId) (after : Option FraNext) : Game :=
 def applyWaitingPlusOne (g : Game) : Game :=
   match g.plusOneAfterSearch with
   | none => g
-  | some id =>
-    addPlusOneIfStillCreature (g.change (.plusOneAfterSearch none)) id
+  | some (id, ctrl, srcId) =>
+    addPlusOneIfStillCreature (g.change (.plusOneAfterSearch none)) id ctrl srcId
 
 /-- Two-pass simultaneous battlefield placement for `placeSearchedBatch`:
 first move every searched card in `remainingIds` onto `.battlefield` using
@@ -325,8 +349,11 @@ def finishLibrarySearch (g : Game) (p : PlayerId) (ids : Array ObjectId)
       let (g, cause) := allocSearchStepCause g
       let g := g.record (GameEvent.searched g.turnNumber p p ids (cause := some cause))
       let g := g.withBatch (some cause) fun g =>
-        ids.foldl (fun g id => g.placeSearchedGraveyard id (cause := some cause)) g
-      g.shuffleSearch p after
+        g.placeSearchedGraveyardLoop ids (cause := some cause)
+      if g.pending != .none then
+        g.chainPendingReplacement (.finishSearchAfterPlace p none dest after true #[] (some cause))
+      else
+        g.finishSearchAfterPlace p none dest after true #[] (some cause)
     | .topAfterShuffle =>
       let (g, cause) := allocSearchStepCause g
       let g := g.record (GameEvent.searched g.turnNumber p p ids (cause := some cause))

@@ -308,7 +308,7 @@ inductive CostKind where
   | casualty            -- 702.153
   | bargain             -- 702.166
   | ward                -- 702.21
-  | teamwork            -- set mechanic (tap two untapped teammates)
+  | teamwork            -- 702.194
   | returnToHand        -- 118.3 / 702.190a (sneak / return permanent to hand)
   | putCounters         -- 118.3 / 122.1
   | cycle               -- 702.29
@@ -341,6 +341,7 @@ inductive ReplacementEffectKind where
   | entersAsCopyCreatureUntilEot (targetId : ObjectId) -- 616.1c / 614.1c / 614.12
   | declineEntersAsCopy                  -- 616.1c / 614.1c / 614.12
   | entersBackFaceUp                     -- 616.1d / 702.145b / 712.14
+  | asEntersAttachAura (hostId : ObjectId) -- 303.4f–g / 614.12
   | entersWithExtraCounters              -- 616.1e
   | othersEnterWithPlusOneEqualToughness -- 616.1e (Arwen, Weaver of Hope)
   | extraCounterOnPermanents             -- 122.6 / 614.1a (Doc Samson)

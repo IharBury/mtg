@@ -507,28 +507,42 @@ def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
     let g :=
       if amt > 0 then
         let happened := GameEvent.damaged g.turnNumber srcEvent (g.snapshot marked) amt combat (cause := dmgCause)
-        let g := g.record happened |>.record (GameEvent.damageMarked g.turnNumber marked.id amt (cause := dmgCause))
-        if g.isPlaneswalker marked then
-          g.record (GameEvent.counters g.turnNumber none (g.snapshot marked) .loyalty amt true (cause := dmgCause))
+        let g := g.record happened
+        let g :=
+          if g.isCreature marked then
+            g.record (GameEvent.damageMarked g.turnNumber marked.id amt (cause := dmgCause))
+          else g
+        let cur := g.object! o.id
+        if g.isPlaneswalker cur then
+          let lose := min amt (cur.status.counterCount .loyalty)
+          if lose > 0 then
+            g.record (GameEvent.counters g.turnNumber none (g.snapshot cur) .loyalty lose true (cause := dmgCause))
+          else g
         else g
       else g
     g.logMsg msg
   else
-  -- CR 120.3c: damage dealt to a planeswalker removes that many loyalty counters.
+  -- CR 120.3c / 120.3e: damage dealt to a creature is marked on it; damage
+  -- dealt to a planeswalker removes up to its remaining loyalty counters.
   let n := rep.amount
-  let happened := GameEvent.damaged g.turnNumber srcEvent (g.snapshot o) n.toNat combat (cause := dmgCause)
-  let g := if n > 0 then g.record happened else g
+  let amt := n.toNat
   let g :=
-    let g :=
-      if n > 0 then
-        g.record (GameEvent.damageMarked g.turnNumber o.id n.toNat (cause := dmgCause))
+    if n > 0 then
+      let happened := GameEvent.damaged g.turnNumber srcEvent (g.snapshot o) amt combat (cause := dmgCause)
+      let g := g.record happened
+      let g :=
+        if g.isCreature o then
+          g.record (GameEvent.damageMarked g.turnNumber o.id amt (cause := dmgCause))
+        else g
+      let cur := g.object! o.id
+      if g.isPlaneswalker cur then
+        let lose := min amt (cur.status.counterCount .loyalty)
+        if lose > 0 then
+          g.record (GameEvent.counters g.turnNumber none (g.snapshot cur) .loyalty lose true (cause := dmgCause))
+        else g
       else g
-    let g :=
-      if g.isPlaneswalker o && n > 0 then
-        g.record (GameEvent.counters g.turnNumber none (g.snapshot o) .loyalty n.toNat true (cause := dmgCause))
-      else g
-    g.logMsg msg
-  g
+    else g
+  g.logMsg msg
 
 /-- Increase `p`'s life total (CR 119.3), running the CR 616.1 replacement loop
 for any active `.modifyLifeGain` replacement effects. Gaining 0 life does
@@ -550,7 +564,7 @@ def gainLife (g : Game) (p : PlayerId) (n : Nat)
     if g.lifeLocked p || g.lifeCantChange p then
       g.logMsg s!"{pl.name}'s life total can't change"
     else
-      let (n, applied, cause', choice?) :
+      let (finalN, applied, cause', choice?) :
           Nat × Array ReplacementId × Option EventCause × Option (PlayerId × Array ReplacementId) := Id.run do
         let mut curN := n
         let mut curApplied : Array ReplacementId := #[]
@@ -594,13 +608,13 @@ def gainLife (g : Game) (p : PlayerId) (n : Nat)
         g.promptChooseReplacement chooser choices (.gainLife p n cause)
       | none =>
         let g := g.consumeReplacementOrder applied
-        if n == 0 then g
+        if finalN == 0 then g
         else
           let before := pl.life
           let finalCause := g.resolveOptionalCause cause' (fallbackCtrl := some p)
-          let happened := GameEvent.life g.turnNumber p n true (cause := finalCause)
+          let happened := GameEvent.life g.turnNumber p finalN true (cause := finalCause)
           (g.record happened).logMsg
-            s!"{pl.name} gains {n} life ({before + (n : Int)} life)"
+            s!"{pl.name} gains {finalN} life ({before + (finalN : Int)} life)"
 
 /-- Deal `n` damage to a creature and log the generic “is dealt” message. -/
 def dealDamageToPermanent (g : Game) (o : GameObject) (n : Int)
@@ -638,7 +652,7 @@ def dealDamageToPermanent (g : Game) (o : GameObject) (n : Int)
     -- CR 702.15b: damage dealt by a source with lifelink.
     match srcEvent?.bind (fun src => if src.keywords.lifelink then src.controller else none) with
     | some c =>
-      if dealtAmt > 0 && !prevented then g.gainLife c dealtAmt.toNat (cause := cause) else g
+      if dealtAmt > 0 && !prevented then g.gainLife c dealtAmt.toNat (cause := rep.cause) else g
     | none => g
 
 /-- Deal `n` damage from a named source (fight, dies trigger, blocked trigger). -/
@@ -707,7 +721,7 @@ def dealDamageFrom (g : Game) (sourceName : String) (o : GameObject) (n : Int)
         -- CR 702.15b: damage dealt by a source with lifelink.
         match ctrl? with
         | some c =>
-          if dealtAmt > 0 && !prevented && hasLl then g.gainLife c dealtAmt.toNat (cause := cause) else g
+          if dealtAmt > 0 && !prevented && hasLl then g.gainLife c dealtAmt.toNat (cause := rep.cause) else g
         | none => g
   | none =>
     g.markDamageOn o n s!"{sourceName} deals {n} damage to {g.name o}" deathtouch (cause := cause)
@@ -801,7 +815,7 @@ def dealDamageToPlayer (g : Game) (pid : PlayerId) (n : Int)
           if srcEvent.keywords.lifelink then srcEvent.controller else none
       | none => if srcEvent.keywords.lifelink then srcEvent.controller else none
     match lifelinkCtrl? with
-    | some c => if n > 0 then g.gainLife c n.toNat (cause := cause) else g
+    | some c => if n > 0 then g.gainLife c n.toNat (cause := some dmgCause) else g
     | none => g
 
 /-- Deal `n` damage to each living player in `players`, stopping if a replacement

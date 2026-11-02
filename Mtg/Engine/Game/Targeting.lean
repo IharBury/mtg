@@ -11,14 +11,15 @@ and which triggered abilities still need targets.
 namespace Mtg.Engine
 namespace Game
 
-/-- Whether `caster` may target `o` (CR 115.1, 702.11b, 702.16b). -/
+/-- Whether `caster` may target `o` (CR 115.1, 702.11b, 702.16b, 810.5). -/
 def canBeTargetedBy (g : Game) (caster : PlayerId) (o : GameObject)
     (sourceId : Option ObjectId := none) : Bool :=
   let srcBlocked :=
     match g.targetingSourceObject? sourceId with
     | some src => g.frcProtectedFrom o src
     | none => false
-  (!g.hasHexproof o || g.controlledBy o caster) && !srcBlocked
+  (!g.hasHexproof o || g.controlledBy o caster ||
+      (g.controllerOf o).any (g.areTeammates · caster)) && !srcBlocked
 
 /-- Player targets `caster` may choose. A player with hexproof or protection is
 not a legal target when prohibited (CR 702.11c / 702.16b). -/
@@ -174,7 +175,7 @@ def legalFilteredTargets (g : Game) (caster : PlayerId) (f : TargetFilter)
       match f.controller with
       | .any => true
       | .you => pl.id == caster
-      | .opponent | .eachOpponent => pl.id != caster
+      | .opponent | .eachOpponent => g.isLivingOpponentOf caster pl.id
       | .specific idx => pl.id.idx == idx)) sourceId
 
 /-- Whether the spell being cast or resolved paid its teamwork cost (CR 601.2 / 608.2).
@@ -364,14 +365,14 @@ def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTarge
     g.legalPermanentTargets caster (fun o => o.isOnBattlefield && g.controlledBy o caster) sourceId
   | .oppPermanent =>
     g.legalPermanentTargets caster (fun o =>
-      o.isOnBattlefield && (g.controllerOf o).isSome && !g.controlledBy o caster) sourceId
+      o.isOnBattlefield && (g.controllerOf o).any (g.isLivingOpponentOf caster ·)) sourceId
   | .planeswalkerYouControl =>
     g.legalPermanentTargets caster (fun o =>
       o.isOnBattlefield && g.isPlaneswalker o && g.controlledBy o caster) sourceId
   | .oppCreatureOrPlaneswalker =>
     g.legalPermanentTargets caster (fun o =>
       o.isOnBattlefield && (g.isCreature o || g.isPlaneswalker o) &&
-        (g.controllerOf o).isSome && !g.controlledBy o caster) sourceId
+        (g.controllerOf o).any (g.isLivingOpponentOf caster ·)) sourceId
   | .creatureYouControlThenOppCreatureOrPlaneswalker => #[]
   | .planeswalkerYouControlThenOppCreatureOrPlaneswalker => #[]
   | .anotherCreatureYouControlPowerAtMost n =>
