@@ -236,12 +236,21 @@ pausing on `Pending.chooseReplacement`. -/
 def returnLinkedExileLoop (g : Game) (remainingIds : Array ObjectId)
     (cause : Option EventCause := none)
     (enteredFromIds : Array ObjectId := #[])
-    (preBattlefield : Option (Array GameObject) := none) : Game := Id.run do
+    (preBattlefield : Option (Array GameObject) := none)
+    (pendingLog : Option (ObjectId × Zone) := none) : Game := Id.run do
   if let .chooseReplacement .. := g.pending then
     return g.chainPendingReplacement
-      (.returnLinkedExileLoop remainingIds cause enteredFromIds preBattlefield)
+      (.returnLinkedExileLoop remainingIds cause enteredFromIds preBattlefield pendingLog)
   let preBf := preBattlefield.getD g.battlefield
   let mut g := g
+  if let some (fromId, dest) := pendingLog then
+    if let some moved := g.followMovedToZone? fromId (· == dest) then
+      match dest with
+      | .hand p =>
+        g := g.logMsg s!"{moved.name} returns to {(g.player p).name}'s hand"
+      | .graveyard p =>
+        g := g.logMsg s!"{moved.name} returns to {(g.player p).name}'s graveyard"
+      | _ => pure ()
   let mut entered := enteredFromIds
   for i in [0:remainingIds.size] do
     let id := remainingIds[i]!
@@ -252,13 +261,24 @@ def returnLinkedExileLoop (g : Game) (remainingIds : Array ObjectId)
         match o.returnToZone with
         | some (.hand p) =>
           let (g', _) := g.move id (.hand p) none (cause := cause)
-          g := g'.logMsg s!"{name} returns to {(g'.player p).name}'s hand"
+          if let .chooseReplacement .. := g'.pending then
+            let rem := remainingIds.extract (i + 1) remainingIds.size
+            return g'.chainPendingReplacement
+              (.returnLinkedExileLoop rem cause entered (some preBf) (some (id, .hand p)))
+          if let some moved := g'.followMovedToZone? id (· == .hand p) then
+            g := g'.logMsg s!"{moved.name} returns to {(g'.player p).name}'s hand"
+          else
+            g := g'
         | some (.graveyard p) =>
           let (g', _) := g.move id (.graveyard p) none (cause := cause)
           if let .chooseReplacement .. := g'.pending then
-            g := g'
+            let rem := remainingIds.extract (i + 1) remainingIds.size
+            return g'.chainPendingReplacement
+              (.returnLinkedExileLoop rem cause entered (some preBf) (some (id, .graveyard p)))
+          if let some moved := g'.followMovedToZone? id (· == .graveyard p) then
+            g := g'.logMsg s!"{moved.name} returns to {(g'.player p).name}'s graveyard"
           else
-            g := g'.logMsg s!"{name} returns to {(g'.player p).name}'s graveyard"
+            g := g'
         | _ =>
           if g.isAura o then
             let auraProbe := { o with controller := some owner }
@@ -277,10 +297,10 @@ def returnLinkedExileLoop (g : Game) (remainingIds : Array ObjectId)
             let (g', _) := g.move id .battlefield (some owner) (cause := cause)
             g := g'
             entered := entered.push id
-        if let .chooseReplacement .. := g.pending then
-          let rem := remainingIds.extract (i + 1) remainingIds.size
-          return g.chainPendingReplacement
-            (.returnLinkedExileLoop rem cause entered (some preBf))
+          if let .chooseReplacement .. := g.pending then
+            let rem := remainingIds.extract (i + 1) remainingIds.size
+            return g.chainPendingReplacement
+              (.returnLinkedExileLoop rem cause entered (some preBf) none)
   for j in [0:entered.size] do
     let fromId := entered[j]!
     if let some enteredObj := g.followMovedToZone? fromId (· == .battlefield) then
@@ -294,7 +314,7 @@ def returnLinkedExileLoop (g : Game) (remainingIds : Array ObjectId)
         let remEntered := entered.extract (j + 1) entered.size
         if !remEntered.isEmpty then
           g := g.chainPendingReplacement
-            (.returnLinkedExileLoop #[] cause remEntered (some preBf))
+            (.returnLinkedExileLoop #[] cause remEntered (some preBf) none)
         return g
   return g
 
@@ -822,7 +842,8 @@ def commitEnteringAttackItems (g : Game)
     (chosen : Array (EnteringAttackItem × Option AttackTarget))
     (cause : Option EventCause := none)
     (resetRecent : Bool := true)
-    (postEntries : Array (ObjectId × PlayerId × String × List TriggeredAbility.TriggerEnterWith × EnteringAttackLog) := #[]) : Game :=
+    (postEntries : Array (ObjectId × PlayerId × String × List TriggeredAbility.TriggerEnterWith × EnteringAttackLog) := #[])
+    (preBattlefield : Option (Array GameObject) := none) : Game :=
   let hasTokens := chosen.any (fun | (.token .., _) => true | _ => false)
   if hasTokens then
     match chosen[0]? with
@@ -879,6 +900,7 @@ def commitEnteringAttackItems (g : Game)
   else
     let g :=
       g.withBatch cause fun g => Id.run do
+        let preBf := preBattlefield.getD g.battlefield
         let mut g := g
         let mut entries := postEntries
         for i in [0:chosen.size] do
@@ -887,18 +909,38 @@ def commitEnteringAttackItems (g : Game)
           | .token .. => pure ()
           | .card cardId enteringController effectController tapped returnedAsArtifact extraEntersWith mods logKind _ =>
             if let some o := g.findObject? cardId then
-              let (g', _) := g.putOntoBattlefield o.id enteringController (tapped := tapped)
-                (attacking := atkTgt.isSome) (attackingTarget := atkTgt)
-                (returnedAsArtifact := returnedAsArtifact)
-                (extraEntersWith := extraEntersWith)
-                (enterMods := mods.toArray)
-                (cause := cause)
-              g := g'
-              entries := entries.push (o.id, effectController, o.name, mods, logKind)
+              if !(g.player enteringController).lost && g.isAura o then
+                let auraProbe := { o with controller := some enteringController }
+                let host? := preBf.find? (fun h =>
+                  (g.findObject? h.id).any (fun curH =>
+                    curH.isOnBattlefield && g.auraObjCanEnchant curH auraProbe))
+                match host? with
+                | none =>
+                  g := g.logMsg s!"{o.name} remains in its current zone (can't be attached legally; CR 303.4f)"
+                | some host =>
+                  let (g', _) := g.putOntoBattlefield o.id enteringController (tapped := tapped)
+                    (attachedTo := some host.id)
+                    (attacking := atkTgt.isSome) (attackingTarget := atkTgt)
+                    (returnedAsArtifact := returnedAsArtifact)
+                    (extraEntersWith := extraEntersWith)
+                    (enterMods := mods.toArray)
+                    (cause := cause)
+                  g := g'
+                  entries := entries.push (o.id, effectController, o.name, mods, logKind)
+              else
+                let (g', _) := g.putOntoBattlefield o.id enteringController (tapped := tapped)
+                  (attacking := atkTgt.isSome) (attackingTarget := atkTgt)
+                  (returnedAsArtifact := returnedAsArtifact)
+                  (extraEntersWith := extraEntersWith)
+                  (enterMods := mods.toArray)
+                  (cause := cause)
+                g := g'
+                entries := entries.push (o.id, effectController, o.name, mods, logKind)
               if let .chooseReplacement .. := g.pending then
                 let rem := chosen.extract (i + 1) chosen.size
                 if !rem.isEmpty then
-                  g := g.chainPendingReplacement (.commitEnteringAttackItems rem cause false entries)
+                  g := g.chainPendingReplacement
+                    (.commitEnteringAttackItems rem cause false entries (some preBf))
                 else
                   g := g.chainPendingReplacement (.finishEnteringAttackCards entries cause)
                 return g
@@ -1122,8 +1164,44 @@ def finishWorldsWithinWorldsExileSelf (g : Game) (sourceId : Option ObjectId) : 
     else
       g.withBatch none fun g =>
         let (g', _) := g.move src.id .exile none
-        g'.logMsg s!"{src.name} is exiled"
+        if let .chooseReplacement .. := g'.pending then
+          g'.chainPendingReplacement
+            (.finishPostStep 87 g'.activePlayer (cardId := some src.id))
+        else if let some moved := g'.followMovedToZone? src.id (· == .exile) then
+          g'.logMsg s!"{moved.name} is exiled"
+        else g'
   | none => g
+
+/-- Move each card in `remainingIds` from `.exile` to its owner's hand inside
+the `Worlds Within Worlds` return batch, logging only once each zone change
+actually places the card into its owner's hand. -/
+def worldsReturnExiledLoop (g : Game) (remainingIds : Array ObjectId)
+    (pendingCard : Option (ObjectId × PlayerId) := none) : Game := Id.run do
+  if let .chooseReplacement .. := g.pending then
+    let (owner, cid?) :=
+      match pendingCard with
+      | some (cid, own) => (own, some cid)
+      | none => (g.activePlayer, none)
+    return g.chainPendingReplacement
+      (.finishPostStep 86 owner (cardId := cid?) (ids := remainingIds))
+  let mut g := g
+  if let some (fromId, owner) := pendingCard then
+    if let some moved := g.followMovedToZone? fromId (· == .hand owner) then
+      g := g.logMsg s!"{moved.name} is returned to its owner's hand"
+  for i in [0:remainingIds.size] do
+    let nid := remainingIds[i]!
+    if let some o := g.findObject? nid then
+      if o.zone == .exile then
+        let owner := o.owner
+        let (g', _) := g.move o.id (.hand owner) none
+        g := g'
+        if let .chooseReplacement .. := g.pending then
+          let rem := remainingIds.extract (i + 1) remainingIds.size
+          return g.chainPendingReplacement
+            (.finishPostStep 86 owner (cardId := some o.id) (ids := rem))
+        if let some moved := g.followMovedToZone? o.id (· == .hand owner) then
+          g := g.logMsg s!"{moved.name} is returned to its owner's hand"
+  return g
 
 /-- Return exiled cards to their owners' hands and exile `sourceId` in separate
 CR 608.2c batches at the end of `finishWorldsWithinWorlds`. -/
@@ -1132,21 +1210,8 @@ def finishWorldsWithinWorldsTail (g : Game) (exiled : Array ObjectId)
   let g :=
     if exiled.isEmpty then g
     else
-      g.withBatch none fun g => Id.run do
-        let mut g := g
-        for i in [0:exiled.size] do
-          let nid := exiled[i]!
-          if let some o := g.findObject? nid then
-            if o.zone == .exile then
-              let (g', _) := g.move o.id (.hand o.owner) none
-              g := g'.logMsg s!"{o.name} is returned to its owner's hand"
-              if let .chooseReplacement .. := g.pending then
-                let rem := exiled.extract (i + 1) exiled.size
-                if !rem.isEmpty then
-                  g := g.chainPendingReplacement
-                    (.finishPostStep 2 g.activePlayer (sourceId := sourceId) (ids := rem))
-                return g
-        return g
+      g.withBatch none fun g =>
+        g.worldsReturnExiledLoop exiled none
   if let .chooseReplacement .. := g.pending then
     g.chainPendingReplacement
       (.finishPostStep 81 g.activePlayer (sourceId := sourceId))

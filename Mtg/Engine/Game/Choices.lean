@@ -230,11 +230,13 @@ def putToBattlefieldLoop (g : Game) (controller : PlayerId)
     (tapped : Bool := false)
     (isLandEnters : Bool := false)
     (onlyFoodArtifact : Bool := false)
-    (cause : Option EventCause := none) : Game := Id.run do
+    (cause : Option EventCause := none)
+    (preBattlefield : Option (Array GameObject) := none) : Game := Id.run do
   if let .chooseReplacement .. := g.pending then
     return g.chainPendingReplacement
       (.putToBattlefieldLoop controller remainingIds enteredFromIds
-        useCardOwner haste tapped isLandEnters onlyFoodArtifact cause)
+        useCardOwner haste tapped isLandEnters onlyFoodArtifact cause preBattlefield)
+  let preBf := preBattlefield.getD g.battlefield
   let mut g := g
   let mut entered := enteredFromIds
   for i in [0:remainingIds.size] do
@@ -246,20 +248,34 @@ def putToBattlefieldLoop (g : Game) (controller : PlayerId)
         pure ()
       else
         let ctrl := if useCardOwner then o.owner else controller
-        let (g', _) :=
-          if onlyFoodArtifact then
-            g.move id .battlefield (some ctrl)
-              (summoningSick := true) (applyHope := false)
-              (onlyFoodArtifact := true) (cause := cause)
-          else
-            g.putOntoBattlefield id ctrl (tapped := tapped) (cause := cause)
-        g := g'
-        entered := entered.push id
+        if !onlyFoodArtifact && !(g.player ctrl).lost && g.isAura o then
+          let auraProbe := { o with controller := some ctrl }
+          let host? := preBf.find? (fun h =>
+            (g.findObject? h.id).any (fun curH =>
+              curH.isOnBattlefield && g.auraObjCanEnchant curH auraProbe))
+          match host? with
+          | none =>
+            g := g.logMsg s!"{o.name} remains in its current zone (can't be attached legally; CR 303.4f)"
+          | some host =>
+            let (g', _) := g.putOntoBattlefield id ctrl (tapped := tapped)
+              (attachedTo := some host.id) (cause := cause)
+            g := g'
+            entered := entered.push id
+        else
+          let (g', _) :=
+            if onlyFoodArtifact then
+              g.move id .battlefield (some ctrl)
+                (summoningSick := true) (applyHope := false)
+                (onlyFoodArtifact := true) (cause := cause)
+            else
+              g.putOntoBattlefield id ctrl (tapped := tapped) (cause := cause)
+          g := g'
+          entered := entered.push id
         if let .chooseReplacement .. := g.pending then
           let rem := remainingIds.extract (i + 1) remainingIds.size
           return g.chainPendingReplacement
             (.putToBattlefieldLoop controller rem entered
-              useCardOwner haste tapped isLandEnters onlyFoodArtifact cause)
+              useCardOwner haste tapped isLandEnters onlyFoodArtifact cause (some preBf))
   for fromId in entered do
     match g.followMovedToZone? fromId (· == .battlefield) with
     | none => pure ()

@@ -235,9 +235,9 @@ partial def resumePendingReplacement (g : Game) (pr : PendingReplacement)
   | .createAndMarkTokensAttacking controller kind n tapped holds sourceId cause =>
     g.createAndMarkTokensAttacking controller kind n tapped holds (sourceId := sourceId)
       (cause := cause)
-  | .commitEnteringAttackItems chosen cause resetRecent postEntries =>
+  | .commitEnteringAttackItems chosen cause resetRecent postEntries preBattlefield =>
     g.commitEnteringAttackItems chosen (cause := cause) (resetRecent := resetRecent)
-      (postEntries := postEntries)
+      (postEntries := postEntries) (preBattlefield := preBattlefield)
   | .finishEnteringAttackCards postEntries cause =>
     g.finishEnteringAttackCards postEntries (cause := cause)
   | .finishEnteringAttackCard newId? effectController cardName mods logKind cause =>
@@ -445,23 +445,25 @@ partial def resumePendingReplacement (g : Game) (pr : PendingReplacement)
     g.sacrificePermanentsLoop remaining
       (preBattlefield := preBattlefield) (cause := cause)
       (createBeastFor := createBeastFor) (passiveLog := passiveLog)
-  | .putToBattlefieldLoop controller remainingIds enteredFromIds useCardOwner haste tapped isLandEnters onlyFoodArtifact cause =>
+  | .putToBattlefieldLoop controller remainingIds enteredFromIds useCardOwner haste tapped isLandEnters onlyFoodArtifact cause preBattlefield =>
     g.putToBattlefieldLoop controller remainingIds
       (enteredFromIds := enteredFromIds) (useCardOwner := useCardOwner)
       (haste := haste) (tapped := tapped) (isLandEnters := isLandEnters)
       (onlyFoodArtifact := onlyFoodArtifact) (cause := cause)
-  | .returnLinkedExileLoop remainingIds cause enteredFromIds preBattlefield =>
+      (preBattlefield := preBattlefield)
+  | .returnLinkedExileLoop remainingIds cause enteredFromIds preBattlefield pendingLog =>
     g.returnLinkedExileLoop remainingIds (cause := cause)
       (enteredFromIds := enteredFromIds) (preBattlefield := preBattlefield)
+      (pendingLog := pendingLog)
   | .putShadowCounter targetId =>
     match g.findObject? targetId with
     | some o => g.putShadowCounter o
     | none => g
   | .finishShadowCounter targetId before =>
     g.finishShadowCounter targetId before
-  | .finishLinkedExileMove remainingIds preBattlefield =>
-    if preBattlefield.isSome then
-      g.runLinkedExileBatch remainingIds preBattlefield
+  | .finishLinkedExileMove remainingIds preBattlefield pendingLog =>
+    if preBattlefield.isSome || pendingLog.isSome then
+      g.runLinkedExileBatch remainingIds preBattlefield pendingLog
     else
       g.returnLinkedExileMoves remainingIds
   | .untapPermanentsLoop remainingIds cause =>
@@ -919,6 +921,12 @@ partial def runPostStep (g : Game) (tag : Nat) (p : PlayerId) (n : Nat := 0)
     else g.change (.planWasSacrificed true)
   | 85 =>
     g.continueOpeningBegin ids
+  | 86 =>
+    g.worldsReturnExiledLoop ids (cardId.map (·, p))
+  | 87 =>
+    match cardId.bind (fun id => g.followMovedToZone? id (· == .exile)) with
+    | some moved => g.logMsg s!"{moved.name} is exiled"
+    | none => g
   | _ => g
 
 /-- Ask `prop.caster` to choose what pays the first of `picks` (reversing under

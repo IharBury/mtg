@@ -2958,7 +2958,10 @@ def applyPut (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
           match how with
           | .underOwner => o.owner
           | _ => controller
-        let options := g.enterModsAttackOptions owner note.enterMods
+        let options :=
+          if !returnedAsArtifact && g.isCreature o then
+            g.enterModsAttackOptions owner note.enterMods
+          else #[]
         some (EnteringAttackItem.card id owner controller tapped returnedAsArtifact
           extra note.enterMods .putOntoBattlefield options)
     g.promptEnteringAttackItems items (cause := cause?)
@@ -3036,7 +3039,10 @@ def applyPut (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
           match how with
           | .underOwner => o.owner
           | _ => controller
-        let options := g.enterModsAttackOptions owner note.enterMods
+        let options :=
+          if !returnedAsArtifact && g.isCreature o then
+            g.enterModsAttackOptions owner note.enterMods
+          else #[]
         EnteringAttackItem.card o.id owner controller tapped returnedAsArtifact
           extra note.enterMods .putOntoBattlefield options
       g.promptEnteringAttackItems items (cause := some cause)

@@ -643,17 +643,40 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
     | none => g
   (g, newId)
 
+/-- Emit the return log for a CR 610.3 `linkedExile` object once its zone change
+has actually placed it in `dest`. -/
+private partial def logLinkedExileReturn (g : Game) (fromId : ObjectId) (dest : Zone) : Game :=
+  match g.followMovedToZone? fromId (· == dest) with
+  | none => g
+  | some moved =>
+    match dest with
+    | .hand p =>
+      g.logMsg s!"{moved.name} returns to {(g.player p).name}'s hand"
+    | .graveyard p =>
+      g.logMsg s!"{moved.name} returns to {(g.player p).name}'s graveyard"
+    | .battlefield =>
+      match moved.attachedTo with
+      | some hid =>
+        let hostName := (g.findObject? hid).map g.name |>.getD (toString hid)
+        g.logMsg s!"{moved.name} returns attached to {hostName} (does not target)"
+      | none =>
+        g.logMsg s!"{moved.name} returns to the battlefield"
+    | _ => g
+
 /-- Execute a batch of CR 610.3 linked-exile returns inside an open post-departure
 batch, checking returning Auras against `preBattlefield` (CR 303.4f) and pausing
 via `PendingReplacement.finishLinkedExileMove` if a return opens a choice. -/
 partial def runLinkedExileBatch (g : Game) (ids : Array ObjectId)
-    (preBattlefield : Option (Array GameObject) := none) : Game :=
-  if ids.isEmpty then g
+    (preBattlefield : Option (Array GameObject) := none)
+    (pendingLog : Option (ObjectId × Zone) := none) : Game :=
+  if ids.isEmpty && pendingLog.isNone then g
   else if match g.pending with | .chooseReplacement .. | .chooseLegend .. => true | _ => false then
-    g.chainPendingReplacement (.finishLinkedExileMove ids preBattlefield)
+    g.chainPendingReplacement (.finishLinkedExileMove ids preBattlefield pendingLog)
   else Id.run do
     let preBf := preBattlefield.getD g.battlefield
     let mut g := g
+    if let some (fromId, dest) := pendingLog then
+      g := logLinkedExileReturn g fromId dest
     for i in [0:ids.size] do
       let exId := ids[i]!
       match g.findObject? exId with
@@ -661,42 +684,45 @@ partial def runLinkedExileBatch (g : Game) (ids : Array ObjectId)
         if o.zone == .exile then
           let name := o.name
           let linkCause := g.lastMoveCauseOf? o.id
-          match o.returnToZone with
-          | some (.hand p) =>
-            let (g', _) := g.move o.id (.hand p) none (cause := linkCause)
-            g := g'.logMsg s!"{name} returns to {(g'.player p).name}'s hand"
-          | some (.graveyard p) =>
-            let (g', _) := g.move o.id (.graveyard p) none (cause := linkCause)
-            g := g'.logMsg s!"{name} returns to {(g'.player p).name}'s graveyard"
-          | _ =>
-            if (g.player o.owner).lost then
-              g := g.logMsg s!"{name} remains in its current zone (CR 800.4b)"
-            else if g.isAura o then
-              let auraWithCtrl := { o with controller := some o.owner }
-              let host? :=
-                preBf.findSome? fun h =>
-                  match g.findObject? h.id with
-                  | some cur =>
-                    if cur.isOnBattlefield && g.auraObjCanEnchant cur auraWithCtrl then some cur
-                    else none
-                  | none => none
-              match host? with
-              | none =>
-                g := g.logMsg s!"{name} remains in exile (can't be attached legally; CR 614.6)"
-              | some host =>
-                let hostId := host.id
-                let hostName := g.name host
-                let (g', _) := g.move o.id .battlefield (some o.owner)
-                  (attachedTo := some hostId) (cause := linkCause)
-                g := g'.logMsg s!"{name} returns attached to {hostName} (does not target)"
-            else
-              let (g', _) := g.move o.id .battlefield (some o.owner) (cause := linkCause)
-              g := g'.logMsg s!"{name} returns to the battlefield"
+          let (g', movedDest?) : Game × Option Zone :=
+            match o.returnToZone with
+            | some (.hand p) =>
+              let (g', _) := g.move o.id (.hand p) none (cause := linkCause)
+              (g', some (.hand p))
+            | some (.graveyard p) =>
+              let (g', _) := g.move o.id (.graveyard p) none (cause := linkCause)
+              (g', some (.graveyard p))
+            | _ =>
+              if (g.player o.owner).lost then
+                (g.logMsg s!"{name} remains in its current zone (CR 800.4b)", none)
+              else if g.isAura o then
+                let auraWithCtrl := { o with controller := some o.owner }
+                let host? :=
+                  preBf.findSome? fun h =>
+                    match g.findObject? h.id with
+                    | some cur =>
+                      if cur.isOnBattlefield && g.auraObjCanEnchant cur auraWithCtrl then some cur
+                      else none
+                    | none => none
+                match host? with
+                | none =>
+                  (g.logMsg s!"{name} remains in exile (can't be attached legally; CR 614.6)", none)
+                | some host =>
+                  let (g', _) := g.move o.id .battlefield (some o.owner)
+                    (attachedTo := some host.id) (cause := linkCause)
+                  (g', some .battlefield)
+              else
+                let (g', _) := g.move o.id .battlefield (some o.owner) (cause := linkCause)
+                (g', some .battlefield)
+          g := g'
           if match g.pending with | .chooseReplacement .. | .chooseLegend .. => true | _ => false then
             let rem := ids.extract (i + 1) ids.size
-            if !rem.isEmpty then
-              g := g.chainPendingReplacement (.finishLinkedExileMove rem (some preBf))
+            let logItem := movedDest?.map (fun d => (o.id, d))
+            if !rem.isEmpty || logItem.isSome then
+              g := g.chainPendingReplacement (.finishLinkedExileMove rem (some preBf) logItem)
             return g
+          if let some dest := movedDest? then
+            g := logLinkedExileReturn g o.id dest
       | none => pure ()
     return g
 

@@ -11408,6 +11408,176 @@ private def mustHold17 (label : String) (ok : Bool) : Bool :=
   mustHold17 "8.replay" ([gPre3, gPreB2, gMayConceded, gProtNextTurn, gDur2, gDur3, gDur4, gDur5, gDur6].all (fun g =>
     Game.replayEvents g.events == g && allRulesEventsClassified g))
 
+-- 9. PR #602 review regression guards:
+--    (a) Post-choice return logs in `runLinkedExileBatch`, `returnLinkedExileLoop`, and `finishWorldsWithinWorldsTail`.
+--    (b) `tricksterLibrary` concession by `caster` clears the prompt and leaves the creature on `.battlefield` (CR 800.4a/g/h).
+--    (c) `commitEnteringAttackItems` (`applyPut` `.revealed`) checks entering Auras against `preBattlefield` (CR 303.4f).
+#guard
+  -- 9a1. `runLinkedExileBatch` & `returnLinkedExileLoop` with competing `.exileInsteadOfGraveyard` replacements:
+  --      neither logs `"returns to ...'s graveyard"` while paused OR when redirected to `.exile`,
+  --      and BOTH log `"returns to ...'s graveyard"` post-choice when the graveyard move actually succeeds!
+  let gLnk0 : Game := insertObject (insertObject (addPermanent afterDraw hero opp opp) bear me .exile) bear me .exile
+  let oppSrc := (gLnk0.battlefield.filter (fun o => o.name == hero.name && o.controller == some opp))[0]!.id
+  let exBearIds := (gLnk0.objects.filter (fun o => o.name == bear.name && o.zone == .exile)).map (·.id)
+  let exGy1 := exBearIds[0]!
+  let exGy2 := exBearIds[1]!
+  let gLnk1 : Game := (gLnk0.changeObject exGy1 (.returnToZone (some (.graveyard me)))).changeObject
+    exGy2 (.returnToZone (some (.graveyard me)))
+  let idRep1A : ReplacementId := { kind := .finalityCounterExile, object := some exGy1 }
+  let idRep1B : ReplacementId := { kind := .exileOppDeath, object := some exGy1 }
+  let idRep2A : ReplacementId := { kind := .finalityCounterExile, object := some exGy2 }
+  let idRep2B : ReplacementId := { kind := .exileOppDeath, object := some exGy2 }
+  let gLnkRedir : Game := ((gLnk1.createEffect
+    (.replacement { id := idRep1A, affectedPlayer := me, kind := .exileInsteadOfGraveyard (some exGy1) false })
+    (cause := some testCause)).createEffect
+    (.replacement { id := idRep1B, affectedPlayer := me, kind := .exileInsteadOfGraveyard (some exGy1) false })
+    (cause := some testCause))
+  let logBeforeBatch := gLnkRedir.log.size
+  let gBatchPaused : Game := gLnkRedir.returnLinkedExileMoves #[exGy1]
+  let gBatchRedirDone : Game := mustApply gBatchPaused me (.chooseReplacement idRep1A)
+  let batchNoPrematureOrFalseLogOk : Bool :=
+    !(gBatchPaused.log.extract logBeforeBatch gBatchPaused.log.size).any (·.contains "returns to") &&
+    !(gBatchRedirDone.log.extract logBeforeBatch gBatchRedirDone.log.size).any (·.contains "returns to") &&
+    (gBatchRedirDone.followMovedToZone? exGy1 (· == .exile)).isSome
+
+  -- Scope the two competing replacements on `exGy2` to `oppSrc` so removing `oppSrc` while paused lets the resumed move enter `.graveyard me`!
+  let gLnkLoop0 : Game := ((gLnk1.createEffect
+    (.replacement { id := idRep2A, affectedPlayer := me, kind := .exileInsteadOfGraveyard (some exGy2) false }
+      (.whileSourceOnBattlefield oppSrc))
+    (cause := some testCause)).createEffect
+    (.replacement { id := idRep2B, affectedPlayer := me, kind := .exileInsteadOfGraveyard (some exGy2) false }
+      (.whileSourceOnBattlefield oppSrc))
+    (cause := some testCause))
+  let logBeforeLoop := gLnkLoop0.log.size
+  let gLoopPaused : Game := gLnkLoop0.withBatch none fun g => g.returnLinkedExileLoop #[exGy2]
+  let loopPausedNoLogOk : Bool :=
+    !(gLoopPaused.log.extract logBeforeLoop gLoopPaused.log.size).any (·.contains "returns to")
+  let gLoopSrcGone : Game := gLoopPaused.expireWhileSourceEffects oppSrc
+  let gLoopGyDone : Game := mustApply gLoopSrcGone me (.chooseReplacement idRep2A)
+  let loopPostChoiceGyLogsOk : Bool :=
+    loopPausedNoLogOk &&
+    (gLoopGyDone.followMovedToZone? exGy2 (· == .graveyard me)).isSome &&
+    (gLoopGyDone.log.extract logBeforeLoop gLoopGyDone.log.size).any (fun s =>
+      s.contains "returns to " && s.contains "'s graveyard")
+
+  -- 9a2. Hand return across an active `Pending.chooseReplacement` in `runLinkedExileBatch`, `returnLinkedExileLoop`, and `finishWorldsWithinWorldsTail`:
+  let gHand0 : Game := insertObject (insertObject gLnkRedir hero me .exile) bear me .exile
+  let exHeroHand := (gHand0.objects.filter (fun o => o.name == hero.name && o.zone == .exile))[0]!.id
+  let exWWWHand := (gHand0.objects.filter (fun o => o.name == bear.name && o.zone == .exile)).back!.id
+  let gHand1 : Game := gHand0.changeObject exHeroHand (.returnToZone (some (.hand me)))
+  let gDummyPause : Game := gHand1.returnLinkedExileMoves #[exGy1]
+  -- Chain `worldsReturnExiledLoop` behind `gDummyPause`'s `Pending.chooseReplacement`:
+  let logBeforeWWW := gDummyPause.log.size
+  let gWWWPaused : Game := gDummyPause.worldsReturnExiledLoop #[exWWWHand] none
+  let wwwNoEarlyLogOk : Bool :=
+    !(gWWWPaused.log.extract logBeforeWWW gWWWPaused.log.size).any (·.contains "returned to its owner's hand")
+  let gWWWResumed : Game := mustApply gWWWPaused me (.chooseReplacement idRep1A)
+  let wwwPostChoiceLogOk : Bool :=
+    wwwNoEarlyLogOk &&
+    (gWWWResumed.followMovedToZone? exWWWHand (· == .hand me)).isSome &&
+    (gWWWResumed.log.extract logBeforeWWW gWWWResumed.log.size).any (·.contains "is returned to its owner's hand")
+
+  let logBeforeLoopHand := gHand1.log.size
+  let gLoopHandPaused : Game := gHand1.withBatch none fun g =>
+    g.returnLinkedExileLoop #[exGy1, exHeroHand]
+  let loopHandNoEarlyLogOk : Bool :=
+    !(gLoopHandPaused.log.extract logBeforeLoopHand gLoopHandPaused.log.size).any (·.contains "returns to")
+  let gLoopHandResumed : Game := mustApply gLoopHandPaused me (.chooseReplacement idRep1A)
+  let loopHandPostChoiceOk : Bool :=
+    loopHandNoEarlyLogOk &&
+    (gLoopHandResumed.followMovedToZone? exHeroHand (· == .hand me)).isSome &&
+    (gLoopHandResumed.log.extract logBeforeLoopHand gLoopHandResumed.log.size).any (·.contains s!"{hero.name} returns to {(gLoopHandResumed.player me).name}'s hand")
+
+  -- 9b. `tricksterLibrary`: `caster` conceding while `q` is choosing clears `pending` and leaves `q`'s creature on `.battlefield`!
+  let threeCfg9 : StartConfig := {
+    seats := #[
+      { name := "Caster", deck := testGreenDeck },
+      { name := "Owner", deck := testGreenDeck },
+      { name := "Third", deck := testGreenDeck }
+    ]
+    format := .constructed
+    seed := 19
+    startingPlayer := some 0
+  }
+  let gTr0 : Game :=
+    match Start.start threeCfg9 with
+    | .ok g => (keepOpeningHands g 20).advanceStep
+    | .error e => panic! e
+  let trCaster : PlayerId := ⟨0⟩
+  let trOwner : PlayerId := ⟨1⟩
+  let gTr1 : Game := addPermanent gTr0 bear trOwner trOwner
+  let trBear := (gTr1.battlefield.filter (fun o => o.name == bear.name && o.owner == trOwner))[0]!.id
+  let gTrPrompt : Game := gTr1.change (.pending (.fraChoice trOwner (.tricksterLibrary trCaster trBear none)))
+  let gTrConceded : Game := gTrPrompt.concede trCaster
+  let gTrNoopHelper : Game := gTrConceded.applyOwnerPutsLibraryThenConnive trCaster #[Target.permanent trBear]
+  let tricksterCasterLeaveOk : Bool :=
+    (gTrConceded.player trCaster).leftTheGame &&
+    gTrConceded.pending == .none &&
+    (gTrConceded.findObject? trBear).any (·.isOnBattlefield) &&
+    !(gTrConceded.player trOwner).library.contains trBear &&
+    (gTrNoopHelper.findObject? trBear).any (·.isOnBattlefield)
+
+  -- 9c. `commitEnteringAttackItems` (`applyPut` `.revealed`): Aura checks `preBattlefield` per CR 303.4f!
+  let revAuraDef : CardDef := aura "Phase17 Revealed Aura" ManaCost.empty "Enchant creature"
+  -- 9c1. Empty `preBf`: revealed `[bear, revAuraDef]` leaves `revAuraDef` in `.library me` (does not enter unattached & die)!
+  let gRevE0 : Game := insertObject (insertObject afterDraw bear me (.library me)) revAuraDef me (.library me)
+  let libRevE := (gRevE0.player me).library
+  let revAuraE := libRevE.back!
+  let revBearE := libRevE[libRevE.size - 2]!
+  let gRevE1 : Game := (gRevE0.change (.pushContinuationFrame { revealedIdsThisWay := #[revBearE, revAuraE] })).applyPut
+    me (.onEnterDraw 0) none #[] .revealed .asPrinted .none
+  let revEmptyAuraStaysOk : Bool :=
+    (gRevE1.permanentsOf me).any (·.name == bear.name) &&
+    !(gRevE1.permanentsOf me).any (·.name == "Phase17 Revealed Aura") &&
+    (gRevE1.object! revAuraE).zone == .library me &&
+    !(gRevE1.player me).graveyard.any (fun id => (gRevE1.object! id).name == "Phase17 Revealed Aura")
+
+  -- 9c2. Non-empty `preBf` with `hero`: revealed `[bear, revAuraDef]` attaches `revAuraDef` to `hero` in the same batch!
+  let gRevH0 : Game := insertObject (insertObject (addPermanent afterDraw hero me me) bear me (.library me)) revAuraDef me (.library me)
+  let preHeroId := (gRevH0.battlefield.filter (·.name == hero.name))[0]!.id
+  let libRevH := (gRevH0.player me).library
+  let revAuraH := libRevH.back!
+  let revBearH := libRevH[libRevH.size - 2]!
+  let preRevHIdx := gRevH0.events.size
+  let gRevH1 : Game := (gRevH0.change (.pushContinuationFrame { revealedIdsThisWay := #[revBearH, revAuraH] })).applyPut
+    me (.onEnterDraw 0) none #[] .revealed .asPrinted .none
+  let revHBatches := (gRevH1.events.extract preRevHIdx gRevH1.events.size).filterMap fun e =>
+    match e.change with
+    | .rules (.zone (.moved _ _ (.library _) .battlefield _ _ _ _)) => e.batch
+    | _ => none
+  let enteredRevAura := (gRevH1.permanentsOf me).filter (·.name == "Phase17 Revealed Aura")
+  let revHostAuraAttachesOk : Bool :=
+    revHBatches.size == 2 && revHBatches[0]! == revHBatches[1]! &&
+    enteredRevAura.size == 1 && enteredRevAura[0]!.attachedTo == some preHeroId
+
+  -- 9c3. Paused `commitEnteringAttackItems` on empty `preBf`: co-entering `asEntersChooseOddEven` creature pausing first still keeps `preBf` empty for the Aura!
+  let oddCreature9 : CardDef := { bear with name := "Phase17 Odd Striker", asEntersChooseOddEven := true }
+  let gPauseEnt0 : Game := insertObject (insertObject afterDraw oddCreature9 me (.hand me)) revAuraDef me (.hand me)
+  let hPause := (gPauseEnt0.player me).hand
+  let pauseAura := hPause.back!
+  let pauseOdd := hPause[hPause.size - 2]!
+  let itemOdd : EnteringAttackItem := .card pauseOdd me me false false #[] [] .putOntoBattlefield #[]
+  let itemAura : EnteringAttackItem := .card pauseAura me me false false #[] [] .putOntoBattlefield #[]
+  let gPauseEnt1 : Game := gPauseEnt0.commitEnteringAttackItems #[(itemOdd, none), (itemAura, none)] (cause := some testCause)
+  let gPauseEntDone : Game := mustApply gPauseEnt1 me (.chooseMode 0)
+  let pausedPreBfPreservedOk : Bool :=
+    gPauseEntDone.pending == .none &&
+    (gPauseEntDone.permanentsOf me).any (·.name == "Phase17 Odd Striker") &&
+    !(gPauseEntDone.permanentsOf me).any (·.name == "Phase17 Revealed Aura") &&
+    (gPauseEntDone.object! pauseAura).zone == .hand me
+
+  mustHold17 "9a1.batchNoPrematureOrFalseLogOk" batchNoPrematureOrFalseLogOk &&
+  mustHold17 "9a1.loopPostChoiceGyLogsOk" loopPostChoiceGyLogsOk &&
+  mustHold17 "9a2.wwwPostChoiceLogOk" wwwPostChoiceLogOk &&
+  mustHold17 "9a2.loopHandPostChoiceOk" loopHandPostChoiceOk &&
+  mustHold17 "9b.tricksterCasterLeaveOk" tricksterCasterLeaveOk &&
+  mustHold17 "9c1.revEmptyAuraStaysOk" revEmptyAuraStaysOk &&
+  mustHold17 "9c2.revHostAuraAttachesOk" revHostAuraAttachesOk &&
+  mustHold17 "9c3.pausedPreBfPreservedOk" pausedPreBfPreservedOk &&
+  mustHold17 "9.replay" ([gBatchPaused, gBatchRedirDone, gLoopPaused, gLoopGyDone, gWWWPaused, gWWWResumed,
+      gLoopHandPaused, gLoopHandResumed, gTrConceded, gRevE1, gRevH1, gPauseEnt1, gPauseEntDone].all (fun g =>
+    Game.replayEvents g.events == g && allRulesEventsClassified g))
+
 end Phase17EventAlignment
 
 end Mtg.Engine.EventTests

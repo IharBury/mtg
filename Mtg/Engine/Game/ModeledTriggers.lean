@@ -886,23 +886,25 @@ def applyLeftoverTextEffect (g : Game) (controller : PlayerId) (text : String)
 
 /-- Put the targeted creature into its owner's library, second from the top
 or on the bottom (Trickster's Stratagem). -/
-def applyOwnerPutsLibraryThenConnive (g : Game) (_controller : PlayerId)
+def applyOwnerPutsLibraryThenConnive (g : Game) (controller : PlayerId)
     (targets : Array Target) (putOnBottom := false) : Game :=
-  match targets[0]? with
-  | some (Target.permanent id) =>
-    match g.findObject? id with
-    | some o =>
-      if o.isOnBattlefield then
-        let owner := o.owner
-        if putOnBottom then
-          let (g, _) := g.move id (.library owner) none (libraryPosition := some .bottom)
-          g.logMsg s!"{o.name} is put on the bottom of {(g.player owner).name}'s library"
-        else
-          let (g, _) := g.move id (.library owner) none (libraryPosition := some (.fromTop 1))
-          g.logMsg s!"{o.name} is put second from the top of {(g.player owner).name}'s library"
-      else g.logMsg "The target is no longer legal"
-    | none => g.logMsg "The target is no longer legal"
-  | _ => g.logMsg "The target is no longer legal"
+  if !g.stillInGame controller then g
+  else
+    match targets[0]? with
+    | some (Target.permanent id) =>
+      match g.findObject? id with
+      | some o =>
+        if o.isOnBattlefield then
+          let owner := o.owner
+          if putOnBottom then
+            let (g, _) := g.move id (.library owner) none (libraryPosition := some .bottom)
+            g.logMsg s!"{o.name} is put on the bottom of {(g.player owner).name}'s library"
+          else
+            let (g, _) := g.move id (.library owner) none (libraryPosition := some (.fromTop 1))
+            g.logMsg s!"{o.name} is put second from the top of {(g.player owner).name}'s library"
+        else g.logMsg "The target is no longer legal"
+      | none => g.logMsg "The target is no longer legal"
+    | _ => g.logMsg "The target is no longer legal"
 
 /-- Avengers Disassembled: if the land mode was chosen and that target is
 illegal, the spell does not resolve — even the untargeted damage mode

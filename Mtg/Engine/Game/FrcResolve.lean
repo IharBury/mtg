@@ -217,53 +217,79 @@ private def creatureOrWalker (c : CardDef) : Bool :=
 private def basicOf (kinds : Array CardSubtype) (c : CardDef) : Bool :=
   isBasicLandCard c && kinds.any fun k => c.hasSubtype k
 
-/-- Move remaining `handIds` to `controller`'s hand in one batch, then move
-`gyIds` to `controller`'s graveyard in a second batch, pausing cleanly if any
+/-- Move each card in `gyIds` into `controller`'s graveyard inside the active
+`Fact or Fiction` graveyard batch, logging only once each zone change places the
+card into `controller`'s graveyard. -/
+partial def factOrFictionGyInnerLoop (g : Game) (controller : PlayerId)
+    (gyIds : Array ObjectId) (pendingCard : Option ObjectId := none) : Game := Id.run do
+  if let .chooseReplacement .. := g.pending then
+    return g.chainPendingReplacement
+      (.finishFrcPostStep 23 controller (cardId := pendingCard) (ids := gyIds))
+  let plName := (g.player controller).name
+  let mut g := g
+  if let some fromId := pendingCard then
+    if let some moved := g.followMovedToZone? fromId (· == .graveyard controller) then
+      g := g.logMsg s!"{moved.name} goes to {plName}'s graveyard"
+  for i in [0:gyIds.size] do
+    let id := gyIds[i]!
+    if let some _ := g.findObject? id then
+      let (g', _) := g.move id (.graveyard controller) none
+      g := g'
+      if let .chooseReplacement .. := g.pending then
+        let rem := gyIds.extract (i + 1) gyIds.size
+        return g.chainPendingReplacement
+          (.finishFrcPostStep 23 controller (cardId := some id) (ids := rem))
+      if let some moved := g.followMovedToZone? id (· == .graveyard controller) then
+        g := g.logMsg s!"{moved.name} goes to {plName}'s graveyard"
+  return g
+
+/-- Move `gyIds` to `controller`'s graveyard in one batch, pausing cleanly if any
 zone move opens `Pending.chooseReplacement` (`Fact or Fiction`). -/
 partial def factOrFictionGyLoop (g : Game) (controller : PlayerId)
     (gyIds : Array ObjectId) : Game :=
   if gyIds.isEmpty then g
   else
-    let plName := (g.player controller).name
-    g.withBatch none fun g => Id.run do
-      let mut g := g
-      for i in [0:gyIds.size] do
-        let id := gyIds[i]!
-        if let some o := g.findObject? id then
-          let oName := o.name
-          let (g', _) := g.move id (.graveyard controller) none
-          g := g'
-          if let .chooseReplacement .. := g.pending then
-            let rem := gyIds.extract (i + 1) gyIds.size
-            if !rem.isEmpty then
-              g := g.chainPendingReplacement (.finishFrcPostStep 23 controller (ids := rem))
-            return g
-          g := g.logMsg s!"{oName} goes to {plName}'s graveyard"
-      return g
+    g.withBatch none fun g =>
+      g.factOrFictionGyInnerLoop controller gyIds
+
+/-- Move each card in `handIds` into `controller`'s hand inside the active
+`Fact or Fiction` hand batch, logging only once each zone change places the card
+into `controller`'s hand. -/
+partial def factOrFictionHandInnerLoop (g : Game) (controller : PlayerId)
+    (handIds : Array ObjectId) (pendingCard : Option ObjectId := none) : Game := Id.run do
+  if let .chooseReplacement .. := g.pending then
+    return g.chainPendingReplacement
+      (.finishFrcPostStep 22 controller (cardId := pendingCard) (ids := handIds))
+  let plName := (g.player controller).name
+  let mut g := g
+  if let some fromId := pendingCard then
+    if let some moved := g.followMovedToZone? fromId (· == .hand controller) then
+      g := g.logMsg s!"{moved.name} goes to {plName}'s hand"
+  for i in [0:handIds.size] do
+    let id := handIds[i]!
+    if let some _ := g.findObject? id then
+      let (g', _) := g.move id (.hand controller) none
+      g := g'
+      if let .chooseReplacement .. := g.pending then
+        let remHand := handIds.extract (i + 1) handIds.size
+        return g.chainPendingReplacement
+          (.finishFrcPostStep 22 controller (cardId := some id) (ids := remHand))
+      if let some moved := g.followMovedToZone? id (· == .hand controller) then
+        g := g.logMsg s!"{moved.name} goes to {plName}'s hand"
+  return g
 
 partial def factOrFictionHandLoop (g : Game) (controller : PlayerId)
     (handIds gyIds : Array ObjectId) : Game :=
   let g :=
     if handIds.isEmpty then g
     else
-      let plName := (g.player controller).name
-      g.withBatch none fun g => Id.run do
-        let mut g := g
-        for i in [0:handIds.size] do
-          let id := handIds[i]!
-          if let some o := g.findObject? id then
-            let oName := o.name
-            let (g', _) := g.move id (.hand controller) none
-            g := g'
-            if let .chooseReplacement .. := g.pending then
-              let remHand := handIds.extract (i + 1) handIds.size
-              g := g.chainPendingReplacement
-                (.finishFrcPostStep 22 controller remHand.size (ids := remHand ++ gyIds))
-              return g
-            g := g.logMsg s!"{oName} goes to {plName}'s hand"
-        return g
-  if let .chooseReplacement .. := g.pending then g
-  else g.factOrFictionGyLoop controller gyIds
+      g.withBatch none fun g =>
+        g.factOrFictionHandInnerLoop controller handIds
+  if let .chooseReplacement .. := g.pending then
+    if gyIds.isEmpty then g
+    else g.chainPendingReplacement (.finishFrcPostStep 25 controller (ids := gyIds))
+  else
+    g.factOrFictionGyLoop controller gyIds
 
 /-- Tap each creature in `ids` still on the battlefield and put a stun counter
 on it inside the enclosing batch, deferring the stun-counter log across
@@ -1048,10 +1074,10 @@ partial def runFrcPostStep (g : Game) (tag : Nat) (p : PlayerId) (n1 : Nat := 0)
       | some card => acc.createEffect (.freeCastFromGraveyardUntilEot card.id)
       | none => acc) g
   | 22 =>
-    let remHand := ids.extract 0 n1
-    let remGy := ids.extract n1 ids.size
-    g.factOrFictionHandLoop p remHand remGy
+    g.factOrFictionHandInnerLoop p ids cardId
   | 23 =>
+    g.factOrFictionGyInnerLoop p ids cardId
+  | 25 =>
     g.factOrFictionGyLoop p ids
   | 24 =>
     let g :=

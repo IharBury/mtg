@@ -584,7 +584,9 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
         else g
       else g
     | .tricksterLibrary caster _id connive =>
-      if q == p then
+      if p == caster then
+        g.changes (#[.pending .none, .chooseModesRest none] ++ clearProp)
+      else if q == p then
         let g := g.changes (#[.pending .none, .chooseModesRest none] ++ clearProp)
         if g.stillInGame caster && connive.isSome then
           g.chainPendingReplacement (.connive caster connive)
