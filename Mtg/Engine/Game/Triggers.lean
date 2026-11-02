@@ -40,12 +40,23 @@ def sharedTriggerModes (ab : TriggeredAbility) : Array Effect :=
         phrase := "Create a 1/1 white Soldier creature token" },
       { resolution := .creaturesYouControlPump 1 1
         phrase := "Creatures you control get +1/+1 until end of turn" }]
+  | .enter .chooseUpToXModes =>
+    #[{ resolution := .sequence [.discard (.cards 1), .draw (.fixed 1)]
+        phrase := "Discard a card, then draw a card" },
+      { targeting := .of .opponent
+        resolution := .targetPlayerLoseLife 2
+        phrase := "Target opponent loses 2 life" },
+      { targeting := .of (.filtered { noun := "target token", tokenOnly := true })
+        resolution := .onPermanent .destroy
+        phrase := "Destroy target token" },
+      { resolution := .sacrifice .eachPlayersCreature
+        phrase := "Each player sacrifices a creature of their choice" }]
   | _ => #[]
 
 /-- Modes of the triggered ability `obj` (from its source). -/
 def triggerModesOf (g : Game) (obj : GameObject) : Array Effect :=
   let fra :=
-    match obj.sourceId.bind g.findObject? with
+    match obj.sourceId.bind g.damageSourceById? with
     | some src => (g.baseCard src).fraTriggerModes
     | none => (g.baseCard obj).fraTriggerModes
   if !fra.isEmpty then fra
@@ -73,6 +84,7 @@ def putTriggeredAbilityOnStack (g : Game) (controller : PlayerId) (source : Game
     (ab : TriggeredAbility) (event : String) (lastKnownPower : Option Int := none)
     (lastKnownToughness : Option Int := none) (cause : Option GameObject := none)
     (causeController : Option PlayerId := none)
+    (causeIds : Array ObjectId := #[])
     (eventCause : Option EventCause := none)
     (delayedTrigger : Option (DelayedTriggerKind × EventCause) := none)
     (abilityEffectOverride : Option Effect := none)
@@ -118,6 +130,7 @@ def putTriggeredAbilityOnStack (g : Game) (controller : PlayerId) (source : Game
       lastKnownPower := lastKnownPower
       lastKnownToughness := lastKnownToughness
       fraCauseId := cause.map (·.id)
+      fraCauseIds := causeIds
       fraCauseController := causeController.orElse (fun _ => cause.bind g.controllerOf)
       fraCausePower := cause.bind (fun c =>
         if (g.findObject? c.id).any (·.isOnBattlefield) then some (g.power (g.object! c.id))
@@ -129,9 +142,63 @@ def putTriggeredAbilityOnStack (g : Game) (controller : PlayerId) (source : Game
     let obj := g.object! newId
     let srcLabel := if srcIdOpt.isNone then source.name else g.name source
     let g := g.logMsg s!"{srcLabel}'s {event} is put on the stack"
-    match ab.effect.resolution with
-    | .chooseTriggerModes n => g.beginTriggerModeChoice controller obj n
-    | _ => if (sharedTriggerModes ab).isEmpty then g else g.beginTriggerModeChoice controller obj 1
+    match ab.shared with
+    | .enter .chooseUpToXModes =>
+      let x := (source.chosenX.orElse (fun _ => g.chosenXOf? source.id)).getD 0
+      let modes := sharedTriggerModes ab
+      let maxModes := Nat.min x modes.size
+      if maxModes == 0 then
+        let noop : Effect := { resolution := .sequence [], phrase := "" }
+        let g := g.changes #[
+          .object obj.id (.abilityEffect (some noop)),
+          .stackEntry obj.id (.targetsAnnounced true)]
+        g.logMsg s!"{(g.player controller).name} chooses 0 modes for {obj.name} (CR 603.3c)"
+      else
+        (g.change (.pending (.fraChoice controller (.upToTriggerModes obj.id maxModes #[])))).logMsg
+          s!"{(g.player controller).name} chooses up to {maxModes} mode(s) for {obj.name} (CR 603.3c)"
+    | _ =>
+      match ab.effect.resolution with
+      | .chooseTriggerModes n => g.beginTriggerModeChoice controller obj n
+      | _ =>
+        match ab.resolution with
+        | .chooseModes modes how =>
+          match how with
+          | .plusOneOrRemoveCounter =>
+            (g.change (.pending (.fraChoice controller (.stackHydeMode obj.id)))).logMsg
+              s!"{(g.player controller).name} chooses a mode for {obj.name} — 0 put a +1/+1 counter, 1 remove a counter and draw (CR 603.3c)"
+          | .vision | .oneUnused | .oneUnusedThisTurn =>
+            let lifetime := how == .oneUnused
+            let memory :=
+              match srcIdOpt with
+              | some sid => if lifetime then g.modesChosenEver sid else g.modesChosenThisTurn sid
+              | none => #[]
+            let available := (List.range modes.length).toArray.filter (fun m => !memory.contains m)
+            if available.isEmpty then
+              let g := g.ceaseToExist obj.id (cause := some (.gameRule .noLegalMode))
+              let msg :=
+                match how with
+                | .oneUnusedThisTurn =>
+                  s!"all three modes have been chosen this turn. {obj.name} is removed from the stack (CR 603.3c)"
+                | .vision =>
+                  s!"{obj.name} has no unused mode and is removed from the stack (CR 603.3c)"
+                | _ =>
+                  s!"all three modes have been chosen. {obj.name} is removed from the stack (CR 603.3c)"
+              g.logMsg msg
+            else
+              let prompt :=
+                match how with
+                | .oneUnusedThisTurn =>
+                  s!"{(g.player controller).name} chooses an Alliance mode that hasn't been chosen this turn (CR 603.3c)"
+                | .vision =>
+                  "Choose one that hasn't been chosen this turn (CR 603.3c)"
+                | _ =>
+                  s!"{(g.player controller).name} chooses a mode that hasn't been chosen (CR 603.3c)"
+              (g.change (.pending (.fraChoice controller (.stackTriggerUnusedMode obj.id srcIdOpt available lifetime)))).logMsg
+                prompt
+          | _ =>
+            if (sharedTriggerModes ab).isEmpty then g else g.beginTriggerModeChoice controller obj 1
+        | _ =>
+          if (sharedTriggerModes ab).isEmpty then g else g.beginTriggerModeChoice controller obj 1
 
 /-- True when this trigger would be put on the stack with no legal target (CR 603.3d). -/
 def triggerHasNoLegalTarget (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
@@ -152,6 +219,7 @@ def putTriggerOrFizzle (g : Game) (controller : PlayerId) (source : GameObject)
     (ab : TriggeredAbility) (event : String)
     (lastKnownPower : Option Int := none) (lastKnownToughness : Option Int := none)
     (cause : Option GameObject := none) (causeController : Option PlayerId := none)
+    (causeIds : Array ObjectId := #[])
     (eventCause : Option EventCause := none)
     (delayedTrigger : Option (DelayedTriggerKind × EventCause) := none)
     (abilityEffectOverride : Option Effect := none)
@@ -168,7 +236,8 @@ def putTriggerOrFizzle (g : Game) (controller : PlayerId) (source : GameObject)
         s!"{srcLabel}'s {event} is removed from the stack (no legal target) (CR 603.3d)"
   else
     g.putTriggeredAbilityOnStack controller source ab event lastKnownPower lastKnownToughness
-      (cause := cause) (causeController := causeController) (eventCause := eventCause)
+      (cause := cause) (causeController := causeController) (causeIds := causeIds)
+      (eventCause := eventCause)
       (delayedTrigger := delayedTrigger)
       (abilityEffectOverride := abilityEffectOverride)
       (reflexiveResolution := reflexiveResolution)
@@ -179,6 +248,7 @@ def putQueuedTrigger (g : Game) (controller : PlayerId) (source : GameObject)
     (ab : TriggeredAbility) (event : TriggerEvent)
     (lastKnownPower : Option Int := none) (lastKnownToughness : Option Int := none)
     (cause : Option GameObject := none) (causeController : Option PlayerId := none)
+    (causeIds : Array ObjectId := #[])
     (eventCause : Option EventCause := none)
     (delayedTrigger : Option (DelayedTriggerKind × EventCause) := none)
     (abilityEffectOverride : Option Effect := none)
@@ -188,15 +258,18 @@ def putQueuedTrigger (g : Game) (controller : PlayerId) (source : GameObject)
     let label :=
       if abilityEffectOverride.isSome || reflexiveResolution.isSome then "reflexive ability"
       else event.label
-    if event.checkTargets || abilityEffectOverride.isSome then
+    if event.checkTargets || abilityEffectOverride.isSome ||
+        (ab.requiresTarget && !ab.allowsZeroTargets) then
       g.putTriggerOrFizzle controller source ab label lastKnownPower lastKnownToughness
-        (cause := cause) (causeController := causeController) (eventCause := eventCause)
+        (cause := cause) (causeController := causeController) (causeIds := causeIds)
+        (eventCause := eventCause)
         (delayedTrigger := delayedTrigger)
         (abilityEffectOverride := abilityEffectOverride)
         (reflexiveResolution := reflexiveResolution)
     else
       g.putTriggeredAbilityOnStack controller source ab label
         lastKnownPower lastKnownToughness (cause := cause) (causeController := causeController)
+        (causeIds := causeIds)
         (eventCause := eventCause) (delayedTrigger := delayedTrigger)
         (abilityEffectOverride := abilityEffectOverride)
         (reflexiveResolution := reflexiveResolution)
@@ -411,7 +484,8 @@ def removeWaitingTrigger (g : Game) (wt : WaitingTrigger) : Game :=
   match g.waitingTriggers.findIdx? (fun w =>
     w.controller == wt.controller && w.source.id == wt.source.id &&
       w.ability == wt.ability && w.event == wt.event &&
-      w.causeId == wt.causeId && w.causeController == wt.causeController &&
+      w.causeId == wt.causeId && w.causeIds == wt.causeIds &&
+      w.causeController == wt.causeController &&
       w.delayedTrigger == wt.delayedTrigger &&
       w.abilityEffect == wt.abilityEffect &&
       w.reflexiveResolution == wt.reflexiveResolution) with
@@ -437,6 +511,7 @@ def putWaitingTrigger (g : Game) (wt : WaitingTrigger) (event : TriggerEvent) : 
     g.putQueuedTrigger wt.controller wt.source wt.ability event
       (lastKnownPowerForTrigger wt.ability wt.lastKnownPower wt.causeId)
       wt.lastKnownToughness (cause := wt.cause) (causeController := wt.causeController)
+      (causeIds := wt.causeIds)
       (eventCause := wt.eventCause) (delayedTrigger := wt.delayedTrigger)
       (abilityEffectOverride := wt.abilityEffect)
       (reflexiveResolution := wt.reflexiveResolution)

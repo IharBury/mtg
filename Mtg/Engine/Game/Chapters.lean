@@ -136,7 +136,7 @@ def gainControlWhileSource (g : Game) (controller : PlayerId)
       | Target.permanent id =>
         match g.findObject? id with
         | some o =>
-          if o.isOnBattlefield then
+          if o.isOnBattlefield && g.isCreature o && g.canBeTargetedBy controller o sourceId then
             let g :=
               if (g.player controller).lost then
                 g.logMsg s!"{o.name} does not change control (CR 800.4b)"
@@ -343,7 +343,17 @@ def triggerInterveningHolds (g : Game) (controller : PlayerId)
       (g.permanentsOf controller).any (fun o => g.hasSubtype o .hero && some o.id != sourceId)
     | .step .drawToTen => (g.player controller).hand.size < 10
     | .protectionEverything => src.any (fun s => g.wasCast s.id)
-    | _ => true
+    | .copySelfNonlegendary =>
+      match sourceId.bind g.findObject? with
+      | some o => !o.printed.isToken
+      | none => (sourceId.bind g.lastKnownBefore?).any (!·.token)
+    | .drawIfAttackedOrEnteredSubtype st =>
+      g.loggedAttackedWithSubtype controller st || g.loggedSubtypeEntered controller st
+    | _ =>
+      match ab.effect.resolution with
+      | .frc .gingerbrute => (g.player controller).isMonarch
+      | .frc .obAngel => g.loggedLifeGained controller > 0
+      | _ => true
   g.interveningStillHolds controller ab &&
     hulklingOk &&
     sharedInterveningOk &&

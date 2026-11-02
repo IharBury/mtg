@@ -278,37 +278,40 @@ def putToBattlefieldLoop (g : Game) (controller : PlayerId)
 They keep name, mana cost, mana value, abilities, and legendary. -/
 def supperForSpidersReturn (g : Game) (controller : PlayerId)
     (ids : Array ObjectId) : Game :=
-  g.putToBattlefieldLoop controller ids (onlyFoodArtifact := true)
+  g.withBatch none fun g =>
+    g.putToBattlefieldLoop controller ids (onlyFoodArtifact := true)
 
 /-- Exile the top `n` cards face down. They may be played while exiled if you
 control `subtype` (CR 610.1 / 701.18). Timing and costs are unchanged. -/
 def exileTopPlayIfYouControlSubtype (g : Game) (p : PlayerId) (n : Nat)
     (subtype : CardSubtype) : Game :=
-  Id.run do
+  if n == 0 then g
+  else
     let (g0, cause?) : Game × Option EventCause :=
-      if n == 0 || (g.player p).library.isEmpty then (g, none)
+      if (g.player p).library.isEmpty then (g, none)
       else
         let (g, c) := g.allocDelayedCause (some p)
         (g, some c)
-    let mut g := g0
-    for _ in List.range n do
-      let pl := g.player p
-      if pl.library.isEmpty then
-        g := g.logMsg s!"{pl.name} has no cards in their library to exile"
-      else
-        let top := pl.library.back!
-        let cardName := (g.object! top).name
-        let (g', newId) := g.move top .exile none (cause := cause?)
-        g := g'
-        g := g.createEffect (.playPermission newId {
-            player := p
-            whileExiled := true
-            requireSubtype := some subtype
-            faceDown := true })
-          (cause := cause?)
-        g := g.logMsg s!"{pl.name} exiles a card face down"
-        let _ := cardName
-    return g
+    g0.withBatch cause? fun g0 => Id.run do
+      let mut g := g0
+      for _ in List.range n do
+        let pl := g.player p
+        if pl.library.isEmpty then
+          g := g.logMsg s!"{pl.name} has no cards in their library to exile"
+        else
+          let top := pl.library.back!
+          let cardName := (g.object! top).name
+          let (g', newId) := g.move top .exile none (cause := cause?)
+          g := g'
+          g := g.createEffect (.playPermission newId {
+              player := p
+              whileExiled := true
+              requireSubtype := some subtype
+              faceDown := true })
+            (cause := cause?)
+          g := g.logMsg s!"{pl.name} exiles a card face down"
+          let _ := cardName
+      return g
 
 /-- Exile cards from the top of `victim`'s library until an instant or
 sorcery, face up. Returns the game, that card, and the other exiled cards
@@ -482,10 +485,15 @@ and end-step sacrifice (Venser), pausing on `Pending.chooseReplacement`
 (`PendingReplacement.copyPermanentTokens`) if token creation or ETB choices
 require interactive CR 616.1 selection. -/
 partial def createPermanentCopyTokens (g : Game) (controller : PlayerId) (template : CardDef)
-    (remaining : Nat) (cause : Option EventCause := none) : Game :=
+    (remaining : Nat) (cause : Option EventCause := none)
+    (priorRecentCount : Option Nat := none) : Game :=
+  let baseCount := priorRecentCount.getD g.recentTokenIds.size
   let applyRecent (g : Game) : Game :=
-    let ids := g.recentTokenIds
-    let g := if g.continuations.isEmpty then g else g.change (.recentTokenIds #[])
+    let allIds := g.recentTokenIds
+    let ids := allIds.extract baseCount allIds.size
+    let g :=
+      if g.continuations.isEmpty || allIds.size ≤ baseCount then g
+      else g.change (.recentTokenIds (allIds.extract 0 baseCount))
     ids.foldl (fun g tid =>
       match g.findObject? tid with
       | none => g
@@ -514,14 +522,14 @@ partial def createPermanentCopyTokens (g : Game) (controller : PlayerId) (templa
     let (g, _) := g.createToken controller template (recordRecent := true) (cause := cause)
     if let .chooseReplacement .. := g.pending then
       g.chainPendingReplacement
-        (.copyPermanentTokens controller template (remaining - 1) cause)
+        (.copyPermanentTokens controller template (remaining - 1) cause baseCount)
     else
       let g := applyRecent g
       let g :=
         if pushedFrame && g.pending == .none && g.pendingReplacement.isNone && remaining == 1 then
           g.change .popContinuationFrame
         else g
-      g.createPermanentCopyTokens controller template (remaining - 1) cause
+      g.createPermanentCopyTokens controller template (remaining - 1) cause (some baseCount)
 
 /-- Whether the source of a proposed activated ability can still pay tap/sacrifice/discard/loyalty. -/
 def sourceStillPayable (g : Game) (prop : ProposedSpell) : Bool :=

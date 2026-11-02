@@ -1,4 +1,4 @@
-import Mtg.Engine.Game.Leaving
+import Mtg.Engine.Game.CombatAssignment
 
 /-!
 # Draws, shuffles, and library order (CR 121)

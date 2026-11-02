@@ -979,6 +979,7 @@ structure StackTriggerSpec where
   lastKnownPower : Option Int := none
   lastKnownToughness : Option Int := none
   fraCauseId : Option ObjectId := none
+  fraCauseIds : Array ObjectId := #[]
   fraCauseController : Option PlayerId := none
   fraCausePower : Option Int := none
   fraCauseStatus : Option Status := none
@@ -1140,6 +1141,10 @@ inductive PendingReplacement where
       (cause : Option EventCause := none)
   | commitEnteringAttackItems (chosen : Array (EnteringAttackItem × Option AttackTarget))
       (cause : Option EventCause) (resetRecent : Bool)
+      (postEntries : Array (ObjectId × PlayerId × String × List TriggeredAbility.TriggerEnterWith × EnteringAttackLog) := #[])
+  | finishEnteringAttackCards
+      (postEntries : Array (ObjectId × PlayerId × String × List TriggeredAbility.TriggerEnterWith × EnteringAttackLog))
+      (cause : Option EventCause)
   | finishEnteringAttackCard (newId : Option ObjectId) (effectController : PlayerId)
       (cardName : String) (mods : List TriggeredAbility.TriggerEnterWith)
       (logKind : EnteringAttackLog) (cause : Option EventCause)
@@ -1171,7 +1176,7 @@ inductive PendingReplacement where
   | copyNontokenCreatures (controller : PlayerId) (snapshots : Array CardDef)
       (cause : Option EventCause)
   | copyPermanentTokens (controller : PlayerId) (card : CardDef) (remaining : Nat)
-      (cause : Option EventCause)
+      (cause : Option EventCause) (priorRecentCount : Nat := 0)
   | finishArtifactCopyToken
   | finishManaAbilityMountainTrigger (player : PlayerId) (sourceId : ObjectId)
   | restorePending (p : Pending)
@@ -1226,8 +1231,11 @@ inductive PendingReplacement where
       (n : Nat) (cause : EventCause)
   | finishPlaceSearched (p : PlayerId) (fromId : ObjectId) (name : String)
       (tapped : Bool) (cause : Option EventCause)
+  | finishSearchedUntap (p : PlayerId) (landId : ObjectId) (name : String)
   | placeSearchedBatch (p : PlayerId) (remainingIds : Array ObjectId) (tapped : Bool)
       (cause : Option EventCause)
+      (entered : Array (ObjectId × String) := #[])
+      (preBattlefield : Option (Array GameObject) := none)
   | finishSearchAfterPlace (p : PlayerId) (fromId : Option ObjectId)
       (dest : SearchDest) (after : Option FraNext) (fromLibrary : Bool)
       (handRest : Array ObjectId := #[]) (cause : Option EventCause := none)
@@ -1290,6 +1298,7 @@ inductive PendingReplacement where
       (preBattlefield : Option (Array GameObject) := none)
       (cause : Option EventCause := none)
       (createBeastFor : Option PlayerId := none)
+      (passiveLog : Bool := false)
   | putToBattlefieldLoop (controller : PlayerId) (remainingIds : Array ObjectId)
       (enteredFromIds : Array ObjectId := #[]) (useCardOwner : Bool := false)
       (haste : Bool := false) (tapped : Bool := false)
@@ -1297,7 +1306,12 @@ inductive PendingReplacement where
       (cause : Option EventCause := none)
   | returnLinkedExileLoop (remainingIds : Array ObjectId)
       (cause : Option EventCause := none)
+      (enteredFromIds : Array ObjectId := #[])
+      (preBattlefield : Option (Array GameObject) := none)
+  | putShadowCounter (targetId : ObjectId)
+  | finishShadowCounter (targetId : ObjectId) (before : Nat)
   | finishLinkedExileMove (remainingIds : Array ObjectId)
+      (preBattlefield : Option (Array GameObject) := none)
   | untapPermanentsLoop (remainingIds : Array ObjectId)
       (cause : Option EventCause := none)
   | millCardsLoop (p : PlayerId) (remainingIds : Array ObjectId)
@@ -1337,6 +1351,15 @@ deriving Repr, Inhabited, BEq
 def PendingReplacement.endsWithFinishFra : PendingReplacement → Bool
   | .finishFraChoice => true
   | .seq _ b => b.endsWithFinishFra
+  | _ => false
+
+/-- Whether a `PendingReplacement` continuation already ends by granting
+priority (`.receivePriority` / `.finishFraChoice` / `.finishPostCast` with
+`grantPriority == true`). -/
+def PendingReplacement.endsWithPriorityGrant : PendingReplacement → Bool
+  | .receivePriority _ | .finishFraChoice => true
+  | .finishPostCast _ _ hadOuter _ => !hadOuter
+  | .seq _ b => b.endsWithPriorityGrant
   | _ => false
 
 /-- Ensure a `PendingReplacement` continuation ends with `.finishFraChoice`
@@ -1535,6 +1558,8 @@ structure ContinuationFrame where
   resolvingSpell : Option ObjectId := none
   /-- The activated or triggered ability currently resolving (CR 608.2). -/
   resolvingAbility : Option ObjectId := none
+  /-- Modes announced when the resolving stack ability was put onto the stack (CR 603.3c / 700.2). -/
+  resolvingModes : Option (Array Nat) := none
   /-- Damage assigned to each target of the resolving divided-damage ability (CR 601.2d). -/
   resolvingDivision : Array Nat := #[]
   /-- Resolution-scoped continuation after a `--norandom` result is applied. -/
@@ -1629,6 +1654,7 @@ inductive ContinuationChange where
   | stashedCause (v : Option EventCause)
   | resolvingSpell (v : Option ObjectId)
   | resolvingAbility (v : Option ObjectId)
+  | resolvingModes (v : Option (Array Nat))
   | resolvingDivision (v : Array Nat)
   | afterRandom (v : AfterRandom)
   | resolutionFinish (v : Option ResolutionFinish)
@@ -1698,6 +1724,8 @@ inductive EngineChange where
   | blockersQueue (v : Array PlayerId)
   | waitingTriggers (v : Array WaitingTrigger)
   | enqueueWaitingTriggers (wts : Array WaitingTrigger)
+  | queueLinkedExile (ids : Array ObjectId)
+  | clearQueuedLinkedExile
   | replacementOrder (ids : Array ReplacementId)
   | castingFromTop (v : Bool)
   | sbaChecked
@@ -1785,6 +1813,7 @@ namespace EngineChange
 @[inline] def stashedCause (v : Option EventCause) : EngineChange := .continuation (.stashedCause v)
 @[inline] def resolvingSpell (v : Option ObjectId) : EngineChange := .continuation (.resolvingSpell v)
 @[inline] def resolvingAbility (v : Option ObjectId) : EngineChange := .continuation (.resolvingAbility v)
+@[inline] def resolvingModes (v : Option (Array Nat)) : EngineChange := .continuation (.resolvingModes v)
 @[inline] def resolvingDivision (v : Array Nat) : EngineChange := .continuation (.resolvingDivision v)
 @[inline] def afterRandom (v : AfterRandom) : EngineChange := .continuation (.afterRandom v)
 @[inline] def resolutionFinish (v : Option ResolutionFinish) : EngineChange := .continuation (.resolutionFinish v)
@@ -2474,40 +2503,58 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : Option Obje
     | .zone (.moved _ _ _ _ (.draw nth _) _ _ _), .anyPlayerDrawsSecond => nth == 2
     | .zone (.moved _ _ _ _ (.draw _ first) (some p) _ _), .opponentDrawsExceptFirstDrawStep => !you p && !first
     | .zone (.moved _ _ _ _ (.draw nth _) (some p) _ _), .opponentDrawsSecondCard => !you p && nth == 2
-    | .life (.gained p _), .youGainLife => you p
-    | .life (.lost _ _ _ _), .playerLosesLife => true
+    | .life (.gained p amount), .youGainLife => you p && amount > 0
+    | .life (.lost _ amount _ _), .playerLosesLife => amount > 0
     | .damage (.dealt pkts), .sourceDealtDamage =>
-      pkts.any (fun pkt => match pkt.recipient with | .permanent o | .battle o => this o | .player _ => false)
+      pkts.any (fun pkt => pkt.amount > 0 && match pkt.recipient with | .permanent o | .battle o => this o | .player _ => false)
     | .damage (.dealt pkts), .sourceDealtNoncombatDamage =>
-      pkts.any (fun pkt => !pkt.combat && match pkt.recipient with | .permanent o | .battle o => this o | .player _ => false)
+      pkts.any (fun pkt => !pkt.combat && pkt.amount > 0 && match pkt.recipient with | .permanent o | .battle o => this o | .player _ => false)
     | .damage (.dealt pkts), .creatureYouControlDealtDamage =>
-      pkts.any (fun pkt => match pkt.recipient with | .permanent o => yours o && o.creature | _ => false)
+      pkts.any (fun pkt => pkt.amount > 0 && match pkt.recipient with | .permanent o => yours o && o.creature | _ => false)
     | .damage (.dealt pkts), .dealsCombatDamageToPlayer =>
-      pkts.any (fun pkt => pkt.combat && match pkt.recipient with | .player _ => true | _ => false)
+      pkts.any (fun pkt =>
+        pkt.combat && pkt.amount > 0 &&
+          (sourceId.isNone || pkt.source.id.isNone || this pkt.source) &&
+          match pkt.recipient with | .player _ => true | _ => false)
     | .damage (.dealt pkts), .fra .dealsCombatDamageToPlayerOrPlaneswalker =>
       pkts.any (fun pkt =>
-        pkt.combat &&
+        pkt.combat && pkt.amount > 0 &&
+          (sourceId.isNone || pkt.source.id.isNone || this pkt.source) &&
           match pkt.recipient with
           | .player _ => true
           | .permanent o => o.planeswalker
           | .battle _ => false)
     | .damage (.dealt pkts), .dealsCombatDamageToPlayerOrBattle =>
-      pkts.any (fun pkt => pkt.combat && match pkt.recipient with | .player _ | .battle _ => true | _ => false)
+      pkts.any (fun pkt =>
+        pkt.combat && pkt.amount > 0 &&
+          (pkt.source.controller.isNone || yours pkt.source || this pkt.source) &&
+          match pkt.recipient with | .player _ | .battle _ => true | _ => false)
     | .damage (.dealt pkts), .combatDamageToYou =>
-      pkts.any (fun pkt => pkt.combat && match pkt.recipient with | .player p => you p | _ => false)
+      pkts.any (fun pkt => pkt.combat && pkt.amount > 0 && match pkt.recipient with | .player p => you p | _ => false)
     | .damage (.dealt pkts), .opponentsDealtCombatDamageYourTurn =>
       pkts.any (fun pkt => pkt.combat && pkt.amount > 0 && match pkt.recipient with | .player p => !you p | _ => false)
     | .damage (.dealt pkts), .fra .opponentsDealtNoncombatDamage =>
       pkts.any (fun pkt => !pkt.combat && pkt.amount > 0 && match pkt.recipient with | .player p => !you p | _ => false)
+    | .damage (.dealt pkts), .fra .opponentDealtNoncombatDamage =>
+      pkts.any (fun pkt => !pkt.combat && pkt.amount > 0 && match pkt.recipient with | .player p => !you p | _ => false)
+    | .damage (.dealt pkts), .armyYouControlCombatDamage =>
+      pkts.any (fun pkt =>
+        pkt.combat && pkt.amount > 0 && yours pkt.source && pkt.source.hasSubtype .army &&
+          match pkt.recipient with | .player _ => true | _ => false)
+    | .damage (.dealt pkts), .equippedDealsCombatDamageToPlayer =>
+      pkts.any (fun pkt =>
+        pkt.combat && pkt.amount > 0 && pkt.source.creature &&
+          match pkt.recipient with | .player _ => true | _ => false)
     | .damage (.dealt pkts), .heroesDealDamageToPlayer =>
       pkts.any (fun pkt =>
-        match pkt.recipient with
-        | .player _ => yours pkt.source && pkt.source.hero
-        | _ => false)
+        pkt.amount > 0 &&
+          match pkt.recipient with
+          | .player _ => yours pkt.source && pkt.source.hero
+          | _ => false)
     | .zone (.moved before _ .battlefield (.graveyard _) _ _ _ _), .dying =>
       this before
     | .zone (.moved before _ .battlefield _ _ _ _ _), .leaving => this before
-    | .zone (.ceasedToExist before), .leaving => before.zone == .battlefield && this before
+    | .zone (.ceasedToExist before), .leaving => before.zone == .battlefield && !before.phasedOut && this before
     | .zone (.moved before after _ .battlefield _ _ _ _), .entering => this after || this before
     | .zone (.created object _), .entering => object.zone == .battlefield && this object
     | .zone (.moved _ after _ .battlefield _ _ _ _), .landYouControlEnters =>
@@ -2604,7 +2651,39 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : Option Obje
     | .zone (.moved before _ .battlefield _ _ _ _ _), .fra .creatureYouControlLeaves =>
       yours before && other before && before.creature
     | .zone (.ceasedToExist before), .fra .creatureYouControlLeaves =>
-      before.zone == .battlefield && yours before && other before && before.creature
+      before.zone == .battlefield && !before.phasedOut && yours before && other before && before.creature
+    | .zone (.moved before after _ .battlefield _ _ _ _), .thisOrNontokenSubtypeYouControlEnters =>
+      (this after || this before) || (yours after && !after.token && !after.subtypes.isEmpty)
+    | .zone (.created object _), .thisOrNontokenSubtypeYouControlEnters =>
+      object.zone == .battlefield && this object
+    | .zone (.moved _ after _ .battlefield _ _ _ _), .anotherSubtypeOrEquipmentYouControlEnters =>
+      yours after && other after && (after.equipment || !after.subtypes.isEmpty)
+    | .zone (.created object controller), .anotherSubtypeOrEquipmentYouControlEnters =>
+      object.zone == .battlefield && you controller && other object && (object.equipment || !object.subtypes.isEmpty)
+    | .zone (.moved before after _ .battlefield _ _ _ _), .thisOrAnotherSubtypeYouControlEnters =>
+      (this after || this before) || (yours after && !after.subtypes.isEmpty)
+    | .zone (.created object controller), .thisOrAnotherSubtypeYouControlEnters =>
+      object.zone == .battlefield && (this object || (you controller && !object.subtypes.isEmpty))
+    | .zone (.moved _ after _ .battlefield _ _ _ _), .fra .anotherCreatureOrPlaneswalkerYouControlEnters =>
+      yours after && other after && (after.creature || after.planeswalker)
+    | .zone (.created object controller), .fra .anotherCreatureOrPlaneswalkerYouControlEnters =>
+      object.zone == .battlefield && you controller && other object && (object.creature || object.planeswalker)
+    | .zone (.moved before after _ .battlefield _ _ _ _), .fra .thisOrAnotherCreatureYouControlEnters =>
+      (this after || this before) || (yours after && after.creature)
+    | .zone (.created object controller), .fra .thisOrAnotherCreatureYouControlEnters =>
+      object.zone == .battlefield && (this object || (you controller && object.creature))
+    | .zone (.moved _ after _ .battlefield _ _ _ _), .fra .anotherNontokenCreatureYouControlEnters =>
+      yours after && other after && !after.token && after.creature
+    | .zone (.created object controller), .fra .anotherNontokenCreatureYouControlEnters =>
+      object.zone == .battlefield && you controller && other object && !object.token && object.creature
+    | .zone (.moved _ after _ .battlefield _ _ _ _), .fra .creatureOpponentControlsEnters =>
+      after.controller.any (!you ·) && after.creature
+    | .zone (.created object controller), .fra .creatureOpponentControlsEnters =>
+      object.zone == .battlefield && !you controller && object.creature
+    | .zone (.moved _ after _ .battlefield _ _ _ _), .fra (.creatureYouControlPowerAtLeastEnters n) =>
+      yours after && after.creature && after.power.any (· ≥ n)
+    | .zone (.created object controller), .fra (.creatureYouControlPowerAtLeastEnters n) =>
+      object.zone == .battlefield && you controller && object.creature && object.power.any (· ≥ n)
     | .zone (.moved _ after _ .battlefield _ _ _ _), .subtypeYouControlEnters sub =>
       yours after && after.hasSubtype sub
     | .zone (.created object controller), .subtypeYouControlEnters sub =>
@@ -2639,16 +2718,32 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : Option Obje
     | .cast (.spellCast spell p _), .youCastCreature =>
       you p && spell.creature
     | .cast (.spellCast _ p _), .youCastSpell => you p
-    | .cast (.spellCast _ p _), .youCastColor _ => you p
-    | .cast (.spellCast _ p (.hand _)), .youCastColorFromHand _ => you p
-    | .cast (.spellCast _ p _), .youCastGreen => you p
+    | .cast (.spellCast spell p _), .youCastColor c => you p && spell.colors.contains c
+    | .cast (.spellCast spell p (.hand _)), .youCastColorFromHand c => you p && spell.colors.contains c
+    | .cast (.spellCast spell p _), .youCastGreen => you p && spell.colors.contains .green
     | .cast (.spellCast spell p _), .youCastVillain => you p && spell.villain
+    | .cast (.spellCast _ p _), .youCastWithTreasure => you p
+    | .cast (.spellCast _ p _), .youCastTargetingCreatureYouControl => you p
+    | .cast (.spellCast _ p _), .youCastTargetingCreature => you p
+    | .cast (.spellCast spell p _), .youCastInstantSorceryTargetingArtifactOrLand =>
+      you p && spell.instantOrSorcery
+    | .cast (.spellCast _ p _), .youCastTargetingOpponentOrTheirCreature => you p
     | .cast (.spellCast _ p _), .opponentCastsSpell => !you p
+    | .cast (.spellCast _ p _), .opponentCastsMatchingParity => !you p
     | .cast (.spellCast spell p _), .youCastFirstNoncreature => you p && !spell.creature
     | .cast (.spellCast _ p _), .youCastSecondSpell => you p
     | .cast (.spellCast _ _ _), .anyPlayerCastsSecondSpell => true
     | .cast (.spellCast _ p _), .opponentCastsFirstNoncreature => !you p
+    | .cast (.spellCast spell p _), .cascade => you p && (sourceId.isNone || this spell)
     | .cast (.spellCast spell p _), .fra .castThis => you p && this spell
+    | .cast (.spellCast spell p _), .fra (.opponentCastsSpellMvAtMost n) =>
+      !you p && spell.manaValue ≤ n
+    | .cast (.spellCast spell p _), .fra .youCastPreparedSpell =>
+      you p && spell.isCopy
+    | .cast (.spellCast spell p _), .fra .youCastArtifactOrCreature =>
+      you p && (spell.artifact || spell.creature)
+    | .cast (.spellCast _ p _), .fra .youCastEquipmentOrTargetingCreatureYouControl =>
+      you p
     | .combat (.attackersDeclared p decls), .attacking =>
       you p && decls.any (fun (attacker, _) => this attacker)
     | .combat (.attackersDeclared p decls), .youAttack =>
@@ -2656,9 +2751,17 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : Option Obje
     | .combat (.attackersDeclared p decls), .youAttackWithElves =>
       you p && decls.any (fun (attacker, _) => attacker.elf)
     | .combat (.attackersDeclared p decls), .youAttackWithTwoOrMore =>
-      you p && !decls.isEmpty
+      you p && decls.size ≥ 2 &&
+        decls.any (fun (_, tgt) =>
+          match tgt with
+          | .player d => (decls.filter (fun (_, tgt') => tgt' == .player d)).size ≥ 2
+          | _ => false)
     | .combat (.attackersDeclared p decls), .creatureYouControlAttacksAlone =>
-      you p && decls.any (fun (attacker, _) => attacker.creature)
+      you p && decls.size == 1 && decls[0]!.1.creature
+    | .combat (.attackersDeclared _ decls), .equippedAttacksAlone =>
+      decls.size == 1 && decls[0]!.1.creature
+    | .combat (.attackersDeclared p decls), .youAttackWithTotalPower =>
+      you p && !decls.isEmpty
     | .combat (.attackersDeclared p decls), .equippedAttacks =>
       you p && !decls.isEmpty
     | .combat (.attackersDeclared p decls), .equippedCreatureYouControlAttacks =>
@@ -2667,6 +2770,40 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : Option Obje
       you p && decls.any (fun (attacker, _) => attacker.merfolk)
     | .combat (.attackersDeclared p decls), .fra .creatureYouControlAttacks =>
       you p && decls.any (fun (attacker, _) => attacker.creature)
+    | .combat (.attackersDeclared p decls), .fra .creatureYouControlAttacksPlayerAlone =>
+      you p &&
+        decls.any (fun (attacker, tgt) =>
+          attacker.creature &&
+            match tgt with
+            | .player d => !decls.any (fun (a', tgt') => a'.id != attacker.id && tgt' == .player d)
+            | _ => false)
+    | .combat (.attackersDeclared p decls), .fra .creatureAttacksYouOrYourPlaneswalker =>
+      !you p &&
+        decls.any (fun (attacker, tgt) =>
+          attacker.creature &&
+            match tgt with
+            | .player d => you d
+            | .planeswalker _ => true
+            | .battle _ => false)
+    | .combat (.attackersDeclared _ decls), .fra .creaturesAttackYourOpponent =>
+      decls.any (fun (attacker, tgt) =>
+        attacker.creature &&
+          match tgt with
+          | .player d => !you d
+          | _ => false)
+    | .combat (.attackersDeclared p decls), .fra .zombieTokenAttacks =>
+      you p && decls.any (fun (attacker, _) =>
+        attacker.token && attacker.hasSubtype .zombie && attacker.power.any (· ≥ 6))
+    | .combat (.attackersDeclared p decls), .fra .sphinxesAttack =>
+      you p && decls.any (fun (attacker, _) => attacker.hasSubtype .sphinx)
+    | .combat (.attackersDeclared _ decls), .enchantedAttacksOrBlocks =>
+      decls.any (fun (attacker, _) => attacker.creature)
+    | .combat (.blockersDeclared _ decls), .enchantedAttacksOrBlocks =>
+      decls.any (fun (blocker, _) => blocker.creature)
+    | .combat (.blockersDeclared _ decls), .fra .opponentSmallCreatureBlocks =>
+      decls.any (fun (blocker, _) =>
+        blocker.controller.any (!you ·) && blocker.creature &&
+          (blocker.power.any (· ≤ 1) || blocker.toughness.any (· ≤ 1)))
     | .combat (.becameBlocked attacker _), .becomesBlocked =>
       this attacker
     | .permanent (.tapped object _), .sourceBecomesTapped => this object
@@ -2711,12 +2848,22 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : Option Obje
     | .zone (.moved before _ .battlefield toZone .sacrifice actor _ _), .youSacrificeToken =>
       let p := actor.getD (before.controller.getD before.owner)
       you p && before.token && toZone != .battlefield
+    | .zone (.moved before _ .battlefield toZone .sacrifice actor _ _), .bolgSacrificedForReflexive =>
+      let p := actor.getD (before.controller.getD before.owner)
+      you p && other before && before.creature && toZone != .battlefield
     | .cast (.abilityActivated _ _ p (.nonMana (some _) ..)), .youActivateLoyaltyAbility => you p
     | .cast (.abilityActivated _ source p _), .youActivateCreatureAbility =>
       you p && source.creature
     | .cast (.abilityActivated _ _ p (.nonMana (some _) ..)), .fra .opponentActivatesLoyaltyAbility => !you p
+    | .cast (.abilityActivated _ _ p (.nonMana ..)), .youTargetSomething => you p
     | .cast (.targeted _ targets ..), .becomesTarget =>
       targets.any (fun t => match t with | .permanent oid => some oid == sourceId | _ => false)
+    | .cast (.targeted _ targets ..), .spellTargetsSource =>
+      targets.any (fun t => match t with | .permanent oid => some oid == sourceId | _ => false)
+    | .cast (.targeted _ targets ..), .ward =>
+      targets.any (fun t => match t with | .permanent oid => some oid == sourceId | _ => false)
+    | .cast (.targeted _ targets ..), .youTargetSomething =>
+      targets.any (fun t => match t with | .permanent _ | .player _ => true | _ => false)
     | .zone (.created object p), .fra .youCreateCreatureTokens =>
       object.zone == .battlefield && object.token && you p && object.creature
     | _, _ => false
@@ -2838,8 +2985,8 @@ def dealtNoncombat (events : Array GameEvent) (turn : Nat) (p : PlayerId) : Bool
     e.turn == turn &&
       match e.change with
       | .rules (.damage (.dealt pkts)) =>
-        pkts.any (fun pkt => !pkt.combat && pkt.recipient == .player p)
-      | .rules (.life (.lost q _ true false)) => q == p
+        pkts.any (fun pkt => !pkt.combat && pkt.amount > 0 && pkt.recipient == .player p)
+      | .rules (.life (.lost q amt true false)) => q == p && amt > 0
       | _ => false
 
 /-- Mana recorded for `spell` when it was cast, if the log has that payment. -/

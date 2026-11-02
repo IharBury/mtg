@@ -23,17 +23,24 @@ inductive FraAnswer where
   | name (name : String)
 deriving Repr, BEq
 
-/-- Combine the chosen modes of a modal triggered ability into one effect.
-At most one chosen mode targets. -/
+/-- Combine the chosen modes of a modal triggered ability into one effect,
+preserving the targeting shapes of every targeted mode in printed order (CR 700.2). -/
 def combineTriggerModes (modes : Array Effect) (chosen : Array Nat) : Option Effect :=
   let picked := (chosen.qsort (· < ·)).filterMap (modes[·]?)
   match picked.toList with
   | [] => none
   | [e] => some e
   | es =>
-    let targeted := es.find? (·.requiresTarget)
-    let base := targeted.getD (es.head!)
-    some { base with
+    let targeted := picked.filter (·.requiresTarget)
+    let targeting : EffectTargeting :=
+      match targeted.toList with
+      | [] => .of .none
+      | [t0] => t0.targeting
+      | t0 :: tRest =>
+        let kind := tRest.foldl (fun k m => EffectTargetKind.pair k m.targetKind) t0.targetKind
+        .of kind
+    some { es.head! with
+      targeting
       resolution := .sequence (es.map (·.resolution))
       phrase := String.intercalate ". " (es.map (·.phrase)) }
 
@@ -56,6 +63,10 @@ def castFreeCopy (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game 
       (g.legalCastTargets p face).isEmpty && !face.allowsZeroTargets then
     throw s!"{face.name} requires a target"
   let rest := ids.filter (· != id)
+  let g :=
+    match g.pendingReplacement with
+    | some outer => g.changes #[.pushOuterPendingReplacement outer, .pendingReplacement none]
+    | none => g
   let g := g.change .saveProposalCheckpoint
   let (g, newId) := g.move id .stack (some p) (verb := some .cast) (actor := some p)
     (isCopy := some true) (cause := some (.gameRule .spellCast))
@@ -112,6 +123,103 @@ def continueRiddlesSplit (g : Game) (controller : PlayerId)
       s!"{opp.name} chooses which pile goes to {(g.player controller).name}'s hand"
   | none =>
     g.applyRiddlesPiles controller faceUp faceDown false (alreadyRevealed := true)
+
+/-- Convert a retargeting `FraAnswer` (`.objects #[id]` or `.mode playerIdx`) to a `Target`. -/
+private def retargetAnswerToTarget? (g : Game) : FraAnswer → Option Target
+  | .objects #[id] =>
+    match g.findObject? id with
+    | some o => some (if o.isOnBattlefield then Target.permanent id else Target.card id)
+    | none => some (Target.permanent id)
+  | .mode idx =>
+    if idx < g.players.size then some (Target.player ⟨idx⟩) else none
+  | _ => none
+
+/-- Advance to the next target slot of `copies[0]` (`slotIdx + 1`), or to `copies[1:]`
+once all slots of `copies[0]` have been answered (CR 707.10c). -/
+private def advanceCopyRetarget (g : Game) (p : PlayerId) (copies : Array ObjectId)
+    (slotIdx slotCount : Nat) : Game :=
+  if slotIdx + 1 < slotCount then
+    g.change (.pending (.fraChoice p (.newTargetsForCopySlot copies (slotIdx + 1))))
+  else
+    let rest := copies.extract 1 copies.size
+    if rest.isEmpty then g.finishFraChoice
+    else g.change (.pending (.fraChoice p (.newTargetsForCopies rest)))
+
+/-- Handle `.newTargetsForCopies` (`slotIdx = 0`) and `.newTargetsForCopySlot` (`slotIdx > 0`)
+per-slot retargeting (CR 707.10c / 115.3 / 115.7d). -/
+private def retargetCopyAtSlot (g : Game) (p : PlayerId) (copies : Array ObjectId)
+    (slotIdx : Nat) (answer : FraAnswer) : Except String Game := do
+  let some c := copies[0]? | return g.finishFraChoice
+  match answer with
+  | .decline =>
+    let slotCount := (g.stackEntry? c).map (·.targets.size) |>.getD 0
+    return advanceCopyRetarget g p copies slotIdx slotCount
+  | .objects ids =>
+    if slotIdx == 0 && ids.size > 1 then
+      let some obj := g.findObject? c | throw "The copy left the stack"
+      let some e := g.stackEntry? c | throw "The copy left the stack"
+      if ids.size != e.targets.size then
+        throw "Choose a new target for the copy, or decline to keep it"
+      let cand := ids.map fun id =>
+        match g.findObject? id with
+        | some o => if o.isOnBattlefield then Target.permanent id else Target.card id
+        | none => Target.permanent id
+      let kind := (g.targetingOf obj).kind
+      if !g.validTargetArrayForEntry e obj kind cand (allowUnchangedIllegal := true) then
+        throw "Illegal target (CR 601.2c)"
+      let g := g.setStackEntryTargets c cand (dividedDamage := e.dividedDamage)
+      let g := g.logMsg s!"{(g.player p).name} chooses new targets for the copy"
+      let rest := copies.extract 1 copies.size
+      if rest.isEmpty then return g.finishFraChoice
+      return g.change (.pending (.fraChoice p (.newTargetsForCopies rest)))
+    else
+      let some t := retargetAnswerToTarget? g answer
+        | throw "Choose a new target for the copy, or decline to keep it"
+      let some obj := g.findObject? c | throw "The copy left the stack"
+      let some e := g.stackEntry? c | throw "The copy left the stack"
+      if slotIdx >= e.targets.size then
+        return advanceCopyRetarget g p copies slotIdx e.targets.size
+      let kind := (g.targetingOf obj).kind
+      let selfSource := obj.sourceId.orElse (fun _ => if obj.zone == .stack then some obj.id else none)
+      let totalSlots := e.targets.size + e.skippedOptionalSlots.size
+      let slotIndices : Array Nat :=
+        if e.skippedOptionalSlots.isEmpty then (List.range e.targets.size).toArray
+        else ((List.range totalSlots).filter (fun s => !e.skippedOptionalSlots.contains s)).toArray
+      let actualSlot := slotIndices[slotIdx]?.getD slotIdx
+      if !(g.legalTargetsForKind e.controller (kind.slotKind actualSlot) selfSource).contains t then
+        throw "Illegal target (CR 601.2c)"
+      let cand := e.targets.set! slotIdx t
+      let checkKind :=
+        match kind with
+        | .twoNonlandsSharingType => if slotIdx + 1 < e.targets.size then .nonland else kind
+        | _ => kind
+      if !g.validTargetArrayForEntry e obj checkKind cand (allowUnchangedIllegal := true) then
+        throw "Illegal target (CR 601.2c)"
+      let g := g.setStackEntryTargets c cand (dividedDamage := e.dividedDamage)
+      let g := g.logMsg s!"{(g.player p).name} chooses {g.targetLogName t} as the copy's new target"
+      return advanceCopyRetarget g p copies slotIdx e.targets.size
+  | .mode _ =>
+    let some t := retargetAnswerToTarget? g answer | throw "Illegal target (CR 601.2c)"
+    let some obj := g.findObject? c | throw "The copy left the stack"
+    let some e := g.stackEntry? c | throw "The copy left the stack"
+    if slotIdx >= e.targets.size then
+      return advanceCopyRetarget g p copies slotIdx e.targets.size
+    let kind := (g.targetingOf obj).kind
+    let selfSource := obj.sourceId.orElse (fun _ => if obj.zone == .stack then some obj.id else none)
+    let totalSlots := e.targets.size + e.skippedOptionalSlots.size
+    let slotIndices : Array Nat :=
+      if e.skippedOptionalSlots.isEmpty then (List.range e.targets.size).toArray
+      else ((List.range totalSlots).filter (fun s => !e.skippedOptionalSlots.contains s)).toArray
+    let actualSlot := slotIndices[slotIdx]?.getD slotIdx
+    if !(g.legalTargetsForKind e.controller (kind.slotKind actualSlot) selfSource).contains t then
+      throw "Illegal target (CR 601.2c)"
+    let cand := e.targets.set! slotIdx t
+    if !g.validTargetArrayForEntry e obj kind cand (allowUnchangedIllegal := true) then
+      throw "Illegal target (CR 601.2c)"
+    let g := g.setStackEntryTargets c cand (dividedDamage := e.dividedDamage)
+    let g := g.logMsg s!"{(g.player p).name} chooses {g.targetLogName t} as the copy's new target"
+    return advanceCopyRetarget g p copies slotIdx e.targets.size
+  | _ => throw "Choose a new target for the copy, or decline to keep it"
 
 def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except String Game := do
   let .fraChoice q choice := g.pending | throw "Nothing to choose now"
@@ -354,12 +462,77 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       !chosen.contains i && (modes[i]?.any (g.triggerModeChoosable p obj)))
     if left > 0 && anyLeft then
       return g.change (.pending (.fraChoice p (.triggerModes objId left chosen)))
-    match combineTriggerModes modes chosen with
+    let sorted := chosen.qsort (· < ·)
+    let g := g.record (GameEvent.announced g.turnNumber obj.id (modes := sorted))
+    match combineTriggerModes modes sorted with
     | none => return g.finishFraChoice
     | some eff =>
       let g := g.changeObject obj.id (.abilityEffect (some eff))
       return g.finishFraChoice
   | .triggerModes .., _ => throw "Choose a mode"
+  | .upToTriggerModes objId remaining chosen, .mode idx =>
+    let some obj := g.findObject? objId | return g.finishFraChoice
+    let modes := g.triggerModesOf obj
+    let some e := modes[idx]? | throw "No such mode (CR 700.2)"
+    if chosen.contains idx then throw "That mode was already chosen (CR 700.2d)"
+    if !g.triggerModeChoosable p obj e then
+      throw "That mode has no legal target (CR 603.3c / 700.2b)"
+    let g := g.logMsg s!"{(g.player p).name} chooses mode {idx + 1} ({e.phrase})"
+    let chosen := chosen.push idx
+    let left := remaining - 1
+    let anyLeft := (List.range modes.size).any (fun i =>
+      !chosen.contains i && (modes[i]?.any (g.triggerModeChoosable p obj)))
+    if left > 0 && anyLeft then
+      return g.change (.pending (.fraChoice p (.upToTriggerModes objId left chosen)))
+    let sorted := chosen.qsort (· < ·)
+    let g := g.record (GameEvent.announced g.turnNumber obj.id (modes := sorted))
+    match combineTriggerModes modes sorted with
+    | none => return g.finishFraChoice
+    | some eff =>
+      let g := g.changeObject obj.id (.abilityEffect (some eff))
+      return g.finishFraChoice
+  | .upToTriggerModes objId _ chosen, .decline =>
+    let some obj := g.findObject? objId | return g.finishFraChoice
+    let modes := g.triggerModesOf obj
+    if chosen.isEmpty then
+      let noop : Effect := { resolution := .sequence [], phrase := "" }
+      let g := g.changes #[
+        .object obj.id (.abilityEffect (some noop)),
+        .stackEntry obj.id (.targetsAnnounced true)]
+      return g.finishFraChoice
+    let sorted := chosen.qsort (· < ·)
+    let g := g.record (GameEvent.announced g.turnNumber obj.id (modes := sorted))
+    match combineTriggerModes modes sorted with
+    | none => return g.finishFraChoice
+    | some eff =>
+      let g := g.changeObject obj.id (.abilityEffect (some eff))
+      return g.finishFraChoice
+  | .upToTriggerModes .., _ => throw "Choose a mode, or decline to finish"
+  | .stackTriggerUnusedMode objId srcIdOpt available lifetime, .mode idx =>
+    if !available.contains idx then
+      throw (if lifetime then "That mode has already been chosen"
+        else "That mode has already been chosen this turn")
+    let g :=
+      match srcIdOpt with
+      | some sid =>
+        if (g.findObject? sid).isSome then
+          g.record (GameEvent.triggerModeChosen g.turnNumber sid idx (lifetime := lifetime))
+        else g
+      | none => g
+    let g :=
+      if (g.findObject? objId).isSome then
+        g.record (GameEvent.announced g.turnNumber objId (modes := #[idx]))
+      else g
+    let g := g.logMsg s!"{(g.player p).name} chooses mode {idx + 1}"
+    return g.finishFraChoice
+  | .stackTriggerUnusedMode .., _ => throw "Choose an unused mode"
+  | .stackHydeMode objId, .mode idx =>
+    if idx > 1 then throw "Choose mode 0 or 1 (CR 700.2)"
+    let some obj := g.findObject? objId | return g.finishFraChoice
+    let g := g.record (GameEvent.announced g.turnNumber obj.id (modes := #[idx]))
+    let g := g.logMsg s!"{(g.player p).name} chooses mode {idx + 1}"
+    return g.finishFraChoice
+  | .stackHydeMode .., _ => throw "Choose mode 0 or 1"
   | .chooseKeyword id options, .mode idx =>
     let some code := options[idx]? | throw "No such choice"
     match g.findObject? id with
@@ -604,18 +777,21 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .attachAnyEquipment hostId eligible, .objects ids =>
     if !ids.all (eligible.contains ·) || ids.toList.eraseDups.length != ids.size then
       throw "Choose Equipment you control"
-    let some host := g.findObject? hostId | return g.finishFraChoice
-    let mut g := g
-    let mut attached : Nat := 0
-    for id in ids do
-      match g.findObject? id with
-      | some eq =>
-        if eq.attachedTo != some hostId && eq.isOnBattlefield then
-          g := g.attachSourceTo eq (g.object! hostId)
-          attached := attached + 1
-      | none => pure ()
-    if attached > 0 && host.isOnBattlefield then
-      g := g.change (.equipmentAttachedHost (some hostId))
+    let some _ := g.findObject? hostId | return g.finishFraChoice
+    let g := g.withBatch none fun g => Id.run do
+      let mut g := g
+      let mut attached : Nat := 0
+      for id in ids do
+        match g.findObject? id with
+        | some eq =>
+          if eq.attachedTo != some hostId && eq.isOnBattlefield &&
+              (g.findObject? hostId).any GameObject.isOnBattlefield then
+            g := g.attachSourceTo eq (g.object! hostId)
+            attached := attached + 1
+        | none => pure ()
+      if attached > 0 && (g.findObject? hostId).any GameObject.isOnBattlefield then
+        g := g.change (.equipmentAttachedHost (some hostId))
+      return g
     return g.finishFraChoice
   | .attachAnyEquipment .., .decline => return g.finishFraChoice
   | .attachAnyEquipment .., _ => throw "Choose Equipment to attach, or decline"
@@ -1101,7 +1277,15 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     return (g.logMsg s!"{(g.player p).name} doesn't exile the top card").finishFraChoice
   | .daredevilMayExile _, _ => throw "Exile the top card (accept), or decline"
   | .mayChangeSpellTarget spellId index, .objects #[id] =>
-    let g := g.setSpellTargetAt spellId index (Target.permanent id)
+    let tgt : Target :=
+      match g.findObject? id with
+      | some o => if o.isOnBattlefield then Target.permanent id else Target.card id
+      | none => Target.permanent id
+    let g := g.setSpellTargetAt spellId index tgt
+    return (g.offerSpellRetarget p spellId (index + 1)).finishFraChoice
+  | .mayChangeSpellTarget spellId index, .mode pIdx =>
+    if pIdx >= g.players.size then throw "Illegal target (CR 601.2c)"
+    let g := g.setSpellTargetAt spellId index (Target.player ⟨pIdx⟩)
     return (g.offerSpellRetarget p spellId (index + 1)).finishFraChoice
   | .mayChangeSpellTarget spellId index, .decline =>
     return (g.offerSpellRetarget p spellId (index + 1)).finishFraChoice
@@ -1263,22 +1447,10 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let some pid := players[idx]? | throw "No such player"
     return (g.applyBlackGateUnblockable creature pid).finishFraChoice
   | .blackGatePlayer .., _ => throw "Choose a player with the most life"
-  | .newTargetsForCopies copies, .objects #[id] =>
-    let some c := copies[0]? | return g.finishFraChoice
-    let some obj := g.findObject? c | throw "The copy left the stack"
-    let t := Target.permanent id
-    if !(g.legalTargetsForKind p (g.targetingOf obj).kind (some c)).contains t then
-      throw "Illegal target (CR 601.2c)"
-    let g := g.setStackEntryTargets c #[t]
-    let g := g.logMsg s!"{(g.player p).name} chooses {g.targetLogName t} as the copy's new target"
-    let rest := copies.extract 1 copies.size
-    if rest.isEmpty then return g.finishFraChoice
-    return g.change (.pending (.fraChoice p (.newTargetsForCopies rest)))
-  | .newTargetsForCopies copies, .decline =>
-    let rest := copies.extract 1 copies.size
-    if rest.isEmpty then return g.finishFraChoice
-    return g.change (.pending (.fraChoice p (.newTargetsForCopies rest)))
-  | .newTargetsForCopies .., _ => throw "Choose a new target for the copy, or decline to keep it"
+  | .newTargetsForCopies copies, ans =>
+    retargetCopyAtSlot g p copies 0 ans
+  | .newTargetsForCopySlot copies slotIdx, ans =>
+    retargetCopyAtSlot g p copies slotIdx ans
   | .chooseEnteringAttackTarget remaining chosen cause, ans =>
     let some item := remaining[0]?
       | return (g.commitEnteringAttackItems chosen cause).finishFraChoice
@@ -1312,27 +1484,32 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       let g := g.commitEnteringAttackItems chosen' cause
       return g.finishFraChoice
   | .mayBeginOnBattlefield ids, .accept =>
+    let wasAwaiting := g.awaitingOpeningBegin
     let rest := ids.extract 1 ids.size
     match ids[0]? with
     | some id =>
       match g.findObject? id with
       | some o =>
         if o.zone != .hand o.owner then
-          return (g.continueOpeningBegin rest).finishFraChoice
+          let g := g.continueOpeningBegin rest
+          return if wasAwaiting then g else g.finishFraChoice
         else
-          let name := o.name
           let (g, _) := g.move id .battlefield (some o.owner)
             (cause := some (.gameRule .staticAbility))
-          let g := g.logMsg s!"{name} begins the game on the battlefield"
-          let g :=
-            if let .chooseReplacement .. := g.pending then
-              g.chainPendingReplacement (.finishBeginOnBattlefield id rest)
-            else
-              g.finishBeginOnBattlefield id rest
-          return g.finishFraChoice
-      | none => return (g.continueOpeningBegin rest).finishFraChoice
-    | none => return (g.continueOpeningBegin rest).finishFraChoice
+          if let .chooseReplacement .. := g.pending then
+            let g := g.chainPendingReplacement (.finishBeginOnBattlefield id rest)
+            return if wasAwaiting then g else g.chainPendingReplacement .finishFraChoice
+          else
+            let g := g.finishBeginOnBattlefield id rest
+            return if wasAwaiting then g else g.finishFraChoice
+      | none =>
+        let g := g.continueOpeningBegin rest
+        return if wasAwaiting then g else g.finishFraChoice
+    | none =>
+      let g := g.continueOpeningBegin rest
+      return if wasAwaiting then g else g.finishFraChoice
   | .mayBeginOnBattlefield ids, .decline =>
+    let wasAwaiting := g.awaitingOpeningBegin
     let g :=
       match ids[0]? with
       | some id =>
@@ -1340,7 +1517,8 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
         | some o => g.logMsg s!"{(g.player o.owner).name} leaves {o.name} in their hand"
         | none => g
       | none => g
-    return (g.continueOpeningBegin (ids.extract 1 ids.size)).finishFraChoice
+    let g := g.continueOpeningBegin (ids.extract 1 ids.size)
+    return if wasAwaiting then g else g.finishFraChoice
   | .mayBeginOnBattlefield _, _ =>
     throw "Begin the game with it on the battlefield (accept), or decline"
 
@@ -1389,6 +1567,20 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
           !chosen.contains i && modes[i]?.any (g.triggerModeChoosable p obj)) with
       | some i => .chooseMode i
       | none => .decline
+  | .upToTriggerModes objId _ chosen =>
+    match g.findObject? objId with
+    | none => .decline
+    | some obj =>
+      let modes := g.triggerModesOf obj
+      match (List.range modes.size).find? (fun i =>
+          !chosen.contains i && modes[i]?.any (g.triggerModeChoosable p obj)) with
+      | some i => .chooseMode i
+      | none => .decline
+  | .stackTriggerUnusedMode _ _ available _ =>
+    match available[0]? with
+    | some m => .chooseMode m
+    | none => .decline
+  | .stackHydeMode _ => .chooseMode 0
   | .chooseKeyword .. => .chooseMode 0
   | .sacrificeCreatureEach .. =>
     .choosePermanents (((g.creaturesControlledBy p).map (·.id)).extract 0 1)
@@ -1529,6 +1721,7 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
   | .searchLibrary eligible count .. =>
     if eligible.isEmpty then .decline else .choosePermanents (eligible.extract 0 count)
   | .newTargetsForCopies _ => .decline
+  | .newTargetsForCopySlot _ _ => .decline
   | .riddlesSplit looked => .choosePermanents looked
   | .riddlesChoosePile .. => .accept
   | .palisadeCreatureType _ => .chooseMode 0

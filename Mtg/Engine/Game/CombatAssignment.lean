@@ -1,4 +1,4 @@
-import Mtg.Engine.Game.Library
+import Mtg.Engine.Game.Movement
 
 /-!
 # Combat damage assignment (CR 510.1)

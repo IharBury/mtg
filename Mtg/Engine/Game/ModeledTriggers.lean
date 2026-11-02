@@ -213,19 +213,15 @@ def setSpellTargetAt (g : Game) (spellId : ObjectId) (index : Nat) (neu : Target
     match g.findObject? spellId with
     | none => g.logMsg "The spell is no longer on the stack"
     | some spell =>
-      let kind := (g.targetingOf spell).kind
-      let slots := kind.spec.slots
-      let legal :=
-        match slots[index]? with
-        | some slotKind => g.legalTargetsForAtomicKind e.controller slotKind (some spellId)
-        | none => g.legalTargetsForKind e.controller kind (some spellId)
-      let distinctOk :=
-        slots.size <= 1 ||
-          (List.range e.targets.size).all (fun j => j == index || e.targets[j]! != neu || !slots.isEmpty)
-      if index < e.targets.size && legal.contains neu && distinctOk then
-        g.record (GameEvent.targeted g.turnNumber spellId (e.targets.set! index neu)
-          (division := e.dividedDamage) (skippedOptionalSlots := e.skippedOptionalSlots))
-          |>.logMsg "A new target is chosen for the spell"
+      if index < e.targets.size then
+        let kind := (g.targetingOf spell).kind
+        let cand := e.targets.set! index neu
+        if cand != e.targets && g.validTargetArrayForEntry e spell kind cand (allowUnchangedIllegal := true) then
+          g.record (GameEvent.targeted g.turnNumber spellId cand
+            (division := e.dividedDamage) (skippedOptionalSlots := e.skippedOptionalSlots))
+            |>.logMsg "A new target is chosen for the spell"
+        else
+          g.logMsg "That target stays unchanged"
       else
         g.logMsg "That target stays unchanged"
 
@@ -662,7 +658,8 @@ def offerMayCreateWall (g : Game) (controller : PlayerId) : Game :=
 /-- Put a +1/+1 counter on each announced creature you control, up to the
 life gained in that event (the trigger's last-known power). -/
 def putPlusOnesUpToLastKnown (g : Game) (controller : PlayerId)
-    (targets : Array Target) (lastKnownPower : Option Int) : Game :=
+    (targets : Array Target) (lastKnownPower : Option Int)
+    (sourceId : Option ObjectId := none) : Game :=
   let n := (lastKnownPower.getD 0).toNat
   g.withBatch none fun g =>
     (targets.extract 0 n).foldl (fun (g : Game) t =>
@@ -670,7 +667,8 @@ def putPlusOnesUpToLastKnown (g : Game) (controller : PlayerId)
       | Target.permanent id =>
         match g.findObject? id with
         | some o =>
-          if o.isOnBattlefield && g.isCreature o && g.controlledBy o controller then
+          if o.isOnBattlefield && g.isCreature o && g.controlledBy o controller &&
+              g.canBeTargetedBy controller o sourceId then
             g.addPlusOnePlusOneTo o 1
           else g.logMsg "The target is no longer legal"
         | none => g.logMsg "The target is no longer legal"
@@ -861,7 +859,13 @@ def applyLeftoverTextEffect (g : Game) (controller : PlayerId) (text : String)
   else if text.contains "fights" then
     match targets[0]?, targets[1]? with
     | some (Target.permanent a), some (Target.permanent b) =>
-      g.dealFightDamage (g.object! a) (g.object! b)
+      match g.findObject? a, g.findObject? b with
+      | some oa, some ob =>
+        if oa.isOnBattlefield && ob.isOnBattlefield && g.isCreature oa && g.isCreature ob &&
+            g.canBeTargetedBy controller oa sourceId && g.canBeTargetedBy controller ob sourceId then
+          g.dealFightDamage oa ob
+        else g.logMsg "The target is no longer legal"
+      | _, _ => g.logMsg "The target is no longer legal"
     | _, _ => g
   else if text.contains "draw" && text.contains "lose" then
     g.drawThenLoseLife controller 2 2

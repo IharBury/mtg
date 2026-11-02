@@ -500,31 +500,35 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
       else
         let (g, c) := g.allocDelayedCause (some controller) sourceId
         (g, some c)
-    let (g, copies) := ids.foldl (fun (acc : Game × Array ObjectId) id =>
-      let (g, cs) := acc
-      let card := g.object! id
-      let (g, ex) := g.move id .exile none (cause := cause?)
-      let g := g.logMsg s!"{card.name} is exiled"
-      let printed := g.copiableValues (g.object! ex)
-      -- Permanent spells cast this way become tokens.
-      let copyId : ObjectId := ⟨g.nextObjectId⟩
-      let copyTs := g.timestamp + 1
-      let copyObj : GameObject := {
-        id := copyId
-        printed := { printed with isToken := printed.isPermanentCard }
-        owner := controller
-        controller := some controller
-        zone := .exile
-        timestamp := copyTs
-        isCopy := true
-      }
-      let g := g.record (GameEvent.created g.turnNumber controller (g.snapshot copyObj)
-        (cause := g.resolveOptionalCause cause? (fallbackSrc := sourceId) (fallbackCtrl := some controller)))
-      let g := g.createEffect (.playPermission copyId {
-        player := controller,
-        whileExiled := true, withoutManaCost := true, ignoreTiming := true })
-        (cause := cause?)
-      (g, cs.push copyId)) (g, #[])
+    let (g, copies) := g.withBatchReturn cause? fun g =>
+      ids.foldl (fun (acc : Game × Array ObjectId) id =>
+        let (g, cs) := acc
+        let card := g.object! id
+        let (g, ex) := g.move id .exile none (cause := cause?)
+        let g := g.logMsg s!"{card.name} is exiled"
+        let printed := g.copiableValues (g.object! ex)
+        -- CR 707.12 / 608.3f: card copies remain non-token copies in exile and
+        -- on the stack; permanent spell copies become tokens as they enter the battlefield.
+        let copyId : ObjectId := ⟨g.nextObjectId⟩
+        let copyTs := g.timestamp + 1
+        let copyObj : GameObject := {
+          id := copyId
+          printed := { printed with
+            isToken := false
+            otherFace := printed.otherFace.map (fun f => { f with isToken := false }) }
+          owner := controller
+          controller := some controller
+          zone := .exile
+          timestamp := copyTs
+          isCopy := true
+        }
+        let g := g.record (GameEvent.created g.turnNumber controller (g.snapshot copyObj)
+          (cause := g.resolveOptionalCause cause? (fallbackSrc := sourceId) (fallbackCtrl := some controller)))
+        let g := g.createEffect (.playPermission copyId {
+          player := controller,
+          whileExiled := true, withoutManaCost := true, ignoreTiming := true })
+          (cause := cause?)
+        (g, cs.push copyId)) (g, #[])
     if copies.isEmpty then g
     else
       g.beginFraChoice controller (.castCopiesFree copies 6 copies.size)
@@ -601,7 +605,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
         | Target.permanent id =>
           match g.findObject? id with
           | some o =>
-            if o.isOnBattlefield && g.isCreature o && g.canBeTargetedBy controller o then
+            if o.isOnBattlefield && g.isCreature o && g.canBeTargetedBy controller o sourceId then
               g.applyPermanentAction o .tapAndStun
             else g.illegalAbilityTarget t
           | none => g
@@ -678,12 +682,16 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     let g :=
       if pickedIds.isEmpty then g
       else g.record (GameEvent.revealed g.turnNumber controller pickedIds (cause := some cause))
-    let g := pickedIds.foldl (fun g id =>
-      match g.findObject? id with
-      | some o =>
-        let g := g.logMsg s!"{(g.player controller).name} reveals {o.name}"
-        (g.move id (.hand controller) none (cause := some cause)).1
-      | none => g) g
+    let g :=
+      if pickedIds.isEmpty then g
+      else
+        g.withBatch (some cause) fun g =>
+          pickedIds.foldl (fun g id =>
+            match g.findObject? id with
+            | some o =>
+              let g := g.logMsg s!"{(g.player controller).name} reveals {o.name}"
+              (g.move id (.hand controller) none (cause := some cause)).1
+            | none => g) g
     g.shuffleLibrary controller
   | .untapAllTokensYouControl =>
     g.withBatch none fun g =>
@@ -717,7 +725,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
                 (g.permanentsOf c).any (fun src =>
                   (g.baseCard src).creaturesCantGetMinusCounters && g.retainsPrintedAbilities src)
               | none => false
-            if o.isOnBattlefield && g.isCreature o && g.canBeTargetedBy controller o && x > 0 &&
+            if o.isOnBattlefield && g.isCreature o && g.canBeTargetedBy controller o sourceId && x > 0 &&
                 !shielded then
               (g.recordPutCounters o.id .minusOneMinusOne x (byPlayer := some controller)).logMsg
                 s!"{x} -1/-1 counter(s) are put on {g.name o}"
@@ -731,8 +739,14 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     g.draw controller ((Color.all.filter colors.contains).length)
   | .untapUnblockable =>
     g.withLegalKindPermanent controller kind targets (fun g o =>
+      let oid := o.id
       let g := g.applyPermanentAction o .untap
-      g.applyPermanentAction (g.object! o.id) .cantBeBlocked) sourceId illegal
+      if let .chooseReplacement .. := g.pending then
+        g.chainPendingReplacement (.finishPostStep 79 controller (cardId := some oid))
+      else
+        match g.findObject? oid with
+        | some cur => if cur.isOnBattlefield then g.applyPermanentAction cur .cantBeBlocked else g
+        | none => g) sourceId illegal
   | .minusPowerPerGraveyard =>
     let n : Int := Int.ofNat (g.player controller).graveyard.size
     g.withLegalKindPermanent controller kind targets (fun g o => g.pumpPermanent o (-n) 0)
@@ -769,7 +783,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
       | Target.permanent id =>
         match g.findObject? id with
         | some o =>
-          if o.isOnBattlefield && g.canBeTargetedBy controller o then (g, ids.push id)
+          if o.isOnBattlefield && g.canBeTargetedBy controller o sourceId then (g, ids.push id)
           else (g.illegalAbilityTarget t, ids)
         | none => (g, ids)
       | _ => (g, ids)) (g, #[])

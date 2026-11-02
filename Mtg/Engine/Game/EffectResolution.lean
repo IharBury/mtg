@@ -171,7 +171,7 @@ def applyFraResolution? (g : Game) (controller : PlayerId) (effect : Effect)
     let kinds := effect.targetKind.spec.slots
     let legalAt (i : Nat) (t : Target) : Bool :=
       match kinds[i]? with
-      | some k => (g.legalTargetsForAtomicKind controller k none).contains t
+      | some k => (g.legalTargetsForAtomicKind controller k sourceId).contains t
       | none => false
     match targets[0]?, targets[1]? with
     | some (Target.permanent srcId), some (Target.permanent dstId) =>
@@ -688,16 +688,20 @@ def beginVisionQuest (g : Game) (p : PlayerId) (x : Nat) : Game :=
       |>.logMsg s!"{(g.player p).name} may search their library and their graveyard"
 
 /-- Connive `id` when it is still a creature the spell's controller controls. -/
-def conniveTricksterTarget (g : Game) (controller : PlayerId) (id? : Option ObjectId) : Game :=
-  match id? with
-  | none => g
-  | some id =>
-    match g.findObject? id with
-    | some o =>
-      if o.isOnBattlefield && g.isCreature o && g.controlledBy o controller then
-        g.applyConnive controller (some id)
-      else g.logMsg "The target is no longer legal"
-    | none => g.logMsg "The target is no longer legal"
+def conniveTricksterTarget (g : Game) (controller : PlayerId) (id? : Option ObjectId)
+    (sourceId : Option ObjectId := none) : Game :=
+  if !g.stillInGame controller then g
+  else
+    match id? with
+    | none => g
+    | some id =>
+      match g.findObject? id with
+      | some o =>
+        if o.isOnBattlefield && g.isCreature o && g.controlledBy o controller &&
+            g.canBeTargetedBy controller o sourceId then
+          g.applyConnive controller (some id)
+        else g.logMsg "The target is no longer legal"
+      | none => g.logMsg "The target is no longer legal"
 
 /-- Mana value of spells `p` has cast this turn other than the spell resolving
 now (ruling 110). Cascade spells that were actually cast are included. A
@@ -1113,9 +1117,9 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
   | .fight .announced (.timesPower k) =>
     match targets[0]?, targets[1]? with
     | some (Target.permanent srcId), some (Target.permanent destId) =>
-      let srcOk := (g.legalCreatureYouControlTargets controller).contains
+      let srcOk := (g.legalCreatureYouControlTargets controller sourceId).contains
         (Target.permanent srcId)
-      let destOk := (g.legalOppCreatureTargets controller).contains
+      let destOk := (g.legalOppCreatureTargets controller sourceId).contains
         (Target.permanent destId)
       if srcOk && destOk then
         let src := g.object! srcId
@@ -1133,9 +1137,9 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
   | .mutualFight .both =>
     match targets[0]?, targets[1]? with
     | some (Target.permanent srcId), some (Target.permanent destId) =>
-      let srcOk := (g.legalCreatureYouControlTargets controller).contains
+      let srcOk := (g.legalCreatureYouControlTargets controller sourceId).contains
         (Target.permanent srcId)
-      let destOk := (g.legalOppCreatureTargets controller).contains
+      let destOk := (g.legalOppCreatureTargets controller sourceId).contains
         (Target.permanent destId)
       if srcOk && destOk then
         g.fightCreatures (g.object! srcId) (g.object! destId)
@@ -1150,13 +1154,19 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
       match g.findObject? srcId, g.findObject? destId with
       | some src, some dest =>
         if src.id != dest.id && src.isOnBattlefield && dest.isOnBattlefield &&
-            g.isCreature src && g.isCreature dest && g.controlledBy src controller then
+            g.isCreature src && g.isCreature dest && g.controlledBy src controller &&
+            g.canBeTargetedBy controller src sourceId &&
+            g.canBeTargetedBy controller dest sourceId then
           g.fightCreatures src dest
         else g.logMsg "The target is no longer legal"
       | _, _ => g.logMsg "The target is no longer legal"
     | some (Target.permanent srcId), none =>
       match g.findObject? srcId with
-      | some src => g.logMsg s!"{g.name src} has nothing to fight"
+      | some src =>
+        if src.isOnBattlefield && g.isCreature src && g.controlledBy src controller &&
+            g.canBeTargetedBy controller src sourceId then
+          g.logMsg s!"{g.name src} has nothing to fight"
+        else g.logMsg "The target is no longer legal"
       | none => g.logMsg "The target is no longer legal"
     | _, _ => g.logMsg "The target is no longer legal"
   | .extraLand =>
@@ -1194,7 +1204,9 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     g.beginScry controller n.toNat
   | .tapTargets =>
     g.foldPermanentTargets targets (fun g o =>
-      if o.isOnBattlefield && g.isCreature o then g.applyPermanentAction o .tap else g)
+      if o.isOnBattlefield && g.isCreature o && g.canBeTargetedBy controller o sourceId then
+        g.applyPermanentAction o .tap
+      else g)
   | .counter =>
     match targets[0]? with
     | some (Target.card id) => g.counterStackSpell id (controller := some controller)
@@ -1245,7 +1257,9 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
         let nonland (o : GameObject) :=
           o.isOnBattlefield && !(g.types o).any (· == .land)
         let share := (g.types oa).any (fun t => (g.types ob).contains t)
-        if a != b && nonland oa && nonland ob && share then
+        if a != b && nonland oa && nonland ob && share &&
+            g.canBeTargetedBy controller oa sourceId &&
+            g.canBeTargetedBy controller ob sourceId then
           match g.controllerOf oa, g.controllerOf ob with
           | some pa, some pb =>
             -- CR 701.12a / 104.5 / 800.4a–b: if the entire exchange can't be
@@ -1287,8 +1301,8 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
         | none => g.logMsg "The target is no longer legal"
       | _ => g.logMsg "The target is no longer legal"
     | .each =>
-      Id.run do
-        let creatureLegal := g.legalTargetsForAtomicKind controller .creature none
+      g.withBatch none fun g => Id.run do
+        let creatureLegal := g.legalTargetsForAtomicKind controller .creature sourceId
         let mut g := g
         for t in targets do
           match t with
@@ -1305,16 +1319,16 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
         return g
   | .gainLife (.fixed n) => g.gainLife controller n.toNat
   | .targetPlayersGainLife n =>
-    Id.run do
-      let playerLegal := g.legalTargetsForAtomicKind controller .player none
-      let (g, cause?) : Game × Option EventCause :=
-        if n == 0 || targets.isEmpty then (g, none)
-        else
-          match g.currentResolvingContext? with
-          | some (src, ctrl) =>
-            let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some controller)) src
-            (g, some c)
-          | none => (g, none)
+    let playerLegal := g.legalTargetsForAtomicKind controller .player sourceId
+    let (g, cause?) : Game × Option EventCause :=
+      if n == 0 || targets.isEmpty then (g, none)
+      else
+        match g.currentResolvingContext? with
+        | some (src, ctrl) =>
+          let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some controller)) src
+          (g, some c)
+        | none => (g, none)
+    g.withBatch cause? fun g => Id.run do
       let mut g := g
       for t in targets do
         match t with
@@ -1460,28 +1474,30 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
   | .exileTopXOppPlayForLife =>
     match targets[0]? with
     | some (Target.player pid) =>
-      Id.run do
+      if chosenX == 0 then g
+      else
         let (g0, cause?) : Game × Option EventCause :=
-          if chosenX == 0 || (g.player pid).library.isEmpty then (g, none)
+          if (g.player pid).library.isEmpty then (g, none)
           else
             let (g, c) := g.allocDelayedCause (some controller) sourceId
             (g, some c)
-        let mut g := g0
-        for _ in List.range chosenX do
-          let pl := g.player pid
-          if pl.library.isEmpty then
-            g := g.logMsg s!"{pl.name} has no cards in their library to exile"
-          else
-            let top := pl.library.back!
-            let name := (g.object! top).name
-            let (g', newId) := g.move top .exile none (cause := cause?)
-            g := g'
-            g := g.createEffect (.playPermission newId {
-              player := controller,
-              payLifeEqualManaValue := true })
-              (cause := cause?)
-            g := g.logMsg s!"{(g.player controller).name} exiles {name}"
-        return g
+        g0.withBatch cause? fun g0 => Id.run do
+          let mut g := g0
+          for _ in List.range chosenX do
+            let pl := g.player pid
+            if pl.library.isEmpty then
+              g := g.logMsg s!"{pl.name} has no cards in their library to exile"
+            else
+              let top := pl.library.back!
+              let name := (g.object! top).name
+              let (g', newId) := g.move top .exile none (cause := cause?)
+              g := g'
+              g := g.createEffect (.playPermission newId {
+                player := controller,
+                payLifeEqualManaValue := true })
+                (cause := cause?)
+              g := g.logMsg s!"{(g.player controller).name} exiles {name}"
+          return g
     | _ => g.logMsg "The target is no longer legal"
   | .riddlesInTheDark n =>
     let looked := g.scryLookedIds controller n
@@ -1658,7 +1674,7 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
         | Target.permanent oid =>
           match g.findObject? oid with
           | some o =>
-            if o.isOnBattlefield && !g.isLand o then
+            if o.isOnBattlefield && !g.isLand o && g.canBeTargetedBy controller o sourceId then
               g.returnToHand o.id o.owner
             else
               g.logMsg "The target is no longer legal"
@@ -1727,7 +1743,7 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
   | .createGalactus =>
     g.createNamedToken controller galactusToken
   | .worldsWithinWorlds =>
-    g.applyWorldsWithinWorlds controller none
+    g.applyWorldsWithinWorlds controller (sourceId.orElse (fun _ => g.resolvingSpell))
   | .exileHandDrawPlayUntilNext =>
     g.exileHandDrawPlayUntilNext controller
   | .copyNontokenCreaturesYouControl =>
@@ -1752,16 +1768,17 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     | some (Target.permanent id) =>
       match g.findObject? id with
       | some o =>
-        if o.isOnBattlefield && g.isCreature o && !g.controlledBy o controller then
+        if o.isOnBattlefield && g.isCreature o && !g.controlledBy o controller &&
+            g.canBeTargetedBy controller o sourceId then
           g.change (.pending (.fraChoice o.owner (.tricksterLibrary controller id connive)))
             |>.logMsg s!"{(g.player o.owner).name} puts {g.name o} second from the top or on the bottom of their library"
         else
           let g := g.logMsg "The target is no longer legal"
-          g.conniveTricksterTarget controller connive
+          g.conniveTricksterTarget controller connive sourceId
       | none =>
-        g.conniveTricksterTarget controller connive
+        g.conniveTricksterTarget controller connive sourceId
     | _ =>
-      g.conniveTricksterTarget controller connive
+      g.conniveTricksterTarget controller connive sourceId
   | .copyThisSpellXTimesThenDamage n =>
     g.applyDamageToKindTarget controller .creature targets n sourceId
   | .mayDrawPerArtifactOppsDraw ty =>
@@ -1998,6 +2015,8 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
   | .amass (.fixed n) .goblin false .you => g.amassGoblins controller n.toNat
   | .discard (.cards n) =>
     g.beginDiscardCards #[controller] n
+  | .sacrifice .eachPlayersCreature _ =>
+    g.beginSacrificeCreatures g.apnapOrder
   | .mill (.fixed n) .player _ =>
     g.withLegalKindPlayer controller effect.targetKind targets
       (fun g pid => g.mill pid n.toNat)
@@ -2015,14 +2034,17 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
     g.applyOnPermanent controller effect.targetKind targets action sourceId
   | .exile (.target .eachPermanent) .untilSourceLeaves _ =>
     g.withSourceStillOnBattlefield sourceId fun g _ =>
+      let legal := g.legalTargetsForKind controller effect.targetKind sourceId
       let (g, linkCause) := g.allocDelayedCause (some controller) sourceId
       g.withBatch (some linkCause) fun g =>
         targets.foldl (fun acc t =>
           match t with
           | Target.permanent oid =>
-            match acc.findObject? oid with
-            | some o => acc.exileUntilSourceLeaves sourceId o (cause := some linkCause)
-            | none => acc
+            if legal.contains t then
+              match acc.findObject? oid with
+              | some o => acc.exileUntilSourceLeaves sourceId o (cause := some linkCause)
+              | none => acc
+            else acc.illegalAbilityTarget t
           | _ => acc) g
   | r =>
     match Resolution.toSpell r with
@@ -2108,13 +2130,18 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
         | some (Target.player a), some (Target.player b) =>
           if a == b then g.logMsg "Two target players must be different"
           else
-            let (g, cause?) : Game × Option EventCause :=
-              match g.currentResolvingContext? with
-              | some (src, ctrl) =>
-                let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some controller)) (src.orElse (fun _ => sourceId))
-                (g, some c)
-              | none => (g, none)
-            g.draw a 1 (cause := cause?) |>.draw b 1 (cause := cause?)
+            let aOk := g.playerCanBeTargetedBy controller a sourceId
+            let bOk := g.playerCanBeTargetedBy controller b sourceId
+            if !aOk && !bOk then g.logMsg "The targets are no longer legal"
+            else
+              let (g, cause?) : Game × Option EventCause :=
+                match g.currentResolvingContext? with
+                | some (src, ctrl) =>
+                  let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some controller)) (src.orElse (fun _ => sourceId))
+                  (g, some c)
+                | none => (g, none)
+              let g := if aOk then g.draw a 1 (cause := cause?) else g.illegalAbilityTarget (Target.player a)
+              if bOk then g.draw b 1 (cause := cause?) else g.illegalAbilityTarget (Target.player b)
         | _, _ => g.logMsg "The targets are no longer legal"
       | .discardLegendarySameNameDraw =>
         g.draw controller 2
@@ -2277,7 +2304,9 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
           | some dest, some src =>
             if dest.isOnBattlefield && src.isOnBattlefield &&
                 g.controlledBy dest controller && g.controlledBy src controller &&
-                g.isArtifact dest && g.isArtifact src then
+                g.isArtifact dest && g.isArtifact src &&
+                g.canBeTargetedBy controller dest sourceId &&
+                g.canBeTargetedBy controller src sourceId then
               g.becomeCopyOf dest src (untilEot := true) (removeSupertypes := #[.legendary])
             else
               g.logMsg "The target is no longer legal. The ability has no effect."

@@ -12,11 +12,11 @@ import Mtg.Engine.Game.Tokens
 import Mtg.Engine.Game.Attachments
 import Mtg.Engine.Game.StatBonuses
 import Mtg.Engine.Game.Movement
-import Mtg.Engine.Game.Leaving
+import Mtg.Engine.Game.CombatAssignment
 import Mtg.Engine.Game.Library
+import Mtg.Engine.Game.Leaving
 import Mtg.Engine.Game.Keywords
 import Mtg.Engine.Game.PowerToughness
-import Mtg.Engine.Game.CombatAssignment
 import Mtg.Engine.Game.StateBasedActions
 import Mtg.Engine.Game.Timing
 import Mtg.Engine.Game.Targeting

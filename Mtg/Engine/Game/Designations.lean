@@ -87,11 +87,27 @@ def grantCitysBlessingIfNeeded (g : Game) (p : PlayerId) : Game :=
 def refreshCitysBlessing (g : Game) : Game :=
   g.players.foldl (fun g pl => g.grantCitysBlessingIfNeeded pl.id) g
 
+/-- Finish placing a shadow counter on `targetId` once `recordPutCounters` completes. -/
+def finishShadowCounter (g : Game) (targetId : ObjectId) (before : Nat) : Game :=
+  match g.findObject? targetId with
+  | none => g
+  | some cur =>
+    if !cur.isOnBattlefield || cur.status.counterCount .shadow <= before then g
+    else
+      let g := g.createEffect (.additionalSubtype cur.id .wraith true)
+      g.logMsg s!"{g.name cur} gets a shadow counter"
+
 /-- Put a shadow counter on `o`. It has shadow and is a Wraith. -/
 def putShadowCounter (g : Game) (o : GameObject) : Game :=
-  let g := g.recordPutCounters o.id .shadow 1 (byPlayer := g.controllerOf o)
-  let g := g.createEffect (.additionalSubtype o.id .wraith true)
-  g.logMsg s!"{g.name o} gets a shadow counter"
+  if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement (.putShadowCounter o.id)
+  else
+    let before := o.status.counterCount .shadow
+    let g := g.recordPutCounters o.id .shadow 1 (byPlayer := g.controllerOf o)
+    if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement (.finishShadowCounter o.id before)
+    else
+      g.finishShadowCounter o.id before
 
 end Game
 end Mtg.Engine

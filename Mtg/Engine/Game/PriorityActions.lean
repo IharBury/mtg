@@ -281,6 +281,7 @@ def pass (g : Game) (p : PlayerId) : Except String Game := do
   let g := g.logMsg s!"{g.player p |>.name} passes priority"
   let g := g.change (.consecutivePasses (g.consecutivePasses + 1))
   if g.consecutivePasses ≥ g.livingPlayers.size then
+    let g := g.change (.consecutivePasses 0)
     if !g.stack.isEmpty then
       let g := g.resolveTop
       if let .chooseReplacement .. := g.pending then
@@ -302,6 +303,15 @@ def concede (g : Game) (p : PlayerId) : Game :=
     match g.decideGameIfFinished with
     | some finished => finished
     | none =>
+      let wasPregame :=
+        g.pregameRandom != .none || !g.mulliganToDeclare.isEmpty ||
+          !g.willMulligan.isEmpty || !g.mulliganToBottom.isEmpty ||
+          g.awaitingOpeningBegin ||
+          match g.pending with
+          | .declareMulligan _ => true
+          | _ => false
+      let wasIdlePriority := g.pending == .none && g.pendingPriority.isNone
+      let savedPendingPrio := g.pendingPriority
       let wasAssigningCombatDamage : Option Bool :=
         match g.pending with
         | .assignCombatDamage _ fa => some fa
@@ -310,16 +320,30 @@ def concede (g : Game) (p : PlayerId) : Game :=
         g.currentBatch.isSome || g.pendingReplacement.isSome ||
           !g.continuations.isEmpty || g.triggerSequenceRest.isSome
       let g := g.playerLeavesGame p
-      let g := if midResolutionOrBatch then g else g.checkSBA
+      let g := if midResolutionOrBatch || wasPregame then g else g.checkSBA
       if g.unlessPaysDue then
         g.flushUnlessPays
       else if g.over || g.pending != .none then g
+      else if wasPregame then
+        if g.pregameRandom != .none then
+          g.finishAfterRandom true
+        else if !g.mulliganToDeclare.isEmpty then
+          g.promptMulligan g.mulliganToDeclare[0]!
+        else if !g.willMulligan.isEmpty then
+          g.resolveDeclaredMulligans
+        else if !g.mulliganToBottom.isEmpty then
+          g.promptBottom g.mulliganToBottom[0]!
+        else if g.awaitingOpeningBegin then
+          g.continueOpeningBegin #[]
+        else
+          g.beginMulliganRound
       else if let some fa := wasAssigningCombatDamage then
         if fa then g.beginCombatDamageAssignment else g.continueBlockerCombatAssignment
       else if !g.continuations.isEmpty || g.pendingReplacement.isSome ||
           g.triggerSequenceRest.isSome then
         g.finishFraChoice
-      else if g.playersReceivePriority && g.consecutivePasses ≥ g.livingPlayers.size then
+      else if wasIdlePriority && g.playersReceivePriority && g.consecutivePasses ≥ g.livingPlayers.size then
+        let g := g.change (.consecutivePasses 0)
         if !g.stack.isEmpty then
           let g := g.resolveTop
           if let .chooseReplacement .. := g.pending then
@@ -329,7 +353,9 @@ def concede (g : Game) (p : PlayerId) : Game :=
         else
           g.advanceStep
       else if g.playersReceivePriority then
-        g.receivePriority g.priority
+        let rawPrio := savedPendingPrio.getD g.priority
+        let nextP := if g.stillInGame rawPrio then rawPrio else g.nextLiving rawPrio
+        g.receivePriority nextP
       else g
 
 end Game

@@ -90,6 +90,9 @@ structure GameObject where
   fraCausePower : Option Int := none
   /-- The causing object's status (its counters) as it last existed. -/
   fraCauseStatus : Option Status := none
+  /-- All causing object IDs when a batch-level trigger tracks multiple causing
+  objects (e.g. Tamiyo, Upriser Crowned's combat-damage stun trigger). -/
+  fraCauseIds : Array ObjectId := #[]
   /-- The permanent that exiled this card, for permissions tied to it (Null
   Summoner). -/
   exiledBy : Option ObjectId := none
@@ -243,7 +246,7 @@ inductive TurnBasedAction where
   | cleanupDiscard      -- 514.1 / 703.4n
   | cleanupClear        -- 514.2 / 703.4p (damage + until-EOT effects)
   | emptyManaPools      -- 500.5 / 703.4q
-  | expireAtStepBegin   -- 500.4 / 611.2b
+  | expireAtStepBegin   -- 500.4 / 611.2a
   | expireAtStepEnd     -- 500.5 / 611.2a
 deriving DecidableEq, Repr, Inhabited, BEq
 
@@ -325,7 +328,7 @@ inductive ReplacementEffectKind where
   | asEntersChooseCardNamePrompt         -- 616.1a / 614.12
   | asEntersChooseCardName (name : String) -- 616.1a / 614.12
   | asEntersChooseCardType (cardType : CardType) -- 616.1a / 614.12
-  | asEntersChooseAnchor (anchor : String) -- 616.1a / 614.12 / 700.2
+  | asEntersChooseAnchor (anchor : String) -- 616.1a / 614.12
   | entersWithLoyalty                    -- 306.5b / 616.1a
   | entersWithPlusOneCounters            -- 616.1a
   | entersWithXPlusOne                   -- 616.1a
@@ -463,6 +466,9 @@ structure WaitingTrigger where
   /-- Object that caused this trigger, if any (the entering Villain for
   Baron Strucker; MSH 422). -/
   causeId : Option ObjectId := none
+  /-- All causing object IDs when a batch-level trigger tracks multiple causing
+  objects (e.g. Tamiyo, Upriser Crowned). -/
+  causeIds : Array ObjectId := #[]
   /-- The causing object as it was when the ability triggered. -/
   cause : Option GameObject := none
   /-- Explicit causing player override (e.g. the attacked opponent for

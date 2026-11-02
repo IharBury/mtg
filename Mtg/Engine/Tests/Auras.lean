@@ -301,7 +301,7 @@ def afterGiftCleanup : Game := passBoth (skipTo giftScried .end 80)
 #guard afterGiftCleanup.power (namedPermanent afterGiftCleanup "Grizzly Bears") == 5
 #guard (afterGiftCleanup.pumpOf (namedPermanent afterGiftCleanup "Grizzly Bears")).1 == 0
 
-/-- If the target leaves before the Aura resolves, the Aura goes to the graveyard (CR 608.3a). -/
+/-- If the target leaves before the Aura resolves, the Aura goes to the graveyard (CR 608.2b / 608.3b). -/
 def giftTargetGone : Game :=
   let id := (namedPermanent paidGift "Grizzly Bears").id
   let (g, _) := paidGift.move id (.graveyard ⟨0⟩) none

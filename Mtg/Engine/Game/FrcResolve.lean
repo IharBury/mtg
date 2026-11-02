@@ -217,6 +217,77 @@ private def creatureOrWalker (c : CardDef) : Bool :=
 private def basicOf (kinds : Array CardSubtype) (c : CardDef) : Bool :=
   isBasicLandCard c && kinds.any fun k => c.hasSubtype k
 
+/-- Move remaining `handIds` to `controller`'s hand in one batch, then move
+`gyIds` to `controller`'s graveyard in a second batch, pausing cleanly if any
+zone move opens `Pending.chooseReplacement` (`Fact or Fiction`). -/
+partial def factOrFictionGyLoop (g : Game) (controller : PlayerId)
+    (gyIds : Array ObjectId) : Game :=
+  if gyIds.isEmpty then g
+  else
+    let plName := (g.player controller).name
+    g.withBatch none fun g => Id.run do
+      let mut g := g
+      for i in [0:gyIds.size] do
+        let id := gyIds[i]!
+        if let some o := g.findObject? id then
+          let oName := o.name
+          let (g', _) := g.move id (.graveyard controller) none
+          g := g'
+          if let .chooseReplacement .. := g.pending then
+            let rem := gyIds.extract (i + 1) gyIds.size
+            if !rem.isEmpty then
+              g := g.chainPendingReplacement (.finishFrcPostStep 23 controller (ids := rem))
+            return g
+          g := g.logMsg s!"{oName} goes to {plName}'s graveyard"
+      return g
+
+partial def factOrFictionHandLoop (g : Game) (controller : PlayerId)
+    (handIds gyIds : Array ObjectId) : Game :=
+  let g :=
+    if handIds.isEmpty then g
+    else
+      let plName := (g.player controller).name
+      g.withBatch none fun g => Id.run do
+        let mut g := g
+        for i in [0:handIds.size] do
+          let id := handIds[i]!
+          if let some o := g.findObject? id then
+            let oName := o.name
+            let (g', _) := g.move id (.hand controller) none
+            g := g'
+            if let .chooseReplacement .. := g.pending then
+              let remHand := handIds.extract (i + 1) handIds.size
+              g := g.chainPendingReplacement
+                (.finishFrcPostStep 22 controller remHand.size (ids := remHand ++ gyIds))
+              return g
+            g := g.logMsg s!"{oName} goes to {plName}'s hand"
+        return g
+  if let .chooseReplacement .. := g.pending then g
+  else g.factOrFictionGyLoop controller gyIds
+
+/-- Tap each creature in `ids` still on the battlefield and put a stun counter
+on it inside the enclosing batch, deferring the stun-counter log across
+`Pending.chooseReplacement` (`Tamiyo, Upriser Crowned`). -/
+partial def tamiyoStunLoop (g : Game) (controller : PlayerId)
+    (ids : Array ObjectId) : Game := Id.run do
+  let mut g := g
+  for i in [0:ids.size] do
+    let id := ids[i]!
+    if let some o := g.findObject? id then
+      if o.isOnBattlefield && g.isCreature o then
+        g := g.becomeTapped o
+        let curBefore := g.object! o.id
+        let before := curBefore.status.stun
+        g := g.recordPutCounters o.id .stun 1 (byPlayer := some controller)
+        if let .chooseReplacement .. := g.pending then
+          let rem := ids.extract (i + 1) ids.size
+          return g.chainPendingReplacement
+            (.finishFrcPostStep 24 controller before (some o.id) (ids := rem))
+        let curAfter := g.object! o.id
+        if curAfter.status.stun > before then
+          g := g.logMsg s!"{g.name curAfter} gets a stun counter"
+  return g
+
 def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffect)
     (targets : Array Target) (sourceId : Option ObjectId)
     (lastKnownPower : Option Int := none) : Game :=
@@ -231,13 +302,14 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
       let hand := (g.player controller).hand
       let n := min putN hand.size
       let back := hand.extract (hand.size - n) hand.size
-      let g := back.foldl (fun g id =>
-        match g.findObject? id with
-        | some o =>
-          if o.zone == .hand controller then
-            (g.move id (.library controller) none).1
-          else g
-        | none => g) g
+      let g := g.withBatch none fun g =>
+        back.foldl (fun g id =>
+          match g.findObject? id with
+          | some o =>
+            if o.zone == .hand controller then
+              (g.move id (.library controller) none).1
+            else g
+          | none => g) g
       g.logMsg s!"{pl.name} puts {n} card(s) on top of their library"
   | .exileTarget =>
     match targets[0]? with
@@ -575,16 +647,12 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
     if (g.player controller).isMonarch then g.makeFrc controller .gingerbrute
     else g
   | .tamiyoStun =>
-    if !(g.player controller).isMonarch then g
-    else
-      match g.frcCause? with
-      | some o =>
-        if o.isOnBattlefield && g.isCreature o then
-          let g := g.becomeTapped o
-          g.recordPutCounters o.id .stun 1 (byPlayer := some controller)
-            |>.logMsg s!"{g.name o} gets a stun counter"
-        else g
-      | none => g
+    let abIds := (g.resolvingAbilityObject?.map (·.fraCauseIds)).getD #[]
+    let ids :=
+      if !abIds.isEmpty then abIds
+      else (g.frcCause?.map (fun o => #[o.id])).getD #[]
+    g.withBatch none fun g =>
+      g.tamiyoStunLoop controller ids
   | .teferi =>
     match targets[0]? with
     | some (Target.player pid) =>
@@ -751,20 +819,7 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
     let handN := (shown.size + 1) / 2
     let toHand := shown.extract 0 handN
     let toGy := shown.extract handN shown.size
-    let g := g.withBatch none fun g =>
-      toHand.foldl (fun g id =>
-        match g.findObject? id with
-        | some o =>
-          let (g, _) := g.move id (.hand controller) none
-          g.logMsg s!"{o.name} goes to {pl.name}'s hand"
-        | none => g) g
-    g.withBatch none fun g =>
-      toGy.foldl (fun g id =>
-        match g.findObject? id with
-        | some o =>
-          let (g, _) := g.move id (.graveyard controller) none
-          g.logMsg s!"{o.name} goes to {pl.name}'s graveyard"
-        | none => g) g
+    g.factOrFictionHandLoop controller toHand toGy
   | .pump n =>
     match g.srcObj? sourceId with
     | some o => g.pumpPermanent o n 0
@@ -845,7 +900,7 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
               s!"{who} may get five poison counters or the spell is countered (ward)"
             | .discardCard =>
               s!"{who} may discard a card or the spell is countered (ward)"
-            | .sacrificePermanents n _ =>
+            | .sacrificePermanents n _ _ =>
               s!"{who} may sacrifice {n} permanents or the spell is countered (ward)"
           (g.change (.pending (.payWard payer spellId cost))).logMsg msg
         else g
@@ -861,12 +916,13 @@ partial def runFrcPostStep (g : Game) (tag : Nat) (p : PlayerId) (n1 : Nat := 0)
     let hand := (g.player p).hand
     let n := min n1 hand.size
     let back := hand.extract (hand.size - n) hand.size
-    let g := back.foldl (fun g id =>
-      match g.findObject? id with
-      | some o =>
-        if o.zone == .hand p then (g.move id (.library p) none).1
-        else g
-      | none => g) g
+    let g := g.withBatch none fun g =>
+      back.foldl (fun g id =>
+        match g.findObject? id with
+        | some o =>
+          if o.zone == .hand p then (g.move id (.library p) none).1
+          else g
+        | none => g) g
     g.logMsg s!"{(g.player p).name} puts {n} card(s) on top of their library"
   | 2 => g.offerMaySearchBasics p
   | 3 => g.makeFrc p .human
@@ -991,6 +1047,19 @@ partial def runFrcPostStep (g : Game) (tag : Nat) (p : PlayerId) (n1 : Nat := 0)
       match acc.followMilledPublic? id with
       | some card => acc.createEffect (.freeCastFromGraveyardUntilEot card.id)
       | none => acc) g
+  | 22 =>
+    let remHand := ids.extract 0 n1
+    let remGy := ids.extract n1 ids.size
+    g.factOrFictionHandLoop p remHand remGy
+  | 23 =>
+    g.factOrFictionGyLoop p ids
+  | 24 =>
+    let g :=
+      match cardId.bind g.findObject? with
+      | some cur =>
+        if cur.status.stun > n1 then g.logMsg s!"{g.name cur} gets a stun counter" else g
+      | none => g
+    if ids.isEmpty then g else g.tamiyoStunLoop p ids
   | _ => g
 
 /-- Reveal creature cards exiled by Synthetic Destiny at the end step. -/

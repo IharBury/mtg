@@ -52,6 +52,7 @@ def addPlusOnePlusOneTo (g : Game) (o : GameObject) (n : Nat := 1)
     (cause : Option EventCause := none) : Game :=
   if let .chooseReplacement .. := g.pending then
     g.chainPendingReplacement (.addPlusOnePlusOneTo o.id n entersWith byPlayer cause)
+  else if n == 0 then g
   else
   let putter0 := byPlayer.orElse (fun _ => g.counterPutter (g.controllerOf o))
   let propCause := g.resolveOptionalCause cause (fallbackCtrl := putter0)
@@ -69,14 +70,16 @@ def addPlusOnePlusOneTo (g : Game) (o : GameObject) (n : Nat := 1)
       (.addPlusOnePlusOneTo o.id n entersWith byPlayer cause)
   | none =>
     let g := g.consumeReplacementOrder applied
-    let finalCause := g.resolveOptionalCause cause' (fallbackCtrl := putter0)
-    let happened := GameEvent.counters g.turnNumber putter0 (g.snapshot (g.object! o.id)) .plusOnePlusOne n'
-      (cause := finalCause)
-    let g := if n' > 0 && !entersWith then g.record happened else g
-    let phrase :=
-      if entersWith then s!"{g.name o} enters with {plusOnePlusOneCountersPhrase n'}"
-      else s!"{g.name o} gets {plusOnePlusOneCountersPhrase n'}"
-    g.logMsg phrase
+    if n' == 0 then g
+    else
+      let finalCause := g.resolveOptionalCause cause' (fallbackCtrl := putter0)
+      let happened := GameEvent.counters g.turnNumber putter0 (g.snapshot (g.object! o.id)) .plusOnePlusOne n'
+        (cause := finalCause)
+      let g := if !entersWith then g.record happened else g
+      let phrase :=
+        if entersWith then s!"{g.name o} enters with {plusOnePlusOneCountersPhrase n'}"
+        else s!"{g.name o} gets {plusOnePlusOneCountersPhrase n'}"
+      g.logMsg phrase
 
 /-- CR 306.5b: a planeswalker enters with loyalty counters equal to its
 printed loyalty (placed in `entersWith` during the zone change). -/
@@ -231,17 +234,26 @@ def finishSagaFinalChapter (g : Game) (controller : PlayerId)
 def isLegalAuraHost (g : Game) (host : GameObject) : Bool :=
   host.isOnBattlefield && g.isCreature host
 
-/-- Resolve an Aura spell, attaching it or putting it into the graveyard (CR 303.4, 608.3a). -/
+/-- Resolve an Aura spell, attaching it (CR 303.4 / 608.3c) or putting it into
+the graveyard when its target is illegal (CR 608.2b / 608.3b). -/
 def resolveAuraSpell (g : Game) (entry : StackEntry) (obj : GameObject) : Game :=
   let finishCause := some (EventCause.gameRule .permanentSpellResolved)
   let toGraveyard (g : Game) : Game :=
-    g.moveToOwnerGraveyard obj s!"{obj.name} goes to the graveyard (illegal Aura target)"
-      (cause := finishCause)
+    if obj.isCopy then
+      (g.ceaseToExist obj.id (cause := some (.stateBased .copyOutsideStackOrBf))).logMsg
+        s!"{obj.name} ceases to exist (illegal Aura target, CR 704.5e)"
+    else
+      g.moveToOwnerGraveyard obj s!"{obj.name} goes to the graveyard (illegal Aura target)"
+        (cause := finishCause)
   match entry.targets[0]? with
   | some (Target.permanent hostId) =>
     match g.findObject? hostId with
     | some host =>
-      if g.auraObjCanEnchant host obj then
+      let effCtrl := (g.controllerOf obj).getD entry.controller
+      let auraAsPerm := { obj with controller := some effCtrl }
+      let targetLegal :=
+        entry.targets.isEmpty || g.canBeTargetedBy entry.controller host (some obj.id)
+      if targetLegal && g.auraObjCanEnchant host auraAsPerm then
         let hostName := g.name host
         let (g, newId) := g.putOntoBattlefield obj.id entry.controller
           (attachedTo := some host.id) (verb := some .resolve) (actor := some entry.controller)
@@ -490,6 +502,7 @@ partial def receivePriority (g : Game) (p : PlayerId) (recheckSba := true) : Gam
                 w.ability == mine[0]!.ability &&
                 w.event == mine[0]!.event &&
                 w.causeId == mine[0]!.causeId &&
+                w.causeIds == mine[0]!.causeIds &&
                 w.causeController == mine[0]!.causeController &&
                 w.lastKnownPower == mine[0]!.lastKnownPower &&
                 w.lastKnownToughness == mine[0]!.lastKnownToughness &&

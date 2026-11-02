@@ -1,4 +1,4 @@
-import Mtg.Engine.Game.CombatAssignment
+import Mtg.Engine.Game.Leaving
 
 /-!
 # State-based actions (CR 704)
@@ -230,9 +230,9 @@ choice is required (CR 704.5j), the check pauses: that SBA is not finished,
 so CR 704.3 does not yet repeat, put triggers on the stack, or grant
 priority. `keepLegend` resumes the loop. -/
 partial def checkSBACounted (g : Game) : Game × Bool :=
-  if g.over then (g, false)
+  if g.over || g.sbaPaused then (g, false)
   else
-    let (g, (changed, paused)) := g.withBatchReturn none fun g => Id.run do
+    let (g, (changed, _paused)) := g.withBatchReturn none fun g => Id.run do
       let mut g := g
       let mut changed := false
       -- Players losing (CR 704.5a–c). They leave after this SBA pass
@@ -397,11 +397,7 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
     | .chooseReplacement .. | .chooseLegend .. =>
       (g.chainPendingReplacement .checkSBA, true)
     | _ =>
-      if paused then (g, changed)
-      else if changed then
-        let (g', _) := checkSBACounted g
-        (g', true)
-      else (g, false)
+      (g, changed)
 
 /-- Repeat `checkSBACounted` and `leavePlayersWhoLost` until neither performs an
 action or the game ends / pauses on a pending choice (CR 704.3 / 800.4a). -/
@@ -412,11 +408,13 @@ partial def checkSBACountedWithLeaves (g : Game) : Game × Bool :=
     let leftBefore := (g.players.filter (·.leftTheGame)).size
     let g := g.leavePlayersWhoLost
     let anyLeft := (g.players.filter (·.leftTheGame)).size > leftBefore
-    if g.over || g.pending != .none then (g, didSba || anyLeft)
-    else if anyLeft then
+    if g.over then (g, didSba || anyLeft)
+    else if g.sbaPaused then (g.chainPendingReplacement .checkSBA, true)
+    else if g.pending != .none then (g, didSba || anyLeft)
+    else if didSba || anyLeft then
       let (g', didMore) := g.checkSBACountedWithLeaves
       (g', didSba || anyLeft || didMore)
-    else (g, didSba)
+    else (g, false)
 
 def checkSBA (g : Game) : Game :=
   (g.checkSBACountedWithLeaves).1

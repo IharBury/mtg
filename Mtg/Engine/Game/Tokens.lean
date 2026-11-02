@@ -100,7 +100,7 @@ def createOneToken (g : Game) (controller : PlayerId) (printed : CardDef)
   else if (g.player controller).lost then
     (g.logMsg "no token is created (CR 800.4b)", noTokenCreated controller printed)
   else
-    g.withBatchReturn cause fun g =>
+    g.withBatchCoreReturn cause fun g =>
       let printed := { printed with
         isToken := true
         otherFace := printed.otherFace.map (fun f => { f with isToken := true }) }
@@ -371,7 +371,7 @@ def createTokenBatches (g : Game) (batches : Array ProposedTokenBatch)
     (extraCounters : CounterBag := #[])
     (recordRecent : Bool := false)
     (cause : Option EventCause := none) : Game × GameObject :=
-  g.withBatchReturn cause fun g => Id.run do
+  g.withBatchCoreReturn cause fun g => Id.run do
     let mut g := g
     let mut last : Option GameObject := none
     for i in [0:batches.size] do
@@ -458,7 +458,7 @@ def createTreasureTokens (g : Game) (controller : PlayerId) (n : Nat)
   else if (g.player controller).lost then
     if n == 0 then g else g.logMsg "no token is created (CR 800.4b)"
   else
-    g.withBatch cause fun g => Id.run do
+    g.withBatchCore cause fun g => Id.run do
       let mut g := g
       for i in [0:n] do
         let (g', _) := g.createToken controller treasureToken (tapped := tapped) (cause := cause)
@@ -828,7 +828,7 @@ def createKindTokens (g : Game) (controller : PlayerId) (kind : TokenKind)
     else g.logMsg "no token is created (CR 800.4b)"
   else
     let g := if resetRecent then g.change (.recentTokenIds #[]) else g
-    g.withBatch cause fun g => Id.run do
+    g.withBatchCore cause fun g => Id.run do
       let mut g := g
       let isAttacking := attacking || attackingTarget.isSome
       let resolvedTarget :=

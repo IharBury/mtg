@@ -399,18 +399,20 @@ def runPostCastCleanup (g : Game) : Game :=
           s!"{(g.player caster).name} puts the exiled cards on the bottom of their library in a random order"
       g.requestOrderInto bottomed (.library caster) msg (cause := cause)
     | .grimaBottom victim cardId others =>
-      let cause := g.lastMoveCauseOf? cardId
-      let landed := g.followMoved cardId
-      let cast := (g.findObject? landed).any (·.zone == .stack)
-      let uncast :=
-        if cast then #[]
-        else if (g.findObject? cardId).any (·.zone == .exile) then #[cardId]
-        else if (g.findObject? landed).any (·.zone == .exile) then #[landed]
-        else #[]
-      let pile := others ++ uncast
-      let msg :=
-        s!"{(g.player victim).name} puts the exiled cards that weren't cast on the bottom of their library in a random order"
-      g.requestOrderInto pile (.library victim) msg (cause := cause)
+      if !g.stillInGame victim then g
+      else
+        let cause := g.lastMoveCauseOf? cardId
+        let landed := g.followMoved cardId
+        let cast := (g.findObject? landed).any (·.zone == .stack)
+        let uncast :=
+          if cast then #[]
+          else if (g.findObject? cardId).any (·.zone == .exile) then #[cardId]
+          else if (g.findObject? landed).any (·.zone == .exile) then #[landed]
+          else #[]
+        let pile := (others ++ uncast).filter (fun id => (g.findObject? id).any (·.zone == .exile))
+        let msg :=
+          s!"{(g.player victim).name} puts the exiled cards that weren't cast on the bottom of their library in a random order"
+        g.requestOrderInto pile (.library victim) msg (cause := cause)
     | .copyCeaseToExist copyId =>
       let landed := g.followMoved copyId
       let onStack :=
@@ -910,15 +912,18 @@ def retargetStackSpell (g : Game) (spellId : ObjectId) (newTargets : Array Targe
     | none => g.logMsg "The spell is no longer on the stack"
     | some spell =>
       let kind := (g.targetingOf spell).kind
-      let legal := g.legalTargetsForKind e.controller kind (some spellId)
       let merged :=
-        Id.run do
-          let mut out := e.targets
-          for j in [0:Nat.min out.size newTargets.size] do
-            let neu := newTargets[j]!
-            if legal.any (fun t => t == neu) then
-              out := out.set! j neu
-          return out
+        if newTargets.size == e.targets.size &&
+            g.validTargetArrayForEntry e spell kind newTargets (allowUnchangedIllegal := true) then
+          newTargets
+        else
+          Id.run do
+            let mut out := e.targets
+            for j in [0:Nat.min out.size newTargets.size] do
+              let cand := out.set! j newTargets[j]!
+              if g.validTargetArrayForEntry e spell kind cand (allowUnchangedIllegal := true) then
+                out := cand
+            return out
       (g.record (GameEvent.targeted g.turnNumber spellId merged (division := e.dividedDamage)
         (skippedOptionalSlots := e.skippedOptionalSlots))).logMsg
         "New targets are chosen for the spell"

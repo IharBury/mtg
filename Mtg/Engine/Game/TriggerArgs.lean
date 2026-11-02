@@ -77,7 +77,10 @@ def permanentsNamed (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.Objec
     | none => none
   let permanentTargets :=
     ctx.targets.filterMap fun
-      | Target.permanent id => onBf id
+      | Target.permanent id =>
+        match onBf id with
+        | some o => if g.canBeTargetedBy controller o sourceId then some o else none
+        | none => none
       | _ => none
   let someEmpty : Option (Array GameObject) := some #[]
   match who with
