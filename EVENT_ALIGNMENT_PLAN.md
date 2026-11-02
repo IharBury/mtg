@@ -4565,14 +4565,17 @@ CR 800.4a/h leave-game continuation handling, CR 702.131a/b/d `citysBlessing` /
      object or advance the step without priority passes (CR 117.3b–d / 117.4).
    - Close remaining counter sync-vs-paused log divergences: guard `n == 0` and
      replaced `n' == 0` in `Entering.addPlusOnePlusOneTo`
-     ([`Entering.lean`](Mtg/Engine/Game/Entering.lean)) so zero-counter
-     placements do not log `"0 +1/+1 counter(s)"` synchronously while logging
-     nothing when paused, and defer delta-computed counter logs in
-     `TriggeredAbilities.applyAffectedCounters` (`.stun`, `.loyalty`) and
-     `TriggeredAbilities.applyPutCounters` (`.quest`, `.honePerOpponent`,
-     `.trample`, `.stun` in `TriggeredAbilities.lean`) across
-     `Pending.chooseReplacement` so paused counter replacements log the actual
-     placed count rather than `0`.
+     ([`Entering.lean`](Mtg/Engine/Game/Entering.lean)) so synchronous
+     zero-counter placements do not log `"{name} gets 0 +1/+1 counters"` (or
+     `"{name} enters with 0 +1/+1 counters"` via `plusOnePlusOneCountersPhrase`),
+     and defer post-`recordPutCounters` counter logs across
+     `Pending.chooseReplacement` in `TriggeredAbilities.lean` so paused counter
+     replacements do not log a `0` delta (`applyAffectedCounters` `.stun` /
+     `.loyalty` and `applyPutCounters` `.honePerOpponent` / `.stun`), a stale
+     pre-placement `status.quest` total (`applyPutCounters` `.quest`), or omit
+     `"{name} gets a trample counter"` (`applyPutCounters` `.trample`, where
+     `placed == 0` while paused skips the log and the continuation never emits it
+     after resume).
 2. Complete CR 603.3c–d / 603.4 / 608.2a–b / 704.5d–e / 707.10 / 707.12 trigger,
    modal, copy, Aura, and target lifecycle (§2.4, §2.9, §3.5):
    - Align the remaining trigger-time and resolution-time intervening-`"if"` &
@@ -4588,11 +4591,14 @@ CR 800.4a/h leave-game continuation handling, CR 702.131a/b/d `citysBlessing` /
      Mansion* / *Avengers Assembled*), `FrcEffect.gingerbrute` (`isMonarch`),
      and `FrcEffect.obAngel` (`loggedLifeGained > 0`, CR 603.4 / 608.2a); align
      `FrcEffect.tamiyoStun` (*"Whenever one or more creatures deal combat damage
-     to you while you're the monarch"*) with CR 603.2 / 603.4 by checking
-     `isMonarch` at trigger time rather than re-checking `isMonarch` on
-     resolution (`Core.lean`, `FrcResolve.lean`) and tapping + putting stun
-     counters on all creatures that dealt combat damage to `controller` in the
-     triggering batch rather than only the first damager; and gate *Windcrag
+     to you while you're the monarch"*, *Tamiyo, Upriser Crowned*) with CR 603.2
+     by checking `isMonarch` as part of the trigger event at trigger time
+     (`Core.lean`) and removing the `isMonarch` re-check on resolution in
+     `FrcResolve.applyFrc` `.tamiyoStun` (`FrcResolve.lean`, since *"while you're
+     the monarch"* is part of the CR 603.2 trigger event rather than an
+     intervening `"if"` clause) while tapping + putting stun counters on all
+     creatures that dealt combat damage to `controller` in the triggering batch
+     rather than only `g.frcCause?`; and gate *Windcrag
      Siege*'s `"Jeskai"` upkeep ability (`FrcEffect.goblin`) on
      `chosenAnchor == some "Jeskai"` in `Core.triggeredAbilities` (`Core.lean`,
      CR 614.12 / 603.2) rather than triggering on `"Mardu"` and no-oping on
@@ -4604,16 +4610,19 @@ CR 800.4a/h leave-game continuation handling, CR 702.131a/b/d `citysBlessing` /
      holds (in addition to `event.checkTargets || abilityEffectOverride.isSome`)
      so mandatory-target triggered abilities with zero legal targets are removed
      on placement per CR 603.3d rather than stalling on `Pending.chooseTargets`;
-     and move mode announcement for the remaining modal triggered abilities
-     (`.enter .chooseUpToXModes` on *The Ruinous Wrecking Crew*—wiring up-to-`X`
-     mode selection and per-mode target announcement—plus `.vision`,
-     `.plusOneOrRemoveCounter`, `.oneUnused`, and `.oneUnusedThisTurn` in
-     `Triggers.lean` and `TriggeredAbilities.lean`) from resolution time to
-     stack placement per CR 603.3c / 700.2b,g (removing the ability on placement
-     without `StackObjectEvent.resolved` when zero modes remain available per CR
-     603.3c, preserving chosen modes on CR 707.10 stack copies, and resolving
-     source-independent modes via LKI when the source has left `.battlefield`
-     per CR 113.7a).
+     add stack-placement up-to-`X` mode choice and per-mode target announcement
+     for `.enter .chooseUpToXModes` (*The Ruinous Wrecking Crew*, whose
+     `.chooseModes TriggerResolution.upToXModes .alreadyChosen` currently has no
+     `sharedTriggerModes` / `putTriggeredAbilityOnStack` arm and replays
+     `modesChosenEver` without ever offering a choice); and move mode
+     announcement from resolution time (`offerVisionModes`, `offerHydeChoice`,
+     `offerChooseModes`) to stack placement for `.vision`,
+     `.plusOneOrRemoveCounter`, `.oneUnused`, and `.oneUnusedThisTurn`
+     (`Triggers.lean` and `TriggeredAbilities.lean`, CR 603.3c / 700.2b,g,
+     removing the ability on placement without `StackObjectEvent.resolved` when
+     zero modes remain available per CR 603.3c, preserving chosen modes on CR
+     707.10 stack copies, and resolving source-independent modes via LKI when the
+     source has left `.battlefield` per CR 113.7a).
    - Complete CR 704.5d–e / 707.10 / 707.12 / 608.2b / 608.3f spell & card copy
      lifecycle and Aura resolution: keep CR 707.12 exiled card copies
      (`FraResolve` `.uldarosCopies` in `FraResolve.lean` and `FraAbilities`
@@ -4670,10 +4679,13 @@ CR 800.4a/h leave-game continuation handling, CR 702.131a/b/d `citysBlessing` /
    integrity (§2.4, §3.2, §3.5, §3.6):
    - Recursively unwrap left-nested `.seq` nodes when extracting `sweepPreBf?`
      from `outerCont?` in `Decisions.keepLegend` (`Decisions.lean`, falling back
-     to `g.openBatchObjects` when paused inside an open SBA batch) so
-     legend-rule graveyard moves evaluate death/exile replacements against
-     start-of-pass `preBf` rather than live post-`stage 0` `g.battlefield` (CR
-     704.3 / 704.5j / 614.4), and remove the inner
+     to `g.openBatchObjects.filter GameObject.isOnBattlefield`—matching
+     `Game.battlefield` rather than raw multi-zone `g.openBatchObjects`, since
+     `Movement.exileInsteadSource?` treats `preBattlefield` as an on-battlefield
+     slice—when paused inside an open SBA batch) so legend-rule graveyard moves
+     evaluate death/exile replacements against start-of-pass `preBf` rather than
+     live post-`stage 0` `g.battlefield` (CR 704.3 / 704.5j / 614.4), and remove
+     the inner
      `else if changed then checkSBACounted g` recursion inside
      `StateBasedActions.checkSBACounted`
      ([`StateBasedActions.lean`](Mtg/Engine/Game/StateBasedActions.lean)) so
