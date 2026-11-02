@@ -1292,12 +1292,11 @@ def applyPutCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     g.withTriggerSource sourceId fun g src =>
       g.putCountersDeferredLog src.id .quest 1 (some controller) 4
   | .honePerOpponent, .source =>
-    let opp :=
+    let opp? :=
       match targets[0]? with
-      | some (Target.player pid) => pid
-      | some (Target.permanent _) => g.opponent controller
-      | _ => g.opponent controller
-    let n := g.countCreaturesControlledBy opp
+      | some (Target.player pid) => some pid
+      | _ => g.firstLivingOpponent? controller
+    let n := match opp? with | some opp => g.countCreaturesControlledBy opp | none => 0
     g.withTriggerSource sourceId fun g src =>
       g.putCountersDeferredLog src.id .hone n (some controller) 5
   | .ofKind .plan _, .source =>
@@ -1450,11 +1449,11 @@ def applyPutCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     | .plusOneSacrificedPower =>
       putN .plusOnePlusOne (g.sacrificedPowerThisWay.getD 0)
     | .honePerOpponent =>
-      let opp :=
+      let opp? :=
         match targets[0]? with
-        | some (Target.player pid) => pid
-        | _ => g.opponent controller
-      putN .hone (g.countCreaturesControlledBy opp)
+        | some (Target.player pid) => some pid
+        | _ => g.firstLivingOpponent? controller
+      putN .hone (match opp? with | some opp => g.countCreaturesControlledBy opp | none => 0)
     | .plusOneNoted => putN .plusOnePlusOne g.notedCountThisWay
     | .sourceCounters =>
       match sourceId.bind g.lastKnownCounterStatus? with
@@ -1524,8 +1523,10 @@ def applyCreateTokens (g : Game) (controller : PlayerId)
     let n := g.countOpponentArtifacts controller
     g.createTreasureTokens controller n (tapped := true)
   | .kind, .you, .damagedPlayerArtifacts, _ =>
-    let pid := g.loggedLastCombatDamagePlayer.getD (g.opponent controller)
-    let n := g.countArtifactsControlledBy pid
+    let n :=
+      match g.loggedLastCombatDamagePlayer.orElse (fun _ => g.firstLivingOpponent? controller) with
+      | some pid => g.countArtifactsControlledBy pid
+      | none => 0
     g.createTreasureTokens controller n |>.logMsg
       s!"{(g.player controller).name} creates {n} Treasure token(s) (artifacts that player controls)"
   | .kind, .you, .lastKnownPower, _ =>
@@ -1789,13 +1790,15 @@ def applyExile (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
               | none => none
             | _ => none)
         | .opponentTop n =>
-          let pid :=
+          let pid? :=
             match targets.findSome? fun
               | Target.player p => some p
               | _ => none with
-            | some p => p
-            | none => g.opponent controller
-          fromIds (g.scryLookedIds pid n)
+            | some p => some p
+            | none => g.firstLivingOpponent? controller
+          match pid? with
+          | some pid => fromIds (g.scryLookedIds pid n)
+          | none => some #[]
         | .milledSubtype subtype =>
           fromIds (g.milledIdsThisWay.filter fun id =>
             (g.findObject? id).any (g.hasSubtype · subtype))
@@ -1957,17 +1960,22 @@ def applySacrifice (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
   | .eachPlayersCreature, .none =>
     g.beginSacrificeCreatures (g.apnapOrder)
   | .leastPower, .none =>
-    let defn :=
+    let defn? : Option PlayerId :=
       match sourceId.bind g.findObject? with
       | some src =>
-        if src.status.attackingTarget.isSome then g.defendingPlayerOf src
-        else g.opponent controller
-      | none => g.opponent controller
-    let chosen :=
-      match targets[0]? with
-      | some (Target.permanent id) => some id
-      | _ => none
-    g.sacrificeLeastPowerCreature defn chosen
+        if src.status.attackingTarget.isSome then
+          let d := g.defendingPlayerOf src
+          if !(g.player d).lost then some d else none
+        else g.firstLivingOpponent? controller
+      | none => g.firstLivingOpponent? controller
+    match defn? with
+    | none => g
+    | some defn =>
+      let chosen :=
+        match targets[0]? with
+        | some (Target.permanent id) => some id
+        | _ => none
+      g.sacrificeLeastPowerCreature defn chosen
   | .combatDamager, .none =>
     g.beginSacDamagers controller (g.apnapOrder.filter (fun p => p != controller && g.stillInGame p))
   | .chosenNontokenCreature, .none =>
@@ -3860,14 +3868,16 @@ partial def applyRevealLibrary (g : Game) (controller : PlayerId)
             | none => g'
           return g.putRestOnBottomRandom controller rest (cause := some cause)
   | .untilInstantOrSorcery, .exile .top .forLater .impulse, .damagedPlayer => some <|
-    let victim := g.loggedLastCombatDamagePlayer.getD (g.opponent controller)
-    let (g, cause) := g.allocDelayedCause (some controller) sourceId
-    let (g, found, others) := g.exileUntilInstantOrSorcery victim (cause := some cause)
-    g.changes #[
-      .grimaImpulseReady true,
-      .grimaImpulseVictim (some victim),
-      .grimaImpulseFound found,
-      .grimaImpulseOthers others]
+    match g.loggedLastCombatDamagePlayer.orElse (fun _ => g.firstLivingOpponent? controller) with
+    | none => g
+    | some victim =>
+      let (g, cause) := g.allocDelayedCause (some controller) sourceId
+      let (g, found, others) := g.exileUntilInstantOrSorcery victim (cause := some cause)
+      g.changes #[
+        .grimaImpulseReady true,
+        .grimaImpulseVictim (some victim),
+        .grimaImpulseFound found,
+        .grimaImpulseOthers others]
   | .untilNonland,
     .may (.putCounters (.ofKind .plusOnePlusOne 1) .source)
       (.exile .top .forLater .anyManaThisTurn) .ifYouDont,
@@ -5334,15 +5344,17 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .createTokens kind (.fixed n) tapped .kind .you .none =>
     g.createKindTokens controller kind n.toNat (tapped := tapped)
   | .markRecentTokensAttacking =>
-    let cause := g.resolveOptionalCause (g.resolvingOneShotCause controller sourceId)
-      (fallbackSrc := sourceId) (fallbackCtrl := some controller)
     let options := g.legalEnteringAttackTargets controller
-    let tgt := options[0]?.getD (.player g.defendingPlayer)
-    g.withBatch (some cause) fun g =>
-      g.recentTokenIds.foldl (fun g id =>
-        match g.findObject? id with
-        | some o => g.record (GameEvent.becameAttacking g.turnNumber (g.snapshot o) tgt (cause := cause))
-        | none => g) g
+    match options[0]? with
+    | none => g
+    | some tgt =>
+      let cause := g.resolveOptionalCause (g.resolvingOneShotCause controller sourceId)
+        (fallbackSrc := sourceId) (fallbackCtrl := some controller)
+      g.withBatch (some cause) fun g =>
+        g.recentTokenIds.foldl (fun g id =>
+          match g.findObject? id with
+          | some o => g.record (GameEvent.becameAttacking g.turnNumber (g.snapshot o) tgt (cause := cause))
+          | none => g) g
   | .addMana types (.fixed 1) =>
     g.addManaLogged controller types (source := sourceId)
   | .discard (.cards n) => g.beginDiscardCards #[controller] n

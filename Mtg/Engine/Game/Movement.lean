@@ -278,9 +278,11 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
     let fromStackTime :=
       fromStackTime?.getD
         (if dest == .battlefield then (old?.filter (·.zone == .stack)).map (·.status.time) |>.getD 0 else 0)
-    let isAttacking := attacking || attackingTarget.isSome
+    let enterCtrl := (controller.orElse (fun _ => old?.map (·.owner))).getD g.activePlayer
     let resolvedAttackTarget : Option AttackTarget :=
-      if isAttacking then some (attackingTarget.getD (.player g.defendingPlayer)) else none
+      if dest == .battlefield then g.resolveEnteringAttackTarget? enterCtrl attacking attackingTarget
+      else none
+    let isAttacking := resolvedAttackTarget.isSome
     (g.chainPendingReplacement
       (.move id dest controller verb actor faceDown tapped
         isAttacking resolvedAttackTarget nightBack returnedAsArtifact onlyFoodArtifact
@@ -297,11 +299,11 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
     (g, id)
   else
   let (board, boardOld) := preBatchBoardFor g old
-  let isAttacking := attacking || attackingTarget.isSome
+  let enterCtrl := controller.getD old.owner
   let resolvedAttackTarget : Option AttackTarget :=
-    if isAttacking then
-      some (attackingTarget.getD (.player g.defendingPlayer))
+    if dest == .battlefield then g.resolveEnteringAttackTarget? enterCtrl attacking attackingTarget
     else none
+  let isAttacking := resolvedAttackTarget.isSome
   let beforeSnap := board.snapshot boardOld
   let sourceCtrlTargets : Array ObjectId :=
     if old.zone != .battlefield || dest == .battlefield then #[]

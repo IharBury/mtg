@@ -5142,23 +5142,39 @@ def playersInOrderFrom (g : Game) (start : PlayerId) (eligible : Player → Bool
         acc := acc.push q
     return acc
 
-def opponent (g : Game) (p : PlayerId) : PlayerId :=
+/-- True when `q` is a living opponent of `p` (CR 102.2 / 810). -/
+def isLivingOpponentOf (g : Game) (p q : PlayerId) : Bool :=
+  (g.livingOpponents p).any (fun pl => pl.id == q)
+
+/-- First living opponent of `p` in turn order after `p`, or `none` when no
+living opponent remains (CR 102.2 / 810). -/
+def firstLivingOpponent? (g : Game) (p : PlayerId) : Option PlayerId :=
   let opps := g.livingOpponents p
   let n := g.players.size
-  if n == 0 then p
+  if n == 0 || opps.isEmpty then none
   else
     Id.run do
       for k in [1:n+1] do
         let q : PlayerId := ⟨(p.idx + k) % n⟩
         if opps.any (fun pl => pl.id == q) then
-          return q
-      if !(g.player p).lost then
-        return p
-      for k in [1:n+1] do
-        let q : PlayerId := ⟨(p.idx + k) % n⟩
-        if !(g.player q).lost then
-          return q
-      return p
+          return some q
+      return none
+
+def opponent (g : Game) (p : PlayerId) : PlayerId :=
+  match g.firstLivingOpponent? p with
+  | some q => q
+  | none =>
+    if !(g.player p).lost then p
+    else
+      let n := g.players.size
+      if n == 0 then p
+      else
+        Id.run do
+          for k in [1:n+1] do
+            let q : PlayerId := ⟨(p.idx + k) % n⟩
+            if !(g.player q).lost then
+              return q
+          return p
 
 /-- Whether `id` (or the spell it resolved from, CR 400.7d) was cast and is not a copy (CR 707.10). -/
 def wasCast (g : Game) (id : ObjectId) : Bool :=
@@ -5364,7 +5380,8 @@ def defendingPlayer (g : Game) : PlayerId :=
   | none =>
     match g.objects.findSome? (fun o =>
       if o.isOnBattlefield && o.status.attacking then
-        (g.defendingPlayerOfStatus o.status).filter (fun p => !(g.player p).lost)
+        let ctrl := (g.controllerOf o).getD g.activePlayer
+        (g.defendingPlayerOfStatus o.status).filter (g.isLivingOpponentOf ctrl ·)
       else none) with
     | some p => p
     | none => g.opponent g.activePlayer
@@ -5374,11 +5391,14 @@ back to `g.defendingPlayer`. -/
 def defendingPlayerOf (g : Game) (o : GameObject) : PlayerId :=
   (g.defendingPlayerOfStatus o.status).getD g.defendingPlayer
 
-/-- Distinct players being attacked, in APNAP order (CR 508.1 / 101.4). -/
+/-- Distinct players being attacked, in APNAP order (CR 508.1 / 101.4 / 810.7). -/
 def defendingPlayers (g : Game) : Array PlayerId :=
   let attacked :=
     g.objects.filterMap (fun o =>
-      if o.isOnBattlefield && o.status.attacking then g.defendingPlayerOfStatus o.status else none)
+      if o.isOnBattlefield && o.status.attacking then
+        let ctrl := (g.controllerOf o).getD g.activePlayer
+        (g.defendingPlayerOfStatus o.status).filter (g.isLivingOpponentOf ctrl ·)
+      else none)
   let n := g.players.size
   Id.run do
     let mut acc : Array PlayerId := #[]
@@ -5808,12 +5828,10 @@ def countersYouPut (g : Game) (o : GameObject) (n : Nat)
 
 /-- Legal players, planeswalkers, and battles that a creature put onto the
 battlefield attacking under `controller`'s control may be chosen to attack
-(CR 508.4). -/
+(CR 508.4 / 810.7). -/
 def legalEnteringAttackTargets (g : Game) (controller : PlayerId) : Array AttackTarget :=
   let opps := g.livingOpponents controller
-  let playerTargets : Array AttackTarget :=
-    if opps.isEmpty then #[.player g.defendingPlayer]
-    else opps.map (fun pl => .player pl.id)
+  let playerTargets : Array AttackTarget := opps.map (fun pl => .player pl.id)
   let noJace := g.cantAttackJaces controller
   let permanentTargets : Array AttackTarget :=
     g.battlefield.filterMap fun o =>
@@ -5825,6 +5843,42 @@ def legalEnteringAttackTargets (g : Game) (controller : PlayerId) : Array Attack
         some (.battle o.id)
       else none
   playerTargets ++ permanentTargets
+
+/-- Default defending opponent for a creature entering attacking or made
+attacking under `controller`'s control, or `none` when no living opponent
+remains (CR 508.1a / 508.4 / 810.7). -/
+def defaultAttackOpponent? (g : Game) (controller : PlayerId) : Option PlayerId :=
+  let defn := g.defendingPlayer
+  if g.isLivingOpponentOf controller defn then some defn
+  else g.firstLivingOpponent? controller
+
+/-- Resolve the `AttackTarget` for a creature entering the battlefield attacking
+or made attacking under `controller`'s control, returning `none` when no legal
+target exists so the permanent is not attacking (CR 508.4c / 810.7). -/
+def resolveEnteringAttackTarget? (g : Game) (controller : PlayerId)
+    (attacking : Bool) (attackingTarget : Option AttackTarget) : Option AttackTarget :=
+  if !(attacking || attackingTarget.isSome) then none
+  else
+    let noJace := g.cantAttackJaces controller
+    match attackingTarget with
+    | some (.player p) =>
+      if g.isLivingOpponentOf controller p then some (.player p)
+      else (g.defaultAttackOpponent? controller).map .player
+    | some (.planeswalker pwId) =>
+      if (g.findObject? pwId).any (fun pw =>
+          pw.isOnBattlefield && g.isPlaneswalker pw &&
+            !(noJace && ((g.name pw).startsWith "Jace" || g.hasSubtype pw .jace)) &&
+            (g.livingOpponents controller).any (fun pl => g.controlledBy pw pl.id)) then
+        some (.planeswalker pwId)
+      else (g.defaultAttackOpponent? controller).map .player
+    | some (.battle bId) =>
+      if (g.findObject? bId).any (fun b =>
+          b.isOnBattlefield &&
+            (g.livingOpponents controller).any (fun pl => g.controlledBy b pl.id)) then
+        some (.battle bId)
+      else (g.defaultAttackOpponent? controller).map .player
+    | none =>
+      (g.defaultAttackOpponent? controller).map .player
 
 /-- Mana value of other spells `p` has cast this turn. Copies that were not
 cast are not recorded. -/
@@ -10781,16 +10835,33 @@ def changeObject (g : Game) (id : ObjectId) (c : ObjectChange) : Game :=
   (g.change (.object id c)).syncImpendingNotACreature id
 
 /-- Record `CombatEvent.becameAttacking` for `id` targeting `target` (defaulting
-to `id`'s opponent) (CR 508.4). -/
+to `id`'s opponent) when a legal attack target exists (CR 508.4 / 810.7). -/
 def markAttacking (g : Game) (id : ObjectId) (target : Option AttackTarget := none)
     (cause : Option EventCause := some (.turnBased .declareAttackers)) : Game :=
   match g.findObject? id with
   | some o =>
-    let tgt := target.getD (.player (g.opponent ((g.controllerOf o).getD g.activePlayer)))
-    let effCause :=
-      g.resolveOptionalCause cause (fallbackSrc := some id)
-        (defaultCause := .turnBased .declareAttackers)
-    g.record (GameEvent.becameAttacking g.turnNumber (g.snapshot o) tgt (cause := effCause))
+    let ctrl := (g.controllerOf o).getD g.activePlayer
+    let tgt? : Option AttackTarget :=
+      match target with
+      | some (.player p) =>
+        if !(g.player p).lost then some (.player p)
+        else (g.defaultAttackOpponent? ctrl).map .player
+      | some (.planeswalker pwId) =>
+        if (g.findObject? pwId).any (fun pw => pw.isOnBattlefield && g.isPlaneswalker pw) then
+          some (.planeswalker pwId)
+        else (g.defaultAttackOpponent? ctrl).map .player
+      | some (.battle bId) =>
+        if (g.findObject? bId).any (·.isOnBattlefield) then some (.battle bId)
+        else (g.defaultAttackOpponent? ctrl).map .player
+      | none =>
+        (g.defaultAttackOpponent? ctrl).map .player
+    match tgt? with
+    | none => g
+    | some tgt =>
+      let effCause :=
+        g.resolveOptionalCause cause (fallbackSrc := some id)
+          (defaultCause := .turnBased .declareAttackers)
+      g.record (GameEvent.becameAttacking g.turnNumber (g.snapshot o) tgt (cause := effCause))
   | none => g
 
 /-- Record `CombatEvent.blockersDeclared` for `id` blocking `attackers` (CR 509.1g). -/

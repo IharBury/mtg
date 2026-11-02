@@ -12503,12 +12503,36 @@ private def mkTwoHeadedGiant18 (seed : UInt64 := 180) : Game :=
     simBearPerm.size == 1 && simBearPerm[0]!.status.plusOnePlusOne == 0 &&
     laterBearPerm.size == 1 && laterBearPerm[0]!.status.plusOnePlusOne == 3
 
-  -- 9e. CR 102.2 / 810 Two-Headed Giant with no living opponents: `opponent`, `resolveAttackDestination`, `defendingPlayer`, and `beginStep .declareBlockers` never select a departed seat!
+  -- 9e. CR 102.2 / 508.4c / 810.7 Two-Headed Giant with no living opponents: entering-attacking, `markAttacking`, `.leastPower`, and stamped player `AttackTarget`s never attack or damage self/teammate!
   let g2hg0 : Game := mkTwoHeadedGiant18
   let g2hgNoOpp : Game := (g2hg0.concede ⟨2⟩).concede ⟨3⟩
-  let atk2hg : ObjectId := ⟨g2hgNoOpp.nextObjectId⟩
-  let tokObj2hg : GameObject := {
-    id := atk2hg
+  let (g2hgTokCreated, createdTok2hg) := g2hgNoOpp.createOneToken ⟨0⟩ bear (attacking := true) (cause := some testCause)
+  let g2hgHand1 : Game := insertObject g2hgTokCreated hero ⟨1⟩ (.hand ⟨1⟩)
+  let h1CardId := (g2hgHand1.player ⟨1⟩).hand.back!
+  let (g2hgPutAtk, putId2hg) := g2hgHand1.move h1CardId .battlefield (some ⟨1⟩) (attacking := true) (cause := some testCause)
+  let g2hgMarked : Game := g2hgPutAtk.markAttacking putId2hg (cause := some testCause)
+  let g2hgPrompted : Game :=
+    g2hgMarked.promptEnteringAttackItems #[.token ⟨0⟩ .spirit false (g2hgMarked.legalEnteringAttackTargets ⟨0⟩)] (cause := some testCause)
+  let g2hgSacStacked : Game :=
+    g2hgPrompted.putTriggeredAbilityOnStack ⟨0⟩ (g2hgPrompted.object! createdTok2hg.id)
+      (.triggered .attack (Effect.ofTrigger .defenderSacsLeastPower)) "attack" (eventCause := some testCause)
+  let g2hgAfterLeastSac : Game := g2hgSacStacked.resolveTop
+  let noOppEnteringSafeOk : Bool :=
+    (g2hgNoOpp.livingOpponents ⟨0⟩).isEmpty &&
+    (g2hgNoOpp.livingOpponents ⟨1⟩).isEmpty &&
+    (g2hgNoOpp.legalEnteringAttackTargets ⟨0⟩).isEmpty &&
+    (g2hgNoOpp.legalEnteringAttackTargets ⟨1⟩).isEmpty &&
+    !(g2hgTokCreated.object! createdTok2hg.id).status.attacking &&
+    (g2hgTokCreated.object! createdTok2hg.id).status.attackingTarget.isNone &&
+    !(g2hgPutAtk.object! putId2hg).status.attacking &&
+    (g2hgPutAtk.object! putId2hg).status.attackingTarget.isNone &&
+    !(g2hgMarked.object! putId2hg).status.attacking &&
+    !g2hgPrompted.battlefield.any (·.status.attacking) &&
+    (g2hgAfterLeastSac.permanentsOf ⟨0⟩).size == (g2hgPrompted.permanentsOf ⟨0⟩).size &&
+    (g2hgAfterLeastSac.permanentsOf ⟨1⟩).size == (g2hgPrompted.permanentsOf ⟨1⟩).size
+  let atk2hgNone : ObjectId := ⟨g2hgNoOpp.nextObjectId⟩
+  let tokObjNone : GameObject := {
+    id := atk2hgNone
     printed := { bear with isToken := true }
     owner := ⟨0⟩
     controller := some ⟨0⟩
@@ -12518,28 +12542,52 @@ private def mkTwoHeadedGiant18 (seed : UInt64 := 180) : Game :=
     timestamp := g2hgNoOpp.timestamp + 1
   }
   let g2hgUntargetedAtk : Game :=
-    g2hgNoOpp.record (GameEvent.created g2hgNoOpp.turnNumber ⟨0⟩ (g2hgNoOpp.snapshot tokObj2hg) (cause := testCause))
-  let g2hgBlockStep : Game := g2hgUntargetedAtk.beginStep .declareBlockers
+    g2hgNoOpp.record (GameEvent.created g2hgNoOpp.turnNumber ⟨0⟩ (g2hgNoOpp.snapshot tokObjNone) (cause := testCause))
+  let atk2hgSelf : ObjectId := ⟨g2hgUntargetedAtk.nextObjectId⟩
+  let tokObjSelf : GameObject := {
+    tokObjNone with
+    id := atk2hgSelf
+    status := { summoningSick := true, attacking := true, attackingTarget := some (.player ⟨0⟩) }
+    timestamp := g2hgUntargetedAtk.timestamp + 1
+  }
+  let g2hgStampedSelf : Game :=
+    g2hgUntargetedAtk.record (GameEvent.created g2hgUntargetedAtk.turnNumber ⟨0⟩ (g2hgUntargetedAtk.snapshot tokObjSelf) (cause := testCause))
+  let atk2hgMate : ObjectId := ⟨g2hgStampedSelf.nextObjectId⟩
+  let tokObjMate : GameObject := {
+    tokObjNone with
+    id := atk2hgMate
+    status := { summoningSick := true, attacking := true, attackingTarget := some (.player ⟨1⟩) }
+    timestamp := g2hgStampedSelf.timestamp + 1
+  }
+  let g2hgStampedBoth : Game :=
+    g2hgStampedSelf.record (GameEvent.created g2hgStampedSelf.turnNumber ⟨0⟩ (g2hgStampedSelf.snapshot tokObjMate) (cause := testCause))
+  let p0LifePre := (g2hgStampedBoth.player ⟨0⟩).life
+  let p1LifePre := (g2hgStampedBoth.player ⟨1⟩).life
+  let g2hgBlockStep : Game := g2hgStampedBoth.beginStep .declareBlockers
+  let g2hgCombatStep : Game := g2hgBlockStep.beginStep .combatDamage
   let twoHeadedNoOppSafeOk : Bool :=
-    (g2hgNoOpp.livingOpponents ⟨0⟩).isEmpty &&
-    (g2hgNoOpp.livingOpponents ⟨1⟩).isEmpty &&
+    noOppEnteringSafeOk &&
     g2hgNoOpp.opponent ⟨0⟩ == ⟨0⟩ &&
     g2hgNoOpp.opponent ⟨1⟩ == ⟨1⟩ &&
     !(g2hgNoOpp.resolveAttackDestination ⟨0⟩ none).isOk &&
     !(g2hgNoOpp.resolveAttackDestination ⟨1⟩ none).isOk &&
     g2hgUntargetedAtk.defendingPlayer == ⟨0⟩ &&
-    !g2hgUntargetedAtk.hasLiveAttackDestination (g2hgUntargetedAtk.object! atk2hg) &&
+    !g2hgStampedBoth.hasLiveAttackDestination (g2hgStampedBoth.object! atk2hgNone) &&
+    !g2hgStampedBoth.hasLiveAttackDestination (g2hgStampedBoth.object! atk2hgSelf) &&
+    !g2hgStampedBoth.hasLiveAttackDestination (g2hgStampedBoth.object! atk2hgMate) &&
     g2hgBlockStep.step == .declareBlockers &&
     g2hgBlockStep.blockersQueue.isEmpty &&
     g2hgBlockStep.pending == .none &&
-    g2hgBlockStep.priority == ⟨0⟩
+    g2hgBlockStep.priority == ⟨0⟩ &&
+    (g2hgCombatStep.player ⟨0⟩).life == p0LifePre &&
+    (g2hgCombatStep.player ⟨1⟩).life == p1LifePre
 
   mustHold18 "9a.turnStartBeforePhaseOk" turnStartBeforePhaseOk &&
   mustHold18 "9b.durationAndExpiryOk" durationAndExpiryOk &&
   mustHold18 "9c.phasedControlAndDepartedRulesOk" phasedControlAndDepartedRulesOk &&
   mustHold18 "9d.arwenPreBfOk" arwenPreBfOk &&
   mustHold18 "9e.twoHeadedNoOppSafeOk" twoHeadedNoOppSafeOk &&
-  mustHold18 "9.replay" ([gBt2, gDuPhased, gDuCounterRemoved, gDuSrcMoved, g3PhEot, g3PhNext, gArwSim, gArwSeq, g2hgNoOpp, g2hgUntargetedAtk, g2hgBlockStep].all (fun g =>
+  mustHold18 "9.replay" ([gBt2, gDuPhased, gDuCounterRemoved, gDuSrcMoved, g3PhEot, g3PhNext, gArwSim, gArwSeq, g2hgNoOpp, g2hgTokCreated, g2hgMarked, g2hgPrompted, g2hgAfterLeastSac, g2hgStampedBoth, g2hgBlockStep, g2hgCombatStep].all (fun g =>
     Game.replayEvents g.events == g && allRulesEventsClassified g))
 
 end Phase18EventAlignment

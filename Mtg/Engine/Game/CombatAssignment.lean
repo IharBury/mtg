@@ -67,20 +67,23 @@ def legalCombatDamageRecipients (g : Game) (source : GameObject) (forAttackers :
   if forAttackers then g.blockersOf source.id else g.creaturesBlockedBy source
 
 /-- True when the player, planeswalker, or battle `source` is attacking is still
-in combat as a valid attack destination (CR 506.4 / 506.4c / 800.4e). -/
+in combat as a valid attack destination (CR 506.4 / 506.4c / 800.4e / 810.7). -/
 def hasLiveAttackDestination (g : Game) (source : GameObject) : Bool :=
+  let ctrl := (g.controllerOf source).getD g.activePlayer
   match source.status.attackingTarget with
-  | some (.player p) => !(g.player p).lost
+  | some (.player p) => g.isLivingOpponentOf ctrl p
   | some (.planeswalker pwId) =>
     !g.removedFromCombatThisCombat pwId &&
-      (g.findObject? pwId).any (fun pw => pw.isOnBattlefield && g.isPlaneswalker pw)
+      (g.findObject? pwId).any (fun pw =>
+        pw.isOnBattlefield && g.isPlaneswalker pw &&
+          (g.livingOpponents ctrl).any (fun pl => g.controlledBy pw pl.id))
   | some (.battle bId) =>
     !g.removedFromCombatThisCombat bId &&
-      (g.findObject? bId).any (·.isOnBattlefield)
+      (g.findObject? bId).any (fun b =>
+        b.isOnBattlefield &&
+          (g.livingOpponents ctrl).any (fun pl => g.controlledBy b pl.id))
   | none =>
-    let defn := g.defendingPlayerOf source
-    !(g.player defn).lost &&
-      (g.livingOpponents ((g.controllerOf source).getD g.activePlayer)).any (fun pl => pl.id == defn)
+    g.isLivingOpponentOf ctrl (g.defendingPlayerOf source)
 
 /-- True when leftover combat damage may be assigned to the player or
 planeswalker `source` is attacking (unblocked, or trample while that attack

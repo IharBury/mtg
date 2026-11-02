@@ -66,9 +66,9 @@ def createOneToken (g : Game) (controller : PlayerId) (printed : CardDef)
     (recordRecent : Bool := false)
     (cause : Option EventCause := none) : Game × GameObject :=
   if let .chooseReplacement .. := g.pending then
-    let isAttacking := attacking || attackingTarget.isSome
     let resolvedAttackTarget : Option AttackTarget :=
-      if isAttacking then some (attackingTarget.getD (.player g.defendingPlayer)) else none
+      g.resolveEnteringAttackTarget? controller attacking attackingTarget
+    let isAttacking := resolvedAttackTarget.isSome
     (g.chainPendingReplacement
       (.createToken controller printed tapped isAttacking resolvedAttackTarget false extraCounters recordRecent cause),
      noTokenCreated controller printed)
@@ -82,11 +82,9 @@ def createOneToken (g : Game) (controller : PlayerId) (printed : CardDef)
       let asOf := g.timestamp
       let newId : ObjectId := ⟨g.nextObjectId⟩
       let ts := g.timestamp + 1
-      let isAttacking := attacking || attackingTarget.isSome
       let resolvedAttackTarget : Option AttackTarget :=
-        if isAttacking then
-          some (attackingTarget.getD (.player g.defendingPlayer))
-        else none
+        g.resolveEnteringAttackTarget? controller attacking attackingTarget
+      let isAttacking := resolvedAttackTarget.isSome
       let baseObj : GameObject := {
         id := newId
         printed := printed
@@ -828,11 +826,8 @@ def createKindTokens (g : Game) (controller : PlayerId) (kind : TokenKind)
     let g := if resetRecent then g.change (.recentTokenIds #[]) else g
     g.withBatchCore cause fun g => Id.run do
       let mut g := g
-      let isAttacking := attacking || attackingTarget.isSome
-      let resolvedTarget :=
-        if isAttacking then
-          some (attackingTarget.getD (.player g.defendingPlayer))
-        else none
+      let resolvedTarget := g.resolveEnteringAttackTarget? controller attacking attackingTarget
+      let isAttacking := resolvedTarget.isSome
       let printed := tokenPrinted kind
       for i in [0:n] do
         let (g', _) := g.createToken controller printed (tapped := tapped)

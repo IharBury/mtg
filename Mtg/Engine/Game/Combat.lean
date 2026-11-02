@@ -393,7 +393,7 @@ def dealAssignedCombatDamage (g : Game) (_appliedSoFar : Array ReplacementId := 
                 if let .chooseReplacement .. := g.pending then
                   return g.chainPendingReplacement (.dealAssignedCombatDamage #[] (k + 1))
             | none => pure ()
-          else if !(g.player defn).lost then
+          else if g.isLivingOpponentOf ((g.controllerOf src).getD g.activePlayer) defn then
             let rep := g.replaceDamage amt (src? := some src) (srcEvent? := some srcEvent)
               (recipientPlayer? := some defn) (combat := true) (cause := combatCause)
             if let some (chooser, choices) := rep.choice? then

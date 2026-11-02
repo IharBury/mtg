@@ -1000,7 +1000,7 @@ def returnFromGyTappedAttackingFinality (g : Game) (controller : PlayerId)
       g.logMsg "The target is no longer a creature card in your graveyard"
     else
       let options :=
-        match attackingTarget with
+        match attackingTarget.bind (fun tgt => g.resolveEnteringAttackTarget? controller true (some tgt)) with
         | some tgt => #[tgt]
         | none => g.legalEnteringAttackTargets controller
       let (g, c) := g.allocDelayedCause (some controller)

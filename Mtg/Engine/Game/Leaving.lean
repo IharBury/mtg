@@ -227,18 +227,21 @@ private def afterRandomReferencesPlayer (p : PlayerId) : AfterRandom → Bool
   | .putOnTop q _ | .beholdUntap q _ _ | .discardRandom q => q == p
   | .plusOne _ => false
 
-private def filterLivingAttackTargets (g : Game) (opts : Array AttackTarget) : Array AttackTarget :=
+private def filterLivingAttackTargets (g : Game) (controller : PlayerId)
+    (opts : Array AttackTarget) : Array AttackTarget :=
   opts.filter fun
-    | .player pid => g.stillInGame pid
-    | .planeswalker oid | .battle oid => (g.findObject? oid).any (·.isOnBattlefield)
+    | .player pid => g.isLivingOpponentOf controller pid
+    | .planeswalker oid | .battle oid =>
+      (g.findObject? oid).any (fun o =>
+        o.isOnBattlefield && (g.livingOpponents controller).any (fun pl => g.controlledBy o pl.id))
 
 private def sanitizeEnteringAttackItem (g : Game) : EnteringAttackItem → Option EnteringAttackItem
   | .token c kind tapped opts =>
     if !g.stillInGame c then none
-    else some (.token c kind tapped (filterLivingAttackTargets g opts))
+    else some (.token c kind tapped (filterLivingAttackTargets g c opts))
   | .card cid c effCtrl tapped retArt extra mods logKind opts =>
     if !g.stillInGame c || (g.findObject? cid).isNone then none
-    else some (.card cid c effCtrl tapped retArt extra mods logKind (filterLivingAttackTargets g opts))
+    else some (.card cid c effCtrl tapped retArt extra mods logKind (filterLivingAttackTargets g c opts))
 
 private partial def advanceSacDamagersAfterLeave (g : Game) (controller : PlayerId)
     (opponents : Array PlayerId) (chosen : Array (PlayerId × ObjectId)) : Game :=
@@ -558,7 +561,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
         match sanitizeEnteringAttackItem g item with
         | none => none
         | some item' =>
-          let validTgt? := tgt?.filter (fun t => (filterLivingAttackTargets g #[t]).size == 1)
+          let validTgt? := tgt?.filter (fun t => (filterLivingAttackTargets g item'.controller #[t]).size == 1)
           some (item', validTgt?.orElse (fun _ => item'.options[0]?))
       if q != p then
         let remClean := remaining.filterMap (sanitizeEnteringAttackItem g)
