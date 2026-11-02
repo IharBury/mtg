@@ -330,12 +330,12 @@ deriving Repr, Inhabited, BEq
 Every `.rules` event carries a mandatory `EventCause` (the migration-only
 `EventCause.unclassified` constructor was deleted in Phase 10, #588), while
 `.engine` changes are cause-free (`GameEvent.cause?` returns `some cause` on
-`.rules` and `none` on `.engine`); replacing the `BatchId ⟨0⟩` sentinel default
-on `GameEvent.rules` / `GameEvent.engine` (and `delayedTriggerCreated` /
-`delayedTriggerConsumed` / `delayedTriggerExpired`) with
-`Option BatchId := none`—so unbatched/proposed events and unstamped `.engine`
-changes carry `none` while real batches start cleanly at `BatchId ⟨0⟩`—moves to
-Phase 16 step 4.
+`.rules` and `none` on `.engine`); Phase 16 (#600) replaced the `BatchId ⟨0⟩`
+sentinel default on `GameEvent.rules` / `GameEvent.engine` (and
+`delayedTriggerCreated` / `delayedTriggerConsumed` / `delayedTriggerExpired`)
+with `Option BatchId := none` so unbatched/proposed events and unstamped
+`.engine` changes carry `none` while real batches start cleanly at
+`BatchId ⟨0⟩`.
 
 ### 2.3 Object snapshot
 
@@ -681,7 +681,8 @@ inductive CastEvent where
   | proposed (obj : ObjectId) (player : PlayerId) (fromZone : Zone) (way : CastWay)  -- 601.2a
   | announced (obj : ObjectId) (modes : Array Nat) (x : Option Nat)
       (costs : Array AdditionalCostChoice)                                         -- 601.2b
-  | targeted (obj : ObjectId) (targets : Array Target) (division : Array Nat)      -- 601.2c–d
+  | targeted (obj : ObjectId) (targets : Array Target) (division : Array Nat)
+      (skippedOptionalSlots : Array Nat := #[])                                    -- 601.2c–d
   | spellCast (spell : EventObject) (player : PlayerId) (fromZone : Zone)          -- 601.2i
   | abilityActivated (ability : ObjectId) (source : EventObject) (player : PlayerId)
       (kind : ActivationKind)                                                       -- 602.2b; mana abilities 605.3b
@@ -739,7 +740,7 @@ enclosing checkpoints across nested `saveProposalCheckpoint` /
 `Game.pendingPriority : Option PlayerId` via `EngineChange.pendingPriority` in
 Phase 15, #598, for CR 117.3c priority retention across intermediate SBA/trigger
 prompts) are **engine state** updated by
-`EngineChange`; only the milestones above go into the rules history. In Phase 5–15:
+`EngineChange`; only the milestones above go into the rules history. In Phase 5–16:
 - In Phase 8 (#584), `AdditionalCostChoice` gained `.impending (timeCounters : Nat)`
   and `.sneak (returned : ObjectId) (attackTarget : Option AttackTarget := none)`,
   `ActivationKind` gained `(abilityIdx : Option Nat := none)` (plus
@@ -748,11 +749,12 @@ prompts) are **engine state** updated by
   With off-stack cast-metadata readers migrated to `CastEvent` log queries and
   those `GameObject` fields deleted, `applyCastEvent`
   ([`Core.lean`](Mtg/Engine/Game/Core.lean)) treats `.proposed` and `.spellCast`
-  as no-ops, writes `chosenX` and impending time counters
-  (`o.status.counters.set .time n`) onto the stack `GameObject` plus
-  `StackEntry.chosenMode` / `extraModes` on `.announced`, writes
-  `StackEntry.targets`, `dividedDamage`, and `targetsAnnounced := true` on
-  `.targeted`, and (since Phase 11, #590; updated in Phase 14, #596, to resolve
+  as no-ops, writes `chosenX`, impending time counters
+  (`o.status.counters.set .time n`), and `.morph` `faceDown := true` (Phase 14,
+  #596) onto the stack `GameObject` plus `StackEntry.chosenMode` / `extraModes`
+  on `.announced`, writes `StackEntry.targets`, `dividedDamage`,
+  `skippedOptionalSlots` (`Array Nat` in Phase 16, #600), and
+  `targetsAnnounced := true` on `.targeted`, and (since Phase 11, #590; updated in Phase 14, #596, to resolve
   `abilityIdx` via `g.activatedAbilitiesOf` and `source.copiable` rather than
   `printed.activatedAbilities` alone) installs the stack ability `GameObject`
   and `StackEntry` (bumping `nextObjectId` / `timestamp` and zeroing
@@ -783,7 +785,7 @@ prompts) are **engine state** updated by
   In Phase 6 step 3, `closeBatch` ([`Core.lean`](Mtg/Engine/Game/Core.lean))
   records `TriggerQueueEvent.triggered` (`GameEvent.triggered`, with default
   `cause := .gameRule .triggeredAbility`, `origin := batchId`, and
-  `batch := batchId`) for each new `WaitingTrigger` copy produced by
+  `batch := some batchId`) for each new `WaitingTrigger` copy produced by
   `matchTriggers` (where `matchTriggers` builds every waiting trigger with
   `checked := true` so `putWaitingTrigger` does not record a second
   `TriggerQueueEvent.triggered` when putting it on the stack; since Phase 12,
@@ -803,9 +805,10 @@ prompts) are **engine state** updated by
   guards `if !source.isOnBattlefield then 0` per 109.2 so cast triggers of stack
   spells are not doubled by battlefield static doublers; `putWaitingTrigger`
   still records `GameEvent.triggered` only when `!wt.checked` and only for the
-  first copy via `loggedTriggeredThisTurn`—while removing the duplicate
-  stack-placement `triggerConditionHolds` check in `Triggers.putQueuedTrigger`
-  moves to Phase 16 step 2—and Phase 13, #594, deleted the
+  first copy via `loggedTriggeredThisTurn`, Phase 16, #600, removed the
+  duplicate stack-placement `triggerConditionHolds` check in
+  `Triggers.putQueuedTrigger` and retired dead `Triggers.sacrificeToGraveyard`,
+  and Phase 13, #594, deleted the
   legacy imperative helpers `queueTrigger`, `putMatchingSourceTriggers`,
   `putControlledTriggers`, and `flushWaitingTriggers` in `Triggers.lean` along
   with `EngineChange.pushWaitingTrigger`), while
@@ -842,9 +845,10 @@ prompts) are **engine state** updated by
   `targetsAnnounced`, `chosenMode`, `extraModes`, `dividedDamage`,
   `skippedOptionalSlots`, `delayedTrigger`, `lastKnownPower`, and
   `lastKnownToughness` from `original`'s `StackEntry` when `original` is still
-  on `g.stack`, or rebuilding `chosenMode`, `extraModes`, `targets`, and
-  `dividedDamage` from `CastEvent.announced` and `CastEvent.targeted` with
-  `targetsAnnounced := true` when `original` is no longer on `g.stack`) per
+  on `g.stack`, or rebuilding `chosenMode`, `extraModes`, `targets`,
+  `dividedDamage`, and `skippedOptionalSlots` from `CastEvent.announced` and
+  `CastEvent.targeted` with `targetsAnnounced := true` when `original` is no
+  longer on `g.stack`) per
   707.10. `GameEvent.rootCopiedSpellId`
   ([`Event.lean`](Mtg/Engine/Game/Event.lean)) resolves copied spells back to
   their root cast for `wasKicked`, `giftPromisedTo?` (`giftPromised`),
@@ -1083,11 +1087,13 @@ def Game.commitBatch (g : Game) (cause : EventCause) (events : Array RulesEvent)
   inside `withBatchReturn none` so heterogeneous `.stateBased` causes
   (`.lifeZeroOrLess`, `.drewFromEmpty`, `.tenPoison`, `.counterAnnihilation`,
   `.zeroOrLessToughness`, `.lethalDamage`, `.deathtouchDamage`, `.zeroLoyalty`,
-  `.tokenOutsideBattlefield`, `.sagaFinalChapter`, `.illegalAura`,
-  `.illegalEquipmentOrFortification`) share one `BatchId` per pass (704.3) while
-  keeping their per-event `.stateBased` causes (the `.stateBased .legendRule`
-  moves are recorded in `Decisions.lean` under a separate
-  `withBatch (some (.stateBased .legendRule))` after `.chooseLegend`). When the
+  `.legendRule`, `.tokenOutsideBattlefield`, `.copyOutsideStackOrBf`,
+  `.sagaFinalChapter`, `.illegalAura`, `.illegalEquipmentOrFortification`) share
+  one `BatchId` per pass (704.3) while keeping their per-event `.stateBased`
+  causes (since Phase 16, #600, `withBatchReturn` keeps the enclosing SBA batch
+  open across `Pending.chooseLegend` so `Decisions.keepLegend` records
+  `.stateBased .legendRule` moves inside that same SBA `BatchId` before resuming
+  `finishSbaSweep`). When the
   outermost batch closes (or when
   `applyEvent` records a standalone `RulesEvent` with `g.currentBatch == none`),
   Phase 4 called `evaluateBatchTriggers preBattlefield batchEvents` (`Core.lean`)
@@ -1102,13 +1108,15 @@ def Game.commitBatch (g : Game) (cause : EventCause) (events : Array RulesEvent)
   `openBatchPending`, and—since Phase 15, #598—`openBatchStack`) alongside
   `startIdx := g.events.size` without bumping
   `nextBatchId` up front: if the batch body finishes without pausing on
-  `Pending.chooseReplacement` or `g1.pendingReplacement.isSome` (the four
+  `Pending.chooseReplacement`, `Pending.chooseLegend`, or
+  `g1.pendingReplacement.isSome` (the four
   post-entry `Pending.fraChoice` `keepOpen` arms—`.chooseColor`,
   `.entersCreatureType`, `.entersOddEven`, `.chooseCardName`—were retired in
   Phase 13, #594, when interactive as-enters choices moved into the pre-entry
-  CR 614.12 / 616.1 replacement pipeline; keeping the enclosing SBA batch open
-  across `Pending.chooseLegend` and restoring `stack := g.openBatchStack` in
-  `Movement.preBatchBoardFor` move to Phase 16 step 3),
+  CR 614.12 / 616.1 replacement pipeline, and Phase 16, #600, added
+  `Pending.chooseLegend` to `keepOpen` and restored `stack := g.openBatchStack`
+  in `Movement.preBatchBoardFor`; fixing unjournaled `currentBatch` reset in
+  nested `withBatchReturn` pauses moves to Phase 17 step 1),
   `finishOpenBatchSync batchId startIdx` (`Core.lean`) reconstructs
   `pre : GameSnapshot` from those transient fields and `g.events[0:startIdx]`,
   clears `currentBatch := none` and `openBatch*` in memory without emitting extra
@@ -1120,27 +1128,28 @@ def Game.commitBatch (g : Game) (cause : EventCause) (events : Array RulesEvent)
   and `PendingReplacement.closeBatch batchId startIdx` is appended via
   `chainPendingReplacement` so `finishOpenBatch` clears the paused state via
   `EngineChange.clearPausedBatch` and evaluates `closeBatch` once after all
-  paused replacement and as-enters choices in the batch finish. Likewise, in Phase 7
-  (expanded in Phase 15, #598, to capture start-of-pass SBA candidate arrays
-  `victims`, `pwMoves`, `tokensOutsideBf`, `copiesOutside`, `sagaMoves`,
-  `illegalAuras`, `illegalEquips`, and `illegalCreatureAtts` against `preBf` so
-  dependent SBAs run in subsequent CR 704.3 passes and `checkSBA` /
-  `Turns.beginStep .cleanup` iterate `checkSBACounted` + `leavePlayersWhoLost`
-  to fixpoint) `checkSBACounted` (`StateBasedActions.lean`) runs player-loss
-  checks (704.5a–c) and +1/+1 / -1/-1 counter annihilation (704.5q; evaluating
-  704.5a–p and capturing `preBf` *before* 704.5q counter annihilation moves to
-  Phase 16 step 3) inside the initial `withBatchReturn none` body ahead of
+  paused replacement, legend-rule, and as-enters choices in the batch finish. Likewise, in Phase 7
+  (expanded in Phase 15, #598, and Phase 16, #600, to capture start-of-pass SBA
+  candidate arrays `victims`, `pwMoves`, `tokensOutsideBf`, `copiesOutside`,
+  `sagaMoves`, `illegalAuras`, `illegalEquips`, and `illegalCreatureAtts`
+  against `preBf` *before* applying 704.5q counter annihilation so simultaneous
+  0-toughness death LKI retains pre-annihilation counters and dependent SBAs run
+  in subsequent CR 704.3 passes; removing inner `checkSBACounted` recursion so
+  `leavePlayersWhoLost` runs after every single synchronous pass moves to Phase
+  17 step 3) `checkSBACounted` (`StateBasedActions.lean`) runs player-loss
+  checks (704.5a–c), captures `preBf` and the 704.5d–p / 704.5s candidate arrays,
+  and applies +1/+1 / -1/-1 counter annihilation (704.5q) inside the initial
+  `withBatchReturn none` body ahead of
   `finishSbaSweep moves preBf stage pwMoves sagaMoves tokensOutsideBf copiesOutside illegalAuras illegalEquips illegalCreatureAtts`
   (`stage == 0`: dying creatures followed by `EngineChange.sbaChecked`;
   `stage <= 1`: 0-loyalty planeswalkers 704.5i unless
   `planeswalkersSurviveZeroLoyalty`, then the legend-rule prompt 704.5j—which
-  sets `Pending.chooseLegend` and returns early from inside `stage <= 1` before
-  the rest of the sweep, with `Decisions.keepLegend` currently putting unkept
-  permanents into a separate `withBatch (some (.stateBased .legendRule))` and
-  re-entering `checkSBA` via `finishAndGrantPriority` without resuming
-  `finishSbaSweep`, while keeping the enclosing SBA batch open across
-  `Pending.chooseLegend` and resuming the skipped tail moves to Phase 16 step
-  3—then tokens outside `.battlefield` 704.5d and non-token copies outside
+  sets `Pending.chooseLegend` and chains the remaining `stage == 1` tail onto
+  `PendingReplacement.finishSbaSweep` inside the kept-open SBA batch so
+  `Decisions.keepLegend` moves unkept legends and resumes `finishSbaSweep`
+  since Phase 16, #600, while recursively unwrapping left-nested `.seq` nodes
+  for `sweepPreBf?` in `Decisions.keepLegend` moves to Phase 17 step 3—then
+  tokens outside `.battlefield` 704.5d and non-token copies outside
   `.stack` and `.battlefield` 704.5e; `stage <= 2`: final-chapter Sagas 714.4 /
   704.5s; `stage <= 3`: illegal Auras put into their owner's graveyard 704.5m;
   followed by an ungated tail for illegal Equipment unattachment 704.5n
@@ -1362,10 +1371,12 @@ clears `currentBatch` locally without touching `openBatch*`, and calls
 `closeBatch` directly on that one rules event) calls
 `closeBatch g pre batchId batchEvents`
 (`Core.lean`, where `abbrev GameSnapshot := Game`), which records
-`PlayerEvent.gainedDesignation` (`enduringStory` / `citysBlessing`) inside
-`batchId` when any event in `batchEvents` is a `ZoneEvent.moved` to
-`.battlefield` or a `ZoneEvent.created` with `object.zone == .battlefield` (so
-`extraTriggerCopies` sees the updated designations), clears stale
+`PlayerEvent.gainedDesignation` (`enduringStory` / permanent `citysBlessing` per
+702.131b,d) inside `batchId` across any non-empty rules batch before
+`matchTriggers` since Phase 16 (#600; so `extraTriggerCopies` and static state
+reflect newly gained designations from control, type, or ability changes as well
+as battlefield arrivals, while 702.131a instant/sorcery spell Ascend is
+evaluated in `SpellResolution.resolveTop`), clears stale
 `Player.ringBearerId` via
 `PermanentEvent.designation _ .ringBearer false` when the bearer is no longer on
 the battlefield or is no longer controlled by that player (Phase 10, #588), and
@@ -1521,7 +1532,11 @@ SBA loop and priority (117.3a, 704.3). Cleanup grants priority only per 514.3a.
   (`GameEvent.castFromGraveyard`, `giftPromised`, `teamwork`, `castForImpending`).
 - Impending (702.176) is already read from the log: `Game.loggedCastForImpending`,
   plus `Status.time` and the `.notACreature` effect created on the permanent in
-  `Game.move`. There is no `Status.impendingPaid`.
+  `Game.move` (and since Phase 16, #600, its fourth ability—702.176a end-step
+  time-counter removal—is synthesized in `Core.triggeredAbilities` and matched on
+  `TurnEvent.stepBegan .end` with its CR 603.4 intervening `"if"` check on
+  resolution rather than removing time counters inline in `Turns.beginStep .end`).
+  There is no `Status.impendingPaid`.
 
 ### 3.8 Field inventory (rebuilt from the structs on `history`)
 
@@ -1574,7 +1589,7 @@ Each field is put in exactly one category. "Log" means a query over
 | Category | Fields (type) | Target |
 | :--- | :--- | :--- |
 | **Core & turn/combat state — stays** | `players : Array Player`, `objects : Array GameObject`, `stack : Array StackEntry`, `activePlayer : PlayerId`, `priority : PlayerId`, `step : Step`, `turnNumber : Nat`, `startingPlayer : PlayerId`, `isFirstTurn : Bool`, `nextObjectId : Nat`, `nextEffectId : Nat`, `activeEffects : Array (EffectId × ContinuousEffectSpec)` (updated from `ContinuousEffect` in Phase 8), `timestamp : Nat`, `result : Option GameResult`, `log : Array String`, `format : Format`, `brawl : Bool`, `consecutivePasses : Nat`, `cleanupGivesPriority : Bool`, `isNight : Bool`, `extraTurns : Array PlayerId` (paired with `extraTurnCauses : Array EventCause` in Phase 3; `extraTurnCauses` was replaced when `TurnEvent.extraTurnAdded` wrote `extraTurns` in Phase 5), `additionalCombatPhases : Nat`, `assignedCombatDamage : Array CreatureCombatAssignment` (cleared by `TurnEvent.stepBegan`, `TurnEvent.stepEnded .combatDamage`, `TurnEvent.phaseEnded .combat`, and `TurnEvent.extraStepAdded .combatDamage .afterCurrent` in `applyTurnEvent` since Phase 12, #592), `pendingBlockerAssignments : Array CreatureCombatAssignment` (added in Phase 15, #598, via `EngineChange.pendingBlockerAssignments` for multi-defender APNAP blocker combat-damage assignment per 510.1d / 802.5), `events : Array GameEvent` (plus `nextBatchId : Nat` and `currentBatch : Option (BatchId × Option EventCause)` in Phase 4, and `openBatchObjects : Array GameObject`, `openBatchPlayers : Array Player`, `openBatchEffects : Array (EffectId × ContinuousEffectSpec)`—updated in Phase 8—`openBatchPending : Pending` in Phase 7, and `openBatchStack : Array StackEntry` in Phase 15, #598) | Written by `RulesEvent`s (`TurnEvent`, `CombatEvent`, `ContinuousEffectEvent`, `DelayedTriggerEvent`, …) or `EngineChange` (`priority`, `consecutivePasses`, `cleanupGivesPriority`, `log`, plus `addPlayer` and `removeStackEntry` replacing bulk `EngineChange.players` and `EngineChange.stack` in Phase 14, #596, and `EngineChange.stackEntry (objectId : ObjectId) (c : StackEntryChange)` replacing `EngineChange.setStackEntryAt` in Phase 15, #598); since Phase 12 (#592), `nextBatchId` is bumped in `applySingleRulesEventInBatch`, `closeBatch`'s `pushInBatch` (for `.rules` events `closeBatch` pushes itself), `recordTriggeredWithOrigin`, `EngineChange.pauseBatch`, and `replayEvent` (`EngineChange.nextBatchId` was deleted in Phase 10, #588); `currentBatch` and `openBatchObjects` / `openBatchPlayers` / `openBatchEffects` / `openBatchPending` / `openBatchStack` are transient pre-batch snapshot fields written in memory by the outermost arm (`currentBatch == none`) of `withBatchReturn` and cleared in memory by `finishOpenBatchSync` when the batch finishes synchronously, or journaled via `EngineChange.pauseBatch` and cleared via `EngineChange.clearPausedBatch` in `finishOpenBatch` when the batch pauses (standalone `applyEvent` sets and clears `currentBatch` locally without touching `openBatch*`). |
-| **Engine prompt / queue state — stays (`EngineChange`)** | `pending : Pending`, `pendingPriority : Option PlayerId` (added in Phase 15, #598, via `EngineChange.pendingPriority` to retain the CR 117.3c priority recipient across intermediate SBA/trigger prompts), `pregameRandom : PregameRandom` (added in Phase 10, #588, for pregame/mulligan `--norandom` shuffle continuations in [`Pending.lean`](Mtg/Engine/Game/Pending.lean)), `proposedSpell : Option ProposedSpell` (`ProposedSpell` in [`Stack.lean`](Mtg/Engine/Game/Stack.lean) gained `originalSnapshot : EventObject := {}` in Phase 11, #590, dropped `handBefore`, `stackBefore`, and `manaBefore` in Phase 12, #592, gained `alternativeCost : Bool := false` and `resolutionCast : Bool := false` alongside `ProposalKind.turnFaceUp` in Phase 14, #596, and gained `teamworkCreatures : Array ObjectId := #[]` via `ProposalChange.teamworkCreatures` in Phase 15, #598), `proposalCheckpoint : Option ProposalCheckpoint` and `outerProposalCheckpoints : Array ProposalCheckpoint` (added in Phase 12, #592, via `EngineChange.saveProposalCheckpoint` / `clearProposalCheckpoint` for CR 733.1 proposal reversal, extended with `currentBatch` / `openBatch*` alongside `ProposalActionKind` `EngineChange.beginProposalAction` / `endProposalAction` in Phase 13, #594, paired with `PendingReplacement.endProposalAction` / `endsWithFinishFra` / `finishProliferateEachKind` in Phase 14, #596, and extended with `openBatchStack` and `outerProposalCheckpoints` in Phase 15, #598), `continuations : Array ContinuationFrame` (added in Phase 8, expanded to 81 fields in Phase 10, #588, when `resolvingSpell`, `resolvingAbility`, `resolvingDivision`, `afterRandom`, `resolutionFinish`, and `pendingResolvedEvent` moved onto `ContinuationFrame`, expanded to 83 fields in Phase 13, #594, with `pendingCastExiledQueue` and `postCastCleanup` while test-only `ContinuationChange.resolvingContext` was deleted, and kept at 83 fields in Phase 15, #598, when write-only `amassControllerThisWay` was retired and `outerPendingReplacements : Array PendingReplacement := #[]` was added via `ContinuationChange.pushOuterPendingReplacement` / `popOuterPendingReplacement`; bulk setter `EngineChange.continuations` deleted in Phase 11, #590; retiring unreachable `pendingCastExiledQueue` moves to Phase 16 step 4), `awaitingOpeningBegin : Bool`, `mulliganToDeclare : Array PlayerId`, `willMulligan : Array PlayerId`, `mulliganToBottom : Array PlayerId`, `blockersQueue : Array PlayerId`, `waitingTriggers : Array WaitingTrigger` (`WaitingTrigger.ordered : Bool := false` added in Phase 15, #598), `castingFromTop : Bool`, `replacementOrder : Array ReplacementId` (added in Phase 7 for player-chosen CR 616.1 ordering) | Updated by `EngineChange` while choices, casts, or abilities are in progress. |
+| **Engine prompt / queue state — stays (`EngineChange`)** | `pending : Pending`, `pendingPriority : Option PlayerId` (added in Phase 15, #598, via `EngineChange.pendingPriority` to retain the CR 117.3c priority recipient across intermediate SBA/trigger prompts), `pregameRandom : PregameRandom` (added in Phase 10, #588, for pregame/mulligan `--norandom` shuffle continuations in [`Pending.lean`](Mtg/Engine/Game/Pending.lean)), `proposedSpell : Option ProposedSpell` (`ProposedSpell` in [`Stack.lean`](Mtg/Engine/Game/Stack.lean) gained `originalSnapshot : EventObject := {}` in Phase 11, #590, dropped `handBefore`, `stackBefore`, and `manaBefore` in Phase 12, #592, gained `alternativeCost : Bool := false` and `resolutionCast : Bool := false` alongside `ProposalKind.turnFaceUp` in Phase 14, #596, and gained `teamworkCreatures : Array ObjectId := #[]` via `ProposalChange.teamworkCreatures` in Phase 15, #598), `proposalCheckpoint : Option ProposalCheckpoint` and `outerProposalCheckpoints : Array ProposalCheckpoint` (added in Phase 12, #592, via `EngineChange.saveProposalCheckpoint` / `clearProposalCheckpoint` for CR 733.1 proposal reversal, extended with `currentBatch` / `openBatch*` alongside `ProposalActionKind` `EngineChange.beginProposalAction` / `endProposalAction` in Phase 13, #594, paired with `PendingReplacement.endProposalAction` / `endsWithFinishFra` / `finishProliferateEachKind` in Phase 14, #596, and extended with `openBatchStack` and `outerProposalCheckpoints` in Phase 15, #598), `continuations : Array ContinuationFrame` (added in Phase 8, expanded to 81 fields in Phase 10, #588, when `resolvingSpell`, `resolvingAbility`, `resolvingDivision`, `afterRandom`, `resolutionFinish`, and `pendingResolvedEvent` moved onto `ContinuationFrame`, expanded to 83 fields in Phase 13, #594, with `pendingCastExiledQueue` and `postCastCleanup` while test-only `ContinuationChange.resolvingContext` was deleted, kept at 83 fields in Phase 15, #598, when write-only `amassControllerThisWay` was retired and `outerPendingReplacements : Array PendingReplacement := #[]` was added via `ContinuationChange.pushOuterPendingReplacement` / `popOuterPendingReplacement`, and brought to 82 fields in Phase 16, #600, when unreachable `pendingCastExiledQueue` was retired; bulk setter `EngineChange.continuations` deleted in Phase 11, #590), `awaitingOpeningBegin : Bool`, `mulliganToDeclare : Array PlayerId`, `willMulligan : Array PlayerId`, `mulliganToBottom : Array PlayerId`, `blockersQueue : Array PlayerId`, `waitingTriggers : Array WaitingTrigger` (`WaitingTrigger.ordered : Bool := false` added in Phase 15, #598), `castingFromTop : Bool`, `replacementOrder : Array ReplacementId` (added in Phase 7 for player-chosen CR 616.1 ordering) | Updated by `EngineChange` while choices, casts, or abilities are in progress. |
 | **Combat / Ward / Path of Ancestry bookkeeping — deleted in Phase 12** | `firstStrikeDamageDone : Bool`, `pendingRegularCombatDamage : Bool`, `firstStrikeAssignedThisCombat : Array ObjectId`, `wardQueue : Array WardObligation`, `ancestryLandsTapped : Array ObjectId` | Deleted in Phase 12 (#592): `firstStrikeDamageDone`, `pendingRegularCombatDamage`, and `firstStrikeAssignedThisCombat` (plus `hasFirstStrikeAssignmentInCurrentStep`) are derived from `TurnEvent.extraStepAdded .combatDamage .afterCurrent` (`PendingReplacement.addExtraCombatDamageStep`), `TurnEvent.stepBegan .combatDamage`, and `CombatEvent.damageAssigned` in the current combat phase; Ward (`TriggeredAbility.onWard` / `FrcEffect.ward`) is matched in `matchTriggers` into `WaitingTrigger` / `g.stack` per 702.21a; and Path of Ancestry's scry check (`Game.ancestryManaSpentOn`) reads `PlayerEvent.manaSpent` `ManaUnit.source` against live `isBattlefieldObject` + `EventObject.commanderIdentityScryCreature` LKI. |
 | **Delayed triggers → delayed-trigger table (603.7, Phase 8 / 10)** | `delayedEndStepReturns : Array (ObjectId × EventCause)`, `delayedEndStepExiles : Array (ObjectId × EventCause)`, `delayedEndStepSacrifices : Array (ObjectId × EventCause)`, `delayedGraveReturns : Array (ObjectId × PlayerId × EventCause)`, `delayedSynthetic : Array (PlayerId × Nat × EventCause)`, `eaglesBirdsCauses : Array (PlayerId × Nat × EventCause)` (added in Phase 3 alongside `Player.eaglesBirdsNextUpkeep : Nat`) | Replaced in Phase 8 (#584) by `Game.delayedTriggers : Array DelayedTrigger := #[]` (`DelayedTriggerKind` in [`Object.lean`](Mtg/Engine/Game/Object.lean)), matched by `matchTriggers` (603.2) and put on the stack via `TriggerQueueEvent.putOnStack` (603.3), with creation, one-shot consumption, and EOT expiry journaled via `DelayedTriggerEvent` (§2.12) in Phase 10 (#588). |
 | **Linked-exile cause cache — deleted in Phase 8** | `linkedExileCauses : Array (ObjectId × EventCause)` | Added in Phase 3 so cards in `GameObject.linkedExile` return under their exiling `.oneShotEffect` cause (610.3); replaced in Phase 8 (#584) by reading the `cause` of the `ZoneEvent.moved` that put the card into `.exile`. |
@@ -1582,7 +1597,7 @@ Each field is put in exactly one category. "Log" means a query over
 | **Game effect mirrors → specs (deleted in Phase 8)** | `creaturesWithoutFlyingCantBlock : Bool`, `powerUpsForbidden : Bool`, `playerControl : Option (PlayerId × PlayerId)`, `controlOnNextTakenTurn : Bool`, `pendingLokiCopy : Option (PlayerId × Option ObjectId × Int)`, `assignCombatDamageEqualToughness : Option PlayerId`, `pendingFreeRGCreature : Option PlayerId` | Replaced in Phase 8 (#584) by `ContinuousEffectSpec.gameRule` / `.playerRule`. |
 | **Game LKI / identity — deleted in Phase 2** | `lastKnownStatus : Array (ObjectId × Status)`, `movedTo : Array (ObjectId × ObjectId)` | `moved.before` / `moved.after`. |
 | **Batch / trigger suppression — deleted in Phase 4 / 6 / 7** | `suppressOthersDie : Bool`, `suppressCreatureCardsToGy : Bool`, `pendingCreatureTokenCreators : Array PlayerId` (deleted in Phase 4); `pendingTokenEnters : Array ObjectId` (kept in Phase 4 for per-token enter triggers in `afterPermanentEnters`, while Mister Fantastic's `.watch .tokensEnterMayDraw` moved to `evaluateBatchTriggers`; deleted in Phase 6); `lockedDeathReplacements : Option (Array GameObject)` (deleted in Phase 7) | Replaced by `withBatch` / `commitBatch`, `matchTriggers pre post batch`, and the 616.1 replacement pipeline. |
-| **Continuation registers — moved to continuation stack in Phase 8 / 10 / 13 / 15** | `pendingDrawAfterScry : Option (PlayerId × Nat)`, `discardedCardThisWay : Option (PlayerId × ObjectId)`, `palantirAfterScry : Option (PlayerId × PlayerId × ObjectId)`, `recentTokenIds : Array ObjectId`, `fraAfterLook : Option (PlayerId × Option ObjectId × FraNext)`, `pendingFreeCopies : Option (PlayerId × Array ObjectId × Nat × Nat)`, `pendingMayCastFromExile : Option (PlayerId × Array ObjectId × Nat)`, `mayPayAlsoPlusOneOn : Option ObjectId`, `humansTappedThisWay : Nat`, `permanentsDestroyedThisWay : Nat`, `removedHopeThisWay : Bool`, `permanentDealtDamageThisWay : Option ObjectId`, `returnedPermanentThisWay : Bool`, `nthResolveThisWay : Option Nat`, `skipTriggerSequenceRest : Bool`, `excessDamageThisWay : Nat`, `destroyedForAmassThisWay : Bool`, `amassControllerThisWay : Option PlayerId` (retired in Phase 15, #598), `amassAmountThisWay : Nat`, `amassYouControlledThisWay : Bool`, `milledIdsThisWay : Array ObjectId`, `revealedIdsThisWay : Array ObjectId`, `opponentsMilledThisWay : Bool`, `palantirChoiceReady : Option (PlayerId × PlayerId × ObjectId)`, `grimaImpulseReady : Bool`, `grimaImpulseVictim : Option PlayerId`, `grimaImpulseFound : Option ObjectId`, `grimaImpulseOthers : Array ObjectId`, `planWasSacrificed : Bool`, `sourceWasSacrificed : Bool`, `exiledIdsThisWay : Array ObjectId`, `notedCopyObject : Option GameObject`, `notedHostId : Option ObjectId`, `handDiscardedThisWay : Option Nat`, `notedSourceThisWay : Option ObjectId`, `equipmentAttachedHost : Option ObjectId`, `notedCountThisWay : Nat`, `createdTokenThisWay : Option ObjectId`, `putArtifactThisWay : Option (ObjectId × ObjectId)`, `playExiledThisWay : Option ObjectId`, `armSurveilReturn : Bool`, `triggerSequenceRest : Option TriggerSequenceRest`, `mayThenDrop : Nat`, `mayThenSkip : Nat`, `mayThenConditional : Option TriggeredAbility.TriggerResolution`, `mayOnAccept : Option TriggeredAbility.TriggerResolution`, `mayOnDecline : Option TriggeredAbility.TriggerResolution`, `mayContext : Option TriggerSequenceRest`, `sacrificedPowerThisWay : Option Nat`, `mayThenResume : Bool`, `triggerOr : Option TriggerOrRest`, `chooseModesRest : Option ChooseModesRest`, `unlessPaysInstead : Option Effect`, `unlessPaysController : PlayerId`, `unlessPaysTargets : Array Target`, `unlessPaysDue : Bool`, `mayEffect : Option Effect`, `mayController : PlayerId`, `mayTargets : Array Target`, `spellOr : Array Effect`, `spellOrController : PlayerId`, `spellOrTargets : Array Target`, `spellOrLibrary : Bool`, `surveilReturnMvAtMost : Option Nat`, `surveilReturnNoncreatureNonland : Bool`, `conniveSource : Option ObjectId`, `plusOneAfterDiscards : Option ObjectId`, `plusOneAfterSearch : Option ObjectId`, `thirstDiscardsLeft : Nat`, `thirstDiscardType : CardType`, `pendingDiscardsLeft : Nat`, `untapSearchedIfLands : Option Nat`; plus `resolvingSpell : Option ObjectId`, `resolvingAbility : Option ObjectId`, `resolvingDivision : Array Nat`, and `afterRandom : AfterRandom` in Phase 10 (#588), `pendingCastExiledQueue : Option (PlayerId × Array ObjectId)` and `postCastCleanup : Option PostCastCleanup` in Phase 13 (#594), and `outerPendingReplacements : Array PendingReplacement` in Phase 15 (#598) | Moved in Phase 8 (#584), Phase 10 (#588), Phase 13 (#594), and Phase 15 (#598) into `ContinuationFrame` (83 fields including `pendingCastExiledQueue`, `postCastCleanup`, `pendingReplacement`, `outerPendingReplacements`, `resolvingContext`, `stashedCause`, `resolvingSpell`, `resolvingAbility`, `resolvingDivision`, `afterRandom`, `resolutionFinish`, and `pendingResolvedEvent`, updated via `ContinuationChange` on `Game.continuations`; CR 608.2n / 608.2p / 608.3 stack-residence and `completeActiveResolutions` frame-drain lifecycle completed in Phase 10, #588). |
+| **Continuation registers — moved to continuation stack in Phase 8 / 10 / 13 / 15** | `pendingDrawAfterScry : Option (PlayerId × Nat)`, `discardedCardThisWay : Option (PlayerId × ObjectId)`, `palantirAfterScry : Option (PlayerId × PlayerId × ObjectId)`, `recentTokenIds : Array ObjectId`, `fraAfterLook : Option (PlayerId × Option ObjectId × FraNext)`, `pendingFreeCopies : Option (PlayerId × Array ObjectId × Nat × Nat)`, `pendingMayCastFromExile : Option (PlayerId × Array ObjectId × Nat)`, `mayPayAlsoPlusOneOn : Option ObjectId`, `humansTappedThisWay : Nat`, `permanentsDestroyedThisWay : Nat`, `removedHopeThisWay : Bool`, `permanentDealtDamageThisWay : Option ObjectId`, `returnedPermanentThisWay : Bool`, `nthResolveThisWay : Option Nat`, `skipTriggerSequenceRest : Bool`, `excessDamageThisWay : Nat`, `destroyedForAmassThisWay : Bool`, `amassControllerThisWay : Option PlayerId` (retired in Phase 15, #598), `amassAmountThisWay : Nat`, `amassYouControlledThisWay : Bool`, `milledIdsThisWay : Array ObjectId`, `revealedIdsThisWay : Array ObjectId`, `opponentsMilledThisWay : Bool`, `palantirChoiceReady : Option (PlayerId × PlayerId × ObjectId)`, `grimaImpulseReady : Bool`, `grimaImpulseVictim : Option PlayerId`, `grimaImpulseFound : Option ObjectId`, `grimaImpulseOthers : Array ObjectId`, `planWasSacrificed : Bool`, `sourceWasSacrificed : Bool`, `exiledIdsThisWay : Array ObjectId`, `notedCopyObject : Option GameObject`, `notedHostId : Option ObjectId`, `handDiscardedThisWay : Option Nat`, `notedSourceThisWay : Option ObjectId`, `equipmentAttachedHost : Option ObjectId`, `notedCountThisWay : Nat`, `createdTokenThisWay : Option ObjectId`, `putArtifactThisWay : Option (ObjectId × ObjectId)`, `playExiledThisWay : Option ObjectId`, `armSurveilReturn : Bool`, `triggerSequenceRest : Option TriggerSequenceRest`, `mayThenDrop : Nat`, `mayThenSkip : Nat`, `mayThenConditional : Option TriggeredAbility.TriggerResolution`, `mayOnAccept : Option TriggeredAbility.TriggerResolution`, `mayOnDecline : Option TriggeredAbility.TriggerResolution`, `mayContext : Option TriggerSequenceRest`, `sacrificedPowerThisWay : Option Nat`, `mayThenResume : Bool`, `triggerOr : Option TriggerOrRest`, `chooseModesRest : Option ChooseModesRest`, `unlessPaysInstead : Option Effect`, `unlessPaysController : PlayerId`, `unlessPaysTargets : Array Target`, `unlessPaysDue : Bool`, `mayEffect : Option Effect`, `mayController : PlayerId`, `mayTargets : Array Target`, `spellOr : Array Effect`, `spellOrController : PlayerId`, `spellOrTargets : Array Target`, `spellOrLibrary : Bool`, `surveilReturnMvAtMost : Option Nat`, `surveilReturnNoncreatureNonland : Bool`, `conniveSource : Option ObjectId`, `plusOneAfterDiscards : Option ObjectId`, `plusOneAfterSearch : Option ObjectId`, `thirstDiscardsLeft : Nat`, `thirstDiscardType : CardType`, `pendingDiscardsLeft : Nat`, `untapSearchedIfLands : Option Nat`; plus `resolvingSpell : Option ObjectId`, `resolvingAbility : Option ObjectId`, `resolvingDivision : Array Nat`, and `afterRandom : AfterRandom` in Phase 10 (#588), `pendingCastExiledQueue : Option (PlayerId × Array ObjectId)` (retired in Phase 16, #600) and `postCastCleanup : Option PostCastCleanup` in Phase 13 (#594), and `outerPendingReplacements : Array PendingReplacement` in Phase 15 (#598) | Moved in Phase 8 (#584), Phase 10 (#588), Phase 13 (#594), and Phase 15 (#598) into `ContinuationFrame` (82 fields after Phase 16, #600, retired `pendingCastExiledQueue`, including `postCastCleanup`, `pendingReplacement`, `outerPendingReplacements`, `resolvingContext`, `stashedCause`, `resolvingSpell`, `resolvingAbility`, `resolvingDivision`, `afterRandom`, `resolutionFinish`, and `pendingResolvedEvent`, updated via `ContinuationChange` on `Game.continuations`; CR 608.2n / 608.2p / 608.3 stack-residence and `completeActiveResolutions` frame-drain lifecycle completed in Phase 10, #588). |
 
 ---
 
@@ -1610,6 +1625,7 @@ flowchart TD
   P13 --> P14["Phase 14: Paused proposal-action & cost/morph alignment,\nsingle-writer ETB/copy/counter/damage fixes, batch look-back/LKI/CR 800.4 & final sweep"]
   P14 --> P15["Phase 15: Pause-safe resolution combinators & replacement loops,\nCR 117.3c/601.2/603.3b/batch-stack fidelity, simultaneous LKI/SBA/combat/cleanup, ObjectId 0 & scaffolding cleanup"]
   P15 --> P16["Phase 16: Remaining replacement/reveal/mill pause-safety & parity,\nCR 603.2/603.4/608.2a-b/702.176a stack & target lifecycle, CR 704.3/704.8/111.8/603.10/701.17c/800.4 batches, Option BatchId & scaffolding cleanup"]
+  P16 --> P17["Phase 17: Nested-batch replay & CR 733.1 reversal fidelity, remaining pause-safety & parity,\nCR 603.3c-d/603.4/608.2b/704.5d-e/707.10-12 stack/modal/copy/target lifecycle,\nCR 704.3/610.3/800.4 SBA/linked-exile/leave-game integrity, and CR 500.4-5/514.3 turn-expiry & CR cleanup"]
 ```
 
 ### Phase 1 — Envelope and durable single-writer constructors
@@ -4486,7 +4502,281 @@ CR 800.4a/h leave-game continuation handling, CR 702.131a/b/d `citysBlessing` /
 `MshOracleTests.lean`, `MshOracleTests2.lean`, `MshOracleTests4.lean`,
 `OracleRulingTests.lean`, `CatalogModelTests.lean`.
 
-Final check (after Phase 16): `lake build`, `lake exe mtg-demo`,
+### Phase 17 — Nested-batch replay & CR 733.1 reversal fidelity, remaining pause-safety & parity, CR 603.3c–d / 603.4 / 608.2b / 704.5d–e / 707.10–12 stack / modal / copy / target lifecycle, CR 704.3 / 610.3 / 800.4 SBA / linked-exile / leave-game integrity, and CR 500.4–5 / 514.3 turn-expiry & CR cleanup
+
+1. Fix nested-batch replay & shared `EffectId` fidelity, CR 733.1 kept-action
+   scaffolding filtering, remaining replacement/continuation pause-safety gaps,
+   and counter/ETB sync-vs-paused parity (§2.1, §2.2, §2.5, §2.9, §3.2, §3.4):
+   - Stop mutating `{ g1 with currentBatch := some (batchId, none) }` in memory
+     without an `EngineChange` inside the nested arm of `Core.withBatchReturn`
+     ([`Core.lean`](Mtg/Engine/Game/Core.lean)) when an already-paused outer
+     `withBatch none` (`prevCause?.isNone`) runs a nested
+     `withBatch (some cause)` that records `.rules` events (minting a shared
+     `.oneShotEffect (some eid) …` on `g1.currentBatch`) and pauses again on
+     `Pending.chooseReplacement`—preserving both `Game.replayEvents g.events == g`
+     parity with `Core.replayEvent` and shared CR 610 `EffectId` attribution
+     across resumed batch steps.
+   - Include `.engine _ (.waitingTriggers _) _` (emitted by `Core.closeBatch`
+     when coalescing `.sourceDealtDamage` onto `waitingTriggers`) and
+     `.rules _ (.delayedTrigger (.consumed ..)) _ _` (emitted by
+     `Core.closeBatch` when consuming one-shot `DelayedTrigger`s) in
+     `Core.reverseToProposalCheckpoint?`'s `skipActionScaffolding` (`Core.lean`)
+     so replaying kept proposal actions inside `gAcc.withBatch none` neither
+     resurrects reversed triggers / double-coalesces damage nor pre-consumes
+     delayed triggers before `closeBatch` runs `matchTriggers` (CR 733.1).
+   - Close remaining `Pending.chooseReplacement` & continuation ordering gaps:
+     defer creating `.additionalSubtype o.id .wraith true` and logging
+     `"gets a shadow counter"` across `Pending.chooseReplacement` (and guard
+     actual `.shadow` counter placement `n' > 0`) in
+     `Designations.putShadowCounter`
+     ([`Designations.lean`](Mtg/Engine/Game/Designations.lean)); pause-chain
+     `TriggeredAbilities.applyPut` (`.source, .asArtifact, _` in
+     [`TriggeredAbilities.lean`](Mtg/Engine/Game/TriggeredAbilities.lean))
+     across `Pending.chooseReplacement`, guarding `.isOnBattlefield` on exile
+     redirects and running `afterPermanentEnters`; pause-chain post-untap
+     `.cantBeBlocked` in `FraResolve.applyFra` `.untapUnblockable`
+     ([`FraResolve.lean`](Mtg/Engine/Game/FraResolve.lean)) and post-untap
+     `afterLandEnters` / `afterPermanentEnters` in
+     `LibrarySearch.finishPlaceSearched`
+     ([`LibrarySearch.lean`](Mtg/Engine/Game/LibrarySearch.lean)) when
+     `untapPermanent` pauses on competing stun-counter replacements (CR 122.1d /
+     616.1); replace eager `foldl` zone-move loops in `FrcResolve.applyFrc`
+     `.factOrFiction` ([`FrcResolve.lean`](Mtg/Engine/Game/FrcResolve.lean)) and
+     `TriggeredAbilities.applySacrifice`'s `permanentsNamed` fallback
+     (`TriggeredAbilities.lean`, capturing shared `preBattlefield`) with
+     pause-safe sequential helpers; stash any outer `g.pendingReplacement` onto
+     `outerPendingReplacements` before casting in `FraChoices.castFreeCopy`
+     ([`FraChoices.lean`](Mtg/Engine/Game/FraChoices.lean)), stop calling
+     `.finishFraChoice` while `Pending.chooseReplacement` is open in
+     `FraChoices.answerFraChoice` `.mayBeginOnBattlefield` (`FraChoices.lean`),
+     scope `recentTokenIds` in `Choices.createPermanentCopyTokens`
+     ([`Choices.lean`](Mtg/Engine/Game/Choices.lean)) so pre-existing tokens in
+     an enclosing resolution frame do not gain haste or end-step sacrifice,
+     avoid double `receivePriority` when `Decisions.resumePendingReplacement`
+     `.finishPostCast` (`grantPriority == true`,
+     [`Decisions.lean`](Mtg/Engine/Game/Decisions.lean)) returns into
+     `Decisions.finishAndGrantPriority` after a Path of Ancestry `.scry`, and
+     reset `consecutivePasses` on stack-resolution / step entry in
+     `PriorityActions.pass` while honoring `g.pendingPriority` in
+     `PriorityActions.concede`
+     ([`PriorityActions.lean`](Mtg/Engine/Game/PriorityActions.lean)) so a
+     mid-prompt multiplayer concession does not see stale
+     `consecutivePasses >= g.livingPlayers.size` and auto-resolve the next stack
+     object or advance the step without priority passes (CR 117.3b–d / 117.4).
+   - Close remaining counter sync-vs-paused log divergences: guard `n == 0` and
+     replaced `n' == 0` in `Entering.addPlusOnePlusOneTo`
+     ([`Entering.lean`](Mtg/Engine/Game/Entering.lean)) so zero-counter
+     placements do not log `"0 +1/+1 counter(s)"` synchronously while logging
+     nothing when paused, and defer delta-computed counter logs in
+     `TriggeredAbilities.applyAffectedCounters` (`.stun`, `.loyalty`) and
+     `TriggeredAbilities.applyPutCounters` (`.quest`, `.honePerOpponent`,
+     `.trample`, `.stun` in `TriggeredAbilities.lean`) across
+     `Pending.chooseReplacement` so paused counter replacements log the actual
+     placed count rather than `0`.
+2. Complete CR 603.3c–d / 603.4 / 608.2a–b / 704.5d–e / 707.10 / 707.12 trigger,
+   modal, copy, Aura, and target lifecycle (§2.4, §2.9, §3.5):
+   - Align the remaining trigger-time and resolution-time intervening-`"if"` &
+     condition checks: add trigger-time (`Core.triggerConditionHolds` in
+     `Core.lean`) and resolution-time (`Chapters.triggerInterveningHolds` /
+     `SpellResolution.resolveTop` in
+     [`Chapters.lean`](Mtg/Engine/Game/Chapters.lean) and
+     [`SpellResolution.lean`](Mtg/Engine/Game/SpellResolution.lean), recording
+     `StackObjectEvent.removedOnResolution` on failure) intervening-`"if"`
+     checks for `SharedTrigger.copySelfNonlegendary` (*The Notary Hobbits*,
+     `!isToken`, plus CR 113.7a / 608.2h LKI copy fallback when the source left
+     `.battlefield`), `SharedTrigger.drawIfAttackedOrEnteredSubtype` (*Avengers
+     Mansion* / *Avengers Assembled*), `FrcEffect.gingerbrute` (`isMonarch`),
+     and `FrcEffect.obAngel` (`loggedLifeGained > 0`, CR 603.4 / 608.2a); align
+     `FrcEffect.tamiyoStun` (*"Whenever one or more creatures deal combat damage
+     to you while you're the monarch"*) with CR 603.2 / 603.4 by checking
+     `isMonarch` at trigger time rather than re-checking `isMonarch` on
+     resolution (`Core.lean`, `FrcResolve.lean`) and tapping + putting stun
+     counters on all creatures that dealt combat damage to `controller` in the
+     triggering batch rather than only the first damager; and gate *Windcrag
+     Siege*'s `"Jeskai"` upkeep ability (`FrcEffect.goblin`) on
+     `chosenAnchor == some "Jeskai"` in `Core.triggeredAbilities` (`Core.lean`,
+     CR 614.12 / 603.2) rather than triggering on `"Mardu"` and no-oping on
+     resolution.
+   - Complete CR 603.3c–d stack-placement modal announcement and target
+     legality: route `Triggers.putQueuedTrigger`
+     ([`Triggers.lean`](Mtg/Engine/Game/Triggers.lean)) through
+     `putTriggerOrFizzle` whenever `(ab.requiresTarget && !ab.allowsZeroTargets)`
+     holds (in addition to `event.checkTargets || abilityEffectOverride.isSome`)
+     so mandatory-target triggered abilities with zero legal targets are removed
+     on placement per CR 603.3d rather than stalling on `Pending.chooseTargets`;
+     and move mode announcement for the remaining modal triggered abilities
+     (`.enter .chooseUpToXModes` on *The Ruinous Wrecking Crew*—wiring up-to-`X`
+     mode selection and per-mode target announcement—plus `.vision`,
+     `.plusOneOrRemoveCounter`, `.oneUnused`, and `.oneUnusedThisTurn` in
+     `Triggers.lean` and `TriggeredAbilities.lean`) from resolution time to
+     stack placement per CR 603.3c / 700.2b,g (removing the ability on placement
+     without `StackObjectEvent.resolved` when zero modes remain available per CR
+     603.3c, preserving chosen modes on CR 707.10 stack copies, and resolving
+     source-independent modes via LKI when the source has left `.battlefield`
+     per CR 113.7a).
+   - Complete CR 704.5d–e / 707.10 / 707.12 / 608.2b / 608.3f spell & card copy
+     lifecycle and Aura resolution: keep CR 707.12 exiled card copies
+     (`FraResolve` `.uldarosCopies` in `FraResolve.lean` and `FraAbilities`
+     `.zemoBoastCopies` in
+     [`FraAbilities.lean`](Mtg/Engine/Game/FraAbilities.lean)) at
+     `isToken := false, isCopy := true` while in `.exile` and `.stack` so
+     `StateBasedActions` `tokensOutsideBf` (`704.5d`) does not delete cast
+     permanent card copies from `.stack` before resolution; convert resolving
+     permanent spell copies (`old.zone == .stack && old.isCopy`, including
+     `.uldarosCopies`, `.zemoBoastCopies`, `.sarumanExileCopyMayCast`, and
+     `copyStackSpellWithId`) into tokens (`isToken := true`) as they enter
+     `.battlefield` (`Movement.move` in
+     [`Movement.lean`](Mtg/Engine/Game/Movement.lean), CR 608.3f / 707.10f);
+     preserve `isCopy := true` when a spell copy moves from `.stack` to a
+     non-battlefield zone (`Movement.move`, CR 704.5e / 707.10a) so
+     `copiesOutside` ceases countered or bounced spell copies via
+     `ZoneEvent.ceasedToExist`; include targeted Aura spells (`g.isAura obj`, CR
+     303.4a) in `SpellResolution.resolveTop`'s CR 608.2b all-targets-illegal
+     check (`SpellResolution.lean`, checking `canBeTargetedBy` for hexproof CR
+     702.11b / shroud CR 702.18a alongside `auraObjCanEnchant`, emitting
+     `StackObjectEvent.removedOnResolution` instead of
+     `StackObjectEvent.resolved`, and ceasing Aura spell copies per CR 704.5e);
+     and enforce `"Enchant creature you control"` (*Secret Invasion*) in
+     `SpellTargets.auraTargetKind`
+     ([`SpellTargets.lean`](Mtg/Engine/Game/SpellTargets.lean)) and
+     `Core.auraObjCanEnchant` (`Core.lean`, CR 303.4a,c / 704.5m).
+   - Complete CR 608.2b / 113.7a / 115.3 / 115.7 target validation, retargeting,
+     and CR 603.6c / 702.26b trigger matching: fall back to LKI
+     (`damageSourceById?` / `lastKnownBefore?`) in
+     `Targeting.legalStackAbilityTargets`
+     ([`Targeting.lean`](Mtg/Engine/Game/Targeting.lean), CR 113.7a / 608.2h)
+     when a stack ability's source has already left `.battlefield`; fix the
+     `!slots.isEmpty` distinctness tautology in
+     `ModeledTriggers.setSpellTargetAt`
+     ([`ModeledTriggers.lean`](Mtg/Engine/Game/ModeledTriggers.lean)) and
+     validate per-slot `slotKind` + `distinctSlots` in
+     `Casting.retargetStackSpell` ([`Casting.lean`](Mtg/Engine/Game/Casting.lean))
+     and `FraChoices` `.mayChangeSpellTarget` / `.newTargetsForCopies`
+     (`FraChoices.lean`, CR 115.3 / 115.7a,d / 707.10c); enforce per-target
+     `canBeTargetedBy` / `targetLegalAt` with `sourceId` on multi-target
+     resolution handlers when at least one target remains legal (`Chapters.lean`,
+     `EffectResolution.lean`, `FraResolve.lean`, `TriggeredAbilities.lean`,
+     `ModeledTriggers.lean`, CR 608.2b / 702.11b / 702.16b / 702.18a); guard
+     `!snap.phasedOut` on battlefield `ZoneEvent.ceasedToExist`
+     leaves-the-battlefield matching (`Core.matchTriggers`,
+     `Core.triggeredAbilities`, and `GameEvent.matchesTrigger` in `Core.lean`
+     and `Event.lean`, CR 603.6c / 702.26b); deduplicate
+     `.fra .opponentDealtNoncombatDamage` once per damaged opponent per
+     `DamageEvent.dealt` batch (`Core.matchTriggers` in `Core.lean`, CR 603.2c);
+     and complete `GameEvent.matchesTrigger` (`Event.lean`) for the remaining
+     `TriggerEvent` / `FraEvent` arms and CR 119.9 / 120.8 `amount > 0` guards.
+3. Complete CR 704.3 / 704.5j / 800.4a SBA & legend-rule LKI, CR 610.3
+   `linkedExile` & two-pass simultaneous entry batches, and CR 800.4 leave-game
+   integrity (§2.4, §3.2, §3.5, §3.6):
+   - Recursively unwrap left-nested `.seq` nodes when extracting `sweepPreBf?`
+     from `outerCont?` in `Decisions.keepLegend` (`Decisions.lean`, falling back
+     to `g.openBatchObjects` when paused inside an open SBA batch) so
+     legend-rule graveyard moves evaluate death/exile replacements against
+     start-of-pass `preBf` rather than live post-`stage 0` `g.battlefield` (CR
+     704.3 / 704.5j / 614.4), and remove the inner
+     `else if changed then checkSBACounted g` recursion inside
+     `StateBasedActions.checkSBACounted`
+     ([`StateBasedActions.lean`](Mtg/Engine/Game/StateBasedActions.lean)) so
+     `checkSBACountedWithLeaves` runs `leavePlayersWhoLost` (CR 104.5 / 800.4a)
+     immediately after *each* single CR 704.3 SBA pass before checking the next
+     pass.
+   - Defer CR 610.3 `Movement.returnLinkedExileMoves` (`Movement.lean`, and
+     stash any active `g.pendingReplacement` onto `outerPendingReplacements`
+     before `returnLinkedExileMoves` in `Leaving.playerLeavesGame` in
+     [`Leaving.lean`](Mtg/Engine/Game/Leaving.lean)) until the enclosing
+     departure batch closes so until-leaves returns commit in a separate
+     post-departure batch rather than inside a simultaneous board-wipe batch (CR
+     610.3 / 603.10); run two-pass simultaneous entry (moving all cards/tokens
+     onto `.battlefield` before running `afterPermanentEnters` /
+     `afterLandEnters`, checking Aura attachment against pre-batch
+     `.battlefield` per CR 303.4f) in `ResolutionEffects.returnLinkedExileLoop`,
+     `ResolutionEffects.commitEnteringAttackItems`
+     ([`ResolutionEffects.lean`](Mtg/Engine/Game/ResolutionEffects.lean)),
+     `LibrarySearch.placeSearchedBatch` (`LibrarySearch.lean`), and
+     `TriggeredAbilities.returnNotedLandsStep` (`TriggeredAbilities.lean`); pass
+     `sourceId` into `applyWorldsWithinWorlds` from
+     `EffectResolution.resolveSpellEffect` `.worldsWithinWorlds`
+     ([`EffectResolution.lean`](Mtg/Engine/Game/EffectResolution.lean)) and
+     separate `ResolutionEffects.finishWorldsWithinWorlds`
+     (`ResolutionEffects.lean`) into distinct batches per sequential CR 608.2c
+     verb (creatures entering from hand, exiled cards returning to owners'
+     hands, and exiling *Worlds Within Worlds*); and wrap the remaining
+     simultaneous multi-object effects and multi-permanent costs in `withBatch`
+     (`EffectResolution` `.countersOnCreatureTargets` /
+     `.targetPlayersGainLife` / `.exileTopXOppPlayForLife` in
+     `EffectResolution.lean`, `FraResolve` `.uldarosCopies` / `.fblthpSearch` in
+     `FraResolve.lean`, `FrcResolve` `.drawPutOnTop` in `FrcResolve.lean`,
+     `Choices.supperForSpidersReturn` / `exileTopPlayIfYouControlSubtype` in
+     `Choices.lean`, `LibrarySearch.finishLibrarySearch` in
+     `LibrarySearch.lean`, `TriggeredAbilities` `applyUntap .attackingCreatures`
+     / `applyPutOnLibrary` in `TriggeredAbilities.lean`, `FraChoices`
+     `.attachAnyEquipment` in `FraChoices.lean`,
+     `ActivationCosts.payCostPickItems` `.tapTwoUntappedArtifacts` in
+     [`ActivationCosts.lean`](Mtg/Engine/Game/ActivationCosts.lean), and
+     `SacrificeDiscard` `Pending.payWard` `.sacrificePermanents` in
+     [`SacrificeDiscard.lean`](Mtg/Engine/Game/SacrificeDiscard.lean) collecting
+     all chosen permanents before simultaneous `sacrificePermanentsLoop`).
+   - Complete CR 800.4 leave-game continuation & pregame/combat handling: route
+     `q == p` departures during `mayThen` prompts (`.mayPayGeneric`,
+     `.mayDiscardDraw`, `.maySacArtifactOrDiscard` in
+     `Leaving.redirectPendingAfterLeave`) through `declineMayThenCore` so
+     `"If you do"` branches do not execute when the choosing player leaves
+     without acting (CR 800.4f); handle two-player-referenced `FraChoice` prompts
+     (`.discardFromRevealedHand`, `.exileFromRevealedHand`, `.extrapolatePick`,
+     `.riddlesChoosePile`, `.palantirMayDraw`, `.tricksterLibrary`, and
+     `.mayCastGrima`) and `postCastCleanup = .grimaBottom` (`Casting.lean`,
+     `Leaving.lean`) when either the chooser or referenced player leaves (CR
+     800.4a/g/h); and handle pregame concessions (`declareMulligan`,
+     `putOnBottom`, and `.mayBeginOnBattlefield` across
+     [`Mulligans.lean`](Mtg/Engine/Game/Mulligans.lean), `Leaving.lean`, and
+     `PriorityActions.lean`, purging departed players from `mulliganToDeclare`,
+     `willMulligan`, and `mulliganToBottom` per CR 103.5 / 104.3a / 800.4a),
+     combat-damage assignment concessions (`playerNeedsCombatDamageChoice` on
+     both `q == p` and `q != p` in `Leaving.lean`), and `--norandom`
+     `Pending.resolveRandom` prompts referencing a departed player
+     (`Leaving.lean`).
+4. Complete CR 500.4–500.5 / 514.3 / 611.2b turn & step `EffectDuration` expiry
+   and final CR citation cleanup (§0.1, §3.3, §3.6):
+   - Route `Turns.finishPostSbaCleanup`
+     ([`Turns.lean`](Mtg/Engine/Game/Turns.lean)) through `beginTurn` (matching
+     `advanceStep`) rather than calling `(g.startNextTurn).beginStep .untap`
+     directly so `.protectionFromEverything` and `.lifeCantChange`
+     (`EffectDuration.untilNextTurnOf`, CR 611.2b) expire on a player's next
+     turn after a normal silent cleanup (CR 514.3), wire §3.3 / §3.6
+     `EffectDuration.untilEndOfCombat` (on `TurnEvent.phaseEnded .combat`, CR
+     500.5a / 511.2), `EffectDuration.untilEndOfStepOrPhase` (on
+     `TurnEvent.stepEnded` / `TurnEvent.phaseEnded`, CR 500.5,
+     `cause := .turnBased .expireAtStepEnd`), and
+     `EffectDuration.untilStepOrPhase` (on `TurnEvent.phaseBegan` /
+     `TurnEvent.stepBegan`, CR 500.4, `cause := .turnBased .expireAtStepBegin`)
+     to record `ContinuousEffectEvent.expired` in `Turns.lean`, and expire
+     general non-copy `.untilEndOfNextTurnOf g.activePlayer` effects in
+     `Turns.clearEOT` when `g.hasTurnBegunSince eid g.activePlayer` holds.
+   - Fix the remaining mismatched CR citations in
+     [`Tests/Auras.lean`](Mtg/Engine/Tests/Auras.lean) (`CR 608.3a` →
+     `CR 608.2b` for Aura target illegality before resolution) and
+     [`Status.lean`](Mtg/Engine/Game/Status.lean) /
+     [`Object.lean`](Mtg/Engine/Game/Object.lean) (`chosenAnchor` /
+     `asEntersChooseAnchor`: `CR 614.12` without modal `700.2`).
+
+Tests: `Events.lean` (isolation tests for nested-batch `currentBatch` replay &
+shared `EffectId` fidelity, CR 733.1 `reverseToProposalCheckpoint?`
+`waitingTriggers` / `DelayedTriggerEvent.consumed` filtering, pause-safe
+`putShadowCounter` / `applyPut .asArtifact` / `untapUnblockable` /
+`factOrFiction` / `castFreeCopy` / `concede` `consecutivePasses` &
+counter-log parity, CR 603.3c–d modal trigger stack announcement & mandatory
+target removal, CR 603.4 / 608.2a intervening-`"if"` checks, CR 704.5d–e /
+707.10 / 707.12 card & permanent spell copy lifecycle, CR 608.2b / 303.4a,c Aura
+resolution & retargeting, CR 704.3 / 704.5j recursive `keepLegend` `preBf` & CR
+800.4a per-pass SBA leave interleaving, CR 610.3 post-departure `linkedExile`
+batches & two-pass simultaneous entry, CR 800.4 `mayThen` / two-player
+`FraChoice` / pregame concessions, and CR 500.4–5 / 514.3 / 611.2b silent
+cleanup `beginTurn` & step/phase `EffectDuration` expiry), `Auras.lean`,
+`Casting.lean`, `Combat.lean`, `Leaving.lean`, `Mulligans.lean`, `Turns.lean`,
+`Abilities.lean`, `Effects.lean`, `Grant.lean`, `Marvel.lean`, `Reflexive.lean`,
+`MshOracleTests.lean`, `OracleRulingTests.lean`, `CatalogModelTests.lean`.
+
+Final check (after Phase 17): `lake build`, `lake exe mtg-demo`,
 `lake exe oracle-roundtrip`, no `EventCause.unclassified` constructor, no
 `ObjectId ⟨0⟩` or `BatchId ⟨0⟩` wildcard/sentinel defaults (unbatched/proposed
 events and unstamped `.engine` changes carry `batch := none` via
