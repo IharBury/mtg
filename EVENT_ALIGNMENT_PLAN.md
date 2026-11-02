@@ -1195,8 +1195,8 @@ def Game.commitBatch (g : Game) (cause : EventCause) (events : Array RulesEvent)
   since Phase 16, #600, with Phase 17, #602, recursively unwrapping left-nested
   `.seq` nodes for `sweepPreBf?` in `Decisions.keepLegend` with an
   `openBatchObjects.filter GameObject.isOnBattlefield` fallback and Phase 18,
-  #604, checking `g.outerPendingReplacements` in `keepLegend`'s
-  `findSweepPreBf?` when `g.pendingReplacement` is `none`—then
+  #604, falling back to `g.outerPendingReplacements.findSomeRev? findSweepPreBf?`
+  in `keepLegend` whenever `outerCont?.bind findSweepPreBf?` returns `none`—then
   tokens outside `.battlefield` 704.5d and non-token copies outside
   `.stack` and `.battlefield` 704.5e; `stage <= 2`: final-chapter Sagas 714.4 /
   704.5s; `stage <= 3`: illegal Auras put into their owner's graveyard 704.5m;
@@ -5315,8 +5315,9 @@ blocker-retention / `playerControl` integrity, and CR 500.4 / 611.2a–b /
      `ActivationCosts.payActivationExtraCosts`'s four `payLifeCost` calls,
      `ManaAbilities.activateManaAbility`'s `payLifeCost`
      ([`ManaAbilities.lean`](Mtg/Engine/Game/ManaAbilities.lean)),
-     `PriorityActions.pay` `.payWard` `.fivePoison` (`PriorityActions.lean`),
-     and `Decisions.payOrDecline` `.payOrLetCounter` (`Decisions.lean`), while
+     `PriorityActions.pay` `.payWard` `.fivePoison`'s `.costPayment .ward`
+     (`PriorityActions.lean`), and `Decisions.payGeneric` `.payOrLetCounter`'s
+     `payCost` (`Decisions.lean`), while
      keeping `Object.noSourceSentinelId` out of `EventCause.costPayment`'s
      `forObject` when `TriggeredAbilities.offerMayPayPick`
      ([`TriggeredAbilities.lean`](Mtg/Engine/Game/TriggeredAbilities.lean),
@@ -5346,19 +5347,22 @@ blocker-retention / `playerControl` integrity, and CR 500.4 / 611.2a–b /
      `TriggerQueueEvent.modeChosen` is recorded even when a token or ephemeral
      source has already ceased to exist before simultaneous trigger copies
      announce modes (CR 603.3c / 700.2g / 704.5d); record `CastEvent.announced`
-     (`modes := #[]`) on the 0-mode `.watch .hawkeyeModes` and
-     `.enter .chooseUpToXModes` paths (`Triggers.lean` and `FraChoices.lean`, CR
-     603.3c / 700.2b); remove an actual counter of any present `CounterKind`
-     from a controlled creature and gate `draw controller 1` on `"If you do"` in
+     (`modes := #[]`) on the 0-mode `.enter .chooseUpToXModes`
+     (`maxModes == 0` in `Triggers.putTriggeredAbilityOnStack`, `Triggers.lean`)
+     and `FraChoices.answerFraChoice` `.upToTriggerModes` `.decline`
+     (`chosen.isEmpty` in `FraChoices.lean`) paths (CR 603.3c / 700.2b); remove
+     an actual counter of any present `CounterKind` from a controlled creature
+     and gate `draw controller 1` on `"If you do"` in
      `ModeledTriggers.applyHydeMode` Mode 1
      ([`ModeledTriggers.lean`](Mtg/Engine/Game/ModeledTriggers.lean), CR 122.1 /
-     608.2c); check all opponents of `controller`
+     608.2c); check all opponents of `controller` in `g.players`
      (`pl.id != controller && !g.areTeammates controller pl.id`, including
      opponents who left a multiplayer game later in the turn per CR 800.4i) for
-     `.opponentDealtNoncombatDamageLastTurn` in `Core.triggerConditionHolds`
-     (`Core.lean`) and `Chapters.triggerInterveningHolds` (`Chapters.lean`, CR
-     603.4 / 800.4i); and pass `(sourceId := sourceId)` in
-     `ModeledTriggers.applyModeledTrigger` `.putPlusOnesUpToLastKnownPower`
+     `.opponentDealtNoncombatDamageLastTurn` in `Core.fraConditionHolds`
+     (`Core.lean`, feeding both `Core.triggerConditionHolds` and
+     `Chapters.triggerInterveningHolds`, CR 603.4 / 800.4i); and pass
+     `(sourceId := sourceId)` to `ModeledTriggers.putPlusOnesUpToLastKnown` in
+     `ModeledTriggers.applyModeledTrigger` `(.resource .gainLifePlusOnes)`
      (`ModeledTriggers.lean`, CR 702.16b).
    - Guard `ModeledTriggers.copyCastTriggerSpell` (`ModeledTriggers.lean`) and
      `EffectResolution` `.copyControlledAbility`
@@ -5408,13 +5412,12 @@ blocker-retention / `playerControl` integrity, and CR 500.4 / 611.2a–b /
      graveyard): attach to an eligible host under `auraObjCanEnchant` (prompting
      if multiple legal hosts exist or keeping the Aura in its origin zone when
      no legal host exists per CR 303.4f–g).
-   - Wrap multi-effect / multi-permanent continuous-effect helpers in
-     `withBatch` (`Pumps.pumpPermanent` when `trample == true`,
-     `Pumps.pumpControlledCreatures`,
-     `Pumps.grantUntilEotToControlledCreatures`, `Pumps.grantUntilEotKeywords`,
-     and `Pumps.setUntilEotForm` in [`Pumps.lean`](Mtg/Engine/Game/Pumps.lean),
-     plus `Chapters.elvesGetVigilance` and `Chapters.gainControlWhileSource` in
-     `Chapters.lean`, CR 608.2c / 611.2c / 613.7).
+   - Wrap multi-effect continuous-effect helpers in `withBatch`
+     (`Pumps.pumpPermanent` when `trample == true`,
+     `Pumps.grantUntilEotKeywords`, and `Pumps.setUntilEotForm` in
+     [`Pumps.lean`](Mtg/Engine/Game/Pumps.lean), plus
+     `Chapters.gainControlWhileSource` in `Chapters.lean`, matching
+     `Triggers.forEachControlledCreature`, CR 608.2c / 611.2c / 613.7).
    - Enforce CR 701.15b / 508.1d `Status.goadedBy` non-goader player attack
      requirements and flying restrictions in `Combat.declareAttackers`
      ([`Combat.lean`](Mtg/Engine/Game/Combat.lean)) and
@@ -5463,18 +5466,25 @@ blocker-retention / `playerControl` integrity, and CR 500.4 / 611.2a–b /
      `.gainControl .duringNextTurn` (`TriggeredAbilities.lean`, matching
      `ResolutionEffects.lean`); gate `onNextTurn == true` in
      `Core.playerControl` and `Core.controllingPlayerOf?` (`Core.lean`) on
-     `g.hasTurnBegunSince eid them` so *Construct a Cosmic Cube* (*"You control
-     target opponent during their next turn"*) does not take effect before
-     `them`'s next turn actually begins (updating
+     `g.hasTurnBegunSince eid them && !g.hasTurnAfterBegunSince eid them` (where
+     `hasTurnAfterBegunSince eid them` checks that a subsequent
+     `TurnEvent.turnBegan` was recorded after the first `TurnEvent.turnBegan them`
+     since `eid`, since `Turns.continueStartNextTurn` records
+     `TurnEvent.turnBegan` before calling `Turns.beginTurn`) so *Construct a
+     Cosmic Cube* (*"You control target opponent during their next turn"*) does
+     not take effect before `them`'s next turn actually begins and stays active
+     throughout `them`'s controlled turn (updating
      `MshOracleTests2.constructACosmicCubeReflexiveOk` in
      [`MshOracleTests2.lean`](Mtg/Engine/MshOracleTests2.lean) to assert
-     `!g.controlsPlayer ⟨0⟩ ⟨1⟩` before `⟨1⟩`'s turn begins and
-     `g.controlsPlayer ⟨0⟩ ⟨1⟩` once `⟨1⟩`'s turn begins); expire
-     `onNextTurn == true` in `Turns.beginTurn` (`Turns.lean`) at the beginning
-     of the turn after `them`'s controlled turn (`g.hasTurnBegunSince eid them`,
-     per CR 723.1 *"the effect doesn't end until the beginning of the next
-     turn"*) and in `Turns.expireUntilNextTurnEffects` if `them` leaves the game
-     (CR 800.4m); and give `onNextTurn == false` (`setPlayerControl you them false`)
+     `!g.controlsPlayer ⟨0⟩ ⟨1⟩` before `⟨1⟩`'s turn begins,
+     `g.controlsPlayer ⟨0⟩ ⟨1⟩` once `⟨1⟩`'s turn begins, and
+     `!g.controlsPlayer ⟨0⟩ ⟨1⟩ && g.controlOnNextTakenTurn.isEmpty` once the
+     following turn begins); expire `onNextTurn == true` in `Turns.beginTurn`
+     (`Turns.lean`) at the beginning of the turn after `them`'s controlled turn
+     (when `g.hasTurnAfterBegunSince eid them` holds, per CR 723.1 *"the effect
+     doesn't end until the beginning of the next turn"*) and in
+     `Turns.expireUntilNextTurnEffects` if `them` leaves the game (CR 800.4m);
+     and give `onNextTurn == false` (`setPlayerControl you them false`)
      `.untilEndOfTurn` duration in `Event.lean` / `Turns.clearEOT` /
      `Turns.expireUntilNextTurnEffects`.
    - Check `g.durationActive e.duration` in `Core.hasActiveEffect` (`Core.lean`,
