@@ -5494,7 +5494,9 @@ blocker-retention / `playerControl` integrity, and CR 500.4 / 611.2a–b /
      pass `(onNextTurn := true)` on `TriggeredAbilities`
      `.gainControl .duringNextTurn` (`TriggeredAbilities.lean`, matching
      `ResolutionEffects.lean`); gate `onNextTurn == true` in
-     `Core.playerControl` and `Core.controllingPlayerOf?` (`Core.lean`) on
+     `Core.playerControl` and `Core.controllingPlayerOf?` (`Core.lean`,
+     preserving `acc` when outside the window while leaving
+     `Core.controlOnNextTakenTurn` ungated until expiry) on
      `g.hasTurnBegunSince eid them && !g.hasTurnAfterBegunSince eid them` (where
      `hasTurnAfterBegunSince eid them` checks that a subsequent
      `TurnEvent.turnBegan` was recorded after the first `TurnEvent.turnBegan them`
@@ -5502,13 +5504,16 @@ blocker-retention / `playerControl` integrity, and CR 500.4 / 611.2a–b /
      `TurnEvent.turnBegan` before calling `Turns.beginTurn`) so *Construct a
      Cosmic Cube* (*"You control target opponent during their next turn"*) does
      not take effect before `them`'s next turn actually begins and stays active
-     throughout `them`'s controlled turn (updating
-     `MshOracleTests2.constructACosmicCubeReflexiveOk` in
+     throughout `them`'s controlled turn (updating both
+     `MshOracleTests2.constructACosmicCubeReflexiveOk` and the
+     `onNextTurn == true` subcheck in `MshOracleTests2.controlAnotherPlayerOk`—seeded
+     from `afterDraw` while keeping the earlier `setPlayerControl ⟨0⟩ ⟨1⟩`
+     `onNextTurn := false` immediate-control check—in
      [`MshOracleTests2.lean`](Mtg/Engine/MshOracleTests2.lean) to assert
-     `!g.controlsPlayer ⟨0⟩ ⟨1⟩` before `⟨1⟩`'s turn begins,
-     `g.controlsPlayer ⟨0⟩ ⟨1⟩` once `⟨1⟩`'s turn begins, and
-     `!g.controlsPlayer ⟨0⟩ ⟨1⟩ && g.controlOnNextTakenTurn.isEmpty` once the
-     following turn begins); expire `onNextTurn == true` in `Turns.beginTurn`
+     `!g.controlsPlayer ⟨0⟩ ⟨1⟩ && !g.controlOnNextTakenTurn.isEmpty` before
+     `⟨1⟩`'s turn begins, `g.controlsPlayer ⟨0⟩ ⟨1⟩` once `⟨1⟩`'s turn begins,
+     and `!g.controlsPlayer ⟨0⟩ ⟨1⟩ && g.controlOnNextTakenTurn.isEmpty` once
+     the following turn begins); expire `onNextTurn == true` in `Turns.beginTurn`
      (`Turns.lean`) at the beginning of the turn after `them`'s controlled turn
      (when `g.hasTurnAfterBegunSince eid them` holds, per CR 723.1 *"the effect
      doesn't end until the beginning of the next turn"*) and in
