@@ -5152,7 +5152,13 @@ def opponent (g : Game) (p : PlayerId) : PlayerId :=
         let q : PlayerId := ⟨(p.idx + k) % n⟩
         if opps.any (fun pl => pl.id == q) then
           return q
-      return PlayerId.mk ((p.idx + 1) % n)
+      if !(g.player p).lost then
+        return p
+      for k in [1:n+1] do
+        let q : PlayerId := ⟨(p.idx + k) % n⟩
+        if !(g.player q).lost then
+          return q
+      return p
 
 /-- Whether `id` (or the spell it resolved from, CR 400.7d) was cast and is not a copy (CR 707.10). -/
 def wasCast (g : Game) (id : ObjectId) : Bool :=
@@ -5357,7 +5363,9 @@ def defendingPlayer (g : Game) : PlayerId :=
   | some p => p
   | none =>
     match g.objects.findSome? (fun o =>
-      if o.isOnBattlefield && o.status.attacking then g.defendingPlayerOfStatus o.status else none) with
+      if o.isOnBattlefield && o.status.attacking then
+        (g.defendingPlayerOfStatus o.status).filter (fun p => !(g.player p).lost)
+      else none) with
     | some p => p
     | none => g.opponent g.activePlayer
 
@@ -5389,7 +5397,11 @@ means the next opponent in turn order. -/
 def resolveAttackDestination (g : Game) (p : PlayerId) (defender : Option PlayerId) :
     Except String PlayerId :=
   match defender with
-  | none => .ok (g.opponent p)
+  | none =>
+    let d := g.opponent p
+    if d == p || (g.player d).lost || !(g.livingOpponents p).any (fun pl => pl.id == d) then
+      throw "no living opponent to attack"
+    else .ok d
   | some d =>
     if d == p then throw "cannot attack yourself"
     else if (g.player d).lost then throw s!"{(g.player d).name} has already lost"

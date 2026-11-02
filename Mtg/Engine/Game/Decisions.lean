@@ -72,19 +72,15 @@ partial def finishAndGrantPriority (g : Game)
       (g.pendingReplacement.bind priorityRecipientOfContinuation?).orElse
         (fun _ => g.outerPendingReplacements.findSomeRev? priorityRecipientOfContinuation?)
         |>.getD g.activePlayer) : Game :=
+  let anyContinuationGrantsPriority (g : Game) : Bool :=
+    g.pendingReplacement.any PendingReplacement.endsWithPriorityGrant ||
+      g.outerPendingReplacements.any PendingReplacement.endsWithPriorityGrant
   let alreadyGrants : Bool :=
-    g.pending == .none && g.afterRandom == .none &&
-      match g.outerPendingReplacements[0]? with
-      | some oldestOuter => oldestOuter.endsWithPriorityGrant
-      | none => g.pendingReplacement.any PendingReplacement.endsWithPriorityGrant
+    g.pending == .none && g.afterRandom == .none && anyContinuationGrantsPriority g
   let g := g.drainPendingContinuations
   if g.over then g
   else if let .chooseReplacement .. := g.pending then
-    let outerOrCurGrants : Bool :=
-      match g.outerPendingReplacements[0]? with
-      | some oldestOuter => oldestOuter.endsWithPriorityGrant
-      | none => g.pendingReplacement.any PendingReplacement.endsWithPriorityGrant
-    if outerOrCurGrants == true then g
+    if anyContinuationGrantsPriority g then g
     else g.chainPendingReplacement (.receivePriority p)
   else if g.pending != .none || g.afterRandom != .none || alreadyGrants then g
   else g.receivePriority p

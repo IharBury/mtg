@@ -11615,6 +11615,22 @@ private def mkThreePlayer18 (seed : UInt64 := 18) : Game :=
   | .ok g => (keepOpeningHands g 20).advanceStep
   | .error e => panic! e
 
+private def mkTwoHeadedGiant18 (seed : UInt64 := 180) : Game :=
+  let cfg : StartConfig := {
+    seats := #[
+      { name := "Chandra", deck := testRedDeck, teammate := some ⟨1⟩ },
+      { name := "Nissa", deck := testGreenDeck, teammate := some ⟨0⟩ },
+      { name := "Liliana", deck := testRedDeck, teammate := some ⟨3⟩ },
+      { name := "Jace", deck := testGreenDeck, teammate := some ⟨2⟩ }
+    ]
+    format := .constructed
+    seed
+    startingPlayer := some 0
+  }
+  match Start.start cfg with
+  | .ok g => (keepOpeningHands g 30).advanceStep
+  | .error e => panic! e
+
 -- 1. Nested-batch `currentBatch` cause isolation, 0-event pause replay parity, & single-writer `.ringBearer` clear.
 #guard
   -- 1a. Outer `withBatch none` wrapping inner `withBatch (some innerCause)` restores `none` after inner batch finishes!
@@ -11720,8 +11736,43 @@ private def mkThreePlayer18 (seed : UInt64 := 18) : Game :=
     match g1.pending with
     | .chooseReplacement _ cs => mustApply g1 me (.chooseReplacement cs[0]!)
     | _ => g1
+  -- Non-granting oldest outer frame (`[0] = .gainLife`) + priority-granting newer outer frame (`[1]`) or inner `pendingReplacement`:
+  -- `finishAndGrantPriority` must still see the existing priority grant and not append a duplicate `.receivePriority`.
+  let gNewerOuter0 : Game :=
+    ((afterDraw.change (.pushContinuationFrame {})).change
+      (.continuation (.pushOuterPendingReplacement (.gainLife me 1 (some testCause))))).change
+      (.continuation (.pushOuterPendingReplacement (.receivePriority opp18)))
+  let gNewerOuterB : Game := addPermanent gNewerOuter0 bear me me
+  let newerBear := (gNewerOuterB.battlefield.filter (·.name == bear.name))[0]!.id
+  let gNewerOuterB : Game :=
+    (gNewerOuterB.createEffect (.replacement { id := idCnt1, affectedPlayer := me, kind := .modifyCountersPut none (some .plusOnePlusOne) 1 1 }) (cause := some testCause)).createEffect
+      (.replacement { id := idCnt2, affectedPlayer := me, kind := .modifyCountersPut none (some .plusOnePlusOne) 0 3 }) (cause := some testCause)
+  let gNewerOuterPaused : Game :=
+    (gNewerOuterB.addPlusOnePlusOneTo (gNewerOuterB.object! newerBear) 1 (cause := some testCause)).finishAndGrantPriority me
+  let newerPausedNoDup : Bool :=
+    !gNewerOuterPaused.pendingReplacement.any PendingReplacement.endsWithPriorityGrant
+  let gNewerOuterDone : Game :=
+    let g1 := mustApply gNewerOuterPaused me (.chooseReplacement idCnt1)
+    match g1.pending with
+    | .chooseReplacement _ cs => mustApply g1 me (.chooseReplacement cs[0]!)
+    | _ => g1
+  let gInnerGrants0 : Game :=
+    (afterDraw.change (.pushContinuationFrame {})).change
+      (.continuation (.pushOuterPendingReplacement (.gainLife me 1 (some testCause))))
+  let gInnerGrantsB : Game := addPermanent gInnerGrants0 bear me me
+  let innerBear := (gInnerGrantsB.battlefield.filter (·.name == bear.name))[0]!.id
+  let gInnerGrantsB : Game :=
+    (gInnerGrantsB.createEffect (.replacement { id := idCnt1, affectedPlayer := me, kind := .modifyCountersPut none (some .plusOnePlusOne) 1 1 }) (cause := some testCause)).createEffect
+      (.replacement { id := idCnt2, affectedPlayer := me, kind := .modifyCountersPut none (some .plusOnePlusOne) 0 3 }) (cause := some testCause)
+  let gInnerGrantsPaused0 : Game :=
+    (gInnerGrantsB.addPlusOnePlusOneTo (gInnerGrantsB.object! innerBear) 1 (cause := some testCause)).chainPendingReplacement (.receivePriority opp18)
+  let gInnerGrantsPaused : Game := gInnerGrantsPaused0.finishAndGrantPriority me
+  let innerNoDup : Bool :=
+    gInnerGrantsPaused.pendingReplacement == gInnerGrantsPaused0.pendingReplacement
   let outerDeferPriorityOk : Bool :=
-    endsCheckOk && gOutDone.priority == opp18
+    endsCheckOk && gOutDone.priority == opp18 &&
+    newerPausedNoDup && gNewerOuterDone.priority == opp18 &&
+    innerNoDup
 
   -- 2b. `runLinkedExileBatch` Pass 2: returning a permanent with an ETB trigger via `linkedExile` runs Pass 2!
   let etbBearDef : CardDef := { bear with name := "Phase18 Linked ETB Bear", triggeredAbilities := #[.onEnterDraw 1] }
@@ -11773,7 +11824,7 @@ private def mkThreePlayer18 (seed : UInt64 := 18) : Game :=
   mustHold18 "2c.shuffleOwnerDrawOk" shuffleOwnerDrawOk &&
   mustHold18 "2d.sacPausedBeforeReflexive" sacPausedBeforeReflexive &&
   mustHold18 "2d.sacQueuedAfterRep" sacQueuedAfterRep &&
-  mustHold18 "2.replay" ([gOutPaused, gOutDone, gLk2, gShDone, gSacChosen, gSacAfterRep].all (fun g =>
+  mustHold18 "2.replay" ([gOutPaused, gOutDone, gNewerOuterPaused, gNewerOuterDone, gInnerGrantsPaused, gLk2, gShDone, gSacChosen, gSacAfterRep].all (fun g =>
     Game.replayEvents g.events == g && allRulesEventsClassified g))
 
 -- 3. CR 733.1 `.crew` / `.zemoBoastExile` & `reverseToProposalCheckpoint?` batch/linkedExile/lookedAt fidelity.
@@ -12452,11 +12503,43 @@ private def mkThreePlayer18 (seed : UInt64 := 18) : Game :=
     simBearPerm.size == 1 && simBearPerm[0]!.status.plusOnePlusOne == 0 &&
     laterBearPerm.size == 1 && laterBearPerm[0]!.status.plusOnePlusOne == 3
 
+  -- 9e. CR 102.2 / 810 Two-Headed Giant with no living opponents: `opponent`, `resolveAttackDestination`, `defendingPlayer`, and `beginStep .declareBlockers` never select a departed seat!
+  let g2hg0 : Game := mkTwoHeadedGiant18
+  let g2hgNoOpp : Game := (g2hg0.concede ⟨2⟩).concede ⟨3⟩
+  let atk2hg : ObjectId := ⟨g2hgNoOpp.nextObjectId⟩
+  let tokObj2hg : GameObject := {
+    id := atk2hg
+    printed := { bear with isToken := true }
+    owner := ⟨0⟩
+    controller := some ⟨0⟩
+    defaultController := some ⟨0⟩
+    zone := .battlefield
+    status := { summoningSick := true, attacking := true, attackingTarget := none }
+    timestamp := g2hgNoOpp.timestamp + 1
+  }
+  let g2hgUntargetedAtk : Game :=
+    g2hgNoOpp.record (GameEvent.created g2hgNoOpp.turnNumber ⟨0⟩ (g2hgNoOpp.snapshot tokObj2hg) (cause := testCause))
+  let g2hgBlockStep : Game := g2hgUntargetedAtk.beginStep .declareBlockers
+  let twoHeadedNoOppSafeOk : Bool :=
+    (g2hgNoOpp.livingOpponents ⟨0⟩).isEmpty &&
+    (g2hgNoOpp.livingOpponents ⟨1⟩).isEmpty &&
+    g2hgNoOpp.opponent ⟨0⟩ == ⟨0⟩ &&
+    g2hgNoOpp.opponent ⟨1⟩ == ⟨1⟩ &&
+    !(g2hgNoOpp.resolveAttackDestination ⟨0⟩ none).isOk &&
+    !(g2hgNoOpp.resolveAttackDestination ⟨1⟩ none).isOk &&
+    g2hgUntargetedAtk.defendingPlayer == ⟨0⟩ &&
+    !g2hgUntargetedAtk.hasLiveAttackDestination (g2hgUntargetedAtk.object! atk2hg) &&
+    g2hgBlockStep.step == .declareBlockers &&
+    g2hgBlockStep.blockersQueue.isEmpty &&
+    g2hgBlockStep.pending == .none &&
+    g2hgBlockStep.priority == ⟨0⟩
+
   mustHold18 "9a.turnStartBeforePhaseOk" turnStartBeforePhaseOk &&
   mustHold18 "9b.durationAndExpiryOk" durationAndExpiryOk &&
   mustHold18 "9c.phasedControlAndDepartedRulesOk" phasedControlAndDepartedRulesOk &&
   mustHold18 "9d.arwenPreBfOk" arwenPreBfOk &&
-  mustHold18 "9.replay" ([gBt2, gDuPhased, gDuCounterRemoved, gDuSrcMoved, g3PhEot, g3PhNext, gArwSim, gArwSeq].all (fun g =>
+  mustHold18 "9e.twoHeadedNoOppSafeOk" twoHeadedNoOppSafeOk &&
+  mustHold18 "9.replay" ([gBt2, gDuPhased, gDuCounterRemoved, gDuSrcMoved, g3PhEot, g3PhNext, gArwSim, gArwSeq, g2hgNoOpp, g2hgUntargetedAtk, g2hgBlockStep].all (fun g =>
     Game.replayEvents g.events == g && allRulesEventsClassified g))
 
 end Phase18EventAlignment

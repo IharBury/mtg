@@ -456,6 +456,7 @@ def everyAttackCosts (g : Game) (o : GameObject) : Bool :=
 or an unpaid attack cost means it does not have to attack (MSH 130). -/
 def mustAttackIfAble (g : Game) (o : GameObject) (attackRequiresCost := false) : Bool :=
   (g.hasAttacksIfAble o || o.status.goaded) && g.canAttack o &&
+    !(g.livingOpponents g.activePlayer).isEmpty &&
     !mustAttackCanDeclineIfOnlyAttackCosts (attackRequiresCost || g.everyAttackCosts o)
 
 /-- Failed Adventure from Bilbo's graveyard ability is exiled by Bilbo, not

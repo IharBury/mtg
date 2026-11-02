@@ -77,7 +77,10 @@ def hasLiveAttackDestination (g : Game) (source : GameObject) : Bool :=
   | some (.battle bId) =>
     !g.removedFromCombatThisCombat bId &&
       (g.findObject? bId).any (·.isOnBattlefield)
-  | none => !(g.player (g.defendingPlayerOf source)).lost
+  | none =>
+    let defn := g.defendingPlayerOf source
+    !(g.player defn).lost &&
+      (g.livingOpponents ((g.controllerOf source).getD g.activePlayer)).any (fun pl => pl.id == defn)
 
 /-- True when leftover combat damage may be assigned to the player or
 planeswalker `source` is attacking (unblocked, or trample while that attack

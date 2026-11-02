@@ -581,11 +581,14 @@ partial def beginStepBody (g : Game) (st : Step) : Game :=
     else
       let ps := g.defendingPlayers
       if ps.isEmpty then
-        if attackers.any (·.status.attackingTarget.isNone) then
-          g.changes #[.pending .declareBlockers, .blockersQueue #[g.opponent g.activePlayer]]
+        let opp := g.opponent g.activePlayer
+        if attackers.any (·.status.attackingTarget.isNone) &&
+            (g.livingOpponents g.activePlayer).any (fun pl => pl.id == opp) then
+          g.changes #[.pending .declareBlockers, .blockersQueue #[opp]]
         else
           -- CR 509.1 / 800.4: attackers remain (CR 506.4c), but every attacked
-          -- player has left the game; skip blocker declaration and grant priority.
+          -- player has left the game (or no living opponent remains); skip blocker
+          -- declaration and grant priority.
           (g.change (.blockersQueue #[])).receivePriority g.activePlayer
       else
         g.changes #[.pending .declareBlockers, .blockersQueue ps]
