@@ -5301,7 +5301,9 @@ blocker-retention / `playerControl` integrity, and CR 500.4 / 611.2a–b /
    - Complete CR 118.9 / 118.12 / 119.4b / 119.8 / 601.2h–i life-cost,
      `forObject`, and `CastEvent.spellCast` `fromZone` fidelity: compute
      `lifeInstead` (`PlayPermission.payLifeEqualManaValue`) before
-     `CastSpell.castSpell`'s zero-cost fast path
+     `CastSpell.castSpell`'s zero-cost fast-path return and require
+     `lifeInstead == 0` to take that fast path so `lifeInstead > 0` builds
+     `ProposedSpell` (`payLife := lifeInstead`)
      ([`CastSpell.lean`](Mtg/Engine/Game/CastSpell.lean)), include
      `prop.payLife > 0` in `Decisions.afterTargetsChosen` (`Decisions.lean`),
      and call `payLifeCost prop.caster prop.payLife (forObject := some prop.spellId)`
@@ -5336,11 +5338,15 @@ blocker-retention / `playerControl` integrity, and CR 500.4 / 611.2a–b /
    - Process `Triggers.putWaitingTrigger` and `Triggers.putTriggerBatch`
      ([`Triggers.lean`](Mtg/Engine/Game/Triggers.lean)) one trigger copy at a
      time with immediate target prompting: call `promptTriggerTargetsIfNeeded`
-     after each `put` in `putWaitingTrigger` and each `putWaitingTrigger` in
-     `putTriggerBatch`, stashing remaining copies / `WaitingTrigger`s
-     (`ordered := true`) whenever `g.pending != .none` so non-modal targeted
-     triggers announce targets in true placement order before later modal or
-     targeted batch triggers are placed on `g.stack` (CR 603.3b–d).
+     after each `put` in `putWaitingTrigger` (both on the `wt.checked` branch
+     and inside the `copies` loop before the existing `g.pending != .none`
+     check, where `promptTriggerTargetsIfNeeded` is a no-op if a mode prompt is
+     already open) so the existing `ordered := true` stashes in
+     `putWaitingTrigger` and `putTriggerBatch` cover both mode pauses and
+     `.chooseTargets` prompts without double-queuing remaining copies, ensuring
+     non-modal targeted triggers announce targets in true placement order before
+     later modal or targeted batch triggers are placed on `g.stack` (CR
+     603.3b–d).
    - Close modal and intervening-`"if"` trigger edge cases: drop the
      `(g.findObject? sid).isSome` guard in `FraChoices.answerFraChoice`
      `.stackTriggerUnusedMode` (`FraChoices.lean`) so
@@ -5368,11 +5374,14 @@ blocker-retention / `playerControl` integrity, and CR 500.4 / 611.2a–b /
      `EffectResolution` `.copyControlledAbility`
      ([`EffectResolution.lean`](Mtg/Engine/Game/EffectResolution.lean), CR
      608.2b / 707.10c / 800.4d): re-check `g.targetLegalAt` on
-     `.copyControlledAbility`, verify `copyStackSpell` / `copyStackAbility`
-     actually pushed a new copy onto `g.stack` (rather than falling back via
-     `.getD spell.id` / `.getD o.id` when `(g.player controller).lost`
-     suppresses copying under CR 800.4d), and open `.newTargetsForCopies` /
-     `offerSpellRetarget` only when the created copy has at least one target.
+     `.copyControlledAbility`, use `ResolutionEffects.copyStackSpellWithId` in
+     `copyCastTriggerSpell` and add `ResolutionEffects.copyStackAbilityWithId`
+     (`ResolutionEffects.lean`, returning `Game × Option ObjectId` with `none`
+     when `(g.player controller).lost` suppresses copying under CR 800.4d
+     instead of falling back via `(g.stack.back?.map (·.objectId)).getD` to the
+     original `spell.id` / `o.id`), and open `.newTargetsForCopies #[copyId]`
+     only when `some copyId` was returned and that copy's stack entry has
+     `!e.targets.isEmpty`.
    - Complete CR 608.2b multi-target & shared-constraint resolution legality:
      re-check per-target `g.targetLegalAt` / `g.playerCanBeTargetedBy` /
      `g.canBeTargetedBy` without aborting unaffected legal targets in
@@ -5386,11 +5395,19 @@ blocker-retention / `playerControl` integrity, and CR 500.4 / 611.2a–b /
      checking `playerCanBeTargetedBy` and `isLivingOpponentOf`), and
      `TriggeredAbilities.applyPut` graveyard targets (`TriggeredAbilities.lean`,
      validating expected owner/type per `what`); and enforce cross-target group
-     constraints (`.twoNonlandsSharingType` and
-     `.upToTwoCreaturesTotalMvAtMost n`) at resolution in
+     constraints at resolution: add explicit group-legality checks in
      `SpellResolution.targetsAllIllegalForKind`
-     ([`SpellResolution.lean`](Mtg/Engine/Game/SpellResolution.lean)) and
-     `Chapters.gainControlWhileSource` (`Chapters.lean`, CR 608.2b).
+     ([`SpellResolution.lean`](Mtg/Engine/Game/SpellResolution.lean)) so
+     `.twoNonlandsSharingType` (`slots == #[.nonland, .nonland]`) checks that
+     two surviving nonland targets still satisfy `g.sharesCardType` and
+     `.upToTwoCreaturesTotalMvAtMost n` (`slots == #[]`, where
+     `legalTargetsForAtomicKind` only checks individual `objectManaValue ≤ n`)
+     checks that the surviving legal creature targets' combined
+     `g.objectManaValue` is `≤ n`, and pass `maxTotalMv := some n` from
+     `Chapters.applyChapterEffect` `.gainControlOfUpToTwoCreaturesTotalMvAtMost n`
+     into `Chapters.gainControlWhileSource` (`Chapters.lean`, instead of
+     dropping `_n`) to enforce both per-creature and combined mana value `≤ n`
+     at resolution (CR 608.2b).
 3. Complete CR 704.5e / 707.10a off-stack copy zone moves, CR 303.4f–g
    single-card Aura `putOntoBattlefield`, simultaneous `Pumps` / `Chapters`
    batching, and CR 508.8 / 701.15b / 810 combat, goad, & Two-Headed Giant
@@ -5444,15 +5461,19 @@ blocker-retention / `playerControl` integrity, and CR 500.4 / 611.2a–b /
      `g.pending == .none` when `Turns.beginStepBody .declareBlockers` runs with
      `attackers.isEmpty`.
    - Complete Two-Headed Giant (`CR 102.3 / 810.2 / 810.5 / 702.11b–c /
-     702.21a`) opponent vs teammate checks: replace `!=` /
-     `!g.controlledBy o ctrl` with `!g.areTeammates` / `g.isLivingOpponentOf`
-     across Hexproof (`Core.playerCanBeTargetedBy` in `Core.lean` and
-     `Targeting.canBeTargetedBy` in
-     [`Targeting.lean`](Mtg/Engine/Game/Targeting.lean)), Ward
-     (`Core.queueWardsFor` and `matchTriggers` in `Core.lean`),
-     `"target permanent / creature or planeswalker an opponent controls"`
-     (`Targeting.lean` `.oppPermanent` and `.oppCreatureOrPlaneswalker`),
-     `Movement.exilesOppDeath?` (`Movement.lean`),
+     702.21a`) opponent vs teammate checks: add `Core.areTeammates` and
+     `Core.isLivingOpponentOf` in `Core.lean`, allow teammates through Hexproof
+     (`caster == target || g.areTeammates caster target || !g.playerHasHexproof target`
+     in `Core.playerCanBeTargetedBy`, `Core.lean`, and
+     `!g.hasHexproof o || g.controlledBy o caster || (g.controllerOf o).any (g.areTeammates · caster)`
+     in `Targeting.canBeTargetedBy`,
+     [`Targeting.lean`](Mtg/Engine/Game/Targeting.lean)), skip teammates on Ward
+     in `Core.matchTriggers` (`c != actor && !board.areTeammates c actor` in
+     `Core.lean`), and use `!g.areTeammates` / `g.isLivingOpponentOf` in
+     `Targeting.legalFilteredTargets` `.player` (`.opponent` / `.eachOpponent`)
+     and `Targeting.legalTargetsForAtomicKind` (`.oppPermanent` and
+     `.oppCreatureOrPlaneswalker`), `Movement.exileInsteadSource?`
+     (`p != q && !g.areTeammates p q` in `Movement.lean`),
      `Core.countOpponentArtifacts` (`Core.lean`), opponent trigger matchers in
      `Core.matchTriggers` (`Core.lean`), and opponent resolution helpers
      (`FraAbilities.lean`, `TriggeredAbilities.lean`, `FraResolve.lean`,
