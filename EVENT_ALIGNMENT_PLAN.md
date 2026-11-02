@@ -4588,7 +4588,7 @@ CR 800.4a/h leave-game continuation handling, CR 702.131a/b/d `citysBlessing` /
      checks for `SharedTrigger.copySelfNonlegendary` (*The Notary Hobbits*,
      `!isToken`, plus CR 113.7a / 608.2h LKI copy fallback when the source left
      `.battlefield`), `SharedTrigger.drawIfAttackedOrEnteredSubtype` (*Avengers
-     Mansion* / *Avengers Assembled*), `FrcEffect.gingerbrute` (`isMonarch`),
+     Assemble!*), `FrcEffect.gingerbrute` (`isMonarch`),
      and `FrcEffect.obAngel` (`loggedLifeGained > 0`, CR 603.4 / 608.2a); align
      `FrcEffect.tamiyoStun` (*"Whenever one or more creatures deal combat damage
      to you while you're the monarch"*, *Tamiyo, Upriser Crowned*) with CR 603.2
@@ -4667,9 +4667,8 @@ CR 800.4a/h leave-game continuation handling, CR 702.131a/b/d `citysBlessing` /
      `EffectResolution.lean`, `FraResolve.lean`, `TriggeredAbilities.lean`,
      `ModeledTriggers.lean`, CR 608.2b / 702.11b / 702.16b / 702.18a); guard
      `!snap.phasedOut` on battlefield `ZoneEvent.ceasedToExist`
-     leaves-the-battlefield matching (`Core.matchTriggers`,
-     `Core.triggeredAbilities`, and `GameEvent.matchesTrigger` in `Core.lean`
-     and `Event.lean`, CR 603.6c / 702.26b); deduplicate
+     leaves-the-battlefield matching (`Core.matchTriggers` in `Core.lean` and
+     `GameEvent.matchesTrigger` in `Event.lean`, CR 603.6c / 702.26b); deduplicate
      `.fra .opponentDealtNoncombatDamage` once per damaged opponent per
      `DamageEvent.dealt` batch (`Core.matchTriggers` in `Core.lean`, CR 603.2c);
      and complete `GameEvent.matchesTrigger` (`Event.lean`) for the remaining
