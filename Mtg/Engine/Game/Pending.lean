@@ -507,13 +507,13 @@ inductive FraChoice where
   | daredevilMayExile (sourceId : Option ObjectId)
   /-- You may choose a new target for one slot of `spellId`, or decline to
   keep it. `index` walks the spell's targets (Speedball). -/
-  | mayChangeSpellTarget (spellId : ObjectId) (index : Nat)
+  | mayChangeSpellTarget (spellId : ObjectId) (index : Nat) (staged : Array Target := #[])
   /-- Choose a new target for the first of `copies`, or decline to keep its
   target; then the rest. -/
   | newTargetsForCopies (copies : Array ObjectId)
   /-- Choose a new target for slot `slotIdx` (`> 0`) of `copies[0]`, or decline
   to keep that slot's target; then advance to the next slot or copy (CR 707.10c). -/
-  | newTargetsForCopySlot (copies : Array ObjectId) (slotIdx : Nat)
+  | newTargetsForCopySlot (copies : Array ObjectId) (slotIdx : Nat) (staged : Array Target := #[])
   /-- Separate `looked` into a face-up pile (the chosen cards) and a face-down
   pile (Riddles in the Dark). An empty pile is legal. -/
   | riddlesSplit (looked : Array ObjectId)

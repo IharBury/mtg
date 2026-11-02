@@ -82,12 +82,13 @@ partial def drawOneWithReplacements (g : Game) (p : PlayerId)
                   kind := .replaceDraw p 2 true }, 2)
         for (_, eff) in g.activeEffects do
           match eff with
-          | .replacement spec _ =>
-            match spec.kind with
-            | .replaceDraw who factor exceptFirst =>
-              if who == p && (!exceptFirst || !firstOfYourDrawStep) then
-                acc := acc.push (spec, factor)
-            | _ => pure ()
+          | .replacement spec d =>
+            if g.durationActive d then
+              match spec.kind with
+              | .replaceDraw who factor exceptFirst =>
+                if who == p && (!exceptFirst || !firstOfYourDrawStep) then
+                  acc := acc.push (spec, factor)
+              | _ => pure ()
           | _ => pure ()
         return acc
     let candidates := specs.map (fun (s, _) => (ReplacementOrPrevention.replacement s).toCandidate)
@@ -181,8 +182,21 @@ def beginRecruit (g : Game) (p : PlayerId) : Game :=
   else
     g.finishBeginRecruit p
 
+/-- Complete the post-move log of `returnStackSpell` if the spell actually
+entered its owner's hand (rather than redirecting to exile, e.g. under CR 702.34a). -/
+def finishReturnStackSpell (g : Game) (spellId : ObjectId) (owner : PlayerId)
+    (name : String) : Game :=
+  if (g.followMovedToZone? spellId (· == .hand owner)).isSome then
+    g.logMsg s!"{name} is returned to {(g.player owner).name}'s hand"
+  else g
+
 /-- Return a spell on the stack to its owner's hand. -/
 def returnStackSpell (g : Game) (spellId : ObjectId) : Game :=
+  if let .chooseReplacement .. := g.pending then
+    let owner := (g.findObject? spellId).map (·.owner) |>.getD g.activePlayer
+    let name := (g.findObject? spellId).map (·.name) |>.getD ""
+    g.chainPendingReplacement (.returnStackSpell spellId owner name false)
+  else
   match g.findObject? spellId with
   | none => g.logMsg "The spell is no longer on the stack"
   | some o =>
@@ -192,7 +206,10 @@ def returnStackSpell (g : Game) (spellId : ObjectId) : Game :=
       let name := o.name
       let owner := o.owner
       let (g, _) := g.move spellId (.hand owner) none
-      g.logMsg s!"{name} is returned to {(g.player owner).name}'s hand"
+      if let .chooseReplacement .. := g.pending then
+        g.chainPendingReplacement (.returnStackSpell spellId owner name true)
+      else
+        g.finishReturnStackSpell spellId owner name
 
 /-- True when a `--norandom` result is still required. -/
 def pendingRandom? (g : Game) : Option RandomRequest :=

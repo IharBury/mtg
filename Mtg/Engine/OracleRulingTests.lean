@@ -1767,19 +1767,16 @@ def enterPermanent (g : Game) (card : CardDef) (p : PlayerId) : Game :=
   else
     g.afterPermanentEnters (g.object! newId)
 
-/-- Arwen and another creature enter as one event (same `asOf` cutoff). -/
+/-- Arwen and another creature enter as one event (same batch). -/
 def enterTogether (g : Game) (a b : CardDef) (p : PlayerId) : Game :=
   let g := addToHand g a p
   let g := addToHand g b p
   let idA := (handCardNamed g p a.name).id
   let idB := (handCardNamed g p b.name).id
-  let asOf := g.timestamp
-  let (g, newA) := g.putOntoBattlefield idA p (summoningSick := false)
-    (applyHope := false)
-  let (g, newB) := g.putOntoBattlefield idB p (summoningSick := false)
-    (applyHope := false)
-  let g := g.applyHopeEnterCounters (g.object! newA) asOf
-  g.applyHopeEnterCounters (g.object! newB) asOf
+  g.withBatch none fun g =>
+    let (g, _) := g.putOntoBattlefield idA p (summoningSick := false)
+    let (g, _) := g.putOntoBattlefield idB p (summoningSick := false)
+    g
 
 def countWaiting (g : Game) (ab : TriggeredAbility) : Nat :=
   g.waitingTriggers.filter (fun wt => wt.ability == ab) |>.size

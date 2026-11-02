@@ -114,11 +114,12 @@ def applyConnive (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
                 kind := .extraDrawOnConnive controller 1 }, 1)
         for (_, eff) in g.activeEffects do
           match eff with
-          | .replacement spec _ =>
-            match spec.kind with
-            | .extraDrawOnConnive who n =>
-              if who == controller then specs := specs.push (spec, n)
-            | _ => pure ()
+          | .replacement spec d =>
+            if g.durationActive d then
+              match spec.kind with
+              | .extraDrawOnConnive who n =>
+                if who == controller then specs := specs.push (spec, n)
+              | _ => pure ()
           | _ => pure ()
         let candidates := specs.map (fun (s, _) => (ReplacementOrPrevention.replacement s).toCandidate)
         match g.selectNextReplacementStep candidates curApplied with
@@ -347,11 +348,17 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
     else
       let preBf := g.battlefield
       let wardCause := EventCause.costPayment .ward p (some spellId)
+      let outerCont? := g.pendingReplacement
+      let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
       let g := g.change (.pending .none)
       let g := g.withBatch (some wardCause) fun g =>
         g.sacrificePermanentsLoop (chosen'.map ((p, ·)))
           (preBattlefield := some preBf)
           (cause := some wardCause)
+      let g :=
+        match outerCont? with
+        | some outer => g.chainPendingReplacement outer
+        | none => g
       return g.afterWardResolved
   | .payWard q spellId .sacrificeLegendary =>
     if p != q then
@@ -359,9 +366,15 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
     let some sac := g.findObject? id | throw "no such object"
     if !(g.legendaryWardSacrificeChoices p).any (fun o => o.id == id) then
       throw s!"Can't sacrifice {g.name sac} to pay ward"
+    let outerCont? := g.pendingReplacement
+    let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
     let g := (g.change (.pending .none)).sacrificeToGraveyard sac
       s!"{(g.player p).name} sacrifices {g.name sac} (ward)"
       (cause := some (.costPayment .ward p (some spellId)))
+    let g :=
+      match outerCont? with
+      | some outer => g.chainPendingReplacement outer
+      | none => g
     return g.afterWardResolved
   | .maySacArtifactOrDiscard q n =>
     if p != q then

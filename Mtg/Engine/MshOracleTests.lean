@@ -2825,7 +2825,7 @@ def speedballMayRetargetOk : Bool :=
     | some e => e.targets[0]?
     | none => none
   match g.pending with
-  | .fraChoice _ (.mayChangeSpellTarget _ 0) =>
+  | .fraChoice _ (.mayChangeSpellTarget _ 0 _) =>
     let kept := mustApply g ⟨0⟩ .decline
     target0 kept == some (Target.permanent speed.id) &&
       (let changed := mustApply g ⟨0⟩ (.choosePermanents #[bears.id])

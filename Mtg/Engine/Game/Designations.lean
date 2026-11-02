@@ -41,7 +41,7 @@ def hasTheRing (g : Game) (p : PlayerId) : Bool :=
 def theRingAbilityCount (g : Game) (p : PlayerId) : Nat :=
   (g.player p).theRingAbilities
 
-/-- Whether `o` is `p`'s Ring-bearer (CR 701.54a / 701.54c). -/
+/-- Whether `o` is `p`'s Ring-bearer (CR 701.54a / 701.54e). -/
 def isRingBearer (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
   o.isOnBattlefield && (g.player p).ringBearerId == some o.id && g.controlledBy o p
 
@@ -65,7 +65,9 @@ def setRingBearer (g : Game) (p : PlayerId) (chosen : Option ObjectId)
         match g.findObject? oldId with
         | some oldObj =>
           g.record (GameEvent.designation g.turnNumber (g.snapshot oldObj) .ringBearer false (cause := effCause))
-        | none => g
+        | none =>
+          let snap := (g.lastKnownBefore? oldId).getD { id := some oldId }
+          g.record (GameEvent.designation g.turnNumber snap .ringBearer false (cause := effCause))
     | none => g
   match chosen with
   | none => g

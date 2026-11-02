@@ -141,12 +141,13 @@ def destroyPermanent (g : Game) (o : GameObject)
       }
     for (_, eff) in g.activeEffects do
       match eff with
-      | .replacement spec _ =>
-        match spec.kind with
-        | .shieldCounterDestroy tid =>
-          if tid == o.id && o.status.shield > 0 then
-            s := s.push { spec with affectedPlayer := affected }
-        | _ => pure ()
+      | .replacement spec d =>
+        if g.durationActive d then
+          match spec.kind with
+          | .shieldCounterDestroy tid =>
+            if tid == o.id && o.status.shield > 0 then
+              s := s.push { spec with affectedPlayer := affected }
+          | _ => pure ()
       | _ => pure ()
     return s
   let candidates := mutSpecs.map (fun s => (ReplacementOrPrevention.replacement s).toCandidate)
@@ -171,10 +172,11 @@ def preventsAllDamageTo (g : Game) (o : GameObject) : Bool :=
     | _ => false) ||
   g.activeEffects.any (fun (_, eff) =>
     match eff with
-    | .prevention spec _ =>
-      match spec.kind with
-      | .preventAllDamageToPermanent tid => tid == o.id
-      | _ => false
+    | .prevention spec d =>
+      g.durationActive d &&
+        match spec.kind with
+        | .preventAllDamageToPermanent tid => tid == o.id
+        | _ => false
     | _ => false)
 
 /-- Result of running the CR 616.1 replacement and prevention loop on proposed damage. -/
@@ -267,16 +269,6 @@ def replaceDamage (g : Game) (n : Int)
       let mut items : Array ReplacementOrPrevention := #[]
       -- 1. Preventions (when damage is preventable)
       if !unpreventable then
-        if let some src := src? then
-          for gid in g.preventDamageGrantedBy src do
-            if g.grantorStillInPlay gid then
-              items := items.push (.prevention {
-                id := { kind := .preventDamageGrantedBy, object := some src.id, grantor := some gid }
-                source := some gid
-                controller := (g.findObject? gid).bind g.controllerOf
-                affectedPlayer := affected
-                kind := .preventAllDamageFromSource src.id
-              })
         if let some o := recipientPerm? then
           if let some src := src? then
             if g.frcProtectedFrom o src then
@@ -316,22 +308,24 @@ def replaceDamage (g : Game) (n : Int)
             })
         for (_, eff) in g.activeEffects do
           match eff with
-          | .prevention spec _ =>
-            let matchesTarget : Bool :=
-              match spec.kind with
-              | .preventAllDamageToPermanent tid =>
-                recipientPerm?.any (·.id == tid)
-              | .preventAllDamageFromSource sid =>
-                src?.any (·.id == sid)
-              | .protectionPreventDamage tid sid =>
-                recipientPerm?.any (·.id == tid) && src?.any (·.id == sid)
-              | .protectionFromEverythingPlayer pid =>
-                recipientPlayer? == some pid
-              | .shieldCounterPreventDamage tid =>
-                recipientPerm?.any (fun o => o.id == tid && (o.status.shield > 0 || alreadyRemovedShield)) &&
-                  !shieldRemoved && !curApplied.contains spec.id
-            if matchesTarget then
-              items := items.push (.prevention { spec with affectedPlayer := affected })
+          | .prevention spec d =>
+            if g.durationActive d then
+              let matchesTarget : Bool :=
+                match spec.kind with
+                | .preventAllDamageToPermanent tid =>
+                  recipientPerm?.any (·.id == tid)
+                | .preventAllDamageFromSource sid =>
+                  src?.any (·.id == sid)
+                | .protectionPreventDamage tid sid =>
+                  recipientPerm?.any (·.id == tid) && src?.any (·.id == sid)
+                | .protectionFromEverythingPlayer pid =>
+                  recipientPlayer? == some pid
+                | .shieldCounterPreventDamage tid =>
+                  recipientPerm?.any (fun o => o.id == tid && (o.status.shield > 0 || alreadyRemovedShield)) &&
+                    !shieldRemoved && !curApplied.contains spec.id
+              if matchesTarget then
+                let ctrl := spec.controller.orElse (fun _ => spec.source.bind g.findObject? |>.bind g.controllerOf)
+                items := items.push (.prevention { spec with controller := ctrl, affectedPlayer := affected })
           | _ => pure ()
       -- 2. Damage-increasing and damage-multiplying replacements
       if let some src := src? then
@@ -380,15 +374,16 @@ def replaceDamage (g : Game) (n : Int)
           | _, _ => pure ()
       for (_, eff) in g.activeEffects do
         match eff with
-        | .replacement spec _ =>
-          match spec.kind with
-          | .addNoncombatDamage sid bonus =>
-            if !combat && (sid.isNone || src?.any (fun s => some s.id == sid)) && bonus > 0 then
-              items := items.push (.replacement { spec with affectedPlayer := affected })
-          | .multiplyDamage sid _ =>
-            if sid.isNone || src?.any (fun s => some s.id == sid) then
-              items := items.push (.replacement { spec with affectedPlayer := affected })
-          | _ => pure ()
+        | .replacement spec d =>
+          if g.durationActive d then
+            match spec.kind with
+            | .addNoncombatDamage sid bonus =>
+              if !combat && (sid.isNone || src?.any (fun s => some s.id == sid)) && bonus > 0 then
+                items := items.push (.replacement { spec with affectedPlayer := affected })
+            | .multiplyDamage sid _ =>
+              if sid.isNone || src?.any (fun s => some s.id == sid) then
+                items := items.push (.replacement { spec with affectedPlayer := affected })
+            | _ => pure ()
         | _ => pure ()
       let candidates := items.map ReplacementOrPrevention.toCandidate
       match g.selectNextReplacementStep candidates curApplied curOrder with
@@ -571,11 +566,12 @@ def gainLife (g : Game) (p : PlayerId) (n : Nat)
             let mut specs : Array (ReplacementSpec × Nat × Nat) := #[]
             for (_, eff) in g.activeEffects do
               match eff with
-              | .replacement spec _ =>
-                match spec.kind with
-                | .modifyLifeGain who add mult =>
-                  if who == p then specs := specs.push (spec, add, mult)
-                | _ => pure ()
+              | .replacement spec d =>
+                if g.durationActive d then
+                  match spec.kind with
+                  | .modifyLifeGain who add mult =>
+                    if who == p then specs := specs.push (spec, add, mult)
+                  | _ => pure ()
               | _ => pure ()
             let candidates := specs.map (fun (s, _, _) => (ReplacementOrPrevention.replacement s).toCandidate)
             match g.selectNextReplacementStep candidates curApplied curOrder with
@@ -884,7 +880,9 @@ def fightCreatures (g : Game) (src dest : GameObject)
 (CR 119.3). Loss of life is not damage (CR 119.3 / 120.3). -/
 def loseLife (g : Game) (p : PlayerId) (n : Nat)
     (cause : Option EventCause := none) : Game :=
-  if n == 0 then g
+  if let .chooseReplacement .. := g.pending then
+    if n == 0 then g else g.chainPendingReplacement (.loseLifeAfterDraw p n cause)
+  else if n == 0 then g
   else
     let pl := g.player p
     if g.lifeLocked p || g.lifeCantChange p then
@@ -899,16 +897,23 @@ greater than `p`'s current life total, `p` gains the difference via `gainLife`;
 if less, `p` loses the difference. -/
 def setLife (g : Game) (p : PlayerId) (life : Int) (msg : String)
     (cause : Option EventCause := none) : Game :=
-  let pl := g.player p
-  if g.lifeLocked p || g.lifeCantChange p then
-    g.logMsg msg
-  else if life > pl.life then
-    (g.gainLife p (life - pl.life).toNat (cause := cause)).logMsg msg
-  else if life < pl.life then
-    let effCause := g.resolveOptionalCause cause (fallbackCtrl := some p)
-    (g.record (GameEvent.life g.turnNumber p (pl.life - life).toNat false (cause := effCause))).logMsg msg
+  if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement (.setLife p life msg cause)
   else
-    g.logMsg msg
+    let pl := g.player p
+    if g.lifeLocked p || g.lifeCantChange p then
+      g.logMsg msg
+    else if life > pl.life then
+      let g := g.gainLife p (life - pl.life).toNat (cause := cause)
+      if let .chooseReplacement .. := g.pending then
+        g.chainPendingReplacement (.logMessage msg)
+      else
+        g.logMsg msg
+    else if life < pl.life then
+      let effCause := g.resolveOptionalCause cause (fallbackCtrl := some p)
+      (g.record (GameEvent.life g.turnNumber p (pl.life - life).toNat false (cause := effCause))).logMsg msg
+    else
+      g.logMsg msg
 
 /-- Each opponent of `controller` loses `n` life under one shared
 `.oneShotEffect` cause when resolving (CR 119.3 / 610.1). -/

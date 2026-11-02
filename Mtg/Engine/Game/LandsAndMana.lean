@@ -32,9 +32,13 @@ def finishPlayLand (g : Game) (p : PlayerId) (id : ObjectId) (tapped : Bool := f
     if let .chooseReplacement .. := g.pending then
       g.chainPendingReplacement (.afterLastPermanentEnters (some id) (isPlayLand := true))
     else
-      let entered := g.object! newId
-      let g := if entered.status.tapped then g.logMsg s!"{card.name} enters tapped" else g
-      g.afterLandEnters entered
+      match g.findObject? newId with
+      | some entered =>
+        if !entered.isOnBattlefield then g
+        else
+          let g := if entered.status.tapped then g.logMsg s!"{card.name} enters tapped" else g
+          g.afterLandEnters entered
+      | none => g
 
 def playLand (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game := do
   if !g.canPlayLand p then

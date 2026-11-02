@@ -714,7 +714,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { targeting := .of .creatureYouControl, allowsZeroTargets := true,
       resolution := .exile .target .nextEndStep }
   | .tapOrUntapNonland =>
-    { targeting := .of .nonland,
+    { targeting := .of .nonland, allowsZeroTargets := true,
       resolution := .or [.tap .target, .untap] }
   | .createFoodOrTreasure =>
     { resolution := .or

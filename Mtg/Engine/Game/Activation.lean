@@ -221,12 +221,6 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
     (abilityEffect := if ab.isModal then none else some effect)
   let newId := abilityObj.id
   let g := g.logMsg s!"{pl.name} begins activating {o.name}"
-  if ab.cost.fra == .zemoBoast then
-    return (g.change (.pending (.fraChoice p (.zemoBoastExile newId id)))).logMsg
-      s!"{pl.name} chooses black cards to exile from their graveyard"
-  if let .crew n := ab.cost.fra then
-    return (g.change (.pending (.fraChoice p (.crew newId id n)))).logMsg
-      s!"{pl.name} chooses untapped creatures with total power {n} or more to crew {o.name}"
   let manaCost := g.activationManaCost p ab (some o)
   let prop : ProposedSpell := {
     caster := p
@@ -250,6 +244,16 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
     loyaltyX
     removePlusOneX := ab.cost.removeAnyNumberPlusOne
   }
+  if ab.cost.fra == .zemoBoast then
+    return (g.changes #[
+      .proposedSpell (some prop),
+      .pending (.fraChoice p (.zemoBoastExile newId id))]).logMsg
+      s!"{pl.name} chooses black cards to exile from their graveyard"
+  if let .crew n := ab.cost.fra then
+    return (g.changes #[
+      .proposedSpell (some prop),
+      .pending (.fraChoice p (.crew newId id n))]).logMsg
+      s!"{pl.name} chooses untapped creatures with total power {n} or more to crew {o.name}"
   if !ab.isModal && !ab.effect.requiresTarget && !loyaltyX &&
       !ab.cost.removeAnyNumberPlusOne &&
       !ab.cost.mana.includesManaPayment && !ab.cost.mana.containsX &&

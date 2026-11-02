@@ -235,49 +235,50 @@ def mustApply (g : Game) (p : PlayerId) (a : Action) : Game :=
 
 /-- Apply the idle action for whoever must act: empty combat declarations or pass. -/
 @[noinline] def applyIdle (g : Game) : Game :=
+  let p := g.rawActor.getD ⟨0⟩
   match g.pending, g.actor with
   | .resolveRandom _, _ =>
     g.resolveRandom
-  | .declareAttackers, some p =>
-    mustApply g p (.declareAttackers #[])
-  | .declareBlockers, some p =>
-    mustApply g p (.declareBlockers #[])
-  | .declareMulligan _, some p =>
-    mustApply g p .keep
-  | .putOnBottom _ n, some p =>
-    mustApply g p (.putOnBottom ((g.player p).hand.extract 0 n))
-  | .scry _ n _, some p =>
-    mustApply g p (.scry (g.scryLookedIds p n) #[])
-  | .surveil _ n _, some p =>
-    mustApply g p (.surveil (g.scryLookedIds p n) #[])
-  | .mayDiscardDraw _ _, some p =>
-    mustApply g p .decline
-  | .chooseTeamwork _, some p =>
-    mustApply g p (.announceTeamwork false)
-  | .chooseTeamworkCreatures _ need, some p =>
-    mustApply g p (.choosePermanents (g.pickTeamworkCreatures p need))
-  | .chooseAdditionalCost _, some p =>
+  | .declareAttackers, some actor =>
+    mustApply g actor (.declareAttackers #[])
+  | .declareBlockers, some actor =>
+    mustApply g actor (.declareBlockers #[])
+  | .declareMulligan _, some actor =>
+    mustApply g actor .keep
+  | .putOnBottom _ n, some actor =>
+    mustApply g actor (.putOnBottom ((g.player p).hand.extract 0 n))
+  | .scry _ n _, some actor =>
+    mustApply g actor (.scry (g.scryLookedIds p n) #[])
+  | .surveil _ n _, some actor =>
+    mustApply g actor (.surveil (g.scryLookedIds p n) #[])
+  | .mayDiscardDraw _ _, some actor =>
+    mustApply g actor .decline
+  | .chooseTeamwork _, some actor =>
+    mustApply g actor (.announceTeamwork false)
+  | .chooseTeamworkCreatures _ need, some actor =>
+    mustApply g actor (.choosePermanents (g.pickTeamworkCreatures p need))
+  | .chooseAdditionalCost _, some actor =>
     match g.proposedSpell with
     | none => panic! "expected a proposed spell while choosing an additional cost"
     | some prop =>
-      mustApply g p (.chooseAdditionalCost (g.additionalCostChoosesGeneric p prop))
-  | .discardForAdditionalCost p, some _ =>
-    match (g.player p).hand.back? with
+      mustApply g actor (.chooseAdditionalCost (g.additionalCostChoosesGeneric p prop))
+  | .discardForAdditionalCost seat, some actor =>
+    match (g.player seat).hand.back? with
     | none => panic! "no card to discard as an additional cost"
-    | some id => mustApply g p (.discard id)
-  | .chooseSacrificeCreature p _ _, some _ =>
-    match (g.creaturesControlledBy p)[0]? with
+    | some id => mustApply g actor (.discard id)
+  | .chooseSacrificeCreature seat _ _, some actor =>
+    match (g.creaturesControlledBy seat)[0]? with
     | none => panic! "no creature to sacrifice"
-    | some o => mustApply g p (.sacrifice o.id)
-  | .chooseDiscardCard p _, some _ =>
-    match (g.player p).hand.back? with
+    | some o => mustApply g actor (.sacrifice o.id)
+  | .chooseDiscardCard seat _, some actor =>
+    match (g.player seat).hand.back? with
     | none => panic! "no card to discard"
-    | some id => mustApply g p (.discard id)
-  | .sacrificeCreature _, some p =>
+    | some id => mustApply g actor (.discard id)
+  | .sacrificeCreature _, some actor =>
     match (g.sacrificeCreatureChoices p)[0]? with
-    | some sac => mustApply g p (.sacrifice sac.id)
+    | some sac => mustApply g actor (.sacrifice sac.id)
     | none => panic! "expected a creature to sacrifice"
-  | .chooseMode _, some p =>
+  | .chooseMode _, some actor =>
     match g.proposedSpell with
     | none => panic! "expected a proposed spell or ability while choosing a mode"
     | some prop =>
@@ -285,82 +286,88 @@ def mustApply (g : Game) (p : PlayerId) (a : Action) : Game :=
       | .activatedAbility =>
         match g.defaultAbilityMode p prop.abilityModes with
         | none => panic! "no legal mode (CR 601.2b)"
-        | some idx => mustApply g p (.chooseMode idx)
+        | some idx => mustApply g actor (.chooseMode idx)
       | .spell =>
         match g.findObject? prop.spellId with
         | none => panic! "expected a proposed spell while choosing a mode"
         | some spell =>
-          if !(g.chosenModesOf spell).isEmpty then mustApply g p .decline else
+          if !(g.chosenModesOf spell).isEmpty then mustApply g actor .decline else
           match g.defaultMode p spell with
           | none => panic! "no legal mode (CR 601.2b)"
-          | some i => mustApply g p (.chooseMode i)
+          | some i => mustApply g actor (.chooseMode i)
       | .turnFaceUp => panic! "unexpected mode choice for turnFaceUp"
-  | .chooseX _, some p =>
-    mustApply g p (.chooseX 0)
-  | .assignCombatDamage _ _, some p =>
-    mustApply g p (.assignCombatDamage #[])
-  | .chooseLegend _ _ ids, some p =>
-    mustApply g p (.keepLegend (g.defaultLegendToKeep ids))
-  | .chooseTriggerToStack p, some _ =>
-    mustApply g p (.stackTriggers (g.defaultTriggerSourceIds p))
-  | .mayPayGeneric _ _, some p =>
-    mustApply g p .decline
-  | .chooseLibraryPlacement _ _, some p =>
-    mustApply g p .chooseBottom
-  | .mayAttachEquipment _ _, some p =>
-    mustApply g p .decline
-  | .mayResolve _, some p =>
-    mustApply g p .decline
-  | .tapHumans _, some p =>
-    mustApply g p .decline
-  | .payOrLetCounter _ _ _, some p =>
-    mustApply g p .decline
-  | .payWard _ _ _, some p =>
-    mustApply g p .decline
-  | .recruitDiscard _, some p =>
+  | .chooseX _, some actor =>
+    mustApply g actor (.chooseX 0)
+  | .assignCombatDamage _ _, some actor =>
+    mustApply g actor (.assignCombatDamage #[])
+  | .chooseLegend _ _ ids, some actor =>
+    mustApply g actor (.keepLegend (g.defaultLegendToKeep ids))
+  | .chooseTriggerToStack seat, some actor =>
+    mustApply g actor (.stackTriggers (g.defaultTriggerSourceIds seat))
+  | .mayPayGeneric _ _, some actor =>
+    mustApply g actor .decline
+  | .chooseLibraryPlacement _ _, some actor =>
+    mustApply g actor .chooseBottom
+  | .mayAttachEquipment _ _, some actor =>
+    mustApply g actor .decline
+  | .mayResolve _, some actor =>
+    mustApply g actor .decline
+  | .tapHumans _, some actor =>
+    mustApply g actor .decline
+  | .payOrLetCounter _ _ _, some actor =>
+    mustApply g actor .decline
+  | .payWard _ _ (.sacrificePermanents _ paid chosen), some actor =>
+    if paid > 0 then
+      match ((g.permanentsOf p).filter (fun o => !chosen.contains o.id))[0]? with
+      | some o => mustApply g actor (.sacrifice o.id)
+      | none => mustApply g actor .decline
+    else mustApply g actor .decline
+  | .payWard _ _ _, some actor =>
+    mustApply g actor .decline
+  | .recruitDiscard _, some actor =>
     match (g.player p).hand.back? with
     | none => panic! "no card to discard for recruit"
-    | some id => mustApply g p (.discard id)
-  | .maySacrificeAnotherBolg _ _, some p =>
-    mustApply g p .decline
-  | .mayCastFromLooked _ _ _, some p =>
-    mustApply g p .decline
-  | .mayPutLandFromHand _, some p =>
-    mustApply g p .decline
-  | .chooseTriggerOr _, some p =>
-    mustApply g p (.chooseMode 0)
-  | .maySacArtifactOrDiscard _ _, some p =>
-    mustApply g p .decline
-  | .mayPutArtifactFromHand _ _, some p =>
-    mustApply g p .decline
-  | .mayHaveVillainConnive _ _ _, some p =>
-    mustApply g p .decline
-  | .mayCastExiledElseDamage .., some p =>
-    mustApply g p .decline
-  | .chooseProliferate _ _, some p =>
-    mustApply g p (.targets #[])
-  | .fraChoice _ choice, some p =>
-    mustApply g p (g.defaultFraAction p choice)
-  | .chooseReplacement p choices, _ =>
-    let chosen := (g.defaultReplacementId p choices).getD choices[0]!
-    mustApply g p (.chooseReplacement chosen)
-  | .chooseTargets _, some p =>
+    | some id => mustApply g actor (.discard id)
+  | .maySacrificeAnotherBolg _ _, some actor =>
+    mustApply g actor .decline
+  | .mayCastFromLooked _ _ _, some actor =>
+    mustApply g actor .decline
+  | .mayPutLandFromHand _, some actor =>
+    mustApply g actor .decline
+  | .chooseTriggerOr _, some actor =>
+    mustApply g actor (.chooseMode 0)
+  | .maySacArtifactOrDiscard _ _, some actor =>
+    mustApply g actor .decline
+  | .mayPutArtifactFromHand _ _, some actor =>
+    mustApply g actor .decline
+  | .mayHaveVillainConnive _ _ _, some actor =>
+    mustApply g actor .decline
+  | .mayCastExiledElseDamage .., some actor =>
+    mustApply g actor .decline
+  | .chooseProliferate _ _, some actor =>
+    mustApply g actor (.targets #[])
+  | .fraChoice _ choice, some actor =>
+    mustApply g actor (g.defaultFraAction p choice)
+  | .chooseReplacement seat choices, some actor =>
+    let chosen := (g.defaultReplacementId seat choices).getD choices[0]!
+    mustApply g actor (.chooseReplacement chosen)
+  | .chooseTargets _, some actor =>
     match g.objectAwaitingTargets with
     | none => panic! "expected a proposed spell or trigger while choosing targets"
     | some spell =>
       match g.defaultTarget p spell with
-      | some t => mustApply g p (.target t)
+      | some t => mustApply g actor (.target t)
       | none =>
-        if g.canSkipCurrentOptionalSlot spell then mustApply g p .decline
-        else if g.canFinishOptionalTargets spell then mustApply g p .decline
+        if g.canSkipCurrentOptionalSlot spell then mustApply g actor .decline
+        else if g.canFinishOptionalTargets spell then mustApply g actor .decline
         else
           match spell.triggeredAbility with
           | some ab =>
-            if ab.allowsZeroTargets then mustApply g p .decline
+            if ab.allowsZeroTargets then mustApply g actor .decline
             else panic! "no legal target (CR 601.2c)"
           | none => panic! "no legal target (CR 601.2c)"
-  | _, some p =>
-    mustApply g p .pass
+  | _, some actor =>
+    mustApply g actor .pass
   | _, none => panic! s!"no actor at {g.step}"
 
 /-- Advance by idle actions until `g` is in `st` with no pending choice. -/

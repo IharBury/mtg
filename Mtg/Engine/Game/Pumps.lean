@@ -142,12 +142,13 @@ def replaceUntap (g : Game) (o : GameObject)
         }
       for (_, eff) in g.activeEffects do
         match eff with
-        | .replacement spec _ =>
-          match spec.kind with
-          | .stunCounterUntap tid =>
-            if tid == o.id && o.status.stun > 0 then
-              s := s.push { spec with affectedPlayer := affected }
-          | _ => pure ()
+        | .replacement spec d =>
+          if g.durationActive d then
+            match spec.kind with
+            | .stunCounterUntap tid =>
+              if tid == o.id && o.status.stun > 0 then
+                s := s.push { spec with affectedPlayer := affected }
+            | _ => pure ()
         | _ => pure ()
       return s
     let candidates := specs.map (fun s => (ReplacementOrPrevention.replacement s).toCandidate)

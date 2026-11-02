@@ -221,9 +221,7 @@ def placeSearchedBatchCore (g : Game) (p : PlayerId) (remainingIds : Array Objec
       let name := o.name
       if g.isAura o then
         let auraProbe := { o with controller := some p }
-        let host? := preBf.find? (fun h =>
-          (g.findObject? h.id).any (fun curH =>
-            curH.isOnBattlefield && g.auraObjCanEnchant curH auraProbe))
+        let host? := g.findPreBatchAuraHost? preBf auraProbe
         match host? with
         | none =>
           g := g.logMsg s!"{name} remains in its current zone (can't be attached legally; CR 303.4f)"

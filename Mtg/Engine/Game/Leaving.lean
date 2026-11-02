@@ -60,6 +60,34 @@ def changeControl (g : Game) (o : GameObject) (p : PlayerId)
     g.createEffect (.control o.id p untilEot turnEndsLeft untilSourceLeaves) (cause := cause)
       |>.logMsg s!"{(g.player p).name} gains control of {g.name o}"
 
+/-- Exile each `(oid, logLine)` in `remaining` sequentially (CR 800.4a / 800.4c),
+pausing and chaining `.endControlExileLoop` if a CR 616.1 replacement choice
+opens and emitting `logLine` only once the permanent has left `.battlefield`. -/
+def runEndControlExileLoop (g : Game) (remaining : Array (ObjectId × String))
+    (cause : Option EventCause := none)
+    (pendingLog : Option (ObjectId × String) := none) : Game :=
+  if remaining.isEmpty && pendingLog.isNone then g
+  else if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement (.endControlExileLoop remaining cause pendingLog)
+  else Id.run do
+    let mut g := g
+    if let some (fromId, logLine) := pendingLog then
+      if !(g.findObject? fromId).any (·.isBattlefieldObject) then
+        g := g.logMsg logLine
+    for i in [0:remaining.size] do
+      let (oid, logLine) := remaining[i]!
+      if let some cur := g.findObject? oid then
+        if cur.isBattlefieldObject then
+          let (g', _) := g.move oid .exile none (cause := cause)
+          g := g'
+          if let .chooseReplacement .. := g.pending then
+            let rem := remaining.extract (i + 1) remaining.size
+            g := g.chainPendingReplacement (.endControlExileLoop rem cause (some (oid, logLine)))
+            return g
+          if !(g.findObject? oid).any (·.isBattlefieldObject) then
+            g := g.logMsg logLine
+    return g
+
 /-- End the Layer 2 control-changing effect recorded under `eid` across every
 battlefield permanent it applies to (singleton `.objects #[id]`, multi-target
 `.objects ids`, `.creaturesControlledBy`, `.permanentsOfSubtype`, or
@@ -78,42 +106,46 @@ def endControlEffectById (g : Game) (eid : EffectId)
       | .layered (.objects ids) (.control _) _ => ids
       | _ => #[]
     let candidates : Array (ObjectId × Option PlayerId × Bool) :=
-      g.battlefield.filterMap fun o =>
-        let applied := g.appliedControlEffectIds o
-        if applied.contains eid || explicitIds.contains o.id then
-          some (o.id, g.controllerOf o, g.controlChanged o || applied.contains eid)
-        else none
-    let g := g.expireEffectById eid (cause := cause)
-    candidates.foldl (fun acc (oid, prevCtrl, hadControlChange) =>
-      match acc.findObject? oid with
-      | none => acc
-      | some cur =>
-        if !cur.isOnBattlefield then acc
+      g.objects.filterMap fun o =>
+        if !o.isBattlefieldObject then none
         else
-          let othersRemain := !(acc.appliedControlEffectIds cur).isEmpty
-          let curCtrl := acc.controllerOf cur
-          let acc :=
-            match prevCtrl with
-            | some prev =>
-              if curCtrl != prevCtrl && (acc.player prev).ringBearerId == some oid then
-                acc.record (GameEvent.designation acc.turnNumber (acc.snapshot cur) .ringBearer false
-                  (cause := cause.getD (.gameRule .staticAbility)))
-              else acc
-            | none => acc
-          if othersRemain then
-            if curCtrl != prevCtrl then
-              acc.logMsg s!"{acc.name cur} reverts to {(acc.player (curCtrl.getD cur.owner)).name}'s control"
-            else acc
-          else if !hadControlChange then acc
+          let applied := g.appliedControlEffectIds o
+          if applied.contains eid || explicitIds.contains o.id then
+            some (o.id, g.controllerOf o, g.controlChanged o || applied.contains eid)
+          else none
+    let g := g.expireEffectById eid (cause := cause)
+    let (g, exileQueue) :=
+      candidates.foldl (fun (acc, exiles) (oid, prevCtrl, hadControlChange) =>
+        match acc.findObject? oid with
+        | none => (acc, exiles)
+        | some cur =>
+          if !cur.isBattlefieldObject then (acc, exiles)
           else
-            let dest := curCtrl.getD (cur.defaultController.getD cur.owner)
-            if (acc.player dest).lost then
-              let name := acc.name cur
-              let (acc, _) := acc.move oid .exile none (cause := some (.gameRule .playerLeftGame))
-              acc.logMsg s!"{name} is exiled (CR 800.4c)"
-            else if curCtrl != prevCtrl || prevCtrl != some dest then
-              acc.logMsg s!"{acc.name cur} reverts to {(acc.player dest).name}'s control"
-            else acc) g
+            let othersRemain := !(acc.appliedControlEffectIds cur).isEmpty
+            let curCtrl := acc.controllerOf cur
+            let acc :=
+              match prevCtrl with
+              | some prev =>
+                if curCtrl != prevCtrl && (acc.player prev).ringBearerId == some oid then
+                  acc.record (GameEvent.designation acc.turnNumber (acc.snapshot cur) .ringBearer false
+                    (cause := cause.getD (.gameRule .staticAbility)))
+                else acc
+              | none => acc
+            if othersRemain then
+              let acc :=
+                if curCtrl != prevCtrl then
+                  acc.logMsg s!"{acc.name cur} reverts to {(acc.player (curCtrl.getD cur.owner)).name}'s control"
+                else acc
+              (acc, exiles)
+            else if !hadControlChange then (acc, exiles)
+            else
+              let dest := curCtrl.getD (cur.defaultController.getD cur.owner)
+              if (acc.player dest).lost then
+                (acc, exiles.push (oid, s!"{acc.name cur} is exiled (CR 800.4c)"))
+              else if curCtrl != prevCtrl || prevCtrl != some dest then
+                (acc.logMsg s!"{acc.name cur} reverts to {(acc.player dest).name}'s control", exiles)
+              else (acc, exiles)) (g, #[])
+    g.runEndControlExileLoop exileQueue (cause := some (.gameRule .playerLeftGame))
 
 /-- End the control-changing effect recorded under `eid` (CR 613.1b / 800.4c). -/
 def endControlEffect (g : Game) (_oid : ObjectId) (eid : EffectId)
@@ -154,13 +186,14 @@ def objectLeavesTheGame (g : Game) (o : GameObject) (_leavingPlayer : PlayerId) 
       let sourceCtrlIds := g.activeEffects.filterMap fun (eid, e) =>
         match e with
         | .layered _ (.control _) (.whileSourceOnBattlefield s)
-        | .layered _ (.control _) (.untilSourceLeaves s) =>
+        | .layered _ (.control _) (.untilSourceLeaves s)
+        | .layered _ (.control _) (.whileSourceHasCounter s _) =>
           if s == o.id then some eid else none
         | _ => none
       if sourceCtrlIds.isEmpty then #[]
       else
-        g.battlefield.filterMap fun pObj =>
-          if pObj.id != o.id &&
+        g.objects.filterMap fun pObj =>
+          if pObj.isBattlefieldObject && pObj.id != o.id &&
               (g.appliedControlEffectIds pObj).any (fun eid => sourceCtrlIds.contains eid) then
             some pObj.id
           else none
@@ -168,18 +201,15 @@ def objectLeavesTheGame (g : Game) (o : GameObject) (_leavingPlayer : PlayerId) 
       let g := g.unattachFrom o.id
       let g := g.removePreparedCopy o.id
       let g := g.ceaseToExist o.id (cause := cause)
-      sourceCtrlTargets.foldl (fun acc tid =>
-        match acc.findObject? tid with
-        | none => acc
+      let exileQueue := sourceCtrlTargets.filterMap fun tid =>
+        match g.findObject? tid with
+        | none => none
         | some cur =>
-          if !cur.isOnBattlefield || !(acc.appliedControlEffectIds cur).isEmpty then acc
+          if !cur.isBattlefieldObject || !(g.appliedControlEffectIds cur).isEmpty then none
           else
-            let destP := (acc.controllerOf cur).getD (cur.defaultController.getD cur.owner)
-            if (acc.player destP).lost then
-              let name := acc.name cur
-              let (acc, _) := acc.move tid .exile none (cause := cause)
-              acc.logMsg s!"{name} is exiled (CR 800.4c)"
-            else acc) g
+            let destP := (g.controllerOf cur).getD (cur.defaultController.getD cur.owner)
+            if (g.player destP).lost then some (tid, s!"{g.name cur} is exiled (CR 800.4c)") else none
+      g.runEndControlExileLoop exileQueue (cause := cause)
     if !o.linkedExile.isEmpty && g.currentBatch.isNone then
       g.returnLinkedExileMoves o.linkedExile
     else g
@@ -197,18 +227,21 @@ private def afterRandomReferencesPlayer (p : PlayerId) : AfterRandom → Bool
   | .putOnTop q _ | .beholdUntap q _ _ | .discardRandom q => q == p
   | .plusOne _ => false
 
-private def filterLivingAttackTargets (g : Game) (opts : Array AttackTarget) : Array AttackTarget :=
+private def filterLivingAttackTargets (g : Game) (controller : PlayerId)
+    (opts : Array AttackTarget) : Array AttackTarget :=
   opts.filter fun
-    | .player pid => g.stillInGame pid
-    | .planeswalker oid | .battle oid => (g.findObject? oid).any (·.isOnBattlefield)
+    | .player pid => g.isLivingOpponentOf controller pid
+    | .planeswalker oid | .battle oid =>
+      (g.findObject? oid).any (fun o =>
+        o.isOnBattlefield && (g.livingOpponents controller).any (fun pl => g.controlledBy o pl.id))
 
 private def sanitizeEnteringAttackItem (g : Game) : EnteringAttackItem → Option EnteringAttackItem
   | .token c kind tapped opts =>
     if !g.stillInGame c then none
-    else some (.token c kind tapped (filterLivingAttackTargets g opts))
+    else some (.token c kind tapped (filterLivingAttackTargets g c opts))
   | .card cid c effCtrl tapped retArt extra mods logKind opts =>
     if !g.stillInGame c || (g.findObject? cid).isNone then none
-    else some (.card cid c effCtrl tapped retArt extra mods logKind (filterLivingAttackTargets g opts))
+    else some (.card cid c effCtrl tapped retArt extra mods logKind (filterLivingAttackTargets g c opts))
 
 private partial def advanceSacDamagersAfterLeave (g : Game) (controller : PlayerId)
     (opponents : Array PlayerId) (chosen : Array (PlayerId × ObjectId)) : Game :=
@@ -341,7 +374,9 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
   | .chooseReplacement q _ =>
     if q == p then
       if g.proposedSpell.any (·.caster == p) then
-        let closeInfo? := g.pendingReplacement.bind findPausedCloseBatch?
+        let closeInfo? :=
+          (g.pendingReplacement.bind findPausedCloseBatch?).orElse (fun _ =>
+            g.outerPendingReplacements.findSomeRev? findPausedCloseBatch?)
         let g := g.changes #[.pending .none, .pendingReplacement none, .proposedSpell none, .clearProposalCheckpoint]
         match closeInfo? with
         | some (batchId, startIdx) => g.finishOpenBatch batchId startIdx
@@ -390,7 +425,23 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
           |>.logMsg s!"{(g.player nextP).name} assigns combat damage (CR 800.4h)"
       | none =>
         g.change (.pending .none)
-  | .activateManaAbilities q | .chooseMode q | .chooseX q | .chooseTargets q
+  | .chooseMode q =>
+    if q == p then
+      let clearProp : Array EngineChange :=
+        if g.proposedSpell.any (·.caster == p) then #[.proposedSpell none, .clearProposalCheckpoint]
+        else #[]
+      g.changes (#[.pending .none] ++ clearProp)
+    else
+      (g.change (.pending .none)).chainPendingReplacement (.finishPostStep 88 q)
+  | .chooseTargets q =>
+    if q == p then
+      let clearProp : Array EngineChange :=
+        if g.proposedSpell.any (·.caster == p) then #[.proposedSpell none, .clearProposalCheckpoint]
+        else #[]
+      g.changes (#[.pending .none] ++ clearProp)
+    else
+      (g.change (.pending .none)).chainPendingReplacement (.finishPostStep 89 q)
+  | .activateManaAbilities q | .chooseX q
   | .chooseAdditionalCost q | .chooseKicker q | .chooseGift q
   | .chooseTeamwork q | .chooseTeamworkCreatures q _
   | .sacrificePermanent q _ | .discardForAdditionalCost q =>
@@ -510,7 +561,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
         match sanitizeEnteringAttackItem g item with
         | none => none
         | some item' =>
-          let validTgt? := tgt?.filter (fun t => (filterLivingAttackTargets g #[t]).size == 1)
+          let validTgt? := tgt?.filter (fun t => (filterLivingAttackTargets g item'.controller #[t]).size == 1)
           some (item', validTgt?.orElse (fun _ => item'.options[0]?))
       if q != p then
         let remClean := remaining.filterMap (sanitizeEnteringAttackItem g)
@@ -622,6 +673,23 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
         else if liveCards != cards then
           g.change (.pending (.fraChoice nextOwner (.mayBeginOnBattlefield liveCards)))
         else g
+    | .triggerModes objId remaining chosen =>
+      if q == p then
+        g.changes (#[.pending .none, .chooseModesRest none] ++ clearProp)
+      else
+        (g.change (.pending .none)).chainPendingReplacement
+          (.finishPostStep 90 q (n := remaining) (sourceId := some objId) (modes := chosen))
+    | .blackGatePlayer oid players =>
+      let players' := players.filter g.stillInGame
+      if q == p then
+        g.changes (#[.pending .none, .chooseModesRest none] ++ clearProp)
+      else if players'.isEmpty then
+        g.changes #[.pending .none, .chooseModesRest none]
+      else if players'.size == 1 then
+        (g.changes #[.pending .none, .chooseModesRest none]).applyBlackGateUnblockable oid players'[0]!
+      else if players' != players then
+        g.change (.pending (.fraChoice q (.blackGatePlayer oid players')))
+      else g
     | _ =>
       if q == p then
         let g := g.changes (#[.chooseModesRest none] ++ clearProp)
@@ -651,8 +719,15 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
         else #[]
       g.changes (#[.pending .none, .chooseModesRest none] ++ clearProp)
     else g
-  | .mayCastExiledElseDamage q .. =>
-    if q == p then g.change (.pending .none) else g
+  | .mayCastExiledElseDamage q _ n sid =>
+    if q == p then
+      let g := (g.change (.pending .none)).logMsg s!"{(g.player p).name} declines (CR 800.4f)"
+      if n > 0 then
+        g.chainPendingReplacement
+          (.finishPostStep 33 p (n := n) (sourceId := sid)
+            (cause := some (g.resolvingOrRuleCause p sid)))
+      else g
+    else g
   | .chooseTriggerOr q =>
     if q == p then g.changes #[.pending .none, .triggerOr none] else g
   | .tapHumans q =>
@@ -716,12 +791,21 @@ def playerLeavesGame (g : Game) (p : PlayerId) : Game :=
   if (g.player p).leftTheGame then g
   else
     let cause := some (EventCause.gameRule .playerLeftGame)
+    let wasMonarch := (g.player p).isMonarch
     let owned := g.objects.filter (fun o => o.owner == p && o.zone != .ante)
     let linkedExileIds := owned.foldl (fun acc o =>
       if o.zone == .battlefield then acc ++ o.linkedExile else acc) #[]
     let g := g.withBatchCore cause fun g =>
       let g := g.record (GameEvent.playerLeftGame g.turnNumber p (cause := cause))
       let g := g.logMsg s!"{(g.player p).name} leaves the game"
+      let g :=
+        if wasMonarch && !g.over && g.livingPlayers.size > 1 then
+          let heir :=
+            if g.stillInGame g.activePlayer && g.activePlayer != p then g.activePlayer
+            else g.nextLiving p
+          (g.record (GameEvent.becameMonarch g.turnNumber heir (some p) (cause := cause))).logMsg
+            s!"{(g.player heir).name} becomes the monarch (CR 725.4)"
+        else g
       let g :=
         owned.foldl (fun acc o =>
           match acc.findObject? o.id with
@@ -742,15 +826,11 @@ def playerLeavesGame (g : Game) (p : PlayerId) : Game :=
           else acc) g
       let still := g.objects.filter (fun o =>
         g.controlledBy o p ||
-          (o.zone == .battlefield && (g.appliedControlEffectIds o).isEmpty &&
+          (o.isBattlefieldObject && (g.appliedControlEffectIds o).isEmpty &&
             ((o.defaultController.orElse (fun _ => o.controller)).getD o.owner) == p))
-      still.foldl (fun acc o =>
-        match acc.findObject? o.id with
-        | none => acc
-        | some o =>
-          let name := acc.name o
-          let (acc, _) := acc.move o.id .exile none (cause := cause)
-          acc.logMsg s!"{name} is exiled (CR 800.4a)") g
+      let exileQueue := still.filterMap fun o =>
+        (g.findObject? o.id).map (fun cur => (cur.id, s!"{g.name cur} is exiled (CR 800.4a)"))
+      g.runEndControlExileLoop exileQueue (cause := cause)
     let g :=
       if g.mulliganToDeclare.contains p then
         g.change (.mulliganToDeclare (g.mulliganToDeclare.filter (· != p)))
@@ -829,12 +909,28 @@ def playerLeavesGame (g : Game) (p : PlayerId) : Game :=
       else g
 
 /-- Perform CR 800.4a for every player who has lost but has not yet left.
-Skipped when the game has already ended (two-player games, CR 104.2a). -/
+Skipped when the game has already ended (two-player games, CR 104.2a). If a
+departing player's post-departure `returnLinkedExileMoves` pauses on
+`Pending.chooseReplacement`, chains `.leavePlayersWhoLost` for any remaining
+losers (CR 104.5 / 800.4a). -/
 def leavePlayersWhoLost (g : Game) : Game :=
   if g.over then g
-  else
-    g.players.foldl (fun acc pl =>
-      if pl.lost && !pl.leftTheGame then acc.playerLeavesGame pl.id else acc) g
+  else if let .chooseReplacement .. := g.pending then
+    if g.players.any (fun pl => pl.lost && !pl.leftTheGame) then
+      g.chainPendingReplacement .leavePlayersWhoLost
+    else g
+  else Id.run do
+    let mut g := g
+    for pl in g.players do
+      if g.over then
+        return g
+      if pl.lost && !(g.player pl.id).leftTheGame then
+        g := g.playerLeavesGame pl.id
+        if let .chooseReplacement .. := g.pending then
+          if g.players.any (fun r => r.lost && !r.leftTheGame) then
+            g := g.chainPendingReplacement .leavePlayersWhoLost
+          return g
+    return g
 
 def emptyManaPools (g : Game) : Game :=
   Id.run do

@@ -22,6 +22,11 @@ def sharedTriggerModes (ab : TriggeredAbility) : Array Effect :=
         phrase := "Tap target creature an opponent controls" },
       { targeting := .of .creatureYouControl, resolution := .onPermanent .untap
         phrase := "Untap target creature you control" }]
+  | .tapOrUntapNonland =>
+    #[{ targeting := .of .nonland, resolution := .onPermanent .tap
+        phrase := "Tap target nonland permanent" },
+      { targeting := .of .nonland, resolution := .onPermanent .untap
+        phrase := "Untap target nonland permanent" }]
   | .wolfPlusOneOrTreasure =>
     #[{ targeting := .of (.creatureYouControlAnySubtype #[.wolf])
         resolution := .onPermanent (.plusOne 1)
@@ -62,6 +67,15 @@ def triggerModesOf (g : Game) (obj : GameObject) : Array Effect :=
   if !fra.isEmpty then fra
   else (obj.triggeredAbility.map sharedTriggerModes).getD #[]
 
+/-- Individual mode effects for Hawkeye's Trick Arrows reflexive trigger (CR 603.3c / 700.2b). -/
+def hawkeyeModeEffects : Array Effect :=
+  #[{ targeting := .of .creature, resolution := .hawkeyeArrows [0]
+      phrase := "Net — Target creature can't block this turn" },
+    { targeting := .of .player, resolution := .hawkeyeArrows [1]
+      phrase := "Explosive — Hawkeye deals 2 damage to target player" },
+    { resolution := .hawkeyeArrows [2]
+      phrase := "Boomerang — Discard a card, then draw a card" }]
+
 /-- Whether `p` may choose this mode of a triggered ability (CR 603.3c / 700.2b). -/
 def triggerModeChoosable (g : Game) (p : PlayerId) (obj : GameObject) (e : Effect) : Bool :=
   !e.requiresTarget || e.allowsZeroTargets ||
@@ -70,9 +84,13 @@ def triggerModeChoosable (g : Game) (p : PlayerId) (obj : GameObject) (e : Effec
 /-- Ask for the modes of a modal triggered ability just put on the stack. -/
 def beginTriggerModeChoice (g : Game) (p : PlayerId) (obj : GameObject) (count : Nat) : Game :=
   let modes := g.triggerModesOf obj
-  if !modes.any (g.triggerModeChoosable p obj) then
+  let choosable := modes.filter (g.triggerModeChoosable p obj)
+  if choosable.size < count then
     let g := g.ceaseToExist obj.id (cause := some (.gameRule .noLegalMode))
-    g.logMsg s!"{obj.name} has no mode that can be chosen and is removed from the stack (CR 603.3c / 700.2b)"
+    let detail :=
+      if choosable.isEmpty then "has no mode that can be chosen"
+      else s!"has fewer than {count} modes that can be chosen"
+    g.logMsg s!"{obj.name} {detail} and is removed from the stack (CR 603.3c / 700.2b)"
   else
     let what := if count == 2 then "two modes" else "a mode"
     (g.change (.pending (.fraChoice p (.triggerModes obj.id count #[])))).logMsg
@@ -142,6 +160,21 @@ def putTriggeredAbilityOnStack (g : Game) (controller : PlayerId) (source : Game
     let obj := g.object! newId
     let srcLabel := if srcIdOpt.isNone then source.name else g.name source
     let g := g.logMsg s!"{srcLabel}'s {event} is put on the stack"
+    match obj.abilityEffect.map Effect.resolution with
+    | some (Resolution.mshReflexive 2 paid) =>
+      let choosable := hawkeyeModeEffects.filter (g.triggerModeChoosable controller obj)
+      let maxModes := Nat.min paid 3
+      if maxModes == 0 || choosable.isEmpty then
+        let noop : Effect := { resolution := Resolution.hawkeyeArrows [], phrase := "" }
+        let g := g.record (GameEvent.announced g.turnNumber obj.id (modes := #[]))
+        let g := g.changes #[
+          .object obj.id (.abilityEffect (some noop)),
+          .stackEntry obj.id (.targetsAnnounced true)]
+        g.logMsg s!"{(g.player controller).name} chooses 0 modes for {obj.name} (CR 603.3c)"
+      else
+        (g.change (.pending (.fraChoice controller (.hawkeyeModes maxModes #[] (some obj.id))))).logMsg
+          s!"{(g.player controller).name} chooses up to {maxModes} Trick Arrows modes (CR 603.3c)"
+    | _ =>
     match ab.shared with
     | .enter .chooseUpToXModes =>
       let x := (source.chosenX.orElse (fun _ => g.chosenXOf? source.id)).getD 0
@@ -334,23 +367,6 @@ def addLoreCounters (g : Game) (saga : GameObject) (n : Nat)
 def addOneLoreCounter (g : Game) (saga : GameObject) : Game :=
   g.addLoreCounters saga 1
 
-/-- As a Saga enters, put a lore counter on it (CR 714.3a). The lore counter(s)
-are placed in `entersWith` during the zone change, so we log the lore
-counter(s) on `o`. -/
-def addLoreAsSagaEnters (g : Game) (o : GameObject) : Game :=
-  match g.controllerOf o, (g.baseCard o).saga with
-  | some _, some _ =>
-    if o.status.faceDown || o.status.lore == 0 then g
-    else
-      let oName := g.name o
-      Id.run do
-        let mut g := g
-        for i in [0:o.status.lore] do
-          let lore := i + 1
-          g := g.logMsg s!"{oName} gets a lore counter ({lore})"
-        return g
-  | _, _ => g
-
 /-- Add a lore counter to each Saga in `sagaIds` sequentially, pausing and
 chaining `.addLoreAfterDrawStep rest` if a CR 616.1 replacement choice opens. -/
 def addLoreAfterDrawStepIds (g : Game) (sagaIds : Array ObjectId) : Game :=
@@ -535,23 +551,41 @@ def putWaitingTrigger (g : Game) (wt : WaitingTrigger) (event : TriggerEvent) : 
           | some cur => g.snapshot cur
           | none => (g.lastKnownBefore? wt.source.id).getD (g.snapshot wt.source)
       let copies := g.extraTriggerCopies wt.controller wt.source + 1
-      (List.range copies).foldl (fun g _ =>
-        let g :=
-          if g.loggedTriggeredThisTurn wt.source.id wt.ability then g
-          else g.recordTriggeredWithOrigin srcSnap wt.controller wt.ability originBatch
-        put g) g
+      Id.run do
+        let mut g := g
+        for i in [0:copies] do
+          if !g.loggedTriggeredThisTurn wt.source.id wt.ability then
+            g := g.recordTriggeredWithOrigin srcSnap wt.controller wt.ability originBatch
+          g := put g
+          if g.pending != .none then
+            let remCount := copies - (i + 1)
+            if remCount > 0 then
+              let remCopy := { wt with event := event, checked := true, ordered := true }
+              let rem := Array.replicate remCount remCopy
+              g := g.change (.waitingTriggers (rem ++ g.waitingTriggers))
+            return g
+        return g
 
 /-- Put these waiting triggers on the stack in the given order (CR 603.3 / 603.3d),
-stopping early if a modal triggered ability pauses on mode selection (CR 603.3c). -/
+stopping early if a modal triggered ability pauses on mode selection (CR 603.3c)
+and preserving `ordered := true` on any remaining triggers in the ordered batch. -/
 def putTriggerBatch (g : Game) (wts : Array WaitingTrigger) : Game :=
   if wts.isEmpty then g
   else
     Id.run do
       let mut g := g
-      for wt in wts do
-        if g.pending == .none then
-          g := g.removeWaitingTrigger wt
-          g := g.putWaitingTrigger wt wt.event
+      for i in [0:wts.size] do
+        let wt := wts[i]!
+        g := g.removeWaitingTrigger wt
+        g := g.putWaitingTrigger wt wt.event
+        if g.pending != .none then
+          let rem := wts.extract (i + 1) wts.size
+          if !rem.isEmpty then
+            for r in rem do
+              g := g.removeWaitingTrigger r
+            let orderedRem := rem.map ({ · with ordered := true })
+            g := g.change (.waitingTriggers (orderedRem ++ g.waitingTriggers))
+          return g
       return g.promptTriggerTargetsIfNeeded
 
 /-- Start scrying `n` as a keyword action (CR 701.22).

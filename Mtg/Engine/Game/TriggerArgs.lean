@@ -315,7 +315,9 @@ def collectPlayers (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.Player
   | .thatPlayer =>
     ctx.lastKnownToughness.map fun idx => #[⟨idx.toNat⟩]
   | .damagedPlayer =>
-    one (g.loggedLastCombatDamagePlayer.getD (g.opponent controller))
+    match g.loggedLastCombatDamagePlayer.orElse (fun _ => g.firstLivingOpponent? controller) with
+    | some pid => one pid
+    | none => some #[]
   | .announced =>
     match ctx.targets.findSome? fun
       | Target.player pid => some pid
@@ -449,8 +451,9 @@ def triggerInt (g : Game) (ctx : TriggerRead) (amount : TriggeredAbility.NumberS
     some n
   | .oppArtifacts => some (g.countOpponentArtifacts controller)
   | .damagedPlayerArtifacts =>
-    let pid := g.loggedLastCombatDamagePlayer.getD (g.opponent controller)
-    some (g.countArtifactsControlledBy pid)
+    match g.loggedLastCombatDamagePlayer.orElse (fun _ => g.firstLivingOpponent? controller) with
+    | some pid => some (g.countArtifactsControlledBy pid)
+    | none => some 0
   | .blueManaSymbols => some (g.blueSymbolsInCastSpell ctx.lastKnownPower)
   | .count what => (g.countNamed ctx what).map (fun n => (n : Int))
   | .cardsDrawnThisTurn => some (g.loggedDraws controller)

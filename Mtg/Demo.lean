@@ -616,7 +616,7 @@ def isAttackDefenderToken (g : Game) (token : String) : Bool :=
 def parseAttackDefender (g : Game) (p : PlayerId) (token : String) : Except String PlayerId :=
   let lower := token.map Char.toLower
   if lower == "opponent" then
-    return g.opponent p
+    g.resolveAttackDestination p none
   else
     match g.players.find? (fun pl => pl.name.map Char.toLower == lower) with
     | none => throw attackUsage

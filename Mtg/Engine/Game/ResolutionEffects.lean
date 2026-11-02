@@ -153,9 +153,12 @@ def choosePutArtifactFromHand (g : Game) (p : PlayerId) (cardId : ObjectId) :
         g.chainPendingReplacement
           (.finishPostStep 1 p (sourceId := some hostId) (cardId := some cardId))
       else
-        let g := g.logMsg s!"{(g.player p).name} puts {name} onto the battlefield"
-        let g := g.afterPermanentEnters (g.object! newId)
-        g.change (.putArtifactThisWay (some (newId, hostId)))
+        let entered := g.object! newId
+        if entered.isOnBattlefield then
+          let g := g.logMsg s!"{(g.player p).name} puts {name} onto the battlefield"
+          let g := g.afterPermanentEnters entered
+          g.change (.putArtifactThisWay (some (newId, hostId)))
+        else g
     return match outerCont? with
       | some outer => g.chainPendingReplacement outer
       | none => g
@@ -190,10 +193,20 @@ def applyBardBowman (g : Game) (targetId : ObjectId) : Game :=
     if !o.isOnBattlefield || !g.isCreature o then
       g.logMsg "The target is no longer legal"
     else
-      let nm := g.name o
-      let g := g.addPlusOnePlusOneTo o 1
-      let g := g.createEffect (.keywordsUntilEot o.id Keyword.lifelink)
-      g.logMsg s!"{nm} gains lifelink until end of turn"
+      let cause := g.currentResolvingContext?.map fun (src, ctrl) =>
+        .oneShotEffect none src ctrl
+      g.withBatch cause fun g =>
+        let g := g.addPlusOnePlusOneTo o 1 (cause := cause)
+        if let .chooseReplacement .. := g.pending then
+          g.chainPendingReplacement
+            (.finishPostStep 91 ((g.controllerOf o).getD g.activePlayer)
+              (cardId := some o.id) (cause := g.currentBatch.bind (·.2)))
+        else if let some cur := g.findObject? o.id then
+          if cur.isOnBattlefield then
+            let g := g.createEffect (.keywordsUntilEot cur.id Keyword.lifelink) (cause := cause)
+            g.logMsg s!"{g.name cur} gains lifelink until end of turn"
+          else g
+        else g
 
 /-- Exile `o` until `source` leaves the battlefield, linking the new exile id
 and storing the exiling one-shot `EventCause` for the return (CR 610.3). -/
@@ -282,9 +295,7 @@ def returnLinkedExileLoop (g : Game) (remainingIds : Array ObjectId)
         | _ =>
           if g.isAura o then
             let auraProbe := { o with controller := some owner }
-            let host? := preBf.find? (fun h =>
-              (g.findObject? h.id).any (fun curH =>
-                curH.isOnBattlefield && g.auraObjCanEnchant curH auraProbe))
+            let host? := g.findPreBatchAuraHost? preBf auraProbe
             match host? with
             | none =>
               g := g.logMsg s!"{name} remains in exile (can't be attached legally; CR 303.4f / 614.6)"
@@ -446,7 +457,7 @@ def attachedEquipmentAtResolution (g : Game) (sourceId : Option ObjectId)
   | some sid =>
     match g.findObject? sid with
     | some o =>
-      if o.isOnBattlefield then g.attachedEquipmentCount o
+      if o.zone == .battlefield then g.attachedEquipmentCount o
       else (departedCount? sid).getD (lastKnownPower.getD (0 : Int)).toNat
     | none => (departedCount? sid).getD (lastKnownPower.getD (0 : Int)).toNat
   | none => (lastKnownPower.getD (0 : Int)).toNat
@@ -516,15 +527,22 @@ def exileTopPlayThisTurn (g : Game) (p : PlayerId) (n : Nat) : Game :=
 /-- Extort is paid: each opponent loses 1 life and `controller` gains the
 life actually lost (CR 702.101a / MSH 292). Extort does not target (MSH 296). -/
 def extortDrain (g : Game) (controller : PlayerId) : Game :=
-  g.withBatch (g.resolvingBatchCause controller) fun g =>
-    let (g, lost) :=
+  let cause := g.resolvingBatchCause controller
+  let (g, lost) :=
+    g.withBatchReturn cause fun g =>
       (g.livingOpponents controller).foldl (fun (acc : Game × Nat) pl =>
         let before := (acc.1.player pl.id).life
         let g := acc.1.loseLife pl.id 1
         let after := (g.player pl.id).life
         let delta := if before > after then (before - after).toNat else 0
         (g, acc.2 + delta)) (g, 0)
-    g.gainLife controller lost |>.logMsg "Extort is paid"
+  let g :=
+    if lost == 0 then g
+    else g.withBatch (g.resolvingBatchCause controller) fun g => g.gainLife controller lost
+  if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement (.logMessage "Extort is paid")
+  else
+    g.logMsg "Extort is paid"
 
 /-- A stack object to stand for `sourceId` as an ability's source. -/
 def abilitySourceFor (g : Game) (controller : PlayerId) (sourceId : Option ObjectId) : GameObject :=
@@ -688,7 +706,12 @@ def sacrificePlanThenQueueReflexive (g : Game) (controller : PlayerId)
       s!"{name} is no longer on the battlefield. The reflexive ability doesn't trigger.")
     (missing :=
       "The Plan is no longer on the battlefield. The reflexive ability doesn't trigger.")
-  if stillThere then g.queueModeledReflexive controller sourceId kind else g
+  if !stillThere then g
+  else if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement (.finishPostStep 92 controller (n := kind) (sourceId := sourceId))
+  else if !(sourceId.bind g.findObject?).any (·.isOnBattlefield) then
+    g.queueModeledReflexive controller sourceId kind
+  else g
 
 /-- Ask `caster` to cast up to `casts` of the exiled nonland cards. -/
 def offerExileCasts (g : Game) (caster : PlayerId) (spells : Array ObjectId)
@@ -911,9 +934,7 @@ def commitEnteringAttackItems (g : Game)
             if let some o := g.findObject? cardId then
               if !(g.player enteringController).lost && g.isAura o then
                 let auraProbe := { o with controller := some enteringController }
-                let host? := preBf.find? (fun h =>
-                  (g.findObject? h.id).any (fun curH =>
-                    curH.isOnBattlefield && g.auraObjCanEnchant curH auraProbe))
+                let host? := g.findPreBatchAuraHost? preBf auraProbe
                 match host? with
                 | none =>
                   g := g.logMsg s!"{o.name} remains in its current zone (can't be attached legally; CR 303.4f)"
@@ -979,7 +1000,7 @@ def returnFromGyTappedAttackingFinality (g : Game) (controller : PlayerId)
       g.logMsg "The target is no longer a creature card in your graveyard"
     else
       let options :=
-        match attackingTarget with
+        match attackingTarget.bind (fun tgt => g.resolveEnteringAttackTarget? controller true (some tgt)) with
         | some tgt => #[tgt]
         | none => g.legalEnteringAttackTargets controller
       let (g, c) := g.allocDelayedCause (some controller)
@@ -1059,7 +1080,7 @@ def resolveModeledReflexive (g : Game) (controller : PlayerId) (sourceId : Optio
 def hasModeledReflexiveOnStack (g : Game) : Bool :=
   g.stack.any (fun e =>
     match ((g.findObject? e.objectId).bind (·.abilityEffect)).map Effect.resolution with
-    | some (Resolution.mshReflexive _ _) => true
+    | some (Resolution.mshReflexive _ _) | some (Resolution.hawkeyeArrows _) => true
     | _ => false)
 
 /-- Merge subtype names without duplicates. -/

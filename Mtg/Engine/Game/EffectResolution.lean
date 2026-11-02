@@ -26,7 +26,7 @@ def shuffleSourceIntoLibrary (g : Game) (sourceId : Option ObjectId)
       | other => other
     let (g, _) := g.move src.id (.library owner) none
       (verb := some .shuffleIntoLibrary) (libraryPosition := some .shuffledIn)
-    g.requestShuffle owner after |>.continueIfShuffled
+    g.shuffleThen owner after
 
 /-- Damage beyond lethal damage dealt to `o` by `dealt` damage (CR 120.4a):
 beyond its toughness minus damage already marked for a creature, beyond its
@@ -192,11 +192,13 @@ def applyFraResolution? (g : Game) (controller : PlayerId) (effect : Effect)
         let name := o.name
         let (g, newId) := g.putOntoBattlefield o.id controller
           (extraEntersWith := #[(.finality, 1)])
-        let g := g.logMsg s!"{name} returns to the battlefield"
         if let .chooseReplacement .. := g.pending then
-          some (g.chainPendingReplacement (.finishPostStep 20 controller 0 none (some o.id) (shuffle := false)))
+          some (g.chainPendingReplacement (.finishPostStep 20 controller 2 none (some o.id) (shuffle := false)))
         else
-          some (g.afterPermanentEnters (g.object! newId))
+          let entered := g.object! newId
+          if entered.isOnBattlefield then
+            some ((g.logMsg s!"{name} returns to the battlefield").afterPermanentEnters entered)
+          else some g
       else some (g.logMsg s!"{o.name} is no longer in the graveyard")
     | none => some (g.logMsg "The card is no longer in the graveyard")
   | .copyNextInstantSorceryThisTurn =>
@@ -561,12 +563,15 @@ def returnFromGyFinalityAttach (g : Game) (controller : PlayerId)
       if let .chooseReplacement .. := g.pending then
         g.chainPendingReplacement (.finishPostStep 24 controller 0 none (some o.id))
       else
-        let g := g.afterPermanentEnters (g.object! newId)
-        if g.pending != .none then g
-        else if (g.permanentsOf controller).any (fun eq => g.isEquipment eq) then
-          g.change (.pending (.mayAttachEquipment controller newId))
-            |>.logMsg s!"{(g.player controller).name} may attach an Equipment to {name}"
-        else g
+        let entered := g.object! newId
+        if !entered.isOnBattlefield then g
+        else
+          let g := g.afterPermanentEnters entered
+          if g.pending != .none then g
+          else if (g.permanentsOf controller).any (fun eq => g.isEquipment eq) then
+            g.change (.pending (.mayAttachEquipment controller newId))
+              |>.logMsg s!"{(g.player controller).name} may attach an Equipment to {name}"
+          else g
 
 /-- Put remaining counter kinds and any `+1/+1` counter on `targetId` during
 `proliferateTarget`, chaining `.finishProliferateEachKind` on
@@ -660,10 +665,14 @@ def finishVisionQuest (g : Game) (p : PlayerId) (id? : Option ObjectId)
         if let .chooseReplacement .. := g.pending then
           g.chainPendingReplacement (.finishPostStep 25 p x none (some id) (shuffle := shuffle))
         else
-          let g := g.afterPermanentEnters (g.object! newId)
+          let entered := g.object! newId
           let g :=
-            if x ≥ 4 then g.grantUntilEotLogged (g.object! newId) Keyword.haste else g
-          let g := g.logMsg s!"{name} is put onto the battlefield"
+            if entered.isOnBattlefield then
+              let g := g.afterPermanentEnters entered
+              let g :=
+                if x ≥ 4 then g.grantUntilEotLogged (g.object! newId) Keyword.haste else g
+              g.logMsg s!"{name} is put onto the battlefield"
+            else g
           if shuffle then g.shuffleThen p .none else g
       else
         let g := g.logMsg "That card can't be found"
@@ -1150,16 +1159,23 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     | _, _ => g.logMsg "The target is no longer legal"
   | .mutualFight .upToOne =>
     match targets[0]?, targets[1]? with
-    | some (Target.permanent srcId), some (Target.permanent destId) =>
-      match g.findObject? srcId, g.findObject? destId with
-      | some src, some dest =>
-        if src.id != dest.id && src.isOnBattlefield && dest.isOnBattlefield &&
-            g.isCreature src && g.isCreature dest && g.controlledBy src controller &&
-            g.canBeTargetedBy controller src sourceId &&
-            g.canBeTargetedBy controller dest sourceId then
-          g.fightCreatures src dest
-        else g.logMsg "The target is no longer legal"
-      | _, _ => g.logMsg "The target is no longer legal"
+    | some t0@(Target.permanent srcId), some t1@(Target.permanent destId) =>
+      let srcOk :=
+        (g.legalCreatureYouControlTargets controller sourceId).contains t0
+      let destOk :=
+        srcId != destId &&
+          (if effect.targetKind.spec.slots.size >= 2 then
+            g.targetLegalAt controller effect.targetKind 1 t1 sourceId
+           else
+             match g.findObject? destId with
+             | some dest => dest.isOnBattlefield && g.isCreature dest && g.canBeTargetedBy controller dest sourceId
+             | none => false)
+      if srcOk && destOk then
+        g.fightCreatures (g.object! srcId) (g.object! destId)
+      else
+        let g := if !srcOk then g.illegalAbilityTarget t0 else g
+        let g := if !destOk then g.illegalAbilityTarget t1 else g
+        if srcOk && !destOk then g.logMsg s!"{g.name (g.object! srcId)} has nothing to fight" else g
     | some (Target.permanent srcId), none =>
       match g.findObject? srcId with
       | some src =>
@@ -1189,7 +1205,8 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     | .youControl =>
       g.pumpControlledCreatures controller p t
     | .all =>
-      g.foldBattlefield (fun o => g.isCreature o) (fun g o => g.pumpPermanent o p t)
+      g.withBatch none fun g =>
+        g.foldBattlefield (fun o => g.isCreature o) (fun g o => g.pumpPermanent o p t)
     | .ofTargetPlayer =>
       g.withLegalKindPlayer controller effect.targetKind targets
         (fun g pid => g.pumpControlledCreatures pid p t)
@@ -1203,10 +1220,24 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
   | .scry (.fixed n) =>
     g.beginScry controller n.toNat
   | .tapTargets =>
-    g.foldPermanentTargets targets (fun g o =>
-      if o.isOnBattlefield && g.isCreature o && g.canBeTargetedBy controller o sourceId then
-        g.applyPermanentAction o .tap
-      else g)
+    g.withBatch none fun g =>
+      (List.range targets.size).foldl (fun g i =>
+        let t := targets[i]!
+        match t with
+        | Target.permanent id =>
+          let ok :=
+            if effect.targetKind != .none then
+              g.targetLegalAt controller effect.targetKind i t sourceId
+            else
+              match g.findObject? id with
+              | some o => o.isOnBattlefield && g.isCreature o && g.canBeTargetedBy controller o sourceId
+              | none => false
+          if ok then
+            match g.findObject? id with
+            | some o => g.applyPermanentAction o .tap
+            | none => g
+          else g.illegalAbilityTarget t
+        | _ => g) g
   | .counter =>
     match targets[0]? with
     | some (Target.card id) => g.counterStackSpell id (controller := some controller)
@@ -1292,13 +1323,14 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     match which with
     | .firstYouControl =>
       match targets[0]? with
-      | some (Target.permanent id) =>
+      | some t@(Target.permanent id) =>
         match g.findObject? id with
         | some o =>
-          if o.isOnBattlefield && g.isCreature o && g.controlledBy o controller then
+          if o.isOnBattlefield && g.isCreature o && g.controlledBy o controller &&
+              g.canBeTargetedBy controller o sourceId then
             g.addCounters o kind n
-          else g.logMsg "The target is no longer legal"
-        | none => g.logMsg "The target is no longer legal"
+          else g.illegalAbilityTarget t
+        | none => g.illegalAbilityTarget t
       | _ => g.logMsg "The target is no longer legal"
     | .each =>
       g.withBatch none fun g => Id.run do
@@ -1448,13 +1480,18 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
   | .exileTopPlayIfYouControlSubtype n subtype =>
     g.exileTopPlayIfYouControlSubtype controller n subtype
   | .exileThenReturnYouControl =>
-    let ids := targets.filterMap fun t =>
+    let (g, ids) := targets.foldl (fun (acc : Game × Array ObjectId) t =>
+      let (g, xs) := acc
       match t with
       | .permanent id =>
         match g.findObject? id with
-        | some o => if g.controlledBy o controller && o.isOnBattlefield then some id else none
-        | none => none
-      | _ => none
+        | some o =>
+          if g.controlledBy o controller && o.isOnBattlefield &&
+              g.canBeTargetedBy controller o sourceId then
+            (g, xs.push id)
+          else (g.illegalAbilityTarget t, xs)
+        | none => (g.illegalAbilityTarget t, xs)
+      | _ => (g, xs)) (g, #[])
     let (g, cause) : Game × Option EventCause :=
       if ids.isEmpty then (g, none)
       else
@@ -1531,9 +1568,11 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
         for i in [0:ids.size] do
           let id := ids[i]!
           match g.findObject? id with
-          | none => pure ()
+          | none =>
+            g := g.illegalAbilityTarget (Target.permanent id)
           | some o =>
-            if o.isOnBattlefield && g.isCreature o && o.owner == controller then
+            if o.isOnBattlefield && g.isCreature o && o.owner == controller &&
+                g.canBeTargetedBy controller o sourceId then
               let name := g.name o
               let owner := o.owner
               let (g', _) := g.move o.id (.hand owner) none (cause := some cause)
@@ -1543,6 +1582,8 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
                 let rem := ids.extract (i + 1) ids.size
                 return g.chainPendingReplacement
                   (.finishPostStep 52 controller (n := count) (sourceId := sourceId) (ids := rem) (cause := some cause))
+            else
+              g := g.illegalAbilityTarget (Target.permanent id)
         if count > 0 then
           let src := sourceId.bind g.damageSourceById?
           g := g.registerDelayedTrigger { controller, source := src, kind := .eaglesBirds count, cause }
@@ -1560,10 +1601,20 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
       g.offerCardChoice controller lands lands.size (.landsTappedGainLife life)
         s!"{(g.player controller).name} may put any number of land cards from among them onto the battlefield tapped"
   | .gainControlOppArtifacts =>
-    g.foldPermanentTargets targets (fun g o =>
-      if o.isOnBattlefield && g.isArtifact o && !g.controlledBy o controller then
-        g.changeControl o controller
-      else g)
+    let cause := g.resolvingBatchCause controller sourceId
+    g.withBatch cause fun g =>
+      targets.foldl (fun g t =>
+        match t with
+        | Target.permanent id =>
+          match g.findObject? id with
+          | some o =>
+            if o.isOnBattlefield && g.isArtifact o &&
+                (g.livingOpponents controller).any (fun opp => g.controlledBy o opp.id) &&
+                g.canBeTargetedBy controller o sourceId then
+              g.changeControl o controller (cause := g.currentBatch.bind (·.2))
+            else g.illegalAbilityTarget t
+          | none => g.illegalAbilityTarget t
+        | _ => g) g
   | .phaseOutKicker =>
     let cause := g.resolvingOneShotCause controller sourceId
     if kicked then
@@ -1630,7 +1681,8 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
           if let .chooseReplacement .. := g.pending then
             g.chainPendingReplacement (.finishPostStep 20 controller 0 none (some id) (shuffle := false))
           else
-            g.afterPermanentEnters (g.object! newId)
+            let entered := g.object! newId
+            if entered.isOnBattlefield then g.afterPermanentEnters entered else g
         else g.logMsg "The target is no longer legal"
       | none => g.logMsg "The target is no longer legal"
     | _ => g.logMsg "The target is no longer legal"
@@ -1698,10 +1750,10 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     | some id =>
       match g.findObject? id with
       | some o =>
-        if o.isOnBattlefield && g.isCreature o then
+        if o.isOnBattlefield && g.isCreature o && g.canBeTargetedBy controller o sourceId then
           g.applyPermanentAction o action (sourceId := g.resolvingDamageSource?.map (·.id))
-        else g.logMsg "The target is no longer legal"
-      | none => g.logMsg "The target is no longer legal"
+        else g.illegalAbilityTarget (Target.permanent id)
+      | none => g.illegalAbilityTarget (Target.permanent id)
   | .returnGySubtypeToHand subtype =>
     match targets[0]? with
     | some (Target.card id) =>
@@ -1846,13 +1898,17 @@ def returnSourceFromGraveyard (g : Game) (sourceId : Option ObjectId)
     else
       let name := o.name
       let (g, newId) := g.putOntoBattlefield o.id controller (tapped := tapped)
-      let g := g.logMsg
-        (if tapped then s!"{name} returns to the battlefield tapped"
-         else s!"{name} returns to the battlefield")
       if let .chooseReplacement .. := g.pending then
-        g.chainPendingReplacement (.finishPostStep 20 controller 0 none (some o.id) (shuffle := false))
+        g.chainPendingReplacement
+          (.finishPostStep 20 controller (if tapped then 3 else 2) none (some o.id) (shuffle := false))
       else
-        g.afterPermanentEnters (g.object! newId)
+        let entered := g.object! newId
+        if entered.isOnBattlefield then
+          let g := g.logMsg
+            (if tapped then s!"{name} returns to the battlefield tapped"
+             else s!"{name} returns to the battlefield")
+          g.afterPermanentEnters entered
+        else g
 
 /-- True when `o` has the looked-at type, including an Equipment artifact (CR 205.3 / 702.73a). -/
 def cardHasLookType (g : Game) (o : GameObject) (t : CardSubtype) : Bool :=
@@ -2085,16 +2141,25 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
         match sourceId.bind g.findObject? with
         | none => g.logMsg "The source is no longer in the graveyard"
         | some src =>
-          g.withLegalKindPermanent controller effect.targetKind targets (fun g host =>
-            let (g, newId) := g.putOntoBattlefield src.id controller
-              (attachedTo := some host.id)
-            if let .chooseReplacement .. := g.pending then
-              g.chainPendingReplacement (.finishPostStep 29 controller 0 (some host.id) (some src.id))
-            else
-              let o := g.object! newId
-              let g := g.logMsg s!"{g.name o} enters the battlefield attached to {g.name host}"
-              g.afterPermanentEnters (g.object! newId))
-            sourceId (some "The target is no longer legal. Eagle's Rescue remains in the graveyard.")
+          if src.zone != .graveyard src.owner then
+            g.logMsg s!"{src.name} is no longer in the graveyard"
+          else
+            g.withLegalKindPermanent controller effect.targetKind targets (fun g host =>
+              let auraProbe := { src with controller := some controller }
+              if g.isAura src && !g.auraObjCanEnchant host auraProbe then
+                g.logMsg s!"{src.name} remains in the graveyard (can't be attached legally; CR 303.4f)"
+              else
+                let (g, newId) := g.putOntoBattlefield src.id controller
+                  (attachedTo := some host.id)
+                if let .chooseReplacement .. := g.pending then
+                  g.chainPendingReplacement (.finishPostStep 29 controller 0 (some host.id) (some src.id))
+                else
+                  let o := g.object! newId
+                  if o.isOnBattlefield then
+                    let g := g.logMsg s!"{g.name o} enters the battlefield attached to {g.name host}"
+                    g.afterPermanentEnters o
+                  else g)
+              sourceId (some "The target is no longer legal. Eagle's Rescue remains in the graveyard.")
       | .searchBasicLandToHand =>
         g.resolveSearchBasicLandToHand controller
       | .createTokensX kind =>
@@ -2109,19 +2174,25 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
         let (g, cause) := g.allocDelayedCause (some controller) sourceId
         let src := sourceId.bind g.findObject?
         g.withBatch (some cause) fun g =>
-          g.foldPermanentTargets targets (fun g o =>
-            if o.isOnBattlefield && g.controlledBy o controller && !g.isLand o &&
-                some o.id != sourceId then
-              let name := g.name o
-              let isNontoken := !o.printed.isToken || o.isCopy
-              let (g, newId) := g.move o.id .exile none (cause := some cause)
-              let g :=
-                if isNontoken then
-                  g.registerDelayedTrigger
-                    { controller, source := src.orElse (fun _ => some o), kind := .endStepReturn newId, cause }
-                else g
-              g.logMsg s!"{name} is exiled until the beginning of the next end step"
-            else g.logMsg "The target is no longer legal")
+          targets.foldl (fun g t =>
+            match t with
+            | Target.permanent id =>
+              match g.findObject? id with
+              | some o =>
+                if o.isOnBattlefield && g.controlledBy o controller && !g.isLand o &&
+                    some o.id != sourceId && g.canBeTargetedBy controller o sourceId then
+                  let name := g.name o
+                  let isNontoken := !o.printed.isToken
+                  let (g, newId) := g.move o.id .exile none (cause := some cause)
+                  let g :=
+                    if isNontoken then
+                      g.registerDelayedTrigger
+                        { controller, source := src.orElse (fun _ => some o), kind := .endStepReturn newId, cause }
+                    else g
+                  g.logMsg s!"{name} is exiled until the beginning of the next end step"
+                else g.illegalAbilityTarget t
+              | none => g.illegalAbilityTarget t
+            | _ => g) g
       | .searchBasicBeholdSubtypeUntap subtype =>
         g.beginLibrarySearch controller isBasicLandCard "a basic land card"
           (.battlefieldTappedBeholdUntap subtype)

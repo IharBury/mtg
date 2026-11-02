@@ -10,7 +10,7 @@ resolution helpers that return owned creatures or destroy the rest.
 namespace Mtg.Engine
 namespace Game
 
-def applyAction (g : Game) (p : PlayerId) : Action → Except String Game
+private def applyActionFor (g : Game) (p : PlayerId) : Action → Except String Game
   | .pass => g.pass p
   | .playLand id => g.playLand p id
   | .tapForMana id m => g.tapForMana p id m
@@ -170,27 +170,9 @@ def applyAction (g : Game) (p : PlayerId) : Action → Except String Game
     | _ => g.answerFraChoice p (.name name)
   | .chooseReplacement id => g.chooseReplacement p id
 
-
-/-- Apply an action, then put any resulting triggered abilities on the stack. -/
-def apply (g : Game) (p : PlayerId) (a : Action) : Except String Game := do
-  let beforeWaiting := g.waitingTriggers.size
-  let g ← g.applyAction p a
-  let g :=
-    if g.pending == .none &&
-        (g.pendingReplacement.isSome || !g.outerPendingReplacements.isEmpty) && !g.over then
-      g.drainPendingContinuations
-    else g
-  let g :=
-    if g.pending == .none && g.waitingTriggers.size > beforeWaiting && !g.over then
-      g.receivePriority g.priority
-    else g
-  return g.flushUnlessPays
-
-def handObjects (g : Game) (p : PlayerId) : Array GameObject :=
-  (g.player p).hand.filterMap (fun id => g.findObject? id)
-
-/-- Who must act next? -/
-def actor (g : Game) : Option PlayerId :=
+/-- Seat whose turn, priority, or pending prompt is currently active, before
+mapping through `playerControl` (CR 723.5). -/
+def rawActor (g : Game) : Option PlayerId :=
   if g.over then none
   else
     let who (p : PlayerId) : Option PlayerId :=
@@ -251,6 +233,52 @@ def actor (g : Game) : Option PlayerId :=
         if g.players.isEmpty then none else who g.startingPlayer
     | .none =>
       if g.playersReceivePriority then some g.priority else none
+
+/-- Who must act next, accounting for player-control effects (CR 723.5)? -/
+def actor (g : Game) : Option PlayerId :=
+  g.rawActor.map fun whose =>
+    match g.controllingPlayerOf? whose with
+    | some ctrl => if (g.player ctrl).lost then whose else ctrl
+    | none => whose
+
+/-- Dispatch `action` for `caller`, routing decisions for any controlled player
+through `decidesFor` (CR 723.5) while keeping `.concede` on `caller` (CR 723.5b). -/
+def applyAction (g : Game) (caller : PlayerId) (action : Action) : Except String Game := do
+  match action with
+  | .concede => return g.concede caller
+  | .supplyOrder ids => return (← g.supplyOrder ids)
+  | .supplyIndex i => return (← g.supplyIndex i)
+  | _ =>
+    let p ←
+      match g.rawActor with
+      | some whose =>
+        if g.decidesFor caller whose then pure whose
+        else
+          match g.controllingPlayerOf? whose with
+          | some ctrl =>
+            throw s!"{(g.player ctrl).name} controls {(g.player whose).name} and makes their choices (CR 723.5)"
+          | none => pure caller
+      | none => pure caller
+    applyActionFor g p action
+
+
+/-- Apply an action, then put any resulting triggered abilities on the stack. -/
+def apply (g : Game) (p : PlayerId) (a : Action) : Except String Game := do
+  let beforeWaiting := g.waitingTriggers.size
+  let g ← g.applyAction p a
+  let g :=
+    if g.pending == .none &&
+        (g.pendingReplacement.isSome || !g.outerPendingReplacements.isEmpty) && !g.over then
+      g.drainPendingContinuations
+    else g
+  let g :=
+    if g.pending == .none && g.waitingTriggers.size > beforeWaiting && !g.over then
+      g.receivePriority g.priority
+    else g
+  return g.flushUnlessPays
+
+def handObjects (g : Game) (p : PlayerId) : Array GameObject :=
+  (g.player p).hand.filterMap (fun id => g.findObject? id)
 
 /-- Return owned creatures to hand and schedule that many Bird Soldiers
 for the next upkeep (The Eagles Are Coming!). Tokens returned this way

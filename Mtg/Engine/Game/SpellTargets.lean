@@ -57,7 +57,8 @@ def combinedModesEffect (modes : Array Effect) : Option Effect :=
     let kind := rest.foldl (fun k m => EffectTargetKind.pair k m.targetKind) e.targetKind
     some { e with
       targeting := .of kind
-      allowsZeroTargets := modes.all (fun m => !m.requiresTarget || m.allowsZeroTargets)
+      allowsZeroTargets := modes.any (·.requiresTarget) &&
+        modes.all (fun m => !m.requiresTarget || m.allowsZeroTargets)
       maxTargets := modes.foldl (fun acc m => acc + m.maxTargetCount) 0 }
 
 /-- The targets a kicked spell announces instead (CR 702.33g / 601.2c): The
@@ -412,7 +413,9 @@ def isOwnPermanentTarget (g : Game) (p : PlayerId) : Target → Bool
 
 /-- Whether this target is a permanent an opponent of `p` controls. -/
 def isOppPermanentTarget (g : Game) (p : PlayerId) : Target → Bool
-  | .permanent oid => (g.findObject? oid).any (fun o => g.controlledBy o (g.opponent p))
+  | .permanent oid =>
+    (g.findObject? oid).any (fun o =>
+      (g.livingOpponents p).any (fun pl => g.controlledBy o pl.id))
   | _ => false
 
 /-- Default choice among `legal` for this targeting shape (CR 601.2c). -/

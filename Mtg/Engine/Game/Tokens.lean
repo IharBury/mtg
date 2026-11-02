@@ -42,31 +42,6 @@ def dragon55flyingToken : CardDef :=
 def humanSoldierToken : CardDef :=
   creatureToken "Human Soldier" #[.human, .soldier] 1 1 (some .white)
 
-/-- Additional +1/+1 counters from Arwen, Weaver of Hope as `entering` enters.
-Only weavers already on the battlefield before timestamp `asOf` apply
-(simultaneous enters do not see each other). -/
-def hopeCountersOnEnter (g : Game) (entering : GameObject) (asOf : Nat) : Nat :=
-  match g.controllerOf entering with
-  | none => 0
-  | some p =>
-    if !g.isCreature entering then 0
-    else
-      (g.permanentsOf p).foldl (fun acc weaver =>
-        if weaver.id == entering.id then acc
-        else if !((g.baseCard weaver).othersEnterWithPlusOneEqualToughness &&
-            g.retainsPrintedAbilities weaver) then acc
-        else if weaver.timestamp >= asOf then acc
-        else acc + (g.toughness weaver).toNat) 0
-
-/-- Put `n` additional +1/+1 counters on `o` as it enters from hope-weaver
-replacements. -/
-def applyHopeEnterCounters (g : Game) (o : GameObject) (asOf : Nat) : Game :=
-  let n := g.hopeCountersOnEnter o asOf
-  if n == 0 then g
-  else
-    let g := g.recordPutCounters o.id .plusOnePlusOne n (byPlayer := g.controllerOf o)
-    g.logMsg s!"{g.nameWithToken o} enters with {n} additional +1/+1 counter(s)"
-
 private def unreplacedCause : EventCause → EventCause
   | .replaced _ orig => unreplacedCause orig
   | other => other
@@ -91,9 +66,9 @@ def createOneToken (g : Game) (controller : PlayerId) (printed : CardDef)
     (recordRecent : Bool := false)
     (cause : Option EventCause := none) : Game × GameObject :=
   if let .chooseReplacement .. := g.pending then
-    let isAttacking := attacking || attackingTarget.isSome
     let resolvedAttackTarget : Option AttackTarget :=
-      if isAttacking then some (attackingTarget.getD (.player g.defendingPlayer)) else none
+      g.resolveEnteringAttackTarget? controller attacking attackingTarget
+    let isAttacking := resolvedAttackTarget.isSome
     (g.chainPendingReplacement
       (.createToken controller printed tapped isAttacking resolvedAttackTarget false extraCounters recordRecent cause),
      noTokenCreated controller printed)
@@ -107,11 +82,9 @@ def createOneToken (g : Game) (controller : PlayerId) (printed : CardDef)
       let asOf := g.timestamp
       let newId : ObjectId := ⟨g.nextObjectId⟩
       let ts := g.timestamp + 1
-      let isAttacking := attacking || attackingTarget.isSome
       let resolvedAttackTarget : Option AttackTarget :=
-        if isAttacking then
-          some (attackingTarget.getD (.player g.defendingPlayer))
-        else none
+        g.resolveEnteringAttackTarget? controller attacking attackingTarget
+      let isAttacking := resolvedAttackTarget.isSome
       let baseObj : GameObject := {
         id := newId
         printed := printed
@@ -139,6 +112,28 @@ def createOneToken (g : Game) (controller : PlayerId) (printed : CardDef)
       | none =>
       let g := g.consumeReplacementOrder etb.applied
       let obj := etb.candidate
+      let auraBoard := g.preBatchAuraBoard
+      let probeObj : GameObject :=
+        match etb.tempCopyUntilEot with
+        | some (_, copyCard) =>
+          let copyTok := { copyCard with
+            isToken := true
+            otherFace := copyCard.otherFace.map (fun f => { f with isToken := true }) }
+          { obj with printed := copyTok }
+        | none => obj
+      let (attachHost?, blockedAura) : Option GameObject × Bool :=
+        if obj.attachedTo.isNone && auraBoard.isAura probeObj then
+          let host? := auraBoard.battlefield.find? fun h =>
+            (g.findObject? h.id).any (·.isOnBattlefield) && auraBoard.auraObjCanEnchant h probeObj
+          match host? with
+          | some host => (some host, false)
+          | none => (none, true)
+        else (none, false)
+      if blockedAura then
+        (g.logMsg s!"{probeObj.name} token can't be attached legally and isn't created (CR 303.4f)",
+         noTokenCreated controller printed)
+      else
+      let obj := match attachHost? with | some h => { obj with attachedTo := some h.id } | none => obj
       let resolvedEtbCause := g.resolveOptionalCause etb.cause (fallbackCtrl := some controller)
       let snapObj : EventObject :=
         match etb.tempCopyUntilEot with
@@ -298,15 +293,16 @@ def replaceTokenCreationChoice (g : Game) (initial : ProposedTokenBatch)
             }
       for (_, eff) in g.activeEffects do
         match eff with
-        | .replacement spec _ =>
-          match spec.kind with
-          | .createExtraTokenWithFood p _ =>
-            if includeKindReplacements && p == ctrl && hasFood then specs := specs.push spec
-          | .artifactTokensBecome p _ =>
-            if includeKindReplacements && p == ctrl && hasArtifact then specs := specs.push spec
-          | .multiplyTokenCreation p _ =>
-            if includeMultiplier && p == ctrl then specs := specs.push spec
-          | _ => pure ()
+        | .replacement spec d =>
+          if g.durationActive d then
+            match spec.kind with
+            | .createExtraTokenWithFood p _ =>
+              if includeKindReplacements && p == ctrl && hasFood then specs := specs.push spec
+            | .artifactTokensBecome p _ =>
+              if includeKindReplacements && p == ctrl && hasArtifact then specs := specs.push spec
+            | .multiplyTokenCreation p _ =>
+              if includeMultiplier && p == ctrl then specs := specs.push spec
+            | _ => pure ()
         | _ => pure ()
       let candidates := specs.map (fun s => (ReplacementOrPrevention.replacement s).toCandidate)
       match g.selectNextReplacementStep candidates curApplied curOrder with
@@ -830,11 +826,8 @@ def createKindTokens (g : Game) (controller : PlayerId) (kind : TokenKind)
     let g := if resetRecent then g.change (.recentTokenIds #[]) else g
     g.withBatchCore cause fun g => Id.run do
       let mut g := g
-      let isAttacking := attacking || attackingTarget.isSome
-      let resolvedTarget :=
-        if isAttacking then
-          some (attackingTarget.getD (.player g.defendingPlayer))
-        else none
+      let resolvedTarget := g.resolveEnteringAttackTarget? controller attacking attackingTarget
+      let isAttacking := resolvedTarget.isSome
       let printed := tokenPrinted kind
       for i in [0:n] do
         let (g', _) := g.createToken controller printed (tapped := tapped)

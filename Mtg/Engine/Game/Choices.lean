@@ -192,32 +192,6 @@ def discardHandThenDraw (g : Game) (p : PlayerId) (n : Nat) : Game :=
   let g := g.discardEntireHand p
   if n == 0 then g else g.draw p n
 
-/-- Players currently tied for most life. -/
-def playersWithMostLife (g : Game) : Array PlayerId :=
-  let living := g.livingPlayers
-  match living[0]? with
-  | none => #[]
-  | some first =>
-    let best := living.foldl (fun acc pl => max acc pl.life) first.life
-    living.filter (fun pl => pl.life == best) |>.map (·.id)
-
-/-- The Black Gate: check most life as the ability resolves, then those
-creatures (including later ones) cannot block the target this turn. -/
-def applyBlackGateUnblockable (g : Game) (attackerId : ObjectId)
-    (chosen : PlayerId) : Game :=
-  if !(g.playersWithMostLife).contains chosen then
-    g.logMsg "The chosen player does not have the most life. The ability does nothing."
-  else
-    match g.findObject? attackerId with
-    | none => g.logMsg "The target is no longer legal"
-    | some o =>
-      if !o.isOnBattlefield then
-        g.logMsg "The target is no longer legal"
-      else
-        let g := g.createEffect (.cantBeBlockedByPlayerUntilEot attackerId chosen)
-        g.logMsg
-          s!"{o.name} can't be blocked by creatures {(g.player chosen).name} controls this turn"
-
 /-- Move or put each card in `remainingIds` onto the battlefield sequentially,
 pausing on `Pending.chooseReplacement` (`PendingReplacement.putToBattlefieldLoop`)
 and running `afterPermanentEnters` / `afterLandEnters` (plus optional haste or
@@ -250,9 +224,7 @@ def putToBattlefieldLoop (g : Game) (controller : PlayerId)
         let ctrl := if useCardOwner then o.owner else controller
         if !onlyFoodArtifact && !(g.player ctrl).lost && g.isAura o then
           let auraProbe := { o with controller := some ctrl }
-          let host? := preBf.find? (fun h =>
-            (g.findObject? h.id).any (fun curH =>
-              curH.isOnBattlefield && g.auraObjCanEnchant curH auraProbe))
+          let host? := g.findPreBatchAuraHost? preBf auraProbe
           match host? with
           | none =>
             g := g.logMsg s!"{o.name} remains in its current zone (can't be attached legally; CR 303.4f)"
@@ -484,6 +456,7 @@ def everyAttackCosts (g : Game) (o : GameObject) : Bool :=
 or an unpaid attack cost means it does not have to attack (MSH 130). -/
 def mustAttackIfAble (g : Game) (o : GameObject) (attackRequiresCost := false) : Bool :=
   (g.hasAttacksIfAble o || o.status.goaded) && g.canAttack o &&
+    !(g.livingOpponents g.activePlayer).isEmpty &&
     !mustAttackCanDeclineIfOnlyAttackCosts (attackRequiresCost || g.everyAttackCosts o)
 
 /-- Failed Adventure from Bilbo's graveyard ability is exiled by Bilbo, not
@@ -497,55 +470,58 @@ def exileFailedAdventureFromBilbo (g : Game) (id : ObjectId) : Game :=
     g.logMsg s!"{name} is exiled (Bilbo's replacement). It cannot be cast as a permanent"
 
 /-- Create `remaining` token copies of `template` under `controller` with haste
-and end-step sacrifice (Venser), pausing on `Pending.chooseReplacement`
+and end-step sacrifice (Venser) as a two-pass simultaneous entry batch inside
+`withBatch` (CR 603.6a / 603.10), pausing on `Pending.chooseReplacement`
 (`PendingReplacement.copyPermanentTokens`) if token creation or ETB choices
 require interactive CR 616.1 selection. -/
 partial def createPermanentCopyTokens (g : Game) (controller : PlayerId) (template : CardDef)
     (remaining : Nat) (cause : Option EventCause := none)
-    (priorRecentCount : Option Nat := none) : Game :=
-  let baseCount := priorRecentCount.getD g.recentTokenIds.size
-  let applyRecent (g : Game) : Game :=
-    let allIds := g.recentTokenIds
-    let ids := allIds.extract baseCount allIds.size
-    let g :=
-      if g.continuations.isEmpty || allIds.size ≤ baseCount then g
-      else g.change (.recentTokenIds (allIds.extract 0 baseCount))
-    ids.foldl (fun g tid =>
-      match g.findObject? tid with
-      | none => g
-      | some tok =>
-        if !tok.isOnBattlefield then g
-        else
-          let g := g.afterPermanentEnters tok
-          match g.findObject? tid with
-          | none => g
-          | some tok =>
-            if !tok.isOnBattlefield then g
-            else
-              let g := g.createEffect (.keywordsUntilEot tok.id Keyword.haste) (cause := cause)
-              g.registerDelayedTrigger {
-                controller
-                source := some tok
-                kind := .endStepSacrifice tok.id
-                cause := cause.getD (.oneShotEffect none none (some controller))
-              }) g
-  let g := applyRecent g
-  if remaining == 0 then
-    g.logMsg "The token copies gain haste and are sacrificed at the next end step"
+    (priorRecentCount : Option Nat := none) (pushedFrame : Bool := false) : Game :=
+  if let .chooseReplacement .. := g.pending then
+    let baseCount := priorRecentCount.getD g.recentTokenIds.size
+    g.chainPendingReplacement
+      (.copyPermanentTokens controller template remaining cause baseCount pushedFrame)
   else
-    let pushedFrame := g.continuations.isEmpty
-    let g := if pushedFrame then g.change (.pushContinuationFrame {}) else g
-    let (g, _) := g.createToken controller template (recordRecent := true) (cause := cause)
-    if let .chooseReplacement .. := g.pending then
-      g.chainPendingReplacement
-        (.copyPermanentTokens controller template (remaining - 1) cause baseCount)
-    else
-      let g := applyRecent g
-      let g :=
-        if pushedFrame && g.pending == .none && g.pendingReplacement.isNone && remaining == 1 then
-          g.change .popContinuationFrame
-        else g
-      g.createPermanentCopyTokens controller template (remaining - 1) cause (some baseCount)
+    let baseCount := priorRecentCount.getD g.recentTokenIds.size
+    let pushed := pushedFrame || (remaining > 0 && g.continuations.isEmpty)
+    let g := if !pushedFrame && pushed then g.change (.pushContinuationFrame {}) else g
+    let g := g.withBatch cause fun g => Id.run do
+      let batchCause := cause.orElse (fun _ => g.currentBatch.bind (·.2))
+      let mut g := g
+      for i in [0:remaining] do
+        let (g', _) := g.createToken controller template (recordRecent := true) (cause := batchCause)
+        g := g'
+        if let .chooseReplacement .. := g.pending then
+          let rem := remaining - (i + 1)
+          return g.chainPendingReplacement
+            (.copyPermanentTokens controller template rem batchCause baseCount pushed)
+      let allIds := g.recentTokenIds
+      let ids := allIds.extract baseCount allIds.size
+      if !g.continuations.isEmpty && allIds.size > baseCount then
+        g := g.change (.recentTokenIds (allIds.extract 0 baseCount))
+      let mut anyEntered := false
+      for tid in ids do
+        if let some tok := g.findObject? tid then
+          if tok.isOnBattlefield then
+            anyEntered := true
+            g := g.afterPermanentEntersInBatch tok
+            if let some tok := g.findObject? tid then
+              if tok.isOnBattlefield then
+                g := g.createEffect (.keywordsUntilEot tok.id Keyword.haste) (cause := batchCause)
+                g := g.registerDelayedTrigger {
+                  controller
+                  source := some tok
+                  kind := .endStepSacrifice tok.id
+                  cause := batchCause.getD (.oneShotEffect none none (some controller))
+                }
+      if anyEntered || remaining == 0 then
+        g := g.logMsg "The token copies gain haste and are sacrificed at the next end step"
+      if pushed && g.continuations.back? == some {} then
+        g := g.change .popContinuationFrame
+      return g
+    if let .chooseReplacement .. := g.pending then g
+    else if g.currentBatch.isNone then g.promptTriggerTargetsIfNeeded
+    else g
 
 /-- Whether the source of a proposed activated ability can still pay tap/sacrifice/discard/loyalty. -/
 def sourceStillPayable (g : Game) (prop : ProposedSpell) : Bool :=

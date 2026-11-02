@@ -144,6 +144,75 @@ def putOnOwnerLibrary (g : Game) (o : GameObject) (top : Bool) : Game :=
   let (g, _) := g.move o.id (.library owner) none (libraryPosition := some pos)
   g.logMsg s!"{(g.player owner).name} puts {name} on the {side} of their library"
 
+/-- Emit the post-`recordPutCounters` log for `oid` from its counter delta
+since `before` (`0 = stun`, `1 = loyalty`, `2 = doubleStrike`, `3 = charge`,
+`4 = quest`, `5 = hone`, `6 = invasion`, `7 = trample`). -/
+def logPutCounterDelta (g : Game) (oid : ObjectId) (before : Nat) (kindTag : Nat) : Game :=
+  match g.findObject? oid with
+  | none => g
+  | some o =>
+    match kindTag with
+    | 0 =>
+      let k := o.status.stun - before
+      if k == 0 then g
+      else
+        let phrase := if k == 1 then "A stun counter is put" else s!"{k} stun counters are put"
+        g.logMsg s!"{phrase} on {g.name o}"
+    | 1 =>
+      let k := o.status.counterCount .loyalty - before
+      if k == 0 then g
+      else
+        let phrase := if k == 1 then "A loyalty counter is put" else s!"{k} loyalty counters are put"
+        g.logMsg s!"{phrase} on {g.name o}"
+    | 2 =>
+      let k := o.status.counterCount .doubleStrike - before
+      if k == 0 then g
+      else
+        let phrase := if k == 1 then "a double strike counter" else s!"{k} double strike counters"
+        g.logMsg s!"{g.name o} gets {phrase}"
+    | 3 =>
+      let k := o.status.counterCount .charge - before
+      if k == 0 then g
+      else
+        let phrase := if k == 1 then "A charge counter is put" else s!"{k} charge counters are put"
+        g.logMsg s!"{phrase} on {g.name o}"
+    | 4 =>
+      let k := o.status.quest - before
+      if k == 0 then g
+      else
+        let phrase := if k == 1 then "a quest counter" else s!"{k} quest counters"
+        g.logMsg s!"{g.name o} gets {phrase} ({o.status.quest})"
+    | 5 =>
+      let k := o.status.hone - before
+      if k == 0 then g
+      else g.logMsg s!"{g.name o} gets {k} hone counter(s)"
+    | 6 =>
+      let k := o.status.counterCount .invasion - before
+      if k == 0 then g
+      else
+        let phrase := if k == 1 then "an invasion counter" else s!"{k} invasion counters"
+        g.logMsg s!"{g.name o} gets {phrase}"
+    | 7 =>
+      let k := o.status.counterCount .trample - before
+      if k == 0 then g
+      else
+        let phrase := if k == 1 then "a trample counter" else s!"{k} trample counters"
+        g.logMsg s!"{g.name o} gets {phrase}"
+    | _ => g
+
+/-- Run `recordPutCounters` on `oid` and emit `logPutCounterDelta` synchronously
+or defer via `.finishPostStep 82` when `Pending.chooseReplacement` opened. -/
+def putCountersDeferredLog (g : Game) (oid : ObjectId) (kind : CounterKind)
+    (n : Nat) (byPlayer : Option PlayerId) (kindTag : Nat)
+    (cause : Option EventCause := none) : Game :=
+  let before := ((g.findObject? oid).map (·.status.counterCount kind)).getD 0
+  let g := g.recordPutCounters oid kind n (byPlayer := byPlayer) (cause := cause)
+  if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement
+      (.finishPostStep 82 (byPlayer.getD g.activePlayer) (n := before) (cardId := some oid) (modes := #[kindTag]))
+  else
+    g.logPutCounterDelta oid before kindTag
+
 /-- Apply a shared permanent action (spells, activated abilities, and triggers). -/
 def applyPermanentAction (g : Game) (o : GameObject) (action : PermanentAction)
     (sourceId : Option ObjectId := none) : Game :=
@@ -192,12 +261,11 @@ def applyPermanentAction (g : Game) (o : GameObject) (action : PermanentAction)
   | .becomePrepared => g.becomePrepared o
   | .tapAndStun =>
     -- Ruling 764: an already tapped creature still gets the stun counter.
-    let g := if o.status.tapped then g else g.becomeTapped o
-    let cur := g.object! o.id
-    let cause := g.resolveOptionalCause none (fallbackSrc := sourceId) (fallbackCtrl := g.controllerOf cur)
-    let g := g.recordPutCounters cur.id .stun 1 (byPlayer := g.controllerOf cur)
-      (cause := some cause)
-    g.logMsg s!"A stun counter is put on {g.name cur}"
+    let cause := g.resolveOptionalCause none (fallbackSrc := sourceId) (fallbackCtrl := g.controllerOf o)
+    g.withBatch (some cause) fun g =>
+      let g := if o.status.tapped then g else g.becomeTapped o (cause := some cause)
+      let cur := g.object! o.id
+      g.putCountersDeferredLog cur.id .stun 1 (g.controllerOf cur) 0 (cause := some cause)
   | .setBasePT pw tw =>
     let g := g.createEffect (.setBasePTUntilEot o.id (pw, tw))
     g.logMsg s!"{g.name o} has base power and toughness {pw}/{tw} until end of turn"
@@ -519,18 +587,21 @@ card in `remainingIds` back to the battlefield under its owner's control. -/
 private def flickerReturnBatchLoop (g : Game) (remainingIds : Array ObjectId)
     (exiledPreIds : Array ObjectId) (enteredFromIds : Array ObjectId)
     (logText : String) (tapped : Bool) (onlyLandTapped : Bool)
-    (clearExileFields : Bool) (cause : Option EventCause) : Game := Id.run do
+    (clearExileFields : Bool) (cause : Option EventCause)
+    (preBattlefield : Option (Array GameObject) := none) : Game := Id.run do
+  let preBf := preBattlefield.getD g.battlefield
   let mut g := g
   for i in [0:remainingIds.size] do
     let eid := remainingIds[i]!
     match g.findObject? eid with
     | some o =>
-      if o.zone == .exile && (!o.printed.isToken || o.isCopy) then
+      if o.zone == .exile && !o.printed.isToken then
         if clearExileFields then
           g := g.changeObject eid (.linkedExile #[])
         let enterTapped := tapped || (onlyLandTapped && g.isLand o)
         if g.isAura o then
-          match g.battlefield.find? (fun h => g.auraObjCanEnchant h o) with
+          let auraProbe := { o with controller := some o.owner }
+          match g.findPreBatchAuraHost? preBf auraProbe with
           | none =>
             g := g.logMsg s!"{o.name} remains in exile (can't be attached legally; CR 303.4g)"
           | some host =>
@@ -545,7 +616,7 @@ private def flickerReturnBatchLoop (g : Game) (remainingIds : Array ObjectId)
           let rem := remainingIds.extract (i + 1) remainingIds.size
           if !rem.isEmpty then
             g := g.chainPendingReplacement
-              (.flickerLoop rem exiledPreIds enteredFromIds logText 2 tapped onlyLandTapped clearExileFields cause)
+              (.flickerLoop rem exiledPreIds enteredFromIds logText 2 tapped onlyLandTapped clearExileFields cause (some preBf))
           return g
     | none => pure ()
   return g
@@ -558,16 +629,17 @@ private def flickerStartReturnBatch (g : Game) (exiledPreIds : Array ObjectId)
   let exiledObjs := exiledPreIds.filterMap (fun id => g.followMovedToZone? id (· == .exile))
   let g :=
     exiledObjs.foldl (fun acc o =>
-      if o.printed.isToken && !o.isCopy then acc.logMsg s!"{o.name} is exiled" else acc) g
-  let returnableIds := (exiledObjs.filter (fun o => !o.printed.isToken || o.isCopy)).map (·.id)
+      if o.printed.isToken then acc.logMsg s!"{o.name} is exiled" else acc) g
+  let returnableIds := (exiledObjs.filter (fun o => !o.printed.isToken)).map (·.id)
   if returnableIds.isEmpty then g
   else
+    let preBf := g.battlefield
     let g := g.withBatch cause fun g =>
       g.flickerReturnBatchLoop returnableIds exiledPreIds returnableIds logText
-        tapped onlyLandTapped clearExileFields cause
+        tapped onlyLandTapped clearExileFields cause (some preBf)
     if let .chooseReplacement .. := g.pending then
       g.chainPendingReplacement
-        (.flickerLoop #[] exiledPreIds returnableIds logText 3 tapped onlyLandTapped clearExileFields cause)
+        (.flickerLoop #[] exiledPreIds returnableIds logText 3 tapped onlyLandTapped clearExileFields cause (some preBf))
     else
       g.flickerPostReturn returnableIds logText
 
@@ -630,15 +702,16 @@ def resumeFlickerLoop (g : Game) (remainingIds : Array ObjectId)
     (enteredFromIds : Array ObjectId := #[])
     (logText : String := "is exiled, then returned to the battlefield")
     (stage : Nat := 0) (tapped : Bool := false) (onlyLandTapped : Bool := false)
-    (clearExileFields : Bool := false) (cause : Option EventCause := none) : Game :=
+    (clearExileFields : Bool := false) (cause : Option EventCause := none)
+    (preBattlefield : Option (Array GameObject) := none) : Game :=
   if let .chooseReplacement .. := g.pending then
     g.chainPendingReplacement
-      (.flickerLoop remainingIds exiledPreIds enteredFromIds logText stage tapped onlyLandTapped clearExileFields cause)
+      (.flickerLoop remainingIds exiledPreIds enteredFromIds logText stage tapped onlyLandTapped clearExileFields cause preBattlefield)
   else
     match stage with
     | 0 => g.flickerExileBatchLoop remainingIds exiledPreIds logText tapped onlyLandTapped clearExileFields cause
     | 1 => g.flickerStartReturnBatch exiledPreIds logText tapped onlyLandTapped clearExileFields cause
-    | 2 => g.flickerReturnBatchLoop remainingIds exiledPreIds enteredFromIds logText tapped onlyLandTapped clearExileFields cause
+    | 2 => g.flickerReturnBatchLoop remainingIds exiledPreIds enteredFromIds logText tapped onlyLandTapped clearExileFields cause preBattlefield
     | 3 => g.flickerPostReturn enteredFromIds logText
     | _ =>
       g.flickerPermanents remainingIds (logText := logText) (tapped := tapped)

@@ -309,11 +309,13 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
       s!"{(g.player controller).name} adds \{U} (noncreature spells only)"
   | .tapAndStunX =>
     g.withLegalKindPermanent controller kind targets (fun g o =>
-      let g := if o.status.tapped then g else g.becomeTapped o
-      if chosenX == 0 then g
-      else
-        (g.recordPutCounters o.id .stun chosenX (byPlayer := some controller)).logMsg
-          s!"{chosenX} stun counter(s) are put on {g.name o}") sourceId illegal
+      let cause := g.resolveOptionalCause none (fallbackSrc := sourceId) (fallbackCtrl := some controller)
+      g.withBatch (some cause) fun g =>
+        let g := if o.status.tapped then g else g.becomeTapped o (cause := some cause)
+        if chosenX == 0 then g
+        else
+          let cur := g.object! o.id
+          g.putCountersDeferredLog cur.id .stun chosenX (some controller) 0 (cause := some cause)) sourceId illegal
   | .emblemDrawOnCast =>
     let emblem : CardDef := {
       name := "Chandra, Chill of Compliance Emblem", types := #[]
@@ -447,10 +449,7 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
       (g.createEffect (.additionalCreature o.id true)).logMsg
         s!"{o.name} becomes an artifact creature until end of turn")
   | .queueMshReflexive kind paid =>
-    if kind == 2 then
-      g.beginFraChoice controller (.hawkeyeModes paid #[] sourceId)
-        s!"{(g.player controller).name} chooses up to {paid} Trick Arrows modes"
-    else g.queueModeledReflexive controller sourceId kind paid
+    g.queueModeledReflexive controller sourceId kind paid
   | .mshReflexive kind paid =>
     g.resolveModeledReflexive controller sourceId kind paid targets g.resolvingDivision
   | .hawkeyeArrows modes =>
@@ -508,7 +507,9 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
             let copyTs := g.timestamp + 1
             let copyObj : GameObject := {
               id := copyId
-              printed := base
+              printed := { base with
+                isToken := false
+                otherFace := base.otherFace.map (fun f => { f with isToken := false }) }
               owner := controller
               controller := some controller
               zone := .exile
