@@ -5461,23 +5461,31 @@ blocker-retention / `playerControl` integrity, and CR 500.4 / 611.2a–b /
      `g.pending == .none` when `Turns.beginStepBody .declareBlockers` runs with
      `attackers.isEmpty`.
    - Complete Two-Headed Giant (`CR 102.3 / 810.2 / 810.5 / 702.11b–c /
-     702.21a`) opponent vs teammate checks: add `Core.areTeammates` and
-     `Core.isLivingOpponentOf` in `Core.lean`, allow teammates through Hexproof
-     (`caster == target || g.areTeammates caster target || !g.playerHasHexproof target`
-     in `Core.playerCanBeTargetedBy`, `Core.lean`, and
+     702.21a`) opponent vs teammate checks: add `Core.areTeammates` in
+     `Core.lean` (`a != b && ((g.player a).teammate == some b || (g.player b).teammate == some a)`,
+     matching `Core.livingOpponents`), replace the Hexproof clause (keeping the
+     existing `protectionFromEverything` / `typeBlock` / `!srcBlocked`
+     protection conjuncts) with
+     `caster == target || g.areTeammates caster target || !g.playerHasHexproof target`
+     in `Core.playerCanBeTargetedBy` (`Core.lean`) and
      `!g.hasHexproof o || g.controlledBy o caster || (g.controllerOf o).any (g.areTeammates · caster)`
-     in `Targeting.canBeTargetedBy`,
-     [`Targeting.lean`](Mtg/Engine/Game/Targeting.lean)), skip teammates on Ward
-     in `Core.matchTriggers` (`c != actor && !board.areTeammates c actor` in
-     `Core.lean`), and use `!g.areTeammates` / `g.isLivingOpponentOf` in
-     `Targeting.legalFilteredTargets` `.player` (`.opponent` / `.eachOpponent`)
-     and `Targeting.legalTargetsForAtomicKind` (`.oppPermanent` and
-     `.oppCreatureOrPlaneswalker`), `Movement.exileInsteadSource?`
-     (`p != q && !g.areTeammates p q` in `Movement.lean`),
-     `Core.countOpponentArtifacts` (`Core.lean`), opponent trigger matchers in
-     `Core.matchTriggers` (`Core.lean`), and opponent resolution helpers
-     (`FraAbilities.lean`, `TriggeredAbilities.lean`, `FraResolve.lean`,
-     `FrcResolve.lean`, and `EffectResolution.lean`).
+     in `Targeting.canBeTargetedBy`
+     ([`Targeting.lean`](Mtg/Engine/Game/Targeting.lean)), gate Ward in
+     `Core.matchTriggers`'s local `queueWardsFor` on
+     `c != actor && !board.areTeammates c actor` (`Core.lean`) and
+     `Movement.exileInsteadSource?` on `p != q && !g.areTeammates p q`
+     (`Movement.lean`), and use existing `Core.isLivingOpponentOf` in
+     `Targeting.legalFilteredTargets` `.player` (`g.isLivingOpponentOf caster pl.id`
+     for `.opponent` / `.eachOpponent`), `Targeting.legalTargetsForAtomicKind`
+     (`(g.controllerOf o).any (g.isLivingOpponentOf caster ·)` for
+     `.oppPermanent` and `.oppCreatureOrPlaneswalker`),
+     `Core.countOpponentArtifacts`
+     (`(g.controllerOf o).any (g.isLivingOpponentOf controller ·)` in
+     `Core.lean`), opponent trigger gates in `Core.matchTriggers`
+     (`.becomesTarget` and `.youCastTargetingOpponentOrTheirCreature` in
+     `Core.lean`), and opponent resolution helpers (`FraAbilities.lean`,
+     `TriggeredAbilities.lean`, `FraResolve.lean`, `FrcResolve.lean`, and
+     `EffectResolution.lean`).
 4. Complete CR 723.1 / 611.2a–b / 800.4m `playerControl` turn-window & expiry,
    `Core.hasActiveEffect` `durationActive`, and orphaned scaffolding & CR
    citation cleanup (§0.1, §3.3, §3.6):
