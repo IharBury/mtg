@@ -4640,10 +4640,10 @@ CR 800.4a/h leave-game continuation handling, CR 702.131a/b/d `citysBlessing` /
      non-battlefield zone (`Movement.move`, CR 704.5e / 707.10a) so
      `copiesOutside` ceases countered or bounced spell copies via
      `ZoneEvent.ceasedToExist`; include targeted Aura spells (`g.isAura obj`, CR
-     303.4a) in `SpellResolution.resolveTop`'s CR 608.2b all-targets-illegal
-     check (`SpellResolution.lean`, checking `canBeTargetedBy` for hexproof CR
-     702.11b / shroud CR 702.18a alongside `auraObjCanEnchant`, emitting
-     `StackObjectEvent.removedOnResolution` instead of
+     303.4a) in `SpellResolution.resolveTop`'s CR 608.2b / 608.3b
+     all-targets-illegal check (`SpellResolution.lean`, checking `canBeTargetedBy`
+     for hexproof CR 702.11b / shroud CR 702.18a alongside `auraObjCanEnchant`,
+     emitting `StackObjectEvent.removedOnResolution` instead of
      `StackObjectEvent.resolved`, and ceasing Aura spell copies per CR 704.5e);
      and enforce `"Enchant creature you control"` (*Secret Invasion*) in
      `SpellTargets.auraTargetKind`
@@ -4747,13 +4747,13 @@ CR 800.4a/h leave-game continuation handling, CR 702.131a/b/d `citysBlessing` /
      both `q == p` and `q != p` in `Leaving.lean`), and `--norandom`
      `Pending.resolveRandom` prompts referencing a departed player
      (`Leaving.lean`).
-4. Complete CR 500.4–500.5 / 514.3 / 611.2b turn & step `EffectDuration` expiry
+4. Complete CR 500.4–500.5 / 514.3 / 611.2a turn & step `EffectDuration` expiry
    and final CR citation cleanup (§0.1, §3.3, §3.6):
    - Route `Turns.finishPostSbaCleanup`
      ([`Turns.lean`](Mtg/Engine/Game/Turns.lean)) through `beginTurn` (matching
      `advanceStep`) rather than calling `(g.startNextTurn).beginStep .untap`
      directly so `.protectionFromEverything` and `.lifeCantChange`
-     (`EffectDuration.untilNextTurnOf`, CR 611.2b) expire on a player's next
+     (`EffectDuration.untilNextTurnOf`, CR 611.2a) expire on a player's next
      turn after a normal silent cleanup (CR 514.3), wire §3.3 / §3.6
      `EffectDuration.untilEndOfCombat` (on `TurnEvent.phaseEnded .combat`, CR
      500.5a / 511.2), `EffectDuration.untilEndOfStepOrPhase` (on
@@ -4765,11 +4765,19 @@ CR 800.4a/h leave-game continuation handling, CR 702.131a/b/d `citysBlessing` /
      general non-copy `.untilEndOfNextTurnOf g.activePlayer` effects in
      `Turns.clearEOT` when `g.hasTurnBegunSince eid g.activePlayer` holds.
    - Fix the remaining mismatched CR citations in
+     `Entering.lean` (`Entering.resolveAuraSpell`: keep `CR 303.4` and replace
+     `608.3a` with `608.3b` for illegal-target graveyard resolution via `608.2b`
+     and `608.3c` for attaching to the target permanent) and
      [`Tests/Auras.lean`](Mtg/Engine/Tests/Auras.lean) (`CR 608.3a` →
-     `CR 608.2b` for Aura target illegality before resolution) and
-     [`Status.lean`](Mtg/Engine/Game/Status.lean) /
-     [`Object.lean`](Mtg/Engine/Game/Object.lean) (`chosenAnchor` /
-     `asEntersChooseAnchor`: `CR 614.12` without modal `700.2`).
+     `CR 608.3b` / `608.2b` when an Aura's target is illegal on resolution), in
+     [`Object.lean`](Mtg/Engine/Game/Object.lean)
+     (`TurnBasedAction.expireAtStepBegin`: `500.4 / 611.2b` → `500.4 / 611.2a`),
+     `Turns.lean` (`expireFraUntilTurnEffects`: `CR 611.2b` → `CR 611.2a`), and
+     `Tests/Events.lean` (`611.2b` → `611.2a` on `untilNextTurnOf` /
+     `expireAtStepBegin` comments), and in
+     [`Status.lean`](Mtg/Engine/Game/Status.lean) / `Object.lean`
+     (`chosenAnchor` / `asEntersChooseAnchor`: `CR 614.12` without modal
+     `700.2`).
 
 Tests: `Events.lean` (isolation tests for nested-batch `currentBatch` replay &
 shared `EffectId` fidelity, CR 733.1 `reverseToProposalCheckpoint?`
@@ -4778,12 +4786,12 @@ shared `EffectId` fidelity, CR 733.1 `reverseToProposalCheckpoint?`
 `factOrFiction` / `castFreeCopy` / `concede` `consecutivePasses` &
 counter-log parity, CR 603.3c–d modal trigger stack announcement & mandatory
 target removal, CR 603.4 / 608.2a intervening-`"if"` checks, CR 704.5d–e /
-707.10 / 707.12 card & permanent spell copy lifecycle, CR 608.2b / 303.4a,c Aura
-resolution & retargeting, CR 704.3 / 704.5j recursive `keepLegend` `preBf` & CR
-800.4a per-pass SBA leave interleaving, CR 610.3 post-departure `linkedExile`
-batches & two-pass simultaneous entry, CR 800.4 `mayThen` / two-player
-`FraChoice` / pregame concessions, and CR 500.4–5 / 514.3 / 611.2b silent
-cleanup `beginTurn` & step/phase `EffectDuration` expiry), `Auras.lean`,
+707.10 / 707.12 card & permanent spell copy lifecycle, CR 608.2b / 608.3b–c /
+303.4a,c Aura resolution & retargeting, CR 704.3 / 704.5j recursive `keepLegend`
+`preBf` & CR 800.4a per-pass SBA leave interleaving, CR 610.3 post-departure
+`linkedExile` batches & two-pass simultaneous entry, CR 800.4 `mayThen` /
+two-player `FraChoice` / pregame concessions, and CR 500.4–5 / 514.3 / 611.2a
+silent cleanup `beginTurn` & step/phase `EffectDuration` expiry), `Auras.lean`,
 `Casting.lean`, `Combat.lean`, `Leaving.lean`, `Mulligans.lean`, `Turns.lean`,
 `Abilities.lean`, `Effects.lean`, `Grant.lean`, `Marvel.lean`, `Reflexive.lean`,
 `MshOracleTests.lean`, `OracleRulingTests.lean`, `CatalogModelTests.lean`.
