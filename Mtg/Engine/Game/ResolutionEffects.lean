@@ -14,10 +14,11 @@ namespace Game
 
 /-- Put Palantír's influence counter when `target` is still a legal opponent.
 `none` means the ability does nothing further: no scry, draw, or mill.
-`some increased` means the counter was put, and `increased` is whether the
-influence total went up. -/
+`some none` means `recordPutCounters` paused on `Pending.chooseReplacement`.
+`some (some increased)` means the counter put completed synchronously and
+`increased` is whether the influence total went up. -/
 def putPalantirInfluence (g : Game) (sourceId : ObjectId) (target : Option PlayerId) :
-    Game × Option Bool :=
+    Game × Option (Option Bool) :=
   let refuse :=
     (g.logMsg
       "The target is no longer legal. No influence counter, scry, draw, or mill.",
@@ -34,17 +35,26 @@ def putPalantirInfluence (g : Game) (sourceId : ObjectId) (target : Option Playe
         else
           let before := src.status.influence
           let g := g.recordPutCounters src.id .influence 1 (byPlayer := g.controllerOf src)
-          let g := g.logMsg s!"{g.name src} gets an influence counter"
-          let after := ((g.findObject? sourceId).map (·.status.influence)).getD before
-          (g, some (after > before))
+          if let .chooseReplacement .. := g.pending then
+            (g, some none)
+          else
+            let g := g.logMsg s!"{g.name src} gets an influence counter"
+            let after := ((g.findObject? sourceId).map (·.status.influence)).getD before
+            (g, some (some (after > before)))
 
 /-- Palantír of Orthanc: an illegal target means no influence, scry, draw,
 or mill. -/
 def applyPalantir (g : Game) (sourceId : ObjectId) (target : Option PlayerId) : Game :=
+  let before := ((g.findObject? sourceId).map (·.status.influence)).getD 0
+  let ctrl? := (g.findObject? sourceId).map g.you
   let (g, ok) := g.putPalantirInfluence sourceId target
   match ok with
   | none => g
-  | some _ =>
+  | some none =>
+    let ctrl := ctrl?.getD g.activePlayer
+    g.chainPendingReplacement
+      (.finishPostStep 56 ctrl (n := before) (sourceId := some sourceId))
+  | some (some _) =>
     match g.findObject? sourceId with
     | some src => g.beginScry (g.you src) 2
     | none => g
@@ -151,17 +161,26 @@ def choosePutArtifactFromHand (g : Game) (p : PlayerId) (cardId : ObjectId) :
       | none => g
   | _ => throw "Not time to put an artifact from your hand"
 
+/-- True when at least one card was milled by a player in `opponents` in
+`g.events[startIdx:]` (CR 701.17a / 701.17c, including zone-redirected mills). -/
+def anyOpponentMilledSince (g : Game) (opponents : Array PlayerId) (startIdx : Nat) : Bool :=
+  Id.run do
+    for i in [startIdx : g.events.size] do
+      match g.events[i]!.change with
+      | .rules (.zone (.moved _ after (.library pid) toZone .mill _ _ _)) =>
+        if opponents.contains pid && toZone != .library pid && after.owner == pid then
+          return true
+      | _ => pure ()
+    return false
+
 /-- Mill opponents, then a reflexive trigger exists only if cards were milled. -/
 def millThenReflexive (g : Game) (opponents : Array PlayerId) (n : Nat)
     (cause : Option EventCause := none) : Game × Bool :=
-  let before :=
-    opponents.foldl (fun acc pid => acc + (g.player pid).graveyard.size) 0
+  let startIdx := g.events.size
   let g :=
     g.withBatch cause fun g =>
       opponents.foldl (fun acc pid => acc.mill pid n (cause := cause)) g
-  let after :=
-    opponents.foldl (fun acc pid => acc + (g.player pid).graveyard.size) 0
-  (g, after > before)
+  (g, g.anyOpponentMilledSince opponents startIdx)
 
 /-- Put +1/+1 and lifelink until end of turn on a creature (Bard the Bowman). -/
 def applyBardBowman (g : Game) (targetId : ObjectId) : Game :=
@@ -366,15 +385,35 @@ def sourcePowerAtResolution (g : Game) (sourceId : Option ObjectId)
     else lkp.getD (g.snapshotPower o)
   | none => lkp.getD (0 : Int)
 
-/-- How many Equipment are attached to the source.
-A source still on the battlefield uses those attachments.
-A source that has left uses `lastKnownPower` as that count. -/
+/-- How many Equipment are attached to the source (CR 608.2h / 301.5c).
+A source still on the battlefield uses its live Equipment attachments.
+A source that has left the battlefield counts the Equipment unattached from it
+in its battlefield-departure batch, falling back to `lastKnownPower` for
+synthetic unit tests that invoke resolution directly without departure events. -/
 def attachedEquipmentAtResolution (g : Game) (sourceId : Option ObjectId)
     (lastKnownPower : Option Int := none) : Nat :=
-  match sourceId.bind g.findObject? with
-  | some o =>
-    if o.isOnBattlefield then g.attachedEquipmentCount o
-    else (lastKnownPower.getD (0 : Int)).toNat
+  let departedCount? (sid : ObjectId) : Option Nat :=
+    match g.events.findSomeRev? (fun e =>
+      match e.change with
+      | .rules (.zone (.moved before _ .battlefield _ _ _ _ _)) =>
+        if before.id == some sid then some e.batch else none
+      | _ => none) with
+    | none => none
+    | some depBatch =>
+      some <| g.events.foldl (fun acc e =>
+        if e.batch == depBatch && e.cause? == some (.gameRule .unattachOnHostLeave) then
+          match e.change with
+          | .rules (.permanent (.unattached att hostId)) =>
+            if hostId == sid && att.subtypes.contains .equipment then acc + 1 else acc
+          | _ => acc
+        else acc) 0
+  match sourceId with
+  | some sid =>
+    match g.findObject? sid with
+    | some o =>
+      if o.isOnBattlefield then g.attachedEquipmentCount o
+      else (departedCount? sid).getD (lastKnownPower.getD (0 : Int)).toNat
+    | none => (departedCount? sid).getD (lastKnownPower.getD (0 : Int)).toNat
   | none => (lastKnownPower.getD (0 : Int)).toNat
 
 /-- `sourcePowerAtResolution` as a `Nat`. -/
@@ -704,58 +743,42 @@ def applyEnterMod (g : Game) (controller : PlayerId) (id : ObjectId)
     | .counter kind n false =>
       g.addCounters o kind n (entersWith := false) (byPlayer := some controller) (cause := cause)
 
-/-- Display name for an `EnteringAttackItem` in choice logs. -/
-def enteringAttackItemName (g : Game) : EnteringAttackItem → String
-  | .token _ kind _ _ => (tokenPrinted kind).name
-  | .card cardId .. =>
-    match g.findObject? cardId with
-    | some o => o.name
-    | none => "the creature"
-
-/-- Advance `remaining` past any items whose attack target is already fixed
-(`options.size <= 1`), appending `(item, item.options[0]?)` to `chosen`. -/
-def advanceFixedEnteringAttackItems
-    (remaining : Array EnteringAttackItem)
-    (chosen : Array (EnteringAttackItem × Option AttackTarget)) :
-    Array EnteringAttackItem × Array (EnteringAttackItem × Option AttackTarget) := Id.run do
-  let mut idx := 0
-  let mut acc := chosen
-  while idx < remaining.size && remaining[idx]!.options.size <= 1 do
-    let item := remaining[idx]!
-    acc := acc.push (item, item.options[0]?)
-    idx := idx + 1
-  return (remaining.extract idx remaining.size, acc)
-
 /-- Finish the post-entry modifications, logs, and enters-triggers for a card
 that just entered the battlefield via `commitEnteringAttackItems`. Stops if an
 `applyEnterMod` call opens `Pending.chooseReplacement` so the remaining mods and
-`afterPermanentEnters` run only after the choice is resolved. -/
+`afterPermanentEnters` run only after the choice is resolved. Does nothing when
+the card's entry was redirected off the battlefield. -/
 def finishEnteringAttackCard (g : Game) (newId : ObjectId)
     (effectController : PlayerId) (cardName : String)
     (mods : List TriggeredAbility.TriggerEnterWith)
     (logKind : EnteringAttackLog) (cause : Option EventCause := none) : Game :=
-  match mods with
-  | m :: rest =>
-    let g := g.applyEnterMod effectController newId m (cause := cause)
-    if let .chooseReplacement .. := g.pending then
-      g.chainPendingReplacement
-        (.finishEnteringAttackCard (some newId) effectController cardName rest logKind cause)
+  match g.findObject? newId with
+  | none => g
+  | some cur =>
+    if !cur.isOnBattlefield then g
     else
-      g.finishEnteringAttackCard newId effectController cardName rest logKind (cause := cause)
-  | [] =>
-    match logKind with
-    | .putOntoBattlefield =>
-      let g := g.logMsg s!"{cardName} is put onto the battlefield"
-      g.afterPermanentEnters (g.object! newId)
-    | .grimReaper =>
-      let entered := g.object! newId
-      let g := g.logMsg s!"{entered.name} gets a finality counter"
-      g.afterPermanentEnters entered |>.logMsg s!"{entered.name} enters tapped and attacking"
-    | .ownerGraveyard loses =>
-      let g := g.afterPermanentEnters (g.object! newId)
-      if loses then
-        g.logMsg s!"{(g.object! newId).name} returns, loses all abilities, and gains haste"
-      else g
+      match mods with
+      | m :: rest =>
+        let g := g.applyEnterMod effectController newId m (cause := cause)
+        if let .chooseReplacement .. := g.pending then
+          g.chainPendingReplacement
+            (.finishEnteringAttackCard (some newId) effectController cardName rest logKind cause)
+        else
+          g.finishEnteringAttackCard newId effectController cardName rest logKind (cause := cause)
+      | [] =>
+        match logKind with
+        | .putOntoBattlefield =>
+          let g := g.logMsg s!"{cardName} is put onto the battlefield"
+          g.afterPermanentEnters (g.object! newId)
+        | .grimReaper =>
+          let entered := g.object! newId
+          let g := g.logMsg s!"{entered.name} gets a finality counter"
+          g.afterPermanentEnters entered |>.logMsg s!"{entered.name} enters tapped and attacking"
+        | .ownerGraveyard loses =>
+          let g := g.afterPermanentEnters (g.object! newId)
+          if loses then
+            g.logMsg s!"{(g.object! newId).name} returns, loses all abilities, and gains haste"
+          else g
 
 /-- Create the tokens or put the cards in `chosen` onto the battlefield with
 their chosen `AttackTarget`s in a single batch, then run their enters-with
@@ -810,6 +833,8 @@ def commitEnteringAttackItems (g : Game)
                     let rem := chosen.extract (i + 1) chosen.size
                     if !rem.isEmpty then
                       g := g.chainPendingReplacement (.commitEnteringAttackItems rem cause false)
+                    else
+                      g := g.chainPendingReplacement (.finishPostStep 60 controller)
                     return g
             return g
         if let .chooseReplacement .. := g.pending then g
@@ -1121,23 +1146,23 @@ together, the exiled cards return to their owners' hands, then the spell
 is exiled. -/
 def applyWorldsWithinWorlds (g : Game) (controller : PlayerId)
     (sourceId : Option ObjectId) : Game :=
-  let (g, exiled) := g.withBatchReturn none fun g =>
-    Id.run do
-      let mut g := g
-      let creatures := g.battlefield.filter (fun o => g.isCreature o)
-      let mut exiled : Array ObjectId := #[]
-      for o in creatures do
-        let name := g.name o
-        let (g', nid) := g.move o.id .exile none
-        g := g'
-        exiled := exiled.push nid
-        g := g.logMsg s!"{name} is exiled"
-      return (g, exiled)
-  let order :=
-    let apnap := g.apnapOrder
-    if apnap.isEmpty then #[controller]
-    else apnap
-  g.offerWorldsCreatures order.toList exiled #[] sourceId
+  let startIdx := g.events.size
+  let creatureIds := (g.battlefield.filter (fun o => g.isCreature o)).map (·.id)
+  let g := g.withBatch none fun g =>
+    g.exilePermanentsLoop creatureIds (logExile := true)
+  if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement
+      (.finishPostStep 61 controller (n := startIdx) (sourceId := sourceId) (ids := creatureIds))
+  else
+    let exiled := creatureIds.filterMap fun id =>
+      if g.wasPermanentExiled id startIdx then
+        (g.followMovedToZone? id (· == .exile)).map (·.id)
+      else none
+    let order :=
+      let apnap := g.apnapOrder
+      if apnap.isEmpty then #[controller]
+      else apnap
+    g.offerWorldsCreatures order.toList exiled #[] sourceId
 
 end Game
 end Mtg.Engine

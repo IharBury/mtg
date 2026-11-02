@@ -11,12 +11,14 @@ demo agent uses (CR 700.2 / 115.1c).
 namespace Mtg.Engine
 namespace Game
 
-def legalTargets (g : Game) (caster : PlayerId) (effect : Effect) : Array Target :=
-  g.legalTargetsForKind caster effect.targetKind
+def legalTargets (g : Game) (caster : PlayerId) (effect : Effect)
+    (sourceId : Option ObjectId := none) : Array Target :=
+  g.legalTargetsForKind caster effect.targetKind sourceId
 
 /-- Legal targets for a unified `Effect` (stored spell modes and faces). -/
-def legalEffectTargets (g : Game) (caster : PlayerId) (effect : Effect) : Array Target :=
-  g.legalTargetsForKind caster effect.targetKind
+def legalEffectTargets (g : Game) (caster : PlayerId) (effect : Effect)
+    (sourceId : Option ObjectId := none) : Array Target :=
+  g.legalTargetsForKind caster effect.targetKind sourceId
 
 /-- What an Aura spell targets (CR 303.4a): a creature, or an artifact or
 non-Aura enchantment for Puppet Crafting. -/
@@ -27,8 +29,9 @@ def auraTargetKind (aura : CardDef) : EffectTargetKind :=
   else .creature
 
 /-- Legal targets for an Aura spell with “Enchant creature” (CR 303.4). -/
-def legalAuraTargets (g : Game) (caster : PlayerId) (aura : CardDef) : Array Target :=
-  g.legalTargetsForKind caster (auraTargetKind aura)
+def legalAuraTargets (g : Game) (caster : PlayerId) (aura : CardDef)
+    (sourceId : Option ObjectId := none) : Array Target :=
+  g.legalTargetsForKind caster (auraTargetKind aura) sourceId
 
 /-- Chosen mode of `o` if it is a modal spell on the stack (CR 700.2). -/
 def chosenModeOf (g : Game) (o : GameObject) : Option Nat :=
@@ -105,26 +108,28 @@ def currentSpellEffect (g : Game) (o : GameObject) : Option Effect :=
 been announced (CR 115.1, 303.4, 601.2c). `none` on a modal card unions every
 mode's targets (used when beginning to cast). -/
 def legalTargetsForFace (g : Game) (p : PlayerId) (c : CardDef)
-    (chosenMode : Option Nat := none) (tcs : Array TextChange := #[]) : Array Target :=
+    (chosenMode : Option Nat := none) (tcs : Array TextChange := #[])
+    (sourceId : Option ObjectId := none) : Array Target :=
   if c.isModal && chosenMode.isNone then
     c.spellModes.foldl (fun acc e =>
-      acc ++ g.legalEffectTargets p (if tcs.isEmpty then e else TextChange.applyEffect tcs e)) #[]
+      acc ++ g.legalEffectTargets p (if tcs.isEmpty then e else TextChange.applyEffect tcs e) sourceId) #[]
   else
     let effect :=
       if c.isModal then chosenMode.bind (fun i => c.spellModes[i]?)
       else c.spellEffect
     match effect with
-    | some e => g.legalEffectTargets p (if tcs.isEmpty then e else TextChange.applyEffect tcs e)
-    | none => if c.isAura then g.legalAuraTargets p c else #[]
+    | some e => g.legalEffectTargets p (if tcs.isEmpty then e else TextChange.applyEffect tcs e) sourceId
+    | none => if c.isAura then g.legalAuraTargets p c sourceId else #[]
 
 /-- Legal targets for beginning to cast `o`, or for the chosen mode (CR 115.1, 303.4, 601.2c). -/
 def legalSpellTargets (g : Game) (p : PlayerId) (o : GameObject) : Array Target :=
-  g.legalTargetsForFace p (g.baseCard o) (g.chosenModeOf o) (g.evalLayer3 o)
+  g.legalTargetsForFace p (g.baseCard o) (g.chosenModeOf o) (g.evalLayer3 o) (some o.id)
 
 /-- True when this mode can be announced: it needs no target, or a legal one
 exists (CR 700.2a). -/
-def spellModeIsChoosable (g : Game) (p : PlayerId) (e : Effect) : Bool :=
-  !e.requiresTarget || !(g.legalEffectTargets p e).isEmpty
+def spellModeIsChoosable (g : Game) (p : PlayerId) (e : Effect)
+    (sourceId : Option ObjectId := none) : Bool :=
+  !e.requiresTarget || !(g.legalEffectTargets p e sourceId).isEmpty
 
 /-- Legal mode indices for a modal spell (CR 700.2a). Untargeted modes stay
 choosable even when another mode has no legal target. -/
@@ -137,7 +142,7 @@ def legalModes (g : Game) (p : PlayerId) (o : GameObject) : Array Nat :=
       let mut acc : Array Nat := #[]
       for i in [0:bc.spellModes.size] do
         let m := if tcs.isEmpty then bc.spellModes[i]! else TextChange.applyEffect tcs bc.spellModes[i]!
-        if g.spellModeIsChoosable p m then
+        if g.spellModeIsChoosable p m (some o.id) then
           acc := acc.push i
       return acc
 
@@ -169,9 +174,10 @@ def defaultMode (g : Game) (p : PlayerId) (spell : GameObject) : Option Nat :=
   | some i => some i
   | none => pool[0]?
 
-/-- Legal targets for an activated-ability effect (CR 115.1 / 601.2c / 702.11b). -/
-def legalAbilityTargets (g : Game) (p : PlayerId) (e : Effect) : Array Target :=
-  g.legalTargetsForKind p e.targetKind
+/-- Legal targets for an activated-ability effect (CR 115.1 / 601.2c / 702.11b / 702.16b). -/
+def legalAbilityTargets (g : Game) (p : PlayerId) (e : Effect)
+    (sourceId : Option ObjectId := none) : Array Target :=
+  g.legalTargetsForKind p e.targetKind sourceId
 
 /-- The spell, activated ability, or triggered ability currently waiting for
 targets (CR 601.2c / 603.3d). -/
@@ -229,15 +235,17 @@ Skipped optional slots count toward this index so the next instance is
 the next “target” word in the card text (CR 601.2c). -/
 def currentTargetSlot (g : Game) (obj : GameObject) : Nat :=
   match g.stackEntry? obj.id with
-  | some e => e.targets.size + e.skippedOptionalSlots
+  | some e => e.targets.size + e.skippedOptionalSlots.size
   | none => 0
 
 /-- Skip the current optional “up to one” instance without announcing a
-target (CR 115.1c / 601.2c). -/
+target, recording its 0-based slot index (CR 115.1c / 601.2c). -/
 def skipOptionalTargetSlot (g : Game) (objectId : ObjectId) : Game :=
-  if g.stack.any (fun e => e.objectId == objectId) then
-    g.change (.stackEntry objectId .skipOptionalSlot)
-  else g
+  match g.findObject? objectId, g.stackEntry? objectId with
+  | some obj, some _ =>
+    let slot := g.currentTargetSlot obj
+    g.change (.stackEntry objectId (.skipOptionalSlot slot))
+  | _, _ => g
 
 /-- Record whether every instance of “target” on this stack object has been
 announced. A triggered ability with several instances stays unfinished until
@@ -366,16 +374,18 @@ def announcingSameWordMultiTargets (g : Game) : Bool :=
   | none => false
 
 /-- Whether `e` currently has a legal target, or does not require one. -/
-def modeIsChoosable (g : Game) (p : PlayerId) (e : Effect) : Bool :=
-  !e.requiresTarget || e.allowsZeroTargets || !(g.legalAbilityTargets p e).isEmpty
+def modeIsChoosable (g : Game) (p : PlayerId) (e : Effect)
+    (sourceId : Option ObjectId := none) : Bool :=
+  !e.requiresTarget || e.allowsZeroTargets || !(g.legalAbilityTargets p e sourceId).isEmpty
 
 /-- Whether this activated ability currently has a legal target, or does not
 require one. Equip restricted to a creature subtype uses that targeting
-shape rather than “any creature you control” (CR 702.6 / 601.2c). -/
-def abilityCanChooseTarget (g : Game) (p : PlayerId) (ab : ActivatedAbility) : Bool :=
+shape rather than “any creature you control” (CR 702.6 / 601.2c / 702.16b). -/
+def abilityCanChooseTarget (g : Game) (p : PlayerId) (ab : ActivatedAbility)
+    (sourceId : Option ObjectId := none) : Bool :=
   if ab.equipWorthy then
     let worthy :=
-      (g.legalTargetsForKind p .creatureYouControl).filter (fun t =>
+      (g.legalTargetsForKind p .creatureYouControl sourceId).filter (fun t =>
         match t with
         | Target.permanent id =>
           match g.findObject? id with
@@ -385,8 +395,8 @@ def abilityCanChooseTarget (g : Game) (p : PlayerId) (ab : ActivatedAbility) : B
     !worthy.isEmpty
   else
     match ab.equipSubtype with
-    | some t => !(g.legalTargetsForKind p (.creatureYouControlSubtype t)).isEmpty
-    | none => ab.allModes.any (g.modeIsChoosable p)
+    | some t => !(g.legalTargetsForKind p (.creatureYouControlSubtype t) sourceId).isEmpty
+    | none => ab.allModes.any (fun m => g.modeIsChoosable p m sourceId)
 
 /-- Last target in `legal` matching `pred`. -/
 def lastLegalTarget (legal : Array Target) (pred : Target → Bool) : Option Target :=

@@ -379,10 +379,14 @@ partial def finishCleanupStepAfterDiscard (g : Game) : Game :=
   -- put the triggers on the stack, and the active player receives priority.
   let (g, sba) := g.checkSBACountedWithLeaves
   if g.over then g
-  else if let .chooseReplacement .. := g.pending then
-    g.chainPendingReplacement (.finishPostStep 39 g.activePlayer (if sba then 1 else 0))
   else
-    g.finishPostSbaCleanup sba
+    match g.pending with
+    | .chooseReplacement .. =>
+      g.chainPendingReplacement (.finishPostStep 39 g.activePlayer (if sba then 1 else 0))
+    | .chooseLegend .. =>
+      g.chainPendingReplacement (.finishPostStep 39 g.activePlayer 1)
+    | _ =>
+      g.finishPostSbaCleanup sba
 
 /-- `partial` because a silent cleanup (CR 514.3) immediately begins the next
 turn, and a skipped draw step (CR 103.8a / 500.11) immediately begins
@@ -464,18 +468,7 @@ partial def beginStep (g : Game) (st : Step) : Game :=
     let ap := g.activePlayer
     g.receivePriority ap
   | .end =>
-    let ap := g.activePlayer
-    let g :=
-      Id.run do
-        let mut g := g
-        for o in g.permanentsOf ap do
-          if (g.baseCard o).impending.isSome && g.loggedCastForImpending o.id && o.status.time > 0 then
-            let impCause := EventCause.gameRule .impending
-            g := (g.record (GameEvent.counters g.turnNumber (some ap) (g.snapshot o) .time 1 true
-              (cause := impCause))).syncImpendingNotACreature o.id (cause := some impCause)
-            g := g.logMsg s!"{g.name o} loses a time counter"
-        return g
-    g.receivePriority ap
+    g.receivePriority g.activePlayer
   | .cleanup =>
     -- CR 514.1–514.3.
     let g := g.discardToMaxHandSize

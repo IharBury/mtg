@@ -43,29 +43,31 @@ Counters and “as this enters” choices are kept. Does not trigger enters (CR 
 def phaseIn (g : Game) (o : GameObject) (cause : Option EventCause := none) : Game :=
   if !o.status.phasedOut then g
   else
-    let pre := g
     let resolvedCause :=
       g.resolveOptionalCause cause (fallbackCtrl := g.controllerOf o)
         (defaultCause := .turnBased .phaseInOut)
-    let g := g.record (GameEvent.phasedIn g.turnNumber (g.snapshot o) false (cause := resolvedCause))
-    let oName := g.name (g.object! o.id)
-    let g := g.logMsg s!"{oName} phases in"
-    let g :=
-      g.objects.foldl (fun acc att =>
-        if att.status.phasedOut && att.status.phasedWith == some o.id then
-          let acc := acc.record (GameEvent.phasedIn acc.turnNumber (acc.snapshot att) true (cause := resolvedCause))
-          acc.logMsg s!"{acc.name (acc.object! att.id)} phases in still attached to {oName}"
-        else acc) g
-    removeFromCombatOnControlChange pre g (cause := some resolvedCause)
+    g.withBatch (some resolvedCause) fun g =>
+      let pre := g
+      let g := g.record (GameEvent.phasedIn g.turnNumber (g.snapshot o) false (cause := resolvedCause))
+      let oName := g.name (g.object! o.id)
+      let g := g.logMsg s!"{oName} phases in"
+      let g :=
+        g.objects.foldl (fun acc att =>
+          if att.status.phasedOut && att.status.phasedWith == some o.id then
+            let acc := acc.record (GameEvent.phasedIn acc.turnNumber (acc.snapshot att) true (cause := resolvedCause))
+            acc.logMsg s!"{acc.name (acc.object! att.id)} phases in still attached to {oName}"
+          else acc) g
+      removeFromCombatOnControlChange pre g (cause := some resolvedCause)
 
 /-- Phase in every phased-out permanent `p` controls (CR 502.1 / 703.4a). -/
 def phaseInControlled (g : Game) (p : PlayerId) : Game :=
   let cause := some (EventCause.turnBased .phaseInOut)
-  g.objects.foldl (fun acc o =>
-    if o.zone == .battlefield && o.status.phasedOut && acc.controlledBy o p &&
-        o.status.phasedWith.isNone then
-      acc.phaseIn (acc.object! o.id) (cause := cause)
-    else acc) g
+  g.withBatch cause fun g =>
+    g.objects.foldl (fun acc o =>
+      if o.zone == .battlefield && o.status.phasedOut && acc.controlledBy o p &&
+          o.status.phasedWith.isNone then
+        acc.phaseIn (acc.object! o.id) (cause := cause)
+      else acc) g
 
 end Game
 end Mtg.Engine

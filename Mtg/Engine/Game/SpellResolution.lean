@@ -10,24 +10,62 @@ to exile (CR 715.3d), and `resolveTop` for the top of the stack.
 namespace Mtg.Engine
 namespace Game
 
-/-- CR 608.2b: an ability whose targets are all illegal doesn't resolve.
-Applied to Reality Fracture triggered abilities, each target checked against
-its own instance of “target”. -/
-def fraAbilityTargetsAllIllegal (g : Game) (controller : PlayerId) (obj : GameObject)
-    (t : TriggeredAbility) (targets : Array Target) : Bool :=
-  let tcs := g.evalLayer3 obj
-  let isFra :=
-    obj.abilityEffect.isSome ||
-      match t.effect.resolution with
-      | .sequence rs => rs.any Resolution.isFra
-      | r => r.isFra || !t.opts.printed.isEmpty
-  let rawE := obj.abilityEffect.getD t.effect
-  let e := if tcs.isEmpty then rawE else TextChange.applyEffect tcs rawE
-  let kind := e.targetKind
-  isFra && !targets.isEmpty &&
-    (List.range targets.size).all (fun i =>
-      !(g.legalTargetsForAtomicKind controller (kind.slotKind (if kind.spec.slots.isEmpty then 0 else i))
-        obj.sourceId).contains targets[i]!)
+/-- CR 608.2b / 115.1c: true when `targets` is non-empty, `kind` has targets,
+and every announced target is illegal for its own non-skipped instance of
+“target” (checking `sourceId` for CR 702.16b protection and “another” rules,
+plus `equipWorthy` when applicable). -/
+def targetsAllIllegalForKind (g : Game) (controller : PlayerId)
+    (kind : EffectTargetKind) (targets : Array Target)
+    (skippedOptionalSlots : Array Nat := #[])
+    (sourceId : Option ObjectId := none)
+    (equipWorthy : Bool := false) : Bool :=
+  if kind == .none || targets.isEmpty then false
+  else
+    let chosenSlots : Array Nat :=
+      if kind.spec.slots.isEmpty then #[]
+      else (List.range kind.spec.slots.size).toArray.filter (fun s => !skippedOptionalSlots.contains s)
+    (List.range targets.size).all fun i =>
+      let t := targets[i]!
+      let legal :=
+        if kind.spec.slots.isEmpty then
+          g.legalTargetsForKind controller kind sourceId
+        else
+          let slotKind := kind.slotKind (chosenSlots[i]?.getD i)
+          if slotKind.spec.slots.isEmpty then
+            g.legalTargetsForAtomicKind controller slotKind sourceId
+          else
+            g.legalTargetsForKind controller slotKind sourceId
+      let baseOk := legal.contains t
+      let worthyOk :=
+        if !equipWorthy then true
+        else
+          match t with
+          | Target.permanent id => (g.findObject? id).any g.isWorthyPermanent
+          | _ => false
+      !(baseOk && worthyOk)
+
+/-- CR 608.2b: an activated or triggered ability with targets whose targets are
+all illegal doesn't resolve. Each announced target is checked against its own
+non-skipped instance of “target”. -/
+def abilityTargetsAllIllegal (g : Game) (controller : PlayerId) (obj : GameObject)
+    (e : Option Effect) (t : Option TriggeredAbility)
+    (targets : Array Target) (skippedOptionalSlots : Array Nat := #[]) : Bool :=
+  let kind :=
+    match e with
+    | some eff => eff.targetKind
+    | none =>
+      match t with
+      | some ab => ab.targetKind
+      | none => .none
+  let equipWorthy :=
+    t.isNone &&
+      e.any (fun eff => eff.resolution == Effect.attachToTargetCreatureYouControl.resolution) &&
+      ((g.baseCard obj).hasEquipWorthy ||
+        (obj.sourceId.bind g.damageSourceById?).any (fun s => (g.baseCard s).hasEquipWorthy))
+  g.targetsAllIllegalForKind controller kind targets
+    (skippedOptionalSlots := skippedOptionalSlots)
+    (sourceId := obj.sourceId)
+    (equipWorthy := equipWorthy)
 
 /-- Resolve a CR 603.7 delayed triggered ability on the stack. -/
 def resolveDelayedTrigger (g : Game) (controller : PlayerId) (kind : DelayedTriggerKind)
@@ -116,7 +154,8 @@ a pending choice or `--norandom` request, then running `empowerJace` when done. 
 partial def runSpellModesAndEmpower (g : Game) (controller : PlayerId)
     (modeEffects : Array Effect) (remainingTargets : Array Target)
     (castFromGraveyard kicked giftPromised : Bool) (chosenX : Nat)
-    (sourceId : Option ObjectId) (empowerJaceN : Option Nat) : Game :=
+    (sourceId : Option ObjectId) (empowerJaceN : Option Nat)
+    (skippedOptionalSlots : Array Nat := #[]) : Game :=
   match modeEffects[0]? with
   | none =>
     match empowerJaceN with
@@ -124,9 +163,13 @@ partial def runSpellModesAndEmpower (g : Game) (controller : PlayerId)
     | none => g
   | some e =>
     let restModes := modeEffects.extract 1 modeEffects.size
-    let n := Nat.min remainingTargets.size
-      (if e.targetKind.spec.slots.isEmpty then e.targetKind.targetCount
-       else e.targetKind.spec.slots.size)
+    let modeSlots :=
+      if e.targetKind.spec.slots.isEmpty then e.targetKind.targetCount
+      else e.targetKind.spec.slots.size
+    let skippedHere := skippedOptionalSlots.filter (· < modeSlots) |>.size
+    let restSkipped :=
+      skippedOptionalSlots.filterMap (fun s => if s >= modeSlots then some (s - modeSlots) else none)
+    let n := Nat.min remainingTargets.size (modeSlots - skippedHere)
     let n := if restModes.isEmpty then remainingTargets.size else n
     let curTargets := remainingTargets.extract 0 n
     let restTargets := remainingTargets.extract n remainingTargets.size
@@ -143,10 +186,10 @@ partial def runSpellModesAndEmpower (g : Game) (controller : PlayerId)
         (g.afterRandom != randomBefore && g.afterRandom != .none) then
       g.chainPendingReplacement
         (.continueSpellModes controller restModes restTargets
-          castFromGraveyard kicked giftPromised chosenX sourceId empowerJaceN)
+          castFromGraveyard kicked giftPromised chosenX sourceId empowerJaceN restSkipped)
     else
       g.runSpellModesAndEmpower controller restModes restTargets
-        castFromGraveyard kicked giftPromised chosenX sourceId empowerJaceN
+        castFromGraveyard kicked giftPromised chosenX sourceId empowerJaceN restSkipped
 
 def resolveTop (g : Game) : Game :=
   if g.stack.isEmpty then g
@@ -179,15 +222,19 @@ def resolveTop (g : Game) : Game :=
         match obj.triggeredAbility with
         | some rawT =>
           let t := if tcs.isEmpty then rawT else TextChange.applyTriggeredAbility tcs rawT
-          if g.fraAbilityTargetsAllIllegal entry.controller obj t entry.targets then
+          if g.abilityTargetsAllIllegal entry.controller obj (some e) (some t) entry.targets
+              entry.skippedOptionalSlots then
             let g := g.withResolvingContext ctxSrc entry.controller fun g =>
               let g := g.record (GameEvent.removedOnResolution g.turnNumber (g.snapshot obj))
               let g := entry.targets.foldl (fun (g : Game) (tg : Target) => g.illegalAbilityTarget tg) g
               g.logMsg s!"{obj.name} doesn't resolve because all its targets are illegal (CR 608.2b)"
             g.ceaseToExist obj.id (cause := some (.gameRule .abilityFinishedResolving))
-          else if !g.fraConditionHolds entry.controller t.opts.fraCondition (obj.sourceId.bind g.findObject?)
-              obj.fraCauseStatus then
-            let g := g.logMsg "The intervening condition is no longer true. The ability doesn't resolve."
+          else if obj.reflexiveResolution.isNone &&
+              !g.triggerInterveningHolds entry.controller t obj.sourceId
+                entry.targets entry.lastKnownPower obj.fraCauseId obj.fraCauseStatus then
+            let g := g.withResolvingContext ctxSrc entry.controller fun g =>
+              let g := g.record (GameEvent.removedOnResolution g.turnNumber (g.snapshot obj))
+              g.logMsg "The intervening condition is no longer true. The ability doesn't resolve."
             g.ceaseToExist obj.id (cause := some (.gameRule .abilityFinishedResolving))
           else
             let snap := g.snapshot obj
@@ -200,27 +247,39 @@ def resolveTop (g : Game) : Game :=
               entry.lastKnownPower ((g.chosenXOf? obj.id).getD 0)
             g.completeActiveResolutions
         | none =>
-          let snap := g.snapshot obj
-          let g := g.change (.pushContinuationFrame {
-            resolvingContext := some (ctxSrc, entry.controller)
-            resolvingAbility := some obj.id
-            resolvingDivision := entry.dividedDamage
-            resolutionFinish := some (.ability obj.id snap entry.controller obj.sourceId) })
-          let g := g.applyUnifiedAbility entry.controller e entry.targets obj.sourceId
-            entry.lastKnownPower ((g.chosenXOf? obj.id).getD 0)
-          g.completeActiveResolutions
+          if g.abilityTargetsAllIllegal entry.controller obj (some e) none entry.targets
+              entry.skippedOptionalSlots then
+            let g := g.withResolvingContext ctxSrc entry.controller fun g =>
+              let g := g.record (GameEvent.removedOnResolution g.turnNumber (g.snapshot obj))
+              let g := entry.targets.foldl (fun (g : Game) (tg : Target) => g.illegalAbilityTarget tg) g
+              g.logMsg s!"{obj.name} doesn't resolve because all its targets are illegal (CR 608.2b)"
+            g.ceaseToExist obj.id (cause := some (.gameRule .abilityFinishedResolving))
+          else
+            let snap := g.snapshot obj
+            let g := g.change (.pushContinuationFrame {
+              resolvingContext := some (ctxSrc, entry.controller)
+              resolvingAbility := some obj.id
+              resolvingDivision := entry.dividedDamage
+              resolutionFinish := some (.ability obj.id snap entry.controller obj.sourceId) })
+            let g := g.applyUnifiedAbility entry.controller e entry.targets obj.sourceId
+              entry.lastKnownPower ((g.chosenXOf? obj.id).getD 0)
+            g.completeActiveResolutions
       else if let some rawT := obj.triggeredAbility then
         let tcs := g.evalLayer3 obj
         let t := if tcs.isEmpty then rawT else TextChange.applyTriggeredAbility tcs rawT
-        if g.fraAbilityTargetsAllIllegal entry.controller obj t entry.targets then
+        if g.abilityTargetsAllIllegal entry.controller obj none (some t) entry.targets
+            entry.skippedOptionalSlots then
           let g := g.withResolvingContext ctxSrc entry.controller fun g =>
             let g := g.record (GameEvent.removedOnResolution g.turnNumber (g.snapshot obj))
             let g := entry.targets.foldl (fun (g : Game) (tg : Target) => g.illegalAbilityTarget tg) g
             g.logMsg s!"{obj.name} doesn't resolve because all its targets are illegal (CR 608.2b)"
           g.ceaseToExist obj.id (cause := some (.gameRule .abilityFinishedResolving))
-        else if !g.fraConditionHolds entry.controller t.opts.fraCondition (obj.sourceId.bind g.findObject?)
-            obj.fraCauseStatus then
-          let g := g.logMsg "The intervening condition is no longer true. The ability doesn't resolve."
+        else if obj.reflexiveResolution.isNone &&
+            !g.triggerInterveningHolds entry.controller t obj.sourceId
+              entry.targets entry.lastKnownPower obj.fraCauseId obj.fraCauseStatus then
+          let g := g.withResolvingContext ctxSrc entry.controller fun g =>
+            let g := g.record (GameEvent.removedOnResolution g.turnNumber (g.snapshot obj))
+            g.logMsg "The intervening condition is no longer true. The ability doesn't resolve."
           g.ceaseToExist obj.id (cause := some (.gameRule .abilityFinishedResolving))
         else
           let sagaChapter :=
@@ -241,7 +300,7 @@ def resolveTop (g : Game) : Game :=
       else
         -- CR 608.2b: an instant or sorcery whose targets are all illegal
         -- doesn't resolve, so none of its effects happen (rulings 734 / 749).
-        -- Each target is checked against its own slot.
+        -- Each target is checked against its own non-skipped slot.
         let kicked := g.wasKicked obj.id
         let fromGy := g.castFromGraveyard obj.id
         let giftTo := g.giftPromisedTo? obj.id
@@ -250,14 +309,9 @@ def resolveTop (g : Game) : Game :=
           g.isInstantOrSorcery obj && !entry.targets.isEmpty &&
             match g.spellEffectOf obj entry.chosenMode entry.extraModes (kicked := kicked) with
             | some e =>
-              let kind := e.targetKind
-              let legal :=
-                if kind.spec.slots.isEmpty then
-                  g.legalTargetsForKind entry.controller kind (some obj.id)
-                else
-                  kind.spec.slots.foldl (fun acc k =>
-                    acc ++ g.legalTargetsForAtomicKind entry.controller k (some obj.id)) #[]
-              entry.targets.all (fun t => !legal.contains t)
+              g.targetsAllIllegalForKind entry.controller e.targetKind entry.targets
+                (skippedOptionalSlots := entry.skippedOptionalSlots)
+                (sourceId := some obj.id)
             | none => false
         if allTargetsIllegal then
           let finishCause := some (EventCause.gameRule .instantOrSorceryFinishedResolving)
@@ -295,6 +349,12 @@ def resolveTop (g : Game) : Game :=
               ((entry.chosenMode.toArray ++ entry.extraModes).qsort (· < ·)).filterMap fun i =>
                 bc.spellModes[i]?.map fun e => if tcs.isEmpty then e else TextChange.applyEffect tcs e
           let empowerJaceN := bc.empowerJace
+          -- CR 702.131a: Ascend on a resolving instant or sorcery spell is a spell ability.
+          let g :=
+            if g.isInstantOrSorcery obj && g.hasKeyword obj (·.ascend) then
+              g.grantDesignationIfNeeded entry.controller (·.citysBlessing)
+                (fun g p => g.permanentCount p ≥ 10) .citysBlessing "has the city's blessing"
+            else g
           let g :=
             match giftTo, g.isInstantOrSorcery obj with
             | some to, true => g.givePromisedGift to
@@ -306,11 +366,13 @@ def resolveTop (g : Game) : Game :=
               if !modeEffects.isEmpty || empowerJaceN.isSome then
                 g.chainPendingReplacement
                   (.continueSpellModes entry.controller modeEffects entry.targets
-                    fromGy kicked giftTo.isSome chosenX (some obj.id) empowerJaceN)
+                    fromGy kicked giftTo.isSome chosenX (some obj.id) empowerJaceN
+                    entry.skippedOptionalSlots)
               else g
             else
               g.runSpellModesAndEmpower entry.controller modeEffects entry.targets
                 fromGy kicked giftTo.isSome chosenX (some obj.id) empowerJaceN
+                entry.skippedOptionalSlots
           g.completeActiveResolutions
 
 end Game

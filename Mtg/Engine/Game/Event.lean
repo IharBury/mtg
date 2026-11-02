@@ -961,7 +961,8 @@ inductive CastEvent where
   | proposed (obj : ObjectId) (player : PlayerId) (fromZone : Zone) (way : CastWay)  -- 601.2a
   | announced (obj : ObjectId) (modes : Array Nat) (x : Option Nat)
       (costs : Array AdditionalCostChoice)                                         -- 601.2b
-  | targeted (obj : ObjectId) (targets : Array Target) (division : Array Nat)      -- 601.2c–d
+  | targeted (obj : ObjectId) (targets : Array Target) (division : Array Nat)
+      (skippedOptionalSlots : Array Nat := #[])                                   -- 601.2c–d
   | spellCast (spell : EventObject) (player : PlayerId) (fromZone : Zone)          -- 601.2i
   | abilityActivated (ability : ObjectId) (source : EventObject) (player : PlayerId)
       (kind : ActivationKind)                                                       -- 602.2b; mana abilities 605.3b
@@ -1000,7 +1001,7 @@ inductive StackObjectEvent where
   | resolved (obj : EventObject) (nth : Nat := 1)
       (sourceId : Option ObjectId := none)
       (ability : Option TriggeredAbility := none)
-  /-- `obj` was removed from the stack on resolution because all its targets were illegal (CR 608.2b). -/
+  /-- `obj` was removed from the stack on resolution because its intervening “if” condition failed or all its targets were illegal (CR 603.4 / 608.2a / 608.2b). -/
   | removedOnResolution (obj : EventObject)
 deriving Repr, Inhabited, BEq
 
@@ -1078,23 +1079,23 @@ deriving Repr, Inhabited, BEq
 when multiple replacement or prevention effects compete in the same CR 616.1a–e tier. -/
 inductive PendingReplacement where
   | seq (first rest : PendingReplacement)
-  | dealDamageToPlayer (p : PlayerId) (n : Nat) (msg : String)
-      (source : Option EventObject) (combat : Bool) (unpreventable : Bool)
+  | dealDamageToPlayer (p : PlayerId) (n : Nat)
+      (source : Option EventObject) (unpreventable : Bool)
       (cause : Option EventCause)
   | dealDamageToPlayers (players : Array PlayerId) (n : Nat)
       (source : Option EventObject) (cause : Option EventCause)
   | dealDamageFrom (sourceName : String) (source : EventObject) (targetId : ObjectId)
-      (n : Nat) (deathtouch : Bool) (combat : Bool) (unpreventable : Bool)
+      (n : Nat) (deathtouch : Bool)
       (cause : Option EventCause)
   | dealFightDamage (sourceId targetId : ObjectId) (cause : Option EventCause)
   | dealDamageToPermanent (targetId : ObjectId) (n : Nat)
-      (source : Option EventObject) (combat : Bool) (unpreventable : Bool)
+      (source : Option EventObject)
       (cause : Option EventCause)
   | markDamageOn (targetId : ObjectId) (n : Nat) (msg : String)
       (deathtouch : Bool) (source : Option EventObject) (combat : Bool)
       (unpreventable : Bool) (cause : Option EventCause)
   | dealAssignedCombatDamage (applied : Array ReplacementId := #[]) (startIdx : Nat := 0)
-  | gainLife (p : PlayerId) (n : Nat) (msg : String) (cause : Option EventCause)
+  | gainLife (p : PlayerId) (n : Nat) (cause : Option EventCause)
   | addPlusOnePlusOneTo (targetId : ObjectId) (n : Nat) (entersWith : Bool)
       (byPlayer : Option PlayerId) (cause : Option EventCause)
   | addCounters (targetId : ObjectId) (kind : CounterKind) (n : Nat)
@@ -1102,7 +1103,7 @@ inductive PendingReplacement where
   | recordPutCounters (targetId : ObjectId) (kind : CounterKind) (n : Nat)
       (byPlayer : Option PlayerId) (cause : Option EventCause)
   | move (id : ObjectId) (dest : Zone) (controller : Option PlayerId)
-      (sacrificed : Bool) (discarded : Bool) (verb : Option ZoneVerb)
+      (verb : Option ZoneVerb)
       (actor : Option PlayerId) (faceDown : Bool) (tapped : Bool)
       (attacking : Bool) (attackingTarget : Option AttackTarget)
       (transformed : Bool) (returnedAsArtifact : Bool) (onlyFoodArtifact : Bool)
@@ -1136,16 +1137,18 @@ inductive PendingReplacement where
       (resetRecent : Bool) (cause : Option EventCause)
   | createAndMarkTokensAttacking (controller : PlayerId) (kind : TokenKind)
       (n : Nat) (tapped holds : Bool) (sourceId : Option ObjectId)
+      (cause : Option EventCause := none)
   | commitEnteringAttackItems (chosen : Array (EnteringAttackItem × Option AttackTarget))
       (cause : Option EventCause) (resetRecent : Bool)
   | finishEnteringAttackCard (newId : Option ObjectId) (effectController : PlayerId)
       (cardName : String) (mods : List TriggeredAbility.TriggerEnterWith)
       (logKind : EnteringAttackLog) (cause : Option EventCause)
   | afterLastPermanentEnters (fromId : Option ObjectId := none) (isPlayLand : Bool := false)
+      (attachedToHost : Option ObjectId := none)
   | addExtraCombatDamageStep
   | finishFraChoice
   | shuffleThen (player : PlayerId) (onDone : AfterRandom)
-  | draw (p : PlayerId) (n : Nat) (drawStepFirst : Bool) (cause : Option EventCause)
+  | draw (p : PlayerId) (n : Nat) (cause : Option EventCause)
   | drawOne (p : PlayerId) (applied : Array ReplacementId) (drawStepFirst : Bool)
       (cause : Option EventCause)
   | drawSubDraws (p : PlayerId) (remaining : Nat) (applied : Array ReplacementId)
@@ -1169,7 +1172,7 @@ inductive PendingReplacement where
       (cause : Option EventCause)
   | copyPermanentTokens (controller : PlayerId) (card : CardDef) (remaining : Nat)
       (cause : Option EventCause)
-  | finishArtifactCopyToken (sourceName : String)
+  | finishArtifactCopyToken
   | finishManaAbilityMountainTrigger (player : PlayerId) (sourceId : ObjectId)
   | restorePending (p : Pending)
   | closeBatch (batchId : BatchId) (startIdx : Nat)
@@ -1185,6 +1188,8 @@ inductive PendingReplacement where
       (hadOuterReplacement hadOpenContinuation : Bool)
   | finishPostCast (caster : PlayerId) (grantPriority : Bool)
       (hadOuterReplacement hadOpenContinuation : Bool)
+  | finishTurnFaceUp (caster : PlayerId) (spellId : ObjectId)
+      (hadOuterReplacement : Bool := false)
   | endProposalAction
   | payCostPickItems (p : PlayerId) (abilityId sourceId : ObjectId) (pick : CostPick)
       (remainingIds : Array ObjectId)
@@ -1210,8 +1215,13 @@ inductive PendingReplacement where
   | finishConniveDraws (controller : PlayerId)
       (extraDraws : Array (Nat × ReplacementId))
       (conniveDrawCause : Option EventCause) (stage : Nat := 0)
+  | amass (controller : PlayerId) (subtype : CardSubtype) (n : Nat)
+      (attach : Option ObjectId := none) (cause : Option EventCause := none)
+  | finishAmassOn (controller : PlayerId) (armyId : ObjectId) (subtype : CardSubtype)
+      (n : Nat) (attach : Option ObjectId := none) (stage : Nat := 0)
+      (cause : Option EventCause := none)
   | finishFreshAmass (controller : PlayerId) (subtype : CardSubtype) (n : Nat)
-      (attach : Option ObjectId) (cause : Option EventCause)
+      (attach : Option ObjectId) (cause : Option EventCause) (minId : Nat := 0)
   | finishDealDamageLoseIndestructibleExile (targetId : ObjectId) (targetName : String)
       (n : Nat) (cause : EventCause)
   | finishPlaceSearched (p : PlayerId) (fromId : ObjectId) (name : String)
@@ -1232,9 +1242,6 @@ inductive PendingReplacement where
       (remainingTargets : Array Target) (permIds : Array ObjectId)
       (playerIds : Array PlayerId) (chosenEmpty : Bool)
       (remainingRounds : Nat) (cause : Option EventCause)
-  | finishProliferateLoop (p : PlayerId) (remainingTargets : Array Target)
-      (permIds : Array ObjectId) (playerIds : Array PlayerId)
-      (chosenEmpty : Bool) (remainingRounds : Nat) (cause : Option EventCause)
   | finishDiscardForDrawMay (p : PlayerId) (n : Nat)
   | finishSacArtifactOrDiscardDraw (p : PlayerId) (n : Nat)
   | finishChooseDiscardCard (p : PlayerId) (card : GameObject)
@@ -1243,7 +1250,7 @@ inductive PendingReplacement where
   | finishPutLandFromHand (fromId : ObjectId)
   | finishBeginOnBattlefield (fromId : ObjectId) (remainingIds : Array ObjectId)
   | addFinalityTo (targetId : ObjectId) (n : Nat) (byPlayer : Option PlayerId)
-      (entersWith : Bool) (logAfter : Bool) (cause : Option EventCause)
+      (entersWith : Bool) (cause : Option EventCause)
   | loseLifeAfterDraw (p : PlayerId) (life : Nat) (cause : Option EventCause)
   | continueUnified (controller : PlayerId) (effect : Effect)
       (steps : Array Resolution) (targets : Array Target)
@@ -1256,6 +1263,7 @@ inductive PendingReplacement where
       (remainingTargets : Array Target)
       (castFromGraveyard kicked giftPromised : Bool) (chosenX : Nat)
       (sourceId : Option ObjectId) (empowerJaceN : Option Nat)
+      (skippedOptionalSlots : Array Nat := #[])
   | empowerJace (controller : PlayerId) (n : Nat) (stage : Nat := 0)
       (targetId : Option ObjectId := none) (cause : Option EventCause := none)
   | continueTriggeredSequence (controller : PlayerId) (steps : Array TriggeredAbility)
@@ -1289,18 +1297,34 @@ inductive PendingReplacement where
       (cause : Option EventCause := none)
   | returnLinkedExileLoop (remainingIds : Array ObjectId)
       (cause : Option EventCause := none)
-  | finishLinkedExileMove
-      (remaining : Array (ObjectId × Zone × Option PlayerId × Bool × Option EventCause))
+  | finishLinkedExileMove (remainingIds : Array ObjectId)
   | untapPermanentsLoop (remainingIds : Array ObjectId)
       (cause : Option EventCause := none)
+  | millCardsLoop (p : PlayerId) (remainingIds : Array ObjectId)
+      (emptyTail : Bool := false) (cause : Option EventCause := none)
+      (logCard : Option String := none) (freshCount : Option Nat := none)
+  | exilePermanentsLoop (remainingIds : Array ObjectId) (logExile : Bool := true)
+      (cause : Option EventCause := none) (logCard : Option String := none)
+  | flickerLoop (remainingIds : Array ObjectId)
+      (exiledPreIds : Array ObjectId := #[])
+      (enteredFromIds : Array ObjectId := #[])
+      (logText : String := "is exiled, then returned to the battlefield")
+      (stage : Nat := 0) (tapped : Bool := false) (onlyLandTapped : Bool := false)
+      (clearExileFields : Bool := false) (cause : Option EventCause := none)
+  | finishMillSubtypeOrEnchantment (p : PlayerId) (preIds : Array ObjectId)
+      (subtype : CardSubtype)
+  | finishMillChooseForHand (p : PlayerId) (preIds : Array ObjectId)
+      (types : Array CardType) (matchedPreIds : Array ObjectId)
+      (max : Nat) (mustOne : Bool) (allMatches : Bool := false)
+      (maxPut : Option Nat := none) (cause : Option EventCause := none)
   | makeFrcLoop (p : PlayerId) (kind : FrcToken) (remaining : Nat) (x : Nat)
       (extraCounters : CounterBag) (cause : Option EventCause)
   | finishFrcRestBottom (p : PlayerId) (rest : Array ObjectId) (shuffle : Bool := false)
       (cause : Option EventCause := none)
       (dackTargets : Array ObjectId := #[]) (jhoiraLife : Nat := 0)
-  | finishFrcPostStep (tag : Nat) (p : PlayerId) (n1 : Nat := 0) (n2 : Nat := 0)
+  | finishFrcPostStep (tag : Nat) (p : PlayerId) (n1 : Nat := 0)
       (cardId : Option ObjectId := none) (shuffle : Bool := false)
-      (cause : Option EventCause := none)
+      (cause : Option EventCause := none) (ids : Array ObjectId := #[])
   | finishPostStep (tag : Nat) (p : PlayerId) (n : Nat := 0)
       (sourceId : Option ObjectId := none) (cardId : Option ObjectId := none)
       (ids : Array ObjectId := #[]) (targets : Array Target := #[])
@@ -1374,9 +1398,6 @@ structure ContinuationFrame where
   /-- Spells exiled by a resolving ability that may still be cast without
   paying their mana costs, and how many casts remain (Doom Reigns Supreme). -/
   pendingMayCastFromExile : Option (PlayerId × Array ObjectId × Nat) := none
-  /-- Remaining exiled cards queued to be cast one at a time as an ability resolves
-  (Doom Reigns `castExiledAsResolves`). -/
-  pendingCastExiledQueue : Option (PlayerId × Array ObjectId) := none
   /-- Deferred post-cast cleanup (Cascade / Gríma / Cosmic Cube library bottoming
   or CR 704.5e copy cease-to-exist) run when the proposed cast completes or reverses. -/
   postCastCleanup : Option PostCastCleanup := none
@@ -1534,7 +1555,6 @@ inductive ContinuationChange where
   | fraAfterLook (v : Option (PlayerId × Option ObjectId × FraNext))
   | pendingFreeCopies (v : Option (PlayerId × Array ObjectId × Nat × Nat))
   | pendingMayCastFromExile (v : Option (PlayerId × Array ObjectId × Nat))
-  | pendingCastExiledQueue (v : Option (PlayerId × Array ObjectId))
   | postCastCleanup (v : Option PostCastCleanup)
   | mayPayAlsoPlusOneOn (v : Option ObjectId)
   | humansTappedThisWay (v : Nat)
@@ -1617,7 +1637,7 @@ deriving Repr, Inhabited, BEq
 
 /-- Structured mutation to a `StackEntry` identified by `objectId`. -/
 inductive StackEntryChange where
-  | skipOptionalSlot
+  | skipOptionalSlot (slot : Nat)
   | targetsAnnounced (done : Bool)
   | lastKnownPT (power toughness : Option Int)
 deriving Repr, Inhabited, BEq
@@ -1691,7 +1711,6 @@ namespace EngineChange
 @[inline] def fraAfterLook (v : Option (PlayerId × Option ObjectId × FraNext)) : EngineChange := .continuation (.fraAfterLook v)
 @[inline] def pendingFreeCopies (v : Option (PlayerId × Array ObjectId × Nat × Nat)) : EngineChange := .continuation (.pendingFreeCopies v)
 @[inline] def pendingMayCastFromExile (v : Option (PlayerId × Array ObjectId × Nat)) : EngineChange := .continuation (.pendingMayCastFromExile v)
-@[inline] def pendingCastExiledQueue (v : Option (PlayerId × Array ObjectId)) : EngineChange := .continuation (.pendingCastExiledQueue v)
 @[inline] def postCastCleanup (v : Option PostCastCleanup) : EngineChange := .continuation (.postCastCleanup v)
 @[inline] def mayPayAlsoPlusOneOn (v : Option ObjectId) : EngineChange := .continuation (.mayPayAlsoPlusOneOn v)
 @[inline] def humansTappedThisWay (v : Nat) : EngineChange := .continuation (.humansTappedThisWay v)
@@ -1782,8 +1801,8 @@ deriving Repr, Inhabited, BEq
 one that happens. Every `RulesEvent` carries an explicit `EventCause`;
 internal `EngineChange` mutations are cause-free. -/
 inductive GameEvent where
-  | rules (turn : Nat) (e : RulesEvent) (cause : EventCause) (batch : BatchId := ⟨0⟩)
-  | engine (turn : Nat) (c : EngineChange) (batch : BatchId := ⟨0⟩)
+  | rules (turn : Nat) (e : RulesEvent) (cause : EventCause) (batch : Option BatchId := none)
+  | engine (turn : Nat) (c : EngineChange) (batch : Option BatchId := none)
 deriving Repr, Inhabited, BEq
 
 namespace GameEvent
@@ -1792,21 +1811,15 @@ namespace GameEvent
 @[inline] def turn : GameEvent → Nat
   | .rules t .. | .engine t .. => t
 
-/-- Batch identifier of `e` (`⟨0⟩` for engine changes or unbatched events). -/
-@[inline] def batch : GameEvent → BatchId
+/-- Batch identifier of `e` (`none` for unstamped engine changes or unbatched/proposed events). -/
+@[inline] def batch : GameEvent → Option BatchId
   | .rules _ _ _ b | .engine _ _ b => b
 
 /-- Return `e` stamped with `b`. -/
 @[inline] def withBatch (e : GameEvent) (b : BatchId) : GameEvent :=
   match e with
-  | .rules t r c _ => .rules t r c b
-  | .engine t c _ => .engine t c b
-
-/-- Return `e` with its `RulesEvent` payload replaced, preserving turn, cause, and batch. -/
-@[inline] def withRules (e : GameEvent) (r : RulesEvent) : GameEvent :=
-  match e with
-  | .rules t _ c b => .rules t r c b
-  | .engine .. => e
+  | .rules t r c _ => .rules t r c (some b)
+  | .engine t c _ => .engine t c (some b)
 
 /-- Return `e` with its `EventCause` replaced (no-op on `.engine`). -/
 @[inline] def withCause (e : GameEvent) (c : EventCause) : GameEvent :=
@@ -1952,21 +1965,15 @@ def announced (turn : Nat) (obj : ObjectId) (modes : Array Nat := #[])
 /-- `obj` had its targets and/or damage division chosen (CR 601.2c–d). -/
 def targeted (turn : Nat) (obj : ObjectId) (targets : Array Target)
     (division : Array Nat := #[])
+    (skippedOptionalSlots : Array Nat := #[])
     (cause : Option EventCause := none) : GameEvent :=
-  rules turn (.cast (.targeted obj targets division))
+  rules turn (.cast (.targeted obj targets division skippedOptionalSlots))
     (cause.getD (.gameRule .spellCast))
 
 /-- `player` cast `spell` from `fromZone` (CR 601.2i). -/
 def spellCast (turn : Nat) (player : PlayerId) (spell : EventObject) (fromZone : Zone)
     (cause : Option EventCause := none) : GameEvent :=
   rules turn (.cast (.spellCast spell player fromZone))
-    (cause.getD (.gameRule .spellCast))
-
-/-- `player` cast `spell` (CR 601.2i). -/
-def cast (turn : Nat) (player : PlayerId) (spell : EventObject) (fromZone : Zone)
-    (manaValue : Nat := 0) (cause : Option EventCause := none) : GameEvent :=
-  let spell' := if manaValue > 0 && spell.manaValue == 0 then { spell with manaValue := manaValue } else spell
-  rules turn (.cast (.spellCast spell' player fromZone))
     (cause.getD (.gameRule .spellCast))
 
 /-- `player` declared `decls` as attackers (CR 508.1k / 508.3d). -/
@@ -2142,7 +2149,7 @@ def stackObjectCopied (turn : Nat) (original : ObjectId) (copy : EventObject)
     (cause : EventCause) : GameEvent :=
   rules turn (.stackObject (.copied original copy controller)) cause
 
-/-- `obj` was removed from the stack on resolution because all its targets were illegal (CR 608.2b). -/
+/-- `obj` was removed from the stack on resolution because its intervening “if” condition failed or all its targets were illegal (CR 603.4 / 608.2a / 608.2b). -/
 def removedOnResolution (turn : Nat) (obj : EventObject)
     (cause : Option EventCause := none) : GameEvent :=
   rules turn (.stackObject (.removedOnResolution obj))
@@ -2340,17 +2347,17 @@ def effectExpired (turn : Nat) (id : EffectId) (_spec : Option ContinuousEffectS
 
 /-- Delayed triggered ability `dt` was created (CR 603.7). -/
 def delayedTriggerCreated (turn : Nat) (dt : DelayedTrigger)
-    (cause : EventCause := dt.cause) (batch : BatchId := ⟨0⟩) : GameEvent :=
+    (cause : EventCause := dt.cause) (batch : Option BatchId := none) : GameEvent :=
   rules turn (.delayedTrigger (.created dt)) cause batch
 
 /-- One-shot delayed triggered ability `dt` triggered and was consumed (CR 603.7b). -/
 def delayedTriggerConsumed (turn : Nat) (dt : DelayedTrigger)
-    (cause : EventCause := .gameRule .triggeredAbility) (batch : BatchId := ⟨0⟩) : GameEvent :=
+    (cause : EventCause := .gameRule .triggeredAbility) (batch : Option BatchId := none) : GameEvent :=
   rules turn (.delayedTrigger (.consumed dt)) cause batch
 
 /-- Duration-scoped delayed triggered ability `dt` expired (CR 603.7b / 514.2 / 800.4i). -/
 def delayedTriggerExpired (turn : Nat) (dt : DelayedTrigger)
-    (cause : EventCause) (batch : BatchId := ⟨0⟩) : GameEvent :=
+    (cause : EventCause) (batch : Option BatchId := none) : GameEvent :=
   rules turn (.delayedTrigger (.expired dt)) cause batch
 
 /-- A creature moved from the battlefield to a graveyard (CR 700.4). -/
@@ -2575,8 +2582,8 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : Option Obje
       yours before && other before && !before.land
     | .zone (.moved before _ (.graveyard owner) _ _ _ _ _), .creatureCardLeavesYourGy =>
       you owner && before.creature
-    | .zone (.moved before _ _ (.graveyard owner) _ _ _ _), .creatureCardsPutIntoYourGy =>
-      you owner && before.creature && !before.token
+    | .zone (.moved _ after _ (.graveyard owner) _ _ _ _), .creatureCardsPutIntoYourGy =>
+      you owner && after.creature && !after.token
     | .zone (.moved _ _ (.hand p) toZone .discard _ _ _), .youDiscard =>
       you p && toZone != .hand p
     | .zone (.moved before after (.hand p) toZone .discard _ _ _), .fra .youDiscardThis =>
@@ -2708,7 +2715,7 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : Option Obje
     | .cast (.abilityActivated _ source p _), .youActivateCreatureAbility =>
       you p && source.creature
     | .cast (.abilityActivated _ _ p (.nonMana (some _) ..)), .fra .opponentActivatesLoyaltyAbility => !you p
-    | .cast (.targeted _ targets _), .becomesTarget =>
+    | .cast (.targeted _ targets ..), .becomesTarget =>
       targets.any (fun t => match t with | .permanent oid => some oid == sourceId | _ => false)
     | .zone (.created object p), .fra .youCreateCreatureTokens =>
       object.zone == .battlefield && object.token && you p && object.creature
@@ -2906,14 +2913,14 @@ def attacks (events : Array GameEvent) (turn : Nat) (p : PlayerId) : Nat :=
       | .rules (.combat (.attackersDeclared q decls)) => if q == p then n + decls.size else n
       | _ => n) 0
 
-/-- Cards that moved from `p`'s library to `p`'s graveyard on `turn`. -/
+/-- Cards `p` milled on `turn` (CR 701.17a / 701.17c, including replacement redirects). -/
 def milled (events : Array GameEvent) (turn : Nat) (p : PlayerId) : Nat :=
   events.foldl (fun n e =>
     if e.turn != turn then n
     else
       match e.change with
-      | .rules (.zone (.moved _ _ (.library owner) (.graveyard q) _ _ _ _)) =>
-        if owner == p && q == p then n + 1 else n
+      | .rules (.zone (.moved _ _ (.library owner) toZone .mill _ _ _)) =>
+        if owner == p && toZone != .library p then n + 1 else n
       | _ => n) 0
 
 /-- `p` has already drawn the first card of their draw step on `turn`. -/
@@ -3260,9 +3267,17 @@ def lastKnownBefore? (events : Array GameEvent) (id : ObjectId) : Option EventOb
 /-- `id` entered from a spell cast for its impending cost (CR 702.176,
 ruling 970). -/
 def castForImpending (events : Array GameEvent) (id : ObjectId) : Bool :=
+  let announcedImpending (spellId : ObjectId) : Bool :=
+    events.any fun e =>
+      match e.change with
+      | .rules (.cast (.announced oid _ _ costs)) =>
+        oid == spellId && costs.any (fun | .impending _ => true | _ => false)
+      | _ => false
   events.any fun e =>
     match e.change with
     | .rules (.continuousEffect (.created _ eff)) => eff == .notACreature id
+    | .rules (.zone (.moved before after .stack .battlefield ..)) =>
+      after.id == some id && before.id.any announcedImpending
     | _ => false
 
 /-- All rules events caused by a one-shot effect in `events`, paired with their

@@ -128,7 +128,7 @@ end
 def draw (g : Game) (p : PlayerId) (n : Nat := 1)
     (cause : Option EventCause := none) : Game :=
   if let .chooseReplacement .. := g.pending then
-    if n == 0 then g else g.chainPendingReplacement (.draw p n false cause)
+    if n == 0 then g else g.chainPendingReplacement (.draw p n cause)
   else
   let (g0, cause?) : Game × Option EventCause :=
     match cause with
@@ -160,7 +160,7 @@ def draw (g : Game) (p : PlayerId) (n : Nat := 1)
       if g.pending != .none then
         let rem := n - (i + 1)
         if rem > 0 then
-          g := g.chainPendingReplacement (.draw p rem false cause?)
+          g := g.chainPendingReplacement (.draw p rem cause?)
         return g
     return g
 

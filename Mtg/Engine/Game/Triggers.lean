@@ -184,7 +184,6 @@ def putQueuedTrigger (g : Game) (controller : PlayerId) (source : GameObject)
     (abilityEffectOverride : Option Effect := none)
     (reflexiveResolution : Option TriggeredAbility.TriggerResolution := none) : Game :=
   if (g.player controller).lost || (g.player controller).leftTheGame then g
-  else if !g.triggerConditionHolds controller ab cause (some source) then g
   else
     let label :=
       if abilityEffectOverride.isSome || reflexiveResolution.isSome then "reflexive ability"
@@ -345,14 +344,6 @@ def forEachControlledCreature (g : Game) (p : PlayerId)
   g.withBatch none fun g =>
     g.foldControlledPermanents p excludeId fun g o =>
       if g.isCreature o then f g o else g
-
-/-- Sacrifice `o` to its owner's graveyard (CR 701.21a). -/
-def sacrificeToGraveyard (g : Game) (o : GameObject) (reason : String)
-    (cause : Option EventCause := none)
-    (preBattlefield : Option (Array GameObject) := none) : Game :=
-  let actor := (g.controllerOf o).getD o.owner
-  g.moveToOwnerGraveyard o reason (verb := some .sacrifice) (actor := some actor)
-    (preBattlefield := preBattlefield) (cause := cause)
 
 /-- Mana types Reality Fracture mana abilities of `o` produce, including the
 `{T}: Add {C}{C}` Emrakul, the Exigent Doom grants a land. -/

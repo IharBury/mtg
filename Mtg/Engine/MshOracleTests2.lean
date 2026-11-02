@@ -347,12 +347,9 @@ def attumaMerfolkOncePerPlayerOk : Bool :=
     g.createEffect (.additionalSubtype (namedPermanent g "Grizzly Bears").id .merfolk)
   let attuma := namedPermanent g "Attuma, Atlantean Warlord"
   let bears := namedPermanent g "Grizzly Bears"
-  let g := g.markAttacking attuma.id (some (.player ⟨1⟩))
-  let g := g.markAttacking bears.id (some (.player ⟨1⟩))
   let one :=
-    g.putAttackTriggersOnStack ⟨0⟩
-      #[(namedPermanent g "Attuma, Atlantean Warlord").id,
-        (namedPermanent g "Grizzly Bears").id]
+    g.record (GameEvent.attackersDeclared g.turnNumber ⟨0⟩
+      #[(g.snapshot attuma, .player ⟨1⟩), (g.snapshot bears, .player ⟨1⟩)])
   let merfolkWaits (g : Game) : Nat :=
     (g.waitingTriggers.filter (fun (t : WaitingTrigger) =>
       t.event == TriggerEvent.merfolkAttackPlayer)).size
@@ -365,12 +362,9 @@ def attumaMerfolkOncePerPlayerOk : Bool :=
        g.createEffect (.additionalSubtype (namedPermanent g "Grizzly Bears").id .merfolk)
      let attuma := namedPermanent g "Attuma, Atlantean Warlord"
      let bears := namedPermanent g "Grizzly Bears"
-     let g := g.markAttacking attuma.id (some (.player ⟨1⟩))
-     let g := g.markAttacking bears.id (some (.player ⟨2⟩))
      let two :=
-       g.putAttackTriggersOnStack ⟨0⟩
-         #[(namedPermanent g "Attuma, Atlantean Warlord").id,
-           (namedPermanent g "Grizzly Bears").id]
+       g.record (GameEvent.attackersDeclared g.turnNumber ⟨0⟩
+         #[(g.snapshot attuma, .player ⟨1⟩), (g.snapshot bears, .player ⟨2⟩)])
      merfolkWaits two == 2) &&
     (mshRuling 452).comment.contains "once for each player"
 
@@ -463,12 +457,12 @@ def captainMarVellFlashOk : Bool :=
   let bears := handCardNamed gCombat ⟨0⟩ "Grizzly Bears"
   !gCombat.asSorcery? ⟨0⟩ &&
     !gCombat.canCast ⟨0⟩ bears &&
-    (let gOpp := gCombat.record (GameEvent.cast gCombat.turnNumber ⟨1⟩
+    (let gOpp := gCombat.record (GameEvent.spellCast gCombat.turnNumber ⟨1⟩
       { id := some ⟨41⟩, controller := some ⟨1⟩, owner := ⟨1⟩ } (.hand ⟨1⟩))
      gOpp.canCast ⟨0⟩ (handCardNamed gOpp ⟨0⟩ "Grizzly Bears")) &&
     (let gLate := addToHand afterDraw grizzlyBears ⟨0⟩
      let gLate := { gLate with step := .beginningOfCombat }
-     let gLate := gLate.record (GameEvent.cast gLate.turnNumber ⟨1⟩
+     let gLate := gLate.record (GameEvent.spellCast gLate.turnNumber ⟨1⟩
        { id := some ⟨42⟩, controller := some ⟨1⟩, owner := ⟨1⟩ } (.hand ⟨1⟩))
      !gLate.canCast ⟨0⟩ (handCardNamed gLate ⟨0⟩ "Grizzly Bears") &&
        (let gLate := addPermanent gLate captainMarVellSpaceBorn ⟨0⟩ ⟨0⟩
@@ -546,19 +540,16 @@ def attacksAloneDestinationsOk : Bool :=
   let g := addPermanent g grayOgre ⟨0⟩ ⟨0⟩
   let bears := namedPermanent g "Grizzly Bears"
   let ogre := namedPermanent g "Gray Ogre"
-  let g := g.markAttacking bears.id (some (.player ⟨1⟩))
-  let g := g.markAttacking ogre.id (some (.player ⟨2⟩))
   let two :=
-    g.putAttackTriggersOnStack ⟨0⟩
-      #[(namedPermanent g "Grizzly Bears").id,
-        (namedPermanent g "Gray Ogre").id]
+    g.record (GameEvent.attackersDeclared g.turnNumber ⟨0⟩
+      #[(g.snapshot bears, .player ⟨1⟩), (g.snapshot ogre, .player ⟨2⟩)])
   !alone two &&
     (let g := addPermanent afterDraw agent13SharonCarter ⟨0⟩ ⟨0⟩
      let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
      let bears := namedPermanent g "Grizzly Bears"
-     let g := g.markAttacking bears.id (some (.player ⟨1⟩))
      let one :=
-       g.putAttackTriggersOnStack ⟨0⟩ #[(namedPermanent g "Grizzly Bears").id]
+       g.record (GameEvent.attackersDeclared g.turnNumber ⟨0⟩
+         #[(g.snapshot bears, .player ⟨1⟩)])
      alone one) &&
     (mshRuling 430).comment.contains "attacks alone" &&
     (mshRuling 431).comment.contains "attacks alone" &&

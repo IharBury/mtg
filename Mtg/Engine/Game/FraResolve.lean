@@ -114,13 +114,17 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     g.withLegalKindPlayer controller kind targets (fun g pid =>
       g.draw controller (g.loggedMilled pid)) sourceId illegal
   | .exileAllCreaturesEmpower =>
-    let creatures := g.battlefield.filter (g.isCreature ·)
+    let startIdx := g.events.size
+    let creatureIds := (g.battlefield.filter (g.isCreature ·)).map (·.id)
     let g := g.withBatch none fun g =>
-      creatures.foldl (fun g o =>
-        let nm := g.name o
-        let (g, _) := g.move o.id .exile none
-        g.logMsg s!"{nm} is exiled") g
-    g.empowerJace controller creatures.size
+      g.exilePermanentsLoop creatureIds (logExile := true)
+    if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement
+        (.finishPostStep 64 controller (n := startIdx) (ids := creatureIds))
+    else
+      let count := creatureIds.foldl (fun acc id =>
+        if g.wasPermanentExiled id startIdx then acc + 1 else acc) 0
+      g.empowerJace controller count
   | .drawGreatestPowerLoseLife =>
     let n := (g.greatestPowerAmongCreatures controller).toNat
     let before := g.loggedDraws controller
@@ -277,15 +281,21 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
       let g := g.createEffect (.exileIfDiesUntilEot o.id)
       g.dealDamageFrom srcName (g.object! o.id) n (source := src?)) sourceId illegal
   | .millMayPutPermanentGainLife n life =>
-    let before := (g.player controller).graveyard.size
+    let lib := (g.player controller).library
+    let count := min n lib.size
+    let preIds := (lib.extract (lib.size - count) lib.size).reverse
     let g := g.mill controller n
-    let gy := (g.player controller).graveyard
-    let milled := gy.extract before gy.size
-    let choices := milled.filter (fun id => (g.findObject? id).any (g.isPermanentCard ·))
-    if choices.isEmpty then g.gainLife controller life
+    if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement (.finishPostStep 66 controller (n := life) (ids := preIds))
     else
-      g.beginFraChoice controller (.mayPutMilledPermanent choices life)
-        s!"{(g.player controller).name} may put a permanent card milled this way into their hand"
+      let choices := preIds.filterMap fun id =>
+        match g.followMilledPublic? id with
+        | some o => if g.isPermanentCard o then some o.id else none
+        | none => none
+      if choices.isEmpty then g.gainLife controller life
+      else
+        g.beginFraChoice controller (.mayPutMilledPermanent choices life)
+          s!"{(g.player controller).name} may put a permanent card milled this way into their hand"
   | .chooseTriggerModes _ => g
   | .untapAllLandsYouControl =>
     g.withBatch none fun g =>
@@ -296,7 +306,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     if targets.isEmpty then g
     else
       g.withLegalKindPermanent controller kind targets (fun g o =>
-        g.exileThenReturn o "is exiled and returns to the battlefield") sourceId illegal
+        g.flickerPermanents #[o.id] (logText := "is exiled and returns to the battlefield")) sourceId illegal
   | .mayMovePlusOneToEachOther =>
     match sourceId.bind g.findObject? with
     | some o =>
@@ -459,7 +469,10 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
           s!"{(g.player controller).name} chooses a nonland card to exile") sourceId illegal
   | .millThenReturnLandTapped n =>
     let g := g.mill controller n
-    g.applyFra controller effect .reflexiveReturnLandTapped #[] sourceId
+    if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement (.finishPostStep 65 controller (sourceId := sourceId))
+    else
+      g.applyFra controller effect .reflexiveReturnLandTapped #[] sourceId
   | .maySacrificeLandForHeartwoods =>
     if (g.permanentsOf controller).any (g.isLand ·) then
       g.beginFraChoice controller (.maySacrificeThen #[.land] (.tappedHeartwoods 2) sourceId)

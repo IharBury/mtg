@@ -465,17 +465,18 @@ def spawnFace (g : Game) (pids : Array PlayerId) (face : CardDef) (n : Nat)
     (tapped : Bool := false) : Game × Option ObjectId :=
   if n == 0 || pids.isEmpty then (g, none)
   else
+    let g := g.change (.recentTokenIds #[])
     g.withBatchReturn none fun g =>
       Id.run do
         let mut g := g
         let mut last : Option ObjectId := none
         for pid in pids do
           for _ in [0:n] do
-            let (g', tok) := g.createToken pid face (tapped := tapped)
+            let (g', tok) := g.createToken pid face (tapped := tapped) (recordRecent := true)
             g := g'
             if tok.zone == .battlefield then
               last := some tok.id
-        return (g, last)
+        return (g, last.orElse (fun _ => g.recentTokenIds.back?))
 
 /-- Recipients of a created token. The Void with no announced opponent is
 created for the controller. -/
@@ -513,17 +514,23 @@ def millCollected (g : Game) (controller : PlayerId) (pids : Array PlayerId) (n 
       acc ++ (lib.extract (lib.size - count) lib.size).reverse) #[]
     let g := g.withBatch cause? fun g =>
       pids.foldl (fun g pid => g.mill pid n (cause := cause?)) g
-    let milled := tops.filterMap (fun id =>
-      (g.followMovedToZone? id (fun | .graveyard _ => true | _ => false)).map (·.id))
-    g.change (.milledIdsThisWay milled)
+    if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement (.finishPostStep 58 controller (ids := tops))
+    else
+      let milled := tops.filterMap (fun id => (g.followMilledPublic? id).map (·.id))
+      g.change (.milledIdsThisWay milled)
   | .opponentsMilled =>
     let opps := pids.filter (· != controller)
-    let (g, flag) := g.withBatchReturn cause? fun g =>
-      let (g, flag) := g.millThenReflexive opps n (cause := cause?)
-      let g := pids.foldl (fun g pid =>
+    let startIdx := g.events.size
+    let g := g.withBatch cause? fun g =>
+      let g := opps.foldl (fun g pid => g.mill pid n (cause := cause?)) g
+      pids.foldl (fun g pid =>
         if pid == controller then g.mill pid n (cause := cause?) else g) g
-      (g, flag)
-    g.change (.opponentsMilledThisWay flag)
+    if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement
+        (.finishPostStep 59 controller (n := startIdx) (targets := opps.map Target.player))
+    else
+      g.change (.opponentsMilledThisWay (g.anyOpponentMilledSince opps startIdx))
 
 end Game
 end Mtg.Engine
