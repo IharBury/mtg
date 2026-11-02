@@ -439,19 +439,18 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
       if q != p then
         if living != rest then g.change (.pending (.fraChoice q (.discardTwo controller living draws))) else g
       else
-        let nextDraws := draws + 1
         let g := g.changes (#[.pending .none, .chooseModesRest none] ++ clearProp)
         match living[0]? with
         | some next =>
           if (g.player next).hand.size > 2 then
-            (g.change (.pending (.fraChoice next (.discardTwo controller (living.extract 1 living.size) nextDraws)))).logMsg
+            (g.change (.pending (.fraChoice next (.discardTwo controller (living.extract 1 living.size) draws)))).logMsg
               s!"{(g.player next).name} discards two cards"
           else
             g.chainPendingReplacement
-              (.finishPostStep 10 controller (n := nextDraws) (modes := living.map (·.idx)))
+              (.finishPostStep 10 controller (n := draws) (modes := living.map (·.idx)))
         | none =>
-          if g.stillInGame controller then
-            g.chainPendingReplacement (.finishPostStep 10 controller (n := nextDraws) (modes := #[]))
+          if g.stillInGame controller && draws > 0 then
+            g.chainPendingReplacement (.finishPostStep 10 controller (n := draws) (modes := #[]))
           else g
     | .worldsPutCreatures eligible rest exiled chosen sourceId =>
       let living := rest.filter g.stillInGame

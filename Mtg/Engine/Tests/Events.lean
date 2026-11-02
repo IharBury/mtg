@@ -10516,7 +10516,20 @@ private def mustHold16 (label : String) (ok : Bool) : Bool :=
       (gOwn2.events.extract preConcedeIdx gOwn2.events.size).filter (fun e =>
         e.change == .engine .clearProposalCheckpoint) |>.size
     let cpLeaveOk := unrelatedCpKept && gOwn2.proposalCheckpoint.isNone && clearCpCount == 1
-    (gS2, gW2, gRLeft, gC1Clean, sacFinishOk && wheelAdvOk && repResumeOk && cpLeaveOk &&
+    -- 9e. `.discardTwo`: an opponent leaving the game before discarding (CR 800.4) does NOT increment `draws`!
+    let gD0 := (insertObject (insertObject g3 bear p2 (.hand p2)) bear p2 (.hand p2)).continueDiscardTwo p0 #[p1, p2] 0
+    let p0HandBefore := (gD0.player p0).hand.size
+    let gD1 := gD0.concede p1
+    let p2Bears := ((gD1.player p2).hand.filter (fun id => (gD1.object! id).name == bear.name)).extract 0 2
+    let gD2 := mustApply gD1 p2 (.choosePermanents p2Bears)
+    let gDLast0 := g3.change (.pending (.fraChoice p1 (.discardTwo p0 #[] 1)))
+    let gDLast1 := gDLast0.concede p1
+    let discardTwoLeaveOk :=
+      gD1.pending == .fraChoice p2 (.discardTwo p0 #[] 0) &&
+      (gD2.player p0).hand.size == p0HandBefore &&
+      (gDLast1.player p0).hand.size == (g3.player p0).hand.size + 1 &&
+      [gD1, gD2, gDLast1].all (fun g => Game.replayEvents g.events == g && allRulesEventsClassified g)
+    (gS2, gW2, gRLeft, gC1Clean, sacFinishOk && wheelAdvOk && repResumeOk && cpLeaveOk && discardTwoLeaveOk &&
       Game.replayEvents gOwn2.events == gOwn2 && allRulesEventsClassified gOwn2)
   let step9AllOk :=
     step9LeaveOk &&
