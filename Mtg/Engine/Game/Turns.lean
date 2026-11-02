@@ -11,6 +11,81 @@ the next turn, `beginStep`, and step advancement.
 namespace Mtg.Engine
 namespace Game
 
+/-- Duration of a continuous effect (CR 611.2). -/
+private def effectDuration : ContinuousEffect → EffectDuration
+  | .layered _ _ d | .playerRule _ _ d | .gameRule _ d
+  | .replacement _ d | .prevention _ d | .permission _ _ d => d
+
+/-- Expire every active continuous effect whose duration satisfies `pred`,
+handling `.control` via `endControlEffectById` and `.copy` log messages (CR 611.2a). -/
+def expireEffectsByDuration (g : Game) (pred : EffectId → EffectDuration → Bool)
+    (cause : Option EventCause) : Game :=
+  g.activeEffects.foldl (fun acc (eid, e) =>
+    if !pred eid (effectDuration e) then acc
+    else
+      match e with
+      | .layered _ (.control _) _ =>
+        acc.endControlEffectById eid (cause := cause)
+      | .layered (.objects #[id]) (.copy printed) _ =>
+        let acc := acc.expireEffectById eid (cause := cause)
+        match acc.findObject? id with
+        | some o =>
+          if o.zone == .battlefield then
+            acc.logMsg s!"{(acc.baseCard o).name} is no longer a copy of {printed.name}"
+          else acc
+        | none => acc
+      | _ =>
+        acc.expireEffectById eid (cause := cause)) g
+
+/-- Expire effects lasting until the end of `st` (CR 500.5). -/
+def expireAtStepEnd (g : Game) (st : Step) : Game :=
+  g.expireEffectsByDuration (fun _ d => d == .untilEndOfStepOrPhase (.step st))
+    (some (.turnBased .expireAtStepEnd))
+
+/-- Expire effects lasting until the end of `ph` or (for `.combat`) until end of combat
+(CR 500.5 / 500.5a / 511.2). -/
+def expireAtPhaseEnd (g : Game) (ph : Phase) : Game :=
+  g.expireEffectsByDuration
+    (fun _ d =>
+      d == .untilEndOfStepOrPhase (.phase ph) ||
+        (ph == .combat && d == .untilEndOfCombat))
+    (some (.turnBased .expireAtStepEnd))
+
+/-- Expire effects lasting until `ph` begins (CR 500.4). -/
+def expireAtPhaseBegin (g : Game) (ph : Phase) : Game :=
+  g.expireEffectsByDuration (fun _ d => d == .untilStepOrPhase (.phase ph))
+    (some (.turnBased .expireAtStepBegin))
+
+/-- Expire effects lasting until `st` begins (CR 500.4). -/
+def expireAtStepBegin (g : Game) (st : Step) : Game :=
+  g.expireEffectsByDuration (fun _ d => d == .untilStepOrPhase (.step st))
+    (some (.turnBased .expireAtStepBegin))
+
+/-- Record `TurnEvent.stepEnded st` and expire effects ending with `st` (CR 500.5). -/
+def recordStepEnded (g : Game) (st : Step) : Game :=
+  (g.record (GameEvent.stepEnded g.turnNumber st
+    (cause := some (.gameRule .stepAdvance)))).expireAtStepEnd st
+
+/-- Record `TurnEvent.phaseEnded ph` and expire effects ending with `ph` (CR 500.5 / 511.2). -/
+def recordPhaseEnded (g : Game) (ph : Phase) : Game :=
+  (g.record (GameEvent.phaseEnded g.turnNumber ph
+    (cause := some (.gameRule .stepAdvance)))).expireAtPhaseEnd ph
+
+/-- Record `TurnEvent.phaseBegan ph` and expire effects lasting until `ph` begins (CR 500.4). -/
+def recordPhaseBegan (g : Game) (ph : Phase) : Game :=
+  let hasExpiry := g.activeEffects.any (fun (_, e) => effectDuration e == .untilStepOrPhase (.phase ph))
+  let body (g : Game) : Game :=
+    (g.record (GameEvent.phaseBegan g.turnNumber ph
+      (cause := some (.gameRule .stepAdvance)))).expireAtPhaseBegin ph
+  if hasExpiry then g.withBatch none body else body g
+
+/-- Record `TurnEvent.stepBegan st` and expire effects lasting until `st` begins (CR 500.4). -/
+def recordStepBegan (g : Game) (st : Step) : Game :=
+  let hasExpiry := g.activeEffects.any (fun (_, e) => effectDuration e == .untilStepOrPhase (.step st))
+  let body (g : Game) : Game :=
+    (g.record (GameEvent.stepped g.turnNumber st g.activePlayer)).expireAtStepBegin st
+  if hasExpiry then g.withBatch none body else body g
+
 /-- Expire play-from-exile permissions as `endingPlayer`'s turn ends (CR 611.2). -/
 def expirePlayPermissions (g : Game) (endingPlayer : PlayerId)
     (cause : Option EventCause := some (.turnBased .cleanupClear)) : Game :=
@@ -123,6 +198,15 @@ def clearEOT (g : Game) : Game :=
       | none => pure ()
       | some cur =>
         g := g.expireObjectUntilEotEffects cur
+    g := g.activeEffects.foldl (fun acc (eid, e) =>
+      match e with
+      | .layered _ (.copy ..) _ | .layered _ (.control _) _
+      | .permission _ (.playFromExile ..) _ => acc
+      | _ =>
+        if effectDuration e == .untilEndOfNextTurnOf g.activePlayer &&
+            acc.hasTurnBegunSince eid g.activePlayer then
+          acc.expireEffectById eid (cause := cause)
+        else acc) g
     g := g.expireMatching (fun
       | .layered _ (.copy ..) _ | .layered _ (.control _) _ => false
       | .layered _ _ .untilEndOfTurn | .gameRule _ .untilEndOfTurn => true
@@ -180,7 +264,7 @@ def expireGoadedFor (g : Game) (p : PlayerId) : Game :=
 
 /-- End Reality Fracture effects that last until `p`'s next turn: Garruk,
 Veiled Butcher's toughness and power reduction and the command-zone effects of Jace, Reality Sculptor
-and Garruk, Curse Breaker (CR 611.2b). -/
+and Garruk, Curse Breaker (CR 611.2a). -/
 def expireFraUntilTurnEffects (g : Game) (p : PlayerId) : Game :=
   let cause := some (EventCause.turnBased .expireAtStepBegin)
   let g :=
@@ -190,9 +274,10 @@ def expireFraUntilTurnEffects (g : Game) (p : PlayerId) : Game :=
         if q == p then acc.endControlEffectById eid (cause := cause) else acc
       | _ => acc) g
   let g := g.expireMatching (fun
-    | .layered _ (.copy ..) _ | .layered _ (.control _) _ => false
-    | .layered _ _ (.untilNextTurnOf q) => q == p
-    | _ => false) (cause := cause)
+    | .layered _ (.copy ..) _ | .layered _ (.control _) _
+    | .playerRule _ .protectionFromEverything _
+    | .playerRule _ .lifeCantChange _ => false
+    | e => effectDuration e == .untilNextTurnOf p) (cause := cause)
   g.objects.foldl (fun g o =>
     if o.zone == .command && g.fraEffectUntilTurnOf o == some p then
       (g.ceaseToExist o.id (cause := cause)).logMsg s!"{o.name} ends"
@@ -361,15 +446,9 @@ partial def finishPostSbaCleanup (g : Game) (sba : Bool) : Game :=
   else
     -- The cleanup step ends (CR 500.3) and the turn ends.
     let g := g.emptyManaPools
-    let g := g.record (GameEvent.stepEnded g.turnNumber .cleanup
-      (cause := some (.gameRule .stepAdvance)))
-    let g := g.record (GameEvent.phaseEnded g.turnNumber .ending
-      (cause := some (.gameRule .stepAdvance)))
-    let g := (g.startNextTurn).beginStep .untap
-    if let .chooseReplacement .. := g.pending then
-      g.chainPendingReplacement .beginStepAfterUntap
-    else
-      g.beginStep .upkeep
+    let g := g.recordStepEnded .cleanup
+    let g := g.recordPhaseEnded .ending
+    g.startNextTurn |>.beginTurn
 
 /-- Run `clearEOT` and cleanup SBAs once `discardToMaxHandSize` finishes (CR 514.2–514.3). -/
 partial def finishCleanupStepAfterDiscard (g : Game) : Game :=
@@ -405,11 +484,9 @@ partial def beginStep (g : Game) (st : Step) : Game :=
   let g :=
     if st == .draw && g.skipsFirstDraw then g
     else if isPhaseStartStep st then
-      g.record (GameEvent.phaseBegan g.turnNumber st.phase
-        (cause := some (.gameRule .stepAdvance)))
+      g.recordPhaseBegan st.phase
     else g
-  let stepEvent := GameEvent.stepped g.turnNumber st g.activePlayer
-  let g := if st == .draw && g.skipsFirstDraw then g else g.record stepEvent
+  let g := if st == .draw && g.skipsFirstDraw then g else g.recordStepBegan st
   let g := g.logMsg s!"— Turn {g.turnNumber}, {g.player g.activePlayer |>.name}: {st} —"
   match st with
   | .untap =>
@@ -427,8 +504,7 @@ partial def beginStep (g : Game) (st : Step) : Game :=
       if let .chooseReplacement .. := g.pending then
         return g
       -- No priority (CR 502.4). Immediately continue.
-      g := g.record (GameEvent.stepEnded g.turnNumber .untap
-        (cause := some (.gameRule .stepAdvance)))
+      g := g.recordStepEnded .untap
       return g
   | .draw =>
     if g.skipsFirstDraw then
@@ -436,8 +512,7 @@ partial def beginStep (g : Game) (st : Step) : Game :=
       -- though it didn't exist. Nothing happens during it — no turn-based
       -- draw, and no player receives priority.
       let g := g.logMsg s!"{g.player g.activePlayer |>.name} skips their first draw step (CR 103.8a)"
-      let g := g.record (GameEvent.phaseEnded g.turnNumber .beginning
-        (cause := some (.gameRule .stepAdvance)))
+      let g := g.recordPhaseEnded .beginning
       g.beginStep .precombatMain
     else
       -- The turn-based draw happens before triggers (ruling 770).
@@ -486,9 +561,7 @@ partial def beginStep (g : Game) (st : Step) : Game :=
   | _ =>
     g.receivePriority g.activePlayer
 
-end
-
-def beginTurn (g : Game) : Game :=
+partial def beginTurn (g : Game) : Game :=
   let p := g.activePlayer
   let cause := some (EventCause.turnBased .expireAtStepBegin)
   let g := g.restoreCopiesUntilNextTurn p
@@ -510,6 +583,8 @@ def beginTurn (g : Game) : Game :=
   else
     g.beginStep .upkeep
 
+end
+
 /-- Advance after both players pass with an empty stack (CR 500.2). -/
 def advanceStep (g : Game) : Game :=
   let g := g.emptyManaPools
@@ -518,45 +593,36 @@ def advanceStep (g : Game) : Game :=
     -- Skip declare blockers / combat damage when no attackers.
     let attackers := g.battlefield.filter (·.status.attacking)
     if g.step == .declareAttackers && attackers.isEmpty then
-      let g := g.record (GameEvent.stepEnded g.turnNumber g.step
-        (cause := some (.gameRule .stepAdvance)))
+      let g := g.recordStepEnded g.step
       g.beginStep .endOfCombat
     else if g.step == .declareBlockers && attackers.isEmpty then
-      let g := g.record (GameEvent.stepEnded g.turnNumber g.step
-        (cause := some (.gameRule .stepAdvance)))
+      let g := g.recordStepEnded g.step
       g.beginStep .endOfCombat
     else if g.step == .combatDamage && g.pendingRegularCombatDamage then
-      let g := g.record (GameEvent.stepEnded g.turnNumber .combatDamage
-        (cause := some (.gameRule .stepAdvance)))
+      let g := g.recordStepEnded .combatDamage
       g.beginStep .combatDamage
     else if g.step == .endOfCombat && g.additionalCombatPhases > 0 then
-      let g := g.record (GameEvent.stepEnded g.turnNumber .endOfCombat
-        (cause := some (.gameRule .stepAdvance)))
-      let g := g.record (GameEvent.phaseEnded g.turnNumber .combat
-        (cause := some (.gameRule .stepAdvance)))
+      let g := g.recordStepEnded .endOfCombat
+      let g := g.recordPhaseEnded .combat
       let g := g.clearCombat
       g.logMsg "An additional combat phase begins"
         |>.beginStep .beginningOfCombat
     else
-      let g := g.record (GameEvent.stepEnded g.turnNumber g.step
-        (cause := some (.gameRule .stepAdvance)))
+      let g := g.recordStepEnded g.step
       let g :=
         if g.step.phase != st.phase then
-          g.record (GameEvent.phaseEnded g.turnNumber g.step.phase
-            (cause := some (.gameRule .stepAdvance)))
+          g.recordPhaseEnded g.step.phase
         else g
       let g := if g.step == .endOfCombat then g.clearCombat else g
       g.beginStep st
   | none =>
     -- Leaving cleanup. If CR 514.3a granted priority this step, another
     -- cleanup step begins; otherwise the turn ends (CR 514.3 / 500.3).
-    let g := g.record (GameEvent.stepEnded g.turnNumber .cleanup
-      (cause := some (.gameRule .stepAdvance)))
+    let g := g.recordStepEnded .cleanup
     if g.cleanupGivesPriority then
       g.beginStep .cleanup
     else
-      let g := g.record (GameEvent.phaseEnded g.turnNumber .ending
-        (cause := some (.gameRule .stepAdvance)))
+      let g := g.recordPhaseEnded .ending
       g.startNextTurn |>.beginTurn
 
 end Game

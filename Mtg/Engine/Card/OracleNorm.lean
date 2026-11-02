@@ -437,7 +437,6 @@ def normalizePhrases (s : String) : String :=
     ("trick arrows ", ""),
     ("if her power", "if its power"),
     ("if his power", "if its power"),
-    ("enchant creature you control", "enchant creature"),
     ("target player create ", "target player creates "),
     ("destroy target artifact or land", "destroy target land"),
     ("you may play it until the end of your next turn",

@@ -179,8 +179,8 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
         match (g.player p).hand.back? with
         | some id => some (.discard id)
         | none => some .decline
-      | .sacrificePermanents left paid =>
-        let perms := g.permanentsOf p
+      | .sacrificePermanents left paid chosen =>
+        let perms := (g.permanentsOf p).filter (fun o => !chosen.contains o.id)
         if paid == 0 && perms.size < left then some .decline
         else
           match perms[0]? with

@@ -71,15 +71,23 @@ card, or start the first turn when that was why the game was waiting. -/
 partial def continueOpeningBegin (g : Game) (rest : Array ObjectId) : Game :=
   if rest.isEmpty then
     if g.awaitingOpeningBegin then
-      let g := g.change (.awaitingOpeningBegin false)
+      let sp := if g.stillInGame g.startingPlayer then g.startingPlayer else g.nextLiving g.startingPlayer
+      let g :=
+        if sp != g.startingPlayer then
+          g.changes #[.awaitingOpeningBegin false, .startingPlayer sp, .priority sp]
+        else
+          g.change (.awaitingOpeningBegin false)
       g.logMsg s!"{g.player g.startingPlayer |>.name} takes the first turn"
         |>.beginTurn
     else g
   else
     match g.findObject? rest[0]! with
     | some o =>
-      g.change (.pending (.fraChoice o.owner (.mayBeginOnBattlefield rest)))
-        |>.logMsg s!"{(g.player o.owner).name} may begin the game with {o.name} on the battlefield"
+      if !g.stillInGame o.owner || o.zone != .hand o.owner then
+        g.continueOpeningBegin (rest.extract 1 rest.size)
+      else
+        g.change (.pending (.fraChoice o.owner (.mayBeginOnBattlefield rest)))
+          |>.logMsg s!"{(g.player o.owner).name} may begin the game with {o.name} on the battlefield"
     | none => g.continueOpeningBegin (rest.extract 1 rest.size)
 
 /-- Finish putting an opening-hand card onto the battlefield (`fromId`), then
@@ -87,10 +95,13 @@ advance to `continueOpeningBegin remainingIds` (CR 103.6 / MSH 84). -/
 def finishBeginOnBattlefield (g : Game) (fromId : ObjectId) (remainingIds : Array ObjectId) : Game :=
   let g :=
     match g.followMovedToZone? fromId (· == Zone.battlefield) with
-    | some newObj => g.afterPermanentEnters newObj
+    | some newObj =>
+      if newObj.isOnBattlefield then
+        (g.logMsg s!"{newObj.name} begins the game on the battlefield").afterPermanentEnters newObj
+      else g
     | none => g
   if let .chooseReplacement .. := g.pending then
-    g.chainPendingReplacement (.finishBeginOnBattlefield ⟨g.nextObjectId⟩ remainingIds)
+    g.chainPendingReplacement (.finishPostStep 85 g.startingPlayer (ids := remainingIds))
   else
     g.continueOpeningBegin remainingIds
 
@@ -164,11 +175,12 @@ def skipFreeMulliganBottoms (g : Game) : Game :=
     let mut g := g
     let mut need : Array PlayerId := #[]
     for p in g.mulliganToBottom do
-      if g.countedMulligans p == 0 then
-        g := g.logMsg
-          s!"{g.player p |>.name} puts no cards on the bottom of their library (CR 103.5c)"
-      else
-        need := need.push p
+      if g.stillInGame p then
+        if g.countedMulligans p == 0 then
+          g := g.logMsg
+            s!"{g.player p |>.name} puts no cards on the bottom of their library (CR 103.5c)"
+        else
+          need := need.push p
     return g.change (.mulliganToBottom need)
 
 /-- Take remaining declared mulligans, pausing if `--norandom` needs a
@@ -183,12 +195,15 @@ partial def executeMulliganQueue (g : Game) (rest : Array PlayerId) : Game :=
       promptBottom g g.mulliganToBottom[0]!
   | some p =>
     let more := rest.extract 1 rest.size
-    let g := g.executeOneMulligan p
-    match g.pendingRandom? with
-    | some _ =>
-      g.change (.pregameRandom (.mulliganQueue p more))
-    | none =>
+    if !g.stillInGame p then
       executeMulliganQueue g more
+    else
+      let g := g.executeOneMulligan p
+      match g.pendingRandom? with
+      | some _ =>
+        g.change (.pregameRandom (.mulliganQueue p more))
+      | none =>
+        executeMulliganQueue g more
 
 /-- After every remaining player has declared, those who chose to mulligan
 do so at the same time (CR 103.5). -/
@@ -212,7 +227,7 @@ def advancePlayerQueue (g : Game) (who : PlayerId) (queue : Array PlayerId)
     (prompt : Game → PlayerId → Game) : Game :=
   if g.over then g
   else
-    let rest := queue.filter (fun q => q != who)
+    let rest := queue.filter (fun q => q != who && g.stillInGame q)
     let g := store g rest
     if rest.isEmpty then whenEmpty g else prompt g rest[0]!
 

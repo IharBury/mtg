@@ -35,6 +35,8 @@ inductive FraStatic where
   | equippedHuntersAxe
   /-- Enchant artifact or non-Aura enchantment. -/
   | enchantArtifactOrNonAuraEnchantment
+  /-- Enchant creature you control. -/
+  | enchantCreatureYouControl
   /-- Enchanted permanent is a Construct creature with base power and
   toughness 5/5 in addition to its other types. -/
   | enchantedIsConstruct55
@@ -136,6 +138,7 @@ def text : FraStatic → String
   | .equippedHuntersAxe =>
     "Equipped creature gets +2/+0 and has \"Whenever this creature attacks, it gains your choice of trample or deathtouch until end of turn.\""
   | .enchantArtifactOrNonAuraEnchantment => "Enchant artifact or non-Aura enchantment"
+  | .enchantCreatureYouControl => "Enchant creature you control"
   | .enchantedIsConstruct55 =>
     "Enchanted permanent is a Construct creature with base power and toughness 5/5 in addition to its other types."
   | .enchantedGetsOneAndDeathtouch => "Enchanted creature gets +1/+0 and has deathtouch."

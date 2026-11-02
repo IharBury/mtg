@@ -20,12 +20,14 @@ def legalEffectTargets (g : Game) (caster : PlayerId) (effect : Effect)
     (sourceId : Option ObjectId := none) : Array Target :=
   g.legalTargetsForKind caster effect.targetKind sourceId
 
-/-- What an Aura spell targets (CR 303.4a): a creature, or an artifact or
-non-Aura enchantment for Puppet Crafting. -/
+/-- What an Aura spell targets (CR 303.4a): a creature, a creature you control
+(Secret Invasion), or an artifact or non-Aura enchantment (Puppet Crafting). -/
 def auraTargetKind (aura : CardDef) : EffectTargetKind :=
   if aura.staticAbilities.any (· == .fra .enchantArtifactOrNonAuraEnchantment) then
     .filtered { noun := "target artifact or non-Aura enchantment"
                 types := #[.artifact, .enchantment], nonAura := true }
+  else if aura.staticAbilities.any (· == .fra .enchantCreatureYouControl) then
+    .creatureYouControl
   else .creature
 
 /-- Legal targets for an Aura spell with “Enchant creature” (CR 303.4). -/
@@ -207,6 +209,7 @@ def targetingOf (g : Game) (obj : GameObject) : EffectTargeting :=
           if g.isAura obj then
             match auraTargetKind (g.baseCard obj) with
             | .creature => EffectTargeting.of .creature .own
+            | .creatureYouControl => EffectTargeting.of .creatureYouControl .own
             | k => EffectTargeting.of k
 
           else EffectTargeting.of .none
@@ -480,6 +483,55 @@ def targetLogName (g : Game) : Target → String
     match g.findObject? oid with
     | some o => g.name o
     | none => toString oid
+
+/-- Whether `candidate` is a legal complete target array for stack entry `e` /
+`obj` with targeting shape `kind` (CR 115.3 / 115.7a,d / 707.10c): preserves
+target count, satisfies each non-skipped slot's `slotKind`, enforces CR 115.3
+distinctness within shared `"target"` groups (`distinctSlots` or single-slot
+multi-target arrays), and checks multi-target relational constraints. -/
+def validTargetArrayForEntry (g : Game) (e : StackEntry) (obj : GameObject)
+    (kind : EffectTargetKind) (candidate : Array Target)
+    (allowUnchangedIllegal : Bool := false) : Bool :=
+  if candidate.size != e.targets.size then false
+  else
+    let selfSource := obj.sourceId.orElse (fun _ => if obj.zone == .stack then some obj.id else none)
+    let totalSlots := candidate.size + e.skippedOptionalSlots.size
+    let slotIndices : Array Nat :=
+      if e.skippedOptionalSlots.isEmpty then (List.range candidate.size).toArray
+      else ((List.range totalSlots).filter (fun s => !e.skippedOptionalSlots.contains s)).toArray
+    let slotsOk :=
+      slotIndices.size == candidate.size &&
+        (List.range candidate.size).all fun idx =>
+          let slotIdx := slotIndices[idx]!
+          (allowUnchangedIllegal && candidate[idx]! == e.targets[idx]!) ||
+            (g.legalTargetsForKind e.controller (kind.slotKind slotIdx) selfSource).contains candidate[idx]!
+    let distinctOk :=
+      if kind.spec.slots.isEmpty then
+        candidate.toList.eraseDups.length == candidate.size
+      else
+        kind.distinctSlots.all fun grp =>
+          let picked := (List.range candidate.size).filterMap fun idx =>
+            if grp.contains slotIndices[idx]! then some candidate[idx]! else none
+          picked.eraseDups.length == picked.length
+    let relationOk :=
+      (allowUnchangedIllegal && candidate == e.targets) ||
+        match kind with
+      | .twoNonlandsSharingType =>
+        match candidate[0]?, candidate[1]? with
+        | some (Target.permanent a), some (Target.permanent b) =>
+          match g.findObject? a, g.findObject? b with
+          | some oa, some ob => g.sharesCardType oa ob
+          | _, _ => false
+        | _, _ => candidate.size < 2
+      | .upToTwoCreaturesTotalMvAtMost n =>
+        let totalMv := candidate.foldl (fun acc t =>
+          match t with
+          | Target.permanent oid =>
+            acc + ((g.findObject? oid).map g.objectManaValue |>.getD 0)
+          | _ => acc) 0
+        totalMv ≤ n
+      | _ => true
+    slotsOk && distinctOk && relationOk
 
 end Game
 end Mtg.Engine

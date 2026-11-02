@@ -83,7 +83,7 @@ def legalStackAbilityTargets (g : Game) (caster : PlayerId)
     | some o =>
       if o.zone == .stack && some o.id != selfId && g.controlledBy o caster &&
           (o.abilityEffect.isSome || o.triggeredAbility.isSome) then
-        match o.sourceId.bind g.findObject? with
+        match o.sourceId.bind g.damageSourceById? with
         | some src =>
           if sourcePred src then some (Target.card o.id) else none
         | none => none
@@ -134,6 +134,7 @@ def matchesTargetFilter (g : Game) (caster : PlayerId) (f : TargetFilter)
     f.nonTypes.all (fun t => !g.objectHasCardType o t) &&
     (!f.nonAura || !g.isAura o) &&
     (!f.nontoken || !o.printed.isToken) &&
+    (!f.tokenOnly || o.printed.isToken) &&
     (!f.permanentCard || g.isPermanentCard o) &&
     (f.mvAtLeast.all (mv ≥ ·)) && (f.mvAtMost.all (mv ≤ ·)) &&
     (f.toughnessAtLeast.all (g.toughness o ≥ ·)) &&

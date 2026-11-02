@@ -63,6 +63,7 @@ structure TargetFilter where
   /-- A permanent card (CR 110.4a). -/
   permanentCard : Bool := false
   nontoken : Bool := false
+  tokenOnly : Bool := false
   controller : TargetController := .any
   /-- The target is at least one of these colors. Empty means any color. -/
   colors : Array Color := #[]
@@ -623,6 +624,32 @@ def slotKind (k : EffectTargetKind) (i : Nat) : EffectTargetKind :=
 /-- True when the `i`th instance of the word “target” is optional (“up to one”). -/
 def isOptionalSlot (k : EffectTargetKind) (i : Nat) : Bool :=
   k.spec.optionalSlots.contains i
+
+/-- 0-based slot-index groups whose chosen targets must be pairwise distinct
+under CR 115.3 (slots sharing a single instance of the word “target” or
+explicitly requiring “a second target”). Single-slot shapes (`slots.isEmpty`)
+with multiple targets (`e.targets.size > 1`) always share one instance of
+“target” and are checked directly when `slots.isEmpty`. -/
+def distinctSlots : EffectTargetKind → Array (Array Nat)
+  | .twoNonlandsSharingType
+  | .twoCreaturesOrLandsYouControl
+  | .twoPlayers
+  | .twoArtifactsYouControl => #[#[0, 1]]
+  | .pair a b =>
+    let sa := a.spec
+    let sb := b.spec
+    let na := if sa.slots.isEmpty then sa.count else sa.slots.size
+    let nb := if sb.slots.isEmpty then sb.count else sb.slots.size
+    let ga :=
+      if sa.slots.isEmpty then
+        if na > 1 then #[(List.range na).toArray] else #[]
+      else a.distinctSlots
+    let gb :=
+      (if sb.slots.isEmpty then
+        if nb > 1 then #[(List.range nb).toArray] else #[]
+      else b.distinctSlots).map (fun grp => grp.map (· + na))
+    ga ++ gb
+  | _ => #[]
 
 /-- Oracle-style noun for the `i`th instance, with “up to one” when optional. -/
 def announcedNoun (k : EffectTargetKind) (i : Nat) : String :=

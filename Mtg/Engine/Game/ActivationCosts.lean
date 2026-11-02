@@ -109,43 +109,49 @@ def costPicksPayable (g : Game) (p : PlayerId) (sourceId : ObjectId) (picks : Ar
 chaining `.payCostPickItems` if an earlier move or sacrifice pauses on
 `Pending.chooseReplacement` (`pick.count >= 2`). -/
 def payCostPickItems (g : Game) (p : PlayerId) (abilityId sourceId : ObjectId) (pick : CostPick)
-    (ids : Array ObjectId) : Game := Id.run do
-  let name := (g.player p).name
-  let mut g := g
-  for i in [0:ids.size] do
-    let id := ids[i]!
-    if let some o := g.findObject? id then
-      match pick with
-      | .tapUntappedCreature | .tapTwoUntappedArtifacts =>
-        let oName := g.name o
-        g := (g.becomeTapped o (cause := some (.costPayment .tap p (some abilityId)))).logMsg
-          s!"{name} taps {oName} to pay a cost"
-      | .exileAnotherCreatureCardFromGraveyard =>
-        g := (g.move id .exile none (cause := some (.costPayment .exile p (some abilityId)))).1.logMsg
-          s!"{name} exiles {o.name} from their graveyard"
-      | _ =>
-        if o.isOnBattlefield then
-          let records :=
-            g.isCreature o && (g.findObject? abilityId).any (fun ab =>
-              (ab.abilityEffect.map (·.resolution)) ==
-                some (.sequence [.drawEqualToLastKnownPower, .discard (.cards 1)]))
-          let pw := g.power o
+    (ids : Array ObjectId) : Game :=
+  let run (g : Game) : Game := Id.run do
+    let name := (g.player p).name
+    let mut g := g
+    for i in [0:ids.size] do
+      let id := ids[i]!
+      if let some o := g.findObject? id then
+        match pick with
+        | .tapUntappedCreature | .tapTwoUntappedArtifacts =>
           let oName := g.name o
-          g := g.sacrificeToGraveyard o s!"{name} sacrifices {oName}"
-            (cause := some (.costPayment .sacrifice p (some abilityId)))
-          if records then
-            if (g.findObject? abilityId).isSome then
-              g := g.setStackEntryLastKnown abilityId (lastKnownPower := some pw)
-        else
-          g := (g.move id (.graveyard o.owner) none (verb := some .discard) (actor := some p)
-            (cause := some (.costPayment .discard p (some abilityId)))).1.logMsg
-            s!"{name} discards {o.name}"
-      if let .chooseReplacement .. := g.pending then
-        let rem := ids.extract (i + 1) ids.size
-        if !rem.isEmpty then
-          g := g.chainPendingReplacement (.payCostPickItems p abilityId sourceId pick rem)
-        return g
-  return g
+          g := (g.becomeTapped o (cause := some (.costPayment .tap p (some abilityId)))).logMsg
+            s!"{name} taps {oName} to pay a cost"
+        | .exileAnotherCreatureCardFromGraveyard =>
+          g := (g.move id .exile none (cause := some (.costPayment .exile p (some abilityId)))).1.logMsg
+            s!"{name} exiles {o.name} from their graveyard"
+        | _ =>
+          if o.isOnBattlefield then
+            let records :=
+              g.isCreature o && (g.findObject? abilityId).any (fun ab =>
+                (ab.abilityEffect.map (·.resolution)) ==
+                  some (.sequence [.drawEqualToLastKnownPower, .discard (.cards 1)]))
+            let pw := g.power o
+            let oName := g.name o
+            g := g.sacrificeToGraveyard o s!"{name} sacrifices {oName}"
+              (cause := some (.costPayment .sacrifice p (some abilityId)))
+            if records then
+              if (g.findObject? abilityId).isSome then
+                g := g.setStackEntryLastKnown abilityId (lastKnownPower := some pw)
+          else
+            g := (g.move id (.graveyard o.owner) none (verb := some .discard) (actor := some p)
+              (cause := some (.costPayment .discard p (some abilityId)))).1.logMsg
+              s!"{name} discards {o.name}"
+        if let .chooseReplacement .. := g.pending then
+          let rem := ids.extract (i + 1) ids.size
+          if !rem.isEmpty then
+            g := g.chainPendingReplacement (.payCostPickItems p abilityId sourceId pick rem)
+          return g
+    return g
+  match pick with
+  | .tapTwoUntappedArtifacts =>
+    if g.currentBatch.isSome || ids.size ≤ 1 then run g
+    else g.withBatch (some (.costPayment .tap p (some abilityId))) run
+  | _ => run g
 
 /-- Pay `pick` with `ids` for the ability `abilityId` of `sourceId`
 (CR 601.2h). The power of a creature sacrificed for an ability that refers

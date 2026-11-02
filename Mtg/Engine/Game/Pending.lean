@@ -315,6 +315,16 @@ inductive FraChoice where
   /-- Choose `remaining` more modes for the triggered ability `objectId`
   from `CardDef.fraTriggerModes` of its source. -/
   | triggerModes (objectId : ObjectId) (remaining : Nat) (chosen : Array Nat)
+  /-- Choose up to `remaining` more modes for the triggered ability `objectId`;
+  declining finishes mode selection with `chosen` (CR 603.3c / 700.2). -/
+  | upToTriggerModes (objectId : ObjectId) (remaining : Nat) (chosen : Array Nat)
+  /-- Choose an available mode for the triggered ability `objectId` as it is
+  put onto the stack (CR 603.3c / 700.2b,g). -/
+  | stackTriggerUnusedMode (objectId : ObjectId) (sourceId : Option ObjectId)
+      (available : Array Nat) (lifetime : Bool)
+  /-- Mister Hyde stack-placement mode choice for `objectId`: mode 0 (+1/+1
+  counter) or mode 1 (remove a counter and draw) (CR 603.3c / 700.2b). -/
+  | stackHydeMode (objectId : ObjectId)
   /-- `objectId` gains your choice of the keywords coded in `options`
   (0 trample, 1 hexproof, 2 haste, 3 deathtouch) until end of turn. Answered
   with the index of an option. -/
@@ -501,6 +511,9 @@ inductive FraChoice where
   /-- Choose a new target for the first of `copies`, or decline to keep its
   target; then the rest. -/
   | newTargetsForCopies (copies : Array ObjectId)
+  /-- Choose a new target for slot `slotIdx` (`> 0`) of `copies[0]`, or decline
+  to keep that slot's target; then advance to the next slot or copy (CR 707.10c). -/
+  | newTargetsForCopySlot (copies : Array ObjectId) (slotIdx : Nat)
   /-- Separate `looked` into a face-up pile (the chosen cards) and a face-down
   pile (Riddles in the Dark). An empty pile is legal. -/
   | riddlesSplit (looked : Array ObjectId)

@@ -731,7 +731,7 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
         s!" [get five poison counters or let the spell be countered (ward, {who})]"
       | .discardCard =>
         s!" [discard a card or let the spell be countered (ward, {who})]"
-      | .sacrificePermanents left paid =>
+      | .sacrificePermanents left paid _ =>
         if paid == 0 then
           s!" [sacrifice {left} permanents or let the spell be countered (ward, {who})]"
         else
@@ -793,6 +793,11 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
         | .exileFromRevealedHand _ _ => "choose a nonland card to exile"
         | .castCopiesFree _ n left => s!"may cast up to {left} copies with total mana value {n} or less (cast or decline)"
         | .triggerModes _ n _ => if n == 2 then "choose two modes" else "choose a mode"
+        | .upToTriggerModes _ n _ => s!"choose up to {n} mode(s), or decline to finish"
+        | .stackTriggerUnusedMode _ _ available _ =>
+          s!"choose an unused mode {available}"
+        | .stackHydeMode _ =>
+          "choose one: 0 +1/+1 counter, 1 remove a counter and draw"
         | .allianceMode _ available =>
           s!"choose an Alliance mode not yet chosen {available}: 0 \{G}\{G}\{G}, 1 +1/+1 on each creature, 2 scry 2 then draw"
         | .gollumMode _ available =>
@@ -863,6 +868,8 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
         | .discardThenDraw => "discard a card, then draw: choose <id>"
         | .newTargetsForCopies copies =>
           s!"choose a new target for the copy ({copies.size} left): choose <id>, or decline to keep it"
+        | .newTargetsForCopySlot copies slotIdx =>
+          s!"choose a new target for slot {slotIdx + 1} of the copy ({copies.size} left): choose <id>, or decline to keep it"
         | .mayCastCascade .. => "cascade: cast the exiled card without paying its mana cost (accept), or decline"
         | .mayCastGrima .. => "may cast the exiled instant or sorcery without paying its mana cost (accept), or decline"
         | .palantirMayDraw .. => "may have that player draw a card (accept), or decline"

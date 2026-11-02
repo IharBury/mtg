@@ -775,6 +775,7 @@ def staticAbilities : Thunk (Array StaticAbility) := Thunk.mk fun _ => #[
   .fra .firstStrikeDuringYourTurn,
   .fra .equippedHuntersAxe,
   .fra .enchantArtifactOrNonAuraEnchantment,
+  .fra .enchantCreatureYouControl,
   .fra .enchantedIsConstruct55,
   .fra .enchantedGetsOneAndDeathtouch,
   .fra .vigilanceIfJace,

@@ -175,12 +175,16 @@ partial def runSpellModesAndEmpower (g : Game) (controller : PlayerId)
     let restTargets := remainingTargets.extract n remainingTargets.size
     let pendingBefore := g.pending
     let randomBefore := g.afterRandom
-    let g := g.applyUnified controller e curTargets
-      (castFromGraveyard := castFromGraveyard)
-      (kicked := kicked)
-      (giftPromised := giftPromised)
-      (chosenX := chosenX)
-      (sourceId := sourceId)
+    let g :=
+      if g.resolvingAbility.isSome then
+        g.applyUnifiedAbility controller e curTargets sourceId (chosenX := chosenX)
+      else
+        g.applyUnified controller e curTargets
+          (castFromGraveyard := castFromGraveyard)
+          (kicked := kicked)
+          (giftPromised := giftPromised)
+          (chosenX := chosenX)
+          (sourceId := sourceId)
     if restModes.isEmpty && empowerJaceN.isNone then g
     else if (g.pending != pendingBefore && g.pending != .none) ||
         (g.afterRandom != randomBefore && g.afterRandom != .none) then
@@ -199,6 +203,9 @@ def resolveTop (g : Game) : Game :=
     | none => (g.change .popStack).logMsg "The spell left the stack unexpectedly"
     | some obj =>
       let ctxSrc := obj.sourceId.orElse (fun _ => some obj.id)
+      let resolvingModes? : Option (Array Nat) :=
+        let ms := entry.chosenMode.toArray ++ entry.extraModes
+        if ms.isEmpty then none else some ms
       if let some (dtKind, dtCause) := entry.delayedTrigger then
         if dtKind == .attackPumpPerPlains && !entry.targets.isEmpty &&
             !(g.legalTargetsForKind entry.controller .creatureYouControl obj.sourceId).contains entry.targets[0]! then
@@ -212,6 +219,7 @@ def resolveTop (g : Game) : Game :=
           let g := g.change (.pushContinuationFrame {
             resolvingContext := some (ctxSrc, entry.controller)
             resolvingAbility := some obj.id
+            resolvingModes := resolvingModes?
             resolutionFinish := some (.ability obj.id snap entry.controller obj.sourceId) })
           let g := g.withBatch (some dtCause) (fun g =>
             g.resolveDelayedTrigger entry.controller dtKind dtCause obj.fraCauseId obj.sourceId entry.targets)
@@ -219,6 +227,19 @@ def resolveTop (g : Game) : Game :=
       else if let some rawE := obj.abilityEffect then
         let tcs := g.evalLayer3 obj
         let e := if tcs.isEmpty then rawE else TextChange.applyEffect tcs rawE
+        let runAbilityBody (g : Game) : Game :=
+          let chosenX := (g.chosenXOf? obj.id).getD 0
+          let trigModes := g.triggerModesOf obj
+          if !entry.extraModes.isEmpty && !trigModes.isEmpty then
+            let modeEffects :=
+              ((entry.chosenMode.toArray ++ entry.extraModes).qsort (· < ·)).filterMap fun i =>
+                trigModes[i]?.map fun mEff =>
+                  if tcs.isEmpty then mEff else TextChange.applyEffect tcs mEff
+            g.runSpellModesAndEmpower entry.controller modeEffects entry.targets
+              false false false chosenX obj.sourceId none entry.skippedOptionalSlots
+          else
+            g.applyUnifiedAbility entry.controller e entry.targets obj.sourceId
+              entry.lastKnownPower chosenX
         match obj.triggeredAbility with
         | some rawT =>
           let t := if tcs.isEmpty then rawT else TextChange.applyTriggeredAbility tcs rawT
@@ -242,9 +263,9 @@ def resolveTop (g : Game) : Game :=
               resolvingContext := some (ctxSrc, entry.controller)
               resolvingAbility := some obj.id
               resolvingDivision := entry.dividedDamage
+              resolvingModes := resolvingModes?
               resolutionFinish := some (.ability obj.id snap entry.controller obj.sourceId) })
-            let g := g.applyUnifiedAbility entry.controller e entry.targets obj.sourceId
-              entry.lastKnownPower ((g.chosenXOf? obj.id).getD 0)
+            let g := runAbilityBody g
             g.completeActiveResolutions
         | none =>
           if g.abilityTargetsAllIllegal entry.controller obj (some e) none entry.targets
@@ -260,9 +281,9 @@ def resolveTop (g : Game) : Game :=
               resolvingContext := some (ctxSrc, entry.controller)
               resolvingAbility := some obj.id
               resolvingDivision := entry.dividedDamage
+              resolvingModes := resolvingModes?
               resolutionFinish := some (.ability obj.id snap entry.controller obj.sourceId) })
-            let g := g.applyUnifiedAbility entry.controller e entry.targets obj.sourceId
-              entry.lastKnownPower ((g.chosenXOf? obj.id).getD 0)
+            let g := runAbilityBody g
             g.completeActiveResolutions
       else if let some rawT := obj.triggeredAbility then
         let tcs := g.evalLayer3 obj
@@ -292,29 +313,47 @@ def resolveTop (g : Game) : Game :=
             resolvingContext := some (ctxSrc, entry.controller)
             resolvingAbility := some obj.id
             resolvingDivision := entry.dividedDamage
+            resolvingModes := resolvingModes?
             resolutionFinish := some (.ability obj.id snap entry.controller obj.sourceId sagaChapter) })
           let g := g.applyTriggeredAbility entry.controller t obj.sourceId
             entry.targets entry.dividedDamage entry.lastKnownPower entry.lastKnownToughness srcName
             (resolutionOverride := obj.reflexiveResolution)
           g.completeActiveResolutions
       else
-        -- CR 608.2b: an instant or sorcery whose targets are all illegal
-        -- doesn't resolve, so none of its effects happen (rulings 734 / 749).
-        -- Each target is checked against its own non-skipped slot.
+        -- CR 608.2b / 608.3b: an instant, sorcery, or targeted Aura spell whose
+        -- targets are all illegal doesn't resolve, so none of its effects happen
+        -- (rulings 734 / 749). Each target is checked against its own non-skipped slot.
         let kicked := g.wasKicked obj.id
         let fromGy := g.castFromGraveyard obj.id
         let giftTo := g.giftPromisedTo? obj.id
         let chosenX := (g.chosenXOf? obj.id).getD 0
+        let auraTargetsAllIllegal :=
+          g.isAura obj && !entry.targets.isEmpty &&
+            !entry.targets.any fun
+              | Target.permanent tid =>
+                match g.findObject? tid with
+                | some host =>
+                  let effCtrl := (g.controllerOf obj).getD entry.controller
+                  let auraAsPerm := { obj with controller := some effCtrl }
+                  host.isOnBattlefield &&
+                    g.canBeTargetedBy entry.controller host (some obj.id) &&
+                    g.auraObjCanEnchant host auraAsPerm
+                | none => false
+              | _ => false
         let allTargetsIllegal :=
-          g.isInstantOrSorcery obj && !entry.targets.isEmpty &&
-            match g.spellEffectOf obj entry.chosenMode entry.extraModes (kicked := kicked) with
-            | some e =>
-              g.targetsAllIllegalForKind entry.controller e.targetKind entry.targets
-                (skippedOptionalSlots := entry.skippedOptionalSlots)
-                (sourceId := some obj.id)
-            | none => false
+          auraTargetsAllIllegal ||
+            (g.isInstantOrSorcery obj && !entry.targets.isEmpty &&
+              match g.spellEffectOf obj entry.chosenMode entry.extraModes (kicked := kicked) with
+              | some e =>
+                g.targetsAllIllegalForKind entry.controller e.targetKind entry.targets
+                  (skippedOptionalSlots := entry.skippedOptionalSlots)
+                  (sourceId := some obj.id)
+              | none => false)
         if allTargetsIllegal then
-          let finishCause := some (EventCause.gameRule .instantOrSorceryFinishedResolving)
+          let finishCause :=
+            some (EventCause.gameRule
+              (if auraTargetsAllIllegal then .permanentSpellResolved
+               else .instantOrSorceryFinishedResolving))
           let g := g.record (GameEvent.removedOnResolution g.turnNumber (g.snapshot obj)
             (cause := finishCause))
           let g := entry.targets.foldl (fun g t => g.illegalAbilityTarget t) g
@@ -325,11 +364,18 @@ def resolveTop (g : Game) : Game :=
               (fromGy && !g.freeCastFromGraveyard obj &&
                 ((g.baseCard obj).flashback.isSome || g.hasFlashbackPermission obj))
           if obj.isCopy then
-            (g.ceaseToExist obj.id (cause := some (.stateBased .copyOutsideStackOrBf))).logMsg
-              s!"The copy of {obj.name} ceases to exist (CR 704.5e)"
+            let copyMsg :=
+              if auraTargetsAllIllegal then
+                s!"{obj.name} ceases to exist (illegal Aura target, CR 704.5e)"
+              else
+                s!"The copy of {obj.name} ceases to exist (CR 704.5e)"
+            (g.ceaseToExist obj.id (cause := some (.stateBased .copyOutsideStackOrBf))).logMsg copyMsg
           else if hasFlashback then
             let (g, _) := g.move obj.id .exile none (cause := finishCause)
             g.logMsg s!"{obj.name} is exiled (flashback)"
+          else if auraTargetsAllIllegal then
+            g.moveToOwnerGraveyard obj s!"{obj.name} goes to the graveyard (illegal Aura target)"
+              (cause := finishCause)
           else
             -- An Adventure that doesn't resolve isn't exiled (ruling 5).
             let permName := (obj.adventurerCard.getD obj.printed).name

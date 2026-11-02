@@ -540,7 +540,9 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
             let copyTs := g.timestamp + 1
             let copyObj : GameObject := {
               id := copyId
-              printed := { base with isToken := base.isPermanentCard }
+              printed := { base with
+                isToken := false
+                otherFace := base.otherFace.map (fun f => { f with isToken := false }) }
               owner := controller
               controller := some controller
               zone := .exile

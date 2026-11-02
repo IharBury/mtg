@@ -25,9 +25,10 @@ inductive WardCost where
   | fivePoison
   /-- Ward — discard a card. -/
   | discardCard
-  /-- Ward — sacrifice `left` more permanents; `paid` were already
-  sacrificed, so the cost can no longer be declined. -/
-  | sacrificePermanents (left paid : Nat)
+  /-- Ward — sacrifice `left` more permanents; `paid` were already chosen to
+  sacrifice simultaneously once all `left` are selected, so the cost can no
+  longer be declined. -/
+  | sacrificePermanents (left paid : Nat) (chosen : Array ObjectId := #[])
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- Trigger events first printed in Reality Fracture (FRA). -/

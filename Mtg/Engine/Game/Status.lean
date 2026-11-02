@@ -11,8 +11,7 @@ import Mtg.Engine.Zone
 # Permanent status (CR 110.5)
 
 The `Status` a permanent carries: tapping, damage, combat state, counters,
-until-end-of-turn effects, and the `untilEotFields` table cleanup folds to
-clear them (CR 514.3).
+designations, and as-enters choices (CR 110.5).
 -/
 
 namespace Mtg.Engine
@@ -67,7 +66,7 @@ structure Status where
   /-- Players whose goad designation on this permanent ends as their next turn
   begins (CR 701.15a). -/
   goadedUntilNextTurnOf : Array PlayerId := #[]
-  /-- Anchor word chosen as this permanent entered the battlefield (CR 614.12 / 700.2). -/
+  /-- Anchor word chosen as this permanent entered the battlefield (CR 614.12). -/
   chosenAnchor : Option String := none
   /-- Card type chosen as this permanent entered (Serra's Emissary). -/
   chosenCardType : Option CardType := none

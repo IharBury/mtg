@@ -241,14 +241,14 @@ def actor (g : Game) : Option PlayerId :=
     | .mayCastExiledElseDamage p .. => who p
     | .resolveRandom req =>
       match req with
-      | .shuffleLibrary p => some p
+      | .shuffleLibrary p => who p
       | .orderInto _ dest _ =>
         match dest with
-        | .library p | .hand p | .graveyard p => some p
+        | .library p | .hand p | .graveyard p => who p
         | _ =>
-          if g.players.isEmpty then none else some g.startingPlayer
+          if g.players.isEmpty then none else who g.startingPlayer
       | .chooseObject _ | .chooseIndex _ =>
-        if g.players.isEmpty then none else some g.startingPlayer
+        if g.players.isEmpty then none else who g.startingPlayer
     | .none =>
       if g.playersReceivePriority then some g.priority else none
 

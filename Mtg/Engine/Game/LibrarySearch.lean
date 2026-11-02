@@ -30,6 +30,22 @@ def findLibraryCard? (g : Game) (p : PlayerId) (pred : CardDef → Bool) : Optio
     | some o => pred (g.baseCard o)
     | none => false)
 
+/-- Finish the post-untap log and ETB checks once a searched land's untap
+replacement choice (e.g. stun counters, CR 122.1d / 616.1) finishes. -/
+def finishSearchedUntap (g : Game) (_p : PlayerId) (landId : ObjectId) (_name : String) : Game :=
+  match g.findObject? landId with
+  | none => g
+  | some cur =>
+    let g :=
+      if !cur.status.tapped then g.logMsg s!"{g.name cur} is untapped" else g
+    match g.findObject? landId with
+    | some cur =>
+      if cur.isOnBattlefield then
+        if g.isLand cur then g.afterLandEnters cur
+        else g.afterPermanentEnters cur
+      else g
+    | none => g
+
 /-- Finish the post-entry untap and ETB trigger checks of `placeSearched`. -/
 def finishPlaceSearched (g : Game) (p : PlayerId) (fromId : ObjectId)
     (name : String) (tapped : Bool) (cause : Option EventCause := none) : Game :=
@@ -38,28 +54,29 @@ def finishPlaceSearched (g : Game) (p : PlayerId) (fromId : ObjectId)
   match g.followMovedToZone? fromId (· == .battlefield) with
   | none => g
   | some entered =>
-    let g :=
+    let untapTriggered :=
       match g.untapSearchedIfLands with
       | some n =>
         let landCount := (g.permanentsOf p).foldl (fun acc (o : GameObject) =>
           if g.isLand o then acc + 1 else acc) 0
-        if tapped && g.isLand entered && landCount >= n then
-          let g := g.change (.untapSearchedIfLands none)
-          let untapCause := g.resolveOptionalCause cause (fallbackCtrl := some p)
-          let g := g.untapPermanent entered (logUntap := false) (cause := some untapCause)
-          match g.findObject? entered.id with
-          | some cur =>
-            if !cur.status.tapped then g.logMsg s!"{g.name cur} is untapped" else g
-          | none => g
+        tapped && g.isLand entered && landCount >= n
+      | none => false
+    if untapTriggered then
+      let g := g.change (.untapSearchedIfLands none)
+      let untapCause := g.resolveOptionalCause cause (fallbackCtrl := some p)
+      let g := g.untapPermanent entered (logUntap := false) (cause := some untapCause)
+      if let .chooseReplacement .. := g.pending then
+        g.chainPendingReplacement (.finishSearchedUntap p entered.id name)
+      else
+        g.finishSearchedUntap p entered.id name
+    else
+      match g.findObject? entered.id with
+      | some cur =>
+        if cur.isOnBattlefield then
+          if g.isLand cur then g.afterLandEnters cur
+          else g.afterPermanentEnters cur
         else g
       | none => g
-    match g.findObject? entered.id with
-    | some cur =>
-      if cur.isOnBattlefield then
-        if g.isLand cur then g.afterLandEnters cur
-        else g.afterPermanentEnters cur
-      else g
-    | none => g
 
 /-- Put `id` onto the battlefield under `p`. Lands can tap immediately. -/
 def placeSearched (g : Game) (p : PlayerId) (id : ObjectId) (tapped : Bool)
@@ -184,20 +201,68 @@ def applyWaitingPlusOne (g : Game) : Game :=
   | some id =>
     addPlusOneIfStillCreature (g.change (.plusOneAfterSearch none)) id
 
-/-- Place each searched card in `ids` onto the battlefield sequentially,
-chaining `.placeSearchedBatch` if an earlier placement pauses on
-`Pending.chooseReplacement`. -/
-def placeSearchedBatch (g : Game) (p : PlayerId) (ids : Array ObjectId) (tapped : Bool)
-    (cause : Option EventCause := none) : Game := Id.run do
+/-- Two-pass simultaneous battlefield placement for `placeSearchedBatch`:
+first move every searched card in `remainingIds` onto `.battlefield` using
+shared `preBf` (so co-entering permanents see each other's presence during
+post-entry checks and share a single arrival `BatchId`), then run
+`finishPlaceSearched` on each `entered` card. -/
+def placeSearchedBatchCore (g : Game) (p : PlayerId) (remainingIds : Array ObjectId)
+    (tapped : Bool) (cause : Option EventCause := none)
+    (entered : Array (ObjectId × String) := #[])
+    (preBattlefield : Option (Array GameObject) := none) : Game := Id.run do
+  let preBf := preBattlefield.getD g.battlefield
   let mut g := g
-  for i in [0:ids.size] do
-    g := (g.placeSearched p ids[i]! tapped (cause := cause)).1
+  let mut entered := entered
+  for i in [0:remainingIds.size] do
+    let id := remainingIds[i]!
+    match g.findObject? id with
+    | none => pure ()
+    | some o =>
+      let name := o.name
+      if g.isAura o then
+        let auraProbe := { o with controller := some p }
+        let host? := preBf.find? (fun h =>
+          (g.findObject? h.id).any (fun curH =>
+            curH.isOnBattlefield && g.auraObjCanEnchant curH auraProbe))
+        match host? with
+        | none =>
+          g := g.logMsg s!"{name} remains in its current zone (can't be attached legally; CR 303.4f)"
+        | some host =>
+          let (g', _) := g.putOntoBattlefield id p (tapped := tapped)
+            (attachedTo := some host.id) (cause := cause)
+          g := g'
+          entered := entered.push (id, name)
+      else
+        let (g', _) := g.putOntoBattlefield id p (tapped := tapped) (cause := cause)
+        g := g'
+        entered := entered.push (id, name)
+      if g.pending != .none then
+        let rem := remainingIds.extract (i + 1) remainingIds.size
+        return g.chainPendingReplacement
+          (.placeSearchedBatch p rem tapped cause entered (some preBf))
+  for i in [0:entered.size] do
+    let (fromId, name) := entered[i]!
+    g := g.finishPlaceSearched p fromId name tapped cause
     if g.pending != .none then
-      let rem := ids.extract (i + 1) ids.size
-      if !rem.isEmpty then
-        g := g.chainPendingReplacement (.placeSearchedBatch p rem tapped cause)
+      let remEntered := entered.extract (i + 1) entered.size
+      if !remEntered.isEmpty then
+        g := g.chainPendingReplacement
+          (.placeSearchedBatch p #[] tapped cause remEntered (some preBf))
       return g
   return g
+
+/-- Place each searched card in `ids` onto the battlefield simultaneously in a
+single `withBatch`, chaining `.placeSearchedBatch` if an earlier placement or
+untap replacement pauses on `Pending.chooseReplacement`. -/
+def placeSearchedBatch (g : Game) (p : PlayerId) (ids : Array ObjectId) (tapped : Bool)
+    (cause : Option EventCause := none)
+    (entered : Array (ObjectId × String) := #[])
+    (preBattlefield : Option (Array GameObject) := none) : Game :=
+  if preBattlefield.isSome then
+    g.placeSearchedBatchCore p ids tapped cause entered preBattlefield
+  else
+    g.withBatch cause fun g =>
+      g.placeSearchedBatchCore p ids tapped cause entered (some g.battlefield)
 
 /-- Finish the post-`placeSearched` steps (moving remaining cards to hand,
 shuffling, behold-untap, or waiting `+1/+1` counter) of `finishLibrarySearch`. -/
@@ -208,7 +273,10 @@ def finishSearchAfterPlace (g : Game) (p : PlayerId) (fromId : Option ObjectId)
   | .battlefield _ =>
     g.shuffleSearch p after
   | .battlefieldTappedThenHand =>
-    let g := handRest.foldl (fun g id => g.placeSearchedHand p id (cause := cause)) g
+    let g :=
+      if handRest.isEmpty then g
+      else g.withBatch cause fun g =>
+        handRest.foldl (fun g id => g.placeSearchedHand p id (cause := cause)) g
     g.shuffleSearch p after
   | .battlefieldTappedBeholdUntap subtype =>
     match fromId.bind (fun fid => g.followMovedToZone? fid (· == .battlefield)) with
@@ -246,17 +314,20 @@ def finishLibrarySearch (g : Game) (p : PlayerId) (ids : Array ObjectId)
     | .hand =>
       let (g, cause) := allocSearchStepCause g
       let g := g.record (GameEvent.searched g.turnNumber p p ids (cause := some cause))
-      let g := ids.foldl (fun g id => g.placeSearchedHand p id (cause := some cause)) g
+      let g := g.withBatch (some cause) fun g =>
+        ids.foldl (fun g id => g.placeSearchedHand p id (cause := some cause)) g
       g.shuffleSearch p after
     | .handThenDiscardRandom =>
       let (g, cause) := allocSearchStepCause g
       let g := g.record (GameEvent.searched g.turnNumber p p ids (cause := some cause))
-      let g := ids.foldl (fun g id => g.placeSearchedHand p id (cause := some cause)) g
+      let g := g.withBatch (some cause) fun g =>
+        ids.foldl (fun g id => g.placeSearchedHand p id (cause := some cause)) g
       g.shuffleThen p (.discardRandom p)
     | .graveyard =>
       let (g, cause) := allocSearchStepCause g
       let g := g.record (GameEvent.searched g.turnNumber p p ids (cause := some cause))
-      let g := ids.foldl (fun g id => g.placeSearchedGraveyard id (cause := some cause)) g
+      let g := g.withBatch (some cause) fun g =>
+        ids.foldl (fun g id => g.placeSearchedGraveyard id (cause := some cause)) g
       g.shuffleSearch p after
     | .topAfterShuffle =>
       let (g, cause) := allocSearchStepCause g
@@ -270,7 +341,8 @@ def finishLibrarySearch (g : Game) (p : PlayerId) (ids : Array ObjectId)
     | .exileLinked source =>
       let (g, linkCause) := allocSearchStepCause g source
       let g := g.record (GameEvent.searched g.turnNumber p p ids (cause := some linkCause))
-      let g := ids.foldl (fun g id => g.exileSearchedLinked p id source (cause := some linkCause)) g
+      let g := g.withBatch (some linkCause) fun g =>
+        ids.foldl (fun g id => g.exileSearchedLinked p id source (cause := some linkCause)) g
       g.shuffleSearch p after
     | .battlefieldTappedThenHand =>
       let (g, cause) := allocSearchStepCause g

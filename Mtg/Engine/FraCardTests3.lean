@@ -140,7 +140,7 @@ they sacrifice three permanents. -/
   let g := castFra g shock [tgt g "Emrakul, the Exigent Doom"] opp
   let g := mustApply (mustApply g opp .pass) me .pass
   match g.pending with
-  | .payWard q _ (.sacrificePermanents 3 0) => q == opp
+  | .payWard q _ (.sacrificePermanents 3 0 _) => q == opp
   | _ => false
 #guard
   let g := addPermanent afterDraw emrakulTheExigentDoom me me

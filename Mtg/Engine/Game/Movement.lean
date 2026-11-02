@@ -34,7 +34,7 @@ def becomePrepared (g : Game) (o : GameObject) (cause : Option EventCause := non
       let batchCause :=
         g.resolveOptionalCause cause (fallbackSrc := srcFallback) (fallbackCtrl := some p)
           (defaultCause := .gameRule .spellCast)
-      let g := g.withBatch (some batchCause) fun g =>
+      let g := g.withBatchCore (some batchCause) fun g =>
         let g := g.createPreparedCopy o face (cause := cause)
         let prepCause :=
           g.resolveOptionalCause cause (fallbackSrc := srcFallback) (fallbackCtrl := some p)
@@ -326,7 +326,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
     let leavingPlay :=
       (old.zone == .battlefield || old.zone == .stack) &&
         targetZone != .battlefield && targetZone != .stack
-    let printed :=
+    let printed0 :=
       match overridePrinted with
       | some p => p
       | none =>
@@ -352,6 +352,14 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
               otherFace := some { old.printed with isToken := keepToken, otherFace := none } }
           | none => old.printed
         else old.printed
+    -- CR 608.3f / 707.10f: a resolving copy of a permanent spell becomes a token
+    -- as it enters the battlefield.
+    let printed :=
+      if old.zone == .stack && old.isCopy && targetZone == .battlefield && !printed0.isToken then
+        { printed0 with
+          isToken := true
+          otherFace := printed0.otherFace.map fun f => { f with isToken := true } }
+      else printed0
     let faceDown := faceDown?.getD (targetZone == .battlefield && old.zone == .stack && old.status.faceDown)
     let fromStackTime :=
       fromStackTime?.getD (if targetZone == .battlefield && old.zone == .stack then old.status.time else 0)
@@ -378,7 +386,12 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
       zone := targetZone
       status := baseStatus
       timestamp := ts
-      isCopy := isCopy.getD (if targetZone == .stack then old.isCopy else false)
+      -- CR 704.5e / 707.10a: preserve `isCopy` when a spell copy moves from the
+      -- stack to a non-battlefield zone so SBAs cease it via `ceasedToExist`.
+      isCopy := isCopy.getD
+        (if targetZone == .stack || (old.zone == .stack && targetZone != .battlefield) then
+           old.isCopy
+         else false)
       isCommander := old.isCommander
       adventurerCard := if targetZone == .stack then adventurerCard.orElse (fun _ => old.adventurerCard) else none
       attachedTo := if targetZone == .battlefield then attachedTo else none
@@ -448,7 +461,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
       | .hand p, .graveyard q => p == q
       | _, _ => false
   let (g, newId) :=
-    g.withBatchReturn cause fun g =>
+    g.withBatchCoreReturn cause fun g =>
       let g :=
         if finalityExile then
           g.logMsg s!"A finality counter exiles {old.name} instead of putting it into a graveyard"
@@ -470,7 +483,9 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
         else g
       let freshForSnap : GameObject :=
         match tempCopyUntilEot with
-        | some (_, copyCard) => { fresh with printed := copyCard }
+        | some (_, copyCard) =>
+          let copyCard' := if fresh.printed.isToken then { copyCard with isToken := true } else copyCard
+          { fresh with printed := copyCard' }
         | none => fresh
       let gWithFresh : Game := Id.run do
         let mut g' : Game :=
@@ -628,14 +643,40 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
     | none => g
   (g, newId)
 
-/-- Return CR 610.3 linked-exile cards sequentially, pausing via
-`PendingReplacement.finishLinkedExileMove` if a return opens `Pending.chooseReplacement`. -/
-partial def returnLinkedExileMoves (g : Game) (ids : Array ObjectId) : Game :=
-  if ids.isEmpty then g
-  else if let .chooseReplacement .. := g.pending then
-    g.chainPendingReplacement (.finishLinkedExileMove ids)
+/-- Emit the return log for a CR 610.3 `linkedExile` object once its zone change
+has actually placed it in `dest`. -/
+private partial def logLinkedExileReturn (g : Game) (fromId : ObjectId) (dest : Zone) : Game :=
+  match g.followMovedToZone? fromId (· == dest) with
+  | none => g
+  | some moved =>
+    match dest with
+    | .hand p =>
+      g.logMsg s!"{moved.name} returns to {(g.player p).name}'s hand"
+    | .graveyard p =>
+      g.logMsg s!"{moved.name} returns to {(g.player p).name}'s graveyard"
+    | .battlefield =>
+      match moved.attachedTo with
+      | some hid =>
+        let hostName := (g.findObject? hid).map g.name |>.getD (toString hid)
+        g.logMsg s!"{moved.name} returns attached to {hostName} (does not target)"
+      | none =>
+        g.logMsg s!"{moved.name} returns to the battlefield"
+    | _ => g
+
+/-- Execute a batch of CR 610.3 linked-exile returns inside an open post-departure
+batch, checking returning Auras against `preBattlefield` (CR 303.4f) and pausing
+via `PendingReplacement.finishLinkedExileMove` if a return opens a choice. -/
+partial def runLinkedExileBatch (g : Game) (ids : Array ObjectId)
+    (preBattlefield : Option (Array GameObject) := none)
+    (pendingLog : Option (ObjectId × Zone) := none) : Game :=
+  if ids.isEmpty && pendingLog.isNone then g
+  else if match g.pending with | .chooseReplacement .. | .chooseLegend .. => true | _ => false then
+    g.chainPendingReplacement (.finishLinkedExileMove ids preBattlefield pendingLog)
   else Id.run do
+    let preBf := preBattlefield.getD g.battlefield
     let mut g := g
+    if let some (fromId, dest) := pendingLog then
+      g := logLinkedExileReturn g fromId dest
     for i in [0:ids.size] do
       let exId := ids[i]!
       match g.findObject? exId with
@@ -643,36 +684,103 @@ partial def returnLinkedExileMoves (g : Game) (ids : Array ObjectId) : Game :=
         if o.zone == .exile then
           let name := o.name
           let linkCause := g.lastMoveCauseOf? o.id
-          match o.returnToZone with
-          | some (.hand p) =>
-            let (g', _) := g.move o.id (.hand p) none (cause := linkCause)
-            g := g'.logMsg s!"{name} returns to {(g'.player p).name}'s hand"
-          | some (.graveyard p) =>
-            let (g', _) := g.move o.id (.graveyard p) none (cause := linkCause)
-            g := g'.logMsg s!"{name} returns to {(g'.player p).name}'s graveyard"
-          | _ =>
-            if g.isAura o then
-              match g.battlefield.find? (fun h => g.auraObjCanEnchant h o) with
-              | none =>
-                g := g.logMsg s!"{name} remains in exile (can't be attached legally; CR 614.6)"
-              | some host =>
-                let hostId := host.id
-                let hostName := g.name host
-                let (g', _) := g.move o.id .battlefield (some o.owner)
-                  (attachedTo := some hostId) (cause := linkCause)
-                g := g'.logMsg s!"{name} returns attached to {hostName} (does not target)"
-            else
-              let (g', _) := g.move o.id .battlefield (some o.owner) (cause := linkCause)
-              g := g'.logMsg s!"{name} returns to the battlefield"
-          if let .chooseReplacement .. := g.pending then
+          let (g', movedDest?) : Game × Option Zone :=
+            match o.returnToZone with
+            | some (.hand p) =>
+              let (g', _) := g.move o.id (.hand p) none (cause := linkCause)
+              (g', some (.hand p))
+            | some (.graveyard p) =>
+              let (g', _) := g.move o.id (.graveyard p) none (cause := linkCause)
+              (g', some (.graveyard p))
+            | _ =>
+              if (g.player o.owner).lost then
+                (g.logMsg s!"{name} remains in its current zone (CR 800.4b)", none)
+              else if g.isAura o then
+                let auraWithCtrl := { o with controller := some o.owner }
+                let host? :=
+                  preBf.findSome? fun h =>
+                    match g.findObject? h.id with
+                    | some cur =>
+                      if cur.isOnBattlefield && g.auraObjCanEnchant cur auraWithCtrl then some cur
+                      else none
+                    | none => none
+                match host? with
+                | none =>
+                  (g.logMsg s!"{name} remains in exile (can't be attached legally; CR 614.6)", none)
+                | some host =>
+                  let (g', _) := g.move o.id .battlefield (some o.owner)
+                    (attachedTo := some host.id) (cause := linkCause)
+                  (g', some .battlefield)
+              else
+                let (g', _) := g.move o.id .battlefield (some o.owner) (cause := linkCause)
+                (g', some .battlefield)
+          g := g'
+          if match g.pending with | .chooseReplacement .. | .chooseLegend .. => true | _ => false then
             let rem := ids.extract (i + 1) ids.size
-            if !rem.isEmpty then
-              g := g.chainPendingReplacement (.finishLinkedExileMove rem)
+            let logItem := movedDest?.map (fun d => (o.id, d))
+            if !rem.isEmpty || logItem.isSome then
+              g := g.chainPendingReplacement (.finishLinkedExileMove rem (some preBf) logItem)
             return g
+          if let some dest := movedDest? then
+            g := logLinkedExileReturn g o.id dest
       | none => pure ()
     return g
 
+/-- Flush any CR 610.3 `linkedExile` returns queued while an enclosing departure
+batch was open once the outermost batch has closed. -/
+partial def flushQueuedLinkedExile (g : Game) : Game :=
+  if g.currentBatch.isSome || g.queuedLinkedExile.isEmpty then g
+  else
+    let ids := g.queuedLinkedExile
+    let g := g.change .clearQueuedLinkedExile
+    g.returnLinkedExileMoves ids
+
+/-- Return CR 610.3 linked-exile cards in a separate post-departure batch once
+any enclosing departure batch closes (CR 610.3 / 603.10), pausing via
+`PendingReplacement.finishLinkedExileMove` if a choice is currently open. -/
+partial def returnLinkedExileMoves (g : Game) (ids : Array ObjectId) : Game :=
+  if ids.isEmpty then g
+  else if g.currentBatch.isSome then
+    g.change (.queueLinkedExile ids)
+  else if match g.pending with | .chooseReplacement .. | .chooseLegend .. => true | _ => false then
+    g.chainPendingReplacement (.finishLinkedExileMove ids none)
+  else
+    let g := g.withBatchCore none fun g => g.runLinkedExileBatch ids none
+    g.flushQueuedLinkedExile
+
 end
+
+/-- Run `f` inside an event batch (`Core.withBatchCoreReturn`), then flush any
+CR 610.3 `linkedExile` returns queued while the batch was open once the
+outermost batch closes. -/
+def withBatchReturn {α : Type} (g : Game) (cause : Option EventCause := none)
+    (f : Game → Game × α) : Game × α :=
+  let (g', res) := g.withBatchCoreReturn cause f
+  (g'.flushQueuedLinkedExile, res)
+
+/-- Run `f` inside an event batch and flush deferred CR 610.3 `linkedExile` returns. -/
+def withBatch (g : Game) (cause : Option EventCause := none) (f : Game → Game) : Game :=
+  (g.withBatchReturn cause (fun g => (f g, ()))).1
+
+/-- Monadic `Except` variant of `withBatchReturn`. -/
+def withBatchExcept {ε α : Type} (g : Game) (cause : Option EventCause := none)
+    (f : Game → Except ε (Game × α)) : Except ε (Game × α) :=
+  let (g', res) :=
+    g.withBatchReturn cause fun g0 =>
+      match f g0 with
+      | .ok (g1, a) => (g1, Except.ok a)
+      | .error err => (({} : Game), Except.error err)
+  res.map (fun a => (g', a))
+
+/-- Monadic `Except` variant of `withBatch`. -/
+def withBatchM {ε : Type} (g : Game) (cause : Option EventCause := none)
+    (f : Game → Except ε Game) : Except ε Game :=
+  (g.withBatchExcept cause fun g0 => do return (← f g0, ())).map Prod.fst
+
+/-- Close a paused batch (`Core.finishOpenBatch`) and flush any CR 610.3
+`linkedExile` returns once the outermost batch closes. -/
+def finishOpenBatchAndLinkedExile (g : Game) (batchId : BatchId) (startIdx : Nat) : Game :=
+  (g.finishOpenBatch batchId startIdx).flushQueuedLinkedExile
 
 /-- Move `o` to its owner's graveyard and log `reason`. Exile-if-dies
 replacements are applied by `move` (CR 614.1 / 614.6). -/
@@ -821,10 +929,11 @@ a 4/4 Beast token if `createBeastFor` is set. -/
 def sacrificePermanentsLoop (g : Game) (remaining : Array (PlayerId × ObjectId))
     (preBattlefield : Option (Array GameObject) := none)
     (cause : Option EventCause := none)
-    (createBeastFor : Option PlayerId := none) : Game := Id.run do
+    (createBeastFor : Option PlayerId := none)
+    (passiveLog : Bool := false) : Game := Id.run do
   if let .chooseReplacement .. := g.pending then
     return g.chainPendingReplacement
-      (.sacrificePermanentsLoop remaining preBattlefield cause createBeastFor)
+      (.sacrificePermanentsLoop remaining preBattlefield cause createBeastFor passiveLog)
   let mut g := g
   let preBf := preBattlefield.getD g.battlefield
   for i in [0:remaining.size] do
@@ -832,14 +941,16 @@ def sacrificePermanentsLoop (g : Game) (remaining : Array (PlayerId × ObjectId)
     match g.findObject? id with
     | some o =>
       if o.isOnBattlefield then
-        g := g.sacrificeToGraveyard o
-          s!"{(g.player who).name} sacrifices {g.name o}"
+        let msg :=
+          if passiveLog then s!"{g.name o} is sacrificed"
+          else s!"{(g.player who).name} sacrifices {g.name o}"
+        g := g.sacrificeToGraveyard o msg
           (cause := cause) (preBattlefield := some preBf)
         if let .chooseReplacement .. := g.pending then
           let rem := remaining.extract (i + 1) remaining.size
           if !rem.isEmpty || createBeastFor.isSome then
             g := g.chainPendingReplacement
-              (.sacrificePermanentsLoop rem (some preBf) cause createBeastFor)
+              (.sacrificePermanentsLoop rem (some preBf) cause createBeastFor passiveLog)
           return g
     | none => pure ()
   if let some ctrl := createBeastFor then
