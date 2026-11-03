@@ -1372,8 +1372,8 @@ shared-turn `seenSeats` / departed-teammate `playerControl` expiry, dropping the
 `!g.controlsPlayer actor whose` self-control conjunct in `canChooseOutsideGame` /
 `canMakeTournamentDecision`, and multi-effect `ContinuousEffectEvent.created`
 batching via `Core.createEffects`, while mid-shared-turn `playerControl`
-creation/expiry and CR 805.4a–b `.untilNextTurnOf` / `.untilEndOfNextTurnOf`
-Two-Headed Giant alignment move to Phase 21 step 3).
+creation/expiry and CR 500.4 / 514.2 / 805.4 / 810.2 `.untilNextTurnOf` /
+`.untilEndOfNextTurnOf` Two-Headed Giant alignment move to Phase 21 step 3).
 
 ### 3.4 Replacement and prevention (614–616)
 
@@ -1732,7 +1732,7 @@ flowchart TD
   P17 --> P18["Phase 18: Nested-batch cause & Ring-bearer single-writer fidelity, outerPendingReplacements & pause-safety,\nCR 603.2d/603.3c-d/608.2b/707.10c modal/copy/target completion, CR 303.4f-g/111.8/800.4/725.4/509.1g/723.5 batches & multiplayer,\nand CR 500.4/611.2a-b/702.26f/800.4i,m durationActive/expiry & CR cleanup"]
   P18 --> P19["Phase 19: Replacement/concede pause-safety, Ring-bearer phase-out & damage/cost/cast event fidelity,\nCR 603.3b-d/700.2/707.10c/608.2b trigger/copy/target completion,\nCR 704.5e/303.4f-g/508.8/701.15b/810 copy/Aura/combat/2HG alignment,\nand CR 723.1/611.2 playerControl window/expiry & scaffolding cleanup"]
   P19 --> P20["Phase 20: Unified CR 303.4f-g Aura ETB, CR 607.2a/610.3 linked-exile LKI & pause/SBA completion,\nCR 601.2b,f,g/602.2b/603.2/707.10c/608.2b/701.14b cast/modal/copy/target legality,\nCR 508.1,8/510.1/506.5/810/800.4i combat & 2HG completion,\nand CR 723.1/810.5 playerControl, createEffects batching & dead-branch cleanup"]
-  P20 --> P21["Phase 21: Concede/flushUnlessPays pause-safety, CR 702.26g/701.3/608.2b phasing/attach/target & deferred logs,\nCR 101.2/601.2f,h/602.2b/733.1/700.2/115.9a/707.10-12 cast/cost/modal/copy fidelity,\nCR 810.7-8/805.4/723.1 2HG poison/blocking/turn-expiry & opponent queries,\nand final simultaneous batches, journaled test/demo state, dead scaffolding & CR sweep"]
+  P20 --> P21["Phase 21: Concede/flushUnlessPays pause-safety, CR 702.26g/701.3/608.2b phasing/attach/target & deferred logs,\nCR 101.2/601.2f,h/602.2b/733.1/700.2/115.9a/707.10-12 cast/cost/modal/copy fidelity,\nCR 805.10d-e/810.7-8/805.4/500.4/514.2/723.1 2HG poison/blocking/turn-expiry & opponent queries,\nand final simultaneous batches, journaled test/demo state, dead scaffolding & CR sweep"]
 ```
 
 ### Phase 1 — Envelope and durable single-writer constructors
@@ -5970,7 +5970,7 @@ limits, and batched `createEffects` / multi-effect continuous-effect helpers),
 `MshOracleTests2.lean`, `OracleRulingTests.lean`, `CatalogModelTests.lean`,
 `RenderTests.lean`.
 
-### Phase 21 — `concede` / `flushUnlessPays` pause-safety, CR 702.26g / 701.3 / 608.2b phasing/attach/target & deferred logs, CR 101.2 / 601.2f,h / 602.2b / 733.1 / 700.2 / 115.9a / 707.10–12 cast/cost/modal/copy fidelity, CR 810.7–8 / 805.4 / 723.1 2HG poison/blocking/turn-expiry, and final batching, journaled test/demo state & scaffolding sweep
+### Phase 21 — `concede` / `flushUnlessPays` pause-safety, CR 702.26g / 701.3 / 608.2b phasing/attach/target & deferred logs, CR 101.2 / 601.2f,h / 602.2b / 733.1 / 700.2 / 115.9a / 707.10–12 cast/cost/modal/copy fidelity, CR 805.10d–e / 810.7–8 / 805.4 / 500.4 / 514.2 / 723.1 2HG poison/blocking/turn-expiry, and final batching, journaled test/demo state & scaffolding sweep
 
 1. Close the remaining `concede` / `playerLeavesGame` / `flushUnlessPays`
    pause-safety gaps, CR 702.26g indirectly phased-out attachment handling, CR
@@ -6002,21 +6002,21 @@ limits, and batched `createEffects` / multi-effect continuous-effect helpers),
      rather than calling `receivePriority g.activePlayer` directly while
      `.continueUnified` / `triggerSequenceRest` / `resolutionFinish` remain on
      `g.continuations`.
-   - Detach and phase in indirectly phased-out attachments when their phased-out
-     host leaves `.battlefield` (`Attachments.lean`, `Phasing.lean`, CR 701.3d /
+   - Unattach indirectly phased-out attachments when their phased-out host
+     leaves `.battlefield` and keep them phased out unless phasing in still
+     attached to that host (`Attachments.lean`, `Phasing.lean`, CR 701.3d /
      702.26g / 800.4a): change `Attachments.unattachFrom` (`Attachments.lean`)
      to scan `g.objects.filter (·.isBattlefieldObject)` instead of
-     `g.battlefield` so indirectly phased-out Auras and Equipment (`status.phasedOut == true`,
-     `status.phasedWith == some hostId`) record `PermanentEvent.unattached` and
-     clear `attachedTo` when `hostId` leaves `.battlefield` (via
-     `Leaving.objectLeavesTheGame` or `Movement.move`); require
-     `att.attachedTo == some o.id` alongside `att.status.phasedWith == some o.id`
-     in `Phasing.phaseIn` (`Phasing.lean`); and extend
-     `Phasing.phaseInControlled` (`Phasing.lean`) so an indirectly phased-out
-     permanent `o` controlled by `p` whose `phasedWith == some hid` is no longer
-     attached to `hid` or whose `hid` is no longer a phased-out battlefield
-     object phases in by itself during `p`'s untap step per CR 702.26g instead
-     of remaining stranded phased out forever.
+     `g.battlefield` so indirectly phased-out Auras and Equipment
+     (`status.phasedOut == true`, `status.phasedWith == some hostId`) record
+     `PermanentEvent.unattached` and clear `attachedTo` when `hostId` leaves
+     `.battlefield` (via `Leaving.objectLeavesTheGame` or `Movement.move`); and
+     require `att.attachedTo == some o.id` alongside
+     `att.status.phasedWith == some o.id` in `Phasing.phaseIn` (`Phasing.lean`),
+     leaving `Phasing.phaseInControlled` (`Phasing.lean`, which skips
+     `phasedWith.isSome` per CR 502.1 / 702.26g / 703.4a) unchanged so an
+     indirectly phased-out attachment never phases in by itself and stays
+     phased out if its host has left `.battlefield`.
    - Enforce CR 701.3a–b / 301.5c / 702.16d / 702.26b / 613.7e attachment
      legality and no-op re-attach across `Attachments.attachSourceTo` and
      non-equip attachment callers (`Attachments.lean`, `Decisions.lean`,
@@ -6150,52 +6150,49 @@ limits, and batched `createEffects` / multi-effect continuous-effect helpers),
      707.10 / 702.176a); and copy face-down Morph spells on `.stack` with
      `status.faceDown := true` / `copy.copiable` characteristics rather than
      unmasking `orig.printed` (CR 707.2 / 708.2).
-3. Complete Two-Headed Giant CR 810.8d 15-poison SBA, CR 810.7a,c,e shared team
-   blocking & `legalBlockerCount`, CR 723.1 / 805.4a–b / 810.2 mid-shared-turn
-   `playerControl` & turn-duration expiry, and residual opponent queries (§2.5,
-   §2.8, §2.9, §3.3, §3.5, §3.6):
+3. Complete Two-Headed Giant CR 810.8d 15-poison SBA, CR 805.10d–e / 810.7
+   shared team blocking & `legalBlockerCount`, CR 500.4 / 514.2 / 611.2a /
+   723.1 / 805.4 / 810.2 mid-shared-turn `playerControl` & turn-duration
+   expiry, and residual opponent queries (§2.5, §2.8, §2.9, §3.3, §3.5, §3.6):
    - Implement CR 810.8d 15-poison Two-Headed Giant SBA in
      `StateBasedActions.checkSBACounted` (`StateBasedActions.lean`): when `pl`
      has a teammate (`g.players.any (fun m => g.areTeammates pl.id m.id)`), sum
      poison counters across `pl` and `pl`'s teammates and trigger `.poison` loss
      at `teamPoison ≥ 15` (keeping `curPl.poison ≥ 10` per CR 704.5c when `pl`
      has no teammate).
-   - Implement CR 810.7a,c,e Two-Headed Giant shared team blocking and enforce
-     `maxBlockersAllowed` in `Combat.declareBlockers` (`Core.lean`, `Combat.lean`,
-     `Event.lean`, `Leaving.lean`, `Turns.lean`, CR 509.1b,h / 702.111b /
-     810.7a,c,e): include living teammates of attacked players in
-     `Core.defendingPlayers` (`Core.lean`); allow `blocker` controlled by
-     `defender` or `defender`'s teammate to block `attacker` in `Core.canBlock`
-     (while checking landwalk across `defender` and `defender`'s teammate per CR
-     810.7e, and explicitly checking `g.controlledBy b p` in
-     `Combat.declareBlockers` so declaring seat `p` only declares `p`'s own
-     creatures); enforce `Core.legalBlockerCount` (`maxBlockersAllowed` as well
-     as `minBlockersRequired`) in `Combat.declareBlockers`; and accumulate a
-     defending team's blocker declarations across teammate seats in
-     `blockersQueue` (verifying on the first teammate's declaration that
-     remaining teammates have enough eligible blockers to complete any partial
-     `minBlockersRequired` assignment so the second teammate cannot be
-     deadlocked, and committing both teammates' `CombatEvent.blockersDeclared`
-     plus a single `CombatEvent.becameBlocked` per blocked attacker in one
-     simultaneous `BatchId` once the defending team finishes declaring or a
-     teammate leaves).
-   - Align mid-shared-turn `playerControl` and CR 805.4a–b `.untilNextTurnOf` /
-     `.untilEndOfNextTurnOf` Two-Headed Giant expiry (`Core.lean`, `Turns.lean`,
-     `Event.lean`, CR 723.1 / 805.4a–b / 810.2): ensure an `onNextTurn == true`
+   - Implement CR 805.10d–e / 810.7 Two-Headed Giant shared team blocking and
+     enforce `Core.legalBlockerCount` (`maxBlockersAllowed` as well as
+     `minBlockersRequired`) on the combined block (`Core.lean`, `Combat.lean`,
+     `Turns.lean`, CR 509.1b / 702.111b / 805.10d–e / 810.7): allow `blocker`
+     controlled by `defender` or a living teammate of `defender`
+     (`g.areTeammates`) to block `attacker` in `Core.canBlock` (`Core.lean`),
+     while keeping `defender := g.defendingPlayerOf attacker` (and landwalk
+     checks on `defender` alone) as the single attacked player or
+     planeswalker/battle controller per CR 805.10e; collapse same-team
+     defending seats into one combined team block entry when seeding
+     `blockersQueue` in `Turns.beginStep .declareBlockers` (`Turns.lean`, CR
+     805.10d / 810.7) so the defending team declares one combined block across
+     creatures controlled by its defending players; and enforce
+     `Core.legalBlockerCount` on that combined assignment in
+     `Combat.declareBlockers` (`Combat.lean`).
+   - Align mid-shared-turn `playerControl` and CR 500.4 / 514.2 / 611.2a / 805.4
+     / 810.2 `.untilNextTurnOf` / `.untilEndOfNextTurnOf` Two-Headed Giant
+     expiry (`Core.lean`, `Turns.lean`, `Event.lean`, CR 500.4 / 514.2 / 611.2a
+     / 723.1 / 805.4 / 810.2): ensure an `onNextTurn == true`
      `PlayerRule.controlsPlayer them true` effect created *during* `them`'s (or
      `them`'s teammate's) already-in-progress shared turn waits for that team's
      **next** shared turn rather than activating on the second teammate's seat
      of the current turn and expiring on the next opposing turn, while keeping
      `onNextTurn == false` active across both seats of a shared turn until its
-     cleanup step; align CR 805.4a “next turn begins” expiry in
-     `Turns.beginTurn` (`Turns.expireGoadedFor` for `goadedUntilNextTurnOf`,
-     `Turns.expireFraUntilTurnEffects` for `.untilNextTurnOf`,
-     `Core.restoreCopiesUntilNextTurn`, and `beginTurn`'s
+     cleanup step; align CR 500.4 / 611.2a / 805.4 / 810.2 “next turn begins”
+     expiry in `Turns.beginTurn` (`Turns.expireGoadedFor` for
+     `goadedUntilNextTurnOf`, `Turns.expireFraUntilTurnEffects` for
+     `.untilNextTurnOf`, `Core.restoreCopiesUntilNextTurn`, and `beginTurn`'s
      `protectionFromEverything` / `lifeCantChange` block) so an effect created
      during the current shared turn does not open or end on the other
      teammate's seat and expires when the first living seat of `p`'s team's
      next shared turn begins; and keep `.untilEndOfNextTurnOf p` on the CR
-     805.4b / 514.2 cleanup path (`Turns.clearEOT`,
+     514.2 / 611.2a / 805.4 / 810.2 cleanup path (`Turns.clearEOT`,
      `Turns.expirePlayPermissions`, and `Core.restoreCopiesUntilEot`), teaching
      those `Core.hasTurnBegunSince` checks (and team-seat matching) to wait for
      the cleanup step of the final living seat of `p`'s team's next shared
@@ -6272,7 +6269,7 @@ limits, and batched `createEffects` / multi-effect continuous-effect helpers),
 
 Tests: `Events.lean` (isolation tests for `concede` `.restorePending` ordering &
 multi-teammate departure pause chaining & `flushUnlessPays` continuation
-preservation, CR 702.26g indirectly phased-out attachment unattach & untap
+preservation, CR 702.26g indirectly phased-out attachment unattach & non-self
 phase-in, CR 701.3a–b / 301.5c attachment legality & no-op re-attach timestamp
 preservation, CR 608.2b target revalidation & deferred post-replacement logs,
 CR 101.2 `cantCastSpellsThisTurn` & flash/`canCast` parity, CR 601.2b,f,h
@@ -6282,14 +6279,15 @@ partial-payment non-cancellation, modal `chooseBothIfTeamwork` & *Call Damage
 Control* `"Choose up to two"` mode/copy fidelity, CR 110.1 / 115.9a
 `.youTargetSomething` player/permanent filter, CR 707.10 vs CR 707.12 copy cast
 semantics & Impending / face-down Morph stack spell copies, CR 810.8d 15-poison
-team SBA, CR 810.7a,c,e shared team blocking & `legalBlockerCount`, CR 723.1 /
-805.4a–b mid-shared-turn `playerControl` & `.untilNextTurnOf` /
-`.untilEndOfNextTurnOf` expiry & 2HG opponent filters, and simultaneous
-`emptyManaPools` / `returnHandToLibrary` / `setRingBearer` / `applyDackOnHits`
-batching), `Auras.lean`, `Casting.lean`, `CastTriggers.lean`, `Combat.lean`,
-`Cycling.lean`, `Equipment.lean`, `Fight.lean`, `Leaving.lean`, `Marvel.lean`,
-`Phasing.lean`, `Turns.lean`, `MshOracleTests.lean`, `MshOracleTests2.lean`,
-`MshOracleTests4.lean`, `MshOracleTests5.lean`, `OracleRulingTests.lean`.
+team SBA, CR 805.10d–e / 810.7 shared team blocking & `legalBlockerCount`, CR
+500.4 / 514.2 / 723.1 / 805.4 / 810.2 mid-shared-turn `playerControl` &
+`.untilNextTurnOf` / `.untilEndOfNextTurnOf` expiry & 2HG opponent filters, and
+simultaneous `emptyManaPools` / `returnHandToLibrary` / `setRingBearer` /
+`applyDackOnHits` batching), `Auras.lean`, `Casting.lean`, `CastTriggers.lean`,
+`Combat.lean`, `Cycling.lean`, `Equipment.lean`, `Fight.lean`, `Leaving.lean`,
+`Marvel.lean`, `Phasing.lean`, `Turns.lean`, `MshOracleTests.lean`,
+`MshOracleTests2.lean`, `MshOracleTests4.lean`, `MshOracleTests5.lean`,
+`OracleRulingTests.lean`.
 
 Final check (after Phase 21): `lake build`, `lake exe mtg-demo`,
 `lake exe oracle-roundtrip`, no `EventCause.unclassified` constructor, no
