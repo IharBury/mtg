@@ -184,7 +184,6 @@ namespace Game
 @[inline] def pendingFreeCopies (g : Game) := g.topFrame.pendingFreeCopies
 @[inline] def pendingMayCastFromExile (g : Game) := g.topFrame.pendingMayCastFromExile
 @[inline] def postCastCleanup (g : Game) := g.topFrame.postCastCleanup
-@[inline] def mayPayAlsoPlusOneOn (g : Game) := g.topFrame.mayPayAlsoPlusOneOn
 @[inline] def humansTappedThisWay (g : Game) := g.topFrame.humansTappedThisWay
 @[inline] def permanentsDestroyedThisWay (g : Game) := g.topFrame.permanentsDestroyedThisWay
 @[inline] def removedHopeThisWay (g : Game) := g.topFrame.removedHopeThisWay
@@ -326,6 +325,8 @@ def applyChange (p : ProposedSpell) (c : ProposalChange) : ProposedSpell :=
   | .teamworkPaid v => { p with teamworkPaid := v }
   | .teamworkAnnounced v => { p with teamworkAnnounced := v }
   | .teamworkCreatures v => { p with teamworkCreatures := v }
+  | .additionalGeneric v => { p with additionalGeneric := v }
+  | .needsBehold v => { p with needsBehold := v }
 
 end ProposedSpell
 
@@ -1024,13 +1025,26 @@ def applyStackObjectEvent (g : Game) (e : StackObjectEvent) : Game :=
     let ts : Nat := g.timestamp + 1
     let origObj? := (g.objects.find? (·.id == original)).filter (·.zone == .stack)
     let origEntry? := g.stack.find? (·.objectId == original)
+    let isFaceDown := copy.faceDown || origObj?.any (·.status.faceDown)
+    let faceDownCard : CardDef :=
+      { name := "", types := #[.creature], power := some 2, toughness := some 2 }
     let printed :=
-      match copy.printed with
-      | some p => p
-      | none =>
-        match origObj? with
-        | some o => o.printed
-        | none => copy.toCardDef
+      if isFaceDown then
+        copy.copiable.getD faceDownCard
+      else
+        match copy.printed with
+        | some p => p
+        | none =>
+          match origObj? with
+          | some o => o.printed
+          | none => copy.toCardDef
+    let timeCounters :=
+      let c := copy.counters.count .time
+      if c > 0 then c else origObj?.map (·.status.time) |>.getD 0
+    let baseStatus : Status := { faceDown := isFaceDown }
+    let copyStatus : Status :=
+      if timeCounters > 0 then { baseStatus with counters := baseStatus.counters.set .time timeCounters }
+      else baseStatus
     let fresh : GameObject :=
       match origObj? with
       | some orig =>
@@ -1042,11 +1056,11 @@ def applyStackObjectEvent (g : Game) (e : StackObjectEvent) : Game :=
           owner := controller
           controller := some controller
           zone := .stack
-          status := {}
+          status := copyStatus
           timestamp := ts
           isCopy := true
           chosenX := copy.chosenX.orElse (fun _ => orig.chosenX)
-          adventurerCard := orig.adventurerCard
+          adventurerCard := if isFaceDown then none else orig.adventurerCard
           abilityEffect := orig.abilityEffect
           triggeredAbility := orig.triggeredAbility
           reflexiveResolution := orig.reflexiveResolution
@@ -1062,11 +1076,11 @@ def applyStackObjectEvent (g : Game) (e : StackObjectEvent) : Game :=
           owner := controller
           controller := some controller
           zone := .stack
-          status := {}
+          status := copyStatus
           timestamp := ts
           isCopy := true
           chosenX := copy.chosenX
-          adventurerCard := copy.adventurerCard }
+          adventurerCard := if isFaceDown then none else copy.adventurerCard }
     let entry : StackEntry :=
       match origEntry? with
       | some origE =>
@@ -1266,36 +1280,81 @@ def livingOpponents (g : Game) (p : PlayerId) : Array Player :=
 def battlefield (g : Game) : Array GameObject :=
   g.objects.filter GameObject.isOnBattlefield
 
-/-- Whether a turn of `p` (or `p`'s Two-Headed Giant teammate, CR 810.2) has begun
-(`TurnEvent.turnBegan`) in `g.events` after the creation of continuous effect `eid`
-(CR 611.2a). -/
-def hasTurnBegunSince (g : Game) (eid : EffectId) (p : PlayerId) : Bool :=
-  g.events.foldl (fun (seenCreate, seenTurn) ev =>
+/-- Seats that have begun as part of the current shared turn in `g.events`
+(CR 805.4 / 810.2). In non-team games this has size 1 (`#[g.activePlayer]`). -/
+def currentSharedTurnSeats (g : Game) : Array PlayerId :=
+  g.events.foldl (fun seats ev =>
     match ev.change with
-    | .rules (.continuousEffect (.created id _)) =>
-      if id == eid then (true, false) else (seenCreate, seenTurn)
-    | .rules (.turn (.turnBegan q _)) =>
-      if seenCreate && (q == p || g.areTeammates q p) then (seenCreate, true)
-      else (seenCreate, seenTurn)
-    | _ => (seenCreate, seenTurn)) (false, false) |>.2
+    | .engine (.startingPlayer v) => #[v]
+    | .rules (.turn (.turnBegan q extra)) =>
+      if !extra && !seats.isEmpty && g.areTeammates seats[0]! q && !seats.contains q then
+        seats.push q
+      else
+        #[q]
+    | _ => seats) #[⟨0⟩]
 
-/-- Whether another turn has begun (`TurnEvent.turnBegan _ _`) in `g.events`
-after the first turn of `p` (and `p`'s Two-Headed Giant teammate, CR 805.4 /
+/-- True when `g.activePlayer` is the first living seat of the current shared turn
+(CR 805.4 / 810.2). Always true in non-team games. -/
+def isSharedTurnFirstSeat (g : Game) : Bool :=
+  g.currentSharedTurnSeats.size ≤ 1
+
+/-- True when no further living teammate seat remains in the current shared turn
+(CR 805.4 / 810.2). Always true in non-team games or when a living extra turn is queued. -/
+def isSharedTurnFinalSeat (g : Game) : Bool :=
+  if g.extraTurns.any (fun q => !(g.player q).lost) then true
+  else
+    let n := g.players.size
+    if n == 0 then true
+    else
+      let seats := g.currentSharedTurnSeats
+      Id.run do
+        for k in [1:n+1] do
+          let q : PlayerId := ⟨(g.activePlayer.idx + k) % n⟩
+          if !(g.player q).lost then
+            return !(g.areTeammates g.activePlayer q && !seats.contains q)
+        return true
+
+/-- Whether a new shared turn of `p` (or `p`'s Two-Headed Giant teammate, CR 805.4 /
+810.2) has begun (`TurnEvent.turnBegan`) in `g.events` after the creation of continuous
+effect `eid` (CR 611.2a). -/
+def hasTurnBegunSince (g : Game) (eid : EffectId) (p : PlayerId) : Bool :=
+  g.events.foldl (fun (seats, seenCreate, seenTurn) ev =>
+    match ev.change with
+    | .engine (.startingPlayer v) => (#[v], seenCreate, seenTurn)
+    | .rules (.continuousEffect (.created id _)) =>
+      if id == eid then (seats, true, false) else (seats, seenCreate, seenTurn)
+    | .rules (.turn (.turnBegan q extra)) =>
+      let sameSharedTurn := !extra && !seats.isEmpty && g.areTeammates seats[0]! q && !seats.contains q
+      let seats' := if sameSharedTurn then seats.push q else #[q]
+      if !sameSharedTurn && seenCreate && (q == p || g.areTeammates q p) then
+        (seats', seenCreate, true)
+      else
+        (seats', seenCreate, seenTurn)
+    | _ => (seats, seenCreate, seenTurn)) (#[⟨0⟩], false, false) |>.2.2
+
+/-- Whether another shared turn has begun (`TurnEvent.turnBegan _ _`) in `g.events`
+after the first new shared turn of `p` (and `p`'s Two-Headed Giant teammate, CR 805.4 /
 810.2) that began since continuous effect `eid` was created (CR 723.1: "during
 their next turn" lasts until the beginning of the next turn). -/
 def hasTurnAfterBegunSince (g : Game) (eid : EffectId) (p : PlayerId) : Bool :=
-  g.events.foldl (fun (seenCreate, seenSeats, seenAfter) ev =>
+  g.events.foldl (fun (seats, seenCreate, seenTeamTurn, seenAfter) ev =>
     match ev.change with
+    | .engine (.startingPlayer v) => (#[v], seenCreate, seenTeamTurn, seenAfter)
     | .rules (.continuousEffect (.created id _)) =>
-      if id == eid then (true, #[], false) else (seenCreate, seenSeats, seenAfter)
-    | .rules (.turn (.turnBegan q _)) =>
-      if !seenCreate || seenAfter then (seenCreate, seenSeats, seenAfter)
-      else if (q == p || g.areTeammates q p) && !seenSeats.contains q then
-        (seenCreate, seenSeats.push q, false)
-      else if !seenSeats.isEmpty then
-        (seenCreate, seenSeats, true)
-      else (seenCreate, seenSeats, seenAfter)
-    | _ => (seenCreate, seenSeats, seenAfter)) (false, (#[] : Array PlayerId), false) |>.2.2
+      if id == eid then (seats, true, false, false)
+      else (seats, seenCreate, seenTeamTurn, seenAfter)
+    | .rules (.turn (.turnBegan q extra)) =>
+      let sameSharedTurn := !extra && !seats.isEmpty && g.areTeammates seats[0]! q && !seats.contains q
+      let seats' := if sameSharedTurn then seats.push q else #[q]
+      if sameSharedTurn || !seenCreate || seenAfter then
+        (seats', seenCreate, seenTeamTurn, seenAfter)
+      else if seenTeamTurn then
+        (seats', seenCreate, seenTeamTurn, true)
+      else if q == p || g.areTeammates q p then
+        (seats', seenCreate, true, false)
+      else
+        (seats', seenCreate, seenTeamTurn, seenAfter)
+    | _ => (seats, seenCreate, seenTeamTurn, seenAfter)) (#[⟨0⟩], false, false, false) |>.2.2.2
 
 /-- Timestamp `(tier, sub)` of `k` counters on `oid` (CR 613.7c): putting a new
 counter of kind `k` on `oid` gives all `k` counters on `oid` that new timestamp. -/
@@ -1341,8 +1400,9 @@ def counterTimestamp (g : Game) (oid : ObjectId) (k : CounterKind) : Nat × Nat 
       | .rules (.stackObject (.copied _ copy _)) =>
         if copy.id == some oid then
           alive := true
-          ts? := none
-          prevCount? := some 0
+          let c := copy.counters.count k
+          ts? := if c > 0 then some i else none
+          prevCount? := some c
       | .rules (.triggerQueue (.putOnStack stackObj _ _ _)) =>
         if stackObj == oid && !alive then
           alive := true
@@ -1991,7 +2051,6 @@ def applyEngineChange (g : Game) (c : EngineChange) : Game :=
       | .pendingFreeCopies v => { f with pendingFreeCopies := v }
       | .pendingMayCastFromExile v => { f with pendingMayCastFromExile := v }
       | .postCastCleanup v => { f with postCastCleanup := v }
-      | .mayPayAlsoPlusOneOn v => { f with mayPayAlsoPlusOneOn := v }
       | .humansTappedThisWay v => { f with humansTappedThisWay := v }
       | .permanentsDestroyedThisWay v => { f with permanentsDestroyedThisWay := v }
       | .removedHopeThisWay v => { f with removedHopeThisWay := v }
@@ -5229,17 +5288,17 @@ def opponent (g : Game) (p : PlayerId) : PlayerId :=
               return q
           return p
 
-/-- Whether `id` (or the spell it resolved from, CR 400.7d) was cast and is not a copy (CR 707.10). -/
+/-- Whether `id` (or the spell it resolved from, CR 400.7d) was cast and is not an uncast stack copy (CR 707.10 / 707.12). -/
 def wasCast (g : Game) (id : ObjectId) : Bool :=
-  GameEvent.wasCast g.events id ((g.findObject? id).any (·.isCopy))
+  GameEvent.wasCast g.events id
 
 /-- Whether `id` (or the spell it resolved from, CR 400.7d) was cast from a graveyard. -/
 def castFromGraveyard (g : Game) (id : ObjectId) : Bool :=
-  GameEvent.castFromGraveyard g.events id ((g.findObject? id).any (·.isCopy))
+  GameEvent.castFromGraveyard g.events id
 
 /-- Whether `id` (or the spell it resolved from, CR 400.7d) was cast from a hand. -/
 def castFromHand (g : Game) (id : ObjectId) : Bool :=
-  GameEvent.castFromHand g.events id ((g.findObject? id).any (·.isCopy))
+  GameEvent.castFromHand g.events id
 
 /-- Whether `id` was proposed as a prepared spell copy (`way == .alternative "prepare"`). -/
 def isPreparedSpell (g : Game) (id : ObjectId) : Bool :=
@@ -5271,11 +5330,12 @@ def sneakAttackWhom? (g : Game) (id : ObjectId) : Option PlayerId :=
   | some (.player p) => some p
   | _ => none
 
-/-- Whether mana from a Treasure was spent to cast `id` (CR 106.6 / 400.7d). -/
+/-- Whether mana from a Treasure was spent to cast `id` (CR 106.6 / 400.7d / 707.10 / 707.12). -/
 def treasureManaSpent (g : Game) (id : ObjectId) : Bool :=
-  if (g.findObject? id).any (·.isCopy) then false
+  let spellId := GameEvent.stackSpellIdOf g.events id
+  if GameEvent.isUncastStackCopy g.events spellId || GameEvent.isUncastStackCopy g.events id then false
   else
-    GameEvent.treasureManaSpentOn g.events (GameEvent.stackSpellIdOf g.events id) ||
+    GameEvent.treasureManaSpentOn g.events spellId ||
       GameEvent.treasureManaSpentOn g.events id
 
 /-- Cards exiled from a graveyard to pay the boast activation cost of `abilityId` (MSH 227). -/
@@ -7343,15 +7403,18 @@ def leftoverFlyingRestriction (g : Game) (p : PlayerId) : Bool :=
       | _ => false))
 
 /-- Whether `blocker` may be assigned to `attacker` as one creature in a
-declaration (CR 509.1b). Menace is not a pairwise restriction. -/
+declaration (CR 509.1b / 805.10d–e / 810.7). Menace is not a pairwise restriction. -/
 def canBlock (g : Game) (blocker attacker : GameObject) : Bool :=
   let defender := g.defendingPlayerOf attacker
   let walkSub := TextChange.applySubtype (g.evalLayer3 attacker) .island
   let islandwalkUnblockable :=
     g.hasIslandwalk attacker &&
       (g.permanentsOf defender).any (fun o => g.hasSubtype o walkSub)
+  let controlledByDefendingTeam :=
+    g.controlledBy blocker defender ||
+      g.livingPlayers.any (fun m => g.areTeammates defender m.id && g.controlledBy blocker m.id)
   blocker.isOnBattlefield && g.isCreature blocker &&
-  g.controlledBy blocker defender && !blocker.status.tapped &&
+  controlledByDefendingTeam && !blocker.status.tapped &&
   blocker.status.blocking.isEmpty && !g.cantBlockUntilEot blocker &&
   !((g.baseCard blocker).cantBlock && g.retainsPrintedAbilities blocker) &&
   g.mayDeclareAsBlocker blocker &&
@@ -9348,9 +9411,10 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
                 (w := waiting) (fs := firedSources)
             waiting := w; firedSources := fs
           -- Photon Blast Barrage: “When you cast this spell, copy it X times.”
+          let isUncastCopy := GameEvent.isUncastStackCopy post.events castObj.id
           let copiesSelf :=
             match (post.baseCard castObj).spellEffect.map (·.resolution) with
-            | some (.copyThisSpellXTimesThenDamage _) => !castObj.isCopy
+            | some (.copyThisSpellXTimesThenDamage _) => !isUncastCopy
             | _ => false
           if copiesSelf then
             let copySelfAb : TriggeredAbility :=
@@ -9389,8 +9453,8 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
           if e.matchesTrigger caster (some castObj.id) .youCastInstantOrSorcery then
             let (w, fs) := queueCtrl post caster .youCastInstantOrSorcery (w := waiting) (fs := firedSources)
             waiting := w; firedSources := fs
-          -- Delayed spell-copy triggers (CR 603.7 / 800.4d): Way of the Cryomancer & Loki Laufeyson
-          if !castObj.isCopy && post.isInstantOrSorcery castObj then
+          -- Delayed spell-copy triggers (CR 603.7 / 707.10 / 707.12 / 800.4d): Way of the Cryomancer & Loki Laufeyson
+          if !isUncastCopy && post.isInstantOrSorcery castObj then
             for dt in post.delayedTriggers do
               if dt.controller == caster &&
                   !(post.player dt.controller).lost && !(post.player dt.controller).leftTheGame then
@@ -9601,7 +9665,12 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
                   (w := waiting) (fs := firedSources)
               waiting := w; firedSources := fs
             let targets := ((post.stackEntry? abilityId).map (·.targets)).getD #[]
-            if !targets.isEmpty then
+            let isPlayerOrPermTarget (t : Target) : Bool :=
+              match t with
+              | .player pid => post.stillInGame pid
+              | .permanent oid => (post.findObject? oid).any (·.isOnBattlefield)
+              | _ => false
+            if targets.any isPlayerOrPermTarget then
               let (w, fs) :=
                 queueCtrl post controller .youTargetSomething (w := waiting) (fs := firedSources)
               waiting := w; firedSources := fs
@@ -9634,8 +9703,13 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
               let prevEntry? := pre.stackEntry? objId
               let prevTargets := (prevEntry?.map (·.targets)).getD #[]
               let isAbility := obj.abilityEffect.isSome || obj.triggeredAbility.isSome
+              let isPlayerOrPermTarget (t : Target) : Bool :=
+                match t with
+                | .player pid => post.stillInGame pid
+                | .permanent oid => (post.findObject? oid).any (·.isOnBattlefield)
+                | _ => false
               if obj.isCopy then
-                if isAbility && se.targets != prevTargets then
+                if isAbility && se.targets.any (fun t => isPlayerOrPermTarget t && !prevTargets.contains t) then
                   let (w, fs) :=
                     queueCtrl post ctrl .youTargetSomething (w := waiting) (fs := firedSources)
                   waiting := w; firedSources := fs
@@ -9663,9 +9737,10 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
                   prevEntry?.any (fun pe =>
                     !pe.targets.isEmpty && pe.targets.size + pe.skippedOptionalSlots.size ≥ totalSlots)
                 if !prevDone && se.targets.size + se.skippedOptionalSlots.size ≥ totalSlots then
-                  let (w, fs) :=
-                    queueCtrl post ctrl .youTargetSomething (w := waiting) (fs := firedSources)
-                  waiting := w; firedSources := fs
+                  if se.targets.any isPlayerOrPermTarget then
+                    let (w, fs) :=
+                      queueCtrl post ctrl .youTargetSomething (w := waiting) (fs := firedSources)
+                    waiting := w; firedSources := fs
                   let perms := uniquePermTargets post se.targets
                   for o in perms do
                     match post.controllerOf o with
@@ -9680,7 +9755,7 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
                     queueWardsFor post ctrl obj perms (w := waiting) (fs := firedSources)
                   waiting := w; firedSources := fs
                 else if prevDone then
-                  if se.targets != prevTargets then
+                  if se.targets.any (fun t => isPlayerOrPermTarget t && !prevTargets.contains t) then
                     let (w, fs) :=
                       queueCtrl post ctrl .youTargetSomething (w := waiting) (fs := firedSources)
                     waiting := w; firedSources := fs
@@ -11119,18 +11194,28 @@ def restoreCopiesIf (g : Game) (p : GameObject → Bool) : Game :=
   g.restoreCopiesWhere (fun _ _ obj? _ => obj?.any p)
 
 /-- Restore copy effects that last until end of turn (including
-`.untilEndOfNextTurnOf g.activePlayer` once that turn has begun, CR 514.2 / 611.2a). -/
+`.untilEndOfNextTurnOf` on the active team's final shared-turn seat once that
+shared turn has begun, CR 514.2 / 611.2a / 805.4 / 810.2). -/
 def restoreCopiesUntilEot (g : Game) : Game :=
   g.restoreCopiesWhere (fun acc eid _ d =>
     d == .untilEndOfTurn ||
-      (d == .untilEndOfNextTurnOf acc.activePlayer && acc.hasTurnBegunSince eid acc.activePlayer))
+      match d with
+      | .untilEndOfNextTurnOf q =>
+        (q == acc.activePlayer || acc.areTeammates q acc.activePlayer) &&
+          acc.isSharedTurnFinalSeat && acc.hasTurnBegunSince eid q
+      | _ => false)
     (cause := some (.turnBased .cleanupClear))
 
 /-- Restore copy effects that last until `p`'s next turn (or also
 `.untilEndOfNextTurnOf p` when `departed` is true under CR 800.4m). -/
 def restoreCopiesUntilNextTurn (g : Game) (p : PlayerId) (departed : Bool := false) : Game :=
-  g.restoreCopiesWhere (fun _ _ _ d =>
-    d == .untilNextTurnOf p || (departed && d == .untilEndOfNextTurnOf p))
+  g.restoreCopiesWhere (fun acc _ _ d =>
+    match d with
+    | .untilNextTurnOf q =>
+      q == p || (!departed && acc.areTeammates q p)
+    | .untilEndOfNextTurnOf q =>
+      departed && q == p
+    | _ => false)
     (cause := some (.turnBased .expireAtStepBegin))
 
 /-- Restore copy effects that last until `srcId` leaves the battlefield. -/

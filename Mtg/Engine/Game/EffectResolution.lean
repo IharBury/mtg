@@ -503,40 +503,86 @@ artifact, creature, enchantment, and land (Call Damage Control). -/
 def returnChosenGraveyardCards (g : Game) (controller : PlayerId)
     (targets : Array Target) : Game :=
   let kinds : Array CardType := #[.artifact, .creature, .enchantment, .land]
-  g.withBatch (g.resolvingBatchCause controller none) fun g =>
-    Id.run do
-      let mut g := g
-      let mut used : Array CardType := #[]
-      for t in targets.extract 0 2 do
-        match t with
-        | Target.card id =>
-          match g.findObject? id with
-          | some o =>
-            if o.zone == .graveyard controller && o.owner == controller then
-              let avail := kinds.filter (fun ty =>
-                !used.contains ty && g.objectHasCardType o ty)
-              match avail[0]? with
-              | some ty =>
-                g := g.returnToHand o.id controller
-                used := used.push ty
+  match g.resolvingModes with
+  | some modes =>
+    if modes.isEmpty then g
+    else
+      g.withBatch (g.resolvingBatchCause controller none) fun g =>
+        Id.run do
+          let mut g := g
+          let mut toReturn : Array ObjectId := #[]
+          let count := Nat.min targets.size modes.size
+          for idx in [0:count] do
+            let t := targets[idx]!
+            let reqTy? := kinds[modes[idx]!]?
+            match t, reqTy? with
+            | Target.card id, some reqTy =>
+              match g.findObject? id with
+              | some o =>
+                if o.zone == .graveyard controller && o.owner == controller &&
+                    g.objectHasCardType o reqTy then
+                  if !toReturn.contains o.id then
+                    toReturn := toReturn.push o.id
+                else
+                  g := g.logMsg "The target is no longer legal"
               | none =>
-                g := g.logMsg s!"{o.name} doesn't match a mode that is still available"
-            else
+                g := g.logMsg "The target is no longer legal"
+            | _, _ =>
               g := g.logMsg "The target is no longer legal"
-          | none =>
+          for id in toReturn do
+            g := g.returnToHand id controller
+          return g
+  | none =>
+    g.withBatch (g.resolvingBatchCause controller none) fun g =>
+      Id.run do
+        let mut g := g
+        let mut used : Array CardType := #[]
+        let picked := targets.extract 0 2
+        for idx in [0:picked.size] do
+          let t := picked[idx]!
+          match t with
+          | Target.card id =>
+            match g.findObject? id with
+            | some o =>
+              if o.zone == .graveyard controller && o.owner == controller then
+                let avail := kinds.filter (fun ty =>
+                  !used.contains ty && g.objectHasCardType o ty)
+                let chosenTy? :=
+                  match idx, picked[1]? with
+                  | 0, some (Target.card id1) =>
+                    match g.findObject? id1 with
+                    | some o1 =>
+                      if o1.zone == .graveyard controller && o1.owner == controller then
+                        avail.find? (fun ty =>
+                          kinds.any (fun ty2 => ty2 != ty && g.objectHasCardType o1 ty2)) <|> avail[0]?
+                      else avail[0]?
+                    | none => avail[0]?
+                  | _, _ => avail[0]?
+                match chosenTy? with
+                | some ty =>
+                  g := g.returnToHand o.id controller
+                  used := used.push ty
+                | none =>
+                  g := g.logMsg s!"{o.name} doesn't match a mode that is still available"
+              else
+                g := g.logMsg "The target is no longer legal"
+            | none =>
+              g := g.logMsg "The target is no longer legal"
+          | _ =>
             g := g.logMsg "The target is no longer legal"
-        | _ =>
-          g := g.logMsg "The target is no longer legal"
-      return g
+        return g
 
 /-- Put a +1/+1 counter and a double strike counter on the source (Quicksilver). -/
 def plusOneAndDoubleStrike (g : Game) (sourceId : Option ObjectId) : Game :=
   g.withSourceOnBattlefield sourceId (fun g o =>
     g.withBatch none fun g =>
+      let byP := g.controllerOf o
       let g := g.addPlusOnePlusOneTo o 1
-      let g := g.recordPutCounters o.id .doubleStrike 1
-        (byPlayer := g.controllerOf o)
-      g.logMsg s!"{g.name o} gets a double strike counter")
+      if let .chooseReplacement .. := g.pending then
+        g.chainPendingReplacement
+          (.finishPostStep 124 (byP.getD g.activePlayer) (cardId := some o.id))
+      else
+        g.putCountersDeferredLog o.id .doubleStrike 1 byP 2)
     "The source is no longer in play"
 
 /-- Put a +1/+1 counter on the source, then it fights up to one creature an
@@ -775,7 +821,7 @@ def otherSpellsManaValue (g : Game) (p : PlayerId) : Nat :=
   let own :=
     match g.resolvingSpell.bind g.findObject? with
     | some spell =>
-      if spell.isCopy || g.controllerOf spell != some p then 0
+      if GameEvent.isUncastStackCopy g.events spell.id || g.controllerOf spell != some p then 0
       else g.objectManaValue spell
     | none => 0
   total - own
@@ -2026,24 +2072,6 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     g.logMsg "The effect does nothing"
 end
 
-/-- Resolve a stashed `unlessPays` effect after its payer left without paying
-(CR 800.4f). -/
-partial def flushUnlessPays (g : Game) : Game :=
-  if !g.unlessPaysDue || g.over then g
-  else
-    match g.unlessPaysInstead with
-    | none => g.change (.unlessPaysDue false)
-    | some effect =>
-      let controller := g.unlessPaysController
-      let targets := g.unlessPaysTargets
-      let sourceId := g.unlessPaysSource
-      let g := g.clearUnlessPays
-      let g := g.applyUnified controller effect targets (sourceId := sourceId)
-      if let .chooseReplacement .. := g.pending then
-        g.chainPendingReplacement (.receivePriority g.activePlayer)
-      else if g.pending != .none || g.over then g
-      else g.receivePriority g.activePlayer
-
 /-- Resolve a printed spell effect (CR 608). -/
 def applyEffect (g : Game) (controller : PlayerId) (effect : Effect)
     (targets : Array Target) (castFromGraveyard := false)
@@ -2258,6 +2286,8 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
       g.withSourceOnBattlefield sourceId (fun g src =>
         if src.attachedTo == some host.id then
           g.logMsg s!"{g.name src} is already attached to {g.name host}"
+        else if g.isEquipment src && !g.canAttachEquipmentTo src host then
+          g
         else
           g.attachSourceTo src host)
         "The Equipment is no longer in play") sourceId

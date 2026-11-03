@@ -286,16 +286,20 @@ def enforcersBoard : Game :=
   choosingCost (activateNamed enforcersBoard "Kingpin's Enforcers" "Draw") &&
     !onBattlefield g "Grizzly Bears" && onBattlefield g "Murmuring Volume" &&
     handSize g me == before + 1
-/- A land can't pay it, and declining cancels the activation and returns the
-mana (CR 733.1). -/
+/- A land can't pay it, voluntary declining is rejected once mana has been paid
+while a legal sacrifice exists (CR 602.2b), and if no legal sacrifice remains
+declining reverses the unpayable activation and returns the mana (CR 733.1). -/
 #guard
   let g := addPermanent enforcersBoard forest me me
   let g := activateNamed g "Kingpin's Enforcers" "Draw"
   let pool := (g.player me).manaPool.total
-  let undone := mustApply g me .decline
-  pickRejected g #[idOf g "Forest"] && g.stack.size == 1 && undone.stack.isEmpty &&
-    (undone.player me).manaPool.total == pool + 3 && undone.pending == .none &&
-    onBattlefield undone "Grizzly Bears"
+  let gNoSac :=
+    #["Kingpin's Enforcers", "Grizzly Bears", "Murmuring Volume"].foldl
+      (fun acc nm => (acc.move (idOf acc nm) .exile none).1) g
+  let undone := mustApply gNoSac me .decline
+  pickRejected g #[idOf g "Forest"] && !(g.apply me .decline).isOk && g.stack.size == 1 &&
+    undone.stack.isEmpty && (undone.player me).manaPool.total == pool + 3 &&
+    undone.pending == .none && onBattlefield undone "Grizzly Bears"
 
 /- Bullseye, Death Dealer: discard a nonland card instead of sacrificing an
 artifact. A land card can't be discarded for it. -/

@@ -72,8 +72,10 @@ def mjolnirCombatDivideOk : Bool :=
   let giant := namedPermanent g "Hill Giant"
   let g := g.attachSourceTo hammer ogre
   let g := (g.markAttacking ogre.id (some (.player ⟨1⟩))).markBlocked ogre.id
-  let g := { g with assignedCombatDamage :=
-    #[{ source := ogre.id, toCreatures := #[(giant.id, 1)], toPlayer := 2 }] }
+  let g := g.record (GameEvent.rules g.turnNumber
+    (.combat (.damageAssigned false true
+      #[{ source := ogre.id, toCreatures := #[(giant.id, 1)], toPlayer := 2 }]))
+    (.turnBased (.assignCombatDamage false)))
   let g := g.dealAssignedCombatDamage
   (namedPermanent g "Hill Giant").status.damage == 2 &&
     (g.player ⟨1⟩).life == 20 - 4

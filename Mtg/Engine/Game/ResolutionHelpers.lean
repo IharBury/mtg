@@ -166,75 +166,6 @@ def putOnOwnerLibrary (g : Game) (o : GameObject) (top : Bool) : Game :=
   let (g, _) := g.move o.id (.library owner) none (libraryPosition := some pos)
   g.logMsg s!"{(g.player owner).name} puts {name} on the {side} of their library"
 
-/-- Emit the post-`recordPutCounters` log for `oid` from its counter delta
-since `before` (`0 = stun`, `1 = loyalty`, `2 = doubleStrike`, `3 = charge`,
-`4 = quest`, `5 = hone`, `6 = invasion`, `7 = trample`). -/
-def logPutCounterDelta (g : Game) (oid : ObjectId) (before : Nat) (kindTag : Nat) : Game :=
-  match g.findObject? oid with
-  | none => g
-  | some o =>
-    match kindTag with
-    | 0 =>
-      let k := o.status.stun - before
-      if k == 0 then g
-      else
-        let phrase := if k == 1 then "A stun counter is put" else s!"{k} stun counters are put"
-        g.logMsg s!"{phrase} on {g.name o}"
-    | 1 =>
-      let k := o.status.counterCount .loyalty - before
-      if k == 0 then g
-      else
-        let phrase := if k == 1 then "A loyalty counter is put" else s!"{k} loyalty counters are put"
-        g.logMsg s!"{phrase} on {g.name o}"
-    | 2 =>
-      let k := o.status.counterCount .doubleStrike - before
-      if k == 0 then g
-      else
-        let phrase := if k == 1 then "a double strike counter" else s!"{k} double strike counters"
-        g.logMsg s!"{g.name o} gets {phrase}"
-    | 3 =>
-      let k := o.status.counterCount .charge - before
-      if k == 0 then g
-      else
-        let phrase := if k == 1 then "A charge counter is put" else s!"{k} charge counters are put"
-        g.logMsg s!"{phrase} on {g.name o}"
-    | 4 =>
-      let k := o.status.quest - before
-      if k == 0 then g
-      else
-        let phrase := if k == 1 then "a quest counter" else s!"{k} quest counters"
-        g.logMsg s!"{g.name o} gets {phrase} ({o.status.quest})"
-    | 5 =>
-      let k := o.status.hone - before
-      if k == 0 then g
-      else g.logMsg s!"{g.name o} gets {k} hone counter(s)"
-    | 6 =>
-      let k := o.status.counterCount .invasion - before
-      if k == 0 then g
-      else
-        let phrase := if k == 1 then "an invasion counter" else s!"{k} invasion counters"
-        g.logMsg s!"{g.name o} gets {phrase}"
-    | 7 =>
-      let k := o.status.counterCount .trample - before
-      if k == 0 then g
-      else
-        let phrase := if k == 1 then "a trample counter" else s!"{k} trample counters"
-        g.logMsg s!"{g.name o} gets {phrase}"
-    | _ => g
-
-/-- Run `recordPutCounters` on `oid` and emit `logPutCounterDelta` synchronously
-or defer via `.finishPostStep 82` when `Pending.chooseReplacement` opened. -/
-def putCountersDeferredLog (g : Game) (oid : ObjectId) (kind : CounterKind)
-    (n : Nat) (byPlayer : Option PlayerId) (kindTag : Nat)
-    (cause : Option EventCause := none) : Game :=
-  let before := ((g.findObject? oid).map (·.status.counterCount kind)).getD 0
-  let g := g.recordPutCounters oid kind n (byPlayer := byPlayer) (cause := cause)
-  if let .chooseReplacement .. := g.pending then
-    g.chainPendingReplacement
-      (.finishPostStep 82 (byPlayer.getD g.activePlayer) (n := before) (cardId := some oid) (modes := #[kindTag]))
-  else
-    g.logPutCounterDelta oid before kindTag
-
 /-- Apply a shared permanent action (spells, activated abilities, and triggers). -/
 def applyPermanentAction (g : Game) (o : GameObject) (action : PermanentAction)
     (sourceId : Option ObjectId := none) : Game :=
@@ -254,9 +185,7 @@ def applyPermanentAction (g : Game) (o : GameObject) (action : PermanentAction)
   | .indestructibleCounter => g.addIndestructibleCounter o
   | .doubleStrikeCounter =>
     let cause := g.resolveOptionalCause none (fallbackSrc := sourceId) (fallbackCtrl := g.controllerOf o)
-    let g := g.recordPutCounters o.id .doubleStrike 1 (byPlayer := g.controllerOf o)
-      (cause := some cause)
-    g.logMsg s!"{g.name o} gets a double strike counter"
+    g.putCountersDeferredLog o.id .doubleStrike 1 (g.controllerOf o) 2 (cause := some cause)
   | .burdenCounter => g.addBurdenCounter o
   | .tap => g.becomeTapped o
   | .untap =>

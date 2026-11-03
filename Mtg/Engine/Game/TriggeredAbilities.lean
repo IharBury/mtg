@@ -1200,42 +1200,80 @@ def applyTriggerDamage (g : Game) (controller : PlayerId) (ab : TriggeredAbility
           else g.withBatch batchCause fun g => objs.foldl dealPermanent g
         | none => g
 
+def keywordCounterTag : CounterKind → Nat
+  | .haste => 20
+  | .flying => 21
+  | .firstStrike => 22
+  | .doubleStrike => 23
+  | .deathtouch => 24
+  | .indestructible => 25
+  | .lifelink => 26
+  | .menace => 27
+  | .reach => 28
+  | .trample => 29
+  | .vigilance => 30
+  | _ => 20
+
+def keywordCounterSpecs : Array ((Game → GameObject → Bool) × CounterKind × Nat × String) := #[
+  (Game.hasHaste, .haste, 20, "haste"),
+  (Game.hasFlying, .flying, 21, "flying"),
+  ((fun g o => g.hasKeyword o (·.firstStrike)), .firstStrike, 22, "first strike"),
+  (Game.hasDoubleStrike, .doubleStrike, 23, "double strike"),
+  (Game.hasDeathtouch, .deathtouch, 24, "deathtouch"),
+  (Game.hasIndestructible, .indestructible, 25, "indestructible"),
+  (Game.hasLifelink, .lifelink, 26, "lifelink"),
+  (Game.hasMenace, .menace, 27, "menace"),
+  ((fun g o => g.hasKeyword o (·.reach)), .reach, 28, "reach"),
+  (Game.hasTrample, .trample, 29, "trample"),
+  (Game.hasVigilance, .vigilance, 30, "vigilance")
+]
+
 /-- Put one keyword counter on `src` when `other` has that keyword and `src`
 does not. -/
 def copyKeywordCounter (g : Game) (src other : GameObject)
     (has : GameObject → Bool) (kind : CounterKind) (name : String) : Game :=
   if has other && !has src then
-    g.recordPutCounters src.id kind 1 (byPlayer := g.controllerOf src)
-      |>.logMsg s!"{g.name src} gets a {name} counter"
+    g.putCountersDeferredLog src.id kind 1 (g.controllerOf src) (keywordCounterTag kind)
+      (name := name)
   else g
+
+/-- Pause-safe loop copying missing keyword counters from `otherId` onto each
+permanent in `srcIds`. -/
+def copyMissingKeywordsStep (g : Game) (srcIds : Array ObjectId) (otherId : ObjectId)
+    (startKw : Nat := 0) : Game := Id.run do
+  if let .chooseReplacement .. := g.pending then
+    return g.chainPendingReplacement
+      (.finishPostStep 128 g.activePlayer (n := startKw) (cardId := some otherId) (ids := srcIds))
+  let mut g := g
+  let mut kwStart := startKw
+  for sIdx in [0:srcIds.size] do
+    let sid := srcIds[sIdx]!
+    for kIdx in [kwStart:keywordCounterSpecs.size] do
+      let (has, kind, tag, name) := keywordCounterSpecs[kIdx]!
+      if let some src := g.findObject? sid then
+        if let some other := g.findObject? otherId then
+          if src.isOnBattlefield && has g other && !has g src then
+            g := g.putCountersDeferredLog src.id kind 1 (g.controllerOf src) tag (name := name)
+            if let .chooseReplacement .. := g.pending then
+              let nextKw := kIdx + 1
+              let (remSrcs, remKw) :=
+                if nextKw < keywordCounterSpecs.size then
+                  (srcIds.extract sIdx srcIds.size, nextKw)
+                else
+                  (srcIds.extract (sIdx + 1) srcIds.size, 0)
+              if !remSrcs.isEmpty then
+                g := g.chainPendingReplacement
+                  (.finishPostStep 128 g.activePlayer (n := remKw) (cardId := some otherId) (ids := remSrcs))
+              return g
+    kwStart := 0
+  return g
 
 /-- Put a counter on `src` for each keyword `other` has that `src` does not.
 Haste, flying, first strike, double strike, deathtouch, indestructible,
 lifelink, menace, reach, trample, and vigilance. -/
 def copyMissingKeywordCounters (g : Game) (src other : GameObject) : Game :=
   g.withBatch none fun g =>
-    let g := g.copyKeywordCounter src other g.hasHaste .haste "haste"
-    let src := g.object! src.id
-    let g := g.copyKeywordCounter src other g.hasFlying .flying "flying"
-    let src := g.object! src.id
-    let g := g.copyKeywordCounter src other
-      (fun o => g.hasKeyword o (·.firstStrike)) .firstStrike "first strike"
-    let src := g.object! src.id
-    let g := g.copyKeywordCounter src other g.hasDoubleStrike .doubleStrike "double strike"
-    let src := g.object! src.id
-    let g := g.copyKeywordCounter src other g.hasDeathtouch .deathtouch "deathtouch"
-    let src := g.object! src.id
-    let g := g.copyKeywordCounter src other g.hasIndestructible .indestructible "indestructible"
-    let src := g.object! src.id
-    let g := g.copyKeywordCounter src other g.hasLifelink .lifelink "lifelink"
-    let src := g.object! src.id
-    let g := g.copyKeywordCounter src other g.hasMenace .menace "menace"
-    let src := g.object! src.id
-    let g := g.copyKeywordCounter src other (fun o => g.hasKeyword o (·.reach)) .reach "reach"
-    let src := g.object! src.id
-    let g := g.copyKeywordCounter src other g.hasTrample .trample "trample"
-    let src := g.object! src.id
-    g.copyKeywordCounter src other g.hasVigilance .vigilance "vigilance"
+    g.copyMissingKeywordsStep #[src.id] other.id 0
 
 /-- Resolve `TriggerResolution.putCounters`. Each printed combination keeps
 the behavior of the constructor it replaced. Any other permanent the
@@ -1416,10 +1454,17 @@ def applyPutCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
   | .missingKeywordsFromTarget, .source =>
     g.withSourceOnBattlefield sourceId (fun g src =>
       match targets[0]? with
-      | some (Target.permanent id) =>
+      | some t@(Target.permanent id) =>
+        let legal :=
+          if ab.targetKind != .none then
+            g.targetLegalAt controller ab.targetKind 0 t sourceId
+          else
+            (g.findObject? id).any (fun other =>
+              other.isOnBattlefield && g.isCreature other && other.id != src.id &&
+                g.canBeTargetedBy controller other sourceId)
         match g.findObject? id with
         | some other =>
-          if !other.isOnBattlefield || !g.isCreature other || other.id == src.id then
+          if !legal || !other.isOnBattlefield || !g.isCreature other || other.id == src.id then
             g.logMsg "The target is no longer legal"
           else
             g.copyMissingKeywordCounters src other
@@ -1471,18 +1516,24 @@ def applyPutCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
                   (byPlayer := some controller)
               else game) g
     | .missingKeywordsFromTarget =>
-      let other? :=
-        match targets[0]? with
-        | some (Target.permanent id) => g.findObject? id
-        | _ => none
-      match other?, g.permanentsNamed ctx who with
-      | some other, some objs =>
-        if !other.isOnBattlefield || !g.isCreature other then g
-        else
-          g.withBatch none fun g =>
-            objs.foldl (fun game o =>
-              game.copyMissingKeywordCounters (game.object! o.id) other) g
-      | _, _ => g
+      match targets[0]? with
+      | some t@(Target.permanent id) =>
+        let legal :=
+          if ab.targetKind != .none then
+            g.targetLegalAt controller ab.targetKind 0 t sourceId
+          else
+            (g.findObject? id).any (fun other =>
+              other.isOnBattlefield && g.isCreature other &&
+                g.canBeTargetedBy controller other sourceId)
+        match g.findObject? id, g.permanentsNamed ctx who with
+        | some other, some objs =>
+          if !legal || !other.isOnBattlefield || !g.isCreature other then
+            g.logMsg "The target is no longer legal"
+          else
+            g.withBatch none fun g =>
+              g.copyMissingKeywordsStep (objs.map (·.id)) other.id 0
+        | _, _ => g.logMsg "The target is no longer legal"
+      | _ => g
     | .ofKind .. => g
 
 /-- Resolve `TriggerResolution.createTokens`. Each printed combination keeps
@@ -1837,13 +1888,22 @@ def applyExile (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     let g := g.changes #[.notedCopyObject none, .notedHostId none]
     g.withSourceStillOnBattlefield sourceId fun g src =>
       match targets[0]? with
-      | some (Target.permanent id) =>
-        match g.findObject? id with
-        | some tgt =>
-          let hostId := src.attachedTo
-          let g := g.exileUntilSourceLeaves sourceId tgt
-          g.changes #[.notedCopyObject (some tgt), .notedHostId hostId]
-        | none => g.logMsg "The target is no longer legal"
+      | some t@(Target.permanent id) =>
+        let legal :=
+          if ab.targetKind != .none then
+            g.targetLegalAt controller ab.targetKind 0 t sourceId
+          else
+            (g.findObject? id).any (fun o =>
+              o.isOnBattlefield && g.canBeTargetedBy controller o sourceId)
+        if !legal then
+          g.illegalAbilityTarget t
+        else
+          match g.findObject? id with
+          | some tgt =>
+            let hostId := src.attachedTo
+            let g := g.exileUntilSourceLeaves sourceId tgt
+            g.changes #[.notedCopyObject (some tgt), .notedHostId hostId]
+          | none => g.illegalAbilityTarget t
       | _ => g
   | .target, .untilSourceLeaves, .none =>
     g.withSourceStillOnBattlefield sourceId fun g _ =>
@@ -2216,7 +2276,9 @@ def applyAttach (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     | none, some (Target.permanent hid) =>
       match g.findObject? hid, sourceId.bind g.findObject? with
       | some host, some src =>
-        if g.isCreature host && g.canBeTargetedBy controller host sourceId then
+        if src.isOnBattlefield && host.isOnBattlefield &&
+            g.canAttachEquipmentTo src host &&
+            g.canBeTargetedBy controller host sourceId then
           g.attachSourceTo src host
         else g
       | _, _ => g
@@ -2233,7 +2295,8 @@ def applyAttach (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         else
           let eligible :=
             ((g.permanentsOf controller).filter (fun o =>
-              g.isEquipment o && o.attachedTo != some host.id)).map (·.id)
+              g.isEquipment o && o.attachedTo != some host.id &&
+                g.canAttachEquipmentTo o host)).map (·.id)
           if eligible.isEmpty then
             g.logMsg "No Equipment was attached this way"
           else
@@ -2586,11 +2649,17 @@ def applyDestroy (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     | none =>
       clear.logMsg
         "No target was chosen. Its controller is undefined and no player amasses Goblins."
-    | some (Target.permanent oid) =>
+    | some t@(Target.permanent oid) =>
+      let legal :=
+        if ab.targetKind != .none then
+          g.targetLegalAt controller ab.targetKind 0 t sourceId
+        else
+          (g.findObject? oid).any (fun o =>
+            o.isOnBattlefield && g.canBeTargetedBy controller o sourceId)
       match g.findObject? oid with
       | none => clear.logMsg "The target is no longer legal"
       | some o =>
-        if !o.isOnBattlefield || !g.canBeTargetedBy controller o sourceId then
+        if !legal || !o.isOnBattlefield || !g.canBeTargetedBy controller o sourceId then
           clear.logMsg "The target is no longer legal"
         else
           let oCtrl := g.controllerOf o
@@ -4758,11 +4827,23 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         sourceId (some "The target is no longer legal")
   | .honeEachEquipment =>
     let eqs :=
-      g.battlefield.filter (fun o => g.controlledBy o controller && g.isEquipment o)
-    g.withBatch none fun g =>
-      eqs.foldl (init := g) fun acc eq =>
-        acc.recordPutCounters eq.id .hone 1 (byPlayer := some controller)
-          |>.logMsg s!"{acc.name eq} received a hone counter"
+      (g.battlefield.filter (fun o => g.controlledBy o controller && g.isEquipment o)).map (·.id)
+    if eqs.isEmpty then g
+    else
+      g.withBatch none fun g =>
+        Id.run do
+          let mut g := g
+          for i in [0:eqs.size] do
+            let id := eqs[i]!
+            if let some eq := g.findObject? id then
+              if eq.isOnBattlefield && g.isEquipment eq then
+                g := g.putCountersDeferredLog eq.id .hone 1 (some controller) 12
+                if let .chooseReplacement .. := g.pending then
+                  let rem := eqs.extract (i + 1) eqs.size
+                  if !rem.isEmpty then
+                    g := g.chainPendingReplacement (.finishPostStep 123 controller (ids := rem))
+                  return g
+          return g
   | .cascade =>
     let maxMv :=
       match sourceId with

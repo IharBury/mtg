@@ -197,7 +197,8 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
       some .chooseBottom
     | .mayAttachEquipment _ hostId _ =>
       match (g.permanentsOf p).find? (fun o =>
-        g.isEquipment o && o.attachedTo != some hostId) with
+        g.isEquipment o && o.attachedTo != some hostId &&
+          (g.findObject? hostId).any (g.canAttachEquipmentTo o)) with
       | some eq => some (.choosePermanents #[eq.id])
       | none => some .decline
     | .mayResolve _ =>
@@ -288,7 +289,7 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
       let affordable :=
         (g.findObject? cardId).any (fun o =>
           let available := g.availableMana p
-          available.canPay (g.playManaCost o (g.baseCard o))
+          available.canPay (g.playManaCost { o with controller := some p } (g.baseCard o))
             (allowElfRestricted := g.hasSubtype o .elf)
             (allowInstRestricted := g.isInstantOrSorcery o) &&
             g.canPayAnnouncedAdditional p o available)
@@ -329,7 +330,8 @@ where
       if !(g.chosenModesOf spell).isEmpty then some .decline else
       match g.defaultMode p spell with
       | some i => some (.chooseMode i)
-      | none => some .pass
+      | none =>
+        if Game.minModesFor (g.baseCard spell) == 0 then some .decline else some .pass
   /-- During CR 601.2c / 603.3d, announce a legal target for the current
   instance of the word “target” on the proposed spell, activated ability,
   or triggered ability. Optional “up to one” triggers may choose no target. -/

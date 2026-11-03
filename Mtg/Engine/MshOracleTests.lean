@@ -3243,7 +3243,9 @@ def visionOfLoveDrawTwoOk : Bool :=
 
 #guard visionOfLoveDrawTwoOk
 
-/-- Call Damage Control returns up to two graveyard cards of different modes. -/
+/-- Call Damage Control returns up to two graveyard cards of different modes,
+including 0, 1, or 2 modes chosen at cast time (CR 601.2b / 700.2) and stack
+copy mode preservation (CR 707.10). -/
 def callDamageControlModesOk : Bool :=
   let g := addToGraveyard (addToGraveyard (addToGraveyard afterDraw theMindStone ⟨0⟩)
     grizzlyBears ⟨0⟩) theMindStone ⟨0⟩
@@ -3252,9 +3254,51 @@ def callDamageControlModesOk : Bool :=
     (g.object! id).name == "Grizzly Bears"))[0]!
   let gBoth := g.returnChosenGraveyardCards ⟨0⟩
     #[Target.card arts[0]!, Target.card bear]
+  let gCastBase := withMana (addToHand g callDamageControl ⟨0⟩) ⟨0⟩ .green 2
+  let cdcId := (handCardNamed gCastBase ⟨0⟩ "Call Damage Control").id
+  -- 0 modes chosen via `.decline` on `"Choose up to two"`
+  let gZero :=
+    let g1 := mustApply gCastBase ⟨0⟩ (.cast cdcId)
+    let g2 := mustApply g1 ⟨0⟩ .decline
+    (mustApply g2 ⟨0⟩ .pay).resolveTop
+  let zeroModesAnnounced := gZero.events.any fun e =>
+    match e.change with
+    | .rules (.cast (.announced _ ms _ _)) => ms.isEmpty
+    | _ => false
+  -- 1 mode chosen (`0` = artifact) then `.decline` second mode; wrong card type rejected
+  let gOne :=
+    let g1 := mustApply gCastBase ⟨0⟩ (.cast cdcId)
+    let g2 := mustApply (mustApply g1 ⟨0⟩ (.chooseMode 0)) ⟨0⟩ .decline
+    let wrongTypeRejected := !(g2.apply ⟨0⟩ (.target (.card bear))).isOk
+    let g3 := mustApply (mustApply g2 ⟨0⟩ (.target (.card arts[0]!))) ⟨0⟩ .pay
+    (wrongTypeRejected, g3.resolveTop)
+  -- 2 modes chosen (`0` = artifact, `1` = creature), stack copy mode preservation, and resolution
+  let gTwo :=
+    let g1 := mustApply gCastBase ⟨0⟩ (.cast cdcId)
+    let g2 := mustApply (mustApply g1 ⟨0⟩ (.chooseMode 0)) ⟨0⟩ (.chooseMode 1)
+    let g2a := mustApply g2 ⟨0⟩ (.target (.card arts[0]!))
+    let wrongSecondType := !(g2a.apply ⟨0⟩ (.target (.card arts[1]!))).isOk
+    let gPaid := mustApply (mustApply g2a ⟨0⟩ (.target (.card bear))) ⟨0⟩ .pay
+    let origSpellId := gPaid.stack.back!.objectId
+    let gCopied := gPaid.copyStackSpell (gPaid.object! origSpellId) ⟨0⟩
+    let copyTop := gCopied.stack.back!
+    let copyModesOk :=
+      copyTop.objectId != origSpellId &&
+      copyTop.chosenMode == some 0 &&
+      copyTop.extraModes == #[1] &&
+      copyTop.targets == #[Target.card arts[0]!, Target.card bear]
+    (wrongSecondType && copyModesOk, gPaid.resolveTop)
   (gBoth.player ⟨0⟩).hand.any (fun id => (gBoth.object! id).name == "The Mind Stone") &&
     (gBoth.player ⟨0⟩).hand.any (fun id => (gBoth.object! id).name == "Grizzly Bears") &&
     !(gBoth.player ⟨0⟩).graveyard.any (fun id => (gBoth.object! id).name == "Grizzly Bears") &&
+    zeroModesAnnounced &&
+    !(gZero.player ⟨0⟩).hand.any (fun id => (gZero.object! id).name == "The Mind Stone") &&
+    gOne.1 &&
+    (gOne.2.player ⟨0⟩).hand.any (fun id => (gOne.2.object! id).name == "The Mind Stone") &&
+    (gOne.2.player ⟨0⟩).graveyard.any (fun id => (gOne.2.object! id).name == "Grizzly Bears") &&
+    gTwo.1 &&
+    (gTwo.2.player ⟨0⟩).hand.any (fun id => (gTwo.2.object! id).name == "The Mind Stone") &&
+    (gTwo.2.player ⟨0⟩).hand.any (fun id => (gTwo.2.object! id).name == "Grizzly Bears") &&
     (let gDup := g.returnChosenGraveyardCards ⟨0⟩
         #[Target.card arts[0]!, Target.card arts[1]!]
      ((gDup.player ⟨0⟩).hand.filter (fun id =>

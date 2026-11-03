@@ -461,7 +461,7 @@ cast a spell this turn, even if he entered afterward. -/
 def captainMarVellFlashOk : Bool :=
   let g := addPermanent afterDraw captainMarVellSpaceBorn ⟨0⟩ ⟨0⟩
   let g := addToHand g grizzlyBears ⟨0⟩
-  let gCombat := { g with step := .beginningOfCombat }
+  let gCombat := g.record (GameEvent.stepBegan g.turnNumber .beginningOfCombat g.activePlayer)
   let bears := handCardNamed gCombat ⟨0⟩ "Grizzly Bears"
   !gCombat.asSorcery? ⟨0⟩ &&
     !gCombat.canCast ⟨0⟩ bears &&
@@ -469,7 +469,7 @@ def captainMarVellFlashOk : Bool :=
       { id := some ⟨41⟩, controller := some ⟨1⟩, owner := ⟨1⟩ } (.hand ⟨1⟩))
      gOpp.canCast ⟨0⟩ (handCardNamed gOpp ⟨0⟩ "Grizzly Bears")) &&
     (let gLate := addToHand afterDraw grizzlyBears ⟨0⟩
-     let gLate := { gLate with step := .beginningOfCombat }
+     let gLate := gLate.record (GameEvent.stepBegan gLate.turnNumber .beginningOfCombat gLate.activePlayer)
      let gLate := gLate.record (GameEvent.spellCast gLate.turnNumber ⟨1⟩
        { id := some ⟨42⟩, controller := some ⟨1⟩, owner := ⟨1⟩ } (.hand ⟨1⟩))
      !gLate.canCast ⟨0⟩ (handCardNamed gLate ⟨0⟩ "Grizzly Bears") &&

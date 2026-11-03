@@ -816,8 +816,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
                     (g.baseCard src).creaturesCantGetMinusCounters && g.retainsPrintedAbilities src)
                 | none => false
               if x > 0 && !shielded then
-                (g.recordPutCounters o.id .minusOneMinusOne x (byPlayer := some controller)).logMsg
-                  s!"{x} -1/-1 counter(s) are put on {g.name o}"
+                g.putCountersDeferredLog o.id .minusOneMinusOne x (some controller) 10
               else g
             | none => g
         | _ => g) g

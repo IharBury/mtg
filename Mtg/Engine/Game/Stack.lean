@@ -114,6 +114,17 @@ structure ProposedSpell where
   alternativeCost : Bool := false
   /-- Cast as part of a resolving spell or ability (CR 608.2g). -/
   resolutionCast : Bool := false
+  /-- Active play permission captured on the pre-move card before `Movement.move`
+  expires zone-scoped permissions on leaving its origin zone (CR 601.2a,f). -/
+  origPerm : Option PlayPermission := none
+  /-- Whether `freeCastFromGraveyard` applied to the pre-move card (CR 601.2a,f). -/
+  isFreeFromGy : Bool := false
+  /-- Generic mana chosen for an optional/alternative additional cost at CR 601.2b
+  so CR 601.2f cost recomputations apply reductions after increases. -/
+  additionalGeneric : Nat := 0
+  /-- Deferred behold subtype announced at CR 601.2b and performed at CR 601.2h
+  cost payment (e.g. Countersculpt). -/
+  needsBehold : Option CardSubtype := none
 deriving Repr, Inhabited, BEq
 
 end Mtg.Engine

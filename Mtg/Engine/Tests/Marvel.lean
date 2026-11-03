@@ -518,7 +518,7 @@ def bilboRingEquipped : Game :=
   (namedPermanent bilboRingEquipped "Grizzly Bears")
 
 def bilboRingOnNissaTurn : Game :=
-  { bilboRingEquipped with activePlayer := ⟨1⟩ }
+  bilboRingEquipped.record (GameEvent.turnBegan (bilboRingEquipped.turnNumber + 1) ⟨1⟩)
 
 #guard !bilboRingOnNissaTurn.hasHexproof
   (namedPermanent bilboRingOnNissaTurn "Grizzly Bears")

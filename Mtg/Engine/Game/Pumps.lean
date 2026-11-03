@@ -414,7 +414,8 @@ private def finishAmassOnPost (g : Game) (controller : PlayerId) (armyId : Objec
   | some sid =>
     match g.findObject? sid, g.findObject? armyId with
     | some src, some army =>
-      if src.isOnBattlefield && army.isOnBattlefield then
+      if src.isOnBattlefield && army.isOnBattlefield &&
+          (!g.isEquipment src || g.canAttachEquipmentTo src army) then
         g.attachSourceTo src army (cause := cause)
       else g
     | _, _ => g

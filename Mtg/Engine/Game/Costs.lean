@@ -45,10 +45,12 @@ def paySneak (g : Game) (p : PlayerId) (spellId : ObjectId) (attackerId : Object
   return g.logMsg s!"{(g.player p).name} pays a sneak cost"
 
 /-- Starting mana cost of `face` before increases and reductions (CR 118.7). -/
-def playCostStart (g : Game) (card : GameObject) (face : CardDef) : ManaCost :=
-  if g.freeCastFromGraveyard card && card.zone == .graveyard card.owner then
+def playCostStart (g : Game) (card : GameObject) (face : CardDef)
+    (isFreeFromGy : Option Bool := none) : ManaCost :=
+  let inGy := match card.zone with | .graveyard _ => true | _ => false
+  if isFreeFromGy.getD (g.freeCastFromGraveyard card && inGy) then
     ManaCost.empty
-  else if g.castFromGraveyard card.id || card.zone == .graveyard card.owner then
+  else if g.castFromGraveyard card.id || inGy then
     face.flashback.getD face.manaCost
   else face.manaCost
 
@@ -117,7 +119,7 @@ def applyCastCostReductions (g : Game) (card : GameObject) (face : CardDef)
     if face.costReductionEqualOppArtifacts then
       let n :=
         g.players.foldl (fun acc pl =>
-          if pl.id == caster || pl.lost then acc
+          if pl.id == caster || pl.lost || g.areTeammates caster pl.id then acc
           else
             let arts :=
               (g.permanentsOf pl.id).filter (fun o => g.isArtifact o) |>.size
@@ -205,7 +207,9 @@ mana symbol become `{0}`, not an unpayable empty cost (CR 107.4d / 202.1b).
 Target-based reductions lock in after CR 601.2c. Cost increases (kicker)
 are applied before these reductions. -/
 def playManaCost (g : Game) (card : GameObject) (face : CardDef)
-    (increase : ManaCost := ManaCost.empty) : ManaCost :=
+    (increase : ManaCost := ManaCost.empty)
+    (origPerm : Option PlayPermission := none)
+    (isFreeFromGy : Option Bool := none) : ManaCost :=
   let caster := card.controller.getD card.owner
   -- Thalia, the Survivor: each one an opponent controls adds {1}.
   let tax :=
@@ -215,7 +219,7 @@ def playManaCost (g : Game) (card : GameObject) (face : CardDef)
         acc + ((g.permanentsOf pl.id).filter (fun o => (g.staticAbilities o).any
           (· == .fra .opponentsNoncreatureSpellsCostMore))).size) 0
   let increase := if tax == 0 then increase else increase.addCost (ManaCost.ofGeneric tax)
-  let start := g.playCostStart card face
+  let start := g.playCostStart card face isFreeFromGy
   let afterIncrease := start.addCost increase
   let afterEquip := g.applyCastCostReductions card face afterIncrease
   let freeRG :=
@@ -228,7 +232,7 @@ def playManaCost (g : Game) (card : GameObject) (face : CardDef)
     if freeRG then
       g.applyCastCostReductions card face (ManaCost.empty.addCost increase)
     else
-      match g.playPermission card with
+      match origPerm <|> g.playPermission card with
       | some perm =>
         if perm.withoutManaCost || perm.payLifeEqualManaValue then
           g.applyCastCostReductions card face (ManaCost.empty.addCost increase)
@@ -243,7 +247,6 @@ def playManaCost (g : Game) (card : GameObject) (face : CardDef)
   -- creatures you control is cast without paying its mana cost. Spells with
   -- `{X}` are cast normally, so X is never forced to 0. Additional costs are
   -- still paid (rulings 794 / 795).
-  let caster := card.owner
   let omnipresent :=
     card.zone == .hand caster && !face.manaCost.containsX &&
       face.manaValue ≤ (g.creaturesControlledBy caster).size &&
@@ -257,8 +260,9 @@ def playManaCost (g : Game) (card : GameObject) (face : CardDef)
   let freeCommander :=
     face.freeCastIfControlCommander &&
       (g.permanentsOf caster).any (·.isCommander)
+  let freeGy := isFreeFromGy.getD (g.freeCastFromGraveyard card)
   let cost :=
-    if freeCommander || g.freeCastFromGraveyard card then
+    if freeCommander || freeGy then
       g.applyCastCostReductions card face (ManaCost.empty.addCost increase)
     else cost
   ManaCost.afterReduction face.manaCost cost
@@ -319,10 +323,10 @@ def activationManaCost (g : Game) (p : PlayerId) (ab : ActivatedAbility)
         (withX afterEnter).reduceGeneric (g.hulkPowerUpGenericReduction p o.id)
       | none => withX ab.cost.mana
     else if ab.costReductionIfYouControlLegendary > 0 && g.controlsLegendaryCreature p then
-      withX (ab.cost.mana.reduceGeneric ab.costReductionIfYouControlLegendary)
+      (withX ab.cost.mana).reduceGeneric ab.costReductionIfYouControlLegendary
     else if ab.costReductionPerEquipment > 0 then
       let n := (g.permanentsOf p).filter (fun o => g.isEquipment o) |>.size
-      withX (ab.cost.mana.reduceGeneric (ab.costReductionPerEquipment * n))
+      (withX ab.cost.mana).reduceGeneric (ab.costReductionPerEquipment * n)
     else withX ab.cost.mana
   ManaCost.afterReduction ab.cost.mana cost
 

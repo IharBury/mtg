@@ -1194,10 +1194,12 @@ accepted boast exiles use `.costPayment .exile` (CR 602.2b / 733.1). -/
     match gCrew0.activateAbility me v.id 0 with
     | .ok g => g
     | .error _ => gCrew0
+  let gCrewUnpayable :=
+    (gCrewStarted.becomeTapped (gCrewStarted.object! b.id)).becomeTapped (gCrewStarted.object! h.id)
   let gCrewDeclined :=
-    match gCrewStarted.answerFraChoice me .decline with
+    match gCrewUnpayable.answerFraChoice me .decline with
     | .ok g => g
-    | .error _ => gCrewStarted
+    | .error _ => gCrewUnpayable
   let blackCard : CardDef :=
     { name := "Dark Ritual15"
       manaCost := { symbols := Array.replicate 15 (.colored .black) }
@@ -1451,18 +1453,22 @@ before the next upkeep keep each batch's delayed `.oneShotEffect` cause (CR 603.
       staticAbilities := #[.equippedGetsTrampleAndCombatTreasures 1 1] }
   let gTreasPlayer :=
     let g := (g0.markAttacking b.id).createEffect (.combatDamageCreatesTreasureUntilEot b.id)
-    let g := { g with assignedCombatDamage := #[{ source := b.id, toPlayer := 2 }] }
+    let g := g.record (GameEvent.rules g.turnNumber
+      (.combat (.damageAssigned false true #[{ source := b.id, toPlayer := 2 }]))
+      (.turnBased (.assignCombatDamage false)))
     (((quiet g).dealAssignedCombatDamage).receivePriority me).resolveTop
   let gTreasPw :=
     let g := addPermanent (addPermanent g0 pwDef opp opp) cleaver3Def me me
     let pw := (g.battlefield.filter (·.name == "Target PW"))[0]!
     let clv := (g.battlefield.filter (·.name == "Target Cleaver"))[0]!
     let g := (g.attachSourceTo clv (g.object! b.id)).markAttacking b.id (some (.planeswalker pw.id))
-    let g := { g with assignedCombatDamage := #[{ source := b.id, toPlayer := 2 }] }
+    let g := g.record (GameEvent.rules g.turnNumber
+      (.combat (.damageAssigned false true #[{ source := b.id, toPlayer := 2 }]))
+      (.turnBased (.assignCombatDamage false)))
     (((quiet g).dealAssignedCombatDamage).receivePriority me).resolveTop
   -- 4. clearCombat: .removeFromCombatAtEndOfCombat in advanceStep from .endOfCombat, none in beginStep .cleanup
   let gEndCombat :=
-    (quiet ({ g0 with step := .endOfCombat }.markAttacking b.id)).advanceStep
+    (quiet ((g0.record (GameEvent.stepBegan g0.turnNumber .endOfCombat g0.activePlayer)).markAttacking b.id)).advanceStep
   let gCleanupCombat :=
     (quiet (g0.markAttacking b.id)).beginStep .cleanup
   -- 5. Multi-permanent phaseOut shares a single .oneShotEffect id
@@ -2718,7 +2724,7 @@ def noOneShotCauses (g : Game) : Bool :=
     (GameEvent.phaseBegan g3.turnNumber .combat)
   let g5 := g4.applyChange (.rules (.turn (.dayNightChanged true)))
   -- Step advance across phase boundary (draw -> precombatMain)
-  let gStep := (quiet { afterDraw with step := .draw }).advanceStep
+  let gStep := (quiet (afterDraw.record (GameEvent.stepBegan afterDraw.turnNumber .draw afterDraw.activePlayer))).advanceStep
   let turnEvents := gStep.events.filterMap (fun e =>
     match e.change with
     | .rules (.turn te) => some te
@@ -2758,7 +2764,7 @@ attacks" triggers (CR 508.3a). -/
   let g0 :=
     let g := addPermanent (addPermanent (addPermanent (addPermanent afterDraw attackWatcher me me) bear me me) hero me me) oppWalker opp opp
     let g := addPermanent g bear opp opp
-    let g := { g with step := .declareAttackers, pending := .declareAttackers }
+    let g := (g.record (GameEvent.stepBegan g.turnNumber .declareAttackers g.activePlayer)).change (.pending .declareAttackers)
     quiet g
   let bMe := (g0.battlefield.filter (fun o => o.name == bear.name && o.controlledBy me))[0]!
   let hMe := (g0.battlefield.filter (fun o => o.name == hero.name && o.controlledBy me))[0]!
@@ -2787,10 +2793,10 @@ attacks" triggers (CR 508.3a). -/
   -- 3. declareBlockers with bOpp blocking bMe while hMe (made attacking) remains unblocked
   let gBothAtk := (quiet gAtk).record (GameEvent.becameAttacking gAtk.turnNumber (gAtk.snapshot (gAtk.object! hMe.id)) (.player opp)
     (cause := .oneShotEffect (some ⟨78⟩) none (some me)))
-  let gToBlk := quiet { gBothAtk with
-    step := .declareBlockers
-    pending := .declareBlockers
-    blockersQueue := #[opp] }
+  let gToBlk := quiet ((gBothAtk.record (GameEvent.stepBegan gBothAtk.turnNumber .declareBlockers gBothAtk.activePlayer)).changes #[
+    .pending .declareBlockers,
+    .blockersQueue #[opp]
+  ])
   let gBlk :=
     match gToBlk.declareBlockers opp #[(bOpp.id, bMe.id)] with
     | .ok g => g
@@ -2835,7 +2841,7 @@ attacks" triggers (CR 508.3a). -/
     let g := insertObject g bear me .stack (some me) {}
     let spId := (g.objects.filter (fun o => o.name == bear.name && o.zone == .stack))[0]!.id
     let g := g.putStackEntry me spId
-    { g with step := .declareBlockers, pending := .none }
+    (g.record (GameEvent.stepBegan g.turnNumber .declareBlockers g.activePlayer)).change (.pending .none)
   let sneakSpellId := gSneak0.stack.back!.objectId
   let gSneak1 :=
     match gSneak0.paySneak me sneakSpellId hMe.id with
@@ -3669,8 +3675,8 @@ and Arwen + Doc Samson ETB counter replacement. -/
   let candOpp : ReplacementCandidate :=
     (ReplacementOrPrevention.replacement {
       id := idLifeOpp, affectedPlayer := opp, kind := .modifyLifeGain opp 1 1 }).toCandidate
-  let gActiveMe := { gOrd0 with activePlayer := me }
-  let gActiveOpp := { gOrd0 with activePlayer := opp }
+  let gActiveMe := gOrd0.record (GameEvent.turnBegan gOrd0.turnNumber me)
+  let gActiveOpp := gOrd0.record (GameEvent.turnBegan (gOrd0.turnNumber + 1) opp)
   -- Simultaneous graveyard move and SBA sweep resumption across multiple dying creatures.
   let finSetupCause : EventCause := .oneShotEffect (some ⟨718⟩) none (some me)
   let gSim0 := addPermanent gFinComp1 { bear with name := "Sim Dying Two" } me me
@@ -3781,7 +3787,8 @@ and Arwen + Doc Samson ETB counter replacement. -/
   let idDrwEx3 : ReplacementId := { kind := .drawThreeExceptFirstDrawStep, player := some me }
   let drwSubCause : EventCause := .oneShotEffect (some ⟨719⟩) none (some me)
   let gDrwSub0 :=
-    (({ quiet started with step := .draw, activePlayer := me }.createEffect
+    (((((quiet started).record (GameEvent.turnBegan started.turnNumber me)).record
+      (GameEvent.stepBegan started.turnNumber .draw me)).createEffect
       (.replacement {
         id := idDrwAll, source := none, controller := some me,
         affectedPlayer := me, kind := .replaceDraw me 2 false })
@@ -3861,7 +3868,7 @@ and Arwen + Doc Samson ETB counter replacement. -/
   let cbtBlk := (gCbt0.battlefield.filter (·.name == "Shield Blocker"))[0]!
   let idCbtBlkShield : ReplacementId := { kind := .shieldCounterPreventDamage, object := some cbtBlk.id }
   let gCbt1 :=
-    { ((((gCbt0.recordPutCounters cbtBlk.id .shield 1 (some opp)
+    (((((gCbt0.recordPutCounters cbtBlk.id .shield 1 (some opp)
           (cause := some (.oneShotEffect (some ⟨720⟩) none (some opp)))).createEffect
         (.replacement {
           id := idCbtMul, source := none, controller := some me,
@@ -3874,11 +3881,11 @@ and Arwen + Doc Samson ETB counter replacement. -/
         (.replacement {
           id := idCbtLifeMul, source := none, controller := some me,
           affectedPlayer := me, kind := .modifyLifeGain me 0 2 })
-        (cause := some drwSubCause)).change (.replacementOrder #[idCbtMul]) with
-      assignedCombatDamage := #[
+        (cause := some drwSubCause)).change (.replacementOrder #[idCbtMul])).record
+      (GameEvent.rules gCbt0.turnNumber (.combat (.damageAssigned false true #[
         { source := cbtAtk1.id, toCreatures := #[], toPlayer := 2 },
         { source := cbtAtk2.id, toCreatures := #[(cbtBlk.id, 2)], toPlayer := 0 }
-      ] }
+      ])) (.turnBased (.assignCombatDamage false)))
   let gCbtPaused := (quiet gCbt1).dealAssignedCombatDamage
   let gCbtAfterLife :=
     (gCbtPaused.apply me (.chooseReplacement idCbtLifeAdd)).toOption.getD gCbtPaused
@@ -3978,11 +3985,11 @@ and Arwen + Doc Samson ETB counter replacement. -/
     bAfter.status.counters == #[(.plusOnePlusOne, 1)]
   -- Delayed trigger `.endStepSacrifice` (CR 603.7): fires at `.end` step and removes itself (`isOneShot == true`).
   let gDelayed0 :=
-    { (g0.registerDelayedTrigger {
-        controller := me
-        source := some h
-        kind := .endStepSacrifice b.id
-        cause := cause8 }) with step := .postcombatMain }
+    (g0.registerDelayedTrigger {
+      controller := me
+      source := some h
+      kind := .endStepSacrifice b.id
+      cause := cause8 }).record (GameEvent.stepBegan g0.turnNumber .postcombatMain g0.activePlayer)
   let gDelayed1 := (quiet gDelayed0).beginStep .end
   let delayedOk :=
     !gDelayed1.delayedTriggers.any (·.kind == .endStepSacrifice b.id) &&
@@ -4420,11 +4427,15 @@ order (CR 613.1f / 613.7 / 702.21). -/
   let gTrLost :=
     gTrPre.createEffect (.losesAbilitiesUntilEot atk.id) (cause := some c2)
   let gTrLostCombat :=
-    (({ gTrLost with assignedCombatDamage := #[{ source := atk.id, toPlayer := 2 }] }.dealAssignedCombatDamage).receivePriority me).resolveTop
+    (((gTrLost.record (GameEvent.rules gTrLost.turnNumber
+      (.combat (.damageAssigned false true #[{ source := atk.id, toPlayer := 2 }]))
+      (.turnBased (.assignCombatDamage false)))).dealAssignedCombatDamage).receivePriority me).resolveTop
   let gTrRe :=
     gTrLost.record (GameEvent.attached gTrLost.turnNumber (gTrLost.snapshot (gTrLost.object! cleaver.id)) atk.id (cause := c3))
   let gTrReCombat :=
-    (({ gTrRe with assignedCombatDamage := #[{ source := atk.id, toPlayer := 2 }] }.dealAssignedCombatDamage).receivePriority me).resolveTop
+    (((gTrRe.record (GameEvent.rules gTrRe.turnNumber
+      (.combat (.damageAssigned false true #[{ source := atk.id, toPlayer := 2 }]))
+      (.turnBased (.assignCombatDamage false)))).dealAssignedCombatDamage).receivePriority me).resolveTop
   let gTrPostEff :=
     gTrLost.createEffect (.combatDamageCreatesTreasureUntilEot atk.id) (cause := some c4)
   let countTreasures (g : Game) : Nat :=
@@ -4899,8 +4910,8 @@ a creature whose controller changes mid-turn without haste becomes summoning-sic
   let m := (g0.battlefield.filter (·.name == "Phase9 Morph Angel"))[0]!
   let cl := (g0.battlefield.filter (·.name == "Phase9 Copy"))[0]!
   -- Divergent `o.controller` fixture does not override living `defaultController`
-  let gRawNone := { g0 with objects := g0.objects.map (fun (o : GameObject) => if o.id == b.id then { o with controller := none } else o) }
-  let gRawMe := { g0 with objects := g0.objects.map (fun (o : GameObject) => if o.id == b.id then { o with controller := some me } else o) }
+  let gRawNone := g0.change (.materializeObject { b with controller := none } none)
+  let gRawMe := g0.change (.materializeObject { b with controller := some me } none)
   let gOppLost := gRawNone.record (GameEvent.playerLost gRawNone.turnNumber opp .conceded)
   let initCtrlOk :=
     gRawNone.controllerOf (gRawNone.object! b.id) == some opp &&
@@ -5243,11 +5254,9 @@ continuity, plus `post.snapshot` in `.creatureYouControlDealtDamage` and
   let (gArr, arrId) := gHand.putOntoBattlefield handBear.id me
   let gPhOut := gArr.phaseOut (gArr.object! arrId)
   let gPhIn := gPhOut.phaseIn (gPhOut.object! arrId)
+  let arrObj := gArr.object! arrId
   let gUntapCleared :=
-    { gArr with
-      objects := gArr.objects.map fun (obj : GameObject) =>
-        if obj.id == arrId then { obj with status := { obj.status with summoningSick := false } }
-        else obj }
+    gArr.change (.materializeObject { arrObj with status := { arrObj.status with summoningSick := false } } none)
   let (gGobHand, handGob) := afterDraw.allocObject ragingGoblin me (.hand me) none
   let (gGobArr, gobId) := gGobHand.putOntoBattlefield handGob.id me
   let gGobStripped :=
@@ -5431,7 +5440,8 @@ continuity, plus `post.snapshot` in `.creatureYouControlDealtDamage` and
     { controller := me, source := some dtHero, kind := .endStepSacrifice dtBear.id, cause := p10Cause }
   let dtUntilEot : DelayedTrigger :=
     { controller := me, source := some dtHero, kind := .attackPumpPerPlains, cause := p10Cause }
-  let gDtReg := { ((gDt0.registerDelayedTrigger dtOneShot).registerDelayedTrigger dtUntilEot) with step := .postcombatMain }
+  let gDtReg := ((gDt0.registerDelayedTrigger dtOneShot).registerDelayedTrigger dtUntilEot).record
+    (GameEvent.stepBegan gDt0.turnNumber .postcombatMain gDt0.activePlayer)
   let gDtConsumed := gDtReg.beginStep .end
   let gDtExpired := gDtConsumed.clearTurnActivations
   let delayedTriggerEventsOk :=
@@ -6167,14 +6177,16 @@ unified CR 614.12 / 616.1 ETB replacement pipeline. -/
   }
   let gCrew0 := addPermanent (addPermanent afterDraw boatDef me me) grizzlyBears me me
   let boatId := (gCrew0.battlefield.filter (·.name == "Phase12 Boat"))[0]!.id
-  let crewPreEv := gCrew0.events.size
+  let crewPilotId := (gCrew0.battlefield.filter (·.name == "Grizzly Bears"))[0]!.id
   let gCrewAsk := mustApply gCrew0 me (.activate boatId 0)
-  let gCrewDec := mustApply gCrewAsk me .decline
+  let crewPayableDeclineBlocked := !(gCrewAsk.apply me .decline).isOk
+  let gCrewUnpayable := gCrewAsk.becomeTapped (gCrewAsk.object! crewPilotId)
+  let gCrewDec := mustApply gCrewUnpayable me .decline
   let crewRevOk :=
+    crewPayableDeclineBlocked &&
     gCrewDec.stack.isEmpty &&
+    gCrewDec.proposedSpell.isNone &&
     gCrewDec.nextObjectId == gCrew0.nextObjectId &&
-    (gCrewDec.events.extract crewPreEv gCrewDec.events.size).all
-      (fun e => match e.change with | .engine (.logMsg _) => true | _ => false) &&
     Game.replayEvents gCrewDec.events == gCrewDec
   let zemoDef : CardDef := {
     name := "Phase12 Zemo"
@@ -6196,14 +6208,16 @@ unified CR 614.12 / 616.1 ETB replacement pipeline. -/
     let z := (g.battlefield.filter (·.name == "Phase12 Zemo"))[0]!
     g.record (GameEvent.attacked g.turnNumber me (g.snapshot z) opp)
   let zemoId := (gZemo0.battlefield.filter (·.name == "Phase12 Zemo"))[0]!.id
-  let zemoPreEv := gZemo0.events.size
+  let hvyId := (gZemo0.objects.filter (·.name == "Phase12 Fifteen Black"))[0]!.id
   let gZemoAsk := mustApply gZemo0 me (.activate zemoId 0)
-  let gZemoDec := mustApply gZemoAsk me .decline
+  let zemoPayableDeclineBlocked := !(gZemoAsk.apply me .decline).isOk
+  let (gZemoUnpayable, _) := gZemoAsk.move hvyId .exile none
+  let gZemoDec := mustApply gZemoUnpayable me .decline
   let zemoRevOk :=
+    zemoPayableDeclineBlocked &&
     gZemoDec.stack.isEmpty &&
+    gZemoDec.proposedSpell.isNone &&
     gZemoDec.nextObjectId == gZemo0.nextObjectId &&
-    (gZemoDec.events.extract zemoPreEv gZemoDec.events.size).all
-      (fun e => match e.change with | .engine (.logMsg _) => true | _ => false) &&
     Game.replayEvents gZemoDec.events == gZemoDec
   -- Chandra `castExiledAsAbilityResolves`: targeted exiled spell reversed restores mana & `.mayCastExiledElseDamage`
   let gChandra0 :=
@@ -9416,7 +9430,7 @@ follow-ups (Path of Ancestry scry, `pendingMayCastFromExile`, and
       Game.replayEvents gWDmg2.events == gWDmg2 && allRulesEventsClassified gWDmg2 &&
       Game.replayEvents gSDmg.events == gSDmg && allRulesEventsClassified gSDmg
     (gDmg, gWDmg, shieldOk && batchTrigOk)
-  -- 7c. CR 702.19c/d: unblocked & blocked tramplers attacking a planeswalker that left combat deal 0 to defending player;
+  -- 7c. CR 702.19b / 702.19f: unblocked & blocked tramplers attacking a planeswalker that left combat deal 0 to defending player;
   --     plus CR 506.4 control change removes creature from combat, and CR 802.5 APNAP multi-defender blocker assignment.
   let (gTrUnblk, gTrBlk, gCtrlRem, gMultiBlkDone, trampleCtrlAndApnapBlkOk) :=
     let mkPwCombat (blocked : Bool) : Game :=
@@ -11878,8 +11892,13 @@ private def mkTwoHeadedGiant18 (seed : UInt64 := 180) : Game :=
       match e.change, e.cause? with
       | .rules (.permanent (.tapped eo _)), some (.costPayment .tap p _) => eo.id == some pilotId && p == me
       | _, _ => false)
-  let gCrDec : Game := mustApply gCrAsk me .decline
-  let crewDecOk : Bool := gCrDec.stack.isEmpty && gCrDec.proposedSpell.isNone && gCrDec.nextObjectId == gCr0.nextObjectId
+  let crewDeclineBlocked : Bool := !(gCrAsk.apply me .decline).isOk
+  let gCrDec : Game := mustApply (gCrAsk.becomeTapped (gCrAsk.object! pilotId)) me .decline
+  let crewDecOk : Bool :=
+    crewDeclineBlocked &&
+    gCrDec.stack.isEmpty &&
+    gCrDec.proposedSpell.isNone &&
+    gCrDec.nextObjectId == gCr0.nextObjectId
 
   -- 3b. Accepting `.zemoBoastExile` across TWO graveyard cards exiles both in a single `BatchId`!
   let zemo18 : CardDef := {
@@ -14103,5 +14122,628 @@ def mkTwoHeadedGiant20 (seed : UInt64 := 220) : Game :=
     Game.replayEvents g.events == g && allRulesEventsClassified g))
 
 end Phase20EventAlignment
+
+section Phase21EventAlignment
+
+def opp21 : PlayerId := ⟨1⟩
+
+def mustHold21 (label : String) (ok : Bool) : Bool :=
+  if ok then true else panic! s!"Phase 21 guard failed: {label}"
+
+def mkThreePlayer21 (seed : UInt64 := 21) : Game :=
+  let cfg : StartConfig := {
+    seats := #[
+      { name := "Chandra", deck := testRedDeck },
+      { name := "Nissa", deck := testGreenDeck },
+      { name := "Liliana", deck := testRedDeck }
+    ]
+    format := .constructed
+    seed
+    startingPlayer := some 0
+  }
+  match Start.start cfg with
+  | .ok g => (keepOpeningHands g 24).advanceStep
+  | .error e => panic! e
+
+def mkTwoHeadedGiant21 (seed : UInt64 := 221) : Game :=
+  let cfg : StartConfig := {
+    seats := #[
+      { name := "Chandra", deck := testRedDeck, teammate := some ⟨1⟩ },
+      { name := "Nissa", deck := testGreenDeck, teammate := some ⟨0⟩ },
+      { name := "Liliana", deck := testRedDeck, teammate := some ⟨3⟩ },
+      { name := "Jace", deck := testGreenDeck, teammate := some ⟨2⟩ }
+    ]
+    format := .constructed
+    seed
+    startingPlayer := some 0
+  }
+  match Start.start cfg with
+  | .ok g => (keepOpeningHands g 30).advanceStep
+  | .error e => panic! e
+
+-- 1. Concede `.restorePending` ordering after post-leave `checkSBA`, multi-teammate departure
+--    pause chaining (`concedePlayersLoop`), and `flushUnlessPays` outer continuation preservation.
+#guard
+  let headWolf21 : CardDef := {
+    bear with
+    name := "Phase21 Head Wolf"
+    staticAbilities := #[.exileOppDeathCreateWolf]
+  }
+  -- 1a. 3-player game: `⟨0⟩` is paused on `.scry ⟨0⟩ 1` while `⟨1⟩` concedes; `⟨1⟩` held temporary
+  --     control of `⟨2⟩`'s lethal-damaged creature with `.finality` + `headWolf21` on `⟨0⟩`, so
+  --     post-leave `checkSBA` pauses on `.chooseReplacement ⟨2⟩` BEFORE `.scry ⟨0⟩ 1` is restored!
+  let g3p0 : Game :=
+    let g := addPermanent (addPermanent mkThreePlayer21 headWolf21 ⟨0⟩ ⟨0⟩) bear ⟨2⟩ ⟨2⟩
+    let victimId := (g.battlefield.filter (·.name == bear.name))[0]!.id
+    let g := g.recordPutCounters victimId .finality 1 (some ⟨2⟩) (cause := some testCause)
+    let g := setMarkedDamage g victimId 2
+    let g := g.createEffect (.layered (.objects #[victimId]) (.control ⟨1⟩) .untilEndOfTurn) (cause := some testCause)
+    g.change (.pending (.scry ⟨0⟩ 1))
+  let victim3pId := (g3p0.battlefield.filter (·.name == bear.name))[0]!.id
+  let fin3pId : ReplacementId := { kind := .finalityCounterExile, object := some victim3pId }
+  let g3pConcede : Game := mustApply g3p0 ⟨1⟩ .concede
+  let sbaPausedBeforeRestore : Bool :=
+    match g3pConcede.pending with
+    | .chooseReplacement p cs => p == ⟨2⟩ && cs.contains fin3pId
+    | _ => false
+  let g3pAfterSba : Game := mustApply g3pConcede ⟨2⟩ (.chooseReplacement fin3pId)
+  let restoreAfterSbaOk : Bool :=
+    sbaPausedBeforeRestore &&
+    (g3pConcede.player ⟨1⟩).leftTheGame &&
+    g3pAfterSba.pending == .scry ⟨0⟩ 1
+
+  -- 1b. 2HG (`mkTwoHeadedGiant21`): Team A (`⟨0⟩, ⟨1⟩`) concedes -> both teammates leave;
+  --     and in a 4-seat game with paired teammates (`⟨0⟩, ⟨1⟩`) vs `⟨2⟩` vs `⟨3⟩`, post-leave `checkSBA`
+  --     pauses across BOTH returned lethal creatures before `.scry ⟨2⟩ 1` is restored!
+  let g2hCon0 : Game := mkTwoHeadedGiant21
+  let g2hCon1 : Game := mustApply g2hCon0 ⟨0⟩ .concede
+  let teamBothLeftOk : Bool :=
+    (g2hCon1.player ⟨0⟩).lost &&
+    (g2hCon1.player ⟨1⟩).lost &&
+    g2hCon1.over
+  let g3pLoop0 : Game :=
+    let cfg : StartConfig := {
+      seats := #[
+        { name := "P0", deck := testRedDeck, teammate := some ⟨1⟩ },
+        { name := "P1", deck := testGreenDeck, teammate := some ⟨0⟩ },
+        { name := "P2", deck := testRedDeck },
+        { name := "P3", deck := testGreenDeck }
+      ]
+      format := .constructed
+      seed := 222
+      startingPlayer := some 0
+    }
+    let base :=
+      match Start.start cfg with
+      | .ok g => (keepOpeningHands g 30).advanceStep
+      | .error e => panic! e
+    let g := addPermanent (addPermanent (addPermanent base headWolf21 ⟨3⟩ ⟨3⟩) bear ⟨2⟩ ⟨2⟩) hero ⟨2⟩ ⟨2⟩
+    let vA := (g.battlefield.filter (·.name == bear.name))[0]!.id
+    let vB := (g.battlefield.filter (·.name == hero.name))[0]!.id
+    let g := (g.recordPutCounters vA .finality 1 (some ⟨2⟩) (cause := some testCause)).recordPutCounters
+      vB .finality 1 (some ⟨2⟩) (cause := some testCause)
+    let g := setMarkedDamage (setMarkedDamage g vA 2) vB 2
+    let g := (g.createEffect (.layered (.objects #[vA]) (.control ⟨0⟩) .untilEndOfTurn) (cause := some testCause)).createEffect
+      (.layered (.objects #[vB]) (.control ⟨1⟩) .untilEndOfTurn) (cause := some testCause)
+    g.change (.pending (.scry ⟨2⟩ 1))
+  let vLoopA := (g3pLoop0.battlefield.filter (·.name == bear.name))[0]!.id
+  let vLoopB := (g3pLoop0.battlefield.filter (·.name == hero.name))[0]!.id
+  let finLoopA : ReplacementId := { kind := .finalityCounterExile, object := some vLoopA }
+  let finLoopB : ReplacementId := { kind := .finalityCounterExile, object := some vLoopB }
+  let gLoop1 : Game := mustApply g3pLoop0 ⟨0⟩ .concede
+  let gLoop2 : Game := mustApply gLoop1 ⟨2⟩ (.chooseReplacement finLoopA)
+  let gLoop3 : Game := mustApply gLoop2 ⟨2⟩ (.chooseReplacement finLoopB)
+  let multiDepartChainOk : Bool :=
+    teamBothLeftOk &&
+    (gLoop1.player ⟨0⟩).leftTheGame &&
+    (gLoop1.player ⟨1⟩).leftTheGame &&
+    (match gLoop1.pending with | .chooseReplacement p cs => p == ⟨2⟩ && cs.contains finLoopA | _ => false) &&
+    (match gLoop2.pending with | .chooseReplacement p cs => p == ⟨2⟩ && cs.contains finLoopB | _ => false) &&
+    gLoop3.pending == .scry ⟨2⟩ 1
+
+  -- 1c. `flushUnlessPays` preserves outer `pendingReplacement` (`PendingReplacement.restorePending`).
+  let gFlush0 : Game :=
+    ((afterDraw.change (.pushContinuationFrame {})).changes #[
+      .continuation (.unlessPaysDue true),
+      .continuation (.unlessPaysController me),
+      .continuation (.unlessPaysInstead (some (.draw 1))),
+      .continuation (.pendingReplacement (some (.restorePending (.scry me 1) false)))
+    ])
+  let handBeforeFlush := (gFlush0.player me).hand.size
+  let gFlush1 : Game := gFlush0.flushUnlessPays
+  let flushPreservesContOk : Bool :=
+    (gFlush1.player me).hand.size == handBeforeFlush + 1 &&
+    gFlush1.pending == .scry me 1
+
+  mustHold21 "1a.restoreAfterSbaOk" restoreAfterSbaOk &&
+  mustHold21 "1b.multiDepartChainOk" multiDepartChainOk &&
+  mustHold21 "1c.flushPreservesContOk" flushPreservesContOk &&
+  mustHold21 "1.replay" ([g3pConcede, g3pAfterSba, g2hCon1, gLoop1, gLoop2, gLoop3, gFlush1].all (fun g =>
+    Game.replayEvents g.events == g && allRulesEventsClassified g))
+
+-- 2. CR 702.26g indirectly phased-out attachment unattach & non-self phase-in, plus
+--    CR 701.3a–b / 301.5c attachment legality and no-op re-attach timestamp preservation (CR 613.7e).
+#guard
+  let eqDef21 : CardDef := {
+    name := "Phase21 Blade"
+    types := #[.artifact]
+    subtypes := #["Equipment"]
+    manaCost := ManaCost.ofColor .white
+  }
+  let proWhiteBear21 : CardDef := {
+    bear with
+    name := "Phase21 ProWhite Bear"
+    protectionFromColors := #[.white]
+  }
+  let relic21 : CardDef := { name := "Phase21 Noncreature Relic", types := #[.artifact] }
+  let gPh0 : Game :=
+    addPermanent (addPermanent (addPermanent (addPermanent afterDraw bear me me) eqDef21 me me) proWhiteBear21 me me) relic21 me me
+  let hostId := (gPh0.battlefield.filter (·.name == bear.name))[0]!.id
+  let eqId := (gPh0.battlefield.filter (·.name == "Phase21 Blade"))[0]!.id
+  let proId := (gPh0.battlefield.filter (·.name == "Phase21 ProWhite Bear"))[0]!.id
+  let relicId := (gPh0.battlefield.filter (·.name == "Phase21 Noncreature Relic"))[0]!.id
+  -- 2a. Attach `eqId` to `hostId`; check no-op re-attach preserves `PermanentEvent.attached` count and timestamp!
+  let gAtt1 : Game := gPh0.attachSourceTo (gPh0.object! eqId) (gPh0.object! hostId)
+  let attCount1 := gAtt1.events.filter (fun e => match e.change with | .rules (.permanent (.attached ..)) => true | _ => false) |>.size
+  let eqTs1 := gAtt1.objectEntryTimestamp (gAtt1.object! eqId)
+  let gAttNoop : Game := gAtt1.attachSourceTo (gAtt1.object! eqId) (gAtt1.object! hostId)
+  let attCount2 := gAttNoop.events.filter (fun e => match e.change with | .rules (.permanent (.attached ..)) => true | _ => false) |>.size
+  -- Check `canAttachEquipmentTo` rejects noncreature, protection, self, and creature-Equipment (CR 301.5c):
+  let gAnimEq : Game := gAtt1.createEffect (.additionalCreature eqId (untilEot := true)) (cause := some testCause)
+  let attachLegalityOk : Bool :=
+    attCount1 == 1 && attCount2 == 1 &&
+    gAttNoop.objectEntryTimestamp (gAttNoop.object! eqId) == eqTs1 &&
+    !gPh0.canAttachEquipmentTo (gPh0.object! eqId) (gPh0.object! relicId) &&
+    !gPh0.canAttachEquipmentTo (gPh0.object! eqId) (gPh0.object! proId) &&
+    !gAnimEq.canAttachEquipmentTo (gAnimEq.object! eqId) (gAnimEq.object! hostId)
+  -- 2b. Phase out `oppHostId` (with `eqId` attached) -> `eqId` phases out indirectly (`phasedWith == some oppHostId`).
+  --     `phaseInControlled me` does NOT phase `eqId` in by itself; when `oppHostId` leaves `.battlefield`
+  --     (exiled), `eqId` unattaches (`attachedTo == none`) AND stays phased out on `phaseInControlled me` (CR 702.26g)!
+  let gPhOpp0 : Game := addPermanent gAtt1 bear opp21 opp21
+  let oppHostId := (gPhOpp0.battlefield.filter (fun o => o.name == bear.name && o.controller == some opp21))[0]!.id
+  let gAttOpp : Game := gPhOpp0.attachSourceTo (gPhOpp0.object! eqId) (gPhOpp0.object! oppHostId)
+  let gPhased : Game := gAttOpp.phaseOut (gAttOpp.object! oppHostId) (cause := some testCause)
+  let gTrySelfIn : Game := gPhased.phaseInControlled me
+  let (gHostExiled, _) := gPhased.move oppHostId .exile none (cause := some testCause)
+  let gEqAfterIn : Game := gHostExiled.phaseInControlled me
+  let indirectPhaseOk : Bool :=
+    (gPhased.object! eqId).status.phasedOut &&
+    (gPhased.object! eqId).status.phasedWith == some oppHostId &&
+    (gTrySelfIn.object! eqId).status.phasedOut &&
+    (gHostExiled.object! eqId).attachedTo == none &&
+    (gEqAfterIn.object! eqId).status.phasedOut &&
+    (gEqAfterIn.object! eqId).attachedTo == none
+
+  mustHold21 "2a.attachLegalityOk" attachLegalityOk &&
+  mustHold21 "2b.indirectPhaseOk" indirectPhaseOk &&
+  mustHold21 "2.replay" ([gAtt1, gAttNoop, gAnimEq, gAttOpp, gPhased, gTrySelfIn, gHostExiled, gEqAfterIn].all (fun g =>
+    Game.replayEvents g.events == g && allRulesEventsClassified g))
+
+-- 3. CR 608.2b target revalidation (`.venserPerm`, `applyDestroy` `.forAmass`, `applyExile` `.copyAndHost`),
+--    `.eaglesBirds` departed-player guard, and deferred post-replacement logs (`putCountersDeferredLog`).
+#guard
+  -- 3a. Target revalidation: `opp21`'s creature targeted by `.venserPerm` and `.forAmass` gains hexproof before resolution -> fizzles!
+  let gVal0 : Game := addPermanent afterDraw bear opp21 opp21
+  let oppBearId := (gVal0.battlefield.filter (·.name == bear.name))[0]!.id
+  let gHex : Game := gVal0.createEffect (.keywordsUntilEot oppBearId Keyword.hexproof) (cause := some testCause)
+  let gVenserFizzle : Game := gHex.applyFrc me default .venserPerm #[Target.permanent oppBearId] none
+  let gAmassFizzle : Game := gHex.applyUnified me { resolution := .destroy .target .forAmass, targeting := .of .creature } #[Target.permanent oppBearId]
+  let targetRevalOk : Bool :=
+    (gVenserFizzle.permanentsOf me).isEmpty &&
+    (gAmassFizzle.object! oppBearId).isOnBattlefield &&
+    !gAmassFizzle.destroyedForAmassThisWay
+  -- 3b. `.eaglesBirds` in 3-player where `⟨2⟩` has left the game does NOT create tokens for departed `⟨2⟩`!
+  let gEagles0 : Game := mustApply mkThreePlayer21 ⟨2⟩ .concede
+  let gEaglesLive : Game := gEagles0.resolveDelayedTrigger ⟨0⟩ (.eaglesBirds 2) testCause
+  let gEaglesDeparted : Game := gEaglesLive.resolveDelayedTrigger ⟨2⟩ (.eaglesBirds 2) testCause
+  let eaglesDepartedGuardOk : Bool :=
+    (gEaglesDeparted.permanentsOf ⟨0⟩).size == 2 &&
+    (gEaglesDeparted.permanentsOf ⟨2⟩).isEmpty
+  -- 3c. `putCountersDeferredLog` logs modified post-replacement count (1 -> 2 under `modifyCountersPut`).
+  let gLog0 : Game := addPermanent afterDraw bear me me
+  let lbId := (gLog0.battlefield.filter (·.name == bear.name))[0]!.id
+  let idDblCtr : ReplacementId := { kind := .multiplyCountersPut, object := some lbId }
+  let gLog1 : Game := gLog0.createEffect (.replacement {
+    id := idDblCtr, source := some lbId, controller := some me,
+    affectedPlayer := me, kind := .modifyCountersPut (some lbId) (some .hone) (add := 0) (mult := 2)
+  }) (cause := some testCause)
+  let gLog2 : Game := gLog1.putCountersDeferredLog lbId .hone 1 (some me) 5 (cause := some testCause)
+  let deferredLogOk : Bool :=
+    (gLog2.object! lbId).status.hone == 2 &&
+    gLog2.log.any (·.contains "gets 2 hone counter(s)") &&
+    !gLog2.log.any (·.contains "gets 1 hone counter(s)")
+
+  mustHold21 "3a.targetRevalOk" targetRevalOk &&
+  mustHold21 "3b.eaglesDepartedGuardOk" eaglesDepartedGuardOk &&
+  mustHold21 "3c.deferredLogOk" deferredLogOk &&
+  mustHold21 "3.replay" ([gHex, gVenserFizzle, gAmassFizzle, gEagles0, gEaglesLive, gEaglesDeparted, gLog2].all (fun g =>
+    Game.replayEvents g.events == g && allRulesEventsClassified g))
+
+-- 4. CR 101.2 `cantCastSpellsThisTurn`, flash/`canCast` parity (`ignoreTiming`, `castOnlyIfGraveyardAtLeast`),
+--    CR 601.2b,f,h caster-identity Thalia & `announceAdditionalCost` reduction order, *Countersculpt* behold
+--    deferred to 601.2h, Morph / Impending `applyKickerToProposed` (no Thalia tax, `anyMana`), and CR 602.2b / 733.1 non-cancellation.
+#guard
+  -- 4a. CR 101.2 `cantCastSpellsThisTurn` blocks `canCast`, `castSpell`, `castFreeCopy`, and `castExiledAsAbilityResolves`.
+  let freeShock21 : CardDef := { shock with name := "Phase21 Free Shock", manaCost := ManaCost.empty }
+  let gSilence0 : Game :=
+    let g := insertObject (insertObject afterDraw freeShock21 me (.hand me)) freeShock21 me .exile
+    g.createEffect (.playerRule me .cantCastSpells .untilEndOfTurn) (cause := some testCause)
+  let hShock := (gSilence0.player me).hand.back!
+  let exShock := (gSilence0.objects.filter (fun o => o.name == "Phase21 Free Shock" && o.zone == .exile))[0]!.id
+  let gSilenceEx : Game := gSilence0.change (.pending (.mayCastExiledElseDamage me exShock 2 none))
+  let gSilenceCopy : Game := gSilence0.change (.pending (.fraChoice me (.castCopiesFree #[exShock] 1 1)))
+  let silenceBlocksAllOk : Bool :=
+    !gSilence0.canCast me (gSilence0.object! hShock) &&
+    !(gSilence0.castSpell me hShock).isOk &&
+    !(gSilenceEx.apply me (.cast exShock)).isOk &&
+    !(gSilenceCopy.apply me (.cast exShock)).isOk
+
+  -- 4b. `canCast` parity: `PlayPermission.ignoreTiming` allows sorcery on opponent's turn; `castOnlyIfGraveyardAtLeast` excludes self in graveyard!
+  let sorc21 : CardDef := { name := "Phase21 Sorcery", manaCost := ManaCost.empty, types := #[.sorcery], spellEffect := some (Effect.draw 1) }
+  let gyThresholdSorc21 : CardDef := {
+    sorc21 with
+    name := "Phase21 Threshold Sorc"
+    castOnlyIfGraveyardAtLeast := some 2
+  }
+  let gOppTurn0 : Game :=
+    let g := ((afterDraw.record (GameEvent.turnBegan (afterDraw.turnNumber + 1) opp21)).record
+      (GameEvent.stepBegan (afterDraw.turnNumber + 1) .precombatMain opp21)).change (.priority me)
+    let g := insertObject g sorc21 me .exile
+    let exId := (g.objects.filter (fun o => o.name == "Phase21 Sorcery" && o.zone == .exile))[0]!.id
+    g.createEffect (.playPermission exId { player := me, withoutManaCost := true, ignoreTiming := true }
+      (d := .untilEndOfTurn)) (cause := some testCause)
+  let exSorcId := (gOppTurn0.objects.filter (fun o => o.name == "Phase21 Sorcery" && o.zone == .exile))[0]!.id
+  let gGyThresh0 : Game :=
+    let g := insertObject (insertObject afterDraw gyThresholdSorc21 me (.graveyard me)) bear me (.graveyard me)
+    let gyId := (g.objects.filter (·.name == "Phase21 Threshold Sorc"))[0]!.id
+    g.createEffect (.playPermission gyId { player := me, withoutManaCost := true } (d := .untilEndOfTurn))
+      (cause := some testCause)
+  let gyThreshId := (gGyThresh0.objects.filter (·.name == "Phase21 Threshold Sorc"))[0]!.id
+  let canCastParityOk : Bool :=
+    gOppTurn0.canCast me (gOppTurn0.object! exSorcId) &&
+    !gGyThresh0.canCast me (gGyThresh0.object! gyThreshId) &&
+    !(gGyThresh0.castSpell me gyThreshId).isOk
+
+  -- 4c. Non-owner caster Thalia tax, `announceAdditionalCost` reduction order, and *Countersculpt* behold deferred to 601.2h!
+  let thalia21 : CardDef := { bear with name := "Phase21 Thalia", staticAbilities := #[.fra .opponentsNoncreatureSpellsCostMore] }
+  let bilbo21 : CardDef := { bear with name := "Phase21 Bilbo", costReductionNotFromHand := 1 }
+  let beholdInst21 : CardDef := {
+    name := "Phase21 Behold Instant"
+    manaCost := { symbols := #[.colored .blue, .colored .blue] }
+    types := #[.instant]
+    additionalCostBeholdOrPay := some (.jace, 1)
+  }
+  let jaceCard21 : CardDef := {
+    name := "Phase21 Hand Jace"
+    types := #[.planeswalker]
+    subtypes := #["Jace"]
+    loyalty := some 3
+  }
+  -- Non-owner caster Thalia: `opp21`'s exiled 0-cost noncreature spell cast by `me` under Thalia costs `{1}`!
+  let gThaliaEx0 : Game :=
+    let g := addPermanent (insertObject afterDraw sorc21 opp21 .exile) thalia21 opp21 opp21
+    let exId := (g.objects.filter (fun o => o.name == "Phase21 Sorcery" && o.zone == .exile))[0]!.id
+    g.createEffect (.playPermission exId { player := me, withoutManaCost := true } (d := .untilEndOfTurn))
+      (cause := some testCause)
+  let oppExSorcId := (gThaliaEx0.objects.filter (fun o => o.name == "Phase21 Sorcery" && o.zone == .exile))[0]!.id
+  let gThaliaProp : Game := mustApply gThaliaEx0 me (.cast oppExSorcId)
+  let thaliaNonOwnerTaxOk : Bool := gThaliaProp.proposedSpell.map (·.cost) == some (ManaCost.ofGeneric 1)
+  -- `announceAdditionalCost true` from exile with `costReductionNotFromHand := 1`: `{U}{U} + {1} - {1} == {U}{U}`!
+  let gBeholdEx0 : Game :=
+    let g := addPermanent (insertObject (insertObject afterDraw beholdInst21 me .exile) jaceCard21 me (.hand me)) bilbo21 me me
+    let exId := (g.objects.filter (fun o => o.name == "Phase21 Behold Instant" && o.zone == .exile))[0]!.id
+    (g.createEffect (.playPermission exId { player := me } (d := .untilEndOfTurn))
+      (cause := some testCause)).addMana me (.colored .blue) 2
+  let exBehId := (gBeholdEx0.objects.filter (fun o => o.name == "Phase21 Behold Instant" && o.zone == .exile))[0]!.id
+  let jaceHandId := (gBeholdEx0.objects.filter (·.name == "Phase21 Hand Jace"))[0]!.id
+  let gBehPayGen : Game := mustApply (mustApply gBeholdEx0 me (.cast exBehId)) me (.chooseAdditionalCost true)
+  let addCostReducedOk : Bool :=
+    gBehPayGen.proposedSpell.map (·.cost) == some ({ symbols := #[.colored .blue, .colored .blue] } : ManaCost)
+  -- Choosing behold (`chooseAdditionalCost false`) does NOT reveal at 601.2b; reveals at 601.2h (`pay`), and reverses if Jace leaves hand before `pay`!
+  let gBehChoose : Game := mustApply (mustApply gBeholdEx0 me (.cast exBehId)) me (.chooseAdditionalCost false)
+  let notRevealedAt6012b : Bool :=
+    !gBehChoose.events.any (fun e => match e.change with | .rules (.player (.revealed ..)) => true | _ => false)
+  let gBehPaid : Game := mustApply gBehChoose me .pay
+  let revealedAt6012h : Bool :=
+    gBehPaid.events.any (fun e => match e.change with | .rules (.player (.revealed p ids)) => p == me && ids == #[jaceHandId] | _ => false)
+  let (gBehLostJace, _) := gBehChoose.move jaceHandId .exile none (cause := some testCause)
+  let gBehReversed : Game := mustApply gBehLostJace me .pay
+  let beholdTimingOk : Bool :=
+    thaliaNonOwnerTaxOk && addCostReducedOk && notRevealedAt6012b && revealedAt6012h &&
+    gBehReversed.stack.isEmpty && gBehReversed.proposedSpell.isNone
+
+  -- 4d. Morph face-down cast under Thalia costs `{3}` (not `{4}`), and colored Impending under `PlayPermission.anyMana` becomes generic `{2}`!
+  let morphNoncrDef21 : CardDef := {
+    name := "Phase21 Morph Enchantment"
+    manaCost := { symbols := #[.colored .blue] }
+    types := #[.enchantment]
+    morph := some (ManaCost.ofGeneric 2)
+  }
+  let impColoredDef21 : CardDef := {
+    bear with
+    name := "Phase21 Colored Impending"
+    impending := some (2, { symbols := #[.colored .blue, .colored .blue] })
+  }
+  let gMorphThalia0 : Game :=
+    let g := addPermanent (insertObject (insertObject afterDraw morphNoncrDef21 me .exile) impColoredDef21 me .exile) thalia21 opp21 opp21
+    let exM := (g.objects.filter (fun o => o.name == "Phase21 Morph Enchantment" && o.zone == .exile))[0]!.id
+    let exI := (g.objects.filter (fun o => o.name == "Phase21 Colored Impending" && o.zone == .exile))[0]!.id
+    (g.createEffect (.playPermission exM { player := me, anyMana := true } (d := .untilEndOfTurn))
+      (cause := some testCause)).createEffect (.playPermission exI { player := me, anyMana := true } (d := .untilEndOfTurn))
+      (cause := some testCause)
+  let exMorphId := (gMorphThalia0.objects.filter (fun o => o.name == "Phase21 Morph Enchantment" && o.zone == .exile))[0]!.id
+  let exImpAnyId := (gMorphThalia0.objects.filter (fun o => o.name == "Phase21 Colored Impending" && o.zone == .exile))[0]!.id
+  let gMorphProp : Game := mustApply (mustApply gMorphThalia0 me (.cast exMorphId)) me (.announceKicker true)
+  let gImpAnyProp : Game := mustApply (mustApply gMorphThalia0 me (.cast exImpAnyId)) me (.announceKicker true)
+  let morphCostOk : Bool :=
+    gMorphProp.proposedSpell.map (·.cost) == some (ManaCost.ofGeneric 3) &&
+    gImpAnyProp.proposedSpell.map (·.cost) == some (ManaCost.ofGeneric 2)
+
+  -- 4e. CR 602.2b / 733.1 partial-payment non-cancellation: once `{1}` mana is paid on `{1}, Sacrifice another creature:`, `.decline` is blocked while a creature exists!
+  let sacAbDef21 : CardDef := {
+    name := "Phase21 Altar"
+    types := #[.artifact]
+    activatedAbilities := #[{
+      cost := { mana := ManaCost.ofGeneric 1, sacrificeAnotherCreature := true }
+      effect := Effect.draw 1
+    }]
+  }
+  let gSacAb0 : Game := (addPermanent (addPermanent afterDraw sacAbDef21 me me) bear me me).addMana me .colorless 1
+  let altarId := (gSacAb0.battlefield.filter (·.name == "Phase21 Altar"))[0]!.id
+  let sacBearId := (gSacAb0.battlefield.filter (·.name == bear.name))[0]!.id
+  let gSacAbPaidMana : Game := mustApply (mustApply gSacAb0 me (.activate altarId 0)) me .pay
+  let declineBlockedAfterMana : Bool := !(gSacAbPaidMana.apply me .decline).isOk
+  let (gSacAbNoCreature, _) := gSacAbPaidMana.move sacBearId .exile none (cause := some testCause)
+  let gSacAbRev : Game := mustApply gSacAbNoCreature me .decline
+  let partialPaymentNonCancelOk : Bool :=
+    declineBlockedAfterMana &&
+    gSacAbRev.stack.isEmpty &&
+    gSacAbRev.proposedSpell.isNone &&
+    (gSacAbRev.player me).manaPool.total == 1
+
+  mustHold21 "4a.silenceBlocksAllOk" silenceBlocksAllOk &&
+  mustHold21 "4b.canCastParityOk" canCastParityOk &&
+  mustHold21 "4c.beholdTimingOk" beholdTimingOk &&
+  mustHold21 "4d.morphCostOk" morphCostOk &&
+  mustHold21 "4e.partialPaymentNonCancelOk" partialPaymentNonCancelOk &&
+  mustHold21 "4.replay" ([gSilence0, gOppTurn0, gGyThresh0, gThaliaProp, gBehPayGen, gBehPaid, gBehReversed, gMorphProp, gImpAnyProp, gSacAbPaidMana, gSacAbRev].all (fun g =>
+    Game.replayEvents g.events == g && allRulesEventsClassified g))
+
+-- 5. Modal `chooseBothIfTeamwork` gating, CR 110.1 / 115.1c / 115.10a `.youTargetSomething`
+--    player/permanent filter, CR 707.10 vs CR 707.12 copy cast semantics, and Impending / face-down Morph stack copies.
+#guard
+  -- 5a. Modal `chooseBothIfTeamwork`: only chooses both modes when ALL modes have legal targets!
+  let twModalDef21 : CardDef := {
+    name := "Phase21 Teamwork Command"
+    manaCost := ManaCost.empty
+    types := #[.sorcery]
+    teamwork := some 2
+    chooseBothIfTeamwork := true
+    spellModes := #[
+      Effect.canonicalDestroy .creature,
+      Effect.canonicalDestroy .artifact
+    ]
+  }
+  let relicTw21 : CardDef := { name := "Phase21 Target Artifact", types := #[.artifact] }
+  let gTwOne0 : Game := insertObject (addPermanent afterDraw bear me me) twModalDef21 me (.hand me)
+  let twBearId := (gTwOne0.battlefield.filter (·.name == bear.name))[0]!.id
+  let twCard1 := (gTwOne0.player me).hand.back!
+  let gTwOne1 : Game :=
+    mustApply (mustApply (mustApply (mustApply gTwOne0 me (.cast twCard1)) me (.chooseMode 0)) me (.announceTeamwork true)) me (.choosePermanents #[twBearId])
+  let gTwBoth0 : Game := addPermanent gTwOne0 relicTw21 opp21 opp21
+  let gTwBoth1 : Game :=
+    mustApply (mustApply (mustApply (mustApply gTwBoth0 me (.cast twCard1)) me (.chooseMode 0)) me (.announceTeamwork true)) me (.choosePermanents #[twBearId])
+  let teamworkModalOk : Bool :=
+    gTwOne1.chosenModesOf (gTwOne1.object! gTwOne1.proposedSpell.get!.spellId) == #[0] &&
+    gTwBoth1.chosenModesOf (gTwBoth1.object! gTwBoth1.proposedSpell.get!.spellId) == #[0, 1]
+
+  -- 5b. CR 110.1 / 115.1c / 115.10a `.youTargetSomething` fires on `.player` / `.permanent`, NOT `.card` (graveyard or stack)!
+  let youTargetTrig21 : TriggeredAbility :=
+    .triggered .fromEffect (Effect.ofTrigger (.watch .youTargetDrawOnce))
+  let watcher21 : CardDef := {
+    name := "Phase21 Target Watcher"
+    types := #[.enchantment]
+    triggeredAbilities := #[youTargetTrig21]
+  }
+  let targeterArt21 : CardDef := {
+    name := "Phase21 Targeter"
+    types := #[.artifact]
+    activatedAbilities := #[
+      { cost := {}, effect := Effect.returnCreatureFromGyThenAmass 0 },
+      { cost := {}, effect := Effect.counterSpell },
+      { cost := {}, effect := shock.spellEffect.get! }
+    ]
+  }
+  let dummySorc21 : CardDef := {
+    name := "Phase21 Stack Dummy"
+    manaCost := ManaCost.empty
+    types := #[.sorcery]
+    spellEffect := some (Effect.draw 1)
+  }
+  let gYtBase : Game :=
+    insertObject (insertObject (addPermanent (addPermanent (addPermanent afterDraw watcher21 me me) targeterArt21 me me) bear opp21 opp21) bear me (.graveyard me)) dummySorc21 me (.hand me)
+  let targeterId := (gYtBase.battlefield.filter (·.name == "Phase21 Targeter"))[0]!.id
+  let gyBearId := (gYtBase.objects.filter (fun o => o.name == bear.name && o.zone == .graveyard me))[0]!.id
+  let dummySpId := (gYtBase.objects.filter (fun o => o.name == "Phase21 Stack Dummy" && o.zone == .hand me))[0]!.id
+  let gYtWithSpell : Game := mustApply gYtBase me (.cast dummySpId)
+  let stackSpellTargetId := gYtWithSpell.stack[0]!.objectId
+  let gYtGy : Game := mustApply (mustApply gYtWithSpell me (.activate targeterId 0)) me (.target (.card gyBearId))
+  let gyDidNotTrigger : Bool := gYtGy.stack.size == 2
+  let gYtStack : Game := mustApply (mustApply gYtGy me (.activate targeterId 1)) me (.target (.card stackSpellTargetId))
+  let stackSpellDidNotTrigger : Bool := gYtStack.stack.size == 3
+  let gYtPing : Game := mustApply (mustApply gYtStack me (.activate targeterId 2)) me (.target (.player opp21))
+  let playerDidTrigger : Bool := gYtPing.stack.size == 5
+  let youTargetFilterOk : Bool := gyDidNotTrigger && stackSpellDidNotTrigger && playerDidTrigger
+
+  -- 5c. CR 707.10 stack copies (`wasCast == false`, Impending & face-down Morph stack copies) vs CR 707.12 `createPreparedCopy` (`isCopy == true`, cast)!
+  let impCopyDef21 : CardDef := { bear with name := "Phase21 Impending Copy", impending := some (2, ManaCost.empty) }
+  let gImp0 : Game := insertObject afterDraw impCopyDef21 me (.hand me)
+  let impCardId := (gImp0.player me).hand.back!
+  let gImpStack : Game := mustApply (mustApply gImp0 me (.cast impCardId)) me (.announceKicker true)
+  let origImpStackId := gImpStack.stack.back!.objectId
+  let gImpCopied : Game := gImpStack.copyStackSpell (gImpStack.object! origImpStackId) me
+  let copyImpStackId := gImpCopied.stack.back!.objectId
+  let gImpCopyRes : Game := gImpCopied.resolveTop
+  let copyImpPerm := (gImpCopyRes.battlefield.filter (·.name == "Phase21 Impending Copy"))[0]!
+  let morphCopyDef21 : CardDef := { bear with name := "Phase21 Morph Copy", power := some 5, toughness := some 5, morph := some (ManaCost.ofGeneric 2) }
+  let gMph0 : Game := (insertObject afterDraw morphCopyDef21 me (.hand me)).addMana me .colorless 3
+  let mphCardId := (gMph0.player me).hand.back!
+  let gMphStack : Game := mustApply (mustApply (mustApply gMph0 me (.cast mphCardId)) me (.announceKicker true)) me .pay
+  let gMphCopied : Game := gMphStack.copyStackSpell (gMphStack.object! gMphStack.stack.back!.objectId) me
+  let mphCopyStackObj := gMphCopied.object! gMphCopied.stack.back!.objectId
+  let gMphCopyRes : Game := gMphCopied.resolveTop
+  let mphCopyPerm := (gMphCopyRes.battlefield.filter (·.printed.isToken))[0]!
+  -- CR 707.12 `createPreparedCopy`: `isCopy == true` in `.exile`, survives SBA while prepared (ruling 736),
+  -- casting emits `CastEvent.announced`, and copy ceases to exist after resolving!
+  let prepFace21 : AdventureFace := { name := "Phase21 Prepared Bolt", manaCost := ManaCost.empty, types := #[.instant], spellEffect := some (Effect.draw 1) }
+  let prepHostDef21 : CardDef := { bear with name := "Phase21 Prepared Host", prepareFace := some prepFace21 }
+  let gPrep0 : Game := addPermanent afterDraw prepHostDef21 me me
+  let prepHost := (gPrep0.battlefield.filter (·.name == "Phase21 Prepared Host"))[0]!
+  let gPrep1 : Game := gPrep0.becomePrepared prepHost (cause := some testCause)
+  let prepCopyObj := (gPrep1.objects.filter (fun o => o.name == "Phase21 Prepared Bolt" && o.zone == .exile))[0]!
+  let gPrepSba : Game := gPrep1.checkSBA
+  let gPrepCast : Game := (mustApply gPrep1 me (.cast prepCopyObj.id)).resolveTop
+  let copySemanticsOk : Bool :=
+    !gImpCopied.wasCast copyImpStackId &&
+    copyImpPerm.printed.isToken &&
+    copyImpPerm.status.time == 2 &&
+    !gImpCopyRes.isCreature copyImpPerm &&
+    mphCopyStackObj.status.faceDown &&
+    mphCopyPerm.printed.isToken &&
+    mphCopyPerm.status.faceDown &&
+    gMphCopyRes.name mphCopyPerm == "" &&
+    gMphCopyRes.power mphCopyPerm == 2 &&
+    gMphCopyRes.toughness mphCopyPerm == 2 &&
+    prepCopyObj.isCopy &&
+    (gPrepSba.objects.filter (fun o => o.name == "Phase21 Prepared Bolt" && o.zone == .exile)).size == 1 &&
+    !(gPrepCast.player me).graveyard.any (fun id => (gPrepCast.object! id).name == "Phase21 Prepared Bolt") &&
+    gPrepCast.events.any (fun e => match e.change with | .rules (.cast (.spellCast ..)) => true | _ => false)
+
+  mustHold21 "5a.teamworkModalOk" teamworkModalOk &&
+  mustHold21 "5b.youTargetFilterOk" youTargetFilterOk &&
+  mustHold21 "5c.copySemanticsOk" copySemanticsOk &&
+  mustHold21 "5.replay" ([gTwOne1, gTwBoth1, gYtGy, gYtStack, gYtPing, gImpCopied, gImpCopyRes, gMphCopied, gMphCopyRes, gPrep1, gPrepCast].all (fun g =>
+    Game.replayEvents g.events == g && allRulesEventsClassified g))
+
+-- 6. Two-Headed Giant CR 810.8d 15-poison team SBA, CR 805.10d–e / 810.7 shared team blocking &
+--    `legalBlockerCount`, CR 500.4 / 514.2 / 723.1 / 805.4 / 810.2 mid-shared-turn `playerControl` &
+--    `.untilNextTurnOf` expiry & 2HG opponent filters, and simultaneous `withBatch` invariants.
+#guard
+  -- 6a. CR 810.8d: 10 + 4 = 14 poison survives in 2HG, whereas 10 + 5 = 15 loses!
+  let gPsn14 : Game :=
+    ((mkTwoHeadedGiant21.record
+      (GameEvent.poisoned mkTwoHeadedGiant21.turnNumber ⟨0⟩ 10 (cause := testCause))).record
+      (GameEvent.poisoned mkTwoHeadedGiant21.turnNumber ⟨1⟩ 4 (cause := testCause))).checkSBA
+  let gPsn15 : Game :=
+    (gPsn14.record
+      (GameEvent.poisoned gPsn14.turnNumber ⟨1⟩ 1 (cause := testCause))).checkSBA
+  let poison2hgOk : Bool :=
+    !gPsn14.over &&
+    !(gPsn14.player ⟨0⟩).lost &&
+    gPsn15.over &&
+    (gPsn15.player ⟨0⟩).lost &&
+    (gPsn15.player ⟨1⟩).lost
+
+  -- 6b. CR 805.10d–e / 810.7: menace attacker blocked jointly by `⟨2⟩`'s creature + teammate `⟨3⟩`'s creature!
+  let menaceAtk21 : CardDef := { bear with name := "Phase21 Menace", keywords := { menace := true, haste := true } }
+  let gBlk2h0 : Game :=
+    let g := addPermanent (addPermanent (addPermanent mkTwoHeadedGiant21 bear ⟨2⟩ ⟨2⟩) hero ⟨3⟩ ⟨3⟩) menaceAtk21 ⟨0⟩ ⟨0⟩
+    g.beginStep .declareAttackers
+  let mAtkId := (gBlk2h0.battlefield.filter (·.name == "Phase21 Menace"))[0]!.id
+  let b2Id := (gBlk2h0.battlefield.filter (·.name == bear.name))[0]!.id
+  let b3Id := (gBlk2h0.battlefield.filter (·.name == hero.name))[0]!.id
+  let gBlk2hAtk : Game := mustApply gBlk2h0 ⟨0⟩ (.declareAttackers #[mAtkId] (some ⟨2⟩) #[] #[])
+  let gBlk2hStep : Game := gBlk2hAtk.advanceStep
+  let blkChooser := gBlk2hStep.currentBlockersPlayer
+  let singleBlkRejected : Bool := !(gBlk2hStep.declareBlockers blkChooser #[(b2Id, mAtkId)]).isOk
+  let gBlk2hJoint : Game := mustApply gBlk2hStep blkChooser (.declareBlockers #[(b2Id, mAtkId), (b3Id, mAtkId)])
+  let sharedBlockingOk : Bool :=
+    gBlk2hStep.legalBlockerCount (gBlk2hStep.object! mAtkId) 2 &&
+    !gBlk2hStep.legalBlockerCount (gBlk2hStep.object! mAtkId) 1 &&
+    singleBlkRejected &&
+    (gBlk2hJoint.object! mAtkId).status.blocked &&
+    (gBlk2hJoint.blockersOf mAtkId).size == 2
+
+  -- 6c. Mid-shared-turn `playerControl` (`onNextTurn := true`) & `.untilNextTurnOf` wait for the NEXT shared turn,
+  --     and `costReductionEqualOppArtifacts` ignores teammate artifacts in 2HG!
+  let oppArtSpell21 : CardDef := {
+    name := "Phase21 Opp Art Spell"
+    manaCost := ManaCost.ofGeneric 3
+    types := #[.sorcery]
+    costReductionEqualOppArtifacts := true
+  }
+  let art21 : CardDef := { name := "Phase21 Art", types := #[.artifact] }
+  let g2hArt0 : Game :=
+    insertObject (addPermanent (addPermanent (addPermanent mkTwoHeadedGiant21 art21 ⟨1⟩ ⟨1⟩) art21 ⟨1⟩ ⟨1⟩) art21 ⟨2⟩ ⟨2⟩) oppArtSpell21 ⟨0⟩ (.hand ⟨0⟩)
+  let artSpellObj := g2hArt0.object! (g2hArt0.player ⟨0⟩).hand.back!
+  -- Teammate `⟨1⟩` has 2 artifacts (ignored!), opponent `⟨2⟩` has 1 artifact -> `{3}` reduced by 1 = `{2}`!
+  let oppArtFilterOk : Bool := g2hArt0.playManaCost artSpellObj oppArtSpell21 == ManaCost.ofGeneric 2
+  -- Start on Team B seat 1 (`⟨2⟩`, two seat advances from `⟨0⟩` -> `⟨1⟩` -> `⟨2⟩`), then grant `⟨0⟩` `playerControl ⟨0⟩ ⟨2⟩ true` and `.untilNextTurnOf ⟨2⟩`:
+  let gMidTeamB1 : Game :=
+    let g := mkTwoHeadedGiant21.startNextTurnAndBegin.startNextTurnAndBegin -- activePlayer == ⟨2⟩ (seat 1 of Team B's shared turn)
+    let g := g.withResolvingContext none ⟨0⟩ fun g => g.setPlayerControl ⟨0⟩ ⟨2⟩ (onNextTurn := true)
+    g.createEffect (.playerRule ⟨0⟩ (.additionalLands 1) (.untilNextTurnOf ⟨2⟩)) (cause := some testCause)
+  let gMidTeamB2 : Game := gMidTeamB1.startNextTurnAndBegin -- activePlayer == ⟨3⟩ (seat 2 of SAME shared turn!)
+  let gNextTeamA1 : Game := gMidTeamB2.startNextTurnAndBegin -- ⟨0⟩
+  let gNextTeamA2 : Game := gNextTeamA1.startNextTurnAndBegin -- ⟨1⟩
+  let gNextTeamB1 : Game := gNextTeamA2.startNextTurnAndBegin -- NEXT shared turn of Team B (`⟨2⟩`)!
+  let gNextTeamB2 : Game := gNextTeamB1.startNextTurnAndBegin -- seat 2 (`⟨3⟩`) of Team B's NEXT shared turn!
+  let gAfterNextTeamB : Game := gNextTeamB2.startNextTurnAndBegin -- back to `⟨0⟩` -> expires!
+  let midSharedTurnOk : Bool :=
+    oppArtFilterOk &&
+    gMidTeamB1.activePlayer == ⟨2⟩ &&
+    !gMidTeamB1.controlsPlayer ⟨0⟩ ⟨2⟩ &&
+    gMidTeamB1.additionalLandsThisTurn ⟨0⟩ == 1 &&
+    gMidTeamB2.activePlayer == ⟨3⟩ &&
+    !gMidTeamB2.controlsPlayer ⟨0⟩ ⟨2⟩ &&
+    !gMidTeamB2.controlsPlayer ⟨0⟩ ⟨3⟩ &&
+    gMidTeamB2.additionalLandsThisTurn ⟨0⟩ == 1 &&
+    gNextTeamB1.activePlayer == ⟨2⟩ &&
+    gNextTeamB1.controlsPlayer ⟨0⟩ ⟨2⟩ &&
+    gNextTeamB1.controlsPlayer ⟨0⟩ ⟨3⟩ &&
+    gNextTeamB1.additionalLandsThisTurn ⟨0⟩ == 0 &&
+    gNextTeamB2.activePlayer == ⟨3⟩ &&
+    gNextTeamB2.controlsPlayer ⟨0⟩ ⟨2⟩ &&
+    gNextTeamB2.controlsPlayer ⟨0⟩ ⟨3⟩ &&
+    !gAfterNextTeamB.controlsPlayer ⟨0⟩ ⟨2⟩
+
+  -- 6d. Simultaneous `withBatch`: `emptyManaPools`, `setRingBearer`, and two-batch `finishFrcRestBottom` (`applyDackOnHits`)!
+  let gPool0 : Game := (afterDraw.addMana me (.colored .red) 1).addMana opp21 (.colored .green) 1
+  let prePoolIdx := gPool0.events.size
+  let gPool1 : Game := gPool0.emptyManaPools
+  let poolBatches := (gPool1.events.extract prePoolIdx gPool1.events.size).filterMap fun e =>
+    match e.change with | .rules (.player (.manaEmptied ..)) => some e.batch | _ => none
+  let gRb0 : Game := addPermanent (addPermanent afterDraw bear me me) hero me me
+  let rb1 := (gRb0.battlefield.filter (·.name == bear.name))[0]!.id
+  let rb2 := (gRb0.battlefield.filter (·.name == hero.name))[0]!.id
+  let gRb1 : Game := gRb0.setRingBearer me (some rb1) (cause := some testCause)
+  let preRbIdx := gRb1.events.size
+  let gRb2 : Game := gRb1.setRingBearer me (some rb2) (cause := some testCause)
+  let rbBatches := (gRb2.events.extract preRbIdx gRb2.events.size).filterMap fun e =>
+    match e.change with | .rules (.permanent (.designation _ .ringBearer _)) => some e.batch | _ => none
+  let gDack0 : Game := addPermanent (addPermanent mkThreePlayer21 bear ⟨0⟩ ⟨0⟩) hero ⟨0⟩ ⟨0⟩
+  let dHit1 := (gDack0.battlefield.filter (·.name == bear.name))[0]!.id
+  let dHit2 := (gDack0.battlefield.filter (·.name == hero.name))[0]!.id
+  let preDackIdx := gDack0.events.size
+  let gDack1 : Game := gDack0.finishFrcRestBottom ⟨0⟩ #[] false (cause := some testCause) (dackTargets := #[dHit1, dHit2])
+  let goadBatches := (gDack1.events.extract preDackIdx gDack1.events.size).filterMap fun e =>
+    match e.change with | .rules (.permanent (.designation _ (.goaded ..) true)) => some e.batch | _ => none
+  let ctrlBatches := (gDack1.events.extract preDackIdx gDack1.events.size).filterMap fun e =>
+    match e.change with | .rules (.continuousEffect (.created _ (.layered _ (.control _) _))) => some e.batch | _ => none
+  let batchInvariantsOk : Bool :=
+    poolBatches.size == 2 && poolBatches[0]!.isSome && poolBatches[0]! == poolBatches[1]! &&
+    rbBatches.size == 2 && rbBatches[0]!.isSome && rbBatches[0]! == rbBatches[1]! &&
+    goadBatches.size == 2 && goadBatches[0]!.isSome && goadBatches[0]! == goadBatches[1]! &&
+    ctrlBatches.size == 2 && ctrlBatches[0]!.isSome && ctrlBatches[0]! == ctrlBatches[1]! &&
+    goadBatches[0]! != ctrlBatches[0]!
+
+  mustHold21 "6a.poison2hgOk" poison2hgOk &&
+  mustHold21 "6b.sharedBlockingOk" sharedBlockingOk &&
+  mustHold21 "6c.midSharedTurnOk" midSharedTurnOk &&
+  mustHold21 "6d.batchInvariantsOk" batchInvariantsOk &&
+  mustHold21 "6.replay" ([gPsn14, gPsn15, gBlk2hJoint, g2hArt0, gMidTeamB1, gMidTeamB2, gNextTeamB1, gNextTeamB2, gAfterNextTeamB, gPool1, gRb2, gDack1].all (fun g =>
+    Game.replayEvents g.events == g && allRulesEventsClassified g))
+
+end Phase21EventAlignment
 
 end Mtg.Engine.EventTests

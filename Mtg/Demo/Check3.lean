@@ -542,17 +542,22 @@ open Mtg.Demo.Render
 
 #guard isPassShortcutCmd "ignore" []
 
-#guard !reachedPassUntil { Tests.afterDraw with step := .beginningOfCombat }
+#guard !reachedPassUntil
+  (Tests.afterDraw.record (GameEvent.stepBegan Tests.afterDraw.turnNumber .beginningOfCombat Tests.afterDraw.activePlayer))
   Tests.afterDraw.turnNumber Tests.afterDraw.step .nextDeclareAttackers
 
 #guard
   let goal := passUntilGoalAt Tests.afterDraw ⟨0⟩ .ignore
+  let gPost :=
+    Tests.afterDraw.record (GameEvent.stepBegan Tests.afterDraw.turnNumber .postcombatMain Tests.afterDraw.activePlayer)
+  let gT2 :=
+    (Tests.afterDraw.record (GameEvent.turnBegan 2 ⟨1⟩)).record (GameEvent.stepBegan 2 .precombatMain ⟨1⟩)
+  let gT3 :=
+    (Tests.afterDraw.record (GameEvent.turnBegan 3 ⟨0⟩)).record (GameEvent.stepBegan 3 .precombatMain ⟨0⟩)
   !reachedIgnore Tests.afterDraw goal &&
-    reachedIgnore { Tests.afterDraw with step := .postcombatMain } goal &&
-    !reachedIgnore { Tests.afterDraw with
-      turnNumber := 2, activePlayer := ⟨1⟩, step := .precombatMain } goal &&
-    reachedIgnore { Tests.afterDraw with
-      turnNumber := 3, activePlayer := ⟨0⟩, step := .precombatMain } goal
+    reachedIgnore gPost goal &&
+    !reachedIgnore gT2 goal &&
+    reachedIgnore gT3 goal
 
 #guard isPassSequenceCommand "main" ["phase"]
 
@@ -935,7 +940,8 @@ open Mtg.Demo.Render
       g'.log.any (fun s => Tests.mentions s "casts Lightning Bolt")
   | _, _ => false
 
-#guard !shouldAutoPass { Tests.started with step := .precombatMain } []
+#guard !shouldAutoPass
+  (Tests.started.record (GameEvent.stepBegan Tests.started.turnNumber .precombatMain Tests.started.activePlayer)) []
 
 #guard !shouldAutoNoAttack Tests.readyToDeclareAttackers []
 

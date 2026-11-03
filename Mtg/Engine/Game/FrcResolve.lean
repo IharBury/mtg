@@ -173,31 +173,35 @@ private def restBottom (g : Game) (p : PlayerId) (rest : Array ObjectId) (shuffl
 
 private def applyDackOnHits (g : Game) (controller : PlayerId) (hits : Array ObjectId)
     (cause : EventCause) : Game :=
-  let g := hits.foldl (fun g id =>
-    match g.followMovedToZone? id (· == Zone.battlefield) with
-    | some o => g.record (GameEvent.designation g.turnNumber (g.snapshot o) (.goaded controller false) true (cause := cause))
-    | none => g) g
+  let g :=
+    if hits.any (fun id => (g.followMovedToZone? id (· == Zone.battlefield)).isSome) then
+      g.withBatch (some cause) fun g =>
+        hits.foldl (fun g id =>
+          match g.followMovedToZone? id (· == Zone.battlefield) with
+          | some o =>
+            g.record (GameEvent.designation g.turnNumber (g.snapshot o) (.goaded controller false) true (cause := cause))
+          | none => g) g
+    else g
   let opps := g.livingOpponents controller
-  Id.run do
-    let mut g := g
-    let mut i := 0
-    for id in hits do
-      match opps[i]?, g.followMovedToZone? id (· == Zone.battlefield) with
-      | some opp, some o =>
-        g := g.changeControl o opp.id (cause := some cause)
-        i := i + 1
-      | _, _ => pure ()
-    return g
+  if opps.isEmpty || !hits.any (fun id => (g.followMovedToZone? id (· == Zone.battlefield)).isSome) then g
+  else
+    g.withBatch (some cause) fun g =>
+      Id.run do
+        let mut g := g
+        let mut i := 0
+        for id in hits do
+          match opps[i]?, g.followMovedToZone? id (· == Zone.battlefield) with
+          | some opp, some o =>
+            g := g.changeControl o opp.id (cause := some cause)
+            i := i + 1
+          | _, _ => pure ()
+        return g
 
 def finishFrcRestBottom (g : Game) (p : PlayerId) (rest : Array ObjectId) (shuffle : Bool)
-    (cause : Option EventCause := none) (dackTargets : Array ObjectId := #[])
-    (jhoiraLife : Nat := 0) : Game :=
+    (cause : Option EventCause := none) (dackTargets : Array ObjectId := #[]) : Game :=
   let g :=
     if dackTargets.isEmpty then g
     else g.applyDackOnHits p dackTargets (cause.getD (g.resolvingOrRuleCause p))
-  let g :=
-    if jhoiraLife == 0 then g
-    else g.loseLife p jhoiraLife (cause := cause)
   g.restBottom p rest shuffle (cause := cause)
 
 private def handDiscardToBottomOf (g : Game) (controller : PlayerId) : Game :=
@@ -314,7 +318,7 @@ partial def tamiyoStunLoop (g : Game) (controller : PlayerId)
           g := g.logMsg s!"{g.name curAfter} gets a stun counter"
   return g
 
-def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffect)
+def applyFrc (g : Game) (controller : PlayerId) (effect : Effect) (e : FrcEffect)
     (targets : Array Target) (sourceId : Option ObjectId)
     (lastKnownPower : Option Int := none) : Game :=
   let pl := g.player controller
@@ -716,7 +720,7 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
   | .venserSpell =>
     match targets[0]? with
     | some t@(Target.card id) =>
-      if !g.targetLegalAt controller _effect.targetKind 0 t sourceId then
+      if !g.targetLegalAt controller effect.targetKind 0 t sourceId then
         g.illegalAbilityTarget t
       else
         match g.findObject? id with
@@ -737,14 +741,23 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
     | _ => g
   | .venserPerm =>
     match targets[0]? with
-    | some (Target.permanent id) =>
-      match g.findObject? id with
-      | some src =>
-        let template := g.copiableValues src
-        let (g, cause) := g.allocDelayedCause (some controller) sourceId
-        g.withBatch (some cause) fun g =>
-          g.createPermanentCopyTokens controller template 2 (cause := some cause)
-      | none => g
+    | some t@(Target.permanent id) =>
+      let legal :=
+        if effect.targetKind != .none then
+          g.targetLegalAt controller effect.targetKind 0 t sourceId
+        else
+          (g.findObject? id).any (fun o =>
+            o.isOnBattlefield && g.canBeTargetedBy controller o sourceId)
+      if !legal then
+        g.illegalAbilityTarget t
+      else
+        match g.findObject? id with
+        | some src =>
+          let template := g.copiableValues src
+          let (g, cause) := g.allocDelayedCause (some controller) sourceId
+          g.withBatch (some cause) fun g =>
+            g.createPermanentCopyTokens controller template 2 (cause := some cause)
+        | none => g.illegalAbilityTarget t
     | _ => g
   | .goblin =>
     let jeskai :=
@@ -770,8 +783,7 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
   | .story =>
     match g.srcObj? sourceId with
     | some o =>
-      g.recordPutCounters o.id .story 1 (byPlayer := some controller)
-        |>.logMsg s!"{g.name o} gets a story counter"
+      g.putCountersDeferredLog o.id .story 1 (some controller) 11
     | none => g
   | .currencyExile =>
     match g.frcGraveyardCause? with

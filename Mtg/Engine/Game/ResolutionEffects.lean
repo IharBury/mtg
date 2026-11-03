@@ -66,19 +66,37 @@ costs (CR 707.10), returning the new copy's `ObjectId` (if created). The copy
 is not cast. -/
 def copyStackSpellWithId (g : Game) (src : GameObject) (controller : PlayerId)
     (cause : Option EventCause := none) : Game × Option ObjectId :=
+  let dispName := if src.status.faceDown then "face-down spell" else src.name
   if (g.player controller).lost then
-    (g.logMsg s!"A copy of {src.name} is not created (CR 800.4d)", none)
+    (g.logMsg s!"A copy of {dispName} is not created (CR 800.4d)", none)
   else
     let copyId : ObjectId := ⟨g.nextObjectId⟩
-    let copySnap : EventObject := {
-      (g.snapshot src) with
-      id := some copyId
-      owner := controller
-      controller := some controller
-      zone := .stack
-      isCopy := true
-      isCommander := false
-    }
+    let baseSnap := g.snapshot src
+    let copySnap : EventObject :=
+      if src.status.faceDown then
+        let masked := g.copiableValues src
+        { baseSnap with
+          id := some copyId
+          name := ""
+          owner := controller
+          controller := some controller
+          zone := .stack
+          isCopy := true
+          isCommander := false
+          printed := some masked
+          copiable := some masked
+          adventurerCard := none
+          faceDown := true
+        }
+      else
+        { baseSnap with
+          id := some copyId
+          owner := controller
+          controller := some controller
+          zone := .stack
+          isCopy := true
+          isCommander := false
+        }
     let resolvedCause :=
       match cause with
       | some c => c
@@ -87,7 +105,7 @@ def copyStackSpellWithId (g : Game) (src : GameObject) (controller : PlayerId)
           (fallbackSrc := some src.id) (fallbackCtrl := some controller)
     let g := g.record (GameEvent.stackObjectCopied g.turnNumber src.id copySnap controller
       (cause := resolvedCause))
-    (g.logMsg s!"A copy of {src.name} is created", some copyId)
+    (g.logMsg s!"A copy of {dispName} is created", some copyId)
 
 /-- Copy a spell on the stack, with its modes, targets, X, and paid optional
 costs (CR 707.10). The copy is not cast. -/
@@ -100,6 +118,12 @@ def mayCastFromLookedError (g : Game) (p : PlayerId) (ids : Array ObjectId)
     (maxMv : Int) (id : ObjectId) : Option String :=
   if !ids.contains id then
     some "That card is not among the cards you looked at"
+  else if g.cantCastSpellsThisTurn p then
+    some "You can't cast spells this turn (CR 101.2)"
+  else if g.combatLocksNonManaAbilities then
+    some "During combat, players can't cast spells (Yuriko, Blade of the Mighty)"
+  else if g.opponentsCantCastOnActiveTurn p then
+    some "Opponents can't cast spells during that player's turn"
   else
     match g.findObject? id with
     | none => some "There is no card to cast"
@@ -109,6 +133,10 @@ def mayCastFromLookedError (g : Game) (p : PlayerId) (ids : Array ObjectId)
         some s!"{o.name} is no longer among the cards you looked at"
       else if g.isLand o then
         some "A land cannot be cast"
+      else if g.spellNameForbidden bc.name then
+        some s!"Spells named {bc.name} can't be cast"
+      else if !g.graveyardCastThresholdMet p o.id bc then
+        some s!"{bc.name} cannot be cast right now"
       else if (g.objectManaValue o : Int) > maxMv then
         some s!"{o.name}'s mana value is greater than the greatest power among attacking creatures you control"
       else if g.isAura o && !bc.allowsZeroTargets &&

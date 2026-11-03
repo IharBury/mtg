@@ -98,6 +98,8 @@ inductive ProposalChange where
   | teamworkPaid (v : Bool)
   | teamworkAnnounced (v : Bool)
   | teamworkCreatures (v : Array ObjectId)
+  | additionalGeneric (n : Nat)
+  | needsBehold (v : Option CardSubtype)
 deriving Repr, Inhabited, BEq
 
 /-- Priority tiers for choosing among multiple applicable replacement or
@@ -955,6 +957,7 @@ inductive AdditionalCostChoice where
   | discard (discarded : ObjectId)
   | impending (timeCounters : Nat)
   | sneak (returned : ObjectId) (attackTarget : Option AttackTarget := none)
+  | genericMana (amount : Nat)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- Whether an activated ability is a non-mana or mana ability (CR 602.2b / 605.3b). -/
@@ -1188,7 +1191,7 @@ inductive PendingReplacement where
       (cause : Option EventCause) (priorRecentCount : Nat := 0) (pushedFrame : Bool := false)
   | finishArtifactCopyToken
   | finishManaAbilityMountainTrigger (player : PlayerId) (sourceId : ObjectId)
-  | restorePending (p : Pending)
+  | restorePending (p : Pending) (popOuter : Bool := false)
   | closeBatch (batchId : BatchId) (startIdx : Nat)
   | checkSBA
   | receivePriority (p : PlayerId)
@@ -1350,7 +1353,7 @@ inductive PendingReplacement where
       (extraCounters : CounterBag) (cause : Option EventCause)
   | finishFrcRestBottom (p : PlayerId) (rest : Array ObjectId) (shuffle : Bool := false)
       (cause : Option EventCause := none)
-      (dackTargets : Array ObjectId := #[]) (jhoiraLife : Nat := 0)
+      (dackTargets : Array ObjectId := #[])
   | finishFrcPostStep (tag : Nat) (p : PlayerId) (n1 : Nat := 0)
       (cardId : Option ObjectId := none) (shuffle : Bool := false)
       (cause : Option EventCause := none) (ids : Array ObjectId := #[])
@@ -1367,7 +1370,7 @@ inductive PendingReplacement where
       (postMove : Bool := false) (name : String := "")
   | returnStackSpell (spellId : ObjectId) (owner : PlayerId) (name : String)
       (postMove : Bool := false)
-  | leavePlayersWhoLost
+  | leavePlayersWhoLost (savedPending : Option Pending := none) (popOuter : Bool := false)
   | endControlExileLoop (remaining : Array (ObjectId × String))
       (cause : Option EventCause := none)
       (pendingLog : Option (ObjectId × String) := none)
@@ -1383,7 +1386,12 @@ inductive PendingReplacement where
       (pendingItem : Option (ObjectId × PlayerId × String) := none)
   | finishConcede (wasIdlePriority : Bool) (savedPendingPrio : Option PlayerId)
       (wasAssigningCombatDamage : Option Bool := none)
-      (savedPending : Option Pending := none)
+      (savedPending : Option Pending := none) (popOuter : Bool := false)
+  | concedePlayersLoop (remaining : Array PlayerId)
+      (wasPregame midResolutionOrBatch wasIdlePriority : Bool)
+      (savedPendingPrio : Option PlayerId)
+      (wasAssigningCombatDamage : Option Bool := none)
+      (savedPending : Option Pending := none) (popOuter : Bool := false)
   | afterWardResolved
 deriving Repr, Inhabited, BEq
 
@@ -1398,6 +1406,7 @@ priority (`.receivePriority` / `.finishFraChoice` / `.finishPostCast` /
 `.finishBecomeCast` with `grantPriority == true` / `.finishConcede`). -/
 def PendingReplacement.endsWithPriorityGrant : PendingReplacement → Bool
   | .receivePriority _ | .finishFraChoice | .finishConcede .. | .afterWardResolved => true
+  | .concedePlayersLoop _ wp mid .. => !wp && !mid
   | .finishPostCast _ grantPriority hadOuter _ => grantPriority && !hadOuter
   | .finishBecomeCast _ _ grantPriority hadOuter openCont =>
     grantPriority && !hadOuter && !openCont
@@ -1466,9 +1475,6 @@ structure ContinuationFrame where
   /-- Deferred post-cast cleanup (Cascade / Gríma / Cosmic Cube library bottoming
   or CR 704.5e copy cease-to-exist) run when the proposed cast completes or reverses. -/
   postCastCleanup : Option PostCastCleanup := none
-  /-- Paying the pending “you may pay” cost also puts a +1/+1 counter on this
-  permanent (Proft, Consulting Detective). -/
-  mayPayAlsoPlusOneOn : Option ObjectId := none
   /-- Humans chosen for the current “tap any number of Humans” step. -/
   humansTappedThisWay : Nat := 0
   /-- Permanents destroyed by `.destroy .oppArtifactsEnchantments (note := .countDestroyed)`. -/
@@ -1628,7 +1634,6 @@ inductive ContinuationChange where
   | pendingFreeCopies (v : Option (PlayerId × Array ObjectId × Nat × Nat))
   | pendingMayCastFromExile (v : Option (PlayerId × Array ObjectId × Nat))
   | postCastCleanup (v : Option PostCastCleanup)
-  | mayPayAlsoPlusOneOn (v : Option ObjectId)
   | humansTappedThisWay (v : Nat)
   | permanentsDestroyedThisWay (v : Nat)
   | removedHopeThisWay (v : Bool)
@@ -1792,7 +1797,6 @@ namespace EngineChange
 @[inline] def pendingFreeCopies (v : Option (PlayerId × Array ObjectId × Nat × Nat)) : EngineChange := .continuation (.pendingFreeCopies v)
 @[inline] def pendingMayCastFromExile (v : Option (PlayerId × Array ObjectId × Nat)) : EngineChange := .continuation (.pendingMayCastFromExile v)
 @[inline] def postCastCleanup (v : Option PostCastCleanup) : EngineChange := .continuation (.postCastCleanup v)
-@[inline] def mayPayAlsoPlusOneOn (v : Option ObjectId) : EngineChange := .continuation (.mayPayAlsoPlusOneOn v)
 @[inline] def humansTappedThisWay (v : Nat) : EngineChange := .continuation (.humansTappedThisWay v)
 @[inline] def permanentsDestroyedThisWay (v : Nat) : EngineChange := .continuation (.permanentsDestroyedThisWay v)
 @[inline] def removedHopeThisWay (v : Bool) : EngineChange := .continuation (.removedHopeThisWay v)
@@ -2794,8 +2798,8 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : Option Obje
     | .cast (.spellCast spell p _), .fra .castThis => you p && this spell
     | .cast (.spellCast spell p _), .fra (.opponentCastsSpellMvAtMost n) =>
       opp p && spell.manaValue ≤ n
-    | .cast (.spellCast spell p _), .fra .youCastPreparedSpell =>
-      you p && spell.isCopy
+    | .cast (.spellCast spell p fromZone), .fra .youCastPreparedSpell =>
+      you p && spell.isCopy && fromZone == .exile
     | .cast (.spellCast spell p _), .fra .youCastArtifactOrCreature =>
       you p && (spell.artifact || spell.creature)
     | .cast (.spellCast _ p _), .fra .youCastEquipmentOrTargetingCreatureYouControl =>
@@ -3302,10 +3306,31 @@ def rootCopiedSpellId (events : Array GameEvent) (spell : ObjectId) : ObjectId :
       if copy.id == some cur then original else cur
     | _ => cur) sid
 
+/-- Whether `id` (or the spell `id` resolved from, CR 400.7d) is an uncast stack
+copy created directly on `.stack` via `StackObjectEvent.copied` (CR 707.10), as
+opposed to a cast card-copy (`CR 707.12` / Ruling 742). -/
+def isUncastStackCopy (events : Array GameEvent) (id : ObjectId) : Bool :=
+  let sid := stackSpellIdOf events id
+  let createdViaStackCopy :=
+    events.any fun e =>
+      match e.change with
+      | .rules (.stackObject (.copied _ copy _)) =>
+        copy.id == some sid || copy.id == some id
+      | .rules (.zone (.moved _ after _ .stack ..)) =>
+        after.isCopy && (after.id == some sid || after.id == some id)
+      | _ => false
+  let hasCastEvent :=
+    events.any fun e =>
+      match e.change with
+      | .rules (.cast (.spellCast s _ _)) => s.id == some sid || s.id == some id
+      | .rules (.cast (.proposed obj _ _ _)) => obj == sid || obj == id
+      | _ => false
+  createdViaStackCopy && !hasCastEvent
+
 /-- Whether `id` (or the spell it resolved from, CR 400.7d) was cast and is not
-a stack copy (CR 707.10). -/
+an uncast stack copy (CR 707.10 / 707.12). -/
 def wasCast (events : Array GameEvent) (id : ObjectId) (isCopy : Bool := false) : Bool :=
-  if isCopy then false
+  if isCopy || isUncastStackCopy events id then false
   else
     let sid := stackSpellIdOf events id
     events.any fun e =>
@@ -3320,7 +3345,7 @@ def wasCast (events : Array GameEvent) (id : ObjectId) (isCopy : Bool := false) 
 
 /-- The cast of `spell` (or the spell `spell` resolved from, CR 400.7d) was from a graveyard. -/
 def castFromGraveyard (events : Array GameEvent) (spell : ObjectId) (isCopy : Bool := false) : Bool :=
-  if isCopy then false
+  if isCopy || isUncastStackCopy events spell then false
   else
     let sid := stackSpellIdOf events spell
     events.any fun e =>
@@ -3334,7 +3359,7 @@ def castFromGraveyard (events : Array GameEvent) (spell : ObjectId) (isCopy : Bo
 
 /-- The cast of `spell` (or the spell `spell` resolved from, CR 400.7d) was from a hand. -/
 def castFromHand (events : Array GameEvent) (spell : ObjectId) (isCopy : Bool := false) : Bool :=
-  if isCopy then false
+  if isCopy || isUncastStackCopy events spell then false
   else
     let sid := stackSpellIdOf events spell
     events.any fun e =>
@@ -3467,14 +3492,15 @@ def lastKnownBefore? (events : Array GameEvent) (id : ObjectId) : Option EventOb
       if before.id == some id then some before else none
     | _ => none
 
-/-- `id` entered from a spell cast for its impending cost (CR 702.176,
-ruling 970). -/
+/-- `id` entered from a spell cast for its impending cost (or a copy of one on
+the stack, CR 702.176 / 707.10, ruling 970). -/
 def castForImpending (events : Array GameEvent) (id : ObjectId) : Bool :=
   let announcedImpending (spellId : ObjectId) : Bool :=
+    let rootId := rootCopiedSpellId events spellId
     events.any fun e =>
       match e.change with
       | .rules (.cast (.announced oid _ _ costs)) =>
-        oid == spellId && costs.any (fun | .impending _ => true | _ => false)
+        (oid == spellId || oid == rootId) && costs.any (fun | .impending _ => true | _ => false)
       | _ => false
   events.any fun e =>
     match e.change with

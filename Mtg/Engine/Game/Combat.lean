@@ -145,7 +145,12 @@ def declareBlockers (g : Game) (p : PlayerId) (assignments : Array (ObjectId × 
     for (blockerId, attackerId) in assignments do
       let b := g.object! blockerId
       let a := g.object! attackerId
-      if !g.canBlock b a then
+      let defP := g.defendingPlayerOf a
+      let onDefendingTeam :=
+        (defP == p || g.areTeammates defP p) &&
+          (g.controlledBy b p ||
+            g.livingPlayers.any (fun m => g.areTeammates p m.id && g.controlledBy b m.id))
+      if !onDefendingTeam || !g.canBlock b a then
         throw s!"{b.name} cannot block {a.name}"
       decls := decls.push (g.snapshot b, attackerId)
     if !decls.isEmpty then
@@ -163,16 +168,18 @@ def declareBlockers (g : Game) (p : PlayerId) (assignments : Array (ObjectId × 
       let bs := (assignments.filter (·.2 == attackerId)).map (·.1)
       g := g.record (GameEvent.becameBlocked g.turnNumber (g.snapshot a) bs
         (cause := some (.turnBased .declareBlockers)))
-    -- CR 509.1b / 702.111: a menace (or “except by N or more”) creature that is
-    -- blocked must be blocked by at least that many creatures.
+    -- CR 509.1b / 702.111 / 805.10d / 810.7: enforce both `minBlockersRequired`
+    -- and `maxBlockersAllowed` (`g.legalBlockerCount`) on the combined declaration.
     for o in g.battlefield do
       if o.status.attacking then
+        let n := (g.blockersOf o.id).size
         let need := g.minBlockersRequired o
-        if need > 1 then
-          let n := (g.blockersOf o.id).size
-          if n > 0 && n < need then
-            let word := if need == 2 then "two" else toString need
-            throw s!"{o.name} can't be blocked except by {word} or more creatures"
+        if n > 0 && n < need then
+          let word := if need == 2 then "two" else toString need
+          throw s!"{o.name} can't be blocked except by {word} or more creatures"
+        if n > 0 && !g.legalBlockerCount o n then
+          let cap := (g.maxBlockersAllowed o).getD 0
+          throw s!"{o.name} can't be blocked by more than {cap} creature(s)"
     let rest := g.blockersQueue.extract 1 g.blockersQueue.size
     if rest.isEmpty then
       for o in g.battlefield do

@@ -74,16 +74,48 @@ def kickedSpellEffect (e : Effect) : Effect :=
   | .phaseOutKicker => { e with targeting := .of .player }
   | _ => e
 
+/-- True when `c` is a “Choose up to two” graveyard-return modal spell
+(*Call Damage Control*, whose printed representation uses
+`Effect.returnUpToTwoGyModal` so `OracleCandidates` round-trips cleanly). -/
+def isReturnUpToTwoGyModal (c : CardDef) : Bool :=
+  c.spellEffect.any (·.resolution == .returnUpToTwoGyModal)
+
+/-- The four CR 700.2 modes of *Call Damage Control* in printed order:
+0 = target artifact card, 1 = target creature card,
+2 = target enchantment card, 3 = target land card (in your graveyard). -/
+def returnUpToTwoGyModes : Array Effect :=
+  #[(.artifact, "artifact"), (.creature, "creature"),
+    (.enchantment, "enchantment"), (.land, "land")].map fun (ty, label) =>
+    Effect.mkSpell
+      (.of (.filtered {
+        noun := s!"target {label} card in your graveyard"
+        zone := .yourGraveyard
+        types := #[ty]
+        controller := .you }))
+      .returnUpToTwoGyModal
+      (castKind := .draw)
+      (phraseOverride := s!"Target {label} card")
+
+/-- Modes a modal spell face offers during CR 601.2b announcement. -/
+def effectiveSpellModes (c : CardDef) : Array Effect :=
+  if isReturnUpToTwoGyModal c then returnUpToTwoGyModes
+  else c.spellModes
+
+/-- True when `c` announces modes at CR 601.2b (`c.isModal` or `isReturnUpToTwoGyModal c`). -/
+def isModalSpellFace (c : CardDef) : Bool :=
+  c.isModal || isReturnUpToTwoGyModal c
+
 /-- Spell effect of `c` after a modal choice, if one has been announced (CR 700.2).
 With `extra` modes, the combined effect of all of them. -/
 def spellEffectOfCard (c : CardDef) (chosenMode : Option Nat) (extra : Array Nat := #[])
     (kicked : Bool := false) : Option Effect :=
   let base :=
-    if c.isModal then
+    if isModalSpellFace c then
+      let modes := effectiveSpellModes c
       match chosenMode with
       | some i =>
-        if extra.isEmpty then c.spellModes[i]?
-        else combinedModesEffect (((#[i] ++ extra).qsort (· < ·)).filterMap (c.spellModes[·]?))
+        if extra.isEmpty then modes[i]?
+        else combinedModesEffect (((#[i] ++ extra).qsort (· < ·)).filterMap (modes[·]?))
       | none => none
     else
       c.spellEffect
@@ -113,12 +145,13 @@ mode's targets (used when beginning to cast). -/
 def legalTargetsForFace (g : Game) (p : PlayerId) (c : CardDef)
     (chosenMode : Option Nat := none) (tcs : Array TextChange := #[])
     (sourceId : Option ObjectId := none) : Array Target :=
-  if c.isModal && chosenMode.isNone then
-    c.spellModes.foldl (fun acc e =>
+  let modes := effectiveSpellModes c
+  if isModalSpellFace c && chosenMode.isNone then
+    modes.foldl (fun acc e =>
       acc ++ g.legalEffectTargets p (if tcs.isEmpty then e else TextChange.applyEffect tcs e) sourceId) #[]
   else
     let effect :=
-      if c.isModal then chosenMode.bind (fun i => c.spellModes[i]?)
+      if isModalSpellFace c then chosenMode.bind (fun i => modes[i]?)
       else c.spellEffect
     match effect with
     | some e => g.legalEffectTargets p (if tcs.isEmpty then e else TextChange.applyEffect tcs e) sourceId
@@ -138,13 +171,14 @@ def spellModeIsChoosable (g : Game) (p : PlayerId) (e : Effect)
 choosable even when another mode has no legal target. -/
 def legalModes (g : Game) (p : PlayerId) (o : GameObject) : Array Nat :=
   let bc := g.baseCard o
-  if !bc.isModal then #[]
+  if !isModalSpellFace bc then #[]
   else
+    let modes := effectiveSpellModes bc
     let tcs := g.evalLayer3 o
     Id.run do
       let mut acc : Array Nat := #[]
-      for i in [0:bc.spellModes.size] do
-        let m := if tcs.isEmpty then bc.spellModes[i]! else TextChange.applyEffect tcs bc.spellModes[i]!
+      for i in [0:modes.size] do
+        let m := if tcs.isEmpty then modes[i]! else TextChange.applyEffect tcs modes[i]!
         if g.spellModeIsChoosable p m (some o.id) then
           acc := acc.push i
       return acc
@@ -160,9 +194,10 @@ target, so the demonstration agent does not counter its own spells. -/
 def defaultMode (g : Game) (p : PlayerId) (spell : GameObject) : Option Nat :=
   let legal := g.legalModes p spell
   let bc := g.baseCard spell
+  let modes := effectiveSpellModes bc
   let tcs := g.evalLayer3 spell
   let modeAt? (i : Nat) : Option Effect :=
-    bc.spellModes[i]?.map (fun e => if tcs.isEmpty then e else TextChange.applyEffect tcs e)
+    modes[i]?.map (fun e => if tcs.isEmpty then e else TextChange.applyEffect tcs e)
   let avoidOwnCounter (i : Nat) : Bool :=
     match modeAt? i with
     | some e => e.targetKind.targetsStackSpell && !g.effectHasOppSpellTarget p e
@@ -270,14 +305,29 @@ Already-chosen targets are excluded (CR 115.3). Multiple instances of the
 word “target” offer the next unset slot from `EffectTargetKind.slotKind`.
 Multiple targets of one instance are announced together. -/
 def legalProposedTargets (g : Game) (p : PlayerId) (o : GameObject) : Array Target :=
-  let already :=
+  let (already, skipped) :=
     match g.stackEntry? o.id with
-    | some e => e.targets
-    | none => #[]
+    | some e => (e.targets, e.skippedOptionalSlots)
+    | none => (#[], #[])
   let kind := (g.targetingOf o).kind
-  let slot := kind.slotKind (g.currentTargetSlot o)
+  let curSlot := g.currentTargetSlot o
+  let slot := kind.slotKind curSlot
   let selfSource := o.sourceId.orElse (fun _ => if o.zone == .stack then some o.id else none)
-  let legal := (g.legalTargetsForKind p slot selfSource).filter (fun t => !already.contains t)
+  let priorSlots : Array Nat :=
+    if skipped.isEmpty then (List.range already.size).toArray
+    else ((List.range curSlot).filter (fun s => !skipped.contains s)).toArray
+  let forbidden : Array Target :=
+    if kind.spec.slots.isEmpty then already
+    else
+      Id.run do
+        let mut out : Array Target := #[]
+        for grp in kind.distinctSlots do
+          if grp.contains curSlot then
+            for idx in [0:already.size] do
+              if grp.contains (priorSlots[idx]?.getD idx) then
+                out := out.push already[idx]!
+        return out
+  let legal := (g.legalTargetsForKind p slot selfSource).filter (fun t => !forbidden.contains t)
   let legal :=
     match g.proposedSpell with
     | some prop =>
@@ -449,9 +499,12 @@ mode, Equip, landfall, Galion's and Oliphaunt's attack triggers, and Auras prefe
 caster controls. -/
 def defaultTarget (g : Game) (p : PlayerId) (obj : GameObject) : Option Target :=
   let legal := g.legalProposedTargets p obj
-  match g.preferredTarget p (g.targetingOf obj) legal with
-  | some t => if legal.contains t then some t else legal[0]?
-  | none => legal[0]?
+  let already := (g.stackEntry? obj.id).map (·.targets) |>.getD #[]
+  let fresh := legal.filter (fun t => !already.contains t)
+  let pool := if fresh.isEmpty then legal else fresh
+  match g.preferredTarget p (g.targetingOf obj) pool with
+  | some t => if legal.contains t then some t else pool[0]?
+  | none => pool[0]?
 
 /-- Default mode index for a modal activated ability (CR 601.2b). Prefers
 dealing damage to an opposing creature, then destroying a colorless nonland. -/
@@ -472,7 +525,7 @@ def defaultAbilityMode (g : Game) (p : PlayerId) (modes : Array Effect)
   let destroyIdx :=
     findKind (fun e => e.abilityKind == .destroyColorless)
   let oppHasCreature :=
-    (g.permanentsOf (g.opponent p)).any (g.isCreature ·)
+    (g.livingOpponents p).any (fun pl => (g.permanentsOf pl.id).any (g.isCreature ·))
   let hasColorless := g.battlefield.any (g.isColorlessNonland ·)
   if oppHasCreature then
     damageIdx <|> destroyIdx <|> choosable[0]?.map (·.1)

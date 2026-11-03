@@ -368,7 +368,7 @@ def threeTreasures : Game := started.createTreasureTokens ⟨0⟩ 3
 def thorinAndOneTreasure : Game :=
   let g := started.createTreasureTokens ⟨0⟩ 1
   let g := addPermanent g thorinOakenshield ⟨0⟩ ⟨0⟩
-  g.refreshEnduringStory
+  g.grantEnduringStoryIfNeeded ⟨0⟩
 
 #guard thorinAndOneTreasure.controlsStoried ⟨0⟩
 #guard thorinAndOneTreasure.storiedPermanentCount ⟨0⟩ == 2
@@ -396,7 +396,7 @@ def storyAfterSba : Game := storyFromZero.checkSBA
 def storyGranted : Game :=
   let g := started.createTreasureTokens ⟨0⟩ 2
   let g := addPermanent g thorinOakenshield ⟨0⟩ ⟨0⟩
-  g.refreshEnduringStory
+  g.grantEnduringStoryIfNeeded ⟨0⟩
 
 def storyThenLostPermanents : Game :=
   storyGranted.battlefield.foldl (fun acc o =>
@@ -1176,7 +1176,7 @@ def tenTreasures : Game := started.createTreasureTokens ⟨0⟩ 10
 def nineThenAnduril : Game :=
   let g := started.createTreasureTokens ⟨0⟩ 8
   let g := addPermanent g andurilNarsilReforged ⟨0⟩ ⟨0⟩
-  g.refreshCitysBlessing
+  g.grantCitysBlessingIfNeeded ⟨0⟩
 
 #guard nineThenAnduril.permanentCount ⟨0⟩ == 9
 #guard nineThenAnduril.controlsAscend ⟨0⟩
@@ -2937,7 +2937,9 @@ def bowmastersAfterDrawOk : Bool :=
 #guard bowmastersAfterDrawOk
 
 def bowmastersFirstDrawStep : Game :=
-  let g := { bowmastersInPlay with step := .draw, activePlayer := ⟨1⟩ }
+  let nextTurn := bowmastersInPlay.turnNumber + 1
+  let g := (bowmastersInPlay.record (GameEvent.turnBegan nextTurn ⟨1⟩)).record
+    (GameEvent.stepBegan nextTurn .draw ⟨1⟩)
   g.draw ⟨1⟩ 1
 
 def bowmastersFirstDrawStepOk : Bool :=
@@ -3333,7 +3335,7 @@ def tenPermanentsWithAscend : Game :=
   let g :=
     (List.range 9).foldl (fun acc _ => addPermanent acc grizzlyBears ⟨0⟩ ⟨0⟩) afterDraw
   let g := addPermanent g andurilNarsilReforged ⟨0⟩ ⟨0⟩
-  g.refreshCitysBlessing
+  g.grantCitysBlessingIfNeeded ⟨0⟩
 
 def cityBlessingPersistsOk : Bool :=
   tenPermanentsWithAscend.hasCitysBlessing ⟨0⟩ &&
@@ -4477,7 +4479,7 @@ def uncastCopyCeasesOk : Bool :=
   let g := addToHand afterDraw lightningBolt ⟨0⟩
   let bolt := handCardNamed g ⟨0⟩ "Lightning Bolt"
   let (g, _) := g.move bolt.id .exile none (isCopy := some true)
-  let g := g.ceaseUncastCopies
+  let g := g.checkSBA
   !(g.objects.any (fun o => o.isCopy && o.name == "Lightning Bolt")) &&
     g.log.any (fun s => mentions s "ceases to exist") &&
     (ruling 213).comment.contains "copy ceases to exist"

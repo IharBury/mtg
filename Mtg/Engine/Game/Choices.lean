@@ -108,13 +108,14 @@ def beholdQuality (g : Game) (p : PlayerId) (quality : CardSubtype)
       | none => false)
   if hasPerm || handMatch?.isSome then
     let effCause := g.resolveOptionalCause cause (fallbackCtrl := some p)
-    let g :=
-      if !hasPerm then
-        match handMatch? with
-        | some hid => g.record (GameEvent.revealed g.turnNumber p #[hid] (cause := some effCause))
-        | none => g
-      else g
-    let g := g.record (GameEvent.beheld g.turnNumber p quality (cause := effCause))
+    let g := g.withBatch (some effCause) fun g =>
+      let g :=
+        if !hasPerm then
+          match handMatch? with
+          | some hid => g.record (GameEvent.revealed g.turnNumber p #[hid] (cause := some effCause))
+          | none => g
+        else g
+      g.record (GameEvent.beheld g.turnNumber p quality (cause := effCause))
     g.logMsg s!"{(g.player p).name} beholds a {quality}"
   else
     g.logMsg s!"{(g.player p).name} does not behold a {quality}"
@@ -160,7 +161,7 @@ def discardHandIdsLoop (g : Game) (p : PlayerId) (ids : Array ObjectId)
 logged (Sauron, the Dark Lord). -/
 def discardEntireHand (g : Game) (p : PlayerId) (cause : Option EventCause := none) : Game :=
   let ids := (g.player p).hand
-  let discarded := ids.size
+  let preDiscards := g.loggedDiscards p
   let (g, cause?) : Game × Option EventCause :=
     match cause with
     | some c => (g, some c)
@@ -174,7 +175,11 @@ def discardEntireHand (g : Game) (p : PlayerId) (cause : Option EventCause := no
         | none => (g, none)
   let g := g.withBatch cause? fun g =>
     g.discardHandIdsLoop p ids (logEach := false) (cause := cause?)
-  g.logMsg s!"{(g.player p).name} discards {discarded} card(s)"
+  if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement (.finishPostStep 121 p (n := preDiscards))
+  else
+    let discarded := g.loggedDiscards p - preDiscards
+    g.logMsg s!"{(g.player p).name} discards {discarded} card(s)"
 
 /-- Discard the hand (zero cards is legal) and draw that many. The choice is
 made during resolution; nothing happens between discard and draw. -/
@@ -184,13 +189,19 @@ def mayDiscardHandDrawThatMany (g : Game) (p : PlayerId) (doDiscard : Bool) : Ga
   else
     let n := (g.player p).hand.size
     let g := g.discardEntireHand p
-    if n == 0 then g else g.draw p n
+    if n == 0 then g
+    else if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement (.finishPostStep 41 p (n := n))
+    else g.draw p n
 
 /-- Discard the hand, then draw `n` cards. An empty hand is a legal discard
 (Sauron, the Dark Lord). -/
 def discardHandThenDraw (g : Game) (p : PlayerId) (n : Nat) : Game :=
   let g := g.discardEntireHand p
-  if n == 0 then g else g.draw p n
+  if n == 0 then g
+  else if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement (.finishPostStep 41 p (n := n))
+  else g.draw p n
 
 /-- Move or put each card in `remainingIds` onto the battlefield sequentially,
 pausing on `Pending.chooseReplacement` (`PendingReplacement.putToBattlefieldLoop`)
@@ -355,14 +366,6 @@ def grimaExileUntilInstantOrSorcery (g : Game) (controller victim : PlayerId)
     g.requestOrderInto exiled (.library victim)
       s!"{(g.player victim).name} puts the remaining exiled cards on the bottom of their library in a random order"
       (cause := some cause)
-
-/-- An uncast copy ceases the next time state-based actions are checked. -/
-def ceaseUncastCopies (g : Game) : Game :=
-  g.objects.foldl (fun acc o =>
-    if o.isCopy && o.zone != .stack && o.zone != .battlefield then
-      let acc := acc.ceaseToExist o.id (cause := some (.stateBased .copyOutsideStackOrBf))
-      acc.logMsg s!"{o.name} ceases to exist"
-    else acc) g
 
 /-- True when `p` can pay Saruman's ward (discard an enchantment, instant,
 or sorcery card). -/

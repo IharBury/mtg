@@ -501,7 +501,7 @@ def attercopSourceGone : Game :=
 #guard attercopSourceGone.log.any (fun s => mentions s "source is no longer in play")
 #guard !(attercopSourceGone.battlefield.any (fun o => o.name == "Attercop"))
 
-/-- The +1/+1 wears off in cleanup (CR 514.3). -/
+/-- The +1/+1 wears off in cleanup (CR 514.2). -/
 def afterAttercopCleanup : Game := passBoth (skipTo attercopLandfallResolved .end 80)
 
 #guard afterAttercopCleanup.power (namedPermanent afterAttercopCleanup "Attercop") == 2

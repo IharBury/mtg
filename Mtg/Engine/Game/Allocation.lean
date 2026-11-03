@@ -82,6 +82,7 @@ def createPreparedCopy (g : Game) (o : GameObject) (face : AdventureFace)
     owner := p
     zone := .exile
     timestamp := copyTs
+    isCopy := true
   }
   let resolvedCause := g.resolveOptionalCause cause (fallbackSrc := some o.id) (fallbackCtrl := some p)
   let g := g.record (GameEvent.created g.turnNumber p (g.snapshot copyObj) (cause := resolvedCause))

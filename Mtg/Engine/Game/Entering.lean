@@ -473,5 +473,127 @@ partial def receivePriority (g : Game) (p : PlayerId) (recheckSba := true) : Gam
           (g.change (.pending (.chooseTriggerToStack q))).logMsg
             s!"{(g.player q).name} chooses the order of triggered abilities (CR 603.3b)"
 
+/-- Emit the post-`recordPutCounters` log for `oid` from its counter delta
+since `before` (`0 = stun`, `1 = loyalty`, `2 = doubleStrike`, `3 = charge`,
+`4 = quest`, `5 = hone`, `6 = invasion`, `7 = trample`, `8 = loyalty cost`,
+`9 = player puts stun`, `10 = minusOneMinusOne`, `11 = story`, `12 = received hone`,
+`20..30 = keyword counter`). -/
+def logPutCounterDelta (g : Game) (oid : ObjectId) (before : Nat) (kindTag : Nat)
+    (byPlayer : Option PlayerId := none) (name : String := "") : Game :=
+  match g.findObject? oid with
+  | none => g
+  | some o =>
+    match kindTag with
+    | 0 =>
+      let k := o.status.stun - before
+      if k == 0 then g
+      else
+        let phrase := if k == 1 then "A stun counter is put" else s!"{k} stun counters are put"
+        g.logMsg s!"{phrase} on {g.name o}"
+    | 1 =>
+      let k := o.status.counterCount .loyalty - before
+      if k == 0 then g
+      else
+        let phrase := if k == 1 then "A loyalty counter is put" else s!"{k} loyalty counters are put"
+        g.logMsg s!"{phrase} on {g.name o}"
+    | 2 =>
+      let k := o.status.counterCount .doubleStrike - before
+      if k == 0 then g
+      else
+        let phrase := if k == 1 then "a double strike counter" else s!"{k} double strike counters"
+        g.logMsg s!"{g.name o} gets {phrase}"
+    | 3 =>
+      let k := o.status.counterCount .charge - before
+      if k == 0 then g
+      else
+        let phrase := if k == 1 then "A charge counter is put" else s!"{k} charge counters are put"
+        g.logMsg s!"{phrase} on {g.name o}"
+    | 4 =>
+      let k := o.status.quest - before
+      if k == 0 then g
+      else
+        let phrase := if k == 1 then "a quest counter" else s!"{k} quest counters"
+        g.logMsg s!"{g.name o} gets {phrase} ({o.status.quest})"
+    | 5 =>
+      let k := o.status.hone - before
+      if k == 0 then g
+      else g.logMsg s!"{g.name o} gets {k} hone counter(s)"
+    | 6 =>
+      let k := o.status.counterCount .invasion - before
+      if k == 0 then g
+      else
+        let phrase := if k == 1 then "an invasion counter" else s!"{k} invasion counters"
+        g.logMsg s!"{g.name o} gets {phrase}"
+    | 7 =>
+      let k := o.status.counterCount .trample - before
+      if k == 0 then g
+      else
+        let phrase := if k == 1 then "a trample counter" else s!"{k} trample counters"
+        g.logMsg s!"{g.name o} gets {phrase}"
+    | 8 =>
+      let k := o.status.counterCount .loyalty - before
+      if k == 0 then g
+      else g.logMsg s!"{k} loyalty counter(s) are put on {g.name o}"
+    | 9 =>
+      let k := o.status.stun - before
+      if k == 0 then g
+      else
+        let pName := (g.player (byPlayer.getD g.activePlayer)).name
+        let phrase := if k == 1 then "a stun counter" else s!"{k} stun counters"
+        g.logMsg s!"{pName} puts {phrase} on {g.name o}"
+    | 10 =>
+      let k := o.status.minusOneMinusOne - before
+      if k == 0 then g
+      else g.logMsg s!"{k} -1/-1 counter(s) are put on {g.name o}"
+    | 11 =>
+      let k := o.status.story - before
+      if k == 0 then g
+      else
+        let phrase := if k == 1 then "a story counter" else s!"{k} story counters"
+        g.logMsg s!"{g.name o} gets {phrase}"
+    | 12 =>
+      let k := o.status.hone - before
+      if k == 0 then g
+      else
+        let phrase := if k == 1 then "a hone counter" else s!"{k} hone counters"
+        g.logMsg s!"{g.name o} received {phrase}"
+    | tag =>
+      let kwKind? : Option CounterKind :=
+        match tag with
+        | 20 => some .haste
+        | 21 => some .flying
+        | 22 => some .firstStrike
+        | 23 => some .doubleStrike
+        | 24 => some .deathtouch
+        | 25 => some .indestructible
+        | 26 => some .lifelink
+        | 27 => some .menace
+        | 28 => some .reach
+        | 29 => some .trample
+        | 30 => some .vigilance
+        | _ => none
+      match kwKind? with
+      | some kind =>
+        let k := o.status.counterCount kind - before
+        if k == 0 then g
+        else
+          let phrase := if k == 1 then s!"a {name} counter" else s!"{k} {name} counters"
+          g.logMsg s!"{g.name o} gets {phrase}"
+      | none => g
+
+/-- Run `recordPutCounters` on `oid` and emit `logPutCounterDelta` synchronously
+or defer via `.finishPostStep 82` when `Pending.chooseReplacement` opened. -/
+def putCountersDeferredLog (g : Game) (oid : ObjectId) (kind : CounterKind)
+    (n : Nat) (byPlayer : Option PlayerId) (kindTag : Nat)
+    (cause : Option EventCause := none) (name : String := "") : Game :=
+  let before := ((g.findObject? oid).map (·.status.counterCount kind)).getD 0
+  let g := g.recordPutCounters oid kind n (byPlayer := byPlayer) (cause := cause)
+  if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement
+      (.finishPostStep 82 (byPlayer.getD g.activePlayer) (n := before)
+        (cardId := some oid) (modes := #[kindTag]) (name := name))
+  else
+    g.logPutCounterDelta oid before kindTag (byPlayer := byPlayer) (name := name)
+
 end Game
 end Mtg.Engine
