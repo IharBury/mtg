@@ -1367,7 +1367,8 @@ departures, and Phase 19, #606, checked `g.durationActive e.duration` in
 turn-window and turn/leave expiry across `Core.hasTurnAfterBegunSince`,
 `Core.playerControl`, `Core.controllingPlayerOf?`, `Turns.beginTurn`,
 `Turns.clearTurnActivations`, and `Turns.expireUntilNextTurnEffects`, while
-`Turns.startNextTurnCore` / Two-Headed Giant teammate `playerControl` expiry,
+`Turns.continueStartNextTurn` (post-`turnBegan`) / Two-Headed Giant teammate
+`playerControl` expiry,
 dropping the self-control conjunct in `canChooseOutsideGame` /
 `canMakeTournamentDecision`,
 and multi-effect `ContinuousEffectEvent.created` batching move to Phase 20
@@ -5671,22 +5672,26 @@ opponent checks, CR 723.1 `playerControl` turn-window & expiry, and
      Hunter*) so when `sourceId == some sid` and `g.findObject? sid` is `none`
      after the source left `.battlefield`, it reconstructs the exiled IDs from
      `g.events` and runs `returnLinkedExileLoop` (keeping `sourceId == none` a
-     no-op); migrate CR 607.2a non-CR-610.3 linked-exile writers
-     `LibrarySearch.exileSearchedLinked` (`LibrarySearch.lean`, *Roads Go Ever,
-     Ever On* Chapter I and *Currency Converter* `.currencyExile`) and
-     `TriggeredAbilities.applyExile` `.forLater .linked`
-     (`TriggeredAbilities.lean`) from `.pushLinkedExile` to
+     no-op, while live sources already pass
+     `source.leaveTriggerExile ++ source.linkedExile` in
+     `ResolutionEffects.returnLinkedExile`); migrate CR 607.2a non-CR-610.3
+     linked-exile writer `LibrarySearch.exileSearchedLinked`
+     (`LibrarySearch.lean`, called by *Roads Go Ever, Ever On* Chapter I via
+     `TriggeredAbilities.applyExile` `.basicUpTo` `.exileLinked` and by
+     *Currency Converter* `.currencyExile`) from `.pushLinkedExile` to
      `.pushLeaveTriggerExile` so destroying or flickering those permanents does
      not auto-return their exiled cards onto `.battlefield` via CR 610.3
-     (updating [`Render.lean`](Mtg/Demo/Render.lean)'s `linkedExileSource?` /
-     `linkedExiledCards` to include `leaveTriggerExile` and updating
-     `Tests/Effects.lean`'s *Roads Go Ever, Ever On* assertions to
-     `.leaveTriggerExile`); and update `Chapters.returnLinkedExileToHand` /
-     `returnLinkedExileToHandLoop` (`Chapters.lean`), `FrcResolve.applyFrc`
-     `.currencyReturn` / `runFrcPostStep` tag `20` (`FrcResolve.lean`), and
-     `TriggeredAbilities.applyExile` `.linkedExile` (`TriggeredAbilities.lean`)
-     to read `leaveTriggerExile ++ linkedExile` (pruning from both arrays when
-     live so synthetic `.linkedExile` test fixtures keep working), select the
+     (keeping [`Render.lean`](Mtg/Demo/Render.lean)'s `linkedExileSource?` /
+     `exileUntilLeavesClause` strictly on `linkedExile` so CR 607.2a exiles are
+     not labeled *"exiled until ... leaves the battlefield"*, extending only
+     `linkedExiledCards` / `linkedExileClause`'s battlefield `"*exiling ...*"`
+     marker if needed, and updating `Mtg/Engine/Tests/Effects.lean`'s *Roads Go
+     Ever, Ever On* assertions to `.leaveTriggerExile`); and update
+     `Chapters.returnLinkedExileToHand` / `returnLinkedExileToHandLoop`
+     (`Chapters.lean`) and `FrcResolve.applyFrc` `.currencyReturn` /
+     `runFrcPostStep` tag `20` (`FrcResolve.lean`) to read
+     `leaveTriggerExile ++ linkedExile` (pruning from both arrays when live so
+     synthetic `.linkedExile` test fixtures keep working), select the
      first still-exiled `eid` (`(g.findObject? eid).any (·.zone == .exile)`) in
      `returnLinkedExileToHand`, re-read `src` and check
      `(g.followMovedToZone? exiledId (· != .exile)).isSome` before pruning and
@@ -5889,8 +5894,11 @@ opponent checks, CR 723.1 `playerControl` turn-window & expiry, and
    - Finish `playerControl` (`PlayerRule.controlsPlayer`) edge cases across
      `Core.lean` and `Turns.lean` (`CR 723.1 / 723.5 / 800.4m / 810.5`, MSH
      Rulings 349–350 / 588): expire finished `onNextTurn == true`
-     `controlsPlayer` effects at turn start in `Turns.startNextTurnCore` as well
-     as `Turns.beginTurn` (`Turns.lean`), treat `them` or `them`'s Two-Headed
+     `controlsPlayer` effects in `Turns.continueStartNextTurn` immediately
+     after `TurnEvent.turnBegan` is recorded (before the `runBeginTurn` /
+     `beginTurn` branch, sharing with standalone `Turns.beginTurn` in
+     `Turns.lean` so `Turns.startNextTurn` / `startNextTurnCore false` also
+     sees the new `turnBegan` timestamp), treat `them` or `them`'s Two-Headed
      Giant teammate beginning/finishing their shared turn (and leaving the game)
      uniformly in `Core.hasTurnBegunSince` / `Core.hasTurnAfterBegunSince`
      callers and `Turns.expireUntilNextTurnEffects` (`Core.lean`, `Turns.lean`,
