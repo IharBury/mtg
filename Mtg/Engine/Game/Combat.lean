@@ -105,21 +105,21 @@ def declareAttackers (g : Game) (p : PlayerId) (ids : Array ObjectId)
     if g.mustAttackIfAble o && !ids.contains o.id then
       let onlyBlockedByTomik :=
         !(g.livingOpponents p).any fun pl =>
-          g.attackTaxPerCreature pl.id == 0 &&
-            (!(g.hasFlying o && g.leftoverFlyingRestriction pl.id) ||
-              (g.permanentsOf pl.id).any fun pw =>
-                g.isPlaneswalker pw &&
-                  !(g.cantAttackJaces p && ((g.name pw).startsWith "Jace" || g.hasSubtype pw .jace)) &&
-                  !(g.planeswalkerAttackedByOneAtMost pw &&
-                    g.battlefield.any (fun a =>
-                      a.status.attacking && a.status.attackingPlaneswalker? == some pw.id)))
+          (g.attackTaxPerCreature pl.id == 0 &&
+            !(g.hasFlying o && g.leftoverFlyingRestriction pl.id)) ||
+          (g.permanentsOf pl.id).any fun pw =>
+            g.isPlaneswalker pw &&
+              !(g.cantAttackJaces p && ((g.name pw).startsWith "Jace" || g.hasSubtype pw .jace)) &&
+              !(g.planeswalkerAttackedByOneAtMost pw &&
+                g.battlefield.any (fun a =>
+                  a.status.attacking && a.status.attackingPlaneswalker? == some pw.id))
       if !onlyBlockedByTomik then
         throw s!"{g.name o} must attack if able"
   let tax := ids.foldl (fun acc id =>
     let o := g.object! id
-    if o.status.attackingTarget.isSome then
-      acc + g.attackTaxPerCreature (g.defendingPlayerOf o)
-    else acc) 0
+    match o.status.attackingTarget with
+    | some (.player d) => acc + g.attackTaxPerCreature d
+    | _ => acc) 0
   if tax > 0 then
     if !(g.player p).manaPool.canPay (ManaCost.ofGeneric tax) then
       throw s!"{(g.player p).name} must pay {tax} to attack"
@@ -447,7 +447,7 @@ def dealAssignedCombatDamage (g : Game) (_appliedSoFar : Array ReplacementId := 
                     (cause := dealtCause))
               if toPlayer > 0 && srcEvent.toxic > 0 then
                 g := g.record (GameEvent.poisoned g.turnNumber defn srcEvent.toxic
-                  (cause := .turnBased (.dealCombatDamage fs)))
+                  (cause := dealtCause))
                 g := g.logMsg s!"{pl.name} gets {srcEvent.toxic} poison counter(s) (toxic)"
               if !(g.lifeLocked defn || g.lifeCantChange defn) then
                 if src.status.blocked then
@@ -457,28 +457,32 @@ def dealAssignedCombatDamage (g : Game) (_appliedSoFar : Array ReplacementId := 
                   g := g.logMsg
                     s!"{g.name src} deals {toPlayer} combat damage to {pl.name} ({(g.player defn).life} life)"
       | .lifelink srcId =>
-        if let some src := (g.findObject? srcId).filter (·.isOnBattlefield) then
-          if g.hasLifelink src then
-            let totalDealt : Nat :=
-              match g.currentBatch with
-              | none => 0
-              | some (bid, _) =>
-                g.events.foldl (fun acc e =>
-                  if e.batch != some bid then acc
-                  else
-                    match e.change with
-                    | .rules (.damage (.dealt pkts)) =>
-                      pkts.foldl (fun s p =>
-                        if p.combat && p.source.id == some srcId then s + p.amount else s) acc
-                    | _ => acc) 0
-            if totalDealt > 0 then
-              match g.controllerOf src with
-              | some pid =>
-                if g.stillInGame pid then
-                  g := g.gainLife pid totalDealt (cause := combatCause)
-                  if let .chooseReplacement .. := g.pending then
-                    return g.chainPendingReplacement (.dealAssignedCombatDamage #[] (k + 1))
-              | none => pure ()
+        let (totalDealt, lkiSnap?) : Nat × Option EventObject :=
+          match g.currentBatch with
+          | none => (0, none)
+          | some (bid, _) =>
+            g.events.foldl (fun (acc, snap?) e =>
+              if e.batch != some bid then (acc, snap?)
+              else
+                match e.change with
+                | .rules (.damage (.dealt pkts)) =>
+                  pkts.foldl (fun (s, sn?) p =>
+                    if p.combat && p.source.id == some srcId then
+                      (s + p.amount, sn?.orElse (fun _ => some p.source))
+                    else (s, sn?)) (acc, snap?)
+                | _ => (acc, snap?)) (0, none)
+        if totalDealt > 0 then
+          let lifelinkCtrl? : Option PlayerId :=
+            match (g.findObject? srcId).filter (·.isOnBattlefield) with
+            | some src => if g.hasLifelink src then g.controllerOf src else none
+            | none => lkiSnap?.bind (fun s => if s.keywords.lifelink then s.controller else none)
+          match lifelinkCtrl? with
+          | some pid =>
+            if g.stillInGame pid then
+              g := g.gainLife pid totalDealt (cause := combatCause)
+              if let .chooseReplacement .. := g.pending then
+                return g.chainPendingReplacement (.dealAssignedCombatDamage #[] (k + 1))
+          | none => pure ()
     g.change (.pending .none)
   if let .chooseReplacement .. := g.pending then
     if isOuterCall then
@@ -534,7 +538,8 @@ def finishAttackerCombatAssignment (g : Game) : Game :=
 /-- Start CR 510.1: the active player assigns attacking creatures first. -/
 def beginCombatDamageAssignment (g : Game) : Game :=
   let g := g.changes #[.pending .none, .pendingBlockerAssignments #[]]
-  if !g.battlefield.any (fun o => o.status.attacking || !o.status.blocking.isEmpty) then
+  if (g.creaturesAssigningCombatDamage true).isEmpty &&
+      (g.creaturesAssigningCombatDamage false).isEmpty then
     g.receivePriority g.activePlayer
   else if g.needsCombatDamageChoice true then
     g.change (.pending (.assignCombatDamage g.activePlayer true))

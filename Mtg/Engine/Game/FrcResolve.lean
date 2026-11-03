@@ -708,10 +708,11 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
       g.chainPendingReplacement
         (.finishFrcPostStep 21 controller 0 none false none preIds)
     else
-      preIds.foldl (fun acc id =>
-        match acc.followMilledPublic? id with
-        | some card => acc.createEffect (.freeCastFromGraveyardUntilEot card.id)
-        | none => acc) g
+      g.withBatch none fun g =>
+        preIds.foldl (fun acc id =>
+          match acc.followMilledPublic? id with
+          | some card => acc.createEffect (.freeCastFromGraveyardUntilEot card.id)
+          | none => acc) g
   | .venserSpell =>
     match targets[0]? with
     | some t@(Target.card id) =>
@@ -756,14 +757,15 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
       if let .chooseReplacement .. := g.pending then
         g.chainPendingReplacement (.finishFrcPostStep 18 controller)
       else
-        g.recentTokenIds.foldl (fun g tid =>
-          match g.findObject? tid with
-          | some tok =>
-            if tok.isOnBattlefield then
-              g.createEffect (.keywordsUntilEot tok.id (Keywords.merge Keyword.lifelink Keyword.haste))
-                |>.logMsg s!"{g.name tok} gains lifelink and haste until end of turn"
-            else g
-          | none => g) g
+        g.withBatch none fun g =>
+          g.recentTokenIds.foldl (fun g tid =>
+            match g.findObject? tid with
+            | some tok =>
+              if tok.isOnBattlefield then
+                g.createEffect (.keywordsUntilEot tok.id (Keywords.merge Keyword.lifelink Keyword.haste))
+                  |>.logMsg s!"{g.name tok} gains lifelink and haste until end of turn"
+              else g
+            | none => g) g
   | .spirit => g.createKindTokens controller .spirit 1
   | .story =>
     match g.srcObj? sourceId with
@@ -787,11 +789,15 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
     else
       g.handDiscard controller
   | .currencyReturn =>
-    match g.srcObj? sourceId with
+    match sourceId with
     | none => g
-    | some src =>
-      match src.linkedExile.find? (fun id => (g.findObject? id).any (·.zone == .exile)) with
-      | none => g.logMsg s!"{g.name src} has no exiled card"
+    | some sid =>
+      let allIds := g.allLinkedExilesOf sid
+      match allIds.find? (fun id => (g.findObject? id).any (·.zone == .exile)) with
+      | none =>
+        match g.srcObj? sourceId with
+        | some src => g.logMsg s!"{g.name src} has no exiled card"
+        | none => g
       | some id =>
         match g.findObject? id with
         | none => g
@@ -799,10 +805,11 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
           let land := g.isLand card
           let (g, _) := g.move id (.graveyard card.owner) none
           if let .chooseReplacement .. := g.pending then
-            g.chainPendingReplacement (.finishFrcPostStep 20 controller id.raw (some src.id) land)
-          else
-            let g := g.changeObject src.id (.linkedExile (src.linkedExile.filter (· != id)))
+            g.chainPendingReplacement (.finishFrcPostStep 20 controller id.raw (some sid) land)
+          else if (g.followMovedToZone? id (· != .exile)).isSome then
+            let g := g.pruneLinkedExileId sid id
             if land then g.makeFrc controller .treasure else g.makeFrc controller .rogue
+          else g
   | .despair =>
     g.withBatch (g.resolvingBatchCause controller sourceId) fun g =>
       g.forEachOpponent controller fun g pid =>
@@ -1065,27 +1072,31 @@ partial def runFrcPostStep (g : Game) (tag : Nat) (p : PlayerId) (n1 : Nat := 0)
     else
       g.restBottom p rest false (cause := some revealCause)
   | 18 =>
-    g.recentTokenIds.foldl (fun g tid =>
-      match g.findObject? tid with
-      | some tok =>
-        if tok.isOnBattlefield then
-          g.createEffect (.keywordsUntilEot tok.id (Keywords.merge Keyword.lifelink Keyword.haste))
-            |>.logMsg s!"{g.name tok} gains lifelink and haste until end of turn"
-        else g
-      | none => g) g
+    g.withBatch none fun g =>
+      g.recentTokenIds.foldl (fun g tid =>
+        match g.findObject? tid with
+        | some tok =>
+          if tok.isOnBattlefield then
+            g.createEffect (.keywordsUntilEot tok.id (Keywords.merge Keyword.lifelink Keyword.haste))
+              |>.logMsg s!"{g.name tok} gains lifelink and haste until end of turn"
+          else g
+        | none => g) g
   | 19 => g.handDiscard p
   | 20 =>
     let exiledId : ObjectId := ⟨n1⟩
-    let g :=
-      match cardId.bind g.findObject? with
-      | some src => g.changeObject src.id (.linkedExile (src.linkedExile.filter (· != exiledId)))
-      | none => g
-    if shuffle then g.makeFrc p .treasure else g.makeFrc p .rogue
+    if (g.followMovedToZone? exiledId (· != .exile)).isSome then
+      let g :=
+        match cardId with
+        | some sid => g.pruneLinkedExileId sid exiledId
+        | none => g
+      if shuffle then g.makeFrc p .treasure else g.makeFrc p .rogue
+    else g
   | 21 =>
-    ids.foldl (fun acc id =>
-      match acc.followMilledPublic? id with
-      | some card => acc.createEffect (.freeCastFromGraveyardUntilEot card.id)
-      | none => acc) g
+    g.withBatch none fun g =>
+      ids.foldl (fun acc id =>
+        match acc.followMilledPublic? id with
+        | some card => acc.createEffect (.freeCastFromGraveyardUntilEot card.id)
+        | none => acc) g
   | 22 =>
     g.factOrFictionHandInnerLoop p ids cardId
   | 23 =>

@@ -113,24 +113,6 @@ def resolveDelayedTrigger (g : Game) (controller : PlayerId) (kind : DelayedTrig
         let owner := o.owner
         if (g.player owner).lost then
           g.logMsg s!"{o.name} remains in its current zone (CR 800.4b)"
-        else if g.isAura o then
-          let auraProbe := { o with controller := some owner }
-          match g.findPreBatchAuraHost? g.battlefield auraProbe with
-          | none =>
-            g.logMsg s!"{o.name} remains in exile (can't be attached legally; CR 303.4g)"
-          | some host =>
-            let isLand := g.isLand o
-            let (g', _) := g.putOntoBattlefield id owner
-              (attachedTo := some host.id) (cause := some cause)
-            if let .chooseReplacement .. := g'.pending then
-              g'.chainPendingReplacement (.finishPostStep 20 owner 1 none (some id) (shuffle := isLand))
-            else
-              match g'.followMovedToZone? id (· == .battlefield) with
-              | some back =>
-                let hostName := (g'.findObject? host.id).map g'.name |>.getD "permanent"
-                let g' := g'.logMsg s!"{back.name} returns to the battlefield attached to {hostName} (beginning of end step)"
-                if g'.isLand back then g'.afterLandEnters back else g'.afterPermanentEnters back
-              | none => g'
         else
           let isLand := g.isLand o
           let (g', _) := g.putOntoBattlefield id owner (cause := some cause)
@@ -139,7 +121,13 @@ def resolveDelayedTrigger (g : Game) (controller : PlayerId) (kind : DelayedTrig
           else
             match g'.followMovedToZone? id (· == .battlefield) with
             | some back =>
-              let g' := g'.logMsg s!"{back.name} returns to the battlefield (beginning of end step)"
+              let g' :=
+                match back.attachedTo with
+                | some hid =>
+                  let hostName := (g'.findObject? hid).map g'.name |>.getD "permanent"
+                  g'.logMsg s!"{back.name} returns to the battlefield attached to {hostName} (beginning of end step)"
+                | none =>
+                  g'.logMsg s!"{back.name} returns to the battlefield (beginning of end step)"
               if g'.isLand back then g'.afterLandEnters back else g'.afterPermanentEnters back
             | none => g'
       else g
@@ -162,35 +150,22 @@ def resolveDelayedTrigger (g : Game) (controller : PlayerId) (kind : DelayedTrig
     match g.findObject? id with
     | some o =>
       if o.zone == .graveyard o.owner && !(g.player who).lost then
-        if g.isAura o then
-          let auraProbe := { o with controller := some who }
-          match g.findPreBatchAuraHost? g.battlefield auraProbe with
-          | none =>
-            g.logMsg s!"{o.name} remains in the graveyard (can't be attached legally; CR 303.4f)"
-          | some host =>
-            let isLand := g.isLand o
-            let (g', _) := g.putOntoBattlefield id who
-              (attachedTo := some host.id) (cause := some cause)
-            if let .chooseReplacement .. := g'.pending then
-              g'.chainPendingReplacement (.finishPostStep 20 who 2 none (some id) (shuffle := isLand))
-            else
-              match g'.followMovedToZone? id (· == .battlefield) with
-              | some back =>
-                let hostName := (g'.findObject? host.id).map g'.name |>.getD "permanent"
-                let g' := g'.logMsg s!"{back.name} returns to the battlefield attached to {hostName}"
-                if g'.isLand back then g'.afterLandEnters back else g'.afterPermanentEnters back
-              | none => g'
+        let isLand := g.isLand o
+        let (g', _) := g.putOntoBattlefield id who (cause := some cause)
+        if let .chooseReplacement .. := g'.pending then
+          g'.chainPendingReplacement (.finishPostStep 20 who 2 none (some id) (shuffle := isLand))
         else
-          let isLand := g.isLand o
-          let (g', _) := g.putOntoBattlefield id who (cause := some cause)
-          if let .chooseReplacement .. := g'.pending then
-            g'.chainPendingReplacement (.finishPostStep 20 who 2 none (some id) (shuffle := isLand))
-          else
-            match g'.followMovedToZone? id (· == .battlefield) with
-            | some back =>
-              let g' := g'.logMsg s!"{back.name} returns to the battlefield"
-              if g'.isLand back then g'.afterLandEnters back else g'.afterPermanentEnters back
-            | none => g'
+          match g'.followMovedToZone? id (· == .battlefield) with
+          | some back =>
+            let g' :=
+              match back.attachedTo with
+              | some hid =>
+                let hostName := (g'.findObject? hid).map g'.name |>.getD "permanent"
+                g'.logMsg s!"{back.name} returns to the battlefield attached to {hostName}"
+              | none =>
+                g'.logMsg s!"{back.name} returns to the battlefield"
+            if g'.isLand back then g'.afterLandEnters back else g'.afterPermanentEnters back
+          | none => g'
       else g
     | none => g
   | .endStepSynthetic n =>
@@ -452,9 +427,13 @@ def resolveTop (g : Game) : Game :=
               (cause := finishCause)
         else
           let snap := g.snapshot obj
+          let chosenSpellModes : Array Nat :=
+            if entry.extraModes.isEmpty then entry.chosenMode.toArray
+            else (entry.chosenMode.toArray ++ entry.extraModes).qsort (· < ·)
           let g := g.change (.pushContinuationFrame {
             resolvingContext := some (ctxSrc, entry.controller)
             resolvingSpell := some obj.id
+            resolvingModes := chosenSpellModes
             resolvingSkippedSlots := entry.skippedOptionalSlots
             resolutionFinish := some (.spell entry snap fromGy) })
           let bc := g.baseCard obj

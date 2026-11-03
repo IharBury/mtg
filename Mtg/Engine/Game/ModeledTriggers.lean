@@ -10,10 +10,11 @@ rules-text effects, and boast, teamwork, and pay-or-counter helpers.
 namespace Mtg.Engine
 namespace Game
 
-/-- The lone attacking creature `p` controls, if exactly one is attacking. -/
+/-- The lone attacking creature `p` controls, if exactly one creature on the
+battlefield is attacking (CR 506.5). -/
 def attackingAlone? (g : Game) (p : PlayerId) : Option GameObject :=
-  let xs := (g.permanentsOf p).filter (fun o => g.isCreature o && o.status.attacking)
-  if xs.size == 1 then some xs[0]! else none
+  let all := g.battlefield.filter (fun o => g.isCreature o && o.status.attacking)
+  if all.size == 1 && g.controlledBy all[0]! p then some all[0]! else none
 
 /-- Permanent this Aura or Equipment is attached to. -/
 def attachedHost? (g : Game) (sourceId : Option ObjectId) : Option GameObject :=
@@ -111,10 +112,11 @@ def finishArtifactCopyTokens (g : Game) : Game :=
         | some tok =>
           if !tok.isOnBattlefield || g.isCreature tok then g
           else
-            let g := g.createEffect
-              (.layered (.objects #[tok.id]) (.types .add #[.creature] #[.robot, .villain] #[]) .indefinite)
-            let g := g.createEffect
-              (.layered (.objects #[tok.id]) (.ptSet 2 2) .indefinite)
+            let g := g.withBatch none fun g =>
+              let g := g.createEffect
+                (.layered (.objects #[tok.id]) (.types .add #[.creature] #[.robot, .villain] #[]) .indefinite)
+              g.createEffect
+                (.layered (.objects #[tok.id]) (.ptSet 2 2) .indefinite)
             g.logMsg s!"{g.name tok} becomes a 2/2 Robot Villain creature after it enters") g
 
 /-- Copy the nontoken artifact that entered (using `lastKnownBefore?` LKI if it
@@ -159,19 +161,26 @@ def copyEnteredArtifact (g : Game) (controller : PlayerId) (artifactId : ObjectI
         g.change .popContinuationFrame
       else g
 
+/-- Finish pumping Daredevil after `exileTopPlayThisTurn` completes (MSH 685). -/
+def finishDaredevilExile (g : Game) (sourceId : Option ObjectId)
+    (top? : Option ObjectId) : Game :=
+  match top?.bind (fun fid => g.followMovedToZone? fid (· == .exile)) with
+  | some moved =>
+    if g.hasSubtype moved .hero then
+      g.withSourceOnBattlefield sourceId (fun g src => g.pumpPermanent src 2 1)
+        "Daredevil is no longer on the battlefield"
+    else g
+  | none => g
+
 /-- Exile the top card of your library. A Hero card pumps Daredevil. The
 exiled card may be played this turn either way (MSH 685). -/
 def applyDaredevilExile (g : Game) (controller : PlayerId) (sourceId : Option ObjectId) : Game :=
   let top? := (g.player controller).library.back?
-  let isHero :=
-    match top? with
-    | some top => g.hasSubtype (g.object! top) .hero
-    | none => false
   let g := g.exileTopPlayThisTurn controller 1
-  if isHero then
-    g.withSourceOnBattlefield sourceId (fun g src => g.pumpPermanent src 2 1)
-      "Daredevil is no longer on the battlefield"
-  else g
+  if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement (.finishPostStep 118 controller 0 sourceId top?)
+  else
+    g.finishDaredevilExile sourceId top?
 
 /-- The Vision's chosen mode that hasn't been chosen yet this turn.
 0 double strike, 1 indestructible, 2 draw. -/
@@ -983,14 +992,16 @@ def applyLeftoverTextEffect (g : Game) (controller : PlayerId) (text : String)
 /-- Put the targeted creature into its owner's library, second from the top
 or on the bottom (Trickster's Stratagem). -/
 def applyOwnerPutsLibraryThenConnive (g : Game) (controller : PlayerId)
-    (targets : Array Target) (putOnBottom := false) : Game :=
+    (targets : Array Target) (putOnBottom := false)
+    (sourceId : Option ObjectId := none) : Game :=
+  let srcId := sourceId.orElse (fun _ => g.resolvingSpell)
   if !g.stillInGame controller then g
   else
     match targets[0]? with
     | some (Target.permanent id) =>
       match g.findObject? id with
       | some o =>
-        if o.isOnBattlefield then
+        if o.isOnBattlefield && g.canBeTargetedBy controller o srcId then
           let owner := o.owner
           if putOnBottom then
             let (g, _) := g.move id (.library owner) none (libraryPosition := some .bottom)
@@ -1006,11 +1017,13 @@ def applyOwnerPutsLibraryThenConnive (g : Game) (controller : PlayerId)
 illegal, the spell does not resolve — even the untargeted damage mode
 (MSH 207). If the land is legal but indestructible, its controller still
 searches. -/
-def applyAvengersDisassembled (g : Game) (_controller : PlayerId)
-    (choseDamage choseLand : Bool) (landId : Option ObjectId) : Game :=
+def applyAvengersDisassembled (g : Game) (controller : PlayerId)
+    (choseDamage choseLand : Bool) (landId : Option ObjectId)
+    (sourceId : Option ObjectId := none) : Game :=
+  let srcId := sourceId.orElse (fun _ => g.resolvingSpell)
   let landOk :=
     match landId.bind g.findObject? with
-    | some o => o.isOnBattlefield && g.isLand o
+    | some o => o.isOnBattlefield && g.isLand o && g.canBeTargetedBy controller o srcId
     | none => false
   if choseLand && !landOk then
     g.logMsg "The target is no longer legal. Avengers Disassembled doesn't resolve."
@@ -1021,16 +1034,18 @@ def applyAvengersDisassembled (g : Game) (_controller : PlayerId)
       else g
     if choseLand then
       if let .chooseReplacement .. := g.pending then
-        g.chainPendingReplacement (.finishPostStep 8 _controller (cardId := landId))
+        g.chainPendingReplacement (.finishPostStep 8 controller 0 srcId (cardId := landId))
       else
         match landId.bind g.findObject? with
         | some o =>
-          let owner := o.owner
-          let g := g.destroyPermanent o
-          if let .chooseReplacement .. := g.pending then
-            g.chainPendingReplacement (.finishPostStep 9 owner)
-          else
-            g.offerMaySearchBasics owner
+          if o.isOnBattlefield && g.isLand o && g.canBeTargetedBy controller o srcId then
+            let owner := o.owner
+            let g := g.destroyPermanent o
+            if let .chooseReplacement .. := g.pending then
+              g.chainPendingReplacement (.finishPostStep 9 owner)
+            else
+              g.offerMaySearchBasics owner
+          else g
         | none => g
     else g
 
@@ -1064,7 +1079,8 @@ def beginPayOrLetCounter (g : Game) (targets : Array Target) (n : Nat) : Game :=
 /-- Ask the target's controller to pay `{n}`. If they do not, resolve `r`.
 Countering uses the existing “pay or let the spell be countered” choice. -/
 def beginUnlessPays (g : Game) (controller : PlayerId) (effect : Effect)
-    (targets : Array Target) (r : SpellResolution) (n : Nat) : Game :=
+    (targets : Array Target) (r : SpellResolution) (n : Nat)
+    (sourceId : Option ObjectId := none) : Game :=
   match r with
   | .counter => g.beginPayOrLetCounter targets n
   | _ =>
@@ -1077,13 +1093,17 @@ def beginUnlessPays (g : Game) (controller : PlayerId) (effect : Effect)
       | some (Target.permanent id) =>
         match g.findObject? id with
         | some o =>
-          -- The pending choice still stores an object id. Use one that has
-          -- not been allocated so the counter fallback cannot hit this permanent.
-          match g.lastControllerOf? o with
-          | some pid => some (pid, { raw := g.nextObjectId })
-          | none => none
+          if o.isOnBattlefield && !g.canBeTargetedBy controller o sourceId then none
+          else
+            -- The pending choice still stores an object id. Use one that has
+            -- not been allocated so the counter fallback cannot hit this permanent.
+            match g.lastControllerOf? o with
+            | some pid => some (pid, { raw := g.nextObjectId })
+            | none => none
         | none => none
-      | some (Target.player pid) => some (pid, { raw := g.nextObjectId })
+      | some (Target.player pid) =>
+        if (g.player pid).lost || !g.playerCanBeTargetedBy controller pid sourceId then none
+        else some (pid, { raw := g.nextObjectId })
       | _ => none
     match payer? with
     | none => g.logMsg "The target is no longer legal"
@@ -1094,6 +1114,7 @@ def beginUnlessPays (g : Game) (controller : PlayerId) (effect : Effect)
         .unlessPaysInstead (some inner),
         .unlessPaysController controller,
         .unlessPaysTargets targets,
+        .unlessPaysSource sourceId,
         .unlessPaysDue false]).logMsg
         s!"{(g.player payer).name} may pay \{{n}} or {SpellResolution.toPhrase r effect.targeting.kind.noun}"
 

@@ -430,7 +430,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
           (forceBackFace := nightBack)
           (applied := applied)
           (cause := curCause)
-          (nonCastBattlefield := old.zone != .stack)
+          (nonCastBattlefield := old.zone != .stack || attachedTo.isNone)
           (preBattlefield := preBattlefield)
       (etb.candidate, etb.entersWith, etb.weaverBonus, impendingNotCreature, faceDown, etb.applied, etb.cause, etb.choice?, etb.tempCopyUntilEot, etb.stayInOriginNoAuraHost)
     else
@@ -460,7 +460,23 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
   | none =>
   if preCheckStayNoAuraHost then
     let g := g.consumeReplacementOrder preCheckAllApplied
-    (g.logMsg s!"{old.name} remains in its current zone (can't be attached legally; CR 303.4f)", id)
+    if old.zone == .stack then
+      if old.isCopy then
+        (g.ceaseToExist old.id (cause := some (.stateBased .copyOutsideStackOrBf))
+          |>.logMsg s!"{old.name} ceases to exist (can't be attached legally; CR 303.4g / 704.5e)",
+         old.id)
+      else
+        let (g', gyId) :=
+          g.move old.id (.graveyard old.owner) none (verb := verb) (actor := actor) (cause := cause)
+        let msg := s!"{old.name} goes to the graveyard (can't be attached legally; CR 303.4g)"
+        if let .chooseReplacement .. := g'.pending then
+          (g'.chainPendingReplacement (.logMessage msg), gyId)
+        else
+          (g'.logMsg msg, gyId)
+    else if old.zone == .exile then
+      (g.logMsg s!"{old.name} remains in exile (can't be attached legally; CR 303.4f / CR 614.6)", id)
+    else
+      (g.logMsg s!"{old.name} remains in its current zone (can't be attached legally; CR 303.4f)", id)
   else
   let exileInstead := moveRep.exileInstead
   let finalityExile := moveRep.finalityExile
@@ -720,19 +736,16 @@ partial def runLinkedExileBatch (g : Game) (ids : Array ObjectId)
             | _ =>
               if (g.player o.owner).lost then
                 (g.logMsg s!"{name} remains in its current zone (CR 800.4b)", none)
-              else if g.isAura o then
-                let auraWithCtrl := { o with controller := some o.owner }
-                let host? := g.findPreBatchAuraHost? preBf auraWithCtrl
-                match host? with
-                | none =>
-                  (g.logMsg s!"{name} remains in exile (can't be attached legally; CR 614.6)", none)
-                | some host =>
-                  let (g', _) := g.move o.id .battlefield (some o.owner)
-                    (attachedTo := some host.id) (cause := linkCause)
-                  (g', some .battlefield)
               else
-                let (g', _) := g.move o.id .battlefield (some o.owner) (cause := linkCause)
-                (g', some .battlefield)
+                let (g', _) :=
+                  g.move o.id .battlefield (some o.owner) (preBattlefield := some preBf)
+                    (cause := linkCause)
+                let movedDest? :=
+                  if (g'.followMovedToZone? o.id (· == .battlefield)).isSome ||
+                      (match g'.pending with | .chooseReplacement .. => true | _ => false) then
+                    some .battlefield
+                  else none
+                (g', movedDest?)
           g := g'
           if movedDest? == some .battlefield then
             entered := entered.push o.id
@@ -745,9 +758,15 @@ partial def runLinkedExileBatch (g : Game) (ids : Array ObjectId)
           if let some dest := movedDest? then
             g := logLinkedExileReturn g o.id dest
       | none => pure ()
-    for fromId in entered do
+    for k in [0:entered.size] do
+      let fromId := entered[k]!
       if let some enteredObj := g.followMovedToZone? fromId (· == .battlefield) then
         g := g.afterPermanentEntersInBatch enteredObj
+        if match g.pending with | .chooseReplacement .. | .chooseLegend .. => true | _ => false then
+          let remEntered := entered.extract (k + 1) entered.size
+          if !remEntered.isEmpty then
+            g := g.chainPendingReplacement (.finishLinkedExileMove #[] (some preBf) none remEntered)
+          return g
     return g
 
 /-- Flush any CR 610.3 `linkedExile` returns queued while an enclosing departure
@@ -860,6 +879,7 @@ def putOntoBattlefield (g : Game) (id : ObjectId) (controller : PlayerId)
     (nightBack := false)
     (extraEntersWith : CounterBag := #[])
     (enterMods : Array TriggeredAbility.TriggerEnterWith := #[])
+    (preBattlefield : Option (Array GameObject) := none)
     (verb : Option ZoneVerb := none) (actor : Option PlayerId := none)
     (cause : Option EventCause := none) : Game × ObjectId :=
   if (g.player controller).lost then
@@ -875,6 +895,7 @@ def putOntoBattlefield (g : Game) (id : ObjectId) (controller : PlayerId)
       (nightBack := nightBack)
       (extraEntersWith := extraEntersWith)
       (enterMods := enterMods)
+      (preBattlefield := preBattlefield)
       (verb := verb) (actor := actor) (cause := cause)
 
 /-- Complete the post-move permission and log step of `counterStackSpell` once

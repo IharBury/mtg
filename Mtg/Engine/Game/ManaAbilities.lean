@@ -309,7 +309,8 @@ def canActivateManaAbility (g : Game) (p : PlayerId) : Bool :=
   else if g.hasPriority p then true
   else
     match g.pending with
-    | .activateManaAbilities caster => caster == p
+    | .activateManaAbilities caster =>
+      caster == p && g.proposedSpell.all (·.cost.includesManaPayment)
     | .mayPayGeneric q _ => q == p
     | .fraChoice q (.mayPayThen ..) | .fraChoice q (.mayPayExtort _)
     | .fraChoice q (.mayPayManaForReflexive ..)

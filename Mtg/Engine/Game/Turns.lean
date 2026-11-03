@@ -325,8 +325,10 @@ def expireUntilNextTurnEffects (g : Game) (p : PlayerId) : Game :=
       | .playerRule q .lifeLocked .untilEndOfTurn
       | .playerRule q (.typeSpellCostLess _ _) .untilEndOfTurn
       | .playerRule q (.supertypeSpellCostLess _ _) .untilEndOfTurn => q == p
-      | .playerRule q (.controlsPlayer them false) .untilEndOfTurn => q == p || them == p
-      | .playerRule q (.controlsPlayer them true) _ => q == p || them == p
+      | .playerRule q (.controlsPlayer them false) .untilEndOfTurn =>
+        q == p || them == p || g.areTeammates them p
+      | .playerRule q (.controlsPlayer them true) _ =>
+        q == p || them == p || g.areTeammates them p
       | _ => false) (cause := cause)
     let expiredDt := g.delayedTriggers.filter (fun dt =>
       (match dt.kind with
@@ -424,6 +426,17 @@ def untapStepPermanents (g : Game) (ids : Array ObjectId) : Game :=
                 g := g.record untap
     return g
 
+private def expireFinishedNextTurnPlayerControl (g : Game) : Game :=
+  let cause := some (EventCause.turnBased .expireAtStepBegin)
+  let expiredCtrl := g.activeEffects.filter fun (eid, e) =>
+    match e with
+    | .playerRule _ (.controlsPlayer them true) _ => g.hasTurnAfterBegunSince eid them
+    | _ => false
+  if expiredCtrl.isEmpty then g
+  else
+    g.withBatch none fun g =>
+      expiredCtrl.foldl (fun acc (eid, _) => acc.expireEffectById eid (cause := cause)) g
+
 mutual
 
 /-- Resume `startNextTurn` across departed-player `expireUntilNextTurnEffects` pauses
@@ -446,6 +459,7 @@ partial def continueStartNextTurn (g : Game) (nextP : PlayerId)
     | some q =>
       let extraCause? := (pendingExtraCauses.extract skipIdx pendingExtraCauses.size)[0]?
       let g := g.record (GameEvent.turnBegan (g.turnNumber + 1) q (extra := true))
+      let g := g.expireFinishedNextTurnPlayerControl
       let g := g.change (.cleanupGivesPriority false)
       let g :=
         if !g.powerUpsForbidden then
@@ -456,6 +470,7 @@ partial def continueStartNextTurn (g : Game) (nextP : PlayerId)
     | none =>
       if !(g.player nextP).lost then
         let g := g.record (GameEvent.turnBegan (g.turnNumber + 1) nextP (extra := false))
+        let g := g.expireFinishedNextTurnPlayerControl
         let g := g.change (.cleanupGivesPriority false)
         g.logMsg s!"It is now {(g.player nextP).name}'s turn {g.turnNumber}"
       else g
@@ -725,29 +740,34 @@ def advanceStep (g : Game) : Game :=
     let hadAttackersThisCombat : Bool :=
       if g.step != .declareAttackers then true
       else
-        let stepStartIdx? :=
+        let combatBoundIdx? :=
           (List.range g.events.size).reverse.find? fun idx =>
             let e := g.events[idx]!
             e.turn == g.turnNumber &&
               match e.change with
-              | .rules (.turn (.stepBegan .declareAttackers _)) => true
+              | .rules (.turn (.phaseBegan .combat))
+              | .rules (.turn (.phaseEnded .combat)) => true
               | _ => false
-        match stepStartIdx? with
-        | some startIdx =>
-          !attackers.isEmpty ||
-            (g.events.extract (startIdx + 1) g.events.size).any fun e =>
-              match e.change with
-              | .rules (.combat (.attackersDeclared _ decls)) => !decls.isEmpty
-              | .rules (.combat (.becameAttacking ..)) => true
-              | _ => false
-        | none =>
-          !attackers.isEmpty ||
-            g.events.any fun e =>
-              e.turn == g.turnNumber &&
-                match e.change with
-                | .rules (.combat (.attackersDeclared _ decls)) => !decls.isEmpty
-                | .rules (.combat (.becameAttacking ..)) => true
-                | _ => false
+        let slice : Array GameEvent :=
+          match combatBoundIdx? with
+          | some boundIdx => g.events.extract (boundIdx + 1) g.events.size
+          | none =>
+            let stepStartIdx? :=
+              (List.range g.events.size).reverse.find? fun idx =>
+                let e : GameEvent := g.events[idx]!
+                e.turn == g.turnNumber &&
+                  match e.change with
+                  | .rules (.turn (.stepBegan .declareAttackers _)) => true
+                  | _ => false
+            match stepStartIdx? with
+            | some startIdx => g.events.extract (startIdx + 1) g.events.size
+            | none => g.events.filter (·.turn == g.turnNumber)
+        !attackers.isEmpty ||
+          slice.any fun e =>
+            match e.change with
+            | .rules (.combat (.attackersDeclared _ decls)) => !decls.isEmpty
+            | .rules (.combat (.becameAttacking ..)) => true
+            | _ => false
     if g.step == .declareAttackers && !hadAttackersThisCombat then
       let g := g.recordStepEnded g.step
       if let .chooseReplacement .. := g.pending then

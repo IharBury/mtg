@@ -57,6 +57,10 @@ kicker must already be included in `start`. -/
 def applyCastCostReductions (g : Game) (card : GameObject) (face : CardDef)
     (start : ManaCost) : ManaCost :=
   let caster := card.controller.getD card.owner
+  let start :=
+    match card.chosenX with
+    | none => start
+    | some x => start.substituteX x
   let afterDied :=
     if face.costReductionIfCreatureDied > 0 && g.loggedCreatureDeaths > 0 then
       start.reduceGeneric face.costReductionIfCreatureDied
@@ -164,16 +168,7 @@ def applyCastCostReductions (g : Game) (card : GameObject) (face : CardDef)
               | _ => false)
           if reduces then acc + (g.power o).toNat else acc) 0
     else 0
-  let afterX :=
-    match card.chosenX with
-    | none => afterNotHand
-    | some x =>
-      { symbols := afterNotHand.symbols.foldl (fun acc s =>
-          match s with
-          | ManaSymbol.x =>
-            if x == 0 then acc else acc.push (ManaSymbol.generic x)
-          | _ => acc.push s) (#[] : Array ManaSymbol) }
-  let afterWitch := afterX.reduceGeneric witchLess
+  let afterWitch := afterNotHand.reduceGeneric witchLess
   let subtypeLess :=
     (g.permanentsOf caster).foldl (fun acc o =>
       (g.staticAbilities o).foldl (fun acc ab =>

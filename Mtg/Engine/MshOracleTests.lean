@@ -3340,7 +3340,7 @@ def winterSoldierFinalityAttachOk : Bool :=
   let g := g.returnFromGyFinalityAttach ⟨0⟩ (some gy)
   (namedPermanent g "Winter Soldier, Icy Assassin").status.finality == 1 &&
     match g.pending with
-    | .mayAttachEquipment _ host =>
+    | .mayAttachEquipment _ host .. =>
       let bow := namedPermanent g "Hawkeye's Bow"
       let g := mustApply g ⟨0⟩ (.choosePermanents #[bow.id])
       (namedPermanent g "Hawkeye's Bow").attachedTo == some host
@@ -3519,7 +3519,7 @@ def tricksterChoiceAndConniveOk : Bool :=
   let g := g.applyEffect ⟨0⟩ Effect.ownerPutsLibraryThenConnive
     #[Target.permanent ogre.id, Target.permanent bears.id]
   match g.pending with
-  | .fraChoice ⟨1⟩ (.tricksterLibrary _ _ (some connive)) =>
+  | .fraChoice ⟨1⟩ (.tricksterLibrary _ _ (some connive) ..) =>
     connive == bears.id &&
       (let gTop := mustApply g ⟨1⟩ .chooseTop
        let lib := (gTop.player ⟨1⟩).library

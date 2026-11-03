@@ -20,7 +20,7 @@ def cosmicAwarenessFlash (g : Game) (p : PlayerId) : Bool :=
     (g.staticAbilities o).any (fun
       | .flashIfOpponentCastThisTurn => true
       | _ => false)) &&
-    (g.livingOpponents p).any (fun pl => g.loggedSpellsCast pl.id > 0)
+    g.players.any (fun q => q.id != p && !g.areTeammates p q.id && g.loggedSpellsCast q.id > 0)
 
 /-- Timing check shared by beginning to cast a spell or an Adventure (CR 601.3). -/
 def timingAllowsCast (g : Game) (p : PlayerId) (face : CardDef) : Bool :=
@@ -66,7 +66,9 @@ def canCast (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
   !g.cantCastSpellsThisTurn p &&
   g.mayPlay p o &&
   (match g.playPermission o with
-   | some perm => perm.ignoreTiming || g.timingAllowsCast p bc
+   | some perm =>
+     (perm.ignoreTiming || g.timingAllowsCast p bc) &&
+       (!perm.payLifeEqualManaValue || g.canPayLife p (g.objectManaValue o))
    | none => g.timingAllowsCast p bc) &&
   (if bc.additionalCostSacrificeArtifactOrCreature &&
       bc.additionalCostOrPayGeneric.isNone then
@@ -86,7 +88,7 @@ def canPayAnnouncedAdditional (g : Game) (p : PlayerId) (o : GameObject)
     (available : ManaPool) : Bool :=
   let bc := g.baseCard o
   let allowElf := g.hasSubtype o .elf
-  let free := (g.playPermission o).any (·.withoutManaCost)
+  let free := (g.playPermission o).any (fun perm => perm.withoutManaCost || perm.payLifeEqualManaValue)
   let payExtra (n : Nat) : Bool :=
     if free then
       available.canPay (ManaCost.ofGeneric n) (allowElfRestricted := allowElf)
@@ -501,14 +503,24 @@ def foldPermanentTargets (g : Game) (targets : Array Target)
       | _ => pure ()
     return g
 
-/-- Clear `.payWard` once a ward cost is paid or declined, then continue with
-trigger target announcements or priority (CR 702.21a / 608.2n). -/
+/-- Clear `.payWard` once a ward cost is paid or declined, draining any active
+`pendingReplacement` / `outerPendingReplacements` continuations before finishing
+active resolutions, trigger target announcements, or priority (CR 702.21a / 608.2n). -/
 def afterWardResolved (g : Game) : Game :=
-  if let .chooseReplacement .. := g.pending then
-    g.chainPendingReplacement .finishFraChoice
+  let g :=
+    match g.pending with
+    | .payWard .. => g.change (.pending .none)
+    | _ => g
+  if (match g.pending with | .chooseReplacement .. => true | _ => false) ||
+      g.pendingReplacement.isSome then
+    g.chainPendingReplacement .afterWardResolved
+  else if let some outer := g.outerPendingReplacements.back? then
+    let g := g.changes #[.popOuterPendingReplacement, .pendingReplacement (some outer)]
+    g.chainPendingReplacement .afterWardResolved
   else
-    let g := g.change (.pending .none)
-    if g.triggerNeedingTargets.isSome then g.promptTriggerTargetsIfNeeded
+    let g := g.completeActiveResolutions
+    if g.pending != .none then g
+    else if g.triggerNeedingTargets.isSome then g.promptTriggerTargetsIfNeeded
     else
       let prio := g.pendingPriority.getD g.activePlayer
       g.receivePriority prio

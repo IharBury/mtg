@@ -60,36 +60,72 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
       let defaultDest := g.opponent p
       let opps := g.livingOpponents p
       let freeOpps := opps.filter (fun pl => g.attackTaxPerCreature pl.id == 0)
-      let pickDestFor (o : GameObject) : Option PlayerId :=
+      let legalPwFor (plId : PlayerId) (usedTomik : Array ObjectId) : Option GameObject :=
+        (g.permanentsOf plId).find? fun pw =>
+          g.isPlaneswalker pw &&
+            !(g.cantAttackJaces p && ((g.name pw).startsWith "Jace" || g.hasSubtype pw .jace)) &&
+            !(g.planeswalkerAttackedByOneAtMost pw && usedTomik.contains pw.id)
+      let pickDestFor (o : GameObject) (usedTomik : Array ObjectId) :
+          Option (PlayerId × Option ObjectId) :=
         let maxSat :=
           if o.status.goadedBy.isEmpty then 0
           else
             freeOpps.foldl (fun best pl =>
               if g.hasFlying o && g.leftoverFlyingRestriction pl.id then best
               else max best (o.status.goadedBy.filter (· != pl.id)).size) 0
-        let okFor (d : PlayerId) : Bool :=
+        let okPlayer (d : PlayerId) : Bool :=
           !(g.hasFlying o && g.leftoverFlyingRestriction d) &&
             (o.status.goadedBy.isEmpty ||
               (o.status.goadedBy.filter (· != d)).size >= maxSat)
-        if opps.any (·.id == defaultDest) && okFor defaultDest then
-          some defaultDest
+        if maxSat > 0 then
+          if freeOpps.any (·.id == defaultDest) && okPlayer defaultDest then
+            some (defaultDest, none)
+          else
+            (freeOpps.find? (fun pl => okPlayer pl.id)).orElse
+              (fun _ => opps.find? (fun pl => okPlayer pl.id))
+              |>.map (fun pl => (pl.id, none))
+        else if freeOpps.any (·.id == defaultDest) && okPlayer defaultDest then
+          some (defaultDest, none)
         else
-          (freeOpps.find? (fun pl => okFor pl.id)).orElse
-            (fun _ => opps.find? (fun pl => okFor pl.id))
-            |>.map (·.id)
-      let candPairs := g.battlefield.filterMap fun o =>
-        if g.canAttack o then (pickDestFor o).map (o, ·) else none
-      let (chosen, _) := candPairs.foldl
-        (fun (acc : Array (GameObject × PlayerId) × Nat) (o, d) =>
-          let nextTax := acc.2 + g.attackTaxPerCreature d
-          if nextTax == 0 || (g.player p).manaPool.canPay (ManaCost.ofGeneric nextTax) then
-            (acc.1.push (o, d), nextTax)
-          else acc) (#[], 0)
+          match freeOpps.find? (fun pl => okPlayer pl.id) with
+          | some pl => some (pl.id, none)
+          | none =>
+            match opps.findSome? (fun pl => (legalPwFor pl.id usedTomik).map (fun pw => (pl.id, some pw.id))) with
+            | some res => some res
+            | none =>
+              if opps.any (·.id == defaultDest) && okPlayer defaultDest then
+                some (defaultDest, none)
+              else
+                (opps.find? (fun pl => okPlayer pl.id)).map (fun pl => (pl.id, none))
+      let allCands := g.battlefield.filter g.canAttack
+      let ordered :=
+        allCands.filter g.mustAttackIfAble ++
+          allCands.filter (fun o => !g.mustAttackIfAble o)
+      let (chosen, _, _) := ordered.foldl
+        (fun (acc : Array (GameObject × PlayerId × Option ObjectId) × Nat × Array ObjectId) o =>
+          let (cur, usedTax, usedTomik) := acc
+          match pickDestFor o usedTomik with
+          | none => acc
+          | some (d, pw?) =>
+            let addTax := if pw?.isSome then 0 else g.attackTaxPerCreature d
+            let nextTax := usedTax + addTax
+            if nextTax == 0 || (g.player p).manaPool.canPay (ManaCost.ofGeneric nextTax) then
+              let nextTomik :=
+                match pw?.bind g.findObject? with
+                | some pw =>
+                  if g.planeswalkerAttackedByOneAtMost pw then usedTomik.push pw.id
+                  else usedTomik
+                | none => usedTomik
+              (cur.push (o, d, pw?), nextTax, nextTomik)
+            else acc) (#[], 0, #[])
       let ids := chosen.map (·.1.id)
-      if chosen.all (·.2 == defaultDest) then
+      let pws := chosen.map (·.2.2)
+      if pws.all (·.isNone) && chosen.all (·.2.1 == defaultDest) then
         some (.declareAttackers ids)
+      else if pws.all (·.isNone) then
+        some (.declareAttackers ids (each := chosen.map (some ·.2.1)))
       else
-        some (.declareAttackers ids (each := chosen.map (some ·.2)))
+        some (.declareAttackers ids (each := chosen.map (some ·.2.1)) (planeswalkers := pws))
     | .declareBlockers =>
       -- Naive: don't block. The demo still exercises the declare-blockers step.
       some (.declareBlockers #[])
@@ -159,7 +195,7 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
       payGenericOrTapFirstSource g p n
     | .chooseLibraryPlacement _ _ =>
       some .chooseBottom
-    | .mayAttachEquipment _ hostId =>
+    | .mayAttachEquipment _ hostId _ =>
       match (g.permanentsOf p).find? (fun o =>
         g.isEquipment o && o.attachedTo != some hostId) with
       | some eq => some (.choosePermanents #[eq.id])
@@ -316,7 +352,7 @@ where
     match g.proposedSpell with
     | none => some .pass
     | some prop =>
-      match g.defaultAbilityMode p prop.abilityModes with
+      match g.defaultAbilityMode p prop.abilityModes prop.sourceId with
       | some idx => some (.chooseMode idx)
       | none => some .pass
   /-- Largest `{X}` `p` can currently pay for `cost` (CR 107.3a). -/

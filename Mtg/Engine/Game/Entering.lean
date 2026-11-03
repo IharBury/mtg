@@ -167,6 +167,24 @@ def resolveAuraSpell (g : Game) (entry : StackEntry) (obj : GameObject) : Game :
     else
       g.moveToOwnerGraveyard obj s!"{obj.name} goes to the graveyard (illegal Aura target)"
         (cause := finishCause)
+  if entry.targets.isEmpty then
+    -- CR 303.4f,g,i: untargeted Aura spell or copy attaches via `.asEntersAttachAura`.
+    let (g, newId) := g.putOntoBattlefield obj.id entry.controller
+      (verb := some .resolve) (actor := some entry.controller) (cause := finishCause)
+    if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement (.afterLastPermanentEnters (some obj.id))
+    else
+      match g.findObject? newId with
+      | some o =>
+        if o.isOnBattlefield then
+          let g :=
+            match o.attachedTo.bind g.findObject? with
+            | some host => g.logMsg s!"{g.name o} enters the battlefield attached to {g.name host}"
+            | none => g.logMsg s!"{g.name o} enters the battlefield"
+          g.afterPermanentEnters (g.object! newId)
+        else g
+      | none => g
+  else
   match entry.targets[0]? with
   | some (Target.permanent hostId) =>
     match g.findObject? hostId with
@@ -197,18 +215,29 @@ def resolveAuraSpell (g : Game) (entry : StackEntry) (obj : GameObject) : Game :
   | _ => toGraveyard g
 
 /-- Resolve an Adventure: apply its effect, then exile the card and grant
-permission to cast the permanent (CR 715.3d). -/
+permission to cast the permanent (CR 715.3d). A copy of an Adventure spell was
+not cast as an Adventure and ceases to exist instead (CR 704.5e / 707.10). -/
 def resolveAdventureSpell (g : Game) (entry : StackEntry) (obj : GameObject) : Game :=
-  let finishCause := some (EventCause.gameRule .adventureSpellResolved)
-  let (g, newId) := g.move obj.id .exile none
-    (verb := some .resolve) (actor := some entry.controller) (cause := finishCause)
-  let o := g.object! newId
-  let g := g.createEffect (.playPermission o.id {
-      player := entry.controller
-      fromAdventure := true })
-    (cause := finishCause)
-  g.logMsg
-    s!"{o.name} is exiled. {(g.player entry.controller).name} may cast it for as long as it remains exiled (CR 715.3d)"
+  if obj.isCopy then
+    (g.ceaseToExist obj.id (cause := some (.stateBased .copyOutsideStackOrBf))).logMsg
+      s!"The copy of {obj.name} ceases to exist (CR 704.5e)"
+  else
+    let finishCause := some (EventCause.gameRule .adventureSpellResolved)
+    let (g, _) := g.move obj.id .exile none
+      (verb := some .resolve) (actor := some entry.controller) (cause := finishCause)
+    if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement
+        (.finishPostStep 99 entry.controller (cardId := some obj.id) (cause := finishCause))
+    else
+      match g.followMovedToZone? obj.id (· == .exile) with
+      | some o =>
+        let g := g.createEffect (.playPermission o.id {
+            player := entry.controller
+            fromAdventure := true })
+          (cause := finishCause)
+        g.logMsg
+          s!"{o.name} is exiled. {(g.player entry.controller).name} may cast it for as long as it remains exiled (CR 715.3d)"
+      | none => g
 
 /-- Perform the final CR 608.2n / 608.2p / 608.3 stack-exit and `StackObjectEvent.resolved`
 step for one finished `ResolutionFinish`. -/
@@ -267,7 +296,7 @@ def finishOneResolution (g : Game) (fin : ResolutionFinish) : Game :=
           (cause := some (.gameRule .instantOrSorceryFinishedResolving)))
       else
         let finishCause : EventCause :=
-          if obj.isAdventureSpell then .gameRule .adventureSpellResolved
+          if obj.isAdventureSpell && !obj.isCopy then .gameRule .adventureSpellResolved
           else if g.isAura obj || (g.isPermanentCard obj && !g.isLand obj) then
             .gameRule .permanentSpellResolved
           else .gameRule .instantOrSorceryFinishedResolving
@@ -300,7 +329,10 @@ def finishOneResolution (g : Game) (fin : ResolutionFinish) : Game :=
               match g.findObject? newId with
               | some o =>
                 if o.isOnBattlefield then
-                  let g := g.logMsg s!"{o.name} enters the battlefield"
+                  let g :=
+                    match o.attachedTo.bind g.findObject? with
+                    | some host => g.logMsg s!"{g.name o} enters the battlefield attached to {g.name host}"
+                    | none => g.logMsg s!"{o.name} enters the battlefield"
                   g.afterPermanentEnters (g.object! newId)
                 else g
               | none => g

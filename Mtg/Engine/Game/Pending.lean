@@ -482,7 +482,7 @@ inductive FraChoice where
   or on the bottom (decline / choose bottom), then `caster` connives
   `connive` (Trickster's Stratagem). -/
   | tricksterLibrary (caster : PlayerId) (creatureId : ObjectId)
-      (connive : Option ObjectId)
+      (connive : Option ObjectId) (sourceId : Option ObjectId := none)
   /-- You may put one of these milled cards into your hand, then gain `lifeAfter`
   life (Rapid Rescue, Rick Jones). Declining still gains the life. -/
   | mayTakeMilled (ids : Array ObjectId) (lifeAfter : Nat)
@@ -611,6 +611,7 @@ inductive Pending where
   | chooseLibraryPlacement (player : PlayerId) (id : ObjectId)
   /-- You may attach an Equipment you control to this creature. -/
   | mayAttachEquipment (player : PlayerId) (hostId : ObjectId)
+      (sourceId : Option ObjectId := none)
   /-- You may resolve the effect stashed in `mayEffect`. -/
   | mayResolve (player : PlayerId)
   /-- Tap any number of untapped Humans you control. A later sequence step

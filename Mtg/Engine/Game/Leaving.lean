@@ -18,19 +18,36 @@ def sbaPaused (g : Game) : Bool :=
   | .chooseReplacement .. | .chooseLegend .. => true
   | _ => false
 
-/-- If 0 or 1 living players remain, set the game result (CR 104). -/
-def decideGameIfFinished (g : Game) : Option Game :=
-  let living := g.livingPlayers
-  if living.size == 0 then
-    some (g.record (GameEvent.gameEnded g.turnNumber .draw) |>.logMsg "The game is a draw")
-  else if living.size == 1 then
-    let w := living[0]!
-    let blocked := (g.livingOpponents w.id).any (fun opp =>
-      (g.permanentsOf opp.id).any (fun o =>
+/-- True when an opponent of `p` controls a permanent or command-zone object
+whose static ability states opponents can't win the game (CR 104.2b). -/
+def playerCantWin (g : Game) (p : PlayerId) : Bool :=
+  (g.livingOpponents p).any (fun opp =>
+    (g.permanentsOf opp.id).any (fun o =>
+      (g.baseCard o).opponentsCantWin && g.retainsPrintedAbilities o) ||
+    (g.objects.filter (fun o =>
+      o.zone == .command && g.controlledBy o opp.id)).any (fun o =>
         (g.baseCard o).opponentsCantWin && g.retainsPrintedAbilities o))
-    if blocked then none
-    else some (g.record (GameEvent.gameEnded g.turnNumber (.won w.id)) |>.logMsg s!"{w.name} wins the game")
-  else none
+
+/-- If 0 living players remain or a single surviving player/team has no living
+opponents left, set the game result (CR 104.2a / 810.8a,b). -/
+def decideGameIfFinished (g : Game) : Option Game :=
+  if g.over then none
+  else
+    let living := g.livingPlayers
+    if living.size == 0 then
+      some (g.record (GameEvent.gameEnded g.turnNumber .draw) |>.logMsg "The game is a draw")
+    else if (living.size == 1 || living.size < g.players.size) &&
+        living.all (fun pl => (g.livingOpponents pl.id).isEmpty) then
+      let w := living[0]!
+      if living.any (fun pl => g.playerCantWin pl.id) then none
+      else
+        let msg :=
+          if living.size == 2 then
+            s!"{w.name} and {living[1]!.name} win the game"
+          else
+            s!"{w.name} wins the game"
+        some (g.record (GameEvent.gameEnded g.turnNumber (.won w.id)) |>.logMsg msg)
+    else none
 
 /-- True when this stack object is a card (CR 800.4a). Activated and
 triggered abilities, and copies of spells, are not represented by cards. -/
@@ -639,7 +656,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
           g.chainPendingReplacement (.finishPostStep 78 controller (sourceId := some sourceId))
         else g
       else g
-    | .tricksterLibrary caster _id connive =>
+    | .tricksterLibrary caster _id connive _ =>
       if p == caster then
         g.changes (#[.pending .none, .chooseModesRest none] ++ clearProp)
       else if q == p then
@@ -713,7 +730,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
       g.logMsg s!"{(g.player p).name} declines (CR 800.4f)"
     else g
   | .sacrificeCreature q | .scry q .. | .surveil q ..
-  | .mayAttachEquipment q _
+  | .mayAttachEquipment q ..
   | .recruitDiscard q
   | .maySacrificeAnotherBolg q _ | .mayCastFromLooked q _ _ | .putOnBottom q _
   | .mayPutLandFromHand q
@@ -800,7 +817,7 @@ def playerLeavesGame (g : Game) (p : PlayerId) : Game :=
     let owned := g.objects.filter (fun o => o.owner == p && o.zone != .ante)
     let linkedExileIds := owned.foldl (fun acc o =>
       if o.zone == .battlefield then acc ++ o.linkedExile else acc) #[]
-    let g := g.withBatchCore cause fun g =>
+    let (g, (savedNonSbaPending?, pushedOuterCont?)) := g.withBatchCoreReturn cause fun g =>
       let g := g.record (GameEvent.playerLeftGame g.turnNumber p (cause := cause))
       let g := g.logMsg s!"{(g.player p).name} leaves the game"
       let g :=
@@ -822,7 +839,9 @@ def playerLeavesGame (g : Game) (p : PlayerId) : Game :=
           | .layered _ (.control c) _ =>
             if c == p then acc.endControlEffectById eid (cause := cause) else acc
           | .playerRule you (.controlsPlayer them _) _ =>
-            if you == p || them == p then acc.expireEffectById eid (cause := cause) else acc
+            if you == p || them == p || acc.areTeammates them p then
+              acc.expireEffectById eid (cause := cause)
+            else acc
           | _ => acc) g
       let g :=
         g.objects.foldl (fun acc o =>
@@ -835,71 +854,84 @@ def playerLeavesGame (g : Game) (p : PlayerId) : Game :=
             ((o.defaultController.orElse (fun _ => o.controller)).getD o.owner) == p))
       let exileQueue := still.filterMap fun o =>
         (g.findObject? o.id).map (fun cur => (cur.id, s!"{g.name cur} is exiled (CR 800.4a)"))
-      g.runEndControlExileLoop exileQueue (cause := cause)
-    let g :=
-      if g.mulliganToDeclare.contains p then
-        g.change (.mulliganToDeclare (g.mulliganToDeclare.filter (· != p)))
-      else g
-    let g :=
-      if g.willMulligan.contains p then
-        g.change (.willMulligan (g.willMulligan.filter (· != p)))
-      else g
-    let g :=
-      if g.mulliganToBottom.contains p then
-        g.change (.mulliganToBottom (g.mulliganToBottom.filter (· != p)))
-      else g
-    let g :=
-      if g.priority == p then g.change (.priority (g.nextLiving p)) else g
-    let g :=
-      if g.pendingPriority == some p then g.change (.pendingPriority (some (g.nextLiving p))) else g
-    let wasCasterProposal := g.proposedSpell.any (fun prop => prop.caster == p)
-    let g := g.redirectPendingAfterLeave p
-    let g :=
-      match g.postCastCleanup with
-      | some (.grimaBottom victim cardId others) =>
-        if p == victim then
-          g.change (.postCastCleanup none)
-        else if wasCasterProposal then
-          let g := g.changes #[.proposedSpell none, .clearProposalCheckpoint, .postCastCleanup none]
-          if g.stillInGame victim then
-            let live := (others.push (g.followMoved cardId)).filter (fun id =>
-              (g.findObject? id).any (fun (o : GameObject) => o.zone == Zone.exile))
-            if live.isEmpty then g
-            else
-              let c := g.lastMoveCauseOf? cardId
-              g.requestOrderInto live (.library victim)
-                s!"{(g.player victim).name} puts the exiled cards on the bottom of their library in a random order"
-                (cause := c)
-          else g
+      let g :=
+        if g.mulliganToDeclare.contains p then
+          g.change (.mulliganToDeclare (g.mulliganToDeclare.filter (· != p)))
         else g
-      | _ => g
-    let g :=
-      if g.proposedSpell.any (fun (prop : ProposedSpell) => prop.caster == p) then
-        g.changes #[.proposedSpell none, .clearProposalCheckpoint]
-      else g
+      let g :=
+        if g.willMulligan.contains p then
+          g.change (.willMulligan (g.willMulligan.filter (· != p)))
+        else g
+      let g :=
+        if g.mulliganToBottom.contains p then
+          g.change (.mulliganToBottom (g.mulliganToBottom.filter (· != p)))
+        else g
+      let g :=
+        if g.priority == p then g.change (.priority (g.nextLiving p)) else g
+      let g :=
+        if g.pendingPriority == some p then g.change (.pendingPriority (some (g.nextLiving p))) else g
+      let wasCasterProposal := g.proposedSpell.any (fun prop => prop.caster == p)
+      let g := g.redirectPendingAfterLeave p
+      let g :=
+        match g.postCastCleanup with
+        | some (.grimaBottom victim cardId others) =>
+          if p == victim then
+            g.change (.postCastCleanup none)
+          else if wasCasterProposal then
+            let g := g.changes #[.proposedSpell none, .clearProposalCheckpoint, .postCastCleanup none]
+            if g.stillInGame victim then
+              let live := (others.push (g.followMoved cardId)).filter (fun id =>
+                (g.findObject? id).any (fun (o : GameObject) => o.zone == Zone.exile))
+              if live.isEmpty then g
+              else
+                let c := g.lastMoveCauseOf? cardId
+                g.requestOrderInto live (.library victim)
+                  s!"{(g.player victim).name} puts the exiled cards on the bottom of their library in a random order"
+                  (cause := c)
+            else g
+          else g
+        | _ => g
+      let g :=
+        if g.proposedSpell.any (fun (prop : ProposedSpell) => prop.caster == p) then
+          g.changes #[.proposedSpell none, .clearProposalCheckpoint]
+        else g
+      let savedNonSbaPending? : Option Pending :=
+        if !g.sbaPaused && g.pending != .none then some g.pending else none
+      let pushedOuterCont? : Option PendingReplacement :=
+        if savedNonSbaPending?.isSome then g.pendingReplacement else none
+      let g :=
+        match savedNonSbaPending? with
+        | some _ =>
+          let g :=
+            match pushedOuterCont? with
+            | some outer => (g.change (.pendingReplacement none)).change (.pushOuterPendingReplacement outer)
+            | none => g
+          g.change (.pending .none)
+        | none => g
+      let g := g.runEndControlExileLoop exileQueue (cause := cause)
+      (g, (savedNonSbaPending?, pushedOuterCont?))
+    let restoreSaved (g : Game) : Game :=
+      match savedNonSbaPending? with
+      | none => g
+      | some saved =>
+        if g.sbaPaused || g.currentBatch.isSome then
+          g.chainPendingReplacement (.restorePending saved)
+        else
+          let g :=
+            if pushedOuterCont?.isSome then
+              match g.outerPendingReplacements.back? with
+              | some popped => g.changes #[.popOuterPendingReplacement, .pendingReplacement (some popped)]
+              | none => g
+            else g
+          g.change (.pending saved)
     let allLinked := linkedExileIds ++ g.queuedLinkedExile
     let g := if g.queuedLinkedExile.isEmpty then g else g.change .clearQueuedLinkedExile
-    if allLinked.isEmpty then g
+    if allLinked.isEmpty then
+      restoreSaved g
     else if g.sbaPaused || g.currentBatch.isSome then
-      g.chainPendingReplacement (.finishLinkedExileMove allLinked)
-    else if g.pending != .none then
-      let saved := g.pending
-      let outerCont? := g.pendingReplacement
-      let g :=
-        match outerCont? with
-        | some outer => (g.change (.pendingReplacement none)).change (.pushOuterPendingReplacement outer)
-        | none => g
-      let g := (g.change (.pending .none)).returnLinkedExileMoves allLinked
-      if let .chooseReplacement .. := g.pending then
-        g.chainPendingReplacement (.restorePending saved)
-      else
-        let g :=
-          if outerCont?.isSome then
-            match g.outerPendingReplacements.back? with
-            | some popped => g.changes #[.popOuterPendingReplacement, .pendingReplacement (some popped)]
-            | none => g
-          else g
-        g.change (.pending saved)
+      restoreSaved (g.chainPendingReplacement (.finishLinkedExileMove allLinked))
+    else if savedNonSbaPending?.isSome then
+      restoreSaved (g.returnLinkedExileMoves allLinked)
     else
       let outerCont? := g.pendingReplacement
       let g :=
