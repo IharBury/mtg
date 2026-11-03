@@ -817,9 +817,11 @@ prompts) are **engine state** updated by
   guards `if !source.isOnBattlefield then 0` per 109.2 so cast triggers of stack
   spells are not doubled by battlefield static doublers; `putWaitingTrigger`
   still records `GameEvent.triggered` only when `!wt.checked` and—until Phase
-  20 step 2 fixes multi-copy and repeat non-`onceEachTurn` `!wt.checked`
-  triggers—only for the
-  first copy via `loggedTriggeredThisTurn`, Phase 16, #600, removed the
+  20 step 2 removes its inner `!g.loggedTriggeredThisTurn` gate while keeping
+  the `wt.ability.onceEachTurn && g.loggedTriggeredThisTurn` early
+  return—suppresses both extra copies (`i > 0`) and later same-turn
+  `!wt.checked` firings of the same non-`onceEachTurn` ability, Phase 16, #600,
+  removed the
   duplicate stack-placement `triggerConditionHolds` check in
   `Triggers.putQueuedTrigger` and retired dead `Triggers.sacrificeToGraveyard`,
   Phase 17, #602, extended `Triggers.putQueuedTrigger`'s `putTriggerOrFizzle`
@@ -844,9 +846,9 @@ prompts) are **engine state** updated by
   `Triggers.putTriggerBatch`, 0-mode `CastEvent.announced` on
   `.enter .chooseUpToXModes` / `.upToTriggerModes`, and departed-source
   `.stackTriggerUnusedMode` `TriggerQueueEvent.modeChosen`—while
-  `CastEvent.announced` on modal `.activatedAbility`, `SpellResolution.resolveTop`
-  `resolvingModes`, and `.enter .chooseUpToXModes` `choosable.isEmpty` move to
-  Phase 20 step 2—and
+  `CastEvent.announced` on modal `.activatedAbility`, `SpellResolution.resolveTop`'s
+  non-ability spell-frame `resolvingModes`, and `.enter .chooseUpToXModes`
+  `choosable.isEmpty` move to Phase 20 step 2—and
   Phase 13, #594, deleted the
   legacy imperative helpers `queueTrigger`, `putMatchingSourceTriggers`,
   `putControlledTriggers`, and `flushWaitingTriggers` in `Triggers.lean` along
@@ -1413,11 +1415,13 @@ wildcards),
 `Leaving`, and `PriorityActions` in Phase 18, #604, and in Phase 19, #606,
 across `Damage.gainLife` 3-replacement input-shadowing, multi-card `.graveyard`
 and `returnLinkedExileToHandLoop` pause loops, `PriorityActions.concede` /
-`Decisions.finishConcedePriority`, and `Decisions.decline` `.payWard` (while
+`Decisions.finishConcedePriority`, and `.payWard` `outerCont?` stash/clear in
+`Decisions.decline` and `SacrificeDiscard.sacrificeForActivation` (while
 retiring orphaned `PendingReplacement.beginStepAfterUntap`), with the remaining
-post-move `newId` / post-entry ETB pause loops, `.payWard` sacrifice
-continuations, active-prompt preservation across `concede`, and CR 122.1c SBA
-shield-counter destruction moving to Phase 20 step 1—and `Movement.move`
+post-move `newId` / post-entry ETB pause loops, `Casting.afterWardResolved`
+post-ward continuation chaining / `pendingReplacement` draining, active-prompt
+preservation across `concede`, and CR 122.1c SBA shield-counter destruction
+moving to Phase 20 step 1—and `Movement.move`
 preserving `ZoneVerb.destroy` across `ReplacementKind.exileInstead` in Phase 15,
 #598, per 701.8).
 `selectNextReplacementStep` (`Core.lean`, returning `ReplacementSelection`:
@@ -5315,7 +5319,8 @@ blocker-retention / `playerControl` integrity, and CR 500.4 / 611.2a–b /
      `checkSBA` on `Pending.chooseReplacement` / `Pending.chooseLegend` (CR
      800.4a / 117.3); and clear `g.pending` while stashing/restoring
      `outerCont? := g.pendingReplacement` on `Decisions.decline` `.payWard`
-     (`Decisions.lean`).
+     (`Decisions.lean`) and `SacrificeDiscard.sacrificeForActivation`'s
+     `.payWard` arms ([`SacrificeDiscard.lean`](Mtg/Engine/Game/SacrificeDiscard.lean)).
    - Preserve `Player.ringBearerId` across phasing out in `Core.closeBatch`
      (`Core.lean`, CR 701.54a / 702.26d): check
      `o.isBattlefieldObject && g.controlledBy o pl.id` rather than
@@ -5357,11 +5362,12 @@ blocker-retention / `playerControl` integrity, and CR 500.4 / 611.2a–b /
      `PriorityActions.pay` `.payWard` `.fivePoison`'s `.costPayment .ward`
      (`PriorityActions.lean`), and `Decisions.payGeneric` `.payOrLetCounter`'s
      `payCost` (`Decisions.lean`), while
-     keeping `Object.noSourceSentinelId` out of `EventCause.costPayment`'s
-     `forObject` in `ActivationCosts.payCostPickItems` (`ActivationCosts.lean`)
-     and falling back to `g.resolvingAbility` when `FraChoices.answerFraChoice`
-     `.mayPayPickThen` ([`FraChoices.lean`](Mtg/Engine/Game/FraChoices.lean))
-     resolves with `sourceId == none` (CR 118.12); and read the actual origin
+     mapping `Object.noSourceSentinelId` to `forObject := none` in
+     `ActivationCosts.payCostPickItems` (`ActivationCosts.lean`) and falling
+     back via `g.resolvingAbility.getD noSourceSentinelId` when
+     `FraChoices.answerFraChoice` `.mayPayPickThen`
+     ([`FraChoices.lean`](Mtg/Engine/Game/FraChoices.lean)) receives
+     `sourceId == noSourceSentinelId` (CR 118.12); and read the actual origin
      zone of `spell.id` from `CastEvent.proposed` /
      `ZoneEvent.moved ... .stack (some .cast)` in
      `Entering.putCastTriggersOnStack`
@@ -5638,12 +5644,17 @@ opponent checks, CR 723.1 `playerControl` turn-window & expiry, and
      handle `etb.stayInOriginNoAuraHost` before recording `ZoneEvent.created`
      (deleting the post-ETB `auraBoard.battlefield.find?` block in
      `Tokens.lean`); enable `.asEntersAttachAura` in `Core.applyEtbReplacements`
-     when a resolving non-Aura permanent spell on `.stack` (`!auraBoard.isAura baseObj`,
-     entering via `Entering.finishOneResolution`'s `putOntoBattlefield` arm
-     rather than `resolveAuraSpell`) becomes an Aura via CR 616.1c–d, putting a
-     card into its owner's graveyard or ceasing a spell copy to exist when
-     `stayInOriginNoAuraHost` holds for `old.zone == .stack` (`Movement.lean` /
-     `Entering.lean`, CR 303.4g / 704.5e); guard `Entering.resolveAdventureSpell`
+     when a resolving non-Aura permanent spell on `.stack` (`old.zone == .stack`
+     with `!g.isAura obj` / `!g.isAura old` entering via
+     `Entering.finishOneResolution`'s non-Aura `putOntoBattlefield` arm rather
+     than `resolveAuraSpell`, where `Movement.move` currently passes
+     `nonCastBattlefield := false`) becomes an Aura (`g.isAura curBf`) via CR
+     616.1c–d, and update `Movement.move` (`Movement.lean`, with any needed
+     caller adjustments in `Entering.lean`) when `stayInOriginNoAuraHost` holds
+     for `old.zone == .stack` so a card goes to its owner's graveyard and a
+     spell copy ceases to exist instead of taking `Movement.move`'s current
+     `"remains in its current zone"` return on `.stack` (CR 303.4g / 704.5e);
+     guard `Entering.resolveAdventureSpell`
      (`Entering.lean`) when `obj.isCopy` holds so a resolving Adventure spell
      copy ceases to exist on `.stack` rather than moving to `.exile` and
      creating an orphaned `.playPermission` (CR 704.5e / 707.10 / 715.3d); and
@@ -5691,11 +5702,15 @@ opponent checks, CR 723.1 `playerControl` turn-window & expiry, and
      `runEndControlExileLoop` can overwrite `g.pending` with
      `Pending.chooseReplacement`) across `Leaving.playerLeavesGame` and
      `PriorityActions.concede` (`Leaving.lean`, `PriorityActions.lean`,
-     `Decisions.lean`, CR 704.3 / 800.4); clear `g.pending` and stash/restore
-     `outerCont? := g.pendingReplacement` on
-     `SacrificeDiscard.sacrificeForActivation`'s `.payWard` sacrifice arms
-     (`SacrificeDiscard.lean`, matching Phase 19's `Decisions.decline` `.payWard`
-     fix); pause-chain post-move `newId` consumers via `followMovedToZone?` /
+     `Decisions.lean`, CR 704.3 / 800.4); fix `Casting.afterWardResolved`
+     (`Casting.lean`, plus `Pending.lean` / `Decisions.lean` and `.payWard`
+     callers in `SacrificeDiscard.lean`, `Decisions.lean`, and
+     `PriorityActions.lean`) so a `.chooseReplacement` pause chains a deferred
+     `afterWardResolved` continuation rather than `.finishFraChoice` and
+     synchronous `.payWard` paths drain any restored `pendingReplacement` /
+     `outerPendingReplacements` before `afterWardResolved` runs its
+     `triggerNeedingTargets` / `pendingPriority` handoff; pause-chain post-move
+     `newId` consumers via `followMovedToZone?` /
      continuations when `g.move` pauses on `Pending.chooseReplacement`
      (`ResolutionEffects.exileUntilSourceLeaves` and `exileForLeaveTrigger` in
      `ResolutionEffects.lean`, `FraResolve.applyFra` `.exileUntilSourceLeaves`
@@ -5728,10 +5743,12 @@ opponent checks, CR 723.1 `playerControl` turn-window & expiry, and
    707.10c `.copySourceSpellXTimes`, and CR 608.2b / 701.12b target & fight
    legality (§2.9, §3.5, §3.7):
    - Evaluate `playManaCost`, `playCostStart`, and `applyCastCostReductions`
-     against `{ spell with zone := prop.fromZone }` in `CastSpell.announceX`
-     (`CastSpell.lean`, also preserving `prop.sneakAttacker` / `sneakCost`) and
-     `CastExtras.applyKickerToProposed` (`CastExtras.lean`) so hand-cast `{X}`,
-     kicked, morph, and impending spells do not falsely receive
+     against `{ spell with zone := prop.original.zone }` in
+     `CastSpell.announceX` (`CastSpell.lean`, also keeping
+     `(g.baseCard spell).sneakCost`—substituting `{X}` via `chosenX`—when
+     `prop.sneakAttacker.isSome` instead of reverting to the printed mana cost)
+     and `CastExtras.applyKickerToProposed` (`CastExtras.lean`) so hand-cast
+     `{X}`, kicked, morph, and impending spells do not falsely receive
      `costReductionNotFromHand` from `spell.zone == .stack` and graveyard casts
      retain `freeCastFromGraveyard` (CR 601.2b,f / 118.8–9).
    - Complete modal activated-ability `CastEvent.announced`, spell
@@ -5741,8 +5758,10 @@ opponent checks, CR 723.1 `playerControl` turn-window & expiry, and
      passing `prop.sourceId` to `modeIsChoosable` there and in
      [`SpellTargets.lean`](Mtg/Engine/Game/SpellTargets.lean)
      `defaultAbilityMode`) so `StackEntry.chosenMode` is populated, set
-     `ContinuationChange.resolvingModes` when pushing the resolution frame in
-     `SpellResolution.resolveTop` (`SpellResolution.lean`), and check
+     `resolvingModes` on the non-ability spell `pushContinuationFrame`
+     (`resolvingSpell := some obj.id`, matching the ability frames that already
+     populate `resolvingModes`) in `SpellResolution.resolveTop`
+     (`SpellResolution.lean`), and check
      `if maxModes == 0 || choosable.isEmpty` (filtering `modes` by
      `g.triggerModeChoosable controller obj`) on `.enter .chooseUpToXModes` in
      `Triggers.putTriggeredAbilityOnStack` (`Triggers.lean`).
@@ -5757,8 +5776,10 @@ opponent checks, CR 723.1 `playerControl` turn-window & expiry, and
      [`Casting.lean`](Mtg/Engine/Game/Casting.lean) `canCast` and `Agent.lean`
      `chooseCast` (preventing unpayable life-cost proposals and `Agent`
      cast-reverse loops), and include `prop.payLife > 0` in
-     `Decisions.beginResolutionCastTargets`'s `hasDeferredCost` check
-     (`Decisions.lean`); and thread `forObject` (excluding
+     `Decisions.beginResolutionCastTargets`'s inline
+     `prop.cost.includesManaPayment || prop.needsSacrificeOther || prop.needsDiscardCard`
+     mana-window condition (`Decisions.lean`, matching Phase 19's
+     `Decisions.afterTargetsChosen` update); and thread `forObject` (excluding
      `Object.noSourceSentinelId`, with `g.resolvingAbility` fallback where
      applicable) through the remaining optional cost payments in
      `FraChoices.answerFraChoice` (`mayPayThen`, `mayPaySymbolsThen`,
@@ -5766,12 +5787,15 @@ opponent checks, CR 723.1 `playerControl` turn-window & expiry, and
      `kingpinMayPay2Life` in `FraChoices.lean`, plus `Pending.lean` as needed)
      and `Decisions.payGeneric` `.mayPayGeneric` (`Decisions.lean`, CR 118.12).
    - Fix `Triggers.putWaitingTrigger` `!wt.checked` `TriggerQueueEvent.triggered`
-     emission (`Triggers.lean`, CR 603.2 / 603.2d): record
-     `recordTriggeredWithOrigin` for all `copies` up front before the
-     stack-placement loop on the `!wt.checked` path so multi-copy
-     (`extraTriggerCopies > 0`) and repeat-in-turn non-`onceEachTurn` triggers
-     on the `!wt.checked` path emit one `TriggerQueueEvent.triggered` per copy
-     even when copy `0` pauses on mode or target announcement, matching
+     emission (`Triggers.lean`, CR 603.2 / 603.2d): keep the
+     `wt.ability.onceEachTurn && g.loggedTriggeredThisTurn wt.source.id wt.ability`
+     early return, remove the inner `!g.loggedTriggeredThisTurn` gate around
+     `recordTriggeredWithOrigin`, and record `recordTriggeredWithOrigin` once
+     per copy up front before the stack-placement loop on the `!wt.checked`
+     path so both extra copies (`extraTriggerCopies > 0`, including copies
+     requeued with `checked := true` when copy `0` pauses on mode or target
+     announcement) and later same-turn `!wt.checked` firings of the same
+     non-`onceEachTurn` ability emit `TriggerQueueEvent.triggered`, matching
      `Core.closeBatch`.
    - Complete CR 707.10c `.copySourceSpellXTimes`, `.damageUpToOneAndPlayer`
      target-index legality, `spellPaidTeamwork` isolation, CR 701.12b fight &
@@ -5888,12 +5912,14 @@ across multi-card / token / CR 616.1c–d Aura entries & Adventure spell copies,
 CR 607.2a `leaveTriggerExile` vs CR 610.3 `linkedExile` & departed-source LKI on
 `onLeaveReturnExiled` / `returnLinkedExileToHand` / `.currencyReturn`,
 `finishConcedePriority` `hasWaitingTriggers` & active-prompt preservation across
-`concede`, `.payWard` sacrifice continuation, post-move `newId` & post-entry ETB
+`concede`, `afterWardResolved` post-ward continuation chaining &
+`pendingReplacement` draining, post-move `newId` & post-entry ETB
 pause-safety, CR 122.1c SBA shield-counter destruction & damage/life departure
 guards, CR 601.2b,f,g pre-stack zone cost calculation & mana-ability window &
 `payLifeEqualManaValue` `canCast` & `forObject` provenance, modal
-`.activatedAbility` `CastEvent.announced` & `resolvingModes` & `!wt.checked`
-multi-copy `TriggerQueueEvent.triggered`, CR 707.10c `.copySourceSpellXTimes` &
+`.activatedAbility` `CastEvent.announced` & non-ability spell `resolvingModes` &
+`!wt.checked` multi-copy / repeat-in-turn `TriggerQueueEvent.triggered`, CR
+707.10c `.copySourceSpellXTimes` &
 `.damageUpToOneAndPlayer` skipped-slot indexing & `spellPaidTeamwork` & CR
 701.12b fight/target legality, CR 508.8 combat-phase bound & empty-assigner
 `beginCombatDamageAssignment` & player-only `attackTaxPerCreature` & CR 506.5
