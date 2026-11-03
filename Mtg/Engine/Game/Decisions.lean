@@ -145,6 +145,43 @@ partial def finishFraChoice (g : Game) : Game :=
       let g := g.promptTriggerTargetsIfNeeded
       if g.pending == .none then g.receivePriority prio else g
 
+/-- Finish an idle-priority or combat-assignment concession after any CR 616.1 /
+704.5j SBA pause inside `playerLeavesGame` or `checkSBA` completes (CR 800.4a /
+117.3). -/
+partial def finishConcedePriority (g : Game) (wasIdlePriority : Bool)
+    (savedPendingPrio : Option PlayerId)
+    (wasAssigningCombatDamage : Option Bool := none)
+    (runSba : Bool := false) : Game :=
+  let g := if runSba && !g.over then g.checkSBA else g
+  if g.unlessPaysDue then
+    g.flushUnlessPays
+  else if g.over then g
+  else if g.sbaPaused then
+    g.chainPendingReplacement
+      (.finishConcede wasIdlePriority savedPendingPrio wasAssigningCombatDamage)
+  else if g.pending != .none then g
+  else if let some fa := wasAssigningCombatDamage then
+    if fa then g.beginCombatDamageAssignment else g.continueBlockerCombatAssignment
+  else if !g.continuations.isEmpty || g.pendingReplacement.isSome ||
+      !g.outerPendingReplacements.isEmpty ||
+      g.triggerSequenceRest.isSome then
+    g.finishFraChoice
+  else if wasIdlePriority && g.playersReceivePriority && g.consecutivePasses ≥ g.livingPlayers.size then
+    let g := g.change (.consecutivePasses 0)
+    if !g.stack.isEmpty then
+      let g := g.resolveTop
+      if let .chooseReplacement .. := g.pending then
+        g.chainPendingReplacement (.receivePriority g.activePlayer)
+      else if g.pending != .none then g
+      else g.receivePriority g.activePlayer
+    else
+      g.advanceStep
+  else if g.playersReceivePriority then
+    let rawPrio := savedPendingPrio.getD g.priority
+    let nextP := if g.stillInGame rawPrio then rawPrio else g.nextLiving rawPrio
+    g.receivePriority nextP
+  else g
+
 /-- Resume the rules event that paused on `Pending.chooseReplacement` (CR 616.1). -/
 partial def resumePendingReplacement (g : Game) (pr : PendingReplacement)
     (followedByFinishFra : Bool := false) : Game :=
@@ -303,12 +340,15 @@ partial def resumePendingReplacement (g : Game) (pr : PendingReplacement)
     | none => g
   | .untapStepPermanents ids =>
     g.untapStepPermanents ids
-  | .beginStepAfterUntap =>
-    let g := g.recordStepEnded .untap
-    if let .chooseReplacement .. := g.pending then
-      g.chainPendingReplacement (.beginStepCont .upkeep)
-    else
-      g.beginStep .upkeep
+  | .moveCardsToGraveyardLoop ids cause =>
+    g.moveCardsToGraveyardLoop ids cause
+  | .placeSearchedGraveyardLoop ids cause pendingLog =>
+    g.placeSearchedGraveyardLoop ids cause pendingLog
+  | .returnLinkedExileToHandLoop srcId ids pendingItem =>
+    g.returnLinkedExileToHandLoop srcId ids pendingItem
+  | .finishConcede wasIdlePriority savedPendingPrio wasAssigningCombatDamage =>
+    g.finishConcedePriority wasIdlePriority savedPendingPrio wasAssigningCombatDamage
+      (runSba := true)
   | .addLoreCounters sagaId n cause =>
     match g.findObject? sagaId with
     | some saga => g.addLoreCounters saga n (cause := cause)
@@ -1658,7 +1698,7 @@ partial def afterTargetsChosen (g : Game) : Game :=
     match g.proposedSpell with
     | none => g
     | some prop =>
-      if prop.cost.includesManaPayment || prop.needsSacrificeOther ||
+      if prop.cost.includesManaPayment || prop.payLife > 0 || prop.needsSacrificeOther ||
           prop.needsDiscardCard then
         (g.change (.pending (.activateManaAbilities prop.caster))).logMsg
           s!"{(g.player prop.caster).name} may activate mana abilities (CR 601.2g)"
@@ -2265,14 +2305,14 @@ def payGeneric (g : Game) (p : PlayerId) : Except String Game := do
         | some outer => g.chainPendingReplacement outer
         | none => g
       return g.finishAndGrantPriority
-  | .payOrLetCounter q n _spellId =>
+  | .payOrLetCounter q n spellId =>
     if p != q then
       throw s!"Only {(g.player q).name} may pay \{{n}}"
     if !(g.player p).manaPool.canPay (ManaCost.ofGeneric n) then
       throw s!"{(g.player p).name} cannot pay \{{n}}"
     let outerCont? := g.pendingReplacement
     let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
-    let g ← g.payCost p (ManaCost.ofGeneric n)
+    let g ← g.payCost p (ManaCost.ofGeneric n) (forObject := some spellId)
     let g := g.logMsg s!"{(g.player p).name} pays \{{n}}"
     let g := (g.change (.pending .none)).clearUnlessPays
     let g :=
@@ -2627,10 +2667,20 @@ def decline (g : Game) (p : PlayerId) : Except String Game := do
   | .payWard q spellId _ =>
     if p != q then
       throw s!"Only {(g.player q).name} may decline to pay ward"
-    let g := g.logMsg s!"{(g.player p).name} does not pay ward"
+    let outerCont? := g.pendingReplacement
+    let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
+    let g := (g.change (.pending .none)).logMsg s!"{(g.player p).name} does not pay ward"
     let wardCtrl := (g.resolvingAbilityObject?.bind (·.controller)).getD (g.opponent p)
     let g := g.counterStackSpell spellId (controller := some wardCtrl)
-    return g.afterWardResolved
+    let g :=
+      match outerCont? with
+      | some outer => g.chainPendingReplacement outer
+      | none => g
+    if g.pending == .none &&
+        (g.pendingReplacement.isSome || !g.outerPendingReplacements.isEmpty) then
+      return g.finishFraChoice
+    else
+      return g.afterWardResolved
   | .mayAttachEquipment q _ =>
     if p != q then
       throw s!"Only {(g.player q).name} may decline to attach Equipment"
@@ -2969,7 +3019,7 @@ partial def finishAfterRandom (g : Game) (grantPriority : Bool) : Game :=
       | .revealRandomCreatureThenBottom _ _ => g
       | .putOnTop p ids => g.putIdsOnTop p ids
       | .beholdUntap p landId subtype => g.beholdAndMaybeUntap p landId subtype
-      | .plusOne id => g.addPlusOneIfStillCreature id
+      | .plusOne id ctrl srcId => g.addPlusOneIfStillCreature id ctrl srcId
       | .discardRandom p =>
         let hand := (g.player p).hand
         if hand.isEmpty then g
@@ -3162,6 +3212,9 @@ def chooseReplacement (g : Game) (p : PlayerId) (id : ReplacementId) : Except St
       | .entersAsCopyCreatureUntilEot tid =>
         let nm := ((g.findObject? tid).map g.name).getD "a creature"
         pure (g.logMsg s!"{(g.player chooser).name} chooses {nm}")
+      | .asEntersAttachAura hid =>
+        let nm := ((g.findObject? hid).map g.name).getD "a permanent"
+        pure (g.logMsg s!"{(g.player chooser).name} attaches it to {nm}")
       | _ => pure g
     let order := (g.replacementOrder.filter (· != id)).push id
     let cont? := g.pendingReplacement

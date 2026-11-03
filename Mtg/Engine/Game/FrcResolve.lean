@@ -424,7 +424,7 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
             if acc.contains name then acc else acc.push name) acc
         | none => acc) (#[] : Array String)
       let g := g.withBatch none fun g =>
-        ids.foldl (fun g id => (g.move id (.graveyard controller) none (verb := some .discard)).1) g
+        g.discardHandIdsLoop controller ids (logEach := false)
       if let .chooseReplacement .. := g.pending then
         g.chainPendingReplacement (.finishFrcPostStep 8 controller types.size)
       else
@@ -617,9 +617,7 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
     let preBf := g.battlefield
     let ids := preBf.filter (fun o =>
       g.isCreature o && o.status.tapped &&
-        match g.controllerOf o with
-        | some c => c != controller && !(g.player c).lost
-        | none => false) |>.map (·.id)
+        (g.controllerOf o).any (g.isLivingOpponentOf controller ·)) |>.map (·.id)
     g.withBatch none fun g =>
       g.destroyPermanentsLoop ids (obGainLifeFor := some controller) (preBattlefield := some preBf)
   | .obAngel =>
@@ -990,7 +988,7 @@ partial def runFrcPostStep (g : Game) (tag : Nat) (p : PlayerId) (n1 : Nat := 0)
           if acc.contains name then acc else acc.push name) acc
       | none => acc) (#[] : Array String)
     let g := g.withBatch none fun g =>
-      ids.foldl (fun g id => (g.move id (.graveyard p) none (verb := some .discard)).1) g
+      g.discardHandIdsLoop p ids (logEach := false)
     if let .chooseReplacement .. := g.pending then
       g.chainPendingReplacement (.finishFrcPostStep 8 p types.size)
     else

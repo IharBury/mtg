@@ -225,7 +225,7 @@ private def afterRandomReferencesPlayer (p : PlayerId) : AfterRandom → Bool
   | .none => false
   | .draw q _ | .gainLife q _ | .revealRandomCreatureThenBottom q _
   | .putOnTop q _ | .beholdUntap q _ _ | .discardRandom q => q == p
-  | .plusOne _ => false
+  | .plusOne .. => false
 
 private def filterLivingAttackTargets (g : Game) (controller : PlayerId)
     (opts : Array AttackTarget) : Array AttackTarget :=
@@ -617,13 +617,18 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
           (g.change (.pending (.fraChoice opp.id (.riddlesChoosePile controller faceUp faceDown)))).logMsg
             s!"{opp.name} chooses a pile (CR 800.4h)"
         | none =>
-          let g := g.change (.pending .none)
+          let outerCont? := g.pendingReplacement
+          let g :=
+            g.changes (#[.pending .none] ++
+              (if outerCont?.isSome then #[.pendingReplacement none] else #[]))
           let g := g.withBatch none fun g =>
             faceUp.foldl (fun acc id =>
               if (acc.findObject? id).isSome then (acc.move id (.hand controller) none).1 else acc) g
-          g.withBatch none fun g =>
-            faceDown.foldl (fun acc id =>
-              if (acc.findObject? id).isSome then (acc.move id (.graveyard controller) none).1 else acc) g
+          let g := g.withBatch none fun g =>
+            g.moveCardsToGraveyardLoop faceDown
+          match outerCont? with
+          | some outer => g.chainPendingReplacement outer
+          | none => g
       else g
     | .palantirMayDraw controller sourceId =>
       if p == controller then

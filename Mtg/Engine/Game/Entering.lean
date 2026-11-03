@@ -14,10 +14,24 @@ namespace Game
 /-- Put “whenever you cast an instant or sorcery” triggers onto the stack
 (CR 601.2i / 603.3). -/
 def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) : Game :=
+  let loggedOrigin? := Id.run do
+    let mut idx := g.events.size
+    while idx > 0 do
+      idx := idx - 1
+      match g.events[idx]!.change with
+      | .rules (.cast (.proposed obj _ fz _)) =>
+        if obj == spell.id then return some fz
+      | .rules (.zone (.moved _ after fz .stack .cast ..)) =>
+        if after.id == some spell.id then return some fz
+      | _ => pure ()
+    return none
   let fromZone :=
-    if g.castFromGraveyard spell.id then Zone.graveyard spell.owner
-    else if g.castFromHand spell.id then Zone.hand spell.owner
-    else Zone.exile
+    match loggedOrigin? with
+    | some fz => fz
+    | none =>
+      if g.castFromGraveyard spell.id then Zone.graveyard spell.owner
+      else if g.castFromHand spell.id then Zone.hand spell.owner
+      else Zone.exile
   let happened :=
     GameEvent.spellCast g.turnNumber caster
       { (g.snapshot spell) with manaValue := g.objectManaValue spell }

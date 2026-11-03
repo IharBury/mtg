@@ -22,11 +22,11 @@ def payRemoveIndestructibleCounter (g : Game) (o : GameObject)
     (cause := .costPayment .removeCounters p forObject))
   return g.logMsg s!"{g.name o} loses an indestructible counter"
 
-/-- Whether `p` can pay `n` life (CR 119.4). Paying 0 life is always legal. -/
+/-- Whether `p` can pay `n` life (CR 119.4 / 119.8). Paying 0 life is always legal. -/
 def canPayLife (g : Game) (p : PlayerId) (n : Nat) : Bool :=
-  n == 0 || (g.player p).life ≥ (n : Int)
+  n == 0 || ((g.player p).life ≥ (n : Int) && !g.lifeLocked p && !g.lifeCantChange p)
 
-/-- Pay `n` life as a cost (CR 118.3b / 119.4). Payment of life is not damage. -/
+/-- Pay `n` life as a cost (CR 118.3b / 119.4 / 119.8). Payment of life is not damage. -/
 def payLifeCost (g : Game) (p : PlayerId) (n : Nat)
     (forObject : Option ObjectId := none)
     (cause : Option EventCause := some (.costPayment .life p forObject)) : Except String Game := do
@@ -35,17 +35,14 @@ def payLifeCost (g : Game) (p : PlayerId) (n : Nat)
   let pl := g.player p
   if pl.life < (n : Int) then
     throw s!"{pl.name} cannot pay {n} life"
+  if g.lifeLocked p || g.lifeCantChange p then
+    throw s!"{pl.name} cannot pay {n} life (life total can't change)"
   let effCause :=
     g.resolveOptionalCause cause (fallbackCtrl := some p)
       (defaultCause := .costPayment .life p forObject)
-  let g :=
-    if g.lifeLocked p || g.lifeCantChange p then
-      g.logMsg s!"{pl.name}'s life total can't change"
-    else
-      (g.record (GameEvent.life g.turnNumber p n false false false
-        (cause := effCause))).logMsg
-        s!"{pl.name} pays {n} life ({pl.life - (n : Int)} life)"
-  return g
+  return (g.record (GameEvent.life g.turnNumber p n false false false
+    (cause := effCause))).logMsg
+    s!"{pl.name} pays {n} life ({pl.life - (n : Int)} life)"
 
 /-- Default order for paying a cost with permanents: tokens first, then the
 lowest mana value. -/
@@ -110,6 +107,7 @@ chaining `.payCostPickItems` if an earlier move or sacrifice pauses on
 `Pending.chooseReplacement` (`pick.count >= 2`). -/
 def payCostPickItems (g : Game) (p : PlayerId) (abilityId sourceId : ObjectId) (pick : CostPick)
     (ids : Array ObjectId) : Game :=
+  let forObj : Option ObjectId := if abilityId == noSourceSentinelId then none else some abilityId
   let run (g : Game) : Game := Id.run do
     let name := (g.player p).name
     let mut g := g
@@ -119,10 +117,10 @@ def payCostPickItems (g : Game) (p : PlayerId) (abilityId sourceId : ObjectId) (
         match pick with
         | .tapUntappedCreature | .tapTwoUntappedArtifacts =>
           let oName := g.name o
-          g := (g.becomeTapped o (cause := some (.costPayment .tap p (some abilityId)))).logMsg
+          g := (g.becomeTapped o (cause := some (.costPayment .tap p forObj))).logMsg
             s!"{name} taps {oName} to pay a cost"
         | .exileAnotherCreatureCardFromGraveyard =>
-          g := (g.move id .exile none (cause := some (.costPayment .exile p (some abilityId)))).1.logMsg
+          g := (g.move id .exile none (cause := some (.costPayment .exile p forObj))).1.logMsg
             s!"{name} exiles {o.name} from their graveyard"
         | _ =>
           if o.isOnBattlefield then
@@ -133,13 +131,13 @@ def payCostPickItems (g : Game) (p : PlayerId) (abilityId sourceId : ObjectId) (
             let pw := g.power o
             let oName := g.name o
             g := g.sacrificeToGraveyard o s!"{name} sacrifices {oName}"
-              (cause := some (.costPayment .sacrifice p (some abilityId)))
+              (cause := some (.costPayment .sacrifice p forObj))
             if records then
               if (g.findObject? abilityId).isSome then
                 g := g.setStackEntryLastKnown abilityId (lastKnownPower := some pw)
           else
             g := (g.move id (.graveyard o.owner) none (verb := some .discard) (actor := some p)
-              (cause := some (.costPayment .discard p (some abilityId)))).1.logMsg
+              (cause := some (.costPayment .discard p forObj))).1.logMsg
               s!"{name} discards {o.name}"
         if let .chooseReplacement .. := g.pending then
           let rem := ids.extract (i + 1) ids.size
@@ -150,7 +148,7 @@ def payCostPickItems (g : Game) (p : PlayerId) (abilityId sourceId : ObjectId) (
   match pick with
   | .tapTwoUntappedArtifacts =>
     if g.currentBatch.isSome || ids.size ≤ 1 then run g
-    else g.withBatch (some (.costPayment .tap p (some abilityId))) run
+    else g.withBatch (some (.costPayment .tap p forObj)) run
   | _ => run g
 
 /-- Pay `pick` with `ids` for the ability `abilityId` of `sourceId`
@@ -221,7 +219,7 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
   if ab.any (·.cost.fra == .exileSourceFromHand) then
     if !(src.zone == .hand src.owner && src.owner == p) then
       throw s!"{src.name} is not in your hand"
-    let g ← g.payLifeCost p payLife
+    let g ← g.payLifeCost p payLife (forObject := forObject)
     let outer? := g.pendingReplacement
     let g := if outer?.isSome then g.change (.pendingReplacement none) else g
     let g := g.logMsg s!"{(g.player p).name} exiles {src.name} from their hand"
@@ -230,7 +228,7 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
   if discardSource then
     if !(src.zone == .hand src.owner && src.owner == p) then
       throw s!"{src.name} is not in your hand"
-    let g ← g.payLifeCost p payLife
+    let g ← g.payLifeCost p payLife (forObject := forObject)
     let src := g.object! sourceId
     let outer? := g.pendingReplacement
     let g := if outer?.isSome then g.change (.pendingReplacement none) else g
@@ -243,7 +241,7 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
     src.zone == .graveyard src.owner && src.owner == p &&
       !ab.any (·.cost.loyalty.isSome)
   if fromGraveyard && !tapSource && !sacrificeSource then
-    let g ← g.payLifeCost p payLife
+    let g ← g.payLifeCost p payLife (forObject := forObject)
     if ab.any (·.cost.exileSourceFromGraveyard) then
       let outer? := g.pendingReplacement
       let g := if outer?.isSome then g.change (.pendingReplacement none) else g
@@ -271,7 +269,7 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
   let mut g := if outer?.isSome then g.change (.pendingReplacement none) else g
   if tapSource then
     g := g.becomeTapped (g.object! sourceId) (cause := some (.costPayment .tap p forObject))
-  g := (← g.payLifeCost p payLife)
+  g := (← g.payLifeCost p payLife (forObject := forObject))
   match ab with
   | some a =>
     if a.cost.removeStoryCounter then

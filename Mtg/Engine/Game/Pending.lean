@@ -57,7 +57,7 @@ inductive AfterRandom where
   /-- Behold `subtype`; if you do, untap `landId` (Elven Passage). -/
   | beholdUntap (p : PlayerId) (landId : ObjectId) (subtype : CardSubtype)
   /-- Put a +1/+1 counter on this creature after the shuffle (Restorative Technique). -/
-  | plusOne (id : ObjectId)
+  | plusOne (id : ObjectId) (controller : PlayerId) (sourceId : Option ObjectId := none)
 /-- Discard a card at random after the shuffle (Curse-Marred Demon). -/
   | discardRandom (p : PlayerId)
 deriving DecidableEq, Repr, Inhabited, BEq

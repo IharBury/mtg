@@ -140,6 +140,7 @@ private def applyActionFor (g : Game) (p : PlayerId) : Action → Except String 
             match c.kind with
             | .entersAsCopyCreatureUntilEot cid => cid == tid
             | .entersUntappedBehold bid _ => bid == tid
+            | .asEntersAttachAura hid => hid == tid
             | _ => false) with
         | some id => g.chooseReplacement p id
         | none => g.choosePermanents p ids

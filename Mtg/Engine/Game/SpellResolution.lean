@@ -24,25 +24,45 @@ def targetsAllIllegalForKind (g : Game) (controller : PlayerId)
     let chosenSlots : Array Nat :=
       if kind.spec.slots.isEmpty then #[]
       else (List.range kind.spec.slots.size).toArray.filter (fun s => !skippedOptionalSlots.contains s)
-    (List.range targets.size).all fun i =>
-      let t := targets[i]!
-      let legal :=
-        if kind.spec.slots.isEmpty then
-          g.legalTargetsForKind controller kind sourceId
-        else
-          let slotKind := kind.slotKind (chosenSlots[i]?.getD i)
-          if slotKind.spec.slots.isEmpty then
-            g.legalTargetsForAtomicKind controller slotKind sourceId
+    let surviving : Array Target :=
+      (List.range targets.size).toArray.filterMap fun i =>
+        let t := targets[i]!
+        let legal :=
+          if kind.spec.slots.isEmpty then
+            g.legalTargetsForKind controller kind sourceId
           else
-            g.legalTargetsForKind controller slotKind sourceId
-      let baseOk := legal.contains t
-      let worthyOk :=
-        if !equipWorthy then true
-        else
+            let slotKind := kind.slotKind (chosenSlots[i]?.getD i)
+            if slotKind.spec.slots.isEmpty then
+              g.legalTargetsForAtomicKind controller slotKind sourceId
+            else
+              g.legalTargetsForKind controller slotKind sourceId
+        let baseOk := legal.contains t
+        let worthyOk :=
+          if !equipWorthy then true
+          else
+            match t with
+            | Target.permanent id => (g.findObject? id).any g.isWorthyPermanent
+            | _ => false
+        if baseOk && worthyOk then some t else none
+    if surviving.isEmpty then true
+    else
+      match kind with
+      | .twoNonlandsSharingType =>
+        match surviving[0]?, surviving[1]? with
+        | some (Target.permanent a), some (Target.permanent b) =>
+          a == b ||
+            match g.findObject? a, g.findObject? b with
+            | some oa, some ob => !g.sharesCardType oa ob
+            | _, _ => true
+        | _, _ => surviving.size >= 2
+      | .upToTwoCreaturesTotalMvAtMost n =>
+        let totalMv := surviving.foldl (fun acc t =>
           match t with
-          | Target.permanent id => (g.findObject? id).any g.isWorthyPermanent
-          | _ => false
-      !(baseOk && worthyOk)
+          | Target.permanent id =>
+            acc + ((g.findObject? id).map g.objectManaValue |>.getD 0)
+          | _ => acc) 0
+        totalMv > n
+      | _ => false
 
 /-- CR 608.2b: an activated or triggered ability with targets whose targets are
 all illegal doesn't resolve. Each announced target is checked against its own

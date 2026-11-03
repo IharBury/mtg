@@ -363,9 +363,9 @@ def lastActive? {α : Type} (g : Game) (f : ContinuousEffectSpec → Option α) 
       | some v => some v
       | none => acc) none
 
-/-- Whether an active continuous effect has exactly the payload `eff`. -/
+/-- Whether an active continuous effect has exactly the payload `eff` (CR 611.2b / 702.26f). -/
 def hasActiveEffect (g : Game) (eff : ContinuousEffectSpec) : Bool :=
-  g.activeEffects.any (fun (_, e) => e == eff)
+  g.activeEffects.any (fun (_, e) => e == eff && g.durationActive e.duration)
 
 /-- Apply one `ContinuousEffectEvent` in isolation (CR 611). -/
 def applyContinuousEffectEvent (g : Game) (e : ContinuousEffectEvent) : Game :=
@@ -1232,10 +1232,13 @@ def livingPlayers (g : Game) : Array Player :=
 def stillInGame (g : Game) (p : PlayerId) : Bool :=
   !(g.player p).lost
 
+/-- True when `a` and `b` are distinct Two-Headed Giant teammates (CR 102.3 / 810.2). -/
+def areTeammates (g : Game) (a b : PlayerId) : Bool :=
+  a != b && ((g.player a).teammate == some b || (g.player b).teammate == some a)
+
 /-- Living opponents of `p` (CR 102.2 / 810). -/
 def livingOpponents (g : Game) (p : PlayerId) : Array Player :=
-  let mate := (g.player p).teammate
-  g.livingPlayers.filter (fun pl => pl.id != p && mate != some pl.id && pl.teammate != some p)
+  g.livingPlayers.filter (fun pl => pl.id != p && !g.areTeammates p pl.id)
 
 def battlefield (g : Game) : Array GameObject :=
   g.objects.filter GameObject.isOnBattlefield
@@ -1250,6 +1253,21 @@ def hasTurnBegunSince (g : Game) (eid : EffectId) (p : PlayerId) : Bool :=
     | .rules (.turn (.turnBegan q _)) =>
       if seenCreate && q == p then (seenCreate, true) else (seenCreate, seenTurn)
     | _ => (seenCreate, seenTurn)) (false, false) |>.2
+
+/-- Whether another turn has begun (`TurnEvent.turnBegan _ _`) in `g.events`
+after the first turn of `p` that began since continuous effect `eid` was created
+(CR 723.1: "during their next turn" lasts until the beginning of the next turn). -/
+def hasTurnAfterBegunSince (g : Game) (eid : EffectId) (p : PlayerId) : Bool :=
+  g.events.foldl (fun (seenCreate, seenTurn, seenAfter) ev =>
+    match ev.change with
+    | .rules (.continuousEffect (.created id _)) =>
+      if id == eid then (true, false, false) else (seenCreate, seenTurn, seenAfter)
+    | .rules (.turn (.turnBegan q _)) =>
+      if !seenCreate then (seenCreate, seenTurn, seenAfter)
+      else if seenTurn then (seenCreate, seenTurn, true)
+      else if q == p then (seenCreate, true, false)
+      else (seenCreate, seenTurn, seenAfter)
+    | _ => (seenCreate, seenTurn, seenAfter)) (false, false, false) |>.2.2
 
 /-- Timestamp `(tier, sub)` of `k` counters on `oid` (CR 613.7c): putting a new
 counter of kind `k` on `oid` gives all `k` counters on `oid` that new timestamp. -/
@@ -2089,10 +2107,11 @@ def assignCombatDamageEqualToughness (g : Game) : Option PlayerId :=
     | _ => acc) none
 
 def playerControl (g : Game) : Option (PlayerId × PlayerId) :=
-  g.activeEffects.foldl (fun acc (_, s) =>
+  g.activeEffects.foldl (fun acc (eid, s) =>
     match s with
-    | .playerRule you (.controlsPlayer them _) d =>
-      if g.durationActive d then some (you, them) else acc
+    | .playerRule you (.controlsPlayer them onNextTurn) d =>
+      let inWindow := !onNextTurn || (g.hasTurnBegunSince eid them && !g.hasTurnAfterBegunSince eid them)
+      if g.durationActive d && inWindow then some (you, them) else acc
     | _ => acc) none
 
 def controlOnNextTakenTurn (g : Game) : Array (PlayerId × PlayerId) :=
@@ -5450,21 +5469,21 @@ def countCreaturesControlledBy (g : Game) (p : PlayerId) : Nat :=
 def countArtifactsControlledBy (g : Game) (p : PlayerId) : Nat :=
   (g.permanentsOf p).filter (g.isArtifact ·) |>.size
 
-/-- Artifacts on the battlefield not controlled by `controller` (after Layer 2 & Layer 4). -/
+/-- Artifacts on the battlefield controlled by a living opponent of `controller` (after Layer 2 & Layer 4). -/
 def countOpponentArtifacts (g : Game) (controller : PlayerId) : Nat :=
   g.battlefield.filter (fun o =>
-    g.isArtifact o && !g.controlledBy o controller) |>.size
+    g.isArtifact o && (g.controllerOf o).any (g.isLivingOpponentOf controller ·)) |>.size
 
 /-- Active player-controlling effect controlling `whose` (latest wins, CR 613.7 /
 723.5; in Two-Headed Giant, controlling a player also controls their teammate,
 CR 810 / MSH 236). -/
 def controllingPlayerOf? (g : Game) (whose : PlayerId) : Option PlayerId :=
-  g.activeEffects.foldl (fun acc (_, s) =>
+  g.activeEffects.foldl (fun acc (eid, s) =>
     match s with
-    | .playerRule you (.controlsPlayer them _) d =>
-      if g.durationActive d &&
-          (them == whose || (g.player them).teammate == some whose ||
-           (g.player whose).teammate == some them) then
+    | .playerRule you (.controlsPlayer them onNextTurn) d =>
+      let inWindow := !onNextTurn || (g.hasTurnBegunSince eid them && !g.hasTurnAfterBegunSince eid them)
+      if g.durationActive d && inWindow &&
+          (them == whose || g.areTeammates them whose) then
         some you
       else acc
     | _ => acc) none
@@ -6187,7 +6206,9 @@ def grantsStatBonusTo (g : Game) (src target : GameObject) : Int × Int :=
           else acc
         | .opponentsCreaturesGet p t =>
           if src.isOnBattlefield && target.isOnBattlefield && tgtIsCreature &&
-              srcCtrl.isSome && tgtCtrl.isSome && srcCtrl != tgtCtrl then
+              (match srcCtrl, tgtCtrl with
+               | some sc, some tc => g.isLivingOpponentOf sc tc
+               | _, _ => false) then
             addStats acc (p, t)
           else acc
         | .chosenTypeCreaturesGet p t =>
@@ -6532,6 +6553,61 @@ private def selfEntersTapped (g : Game) (p : PlayerId) (o : GameObject) : Bool :
          nOpp < n
        | none => false)))
 
+/-- Protection from the source's colors or from its card type (CR 702.16 / 613.1c–e). -/
+def frcProtectedFrom (g : Game) (o src : GameObject) : Bool :=
+  let srcColors := g.colors src
+  let tc := g.evalLayer3 o
+  let bc := g.baseCard o
+  let colorBlock :=
+    g.retainsPrintedAbilities o &&
+      bc.protectionFromColors.any (fun c => srcColors.contains (TextChange.applyColor tc c))
+  let typeMatch (em : GameObject) :=
+    (g.baseCard em).protectionFromChosenCardType &&
+      g.retainsPrintedAbilities em &&
+      match em.status.chosenCardType with
+      | some t => g.hasType src t
+      | none => false
+  colorBlock || typeMatch o ||
+    match g.controllerOf o with
+    | some p => (g.permanentsOf p).any typeMatch
+    | none => false
+
+/-- Whether battlefield Aura `auraObj` may enchant `host` after Layer 4 and
+Layer 6 evaluation, including protection (CR 303.4 / 613.1d / 613.1f / 702.16c / 704.5m). -/
+def auraObjCanEnchant (g : Game) (host auraObj : GameObject) : Bool :=
+  let statics := g.staticAbilities auraObj
+  host.isOnBattlefield && !g.frcProtectedFrom host auraObj &&
+    if statics.any (· == .fra .enchantArtifactOrNonAuraEnchantment) then
+      g.isArtifact host || (g.isEnchantment host && !g.isAura host)
+    else if statics.any (· == .fra .enchantCreatureYouControl) then
+      g.isCreature host && g.controlledBy host (g.you auraObj)
+    else g.isCreature host
+
+/-- Reconstruct a pre-batch `Game` board for CR 303.4f / 614.12 Aura host
+legality checks so co-entering permanents' static abilities do not contaminate
+host evaluation during simultaneous entry. -/
+def preBatchAuraBoard (g : Game) (preBf? : Option (Array GameObject) := none) : Game :=
+  match preBf? with
+  | some preBf =>
+    let nonBf := g.objects.filter (fun o => o.zone != .battlefield && !preBf.any (·.id == o.id))
+    { g with objects := preBf ++ nonBf }
+  | none =>
+    if g.currentBatch.isSome && !g.openBatchObjects.isEmpty then
+      { g with
+        objects := g.openBatchObjects
+        players := g.openBatchPlayers
+        activeEffects := g.openBatchEffects
+        stack := g.openBatchStack }
+    else g
+
+/-- First legal battlefield host in `preBf` (evaluated on `g.preBatchAuraBoard (some preBf)`)
+that `auraProbe` may enchant and that is still on the battlefield in `g` (CR 303.4f–g). -/
+def findPreBatchAuraHost? (g : Game) (preBf : Array GameObject) (auraProbe : GameObject) :
+    Option GameObject :=
+  let board := g.preBatchAuraBoard (some preBf)
+  preBf.find? (fun h =>
+    (g.findObject? h.id).any (·.isOnBattlefield) && board.auraObjCanEnchant h auraProbe)
+
 /-- Result of applying CR 616.1a–g enters-the-battlefield replacement effects
 to a permanent or token about to enter the battlefield. -/
 structure EtbReplacementResult where
@@ -6544,6 +6620,9 @@ structure EtbReplacementResult where
   /-- `(originalPrinted, copyCard)` when Cursed Mirror enters as a copy of a
   creature with haste until end of turn (CR 614.1c / 614.12 / Ruling 1015). -/
   tempCopyUntilEot : Option (CardDef × CardDef) := none
+  /-- True when a non-cast Aura could not legally enchant any object on the
+  battlefield and therefore stays in its origin zone (CR 303.4f–g). -/
+  stayInOriginNoAuraHost : Bool := false
 
 /-- Run the CR 616.1a–g replacement loop for `candidate` about to enter the
 battlefield (CR 614.1c / 614.12 / 616.1):
@@ -6555,6 +6634,7 @@ battlefield (CR 614.1c / 614.12 / 616.1):
 - `616.1c` (`copy`): `entersAsCopy`, `entersAsCopyCreatureUntilEot` / `declineEntersAsCopy`.
 - `616.1d` (`backFaceUp`): `entersBackFaceUp` (including daybound entering
   transformed when `g.isNight`, CR 702.145b).
+- `303.4f–g` (`auraHost`): non-cast Aura host selection.
 - `616.1e` (`other`): `entersWithExtraCounters`
   (including Arwen, Weaver of Hope, `othersEnterWithPlusOneEqualToughness`).
 - `616.1g`: contained counter-putting replacements via `replaceCountersPut`. -/
@@ -6564,7 +6644,9 @@ def applyEtbReplacements (g : Game) (candidate : GameObject)
     (leavingPlay : Bool := false) (forceBackFace : Bool := false)
     (applied : Array ReplacementId := #[])
     (cause : Option EventCause := none)
-    (order : Array ReplacementId := g.replacementOrder) : EtbReplacementResult := Id.run do
+    (order : Array ReplacementId := g.replacementOrder)
+    (nonCastBattlefield : Bool := false)
+    (preBattlefield : Option (Array GameObject) := none) : EtbReplacementResult := Id.run do
   let _ := asOf
   let preBfOk (c : GameObject) : Bool :=
     c.isOnBattlefield && c.id != candidate.id &&
@@ -6581,6 +6663,7 @@ def applyEtbReplacements (g : Game) (candidate : GameObject)
   let mut choice? : Option (PlayerId × Array ReplacementId) := none
   let mut weaverBonus : Nat := 0
   let mut tempCopy : Option (CardDef × CardDef) := none
+  let mut stayInOriginNoAuraHost : Bool := false
   -- Any caller-supplied `extraCounters` (e.g., incubate, return with finality)
   -- have contained counter-putting replacements applied (CR 616.1g).
   for (k, n) in extraCounters do
@@ -6951,6 +7034,47 @@ def applyEtbReplacements (g : Game) (candidate : GameObject)
               specs := specs.push { spec with affectedPlayer := ctrl }
           | _ => pure ()
       | _ => pure ()
+    -- CR 303.4f–g: non-cast Aura entering `.battlefield` must attach to an
+    -- object it can legally enchant (or remain in its origin zone if none exists).
+    if nonCastBattlefield && !cur.status.faceDown && cur.attachedTo.isNone && g.isAura curBf then
+      let pendingCtrlCopyFace :=
+        hasPendingExternalCopyOrBackFace ||
+          specs.any (fun s =>
+            match s.kind with
+            | .entersUnderControl .. | .entersAsCopy ..
+            | .entersAsCopyCreatureUntilEot .. | .declineEntersAsCopy ..
+            | .entersBackFaceUp .. => true
+            | _ => false)
+      let hostDecided :=
+        curApplied.any (fun rid =>
+          rid.object == some cur.id &&
+            match rid.kind with | .asEntersAttachAura _ => true | _ => false)
+      if !pendingCtrlCopyFace && !hostDecided then
+        let board := g.preBatchAuraBoard preBattlefield
+        let candidatePool : Array GameObject :=
+          match preBattlefield with
+          | some pb => pb
+          | none =>
+            if g.currentBatch.isSome && !g.openBatchObjects.isEmpty then
+              g.openBatchObjects.filter GameObject.isOnBattlefield
+            else g.battlefield
+        let legalHosts :=
+          candidatePool.filter (fun (h : GameObject) =>
+            h.id != cur.id && (g.findObject? h.id).any GameObject.isOnBattlefield &&
+              board.auraObjCanEnchant h curBf)
+        if legalHosts.isEmpty then
+          stayInOriginNoAuraHost := true
+          specs := #[]
+          fuel := 0
+        else
+          for h in legalHosts do
+            specs := specs.push {
+              id := { kind := .asEntersAttachAura h.id, object := some cur.id, player := some ctrl }
+              source := some cur.id
+              controller := some ctrl
+              affectedPlayer := ctrl
+              kind := .asEntersAttachAura cur.id h.id
+            }
     let candidates := specs.map (fun s => (ReplacementOrPrevention.replacement s).toCandidate)
     match g.selectNextReplacementStep candidates curApplied curOrder with
     | .none => fuel := 0
@@ -6964,7 +7088,10 @@ def applyEtbReplacements (g : Game) (candidate : GameObject)
       | none => fuel := 0
       | some spec =>
         curApplied := curApplied.push chosen.id
-        curCause := g.wrapReplacedCause chosen.id curCause (some ctrl)
+        curCause :=
+          match spec.kind with
+          | .asEntersAttachAura .. => curCause
+          | _ => g.wrapReplacedCause chosen.id curCause (some ctrl)
         match spec.kind with
         | .entersTappedSelf _
         | .entersTappedDeclinePayLife _ | .entersTappedDeclineBehold _ =>
@@ -7055,6 +7182,12 @@ def applyEtbReplacements (g : Game) (candidate : GameObject)
               printed := newPrinted
               status := st' }
           | none => pure ()
+        | .asEntersAttachAura _ hid =>
+          if (g.findObject? hid).any (·.isOnBattlefield) then
+            cur := { cur with attachedTo := some hid }
+          else
+            stayInOriginNoAuraHost := true
+            fuel := 0
         | .entersWithExtraCounters _ k n =>
           let isWeaver :=
             match spec.source.bind g.findObject? with
@@ -7092,6 +7225,7 @@ def applyEtbReplacements (g : Game) (candidate : GameObject)
     cause := curCause
     choice? := choice?
     tempCopyUntilEot := tempCopy
+    stayInOriginNoAuraHost := stayInOriginNoAuraHost
   }
 
 /-- Whether `blocker`'s static abilities currently allow it to be declared as
@@ -7251,61 +7385,6 @@ def playerHasHexproof (g : Game) (p : PlayerId) : Bool :=
         | .youAndOtherSubtypeHaveHexproofIfShield _ => true
         | _ => false))
 
-/-- Protection from the source's colors or from its card type (CR 702.16 / 613.1c–e). -/
-def frcProtectedFrom (g : Game) (o src : GameObject) : Bool :=
-  let srcColors := g.colors src
-  let tc := g.evalLayer3 o
-  let bc := g.baseCard o
-  let colorBlock :=
-    g.retainsPrintedAbilities o &&
-      bc.protectionFromColors.any (fun c => srcColors.contains (TextChange.applyColor tc c))
-  let typeMatch (em : GameObject) :=
-    (g.baseCard em).protectionFromChosenCardType &&
-      g.retainsPrintedAbilities em &&
-      match em.status.chosenCardType with
-      | some t => g.hasType src t
-      | none => false
-  colorBlock || typeMatch o ||
-    match g.controllerOf o with
-    | some p => (g.permanentsOf p).any typeMatch
-    | none => false
-
-/-- Whether battlefield Aura `auraObj` may enchant `host` after Layer 4 and
-Layer 6 evaluation, including protection (CR 303.4 / 613.1d / 613.1f / 702.16c / 704.5m). -/
-def auraObjCanEnchant (g : Game) (host auraObj : GameObject) : Bool :=
-  let statics := g.staticAbilities auraObj
-  host.isOnBattlefield && !g.frcProtectedFrom host auraObj &&
-    if statics.any (· == .fra .enchantArtifactOrNonAuraEnchantment) then
-      g.isArtifact host || (g.isEnchantment host && !g.isAura host)
-    else if statics.any (· == .fra .enchantCreatureYouControl) then
-      g.isCreature host && g.controlledBy host (g.you auraObj)
-    else g.isCreature host
-
-/-- Reconstruct a pre-batch `Game` board for CR 303.4f / 614.12 Aura host
-legality checks so co-entering permanents' static abilities do not contaminate
-host evaluation during simultaneous entry. -/
-def preBatchAuraBoard (g : Game) (preBf? : Option (Array GameObject) := none) : Game :=
-  match preBf? with
-  | some preBf =>
-    let nonBf := g.objects.filter (fun o => o.zone != .battlefield && !preBf.any (·.id == o.id))
-    { g with objects := preBf ++ nonBf }
-  | none =>
-    if g.currentBatch.isSome && !g.openBatchObjects.isEmpty then
-      { g with
-        objects := g.openBatchObjects
-        players := g.openBatchPlayers
-        activeEffects := g.openBatchEffects
-        stack := g.openBatchStack }
-    else g
-
-/-- First legal battlefield host in `preBf` (evaluated on `g.preBatchAuraBoard (some preBf)`)
-that `auraProbe` may enchant and that is still on the battlefield in `g` (CR 303.4f–g). -/
-def findPreBatchAuraHost? (g : Game) (preBf : Array GameObject) (auraProbe : GameObject) :
-    Option GameObject :=
-  let board := g.preBatchAuraBoard (some preBf)
-  preBf.find? (fun h =>
-    (g.findObject? h.id).any (·.isOnBattlefield) && board.auraObjCanEnchant h auraProbe)
-
 /-- Whether `sid` last held `.prepared` designation before leaving the battlefield. -/
 def wasPreparedAtDeparture (g : Game) (sid : ObjectId) : Bool :=
   g.events.foldl (fun acc ev =>
@@ -7424,7 +7503,7 @@ def playerCanBeTargetedBy (g : Game) (caster target : PlayerId)
           match em.status.chosenCardType with
           | some t => g.hasType src t
           | none => false)
-  (caster == target || !g.playerHasHexproof target) &&
+  (caster == target || g.areTeammates caster target || !g.playerHasHexproof target) &&
     !(g.protectionFromEverything target) && !typeBlock
 
 /-- Mana value of `o` (CR 202.3 / 613.1a / 708.2a). `{X}` is the chosen value
@@ -7643,7 +7722,9 @@ def fraConditionHolds (g : Game) (controller : PlayerId) (cond : FraCondition)
   | .sourceNotToken => !(source.any (·.printed.isToken))
   | .twoCreaturesDiedThisTurn => g.loggedCreatureDeaths ≥ 2
   | .opponentDealtNoncombatDamageLastTurn =>
-    (g.livingOpponents controller).any (fun opp => g.loggedNoncombatDamageLastTurn opp.id)
+    g.players.any (fun pl =>
+      pl.id != controller && !g.areTeammates controller pl.id &&
+        g.loggedNoncombatDamageLastTurn pl.id)
   | .drewThreeThisTurn => g.loggedDraws controller ≥ 3
   | .castNoSpellThisTurn => g.loggedSpellsCast controller == 0
   | .activatedLoyaltyThisTurn => g.loggedActivatedLoyalty controller
@@ -7882,7 +7963,7 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
       perms.foldl (fun (w, fs) o =>
         match board.controllerOf o with
         | some c =>
-          if o.isOnBattlefield && c != actor then
+          if o.isOnBattlefield && c != actor && !board.areTeammates c actor then
             (board.wardCostsOn o).foldl (fun (w, fs) cost =>
               queueAb board c o (TriggeredAbility.onWard cost) .ward
                 (cause := some stackObj) (causeController := some actor)
@@ -8807,7 +8888,7 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
                   if !noncombatDamagedPlayers.contains defn then
                     noncombatDamagedPlayers := noncombatDamagedPlayers.push defn
                     for q in post.livingPlayers do
-                      if q.id != defn then
+                      if post.isLivingOpponentOf q.id defn then
                         let (w, fs) :=
                           queueFra post q.id .opponentDealtNoncombatDamage
                             (w := waiting) (fs := firedSources)
@@ -8969,7 +9050,7 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
             waiting := w; firedSources := fs
           | .beginningOfCombat =>
             for pl in post.livingPlayers do
-              if pl.id != ap then
+              if post.isLivingOpponentOf pl.id ap then
                 let (w, fs) :=
                   queueFra post pl.id .opponentBeginCombat (w := waiting) (fs := firedSources)
                 waiting := w; firedSources := fs
@@ -9104,7 +9185,7 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
                     post.defendingPlayerOf o == d) with
               | some o =>
                 for q in post.livingPlayers do
-                  if q.id != d then
+                  if post.isLivingOpponentOf q.id d then
                     let (w, fs) :=
                       queueFra post q.id .creaturesAttackYourOpponent
                         (cause := some o) (causeController := some d)
@@ -9206,7 +9287,7 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
                   | none => pure ()
               if post.power b ≤ 1 || post.toughness b ≤ 1 then
                 for pl in post.livingPlayers do
-                  if some pl.id != post.controllerOf b then
+                  if (post.controllerOf b).any (post.isLivingOpponentOf pl.id ·) then
                     let (w, fs) :=
                       queueFra post pl.id .opponentSmallCreatureBlocks (cause := some b)
                         (w := waiting) (fs := firedSources)
@@ -9254,7 +9335,7 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
           for o in uniquePerm do
             match post.controllerOf o with
             | some c =>
-              if c != caster then
+              if post.isLivingOpponentOf c caster then
                 let (w, fs) :=
                   queueSrc post c o .becomesTarget (cause := some castObj)
                     (w := waiting) (fs := firedSources)
@@ -9437,10 +9518,11 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
           let targetsOpponentOrTheirCreature :=
             targets.any (fun t =>
               match t with
-              | .player q => q != caster
+              | .player q => post.isLivingOpponentOf caster q
               | .permanent id =>
                 (post.findObject? id).any (fun o =>
-                  o.isOnBattlefield && post.isCreature o && (post.controllerOf o).isSome && !post.controlledBy o caster)
+                  o.isOnBattlefield && post.isCreature o &&
+                    (post.controllerOf o).any (post.isLivingOpponentOf caster ·))
               | _ => false)
           if targetsOpponentOrTheirCreature then
             let (w, fs) :=
@@ -9497,7 +9579,7 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
             for o in uniquePerm do
               match post.controllerOf o with
               | some c =>
-                if c != controller then
+                if post.isLivingOpponentOf c controller then
                   let (w, fs) :=
                     queueSrc post c o .becomesTarget (cause := abCause?)
                       (w := waiting) (fs := firedSources)
@@ -9532,7 +9614,7 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
                 for o in newlyTargeted do
                   match post.controllerOf o with
                   | some c =>
-                    if c != ctrl then
+                    if post.isLivingOpponentOf c ctrl then
                       let (w, fs) :=
                         queueSrc post c o .becomesTarget (cause := some obj)
                           (w := waiting) (fs := firedSources)
@@ -9557,7 +9639,7 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
                   for o in perms do
                     match post.controllerOf o with
                     | some c =>
-                      if c != ctrl then
+                      if post.isLivingOpponentOf c ctrl then
                         let (w, fs) :=
                           queueSrc post c o .becomesTarget (cause := some obj)
                             (w := waiting) (fs := firedSources)
@@ -9577,7 +9659,7 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
                   for o in newlyTargeted do
                     match post.controllerOf o with
                     | some c =>
-                      if c != ctrl then
+                      if post.isLivingOpponentOf c ctrl then
                         let (w, fs) :=
                           queueSrc post c o .becomesTarget (cause := some obj)
                             (w := waiting) (fs := firedSources)
@@ -9593,7 +9675,7 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
                 for o in newlyTargeted do
                   match post.controllerOf o with
                   | some c =>
-                    if c != ctrl then
+                    if post.isLivingOpponentOf c ctrl then
                       let (w, fs) :=
                         queueSrc post c o .becomesTarget (cause := some obj)
                           (w := waiting) (fs := firedSources)
@@ -9670,7 +9752,7 @@ def closeBatch (g : Game) (pre : GameSnapshot) (batchId : BatchId)
             pushInBatch g (GameEvent.designation g.turnNumber snap .ringBearer false
               (cause := .gameRule .staticAbility))
           | some o =>
-            if o.isOnBattlefield && g.controlledBy o pl.id then g
+            if o.isBattlefieldObject && g.controlledBy o pl.id then g
             else
               pushInBatch g (GameEvent.designation g.turnNumber (g.snapshot o) .ringBearer false
                 (cause := .gameRule .staticAbility))) g
@@ -9976,7 +10058,7 @@ def withBatchCoreReturn {α : Type} (g : Game) (cause : Option EventCause := non
         let innerEndCause? := (g1.currentBatch.map Prod.snd).join
         let targetCause? : Option EventCause :=
           if innerOpenedPause then innerEndCause?
-          else if prevCause?.isNone then none
+          else if prevCause?.isNone && cause.isSome then none
           else innerEndCause?
         let replayedPausedBatch? : Option (BatchId × Option EventCause) := Id.run do
           let mut pauseIdx? : Option (Nat × BatchId × Option EventCause) := none

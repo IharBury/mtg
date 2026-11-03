@@ -188,15 +188,15 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
   let needsFlashbackDiscard := isFlashbackCast && face.flashbackDiscard
   if needsFlashbackDiscard && (g.player p).hand.isEmpty then
     throw s!"{face.name}'s flashback cost requires discarding a card"
-  if !needsMode && !needsTarget && !cost.includesManaPayment && !cost.containsX &&
-      !needsSacrifice && !needsFlashbackDiscard &&
-      !needsAdditionalCostChoice && !needsKicker && !needsGift && !needsTeamwork then
-    return (g.becomeCast p (g.object! newId)).resumeAfterBecomeCast
   let lifeInstead :=
     match origPerm with
     | some perm =>
       if perm.payLifeEqualManaValue then g.objectManaValue original else 0
     | none => 0
+  if !needsMode && !needsTarget && !cost.includesManaPayment && !cost.containsX &&
+      lifeInstead == 0 && !needsSacrifice && !needsFlashbackDiscard &&
+      !needsAdditionalCostChoice && !needsKicker && !needsGift && !needsTeamwork then
+    return (g.becomeCast p (g.object! newId)).resumeAfterBecomeCast
   let prop : ProposedSpell := {
     caster := p
     cost := cost

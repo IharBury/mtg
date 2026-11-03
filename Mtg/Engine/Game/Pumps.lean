@@ -15,8 +15,13 @@ namespace Game
 /-- Until-end-of-turn +P/+T on `o` (CR 613.4c / 611.2a). `trample` also grants
 trample until end of turn (e.g. Oliphaunt). -/
 def pumpPermanent (g : Game) (o : GameObject) (p t : Int) (trample := false) : Game :=
-  let g := g.createEffect (.pump o.id p t)
-  let g := if trample then g.createEffect (.keywordsUntilEot o.id Keyword.trample) else g
+  let g :=
+    if trample then
+      g.withBatch none fun g =>
+        let g := g.createEffect (.pump o.id p t)
+        g.createEffect (.keywordsUntilEot o.id Keyword.trample)
+    else
+      g.createEffect (.pump o.id p t)
   let gain := if trample then " and gains trample" else ""
   g.logMsg s!"{o.name} gets {signedStat p}/{signedStat t}{gain} until end of turn"
 
@@ -35,9 +40,10 @@ def grantUntilEotToControlledCreatures (g : Game) (p : PlayerId) (kw : Keywords)
 
 /-- Grant each keyword in `kws` until end of turn, re-reading `o` after each. -/
 def grantUntilEotKeywords (g : Game) (o : GameObject) (kws : List Keywords) : Game :=
-  kws.foldl (fun g kw =>
-    if (g.findObject? o.id).isSome then g.createEffect (.keywordsUntilEot o.id kw)
-    else g) g
+  g.withBatch none fun g =>
+    kws.foldl (fun g kw =>
+      if (g.findObject? o.id).isSome then g.createEffect (.keywordsUntilEot o.id kw)
+      else g) g
 
 /-- Grant `k` until end of turn and log the standard “gains … until end of turn”. -/
 def grantUntilEotLogged (g : Game) (o : GameObject) (k : Keywords) : Game :=
@@ -50,16 +56,17 @@ def setUntilEotForm (g : Game) (o : GameObject) (pt : Int × Int)
     (types : Option (Array CardSubtype) := none)
     (additionalCreature := false) (additionalArtifact := false)
     (pumpPerArtifact := false) : Game :=
-  let g := g.createEffect (.setBasePTUntilEot o.id pt)
-  let g :=
-    match types with
-    | some subs => g.createEffect (.replacedCreatureTypesUntilEot o.id subs)
-    | none => g
-  let g := if kws != Keywords.none then g.createEffect (.keywordsUntilEot o.id kws) else g
-  let g := if additionalCreature then g.createEffect (.additionalCreature o.id true) else g
-  let g := if additionalArtifact then g.createEffect (.additionalArtifactUntilEot o.id) else g
-  let g := if pumpPerArtifact then g.createEffect (.pumpPerArtifactUntilEot o.id) else g
-  g.logMsg msg
+  g.withBatch none fun g =>
+    let g := g.createEffect (.setBasePTUntilEot o.id pt)
+    let g :=
+      match types with
+      | some subs => g.createEffect (.replacedCreatureTypesUntilEot o.id subs)
+      | none => g
+    let g := if kws != Keywords.none then g.createEffect (.keywordsUntilEot o.id kws) else g
+    let g := if additionalCreature then g.createEffect (.additionalCreature o.id true) else g
+    let g := if additionalArtifact then g.createEffect (.additionalArtifactUntilEot o.id) else g
+    let g := if pumpPerArtifact then g.createEffect (.pumpPerArtifactUntilEot o.id) else g
+    g.logMsg msg
 
 /-- Put `n` finality counters on `o` (MSH). Multiple counters are redundant. -/
 def addFinalityTo (g : Game) (o : GameObject) (n : Nat := 1)
@@ -261,11 +268,13 @@ def tapArtifactsForImprovise (g : Game) (p : PlayerId) (ids : Array ObjectId) :
     return g
   return g.logMsg s!"{(g.player p).name} taps {ids.size} artifact(s) for improvise"
 
-/-- Put a +1/+1 counter on `id` when it is still a creature. -/
-def addPlusOneIfStillCreature (g : Game) (id : ObjectId) : Game :=
+/-- Put a +1/+1 counter on `id` when it is still a legal creature target (CR 608.2b). -/
+def addPlusOneIfStillCreature (g : Game) (id : ObjectId) (controller : PlayerId)
+    (sourceId : Option ObjectId := none) : Game :=
   match g.findObject? id with
   | some o =>
-    if o.isOnBattlefield && g.isCreature o then g.addPlusOnePlusOneTo o 1
+    if o.isOnBattlefield && g.isCreature o && g.canBeTargetedBy controller o sourceId then
+      g.addPlusOnePlusOneTo o 1
     else g.logMsg "The target is no longer legal"
   | none => g.logMsg "The target is no longer legal"
 

@@ -516,6 +516,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let modes := g.triggerModesOf obj
     if chosen.isEmpty then
       let noop : Effect := { resolution := .sequence [], phrase := "" }
+      let g := g.record (GameEvent.announced g.turnNumber obj.id (modes := #[]))
       let g := g.changes #[
         .object obj.id (.abilityEffect (some noop)),
         .stackEntry obj.id (.targetsAnnounced true)]
@@ -535,9 +536,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let g :=
       match srcIdOpt with
       | some sid =>
-        if (g.findObject? sid).isSome then
-          g.record (GameEvent.triggerModeChosen g.turnNumber sid idx (lifetime := lifetime))
-        else g
+        g.record (GameEvent.triggerModeChosen g.turnNumber sid idx (lifetime := lifetime))
       | none => g
     let g :=
       if (g.findObject? objId).isSome then
@@ -819,16 +818,20 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     return (g.sacrificeLeastPowerCreature p (some id)).finishFraChoice
   | .sacrificeLeastPower _, _ => throw "Choose a creature tied for the least power"
   | .mayPayPickThen pick next sourceId, .objects ids =>
-    let g ← g.payCostPick p sourceId sourceId pick ids
+    let srcOpt := if sourceId == noSourceSentinelId then none else some sourceId
+    let abId :=
+      if sourceId == noSourceSentinelId then g.resolvingAbility.getD noSourceSentinelId
+      else sourceId
+    let g ← g.payCostPick p abId sourceId pick ids
     if g.mayThenDrop > 0 then
       return g.acceptMayThen
     else
       let g :=
         if let .chooseReplacement .. := g.pending then
           g.chainPendingReplacement
-            (.continueUnifiedAbility p default #[next.toResolution] #[] (some sourceId) none 0)
+            (.continueUnifiedAbility p default #[next.toResolution] #[] srcOpt none 0)
         else
-          g.applyFra p default next.toResolution #[] (some sourceId)
+          g.applyFra p default next.toResolution #[] srcOpt
       return g.finishFraChoice
   | .mayPayPickThen .., .decline =>
     if g.mayThenDrop > 0 then return g.declineMayThen else return g.finishFraChoice

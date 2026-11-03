@@ -182,6 +182,7 @@ def putTriggeredAbilityOnStack (g : Game) (controller : PlayerId) (source : Game
       let maxModes := Nat.min x modes.size
       if maxModes == 0 then
         let noop : Effect := { resolution := .sequence [], phrase := "" }
+        let g := g.record (GameEvent.announced g.turnNumber obj.id (modes := #[]))
         let g := g.changes #[
           .object obj.id (.abilityEffect (some noop)),
           .stackEntry obj.id (.targetsAnnounced true)]
@@ -531,7 +532,7 @@ def putWaitingTrigger (g : Game) (wt : WaitingTrigger) (event : TriggerEvent) : 
       (eventCause := wt.eventCause) (delayedTrigger := wt.delayedTrigger)
       (abilityEffectOverride := wt.abilityEffect)
       (reflexiveResolution := wt.reflexiveResolution)
-  if wt.checked then put g
+  if wt.checked then (put g).promptTriggerTargetsIfNeeded
   else
     if wt.ability.onceEachTurn && g.loggedTriggeredThisTurn wt.source.id wt.ability then g
     else if wt.ability.optionalOnceEachTurn && g.optionalOnceUsedThisTurn wt.source.id then g
@@ -556,7 +557,7 @@ def putWaitingTrigger (g : Game) (wt : WaitingTrigger) (event : TriggerEvent) : 
         for i in [0:copies] do
           if !g.loggedTriggeredThisTurn wt.source.id wt.ability then
             g := g.recordTriggeredWithOrigin srcSnap wt.controller wt.ability originBatch
-          g := put g
+          g := (put g).promptTriggerTargetsIfNeeded
           if g.pending != .none then
             let remCount := copies - (i + 1)
             if remCount > 0 then
@@ -567,8 +568,9 @@ def putWaitingTrigger (g : Game) (wt : WaitingTrigger) (event : TriggerEvent) : 
         return g
 
 /-- Put these waiting triggers on the stack in the given order (CR 603.3 / 603.3d),
-stopping early if a modal triggered ability pauses on mode selection (CR 603.3c)
-and preserving `ordered := true` on any remaining triggers in the ordered batch. -/
+stopping early if a triggered ability pauses on mode or target selection
+(CR 603.3c–d) and preserving `ordered := true` on any remaining triggers in the
+ordered batch. -/
 def putTriggerBatch (g : Game) (wts : Array WaitingTrigger) : Game :=
   if wts.isEmpty then g
   else
@@ -577,14 +579,18 @@ def putTriggerBatch (g : Game) (wts : Array WaitingTrigger) : Game :=
       for i in [0:wts.size] do
         let wt := wts[i]!
         g := g.removeWaitingTrigger wt
+        let beforeSize := g.waitingTriggers.size
         g := g.putWaitingTrigger wt wt.event
         if g.pending != .none then
           let rem := wts.extract (i + 1) wts.size
           if !rem.isEmpty then
+            let prependedCount := g.waitingTriggers.size - beforeSize
+            let prepended := g.waitingTriggers.extract 0 prependedCount
+            g := g.change (.waitingTriggers (g.waitingTriggers.extract prependedCount g.waitingTriggers.size))
             for r in rem do
               g := g.removeWaitingTrigger r
             let orderedRem := rem.map ({ · with ordered := true })
-            g := g.change (.waitingTriggers (orderedRem ++ g.waitingTriggers))
+            g := g.change (.waitingTriggers (prepended ++ orderedRem ++ g.waitingTriggers))
           return g
       return g.promptTriggerTargetsIfNeeded
 

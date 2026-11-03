@@ -289,17 +289,23 @@ def applyHydeMode (g : Game) (controller : PlayerId) (sourceId : Option ObjectId
     | some (Target.permanent id) =>
       match g.findObject? id with
       | some o =>
-        if o.isOnBattlefield && g.controlledBy o controller && o.status.hasCounters then
-          let nm := g.name o
-          let g :=
-            if o.status.plusOnePlusOne > 0 then
-              g.recordRemoveCounters o.id .plusOnePlusOne 1 (byPlayer := some controller)
-                |>.logMsg s!"A counter is removed from {nm}"
-            else if o.status.indestructibleCounters > 0 then
-              g.recordRemoveCounters o.id .indestructible 1 (byPlayer := some controller)
-                |>.logMsg s!"A counter is removed from {nm}"
-            else g.logMsg "A counter is removed from the creature"
-          g.draw controller 1
+        if o.isOnBattlefield && g.isCreature o && g.controlledBy o controller && o.status.hasCounters then
+          let kind? : Option CounterKind :=
+            if o.status.plusOnePlusOne > 0 then some .plusOnePlusOne
+            else if o.status.indestructibleCounters > 0 then some .indestructible
+            else o.status.toCounterBag[0]?.map (·.1)
+          match kind? with
+          | some kind =>
+            let nm := g.name o
+            let before := o.status.counterCount kind
+            let g := g.recordRemoveCounters o.id kind 1 (byPlayer := some controller)
+              |>.logMsg s!"A counter is removed from {nm}"
+            let removed : Bool :=
+              match g.findObject? o.id with
+              | some cur => decide (cur.status.counterCount kind < before)
+              | none => true
+            if removed then g.draw controller 1 else g
+          | none => g
         else
           g.logMsg "You must remove a counter from a creature you control if you can"
       | none =>
@@ -670,16 +676,21 @@ def grantKeywordsToSpellCreatureTargets (g : Game) (k : Keywords) : Game :=
         else g
       | none => g) g
 
-/-- Copy the spell that caused this trigger and ask for new targets. -/
+/-- Copy the spell that caused this trigger and ask for new targets if targeted
+(CR 707.10c / 800.4d). -/
 def copyCastTriggerSpell (g : Game) (controller : PlayerId) : Game :=
   match g.castTriggerSpell? with
   | some spell =>
     if spell.zone != .stack then g.logMsg s!"{spell.name} is no longer on the stack"
     else
-      let g := g.copyStackSpell spell controller
-      let copyId := (g.stack.back?.map (·.objectId)).getD spell.id
-      (g.change (.pending (.fraChoice controller (.newTargetsForCopies #[copyId])))).logMsg
-        s!"{(g.player controller).name} may choose new targets for the copy"
+      let (g, copyId?) := g.copyStackSpellWithId spell controller
+      match copyId? with
+      | some copyId =>
+        if (g.stackEntry? copyId).any (!·.targets.isEmpty) then
+          (g.change (.pending (.fraChoice controller (.newTargetsForCopies #[copyId])))).logMsg
+            s!"{(g.player controller).name} may choose new targets for the copy"
+        else g
+      | none => g
   | none => g
 
 /-- You may exile the discarded card, recorded as `lastKnownPower`, and play
@@ -852,7 +863,7 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
   | (.resource .secondDrawDrain) =>
     g.eachOpponentLosesYouGain controller 1
   | (.resource .gainLifePlusOnes) =>
-    g.putPlusOnesUpToLastKnown controller targets lastKnownPower
+    g.putPlusOnesUpToLastKnown controller targets lastKnownPower (sourceId := sourceId)
   | (.resource .plusOneOnThisOnce) =>
     g.withSourceOnBattlefield sourceId (fun g o => g.addPlusOnePlusOneTo o 1)
       "The source is no longer in play"

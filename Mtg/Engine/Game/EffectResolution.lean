@@ -305,7 +305,8 @@ def copyNontokenCreaturesYouControl (g : Game) (p : PlayerId) : Game :=
 /-- Gain control of the targeted creature until end of turn, or until the end
 of your next turn when you control a Villain with greater mana value. Untap
 it and it gains haste until end of turn (Evil's Thrall; ruling 514). -/
-def applyEvilsThrall (g : Game) (controller : PlayerId) (targets : Array Target) : Game :=
+def applyEvilsThrall (g : Game) (controller : PlayerId) (targets : Array Target)
+    (sourceId : Option ObjectId := none) : Game :=
   g.withLegalKindPermanent controller .creature targets (fun g o =>
     let mv := g.objectManaValue o
     let longer := (g.creaturesControlledBy controller).any (fun v =>
@@ -321,7 +322,7 @@ def applyEvilsThrall (g : Game) (controller : PlayerId) (targets : Array Target)
       let g := g.applyPermanentAction o .untap
       match g.findObject? o.id with
       | none => g
-      | some o => g.grantUntilEotLogged o Keyword.haste) none
+      | some o => g.grantUntilEotLogged o Keyword.haste) sourceId
     (some "The target is no longer legal")
 
 /-- Finish `millMayPutPermanentGainLife` once `mill` completes (CR 701.17c). -/
@@ -377,8 +378,9 @@ def millMayPutSubtypeOrEnchantment (g : Game) (p : PlayerId) (n : Nat) (subtype 
 /-- Target player gains `life`, searches for a basic land tapped, then a
 +1/+1 counter goes on the creature target if it is still legal
 (Restorative Technique). -/
-def applyGainLifeSearchBasicPlusOne (g : Game) (_controller : PlayerId)
-    (targets : Array Target) (life : Nat) : Game :=
+def applyGainLifeSearchBasicPlusOne (g : Game) (controller : PlayerId)
+    (targets : Array Target) (life : Nat)
+    (sourceId : Option ObjectId := none) : Game :=
   let run (g : Game) : Game :=
     let player? := targets.findSome? (fun t =>
       match t with
@@ -388,26 +390,35 @@ def applyGainLifeSearchBasicPlusOne (g : Game) (_controller : PlayerId)
       match t with
       | Target.permanent id => some id
       | _ => none)
-    match player? with
-    | none => g.logMsg "The target is no longer legal"
+    let legalPlayer? :=
+      match player? with
+      | some pid =>
+        if !(g.player pid).lost && g.playerCanBeTargetedBy controller pid sourceId then
+          some pid
+        else none
+      | none => none
+    match legalPlayer? with
+    | none =>
+      let g := g.logMsg "The target is no longer legal"
+      match creature? with
+      | some cid => g.addPlusOneIfStillCreature cid controller sourceId
+      | none => g
     | some pid =>
-      if (g.player pid).lost then g.logMsg "The target is no longer legal"
+      let g :=
+        match creature? with
+        | none => g
+        | some id =>
+          match g.findObject? id with
+          | some o =>
+            if o.isOnBattlefield && g.isCreature o && g.canBeTargetedBy controller o sourceId then
+              g.change (.plusOneAfterSearch (some (id, controller, sourceId)))
+            else g.logMsg "The target is no longer legal"
+          | none => g.logMsg "The target is no longer legal"
+      let g := g.gainLife pid life
+      if let .chooseReplacement .. := g.pending then
+        g.chainPendingReplacement (.finishPostStep 22 pid)
       else
-        let g :=
-          match creature? with
-          | none => g
-          | some id =>
-            match g.findObject? id with
-            | some o =>
-              if o.isOnBattlefield && g.isCreature o then
-                g.change (.plusOneAfterSearch (some id))
-              else g.logMsg "The target is no longer legal"
-            | none => g.logMsg "The target is no longer legal"
-        let g := g.gainLife pid life
-        if let .chooseReplacement .. := g.pending then
-          g.chainPendingReplacement (.finishPostStep 22 pid)
-        else
-          g.beginLibrarySearch pid isBasicLandCard "a basic land card" (.battlefield true)
+        g.beginLibrarySearch pid isBasicLandCard "a basic land card" (.battlefield true)
   g.withContinuationFrame run
 
 /-- You may draw one card for each permanent of type `ty` you control. If you
@@ -1398,7 +1409,8 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     let g := match which with
       | .each => g.dealDamageToEachCreatureMatching n (source := srcEvent?)
       | .opponentsControl =>
-        g.dealDamageToEachCreatureMatching n (fun o => !g.controlledBy o controller) (source := srcEvent?)
+        g.dealDamageToEachCreatureMatching n
+          (fun o => (g.controllerOf o).any (g.isLivingOpponentOf controller ·)) (source := srcEvent?)
       | .nonSubtype subtype => g.dealDamageToEachNonDragon n subtype (source := srcEvent?)
     match amount, which with
     | .otherSpellsManaValue, .opponentsControl =>
@@ -1412,7 +1424,7 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
         g.logMsg s!"If {g.name o} would die this turn, exile it instead")
   | .addRedPerOppArtifacts ty =>
     let n := g.battlefield.filter (fun o =>
-      g.hasType o ty && !g.controlledBy o controller) |>.size
+      g.hasType o ty && (g.controllerOf o).any (g.isLivingOpponentOf controller ·)) |>.size
     let g := g.addMana controller (.colored .red) n (source := sourceId)
     g.logMsg s!"{(g.player controller).name} adds {n} red mana"
   | .chooseTypeReturnOthers =>
@@ -1549,7 +1561,8 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
       g.loggedCreaturesToGraveyard.filter (fun id =>
         match g.findObject? id with
         | some o =>
-          o.zone == .graveyard o.owner && o.owner != controller
+          o.zone == .graveyard o.owner && o.owner != controller &&
+            !g.areTeammates controller o.owner
         | none => false)
     g.supperForSpidersReturn controller ids
   | .eaglesAreComing =>
@@ -1706,19 +1719,25 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
         (.revealPutCreatures top creatures g.resolvingTeamworkPaid)
         s!"{(g.player controller).name} may put creature cards from among them onto the battlefield"
   | .createTokens kind amount tapped _ who _ =>
-    let pid := match who with
-      | .you => controller
+    let pid? : Option PlayerId := match who with
+      | .you => some controller
       | .player =>
-        match targets[0]? with
-        | some (Target.player p) => p
-        | _ => controller
-      | _ => controller
-    let count := match amount with
-      | .fixed n => n.toNat
-      | .chosenX => chosenX
-      | .perSubtype subtype => g.countSubtype pid subtype
-      | _ => 0
-    g.createKindTokens pid kind count (tapped := tapped)
+        match targets.findSome? (fun | Target.player p => some p | _ => none) with
+        | some p =>
+          if !(g.player p).lost && g.playerCanBeTargetedBy controller p sourceId then
+            some p
+          else none
+        | none => none
+      | _ => some controller
+    match pid? with
+    | none => g.logMsg "The target is no longer legal"
+    | some pid =>
+      let count := match amount with
+        | .fixed n => n.toNat
+        | .chosenX => chosenX
+        | .perSubtype subtype => g.countSubtype pid subtype
+        | _ => 0
+      g.createKindTokens pid kind count (tapped := tapped)
   | .returnOneOrTwoNonlands =>
     g.withBatch none fun g =>
       targets.foldl (fun g t =>
@@ -1738,7 +1757,8 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
         | Target.player pid => some pid
         | _ => none) with
     | some pid =>
-      if (g.player pid).lost then g.logMsg "The target is no longer legal"
+      if (g.player pid).lost || !g.playerCanBeTargetedBy controller pid sourceId then
+        g.logMsg "The target is no longer legal"
       else (g.createToken pid clueToken).1
     | none => g.logMsg "The target is no longer legal"
   | .onCreatureAmongTargets action =>
@@ -1801,13 +1821,13 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
   | .copyNontokenCreaturesYouControl =>
     g.copyNontokenCreaturesYouControl controller
   | .gainControlUntilEotOrNextIfVillain =>
-    g.applyEvilsThrall controller targets
+    g.applyEvilsThrall controller targets sourceId
   | .millThenPutPermanentGainLife n life =>
     g.millMayPutPermanentGainLife controller n life
   | .searchLibraryOrGyArtifactCreatureX =>
     g.beginVisionQuest controller chosenX
   | .gainLifeSearchBasicPlusOne life =>
-    g.applyGainLifeSearchBasicPlusOne controller targets life
+    g.applyGainLifeSearchBasicPlusOne controller targets life sourceId
   | .nextFreeRGCreature =>
     g.createEffect (.pendingFreeRGCreatureThisTurn controller)
       |>.logMsg "The next red or green creature spell you cast this turn can be cast without paying its mana cost"
@@ -1820,7 +1840,8 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     | some (Target.permanent id) =>
       match g.findObject? id with
       | some o =>
-        if o.isOnBattlefield && g.isCreature o && !g.controlledBy o controller &&
+        if o.isOnBattlefield && g.isCreature o &&
+            (g.controllerOf o).any (g.isLivingOpponentOf controller ·) &&
             g.canBeTargetedBy controller o sourceId then
           g.change (.pending (.fraChoice o.owner (.tricksterLibrary controller id connive)))
             |>.logMsg s!"{(g.player o.owner).name} puts {g.name o} second from the top or on the bottom of their library"
@@ -2319,17 +2340,18 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
         | some (Target.card id) | some (Target.permanent id) =>
           match g.findObject? id with
           | some o =>
-            if o.zone == .stack && (o.abilityEffect.isSome || o.triggeredAbility.isSome) then
-              let g := g.copyStackAbility o controller
-              let copyId := (g.stack.back?.map (·.objectId)).getD o.id
-              let hasTargets :=
-                match g.stack.find? (fun e => e.objectId == copyId) with
-                | some e => !e.targets.isEmpty
-                | none => false
-              if hasTargets then
-                g.change (.pending (.fraChoice controller (.newTargetsForCopies #[copyId])))
-                  |>.logMsg s!"{(g.player controller).name} may choose new targets for the copy"
-              else g
+            let kindOk :=
+              if effect.targetKind == .none then g.controlledBy o controller
+              else g.targetLegalAt controller effect.targetKind 0 (Target.card id) sourceId
+            if o.zone == .stack && (o.abilityEffect.isSome || o.triggeredAbility.isSome) && kindOk then
+              let (g, copyId?) := g.copyStackAbilityWithId o controller
+              match copyId? with
+              | some copyId =>
+                if (g.stackEntry? copyId).any (!·.targets.isEmpty) then
+                  g.change (.pending (.fraChoice controller (.newTargetsForCopies #[copyId])))
+                    |>.logMsg s!"{(g.player controller).name} may choose new targets for the copy"
+                else g
+              | none => g
             else g.logMsg "The target is no longer legal"
           | none => g.logMsg "The target is no longer legal"
         | _ => g

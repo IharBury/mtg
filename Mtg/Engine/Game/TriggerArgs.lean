@@ -121,7 +121,8 @@ def permanentsNamed (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.Objec
     some (g.battlefield.filter fun o =>
       g.controlledBy o controller && some o.id != sourceId && g.hasSubtype o subtype)
   | .opponentsCreatures =>
-    some (g.battlefield.filter fun o => g.isCreature o && !g.controlledBy o controller)
+    some (g.battlefield.filter fun o =>
+      g.isCreature o && (g.controllerOf o).any (g.isLivingOpponentOf controller ·))
   | .blockers =>
     match sourceId with
     | some sid => some (g.blockersOf sid)
@@ -156,7 +157,7 @@ def permanentsNamed (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.Objec
     | none => someEmpty
   | .oppArtifactsEnchantments =>
     some (g.battlefield.filter fun o =>
-      !g.controlledBy o controller &&
+      (g.controllerOf o).any (g.isLivingOpponentOf controller ·) &&
         (g.isArtifact o || g.isEnchantment o))
   | .permanentDealtDamage =>
     match g.permanentDealtDamageThisWay.bind onBf with
@@ -526,12 +527,12 @@ def millCollected (g : Game) (controller : PlayerId) (pids : Array PlayerId) (n 
       let milled := tops.filterMap (fun id => (g.followMilledPublic? id).map (·.id))
       g.change (.milledIdsThisWay milled)
   | .opponentsMilled =>
-    let opps := pids.filter (· != controller)
+    let opps := pids.filter (g.isLivingOpponentOf controller ·)
     let startIdx := g.events.size
     let g := g.withBatch cause? fun g =>
       let g := opps.foldl (fun g pid => g.mill pid n (cause := cause?)) g
       pids.foldl (fun g pid =>
-        if pid == controller then g.mill pid n (cause := cause?) else g) g
+        if !opps.contains pid then g.mill pid n (cause := cause?) else g) g
     if let .chooseReplacement .. := g.pending then
       g.chainPendingReplacement
         (.finishPostStep 59 controller (n := startIdx) (targets := opps.map Target.player))

@@ -110,6 +110,8 @@ inductive ReplacementTier where
   | copy
   /-- CR 616.1d: Effects causing an object to enter the battlefield with its back face up. -/
   | backFaceUp
+  /-- CR 303.4f–g: Choosing an object for a non-cast Aura to enchant as it enters. -/
+  | auraHost
   /-- CR 616.1e: Any other applicable replacement or prevention effect. -/
   | other
 deriving DecidableEq, Repr, Inhabited, BEq
@@ -121,7 +123,8 @@ def ReplacementTier.rank : ReplacementTier → Nat
   | .control => 1
   | .copy => 2
   | .backFaceUp => 3
-  | .other => 4
+  | .auraHost => 4
+  | .other => 5
 
 /-- The kind of replacement effect (CR 614 / 616.1a–e). -/
 inductive ReplacementKind where
@@ -159,6 +162,8 @@ inductive ReplacementKind where
   | declineEntersAsCopy (object : ObjectId)
   /-- CR 616.1d / 702.145b / 712.14: Causes `object` to enter the battlefield with its back face up. -/
   | entersBackFaceUp (object : Option ObjectId)
+  /-- CR 303.4f–g / 614.12: Attach non-cast Aura `object` to `hostId` as it enters. -/
+  | asEntersAttachAura (object hostId : ObjectId)
   /-- CR 616.1e: External effect causing `object` to enter with additional `kind` counters. -/
   | entersWithExtraCounters (object : Option ObjectId) (kind : CounterKind) (amount : Nat)
   /-- CR 616.1e / 122.6: Modifies the number of counters put on `object` (`count * mult + add`). -/
@@ -209,6 +214,7 @@ def ReplacementKind.tier : ReplacementKind → ReplacementTier
   | .entersAsCopyCreatureUntilEot .. => .copy
   | .declineEntersAsCopy _ => .copy
   | .entersBackFaceUp _ => .backFaceUp
+  | .asEntersAttachAura .. => .auraHost
   | _ => .other
 
 /-- A replacement effect specification (CR 614). -/
@@ -694,7 +700,8 @@ the battlefield (CR 611.2b / 613.1b / 702.26f). -/
 
 /-- `controller` controls `controlled` during their turn (CR 611.2, 723). -/
 @[inline] def playerControl (controller controlled : PlayerId) (onNextTurn : Bool := false) : ContinuousEffectSpec :=
-  .playerRule controller (.controlsPlayer controlled onNextTurn) .indefinite
+  .playerRule controller (.controlsPlayer controlled onNextTurn)
+    (if onNextTurn then .indefinite else .untilEndOfTurn)
 
 /-- Creatures can't get +X/+Y from spells or abilities this turn (CR 611.2). -/
 @[inline] def powerUpsForbiddenThisTurn : ContinuousEffectSpec :=
@@ -1171,7 +1178,6 @@ inductive PendingReplacement where
   | untapPermanent (targetId : ObjectId) (duringUntapStep : Bool := false)
       (logUntap : Bool := true) (cause : Option EventCause := none)
   | untapStepPermanents (ids : Array ObjectId)
-  | beginStepAfterUntap
   | addLoreCounters (sagaId : ObjectId) (n : Nat) (cause : Option EventCause)
   | addLoreAfterDrawStep (sagaIds : Array ObjectId)
   | copyNontokenCreatures (controller : PlayerId) (snapshots : Array CardDef)
@@ -1368,6 +1374,13 @@ inductive PendingReplacement where
   | continueStartNextTurn (nextP : PlayerId) (remainingDeparted : Array PlayerId)
       (runBeginTurn : Bool := false)
   | beginTurnAfterStartExpiry
+  | moveCardsToGraveyardLoop (ids : Array ObjectId) (cause : Option EventCause := none)
+  | placeSearchedGraveyardLoop (ids : Array ObjectId) (cause : Option EventCause := none)
+      (pendingLog : Option (ObjectId × PlayerId × String) := none)
+  | returnLinkedExileToHandLoop (srcId : ObjectId) (ids : Array ObjectId)
+      (pendingItem : Option (ObjectId × PlayerId × String) := none)
+  | finishConcede (wasIdlePriority : Bool) (savedPendingPrio : Option PlayerId)
+      (wasAssigningCombatDamage : Option Bool := none)
 deriving Repr, Inhabited, BEq
 
 /-- Whether a `PendingReplacement` continuation ends with `.finishFraChoice`. -/
@@ -1378,9 +1391,9 @@ def PendingReplacement.endsWithFinishFra : PendingReplacement → Bool
 
 /-- Whether a `PendingReplacement` continuation already ends by granting
 priority (`.receivePriority` / `.finishFraChoice` / `.finishPostCast` /
-`.finishBecomeCast` with `grantPriority == true`). -/
+`.finishBecomeCast` with `grantPriority == true` / `.finishConcede`). -/
 def PendingReplacement.endsWithPriorityGrant : PendingReplacement → Bool
-  | .receivePriority _ | .finishFraChoice => true
+  | .receivePriority _ | .finishFraChoice | .finishConcede .. => true
   | .finishPostCast _ grantPriority hadOuter _ => grantPriority && !hadOuter
   | .finishBecomeCast _ _ grantPriority hadOuter openCont =>
     grantPriority && !hadOuter && !openCont
@@ -1564,7 +1577,7 @@ structure ContinuationFrame where
   /-- Put a +1/+1 counter on this permanent after the current discard choices finish. -/
   plusOneAfterDiscards : Option ObjectId := none
   /-- After the current library search shuffles, put a +1/+1 counter on this creature. -/
-  plusOneAfterSearch : Option ObjectId := none
+  plusOneAfterSearch : Option (ObjectId × PlayerId × Option ObjectId) := none
   /-- Remaining discards for Thirst for Knowledge (MSH 344). -/
   thirstDiscardsLeft : Nat := 0
   /-- Discarding a card of this type finishes `thirstDiscardsLeft` early. -/
@@ -1673,7 +1686,7 @@ inductive ContinuationChange where
   | popOuterPendingReplacement
   | conniveSource (v : Option ObjectId)
   | plusOneAfterDiscards (v : Option ObjectId)
-  | plusOneAfterSearch (v : Option ObjectId)
+  | plusOneAfterSearch (v : Option (ObjectId × PlayerId × Option ObjectId))
   | thirstDiscardsLeft (v : Nat)
   | thirstDiscardType (v : CardType)
   | pendingDiscardsLeft (v : Nat)
@@ -1834,7 +1847,7 @@ namespace EngineChange
 @[inline] def popOuterPendingReplacement : EngineChange := .continuation .popOuterPendingReplacement
 @[inline] def conniveSource (v : Option ObjectId) : EngineChange := .continuation (.conniveSource v)
 @[inline] def plusOneAfterDiscards (v : Option ObjectId) : EngineChange := .continuation (.plusOneAfterDiscards v)
-@[inline] def plusOneAfterSearch (v : Option ObjectId) : EngineChange := .continuation (.plusOneAfterSearch v)
+@[inline] def plusOneAfterSearch (v : Option (ObjectId × PlayerId × Option ObjectId)) : EngineChange := .continuation (.plusOneAfterSearch v)
 @[inline] def thirstDiscardsLeft (v : Nat) : EngineChange := .continuation (.thirstDiscardsLeft v)
 @[inline] def thirstDiscardType (v : CardType) : EngineChange := .continuation (.thirstDiscardType v)
 @[inline] def pendingDiscardsLeft (v : Nat) : EngineChange := .continuation (.pendingDiscardsLeft v)

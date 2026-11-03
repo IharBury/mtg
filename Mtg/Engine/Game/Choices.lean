@@ -402,12 +402,16 @@ def applyRiddlesPiles (g : Game) (p : PlayerId) (faceUp faceDown : Array ObjectI
       g.logMsg "The face-down pile is put into hand without being revealed"
     else
       g.logMsg "The face-up pile is put into hand"
+  let outerCont? := g.pendingReplacement
+  let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
   let g := g.withBatch none fun g =>
     toHand.foldl (fun acc id =>
       (acc.move id (.hand p) none).1) g
-  g.withBatch none fun g =>
-    toGy.foldl (fun acc id =>
-      (acc.move id (.graveyard p) none).1) g
+  let g := g.withBatch none fun g =>
+    g.moveCardsToGraveyardLoop toGy
+  match outerCont? with
+  | some outer => g.chainPendingReplacement outer
+  | none => g
 
 /-- Split the top four library cards into a face-up pile and a face-down pile.
 A 4/0 split is legal. The face-down pile is not revealed if it is put into
@@ -452,11 +456,29 @@ def everyAttackCosts (g : Game) (o : GameObject) : Bool :=
     let opps := g.livingOpponents p
     !opps.isEmpty && opps.all (fun pl => g.attackTaxPerCreature pl.id > 0)
 
+/-- Whether `o` has at least one legal attack target (an opponent player or
+opponent-controlled planeswalker) that does not charge an attack cost
+(CR 508.1b,c,d / 506.4c). -/
+def hasCostFreeLegalAttackTarget (g : Game) (o : GameObject) : Bool :=
+  match g.controllerOf o with
+  | none => false
+  | some p =>
+    let opps := g.livingOpponents p
+    let flyer := g.hasFlying o
+    let noJace := g.cantAttackJaces p
+    opps.any fun pl =>
+      g.attackTaxPerCreature pl.id == 0 &&
+        (!(flyer && g.leftoverFlyingRestriction pl.id) ||
+          (g.permanentsOf pl.id).any (fun pw =>
+            g.isPlaneswalker pw &&
+              !(noJace && ((g.name pw).startsWith "Jace" || g.hasSubtype pw .jace))))
+
 /-- True when `o` must attack this combat. Summoning sickness, being tapped,
-or an unpaid attack cost means it does not have to attack (MSH 130). -/
+having no legal attack target, or an unpaid attack cost means it does not have
+to attack (CR 508.1d / MSH 130). -/
 def mustAttackIfAble (g : Game) (o : GameObject) (attackRequiresCost := false) : Bool :=
   (g.hasAttacksIfAble o || o.status.goaded) && g.canAttack o &&
-    !(g.livingOpponents g.activePlayer).isEmpty &&
+    g.hasCostFreeLegalAttackTarget o &&
     !mustAttackCanDeclineIfOnlyAttackCosts (attackRequiresCost || g.everyAttackCosts o)
 
 /-- Failed Adventure from Bilbo's graveyard ability is exiled by Bilbo, not
