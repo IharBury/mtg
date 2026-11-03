@@ -1368,7 +1368,8 @@ turn-window and turn/leave expiry across `Core.hasTurnAfterBegunSince`,
 `Core.playerControl`, `Core.controllingPlayerOf?`, `Turns.beginTurn`,
 `Turns.clearTurnActivations`, and `Turns.expireUntilNextTurnEffects`, while
 `Turns.startNextTurnCore` / Two-Headed Giant teammate `playerControl` expiry,
-self-control guards in `canChooseOutsideGame` / `canMakeTournamentDecision`,
+dropping the self-control conjunct in `canChooseOutsideGame` /
+`canMakeTournamentDecision`,
 and multi-effect `ContinuousEffectEvent.created` batching move to Phase 20
 step 4).
 
@@ -5771,11 +5772,12 @@ opponent checks, CR 723.1 `playerControl` turn-window & expiry, and
      `.activateManaAbilities caster` (`ManaAbilities.lean`) by
      `caster == p && g.proposedSpell.all (·.cost.includesManaPayment)` so mana
      abilities cannot be activated during life-only / non-mana cost proposals;
-     require `g.canPayLife p (g.baseCard card).manaCost.manaValue` when
+     require `g.canPayLife p (g.objectManaValue o)` when
      `PlayPermission.payLifeEqualManaValue` applies in
-     [`Casting.lean`](Mtg/Engine/Game/Casting.lean) `canCast` and `Agent.lean`
-     `chooseCast` (preventing unpayable life-cost proposals and `Agent`
-     cast-reverse loops), and include `prop.payLife > 0` in
+     [`Casting.lean`](Mtg/Engine/Game/Casting.lean) `canCast` (matching
+     `CastSpell.castSpell`'s `g.objectManaValue original`, which also filters
+     `Agent.choose`'s `chooseCast` via `g.canCast` without a duplicate life
+     check), and include `prop.payLife > 0` in
      `Decisions.beginResolutionCastTargets`'s inline
      `prop.cost.includesManaPayment || prop.needsSacrificeOther || prop.needsDiscardCard`
      mana-window condition (`Decisions.lean`, matching Phase 19's
@@ -5804,11 +5806,15 @@ opponent checks, CR 723.1 `playerControl` turn-window & expiry, and
      from unguarded `copyStackSpell` + `(g.stack.back?.map (·.objectId)).getD spell.id`
      to `copyStackSpellWithId` (`filterMap`, opening `.newTargetsForCopies copies`
      only when `!copies.isEmpty` and a copy has `!e.targets.isEmpty`, CR
-     707.10c / 800.4d); pass the announced target index (`if g.resolvingSkippedSlots.isEmpty then 1 else idx`)
-     instead of hardcoded `1` on `Target.player pid` in
-     `FraAbilities.applyFraAbility` `.damageUpToOneAndPlayer` (`FraAbilities.lean`)
-     so skipping optional slot `0` does not falsely fizzle the mandatory player
-     target; replace the unguarded `g.stack.back?` fallback in
+     707.10c / 800.4d); thread the announced-target fold index `i` through
+     `targets` and pass `i` to `g.targetLegalAt` on both `Target.permanent id`
+     and `Target.player pid` (replacing hardcoded `0` and `1`, since
+     `FraHelpers.targetLegalAt` already maps announced index `i` across
+     `resolvingSkippedSlots`) in `FraAbilities.applyFraAbility`
+     `.damageUpToOneAndPlayer` (`FraAbilities.lean`) so skipping optional slot
+     `0` checks the mandatory player target at announced index `0` -> printed
+     slot `1` rather than fizzling; replace the unguarded `g.stack.back?`
+     fallback in
      `Targeting.spellPaidTeamwork` (`Targeting.lean`) with an explicit
      `.newTargetsForCopies` / `.newTargetsForCopySlot` check ahead of
      `g.resolvingSpell` so an unrelated teamwork spell on `g.stack` cannot leak
@@ -5854,9 +5860,12 @@ opponent checks, CR 723.1 `playerControl` turn-window & expiry, and
      `Targeting.legalTargetsForAtomicKind` `.attackingAloneCreatureYouControl`
      (`Targeting.lean`, CR 506.5 / MSH Ruling 435).
    - Complete Two-Headed Giant (`CR 104.2b / 810.5 / 810.8a,b,d`) and CR 800.4i
-     departed-opponent queries: check `(g.livingOpponents w.id).isEmpty` in
-     `Leaving.decideGameIfFinished` (`Leaving.lean`) so a surviving Two-Headed
-     Giant team wins when both opposing teammates have left, propagate team loss
+     departed-opponent queries: replace the `else if living.size == 1` branch in
+     `Leaving.decideGameIfFinished` (`Leaving.lean`) with checking whether every
+     living player in `living` has `(g.livingOpponents pl.id).isEmpty` (when
+     `!living.isEmpty`) so both a lone survivor and a surviving Two-Headed Giant
+     team (`living.size == 2`) whose opponents have all left win the game,
+     propagate team loss
      and concession across teammates in `StateBasedActions.lean` / `Leaving.lean` /
      `PriorityActions.concede` while honoring a teammate's `cantLoseGame` (`CR
      810.8a,b,d`) and command-zone `opponentsCantWin` / team `.winTheGame` (`CR
@@ -5866,14 +5875,14 @@ opponent checks, CR 723.1 `playerControl` turn-window & expiry, and
      `.noncombatDamagePlusOne` (`Damage.lean`), `Core.matchTriggers` /
      `Event.matchesTrigger` `.opponentsDealtCombatDamageYourTurn` and
      `.opponentsDealtNoncombatDamage` (`Core.lean`, `Event.lean`), and
-     `Core.evalLayer6` `corruptedActive` (`Core.lean`), plus symmetric
+     `Core.evalLayer6Aux` `corruptedActive` (`Core.lean`), plus symmetric
      `g.areTeammates` checks in `Decisions.announceGift` (`Decisions.lean`) and
      `Core.setPlayerControl` (`Core.lean`); and include departed opponents in
      `g.players` (`q.id != p && !g.areTeammates p q.id`, per CR 800.4i) in
      [`Activation.lean`](Mtg/Engine/Game/Activation.lean)
-     `onlyIfOpponentDealtNoncombatDamage`, `Core.evalLayer6`
-     `.flyingHasteIfOpponentDealtNoncombat` (`Core.lean`), and `Casting.flashFromStatic`
-     `.flashIfOpponentCastThisTurn` (`Casting.lean`).
+     `onlyIfOpponentDealtNoncombatDamage`, `Core.evalSelfStaticKeywords`
+     `.flyingHasteIfOpponentDealtNoncombat` (`Core.lean`), and
+     `Casting.cosmicAwarenessFlash` (`Casting.lean`).
 4. Complete CR 723.1 / 810.5 `playerControl` turn-start / teammate / self-control
    edges, multi-effect `ContinuousEffectEvent.created` batching, and dead
    scaffolding cleanup (§3.2, §3.3, §3.6):
@@ -5885,12 +5894,14 @@ opponent checks, CR 723.1 `playerControl` turn-window & expiry, and
      Giant teammate beginning/finishing their shared turn (and leaving the game)
      uniformly in `Core.hasTurnBegunSince` / `Core.hasTurnAfterBegunSince`
      callers and `Turns.expireUntilNextTurnEffects` (`Core.lean`, `Turns.lean`,
-     CR 810.5 / MSH Ruling 588), and check `(g.controllingPlayerOf? whose).all (· == actor)`
-     (rather than `!g.controlsPlayer actor whose`) in `Core.canChooseOutsideGame`
-     and `Core.canMakeTournamentDecision` (`Core.lean`) so self-control
-     (`setPlayerControl p p`) does not lock `p` out of their own outside-game or
-     tournament decisions while keeping `MshOracleTests2.controlPlayerLimitsOk`
-     green.
+     CR 810.5 / MSH Ruling 588), and keep `actor == whose` while dropping the
+     `!g.controlsPlayer actor whose` self-control conjunct in
+     `Core.canChooseOutsideGame` and `Core.canMakeTournamentDecision`
+     (`Core.lean`, matching `canLookAtSideboard` and `canConcedeAs`) so a
+     controlling opponent still cannot make outside-game or tournament decisions
+     for `whose`, `whose` still makes their own tournament decisions, and
+     self-control (`setPlayerControl p p`) no longer locks `p` out while keeping
+     `MshOracleTests2.controlPlayerLimitsOk` green.
    - Batch multi-effect `ContinuousEffectEvent.created` helpers under one
      simultaneous `BatchId` (`CR 608.2c / 611.2c / 613.7`): wrap
      `Core.createEffects` (`Core.lean`, when `effs.size > 1`) in
