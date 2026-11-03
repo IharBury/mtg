@@ -1732,7 +1732,7 @@ flowchart TD
   P17 --> P18["Phase 18: Nested-batch cause & Ring-bearer single-writer fidelity, outerPendingReplacements & pause-safety,\nCR 603.2d/603.3c-d/608.2b/707.10c modal/copy/target completion, CR 303.4f-g/111.8/800.4/725.4/509.1g/723.5 batches & multiplayer,\nand CR 500.4/611.2a-b/702.26f/800.4i,m durationActive/expiry & CR cleanup"]
   P18 --> P19["Phase 19: Replacement/concede pause-safety, Ring-bearer phase-out & damage/cost/cast event fidelity,\nCR 603.3b-d/700.2/707.10c/608.2b trigger/copy/target completion,\nCR 704.5e/303.4f-g/508.8/701.15b/810 copy/Aura/combat/2HG alignment,\nand CR 723.1/611.2 playerControl window/expiry & scaffolding cleanup"]
   P19 --> P20["Phase 20: Unified CR 303.4f-g Aura ETB, CR 607.2a/610.3 linked-exile LKI & pause/SBA completion,\nCR 601.2b,f,g/602.2b/603.2/707.10c/608.2b/701.14b cast/modal/copy/target legality,\nCR 508.1,8/510.1/506.5/810/800.4i combat & 2HG completion,\nand CR 723.1/810.5 playerControl, createEffects batching & dead-branch cleanup"]
-  P20 --> P21["Phase 21: Concede/flushUnlessPays pause-safety, CR 702.26g/701.3/608.2b phasing/attach/target & deferred logs,\nCR 101.2/601.2f,h/602.2b/733.1/700.2/115.9a/707.10-12 cast/cost/modal/copy fidelity,\nCR 805.10d-e/810.7-8/805.4/500.4/514.2/723.1 2HG poison/blocking/turn-expiry & opponent queries,\nand final simultaneous batches, journaled test/demo state, dead scaffolding & CR sweep"]
+  P20 --> P21["Phase 21: Concede/flushUnlessPays pause-safety, CR 702.26g/701.3/608.2b phasing/attach/target & deferred logs,\nCR 101.2/601.2f,h/602.2b/733.1/700.2/110.1/115.1c,10a/707.10-12 cast/cost/modal/copy fidelity,\nCR 805.10d-e/810.7-8/805.4/500.4/514.2/723.1 2HG poison/blocking/turn-expiry & opponent queries,\nand final simultaneous batches, journaled test/demo state, dead scaffolding & CR sweep"]
 ```
 
 ### Phase 1 — Envelope and durable single-writer constructors
@@ -5970,7 +5970,7 @@ limits, and batched `createEffects` / multi-effect continuous-effect helpers),
 `MshOracleTests2.lean`, `OracleRulingTests.lean`, `CatalogModelTests.lean`,
 `RenderTests.lean`.
 
-### Phase 21 — `concede` / `flushUnlessPays` pause-safety, CR 702.26g / 701.3 / 608.2b phasing/attach/target & deferred logs, CR 101.2 / 601.2f,h / 602.2b / 733.1 / 700.2 / 115.9a / 707.10–12 cast/cost/modal/copy fidelity, CR 805.10d–e / 810.7–8 / 805.4 / 500.4 / 514.2 / 723.1 2HG poison/blocking/turn-expiry, and final batching, journaled test/demo state & scaffolding sweep
+### Phase 21 — `concede` / `flushUnlessPays` pause-safety, CR 702.26g / 701.3 / 608.2b phasing/attach/target & deferred logs, CR 101.2 / 601.2f,h / 602.2b / 733.1 / 700.2 / 110.1 / 115.1c / 115.10a / 707.10–12 cast/cost/modal/copy fidelity, CR 805.10d–e / 810.7–8 / 805.4 / 500.4 / 514.2 / 723.1 2HG poison/blocking/turn-expiry, and final batching, journaled test/demo state & scaffolding sweep
 
 1. Close the remaining `concede` / `playerLeavesGame` / `flushUnlessPays`
    pause-safety gaps, CR 702.26g indirectly phased-out attachment handling, CR
@@ -6055,7 +6055,7 @@ limits, and batched `createEffects` / multi-effect continuous-effect helpers),
 2. Complete CR 101.2 / 601.3 casting-restriction & flash parity, CR 601.2b,f,h
    cost calculation & caster/permission preservation, CR 602.2b / 733.1
    activation partial-payment non-cancellation, CR 700.2 modal
-   `chooseBothIfTeamwork` & *Call Damage Control*, CR 110.1 / 115.9a
+   `chooseBothIfTeamwork` & *Call Damage Control*, CR 110.1 / 115.1c / 115.10a
    `.youTargetSomething`, and CR 707.10 / 707.12 / 702.176a / 708.2 copy
    fidelity (§2.4, §2.9, §2.10, §3.1, §3.5, §3.7):
    - Align casting restrictions, flash permissions, and `Casting.canCast` parity
@@ -6123,11 +6123,11 @@ limits, and batched `createEffects` / multi-effect continuous-effect helpers),
      preservation across `StackObjectEvent.copied`.
    - Restrict `.youTargetSomething` (`"Whenever a player or permanent becomes
      the target of an ability you control"`, `Core.matchTriggers` and
-     `Event.matchesTrigger`, CR 110.1 / 115.9a) to abilities with at least one
-     newly targeted `.permanent` (on `.battlefield`) or `.player` target,
-     excluding graveyard `Target.card` and stack `Target.spell` targets and
-     checking newly added `.permanent` / `.player` targets against `prevTargets`
-     on retarget / copy retarget.
+     `Event.matchesTrigger`, CR 110.1 / 115.1c / 115.10a) to abilities with at
+     least one newly targeted `.permanent` (on `.battlefield`) or `.player`
+     target, excluding graveyard `Target.card` and stack `Target.spell` targets
+     and checking newly added `.permanent` / `.player` targets against
+     `prevTargets` on retarget / copy retarget.
    - Separate CR 707.10 uncast stack copies from CR 707.12 / Ruling 742 cast
      card-copies and preserve Impending & face-down Morph copiable values on
      stack spell copies (`Allocation.lean`, `Core.lean`, `Event.lean`,
@@ -6213,7 +6213,7 @@ limits, and batched `createEffects` / multi-effect continuous-effect helpers),
      `Mulligans.returnHandToLibrary` (`Mulligans.lean`, CR 103.5),
      `Casting.finishPostCast` copy `ceaseToExist` (`Casting.lean`, CR 704.5e),
      `FrcResolve.applyDackOnHits` (`FrcResolve.lean`, CR 608.2c / 701.15a),
-     `Library.putIdsOnTop` (`Library.lean`, CR 701.23), `Choices.beholdQuality`
+     `Library.putIdsOnTop` (`Library.lean`, CR 401.4), `Choices.beholdQuality`
      (`Choices.lean`, CR 701.4a), `Turns.startNextTurnCore`
      `expirePlayPermissions` + `clearTurnActivations` (`Turns.lean`), and
      `Designations.setRingBearer` (`Designations.lean`, CR 701.54a).
@@ -6276,7 +6276,7 @@ CR 101.2 `cantCastSpellsThisTurn` & flash/`canCast` parity, CR 601.2b,f,h
 pre-move `PlayPermission` / caster-identity **Thalia** & reduction order /
 *Countersculpt* behold timing / Morph `applyKickerToProposed`, CR 602.2b / 733.1
 partial-payment non-cancellation, modal `chooseBothIfTeamwork` & *Call Damage
-Control* `"Choose up to two"` mode/copy fidelity, CR 110.1 / 115.9a
+Control* `"Choose up to two"` mode/copy fidelity, CR 110.1 / 115.1c / 115.10a
 `.youTargetSomething` player/permanent filter, CR 707.10 vs CR 707.12 copy cast
 semantics & Impending / face-down Morph stack spell copies, CR 810.8d 15-poison
 team SBA, CR 805.10d–e / 810.7 shared team blocking & `legalBlockerCount`, CR
