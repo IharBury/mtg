@@ -222,44 +222,41 @@ def putToBattlefieldLoop (g : Game) (controller : PlayerId)
         pure ()
       else
         let ctrl := if useCardOwner then o.owner else controller
-        if !onlyFoodArtifact && !(g.player ctrl).lost && g.isAura o then
-          let auraProbe := { o with controller := some ctrl }
-          let host? := g.findPreBatchAuraHost? preBf auraProbe
-          match host? with
-          | none =>
-            g := g.logMsg s!"{o.name} remains in its current zone (can't be attached legally; CR 303.4f)"
-          | some host =>
-            let (g', _) := g.putOntoBattlefield id ctrl (tapped := tapped)
-              (attachedTo := some host.id) (cause := cause)
-            g := g'
-            entered := entered.push id
-        else
-          let (g', _) :=
-            if onlyFoodArtifact then
-              g.move id .battlefield (some ctrl)
-                (summoningSick := true) (applyHope := false)
-                (onlyFoodArtifact := true) (cause := cause)
-            else
-              g.putOntoBattlefield id ctrl (tapped := tapped) (cause := cause)
-          g := g'
-          entered := entered.push id
+        let (g', _) :=
+          if onlyFoodArtifact then
+            g.move id .battlefield (some ctrl)
+              (summoningSick := true) (applyHope := false)
+              (onlyFoodArtifact := true) (preBattlefield := some preBf) (cause := cause)
+          else
+            g.putOntoBattlefield id ctrl (tapped := tapped)
+              (preBattlefield := some preBf) (cause := cause)
+        g := g'
+        entered := entered.push id
         if let .chooseReplacement .. := g.pending then
           let rem := remainingIds.extract (i + 1) remainingIds.size
           return g.chainPendingReplacement
             (.putToBattlefieldLoop controller rem entered
               useCardOwner haste tapped isLandEnters onlyFoodArtifact cause (some preBf))
-  for fromId in entered do
+  for j in [0:entered.size] do
+    let fromId := entered[j]!
     match g.followMovedToZone? fromId (· == .battlefield) with
     | none => pure ()
     | some enteredObj =>
       if haste then
         g := g.createEffect (.keywordsUntilEot enteredObj.id { haste := true }) (cause := cause)
-      g :=
-        if isLandEnters then g.afterLandEnters (g.object! enteredObj.id)
-        else g.afterPermanentEnters (g.object! enteredObj.id)
       if onlyFoodArtifact then
         if let some cur := g.findObject? enteredObj.id then
           g := g.logMsg s!"{cur.name} returns as a Food artifact"
+      g :=
+        if isLandEnters then g.afterLandEnters (g.object! enteredObj.id)
+        else g.afterPermanentEnters (g.object! enteredObj.id)
+      if let .chooseReplacement .. := g.pending then
+        let remEntered := entered.extract (j + 1) entered.size
+        if !remEntered.isEmpty then
+          g := g.chainPendingReplacement
+            (.putToBattlefieldLoop controller #[] remEntered
+              useCardOwner haste tapped isLandEnters onlyFoodArtifact cause (some preBf))
+        return g
   return g
 
 /-- Put the returned cards onto the battlefield as Food artifacts only.
@@ -448,13 +445,18 @@ def hasAttacksIfAble (g : Game) (o : GameObject) : Bool :=
     | .attacksEachCombatIfAble => true
     | _ => false)
 
-/-- Every legal defending player charges a cost to be attacked. -/
+/-- Every legal attack target (player or planeswalker) charges a cost to be attacked. -/
 def everyAttackCosts (g : Game) (o : GameObject) : Bool :=
   match g.controllerOf o with
   | none => false
   | some p =>
     let opps := g.livingOpponents p
-    !opps.isEmpty && opps.all (fun pl => g.attackTaxPerCreature pl.id > 0)
+    let noJace := g.cantAttackJaces p
+    !opps.isEmpty && opps.all (fun pl =>
+      g.attackTaxPerCreature pl.id > 0 &&
+        !(g.permanentsOf pl.id).any (fun pw =>
+          g.isPlaneswalker pw &&
+            !(noJace && ((g.name pw).startsWith "Jace" || g.hasSubtype pw .jace))))
 
 /-- Whether `o` has at least one legal attack target (an opponent player or
 opponent-controlled planeswalker) that does not charge an attack cost
@@ -467,11 +469,10 @@ def hasCostFreeLegalAttackTarget (g : Game) (o : GameObject) : Bool :=
     let flyer := g.hasFlying o
     let noJace := g.cantAttackJaces p
     opps.any fun pl =>
-      g.attackTaxPerCreature pl.id == 0 &&
-        (!(flyer && g.leftoverFlyingRestriction pl.id) ||
-          (g.permanentsOf pl.id).any (fun pw =>
-            g.isPlaneswalker pw &&
-              !(noJace && ((g.name pw).startsWith "Jace" || g.hasSubtype pw .jace))))
+      (g.attackTaxPerCreature pl.id == 0 && !(flyer && g.leftoverFlyingRestriction pl.id)) ||
+        (g.permanentsOf pl.id).any (fun pw =>
+          g.isPlaneswalker pw &&
+            !(noJace && ((g.name pw).startsWith "Jace" || g.hasSubtype pw .jace)))
 
 /-- True when `o` must attack this combat. Summoning sickness, being tapped,
 having no legal attack target, or an unpaid attack cost means it does not have

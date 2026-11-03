@@ -60,13 +60,15 @@ private def applyActionFor (g : Game) (p : PlayerId) : Action → Except String 
   | .activate id idx => g.activateAbility p id idx
   | .pay => g.pay p
   | .sacrifice id => do
-    let wasPropOrWard :=
+    let wasWard :=
       match g.pending with
-      | .sacrificePermanent .. | .payWard .. => true
+      | .payWard .. => true
       | _ => false
-    let isResCastSac :=
-      (match g.pending with | .sacrificePermanent .. => true | _ => false) &&
-        g.proposedSpell.any (·.resolutionCast)
+    let wasProp :=
+      match g.pending with
+      | .sacrificePermanent .. => true
+      | _ => false
+    let isResCastSac := wasProp && g.proposedSpell.any (·.resolutionCast)
     let g ← g.sacrificeForActivation p id
     if isResCastSac then
       if (match g.pending with | .chooseReplacement .. => true | _ => false) &&
@@ -74,7 +76,9 @@ private def applyActionFor (g : Game) (p : PlayerId) : Action → Except String 
         return g
       else
         return g.finishFraChoice
-    else if wasPropOrWard then
+    else if wasWard then
+      return if (match g.pending with | .payWard .. => true | _ => false) then g else g.drainPendingContinuations
+    else if wasProp then
       return g.resumeAfterBecomeCast
     else
       return if g.mayThenResume then g.acceptMayThen else g.finishAndGrantPriority
@@ -201,7 +205,7 @@ def rawActor (g : Game) : Option PlayerId :=
     | .chooseTriggerToStack p => who p
     | .mayPayGeneric p _ => who p
     | .chooseLibraryPlacement p _ => who p
-    | .mayAttachEquipment p _ => who p
+    | .mayAttachEquipment p .. => who p
     | .mayResolve p => who p
     | .tapHumans p => who p
     | .payOrLetCounter p _ _ => who p

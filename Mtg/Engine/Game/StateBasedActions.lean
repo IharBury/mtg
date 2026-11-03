@@ -66,6 +66,76 @@ def defaultLegendToKeep (g : Game) (ids : Array ObjectId) : ObjectId :=
     | _, some _ => id
     | _, none => best) (ids[0]!)
 
+/-- Reconstruct the pre-batch board state when `o.id` already existed on the
+battlefield at the start of an enclosing simultaneous batch (CR 608.2c / 701.8b). -/
+private def preBatchDestroyCheck (g : Game) (o : GameObject) : Game × GameObject :=
+  if g.currentBatch.isSome && !g.openBatchObjects.isEmpty then
+    let preG : Game :=
+      { g with
+        objects := g.openBatchObjects
+        players := g.openBatchPlayers
+        activeEffects := g.openBatchEffects
+        stack := g.openBatchStack }
+    match preG.findObject? o.id with
+    | some preO =>
+      if preO.isOnBattlefield then (preG, preO) else (g, o)
+    | none => (g, o)
+  else (g, o)
+
+/-- Destroy a permanent (CR 701.8). Indestructible permanents aren't destroyed
+(CR 702.12b). A shield counter replaces destruction with removing a
+shield counter via the CR 616.1 replacement loop (CR 122.1c / 614.6). If it
+would die this turn under an exile replacement, `move` sends it to exile instead
+of the graveyard (CR 614.1). -/
+def destroyPermanent (g : Game) (o : GameObject)
+    (cause : Option EventCause := none)
+    (preBattlefield : Option (Array GameObject) := none)
+    (reason : Option String := none) : Game :=
+  if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement (.destroyPermanent o.id cause preBattlefield reason)
+  else
+  let (checkG, checkO) := g.preBatchDestroyCheck o
+  if checkG.hasIndestructible checkO then
+    g.logMsg s!"{g.name o} is indestructible and isn't destroyed"
+  else
+  let ctrl := g.controllerOf o
+  let affected := ctrl.getD o.owner
+  let mutSpecs : Array ReplacementSpec := Id.run do
+    let mut s : Array ReplacementSpec := #[]
+    if o.status.shield > 0 then
+      s := s.push {
+        id := { kind := .shieldCounterDestroy, object := some o.id }
+        source := some o.id
+        controller := ctrl
+        affectedPlayer := affected
+        kind := .shieldCounterDestroy o.id
+      }
+    for (_, eff) in g.activeEffects do
+      match eff with
+      | .replacement spec d =>
+        if g.durationActive d then
+          match spec.kind with
+          | .shieldCounterDestroy tid =>
+            if tid == o.id && o.status.shield > 0 then
+              s := s.push { spec with affectedPlayer := affected }
+          | _ => pure ()
+      | _ => pure ()
+    return s
+  let candidates := mutSpecs.map (fun s => (ReplacementOrPrevention.replacement s).toCandidate)
+  match g.selectNextReplacementStep candidates #[] with
+  | .needChoice chooser choices _ =>
+    g.promptChooseReplacement chooser choices (.destroyPermanent o.id cause preBattlefield reason)
+  | .chosen chosen _ =>
+    let g := g.consumeReplacementOrder #[chosen.id]
+    let cause' := g.wrapReplacedCause chosen.id cause ctrl
+    let finalCause := g.resolveOptionalCause cause' (fallbackCtrl := ctrl)
+    let oName := g.name o
+    let g := g.record (GameEvent.counters g.turnNumber ctrl (g.snapshot o) .shield 1 true (cause := finalCause))
+    g.logMsg s!"A shield counter is removed from {oName} instead of destroying it"
+  | .none =>
+    g.moveToOwnerGraveyard o (reason.getD s!"{g.name o} is destroyed") (verb := some .destroy)
+      (preBattlefield := preBattlefield) (cause := cause)
+
 /-- Execute the remaining permanent-removal and unattachment actions of a
 single CR 704.3 state-based action pass inside the currently open batch using
 conditions captured at the start of the pass (`stage` 0 = dying creatures,
@@ -92,9 +162,13 @@ def finishSbaSweep (g : Game) (moves : Array SbaGraveyardMove)
       match g.findObject? m.objectId with
       | some o =>
         if o.isOnBattlefield then
-          g := g.moveToOwnerGraveyard o m.reason (verb := m.verb) (actor := m.actor)
-            (preBattlefield := some preBf)
-            (cause := some (.stateBased m.sba))
+          if m.verb == some .destroy then
+            g := g.destroyPermanent o (cause := some (.stateBased m.sba))
+              (preBattlefield := some preBf) (reason := some m.reason)
+          else
+            g := g.moveToOwnerGraveyard o m.reason (verb := m.verb) (actor := m.actor)
+              (preBattlefield := some preBf)
+              (cause := some (.stateBased m.sba))
           changed := true
           if let .chooseReplacement _ _ := g.pending then
             let rem := moves.extract (i + 1) moves.size
@@ -235,33 +309,47 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
     let (g, (changed, _paused)) := g.withBatchReturn none fun g => Id.run do
       let mut g := g
       let mut changed := false
-      -- Players losing (CR 704.5a–c). They leave after this SBA pass
+      -- Players losing (CR 704.5a–c / 810.8a,d). They leave after this SBA pass
       -- if the game continues (CR 800.4 / 800.4a).
+      let hasCantLose (g : Game) (pid : PlayerId) : Bool :=
+        (g.permanentsOf pid).any (fun o =>
+          (g.baseCard o).cantLoseGame && g.retainsPrintedAbilities o) ||
+        (g.objects.filter (fun o =>
+          o.zone == .command && g.controlledBy o pid)).any (fun o =>
+            (g.baseCard o).cantLoseGame && g.retainsPrintedAbilities o)
       for pl in g.players do
-        if !pl.lost then
+        let curPl := g.player pl.id
+        if !curPl.lost then
           let shielded :=
-            (g.permanentsOf pl.id).any (fun o =>
-              (g.baseCard o).cantLoseGame && g.retainsPrintedAbilities o) ||
-              (g.objects.filter (fun o =>
-                o.zone == .command && g.controlledBy o pl.id)).any (fun o =>
-                  (g.baseCard o).cantLoseGame && g.retainsPrintedAbilities o)
+            hasCantLose g pl.id ||
+              g.livingPlayers.any (fun mate =>
+                g.areTeammates pl.id mate.id && hasCantLose g mate.id)
           if shielded then
             pure ()
-          else if pl.life ≤ 0 then
-            g := g.record (GameEvent.playerLost g.turnNumber pl.id .lifeZeroOrLess
-              (cause := some (.stateBased .lifeZeroOrLess)))
-            g := g.logMsg s!"{pl.name} loses the game (life total {pl.life})"
-            changed := true
-          else if g.drewFromEmpty pl.id then
-            g := g.record (GameEvent.playerLost g.turnNumber pl.id .decked
-              (cause := some (.stateBased .drewFromEmpty)))
-            g := g.logMsg s!"{pl.name} loses the game (drew from empty library)"
-            changed := true
-          else if pl.poison ≥ 10 then
-            g := g.record (GameEvent.playerLost g.turnNumber pl.id .poison
-              (cause := some (.stateBased .tenPoison)))
-            g := g.logMsg s!"{pl.name} loses the game (poison)"
-            changed := true
+          else
+            let loss? : Option (LossReason × StateBasedAction) :=
+              if curPl.life ≤ 0 then some (.lifeZeroOrLess, .lifeZeroOrLess)
+              else if g.drewFromEmpty pl.id then some (.decked, .drewFromEmpty)
+              else if curPl.poison ≥ 10 then some (.poison, .tenPoison)
+              else none
+            match loss? with
+            | none => pure ()
+            | some (lossReason, sbaKind) =>
+              g := g.record (GameEvent.playerLost g.turnNumber pl.id lossReason
+                (cause := some (.stateBased sbaKind)))
+              let detail :=
+                match lossReason with
+                | .lifeZeroOrLess => s!"life total {curPl.life}"
+                | .decked => "drew from empty library"
+                | .poison => "poison"
+                | _ => "state-based action"
+              g := g.logMsg s!"{curPl.name} loses the game ({detail})"
+              for mate in g.players do
+                if mate.id != pl.id && !(g.player mate.id).lost && g.areTeammates pl.id mate.id then
+                  g := g.record (GameEvent.playerLost g.turnNumber mate.id lossReason
+                    (cause := some (.stateBased sbaKind)))
+                  g := g.logMsg s!"{mate.name} loses the game (teammate lost; CR 810.8a)"
+              changed := true
       match g.decideGameIfFinished with
       | some finished => return (finished, (true, true))
       | none => pure ()

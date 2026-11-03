@@ -103,7 +103,7 @@ def createOneToken (g : Game) (controller : PlayerId) (printed : CardDef)
       }
       let etb :=
         g.applyEtbReplacements baseObj (asOf := asOf) (extraCounters := extraCounters)
-          (cause := cause)
+          (cause := cause) (nonCastBattlefield := true)
       match etb.choice? with
       | some (chooser, choices) =>
         (g.promptChooseReplacement chooser choices
@@ -112,28 +112,10 @@ def createOneToken (g : Game) (controller : PlayerId) (printed : CardDef)
       | none =>
       let g := g.consumeReplacementOrder etb.applied
       let obj := etb.candidate
-      let auraBoard := g.preBatchAuraBoard
-      let probeObj : GameObject :=
-        match etb.tempCopyUntilEot with
-        | some (_, copyCard) =>
-          let copyTok := { copyCard with
-            isToken := true
-            otherFace := copyCard.otherFace.map (fun f => { f with isToken := true }) }
-          { obj with printed := copyTok }
-        | none => obj
-      let (attachHost?, blockedAura) : Option GameObject × Bool :=
-        if obj.attachedTo.isNone && auraBoard.isAura probeObj then
-          let host? := auraBoard.battlefield.find? fun h =>
-            (g.findObject? h.id).any (·.isOnBattlefield) && auraBoard.auraObjCanEnchant h probeObj
-          match host? with
-          | some host => (some host, false)
-          | none => (none, true)
-        else (none, false)
-      if blockedAura then
-        (g.logMsg s!"{probeObj.name} token can't be attached legally and isn't created (CR 303.4f)",
+      if etb.stayInOriginNoAuraHost then
+        (g.logMsg s!"{obj.name} token can't be attached legally and isn't created (CR 303.4f)",
          noTokenCreated controller printed)
       else
-      let obj := match attachHost? with | some h => { obj with attachedTo := some h.id } | none => obj
       let resolvedEtbCause := g.resolveOptionalCause etb.cause (fallbackCtrl := some controller)
       let snapObj : EventObject :=
         match etb.tempCopyUntilEot with

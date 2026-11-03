@@ -105,6 +105,43 @@ def applyDamageToKindTarget (g : Game) (controller : PlayerId) (kind : EffectTar
     (fun g t => g.dealDamageToTarget t n (source := sourceId.bind g.findObject?) (cause := cause))
     sourceId missing
 
+/-- Sequential pause-safe loop for `exileCreaturesFromGraveyard`. -/
+def exileCreaturesFromGraveyardLoop (g : Game) (controller : PlayerId)
+    (ids : Array ObjectId) (cause : Option EventCause)
+    (pendingFromId : Option ObjectId := none) : Game := Id.run do
+  if let .chooseReplacement .. := g.pending then
+    return g.chainPendingReplacement
+      (.finishPostStep 102 controller (cardId := pendingFromId) (ids := ids) (cause := cause))
+  let mut g := g
+  if let some fid := pendingFromId then
+    if let some moved := g.followMovedToZone? fid (· == .exile) then
+      g := g.createEffect (.playPermission moved.id {
+        player := controller
+        whileExiled := true
+        anyMana := true }) (cause := cause)
+      g := g.logMsg
+        s!"{moved.name} is exiled. {(g.player controller).name} may cast it for as long as it remains exiled"
+  for i in [0:ids.size] do
+    let id := ids[i]!
+    match g.findObject? id with
+    | none => pure ()
+    | some o =>
+      let name := o.name
+      let (g', _) := g.move id .exile none (cause := cause)
+      g := g'
+      if let .chooseReplacement .. := g.pending then
+        let rem := ids.extract (i + 1) ids.size
+        return g.chainPendingReplacement
+          (.finishPostStep 102 controller (cardId := some id) (ids := rem) (cause := cause))
+      if let some moved := g.followMovedToZone? id (· == .exile) then
+        g := g.createEffect (.playPermission moved.id {
+          player := controller
+          whileExiled := true
+          anyMana := true }) (cause := cause)
+        g := g.logMsg
+          s!"{name} is exiled. {(g.player controller).name} may cast it for as long as it remains exiled"
+  return g
+
 /-- Exile creature cards from `fromPlayer`'s graveyard and grant `controller`
 permission to cast them, spending mana as though it were any type (CR 610.1 / 701.18). -/
 def exileCreaturesFromGraveyard (g : Game) (controller fromPlayer : PlayerId)
@@ -117,23 +154,8 @@ def exileCreaturesFromGraveyard (g : Game) (controller fromPlayer : PlayerId)
   if ids.isEmpty then g
   else
     let (g, cause) := g.allocDelayedCause (some controller)
-    g.withBatch (some cause) fun g => Id.run do
-      let mut g := g
-      for id in ids do
-        match g.findObject? id with
-        | none => pure ()
-        | some o =>
-          let name := o.name
-          let (g', newId) := g.move id .exile none (cause := some cause)
-          g := g'
-          g := g.createEffect (.playPermission newId {
-            player := controller
-            whileExiled := true
-            anyMana := true })
-            (cause := some cause)
-          g := g.logMsg
-            s!"{name} is exiled. {(g.player controller).name} may cast it for as long as it remains exiled"
-      return g
+    g.withBatch (some cause) fun g =>
+      g.exileCreaturesFromGraveyardLoop controller ids (some cause)
 
 /-- Put `o` on the top (`top`) or bottom of its owner's library. -/
 def putOnOwnerLibrary (g : Game) (o : GameObject) (top : Bool) : Game :=
@@ -574,13 +596,21 @@ def exilePermanentsLoop (g : Game) (remainingIds : Array ObjectId)
 /-- Stage 3 of `flickerPermanents`: log and run `afterPermanentEnters` for each
 exiled card in `enteredFromIds` that returned to the battlefield. -/
 private def flickerPostReturn (g : Game) (enteredFromIds : Array ObjectId)
-    (logText : String) : Game :=
-  enteredFromIds.foldl (fun acc eid =>
-    match acc.followMovedToZone? eid (· == .battlefield) with
+    (logText : String) : Game := Id.run do
+  let mut g := g
+  for k in [0:enteredFromIds.size] do
+    let eid := enteredFromIds[k]!
+    match g.followMovedToZone? eid (· == .battlefield) with
     | some retObj =>
-      let acc := acc.logMsg s!"{retObj.name} {logText}"
-      acc.afterPermanentEnters retObj
-    | none => acc) g
+      g := g.logMsg s!"{retObj.name} {logText}"
+      g := g.afterPermanentEnters retObj
+      if let .chooseReplacement .. := g.pending then
+        let rem := enteredFromIds.extract (k + 1) enteredFromIds.size
+        if !rem.isEmpty then
+          g := g.chainPendingReplacement (.flickerLoop #[] #[] rem logText 3)
+        return g
+    | none => pure ()
+  return g
 
 /-- Stage 2 of `flickerPermanents`: inside the return batch, move each exiled
 card in `remainingIds` back to the battlefield under its owner's control. -/
@@ -599,19 +629,9 @@ private def flickerReturnBatchLoop (g : Game) (remainingIds : Array ObjectId)
         if clearExileFields then
           g := g.changeObject eid (.linkedExile #[])
         let enterTapped := tapped || (onlyLandTapped && g.isLand o)
-        if g.isAura o then
-          let auraProbe := { o with controller := some o.owner }
-          match g.findPreBatchAuraHost? preBf auraProbe with
-          | none =>
-            g := g.logMsg s!"{o.name} remains in exile (can't be attached legally; CR 303.4g)"
-          | some host =>
-            let (g', _) := g.move eid .battlefield (some o.owner)
-              (tapped := enterTapped) (attachedTo := some host.id) (cause := cause)
-            g := g'
-        else
-          let (g', _) := g.move eid .battlefield (some o.owner)
-            (tapped := enterTapped) (cause := cause)
-          g := g'
+        let (g', _) := g.move eid .battlefield (some o.owner)
+          (tapped := enterTapped) (preBattlefield := some preBf) (cause := cause)
+        g := g'
         if let .chooseReplacement .. := g.pending then
           let rem := remainingIds.extract (i + 1) remainingIds.size
           if !rem.isEmpty then

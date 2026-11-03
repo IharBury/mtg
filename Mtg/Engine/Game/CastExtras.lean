@@ -124,26 +124,30 @@ def applyKickerToProposed (g : Game) (kick : Bool) : Except String Game := do
   if !kick then
     return g.changeProposals #[.kicked false, .kickerAnnounced true]
   let some spell := g.findObject? prop.spellId | throw "The spell left the stack"
+  let preSpell := { spell with
+    id := prop.original.id
+    zone := prop.original.zone
+    exiledBy := prop.original.exiledBy }
   let face := g.baseCard spell
   match face.morph, face.impending, face.kicker with
   | some alt, _, none =>
     let g := g.record (GameEvent.announced g.turnNumber spell.id (costs := #[.morph]))
-    let cost := ManaCost.afterReduction alt (g.applyCastCostReductions spell face alt)
+    let cost := ManaCost.afterReduction alt (g.applyCastCostReductions preSpell face alt)
     return g.changeProposals #[.kicked true, .kickerAnnounced true, .cost cost]
   | _, some (n, alt), none =>
     let g := g.record (GameEvent.announced g.turnNumber spell.id (costs := #[.impending n]))
-    let cost := ManaCost.afterReduction alt (g.applyCastCostReductions spell face alt)
+    let cost := ManaCost.afterReduction alt (g.applyCastCostReductions preSpell face alt)
     return g.changeProposals #[.kicked true, .kickerAnnounced true, .cost cost]
   | _, _, none => throw "That spell has no kicker"
   | _, _, some kicker =>
     let g := g.record (GameEvent.announced g.turnNumber spell.id (costs := #[.kicker]))
     let start :=
-      if !prop.cost.includesManaPayment && (g.playCostStart spell face).includesManaPayment then
+      if !prop.cost.includesManaPayment && (g.playCostStart preSpell face).includesManaPayment then
         ManaCost.empty
-      else g.playCostStart spell face
+      else g.playCostStart preSpell face
     let cost :=
       ManaCost.afterReduction face.manaCost
-        (g.applyCastCostReductions spell face (start.addCost kicker))
+        (g.applyCastCostReductions preSpell face (start.addCost kicker))
     return g.changeProposals #[.kicked true, .kickerAnnounced true, .cost cost]
 
 /-- Promise a gift to `to`. Cannot promise more than once. -/
@@ -213,19 +217,32 @@ def discardNonlandFrom (g : Game) (controller victim : PlayerId) : Game :=
       g.logMsg logLine
     else g
 
+/-- Finish registering `.endStepReturn` for `exileUntilNextEndStep` once `g.move`
+to `.exile` completes. -/
+def finishExileUntilNextEndStep (g : Game) (ctrl : PlayerId) (fromId : ObjectId)
+    (cause : EventCause) : Game :=
+  match g.followMovedToZone? fromId (· == .exile) with
+  | none => g
+  | some moved =>
+    let g := g.registerDelayedTrigger
+      { controller := ctrl, source := some moved, kind := .endStepReturn moved.id, cause }
+    g.logMsg s!"{moved.name} is exiled until the beginning of the next end step"
+
 /-- Exile `o` and return it at the beginning of the next end step. -/
 def exileUntilNextEndStep (g : Game) (o : GameObject)
     (cause : Option EventCause := none) : Game :=
-  let name := g.name o
   let curCtrl := g.controllerOf o
   let (g, cause) :=
     match cause with
     | some c => (g, c)
     | none => g.allocDelayedCause curCtrl
-  let (g, newId) := g.move o.id .exile none (cause := some cause)
   let ctrl := curCtrl.getD o.owner
-  let g := g.registerDelayedTrigger { controller := ctrl, source := some o, kind := .endStepReturn newId, cause }
-  g.logMsg s!"{name} is exiled until the beginning of the next end step"
+  let (g, _) := g.move o.id .exile none (cause := some cause)
+  if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement
+      (.finishPostStep 108 ctrl (cardId := some o.id) (cause := some cause))
+  else
+    g.finishExileUntilNextEndStep ctrl o.id cause
 
 /-- Post-entry continuation for `putLandFromHandTapped`. -/
 def finishPutLandFromHand (g : Game) (fromId : ObjectId) : Game :=

@@ -51,7 +51,7 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
     throw "A spell with split second is on the stack (CR 702.61a)"
   if g.combatLocksNonManaAbilities then
     throw "During combat, players can't cast spells (Yuriko, Blade of the Mighty)"
-  if p != g.activePlayer &&
+  if p != g.activePlayer && !g.areTeammates p g.activePlayer &&
       (g.permanentsOf g.activePlayer).any (fun o =>
         (g.staticAbilities o).any (fun
           | .opponentsCantCastOnYourTurn => true
@@ -228,9 +228,10 @@ def announceMode (g : Game) (p : PlayerId) (mode : Nat) : Except String Game := 
     | .activatedAbility =>
       let some chosen := prop.abilityModes[mode]?
         | throw "No such mode (CR 601.2b)"
-      if !g.modeIsChoosable p chosen then
+      if !g.modeIsChoosable p chosen prop.sourceId then
         throw "That mode requires a target (CR 700.2a)"
       let some _obj := g.findObject? prop.spellId | throw "The ability left the stack"
+      let g := g.record (GameEvent.announced g.turnNumber prop.spellId (modes := #[mode]))
       let g := g.changeObject prop.spellId (.abilityEffect (some chosen))
       let g := g.logMsg
         s!"{(g.player p).name} chooses a mode: {chosen.toNotation} (CR 601.2b)"
@@ -295,7 +296,16 @@ def announceX (g : Game) (p : PlayerId) (x : Nat) : Except String Game := do
         g.activationManaCost p ab (source := src) (chosenX := some x)
       | .spell, _, _ =>
         let spell := g.object! prop.spellId
-        g.playManaCost spell (g.baseCard spell)
+        let preSpell := { spell with
+          id := prop.original.id
+          zone := prop.original.zone
+          exiledBy := prop.original.exiledBy }
+        let baseFace := g.baseCard spell
+        let face :=
+          match prop.sneakAttacker, baseFace.sneakCost with
+          | some _, some sc => { baseFace with manaCost := sc }
+          | _, _ => baseFace
+        g.playManaCost preSpell face
       | _, _, _ => prop.cost.substituteX x
     let g := g.changeProposal (.cost cost)
     let prop := g.proposedSpell.getD prop

@@ -1661,6 +1661,165 @@ def applyCreateTokens (g : Game) (controller : PlayerId)
             phrase := "Attach it to target creature you control" }
         | _, _ => g
 
+/-- Pause-safe loop for `applyExile` across `ids`, resolving post-move `newId`
+effects via `followMovedToZone?` after any `Pending.chooseReplacement` pause
+(CR 616.1). -/
+partial def runTriggerExileLoop (g : Game) (controller : PlayerId)
+    (sourceId : Option ObjectId) (modeCode casts : Nat)
+    (ids accMovedPreIds : Array ObjectId) (cause : Option EventCause)
+    (justMovedFrom : Option ObjectId := none) (extraFlag : Nat := 0)
+    (movedName : String := "") : Game :=
+  let g :=
+    match justMovedFrom with
+    | none => g
+    | some fid =>
+      match modeCode with
+      | 3 =>
+        match g.followMovedToZone? fid (· == Zone.exile) with
+        | some moved =>
+          let g := g.createEffect
+            (.playPermission moved.id { player := controller } (turnEnds := 2))
+            (cause := cause)
+          g.logMsg
+            s!"{(g.player controller).name} exiles {movedName} and may play it until the end of their next turn"
+        | none => g
+      | 4 =>
+        match g.followMovedToZone? fid (· == Zone.exile) with
+        | some moved =>
+          let g := g.createEffect
+            (.playPermission moved.id { player := controller })
+            (cause := cause)
+          g.logMsg s!"{(g.player controller).name} exiles {movedName} and may play it this turn"
+        | none => g
+      | 10 =>
+        if (g.followMovedToZone? fid (· == Zone.exile)).isSome then
+          g.logMsg s!"{movedName} is exiled"
+        else g
+      | 11 =>
+        if extraFlag == 1 then
+          match g.followMovedToZone? fid (· == Zone.exile) with
+          | some moved => g.change (.pushExiledIdThisWay moved.id)
+          | none => g
+        else g
+      | 12 =>
+        match g.followMovedToZone? fid (· == Zone.exile) with
+        | some moved => g.change (.playExiledThisWay (some moved.id))
+        | none => g
+      | 14 =>
+        match g.followMovedToZone? fid (· == Zone.exile) with
+        | some moved =>
+          g.changes #[
+            .grimaImpulseReady true,
+            .grimaImpulseVictim (some moved.owner),
+            .grimaImpulseFound (some moved.id),
+            .grimaImpulseOthers g.grimaImpulseOthers]
+        | none => g
+      | 15 =>
+        match g.followMovedToZone? fid (· == Zone.exile), sourceId.bind g.findObject? with
+        | some moved, some src => g.changeObject src.id (.pushLinkedExile moved.id)
+        | _, _ => g
+      | 16 =>
+        if extraFlag == 1 && (g.followMovedToZone? fid (· == Zone.exile)).isSome then
+          match sourceId.bind g.findObject? with
+          | some src =>
+            if src.isOnBattlefield then g.pumpPermanent src 2 1 else g
+          | none => g
+        else g
+      | 17 =>
+        match g.followMovedToZone? fid (· == Zone.exile) with
+        | some moved => g.grantWidowCast controller (some moved.id) (cause := cause)
+        | none => g
+      | _ => g
+  if let .chooseReplacement .. := g.pending then
+    if ids.isEmpty && modeCode != 20 then g
+    else
+      g.chainPendingReplacement
+        (.finishPostStep 120 controller casts sourceId none
+          (ids := ids) (targets := accMovedPreIds.map Target.card)
+          (modes := #[modeCode, 0]) (cause := cause))
+  else
+    match ids[0]? with
+    | none =>
+      if modeCode == 20 then
+        let arrived := accMovedPreIds.filterMap (fun pid =>
+          (g.followMovedToZone? pid (· == Zone.exile)).map GameObject.id)
+        if arrived.isEmpty then g
+        else
+          g.change (.pending
+            (.fraChoice controller (.mayCastUpToFromExile arrived casts)))
+      else g
+    | some oid =>
+      let rem := ids.extract 1 ids.size
+      match g.findObject? oid with
+      | none =>
+        g.runTriggerExileLoop controller sourceId modeCode casts rem accMovedPreIds cause
+      | some o =>
+        if modeCode == 0 then
+          let g := g.exileForLeaveTrigger sourceId o (cause := cause)
+          if let .chooseReplacement .. := g.pending then
+            if rem.isEmpty then g
+            else
+              g.chainPendingReplacement
+                (.finishPostStep 120 controller casts sourceId none
+                  (ids := rem) (modes := #[modeCode, 0]) (cause := cause))
+          else
+            g.runTriggerExileLoop controller sourceId modeCode casts rem accMovedPreIds cause
+        else if modeCode == 1 then
+          let g :=
+            match sourceId.bind g.findObject? with
+            | some src =>
+              if src.isOnBattlefield then g.exileUntilSourceLeaves sourceId o (cause := cause)
+              else g
+            | none => g
+          if let .chooseReplacement .. := g.pending then
+            if rem.isEmpty then g
+            else
+              g.chainPendingReplacement
+                (.finishPostStep 120 controller casts sourceId none
+                  (ids := rem) (modes := #[modeCode, 0]) (cause := cause))
+          else
+            g.runTriggerExileLoop controller sourceId modeCode casts rem accMovedPreIds cause
+        else if modeCode == 2 then
+          let g := g.exileUntilNextEndStep o (cause := cause)
+          if let .chooseReplacement .. := g.pending then
+            if rem.isEmpty then g
+            else
+              g.chainPendingReplacement
+                (.finishPostStep 120 controller casts sourceId none
+                  (ids := rem) (modes := #[modeCode, 0]) (cause := cause))
+          else
+            g.runTriggerExileLoop controller sourceId modeCode casts rem accMovedPreIds cause
+        else if modeCode == 20 then
+          let (g, _) := g.move o.id .exile none (cause := cause)
+          let acc' := accMovedPreIds.push o.id
+          if let .chooseReplacement .. := g.pending then
+            g.chainPendingReplacement
+              (.finishPostStep 120 controller casts sourceId none
+                (ids := rem) (targets := acc'.map Target.card)
+                (modes := #[modeCode, 0]) (cause := cause))
+          else
+            g.runTriggerExileLoop controller sourceId modeCode casts rem acc' cause
+        else
+          let name := if o.isOnBattlefield then g.name o else o.name
+          let flag :=
+            if modeCode == 11 then (if g.isLand o then 1 else 0)
+            else if modeCode == 16 then (if g.hasSubtype o .hero then 1 else 0)
+            else 0
+          let g :=
+            if modeCode == 13 then
+              let hostId := (sourceId.bind g.findObject?).bind (·.attachedTo)
+              g.changes #[.notedCopyObject (some o), .notedHostId hostId]
+            else g
+          let (g, _) := g.move o.id .exile none (cause := cause)
+          if let .chooseReplacement .. := g.pending then
+            g.chainPendingReplacement
+              (.finishPostStep 120 controller casts sourceId (some o.id)
+                (ids := rem) (targets := accMovedPreIds.map Target.card)
+                (modes := #[modeCode, flag]) (name := name) (cause := cause))
+          else
+            g.runTriggerExileLoop controller sourceId modeCode casts rem accMovedPreIds cause
+              (some o.id) flag name
+
 /-- Resolve `TriggerResolution.exile`. Each printed combination keeps
 the behavior of the constructor it replaced. Any other card the selector
 names is exiled as `how` and `note` say. A hand or an unmade choice
@@ -1696,17 +1855,18 @@ def applyExile (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
   | .target .eachPermanent, .untilSourceLeaves, .none =>
     g.withSourceStillOnBattlefield sourceId fun g _ =>
       let legal := g.legalTargetsForKind controller ab.targetKind sourceId
-      let (g, linkCause) := g.allocDelayedCause (some controller) sourceId
-      g.withBatch (some linkCause) fun g =>
-        targets.foldl (fun acc t =>
-          match t with
-          | Target.permanent oid =>
-            if legal.contains t then
-              match acc.findObject? oid with
-              | some o => acc.exileUntilSourceLeaves sourceId o (cause := some linkCause)
-              | none => acc
-            else acc.illegalAbilityTarget t
-          | _ => acc) g
+      let (g, validIds) := targets.foldl (fun (acc : Game × Array ObjectId) t =>
+        let (g, xs) := acc
+        match t with
+        | Target.permanent oid =>
+          if legal.contains t then (g, xs.push oid)
+          else (g.illegalAbilityTarget t, xs)
+        | _ => (g, xs)) (g, #[])
+      if validIds.isEmpty then g
+      else
+        let (g, linkCause) := g.allocDelayedCause (some controller) sourceId
+        g.withBatch (some linkCause) fun g =>
+          g.exileIdsUntilSourceLeavesLoop sourceId validIds (some linkCause)
   | .landsYouControl, .forLater, .lands =>
     let g := g.change (.exiledIdsThisWay #[])
     let eligible := targets.filterMap (fun
@@ -1735,8 +1895,13 @@ def applyExile (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       | Target.card id | Target.permanent id =>
         match g.findObject? id with
         | some o =>
-          let (g, newId) := g.move o.id .exile none
-          g.change (.playExiledThisWay (some newId))
+          let (g, _) := g.move o.id .exile none
+          if let .chooseReplacement .. := g.pending then
+            g.chainPendingReplacement (.finishPostStep 119 controller 0 sourceId (some o.id))
+          else
+            match g.followMovedToZone? o.id (· == .exile) with
+            | some moved => g.change (.playExiledThisWay (some moved.id))
+            | none => g
         | none => g.logMsg "The target is no longer in the graveyard"
       | _ => g) sourceId (some "The target is no longer legal")
   | .target, .forLater, .none =>
@@ -1780,8 +1945,8 @@ def applyExile (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
             | some o => some #[o]
             | none => some #[]
         | .linkedExile =>
-          match sourceId.bind g.findObject? with
-          | some src => fromIds src.linkedExile
+          match sourceId with
+          | some sid => fromIds (g.allLinkedExilesOf sid)
           | none => some #[]
         | .graveyardCard | .graveyardPermanent | .creatureCard =>
           some (targets.filterMap fun
@@ -1831,76 +1996,6 @@ def applyExile (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
             let (g, c) := g.allocDelayedCause (some controller) sourceId
             (g, some c)
           else (g, none)
-      let exileOne (g : Game) (o : GameObject) : Game :=
-        match how with
-        | .leaveTrigger => g.exileForLeaveTrigger sourceId o (cause := sharedCause?)
-        | .untilSourceLeaves =>
-          match sourceId.bind g.findObject? with
-          | some src =>
-            if src.isOnBattlefield then g.exileUntilSourceLeaves sourceId o (cause := sharedCause?)
-            else g
-          | none => g
-        | .nextEndStep => g.exileUntilNextEndStep o (cause := sharedCause?)
-        | .playUntilNextTurn =>
-          let name := if o.isOnBattlefield then g.name o else o.name
-          let (g, newId) := g.move o.id .exile none (cause := sharedCause?)
-          let g := g.createEffect
-            (.playPermission newId { player := controller } (turnEnds := 2))
-            (cause := sharedCause?)
-          g.logMsg
-            s!"{(g.player controller).name} exiles {name} and may play it until the end of their next turn"
-        | .playThisTurn =>
-          let name := if o.isOnBattlefield then g.name o else o.name
-          let (g, newId) := g.move o.id .exile none (cause := sharedCause?)
-          let g := g.createEffect
-            (.playPermission newId { player := controller })
-            (cause := sharedCause?)
-          g.logMsg s!"{(g.player controller).name} exiles {name} and may play it this turn"
-        | .forLater =>
-          let name := if o.isOnBattlefield then g.name o else o.name
-          let wasLand := g.isLand o
-          let (g, newId) := g.move o.id .exile none (cause := sharedCause?)
-          match note with
-          | .lands =>
-            if wasLand then
-              g.change (.pushExiledIdThisWay newId)
-            else g
-          | .playCard => g.change (.playExiledThisWay (some newId))
-          | .copyAndHost =>
-            let hostId :=
-              match sourceId.bind g.findObject? with
-              | some src => src.attachedTo
-              | none => none
-            g.changes #[.notedCopyObject (some o), .notedHostId hostId]
-          | .impulse =>
-            g.changes #[
-              .grimaImpulseReady true,
-              .grimaImpulseVictim (some o.owner),
-              .grimaImpulseFound (some newId),
-              .grimaImpulseOthers g.grimaImpulseOthers]
-          | .linked =>
-            match sourceId.bind g.findObject? with
-            | some src =>
-              g.changeObject src.id (.pushLinkedExile newId)
-            | none => g
-          | .ifHero =>
-            if g.hasSubtype o .hero then
-              match sourceId.bind g.findObject? with
-              | some src =>
-                if src.isOnBattlefield then g.pumpPermanent src 2 1 else g
-              | none => g
-            else g
-          | .anyManaThisTurn => g.grantWidowCast controller (some newId) (cause := sharedCause?)
-          | .none => g.logMsg s!"{name} is exiled"
-        | .returnImmediately | .returnTapped => g
-        | .mayCastUpTo casts =>
-          let (g, newId) := g.move o.id .exile none (cause := sharedCause?)
-          let prev :=
-            match g.pending with
-            | .fraChoice _ (.mayCastUpToFromExile ids _) => ids
-            | _ => #[]
-          g.change (.pending
-            (.fraChoice controller (.mayCastUpToFromExile (prev.push newId) casts)))
       match how with
       | .returnImmediately =>
         g.flickerPermanents (objs.map (·.id)) (logText := "is exiled, then returned")
@@ -1910,7 +2005,29 @@ def applyExile (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         g.flickerPermanents (elig.map (·.id)) (logText := "is exiled, then returned tapped")
           (tapped := true) (cause := sharedCause?)
       | _ =>
-        g.withBatch sharedCause? fun g => objs.foldl exileOne g
+        let (modeCode, casts) : Nat × Nat :=
+          match how with
+          | .leaveTrigger => (0, 0)
+          | .untilSourceLeaves => (1, 0)
+          | .nextEndStep => (2, 0)
+          | .playUntilNextTurn => (3, 0)
+          | .playThisTurn => (4, 0)
+          | .forLater =>
+            let nc :=
+              match note with
+              | .none => 10
+              | .lands => 11
+              | .playCard => 12
+              | .copyAndHost => 13
+              | .impulse => 14
+              | .linked => 15
+              | .ifHero => 16
+              | .anyManaThisTurn => 17
+            (nc, 0)
+          | .mayCastUpTo c => (20, c)
+          | .returnImmediately | .returnTapped => (10, 0)
+        g.withBatch sharedCause? fun g =>
+          g.runTriggerExileLoop controller sourceId modeCode casts (objs.map (·.id)) #[] sharedCause?
 
 /-- Resolve `TriggerResolution.sacrifice`. Each printed selector keeps
 the behavior of the combination it replaced. Any other permanent the
@@ -2473,7 +2590,8 @@ def applyDestroy (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       match g.findObject? oid with
       | none => clear.logMsg "The target is no longer legal"
       | some o =>
-        if !o.isOnBattlefield then clear.logMsg "The target is no longer legal"
+        if !o.isOnBattlefield || !g.canBeTargetedBy controller o sourceId then
+          clear.logMsg "The target is no longer legal"
         else
           let oCtrl := g.controllerOf o
           let pw := lastKnownPower.getD (g.power o)
@@ -2825,9 +2943,15 @@ def applyPut (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (note : TriggeredAbility.TriggerPutNote) : Game :=
   match what, how, note with
   | .linkedExile, _, _ =>
-    match sourceId.bind g.findObject? with
-    | some src => g.returnLinkedExile src
+    match sourceId with
     | none => g
+    | some sid =>
+      match g.findObject? sid with
+      | some src => g.returnLinkedExile src
+      | none =>
+        let ids := g.allLinkedExilesOf sid
+        if ids.isEmpty then g
+        else g.withBatch none fun g => g.returnLinkedExileLoop ids
   | .creatureMvAtMost _, _, _ =>
     g.withLegalKindTarget controller ab.targetKind targets
       (fun g t =>
@@ -2858,22 +2982,6 @@ def applyPut (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
           let name := card.name
           if (g.player card.owner).lost then
             g.logMsg s!"{name} remains in its current zone (CR 800.4b)"
-          else if g.isAura card then
-            let auraProbe := { card with controller := some card.owner }
-            match g.findPreBatchAuraHost? g.battlefield auraProbe with
-            | none =>
-              g.logMsg s!"{name} remains in its current zone (can't be attached legally; CR 303.4f)"
-            | some host =>
-              let (g, newId) := g.putOntoBattlefield id card.owner (attachedTo := some host.id)
-              if let .chooseReplacement .. := g.pending then
-                g.chainPendingReplacement (.finishPostStep 74 card.owner (cardId := some id))
-              else
-                match g.findObject? newId with
-                | some entered =>
-                  if entered.isOnBattlefield then
-                    (g.logMsg s!"{name} is put onto the battlefield under its owner's control").afterPermanentEnters entered
-                  else g
-                | none => g
           else
             let (g, newId) := g.putOntoBattlefield id card.owner
             if let .chooseReplacement .. := g.pending then
@@ -3209,11 +3317,15 @@ def applyFight (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
     (how : TriggeredAbility.TriggerFightHow) : Game :=
   match who, how with
   | .source, .mutual =>
+    -- CR 608.2b / 701.14b: revalidate the target creature and check that both
+    -- the source and the target are still creatures on the battlefield.
     match sourceId.bind g.findObject?, targets[0]? with
     | some src, some (Target.permanent id) =>
       match g.findObject? id with
       | some dest =>
-        if src.isOnBattlefield && dest.isOnBattlefield then
+        if src.isOnBattlefield && dest.isOnBattlefield &&
+            g.isCreature src && g.isCreature dest &&
+            g.canBeTargetedBy controller dest sourceId then
           g.fightCreatures src dest
         else g.logMsg "The target is no longer legal"
       | none => g.logMsg "The target is no longer legal"
@@ -4044,7 +4156,7 @@ def applyLose (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     | some (Target.permanent id) =>
       match g.findObject? id with
       | some tgt =>
-        if !tgt.isOnBattlefield then g
+        if !tgt.isOnBattlefield || !g.canBeTargetedBy controller tgt sourceId then g
         else
           match sourceId.bind g.findObject? with
           | some src =>
@@ -4809,11 +4921,13 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     | some (Target.permanent oid) =>
       match g.findObject? oid with
       | some o =>
-        if g.hasSubtype o .bear then g
+        if !o.isOnBattlefield || !g.canBeTargetedBy controller o sourceId then
+          g.logMsg "The target is no longer legal"
+        else if g.hasSubtype o .bear then g
         else
           let g := g.createEffect (.additionalSubtype o.id .bear)
           g.logMsg s!"{g.name o} becomes a Bear in addition to its other types"
-      | none => g
+      | none => g.logMsg "The target is no longer legal"
     | _ => g
   | .mayCast origin maxMv cost note =>
     g.applyMayCast controller lastKnownPower origin maxMv cost note
@@ -4884,9 +4998,22 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .winTheGame =>
     -- Ruling 835: you win while the ability resolves, before the
     -- state-based action for drawing from an empty library.
-    g.record (GameEvent.gameEnded g.turnNumber (.won controller)
-      (cause := g.resolvingOneShotCause controller sourceId))
-      |>.logMsg s!"{(g.player controller).name} wins the game"
+    -- CR 104.2b / 810.8b (MSH Ruling 944): a player or Two-Headed Giant team
+    -- can't win while an opponent controls an `opponentsCantWin` effect on
+    -- `.battlefield` or `.command`.
+    let teamCantWin :=
+      g.playerCantWin controller ||
+        g.livingPlayers.any (fun pl => g.areTeammates controller pl.id && g.playerCantWin pl.id)
+    if g.over || !g.stillInGame controller || teamCantWin then g
+    else
+      let mates := g.livingPlayers.filter (fun pl => pl.id != controller && g.areTeammates controller pl.id)
+      let msg :=
+        match mates[0]? with
+        | some mate => s!"{(g.player controller).name} and {mate.name} win the game"
+        | none => s!"{(g.player controller).name} wins the game"
+      g.record (GameEvent.gameEnded g.turnNumber (.won controller)
+        (cause := g.resolvingOneShotCause controller sourceId))
+        |>.logMsg msg
   | .shuffleSource =>
     g.shuffleSourceIntoLibrary sourceId
   | .ringTempts =>

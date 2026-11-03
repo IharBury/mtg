@@ -49,11 +49,11 @@ def finishSearchedUntap (g : Game) (_p : PlayerId) (landId : ObjectId) (_name : 
 /-- Finish the post-entry untap and ETB trigger checks of `placeSearched`. -/
 def finishPlaceSearched (g : Game) (p : PlayerId) (fromId : ObjectId)
     (name : String) (tapped : Bool) (cause : Option EventCause := none) : Game :=
-  let phrase := if tapped then " onto the battlefield tapped" else " onto the battlefield"
-  let g := g.logMsg s!"{(g.player p).name} puts {name}{phrase}"
   match g.followMovedToZone? fromId (· == .battlefield) with
   | none => g
   | some entered =>
+    let phrase := if tapped then " onto the battlefield tapped" else " onto the battlefield"
+    let g := g.logMsg s!"{(g.player p).name} puts {name}{phrase}"
     let untapTriggered :=
       match g.untapSearchedIfLands with
       | some n =>
@@ -139,26 +139,52 @@ def placeSearchedGraveyard (g : Game) (id : ObjectId)
     (cause : Option EventCause := none) : Game :=
   g.placeSearchedGraveyardLoop #[id] cause
 
-/-- Exile `id` and link the exiled card to `source` (CR 610.3). -/
+/-- Exile `ids` sequentially inside an open batch and link each card that
+arrives in `.exile` to `source`'s CR 607.2a `leaveTriggerExile` list, pausing
+across `Pending.chooseReplacement` via post-step `100`. -/
+def exileSearchedLinkedLoop (g : Game) (p : PlayerId) (ids : Array ObjectId)
+    (source : Option ObjectId) (cause : Option EventCause := none)
+    (pendingFromId : Option ObjectId := none) : Game := Id.run do
+  if let .chooseReplacement .. := g.pending then
+    return g.chainPendingReplacement
+      (.finishPostStep 100 p (sourceId := source) (cardId := pendingFromId)
+        (ids := ids) (cause := cause))
+  let mut g := g
+  if let some fid := pendingFromId then
+    if let some moved := g.followMovedToZone? fid (· == .exile) then
+      if let some src := source.bind g.findObject? then
+        g := g.changeObject src.id (.pushLeaveTriggerExile moved.id)
+      g := g.logMsg s!"{(g.player p).name} exiles {moved.name}"
+  for i in [0:ids.size] do
+    let id := ids[i]!
+    match g.findObject? id with
+    | none => pure ()
+    | some o =>
+      let name := o.name
+      let (g1, linkCause) : Game × EventCause :=
+        match cause with
+        | some c => (g, c)
+        | none =>
+          match g.currentResolvingContext? with
+          | some _ => g.allocDelayedCause (some p) source
+          | none => (g, .gameRule .spellCast)
+      let (g2, _) := g1.move id .exile none (cause := some linkCause)
+      g := g2
+      if let .chooseReplacement .. := g.pending then
+        let rem := ids.extract (i + 1) ids.size
+        return g.chainPendingReplacement
+          (.finishPostStep 100 p (sourceId := source) (cardId := some id)
+            (ids := rem) (cause := some linkCause))
+      if let some moved := g.followMovedToZone? id (· == .exile) then
+        if let some src := source.bind g.findObject? then
+          g := g.changeObject src.id (.pushLeaveTriggerExile moved.id)
+        g := g.logMsg s!"{(g.player p).name} exiles {name}"
+  return g
+
+/-- Exile `id` and link the exiled card to `source` via CR 607.2a `leaveTriggerExile`. -/
 def exileSearchedLinked (g : Game) (p : PlayerId) (id : ObjectId)
     (source : Option ObjectId) (cause : Option EventCause := none) : Game :=
-  match g.findObject? id with
-  | none => g
-  | some o =>
-    let name := o.name
-    let (g, linkCause) : Game × EventCause :=
-      match cause with
-      | some c => (g, c)
-      | none =>
-        match g.currentResolvingContext? with
-        | some _ => g.allocDelayedCause (some p) source
-        | none => (g, .gameRule .spellCast)
-    let (g, newId) := g.move id .exile none (cause := some linkCause)
-    let g :=
-      match source.bind g.findObject? with
-      | some src => g.changeObject src.id (.pushLinkedExile newId)
-      | none => g
-    g.logMsg s!"{(g.player p).name} exiles {name}"
+  g.exileSearchedLinkedLoop p #[id] source cause
 
 /-- Behold `subtype`. If you do, untap the land this search just found (CR 608.2c / 701.4). -/
 def beholdAndMaybeUntap (g : Game) (p : PlayerId) (landId : ObjectId) (subtype : CardSubtype) : Game :=
@@ -243,21 +269,10 @@ def placeSearchedBatchCore (g : Game) (p : PlayerId) (remainingIds : Array Objec
     | none => pure ()
     | some o =>
       let name := o.name
-      if g.isAura o then
-        let auraProbe := { o with controller := some p }
-        let host? := g.findPreBatchAuraHost? preBf auraProbe
-        match host? with
-        | none =>
-          g := g.logMsg s!"{name} remains in its current zone (can't be attached legally; CR 303.4f)"
-        | some host =>
-          let (g', _) := g.putOntoBattlefield id p (tapped := tapped)
-            (attachedTo := some host.id) (cause := cause)
-          g := g'
-          entered := entered.push (id, name)
-      else
-        let (g', _) := g.putOntoBattlefield id p (tapped := tapped) (cause := cause)
-        g := g'
-        entered := entered.push (id, name)
+      let (g', _) := g.putOntoBattlefield id p (tapped := tapped)
+        (preBattlefield := some preBf) (cause := cause)
+      g := g'
+      entered := entered.push (id, name)
       if g.pending != .none then
         let rem := remainingIds.extract (i + 1) remainingIds.size
         return g.chainPendingReplacement
@@ -367,7 +382,7 @@ def finishLibrarySearch (g : Game) (p : PlayerId) (ids : Array ObjectId)
       let (g, linkCause) := allocSearchStepCause g source
       let g := g.record (GameEvent.searched g.turnNumber p p ids (cause := some linkCause))
       let g := g.withBatch (some linkCause) fun g =>
-        ids.foldl (fun g id => g.exileSearchedLinked p id source (cause := some linkCause)) g
+        g.exileSearchedLinkedLoop p ids source (cause := some linkCause)
       g.shuffleSearch p after
     | .battlefieldTappedThenHand =>
       let (g, cause) := allocSearchStepCause g
@@ -483,13 +498,19 @@ def resolveExileTopPlayUntilEndOfNextTurn (g : Game) (p : PlayerId) : Game :=
     g.logMsg s!"{pl.name} has no cards in their library to exile"
   else
     let top := pl.library.back!
-    let cardName := (g.object! top).name
     let (g, cause) := g.allocDelayedCause (some p)
-    let (g, newId) := g.move top .exile none (cause := some cause)
-    let g := g.createEffect (.playPermission newId { player := p } (turnEnds := 2))
-      (cause := some cause)
-    g.logMsg
-      s!"{pl.name} exiles {cardName} and may play it until the end of their next turn"
+    let (g, _) := g.move top .exile none (cause := some cause)
+    if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement
+        (.finishPostStep 101 p (cardId := some top) (cause := some cause))
+    else
+      match g.followMovedToZone? top (· == .exile) with
+      | some moved =>
+        let g := g.createEffect (.playPermission moved.id { player := p } (turnEnds := 2))
+          (cause := some cause)
+        g.logMsg
+          s!"{pl.name} exiles {moved.name} and may play it until the end of their next turn"
+      | none => g
 
 end Game
 end Mtg.Engine

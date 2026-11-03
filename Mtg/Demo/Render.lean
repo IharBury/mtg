@@ -178,9 +178,12 @@ def withoutPayingManaClause (g : Game) (o : GameObject) : String :=
 def linkedExileSource? (g : Game) (o : GameObject) : Option GameObject :=
   g.battlefield.find? (fun src => src.linkedExile.contains o.id)
 
-/-- Cards `o` has exiled until it leaves that are still in exile (CR 610.3). -/
+/-- Cards `o` has linked-exiled (CR 610.3 `linkedExile` or CR 607.2a
+`leaveTriggerExile`) that are still in exile. -/
 def linkedExiledCards (g : Game) (o : GameObject) : Array GameObject :=
-  o.linkedExile.filterMap (fun id =>
+  let ids := o.linkedExile.foldl (fun acc id => if acc.contains id then acc else acc.push id) #[]
+  let ids := o.leaveTriggerExile.foldl (fun acc id => if acc.contains id then acc else acc.push id) ids
+  ids.filterMap (fun id =>
     match g.findObject? id with
     | some e => if e.zone == .exile then some e else none
     | none => none)
@@ -701,7 +704,7 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
         s!" [choose top or bottom ({g.player p |>.name})]"
       else
         s!" [choose one ({g.player p |>.name})]"
-    | .mayAttachEquipment p _ =>
+    | .mayAttachEquipment p .. =>
       s!" [may attach Equipment ({g.player p |>.name})]"
     | .mayResolve p =>
       let detail :=

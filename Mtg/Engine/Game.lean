@@ -284,7 +284,7 @@ def mustApply (g : Game) (p : PlayerId) (a : Action) : Game :=
     | some prop =>
       match prop.kind with
       | .activatedAbility =>
-        match g.defaultAbilityMode p prop.abilityModes with
+        match g.defaultAbilityMode p prop.abilityModes prop.sourceId with
         | none => panic! "no legal mode (CR 601.2b)"
         | some idx => mustApply g actor (.chooseMode idx)
       | .spell =>
@@ -308,7 +308,7 @@ def mustApply (g : Game) (p : PlayerId) (a : Action) : Game :=
     mustApply g actor .decline
   | .chooseLibraryPlacement _ _, some actor =>
     mustApply g actor .chooseBottom
-  | .mayAttachEquipment _ _, some actor =>
+  | .mayAttachEquipment .., some actor =>
     mustApply g actor .decline
   | .mayResolve _, some actor =>
     mustApply g actor .decline

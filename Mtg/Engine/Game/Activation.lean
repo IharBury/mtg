@@ -85,7 +85,7 @@ def validateActivation (g : Game) (p : PlayerId) (o : GameObject) (ab : Activate
   if ab.onlyIfYouAttackedWithTwoOrMore && g.loggedAttacks p < 2 then
     throw s!"{o.name}'s ability can be activated only if you attacked with two or more creatures this turn"
   if ab.onlyIfOpponentDealtNoncombatDamage &&
-      !(g.livingOpponents p).any (fun opp => g.loggedNoncombatDamage opp.id) then
+      !g.players.any (fun q => q.id != p && !g.areTeammates p q.id && g.loggedNoncombatDamage q.id) then
     throw s!"{o.name}'s ability can be activated only if an opponent has been dealt noncombat damage this turn"
   if ab.onlyAsSorcery && !g.asSorcery? p then
     throw s!"{o.name}'s ability can be activated only as a sorcery"

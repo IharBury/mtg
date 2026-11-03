@@ -255,6 +255,12 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
         g.changes #[.pushOuterPendingReplacement outer, .pendingReplacement none]
       | none => g
     else g
+  let cleanObj? (oid? : Option ObjectId) : Option ObjectId :=
+    oid?.filter (· != noSourceSentinelId)
+  let resolvingForObj :=
+    cleanObj? (g.currentResolvingContext?.bind Prod.fst) <|>
+      cleanObj? g.resolvingAbility <|>
+      cleanObj? g.resolvingSpell
   match choice, answer with
   | .discardFromRevealedHand victim permanentOnly, .objects #[id] =>
     if !(g.revealedHandChoices victim permanentOnly).contains id then
@@ -368,7 +374,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .mayPayThen n next sourceId, .accept =>
     if !(g.player p).manaPool.canPay (ManaCost.ofGeneric n) then
       throw s!"{(g.player p).name} cannot pay \{{n}}; add mana first"
-    let g ← g.payCost p (ManaCost.ofGeneric n)
+    let g ← g.payCost p (ManaCost.ofGeneric n) (forObject := cleanObj? sourceId <|> resolvingForObj)
     let g := g.logMsg s!"{(g.player p).name} pays \{{n}}"
     return (g.applyFra p default next.toResolution #[] sourceId).finishFraChoice
   | .mayPayThen .., .decline => return g.finishFraChoice
@@ -784,7 +790,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let cost : ManaCost := { symbols := symbols }
     if !(g.player p).manaPool.canPay cost then
       throw s!"{(g.player p).name} cannot pay that cost; add mana first"
-    let g ← g.payCost p cost
+    let g ← g.payCost p cost (forObject := cleanObj? (some sourceId) <|> resolvingForObj)
     if g.mayThenDrop > 0 then
       return g.acceptMayThen
     else
@@ -845,11 +851,11 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     if left > 1 then return g.change (.pending (.fraChoice p (.addManaColors (left - 1) use)))
     return g.finishFraChoice
   | .addManaColors .., _ => throw "Choose a color for the mana"
-  | .mayPayExtort _, .accept =>
+  | .mayPayExtort sourceId, .accept =>
     let cost : ManaCost := { symbols := #[.hybrid .white .black] }
     if !(g.player p).manaPool.canPay cost then
       throw s!"{(g.player p).name} cannot pay \{W/B}; add mana first"
-    let g ← g.payCost p cost
+    let g ← g.payCost p cost (forObject := cleanObj? sourceId <|> resolvingForObj)
     return (g.extortDrain p).finishFraChoice
   | .mayPayExtort _, .decline => return (g.logMsg "Extort is not paid").finishFraChoice
   | .mayPayExtort _, _ => throw "Pay {W/B} (accept), or decline"
@@ -941,7 +947,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let total : ManaCost := { symbols := (List.replicate times cost.toList).flatten.toArray }
     if !(g.player p).manaPool.canPay total then
       throw s!"{(g.player p).name} cannot pay {total}; add mana first"
-    let g ← g.payCost p total
+    let g ← g.payCost p total (forObject := cleanObj? sourceId <|> resolvingForObj)
     let g := g.logMsg s!"{(g.player p).name} pays {total}"
     if g.mayThenDrop > 0 then
       return g.acceptMayThen
@@ -1211,7 +1217,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let cost := ManaCost.ofGeneric 2
     if !(g.player p).manaPool.canPay cost then
       throw s!"{(g.player p).name} cannot pay {2}; add mana first, or decline"
-    let g ← g.payCost p cost
+    let g ← g.payCost p cost (forObject := resolvingForObj)
     return g.acceptMayThen
   | .ultronMayPay _, .decline =>
     return (g.logMsg s!"{(g.player p).name} doesn't pay {2}").declineMayThen
@@ -1225,17 +1231,27 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     match g.findObject? cardId with
     | some o =>
       if o.zone != .graveyard p then throw s!"{o.name} is no longer in your graveyard"
-      let name := o.name
+      let oldId := o.id
       let (g, cause) := g.allocDelayedCause (some p)
-      let (g, newId) := g.move o.id .exile none (cause := some cause)
-      return (g.createEffect (.playPermission newId { player := p } (turnEnds := 2))
-        (cause := some cause)
-        |>.logMsg s!"{name} is exiled. {(g.player p).name} may play it until the end of their next turn").finishFraChoice
+      let (g, _) := g.move oldId .exile none (cause := some cause)
+      let g :=
+        if let .chooseReplacement .. := g.pending then
+          g.chainPendingReplacement
+            (.finishPostStep 101 p (cardId := some oldId) (cause := some cause))
+        else
+          match g.followMovedToZone? oldId (· == Zone.exile) with
+          | some moved =>
+            (g.createEffect (.playPermission moved.id { player := p } (turnEnds := 2))
+              (cause := some cause))
+              |>.logMsg s!"{moved.name} is exiled. {(g.player p).name} may play it until the end of their next turn"
+          | none => g
+      return g.finishFraChoice
     | none => return g.finishFraChoice
   | .moonstoneMayExile _, .decline =>
     return (g.logMsg s!"{(g.player p).name} doesn't exile the discarded card").finishFraChoice
   | .moonstoneMayExile _, _ => throw "Exile the discarded card (accept), or decline"
-  | .tricksterLibrary caster id connive, .accept | .tricksterLibrary caster id connive, .decline =>
+  | .tricksterLibrary caster id connive sourceId, .accept
+  | .tricksterLibrary caster id connive sourceId, .decline =>
     let onBottom :=
       match answer with
       | .decline => true
@@ -1245,10 +1261,10 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       | some o =>
         if o.isOnBattlefield && g.isCreature o then
           g.applyOwnerPutsLibraryThenConnive caster #[Target.permanent id]
-            (putOnBottom := onBottom)
+            (putOnBottom := onBottom) (sourceId := sourceId)
         else g.logMsg "The target is no longer legal"
       | none => g.logMsg "The target is no longer legal"
-    return (g.conniveTricksterTarget caster connive).finishFraChoice
+    return (g.conniveTricksterTarget caster connive (sourceId := sourceId)).finishFraChoice
   | .tricksterLibrary .., _ =>
     throw "Put the creature second from the top (choose top), or on the bottom (choose bottom)"
   | .mayTakeMilled ids life, .objects #[id] =>
@@ -1306,7 +1322,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     return (g.finishVisionQuest p none x shuffle).finishFraChoice
   | .visionQuestPick .., _ => throw "Choose an artifact creature, or decline to find nothing"
   | .kingpinMayPay2Life, .accept =>
-    let g ← g.payLifeCost p 2
+    let g ← g.payLifeCost p 2 (forObject := resolvingForObj)
     return ((g.createEffect (.assignCombatDamageEqualToughnessUntilEot p))
       |>.logMsg "Creatures you control assign combat damage equal to their toughness").finishFraChoice
   | .kingpinMayPay2Life, .decline =>

@@ -166,7 +166,7 @@ def pay (g : Game) (p : PlayerId) : Except String Game := do
     let g := g.record
       (GameEvent.poisoned g.turnNumber p 5 (cause := .costPayment .ward p (some spellId)))
     let g := g.logMsg s!"{(g.player p).name} gets five poison counters (ward)"
-    return g.afterWardResolved
+    return g.finishWardAndDrain
   | _ => throw "No spell or ability is waiting to be paid for (CR 601.2h)"
 
 /-- Prefer paying extra generic mana when the non-mana additional-cost
@@ -301,8 +301,16 @@ def concede (g : Game) (p : PlayerId) : Game :=
   if (g.player p).lost then g
   else
     let pl := g.player p
+    let mates :=
+      g.players.filter (fun m => m.id != p && !m.lost && g.areTeammates p m.id) |>.map (·.id)
     let g := g.record (GameEvent.playerLost g.turnNumber p .conceded (cause := some (.gameRule .playerLeftGame)))
     let g := g.logMsg s!"{pl.name} concedes (CR 104.3a)"
+    let g :=
+      mates.foldl (fun acc mid =>
+        let mpl := acc.player mid
+        let acc := acc.record (GameEvent.playerLost acc.turnNumber mid .conceded
+          (cause := some (.gameRule .playerLeftGame)))
+        acc.logMsg s!"{mpl.name} concedes with their team (CR 810.8a)") g
     match g.decideGameIfFinished with
     | some finished => finished
     | none =>
@@ -323,30 +331,41 @@ def concede (g : Game) (p : PlayerId) : Game :=
         g.currentBatch.isSome || g.pendingReplacement.isSome ||
           !g.outerPendingReplacements.isEmpty ||
           !g.continuations.isEmpty || g.triggerSequenceRest.isSome
-      let g := g.playerLeavesGame p
+      let g := ([p] ++ mates.toList).foldl (fun acc pid => acc.playerLeavesGame pid) g
+      let savedPostLeavePending : Option Pending :=
+        if !midResolutionOrBatch && !wasPregame && !g.sbaPaused && g.pending != .none then
+          some g.pending
+        else none
+      let g :=
+        if savedPostLeavePending.isSome then g.change (.pending .none) else g
       let g := if midResolutionOrBatch || wasPregame then g else g.checkSBA
       if g.unlessPaysDue then
         g.flushUnlessPays
       else if g.over then g
       else if !midResolutionOrBatch && !wasPregame && g.sbaPaused then
         g.chainPendingReplacement
-          (.finishConcede wasIdlePriority savedPendingPrio wasAssigningCombatDamage)
-      else if g.pending != .none then g
-      else if wasPregame then
-        if g.pregameRandom != .none then
-          g.finishAfterRandom true
-        else if !g.mulliganToDeclare.isEmpty then
-          g.promptMulligan g.mulliganToDeclare[0]!
-        else if !g.willMulligan.isEmpty then
-          g.resolveDeclaredMulligans
-        else if !g.mulliganToBottom.isEmpty then
-          g.promptBottom g.mulliganToBottom[0]!
-        else if g.awaitingOpeningBegin then
-          g.continueOpeningBegin #[]
-        else
-          g.beginMulliganRound
+          (.finishConcede wasIdlePriority savedPendingPrio wasAssigningCombatDamage savedPostLeavePending)
       else
-        g.finishConcedePriority wasIdlePriority savedPendingPrio wasAssigningCombatDamage
+        let g :=
+          match savedPostLeavePending with
+          | some sp => if g.pending == .none then g.resumePendingReplacement (.restorePending sp) else g
+          | none => g
+        if g.pending != .none then g
+        else if wasPregame then
+          if g.pregameRandom != .none then
+            g.finishAfterRandom true
+          else if !g.mulliganToDeclare.isEmpty then
+            g.promptMulligan g.mulliganToDeclare[0]!
+          else if !g.willMulligan.isEmpty then
+            g.resolveDeclaredMulligans
+          else if !g.mulliganToBottom.isEmpty then
+            g.promptBottom g.mulliganToBottom[0]!
+          else if g.awaitingOpeningBegin then
+            g.continueOpeningBegin #[]
+          else
+            g.beginMulliganRound
+        else
+          g.finishConcedePriority wasIdlePriority savedPendingPrio wasAssigningCombatDamage
 
 end Game
 end Mtg.Engine

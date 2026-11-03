@@ -212,14 +212,15 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
     match sourceId.bind (fun id => g.followMovedToZone? id (· == Zone.exile)) with
     | none => g
     | some card =>
-      let perm : PlayPermission :=
-        { player := controller, whileExiled := true }
-      let g := (g.createEffect (.playPermission card.id perm)).logMsg
-        s!"{(g.player controller).name} may cast {card.name} for as long as it remains exiled"
-      g.withLegalKindPermanent controller kind targets (fun g land =>
-        let g := g.createEffect (.colorlessGrantUntilCast land.id card.id)
-        g.logMsg s!"{g.name land} gains \"\{T}: Add \{C}\{C}\" until {card.name} is cast from exile")
-        sourceId illegal
+      g.withBatch none fun g =>
+        let perm : PlayPermission :=
+          { player := controller, whileExiled := true }
+        let g := (g.createEffect (.playPermission card.id perm)).logMsg
+          s!"{(g.player controller).name} may cast {card.name} for as long as it remains exiled"
+        g.withLegalKindPermanent controller kind targets (fun g land =>
+          let g := g.createEffect (.colorlessGrantUntilCast land.id card.id)
+          g.logMsg s!"{g.name land} gains \"\{T}: Add \{C}\{C}\" until {card.name} is cast from exile")
+          sourceId illegal
   | .nextSpellCantBeCountered =>
     (g.createEffect (.nextSpellCantBeCounteredThisTurn controller)).logMsg
       s!"The next spell {(g.player controller).name} casts this turn can't be countered"
@@ -410,14 +411,15 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
           (g, some c)
         | none => (g, none)
     g.withBatch cause? fun g =>
-      targets.foldl (fun g t =>
+      (List.range targets.size).foldl (fun g i =>
+        let t := targets[i]!
         match t with
         | Target.permanent id =>
-          if g.targetLegalAt controller kind 0 t sourceId then
+          if g.targetLegalAt controller kind i t sourceId then
             g.dealDamageFrom srcName (g.object! id) n (source := src?) (cause := cause?)
           else g.illegalAbilityTarget t
         | Target.player pid =>
-          if g.targetLegalAt controller kind 1 t sourceId then
+          if g.targetLegalAt controller kind i t sourceId then
             g.dealDamageToPlayer pid n (source := src?) (cause := cause?)
           else g.illegalAbilityTarget t
         | _ => g) g
@@ -461,9 +463,12 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
       else
         let x := spell.chosenX.getD 0
         let (g, copies) := (List.range x).foldl (fun (acc : Game × Array ObjectId) _ =>
-          let g := acc.1.copyStackSpell spell controller
-          (g, acc.2.push ((g.stack.back?.map (·.objectId)).getD spell.id))) (g, #[])
-        let targeted := ((g.stackEntry? spell.id).map (!·.targets.isEmpty)).getD false
+          let (g, cid?) := acc.1.copyStackSpellWithId spell controller
+          match cid? with
+          | some cid => (g, acc.2.push cid)
+          | none => (g, acc.2)) (g, #[])
+        let targeted := copies.any (fun cid =>
+          ((g.stackEntry? cid).map (!·.targets.isEmpty)).getD false)
         if copies.isEmpty || !targeted then g
         else
           g.beginFraChoice controller (.newTargetsForCopies copies)

@@ -64,9 +64,8 @@ def returnLinkedExileToHandLoop (g : Game) (srcId : ObjectId) (ids : Array Objec
     return g.chainPendingReplacement (.returnLinkedExileToHandLoop srcId ids pendingItem)
   let mut g := g
   if let some (eid, owner, name) := pendingItem then
-    if let some srcNow := g.findObject? srcId then
-      if (g.followMovedToZone? eid (· != .exile)).isSome then
-        g := g.changeObject srcId (.linkedExile (srcNow.linkedExile.filter (· != eid)))
+    if (g.followMovedToZone? eid (· != .exile)).isSome then
+      g := g.pruneLinkedExileId srcId eid
     if (g.followMovedToZone? eid (· == .hand owner)).isSome then
       g := g.logMsg s!"{name} is put into {(g.player owner).name}'s hand"
   for i in [0:ids.size] do
@@ -82,25 +81,27 @@ def returnLinkedExileToHandLoop (g : Game) (srcId : ObjectId) (ids : Array Objec
         let rem := ids.extract (i + 1) ids.size
         return g.chainPendingReplacement
           (.returnLinkedExileToHandLoop srcId rem (some (eid, owner, name)))
-      if let some srcNow := g.findObject? srcId then
-        if (g.followMovedToZone? eid (· != .exile)).isSome then
-          g := g.changeObject srcId (.linkedExile (srcNow.linkedExile.filter (· != eid)))
+      if (g.followMovedToZone? eid (· != .exile)).isSome then
+        g := g.pruneLinkedExileId srcId eid
       if (g.followMovedToZone? eid (· == .hand owner)).isSome then
         g := g.logMsg s!"{name} is put into {(g.player owner).name}'s hand"
   return g
 
-/-- A card the source exiled returns to its owner's hand. -/
+/-- A card the source exiled returns to its owner's hand (CR 607.2a / 714.4,
+including LKI when the Saga left the battlefield before its chapter resolved). -/
 def returnLinkedExileToHand (g : Game) (sourceId : Option ObjectId) : Game :=
-  match sourceId.bind g.findObject? with
+  match sourceId with
   | none => g.logMsg "The Saga is no longer in play"
-  | some src =>
-    match src.linkedExile[0]? with
-    | none => g.logMsg "No card is exiled with this Saga"
-    | some eid =>
-      if (g.findObject? eid).isNone then
-        g.logMsg "The exiled card is no longer there"
+  | some sid =>
+    let allIds := g.allLinkedExilesOf sid
+    match allIds.find? (fun eid => (g.findObject? eid).any (·.zone == .exile)) with
+    | some eid => g.returnLinkedExileToHandLoop sid #[eid]
+    | none =>
+      if allIds.isEmpty then
+        if (g.findObject? sid).isSome then g.logMsg "No card is exiled with this Saga"
+        else g.logMsg "The Saga is no longer in play"
       else
-        g.returnLinkedExileToHandLoop src.id #[eid]
+        g.logMsg "The exiled card is no longer there"
 
 /-- Whenever the controller attacks this turn, a creature they control
 gets +1/+1 for each Plains they control. -/

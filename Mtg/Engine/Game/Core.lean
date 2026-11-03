@@ -231,13 +231,16 @@ namespace Game
 @[inline] def unlessPaysInstead (g : Game) := g.topFrame.unlessPaysInstead
 @[inline] def unlessPaysController (g : Game) := g.topFrame.unlessPaysController
 @[inline] def unlessPaysTargets (g : Game) := g.topFrame.unlessPaysTargets
+@[inline] def unlessPaysSource (g : Game) := g.topFrame.unlessPaysSource
 @[inline] def unlessPaysDue (g : Game) := g.topFrame.unlessPaysDue
 @[inline] def mayEffect (g : Game) := g.topFrame.mayEffect
 @[inline] def mayController (g : Game) := g.topFrame.mayController
 @[inline] def mayTargets (g : Game) := g.topFrame.mayTargets
+@[inline] def maySource (g : Game) := g.topFrame.maySource
 @[inline] def spellOr (g : Game) := g.topFrame.spellOr
 @[inline] def spellOrController (g : Game) := g.topFrame.spellOrController
 @[inline] def spellOrTargets (g : Game) := g.topFrame.spellOrTargets
+@[inline] def spellOrSource (g : Game) := g.topFrame.spellOrSource
 @[inline] def spellOrLibrary (g : Game) := g.topFrame.spellOrLibrary
 @[inline] def surveilReturnMvAtMost (g : Game) := g.topFrame.surveilReturnMvAtMost
 @[inline] def surveilReturnNoncreatureNonland (g : Game) := g.topFrame.surveilReturnNoncreatureNonland
@@ -287,6 +290,7 @@ def applyChange (o : GameObject) (c : ObjectChange) : GameObject :=
   | .linkedExile v => { o with linkedExile := v }
   | .pushLinkedExile id => { o with linkedExile := o.linkedExile.push id }
   | .returnToZone v => { o with returnToZone := v }
+  | .leaveTriggerExile v => { o with leaveTriggerExile := v }
   | .pushLeaveTriggerExile id => { o with leaveTriggerExile := o.leaveTriggerExile.push id }
   | .exiledBy v => { o with exiledBy := v }
 
@@ -975,6 +979,25 @@ def followMovedToZone? (g : Game) (id : ObjectId) (expectedZone : Zone → Bool)
       else (g.objects.find? (·.id == afterId)).filter (·.zone == toZone)
     | none => none
 
+/-- Like `followMovedToZone?`, also returning the `fromZone` recorded on `id`'s
+immediate `ZoneEvent.moved` (or `o.zone` when `id` itself is in `expectedZone`). -/
+def followMovedWithOrigin? (g : Game) (id : ObjectId) (expectedZone : Zone → Bool) :
+    Option (GameObject × Zone) :=
+  match g.objects.find? (·.id == id) with
+  | some o => if expectedZone o.zone then some (o, o.zone) else none
+  | none =>
+    match g.events.reverse.findSome? (fun e =>
+      match e.change with
+      | .rules (.zone (.moved before after fromZone toZone _ _ _ _)) =>
+        if before.id == some id then
+          after.id.filter (· != id) |>.map (·, fromZone, toZone)
+        else none
+      | _ => none) with
+    | some (afterId, fromZone, toZone) =>
+      if !expectedZone toZone then none
+      else ((g.objects.find? (·.id == afterId)).filter (·.zone == toZone)).map (·, fromZone)
+    | none => none
+
 /-- Whether `z` is a public zone (CR 400.2). -/
 @[inline] def isPublicZone (z : Zone) : Bool :=
   z.isPublic
@@ -1168,9 +1191,9 @@ def currentResolvingContext? (g : Game) : Option (Option ObjectId × Option Play
           match g.chooseModesRest with
           | some rest => some (rest.sourceId, some rest.controller)
           | none =>
-            if g.mayEffect.isSome then some (none, some g.mayController)
-            else if !g.spellOr.isEmpty then some (none, some g.spellOrController)
-            else if g.unlessPaysInstead.isSome then some (none, some g.unlessPaysController)
+            if g.mayEffect.isSome then some (g.maySource, some g.mayController)
+            else if !g.spellOr.isEmpty then some (g.spellOrSource, some g.spellOrController)
+            else if g.unlessPaysInstead.isSome then some (g.unlessPaysSource, some g.unlessPaysController)
             else objId?.map (fun id => (some id, none))
 
 /-- Populate a fresh `EffectId` (and fallback `source` / `controller` from the
@@ -1243,31 +1266,36 @@ def livingOpponents (g : Game) (p : PlayerId) : Array Player :=
 def battlefield (g : Game) : Array GameObject :=
   g.objects.filter GameObject.isOnBattlefield
 
-/-- Whether a turn of `p` has begun (`TurnEvent.turnBegan p _`) in `g.events`
-after the creation of continuous effect `eid` (CR 611.2a). -/
+/-- Whether a turn of `p` (or `p`'s Two-Headed Giant teammate, CR 810.2) has begun
+(`TurnEvent.turnBegan`) in `g.events` after the creation of continuous effect `eid`
+(CR 611.2a). -/
 def hasTurnBegunSince (g : Game) (eid : EffectId) (p : PlayerId) : Bool :=
   g.events.foldl (fun (seenCreate, seenTurn) ev =>
     match ev.change with
     | .rules (.continuousEffect (.created id _)) =>
       if id == eid then (true, false) else (seenCreate, seenTurn)
     | .rules (.turn (.turnBegan q _)) =>
-      if seenCreate && q == p then (seenCreate, true) else (seenCreate, seenTurn)
+      if seenCreate && (q == p || g.areTeammates q p) then (seenCreate, true)
+      else (seenCreate, seenTurn)
     | _ => (seenCreate, seenTurn)) (false, false) |>.2
 
 /-- Whether another turn has begun (`TurnEvent.turnBegan _ _`) in `g.events`
-after the first turn of `p` that began since continuous effect `eid` was created
-(CR 723.1: "during their next turn" lasts until the beginning of the next turn). -/
+after the first turn of `p` (and `p`'s Two-Headed Giant teammate, CR 805.4 /
+810.2) that began since continuous effect `eid` was created (CR 723.1: "during
+their next turn" lasts until the beginning of the next turn). -/
 def hasTurnAfterBegunSince (g : Game) (eid : EffectId) (p : PlayerId) : Bool :=
-  g.events.foldl (fun (seenCreate, seenTurn, seenAfter) ev =>
+  g.events.foldl (fun (seenCreate, seenSeats, seenAfter) ev =>
     match ev.change with
     | .rules (.continuousEffect (.created id _)) =>
-      if id == eid then (true, false, false) else (seenCreate, seenTurn, seenAfter)
+      if id == eid then (true, #[], false) else (seenCreate, seenSeats, seenAfter)
     | .rules (.turn (.turnBegan q _)) =>
-      if !seenCreate then (seenCreate, seenTurn, seenAfter)
-      else if seenTurn then (seenCreate, seenTurn, true)
-      else if q == p then (seenCreate, true, false)
-      else (seenCreate, seenTurn, seenAfter)
-    | _ => (seenCreate, seenTurn, seenAfter)) (false, false, false) |>.2.2
+      if !seenCreate || seenAfter then (seenCreate, seenSeats, seenAfter)
+      else if (q == p || g.areTeammates q p) && !seenSeats.contains q then
+        (seenCreate, seenSeats.push q, false)
+      else if !seenSeats.isEmpty then
+        (seenCreate, seenSeats, true)
+      else (seenCreate, seenSeats, seenAfter)
+    | _ => (seenCreate, seenSeats, seenAfter)) (false, (#[] : Array PlayerId), false) |>.2.2
 
 /-- Timestamp `(tier, sub)` of `k` counters on `oid` (CR 613.7c): putting a new
 counter of kind `k` on `oid` gives all `k` counters on `oid` that new timestamp. -/
@@ -2024,13 +2052,16 @@ def applyEngineChange (g : Game) (c : EngineChange) : Game :=
       | .unlessPaysInstead v => { f with unlessPaysInstead := v }
       | .unlessPaysController v => { f with unlessPaysController := v }
       | .unlessPaysTargets v => { f with unlessPaysTargets := v }
+      | .unlessPaysSource v => { f with unlessPaysSource := v }
       | .unlessPaysDue v => { f with unlessPaysDue := v }
       | .mayEffect v => { f with mayEffect := v }
       | .mayController v => { f with mayController := v }
       | .mayTargets v => { f with mayTargets := v }
+      | .maySource v => { f with maySource := v }
       | .spellOr v => { f with spellOr := v }
       | .spellOrController v => { f with spellOrController := v }
       | .spellOrTargets v => { f with spellOrTargets := v }
+      | .spellOrSource v => { f with spellOrSource := v }
       | .spellOrLibrary v => { f with spellOrLibrary := v }
       | .surveilReturnMvAtMost v => { f with surveilReturnMvAtMost := v }
       | .surveilReturnNoncreatureNonland v => { f with surveilReturnNoncreatureNonland := v }
@@ -2115,10 +2146,10 @@ def playerControl (g : Game) : Option (PlayerId × PlayerId) :=
     | _ => acc) none
 
 def controlOnNextTakenTurn (g : Game) : Array (PlayerId × PlayerId) :=
-  g.activeEffects.filterMap fun (_, s) =>
+  g.activeEffects.filterMap fun (eid, s) =>
     match s with
     | .playerRule you (.controlsPlayer them true) d =>
-      if g.durationActive d then some (you, them) else none
+      if g.durationActive d && !g.hasTurnAfterBegunSince eid them then some (you, them) else none
     | _ => none
 
 def pendingFreeRGCreature (g : Game) : Option PlayerId :=
@@ -3604,7 +3635,8 @@ private def evalSelfStaticKeywords (g : Game) (o : GameObject) (abs : Array Stat
         | .fra .flyingHasteIfOpponentDealtNoncombat =>
           match ctrl? with
           | some p =>
-            if (g.livingOpponents p).any (fun opp => g.loggedNoncombatDamage opp.id) then
+            if g.players.any (fun q =>
+                q.id != p && !g.areTeammates p q.id && g.loggedNoncombatDamage q.id) then
               Keyword.flying.merge Keyword.haste
             else Keywords.none
           | none => Keywords.none
@@ -4195,7 +4227,9 @@ private def evalLayer6Aux (g : Game) (needStaticsTs kwOnly : Bool) : Nat → Gam
                     })
         -- 3. Team / lord static abilities and emblems controlled by `o`'s controller (CR 613.7a / 613.7d).
         if let some p := ctrl? then
-          let corruptedActive := g.players.any (fun opp => !opp.lost && opp.id != p && opp.poison >= 3)
+          let corruptedActive :=
+            g.players.any (fun opp =>
+              !opp.lost && opp.id != p && !g.areTeammates p opp.id && opp.poison >= 3)
           if !o.status.faceDown && bc.corruptedToxicLifelink && corruptedActive then
             pending := pending.push (.base, {
               idx := pending.size
@@ -5522,13 +5556,13 @@ def canLookAtSideboard (_g : Game) (viewer whose : PlayerId) : Bool :=
   viewer == whose
 
 /-- You cannot have a player you're controlling choose a card from
-outside the game (MSH 349). -/
-def canChooseOutsideGame (g : Game) (actor whose : PlayerId) : Bool :=
-  actor == whose && !g.controlsPlayer actor whose
+outside the game (CR 723.5b; MSH 349). -/
+def canChooseOutsideGame (_g : Game) (actor whose : PlayerId) : Bool :=
+  actor == whose
 
-/-- Tournament-rule decisions stay with the actual player (MSH 350). -/
-def canMakeTournamentDecision (g : Game) (actor whose : PlayerId) : Bool :=
-  actor == whose && !g.controlsPlayer actor whose
+/-- Tournament-rule decisions stay with the actual player (CR 723.5; MSH 350). -/
+def canMakeTournamentDecision (_g : Game) (actor whose : PlayerId) : Bool :=
+  actor == whose
 
 /-- You cannot make illegal choices for a player you control (MSH 351). -/
 def canMakeIllegalDecision (_g : Game) (_actor _whose : PlayerId) : Bool :=
@@ -6600,14 +6634,6 @@ def preBatchAuraBoard (g : Game) (preBf? : Option (Array GameObject) := none) : 
         stack := g.openBatchStack }
     else g
 
-/-- First legal battlefield host in `preBf` (evaluated on `g.preBatchAuraBoard (some preBf)`)
-that `auraProbe` may enchant and that is still on the battlefield in `g` (CR 303.4f–g). -/
-def findPreBatchAuraHost? (g : Game) (preBf : Array GameObject) (auraProbe : GameObject) :
-    Option GameObject :=
-  let board := g.preBatchAuraBoard (some preBf)
-  preBf.find? (fun h =>
-    (g.findObject? h.id).any (·.isOnBattlefield) && board.auraObjCanEnchant h auraProbe)
-
 /-- Result of applying CR 616.1a–g enters-the-battlefield replacement effects
 to a permanent or token about to enter the battlefield. -/
 structure EtbReplacementResult where
@@ -7034,23 +7060,26 @@ def applyEtbReplacements (g : Game) (candidate : GameObject)
               specs := specs.push { spec with affectedPlayer := ctrl }
           | _ => pure ()
       | _ => pure ()
-    -- CR 303.4f–g: non-cast Aura entering `.battlefield` must attach to an
-    -- object it can legally enchant (or remain in its origin zone if none exists).
-    if nonCastBattlefield && !cur.status.faceDown && cur.attachedTo.isNone && g.isAura curBf then
+    -- CR 303.4f–g,i: non-cast Aura (or untargeted Aura spell / copy) entering
+    -- `.battlefield` must attach to an object it can legally enchant (or remain in
+    -- its origin zone / go to graveyard / cease to exist if none exists).
+    let board := g.preBatchAuraBoard preBattlefield
+    if nonCastBattlefield && !cur.status.faceDown && cur.attachedTo.isNone &&
+        (g.isAura curBf || board.isAura curBf) then
       let pendingCtrlCopyFace :=
         hasPendingExternalCopyOrBackFace ||
           specs.any (fun s =>
-            match s.kind with
-            | .entersUnderControl .. | .entersAsCopy ..
-            | .entersAsCopyCreatureUntilEot .. | .declineEntersAsCopy ..
-            | .entersBackFaceUp .. => true
-            | _ => false)
+            !curApplied.contains s.id &&
+              match s.kind with
+              | .entersUnderControl .. | .entersAsCopy ..
+              | .entersAsCopyCreatureUntilEot .. | .declineEntersAsCopy ..
+              | .entersBackFaceUp .. => true
+              | _ => false)
       let hostDecided :=
         curApplied.any (fun rid =>
           rid.object == some cur.id &&
             match rid.kind with | .asEntersAttachAura _ => true | _ => false)
       if !pendingCtrlCopyFace && !hostDecided then
-        let board := g.preBatchAuraBoard preBattlefield
         let candidatePool : Array GameObject :=
           match preBattlefield with
           | some pb => pb
@@ -8052,13 +8081,15 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
     -- 8. “Whenever one or more opponents are dealt combat damage during your turn” (post-batch).
     let pid := post.activePlayer
     if pid.idx < post.players.size && !(post.player pid).lost &&
-        batch.any (·.matchesTrigger pid none .opponentsDealtCombatDamageYourTurn) then
+        batch.any (·.matchesTrigger pid none .opponentsDealtCombatDamageYourTurn
+          (isTeammate := post.areTeammates pid)) then
       let (w, fs) := queueCtrl post pid .opponentsDealtCombatDamageYourTurn (w := waiting) (fs := firedSources)
       waiting := w; firedSources := fs
     -- 9. “Whenever one or more opponents are dealt noncombat damage” (post-batch).
     for pl in post.livingPlayers do
       let q := pl.id
-      if batch.any (·.matchesTrigger q none (.fra .opponentsDealtNoncombatDamage)) then
+      if batch.any (·.matchesTrigger q none (.fra .opponentsDealtNoncombatDamage)
+          (isTeammate := post.areTeammates q)) then
         let (w, fs) := queueCtrl post q (.fra .opponentsDealtNoncombatDamage) (w := waiting) (fs := firedSources)
         waiting := w; firedSources := fs
     -- 10. “Whenever one or more Heroes you control deal damage to a player” (post-batch).
@@ -9241,10 +9272,10 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
                     eventCause := some dt.cause
                     delayedTrigger := some (dt.kind, dt.cause)
                     checked := true }
-            let attackingNow :=
-              (post.permanentsOf activePlayer).filter (fun o => post.isCreature o && o.status.attacking)
-            if attackingNow.size == 1 then
-              let attacker := attackingNow[0]!
+            let allAttacking :=
+              post.battlefield.filter (fun o => post.isCreature o && o.status.attacking)
+            if allAttacking.size == 1 && post.controlledBy allAttacking[0]! activePlayer then
+              let attacker := allAttacking[0]!
               let aid := attacker.id
               for o in post.permanentsOf activePlayer do
                 let (w, fs) :=
@@ -10824,7 +10855,9 @@ def createEffects (g : Game) (effs : Array ContinuousEffect)
         | some cid => (g.change (.nextEffectId (max g.nextEffectId (cid.raw + 1))), some c')
         | none => (g, some c')
       | _, _, _ => (g, cause)
-    effs.foldl (fun acc e => acc.createEffect e (cause := cause)) g
+    let applyAll (g : Game) : Game :=
+      effs.foldl (fun acc e => acc.createEffect e (cause := cause)) g
+    if effs.size > 1 then g.withBatchCore cause applyAll else applyAll g
 
 /-- Record and apply the expiration of the active continuous effect recorded
 under `eid` (CR 611), using the payload stored when it was created. An id that
@@ -10985,18 +11018,64 @@ def expireEffectsOnLeavingObject (g : Game) (o : GameObject)
         ids.contains o.id && ids.all (fun id => id == o.id || (g.findObject? id).isNone)
       | _ => false) (cause := cause)
 
+/-- Reconstruct `(leaveTriggerExile, linkedExile)` recorded on departed source
+`sid` from `g.events` (CR 607.2a). -/
+def departedLinkedExiles (g : Game) (sid : ObjectId) : Array ObjectId × Array ObjectId :=
+  g.events.foldl (fun (lte, le) ev =>
+    match ev.change with
+    | .rules (.zone (.moved _ after ..)) =>
+      if after.id == some sid then (#[], #[]) else (lte, le)
+    | .rules (.zone (.created after _)) =>
+      if after.id == some sid then (#[], #[]) else (lte, le)
+    | .engine (.materializeObject obj _) =>
+      if obj.id == sid then (obj.leaveTriggerExile, obj.linkedExile) else (lte, le)
+    | .engine (.object id oc) =>
+      if id != sid then (lte, le)
+      else
+        match oc with
+        | .leaveTriggerExile v => (v, le)
+        | .pushLeaveTriggerExile x => (lte.push x, le)
+        | .linkedExile v => (lte, v)
+        | .pushLinkedExile x => (lte, le.push x)
+        | _ => (lte, le)
+    | _ => (lte, le)) (#[], #[])
+
+/-- Linked-exile object ids (`leaveTriggerExile ++ linkedExile`) of `sid`,
+consulting `g.events` LKI when `sid` has already left its zone (CR 607.2a). -/
+def allLinkedExilesOf (g : Game) (sid : ObjectId) : Array ObjectId :=
+  match g.findObject? sid with
+  | some src => src.leaveTriggerExile ++ src.linkedExile
+  | none =>
+    let (lte, le) := g.departedLinkedExiles sid
+    lte ++ le
+
+/-- Remove `eid` from a live `sid`'s `leaveTriggerExile` and `linkedExile`
+metadata lists once `eid` has been consumed by a linked ability (CR 607.2a). -/
+def pruneLinkedExileId (g : Game) (sid eid : ObjectId) : Game :=
+  match g.findObject? sid with
+  | none => g
+  | some src =>
+    let g :=
+      if src.leaveTriggerExile.contains eid then
+        g.changeObject sid (.leaveTriggerExile (src.leaveTriggerExile.filter (· != eid)))
+      else g
+    let src := g.object! sid
+    if src.linkedExile.contains eid then
+      g.changeObject sid (.linkedExile (src.linkedExile.filter (· != eid)))
+    else g
+
 /-- Drop a stashed `unlessPays` effect. Paying, or countering for real,
 clears it; leaving without paying sets `unlessPaysDue` instead. -/
 def clearUnlessPays (g : Game) : Game :=
-  g.changes #[.unlessPaysInstead none, .unlessPaysDue false, .unlessPaysTargets #[]]
+  g.changes #[.unlessPaysInstead none, .unlessPaysDue false, .unlessPaysTargets #[], .unlessPaysSource none]
 
 /-- Drop a stashed `SpellResolution.may` after the player accepts or declines. -/
 def clearMay (g : Game) : Game :=
-  g.changes #[.mayEffect none, .mayTargets #[]]
+  g.changes #[.mayEffect none, .mayTargets #[], .maySource none]
 
 /-- Drop a stashed `SpellResolution.or` after the player has chosen. -/
 def clearSpellOr (g : Game) : Game :=
-  g.changes #[.spellOr #[], .spellOrTargets #[], .spellOrLibrary false]
+  g.changes #[.spellOr #[], .spellOrTargets #[], .spellOrSource none, .spellOrLibrary false]
 
 /-- Record that combat damage was dealt to `p`. -/
 def noteCombatDamageTo (g : Game) (p : PlayerId) (source : EventObject)
@@ -11118,12 +11197,12 @@ def setPlayerControl (g : Game) (you them : PlayerId) (onNextTurn : Bool := fals
     g.createEffect (.playerControl you them onNextTurn)
       |>.logMsg
         s!"{(g.player you).name} controls {(g.player them).name} during their next turn"
-  match (g.player them).teammate with
+  match g.players.find? (fun pl => g.areTeammates them pl.id) with
   | some mate =>
-    if mate == you then g
+    if mate.id == you then g
     else
       g.logMsg
-        s!"{(g.player you).name} also controls {(g.player mate).name} (Two-Headed Giant team)"
+        s!"{(g.player you).name} also controls {mate.name} (Two-Headed Giant team)"
   | none => g
 
 /-- Record putting `n` counters of `kind` on `id` via `PermanentEvent.counters`

@@ -70,6 +70,7 @@ inductive ObjectChange where
   | linkedExile (v : Array ObjectId)
   | pushLinkedExile (id : ObjectId)
   | returnToZone (v : Option Zone)
+  | leaveTriggerExile (v : Array ObjectId)
   | pushLeaveTriggerExile (id : ObjectId)
   | exiledBy (v : Option ObjectId)
 deriving Repr, Inhabited, BEq
@@ -1130,6 +1131,7 @@ inductive PendingReplacement where
       (cause : Option EventCause)
   | destroyPermanent (targetId : ObjectId) (cause : Option EventCause)
       (preBattlefield : Option (Array GameObject) := none)
+      (reason : Option String := none)
   | createToken (controller : PlayerId) (card : CardDef) (tapped : Bool)
       (attacking : Bool) (attackingTarget : Option AttackTarget)
       (applyFoodBonus : Bool) (extraCounters : CounterBag)
@@ -1356,7 +1358,7 @@ inductive PendingReplacement where
       (sourceId : Option ObjectId := none) (cardId : Option ObjectId := none)
       (ids : Array ObjectId := #[]) (targets : Array Target := #[])
       (modes : Array Nat := #[]) (shuffle : Bool := false)
-      (cause : Option EventCause := none)
+      (cause : Option EventCause := none) (name : String := "")
   | acceptMayThen
   | setLife (p : PlayerId) (life : Int) (msg : String) (cause : Option EventCause)
   | logMessage (msg : String)
@@ -1381,6 +1383,8 @@ inductive PendingReplacement where
       (pendingItem : Option (ObjectId × PlayerId × String) := none)
   | finishConcede (wasIdlePriority : Bool) (savedPendingPrio : Option PlayerId)
       (wasAssigningCombatDamage : Option Bool := none)
+      (savedPending : Option Pending := none)
+  | afterWardResolved
 deriving Repr, Inhabited, BEq
 
 /-- Whether a `PendingReplacement` continuation ends with `.finishFraChoice`. -/
@@ -1393,7 +1397,7 @@ def PendingReplacement.endsWithFinishFra : PendingReplacement → Bool
 priority (`.receivePriority` / `.finishFraChoice` / `.finishPostCast` /
 `.finishBecomeCast` with `grantPriority == true` / `.finishConcede`). -/
 def PendingReplacement.endsWithPriorityGrant : PendingReplacement → Bool
-  | .receivePriority _ | .finishFraChoice | .finishConcede .. => true
+  | .receivePriority _ | .finishFraChoice | .finishConcede .. | .afterWardResolved => true
   | .finishPostCast _ grantPriority hadOuter _ => grantPriority && !hadOuter
   | .finishBecomeCast _ _ grantPriority hadOuter openCont =>
     grantPriority && !hadOuter && !openCont
@@ -1551,16 +1555,19 @@ structure ContinuationFrame where
   unlessPaysInstead : Option Effect := none
   unlessPaysController : PlayerId := ⟨0⟩
   unlessPaysTargets : Array Target := #[]
+  unlessPaysSource : Option ObjectId := none
   /-- The payer left without paying (CR 800.4f). -/
   unlessPaysDue : Bool := false
   /-- Accepting `mayResolve` resolves this effect. -/
   mayEffect : Option Effect := none
   mayController : PlayerId := ⟨0⟩
   mayTargets : Array Target := #[]
+  maySource : Option ObjectId := none
   /-- Alternatives for a pending `SpellResolution.or`. -/
   spellOr : Array Effect := #[]
   spellOrController : PlayerId := ⟨0⟩
   spellOrTargets : Array Target := #[]
+  spellOrSource : Option ObjectId := none
   /-- `chooseTop` and `chooseBottom` name the library side, not list order. -/
   spellOrLibrary : Bool := false
   /-- After the pending surveil, a card with mana value at most this put into the graveyard goes to hand. -/
@@ -1671,13 +1678,16 @@ inductive ContinuationChange where
   | unlessPaysInstead (v : Option Effect)
   | unlessPaysController (v : PlayerId)
   | unlessPaysTargets (v : Array Target)
+  | unlessPaysSource (v : Option ObjectId)
   | unlessPaysDue (v : Bool)
   | mayEffect (v : Option Effect)
   | mayController (v : PlayerId)
   | mayTargets (v : Array Target)
+  | maySource (v : Option ObjectId)
   | spellOr (v : Array Effect)
   | spellOrController (v : PlayerId)
   | spellOrTargets (v : Array Target)
+  | spellOrSource (v : Option ObjectId)
   | spellOrLibrary (v : Bool)
   | surveilReturnMvAtMost (v : Option Nat)
   | surveilReturnNoncreatureNonland (v : Bool)
@@ -1832,13 +1842,16 @@ namespace EngineChange
 @[inline] def unlessPaysInstead (v : Option Effect) : EngineChange := .continuation (.unlessPaysInstead v)
 @[inline] def unlessPaysController (v : PlayerId) : EngineChange := .continuation (.unlessPaysController v)
 @[inline] def unlessPaysTargets (v : Array Target) : EngineChange := .continuation (.unlessPaysTargets v)
+@[inline] def unlessPaysSource (v : Option ObjectId) : EngineChange := .continuation (.unlessPaysSource v)
 @[inline] def unlessPaysDue (v : Bool) : EngineChange := .continuation (.unlessPaysDue v)
 @[inline] def mayEffect (v : Option Effect) : EngineChange := .continuation (.mayEffect v)
 @[inline] def mayController (v : PlayerId) : EngineChange := .continuation (.mayController v)
 @[inline] def mayTargets (v : Array Target) : EngineChange := .continuation (.mayTargets v)
+@[inline] def maySource (v : Option ObjectId) : EngineChange := .continuation (.maySource v)
 @[inline] def spellOr (v : Array Effect) : EngineChange := .continuation (.spellOr v)
 @[inline] def spellOrController (v : PlayerId) : EngineChange := .continuation (.spellOrController v)
 @[inline] def spellOrTargets (v : Array Target) : EngineChange := .continuation (.spellOrTargets v)
+@[inline] def spellOrSource (v : Option ObjectId) : EngineChange := .continuation (.spellOrSource v)
 @[inline] def spellOrLibrary (v : Bool) : EngineChange := .continuation (.spellOrLibrary v)
 @[inline] def surveilReturnMvAtMost (v : Option Nat) : EngineChange := .continuation (.surveilReturnMvAtMost v)
 @[inline] def surveilReturnNoncreatureNonland (v : Bool) : EngineChange := .continuation (.surveilReturnNoncreatureNonland v)
@@ -2528,8 +2541,9 @@ def watches (e : GameEvent) (watch : ReplacementWatch) : Bool :=
 “You” abilities require `listener` to be the player who did it.
 An event this change does not describe does not match. -/
 def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : Option ObjectId := none)
-    (te : TriggerEvent) : Bool :=
+    (te : TriggerEvent) (isTeammate : PlayerId → Bool := fun _ => false) : Bool :=
   let you (p : PlayerId) : Bool := p == listener
+  let opp (p : PlayerId) : Bool := !you p && !isTeammate p
   let this (o : EventObject) : Bool := sourceId.isSome && o.id == sourceId
   let yours (o : EventObject) : Bool := o.controller == some listener
   let other (o : EventObject) : Bool :=
@@ -2543,8 +2557,8 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : Option Obje
     | .zone (.moved _ _ _ _ (.draw _ _) (some p) _ _), .youDraw => you p
     | .zone (.moved _ _ _ _ (.draw nth _) (some p) _ _), .youDrawSecondCard => you p && nth == 2
     | .zone (.moved _ _ _ _ (.draw nth _) _ _ _), .anyPlayerDrawsSecond => nth == 2
-    | .zone (.moved _ _ _ _ (.draw _ first) (some p) _ _), .opponentDrawsExceptFirstDrawStep => !you p && !first
-    | .zone (.moved _ _ _ _ (.draw nth _) (some p) _ _), .opponentDrawsSecondCard => !you p && nth == 2
+    | .zone (.moved _ _ _ _ (.draw _ first) (some p) _ _), .opponentDrawsExceptFirstDrawStep => opp p && !first
+    | .zone (.moved _ _ _ _ (.draw nth _) (some p) _ _), .opponentDrawsSecondCard => opp p && nth == 2
     | .life (.gained p amount), .youGainLife => you p && amount > 0
     | .life (.lost _ amount _ _), .playerLosesLife => amount > 0
     | .damage (.dealt pkts), .sourceDealtDamage =>
@@ -2574,11 +2588,11 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : Option Obje
     | .damage (.dealt pkts), .combatDamageToYou =>
       pkts.any (fun pkt => pkt.combat && pkt.amount > 0 && match pkt.recipient with | .player p => you p | _ => false)
     | .damage (.dealt pkts), .opponentsDealtCombatDamageYourTurn =>
-      pkts.any (fun pkt => pkt.combat && pkt.amount > 0 && match pkt.recipient with | .player p => !you p | _ => false)
+      pkts.any (fun pkt => pkt.combat && pkt.amount > 0 && match pkt.recipient with | .player p => opp p | _ => false)
     | .damage (.dealt pkts), .fra .opponentsDealtNoncombatDamage =>
-      pkts.any (fun pkt => !pkt.combat && pkt.amount > 0 && match pkt.recipient with | .player p => !you p | _ => false)
+      pkts.any (fun pkt => !pkt.combat && pkt.amount > 0 && match pkt.recipient with | .player p => opp p | _ => false)
     | .damage (.dealt pkts), .fra .opponentDealtNoncombatDamage =>
-      pkts.any (fun pkt => !pkt.combat && pkt.amount > 0 && match pkt.recipient with | .player p => !you p | _ => false)
+      pkts.any (fun pkt => !pkt.combat && pkt.amount > 0 && match pkt.recipient with | .player p => opp p | _ => false)
     | .damage (.dealt pkts), .armyYouControlCombatDamage =>
       pkts.any (fun pkt =>
         pkt.combat && pkt.amount > 0 && yours pkt.source && pkt.source.hasSubtype .army &&
@@ -2719,9 +2733,9 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : Option Obje
     | .zone (.created object controller), .fra .anotherNontokenCreatureYouControlEnters =>
       object.zone == .battlefield && you controller && other object && !object.token && object.creature
     | .zone (.moved _ after _ .battlefield _ _ _ _), .fra .creatureOpponentControlsEnters =>
-      after.controller.any (!you ·) && after.creature
+      after.controller.any opp && after.creature
     | .zone (.created object controller), .fra .creatureOpponentControlsEnters =>
-      object.zone == .battlefield && !you controller && object.creature
+      object.zone == .battlefield && opp controller && object.creature
     | .zone (.moved _ after _ .battlefield _ _ _ _), .fra (.creatureYouControlPowerAtLeastEnters n) =>
       yours after && after.creature && after.power.any (· ≥ n)
     | .zone (.created object controller), .fra (.creatureYouControlPowerAtLeastEnters n) =>
@@ -2770,16 +2784,16 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : Option Obje
     | .cast (.spellCast spell p _), .youCastInstantSorceryTargetingArtifactOrLand =>
       you p && spell.instantOrSorcery
     | .cast (.spellCast _ p _), .youCastTargetingOpponentOrTheirCreature => you p
-    | .cast (.spellCast _ p _), .opponentCastsSpell => !you p
-    | .cast (.spellCast _ p _), .opponentCastsMatchingParity => !you p
+    | .cast (.spellCast _ p _), .opponentCastsSpell => opp p
+    | .cast (.spellCast _ p _), .opponentCastsMatchingParity => opp p
     | .cast (.spellCast spell p _), .youCastFirstNoncreature => you p && !spell.creature
     | .cast (.spellCast _ p _), .youCastSecondSpell => you p
     | .cast (.spellCast _ _ _), .anyPlayerCastsSecondSpell => true
-    | .cast (.spellCast _ p _), .opponentCastsFirstNoncreature => !you p
+    | .cast (.spellCast _ p _), .opponentCastsFirstNoncreature => opp p
     | .cast (.spellCast spell p _), .cascade => you p && (sourceId.isNone || this spell)
     | .cast (.spellCast spell p _), .fra .castThis => you p && this spell
     | .cast (.spellCast spell p _), .fra (.opponentCastsSpellMvAtMost n) =>
-      !you p && spell.manaValue ≤ n
+      opp p && spell.manaValue ≤ n
     | .cast (.spellCast spell p _), .fra .youCastPreparedSpell =>
       you p && spell.isCopy
     | .cast (.spellCast spell p _), .fra .youCastArtifactOrCreature =>

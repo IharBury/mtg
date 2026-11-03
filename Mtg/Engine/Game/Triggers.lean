@@ -179,8 +179,9 @@ def putTriggeredAbilityOnStack (g : Game) (controller : PlayerId) (source : Game
     | .enter .chooseUpToXModes =>
       let x := (source.chosenX.orElse (fun _ => g.chosenXOf? source.id)).getD 0
       let modes := sharedTriggerModes ab
+      let choosable := modes.filter (g.triggerModeChoosable controller obj)
       let maxModes := Nat.min x modes.size
-      if maxModes == 0 then
+      if maxModes == 0 || choosable.isEmpty then
         let noop : Effect := { resolution := .sequence [], phrase := "" }
         let g := g.record (GameEvent.announced g.turnNumber obj.id (modes := #[]))
         let g := g.changes #[
@@ -554,9 +555,9 @@ def putWaitingTrigger (g : Game) (wt : WaitingTrigger) (event : TriggerEvent) : 
       let copies := g.extraTriggerCopies wt.controller wt.source + 1
       Id.run do
         let mut g := g
+        for _ in [0:copies] do
+          g := g.recordTriggeredWithOrigin srcSnap wt.controller wt.ability originBatch
         for i in [0:copies] do
-          if !g.loggedTriggeredThisTurn wt.source.id wt.ability then
-            g := g.recordTriggeredWithOrigin srcSnap wt.controller wt.ability originBatch
           g := (put g).promptTriggerTargetsIfNeeded
           if g.pending != .none then
             let remCount := copies - (i + 1)

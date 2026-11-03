@@ -588,7 +588,7 @@ def vowMayAttach : Game :=
 
 #guard
   match vowMayAttach.pending with
-  | .mayAttachEquipment ⟨0⟩ id =>
+  | .mayAttachEquipment ⟨0⟩ id .. =>
     id == (namedPermanent vowMayAttach "Bofur, Reliable Guardian").id
   | _ => false
 #guard vowMayAttach.actor == some ⟨0⟩
@@ -652,7 +652,7 @@ def vowMayAttachNoGear : Game :=
 
 #guard
   match vowMayAttachNoGear.pending with
-  | .mayAttachEquipment ⟨0⟩ _ => true
+  | .mayAttachEquipment ⟨0⟩ .. => true
   | _ => false
 #guard
   match Agent.choose vowMayAttachNoGear ⟨0⟩ with

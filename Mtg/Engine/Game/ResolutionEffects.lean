@@ -210,39 +210,62 @@ def applyBardBowman (g : Game) (targetId : ObjectId) : Game :=
           else g
         else g
 
+/-- Finish the post-move CR 610.3 link step of `exileUntilSourceLeaves` once
+`g.move` to `.exile` completes. -/
+def finishExileUntilSourceLeaves (g : Game) (sourceId : Option ObjectId)
+    (fromId : ObjectId) : Game :=
+  match g.followMovedWithOrigin? fromId (· == .exile) with
+  | none => g
+  | some (moved, fromZone) =>
+    let g := g.changeObject moved.id (.returnToZone (some fromZone))
+    let g :=
+      match sourceId.bind g.findObject? with
+      | some src => g.changeObject src.id (.pushLinkedExile moved.id)
+      | none => g
+    g.logMsg s!"{moved.name} is exiled until the source leaves the battlefield"
+
 /-- Exile `o` until `source` leaves the battlefield, linking the new exile id
 and storing the exiling one-shot `EventCause` for the return (CR 610.3). -/
 def exileUntilSourceLeaves (g : Game) (sourceId : Option ObjectId) (o : GameObject)
     (cause : Option EventCause := none) : Game :=
-  let name := g.name o
-  let fromZone := o.zone
   let fallbackCtrl :=
     (sourceId.bind g.findObject?).bind (fun src => (g.controllerOf src).orElse (fun _ => some src.owner))
   let (g, linkCause) :=
     match cause with
     | some c => (g, c)
     | none => g.allocDelayedCause fallbackCtrl sourceId
-  let (g, newId) := g.move o.id .exile none (cause := some linkCause)
-  let g := g.changeObject newId (.returnToZone (some fromZone))
-  let g :=
-    match sourceId.bind g.findObject? with
-    | some src =>
-      g.changeObject src.id (.pushLinkedExile newId)
-    | none => g
-  g.logMsg s!"{name} is exiled until the source leaves the battlefield"
+  let (g, _) := g.move o.id .exile none (cause := some linkCause)
+  if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement
+      (.finishPostStep 103 (fallbackCtrl.getD g.activePlayer)
+        (sourceId := sourceId) (cardId := some o.id) (cause := some linkCause))
+  else
+    g.finishExileUntilSourceLeaves sourceId o.id
+
+/-- Finish the post-move CR 607.2a link step of `exileForLeaveTrigger` once
+`g.move` to `.exile` completes. -/
+def finishExileForLeaveTrigger (g : Game) (sourceId : Option ObjectId)
+    (fromId : ObjectId) : Game :=
+  match g.followMovedToZone? fromId (· == .exile) with
+  | none => g
+  | some moved =>
+    let g :=
+      match sourceId.bind g.findObject? with
+      | some src => g.changeObject src.id (.pushLeaveTriggerExile moved.id)
+      | none => g
+    g.logMsg s!"{moved.name} is exiled"
 
 /-- Exile `o` for a leave-the-battlefield trigger (Fiend Hunter). The card
 does not return automatically when the source leaves. -/
 def exileForLeaveTrigger (g : Game) (sourceId : Option ObjectId) (o : GameObject)
     (cause : Option EventCause := none) : Game :=
-  let name := o.name
-  let (g, newId) := g.move o.id .exile none (cause := cause)
-  let g :=
-    match sourceId.bind g.findObject? with
-    | some src =>
-      g.changeObject src.id (.pushLeaveTriggerExile newId)
-    | none => g
-  g.logMsg s!"{name} is exiled"
+  let (g, _) := g.move o.id .exile none (cause := cause)
+  if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement
+      (.finishPostStep 104 g.activePlayer
+        (sourceId := sourceId) (cardId := some o.id) (cause := cause))
+  else
+    g.finishExileForLeaveTrigger sourceId o.id
 
 /-- Return each exiled id in `remainingIds` simultaneously in two passes
 (moving all cards to their destination zones before running `afterPermanentEnters`,
@@ -271,7 +294,6 @@ def returnLinkedExileLoop (g : Game) (remainingIds : Array ObjectId)
     let id := remainingIds[i]!
     if let some o := g.findObject? id then
       if o.zone == .exile then
-        let name := o.name
         let owner := o.owner
         match o.returnToZone with
         | some (.hand p) =>
@@ -295,21 +317,10 @@ def returnLinkedExileLoop (g : Game) (remainingIds : Array ObjectId)
           else
             g := g'
         | _ =>
-          if g.isAura o then
-            let auraProbe := { o with controller := some owner }
-            let host? := g.findPreBatchAuraHost? preBf auraProbe
-            match host? with
-            | none =>
-              g := g.logMsg s!"{name} remains in exile (can't be attached legally; CR 303.4f / 614.6)"
-            | some host =>
-              let (g', _) := g.move id .battlefield (some owner)
-                (attachedTo := some host.id) (cause := cause)
-              g := g'
-              entered := entered.push id
-          else
-            let (g', _) := g.move id .battlefield (some owner) (cause := cause)
-            g := g'
-            entered := entered.push id
+          let (g', _) := g.move id .battlefield (some owner)
+            (preBattlefield := some preBf) (cause := cause)
+          g := g'
+          entered := entered.push id
           if let .chooseReplacement .. := g.pending then
             let rem := remainingIds.extract (i + 1) remainingIds.size
             return g.chainPendingReplacement
@@ -495,31 +506,57 @@ def logLookAtTop (g : Game) (p : PlayerId) (n : Nat)
       (cause := some (g.resolvingOrRuleCause p sourceId)))
   g.logMsg s!"{(g.player p).name} looks at the top {n} cards"
 
+/-- Pause-safe loop for `exileTopPlayThisTurn` (`mayCastStyle := false`) and
+`exileTopMayCast` (`mayCastStyle := true`). -/
+def exileTopForPlayLoop (g : Game) (fromPlayer caster : PlayerId)
+    (remaining : Nat) (mayCastStyle : Bool) (cause? : Option EventCause)
+    (pendingFromId : Option ObjectId := none) : Game := Id.run do
+  let fmtMsg (g : Game) (ownerName cardName : String) : String :=
+    if mayCastStyle then
+      s!"{ownerName} exiles {cardName}; {(g.player caster).name} may cast it"
+    else
+      s!"{ownerName} exiles {cardName} and may play it this turn"
+  let modeArr : Array Nat := #[fromPlayer.idx, if mayCastStyle then 1 else 0]
+  if let .chooseReplacement .. := g.pending then
+    return g.chainPendingReplacement
+      (.finishPostStep 105 caster (n := remaining) (cardId := pendingFromId)
+        (modes := modeArr) (cause := cause?))
+  let mut g := g
+  if let some fid := pendingFromId then
+    if let some moved := g.followMovedToZone? fid (· == .exile) then
+      g := g.createEffect (.playPermission moved.id { player := caster }) (cause := cause?)
+      g := g.logMsg (fmtMsg g (g.player fromPlayer).name moved.name)
+  for i in [0:remaining] do
+    let pl := g.player fromPlayer
+    if pl.library.isEmpty then
+      g := g.logMsg s!"{pl.name} has no cards in their library to exile"
+    else
+      let top := pl.library.back!
+      let cardName := (g.object! top).name
+      let (g', _) := g.move top .exile none (cause := cause?)
+      g := g'
+      if let .chooseReplacement .. := g.pending then
+        let rem := remaining - (i + 1)
+        return g.chainPendingReplacement
+          (.finishPostStep 105 caster (n := rem) (cardId := some top)
+            (modes := modeArr) (cause := cause?))
+      if let some moved := g.followMovedToZone? top (· == .exile) then
+        g := g.createEffect (.playPermission moved.id { player := caster }) (cause := cause?)
+        g := g.logMsg (fmtMsg g pl.name cardName)
+  return g
+
 /-- Exile the top `n` cards of `fromPlayer`'s library. `caster` may play
 them this turn. `logAfter ownerName cardName` is the per-card message. -/
 def exileTopForPlay (g : Game) (fromPlayer caster : PlayerId) (n : Nat)
-    (logAfter : String → String → String) : Game :=
+    (logAfter : String → String → String) (mayCastStyle : Bool := false) : Game :=
+  let _ := logAfter
   let (g0, cause?) : Game × Option EventCause :=
     if n > 0 && !(g.player fromPlayer).library.isEmpty then
       let (g, c) := g.allocDelayedCause (some caster)
       (g, some c)
     else (g, none)
   g0.withBatch cause? fun g =>
-    Id.run do
-      let mut g := g
-      for _ in [0:n] do
-        let pl := g.player fromPlayer
-        if pl.library.isEmpty then
-          g := g.logMsg s!"{pl.name} has no cards in their library to exile"
-        else
-          let top := pl.library.back!
-          let cardName := (g.object! top).name
-          let (g', newId) := g.move top .exile none (cause := cause?)
-          g := g'
-          g := g.createEffect (.playPermission newId { player := caster })
-            (cause := cause?)
-          g := g.logMsg (logAfter pl.name cardName)
-      return g
+    g.exileTopForPlayLoop fromPlayer caster n mayCastStyle cause?
 
 /-- Exile the top `n` cards of `p`'s library. They may be played this turn. -/
 def exileTopPlayThisTurn (g : Game) (p : PlayerId) (n : Nat) : Game :=
@@ -721,6 +758,51 @@ def offerExileCasts (g : Game) (caster : PlayerId) (spells : Array ObjectId)
   g.change (.pending (.fraChoice caster (.mayCastUpToFromExile spells casts)))
     |>.logMsg s!"{(g.player caster).name} may cast up to {casts} spells from among the exiled cards without paying their mana costs"
 
+/-- Pause-safe loop for `exileTopMayCastUpTo`, running inside an open batch and
+offering up to `casts` free spell casts once all moves complete. -/
+def exileTopMayCastUpToLoop (g : Game) (fromPlayer caster : PlayerId)
+    (remaining casts : Nat) (cause? : Option EventCause)
+    (accIds : Array ObjectId := #[])
+    (pendingFromId : Option ObjectId := none) : Game := Id.run do
+  let modeArr : Array Nat := #[fromPlayer.idx, casts]
+  if let .chooseReplacement .. := g.pending then
+    return g.chainPendingReplacement
+      (.finishPostStep 106 caster (n := remaining) (cardId := pendingFromId)
+        (ids := accIds) (modes := modeArr) (cause := cause?))
+  let mut g := g
+  let mut ids := accIds
+  if let some fid := pendingFromId then
+    if let some moved := g.followMovedToZone? fid (· == .exile) then
+      ids := ids.push moved.id
+      g := g.logMsg s!"{(g.player fromPlayer).name} exiles {moved.name}"
+  for i in [0:remaining] do
+    let pl := g.player fromPlayer
+    if pl.library.isEmpty then
+      g := g.logMsg s!"{pl.name} has no cards in their library to exile"
+    else
+      let top := pl.library.back!
+      let name := (g.object! top).name
+      let (g', _) := g.move top .exile none (cause := cause?)
+      g := g'
+      if let .chooseReplacement .. := g.pending then
+        let rem := remaining - (i + 1)
+        return g.chainPendingReplacement
+          (.finishPostStep 106 caster (n := rem) (cardId := some top)
+            (ids := ids) (modes := modeArr) (cause := cause?))
+      if let some moved := g.followMovedToZone? top (· == .exile) then
+        ids := ids.push moved.id
+        g := g.logMsg s!"{pl.name} exiles {name}"
+  return g
+
+/-- Offer up to `casts` free casts from `ids` after `exileTopMayCastUpTo`'s
+exile batch has closed. -/
+def finishExileTopMayCastUpToOffer (g : Game) (caster : PlayerId)
+    (ids : Array ObjectId) (casts : Nat) : Game :=
+  let spells := ids.filter (fun id =>
+    (g.findObject? id).any (fun o => o.zone == .exile && !g.isLand o))
+  if spells.isEmpty || casts == 0 then g
+  else g.offerExileCasts caster spells casts
+
 /-- Exile the top `n` cards of `fromPlayer`'s library. `caster` may cast up
 to `casts` nonland cards from among them without paying their mana costs. -/
 def exileTopMayCastUpTo (g : Game) (fromPlayer caster : PlayerId) (n casts : Nat) : Game :=
@@ -729,31 +811,23 @@ def exileTopMayCastUpTo (g : Game) (fromPlayer caster : PlayerId) (n casts : Nat
       let (g, c) := g.allocDelayedCause (some caster)
       (g, some c)
     else (g, none)
-  let (g, ids) := g0.withBatchReturn cause? fun g =>
-    Id.run do
-      let mut g := g
-      let mut ids : Array ObjectId := #[]
-      for _ in [0:n] do
-        let pl := g.player fromPlayer
-        if pl.library.isEmpty then
-          g := g.logMsg s!"{pl.name} has no cards in their library to exile"
-        else
-          let top := pl.library.back!
-          let name := (g.object! top).name
-          let (g', newId) := g.move top .exile none (cause := cause?)
-          g := g'
-          ids := ids.push newId
-          g := g.logMsg s!"{pl.name} exiles {name}"
-      return (g, ids)
-  let spells := ids.filter (fun id =>
-    (g.findObject? id).any (fun o => !g.isLand o))
-  if spells.isEmpty || casts == 0 then g
-  else g.offerExileCasts caster spells casts
+  let preIds :=
+    let lib := (g0.player fromPlayer).library
+    let k := min n lib.size
+    (lib.extract (lib.size - k) lib.size).reverse
+  let g := g0.withBatch cause? fun g =>
+    g.exileTopMayCastUpToLoop fromPlayer caster n casts cause?
+  if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement
+      (.finishPostStep 107 caster (n := casts) (ids := preIds) (cause := cause?))
+  else
+    let arrived := preIds.filterMap (fun pid => (g.followMovedToZone? pid (· == .exile)).map (·.id))
+    g.finishExileTopMayCastUpToOffer caster arrived casts
 
 /-- Exile the top `n` cards of `fromPlayer`'s library. `caster` may play
 them this turn. -/
 def exileTopMayCast (g : Game) (fromPlayer caster : PlayerId) (n : Nat) : Game :=
-  g.exileTopForPlay fromPlayer caster n fun owner card =>
+  g.exileTopForPlay fromPlayer caster n (mayCastStyle := true) fun owner card =>
     s!"{owner} exiles {card}; {(g.player caster).name} may cast it"
 
 /-- True when `mods` strips abilities and grants haste, as Hellcat returns. -/
@@ -934,31 +1008,15 @@ def commitEnteringAttackItems (g : Game)
           | .token .. => pure ()
           | .card cardId enteringController effectController tapped returnedAsArtifact extraEntersWith mods logKind _ =>
             if let some o := g.findObject? cardId then
-              if !(g.player enteringController).lost && g.isAura o then
-                let auraProbe := { o with controller := some enteringController }
-                let host? := g.findPreBatchAuraHost? preBf auraProbe
-                match host? with
-                | none =>
-                  g := g.logMsg s!"{o.name} remains in its current zone (can't be attached legally; CR 303.4f)"
-                | some host =>
-                  let (g', _) := g.putOntoBattlefield o.id enteringController (tapped := tapped)
-                    (attachedTo := some host.id)
-                    (attacking := atkTgt.isSome) (attackingTarget := atkTgt)
-                    (returnedAsArtifact := returnedAsArtifact)
-                    (extraEntersWith := extraEntersWith)
-                    (enterMods := mods.toArray)
-                    (cause := cause)
-                  g := g'
-                  entries := entries.push (o.id, effectController, o.name, mods, logKind)
-              else
-                let (g', _) := g.putOntoBattlefield o.id enteringController (tapped := tapped)
-                  (attacking := atkTgt.isSome) (attackingTarget := atkTgt)
-                  (returnedAsArtifact := returnedAsArtifact)
-                  (extraEntersWith := extraEntersWith)
-                  (enterMods := mods.toArray)
-                  (cause := cause)
-                g := g'
-                entries := entries.push (o.id, effectController, o.name, mods, logKind)
+              let (g', _) := g.putOntoBattlefield o.id enteringController (tapped := tapped)
+                (attacking := atkTgt.isSome) (attackingTarget := atkTgt)
+                (returnedAsArtifact := returnedAsArtifact)
+                (extraEntersWith := extraEntersWith)
+                (enterMods := mods.toArray)
+                (preBattlefield := some preBf)
+                (cause := cause)
+              g := g'
+              entries := entries.push (o.id, effectController, o.name, mods, logKind)
               if let .chooseReplacement .. := g.pending then
                 let rem := chosen.extract (i + 1) chosen.size
                 if !rem.isEmpty then

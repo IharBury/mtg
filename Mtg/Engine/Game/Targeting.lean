@@ -178,19 +178,22 @@ def legalFilteredTargets (g : Game) (caster : PlayerId) (f : TargetFilter)
       | .opponent | .eachOpponent => g.isLivingOpponentOf caster pl.id
       | .specific idx => pl.id.idx == idx)) sourceId
 
-/-- Whether the spell being cast or resolved paid its teamwork cost (CR 601.2 / 608.2).
-Checks an active `proposedSpell` first (including mid-resolution casts), then
-`resolvingSpell`, then the top stack entry. -/
+/-- Whether the spell being cast or resolved paid its teamwork cost (CR 601.2 / 608.2 / 707.10).
+Checks an active `proposedSpell` first (including mid-resolution casts), then an
+active spell-copy retargeting prompt (`.newTargetsForCopies` / `.newTargetsForCopySlot`,
+MSH Ruling 365), then `resolvingSpell`. -/
 def spellPaidTeamwork (g : Game) : Bool :=
   match g.proposedSpell with
   | some prop => prop.teamworkPaid || g.teamworkPaid prop.spellId
   | none =>
-    match g.resolvingSpell with
+    let copyTargetId? : Option ObjectId :=
+      match g.pending with
+      | .fraChoice _ (.newTargetsForCopies copies)
+      | .fraChoice _ (.newTargetsForCopySlot copies ..) => copies[0]?
+      | _ => none
+    match copyTargetId?.orElse (fun _ => g.resolvingSpell) with
     | some id => g.teamworkPaid id
-    | none =>
-      match g.stack.back? with
-      | some e => g.teamworkPaid e.objectId
-      | none => false
+    | none => false
 
 /-- Legal targets for an atomic targeting shape (no sequential slots). -/
 def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTargetKind)
@@ -379,10 +382,13 @@ def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTarge
     g.legalCreatureTargets caster (fun o =>
       g.controlledBy o caster && some o.id != sourceId && g.snapshotPower o <= n) sourceId
   | .attackingAloneCreatureYouControl =>
-    let attackers :=
-      g.legalCreatureTargets caster (fun o =>
-        g.controlledBy o caster && o.status.attacking) sourceId
-    if attackers.size == 1 then attackers else #[]
+    let allAttackers := g.battlefield.filter (fun o => g.isCreature o && o.status.attacking)
+    if allAttackers.size == 1 then
+      let lone := allAttackers[0]!
+      if g.controlledBy lone caster && g.canBeTargetedBy caster lone sourceId then
+        #[Target.permanent lone.id]
+      else #[]
+    else #[]
   | .noncreatureArtifactOrEnchantment =>
     g.legalPermanentTargets caster (fun o =>
       o.isOnBattlefield && !g.isCreature o &&

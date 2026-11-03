@@ -455,13 +455,14 @@ def defaultTarget (g : Game) (p : PlayerId) (obj : GameObject) : Option Target :
 
 /-- Default mode index for a modal activated ability (CR 601.2b). Prefers
 dealing damage to an opposing creature, then destroying a colorless nonland. -/
-def defaultAbilityMode (g : Game) (p : PlayerId) (modes : Array Effect) : Option Nat :=
+def defaultAbilityMode (g : Game) (p : PlayerId) (modes : Array Effect)
+    (sourceId : Option ObjectId := none) : Option Nat :=
   let choosable : Array (Nat × Effect) :=
     Id.run do
       let mut acc : Array (Nat × Effect) := #[]
       for i in [0:modes.size] do
         let e := modes[i]!
-        if g.modeIsChoosable p e then
+        if g.modeIsChoosable p e sourceId then
           acc := acc.push (i, e)
       return acc
   let findKind (pred : Effect → Bool) : Option Nat :=

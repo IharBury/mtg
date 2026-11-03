@@ -1190,7 +1190,8 @@ def roadsChapterI : Game :=
 
 #guard
   (roadsChapterI.player ⟨0⟩).life == (afterDraw.player ⟨0⟩).life + 2 &&
-    (namedPermanent roadsChapterI "Roads Go Ever, Ever On").linkedExile.size == 2
+    (namedPermanent roadsChapterI "Roads Go Ever, Ever On").leaveTriggerExile.size == 2 &&
+    (namedPermanent roadsChapterI "Roads Go Ever, Ever On").linkedExile.isEmpty
 
 def roadsReturn : Game :=
   addSagaLore roadsChapterI "Roads Go Ever, Ever On"
@@ -1198,7 +1199,8 @@ def roadsReturn : Game :=
 #guard
   (roadsReturn.player ⟨0⟩).hand.any (fun id =>
     (roadsReturn.object! id).name == "Plains") &&
-    (namedPermanent roadsReturn "Roads Go Ever, Ever On").linkedExile.size == 1
+    (namedPermanent roadsReturn "Roads Go Ever, Ever On").leaveTriggerExile.size == 1 &&
+    (namedPermanent roadsReturn "Roads Go Ever, Ever On").linkedExile.isEmpty
 
 def roadsChapterIII : Game :=
   addSagaLore roadsReturn "Roads Go Ever, Ever On"
@@ -1206,6 +1208,7 @@ def roadsChapterIII : Game :=
 #guard
   ((roadsChapterIII.player ⟨0⟩).hand.filter (fun id =>
     (roadsChapterIII.object! id).name == "Plains")).size == 2 &&
+    (namedPermanent roadsChapterIII "Roads Go Ever, Ever On").leaveTriggerExile.isEmpty &&
     (namedPermanent roadsChapterIII "Roads Go Ever, Ever On").linkedExile.isEmpty
 
 def roadsChapterIV : Game :=
