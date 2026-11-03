@@ -6187,14 +6187,19 @@ limits, and batched `createEffects` / multi-effect continuous-effect helpers),
      **next** shared turn rather than activating on the second teammate's seat
      of the current turn and expiring on the next opposing turn, while keeping
      `onNextTurn == false` active across both seats of a shared turn until its
-     cleanup step; and align `.untilNextTurnOf p`, `goadedUntilNextTurnOf`,
-     `expireFraUntilTurnEffects`, `protectionFromEverything`, `lifeCantChange`,
-     and `restoreCopiesUntilNextTurn` (CR 805.4a: expiring as `p`'s team's next
-     shared turn begins rather than mid-current-shared-turn or waiting past the
-     first seat of that next shared turn) alongside `.untilEndOfNextTurnOf p` in
-     `Turns.clearEOT`, `Turns.expirePlayPermissions`, and
-     `Core.restoreCopiesUntilEot` (CR 805.4b: expiring at the cleanup step of
-     the final living seat of `p`'s team's next shared turn).
+     cleanup step; align CR 805.4a “next turn begins” expiry in
+     `Turns.beginTurn` (`Turns.expireGoadedFor` for `goadedUntilNextTurnOf`,
+     `Turns.expireFraUntilTurnEffects` for `.untilNextTurnOf`,
+     `Core.restoreCopiesUntilNextTurn`, and `beginTurn`'s
+     `protectionFromEverything` / `lifeCantChange` block) so an effect created
+     during the current shared turn does not open or end on the other
+     teammate's seat and expires when the first living seat of `p`'s team's
+     next shared turn begins; and keep `.untilEndOfNextTurnOf p` on the CR
+     805.4b / 514.2 cleanup path (`Turns.clearEOT`,
+     `Turns.expirePlayPermissions`, and `Core.restoreCopiesUntilEot`), teaching
+     those `Core.hasTurnBegunSince` checks (and team-seat matching) to wait for
+     the cleanup step of the final living seat of `p`'s team's next shared
+     turn.
    - Close the remaining Two-Headed Giant / multiplayer opponent filters: exclude
      teammates (`!g.areTeammates caster pl.id`) in `Costs.applyCastCostReductions`
      `costReductionEqualOppArtifacts` (`Costs.lean`, whose fold currently skips
@@ -6203,9 +6208,9 @@ limits, and batched `createEffects` / multi-effect continuous-effect helpers),
      second living opponent) with `(g.livingOpponents p).any ...` in
      `SpellTargets.defaultAbilityMode` (`SpellTargets.lean`).
 4. Wrap the remaining simultaneous event-group sites in `withBatch`, replace the
-   last ad-hoc `{ g with … }` test/demo state setups with journaled `g.change` /
-   `g.record` helpers, and remove dead scaffolding & stale CR citations (§2.1,
-   §3.1, §3.8):
+   last ad-hoc `{ … with … }` `Game` test/demo fixture updates with journaled
+   `g.record` (`TurnEvent` / `CombatEvent`) and `g.change` updates, and remove
+   dead scaffolding & stale CR citations (§2.1, §3.1, §3.8):
    - Wrap the remaining simultaneous rules-event helpers under one `BatchId`:
      `Leaving.emptyManaPools` (`Leaving.lean`, CR 500.5 / 703.4q),
      `Mulligans.returnHandToLibrary` (`Mulligans.lean`, CR 103.5),
@@ -6215,15 +6220,36 @@ limits, and batched `createEffects` / multi-effect continuous-effect helpers),
      (`Choices.lean`, CR 701.4a), `Turns.startNextTurnCore`
      `expirePlayPermissions` + `clearTurnActivations` (`Turns.lean`), and
      `Designations.setRingBearer` (`Designations.lean`, CR 701.54a).
-   - Replace the remaining unjournaled `{ g with step := … }` /
-     `{ g with activePlayer := … }` / `{ g with assignedCombatDamage := … }`
-     struct updates in `MshOracleTests2.lean`, `MshOracleTests4.lean`,
-     `MshOracleTests5.lean`, `OracleRulingTests.lean`, `Tests/Marvel.lean`,
-     `Tests/Events.lean`, and [`Mtg/Demo/Check0.lean`](Mtg/Demo/Check0.lean),
+   - Replace the remaining unjournaled `Game` struct updates for `step`,
+     `activePlayer` / `turnNumber`, and `assignedCombatDamage` with `g.record`
+     of `TurnEvent.stepBegan`, `TurnEvent.turnBegan`, and
+     `CombatEvent.damageAssigned` (plus `g.change` for accompanying `pending` /
+     `blockersQueue` fields, since `step`, `activePlayer`, and
+     `assignedCombatDamage` have no `EngineChange` constructors) across all
+     fixture receivers: `OracleRulingTests.lean`
+     (`{ bowmastersInPlay with step := .draw, activePlayer := ⟨1⟩ }`),
+     `Tests/Marvel.lean` (`{ bilboRingEquipped with activePlayer := ⟨1⟩ }`),
+     [`Mtg/Demo/Check0.lean`](Mtg/Demo/Check0.lean),
      [`Check2.lean`](Mtg/Demo/Check2.lean), and
-     [`Check3.lean`](Mtg/Demo/Check3.lean) with journaled `g.change` /
-     `g.record` updates so `Game.replayEvents g.events == g` holds across test
-     and demo fixtures too.
+     [`Check3.lean`](Mtg/Demo/Check3.lean)
+     (`{ Tests.afterDraw with step := … }`,
+     `{ Tests.afterDraw with turnNumber := …, activePlayer := …, step := .precombatMain }`,
+     and `{ Tests.started with step := .precombatMain }`),
+     `MshOracleTests2.lean` (`{ g with step := .beginningOfCombat }` and
+     `{ gLate with step := .beginningOfCombat }`), `MshOracleTests4.lean`
+     (`{ g with assignedCombatDamage := … }`), `MshOracleTests5.lean`
+     (`{ g with step := .beginningOfCombat }`), and `Tests/Events.lean`
+     (`{ g0 with step := .endOfCombat }`, `{ afterDraw with step := .draw }`,
+     `{ g with step := …, pending := … }`,
+     `{ gBothAtk with step := .declareBlockers, pending := .declareBlockers, blockersQueue := … }`,
+     `{ gOrd0 with activePlayer := … }`,
+     `{ quiet started with step := .draw, activePlayer := me }`,
+     `{ g with assignedCombatDamage := … }`,
+     `{ gTrLost with assignedCombatDamage := … }`,
+     `{ gTrRe with assignedCombatDamage := … }`, and chained
+     `registerDelayedTrigger` / `change` expressions setting `step` or
+     `assignedCombatDamage`) so `Game.replayEvents g.events == g` holds across
+     test and demo fixtures too.
    - Delete dead scaffolding and finish the 20260925 CR citation sweep: remove
      never-populated `ContinuationFrame.mayPayAlsoPlusOneOn` (never written to
      `some`; remove `ContinuationChange.mayPayAlsoPlusOneOn`,
