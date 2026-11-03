@@ -1386,7 +1386,7 @@ batching via `Core.createEffects`, and Phase 21, #610, completed mid-shared-turn
 `playerControl` creation/expiry and CR 500.4 / 514.2 / 611.2a / 805.4 / 810.2
 `.untilNextTurnOf` / `.untilEndOfNextTurnOf` Two-Headed Giant alignment across
 `Core.currentSharedTurnSeats`, `Core.hasTurnBegunSince`,
-`Core.hasTurnAfterBegunSince`, `Core.isSharedTurnInitialSeat`,
+`Core.hasTurnAfterBegunSince`, `Core.isSharedTurnFirstSeat`,
 `Core.isSharedTurnFinalSeat`, `Turns.beginTurnAfterStartExpiry`,
 `Turns.expireGoadedFor`, `Turns.expireFraUntilTurnEffects`, `Turns.clearEOT`,
 `Turns.expirePlayPermissions`, `Core.restoreCopiesUntilNextTurn`, and
@@ -6018,9 +6018,9 @@ limits, and batched `createEffects` / multi-effect continuous-effect helpers),
      `Decisions.resumePendingReplacement` `.seq` aborts before `.finishConcede`
      runs, stranding `.finishConcede` in `g.pendingReplacement` and leaking
      `pushedOuterCont?` on `outerPendingReplacements`; pause-chain multi-seat
-     team concession `([p] ++ mates.toList)` via `Leaving.concedePlayersLoop` /
-     `PendingReplacement.concedePlayersLoop` (`PriorityActions.concede`,
-     `Leaving.lean`, `Event.lean`) when an earlier teammate's `playerLeavesGame`
+     team concession `([p] ++ mates.toList)` via `Decisions.concedePlayersLoop` /
+     `PendingReplacement.concedePlayersLoop` (`PriorityActions.lean`,
+     `Decisions.lean`, `Event.lean`) when an earlier teammate's `playerLeavesGame`
      pauses on `Pending.chooseReplacement` (mirroring `Leaving.leavePlayersWhoLost`)
      so the next teammate's departure does not run inside the paused batch and
      overwrite `g.pending`; and move `flushUnlessPays` to `Decisions.flushUnlessPays`
@@ -6233,7 +6233,7 @@ limits, and batched `createEffects` / multi-effect continuous-effect helpers),
      expiry (`Core.lean`, `Turns.lean`, `Event.lean`, CR 500.4 / 514.2 / 611.2a
      / 723.1 / 805.4 / 810.2): via `Core.currentSharedTurnSeats`,
      `Core.hasTurnBegunSince`, `Core.hasTurnAfterBegunSince`,
-     `Core.isSharedTurnInitialSeat`, and `Core.isSharedTurnFinalSeat`, ensure an
+     `Core.isSharedTurnFirstSeat`, and `Core.isSharedTurnFinalSeat`, ensure an
      `onNextTurn == true` `PlayerRule.controlsPlayer them true` effect created
      *during* `them`'s (or `them`'s teammate's) already-in-progress shared turn
      waits for that team's **next** shared turn rather than activating on the
@@ -6404,27 +6404,35 @@ two-batch `applyDackOnHits` batching), `Auras.lean`, `Casting.lean`, `CastTrigge
        `ResolutionHelpers.lean`).
    - Stop smuggling `ObjectId.raw` and `PlayerId.idx` through
      `lastKnownPower` / `lastKnownToughness : Option Int` and eliminate fake
-     prompt/continuation `ObjectId` sentinels: thread `wt.causeId` into
-     `StackTriggerSpec.fraCauseId`
-     (`(cause.map (·.id)).orElse (fun _ => causeId)` in `Triggers.lean`) and
-     read `fraCauseId`, `fraCauseController`, and `StackEntry.chosenMode`
-     directly instead of `lastKnownPower` / `lastKnownToughness` in
+     prompt/continuation `ObjectId` sentinels: pass typed `cause` /
+     `causeController` in `Core.matchTriggers` (`.youDiscard`,
+     `.dealsCombatDamageToPlayer`, and `.playerLosesLife`), thread `wt.causeId`
+     into `StackTriggerSpec.fraCauseId`
+     (`(cause.map (·.id)).orElse (fun _ => causeId)` in `Triggers.lean`), and
+     read `fraCauseId`, `fraCauseController`, `resolvingModes` /
+     `StackEntry.chosenMode`, and typed payment/cause context directly instead
+     of `lastKnownPower` / `lastKnownToughness` in
      `Triggers.lastKnownPowerForTrigger` (`.villainConniveOnce` and
      `.pumpIfFiveOtherForests`), `TriggerArgs.lean` (`.forestsExceptCause`,
      `.thatPlayer`, `.announced`), `ModeledTriggers.lean`
-     (`(.discard .discardExilePlay)` and chosen mode index), and
-     `TriggeredAbilities.lean` (using a dedicated `Bool` parameter or typed
-     context field for extra-cost paid in `TriggeredAbilities.lean`); widen
+     (`(.resource .discardExilePlay)` / `offerMayExileDiscarded` and
+     `(.step .hydeChoose)` chosen mode index), and `TriggeredAbilities.lean`
+     (`.forestsExceptCause`, `villainConniveTarget?`, player index on
+     `.thatManyLost` / `.thatPlayer`, combat-damage player on `.announced`,
+     `.chooseModes` `.fromLastKnown`, `offerMayExileDiscarded`, `.may` `.draw`
+     `ifPaid`, and `.copy` reflexive mana-value fallback); widen
      `Pending.chooseLibraryPlacement` (`id : Option ObjectId`) and
      `Pending.payOrLetCounter` (`spellId : Option ObjectId`) in `Pending.lean`
      so `EffectResolution.lean` (`spellOrLibrary = false`) and
      `ModeledTriggers.lean` pass `none` instead of unallocated
-     `{ raw := g.nextObjectId }`; widen `Pending.tapCreatures`,
-     `Pending.sacrificePermanent`, and `FraChoice.hydeMode` / `.chooseColor` /
-     `.sacrificeCreatureForCounters` to `Option ObjectId` instead of
-     `noSourceSentinelId` (`ActivationCosts.lean`, `Decisions.lean`,
-     `FraChoices.lean`, `ModeledTriggers.lean`, `TriggeredAbilities.lean`, plus
-     removing dead `getD noSourceSentinelId` in `Library.lean`); and split
+     `{ raw := g.nextObjectId }`; widen `FraChoice.mayPayPickThen`,
+     `FraChoice.hydeMode`, and `Pending.mayPutArtifactFromHand` to
+     `Option ObjectId` instead of `noSourceSentinelId`
+     (`Pending.lean`, `TriggeredAbilities.lean`, `ModeledTriggers.lean`,
+     `FraChoices.lean`, `ActivationCosts.lean`, `Decisions.lean`,
+     `ResolutionEffects.lean`, `Leaving.lean`, `Actions.lean`, `Agent.lean`,
+     `Game.lean`, keeping `Library.drawOneWithReplacements`'s empty-library
+     would-draw `noSourceSentinelId` intact); and split
      `Decisions.finishSurveilPostMove` instead of passing
      `fromId := noSourceSentinelId` as a control-flow flag.
 2. Convert the three CR 616.1 library-exile `while` loops to pause-safe loops,
