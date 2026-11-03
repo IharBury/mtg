@@ -6065,11 +6065,14 @@ limits, and batched `createEffects` / multi-effect continuous-effect helpers),
      (`FraChoices.castFreeCopy`, `Decisions.chooseCastFromLooked`,
      `Decisions.castExiledAsAbilityResolves`, `.mayCastCards`, and
      `.mayCastFromGraveyard`); route `CastSpell.castSpell`'s sorcery-speed check
-     through `g.timingAllowsCast p face || origPerm.any (·.ignoreTiming)` so
+     through `g.timingAllowsCast p face || origPerm.any (·.ignoreTiming)` while
+     preserving its existing `sneakCost.isSome` and
+     `g.freeCastFromGraveyard card && card.zone == .graveyard p` exemptions so
      `flashIfYouControlSubtype`, `firstCreatureHasFlash`, `cosmicAwarenessFlash`,
      and `PlayPermission.ignoreTiming` work in `CastSpell.castSpell` as well as
-     `Casting.canCast`; and align `Casting.canCast` / `canCastAdventure` with
-     `CastSpell.castSpell` on `splitSecondOnStack`,
+     `Casting.canCast` without rejecting Sneak during declare blockers or free
+     graveyard sorcery casts; and align `Casting.canCast` / `canCastAdventure`
+     with `CastSpell.castSpell` on `splitSecondOnStack`,
      `opponentsCantCastOnYourTurn`, `castOnlyIfGraveyardAtLeast`,
      `additionalCostSacrificeCreature`, `flashbackDiscard`, and modal
      `spellModes` target availability (`face.spellModes.any (g.spellModeIsChoosable p) || face.allowsZeroTargets`).
@@ -6080,13 +6083,15 @@ limits, and batched `createEffects` / multi-effect continuous-effect helpers),
      `ProposedSpell` (and pass them into `Costs.playManaCost`, since
      `Movement.move` expires `.playFromExile` and `.freeCastFromGraveyard` via
      `expireEffectsOnLeavingObject` at CR 601.2a before `playManaCost` runs at
-     CR 601.2f); evaluate `Costs.playManaCost` and `Costs.applyCastCostReductions`
-     against `{ card with controller := some p }` (fixing `let caster := card.owner`
-     at `Costs.lean` `omnipresent` / `freeCommander` to
-     `card.controller.getD card.owner`) so casting an opponent-owned card from
-     exile checks **Thalia** taxes and cost reductions against caster `p` rather
-     than `card.owner`; recompute `prop.cost` via `playManaCost` (recording
-     `CastEvent.announced`) when generic additional costs are chosen in
+     CR 601.2f); pass `{ card with controller := some p }` (keeping `card`'s
+     origin `zone`) into `Costs.playManaCost` and `Costs.applyCastCostReductions`
+     so **Thalia** taxes and cost reductions (`card.controller.getD card.owner`)
+     evaluate against caster `p` rather than an exile/pre-move card's owner, and
+     rewrite the shadowed `let caster := card.owner` binding in
+     `Costs.playManaCost` (`Costs.lean`, used only for Omnipresence and
+     `freeCastIfControlCommander`) to `card.controller.getD card.owner`;
+     recompute `prop.cost` via `playManaCost` (recording `CastEvent.announced`)
+     when generic additional costs are chosen in
      `PriorityActions.announceAdditionalCost` so CR 601.2f cost reductions apply
      after additional-cost increases, and defer *Countersculpt*'s behold action
      from CR 601.2b announcement to CR 601.2h cost payment; route
@@ -6122,12 +6127,17 @@ limits, and batched `createEffects` / multi-effect continuous-effect helpers),
      `resolvingModes` is `none` in direct helper tests), and `StackEntry` mode
      preservation across `StackObjectEvent.copied`.
    - Restrict `.youTargetSomething` (`"Whenever a player or permanent becomes
-     the target of an ability you control"`, `Core.matchTriggers` and
-     `Event.matchesTrigger`, CR 110.1 / 115.1c / 115.10a) to abilities with at
-     least one newly targeted `.permanent` (on `.battlefield`) or `.player`
-     target, excluding graveyard `Target.card` and stack `Target.spell` targets
-     and checking newly added `.permanent` / `.player` targets against
-     `prevTargets` on retarget / copy retarget.
+     the target of an ability you control"`, CR 110.1 / 115.1c / 115.10a) on the
+     four `queueCtrl … .youTargetSomething` sites in `Core.matchTriggers`
+     (`Core.lean`: `.abilityActivated` reading `se.targets`, `.targeted` on an
+     ability copy, `.targeted` on a non-copy ability's initial completion, and
+     `.targeted` on a later retarget) so it queues only when `se.targets`
+     contains at least one `.player` or on-battlefield `.permanent` target—and
+     on the copy and retarget sites, at least one such `.player` or
+     on-battlefield `.permanent` target not already in `prevTargets`—excluding
+     graveyard `Target.card` and stack `Target.spell` targets (matching
+     `Event.matchesTrigger`'s `.targeted` arm, while leaving
+     `Event.matchesTrigger`'s targetless `.abilityActivated` arm as `you p`).
    - Separate CR 707.10 uncast stack copies from CR 707.12 / Ruling 742 cast
      card-copies and preserve Impending & face-down Morph copiable values on
      stack spell copies (`Allocation.lean`, `Core.lean`, `Event.lean`,
@@ -6208,11 +6218,13 @@ limits, and batched `createEffects` / multi-effect continuous-effect helpers),
    last ad-hoc `{ … with … }` `Game` test/demo fixture updates with journaled
    `g.record` (`TurnEvent` / `CombatEvent`) and `g.change` updates, and remove
    dead scaffolding & stale CR citations (§2.1, §3.1, §3.8):
-   - Wrap the remaining simultaneous rules-event helpers under one `BatchId`:
+   - Wrap the remaining simultaneous rules-event groups under `withBatch`:
      `Leaving.emptyManaPools` (`Leaving.lean`, CR 500.5 / 703.4q),
      `Mulligans.returnHandToLibrary` (`Mulligans.lean`, CR 103.5),
      `Casting.finishPostCast` copy `ceaseToExist` (`Casting.lean`, CR 704.5e),
-     `FrcResolve.applyDackOnHits` (`FrcResolve.lean`, CR 608.2c / 701.15a),
+     `FrcResolve.applyDackOnHits` (`FrcResolve.lean`, giving the CR 701.15a goad
+     designations one `BatchId` and the subsequent `"each chosen opponent gains
+     control"` `changeControl` loop its own separate `BatchId` per CR 608.2c),
      `Library.putIdsOnTop` (`Library.lean`, CR 401.4), `Choices.beholdQuality`
      (`Choices.lean`, CR 701.4a), `Turns.startNextTurnCore`
      `expirePlayPermissions` + `clearTurnActivations` (`Turns.lean`), and
@@ -6282,8 +6294,8 @@ semantics & Impending / face-down Morph stack spell copies, CR 810.8d 15-poison
 team SBA, CR 805.10d–e / 810.7 shared team blocking & `legalBlockerCount`, CR
 500.4 / 514.2 / 723.1 / 805.4 / 810.2 mid-shared-turn `playerControl` &
 `.untilNextTurnOf` / `.untilEndOfNextTurnOf` expiry & 2HG opponent filters, and
-simultaneous `emptyManaPools` / `returnHandToLibrary` / `setRingBearer` /
-`applyDackOnHits` batching), `Auras.lean`, `Casting.lean`, `CastTriggers.lean`,
+simultaneous `emptyManaPools` / `returnHandToLibrary` / `setRingBearer` &
+two-batch `applyDackOnHits` batching), `Auras.lean`, `Casting.lean`, `CastTriggers.lean`,
 `Combat.lean`, `Cycling.lean`, `Equipment.lean`, `Fight.lean`, `Leaving.lean`,
 `Marvel.lean`, `Phasing.lean`, `Turns.lean`, `MshOracleTests.lean`,
 `MshOracleTests2.lean`, `MshOracleTests4.lean`, `MshOracleTests5.lean`,
