@@ -93,12 +93,12 @@ def resolveDelayedTrigger (g : Game) (controller : PlayerId) (kind : DelayedTrig
     (sourceId : Option ObjectId := none) (targets : Array Target := #[]) : Game :=
   match kind with
   | .eaglesBirds n =>
-    if n > 0 then
-      let g :=
-        if g.stillInGame controller then
-          g.createKindTokens controller .birdSoldier n (cause := some cause)
-        else g
-      g.logMsg s!"{(g.player controller).name}'s delayed triggered ability creates {n} Bird Soldier token(s)"
+    if n > 0 && g.stillInGame controller then
+      let g := g.createKindTokens controller .birdSoldier n (cause := some cause)
+      if let .chooseReplacement .. := g.pending then
+        g.chainPendingReplacement (.finishPostStep .logDelayedBirdSoldiersCreated controller (n := n))
+      else
+        g.logMsg s!"{(g.player controller).name}'s delayed triggered ability creates {n} Bird Soldier token(s)"
     else g
   | .attackPumpPerPlains =>
     let n : Int := g.countSubtype controller .plains
@@ -117,7 +117,7 @@ def resolveDelayedTrigger (g : Game) (controller : PlayerId) (kind : DelayedTrig
           let isLand := g.isLand o
           let (g', _) := g.putOntoBattlefield id owner (cause := some cause)
           if let .chooseReplacement .. := g'.pending then
-            g'.chainPendingReplacement (.finishPostStep 20 owner 1 none (some id) (shuffle := isLand))
+            g'.chainPendingReplacement (.finishPostStep .returnedBattlefieldEndStep owner 0 none (some id) (shuffle := isLand))
           else
             match g'.followMovedToZone? id (· == .battlefield) with
             | some back =>
@@ -153,7 +153,7 @@ def resolveDelayedTrigger (g : Game) (controller : PlayerId) (kind : DelayedTrig
         let isLand := g.isLand o
         let (g', _) := g.putOntoBattlefield id who (cause := some cause)
         if let .chooseReplacement .. := g'.pending then
-          g'.chainPendingReplacement (.finishPostStep 20 who 2 none (some id) (shuffle := isLand))
+          g'.chainPendingReplacement (.finishPostStep .returnedToBattlefield who 0 none (some id) (shuffle := isLand))
         else
           match g'.followMovedToZone? id (· == .battlefield) with
           | some back =>
@@ -439,7 +439,8 @@ def resolveTop (g : Game) : Game :=
           let bc := g.baseCard obj
           let tcs := g.evalLayer3 obj
           let modeEffects : Array Effect :=
-            if entry.extraModes.isEmpty then (g.spellEffectOf obj entry.chosenMode (kicked := kicked)).toArray
+            if entry.extraModes.isEmpty || isReturnUpToTwoGyModal bc then
+              (g.spellEffectOf obj entry.chosenMode entry.extraModes (kicked := kicked)).toArray
             else
               ((entry.chosenMode.toArray ++ entry.extraModes).qsort (· < ·)).filterMap fun i =>
                 bc.spellModes[i]?.map fun e => if tcs.isEmpty then e else TextChange.applyEffect tcs e

@@ -522,7 +522,7 @@ def millCollected (g : Game) (controller : PlayerId) (pids : Array PlayerId) (n 
     let g := g.withBatch cause? fun g =>
       pids.foldl (fun g pid => g.mill pid n (cause := cause?)) g
     if let .chooseReplacement .. := g.pending then
-      g.chainPendingReplacement (.finishPostStep 58 controller (ids := tops))
+      g.chainPendingReplacement (.finishPostStep .noteMilledIds controller (ids := tops))
     else
       let milled := tops.filterMap (fun id => (g.followMilledPublic? id).map (·.id))
       g.change (.milledIdsThisWay milled)
@@ -535,7 +535,7 @@ def millCollected (g : Game) (controller : PlayerId) (pids : Array PlayerId) (n 
         if !opps.contains pid then g.mill pid n (cause := cause?) else g) g
     if let .chooseReplacement .. := g.pending then
       g.chainPendingReplacement
-        (.finishPostStep 59 controller (n := startIdx) (targets := opps.map Target.player))
+        (.finishPostStep .noteOpponentsMilled controller (n := startIdx) (targets := opps.map Target.player))
     else
       g.change (.opponentsMilledThisWay (g.anyOpponentMilledSince opps startIdx))
 

@@ -738,7 +738,7 @@ def guardianResolvedTwice : Game :=
   (namedPermanent guardianResolvedTwice "Guardian of the Halls") == 8
 #guard (namedPermanent guardianResolvedTwice "Guardian of the Halls").status.plusOnePlusOne == 6
 
-/-- Counters do not wear off in cleanup (CR 122.1 / 514.3). -/
+/-- Counters do not wear off in cleanup (CR 122.1 / 514.2). -/
 def afterGuardianCleanup : Game :=
   passBoth (skipTo guardianResolved .end 80)
 

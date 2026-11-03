@@ -84,7 +84,10 @@ def givePromisedGift (g : Game) (to : PlayerId) : Game :=
   if !g.stillInGame to then g
   else
     let (g, _) := g.createToken to treasureToken
-    g.logMsg s!"{(g.player to).name} is given a Treasure (gift)"
+    if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement (.finishPostStep .logGiftTreasureGiven to)
+    else
+      g.logMsg s!"{(g.player to).name} is given a Treasure (gift)"
 
 /-- Cascade (CR 702.85a): exile from the top until a nonland card with mana
 value less than `maxMv`. The player may cast it without paying its mana
@@ -127,27 +130,40 @@ def applyKickerToProposed (g : Game) (kick : Bool) : Except String Game := do
   let preSpell := { spell with
     id := prop.original.id
     zone := prop.original.zone
-    exiledBy := prop.original.exiledBy }
+    exiledBy := prop.original.exiledBy
+    controller := some prop.caster }
   let face := g.baseCard spell
+  let extraGen := ManaCost.ofGeneric prop.additionalGeneric
   match face.morph, face.impending, face.kicker with
-  | some alt, _, none =>
+  | some _, _, none =>
     let g := g.record (GameEvent.announced g.turnNumber spell.id (costs := #[.morph]))
-    let cost := ManaCost.afterReduction alt (g.applyCastCostReductions preSpell face alt)
+    let morphFace : CardDef :=
+      { name := "", types := #[.creature], power := some 2, toughness := some 2,
+        manaCost := ManaCost.ofGeneric 3 }
+    let cost :=
+      g.playManaCost preSpell morphFace extraGen
+        (origPerm := prop.origPerm) (isFreeFromGy := some false)
     return g.changeProposals #[.kicked true, .kickerAnnounced true, .cost cost]
   | _, some (n, alt), none =>
     let g := g.record (GameEvent.announced g.turnNumber spell.id (costs := #[.impending n]))
-    let cost := ManaCost.afterReduction alt (g.applyCastCostReductions preSpell face alt)
+    let impFace : CardDef := { face with manaCost := alt }
+    let cost :=
+      g.playManaCost preSpell impFace extraGen
+        (origPerm := prop.origPerm) (isFreeFromGy := some false)
     return g.changeProposals #[.kicked true, .kickerAnnounced true, .cost cost]
   | _, _, none => throw "That spell has no kicker"
   | _, _, some kicker =>
     let g := g.record (GameEvent.announced g.turnNumber spell.id (costs := #[.kicker]))
-    let start :=
-      if !prop.cost.includesManaPayment && (g.playCostStart preSpell face).includesManaPayment then
-        ManaCost.empty
-      else g.playCostStart preSpell face
+    let effPerm :=
+      prop.origPerm <|>
+        (if prop.alternativeCost && prop.sneakAttacker.isNone && !prop.isFreeFromGy &&
+            !g.castFromGraveyard spell.id &&
+            !(match prop.original.zone with | .graveyard _ => true | _ => false) then
+          some { player := prop.caster, withoutManaCost := true }
+        else none)
     let cost :=
-      ManaCost.afterReduction face.manaCost
-        (g.applyCastCostReductions preSpell face (start.addCost kicker))
+      g.playManaCost preSpell face (kicker.addCost extraGen)
+        (origPerm := effPerm) (isFreeFromGy := some prop.isFreeFromGy)
     return g.changeProposals #[.kicked true, .kickerAnnounced true, .cost cost]
 
 /-- Promise a gift to `to`. Cannot promise more than once. -/
@@ -212,7 +228,7 @@ def discardNonlandFrom (g : Game) (controller victim : PlayerId) : Game :=
     let (g, _) := g.move o.id (.graveyard o.owner) none (verb := some .discard) (actor := some victim)
     let logLine := s!"{(g.player controller).name} chooses {cardName}. {(g.player victim).name} discards it"
     if let .chooseReplacement .. := g.pending then
-      g.chainPendingReplacement (.finishPostStep 96 controller (n := victim.idx) (cardId := some o.id))
+      g.chainPendingReplacement (.finishPostStep .logChosenCardDiscarded controller (n := victim.idx) (cardId := some o.id))
     else if !(g.findObject? o.id).any (·.zone == .hand victim) then
       g.logMsg logLine
     else g
@@ -240,7 +256,7 @@ def exileUntilNextEndStep (g : Game) (o : GameObject)
   let (g, _) := g.move o.id .exile none (cause := some cause)
   if let .chooseReplacement .. := g.pending then
     g.chainPendingReplacement
-      (.finishPostStep 108 ctrl (cardId := some o.id) (cause := some cause))
+      (.finishPostStep .finishExileUntilNextEndStep ctrl (cardId := some o.id) (cause := some cause))
   else
     g.finishExileUntilNextEndStep ctrl o.id cause
 

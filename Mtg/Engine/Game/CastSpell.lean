@@ -47,15 +47,13 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
     (sneakAttacker : Option ObjectId := none) : Except String Game := do
   if !g.hasPriority p then
     throw "You don't have priority"
+  if g.cantCastSpellsThisTurn p then
+    throw "You can't cast spells this turn (CR 101.2)"
   if g.splitSecondOnStack then
     throw "A spell with split second is on the stack (CR 702.61a)"
   if g.combatLocksNonManaAbilities then
     throw "During combat, players can't cast spells (Yuriko, Blade of the Mighty)"
-  if p != g.activePlayer && !g.areTeammates p g.activePlayer &&
-      (g.permanentsOf g.activePlayer).any (fun o =>
-        (g.staticAbilities o).any (fun
-          | .opponentsCantCastOnYourTurn => true
-          | _ => false)) then
+  if g.opponentsCantCastOnActiveTurn p then
     throw "Opponents can't cast spells during that player's turn"
   let some card := g.findObject? id | throw "no such object"
   if !g.mayPlay p card then
@@ -75,13 +73,9 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
   let pl := g.player p
   if face.isLand then
     throw "Lands are played, not cast (CR 305)"
-  match face.castOnlyIfGraveyardAtLeast with
-  | some n =>
-    -- Ruling 852: the card itself doesn't count if it's in the graveyard.
-    let others := (g.player p).graveyard.filter (· != id) |>.size
-    if others < n then
-      throw s!"{face.name} can be cast only with {n} or more other cards in your graveyard"
-  | none => pure ()
+  if !g.graveyardCastThresholdMet p id face then
+    let n := face.castOnlyIfGraveyardAtLeast.getD 0
+    throw s!"{face.name} can be cast only with {n} or more other cards in your graveyard"
   let sneakCost ← match sneakAttacker with
     | none => pure none
     | some a =>
@@ -93,11 +87,13 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
           att.status.attacking && !att.status.blocked) then
         throw s!"{g.name att} is not an unblocked attacker you control"
       pure (some c)
-  if face.hasSorcerySpeed && !g.asSorcery? p && sneakCost.isNone &&
-      !(g.freeCastFromGraveyard card && card.zone == .graveyard p) then
+  let origPerm := g.playPermission card
+  if !(g.timingAllowsCast p face || origPerm.any (·.ignoreTiming) || sneakCost.isSome ||
+      (g.freeCastFromGraveyard card && card.zone == .graveyard p)) then
     throw s!"{face.name} has sorcery speed"
-  if face.isModal then
-    if !face.spellModes.any (g.spellModeIsChoosable p) && !face.allowsZeroTargets then
+  if isModalSpellFace face then
+    if !(effectiveSpellModes face).any (g.spellModeIsChoosable p) &&
+        !isReturnUpToTwoGyModal face && !face.allowsZeroTargets then
       throw s!"{face.name} requires a target"
   else if face.requiresTarget &&
       (g.legalCastTargets p face).isEmpty && !face.allowsZeroTargets then
@@ -108,7 +104,6 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
     throw s!"{face.name} requires sacrificing an artifact or creature"
   if face.additionalCostSacrificeCreature && (g.creaturesControlledBy p).isEmpty then
     throw s!"{face.name} requires sacrificing a creature"
-  let origPerm := g.playPermission card
   match origPerm.bind (·.prepareSource) with
   | some src =>
     match g.findObject? src with
@@ -147,10 +142,13 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
     else g
   -- CR 601.2a / 601.2f: the total cost is determined after the spell is on
   -- the stack (rulings 824 / 874).
+  let casterCard := { original with controller := some p }
   let cost :=
     match sneakCost with
-    | some c => g.playManaCost card { face with manaCost := c }
-    | none => g.playManaCost card face
+    | some c => g.playManaCost casterCard { face with manaCost := c }
+        (origPerm := origPerm) (isFreeFromGy := some isFreeFromGy)
+    | none => g.playManaCost casterCard face
+        (origPerm := origPerm) (isFreeFromGy := some isFreeFromGy)
   -- Casting the exiled copy of a prepare spell unprepares its permanent. The
   -- spell on the stack is a copy, so it isn't put into a graveyard later
   -- (CR 707.10 / 704.5e).
@@ -177,7 +175,7 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
   let altCost :=
     sneakCost.isSome || isFlashbackCast || isFreeFromGy ||
       origPerm.any (fun pm => pm.withoutManaCost || pm.payLifeEqualManaValue)
-  let needsMode := face.isModal
+  let needsMode := isModalSpellFace face
   let needsTarget := face.requiresTarget && !needsMode
   let needsAdditionalCostChoice := face.announcesAdditionalCost
   let needsKicker :=
@@ -203,6 +201,8 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
     spellId := newId
     original := original
     originalSnapshot := origSnap
+    origPerm
+    isFreeFromGy
     needsSacrificeOther := needsSacrifice
     needsDiscardCard := needsFlashbackDiscard
     payLife := lifeInstead
@@ -242,10 +242,11 @@ def announceMode (g : Game) (p : PlayerId) (mode : Nat) : Except String Game := 
     | .spell =>
       let some spell := g.findObject? prop.spellId | throw "The spell left the stack"
       let face := g.baseCard spell
-      if !face.isModal then
+      let effModes := effectiveSpellModes face
+      if !isModalSpellFace face then
         throw "That spell is not modal (CR 700.2)"
-      let some effect := face.spellModes[mode]? | throw "No such mode (CR 700.2)"
-      if !g.spellModeIsChoosable p effect then
+      let some effect := effModes[mode]? | throw "No such mode (CR 700.2)"
+      if !g.spellModeIsChoosable p effect (some spell.id) then
         throw "That mode has no legal target (CR 700.2a)"
       let chosen := g.chosenModesOf spell
       if chosen.contains mode then
@@ -254,8 +255,8 @@ def announceMode (g : Game) (p : PlayerId) (mode : Nat) : Except String Game := 
       let g := g.logMsg
         s!"{(g.player p).name} chooses mode {mode + 1} ({effect.toNotation}) (CR 601.2b)"
       let chosen := chosen.push mode
-      let more := (List.range face.spellModes.size).any (fun i =>
-        !chosen.contains i && g.spellModeIsChoosable p face.spellModes[i]!)
+      let more := (List.range effModes.size).any (fun i =>
+        !chosen.contains i && g.spellModeIsChoosable p effModes[i]! (some spell.id))
       if chosen.size < g.maxModesFor p face && more then
         let g := g.change (.pending (.chooseMode p))
         return g.logMsg s!"{(g.player p).name} may choose another mode, or decline (CR 700.2)"
@@ -299,13 +300,15 @@ def announceX (g : Game) (p : PlayerId) (x : Nat) : Except String Game := do
         let preSpell := { spell with
           id := prop.original.id
           zone := prop.original.zone
-          exiledBy := prop.original.exiledBy }
+          exiledBy := prop.original.exiledBy
+          controller := some p }
         let baseFace := g.baseCard spell
         let face :=
           match prop.sneakAttacker, baseFace.sneakCost with
           | some _, some sc => { baseFace with manaCost := sc }
           | _, _ => baseFace
-        g.playManaCost preSpell face
+        g.playManaCost preSpell face (ManaCost.ofGeneric prop.additionalGeneric)
+          (origPerm := prop.origPerm) (isFreeFromGy := some prop.isFreeFromGy)
       | _, _, _ => prop.cost.substituteX x
     let g := g.changeProposal (.cost cost)
     let prop := g.proposedSpell.getD prop
@@ -332,8 +335,9 @@ def announceX (g : Game) (p : PlayerId) (x : Nat) : Except String Game := do
       else
         let spell := g.object! prop.spellId
         let face := g.baseCard spell
-        return g.enterProposalWindow p pl prop face.isModal
-          (face.requiresTarget && !face.isModal) "CR 601.2b / 700.2"
+        let modal := isModalSpellFace face
+        return g.enterProposalWindow p pl prop modal
+          (face.requiresTarget && !modal) "CR 601.2b / 700.2"
           (needsAdditionalCost := face.announcesAdditionalCost)
           (needsKicker := face.kicker.isSome || (!prop.alternativeCost && (face.morph.isSome || face.impending.isSome)))
           (needsGift := face.giftTreasure)

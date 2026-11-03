@@ -53,7 +53,8 @@ def phaseIn (g : Game) (o : GameObject) (cause : Option EventCause := none) : Ga
       let g := g.logMsg s!"{oName} phases in"
       let g :=
         g.objects.foldl (fun acc att =>
-          if att.status.phasedOut && att.status.phasedWith == some o.id then
+          if att.zone == .battlefield && att.status.phasedOut &&
+              att.status.phasedWith == some o.id && att.attachedTo == some o.id then
             let acc := acc.record (GameEvent.phasedIn acc.turnNumber (acc.snapshot att) true (cause := resolvedCause))
             acc.logMsg s!"{acc.name (acc.object! att.id)} phases in still attached to {oName}"
           else acc) g

@@ -192,15 +192,30 @@ def plusOneOnEachCreatureOf (g : Game) (p : PlayerId) (n : Nat := 1) : Game :=
   g.withBatch none fun g =>
     (g.creaturesControlledBy p).foldl (fun g o => g.addPlusOnePlusOneTo (g.object! o.id) n) g
 
+/-- Pause-safe loop placing a loyalty counter on each planeswalker in `ids`. -/
+def loyaltyOnPwsLoop (g : Game) (p : PlayerId) (ids : Array ObjectId) : Game := Id.run do
+  if let .chooseReplacement .. := g.pending then
+    return g.chainPendingReplacement (.finishPostStep .loyaltyOnPlaneswalkersLoop p (ids := ids))
+  let mut g := g
+  for i in [0:ids.size] do
+    let id := ids[i]!
+    if let some o := g.findObject? id then
+      if o.isOnBattlefield && g.isPlaneswalker o then
+        g := g.putCountersDeferredLog o.id .loyalty 1 (some p) .isPutOn
+        if let .chooseReplacement .. := g.pending then
+          let rem := ids.extract (i + 1) ids.size
+          if !rem.isEmpty then
+            g := g.chainPendingReplacement (.finishPostStep .loyaltyOnPlaneswalkersLoop p (ids := rem))
+          return g
+  return g
+
 /-- Put a loyalty counter on each planeswalker `p` controls. -/
 def loyaltyOnEachPlaneswalkerOf (g : Game) (p : PlayerId) : Game :=
-  let pws := (g.permanentsOf p).filter (g.isPlaneswalker ·)
+  let pws := (g.permanentsOf p).filter (g.isPlaneswalker ·) |>.map (·.id)
   if pws.isEmpty then g
   else
     g.withBatch none fun g =>
-      pws.foldl (fun g o =>
-        (g.recordPutCounters o.id .loyalty 1 (byPlayer := some p)).logMsg
-          s!"A loyalty counter is put on {g.name o}") g
+      g.loyaltyOnPwsLoop p pws
 
 end Game
 end Mtg.Engine

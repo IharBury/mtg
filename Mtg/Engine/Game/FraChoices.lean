@@ -55,15 +55,27 @@ def castFreeCopy (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game 
   let some card := g.findObject? id | throw "no such object"
   let origSnap := g.snapshot card
   let face := g.baseCard card
+  if g.cantCastSpellsThisTurn p then
+    throw "You can't cast spells this turn (CR 101.2)"
+  if g.splitSecondOnStack then
+    throw "A spell with split second is on the stack (CR 702.61a)"
+  if g.combatLocksNonManaAbilities then
+    throw "During combat, players can't cast spells (Yuriko, Blade of the Mighty)"
+  if g.opponentsCantCastOnActiveTurn p then
+    throw "Opponents can't cast spells during that player's turn"
+  if g.spellNameForbidden face.name then
+    throw s!"Spells named {face.name} can't be cast"
   let mv := g.objectManaValue card
   if mv > budget then
     throw s!"{face.name} has mana value {mv}; only {budget} is left"
   if face.isLand then throw "A land can't be cast"
-  if face.isModal && !face.spellModes.any (g.spellModeIsChoosable p) && !face.allowsZeroTargets then
+  if isModalSpellFace face && !(effectiveSpellModes face).any (g.spellModeIsChoosable p) &&
+      !isReturnUpToTwoGyModal face && !face.allowsZeroTargets then
     throw s!"{face.name} requires a target"
-  if !face.isModal && (face.requiresTarget || face.isAura) &&
+  if !isModalSpellFace face && (face.requiresTarget || face.isAura) &&
       (g.legalCastTargets p face).isEmpty && !face.allowsZeroTargets then
     throw s!"{face.name} requires a target"
+  let origPerm : Option PlayPermission := some { player := p, withoutManaCost := true }
   let rest := ids.filter (· != id)
   let g :=
     match g.pendingReplacement with
@@ -76,12 +88,15 @@ def castFreeCopy (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game 
   let g := g.record (GameEvent.proposed g.turnNumber newId p card.zone (.alternative "free copy"))
   let g := g.changes #[.pending .none, .pendingFreeCopies (some (p, rest, budget - mv, castsLeft - 1))]
   let g := g.logMsg s!"{(g.player p).name} casts a copy of {face.name} without paying its mana cost"
+  let cost := g.playManaCost { card with controller := some p } face
+    (origPerm := origPerm) (isFreeFromGy := some false)
   let needsSacrifice :=
     face.additionalCostSacrificeCreature ||
       (face.additionalCostSacrificeArtifactOrCreature && face.additionalCostOrPayGeneric.isNone)
   let prop : ProposedSpell := {
-    caster := p, cost := ManaCost.empty, spellId := newId, original := card
-    originalSnapshot := origSnap, needsSacrificeOther := needsSacrifice
+    caster := p, cost, spellId := newId, original := card
+    originalSnapshot := origSnap, origPerm
+    needsSacrificeOther := needsSacrifice
     alternativeCost := true, resolutionCast := true }
   let g' := g.beginResolutionCastTargets p prop
   return if g'.pending == .none && (g'.findObject? newId).any (·.zone == .stack) then
@@ -275,12 +290,12 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
         g.discardHandIdsLoop p hand (logEach := true)
       let g :=
         if let .chooseReplacement .. := g.pending then
-          g.chainPendingReplacement (.finishPostStep 41 p (n := n) (modes := restModes))
+          g.chainPendingReplacement (.finishPostStep .wheelDrawThenOfferNext p (n := n) (modes := restModes))
         else
-          g.runPostStep 41 p (n := n) (modes := restModes)
+          g.runPostStep .wheelDrawThenOfferNext p (n := n) (modes := restModes)
       return g.finishFraChoice
     else
-      let g := (g.logMsg s!"{(g.player p).name} keeps their hand").runPostStep 42 p (n := n) (modes := restModes)
+      let g := (g.logMsg s!"{(g.player p).name} keeps their hand").runPostStep .wheelOfferNext p (n := n) (modes := restModes)
       return g.finishFraChoice
   | .mayWheel .., _ => throw "Answer accept or decline"
   | .maySacrificePlaneswalker, .objects #[id] =>
@@ -290,9 +305,9 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let g := g.sacrificeToGraveyard pw s!"{(g.player p).name} sacrifices {g.name pw}"
     let g :=
       if let .chooseReplacement .. := g.pending then
-        g.chainPendingReplacement (.finishPostStep 43 p)
+        g.chainPendingReplacement (.finishPostStep .searchLibraryPlaneswalker p)
       else
-        g.runPostStep 43 p
+        g.runPostStep .searchLibraryPlaneswalker p
     return g.finishFraChoice
   | .maySacrificePlaneswalker, .decline =>
     return (g.logMsg s!"{(g.player p).name} doesn't sacrifice a planeswalker").finishFraChoice
@@ -330,9 +345,9 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let g := g.logMsg s!"{(g.player p).name} exiles five cards named Sphinx's Approach"
     let g :=
       if let .chooseReplacement .. := g.pending then
-        g.chainPendingReplacement (.finishPostStep 44 p)
+        g.chainPendingReplacement (.finishPostStep .searchLibrarySphinx p)
       else
-        g.runPostStep 44 p
+        g.runPostStep .searchLibrarySphinx p
     return g.finishFraChoice
   | .sphinxsApproach _, .decline => return g.finishFraChoice
   | .sphinxsApproach _, _ => throw "Answer accept or decline"
@@ -395,9 +410,9 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let g := g.discardFromHand p id
     let g :=
       if let .chooseReplacement .. := g.pending then
-        g.chainPendingReplacement (.finishPostStep 45 p (sourceId := causeId))
+        g.chainPendingReplacement (.finishPostStep .drawOneThenPlusOnesForDiscards p (sourceId := causeId))
       else
-        g.runPostStep 45 p (sourceId := causeId)
+        g.runPostStep .drawOneThenPlusOnesForDiscards p (sourceId := causeId)
     return g.finishFraChoice
   | .discardThen .., _ => throw "Choose a card to discard"
   | .discardThenStun n sourceId, .objects ids =>
@@ -410,9 +425,9 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       g.discardHandIdsLoop p ids (logEach := true)
     let g :=
       if let .chooseReplacement .. := g.pending then
-        g.chainPendingReplacement (.finishPostStep 46 p (n := nonland) (sourceId := sourceId))
+        g.chainPendingReplacement (.finishPostStep .queueTapAndStunReflexive p (n := nonland) (sourceId := sourceId))
       else
-        g.runPostStep 46 p (n := nonland) (sourceId := sourceId)
+        g.runPostStep .queueTapAndStunReflexive p (n := nonland) (sourceId := sourceId)
     return g.finishFraChoice
   | .discardThenStun .., _ => throw "Choose the cards to discard"
   | .maySacrificeThen types next sourceId, .objects #[id] =>
@@ -585,7 +600,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       g.discardHandIdsLoop p ids (logEach := true)
     let g :=
       if let .chooseReplacement .. := g.pending then
-        g.chainPendingReplacement (.finishPostStep 10 controller (n := nextDraws) (modes := rest.map (fun (q : PlayerId) => q.idx)))
+        g.chainPendingReplacement (.finishPostStep .continueDiscardTwo controller (n := nextDraws) (modes := rest.map (fun (q : PlayerId) => q.idx)))
       else
         g.continueDiscardTwo controller rest nextDraws
     return g.finishFraChoice
@@ -652,9 +667,17 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
         | none => g
       else g
     return g.resumeAfterBecomeCast
-  | .crew _ _ _, .decline =>
-    gPre.reverseProposedSpell? (resumeContinuation := true)
-      (extraLog := some s!"{(gPre.player p).name} doesn't crew")
+  | .crew _ vehicleId n, .decline =>
+    let totalAvail :=
+      ((gPre.creaturesControlledBy p).filter (fun c => c.id != vehicleId && !c.status.tapped)).foldl
+        (fun acc c => acc + (gPre.power c).toNat) 0
+    if totalAvail < n then
+      gPre.reverseProposedSpell? (resumeContinuation := true)
+        (extraLog := some s!"{(gPre.player p).name} doesn't crew")
+    else if gPre.proposedSpell.any (·.cost.includesManaPayment) then
+      throw "Part of the cost is already paid; the activation can't be cancelled"
+    else
+      throw "Choose creatures to tap to crew (CR 602.2b)"
   | .crew .., _ => throw "Choose creatures to tap, or decline"
   | .costPicks sourceId picks _, .objects ids =>
     let some prop := g.proposedSpell | throw "No activation is being paid for"
@@ -722,9 +745,9 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     else
       let g :=
         if let .chooseReplacement .. := g.pending then
-          g.chainPendingReplacement (.finishPostStep 53 p (n := pw) (sourceId := some sourceId))
+          g.chainPendingReplacement (.finishPostStep .addPlusOnesToSource p (n := pw) (sourceId := some sourceId))
         else
-          g.runPostStep 53 p (n := pw) (sourceId := some sourceId)
+          g.runPostStep .addPlusOnesToSource p (n := pw) (sourceId := some sourceId)
       return g.finishFraChoice
   | .maySacrificeAnotherCreatureForPower _, .decline =>
     if g.mayThenDrop > 0 then return g.declineMayThen else return g.finishFraChoice
@@ -806,13 +829,12 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       let mut g := g
       let mut attached : Nat := 0
       for id in ids do
-        match g.findObject? id with
-        | some eq =>
-          if eq.attachedTo != some hostId && eq.isOnBattlefield &&
-              (g.findObject? hostId).any GameObject.isOnBattlefield then
-            g := g.attachSourceTo eq (g.object! hostId)
+        match g.findObject? id, g.findObject? hostId with
+        | some eq, some host =>
+          if eq.attachedTo != some hostId && g.canAttachEquipmentTo eq host then
+            g := g.attachSourceTo eq host
             attached := attached + 1
-        | none => pure ()
+        | _, _ => pure ()
       if attached > 0 && (g.findObject? hostId).any GameObject.isOnBattlefield then
         g := g.change (.equipmentAttachedHost (some hostId))
       return g
@@ -910,9 +932,9 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let g := g.enterFromNickFury p id (cause := some cause)
     let g :=
       if let .chooseReplacement .. := g.pending then
-        g.chainPendingReplacement (.finishPostStep 47 p (cardId := some id) (ids := rest) (cause := some cause))
+        g.chainPendingReplacement (.finishPostStep .nickFuryMayTransformOrBottom p (cardId := some id) (ids := rest) (cause := some cause))
       else
-        g.runPostStep 47 p (cardId := some id) (ids := rest) (cause := some cause)
+        g.runPostStep .nickFuryMayTransformOrBottom p (cardId := some id) (ids := rest) (cause := some cause)
     return g.finishFraChoice
   | .nickFuryPut looked _, .decline =>
     return (g.putRestOnBottomRandom p looked).finishFraChoice
@@ -1051,9 +1073,20 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
         | none => g
       else g
     return g.resumeAfterBecomeCast
-  | .zemoBoastExile _ _, .decline =>
-    gPre.reverseProposedSpell? (resumeContinuation := true)
-      (extraLog := some s!"{(gPre.player p).name} doesn't boast")
+  | .zemoBoastExile _ sourceId, .decline =>
+    let col :=
+      match gPre.findObject? sourceId with
+      | some src => TextChange.applyColor (gPre.evalLayer3 src) .black
+      | none => .black
+    let allCands := (gPre.player p).graveyard.filter (fun id =>
+      (gPre.findObject? id).any (fun card => (gPre.colors card).contains col))
+    if !gPre.canPayZemoBoast p allCands col then
+      gPre.reverseProposedSpell? (resumeContinuation := true)
+        (extraLog := some s!"{(gPre.player p).name} doesn't boast")
+    else if gPre.proposedSpell.any (·.cost.includesManaPayment) then
+      throw "Part of the cost is already paid; the activation can't be cancelled"
+    else
+      throw "Choose cards to exile to pay the boast cost (CR 602.2b)"
   | .zemoBoastExile .., _ => throw "Choose the cards to exile, or decline"
   | .mayCastCascade cardId others, .accept =>
     let g :=
@@ -1123,9 +1156,9 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let g := g.discardEntireHand p
     let g :=
       if let .chooseReplacement .. := g.pending then
-        g.chainPendingReplacement (.finishPostStep 48 p (n := n) (sourceId := sourceId))
+        g.chainPendingReplacement (.finishPostStep .noteHandDiscardedCount p (n := n) (sourceId := sourceId))
       else
-        g.runPostStep 48 p (n := n) (sourceId := sourceId)
+        g.runPostStep .noteHandDiscardedCount p (n := n) (sourceId := sourceId)
     return g.finishFraChoice
   | .mayDiscardHandBalin _, .decline =>
     return (g.logMsg s!"{(g.player p).name} does not discard their hand").finishFraChoice
@@ -1149,13 +1182,16 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .sacrificeDamager .., _ => throw "Choose a creature that dealt combat damage"
   | .mayCastInstantSorceryFromHand eligible, .objects #[id] =>
     if !eligible.contains id then throw "That card can't be cast this way"
+    if g.cantCastSpellsThisTurn p then
+      throw "You can't cast spells this turn (CR 101.2)"
     let some o := g.findObject? id | throw "no such object"
     if o.zone != .hand p || !g.isInstantOrSorcery o then
       throw s!"{o.name} is no longer an instant or sorcery in your hand"
     let face := g.baseCard o
-    if face.isModal && !face.spellModes.any (g.spellModeIsChoosable p) && !face.allowsZeroTargets then
+    if isModalSpellFace face && !(effectiveSpellModes face).any (g.spellModeIsChoosable p) &&
+        !isReturnUpToTwoGyModal face && !face.allowsZeroTargets then
       throw s!"{face.name} has no mode with a legal target"
-    if !face.isModal && (face.requiresTarget || face.isAura) &&
+    if !isModalSpellFace face && (face.requiresTarget || face.isAura) &&
         (g.legalCastTargets p face).isEmpty && !face.allowsZeroTargets then
       throw s!"{face.name} has no legal target"
     let g := (gPre.change .saveProposalCheckpoint).change (.pending .none)
@@ -1165,6 +1201,8 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .mayCastInstantSorceryFromHand _, _ => throw "Choose a spell to cast, or decline"
   | .mayCastUpToFromExile eligible left, .objects #[id] =>
     if left == 0 || !eligible.contains id then throw "That card can't be cast this way"
+    if g.cantCastSpellsThisTurn p then
+      throw "You can't cast spells this turn (CR 101.2)"
     let some o := g.findObject? id | throw "no such object"
     if o.zone != .exile || g.isLand o then
       throw s!"{o.name} can't be cast this way"
@@ -1237,7 +1275,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       let g :=
         if let .chooseReplacement .. := g.pending then
           g.chainPendingReplacement
-            (.finishPostStep 101 p (cardId := some oldId) (cause := some cause))
+            (.finishPostStep .grantPlayUntilEndOfNextTurn p (cardId := some oldId) (cause := some cause))
         else
           match g.followMovedToZone? oldId (· == Zone.exile) with
           | some moved =>
@@ -1281,9 +1319,9 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let g := g.draw p n
     let g :=
       if let .chooseReplacement .. := g.pending then
-        g.chainPendingReplacement (.finishPostStep 49 p (n := before))
+        g.chainPendingReplacement (.finishPostStep .checkDrawThenOpponentsDraw p (n := before))
       else
-        g.runPostStep 49 p (n := before)
+        g.runPostStep .checkDrawThenOpponentsDraw p (n := before)
     return g.finishFraChoice
   | .mayDrawThenEachOpponentDraws _, .decline =>
     return (g.logMsg s!"{(g.player p).name} doesn't draw").finishFraChoice
@@ -1296,9 +1334,9 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let (g, _) := g.putOntoBattlefield id p
     let g :=
       if let .chooseReplacement .. := g.pending then
-        g.chainPendingReplacement (.finishPostStep 20 p (cardId := some id))
+        g.chainPendingReplacement (.finishPostStep .enteredBattlefieldSilent p (cardId := some id))
       else
-        g.runPostStep 20 p (cardId := some id)
+        g.runPostStep .enteredBattlefieldSilent p (cardId := some id)
     return g.finishFraChoice
   | .mayPutHeroFromHandOrDraw _, .decline =>
     return (g.draw p 1).finishFraChoice
@@ -1379,18 +1417,21 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let g :=
       if let .chooseReplacement .. := g.pending then
         g.chainPendingReplacement
-          (.finishPostStep 51 p (ids := tops) (modes := #[controller.idx]) (cause := cause?))
+          (.finishPostStep .loseLifeForMilledManaValue p (ids := tops) (modes := #[controller.idx]) (cause := cause?))
       else
-        g.runPostStep 51 p (ids := tops) (modes := #[controller.idx]) (cause := cause?)
+        g.runPostStep .loseLifeForMilledManaValue p (ids := tops) (modes := #[controller.idx]) (cause := cause?)
     return g.finishFraChoice
   | .palantirMayDraw .., _ => throw "Have that player draw (accept), or decline"
   | .mayCastCards eligible withoutPaying exileInstead, .objects #[id] =>
     if !eligible.contains id then throw "That card can't be cast this way"
+    if g.cantCastSpellsThisTurn p then
+      throw "You can't cast spells this turn (CR 101.2)"
     let some o := g.findObject? id | throw "no such object"
     let face := g.baseCard o
-    if face.isModal && !face.spellModes.any (g.spellModeIsChoosable p) && !face.allowsZeroTargets then
+    if isModalSpellFace face && !(effectiveSpellModes face).any (g.spellModeIsChoosable p) &&
+        !isReturnUpToTwoGyModal face && !face.allowsZeroTargets then
       throw s!"{face.name} has no mode with a legal target"
-    if !face.isModal && (face.requiresTarget || face.isAura) &&
+    if !isModalSpellFace face && (face.requiresTarget || face.isAura) &&
         (g.legalCastTargets p face).isEmpty && !face.allowsZeroTargets then
       throw s!"{face.name} has no legal target"
     let g := (gPre.change .saveProposalCheckpoint).change (.pending .none)
@@ -1401,14 +1442,17 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .mayCastCards _ _ _, _ => throw "Choose a spell to cast, or decline"
   | .mayCastFromGraveyard eligible, .objects #[id] =>
     if !eligible.contains id then throw "That card can't be cast this way"
+    if g.cantCastSpellsThisTurn p then
+      throw "You can't cast spells this turn (CR 101.2)"
     let some o := g.findObject? id | throw "no such object"
     if o.zone != .graveyard o.owner then throw s!"{o.name} is no longer in the graveyard"
     if !(g.isArtifact o || g.isInstantOrSorcery o) then
       throw s!"{o.name} is not an artifact, instant, or sorcery"
     let face := g.baseCard o
-    if face.isModal && !face.spellModes.any (g.spellModeIsChoosable p) && !face.allowsZeroTargets then
+    if isModalSpellFace face && !(effectiveSpellModes face).any (g.spellModeIsChoosable p) &&
+        !isReturnUpToTwoGyModal face && !face.allowsZeroTargets then
       throw s!"{face.name} has no mode with a legal target"
-    if !face.isModal && (face.requiresTarget || face.isAura) &&
+    if !isModalSpellFace face && (face.requiresTarget || face.isAura) &&
         (g.legalCastTargets p face).isEmpty && !face.allowsZeroTargets then
       throw s!"{face.name} has no legal target"
     let g := (gPre.change .saveProposalCheckpoint).change (.pending .none)
@@ -1646,13 +1690,15 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
   | .crew _ vehicleId n =>
     let cands := ((g.creaturesControlledBy p).filter (fun c => c.id != vehicleId && !c.status.tapped)).qsort
       (fun a b => g.power a > g.power b)
-    let (picked, _) := cands.foldl (fun (acc : Array ObjectId × Nat) c =>
+    let (picked, total) := cands.foldl (fun (acc : Array ObjectId × Nat) c =>
       if acc.2 ≥ n then acc else (acc.1.push c.id, acc.2 + (g.power c).toNat)) (#[], 0)
-    .choosePermanents picked
+    if total < n then .decline else .choosePermanents picked
   | .costPicks sourceId picks _ =>
     match picks[0]? with
     | some pick =>
-      .choosePermanents ((g.costPickCandidates p sourceId pick).extract 0 pick.count)
+      let cands := g.costPickCandidates p sourceId pick
+      if cands.size < pick.count then .decline
+      else .choosePermanents (cands.extract 0 pick.count)
     | none => .decline
   | .mayPayPickThen .. => .decline
   | .chooseCreatureType _ => .chooseMode 0
@@ -1662,7 +1708,11 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
   | .mayDiscardThese _ _ => .decline
   | .mayPaySymbolsThen symbols .. =>
     if (g.player p).manaPool.canPay { symbols := symbols } then .accept else .decline
-  | .attachAnyEquipment _ eligible => .choosePermanents eligible
+  | .attachAnyEquipment hostId eligible =>
+    .choosePermanents (eligible.filter fun id =>
+      match g.findObject? id, g.findObject? hostId with
+      | some eq, some host => g.canAttachEquipmentTo eq host
+      | _, _ => false)
   | .sacrificeLeastPower ids => .choosePermanents (ids.extract 0 1)
   | .addManaColors .. => .chooseMode 0
   | .mayPayExtort _ =>
@@ -1748,36 +1798,53 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
   | .daredevilMayExile _ => .decline
   | .mayChangeSpellTarget .. => .decline
   | .mayCastCards eligible withoutPaying _ =>
-    let hasTargets (o : GameObject) : Bool :=
-      let face := g.baseCard o
-      if face.isModal then face.spellModes.any (g.spellModeIsChoosable p) || face.allowsZeroTargets
-      else if face.requiresTarget || face.isAura then
-        !(g.legalCastTargets p face).isEmpty || face.allowsZeroTargets
-      else true
-    if withoutPaying then
-      match eligible.find? (fun id => (g.findObject? id).any hasTargets) with
+    if g.cantCastSpellsThisTurn p || g.splitSecondOnStack || g.combatLocksNonManaAbilities ||
+        g.opponentsCantCastOnActiveTurn p then
+      .decline
+    else
+      let hasTargets (o : GameObject) : Bool :=
+        let face := g.baseCard o
+        !g.spellNameForbidden face.name &&
+          if isModalSpellFace face then
+            (effectiveSpellModes face).any (g.spellModeIsChoosable p) ||
+              isReturnUpToTwoGyModal face || face.allowsZeroTargets
+          else if face.requiresTarget || face.isAura then
+            !(g.legalCastTargets p face).isEmpty || face.allowsZeroTargets
+          else true
+      let available := g.availableMana p
+      match eligible.find? (fun id =>
+        (g.findObject? id).any (fun o =>
+          let face := g.baseCard o
+          let origPerm : Option PlayPermission :=
+            if withoutPaying then some { player := p, withoutManaCost := true }
+            else g.playPermission o
+          let isFreeFromGy := !withoutPaying && o.zone == .graveyard o.owner && g.freeCastFromGraveyard o
+          hasTargets o && available.canPay (g.playManaCost { o with controller := some p } face
+            (origPerm := origPerm) (isFreeFromGy := some isFreeFromGy)))) with
       | some id => .cast id
       | none => .decline
+  | .mayCastFromGraveyard eligible =>
+    if g.cantCastSpellsThisTurn p || g.splitSecondOnStack || g.combatLocksNonManaAbilities ||
+        g.opponentsCantCastOnActiveTurn p then
+      .decline
     else
       let available := g.availableMana p
       match eligible.find? (fun id =>
         (g.findObject? id).any (fun o =>
-          hasTargets o && available.canPay (g.playManaCost o (g.baseCard o)))) with
+          let face := g.baseCard o
+          let hasTargets :=
+            !g.spellNameForbidden face.name &&
+              if isModalSpellFace face then
+                (effectiveSpellModes face).any (g.spellModeIsChoosable p) ||
+                  isReturnUpToTwoGyModal face || face.allowsZeroTargets
+              else if face.requiresTarget || face.isAura then
+                !(g.legalCastTargets p face).isEmpty || face.allowsZeroTargets
+              else true
+          let isFreeFromGy := o.zone == .graveyard o.owner && g.freeCastFromGraveyard o
+          hasTargets && available.canPay (g.playManaCost { o with controller := some p } face
+            (origPerm := g.playPermission o) (isFreeFromGy := some isFreeFromGy)))) with
       | some id => .cast id
       | none => .decline
-  | .mayCastFromGraveyard eligible =>
-    let available := g.availableMana p
-    match eligible.find? (fun id =>
-      (g.findObject? id).any (fun o =>
-        let face := g.baseCard o
-        let hasTargets :=
-          if face.isModal then face.spellModes.any (g.spellModeIsChoosable p) || face.allowsZeroTargets
-          else if face.requiresTarget || face.isAura then
-            !(g.legalCastTargets p face).isEmpty || face.allowsZeroTargets
-          else true
-        hasTargets && available.canPay (g.playManaCost o face))) with
-    | some id => .cast id
-    | none => .decline
   | .maySearchLibrary eligible .. =>
     if eligible.isEmpty then .decline else .accept
   | .searchLibrary eligible count .. =>
@@ -1794,8 +1861,9 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
       match g.findObject? sourceId with
       | some src => TextChange.applyColor (g.evalLayer3 src) .black
       | none => .black
-    .choosePermanents ((g.player p).graveyard.filter (fun id =>
-      (g.findObject? id).any (fun card => (g.colors card).contains col)))
+    let cands := (g.player p).graveyard.filter (fun id =>
+      (g.findObject? id).any (fun card => (g.colors card).contains col))
+    if g.canPayZemoBoast p cands col then .choosePermanents cands else .decline
   | .chooseEnteringAttackTarget .. => .chooseMode 0
   | .mayBeginOnBattlefield _ => .decline
 

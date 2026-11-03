@@ -217,11 +217,13 @@ def finishSbaSweep (g : Game) (moves : Array SbaGraveyardMove)
           g := g.logMsg s!"{o.name} ceases to exist (token left the battlefield)"
           changed := true
       | none => pure ()
-    -- Non-token copies outside stack and battlefield at start of pass cease to exist (CR 704.5e).
+    -- Non-token copies outside stack and battlefield at start of pass cease to exist (CR 704.5e;
+    -- FRA ruling 736 exempts a prepared creature's associated spell copy in exile).
     for cid in copiesOutside do
       match g.findObject? cid with
       | some o =>
-        if o.isCopy && !o.printed.isToken && o.zone != .stack && o.zone != .battlefield then
+        if o.isCopy && !o.printed.isToken && o.zone != .stack && o.zone != .battlefield &&
+            !(o.zone == .exile && ((g.playPermission o).bind (·.prepareSource)).isSome) then
           g := g.ceaseToExist o.id (cause := some (.stateBased .copyOutsideStackOrBf))
           g := g.logMsg s!"{o.name} ceases to exist (copy outside stack or battlefield, CR 704.5e)"
           changed := true
@@ -327,10 +329,20 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
           if shielded then
             pure ()
           else
+            let hasTeammate := g.players.any (fun m => g.areTeammates pl.id m.id)
+            let poisonLoss :=
+              if hasTeammate then
+                let teamPoison :=
+                  g.players.foldl (fun acc m =>
+                    if m.id == pl.id || g.areTeammates pl.id m.id then acc + (g.player m.id).poison
+                    else acc) 0
+                teamPoison ≥ 15
+              else
+                curPl.poison ≥ 10
             let loss? : Option (LossReason × StateBasedAction) :=
               if curPl.life ≤ 0 then some (.lifeZeroOrLess, .lifeZeroOrLess)
               else if g.drewFromEmpty pl.id then some (.decked, .drewFromEmpty)
-              else if curPl.poison ≥ 10 then some (.poison, .tenPoison)
+              else if poisonLoss then some (.poison, .tenPoison)
               else none
             match loss? with
             | none => pure ()
@@ -418,7 +430,8 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
           if o.printed.isToken && o.zone != .battlefield then some o.id else none)
       let copiesOutside : Array ObjectId :=
         g.objects.filterMap (fun o =>
-          if o.isCopy && !o.printed.isToken && o.zone != .stack && o.zone != .battlefield then
+          if o.isCopy && !o.printed.isToken && o.zone != .stack && o.zone != .battlefield &&
+              !(o.zone == .exile && ((g.playPermission o).bind (·.prepareSource)).isSome) then
             some o.id
           else none)
       let sagaMoves : Array SbaGraveyardMove :=

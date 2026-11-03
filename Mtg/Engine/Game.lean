@@ -293,7 +293,9 @@ def mustApply (g : Game) (p : PlayerId) (a : Action) : Game :=
         | some spell =>
           if !(g.chosenModesOf spell).isEmpty then mustApply g actor .decline else
           match g.defaultMode p spell with
-          | none => panic! "no legal mode (CR 601.2b)"
+          | none =>
+            if Game.minModesFor (g.baseCard spell) == 0 then mustApply g actor .decline
+            else panic! "no legal mode (CR 601.2b)"
           | some i => mustApply g actor (.chooseMode i)
       | .turnFaceUp => panic! "unexpected mode choice for turnFaceUp"
   | .chooseX _, some actor =>

@@ -297,7 +297,15 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
         |>.logMsg "no active player declares attackers (CR 800.4j)"
     else g
   | .declareBlockers =>
-    let filtered := g.blockersQueue.filter (· != p)
+    let livingMate? :=
+      g.livingPlayers.find? (fun m => g.areTeammates p m.id && g.defendingPlayers.contains m.id)
+        |>.map (·.id)
+    let filtered :=
+      match livingMate? with
+      | some mid =>
+        if g.blockersQueue.contains mid then g.blockersQueue.filter (· != p)
+        else g.blockersQueue.map (fun q => if q == p then mid else q)
+      | none => g.blockersQueue.filter (· != p)
     if g.currentBlockersPlayer == p then
       if filtered.isEmpty then
         let g := g.changes #[.pending .none, .blockersQueue #[]]
@@ -338,7 +346,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
     else g
   | .mayPayGeneric q _ =>
     if q == p then
-      let g := g.changes #[.pending .none, .mayPayAlsoPlusOneOn none]
+      let g := g.change (.pending .none)
       let g := if g.mayThenDrop > 0 then g.declineMayThenCore else g
       g.logMsg s!"{(g.player p).name} does not pay (CR 800.4f)"
     else g
@@ -449,7 +457,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
         else #[]
       g.changes (#[.pending .none] ++ clearProp)
     else
-      (g.change (.pending .none)).chainPendingReplacement (.finishPostStep 88 q)
+      (g.change (.pending .none)).chainPendingReplacement (.finishPostStep .resumeChooseModeAfterLeave q)
   | .chooseTargets q =>
     if q == p then
       let clearProp : Array EngineChange :=
@@ -457,7 +465,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
         else #[]
       g.changes (#[.pending .none] ++ clearProp)
     else
-      (g.change (.pending .none)).chainPendingReplacement (.finishPostStep 89 q)
+      (g.change (.pending .none)).chainPendingReplacement (.finishPostStep .resumeChooseTargetsAfterLeave q)
   | .activateManaAbilities q | .chooseX q
   | .chooseAdditionalCost q | .chooseKicker q | .chooseGift q
   | .chooseTeamwork q | .chooseTeamworkCreatures q _
@@ -548,10 +556,10 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
               s!"{(g.player next).name} discards two cards"
           else
             g.chainPendingReplacement
-              (.finishPostStep 10 controller (n := draws) (modes := living.map (·.idx)))
+              (.finishPostStep .continueDiscardTwo controller (n := draws) (modes := living.map (·.idx)))
         | none =>
           if g.stillInGame controller && draws > 0 then
-            g.chainPendingReplacement (.finishPostStep 10 controller (n := draws) (modes := #[]))
+            g.chainPendingReplacement (.finishPostStep .continueDiscardTwo controller (n := draws) (modes := #[]))
           else g
     | .worldsPutCreatures eligible rest exiled chosen sourceId =>
       let living := rest.filter g.stillInGame
@@ -564,7 +572,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
         let rec offerNext : List PlayerId → Game
           | [] =>
             (g.change (.pending .none)).chainPendingReplacement
-              (.finishPostStep 67 g.activePlayer (sourceId := sourceId) (ids := exiled)
+              (.finishPostStep .worldsWithinWorlds g.activePlayer (sourceId := sourceId) (ids := exiled)
                 (targets := chosen.map Target.card))
           | r :: more =>
             let elig := (g.player r).hand.filter (fun id => (g.findObject? id).any g.isCreature)
@@ -653,7 +661,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
       else if q == p then
         let g := g.changes (#[.pending .none, .chooseModesRest none] ++ clearProp)
         if g.stillInGame controller then
-          g.chainPendingReplacement (.finishPostStep 78 controller (sourceId := some sourceId))
+          g.chainPendingReplacement (.finishPostStep .millSourceInfluenceCount controller (sourceId := some sourceId))
         else g
       else g
     | .tricksterLibrary caster _id connive _ =>
@@ -700,7 +708,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
         g.changes (#[.pending .none, .chooseModesRest none] ++ clearProp)
       else
         (g.change (.pending .none)).chainPendingReplacement
-          (.finishPostStep 90 q (n := remaining) (sourceId := some objId) (modes := chosen))
+          (.finishPostStep .resumeTriggerModesAfterLeave q (n := remaining) (sourceId := some objId) (modes := chosen))
     | .blackGatePlayer oid players =>
       let players' := players.filter g.stillInGame
       if q == p then
@@ -746,7 +754,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
       let g := (g.change (.pending .none)).logMsg s!"{(g.player p).name} declines (CR 800.4f)"
       if n > 0 then
         g.chainPendingReplacement
-          (.finishPostStep 33 p (n := n) (sourceId := sid)
+          (.finishPostStep .dealDamageToEachOpponent p (n := n) (sourceId := sid)
             (cause := some (g.resolvingOrRuleCause p sid)))
       else g
     else g
@@ -805,12 +813,31 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
         g.changes #[.pending .none, .afterRandom .none]
       else g
 
-/-- `p` loses and leaves the game (CR 800.4 / 800.4a). Owned objects leave
-immediately (until-leaves one-shots return); control-changing effects that
-gave them control end; their non-card stack objects cease; remaining objects
-they control are exiled. This is not a state-based action. -/
-def playerLeavesGame (g : Game) (p : PlayerId) : Game :=
-  if (g.player p).leftTheGame then g
+/-- Restore a non-SBA pending decision saved across `playerLeavesGameCore`,
+popping any pushed outer `pendingReplacement` when unpaused (CR 800.4a). -/
+def restoreSavedPostLeave (g : Game) (saved? : Option Pending) (popOuter : Bool) : Game :=
+  match saved? with
+  | none => g
+  | some saved =>
+    if g.sbaPaused || g.currentBatch.isSome then
+      g.chainPendingReplacement (.restorePending saved popOuter)
+    else
+      let g :=
+        if popOuter then
+          match g.outerPendingReplacements.back? with
+          | some popped => (g.change .popOuterPendingReplacement).chainPendingReplacement popped
+          | none => g
+        else g
+      g.change (.pending saved)
+
+/-- Core implementation of `playerLeavesGame` (CR 800.4 / 800.4a). When
+`deferRestore` is `true`, returns any stashed `(savedNonSbaPending, popOuter)`
+instead of chaining `.restorePending` immediately so multi-player departure
+loops (`leavePlayersWhoLost`, `concede`) can finish remaining departures and
+post-departure SBAs before restoring `savedNonSbaPending`. -/
+def playerLeavesGameCore (g : Game) (p : PlayerId)
+    (deferRestore : Bool := false) : Game × Option (Pending × Bool) :=
+  if (g.player p).leftTheGame then (g, none)
   else
     let cause := some (EventCause.gameRule .playerLeftGame)
     let wasMonarch := (g.player p).isMonarch
@@ -910,28 +937,19 @@ def playerLeavesGame (g : Game) (p : PlayerId) : Game :=
         | none => g
       let g := g.runEndControlExileLoop exileQueue (cause := cause)
       (g, (savedNonSbaPending?, pushedOuterCont?))
-    let restoreSaved (g : Game) : Game :=
-      match savedNonSbaPending? with
-      | none => g
-      | some saved =>
-        if g.sbaPaused || g.currentBatch.isSome then
-          g.chainPendingReplacement (.restorePending saved)
-        else
-          let g :=
-            if pushedOuterCont?.isSome then
-              match g.outerPendingReplacements.back? with
-              | some popped => g.changes #[.popOuterPendingReplacement, .pendingReplacement (some popped)]
-              | none => g
-            else g
-          g.change (.pending saved)
+    let popOuter := pushedOuterCont?.isSome
+    let deferredInfo := savedNonSbaPending?.map (·, popOuter)
+    let finish (g : Game) : Game × Option (Pending × Bool) :=
+      if deferRestore then (g, deferredInfo)
+      else (g.restoreSavedPostLeave savedNonSbaPending? popOuter, none)
     let allLinked := linkedExileIds ++ g.queuedLinkedExile
     let g := if g.queuedLinkedExile.isEmpty then g else g.change .clearQueuedLinkedExile
     if allLinked.isEmpty then
-      restoreSaved g
+      finish g
     else if g.sbaPaused || g.currentBatch.isSome then
-      restoreSaved (g.chainPendingReplacement (.finishLinkedExileMove allLinked))
+      finish (g.chainPendingReplacement (.finishLinkedExileMove allLinked))
     else if savedNonSbaPending?.isSome then
-      restoreSaved (g.returnLinkedExileMoves allLinked)
+      finish (g.returnLinkedExileMoves allLinked)
     else
       let outerCont? := g.pendingReplacement
       let g :=
@@ -939,53 +957,77 @@ def playerLeavesGame (g : Game) (p : PlayerId) : Game :=
         | some outer => (g.change (.pendingReplacement none)).change (.pushOuterPendingReplacement outer)
         | none => g
       let g := g.returnLinkedExileMoves allLinked
-      if g.pending == .none && g.pendingReplacement.isNone && outerCont?.isSome then
-        match g.outerPendingReplacements.back? with
-        | some popped => g.changes #[.popOuterPendingReplacement, .pendingReplacement (some popped)]
-        | none => g
-      else g
+      let g :=
+        if g.pending == .none && g.pendingReplacement.isNone && outerCont?.isSome then
+          match g.outerPendingReplacements.back? with
+          | some popped => g.changes #[.popOuterPendingReplacement, .pendingReplacement (some popped)]
+          | none => g
+        else g
+      (g, none)
+
+/-- `p` loses and leaves the game (CR 800.4 / 800.4a). Owned objects leave
+immediately (until-leaves one-shots return); control-changing effects that
+gave them control end; their non-card stack objects cease; remaining objects
+they control are exiled. This is not a state-based action. -/
+def playerLeavesGame (g : Game) (p : PlayerId) : Game :=
+  (g.playerLeavesGameCore p false).1
 
 /-- Perform CR 800.4a for every player who has lost but has not yet left.
 Skipped when the game has already ended (two-player games, CR 104.2a). If a
-departing player's post-departure `returnLinkedExileMoves` pauses on
-`Pending.chooseReplacement`, chains `.leavePlayersWhoLost` for any remaining
-losers (CR 104.5 / 800.4a). -/
-def leavePlayersWhoLost (g : Game) : Game :=
+departing player's departure pauses on `Pending.chooseReplacement`, chains
+`.leavePlayersWhoLost` for any remaining losers and deferred `savedPending`
+(CR 104.5 / 800.4a). -/
+def leavePlayersWhoLost (g : Game)
+    (savedIn : Option Pending := none) (popOuterIn : Bool := false) : Game :=
   if g.over then g
   else if let .chooseReplacement .. := g.pending then
-    if g.players.any (fun pl => pl.lost && !pl.leftTheGame) then
-      g.chainPendingReplacement .leavePlayersWhoLost
+    if g.players.any (fun pl => pl.lost && !pl.leftTheGame) || savedIn.isSome then
+      g.chainPendingReplacement (.leavePlayersWhoLost savedIn popOuterIn)
     else g
   else Id.run do
     let mut g := g
+    let mut saved? := savedIn
+    let mut popOuter := popOuterIn
     for pl in g.players do
       if g.over then
         return g
       if pl.lost && !(g.player pl.id).leftTheGame then
-        g := g.playerLeavesGame pl.id
+        if saved?.isSome && !g.sbaPaused && g.currentBatch.isNone then
+          g := g.restoreSavedPostLeave saved? popOuter
+          saved? := none
+          popOuter := false
+        let (g', newlySaved?) := g.playerLeavesGameCore pl.id (deferRestore := true)
+        g := g'
+        if let some (sp, po) := newlySaved? then
+          if saved?.isNone then
+            saved? := some sp
+            popOuter := po
         if let .chooseReplacement .. := g.pending then
-          if g.players.any (fun r => r.lost && !r.leftTheGame) then
-            g := g.chainPendingReplacement .leavePlayersWhoLost
+          if g.players.any (fun r => r.lost && !r.leftTheGame) || saved?.isSome then
+            g := g.chainPendingReplacement (.leavePlayersWhoLost saved? popOuter)
           return g
-    return g
+    return g.restoreSavedPostLeave saved? popOuter
 
 def emptyManaPools (g : Game) : Game :=
-  Id.run do
-    let mut g := g
+  if !g.players.any (fun pl => !pl.manaPool.isEmpty) then g
+  else
     let cause := some (EventCause.turnBased .emptyManaPools)
-    for pl in g.players do
-      if !pl.manaPool.isEmpty then
-        let colorless :=
-          (g.permanentsOf pl.id).any (fun o =>
-            (g.baseCard o).unspentManaBecomesColorless && g.retainsPrintedAbilities o)
-        let units := pl.manaPool.toUnits
-        if colorless then
-          g := g.record (GameEvent.manaEmptied g.turnNumber pl.id units true (cause := cause))
-          g := g.logMsg s!"{pl.name}'s unspent mana becomes colorless"
-        else
-          g := g.logMsg s!"{pl.name} empties mana pool ({pl.manaPool})"
-          g := g.record (GameEvent.manaEmptied g.turnNumber pl.id units false (cause := cause))
-    return g
+    g.withBatch cause fun g =>
+      Id.run do
+        let mut g := g
+        for pl in g.players do
+          if !pl.manaPool.isEmpty then
+            let colorless :=
+              (g.permanentsOf pl.id).any (fun o =>
+                (g.baseCard o).unspentManaBecomesColorless && g.retainsPrintedAbilities o)
+            let units := pl.manaPool.toUnits
+            if colorless then
+              g := g.record (GameEvent.manaEmptied g.turnNumber pl.id units true (cause := cause))
+              g := g.logMsg s!"{pl.name}'s unspent mana becomes colorless"
+            else
+              g := g.logMsg s!"{pl.name} empties mana pool ({pl.manaPool})"
+              g := g.record (GameEvent.manaEmptied g.turnNumber pl.id units false (cause := cause))
+        return g
 
 end Game
 end Mtg.Engine

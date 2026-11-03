@@ -29,10 +29,6 @@ def grantEnduringStoryIfNeeded (g : Game) (p : PlayerId) : Game :=
     .enduringStory
     "has an enduring story"
 
-/-- Grant an enduring story to every player who now qualifies. -/
-def refreshEnduringStory (g : Game) : Game :=
-  g.players.foldl (fun g pl => g.grantEnduringStoryIfNeeded pl.id) g
-
 /-- Whether `p` has an emblem named The Ring. -/
 def hasTheRing (g : Game) (p : PlayerId) : Bool :=
   (g.player p).theRingAbilities > 0
@@ -57,25 +53,27 @@ def ringBearerChoices (g : Game) (p : PlayerId) : Array GameObject :=
 def setRingBearer (g : Game) (p : PlayerId) (chosen : Option ObjectId)
     (cause : Option EventCause := none) : Game :=
   let effCause := g.resolveOptionalCause (cause.orElse (fun _ => g.resolvingOneShotCause p)) (fallbackCtrl := some p)
-  let g :=
-    match (g.player p).ringBearerId with
-    | some oldId =>
-      if some oldId == chosen then g
-      else
-        match g.findObject? oldId with
-        | some oldObj =>
-          g.record (GameEvent.designation g.turnNumber (g.snapshot oldObj) .ringBearer false (cause := effCause))
-        | none =>
-          let snap := (g.lastKnownBefore? oldId).getD { id := some oldId }
-          g.record (GameEvent.designation g.turnNumber snap .ringBearer false (cause := effCause))
+  g.withBatchCore (some effCause) fun g =>
+    let effCause := g.resolveOptionalCause (cause.orElse (fun _ => g.resolvingOneShotCause p)) (fallbackCtrl := some p)
+    let g :=
+      match (g.player p).ringBearerId with
+      | some oldId =>
+        if some oldId == chosen then g
+        else
+          match g.findObject? oldId with
+          | some oldObj =>
+            g.record (GameEvent.designation g.turnNumber (g.snapshot oldObj) .ringBearer false (cause := effCause))
+          | none =>
+            let snap := (g.lastKnownBefore? oldId).getD { id := some oldId }
+            g.record (GameEvent.designation g.turnNumber snap .ringBearer false (cause := effCause))
+      | none => g
+    match chosen with
     | none => g
-  match chosen with
-  | none => g
-  | some id =>
-    match g.findObject? id with
-    | none => g
-    | some o =>
-      g.record (GameEvent.designation g.turnNumber (g.snapshot o) .ringBearer true (cause := effCause))
+    | some id =>
+      match g.findObject? id with
+      | none => g
+      | some o =>
+        g.record (GameEvent.designation g.turnNumber (g.snapshot o) .ringBearer true (cause := effCause))
 
 /-- Grant the city's blessing if `p` now qualifies. The designation is on the
 player and is never removed. Not a triggered ability. -/
@@ -84,10 +82,6 @@ def grantCitysBlessingIfNeeded (g : Game) (p : PlayerId) : Game :=
     (fun g p => g.controlsAscend p && g.permanentCount p ≥ 10)
     .citysBlessing
     "has the city's blessing"
-
-/-- Grant the city's blessing to every player who now qualifies. -/
-def refreshCitysBlessing (g : Game) : Game :=
-  g.players.foldl (fun g pl => g.grantCitysBlessingIfNeeded pl.id) g
 
 /-- Finish placing a shadow counter on `targetId` once `recordPutCounters` completes. -/
 def finishShadowCounter (g : Game) (targetId : ObjectId) (before : Nat) : Game :=

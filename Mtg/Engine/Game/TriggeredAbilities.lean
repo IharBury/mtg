@@ -258,7 +258,7 @@ def resolveRandomCreatureReveal (g : Game) (p : PlayerId) (revealed : Array Obje
     let (g, newId) := g.putOntoBattlefield chosen p (cause := cause)
     if let .chooseReplacement .. := g.pending then
       g.chainPendingReplacement
-        (.finishPostStep 70 p (n := libraryOwner.idx) (cardId := some chosen)
+        (.finishPostStep .enteredThenPutRestBottomRandom p (n := libraryOwner.idx) (cardId := some chosen)
           (ids := rest) (cause := cause))
     else
       let g :=
@@ -887,14 +887,14 @@ def applyAffectedCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbil
       else g.addIndestructibleCounter o n
     | .doubleStrike =>
       if n == 1 then g.applyPermanentAction o .doubleStrikeCounter
-      else g.putCountersDeferredLog o.id .doubleStrike n (g.controllerOf o) 2
+      else g.putCountersDeferredLog o.id .doubleStrike n (g.controllerOf o) .gets
     | .burden =>
       if n == 1 then g.applyPermanentAction o .burdenCounter
       else g.addBurdenCounter o n
     | .stun =>
-      g.putCountersDeferredLog o.id .stun n (g.controllerOf o) 0
+      g.putCountersDeferredLog o.id .stun n (g.controllerOf o) .isPutOn
     | .loyalty =>
-      g.putCountersDeferredLog o.id .loyalty n (some controller) 1
+      g.putCountersDeferredLog o.id .loyalty n (some controller) .isPutOn
     | kind =>
       g.addCounters o kind n (byPlayer := some controller)
 
@@ -990,7 +990,7 @@ def applyTriggerDamage (g : Game) (controller : PlayerId) (ab : TriggeredAbility
       let g := g.dealDamageFrom sourceName o amt (source := sourceId.bind g.findObject?)
       if let .chooseReplacement .. := g.pending then
         g.chainPendingReplacement
-          (.finishPostStep 34 controller lethal none (some o.id) (modes := #[startIdx]))
+          (.finishPostStep .noteExcessDamageDealt controller lethal none (some o.id) (modes := #[startIdx]))
       else
         let dealt := g.damageDealtToPermanentSince o.id startIdx
         g.change (.excessDamageThisWay (dealt - lethal)))
@@ -1049,7 +1049,7 @@ def applyTriggerDamage (g : Game) (controller : PlayerId) (ab : TriggeredAbility
           let startIdx := g.events.size
           let g := g.applyEffect controller (Effect.dealDamage n) #[tgt] (sourceId := sourceId)
           if let .chooseReplacement .. := g.pending then
-            g.chainPendingReplacement (.finishPostStep 35 controller startIdx none (some oid))
+            g.chainPendingReplacement (.finishPostStep .notePermanentDealtDamage controller startIdx none (some oid))
           else
             let marked :=
               (g.findObject? oid).any (·.isOnBattlefield) &&
@@ -1157,7 +1157,7 @@ def applyTriggerDamage (g : Game) (controller : PlayerId) (ab : TriggeredAbility
           let game := game.dealDamageFrom sourceName o amt (source := src)
           if let .chooseReplacement .. := game.pending then
             game.chainPendingReplacement
-              (.finishPostStep 34 controller lethal none (some o.id) (modes := #[startIdx]))
+              (.finishPostStep .noteExcessDamageDealt controller lethal none (some o.id) (modes := #[startIdx]))
           else
             let dealt := game.damageDealtToPermanentSince o.id startIdx
             game.change (.excessDamageThisWay (dealt - lethal))
@@ -1165,7 +1165,7 @@ def applyTriggerDamage (g : Game) (controller : PlayerId) (ab : TriggeredAbility
           let startIdx := game.events.size
           let game := game.dealDamageFrom sourceName o (Int.ofNat n) (source := src)
           if let .chooseReplacement .. := game.pending then
-            game.chainPendingReplacement (.finishPostStep 35 controller startIdx none (some o.id))
+            game.chainPendingReplacement (.finishPostStep .notePermanentDealtDamage controller startIdx none (some o.id))
           else
             let marked :=
               (game.findObject? o.id).any (·.isOnBattlefield) &&
@@ -1200,42 +1200,65 @@ def applyTriggerDamage (g : Game) (controller : PlayerId) (ab : TriggeredAbility
           else g.withBatch batchCause fun g => objs.foldl dealPermanent g
         | none => g
 
+def keywordCounterSpecs : Array ((Game → GameObject → Bool) × CounterKind) := #[
+  (Game.hasHaste, .haste),
+  (Game.hasFlying, .flying),
+  ((fun g o => g.hasKeyword o (·.firstStrike)), .firstStrike),
+  (Game.hasDoubleStrike, .doubleStrike),
+  (Game.hasDeathtouch, .deathtouch),
+  (Game.hasIndestructible, .indestructible),
+  (Game.hasLifelink, .lifelink),
+  (Game.hasMenace, .menace),
+  ((fun g o => g.hasKeyword o (·.reach)), .reach),
+  (Game.hasTrample, .trample),
+  (Game.hasVigilance, .vigilance)
+]
+
 /-- Put one keyword counter on `src` when `other` has that keyword and `src`
 does not. -/
 def copyKeywordCounter (g : Game) (src other : GameObject)
-    (has : GameObject → Bool) (kind : CounterKind) (name : String) : Game :=
+    (has : GameObject → Bool) (kind : CounterKind) : Game :=
   if has other && !has src then
-    g.recordPutCounters src.id kind 1 (byPlayer := g.controllerOf src)
-      |>.logMsg s!"{g.name src} gets a {name} counter"
+    g.putCountersDeferredLog src.id kind 1 (g.controllerOf src) .gets
   else g
+
+/-- Pause-safe loop copying missing keyword counters from `otherId` onto each
+permanent in `srcIds`. -/
+def copyMissingKeywordsStep (g : Game) (srcIds : Array ObjectId) (otherId : ObjectId)
+    (startKw : Nat := 0) : Game := Id.run do
+  if let .chooseReplacement .. := g.pending then
+    return g.chainPendingReplacement
+      (.finishPostStep .copyMissingKeywordsStep g.activePlayer (n := startKw) (cardId := some otherId) (ids := srcIds))
+  let mut g := g
+  let mut kwStart := startKw
+  for sIdx in [0:srcIds.size] do
+    let sid := srcIds[sIdx]!
+    for kIdx in [kwStart:keywordCounterSpecs.size] do
+      let (has, kind) := keywordCounterSpecs[kIdx]!
+      if let some src := g.findObject? sid then
+        if let some other := g.findObject? otherId then
+          if src.isOnBattlefield && has g other && !has g src then
+            g := g.putCountersDeferredLog src.id kind 1 (g.controllerOf src) .gets
+            if let .chooseReplacement .. := g.pending then
+              let nextKw := kIdx + 1
+              let (remSrcs, remKw) :=
+                if nextKw < keywordCounterSpecs.size then
+                  (srcIds.extract sIdx srcIds.size, nextKw)
+                else
+                  (srcIds.extract (sIdx + 1) srcIds.size, 0)
+              if !remSrcs.isEmpty then
+                g := g.chainPendingReplacement
+                  (.finishPostStep .copyMissingKeywordsStep g.activePlayer (n := remKw) (cardId := some otherId) (ids := remSrcs))
+              return g
+    kwStart := 0
+  return g
 
 /-- Put a counter on `src` for each keyword `other` has that `src` does not.
 Haste, flying, first strike, double strike, deathtouch, indestructible,
 lifelink, menace, reach, trample, and vigilance. -/
 def copyMissingKeywordCounters (g : Game) (src other : GameObject) : Game :=
   g.withBatch none fun g =>
-    let g := g.copyKeywordCounter src other g.hasHaste .haste "haste"
-    let src := g.object! src.id
-    let g := g.copyKeywordCounter src other g.hasFlying .flying "flying"
-    let src := g.object! src.id
-    let g := g.copyKeywordCounter src other
-      (fun o => g.hasKeyword o (·.firstStrike)) .firstStrike "first strike"
-    let src := g.object! src.id
-    let g := g.copyKeywordCounter src other g.hasDoubleStrike .doubleStrike "double strike"
-    let src := g.object! src.id
-    let g := g.copyKeywordCounter src other g.hasDeathtouch .deathtouch "deathtouch"
-    let src := g.object! src.id
-    let g := g.copyKeywordCounter src other g.hasIndestructible .indestructible "indestructible"
-    let src := g.object! src.id
-    let g := g.copyKeywordCounter src other g.hasLifelink .lifelink "lifelink"
-    let src := g.object! src.id
-    let g := g.copyKeywordCounter src other g.hasMenace .menace "menace"
-    let src := g.object! src.id
-    let g := g.copyKeywordCounter src other (fun o => g.hasKeyword o (·.reach)) .reach "reach"
-    let src := g.object! src.id
-    let g := g.copyKeywordCounter src other g.hasTrample .trample "trample"
-    let src := g.object! src.id
-    g.copyKeywordCounter src other g.hasVigilance .vigilance "vigilance"
+    g.copyMissingKeywordsStep #[src.id] other.id 0
 
 /-- Resolve `TriggerResolution.putCounters`. Each printed combination keeps
 the behavior of the constructor it replaced. Any other permanent the
@@ -1270,7 +1293,7 @@ def applyPutCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       (some "The target is no longer legal")
   | .ofKind .loyalty _, .source =>
     g.withSourceOnBattlefield sourceId (fun g o =>
-      g.putCountersDeferredLog o.id .loyalty 1 (some controller) 1)
+      g.putCountersDeferredLog o.id .loyalty 1 (some controller) .isPutOn)
   | .sourceCounters, .permanent _ =>
     -- Rulings 756 / 758: each kind of counter it had as it died, in the same
     -- numbers; nothing moves from the dead creature.
@@ -1288,10 +1311,10 @@ def applyPutCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
           g.logMsg s!"The counters are put on {g.name o}") "No target was chosen"
   | .ofKind .charge _, .source =>
     g.withSourceOnBattlefield sourceId (fun g o =>
-      g.putCountersDeferredLog o.id .charge 1 (some controller) 3)
+      g.putCountersDeferredLog o.id .charge 1 (some controller) .isPutOn)
   | .ofKind .quest _, .source =>
     g.withTriggerSource sourceId fun g src =>
-      g.putCountersDeferredLog src.id .quest 1 (some controller) 4
+      g.putCountersDeferredLog src.id .quest 1 (some controller) .getsWithTotal
   | .honePerOpponent, .source =>
     let opp? :=
       match targets[0]? with
@@ -1299,7 +1322,7 @@ def applyPutCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       | _ => g.firstLivingOpponent? controller
     let n := match opp? with | some opp => g.countCreaturesControlledBy opp | none => 0
     g.withTriggerSource sourceId fun g src =>
-      g.putCountersDeferredLog src.id .hone n (some controller) 5
+      g.putCountersDeferredLog src.id .hone n (some controller) .getsCount
   | .ofKind .plan _, .source =>
     match sourceId.bind g.findObject? with
     | some o =>
@@ -1327,7 +1350,7 @@ def applyPutCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
   | .ofKind .invasion _, .source =>
     let g := g.change (.notedCountThisWay 0)
     g.withSourceOnBattlefield sourceId (fun g src =>
-      g.putCountersDeferredLog src.id .invasion 1 (some controller) 6)
+      g.putCountersDeferredLog src.id .invasion 1 (some controller) .gets)
       "The source is no longer in play"
   | .ofKind .trample _, .permanent _ =>
     match targets[0]? with
@@ -1335,7 +1358,7 @@ def applyPutCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       match g.findObject? oid with
       | some o =>
         if o.isOnBattlefield && g.canBeTargetedBy controller o sourceId then
-          g.putCountersDeferredLog o.id .trample 1 (some controller) 7
+          g.putCountersDeferredLog o.id .trample 1 (some controller) .gets
         else g.logMsg "The target is no longer legal"
       | none => g
     | _ => g
@@ -1356,7 +1379,7 @@ def applyPutCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       | none => g.change (.skipTriggerSequenceRest true)
       | some none =>
         g.chainPendingReplacement
-          (.finishPostStep 57 controller (n := before) (sourceId := some sid)
+          (.finishPostStep .finishPalantirInfluence controller (n := before) (sourceId := some sid)
             (targets := match tgt with | some opp => #[Target.player opp] | none => #[]))
       | some (some increased) =>
         match tgt with
@@ -1367,7 +1390,7 @@ def applyPutCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         | none => g
   | .ofKind .loyalty _, .permanent _ =>
     g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
-      g.putCountersDeferredLog o.id .loyalty 1 (some controller) 1)
+      g.putCountersDeferredLog o.id .loyalty 1 (some controller) .isPutOn)
   | .plusOneSacrificedPower, .source =>
     let n := g.sacrificedPowerThisWay.getD 0
     let g := g.change (.sacrificedPowerThisWay none)
@@ -1386,7 +1409,7 @@ def applyPutCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       "The target is no longer legal"
   | .ofKind .doubleStrike n, .permanent false =>
     g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
-      g.putCountersDeferredLog o.id .doubleStrike n (some controller) 2)
+      g.putCountersDeferredLog o.id .doubleStrike n (some controller) .gets)
       "The target is no longer legal"
   | .ofKind .burden n, .permanent false =>
     g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
@@ -1394,7 +1417,7 @@ def applyPutCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       "The target is no longer legal"
   | .ofKind .stun n, .permanent false =>
     g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
-      g.putCountersDeferredLog o.id .stun n (g.controllerOf o) 0)
+      g.putCountersDeferredLog o.id .stun n (g.controllerOf o) .isPutOn)
       "The target is no longer legal"
   | .ofKind kind n, .source =>
     g.applyAffectedCounters controller ab sourceId targets kind n .source
@@ -1416,10 +1439,17 @@ def applyPutCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
   | .missingKeywordsFromTarget, .source =>
     g.withSourceOnBattlefield sourceId (fun g src =>
       match targets[0]? with
-      | some (Target.permanent id) =>
+      | some t@(Target.permanent id) =>
+        let legal :=
+          if ab.targetKind != .none then
+            g.targetLegalAt controller ab.targetKind 0 t sourceId
+          else
+            (g.findObject? id).any (fun other =>
+              other.isOnBattlefield && g.isCreature other && other.id != src.id &&
+                g.canBeTargetedBy controller other sourceId)
         match g.findObject? id with
         | some other =>
-          if !other.isOnBattlefield || !g.isCreature other || other.id == src.id then
+          if !legal || !other.isOnBattlefield || !g.isCreature other || other.id == src.id then
             g.logMsg "The target is no longer legal"
           else
             g.copyMissingKeywordCounters src other
@@ -1471,18 +1501,24 @@ def applyPutCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
                   (byPlayer := some controller)
               else game) g
     | .missingKeywordsFromTarget =>
-      let other? :=
-        match targets[0]? with
-        | some (Target.permanent id) => g.findObject? id
-        | _ => none
-      match other?, g.permanentsNamed ctx who with
-      | some other, some objs =>
-        if !other.isOnBattlefield || !g.isCreature other then g
-        else
-          g.withBatch none fun g =>
-            objs.foldl (fun game o =>
-              game.copyMissingKeywordCounters (game.object! o.id) other) g
-      | _, _ => g
+      match targets[0]? with
+      | some t@(Target.permanent id) =>
+        let legal :=
+          if ab.targetKind != .none then
+            g.targetLegalAt controller ab.targetKind 0 t sourceId
+          else
+            (g.findObject? id).any (fun other =>
+              other.isOnBattlefield && g.isCreature other &&
+                g.canBeTargetedBy controller other sourceId)
+        match g.findObject? id, g.permanentsNamed ctx who with
+        | some other, some objs =>
+          if !legal || !other.isOnBattlefield || !g.isCreature other then
+            g.logMsg "The target is no longer legal"
+          else
+            g.withBatch none fun g =>
+              g.copyMissingKeywordsStep (objs.map (·.id)) other.id 0
+        | _, _ => g.logMsg "The target is no longer legal"
+      | _ => g
     | .ofKind .. => g
 
 /-- Resolve `TriggerResolution.createTokens`. Each printed combination keeps
@@ -1509,7 +1545,7 @@ def applyCreateTokens (g : Game) (controller : PlayerId)
     let noteCode := match note with | .attachReflexive => 1 | _ => 0
     if let .chooseReplacement .. := g.pending then
       g.chainPendingReplacement
-        (.finishPostStep 71 controller (sourceId := sourceId) (modes := #[noteCode, 1, minId]))
+        (.finishPostStep .createdTokenNote controller (sourceId := sourceId) (modes := #[noteCode, 1, minId]))
     else
       match note, last with
       | .attachReflexive, some id =>
@@ -1568,7 +1604,7 @@ def applyCreateTokens (g : Game) (controller : PlayerId)
         (tapped := tapped)
     if let .chooseReplacement .. := g.pending then
       g.chainPendingReplacement
-        (.finishPostStep 71 controller (n := inv) (sourceId := sourceId) (modes := #[3, 0, minId]))
+        (.finishPostStep .createdTokenNote controller (n := inv) (sourceId := sourceId) (modes := #[3, 0, minId]))
     else
       match last with
       | some id => g.changes #[.notedCountThisWay inv, .createdTokenThisWay (some id)]
@@ -1583,7 +1619,7 @@ def applyCreateTokens (g : Game) (controller : PlayerId)
         (tapped := tapped)
     if let .chooseReplacement .. := g.pending then
       g.chainPendingReplacement
-        (.finishPostStep 71 controller (sourceId := sourceId) (modes := #[2, 0, minId]))
+        (.finishPostStep .createdTokenNote controller (sourceId := sourceId) (modes := #[2, 0, minId]))
     else
       match last with
       | some id => g.change (.createdTokenThisWay (some id))
@@ -1647,7 +1683,7 @@ def applyCreateTokens (g : Game) (controller : PlayerId)
         match noteCode with
         | some code =>
           g.chainPendingReplacement
-            (.finishPostStep 71 controller (n := inv) (sourceId := sourceId) (modes := #[code, 0, minId]))
+            (.finishPostStep .createdTokenNote controller (n := inv) (sourceId := sourceId) (modes := #[code, 0, minId]))
         | none => g
       else
         match note, last with
@@ -1734,7 +1770,7 @@ partial def runTriggerExileLoop (g : Game) (controller : PlayerId)
     if ids.isEmpty && modeCode != 20 then g
     else
       g.chainPendingReplacement
-        (.finishPostStep 120 controller casts sourceId none
+        (.finishPostStep .triggerExileLoop controller casts sourceId none
           (ids := ids) (targets := accMovedPreIds.map Target.card)
           (modes := #[modeCode, 0]) (cause := cause))
   else
@@ -1760,7 +1796,7 @@ partial def runTriggerExileLoop (g : Game) (controller : PlayerId)
             if rem.isEmpty then g
             else
               g.chainPendingReplacement
-                (.finishPostStep 120 controller casts sourceId none
+                (.finishPostStep .triggerExileLoop controller casts sourceId none
                   (ids := rem) (modes := #[modeCode, 0]) (cause := cause))
           else
             g.runTriggerExileLoop controller sourceId modeCode casts rem accMovedPreIds cause
@@ -1775,7 +1811,7 @@ partial def runTriggerExileLoop (g : Game) (controller : PlayerId)
             if rem.isEmpty then g
             else
               g.chainPendingReplacement
-                (.finishPostStep 120 controller casts sourceId none
+                (.finishPostStep .triggerExileLoop controller casts sourceId none
                   (ids := rem) (modes := #[modeCode, 0]) (cause := cause))
           else
             g.runTriggerExileLoop controller sourceId modeCode casts rem accMovedPreIds cause
@@ -1785,7 +1821,7 @@ partial def runTriggerExileLoop (g : Game) (controller : PlayerId)
             if rem.isEmpty then g
             else
               g.chainPendingReplacement
-                (.finishPostStep 120 controller casts sourceId none
+                (.finishPostStep .triggerExileLoop controller casts sourceId none
                   (ids := rem) (modes := #[modeCode, 0]) (cause := cause))
           else
             g.runTriggerExileLoop controller sourceId modeCode casts rem accMovedPreIds cause
@@ -1794,7 +1830,7 @@ partial def runTriggerExileLoop (g : Game) (controller : PlayerId)
           let acc' := accMovedPreIds.push o.id
           if let .chooseReplacement .. := g.pending then
             g.chainPendingReplacement
-              (.finishPostStep 120 controller casts sourceId none
+              (.finishPostStep .triggerExileLoop controller casts sourceId none
                 (ids := rem) (targets := acc'.map Target.card)
                 (modes := #[modeCode, 0]) (cause := cause))
           else
@@ -1813,7 +1849,7 @@ partial def runTriggerExileLoop (g : Game) (controller : PlayerId)
           let (g, _) := g.move o.id .exile none (cause := cause)
           if let .chooseReplacement .. := g.pending then
             g.chainPendingReplacement
-              (.finishPostStep 120 controller casts sourceId (some o.id)
+              (.finishPostStep .triggerExileLoop controller casts sourceId (some o.id)
                 (ids := rem) (targets := accMovedPreIds.map Target.card)
                 (modes := #[modeCode, flag]) (name := name) (cause := cause))
           else
@@ -1837,13 +1873,22 @@ def applyExile (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     let g := g.changes #[.notedCopyObject none, .notedHostId none]
     g.withSourceStillOnBattlefield sourceId fun g src =>
       match targets[0]? with
-      | some (Target.permanent id) =>
-        match g.findObject? id with
-        | some tgt =>
-          let hostId := src.attachedTo
-          let g := g.exileUntilSourceLeaves sourceId tgt
-          g.changes #[.notedCopyObject (some tgt), .notedHostId hostId]
-        | none => g.logMsg "The target is no longer legal"
+      | some t@(Target.permanent id) =>
+        let legal :=
+          if ab.targetKind != .none then
+            g.targetLegalAt controller ab.targetKind 0 t sourceId
+          else
+            (g.findObject? id).any (fun o =>
+              o.isOnBattlefield && g.canBeTargetedBy controller o sourceId)
+        if !legal then
+          g.illegalAbilityTarget t
+        else
+          match g.findObject? id with
+          | some tgt =>
+            let hostId := src.attachedTo
+            let g := g.exileUntilSourceLeaves sourceId tgt
+            g.changes #[.notedCopyObject (some tgt), .notedHostId hostId]
+          | none => g.illegalAbilityTarget t
       | _ => g
   | .target, .untilSourceLeaves, .none =>
     g.withSourceStillOnBattlefield sourceId fun g _ =>
@@ -1881,7 +1926,7 @@ def applyExile (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       let g := g.withBatch (some cause) fun g =>
         g.exilePermanentsLoop eligible (logExile := false) (cause := some cause)
       if let .chooseReplacement .. := g.pending then
-        g.chainPendingReplacement (.finishPostStep 72 controller (ids := eligible))
+        g.chainPendingReplacement (.finishPostStep .noteExiledIds controller (ids := eligible))
       else
         let exiled := eligible.filterMap (fun id => (g.followMovedToZone? id (· == .exile)).map (·.id))
         g.change (.exiledIdsThisWay exiled)
@@ -1897,7 +1942,7 @@ def applyExile (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         | some o =>
           let (g, _) := g.move o.id .exile none
           if let .chooseReplacement .. := g.pending then
-            g.chainPendingReplacement (.finishPostStep 119 controller 0 sourceId (some o.id))
+            g.chainPendingReplacement (.finishPostStep .notePlayExiledThisWay controller 0 sourceId (some o.id))
           else
             match g.followMovedToZone? o.id (· == .exile) with
             | some moved => g.change (.playExiledThisWay (some moved.id))
@@ -2037,28 +2082,38 @@ def applySacrifice (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target)
     (what : TriggeredAbility.ObjectSelector)
     (note : TriggeredAbility.TriggerSacrificeNote) : Game :=
-  let finishSacNote (game : Game) (sid : ObjectId) (noteTag : Nat) : Game :=
-    if noteTag == 0 then game
-    else if let .chooseReplacement .. := game.pending then
-      game.chainPendingReplacement (.finishPostStep 84 controller (n := noteTag) (ids := #[sid]))
-    else if !(game.findObject? sid).any GameObject.isOnBattlefield then
-      if noteTag == 1 then game.change (.sourceWasSacrificed true)
-      else game.change (.planWasSacrificed true)
-    else game
-  let sacrificeSource (how : TriggeredAbility.SacrificeSourceHow) (noteTag : Nat) : Game :=
+  let finishSacNote (game : Game) (sid : ObjectId)
+      (sacNote : TriggeredAbility.TriggerSacrificeNote) : Game :=
+    match sacNote with
+    | .none => game
+    | .noted =>
+      if let .chooseReplacement .. := game.pending then
+        game.chainPendingReplacement (.finishPostStep .noteSacrificedSource controller (ids := #[sid]))
+      else if !(game.findObject? sid).any GameObject.isOnBattlefield then
+        game.change (.sourceWasSacrificed true)
+      else game
+    | .forReflexive =>
+      if let .chooseReplacement .. := game.pending then
+        game.chainPendingReplacement (.finishPostStep .noteSacrificedPlan controller (ids := #[sid]))
+      else if !(game.findObject? sid).any GameObject.isOnBattlefield then
+        game.change (.planWasSacrificed true)
+      else game
+  let sacrificeSource (how : TriggeredAbility.SacrificeSourceHow)
+      (sacNote : TriggeredAbility.TriggerSacrificeNote) : Game :=
     let g :=
-      if noteTag == 1 then g.change (.sourceWasSacrificed false)
-      else if noteTag == 2 then g.change (.planWasSacrificed false)
-      else g
+      match sacNote with
+      | .noted => g.change (.sourceWasSacrificed false)
+      | .forReflexive => g.change (.planWasSacrificed false)
+      | .none => g
     match how with
     | .isSacrificed =>
       g.withSourceOnBattlefield sourceId (fun g src =>
         let g := g.sacrificeToGraveyard src s!"{g.name src} is sacrificed"
-        finishSacNote g src.id noteTag)
+        finishSacNote g src.id sacNote)
     | .controllerSacrifices =>
       g.withSourceOnBattlefield sourceId (fun g src =>
         let g := g.sacrificeToGraveyard src s!"{(g.player controller).name} sacrifices {g.name src}"
-        finishSacNote g src.id noteTag)
+        finishSacNote g src.id sacNote)
     | .movedAsSacrificed =>
       g.withTriggerSource sourceId fun g src =>
         let name := g.name src
@@ -2070,7 +2125,7 @@ def applySacrifice (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
           else if !(g.findObject? src.id).any GameObject.isOnBattlefield then
             g.logMsg s!"{name} is sacrificed"
           else g
-        finishSacNote g src.id noteTag
+        finishSacNote g src.id sacNote
   match what, note with
   | .opponentChosenCreature, .none =>
     g.withLegalTriggerPlayer controller ab sourceId targets (fun g pid =>
@@ -2099,15 +2154,15 @@ def applySacrifice (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
   | .chosenNontokenCreature, .none =>
     g.continueNontokenSacrifices ((g.livingOpponents controller).map (·.id)) #[]
   | .source, .noted =>
-    sacrificeSource .isSacrificed 1
+    sacrificeSource .isSacrificed .noted
   | .sacrificedSource how, .noted =>
-    sacrificeSource how 1
+    sacrificeSource how .noted
   | .source, .none =>
-    sacrificeSource .isSacrificed 0
+    sacrificeSource .isSacrificed .none
   | .sacrificedSource how, .none =>
-    sacrificeSource how 0
+    sacrificeSource how .none
   | .sacrificedSource how, .forReflexive =>
-    sacrificeSource how 2
+    sacrificeSource how .forReflexive
   | .plan, .none =>
     g.sacrificePlanIfOnBattlefield sourceId
   | .plan, .forReflexive =>
@@ -2124,7 +2179,7 @@ def applySacrifice (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     if !stillThere then g
     else
       match sourceId with
-      | some sid => finishSacNote g sid 2
+      | some sid => finishSacNote g sid .forReflexive
       | none => g
   | .another, _ =>
     match sourceId with
@@ -2150,21 +2205,22 @@ def applySacrifice (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       if pairs.isEmpty then g
       else
         let ids := pairs.map Prod.snd
-        let noteTag : Nat :=
-          match note with
-          | .noted => 1
-          | .forReflexive => 2
-          | .none => 0
         let g := g.withBatch none fun g =>
           g.sacrificePermanentsLoop pairs (preBattlefield := some preBf) (passiveLog := true)
-        if noteTag == 0 then g
-        else if let .chooseReplacement .. := g.pending then
-          g.chainPendingReplacement (.finishPostStep 84 controller (n := noteTag) (ids := ids))
-        else
-          let anySac := ids.any fun id => !(g.findObject? id).any GameObject.isOnBattlefield
-          if !anySac then g
-          else if noteTag == 1 then g.change (.sourceWasSacrificed true)
-          else g.change (.planWasSacrificed true)
+        match note with
+        | .none => g
+        | .noted =>
+          if let .chooseReplacement .. := g.pending then
+            g.chainPendingReplacement (.finishPostStep .noteSacrificedSource controller (ids := ids))
+          else if ids.any (fun id => !(g.findObject? id).any GameObject.isOnBattlefield) then
+            g.change (.sourceWasSacrificed true)
+          else g
+        | .forReflexive =>
+          if let .chooseReplacement .. := g.pending then
+            g.chainPendingReplacement (.finishPostStep .noteSacrificedPlan controller (ids := ids))
+          else if ids.any (fun id => !(g.findObject? id).any GameObject.isOnBattlefield) then
+            g.change (.planWasSacrificed true)
+          else g
 
 /-- Resolve `TriggerResolution.attach`. Each printed combination keeps
 the behavior of the constructor it replaced. -/
@@ -2216,7 +2272,9 @@ def applyAttach (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     | none, some (Target.permanent hid) =>
       match g.findObject? hid, sourceId.bind g.findObject? with
       | some host, some src =>
-        if g.isCreature host && g.canBeTargetedBy controller host sourceId then
+        if src.isOnBattlefield && host.isOnBattlefield &&
+            g.canAttachEquipmentTo src host &&
+            g.canBeTargetedBy controller host sourceId then
           g.attachSourceTo src host
         else g
       | _, _ => g
@@ -2233,7 +2291,8 @@ def applyAttach (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         else
           let eligible :=
             ((g.permanentsOf controller).filter (fun o =>
-              g.isEquipment o && o.attachedTo != some host.id)).map (·.id)
+              g.isEquipment o && o.attachedTo != some host.id &&
+                g.canAttachEquipmentTo o host)).map (·.id)
           if eligible.isEmpty then
             g.logMsg "No Equipment was attached this way"
           else
@@ -2586,11 +2645,17 @@ def applyDestroy (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     | none =>
       clear.logMsg
         "No target was chosen. Its controller is undefined and no player amasses Goblins."
-    | some (Target.permanent oid) =>
+    | some t@(Target.permanent oid) =>
+      let legal :=
+        if ab.targetKind != .none then
+          g.targetLegalAt controller ab.targetKind 0 t sourceId
+        else
+          (g.findObject? oid).any (fun o =>
+            o.isOnBattlefield && g.canBeTargetedBy controller o sourceId)
       match g.findObject? oid with
       | none => clear.logMsg "The target is no longer legal"
       | some o =>
-        if !o.isOnBattlefield || !g.canBeTargetedBy controller o sourceId then
+        if !legal || !o.isOnBattlefield || !g.canBeTargetedBy controller o sourceId then
           clear.logMsg "The target is no longer legal"
         else
           let oCtrl := g.controllerOf o
@@ -2891,7 +2956,7 @@ def finishCreatedTokenNote (g : Game) (controller : PlayerId) (inv : Nat)
     | _, _ => g
 
 /-- Run Pass 2 (`afterLandEnters` + log) across lands moved onto `.battlefield`
-by `returnNotedLandsStep`, pause-chaining `.finishPostStep 83` if any land entry
+by `returnNotedLandsStep`, pause-chaining `.finishPostStep .notedLandsEntered` if any land entry
 opens `Pending.chooseReplacement` (CR 603.6a / 614.12). -/
 partial def finishNotedLandsEntered (g : Game) (entered : Array ObjectId) : Game :=
   match entered[0]? with
@@ -2907,7 +2972,7 @@ partial def finishNotedLandsEntered (g : Game) (entered : Array ObjectId) : Game
       | none => g
     if rest.isEmpty then g
     else if let .chooseReplacement .. := g.pending then
-      g.chainPendingReplacement (.finishPostStep 83 g.activePlayer (ids := rest))
+      g.chainPendingReplacement (.finishPostStep .notedLandsEntered g.activePlayer (ids := rest))
     else
       g.finishNotedLandsEntered rest
 
@@ -2928,7 +2993,7 @@ partial def returnNotedLandsStep (g : Game) (ids : Array ObjectId)
       let entered' := entered.push id
       if let .chooseReplacement .. := g.pending then
         g.chainPendingReplacement
-          (.finishPostStep 76 o.owner (ids := rest) (targets := entered'.map Target.card))
+          (.finishPostStep .returnNotedLandsStep o.owner (ids := rest) (targets := entered'.map Target.card))
       else
         g.returnNotedLandsStep rest entered'
 
@@ -2963,7 +3028,7 @@ def applyPut (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
             let name := o.name
             let (g, newId) := g.putOntoBattlefield oid controller
             if let .chooseReplacement .. := g.pending then
-              g.chainPendingReplacement (.finishPostStep 73 controller (cardId := some oid))
+              g.chainPendingReplacement (.finishPostStep .logReturnsToBattlefieldAndEnter controller (cardId := some oid))
             else
               match g.findObject? newId with
               | some entered =>
@@ -2985,7 +3050,7 @@ def applyPut (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
           else
             let (g, newId) := g.putOntoBattlefield id card.owner
             if let .chooseReplacement .. := g.pending then
-              g.chainPendingReplacement (.finishPostStep 74 card.owner (cardId := some id))
+              g.chainPendingReplacement (.finishPostStep .logPutUnderOwnerControlAndEnter card.owner (cardId := some id))
             else
               match g.findObject? newId with
               | some entered =>
@@ -3004,7 +3069,7 @@ def applyPut (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         let fromId := src.id
         let (g, newId) := g.putOntoBattlefield fromId controller (returnedAsArtifact := true)
         if let .chooseReplacement .. := g.pending then
-          g.chainPendingReplacement (.finishPostStep 80 controller (cardId := some fromId))
+          g.chainPendingReplacement (.finishPostStep .logReturnsAsArtifactAndEnter controller (cardId := some fromId))
         else
           match g.findObject? newId with
           | some entered =>
@@ -3028,7 +3093,7 @@ def applyPut (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
           let name := o.name
           let (g, newId) := g.putOntoBattlefield fromId pid (tapped := true)
           if let .chooseReplacement .. := g.pending then
-            g.chainPendingReplacement (.finishPostStep 20 pid 4 none (some fromId) (shuffle := true))
+            g.chainPendingReplacement (.finishPostStep .enteredBattlefieldTapped pid 0 none (some fromId) (shuffle := true))
           else
             let entered := g.object! newId
             if entered.isOnBattlefield then
@@ -3504,7 +3569,7 @@ def applyMill (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     let (g, milled) := g.millThenReflexive opps n.toNat
     if let .chooseReplacement .. := g.pending then
       g.chainPendingReplacement
-        (.finishPostStep 59 controller (n := startIdx) (targets := opps.map Target.player))
+        (.finishPostStep .noteOpponentsMilled controller (n := startIdx) (targets := opps.map Target.player))
     else
       g.change (.opponentsMilledThisWay milled)
   | amount, who, note =>
@@ -3942,7 +4007,7 @@ partial def applyRevealLibrary (g : Game) (controller : PlayerId)
           let (g', newId) := g.putOntoBattlefield cid controller (cause := some cause)
           if let .chooseReplacement .. := g'.pending then
             return g'.chainPendingReplacement
-              (.finishPostStep 70 controller (n := controller.idx) (cardId := some cid)
+              (.finishPostStep .enteredThenPutRestBottomRandom controller (n := controller.idx) (cardId := some cid)
                 (ids := rest) (cause := some cause))
           else
             g :=
@@ -3984,7 +4049,7 @@ partial def applyRevealLibrary (g : Game) (controller : PlayerId)
         let (g', newId) := g.putOntoBattlefield sid controller (cause := some cause)
         if let .chooseReplacement .. := g'.pending then
           return g'.chainPendingReplacement
-            (.finishPostStep 70 controller (n := controller.idx) (cardId := some sid)
+            (.finishPostStep .enteredThenPutRestBottomRandom controller (n := controller.idx) (cardId := some sid)
               (ids := rest) (cause := some cause))
         else
           g :=
@@ -4743,7 +4808,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
           let g := g.applyPermanentAction (g.object! o.id) .untap (sourceId := sourceId)
           if let .chooseReplacement .. := g.pending then
             g.chainPendingReplacement
-              (.finishPostStep 93 controller (cardId := some o.id) (cause := g.currentBatch.bind (·.2)))
+              (.finishPostStep .grantHasteUntilEotSilent controller (cardId := some o.id) (cause := g.currentBatch.bind (·.2)))
           else
             g.createEffect (.keywordsUntilEot o.id Keyword.haste) (cause := g.currentBatch.bind (·.2)))
     | .whileSourceRemains =>
@@ -4758,11 +4823,23 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         sourceId (some "The target is no longer legal")
   | .honeEachEquipment =>
     let eqs :=
-      g.battlefield.filter (fun o => g.controlledBy o controller && g.isEquipment o)
-    g.withBatch none fun g =>
-      eqs.foldl (init := g) fun acc eq =>
-        acc.recordPutCounters eq.id .hone 1 (byPlayer := some controller)
-          |>.logMsg s!"{acc.name eq} received a hone counter"
+      (g.battlefield.filter (fun o => g.controlledBy o controller && g.isEquipment o)).map (·.id)
+    if eqs.isEmpty then g
+    else
+      g.withBatch none fun g =>
+        Id.run do
+          let mut g := g
+          for i in [0:eqs.size] do
+            let id := eqs[i]!
+            if let some eq := g.findObject? id then
+              if eq.isOnBattlefield && g.isEquipment eq then
+                g := g.putCountersDeferredLog eq.id .hone 1 (some controller) .received
+                if let .chooseReplacement .. := g.pending then
+                  let rem := eqs.extract (i + 1) eqs.size
+                  if !rem.isEmpty then
+                    g := g.chainPendingReplacement (.finishPostStep .honeControlledEquipmentLoop controller (ids := rem))
+                  return g
+          return g
   | .cascade =>
     let maxMv :=
       match sourceId with
@@ -4949,7 +5026,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       rests.foldl (fun g (pid, rest) =>
         if rest.isEmpty then g
         else if g.pending != .none || g.afterRandom != .none then
-          g.chainPendingReplacement (.finishPostStep 77 pid (ids := rest) (cause := some cause))
+          g.chainPendingReplacement (.finishPostStep .putRestOnBottomRandom pid (ids := rest) (cause := some cause))
         else
           g.putRestOnBottomRandom pid rest (cause := some cause)) g
   | .fight who how =>
@@ -4977,7 +5054,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
           let (g, _) := g.createToken controller face
           let (g, _) := g.createToken controller face
           if let .chooseReplacement .. := g.pending then
-            g.chainPendingReplacement (.finishPostStep 36 controller 0 sourceId)
+            g.chainPendingReplacement (.finishPostStep .logTwoNonlegendaryCopyTokens controller 0 sourceId)
           else
             g.logMsg s!"two nonlegendary tokens that are copies of {srcName} are created"
   | .loseLife amount who =>

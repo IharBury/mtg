@@ -124,7 +124,7 @@ has already left the battlefield; CR 608.2h / 707.12 / MSH 547 / 656), then make
 a noncreature token a 2/2 Robot Villain after it enters (MSH 574). -/
 def copyEnteredArtifact (g : Game) (controller : PlayerId) (artifactId : ObjectId) : Game :=
   if let .chooseReplacement .. := g.pending then
-    g.chainPendingReplacement (.finishPostStep 3 controller (cardId := some artifactId))
+    g.chainPendingReplacement (.finishPostStep .copyEnteredArtifact controller (cardId := some artifactId))
   else
   let copiableRes : Except String CardDef :=
     match g.findObject? artifactId with
@@ -178,7 +178,7 @@ def applyDaredevilExile (g : Game) (controller : PlayerId) (sourceId : Option Ob
   let top? := (g.player controller).library.back?
   let g := g.exileTopPlayThisTurn controller 1
   if let .chooseReplacement .. := g.pending then
-    g.chainPendingReplacement (.finishPostStep 118 controller 0 sourceId top?)
+    g.chainPendingReplacement (.finishPostStep .finishDaredevilExile controller 0 sourceId top?)
   else
     g.finishDaredevilExile sourceId top?
 
@@ -787,7 +787,7 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
   | (.casting .drawPowerEqualHand) =>
     let g := g.draw controller 1
     if let .chooseReplacement .. := g.pending then
-      g.chainPendingReplacement (.finishPostStep 4 controller (sourceId := sourceId))
+      g.chainPendingReplacement (.finishPostStep .grantHandSizePower controller (sourceId := sourceId))
     else
       g.grantHandSizePower sourceId
   | (.step .hydeChoose) =>
@@ -844,7 +844,7 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
       g.withSourceOnBattlefield sourceId (fun g o => g.addPlusOnePlusOneTo o 1)
         "The source is no longer in play"
     if let .chooseReplacement .. := g.pending then
-      g.chainPendingReplacement (.finishPostStep 5 controller)
+      g.chainPendingReplacement (.finishPostStep .beginScryOne controller)
     else
       g.beginScry controller 1
   | (.casting .targetsGainFlying) =>
@@ -853,7 +853,7 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
     let g := g.withSourceOnBattlefield sourceId (fun g o => g.addPlusOnePlusOneTo o 2)
       "The source is no longer in play"
     if let .chooseReplacement .. := g.pending then
-      g.chainPendingReplacement (.finishPostStep 6 controller)
+      g.chainPendingReplacement (.finishPostStep .copyCastTriggerSpell controller)
     else
       g.copyCastTriggerSpell controller
   | (.casting .tapCreatureOrLand) =>
@@ -922,7 +922,7 @@ def applyLeftoverTextEffect (g : Game) (controller : PlayerId) (text : String)
   else if text.contains "2/1 black Villain" && text.contains "+1/+0" then
     let g := g.createKindTokens controller .villain21menace 1
     if let .chooseReplacement .. := g.pending then
-      g.chainPendingReplacement (.finishPostStep 7 controller)
+      g.chainPendingReplacement (.finishPostStep .pumpControlledCreaturesOneZero controller)
     else
       g.pumpControlledCreatures controller 1 0
   else if text.contains "Treasure token" then
@@ -1034,7 +1034,7 @@ def applyAvengersDisassembled (g : Game) (controller : PlayerId)
       else g
     if choseLand then
       if let .chooseReplacement .. := g.pending then
-        g.chainPendingReplacement (.finishPostStep 8 controller 0 srcId (cardId := landId))
+        g.chainPendingReplacement (.finishPostStep .destroyTargetLandThenOfferSearchBasics controller 0 srcId (cardId := landId))
       else
         match landId.bind g.findObject? with
         | some o =>
@@ -1042,7 +1042,7 @@ def applyAvengersDisassembled (g : Game) (controller : PlayerId)
             let owner := o.owner
             let g := g.destroyPermanent o
             if let .chooseReplacement .. := g.pending then
-              g.chainPendingReplacement (.finishPostStep 9 owner)
+              g.chainPendingReplacement (.finishPostStep .offerMaySearchBasics owner)
             else
               g.offerMaySearchBasics owner
           else g

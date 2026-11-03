@@ -506,10 +506,12 @@ open Mtg.Demo.Render
 
 #guard isPassShortcutCmd "your" []
 
-#guard reachedPassUntil { Tests.afterDraw with step := .declareAttackers }
+#guard reachedPassUntil
+  (Tests.afterDraw.record (GameEvent.stepBegan Tests.afterDraw.turnNumber .declareAttackers Tests.afterDraw.activePlayer))
   Tests.afterDraw.turnNumber Tests.afterDraw.step .nextDeclareAttackers
 
-#guard reachedPassUntil { Tests.afterDraw with step := .postcombatMain }
+#guard reachedPassUntil
+  (Tests.afterDraw.record (GameEvent.stepBegan Tests.afterDraw.turnNumber .postcombatMain Tests.afterDraw.activePlayer))
   Tests.afterDraw.turnNumber Tests.afterDraw.step .nextMain
 
 #guard isPassSequenceCommand "noblock" []
@@ -534,7 +536,9 @@ open Mtg.Demo.Render
   let ign := passUntilGoalAt Tests.afterDraw ⟨0⟩ .ignore
   !named.uninterruptible && ign.uninterruptible &&
     !reachedPassUntilGoal Tests.afterDraw named &&
-    reachedPassUntilGoal { Tests.afterDraw with step := .postcombatMain } named
+    reachedPassUntilGoal
+      (Tests.afterDraw.record (GameEvent.stepBegan Tests.afterDraw.turnNumber .postcombatMain Tests.afterDraw.activePlayer))
+      named
 
 #guard
   match applyKeep Tests.twoBofursSBA ⟨0⟩ [] with

@@ -101,7 +101,7 @@ def finishBeginOnBattlefield (g : Game) (fromId : ObjectId) (remainingIds : Arra
       else g
     | none => g
   if let .chooseReplacement .. := g.pending then
-    g.chainPendingReplacement (.finishPostStep 85 g.startingPlayer (ids := remainingIds))
+    g.chainPendingReplacement (.finishPostStep .continueOpeningBegin g.startingPlayer (ids := remainingIds))
   else
     g.continueOpeningBegin remainingIds
 
@@ -139,13 +139,16 @@ def beginMulliganRound (g : Game) : Game :=
 
 /-- Shuffle the cards in `p`'s hand back into their library (CR 103.5). -/
 def returnHandToLibrary (g : Game) (p : PlayerId) : Game :=
-  Id.run do
-    let mut g := g
-    let ids := (g.player p).hand
-    for id in ids do
-      let (g', _) := g.move id (.library p) (cause := some (.gameRule .mulligan))
-      g := g'
-    return g
+  let ids := (g.player p).hand
+  if ids.isEmpty then g
+  else
+    g.withBatch (some (.gameRule .mulligan)) fun g =>
+      Id.run do
+        let mut g := g
+        for id in ids do
+          let (g', _) := g.move id (.library p) (cause := some (.gameRule .mulligan))
+          g := g'
+        return g
 
 /-- A player may mulligan until that mulligan would leave a zero-card opening
 hand, after which they may not take further mulligans (CR 103.5). The first

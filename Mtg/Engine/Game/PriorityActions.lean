@@ -39,6 +39,13 @@ def finishProposedSpell (g : Game) : Except String Game := do
         o.isOnBattlefield && g.isCreature o && g.controlledBy o prop.caster && !o.status.tapped
     if !teamworkOk then
       return (← g.reverseProposedSpell? (resumeContinuation := true))
+  if let some quality := prop.needsBehold then
+    let hasPerm := (g.permanentsOf prop.caster).any (fun o => g.hasSubtype o quality)
+    let hasHand :=
+      (g.player prop.caster).hand.any (fun id =>
+        (g.findObject? id).any (fun card => g.hasSubtype card quality))
+    if !(hasPerm || hasHand) then
+      return (← g.reverseProposedSpell? (resumeContinuation := true))
   let count (g : Game) (u : FraManaUse) :=
     ((g.player prop.caster).manaPool.fraRestricted.filter (·.2 == u)).size
   let g ← g.withProposalActionM .costAction fun g0 => do
@@ -66,6 +73,20 @@ def finishProposedSpell (g : Game) : Except String Game := do
     if prop.teamworkPaid && !prop.teamworkCreatures.isEmpty then
       let g0 := if outerCont?.isSome then g.change (.pendingReplacement none) else g
       match g0.tapTeamworkCreaturesForProposed prop with
+      | .ok g =>
+        let paused := match g.pending with | .chooseReplacement .. => true | _ => false
+        pure (if !paused then
+          match outerCont? with
+          | some outer => g.chainPendingReplacement outer
+          | none => g
+        else g)
+      | .error _ => return (← g.reverseProposedSpell? (resumeContinuation := true))
+    else pure g
+  let outerCont? := g.pendingReplacement
+  let g ←
+    if prop.needsBehold.isSome then
+      let g0 := if outerCont?.isSome then g.change (.pendingReplacement none) else g
+      match g0.payBeholdForProposed prop with
       | .ok g =>
         let paused := match g.pending with | .chooseReplacement .. => true | _ => false
         pure (if !paused then
@@ -206,46 +227,60 @@ def announceAdditionalCost (g : Game) (p : PlayerId) (payGeneric : Bool) :
       | throw "No spell is waiting for an additional cost (CR 601.2b)"
     let some spell := g.findObject? prop.spellId
       | throw "The spell left the stack"
-    match (g.baseCard spell).additionalCostBeholdOrPay with
+    let baseFace := g.baseCard spell
+    let costFace :=
+      match prop.sneakAttacker, baseFace.sneakCost with
+      | some _, some sc => { baseFace with manaCost := sc }
+      | _, _ => baseFace
+    let preSpell := { spell with
+      id := prop.original.id
+      zone := prop.original.zone
+      exiledBy := prop.original.exiledBy
+      controller := some p }
+    let announceExtraGeneric (g : Game) (n : Nat) : Game :=
+      let g := g.record (GameEvent.announced g.turnNumber spell.id
+        (costs := #[.genericMana n]))
+      let newCost := g.playManaCost preSpell costFace (ManaCost.ofGeneric n)
+        (origPerm := prop.origPerm) (isFreeFromGy := some prop.isFreeFromGy)
+      g.changeProposals #[
+        .cost newCost,
+        .additionalGeneric n,
+        .needsBehold none,
+        .needsSacrificeOther false,
+        .needsDiscardCard false ]
+        |>.logMsg
+          s!"{(g.player p).name} chooses to pay \{{n}} as an additional cost (CR 601.2b)"
+    match baseFace.additionalCostBeholdOrPay with
     | some (quality, n) =>
       if payGeneric then
+        return (announceExtraGeneric g n).afterAdditionalCostAnnounced
+      else
+        let hasPerm := (g.permanentsOf p).any (fun o => g.hasSubtype o quality)
+        let hasHand :=
+          (g.player p).hand.any (fun id =>
+            (g.findObject? id).any (fun card => g.hasSubtype card quality))
+        if !(hasPerm || hasHand) then
+          throw s!"{spell.name} requires beholding a {quality}"
         let g := g.changeProposals #[
-          .addGenericCost n,
+          .additionalGeneric 0,
+          .needsBehold (some quality),
           .needsSacrificeOther false,
           .needsDiscardCard false ]
         let g := g.logMsg
-          s!"{(g.player p).name} chooses to pay \{{n}} as an additional cost (CR 601.2b)"
-        return g.afterAdditionalCostAnnounced
-      else
-        let beforeEvents := g.events.size
-        let g := g.withProposalAction .costAction fun g =>
-          g.beholdQuality p quality
-            (cause := some (.costPayment .behold p (some prop.spellId)))
-        let beheldNow :=
-          (g.events.extract beforeEvents g.events.size).any fun e =>
-            match e.change with
-            | .rules (.player (.beheld who q)) => who == p && q == quality
-            | _ => false
-        if !beheldNow then
-          throw s!"{spell.name} requires beholding a {quality}"
+          s!"{(g.player p).name} chooses to behold a {quality} as an additional cost (CR 601.2b)"
         return g.afterAdditionalCostAnnounced
     | none =>
-    let face := g.baseCard spell
-    match face.additionalCostOrPayGeneric,
-          face.additionalCostDiscardOrPayGeneric with
+    match baseFace.additionalCostOrPayGeneric,
+          baseFace.additionalCostDiscardOrPayGeneric with
     | some n, _ =>
       if payGeneric then
-        let g := g.changeProposals #[
-          .addGenericCost n,
-          .needsSacrificeOther false,
-          .needsDiscardCard false ]
-        let g := g.logMsg
-          s!"{(g.player p).name} chooses to pay \{{n}} as an additional cost (CR 601.2b)"
-        return g.afterAdditionalCostAnnounced
+        return (announceExtraGeneric g n).afterAdditionalCostAnnounced
       else
         if (g.sacrificeCreatureOrArtifactChoices p prop.spellId).isEmpty then
           throw s!"{spell.name} requires sacrificing an artifact or creature"
         let g := g.changeProposals #[
+          .additionalGeneric 0,
+          .needsBehold none,
           .needsSacrificeOther true,
           .needsDiscardCard false ]
         let g := g.logMsg
@@ -253,17 +288,13 @@ def announceAdditionalCost (g : Game) (p : PlayerId) (payGeneric : Bool) :
         return g.afterAdditionalCostAnnounced
     | none, some n =>
       if payGeneric then
-        let g := g.changeProposals #[
-          .addGenericCost n,
-          .needsSacrificeOther false,
-          .needsDiscardCard false ]
-        let g := g.logMsg
-          s!"{(g.player p).name} chooses to pay \{{n}} as an additional cost (CR 601.2b)"
-        return g.afterAdditionalCostAnnounced
+        return (announceExtraGeneric g n).afterAdditionalCostAnnounced
       else
         if (g.player p).hand.isEmpty then
           throw s!"{spell.name} requires discarding a card"
         let g := g.changeProposals #[
+          .additionalGeneric 0,
+          .needsBehold none,
           .needsSacrificeOther false,
           .needsDiscardCard true ]
         let g := g.logMsg
@@ -331,41 +362,8 @@ def concede (g : Game) (p : PlayerId) : Game :=
         g.currentBatch.isSome || g.pendingReplacement.isSome ||
           !g.outerPendingReplacements.isEmpty ||
           !g.continuations.isEmpty || g.triggerSequenceRest.isSome
-      let g := ([p] ++ mates.toList).foldl (fun acc pid => acc.playerLeavesGame pid) g
-      let savedPostLeavePending : Option Pending :=
-        if !midResolutionOrBatch && !wasPregame && !g.sbaPaused && g.pending != .none then
-          some g.pending
-        else none
-      let g :=
-        if savedPostLeavePending.isSome then g.change (.pending .none) else g
-      let g := if midResolutionOrBatch || wasPregame then g else g.checkSBA
-      if g.unlessPaysDue then
-        g.flushUnlessPays
-      else if g.over then g
-      else if !midResolutionOrBatch && !wasPregame && g.sbaPaused then
-        g.chainPendingReplacement
-          (.finishConcede wasIdlePriority savedPendingPrio wasAssigningCombatDamage savedPostLeavePending)
-      else
-        let g :=
-          match savedPostLeavePending with
-          | some sp => if g.pending == .none then g.resumePendingReplacement (.restorePending sp) else g
-          | none => g
-        if g.pending != .none then g
-        else if wasPregame then
-          if g.pregameRandom != .none then
-            g.finishAfterRandom true
-          else if !g.mulliganToDeclare.isEmpty then
-            g.promptMulligan g.mulliganToDeclare[0]!
-          else if !g.willMulligan.isEmpty then
-            g.resolveDeclaredMulligans
-          else if !g.mulliganToBottom.isEmpty then
-            g.promptBottom g.mulliganToBottom[0]!
-          else if g.awaitingOpeningBegin then
-            g.continueOpeningBegin #[]
-          else
-            g.beginMulliganRound
-        else
-          g.finishConcedePriority wasIdlePriority savedPendingPrio wasAssigningCombatDamage
+      g.concedePlayersLoop (#[p] ++ mates) wasPregame midResolutionOrBatch
+        wasIdlePriority savedPendingPrio wasAssigningCombatDamage
 
 end Game
 end Mtg.Engine

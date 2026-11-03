@@ -78,7 +78,7 @@ def moleManPlayLandOk : Bool :=
   let land := namedGraveyardCard g ⟨0⟩ "Forest"
   g.mayPlayFromGraveyard ⟨0⟩ land &&
     g.canPlayLand ⟨0⟩ &&
-    (let gLate := { g with step := .beginningOfCombat }
+    (let gLate := g.record (GameEvent.stepBegan g.turnNumber .beginningOfCombat g.activePlayer)
      !gLate.canPlayLand ⟨0⟩) &&
     (let gCyc := addToGraveyard afterDraw kreeSentinel ⟨0⟩
      let cyc := namedGraveyardCard gCyc ⟨0⟩ "Kree Sentinel"

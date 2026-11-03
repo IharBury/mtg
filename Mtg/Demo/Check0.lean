@@ -566,7 +566,8 @@ Nissa (CR 506.3). -/
 
 #guard isPassShortcutCmd "attack" ["step"]
 
-#guard !reachedPassUntil { Tests.afterDraw with step := .declareAttackers }
+#guard !reachedPassUntil
+  (Tests.afterDraw.record (GameEvent.stepBegan Tests.afterDraw.turnNumber .declareAttackers Tests.afterDraw.activePlayer))
   Tests.afterDraw.turnNumber .declareAttackers .nextDeclareAttackers
 
 #guard isPassSequenceCommand "pass" []

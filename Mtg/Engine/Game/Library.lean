@@ -267,24 +267,27 @@ def moveIdsInOrder (g : Game) (ids : Array ObjectId) (dest : Zone)
     ids.foldl (fun acc id => (acc.move id dest none (cause := cause)).1) g
 
 /-- Put `ids` on top of `p`'s library, last listed on top. Cards that are no
-longer in that library are skipped. -/
+longer in that library are skipped (CR 401.4). -/
 def putIdsOnTop (g : Game) (p : PlayerId) (ids : Array ObjectId) : Game :=
-  Id.run do
-    let mut g := g
-    for id in ids do
-      match g.findObject? id with
-      | some o =>
-        if o.zone == .library p then
-          let name := o.name
-          let snap := g.snapshot o
-          let moveCause := g.resolvingOrRuleCause p
-          g := g.record (GameEvent.moved g.turnNumber snap (.library p) (.library p)
-            (after := some snap) (verb := some .put) (actor := some p)
-            (libraryPosition := some .top) (cause := moveCause))
-          g := g.logMsg s!"{(g.player p).name} puts {name} on top of their library"
-        else pure ()
-      | none => pure ()
-    return g
+  if !ids.any (fun id => (g.findObject? id).any (·.zone == .library p)) then g
+  else
+    g.withBatch (g.resolvingBatchCause p) fun g =>
+      Id.run do
+        let mut g := g
+        for id in ids do
+          match g.findObject? id with
+          | some o =>
+            if o.zone == .library p then
+              let name := o.name
+              let snap := g.snapshot o
+              let moveCause := g.resolvingOrRuleCause p
+              g := g.record (GameEvent.moved g.turnNumber snap (.library p) (.library p)
+                (after := some snap) (verb := some .put) (actor := some p)
+                (libraryPosition := some .top) (cause := moveCause))
+              g := g.logMsg s!"{(g.player p).name} puts {name} on top of their library"
+            else pure ()
+          | none => pure ()
+        return g
 
 /-- Put `ids` into `dest` in a random order. With two or more cards and no
 other pending choice, becomes `Pending.resolveRandom`. -/

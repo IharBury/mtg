@@ -291,11 +291,8 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
       g := g'.logMsg
         s!"{(g.player p).name} removes {removePlusOnes} +1/+1 counters from {srcName}"
     if a.cost.putStunCounterOnSource then
-      let src := g.object! sourceId
-      let srcName := g.name src
-      g := g.recordPutCounters sourceId .stun 1 (byPlayer := some p)
+      g := g.putCountersDeferredLog sourceId .stun 1 (some p) (.playerPutsOn p)
         (cause := some (.costPayment .putCounters p forObject))
-      g := g.logMsg s!"{(g.player p).name} puts a stun counter on {srcName}"
       if let .chooseReplacement .. := g.pending then
         if sacrificeSource || exileSource then
           g := g.chainPendingReplacement

@@ -55,7 +55,7 @@ def applyPalantir (g : Game) (sourceId : ObjectId) (target : Option PlayerId) : 
   | some none =>
     let ctrl := ctrl?.getD g.activePlayer
     g.chainPendingReplacement
-      (.finishPostStep 56 ctrl (n := before) (sourceId := some sourceId))
+      (.finishPostStep .logInfluenceThenScryTwo ctrl (n := before) (sourceId := some sourceId))
   | some (some _) =>
     match g.findObject? sourceId with
     | some src => g.beginScry (g.you src) 2
@@ -66,19 +66,37 @@ costs (CR 707.10), returning the new copy's `ObjectId` (if created). The copy
 is not cast. -/
 def copyStackSpellWithId (g : Game) (src : GameObject) (controller : PlayerId)
     (cause : Option EventCause := none) : Game × Option ObjectId :=
+  let dispName := if src.status.faceDown then "face-down spell" else src.name
   if (g.player controller).lost then
-    (g.logMsg s!"A copy of {src.name} is not created (CR 800.4d)", none)
+    (g.logMsg s!"A copy of {dispName} is not created (CR 800.4d)", none)
   else
     let copyId : ObjectId := ⟨g.nextObjectId⟩
-    let copySnap : EventObject := {
-      (g.snapshot src) with
-      id := some copyId
-      owner := controller
-      controller := some controller
-      zone := .stack
-      isCopy := true
-      isCommander := false
-    }
+    let baseSnap := g.snapshot src
+    let copySnap : EventObject :=
+      if src.status.faceDown then
+        let masked := g.copiableValues src
+        { baseSnap with
+          id := some copyId
+          name := ""
+          owner := controller
+          controller := some controller
+          zone := .stack
+          isCopy := true
+          isCommander := false
+          printed := some masked
+          copiable := some masked
+          adventurerCard := none
+          faceDown := true
+        }
+      else
+        { baseSnap with
+          id := some copyId
+          owner := controller
+          controller := some controller
+          zone := .stack
+          isCopy := true
+          isCommander := false
+        }
     let resolvedCause :=
       match cause with
       | some c => c
@@ -87,7 +105,7 @@ def copyStackSpellWithId (g : Game) (src : GameObject) (controller : PlayerId)
           (fallbackSrc := some src.id) (fallbackCtrl := some controller)
     let g := g.record (GameEvent.stackObjectCopied g.turnNumber src.id copySnap controller
       (cause := resolvedCause))
-    (g.logMsg s!"A copy of {src.name} is created", some copyId)
+    (g.logMsg s!"A copy of {dispName} is created", some copyId)
 
 /-- Copy a spell on the stack, with its modes, targets, X, and paid optional
 costs (CR 707.10). The copy is not cast. -/
@@ -100,6 +118,12 @@ def mayCastFromLookedError (g : Game) (p : PlayerId) (ids : Array ObjectId)
     (maxMv : Int) (id : ObjectId) : Option String :=
   if !ids.contains id then
     some "That card is not among the cards you looked at"
+  else if g.cantCastSpellsThisTurn p then
+    some "You can't cast spells this turn (CR 101.2)"
+  else if g.combatLocksNonManaAbilities then
+    some "During combat, players can't cast spells (Yuriko, Blade of the Mighty)"
+  else if g.opponentsCantCastOnActiveTurn p then
+    some "Opponents can't cast spells during that player's turn"
   else
     match g.findObject? id with
     | none => some "There is no card to cast"
@@ -109,6 +133,10 @@ def mayCastFromLookedError (g : Game) (p : PlayerId) (ids : Array ObjectId)
         some s!"{o.name} is no longer among the cards you looked at"
       else if g.isLand o then
         some "A land cannot be cast"
+      else if g.spellNameForbidden bc.name then
+        some s!"Spells named {bc.name} can't be cast"
+      else if !g.graveyardCastThresholdMet p o.id bc then
+        some s!"{bc.name} cannot be cast right now"
       else if (g.objectManaValue o : Int) > maxMv then
         some s!"{o.name}'s mana value is greater than the greatest power among attacking creatures you control"
       else if g.isAura o && !bc.allowsZeroTargets &&
@@ -153,7 +181,7 @@ def choosePutArtifactFromHand (g : Game) (p : PlayerId) (cardId : ObjectId) :
     let g :=
       if let .chooseReplacement .. := g.pending then
         g.chainPendingReplacement
-          (.finishPostStep 1 p (sourceId := some hostId) (cardId := some cardId))
+          (.finishPostStep .putArtifactOntoBattlefield p (sourceId := some hostId) (cardId := some cardId))
       else
         let entered := g.object! newId
         if entered.isOnBattlefield then
@@ -201,7 +229,7 @@ def applyBardBowman (g : Game) (targetId : ObjectId) : Game :=
         let g := g.addPlusOnePlusOneTo o 1 (cause := cause)
         if let .chooseReplacement .. := g.pending then
           g.chainPendingReplacement
-            (.finishPostStep 91 ((g.controllerOf o).getD g.activePlayer)
+            (.finishPostStep .grantLifelinkUntilEot ((g.controllerOf o).getD g.activePlayer)
               (cardId := some o.id) (cause := g.currentBatch.bind (·.2)))
         else if let some cur := g.findObject? o.id then
           if cur.isOnBattlefield then
@@ -237,7 +265,7 @@ def exileUntilSourceLeaves (g : Game) (sourceId : Option ObjectId) (o : GameObje
   let (g, _) := g.move o.id .exile none (cause := some linkCause)
   if let .chooseReplacement .. := g.pending then
     g.chainPendingReplacement
-      (.finishPostStep 103 (fallbackCtrl.getD g.activePlayer)
+      (.finishPostStep .finishExileUntilSourceLeaves (fallbackCtrl.getD g.activePlayer)
         (sourceId := sourceId) (cardId := some o.id) (cause := some linkCause))
   else
     g.finishExileUntilSourceLeaves sourceId o.id
@@ -262,7 +290,7 @@ def exileForLeaveTrigger (g : Game) (sourceId : Option ObjectId) (o : GameObject
   let (g, _) := g.move o.id .exile none (cause := cause)
   if let .chooseReplacement .. := g.pending then
     g.chainPendingReplacement
-      (.finishPostStep 104 g.activePlayer
+      (.finishPostStep .finishExileForLeaveTrigger g.activePlayer
         (sourceId := sourceId) (cardId := some o.id) (cause := cause))
   else
     g.finishExileForLeaveTrigger sourceId o.id
@@ -519,7 +547,7 @@ def exileTopForPlayLoop (g : Game) (fromPlayer caster : PlayerId)
   let modeArr : Array Nat := #[fromPlayer.idx, if mayCastStyle then 1 else 0]
   if let .chooseReplacement .. := g.pending then
     return g.chainPendingReplacement
-      (.finishPostStep 105 caster (n := remaining) (cardId := pendingFromId)
+      (.finishPostStep .exileTopForPlayLoop caster (n := remaining) (cardId := pendingFromId)
         (modes := modeArr) (cause := cause?))
   let mut g := g
   if let some fid := pendingFromId then
@@ -538,7 +566,7 @@ def exileTopForPlayLoop (g : Game) (fromPlayer caster : PlayerId)
       if let .chooseReplacement .. := g.pending then
         let rem := remaining - (i + 1)
         return g.chainPendingReplacement
-          (.finishPostStep 105 caster (n := rem) (cardId := some top)
+          (.finishPostStep .exileTopForPlayLoop caster (n := rem) (cardId := some top)
             (modes := modeArr) (cause := cause?))
       if let some moved := g.followMovedToZone? top (· == .exile) then
         g := g.createEffect (.playPermission moved.id { player := caster }) (cause := cause?)
@@ -747,7 +775,7 @@ def sacrificePlanThenQueueReflexive (g : Game) (controller : PlayerId)
       "The Plan is no longer on the battlefield. The reflexive ability doesn't trigger.")
   if !stillThere then g
   else if let .chooseReplacement .. := g.pending then
-    g.chainPendingReplacement (.finishPostStep 92 controller (n := kind) (sourceId := sourceId))
+    g.chainPendingReplacement (.finishPostStep .queueModeledReflexiveIfSourceLeft controller (n := kind) (sourceId := sourceId))
   else if !(sourceId.bind g.findObject?).any (·.isOnBattlefield) then
     g.queueModeledReflexive controller sourceId kind
   else g
@@ -767,7 +795,7 @@ def exileTopMayCastUpToLoop (g : Game) (fromPlayer caster : PlayerId)
   let modeArr : Array Nat := #[fromPlayer.idx, casts]
   if let .chooseReplacement .. := g.pending then
     return g.chainPendingReplacement
-      (.finishPostStep 106 caster (n := remaining) (cardId := pendingFromId)
+      (.finishPostStep .exileTopMayCastUpToLoop caster (n := remaining) (cardId := pendingFromId)
         (ids := accIds) (modes := modeArr) (cause := cause?))
   let mut g := g
   let mut ids := accIds
@@ -787,7 +815,7 @@ def exileTopMayCastUpToLoop (g : Game) (fromPlayer caster : PlayerId)
       if let .chooseReplacement .. := g.pending then
         let rem := remaining - (i + 1)
         return g.chainPendingReplacement
-          (.finishPostStep 106 caster (n := rem) (cardId := some top)
+          (.finishPostStep .exileTopMayCastUpToLoop caster (n := rem) (cardId := some top)
             (ids := ids) (modes := modeArr) (cause := cause?))
       if let some moved := g.followMovedToZone? top (· == .exile) then
         ids := ids.push moved.id
@@ -819,7 +847,7 @@ def exileTopMayCastUpTo (g : Game) (fromPlayer caster : PlayerId) (n casts : Nat
     g.exileTopMayCastUpToLoop fromPlayer caster n casts cause?
   if let .chooseReplacement .. := g.pending then
     g.chainPendingReplacement
-      (.finishPostStep 107 caster (n := casts) (ids := preIds) (cause := cause?))
+      (.finishPostStep .offerMayCastUpToFromExile caster (n := casts) (ids := preIds) (cause := cause?))
   else
     let arrived := preIds.filterMap (fun pid => (g.followMovedToZone? pid (· == .exile)).map (·.id))
     g.finishExileTopMayCastUpToOffer caster arrived casts
@@ -990,7 +1018,7 @@ def commitEnteringAttackItems (g : Game)
                     if !rem.isEmpty then
                       g := g.chainPendingReplacement (.commitEnteringAttackItems rem cause false)
                     else
-                      g := g.chainPendingReplacement (.finishPostStep 60 controller)
+                      g := g.chainPendingReplacement (.finishPostStep .logTwoTappedAttackingSpirits controller)
                     return g
             return g
         if let .chooseReplacement .. := g.pending then g
@@ -1253,7 +1281,7 @@ def finishWorldsWithinWorldsExileSelf (g : Game) (sourceId : Option ObjectId) : 
         let (g', _) := g.move src.id .exile none
         if let .chooseReplacement .. := g'.pending then
           g'.chainPendingReplacement
-            (.finishPostStep 87 g'.activePlayer (cardId := some src.id))
+            (.finishPostStep .logMovedToExile g'.activePlayer (cardId := some src.id))
         else if let some moved := g'.followMovedToZone? src.id (· == .exile) then
           g'.logMsg s!"{moved.name} is exiled"
         else g'
@@ -1270,7 +1298,7 @@ def worldsReturnExiledLoop (g : Game) (remainingIds : Array ObjectId)
       | some (cid, own) => (own, some cid)
       | none => (g.activePlayer, none)
     return g.chainPendingReplacement
-      (.finishPostStep 86 owner (cardId := cid?) (ids := remainingIds))
+      (.finishPostStep .worldsReturnExiledLoop owner (cardId := cid?) (ids := remainingIds))
   let mut g := g
   if let some (fromId, owner) := pendingCard then
     if let some moved := g.followMovedToZone? fromId (· == .hand owner) then
@@ -1285,7 +1313,7 @@ def worldsReturnExiledLoop (g : Game) (remainingIds : Array ObjectId)
         if let .chooseReplacement .. := g.pending then
           let rem := remainingIds.extract (i + 1) remainingIds.size
           return g.chainPendingReplacement
-            (.finishPostStep 86 owner (cardId := some o.id) (ids := rem))
+            (.finishPostStep .worldsReturnExiledLoop owner (cardId := some o.id) (ids := rem))
         if let some moved := g.followMovedToZone? o.id (· == .hand owner) then
           g := g.logMsg s!"{moved.name} is returned to its owner's hand"
   return g
@@ -1301,7 +1329,7 @@ def finishWorldsWithinWorldsTail (g : Game) (exiled : Array ObjectId)
         g.worldsReturnExiledLoop exiled none
   if let .chooseReplacement .. := g.pending then
     g.chainPendingReplacement
-      (.finishPostStep 81 g.activePlayer (sourceId := sourceId))
+      (.finishPostStep .worldsWithinWorldsExileSelf g.activePlayer (sourceId := sourceId))
   else
     g.finishWorldsWithinWorldsExileSelf sourceId
 
@@ -1320,7 +1348,7 @@ def finishWorldsWithinWorlds (g : Game) (exiled chosen : Array ObjectId)
     g.putToBattlefieldLoop g.activePlayer validChosen (useCardOwner := true)
   if let .chooseReplacement .. := g.pending then
     g.chainPendingReplacement
-      (.finishPostStep 2 g.activePlayer (sourceId := sourceId) (ids := exiled))
+      (.finishPostStep .worldsWithinWorldsTail g.activePlayer (sourceId := sourceId) (ids := exiled))
   else
     g.finishWorldsWithinWorldsTail exiled sourceId
 
@@ -1353,7 +1381,7 @@ def applyWorldsWithinWorlds (g : Game) (controller : PlayerId)
     g.exilePermanentsLoop creatureIds (logExile := true)
   if let .chooseReplacement .. := g.pending then
     g.chainPendingReplacement
-      (.finishPostStep 61 controller (n := startIdx) (sourceId := sourceId) (ids := creatureIds))
+      (.finishPostStep .offerWorldsCreatures controller (n := startIdx) (sourceId := sourceId) (ids := creatureIds))
   else
     let exiled := creatureIds.filterMap fun id =>
       if g.wasPermanentExiled id startIdx then

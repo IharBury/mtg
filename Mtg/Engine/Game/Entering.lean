@@ -227,7 +227,7 @@ def resolveAdventureSpell (g : Game) (entry : StackEntry) (obj : GameObject) : G
       (verb := some .resolve) (actor := some entry.controller) (cause := finishCause)
     if let .chooseReplacement .. := g.pending then
       g.chainPendingReplacement
-        (.finishPostStep 99 entry.controller (cardId := some obj.id) (cause := finishCause))
+        (.finishPostStep .grantAdventureExilePermission entry.controller (cardId := some obj.id) (cause := finishCause))
     else
       match g.followMovedToZone? obj.id (· == .exile) with
       | some o =>
@@ -472,6 +472,52 @@ partial def receivePriority (g : Game) (p : PlayerId) (recheckSba := true) : Gam
           let g := savePendingP g
           (g.change (.pending (.chooseTriggerToStack q))).logMsg
             s!"{(g.player q).name} chooses the order of triggered abilities (CR 603.3b)"
+
+/-- Emit the post-`recordPutCounters` log for `oid` from its `kind` counter
+delta since `before`. -/
+def logPutCounterDelta (g : Game) (oid : ObjectId) (kind : CounterKind)
+    (before : Nat) (logKind : PutCounterLog) : Game :=
+  match g.findObject? oid with
+  | none => g
+  | some o =>
+    let after := o.status.counterCount kind
+    let k := after - before
+    if k == 0 then g
+    else
+      let cName := kind.oracleName
+      match logKind with
+      | .isPutOn =>
+        let art := if indefinite cName == "an" then "An" else "A"
+        let phrase :=
+          if k == 1 then s!"{art} {cName} counter is put"
+          else s!"{k} {cName} counters are put"
+        g.logMsg s!"{phrase} on {g.name o}"
+      | .gets =>
+        g.logMsg s!"{g.name o} gets {kind.countersPhrase k}"
+      | .getsWithTotal =>
+        g.logMsg s!"{g.name o} gets {kind.countersPhrase k} ({after})"
+      | .getsCount =>
+        g.logMsg s!"{g.name o} gets {k} {cName} counter(s)"
+      | .countArePutOn =>
+        g.logMsg s!"{k} {cName} counter(s) are put on {g.name o}"
+      | .playerPutsOn player =>
+        let pName := (g.player player).name
+        g.logMsg s!"{pName} puts {kind.countersPhrase k} on {g.name o}"
+      | .received =>
+        g.logMsg s!"{g.name o} received {kind.countersPhrase k}"
+
+/-- Run `recordPutCounters` on `oid` and emit `logPutCounterDelta` synchronously
+or defer via `PendingReplacement.logPutCounterDelta` when
+`Pending.chooseReplacement` opened. -/
+def putCountersDeferredLog (g : Game) (oid : ObjectId) (kind : CounterKind)
+    (n : Nat) (byPlayer : Option PlayerId) (logKind : PutCounterLog)
+    (cause : Option EventCause := none) : Game :=
+  let before := ((g.findObject? oid).map (·.status.counterCount kind)).getD 0
+  let g := g.recordPutCounters oid kind n (byPlayer := byPlayer) (cause := cause)
+  if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement (.logPutCounterDelta oid kind before logKind)
+  else
+    g.logPutCounterDelta oid kind before logKind
 
 end Game
 end Mtg.Engine

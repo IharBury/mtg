@@ -57,29 +57,61 @@ def spellNameForbidden (g : Game) (name : String) : Bool :=
     o.status.chosenName == some name &&
       (g.staticAbilities o).any (· == .fra .chosenNameSpellsCantBeCast))
 
+/-- Whether `g.activePlayer` controls a permanent forbidding opponents from
+casting spells during that player's turn (CR 101.2). -/
+def opponentsCantCastOnActiveTurn (g : Game) (p : PlayerId) : Bool :=
+  p != g.activePlayer && !g.areTeammates p g.activePlayer &&
+    (g.permanentsOf g.activePlayer).any (fun o =>
+      (g.staticAbilities o).any (· == .opponentsCantCastOnYourTurn))
+
+/-- Whether `p`'s graveyard has enough other cards to cast `face` (Ruling 852). -/
+def graveyardCastThresholdMet (g : Game) (p : PlayerId) (cardId : ObjectId) (face : CardDef) : Bool :=
+  match face.castOnlyIfGraveyardAtLeast with
+  | some n => ((g.player p).graveyard.filter (· != cardId)).size >= n
+  | none => true
+
 /-- Whether `p` may begin to cast `o` (CR 601.3). Having enough mana in the
 pool is not required; mana abilities are activated at CR 601.2g. Additional
 non-mana costs such as sacrificing a permanent must still be payable. -/
 def canCast (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
   let bc := { g.baseCard o with keywords := g.currentKeywords o }
-  !g.isLand o && !g.combatLocksNonManaAbilities && !g.spellNameForbidden (g.name o) &&
+  let fromGraveyard := o.zone == .graveyard o.owner
+  let isFreeFromGy := fromGraveyard && g.freeCastFromGraveyard o
+  let hadFlashbackPerm := fromGraveyard && !isFreeFromGy && g.flashbackUntilEot o
+  let isFlashbackCast := fromGraveyard && !isFreeFromGy && (bc.flashback.isSome || hadFlashbackPerm)
+  let freeGyTiming := g.hasPriority p && g.freeCastFromGraveyard o && o.zone == .graveyard p
+  !g.isLand o && !g.splitSecondOnStack && !g.combatLocksNonManaAbilities &&
+  !g.opponentsCantCastOnActiveTurn p && !g.spellNameForbidden (g.name o) &&
   !g.cantCastSpellsThisTurn p &&
   g.mayPlay p o &&
+  g.graveyardCastThresholdMet p o.id bc &&
   (match g.playPermission o with
    | some perm =>
-     (perm.ignoreTiming || g.timingAllowsCast p bc) &&
+     (perm.ignoreTiming || freeGyTiming || g.timingAllowsCast p bc) &&
        (!perm.payLifeEqualManaValue || g.canPayLife p (g.objectManaValue o))
-   | none => g.timingAllowsCast p bc) &&
+   | none => freeGyTiming || g.timingAllowsCast p bc) &&
   (if bc.additionalCostSacrificeArtifactOrCreature &&
       bc.additionalCostOrPayGeneric.isNone then
     (g.permanentsOf p).any (fun perm =>
-      perm.id != o.id && (g.isCreature perm || g.isArtifact perm))
+      perm.id != o.id &&
+        if bc.additionalCostSacrificeCreatureOrPlaneswalker then
+          g.isCreature perm || g.isPlaneswalker perm
+        else if bc.additionalCostSacrificeCreature then g.isCreature perm
+        else g.isCreature perm || g.isArtifact perm)
    else true) &&
+  (!bc.additionalCostSacrificeCreature || !(g.creaturesControlledBy p).isEmpty) &&
+  (!(isFlashbackCast && bc.flashbackDiscard) || (g.player p).hand.any (· != o.id)) &&
   -- Untargeted permanents, and untargeted instants/sorceries with a modeled
   -- effect (e.g. Night's Whisper), may be proposed (CR 601.3).
-  if bc.requiresTarget then
+  if isModalSpellFace bc then
+    let tcs := g.evalLayer3 o
+    (effectiveSpellModes bc).any (fun e =>
+      let m := if tcs.isEmpty then e else TextChange.applyEffect tcs e
+      g.spellModeIsChoosable p m (some o.id)) ||
+      isReturnUpToTwoGyModal bc || bc.allowsZeroTargets
+  else if bc.requiresTarget then
     bc.allowsZeroTargets || !(g.legalSpellTargets p o |>.isEmpty)
-  else bc.isPermanentCard || bc.spellEffect.isSome || bc.isModal
+  else bc.isPermanentCard || bc.spellEffect.isSome || isModalSpellFace bc
 
 /-- Whether `p` can pay a mandatory additional cost of `o` from `available`
 (another card to discard, a permanent to sacrifice, or the generic
@@ -132,15 +164,40 @@ def canCastAdventure (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
   | none => false
   | some adv =>
     let face := adv.toCardDef
+    let fromGraveyard := o.zone == .graveyard o.owner
+    let isFreeFromGy := fromGraveyard && g.freeCastFromGraveyard o
+    let hadFlashbackPerm := fromGraveyard && !isFreeFromGy && g.flashbackUntilEot o
+    let isFlashbackCast := fromGraveyard && !isFreeFromGy && (face.flashback.isSome || hadFlashbackPerm)
+    let freeGyTiming := g.hasPriority p && g.freeCastFromGraveyard o && o.zone == .graveyard p
+    !g.splitSecondOnStack &&
     !g.combatLocksNonManaAbilities &&
+    !g.opponentsCantCastOnActiveTurn p &&
     !g.spellNameForbidden face.name &&
     !g.cantCastSpellsThisTurn p &&
     !g.adventureExileForbidsRecast o &&
     g.mayPlay p o &&
+    g.graveyardCastThresholdMet p o.id face &&
     (match g.playPermission o with
-     | some perm => perm.ignoreTiming || g.timingAllowsCast p face
-     | none => g.timingAllowsCast p face) &&
-    if face.requiresTarget then !(g.legalCastTargets p face).isEmpty
+     | some perm =>
+       (perm.ignoreTiming || freeGyTiming || g.timingAllowsCast p face) &&
+         (!perm.payLifeEqualManaValue || g.canPayLife p face.manaValue)
+     | none => freeGyTiming || g.timingAllowsCast p face) &&
+    (if face.additionalCostSacrificeArtifactOrCreature &&
+        face.additionalCostOrPayGeneric.isNone then
+      (g.permanentsOf p).any (fun perm =>
+        perm.id != o.id &&
+          if face.additionalCostSacrificeCreatureOrPlaneswalker then
+            g.isCreature perm || g.isPlaneswalker perm
+          else if face.additionalCostSacrificeCreature then g.isCreature perm
+          else g.isCreature perm || g.isArtifact perm)
+     else true) &&
+    (!face.additionalCostSacrificeCreature || !(g.creaturesControlledBy p).isEmpty) &&
+    (!(isFlashbackCast && face.flashbackDiscard) || (g.player p).hand.any (· != o.id)) &&
+    if isModalSpellFace face then
+      (effectiveSpellModes face).any (g.spellModeIsChoosable p · (some o.id)) ||
+        isReturnUpToTwoGyModal face || face.allowsZeroTargets
+    else if face.requiresTarget then
+      face.allowsZeroTargets || !(g.legalCastTargets p face).isEmpty
     else true
 
 /-- Whether paying this proposed spell or ability may spend Elf-restricted mana
@@ -567,8 +624,12 @@ def finishPostCast (g : Game) (p : PlayerId)
         let castable := alive.filter (fun id =>
           (g.findObject? id).any (fun o => g.objectManaValue o ≤ budget))
         if castable.isEmpty || castsLeft == 0 then
-          let g := alive.foldl (fun g id =>
-            g.ceaseToExist id (cause := some (.stateBased .copyOutsideStackOrBf))) g
+          let g :=
+            if alive.isEmpty then g
+            else
+              g.withBatch (some (.stateBased .copyOutsideStackOrBf)) fun g =>
+                alive.foldl (fun g id =>
+                  g.ceaseToExist id (cause := some (.stateBased .copyOutsideStackOrBf))) g
           g.change (.pendingFreeCopies none)
         else
           g.change (.pending (.fraChoice q (.castCopiesFree alive budget castsLeft)))
@@ -606,7 +667,7 @@ def becomeCast (g : Game) (p : PlayerId) (spell : GameObject)
         else g) g) g
     -- Theorist's Proxy: the next spell this player casts this turn.
     let g :=
-      if g.nextSpellCantBeCountered p && !spell.isCopy then
+      if g.nextSpellCantBeCountered p && !GameEvent.isUncastStackCopy g.events spell.id then
         let g := g.expireEffect (.nextSpellCantBeCounteredThisTurn p)
         (g.createEffect (.uncounterableThisCast spell.id)).logMsg
           s!"{spell.name} can't be countered"
@@ -698,10 +759,9 @@ def payLoyaltyCost (g : Game) (p : PlayerId) (o : GameObject) (sym : LoyaltySymb
   let k := (sym.counters).getD 0
   let oName := g.name o
   if k > 0 then
-    let g := g.withProposalAction .costAction fun g =>
-      g.recordPutCounters o.id .loyalty k.natAbs (byPlayer := some p)
+    g.withProposalAction .costAction fun g =>
+      g.putCountersDeferredLog o.id .loyalty k.natAbs (some p) .countArePutOn
         (cause := some (.costPayment .loyalty p forObject))
-    g.logMsg s!"{k} loyalty counter(s) are put on {oName}"
   else if k < 0 then
     let g := g.withProposalAction .costAction fun g =>
       g.record (GameEvent.counters g.turnNumber (some p) (g.snapshot o) .loyalty k.natAbs true
@@ -904,7 +964,10 @@ def proposedNeedsTarget (g : Game) (prop : ProposedSpell) : Bool :=
     | .spell =>
       match g.currentSpellEffect o with
       | some e => e.requiresTarget
-      | none => (g.baseCard o).requiresTarget || g.isAura o
+      | none =>
+        let bc := g.baseCard o
+        if isModalSpellFace bc then false
+        else bc.requiresTarget || g.isAura o
     | .activatedAbility =>
       match o.abilityEffect with
       | some e => e.requiresTarget
@@ -969,13 +1032,19 @@ def setProposedTargets (g : Game) (targets : Array Target) : Game :=
   | some prop => g.setStackEntryTargets prop.spellId targets
 
 /-- How many modes `p` may choose for `face` (CR 700.2): two for “choose one
-or both” and for “choose two if you control a [subtype]” while they do. -/
+or both”, “choose up to two”, and “choose two if you control a [subtype]”
+while they do. -/
 def maxModesFor (g : Game) (p : PlayerId) (face : CardDef) : Nat :=
-  if face.chooseOneOrBoth then 2
+  if face.chooseOneOrBoth || isReturnUpToTwoGyModal face then 2
   else
     match face.chooseTwoIfYouControlSubtype with
     | some s => if (g.permanentsOf p).any (fun o => g.hasSubtype o s) then 2 else 1
     | none => 1
+
+/-- Minimum number of modes required for `face` (CR 700.2b): `0` for “choose
+up to two”, `1` otherwise. -/
+def minModesFor (face : CardDef) : Nat :=
+  if isReturnUpToTwoGyModal face then 0 else 1
 
 /-- Add `mode` to the proposed spell's chosen modes. -/
 def addProposedExtraMode (g : Game) (mode : Nat) : Game :=
