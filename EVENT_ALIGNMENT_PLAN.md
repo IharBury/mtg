@@ -5721,7 +5721,7 @@ opponent checks, CR 723.1 `playerControl` turn-window & expiry, and
      continuations when `g.move` pauses on `Pending.chooseReplacement`
      (`ResolutionEffects.exileUntilSourceLeaves` and `exileForLeaveTrigger` in
      `ResolutionEffects.lean`, `FraResolve.applyFra` `.exileUntilSourceLeaves`
-     and `.castCopiesFree` in `FraResolve.lean`, `EffectResolution` exile-top-`X`
+     and `.uldarosCopies` in `FraResolve.lean`, `EffectResolution` exile-top-`X`
      and `.exileThenReturnNextEnd` in `EffectResolution.lean`,
      `LibrarySearch.exileSearchedLinked` in `LibrarySearch.lean`, and
      `TriggeredAbilities.applyExile` `.forLater` / `.playUntilNextTurn` /
