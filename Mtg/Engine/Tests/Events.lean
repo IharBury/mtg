@@ -14347,7 +14347,7 @@ def mkTwoHeadedGiant21 (seed : UInt64 := 221) : Game :=
     id := idDblCtr, source := some lbId, controller := some me,
     affectedPlayer := me, kind := .modifyCountersPut (some lbId) (some .hone) (add := 0) (mult := 2)
   }) (cause := some testCause)
-  let gLog2 : Game := gLog1.putCountersDeferredLog lbId .hone 1 (some me) 5 (cause := some testCause)
+  let gLog2 : Game := gLog1.putCountersDeferredLog lbId .hone 1 (some me) .getsCount (cause := some testCause)
   let deferredLogOk : Bool :=
     (gLog2.object! lbId).status.hone == 2 &&
     gLog2.log.any (·.contains "gets 2 hone counter(s)") &&

@@ -405,6 +405,8 @@ partial def resumePendingReplacement (g : Game) (pr : PendingReplacement)
     | none => g
   | .recordPutCounters targetId kind n byPlayer cause =>
     g.recordPutCounters targetId kind n byPlayer (cause := cause)
+  | .logPutCounterDelta targetId kind before logKind =>
+    g.logPutCounterDelta targetId kind before logKind
   | .move id dest controller verb actor faceDown tapped
       attacking attackingTarget transformed returnedAsArtifact onlyFoodArtifact
       extraEntersWith libraryPosition fromStackTime applyHope preBattlefield
@@ -1191,10 +1193,6 @@ partial def runPostStep (g : Game) (tag : Nat) (p : PlayerId) (n : Nat := 0)
     | none => g
   | 81 =>
     g.finishWorldsWithinWorldsExileSelf sourceId
-  | 82 =>
-    match cardId with
-    | some oid => g.logPutCounterDelta oid n (modes[0]?.getD 0) (byPlayer := some p) (name := name)
-    | none => g
   | 83 =>
     g.finishNotedLandsEntered ids
   | 84 =>
@@ -1428,7 +1426,7 @@ partial def runPostStep (g : Game) (tag : Nat) (p : PlayerId) (n : Nat := 0)
         let id := ids[i]!
         if let some eq := g.findObject? id then
           if eq.isOnBattlefield && g.isEquipment eq then
-            g := g.putCountersDeferredLog eq.id .hone 1 (some p) 12
+            g := g.putCountersDeferredLog eq.id .hone 1 (some p) .received
             if let .chooseReplacement .. := g.pending then
               let rem := ids.extract (i + 1) ids.size
               if !rem.isEmpty then
@@ -1437,7 +1435,7 @@ partial def runPostStep (g : Game) (tag : Nat) (p : PlayerId) (n : Nat := 0)
       return g
   | 124 =>
     match cardId with
-    | some oid => g.putCountersDeferredLog oid .doubleStrike 1 (some p) 2
+    | some oid => g.putCountersDeferredLog oid .doubleStrike 1 (some p) .gets
     | none => g
   | 125 =>
     if g.stillInGame p then g.logMsg s!"{(g.player p).name} is given a Treasure (gift)" else g

@@ -1087,6 +1087,25 @@ structure SbaGraveyardMove where
   sba : StateBasedAction
 deriving Repr, Inhabited, BEq
 
+/-- How `Game.logPutCounterDelta` formats the post-replacement log for `kind`
+counters put on a permanent. -/
+inductive PutCounterLog where
+  /-- `"A(n) <kind> counter is put on <name>"` / `"<k> <kind> counters are put on <name>"`. -/
+  | isPutOn
+  /-- `"<name> gets a(n) <kind> counter"` / `"<name> gets <k> <kind> counters"`. -/
+  | gets
+  /-- `"<name> gets a(n) <kind> counter (<total>)"` / `"<name> gets <k> <kind> counters (<total>)"`. -/
+  | getsWithTotal
+  /-- `"<name> gets <k> <kind> counter(s)"`. -/
+  | getsCount
+  /-- `"<k> <kind> counter(s) are put on <name>"`. -/
+  | countArePutOn
+  /-- `"<player> puts a(n) <kind> counter on <name>"` / `"<player> puts <k> <kind> counters on <name>"`. -/
+  | playerPutsOn (player : PlayerId)
+  /-- `"<name> received a(n) <kind> counter"` / `"<name> received <k> <kind> counters"`. -/
+  | received
+deriving DecidableEq, Repr, Inhabited, BEq
+
 /-- Continuation stored while waiting for a player to answer `Pending.chooseReplacement`
 when multiple replacement or prevention effects compete in the same CR 616.1a–e tier. -/
 inductive PendingReplacement where
@@ -1114,6 +1133,8 @@ inductive PendingReplacement where
       (entersWith : Bool) (byPlayer : Option PlayerId) (cause : Option EventCause)
   | recordPutCounters (targetId : ObjectId) (kind : CounterKind) (n : Nat)
       (byPlayer : Option PlayerId) (cause : Option EventCause)
+  | logPutCounterDelta (targetId : ObjectId) (kind : CounterKind) (before : Nat)
+      (logKind : PutCounterLog)
   | move (id : ObjectId) (dest : Zone) (controller : Option PlayerId)
       (verb : Option ZoneVerb)
       (actor : Option PlayerId) (faceDown : Bool) (tapped : Bool)

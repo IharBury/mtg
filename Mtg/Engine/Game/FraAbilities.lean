@@ -316,7 +316,7 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
         if chosenX == 0 then g
         else
           let cur := g.object! o.id
-          g.putCountersDeferredLog cur.id .stun chosenX (some controller) 0 (cause := some cause)) sourceId illegal
+          g.putCountersDeferredLog cur.id .stun chosenX (some controller) .isPutOn (cause := some cause)) sourceId illegal
   | .emblemDrawOnCast =>
     let emblem : CardDef := {
       name := "Chandra, Chill of Compliance Emblem", types := #[]

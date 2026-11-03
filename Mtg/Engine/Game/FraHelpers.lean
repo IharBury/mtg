@@ -201,7 +201,7 @@ def loyaltyOnPwsLoop (g : Game) (p : PlayerId) (ids : Array ObjectId) : Game := 
     let id := ids[i]!
     if let some o := g.findObject? id then
       if o.isOnBattlefield && g.isPlaneswalker o then
-        g := g.putCountersDeferredLog o.id .loyalty 1 (some p) 1
+        g := g.putCountersDeferredLog o.id .loyalty 1 (some p) .isPutOn
         if let .chooseReplacement .. := g.pending then
           let rem := ids.extract (i + 1) ids.size
           if !rem.isEmpty then

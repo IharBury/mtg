@@ -783,7 +783,7 @@ def applyFrc (g : Game) (controller : PlayerId) (effect : Effect) (e : FrcEffect
   | .story =>
     match g.srcObj? sourceId with
     | some o =>
-      g.putCountersDeferredLog o.id .story 1 (some controller) 11
+      g.putCountersDeferredLog o.id .story 1 (some controller) .gets
     | none => g
   | .currencyExile =>
     match g.frcGraveyardCause? with

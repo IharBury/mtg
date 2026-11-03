@@ -582,7 +582,7 @@ def plusOneAndDoubleStrike (g : Game) (sourceId : Option ObjectId) : Game :=
         g.chainPendingReplacement
           (.finishPostStep 124 (byP.getD g.activePlayer) (cardId := some o.id))
       else
-        g.putCountersDeferredLog o.id .doubleStrike 1 byP 2)
+        g.putCountersDeferredLog o.id .doubleStrike 1 byP .gets)
     "The source is no longer in play"
 
 /-- Put a +1/+1 counter on the source, then it fights up to one creature an

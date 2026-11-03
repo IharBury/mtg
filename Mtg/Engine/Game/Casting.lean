@@ -760,7 +760,7 @@ def payLoyaltyCost (g : Game) (p : PlayerId) (o : GameObject) (sym : LoyaltySymb
   let oName := g.name o
   if k > 0 then
     g.withProposalAction .costAction fun g =>
-      g.putCountersDeferredLog o.id .loyalty k.natAbs (some p) 8
+      g.putCountersDeferredLog o.id .loyalty k.natAbs (some p) .countArePutOn
         (cause := some (.costPayment .loyalty p forObject))
   else if k < 0 then
     let g := g.withProposalAction .costAction fun g =>

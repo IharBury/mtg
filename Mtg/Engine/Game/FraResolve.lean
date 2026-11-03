@@ -27,7 +27,7 @@ def tapAndStunTargetsLoop (g : Game) (controller : PlayerId) (kind : EffectTarge
         if let some o := g.findObject? id then
           let g' := if o.status.tapped then g else g.becomeTapped o (cause := cause)
           let cur := g'.object! o.id
-          g := g'.putCountersDeferredLog cur.id .stun 1 (g'.controllerOf cur) 0 (cause := cause)
+          g := g'.putCountersDeferredLog cur.id .stun 1 (g'.controllerOf cur) .isPutOn (cause := cause)
           if let .chooseReplacement .. := g.pending then
             let rem := remaining.extract (i + 1) remaining.size
             if !rem.isEmpty then
@@ -816,7 +816,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
                     (g.baseCard src).creaturesCantGetMinusCounters && g.retainsPrintedAbilities src)
                 | none => false
               if x > 0 && !shielded then
-                g.putCountersDeferredLog o.id .minusOneMinusOne x (some controller) 10
+                g.putCountersDeferredLog o.id .minusOneMinusOne x (some controller) .countArePutOn
               else g
             | none => g
         | _ => g) g

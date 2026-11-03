@@ -185,7 +185,7 @@ def applyPermanentAction (g : Game) (o : GameObject) (action : PermanentAction)
   | .indestructibleCounter => g.addIndestructibleCounter o
   | .doubleStrikeCounter =>
     let cause := g.resolveOptionalCause none (fallbackSrc := sourceId) (fallbackCtrl := g.controllerOf o)
-    g.putCountersDeferredLog o.id .doubleStrike 1 (g.controllerOf o) 2 (cause := some cause)
+    g.putCountersDeferredLog o.id .doubleStrike 1 (g.controllerOf o) .gets (cause := some cause)
   | .burdenCounter => g.addBurdenCounter o
   | .tap => g.becomeTapped o
   | .untap =>
@@ -216,7 +216,7 @@ def applyPermanentAction (g : Game) (o : GameObject) (action : PermanentAction)
     g.withBatch (some cause) fun g =>
       let g := if o.status.tapped then g else g.becomeTapped o (cause := some cause)
       let cur := g.object! o.id
-      g.putCountersDeferredLog cur.id .stun 1 (g.controllerOf cur) 0 (cause := some cause)
+      g.putCountersDeferredLog cur.id .stun 1 (g.controllerOf cur) .isPutOn (cause := some cause)
   | .setBasePT pw tw =>
     let g := g.createEffect (.setBasePTUntilEot o.id (pw, tw))
     g.logMsg s!"{g.name o} has base power and toughness {pw}/{tw} until end of turn"

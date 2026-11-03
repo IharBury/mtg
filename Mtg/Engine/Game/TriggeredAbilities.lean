@@ -887,14 +887,14 @@ def applyAffectedCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbil
       else g.addIndestructibleCounter o n
     | .doubleStrike =>
       if n == 1 then g.applyPermanentAction o .doubleStrikeCounter
-      else g.putCountersDeferredLog o.id .doubleStrike n (g.controllerOf o) 2
+      else g.putCountersDeferredLog o.id .doubleStrike n (g.controllerOf o) .gets
     | .burden =>
       if n == 1 then g.applyPermanentAction o .burdenCounter
       else g.addBurdenCounter o n
     | .stun =>
-      g.putCountersDeferredLog o.id .stun n (g.controllerOf o) 0
+      g.putCountersDeferredLog o.id .stun n (g.controllerOf o) .isPutOn
     | .loyalty =>
-      g.putCountersDeferredLog o.id .loyalty n (some controller) 1
+      g.putCountersDeferredLog o.id .loyalty n (some controller) .isPutOn
     | kind =>
       g.addCounters o kind n (byPlayer := some controller)
 
@@ -1200,41 +1200,26 @@ def applyTriggerDamage (g : Game) (controller : PlayerId) (ab : TriggeredAbility
           else g.withBatch batchCause fun g => objs.foldl dealPermanent g
         | none => g
 
-def keywordCounterTag : CounterKind → Nat
-  | .haste => 20
-  | .flying => 21
-  | .firstStrike => 22
-  | .doubleStrike => 23
-  | .deathtouch => 24
-  | .indestructible => 25
-  | .lifelink => 26
-  | .menace => 27
-  | .reach => 28
-  | .trample => 29
-  | .vigilance => 30
-  | _ => 20
-
-def keywordCounterSpecs : Array ((Game → GameObject → Bool) × CounterKind × Nat × String) := #[
-  (Game.hasHaste, .haste, 20, "haste"),
-  (Game.hasFlying, .flying, 21, "flying"),
-  ((fun g o => g.hasKeyword o (·.firstStrike)), .firstStrike, 22, "first strike"),
-  (Game.hasDoubleStrike, .doubleStrike, 23, "double strike"),
-  (Game.hasDeathtouch, .deathtouch, 24, "deathtouch"),
-  (Game.hasIndestructible, .indestructible, 25, "indestructible"),
-  (Game.hasLifelink, .lifelink, 26, "lifelink"),
-  (Game.hasMenace, .menace, 27, "menace"),
-  ((fun g o => g.hasKeyword o (·.reach)), .reach, 28, "reach"),
-  (Game.hasTrample, .trample, 29, "trample"),
-  (Game.hasVigilance, .vigilance, 30, "vigilance")
+def keywordCounterSpecs : Array ((Game → GameObject → Bool) × CounterKind) := #[
+  (Game.hasHaste, .haste),
+  (Game.hasFlying, .flying),
+  ((fun g o => g.hasKeyword o (·.firstStrike)), .firstStrike),
+  (Game.hasDoubleStrike, .doubleStrike),
+  (Game.hasDeathtouch, .deathtouch),
+  (Game.hasIndestructible, .indestructible),
+  (Game.hasLifelink, .lifelink),
+  (Game.hasMenace, .menace),
+  ((fun g o => g.hasKeyword o (·.reach)), .reach),
+  (Game.hasTrample, .trample),
+  (Game.hasVigilance, .vigilance)
 ]
 
 /-- Put one keyword counter on `src` when `other` has that keyword and `src`
 does not. -/
 def copyKeywordCounter (g : Game) (src other : GameObject)
-    (has : GameObject → Bool) (kind : CounterKind) (name : String) : Game :=
+    (has : GameObject → Bool) (kind : CounterKind) : Game :=
   if has other && !has src then
-    g.putCountersDeferredLog src.id kind 1 (g.controllerOf src) (keywordCounterTag kind)
-      (name := name)
+    g.putCountersDeferredLog src.id kind 1 (g.controllerOf src) .gets
   else g
 
 /-- Pause-safe loop copying missing keyword counters from `otherId` onto each
@@ -1249,11 +1234,11 @@ def copyMissingKeywordsStep (g : Game) (srcIds : Array ObjectId) (otherId : Obje
   for sIdx in [0:srcIds.size] do
     let sid := srcIds[sIdx]!
     for kIdx in [kwStart:keywordCounterSpecs.size] do
-      let (has, kind, tag, name) := keywordCounterSpecs[kIdx]!
+      let (has, kind) := keywordCounterSpecs[kIdx]!
       if let some src := g.findObject? sid then
         if let some other := g.findObject? otherId then
           if src.isOnBattlefield && has g other && !has g src then
-            g := g.putCountersDeferredLog src.id kind 1 (g.controllerOf src) tag (name := name)
+            g := g.putCountersDeferredLog src.id kind 1 (g.controllerOf src) .gets
             if let .chooseReplacement .. := g.pending then
               let nextKw := kIdx + 1
               let (remSrcs, remKw) :=
@@ -1308,7 +1293,7 @@ def applyPutCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       (some "The target is no longer legal")
   | .ofKind .loyalty _, .source =>
     g.withSourceOnBattlefield sourceId (fun g o =>
-      g.putCountersDeferredLog o.id .loyalty 1 (some controller) 1)
+      g.putCountersDeferredLog o.id .loyalty 1 (some controller) .isPutOn)
   | .sourceCounters, .permanent _ =>
     -- Rulings 756 / 758: each kind of counter it had as it died, in the same
     -- numbers; nothing moves from the dead creature.
@@ -1326,10 +1311,10 @@ def applyPutCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
           g.logMsg s!"The counters are put on {g.name o}") "No target was chosen"
   | .ofKind .charge _, .source =>
     g.withSourceOnBattlefield sourceId (fun g o =>
-      g.putCountersDeferredLog o.id .charge 1 (some controller) 3)
+      g.putCountersDeferredLog o.id .charge 1 (some controller) .isPutOn)
   | .ofKind .quest _, .source =>
     g.withTriggerSource sourceId fun g src =>
-      g.putCountersDeferredLog src.id .quest 1 (some controller) 4
+      g.putCountersDeferredLog src.id .quest 1 (some controller) .getsWithTotal
   | .honePerOpponent, .source =>
     let opp? :=
       match targets[0]? with
@@ -1337,7 +1322,7 @@ def applyPutCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       | _ => g.firstLivingOpponent? controller
     let n := match opp? with | some opp => g.countCreaturesControlledBy opp | none => 0
     g.withTriggerSource sourceId fun g src =>
-      g.putCountersDeferredLog src.id .hone n (some controller) 5
+      g.putCountersDeferredLog src.id .hone n (some controller) .getsCount
   | .ofKind .plan _, .source =>
     match sourceId.bind g.findObject? with
     | some o =>
@@ -1365,7 +1350,7 @@ def applyPutCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
   | .ofKind .invasion _, .source =>
     let g := g.change (.notedCountThisWay 0)
     g.withSourceOnBattlefield sourceId (fun g src =>
-      g.putCountersDeferredLog src.id .invasion 1 (some controller) 6)
+      g.putCountersDeferredLog src.id .invasion 1 (some controller) .gets)
       "The source is no longer in play"
   | .ofKind .trample _, .permanent _ =>
     match targets[0]? with
@@ -1373,7 +1358,7 @@ def applyPutCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       match g.findObject? oid with
       | some o =>
         if o.isOnBattlefield && g.canBeTargetedBy controller o sourceId then
-          g.putCountersDeferredLog o.id .trample 1 (some controller) 7
+          g.putCountersDeferredLog o.id .trample 1 (some controller) .gets
         else g.logMsg "The target is no longer legal"
       | none => g
     | _ => g
@@ -1405,7 +1390,7 @@ def applyPutCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         | none => g
   | .ofKind .loyalty _, .permanent _ =>
     g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
-      g.putCountersDeferredLog o.id .loyalty 1 (some controller) 1)
+      g.putCountersDeferredLog o.id .loyalty 1 (some controller) .isPutOn)
   | .plusOneSacrificedPower, .source =>
     let n := g.sacrificedPowerThisWay.getD 0
     let g := g.change (.sacrificedPowerThisWay none)
@@ -1424,7 +1409,7 @@ def applyPutCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       "The target is no longer legal"
   | .ofKind .doubleStrike n, .permanent false =>
     g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
-      g.putCountersDeferredLog o.id .doubleStrike n (some controller) 2)
+      g.putCountersDeferredLog o.id .doubleStrike n (some controller) .gets)
       "The target is no longer legal"
   | .ofKind .burden n, .permanent false =>
     g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
@@ -1432,7 +1417,7 @@ def applyPutCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       "The target is no longer legal"
   | .ofKind .stun n, .permanent false =>
     g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
-      g.putCountersDeferredLog o.id .stun n (g.controllerOf o) 0)
+      g.putCountersDeferredLog o.id .stun n (g.controllerOf o) .isPutOn)
       "The target is no longer legal"
   | .ofKind kind n, .source =>
     g.applyAffectedCounters controller ab sourceId targets kind n .source
@@ -4837,7 +4822,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
             let id := eqs[i]!
             if let some eq := g.findObject? id then
               if eq.isOnBattlefield && g.isEquipment eq then
-                g := g.putCountersDeferredLog eq.id .hone 1 (some controller) 12
+                g := g.putCountersDeferredLog eq.id .hone 1 (some controller) .received
                 if let .chooseReplacement .. := g.pending then
                   let rem := eqs.extract (i + 1) eqs.size
                   if !rem.isEmpty then
