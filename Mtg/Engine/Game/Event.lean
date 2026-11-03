@@ -1106,6 +1106,175 @@ inductive PutCounterLog where
   | received
 deriving DecidableEq, Repr, Inhabited, BEq
 
+/-- Deferred continuation step for FRC effects (`FrcResolve.lean`) resumed after a
+CR 616.1 `Pending.chooseReplacement` pause finishes. -/
+inductive FrcPostStep where
+  | putDrawnBackOnTop
+  | offerMaySearchBasics
+  | makeHumanToken
+  | grantControlledCreaturesIndestructible
+  | destroyNonRecentCreaturesAtFive
+  | makeMitesThenDestroyAtFive
+  | discardBackHandThenCreateSpirits
+  | createSpiritTokens
+  | incubateForExiledCount
+  | polymorphRevealCreatures
+  | registerSyntheticDestinyEndStep
+  | polymorphSingleTargetReveal
+  | discardHandThenDrainAndDraw
+  | loseThreeDrawOneGainThree
+  | optionalOncePolymorphReveal
+  | handDiscardToBottom
+  | revealCreatureOrPlaneswalker
+  | grantRecentTokensLifelinkHaste
+  | discardHand
+  | currencyReturnCreateToken
+  | grantMilledFreeCastUntilEot
+  | factOrFictionHandInnerLoop
+  | factOrFictionGyInnerLoop
+  | tamiyoStunLoop
+  | factOrFictionGyLoop
+deriving DecidableEq, Repr, Inhabited, BEq
+
+/-- Deferred post-step continuation (`Decisions.runPostStep`) resumed after a CR 616.1
+`Pending.chooseReplacement` pause finishes. -/
+inductive PostStep where
+  | putArtifactOntoBattlefield
+  | worldsWithinWorldsTail
+  | copyEnteredArtifact
+  | grantHandSizePower
+  | beginScryOne
+  | copyCastTriggerSpell
+  | pumpControlledCreaturesOneZero
+  | destroyTargetLandThenOfferSearchBasics
+  | offerMaySearchBasics
+  | continueDiscardTwo
+  | enteredBattlefieldPutRestBottomRandom
+  | hawkeyeArrows
+  | loseLifeForLoggedDraws
+  | returnTappedWithEndStepExile
+  | beginDiscardThenStun
+  | afterRecentTokensEnter
+  | drainOpponents
+  | addPlusOnesForLoggedDiscards
+  | addRedManaIfPositive
+  | enteredBattlefieldSilent
+  | returnedBattlefieldEndStep
+  | returnedToBattlefield
+  | returnedToBattlefieldTapped
+  | enteredBattlefieldTapped
+  | empowerJaceExcessDamage
+  | searchBasicLandTapped
+  | fightTargetOpponentCreature
+  | enteredOfferAttachEquipment
+  | putOntoBattlefieldHasteAtFour
+  | revealPutCreaturesStep
+  | shuffleThenGainLife
+  | offerCreaturesFromHandToBattlefield
+  | enteredAttachedToSource
+  | treasureThenDragonAfterCreate
+  | treasureThenDragonCreateDragon
+  | logAndEnterRecentTokens
+  | dealDamageToEachOpponent
+  | noteExcessDamageDealt
+  | notePermanentDealtDamage
+  | logTwoNonlegendaryCopyTokens
+  | discardCleanupIds
+  | postSbaCleanup
+  | cleanupStepAfterDiscard
+  | wheelDrawThenOfferNext
+  | wheelOfferNext
+  | searchLibraryPlaneswalker
+  | searchLibrarySphinx
+  | drawOneThenPlusOnesForDiscards
+  | queueTapAndStunReflexive
+  | nickFuryMayTransformOrBottom
+  | noteHandDiscardedCount
+  | checkDrawThenOpponentsDraw
+  | opponentsDrawOneLoop
+  | loseLifeForMilledManaValue
+  | eaglesReturnCreaturesLoop
+  | addPlusOnesToSource
+  | beginDiscardCardsStep
+  | continueAfterDiscardStep
+  | discardHandIdsLoop
+  | logInfluenceThenScryTwo
+  | finishPalantirInfluence
+  | noteMilledIds
+  | noteOpponentsMilled
+  | logTwoTappedAttackingSpirits
+  | offerWorldsCreatures
+  | identityEchoAfterExile
+  | logShuffleIntoLibrary
+  | empowerJaceExiledCount
+  | reflexiveReturnLandTapped
+  | offerPutMilledPermanentOrGainLife
+  | worldsWithinWorlds
+  | millMayPutPermanentGainLife
+  | offerSearchBasicsExiledCount
+  | enteredThenPutRestBottomRandom
+  | createdTokenNote
+  | noteExiledIds
+  | logReturnsToBattlefieldAndEnter
+  | logPutUnderOwnerControlAndEnter
+  | returnNotedLandsStep
+  | putRestOnBottomRandom
+  | millSourceInfluenceCount
+  | grantCantBeBlockedIfOnBattlefield
+  | logReturnsAsArtifactAndEnter
+  | worldsWithinWorldsExileSelf
+  | notedLandsEntered
+  | noteSacrificedSource
+  | noteSacrificedPlan
+  | continueOpeningBegin
+  | worldsReturnExiledLoop
+  | logMovedToExile
+  | resumeChooseModeAfterLeave
+  | resumeChooseTargetsAfterLeave
+  | resumeTriggerModesAfterLeave
+  | grantLifelinkUntilEot
+  | queueModeledReflexiveIfSourceLeft
+  | grantHasteUntilEotSilent
+  | endTurnAfterCleanupStepEnded
+  | startNextTurnAndBegin
+  | advanceAfterStepEnded
+  | recordUntapStepEnded
+  | beginStepAfterPhaseBegan (st : Step)
+  | beginStepBody (st : Step)
+  | logChosenCardDiscarded
+  | tapAndStunTargetsLoop
+  | exileZemoBoastCards
+  | grantAdventureExilePermission
+  | exileSearchedLinkedLoop
+  | grantPlayUntilEndOfNextTurn
+  | exileCreaturesFromGraveyardLoop
+  | finishExileUntilSourceLeaves
+  | finishExileForLeaveTrigger
+  | exileTopForPlayLoop
+  | exileTopMayCastUpToLoop
+  | offerMayCastUpToFromExile
+  | finishExileUntilNextEndStep
+  | finishFraExileUntilSourceLeaves
+  | uldarosCopiesLoop
+  | finishUldarosCopiesOffer
+  | finishExileTopMayCastElseDamage
+  | exileHandDrawLoop
+  | finishExileHandDrawPlayUntilNext
+  | exileTopXOppPlayForLifeLoop
+  | exileIdsUntilSourceLeavesLoop
+  | exileThenReturnNextEndLoop
+  | finishDaredevilExile
+  | notePlayExiledThisWay
+  | triggerExileLoop
+  | logDiscardedCount
+  | loyaltyOnPlaneswalkersLoop
+  | honeControlledEquipmentLoop
+  | putDoubleStrikeCounter
+  | logGiftTreasureGiven
+  | logDelayedBirdSoldiersCreated
+  | copyMissingKeywordsStep
+deriving DecidableEq, Repr, Inhabited, BEq
+
 /-- Continuation stored while waiting for a player to answer `Pending.chooseReplacement`
 when multiple replacement or prevention effects compete in the same CR 616.1a–e tier. -/
 inductive PendingReplacement where
@@ -1375,10 +1544,10 @@ inductive PendingReplacement where
   | finishFrcRestBottom (p : PlayerId) (rest : Array ObjectId) (shuffle : Bool := false)
       (cause : Option EventCause := none)
       (dackTargets : Array ObjectId := #[])
-  | finishFrcPostStep (tag : Nat) (p : PlayerId) (n1 : Nat := 0)
+  | finishFrcPostStep (step : FrcPostStep) (p : PlayerId) (n1 : Nat := 0)
       (cardId : Option ObjectId := none) (shuffle : Bool := false)
       (cause : Option EventCause := none) (ids : Array ObjectId := #[])
-  | finishPostStep (tag : Nat) (p : PlayerId) (n : Nat := 0)
+  | finishPostStep (step : PostStep) (p : PlayerId) (n : Nat := 0)
       (sourceId : Option ObjectId := none) (cardId : Option ObjectId := none)
       (ids : Array ObjectId := #[]) (targets : Array Target := #[])
       (modes : Array Nat := #[]) (shuffle : Bool := false)

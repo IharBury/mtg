@@ -137,7 +137,7 @@ def discardHandIdsLoop (g : Game) (p : PlayerId) (ids : Array ObjectId)
     (logEach : Bool := false) (cause : Option EventCause := none) : Game := Id.run do
   if let .chooseReplacement .. := g.pending then
     return g.chainPendingReplacement
-      (.finishPostStep 55 p (n := if logEach then 1 else 0) (ids := ids) (cause := cause))
+      (.finishPostStep .discardHandIdsLoop p (n := if logEach then 1 else 0) (ids := ids) (cause := cause))
   let mut g := g
   for i in [0:ids.size] do
     let id := ids[i]!
@@ -153,7 +153,7 @@ def discardHandIdsLoop (g : Game) (p : PlayerId) (ids : Array ObjectId)
           let rem := ids.extract (i + 1) ids.size
           if !rem.isEmpty then
             g := g.chainPendingReplacement
-              (.finishPostStep 55 p (n := if logEach then 1 else 0) (ids := rem) (cause := cause))
+              (.finishPostStep .discardHandIdsLoop p (n := if logEach then 1 else 0) (ids := rem) (cause := cause))
           return g
   return g
 
@@ -176,7 +176,7 @@ def discardEntireHand (g : Game) (p : PlayerId) (cause : Option EventCause := no
   let g := g.withBatch cause? fun g =>
     g.discardHandIdsLoop p ids (logEach := false) (cause := cause?)
   if let .chooseReplacement .. := g.pending then
-    g.chainPendingReplacement (.finishPostStep 121 p (n := preDiscards))
+    g.chainPendingReplacement (.finishPostStep .logDiscardedCount p (n := preDiscards))
   else
     let discarded := g.loggedDiscards p - preDiscards
     g.logMsg s!"{(g.player p).name} discards {discarded} card(s)"
@@ -191,7 +191,7 @@ def mayDiscardHandDrawThatMany (g : Game) (p : PlayerId) (doDiscard : Bool) : Ga
     let g := g.discardEntireHand p
     if n == 0 then g
     else if let .chooseReplacement .. := g.pending then
-      g.chainPendingReplacement (.finishPostStep 41 p (n := n))
+      g.chainPendingReplacement (.finishPostStep .wheelDrawThenOfferNext p (n := n))
     else g.draw p n
 
 /-- Discard the hand, then draw `n` cards. An empty hand is a legal discard
@@ -200,7 +200,7 @@ def discardHandThenDraw (g : Game) (p : PlayerId) (n : Nat) : Game :=
   let g := g.discardEntireHand p
   if n == 0 then g
   else if let .chooseReplacement .. := g.pending then
-    g.chainPendingReplacement (.finishPostStep 41 p (n := n))
+    g.chainPendingReplacement (.finishPostStep .wheelDrawThenOfferNext p (n := n))
   else g.draw p n
 
 /-- Move or put each card in `remainingIds` onto the battlefield sequentially,

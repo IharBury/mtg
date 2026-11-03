@@ -290,12 +290,12 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
         g.discardHandIdsLoop p hand (logEach := true)
       let g :=
         if let .chooseReplacement .. := g.pending then
-          g.chainPendingReplacement (.finishPostStep 41 p (n := n) (modes := restModes))
+          g.chainPendingReplacement (.finishPostStep .wheelDrawThenOfferNext p (n := n) (modes := restModes))
         else
-          g.runPostStep 41 p (n := n) (modes := restModes)
+          g.runPostStep .wheelDrawThenOfferNext p (n := n) (modes := restModes)
       return g.finishFraChoice
     else
-      let g := (g.logMsg s!"{(g.player p).name} keeps their hand").runPostStep 42 p (n := n) (modes := restModes)
+      let g := (g.logMsg s!"{(g.player p).name} keeps their hand").runPostStep .wheelOfferNext p (n := n) (modes := restModes)
       return g.finishFraChoice
   | .mayWheel .., _ => throw "Answer accept or decline"
   | .maySacrificePlaneswalker, .objects #[id] =>
@@ -305,9 +305,9 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let g := g.sacrificeToGraveyard pw s!"{(g.player p).name} sacrifices {g.name pw}"
     let g :=
       if let .chooseReplacement .. := g.pending then
-        g.chainPendingReplacement (.finishPostStep 43 p)
+        g.chainPendingReplacement (.finishPostStep .searchLibraryPlaneswalker p)
       else
-        g.runPostStep 43 p
+        g.runPostStep .searchLibraryPlaneswalker p
     return g.finishFraChoice
   | .maySacrificePlaneswalker, .decline =>
     return (g.logMsg s!"{(g.player p).name} doesn't sacrifice a planeswalker").finishFraChoice
@@ -345,9 +345,9 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let g := g.logMsg s!"{(g.player p).name} exiles five cards named Sphinx's Approach"
     let g :=
       if let .chooseReplacement .. := g.pending then
-        g.chainPendingReplacement (.finishPostStep 44 p)
+        g.chainPendingReplacement (.finishPostStep .searchLibrarySphinx p)
       else
-        g.runPostStep 44 p
+        g.runPostStep .searchLibrarySphinx p
     return g.finishFraChoice
   | .sphinxsApproach _, .decline => return g.finishFraChoice
   | .sphinxsApproach _, _ => throw "Answer accept or decline"
@@ -410,9 +410,9 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let g := g.discardFromHand p id
     let g :=
       if let .chooseReplacement .. := g.pending then
-        g.chainPendingReplacement (.finishPostStep 45 p (sourceId := causeId))
+        g.chainPendingReplacement (.finishPostStep .drawOneThenPlusOnesForDiscards p (sourceId := causeId))
       else
-        g.runPostStep 45 p (sourceId := causeId)
+        g.runPostStep .drawOneThenPlusOnesForDiscards p (sourceId := causeId)
     return g.finishFraChoice
   | .discardThen .., _ => throw "Choose a card to discard"
   | .discardThenStun n sourceId, .objects ids =>
@@ -425,9 +425,9 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       g.discardHandIdsLoop p ids (logEach := true)
     let g :=
       if let .chooseReplacement .. := g.pending then
-        g.chainPendingReplacement (.finishPostStep 46 p (n := nonland) (sourceId := sourceId))
+        g.chainPendingReplacement (.finishPostStep .queueTapAndStunReflexive p (n := nonland) (sourceId := sourceId))
       else
-        g.runPostStep 46 p (n := nonland) (sourceId := sourceId)
+        g.runPostStep .queueTapAndStunReflexive p (n := nonland) (sourceId := sourceId)
     return g.finishFraChoice
   | .discardThenStun .., _ => throw "Choose the cards to discard"
   | .maySacrificeThen types next sourceId, .objects #[id] =>
@@ -600,7 +600,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       g.discardHandIdsLoop p ids (logEach := true)
     let g :=
       if let .chooseReplacement .. := g.pending then
-        g.chainPendingReplacement (.finishPostStep 10 controller (n := nextDraws) (modes := rest.map (fun (q : PlayerId) => q.idx)))
+        g.chainPendingReplacement (.finishPostStep .continueDiscardTwo controller (n := nextDraws) (modes := rest.map (fun (q : PlayerId) => q.idx)))
       else
         g.continueDiscardTwo controller rest nextDraws
     return g.finishFraChoice
@@ -745,9 +745,9 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     else
       let g :=
         if let .chooseReplacement .. := g.pending then
-          g.chainPendingReplacement (.finishPostStep 53 p (n := pw) (sourceId := some sourceId))
+          g.chainPendingReplacement (.finishPostStep .addPlusOnesToSource p (n := pw) (sourceId := some sourceId))
         else
-          g.runPostStep 53 p (n := pw) (sourceId := some sourceId)
+          g.runPostStep .addPlusOnesToSource p (n := pw) (sourceId := some sourceId)
       return g.finishFraChoice
   | .maySacrificeAnotherCreatureForPower _, .decline =>
     if g.mayThenDrop > 0 then return g.declineMayThen else return g.finishFraChoice
@@ -932,9 +932,9 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let g := g.enterFromNickFury p id (cause := some cause)
     let g :=
       if let .chooseReplacement .. := g.pending then
-        g.chainPendingReplacement (.finishPostStep 47 p (cardId := some id) (ids := rest) (cause := some cause))
+        g.chainPendingReplacement (.finishPostStep .nickFuryMayTransformOrBottom p (cardId := some id) (ids := rest) (cause := some cause))
       else
-        g.runPostStep 47 p (cardId := some id) (ids := rest) (cause := some cause)
+        g.runPostStep .nickFuryMayTransformOrBottom p (cardId := some id) (ids := rest) (cause := some cause)
     return g.finishFraChoice
   | .nickFuryPut looked _, .decline =>
     return (g.putRestOnBottomRandom p looked).finishFraChoice
@@ -1156,9 +1156,9 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let g := g.discardEntireHand p
     let g :=
       if let .chooseReplacement .. := g.pending then
-        g.chainPendingReplacement (.finishPostStep 48 p (n := n) (sourceId := sourceId))
+        g.chainPendingReplacement (.finishPostStep .noteHandDiscardedCount p (n := n) (sourceId := sourceId))
       else
-        g.runPostStep 48 p (n := n) (sourceId := sourceId)
+        g.runPostStep .noteHandDiscardedCount p (n := n) (sourceId := sourceId)
     return g.finishFraChoice
   | .mayDiscardHandBalin _, .decline =>
     return (g.logMsg s!"{(g.player p).name} does not discard their hand").finishFraChoice
@@ -1275,7 +1275,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       let g :=
         if let .chooseReplacement .. := g.pending then
           g.chainPendingReplacement
-            (.finishPostStep 101 p (cardId := some oldId) (cause := some cause))
+            (.finishPostStep .grantPlayUntilEndOfNextTurn p (cardId := some oldId) (cause := some cause))
         else
           match g.followMovedToZone? oldId (· == Zone.exile) with
           | some moved =>
@@ -1319,9 +1319,9 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let g := g.draw p n
     let g :=
       if let .chooseReplacement .. := g.pending then
-        g.chainPendingReplacement (.finishPostStep 49 p (n := before))
+        g.chainPendingReplacement (.finishPostStep .checkDrawThenOpponentsDraw p (n := before))
       else
-        g.runPostStep 49 p (n := before)
+        g.runPostStep .checkDrawThenOpponentsDraw p (n := before)
     return g.finishFraChoice
   | .mayDrawThenEachOpponentDraws _, .decline =>
     return (g.logMsg s!"{(g.player p).name} doesn't draw").finishFraChoice
@@ -1334,9 +1334,9 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let (g, _) := g.putOntoBattlefield id p
     let g :=
       if let .chooseReplacement .. := g.pending then
-        g.chainPendingReplacement (.finishPostStep 20 p (cardId := some id))
+        g.chainPendingReplacement (.finishPostStep .enteredBattlefieldSilent p (cardId := some id))
       else
-        g.runPostStep 20 p (cardId := some id)
+        g.runPostStep .enteredBattlefieldSilent p (cardId := some id)
     return g.finishFraChoice
   | .mayPutHeroFromHandOrDraw _, .decline =>
     return (g.draw p 1).finishFraChoice
@@ -1417,9 +1417,9 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let g :=
       if let .chooseReplacement .. := g.pending then
         g.chainPendingReplacement
-          (.finishPostStep 51 p (ids := tops) (modes := #[controller.idx]) (cause := cause?))
+          (.finishPostStep .loseLifeForMilledManaValue p (ids := tops) (modes := #[controller.idx]) (cause := cause?))
       else
-        g.runPostStep 51 p (ids := tops) (modes := #[controller.idx]) (cause := cause?)
+        g.runPostStep .loseLifeForMilledManaValue p (ids := tops) (modes := #[controller.idx]) (cause := cause?)
     return g.finishFraChoice
   | .palantirMayDraw .., _ => throw "Have that player draw (accept), or decline"
   | .mayCastCards eligible withoutPaying exileInstead, .objects #[id] =>

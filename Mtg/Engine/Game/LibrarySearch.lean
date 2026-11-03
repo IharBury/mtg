@@ -141,13 +141,13 @@ def placeSearchedGraveyard (g : Game) (id : ObjectId)
 
 /-- Exile `ids` sequentially inside an open batch and link each card that
 arrives in `.exile` to `source`'s CR 607.2a `leaveTriggerExile` list, pausing
-across `Pending.chooseReplacement` via post-step `100`. -/
+across `Pending.chooseReplacement` via `.exileSearchedLinkedLoop`. -/
 def exileSearchedLinkedLoop (g : Game) (p : PlayerId) (ids : Array ObjectId)
     (source : Option ObjectId) (cause : Option EventCause := none)
     (pendingFromId : Option ObjectId := none) : Game := Id.run do
   if let .chooseReplacement .. := g.pending then
     return g.chainPendingReplacement
-      (.finishPostStep 100 p (sourceId := source) (cardId := pendingFromId)
+      (.finishPostStep .exileSearchedLinkedLoop p (sourceId := source) (cardId := pendingFromId)
         (ids := ids) (cause := cause))
   let mut g := g
   if let some fid := pendingFromId then
@@ -173,7 +173,7 @@ def exileSearchedLinkedLoop (g : Game) (p : PlayerId) (ids : Array ObjectId)
       if let .chooseReplacement .. := g.pending then
         let rem := ids.extract (i + 1) ids.size
         return g.chainPendingReplacement
-          (.finishPostStep 100 p (sourceId := source) (cardId := some id)
+          (.finishPostStep .exileSearchedLinkedLoop p (sourceId := source) (cardId := some id)
             (ids := rem) (cause := some linkCause))
       if let some moved := g.followMovedToZone? id (· == .exile) then
         if let some src := source.bind g.findObject? then
@@ -502,7 +502,7 @@ def resolveExileTopPlayUntilEndOfNextTurn (g : Game) (p : PlayerId) : Game :=
     let (g, _) := g.move top .exile none (cause := some cause)
     if let .chooseReplacement .. := g.pending then
       g.chainPendingReplacement
-        (.finishPostStep 101 p (cardId := some top) (cause := some cause))
+        (.finishPostStep .grantPlayUntilEndOfNextTurn p (cardId := some top) (cause := some cause))
     else
       match g.followMovedToZone? top (· == .exile) with
       | some moved =>

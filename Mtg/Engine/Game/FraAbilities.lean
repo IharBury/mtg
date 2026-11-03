@@ -91,7 +91,7 @@ partial def continueDiscardTwo (g : Game) (controller : PlayerId) (players : Arr
         if hand.isEmpty then g.logMsg s!"{(g.player p).name} has no cards to discard" else g
       if let .chooseReplacement .. := g.pending then
         g.chainPendingReplacement
-          (.finishPostStep 10 controller nextDraws (modes := rest.toArray.map (·.idx)))
+          (.finishPostStep .continueDiscardTwo controller nextDraws (modes := rest.toArray.map (·.idx)))
       else
         g.continueDiscardTwo controller rest.toArray nextDraws
     else
@@ -134,7 +134,7 @@ def runHawkeyeArrows (g : Game) (controller : PlayerId) (modes : Array Nat)
       let rem := modes.extract (k + 1) modes.size
       if !rem.isEmpty then
         g := g.chainPendingReplacement
-          (.finishPostStep 12 controller idx (sourceId := sourceId)
+          (.finishPostStep .hawkeyeArrows controller idx (sourceId := sourceId)
             (targets := targets) (modes := rem))
       return g
   return g
@@ -170,7 +170,7 @@ def finishIdentityEchoAfterExile (g : Game) (controller : PlayerId)
     let (g, newId) := g.putOntoBattlefield id controller (cause := revealCause?)
     if let .chooseReplacement .. := g.pending then
       g.chainPendingReplacement
-        (.finishPostStep 11 controller 0 none (some id) (ids := revealed) (cause := revealCause?))
+        (.finishPostStep .enteredBattlefieldPutRestBottomRandom controller 0 none (some id) (ids := revealed) (cause := revealCause?))
     else
       let g :=
         match g.findObject? newId with
@@ -231,7 +231,7 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
       let (g, _) := g.move o.id .exile none (cause := some exileCause)
       if let .chooseReplacement .. := g.pending then
         g.chainPendingReplacement
-          (.finishPostStep 62 controller (sourceId := sourceId) (cardId := some o.id))
+          (.finishPostStep .identityEchoAfterExile controller (sourceId := sourceId) (cardId := some o.id))
       else
         g.finishIdentityEchoAfterExile controller sourceId oName)
       sourceId illegal
@@ -262,7 +262,7 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
       let (g, _) := g.move o.id (.library owner) none
         (verb := some .shuffleIntoLibrary) (libraryPosition := some .shuffledIn)
       if let .chooseReplacement .. := g.pending then
-        g.chainPendingReplacement (.finishPostStep 63 owner (cardId := some o.id))
+        g.chainPendingReplacement (.finishPostStep .logShuffleIntoLibrary owner (cardId := some o.id))
       else
         let g := g.logMsg s!"{(g.player owner).name} shuffles {oName} into their library"
         g.shuffleThen owner .none) sourceId illegal

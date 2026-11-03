@@ -85,7 +85,7 @@ def givePromisedGift (g : Game) (to : PlayerId) : Game :=
   else
     let (g, _) := g.createToken to treasureToken
     if let .chooseReplacement .. := g.pending then
-      g.chainPendingReplacement (.finishPostStep 125 to)
+      g.chainPendingReplacement (.finishPostStep .logGiftTreasureGiven to)
     else
       g.logMsg s!"{(g.player to).name} is given a Treasure (gift)"
 
@@ -228,7 +228,7 @@ def discardNonlandFrom (g : Game) (controller victim : PlayerId) : Game :=
     let (g, _) := g.move o.id (.graveyard o.owner) none (verb := some .discard) (actor := some victim)
     let logLine := s!"{(g.player controller).name} chooses {cardName}. {(g.player victim).name} discards it"
     if let .chooseReplacement .. := g.pending then
-      g.chainPendingReplacement (.finishPostStep 96 controller (n := victim.idx) (cardId := some o.id))
+      g.chainPendingReplacement (.finishPostStep .logChosenCardDiscarded controller (n := victim.idx) (cardId := some o.id))
     else if !(g.findObject? o.id).any (·.zone == .hand victim) then
       g.logMsg logLine
     else g
@@ -256,7 +256,7 @@ def exileUntilNextEndStep (g : Game) (o : GameObject)
   let (g, _) := g.move o.id .exile none (cause := some cause)
   if let .chooseReplacement .. := g.pending then
     g.chainPendingReplacement
-      (.finishPostStep 108 ctrl (cardId := some o.id) (cause := some cause))
+      (.finishPostStep .finishExileUntilNextEndStep ctrl (cardId := some o.id) (cause := some cause))
   else
     g.finishExileUntilNextEndStep ctrl o.id cause
 

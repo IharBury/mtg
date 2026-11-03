@@ -457,7 +457,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
         else #[]
       g.changes (#[.pending .none] ++ clearProp)
     else
-      (g.change (.pending .none)).chainPendingReplacement (.finishPostStep 88 q)
+      (g.change (.pending .none)).chainPendingReplacement (.finishPostStep .resumeChooseModeAfterLeave q)
   | .chooseTargets q =>
     if q == p then
       let clearProp : Array EngineChange :=
@@ -465,7 +465,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
         else #[]
       g.changes (#[.pending .none] ++ clearProp)
     else
-      (g.change (.pending .none)).chainPendingReplacement (.finishPostStep 89 q)
+      (g.change (.pending .none)).chainPendingReplacement (.finishPostStep .resumeChooseTargetsAfterLeave q)
   | .activateManaAbilities q | .chooseX q
   | .chooseAdditionalCost q | .chooseKicker q | .chooseGift q
   | .chooseTeamwork q | .chooseTeamworkCreatures q _
@@ -556,10 +556,10 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
               s!"{(g.player next).name} discards two cards"
           else
             g.chainPendingReplacement
-              (.finishPostStep 10 controller (n := draws) (modes := living.map (·.idx)))
+              (.finishPostStep .continueDiscardTwo controller (n := draws) (modes := living.map (·.idx)))
         | none =>
           if g.stillInGame controller && draws > 0 then
-            g.chainPendingReplacement (.finishPostStep 10 controller (n := draws) (modes := #[]))
+            g.chainPendingReplacement (.finishPostStep .continueDiscardTwo controller (n := draws) (modes := #[]))
           else g
     | .worldsPutCreatures eligible rest exiled chosen sourceId =>
       let living := rest.filter g.stillInGame
@@ -572,7 +572,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
         let rec offerNext : List PlayerId → Game
           | [] =>
             (g.change (.pending .none)).chainPendingReplacement
-              (.finishPostStep 67 g.activePlayer (sourceId := sourceId) (ids := exiled)
+              (.finishPostStep .worldsWithinWorlds g.activePlayer (sourceId := sourceId) (ids := exiled)
                 (targets := chosen.map Target.card))
           | r :: more =>
             let elig := (g.player r).hand.filter (fun id => (g.findObject? id).any g.isCreature)
@@ -661,7 +661,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
       else if q == p then
         let g := g.changes (#[.pending .none, .chooseModesRest none] ++ clearProp)
         if g.stillInGame controller then
-          g.chainPendingReplacement (.finishPostStep 78 controller (sourceId := some sourceId))
+          g.chainPendingReplacement (.finishPostStep .millSourceInfluenceCount controller (sourceId := some sourceId))
         else g
       else g
     | .tricksterLibrary caster _id connive _ =>
@@ -708,7 +708,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
         g.changes (#[.pending .none, .chooseModesRest none] ++ clearProp)
       else
         (g.change (.pending .none)).chainPendingReplacement
-          (.finishPostStep 90 q (n := remaining) (sourceId := some objId) (modes := chosen))
+          (.finishPostStep .resumeTriggerModesAfterLeave q (n := remaining) (sourceId := some objId) (modes := chosen))
     | .blackGatePlayer oid players =>
       let players' := players.filter g.stillInGame
       if q == p then
@@ -754,7 +754,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
       let g := (g.change (.pending .none)).logMsg s!"{(g.player p).name} declines (CR 800.4f)"
       if n > 0 then
         g.chainPendingReplacement
-          (.finishPostStep 33 p (n := n) (sourceId := sid)
+          (.finishPostStep .dealDamageToEachOpponent p (n := n) (sourceId := sid)
             (cause := some (g.resolvingOrRuleCause p sid)))
       else g
     else g

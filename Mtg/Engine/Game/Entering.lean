@@ -227,7 +227,7 @@ def resolveAdventureSpell (g : Game) (entry : StackEntry) (obj : GameObject) : G
       (verb := some .resolve) (actor := some entry.controller) (cause := finishCause)
     if let .chooseReplacement .. := g.pending then
       g.chainPendingReplacement
-        (.finishPostStep 99 entry.controller (cardId := some obj.id) (cause := finishCause))
+        (.finishPostStep .grantAdventureExilePermission entry.controller (cardId := some obj.id) (cause := finishCause))
     else
       match g.followMovedToZone? obj.id (· == .exile) with
       | some o =>

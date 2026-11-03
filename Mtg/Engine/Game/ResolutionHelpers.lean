@@ -111,7 +111,7 @@ def exileCreaturesFromGraveyardLoop (g : Game) (controller : PlayerId)
     (pendingFromId : Option ObjectId := none) : Game := Id.run do
   if let .chooseReplacement .. := g.pending then
     return g.chainPendingReplacement
-      (.finishPostStep 102 controller (cardId := pendingFromId) (ids := ids) (cause := cause))
+      (.finishPostStep .exileCreaturesFromGraveyardLoop controller (cardId := pendingFromId) (ids := ids) (cause := cause))
   let mut g := g
   if let some fid := pendingFromId then
     if let some moved := g.followMovedToZone? fid (· == .exile) then
@@ -132,7 +132,7 @@ def exileCreaturesFromGraveyardLoop (g : Game) (controller : PlayerId)
       if let .chooseReplacement .. := g.pending then
         let rem := ids.extract (i + 1) ids.size
         return g.chainPendingReplacement
-          (.finishPostStep 102 controller (cardId := some id) (ids := rem) (cause := cause))
+          (.finishPostStep .exileCreaturesFromGraveyardLoop controller (cardId := some id) (ids := rem) (cause := cause))
       if let some moved := g.followMovedToZone? id (· == .exile) then
         g := g.createEffect (.playPermission moved.id {
           player := controller

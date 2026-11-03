@@ -96,7 +96,7 @@ def resolveDelayedTrigger (g : Game) (controller : PlayerId) (kind : DelayedTrig
     if n > 0 && g.stillInGame controller then
       let g := g.createKindTokens controller .birdSoldier n (cause := some cause)
       if let .chooseReplacement .. := g.pending then
-        g.chainPendingReplacement (.finishPostStep 126 controller (n := n))
+        g.chainPendingReplacement (.finishPostStep .logDelayedBirdSoldiersCreated controller (n := n))
       else
         g.logMsg s!"{(g.player controller).name}'s delayed triggered ability creates {n} Bird Soldier token(s)"
     else g
@@ -117,7 +117,7 @@ def resolveDelayedTrigger (g : Game) (controller : PlayerId) (kind : DelayedTrig
           let isLand := g.isLand o
           let (g', _) := g.putOntoBattlefield id owner (cause := some cause)
           if let .chooseReplacement .. := g'.pending then
-            g'.chainPendingReplacement (.finishPostStep 20 owner 1 none (some id) (shuffle := isLand))
+            g'.chainPendingReplacement (.finishPostStep .returnedBattlefieldEndStep owner 0 none (some id) (shuffle := isLand))
           else
             match g'.followMovedToZone? id (· == .battlefield) with
             | some back =>
@@ -153,7 +153,7 @@ def resolveDelayedTrigger (g : Game) (controller : PlayerId) (kind : DelayedTrig
         let isLand := g.isLand o
         let (g', _) := g.putOntoBattlefield id who (cause := some cause)
         if let .chooseReplacement .. := g'.pending then
-          g'.chainPendingReplacement (.finishPostStep 20 who 2 none (some id) (shuffle := isLand))
+          g'.chainPendingReplacement (.finishPostStep .returnedToBattlefield who 0 none (some id) (shuffle := isLand))
         else
           match g'.followMovedToZone? id (· == .battlefield) with
           | some back =>

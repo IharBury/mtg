@@ -101,7 +101,7 @@ def finishBeginOnBattlefield (g : Game) (fromId : ObjectId) (remainingIds : Arra
       else g
     | none => g
   if let .chooseReplacement .. := g.pending then
-    g.chainPendingReplacement (.finishPostStep 85 g.startingPlayer (ids := remainingIds))
+    g.chainPendingReplacement (.finishPostStep .continueOpeningBegin g.startingPlayer (ids := remainingIds))
   else
     g.continueOpeningBegin remainingIds
 
