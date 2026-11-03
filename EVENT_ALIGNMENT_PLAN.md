@@ -6025,25 +6025,29 @@ limits, and batched `createEffects` / multi-effect continuous-effect helpers),
      `!src.isOnBattlefield || !host.isOnBattlefield || src.id == host.id || src.attachedTo == some host.id`
      (so re-attaching an already-attached permanent does not emit a spurious
      `PermanentEvent.attached` or refresh its CR 613.7e timestamp per CR
-     701.3b), require Equipment-host legality (`g.isCreature host && !g.isCreature src && !g.isBattle src && !g.frcProtectedFrom host src`)
-     across `Decisions.choosePermanent` `.mayAttachEquipment`,
+     701.3b), and require Equipment-host legality
+     (`g.isCreature host && !g.isCreature src && !g.isBattle src && !g.frcProtectedFrom host src`)
+     across `Decisions.choosePermanents` `.mayAttachEquipment`,
      `FraChoices.answerFraChoice` `.attachAnyEquipment`,
-     `TriggeredAbilities.applyAttach`, `Pumps.finishAmassOnPost`, and
-     `EffectResolution.applyUnified` `.attachToTarget`, and check
-     `g.canBeTargetedBy controller host sourceId` on targeted `.source, .laterCreature`
-     in `TriggeredAbilities.applyAttach` (CR 608.2b / 702.16b).
+     `TriggeredAbilities.applyAttach` (including completing `.source, .laterCreature`—which
+     already checks `g.isCreature host && g.canBeTargetedBy controller host sourceId`—with
+     `src.isOnBattlefield && host.isOnBattlefield && !g.isCreature src && !g.isBattle src && !g.frcProtectedFrom host src`),
+     `Pumps.finishAmassOnPost`, and `EffectResolution.applyUnifiedAbility`
+     `.attach .source .target` (which already no-ops when
+     `src.attachedTo == some host.id`).
    - Close the remaining CR 608.2b target-legality checks and pre-replacement /
      departed-player log leaks: enforce `isOnBattlefield`, `canBeTargetedBy`, and
      printed `targetKind` (`targetLegalAt` / `withLegalKindPermanent`) in
      `TriggeredAbilities.applyExile` `.target, .untilSourceLeaves, .copyAndHost`,
-     `TriggeredAbilities.applyDestroy` `.target, .forAmass` (checking printed
-     `targetKind`, e.g. tapped creature), `TriggeredAbilities.applyPutCounters`
-     `.missingKeywordsFromTarget`, and `FrcResolve.applyFrc` `.venserPerm`;
+     `TriggeredAbilities.applyPutCounters` `.missingKeywordsFromTarget`, and
+     `FrcResolve.applyFrc` `.venserPerm`, plus printed `targetKind` (e.g. tapped
+     creature, alongside its existing `isOnBattlefield` and `canBeTargetedBy`
+     checks) in `TriggeredAbilities.applyDestroy` `.target, .forAmass`;
      guard `SpellResolution.resolveDelayedTrigger` `.eaglesBirds`'s token-creation
      log on `g.stillInGame controller` (CR 800.4b); and gate/defer synchronous
      post-call log messages across `Pending.chooseReplacement` pauses (and
      actual post-replacement counter deltas) in `Casting.payLoyaltyCost`,
-     `ActivationCosts.payActivationExtraCosts` (stun-counter removal cost),
+     `ActivationCosts.payActivationExtraCosts` (`putStunCounterOnSource`),
      `Choices.discardEntireHand`, `CastExtras.givePromisedGift`, and the
      remaining `recordPutCounters` log sites in `FraResolve.lean`,
      `FraHelpers.lean`, `FrcResolve.lean`, `TriggeredAbilities.lean`, and
@@ -6089,8 +6093,11 @@ limits, and batched `createEffects` / multi-effect continuous-effect helpers),
      `CastExtras.applyKickerToProposed` through `playManaCost` *after* recording
      `.morph` / `.impending` / `.kicker` so **Thalia** noncreature taxes,
      `PlayPermission.anyMana`, and Morph face-down creature characteristics
-     (`CR 708.2 / 601.2f`) are respected; and apply `chosenX` (`substituteX`)
-     before `reduceGeneric` in `Costs.activationManaCost` (`Costs.lean`).
+     (`CR 708.2 / 601.2f`) are respected; and apply `chosenX` (`withX` /
+     `substituteX`) before `reduceGeneric` on the
+     `costReductionIfYouControlLegendary` and `costReductionPerEquipment` arms
+     of `Costs.activationManaCost` (`Costs.lean`, matching the `ab.powerUp` arm
+     that already substitutes `{X}` first).
    - Prevent voluntary cancellation after partial activation cost payment
      (`Decisions.lean`, `FraChoices.lean`, CR 601.2h / 602.2b / 733.1): pass
      `paid := prop.cost.includesManaPayment` (or prior cost payment) into
@@ -6190,15 +6197,11 @@ limits, and batched `createEffects` / multi-effect continuous-effect helpers),
      the final living seat of `p`'s team's next shared turn).
    - Close the remaining Two-Headed Giant / multiplayer opponent filters: exclude
      teammates (`!g.areTeammates caster pl.id`) in `Costs.applyCastCostReductions`
-     `costReductionEqualOppArtifacts` (`Costs.lean`); replace `!you` with `opp`
-     (`!you p && !isTeammate p`) on `.creaturesAttackYourOpponent`,
-     `.opponentSmallCreatureBlocks`, `.opponentBeginCombat`,
-     `.eachOpponentDrawStep`, and `.opponentActivatesLoyaltyAbility` in
-     `Event.matchesTrigger` (`Event.lean`, passing
-     `isTeammate := post.areTeammates opp.id` at `Core.lean`'s
-     `.opponentActivatesLoyaltyAbility` call site); and replace `g.opponent p`
-     with `(g.livingOpponents p).any ...` in `SpellTargets.defaultAbilityMode`
-     (`SpellTargets.lean`).
+     `costReductionEqualOppArtifacts` (`Costs.lean`, whose fold currently skips
+     only `pl.id == caster || pl.lost`); and replace `g.opponent p` (which only
+     inspects `firstLivingOpponent?` and ignores creatures controlled by a
+     second living opponent) with `(g.livingOpponents p).any ...` in
+     `SpellTargets.defaultAbilityMode` (`SpellTargets.lean`).
 4. Wrap the remaining simultaneous event-group sites in `withBatch`, replace the
    last ad-hoc `{ g with … }` test/demo state setups with journaled `g.change` /
    `g.record` helpers, and remove dead scaffolding & stale CR citations (§2.1,
@@ -6222,9 +6225,12 @@ limits, and batched `createEffects` / multi-effect continuous-effect helpers),
      `g.record` updates so `Game.replayEvents g.events == g` holds across test
      and demo fixtures too.
    - Delete dead scaffolding and finish the 20260925 CR citation sweep: remove
-     unread `ContinuationFrame.mayPayAlsoPlusOneOn` (`ContinuationChange.mayPayAlsoPlusOneOn`,
-     `EngineChange.mayPayAlsoPlusOneOn`, `Core.mayPayAlsoPlusOneOn`, and reset
-     sites in `Decisions.lean` / `Leaving.lean`), remove the dead `jhoiraLife`
+     never-populated `ContinuationFrame.mayPayAlsoPlusOneOn` (never written to
+     `some`; remove `ContinuationChange.mayPayAlsoPlusOneOn`,
+     `EngineChange.mayPayAlsoPlusOneOn`, `Core.mayPayAlsoPlusOneOn`, the dead
+     `mayThenDrop == 0` `addPlusOnePlusOneTo` reader in `Decisions.payGeneric`,
+     and the `none` resets in `Decisions.payGeneric`, `Decisions.decline`, and
+     `Leaving.redirectPendingAfterLeave`), remove the dead `jhoiraLife`
      parameter/branch from `PendingReplacement.finishFrcRestBottom` and
      `FrcResolve.finishFrcRestBottom` (`Event.lean`, `FrcResolve.lean`,
      `Decisions.lean`), delete zero-engine-caller `Choices.ceaseUncastCopies`
@@ -6232,9 +6238,11 @@ limits, and batched `createEffects` / multi-effect continuous-effect helpers),
      `Designations.refreshEnduringStory` / `Designations.refreshCitysBlessing`
      (`Designations.lean`, updating `OracleRulingTests.lean` to call
      `grantEnduringStoryIfNeeded` / `grantCitysBlessingIfNeeded` or rely on
-     `closeBatch`), and update `CR 702.19c/d` → `CR 702.19f` in
-     `Tests/Events.lean` and `CR 514.3` → `CR 514.2` in `Turns.lean`,
-     `Tests/CastTriggers.lean`, and `Tests/Fight.lean`.
+     `closeBatch`), and update the planeswalker-left trample note in
+     `Tests/Events.lean` from `CR 702.19c/d` → `CR 702.19b / 702.19f` and the
+     cleanup wear-off notes in `Tests/CastTriggers.lean` and `Tests/Fight.lean`
+     from `CR 514.3` → `CR 514.2` (leaving cleanup-priority `CR 514.3` /
+     `514.3a` references in `Turns.lean` and `PriorityActions.lean` intact).
 
 Tests: `Events.lean` (isolation tests for `concede` `.restorePending` ordering &
 multi-teammate departure pause chaining & `flushUnlessPays` continuation
