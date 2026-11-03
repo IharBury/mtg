@@ -1280,20 +1280,22 @@ def hasTurnBegunSince (g : Game) (eid : EffectId) (p : PlayerId) : Bool :=
     | _ => (seenCreate, seenTurn)) (false, false) |>.2
 
 /-- Whether another turn has begun (`TurnEvent.turnBegan _ _`) in `g.events`
-after the first turn of `p` (or `p`'s Two-Headed Giant teammate, CR 810.2) that began
-since continuous effect `eid` was created (CR 723.1: "during their next turn" lasts
-until the beginning of the next turn). -/
+after the first turn of `p` (and `p`'s Two-Headed Giant teammate, CR 805.4 /
+810.2) that began since continuous effect `eid` was created (CR 723.1: "during
+their next turn" lasts until the beginning of the next turn). -/
 def hasTurnAfterBegunSince (g : Game) (eid : EffectId) (p : PlayerId) : Bool :=
-  g.events.foldl (fun (seenCreate, seenTurn, seenAfter) ev =>
+  g.events.foldl (fun (seenCreate, seenSeats, seenAfter) ev =>
     match ev.change with
     | .rules (.continuousEffect (.created id _)) =>
-      if id == eid then (true, false, false) else (seenCreate, seenTurn, seenAfter)
+      if id == eid then (true, #[], false) else (seenCreate, seenSeats, seenAfter)
     | .rules (.turn (.turnBegan q _)) =>
-      if !seenCreate then (seenCreate, seenTurn, seenAfter)
-      else if seenTurn then (seenCreate, seenTurn, true)
-      else if q == p || g.areTeammates q p then (seenCreate, true, false)
-      else (seenCreate, seenTurn, seenAfter)
-    | _ => (seenCreate, seenTurn, seenAfter)) (false, false, false) |>.2.2
+      if !seenCreate || seenAfter then (seenCreate, seenSeats, seenAfter)
+      else if (q == p || g.areTeammates q p) && !seenSeats.contains q then
+        (seenCreate, seenSeats.push q, false)
+      else if !seenSeats.isEmpty then
+        (seenCreate, seenSeats, true)
+      else (seenCreate, seenSeats, seenAfter)
+    | _ => (seenCreate, seenSeats, seenAfter)) (false, (#[] : Array PlayerId), false) |>.2.2
 
 /-- Timestamp `(tier, sub)` of `k` counters on `oid` (CR 613.7c): putting a new
 counter of kind `k` on `oid` gives all `k` counters on `oid` that new timestamp. -/

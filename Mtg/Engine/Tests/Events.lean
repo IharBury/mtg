@@ -14033,26 +14033,53 @@ def mkTwoHeadedGiant20 (seed : UInt64 := 220) : Game :=
     gDepDmg1.hasFlying (gDepDmg1.object! flierId) &&
     gDepDmg1.hasHaste (gDepDmg1.object! flierId)
 
-  -- 8b. CR 723.1 / 810.5 2HG shared-turn `playerControl` expiry & self-control limits (`canChooseOutsideGame`, `canMakeTournamentDecision`)!
+  -- 8b. CR 723.1 / 805.4 / 810.2,5 2HG shared-turn `playerControl` expiry, departed-teammate skip,
+  --     extra-turn single-turn expiry, & self-control limits (`canChooseOutsideGame`, `canMakeTournamentDecision`)!
   let g2hCtrl0 : Game := mkTwoHeadedGiant20 802
   let g2hCtrl1 : Game :=
     g2hCtrl0.withResolvingContext none ⟨0⟩ fun g =>
       g.setPlayerControl ⟨0⟩ ⟨3⟩ (onNextTurn := true)
-  -- `startNextTurnAndBegin` advances `⟨0⟩ -> ⟨1⟩` (still team 0/1), then `⟨1⟩ -> ⟨2⟩` (teammate of `⟨3⟩`):
+  -- `startNextTurnAndBegin` advances `⟨0⟩ -> ⟨1⟩` (still team 0/1), `⟨1⟩ -> ⟨2⟩` (teammate of `⟨3⟩`),
+  -- `⟨2⟩ -> ⟨3⟩` (`⟨3⟩`'s own half of that shared turn), and `⟨3⟩ -> ⟨0⟩` (next opposing turn):
   let g2hCtrlMateTurn : Game := g2hCtrl1.startNextTurnAndBegin
-  let g2hCtrlTeamTurn : Game := g2hCtrlMateTurn.startNextTurnAndBegin
-  let g2hCtrlAfterTeamTurn : Game := g2hCtrlTeamTurn.startNextTurnAndBegin
+  let g2hCtrlTeamSeat1 : Game := g2hCtrlMateTurn.startNextTurnAndBegin
+  let g2hCtrlTeamSeat2 : Game := g2hCtrlTeamSeat1.startNextTurnAndBegin
+  let g2hCtrlAfterTeamTurn : Game := g2hCtrlTeamSeat2.startNextTurnAndBegin
+  -- Skipping a departed teammate `⟨2⟩` keeps `onNextTurn` control of still-living `⟨3⟩` for `⟨3⟩`'s turn:
+  let g2hDepMate0 : Game := g2hCtrl1.playerLeavesGame ⟨2⟩
+  let g2hDepMateTurn1 : Game := g2hDepMate0.startNextTurnAndBegin
+  let g2hDepMateTargetTurn : Game := g2hDepMateTurn1.startNextTurnAndBegin
+  let g2hDepMateAfter : Game := g2hDepMateTargetTurn.startNextTurnAndBegin
+  -- Consecutive turns of the same non-teammate player (extra turn -> regular turn) still expire after 1 turn:
+  let gExCtrl0 : Game :=
+    (afterDraw.record (GameEvent.extraTurnAdded afterDraw.turnNumber opp20 .current (cause := testCause))).withResolvingContext none me fun g =>
+      g.setPlayerControl me opp20 (onNextTurn := true)
+  let gExCtrlTurn1 : Game := gExCtrl0.startNextTurnAndBegin
+  let gExCtrlTurn2 : Game := gExCtrlTurn1.startNextTurnAndBegin
   let twoHeadedCtrlAndSelfOk : Bool :=
     g2hCtrl1.log.any (·.contains "Two-Headed Giant team") &&
     !g2hCtrlMateTurn.controlsPlayer ⟨0⟩ ⟨3⟩ &&
-    g2hCtrlTeamTurn.controlsPlayer ⟨0⟩ ⟨3⟩ &&
-    g2hCtrlTeamTurn.controlsPlayer ⟨0⟩ ⟨2⟩ &&
+    g2hCtrlTeamSeat1.activePlayer == ⟨2⟩ &&
+    g2hCtrlTeamSeat1.controlsPlayer ⟨0⟩ ⟨3⟩ &&
+    g2hCtrlTeamSeat1.controlsPlayer ⟨0⟩ ⟨2⟩ &&
+    g2hCtrlTeamSeat2.activePlayer == ⟨3⟩ &&
+    g2hCtrlTeamSeat2.controlsPlayer ⟨0⟩ ⟨3⟩ &&
+    g2hCtrlTeamSeat2.controlsPlayer ⟨0⟩ ⟨2⟩ &&
+    g2hCtrlAfterTeamTurn.activePlayer == ⟨0⟩ &&
     !g2hCtrlAfterTeamTurn.controlsPlayer ⟨0⟩ ⟨3⟩ &&
     !g2hCtrlAfterTeamTurn.controlsPlayer ⟨0⟩ ⟨2⟩ &&
-    g2hCtrlTeamTurn.canChooseOutsideGame ⟨0⟩ ⟨0⟩ &&
-    !g2hCtrlTeamTurn.canChooseOutsideGame ⟨0⟩ ⟨3⟩ &&
-    g2hCtrlTeamTurn.canMakeTournamentDecision ⟨0⟩ ⟨0⟩ &&
-    !g2hCtrlTeamTurn.canMakeTournamentDecision ⟨0⟩ ⟨3⟩
+    g2hCtrlAfterTeamTurn.controlOnNextTakenTurn.isEmpty &&
+    !g2hDepMateTurn1.controlsPlayer ⟨0⟩ ⟨3⟩ &&
+    g2hDepMateTargetTurn.activePlayer == ⟨3⟩ &&
+    g2hDepMateTargetTurn.controlsPlayer ⟨0⟩ ⟨3⟩ &&
+    !g2hDepMateAfter.controlsPlayer ⟨0⟩ ⟨3⟩ &&
+    gExCtrlTurn1.controlsPlayer me opp20 &&
+    !gExCtrlTurn2.controlsPlayer me opp20 &&
+    gExCtrlTurn2.controlOnNextTakenTurn.isEmpty &&
+    g2hCtrlTeamSeat1.canChooseOutsideGame ⟨0⟩ ⟨0⟩ &&
+    !g2hCtrlTeamSeat1.canChooseOutsideGame ⟨0⟩ ⟨3⟩ &&
+    g2hCtrlTeamSeat1.canMakeTournamentDecision ⟨0⟩ ⟨0⟩ &&
+    !g2hCtrlTeamSeat1.canMakeTournamentDecision ⟨0⟩ ⟨3⟩
 
   -- 8c. `createEffects` with `effs.size > 1` stamps all created continuous effects with one shared `BatchId`!
   let gBatchEff0 : Game := addPermanent afterDraw bear me me
@@ -14072,7 +14099,7 @@ def mkTwoHeadedGiant20 (seed : UInt64 := 220) : Game :=
   mustHold20 "8a.twoHeadedAndDepartedOk" twoHeadedAndDepartedOk &&
   mustHold20 "8b.twoHeadedCtrlAndSelfOk" twoHeadedCtrlAndSelfOk &&
   mustHold20 "8c.batchedCreateEffectsOk" batchedCreateEffectsOk &&
-  mustHold20 "8.replay" ([g2hTryWin, g2hMateCastOk, g2hMatePoison, g2hOppPoison, gDepDmg1, g2hCtrl1, g2hCtrlMateTurn, g2hCtrlTeamTurn, g2hCtrlAfterTeamTurn, gBatchEff1].all (fun g =>
+  mustHold20 "8.replay" ([g2hTryWin, g2hMateCastOk, g2hMatePoison, g2hOppPoison, gDepDmg1, g2hCtrl1, g2hCtrlMateTurn, g2hCtrlTeamSeat1, g2hCtrlTeamSeat2, g2hCtrlAfterTeamTurn, g2hDepMate0, g2hDepMateTurn1, g2hDepMateTargetTurn, g2hDepMateAfter, gExCtrl0, gExCtrlTurn1, gExCtrlTurn2, gBatchEff1].all (fun g =>
     Game.replayEvents g.events == g && allRulesEventsClassified g))
 
 end Phase20EventAlignment

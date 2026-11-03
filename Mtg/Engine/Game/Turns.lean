@@ -328,7 +328,7 @@ def expireUntilNextTurnEffects (g : Game) (p : PlayerId) : Game :=
       | .playerRule q (.controlsPlayer them false) .untilEndOfTurn =>
         q == p || them == p || g.areTeammates them p
       | .playerRule q (.controlsPlayer them true) _ =>
-        q == p || them == p || g.areTeammates them p
+        q == p || them == p
       | _ => false) (cause := cause)
     let expiredDt := g.delayedTriggers.filter (fun dt =>
       (match dt.kind with

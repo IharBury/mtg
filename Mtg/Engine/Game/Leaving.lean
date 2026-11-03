@@ -839,7 +839,7 @@ def playerLeavesGame (g : Game) (p : PlayerId) : Game :=
           | .layered _ (.control c) _ =>
             if c == p then acc.endControlEffectById eid (cause := cause) else acc
           | .playerRule you (.controlsPlayer them _) _ =>
-            if you == p || them == p || acc.areTeammates them p then
+            if you == p || them == p || (acc.areTeammates them p && (acc.player them).lost) then
               acc.expireEffectById eid (cause := cause)
             else acc
           | _ => acc) g
