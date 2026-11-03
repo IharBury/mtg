@@ -5677,7 +5677,8 @@ opponent checks, CR 723.1 `playerControl` turn-window & expiry, and
      `ResolutionEffects.returnLinkedExile`); migrate CR 607.2a non-CR-610.3
      linked-exile writer `LibrarySearch.exileSearchedLinked`
      (`LibrarySearch.lean`, called by *Roads Go Ever, Ever On* Chapter I via
-     `TriggeredAbilities.applyExile` `.basicUpTo` `.exileLinked` and by
+     `TriggeredAbilities.applySearchLibrary` and
+     `CastExtras.resolveSearchBasicPlainsExile` `.exileLinked`, and by
      *Currency Converter* `.currencyExile`) from `.pushLinkedExile` to
      `.pushLeaveTriggerExile` so destroying or flickering those permanents does
      not auto-return their exiled cards onto `.battlefield` via CR 610.3
