@@ -6467,8 +6467,8 @@ two-batch `applyDackOnHits` batching), `Auras.lean`, `Casting.lean`, `CastTrigge
      `Movement.move` pauses on competing exile replacements into pause-safe
      `PendingReplacement` / `PostStep` loops:
      `ModeledTriggers.exileLibraryUntilNonlandLoop` +
-     `finishExileLibraryUntilNonland` + `TriggeredAbilities.applyExileLibrary`'s
-     `.untilNonland` arm
+     `finishExileLibraryUntilNonland` + `TriggeredAbilities.applyRevealLibrary`'s
+     (`TriggerResolution.revealLibrary`) `.untilNonland` arm
      (`.may (.putCounters …) (.exile .top .forLater .anyManaThisTurn) .ifYouDont`,
      `.announced` in `ModeledTriggers.lean`, `TriggeredAbilities.lean`),
      `CastExtras.resolveCascadeLoop` / `resolveCascade` (`CastExtras.lean`, CR
@@ -6849,7 +6849,7 @@ across multiplied token creation, and CR 616.1 `enterWithPlusOnes` /
      `.becomesTarget`, and `.ward`.
 3. Complete CR 614.1c / 614.12 / 614.15 / 616.1a–g ETB replacement ordering,
    shockland life-payment re-entry, unified ETB counter modification,
-   batch-isolated token replacements, and CR 510.2 / 702.26h / 703.4f /
+   batch-isolated token replacements, and CR 510.2 / 702.26g,h / 703.4f /
    714.2b,3c / 121.2c simultaneous batches (§2.5, §2.6, §3.2, §3.4, §3.5):
    - Preserve already-chosen `entersTappedUnlessPayLife` on `specs` across
      `applyEtbReplacements` re-entry and move `ReplacementKind.entersTappedSelf`
@@ -6894,49 +6894,61 @@ across multiplied token creation, and CR 616.1 `enterWithPlusOnes` /
      the currently open batch from `Tokens.replaceTokenCreationChoice` static
      scans; and run `afterPermanentEnters` / `afterPermanentEntersInBatch` for
      all tokens created by `EffectResolution` `.copyNontokenCreaturesYouControl`.
-   - Fix simultaneous combat lifelink ordering, mass phase-out snapshot/order,
-     Saga lore-counter batching, and APNAP multi-player draw/mill ordering
-     (`Combat.lean`, `Event.lean`, `Decisions.lean`, `Phasing.lean`,
-     `EffectResolution.lean`, `FrcResolve.lean`, `Triggers.lean`,
-     `Actions.lean`, CR 101.4 / 120.3f / 121.2c / 510.2 / 702.15b / 702.26a,g,h
-     / 703.4f / 714.2b / 714.3c): append all `.lifelink` steps *after* all `.damage`
-     steps in `Combat.buildCombatDamageSteps` (`Combat.lean`, so combat damage
-     in a CR 510.2 step is dealt before lifelink life-gain replacements pause or
-     resolve) and retire the unused `applied : Array ReplacementId` parameter on
+   - Fix simultaneous combat lifelink ordering, mass phase-out snapshot and CR
+     702.26g–h indirect collapse, Saga lore-counter batching, and APNAP
+     multi-player draw ordering (`Combat.lean`, `Event.lean`, `Decisions.lean`,
+     `Phasing.lean`, `EffectResolution.lean`, `FrcResolve.lean`, `Triggers.lean`,
+     `Actions.lean`, CR 101.4 / 120.3f / 121.2c / 510.2 / 608.2f / 702.15b /
+     702.26a,g,h / 703.4f / 714.2b / 714.3c): append all `.lifelink` steps
+     *after* all `.damage` steps in `Combat.buildCombatDamageSteps`
+     (`Combat.lean`, so combat damage in a CR 510.2 step is dealt before lifelink
+     life-gain replacements pause or resolve) and retire the unused
+     `applied : Array ReplacementId` parameter on
      `PendingReplacement.dealAssignedCombatDamage` /
      `Combat.dealAssignedCombatDamage`; re-fetch live `g.findObject? o.id` in
-     `Phasing.phaseOut` (`Phasing.lean`), snapshot pre-batch target sets in mass
-     phase-out callers (`EffectResolution.lean`, `FrcResolve.lean`), and phase
-     out hosts before co-phasing attachments per CR 702.26h; emit a single
-     `n'`-counter `.lore` `PermanentEvent.counters` in
-     `Triggers.addLoreCounters` (per CR 714.2b's `"one or more lore counters"`
-     chapter trigger) and wrap `Triggers.addLoreAfterDrawStep` (`Triggers.lean`)
-     in `withBatch (some (.turnBased .sagaLoreOnMain))` per CR 703.4f / 714.3c;
-     and process multi-player draws and mills in APNAP order across
-     `Actions.twoPlayersEachDraw`, `EffectResolution` `.twoPlayersDraw`, and
-     `FrcResolve` `.urSphinx` (CR 101.4 / 121.2c).
+     `Phasing.phaseOut` (`Phasing.lean`, which phases out a host and its
+     attached Auras, Equipment, and Fortifications simultaneously and indirectly
+     in one batch per CR 702.26g), snapshot pre-batch target sets in mass
+     phase-out callers (`EffectResolution.lean`, `FrcResolve.lean`), and process
+     hosts before co-phasing attachments inside that batch so an attachment that
+     would simultaneously phase out directly and indirectly just phases out
+     indirectly per CR 702.26h; emit a single `n'`-counter `.lore`
+     `PermanentEvent.counters` in `Triggers.addLoreCounters` (per CR 714.2b's
+     `"one or more lore counters"` chapter trigger) and wrap
+     `Triggers.addLoreAfterDrawStep` (`Triggers.lean`) in
+     `withBatch (some (.turnBased .sagaLoreOnMain))` per CR 703.4f / 714.3c; and
+     process multi-player draws in APNAP order across `Actions.twoPlayersEachDraw`
+     and `EffectResolution` `.twoPlayersDraw` (CR 101.4 / 121.2c, leaving
+     `FrcResolve` `.urSphinx`'s `"each player mills"` simultaneous per CR
+     608.2f).
 4. Complete Two-Headed Giant shared life total, first-turn draw skip & shared
    poison semantics, simultaneous CR 704.3 SBA evaluation before `pl.lost`, and
    `amass` `minId` / LKI `noSourceSentinelId` / dead-helper cleanup (§2.3, §2.6,
    §2.7, §3.2, §3.6, §3.8):
-   - Implement Two-Headed Giant CR 103.8b / 810.4 / 810.6 / 810.8c–d /
-     810.9a–c,g–h / 810.10a,b,d / 810.11 shared life total, first-turn draw
-     skip, and shared poison counters (`Start.lean`, `Core.lean`, `Timing.lean`,
-     `StateBasedActions.lean`, `Decisions.lean`, `EffectResolution.lean`; Ruling
-     410): initialize team seats with shared starting life `15 * teamSize` (`30`
-     for a two-player team, `+15` per additional player, CR 810.4); synchronize
+   - Implement Two-Headed Giant CR 103.8b / 701.34a–b / 704.6a–b / 810.4 /
+     810.6 / 810.8c–d / 810.9 / 810.9a,c,g–h / 810.10a,b,d / 810.11 shared life
+     total, first-turn draw skip, and shared poison counters (`Start.lean`,
+     `Core.lean`, `Timing.lean`, `StateBasedActions.lean`, `Decisions.lean`,
+     `EffectResolution.lean`; Ruling 410): initialize team seats with shared
+     starting life `15 * teamSize` (`30` for a two-player team per CR 810.4,
+     `+15` per additional player beyond the second per CR 810.11); synchronize
      teammate `life` in `Core.applyLifeEvent` (`Core.lean`) while keeping
      `LifeEvent` attributed to the individual player (preserving individual
-     `loggedLifeGained` / `loggedLifeLost` per CR 810.9g–h and Ruling 410) and
-     extending `lifeLocked` / `lifeCantChange` across teammates (CR 810.9a–c);
-     skip the starting team's first shared turn draw step across all seats of
-     that team in `Timing.skipsFirstDraw` / `Turns.lean` (CR 103.8b / 810.6);
-     and scale team poison SBA loss to `10 + 5 * (teamSize - 1)` in
-     `StateBasedActions.checkSBACounted` (CR 810.8d / 810.11), check shared team
-     poison in `Core.opponentPoisonedAtLeast` (Corrupted, CR 810.8c), include
-     `pl.counters` and team-once poison proliferation in `Decisions.lean` /
-     `EffectResolution.lean` (CR 701.34a / 810.8c), and spill `.poison (.removed n)`
-     across teammates when `cur < n` in `Core.applyPermanentEvent`.
+     `loggedLifeGained` / `loggedLifeLost` while applying the result to the
+     team's shared life total per CR 810.9 and Ruling 410, with team life
+     reads/adjustments per CR 810.9a,c and 0-or-less team life loss per CR
+     704.6a / 810.8c) and extending `lifeLocked` / `lifeCantChange` across
+     teammates (CR 810.9g–h); skip the starting team's first shared turn draw
+     step across all seats of that team in `Timing.skipsFirstDraw` /
+     `Turns.lean` (CR 103.8b / 810.6); and scale team poison SBA loss to
+     `10 + 5 * (teamSize - 1)` in `StateBasedActions.checkSBACounted` (`15` for
+     a two-player team per CR 704.6b / 810.8d, `+5` per additional player beyond
+     the second per CR 810.11), check shared team poison in
+     `Core.opponentPoisonedAtLeast` (Corrupted / `"poisoned"` per CR 810.10d and
+     opposing team poison counts per CR 810.10a), include `pl.counters` (CR
+     701.34a / 810.10d) and team-once poison proliferation (CR 701.34b) in
+     `Decisions.lean` / `EffectResolution.lean`, and spill `.poison (.removed n)`
+     across teammates when `cur < n` in `Core.applyPermanentEvent` (CR 810.10b).
    - Capture start-of-pass permanent SBAs *before* recording `GameEvent.playerLost`
      in `StateBasedActions.checkSBACounted` (`StateBasedActions.lean`, CR 704.3
      / 800.4a) so a player losing via SBA in multiplayer does not alter
@@ -6992,8 +7004,9 @@ abilities / Split Second on face-down permanents, face-up stack-copy `copiable`
 shockland `entersTappedUnlessPayLife` re-entry at `n ≤ life < 2 * n`, CR 616.1e
 `.entersTappedSelf` ordering, unified CR 616.1g ETB counter evaluation &
 `preBatchAuraBoard` isolation, batched multi-token `replaceTokenCreationChoice`,
-post-damage combat `.lifelink` ordering, CR 702.26h mass phase-out host-first
-ordering, batched Saga lore counters & APNAP multi-player draw/mill, CR 810 2HG
+post-damage combat `.lifelink` ordering, CR 702.26g–h indirect attachment
+phase-out & direct+indirect collapse, batched Saga lore counters & CR 121.2c
+APNAP multi-player draws, CR 810 2HG
 shared life / first-turn draw skip / shared poison, simultaneous CR 704.3 SBA
 before `pl.lost`, `finishFreshAmass` `startEventIdx`, and `EventObject.blockingIds`
 LKI reconstruction), `Activation.lean`, `AddMana.lean`, `Casting.lean`,
