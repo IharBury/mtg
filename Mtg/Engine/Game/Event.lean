@@ -1461,7 +1461,7 @@ inductive PostStep where
   | logInvestigateClueCreated (controller : PlayerId) (startEventIdx : Nat)
   | revealUntilCreatureToHandAfterMove (controller : PlayerId) (cardId : ObjectId)
       (cardName : String) (rest : Array ObjectId) (cause : EventCause)
-  | logSacrificedIfLeftBattlefield (cardId : ObjectId) (cardName : String)
+  | logSacrificedIfInGraveyard (cardId : ObjectId) (owner : PlayerId) (cardName : String)
   | movePublicCardsToHandLoop (p : PlayerId) (remainingIds : Array ObjectId)
       (maxLeft : Nat) (playerPutsStyle : Bool) (cause : Option EventCause)
       (pendingCard : Option (ObjectId × String) := none)
@@ -1471,7 +1471,7 @@ inductive PostStep where
       (movedAnyForCur : Bool := false) (pendingId : Option ObjectId := none)
   | worldsWithinWorldsAfterPut (exiled : Array ObjectId)
       (validChosen : Array (ObjectId × PlayerId × String)) (sourceId : Option ObjectId)
-  | logDiscardFromHandIfLeft (p : PlayerId) (cardId : ObjectId) (msg : String)
+  | logDiscardIfInGraveyard (cardId : ObjectId) (owner : PlayerId) (msg : String)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- Stage of `StateBasedActions.finishSbaSweep` across `Pending.chooseReplacement` pauses. -/

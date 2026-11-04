@@ -413,15 +413,16 @@ def discardFromHand (g : Game) (p : PlayerId) (id : ObjectId) (chooser : Option 
     (cause : Option EventCause := none) :
     Game :=
   let card := g.object! id
+  let owner := card.owner
   let msg :=
     match chooser with
     | some c => s!"{(g.player c).name} chooses {card.name}. {(g.player p).name} discards it"
     | none => s!"{(g.player p).name} discards {card.name}"
-  let (g, _) := g.move id (.graveyard card.owner) none (verb := some .discard)
+  let (g, _) := g.move id (.graveyard owner) none (verb := some .discard)
     (actor := some p) (cause := cause)
   if let .chooseReplacement .. := g.pending then
-    g.chainPendingReplacement (.finishPostStep (.logDiscardFromHandIfLeft p id msg))
-  else if !(g.player p).hand.contains id then
+    g.chainPendingReplacement (.finishPostStep (.logDiscardIfInGraveyard id owner msg))
+  else if (g.followMovedToZone? id (· == .graveyard owner)).isSome then
     g.logMsg msg
   else g
 

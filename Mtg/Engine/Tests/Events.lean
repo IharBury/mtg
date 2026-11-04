@@ -15580,6 +15580,30 @@ def mustHold23 (label : String) (ok : Bool) : Bool :=
   let gHdPause2 : Game := mustApply gHdPause1 me (.chooseReplacement idHdExA)
   let preHdNormLog := afterDraw.log.size
   let gHdNorm : Game := afterDraw.runFrcPostStep (.discardHand me)
+  let dfhSyncCard := (gHdSync0.player me).hand.back!
+  let preDfhSyncLog := gHdSync0.log.size
+  let gDfhSync : Game := gHdSync0.discardFromHand me dfhSyncCard
+  let dpcPauseCard := (gHdPause0.player me).hand.back!
+  let gDpcPause0 : Game := gHdPause0.change (.pending (.chooseDiscardCard me #[]))
+  let preDpcPauseLog := gDpcPause0.log.size
+  let gDpcPause1 : Game := mustApply gDpcPause0 me (.discard dpcPauseCard)
+  let gDpcPause2 : Game := mustApply gDpcPause1 me (.chooseReplacement idHdExA)
+  let gSacChSync0 : Game := addPermanent gHdSync0 bear me me
+  let sacChSyncId := (gSacChSync0.battlefield.filter (·.name == bear.name))[0]!.id
+  let preSacChSyncLog := gSacChSync0.log.size
+  let gSacChSync1 : Game :=
+    gSacChSync0.sacrificeChosenOrGone #[.player me, .permanent sacChSyncId]
+  let gSacChPause0 : Game := addPermanent gHdPause0 bear me me
+  let sacChPauseId := (gSacChPause0.battlefield.filter (·.name == bear.name))[0]!.id
+  let preSacChPauseLog := gSacChPause0.log.size
+  let gSacChPause1 : Game :=
+    gSacChPause0.sacrificeChosenOrGone #[.player me, .permanent sacChPauseId]
+  let gSacChPause2 : Game := mustApply gSacChPause1 me (.chooseReplacement idHdExA)
+  let gSacChNorm0 : Game := addPermanent afterDraw bear me me
+  let sacChNormId := (gSacChNorm0.battlefield.filter (·.name == bear.name))[0]!.id
+  let preSacChNormLog := gSacChNorm0.log.size
+  let gSacChNorm1 : Game :=
+    gSacChNorm0.sacrificeChosenOrGone #[.player me, .permanent sacChNormId]
   let clashAndHandDiscardArrivalOk : Bool :=
     (gTopExiled.player opp23).life == 20 &&
     !gTopExiled.log.any (·.contains "on top of their library") &&
@@ -15591,13 +15615,23 @@ def mustHold23 (label : String) (ok : Bool) : Bool :=
     (match gHdPause1.pending with | .chooseReplacement p cs => p == me && cs.size == 2 | _ => false) &&
     (gHdPause2.followMovedToZone? hdPauseCard (· == .exile)).isSome &&
     !(gHdPause2.log.extract preHdPauseLog gHdPause2.log.size).any (·.contains "discards ") &&
-    (gHdNorm.log.extract preHdNormLog gHdNorm.log.size).any (·.contains "discards ")
+    (gHdNorm.log.extract preHdNormLog gHdNorm.log.size).any (·.contains "discards ") &&
+    (gDfhSync.followMovedToZone? dfhSyncCard (· == .exile)).isSome &&
+    !(gDfhSync.log.extract preDfhSyncLog gDfhSync.log.size).any (·.contains "discards ") &&
+    (gDpcPause2.followMovedToZone? dpcPauseCard (· == .exile)).isSome &&
+    !(gDpcPause2.log.extract preDpcPauseLog gDpcPause2.log.size).any (·.contains "discards ") &&
+    (gSacChSync1.followMovedToZone? sacChSyncId (· == .exile)).isSome &&
+    !(gSacChSync1.log.extract preSacChSyncLog gSacChSync1.log.size).any (·.contains "is sacrificed") &&
+    (gSacChPause2.followMovedToZone? sacChPauseId (· == .exile)).isSome &&
+    !(gSacChPause2.log.extract preSacChPauseLog gSacChPause2.log.size).any (·.contains "is sacrificed") &&
+    (gSacChNorm1.log.extract preSacChNormLog gSacChNorm1.log.size).any (·.contains "is sacrificed")
 
   mustHold23 "2a.seqTargetsOk" seqTargetsOk &&
   mustHold23 "2b.preventedNoSideEffectOk" preventedNoSideEffectOk &&
   mustHold23 "2c.clashAndHandDiscardArrivalOk" clashAndHandDiscardArrivalOk &&
   mustHold23 "2.replay" ([gSeqPaused, gSeqDone, gSmitePrev, gOppDmgPrev,
-      gTopExiled, gTopPaused0, gTopPausedDone, gHdSync1, gHdPause1, gHdPause2, gHdNorm].all (fun g =>
+      gTopExiled, gTopPaused0, gTopPausedDone, gHdSync1, gHdPause1, gHdPause2, gHdNorm,
+      gDfhSync, gDpcPause1, gDpcPause2, gSacChSync1, gSacChPause1, gSacChPause2, gSacChNorm1].all (fun g =>
     Game.replayEvents g.events == g && allRulesEventsClassified g))
 
 -- 3. 0-mana `sneakAttacker` bounce, reduced-`{0}` `activateAbility` `CastEvent.announced`,

@@ -1592,8 +1592,8 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
         g.logMsg s!"{cardName} is put into {(g.player controller).name}'s hand"
       else g
     g.putRestOnBottomRandom controller rest (cause := some cause)
-  | .logSacrificedIfLeftBattlefield cardId cardName =>
-    if (g.followMovedToZone? cardId (· != .battlefield)).isSome then
+  | .logSacrificedIfInGraveyard cardId owner cardName =>
+    if (g.followMovedToZone? cardId (· == .graveyard owner)).isSome then
       g.logMsg s!"{cardName} is sacrificed"
     else g
   | .movePublicCardsToHandLoop p remainingIds maxLeft playerPutsStyle cause pendingCard requirePublicZone =>
@@ -1602,8 +1602,8 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
     g.exileOpponentLibrariesLoop remainingOpps curOpp curIds movedAnyForCur pendingId
   | .worldsWithinWorldsAfterPut exiled validChosen sourceId =>
     g.finishWorldsWithinWorldsAfterPut exiled validChosen sourceId
-  | .logDiscardFromHandIfLeft p cardId msg =>
-    if !(g.player p).hand.contains cardId then g.logMsg msg else g
+  | .logDiscardIfInGraveyard cardId owner msg =>
+    if (g.followMovedToZone? cardId (· == .graveyard owner)).isSome then g.logMsg msg else g
 
 /-- Ask `prop.caster` to choose what pays the first of `picks` (reversing under
 CR 733.1 if `cands.size < pick.count`), or finish the activation when none remain. -/
@@ -2782,14 +2782,15 @@ def discardPendingCard (g : Game) (p q : PlayerId) (id : ObjectId)
   if !(g.player p).hand.contains id then
     throw "That card is not in your hand"
   let some card := g.findObject? id | throw "no such object"
+  let owner := card.owner
   let msg := s!"{(g.player p).name} discards {card.name}{logSuffix}"
   let g := g.change (.pending .none)
-  let (g, _) := g.move id (.graveyard card.owner) none (verb := some .discard)
+  let (g, _) := g.move id (.graveyard owner) none (verb := some .discard)
     (actor := some p) (cause := cause)
   let g :=
     if let .chooseReplacement .. := g.pending then
-      g.chainPendingReplacement (.finishPostStep (.logDiscardFromHandIfLeft p id msg))
-    else if !(g.player p).hand.contains id then
+      g.chainPendingReplacement (.finishPostStep (.logDiscardIfInGraveyard id owner msg))
+    else if (g.followMovedToZone? id (· == .graveyard owner)).isSome then
       g.logMsg msg
     else g
   return (g, card)

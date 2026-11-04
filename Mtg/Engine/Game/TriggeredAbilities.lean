@@ -195,12 +195,13 @@ def sacrificeChosenOrGone (g : Game) (targets : Array Target) : Game :=
     match g.findObject? id with
     | some o =>
       if o.isOnBattlefield then
+        let owner := o.owner
         let name := g.name o
-        let actor := (g.controllerOf o).getD o.owner
-        let (g, _) := g.move id (.graveyard o.owner) none (verb := some .sacrifice) (actor := some actor)
+        let actor := (g.controllerOf o).getD owner
+        let (g, _) := g.move id (.graveyard owner) none (verb := some .sacrifice) (actor := some actor)
         if let .chooseReplacement .. := g.pending then
-          g.chainPendingReplacement (.finishPostStep (.logSacrificedIfLeftBattlefield id name))
-        else if (g.followMovedToZone? id (· != .battlefield)).isSome then
+          g.chainPendingReplacement (.finishPostStep (.logSacrificedIfInGraveyard id owner name))
+        else if (g.followMovedToZone? id (· == .graveyard owner)).isSome then
           g.logMsg s!"{name} is sacrificed"
         else g
       else
