@@ -7059,16 +7059,15 @@ LKI reconstruction), `Activation.lean`, `AddMana.lean`, `Casting.lean`,
      `.mayMoveAllCounters` logs, and preserve outer `g.pendingReplacement`
      continuations across `Leaving.redirectPendingAfterLeave`
      (`EffectResolution.lean`, `FraAbilities.lean`, `FraChoices.lean`,
-     `Entering.lean`, `Leaving.lean`, `Event.lean`, `Decisions.lean`, CR 111.8 /
-     117.3b / 122.1 / 122.5 / 400.3 / 608.2c,n / 614.6 / 616.1 / 704.4 /
-     800.4a–b,f–h):
+     `Entering.lean`, `Leaving.lean`, `Event.lean`, `Decisions.lean`, CR 117.3b /
+     122.1 / 122.5 / 400.3 / 608.2c,n / 614.6 / 616.1 / 704.4 / 800.4a,f–h):
      - replace the synchronous `chosen.foldl` in
        `EffectResolution.finishChooseCards` `.toHand _` (`EffectResolution.lean`)
        with a pause-safe loop moving each chosen card to `.hand o.owner` (rather
        than `.hand p`, CR 400.3) and logging `"puts ... into their hand"` only
        when `(g.followMovedToZone? id (· == .hand owner)).isSome` (so a card
        owned by a departed player or replaced before arrival does not log a
-       false hand move, CR 111.8 / 614.6 / 616.1 / 800.4b);
+       false hand move, CR 400.3 / 614.6 / 616.1 / 800.4a);
      - return `g.finishPlusOneAfterDiscards` directly instead of calling
        `(g.finishPlusOneAfterDiscards).receivePriority g.activePlayer` when
        `g.pending == .none` in `EffectResolution.applyUnifiedAbility`
@@ -7334,18 +7333,18 @@ LKI reconstruction), `Activation.lean`, `AddMana.lean`, `Casting.lean`,
        810.8a / 810.11).
    - Capture start-of-pass CR 704.5j legend-rule groups and enforce Layer 4 /
      Layer 6 Saga subtype & ability checks (`StateBasedActions.lean`,
-     `Triggers.lean`, `Core.lean`, `Entering.lean`, CR 305.7 / 613.1d,f / 704.3 /
-     704.5j / 704.5s / 704.8 / 714.2d / 714.3c / 714.4 / 800.4a): evaluate
-     `firstLegendRuleChoice?` against start-of-pass `preBf` / living-player state
-     before `GameEvent.playerLost`, CR 704.5q counter annihilation,
-     `dyingCreatures`, and `pwMoves` in `StateBasedActions.checkSBACounted` /
-     `finishSbaSweep` (CR 704.3 / 704.5j / 704.8 / 800.4a); and check
-     `g.hasSubtype o .saga` and Layer 6 ability retention
-     (`g.retainsPrintedAbilities o`) across `StateBasedActions.checkSBACounted`
-     `sagaMoves` (CR 704.5s / 714.2d / 714.4), `Triggers.addLoreAfterDrawStep` /
-     `addLoreAfterDrawStepIds` (CR 305.7 / 714.3c), `Core.loreAmongSagas`
-     (`g.hasSubtype o .saga`, CR 613.1d), and `Entering.lean`
-     (`finalSagaPlayer?`).
+     `Triggers.lean`, `Core.lean`, `Entering.lean`, CR 613.1d,f / 703.4f /
+     704.3 / 704.5j / 704.5s / 704.8 / 714.2d / 714.3c / 714.4 / 800.4a):
+     evaluate `firstLegendRuleChoice?` against start-of-pass `preBf` /
+     living-player state before `GameEvent.playerLost`, CR 704.5q counter
+     annihilation, `dyingCreatures`, and `pwMoves` in
+     `StateBasedActions.checkSBACounted` / `finishSbaSweep` (CR 704.3 / 704.5j /
+     704.8 / 800.4a); and check `g.hasSubtype o .saga` and Layer 6 ability
+     retention (`g.retainsPrintedAbilities o`) across
+     `StateBasedActions.checkSBACounted` `sagaMoves` (CR 704.5s / 714.2d /
+     714.4), `Triggers.addLoreAfterDrawStep` / `addLoreAfterDrawStepIds` (CR
+     613.1d,f / 703.4f / 714.3c), `Core.loreAmongSagas` (`g.hasSubtype o .saga`,
+     CR 613.1d), and `Entering.lean` (`finalSagaPlayer?`).
    - Retire orphaned `PostStep.worldsWithinWorldsTail`,
      `PostStep.logChosenCardDiscarded`, and test-only
      `ResolutionEffects.incrementPlanThen`, and update the remaining stale
