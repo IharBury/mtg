@@ -6467,9 +6467,12 @@ two-batch `applyDackOnHits` batching), `Auras.lean`, `Casting.lean`, `CastTrigge
      `Movement.move` pauses on competing exile replacements into pause-safe
      `PendingReplacement` / `PostStep` loops:
      `ModeledTriggers.exileLibraryUntilNonlandLoop` +
-     `finishExileLibraryUntilNonland` + `.exileTopOpponentCastFree`
-     (`ModeledTriggers.lean`, `TriggeredAbilities.lean`),
-     `CastExtras.resolveCascade` (`CastExtras.lean`, CR 702.85a), and
+     `finishExileLibraryUntilNonland` + `TriggeredAbilities.applyExileLibrary`'s
+     `.untilNonland` arm
+     (`.may (.putCounters …) (.exile .top .forLater .anyManaThisTurn) .ifYouDont`,
+     `.announced` in `ModeledTriggers.lean`, `TriggeredAbilities.lean`),
+     `CastExtras.resolveCascadeLoop` / `resolveCascade` (`CastExtras.lean`, CR
+     702.85a), and
      `Choices.exileUntilInstantOrSorceryLoop` + `finishGrimaDirectCast` +
      `grimaExileUntilInstantOrSorcery` + `.exileUntilInstantOrSorcery`
      (`Choices.lean`, `TriggeredAbilities.lean`).
@@ -6642,7 +6645,7 @@ Tests: `Events.lean` (isolation tests for typed `PostStep` / `FrcPostStep` /
 stage / `TriggerReflexiveKind` / `KeywordChoice` / `TriggerExileMode`
 continuations, non-smuggled `fraCauseId` / `fraCauseController` / `chosenMode`
 trigger reads & sentinel-free optional `ObjectId` prompts, pause-safe
-`exileLibraryUntilNonlandLoop` / `resolveCascade` / `exileUntilInstantOrSorceryLoop`
+`exileLibraryUntilNonlandLoop` / `resolveCascadeLoop` / `exileUntilInstantOrSorceryLoop`
 library-exile loops under competing exile replacements, `.sarumanExileCopyMayCast`
 & `.fblthpSearch` & `castExiledAsAbilityResolves` `outerCont?` preservation,
 post-move `followMovedToZone?` in `.exileReturnBrieflyIfMvAtMost` /
@@ -6846,20 +6849,28 @@ across multiplied token creation, and CR 616.1 `enterWithPlusOnes` /
      `.becomesTarget`, and `.ward`.
 3. Complete CR 614.1c / 614.12 / 614.15 / 616.1a–g ETB replacement ordering,
    shockland life-payment re-entry, unified ETB counter modification,
-   batch-isolated token replacements, and CR 510.2 / 702.26h / 714.2b–3c /
-   121.2c simultaneous batches (§2.5, §2.6, §3.2, §3.4, §3.5):
-   - Preserve already-chosen `entersTappedUnlessPayLife` across `applyEtbReplacements`
-     re-entry and order `ReplacementKind.entersTappedSelf` after CR 616.1b–d
-     (`Core.lean`, `Decisions.lean`, `Event.lean`, CR 614.1c / 614.12a / 614.15
-     / 616.1a–f): keep `idPay` in `items` when `curOrder.contains idPay` (before
-     it is added to `curApplied`) in `Core.applyEtbReplacements` (`Core.lean`)
-     so paying `n` life when `n ≤ (g.player ctrl).life < 2 * n` (e.g. 2 or 3
-     life for a shockland) does not drop `idPay` on re-entry and tap the land
+   batch-isolated token replacements, and CR 510.2 / 702.26h / 703.4f /
+   714.2b,3c / 121.2c simultaneous batches (§2.5, §2.6, §3.2, §3.4, §3.5):
+   - Preserve already-chosen `entersTappedUnlessPayLife` on `specs` across
+     `applyEtbReplacements` re-entry and move `ReplacementKind.entersTappedSelf`
+     off `ReplacementTier.self` (`Core.lean`, `Decisions.lean`, `Event.lean`,
+     `Object.lean`, CR 614.1c / 614.12 / 614.15 / 616.1a–f): keep `idPay` on
+     `specs` when `curOrder.contains idPay` (while `!curApplied.contains idPay`,
+     after `Decisions.chooseReplacement` pays `n` life and pushes `idPay` onto
+     `replacementOrder` so `canPay` becomes `false` when
+     `n ≤ (g.player ctrl).life < 2 * n`) in `Core.applyEtbReplacements`
+     (`Core.lean`) so re-entry does not push only `idTap` and tap a shockland
      after life was paid; and move `ReplacementKind.entersTappedSelf` out of
-     `ReplacementTier.self` (`616.1a`) into `ReplacementTier.other` (`616.1e`)
-     so CR 616.1b–d control-changing, copy, and back-face ETB replacements apply
-     before intrinsic `"~ enters tapped"` (matching CR 616.1f's Rusted Sentinel
-     + Essence of the Wild example).
+     `ReplacementTier.self` (`616.1a`, which is reserved for CR 614.15
+     self-replacement effects of a resolving spell or ability, whereas printed
+     `"~ enters tapped"` is CR 614.1c / 614.12) into `ReplacementTier.other`
+     (`616.1e`) so CR 616.1b–d control-changing, copy, and back-face ETB
+     replacements apply first, and when `applyEtbReplacements` repeats per CR
+     616.1f and rebuilds `specs` from `selfEntersTapped` on the updated `cur`
+     per CR 614.12, a copied-away printed enters-tapped ability is dropped so
+     the copy enters untapped (matching CR 616.1f's Rusted Sentinel + Essence
+     of the Wild example, while enters-tapped effects that still apply to the
+     updated permanent—such as Urabrask—apply in `616.1e`).
    - Unify CR 616.1g / 122.6 ETB counter replacement evaluation and complete
      `preBfOk` / `preBatchAuraBoard` isolation (`Core.lean`, `Allocation.lean`,
      CR 122.6 / 614.12 / 616.1g / 702.26b): evaluate `replaceCountersPutChoice`
@@ -6888,7 +6899,7 @@ across multiplied token creation, and CR 616.1 `enterWithPlusOnes` /
      (`Combat.lean`, `Event.lean`, `Decisions.lean`, `Phasing.lean`,
      `EffectResolution.lean`, `FrcResolve.lean`, `Triggers.lean`,
      `Actions.lean`, CR 101.4 / 120.3f / 121.2c / 510.2 / 702.15b / 702.26a,g,h
-     / 714.2b / 714.3c): append all `.lifelink` steps *after* all `.damage`
+     / 703.4f / 714.2b / 714.3c): append all `.lifelink` steps *after* all `.damage`
      steps in `Combat.buildCombatDamageSteps` (`Combat.lean`, so combat damage
      in a CR 510.2 step is dealt before lifelink life-gain replacements pause or
      resolve) and retire the unused `applied : Array ReplacementId` parameter on
@@ -6898,9 +6909,10 @@ across multiplied token creation, and CR 616.1 `enterWithPlusOnes` /
      phase-out callers (`EffectResolution.lean`, `FrcResolve.lean`), and phase
      out hosts before co-phasing attachments per CR 702.26h; emit a single
      `n'`-counter `.lore` `PermanentEvent.counters` in
-     `Triggers.addLoreCounters` and wrap `Triggers.addLoreAfterDrawStep`
-     (`Triggers.lean`) in `withBatch (some (.turnBased .sagaLoreOnMain))` per CR
-     714.3b; and process multi-player draws and mills in APNAP order across
+     `Triggers.addLoreCounters` (per CR 714.2b's `"one or more lore counters"`
+     chapter trigger) and wrap `Triggers.addLoreAfterDrawStep` (`Triggers.lean`)
+     in `withBatch (some (.turnBased .sagaLoreOnMain))` per CR 703.4f / 714.3c;
+     and process multi-player draws and mills in APNAP order across
      `Actions.twoPlayersEachDraw`, `EffectResolution` `.twoPlayersDraw`, and
      `FrcResolve` `.urSphinx` (CR 101.4 / 121.2c).
 4. Complete Two-Headed Giant shared life total, first-turn draw skip & shared
