@@ -6700,23 +6700,16 @@ across multiplied token creation, and CR 616.1 `enterWithPlusOnes` /
        and chaining `outerCont?` (or `.finishFraChoice` when `openCont` holds)
        *after* `becomeCast`'s `.finishPostCast` continuation rather than before
        it.
-   - Fix `Library.moveIdsInOrder` paused library-offset calculation, Vision
-     Quest pre-ETB haste timing, `.lootLandEntersTapped` graveyard-only arrival
-     gating, and post-move pause chaining (`Library.lean`,
-     `EffectResolution.lean`, `Decisions.lean`, `TriggeredAbilities.lean`,
+   - Fix `Library.moveIdsInOrder` paused library-offset calculation,
+     `.lootLandEntersTapped` graveyard-only arrival gating, and post-move pause
+     chaining (`Library.lean`, `TriggeredAbilities.lean`,
      `ResolutionEffects.lean`, `ModeledTriggers.lean`, `FraChoices.lean`,
-     `FrcResolve.lean`, `FraAbilities.lean`, CR 401.4 / 603.6a / 608.2d /
-     614.6 / 616.1):
+     `FrcResolve.lean`, `FraAbilities.lean`, CR 401.4 / 608.2d / 614.6 / 616.1):
      - compute `LibraryPosition.fromTop` offsets in `Library.moveIdsInOrder`
        (`Library.lean`) against the pause-safe placement loop rather than live
        `((g.player p).library.filter (· != id)).size` while an earlier move in
        `ids` is paused on `Pending.chooseReplacement` and has not yet entered
        `.library p`;
-     - grant `Keyword.haste` *before* `afterPermanentEnters` in both
-       `EffectResolution.finishVisionQuest` (`EffectResolution.lean`) and
-       `Decisions.runPostStep` `.putOntoBattlefieldHasteAtFour`
-       (`Decisions.lean`) when `x ≥ 4` so ETB checks/triggers see haste on
-       arrival;
      - restrict `TriggeredAbilities.applyPut` `.discardedLand, .tapped, _`
        (`TriggeredAbilities.lean`, `"put it from your graveyard onto the
        battlefield tapped"`) to `o.zone == .graveyard o.owner` (dropping
@@ -6785,19 +6778,20 @@ across multiplied token creation, and CR 616.1 `enterWithPlusOnes` /
      in `Activation.activateAbility` so untargeted abilities whose mana cost is
      reduced to `{0}` finish immediately instead of pausing at
      `Pending.activateManaAbilities`; and record `GameEvent.announced` with
-     `choices := #[.sacrifice sac.id]` in
+     `costs := #[.sacrifice sac.id]` in
      `SacrificeDiscard.sacrificeForActivation` `.sacrificePermanent` when
-     `prop.kind == .spell` (matching `CastSpell.castSpell`'s 0-mana path).
+     `prop.kind == .spell` (matching `Decisions.discardForDraw`
+     `.discardForAdditionalCost`'s `costs := #[.discard id]`).
    - Fix CR 106.6 `FraManaUse.fromTreasure` priority, non-spell
      `.cantNonartifact` mana usability, and `payWard` / `payOrLetCounter`
      `manaSpentOn` provenance (`Mana.lean`, `Decisions.lean`, `Combat.lean`,
      `FraChoices.lean`, `TriggeredAbilities.lean`, `Event.lean`, CR 106.6 /
      118.12 / 601.2h / 702.21a; Rulings 697, 699): treat provenance-only
-     `.fra .fromTreasure` (`FraManaUse.allows _ == true`) as unrestricted in the
-     restricted-first pass of `ManaPool.spendOneUnit?` and `spendAnyUnit?` (and
-     include `.colorless` alongside `Color.all` in `spendAnyUnit?`'s `.fra`
-     generic-mana pass) so unrestricted Treasure mana does not preempt genuinely
-     restricted mana or get stranded when colorless; allow `.cantNonartifact`
+     `.fra .fromTreasure` (`FraManaUse.allows _ == true`) as unrestricted in
+     `ManaPool.spendOneUnit?` and `spendAnyUnit?` (skipping `.fromTreasure` in
+     the restricted-first `.fra` pass and spending it alongside unrestricted
+     mana) so unrestricted Treasure mana does not preempt genuinely restricted
+     mana; allow `.cantNonartifact`
      ("Spend this mana only to cast an artifact spell or activate an ability")
      on non-spell mana payments (`Decisions.payGeneric` `.mayPayGeneric` /
      `.payOrLetCounter` / `.payWard`, `Combat.declareAttackers`
@@ -6873,12 +6867,13 @@ across multiplied token creation, and CR 616.1 `enterWithPlusOnes` /
      updated permanent—such as Urabrask—apply in `616.1e`).
    - Unify CR 616.1g / 122.6 ETB counter replacement evaluation and complete
      `preBfOk` / `preBatchAuraBoard` isolation (`Core.lean`, `Allocation.lean`,
-     CR 122.6 / 614.12 / 616.1g / 702.26b): evaluate `replaceCountersPutChoice`
+     CR 122.6 / 614.12 / 616.1g / 702.26b,d): evaluate `replaceCountersPutChoice`
      once per `CounterKind` on the combined entering counter bag *after* CR
      616.1b–d copy/type/control modifications rather than separately across
      caller `extraCounters`, `616.1a`, and `616.1e` (preventing double Doc
      Samson `+1` application or missed creature-type counter modifiers after
-     Clone); check `pre.isOnBattlefield` (`!pre.status.phasedOut`) in `preBfOk`;
+     Clone); check `pre.isOnBattlefield` (`!pre.status.phasedOut`) in
+     `Core.replaceCountersPutChoice`'s `preBfOk`;
      and evaluate `selfEntersTapped` / `applyEtbReplacements` board queries
      against `preBatchAuraBoard preBattlefield` so an earlier permanent moved in
      the same simultaneous batch does not satisfy a co-entering land's
@@ -6886,7 +6881,7 @@ across multiplied token creation, and CR 616.1 `enterWithPlusOnes` /
    - Batch single-instruction multi-token `replaceTokenCreationChoice` calls,
      isolate pre-batch token modifiers, and finish `.copyNontokenCreaturesYouControl`
      ETB processing (`Tokens.lean`, `FrcResolve.lean`, `Choices.lean`,
-     `EffectResolution.lean`, CR 603.6a / 608.2c / 614.4 / 616.1): pass
+     `EffectResolution.lean`, CR 603.6a / 608.2c / 614.1 / 616.1): pass
      `count := n` into `replaceTokenCreationChoice` / `createTokenBatches` for
      single `"create N tokens"` instructions (`FrcResolve.makeFrc`,
      `Tokens.empowerJaceStep`, `Choices.commitEnteringAttackItems`) instead of
@@ -6972,8 +6967,9 @@ across multiplied token creation, and CR 616.1 `enterWithPlusOnes` /
        `blocking := eo.blockingIds` without fabricating `#[noSourceSentinelId]`
        (`ObjectId ⟨1000000000⟩`);
      - add `@[inline] def EngineChange.resolvingSkippedSlots` (`Event.lean`,
-       updating the two `.continuation (.resolvingSkippedSlots ...)` call sites
-       in `SpellResolution.lean`) and fix `ProposedSpellCostStage`'s docstring
+       updating the `.continuation (.resolvingSkippedSlots ...)` call sites in
+       `SpellResolution.resolveOneMode` and `Tests/Events.lean`) and fix
+       `ProposedSpellCostStage`'s docstring
        to reference `Decisions.finishProposedSpellCosts`; and
      - remove the 22 verified zero-caller helpers across `Mtg/Engine/Game/`
        (`Core.lastActive?`, `Core.effSourceId?`,
@@ -6992,8 +6988,8 @@ Tests: `Events.lean` (isolation tests for `drainPendingContinuations`
 `triggerSequenceRest`-before-`outerPendingReplacements` ordering, non-mana
 `payWard` `.afterWardResolved`-before-`outerCont?` ordering,
 `beginResolutionCastTargets` post-`becomeCast` pause chaining,
-`moveIdsInOrder` paused `.fromTop` offsets, Vision Quest pre-ETB haste,
-`.lootLandEntersTapped` graveyard-only check, sequential multi-target CR 608.2b
+`moveIdsInOrder` paused `.fromTop` offsets, `.lootLandEntersTapped`
+graveyard-only check, sequential multi-target CR 608.2b
 legality & CR 614.6 / 615.6 deferred logs, 0-mana `sneakAttacker` / reduced-`{0}`
 `activateAbility` / spell-sacrifice `CastEvent.announced`, CR 106.6
 `fromTreasure` spending priority & non-spell `.cantNonartifact` & `payWard` /
@@ -7003,7 +6999,8 @@ abilities / Split Second on face-down permanents, face-up stack-copy `copiable`
 & non-`"another"` dies self-triggers & `matchesTrigger` target predicates,
 shockland `entersTappedUnlessPayLife` re-entry at `n ≤ life < 2 * n`, CR 616.1e
 `.entersTappedSelf` ordering, unified CR 616.1g ETB counter evaluation &
-`preBatchAuraBoard` isolation, batched multi-token `replaceTokenCreationChoice`,
+`preBfOk` / `preBatchAuraBoard` isolation, batched multi-token
+`replaceTokenCreationChoice`,
 post-damage combat `.lifelink` ordering, CR 702.26g–h indirect attachment
 phase-out & direct+indirect collapse, batched Saga lore counters & CR 121.2c
 APNAP multi-player draws, CR 810 2HG
