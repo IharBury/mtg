@@ -1212,10 +1212,12 @@ def Game.commitBatch (g : Game) (cause : EventCause) (events : Array RulesEvent)
   CR 704.3 / 800.4a; capturing `firstLegendRuleChoice?` against start-of-pass
   `preBf` / living-player state before `pl.lost`, 704.5q annihilation,
   `dyingCreatures`, and `pwMoves` moves to Phase 24 step 4) `checkSBACounted`
-  (`StateBasedActions.lean`) captures `preBf` and the 704.5d–p / 704.5s
-  candidate arrays, runs player-loss checks (704.5a–c / 704.6a–b / 810.8a,c,d /
-  810.11), and applies +1/+1 / -1/-1 counter annihilation (704.5q) inside the
-  initial `withBatchReturn none` body ahead of
+  (`StateBasedActions.lean`) captures `preBf` and the 704.5d–i (with 704.5j
+  still evaluated later in `finishSbaSweep` until Phase 24 step 4), 704.5m,
+  704.5n, 704.5p, and 704.5s candidate arrays, runs player-loss checks
+  (704.5a–c / 704.6a–b / 810.8a,c,d / 810.11), and applies +1/+1 / -1/-1
+  counter annihilation (704.5q) inside the initial `withBatchReturn none` body
+  ahead of
   `finishSbaSweep moves preBf stage pwMoves sagaMoves tokensOutsideBf copiesOutside illegalAuras illegalEquips illegalCreatureAtts`
   (typed via `SbaSweepStage` in Phase 22, #612—`.dyingCreatures`: dying
   creatures followed by `EngineChange.sbaChecked`;
@@ -7268,8 +7270,12 @@ LKI reconstruction), `Activation.lean`, `AddMana.lean`, `Casting.lean`,
        `ResolutionEffects.extortDrain` in one shared `withBatch` / `EventCause`
        (CR 702.101a / 608.2c), and drop `withBatch` in `Damage.drawThenLoseLife`
        while allocating one shared `.oneShotEffect` cause via `allocDelayedCause`
-       so individual draws and subsequent life loss remain in separate batches
-       with a shared effect cause (CR 121.2 / 608.2c); and
+       so individual draws (CR 121.2: *"Cards may only be drawn one at a time. If
+       a player is instructed to draw multiple cards, that player performs that
+       many individual card draws"*, as distinct from CR 121.1 single-card draw
+       and CR 121.2c multi-player APNAP draw order) and subsequent life loss
+       remain in separate batches with a shared effect cause (CR 121.2 /
+       608.2c); and
      - preserve per-player `count > 1` across `remaining` players in
        `SacrificeDiscard.beginDiscardCards` / `Decisions.continueAfterDiscard` /
        `finishChooseDiscardCard` and keep a shared `pausedBatch` open across
@@ -7284,11 +7290,11 @@ LKI reconstruction), `Activation.lean`, `AddMana.lean`, `Casting.lean`,
      active-team `"during your turn"` queries, starting team, extra turns,
      `GameEvent.matchesTrigger` teammate filter, player-control edge cases, and
      `3+`-seat team win logs (`Core.lean`, `Turns.lean`, `Start.lean`,
-     `Activation.lean`, `Casting.lean`, `Triggers.lean`, `FrcResolve.lean`,
+     `Activation.lean`, `Triggers.lean`, `FrcResolve.lean`,
      `EffectResolution.lean`, `Event.lean`, `Leaving.lean`,
      `TriggeredAbilities.lean`, CR 102.3 / 103.1a / 514.2 / 602.5b / 603.2h /
-     606.3 / 723.5 / 800.4a,m / 805.3 / 805.4 / 805.4a,c / 805.8 / 810.2 /
-     810.8a / 810.11):
+     606.3 / 723.5 / 800.4a,m / 805.3 / 805.4 / 805.4a,c / 805.8 / 805.10a /
+     810.2 / 810.8a / 810.11):
      - keep `g.turnNumber` constant across consecutive teammate seats of the
        same shared turn in `Turns.continueStartNextTurn` and
        `Core.applyTurnEvent` so `"this turn"` queries
@@ -7305,10 +7311,9 @@ LKI reconstruction), `Activation.lean`, `AddMana.lean`, `Casting.lean`,
      - check active-team membership (`g.activePlayer == p ||
        g.areTeammates g.activePlayer p`, when living) across `"during your turn"`
        / `"on your turn"` checks in `Activation.validateActivation`
-       (`ab.onlyDuringYourTurn`), `Casting.opponentsCantCastOnActiveTurn`
-       (`.opponentsCantCastOnYourTurn`), `Core.evalSelfStaticKeywords`
+       (`ab.onlyDuringYourTurn`), `Core.evalSelfStaticKeywords`
        (`.fra .firstStrikeDuringYourTurn`), `Core.evalTeamStaticOn`
-       (`ab.equippedTeamKeywordsDuringYourTurn`), `Core.layer6State`
+       (`ab.equippedTeamKeywordsDuringYourTurn`), `Core.evalLayer6Aux`
        (`.equippedHexproofUnblockableDuringYourTurn` and
        `add.firstStrikeOnYourTurn`), `Core.matchTriggers`
        (`.opponentsDealtCombatDamageYourTurn`), `Triggers.becomeTapped`
@@ -7316,14 +7321,17 @@ LKI reconstruction), `Activation.lean`, `AddMana.lean`, `Casting.lean`,
      - start on the first seat of the randomly chosen starting team in
        `Start.startWithRng` (CR 103.1a / 805.3), queue and advance shared team
        extra turns under CR 805.8 (`EffectResolution.lean`, `Core.lean`,
-       `Turns.lean`), use `opp` instead of `!you` in the five opponent-scoped
-       arms of `GameEvent.matchesTrigger` (`Event.lean`, CR 102.3 / 810.2), add
-       `|| g.areTeammates them p` on `.controlsPlayer them true` in
-       `Turns.expireUntilNextTurnEffects` (CR 800.4m) and
-       `!((g.player you).lost)` in `Core.controllingPlayerOf?` (CR 723.5 /
-       800.4a), and format all living teammates' names for `3+`-seat team wins in
-       `Leaving.decideGameIfFinished` and `TriggeredAbilities` (CR 810.8a /
-       810.11).
+       `Turns.lean`), use `opp` instead of `!you` across all six `!you` arms of
+       `GameEvent.matchesTrigger` (`.fra .creatureAttacksYouOrYourPlaneswalker`,
+       `.fra .creaturesAttackYourOpponent`, `.fra .opponentSmallCreatureBlocks`,
+       `.fra .opponentBeginCombat`, `.eachOpponentDrawStep`, and
+       `.fra .opponentActivatesLoyaltyAbility` in `Event.lean`, CR 102.3 /
+       805.10a / 810.2), add `|| g.areTeammates them p` on
+       `.controlsPlayer them true` in `Turns.expireUntilNextTurnEffects` (CR
+       800.4m) and `!((g.player you).lost)` in `Core.controllingPlayerOf?` (CR
+       723.5 / 800.4a), and format all living teammates' names for `3+`-seat team
+       wins in `Leaving.decideGameIfFinished` and `TriggeredAbilities` (CR
+       810.8a / 810.11).
    - Capture start-of-pass CR 704.5j legend-rule groups and enforce Layer 4 /
      Layer 6 Saga subtype & ability checks (`StateBasedActions.lean`,
      `Triggers.lean`, `Core.lean`, `Entering.lean`, CR 305.7 / 613.1d,f / 704.3 /
@@ -7348,9 +7356,12 @@ LKI reconstruction), `Activation.lean`, `AddMana.lean`, `Casting.lean`,
      `Decisions.lean`, once `CastExtras.discardNonlandFrom` delegates to
      `SacrificeDiscard.discardFromHand`), and test-only
      `ResolutionEffects.incrementPlanThen` (`ResolutionEffects.lean`, updating
-     `MshOracleTests.lean` to call `incrementPlanSource`); and update the stale
-     cleanup docstrings in `Turns.lean` and `Game.lean` from `CR 514.3` to
-     `CR 514.2` / `CR 514.1–3`.
+     `MshOracleTests.lean` to call `incrementPlanSource`); and update
+     `Turns.lean`'s module docstring `"End-of-turn and cleanup clearing (CR
+     514.3)"` (line 6) to `CR 514.2` and `Game.lean`'s module overview
+     `"cleanup (CR 514.3)"` (lines 132–133) to `CR 514.1–3` while keeping
+     `Turns.lean`'s cleanup-priority `CR 514.3` / `514.3a` comments and log
+     unchanged.
 
 Tests: `Events.lean` (isolation tests for pause-safe `finishChooseCards`
 `.toHand _` owner-hand arrival, mid-resolution `.eachOppDiscardThenPlusOne`
