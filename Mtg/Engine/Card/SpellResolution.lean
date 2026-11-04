@@ -175,6 +175,28 @@ inductive PrepareWhen where
   | ifThreeCreaturesDied
 deriving Repr, Inhabited, BEq, DecidableEq
 
+/-- Keyword option offered by `Resolution.chooseKeyword` and `FraChoice.chooseKeyword`. -/
+inductive KeywordChoice where
+  | trample
+  | hexproof
+  | haste
+  | deathtouch
+deriving Repr, Inhabited, BEq, DecidableEq
+
+/-- `Keywords` bitmask granted by a `KeywordChoice`. -/
+def KeywordChoice.toKeywords : KeywordChoice → Keywords
+  | .trample => Keyword.trample
+  | .hexproof => Keyword.hexproof
+  | .haste => Keyword.haste
+  | .deathtouch => Keyword.deathtouch
+
+/-- Lowercase rules text name of a `KeywordChoice`. -/
+def KeywordChoice.name : KeywordChoice → String
+  | .trample => "trample"
+  | .hexproof => "hexproof"
+  | .haste => "haste"
+  | .deathtouch => "deathtouch"
+
 namespace TriggeredAbility
 
 /-- How `TriggerResolution.sacrifice` moves the source when `what` is
@@ -189,13 +211,15 @@ inductive SacrificeSourceHow where
   | movedAsSacrificed
 deriving Repr, Inhabited, BEq
 
-/-- Which MSH reflexive `TriggerResolution.queueReflexive` queues.
-`toNat` is the index `Resolution.mshReflexive` matches. -/
+/-- Which MSH reflexive `TriggerResolution.queueReflexive` /
+`Resolution.mshReflexive` queues and resolves. -/
 inductive TriggerReflexiveKind where
   /-- Another target nonattacking creature you control gains indestructible
   until end of turn.
   `.grant (.keywords Keyword.indestructible) .target`. -/
   | grantIndestructible
+  /-- This deals 2 damage to any target. -/
+  | dealTwoDamage
   /-- Choose up to three Trick Arrows modes.
   `.chooseModes TriggerResolution.trickArrowModes .alreadyChosen`. -/
   | trickArrows
@@ -225,6 +249,8 @@ inductive TriggerReflexiveKind where
   creatures with haste.
   `.cant (.beBlockedExceptByHaste .target)`. -/
   | hasteUnblockable
+  /-- It deals 7 damage divided as you choose among one or two targets. -/
+  | divideSevenDamage
   /-- Return up to two target instant and/or sorcery cards from your
   graveyard to your hand.
   `.returnToHand (.graveyardInstants 2)`. -/
@@ -232,25 +258,8 @@ inductive TriggerReflexiveKind where
   /-- Put a +1/+1 counter on target creature.
   `.putCounters (.ofKind .plusOnePlusOne) .permanent`. -/
   | plusOne
-deriving Repr, Inhabited, BEq
+deriving Repr, Inhabited, BEq, DecidableEq
 
-namespace TriggerReflexiveKind
-
-/-- The index `Resolution.mshReflexive` matches. -/
-def toNat : TriggerReflexiveKind → Nat
-  | .grantIndestructible => 0
-  | .trickArrows => 2
-  | .indestructibleCounter => 3
-  | .controlOpponent => 4
-  | .exileTopFive => 5
-  | .returnAttacking => 6
-  | .destroyOppNonland => 7
-  | .countersDamage => 8
-  | .hasteUnblockable => 9
-  | .returnInstants => 11
-  | .plusOne => 12
-
-end TriggerReflexiveKind
 mutual
 
 /-- Which player `ObjectSelector.player` names, who
@@ -3277,17 +3286,17 @@ inductive Resolution where
   /-- Put the reflexive triggered ability `kind` of an MSH card on the stack
   (“When you do, …”; MSH 359–369). `paid` is how many times its cost was
   paid. -/
-  | queueMshReflexive (kind paid : Nat)
+  | queueMshReflexive (kind : TriggeredAbility.TriggerReflexiveKind) (paid : Nat)
   /-- Resolve the reflexive triggered ability `kind` of an MSH card. -/
-  | mshReflexive (kind paid : Nat)
+  | mshReflexive (kind : TriggeredAbility.TriggerReflexiveKind) (paid : Nat)
   /-- Hawkeye's Trick Arrows: resolve the chosen modes (0 Net, 1 Explosive,
   2 Boomerang) in order. -/
   | hawkeyeArrows (modes : List Nat)
   /-- The creature that caused this ability gets +P/+T until end of turn. -/
   | causeGetsPump (power toughness : Int)
-  /-- The source gains your choice of the keywords coded in `options` until
+  /-- The source gains your choice of the keywords in `options` until
   end of turn. -/
-  | chooseKeyword (options : List Nat)
+  | chooseKeyword (options : List KeywordChoice)
   /-- This deals `n` damage to each creature except tokens you control. -/
   | damageEachCreatureExceptYourTokens (n : Nat)
   /-- This deals `n` damage to up to one target creature or planeswalker and
@@ -3724,14 +3733,14 @@ copies a milled spell. `.divided` deals that total among one or two
 targets. `.attackPump` arms this turn's attack pump. `.none` queues
 nothing. -/
 inductive QueuedReflexive where
-  | modeled (kind times : Nat)
-  | counters (kind : Nat)
+  | modeled (kind : TriggerReflexiveKind) (times : Nat)
+  | counters (kind : TriggerReflexiveKind)
   | damage (n : Nat)
   | copy
   | divided (amount : Nat)
   | attackPump
   | none
-deriving Repr, Inhabited, BEq
+deriving Repr, Inhabited, BEq, DecidableEq
 
 /-- Trick Arrows: Net, Explosive, and Boomerang.
 Paying up to three times is
@@ -3746,32 +3755,32 @@ resolution is `.none`; the caller still puts that follow-up on the stack. -/
 def queuedReflexive : TriggerResolution → QueuedReflexive
   | .grant (.keywords k) .target =>
     if k == Keyword.indestructible then
-      .modeled (TriggerReflexiveKind.toNat .grantIndestructible) 1
+      .modeled .grantIndestructible 1
     else .none
   | .chooseModes modes .alreadyChosen =>
     if modes == trickArrowModes then
-      .modeled (TriggerReflexiveKind.toNat .trickArrows) modes.length
+      .modeled .trickArrows modes.length
     else .none
   | .putCounters (.ofKind .indestructible _) .permanent =>
-    .modeled (TriggerReflexiveKind.toNat .indestructibleCounter) 1
+    .modeled .indestructibleCounter 1
   | .gainControl .duringNextTurn =>
-    .modeled (TriggerReflexiveKind.toNat .controlOpponent) 1
+    .modeled .controlOpponent 1
   | .exile (.opponentTop 5) (.mayCastUpTo 2) _ =>
-    .modeled (TriggerReflexiveKind.toNat .exileTopFive) 1
+    .modeled .exileTopFive 1
   | .put .creatureCard .tapped (.entering mods) =>
     if mods == [.attacking, .counter .finality] then
-      .modeled (TriggerReflexiveKind.toNat .returnAttacking) 1
+      .modeled .returnAttacking 1
     else .none
   | .destroy .target .none =>
-    .modeled (TriggerReflexiveKind.toNat .destroyOppNonland) 1
+    .modeled .destroyOppNonland 1
   | .cant (.beBlockedExceptByHaste .target) =>
-    .modeled (TriggerReflexiveKind.toNat .hasteUnblockable) 1
+    .modeled .hasteUnblockable 1
   | .returnToHand (.graveyardInstants _) .none =>
-    .modeled (TriggerReflexiveKind.toNat .returnInstants) 1
+    .modeled .returnInstants 1
   | .putCounters (.ofKind .plusOnePlusOne _) .permanent =>
-    .modeled (TriggerReflexiveKind.toNat .plusOne) 1
+    .modeled .plusOne 1
   | .dealDamage .plusOneCounters .target .none =>
-    .counters (TriggerReflexiveKind.toNat .countersDamage)
+    .counters .countersDamage
   | .dealDamage (.fixed n) .target .divided =>
     .divided n.toNat
   | .dealDamage (.fixed n) .target .none =>

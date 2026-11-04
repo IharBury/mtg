@@ -1682,7 +1682,7 @@ def activatedAbilities : Thunk (Array ActivatedAbility) := Thunk.mk fun _ => #[
     { sacrificeSource := true } (onlyAsSorcery := true),
   ActivatedAbility.fra
     "{1}, Sacrifice another artifact: Put a +1/+1 counter on this creature. It gains your choice of trample, hexproof, or haste until end of turn."
-    (FraCandidates.ab (.sequence [.plusOneOnSource 1, .chooseKeyword [0, 1, 2]]) "Put a +1/+1 counter on this creature")
+    (FraCandidates.ab (.sequence [.plusOneOnSource 1, .chooseKeyword [.trample, .hexproof, .haste]]) "Put a +1/+1 counter on this creature")
     { mana := ManaCost.ofGeneric 1, fra := .sacrificeAnotherArtifact },
   ActivatedAbility.fra "{4}{G}: Return this card from your graveyard to your hand."
     (FraCandidates.ab .returnFromGraveyardToHand "Return this card from your graveyard to your hand")

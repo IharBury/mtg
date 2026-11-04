@@ -245,7 +245,7 @@ def clearEOT (g : Game) : Game :=
 `Pending.chooseReplacement`. -/
 def discardCleanupIds (g : Game) (p : PlayerId) (ids : Array ObjectId) : Game := Id.run do
   if let .chooseReplacement .. := g.pending then
-    return g.chainPendingReplacement (.finishPostStep .discardCleanupIds p (ids := ids))
+    return g.chainPendingReplacement (.finishPostStep (.discardCleanupIds p ids))
   let mut g := g
   for i in [0:ids.size] do
     let id := ids[i]!
@@ -257,7 +257,7 @@ def discardCleanupIds (g : Game) (p : PlayerId) (ids : Array ObjectId) : Game :=
       g := g'
       if let .chooseReplacement .. := g.pending then
         let rem := ids.extract (i + 1) ids.size
-        g := g.chainPendingReplacement (.finishPostStep .discardCleanupIds p (cardId := some id) (ids := rem))
+        g := g.chainPendingReplacement (.finishPostStep (.discardCleanupIds p rem (some id)))
         return g
       if !(g.player p).hand.contains id then
         g := g.logMsg s!"{pl.name} discards {name} (cleanup)"
@@ -538,7 +538,7 @@ partial def startNextTurnAndBegin (g : Game) : Game :=
 partial def endTurnAfterCleanupStepEnded (g : Game) : Game :=
   let g := g.recordPhaseEnded .ending
   if let .chooseReplacement .. := g.pending then
-    g.chainPendingReplacement (.finishPostStep .startNextTurnAndBegin g.activePlayer)
+    g.chainPendingReplacement (.finishPostStep .startNextTurnAndBegin)
   else
     g.startNextTurnAndBegin
 
@@ -554,7 +554,7 @@ partial def finishPostSbaCleanup (g : Game) (sba : Bool) : Game :=
     let g := g.emptyManaPools
     let g := g.recordStepEnded .cleanup
     if let .chooseReplacement .. := g.pending then
-      g.chainPendingReplacement (.finishPostStep .endTurnAfterCleanupStepEnded g.activePlayer)
+      g.chainPendingReplacement (.finishPostStep .endTurnAfterCleanupStepEnded)
     else
       g.endTurnAfterCleanupStepEnded
 
@@ -565,9 +565,9 @@ partial def finishCleanupAfterClearEot (g : Game) : Game :=
   else
     match g.pending with
     | .chooseReplacement .. =>
-      g.chainPendingReplacement (.finishPostStep .postSbaCleanup g.activePlayer (if sba then 1 else 0))
+      g.chainPendingReplacement (.finishPostStep (.postSbaCleanup sba))
     | .chooseLegend .. =>
-      g.chainPendingReplacement (.finishPostStep .postSbaCleanup g.activePlayer 1)
+      g.chainPendingReplacement (.finishPostStep (.postSbaCleanup true))
     | _ =>
       g.finishPostSbaCleanup sba
 
@@ -593,7 +593,7 @@ partial def beginStepBody (g : Game) (st : Step) : Game :=
       g := g.withBatch (some (.turnBased .untapAll)) fun g =>
         g.untapStepPermanents ids
       if let .chooseReplacement .. := g.pending then
-        return g.chainPendingReplacement (.finishPostStep .recordUntapStepEnded ap)
+        return g.chainPendingReplacement (.finishPostStep .recordUntapStepEnded)
       -- No priority (CR 502.4). Immediately continue.
       g := g.recordStepEnded .untap
       return g
@@ -658,7 +658,7 @@ partial def beginStepBody (g : Game) (st : Step) : Game :=
     -- CR 514.1–514.3.
     let g := g.discardToMaxHandSize
     if let .chooseReplacement .. := g.pending then
-      g.chainPendingReplacement (.finishPostStep .cleanupStepAfterDiscard g.activePlayer)
+      g.chainPendingReplacement (.finishPostStep .cleanupStepAfterDiscard)
     else
       g.finishCleanupStepAfterDiscard
   | .precombatMain =>
@@ -675,7 +675,7 @@ partial def beginStepBody (g : Game) (st : Step) : Game :=
 partial def beginStepAfterPhaseBegan (g : Game) (st : Step) : Game :=
   let g := if st == .draw && g.skipsFirstDraw then g else g.recordStepBegan st
   if let .chooseReplacement .. := g.pending then
-    g.chainPendingReplacement (.finishPostStep (.beginStepBody st) g.activePlayer)
+    g.chainPendingReplacement (.finishPostStep (.beginStepBody st))
   else
     g.beginStepBody st
 
@@ -699,7 +699,7 @@ partial def beginStep (g : Game) (st : Step) : Game :=
       g.recordPhaseBegan st.phase
     else g
   if let .chooseReplacement .. := g.pending then
-    g.chainPendingReplacement (.finishPostStep (.beginStepAfterPhaseBegan st) g.activePlayer)
+    g.chainPendingReplacement (.finishPostStep (.beginStepAfterPhaseBegan st))
   else
     g.beginStepAfterPhaseBegan st
 
@@ -820,7 +820,7 @@ def advanceStep (g : Game) : Game :=
     else if g.step == .endOfCombat && g.additionalCombatPhases > 0 then
       let g := g.recordStepEnded .endOfCombat
       if let .chooseReplacement .. := g.pending then
-        g.chainPendingReplacement (.finishPostStep .advanceAfterStepEnded g.activePlayer)
+        g.chainPendingReplacement (.finishPostStep .advanceAfterStepEnded)
       else
         let g := g.recordPhaseEnded .combat
         if let .chooseReplacement .. := g.pending then
@@ -831,7 +831,7 @@ def advanceStep (g : Game) : Game :=
       let g := g.recordStepEnded g.step
       if let .chooseReplacement .. := g.pending then
         if g.step.phase != st.phase then
-          g.chainPendingReplacement (.finishPostStep .advanceAfterStepEnded g.activePlayer)
+          g.chainPendingReplacement (.finishPostStep .advanceAfterStepEnded)
         else
           g.chainPendingReplacement (.beginStepCont st)
       else
@@ -854,7 +854,7 @@ def advanceStep (g : Game) : Game :=
         g.beginStep .cleanup
     else
       if let .chooseReplacement .. := g.pending then
-        g.chainPendingReplacement (.finishPostStep .endTurnAfterCleanupStepEnded g.activePlayer)
+        g.chainPendingReplacement (.finishPostStep .endTurnAfterCleanupStepEnded)
       else
         g.endTurnAfterCleanupStepEnded
 

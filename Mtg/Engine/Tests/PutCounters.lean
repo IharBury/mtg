@@ -197,9 +197,9 @@ counter. A noncreature is reported. Zero puts nothing. -/
 #guard
   let g0 := board
   let id := pid g0 "Counter Other"
-  let g := step (g0.changes #[.createdTokenThisWay (some id), .notedCountThisWay 3])
+  let g := step (g0.changes #[.createdTokensThisWay #[id], .notedCountThisWay 3])
     (.putCounters .plusOneNoted .createdToken)
-  plus g "Counter Other" == 3 && g.createdTokenThisWay.isNone &&
+  plus g "Counter Other" == 3 && g.createdTokensThisWay.isEmpty &&
     g.notedCountThisWay == 3
 
 #guard

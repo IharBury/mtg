@@ -407,7 +407,7 @@ def finishActivateManaAbilityPicks (g : Game) (p : PlayerId) (id : ObjectId) (on
     let pick := picks[i]!
     let slice := rest.extract 0 pick.count
     rest := rest.extract pick.count rest.size
-    g := g.payCostPickItems p id id pick slice
+    g := g.payCostPickItems p (some id) (some id) pick slice
     if let .chooseReplacement .. := g.pending then
       let remPicks := picks.extract (i + 1) picks.size
       g := g.chainPendingReplacement
@@ -462,7 +462,7 @@ def activateManaAbility (g : Game) (p : PlayerId) (id : ObjectId) (idx : Nat)
       throw s!"{oname} has summoning sickness (CR 302.6)"
   if d.onceEachTurn && d.activatedIdx.any (g.abilitiesActivatedThisTurn o.id).contains then
     throw s!"{oname}'s ability can be activated only once each turn"
-  if !g.costPicksPayable p id d.picks then
+  if !g.costPicksPayable p (some id) d.picks then
     throw s!"{oname}'s ability has a cost that can't be paid"
   let need := d.picks.foldl (fun acc pick => acc + pick.count) 0
   if costIds.size != need || costIds.toList.eraseDups.length != costIds.size then
@@ -472,7 +472,7 @@ def activateManaAbility (g : Game) (p : PlayerId) (id : ObjectId) (idx : Nat)
     let slice := checkRest.extract 0 pick.count
     for cid in slice do
       let some co := g.findObject? cid | throw "no such object"
-      if !g.costPickAllows p id pick co then
+      if !g.costPickAllows p (some id) pick co then
         throw s!"{g.name co} can't be used to {pick.phrase}"
     checkRest := checkRest.extract pick.count checkRest.size
   let pl := g.player p

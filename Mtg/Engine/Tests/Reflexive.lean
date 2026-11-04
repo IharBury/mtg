@@ -78,17 +78,8 @@ use `queueReflexive`. -/
 #guard (SharedTrigger.timing (.chapter 0 .grantAttackPumpPerPlainsThisTurn)).resolution ==
   .queueReflexive (.pump .perPlains .perPlains .target)
 
-#guard TriggeredAbility.TriggerReflexiveKind.toNat .grantIndestructible == 0
-#guard TriggeredAbility.TriggerReflexiveKind.toNat .trickArrows == 2
-#guard TriggeredAbility.TriggerReflexiveKind.toNat .indestructibleCounter == 3
-#guard TriggeredAbility.TriggerReflexiveKind.toNat .controlOpponent == 4
-#guard TriggeredAbility.TriggerReflexiveKind.toNat .exileTopFive == 5
-#guard TriggeredAbility.TriggerReflexiveKind.toNat .returnAttacking == 6
-#guard TriggeredAbility.TriggerReflexiveKind.toNat .destroyOppNonland == 7
-#guard TriggeredAbility.TriggerReflexiveKind.toNat .countersDamage == 8
-#guard TriggeredAbility.TriggerReflexiveKind.toNat .hasteUnblockable == 9
-#guard TriggeredAbility.TriggerReflexiveKind.toNat .returnInstants == 11
-#guard TriggeredAbility.TriggerReflexiveKind.toNat .plusOne == 12
+#guard TriggeredAbility.TriggerReflexiveKind.grantIndestructible != .dealTwoDamage &&
+  TriggeredAbility.TriggerReflexiveKind.divideSevenDamage != .plusOne
 
 #guard TriggeredAbility.resolutionPhrase
     { resolution := .«if» .planWasSacrificed (.queueReflexive (.returnToHand (.graveyardInstants 2))) } ==
@@ -121,7 +112,7 @@ use `queueReflexive`. -/
     match stackEffect g with
     | some eff =>
       match eff.resolution with
-      | .mshReflexive 11 _ =>
+      | .mshReflexive .returnInstants _ =>
         eff.phrase ==
           "Return up to two target instant and/or sorcery cards from your graveyard to your hand"
       | _ => false
@@ -166,7 +157,7 @@ use `queueReflexive`. -/
   | some eff =>
     eff.dividedDamage == some (7, 2) &&
       (match eff.resolution with
-       | .mshReflexive 10 _ => true
+       | .mshReflexive .divideSevenDamage _ => true
        | _ => false) &&
       eff.phrase == "It deals 7 damage divided as you choose among one or two targets" &&
       !g.planWasSacrificed
@@ -181,7 +172,7 @@ use `queueReflexive`. -/
 /- A milled instant of a low enough mana value is the reflexive's target. -/
 #guard
   let g0 := putInGraveyard afterDraw bolt opp
-  let g := step g0 (.queueReflexive (.mayCast .milledSpell .causingSpell .withoutPaying)) none (some 1)
+  let g := step g0 (.queueReflexive (.mayCast .milledSpell .causingSpell .withoutPaying))
   match stackEffect g with
   | some eff =>
     match eff.resolution with
@@ -192,7 +183,7 @@ use `queueReflexive`. -/
 
 /- No legal milled card removes the reflexive. -/
 #guard
-  let g := step afterDraw (.queueReflexive (.mayCast .milledSpell .causingSpell .withoutPaying)) none (some 1)
+  let g := step afterDraw (.queueReflexive (.mayCast .milledSpell .causingSpell .withoutPaying))
   g.stack.isEmpty &&
     logContains g "reflexive ability has no legal target and is removed"
 

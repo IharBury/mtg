@@ -236,7 +236,7 @@ a name, so the new top may still be called the same thing. -/
 
 #guard TriggeredAbility.TriggerResolution.queuedReflexive
     (.exile (.opponentTop 5) (.mayCastUpTo 2)) ==
-  .modeled (TriggeredAbility.TriggerReflexiveKind.toNat .exileTopFive) 1
+  .modeled .exileTopFive 1
 
 /- A cause that was not recorded, a player, a hand, and an unchosen card
 exile nothing. -/

@@ -1265,10 +1265,18 @@ mills and loses life equal to the milled cards' mana values. -/
 Banishing Light under Lightning Bolt. The spell's mana value is 1. -/
 def sarumanMilled : Game :=
   let g := addPermanent afterDraw sarumanOfManyColors me me
+  let g := addToGraveyard g lightningBolt me
+  let causeBoltId := (g.player me).graveyard.back!
   let g := emptyLibrary g opp
   let g := addToLibraryTop (addToLibraryTop g banishingLight opp) lightningBolt opp
-  g.applyTriggeredAbility me .onCastSecondSpellMillThenCopy
-    (some (idOf g "Saruman of Many Colors")) (lastKnownPower := some 1)
+  let sar := namedPermanent g "Saruman of Many Colors"
+  let abId : ObjectId := ⟨g.nextObjectId⟩
+  let g := g.record (GameEvent.triggerPutOnStack g.turnNumber abId (g.snapshot sar) me
+    (spec := {
+      triggeredAbility := some .onCastSecondSpellMillThenCopy
+      sourceId := some sar.id
+      fraCauseId := some causeBoltId }))
+  passBoth g
 
 def gyNamed? (g : Game) (p : PlayerId) (name : String) : Option ObjectId :=
   (g.player p).graveyard.find? (fun id => (g.object! id).name == name)
@@ -1318,7 +1326,7 @@ is optional. -/
   let g := addPermanent afterDraw sarumanOfManyColors me me
   let g := emptyLibrary g opp
   let g := g.applyTriggeredAbility me .onCastSecondSpellMillThenCopy
-    (some (idOf g "Saruman of Many Colors")) (lastKnownPower := some 1)
+    (some (idOf g "Saruman of Many Colors"))
   g.stack.isEmpty && g.pending == .none
 
 /- Sauron may discard a hand, including an empty one, to draw four cards. -/

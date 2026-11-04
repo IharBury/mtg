@@ -60,24 +60,28 @@ def drawThenBeginDiscard (g : Game) (p : PlayerId) (cards : Nat := 1)
     g.beginDiscardCards #[p] discardRounds
 
 /-- Execute the remaining `extraDraws`, connive draw, and discard prompt of
-`applyConnive` (`stage` 0 = extra draws + connive draw + discard, 1 = connive
-draw + discard, 2 = discard). -/
+`applyConnive`. -/
 def finishConniveDraws (g : Game) (controller : PlayerId)
     (extraDraws : Array (Nat × ReplacementId))
-    (conniveDrawCause : Option EventCause) (stage : Nat := 0) : Game := Id.run do
+    (conniveDrawCause : Option EventCause)
+    (stage : ConniveDrawStage := .draws) : Game := Id.run do
+  if let .chooseReplacement .. := g.pending then
+    return g.chainPendingReplacement
+      (.finishConniveDraws controller extraDraws conniveDrawCause stage)
   let mut g := g
-  if stage == 0 then
+  if stage == .draws then
     for i in [0:extraDraws.size] do
       let (n, rid) := extraDraws[i]!
       let c := g.wrapReplacedCause rid none (some controller)
       g := g.draw controller n (cause := c)
       if let .chooseReplacement .. := g.pending then
         let rem := extraDraws.extract (i + 1) extraDraws.size
-        return g.chainPendingReplacement (.finishConniveDraws controller rem conniveDrawCause 0)
-  if stage <= 1 then
+        return g.chainPendingReplacement
+          (.finishConniveDraws controller rem conniveDrawCause .draws)
     g := g.draw controller 1 (cause := conniveDrawCause)
     if let .chooseReplacement .. := g.pending then
-      return g.chainPendingReplacement (.finishConniveDraws controller #[] conniveDrawCause 2)
+      return g.chainPendingReplacement
+        (.finishConniveDraws controller #[] conniveDrawCause .discardOnly)
   if (g.player controller).hand.isEmpty then
     g := g.change (.conniveSource none)
     return g.logMsg "No card is discarded; the conniving creature does not receive a +1/+1 counter"
@@ -144,7 +148,7 @@ def applyConnive (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
       let conniveDrawCause :=
         extraDraws.foldl (fun acc (_, rid) =>
           g.wrapReplacedCause rid acc (some controller)) none
-      g.finishConniveDraws controller extraDraws conniveDrawCause 0
+      g.finishConniveDraws controller extraDraws conniveDrawCause .draws
   g.withContinuationFrame run
 
 /-- Finish a pending connive after a card is discarded. -/
@@ -166,15 +170,15 @@ def finishConniveDiscard (g : Game) (discarded : GameObject) : Game :=
         g.logMsg "The conniving creature has left the battlefield; no +1/+1 counter is put"
 
 /-- Villain that would connive for Baron Strucker: an announced target, the
-causing object's id stored as last-known power, or the newest other Villain
+causing object's id stored in `fraCauseId`, or the newest other Villain
 that entered this turn. -/
 def villainConniveTarget? (g : Game) (controller : PlayerId) (sourceId : ObjectId)
-    (targets : Array Target) (lastKnownPower : Option Int) : Option ObjectId :=
+    (targets : Array Target) : Option ObjectId :=
   match targets[0]? with
   | some (Target.permanent id) => some id
   | _ =>
-    match lastKnownPower with
-    | some n => some ⟨n.toNat⟩
+    match (g.resolvingAbility.bind g.findObject?).bind (·.fraCauseId) with
+    | some cid => some cid
     | none =>
       let cands :=
         (g.permanentsOf controller).filter (fun x =>
@@ -397,13 +401,16 @@ def discardFromHand (g : Game) (p : PlayerId) (id : ObjectId) (chooser : Option 
     (cause : Option EventCause := none) :
     Game :=
   let card := g.object! id
-  let g :=
+  let msg :=
     match chooser with
-    | some c => g.logMsg s!"{(g.player c).name} chooses {card.name}. {(g.player p).name} discards it"
-    | none => g.logMsg s!"{(g.player p).name} discards {card.name}"
+    | some c => s!"{(g.player c).name} chooses {card.name}. {(g.player p).name} discards it"
+    | none => s!"{(g.player p).name} discards {card.name}"
   let (g, _) := g.move id (.graveyard card.owner) none (verb := some .discard)
     (actor := some p) (cause := cause)
-  g
+  if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement (.logMessage msg)
+  else
+    g.logMsg msg
 
 /-- `p` discards `id`, chosen at random (CR 701.9). -/
 def discardFromHandRandomly (g : Game) (p : PlayerId) (id : ObjectId) : Game :=

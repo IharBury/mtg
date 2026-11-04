@@ -75,7 +75,19 @@ def step (g : Game) (r : TriggeredAbility.TriggerResolution)
     (targets : Array Target := #[])
     (lastKnownPower : Option Int := none)
     (lastKnownToughness : Option Int := none)
+    (causeController : Option PlayerId := none)
     (ab : TriggeredAbility := .onEnterDraw 1) : Game :=
+  let g :=
+    match causeController with
+    | none => g
+    | some pid =>
+      let abId : ObjectId := ⟨g.nextObjectId⟩
+      let srcSnap : EventObject := {
+        owner := caster, controller := some caster, name := "Mill Source", zone := .battlefield }
+      let g := g.record (GameEvent.triggerPutOnStack g.turnNumber abId srcSnap caster
+        (spec := { triggeredAbility := some ab, fraCauseController := some pid }))
+      let g := if g.continuations.isEmpty then g.change (.pushContinuationFrame {}) else g
+      g.changes #[.popStack, .resolvingAbility (some abId)]
   g.applyTriggeredAbility caster ab none targets
     (lastKnownPower := lastKnownPower) (lastKnownToughness := lastKnownToughness)
     (resolutionOverride := some r)
@@ -167,11 +179,11 @@ target kind decides who is legal. -/
     logContains g "The target is no longer legal"
 
 /- The player who lost life mills that many. The count is the last-known
-power, and the seat is the last-known toughness. -/
+power, and the seat is `fraCauseController` on the resolving ability. -/
 #guard
   let g0 := putOnLibrary (putOnLibrary afterDraw elf opp) bolt opp
   let g := step g0 (.mill .thatManyLost .thatPlayer)
-    (lastKnownPower := some 2) (lastKnownToughness := some 1)
+    (lastKnownPower := some 2) (causeController := some opp)
   inGraveyard g opp "Mill Bolt" && inGraveyard g opp "Mill Elf" &&
     libSize g opp == libSize g0 opp - 2 &&
     libSize g caster == libSize g0 caster &&
@@ -181,20 +193,20 @@ power, and the seat is the last-known toughness. -/
 #guard
   let g0 := putOnLibrary afterDraw elf caster
   let g := step g0 (.mill .thatManyLost .thatPlayer)
-    (lastKnownPower := some 1) (lastKnownToughness := some 0)
+    (lastKnownPower := some 1) (causeController := some caster)
   inGraveyard g caster "Mill Elf" && logContains g "Chandra mills Mill Elf"
 
 #guard
   let g0 := putOnLibrary afterDraw elf opp
   let missingPower := step g0 (.mill .thatManyLost .thatPlayer)
-    (lastKnownToughness := some 1)
+    (causeController := some opp)
   let missingSeat := step g0 (.mill .thatManyLost .thatPlayer)
     (lastKnownPower := some 1)
   let neither := step g0 (.mill .thatManyLost .thatPlayer)
   let zero := step g0 (.mill .thatManyLost .thatPlayer)
-    (lastKnownPower := some 0) (lastKnownToughness := some 1)
+    (lastKnownPower := some 0) (causeController := some opp)
   let negative := step g0 (.mill .thatManyLost .thatPlayer)
-    (lastKnownPower := some (-1)) (lastKnownToughness := some 1)
+    (lastKnownPower := some (-1)) (causeController := some opp)
   !inGraveyard missingPower opp "Mill Elf" &&
     missingPower.log.size == g0.log.size &&
     !inGraveyard missingSeat opp "Mill Elf" &&
@@ -311,7 +323,7 @@ ability and clears the note. -/
       #[.milledIdsThisWay #[⟨1⟩], .opponentsMilledThisWay true]
   let run (r : TriggeredAbility.TriggerResolution) : Game :=
     step g0 r #[Target.player opp]
-      (lastKnownPower := some 2) (lastKnownToughness := some 1)
+      (lastKnownPower := some 2) (causeController := some opp)
       (ab := playerMill)
   let targetNoted := run (.mill (.fixed 2) (.target .player) (note := .milledCards))
   let eachOpp := run (.mill (.fixed 2) .eachOpponent)

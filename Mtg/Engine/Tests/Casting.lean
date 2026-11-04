@@ -156,7 +156,7 @@ def speedOffer : Game :=
 
 #guard
   match speedOffer.pending with
-  | .fraChoice q (.mayPayManaForReflexive cost _ 9 _) =>
+  | .fraChoice q (.mayPayManaForReflexive cost _ .hasteUnblockable _) =>
     q == me && cost == #[.generic 1]
   | _ => false
 

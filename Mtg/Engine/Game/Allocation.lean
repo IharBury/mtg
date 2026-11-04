@@ -126,6 +126,47 @@ def enterWithLoyalty (g : Game) (o : GameObject) : Game :=
       else g
     | _, _ => g
 
+/-- Reconstruct the applied CR 616.1 `ReplacementId` order and pre-arrival
+battlefield snapshot for `oid`'s latest battlefield arrival event in `g.events`,
+so post-entry `entersWith` counter logging reproduces player-chosen replacement
+orders and CR 614.12 simultaneous-entry isolation after `consumeReplacementOrder`
+has cleared `g.replacementOrder`. -/
+private def arrivalCounterContext (g : Game) (oid : ObjectId) :
+    Array ReplacementId × Option (Array GameObject) := Id.run do
+  let isBfArrivalOf (ev : GameEvent) (pid : ObjectId) : Bool :=
+    match ev.change with
+    | .rules (.zone (.moved _ after _ .battlefield ..)) => after.id == some pid
+    | .rules (.zone (.created snap _)) => snap.id == some pid && snap.zone == .battlefield
+    | .engine (.materializeObject obj _) => obj.id == pid && obj.zone == .battlefield
+    | _ => false
+  let mut found? : Option (Nat × EventCause × Option BatchId) := none
+  let mut idx := g.events.size
+  while idx > 0 do
+    idx := idx - 1
+    let ev := g.events[idx]!
+    match ev with
+    | .rules _ (.zone (.moved _ after _ .battlefield ..)) cause batch =>
+      if after.id == some oid then
+        found? := some (idx, cause, batch)
+        break
+    | .rules _ (.zone (.created snap _)) cause batch =>
+      if snap.id == some oid && snap.zone == .battlefield then
+        found? := some (idx, cause, batch)
+        break
+    | _ => pure ()
+  match found? with
+  | none => return (g.replacementOrder, none)
+  | some (arrIdx, arrCause, arrBatch?) =>
+    let coOrLater (pid : ObjectId) : Bool := Id.run do
+      for j in [0:g.events.size] do
+        let ev := g.events[j]!
+        if isBfArrivalOf ev pid &&
+            (j >= arrIdx || (arrBatch?.isSome && ev.batch == arrBatch?)) then
+          return true
+      return false
+    let preBf := g.battlefield.filter (fun pObj => pObj.id != oid && !coOrLater pObj.id)
+    return (arrCause.replacedBy, some preBf)
+
 /-- “This creature enters with N +1/+1 counters on it” (placed in `entersWith`
 during the zone change). -/
 def enterWithPlusOnes (g : Game) (o : GameObject) : Game :=
@@ -134,9 +175,11 @@ def enterWithPlusOnes (g : Game) (o : GameObject) : Game :=
     let base := (g.baseCard o).entersWithPlusOneCounters
     if base == 0 || o.status.plusOnePlusOne == 0 then g
     else
+      let (arrivalOrder, preBf?) := g.arrivalCounterContext o.id
       let (n, _, _) :=
         g.replaceCountersPut o .plusOnePlusOne base (putter := g.controllerOf o)
           (entersWith := true) (entering := some o)
+          (order := arrivalOrder) (preBattlefield := preBf?)
       if n == 0 then g
       else g.logMsg s!"{g.name o} enters with {n} +1/+1 counter(s)"
 
@@ -144,7 +187,8 @@ def enterWithIndestructibleCounter (g : Game) (o : GameObject) : Game :=
   if !o.status.faceDown && g.retainsPrintedAbilities o &&
       (g.baseCard o).entersWithIndestructibleCounter &&
       o.status.indestructibleCounters > 0 then
-    g.logMsg s!"{g.name o} enters with an indestructible counter"
+    let phrase := CounterKind.indestructible.countersPhrase o.status.indestructibleCounters
+    g.logMsg s!"{g.name o} enters with {phrase}"
   else g
 
 def enterWithShield (g : Game) (o : GameObject) : Game :=
@@ -160,9 +204,11 @@ def enterWithXPlusOnes (g : Game) (o : GameObject) : Game :=
   if !o.status.faceDown && (g.staticAbilities o).any (fun
       | .entersWithXPlusOne => true
       | _ => false) && o.status.plusOnePlusOne > 0 then
+    let (arrivalOrder, preBf?) := g.arrivalCounterContext o.id
     let (n, _, _) :=
       g.replaceCountersPut o .plusOnePlusOne ((g.chosenXOf? o.id).getD 0) (putter := g.controllerOf o)
         (entersWith := true) (entering := some o)
+        (order := arrivalOrder) (preBattlefield := preBf?)
     if n == 0 then g
     else g.logMsg s!"{g.name o} enters with {n} +1/+1 counter(s)"
   else g

@@ -49,7 +49,16 @@ def isle : CardDef := land "Count Isle" "({T}: Add {C}.)" (tapAddMana := #[.colo
 def holds (g : Game) (cond : TriggeredAbility.ConditionSelector)
     (sourceId : Option ObjectId := none) (targets : Array Target := #[])
     (lastKnownPower : Option Int := none)
+    (cause : Option GameObject := none)
     (ab : TriggeredAbility := .onEnterDraw 1) : Game × Bool :=
+  let g :=
+    match cause with
+    | none => g
+    | some c =>
+      let abId : ObjectId := ⟨g.nextObjectId⟩
+      let g := g.record (GameEvent.triggerPutOnStack g.turnNumber abId (g.snapshot c) caster
+        (spec := { triggeredAbility := some ab, fraCauseId := some c.id }))
+      g.changes #[.popStack, .pushContinuationFrame { resolvingAbility := some abId }]
   g.triggerIfHolds caster ab sourceId targets lastKnownPower cond
 
 def named (g : Game) (name : String) : GameObject :=
@@ -100,17 +109,16 @@ zero is at least zero. -/
   !noWalker && quiet && one && reported && !two && g.log.size == before
 
 /- Forests other than the one that caused this. Five including that one is
-four others. The cause's id is the last-known power. -/
+four others. The cause's id is `fraCauseId` on the resolving ability. -/
 #guard
   let g := (List.range 5).foldl (fun g _ => addPermanent g forest caster caster) afterDraw
   let cause := named g "Forest"
-  let power := some (Int.ofNat cause.id.raw)
-  let (g, four) := holds g (.atLeast (.count .forestsExceptCause) (.fixed 5)) (lastKnownPower := power)
+  let (g, four) := holds g (.atLeast (.count .forestsExceptCause) (.fixed 5)) (cause := some cause)
   let reported := logContains g "fewer than five other Forests"
-  let (g, enough) := holds g (.atLeast (.count .forestsExceptCause) (.fixed 4)) (lastKnownPower := power)
+  let (g, enough) := holds g (.atLeast (.count .forestsExceptCause) (.fixed 4)) (cause := some cause)
   let g := addPermanent g forest caster caster
   let (_, fiveOthers) :=
-    holds g (.atLeast (.count .forestsExceptCause) (.subtypeCount .forest)) (lastKnownPower := power)
+    holds g (.atLeast (.count .forestsExceptCause) (.subtypeCount .forest)) (cause := some cause)
   !four && reported && enough && !fiveOthers
 
 /- Bears and any other subtype use the permanents you control. -/

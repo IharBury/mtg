@@ -47,15 +47,11 @@ def putPalantirInfluence (g : Game) (sourceId : ObjectId) (target : Option Playe
 /-- Palantír of Orthanc: an illegal target means no influence, scry, draw,
 or mill. -/
 def applyPalantir (g : Game) (sourceId : ObjectId) (target : Option PlayerId) : Game :=
-  let before := ((g.findObject? sourceId).map (·.status.influence)).getD 0
-  let ctrl? := (g.findObject? sourceId).map g.you
   let (g, ok) := g.putPalantirInfluence sourceId target
   match ok with
   | none => g
   | some none =>
-    let ctrl := ctrl?.getD g.activePlayer
-    g.chainPendingReplacement
-      (.finishPostStep .logInfluenceThenScryTwo ctrl (n := before) (sourceId := some sourceId))
+    g.chainPendingReplacement (.finishPostStep (.logInfluenceThenScryTwo sourceId))
   | some (some _) =>
     match g.findObject? sourceId with
     | some src => g.beginScry (g.you src) 2
@@ -181,13 +177,13 @@ def choosePutArtifactFromHand (g : Game) (p : PlayerId) (cardId : ObjectId) :
     let g :=
       if let .chooseReplacement .. := g.pending then
         g.chainPendingReplacement
-          (.finishPostStep .putArtifactOntoBattlefield p (sourceId := some hostId) (cardId := some cardId))
+          (.finishPostStep (.putArtifactOntoBattlefield p cardId hostId))
       else
         let entered := g.object! newId
         if entered.isOnBattlefield then
           let g := g.logMsg s!"{(g.player p).name} puts {name} onto the battlefield"
           let g := g.afterPermanentEnters entered
-          g.change (.putArtifactThisWay (some (newId, hostId)))
+          if let some hid := hostId then g.change (.putArtifactThisWay (some (newId, hid))) else g
         else g
     return match outerCont? with
       | some outer => g.chainPendingReplacement outer
@@ -229,8 +225,7 @@ def applyBardBowman (g : Game) (targetId : ObjectId) : Game :=
         let g := g.addPlusOnePlusOneTo o 1 (cause := cause)
         if let .chooseReplacement .. := g.pending then
           g.chainPendingReplacement
-            (.finishPostStep .grantLifelinkUntilEot ((g.controllerOf o).getD g.activePlayer)
-              (cardId := some o.id) (cause := g.currentBatch.bind (·.2)))
+            (.finishPostStep (.grantLifelinkUntilEot o.id (g.currentBatch.bind (·.2))))
         else if let some cur := g.findObject? o.id then
           if cur.isOnBattlefield then
             let g := g.createEffect (.keywordsUntilEot cur.id Keyword.lifelink) (cause := cause)
@@ -264,9 +259,7 @@ def exileUntilSourceLeaves (g : Game) (sourceId : Option ObjectId) (o : GameObje
     | none => g.allocDelayedCause fallbackCtrl sourceId
   let (g, _) := g.move o.id .exile none (cause := some linkCause)
   if let .chooseReplacement .. := g.pending then
-    g.chainPendingReplacement
-      (.finishPostStep .finishExileUntilSourceLeaves (fallbackCtrl.getD g.activePlayer)
-        (sourceId := sourceId) (cardId := some o.id) (cause := some linkCause))
+    g.chainPendingReplacement (.finishPostStep (.finishExileUntilSourceLeaves sourceId o.id))
   else
     g.finishExileUntilSourceLeaves sourceId o.id
 
@@ -289,9 +282,7 @@ def exileForLeaveTrigger (g : Game) (sourceId : Option ObjectId) (o : GameObject
     (cause : Option EventCause := none) : Game :=
   let (g, _) := g.move o.id .exile none (cause := cause)
   if let .chooseReplacement .. := g.pending then
-    g.chainPendingReplacement
-      (.finishPostStep .finishExileForLeaveTrigger g.activePlayer
-        (sourceId := sourceId) (cardId := some o.id) (cause := cause))
+    g.chainPendingReplacement (.finishPostStep (.finishExileForLeaveTrigger sourceId o.id))
   else
     g.finishExileForLeaveTrigger sourceId o.id
 
@@ -534,8 +525,7 @@ def logLookAtTop (g : Game) (p : PlayerId) (n : Nat)
       (cause := some (g.resolvingOrRuleCause p sourceId)))
   g.logMsg s!"{(g.player p).name} looks at the top {n} cards"
 
-/-- Pause-safe loop for `exileTopPlayThisTurn` (`mayCastStyle := false`) and
-`exileTopMayCast` (`mayCastStyle := true`). -/
+/-- Pause-safe loop for `exileTopPlayThisTurn` / `exileTopForPlay`. -/
 def exileTopForPlayLoop (g : Game) (fromPlayer caster : PlayerId)
     (remaining : Nat) (mayCastStyle : Bool) (cause? : Option EventCause)
     (pendingFromId : Option ObjectId := none) : Game := Id.run do
@@ -544,11 +534,9 @@ def exileTopForPlayLoop (g : Game) (fromPlayer caster : PlayerId)
       s!"{ownerName} exiles {cardName}; {(g.player caster).name} may cast it"
     else
       s!"{ownerName} exiles {cardName} and may play it this turn"
-  let modeArr : Array Nat := #[fromPlayer.idx, if mayCastStyle then 1 else 0]
   if let .chooseReplacement .. := g.pending then
     return g.chainPendingReplacement
-      (.finishPostStep .exileTopForPlayLoop caster (n := remaining) (cardId := pendingFromId)
-        (modes := modeArr) (cause := cause?))
+      (.finishPostStep (.exileTopForPlayLoop fromPlayer caster remaining mayCastStyle cause? pendingFromId))
   let mut g := g
   if let some fid := pendingFromId then
     if let some moved := g.followMovedToZone? fid (· == .exile) then
@@ -566,8 +554,7 @@ def exileTopForPlayLoop (g : Game) (fromPlayer caster : PlayerId)
       if let .chooseReplacement .. := g.pending then
         let rem := remaining - (i + 1)
         return g.chainPendingReplacement
-          (.finishPostStep .exileTopForPlayLoop caster (n := rem) (cardId := some top)
-            (modes := modeArr) (cause := cause?))
+          (.finishPostStep (.exileTopForPlayLoop fromPlayer caster rem mayCastStyle cause? (some top)))
       if let some moved := g.followMovedToZone? top (· == .exile) then
         g := g.createEffect (.playPermission moved.id { player := caster }) (cause := cause?)
         g := g.logMsg (fmtMsg g pl.name cardName)
@@ -659,7 +646,8 @@ def queueFollowupReflexive (g : Game) (controller : PlayerId) (sourceId : Option
 `WaitingTrigger` + `recordReflexiveTrigger` (`TriggerQueueEvent.triggered`,
 CR 603.3c–d / 603.12). Its targets are chosen when put on the stack. -/
 def putReflexiveTrigger (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
-    (effect : Effect) (deferToPriority : Bool := false) : Game :=
+    (effect : Effect) (deferToPriority : Bool := false)
+    (causeIds : Array ObjectId := #[]) : Game :=
   if (g.player controller).lost || (g.player controller).leftTheGame then g
   else
     let src := g.abilitySourceFor controller sourceId
@@ -670,6 +658,7 @@ def putReflexiveTrigger (g : Game) (controller : PlayerId) (sourceId : Option Ob
       source := src
       ability := marker
       event := .entering
+      causeIds := causeIds
       checked := true
       eventCause := eventCause
       abilityEffect := some effect
@@ -680,68 +669,66 @@ def putReflexiveTrigger (g : Game) (controller : PlayerId) (sourceId : Option Ob
 
 /-- The reflexive triggered ability `kind` of an MSH card, with its targets
 (MSH 359–369). -/
-def modeledReflexiveEffect (kind paid : Nat) : Effect :=
+def modeledReflexiveEffect (kind : TriggeredAbility.TriggerReflexiveKind) (paid : Nat) : Effect :=
   let base : Effect := { resolution := .mshReflexive kind paid }
   let creature (f : TargetFilter) : TargetFilter := { f with types := #[.creature] }
   match kind with
-  | 0 =>
+  | .grantIndestructible =>
     { base with
       targeting := .of (.filtered (creature
         { noun := "another target nonattacking creature you control", controller := .you
           another := true, nonattacking := true }))
       phrase := "Another target nonattacking creature you control gains indestructible until end of turn" }
-  | 1 => { base with targeting := .of .playerOrCreature, phrase := "This deals 2 damage to any target" }
-  | 3 =>
+  | .dealTwoDamage =>
+    { base with targeting := .of .playerOrCreature, phrase := "This deals 2 damage to any target" }
+  | .trickArrows => base
+  | .indestructibleCounter =>
     { base with targeting := .of .creatureYouControl
                 phrase := "Put an indestructible counter on target creature you control" }
-  | 4 =>
+  | .controlOpponent =>
     { base with targeting := .of .opponent
                 phrase := "You control target opponent during their next turn" }
-  | 5 =>
+  | .exileTopFive =>
     { base with targeting := .of .opponent
                 phrase := "Target opponent exiles the top five cards of their library" }
-  | 6 =>
+  | .returnAttacking =>
     { base with targeting := .of .creatureCardInYourGraveyard
                 phrase := "Return target creature card from your graveyard to the battlefield tapped and attacking with a finality counter on it" }
-  | 7 =>
+  | .destroyOppNonland =>
     { base with targeting := .of .oppNonland
                 phrase := "Destroy target nonland permanent an opponent controls" }
-  | 8 =>
+  | .countersDamage =>
     { base with
       targeting := .of (.filtered { noun := "any other target", zone := .anyTarget, another := true })
       phrase := "This deals damage equal to the number of +1/+1 counters on it to any other target" }
-  | 9 =>
+  | .hasteUnblockable =>
     { base with
       targeting := .of (.filtered (creature { noun := "target creature with haste", withHaste := true }))
       phrase := "Target creature with haste can't be blocked this turn except by creatures with haste" }
-  | 10 =>
+  | .divideSevenDamage =>
     { base with targeting := .of .playerOrCreature, dividedDamage := some (7, 2)
                 phrase := "It deals 7 damage divided as you choose among one or two targets" }
-  | 11 =>
+  | .returnInstants =>
     { base with
       targeting := .of (.filtered
         { noun := "up to two target instant and/or sorcery cards from your graveyard"
           zone := .yourGraveyard, types := #[.instant, .sorcery] })
       maxTargets := 2, allowsZeroTargets := true
       phrase := "Return up to two target instant and/or sorcery cards from your graveyard to your hand" }
-  | 12 =>
+  | .plusOne =>
     { base with targeting := .of .creature, phrase := "Put a +1/+1 counter on target creature" }
-  | _ => base
 
 /-- Put MSH reflexive ability `kind` on the stack; its targets are chosen now
 (CR 603.12 / MSH 359–369). -/
 def queueModeledReflexive (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
-    (kind : Nat) (paid : Nat := 0) : Game :=
+    (kind : TriggeredAbility.TriggerReflexiveKind) (paid : Nat := 0) : Game :=
   g.putReflexiveTrigger controller sourceId (modeledReflexiveEffect kind paid)
-
-/-- Run `act` when `paid` is positive; otherwise log `unpaid`. -/
-def ifPaid (g : Game) (paid : Nat) (unpaid : String) (act : Game → Game) : Game :=
-  if paid == 0 then g.logMsg unpaid else act g
 
 /-- Offer to pay `cost` up to `maxTimes` times; when the player does, MSH
 reflexive ability `kind` triggers (MSH 359–369). -/
 def offerPayForReflexive (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
-    (cost : Array ManaSymbol) (kind : Nat) (maxTimes : Nat := 1) : Game :=
+    (cost : Array ManaSymbol) (kind : TriggeredAbility.TriggerReflexiveKind)
+    (maxTimes : Nat := 1) : Game :=
   let shown := String.join (cost.toList.map toString)
   let times := if maxTimes > 1 then s!" up to {maxTimes} times" else ""
   g.change (.pending (.fraChoice controller (.mayPayManaForReflexive cost maxTimes kind sourceId)))
@@ -759,27 +746,6 @@ def sacrificePlanIfOnBattlefield (g : Game) (sourceId : Option ObjectId)
   | none =>
     g.logMsg missing
 
-/-- Sacrifice the Plan if it is still on the battlefield. Queue the
-reflexive second ability only if the sacrifice happened (MSH 360–362,
-368–369). -/
-def sacrificePlanThenQueueReflexive (g : Game) (controller : PlayerId)
-    (sourceId : Option ObjectId) (kind : Nat) : Game :=
-  let stillThere :=
-    match sourceId.bind g.findObject? with
-    | some o => o.isOnBattlefield
-    | none => false
-  let g := g.sacrificePlanIfOnBattlefield sourceId
-    (gone := fun name =>
-      s!"{name} is no longer on the battlefield. The reflexive ability doesn't trigger.")
-    (missing :=
-      "The Plan is no longer on the battlefield. The reflexive ability doesn't trigger.")
-  if !stillThere then g
-  else if let .chooseReplacement .. := g.pending then
-    g.chainPendingReplacement (.finishPostStep .queueModeledReflexiveIfSourceLeft controller (n := kind) (sourceId := sourceId))
-  else if !(sourceId.bind g.findObject?).any (·.isOnBattlefield) then
-    g.queueModeledReflexive controller sourceId kind
-  else g
-
 /-- Ask `caster` to cast up to `casts` of the exiled nonland cards. -/
 def offerExileCasts (g : Game) (caster : PlayerId) (spells : Array ObjectId)
     (casts : Nat) : Game :=
@@ -792,11 +758,9 @@ def exileTopMayCastUpToLoop (g : Game) (fromPlayer caster : PlayerId)
     (remaining casts : Nat) (cause? : Option EventCause)
     (accIds : Array ObjectId := #[])
     (pendingFromId : Option ObjectId := none) : Game := Id.run do
-  let modeArr : Array Nat := #[fromPlayer.idx, casts]
   if let .chooseReplacement .. := g.pending then
     return g.chainPendingReplacement
-      (.finishPostStep .exileTopMayCastUpToLoop caster (n := remaining) (cardId := pendingFromId)
-        (ids := accIds) (modes := modeArr) (cause := cause?))
+      (.finishPostStep (.exileTopMayCastUpToLoop fromPlayer caster remaining casts cause? accIds pendingFromId))
   let mut g := g
   let mut ids := accIds
   if let some fid := pendingFromId then
@@ -815,8 +779,7 @@ def exileTopMayCastUpToLoop (g : Game) (fromPlayer caster : PlayerId)
       if let .chooseReplacement .. := g.pending then
         let rem := remaining - (i + 1)
         return g.chainPendingReplacement
-          (.finishPostStep .exileTopMayCastUpToLoop caster (n := rem) (cardId := some top)
-            (ids := ids) (modes := modeArr) (cause := cause?))
+          (.finishPostStep (.exileTopMayCastUpToLoop fromPlayer caster rem casts cause? ids (some top)))
       if let some moved := g.followMovedToZone? top (· == .exile) then
         ids := ids.push moved.id
         g := g.logMsg s!"{pl.name} exiles {name}"
@@ -847,16 +810,10 @@ def exileTopMayCastUpTo (g : Game) (fromPlayer caster : PlayerId) (n casts : Nat
     g.exileTopMayCastUpToLoop fromPlayer caster n casts cause?
   if let .chooseReplacement .. := g.pending then
     g.chainPendingReplacement
-      (.finishPostStep .offerMayCastUpToFromExile caster (n := casts) (ids := preIds) (cause := cause?))
+      (.finishPostStep (.offerMayCastUpToFromExile caster preIds casts))
   else
     let arrived := preIds.filterMap (fun pid => (g.followMovedToZone? pid (· == .exile)).map (·.id))
     g.finishExileTopMayCastUpToOffer caster arrived casts
-
-/-- Exile the top `n` cards of `fromPlayer`'s library. `caster` may play
-them this turn. -/
-def exileTopMayCast (g : Game) (fromPlayer caster : PlayerId) (n : Nat) : Game :=
-  g.exileTopForPlay fromPlayer caster n (mayCastStyle := true) fun owner card =>
-    s!"{owner} exiles {card}; {(g.player caster).name} may cast it"
 
 /-- True when `mods` strips abilities and grants haste, as Hellcat returns. -/
 def losesAbilitiesAndHaste (mods : List TriggeredAbility.TriggerEnterWith) : Bool :=
@@ -1018,7 +975,7 @@ def commitEnteringAttackItems (g : Game)
                     if !rem.isEmpty then
                       g := g.chainPendingReplacement (.commitEnteringAttackItems rem cause false)
                     else
-                      g := g.chainPendingReplacement (.finishPostStep .logTwoTappedAttackingSpirits controller)
+                      g := g.chainPendingReplacement (.finishPostStep (.logTwoTappedAttackingSpirits controller))
                     return g
             return g
         if let .chooseReplacement .. := g.pending then g
@@ -1099,35 +1056,37 @@ def returnFromGyTappedAttackingFinality (g : Game) (controller : PlayerId)
 /-- Resolve MSH reflexive ability `kind` with its announced targets. A target
 that is no longer legal is skipped (MSH 125). -/
 def resolveModeledReflexive (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
-    (kind paid : Nat) (targets : Array Target) (division : Array Nat := #[]) : Game :=
+    (kind : TriggeredAbility.TriggerReflexiveKind) (paid : Nat)
+    (targets : Array Target) (division : Array Nat := #[]) : Game :=
   let tkind := (modeledReflexiveEffect kind paid).targetKind
   let illegal := some "The target is no longer legal"
   match kind with
-  | 0 =>
+  | .grantIndestructible =>
     g.withLegalKindPermanent controller tkind targets
       (fun g o => g.grantUntilEotLogged o Keyword.indestructible) sourceId illegal
-  | 1 =>
+  | .dealTwoDamage =>
     g.withLegalKindTarget controller tkind targets
       (fun g tgt => g.dealDamageToTarget tgt 2 (source := sourceId.bind g.findObject?)) sourceId illegal
-  | 3 =>
+  | .trickArrows => g
+  | .indestructibleCounter =>
     g.withLegalKindPermanent controller tkind targets
       (fun g o => g.addIndestructibleCounter o) sourceId illegal
-  | 4 =>
+  | .controlOpponent =>
     g.withLegalKindPlayer controller tkind targets (fun g pid =>
       g.setPlayerControl controller pid (onNextTurn := true))
       sourceId illegal
-  | 5 =>
+  | .exileTopFive =>
     g.withLegalKindPlayer controller tkind targets
       (fun g pid => g.exileTopMayCastUpTo pid controller 5 2) sourceId illegal
-  | 6 =>
+  | .returnAttacking =>
     g.withLegalKindTarget controller tkind targets (fun g tgt =>
       match tgt with
       | Target.card id | Target.permanent id => g.returnFromGyTappedAttackingFinality controller id
       | _ => g) sourceId illegal
-  | 7 =>
+  | .destroyOppNonland =>
     g.withLegalKindPermanent controller tkind targets
       (fun g o => g.destroyPermanent o) sourceId illegal
-  | 8 =>
+  | .countersDamage =>
     let counters :=
       match sourceId.bind g.findObject? with
       | some o => if o.isOnBattlefield then o.status.plusOnePlusOne else paid
@@ -1135,13 +1094,13 @@ def resolveModeledReflexive (g : Game) (controller : PlayerId) (sourceId : Optio
     g.withLegalKindTarget controller tkind targets
       (fun g tgt => g.dealDamageToTarget tgt (Int.ofNat counters) (source := sourceId.bind g.findObject?))
       sourceId illegal
-  | 9 =>
+  | .hasteUnblockable =>
     g.withLegalKindPermanent controller tkind targets
       (fun g o =>
         g.createEffect (.cantBeBlockedExceptByHasteUntilEot o.id)
           |>.logMsg s!"{o.name} can't be blocked this turn except by creatures with haste")
       sourceId illegal
-  | 10 =>
+  | .divideSevenDamage =>
     let legal := g.legalTargetsForKind controller tkind sourceId
     if targets.isEmpty then g
     else
@@ -1151,7 +1110,7 @@ def resolveModeledReflexive (g : Game) (controller : PlayerId) (sourceId : Optio
           if legal.contains tgt then
             g.dealDamageToTarget tgt (Int.ofNat (division[i]?.getD 0)) (source := sourceId.bind g.findObject?)
           else g.illegalAbilityTarget tgt) g
-  | 11 =>
+  | .returnInstants =>
     let legal := g.legalTargetsForKind controller tkind sourceId
     g.withBatch none fun g =>
       targets.foldl (fun g tgt =>
@@ -1159,10 +1118,9 @@ def resolveModeledReflexive (g : Game) (controller : PlayerId) (sourceId : Optio
         | Target.card id =>
           if legal.contains tgt then g.returnToHand id controller else g.illegalAbilityTarget tgt
         | _ => g) g
-  | 12 =>
+  | .plusOne =>
     g.withLegalKindPermanent controller tkind targets
       (fun g o => g.addPlusOnePlusOneTo o 1) sourceId illegal
-  | _ => g
 
 /-- Whether an MSH reflexive ability is on the stack. -/
 def hasModeledReflexiveOnStack (g : Game) : Bool :=
@@ -1280,8 +1238,7 @@ def finishWorldsWithinWorldsExileSelf (g : Game) (sourceId : Option ObjectId) : 
       g.withBatch none fun g =>
         let (g', _) := g.move src.id .exile none
         if let .chooseReplacement .. := g'.pending then
-          g'.chainPendingReplacement
-            (.finishPostStep .logMovedToExile g'.activePlayer (cardId := some src.id))
+          g'.chainPendingReplacement (.finishPostStep (.logMovedToExile src.id))
         else if let some moved := g'.followMovedToZone? src.id (· == .exile) then
           g'.logMsg s!"{moved.name} is exiled"
         else g'
@@ -1293,12 +1250,8 @@ actually places the card into its owner's hand. -/
 def worldsReturnExiledLoop (g : Game) (remainingIds : Array ObjectId)
     (pendingCard : Option (ObjectId × PlayerId) := none) : Game := Id.run do
   if let .chooseReplacement .. := g.pending then
-    let (owner, cid?) :=
-      match pendingCard with
-      | some (cid, own) => (own, some cid)
-      | none => (g.activePlayer, none)
     return g.chainPendingReplacement
-      (.finishPostStep .worldsReturnExiledLoop owner (cardId := cid?) (ids := remainingIds))
+      (.finishPostStep (.worldsReturnExiledLoop remainingIds pendingCard))
   let mut g := g
   if let some (fromId, owner) := pendingCard then
     if let some moved := g.followMovedToZone? fromId (· == .hand owner) then
@@ -1313,7 +1266,7 @@ def worldsReturnExiledLoop (g : Game) (remainingIds : Array ObjectId)
         if let .chooseReplacement .. := g.pending then
           let rem := remainingIds.extract (i + 1) remainingIds.size
           return g.chainPendingReplacement
-            (.finishPostStep .worldsReturnExiledLoop owner (cardId := some o.id) (ids := rem))
+            (.finishPostStep (.worldsReturnExiledLoop rem (some (o.id, owner))))
         if let some moved := g.followMovedToZone? o.id (· == .hand owner) then
           g := g.logMsg s!"{moved.name} is returned to its owner's hand"
   return g
@@ -1329,7 +1282,7 @@ def finishWorldsWithinWorldsTail (g : Game) (exiled : Array ObjectId)
         g.worldsReturnExiledLoop exiled none
   if let .chooseReplacement .. := g.pending then
     g.chainPendingReplacement
-      (.finishPostStep .worldsWithinWorldsExileSelf g.activePlayer (sourceId := sourceId))
+      (.finishPostStep (.worldsWithinWorldsExileSelf sourceId))
   else
     g.finishWorldsWithinWorldsExileSelf sourceId
 
@@ -1348,7 +1301,7 @@ def finishWorldsWithinWorlds (g : Game) (exiled chosen : Array ObjectId)
     g.putToBattlefieldLoop g.activePlayer validChosen (useCardOwner := true)
   if let .chooseReplacement .. := g.pending then
     g.chainPendingReplacement
-      (.finishPostStep .worldsWithinWorldsTail g.activePlayer (sourceId := sourceId) (ids := exiled))
+      (.finishPostStep (.worldsWithinWorldsTail exiled sourceId))
   else
     g.finishWorldsWithinWorldsTail exiled sourceId
 
@@ -1381,7 +1334,7 @@ def applyWorldsWithinWorlds (g : Game) (controller : PlayerId)
     g.exilePermanentsLoop creatureIds (logExile := true)
   if let .chooseReplacement .. := g.pending then
     g.chainPendingReplacement
-      (.finishPostStep .offerWorldsCreatures controller (n := startIdx) (sourceId := sourceId) (ids := creatureIds))
+      (.finishPostStep (.offerWorldsCreatures controller startIdx creatureIds sourceId))
   else
     let exiled := creatureIds.filterMap fun id =>
       if g.wasPermanentExiled id startIdx then

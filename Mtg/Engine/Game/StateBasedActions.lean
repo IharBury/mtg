@@ -138,13 +138,14 @@ def destroyPermanent (g : Game) (o : GameObject)
 
 /-- Execute the remaining permanent-removal and unattachment actions of a
 single CR 704.3 state-based action pass inside the currently open batch using
-conditions captured at the start of the pass (`stage` 0 = dying creatures,
-1 = 0-loyalty planeswalkers + legend rule + tokens/copies outside valid zones,
-2 = final-chapter Sagas, 3 = illegal Auras + illegal Equipment/creature
-attachments), chaining `.finishSbaSweep` if a graveyard move pauses on
+conditions captured at the start of the pass (`.dyingCreatures` = dying creatures,
+`.planeswalkersAndLegend` = 0-loyalty planeswalkers + legend rule + tokens/copies
+outside valid zones, `.finalChapterSagas` = final-chapter Sagas,
+`.illegalAttachments` = illegal Auras + illegal Equipment/creature attachments),
+chaining `.finishSbaSweep` if a graveyard move pauses on
 `Pending.chooseReplacement`. -/
 def finishSbaSweep (g : Game) (moves : Array SbaGraveyardMove)
-    (preBf : Array GameObject) (stage : Nat)
+    (preBf : Array GameObject) (stage : SbaSweepStage)
     (pwMoves : Array SbaGraveyardMove := #[])
     (sagaMoves : Array SbaGraveyardMove := #[])
     (tokensOutsideBf : Array ObjectId := #[])
@@ -156,7 +157,7 @@ def finishSbaSweep (g : Game) (moves : Array SbaGraveyardMove)
     Game × (Bool × Bool) := Id.run do
   let mut g := g
   let mut changed := changedIn
-  if stage == 0 then
+  if stage == .dyingCreatures then
     for i in [0:moves.size] do
       let m := moves[i]!
       match g.findObject? m.objectId with
@@ -172,14 +173,15 @@ def finishSbaSweep (g : Game) (moves : Array SbaGraveyardMove)
           changed := true
           if let .chooseReplacement _ _ := g.pending then
             let rem := moves.extract (i + 1) moves.size
-            return (g.chainPendingReplacement (.finishSbaSweep rem preBf 0
+            return (g.chainPendingReplacement (.finishSbaSweep rem preBf .dyingCreatures
               pwMoves sagaMoves tokensOutsideBf copiesOutside illegalAuras
               illegalEquips illegalCreatureAtts), (true, true))
       | none => pure ()
     g := g.change .sbaChecked
-  if stage <= 1 then
+  if stage == .dyingCreatures || stage == .planeswalkersAndLegend then
     -- Planeswalkers with 0 loyalty captured at start of pass (CR 704.5i).
-    let pwList : Array SbaGraveyardMove := if stage == 1 then moves else pwMoves
+    let pwList : Array SbaGraveyardMove :=
+      if stage == .planeswalkersAndLegend then moves else pwMoves
     for i in [0:pwList.size] do
       let m := pwList[i]!
       match g.findObject? m.objectId with
@@ -191,7 +193,7 @@ def finishSbaSweep (g : Game) (moves : Array SbaGraveyardMove)
           changed := true
           if let .chooseReplacement _ _ := g.pending then
             let rem := pwList.extract (i + 1) pwList.size
-            return (g.chainPendingReplacement (.finishSbaSweep rem preBf 1
+            return (g.chainPendingReplacement (.finishSbaSweep rem preBf .planeswalkersAndLegend
               #[] sagaMoves tokensOutsideBf copiesOutside illegalAuras
               illegalEquips illegalCreatureAtts), (true, true))
       | none => pure ()
@@ -203,7 +205,7 @@ def finishSbaSweep (g : Game) (moves : Array SbaGraveyardMove)
       g := g.change (.pending (.chooseLegend p name ids))
       g := g.logMsg
         s!"{(g.player p).name} chooses which {name} to keep (legend rule, CR 704.5j)"
-      g := g.chainPendingReplacement (.finishSbaSweep #[] preBf 1
+      g := g.chainPendingReplacement (.finishSbaSweep #[] preBf .planeswalkersAndLegend
         #[] sagaMoves tokensOutsideBf copiesOutside illegalAuras
         illegalEquips illegalCreatureAtts)
       return (g, (true, true))
@@ -228,10 +230,11 @@ def finishSbaSweep (g : Game) (moves : Array SbaGraveyardMove)
           g := g.logMsg s!"{o.name} ceases to exist (copy outside stack or battlefield, CR 704.5e)"
           changed := true
       | none => pure ()
-  if stage <= 2 then
+  if stage != .illegalAttachments then
     -- Saga with lore at or past its final chapter and no chapter on the
     -- stack captured at start of pass is sacrificed (CR 714.4 / 704.5s).
-    let sagaList : Array SbaGraveyardMove := if stage == 2 then moves else sagaMoves
+    let sagaList : Array SbaGraveyardMove :=
+      if stage == .finalChapterSagas then moves else sagaMoves
     for i in [0:sagaList.size] do
       let m := sagaList[i]!
       match g.findObject? m.objectId with
@@ -243,13 +246,13 @@ def finishSbaSweep (g : Game) (moves : Array SbaGraveyardMove)
           changed := true
           if let .chooseReplacement _ _ := g.pending then
             let rem := sagaList.extract (i + 1) sagaList.size
-            return (g.chainPendingReplacement (.finishSbaSweep rem preBf 2
+            return (g.chainPendingReplacement (.finishSbaSweep rem preBf .finalChapterSagas
               #[] #[] #[] #[] illegalAuras illegalEquips illegalCreatureAtts), (true, true))
       | none => pure ()
-  if stage <= 3 then
+  do
     -- Unattached or illegally attached Auras captured at start of pass (CR 704.5m).
     let auraList : Array SbaGraveyardMove :=
-      if stage == 3 then moves
+      if stage == .illegalAttachments then moves
       else
         illegalAuras.filterMap (fun aid =>
           match g.findObject? aid with
@@ -273,7 +276,7 @@ def finishSbaSweep (g : Game) (moves : Array SbaGraveyardMove)
           changed := true
           if let .chooseReplacement _ _ := g.pending then
             let rem := auraList.extract (i + 1) auraList.size
-            return (g.chainPendingReplacement (.finishSbaSweep rem preBf 3
+            return (g.chainPendingReplacement (.finishSbaSweep rem preBf .illegalAttachments
               #[] #[] #[] #[] #[] illegalEquips illegalCreatureAtts), (true, true))
       | none => pure ()
   -- Illegally attached Equipment captured at start of pass (CR 704.5n / 702.16d).
@@ -491,7 +494,7 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
             (cause := cause))
           g := g.logMsg s!"{k} +1/+1 and -1/-1 counter pair(s) are removed from {o.name}"
           changed := true
-      return g.finishSbaSweep victims preBf 0 pwMoves sagaMoves tokensOutsideBf
+      return g.finishSbaSweep victims preBf .dyingCreatures pwMoves sagaMoves tokensOutsideBf
         copiesOutside illegalAuras illegalEquips illegalCreatureAtts
         (changedIn := changed)
     match g.pending with

@@ -212,7 +212,7 @@ namespace Game
 @[inline] def notedSourceThisWay (g : Game) := g.topFrame.notedSourceThisWay
 @[inline] def equipmentAttachedHost (g : Game) := g.topFrame.equipmentAttachedHost
 @[inline] def notedCountThisWay (g : Game) := g.topFrame.notedCountThisWay
-@[inline] def createdTokenThisWay (g : Game) := g.topFrame.createdTokenThisWay
+@[inline] def createdTokensThisWay (g : Game) := g.topFrame.createdTokensThisWay
 @[inline] def putArtifactThisWay (g : Game) := g.topFrame.putArtifactThisWay
 @[inline] def playExiledThisWay (g : Game) := g.topFrame.playExiledThisWay
 @[inline] def armSurveilReturn (g : Game) := g.topFrame.armSurveilReturn
@@ -312,7 +312,6 @@ namespace ProposedSpell
 def applyChange (p : ProposedSpell) (c : ProposalChange) : ProposedSpell :=
   match c with
   | .cost v => { p with cost := v }
-  | .addGenericCost n => { p with cost := p.cost.addGeneric n }
   | .reduceCostBy mc => { p with cost := p.cost.reduceByCost mc }
   | .tapped v => { p with tapped := v }
   | .pushTapped id => { p with tapped := p.tapped.push id }
@@ -2080,7 +2079,7 @@ def applyEngineChange (g : Game) (c : EngineChange) : Game :=
       | .notedSourceThisWay v => { f with notedSourceThisWay := v }
       | .equipmentAttachedHost v => { f with equipmentAttachedHost := v }
       | .notedCountThisWay v => { f with notedCountThisWay := v }
-      | .createdTokenThisWay v => { f with createdTokenThisWay := v }
+      | .createdTokensThisWay v => { f with createdTokensThisWay := v }
       | .putArtifactThisWay v => { f with putArtifactThisWay := v }
       | .playExiledThisWay v => { f with playExiledThisWay := v }
       | .armSurveilReturn v => { f with armSurveilReturn := v }
@@ -2137,7 +2136,6 @@ def applyEngineChange (g : Game) (c : EngineChange) : Game :=
       | .stashedCause v => { f with stashedCause := v }
       | .resolvingSpell v => { f with resolvingSpell := v }
       | .resolvingAbility v => { f with resolvingAbility := v }
-      | .resolvingModes v => { f with resolvingModes := v }
       | .resolvingDivision v => { f with resolvingDivision := v }
       | .resolvingSkippedSlots v => { f with resolvingSkippedSlots := v }
       | .afterRandom v => { f with afterRandom := v }
@@ -4214,7 +4212,7 @@ private def evalLayer6Aux (g : Game) (needStaticsTs kwOnly : Bool) : Nat → Gam
                       | .fra .equippedHuntersAxe =>
                         #[TriggeredAbility.fra .attack
                           "Whenever this creature attacks, it gains your choice of trample or deathtouch until end of turn."
-                          (.chooseKeyword [0, 3])]
+                          (.chooseKeyword [.trample, .deathtouch])]
                       | .fra .equippedMedicsKitesail =>
                         #[TriggeredAbility.fra .attack
                           "Whenever this creature attacks, you gain 1 life." (.gainLife 1)]
@@ -4265,7 +4263,7 @@ private def evalLayer6Aux (g : Game) (needStaticsTs kwOnly : Bool) : Nat → Gam
                     | .fra .equippedHuntersAxe =>
                       #[TriggeredAbility.fra .attack
                         "Whenever this creature attacks, it gains your choice of trample or deathtouch until end of turn."
-                        (.chooseKeyword [0, 3])]
+                        (.chooseKeyword [.trample, .deathtouch])]
                     | .fra .equippedMedicsKitesail =>
                       #[TriggeredAbility.fra .attack
                         "Whenever this creature attacks, you gain 1 life." (.gainLife 1)]
@@ -5816,7 +5814,8 @@ def replaceCountersPutChoice (g : Game) (target : GameObject) (kind : CounterKin
     (entering : Option GameObject := none)
     (applied : Array ReplacementId := #[])
     (cause : Option EventCause := none)
-    (order : Array ReplacementId := g.replacementOrder) :
+    (order : Array ReplacementId := g.replacementOrder)
+    (preBattlefield : Option (Array GameObject) := none) :
     Nat × Array ReplacementId × Option EventCause × Option (PlayerId × Array ReplacementId) × Array ReplacementId :=
   if n == 0 then (0, applied, cause, none, order)
   else
@@ -5825,6 +5824,13 @@ def replaceCountersPutChoice (g : Game) (target : GameObject) (kind : CounterKin
       if entersWith then tCtrl
       else putter.orElse (fun _ => g.counterPutter tCtrl)
     let affected := tCtrl.orElse (fun _ => who) |>.getD target.owner
+    let preBfOk (pObj : GameObject) : Bool :=
+      pObj.id != target.id && (entering.all (fun ent => pObj.id != ent.id)) &&
+        match preBattlefield with
+        | some pb => pb.any (fun pre => pre.id == pObj.id && pre.zone == .battlefield)
+        | none =>
+          g.currentBatch.isNone ||
+            g.openBatchObjects.any (fun pre => pre.id == pObj.id && pre.zone == .battlefield)
     Id.run do
       let mut curN := n
       let mut curApplied := applied
@@ -5841,7 +5847,9 @@ def replaceCountersPutChoice (g : Game) (target : GameObject) (kind : CounterKin
           -- Battlefield permanents controlled by `target`'s controller
           match tCtrl with
           | some c =>
-            let perms := g.permanentsOf c
+            let perms :=
+              if entersWith then (g.permanentsOf c).filter preBfOk
+              else g.permanentsOf c
             let allPerms :=
               match entering with
               | some ent =>
@@ -5911,10 +5919,14 @@ def replaceCountersPut (g : Game) (target : GameObject) (kind : CounterKind) (n 
     (putter : Option PlayerId := none) (entersWith : Bool := false)
     (entering : Option GameObject := none)
     (applied : Array ReplacementId := #[])
-    (cause : Option EventCause := none) : Nat × Array ReplacementId × Option EventCause :=
+    (cause : Option EventCause := none)
+    (order : Array ReplacementId := g.replacementOrder)
+    (preBattlefield : Option (Array GameObject) := none) :
+    Nat × Array ReplacementId × Option EventCause :=
   let (n', app', c', _, _) :=
     g.replaceCountersPutChoice target kind n (putter := putter) (entersWith := entersWith)
       (entering := entering) (applied := applied) (cause := cause)
+      (order := order) (preBattlefield := preBattlefield)
   (n', app', c')
 
 /-- Extra counters from each Doc Samson `putter` controls, when that player
@@ -6601,21 +6613,25 @@ def mayAttackDespiteDefender (g : Game) (o : GameObject) : Bool :=
     (g.permanentsOf p).any (fun x => (g.staticAbilities x).any (· == StaticAbility.fra .creaturesAttackDespiteDefender))
 
 /-- Whether `p` currently controls a permanent with any of these subtypes. -/
-def controlsAnySubtype (g : Game) (p : PlayerId) (subtypes : Array CardSubtype) : Bool :=
-  (g.permanentsOf p).any (fun o => subtypes.any (g.hasSubtype o))
+def controlsAnySubtype (g : Game) (p : PlayerId) (subtypes : Array CardSubtype)
+    (ok : GameObject → Bool := fun _ => true) : Bool :=
+  (g.permanentsOf p).any (fun o => ok o && subtypes.any (g.hasSubtype o))
 
 /-- Whether `p` currently controls a legendary creature. -/
-def controlsLegendaryCreature (g : Game) (p : PlayerId) : Bool :=
+def controlsLegendaryCreature (g : Game) (p : PlayerId)
+    (ok : GameObject → Bool := fun _ => true) : Bool :=
   (g.permanentsOf p).any (fun o =>
-    g.isCreature o && g.isLegendary o)
+    ok o && g.isCreature o && g.isLegendary o)
 
 /-- Whether `p` currently controls an Equipment. -/
-def controlsEquipment (g : Game) (p : PlayerId) : Bool :=
-  (g.permanentsOf p).any (g.isEquipment ·)
+def controlsEquipment (g : Game) (p : PlayerId)
+    (ok : GameObject → Bool := fun _ => true) : Bool :=
+  (g.permanentsOf p).any (fun o => ok o && g.isEquipment o)
 
 /-- Intrinsic self-replacement check for whether `o` enters the battlefield
 tapped under `p`'s control (CR 614.1c / 614.12 / 616.1a; rulings 808 / 809). -/
-private def selfEntersTapped (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
+private def selfEntersTapped (g : Game) (p : PlayerId) (o : GameObject)
+    (ok : GameObject → Bool := fun _ => true) : Bool :=
   let oBf : GameObject := { o with zone := .battlefield, controller := some p, defaultController := some p }
   let card := g.baseCard oBf
   let proposed := GameEvent.moved g.turnNumber
@@ -6628,22 +6644,22 @@ private def selfEntersTapped (g : Game) (p : PlayerId) (o : GameObject) : Bool :
   let sas := g.staticAbilities oBf
   (retains && card.entersTapped) || sas.any (· == StaticAbility.fra .entersTappedChooseColor) ||
     (retains && (
-      (card.entersTappedUnlessLegendary && !g.controlsLegendaryCreature p) ||
-      (card.entersTappedUnlessEquipment && !g.controlsEquipment p) ||
+      (card.entersTappedUnlessLegendary && !g.controlsLegendaryCreature p ok) ||
+      (card.entersTappedUnlessEquipment && !g.controlsEquipment p ok) ||
       (card.entersTappedUnlessPlaneswalker &&
-        !(g.permanentsOf p).any (g.isPlaneswalker ·)) ||
+        !(g.permanentsOf p).any (fun x => ok x && g.isPlaneswalker x)) ||
       (card.entersTappedUnlessTwoOtherLands &&
-        ((g.permanentsOf p).filter (g.isLand ·)).size < 2) ||
+        ((g.permanentsOf p).filter (fun x => ok x && g.isLand x)).size < 2) ||
       (!card.entersTappedUnlessAnySubtype.isEmpty &&
-        !g.controlsAnySubtype p card.entersTappedUnlessAnySubtype) ||
+        !g.controlsAnySubtype p card.entersTappedUnlessAnySubtype ok) ||
       (match card.entersTappedUnlessNBasics with
        | some n =>
-         ((g.permanentsOf p).filter (g.isBasicLand ·)).size < n
+         ((g.permanentsOf p).filter (fun x => ok x && g.isBasicLand x)).size < n
        | none => false) ||
       (match card.entersTappedUnlessOppLands with
        | some n =>
          let nOpp := (g.livingOpponents p).foldl (fun acc pl =>
-           acc + ((g.permanentsOf pl.id).filter (g.isLand ·)).size) 0
+           acc + ((g.permanentsOf pl.id).filter (fun x => ok x && g.isLand x)).size) 0
          nOpp < n
        | none => false)))
 
@@ -6686,7 +6702,7 @@ def preBatchAuraBoard (g : Game) (preBf? : Option (Array GameObject) := none) : 
     let nonBf := g.objects.filter (fun o => o.zone != .battlefield && !preBf.any (·.id == o.id))
     { g with objects := preBf ++ nonBf }
   | none =>
-    if g.currentBatch.isSome && !g.openBatchObjects.isEmpty then
+    if g.currentBatch.isSome then
       { g with
         objects := g.openBatchObjects
         players := g.openBatchPlayers
@@ -6736,8 +6752,11 @@ def applyEtbReplacements (g : Game) (candidate : GameObject)
   let _ := asOf
   let preBfOk (c : GameObject) : Bool :=
     c.isOnBattlefield && c.id != candidate.id &&
-      (g.openBatchObjects.isEmpty ||
-        g.openBatchObjects.any (fun pre => pre.id == c.id && pre.zone == .battlefield))
+      match preBattlefield with
+      | some pb => pb.any (fun pre => pre.id == c.id && pre.zone == .battlefield)
+      | none =>
+        g.currentBatch.isNone ||
+          g.openBatchObjects.any (fun pre => pre.id == c.id && pre.zone == .battlefield)
   let chosableCardTypes : Array CardType :=
     #[.creature, .artifact, .battle, .enchantment, .instant, .kindred, .land, .planeswalker, .sorcery]
   let mut cur := candidate
@@ -6757,6 +6776,7 @@ def applyEtbReplacements (g : Game) (candidate : GameObject)
       let (n', app', c', subChoice?, ord') :=
         g.replaceCountersPutChoice cur k n (putter := cur.controller) (entersWith := true)
           (entering := some cur) (applied := curApplied) (cause := curCause) (order := curOrder)
+          (preBattlefield := preBattlefield)
       curOrder := ord'
       match subChoice? with
       | some ch => choice? := some ch
@@ -6791,7 +6811,7 @@ def applyEtbReplacements (g : Game) (candidate : GameObject)
     let mut specs : Array ReplacementSpec := #[]
     let mut pushedInteractive616a : Bool := false
     -- 616.1a: self enters-tapped replacement
-    let selfTap := !cur.status.faceDown && !cur.status.tapped && g.selfEntersTapped ctrl curBf
+    let selfTap := !cur.status.faceDown && !cur.status.tapped && g.selfEntersTapped ctrl curBf preBfOk
     if selfTap then
       specs := specs.push {
         id := { kind := .entersTappedSelf, object := some cur.id }
@@ -7034,7 +7054,7 @@ def applyEtbReplacements (g : Game) (candidate : GameObject)
           kind := .entersWithCountersSelf cur.id .shield bc.entersWithShield
         }
       if retains && bc.entersWithHopePerCreature then
-        let others := ((g.creaturesControlledBy ctrl).filter (·.id != cur.id)).size
+        let others := ((g.creaturesControlledBy ctrl).filter preBfOk).size
         let selfCount := if g.isCreature curBf then 1 else 0
         let totalHope := others + selfCount
         if totalHope > 0 then
@@ -7144,7 +7164,7 @@ def applyEtbReplacements (g : Game) (candidate : GameObject)
           match preBattlefield with
           | some pb => pb
           | none =>
-            if g.currentBatch.isSome && !g.openBatchObjects.isEmpty then
+            if g.currentBatch.isSome then
               g.openBatchObjects.filter GameObject.isOnBattlefield
             else g.battlefield
         let legalHosts :=
@@ -7213,6 +7233,7 @@ def applyEtbReplacements (g : Game) (candidate : GameObject)
           let (n', app', c', subChoice?, ord2) :=
             g.replaceCountersPutChoice enterTarget k n (putter := some effCtrl) (entersWith := true)
               (entering := some enterTarget) (applied := curApplied) (cause := curCause) (order := curOrder)
+              (preBattlefield := preBattlefield)
           curOrder := ord2
           match subChoice? with
           | some ch =>
@@ -7287,6 +7308,7 @@ def applyEtbReplacements (g : Game) (candidate : GameObject)
           let (n', app', c', subChoice?, ord2) :=
             g.replaceCountersPutChoice enterTarget k n (putter := some effCtrl) (entersWith := true)
               (entering := some enterTarget) (applied := curApplied) (cause := curCause) (order := curOrder)
+              (preBattlefield := preBattlefield)
           curOrder := ord2
           match subChoice? with
           | some ch =>
@@ -8795,7 +8817,7 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
                   queueSrc post handP afterObj (.fra .youDiscardThis) (w := waiting) (fs := firedSources)
                 let (w, fs) :=
                   queueCtrl post handP .youDiscard
-                    (lastKnownPower := some (Int.ofNat afterObj.id.raw))
+                    (cause := some afterObj)
                     (w := w) (fs := fs)
                 let (w, fs) :=
                   queueCtrl post handP (.fra .youDiscardOne)
@@ -8934,7 +8956,7 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
                       if pktEv.matchesTrigger pid (some srcObj.id) .dealsCombatDamageToPlayer then
                         let (w, fs) :=
                           queueSrc post pid srcObj .dealsCombatDamageToPlayer
-                            (lastKnownToughness := some (Int.ofNat defn.idx))
+                            (causeController := some defn)
                             (w := waiting) (fs := firedSources)
                         waiting := w; firedSources := fs
                       if pktEv.matchesTrigger pid (some srcObj.id) (.fra .dealsCombatDamageToPlayerOrPlaneswalker) then
@@ -9041,7 +9063,7 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
                   let (w, fs) :=
                     queueSrc post pl.id o .playerLosesLife
                       (lastKnownPower := some (Int.ofNat amount))
-                      (lastKnownToughness := some (Int.ofNat p.idx))
+                      (causeController := some p)
                       (w := waiting) (fs := firedSources)
                   waiting := w; firedSources := fs
         | .player (.scried p _ _ lookedAt _) =>
@@ -10034,10 +10056,6 @@ this, and do not record a change they replace (CR 614.6). -/
 def record (g : Game) (e : GameEvent) : Game :=
   g.applyEvent e
 
-/-- Record a sequence of events in order, processing each in isolation. -/
-def recordAll (g : Game) (es : Array GameEvent) : Game :=
-  es.foldl Game.record g
-
 /-- Add and process an `EngineChange` on the current turn. -/
 def change (g : Game) (c : EngineChange) : Game :=
   g.record (GameEvent.engine g.turnNumber c)
@@ -10231,21 +10249,6 @@ def withBatchCoreReturn {α : Type} (g : Game) (cause : Option EventCause := non
 /-- Core batch runner (without `Movement`'s deferred `linkedExile` flush). -/
 def withBatchCore (g : Game) (cause : Option EventCause := none) (f : Game → Game) : Game :=
   (g.withBatchCoreReturn cause (fun g => (f g, ()))).1
-
-/-- Monadic `Except` variant of `withBatchCoreReturn`. -/
-def withBatchCoreExcept {ε α : Type} (g : Game) (cause : Option EventCause := none)
-    (f : Game → Except ε (Game × α)) : Except ε (Game × α) :=
-  let (g', res) :=
-    g.withBatchCoreReturn cause fun g0 =>
-      match f g0 with
-      | .ok (g1, a) => (g1, Except.ok a)
-      | .error err => (({} : Game), Except.error err)
-  res.map (fun a => (g', a))
-
-/-- Monadic `Except` variant of `withBatchCore`. -/
-def withBatchCoreM {ε : Type} (g : Game) (cause : Option EventCause := none)
-    (f : Game → Except ε Game) : Except ε Game :=
-  (g.withBatchCoreExcept cause fun g0 => do return (← f g0, ())).map Prod.fst
 
 /-- Bracket a single mana ability or cost action executed during a spell/ability
 proposal with `EngineChange.beginProposalAction` / `endProposalAction` so
@@ -10983,11 +10986,6 @@ def expireAll (g : Game) (eff : ContinuousEffect)
     (cause : Option EventCause := none) : Game :=
   g.expireMatching (· == eff) (cause := cause)
 
-/-- Record and apply the expiration of multiple continuous effects in order (CR 611). -/
-def expireEffects (g : Game) (effs : Array ContinuousEffect)
-    (cause : Option EventCause := none) : Game :=
-  effs.foldl (fun acc e => acc.expireEffect e (cause := cause)) g
-
 /-- `id` is a permanent that was cast for its impending cost (CR 702.176,
 ruling 970). -/
 def loggedCastForImpending (g : Game) (id : ObjectId) : Bool :=
@@ -11183,15 +11181,6 @@ def restoreCopiesWhere (g : Game)
         acc.battlefield.any (fun o => sel acc eid (some o) d) || sel acc eid none d
       if matchesAny then acc.expireEffectById eid (cause := cause) else acc
     | _ => acc) g
-
-/-- End every copy effect on `o`, restoring its original printed card (CR 707).
-Does not cause the permanent to enter or leave the battlefield. -/
-def restoreCopy (g : Game) (o : GameObject) : Game :=
-  g.restoreCopiesWhere (fun _ _ obj? _ => obj?.any (·.id == o.id))
-
-/-- Restore copy effects on battlefield objects that satisfy `p`. -/
-def restoreCopiesIf (g : Game) (p : GameObject → Bool) : Game :=
-  g.restoreCopiesWhere (fun _ _ obj? _ => obj?.any p)
 
 /-- Restore copy effects that last until end of turn (including
 `.untilEndOfNextTurnOf` on the active team's final shared-turn seat once that

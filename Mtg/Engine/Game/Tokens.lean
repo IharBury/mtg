@@ -680,61 +680,63 @@ def jacePlaneswalkerTokens (g : Game) (controller : PlayerId) : Array GameObject
     g.isPlaneswalker o && g.hasSubtype o .jace && o.printed.isToken)
 
 /-- Stepwise resumption helper for `empowerJace` across token-creation and
-loyalty-counter `Pending.chooseReplacement` pauses (`stage == 0` initial,
-`stage == 1` post-token-create, `stage >= 2` post-counter-put with
-`prevLoyalty := stage - 2`). -/
+loyalty-counter `Pending.chooseReplacement` pauses. -/
 def empowerJaceStep (g : Game) (controller : PlayerId) (n : Nat)
-    (stage : Nat := 0) (chosen : Option ObjectId := none)
+    (stage : EmpowerJaceStage := .initial) (chosen : Option ObjectId := none)
     (cause : Option EventCause := none) : Game :=
   if let .chooseReplacement .. := g.pending then
     g.chainPendingReplacement (.empowerJace controller n stage chosen cause)
-  else if stage >= 2 then
-    let prevLoyalty := stage - 2
-    match chosen.bind g.findObject? with
-    | some o =>
-      let added := o.status.loyaltyCounters - prevLoyalty
-      g.logMsg s!"Empower Jace {n}: {added} loyalty counter(s) are put on {g.name o}"
-    | none =>
-      g.logMsg s!"Empower Jace {n}: {n} loyalty counter(s) are put on Jace"
   else
-    let (g, justCreated) : Game × Bool :=
-      if stage == 1 then
-        let hasNow := !(g.jacePlaneswalkerTokens controller).isEmpty
-        (if hasNow then
-           g.logMsg s!"{(g.player controller).name} creates a Jace planeswalker token"
-         else g, false)
-      else if (g.jacePlaneswalkerTokens controller).isEmpty then
-        let (g, _) := g.createToken controller jacePlaneswalkerToken (cause := cause)
-        if let .chooseReplacement .. := g.pending then
-          (g.chainPendingReplacement (.empowerJace controller n 1 chosen cause), true)
-        else
+    match stage with
+    | .afterPutCounters prevLoyalty =>
+      match chosen.bind g.findObject? with
+      | some o =>
+        let added := o.status.loyaltyCounters - prevLoyalty
+        g.logMsg s!"Empower Jace {n}: {added} loyalty counter(s) are put on {g.name o}"
+      | none =>
+        g.logMsg s!"Empower Jace {n}: {n} loyalty counter(s) are put on Jace"
+    | .initial | .afterTokenCreate =>
+      let (g, justCreated) : Game × Bool :=
+        match stage with
+        | .afterTokenCreate =>
           let hasNow := !(g.jacePlaneswalkerTokens controller).isEmpty
           (if hasNow then
              g.logMsg s!"{(g.player controller).name} creates a Jace planeswalker token"
            else g, false)
-      else (g, false)
-    if justCreated then g
-    else
-      let tokens := g.jacePlaneswalkerTokens controller
-      let pick :=
-        match chosen.bind (fun id => tokens.find? (·.id == id)) with
-        | some o => some o
-        | none =>
-          tokens.foldl (fun (best : Option GameObject) (o : GameObject) =>
-            match best with
-            | some b => if o.timestamp ≥ b.timestamp then some o else best
-            | none => some o) none
-      match pick with
-      | none => g.logMsg "Empower Jace creates no token"
-      | some o =>
-        let oName := g.name o
-        let prevLoyalty := o.status.loyaltyCounters
-        let g := g.recordPutCounters o.id .loyalty n (byPlayer := some controller) (cause := cause)
-        if let .chooseReplacement .. := g.pending then
-          g.chainPendingReplacement (.empowerJace controller n (prevLoyalty + 2) (some o.id) cause)
-        else
-          let added := ((g.findObject? o.id).map (·.status.loyaltyCounters)).getD prevLoyalty - prevLoyalty
-          g.logMsg s!"Empower Jace {n}: {added} loyalty counter(s) are put on {oName}"
+        | _ =>
+          if (g.jacePlaneswalkerTokens controller).isEmpty then
+            let (g, _) := g.createToken controller jacePlaneswalkerToken (cause := cause)
+            if let .chooseReplacement .. := g.pending then
+              (g.chainPendingReplacement (.empowerJace controller n .afterTokenCreate chosen cause), true)
+            else
+              let hasNow := !(g.jacePlaneswalkerTokens controller).isEmpty
+              (if hasNow then
+                 g.logMsg s!"{(g.player controller).name} creates a Jace planeswalker token"
+               else g, false)
+          else (g, false)
+      if justCreated then g
+      else
+        let tokens := g.jacePlaneswalkerTokens controller
+        let pick :=
+          match chosen.bind (fun id => tokens.find? (·.id == id)) with
+          | some o => some o
+          | none =>
+            tokens.foldl (fun (best : Option GameObject) (o : GameObject) =>
+              match best with
+              | some b => if o.timestamp ≥ b.timestamp then some o else best
+              | none => some o) none
+        match pick with
+        | none => g.logMsg "Empower Jace creates no token"
+        | some o =>
+          let oName := g.name o
+          let prevLoyalty := o.status.loyaltyCounters
+          let g := g.recordPutCounters o.id .loyalty n (byPlayer := some controller) (cause := cause)
+          if let .chooseReplacement .. := g.pending then
+            g.chainPendingReplacement
+              (.empowerJace controller n (.afterPutCounters prevLoyalty) (some o.id) cause)
+          else
+            let added := ((g.findObject? o.id).map (·.status.loyaltyCounters)).getD prevLoyalty - prevLoyalty
+            g.logMsg s!"Empower Jace {n}: {added} loyalty counter(s) are put on {oName}"
 
 /-- Empower Jace `n` (Reality Fracture, ruling 732). If you don't control a
 Jace planeswalker token, create one with 0 loyalty. Then put `n` loyalty
@@ -743,7 +745,7 @@ token while you control one; with several, `chosen` picks which (ruling
 731), defaulting to the one that entered most recently. -/
 def empowerJace (g : Game) (controller : PlayerId) (n : Nat)
     (chosen : Option ObjectId := none) (cause : Option EventCause := none) : Game :=
-  g.empowerJaceStep controller n 0 chosen cause
+  g.empowerJaceStep controller n .initial chosen cause
 
 /-- Printed characteristics for a `TokenKind`. -/
 def tokenPrinted (k : TokenKind) : CardDef :=
@@ -788,6 +790,16 @@ def tokenPrinted (k : TokenKind) : CardDef :=
   | .illusion11blue => creatureToken "Illusion" #[.illusion] 1 1 (some .blue)
   | .leviathan88hexproof =>
     creatureToken "Leviathan" #[.leviathan] 8 8 (some .blue) (keywords := Keyword.hexproof)
+
+/-- Token `ObjectId`s created on the battlefield since `startEventIdx` in `g.events`. -/
+def tokensCreatedSince (g : Game) (startEventIdx : Nat) : Array ObjectId :=
+  (g.events.extract startEventIdx g.events.size).foldl (fun acc e =>
+    match e.change with
+    | .rules (.zone (.created eo _)) =>
+      match eo.id with
+      | some tid => if eo.zone == .battlefield && !acc.contains tid then acc.push tid else acc
+      | none => acc
+    | _ => acc) #[]
 
 /-- Create `n` tokens of `kind`. -/
 def createKindTokens (g : Game) (controller : PlayerId) (kind : TokenKind)

@@ -2274,7 +2274,7 @@ def ironManCombatPutEquipmentOk : Bool :=
     let bow := handCardNamed g ⟨0⟩ "Hawkeye's Bow"
     let g := mustApply g ⟨0⟩ (.cast bow.id)
     let bow := namedPermanent g "Hawkeye's Bow"
-    hostId == iron.id &&
+    hostId == some iron.id &&
       rest.steps == [.«if» (.atLeast (.count .putEquipment) (.fixed 1)) (.attach .putArtifact .notedHost)] &&
       bow.isOnBattlefield &&
       bow.attachedTo == some iron.id &&
@@ -2666,8 +2666,13 @@ def blackWidowChoiceOk : Bool :=
          (declined.objects.any (fun o =>
            o.zone == .exile && o.name == "Lightning Bolt" && (declined.playPermission o).isSome))
      | _ => false) &&
-    (let (g, ab) := setup.putStackAbility widow ⟨0⟩ (lastKnownToughness := some 1)
-     let g := g.change (.pushContinuationFrame { resolvingAbility := some ab.id })
+    (let abId : ObjectId := ⟨setup.nextObjectId⟩
+     let g := setup.record (GameEvent.triggerPutOnStack setup.turnNumber abId (setup.snapshot widow) ⟨0⟩
+       (spec := {
+         triggeredAbility := some (.onWatch Effect.watchCombatDamageExileUntilNonland)
+         sourceId := some widow.id
+         fraCauseController := some ⟨1⟩ }))
+     let g := g.changes #[.popStack, .pushContinuationFrame { resolvingAbility := some abId }]
      let g := g.applyTriggeredAbility ⟨0⟩
        (.onWatch Effect.watchCombatDamageExileUntilNonland) (some widow.id) #[]
      match g.pending with
@@ -3018,8 +3023,16 @@ def moonstoneMayExileOk : Bool :=
   let g := addPermanent afterDraw moonstoneHarshMistress ⟨0⟩ ⟨0⟩
   let g := addToGraveyard g lightningBolt ⟨0⟩
   let bolt := namedGraveyardCard g ⟨0⟩ "Lightning Bolt"
+  let moon := namedPermanent g "Moonstone, Harsh Mistress"
+  let abId : ObjectId := ⟨g.nextObjectId⟩
+  let g := g.record (GameEvent.triggerPutOnStack g.turnNumber abId (g.snapshot moon) ⟨0⟩
+    (spec := {
+      triggeredAbility := some (.onResource Effect.resourceDiscardExilePlay)
+      sourceId := some moon.id
+      fraCauseId := some bolt.id }))
+  let g := g.changes #[.popStack, .pushContinuationFrame { resolvingAbility := some abId }]
   let g := g.applyModeledTrigger ⟨0⟩ (.onResource Effect.resourceDiscardExilePlay)
-    none #[] "Moonstone" (some (Int.ofNat bolt.id.raw))
+    (some moon.id) #[] "Moonstone"
   match g.pending with
   | .fraChoice _ (.moonstoneMayExile _) =>
     let kept := mustApply g ⟨0⟩ .decline

@@ -807,7 +807,7 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
           s!"choose a mode not yet chosen {available}: 0 +1/+1, 1 each opponent loses 2 and you gain 2, 2 draw"
         | .chooseKeyword _ options =>
           let names : List String :=
-            (List.range options.size).map (fun i => s!"{i} {fraKeywordName options[i]!}")
+            (List.range options.size).map (fun i => s!"{i} {(options[i]! : KeywordChoice).name}")
           "choose a keyword: " ++ String.intercalate ", " names
         | .sacrificeCreatureEach .. => "sacrifice a creature"
         | .discardTwo .. => "discard two cards"

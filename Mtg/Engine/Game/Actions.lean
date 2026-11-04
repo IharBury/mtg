@@ -297,7 +297,7 @@ def returnOwnedCreaturesScheduleBirds (g : Game) (p : PlayerId)
     let srcId := g.currentResolvingContext?.bind Prod.fst
     let (g, cause) := g.allocDelayedCause (some p) srcId
     g.withBatch (some cause) fun g =>
-      g.runPostStep .eaglesReturnCreaturesLoop p (n := 0) (sourceId := srcId) (ids := eligible) (cause := some cause)
+      g.eaglesReturnCreaturesLoop p 0 srcId eligible (some cause) (targeted := false)
 
 /-- Choose up to two creatures (they are not targets) and destroy the rest
 (Mount Doom). Shroud and hexproof do not stop the choice. -/

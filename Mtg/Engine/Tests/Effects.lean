@@ -1359,7 +1359,7 @@ def ownerLibraryChoice : Game :=
 #guard
   match ownerLibraryChoice.pending with
   | .chooseLibraryPlacement p id =>
-    p == ⟨1⟩ && id == (namedPermanent ownerLibraryChoice "Grizzly Bears").id &&
+    p == ⟨1⟩ && id == some (namedPermanent ownerLibraryChoice "Grizzly Bears").id &&
       ownerLibraryChoice.spellOrLibrary && ownerLibraryChoice.spellOr.size == 2
   | _ => false
 

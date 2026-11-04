@@ -128,7 +128,7 @@ def threeUnpaidCostCounters : Game :=
   let g := addToHand threeStarted lightningBolt ⟨1⟩
   let bolt := handCardNamed g ⟨1⟩ "Lightning Bolt"
   let (g, newId) := g.move bolt.id .stack (some ⟨1⟩)
-  let g := g.change (.pending (.payOrLetCounter ⟨0⟩ 3 newId))
+  let g := g.change (.pending (.payOrLetCounter ⟨0⟩ 3 (some newId)))
   g.playerLeavesGame ⟨0⟩
 
 #guard !threeUnpaidCostCounters.stack.any (fun e =>

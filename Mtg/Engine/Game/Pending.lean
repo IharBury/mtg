@@ -77,7 +77,7 @@ inductive FraNext where
   | reflexiveReturnLandTapped
   | beastToken
   | proliferate (times : Nat)
-  | mshReflexive (kind paid : Nat)
+  | mshReflexive (kind : TriggeredAbility.TriggerReflexiveKind) (paid : Nat)
   | gainLife (n : Nat)
   /-- Return the source from the graveyard to its owner's hand. -/
   | returnSourceToHand
@@ -325,10 +325,9 @@ inductive FraChoice where
   /-- Mister Hyde stack-placement mode choice for `objectId`: mode 0 (+1/+1
   counter) or mode 1 (remove a counter and draw) (CR 603.3c / 700.2b). -/
   | stackHydeMode (objectId : ObjectId)
-  /-- `objectId` gains your choice of the keywords coded in `options`
-  (0 trample, 1 hexproof, 2 haste, 3 deathtouch) until end of turn. Answered
-  with the index of an option. -/
-  | chooseKeyword (objectId : ObjectId) (options : Array Nat)
+  /-- `objectId` gains your choice of the keywords in `options` until end of
+  turn. Answered with the index of an option. -/
+  | chooseKeyword (objectId : ObjectId) (options : Array KeywordChoice)
   /-- Each player sacrifices a creature of their choice; `controller` creates
   a 4/4 Beast if they sacrificed one (Garruk, Veiled Butcher). `chosen` are
   sacrificed together once everyone has chosen. -/
@@ -349,7 +348,7 @@ inductive FraChoice where
   | costPicks (sourceId : ObjectId) (picks : Array CostPick) (paid : Bool)
   /-- You may pay `pick` (sacrifice, discard, …) as an ability of `sourceId`
   resolves; when you do, do `next`. -/
-  | mayPayPickThen (pick : CostPick) (next : FraNext) (sourceId : ObjectId)
+  | mayPayPickThen (pick : CostPick) (next : FraNext) (sourceId : Option ObjectId)
   /-- Choose a creature type you control. `types` are offered by index
   (Orcrist). Answered with `Action.chooseMode` or `Action.chooseName`. -/
   | chooseCreatureType (types : Array CardSubtype)
@@ -418,7 +417,8 @@ inductive FraChoice where
   /-- You may pay `cost` up to `maxTimes` times (accept pays once; a mode
   index pays that many times); when you do, the reflexive ability `kind`
   triggers. -/
-  | mayPayManaForReflexive (cost : Array ManaSymbol) (maxTimes : Nat) (kind : Nat)
+  | mayPayManaForReflexive (cost : Array ManaSymbol) (maxTimes : Nat)
+    (kind : TriggeredAbility.TriggerReflexiveKind)
     (sourceId : Option ObjectId)
   /-- You may tap the untapped source; if you do, do `next`. -/
   | mayTapSourceThen (next : FraNext) (sourceId : ObjectId)
@@ -461,7 +461,7 @@ inductive FraChoice where
   | mayCastUpToFromExile (eligible : Array ObjectId) (left : Nat)
   /-- Mister Hyde: choose mode 0 (+1/+1 counter) or 1 (remove a counter
   and draw). -/
-  | hydeMode (sourceId : ObjectId)
+  | hydeMode (sourceId : Option ObjectId)
   /-- Remove one counter from one of these creatures, then draw (Mister Hyde). -/
   | hydeRemoveCounter (ids : Array ObjectId)
   /-- You may have The Sensational She-Hulk deal `amount` damage to `target`.
@@ -606,9 +606,10 @@ inductive Pending where
   /-- You may pay `{n}` generic mana; if you do, draw a card. -/
   | mayPayGeneric (player : PlayerId) (n : Nat)
   /-- Choose one alternative of a `SpellResolution.or`. For a library
-  top-or-bottom choice, `id` is the permanent and top/bottom name the side.
-  Otherwise `chooseTop` is the first alternative and `chooseBottom` the second. -/
-  | chooseLibraryPlacement (player : PlayerId) (id : ObjectId)
+  top-or-bottom choice, `id` is `some permanentId` and top/bottom name the side.
+  Otherwise `id` is `none`, `chooseTop` is the first alternative, and
+  `chooseBottom` the second. -/
+  | chooseLibraryPlacement (player : PlayerId) (id : Option ObjectId)
   /-- You may attach an Equipment you control to this creature. -/
   | mayAttachEquipment (player : PlayerId) (hostId : ObjectId)
       (sourceId : Option ObjectId := none)
@@ -617,9 +618,9 @@ inductive Pending where
   /-- Tap any number of untapped Humans you control. A later sequence step
   draws a card for each Human tapped. -/
   | tapHumans (player : PlayerId)
-  /-- Pay `{n}` or let the targeted spell be countered. When the game's
-  `unlessPaysInstead` is set, declining resolves that effect instead. -/
-  | payOrLetCounter (player : PlayerId) (n : Nat) (spellId : ObjectId)
+  /-- Pay `{n}` or let the targeted spell (`some spellId`) be countered; when
+  `spellId` is `none`, `unlessPaysInstead` resolves on decline instead. -/
+  | payOrLetCounter (player : PlayerId) (n : Nat) (spellId : Option ObjectId)
   /-- Pay this ward cost or let the targeting spell or ability be countered
   (CR 702.21). -/
   | payWard (player : PlayerId) (spellId : ObjectId) (cost : WardCost)
@@ -647,7 +648,7 @@ inductive Pending where
   | maySacArtifactOrDiscard (player : PlayerId) (draw : Nat)
   /-- You may put an artifact card from your hand onto the battlefield.
   `hostId` is the creature the following step attaches it to if it is Equipment. -/
-  | mayPutArtifactFromHand (player : PlayerId) (hostId : ObjectId)
+  | mayPutArtifactFromHand (player : PlayerId) (hostId : Option ObjectId)
   /-- You may have this entering Villain connive (Baron Strucker; MSH 422). -/
   | mayHaveVillainConnive (player : PlayerId) (sourceId : ObjectId) (villainId : ObjectId)
   /-- You may cast exiled `cardId` as an ability resolves, paying its costs.

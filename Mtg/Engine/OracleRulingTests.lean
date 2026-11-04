@@ -1366,7 +1366,14 @@ def twoBardsFourTreasures : Game :=
 
 /-- Ruling 203: amass with Bard creates two Armies; counters go on one;
 the other dies as a 0/0. -/
-def bardAmass : Game := withBard.amassGoblins ⟨0⟩ 3
+def bardAmass : Game :=
+  let g := withBard.amassGoblins ⟨0⟩ 3
+  match g.pending with
+  | .fraChoice ⟨0⟩ (.chooseCards ids 1 purpose) =>
+    let cause := g.stashedCause
+    let g := (g.change (.pending .none)).change (.stashedCause none)
+    g.finishChooseCards ⟨0⟩ #[ids[1]!] purpose (cause := cause)
+  | _ => g
 
 def bardAmassBeforeSbaOk : Bool :=
   let armies := bardAmass.battlefield.filter (fun o => o.name == "Goblin Army")
@@ -4655,7 +4662,7 @@ def uneasyPartingsOwnerChoosesOk : Bool :=
   let g := g.applyEffect ⟨0⟩ (Effect.putOnTopOrBottom)
     #[Target.permanent bear.id]
   (match g.pending with
-   | .chooseLibraryPlacement p id => p == ⟨1⟩ && id == bear.id
+   | .chooseLibraryPlacement p id => p == ⟨1⟩ && id == some bear.id
    | _ => false) &&
     (ruling 284).comment.contains "creature's owner chooses"
 

@@ -138,9 +138,7 @@ def permanentsNamed (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.Objec
     some (g.battlefield.filter fun o =>
       g.isCreature o && g.controlledBy o controller && some o.id != sourceId)
   | .createdToken =>
-    match g.createdTokenThisWay.bind onBf with
-    | some o => some #[o]
-    | none => someEmpty
+    some (g.createdTokensThisWay.filterMap onBf)
   | .humans =>
     some (g.battlefield.filter fun o =>
       g.isCreature o && g.controlledBy o controller && g.hasSubtype o .human)
@@ -205,8 +203,7 @@ def permanentsNamed (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.Objec
   | .planeswalkersYouControl =>
     some ((g.permanentsOf controller).filter (g.isPlaneswalker ·))
   | .forestsExceptCause =>
-    -- The causing Forest's id is this trigger's last-known power.
-    let cause : Option ObjectId := ctx.lastKnownPower.map (fun k => ⟨k.toNat⟩)
+    let cause : Option ObjectId := g.recordedCauseId
     some ((g.permanentsOf controller).filter fun o =>
       g.hasSubtype o .forest && some o.id != cause)
   | .creature | .target .creature =>
@@ -314,7 +311,9 @@ def collectPlayers (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.Player
   | .controller what => g.controllersNamed ctx what
   | .target _ => none
   | .thatPlayer =>
-    ctx.lastKnownToughness.map fun idx => #[⟨idx.toNat⟩]
+    match g.resolvingAbilityObject?.bind (·.fraCauseController) with
+    | some pid => one pid
+    | none => none
   | .damagedPlayer =>
     match g.loggedLastCombatDamagePlayer.orElse (fun _ => g.firstLivingOpponent? controller) with
     | some pid => one pid
@@ -325,8 +324,8 @@ def collectPlayers (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.Player
       | _ => none with
     | some pid => one pid
     | none =>
-      match ctx.lastKnownToughness.orElse (fun _ => g.resolvingAbility.bind g.lastKnownToughnessOf?) with
-      | some idx => one ⟨idx.toNat⟩
+      match g.resolvingAbilityObject?.bind (·.fraCauseController) with
+      | some pid => one pid
       | none => none
   | .opponentHasYou => none
 
@@ -522,7 +521,7 @@ def millCollected (g : Game) (controller : PlayerId) (pids : Array PlayerId) (n 
     let g := g.withBatch cause? fun g =>
       pids.foldl (fun g pid => g.mill pid n (cause := cause?)) g
     if let .chooseReplacement .. := g.pending then
-      g.chainPendingReplacement (.finishPostStep .noteMilledIds controller (ids := tops))
+      g.chainPendingReplacement (.finishPostStep (.noteMilledIds tops))
     else
       let milled := tops.filterMap (fun id => (g.followMilledPublic? id).map (·.id))
       g.change (.milledIdsThisWay milled)
@@ -534,8 +533,7 @@ def millCollected (g : Game) (controller : PlayerId) (pids : Array PlayerId) (n 
       pids.foldl (fun g pid =>
         if !opps.contains pid then g.mill pid n (cause := cause?) else g) g
     if let .chooseReplacement .. := g.pending then
-      g.chainPendingReplacement
-        (.finishPostStep .noteOpponentsMilled controller (n := startIdx) (targets := opps.map Target.player))
+      g.chainPendingReplacement (.finishPostStep (.noteOpponentsMilled opps startIdx))
     else
       g.change (.opponentsMilledThisWay (g.anyOpponentMilledSince opps startIdx))
 
