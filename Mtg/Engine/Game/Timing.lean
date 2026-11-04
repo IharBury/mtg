@@ -15,10 +15,31 @@ namespace Game
 def isMultiplayer (g : Game) : Bool :=
   g.players.size > 2
 
-/-- CR 103.8a: in a two-player game the starting player skips the draw step
-of their first turn. Multiplayer games do not skip that draw (CR 103.8c). -/
+/-- CR 103.8a–c / 810.6: in a two-player game or a two-team Two-Headed Giant
+game, the starting player or starting team skips the draw step of their first
+turn. Multiplayer games with more than two teams/sides do not skip that draw
+(CR 103.8c). -/
 def skipsFirstDraw (g : Game) : Bool :=
-  g.isFirstTurn && !g.isMultiplayer && g.activePlayer == g.startingPlayer
+  let teamCount := (g.players.foldl (fun (reps : Array PlayerId) pl =>
+    if reps.any (fun r => r == pl.id || g.areTeammates r pl.id) then reps
+    else reps.push pl.id) #[]).size
+  if teamCount > 2 then false
+  else
+    let sp := g.startingPlayer
+    if g.activePlayer == sp then
+      g.isFirstTurn
+    else if g.areTeammates sp g.activePlayer then
+      let (ok, seen) := g.events.foldl (fun (ok, seen) ev =>
+        match ev.change with
+        | .engine (.startingPlayer _) => (true, (#[] : Array PlayerId))
+        | .rules (.turn (.turnBegan q extra)) =>
+          if ok && !extra && g.areTeammates sp q && !seen.contains q then
+            (true, seen.push q)
+          else
+            (false, seen)
+        | _ => (ok, seen)) (true, (#[] : Array PlayerId))
+      ok && !seen.isEmpty
+    else false
 
 /-- Whether a player currently receives priority (CR 117.3a, 502.4, 514.3,
 103.8a / 500.11). A skipped draw step grants none. -/
@@ -155,10 +176,6 @@ def controlsCastCreaturesFromTop (g : Game) (p : PlayerId) : Bool :=
   (g.permanentsOf p).any (fun o =>
     (g.baseCard o).mayCastCreaturesFromTop && g.retainsPrintedAbilities o)
 
-/-- The top card of `p`'s library, if any. -/
-def libraryTop? (g : Game) (p : PlayerId) : Option GameObject :=
-  (g.player p).library.back?.bind g.findObject?
-
 /-- True when `o` is the top card of `p`'s library and they may cast it as
 a creature spell from there. Timing is still checked by `canCast`. -/
 def controlsPlayLandsFromTop (g : Game) (p : PlayerId) : Bool :=
@@ -168,7 +185,7 @@ def controlsPlayLandsFromTop (g : Game) (p : PlayerId) : Bool :=
 def mayPlayFromLibraryTop (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
   o.zone == .library p &&
     (g.player p).library.back? == some o.id &&
-    ((g.isCreature o && g.controlsCastCreaturesFromTop p) ||
+    (((g.isCreature o || (g.baseCard o).morph.isSome) && g.controlsCastCreaturesFromTop p) ||
       (g.isLand o && g.controlsPlayLandsFromTop p))
 
 def mayPlay (g : Game) (p : PlayerId) (o : GameObject) : Bool :=

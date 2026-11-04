@@ -105,9 +105,12 @@ def isOppStackSpellTarget (g : Game) (p : PlayerId) : Target → Bool
       o.zone == .stack && (g.livingOpponents p).any (fun pl => g.controlledBy o pl.id))
   | _ => false
 
-/-- Opponent-controlled spells currently on the stack. -/
-def oppStackSpells (g : Game) (p : PlayerId) : Array GameObject :=
-  g.stackSpells (fun o => (g.livingOpponents p).any (fun pl => g.controlledBy o pl.id))
+/-- Equip worthy may attach only to a legendary non-Villain red or white
+creature (CR 613.1d / 613.1e / 702.6c). -/
+def isWorthyPermanent (g : Game) (o : GameObject) : Bool :=
+  o.isOnBattlefield && g.isCreature o && g.isLegendary o &&
+    !g.hasSubtype o .villain &&
+    ((g.colors o).contains .red || (g.colors o).contains .white)
 
 /-- Whether `o` has card type `t`, counting type-changing effects on
 permanents. -/
@@ -257,6 +260,8 @@ def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTarge
     g.legalCreatureTargets caster (fun o => o.status.attacking && !g.hasFlying o) sourceId
   | .creatureYouControlSubtype subtype =>
     g.legalCreatureTargets caster (fun o => g.controlledBy o caster && g.hasSubtype o subtype) sourceId
+  | .worthyCreatureYouControl =>
+    g.legalCreatureTargets caster (fun o => g.controlledBy o caster && g.isWorthyPermanent o) sourceId
   | .spell =>
     g.legalStackSpellTargets (fun _ => true) sourceId
   | .creatureSpell =>

@@ -245,10 +245,17 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
     let outerCont? := g.pendingReplacement
     let openCont := g.proposalHadOpenContinuation
     let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
+    let spellPropId? :=
+      g.proposedSpell.bind (fun pr => if pr.kind == .spell then some pr.spellId else none)
     let g := g.withProposalAction .costAction fun g =>
-      g.sacrificeToGraveyard sac
+      let g := g.sacrificeToGraveyard sac
         s!"{(g.player p).name} sacrifices {g.name sac}"
         (cause := some (.costPayment .sacrifice p forObject))
+      match spellPropId? with
+      | some sid =>
+        g.record (GameEvent.announced g.turnNumber sid (costs := #[.sacrifice sac.id])
+          (cause := some (.costPayment .sacrifice p (some sid))))
+      | none => g
     let paused := match g.pending with | .chooseReplacement .. => true | _ => false
     let g :=
       if !paused then
@@ -359,11 +366,12 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
         g.sacrificePermanentsLoop (chosen'.map ((p, ·)))
           (preBattlefield := some preBf)
           (cause := some wardCause)
+      let g := g.afterWardResolved
       let g :=
         match outerCont? with
         | some outer => g.chainPendingReplacement outer
         | none => g
-      return g.afterWardResolved
+      return g
   | .payWard q spellId .sacrificeLegendary =>
     if p != q then
       throw s!"Only {(g.player q).name} may sacrifice for ward"
@@ -375,42 +383,48 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
     let g := (g.change (.pending .none)).sacrificeToGraveyard sac
       s!"{(g.player p).name} sacrifices {g.name sac} (ward)"
       (cause := some (.costPayment .ward p (some spellId)))
+    let g := g.afterWardResolved
     let g :=
       match outerCont? with
       | some outer => g.chainPendingReplacement outer
       | none => g
-    return g.afterWardResolved
+    return g
   | .maySacArtifactOrDiscard q n =>
     if p != q then
       throw s!"Only {(g.player q).name} may sacrifice"
     let some sac := g.findObject? id | throw "no such object"
     if !sac.isOnBattlefield || !g.isArtifact sac || !g.controlledBy sac p then
       throw s!"Can't sacrifice {g.name sac}"
+    let inMayThen := g.mayThenDrop > 0
     let outerCont? := g.pendingReplacement
     let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
     let g := (g.change (.pending .none)).sacrificeToGraveyard sac
       s!"{(g.player p).name} sacrifices {g.name sac}"
     let g := g.finishSacArtifactOrDiscardDraw p n
     return match outerCont? with
-      | some outer => g.chainPendingReplacement outer
+      | some outer =>
+        if inMayThen then g.change (.pushOuterPendingReplacement outer)
+        else g.chainPendingReplacement outer
       | none => g
   | _ => throw "Not time to sacrifice a permanent"
 
-/-- `p` discards `id` from their hand (CR 701.9). -/
+/-- `p` discards `id` from their hand (CR 701.9 / 614.6). -/
 def discardFromHand (g : Game) (p : PlayerId) (id : ObjectId) (chooser : Option PlayerId := none)
     (cause : Option EventCause := none) :
     Game :=
   let card := g.object! id
+  let owner := card.owner
   let msg :=
     match chooser with
     | some c => s!"{(g.player c).name} chooses {card.name}. {(g.player p).name} discards it"
     | none => s!"{(g.player p).name} discards {card.name}"
-  let (g, _) := g.move id (.graveyard card.owner) none (verb := some .discard)
+  let (g, _) := g.move id (.graveyard owner) none (verb := some .discard)
     (actor := some p) (cause := cause)
   if let .chooseReplacement .. := g.pending then
-    g.chainPendingReplacement (.logMessage msg)
-  else
+    g.chainPendingReplacement (.finishPostStep (.logDiscardIfInGraveyard id owner msg))
+  else if (g.followMovedToZone? id (· == .graveyard owner)).isSome then
     g.logMsg msg
+  else g
 
 /-- `p` discards `id`, chosen at random (CR 701.9). -/
 def discardFromHandRandomly (g : Game) (p : PlayerId) (id : ObjectId) : Game :=

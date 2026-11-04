@@ -89,10 +89,12 @@ def pay (g : Game) (p : PlayerId) : Except String Game := do
   | .payWard q spellId .fivePoison =>
     if p != q then
       throw s!"Only {(g.player q).name} may pay ward"
+    let outerCont? := g.pendingReplacement
+    let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
     let g := g.record
       (GameEvent.poisoned g.turnNumber p 5 (cause := .costPayment .ward p (some spellId)))
     let g := g.logMsg s!"{(g.player p).name} gets five poison counters (ward)"
-    return g.finishWardAndDrain
+    return g.finishWardAndDrain outerCont?
   | _ => throw "No spell or ability is waiting to be paid for (CR 601.2h)"
 
 /-- Prefer paying extra generic mana when the non-mana additional-cost

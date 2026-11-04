@@ -12,13 +12,11 @@ namespace Game
 
 /-- CR 608.2b / 115.1c: true when `targets` is non-empty, `kind` has targets,
 and every announced target is illegal for its own non-skipped instance of
-“target” (checking `sourceId` for CR 702.16b protection and “another” rules,
-plus `equipWorthy` when applicable). -/
+“target” (checking `sourceId` for CR 702.16b protection and “another” rules). -/
 def targetsAllIllegalForKind (g : Game) (controller : PlayerId)
     (kind : EffectTargetKind) (targets : Array Target)
     (skippedOptionalSlots : Array Nat := #[])
-    (sourceId : Option ObjectId := none)
-    (equipWorthy : Bool := false) : Bool :=
+    (sourceId : Option ObjectId := none) : Bool :=
   if kind == .none || targets.isEmpty then false
   else
     let chosenSlots : Array Nat :=
@@ -36,14 +34,7 @@ def targetsAllIllegalForKind (g : Game) (controller : PlayerId)
               g.legalTargetsForAtomicKind controller slotKind sourceId
             else
               g.legalTargetsForKind controller slotKind sourceId
-        let baseOk := legal.contains t
-        let worthyOk :=
-          if !equipWorthy then true
-          else
-            match t with
-            | Target.permanent id => (g.findObject? id).any g.isWorthyPermanent
-            | _ => false
-        if baseOk && worthyOk then some t else none
+        if legal.contains t then some t else none
     if surviving.isEmpty then true
     else
       match kind with
@@ -77,15 +68,9 @@ def abilityTargetsAllIllegal (g : Game) (controller : PlayerId) (obj : GameObjec
       match t with
       | some ab => ab.targetKind
       | none => .none
-  let equipWorthy :=
-    t.isNone &&
-      e.any (fun eff => eff.resolution == Effect.attachToTargetCreatureYouControl.resolution) &&
-      ((g.baseCard obj).hasEquipWorthy ||
-        (obj.sourceId.bind g.damageSourceById?).any (fun s => (g.baseCard s).hasEquipWorthy))
   g.targetsAllIllegalForKind controller kind targets
     (skippedOptionalSlots := skippedOptionalSlots)
     (sourceId := obj.sourceId)
-    (equipWorthy := equipWorthy)
 
 /-- Resolve a CR 603.7 delayed triggered ability on the stack. -/
 def resolveDelayedTrigger (g : Game) (controller : PlayerId) (kind : DelayedTriggerKind)
@@ -218,7 +203,7 @@ partial def runSpellModesAndEmpower (g : Game) (controller : PlayerId)
     let restTargets := remainingTargets.extract n remainingTargets.size
     let g :=
       if g.continuations.isEmpty then g
-      else g.change (.continuation (.resolvingSkippedSlots curSkipped))
+      else g.change (.resolvingSkippedSlots curSkipped)
     let pendingBefore := g.pending
     let randomBefore := g.afterRandom
     let g :=

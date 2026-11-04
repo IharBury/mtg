@@ -11,7 +11,25 @@ namespace Mtg.Engine
 
 namespace Start
 
-def materializeSeat (g : Game) (seatIdx : Nat) (seat : Seat) : Except String Game := do
+def seatTeamSize (seats : Array Seat) (seatIdx : Nat) : Nat := Id.run do
+  let n := seats.size
+  if seatIdx ≥ n then return 1
+  if !seats.any (·.teammate.isSome) then return 1
+  let linked (a b : Nat) : Bool :=
+    a < n && b < n && a != b &&
+      (seats[a]!.teammate == some ⟨b⟩ || seats[b]!.teammate == some ⟨a⟩)
+  let mut team : Array Nat := #[seatIdx]
+  let mut idx := 0
+  while idx < team.size do
+    let u := team[idx]!
+    for v in [0:n] do
+      if !team.contains v && linked u v then
+        team := team.push v
+    idx := idx + 1
+  return team.size
+
+def materializeSeat (g : Game) (seatIdx : Nat) (seat : Seat) (teamSize : Nat := 1) :
+    Except String Game := do
   if seat.deck.isEmpty then
     throw s!"{seat.name} has an empty deck"
   match validateDeck g.format seat.deck with
@@ -32,10 +50,13 @@ def materializeSeat (g : Game) (seatIdx : Nat) (seat : Seat) : Except String Gam
           | none => acc) acc) #[]
   -- CR 400.11b: sideboard cards are outside the game. They become objects
   -- only when an effect reaches outside the game.
+  -- CR 810.4 / 810.11: shared starting life total is 30 for a two-player team,
+  -- +15 for each additional teammate beyond the second.
+  let startingLife : Int := if teamSize ≤ 1 then 20 else Int.ofNat (15 * teamSize)
   let player : Player := {
     id := pid
     name := seat.name
-    life := 20
+    life := startingLife
     hasCommander := hasCommander
     commanderColorIdentity := commanderColorIdentity
     commanderCreatureTypes := commanderCreatureTypes
@@ -60,7 +81,7 @@ def startWithRng (cfg : StartConfig) : Except String (Game × Rng) := do
     .format cfg.format,
     .brawl cfg.brawl ]
   for i in [0:cfg.seats.size] do
-    g ← materializeSeat g i cfg.seats[i]!
+    g ← materializeSeat g i cfg.seats[i]! (teamSize := seatTeamSize cfg.seats i)
   let rng := Rng.ofSeed cfg.seed
   -- Determine starting player (CR 103.1).
   let (rng, g1) :=

@@ -310,18 +310,24 @@ def chooseCreaturesDestroyRest (g : Game) (keep : Array ObjectId) : Game :=
       (preBattlefield := some preBf)
 
 /-- Two different players each draw a card (Gleaming Splendor). The same
-player cannot be chosen twice. -/
+player cannot be chosen twice. Ordered in APNAP order (CR 101.4 / 121.2c). -/
 def twoPlayersEachDraw (g : Game) (a b : PlayerId) : Except String Game := do
   if a == b then
     throw "Two target players must be different"
+  let ordered := g.apnapOrder.filter (fun p => p == a || p == b)
+  let first := ordered[0]?.getD a
+  let second := if first == a then b else a
   let (g, cause?) : Game × Option EventCause :=
     match g.currentResolvingContext? with
     | some (src, ctrl) =>
-      let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some a)) src
+      let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some first)) src
       (g, some c)
     | none => (g, none)
-  let g := g.draw a 1 (cause := cause?)
-  return g.draw b 1 (cause := cause?)
+  let g := g.draw first 1 (cause := cause?)
+  if let .chooseReplacement .. := g.pending then
+    return g.chainPendingReplacement (.finishPostStep (.twoPlayersEachDrawSecond second 1 cause?))
+  else
+    return g.draw second 1 (cause := cause?)
 
 end Game
 end Mtg.Engine

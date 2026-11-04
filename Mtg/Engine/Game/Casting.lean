@@ -22,8 +22,10 @@ def cosmicAwarenessFlash (g : Game) (p : PlayerId) : Bool :=
       | _ => false)) &&
     g.players.any (fun q => q.id != p && !g.areTeammates p q.id && g.loggedSpellsCast q.id > 0)
 
-/-- Timing check shared by beginning to cast a spell or an Adventure (CR 601.3). -/
-def timingAllowsCast (g : Game) (p : PlayerId) (face : CardDef) : Bool :=
+/-- Timing check shared by beginning to cast a spell or an Adventure (CR 601.3)
+and CR 601.2b Morph vs. printed-face selection (`excludeStackId := some prop.spellId`). -/
+def timingAllowsCast (g : Game) (p : PlayerId) (face : CardDef)
+    (excludeStackId : Option ObjectId := none) : Bool :=
   let hasConditionalFlash :=
     match face.flashIfYouControlSubtype with
     | some t => g.controlsAnySubtype p #[t]
@@ -32,10 +34,20 @@ def timingAllowsCast (g : Game) (p : PlayerId) (face : CardDef) : Bool :=
     face.isCreature && g.loggedCreatureSpells p == 0 &&
       (g.permanentsOf p).any (fun o =>
         (g.baseCard o).firstCreatureHasFlash && g.retainsPrintedAbilities o)
-  g.hasPriority p &&
+  let prioOk :=
+    match excludeStackId with
+    | some _ => !g.over && g.priority == p && g.playersReceivePriority
+    | none => g.hasPriority p
+  let sorceryOk :=
+    match excludeStackId with
+    | some sid =>
+      !g.over && !(g.stack.any (·.objectId != sid)) &&
+        g.step.isMainPhase && g.activePlayer == p && g.priority == p
+    | none => g.asSorcery? p
+  prioOk &&
   (if face.hasSorcerySpeed && !hasConditionalFlash && !radagastFlash &&
       !g.cosmicAwarenessFlash p then
-    g.asSorcery? p else true)
+    sorceryOk else true)
 
 /-- Every card face the game knows: each object's card, its other face,
 Adventure, and prepare spell, and each sideboard card. A prepare spell's name
@@ -70,10 +82,29 @@ def graveyardCastThresholdMet (g : Game) (p : PlayerId) (cardId : ObjectId) (fac
   | some n => ((g.player p).graveyard.filter (· != cardId)).size >= n
   | none => true
 
-/-- Whether `p` may begin to cast `o` (CR 601.3). Having enough mana in the
-pool is not required; mana abilities are activated at CR 601.2g. Additional
-non-mana costs such as sacrificing a permanent must still be payable. -/
-def canCast (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
+/-- Characteristics of a face-down Morph spell on the stack (CR 702.37a / 708.2a). -/
+def morphSpellFace : CardDef :=
+  { name := "", types := #[.creature], power := some 2, toughness := some 2,
+    manaCost := ManaCost.ofGeneric 3 }
+
+/-- Whether `p` may begin to cast `o` face down via Morph (CR 702.37a,c / 708.2). -/
+def canCastMorphFaceDown (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
+  let bc := { g.baseCard o with keywords := g.currentKeywords o }
+  let fromGraveyard := o.zone == .graveyard o.owner
+  let origPerm := g.playPermission o
+  let altPerm := origPerm.any (fun pm => pm.withoutManaCost || pm.payLifeEqualManaValue)
+  bc.morph.isSome && !fromGraveyard && !altPerm &&
+    (origPerm.bind (·.prepareSource)).isNone &&
+    !g.splitSecondOnStack && !g.combatLocksNonManaAbilities &&
+    !g.opponentsCantCastOnActiveTurn p && !g.spellNameForbidden "" &&
+    !g.cantCastSpellsThisTurn p &&
+    g.mayPlay p o &&
+    (match origPerm with
+     | some perm => perm.ignoreTiming || g.timingAllowsCast p morphSpellFace
+     | none => g.timingAllowsCast p morphSpellFace)
+
+/-- Whether `p` may begin to cast `o` using its front-face characteristics (CR 601.3). -/
+def canCastFrontFace (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
   let bc := { g.baseCard o with keywords := g.currentKeywords o }
   let fromGraveyard := o.zone == .graveyard o.owner
   let isFreeFromGy := fromGraveyard && g.freeCastFromGraveyard o
@@ -83,6 +114,7 @@ def canCast (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
   !g.isLand o && !g.splitSecondOnStack && !g.combatLocksNonManaAbilities &&
   !g.opponentsCantCastOnActiveTurn p && !g.spellNameForbidden (g.name o) &&
   !g.cantCastSpellsThisTurn p &&
+  (o.zone != .library p || g.isCreature o) &&
   g.mayPlay p o &&
   g.graveyardCastThresholdMet p o.id bc &&
   (match g.playPermission o with
@@ -112,6 +144,12 @@ def canCast (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
   else if bc.requiresTarget then
     bc.allowsZeroTargets || !(g.legalSpellTargets p o |>.isEmpty)
   else bc.isPermanentCard || bc.spellEffect.isSome || isModalSpellFace bc
+
+/-- Whether `p` may begin to cast `o` (CR 601.3 / 702.37a). Having enough mana
+in the pool is not required; mana abilities are activated at CR 601.2g. Additional
+non-mana costs such as sacrificing a permanent must still be payable. -/
+def canCast (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
+  g.canCastFrontFace p o || g.canCastMorphFaceDown p o
 
 /-- Whether `p` can pay a mandatory additional cost of `o` from `available`
 (another card to discard, a permanent to sacrifice, or the generic
@@ -157,6 +195,58 @@ def adventureExileForbidsRecast (g : Game) (o : GameObject) : Bool :=
 /-- Legal targets for beginning to cast card `c` (from hand or as an Adventure). -/
 def legalCastTargets (g : Game) (p : PlayerId) (c : CardDef) : Array Target :=
   g.legalTargetsForFace p c none
+
+/-- Validate front-face timing, prohibitions, targets, and mandatory additional
+costs when casting `card` as `face` (either upfront in `castSpell` or when
+choosing the printed cost instead of Morph at `announceKicker`; CR 601.2b–c /
+601.3 / 702.37a). -/
+def validateFrontFaceCast (g : Game) (p : PlayerId) (card : GameObject) (face : CardDef)
+    (asAdventure : Bool := false) (sneakCost : Option ManaCost := none)
+    (origPermOverride : Option PlayPermission := none)
+    (excludeIdOverride : Option ObjectId := none) : Except String Unit := do
+  let checkId := excludeIdOverride.getD card.id
+  if card.zone == .library p && !asAdventure && !face.isCreature then
+    throw "You may only cast creature spells from the top of your library"
+  if g.spellNameForbidden face.name then
+    throw s!"Spells named {face.name} can't be cast"
+  if face.isLand then
+    throw "Lands are played, not cast (CR 305)"
+  if !g.graveyardCastThresholdMet p card.id face then
+    let n := face.castOnlyIfGraveyardAtLeast.getD 0
+    throw s!"{face.name} can be cast only with {n} or more other cards in your graveyard"
+  let origPerm := origPermOverride.orElse (fun _ => g.playPermission card)
+  let fromGraveyard := card.zone == .graveyard card.owner
+  let isFreeFromGy := fromGraveyard && g.freeCastFromGraveyard card
+  let prioOk :=
+    if excludeIdOverride.isSome then !g.over && g.priority == p && g.playersReceivePriority
+    else g.hasPriority p
+  if !(g.timingAllowsCast p face (excludeStackId := excludeIdOverride) ||
+      origPerm.any (·.ignoreTiming) || sneakCost.isSome ||
+      (isFreeFromGy && card.zone == .graveyard p && prioOk)) then
+    throw s!"{face.name} has sorcery speed"
+  if isModalSpellFace face then
+    let tcs := g.evalLayer3 card
+    if !(effectiveSpellModes face).any (fun e =>
+        let m := if tcs.isEmpty then e else TextChange.applyEffect tcs e
+        g.spellModeIsChoosable p m (some checkId)) &&
+        !isReturnUpToTwoGyModal face && !face.allowsZeroTargets then
+      throw s!"{face.name} requires a target"
+  else if face.requiresTarget &&
+      (g.legalTargetsForFace p face none (tcs := g.evalLayer3 card) (sourceId := some checkId)).isEmpty &&
+      !face.allowsZeroTargets then
+    throw s!"{face.name} requires a target"
+  if face.additionalCostSacrificeArtifactOrCreature &&
+      face.additionalCostOrPayGeneric.isNone &&
+      !(g.permanentsOf p).any (fun perm =>
+        perm.id != checkId &&
+          if face.additionalCostSacrificeCreatureOrPlaneswalker then
+            g.isCreature perm || g.isPlaneswalker perm
+          else if face.additionalCostSacrificeCreature then g.isCreature perm
+          else g.isCreature perm || g.isArtifact perm) then
+    throw s!"{face.name} requires sacrificing an artifact or creature"
+  if face.additionalCostSacrificeCreature &&
+      !(g.creaturesControlledBy p).any (·.id != checkId) then
+    throw s!"{face.name} requires sacrificing a creature"
 
 /-- Whether `p` may begin to cast `o` as an Adventure (CR 715.3). -/
 def canCastAdventure (g : Game) (p : PlayerId) (o : GameObject) : Bool :=

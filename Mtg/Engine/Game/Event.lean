@@ -130,7 +130,7 @@ def ReplacementTier.rank : ReplacementTier → Nat
 
 /-- The kind of replacement effect (CR 614 / 616.1a–e). -/
 inductive ReplacementKind where
-  /-- CR 616.1a: Intrinsic enters-tapped replacement on `object`. -/
+  /-- CR 616.1e / 614.1c / 614.12: Intrinsic enters-tapped replacement on `object`. -/
   | entersTappedSelf (object : ObjectId)
   /-- CR 616.1a / 614.12: Pay `life` life as `object` enters so it doesn't enter tapped. -/
   | entersUntappedPayLife (object : ObjectId) (life : Nat)
@@ -198,7 +198,6 @@ deriving Repr, Inhabited, BEq
 
 /-- Priority tier of a `ReplacementKind` under CR 616.1a–e. -/
 def ReplacementKind.tier : ReplacementKind → ReplacementTier
-  | .entersTappedSelf _ => .self
   | .entersUntappedPayLife .. => .self
   | .entersTappedDeclinePayLife _ => .self
   | .entersUntappedBehold .. => .self
@@ -1140,6 +1139,14 @@ inductive FrcPostStep where
   | tamiyoStunLoop (controller : PlayerId) (targetId : ObjectId) (beforeStun : Nat)
       (remainingIds : Array ObjectId)
   | factOrFictionGyLoop (controller : PlayerId) (gyIds : Array ObjectId)
+  | swordsGainLife (targetId : ObjectId) (fallbackOwner : PlayerId) (fallbackPower : Nat)
+  | putBackOnTopLoop (p : PlayerId) (remainingIds : Array ObjectId)
+      (movedCount : Nat := 0) (pendingId : Option ObjectId := none)
+  | logHandDiscard (p : PlayerId) (cardId : ObjectId) (destOwner : PlayerId)
+      (cardName : String)
+  | logHandDiscardToBottom (p : PlayerId) (cardId : ObjectId) (destOwner : PlayerId)
+      (cardName : String)
+  | logExploreLandToHand (controller : PlayerId) (cardId : ObjectId) (cardName : String)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- Exile follow-up mode for `TriggeredAbilities.runTriggerExileLoop`. -/
@@ -1237,7 +1244,7 @@ inductive PostStep where
       (cause : Option EventCause)
   | noteExcessDamageDealt (targetId : ObjectId) (lethal startIdx : Nat)
   | notePermanentDealtDamage (targetId : ObjectId) (startIdx : Nat)
-  | logTwoNonlegendaryCopyTokens (sourceId : Option ObjectId)
+  | logTwoNonlegendaryCopyTokens (sourceId : Option ObjectId) (startEventIdx : Nat := 0)
   | discardCleanupIds (p : PlayerId) (remainingIds : Array ObjectId)
       (justDiscarded : Option ObjectId := none)
   | postSbaCleanup (sba : Bool)
@@ -1397,11 +1404,74 @@ inductive PostStep where
   | finishSurveilHandMove (p : PlayerId) (fromId : ObjectId) (cardName : String)
       (remainingGy : Array ObjectId) (cause : Option EventCause)
   | logPutOnOwnerLibrary (fromId : ObjectId) (owner : PlayerId) (cardName : String)
-      (top : Bool)
+      (top : Bool) (msgOverride : Option String := none)
   | logDealDamageEachOpposingCreature (amount : Nat)
   | finishZemoBoastExileLogs (p : PlayerId) (sourceId : ObjectId) (preIds : Array ObjectId)
   | plusOneOnCreatedTokensLoop (controller : PlayerId) (remainingIds : Array ObjectId)
       (amount : Nat)
+  | moveIdsInOrderLoop (ids : Array ObjectId) (dest : Zone) (log : String)
+      (cause : Option EventCause) (placedCount : Nat := 0)
+      (prevLibraryMoved : Option (ObjectId × PlayerId) := none)
+  | createMerfolkForBlueSymbols (controller : PlayerId) (lastKnownPower : Option Int)
+  | incrementPlanSource (controller : PlayerId) (sourceId : Option ObjectId)
+  | millOpponentsOnly (opponents : Array PlayerId) (n : Nat) (cause : Option EventCause)
+  | millOpponentsAndNote (opponents allPids : Array PlayerId) (n : Nat)
+      (cause : Option EventCause)
+  | conniveTricksterTarget (caster : PlayerId) (connive : Option ObjectId)
+      (sourceId : Option ObjectId)
+  | topOrBottomDamageFollowup (fromId : ObjectId) (owner : PlayerId) (cardName : String)
+      (top : Bool) (damage : Nat) (sourceId : Option ObjectId)
+  | gainLifePlayer (p : PlayerId) (amount : Nat) (cause : Option EventCause := none)
+  | drawCardsPlayer (p : PlayerId) (amount : Nat) (cause : Option EventCause := none)
+  | sheHulkAfterDamage (p : PlayerId) (startIdx : Nat)
+  | copyNontokenCreaturesAfterEnter (startEventIdx : Nat)
+  | countersOnCreatureTargetsLoop (controller : PlayerId) (remaining : Array Target)
+      (kind : CounterKind) (n : Nat) (sourceId : Option ObjectId)
+  | targetPlayersGainLifeLoop (controller : PlayerId) (remaining : Array Target)
+      (n : Nat) (sourceId : Option ObjectId) (cause : Option EventCause)
+  | twoPlayersDrawSecond (controller second : PlayerId) (sourceId : Option ObjectId)
+      (cause : Option EventCause)
+  | twoPlayersEachDrawSecond (second : PlayerId) (cards : Nat) (cause : Option EventCause)
+  | bounceEachTargetLoop (controller : PlayerId) (kind : EffectTargetKind)
+      (remaining : Array (Nat × Target)) (sourceId : Option ObjectId)
+  | untapTargetsLoop (controller : PlayerId) (kind : EffectTargetKind)
+      (remaining : Array (Nat × Target)) (sourceId : Option ObjectId)
+  | damageUpToOneAndPlayerLoop (controller : PlayerId) (kind : EffectTargetKind)
+      (remaining : Array (Nat × Target)) (n : Nat) (srcName : String)
+      (sourceId : Option ObjectId) (cause : Option EventCause)
+  | plusOneOnEachTargetLoop (controller : PlayerId) (kind : EffectTargetKind)
+      (remaining : Array (Nat × Target)) (n : Nat) (sourceId : Option ObjectId)
+  | minusOnesPerOpponentLoop (controller : PlayerId) (kind : EffectTargetKind)
+      (remaining : Array (Nat × Target)) (x : Nat) (sourceId : Option ObjectId)
+  | divideSevenDamageLoop (controller : PlayerId) (kind : EffectTargetKind)
+      (remaining : Array (Nat × Target)) (division : Array Nat) (sourceId : Option ObjectId)
+  | returnInstantsLoop (controller : PlayerId) (kind : EffectTargetKind)
+      (remaining : Array Target) (sourceId : Option ObjectId)
+  | putPlusOnesUpToLastKnownLoop (controller : PlayerId) (remaining : Array Target)
+      (sourceId : Option ObjectId)
+  | attachEquipmentToHostLoop (controller : PlayerId) (kind : EffectTargetKind)
+      (hostId : ObjectId) (remaining : Array (Nat × Target)) (sourceId : Option ObjectId)
+  | copyTokenOfSourceAfterCreate (controller : PlayerId) (cardName : String)
+      (startEventIdx : Nat)
+  | fblthpMoveToHandLoop (controller : PlayerId) (remainingIds : Array ObjectId)
+      (cause : EventCause)
+  | fblthpShuffleAfterHand (controller : PlayerId)
+  | putSourceCountersPlusOneAndLog (targetId : ObjectId) (plusOnes : Nat)
+      (byPlayer : Option PlayerId) (hadOtherCounters : Bool) (beforePlusOne : Nat)
+  | logInvestigateClueCreated (controller : PlayerId) (startEventIdx : Nat)
+  | revealUntilCreatureToHandAfterMove (controller : PlayerId) (cardId : ObjectId)
+      (cardName : String) (rest : Array ObjectId) (cause : EventCause)
+  | logSacrificedIfInGraveyard (cardId : ObjectId) (owner : PlayerId) (cardName : String)
+  | movePublicCardsToHandLoop (p : PlayerId) (remainingIds : Array ObjectId)
+      (maxLeft : Nat) (playerPutsStyle : Bool) (cause : Option EventCause)
+      (pendingCard : Option (ObjectId × String) := none)
+      (requirePublicZone : Bool := true)
+  | exileOpponentLibrariesLoop (remainingOpps : Array PlayerId)
+      (curOpp : Option PlayerId := none) (curIds : Array ObjectId := #[])
+      (movedAnyForCur : Bool := false) (pendingId : Option ObjectId := none)
+  | worldsWithinWorldsAfterPut (exiled : Array ObjectId)
+      (validChosen : Array (ObjectId × PlayerId × String)) (sourceId : Option ObjectId)
+  | logDiscardIfInGraveyard (cardId : ObjectId) (owner : PlayerId) (msg : String)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- Stage of `StateBasedActions.finishSbaSweep` across `Pending.chooseReplacement` pauses. -/
@@ -1446,7 +1516,7 @@ inductive FlickerStage where
   | postReturn
 deriving DecidableEq, Repr, Inhabited, BEq
 
-/-- Sequential cost-payment stage of `PriorityActions.finishProposedSpellCosts`
+/-- Sequential cost-payment stage of `Decisions.finishProposedSpellCosts`
 across `Pending.chooseReplacement` pauses (CR 601.2h). -/
 inductive ProposedSpellCostStage where
   | teamwork
@@ -1474,7 +1544,7 @@ inductive PendingReplacement where
   | markDamageOn (targetId : ObjectId) (n : Nat) (msg : String)
       (deathtouch : Bool) (source : Option EventObject) (combat : Bool)
       (unpreventable : Bool) (cause : Option EventCause)
-  | dealAssignedCombatDamage (applied : Array ReplacementId := #[]) (startIdx : Nat := 0)
+  | dealAssignedCombatDamage (startIdx : Nat := 0)
   | gainLife (p : PlayerId) (n : Nat) (cause : Option EventCause)
   | addPlusOnePlusOneTo (targetId : ObjectId) (n : Nat) (entersWith : Bool)
       (byPlayer : Option PlayerId) (cause : Option EventCause)
@@ -1511,6 +1581,7 @@ inductive PendingReplacement where
       (attacking : Bool) (attackingTarget : Option AttackTarget)
       (applyFoodBonus : Bool) (extraCounters : CounterBag)
       (recordRecent : Bool := false) (cause : Option EventCause)
+      (count : Nat := 1)
   | createTokenBatches (batches : Array ProposedTokenBatch)
       (attacking : Bool) (attackingTarget : Option AttackTarget)
       (extraCounters : CounterBag) (recordRecent : Bool)
@@ -1613,7 +1684,7 @@ inductive PendingReplacement where
       (n : Nat) (attach : Option ObjectId := none) (stage : AmassStage := .putCounters)
       (cause : Option EventCause := none)
   | finishFreshAmass (controller : PlayerId) (subtype : CardSubtype) (n : Nat)
-      (attach : Option ObjectId) (cause : Option EventCause) (minId : Nat := 0)
+      (attach : Option ObjectId) (cause : Option EventCause) (startEventIdx : Nat := 0)
   | finishDealDamageLoseIndestructibleExile (targetId : ObjectId) (targetName : String)
       (n : Nat) (cause : EventCause)
   | finishPlaceSearched (p : PlayerId) (fromId : ObjectId) (name : String)
@@ -1714,7 +1785,10 @@ inductive PendingReplacement where
       (emptyTail : Bool := false) (cause : Option EventCause := none)
       (logCard : Option String := none) (freshCount : Option Nat := none)
   | exilePermanentsLoop (remainingIds : Array ObjectId) (logExile : Bool := true)
-      (cause : Option EventCause := none) (logCard : Option String := none)
+      (cause : Option EventCause := none) (logCard : Option (ObjectId × String) := none)
+  | causeDealsDamageToOpponentsLoop (remainingOpps : Array PlayerId) (n : Nat)
+      (name : String) (causeSrc : Option EventObject) (cause : Option EventCause)
+      (pendingDmg : Option (PlayerId × Nat) := none)
   | flickerLoop (remainingIds : Array ObjectId)
       (exiledPreIds : Array ObjectId := #[])
       (enteredFromIds : Array ObjectId := #[])
@@ -2247,6 +2321,7 @@ namespace EngineChange
 @[inline] def resolvingSpell (v : Option ObjectId) : EngineChange := .continuation (.resolvingSpell v)
 @[inline] def resolvingAbility (v : Option ObjectId) : EngineChange := .continuation (.resolvingAbility v)
 @[inline] def resolvingDivision (v : Array Nat) : EngineChange := .continuation (.resolvingDivision v)
+@[inline] def resolvingSkippedSlots (v : Array Nat) : EngineChange := .continuation (.resolvingSkippedSlots v)
 @[inline] def afterRandom (v : AfterRandom) : EngineChange := .continuation (.afterRandom v)
 @[inline] def resolutionFinish (v : Option ResolutionFinish) : EngineChange := .continuation (.resolutionFinish v)
 @[inline] def pendingResolvedEvent (v : Option (EventObject × PlayerId × EventCause)) : EngineChange := .continuation (.pendingResolvedEvent v)
@@ -2734,6 +2809,12 @@ def poisoned (turn : Nat) (player : PlayerId) (n : Nat)
     (cause : EventCause) : GameEvent :=
   rules turn (.permanent (.counters (.player player) .poison (.put n) byPlayer)) cause
 
+/-- `player` got or lost `kind` counters (CR 122.1). -/
+def playerCounters (turn : Nat) (player : PlayerId) (kind : CounterKind)
+    (delta : CounterDelta) (byPlayer : Option PlayerId := none)
+    (cause : EventCause) : GameEvent :=
+  rules turn (.permanent (.counters (.player player) kind delta byPlayer)) cause
+
 /-- `player` proliferated (CR 701.34 / 610.1). -/
 def proliferated (turn : Nat) (player : PlayerId)
     (id : Option EffectId := none)
@@ -3053,7 +3134,7 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : Option Obje
     | .zone (.moved before _ .battlefield (.graveyard _) _ _ _ _), .anotherGoblinOrcArmyDies =>
       yours before && other before && before.creature && before.goblinOrcArmy
     | .zone (.moved before _ .battlefield (.graveyard _) _ _ _ _), .villainYouControlDies =>
-      yours before && other before && before.creature && before.villain
+      yours before && before.creature && before.villain
     | .zone (.moved before _ .battlefield (.graveyard _) _ _ _ _), .attackingCreatureYouControlDies =>
       yours before && before.creature && before.attacking
     | .zone (.moved before _ .battlefield (.graveyard _) _ _ _ _), .oneOrMoreOtherCreaturesDie =>
@@ -3177,6 +3258,12 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : Option Obje
       you p && (spell.artifact || spell.creature)
     | .cast (.spellCast _ p _), .fra .youCastEquipmentOrTargetingCreatureYouControl =>
       you p
+    | .cast (.spellCast _ p _), .becomesTarget =>
+      sourceId.isSome && opp p
+    | .cast (.spellCast _ p _), .ward =>
+      sourceId.isSome && opp p
+    | .cast (.spellCast _ _ _), .spellTargetsSource =>
+      sourceId.isSome
     | .combat (.attackersDeclared p decls), .attacking =>
       you p && decls.any (fun (attacker, _) => this attacker)
     | .combat (.attackersDeclared p decls), .youAttack =>
@@ -3289,14 +3376,31 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : Option Obje
       you p && source.creature
     | .cast (.abilityActivated _ _ p (.nonMana (some _) ..)), .fra .opponentActivatesLoyaltyAbility => !you p
     | .cast (.abilityActivated _ _ p (.nonMana ..)), .youTargetSomething => you p
+    | .cast (.abilityActivated _ _ p (.nonMana ..)), .becomesTarget =>
+      sourceId.isSome && opp p
+    | .cast (.abilityActivated _ _ p (.nonMana ..)), .ward =>
+      sourceId.isSome && opp p
     | .cast (.targeted _ targets ..), .becomesTarget =>
-      targets.any (fun t => match t with | .permanent oid => some oid == sourceId | _ => false)
-    | .cast (.targeted _ targets ..), .spellTargetsSource =>
-      targets.any (fun t => match t with | .permanent oid => some oid == sourceId | _ => false)
+      let causeOpp :=
+        match e.cause? with
+        | some (.costPayment _ p _) | some (.oneShotEffect _ _ (some p)) => opp p
+        | _ => true
+      sourceId.isSome && causeOpp &&
+        targets.any (fun t => match t with | .permanent oid => some oid == sourceId | _ => false)
     | .cast (.targeted _ targets ..), .ward =>
-      targets.any (fun t => match t with | .permanent oid => some oid == sourceId | _ => false)
+      let causeOpp :=
+        match e.cause? with
+        | some (.costPayment _ p _) | some (.oneShotEffect _ _ (some p)) => opp p
+        | _ => true
+      sourceId.isSome && causeOpp &&
+        targets.any (fun t => match t with | .permanent oid => some oid == sourceId | _ => false)
     | .cast (.targeted _ targets ..), .youTargetSomething =>
-      targets.any (fun t => match t with | .permanent _ | .player _ => true | _ => false)
+      let causeYou :=
+        match e.cause? with
+        | some (.costPayment _ p _) | some (.oneShotEffect _ _ (some p)) => you p
+        | _ => true
+      causeYou &&
+        targets.any (fun t => match t with | .permanent _ | .player _ => true | _ => false)
     | .zone (.created object p), .fra .youCreateCreatureTokens =>
       object.zone == .battlefield && object.token && you p && object.creature
     | _, _ => false

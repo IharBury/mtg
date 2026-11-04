@@ -314,60 +314,6 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
     let (g, (changed, _paused)) := g.withBatchReturn none fun g => Id.run do
       let mut g := g
       let mut changed := false
-      -- Players losing (CR 704.5a–c / 810.8a,d). They leave after this SBA pass
-      -- if the game continues (CR 800.4 / 800.4a).
-      let hasCantLose (g : Game) (pid : PlayerId) : Bool :=
-        (g.permanentsOf pid).any (fun o =>
-          (g.baseCard o).cantLoseGame && g.retainsPrintedAbilities o) ||
-        (g.objects.filter (fun o =>
-          o.zone == .command && g.controlledBy o pid)).any (fun o =>
-            (g.baseCard o).cantLoseGame && g.retainsPrintedAbilities o)
-      for pl in g.players do
-        let curPl := g.player pl.id
-        if !curPl.lost then
-          let shielded :=
-            hasCantLose g pl.id ||
-              g.livingPlayers.any (fun mate =>
-                g.areTeammates pl.id mate.id && hasCantLose g mate.id)
-          if shielded then
-            pure ()
-          else
-            let hasTeammate := g.players.any (fun m => g.areTeammates pl.id m.id)
-            let poisonLoss :=
-              if hasTeammate then
-                let teamPoison :=
-                  g.players.foldl (fun acc m =>
-                    if m.id == pl.id || g.areTeammates pl.id m.id then acc + (g.player m.id).poison
-                    else acc) 0
-                teamPoison ≥ 15
-              else
-                curPl.poison ≥ 10
-            let loss? : Option (LossReason × StateBasedAction) :=
-              if curPl.life ≤ 0 then some (.lifeZeroOrLess, .lifeZeroOrLess)
-              else if g.drewFromEmpty pl.id then some (.decked, .drewFromEmpty)
-              else if poisonLoss then some (.poison, .tenPoison)
-              else none
-            match loss? with
-            | none => pure ()
-            | some (lossReason, sbaKind) =>
-              g := g.record (GameEvent.playerLost g.turnNumber pl.id lossReason
-                (cause := some (.stateBased sbaKind)))
-              let detail :=
-                match lossReason with
-                | .lifeZeroOrLess => s!"life total {curPl.life}"
-                | .decked => "drew from empty library"
-                | .poison => "poison"
-                | _ => "state-based action"
-              g := g.logMsg s!"{curPl.name} loses the game ({detail})"
-              for mate in g.players do
-                if mate.id != pl.id && !(g.player mate.id).lost && g.areTeammates pl.id mate.id then
-                  g := g.record (GameEvent.playerLost g.turnNumber mate.id lossReason
-                    (cause := some (.stateBased sbaKind)))
-                  g := g.logMsg s!"{mate.name} loses the game (teammate lost; CR 810.8a)"
-              changed := true
-      match g.decideGameIfFinished with
-      | some finished => return (finished, (true, true))
-      | none => pure ()
       -- Waiting for a legend-rule choice: do not apply further SBAs until
       -- the player keeps one copy (CR 704.5j). Drop a stale prompt if the
       -- group is no longer two or more.
@@ -386,9 +332,11 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
           g := g.change (.pending .none)
       | _ => pure ()
       -- Capture all applicable CR 704.5 state-based actions simultaneously
-      -- against the start-of-pass state BEFORE applying CR 704.5q counter
-      -- annihilation so simultaneous 0-toughness death LKI retains its
-      -- pre-annihilation counters and Pass 1 does not sweep newly dead tokens
+      -- against the start-of-pass state BEFORE recording `GameEvent.playerLost`
+      -- or applying CR 704.5q counter annihilation so a player losing in this
+      -- pass does not alter battlefield control or continuous effects mid-pass
+      -- (CR 704.3 / 800.4a), simultaneous 0-toughness death LKI retains its
+      -- pre-annihilation counters, and Pass 1 does not sweep newly dead tokens
       -- or newly unattached Auras/Equipment until Pass 2 (CR 704.3 / 704.8).
       let preBf := g.battlefield
       let victims : Array SbaGraveyardMove :=
@@ -482,6 +430,54 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
             if g.isCreature o || g.isBattle o || (!g.isAura o && !g.isEquipment o) then
               some (o.id, hostId)
             else none)
+      -- Players losing (CR 704.5a–c / 704.6a–b / 810.8a,c,d / 810.11). They
+      -- leave after this SBA pass if the game continues (CR 800.4 / 800.4a).
+      let hasCantLose (g : Game) (pid : PlayerId) : Bool :=
+        (g.permanentsOf pid).any (fun o =>
+          (g.baseCard o).cantLoseGame && g.retainsPrintedAbilities o) ||
+        (g.objects.filter (fun o =>
+          o.zone == .command && g.controlledBy o pid)).any (fun o =>
+            (g.baseCard o).cantLoseGame && g.retainsPrintedAbilities o)
+      for pl in g.players do
+        let curPl := g.player pl.id
+        if !curPl.lost then
+          let shielded :=
+            hasCantLose g pl.id ||
+              g.livingPlayers.any (fun mate =>
+                g.areTeammates pl.id mate.id && hasCantLose g mate.id)
+          if shielded then
+            pure ()
+          else
+            let team := g.teamMembers pl.id
+            let poisonThreshold :=
+              if team.size ≤ 1 then 10 else 10 + 5 * (team.size - 1)
+            let poisonLoss := g.teamPoison pl.id ≥ poisonThreshold
+            let loss? : Option (LossReason × StateBasedAction) :=
+              if curPl.life ≤ 0 then some (.lifeZeroOrLess, .lifeZeroOrLess)
+              else if g.drewFromEmpty pl.id then some (.decked, .drewFromEmpty)
+              else if poisonLoss then some (.poison, .tenPoison)
+              else none
+            match loss? with
+            | none => pure ()
+            | some (lossReason, sbaKind) =>
+              g := g.record (GameEvent.playerLost g.turnNumber pl.id lossReason
+                (cause := some (.stateBased sbaKind)))
+              let detail :=
+                match lossReason with
+                | .lifeZeroOrLess => s!"life total {curPl.life}"
+                | .decked => "drew from empty library"
+                | .poison => "poison"
+                | _ => "state-based action"
+              g := g.logMsg s!"{curPl.name} loses the game ({detail})"
+              for mate in g.players do
+                if mate.id != pl.id && !(g.player mate.id).lost && g.areTeammates pl.id mate.id then
+                  g := g.record (GameEvent.playerLost g.turnNumber mate.id lossReason
+                    (cause := some (.stateBased sbaKind)))
+                  g := g.logMsg s!"{mate.name} loses the game (teammate lost; CR 810.8a)"
+              changed := true
+      match g.decideGameIfFinished with
+      | some finished => return (finished, (true, true))
+      | none => pure ()
       -- CR 704.5q: +1/+1 and -1/-1 counters on one permanent are removed in
       -- pairs.
       for o in preBf do

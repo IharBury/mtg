@@ -39,6 +39,146 @@ def tapAndStunTargetsLoop (g : Game) (controller : PlayerId) (kind : EffectTarge
     | _ => pure ()
   return g
 
+/-- Put `n` +1/+1 counters on each `remaining` target permanent using its slot
+index `i`, pausing across `Pending.chooseReplacement` so subsequent target
+legality checks do not run before an earlier replacement resolves. -/
+partial def plusOneOnEachTargetLoop (g : Game) (controller : PlayerId)
+    (kind : EffectTargetKind) (remaining : Array (Nat × Target)) (n : Nat)
+    (sourceId : Option ObjectId) : Game :=
+  match remaining[0]? with
+  | none => g
+  | some (i, t) =>
+    let rest := remaining.extract 1 remaining.size
+    let g :=
+      match t with
+      | Target.permanent id =>
+        if g.targetLegalAt controller kind i t sourceId then
+          match g.findObject? id with
+          | some o => g.addPlusOnePlusOneTo o n
+          | none => g
+        else g.illegalAbilityTarget t
+      | _ => g
+    if rest.isEmpty then g
+    else if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement
+        (.finishPostStep (.plusOneOnEachTargetLoop controller kind rest n sourceId))
+    else
+      g.plusOneOnEachTargetLoop controller kind rest n sourceId
+
+/-- Put `x` `.minusOneMinusOne` counters on each `remaining` target permanent using its slot
+index `i`, pausing across `Pending.chooseReplacement` before checking subsequent
+targets. -/
+partial def minusOnesPerOpponentLoop (g : Game) (controller : PlayerId)
+    (kind : EffectTargetKind) (remaining : Array (Nat × Target)) (x : Nat)
+    (sourceId : Option ObjectId) : Game :=
+  match remaining[0]? with
+  | none => g
+  | some (i, t) =>
+    let rest := remaining.extract 1 remaining.size
+    let g :=
+      match t with
+      | Target.permanent id =>
+        if !g.targetLegalAt controller kind i t sourceId then
+          g.illegalAbilityTarget t
+        else
+          match g.findObject? id with
+          | some o =>
+            let shielded :=
+              match g.controllerOf o with
+              | some c =>
+                (g.permanentsOf c).any (fun src =>
+                  (g.baseCard src).creaturesCantGetMinusCounters && g.retainsPrintedAbilities src)
+              | none => false
+            if x > 0 && !shielded then
+              g.putCountersDeferredLog o.id .minusOneMinusOne x (some controller) .countArePutOn
+            else g
+          | none => g
+      | _ => g
+    if rest.isEmpty then g
+    else if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement
+        (.finishPostStep (.minusOnesPerOpponentLoop controller kind rest x sourceId))
+    else
+      g.minusOnesPerOpponentLoop controller kind rest x sourceId
+
+/-- Log token-copy creation and run post-entry hooks for tokens created since
+`startEventIdx` once `.copyTokenOfSourceIfNotToken`'s `createToken` completes. -/
+def copyTokenOfSourceAfterCreate (g : Game) (controller : PlayerId)
+    (cardName : String) (startEventIdx : Nat) : Game :=
+  let created := g.tokensCreatedSince startEventIdx
+  if created.isEmpty then g
+  else
+    let g := g.logMsg s!"{(g.player controller).name} creates a token copy of {cardName}"
+    let (g, anyPrompt) :=
+      created.foldl (fun (g, anyP) tid =>
+        match g.findObject? tid with
+        | some entered =>
+          if entered.isOnBattlefield then
+            let g := g.afterPermanentEntersInBatch entered
+            let p :=
+              match g.findObject? tid with
+              | some cur => cur.isOnBattlefield && !g.enteringCausesNoTriggers cur
+              | none => false
+            (g, anyP || p)
+          else (g, anyP)
+        | none => (g, anyP)) (g, false)
+    if anyPrompt && g.currentBatch.isNone then
+      g.promptTriggerTargetsIfNeeded
+    else g
+
+/-- Deal `n` damage from `causeSrc` to each opponent in `remainingOpps`,
+pausing across `Pending.chooseReplacement` and logging `"{name} deals {dealt} damage"`
+only when unprevented damage `dealt > 0` was dealt (CR 615.6). -/
+def causeDealsDamageToOpponentsLoop (g : Game) (remainingOpps : Array PlayerId)
+    (n : Nat) (name : String) (causeSrc : Option EventObject)
+    (cause : Option EventCause)
+    (pendingDmg : Option (PlayerId × Nat) := none) : Game := Id.run do
+  if let .chooseReplacement .. := g.pending then
+    return g.chainPendingReplacement
+      (.causeDealsDamageToOpponentsLoop remainingOpps n name causeSrc cause pendingDmg)
+  let mut g := g
+  if let some (_, startIdx) := pendingDmg then
+    let dealt := g.damageDealtSince startIdx
+    if dealt > 0 then
+      g := g.logMsg s!"{name} deals {dealt} damage"
+  for i in [0:remainingOpps.size] do
+    let pid := remainingOpps[i]!
+    let startIdx := g.events.size
+    g := g.dealDamageToPlayer pid n (sourceSnap := causeSrc) (cause := cause)
+    if let .chooseReplacement .. := g.pending then
+      let rem := remainingOpps.extract (i + 1) remainingOpps.size
+      return g.chainPendingReplacement
+        (.causeDealsDamageToOpponentsLoop rem n name causeSrc cause (some (pid, startIdx)))
+    let dealt := g.damageDealtSince startIdx
+    if dealt > 0 then
+      g := g.logMsg s!"{name} deals {dealt} damage"
+  return g
+
+/-- Reveal and move each searched card in `remainingIds` to `controller`'s hand
+for `.fblthpSearch`, pausing across `Pending.chooseReplacement`. -/
+def fblthpMoveToHandLoop (g : Game) (controller : PlayerId)
+    (remainingIds : Array ObjectId) (cause : EventCause) : Game := Id.run do
+  if let .chooseReplacement .. := g.pending then
+    return g.chainPendingReplacement
+      (.finishPostStep (.fblthpMoveToHandLoop controller remainingIds cause))
+  let mut g := g
+  for i in [0:remainingIds.size] do
+    let id := remainingIds[i]!
+    match g.findObject? id with
+    | some o =>
+      let name := o.name
+      g := g.logMsg s!"{(g.player controller).name} reveals {name}"
+      let (g', _) := g.move id (.hand controller) none (cause := some cause)
+      g := g'
+      if let .chooseReplacement .. := g.pending then
+        let rem := remainingIds.extract (i + 1) remainingIds.size
+        if !rem.isEmpty then
+          g := g.chainPendingReplacement
+            (.finishPostStep (.fblthpMoveToHandLoop controller rem cause))
+        return g
+    | none => pure ()
+  return g
+
 /-- Finish the post-exile return-tapped step of `.exileReturnBrieflyIfMvAtMost`
 once the initial exile move (and any CR 616.1 replacement choice) completes,
 following `fromId` to `.exile` under CR 614.6 before putting it onto `.battlefield`. -/
@@ -237,14 +377,9 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
   | .searchPlaneswalkerToTop =>
     g.beginLibrarySearch controller (·.isPlaneswalker) "a planeswalker card" .topAfterShuffle
   | .plusOneOnEachTarget n =>
+    let indexed := (List.range targets.size).toArray.map fun i => (i, targets[i]!)
     g.withBatch none fun g =>
-      targets.foldl (fun g t =>
-        match t with
-        | Target.permanent id =>
-          if g.targetLegalAt controller kind 0 t sourceId then
-            g.addPlusOnePlusOneTo (g.object! id) n
-          else g.illegalAbilityTarget t
-        | _ => g) g
+      g.plusOneOnEachTargetLoop controller kind indexed n sourceId
   | .returnAllNonlandPermanentsFromGy =>
     let ids := (g.player controller).graveyard.filter (fun id =>
       (g.findObject? id).any (fun o =>
@@ -491,17 +626,14 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
             | none => none
       match copiable? with
       | some (base, false) =>
+        let startEventIdx := g.events.size
         let g := g.change (.recentTokenIds #[])
-        let (g, tok) := g.createToken controller { base with isToken := true } (recordRecent := true)
-        let g := g.logMsg s!"{(g.player controller).name} creates a token copy of {base.name}"
+        let (g, _) := g.createToken controller { base with isToken := true } (recordRecent := true)
         if let .chooseReplacement .. := g.pending then
-          g.chainPendingReplacement (.finishPostStep .afterRecentTokensEnter)
-        else if tok.zone == .battlefield then
-          g.recentTokenIds.foldl (fun g tid =>
-            match g.findObject? tid with
-            | some entered => if entered.isOnBattlefield then g.afterPermanentEnters entered else g
-            | none => g) g
-        else g
+          g.chainPendingReplacement
+            (.finishPostStep (.copyTokenOfSourceAfterCreate controller base.name startEventIdx))
+        else
+          g.copyTokenOfSourceAfterCreate controller base.name startEventIdx
       | some (_, true) => g
       | none => g.logMsg "The card can't be found"
   | .returnSourceFromGy toHand tapped plusOnes =>
@@ -590,13 +722,15 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
       else g
     | none => g
   | .causeDealsDamageToEachOpponent n =>
-    let cause := (g.resolvingAbilityObject?.bind (·.fraCauseId)).bind g.damageSourceById?
-    let name := (cause.map g.name).getD "The creature"
+    let causeObj := (g.resolvingAbilityObject?.bind (·.fraCauseId)).bind g.damageSourceById?
+    let causeSnap := causeObj.map g.snapshotDamageSource
+    let name := (causeObj.map g.name).getD "The creature"
     if n == 0 then g
     else
-      g.withBatch (g.resolvingBatchCause controller sourceId) fun g =>
-        g.forEachOpponent controller (fun g pid =>
-          (g.dealDamageToPlayer pid n (source := cause)).logMsg s!"{name} deals {n} damage")
+      let opps := g.apnapOrder.filter (g.isLivingOpponentOf controller ·)
+      let batchCause := g.resolvingBatchCause controller sourceId
+      g.withBatch batchCause fun g =>
+        g.causeDealsDamageToOpponentsLoop opps n name causeSnap batchCause
   | .exileFromHandUntilLeaves =>
     g.withLegalKindPlayer controller kind targets (fun g pid =>
       let g := g.revealHand pid
@@ -792,13 +926,11 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
       if pickedIds.isEmpty then g
       else
         g.withBatch (some cause) fun g =>
-          pickedIds.foldl (fun g id =>
-            match g.findObject? id with
-            | some o =>
-              let g := g.logMsg s!"{(g.player controller).name} reveals {o.name}"
-              (g.move id (.hand controller) none (cause := some cause)).1
-            | none => g) g
-    g.shuffleThen controller .none
+          g.fblthpMoveToHandLoop controller pickedIds cause
+    if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement (.finishPostStep (.fblthpShuffleAfterHand controller))
+    else
+      g.shuffleThen controller .none
   | .untapAllTokensYouControl =>
     g.withBatch none fun g =>
       (g.permanentsOf controller).foldl (fun g o =>
@@ -819,27 +951,9 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
       match g.findObject? id with
       | some o => Nat.max acc (g.objectManaValue o)
       | none => acc) 0
+    let indexed := (List.range targets.size).toArray.map fun i => (i, targets[i]!)
     g.withBatch none fun g =>
-      (List.range targets.size).foldl (fun g i =>
-        let t := targets[i]!
-        match t with
-        | Target.permanent id =>
-          if !g.targetLegalAt controller kind i t sourceId then
-            g.illegalAbilityTarget t
-          else
-            match g.findObject? id with
-            | some o =>
-              let shielded :=
-                match g.controllerOf o with
-                | some c =>
-                  (g.permanentsOf c).any (fun src =>
-                    (g.baseCard src).creaturesCantGetMinusCounters && g.retainsPrintedAbilities src)
-                | none => false
-              if x > 0 && !shielded then
-                g.putCountersDeferredLog o.id .minusOneMinusOne x (some controller) .countArePutOn
-              else g
-            | none => g
-        | _ => g) g
+      g.minusOnesPerOpponentLoop controller kind indexed x sourceId
   | .drawPerColorAmongOtherArtifacts =>
     let colors := (g.permanentsOf controller).foldl (fun (acc : ColorSet) o =>
       if g.isArtifact o && some o.id != sourceId then ColorSet.union acc (g.colors o)

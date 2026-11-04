@@ -644,14 +644,16 @@ def spendOneUnit? (p : ManaPool) (t : ManaType) (allowElfRestricted : Bool := fa
     (eraseFirst? p.units (fun u => u.mana == t && pred u)).map fun (us, u) => ({ units := us }, u)
   let hasRestr (r : ManaRestriction) (u : ManaUnit) : Bool :=
     ManaRestriction.normalize? u.restriction == some r
-  (take fun u => match u.restriction with | some (.fra fu) => fu.allows spend | _ => false)
+  (take fun u => match u.restriction with | some (.fra fu) => fu != .fromTreasure && fu.allows spend | _ => false)
     <|> (if allowHeroRestricted then take (hasRestr .hero) else none)
     <|> (if allowVillainRestricted then take (hasRestr .villain) else none)
     <|> (if allowCreatureRestricted then take (hasRestr .creatureSource) else none)
     <|> (if allowElfRestricted then take (hasRestr .elf) else none)
     <|> (if allowInstRestricted then take (hasRestr .instantOrSorcery) else none)
     <|> (if allowCantNonartifact then take (hasRestr .cantNonartifact) else none)
-    <|> take (fun u => (ManaRestriction.normalize? u.restriction).isNone)
+    <|> take (fun u => match ManaRestriction.normalize? u.restriction with
+      | none | some (.fra .fromTreasure) => true
+      | _ => false)
 
 /-- Try to spend one mana of the given type (CR 106.6). -/
 def spendOne? (p : ManaPool) (t : ManaType) (allowElfRestricted : Bool := false)
@@ -685,7 +687,7 @@ def spendAnyUnit? (p : ManaPool) (allowElfRestricted : Bool := false)
       return none
   Id.run do
     if let some (us, u) := eraseFirst? p.units (fun u =>
-        match u.restriction with | some (.fra fu) => fu.allows spend | _ => false) then
+        match u.restriction with | some (.fra fu) => fu != .fromTreasure && fu.allows spend | _ => false) then
       return some ({ units := us }, u)
     if allowElfRestricted then
       if let some res := takeRestr .elf then return some res
@@ -697,6 +699,8 @@ def spendAnyUnit? (p : ManaPool) (allowElfRestricted : Bool := false)
       if let some res := takeRestr .villain then return some res
     if allowCreatureRestricted then
       if let some res := takeRestr .creatureSource then return some res
+    if allowCantNonartifact then
+      if let some res := takeRestr .cantNonartifact then return some res
     for t in order do
       if let some res := p.spendOneUnit? t allowElfRestricted allowInstRestricted
           allowHeroRestricted allowVillainRestricted allowCantNonartifact

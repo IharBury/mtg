@@ -526,13 +526,13 @@ partial def createPermanentCopyTokens (g : Game) (controller : PlayerId) (templa
     let g := g.withBatch cause fun g => Id.run do
       let batchCause := cause.orElse (fun _ => g.currentBatch.bind (·.2))
       let mut g := g
-      for i in [0:remaining] do
-        let (g', _) := g.createToken controller template (recordRecent := true) (cause := batchCause)
+      if remaining > 0 then
+        let (g', _) := g.createToken controller template (recordRecent := true)
+          (cause := batchCause) (count := remaining)
         g := g'
         if let .chooseReplacement .. := g.pending then
-          let rem := remaining - (i + 1)
           return g.chainPendingReplacement
-            (.copyPermanentTokens controller template rem batchCause baseCount pushed)
+            (.copyPermanentTokens controller template 0 batchCause baseCount pushed)
       let allIds := g.recentTokenIds
       let ids := allIds.extract baseCount allIds.size
       if !g.continuations.isEmpty && allIds.size > baseCount then

@@ -313,26 +313,10 @@ def putQueuedTrigger (g : Game) (controller : PlayerId) (source : GameObject)
         (abilityEffectOverride := abilityEffectOverride)
         (reflexiveResolution := reflexiveResolution)
 
-/-- Put one lore counter on `saga` with explicit `cause` and queue that chapter. -/
-def addOneLoreRaw (g : Game) (saga : GameObject)
-    (cause : EventCause := .turnBased .sagaLoreOnMain) : Game :=
-  match g.controllerOf saga, (g.baseCard saga).saga with
-  | some p, some _ =>
-    match g.findObject? saga.id with
-    | none => g
-    | some saga =>
-      if !saga.isOnBattlefield then g
-      else
-        let lore := saga.status.lore + 1
-        let sagaName := g.name saga
-        let g := g.record (GameEvent.counters g.turnNumber (some p) (g.snapshot saga) .lore 1
-          (cause := cause))
-        g.logMsg s!"{sagaName} gets a lore counter ({lore})"
-  | _, _ => g
-
 /-- Add `n` lore counters via `replaceCountersPutChoice`, including Doc Samson's
-+1 replacement (CR 614.1a / MSH 517), pausing for CR 616.1 choice when competing
-counter replacements tie and preserving `EventCause.replaced`. -/
++1 replacement (CR 614.1a / MSH 517), emitting a single `n'`-counter `.lore`
+`PermanentEvent.counters` (CR 714.2b), pausing for CR 616.1 choice when
+competing counter replacements tie, and preserving `EventCause.replaced`. -/
 def addLoreCounters (g : Game) (saga : GameObject) (n : Nat)
     (cause : Option EventCause := some (.turnBased .sagaLoreOnMain)) : Game :=
   if let .chooseReplacement .. := g.pending then
@@ -359,17 +343,25 @@ def addLoreCounters (g : Game) (saga : GameObject) (n : Nat)
         | none =>
           let g := g.consumeReplacementOrder applied
           let finalCause := g.resolveOptionalCause cause' (fallbackCtrl := some p)
-          Id.run do
-            let mut g := g
-            for _ in [0:n'] do
-              match g.findObject? saga.id with
-              | some o => g := g.addOneLoreRaw o (cause := finalCause)
-              | none => pure ()
-            return g
+          if n' == 0 then g
+          else
+            match g.findObject? saga.id with
+            | none => g
+            | some o =>
+              if !o.isOnBattlefield then g
+              else
+                let lore := o.status.lore + n'
+                let sagaName := g.name o
+                let g := g.record (GameEvent.counters g.turnNumber (some p) (g.snapshot o) .lore n'
+                  (cause := finalCause))
+                if n' == 1 then
+                  g.logMsg s!"{sagaName} gets a lore counter ({lore})"
+                else
+                  g.logMsg s!"{sagaName} gets {n'} lore counters ({lore})"
   | _, _ => g
 
 /-- Put one lore counter on `saga` and queue the matching chapter abilities
-(CR 714.2). Counters are added one at a time. -/
+(CR 714.2). -/
 def addOneLoreCounter (g : Game) (saga : GameObject) : Game :=
   g.addLoreCounters saga 1
 
@@ -395,10 +387,13 @@ def addLoreAfterDrawStepIds (g : Game) (sagaIds : Array ObjectId) : Game :=
     return g
 
 /-- After the draw step / as first main begins, add a lore counter to each
-Saga the active player controls (CR 714.3c). -/
+Saga the active player controls simultaneously in one batch (CR 703.4f / 714.3c). -/
 def addLoreAfterDrawStep (g : Game) : Game :=
   let sagaIds := ((g.permanentsOf g.activePlayer).filter (fun o => (g.baseCard o).saga.isSome)).map (·.id)
-  g.addLoreAfterDrawStepIds sagaIds
+  if sagaIds.isEmpty then g
+  else
+    g.withBatchCore (some (.turnBased .sagaLoreOnMain)) fun g =>
+      g.addLoreAfterDrawStepIds sagaIds
 
 /-- Apply `f` to each battlefield permanent matching `pred`. -/
 def foldBattlefield (g : Game) (pred : GameObject → Bool)

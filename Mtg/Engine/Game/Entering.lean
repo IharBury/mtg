@@ -341,8 +341,9 @@ def finishOneResolution (g : Game) (fin : ResolutionFinish) : Game :=
             if let .chooseReplacement .. := g.pending then
               g.chainPendingReplacement
                 (.finishPostStep (.logExiledIfInExile obj.id s!"{obj.name} is exiled (flashback)"))
-            else
+            else if (g.followMovedToZone? obj.id (· == .exile)).isSome then
               g.logMsg s!"{obj.name} is exiled (flashback)"
+            else g
           else
             g.moveToOwnerGraveyard obj s!"{obj.name} goes to the graveyard"
               (verb := some .resolve) (actor := some entry.controller) (cause := some finishCause)

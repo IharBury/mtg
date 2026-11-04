@@ -318,25 +318,57 @@ def mill (g : Game) (p : PlayerId) (n : Nat) (cause : Option EventCause := none)
         let tops := (pl.library.extract (pl.library.size - count) pl.library.size).reverse
         g.millCardsLoop p tops (emptyTail := count < n) (cause := defaultCause)
 
+/-- Move up to `maxLeft` public cards from `remainingIds` into `p`'s hand inside
+an open or standalone batch, pausing on `Pending.chooseReplacement` and logging
+arrival only if each card enters `.hand p` (CR 614.6 / 701.17c). -/
+def movePublicCardsToHandLoop (g : Game) (p : PlayerId) (remainingIds : Array ObjectId)
+    (maxLeft : Nat) (playerPutsStyle : Bool) (cause : Option EventCause)
+    (pendingCard : Option (ObjectId × String) := none)
+    (requirePublicZone : Bool := true) : Game := Id.run do
+  if let .chooseReplacement .. := g.pending then
+    return g.chainPendingReplacement
+      (.finishPostStep (.movePublicCardsToHandLoop p remainingIds maxLeft playerPutsStyle cause pendingCard requirePublicZone))
+  let mut g := g
+  let mut left := maxLeft
+  if let some (cid, cname) := pendingCard then
+    if (g.followMovedToZone? cid (· == .hand p)).isSome then
+      g := g.logMsg
+        (if playerPutsStyle then s!"{(g.player p).name} puts {cname} into their hand"
+         else s!"{cname} is put into {(g.player p).name}'s hand")
+  for i in [0:remainingIds.size] do
+    let id := remainingIds[i]!
+    match g.findObject? id with
+    | some o =>
+      if left > 0 && (!requirePublicZone || isPublicZone o.zone) then
+        let name := o.name
+        left := left - 1
+        let (g', _) := g.move id (.hand p) none (cause := cause)
+        g := g'
+        if let .chooseReplacement .. := g.pending then
+          let rem := remainingIds.extract (i + 1) remainingIds.size
+          return g.chainPendingReplacement
+            (.finishPostStep (.movePublicCardsToHandLoop p rem left playerPutsStyle cause (some (id, name)) requirePublicZone))
+        if (g.followMovedToZone? id (· == .hand p)).isSome then
+          g := g.logMsg
+            (if playerPutsStyle then s!"{(g.player p).name} puts {name} into their hand"
+             else s!"{name} is put into {(g.player p).name}'s hand")
+    | none => pure ()
+  return g
+
 /-- Move milled cards matching `pred` from the public zone they entered into
 `p`'s hand (CR 701.17c). -/
 def finishMillThenPutFromPublic (g : Game) (p : PlayerId) (preIds : Array ObjectId)
     (pred : GameObject → Bool) (maxPut : Option Nat := none)
     (cause : Option EventCause := none) : Game :=
-  let milled := preIds.filterMap (fun id => (g.followMilledPublic? id).map (·.id))
-  g.withBatch cause fun g => Id.run do
-    let mut g := g
-    let mut left := maxPut.getD milled.size
-    for id in milled do
-      match g.findObject? id with
-      | some o =>
-        if left > 0 && isPublicZone o.zone && pred o then
-          let name := o.name
-          let (g', _) := g.move id (.hand p) none (cause := cause)
-          g := g'.logMsg s!"{(g.player p).name} puts {name} into their hand"
-          left := left - 1
-      | none => pure ()
-    return g
+  let milled :=
+    preIds.filterMap fun id =>
+      match g.followMilledPublic? id with
+      | some o => if isPublicZone o.zone && pred o then some o.id else none
+      | none => none
+  if milled.isEmpty then g
+  else
+    g.withBatch cause fun g =>
+      g.movePublicCardsToHandLoop p milled (maxPut.getD milled.size) true cause
 
 /-- Mill `n`, then put matching milled cards from the public zone they entered
 into hand (CR 701.17c). `maxPut` limits how many are returned (`none` means all
@@ -498,16 +530,17 @@ def wasPermanentExiled (g : Game) (id : ObjectId) (startIdx : Nat := 0) : Bool :
     return false
 
 /-- Exile each still-present permanent in `remainingIds` sequentially inside an
-open or standalone batch, pausing on `Pending.chooseReplacement`. -/
+open or standalone batch, pausing on `Pending.chooseReplacement` and logging
+exile only if the object arrives in `.exile` (CR 614.6). -/
 def exilePermanentsLoop (g : Game) (remainingIds : Array ObjectId)
     (logExile : Bool := true) (cause : Option EventCause := none)
-    (logCard : Option String := none) : Game := Id.run do
+    (logCard : Option (ObjectId × String) := none) : Game := Id.run do
   if let .chooseReplacement .. := g.pending then
     return g.chainPendingReplacement
       (.exilePermanentsLoop remainingIds logExile cause logCard)
   let mut g := g
-  if let some name := logCard then
-    if logExile then
+  if let some (oid, name) := logCard then
+    if logExile && (g.followMovedToZone? oid (· == .exile)).isSome then
       g := g.logMsg s!"{name} is exiled"
   for i in [0:remainingIds.size] do
     let id := remainingIds[i]!
@@ -521,9 +554,9 @@ def exilePermanentsLoop (g : Game) (remainingIds : Array ObjectId)
           let rem := remainingIds.extract (i + 1) remainingIds.size
           if !rem.isEmpty || logExile then
             g := g.chainPendingReplacement
-              (.exilePermanentsLoop rem logExile cause (if logExile then some name else none))
+              (.exilePermanentsLoop rem logExile cause (if logExile then some (id, name) else none))
           return g
-        if logExile then
+        if logExile && (g.followMovedToZone? id (· == .exile)).isSome then
           g := g.logMsg s!"{name} is exiled"
     | none => pure ()
   return g

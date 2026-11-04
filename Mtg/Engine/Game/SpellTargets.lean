@@ -232,12 +232,13 @@ def announcingDividedDamage (g : Game) : Bool :=
 
 /-- Targeting shape of the object currently being announced. -/
 def targetingOf (g : Game) (obj : GameObject) : EffectTargeting :=
+  let tcs := g.evalLayer3 obj
   let fromObj : EffectTargeting :=
     match obj.abilityEffect with
-    | some e => e.targeting
+    | some e => (if tcs.isEmpty then e else TextChange.applyEffect tcs e).targeting
     | none =>
       match obj.triggeredAbility with
-      | some ab => ab.targeting
+      | some ab => (if tcs.isEmpty then ab else TextChange.applyTriggeredAbility tcs ab).targeting
       | none =>
         match g.currentSpellEffect obj with
         | some e => e.targeting
@@ -261,13 +262,6 @@ def targetingOf (g : Game) (obj : GameObject) : EffectTargeting :=
 /-- True when two permanents share a card type (CR 205.2). -/
 def sharesCardType (g : Game) (a b : GameObject) : Bool :=
   (g.types a).any (fun t => (g.types b).contains t)
-
-/-- Equip worthy may attach only to a legendary non-Villain red or white
-creature (CR 613.1d / 613.1e). -/
-def isWorthyPermanent (g : Game) (o : GameObject) : Bool :=
-  o.isOnBattlefield && g.isCreature o && g.isLegendary o &&
-    !g.hasSubtype o .villain &&
-    ((g.colors o).contains .red || (g.colors o).contains .white)
 
 /-- Current instance of the word “target” being announced (0-based).
 Skipped optional slots count toward this index so the next instance is
@@ -328,22 +322,6 @@ def legalProposedTargets (g : Game) (p : PlayerId) (o : GameObject) : Array Targ
                 out := out.push already[idx]!
         return out
   let legal := (g.legalTargetsForKind p slot selfSource).filter (fun t => !forbidden.contains t)
-  let legal :=
-    match g.proposedSpell with
-    | some prop =>
-      if prop.spellId == o.id &&
-          prop.kind == .activatedAbility &&
-          (prop.activation.any (·.equipWorthy) ||
-            (g.baseCard prop.original).hasEquipWorthy) then
-        legal.filter (fun t =>
-          match t with
-          | Target.permanent id =>
-            match g.findObject? id with
-            | some c => g.isWorthyPermanent c
-            | none => false
-          | _ => false)
-      else legal
-    | none => legal
   match kind with
   | .twoNonlandsSharingType =>
     match already[0]? with
@@ -433,23 +411,19 @@ def modeIsChoosable (g : Game) (p : PlayerId) (e : Effect)
   !e.requiresTarget || e.allowsZeroTargets || !(g.legalAbilityTargets p e sourceId).isEmpty
 
 /-- Whether this activated ability currently has a legal target, or does not
-require one. Equip restricted to a creature subtype uses that targeting
-shape rather than “any creature you control” (CR 702.6 / 601.2c / 702.16b). -/
+require one (CR 702.6 / 601.2c / 702.16b). Subtype- and worthy-restricted Equip
+targets are encoded directly in `ab.effect.targeting.kind`. -/
 def abilityCanChooseTarget (g : Game) (p : PlayerId) (ab : ActivatedAbility)
     (sourceId : Option ObjectId := none) : Bool :=
-  if ab.equipWorthy then
-    let worthy :=
-      (g.legalTargetsForKind p .creatureYouControl sourceId).filter (fun t =>
-        match t with
-        | Target.permanent id =>
-          match g.findObject? id with
-          | some c => g.isWorthyPermanent c
-          | none => false
-        | _ => false)
-    !worthy.isEmpty
+  if ab.equipWorthy && ab.effect.targetKind == .creatureYouControl then
+    !(g.legalTargetsForKind p .worthyCreatureYouControl sourceId).isEmpty
   else
     match ab.equipSubtype with
-    | some t => !(g.legalTargetsForKind p (.creatureYouControlSubtype t) sourceId).isEmpty
+    | some t =>
+      if ab.effect.targetKind == .creatureYouControl then
+        !(g.legalTargetsForKind p (.creatureYouControlSubtype t) sourceId).isEmpty
+      else
+        ab.allModes.any (fun m => g.modeIsChoosable p m sourceId)
     | none => ab.allModes.any (fun m => g.modeIsChoosable p m sourceId)
 
 /-- Last target in `legal` matching `pred`. -/

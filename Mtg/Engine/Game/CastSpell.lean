@@ -17,8 +17,12 @@ mana abilities (CR 601.2g). -/
 def enterProposalWindow (g : Game) (p : PlayerId) (pl : Player) (prop : ProposedSpell)
     (needsMode needsTarget : Bool) (modeCitation : String)
     (needsAdditionalCost : Bool := false) (needsKicker : Bool := false)
-    (needsGift : Bool := false) (needsTeamwork : Bool := false) : Game :=
-  if prop.cost.containsX then
+    (needsGift : Bool := false) (needsTeamwork : Bool := false)
+    (needsMorphFirst : Bool := false) : Game :=
+  if needsMorphFirst then
+    let g := g.changes #[.pending (.chooseKicker p), .proposedSpell (some prop)]
+    g.logMsg s!"{pl.name} may kick the spell (CR 702.33 / 601.2b)"
+  else if prop.cost.containsX then
     let g := g.changes #[.pending (.chooseX p), .proposedSpell (some prop)]
     g.logMsg s!"{pl.name} must choose a value for X (CR 107.3a / 601.2b)"
   else if needsMode then
@@ -68,14 +72,7 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
     match asAdventure, bc.adventure with
     | true, some adv => adv.toCardDef
     | _, _ => { bc with keywords := g.currentKeywords card }
-  if g.spellNameForbidden face.name then
-    throw s!"Spells named {face.name} can't be cast"
   let pl := g.player p
-  if face.isLand then
-    throw "Lands are played, not cast (CR 305)"
-  if !g.graveyardCastThresholdMet p id face then
-    let n := face.castOnlyIfGraveyardAtLeast.getD 0
-    throw s!"{face.name} can be cast only with {n} or more other cards in your graveyard"
   let sneakCost ← match sneakAttacker with
     | none => pure none
     | some a =>
@@ -88,22 +85,6 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
         throw s!"{g.name att} is not an unblocked attacker you control"
       pure (some c)
   let origPerm := g.playPermission card
-  if !(g.timingAllowsCast p face || origPerm.any (·.ignoreTiming) || sneakCost.isSome ||
-      (g.freeCastFromGraveyard card && card.zone == .graveyard p)) then
-    throw s!"{face.name} has sorcery speed"
-  if isModalSpellFace face then
-    if !(effectiveSpellModes face).any (g.spellModeIsChoosable p) &&
-        !isReturnUpToTwoGyModal face && !face.allowsZeroTargets then
-      throw s!"{face.name} requires a target"
-  else if face.requiresTarget &&
-      (g.legalCastTargets p face).isEmpty && !face.allowsZeroTargets then
-    throw s!"{face.name} requires a target"
-  if face.additionalCostSacrificeArtifactOrCreature &&
-      face.additionalCostOrPayGeneric.isNone &&
-      (g.sacrificeCreatureOrArtifactChoices p id).isEmpty then
-    throw s!"{face.name} requires sacrificing an artifact or creature"
-  if face.additionalCostSacrificeCreature && (g.creaturesControlledBy p).isEmpty then
-    throw s!"{face.name} requires sacrificing a creature"
   match origPerm.bind (·.prepareSource) with
   | some src =>
     match g.findObject? src with
@@ -114,14 +95,25 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
         throw s!"Only {g.name perm}'s controller may cast this copy (ruling 744)"
     | none => throw "The prepared permanent is gone"
   | none => pure ()
-  -- CR 601.2a: propose the spell by moving it onto the stack. Modes and
-  -- additional costs are announced at CR 601.2b, targets at CR 601.2c; mana
-  -- is not required yet (CR 601.2g). CR 715.3: an adventurer card may be
-  -- cast as its Adventure.
   let fromGraveyard := card.zone == .graveyard card.owner
   let isFreeFromGy := fromGraveyard && g.freeCastFromGraveyard card
   let hadFlashbackPerm := fromGraveyard && !isFreeFromGy && g.flashbackUntilEot card
   let isFlashbackCast := fromGraveyard && !isFreeFromGy && (face.flashback.isSome || hadFlashbackPerm)
+  let altCost :=
+    sneakCost.isSome || isFlashbackCast || isFreeFromGy ||
+      origPerm.any (fun pm => pm.withoutManaCost || pm.payLifeEqualManaValue)
+  let hasMorphChoice :=
+    !asAdventure && !altCost && face.morph.isSome && face.kicker.isNone &&
+      (origPerm.bind (·.prepareSource)).isNone && !fromGraveyard
+  if hasMorphChoice then
+    if !g.canCastMorphFaceDown p card then
+      g.validateFrontFaceCast p card face asAdventure sneakCost
+  else
+    g.validateFrontFaceCast p card face asAdventure sneakCost
+  -- CR 601.2a: propose the spell by moving it onto the stack. Modes and
+  -- additional costs are announced at CR 601.2b, targets at CR 601.2c; mana
+  -- is not required yet (CR 601.2g). CR 715.3: an adventurer card may be
+  -- cast as its Adventure.
   let needsSacrifice :=
     face.additionalCostSacrificeCreature ||
       (face.additionalCostSacrificeArtifactOrCreature && face.additionalCostOrPayGeneric.isNone)
@@ -172,9 +164,6 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
     else if isFreeFromGy || origPerm.isSome then .alternative "permission"
     else .normal
   let g := g.record (GameEvent.proposed g.turnNumber newId p original.zone way)
-  let altCost :=
-    sneakCost.isSome || isFlashbackCast || isFreeFromGy ||
-      origPerm.any (fun pm => pm.withoutManaCost || pm.payLifeEqualManaValue)
   let needsMode := isModalSpellFace face
   let needsTarget := face.requiresTarget && !needsMode
   let needsAdditionalCostChoice := face.announcesAdditionalCost
@@ -193,7 +182,8 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
     | none => 0
   if !needsMode && !needsTarget && !cost.includesManaPayment && !cost.containsX &&
       lifeInstead == 0 && !needsSacrifice && !needsFlashbackDiscard &&
-      !needsAdditionalCostChoice && !needsKicker && !needsGift && !needsTeamwork then
+      !needsAdditionalCostChoice && !needsKicker && !needsGift && !needsTeamwork &&
+      sneakAttacker.isNone then
     return (g.becomeCast p (g.object! newId)).resumeAfterBecomeCast
   let prop : ProposedSpell := {
     caster := p
@@ -214,6 +204,7 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
     (needsAdditionalCost := needsAdditionalCostChoice)
     (needsKicker := needsKicker) (needsGift := needsGift)
     (needsTeamwork := needsTeamwork)
+    (needsMorphFirst := hasMorphChoice)
 
 /-- Announce the chosen mode for a modal spell or activated ability
 (CR 601.2b / 700.2). -/
@@ -339,7 +330,8 @@ def announceX (g : Game) (p : PlayerId) (x : Nat) : Except String Game := do
         return g.enterProposalWindow p pl prop modal
           (face.requiresTarget && !modal) "CR 601.2b / 700.2"
           (needsAdditionalCost := face.announcesAdditionalCost)
-          (needsKicker := face.kicker.isSome || (!prop.alternativeCost && (face.morph.isSome || face.impending.isSome)))
+          (needsKicker := !prop.kickerAnnounced &&
+            (face.kicker.isSome || (!prop.alternativeCost && (face.morph.isSome || face.impending.isSome))))
           (needsGift := face.giftTreasure)
           (needsTeamwork := face.teamwork.isSome)
     | .turnFaceUp =>
