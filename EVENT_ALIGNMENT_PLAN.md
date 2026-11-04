@@ -6704,7 +6704,7 @@ across multiplied token creation, and CR 616.1 `enterWithPlusOnes` /
      `.lootLandEntersTapped` graveyard-only arrival gating, and post-move pause
      chaining (`Library.lean`, `TriggeredAbilities.lean`,
      `ResolutionEffects.lean`, `ModeledTriggers.lean`, `FraChoices.lean`,
-     `FrcResolve.lean`, `FraAbilities.lean`, CR 401.4 / 608.2d / 614.6 / 616.1):
+     `FrcResolve.lean`, `FraAbilities.lean`, CR 401.4 / 614.6 / 616.1):
      - compute `LibraryPosition.fromTop` offsets in `Library.moveIdsInOrder`
        (`Library.lean`) against the pause-safe placement loop rather than live
        `((g.player p).library.filter (· != id)).size` while an earlier move in
@@ -6714,7 +6714,7 @@ across multiplied token creation, and CR 616.1 `enterWithPlusOnes` /
        (`TriggeredAbilities.lean`, `"put it from your graveyard onto the
        battlefield tapped"`) to `o.zone == .graveyard o.owner` (dropping
        `|| o.zone == .exile` when a replacement redirected the discard to
-       exile per CR 608.2d / 614.6); and
+       exile per CR 614.6); and
      - pause-guard `ModeledTriggers.createMerfolkForBlueSymbols`
        (`ModeledTriggers.lean`), `ResolutionEffects.incrementPlanThen`, and
        `ResolutionEffects.millThenReflexive` (`ResolutionEffects.lean`, plus its
@@ -6812,23 +6812,26 @@ across multiplied token creation, and CR 616.1 `enterWithPlusOnes` /
      Equip abilities all enforce the exact target restriction of that Equip
      ability without bleeding onto ordinary `"Equip {N}"` abilities on the same
      permanent.
-   - Align face-down Morph casting and Layer-6 activated abilities / Split
-     Second on face-down permanents (`Casting.lean`, `CastSpell.lean`,
+   - Align face-down Morph casting and Layer-6 activated abilities / Morph
+     special actions on face-down permanents (`Casting.lean`, `CastSpell.lean`,
      `CastExtras.lean`, `Decisions.lean`, `Activation.lean`, CR 116.2b / 613.1f
      / 702.37a,c,e / 702.61b / 708.2,4): allow a card with Morph to begin
      casting face down as a nameless 2/2 creature spell at creature timing even
      when its front face is an instant/sorcery, lacks legal targets, requires a
      creature sacrifice, or is named/prohibited on the front face (re-validating
      front-face timing, prohibitions, targets, and additional costs if the
-     printed cost is chosen instead of Morph); exempt `morphAb`
-     (`ab.effect.resolution == .frc .turnFaceUp`, CR 116.2b / 702.37e special
-     action) from `splitSecondOnStack` (CR 702.61b) and
-     `combatLocksNonManaAbilities` in `Activation.validateActivation`; and look
-     up `abs[abilityIdx]?` directly in `Activation.activateAbility` without
-     blocking non-Morph Layer-6 granted abilities on face-down permanents or
-     revealing `o.printed.name` in activation logs.
+     printed cost is chosen instead of Morph); keep the non-stack
+     `o.status.faceDown` special-action arm (`GameEvent.turnedFaceUp` with
+     `.specialAction .turnFaceUp`, CR 116.2b / 702.37e, and matching
+     special-action legality in `Activation.canActivate` rather than
+     `validateActivation` per CR 702.61b) in `Activation.activateAbility` when
+     the selected ability in `g.activatedAbilitiesOf o` is `morphAb`
+     (`ab.effect.resolution == .frc .turnFaceUp`), and only then look up
+     `abs[abilityIdx]?` for other Layer-6 granted abilities on face-down
+     permanents while using `g.name` instead of `GameObject.name`
+     (`printed.name`) in `Activation.lean` logs and errors.
    - Fix face-up stack-copy `copiable` characteristics, non-`"another"` dies
-     self-triggers, and `GameEvent.matchesTrigger` target predicates
+     self-triggers, and `GameEvent.matchesTrigger` predicates
      (`Core.lean`, `Event.lean`, CR 603.6c / 603.10a / 707.2 / 707.10): prefer
      `copy.copiable` before `copy.printed` on face-up stack copies in
      `Core.applyStackObjectEvent` (`Core.lean`) so Layer 1 copy effects on a
@@ -6839,8 +6842,9 @@ across multiplied token creation, and CR 616.1 `enterWithPlusOnes` /
      `some c.id != source.map (·.id)` to `SharedTrigger.death .deathtouchOppSac`
      in `Core.triggerConditionHolds`, `"Whenever another creature you control
      with deathtouch dies"`); and align `GameEvent.matchesTrigger`
-     (`Event.lean`) with `Core.matchTriggers` on `.youTargetSomething`,
-     `.becomesTarget`, and `.ward`.
+     (`Event.lean`) with `Core.matchTriggers` by dropping `other before` on
+     `.villainYouControlDies` and matching `.youTargetSomething`,
+     `.becomesTarget`, and `.ward` target predicates.
 3. Complete CR 614.1c / 614.12 / 614.15 / 616.1a–g ETB replacement ordering,
    shockland life-payment re-entry, unified ETB counter modification,
    batch-isolated token replacements, and CR 510.2 / 702.26g,h / 703.4f /
@@ -6880,15 +6884,16 @@ across multiplied token creation, and CR 616.1 `enterWithPlusOnes` /
      `"unless you control..."` check or contribute static ETB modifiers.
    - Batch single-instruction multi-token `replaceTokenCreationChoice` calls,
      isolate pre-batch token modifiers, and finish `.copyNontokenCreaturesYouControl`
-     ETB processing (`Tokens.lean`, `FrcResolve.lean`, `Choices.lean`,
+     ETB processing (`Tokens.lean`, `FrcResolve.lean`,
      `EffectResolution.lean`, CR 603.6a / 608.2c / 614.1 / 616.1): pass
      `count := n` into `replaceTokenCreationChoice` / `createTokenBatches` for
-     single `"create N tokens"` instructions (`FrcResolve.makeFrc`,
-     `Tokens.empowerJaceStep`, `Choices.commitEnteringAttackItems`) instead of
-     looping `n` separate `count := 1` events; exclude tokens created earlier in
-     the currently open batch from `Tokens.replaceTokenCreationChoice` static
-     scans; and run `afterPermanentEnters` / `afterPermanentEntersInBatch` for
-     all tokens created by `EffectResolution` `.copyNontokenCreaturesYouControl`.
+     single `"create N tokens"` instructions (`FrcResolve.makeFrc` /
+     `makeFrcLoop`, `Tokens.createTreasureTokens`, `Tokens.createKindTokens`)
+     instead of looping `n` separate `createToken` (`count := 1`) events;
+     exclude tokens created earlier in the currently open batch from
+     `Tokens.replaceTokenCreationChoice` static scans; and run
+     `afterPermanentEnters` / `afterPermanentEntersInBatch` for all tokens
+     created by `EffectResolution` `.copyNontokenCreaturesYouControl`.
    - Fix simultaneous combat lifelink ordering, mass phase-out snapshot and CR
      702.26g–h indirect collapse, Saga lore-counter batching, and APNAP
      multi-player draw ordering (`Combat.lean`, `Event.lean`, `Decisions.lean`,
@@ -6995,8 +7000,8 @@ legality & CR 614.6 / 615.6 deferred logs, 0-mana `sneakAttacker` / reduced-`{0}
 `fromTreasure` spending priority & non-spell `.cantNonartifact` & `payWard` /
 `payOrLetCounter` `manaSpentOn` provenance, `equipSubtype` / `equipWorthy`
 revalidation & copy/retarget fidelity, face-down Morph casting & Layer-6
-abilities / Split Second on face-down permanents, face-up stack-copy `copiable`
-& non-`"another"` dies self-triggers & `matchesTrigger` target predicates,
+abilities / Morph special actions on face-down permanents, face-up stack-copy `copiable`
+& non-`"another"` dies self-triggers & `matchesTrigger` predicates,
 shockland `entersTappedUnlessPayLife` re-entry at `n ≤ life < 2 * n`, CR 616.1e
 `.entersTappedSelf` ordering, unified CR 616.1g ETB counter evaluation &
 `preBfOk` / `preBatchAuraBoard` isolation, batched multi-token
