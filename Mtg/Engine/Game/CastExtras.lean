@@ -253,14 +253,7 @@ def discardNonlandFrom (g : Game) (controller victim : PlayerId) : Game :=
       | none => none) with
   | none => g.logMsg s!"{(g.player victim).name} has no nonland card to discard"
   | some o =>
-    let cardName := o.name
-    let (g, _) := g.move o.id (.graveyard o.owner) none (verb := some .discard) (actor := some victim)
-    let logLine := s!"{(g.player controller).name} chooses {cardName}. {(g.player victim).name} discards it"
-    if let .chooseReplacement .. := g.pending then
-      g.chainPendingReplacement (.finishPostStep (.logChosenCardDiscarded controller victim o.id))
-    else if !(g.findObject? o.id).any (·.zone == .hand victim) then
-      g.logMsg logLine
-    else g
+    g.discardFromHand victim o.id (chooser := some controller)
 
 /-- Finish registering `.endStepReturn` for `exileUntilNextEndStep` once `g.move`
 to `.exile` completes. -/

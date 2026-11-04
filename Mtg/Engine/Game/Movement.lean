@@ -459,10 +459,15 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
             let (g', gyId) :=
               g.move old.id (.graveyard old.owner) none (verb := verb) (actor := actor) (cause := cause)
             let msg := s!"{old.name} goes to the graveyard (can't be attached legally; CR 303.4g)"
+            -- CR 614.6: log only once the Aura actually reaches its owner's graveyard.
             if let .chooseReplacement .. := g'.pending then
-              (g'.chainPendingReplacement (.logMessage msg), (gyId, none, false))
-            else
+              (g'.chainPendingReplacement
+                  (.finishPostStep (.logDiscardIfInGraveyard old.id old.owner msg)),
+                (gyId, none, false))
+            else if (g'.followMovedToZone? old.id (· == .graveyard old.owner)).isSome then
               (g'.logMsg msg, (gyId, none, false))
+            else
+              (g', (gyId, none, false))
         else if old.zone == .exile then
           (g.logMsg s!"{old.name} remains in exile (can't be attached legally; CR 303.4f / CR 614.6)",
            (id, none, false))
@@ -495,7 +500,16 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
       let newId := fresh.id
       let g :=
         if exileInstead then
-          g.logMsg s!"{old.name} is exiled instead of dying (CR 614.6)"
+          -- CR 700.4: only a battlefield-to-graveyard move is "dying".
+          if old.zone == .battlefield then
+            g.logMsg s!"{old.name} is exiled instead of dying (CR 614.6)"
+          else
+            match origDest with
+            | .graveyard _ =>
+              g.logMsg s!"{old.name} is exiled instead of going to a graveyard (CR 614.6)"
+            | _ =>
+              -- CR 702.34a: a stack-leave replacement to a non-graveyard zone.
+              g.logMsg s!"{old.name} is exiled instead of leaving the stack (CR 614.6)"
         else g
       let freshForSnap : GameObject :=
         match tempCopyUntilEot with
@@ -824,14 +838,16 @@ def finishOpenBatchAndLinkedExile (g : Game) (batchId : BatchId) (startIdx : Nat
 
 /-- Emit the post-move log for `moveToOwnerGraveyard` once `fromId` finishes its
 CR 616.1 replacement loop, suppressing false graveyard logs when redirected to
-`.exile` or `.library` (CR 614.6). -/
+`.exile` or `.library` (CR 614.6). A sacrifice (`verb == some .sacrifice`) logs
+only on arrival in `owner`'s graveyard (CR 614.6 / 701.21a). -/
 def finishMoveToOwnerGraveyardLog (g : Game) (fromId : ObjectId) (fromZone : Zone)
-    (owner : PlayerId) (cardName reason : String) (_verb : Option ZoneVerb) : Game :=
+    (owner : PlayerId) (cardName reason : String) (verb : Option ZoneVerb) : Game :=
   match g.followMovedToZone? fromId (fun _ => true) with
   | none => g
   | some arrived =>
     if arrived.zone == .graveyard owner then
       g.logMsg reason
+    else if verb == some .sacrifice then g
     else
       let isFalseGraveyardLog :=
         (reason.splitOn "goes to the graveyard").length > 1 ||

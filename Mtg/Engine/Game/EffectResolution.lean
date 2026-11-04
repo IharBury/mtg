@@ -926,6 +926,44 @@ def finishRevealPutCreatures (g : Game) (p : PlayerId) (looked put : Array Objec
   g0.withBatch cause? fun g =>
     g.finishRevealPutCreaturesStep p looked put #[] (cause := cause?)
 
+/-- Log `p` putting `name` into `owner`'s hand only if `id` arrived there
+(CR 400.3 / 614.6 / 616.1 / 800.4a). -/
+private def logChosenCardToHand (g : Game) (p : PlayerId) (id : ObjectId)
+    (owner : PlayerId) (name : String) : Game :=
+  if (g.followMovedToZone? id (· == .hand owner)).isSome then
+    if owner == p then g.logMsg s!"{(g.player p).name} puts {name} into their hand"
+    else g.logMsg s!"{(g.player p).name} puts {name} into {(g.player owner).name}'s hand"
+  else g
+
+/-- Pause-safe loop for `CardChoice.toHand`: move each chosen card still in a
+public zone (or its owner's hand) into its owner's hand (CR 400.3), pausing on
+`Pending.chooseReplacement` and logging only on arrival (CR 614.6 / 616.1). -/
+def chooseCardsToHandLoop (g : Game) (p : PlayerId) (remainingIds : Array ObjectId)
+    (cause : Option EventCause) (pendingCard : Option (ObjectId × PlayerId × String) := none) :
+    Game := Id.run do
+  if let .chooseReplacement .. := g.pending then
+    return g.chainPendingReplacement
+      (.finishPostStep (.chooseCardsToHandLoop p remainingIds cause pendingCard))
+  let mut g := g
+  if let some (cid, owner, name) := pendingCard then
+    g := g.logChosenCardToHand p cid owner name
+  for i in [0:remainingIds.size] do
+    let id := remainingIds[i]!
+    match g.findObject? id with
+    | some o =>
+      if isPublicZone o.zone || o.zone == .hand o.owner then
+        let owner := o.owner
+        let name := o.name
+        let (g', _) := g.move id (.hand owner) none (cause := cause)
+        g := g'
+        if let .chooseReplacement .. := g.pending then
+          let rem := remainingIds.extract (i + 1) remainingIds.size
+          return g.chainPendingReplacement
+            (.finishPostStep (.chooseCardsToHandLoop p rem cause (some (id, owner, name))))
+        g := g.logChosenCardToHand p id owner name
+    | none => pure ()
+  return g
+
 /-- Carry out a `chooseCards` answer. -/
 def finishChooseCards (g : Game) (p : PlayerId) (chosen : Array ObjectId)
     (purpose : CardChoice) (cause : Option EventCause := none) : Game :=
@@ -945,15 +983,7 @@ def finishChooseCards (g : Game) (p : PlayerId) (chosen : Array ObjectId)
         match stashed with
         | some c => (g, some c)
         | none => allocIfResolving g
-    g.withBatch cause? fun g =>
-      chosen.foldl (fun g id =>
-        match g.findObject? id with
-        | some o =>
-          if isPublicZone o.zone || o.zone == .hand o.owner then
-            let name := o.name
-            (g.move id (.hand p) none (cause := cause?)).1.logMsg s!"{(g.player p).name} puts {name} into their hand"
-          else g
-        | none => g) g
+    g.withBatch cause? fun g => g.chooseCardsToHandLoop p chosen cause?
   | .creaturesToBattlefield =>
     let valid := chosen.filter fun id =>
       (g.findObject? id).any (fun o => o.zone == .hand o.owner && g.isCreature o)
@@ -2575,8 +2605,9 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
         let opps := (g.livingOpponents controller).map (·.id)
         let g := g.change (.plusOneAfterDiscards sourceId)
         let g := g.beginDiscardCards opps
-        if g.pending == .none then
-          (g.finishPlusOneAfterDiscards).receivePriority g.activePlayer
+        -- CR 117.3b / 608.2c,n / 704.4: no priority or SBAs mid-resolution; later
+        -- modes of the resolving spell still have to run.
+        if g.pending == .none then g.finishPlusOneAfterDiscards
         else g
       | .lookAtTopPutTypes n types =>
         g.beginLookPutTypes controller n types

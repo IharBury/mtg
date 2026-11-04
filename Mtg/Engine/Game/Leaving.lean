@@ -256,6 +256,18 @@ private def sanitizeEnteringAttackItem (g : Game) : EnteringAttackItem → Optio
     if !g.stillInGame c || (g.findObject? cid).isNone then none
     else some (.card cid c effCtrl tapped retArt extra mods logKind (filterLivingAttackTargets g c opts))
 
+/-- Run `f` with the outer `g.pendingReplacement` stashed, re-chaining it after
+whatever `f` leaves (including a fresh `Pending.chooseReplacement` continuation
+from a graveyard / stack-leave replacement), so the outer continuation is not
+clobbered when a player leaves the game (CR 616.1 / 800.4a,f–h). -/
+private def withOuterContStashed (g : Game) (f : Game → Game) : Game :=
+  let outerCont? := g.pendingReplacement
+  let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
+  let g := f g
+  match outerCont? with
+  | some outer => g.chainPendingReplacement outer
+  | none => g
+
 private partial def advanceSacDamagersAfterLeave (g : Game) (controller : PlayerId)
     (opponents : Array PlayerId) (chosen : Array (PlayerId × ObjectId)) : Game :=
   let living := opponents.filter g.stillInGame
@@ -265,8 +277,9 @@ private partial def advanceSacDamagersAfterLeave (g : Game) (controller : Player
     if chosen.isEmpty then g
     else
       let preBf := g.battlefield
-      g.withBatch none fun g =>
-        g.sacrificePermanentsLoop chosen (preBattlefield := some preBf)
+      g.withOuterContStashed fun g =>
+        g.withBatch none fun g =>
+          g.sacrificePermanentsLoop chosen (preBattlefield := some preBf)
   | some r =>
     let rest := living.extract 1 living.size
     let ids :=
@@ -328,7 +341,9 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
         let g := g.clearUnlessPays
         match spellId?.bind g.findObject? |>.filter (·.zone == .stack) with
         | none => g
-        | some o => g.counterStackSpell o.id (controller := some caster)
+        | some o =>
+          g.withOuterContStashed fun g =>
+            g.counterStackSpell o.id (controller := some caster)
     else g
   | .payWard q spellId _ =>
     if q == p then
@@ -338,7 +353,8 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
       | none => g
       | some _ =>
         let wardCtrl := ((g.resolvingAbility.bind g.findObject?).bind (·.controller)).getD (g.opponent p)
-        g.counterStackSpell spellId (controller := some wardCtrl)
+        g.withOuterContStashed fun g =>
+          g.counterStackSpell spellId (controller := some wardCtrl)
     else g
   | .mayPayGeneric q _ =>
     if q == p then
@@ -358,7 +374,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
         let skipped := livingRem.filter (fun r => (g.creaturesControlledBy r).isEmpty)
         let g := g.logForPlayers skipped (fun r =>
           s!"{(g.player r).name} has no creature to sacrifice")
-        g.finishChosenSacrifices chosen
+        g.withOuterContStashed fun g => g.finishChosenSacrifices chosen
       | some (np, rest) =>
         let prefixIdx := livingRem.findIdx? (· == np) |>.getD 0
         let skipped := (livingRem.extract 0 prefixIdx).filter (fun r => (g.creaturesControlledBy r).isEmpty)
@@ -508,9 +524,10 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
             | none => none)
           let preBf := g.battlefield
           let g := g.change (.pending .none)
-          g.withBatch none fun g =>
-            g.sacrificePermanentsLoop pairs (preBattlefield := some preBf)
-              (createBeastFor := if youSacrificed then some controller else none)
+          g.withOuterContStashed fun g =>
+            g.withBatch none fun g =>
+              g.sacrificePermanentsLoop pairs (preBattlefield := some preBf)
+                (createBeastFor := if youSacrificed then some controller else none)
     | .sacrificeNontokenEach rest chosen =>
       let hasNontoken (r : PlayerId) :=
         g.stillInGame r && (g.permanentsOf r).any (fun o => g.isCreature o && !o.printed.isToken)
@@ -530,8 +547,9 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
             | none => none)
           let preBf := g.battlefield
           let g := g.change (.pending .none)
-          g.withBatch none fun g =>
-            g.sacrificePermanentsLoop pairs (preBattlefield := some preBf)
+          g.withOuterContStashed fun g =>
+            g.withBatch none fun g =>
+              g.sacrificePermanentsLoop pairs (preBattlefield := some preBf)
     | .sacrificeDamager ids rest controller chosen =>
       let living := rest.filter g.stillInGame
       if q != p then

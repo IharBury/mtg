@@ -408,9 +408,11 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
       | none => g
   | _ => throw "Not time to sacrifice a permanent"
 
-/-- `p` discards `id` from their hand (CR 701.9 / 614.6). -/
+/-- `p` discards `id` from their hand (CR 701.9 / 614.6). With `atRandom`, a
+leading `"discards a card at random"` line is logged too. Logs only once the card
+arrives in its owner's graveyard (CR 614.6 / 701.9a). -/
 def discardFromHand (g : Game) (p : PlayerId) (id : ObjectId) (chooser : Option PlayerId := none)
-    (cause : Option EventCause := none) :
+    (cause : Option EventCause := none) (atRandom : Bool := false) :
     Game :=
   let card := g.object! id
   let owner := card.owner
@@ -418,17 +420,23 @@ def discardFromHand (g : Game) (p : PlayerId) (id : ObjectId) (chooser : Option 
     match chooser with
     | some c => s!"{(g.player c).name} chooses {card.name}. {(g.player p).name} discards it"
     | none => s!"{(g.player p).name} discards {card.name}"
+  let randomMsg := s!"{(g.player p).name} discards a card at random"
   let (g, _) := g.move id (.graveyard owner) none (verb := some .discard)
     (actor := some p) (cause := cause)
   if let .chooseReplacement .. := g.pending then
+    let g :=
+      if atRandom then
+        g.chainPendingReplacement (.finishPostStep (.logDiscardIfInGraveyard id owner randomMsg))
+      else g
     g.chainPendingReplacement (.finishPostStep (.logDiscardIfInGraveyard id owner msg))
   else if (g.followMovedToZone? id (· == .graveyard owner)).isSome then
+    let g := if atRandom then g.logMsg randomMsg else g
     g.logMsg msg
   else g
 
 /-- `p` discards `id`, chosen at random (CR 701.9). -/
 def discardFromHandRandomly (g : Game) (p : PlayerId) (id : ObjectId) : Game :=
-  (g.logMsg s!"{(g.player p).name} discards a card at random").discardFromHand p id
+  g.discardFromHand p id (atRandom := true)
 
 end Game
 end Mtg.Engine

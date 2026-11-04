@@ -40,18 +40,20 @@ def putPalantirInfluence (g : Game) (sourceId : ObjectId) (target : Option Playe
           if let .chooseReplacement .. := g.pending then
             (g, some none)
           else
-            let g := g.logMsg s!"{g.name src} gets an influence counter"
             let after := ((g.findObject? sourceId).map (·.status.influence)).getD before
+            let g :=
+              if after > before then g.logMsg s!"{g.name src} gets an influence counter" else g
             (g, some (some (after > before)))
 
 /-- Palantír of Orthanc: an illegal target means no influence, scry, draw,
 or mill. -/
 def applyPalantir (g : Game) (sourceId : ObjectId) (target : Option PlayerId) : Game :=
+  let before := ((g.findObject? sourceId).map (·.status.influence)).getD 0
   let (g, ok) := g.putPalantirInfluence sourceId target
   match ok with
   | none => g
   | some none =>
-    g.chainPendingReplacement (.finishPostStep (.logInfluenceThenScryTwo sourceId))
+    g.chainPendingReplacement (.finishPostStep (.logInfluenceThenScryTwo sourceId before))
   | some (some _) =>
     match g.findObject? sourceId with
     | some src => g.beginScry (g.you src) 2

@@ -149,11 +149,15 @@ def payCostPickItems (g : Game) (p : PlayerId) (abilityId sourceId : Option Obje
                       g := g.setStackEntryLastKnown aid (lastKnownPower := some pw)
             else
               let msg := s!"{name} discards {o.name}"
-              g := (g.move id (.graveyard o.owner) none (verb := some .discard) (actor := some p)
+              let owner := o.owner
+              g := (g.move id (.graveyard owner) none (verb := some .discard) (actor := some p)
                 (cause := some (.costPayment .discard p forObj))).1
+              -- CR 614.6 / 701.9a: log the discard only once the card reaches
+              -- its owner's graveyard.
               if let .chooseReplacement .. := g.pending then
-                g := g.chainPendingReplacement (.logMessage msg)
-              else
+                g := g.chainPendingReplacement
+                  (.finishPostStep (.logDiscardIfInGraveyard id owner msg))
+              else if (g.followMovedToZone? id (· == .graveyard owner)).isSome then
                 g := g.logMsg msg
           if let .chooseReplacement .. := g.pending then
             let rem := ids.extract (i + 1) ids.size
@@ -257,9 +261,10 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
       (actor := some p) (cause := some (.costPayment costKind p forObject))
     let g :=
       if let .chooseReplacement .. := g.pending then
-        g.chainPendingReplacement (.logMessage msg)
-      else
+        g.chainPendingReplacement (.finishPostStep (.logDiscardIfInGraveyard sourceId src.owner msg))
+      else if (g.followMovedToZone? sourceId (· == .graveyard src.owner)).isSome then
         g.logMsg msg
+      else g
     return match outer? with | some outer => g.chainPendingReplacement outer | none => g
   let fromGraveyard :=
     src.zone == .graveyard src.owner && src.owner == p &&

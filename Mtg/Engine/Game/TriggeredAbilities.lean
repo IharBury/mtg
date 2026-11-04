@@ -2146,12 +2146,13 @@ def applySacrifice (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     | .movedAsSacrificed =>
       g.withTriggerSource sourceId fun g src =>
         let name := g.name src
-        let actor := (g.controllerOf src).getD src.owner
-        let (g, _) := g.move src.id (.graveyard src.owner) none (verb := some .sacrifice) (actor := some actor)
+        let owner := src.owner
+        let actor := (g.controllerOf src).getD owner
+        let (g, _) := g.move src.id (.graveyard owner) none (verb := some .sacrifice) (actor := some actor)
         let g :=
           if let .chooseReplacement .. := g.pending then
-            g.chainPendingReplacement (.logMessage s!"{name} is sacrificed")
-          else if !(g.findObject? src.id).any GameObject.isOnBattlefield then
+            g.chainPendingReplacement (.finishPostStep (.logSacrificedIfInGraveyard src.id owner name))
+          else if (g.followMovedToZone? src.id (· == .graveyard owner)).isSome then
             g.logMsg s!"{name} is sacrificed"
           else g
         finishSacNote g src.id sacNote

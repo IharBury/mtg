@@ -1246,7 +1246,7 @@ inductive PostStep where
   | notePermanentDealtDamage (targetId : ObjectId) (startIdx : Nat)
   | logTwoNonlegendaryCopyTokens (sourceId : Option ObjectId) (startEventIdx : Nat := 0)
   | discardCleanupIds (p : PlayerId) (remainingIds : Array ObjectId)
-      (justDiscarded : Option ObjectId := none)
+      (justDiscarded : Option (ObjectId × PlayerId) := none)
   | postSbaCleanup (sba : Bool)
   | cleanupStepAfterDiscard
   | wheelDrawThenOfferNext (p : PlayerId) (cards : Nat) (rest : Array PlayerId := #[])
@@ -1272,7 +1272,7 @@ inductive PostStep where
   | continueAfterDiscardStep (remaining : Array PlayerId)
   | discardHandIdsLoop (p : PlayerId) (ids : Array ObjectId) (logEach : Bool)
       (cause : Option EventCause)
-  | logInfluenceThenScryTwo (sourceId : ObjectId)
+  | logInfluenceThenScryTwo (sourceId : ObjectId) (beforeInfluence : Nat)
   | finishPalantirInfluence (controller : PlayerId) (sourceId : ObjectId)
       (beforeInfluence : Nat) (targetOpponent : Option PlayerId)
   | noteMilledIds (tops : Array ObjectId)
@@ -1323,7 +1323,6 @@ inductive PostStep where
   | recordUntapStepEnded
   | beginStepAfterPhaseBegan (st : Step)
   | beginStepBody (st : Step)
-  | logChosenCardDiscarded (chooser victim : PlayerId) (cardId : ObjectId)
   | tapAndStunTargetsLoop (controller : PlayerId) (remaining : Array (Nat × Target))
       (sourceId : Option ObjectId) (cause : Option EventCause)
   | exileZemoBoastCards (p : PlayerId) (abilityId : ObjectId) (remainingIds : Array ObjectId)
@@ -1471,7 +1470,17 @@ inductive PostStep where
       (movedAnyForCur : Bool := false) (pendingId : Option ObjectId := none)
   | worldsWithinWorldsAfterPut (exiled : Array ObjectId)
       (validChosen : Array (ObjectId × PlayerId × String)) (sourceId : Option ObjectId)
+  /-- Log `msg` only if `cardId` arrived in `owner`'s graveyard (CR 614.6); also
+  used for the CR 303.4g stack-Aura graveyard log. -/
   | logDiscardIfInGraveyard (cardId : ObjectId) (owner : PlayerId) (msg : String)
+  /-- Resume `EffectResolution.chooseCardsToHandLoop`; `pendingCard` is the card
+  whose owner's-hand arrival (CR 400.3 / 614.6) is still to be logged. -/
+  | chooseCardsToHandLoop (p : PlayerId) (remainingIds : Array ObjectId)
+      (cause : Option EventCause)
+      (pendingCard : Option (ObjectId × PlayerId × String) := none)
+  /-- Log `msg` only if some counter kind on `targetId` increased over `before`
+  (CR 122.1 / 614.6). -/
+  | logIfCountersIncreased (targetId : ObjectId) (before : CounterBag) (msg : String)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- Stage of `StateBasedActions.finishSbaSweep` across `Pending.chooseReplacement` pauses. -/

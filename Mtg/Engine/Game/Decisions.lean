@@ -988,14 +988,15 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
   | .discardCleanupIds p remainingIds justDiscarded =>
     let g :=
       match justDiscarded with
-      | some cid =>
-        if !(g.player p).hand.contains cid then
+      | some (cid, owner) =>
+        match g.followMovedToZone? cid (· == Zone.graveyard owner) with
+        | some _ =>
           let name :=
             match g.findObject? cid with
             | some o => o.name
             | none => ((g.lastKnownBefore? cid).map (fun (eo : EventObject) => eo.name)).getD "card"
           g.logMsg s!"{(g.player p).name} discards {name} (cleanup)"
-        else g
+        | none => g
       | none => g
     g.discardCleanupIds p remainingIds
   | .postSbaCleanup sba =>
@@ -1081,20 +1082,26 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
     g.continueAfterDiscard remaining
   | .discardHandIdsLoop p ids logEach cause =>
     g.discardHandIdsLoop p ids (logEach := logEach) (cause := cause)
-  | .logInfluenceThenScryTwo sourceId =>
+  | .logInfluenceThenScryTwo sourceId beforeInfluence =>
     match g.findObject? sourceId with
     | some src =>
       if src.isOnBattlefield then
-        (g.logMsg s!"{g.name src} gets an influence counter").beginScry (g.you src) 2
+        let g :=
+          if src.status.influence > beforeInfluence then
+            g.logMsg s!"{g.name src} gets an influence counter"
+          else g
+        g.beginScry (g.you src) 2
       else g
     | none => g
   | .finishPalantirInfluence controller sourceId beforeInfluence targetOpponent =>
+    let after := ((g.findObject? sourceId).map (·.status.influence)).getD beforeInfluence
     let g :=
       match g.findObject? sourceId with
       | some src =>
-        if src.isOnBattlefield then g.logMsg s!"{g.name src} gets an influence counter" else g
+        if src.isOnBattlefield && after > beforeInfluence then
+          g.logMsg s!"{g.name src} gets an influence counter"
+        else g
       | none => g
-    let after := ((g.findObject? sourceId).map (·.status.influence)).getD beforeInfluence
     match targetOpponent with
     | some opp =>
       if after > beforeInfluence then
@@ -1316,14 +1323,6 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
     g.beginStepAfterPhaseBegan st
   | .beginStepBody st =>
     g.beginStepBody st
-  | .logChosenCardDiscarded chooser victim cardId =>
-    if victim.idx < g.players.size && !(g.player victim).hand.contains cardId then
-      let name :=
-        match g.findObject? cardId with
-        | some o => o.name
-        | none => ((g.lastKnownBefore? cardId).map (fun (eo : EventObject) => eo.name)).getD "card"
-      g.logMsg s!"{(g.player chooser).name} chooses {name}. {(g.player victim).name} discards it"
-    else g
   | .tapAndStunTargetsLoop controller remaining sourceId cause =>
     let kind :=
       (g.resolvingSpell.bind g.findObject? |>.bind g.currentSpellEffect |>.map (·.targetKind)).orElse
@@ -1604,6 +1603,10 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
     g.finishWorldsWithinWorldsAfterPut exiled validChosen sourceId
   | .logDiscardIfInGraveyard cardId owner msg =>
     if (g.followMovedToZone? cardId (· == .graveyard owner)).isSome then g.logMsg msg else g
+  | .chooseCardsToHandLoop p remainingIds cause pendingCard =>
+    g.chooseCardsToHandLoop p remainingIds cause pendingCard
+  | .logIfCountersIncreased targetId before msg =>
+    g.logIfCountersIncreased targetId before msg
 
 /-- Ask `prop.caster` to choose what pays the first of `picks` (reversing under
 CR 733.1 if `cands.size < pick.count`), or finish the activation when none remain. -/

@@ -523,5 +523,19 @@ def putCountersDeferredLog (g : Game) (oid : ObjectId) (kind : CounterKind)
     else
       g.logPutCounterDelta oid kind before logKind
 
+/-- Whether some counter kind on `oid` now exceeds its count in `before`, i.e.
+counters were actually placed after replacements (CR 122.1 / 614.6). -/
+def countersIncreasedSince (g : Game) (oid : ObjectId) (before : CounterBag) : Bool :=
+  match g.findObject? oid with
+  | none => false
+  | some o =>
+    o.status.toCounterBag.any fun (k, n) =>
+      n > ((before.find? (·.1 == k)).map (·.2)).getD 0
+
+/-- Log `msg` only when `countersIncreasedSince oid before` (CR 122.1 / 614.6). -/
+def logIfCountersIncreased (g : Game) (oid : ObjectId) (before : CounterBag)
+    (msg : String) : Game :=
+  if g.countersIncreasedSince oid before then g.logMsg msg else g
+
 end Game
 end Mtg.Engine

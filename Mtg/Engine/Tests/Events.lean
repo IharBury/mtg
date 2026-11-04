@@ -16084,4 +16084,368 @@ def mustHold23 (label : String) (ok : Bool) : Bool :=
 
 end Phase23EventAlignment
 
+section Phase24Item1EventAlignment
+
+def opp24i1 : PlayerId := ⟨1⟩
+
+def mustHold24i1 (label : String) (ok : Bool) : Bool :=
+  if ok then true else panic! s!"Phase 24 item 1 guard failed: {label}"
+
+def exA24i1 : ReplacementId := { kind := .exileOppDeath, object := some ⟨1981⟩ }
+def exB24i1 : ReplacementId := { kind := .exileOppDeath, object := some ⟨1982⟩ }
+
+/-- Add one (or, with `twice`, two competing) `.exileInsteadOfGraveyard` replacements;
+two force a CR 616.1 `Pending.chooseReplacement` pause on a graveyard-bound move. -/
+def withGyExile24i1 (g : Game) (twice : Bool) : Game :=
+  let g := g.createEffect
+    (.replacement { id := exA24i1, affectedPlayer := me, kind := .exileInsteadOfGraveyard none false })
+    (cause := some testCause)
+  if twice then
+    g.createEffect
+      (.replacement { id := exB24i1, affectedPlayer := me, kind := .exileInsteadOfGraveyard none false })
+      (cause := some testCause)
+  else g
+
+def rAdd24i1 : ReplacementId := { kind := .addCountersPut, object := some ⟨1985⟩ }
+def rMul24i1 : ReplacementId := { kind := .multiplyCountersPut, object := some ⟨1986⟩ }
+
+/-- With `twice`, two competing counter-put replacements on `oid` (add 1, double) that
+pause on `Pending.chooseReplacement`; otherwise a single `mult := 0` replacement
+that leaves no counters placed (CR 122.1 / 614.6 / 616.1). -/
+def withCounterReps24i1 (g : Game) (oid : ObjectId) (kind : CounterKind) (twice : Bool) : Game :=
+  if twice then
+    let g := g.createEffect (.replacement {
+      id := rAdd24i1, source := none, controller := some me, affectedPlayer := me
+      kind := .modifyCountersPut (some oid) (some kind) (add := 1) (mult := 1) }) (cause := some testCause)
+    g.createEffect (.replacement {
+      id := rMul24i1, source := none, controller := some me, affectedPlayer := me
+      kind := .modifyCountersPut (some oid) (some kind) (add := 0) (mult := 2) }) (cause := some testCause)
+  else
+    g.createEffect (.replacement {
+      id := rMul24i1, source := none, controller := some me, affectedPlayer := me
+      kind := .modifyCountersPut (some oid) (some kind) (add := 0) (mult := 0) }) (cause := some testCause)
+
+def newLogs24i1 (g0 g : Game) : Array String := g.log.extract g0.log.size g.log.size
+
+def paused24i1 (g : Game) : Bool :=
+  match g.pending with | .chooseReplacement .. => true | _ => false
+
+/-- Answer a pending replacement choice with its first option. -/
+def resolveChoice24i1 (g : Game) : Game :=
+  match g.pending with
+  | .chooseReplacement p cs => mustApply g p (.chooseReplacement cs[0]!)
+  | _ => g
+
+def replayOk24i1 (gs : Array Game) : Bool :=
+  gs.all (fun g => Game.replayEvents g.events == g && allRulesEventsClassified g)
+
+-- 1. Pause-safe `.toHand` (CR 400.3 owner's hand / 614.6 arrival logs), no mid-resolution
+--    priority/SBAs in `.eachOppDiscardThenPlusOne` (CR 117.3b / 608.2c,n / 704.4), and
+--    deferred counter logs (CR 122.1 / 614.6 / 616.1).
+#guard
+  -- 1a. `.toHand` puts an opponent-owned card into its OWNER's hand and logs accordingly:
+  let gTH0 : Game :=
+    insertObject (insertObject afterDraw bear opp24i1 (.graveyard opp24i1)) hero me (.graveyard me)
+  let thOppId := (gTH0.objects.filter (fun o => o.name == bear.name && o.zone == .graveyard opp24i1))[0]!.id
+  let thMyId := (gTH0.objects.filter (fun o => o.name == hero.name && o.zone == .graveyard me))[0]!.id
+  let gTH1 : Game := gTH0.finishChooseCards me #[thOppId, thMyId] (.toHand false)
+  let thLogs := newLogs24i1 gTH0 gTH1
+  let ownerHandOk : Bool :=
+    (gTH1.followMovedToZone? thOppId (· == .hand opp24i1)).isSome &&
+    (gTH1.followMovedToZone? thMyId (· == .hand me)).isSome &&
+    thLogs.any (·.contains s!"puts {bear.name} into {(gTH1.player opp24i1).name}'s hand") &&
+    thLogs.any (·.contains s!"puts {hero.name} into their hand")
+
+  -- 1b. A stack-leave replacement choice on the first chosen card pauses BEFORE the second
+  --     card moves; the exiled card logs no hand move, the second card logs on arrival:
+  let stA : ReplacementId := { kind := .flashbackExile, object := some ⟨1983⟩ }
+  let stB : ReplacementId := { kind := .flashbackExile, object := some ⟨1984⟩ }
+  let gTHP0 : Game :=
+    let g := insertObject (insertObject afterDraw bear me .stack (some me)) hero me (.graveyard me)
+    let spId := (g.objects.filter (fun o => o.name == bear.name && o.zone == .stack))[0]!.id
+    let g := g.putStackEntry me spId
+    let g := g.createEffect (.replacement {
+      id := stA, affectedPlayer := me, kind := .exileInsteadOfStackLeave none }) (cause := some testCause)
+    g.createEffect (.replacement {
+      id := stB, affectedPlayer := me, kind := .exileInsteadOfStackLeave none }) (cause := some testCause)
+  let thSpId := (gTHP0.objects.filter (fun o => o.name == bear.name && o.zone == .stack))[0]!.id
+  let thGyId := (gTHP0.objects.filter (fun o => o.name == hero.name && o.zone == .graveyard me))[0]!.id
+  let gTHP1 : Game := gTHP0.finishChooseCards me #[thSpId, thGyId] (.toHand false)
+  let gTHP2 : Game := resolveChoice24i1 gTHP1
+  let thpLogs := newLogs24i1 gTHP0 gTHP2
+  let toHandPauseOk : Bool :=
+    paused24i1 gTHP1 &&
+    (gTHP1.findObject? thGyId).any (·.zone == .graveyard me) &&
+    !(newLogs24i1 gTHP0 gTHP1).any (·.contains "into their hand") &&
+    !paused24i1 gTHP2 &&
+    (gTHP2.followMovedToZone? thSpId (· == .exile)).isSome &&
+    (gTHP2.followMovedToZone? thGyId (· == .hand me)).isSome &&
+    !thpLogs.any (·.contains s!"puts {bear.name} into") &&
+    thpLogs.any (·.contains s!"puts {hero.name} into their hand") &&
+    thpLogs.any (·.contains s!"{bear.name} is exiled instead of leaving the stack (CR 614.6)")
+
+  -- 1c. `.eachOppDiscardThenPlusOne` with empty-handed opponents: +1/+1 on the source but
+  --     no SBA check mid-resolution (a lethally damaged creature stays on the battlefield):
+  let gEO0 : Game :=
+    let g := (afterDraw.player opp24i1).hand.foldl (fun acc hid =>
+      (acc.move hid .exile none (cause := some testCause)).1) afterDraw
+    let g := addPermanent (addPermanent g bear me me) hero opp24i1 opp24i1
+    let heroId := (g.battlefield.filter (·.name == hero.name))[0]!.id
+    setMarkedDamage g heroId 5
+  let eoSrcId := (gEO0.battlefield.filter (·.name == bear.name))[0]!.id
+  let eoHeroId := (gEO0.battlefield.filter (·.name == hero.name))[0]!.id
+  let gEO1 : Game := gEO0.applyUnifiedAbility me Effect.eachOppDiscardThenPlusOne #[] (some eoSrcId)
+  let noMidResolutionSbaOk : Bool :=
+    (gEO1.player opp24i1).hand.isEmpty &&
+    (gEO1.object! eoSrcId).status.plusOnePlusOne == 1 &&
+    (gEO1.findObject? eoHeroId).any (·.isOnBattlefield)
+
+  -- 1d. `.putCauseCountersOnSource`: no log when replacements leave no counters; across a
+  --     counter-put replacement pause the log is deferred until the counters land:
+  let fraCause (g : Game) (srcId : ObjectId) : Game :=
+    let abId : ObjectId := ⟨g.nextObjectId⟩
+    let g := g.record (GameEvent.triggerPutOnStack g.turnNumber abId (g.snapshot (g.object! srcId)) me
+      (spec := {
+        sourceId := some srcId
+        fraCauseId := some ⟨1990⟩
+        fraCauseStatus := some { counters := #[(.plusOnePlusOne, 2)] } }))
+    g.changes #[.pushContinuationFrame {}, .resolvingAbility (some abId)]
+  let gPC0 : Game := addPermanent afterDraw bear me me
+  let pcSrcId := (gPC0.battlefield.filter (·.name == bear.name))[0]!.id
+  let gPCZero0 : Game := fraCause (withCounterReps24i1 gPC0 pcSrcId .plusOnePlusOne false) pcSrcId
+  let gPCZero1 : Game :=
+    gPCZero0.applyFraAbility me Effect.eachOppDiscardThenPlusOne .putCauseCountersOnSource #[] (some pcSrcId)
+  let gPCPause0 : Game := fraCause (withCounterReps24i1 gPC0 pcSrcId .plusOnePlusOne true) pcSrcId
+  let gPCPause1 : Game :=
+    gPCPause0.applyFraAbility me Effect.eachOppDiscardThenPlusOne .putCauseCountersOnSource #[] (some pcSrcId)
+  let gPCPause2 : Game := resolveChoice24i1 gPCPause1
+  let gPCNorm0 : Game := fraCause gPC0 pcSrcId
+  let gPCNorm1 : Game :=
+    gPCNorm0.applyFraAbility me Effect.eachOppDiscardThenPlusOne .putCauseCountersOnSource #[] (some pcSrcId)
+  let causeCountersLogOk : Bool :=
+    (gPCZero1.object! pcSrcId).status.plusOnePlusOne == 0 &&
+    !(newLogs24i1 gPCZero0 gPCZero1).any (·.contains "Counters are put on") &&
+    paused24i1 gPCPause1 &&
+    !(newLogs24i1 gPCPause0 gPCPause1).any (·.contains "Counters are put on") &&
+    (gPCPause2.object! pcSrcId).status.plusOnePlusOne > 0 &&
+    (newLogs24i1 gPCPause0 gPCPause2).any (·.contains "Counters are put on") &&
+    (gPCNorm1.object! pcSrcId).status.plusOnePlusOne == 2 &&
+    (newLogs24i1 gPCNorm0 gPCNorm1).any (·.contains "Counters are put on")
+
+  -- 1e. `.mayMoveAllCounters` accept: the same gating / deferral for "All counters move":
+  let gMv0 : Game :=
+    let g := insertObject afterDraw bear me .battlefield (some me)
+      (status := { counters := #[(.plusOnePlusOne, 2)] })
+    addPermanent g hero me me
+  let mvSrcId := (gMv0.battlefield.filter (·.name == bear.name))[0]!.id
+  let mvDstId := (gMv0.battlefield.filter (·.name == hero.name))[0]!.id
+  let askMove (g : Game) : Game :=
+    g.changes #[.pushContinuationFrame {}, .pending (.fraChoice me (.mayMoveAllCounters mvSrcId mvDstId))]
+  let gMvZero0 : Game := askMove (withCounterReps24i1 gMv0 mvDstId .plusOnePlusOne false)
+  let gMvZero1 : Game := mustApply gMvZero0 me .accept
+  let gMvPause0 : Game := askMove (withCounterReps24i1 gMv0 mvDstId .plusOnePlusOne true)
+  let gMvPause1 : Game := mustApply gMvPause0 me .accept
+  let gMvPause2 : Game := resolveChoice24i1 gMvPause1
+  let gMvNorm0 : Game := askMove gMv0
+  let gMvNorm1 : Game := mustApply gMvNorm0 me .accept
+  let moveCountersLogOk : Bool :=
+    (gMvZero1.object! mvDstId).status.plusOnePlusOne == 0 &&
+    !(newLogs24i1 gMvZero0 gMvZero1).any (·.contains "All counters move") &&
+    paused24i1 gMvPause1 &&
+    !(newLogs24i1 gMvPause0 gMvPause1).any (·.contains "All counters move") &&
+    (gMvPause2.object! mvDstId).status.plusOnePlusOne > 0 &&
+    (newLogs24i1 gMvPause0 gMvPause2).any (·.contains "All counters move") &&
+    (gMvNorm1.object! mvDstId).status.plusOnePlusOne == 2 &&
+    (newLogs24i1 gMvNorm0 gMvNorm1).any (·.contains "All counters move")
+
+  mustHold24i1 "1a.ownerHandOk" ownerHandOk &&
+  mustHold24i1 "1b.toHandPauseOk" toHandPauseOk &&
+  mustHold24i1 "1c.noMidResolutionSbaOk" noMidResolutionSbaOk &&
+  mustHold24i1 "1d.causeCountersLogOk" causeCountersLogOk &&
+  mustHold24i1 "1e.moveCountersLogOk" moveCountersLogOk &&
+  mustHold24i1 "1.replay" (replayOk24i1 #[gTH1, gTHP1, gTHP2, gEO1, gPCZero1, gPCPause1, gPCPause2,
+    gPCNorm1, gMvZero1, gMvPause1, gMvPause2, gMvNorm1])
+
+-- 2. `Leaving.redirectPendingAfterLeave` preserves the outer `pendingReplacement` across a
+--    graveyard replacement choice in all six branches (CR 616.1 / 800.4a,f–h).
+#guard
+  let base : Game :=
+    let g := insertObject (addPermanent afterDraw bear me me) hero me .stack (some me)
+    let spId := (g.objects.filter (fun o => o.name == hero.name && o.zone == .stack))[0]!.id
+    let g := g.putStackEntry me spId
+    let g := withGyExile24i1 g true
+    g.change (.pushContinuationFrame { pendingReplacement := some (.restorePending (.scry me 1)) })
+  let bearId := (base.battlefield.filter (·.name == bear.name))[0]!.id
+  let spId := (base.objects.filter (fun o => o.name == hero.name && o.zone == .stack))[0]!.id
+  let run (pending : Pending) (movedId : ObjectId) : Game × Game × Bool :=
+    let g1 := (base.change (.pending pending)).redirectPendingAfterLeave opp24i1
+    let g2 := resolveChoice24i1 g1
+    (g1, g2,
+      paused24i1 g1 && g2.pending == .scry me 1 &&
+        (g2.followMovedToZone? movedId (· == .exile)).isSome)
+  let (gC1, gC2, counterOk) := run (.payOrLetCounter opp24i1 2 (some spId)) spId
+  let (gW1, gW2, wardOk) := run (.payWard opp24i1 spId .discardCard) spId
+  let (gS1, gS2, chooseSacOk) := run (.chooseSacrificeCreature opp24i1 #[bearId] #[]) bearId
+  let (gE1, gE2, eachOk) := run (.fraChoice opp24i1 (.sacrificeCreatureEach me #[] #[bearId])) bearId
+  let (gN1, gN2, nontokenOk) := run (.fraChoice opp24i1 (.sacrificeNontokenEach #[] #[bearId])) bearId
+  let (gD1, gD2, damagerOk) := run (.fraChoice opp24i1 (.sacrificeDamager #[] #[] me #[(me, bearId)])) bearId
+  mustHold24i1 "2.payOrLetCounter" counterOk &&
+  mustHold24i1 "2.payWard" wardOk &&
+  mustHold24i1 "2.chooseSacrificeCreature" chooseSacOk &&
+  mustHold24i1 "2.sacrificeCreatureEach" eachOk &&
+  mustHold24i1 "2.sacrificeNontokenEach" nontokenOk &&
+  mustHold24i1 "2.sacrificeDamager" damagerOk &&
+  mustHold24i1 "2.replay" (replayOk24i1 #[gC1, gC2, gW1, gW2, gS1, gS2, gE1, gE2, gN1, gN2, gD1, gD2])
+
+-- 3. Discards and sacrifices log only on arrival in the owner's graveyard
+--    (CR 400.3 / 614.6 / 701.9a / 701.21a).
+#guard
+  let gSync : Game := withGyExile24i1 afterDraw false
+  let gPause : Game := withGyExile24i1 afterDraw true
+  let handCard (g : Game) : ObjectId := (g.player me).hand.back!
+  let unwrap (g : Game) (r : Except String Game) : Game :=
+    match r with | .ok g' => g' | .error _ => g
+  let check (g0 : Game) (f : Game → ObjectId → Game) (needle : String) (exiled : Bool) :
+      Game × Bool :=
+    let cid := handCard g0
+    let g1 := resolveChoice24i1 (f g0 cid)
+    let logs := newLogs24i1 g0 g1
+    let ok :=
+      if exiled then
+        (g1.followMovedToZone? cid (· == .exile)).isSome && !logs.any (·.contains needle)
+      else
+        (g1.followMovedToZone? cid (· == .graveyard me)).isSome && logs.any (·.contains needle)
+    (g1, ok)
+  -- 3a. Cost discard (`payCostPickItems`):
+  let costDisc (g : Game) (cid : ObjectId) : Game := g.payCostPickItems me none none .discardACard #[cid]
+  let (gCd1, cdSyncOk) := check gSync costDisc " discards " true
+  let (gCd2, cdPauseOk) := check gPause costDisc " discards " true
+  let (gCd3, cdNormOk) := check afterDraw costDisc " discards " false
+  -- 3b. `discardSource` activation cost:
+  let srcDisc (g : Game) (cid : ObjectId) : Game :=
+    unwrap g (g.payActivationExtraCosts me cid false false (discardSource := true))
+  let (gSd1, sdSyncOk) := check gSync srcDisc " discards " true
+  let (gSd2, sdPauseOk) := check gPause srcDisc " discards " true
+  let (gSd3, sdNormOk) := check afterDraw srcDisc " discards " false
+  -- 3c. `discardHandIdsLoop` with `logEach`:
+  let loopDisc (g : Game) (cid : ObjectId) : Game := g.discardHandIdsLoop me #[cid] (logEach := true)
+  let (gLd1, ldSyncOk) := check gSync loopDisc " discards " true
+  let (gLd2, ldPauseOk) := check gPause loopDisc " discards " true
+  let (gLd3, ldNormOk) := check afterDraw loopDisc " discards " false
+  -- 3d. `discardFromHandRandomly`: neither line logs when the card is exiled instead:
+  let randDisc (g : Game) (cid : ObjectId) : Game := g.discardFromHandRandomly me cid
+  let (gRd1, rdSyncOk) := check gSync randDisc "discards" true
+  let (gRd2, rdPauseOk) := check gPause randDisc "discards" true
+  let (gRd3, rdNormOk) := check afterDraw randDisc "discards a card at random" false
+  -- 3e. `discardNonlandFrom` delegates to `discardFromHand` (chooser line gated too):
+  let nonlandSetup (g : Game) : Game :=
+    let g := (g.player me).hand.foldl (fun acc hid =>
+      (acc.move hid .exile none (cause := some testCause)).1) g
+    insertObject g bear me (.hand me)
+  let nlDisc (g : Game) (_ : ObjectId) : Game := g.discardNonlandFrom opp24i1 me
+  let (gNl1, nlSyncOk) := check (nonlandSetup gSync) nlDisc "discards it" true
+  let (gNl2, nlPauseOk) := check (nonlandSetup gPause) nlDisc "discards it" true
+  let (gNl3, nlNormOk) := check (nonlandSetup afterDraw) nlDisc "discards it" false
+  -- 3f. Cleanup discard of an opponent-owned card goes to its OWNER's graveyard (CR 400.3):
+  let gCl0 : Game := insertObject afterDraw bear opp24i1 (.hand me)
+  let clId := (gCl0.player me).hand.back!
+  let gCl1 : Game := gCl0.discardCleanupIds me #[clId]
+  let gClEx0 : Game := withGyExile24i1 gCl0 true
+  let gClEx1 : Game := gClEx0.discardCleanupIds me #[clId]
+  let gClEx2 : Game := resolveChoice24i1 gClEx1
+  let cleanupOk : Bool :=
+    (gCl1.followMovedToZone? clId (· == .graveyard opp24i1)).isSome &&
+    (newLogs24i1 gCl0 gCl1).any (·.contains s!"discards {bear.name} (cleanup)") &&
+    paused24i1 gClEx1 &&
+    (gClEx2.followMovedToZone? clId (· == .exile)).isSome &&
+    !(newLogs24i1 gClEx0 gClEx2).any (·.contains "(cleanup)")
+  -- 3g. Sacrifices: `sacrificeToGraveyard` and `.movedAsSacrificed`:
+  let sacCheck (g0 : Game) (f : Game → ObjectId → Game) (needle : String) (exiled : Bool) :
+      Game × Bool :=
+    let g0 := addPermanent g0 bear me me
+    let bid := (g0.battlefield.filter (·.name == bear.name))[0]!.id
+    let g1 := resolveChoice24i1 (f g0 bid)
+    let logs := newLogs24i1 g0 g1
+    let ok :=
+      if exiled then
+        (g1.followMovedToZone? bid (· == .exile)).isSome && !logs.any (·.contains needle) &&
+          logs.any (·.contains s!"{bear.name} is exiled instead of dying (CR 614.6)")
+      else
+        (g1.followMovedToZone? bid (· == .graveyard me)).isSome && logs.any (·.contains needle)
+    (g1, ok)
+  let sacToGy (g : Game) (bid : ObjectId) : Game :=
+    g.sacrificeToGraveyard (g.object! bid) s!"P24 sacrifices {bear.name}"
+  let (gSt1, stSyncOk) := sacCheck gSync sacToGy "P24 sacrifices" true
+  let (gSt2, stPauseOk) := sacCheck gPause sacToGy "P24 sacrifices" true
+  let (gSt3, stNormOk) := sacCheck afterDraw sacToGy "P24 sacrifices" false
+  let dummyAb : TriggeredAbility := .triggered .enter (Effect.gainLife 1)
+  let movedSac (g : Game) (bid : ObjectId) : Game :=
+    g.applySacrifice me dummyAb (some bid) #[] (.sacrificedSource .movedAsSacrificed) .none
+  let (gMs1, msSyncOk) := sacCheck gSync movedSac "is sacrificed" true
+  let (gMs2, msPauseOk) := sacCheck gPause movedSac "is sacrificed" true
+  let (gMs3, msNormOk) := sacCheck afterDraw movedSac "is sacrificed" false
+  mustHold24i1 "3a.costDiscard" (cdSyncOk && cdPauseOk && cdNormOk) &&
+  mustHold24i1 "3b.discardSource" (sdSyncOk && sdPauseOk && sdNormOk) &&
+  mustHold24i1 "3c.discardHandIdsLoop" (ldSyncOk && ldPauseOk && ldNormOk) &&
+  mustHold24i1 "3d.discardRandomly" (rdSyncOk && rdPauseOk && rdNormOk) &&
+  mustHold24i1 "3e.discardNonlandFrom" (nlSyncOk && nlPauseOk && nlNormOk) &&
+  mustHold24i1 "3f.cleanupOk" cleanupOk &&
+  mustHold24i1 "3g.sacrificeToGraveyard" (stSyncOk && stPauseOk && stNormOk) &&
+  mustHold24i1 "3g.movedAsSacrificed" (msSyncOk && msPauseOk && msNormOk) &&
+  mustHold24i1 "3.replay" (replayOk24i1 #[gCd1, gCd2, gCd3, gSd1, gSd2, gSd3, gLd1, gLd2, gLd3,
+    gRd1, gRd2, gRd3, gNl1, gNl2, gNl3, gCl1, gClEx1, gClEx2, gSt1, gSt2, gSt3, gMs1, gMs2, gMs3])
+
+-- 4. CR 303.4g stack-Aura graveyard log gated on arrival, non-battlefield `exileInstead`
+--    wording (CR 614.6 / 700.4), and Palantír influence log gated on counter delta (CR 122.1).
+#guard
+  let auraDef : CardDef := aura "P24 Hostless Aura" ManaCost.empty "Enchant creature"
+  let auraOnStack (g : Game) : Game × ObjectId :=
+    let g := insertObject g auraDef me .stack (some me)
+    let aid := (g.objects.filter (fun o => o.name == auraDef.name && o.zone == .stack))[0]!.id
+    (g.putStackEntry me aid, aid)
+  let auraRun (g0 : Game) : Game × Game × ObjectId :=
+    let (g0, aid) := auraOnStack g0
+    let g1 := (g0.move aid .battlefield none (cause := some testCause)).1
+    (g0, resolveChoice24i1 g1, aid)
+  let goesLog := "goes to the graveyard (can't be attached legally; CR 303.4g)"
+  let (gA0, gA1, aNormId) := auraRun afterDraw
+  let (gAS0, gAS1, aSyncId) := auraRun (withGyExile24i1 afterDraw false)
+  let (gAP0, gAP1, aPauseId) := auraRun (withGyExile24i1 afterDraw true)
+  let aura303Ok : Bool :=
+    (gA1.followMovedToZone? aNormId (· == .graveyard me)).isSome &&
+    (newLogs24i1 gA0 gA1).any (·.contains goesLog) &&
+    (gAS1.followMovedToZone? aSyncId (· == .exile)).isSome &&
+    !(newLogs24i1 gAS0 gAS1).any (·.contains goesLog) &&
+    (newLogs24i1 gAS0 gAS1).any (·.contains s!"{auraDef.name} is exiled instead of going to a graveyard (CR 614.6)") &&
+    !(newLogs24i1 gAS0 gAS1).any (·.contains "instead of dying") &&
+    (gAP1.followMovedToZone? aPauseId (· == .exile)).isSome &&
+    !(newLogs24i1 gAP0 gAP1).any (·.contains goesLog)
+
+  -- Palantír: `mult := 0` leaves no influence counter (no log, still scries); a paused
+  -- counter-put replacement defers the log until the counter lands:
+  let gPl0 : Game := addPermanent afterDraw bear me me
+  let plId := (gPl0.battlefield.filter (·.name == bear.name))[0]!.id
+  let gPlZero0 : Game := withCounterReps24i1 gPl0 plId .influence false
+  let gPlZero1 : Game := gPlZero0.applyPalantir plId (some opp24i1)
+  let gPlPause0 : Game := withCounterReps24i1 gPl0 plId .influence true
+  let gPlPause1 : Game := gPlPause0.applyPalantir plId (some opp24i1)
+  let gPlPause2 : Game := resolveChoice24i1 gPlPause1
+  let gPlNorm1 : Game := gPl0.applyPalantir plId (some opp24i1)
+  let isScry (g : Game) : Bool := match g.pending with | .scry p 2 => p == me | _ => false
+  let palantirOk : Bool :=
+    (gPlZero1.object! plId).status.influence == 0 &&
+    !(newLogs24i1 gPlZero0 gPlZero1).any (·.contains "gets an influence counter") &&
+    isScry gPlZero1 &&
+    paused24i1 gPlPause1 &&
+    !(newLogs24i1 gPlPause0 gPlPause1).any (·.contains "gets an influence counter") &&
+    (gPlPause2.object! plId).status.influence > 0 &&
+    (newLogs24i1 gPlPause0 gPlPause2).any (·.contains "gets an influence counter") &&
+    isScry gPlPause2 &&
+    (newLogs24i1 gPl0 gPlNorm1).any (·.contains "gets an influence counter")
+  mustHold24i1 "4a.aura303Ok" aura303Ok &&
+  mustHold24i1 "4b.palantirOk" palantirOk &&
+  mustHold24i1 "4.replay" (replayOk24i1 #[gA1, gAS1, gAP1, gPlZero1, gPlPause1, gPlPause2, gPlNorm1])
+
+end Phase24Item1EventAlignment
+
 end Mtg.Engine.EventTests

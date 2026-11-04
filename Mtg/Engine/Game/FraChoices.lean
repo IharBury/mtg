@@ -630,13 +630,18 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
         let g := g.withBatch none fun g =>
           let moved := src.status
           let srcName := g.name src
+          let dstBefore := dst.status.toCounterBag
           let g := g.removeAllCountersFrom src.id (byPlayer := some p)
           let dst := g.object! toId
+          let msg := s!"All counters move from {srcName} onto {g.name dst}"
           let g := g.putCountersExceptPlusOne dst.id moved (byPlayer := some p)
           let g :=
             if moved.plusOnePlusOne > 0 then g.addPlusOnePlusOneTo (g.object! toId) moved.plusOnePlusOne
             else g
-          g.logMsg s!"All counters move from {srcName} onto {g.name (g.object! toId)}"
+          if let .chooseReplacement .. := g.pending then
+            g.chainPendingReplacement (.finishPostStep (.logIfCountersIncreased toId dstBefore msg))
+          else
+            g.logIfCountersIncreased toId dstBefore msg
         return g.finishFraChoice
     | _, _ => return g.finishFraChoice
   | .mayMoveAllCounters .., .decline => return g.finishFraChoice

@@ -251,15 +251,17 @@ def discardCleanupIds (g : Game) (p : PlayerId) (ids : Array ObjectId) : Game :=
     let id := ids[i]!
     let pl := g.player p
     if pl.hand.contains id then
-      let name := (g.object! id).name
-      let (g', _) := g.move id (.graveyard p) none (verb := some .discard) (actor := some p)
+      let card := g.object! id
+      let name := card.name
+      let owner := card.owner
+      let (g', _) := g.move id (.graveyard owner) none (verb := some .discard) (actor := some p)
         (cause := some (.turnBased .cleanupDiscard))
       g := g'
       if let .chooseReplacement .. := g.pending then
         let rem := ids.extract (i + 1) ids.size
-        g := g.chainPendingReplacement (.finishPostStep (.discardCleanupIds p rem (some id)))
+        g := g.chainPendingReplacement (.finishPostStep (.discardCleanupIds p rem (some (id, owner))))
         return g
-      if !(g.player p).hand.contains id then
+      if (g.followMovedToZone? id (· == .graveyard owner)).isSome then
         g := g.logMsg s!"{pl.name} discards {name} (cleanup)"
   return g
 
