@@ -273,7 +273,7 @@ def finishOneResolution (g : Game) (fin : ResolutionFinish) : Game :=
         g.record (GameEvent.resolved g.turnNumber controller 0 snap
           (sourceId := sourceId) (ability := ab?)
           (cause := some (.gameRule .abilityFinishedResolving)))
-  | .spell entry snap fromGy =>
+  | .spell entry snap _fromGy =>
     match g.findObject? entry.objectId with
     | none =>
       let g :=
@@ -296,10 +296,9 @@ def finishOneResolution (g : Game) (fin : ResolutionFinish) : Game :=
           else if g.isAura obj || (g.isPermanentCard obj && !g.isLand obj) then
             .gameRule .permanentSpellResolved
           else .gameRule .instantOrSorceryFinishedResolving
-        let hasFlashback :=
-          GameEvent.castWithFlashback g.events obj.id || g.flashbackUntilEot obj ||
-            (fromGy && !g.freeCastFromGraveyard obj &&
-              ((g.baseCard obj).flashback.isSome || g.hasFlashbackPermission obj))
+        -- CR 702.34a: only a spell actually cast via Flashback is exiled; a non-Flashback
+        -- graveyard cast (Bilbo's `mayCastFromGraveyard`) goes to the graveyard as usual.
+        let hasFlashback := g.castViaFlashback obj
         let g :=
           if obj.isAdventureSpell then
             g.resolveAdventureSpell entry obj

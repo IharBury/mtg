@@ -413,8 +413,11 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         [.dealDamage (.fixed n) .target .markedPermanent,
          .«if» (.dealtDamageToSubtype subtype) (.destroy .permanentDealtDamage)] }
   | .attachEquipmentToCreature =>
+    -- *Iron Hills Stalwart*: the Equipment target is mandatory (slot 0); only the creature
+    -- slot is optional (`optionalSlots := #[1]`), so the trigger is removed when you control
+    -- no Equipment (CR 115.1c / 603.3d).
     { targeting := .of .equipmentYouControlThenCreatureYouControl,
-      allowsZeroTargets := true, resolution := .attach .target .optionalCreature }
+      allowsZeroTargets := false, resolution := .attach .target .optionalCreature }
   | .defenderSacsLeastPower =>
     { resolution := .sacrifice .leastPower }
   | .returnOtherPlusOne =>

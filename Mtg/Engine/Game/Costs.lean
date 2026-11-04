@@ -55,13 +55,20 @@ def paySneak (g : Game) (p : PlayerId) (spellId : ObjectId) (attackerId : Object
     (costs := #[.sneak attackerId atkTarget]) (cause := cause))
   return g.logMsg s!"{(g.player p).name} pays a sneak cost"
 
-/-- Starting mana cost of `face` before increases and reductions (CR 118.7). -/
+/-- Starting mana cost of `face` before increases and reductions (CR 118.7).
+The flashback cost replaces the mana cost only for a cast actually made via Flashback
+(CR 702.34a / 601.2b,f): `flashback := some b` states it explicitly (the caster
+knows how the spell is being cast); otherwise a card still in a graveyard is assumed
+to be cast via its flashback ability (the only way `castSpell` casts a non-free
+graveyard card with flashback), and a spell already cast reads
+`GameEvent.castWithFlashback` rather than any graveyard origin (so *Bilbo, Thief in
+the Night*'s `mayCastFromGraveyard` pays the normal mana cost). -/
 def playCostStart (g : Game) (card : GameObject) (face : CardDef)
-    (isFreeFromGy : Option Bool := none) : ManaCost :=
+    (isFreeFromGy : Option Bool := none) (flashback : Option Bool := none) : ManaCost :=
   let inGy := match card.zone with | .graveyard _ => true | _ => false
   if isFreeFromGy.getD (g.freeCastFromGraveyard card && inGy) then
     ManaCost.empty
-  else if g.castFromGraveyard card.id || inGy then
+  else if flashback.getD (inGy || GameEvent.castWithFlashback g.events card.id) then
     face.flashback.getD face.manaCost
   else face.manaCost
 
@@ -220,7 +227,7 @@ are applied before these reductions. -/
 def playManaCost (g : Game) (card : GameObject) (face : CardDef)
     (increase : ManaCost := ManaCost.empty)
     (origPerm : Option PlayPermission := none)
-    (isFreeFromGy : Option Bool := none) : ManaCost :=
+    (isFreeFromGy : Option Bool := none) (flashback : Option Bool := none) : ManaCost :=
   let caster := card.controller.getD card.owner
   -- Thalia, the Survivor: each one an opponent controls adds {1}.
   let tax :=
@@ -230,7 +237,7 @@ def playManaCost (g : Game) (card : GameObject) (face : CardDef)
         acc + ((g.permanentsOf pl.id).filter (fun o => (g.staticAbilities o).any
           (· == .fra .opponentsNoncreatureSpellsCostMore))).size) 0
   let increase := if tax == 0 then increase else increase.addCost (ManaCost.ofGeneric tax)
-  let start := g.playCostStart card face isFreeFromGy
+  let start := g.playCostStart card face isFreeFromGy flashback
   let afterIncrease := start.addCost increase
   let afterEquip := g.applyCastCostReductions card face afterIncrease
   let freeRG :=

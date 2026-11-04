@@ -136,11 +136,10 @@ def replaceZoneMove (g : Game) (old : GameObject) (beforeSnap : EventObject)
       GameEvent.moved g.turnNumber beforeSnap old.zone curDest (discarded := discarded)
         (verb := verb) (actor := actor) (libraryPosition := libraryPosition) (cause := proposedCause)
     let mut specs : Array (ReplacementSpec × Option GameObject × Bool) := #[]
-    -- CR 702.34a: flashback exiles the spell whenever it would leave the stack for anywhere else.
-    let hasFlashback :=
-      GameEvent.castWithFlashback g.events old.id || g.flashbackUntilEot old ||
-        (g.castFromGraveyard old.id && !g.freeCastFromGraveyard old &&
-          ((g.baseCard old).flashback.isSome || g.hasFlashbackPermission old))
+    -- CR 702.34a: flashback exiles the spell whenever it would leave the stack for anywhere
+    -- else — but only a spell actually cast via Flashback (`castViaFlashback`), not any
+    -- non-free graveyard cast (Bilbo's `mayCastFromGraveyard` is `CastWay.normal`).
+    let hasFlashback := g.castViaFlashback old
     if proposed.watches .wouldLeaveStack && hasFlashback && !old.isCopy && curDest != .exile then
       specs := specs.push (
         { id := { kind := .flashbackExile, object := some old.id }

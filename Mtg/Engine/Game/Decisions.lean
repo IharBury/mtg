@@ -2078,7 +2078,14 @@ partial def beginResolutionCastTargets (g : Game) (p : PlayerId) (prop : Propose
     g.change (.pending (.chooseTeamwork p))
       |>.logMsg s!"{(g.player p).name} may pay a teamwork cost (CR 702.194)"
   else if g.proposedNeedsTarget prop then
-    if (g.legalCastTargets p face).isEmpty && !face.allowsZeroTargets then
+    -- CR 601.2c / 702.33d,g: check the targeting of the spell as proposed (kicked or not).
+    let zeroOk := face.allowsZeroTargets ||
+      (g.currentSpellEffect spell).any (·.allowsZeroTargets)
+    let noLegal :=
+      if g.isAura spell && (g.currentSpellEffect spell).isNone then
+        (g.legalCastTargets p face).isEmpty
+      else (g.legalProposedTargets p spell).isEmpty
+    if noLegal && !zeroOk then
       g.reverseProposedSpell (resumeContinuation := true)
         (extraLog := some s!"{face.name} has no legal target and can't be cast")
     else
@@ -2181,7 +2188,10 @@ partial def castAsPartOfResolution (g : Game) (p : PlayerId) (id : ObjectId)
         zone := original.zone
         exiledBy := original.exiledBy
         controller := some p }
-      let cost := g.playManaCost preSpell stackFace (origPerm := origPerm) (isFreeFromGy := some isFreeFromGy)
+      -- CR 702.34a: casting as an ability resolves is never a Flashback cast, so a
+      -- graveyard card (Bilbo's `mayCastFromGraveyard`) pays its normal mana cost.
+      let cost := g.playManaCost preSpell stackFace (origPerm := origPerm)
+        (isFreeFromGy := some isFreeFromGy) (flashback := some false)
       let needsSacrifice :=
         stackFace.additionalCostSacrificeCreature ||
           (stackFace.additionalCostSacrificeArtifactOrCreature && stackFace.additionalCostOrPayGeneric.isNone)
@@ -2237,12 +2247,15 @@ partial def chooseCastFromLooked (g : Game) (p : PlayerId) (castId : Option Obje
       match g.mayCastFromLookedError p ids maxMv id with
       | some err => throw err
       | none =>
+        -- CR 733.1 / 601.2: checkpoint while the Cosmic Cube choice is still pending, so
+        -- reversing an illegal proposal restores `mayCastFromLooked` (cards still on top,
+        -- no continuation frame or bottoming cleanup yet).
+        let g := g.change .saveProposalCheckpoint
         let g :=
           if g.continuations.isEmpty then g.change (.pushContinuationFrame {}) else g
         let g := g.changes #[
           .postCastCleanup (some (.lookedBottom p id ids)),
-          .pending .none,
-          .saveProposalCheckpoint
+          .pending .none
         ]
         let g := g.castAsPartOfResolution p id (callerCheckpoint := true)
         if g.pending != .none then
@@ -2326,8 +2339,17 @@ partial def afterAdditionalCostAnnounced (g : Game) : Game :=
       (g.change (.pending (.chooseTeamwork p))).logMsg
         s!"{(g.player p).name} may pay a teamwork cost (CR 702.194)"
     else if g.proposedNeedsTarget prop then
-      if prop.resolutionCast &&
-          (g.legalCastTargets p face).isEmpty && !face.allowsZeroTargets then
+      -- CR 601.2c / 702.33d,g / 733.1: the targets announced now are those of the spell as
+      -- proposed (kicked or not). A target-replacing kicker may have been the only route to
+      -- a legal target; declining it (or kicking with no kicked target) leaves no legal
+      -- choice, so the proposal is reversed for every cast, not only resolution casts.
+      let zeroOk := face.allowsZeroTargets ||
+        (g.currentSpellEffect spell).any (·.allowsZeroTargets)
+      let noLegal :=
+        if g.isAura spell && (g.currentSpellEffect spell).isNone then
+          (g.legalCastTargets p face).isEmpty
+        else (g.legalProposedTargets p spell).isEmpty
+      if prop.kind == .spell && noLegal && !zeroOk then
         g.reverseProposedSpell (resumeContinuation := true)
           (extraLog := some s!"{face.name} has no legal target and can't be cast")
       else
@@ -3193,7 +3215,7 @@ def castExiledAsAbilityResolves (g : Game) (p : PlayerId) (id : ObjectId) :
           !isReturnUpToTwoGyModal face && !face.allowsZeroTargets then
         throw s!"{face.name} has no mode with a legal target"
       if !isModalSpellFace face && (face.requiresTarget || face.isAura) &&
-          (g.legalCastTargets p face).isEmpty && !face.allowsZeroTargets then
+          !g.castFaceHasLegalTarget p face && !face.allowsZeroTargets then
         throw s!"{face.name} requires a target"
     let g :=
       match g.pendingReplacement with
@@ -3214,6 +3236,7 @@ def castExiledAsAbilityResolves (g : Game) (p : PlayerId) (id : ObjectId) :
       exiledBy := card.exiledBy
       controller := some p }
     let cost := g.playManaCost preSpell stackFace (origPerm := origPerm) (isFreeFromGy := some false)
+      (flashback := some false)
     let needsSacrifice :=
       stackFace.additionalCostSacrificeCreature ||
         (stackFace.additionalCostSacrificeArtifactOrCreature && stackFace.additionalCostOrPayGeneric.isNone)

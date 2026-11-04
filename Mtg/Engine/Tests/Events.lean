@@ -7086,7 +7086,9 @@ departed-source `lastKnownBefore?` LKI + Step 4 audits. -/
     gLookCast.postCastCleanup.isNone &&
     (gLookCast.player me).library[0]? == some (gLookCast.followMoved drawLibId) &&
     Game.replayEvents gLookCast.events == gLookCast
-  -- Branch 2: reversing the paused proposal returns `remLibId` to `.library` and bottoms BOTH looked cards.
+  -- Branch 2: reversing the paused proposal returns `remLibId` to `.library` and restores the
+  -- CR 733.1 checkpoint taken while `Pending.mayCastFromLooked` was still open (Phase 24 item
+  -- 2): nothing is bottomed and the choice is offered again.
   let gLookRev :=
     let g1 := gLookPaused.reverseProposedSpell
     match g1.pending with
@@ -7095,6 +7097,8 @@ departed-source `lastKnownBefore?` LKI + Step 4 audits. -/
   let lookRevRestored :=
     gLookRev.stack.isEmpty &&
     gLookRev.postCastCleanup.isNone &&
+    gLookRev.pending == .mayCastFromLooked me #[remLibId, drawLibId] 10 &&
+    (gLookRev.player me).library.back? == some remLibId &&
     lookPostCastBottomOk &&
     lookDeferredDuringTargets &&
     Game.replayEvents gLookRev.events == gLookRev
@@ -7781,17 +7785,26 @@ departed-source `lastKnownBefore?` LKI + Step 4 audits. -/
     let cid := (g.player me).library.back!
     let g := mkSeqFrame g 3
     (g.beginMayCastFromLooked me 1 5, cid)
+  -- CR 601.2b–c / 733.1 (Phase 24 item 2): a looked-at card with no legal target or no
+  -- choosable mode is rejected up front by `mayCastFromLookedError`; the choice stays open
+  -- and declining it finishes the ability.
+  let rejectsNoTarget (g : Game) (cid : ObjectId) : Bool :=
+    match g.apply me (.cast cid) with
+    | .error e => mentions e "has no legal target and can't be cast"
+    | .ok _ => false
   let (gLookNoTgt0, lookNoTgtId) := mkTopLook1 impossibleRemDef
-  let gLookNoTgt := mustApply gLookNoTgt0 me (.cast lookNoTgtId)
+  let lookNoTgtRejected := rejectsNoTarget gLookNoTgt0 lookNoTgtId
+  let gLookNoTgt := mustApply gLookNoTgt0 me .decline
   let (gLookNoMode0, lookNoModeId) := mkTopLook1 impossibleModalDef
-  let gLookNoMode := mustApply gLookNoMode0 me (.cast lookNoModeId)
+  let lookNoModeRejected := rejectsNoTarget gLookNoMode0 lookNoModeId
+  let gLookNoMode := mustApply gLookNoMode0 me .decline
   let (gLookSync0, lookSyncId) := mkTopLook1 freeDrawDef
   let gLookSync := mustApply gLookSync0 me (.cast lookSyncId)
   let gLookDec := mustApply gLookSync0 me .decline
   let lookedContAllOk :=
+    lookNoTgtRejected && lookNoModeRejected &&
     gLookNoTgt.triggerSequenceRest.isNone && gLookNoTgt.continuations.isEmpty &&
     (gLookNoTgt.player me).life == 23 && gLookNoTgt.stack.isEmpty &&
-    gLookNoTgt.log.any (fun s => mentions s "has no legal target and can't be cast") &&
     gLookNoMode.triggerSequenceRest.isNone && gLookNoMode.continuations.isEmpty &&
     (gLookNoMode.player me).life == 23 && gLookNoMode.stack.isEmpty &&
     gLookSync.triggerSequenceRest.isNone && gLookSync.continuations.isEmpty &&
@@ -16447,5 +16460,320 @@ def replayOk24i1 (gs : Array Game) : Bool :=
   mustHold24i1 "4.replay" (replayOk24i1 #[gA1, gAS1, gAP1, gPlZero1, gPlPause1, gPlPause2, gPlNorm1])
 
 end Phase24Item1EventAlignment
+
+section Phase24Item2EventAlignment
+
+def opp24i2 : PlayerId := ⟨1⟩
+
+def mustHold24i2 (label : String) (ok : Bool) : Bool :=
+  if ok then true else panic! s!"Phase 24 item 2 guard failed: {label}"
+
+def newLogs24i2 (g0 g : Game) : Array String := g.log.extract g0.log.size g.log.size
+
+def replayOk24i2 (gs : Array Game) : Bool :=
+  gs.all (fun g => Game.replayEvents g.events == g && allRulesEventsClassified g)
+
+def isErr24i2 (r : Except String Game) : Bool :=
+  match r with
+  | .error _ => true
+  | .ok _ => false
+
+/-- A sorcery with mana cost `{1}` and flashback `{3}` (CR 702.34a). -/
+def fbDraw24i2 : CardDef := {
+  name := "P24i2 Flashback Draw"
+  manaCost := ManaCost.ofGeneric 1
+  types := #[.sorcery]
+  flashback := some (ManaCost.ofGeneric 3)
+  spellEffect := some { resolution := .draw 1, phrase := "Draw a card" }
+}
+
+def freeDraw24i2 : CardDef := {
+  name := "P24i2 Free Draw"
+  manaCost := ManaCost.empty
+  types := #[.sorcery]
+  spellEffect := some { resolution := .draw 1, phrase := "Draw a card" }
+}
+
+/-- A creature with a `{2}` sorcery Adventure (CR 715.2). -/
+def adventurer24i2 : CardDef := {
+  bear with
+  name := "P24i2 Adventurer"
+  adventure := some {
+    name := "P24i2 Side Quest"
+    manaCost := ManaCost.ofGeneric 2
+    spellEffect := some { resolution := .draw 1, phrase := "Draw a card" } }
+}
+
+/-- *Galadriel's Dismissal* (HOC; `Mtg.Engine.Catalog.galadrielSDismissal`, not imported
+here): `{W}` instant, kicker `{2}{W}`, "Target creature phases out. If this spell was kicked,
+each creature target player controls phases out instead." (`Effect.phaseOutKicker`). -/
+def dismissal24i2 : CardDef := {
+  name := "Galadriel's Dismissal"
+  manaCost := ManaCost.ofColor .white
+  types := #[.instant]
+  kicker := some (ManaCost.ofGenericAndColor 2 .white)
+  spellEffect := some Effect.phaseOutKicker
+}
+
+/-- *Iron Hills Stalwart*'s ETB (`Mtg.Engine.Catalog.ironHillsStalwart`, not imported here):
+"attach target Equipment you control to up to one target creature you control". -/
+def stalwart24i2 : CardDef := {
+  bear with
+  name := "P24i2 Stalwart"
+  triggeredAbilities := #[TriggeredAbility.onEnterAttachTargetEquipment]
+}
+
+def gyId24i2 (g : Game) (name : String) : ObjectId :=
+  ((g.player me).graveyard.filter (fun id => (g.object! id).name == name))[0]!
+
+def stackId24i2 (g : Game) (name : String) : ObjectId :=
+  (g.objects.filter (fun o => o.name == name && o.zone == .stack))[0]!.id
+
+/-- No zone change was replaced by the CR 702.34a flashback exile replacement. -/
+def noFlashbackExile24i2 (g : Game) : Bool :=
+  !g.events.any (fun e =>
+    match e.cause? with
+    | some (.replaced rep _) => rep.kind == .flashbackExile
+    | _ => false)
+
+-- 1. CR 106.6 / 118.9 / 400.7 / 601.2b,f / 611.2a / 702.34a Flashback cost & exile scoping,
+--    active-duration `hasFlashbackPermission`, and `canPayAnnouncedAdditional` restriction flags.
+#guard
+  -- 1a. A real Flashback cast pays the flashback cost and is exiled as it leaves the stack:
+  let gFb0 : Game := (insertObject afterDraw fbDraw24i2 me (.graveyard me)).addMana me .colorless 3
+  let fbGyId := gyId24i2 gFb0 fbDraw24i2.name
+  let gFbProp : Game := mustApply gFb0 me (.cast fbGyId)
+  let gFbCast : Game := mustApply gFbProp me .pay
+  let fbSpId := stackId24i2 gFbCast fbDraw24i2.name
+  let (gFbMoved, fbMovedId) := gFbCast.move fbSpId (.graveyard me) none
+  let realFlashbackOk :=
+    gFbProp.proposedSpell.any (·.cost.manaValue == 3) &&
+    gFbCast.stack.size == 1 &&
+    gFbCast.castViaFlashback (gFbCast.object! fbSpId) &&
+    (gFbMoved.object! fbMovedId).zone == .exile &&
+    !noFlashbackExile24i2 gFbMoved
+
+  -- 1b. *Bilbo, Thief in the Night*-style `mayCastFromGraveyard` of the same card is NOT a
+  --     Flashback cast: it pays the `{1}` mana cost, and leaving the stack applies only the
+  --     card's own "exile it instead" replacement (no CR 616.1 choice against flashback exile):
+  let gBb0 : Game := (insertObject afterDraw fbDraw24i2 me (.graveyard me)).addMana me .colorless 1
+  let bbGyId := gyId24i2 gBb0 fbDraw24i2.name
+  let gBb1 : Game := (gBb0.change (.pushContinuationFrame {})).change
+    (.pending (.fraChoice me (.mayCastFromGraveyard #[bbGyId])))
+  let gBbProp : Game := mustApply gBb1 me (.cast bbGyId)
+  let gBbCast : Game := mustApply gBbProp me .pay
+  let bbSpId := stackId24i2 gBbCast fbDraw24i2.name
+  let (gBbMoved, bbMovedId) := gBbCast.move bbSpId (.graveyard me) none
+  let bilboNotFlashbackOk :=
+    gBbProp.proposedSpell.any (·.cost.manaValue == 1) &&
+    gBbCast.stack.size == 1 &&
+    !gBbCast.castViaFlashback (gBbCast.object! bbSpId) &&
+    !(match gBbMoved.pending with | .chooseReplacement .. => true | _ => false) &&
+    (gBbMoved.object! bbMovedId).zone == .exile &&
+    noFlashbackExile24i2 gBbMoved &&
+    gBbCast.playCostStart (gBbCast.object! bbSpId) fbDraw24i2 == fbDraw24i2.manaCost
+
+  -- 1c. `hasFlashbackPermission` reads the grant only while its duration is active: a grant that
+  --     expired for another reason (an earlier cleanup) no longer matches once the card moved:
+  let gPm0 : Game := insertObject afterDraw bear me (.graveyard me)
+  let pmGyId := gyId24i2 gPm0 bear.name
+  let gPmLive : Game := gPm0.createEffect (.flashbackUntilEot pmGyId) (cause := some testCause)
+  let gPmExp : Game := gPmLive.expireEffect (.flashbackUntilEot pmGyId)
+  let (gPmLiveSt, liveStId) := gPmLive.move pmGyId .stack (some me)
+  let (gPmExpSt, expStId) := gPmExp.move pmGyId .stack (some me)
+  let permDurationOk :=
+    gPmLive.hasFlashbackPermission (gPmLive.object! pmGyId) &&
+    !gPmExp.hasFlashbackPermission (gPmExp.object! pmGyId) &&
+    gPmLiveSt.hasFlashbackPermission (gPmLiveSt.object! liveStId) &&
+    !gPmExpSt.hasFlashbackPermission (gPmExpSt.object! expStId)
+
+  -- 1d. `canPayAnnouncedAdditional` honours every CR 106.6 restriction flag for the spell:
+  let addl (nm : String) (tys : Array CardType) (subs : Array Subtype) : CardDef :=
+    { name := nm, manaCost := ManaCost.ofGeneric 1, types := tys, subtypes := subs
+      additionalCostOrPayGeneric := some 2 }
+  let instDef := addl "P24i2 Addl Instant" #[.instant] #[]
+  let heroDef := addl "P24i2 Addl Hero" #[.creature] #["Hero"]
+  let villDef := addl "P24i2 Addl Villain" #[.creature] #["Villain"]
+  let artDef := addl "P24i2 Addl Artifact" #[.artifact] #[]
+  let plainDef := addl "P24i2 Addl Plain" #[.creature] #[]
+  let payWith (d : CardDef) (pool : ManaPool) : Bool :=
+    let g := insertObject afterDraw d me (.hand me)
+    g.canPayAnnouncedAdditional me (g.object! (g.player me).hand.back!) pool
+  let pInst := ManaPool.empty.add .colorless 3 (instRestricted := true)
+  let pHero := ManaPool.empty.add .colorless 3 (heroRestricted := true)
+  let pVill := ManaPool.empty.add .colorless 3 (villainRestricted := true)
+  let pCant := ManaPool.empty.add .colorless 3 (cantNonartifact := true)
+  let pCreat := ManaPool.empty.add .colorless 3 (creatureRestricted := true)
+  let pFree := ManaPool.empty.add .colorless 3
+  let restrictionFlagsOk :=
+    payWith instDef pInst && !payWith plainDef pInst &&
+    payWith heroDef pHero && !payWith plainDef pHero &&
+    payWith villDef pVill && !payWith plainDef pVill &&
+    payWith artDef pCant && !payWith plainDef pCant &&
+    !payWith plainDef pCreat && payWith plainDef pFree
+  mustHold24i2 "1a.realFlashbackOk" realFlashbackOk &&
+  mustHold24i2 "1b.bilboNotFlashbackOk" bilboNotFlashbackOk &&
+  mustHold24i2 "1c.permDurationOk" permDurationOk &&
+  mustHold24i2 "1d.restrictionFlagsOk" restrictionFlagsOk &&
+  mustHold24i2 "1.replay" (replayOk24i2 #[gFbProp, gFbCast, gFbMoved, gBbProp, gBbCast, gBbMoved])
+
+-- 2. CR 601.2b–c / 702.33a,d,g / 733.1 target-replacing Kicker (*Galadriel's Dismissal*).
+#guard
+  -- With no creature anywhere only the kicked "target player" is legal: the spell may still be
+  -- proposed; kicking proceeds to player targets, declining the kicker reverses the proposal.
+  let gGd0 : Game :=
+    (insertObject afterDraw dismissal24i2 me (.hand me)).addMana me (.colored .white) 4
+  let gdId := (gGd0.player me).hand.back!
+  let gGdProp : Game := mustApply gGd0 me (.cast gdId)
+  let gGdKick : Game := mustApply gGdProp me (.announceKicker true)
+  let gdKickSpell := gGdKick.object! gGdKick.stack.back!.objectId
+  let gGdTgt : Game := mustApply gGdKick me (.target (.player opp24i2))
+  let gGdPaid : Game := mustApply gGdTgt me .pay
+  let gGdNoKick : Game := mustApply gGdProp me (.announceKicker false)
+  let kickerOk :=
+    !gGd0.battlefield.any (fun o => gGd0.isCreature o) &&
+    gGd0.canCast me (gGd0.object! gdId) &&
+    dismissal24i2.kicker.isSome &&
+    gGdProp.pending == .chooseKicker me &&
+    gGdKick.pending == .chooseTargets me &&
+    (gGdKick.legalProposedTargets me gdKickSpell).contains (.player opp24i2) &&
+    gGdPaid.stack.size == 1 &&
+    gGdPaid.wasKicked gGdPaid.stack.back!.objectId &&
+    gGdNoKick.proposedSpell.isNone &&
+    gGdNoKick.stack.isEmpty &&
+    (gGdNoKick.player me).hand.contains gdId &&
+    (newLogs24i2 gGd0 gGdNoKick).any (·.contains "has no legal target and can't be cast")
+  mustHold24i2 "2.kickerOk" kickerOk &&
+  mustHold24i2 "2.replay" (replayOk24i2 #[gGdProp, gGdKick, gGdTgt, gGdPaid, gGdNoKick])
+
+-- 3. CR 601.3e / 715.3a–b Adventure library-top & life payment, and CR 608.2d / 733.1
+--    *Cosmic Cube* `Pending.mayCastFromLooked` legality & checkpoint.
+#guard
+  -- 3a. A creature-only library-top permission can't cast the (sorcery) Adventure half:
+  let topCasterDef : CardDef := { bear with name := "P24i2 Top Caster", mayCastCreaturesFromTop := true }
+  let gTop0 : Game := insertObject (addPermanent afterDraw topCasterDef me me) adventurer24i2 me (.library me)
+  let topAdvId := (gTop0.player me).library.back!
+  let topAdventureOk :=
+    !gTop0.canCastAdventure me (gTop0.object! topAdvId) &&
+    isErr24i2 (gTop0.apply me (.castAdventure topAdvId)) &&
+    gTop0.canCast me (gTop0.object! topAdvId)
+
+  -- 3b. "Pay life equal to its mana value" reads the Adventure spell (MV 2), not the creature (MV 0):
+  let gLf0 : Game := insertObject afterDraw adventurer24i2 me .exile
+  let lfId := (gLf0.objects.filter (fun o => o.name == adventurer24i2.name && o.zone == .exile))[0]!.id
+  let gLf1 : Game := gLf0.createEffect
+    (.playPermission lfId { player := me, whileExiled := true, payLifeEqualManaValue := true })
+    (cause := some testCause)
+  let gLfProp : Game := mustApply gLf1 me (.castAdventure lfId)
+  let gLfPaid : Game := mustApply gLfProp me .pay
+  let lifeAdventureOk :=
+    gLfProp.proposedSpell.any (·.payLife == 2) &&
+    gLfPaid.stack.size == 1 &&
+    (gLfPaid.player me).life + 2 == (gLf1.player me).life
+
+  -- 3c. Cosmic Cube rejects a looked-at card with no legal target or an unpayable mandatory
+  --     sacrifice, but accepts a castable one:
+  let remDef : CardDef := {
+    name := "P24i2 Removal", manaCost := ManaCost.empty, types := #[.sorcery]
+    spellEffect := some { targeting := .of .creature, resolution := .destroyTarget, phrase := "Destroy target creature" } }
+  let sacDef : CardDef := { freeDraw24i2 with name := "P24i2 Sac Draw", additionalCostSacrificeCreature := true }
+  let gCc0 : Game :=
+    insertObject (insertObject (insertObject afterDraw freeDraw24i2 me (.library me)) sacDef me (.library me))
+      remDef me (.library me)
+  let ccLib := (gCc0.player me).library
+  let ccRemId := ccLib.back!
+  let ccSacId := ccLib[ccLib.size - 2]!
+  let ccDrawId := ccLib[ccLib.size - 3]!
+  let gCcAsk : Game := gCc0.change (.pending (.mayCastFromLooked me #[ccRemId, ccSacId, ccDrawId] 10))
+  let cubeLegalityOk :=
+    isErr24i2 (gCcAsk.apply me (.cast ccRemId)) &&
+    isErr24i2 (gCcAsk.apply me (.cast ccSacId)) &&
+    !isErr24i2 (gCcAsk.apply me (.cast ccDrawId))
+
+  -- 3d. A proposal from the looked-at cards that is reversed (declining *Galadriel's
+  --     Dismissal*'s kicker with no creature) restores `Pending.mayCastFromLooked` with the cards
+  --     still on top; declining afterwards bottoms them:
+  let gCg0 : Game := insertObject (insertObject afterDraw freeDraw24i2 me (.library me)) dismissal24i2 me (.library me)
+  let cgLib := (gCg0.player me).library
+  let cgGdId := cgLib.back!
+  let cgDrawId := cgLib[cgLib.size - 2]!
+  let cgIds := #[cgGdId, cgDrawId]
+  let gCgAsk : Game := gCg0.change (.pending (.mayCastFromLooked me cgIds 10))
+  let gCgProp : Game := mustApply gCgAsk me (.cast cgGdId)
+  let gCgRev : Game := mustApply gCgProp me (.announceKicker false)
+  let gCgDec : Game := mustApply gCgRev me .decline
+  let cubeCheckpointOk :=
+    gCgProp.pending == .chooseKicker me &&
+    gCgRev.pending == .mayCastFromLooked me cgIds 10 &&
+    gCgRev.proposedSpell.isNone &&
+    gCgRev.stack.isEmpty &&
+    gCgRev.postCastCleanup.isNone &&
+    (gCgRev.player me).library.back? == some cgGdId &&
+    (gCgRev.player me).library[(gCgRev.player me).library.size - 2]? == some cgDrawId &&
+    gCgDec.pending == .none &&
+    (gCgDec.player me).library.back? != some cgGdId &&
+    (gCgDec.player me).library.back? != some cgDrawId
+  mustHold24i2 "3a.topAdventureOk" topAdventureOk &&
+  mustHold24i2 "3b.lifeAdventureOk" lifeAdventureOk &&
+  mustHold24i2 "3c.cubeLegalityOk" cubeLegalityOk &&
+  mustHold24i2 "3d.cubeCheckpointOk" cubeCheckpointOk &&
+  mustHold24i2 "3.replay" (replayOk24i2 #[gLfProp, gLfPaid, gCgProp, gCgRev, gCgDec])
+
+-- 4. CR 115.1a–d / 115.3 / 601.2c / 603.3c–d multi-slot legality, `targetCount` minimums, and
+--    *Iron Hills Stalwart*'s mandatory Equipment slot.
+#guard
+  -- 4a. "Target artifact you control and a second target artifact you control" needs two
+  --     different artifacts (CR 115.3):
+  let trinket : CardDef := { name := "P24i2 Trinket", types := #[.artifact] }
+  let gArt1 : Game := addPermanent afterDraw trinket me me
+  let gArt2 : Game := addPermanent gArt1 trinket me me
+  let twoArtifactsOk :=
+    (gArt1.legalTargetsForKind me .twoArtifactsYouControl).isEmpty &&
+    (gArt2.legalTargetsForKind me .twoArtifactsYouControl).size == 4 &&
+    (afterDraw.legalTargetsForKind me .twoPlayers).size == 4
+
+  -- 4b. "Two target nonland permanents that share a card type" needs such a pair (CR 205.2a):
+  let gSh1 : Game := addPermanent (addPermanent afterDraw bear me me) trinket opp24i2 opp24i2
+  let gSh2 : Game := addPermanent gSh1 hero opp24i2 opp24i2
+  let sharingTypeOk :=
+    (gSh1.legalTargetsForKind me .twoNonlandsSharingType).isEmpty &&
+    !(gSh2.legalTargetsForKind me .twoNonlandsSharingType).isEmpty
+
+  -- 4c. A single "target" announcing two targets needs two distinct legal targets unless it
+  --     allows zero (spell modes and triggers alike):
+  let twoEff : Effect := {
+    targeting := .of (.upToTwoCreaturesTotalMvAtMost 10)
+    resolution := .destroyTarget
+    phrase := "Destroy two target creatures" }
+  let twoTrig : TriggeredAbility := .triggered .enter twoEff
+  let gTc1 : Game := addPermanent afterDraw bear me me
+  let gTc2 : Game := addPermanent gTc1 hero opp24i2 opp24i2
+  let tcSrc := (gTc1.battlefield.filter (·.name == bear.name))[0]!.id
+  let targetCountOk :=
+    !gTc1.spellModeIsChoosable me twoEff &&
+    gTc2.spellModeIsChoosable me twoEff &&
+    gTc1.spellModeIsChoosable me { twoEff with allowsZeroTargets := true } &&
+    gTc1.triggerHasNoLegalTarget me twoTrig tcSrc &&
+    !gTc2.triggerHasNoLegalTarget me twoTrig tcSrc
+
+  -- 4d. *Iron Hills Stalwart*: the Equipment slot is required, only the creature slot is
+  --     "up to one", so the trigger has no legal target without an Equipment:
+  let stalwartAb := stalwart24i2.triggeredAbilities[0]!
+  let blade : CardDef := { name := "P24i2 Blade", types := #[.artifact], subtypes := #["Equipment"] }
+  let gSt0 : Game := addPermanent afterDraw stalwart24i2 me me
+  let stId := (gSt0.battlefield.filter (·.name == stalwart24i2.name))[0]!.id
+  let gSt1 : Game := addPermanent gSt0 blade me me
+  let stalwartOk :=
+    !stalwartAb.allowsZeroTargets &&
+    !EffectTargetKind.isOptionalSlot .equipmentYouControlThenCreatureYouControl 0 &&
+    EffectTargetKind.isOptionalSlot .equipmentYouControlThenCreatureYouControl 1 &&
+    gSt0.triggerHasNoLegalTarget me stalwartAb stId &&
+    !gSt1.triggerHasNoLegalTarget me stalwartAb stId
+  mustHold24i2 "4a.twoArtifactsOk" twoArtifactsOk &&
+  mustHold24i2 "4b.sharingTypeOk" sharingTypeOk &&
+  mustHold24i2 "4c.targetCountOk" targetCountOk &&
+  mustHold24i2 "4d.stalwartOk" stalwartOk
+
+end Phase24Item2EventAlignment
 
 end Mtg.Engine.EventTests

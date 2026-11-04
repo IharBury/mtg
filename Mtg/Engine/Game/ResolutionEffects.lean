@@ -140,6 +140,26 @@ def mayCastFromLookedError (g : Game) (p : PlayerId) (ids : Array ObjectId)
       else if g.isAura o && !bc.allowsZeroTargets &&
           (g.legalCastTargets p bc).isEmpty then
         some s!"{o.name} requires a target to enchant"
+      -- CR 601.2b–c / 115.1 / 733.1: a spell that can't announce a legal target (kicked
+      -- or not) or a choosable mode can't be cast from among the looked-at cards.
+      else if isModalSpellFace bc &&
+          !(effectiveSpellModes bc).any (g.spellModeIsChoosable p · (some o.id)) &&
+          !isReturnUpToTwoGyModal bc && !bc.allowsZeroTargets then
+        some s!"{o.name} has no legal target and can't be cast"
+      else if !g.isAura o && !isModalSpellFace bc && bc.requiresTarget &&
+          !bc.allowsZeroTargets && !g.castFaceHasLegalTarget p bc then
+        some s!"{o.name} has no legal target and can't be cast"
+      -- CR 601.2b / 601.2h: a mandatory sacrifice additional cost must be payable.
+      else if bc.additionalCostSacrificeArtifactOrCreature &&
+          bc.additionalCostOrPayGeneric.isNone &&
+          !(g.permanentsOf p).any (fun perm =>
+            if bc.additionalCostSacrificeCreatureOrPlaneswalker then
+              g.isCreature perm || g.isPlaneswalker perm
+            else if bc.additionalCostSacrificeCreature then g.isCreature perm
+            else g.isCreature perm || g.isArtifact perm) then
+        some s!"{o.name} requires sacrificing an artifact or creature"
+      else if bc.additionalCostSacrificeCreature && (g.creaturesControlledBy p).isEmpty then
+        some s!"{o.name} requires sacrificing a creature"
       else none
 
 /-- Look at the top `n` cards and wait for the controller to choose whether

@@ -242,13 +242,17 @@ def triggerHasNoLegalTarget (g : Game) (controller : PlayerId) (ab : TriggeredAb
   let srcIdOpt :=
     if sourceId == noSourceSentinelId then none
     else some sourceId
+  -- A single-instance shape announcing several targets (`kind.spec.slots.isEmpty`) needs
+  -- `targetCount` distinct legal targets (CR 115.3 / 603.3c–d); multi-slot shapes need a
+  -- valid cross-slot assignment, checked in `legalTargetsForKind`.
+  let lacking (kind : EffectTargetKind) (count : Nat) : Bool :=
+    let legal := g.legalTargetsForKind controller kind srcIdOpt
+    if kind.spec.slots.isEmpty then legal.size < max 1 count else legal.isEmpty
   match abilityEffectOverride with
   | some eff =>
-    eff.requiresTarget && !eff.allowsZeroTargets &&
-      (g.legalTargetsForKind controller eff.targetKind srcIdOpt).isEmpty
+    eff.requiresTarget && !eff.allowsZeroTargets && lacking eff.targetKind eff.targetCount
   | none =>
-    ab.requiresTarget && !ab.allowsZeroTargets &&
-      (g.legalTriggerTargets controller ab srcIdOpt).isEmpty
+    ab.requiresTarget && !ab.allowsZeroTargets && lacking ab.targetKind ab.targeting.targetCount
 
 /-- Put `ab` on the stack, or log that it is removed for lack of a target (CR 603.3d). -/
 def putTriggerOrFizzle (g : Game) (controller : PlayerId) (source : GameObject)

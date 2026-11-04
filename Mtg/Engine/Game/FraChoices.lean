@@ -73,7 +73,7 @@ def castFreeCopy (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game 
       !isReturnUpToTwoGyModal face && !face.allowsZeroTargets then
     throw s!"{face.name} requires a target"
   if !isModalSpellFace face && (face.requiresTarget || face.isAura) &&
-      (g.legalCastTargets p face).isEmpty && !face.allowsZeroTargets then
+      !g.castFaceHasLegalTarget p face && !face.allowsZeroTargets then
     throw s!"{face.name} requires a target"
   let origPerm : Option PlayPermission := some { player := p, withoutManaCost := true }
   let rest := ids.filter (· != id)
@@ -89,7 +89,7 @@ def castFreeCopy (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game 
   let g := g.changes #[.pending .none, .pendingFreeCopies (some (p, rest, budget - mv, castsLeft - 1))]
   let g := g.logMsg s!"{(g.player p).name} casts a copy of {face.name} without paying its mana cost"
   let cost := g.playManaCost { card with controller := some p } face
-    (origPerm := origPerm) (isFreeFromGy := some false)
+    (origPerm := origPerm) (isFreeFromGy := some false) (flashback := some false)
   let needsSacrifice :=
     face.additionalCostSacrificeCreature ||
       (face.additionalCostSacrificeArtifactOrCreature && face.additionalCostOrPayGeneric.isNone)
@@ -1218,7 +1218,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
         !isReturnUpToTwoGyModal face && !face.allowsZeroTargets then
       throw s!"{face.name} has no mode with a legal target"
     if !isModalSpellFace face && (face.requiresTarget || face.isAura) &&
-        (g.legalCastTargets p face).isEmpty && !face.allowsZeroTargets then
+        !g.castFaceHasLegalTarget p face && !face.allowsZeroTargets then
       throw s!"{face.name} has no legal target"
     let g := (gPre.change .saveProposalCheckpoint).change (.pending .none)
     return (g.castAsPartOfResolution p id (callerCheckpoint := true)).finishFraChoice
@@ -1478,7 +1478,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
         !isReturnUpToTwoGyModal face && !face.allowsZeroTargets then
       throw s!"{face.name} has no mode with a legal target"
     if !isModalSpellFace face && (face.requiresTarget || face.isAura) &&
-        (g.legalCastTargets p face).isEmpty && !face.allowsZeroTargets then
+        !g.castFaceHasLegalTarget p face && !face.allowsZeroTargets then
       throw s!"{face.name} has no legal target"
     let g := (gPre.change .saveProposalCheckpoint).change (.pending .none)
     return (g.castAsPartOfResolution p id (withoutManaCost := withoutPaying)
@@ -1499,7 +1499,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
         !isReturnUpToTwoGyModal face && !face.allowsZeroTargets then
       throw s!"{face.name} has no mode with a legal target"
     if !isModalSpellFace face && (face.requiresTarget || face.isAura) &&
-        (g.legalCastTargets p face).isEmpty && !face.allowsZeroTargets then
+        !g.castFaceHasLegalTarget p face && !face.allowsZeroTargets then
       throw s!"{face.name} has no legal target"
     let g := (gPre.change .saveProposalCheckpoint).change (.pending .none)
     return (g.castAsPartOfResolution p id (withoutManaCost := false)
@@ -1855,7 +1855,7 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
             (effectiveSpellModes face).any (g.spellModeIsChoosable p) ||
               isReturnUpToTwoGyModal face || face.allowsZeroTargets
           else if face.requiresTarget || face.isAura then
-            !(g.legalCastTargets p face).isEmpty || face.allowsZeroTargets
+            g.castFaceHasLegalTarget p face || face.allowsZeroTargets
           else true
       let available := g.availableMana p
       match eligible.find? (fun id =>
@@ -1866,7 +1866,7 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
             else g.playPermission o
           let isFreeFromGy := !withoutPaying && o.zone == .graveyard o.owner && g.freeCastFromGraveyard o
           hasTargets o && available.canPay (g.playManaCost { o with controller := some p } face
-            (origPerm := origPerm) (isFreeFromGy := some isFreeFromGy)))) with
+            (origPerm := origPerm) (isFreeFromGy := some isFreeFromGy) (flashback := some false)))) with
       | some id => .cast id
       | none => .decline
   | .mayCastFromGraveyard eligible =>
@@ -1884,11 +1884,12 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
                 (effectiveSpellModes face).any (g.spellModeIsChoosable p) ||
                   isReturnUpToTwoGyModal face || face.allowsZeroTargets
               else if face.requiresTarget || face.isAura then
-                !(g.legalCastTargets p face).isEmpty || face.allowsZeroTargets
+                g.castFaceHasLegalTarget p face || face.allowsZeroTargets
               else true
           let isFreeFromGy := o.zone == .graveyard o.owner && g.freeCastFromGraveyard o
           hasTargets && available.canPay (g.playManaCost { o with controller := some p } face
-            (origPerm := g.playPermission o) (isFreeFromGy := some isFreeFromGy)))) with
+            (origPerm := g.playPermission o) (isFreeFromGy := some isFreeFromGy)
+            (flashback := some false)))) with
       | some id => .cast id
       | none => .decline
   | .maySearchLibrary eligible .. =>

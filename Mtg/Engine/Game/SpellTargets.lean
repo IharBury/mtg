@@ -161,11 +161,51 @@ def legalTargetsForFace (g : Game) (p : PlayerId) (c : CardDef)
 def legalSpellTargets (g : Game) (p : PlayerId) (o : GameObject) : Array Target :=
   g.legalTargetsForFace p (g.baseCard o) (g.chosenModeOf o) (g.evalLayer3 o) (some o.id)
 
-/-- True when this mode can be announced: it needs no target, or a legal one
-exists (CR 700.2a). -/
+/-- Legal targets of card face `c`'s kicked spell effect (`kickedSpellEffect`). A
+target-replacing kicker (*Galadriel's Dismissal* `.phaseOutKicker`, *The Eagles Are
+Coming!*) announces those targets instead of the unkicked ones (CR 601.2b–c /
+702.33d,g). Empty when `c` has no kicker or announces modes. -/
+def legalKickedTargetsForFace (g : Game) (p : PlayerId) (c : CardDef)
+    (tcs : Array TextChange := #[]) (sourceId : Option ObjectId := none) : Array Target :=
+  match c.kicker, c.spellEffect with
+  | some _, some e =>
+    if isModalSpellFace c then #[]
+    else
+      let k := kickedSpellEffect e
+      g.legalEffectTargets p (if tcs.isEmpty then k else TextChange.applyEffect tcs k) sourceId
+  | _, _ => #[]
+
+/-- Whether `c` may be proposed kicked with legal targets even when none of its unkicked
+targets are legal: kicker may be chosen at CR 601.2b, and the kicked effect then announces
+its own targets at CR 601.2c (CR 702.33d,g). Choosing not to kick afterwards with no legal
+unkicked target reverses the proposal (CR 733.1). -/
+def kickedFaceHasLegalTarget (g : Game) (p : PlayerId) (c : CardDef)
+    (tcs : Array TextChange := #[]) (sourceId : Option ObjectId := none) : Bool :=
+  match c.kicker, c.spellEffect with
+  | some _, some e =>
+    if isModalSpellFace c then false
+    else
+      let k := kickedSpellEffect e
+      !k.requiresTarget || k.allowsZeroTargets ||
+        !(g.legalKickedTargetsForFace p c tcs sourceId).isEmpty
+  | _, _ => false
+
+/-- Whether enough distinct legal targets exist for `e` (CR 115.3 / 601.2c): a
+single-instance shape announcing `e.targetCount > 1` targets of one word “target”
+(`kind.spec.slots.isEmpty`) needs that many distinct legal targets unless it allows
+zero; multi-slot shapes are checked slot by slot in `legalTargetsForKind`. -/
+def effectHasEnoughTargets (g : Game) (p : PlayerId) (e : Effect)
+    (sourceId : Option ObjectId := none) : Bool :=
+  let legal := g.legalTargetsForKind p e.targetKind sourceId
+  if e.targetKind.spec.slots.isEmpty && !e.allowsZeroTargets then
+    legal.size >= max 1 e.targetCount
+  else !legal.isEmpty
+
+/-- True when this mode can be announced: it needs no target, or enough legal
+ones exist (CR 700.2a / 601.2c / 115.3). -/
 def spellModeIsChoosable (g : Game) (p : PlayerId) (e : Effect)
     (sourceId : Option ObjectId := none) : Bool :=
-  !e.requiresTarget || !(g.legalEffectTargets p e sourceId).isEmpty
+  !e.requiresTarget || g.effectHasEnoughTargets p e sourceId
 
 /-- Legal mode indices for a modal spell (CR 700.2a). Untargeted modes stay
 choosable even when another mode has no legal target. -/
@@ -405,10 +445,11 @@ def announcingSameWordMultiTargets (g : Game) : Bool :=
       !g.announcingDividedDamage
   | none => false
 
-/-- Whether `e` currently has a legal target, or does not require one. -/
+/-- Whether `e` currently has enough legal targets, or does not require one
+(CR 601.2c / 602.2b / 115.3). -/
 def modeIsChoosable (g : Game) (p : PlayerId) (e : Effect)
     (sourceId : Option ObjectId := none) : Bool :=
-  !e.requiresTarget || e.allowsZeroTargets || !(g.legalAbilityTargets p e sourceId).isEmpty
+  !e.requiresTarget || e.allowsZeroTargets || g.effectHasEnoughTargets p e sourceId
 
 /-- Whether this activated ability currently has a legal target, or does not
 require one (CR 702.6 / 601.2c / 702.16b). Subtype- and worthy-restricted Equip

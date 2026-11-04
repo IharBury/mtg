@@ -107,9 +107,9 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
       (origPerm.bind (·.prepareSource)).isNone && !fromGraveyard
   if hasMorphChoice then
     if !g.canCastMorphFaceDown p card then
-      g.validateFrontFaceCast p card face asAdventure sneakCost
+      g.validateFrontFaceCast p card face (sneakCost := sneakCost)
   else
-    g.validateFrontFaceCast p card face asAdventure sneakCost
+    g.validateFrontFaceCast p card face (sneakCost := sneakCost)
   -- CR 601.2a: propose the spell by moving it onto the stack. Modes and
   -- additional costs are announced at CR 601.2b, targets at CR 601.2c; mana
   -- is not required yet (CR 601.2g). CR 715.3: an adventurer card may be
@@ -139,8 +139,10 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
     match sneakCost with
     | some c => g.playManaCost casterCard { face with manaCost := c }
         (origPerm := origPerm) (isFreeFromGy := some isFreeFromGy)
+        (flashback := some isFlashbackCast)
     | none => g.playManaCost casterCard face
         (origPerm := origPerm) (isFreeFromGy := some isFreeFromGy)
+        (flashback := some isFlashbackCast)
   -- Casting the exiled copy of a prepare spell unprepares its permanent. The
   -- spell on the stack is a copy, so it isn't put into a graveyard later
   -- (CR 707.10 / 704.5e).
@@ -175,10 +177,16 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
   let needsFlashbackDiscard := isFlashbackCast && face.flashbackDiscard
   if needsFlashbackDiscard && (g.player p).hand.isEmpty then
     throw s!"{face.name}'s flashback cost requires discarding a card"
+  -- CR 118.9 / 202.3 / 715.3a–b: "pay life equal to its mana value" (Inside Information)
+  -- reads the spell on the stack, so an Adventure pays its Adventure's mana value.
   let lifeInstead :=
     match origPerm with
     | some perm =>
-      if perm.payLifeEqualManaValue then g.objectManaValue original else 0
+      if perm.payLifeEqualManaValue then
+        match g.findObject? newId with
+        | some spell => g.objectManaValue spell
+        | none => g.objectManaValue original
+      else 0
     | none => 0
   if !needsMode && !needsTarget && !cost.includesManaPayment && !cost.containsX &&
       lifeInstead == 0 && !needsSacrifice && !needsFlashbackDiscard &&
@@ -300,6 +308,7 @@ def announceX (g : Game) (p : PlayerId) (x : Nat) : Except String Game := do
           | _, _ => baseFace
         g.playManaCost preSpell face (ManaCost.ofGeneric prop.additionalGeneric)
           (origPerm := prop.origPerm) (isFreeFromGy := some prop.isFreeFromGy)
+          (flashback := some (GameEvent.castWithFlashback g.events prop.spellId))
       | _, _, _ => prop.cost.substituteX x
     let g := g.changeProposal (.cost cost)
     let prop := g.proposedSpell.getD prop

@@ -395,10 +395,8 @@ def resolveTop (g : Game) : Game :=
           let g := entry.targets.foldl (fun g t => g.illegalAbilityTarget t) g
           let g := g.logMsg
             s!"{obj.name} doesn't resolve because all its targets are illegal (CR 608.2b)"
-          let hasFlashback :=
-            GameEvent.castWithFlashback g.events obj.id || g.flashbackUntilEot obj ||
-              (fromGy && !g.freeCastFromGraveyard obj &&
-                ((g.baseCard obj).flashback.isSome || g.hasFlashbackPermission obj))
+          -- CR 702.34a: only a spell actually cast via Flashback is exiled.
+          let hasFlashback := g.castViaFlashback obj
           if obj.isCopy then
             let copyMsg :=
               if auraTargetsAllIllegal then

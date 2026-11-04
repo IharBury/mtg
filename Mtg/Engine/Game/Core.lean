@@ -2367,17 +2367,46 @@ def flashbackUntilEot (g : Game) (o : GameObject) : Bool :=
       g.durationActive d && (id == o.id || id == originId)
     | _ => false
 
+/-- Whether `o` (or the graveyard card it was cast from, CR 400.7) has a flashback
+permission whose duration is still active (CR 611.2a / 702.34a). Once the card moves
+onto the stack its graveyard permission expires on leaving the zone (CR 400.7), so the
+fallback reads the creating event — but only while `g.durationActive d` holds and the
+effect did not expire for any other reason (such as an earlier turn's cleanup, CR
+514.2), so a stale "until end of turn" grant from a previous turn never matches. -/
 def hasFlashbackPermission (g : Game) (o : GameObject) : Bool :=
   if g.flashbackUntilEot o then true
   else
     let originId := GameEvent.castOriginIdOf g.events o.id
     if originId == o.id && (g.findObject? o.id).isSome then false
     else
+      let expiredOtherwise (eid : EffectId) : Bool :=
+        g.events.any fun x =>
+          match x.change, x.cause? with
+          | .rules (.continuousEffect (.expired _)), some (.gameRule .leavingZone) => false
+          | .rules (.continuousEffect (.expired xid)), _ => xid == eid
+          | _, _ => false
       g.events.any fun e =>
         match e.change with
-        | .rules (.continuousEffect (.created _ (.permission _ (.flashback id) _))) =>
-          id == originId || id == o.id
+        | .rules (.continuousEffect (.created eid (.permission _ (.flashback id) d))) =>
+          (id == originId || id == o.id) && g.durationActive d && !expiredOtherwise eid
         | _ => false
+
+/-- Whether spell `o` was actually cast via Flashback (CR 702.34a / 601.2b,f): proposed
+for its flashback cost (`GameEvent.castWithFlashback`, `CastWay.alternative "flashback"`)
+or carrying the active flashback permission `castSpell` re-creates on the stack spell
+itself. A graveyard cast through any other permission — *Bilbo, Thief in the Night*'s
+`FraChoice.mayCastFromGraveyard` (`CastWay.normal`), a free-cast permission — is not a
+Flashback cast even when the card has (or was granted) flashback, so neither the
+flashback cost nor the "exile instead" replacement applies to it. Copies are never
+cast via Flashback (CR 707.10). -/
+def castViaFlashback (g : Game) (o : GameObject) : Bool :=
+  !o.isCopy &&
+    (GameEvent.castWithFlashback g.events o.id ||
+      (o.zone == .stack &&
+        g.activeEffects.any fun (_, s) =>
+          match s with
+          | .permission _ (.flashback id) d => id == o.id && g.durationActive d
+          | _ => false))
 
 def freeCastFromGraveyard (g : Game) (o : GameObject) : Bool :=
   let active :=

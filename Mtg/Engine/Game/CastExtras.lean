@@ -171,6 +171,7 @@ def applyKickerToProposed (g : Game) (kick : Bool) : Except String Game := do
     let cost :=
       g.playManaCost preSpell morphSpellFace extraGen
         (origPerm := prop.origPerm) (isFreeFromGy := some false)
+        (flashback := some (GameEvent.castWithFlashback g.events prop.spellId))
     return g.changeProposals
       #[.kicked true, .kickerAnnounced true, .cost cost, .needsSacrificeOther false, .needsDiscardCard false]
   | _, some (n, alt), none =>
@@ -179,6 +180,7 @@ def applyKickerToProposed (g : Game) (kick : Bool) : Except String Game := do
     let cost :=
       g.playManaCost preSpell impFace extraGen
         (origPerm := prop.origPerm) (isFreeFromGy := some false)
+        (flashback := some (GameEvent.castWithFlashback g.events prop.spellId))
     return g.changeProposals #[.kicked true, .kickerAnnounced true, .cost cost]
   | _, _, none => throw "That spell has no kicker"
   | _, _, some kicker =>
@@ -193,6 +195,7 @@ def applyKickerToProposed (g : Game) (kick : Bool) : Except String Game := do
     let cost :=
       g.playManaCost preSpell face (kicker.addCost extraGen)
         (origPerm := effPerm) (isFreeFromGy := some prop.isFreeFromGy)
+        (flashback := some (GameEvent.castWithFlashback g.events prop.spellId))
     return g.changeProposals #[.kicked true, .kickerAnnounced true, .cost cost]
 
 /-- Promise a gift to `to`. Cannot promise more than once. -/
