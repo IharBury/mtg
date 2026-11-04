@@ -47,11 +47,12 @@ private def handDiscard (g : Game) (p : PlayerId) : Game :=
   | none => g.logMsg s!"{(g.player p).name} has no card to discard"
   | some id =>
     let card := g.object! id
+    let destOwner := card.owner
     let name := card.name
-    let (g, _) := g.move id (.graveyard card.owner) none (verb := some .discard) (actor := some p)
+    let (g, _) := g.move id (.graveyard destOwner) none (verb := some .discard) (actor := some p)
     if let .chooseReplacement .. := g.pending then
-      g.chainPendingReplacement (.finishFrcPostStep (.logHandDiscard p id name))
-    else if !(g.player p).hand.contains id then
+      g.chainPendingReplacement (.finishFrcPostStep (.logHandDiscard p id destOwner name))
+    else if (g.followMovedToZone? id (· == .graveyard destOwner)).isSome then
       g.logMsg s!"{(g.player p).name} discards {name}"
     else g
 
@@ -1026,8 +1027,8 @@ partial def runFrcPostStep (g : Game) (step : FrcPostStep) : Game :=
       | some cur => if cur.isOnBattlefield then (g.snapshotPower cur).toNat else fallbackPower
       | none => ((g.lastKnownBefore? targetId).bind (·.power)).map Int.toNat |>.getD fallbackPower
     g.gainLife fallbackOwner pw
-  | .logHandDiscard p cardId cardName =>
-    if !(g.player p).hand.contains cardId then
+  | .logHandDiscard p cardId destOwner cardName =>
+    if (g.followMovedToZone? cardId (· == .graveyard destOwner)).isSome then
       g.logMsg s!"{(g.player p).name} discards {cardName}"
     else g
   | .logHandDiscardToBottom p cardId destOwner cardName =>

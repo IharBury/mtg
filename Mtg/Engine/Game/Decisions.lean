@@ -1513,7 +1513,7 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
         let side := if top then "top" else "the bottom"
         g.logMsg s!"{(g.player owner).name} puts {cardName} on {side} of their library"
       else g
-    if top && damage > 0 then
+    if arrived && top && damage > 0 then
       g.dealDamageToPlayer owner damage (source := sourceId.bind g.damageSourceById?)
     else g
   | .gainLifePlayer p amount cause =>

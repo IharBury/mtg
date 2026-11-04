@@ -15538,9 +15538,66 @@ def mustHold23 (label : String) (ok : Bool) : Bool :=
     !(smiteLogs.any (·.contains "is dealt")) &&
     !(oppDmgLogs.any (·.contains "Phase23 Source deals"))
 
+  -- 2c. CR 614.6 arrival gating on Clash of Elements (`.topOrBottomDamage` / `.topOrBottomDamageFollowup`)
+  --     and `FrcResolve` `handDiscard` / `.logHandDiscard` when replaced to `.exile`:
+  let gTopExiled : Game :=
+    let g := addPermanent afterDraw bear opp23 opp23
+    let bid := (g.battlefield.filter (·.name == bear.name))[0]!.id
+    let (g, _) := g.move bid .exile none (cause := some testCause)
+    g.runPostStep (.topOrBottomDamageFollowup bid opp23 bear.name true 2 none)
+  let clashShockDef23 : CardDef := {
+    forest with
+    name := "Phase23 Clash Linked Shock"
+    entersTappedUnlessPayLife := some 2
+  }
+  let gTopPaused0 : Game :=
+    let g := addPermanent (insertObject afterDraw clashShockDef23 me .exile) bear opp23 opp23
+    let bid := (g.battlefield.filter (·.name == bear.name))[0]!.id
+    let exId := (g.objects.filter (fun o => o.name == "Phase23 Clash Linked Shock" && o.zone == .exile))[0]!.id
+    let g := (g.change (.object bid (.pushLinkedExile exId))).change (.pushContinuationFrame {})
+    let g := g.change (.pending (.fraChoice opp23 (.topOrBottomDamage bid 2 none)))
+    mustApply g opp23 .chooseTop
+  let gTopPausedDone : Game :=
+    match gTopPaused0.pending with
+    | .chooseReplacement p cs => mustApply gTopPaused0 p (.chooseReplacement cs[0]!)
+    | _ => gTopPaused0
+  let idHdExA : ReplacementId := { kind := .exileOppDeath, object := some ⟨988⟩ }
+  let idHdExB : ReplacementId := { kind := .exileOppDeath, object := some ⟨989⟩ }
+  let gHdSync0 : Game :=
+    afterDraw.createEffect
+      (.replacement { id := idHdExA, affectedPlayer := me, kind := .exileInsteadOfGraveyard none false })
+      (cause := some testCause)
+  let preHdSyncLog := gHdSync0.log.size
+  let hdSyncCard := (gHdSync0.player me).hand.back!
+  let gHdSync1 : Game := gHdSync0.runFrcPostStep (.discardHand me)
+  let gHdPause0 : Game :=
+    gHdSync0.createEffect
+      (.replacement { id := idHdExB, affectedPlayer := me, kind := .exileInsteadOfGraveyard none false })
+      (cause := some testCause)
+  let preHdPauseLog := gHdPause0.log.size
+  let hdPauseCard := (gHdPause0.player me).hand.back!
+  let gHdPause1 : Game := gHdPause0.runFrcPostStep (.discardHand me)
+  let gHdPause2 : Game := mustApply gHdPause1 me (.chooseReplacement idHdExA)
+  let preHdNormLog := afterDraw.log.size
+  let gHdNorm : Game := afterDraw.runFrcPostStep (.discardHand me)
+  let clashAndHandDiscardArrivalOk : Bool :=
+    (gTopExiled.player opp23).life == 20 &&
+    !gTopExiled.log.any (·.contains "on top of their library") &&
+    (gTopPaused0.player opp23).life == 20 &&
+    (gTopPausedDone.player opp23).life == 18 &&
+    gTopPausedDone.log.any (·.contains "on top of their library") &&
+    (gHdSync1.followMovedToZone? hdSyncCard (· == .exile)).isSome &&
+    !(gHdSync1.log.extract preHdSyncLog gHdSync1.log.size).any (·.contains "discards ") &&
+    (match gHdPause1.pending with | .chooseReplacement p cs => p == me && cs.size == 2 | _ => false) &&
+    (gHdPause2.followMovedToZone? hdPauseCard (· == .exile)).isSome &&
+    !(gHdPause2.log.extract preHdPauseLog gHdPause2.log.size).any (·.contains "discards ") &&
+    (gHdNorm.log.extract preHdNormLog gHdNorm.log.size).any (·.contains "discards ")
+
   mustHold23 "2a.seqTargetsOk" seqTargetsOk &&
   mustHold23 "2b.preventedNoSideEffectOk" preventedNoSideEffectOk &&
-  mustHold23 "2.replay" ([gSeqPaused, gSeqDone, gSmitePrev, gOppDmgPrev].all (fun g =>
+  mustHold23 "2c.clashAndHandDiscardArrivalOk" clashAndHandDiscardArrivalOk &&
+  mustHold23 "2.replay" ([gSeqPaused, gSeqDone, gSmitePrev, gOppDmgPrev,
+      gTopExiled, gTopPaused0, gTopPausedDone, gHdSync1, gHdPause1, gHdPause2, gHdNorm].all (fun g =>
     Game.replayEvents g.events == g && allRulesEventsClassified g))
 
 -- 3. 0-mana `sneakAttacker` bounce, reduced-`{0}` `activateAbility` `CastEvent.announced`,

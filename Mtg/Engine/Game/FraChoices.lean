@@ -331,7 +331,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
               g.logMsg s!"{(g.player owner).name} puts {oName} on {side} of their library"
             else g
           let g :=
-            if top && damage > 0 then
+            if arrived && top && damage > 0 then
               g.dealDamageToPlayer owner damage (source := sid.bind g.damageSourceById?)
             else g
           return g.finishFraChoice
