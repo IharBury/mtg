@@ -6688,12 +6688,13 @@ across multiplied token creation, and CR 616.1 `enterWithPlusOnes` /
        `.continueTriggeredModes` or frame-popping `.finishFraChoice`) runs after
        step 2 rather than ahead of or destroying it;
      - run `finishWardAndDrain` / `Casting.afterWardResolved` *before*
-       re-chaining `outerCont?` across all three non-mana `.payWard` handlers
-       (`Decisions.discardForDraw` `.payWard` and
+       re-chaining `outerCont?` across all four non-mana `.payWard` handlers
+       that stash `outerCont?` (`Decisions.discardForDraw` `.payWard`,
+       `Decisions.decline` `.payWard`, and
        `SacrificeDiscard.sacrificeForActivation` `.payWard` multi-permanent and
        `.sacrificeLegendary` arms) so `.afterWardResolved` executes before any
-       outer continuation when the ward sacrifice or discard pauses on
-       `Pending.chooseReplacement`; and
+       outer continuation when countering `spellId` or paying the ward
+       sacrifice/discard pauses on `Pending.chooseReplacement`; and
      - stash `outerCont?` around `Casting.becomeCast` in
        `Decisions.beginResolutionCastTargets` (`Decisions.lean`), checking
        post-`becomeCast` pause state (`g.pending != .none || g.afterRandom != .none`)
@@ -6884,13 +6885,18 @@ across multiplied token creation, and CR 616.1 `enterWithPlusOnes` /
      `"unless you control..."` check or contribute static ETB modifiers.
    - Batch single-instruction multi-token `replaceTokenCreationChoice` calls,
      isolate pre-batch token modifiers, and finish `.copyNontokenCreaturesYouControl`
-     ETB processing (`Tokens.lean`, `FrcResolve.lean`,
+     ETB processing (`Tokens.lean`, `FrcResolve.lean`, `Choices.lean`,
+     `ModeledTriggers.lean`, `TriggerArgs.lean`, `TriggeredAbilities.lean`,
      `EffectResolution.lean`, CR 603.6a / 608.2c / 614.1 / 616.1): pass
      `count := n` into `replaceTokenCreationChoice` / `createTokenBatches` for
      single `"create N tokens"` instructions (`FrcResolve.makeFrc` /
-     `makeFrcLoop`, `Tokens.createTreasureTokens`, `Tokens.createKindTokens`)
-     instead of looping `n` separate `createToken` (`count := 1`) events;
-     exclude tokens created earlier in the currently open batch from
+     `makeFrcLoop`, `Tokens.createTreasureTokens`, `Tokens.createKindTokens`,
+     `TriggerArgs.spawnFace` per recipient,
+     `ModeledTriggers.createMerfolkForBlueSymbols`,
+     `Choices.createPermanentCopyTokens`, and
+     `TriggeredAbilities.applyTriggeredAbility` `.copySelfNonlegendary` with
+     `count := 2`) instead of looping `n` separate `createToken` (`count := 1`)
+     events; exclude tokens created earlier in the currently open batch from
      `Tokens.replaceTokenCreationChoice` static scans; and run
      `afterPermanentEnters` / `afterPermanentEntersInBatch` for all tokens
      created by `EffectResolution` `.copyNontokenCreaturesYouControl`.
