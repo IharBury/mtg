@@ -1475,9 +1475,10 @@ deferred-log, and CR 614.1c / 614.15 / 616.1e–g shockland / `.entersTappedSelf
 / unified ETB counter / multi-token replacement batching edge cases, while
 closing the remaining `finishChooseCards` `.toHand _` /
 `Leaving.redirectPendingAfterLeave` pause-safety, CR 400.3 / 614.6 / 700.4 /
-701.9a / 701.21a / 122.1 arrival & counter-delta logs, and CR 614.1c,5,12 /
-616.1b–c,g / 701.14 / 702.15b ETB self-exclusion, wildcard counter kinds, tier
-gating & token/fight/lifelink/discard batching edge cases moves to Phase 24—and
+701.9a / 701.21a / 122.1 arrival & counter-delta logs, and CR 614.1c,5,12,15 /
+616.1a–g / 701.14 / 702.15b ETB self-exclusion, wildcard counter kinds,
+`616.1e` printed enters-with / shockland / behold tier placement &
+token/fight/lifelink/discard batching edge cases moves to Phase 24—and
 `Movement.move`
 preserving `ZoneVerb.destroy` across `ReplacementKind.exileInstead` in Phase 15,
 #598, per 701.8).
@@ -1785,7 +1786,7 @@ flowchart TD
   P20 --> P21["Phase 21: Concede/flushUnlessPays pause-safety, CR 702.26g/701.3/608.2b phasing/attach/target & deferred logs,\nCR 101.2/601.2f,h/602.2b/733.1/700.2/110.1/115.1c,10a/707.10-12 cast/cost/modal/copy fidelity,\nCR 805.10d-e/810.7-8/805.4/500.4/514.2/723.1 2HG poison/blocking/turn-expiry & opponent queries,\nand simultaneous batches, journaled test/demo state, PostStep/PutCounterLog tags & dead scaffolding"]
   P21 --> P22["Phase 22: Typed PostStep/FrcPostStep & stage/mode/reflexive payloads,\nCR 616.1 library-exile loops & pause-safety completion,\nCR 601.2h/602.2b/733.1 proposal payment chaining & unpayable-cost reversal,\nand CR 614.6/614.12/616.1/701.47 simultaneous-ETB, amass, multiplied-token & dead-scaffolding cleanup"]
   P22 --> P23["Phase 23: Continuation/ward/cast pause-safety & CR 614.6/615.6/608.2b deferred logs,\nCR 106.6/601.2/602.2/702.37/707.2,10/603.6c,10a mana, cast, equip, morph, copy & trigger alignment,\nCR 614.1c,12,15/616.1a-g ETB ordering, shockland re-entry, unified ETB counters, token & combat/phasing/Saga/APNAP batches,\nand CR 810 2HG shared life/draw/poison, simultaneous CR 704.3 SBA, amass/LKI sentinel & dead-helper cleanup"]
-  P23 --> P24["Phase 24: Remaining pause/Leaving continuation safety & CR 400.3/614.6/700.4/701.9a,21a/122.1 arrival logs,\nCR 601.2-3/702.33-34/715.3/733.1/115.1,3 Flashback, Kicker, Adventure, Cosmic Cube & multi-slot target legality,\nCR 614.1c,5,12/616.1b-c,g/701.14/702.15b/121.2 ETB self-exclusion, wildcard counters, tier gating & token/fight/lifelink/discard batches,\nand CR 805.3-4,8/810.2 2HG shared-turn lifecycle, start-of-pass CR 704.5j/s legend & Saga SBAs, and scaffolding/CR cleanup"]
+  P23 --> P24["Phase 24: Remaining pause/Leaving continuation safety & CR 400.3/614.6/700.4/701.9a,21a/122.1 arrival logs,\nCR 601.2-3/702.33-34/715.3/733.1/115.1,3 Flashback, Kicker, Adventure, Cosmic Cube & multi-slot target legality,\nCR 614.1c,5,12,15/616.1a-g/701.14/702.15b/121.2 ETB self-exclusion, wildcard counters, 616.1e ETB tiers & token/fight/lifelink/discard batches,\nand CR 805.3-4,8/810.2 2HG shared-turn lifecycle, start-of-pass CR 704.5j/s legend & Saga SBAs, and scaffolding/CR cleanup"]
 ```
 
 ### Phase 1 — Envelope and durable single-writer constructors
@@ -7047,7 +7048,7 @@ LKI reconstruction), `Activation.lean`, `AddMana.lean`, `Casting.lean`,
 `MshOracleTests2.lean`, `MshOracleTests4.lean`, `OracleRulingTests.lean`,
 `CatalogModelTests.lean`, `RenderTests.lean`.
 
-### Phase 24 — Remaining pause / `Leaving` continuation safety & CR 400.3 / 614.6 / 700.4 / 701.9a,21a / 122.1 arrival logs, CR 601.2–3 / 702.33–34 / 715.3 / 733.1 / 115.1,3 Flashback, Kicker, Adventure, *Cosmic Cube* & multi-slot target legality, CR 614.1c,5,12 / 616.1b–c,g / 701.14 / 702.15b / 121.2 ETB self-exclusion, wildcard counters, tier gating & token/fight/lifelink/discard batches, and CR 805.3–4,8 / 810.2 2HG shared-turn lifecycle, start-of-pass CR 704.5j,s legend & Saga SBAs, and scaffolding/CR cleanup
+### Phase 24 — Remaining pause / `Leaving` continuation safety & CR 400.3 / 614.6 / 700.4 / 701.9a,21a / 122.1 arrival logs, CR 601.2–3 / 702.33–34 / 715.3 / 733.1 / 115.1,3 Flashback, Kicker, Adventure, *Cosmic Cube* & multi-slot target legality, CR 614.1c,5,12,15 / 616.1a–g / 701.14 / 702.15b / 121.2 ETB self-exclusion, wildcard counters, `616.1e` ETB tiers & token/fight/lifelink/discard batches, and CR 805.3–4,8 / 810.2 2HG shared-turn lifecycle, start-of-pass CR 704.5j,s legend & Saga SBAs, and scaffolding/CR cleanup
 
 1. Complete the remaining pause-safety / `Leaving` outer-continuation guards,
    remove premature mid-resolution `receivePriority`, and gate the remaining
@@ -7203,15 +7204,18 @@ LKI reconstruction), `Activation.lean`, `AddMana.lean`, `Casting.lean`,
      (`Card/Targeting.lean`) while setting `allowsZeroTargets := false` on
      `Effect.ofTrigger` `.attachEquipmentToCreature` (`Card/Trigger.lean`,
      `TriggeredAbility.onEnterAttachTargetEquipment`).
-3. Complete CR 614.1c,5,12 / 616.1b–c,g ETB self-exclusion, multi-`CounterKind`
-   wildcard modifiers & tier gating, and CR 616.1 / 701.7a / 701.14a,c /
-   702.15b / 121.2 token, fight, noncombat lifelink, mass-damage/Extort,
-   draw-lose & multi-discard batching (§2.5, §2.6, §3.2, §3.4, §3.6):
+3. Complete CR 614.1c,5,12,15 / 616.1a–g ETB self-exclusion, multi-`CounterKind`
+   wildcard modifiers & `616.1e` printed ETB tier placement, and CR 616.1 /
+   701.7a / 701.14a,c / 702.15b / 121.2 token, fight, noncombat lifelink,
+   mass-damage/Extort, draw-lose & multi-discard batching (§2.5, §2.6, §3.2,
+   §3.4, §3.6):
    - Exclude entering permanents from general-subset CR 614.12 counter modifiers,
      scope wildcard `.modifyCountersPut` `ReplacementId`s per `CounterKind`, and
-     align `616.1b–c` / already-tapped `entersTappedUnless*` ETB handling
-     (`Core.lean`, `Decisions.lean`, CR 122.6 / 614.1c / 614.5 / 614.12 /
-     616.1a–g):
+     move printed CR 614.1c / 614.12 enters-with, as-enters, shockland, and
+     behold replacements to `ReplacementTier.other` (`616.1e`) alongside
+     already-tapped `entersTappedUnless*` handling (`Core.lean`, `Event.lean`,
+     `Object.lean`, `Decisions.lean`, CR 122.6 / 614.1c / 614.5 / 614.12 /
+     614.15 / 616.1a–g):
      - require `o.id != ent.id` when `entering == some ent` on general-subset
        counter modifiers `.extraCounterOnPermanents` (*Doc Samson*) and
        `.fra .extraPlusOneCounter` (*Yoshimaru* / *The Golden Gear*) in
@@ -7225,15 +7229,28 @@ LKI reconstruction), `Activation.lean`, `AddMana.lean`, `Casting.lean`,
        per-`CounterKind` loop neither skips a second counter kind in
        `curApplied` nor stalls when `g.replacementOrder` deduplicates `id`
        across multiple counter kinds (CR 122.6 / 614.5 / 616.1 / 616.1g); and
-     - extend `hasPendingExternalCopyOrBackFace` in `Core.applyEtbReplacements`
-       to also hold off printed CR 614.12 self-ETB replacements while pending
-       `.entersUnderControl` (CR 616.1b) or pending
-       `bc.asEntersMayCopyCreatureHasteUntilEot` (*Cursed Mirror*, CR 616.1c)
-       choices remain (keeping `specSelf` in `board.activeEffects` at `616.1a`),
-       and drop `!cur.status.tapped && !selfTap` on
-       `bc.entersTappedUnlessPayLife` and `bc.entersTappedUnlessBehold` so *The
-       Black Gate* and *Theorist's Sanctum* still allow paying life or beholding
-       when entering tapped (CR 614.1c / 614.12).
+     - move printed CR 614.1c / 614.12 enters-with, as-enters, shockland, and
+       behold `ReplacementKind` constructors (`.entersUntappedPayLife`,
+       `.entersTappedDeclinePayLife`, `.entersUntappedBehold`,
+       `.entersTappedDeclineBehold`, `.asEntersChooseColor`,
+       `.asEntersChooseCreatureType`, `.asEntersChooseOdd`,
+       `.asEntersChooseCardName`, `.asEntersChooseCardType`,
+       `.asEntersChooseAnchor`, and `.entersWithCountersSelf`, plus their CR
+       comments in `Event.lean`, `Object.lean`, and `Core.lean`) out of
+       `ReplacementTier.self` (`616.1a`, which is reserved strictly for CR
+       614.15 self-replacement effects of a resolving spell or ability; passing
+       explicit `tier := .self` on the synthetic `616.1a` test spec in
+       `Tests/Events.lean`) into `ReplacementTier.other` (`616.1e`, matching
+       `.entersTappedSelf` in Phase 23) so `616.1b` (`.entersUnderControl`),
+       `616.1c` (`.entersAsCopy` and *Cursed Mirror*'s
+       `.entersAsCopyCreatureUntilEot` / `.declineEntersAsCopy`), and `616.1d`
+       (`.entersBackFaceUp`) apply strictly before printed enters-with /
+       as-enters / shockland / behold choices (and retire or align
+       `hasPendingExternalCopyOrBackFace` accordingly), and drop
+       `!cur.status.tapped && !selfTap` on `bc.entersTappedUnlessPayLife` and
+       `bc.entersTappedUnlessBehold` so *The Black Gate* and *Theorist's
+       Sanctum* still allow paying life or beholding at `616.1e` when entering
+       tapped (CR 614.1c / 614.12 / 616.1a–f).
    - Unify multi-token CR 616.1 replacement batching across multi-creature copy
      and entering-attacking token effects, and propagate token riders to
      `.createExtraTokenWithFood` bonus batches (`EffectResolution.lean`,
@@ -7376,8 +7393,9 @@ non-Flashback graveyard casts & expired `hasFlashbackPermission`, CR 106.6
 `Pending.mayCastFromLooked` CR 733.1 checkpoint reversal, multi-slot
 `distinctSlots` / `.twoNonlandsSharingType` / `targetCount` & *Iron Hills
 Stalwart* mandatory slot-0 targeting, CR 614.12 general-subset self-exclusion,
-wildcard `.modifyCountersPut` multi-`CounterKind` ETB evaluation, `616.1b–c`
-self-ETB tier gating & tapped `entersTappedUnless*`, batched multi-token copy /
+wildcard `.modifyCountersPut` multi-`CounterKind` ETB evaluation, `616.1e`
+printed enters-with / as-enters / shockland / behold tier ordering after
+`616.1b–d` & tapped `entersTappedUnless*`, batched multi-token copy /
 attacking creation & `.createExtraTokenWithFood` riders, CR 701.14a,c mutual and
 self-fight damage, aggregated noncombat multi-recipient lifelink, batched
 `.dealDamageToEachNonSubtypeAndOpponents` / `extortDrain` & unbatched
