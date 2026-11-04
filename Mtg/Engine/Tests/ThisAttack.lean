@@ -76,7 +76,7 @@ def antManOffer : Game :=
 
 #guard
   match antManOffer.pending with
-  | .fraChoice q (.mayPayManaForReflexive cost _ 12 _) =>
+  | .fraChoice q (.mayPayManaForReflexive cost _ .plusOne _) =>
     q == me && cost == #[.generic 1]
   | _ => false
 
@@ -102,7 +102,7 @@ def reaperOffer : Game :=
 
 #guard
   match reaperOffer.pending with
-  | .fraChoice q (.mayPayManaForReflexive cost _ 6 _) =>
+  | .fraChoice q (.mayPayManaForReflexive cost _ .returnAttacking _) =>
     q == me && cost == #[.generic 3, .colored .black]
   | _ => false
 

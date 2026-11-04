@@ -881,8 +881,8 @@ def nontokenHeroModalSoldier : Game :=
 
 def nontokenHeroModalPump : Game :=
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
-  g.applyTriggeredAbility ⟨0⟩ (.onWatch Effect.watchNontokenHeroModal) none #[]
-    #[] (some 1)
+  let g := g.change (.pushContinuationFrame { resolvingModes := some #[1] })
+  g.applyTriggeredAbility ⟨0⟩ (.onWatch Effect.watchNontokenHeroModal) none
 
 #guard (nontokenHeroModalSoldier.battlefield.filter (fun o =>
   o.printed.isToken && o.printed.hasSubtype .soldier)).size == 1

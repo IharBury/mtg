@@ -152,10 +152,6 @@ def finishSagaFinalChapter (g : Game) (controller : PlayerId)
   | none => g
   | some tom => g.logMsg s!"{g.name tom}'s last ability triggers"
 
-/-- Whether `host` is a legal Enchant-creature attachment (CR 303.4). -/
-def isLegalAuraHost (g : Game) (host : GameObject) : Bool :=
-  host.isOnBattlefield && g.isCreature host
-
 /-- Resolve an Aura spell, attaching it (CR 303.4 / 608.3c) or putting it into
 the graveyard when its target is illegal (CR 608.2b / 608.3b). -/
 def resolveAuraSpell (g : Game) (entry : StackEntry) (obj : GameObject) : Game :=
@@ -227,7 +223,7 @@ def resolveAdventureSpell (g : Game) (entry : StackEntry) (obj : GameObject) : G
       (verb := some .resolve) (actor := some entry.controller) (cause := finishCause)
     if let .chooseReplacement .. := g.pending then
       g.chainPendingReplacement
-        (.finishPostStep .grantAdventureExilePermission entry.controller (cardId := some obj.id) (cause := finishCause))
+        (.finishPostStep (.grantAdventureExilePermission entry.controller obj.id finishCause))
     else
       match g.followMovedToZone? obj.id (· == .exile) with
       | some o =>
@@ -342,7 +338,11 @@ def finishOneResolution (g : Game) (fin : ResolutionFinish) : Game :=
           else if hasFlashback then
             let (g, _) := g.move obj.id .exile none
               (verb := some .resolve) (actor := some entry.controller) (cause := some finishCause)
-            g.logMsg s!"{obj.name} is exiled (flashback)"
+            if let .chooseReplacement .. := g.pending then
+              g.chainPendingReplacement
+                (.finishPostStep (.logExiledIfInExile obj.id s!"{obj.name} is exiled (flashback)"))
+            else
+              g.logMsg s!"{obj.name} is exiled (flashback)"
           else
             g.moveToOwnerGraveyard obj s!"{obj.name} goes to the graveyard"
               (verb := some .resolve) (actor := some entry.controller) (cause := some finishCause)
@@ -512,12 +512,15 @@ or defer via `PendingReplacement.logPutCounterDelta` when
 def putCountersDeferredLog (g : Game) (oid : ObjectId) (kind : CounterKind)
     (n : Nat) (byPlayer : Option PlayerId) (logKind : PutCounterLog)
     (cause : Option EventCause := none) : Game :=
-  let before := ((g.findObject? oid).map (·.status.counterCount kind)).getD 0
-  let g := g.recordPutCounters oid kind n (byPlayer := byPlayer) (cause := cause)
   if let .chooseReplacement .. := g.pending then
-    g.chainPendingReplacement (.logPutCounterDelta oid kind before logKind)
+    g.chainPendingReplacement (.putCountersDeferredLog oid kind n byPlayer logKind cause)
   else
-    g.logPutCounterDelta oid kind before logKind
+    let before := ((g.findObject? oid).map (·.status.counterCount kind)).getD 0
+    let g := g.recordPutCounters oid kind n (byPlayer := byPlayer) (cause := cause)
+    if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement (.logPutCounterDelta oid kind before logKind)
+    else
+      g.logPutCounterDelta oid kind before logKind
 
 end Game
 end Mtg.Engine

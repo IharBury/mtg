@@ -22,14 +22,6 @@ def searchAfter (p : PlayerId) : Option FraNext → AfterRandom
   | some (.gainLife n) => .gainLife p n
   | _ => .none
 
-/-- First library card of `p` whose printed characteristics satisfy `pred`
-(bottom of the library first). -/
-def findLibraryCard? (g : Game) (p : PlayerId) (pred : CardDef → Bool) : Option ObjectId :=
-  (g.player p).library.find? (fun id =>
-    match g.findObject? id with
-    | some o => pred (g.baseCard o)
-    | none => false)
-
 /-- Finish the post-untap log and ETB checks once a searched land's untap
 replacement choice (e.g. stun counters, CR 122.1d / 616.1) finishes. -/
 def finishSearchedUntap (g : Game) (_p : PlayerId) (landId : ObjectId) (_name : String) : Game :=
@@ -103,7 +95,12 @@ def placeSearchedHand (g : Game) (p : PlayerId) (id : ObjectId)
     let revCause := some (cause.getD (g.resolvingOrRuleCause p))
     let g := g.record (GameEvent.revealed g.turnNumber p #[id] (cause := revCause))
     let (g, _) := g.move id (.hand p) none (cause := cause)
-    g.logMsg s!"{(g.player p).name} reveals {name} and puts it into their hand"
+    let msg := s!"{(g.player p).name} reveals {name} and puts it into their hand"
+    if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement (.logMessage msg)
+    else if (g.followMovedToZone? id (· == .hand p)).isSome then
+      g.logMsg msg
+    else g
 
 /-- Put `ids` into their owners' graveyards sequentially inside an open batch,
 deferring each `"is put into ...'s graveyard"` log across `Pending.chooseReplacement`
@@ -134,11 +131,6 @@ def placeSearchedGraveyardLoop (g : Game) (ids : Array ObjectId)
         g := g.logMsg s!"{name} is put into {(g.player owner).name}'s graveyard"
   return g
 
-/-- Put `id` into its owner's graveyard. -/
-def placeSearchedGraveyard (g : Game) (id : ObjectId)
-    (cause : Option EventCause := none) : Game :=
-  g.placeSearchedGraveyardLoop #[id] cause
-
 /-- Exile `ids` sequentially inside an open batch and link each card that
 arrives in `.exile` to `source`'s CR 607.2a `leaveTriggerExile` list, pausing
 across `Pending.chooseReplacement` via `.exileSearchedLinkedLoop`. -/
@@ -147,8 +139,7 @@ def exileSearchedLinkedLoop (g : Game) (p : PlayerId) (ids : Array ObjectId)
     (pendingFromId : Option ObjectId := none) : Game := Id.run do
   if let .chooseReplacement .. := g.pending then
     return g.chainPendingReplacement
-      (.finishPostStep .exileSearchedLinkedLoop p (sourceId := source) (cardId := pendingFromId)
-        (ids := ids) (cause := cause))
+      (.finishPostStep (.exileSearchedLinkedLoop p ids source cause pendingFromId))
   let mut g := g
   if let some fid := pendingFromId then
     if let some moved := g.followMovedToZone? fid (· == .exile) then
@@ -173,8 +164,7 @@ def exileSearchedLinkedLoop (g : Game) (p : PlayerId) (ids : Array ObjectId)
       if let .chooseReplacement .. := g.pending then
         let rem := ids.extract (i + 1) ids.size
         return g.chainPendingReplacement
-          (.finishPostStep .exileSearchedLinkedLoop p (sourceId := source) (cardId := some id)
-            (ids := rem) (cause := some linkCause))
+          (.finishPostStep (.exileSearchedLinkedLoop p rem source (some linkCause) (some id)))
       if let some moved := g.followMovedToZone? id (· == .exile) then
         if let some src := source.bind g.findObject? then
           g := g.changeObject src.id (.pushLeaveTriggerExile moved.id)
@@ -502,7 +492,7 @@ def resolveExileTopPlayUntilEndOfNextTurn (g : Game) (p : PlayerId) : Game :=
     let (g, _) := g.move top .exile none (cause := some cause)
     if let .chooseReplacement .. := g.pending then
       g.chainPendingReplacement
-        (.finishPostStep .grantPlayUntilEndOfNextTurn p (cardId := some top) (cause := some cause))
+        (.finishPostStep (.grantPlayUntilEndOfNextTurn p top (some cause)))
     else
       match g.followMovedToZone? top (· == .exile) with
       | some moved =>

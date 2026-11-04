@@ -94,11 +94,13 @@ def resolveDelayedTrigger (g : Game) (controller : PlayerId) (kind : DelayedTrig
   match kind with
   | .eaglesBirds n =>
     if n > 0 && g.stillInGame controller then
+      let startEventIdx := g.events.size
       let g := g.createKindTokens controller .birdSoldier n (cause := some cause)
       if let .chooseReplacement .. := g.pending then
-        g.chainPendingReplacement (.finishPostStep .logDelayedBirdSoldiersCreated controller (n := n))
+        g.chainPendingReplacement (.finishPostStep (.logDelayedBirdSoldiersCreated controller startEventIdx))
       else
-        g.logMsg s!"{(g.player controller).name}'s delayed triggered ability creates {n} Bird Soldier token(s)"
+        let created := (g.tokensCreatedSince startEventIdx).size
+        g.logMsg s!"{(g.player controller).name}'s delayed triggered ability creates {created} Bird Soldier token(s)"
     else g
   | .attackPumpPerPlains =>
     let n : Int := g.countSubtype controller .plains
@@ -117,7 +119,7 @@ def resolveDelayedTrigger (g : Game) (controller : PlayerId) (kind : DelayedTrig
           let isLand := g.isLand o
           let (g', _) := g.putOntoBattlefield id owner (cause := some cause)
           if let .chooseReplacement .. := g'.pending then
-            g'.chainPendingReplacement (.finishPostStep .returnedBattlefieldEndStep owner 0 none (some id) (shuffle := isLand))
+            g'.chainPendingReplacement (.finishPostStep (.returnedBattlefieldEndStep id isLand))
           else
             match g'.followMovedToZone? id (· == .battlefield) with
             | some back =>
@@ -135,8 +137,13 @@ def resolveDelayedTrigger (g : Game) (controller : PlayerId) (kind : DelayedTrig
     match g.findObject? id with
     | some o =>
       if o.isOnBattlefield then
+        let msg := s!"{o.name} is exiled (beginning of end step)"
         let (g', _) := g.move id .exile none (cause := some cause)
-        g'.logMsg s!"{o.name} is exiled (beginning of end step)"
+        if let .chooseReplacement .. := g'.pending then
+          g'.chainPendingReplacement (.finishPostStep (.logExiledIfInExile id msg))
+        else if (g'.followMovedToZone? id (· == .exile)).isSome then
+          g'.logMsg msg
+        else g'
       else g
     | none => g
   | .endStepSacrifice id =>
@@ -153,7 +160,7 @@ def resolveDelayedTrigger (g : Game) (controller : PlayerId) (kind : DelayedTrig
         let isLand := g.isLand o
         let (g', _) := g.putOntoBattlefield id who (cause := some cause)
         if let .chooseReplacement .. := g'.pending then
-          g'.chainPendingReplacement (.finishPostStep .returnedToBattlefield who 0 none (some id) (shuffle := isLand))
+          g'.chainPendingReplacement (.finishPostStep (.returnedToBattlefield id isLand))
         else
           match g'.followMovedToZone? id (· == .battlefield) with
           | some back =>
@@ -415,8 +422,13 @@ def resolveTop (g : Game) : Game :=
                 s!"The copy of {obj.name} ceases to exist (CR 704.5e)"
             (g.ceaseToExist obj.id (cause := some (.stateBased .copyOutsideStackOrBf))).logMsg copyMsg
           else if hasFlashback then
+            let msg := s!"{obj.name} is exiled (flashback)"
             let (g, _) := g.move obj.id .exile none (cause := finishCause)
-            g.logMsg s!"{obj.name} is exiled (flashback)"
+            if let .chooseReplacement .. := g.pending then
+              g.chainPendingReplacement (.finishPostStep (.logExiledIfInExile obj.id msg))
+            else if (g.followMovedToZone? obj.id (· == .exile)).isSome then
+              g.logMsg msg
+            else g
           else if auraTargetsAllIllegal then
             g.moveToOwnerGraveyard obj s!"{obj.name} goes to the graveyard (illegal Aura target)"
               (cause := finishCause)

@@ -11,12 +11,20 @@ reductions.
 namespace Mtg.Engine
 namespace Game
 
-/-- Move `id` to `to`'s hand and log the return. -/
+/-- Move `id` to `to`'s hand and log the return if it actually arrives in
+`to`'s hand, deferring the log across `Pending.chooseReplacement`. -/
 def returnToHand (g : Game) (id : ObjectId) (to : PlayerId)
     (cause : Option EventCause := none) : Game :=
-  let name := (g.object! id).name
-  let (g, _) := g.move id (.hand to) none (verb := some .returnToHand) (cause := cause)
-  g.logMsg s!"{name} is returned to {(g.player to).name}'s hand"
+  match g.findObject? id with
+  | none => g
+  | some o =>
+    let name := o.name
+    let (g, _) := g.move id (.hand to) none (verb := some .returnToHand) (cause := cause)
+    if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement (.finishPostStep (.logReturnedToHand id to name))
+    else if (g.followMovedToZone? id (· == .hand to)).isSome then
+      g.logMsg s!"{name} is returned to {(g.player to).name}'s hand"
+    else g
 
 /-- Legal only during the declare blockers step of the caster's turn. -/
 def canCastForSneak (g : Game) (p : PlayerId) : Bool :=
@@ -40,6 +48,9 @@ def paySneak (g : Game) (p : PlayerId) (spellId : ObjectId) (attackerId : Object
   let some _spell := g.findObject? spellId | throw "The spell left the stack"
   let cause := some (EventCause.costPayment .returnToHand p (some spellId))
   let g := g.returnToHand attackerId attacker.owner (cause := cause)
+  if let .chooseReplacement .. := g.pending then
+    return g.chainPendingReplacement
+      (.finishPostStep (.finishPaySneak p spellId attackerId atkTarget cause))
   let g := g.record (GameEvent.announced g.turnNumber spellId
     (costs := #[.sneak attackerId atkTarget]) (cause := cause))
   return g.logMsg s!"{(g.player p).name} pays a sneak cost"

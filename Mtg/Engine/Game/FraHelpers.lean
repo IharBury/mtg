@@ -195,7 +195,7 @@ def plusOneOnEachCreatureOf (g : Game) (p : PlayerId) (n : Nat := 1) : Game :=
 /-- Pause-safe loop placing a loyalty counter on each planeswalker in `ids`. -/
 def loyaltyOnPwsLoop (g : Game) (p : PlayerId) (ids : Array ObjectId) : Game := Id.run do
   if let .chooseReplacement .. := g.pending then
-    return g.chainPendingReplacement (.finishPostStep .loyaltyOnPlaneswalkersLoop p (ids := ids))
+    return g.chainPendingReplacement (.finishPostStep (.loyaltyOnPlaneswalkersLoop p ids))
   let mut g := g
   for i in [0:ids.size] do
     let id := ids[i]!
@@ -205,7 +205,7 @@ def loyaltyOnPwsLoop (g : Game) (p : PlayerId) (ids : Array ObjectId) : Game := 
         if let .chooseReplacement .. := g.pending then
           let rem := ids.extract (i + 1) ids.size
           if !rem.isEmpty then
-            g := g.chainPendingReplacement (.finishPostStep .loyaltyOnPlaneswalkersLoop p (ids := rem))
+            g := g.chainPendingReplacement (.finishPostStep (.loyaltyOnPlaneswalkersLoop p rem))
           return g
   return g
 

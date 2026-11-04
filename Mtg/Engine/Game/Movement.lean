@@ -74,18 +74,6 @@ private def unreplacedCause : EventCause → EventCause
   | .replaced _ orig => unreplacedCause orig
   | c => c
 
-/-- Source of a Head-of-the-Hunt-style replacement, if `dying` is an opposing
-creature that would go to a graveyard. Accepts an optional `preBattlefield`
-snapshot so a simultaneous death of the source still applies (CR 614.4 / 614.6). -/
-def exileInsteadSource? (g : Game) (dying : GameObject)
-    (preBattlefield : Option (Array GameObject) := none) : Option GameObject :=
-  let bf := preBattlefield.getD g.battlefield
-  (bf.filter g.exilesOppDeath?).find? (fun o =>
-    o.id != dying.id &&
-      match g.controllerOf o, g.controllerOf dying with
-      | some p, some q => p != q && !g.areTeammates p q
-      | _, _ => false)
-
 /-- Result of running the CR 616.1 replacement loop on a proposed zone move. -/
 structure ZoneMoveReplacementResult where
   dest : Zone
@@ -298,47 +286,58 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
   if old.printed.isToken && old.zone != .battlefield then
     (g, id)
   else
-  let (board, boardOld) := preBatchBoardFor g old
-  let enterCtrl := controller.getD old.owner
-  let resolvedAttackTarget : Option AttackTarget :=
-    if dest == .battlefield then g.resolveEnteringAttackTarget? enterCtrl attacking attackingTarget
-    else none
-  let isAttacking := resolvedAttackTarget.isSome
-  let beforeSnap := board.snapshot boardOld
-  let sourceCtrlTargets : Array ObjectId :=
-    if old.zone != .battlefield || dest == .battlefield then #[]
-    else
-      let sourceCtrlIds := g.activeEffects.filterMap fun (eid, e) =>
-        match e with
-        | .layered _ (.control _) (.whileSourceOnBattlefield s)
-        | .layered _ (.control _) (.untilSourceLeaves s)
-        | .layered _ (.control _) (.whileSourceHasCounter s _) =>
-          if s == old.id then some eid else none
-        | _ => none
-      if sourceCtrlIds.isEmpty then #[]
-      else
-        g.objects.filterMap fun pObj =>
-          if pObj.isBattlefieldObject && pObj.id != old.id &&
-              (g.appliedControlEffectIds pObj).any (fun eid => sourceCtrlIds.contains eid) then
-            some pObj.id
-          else none
-  let buildArrival (g : Game) (targetZone : Zone) (asOf : Nat)
-      (applied : Array ReplacementId := #[]) (curCause : Option EventCause := cause) :
-      GameObject × CounterBag × Nat × Bool × Bool × Array ReplacementId × Option EventCause × Option (PlayerId × Array ReplacementId) × Option (CardDef × CardDef) × Bool :=
-    let newId : ObjectId := ⟨g.nextObjectId⟩
-    let ts := g.timestamp + 1
-    let leavingPlay :=
-      (old.zone == .battlefield || old.zone == .stack) &&
-        targetZone != .battlefield && targetZone != .stack
-    let printed0 :=
-      match overridePrinted with
-      | some p => p
-      | none =>
-        if old.zone == .stack && targetZone != .stack then
-          match old.adventurerCard with
-          | some advOrig => advOrig
+  let (g, (newId, headSource, didMove)) :=
+    g.withBatchCoreReturn cause fun g =>
+      let (board, boardOld) := preBatchBoardFor g old
+      let enterCtrl := controller.getD old.owner
+      let resolvedAttackTarget : Option AttackTarget :=
+        if dest == .battlefield then g.resolveEnteringAttackTarget? enterCtrl attacking attackingTarget
+        else none
+      let isAttacking := resolvedAttackTarget.isSome
+      let beforeSnap := board.snapshot boardOld
+      let sourceCtrlTargets : Array ObjectId :=
+        if old.zone != .battlefield || dest == .battlefield then #[]
+        else
+          let sourceCtrlIds := g.activeEffects.filterMap fun (eid, e) =>
+            match e with
+            | .layered _ (.control _) (.whileSourceOnBattlefield s)
+            | .layered _ (.control _) (.untilSourceLeaves s)
+            | .layered _ (.control _) (.whileSourceHasCounter s _) =>
+              if s == old.id then some eid else none
+            | _ => none
+          if sourceCtrlIds.isEmpty then #[]
+          else
+            g.objects.filterMap fun pObj =>
+              if pObj.isBattlefieldObject && pObj.id != old.id &&
+                  (g.appliedControlEffectIds pObj).any (fun eid => sourceCtrlIds.contains eid) then
+                some pObj.id
+              else none
+      let buildArrival (g : Game) (targetZone : Zone) (asOf : Nat)
+          (applied : Array ReplacementId := #[]) (curCause : Option EventCause := cause) :
+          GameObject × CounterBag × Nat × Bool × Bool × Array ReplacementId × Option EventCause × Option (PlayerId × Array ReplacementId) × Option (CardDef × CardDef) × Bool :=
+        let newId : ObjectId := ⟨g.nextObjectId⟩
+        let ts := g.timestamp + 1
+        let leavingPlay :=
+          (old.zone == .battlefield || old.zone == .stack) &&
+            targetZone != .battlefield && targetZone != .stack
+        let printed0 :=
+          match overridePrinted with
+          | some p => p
           | none =>
-            if leavingPlay && old.status.transformed then
+            if old.zone == .stack && targetZone != .stack then
+              match old.adventurerCard with
+              | some advOrig => advOrig
+              | none =>
+                if leavingPlay && old.status.transformed then
+                  match old.printed.otherFace with
+                  | some front =>
+                    let keepToken := old.printed.isToken
+                    { front with
+                      isToken := keepToken
+                      otherFace := some { old.printed with isToken := keepToken, otherFace := none } }
+                  | none => old.printed
+                else old.printed
+            else if leavingPlay && old.status.transformed then
               match old.printed.otherFace with
               | some front =>
                 let keepToken := old.printed.isToken
@@ -347,147 +346,138 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
                   otherFace := some { old.printed with isToken := keepToken, otherFace := none } }
               | none => old.printed
             else old.printed
-        else if leavingPlay && old.status.transformed then
-          match old.printed.otherFace with
-          | some front =>
-            let keepToken := old.printed.isToken
-            { front with
-              isToken := keepToken
-              otherFace := some { old.printed with isToken := keepToken, otherFace := none } }
-          | none => old.printed
-        else old.printed
-    -- CR 608.3f / 707.10f: a resolving or entering copy of a permanent becomes
-    -- a token as it enters the battlefield.
-    let printed :=
-      if (isCopy.getD old.isCopy) && targetZone == .battlefield && !printed0.isToken then
-        { printed0 with
-          isToken := true
-          otherFace := printed0.otherFace.map fun f => { f with isToken := true } }
-      else printed0
-    let faceDown := faceDown?.getD (targetZone == .battlefield && old.zone == .stack && old.status.faceDown)
-    let fromStackTime :=
-      fromStackTime?.getD (if targetZone == .battlefield && old.zone == .stack then old.status.time else 0)
-    let prepared :=
-      targetZone == .battlefield && !faceDown && printed.entersPrepared
-    let impendingNotCreature :=
-      (old.zone == .stack || fromStackTime?.isSome) && targetZone == .battlefield &&
-        printed.impending.isSome && fromStackTime > 0
-    let baseStatus : Status :=
-      if targetZone == .battlefield then
-        { faceDown := faceDown
-          tapped := tapped
-          summoningSick := summoningSick
-          attacking := isAttacking
-          attackingTarget := resolvedAttackTarget
-          prepared := prepared }
-      else {}
-    let candidate : GameObject := {
-      id := newId
-      printed
-      owner := old.owner
-      controller := controller
-      defaultController := if targetZone == .battlefield then controller else none
-      zone := targetZone
-      status := baseStatus
-      timestamp := ts
-      -- CR 704.5e / 707.10a / 707.12: preserve `isCopy` across any non-battlefield
-      -- zone transition so countered/bounced copies moved again before SBAs run
-      -- still cease to exist via `ceasedToExist`, while playable exiled card copies
-      -- remain copies on `.exile → .stack` and become tokens on `.battlefield`.
-      isCopy := isCopy.getD
-        (if targetZone != .battlefield then old.isCopy else false)
-      isCommander := old.isCommander
-      adventurerCard := if targetZone == .stack then adventurerCard.orElse (fun _ => old.adventurerCard) else none
-      attachedTo := if targetZone == .battlefield then attachedTo else none
-      chosenX := if targetZone == .stack then old.chosenX else none
-    }
-    if targetZone == .battlefield then
-      let gForArrival : Game := Id.run do
-        let mut g' := g
-        if impendingNotCreature then
-          g' := { g' with activeEffects := g'.activeEffects.push (⟨g'.nextEffectId⟩, .notACreature newId), nextEffectId := g'.nextEffectId + 1 }
-        if returnedAsArtifact then
-          g' := { g' with activeEffects := g'.activeEffects.push (⟨g'.nextEffectId⟩, .returnedAsArtifact newId), nextEffectId := g'.nextEffectId + 1 }
-        if onlyFoodArtifact then
-          g' := { g' with activeEffects := g'.activeEffects.push (⟨g'.nextEffectId⟩, .onlyFoodArtifact newId), nextEffectId := g'.nextEffectId + 1 }
-        for m in enterMods do
-          match m with
-          | .loseAllAbilities =>
-            g' := { g' with activeEffects := g'.activeEffects.push (⟨g'.nextEffectId⟩, .layered (.objects #[newId]) (.abilities {} .all) .indefinite), nextEffectId := g'.nextEffectId + 1 }
-          | .keywords k =>
-            g' := { g' with activeEffects := g'.activeEffects.push (⟨g'.nextEffectId⟩, .layered (.objects #[newId]) (.abilities { keywords := k } .none) .indefinite), nextEffectId := g'.nextEffectId + 1 }
-          | .additionalSubtype subtype =>
-            g' := { g' with activeEffects := g'.activeEffects.push (⟨g'.nextEffectId⟩, .additionalSubtype newId subtype (dedup := true)), nextEffectId := g'.nextEffectId + 1 }
-          | _ => pure ()
-        return g'
-      let etb :=
-        gForArrival.applyEtbReplacements candidate
-          (fromStackTime := fromStackTime)
-          (applyHope := applyHope)
-          (asOf := asOf)
-          (extraCounters := extraEntersWith)
-          (leavingPlay := leavingPlay)
-          (forceBackFace := nightBack)
-          (applied := applied)
-          (cause := curCause)
-          (nonCastBattlefield := old.zone != .stack || attachedTo.isNone)
-          (preBattlefield := preBattlefield)
-      (etb.candidate, etb.entersWith, etb.weaverBonus, impendingNotCreature, faceDown, etb.applied, etb.cause, etb.choice?, etb.tempCopyUntilEot, etb.stayInOriginNoAuraHost)
-    else
-      (candidate, #[], 0, impendingNotCreature, faceDown, applied, curCause, none, none, false)
-  -- Run the CR 616.1 replacement loop for leaving/destination replacements (CR 614.6).
-  let origDest := dest
-  let moveRep :=
-    g.replaceZoneMove old beforeSnap dest (verb := verb) (actor := actor)
-      (libraryPosition := libraryPosition) (preBattlefield := preBattlefield)
-      (cause := cause)
-  let dest := moveRep.dest
-  let (preCheckArrivalChoice?, preCheckStayNoAuraHost, preCheckAllApplied) :=
-    if moveRep.choice?.isNone && dest == .battlefield then
-      let (_, _, _, _, _, app, _, ch?, _, stayNoHost) := buildArrival g dest g.timestamp moveRep.applied moveRep.cause
-      (ch?, stayNoHost, app)
-    else (none, false, moveRep.applied)
-  match moveRep.choice?.orElse (fun _ => preCheckArrivalChoice?) with
-  | some (chooser, choices) =>
-    let faceDown := faceDown?.getD (origDest == .battlefield && old.zone == .stack && old.status.faceDown)
-    let fromStackTime := fromStackTime?.getD (if origDest == .battlefield && old.zone == .stack then old.status.time else 0)
-    (g.promptChooseReplacement chooser choices
-      (.move id origDest controller verb actor faceDown tapped
-        isAttacking resolvedAttackTarget nightBack returnedAsArtifact onlyFoodArtifact
-        extraEntersWith libraryPosition fromStackTime applyHope preBattlefield
-        isCopy overridePrinted adventurerCard summoningSick attachedTo enterMods cause),
-     id)
-  | none =>
-  if preCheckStayNoAuraHost then
-    let g := g.consumeReplacementOrder preCheckAllApplied
-    if old.zone == .stack then
-      if old.isCopy then
-        (g.ceaseToExist old.id (cause := some (.stateBased .copyOutsideStackOrBf))
-          |>.logMsg s!"{old.name} ceases to exist (can't be attached legally; CR 303.4g / 704.5e)",
-         old.id)
-      else
-        let (g', gyId) :=
-          g.move old.id (.graveyard old.owner) none (verb := verb) (actor := actor) (cause := cause)
-        let msg := s!"{old.name} goes to the graveyard (can't be attached legally; CR 303.4g)"
-        if let .chooseReplacement .. := g'.pending then
-          (g'.chainPendingReplacement (.logMessage msg), gyId)
+        -- CR 608.3f / 707.10f: a resolving or entering copy of a permanent becomes
+        -- a token as it enters the battlefield.
+        let printed :=
+          if (isCopy.getD old.isCopy) && targetZone == .battlefield && !printed0.isToken then
+            { printed0 with
+              isToken := true
+              otherFace := printed0.otherFace.map fun f => { f with isToken := true } }
+          else printed0
+        let faceDown := faceDown?.getD (targetZone == .battlefield && old.zone == .stack && old.status.faceDown)
+        let fromStackTime :=
+          fromStackTime?.getD (if targetZone == .battlefield && old.zone == .stack then old.status.time else 0)
+        let prepared :=
+          targetZone == .battlefield && !faceDown && printed.entersPrepared
+        let impendingNotCreature :=
+          (old.zone == .stack || fromStackTime?.isSome) && targetZone == .battlefield &&
+            printed.impending.isSome && fromStackTime > 0
+        let baseStatus : Status :=
+          if targetZone == .battlefield then
+            { faceDown := faceDown
+              tapped := tapped
+              summoningSick := summoningSick
+              attacking := isAttacking
+              attackingTarget := resolvedAttackTarget
+              prepared := prepared }
+          else {}
+        let candidate : GameObject := {
+          id := newId
+          printed
+          owner := old.owner
+          controller := controller
+          defaultController := if targetZone == .battlefield then controller else none
+          zone := targetZone
+          status := baseStatus
+          timestamp := ts
+          -- CR 704.5e / 707.10a / 707.12: preserve `isCopy` across any non-battlefield
+          -- zone transition so countered/bounced copies moved again before SBAs run
+          -- still cease to exist via `ceasedToExist`, while playable exiled card copies
+          -- remain copies on `.exile → .stack` and become tokens on `.battlefield`.
+          isCopy := isCopy.getD
+            (if targetZone != .battlefield then old.isCopy else false)
+          isCommander := old.isCommander
+          adventurerCard := if targetZone == .stack then adventurerCard.orElse (fun _ => old.adventurerCard) else none
+          attachedTo := if targetZone == .battlefield then attachedTo else none
+          chosenX := if targetZone == .stack then old.chosenX else none
+        }
+        if targetZone == .battlefield then
+          let gForArrival : Game := Id.run do
+            let mut g' := g
+            if impendingNotCreature then
+              g' := { g' with activeEffects := g'.activeEffects.push (⟨g'.nextEffectId⟩, .notACreature newId), nextEffectId := g'.nextEffectId + 1 }
+            if returnedAsArtifact then
+              g' := { g' with activeEffects := g'.activeEffects.push (⟨g'.nextEffectId⟩, .returnedAsArtifact newId), nextEffectId := g'.nextEffectId + 1 }
+            if onlyFoodArtifact then
+              g' := { g' with activeEffects := g'.activeEffects.push (⟨g'.nextEffectId⟩, .onlyFoodArtifact newId), nextEffectId := g'.nextEffectId + 1 }
+            for m in enterMods do
+              match m with
+              | .loseAllAbilities =>
+                g' := { g' with activeEffects := g'.activeEffects.push (⟨g'.nextEffectId⟩, .layered (.objects #[newId]) (.abilities {} .all) .indefinite), nextEffectId := g'.nextEffectId + 1 }
+              | .keywords k =>
+                g' := { g' with activeEffects := g'.activeEffects.push (⟨g'.nextEffectId⟩, .layered (.objects #[newId]) (.abilities { keywords := k } .none) .indefinite), nextEffectId := g'.nextEffectId + 1 }
+              | .additionalSubtype subtype =>
+                g' := { g' with activeEffects := g'.activeEffects.push (⟨g'.nextEffectId⟩, .additionalSubtype newId subtype (dedup := true)), nextEffectId := g'.nextEffectId + 1 }
+              | _ => pure ()
+            return g'
+          let etb :=
+            gForArrival.applyEtbReplacements candidate
+              (fromStackTime := fromStackTime)
+              (applyHope := applyHope)
+              (asOf := asOf)
+              (extraCounters := extraEntersWith)
+              (leavingPlay := leavingPlay)
+              (forceBackFace := nightBack)
+              (applied := applied)
+              (cause := curCause)
+              (nonCastBattlefield := old.zone != .stack || attachedTo.isNone)
+              (preBattlefield := preBattlefield)
+          (etb.candidate, etb.entersWith, etb.weaverBonus, impendingNotCreature, faceDown, etb.applied, etb.cause, etb.choice?, etb.tempCopyUntilEot, etb.stayInOriginNoAuraHost)
         else
-          (g'.logMsg msg, gyId)
-    else if old.zone == .exile then
-      (g.logMsg s!"{old.name} remains in exile (can't be attached legally; CR 303.4f / CR 614.6)", id)
-    else
-      (g.logMsg s!"{old.name} remains in its current zone (can't be attached legally; CR 303.4f)", id)
-  else
-  let exileInstead := moveRep.exileInstead
-  let finalityExile := moveRep.finalityExile
-  let headSource := moveRep.headSource
-  let finalDiscarded :=
-    verb == some .discard ||
-      match old.zone, origDest with
-      | .hand p, .graveyard q => p == q
-      | _, _ => false
-  let (g, newId) :=
-    g.withBatchCoreReturn cause fun g =>
+          (candidate, #[], 0, impendingNotCreature, faceDown, applied, curCause, none, none, false)
+      -- Run the CR 616.1 replacement loop for leaving/destination replacements (CR 614.6).
+      let origDest := dest
+      let moveRep :=
+        g.replaceZoneMove old beforeSnap dest (verb := verb) (actor := actor)
+          (libraryPosition := libraryPosition) (preBattlefield := preBattlefield)
+          (cause := cause)
+      let dest := moveRep.dest
+      let (preCheckArrivalChoice?, preCheckStayNoAuraHost, preCheckAllApplied) :=
+        if moveRep.choice?.isNone && dest == .battlefield then
+          let (_, _, _, _, _, app, _, ch?, _, stayNoHost) := buildArrival g dest g.timestamp moveRep.applied moveRep.cause
+          (ch?, stayNoHost, app)
+        else (none, false, moveRep.applied)
+      match moveRep.choice?.orElse (fun _ => preCheckArrivalChoice?) with
+      | some (chooser, choices) =>
+        let faceDown := faceDown?.getD (origDest == .battlefield && old.zone == .stack && old.status.faceDown)
+        let fromStackTime := fromStackTime?.getD (if origDest == .battlefield && old.zone == .stack then old.status.time else 0)
+        (g.promptChooseReplacement chooser choices
+          (.move id origDest controller verb actor faceDown tapped
+            isAttacking resolvedAttackTarget nightBack returnedAsArtifact onlyFoodArtifact
+            extraEntersWith libraryPosition fromStackTime applyHope preBattlefield
+            isCopy overridePrinted adventurerCard summoningSick attachedTo enterMods cause),
+         (id, none, false))
+      | none =>
+      if preCheckStayNoAuraHost then
+        let g := g.consumeReplacementOrder preCheckAllApplied
+        if old.zone == .stack then
+          if old.isCopy then
+            (g.ceaseToExist old.id (cause := some (.stateBased .copyOutsideStackOrBf))
+              |>.logMsg s!"{old.name} ceases to exist (can't be attached legally; CR 303.4g / 704.5e)",
+             (old.id, none, false))
+          else
+            let (g', gyId) :=
+              g.move old.id (.graveyard old.owner) none (verb := verb) (actor := actor) (cause := cause)
+            let msg := s!"{old.name} goes to the graveyard (can't be attached legally; CR 303.4g)"
+            if let .chooseReplacement .. := g'.pending then
+              (g'.chainPendingReplacement (.logMessage msg), (gyId, none, false))
+            else
+              (g'.logMsg msg, (gyId, none, false))
+        else if old.zone == .exile then
+          (g.logMsg s!"{old.name} remains in exile (can't be attached legally; CR 303.4f / CR 614.6)",
+           (id, none, false))
+        else
+          (g.logMsg s!"{old.name} remains in its current zone (can't be attached legally; CR 303.4f)",
+           (id, none, false))
+      else
+      let exileInstead := moveRep.exileInstead
+      let finalityExile := moveRep.finalityExile
+      let headSource := moveRep.headSource
+      let finalDiscarded :=
+        verb == some .discard ||
+          match old.zone, origDest with
+          | .hand p, .graveyard q => p == q
+          | _, _ => false
       let g :=
         if finalityExile then
           g.logMsg s!"A finality counter exiles {old.name} instead of putting it into a graveyard"
@@ -655,7 +645,9 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
         if weaverBonus > 0 then
           g.logMsg s!"{freshForSnap.nameWithToken} enters with {weaverBonus} additional +1/+1 counter(s)"
         else g
-      (g, newId)
+      (g, (newId, headSource, true))
+  if !didMove then (g, newId)
+  else
   let g :=
     if old.zone == .battlefield && !old.linkedExile.isEmpty then
       g.returnLinkedExileMoves old.linkedExile
@@ -830,19 +822,45 @@ def reverseToProposalCheckpoint? (g : Game) : Except String Game :=
 def finishOpenBatchAndLinkedExile (g : Game) (batchId : BatchId) (startIdx : Nat) : Game :=
   (g.finishOpenBatch batchId startIdx).flushQueuedLinkedExile
 
-/-- Move `o` to its owner's graveyard and log `reason`. Exile-if-dies
-replacements are applied by `move` (CR 614.1 / 614.6). -/
+/-- Emit the post-move log for `moveToOwnerGraveyard` once `fromId` finishes its
+CR 616.1 replacement loop, suppressing false graveyard logs when redirected to
+`.exile` or `.library` (CR 614.6). -/
+def finishMoveToOwnerGraveyardLog (g : Game) (fromId : ObjectId) (fromZone : Zone)
+    (owner : PlayerId) (cardName reason : String) (_verb : Option ZoneVerb) : Game :=
+  match g.followMovedToZone? fromId (fun _ => true) with
+  | none => g
+  | some arrived =>
+    if arrived.zone == .graveyard owner then
+      g.logMsg reason
+    else
+      let isFalseGraveyardLog :=
+        (reason.splitOn "goes to the graveyard").length > 1 ||
+          (reason.splitOn "into its owner's graveyard").length > 1 ||
+          (reason.splitOn "into their graveyard").length > 1
+      if isFalseGraveyardLog then
+        if arrived.zone == .exile && fromZone == .stack then
+          g.logMsg s!"{cardName} is exiled"
+        else g
+      else
+        g.logMsg reason
+
+/-- Move `o` to its owner's graveyard and log `reason` after replacement choices
+resolve, suppressing false graveyard logs when redirected (CR 614.1 / 614.6). -/
 def moveToOwnerGraveyard (g : Game) (o : GameObject) (reason : String)
     (verb : Option ZoneVerb := none) (actor : Option PlayerId := none)
     (preBattlefield : Option (Array GameObject) := none)
     (cause : Option EventCause := none) : Game :=
-  let reason :=
-    if g.exileInstantSorceryInstead o && g.isInstantOrSorcery o then
-      s!"{o.name} is exiled"
-    else reason
-  let g := g.logMsg reason
-  (g.move o.id (.graveyard o.owner) none (verb := verb) (actor := actor)
-    (preBattlefield := preBattlefield) (cause := cause)).1
+  let fromId := o.id
+  let fromZone := o.zone
+  let owner := o.owner
+  let cardName := g.name o
+  let (g, _) := g.move fromId (.graveyard owner) none (verb := verb) (actor := actor)
+    (preBattlefield := preBattlefield) (cause := cause)
+  if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement
+      (.finishPostStep (.finishMoveToOwnerGraveyardLog fromId fromZone owner cardName reason verb))
+  else
+    g.finishMoveToOwnerGraveyardLog fromId fromZone owner cardName reason verb
 
 /-- Move several objects to their owners' graveyards as one event.
 Sources that also leave do not see “creature cards put into your

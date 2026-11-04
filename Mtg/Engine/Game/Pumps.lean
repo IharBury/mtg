@@ -96,7 +96,7 @@ def addFinalityTo (g : Game) (o : GameObject) (n : Nat := 1)
           g.record (GameEvent.counters g.turnNumber putter (g.snapshot o) .finality n'
             (cause := g.resolveOptionalCause cause' (fallbackCtrl := putter)))
         else g
-      g.logMsg s!"{g.name o} gets a finality counter"
+      g.logMsg s!"{g.name o} gets {CounterKind.finality.countersPhrase n'}"
 
 /-- Frozen in Ice, or a granted “can't become untapped”, blocks every untap.
 Enchanted River's Grasp only skips the untap step. -/
@@ -278,14 +278,6 @@ def addPlusOneIfStillCreature (g : Game) (id : ObjectId) (controller : PlayerId)
     else g.logMsg "The target is no longer legal"
   | none => g.logMsg "The target is no longer legal"
 
-/-- The Army `controller` controls with the latest timestamp, if any. -/
-def newestArmy? (g : Game) (controller : PlayerId) : Option GameObject :=
-  let armies := (g.permanentsOf controller).filter (fun o => g.hasSubtype o .army)
-  armies.foldl (fun best o =>
-    match best with
-    | none => some o
-    | some b => if o.timestamp ≥ b.timestamp then some o else some b) none
-
 /-- Put an indestructible counter on `o`. -/
 def addIndestructibleCounter (g : Game) (o : GameObject) (n : Nat := 1)
     (byPlayer : Option PlayerId := none)
@@ -309,7 +301,7 @@ def addIndestructibleCounter (g : Game) (o : GameObject) (n : Nat := 1)
       let g :=
         g.record (GameEvent.counters g.turnNumber putter (g.snapshot o) .indestructible n'
           (cause := g.resolveOptionalCause cause' (fallbackCtrl := putter)))
-      g.logMsg s!"{g.name o} gets an indestructible counter"
+      g.logMsg s!"{g.name o} gets {CounterKind.indestructible.countersPhrase n'}"
 
 /-- Put a lifelink counter on `o`. -/
 def addLifelinkCounter (g : Game) (o : GameObject) (n : Nat := 1)
@@ -334,7 +326,7 @@ def addLifelinkCounter (g : Game) (o : GameObject) (n : Nat := 1)
       let g :=
         g.record (GameEvent.counters g.turnNumber putter (g.snapshot o) .lifelink n'
           (cause := g.resolveOptionalCause cause' (fallbackCtrl := putter)))
-      g.logMsg s!"{g.name o} gets a lifelink counter"
+      g.logMsg s!"{g.name o} gets {CounterKind.lifelink.countersPhrase n'}"
 
 /-- Put a burden counter on `o`. The log includes the new total. -/
 def addBurdenCounter (g : Game) (o : GameObject) (n : Nat := 1)
@@ -360,7 +352,7 @@ def addBurdenCounter (g : Game) (o : GameObject) (n : Nat := 1)
         g.record (GameEvent.counters g.turnNumber putter (g.snapshot o) .burden n'
           (cause := g.resolveOptionalCause cause' (fallbackCtrl := putter)))
       let total := (g.object! o.id).status.burden
-      g.logMsg s!"{g.name o} gets a burden counter ({total})"
+      g.logMsg s!"{g.name o} gets {CounterKind.burden.countersPhrase n'} ({total})"
 
 /-- Put `n` counters of `kind` on `o`. +1/+1 counters go through
 `addPlusOnePlusOneTo` so their enters-with bonus and “you put a +1/+1
@@ -423,10 +415,10 @@ private def finishAmassOnPost (g : Game) (controller : PlayerId) (armyId : Objec
 /-- Put the amass counters and subtype on `armyId`. -/
 def finishAmassOn (g : Game) (controller : PlayerId) (armyId : ObjectId)
     (subtype : CardSubtype) (n : Nat) (attach : Option ObjectId := none)
-    (stage : Nat := 0) (cause : Option EventCause := none) : Game :=
+    (stage : AmassStage := .putCounters) (cause : Option EventCause := none) : Game :=
   if let .chooseReplacement .. := g.pending then
     g.chainPendingReplacement (.finishAmassOn controller armyId subtype n attach stage cause)
-  else if stage != 0 then
+  else if stage == .postCounters then
     g.finishAmassOnPost controller armyId subtype n attach cause
   else
     match g.findObject? armyId with
@@ -450,12 +442,14 @@ def finishAmassOn (g : Game) (controller : PlayerId) (armyId : ObjectId)
         let army := g.object! army.id
         let g := g.addPlusOnePlusOneTo army n (cause := cause)
         if let .chooseReplacement .. := g.pending then
-          g.chainPendingReplacement (.finishAmassOn controller armyId subtype n attach 1 cause)
+          g.chainPendingReplacement (.finishAmassOn controller armyId subtype n attach .postCounters cause)
         else
           g.finishAmassOnPost controller armyId subtype n attach cause
 
 /-- Finish a freshly-created Army amass once `createToken` completes (synchronously
-or after a `Pending.chooseReplacement` pause). -/
+or after a `Pending.chooseReplacement` pause). When `multiplyTokenCreation`
+created multiple Army tokens (CR 614.6 / 701.47a), prompts `controller` to
+choose which Army to amass rather than hardcoding the first token. -/
 def finishFreshAmass (g : Game) (controller : PlayerId) (subtype : CardSubtype)
     (n : Nat) (attach : Option ObjectId) (cause : Option EventCause := none)
     (minId : Nat := 0) : Game :=
@@ -463,6 +457,18 @@ def finishFreshAmass (g : Game) (controller : PlayerId) (subtype : CardSubtype)
     (g.permanentsOf controller).filter (fun o =>
       o.printed.isToken && g.hasSubtype o .army && o.id.raw ≥ minId)
   if freshArmies.isEmpty then g
+  else if freshArmies.size > 1 then
+    let g := freshArmies.foldl (fun acc o => acc.afterPermanentEntersInBatch o) g
+    let g := g.logMsg s!"the amassed Army entered as a 0/0 creature"
+    let ids := freshArmies.map (fun (o : GameObject) => o.id)
+    let g :=
+      match cause with
+      | some c =>
+        let g := if g.continuations.isEmpty then g.change (.pushContinuationFrame {}) else g
+        g.change (.stashedCause (some c))
+      | none => g
+    (g.change (.pending (.fraChoice controller (.chooseCards ids 1 (.amassArmy subtype n attach))))).logMsg
+      s!"{(g.player controller).name} chooses an Army to amass"
   else
     let g := freshArmies.foldl (fun acc o => acc.afterPermanentEnters o) g
     let g := g.logMsg s!"the amassed Army entered as a 0/0 creature"
@@ -490,7 +496,9 @@ def amass (g : Game) (controller : PlayerId) (subtype : CardSubtype) (n : Nat)
     let ids := armies.map (fun (o : GameObject) => o.id)
     let g :=
       match cause with
-      | some c => g.change (.stashedCause (some c))
+      | some c =>
+        let g := if g.continuations.isEmpty then g.change (.pushContinuationFrame {}) else g
+        g.change (.stashedCause (some c))
       | none => g
     (g.change (.pending (.fraChoice controller (.chooseCards ids 1 (.amassArmy subtype n attach))))).logMsg
       s!"{(g.player controller).name} chooses an Army to amass"

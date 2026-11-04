@@ -123,10 +123,10 @@ def merfolkDraw : Game :=
 #guard (merfolkDraw.player me).hand.size == (afterDraw.player me).hand.size + 1
 
 def declinedTokenDraw : Game :=
-  resolve afterDraw (onWatch Effect.watchTokensEnterMayDraw) none #[] (some 0)
+  mustApply (resolve afterDraw (onWatch Effect.watchTokensEnterMayDraw) none) me .decline
 
 #guard (declinedTokenDraw.player me).hand.size == (afterDraw.player me).hand.size &&
-  logContains declinedTokenDraw "The optional draw was declined"
+  logContains declinedTokenDraw "declines"
 
 def aloneKeywords : Game :=
   let g := addPermanent afterDraw grizzlyBears me me

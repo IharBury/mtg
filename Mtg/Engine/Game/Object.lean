@@ -415,6 +415,11 @@ def EventCause.oneShotEffectId? : EventCause → Option EffectId
   | .replaced _ orig => orig.oneShotEffectId?
   | _ => none
 
+/-- Applied `ReplacementId`s in chronological application order (first applied first, CR 616.1). -/
+def EventCause.replacedBy : EventCause → Array ReplacementId
+  | .replaced r orig => orig.replacedBy.push r
+  | _ => #[]
+
 /-- Delayed triggered ability kinds created by resolving effects (CR 603.7). -/
 inductive DelayedTriggerKind where
   /-- Create `count` 1/1 white Bird Soldier creature tokens with flying at the beginning of the next upkeep (The Eagles Are Coming!). -/

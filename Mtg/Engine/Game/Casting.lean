@@ -541,25 +541,6 @@ def reverseProposedSpellCore? (g : Game) (resumeContinuation : Bool := false)
     else
       return (g, false)
 
-/-- Fold `f` over each targeted permanent that still exists. Non-permanent
-targets are skipped. `unique` visits a permanent only once even when it is
-targeted more than once. -/
-def foldPermanentTargets (g : Game) (targets : Array Target)
-    (f : Game → GameObject → Game) (unique := false) : Game :=
-  g.withBatch none fun g => Id.run do
-    let mut g := g
-    let mut seen : Array ObjectId := #[]
-    for t in targets do
-      match t with
-      | Target.permanent oid =>
-        if !(unique && seen.contains oid) then
-          seen := seen.push oid
-          match g.findObject? oid with
-          | some o => g := f g o
-          | none => pure ()
-      | _ => pure ()
-    return g
-
 /-- Clear `.payWard` once a ward cost is paid or declined, draining any active
 `pendingReplacement` / `outerPendingReplacements` continuations before finishing
 active resolutions, trigger target announcements, or priority (CR 702.21a / 608.2n). -/
@@ -894,6 +875,18 @@ def becomeActivated (g : Game) (p : PlayerId) (sourceName : String)
       g.finishPostLoyaltyActivated p sourceName sourceId activation abilityId sourceSnap
         srcObj? hadOuter openCont
 
+/-- Permanents `p` may sacrifice to pay “sacrifice another creature or artifact”. -/
+def sacrificeCreatureOrArtifactChoices (g : Game) (p : PlayerId) (sourceId : ObjectId) :
+    Array GameObject :=
+  let src := g.findObject? sourceId
+  let creatureOrPlaneswalker := src.any (fun s => (g.baseCard s).additionalCostSacrificeCreatureOrPlaneswalker)
+  let creatureOnly := src.any (fun s => (g.baseCard s).additionalCostSacrificeCreature)
+  g.permanentsOf p |>.filter (fun o =>
+    o.id != sourceId &&
+      if creatureOrPlaneswalker then g.isCreature o || g.isPlaneswalker o
+      else if creatureOnly then g.isCreature o
+      else g.isCreature o || g.isArtifact o)
+
 /-- Finish paying the proposed activation once its mana is paid and every
 chosen cost is paid: tap, life, and the source's own costs, then put it on
 the stack (CR 601.2h–i / 602.2b). -/
@@ -914,23 +907,22 @@ def completeActivation (g : Game) (prop : ProposedSpell)
   let g ← g0.payActivationExtraCosts prop.caster sid prop.tapSource prop.sacrificeSource
     prop.payLife prop.discardSource prop.activation (if prop.removePlusOneX then x else 0)
   if prop.needsSacrificeOther then
+    let prompt := s!"{(g.player prop.caster).name} must sacrifice another creature or artifact"
     if let .chooseReplacement .. := g.pending then
       let g := (g.change (.consecutivePasses 0)).chainPendingReplacement
-        (.restorePending (.sacrificePermanent prop.caster sid))
-      let g :=
-        match localOuter? with
+        (.restorePending (.sacrificePermanent prop.caster sid) (promptLog := some prompt))
+      return match localOuter? with
         | some outer => g.chainPendingReplacement outer
         | none => g
-      return g.logMsg
-        s!"{(g.player prop.caster).name} must sacrifice another creature or artifact"
     else
+      if (g.sacrificeCreatureOrArtifactChoices prop.caster sid).isEmpty then
+        throw "No creature or artifact to sacrifice"
       let g :=
         match localOuter? with
         | some outer => g.chainPendingReplacement outer
         | none => g
       let g := g.changes #[.pending (.sacrificePermanent prop.caster sid), .consecutivePasses 0]
-      return g.logMsg
-        s!"{(g.player prop.caster).name} must sacrifice another creature or artifact"
+      return g.logMsg prompt
   let paused := match g.pending with | .chooseReplacement .. => true | _ => false
   let g :=
     if !paused then
@@ -1024,12 +1016,6 @@ def setStackEntryTargets (g : Game) (objectId : ObjectId) (targets : Array Targe
   let skipped := (g.stackEntry? objectId).map (·.skippedOptionalSlots) |>.getD #[]
   g.record (GameEvent.targeted g.turnNumber objectId targets
     (division := dividedDamage) (skippedOptionalSlots := skipped))
-
-/-- Write `targets` onto the stack entry for the proposed spell. -/
-def setProposedTargets (g : Game) (targets : Array Target) : Game :=
-  match g.proposedSpell with
-  | none => g
-  | some prop => g.setStackEntryTargets prop.spellId targets
 
 /-- How many modes `p` may choose for `face` (CR 700.2): two for “choose one
 or both”, “choose up to two”, and “choose two if you control a [subtype]”

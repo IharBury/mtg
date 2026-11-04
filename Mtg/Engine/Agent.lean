@@ -155,11 +155,11 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
     | .sacrificePermanent _ sourceId =>
       match (g.sacrificeCreatureOrArtifactChoices p sourceId)[0]? with
       | some sac => some (.sacrifice sac.id)
-      | none => some .pass
+      | none => some .decline
     | .discardForAdditionalCost _ =>
       match (g.player p).hand.back? with
       | some id => some (.discard id)
-      | none => some .pass
+      | none => some .decline
     | .sacrificeCreature _ =>
       match (g.sacrificeCreatureChoices p)[0]? with
       | some sac => some (.sacrifice sac.id)

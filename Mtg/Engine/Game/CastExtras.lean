@@ -85,39 +85,57 @@ def givePromisedGift (g : Game) (to : PlayerId) : Game :=
   else
     let (g, _) := g.createToken to treasureToken
     if let .chooseReplacement .. := g.pending then
-      g.chainPendingReplacement (.finishPostStep .logGiftTreasureGiven to)
+      g.chainPendingReplacement (.finishPostStep (.logGiftTreasureGiven to))
     else
       g.logMsg s!"{(g.player to).name} is given a Treasure (gift)"
+
+/-- Pause-safe loop for `resolveCascade` (CR 702.85a / 616.1). -/
+partial def resolveCascadeLoop (g : Game) (p : PlayerId) (maxMv : Nat)
+    (cause : EventCause) (exiled : Array ObjectId := #[])
+    (pendingFromId : Option ObjectId := none) : Game :=
+  match pendingFromId with
+  | some fid =>
+    if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement
+        (.finishPostStep (.resolveCascadeLoop p maxMv cause exiled (some fid)))
+    else
+      match g.followMovedToZone? fid (· == .exile) with
+      | some card =>
+        let exiled := exiled.push card.id
+        if !g.isLand card && g.objectManaValue card < maxMv then
+          let g := g.logMsg s!"{(g.player p).name} exiles cards for cascade (less than {maxMv})"
+          let others := exiled.filter (· != card.id)
+          g.change (.pending (.fraChoice p (.mayCastCascade card.id others)))
+            |>.logMsg s!"{(g.player p).name} may cast {card.name} without paying its mana cost (cascade)"
+        else
+          g.resolveCascadeLoop p maxMv cause exiled none
+      | none =>
+        g.resolveCascadeLoop p maxMv cause exiled none
+  | none =>
+    if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement
+        (.finishPostStep (.resolveCascadeLoop p maxMv cause exiled none))
+    else
+      match (g.player p).library.back? with
+      | none =>
+        let g := g.logMsg s!"{(g.player p).name} exiles cards for cascade (less than {maxMv})"
+        g.requestOrderInto exiled (.library p)
+          s!"No cheaper nonland card was exiled; {(g.player p).name} puts the exiled cards on the bottom of their library in a random order"
+          (cause := some cause)
+      | some id =>
+        let (g, _) := g.move id .exile none (cause := some cause)
+        if let .chooseReplacement .. := g.pending then
+          g.chainPendingReplacement
+            (.finishPostStep (.resolveCascadeLoop p maxMv cause exiled (some id)))
+        else
+          g.resolveCascadeLoop p maxMv cause exiled (some id)
 
 /-- Cascade (CR 702.85a): exile from the top until a nonland card with mana
 value less than `maxMv`. The player may cast it without paying its mana
 cost; the other exiled cards go on the bottom in a random order. -/
 def resolveCascade (g : Game) (p : PlayerId) (maxMv : Nat) : Game :=
-  Id.run do
-    let (g0, cause) := g.allocDelayedCause (some p)
-    let mut g := g0
-    let mut exiled : Array ObjectId := #[]
-    let mut found : Option GameObject := none
-    while found.isNone && !(g.player p).library.isEmpty do
-      match (g.player p).library.back? with
-      | none => pure ()
-      | some id =>
-        let (g', newId) := g.move id .exile none (cause := some cause)
-        g := g'
-        exiled := exiled.push newId
-        let card := g.object! newId
-        if !g.isLand card && g.objectManaValue card < maxMv then
-          found := some card
-    g := g.logMsg s!"{(g.player p).name} exiles cards for cascade (less than {maxMv})"
-    match found with
-    | none =>
-      return g.requestOrderInto exiled (.library p)
-        s!"No cheaper nonland card was exiled; {(g.player p).name} puts the exiled cards on the bottom of their library in a random order"
-        (cause := some cause)
-    | some card =>
-      let others := exiled.filter (· != card.id)
-      return g.change (.pending (.fraChoice p (.mayCastCascade card.id others)))
-        |>.logMsg s!"{(g.player p).name} may cast {card.name} without paying its mana cost (cascade)"
+  let (g, cause) := g.allocDelayedCause (some p)
+  g.resolveCascadeLoop p maxMv cause
 
 /-- Mark the proposed spell kicked and add the kicker cost. Cannot kick twice. -/
 def applyKickerToProposed (g : Game) (kick : Bool) : Except String Game := do
@@ -228,7 +246,7 @@ def discardNonlandFrom (g : Game) (controller victim : PlayerId) : Game :=
     let (g, _) := g.move o.id (.graveyard o.owner) none (verb := some .discard) (actor := some victim)
     let logLine := s!"{(g.player controller).name} chooses {cardName}. {(g.player victim).name} discards it"
     if let .chooseReplacement .. := g.pending then
-      g.chainPendingReplacement (.finishPostStep .logChosenCardDiscarded controller (n := victim.idx) (cardId := some o.id))
+      g.chainPendingReplacement (.finishPostStep (.logChosenCardDiscarded controller victim o.id))
     else if !(g.findObject? o.id).any (·.zone == .hand victim) then
       g.logMsg logLine
     else g
@@ -256,7 +274,7 @@ def exileUntilNextEndStep (g : Game) (o : GameObject)
   let (g, _) := g.move o.id .exile none (cause := some cause)
   if let .chooseReplacement .. := g.pending then
     g.chainPendingReplacement
-      (.finishPostStep .finishExileUntilNextEndStep ctrl (cardId := some o.id) (cause := some cause))
+      (.finishPostStep (.finishExileUntilNextEndStep ctrl o.id cause))
   else
     g.finishExileUntilNextEndStep ctrl o.id cause
 

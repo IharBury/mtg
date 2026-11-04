@@ -121,7 +121,7 @@ def treasureThenDragonCreateDragon (g : Game) (controller : PlayerId) : Game :=
   let g := g.change (.recentTokenIds #[])
   let (g, _) := g.createToken controller dragonToken (recordRecent := true)
   if let .chooseReplacement .. := g.pending then
-    g.chainPendingReplacement (.finishPostStep .logAndEnterRecentTokens controller)
+    g.chainPendingReplacement (.finishPostStep .logAndEnterRecentTokens)
   else
     g.recentTokenIds.foldl (fun g tid =>
       match g.findObject? tid with
@@ -143,7 +143,7 @@ def treasureThenDragonAfterCreate (g : Game) (controller : PlayerId)
       let name := src.name
       let g := g.sacrificeToGraveyard src s!"{name} is sacrificed"
       if let .chooseReplacement .. := g.pending then
-        g.chainPendingReplacement (.finishPostStep .treasureThenDragonCreateDragon controller)
+        g.chainPendingReplacement (.finishPostStep (.treasureThenDragonCreateDragon controller))
       else
         g.treasureThenDragonCreateDragon controller
 
@@ -153,7 +153,7 @@ def treasureThenDragon (g : Game) (controller : PlayerId)
     (sourceId : Option ObjectId) : Game :=
   let g := g.createTreasureTokens controller 1
   if let .chooseReplacement .. := g.pending then
-    g.chainPendingReplacement (.finishPostStep .treasureThenDragonAfterCreate controller 0 sourceId)
+    g.chainPendingReplacement (.finishPostStep (.treasureThenDragonAfterCreate controller sourceId))
   else
     g.treasureThenDragonAfterCreate controller sourceId
 
@@ -265,7 +265,7 @@ def applyChapterEffect (g : Game) (controller : PlayerId) (e : Effect)
             let name := o.name
             let (g, newId) := g.putOntoBattlefield oid controller
             if let .chooseReplacement .. := g.pending then
-              g.chainPendingReplacement (.finishPostStep .returnedToBattlefield controller 0 none (some oid) (shuffle := false))
+              g.chainPendingReplacement (.finishPostStep (.returnedToBattlefield oid false))
             else
               let entered := g.object! newId
               if entered.isOnBattlefield then
@@ -293,7 +293,7 @@ def applyChapterEffect (g : Game) (controller : PlayerId) (e : Effect)
       g.dealDamageToEachCreatureMatching n (fun o => !g.hasSubtype o subtype)
         (source := srcSnap?) (cause := cause?)
     if let .chooseReplacement .. := g.pending then
-      g.chainPendingReplacement (.finishPostStep .dealDamageToEachOpponent controller n sourceId (cause := cause?))
+      g.chainPendingReplacement (.finishPostStep (.dealDamageToEachOpponent controller n sourceId cause?))
     else
       g.dealDamageToEachOpponent controller n (source := src?) (cause := cause?)
   | .dealXDamageToTargetOpponentGreatestArtifactMv =>

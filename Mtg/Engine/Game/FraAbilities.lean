@@ -10,29 +10,13 @@ emblems and effects those create. `applyFra` delegates them here.
 namespace Mtg.Engine
 namespace Game
 
-/-- Keyword coded by `code` in `Resolution.chooseKeyword`. -/
-def fraKeywordOfCode : Nat → Keywords
-  | 0 => Keyword.trample
-  | 1 => Keyword.hexproof
-  | 2 => Keyword.haste
-  | 3 => Keyword.deathtouch
-  | _ => Keywords.none
-
-/-- Name of the keyword coded by `code`. -/
-def fraKeywordName : Nat → String
-  | 0 => "trample"
-  | 1 => "hexproof"
-  | 2 => "haste"
-  | 3 => "deathtouch"
-  | _ => "nothing"
-
 /-- Ask `p` which of `options` the permanent `id` gains until end of turn. -/
-def beginChooseKeyword (g : Game) (p : PlayerId) (id : ObjectId) (options : Array Nat) : Game :=
+def beginChooseKeyword (g : Game) (p : PlayerId) (id : ObjectId) (options : Array KeywordChoice) : Game :=
   match g.findObject? id with
   | some o =>
     if !o.isOnBattlefield then g
     else
-      let names := String.intercalate ", " (options.toList.map fraKeywordName)
+      let names := String.intercalate ", " (options.toList.map KeywordChoice.name)
       g.beginFraChoice p (.chooseKeyword id options)
         s!"{(g.player p).name} chooses {names} for {o.name}"
   | none => g
@@ -91,7 +75,7 @@ partial def continueDiscardTwo (g : Game) (controller : PlayerId) (players : Arr
         if hand.isEmpty then g.logMsg s!"{(g.player p).name} has no cards to discard" else g
       if let .chooseReplacement .. := g.pending then
         g.chainPendingReplacement
-          (.finishPostStep .continueDiscardTwo controller nextDraws (modes := rest.toArray.map (·.idx)))
+          (.finishPostStep (.continueDiscardTwo controller rest.toArray nextDraws))
       else
         g.continueDiscardTwo controller rest.toArray nextDraws
     else
@@ -134,10 +118,38 @@ def runHawkeyeArrows (g : Game) (controller : PlayerId) (modes : Array Nat)
       let rem := modes.extract (k + 1) modes.size
       if !rem.isEmpty then
         g := g.chainPendingReplacement
-          (.finishPostStep .hawkeyeArrows controller idx (sourceId := sourceId)
-            (targets := targets) (modes := rem))
+          (.finishPostStep (.hawkeyeArrows controller rem targets idx sourceId))
       return g
   return g
+
+/-- Finish `.sarumanExileCopyMayCast` after `fromId`'s exile move (and any
+CR 616.1 replacement choice) completes, creating a card-copy and opening
+`.mayCastCopy` only if `fromId` actually arrived in `.exile` (CR 614.6 / 707.12). -/
+def finishSarumanExileCopyMayCast (g : Game) (controller : PlayerId) (fromId : ObjectId)
+    (cause : EventCause) : Game :=
+  match g.followMovedToZone? fromId (· == .exile) with
+  | none => g
+  | some card =>
+    let name := card.name
+    let g := g.logMsg s!"{name} is exiled"
+    let base := g.copiableValues card
+    let copyId : ObjectId := ⟨g.nextObjectId⟩
+    let copyTs := g.timestamp + 1
+    let copyObj : GameObject := {
+      id := copyId
+      printed := { base with
+        isToken := false
+        otherFace := base.otherFace.map (fun f => { f with isToken := false }) }
+      owner := controller
+      controller := some controller
+      zone := .exile
+      timestamp := copyTs
+      isCopy := true
+    }
+    let g := g.record (GameEvent.created g.turnNumber controller (g.snapshot copyObj)
+      (cause := cause))
+    g.beginFraChoice controller (.mayCastCopy copyId)
+      s!"{(g.player controller).name} may cast the copy of {name} without paying its mana cost"
 
 /-- Run the library-reveal, put-onto-battlefield, and bottoming tail of
 `.identityEcho` once the target permanent's exile completes. -/
@@ -170,7 +182,7 @@ def finishIdentityEchoAfterExile (g : Game) (controller : PlayerId)
     let (g, newId) := g.putOntoBattlefield id controller (cause := revealCause?)
     if let .chooseReplacement .. := g.pending then
       g.chainPendingReplacement
-        (.finishPostStep .enteredBattlefieldPutRestBottomRandom controller 0 none (some id) (ids := revealed) (cause := revealCause?))
+        (.finishPostStep (.enteredBattlefieldPutRestBottomRandom controller id revealed revealCause?))
     else
       let g :=
         match g.findObject? newId with
@@ -231,7 +243,7 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
       let (g, _) := g.move o.id .exile none (cause := some exileCause)
       if let .chooseReplacement .. := g.pending then
         g.chainPendingReplacement
-          (.finishPostStep .identityEchoAfterExile controller (sourceId := sourceId) (cardId := some o.id))
+          (.finishPostStep (.identityEchoAfterExile controller o.id sourceId))
       else
         g.finishIdentityEchoAfterExile controller sourceId oName)
       sourceId illegal
@@ -262,7 +274,7 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
       let (g, _) := g.move o.id (.library owner) none
         (verb := some .shuffleIntoLibrary) (libraryPosition := some .shuffledIn)
       if let .chooseReplacement .. := g.pending then
-        g.chainPendingReplacement (.finishPostStep .logShuffleIntoLibrary owner (cardId := some o.id))
+        g.chainPendingReplacement (.finishPostStep (.logShuffleIntoLibrary owner o.id))
       else
         let g := g.logMsg s!"{(g.player owner).name} shuffles {oName} into their library"
         g.shuffleThen owner .none) sourceId illegal
@@ -503,28 +515,12 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
               !(g.isEnchantment o || g.isInstantOrSorcery o) then
             g.logMsg "The target is no longer legal"
           else
-            let name := g.name o
-            let (g, exId) := g.move id .exile none
-            let g := g.logMsg s!"{name} is exiled"
-            let card := g.object! exId
-            let base := g.copiableValues card
-            let copyId : ObjectId := ⟨g.nextObjectId⟩
-            let copyTs := g.timestamp + 1
-            let copyObj : GameObject := {
-              id := copyId
-              printed := { base with
-                isToken := false
-                otherFace := base.otherFace.map (fun f => { f with isToken := false }) }
-              owner := controller
-              controller := some controller
-              zone := .exile
-              timestamp := copyTs
-              isCopy := true
-            }
-            let g := g.record (GameEvent.created g.turnNumber controller (g.snapshot copyObj)
-              (cause := g.resolveOptionalCause none (fallbackSrc := sourceId) (fallbackCtrl := some controller)))
-            g.beginFraChoice controller (.mayCastCopy copyId)
-              s!"{(g.player controller).name} may cast the copy of {name} without paying its mana cost"
+            let cause := g.resolveOptionalCause none (fallbackSrc := sourceId) (fallbackCtrl := some controller)
+            let (g, _) := g.move id .exile none (cause := some cause)
+            if let .chooseReplacement .. := g.pending then
+              g.chainPendingReplacement (.finishPostStep (.sarumanExileCopyMayCast controller id cause))
+            else
+              g.finishSarumanExileCopyMayCast controller id cause
         | none => g.logMsg "The target is no longer legal"
       | _ => g.logMsg "The target is no longer legal") sourceId illegal
   | .zemoBoastCopies =>

@@ -127,13 +127,6 @@ def combatDamageToAssign (g : Game) (source : GameObject) (forAttackers : Bool) 
     0
   else g.combatDamageAmount source
 
-/-- True when a creature `p` controls has two or more creature recipients, so
-`p` must divide combat damage (CR 510.1c–d). -/
-def playerNeedsCombatDamageChoice (g : Game) (p : PlayerId) (forAttackers : Bool) : Bool :=
-  (g.creaturesAssigningCombatDamage forAttackers).any (fun o =>
-    g.controlledBy o p &&
-      (g.legalCombatDamageRecipients o forAttackers).size ≥ 2 && g.combatDamageAmount o > 0)
-
 /-- True when any creature in this half has two or more creature recipients, so
 its controller must divide combat damage (CR 510.1c–d). -/
 def needsCombatDamageChoice (g : Game) (forAttackers : Bool) : Bool :=

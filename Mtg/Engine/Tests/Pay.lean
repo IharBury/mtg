@@ -305,7 +305,7 @@ creature queues nothing. -/
   let g := step g0 sacDestroy (some (pid g0 "Bear"))
   match g.pending with
   | .fraChoice p (.mayPayPickThen .sacrificeAnotherCreature _ sid) =>
-    p == caster && sid == pid g0 "Bear"
+    p == caster && sid == some (pid g0 "Bear")
   | _ => false
 
 #guard
@@ -333,7 +333,7 @@ reflexive. Nothing to pay queues nothing. -/
   let g := step g0 sacDamage (some (pid g0 "Bear"))
   match g.pending with
   | .fraChoice p (.mayPayPickThen .sacrificeArtifactOrDiscardNonland _ sid) =>
-    p == caster && sid == pid g0 "Bear"
+    p == caster && sid == some (pid g0 "Bear")
   | _ => false
 
 #guard

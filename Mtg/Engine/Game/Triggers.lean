@@ -101,6 +101,7 @@ ability's modes are chosen as it is put on the stack (CR 603.3c). -/
 def putTriggeredAbilityOnStack (g : Game) (controller : PlayerId) (source : GameObject)
     (ab : TriggeredAbility) (event : String) (lastKnownPower : Option Int := none)
     (lastKnownToughness : Option Int := none) (cause : Option GameObject := none)
+    (causeId : Option ObjectId := none)
     (causeController : Option PlayerId := none)
     (causeIds : Array ObjectId := #[])
     (eventCause : Option EventCause := none)
@@ -147,7 +148,7 @@ def putTriggeredAbilityOnStack (g : Game) (controller : PlayerId) (source : Game
       delayedTrigger := delayedTrigger
       lastKnownPower := lastKnownPower
       lastKnownToughness := lastKnownToughness
-      fraCauseId := cause.map (·.id)
+      fraCauseId := (cause.map (·.id)).orElse (fun _ => causeId)
       fraCauseIds := causeIds
       fraCauseController := causeController.orElse (fun _ => cause.bind g.controllerOf)
       fraCausePower := cause.bind (fun c =>
@@ -161,7 +162,7 @@ def putTriggeredAbilityOnStack (g : Game) (controller : PlayerId) (source : Game
     let srcLabel := if srcIdOpt.isNone then source.name else g.name source
     let g := g.logMsg s!"{srcLabel}'s {event} is put on the stack"
     match obj.abilityEffect.map Effect.resolution with
-    | some (Resolution.mshReflexive 2 paid) =>
+    | some (Resolution.mshReflexive .trickArrows paid) =>
       let choosable := hawkeyeModeEffects.filter (g.triggerModeChoosable controller obj)
       let maxModes := Nat.min paid 3
       if maxModes == 0 || choosable.isEmpty then
@@ -253,7 +254,8 @@ def triggerHasNoLegalTarget (g : Game) (controller : PlayerId) (ab : TriggeredAb
 def putTriggerOrFizzle (g : Game) (controller : PlayerId) (source : GameObject)
     (ab : TriggeredAbility) (event : String)
     (lastKnownPower : Option Int := none) (lastKnownToughness : Option Int := none)
-    (cause : Option GameObject := none) (causeController : Option PlayerId := none)
+    (cause : Option GameObject := none) (causeId : Option ObjectId := none)
+    (causeController : Option PlayerId := none)
     (causeIds : Array ObjectId := #[])
     (eventCause : Option EventCause := none)
     (delayedTrigger : Option (DelayedTriggerKind × EventCause) := none)
@@ -271,7 +273,7 @@ def putTriggerOrFizzle (g : Game) (controller : PlayerId) (source : GameObject)
         s!"{srcLabel}'s {event} is removed from the stack (no legal target) (CR 603.3d)"
   else
     g.putTriggeredAbilityOnStack controller source ab event lastKnownPower lastKnownToughness
-      (cause := cause) (causeController := causeController) (causeIds := causeIds)
+      (cause := cause) (causeId := causeId) (causeController := causeController) (causeIds := causeIds)
       (eventCause := eventCause)
       (delayedTrigger := delayedTrigger)
       (abilityEffectOverride := abilityEffectOverride)
@@ -282,7 +284,8 @@ and CR 603.3d check so a new event is not restated at every queue site. -/
 def putQueuedTrigger (g : Game) (controller : PlayerId) (source : GameObject)
     (ab : TriggeredAbility) (event : TriggerEvent)
     (lastKnownPower : Option Int := none) (lastKnownToughness : Option Int := none)
-    (cause : Option GameObject := none) (causeController : Option PlayerId := none)
+    (cause : Option GameObject := none) (causeId : Option ObjectId := none)
+    (causeController : Option PlayerId := none)
     (causeIds : Array ObjectId := #[])
     (eventCause : Option EventCause := none)
     (delayedTrigger : Option (DelayedTriggerKind × EventCause) := none)
@@ -296,14 +299,15 @@ def putQueuedTrigger (g : Game) (controller : PlayerId) (source : GameObject)
     if event.checkTargets || abilityEffectOverride.isSome ||
         (ab.requiresTarget && !ab.allowsZeroTargets) then
       g.putTriggerOrFizzle controller source ab label lastKnownPower lastKnownToughness
-        (cause := cause) (causeController := causeController) (causeIds := causeIds)
+        (cause := cause) (causeId := causeId) (causeController := causeController) (causeIds := causeIds)
         (eventCause := eventCause)
         (delayedTrigger := delayedTrigger)
         (abilityEffectOverride := abilityEffectOverride)
         (reflexiveResolution := reflexiveResolution)
     else
       g.putTriggeredAbilityOnStack controller source ab label
-        lastKnownPower lastKnownToughness (cause := cause) (causeController := causeController)
+        lastKnownPower lastKnownToughness (cause := cause) (causeId := causeId)
+        (causeController := causeController)
         (causeIds := causeIds)
         (eventCause := eventCause) (delayedTrigger := delayedTrigger)
         (abilityEffectOverride := abilityEffectOverride)
@@ -510,15 +514,6 @@ def removeWaitingTrigger (g : Game) (wt : WaitingTrigger) : Game :=
   | none => g
   | some i => g.change (.waitingTriggers (g.waitingTriggers.eraseIdx! i))
 
-/-- Last-known power, or the causing object's id for Baron Strucker's optional
-connive (MSH 422). -/
-def lastKnownPowerForTrigger (ab : TriggeredAbility) (lastKnownPower : Option Int)
-    (causeId : Option ObjectId) : Option Int :=
-  match ab.shared, causeId with
-  | .watch .villainConniveOnce, some id => some (Int.ofNat id.raw)
-  | .pumpIfFiveOtherForests, some id => some (Int.ofNat id.raw)
-  | _, _ => lastKnownPower
-
 /-- Put one waiting trigger on the stack. A trigger queued without
 `checked := true` is checked here for “only once each turn” (CR 603.2h) and
 gets its extra copies (Chief of the Wilds, Bifur). -/
@@ -527,8 +522,8 @@ def putWaitingTrigger (g : Game) (wt : WaitingTrigger) (event : TriggerEvent) : 
   else
   let put (g : Game) :=
     g.putQueuedTrigger wt.controller wt.source wt.ability event
-      (lastKnownPowerForTrigger wt.ability wt.lastKnownPower wt.causeId)
-      wt.lastKnownToughness (cause := wt.cause) (causeController := wt.causeController)
+      wt.lastKnownPower wt.lastKnownToughness
+      (cause := wt.cause) (causeId := wt.causeId) (causeController := wt.causeController)
       (causeIds := wt.causeIds)
       (eventCause := wt.eventCause) (delayedTrigger := wt.delayedTrigger)
       (abilityEffectOverride := wt.abilityEffect)

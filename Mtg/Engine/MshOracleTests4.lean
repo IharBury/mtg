@@ -207,7 +207,7 @@ def deathToOurEnemiesDivisionOk : Bool :=
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
   let plan := namedPermanent g "Death to Our Enemies"
   let bears := namedPermanent g "Grizzly Bears"
-  let g := g.queueModeledReflexive ⟨0⟩ (some plan.id) 10 7
+  let g := g.queueModeledReflexive ⟨0⟩ (some plan.id) .divideSevenDamage 7
   let g := mustApply g ⟨0⟩ (.divideDamage #[(Target.player ⟨1⟩, 4), (Target.permanent bears.id, 3)])
   let (gGone, _) := g.move bears.id (.graveyard ⟨1⟩) none
   let gGone := passBoth gGone
@@ -223,7 +223,7 @@ def deathToOurEnemiesEachTargetAtLeastOneOk : Bool :=
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
   let plan := namedPermanent g "Death to Our Enemies"
   let bears := namedPermanent g "Grizzly Bears"
-  let g := g.queueModeledReflexive ⟨0⟩ (some plan.id) 10
+  let g := g.queueModeledReflexive ⟨0⟩ (some plan.id) .divideSevenDamage
   let life0 := (g.player ⟨1⟩).life
   let zeroRejected :=
     match g.apply ⟨0⟩ (.divideDamage #[(Target.player ⟨1⟩, 0), (Target.permanent bears.id, 7)]) with
@@ -306,14 +306,16 @@ def hydeMustRemoveOk : Bool :=
   let g := addPermanent afterDraw misterHydeMonsterWithin ⟨0⟩ ⟨0⟩
   let hyde := namedPermanent g "Mister Hyde, Monster Within"
   let g := g.addPlusOnePlusOneTo hyde 1
-  let g := g.applyModeledTrigger ⟨0⟩ (.onStep Effect.stepHydeChoose)
-    (some (namedPermanent g "Mister Hyde, Monster Within").id) #[]
-    "Mister Hyde, Monster Within" (some (1 : Int))
+  let g0 := g.change (.pushContinuationFrame { resolvingModes := some #[1] })
+  let g := g0.applyModeledTrigger ⟨0⟩ (.onStep Effect.stepHydeChoose)
+    (some (namedPermanent g0 "Mister Hyde, Monster Within").id) #[]
+    "Mister Hyde, Monster Within"
   logContains g "must remove a counter" &&
     (let hyde := namedPermanent g "Mister Hyde, Monster Within"
-     let g := g.applyModeledTrigger ⟨0⟩ (.onStep Effect.stepHydeChoose)
+     let g1 := g.change (.pushContinuationFrame { resolvingModes := some #[1] })
+     let g := g1.applyModeledTrigger ⟨0⟩ (.onStep Effect.stepHydeChoose)
        (some hyde.id) #[Target.permanent hyde.id]
-       "Mister Hyde, Monster Within" (some (1 : Int))
+       "Mister Hyde, Monster Within"
      (namedPermanent g "Mister Hyde, Monster Within").status.plusOnePlusOne == 0 &&
        (g.player ⟨0⟩).hand.size >= 1) &&
     (mshRuling 584).comment.contains "must remove a counter"

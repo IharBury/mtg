@@ -304,8 +304,14 @@ def requestOrderInto (g : Game) (ids : Array ObjectId) (dest : Zone)
           let (g, c) := g.allocDelayedCause ctrl src
           (g, some c)
         | none => (g, none)
-  if ids.size ≤ 1 || g.pending != .none then
-    g.moveIdsInOrder ids dest (cause := cause) |>.logMsg log
+  if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement (.requestOrderInto ids dest log cause)
+  else if ids.size ≤ 1 || g.pending != .none then
+    let g := g.moveIdsInOrder ids dest (cause := cause)
+    if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement (.logMessage log)
+    else
+      g.logMsg log
   else
     (g.change (.pending (.resolveRandom (.orderInto ids dest cause)))).logMsg log
 

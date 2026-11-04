@@ -22,7 +22,18 @@ def me : PlayerId := ⟨0⟩
 def opp : PlayerId := ⟨1⟩
 
 def resolve (g : Game) (ab : TriggeredAbility) (sourceId : Option ObjectId := none)
-    (targets : Array Target := #[]) (lastKnownPower : Option Int := none) : Game :=
+    (targets : Array Target := #[]) (lastKnownPower : Option Int := none)
+    (causeId : Option ObjectId := none) : Game :=
+  let g :=
+    match causeId with
+    | none => g
+    | some cid =>
+      let abId : ObjectId := ⟨g.nextObjectId⟩
+      let srcSnap : EventObject := {
+        owner := me, controller := some me, name := "Resource Source", zone := .battlefield }
+      let g := g.record (GameEvent.triggerPutOnStack g.turnNumber abId srcSnap me
+        (spec := { triggeredAbility := some ab, fraCauseId := some cid }))
+      g.changes #[.popStack, .pushContinuationFrame { resolvingAbility := some abId }]
   g.applyTriggeredAbility me ab sourceId targets (lastKnownPower := lastKnownPower)
 
 def named (g : Game) (name : String) : GameObject :=
@@ -92,7 +103,7 @@ def moonstoneBoard : Game :=
 def moonstoneOffer : Game :=
   let bolt := namedGraveyardCard moonstoneBoard me "Lightning Bolt"
   resolve moonstoneBoard (resource Effect.resourceDiscardExilePlay)
-    none #[] (some (Int.ofNat bolt.id.raw))
+    none #[] (causeId := some bolt.id)
 
 def moonstoneKept : Game :=
   mustApply moonstoneOffer me .decline
@@ -107,7 +118,7 @@ def moonstoneLeft : Game :=
   let g := addPermanent afterDraw grizzlyBears me me
   let bears := named g "Grizzly Bears"
   resolve g (resource Effect.resourceDiscardExilePlay) none #[]
-    (some (Int.ofNat bears.id.raw))
+    (causeId := some bears.id)
 
 #guard
   match moonstoneOffer.pending with

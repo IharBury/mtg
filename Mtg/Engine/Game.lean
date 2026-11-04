@@ -262,9 +262,13 @@ def mustApply (g : Game) (p : PlayerId) (a : Action) : Game :=
     | none => panic! "expected a proposed spell while choosing an additional cost"
     | some prop =>
       mustApply g actor (.chooseAdditionalCost (g.additionalCostChoosesGeneric p prop))
+  | .sacrificePermanent seat sourceId, some actor =>
+    match (g.sacrificeCreatureOrArtifactChoices seat sourceId)[0]? with
+    | none => mustApply g actor .decline
+    | some sac => mustApply g actor (.sacrifice sac.id)
   | .discardForAdditionalCost seat, some actor =>
     match (g.player seat).hand.back? with
-    | none => panic! "no card to discard as an additional cost"
+    | none => mustApply g actor .decline
     | some id => mustApply g actor (.discard id)
   | .chooseSacrificeCreature seat _ _, some actor =>
     match (g.creaturesControlledBy seat)[0]? with

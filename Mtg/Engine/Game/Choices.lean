@@ -11,18 +11,6 @@ quality, Riddles in the Dark, The Black Gate, and Gríma's exile.
 namespace Mtg.Engine
 namespace Game
 
-/-- Permanents `p` may sacrifice to pay “sacrifice another creature or artifact”. -/
-def sacrificeCreatureOrArtifactChoices (g : Game) (p : PlayerId) (sourceId : ObjectId) :
-    Array GameObject :=
-  let src := g.findObject? sourceId
-  let creatureOrPlaneswalker := src.any (fun s => (g.baseCard s).additionalCostSacrificeCreatureOrPlaneswalker)
-  let creatureOnly := src.any (fun s => (g.baseCard s).additionalCostSacrificeCreature)
-  g.permanentsOf p |>.filter (fun o =>
-    o.id != sourceId &&
-      if creatureOrPlaneswalker then g.isCreature o || g.isPlaneswalker o
-      else if creatureOnly then g.isCreature o
-      else g.isCreature o || g.isArtifact o)
-
 /-- Creatures `p` may sacrifice to a “sacrifices a creature of their choice” effect. -/
 def sacrificeCreatureChoices (g : Game) (p : PlayerId) : Array GameObject :=
   g.creaturesControlledBy p
@@ -80,22 +68,6 @@ for the object's lifetime (ruling 164). -/
 def unusedGollumModes (g : Game) (src : GameObject) : Array Nat :=
   unusedModes (g.modesChosenEver src.id)
 
-/-- Apply the first unused mode of `sourceId`, or log `gone` / `exhausted`. -/
-def applyNextUnusedMode (g : Game) (sourceId : Option ObjectId)
-    (unused : GameObject → Array Nat)
-    (apply : Game → ObjectId → Nat → Game)
-    (exhausted : String)
-    (gone := "The ability is removed from the stack with no effect") : Game :=
-  match sourceId with
-  | none => g.logMsg gone
-  | some sid =>
-    match g.findObject? sid with
-    | none => g.logMsg gone
-    | some src =>
-      match (unused src)[0]? with
-      | none => g.logMsg exhausted
-      | some mode => apply g sid mode
-
 /-- Behold a quality: choose a matching permanent you control or reveal a
 matching card from your hand. Later zone changes do not un-behold (117). -/
 def beholdQuality (g : Game) (p : PlayerId) (quality : CardSubtype)
@@ -137,7 +109,7 @@ def discardHandIdsLoop (g : Game) (p : PlayerId) (ids : Array ObjectId)
     (logEach : Bool := false) (cause : Option EventCause := none) : Game := Id.run do
   if let .chooseReplacement .. := g.pending then
     return g.chainPendingReplacement
-      (.finishPostStep .discardHandIdsLoop p (n := if logEach then 1 else 0) (ids := ids) (cause := cause))
+      (.finishPostStep (.discardHandIdsLoop p ids logEach cause))
   let mut g := g
   for i in [0:ids.size] do
     let id := ids[i]!
@@ -145,16 +117,20 @@ def discardHandIdsLoop (g : Game) (p : PlayerId) (ids : Array ObjectId)
     | none => pure ()
     | some o =>
       if o.zone == .hand p then
-        let g0 := if logEach then g.logMsg s!"{(g.player p).name} discards {o.name}" else g
-        let (g', _) := g0.move id (.graveyard o.owner) none (verb := some .discard)
+        let msg := s!"{(g.player p).name} discards {o.name}"
+        let (g', _) := g.move id (.graveyard o.owner) none (verb := some .discard)
           (actor := some p) (cause := cause)
         g := g'
         if let .chooseReplacement .. := g.pending then
+          if logEach then
+            g := g.chainPendingReplacement (.logMessage msg)
           let rem := ids.extract (i + 1) ids.size
           if !rem.isEmpty then
             g := g.chainPendingReplacement
-              (.finishPostStep .discardHandIdsLoop p (n := if logEach then 1 else 0) (ids := rem) (cause := cause))
+              (.finishPostStep (.discardHandIdsLoop p rem logEach cause))
           return g
+        if logEach then
+          g := g.logMsg msg
   return g
 
 /-- Discard every card in `p`'s hand. Zero cards is a legal discard and is
@@ -176,7 +152,7 @@ def discardEntireHand (g : Game) (p : PlayerId) (cause : Option EventCause := no
   let g := g.withBatch cause? fun g =>
     g.discardHandIdsLoop p ids (logEach := false) (cause := cause?)
   if let .chooseReplacement .. := g.pending then
-    g.chainPendingReplacement (.finishPostStep .logDiscardedCount p (n := preDiscards))
+    g.chainPendingReplacement (.finishPostStep (.logDiscardedCount p preDiscards))
   else
     let discarded := g.loggedDiscards p - preDiscards
     g.logMsg s!"{(g.player p).name} discards {discarded} card(s)"
@@ -191,7 +167,7 @@ def mayDiscardHandDrawThatMany (g : Game) (p : PlayerId) (doDiscard : Bool) : Ga
     let g := g.discardEntireHand p
     if n == 0 then g
     else if let .chooseReplacement .. := g.pending then
-      g.chainPendingReplacement (.finishPostStep .wheelDrawThenOfferNext p (n := n))
+      g.chainPendingReplacement (.finishPostStep (.wheelDrawThenOfferNext p n))
     else g.draw p n
 
 /-- Discard the hand, then draw `n` cards. An empty hand is a legal discard
@@ -200,13 +176,13 @@ def discardHandThenDraw (g : Game) (p : PlayerId) (n : Nat) : Game :=
   let g := g.discardEntireHand p
   if n == 0 then g
   else if let .chooseReplacement .. := g.pending then
-    g.chainPendingReplacement (.finishPostStep .wheelDrawThenOfferNext p (n := n))
+    g.chainPendingReplacement (.finishPostStep (.wheelDrawThenOfferNext p n))
   else g.draw p n
 
 /-- Move or put each card in `remainingIds` onto the battlefield sequentially,
 pausing on `Pending.chooseReplacement` (`PendingReplacement.putToBattlefieldLoop`)
-and running `afterPermanentEnters` / `afterLandEnters` (plus optional haste or
-Food-artifact log) only after all cards have finished entering. -/
+and running `afterPermanentEnters` / `afterLandEnters` (plus optional haste,
+entry log, or Food-artifact log) only after all cards have finished entering. -/
 def putToBattlefieldLoop (g : Game) (controller : PlayerId)
     (remainingIds : Array ObjectId)
     (enteredFromIds : Array ObjectId := #[])
@@ -215,12 +191,13 @@ def putToBattlefieldLoop (g : Game) (controller : PlayerId)
     (tapped : Bool := false)
     (isLandEnters : Bool := false)
     (onlyFoodArtifact : Bool := false)
+    (entryLog : PutBattlefieldEntryLog := .none)
     (cause : Option EventCause := none)
     (preBattlefield : Option (Array GameObject) := none) : Game := Id.run do
   if let .chooseReplacement .. := g.pending then
     return g.chainPendingReplacement
       (.putToBattlefieldLoop controller remainingIds enteredFromIds
-        useCardOwner haste tapped isLandEnters onlyFoodArtifact cause preBattlefield)
+        useCardOwner haste tapped isLandEnters onlyFoodArtifact entryLog cause preBattlefield)
   let preBf := preBattlefield.getD g.battlefield
   let mut g := g
   let mut entered := enteredFromIds
@@ -247,12 +224,16 @@ def putToBattlefieldLoop (g : Game) (controller : PlayerId)
           let rem := remainingIds.extract (i + 1) remainingIds.size
           return g.chainPendingReplacement
             (.putToBattlefieldLoop controller rem entered
-              useCardOwner haste tapped isLandEnters onlyFoodArtifact cause (some preBf))
+              useCardOwner haste tapped isLandEnters onlyFoodArtifact entryLog cause (some preBf))
   for j in [0:entered.size] do
     let fromId := entered[j]!
     match g.followMovedToZone? fromId (· == .battlefield) with
     | none => pure ()
     | some enteredObj =>
+      match entryLog with
+      | .none => pure ()
+      | .enters => g := g.logMsg s!"{enteredObj.name} enters the battlefield"
+      | .entersTapped => g := g.logMsg s!"{enteredObj.name} enters tapped"
       if haste then
         g := g.createEffect (.keywordsUntilEot enteredObj.id { haste := true }) (cause := cause)
       if onlyFoodArtifact then
@@ -266,7 +247,7 @@ def putToBattlefieldLoop (g : Game) (controller : PlayerId)
         if !remEntered.isEmpty then
           g := g.chainPendingReplacement
             (.putToBattlefieldLoop controller #[] remEntered
-              useCardOwner haste tapped isLandEnters onlyFoodArtifact cause (some preBf))
+              useCardOwner haste tapped isLandEnters onlyFoodArtifact entryLog cause (some preBf))
         return g
   return g
 
@@ -309,36 +290,84 @@ def exileTopPlayIfYouControlSubtype (g : Game) (p : PlayerId) (n : Nat)
           let _ := cardName
       return g
 
-/-- Exile cards from the top of `victim`'s library until an instant or
-sorcery, face up. Returns the game, that card, and the other exiled cards
-in the order they were exiled. -/
-partial def exileUntilInstantOrSorcery (g : Game) (victim : PlayerId)
-    (cause : Option EventCause := none) :
-    Game × Option ObjectId × Array ObjectId :=
-  Id.run do
-    let (g0, cause?) : Game × Option EventCause :=
-      match cause with
-      | some c => (g, some c)
-      | none =>
-        if (g.player victim).library.isEmpty then (g, none)
-        else
-          let (g, c) := g.allocDelayedCause (some victim)
-          (g, some c)
-    let mut g := g0
-    let mut exiled : Array ObjectId := #[]
-    let mut found : Option ObjectId := none
-    while found.isNone && !(g.player victim).library.isEmpty do
-      let top := (g.player victim).library.back!
-      let name := (g.object! top).name
-      let (g', newId) := g.move top .exile none (cause := cause?)
-      g := g'
-      let o := g.object! newId
-      g := g.logMsg s!"{(g.player victim).name} exiles {name} face up"
-      if g.isInstantOrSorcery o then
-        found := some newId
+/-- Finish the direct-cast step of `grimaExileUntilInstantOrSorcery` once
+moving `fromId` to `.stack` completes, then put `others` on the bottom of
+`victim`'s library in a random order. -/
+def finishGrimaDirectCast (g : Game) (controller victim : PlayerId)
+    (fromId : ObjectId) (others : Array ObjectId)
+    (cause : Option EventCause) : Game :=
+  let g :=
+    match g.followMovedToZone? fromId (· == .stack) with
+    | some moved =>
+      g.logMsg s!"{(g.player controller).name} casts {moved.name} as the ability resolves"
+    | none => g
+  g.requestOrderInto others (.library victim)
+    s!"{(g.player victim).name} puts the remaining exiled cards on the bottom of their library in a random order"
+    (cause := cause)
+
+/-- Pause-safe loop exiling cards from the top of `victim`'s library face up
+until an instant or sorcery card is exiled (or the library is empty), following
+each moved card via `followMovedToZone?` across `Pending.chooseReplacement`
+pauses and then finishing via `mode` (`GrimaExileMode`). -/
+partial def exileUntilInstantOrSorceryLoop (g : Game) (victim : PlayerId)
+    (mode : GrimaExileMode) (cause : Option EventCause := none)
+    (others : Array ObjectId := #[])
+    (pendingFromId : Option ObjectId := none) : Game := Id.run do
+  if let .chooseReplacement .. := g.pending then
+    return g.chainPendingReplacement
+      (.finishPostStep (.exileUntilInstantOrSorceryLoop victim mode cause others pendingFromId))
+  let mut g := g
+  let mut others := others
+  let mut found : Option ObjectId := none
+  if let some fid := pendingFromId then
+    if let some moved := g.followMovedToZone? fid (· == .exile) then
+      g := g.logMsg s!"{(g.player victim).name} exiles {moved.name} face up"
+      if g.isInstantOrSorcery moved then
+        found := some moved.id
       else
-        exiled := exiled.push newId
-    return (g, found, exiled)
+        others := others.push moved.id
+  while found.isNone && !(g.player victim).library.isEmpty do
+    let top := (g.player victim).library.back!
+    let name := (g.object! top).name
+    let (g', _) := g.move top .exile none (cause := cause)
+    g := g'
+    if let .chooseReplacement .. := g.pending then
+      return g.chainPendingReplacement
+        (.finishPostStep (.exileUntilInstantOrSorceryLoop victim mode cause others (some top)))
+    if let some moved := g.followMovedToZone? top (· == .exile) then
+      g := g.logMsg s!"{(g.player victim).name} exiles {name} face up"
+      if g.isInstantOrSorcery moved then
+        found := some moved.id
+      else
+        others := others.push moved.id
+  match mode with
+  | .impulseState =>
+    if g.continuations.isEmpty then
+      g := g.change (.pushContinuationFrame {})
+    return g.changes #[
+      .grimaImpulseReady true,
+      .grimaImpulseVictim (some victim),
+      .grimaImpulseFound found,
+      .grimaImpulseOthers others]
+  | .directCastOrBottom controller castTheCard =>
+    match found with
+    | none =>
+      return g.requestOrderInto others (.library victim)
+        s!"{(g.player victim).name} randomizes the exiled cards; they become that player's library"
+        (cause := cause)
+    | some instId =>
+      if castTheCard then
+        let (g', _) := g.move instId .stack (some controller)
+          (verb := some .cast) (actor := some controller) (cause := cause)
+        if let .chooseReplacement .. := g'.pending then
+          return g'.chainPendingReplacement
+            (.finishPostStep (.finishGrimaDirectCast controller victim instId others cause))
+        return g'.finishGrimaDirectCast controller victim instId others cause
+      else
+        let (g', _) := g.move instId (.library victim) none (cause := cause)
+        return g'.requestOrderInto others (.library victim)
+          s!"{(g'.player victim).name} puts the remaining exiled cards on the bottom of their library in a random order"
+          (cause := cause)
 
 /-- Exile cards from `victim`'s library until an instant or sorcery, face up.
 An empty library becomes that player's library again. The found card may be
@@ -347,25 +376,8 @@ in a random order. -/
 def grimaExileUntilInstantOrSorcery (g : Game) (controller victim : PlayerId)
     (castTheCard : Bool) : Game :=
   let (g, cause) := g.allocDelayedCause (some controller)
-  let (g, found, exiled) := g.exileUntilInstantOrSorcery victim (cause := some cause)
-  match found with
-  | none =>
-    g.requestOrderInto exiled (.library victim)
-      s!"{(g.player victim).name} randomizes the exiled cards; they become that player's library"
-      (cause := some cause)
-  | some instId =>
-    let g :=
-      if castTheCard then
-        let o := g.object! instId
-        let (g, _) := g.move instId .stack (some controller)
-          (verb := some .cast) (actor := some controller) (cause := some cause)
-        g.logMsg
-          s!"{(g.player controller).name} casts {o.name} as the ability resolves"
-      else
-        (g.move instId (.library victim) none (cause := some cause)).1
-    g.requestOrderInto exiled (.library victim)
-      s!"{(g.player victim).name} puts the remaining exiled cards on the bottom of their library in a random order"
-      (cause := some cause)
+  g.exileUntilInstantOrSorceryLoop victim (.directCastOrBottom controller castTheCard)
+    (cause := some cause)
 
 /-- True when `p` can pay Saruman's ward (discard an enchantment, instant,
 or sorcery card). -/

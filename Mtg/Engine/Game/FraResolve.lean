@@ -31,16 +31,38 @@ def tapAndStunTargetsLoop (g : Game) (controller : PlayerId) (kind : EffectTarge
           if let .chooseReplacement .. := g.pending then
             let rem := remaining.extract (i + 1) remaining.size
             if !rem.isEmpty then
-              let remSlots := rem.map (·.1)
-              let remTargets := rem.map (·.2)
               g := g.chainPendingReplacement
-                (.finishPostStep .tapAndStunTargetsLoop controller (sourceId := sourceId)
-                  (targets := remTargets) (modes := remSlots) (cause := cause))
+                (.finishPostStep (.tapAndStunTargetsLoop controller rem sourceId cause))
             return g
       else
         g := g.illegalAbilityTarget t
     | _ => pure ()
   return g
+
+/-- Finish the post-exile return-tapped step of `.exileReturnBrieflyIfMvAtMost`
+once the initial exile move (and any CR 616.1 replacement choice) completes,
+following `fromId` to `.exile` under CR 614.6 before putting it onto `.battlefield`. -/
+def finishExileReturnBrieflyAfterExile (g : Game) (controller : PlayerId) (fromId : ObjectId)
+    (cardName : String) (returnable : Bool) (sourceId : Option ObjectId)
+    (cause : EventCause) : Game :=
+  match g.followMovedToZone? fromId (· == .exile) with
+  | none => g
+  | some moved =>
+    let g := g.logMsg s!"{cardName} is exiled"
+    if returnable then
+      let (g, back) := g.putOntoBattlefield moved.id controller (tapped := true) (cause := some cause)
+      if let .chooseReplacement .. := g.pending then
+        g.chainPendingReplacement
+          (.finishPostStep (.returnTappedWithEndStepExile controller moved.id sourceId cause))
+      else
+        let entered := g.object! back
+        if entered.isOnBattlefield then
+          let g := g.logMsg s!"{cardName} returns to the battlefield tapped under {(g.player controller).name}'s control"
+          let src := (sourceId.bind g.findObject?).orElse (fun _ => some entered)
+          let g := g.registerDelayedTrigger { controller, source := src, kind := .endStepExile back, cause }
+          g.afterPermanentEnters entered
+        else g
+    else g
 
 /-- Finish the post-move CR 610.3 link step of `.fra .exileUntilSourceLeaves`. -/
 def finishFraExileUntilSourceLeaves (g : Game) (srcId fromId : ObjectId) : Game :=
@@ -91,8 +113,7 @@ def uldarosCopiesLoop (g : Game) (controller : PlayerId)
     (cause? : Option EventCause) (pendingFromId : Option ObjectId := none) : Game := Id.run do
   if let .chooseReplacement .. := g.pending then
     return g.chainPendingReplacement
-      (.finishPostStep .uldarosCopiesLoop controller (sourceId := sourceId) (cardId := pendingFromId)
-        (ids := ids) (cause := cause?))
+      (.finishPostStep (.uldarosCopiesLoop controller sourceId ids cause? pendingFromId))
   let mut g := g
   if let some fid := pendingFromId then
     if let some exObj := g.followMovedToZone? fid (· == .exile) then
@@ -105,8 +126,7 @@ def uldarosCopiesLoop (g : Game) (controller : PlayerId)
       if let .chooseReplacement .. := g.pending then
         let rem := ids.extract (i + 1) ids.size
         return g.chainPendingReplacement
-          (.finishPostStep .uldarosCopiesLoop controller (sourceId := sourceId) (cardId := some id)
-            (ids := rem) (cause := cause?))
+          (.finishPostStep (.uldarosCopiesLoop controller sourceId rem cause? (some id)))
       if let some exObj := g.followMovedToZone? id (· == .exile) then
         g := makeUldarosExiledCopy g controller sourceId exObj cause?
   return g
@@ -114,7 +134,7 @@ def uldarosCopiesLoop (g : Game) (controller : PlayerId)
 /-- Offer `.castCopiesFree` on all exiled card-copies created under `cause?` once
 `uldarosCopiesLoop`'s batch has closed. -/
 def finishUldarosCopiesOffer (g : Game) (controller : PlayerId)
-    (_ids : Array ObjectId) (cause? : Option EventCause) : Game :=
+    (cause? : Option EventCause) : Game :=
   let copies : Array ObjectId :=
     match cause? with
     | none => #[]
@@ -160,8 +180,13 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
       | Target.player _ => g) sourceId illegal
   | .exileTarget =>
     g.withLegalKindPermanent controller kind targets (fun g o =>
+      let oName := o.name
       let (g, _) := g.move o.id .exile none
-      g.logMsg s!"{o.name} is exiled") sourceId illegal
+      if let .chooseReplacement .. := g.pending then
+        g.chainPendingReplacement (.finishPostStep (.logExiledIfInExile o.id s!"{oName} is exiled"))
+      else if (g.followMovedToZone? o.id (· == .exile)).isSome then
+        g.logMsg s!"{oName} is exiled"
+      else g) sourceId illegal
   | .destroyDrawIfNotAttacking =>
     g.withLegalKindPermanent controller kind targets (fun g o =>
       let wasAttacking := o.status.attacking
@@ -187,7 +212,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
       | Target.card id =>
         let (g, newId) := g.returnCardToBattlefield controller id plusOnes
         if let .chooseReplacement .. := g.pending then
-          g.chainPendingReplacement (.finishPostStep .returnedToBattlefield controller 0 none (some id) (shuffle := false))
+          g.chainPendingReplacement (.finishPostStep (.returnedToBattlefield id false))
         else
           let entered := g.object! newId
           if entered.isOnBattlefield then g.afterPermanentEnters entered else g
@@ -236,7 +261,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
       g.exilePermanentsLoop creatureIds (logExile := true)
     if let .chooseReplacement .. := g.pending then
       g.chainPendingReplacement
-        (.finishPostStep .empowerJaceExiledCount controller (n := startIdx) (ids := creatureIds))
+        (.finishPostStep (.empowerJaceExiledCount controller startIdx creatureIds))
     else
       let count := creatureIds.foldl (fun acc id =>
         if g.wasPermanentExiled id startIdx then acc + 1 else acc) 0
@@ -246,7 +271,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     let before := g.loggedDraws controller
     let g := g.draw controller n
     if let .chooseReplacement .. := g.pending then
-      g.chainPendingReplacement (.finishPostStep .loseLifeForLoggedDraws controller before)
+      g.chainPendingReplacement (.finishPostStep (.loseLifeForLoggedDraws controller before))
     else
       let drawn := g.loggedDraws controller - before
       g.loseLife controller drawn
@@ -356,23 +381,14 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
       -- on the battlefield.
       let mv := g.objectManaValue o
       let oName := o.name
+      let returnable := mv ≤ n && !o.printed.isToken
       let (g, cause) := g.allocDelayedCause (some controller) sourceId
-      let (g, exiled) := g.move o.id .exile none (cause := some cause)
-      let g := g.logMsg s!"{oName} is exiled"
-      if mv ≤ n && !o.printed.isToken then
-        let (g, back) := g.putOntoBattlefield exiled controller (tapped := true) (cause := some cause)
-        if let .chooseReplacement .. := g.pending then
-          g.chainPendingReplacement
-            (.finishPostStep .returnTappedWithEndStepExile controller 0 sourceId (some exiled) (cause := some cause))
-        else
-          let entered := g.object! back
-          if entered.isOnBattlefield then
-            let g := g.logMsg s!"{oName} returns to the battlefield tapped under {(g.player controller).name}'s control"
-            let src := (sourceId.bind g.findObject?).orElse (fun _ => some entered)
-            let g := g.registerDelayedTrigger { controller, source := src, kind := .endStepExile back, cause }
-            g.afterPermanentEnters entered
-          else g
-      else g) sourceId illegal
+      let (g, _) := g.move o.id .exile none (cause := some cause)
+      if let .chooseReplacement .. := g.pending then
+        g.chainPendingReplacement
+          (.finishPostStep (.exileReturnBrieflyAfterExile controller o.id oName returnable sourceId cause))
+      else
+        g.finishExileReturnBrieflyAfterExile controller o.id oName returnable sourceId cause) sourceId illegal
   | .eachPlayerMayWheel n =>
     match g.apnapFrom.toList with
     | [] => g
@@ -405,7 +421,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     let preIds := (lib.extract (lib.size - count) lib.size).reverse
     let g := g.mill controller n
     if let .chooseReplacement .. := g.pending then
-      g.chainPendingReplacement (.finishPostStep .offerPutMilledPermanentOrGainLife controller (n := life) (ids := preIds))
+      g.chainPendingReplacement (.finishPostStep (.offerPutMilledPermanentOrGainLife controller preIds life))
     else
       let choices := preIds.filterMap fun id =>
         match g.followMilledPublic? id with
@@ -452,7 +468,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
   | .drawTwoDiscardTwoStun =>
     let g := g.draw controller 2
     if let .chooseReplacement .. := g.pending then
-      g.chainPendingReplacement (.finishPostStep .beginDiscardThenStun controller 0 sourceId)
+      g.chainPendingReplacement (.finishPostStep (.beginDiscardThenStun controller sourceId))
     else
       let n := Nat.min 2 (g.player controller).hand.size
       if n == 0 then g
@@ -479,7 +495,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
         let (g, tok) := g.createToken controller { base with isToken := true } (recordRecent := true)
         let g := g.logMsg s!"{(g.player controller).name} creates a token copy of {base.name}"
         if let .chooseReplacement .. := g.pending then
-          g.chainPendingReplacement (.finishPostStep .afterRecentTokensEnter controller)
+          g.chainPendingReplacement (.finishPostStep .afterRecentTokensEnter)
         else if tok.zone == .battlefield then
           g.recentTokenIds.foldl (fun g tid =>
             match g.findObject? tid with
@@ -496,7 +512,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
       else
         let (g, newId) := g.returnCardToBattlefield controller o.id plusOnes (tapped := tapped)
         if let .chooseReplacement .. := g.pending then
-          g.chainPendingReplacement (.finishPostStep .returnedToBattlefield controller 0 none (some o.id) (shuffle := false))
+          g.chainPendingReplacement (.finishPostStep (.returnedToBattlefield o.id false))
         else
           let entered := g.object! newId
           if entered.isOnBattlefield then g.afterPermanentEnters entered else g
@@ -559,7 +575,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
         let cardName := card.name
         let (g, newId) := g.putOntoBattlefield card.id card.owner (tapped := true)
         if let .chooseReplacement .. := g.pending then
-          g.chainPendingReplacement (.finishPostStep .returnedToBattlefieldTapped card.owner 0 none (some card.id) (shuffle := false))
+          g.chainPendingReplacement (.finishPostStep (.returnedToBattlefieldTapped card.id false))
         else
           let entered := g.object! newId
           if entered.isOnBattlefield then
@@ -592,7 +608,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
   | .millThenReturnLandTapped n =>
     let g := g.mill controller n
     if let .chooseReplacement .. := g.pending then
-      g.chainPendingReplacement (.finishPostStep .reflexiveReturnLandTapped controller (sourceId := sourceId))
+      g.chainPendingReplacement (.finishPostStep (.reflexiveReturnLandTapped controller sourceId))
     else
       g.applyFra controller effect .reflexiveReturnLandTapped #[] sourceId
   | .maySacrificeLandForHeartwoods =>
@@ -626,9 +642,9 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
       g.uldarosCopiesLoop controller sourceId ids cause?
     if let .chooseReplacement .. := g.pending then
       g.chainPendingReplacement
-        (.finishPostStep .finishUldarosCopiesOffer controller (sourceId := sourceId) (ids := ids) (cause := cause?))
+        (.finishPostStep (.finishUldarosCopiesOffer controller cause?))
     else
-      g.finishUldarosCopiesOffer controller ids cause?
+      g.finishUldarosCopiesOffer controller cause?
   | .exileCardFromGraveyard =>
     if targets.isEmpty then g
     else
@@ -637,7 +653,11 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
         | Target.card id =>
           let name := (g.object! id).name
           let (g, _) := g.move id .exile none
-          g.logMsg s!"{name} is exiled"
+          if let .chooseReplacement .. := g.pending then
+            g.chainPendingReplacement (.finishPostStep (.logExiledIfInExile id s!"{name} is exiled"))
+          else if (g.followMovedToZone? id (· == .exile)).isSome then
+            g.logMsg s!"{name} is exiled"
+          else g
         | _ => g) sourceId illegal
   | .copyCauseSpell =>
     if (g.player controller).lost then g
@@ -678,7 +698,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
             | none => (g, none)
           let g := g.sacrificeToGraveyard o s!"{(g.player controller).name} sacrifices {o.name}" (cause := cause?)
           if let .chooseReplacement .. := g.pending then
-            g.chainPendingReplacement (.finishPostStep .drainOpponents controller 2 (some o.id) (cause := cause?))
+            g.chainPendingReplacement (.finishPostStep (.drainOpponents controller 2 (some o.id) cause?))
           else
             g.drainOpponents controller 2 (some o) (cause := cause?)
       | none => g
@@ -730,7 +750,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     let causeId? := g.resolvingAbilityObject?.bind (·.fraCauseId)
     let g := g.draw controller 1
     if let .chooseReplacement .. := g.pending then
-      g.chainPendingReplacement (.finishPostStep .addPlusOnesForLoggedDiscards controller 0 causeId?)
+      g.chainPendingReplacement (.finishPostStep (.addPlusOnesForLoggedDiscards controller causeId?))
     else
       let n := g.loggedDiscards controller
       match g.fraCause? with
@@ -747,7 +767,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     let g := g.dealDamageToEachOpponent controller 1 (source := src?)
     if !isMtn then g
     else if let .chooseReplacement .. := g.pending then
-      g.chainPendingReplacement (.finishPostStep .addRedManaIfPositive controller 1 sourceId)
+      g.chainPendingReplacement (.finishPostStep (.addRedManaIfPositive controller 1 sourceId))
     else
       g.addManaLogged controller #[.colored .red] (source := sourceId)
   | .fblthpSearch =>
@@ -778,7 +798,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
               let g := g.logMsg s!"{(g.player controller).name} reveals {o.name}"
               (g.move id (.hand controller) none (cause := some cause)).1
             | none => g) g
-    g.shuffleLibrary controller
+    g.shuffleThen controller .none
   | .untapAllTokensYouControl =>
     g.withBatch none fun g =>
       (g.permanentsOf controller).foldl (fun g o =>
@@ -830,7 +850,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
       let oid := o.id
       let g := g.applyPermanentAction o .untap
       if let .chooseReplacement .. := g.pending then
-        g.chainPendingReplacement (.finishPostStep .grantCantBeBlockedIfOnBattlefield controller (cardId := some oid))
+        g.chainPendingReplacement (.finishPostStep (.grantCantBeBlockedIfOnBattlefield oid))
       else
         match g.findObject? oid with
         | some cur => if cur.isOnBattlefield then g.applyPermanentAction cur .cantBeBlocked else g
@@ -862,8 +882,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
           let (g, _) := g.move o.id .exile none (cause := some linkCause)
           if let .chooseReplacement .. := g.pending then
             g.chainPendingReplacement
-              (.finishPostStep .finishFraExileUntilSourceLeaves controller (sourceId := some src.id)
-                (cardId := some o.id) (cause := some linkCause))
+              (.finishPostStep (.finishFraExileUntilSourceLeaves src.id o.id))
           else
             g.finishFraExileUntilSourceLeaves src.id o.id) sourceId illegal
     | none => g
@@ -891,7 +910,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
       | Target.card id =>
         let (g, newId) := g.returnCardToBattlefield controller id 0 (tapped := true)
         if let .chooseReplacement .. := g.pending then
-          g.chainPendingReplacement (.finishPostStep .returnedToBattlefield controller 0 none (some id) (shuffle := true))
+          g.chainPendingReplacement (.finishPostStep (.returnedToBattlefield id true))
         else
           let entered := g.object! newId
           if entered.isOnBattlefield then g.afterLandEnters entered else g

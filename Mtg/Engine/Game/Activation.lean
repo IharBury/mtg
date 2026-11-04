@@ -36,7 +36,7 @@ def canPayFraCost (g : Game) (p : PlayerId) (o : GameObject) (c : FraCost) : Boo
   | .exileAnotherCreatureCardFromGraveyard | .sacrificeAnotherArtifact
   | .sacrificeAnotherCreatureOrPlaneswalker | .sacrificeArtifactOrLand
   | .discardLegendaryCard | .tapTwoUntappedArtifacts =>
-    g.costPicksPayable p o.id (costPicksOf { cost := { fra := c }, effect := default })
+    g.costPicksPayable p (some o.id) (costPicksOf { cost := { fra := c }, effect := default })
   | .exileSourceFromHand => o.zone == .hand o.owner
   | .exileSource => o.isOnBattlefield
   | .zemoBoast =>
@@ -134,8 +134,8 @@ def validateActivation (g : Game) (p : PlayerId) (o : GameObject) (ab : Activate
   if ab.cost.sacrificeAnotherCreatureOrArtifact &&
       (g.sacrificeCreatureOrArtifactChoices p o.id).isEmpty then
     throw s!"{g.name o}'s ability requires sacrificing another creature or artifact"
-  if !g.costPicksPayable p o.id (costPicksOf ab) then
-    throw s!"{g.name o}'s ability has a cost that can't be paid"
+  if !g.costPicksPayable p (some o.id) (costPicksOf ab) then
+    throw s!"{o.name}'s ability has a cost that can't be paid"
   if ab.cost.removeAnyNumberPlusOne && ab.cost.tap && o.status.tapped then
     throw s!"{g.name o} is already tapped"
   if !g.canPayLife p ab.cost.payLife then

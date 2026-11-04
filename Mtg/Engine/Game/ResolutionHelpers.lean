@@ -111,7 +111,7 @@ def exileCreaturesFromGraveyardLoop (g : Game) (controller : PlayerId)
     (pendingFromId : Option ObjectId := none) : Game := Id.run do
   if let .chooseReplacement .. := g.pending then
     return g.chainPendingReplacement
-      (.finishPostStep .exileCreaturesFromGraveyardLoop controller (cardId := pendingFromId) (ids := ids) (cause := cause))
+      (.finishPostStep (.exileCreaturesFromGraveyardLoop controller ids cause pendingFromId))
   let mut g := g
   if let some fid := pendingFromId then
     if let some moved := g.followMovedToZone? fid (· == .exile) then
@@ -132,7 +132,7 @@ def exileCreaturesFromGraveyardLoop (g : Game) (controller : PlayerId)
       if let .chooseReplacement .. := g.pending then
         let rem := ids.extract (i + 1) ids.size
         return g.chainPendingReplacement
-          (.finishPostStep .exileCreaturesFromGraveyardLoop controller (cardId := some id) (ids := rem) (cause := cause))
+          (.finishPostStep (.exileCreaturesFromGraveyardLoop controller rem cause (some id)))
       if let some moved := g.followMovedToZone? id (· == .exile) then
         g := g.createEffect (.playPermission moved.id {
           player := controller
@@ -157,14 +157,20 @@ def exileCreaturesFromGraveyard (g : Game) (controller fromPlayer : PlayerId)
     g.withBatch (some cause) fun g =>
       g.exileCreaturesFromGraveyardLoop controller ids (some cause)
 
-/-- Put `o` on the top (`top`) or bottom of its owner's library. -/
+/-- Put `o` on the top (`top`) or bottom of its owner's library, deferring the
+log across `Pending.chooseReplacement` and emitting it only if `o` actually
+arrives in `.library owner`. -/
 def putOnOwnerLibrary (g : Game) (o : GameObject) (top : Bool) : Game :=
   let side := if top then "top" else "bottom"
   let name := o.name
   let owner := o.owner
   let pos : LibraryPosition := if top then .top else .bottom
   let (g, _) := g.move o.id (.library owner) none (libraryPosition := some pos)
-  g.logMsg s!"{(g.player owner).name} puts {name} on the {side} of their library"
+  if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement (.finishPostStep (.logPutOnOwnerLibrary o.id owner name top))
+  else if (g.followMovedToZone? o.id (· == .library owner)).isSome then
+    g.logMsg s!"{(g.player owner).name} puts {name} on the {side} of their library"
+  else g
 
 /-- Apply a shared permanent action (spells, activated abilities, and triggers). -/
 def applyPermanentAction (g : Game) (o : GameObject) (action : PermanentAction)
@@ -522,8 +528,8 @@ def exilePermanentsLoop (g : Game) (remainingIds : Array ObjectId)
     | none => pure ()
   return g
 
-/-- Stage 3 of `flickerPermanents`: log and run `afterPermanentEnters` for each
-exiled card in `enteredFromIds` that returned to the battlefield. -/
+/-- Post-return stage of `flickerPermanents`: log and run `afterPermanentEnters`
+for each exiled card in `enteredFromIds` that returned to the battlefield. -/
 private def flickerPostReturn (g : Game) (enteredFromIds : Array ObjectId)
     (logText : String) : Game := Id.run do
   let mut g := g
@@ -536,13 +542,13 @@ private def flickerPostReturn (g : Game) (enteredFromIds : Array ObjectId)
       if let .chooseReplacement .. := g.pending then
         let rem := enteredFromIds.extract (k + 1) enteredFromIds.size
         if !rem.isEmpty then
-          g := g.chainPendingReplacement (.flickerLoop #[] #[] rem logText 3)
+          g := g.chainPendingReplacement (.flickerLoop #[] #[] rem logText .postReturn)
         return g
     | none => pure ()
   return g
 
-/-- Stage 2 of `flickerPermanents`: inside the return batch, move each exiled
-card in `remainingIds` back to the battlefield under its owner's control. -/
+/-- Return-batch stage of `flickerPermanents`: inside the return batch, move each
+exiled card in `remainingIds` back to the battlefield under its owner's control. -/
 private def flickerReturnBatchLoop (g : Game) (remainingIds : Array ObjectId)
     (exiledPreIds : Array ObjectId) (enteredFromIds : Array ObjectId)
     (logText : String) (tapped : Bool) (onlyLandTapped : Bool)
@@ -565,13 +571,14 @@ private def flickerReturnBatchLoop (g : Game) (remainingIds : Array ObjectId)
           let rem := remainingIds.extract (i + 1) remainingIds.size
           if !rem.isEmpty then
             g := g.chainPendingReplacement
-              (.flickerLoop rem exiledPreIds enteredFromIds logText 2 tapped onlyLandTapped clearExileFields cause (some preBf))
+              (.flickerLoop rem exiledPreIds enteredFromIds logText .returnBatch tapped onlyLandTapped clearExileFields cause (some preBf))
           return g
     | none => pure ()
   return g
 
-/-- Stage 1 of `flickerPermanents`: after the exile batch closes, return all
-nontoken exiled cards simultaneously in a second batch (CR 111.8 / 400.7 / 603.6a). -/
+/-- Start-return-batch stage of `flickerPermanents`: after the exile batch closes,
+return all nontoken exiled cards simultaneously in a second batch
+(CR 111.8 / 400.7 / 603.6a). -/
 private def flickerStartReturnBatch (g : Game) (exiledPreIds : Array ObjectId)
     (logText : String) (tapped : Bool) (onlyLandTapped : Bool)
     (clearExileFields : Bool) (cause : Option EventCause) : Game :=
@@ -588,12 +595,12 @@ private def flickerStartReturnBatch (g : Game) (exiledPreIds : Array ObjectId)
         tapped onlyLandTapped clearExileFields cause (some preBf)
     if let .chooseReplacement .. := g.pending then
       g.chainPendingReplacement
-        (.flickerLoop #[] exiledPreIds returnableIds logText 3 tapped onlyLandTapped clearExileFields cause (some preBf))
+        (.flickerLoop #[] exiledPreIds returnableIds logText .postReturn tapped onlyLandTapped clearExileFields cause (some preBf))
     else
       g.flickerPostReturn returnableIds logText
 
-/-- Stage 0 of `flickerPermanents`: inside the exile batch, move each target in
-`remainingIds` to `.exile`. -/
+/-- Exile-batch stage of `flickerPermanents`: inside the exile batch, move each
+target in `remainingIds` to `.exile`. -/
 private def flickerExileBatchLoop (g : Game) (remainingIds : Array ObjectId)
     (exiledPreIds : Array ObjectId) (logText : String) (tapped : Bool)
     (onlyLandTapped : Bool) (clearExileFields : Bool)
@@ -610,7 +617,7 @@ private def flickerExileBatchLoop (g : Game) (remainingIds : Array ObjectId)
           let rem := remainingIds.extract (i + 1) remainingIds.size
           if !rem.isEmpty then
             g := g.chainPendingReplacement
-              (.flickerLoop rem exiledPreIds #[] logText 0 tapped onlyLandTapped clearExileFields cause)
+              (.flickerLoop rem exiledPreIds #[] logText .exileBatch tapped onlyLandTapped clearExileFields cause)
           return g
     | none => pure ()
   return g
@@ -635,13 +642,13 @@ def flickerPermanents (g : Game) (targetIds : Array ObjectId)
         | none => (g, none)
     if let .chooseReplacement .. := g.pending then
       g.chainPendingReplacement
-        (.flickerLoop targetIds targetIds #[] logText 4 tapped onlyLandTapped clearExileFields cause)
+        (.flickerLoop targetIds targetIds #[] logText .beforeExileBatch tapped onlyLandTapped clearExileFields cause)
     else
       let g := g.withBatch cause fun g =>
         g.flickerExileBatchLoop targetIds targetIds logText tapped onlyLandTapped clearExileFields cause
       if let .chooseReplacement .. := g.pending then
         g.chainPendingReplacement
-          (.flickerLoop #[] targetIds #[] logText 1 tapped onlyLandTapped clearExileFields cause)
+          (.flickerLoop #[] targetIds #[] logText .startReturnBatch tapped onlyLandTapped clearExileFields cause)
       else
         g.flickerStartReturnBatch targetIds logText tapped onlyLandTapped clearExileFields cause
 
@@ -650,7 +657,7 @@ def resumeFlickerLoop (g : Game) (remainingIds : Array ObjectId)
     (exiledPreIds : Array ObjectId := #[])
     (enteredFromIds : Array ObjectId := #[])
     (logText : String := "is exiled, then returned to the battlefield")
-    (stage : Nat := 0) (tapped : Bool := false) (onlyLandTapped : Bool := false)
+    (stage : FlickerStage := .exileBatch) (tapped : Bool := false) (onlyLandTapped : Bool := false)
     (clearExileFields : Bool := false) (cause : Option EventCause := none)
     (preBattlefield : Option (Array GameObject) := none) : Game :=
   if let .chooseReplacement .. := g.pending then
@@ -658,11 +665,11 @@ def resumeFlickerLoop (g : Game) (remainingIds : Array ObjectId)
       (.flickerLoop remainingIds exiledPreIds enteredFromIds logText stage tapped onlyLandTapped clearExileFields cause preBattlefield)
   else
     match stage with
-    | 0 => g.flickerExileBatchLoop remainingIds exiledPreIds logText tapped onlyLandTapped clearExileFields cause
-    | 1 => g.flickerStartReturnBatch exiledPreIds logText tapped onlyLandTapped clearExileFields cause
-    | 2 => g.flickerReturnBatchLoop remainingIds exiledPreIds enteredFromIds logText tapped onlyLandTapped clearExileFields cause preBattlefield
-    | 3 => g.flickerPostReturn enteredFromIds logText
-    | _ =>
+    | .exileBatch => g.flickerExileBatchLoop remainingIds exiledPreIds logText tapped onlyLandTapped clearExileFields cause
+    | .startReturnBatch => g.flickerStartReturnBatch exiledPreIds logText tapped onlyLandTapped clearExileFields cause
+    | .returnBatch => g.flickerReturnBatchLoop remainingIds exiledPreIds enteredFromIds logText tapped onlyLandTapped clearExileFields cause preBattlefield
+    | .postReturn => g.flickerPostReturn enteredFromIds logText
+    | .beforeExileBatch =>
       g.flickerPermanents remainingIds (logText := logText) (tapped := tapped)
         (onlyLandTapped := onlyLandTapped) (clearExileFields := clearExileFields) (cause := cause)
 

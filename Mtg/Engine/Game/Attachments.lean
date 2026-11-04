@@ -40,10 +40,6 @@ def attachSourceTo (g : Game) (src host : GameObject)
       g.logMsg s!"{src.name} attaches to {host.name}"
   | _, _ => g
 
-/-- Remove an id from a zone list. -/
-def stripId (ids : Array ObjectId) (id : ObjectId) : Array ObjectId :=
-  ids.filter (fun x => x != id)
-
 /-- An object ceases to exist (CR 111.7 / 704.5d / 704.5e).
 The object is deleted and its id is removed from the zone it occupied, so a
 graveyard, hand, library, or stack keeps nothing of it. -/

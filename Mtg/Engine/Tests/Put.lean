@@ -239,7 +239,7 @@ attach; another artifact is not. An empty hand skips the choice. -/
         (some host.id)
       let offered :=
         match g.pending with
-        | .mayPutArtifactFromHand p hid => p == caster && hid == host.id
+        | .mayPutArtifactFromHand p hid => p == caster && hid == some host.id
         | _ => false
       match g.choosePutArtifactFromHand caster id with
       | .error _ => false
