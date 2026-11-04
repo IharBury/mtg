@@ -242,9 +242,13 @@ def replaceTokenCreationChoice (g : Game) (initial : ProposedTokenBatch)
     else
       let hasFood := batches.any (fun b => g.tokenBatchIsFood b.controller b.printed)
       let hasArtifact := batches.any (fun b => g.tokenBatchIsArtifact b.controller b.printed)
+      let preBatchPermOk (o : GameObject) : Bool :=
+        g.currentBatch.isNone ||
+          g.openBatchObjects.any (fun pre => pre.id == o.id && pre.isOnBattlefield)
+      let ctrlPerms := (g.permanentsOf ctrl).filter preBatchPermOk
       let mut specs : Array ReplacementSpec := #[]
       if includeKindReplacements && hasFood then
-        for o in g.permanentsOf ctrl do
+        for o in ctrlPerms do
           if (g.baseCard o).foodAlsoCreatesTreasure && g.retainsPrintedAbilities o then
             specs := specs.push {
               id := { kind := .foodAlsoCreatesTreasure, object := some o.id }
@@ -254,7 +258,7 @@ def replaceTokenCreationChoice (g : Game) (initial : ProposedTokenBatch)
               kind := .createExtraTokenWithFood ctrl treasureToken
             }
       if includeKindReplacements && hasArtifact then
-        for o in g.permanentsOf ctrl do
+        for o in ctrlPerms do
           if (g.staticAbilities o).any (· == .artifactTokensBecomeDragons) then
             specs := specs.push {
               id := { kind := .artifactTokensBecomeDragons, object := some o.id }
@@ -264,7 +268,7 @@ def replaceTokenCreationChoice (g : Game) (initial : ProposedTokenBatch)
               kind := .artifactTokensBecome ctrl dragon55flyingToken
             }
       if includeMultiplier then
-        for o in g.permanentsOf ctrl do
+        for o in ctrlPerms do
           if (g.baseCard o).tokenDoubling && g.retainsPrintedAbilities o then
             specs := specs.push {
               id := { kind := .tokenDoubling, object := some o.id }
@@ -381,29 +385,49 @@ def createTokenBatches (g : Game) (batches : Array ProposedTokenBatch)
       let fallbackCard := (batches[0]?.map (·.printed)).getD { name := "", types := #[], isToken := true }
       (g, noTokenCreated fallbackCtrl fallbackCard)
 
-/-- Create a token under `controller`, running the CR 616.1 token-creation
-replacement loop (Food/Treasure, Draconic Visitor, token-doubling). -/
+/-- Create `count` tokens under `controller` in a single CR 616.1 token-creation
+event (Food/Treasure, Draconic Visitor, token-doubling). -/
 def createToken (g : Game) (controller : PlayerId) (printed : CardDef)
     (tapped := false) (_batch := false) (attacking := false)
     (attackingTarget : Option AttackTarget := none)
     (applyFoodBonus : Bool := true)
     (extraCounters : CounterBag := #[])
     (recordRecent : Bool := false)
-    (cause : Option EventCause := none) : Game × GameObject :=
-  if let .chooseReplacement .. := g.pending then
+    (cause : Option EventCause := none)
+    (count : Nat := 1) : Game × GameObject :=
+  if count == 0 then
+    (g, noTokenCreated controller printed)
+  else if let .chooseReplacement .. := g.pending then
     (g.chainPendingReplacement
-      (.createToken controller printed tapped attacking attackingTarget applyFoodBonus extraCounters recordRecent cause),
+      (.createToken controller printed tapped attacking attackingTarget applyFoodBonus extraCounters recordRecent cause count),
      noTokenCreated controller printed)
-  else if (g.player controller).lost || !applyFoodBonus then
-    g.createOneToken controller printed (tapped := tapped)
-      (attacking := attacking)
-      (attackingTarget := attackingTarget)
-      (extraCounters := extraCounters) (recordRecent := recordRecent) (cause := cause)
+  else if (g.player controller).lost then
+    (g.logMsg "no token is created (CR 800.4b)", noTokenCreated controller printed)
+  else if !applyFoodBonus then
+    if count == 1 then
+      g.createOneToken controller printed (tapped := tapped)
+        (attacking := attacking)
+        (attackingTarget := attackingTarget)
+        (extraCounters := extraCounters) (recordRecent := recordRecent) (cause := cause)
+    else
+      let batches := (List.replicate count {
+        controller := controller
+        printed := printed
+        count := 1
+        tapped := tapped
+        attacking := attacking
+        attackingTarget := attackingTarget
+        extraCounters := extraCounters
+        cause := cause
+      }).toArray
+      g.createTokenBatches batches (attacking := attacking)
+        (attackingTarget := attackingTarget) (extraCounters := extraCounters)
+        (recordRecent := recordRecent) (cause := cause)
   else
     let (batches, applied, choice?) := g.replaceTokenCreationChoice {
       controller := controller
       printed := printed
-      count := 1
+      count := count
       tapped := tapped
       attacking := attacking
       attackingTarget := attackingTarget
@@ -413,7 +437,7 @@ def createToken (g : Game) (controller : PlayerId) (printed : CardDef)
     match choice? with
     | some (chooser, choices) =>
       (g.promptChooseReplacement chooser choices
-        (.createToken controller printed tapped attacking attackingTarget true extraCounters recordRecent cause),
+        (.createToken controller printed tapped attacking attackingTarget true extraCounters recordRecent cause count),
        noTokenCreated controller printed)
     | none =>
     let g := g.consumeReplacementOrder applied
@@ -430,23 +454,13 @@ def createToken (g : Game) (controller : PlayerId) (printed : CardDef)
 /-- Create `n` Treasure tokens, optionally tapped. -/
 def createTreasureTokens (g : Game) (controller : PlayerId) (n : Nat)
     (tapped := false) (cause : Option EventCause := none) : Game :=
-  if let .chooseReplacement .. := g.pending then
-    if n == 0 then g
-    else g.chainPendingReplacement (.createTreasureTokens controller n tapped cause)
+  if n == 0 then g
+  else if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement (.createTreasureTokens controller n tapped cause)
   else if (g.player controller).lost then
-    if n == 0 then g else g.logMsg "no token is created (CR 800.4b)"
+    g.logMsg "no token is created (CR 800.4b)"
   else
-    g.withBatchCore cause fun g => Id.run do
-      let mut g := g
-      for i in [0:n] do
-        let (g', _) := g.createToken controller treasureToken (tapped := tapped) (cause := cause)
-        g := g'
-        if let .chooseReplacement .. := g.pending then
-          let rem := n - (i + 1)
-          if rem > 0 then
-            g := g.chainPendingReplacement (.createTreasureTokens controller rem tapped cause)
-          return g
-      return g
+    (g.createToken controller treasureToken (tapped := tapped) (cause := cause) (count := n)).1
 
 /-- A 0/0 black Army creature token of the given subtype (amass). -/
 def armyToken (subtype : CardSubtype) : CardDef := {
@@ -818,23 +832,15 @@ def createKindTokens (g : Game) (controller : PlayerId) (kind : TokenKind)
     else g.logMsg "no token is created (CR 800.4b)"
   else
     let g := if resetRecent then g.change (.recentTokenIds #[]) else g
-    g.withBatchCore cause fun g => Id.run do
-      let mut g := g
+    if n == 0 then g
+    else
       let resolvedTarget := g.resolveEnteringAttackTarget? controller attacking attackingTarget
       let isAttacking := resolvedTarget.isSome
       let printed := tokenPrinted kind
-      for i in [0:n] do
-        let (g', _) := g.createToken controller printed (tapped := tapped)
-          (attacking := isAttacking)
-          (attackingTarget := resolvedTarget) (recordRecent := true) (cause := cause)
-        g := g'
-        if let .chooseReplacement .. := g.pending then
-          let rem := n - (i + 1)
-          if rem > 0 then
-            g := g.chainPendingReplacement
-              (.createKindTokens controller kind rem tapped attacking attackingTarget false cause)
-          return g
-      return g
+      (g.createToken controller printed (tapped := tapped)
+        (attacking := isAttacking)
+        (attackingTarget := resolvedTarget) (recordRecent := true) (cause := cause)
+        (count := n)).1
 
 end Game
 end Mtg.Engine

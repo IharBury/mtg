@@ -46,9 +46,14 @@ private def handDiscard (g : Game) (p : PlayerId) : Game :=
   match (g.player p).hand.back? with
   | none => g.logMsg s!"{(g.player p).name} has no card to discard"
   | some id =>
-    let name := (g.object! id).name
-    let (g, _) := g.move id (.graveyard p) none (verb := some .discard)
-    g.logMsg s!"{(g.player p).name} discards {name}"
+    let card := g.object! id
+    let name := card.name
+    let (g, _) := g.move id (.graveyard card.owner) none (verb := some .discard) (actor := some p)
+    if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement (.finishFrcPostStep (.logHandDiscard p id name))
+    else if !(g.player p).hand.contains id then
+      g.logMsg s!"{(g.player p).name} discards {name}"
+    else g
 
 private def destroyIds (g : Game) (ids : Array ObjectId) (pred : GameObject → Bool := fun _ => true) : Game :=
   let preBf := g.battlefield
@@ -113,21 +118,14 @@ private def frcPrinted (k : FrcToken) (x : Nat) : CardDef :=
           cost := { mana := ManaCost.ofGeneric 2 } } ] }
 
 def makeFrcLoop (g : Game) (p : PlayerId) (k : FrcToken) (remaining : Nat) (x : Nat)
-    (extraCounters : CounterBag) (cause : Option EventCause) : Game := Id.run do
-  if let .chooseReplacement .. := g.pending then
-    return g.chainPendingReplacement (.makeFrcLoop p k remaining x extraCounters cause)
-  let mut g := g
-  let printed := frcPrinted k x
-  for i in [0:remaining] do
-    let (g', _) := g.createToken p printed
-      (extraCounters := extraCounters) (recordRecent := true) (cause := cause)
-    g := g'
-    if let .chooseReplacement .. := g.pending then
-      let rem := remaining - (i + 1)
-      if rem > 0 then
-        g := g.chainPendingReplacement (.makeFrcLoop p k rem x extraCounters cause)
-      return g
-  return g
+    (extraCounters : CounterBag) (cause : Option EventCause) : Game :=
+  if remaining == 0 then g
+  else if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement (.makeFrcLoop p k remaining x extraCounters cause)
+  else
+    let printed := frcPrinted k x
+    (g.createToken p printed (extraCounters := extraCounters)
+      (recordRecent := true) (cause := cause) (count := remaining)).1
 
 private def makeFrc (g : Game) (p : PlayerId) (k : FrcToken) (n : Nat := 1) (x : Nat := 0)
     (extraCounters : CounterBag := #[]) (cause : Option EventCause := none) : Game :=
@@ -212,9 +210,47 @@ private def handDiscardToBottomOf (g : Game) (controller : PlayerId) : Game :=
   match (g.player controller).hand.back? with
   | none => g
   | some id =>
-    let name := (g.object! id).name
-    let (g, _) := g.move id (.library controller) none (libraryPosition := some .bottom)
-    g.logMsg s!"{(g.player controller).name} puts {name} on the bottom of their library"
+    let card := g.object! id
+    let destOwner := card.owner
+    let name := card.name
+    let (g, _) := g.move id (.library destOwner) none (libraryPosition := some .bottom)
+    if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement
+        (.finishFrcPostStep (.logHandDiscardToBottom controller id destOwner name))
+    else if (g.followMovedToZone? id (· == .library destOwner)).isSome then
+      g.logMsg s!"{(g.player controller).name} puts {name} on the bottom of their library"
+    else g
+
+/-- Move `remainingIds` from `p`'s hand onto the top of `p`'s library one at a
+time, pausing across `Pending.chooseReplacement` and logging the count of cards
+that entered `.library p` (CR 614.6 / 616.1). -/
+def putBackOnTopLoop (g : Game) (p : PlayerId) (remainingIds : Array ObjectId)
+    (movedCount : Nat := 0) (pendingId : Option ObjectId := none) : Game := Id.run do
+  if let .chooseReplacement .. := g.pending then
+    return g.chainPendingReplacement
+      (.finishFrcPostStep (.putBackOnTopLoop p remainingIds movedCount pendingId))
+  let mut g := g
+  let mut cnt := movedCount
+  if let some pid := pendingId then
+    if (g.followMovedToZone? pid (· == .library p)).isSome then
+      cnt := cnt + 1
+  for i in [0:remainingIds.size] do
+    let id := remainingIds[i]!
+    match g.findObject? id with
+    | some o =>
+      if o.zone == .hand p then
+        let (g', _) := g.move id (.library p) none
+        g := g'
+        if let .chooseReplacement .. := g.pending then
+          let rem := remainingIds.extract (i + 1) remainingIds.size
+          return g.chainPendingReplacement
+            (.finishFrcPostStep (.putBackOnTopLoop p rem cnt (some id)))
+        if (g.followMovedToZone? id (· == .library p)).isSome then
+          cnt := cnt + 1
+    | none => pure ()
+  if cnt > 0 || (remainingIds.isEmpty && pendingId.isNone && movedCount == 0) then
+    g := g.logMsg s!"{(g.player p).name} puts {cnt} card(s) on top of their library"
+  return g
 
 private def historicCard (c : CardDef) : Bool :=
   c.isPermanentCard && (c.isArtifact || c.hasSupertype .legendary || c.hasSubtype .saga)
@@ -336,15 +372,8 @@ def applyFrc (g : Game) (controller : PlayerId) (effect : Effect) (e : FrcEffect
       let hand := (g.player controller).hand
       let n := min putN hand.size
       let back := hand.extract (hand.size - n) hand.size
-      let g := g.withBatch none fun g =>
-        back.foldl (fun g id =>
-          match g.findObject? id with
-          | some o =>
-            if o.zone == .hand controller then
-              (g.move id (.library controller) none).1
-            else g
-          | none => g) g
-      g.logMsg s!"{pl.name} puts {n} card(s) on top of their library"
+      g.withBatch none fun g =>
+        g.putBackOnTopLoop controller back
   | .exileTarget =>
     match targets[0]? with
     | some (Target.permanent id) => g.exileId id
@@ -371,7 +400,10 @@ def applyFrc (g : Game) (controller : PlayerId) (effect : Effect) (e : FrcEffect
         let owner := (g.controllerOf o).getD o.owner
         let pw := (g.snapshotPower o).toNat
         let g := g.exileId id
-        g.gainLife owner pw
+        if let .chooseReplacement .. := g.pending then
+          g.chainPendingReplacement (.finishFrcPostStep (.swordsGainLife id owner pw))
+        else
+          g.gainLife owner pw
       | none => g
     | _ => g
   | .stroke =>
@@ -696,13 +728,9 @@ def applyFrc (g : Game) (controller : PlayerId) (effect : Effect) (e : FrcEffect
       let g := g.createEffects
         #[.protectionFromEverything pid, .lifeCantChange pid]
       let g := g.logMsg s!"{(g.player pid).name} has protection from everything and their life total can't change"
-      let ids := (g.permanentsOf pid).filter (fun o => !g.isLand o) |>.map (·.id)
-      let phaseCause := g.resolvingBatchCause controller sourceId
-      let g := g.withBatch phaseCause fun g =>
-        ids.foldl (fun g id =>
-          match g.findObject? id with
-          | some o => if o.isOnBattlefield then g.phaseOut o (cause := phaseCause) else g
-          | none => g) g
+      let targetsToPhase := (g.permanentsOf pid).filter (fun o => !g.isLand o)
+      let phaseCause := g.resolvingOneShotCause controller sourceId
+      let g := g.phaseOutPermanents targetsToPhase (cause := phaseCause)
       match g.resolvingSpell.bind g.findObject? with
       | some spell =>
         g.createEffect (.exileInstantSorceryInstead spell.id)
@@ -904,8 +932,14 @@ def applyFrc (g : Game) (controller : PlayerId) (effect : Effect) (e : FrcEffect
       let g := g.record (GameEvent.revealed g.turnNumber controller #[top]
         (cause := some (g.resolvingOrRuleCause controller sourceId)))
       if g.isLand card then
+        let cName := card.name
         let (g, _) := g.move top (.hand controller) none
-        g.logMsg s!"{pl.name} explores and puts {card.name} into their hand"
+        if let .chooseReplacement .. := g.pending then
+          g.chainPendingReplacement
+            (.finishFrcPostStep (.logExploreLandToHand controller top cName))
+        else if (g.followMovedToZone? top (· == .hand controller)).isSome then
+          g.logMsg s!"{pl.name} explores and puts {cName} into their hand"
+        else g
       else
         let g := g.logMsg s!"{pl.name} puts {card.name} on top of their library"
         match g.srcObj? sourceId with
@@ -982,14 +1016,28 @@ partial def runFrcPostStep (g : Game) (step : FrcPostStep) : Game :=
     let hand := (g.player p).hand
     let n := min count hand.size
     let back := hand.extract (hand.size - n) hand.size
-    let g := g.withBatch none fun g =>
-      back.foldl (fun g id =>
-        match g.findObject? id with
-        | some o =>
-          if o.zone == .hand p then (g.move id (.library p) none).1
-          else g
-        | none => g) g
-    g.logMsg s!"{(g.player p).name} puts {n} card(s) on top of their library"
+    g.withBatch none fun g =>
+      g.putBackOnTopLoop p back
+  | .putBackOnTopLoop p remainingIds movedCount pendingId =>
+    g.putBackOnTopLoop p remainingIds movedCount pendingId
+  | .swordsGainLife targetId fallbackOwner fallbackPower =>
+    let pw :=
+      match g.findObject? targetId with
+      | some cur => if cur.isOnBattlefield then (g.snapshotPower cur).toNat else fallbackPower
+      | none => ((g.lastKnownBefore? targetId).bind (·.power)).map Int.toNat |>.getD fallbackPower
+    g.gainLife fallbackOwner pw
+  | .logHandDiscard p cardId cardName =>
+    if !(g.player p).hand.contains cardId then
+      g.logMsg s!"{(g.player p).name} discards {cardName}"
+    else g
+  | .logHandDiscardToBottom p cardId destOwner cardName =>
+    if (g.followMovedToZone? cardId (· == .library destOwner)).isSome then
+      g.logMsg s!"{(g.player p).name} puts {cardName} on the bottom of their library"
+    else g
+  | .logExploreLandToHand controller cardId cardName =>
+    if (g.followMovedToZone? cardId (· == .hand controller)).isSome then
+      g.logMsg s!"{(g.player controller).name} explores and puts {cardName} into their hand"
+    else g
   | .offerMaySearchBasics owner => g.offerMaySearchBasics owner
   | .makeHumanToken owner => g.makeFrc owner .human
   | .grantControlledCreaturesIndestructible controller =>

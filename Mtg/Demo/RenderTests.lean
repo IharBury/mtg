@@ -1638,10 +1638,29 @@ def freeKnightActivating : Game :=
   mustApply (readyMain freeKnightWithLegend) ⟨0⟩
     (.activate (namedPermanent freeKnightWithLegend "Free Knight").id 0)
 
-#guard pendingCostNotation freeKnightActivating == some "{0}"
-#guard pendingCostLine freeKnightActivating == some "Cost: {0}"
-#guard mentions (header freeKnightActivating) "cost {0}"
-#guard mentions (snapshot freeKnightActivating) "Cost: {0}"
+#guard freeKnightActivating.pending == .none
+#guard freeKnightActivating.stack.size == 1
+#guard pendingCostNotation freeKnightActivating == none
+
+def freeSacKnight : CardDef :=
+  { freeKnight with
+    name := "Free Sac Knight"
+    activatedAbilities := #[
+      activated (Effect.sourceGets 1 1) (ManaCost.ofGeneric 2)
+        (sacrificeAnotherCreatureOrArtifact := true)
+        (costReductionIfYouControlLegendary := 2)] }
+
+def freeSacKnightWithLegend : Game :=
+  addPermanent (addPermanent afterDraw freeSacKnight ⟨0⟩ ⟨0⟩) testLegend ⟨0⟩ ⟨0⟩
+
+def freeSacKnightActivating : Game :=
+  mustApply (readyMain freeSacKnightWithLegend) ⟨0⟩
+    (.activate (namedPermanent freeSacKnightWithLegend "Free Sac Knight").id 0)
+
+#guard pendingCostNotation freeSacKnightActivating == some "{0}, Sacrifice another creature or artifact"
+#guard pendingCostLine freeSacKnightActivating == some "Cost: {0}, Sacrifice another creature or artifact"
+#guard mentions (header freeSacKnightActivating) "cost {0}"
+#guard mentions (snapshot freeSacKnightActivating) "Cost: {0}"
 
 /-- A spell whose entire generic mana cost is waived if a creature died. -/
 def freeCloud : CardDef :=

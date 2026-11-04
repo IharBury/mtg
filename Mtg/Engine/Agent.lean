@@ -39,7 +39,7 @@ def discardBackOrDecline (g : Game) (p : PlayerId) : Option Action :=
 
 /-- Pay `{n}` from the pool if possible; otherwise tap the first mana source. -/
 def payGenericOrTapFirstSource (g : Game) (p : PlayerId) (n : Nat) : Option Action :=
-  if (g.player p).manaPool.canPay (ManaCost.ofGeneric n) then
+  if (g.player p).manaPool.canPay (ManaCost.ofGeneric n) (allowCantNonartifact := true) then
     some .payGeneric
   else
     match (g.manaSources p).find? (fun (_, types) => !types.isEmpty) with
@@ -109,7 +109,7 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
           | some (d, pw?) =>
             let addTax := if pw?.isSome then 0 else g.attackTaxPerCreature d
             let nextTax := usedTax + addTax
-            if nextTax == 0 || (g.player p).manaPool.canPay (ManaCost.ofGeneric nextTax) then
+            if nextTax == 0 || (g.player p).manaPool.canPay (ManaCost.ofGeneric nextTax) (allowCantNonartifact := true) then
               let nextTomik :=
                 match pw?.bind g.findObject? with
                 | some pw =>
@@ -250,7 +250,22 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
     | .recruitDiscard _ =>
       discardBackOrDecline g p
     | .chooseKicker _ =>
-      some (.announceKicker false)
+      match g.apply actor (.announceKicker false) with
+      | .ok _ =>
+        let preferMorph :=
+          match g.proposedSpell with
+          | some prop =>
+            let face := g.baseCard prop.original
+            if !prop.alternativeCost && face.morph.isSome && face.kicker.isNone then
+              let available := g.availableMana p
+              !available.canPay prop.cost
+                (allowElfRestricted := g.hasSubtype prop.original .elf)
+                (allowInstRestricted := face.types.any CardType.isInstantOrSorcery) &&
+                (g.apply actor (.announceKicker true)).isOk
+            else false
+          | none => false
+        some (.announceKicker preferMorph)
+      | .error _ => some (.announceKicker true)
     | .chooseGift _ =>
       some (.announceGift none)
     | .chooseTeamwork _ =>
@@ -304,7 +319,9 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
       (g.defaultReplacementId p choices (payLifeIfSafe := true)).map Action.chooseReplacement
     | .chooseProliferate _ _ =>
       let own := (g.permanentsOf p).filter (·.status.hasCounters) |>.map (Target.permanent ·.id)
-      let opps := (g.livingOpponents p).filter (·.poison > 0) |>.map (Target.player ·.id)
+      let opps :=
+        (g.livingOpponents p).filter (fun pl =>
+          g.teamPoison pl.id > 0 || pl.counters.any (fun (_, c) => c > 0)) |>.map (Target.player ·.id)
       some (.targets (own ++ opps))
     | .resolveRandom _ =>
       -- Random results are supplied by the host (`--norandom`), never the heuristic.
@@ -373,13 +390,14 @@ where
         g.availableManaExcept p (if ab.cost.tap then some o.id else none)
       let manaCost := g.activationManaCost p ab (some o)
       g.canActivate p o ab &&
-      available.canPay ab.cost.mana (allowElfRestricted := g.hasSubtype o .elf) &&
+      available.canPay ab.cost.mana (allowElfRestricted := g.hasSubtype o .elf)
+        (allowCantNonartifact := true) &&
       -- Don't pay life that would reduce the player to 0 or less.
       (ab.cost.payLife == 0 || (g.player p).life > (ab.cost.payLife : Int)) &&
       -- Don't spend a once-only X power-up at X = 0.
       !(ab.effect == Effect.plusOneX && maxAffordableX g p manaCost == 0) &&
       -- Don't spend mana re-equipping a creature that is already equipped.
-      !(ab.effect == Effect.attachToTargetCreatureYouControl && o.attachedTo.isSome) &&
+      !(ab.isEquip && o.attachedTo.isSome) &&
       -- Spend {4}{T} on Rogue's Passage only after attackers are declared.
       !(ab.effect == Effect.targetCantBeBlockedThisTurn &&
         !(g.permanentsOf p).any (fun c => g.isCreature c && c.status.attacking)) &&

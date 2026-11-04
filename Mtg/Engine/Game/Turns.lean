@@ -149,9 +149,9 @@ def clearTurnActivations (g : Game) : Game :=
           | .playerRule p .cantAttackJaces .untilEndOfTurn
           | .playerRule p .cantCastSpells .untilEndOfTurn
           | .playerRule p .nextSpellCantBeCountered .untilEndOfTurn
-          | .playerRule p .lifeLocked .untilEndOfTurn
           | .playerRule p (.typeSpellCostLess _ _) .untilEndOfTurn
           | .playerRule p (.supertypeSpellCostLess _ _) .untilEndOfTurn => p == pl.id
+          | .playerRule p .lifeLocked .untilEndOfTurn
           | .playerRule p (.controlsPlayer _ false) .untilEndOfTurn => p == pl.id && finalSeat
           | _ => false) (cause := cause)
     let expiredDt := g.delayedTriggers.filter (fun dt =>
@@ -599,10 +599,11 @@ partial def beginStepBody (g : Game) (st : Step) : Game :=
       return g
   | .draw =>
     if g.skipsFirstDraw then
-      -- CR 103.8a / 500.11 / 614.10: to skip a step is to proceed past it as
-      -- though it didn't exist. Nothing happens during it — no turn-based
-      -- draw, and no player receives priority.
-      let g := g.logMsg s!"{g.player g.activePlayer |>.name} skips their first draw step (CR 103.8a)"
+      -- CR 103.8a–b / 500.11 / 614.10 / 810.6: to skip a step is to proceed
+      -- past it as though it didn't exist. Nothing happens during it — no
+      -- turn-based draw, and no player receives priority.
+      let crRef := if (g.teamMembers g.activePlayer).size > 1 then "CR 103.8b / 810.6" else "CR 103.8a"
+      let g := g.logMsg s!"{g.player g.activePlayer |>.name} skips their first draw step ({crRef})"
       let g := g.recordPhaseEnded .beginning
       if let .chooseReplacement .. := g.pending then
         g.chainPendingReplacement (.beginStepCont .precombatMain)
@@ -741,11 +742,11 @@ partial def beginTurn (g : Game) : Game :=
         let g := g.expireGoadedFor p (includeTeammates := true)
         let g := g.expireFraUntilTurnEffects p (includeTeammates := true)
         let g := g.restoreCopiesUntilNextTurn p
-        let teamSeats := (g.players.filter (fun m => m.id == p || g.areTeammates p m.id)).map (·.id)
+        let teamSeats := g.teamMembers p
         teamSeats.foldl (fun g q =>
-          if g.protectionFromEverything q || g.lifeCantChange q then
-            let hadLife := g.lifeCantChange q
-            let hadProt := g.protectionFromEverything q
+          let hadLife := g.activeEffects.any (fun (_, s) => s == .lifeCantChange q)
+          let hadProt := g.activeEffects.any (fun (_, s) => s == .protectionFromEverything q)
+          if hadProt || hadLife then
             let g := if hadProt then g.expireAll (.protectionFromEverything q) (cause := cause) else g
             let g := if hadLife then g.expireAll (.lifeCantChange q) (cause := cause) else g
             g.logMsg

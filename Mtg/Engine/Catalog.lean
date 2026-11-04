@@ -770,7 +770,11 @@ def activated (effect : Effect) (mana : ManaCost := ManaCost.empty)
     putStunCounterOnSource := putStunCounterOnSource
     sacrificeEquipmentAttachedToSource := sacrificeEquipmentAttachedToSource
   }
-  effect := effect
+  effect :=
+    if effect == Effect.attachToTargetCreatureYouControl && (equipSubtype.isSome || equipWorthy) then
+      Effect.equipEffect equipSubtype equipWorthy
+    else
+      effect
   otherModes := otherModes
   onlyAsSorcery, onlyDuringYourTurn, onceEachTurn
   activateFromGraveyard, activateFromHand, onlyIfYouControlLegendary
@@ -783,12 +787,12 @@ def activated (effect : Effect) (mana : ManaCost := ManaCost.empty)
 /-- Equip `mana`: attach to target creature you control, only as a sorcery.
 `subtype` restricts Equip to that creature type (e.g. Equip Human). -/
 def equipAbility (mana : ManaCost) (subtype : Option CardSubtype := none) : ActivatedAbility :=
-  activated (Effect.attachToTargetCreatureYouControl) mana (onlyAsSorcery := true)
+  activated (Effect.equipEffect subtype false) mana (onlyAsSorcery := true)
     (equipSubtype := subtype)
 
 /-- Equip worthy `mana` (MSH): attach only to a worthy creature. -/
 def equipWorthyAbility (mana : ManaCost) : ActivatedAbility :=
-  activated (Effect.attachToTargetCreatureYouControl) mana (onlyAsSorcery := true)
+  activated (Effect.equipEffect none true) mana (onlyAsSorcery := true)
     (equipWorthy := true)
 
 /-- Equipment with a standard Equip cost (CR 301.5 / 702.6). -/

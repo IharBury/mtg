@@ -79,7 +79,8 @@ def changeControl (g : Game) (o : GameObject) (p : PlayerId)
 
 /-- Exile each `(oid, logLine)` in `remaining` sequentially (CR 800.4a / 800.4c),
 pausing and chaining `.endControlExileLoop` if a CR 616.1 replacement choice
-opens and emitting `logLine` only once the permanent has left `.battlefield`. -/
+opens and emitting `logLine` only once the permanent has arrived in `.exile`
+(CR 614.6). -/
 def runEndControlExileLoop (g : Game) (remaining : Array (ObjectId × String))
     (cause : Option EventCause := none)
     (pendingLog : Option (ObjectId × String) := none) : Game :=
@@ -89,7 +90,7 @@ def runEndControlExileLoop (g : Game) (remaining : Array (ObjectId × String))
   else Id.run do
     let mut g := g
     if let some (fromId, logLine) := pendingLog then
-      if !(g.findObject? fromId).any (·.isBattlefieldObject) then
+      if (g.followMovedToZone? fromId (· == .exile)).isSome then
         g := g.logMsg logLine
     for i in [0:remaining.size] do
       let (oid, logLine) := remaining[i]!
@@ -101,7 +102,7 @@ def runEndControlExileLoop (g : Game) (remaining : Array (ObjectId × String))
             let rem := remaining.extract (i + 1) remaining.size
             g := g.chainPendingReplacement (.endControlExileLoop rem cause (some (oid, logLine)))
             return g
-          if !(g.findObject? oid).any (·.isBattlefieldObject) then
+          if (g.followMovedToZone? oid (· == .exile)).isSome then
             g := g.logMsg logLine
     return g
 

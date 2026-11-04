@@ -202,14 +202,27 @@ def anyOpponentMilledSince (g : Game) (opponents : Array PlayerId) (startIdx : N
       | _ => pure ()
     return false
 
+/-- Mill opponents without returning a reflexive-trigger flag, deferring across
+any open `Pending.chooseReplacement` pause. -/
+def millOpponentsOnly (g : Game) (opponents : Array PlayerId) (n : Nat)
+    (cause : Option EventCause := none) : Game :=
+  if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement (.finishPostStep (.millOpponentsOnly opponents n cause))
+  else
+    g.withBatch cause fun g =>
+      opponents.foldl (fun acc pid => acc.mill pid n (cause := cause)) g
+
 /-- Mill opponents, then a reflexive trigger exists only if cards were milled. -/
 def millThenReflexive (g : Game) (opponents : Array PlayerId) (n : Nat)
     (cause : Option EventCause := none) : Game × Bool :=
-  let startIdx := g.events.size
-  let g :=
-    g.withBatch cause fun g =>
-      opponents.foldl (fun acc pid => acc.mill pid n (cause := cause)) g
-  (g, g.anyOpponentMilledSince opponents startIdx)
+  if let .chooseReplacement .. := g.pending then
+    (g.chainPendingReplacement (.finishPostStep (.millOpponentsOnly opponents n cause)), false)
+  else
+    let startIdx := g.events.size
+    let g :=
+      g.withBatch cause fun g =>
+        opponents.foldl (fun acc pid => acc.mill pid n (cause := cause)) g
+    (g, g.anyOpponentMilledSince opponents startIdx)
 
 /-- Put +1/+1 and lifelink until end of turn on a creature (Bard the Bowman). -/
 def applyBardBowman (g : Game) (targetId : ObjectId) : Game :=
@@ -440,17 +453,40 @@ def withSourceStillOnBattlefield (g : Game) (sourceId : Option ObjectId)
     (missing := "The source has left the battlefield. Nothing is exiled.") : Game :=
   g.withSourceOnBattlefield sourceId f missing (leftMsg := some missing)
 
+/-- Increment the source's plan counter if still on the battlefield (setting
+`skipTriggerSequenceRest` when absent), deferring across any open
+`Pending.chooseReplacement` pause. -/
+def incrementPlanSource (g : Game) (controller : PlayerId) (sourceId : Option ObjectId) : Game :=
+  if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement (.finishPostStep (.incrementPlanSource controller sourceId))
+  else
+    match sourceId.bind g.findObject? with
+    | some o =>
+      if o.isOnBattlefield then
+        let cause := g.resolveOptionalCause none (fallbackSrc := sourceId) (fallbackCtrl := some controller)
+        g.withBatch (g.resolvingBatchCause controller sourceId) fun g =>
+          g.recordPutCounters o.id .plan 1 (byPlayer := some controller) (cause := some cause)
+      else
+        g.change (.skipTriggerSequenceRest true)
+          |>.logMsg s!"{o.name} is no longer on the battlefield"
+    | none =>
+      g.change (.skipTriggerSequenceRest true)
+        |>.logMsg "The ability's source is no longer in play"
+
 /-- Increment the source's plan counter, queue the matching chapter trigger,
 then run `k`. -/
 def incrementPlanThen (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
     (k : Game → GameObject → Game) : Game :=
-  g.withSourceOnBattlefield sourceId fun g o =>
-    let cause := g.resolveOptionalCause none (fallbackSrc := sourceId) (fallbackCtrl := some controller)
-    let g := g.withBatch (g.resolvingBatchCause controller sourceId) fun g =>
-      g.recordPutCounters o.id .plan 1 (byPlayer := some controller) (cause := some cause)
-    match g.findObject? o.id with
-    | some cur => k g cur
-    | none => g
+  if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement (.finishPostStep (.incrementPlanSource controller sourceId))
+  else
+    g.withSourceOnBattlefield sourceId fun g o =>
+      let cause := g.resolveOptionalCause none (fallbackSrc := sourceId) (fallbackCtrl := some controller)
+      let g := g.withBatch (g.resolvingBatchCause controller sourceId) fun g =>
+        g.recordPutCounters o.id .plan 1 (byPlayer := some controller) (cause := some cause)
+      match g.findObject? o.id with
+      | some cur => k g cur
+      | none => g
 
 /-- Current power of `sourceId` if it is still on the battlefield; otherwise
 last-known power, falling back to the object's current power. -/
@@ -1053,6 +1089,50 @@ def returnFromGyTappedAttackingFinality (g : Game) (controller : PlayerId)
         #[(.finality, 1)] [] .grimReaper options
       g.promptEnteringAttackItems #[item] (cause := some c)
 
+/-- Deal divided damage across `remaining` targets one at a time, pausing across
+`Pending.chooseReplacement` so subsequent target legality checks do not run early. -/
+partial def divideSevenDamageLoop (g : Game) (controller : PlayerId) (kind : EffectTargetKind)
+    (remaining : Array (Nat × Target)) (division : Array Nat)
+    (sourceId : Option ObjectId) : Game :=
+  match remaining[0]? with
+  | none => g
+  | some (i, tgt) =>
+    let rest := remaining.extract 1 remaining.size
+    let legal := g.legalTargetsForKind controller kind sourceId
+    let g :=
+      if legal.contains tgt then
+        g.dealDamageToTarget tgt (Int.ofNat (division[i]?.getD 0))
+          (source := sourceId.bind g.findObject?)
+      else
+        g.illegalAbilityTarget tgt
+    if rest.isEmpty then g
+    else if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement
+        (.finishPostStep (.divideSevenDamageLoop controller kind rest division sourceId))
+    else
+      g.divideSevenDamageLoop controller kind rest division sourceId
+
+/-- Return targeted graveyard instant cards to `controller`'s hand one at a time,
+pausing across `Pending.chooseReplacement` before checking subsequent targets. -/
+partial def returnInstantsLoop (g : Game) (controller : PlayerId) (kind : EffectTargetKind)
+    (remaining : Array Target) (sourceId : Option ObjectId) : Game :=
+  match remaining[0]? with
+  | none => g
+  | some tgt =>
+    let rest := remaining.extract 1 remaining.size
+    let legal := g.legalTargetsForKind controller kind sourceId
+    let g :=
+      match tgt with
+      | Target.card id =>
+        if legal.contains tgt then g.returnToHand id controller else g.illegalAbilityTarget tgt
+      | _ => g
+    if rest.isEmpty then g
+    else if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement
+        (.finishPostStep (.returnInstantsLoop controller kind rest sourceId))
+    else
+      g.returnInstantsLoop controller kind rest sourceId
+
 /-- Resolve MSH reflexive ability `kind` with its announced targets. A target
 that is no longer legal is skipped (MSH 125). -/
 def resolveModeledReflexive (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
@@ -1101,23 +1181,14 @@ def resolveModeledReflexive (g : Game) (controller : PlayerId) (sourceId : Optio
           |>.logMsg s!"{o.name} can't be blocked this turn except by creatures with haste")
       sourceId illegal
   | .divideSevenDamage =>
-    let legal := g.legalTargetsForKind controller tkind sourceId
     if targets.isEmpty then g
     else
+      let indexed := (List.range targets.size).toArray.map fun i => (i, targets[i]!)
       g.withBatch (g.resolvingBatchCause controller sourceId) fun g =>
-        (List.range targets.size).foldl (fun g i =>
-          let tgt := targets[i]!
-          if legal.contains tgt then
-            g.dealDamageToTarget tgt (Int.ofNat (division[i]?.getD 0)) (source := sourceId.bind g.findObject?)
-          else g.illegalAbilityTarget tgt) g
+        g.divideSevenDamageLoop controller tkind indexed division sourceId
   | .returnInstants =>
-    let legal := g.legalTargetsForKind controller tkind sourceId
     g.withBatch none fun g =>
-      targets.foldl (fun g tgt =>
-        match tgt with
-        | Target.card id =>
-          if legal.contains tgt then g.returnToHand id controller else g.illegalAbilityTarget tgt
-        | _ => g) g
+      g.returnInstantsLoop controller tkind targets sourceId
   | .plusOne =>
     g.withLegalKindPermanent controller tkind targets
       (fun g o => g.addPlusOnePlusOneTo o 1) sourceId illegal
@@ -1286,24 +1357,38 @@ def finishWorldsWithinWorldsTail (g : Game) (exiled : Array ObjectId)
   else
     g.finishWorldsWithinWorldsExileSelf sourceId
 
+/-- Log arrival on the battlefield for chosen creature cards after
+`putToBattlefieldLoop` finishes, then continue `finishWorldsWithinWorldsTail`. -/
+def finishWorldsWithinWorldsAfterPut (g : Game) (exiled : Array ObjectId)
+    (validChosen : Array (ObjectId × PlayerId × String))
+    (sourceId : Option ObjectId) : Game :=
+  let g := validChosen.foldl (fun g (cid, owner, name) =>
+    if (g.followMovedToZone? cid (· == .battlefield)).isSome then
+      g.logMsg s!"{(g.player owner).name} puts {name} onto the battlefield"
+    else g) g
+  g.finishWorldsWithinWorldsTail exiled sourceId
+
 /-- After every player has chosen, the chosen creature cards enter together,
 the exiled cards return to their owners' hands, and the spell is exiled, each
 as its own sequential CR 608.2c verb batch. -/
 def finishWorldsWithinWorlds (g : Game) (exiled chosen : Array ObjectId)
     (sourceId : Option ObjectId) : Game :=
-  let g := g.withBatch none fun g =>
-    let validChosen := chosen.filter (fun id =>
-      (g.findObject? id).any (fun o => o.zone == .hand o.owner && g.isCreature o))
-    let g := validChosen.foldl (fun g id =>
+  let validChosen : Array (ObjectId × PlayerId × String) :=
+    chosen.filterMap fun id =>
       match g.findObject? id with
-      | some o => g.logMsg s!"{(g.player o.owner).name} puts {o.name} onto the battlefield"
-      | none => g) g
-    g.putToBattlefieldLoop g.activePlayer validChosen (useCardOwner := true)
+      | some o =>
+        if o.zone == .hand o.owner && g.isCreature o then
+          some (id, o.owner, o.name)
+        else none
+      | none => none
+  let validIds := validChosen.map (·.1)
+  let g := g.withBatch none fun g =>
+    g.putToBattlefieldLoop g.activePlayer validIds (useCardOwner := true)
   if let .chooseReplacement .. := g.pending then
     g.chainPendingReplacement
-      (.finishPostStep (.worldsWithinWorldsTail exiled sourceId))
+      (.finishPostStep (.worldsWithinWorldsAfterPut exiled validChosen sourceId))
   else
-    g.finishWorldsWithinWorldsTail exiled sourceId
+    g.finishWorldsWithinWorldsAfterPut exiled validChosen sourceId
 
 /-- Ask the next player who has a creature card in hand, in the order given. -/
 def offerWorldsCreatures (g : Game) (rest : List PlayerId)

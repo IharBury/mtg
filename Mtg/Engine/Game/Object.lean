@@ -316,7 +316,7 @@ deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- The rule or effect kind that a `ReplacementId` identifies (CR 614 / 615). -/
 inductive ReplacementEffectKind where
-  | entersTappedSelf                     -- 616.1a
+  | entersTappedSelf                     -- 616.1e / 614.1c / 614.12
   | entersUntappedPayLife (life : Nat)   -- 616.1a / 614.12
   | entersTappedDeclinePayLife           -- 616.1a / 614.12
   | entersUntappedBehold (beholdId : ObjectId) (subtype : CardSubtype) -- 616.1a / 614.12
@@ -521,6 +521,7 @@ structure EventObject where
   tapped          : Bool                 := false
   attacking       : Bool                 := false
   blocking        : Bool                 := false
+  blockingIds     : Array ObjectId       := #[]
   phasedOut       : Bool                 := false
   faceDown        : Bool                 := false
   transformed     : Bool                 := false

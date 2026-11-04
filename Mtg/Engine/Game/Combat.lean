@@ -121,9 +121,9 @@ def declareAttackers (g : Game) (p : PlayerId) (ids : Array ObjectId)
     | some (.player d) => acc + g.attackTaxPerCreature d
     | _ => acc) 0
   if tax > 0 then
-    if !(g.player p).manaPool.canPay (ManaCost.ofGeneric tax) then
+    if !(g.player p).manaPool.canPay (ManaCost.ofGeneric tax) (allowCantNonartifact := true) then
       throw s!"{(g.player p).name} must pay {tax} to attack"
-    g ← g.payCost p (ManaCost.ofGeneric tax)
+    g ← g.payCost p (ManaCost.ofGeneric tax) (allowCantNonartifact := true)
     g := g.logMsg s!"{(g.player p).name} pays {tax} to attack"
   if ids.isEmpty then
     g := g.logMsg s!"{g.player p |>.name} does not attack"
@@ -351,6 +351,7 @@ deriving Inhabited
 private def buildCombatDamageSteps (asgns : Array CreatureCombatAssignment) : Array CombatDamageStep :=
   Id.run do
     let mut steps : Array CombatDamageStep := #[]
+    let mut lifelinkSteps : Array CombatDamageStep := #[]
     for asgn in asgns do
       steps := steps.push (.checkEmpty asgn.source asgn.toPlayer)
       for (tid, amt) in asgn.toCreatures do
@@ -358,12 +359,11 @@ private def buildCombatDamageSteps (asgns : Array CreatureCombatAssignment) : Ar
           steps := steps.push (.toCreature asgn.source tid amt)
       if asgn.toPlayer > 0 then
         steps := steps.push (.toPlayerOrPw asgn.source asgn.toPlayer)
-      steps := steps.push (.lifelink asgn.source)
-    return steps
+      lifelinkSteps := lifelinkSteps.push (.lifelink asgn.source)
+    return steps ++ lifelinkSteps
 
-/-- Apply assigned combat damage simultaneously (CR 510.2). -/
-def dealAssignedCombatDamage (g : Game) (_appliedSoFar : Array ReplacementId := #[])
-    (startIdx : Nat := 0) : Game :=
+/-- Apply assigned combat damage simultaneously (CR 510.2 / 702.15b). -/
+def dealAssignedCombatDamage (g : Game) (startIdx : Nat := 0) : Game :=
   let fs := (g.combatHasFirstStrike || g.hasFirstStrikeAssignmentInCurrentStep) && !g.firstStrikeDamageDone
   let combatCause := some (EventCause.turnBased (.dealCombatDamage fs))
   let isOuterCall := g.currentBatch.isNone
@@ -391,7 +391,7 @@ def dealAssignedCombatDamage (g : Game) (_appliedSoFar : Array ReplacementId := 
           let rep := g.replaceDamage amt (src? := some src) (srcEvent? := some srcEvent)
             (recipientPerm? := some t) (combat := true) (cause := combatCause)
           if let some (chooser, choices) := rep.choice? then
-            return g.promptChooseReplacement chooser choices (.dealAssignedCombatDamage #[] k)
+            return g.promptChooseReplacement chooser choices (.dealAssignedCombatDamage k)
           let dealtAmt := rep.amount
           g := g.markDamageOn t amt
             s!"{src.name} deals {dealtAmt} combat damage to {t.name}"
@@ -399,7 +399,7 @@ def dealAssignedCombatDamage (g : Game) (_appliedSoFar : Array ReplacementId := 
             (source := some srcEvent) (sourceObj := some src)
             (replaced := some rep) (consumeOrder := true) (cause := rep.cause)
           if let .chooseReplacement .. := g.pending then
-            return g.chainPendingReplacement (.dealAssignedCombatDamage #[] (k + 1))
+            return g.chainPendingReplacement (.dealAssignedCombatDamage (k + 1))
       | .toPlayerOrPw srcId amt =>
         if let some src := (g.findObject? srcId).filter (·.isOnBattlefield) then
           let srcEvent := g.snapshot src
@@ -413,20 +413,20 @@ def dealAssignedCombatDamage (g : Game) (_appliedSoFar : Array ReplacementId := 
                 let rep := g.replaceDamage amt (src? := some src) (srcEvent? := some srcEvent)
                   (recipientPerm? := some pw) (combat := true) (cause := combatCause)
                 if let some (chooser, choices) := rep.choice? then
-                  return g.promptChooseReplacement chooser choices (.dealAssignedCombatDamage #[] k)
+                  return g.promptChooseReplacement chooser choices (.dealAssignedCombatDamage k)
                 let dealtAmt := rep.amount
                 g := g.markDamageOn pw amt s!"{src.name} deals {dealtAmt} combat damage to {pw.name}"
                   (deathtouch := g.hasDeathtouch src) (combat := true)
                   (source := some srcEvent) (sourceObj := some src)
                   (replaced := some rep) (consumeOrder := true) (cause := rep.cause)
                 if let .chooseReplacement .. := g.pending then
-                  return g.chainPendingReplacement (.dealAssignedCombatDamage #[] (k + 1))
+                  return g.chainPendingReplacement (.dealAssignedCombatDamage (k + 1))
             | none => pure ()
           else if g.isLivingOpponentOf ((g.controllerOf src).getD g.activePlayer) defn then
             let rep := g.replaceDamage amt (src? := some src) (srcEvent? := some srcEvent)
               (recipientPlayer? := some defn) (combat := true) (cause := combatCause)
             if let some (chooser, choices) := rep.choice? then
-              return g.promptChooseReplacement chooser choices (.dealAssignedCombatDamage #[] k)
+              return g.promptChooseReplacement chooser choices (.dealAssignedCombatDamage k)
             g := g.consumeReplacementOrder rep.applied
             let pl := g.player defn
             if rep.prevented then
@@ -488,7 +488,7 @@ def dealAssignedCombatDamage (g : Game) (_appliedSoFar : Array ReplacementId := 
             if g.stillInGame pid then
               g := g.gainLife pid totalDealt (cause := combatCause)
               if let .chooseReplacement .. := g.pending then
-                return g.chainPendingReplacement (.dealAssignedCombatDamage #[] (k + 1))
+                return g.chainPendingReplacement (.dealAssignedCombatDamage (k + 1))
           | none => pure ()
     g.change (.pending .none)
   if let .chooseReplacement .. := g.pending then

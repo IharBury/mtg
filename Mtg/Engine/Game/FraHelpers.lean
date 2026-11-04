@@ -85,13 +85,6 @@ def chooseCreatureTypeFor (g : Game) (p : PlayerId) : CardSubtype :=
     | none => some c
     | some b => if c.2 > b.2 then some c else best) none).map (·.1) |>.getD .human
 
-/-- Begin a `FraChoice` for `p`. -/
-def beginFraChoice (g : Game) (p : PlayerId) (choice : FraChoice) (msg : String) : Game :=
-  let g :=
-    if g.continuations.isEmpty then g.change (.pushContinuationFrame {})
-    else g
-  (g.change (.pending (.fraChoice p choice))).logMsg msg
-
 /-- Cards in `p`'s hand that a “reveal your hand, you choose” effect may pick. -/
 def revealedHandChoices (g : Game) (p : PlayerId) (permanentOnly : Bool) : Array ObjectId :=
   (g.player p).hand.filter (fun id =>

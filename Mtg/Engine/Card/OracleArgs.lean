@@ -650,7 +650,11 @@ def takeActivated (ab : ActivatedAbility) : ArgM ActivatedAbility := do
   let costReductionIfYouControlLegendary ←
     if ab.costReductionIfYouControlLegendary == 0 then pure 0
     else takeNat ab.costReductionIfYouControlLegendary
-  let equipSubtype ← takeOptSubtype ab.equipSubtype
+  let equipSubtype ←
+    match effect.targeting.kind with
+    | .creatureYouControlSubtype s =>
+      pure (if ab.equipSubtype.isSome then some s else none)
+    | _ => takeOptSubtype ab.equipSubtype
   let costReductionPerEquipment ←
     if ab.costReductionPerEquipment == 0 then pure 0 else takeNat ab.costReductionPerEquipment
   let onlyIfYouControlCreatureToughnessAtLeast ←

@@ -32,10 +32,6 @@ def createCommandObject (g : Game) (p : PlayerId) (card : CardDef)
     g.createEffect (.fraEmblemUntilTurnOf obj.id q) (cause := some effCause)
   | none => g
 
-/-- Each player in APNAP order who controls a creature. -/
-def playersWithCreaturesApnap (g : Game) : Array PlayerId :=
-  g.apnapOrder.filter (fun p => !(g.creaturesControlledBy p).isEmpty)
-
 /-- Ask the next player in `players` to sacrifice a creature for Garruk,
 Veiled Butcher, or sacrifice the chosen creatures and finish. -/
 def continueSacrificeEach (g : Game) (controller : PlayerId) (players : Array PlayerId)
@@ -154,8 +150,11 @@ def finishSarumanExileCopyMayCast (g : Game) (controller : PlayerId) (fromId : O
 /-- Run the library-reveal, put-onto-battlefield, and bottoming tail of
 `.identityEcho` once the target permanent's exile completes. -/
 def finishIdentityEchoAfterExile (g : Game) (controller : PlayerId)
-    (sourceId : Option ObjectId) (oName : String) : Game :=
-  let g := g.logMsg s!"{oName} is exiled"
+    (exiledId : ObjectId) (sourceId : Option ObjectId) (oName : String) : Game :=
+  let g :=
+    if (g.followMovedToZone? exiledId (· == .exile)).isSome then
+      g.logMsg s!"{oName} is exiled"
+    else g
   let lib := (g.player controller).library
   let (revealed, hit) := Id.run do
     let mut revealed : Array ObjectId := #[]
@@ -205,6 +204,134 @@ def finishIdentityEchoAfterExile (g : Game) (controller : PlayerId)
         s!"{(g.player controller).name} puts the rest on the bottom of their library in a random order"
         (cause := revealCause?)
 
+/-- Bounce each `remaining` target permanent one at a time, pausing across
+`Pending.chooseReplacement` so subsequent target legality checks do not run
+before an earlier replacement resolves. -/
+partial def bounceEachTargetLoop (g : Game) (controller : PlayerId) (kind : EffectTargetKind)
+    (remaining : Array (Nat × Target)) (sourceId : Option ObjectId) : Game :=
+  match remaining[0]? with
+  | none => g
+  | some (i, t) =>
+    let rest := remaining.extract 1 remaining.size
+    let g :=
+      match t with
+      | Target.permanent id =>
+        if g.targetLegalAt controller kind i t sourceId then
+          match g.findObject? id with
+          | some o => g.returnToHand id o.owner
+          | none => g
+        else g.illegalAbilityTarget t
+      | _ => g
+    if rest.isEmpty then g
+    else if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement
+        (.finishPostStep (.bounceEachTargetLoop controller kind rest sourceId))
+    else
+      g.bounceEachTargetLoop controller kind rest sourceId
+
+/-- Untap each `remaining` target permanent one at a time, pausing across
+`Pending.chooseReplacement` before checking subsequent targets. -/
+partial def untapTargetsLoop (g : Game) (controller : PlayerId) (kind : EffectTargetKind)
+    (remaining : Array (Nat × Target)) (sourceId : Option ObjectId) : Game :=
+  match remaining[0]? with
+  | none => g
+  | some (i, t) =>
+    let rest := remaining.extract 1 remaining.size
+    let g :=
+      match t with
+      | Target.permanent id =>
+        if g.targetLegalAt controller kind i t sourceId then
+          match g.findObject? id with
+          | some o => g.applyPermanentAction o .untap
+          | none => g
+        else g.illegalAbilityTarget t
+      | _ => g
+    if rest.isEmpty then g
+    else if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement
+        (.finishPostStep (.untapTargetsLoop controller kind rest sourceId))
+    else
+      g.untapTargetsLoop controller kind rest sourceId
+
+/-- Deal `n` damage to each `remaining` target permanent or player one at a
+time, pausing across `Pending.chooseReplacement` before checking subsequent
+targets. -/
+partial def damageUpToOneAndPlayerLoop (g : Game) (controller : PlayerId)
+    (kind : EffectTargetKind) (remaining : Array (Nat × Target)) (n : Nat)
+    (srcName : String) (sourceId : Option ObjectId)
+    (cause? : Option EventCause) : Game :=
+  match remaining[0]? with
+  | none => g
+  | some (i, t) =>
+    let rest := remaining.extract 1 remaining.size
+    let src? :=
+      (g.resolvingSpell.bind g.damageSourceById?).orElse (fun _ => sourceId.bind g.damageSourceById?)
+    let g :=
+      match t with
+      | Target.permanent id =>
+        if g.targetLegalAt controller kind i t sourceId then
+          match g.findObject? id with
+          | some o => g.dealDamageFrom srcName o n (source := src?) (cause := cause?)
+          | none => g
+        else g.illegalAbilityTarget t
+      | Target.player pid =>
+        if g.targetLegalAt controller kind i t sourceId then
+          g.dealDamageToPlayer pid n (source := src?) (cause := cause?)
+        else g.illegalAbilityTarget t
+      | _ => g
+    if rest.isEmpty then g
+    else if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement
+        (.finishPostStep (.damageUpToOneAndPlayerLoop controller kind rest n srcName sourceId cause?))
+    else
+      g.damageUpToOneAndPlayerLoop controller kind rest n srcName sourceId cause?
+
+/-- Exile all but the bottom card of each opponent's library, pausing across
+`Pending.chooseReplacement` and logging per opponent only when at least one
+card arrived in `.exile` (or the library already had at most one card). -/
+partial def exileOpponentLibrariesLoop (g : Game) (remainingOpps : Array PlayerId)
+    (curOpp : Option PlayerId := none) (curIds : Array ObjectId := #[])
+    (movedAnyForCur : Bool := false)
+    (pendingId : Option ObjectId := none) : Game := Id.run do
+  if let .chooseReplacement .. := g.pending then
+    return g.chainPendingReplacement
+      (.finishPostStep (.exileOpponentLibrariesLoop remainingOpps curOpp curIds movedAnyForCur pendingId))
+  let mut g := g
+  let mut opps := remainingOpps
+  let mut cOpp := curOpp
+  let mut ids := curIds
+  let mut anyMoved := movedAnyForCur
+  if let some pid := pendingId then
+    if (g.followMovedToZone? pid (· == .exile)).isSome then
+      anyMoved := true
+  while true do
+    match cOpp with
+    | none =>
+      match opps[0]? with
+      | none => return g
+      | some pid =>
+        opps := opps.extract 1 opps.size
+        let lib := (g.player pid).library
+        cOpp := some pid
+        ids := lib.extract 1 lib.size
+        anyMoved := ids.isEmpty
+    | some pid =>
+      match ids[0]? with
+      | none =>
+        if anyMoved then
+          g := g.logMsg s!"All but the bottom card of {(g.player pid).name}'s library are exiled"
+        cOpp := none
+      | some cid =>
+        ids := ids.extract 1 ids.size
+        let (g', _) := g.move cid .exile none
+        g := g'
+        if let .chooseReplacement .. := g.pending then
+          return g.chainPendingReplacement
+            (.finishPostStep (.exileOpponentLibrariesLoop opps (some pid) ids anyMoved (some cid)))
+        if (g.followMovedToZone? cid (· == .exile)).isSome then
+          anyMoved := true
+  return g
+
 /-- Resolve an FRA activated or loyalty ability resolution. -/
 def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Resolution)
     (targets : Array Target) (sourceId : Option ObjectId) : Game :=
@@ -239,19 +366,24 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
   | .identityEcho =>
     g.withLegalKindPermanent controller kind targets (fun g o =>
       let oName := g.name o
+      let oid := o.id
       let (g, exileCause) := g.allocDelayedCause (some controller) sourceId
-      let (g, _) := g.move o.id .exile none (cause := some exileCause)
+      let (g, _) := g.move oid .exile none (cause := some exileCause)
       if let .chooseReplacement .. := g.pending then
         g.chainPendingReplacement
-          (.finishPostStep (.identityEchoAfterExile controller o.id sourceId))
+          (.finishPostStep (.identityEchoAfterExile controller oid sourceId))
       else
-        g.finishIdentityEchoAfterExile controller sourceId oName)
+        g.finishIdentityEchoAfterExile controller oid sourceId oName)
       sourceId illegal
   | .destroyDrawIfLegendaryEnchantment =>
     g.withLegalKindPermanent controller kind targets (fun g o =>
       let legendaryEnchantment := g.isLegendary o && g.isEnchantment o
       let g := g.destroyPermanent o
-      if legendaryEnchantment then g.draw controller 1 else g) sourceId illegal
+      if !legendaryEnchantment then g
+      else if let .chooseReplacement .. := g.pending then
+        g.chainPendingReplacement (.finishPostStep (.drawCardsPlayer controller 1))
+      else
+        g.draw controller 1) sourceId illegal
   | .chooseKeyword options =>
     onSource (fun g o => g.beginChooseKeyword controller o.id options.toArray)
   | .graveyardCardToLibraryBottom =>
@@ -259,8 +391,8 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
       match t with
       | Target.card id =>
         let card := g.object! id
-        (g.moveIdsInOrder #[id] (.library card.owner)).logMsg
-          s!"{card.name} is put on the bottom of {(g.player card.owner).name}'s library"
+        g.moveIdsInOrder #[id] (.library card.owner)
+          (log := s!"{card.name} is put on the bottom of {(g.player card.owner).name}'s library")
       | _ => g) sourceId illegal
   | .destroyAllCreatures =>
     let preBf := g.battlefield
@@ -271,12 +403,16 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
     g.withLegalKindPermanent controller kind targets (fun g o =>
       let owner := o.owner
       let oName := g.name o
-      let (g, _) := g.move o.id (.library owner) none
+      let oid := o.id
+      let (g, _) := g.move oid (.library owner) none
         (verb := some .shuffleIntoLibrary) (libraryPosition := some .shuffledIn)
       if let .chooseReplacement .. := g.pending then
-        g.chainPendingReplacement (.finishPostStep (.logShuffleIntoLibrary owner o.id))
+        g.chainPendingReplacement (.finishPostStep (.logShuffleIntoLibrary owner oid))
       else
-        let g := g.logMsg s!"{(g.player owner).name} shuffles {oName} into their library"
+        let g :=
+          if (g.followMovedToZone? oid (· == .library owner)).isSome then
+            g.logMsg s!"{(g.player owner).name} shuffles {oName} into their library"
+          else g
         g.shuffleThen owner .none) sourceId illegal
   | .grantCombatDamageDrawTwo =>
     onSource (fun g o =>
@@ -301,16 +437,9 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
         | some o => g.addPlusOnePlusOneTo o 1
         | none => g) g
   | .bounceEachTarget =>
+    let indexed := (List.range targets.size).toArray.map fun i => (i, targets[i]!)
     g.withBatch none fun g =>
-      (List.range targets.size).foldl (fun g i =>
-        match targets[i]! with
-        | t@(Target.permanent id) =>
-          if g.targetLegalAt controller kind i t sourceId then
-            match g.findObject? id with
-            | some o => g.returnToHand id o.owner
-            | none => g
-          else g.illegalAbilityTarget t
-        | _ => g) g
+      g.bounceEachTargetLoop controller kind indexed sourceId
   | .surveilReturnNoncreatureNonland =>
     let g := g.beginSurveil controller 1
     match g.pending with
@@ -348,11 +477,9 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
     (g.createCommandObject controller effectCard (untilTurnOf := some controller)).logMsg
       s!"Until {(g.player controller).name}'s next turn, whenever a creature attacks them or a planeswalker they control, it gets -5/-0 until end of turn"
   | .exileOpponentLibrariesButBottom =>
+    let opps := g.apnapOrder.filter (g.isLivingOpponentOf controller ·)
     g.withBatch none fun g =>
-      g.forEachOpponent controller (fun g pid =>
-        let lib := (g.player pid).library
-        let g := (lib.extract 1 lib.size).foldl (fun g id => (g.move id .exile none).1) g
-        g.logMsg s!"All but the bottom card of {(g.player pid).name}'s library are exiled")
+      g.exileOpponentLibrariesLoop opps
   | .minusFourMinusOneUntilYourTurn =>
     if targets.isEmpty then g
     else
@@ -386,16 +513,9 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
     (g.createCommandObject controller emblem).logMsg
       s!"{(g.player controller).name} gets an emblem with \"Creatures you control get +2/+2.\""
   | .untapTargets =>
+    let indexed := (List.range targets.size).toArray.map fun i => (i, targets[i]!)
     g.withBatch none fun g =>
-      (List.range targets.size).foldl (fun g i =>
-        match targets[i]! with
-        | t@(Target.permanent id) =>
-          if g.targetLegalAt controller kind i t sourceId then
-            match g.findObject? id with
-            | some o => g.applyPermanentAction o .untap
-            | none => g
-          else g.illegalAbilityTarget t
-        | _ => g) g
+      g.untapTargetsLoop controller kind indexed sourceId
   | .attackersGetTwoTwoTrampleUntilYourTurn =>
     let effectCard : CardDef := {
       name := s!"{srcName} effect", types := #[]
@@ -422,19 +542,9 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
           let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some controller)) (src.orElse (fun _ => sourceId))
           (g, some c)
         | none => (g, none)
+    let indexed := (List.range targets.size).toArray.map fun i => (i, targets[i]!)
     g.withBatch cause? fun g =>
-      (List.range targets.size).foldl (fun g i =>
-        let t := targets[i]!
-        match t with
-        | Target.permanent id =>
-          if g.targetLegalAt controller kind i t sourceId then
-            g.dealDamageFrom srcName (g.object! id) n (source := src?) (cause := cause?)
-          else g.illegalAbilityTarget t
-        | Target.player pid =>
-          if g.targetLegalAt controller kind i t sourceId then
-            g.dealDamageToPlayer pid n (source := src?) (cause := cause?)
-          else g.illegalAbilityTarget t
-        | _ => g) g
+      g.damageUpToOneAndPlayerLoop controller kind indexed n srcName sourceId cause?
   | .beastToken => g.createKindTokens controller .beast44trample 1
   | .putCauseCountersOnSource =>
     match g.resolvingAbilityObject?.bind (·.fraCauseStatus), source? with

@@ -463,7 +463,7 @@ def manaLetters (s : String) : Option (List ManaType) :=
   if s.startsWith "{" then go s [] else none
 
 def isEquipAbility (ab : ActivatedAbility) : Bool :=
-  ab.effect == Effect.attachToTargetCreatureYouControl && ab.onlyAsSorcery && !ab.isModal
+  ab.isEquip
 
 def typecyclingLand? (ab : ActivatedAbility) : Option String :=
   if ab.activateFromHand && ab.cost.discardSource then
@@ -477,10 +477,16 @@ def printedActivated (ab : ActivatedAbility) : String :=
   if !ab.printed.isEmpty then ab.printed
   else if isEquipAbility ab then
     let pay := if ab.cost.payLife != 0 then s!", Pay {ab.cost.payLife} life" else ""
-    match ab.equipSubtype with
+    let subtype? :=
+      ab.equipSubtype.orElse fun _ =>
+        match ab.effect.targetKind with
+        | .creatureYouControlSubtype t => some t
+        | _ => none
+    let worthy := ab.equipWorthy || ab.effect.targetKind == .worthyCreatureYouControl
+    match subtype? with
     | some t => s!"Equip {t} {ab.cost.mana}{pay}"
     | none =>
-      if ab.equipWorthy then s!"Equip worthy {ab.cost.mana}{pay}"
+      if worthy then s!"Equip worthy {ab.cost.mana}{pay}"
       else if pay != "" then s!"Equip—{ab.cost.mana}{pay}"
       else s!"Equip {ab.cost.mana}"
   else
@@ -640,7 +646,7 @@ def parseEquipLine (line : String) : Option ActivatedAbility :=
     match cost? with
     | none => none
     | some cost =>
-      some (activated (Effect.attachToTargetCreatureYouControl) cost
+      some (activated (Effect.equipEffect subtype worthy) cost
         (onlyAsSorcery := true) (payLife := payLife)
         (equipSubtype := subtype) (equipWorthy := worthy))
 

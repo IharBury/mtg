@@ -711,6 +711,15 @@ def destroyTargetColorlessNonland : Effect :=
 def attachToTargetCreatureYouControl : Effect :=
   mkAbility (.of .creatureYouControl) (.attach .source .target)
 
+/-- Equip effect with optional subtype or worthy target restriction (CR 702.6c). -/
+def equipEffect (subtype : Option CardSubtype := none) (worthy : Bool := false) : Effect :=
+  let kind : EffectTargetKind :=
+    if worthy then .worthyCreatureYouControl
+    else match subtype with
+      | some s => .creatureYouControlSubtype s
+      | none => .creatureYouControl
+  mkAbility (.of kind) (.attach .source .target)
+
 def becomeSubtypeWithLandsPT (subtype : String) : Effect :=
   mkAbility ({}) (.becomeSubtypeWithLandsPT (CardSubtype.ofOracleD subtype))
 

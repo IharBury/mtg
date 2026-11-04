@@ -66,37 +66,37 @@ def validateActivation (g : Game) (p : PlayerId) (o : GameObject) (ab : Activate
     throw "You don't have priority"
   if (g.manaAbilityDefs o).any (fun d =>
       d.activatedIdx.isSome && d.activatedIdx == (g.activatedAbilitiesOf o).findIdx? (· == ab)) then
-    throw s!"{o.name}'s ability is a mana ability (CR 605)"
+    throw s!"{g.name o}'s ability is a mana ability (CR 605)"
   if g.splitSecondOnStack && !isManaActivation ab then
     throw "A spell with split second is on the stack (CR 702.61a)"
   if ab.activateFromGraveyard then
     if !(o.zone == .graveyard o.owner && o.owner == p) then
-      throw s!"{o.name}'s ability can be activated only from the graveyard"
+      throw s!"{g.name o}'s ability can be activated only from the graveyard"
   else if ab.activateFromHand then
     if !(o.zone == .hand o.owner && o.owner == p) then
-      throw s!"{o.name}'s ability can be activated only from your hand"
+      throw s!"{g.name o}'s ability can be activated only from your hand"
   else
     if !o.isOnBattlefield then
       throw s!"{g.name o} is not on the battlefield"
     if !g.controlledBy o p then
       throw "You don't control that permanent"
   if ab.onlyIfYouControlLegendary && !g.controlsLegendaryCreature p then
-    throw s!"{o.name}'s ability can be activated only if you control a legendary creature"
+    throw s!"{g.name o}'s ability can be activated only if you control a legendary creature"
   if ab.onlyIfYouAttackedWithTwoOrMore && g.loggedAttacks p < 2 then
-    throw s!"{o.name}'s ability can be activated only if you attacked with two or more creatures this turn"
+    throw s!"{g.name o}'s ability can be activated only if you attacked with two or more creatures this turn"
   if ab.onlyIfOpponentDealtNoncombatDamage &&
       !g.players.any (fun q => q.id != p && !g.areTeammates p q.id && g.loggedNoncombatDamage q.id) then
-    throw s!"{o.name}'s ability can be activated only if an opponent has been dealt noncombat damage this turn"
+    throw s!"{g.name o}'s ability can be activated only if an opponent has been dealt noncombat damage this turn"
   if ab.onlyAsSorcery && !g.asSorcery? p then
-    throw s!"{o.name}'s ability can be activated only as a sorcery"
+    throw s!"{g.name o}'s ability can be activated only as a sorcery"
   if ab.exhaust && g.exhaustUsed o.id then
-    throw s!"{o.name}'s exhaust ability can be activated only once (CR 702.177)"
+    throw s!"{g.name o}'s exhaust ability can be activated only once (CR 702.177)"
   if !g.fraActivationConditionHolds p ab.fraCondition then
-    throw s!"{o.name}'s ability can't be activated now (its \"Activate only if\" condition isn't met)"
+    throw s!"{g.name o}'s ability can't be activated now (its \"Activate only if\" condition isn't met)"
   if ab.cost.fra == .zemoBoast && !g.canActivateBoast o then
-    throw s!"{o.name}'s boast ability can be activated only if it attacked this turn and only once each turn"
+    throw s!"{g.name o}'s boast ability can be activated only if it attacked this turn and only once each turn"
   if !g.canPayFraCost p o ab.cost.fra then
-    throw s!"{o.name}'s ability has a cost that can't be paid"
+    throw s!"{g.name o}'s ability has a cost that can't be paid"
   if g.combatLocksNonManaAbilities && !isManaActivation ab then
     throw "During combat, players can't activate abilities that aren't mana abilities (Yuriko)"
   match ab.cost.loyalty with
@@ -105,28 +105,28 @@ def validateActivation (g : Game) (p : PlayerId) (o : GameObject) (ab : Activate
     -- CR 606.3: once per turn per permanent, and only as a sorcery unless an
     -- effect such as Jace's Machinations allows otherwise.
     if g.loyaltyActivatedThisTurn o.id then
-      throw s!"A loyalty ability of {o.name} has already been activated this turn (CR 606.3)"
+      throw s!"A loyalty ability of {g.name o} has already been activated this turn (CR 606.3)"
     if !g.asSorcery? p && !g.mayActivateLoyaltyAtInstantSpeed p o then
-      throw s!"{o.name}'s loyalty abilities can be activated only as a sorcery (CR 606.3)"
+      throw s!"{g.name o}'s loyalty abilities can be activated only as a sorcery (CR 606.3)"
     match sym.counters with
     | some k =>
       if k < 0 && (o.status.loyaltyCounters : Int) < -k then
-        throw s!"{o.name} doesn't have {-k} loyalty counters to remove (CR 606.4)"
+        throw s!"{g.name o} doesn't have {-k} loyalty counters to remove (CR 606.4)"
     | none =>
-      if sym != .minusX then throw s!"{o.name}'s X loyalty cost is not supported"
+      if sym != .minusX then throw s!"{g.name o}'s X loyalty cost is not supported"
   if ab.onlyDuringYourTurn && g.activePlayer != p then
-    throw s!"{o.name}'s ability can be activated only during your turn"
+    throw s!"{g.name o}'s ability can be activated only during your turn"
   if ab.onceEachTurn &&
       (match (g.activatedAbilitiesOf o).findIdx? (· == ab) with
        | some i => (g.abilitiesActivatedThisTurn o.id).contains i
        | none => g.activationsThisTurn o.id != 0) then
-    throw s!"{o.name}'s ability can be activated only once each turn"
+    throw s!"{g.name o}'s ability can be activated only once each turn"
   if ab.powerUp && g.powerUpsForbidden then
     throw s!"Power-up abilities can't be activated during this extra turn"
   if ab.powerUp &&
       (Nat.max (g.powerUpActivations o.id) (if g.powerUpUsed o.id then 1 else 0)) ≥
         g.powerUpActivationLimit p then
-    throw s!"{o.name}'s power-up ability can be activated only once"
+    throw s!"{g.name o}'s power-up ability can be activated only once"
   if ab.cost.tap && o.status.tapped then
     throw s!"{g.name o} is already tapped"
   if ab.cost.tap && g.hasSummoningSickness o && !(g.isCreature o && g.activatesAsThoughHaste p) then
@@ -135,7 +135,7 @@ def validateActivation (g : Game) (p : PlayerId) (o : GameObject) (ab : Activate
       (g.sacrificeCreatureOrArtifactChoices p o.id).isEmpty then
     throw s!"{g.name o}'s ability requires sacrificing another creature or artifact"
   if !g.costPicksPayable p (some o.id) (costPicksOf ab) then
-    throw s!"{o.name}'s ability has a cost that can't be paid"
+    throw s!"{g.name o}'s ability has a cost that can't be paid"
   if ab.cost.removeAnyNumberPlusOne && ab.cost.tap && o.status.tapped then
     throw s!"{g.name o} is already tapped"
   if !g.canPayLife p ab.cost.payLife then
@@ -143,7 +143,7 @@ def validateActivation (g : Game) (p : PlayerId) (o : GameObject) (ab : Activate
   if ab.onlyIfYouControlCreatureToughnessAtLeast != 0 &&
       !(g.permanentsOf p).any (fun x =>
         g.isCreature x && g.toughness x >= (ab.onlyIfYouControlCreatureToughnessAtLeast : Int)) then
-    throw s!"{o.name}'s ability can be activated only if you control a creature with toughness {ab.onlyIfYouControlCreatureToughnessAtLeast} or greater"
+    throw s!"{g.name o}'s ability can be activated only if you control a creature with toughness {ab.onlyIfYouControlCreatureToughnessAtLeast} or greater"
   if ab.onlyIfGyCreaturesAtLeast != 0 then
     let gy :=
       (g.player p).graveyard.filter (fun id =>
@@ -151,20 +151,34 @@ def validateActivation (g : Game) (p : PlayerId) (o : GameObject) (ab : Activate
         | some c => g.isCreature c
         | none => false) |>.size
     if gy < ab.onlyIfGyCreaturesAtLeast then
-      throw s!"{o.name}'s ability can be activated only if there are {ab.onlyIfGyCreaturesAtLeast} or more creature cards in your graveyard"
+      throw s!"{g.name o}'s ability can be activated only if there are {ab.onlyIfGyCreaturesAtLeast} or more creature cards in your graveyard"
   if !g.abilityCanChooseTarget p ab (sourceId := some o.id) then
-    throw s!"{o.name}'s ability requires a target"
+    throw s!"{g.name o}'s ability requires a target"
 
 /-- Whether `p` may begin activating `ab` of `o` (CR 602.5). Having
 enough mana in the pool is not required; mana abilities are activated at
-CR 601.2g. Cycling and other hand abilities use `activateFromHand` (CR 702.29). -/
+CR 601.2g. Cycling and other hand abilities use `activateFromHand` (CR 702.29).
+Turning a face-down Morph permanent face up is a CR 116.2b / 702.37e special
+action rather than an activated ability (so Split Second does not forbid it,
+CR 702.61b). -/
 def canActivate (g : Game) (p : PlayerId) (o : GameObject) (ab : ActivatedAbility) : Bool :=
-  (g.validateActivation p o ab).isOk
+  if o.status.faceDown && ab.effect.resolution == .frc .turnFaceUp then
+    g.hasPriority p && o.isOnBattlefield && g.controlledBy o p &&
+      (g.unmaskedCopiableValues o).morph.isSome
+  else
+    (g.validateActivation p o ab).isOk
 
 def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat) :
     Except String Game := do
   let some o := g.findObject? id | throw "no such object"
-  if o.status.faceDown then
+  let abs := g.activatedAbilitiesOf o
+  if abs.isEmpty then
+    if o.status.faceDown then
+      throw s!"{g.name o} is face down"
+    throw s!"{g.name o} has no activated ability"
+  let some ab := abs[abilityIdx]?
+    | throw s!"{g.name o} has no such activated ability"
+  if o.status.faceDown && ab.effect.resolution == .frc .turnFaceUp then
     if !g.hasPriority p then
       throw "You don't have priority"
     if !o.isOnBattlefield then
@@ -192,14 +206,9 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
         let g := g.record
           (GameEvent.turnedFaceUp g.turnNumber (g.snapshot (g.object! o.id))
             (cause := .specialAction .turnFaceUp p))
-        let g := g.logMsg s!"{pl.name} turns {(g.object! o.id).name} face up"
+        let g := g.logMsg s!"{pl.name} turns {g.name (g.object! o.id)} face up"
         return g.receivePriority p
-    | none => throw s!"{o.name} is face down"
-  let abs := g.activatedAbilitiesOf o
-  if abs.isEmpty then
-    throw s!"{o.name} has no activated ability"
-  let some ab := abs[abilityIdx]?
-    | throw s!"{o.name} has no such activated ability"
+    | none => throw s!"{g.name o} is face down"
   let defs := g.manaAbilityDefs o
   if let some i := (List.range defs.size).find? (fun i => defs[i]!.activatedIdx == some abilityIdx) then
     -- A mana ability doesn't use the stack (CR 605.3b).
@@ -207,7 +216,7 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
     match d.output, d.picks.isEmpty with
     | .fixed m, true => return (← g.activateManaAbility p id i m)
     | _, _ =>
-      throw s!"{o.name}'s ability is a mana ability: choose the mana it adds and what pays its cost (CR 605.3)"
+      throw s!"{g.name o}'s ability is a mana ability: choose the mana it adds and what pays its cost (CR 605.3)"
   if !g.hasPriority p then
     throw "You don't have priority"
   g.validateActivation p o ab
@@ -220,7 +229,7 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
   let (g, abilityObj) := g.putStackAbility o p
     (abilityEffect := if ab.isModal then none else some effect)
   let newId := abilityObj.id
-  let g := g.logMsg s!"{pl.name} begins activating {o.name}"
+  let g := g.logMsg s!"{pl.name} begins activating {g.name o}"
   let manaCost := g.activationManaCost p ab (some o)
   let prop : ProposedSpell := {
     caster := p
@@ -237,9 +246,7 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
     discardSource := ab.cost.discardSource
     abilityModes := ab.allModes
     targetKindOverride :=
-      match ab.equipSubtype with
-      | some t => some (EffectTargetKind.creatureYouControlSubtype t)
-      | none => if effect.targetKind != ab.effect.targetKind then some effect.targetKind else none
+      if effect.targetKind != ab.effect.targetKind then some effect.targetKind else none
     activation := some ab
     loyaltyX
     removePlusOneX := ab.cost.removeAnyNumberPlusOne
@@ -253,10 +260,10 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
     return (g.changes #[
       .proposedSpell (some prop),
       .pending (.fraChoice p (.crew newId id n))]).logMsg
-      s!"{pl.name} chooses untapped creatures with total power {n} or more to crew {o.name}"
+      s!"{pl.name} chooses untapped creatures with total power {n} or more to crew {g.name o}"
   if !ab.isModal && !ab.effect.requiresTarget && !loyaltyX &&
       !ab.cost.removeAnyNumberPlusOne &&
-      !ab.cost.mana.includesManaPayment && !ab.cost.mana.containsX &&
+      !manaCost.includesManaPayment && !manaCost.containsX &&
       !ab.cost.sacrificeAnotherCreatureOrArtifact then
     let g := g.change (.proposedSpell (some prop))
     return (← g.beginActivationPayment prop)

@@ -241,30 +241,73 @@ def requestShuffle (g : Game) (p : PlayerId) (after : AfterRandom := .none) : Ga
   if after != .none then g.withContinuationFrame run
   else run g
 
+/-- Pause-safe loop for `moveIdsInOrder`, tracking `placedCount` of cards that
+actually entered `.library p` across `Pending.chooseReplacement` pauses so
+`LibraryPosition.fromTop` offsets stay accurate (CR 401.4 / 616.1). -/
+def moveIdsInOrderLoop (g : Game) (ids : Array ObjectId) (dest : Zone)
+    (log : String := "") (cause : Option EventCause := none)
+    (placedCount : Nat := 0)
+    (prevLibraryMoved : Option (ObjectId × PlayerId) := none) : Game :=
+  if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement
+      (.finishPostStep (.moveIdsInOrderLoop ids dest log cause placedCount prevLibraryMoved))
+  else
+  let placedCount :=
+    match prevLibraryMoved with
+    | some (prevId, p) =>
+      if (g.followMovedToZone? prevId (· == .library p)).isSome then placedCount + 1
+      else placedCount
+    | none => placedCount
+  match dest with
+  | .library p =>
+    Id.run do
+      let mut g := g
+      let mut placed := placedCount
+      for i in [0:ids.size] do
+        let id := ids[i]!
+        let libSize := ((g.player p).library.filter (· != id)).size
+        let pos : LibraryPosition :=
+          if placed == 0 then .bottom
+          else .fromTop (libSize - Nat.min placed libSize)
+        let (g', _) := g.move id dest none (libraryPosition := some pos) (cause := cause)
+        g := g'
+        if let .chooseReplacement .. := g.pending then
+          let rem := ids.extract (i + 1) ids.size
+          g := g.chainPendingReplacement
+            (.finishPostStep (.moveIdsInOrderLoop rem dest log cause placed (some (id, p))))
+          return g
+        if (g.followMovedToZone? id (· == .library p)).isSome then
+          placed := placed + 1
+      if !log.isEmpty && (placed > 0 || (ids.isEmpty && prevLibraryMoved.isNone)) then
+        g := g.logMsg log
+      return g
+  | _ =>
+    Id.run do
+      let mut g := g
+      for i in [0:ids.size] do
+        let id := ids[i]!
+        let (g', _) := g.move id dest none (cause := cause)
+        g := g'
+        if let .chooseReplacement .. := g.pending then
+          let rem := ids.extract (i + 1) ids.size
+          if !rem.isEmpty || !log.isEmpty then
+            g := g.chainPendingReplacement
+              (.finishPostStep (.moveIdsInOrderLoop rem dest log cause 0 none))
+          return g
+      if !log.isEmpty then
+        g := g.logMsg log
+      return g
+
 /-- Move `ids` into `dest` in this order. For a library, first listed becomes
 the new bottom of that group. -/
 def moveIdsInOrder (g : Game) (ids : Array ObjectId) (dest : Zone)
-    (cause : Option EventCause := none) : Game :=
+    (cause : Option EventCause := none) (log : String := "") : Game :=
   let defaultCause :=
     cause.orElse (fun _ =>
       if ids.isEmpty then none
       else g.currentResolvingContext?.map fun (src, ctrl) => .oneShotEffect none src ctrl)
   g.withBatch defaultCause fun g =>
-  match dest with
-  | .library p =>
-    Id.run do
-      let mut g := g
-      for i in [0:ids.size] do
-        let id := ids[i]!
-        let libSize := ((g.player p).library.filter (· != id)).size
-        let pos : LibraryPosition :=
-          if i == 0 then .bottom
-          else .fromTop (libSize - Nat.min i libSize)
-        let (g', _) := g.move id dest none (libraryPosition := some pos) (cause := cause)
-        g := g'
-      return g
-  | _ =>
-    ids.foldl (fun acc id => (acc.move id dest none (cause := cause)).1) g
+    g.moveIdsInOrderLoop ids dest log cause
 
 /-- Put `ids` on top of `p`'s library, last listed on top. Cards that are no
 longer in that library are skipped (CR 401.4). -/
@@ -307,11 +350,7 @@ def requestOrderInto (g : Game) (ids : Array ObjectId) (dest : Zone)
   if let .chooseReplacement .. := g.pending then
     g.chainPendingReplacement (.requestOrderInto ids dest log cause)
   else if ids.size ≤ 1 || g.pending != .none then
-    let g := g.moveIdsInOrder ids dest (cause := cause)
-    if let .chooseReplacement .. := g.pending then
-      g.chainPendingReplacement (.logMessage log)
-    else
-      g.logMsg log
+    g.moveIdsInOrder ids dest (cause := cause) (log := log)
   else
     (g.change (.pending (.resolveRandom (.orderInto ids dest cause)))).logMsg log
 

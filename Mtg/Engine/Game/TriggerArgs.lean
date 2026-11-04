@@ -477,11 +477,10 @@ def spawnFace (g : Game) (pids : Array PlayerId) (face : CardDef) (n : Nat)
         let mut g := g
         let mut last : Option ObjectId := none
         for pid in pids do
-          for _ in [0:n] do
-            let (g', tok) := g.createToken pid face (tapped := tapped) (recordRecent := true)
-            g := g'
-            if tok.zone == .battlefield then
-              last := some tok.id
+          let (g', tok) := g.createToken pid face (tapped := tapped) (recordRecent := true) (count := n)
+          g := g'
+          if tok.zone == .battlefield then
+            last := some tok.id
         return (g, last.orElse (fun _ => g.recentTokenIds.back?))
 
 /-- Recipients of a created token. The Void with no announced opponent is
@@ -496,6 +495,23 @@ def tokenRecipients (g : Game) (ctx : TriggerRead) (token : TriggeredAbility.Tri
     | some pid => #[pid]
     | none => #[ctx.controller]
   | _, _ => (g.collectPlayers ctx who).getD #[]
+
+/-- Mill `opponents` (and any non-opponent `allPids`) `n` cards in one batch and
+record `opponentsMilledThisWay`, pausing safely on entry or mid-batch. -/
+def millOpponentsAndNote (g : Game) (opponents allPids : Array PlayerId) (n : Nat)
+    (cause : Option EventCause := none) : Game :=
+  if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement (.finishPostStep (.millOpponentsAndNote opponents allPids n cause))
+  else
+    let startIdx := g.events.size
+    let g := g.withBatch cause fun g =>
+      let g := opponents.foldl (fun g pid => g.mill pid n (cause := cause)) g
+      allPids.foldl (fun g pid =>
+        if !opponents.contains pid then g.mill pid n (cause := cause) else g) g
+    if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement (.finishPostStep (.noteOpponentsMilled opponents startIdx))
+    else
+      g.change (.opponentsMilledThisWay (g.anyOpponentMilledSince opponents startIdx))
 
 /-- Mill `pids` `n` cards and record `note`. -/
 def millCollected (g : Game) (controller : PlayerId) (pids : Array PlayerId) (n : Nat)
@@ -527,15 +543,7 @@ def millCollected (g : Game) (controller : PlayerId) (pids : Array PlayerId) (n 
       g.change (.milledIdsThisWay milled)
   | .opponentsMilled =>
     let opps := pids.filter (g.isLivingOpponentOf controller ·)
-    let startIdx := g.events.size
-    let g := g.withBatch cause? fun g =>
-      let g := opps.foldl (fun g pid => g.mill pid n (cause := cause?)) g
-      pids.foldl (fun g pid =>
-        if !opps.contains pid then g.mill pid n (cause := cause?) else g) g
-    if let .chooseReplacement .. := g.pending then
-      g.chainPendingReplacement (.finishPostStep (.noteOpponentsMilled opps startIdx))
-    else
-      g.change (.opponentsMilledThisWay (g.anyOpponentMilledSince opps startIdx))
+    g.millOpponentsAndNote opps pids n (cause := cause?)
 
 end Game
 end Mtg.Engine

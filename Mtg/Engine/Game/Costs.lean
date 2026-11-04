@@ -294,13 +294,6 @@ def grantsExtraPowerUp (g : Game) (o : GameObject) : Bool :=
 def powerUpActivationLimit (g : Game) (p : PlayerId) : Nat :=
   1 + ((g.permanentsOf p).filter (g.grantsExtraPowerUp ·)).size
 
-/-- True when `o` is Hulk's generic power-up cost reduction. -/
-def grantsHulkPowerUpReduction (g : Game) (o : GameObject) : Bool :=
-  (g.staticAbilities o).any (fun ab =>
-    match ab with
-    | .otherPowerUpCostsLess _ => true
-    | _ => false)
-
 /-- Generic mana subtracted from other creatures' power-up costs by Hulk
 (MSH ruling 127: only generic mana). -/
 def hulkPowerUpGenericReduction (g : Game) (p : PlayerId) (sourceId : ObjectId) : Nat :=

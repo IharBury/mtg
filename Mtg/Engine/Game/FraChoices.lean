@@ -317,14 +317,23 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       else
         let owner := o.owner
         let oName := g.name o
-        let src? := sid.bind g.damageSourceById?
-        let pos : LibraryPosition := if answer == .accept then .top else .bottom
+        let top := answer == .accept
+        let pos : LibraryPosition := if top then .top else .bottom
         let (g, _) := g.move id (.library owner) none (libraryPosition := some pos)
-        if answer == .accept then
-          let g := g.logMsg s!"{(g.player owner).name} puts {oName} on top of their library"
-          return (g.dealDamageToPlayer owner damage (source := src?)).finishFraChoice
+        if let .chooseReplacement .. := g.pending then
+          return (g.chainPendingReplacement
+            (.finishPostStep (.topOrBottomDamageFollowup id owner oName top damage sid))).finishFraChoice
         else
-          let g := g.logMsg s!"{(g.player owner).name} puts {oName} on the bottom of their library"
+          let arrived := (g.followMovedToZone? id (· == .library owner)).isSome
+          let g :=
+            if arrived then
+              let side := if top then "top" else "the bottom"
+              g.logMsg s!"{(g.player owner).name} puts {oName} on {side} of their library"
+            else g
+          let g :=
+            if top && damage > 0 then
+              g.dealDamageToPlayer owner damage (source := sid.bind g.damageSourceById?)
+            else g
           return g.finishFraChoice
   | .topOrBottomDamage .., _ => throw "Choose top or bottom"
   | .sphinxsApproach spellId, .accept =>
@@ -375,7 +384,12 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let some o := g.findObject? id | throw "no such object"
     if !isPublicZone o.zone then throw s!"{o.name} is no longer in a public zone"
     let g := g.returnToHand id p
-    return (g.gainLife p life).finishFraChoice
+    let g :=
+      if let .chooseReplacement .. := g.pending then
+        g.chainPendingReplacement (.finishPostStep (.gainLifePlayer p life))
+      else
+        g.gainLife p life
+    return g.finishFraChoice
   | .mayPutMilledPermanent _ life, .decline =>
     return (g.gainLife p life).finishFraChoice
   | .mayPutMilledPermanent .., _ => throw "Choose a milled permanent card, or decline"
@@ -384,9 +398,10 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .mayThen .., .decline => return g.finishFraChoice
   | .mayThen .., _ => throw "Answer accept or decline"
   | .mayPayThen n next sourceId, .accept =>
-    if !(g.player p).manaPool.canPay (ManaCost.ofGeneric n) then
+    if !(g.player p).manaPool.canPay (ManaCost.ofGeneric n) (allowCantNonartifact := true) then
       throw s!"{(g.player p).name} cannot pay \{{n}}; add mana first"
-    let g ← g.payCost p (ManaCost.ofGeneric n) (forObject := sourceId <|> resolvingForObj)
+    let g ← g.payCost p (ManaCost.ofGeneric n) (allowCantNonartifact := true)
+      (forObject := sourceId <|> resolvingForObj)
     let g := g.logMsg s!"{(g.player p).name} pays \{{n}}"
     return (g.applyFra p default next.toResolution #[] sourceId).finishFraChoice
   | .mayPayThen .., .decline => return g.finishFraChoice
@@ -813,9 +828,10 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .mayDiscardThese n _, _ => throw s!"Choose {n} to discard, or decline"
   | .mayPaySymbolsThen symbols next sourceId, .accept =>
     let cost : ManaCost := { symbols := symbols }
-    if !(g.player p).manaPool.canPay cost then
+    if !(g.player p).manaPool.canPay cost (allowCantNonartifact := true) then
       throw s!"{(g.player p).name} cannot pay that cost; add mana first"
-    let g ← g.payCost p cost (forObject := some sourceId <|> resolvingForObj)
+    let g ← g.payCost p cost (allowCantNonartifact := true)
+      (forObject := some sourceId <|> resolvingForObj)
     if g.mayThenDrop > 0 then
       return g.acceptMayThen
     else
@@ -874,9 +890,10 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .addManaColors .., _ => throw "Choose a color for the mana"
   | .mayPayExtort sourceId, .accept =>
     let cost : ManaCost := { symbols := #[.hybrid .white .black] }
-    if !(g.player p).manaPool.canPay cost then
+    if !(g.player p).manaPool.canPay cost (allowCantNonartifact := true) then
       throw s!"{(g.player p).name} cannot pay \{W/B}; add mana first"
-    let g ← g.payCost p cost (forObject := sourceId <|> resolvingForObj)
+    let g ← g.payCost p cost (allowCantNonartifact := true)
+      (forObject := sourceId <|> resolvingForObj)
     return (g.extortDrain p).finishFraChoice
   | .mayPayExtort _, .decline => return (g.logMsg "Extort is not paid").finishFraChoice
   | .mayPayExtort _, _ => throw "Pay {W/B} (accept), or decline"
@@ -953,12 +970,12 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let cause := g.stashedCause.orElse (fun _ => ids[0]?.bind g.lastMoveCauseOf?)
     let g := if g.stashedCause.isSome then g.change (.stashedCause none) else g
     return (g.moveIdsInOrder ordered (.library p) (cause := cause)
-      |>.logMsg s!"{(g.player p).name} puts the rest on the bottom of their library in the chosen order").finishFraChoice
+      (log := s!"{(g.player p).name} puts the rest on the bottom of their library in the chosen order")).finishFraChoice
   | .orderLibraryBottom ids, .decline =>
     let cause := g.stashedCause.orElse (fun _ => ids[0]?.bind g.lastMoveCauseOf?)
     let g := if g.stashedCause.isSome then g.change (.stashedCause none) else g
     return (g.moveIdsInOrder ids (.library p) (cause := cause)
-      |>.logMsg s!"{(g.player p).name} puts the rest on the bottom of their library in the chosen order").finishFraChoice
+      (log := s!"{(g.player p).name} puts the rest on the bottom of their library in the chosen order")).finishFraChoice
   | .orderLibraryBottom _, _ => throw "Choose the order for the bottom of your library"
   | .mayPayManaForReflexive cost maxTimes kind sourceId, .accept
   | .mayPayManaForReflexive cost maxTimes kind sourceId, .mode _ =>
@@ -966,9 +983,10 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     if times == 0 then return g.finishFraChoice
     if times > maxTimes then throw s!"Pay at most {maxTimes} times"
     let total : ManaCost := { symbols := (List.replicate times cost.toList).flatten.toArray }
-    if !(g.player p).manaPool.canPay total then
+    if !(g.player p).manaPool.canPay total (allowCantNonartifact := true) then
       throw s!"{(g.player p).name} cannot pay {total}; add mana first"
-    let g ← g.payCost p total (forObject := sourceId <|> resolvingForObj)
+    let g ← g.payCost p total (allowCantNonartifact := true)
+      (forObject := sourceId <|> resolvingForObj)
     let g := g.logMsg s!"{(g.player p).name} pays {total}"
     if g.mayThenDrop > 0 then
       return g.acceptMayThen
@@ -1026,7 +1044,13 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .hawkeyeModes .., _ => throw "Choose a mode, or decline to stop"
   | .discardThenDraw, .objects #[id] =>
     if !(g.player p).hand.contains id then throw "That card is not in your hand"
-    return ((g.discardFromHand p id).draw p 1).finishFraChoice
+    let g := g.discardFromHand p id
+    let g :=
+      if let .chooseReplacement .. := g.pending then
+        g.chainPendingReplacement (.finishPostStep (.drawCardsPlayer p 1))
+      else
+        g.draw p 1
+    return g.finishFraChoice
   | .discardThenDraw, _ => throw "Choose a card to discard"
   | .zemoBoastExile abilityId sourceId, .objects ids =>
     if ids.toList.eraseDups.length != ids.size then throw "Choose each card once"
@@ -1250,9 +1274,9 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     throw "Put a +1/+1 counter on Black Widow (accept), or decline"
   | .ultronMayPay _, .accept =>
     let cost := ManaCost.ofGeneric 2
-    if !(g.player p).manaPool.canPay cost then
+    if !(g.player p).manaPool.canPay cost (allowCantNonartifact := true) then
       throw s!"{(g.player p).name} cannot pay {2}; add mana first, or decline"
-    let g ← g.payCost p cost (forObject := resolvingForObj)
+    let g ← g.payCost p cost (allowCantNonartifact := true) (forObject := resolvingForObj)
     return g.acceptMayThen
   | .ultronMayPay _, .decline =>
     return (g.logMsg s!"{(g.player p).name} doesn't pay {2}").declineMayThen
@@ -1299,7 +1323,13 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
             (putOnBottom := onBottom) (sourceId := sourceId)
         else g.logMsg "The target is no longer legal"
       | none => g.logMsg "The target is no longer legal"
-    return (g.conniveTricksterTarget caster connive (sourceId := sourceId)).finishFraChoice
+    let g :=
+      if let .chooseReplacement .. := g.pending then
+        g.chainPendingReplacement
+          (.finishPostStep (.conniveTricksterTarget caster connive sourceId))
+      else
+        g.conniveTricksterTarget caster connive (sourceId := sourceId)
+    return g.finishFraChoice
   | .tricksterLibrary .., _ =>
     throw "Put the creature second from the top (choose top), or on the bottom (choose bottom)"
   | .mayTakeMilled ids life, .objects #[id] =>
@@ -1307,7 +1337,12 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let some o := g.findObject? id | throw "no such object"
     if !isPublicZone o.zone then throw s!"{o.name} is no longer in a public zone"
     let g := g.returnToHand o.id p
-    return (g.gainLife p life).finishFraChoice
+    let g :=
+      if let .chooseReplacement .. := g.pending then
+        g.chainPendingReplacement (.finishPostStep (.gainLifePlayer p life))
+      else
+        g.gainLife p life
+    return g.finishFraChoice
   | .mayTakeMilled _ life, .decline =>
     return (g.gainLife p life).finishFraChoice
   | .mayTakeMilled .., _ => throw "Put a milled card into your hand, or decline"
@@ -1383,12 +1418,21 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     return (g.offerSpellRetarget p spellId (index + 1) staged).finishFraChoice
   | .mayChangeSpellTarget .., _ => throw "Choose a new target, or decline to keep it"
   | .sheHulkMayDamage amount target sourceId, .accept =>
-    let g := g.record (GameEvent.sheHulkDealtDamage g.turnNumber p)
+    let startIdx := g.events.size
     let g :=
       g.withLegalKindTarget p .playerOrCreature #[target]
         (fun g tgt => g.dealDamageToTarget tgt amount (source := sourceId.bind g.damageSourceById?))
         sourceId none
-    return (g.logMsg "The Sensational She-Hulk deals damage (only once each turn)").finishFraChoice
+    if let .chooseReplacement .. := g.pending then
+      return (g.chainPendingReplacement
+        (.finishPostStep (.sheHulkAfterDamage p startIdx))).finishFraChoice
+    else
+      let g :=
+        if g.damageDealtSince startIdx > 0 then
+          (g.record (GameEvent.sheHulkDealtDamage g.turnNumber p))
+            |>.logMsg "The Sensational She-Hulk deals damage (only once each turn)"
+        else g
+      return g.finishFraChoice
   | .sheHulkMayDamage .., .decline =>
     return (g.logMsg s!"{(g.player p).name} declines to have The Sensational She-Hulk deal damage").finishFraChoice
   | .sheHulkMayDamage .., _ => throw "Have She-Hulk deal damage (accept), or decline"
@@ -1639,7 +1683,7 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
   | .mayPutMilledPermanent ids _ => .choosePermanents (ids.extract 0 1)
   | .mayThen .. => .accept
   | .mayPayThen n .. =>
-    if (g.player p).manaPool.canPay (ManaCost.ofGeneric n) then .accept else .decline
+    if (g.player p).manaPool.canPay (ManaCost.ofGeneric n) (allowCantNonartifact := true) then .accept else .decline
   | .mayDiscardThen .. => .decline
   | .discardThen .. => .choosePermanents ((g.player p).hand.extract 0 1)
   | .discardThenStun n _ => .choosePermanents ((g.player p).hand.extract 0 n)
@@ -1704,7 +1748,7 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
   | .maySacrificeThese _ _ => .decline
   | .mayDiscardThese _ _ => .decline
   | .mayPaySymbolsThen symbols .. =>
-    if (g.player p).manaPool.canPay { symbols := symbols } then .accept else .decline
+    if (g.player p).manaPool.canPay { symbols := symbols } (allowCantNonartifact := true) then .accept else .decline
   | .attachAnyEquipment hostId eligible =>
     .choosePermanents (eligible.filter fun id =>
       match g.findObject? id, g.findObject? hostId with
@@ -1713,7 +1757,7 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
   | .sacrificeLeastPower ids => .choosePermanents (ids.extract 0 1)
   | .addManaColors .. => .chooseMode 0
   | .mayPayExtort _ =>
-    if (g.player p).manaPool.canPay { symbols := #[.hybrid .white .black] } then .accept else .decline
+    if (g.player p).manaPool.canPay { symbols := #[.hybrid .white .black] } (allowCantNonartifact := true) then .accept else .decline
   | .mayDrawThenDiscard .. => .accept
   | .mayCreateTokens .. => .accept
   | .mayBecomeBasePT .. => .accept
@@ -1749,7 +1793,7 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
   | .sacrificeNontokenEach .. =>
     .choosePermanents (((g.creaturesControlledBy p).filter (!·.printed.isToken)).map (·.id) |>.extract 0 1)
   | .mayPayManaForReflexive cost _ _ _ =>
-    if (g.player p).manaPool.canPay { symbols := cost } then .accept else .decline
+    if (g.player p).manaPool.canPay { symbols := cost } (allowCantNonartifact := true) then .accept else .decline
   | .mayTapSourceThen .. => .accept
   | .hawkeyeModes _ chosen objId? =>
     let obj? := objId?.bind g.findObject?

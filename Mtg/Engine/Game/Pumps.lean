@@ -452,23 +452,22 @@ created multiple Army tokens (CR 614.6 / 701.47a), prompts `controller` to
 choose which Army to amass rather than hardcoding the first token. -/
 def finishFreshAmass (g : Game) (controller : PlayerId) (subtype : CardSubtype)
     (n : Nat) (attach : Option ObjectId) (cause : Option EventCause := none)
-    (minId : Nat := 0) : Game :=
+    (startEventIdx : Nat := 0) : Game :=
+  let createdIds := g.tokensCreatedSince startEventIdx
   let freshArmies :=
     (g.permanentsOf controller).filter (fun o =>
-      o.printed.isToken && g.hasSubtype o .army && o.id.raw ≥ minId)
+      createdIds.contains o.id && g.hasSubtype o .army)
   if freshArmies.isEmpty then g
   else if freshArmies.size > 1 then
     let g := freshArmies.foldl (fun acc o => acc.afterPermanentEntersInBatch o) g
     let g := g.logMsg s!"the amassed Army entered as a 0/0 creature"
     let ids := freshArmies.map (fun (o : GameObject) => o.id)
     let g :=
-      match cause with
-      | some c =>
-        let g := if g.continuations.isEmpty then g.change (.pushContinuationFrame {}) else g
-        g.change (.stashedCause (some c))
-      | none => g
-    (g.change (.pending (.fraChoice controller (.chooseCards ids 1 (.amassArmy subtype n attach))))).logMsg
-      s!"{(g.player controller).name} chooses an Army to amass"
+      g.beginFraChoice controller (.chooseCards ids 1 (.amassArmy subtype n attach))
+        s!"{(g.player controller).name} chooses an Army to amass"
+    match cause with
+    | some c => g.change (.stashedCause (some c))
+    | none => g
   else
     let g := freshArmies.foldl (fun acc o => acc.afterPermanentEnters o) g
     let g := g.logMsg s!"the amassed Army entered as a 0/0 creature"
@@ -495,24 +494,22 @@ def amass (g : Game) (controller : PlayerId) (subtype : CardSubtype) (n : Nat)
   if armies.size > 1 then
     let ids := armies.map (fun (o : GameObject) => o.id)
     let g :=
-      match cause with
-      | some c =>
-        let g := if g.continuations.isEmpty then g.change (.pushContinuationFrame {}) else g
-        g.change (.stashedCause (some c))
-      | none => g
-    (g.change (.pending (.fraChoice controller (.chooseCards ids 1 (.amassArmy subtype n attach))))).logMsg
-      s!"{(g.player controller).name} chooses an Army to amass"
+      g.beginFraChoice controller (.chooseCards ids 1 (.amassArmy subtype n attach))
+        s!"{(g.player controller).name} chooses an Army to amass"
+    match cause with
+    | some c => g.change (.stashedCause (some c))
+    | none => g
   else
     match armies[0]? with
     | some army =>
       g.finishAmassOn controller army.id subtype n attach (cause := cause)
     | none =>
-      let minId := g.nextObjectId
+      let startEventIdx := g.events.size
       let (g, _) := g.createToken controller (armyToken subtype) (cause := cause)
       if let .chooseReplacement .. := g.pending then
-        g.chainPendingReplacement (.finishFreshAmass controller subtype n attach cause minId)
+        g.chainPendingReplacement (.finishFreshAmass controller subtype n attach cause startEventIdx)
       else
-        g.finishFreshAmass controller subtype n attach (cause := cause) (minId := minId)
+        g.finishFreshAmass controller subtype n attach (cause := cause) (startEventIdx := startEventIdx)
 
 /-- Amass Goblins `n` (CR 701.47). -/
 def amassGoblins (g : Game) (controller : PlayerId) (n : Nat)
@@ -530,14 +527,30 @@ def amassZombies (g : Game) (controller : PlayerId) (n : Nat)
   g.amass controller .zombie n (cause := cause)
 
 /-- Finish the until-EOT lose-indestructible and exile-if-dies effects of
-`dealDamageLoseIndestructibleExileTo` once `markDamageOn` finishes. -/
+`dealDamageLoseIndestructibleExileTo` once `markDamageOn` finishes (CR 615.6). -/
 def finishDealDamageLoseIndestructibleExile (g : Game) (targetId : ObjectId)
-    (targetName : String) (n : Nat) (cause : EventCause) : Game :=
+    (targetName : String) (_n : Nat) (cause : EventCause) : Game :=
   let name := (g.findObject? targetId).map g.name |>.getD targetName
+  let effId? := cause.oneShotEffectId?
+  let dealt : Nat :=
+    g.events.foldl (fun acc e =>
+      if effId?.isSome && e.cause?.bind EventCause.oneShotEffectId? == effId? then
+        match e.change with
+        | .rules (.damage (.dealt pkts)) =>
+          pkts.foldl (fun s p =>
+            match p.recipient with
+            | .permanent eo => if eo.id == some targetId then s + p.amount else s
+            | _ => s) acc
+        | _ => acc
+      else acc) 0
   let g := g.createEffects #[.loseIndestructibleUntilEot targetId, .exileIfDiesUntilEot targetId]
     (cause := some cause)
-  g.logMsg
-    s!"{name} is dealt {n} damage, loses indestructible until end of turn, and will be exiled if it would die this turn"
+  if dealt > 0 then
+    g.logMsg
+      s!"{name} is dealt {dealt} damage, loses indestructible until end of turn, and will be exiled if it would die this turn"
+  else
+    g.logMsg
+      s!"{name} loses indestructible until end of turn and will be exiled if it would die this turn"
 
 /-- Damage plus until-EOT lose-indestructible and exile-if-dies (e.g. Smite).
 Spells apply those three steps in order. This sets the same flags at once. -/
@@ -546,7 +559,7 @@ def dealDamageLoseIndestructibleExileTo (g : Game) (o : GameObject) (n : Nat)
   let (g, cause) := g.allocDelayedCause source.controller source.id
   let srcObj := g.damageSourceObjFromSnapshot? (some source)
   let oName := g.name o
-  let g := g.markDamageOn o (Int.ofNat n) s!"{oName} is dealt {n} damage"
+  let g := g.markDamageOn o (Int.ofNat n) ""
     (source := some source) (sourceObj := srcObj) (cause := some cause)
   if let .chooseReplacement .. := g.pending then
     g.chainPendingReplacement (.finishDealDamageLoseIndestructibleExile o.id oName n cause)

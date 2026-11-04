@@ -142,26 +142,37 @@ def applyKickerToProposed (g : Game) (kick : Bool) : Except String Game := do
   let some prop := g.proposedSpell | throw "No spell is waiting for kicker"
   if prop.kicked && kick then
     throw "The kicker ability doesn't let you pay a kicker cost more than once"
-  if !kick then
-    return g.changeProposals #[.kicked false, .kickerAnnounced true]
   let some spell := g.findObject? prop.spellId | throw "The spell left the stack"
+  let face := { g.baseCard spell with keywords := g.currentKeywords spell }
+  if !kick then
+    if !prop.alternativeCost && face.morph.isSome && face.kicker.isNone then
+      let effPerm :=
+        if prop.resolutionCast then
+          some { (prop.origPerm.getD { player := prop.caster }) with ignoreTiming := true }
+        else prop.origPerm
+      g.validateFrontFaceCast prop.caster prop.original face
+        (origPermOverride := effPerm)
+        (excludeIdOverride := some prop.spellId)
+    return g.changeProposals #[.kicked false, .kickerAnnounced true]
   let preSpell := { spell with
     id := prop.original.id
     zone := prop.original.zone
     exiledBy := prop.original.exiledBy
     controller := some prop.caster }
-  let face := g.baseCard spell
   let extraGen := ManaCost.ofGeneric prop.additionalGeneric
   match face.morph, face.impending, face.kicker with
   | some _, _, none =>
+    if g.spellNameForbidden "" then
+      throw "Nameless spells can't be cast"
+    if !(g.timingAllowsCast prop.caster morphSpellFace (excludeStackId := some spell.id) ||
+        prop.resolutionCast || prop.origPerm.any (·.ignoreTiming)) then
+      throw "Morph can be cast face down only when you could cast a creature spell (CR 702.37a)"
     let g := g.record (GameEvent.announced g.turnNumber spell.id (costs := #[.morph]))
-    let morphFace : CardDef :=
-      { name := "", types := #[.creature], power := some 2, toughness := some 2,
-        manaCost := ManaCost.ofGeneric 3 }
     let cost :=
-      g.playManaCost preSpell morphFace extraGen
+      g.playManaCost preSpell morphSpellFace extraGen
         (origPerm := prop.origPerm) (isFreeFromGy := some false)
-    return g.changeProposals #[.kicked true, .kickerAnnounced true, .cost cost]
+    return g.changeProposals
+      #[.kicked true, .kickerAnnounced true, .cost cost, .needsSacrificeOther false, .needsDiscardCard false]
   | _, some (n, alt), none =>
     let g := g.record (GameEvent.announced g.turnNumber spell.id (costs := #[.impending n]))
     let impFace : CardDef := { face with manaCost := alt }

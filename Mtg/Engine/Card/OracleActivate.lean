@@ -66,7 +66,11 @@ def activated (effect : Effect) (mana : ManaCost := ManaCost.empty)
     putStunCounterOnSource := putStunCounterOnSource
     sacrificeEquipmentAttachedToSource := sacrificeEquipmentAttachedToSource
   }
-  effect := effect
+  effect :=
+    if effect == Effect.attachToTargetCreatureYouControl && (equipSubtype.isSome || equipWorthy) then
+      Effect.equipEffect equipSubtype equipWorthy
+    else
+      effect
   otherModes := otherModes
   onlyAsSorcery, onlyDuringYourTurn, onceEachTurn
   activateFromGraveyard, activateFromHand, onlyIfYouControlLegendary
@@ -78,12 +82,12 @@ def activated (effect : Effect) (mana : ManaCost := ManaCost.empty)
 
 /-- Equip `mana`, only as a sorcery. -/
 def equipAbility (mana : ManaCost) (subtype : Option CardSubtype := none) : ActivatedAbility :=
-  activated (Effect.attachToTargetCreatureYouControl) mana (onlyAsSorcery := true)
+  activated (Effect.equipEffect subtype false) mana (onlyAsSorcery := true)
     (equipSubtype := subtype)
 
 /-- Equip worthy `mana`. -/
 def equipWorthyAbility (mana : ManaCost) : ActivatedAbility :=
-  activated (Effect.attachToTargetCreatureYouControl) mana (onlyAsSorcery := true)
+  activated (Effect.equipEffect none true) mana (onlyAsSorcery := true)
     (equipWorthy := true)
 
 /-- Typecycling `{cost}`. -/

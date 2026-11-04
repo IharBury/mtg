@@ -28,13 +28,6 @@ def shuffleSourceIntoLibrary (g : Game) (sourceId : Option ObjectId)
       (verb := some .shuffleIntoLibrary) (libraryPosition := some .shuffledIn)
     g.shuffleThen owner after
 
-/-- Damage beyond lethal damage dealt to `o` by `dealt` damage (CR 120.4a):
-beyond its toughness minus damage already marked for a creature, beyond its
-loyalty for a planeswalker (ruling 790), and beyond the greater of the two
-when it is both. -/
-def excessDamage (g : Game) (o : GameObject) (dealt : Nat) : Nat :=
-  dealt - g.lethalDamageThreshold o
-
 /-- `pid` sacrifices a creature or planeswalker with the greatest mana value
 among creatures and planeswalkers they control, as one group (rulings
 771–773). With a tie, the most recent of them is sacrificed. -/
@@ -333,10 +326,33 @@ def exileHandDrawPlayUntilNext (g : Game) (p : PlayerId) : Game :=
   else
     g.finishExileHandDrawPlayUntilNext p n cause?
 
+/-- Run `afterPermanentEntersInBatch` for all tokens created since
+`startEventIdx` that are still on the battlefield, then prompt any stack-entry
+trigger targets once (CR 603.6a). -/
+def finishCopyNontokenCreaturesAfterEnter (g : Game) (startEventIdx : Nat) : Game :=
+  let ids := g.tokensCreatedSince startEventIdx
+  let (g, anyPrompt) :=
+    ids.foldl (fun (g, anyP) id =>
+      match g.findObject? id with
+      | some o =>
+        if o.isOnBattlefield then
+          let g := g.afterPermanentEntersInBatch o
+          let p :=
+            match g.findObject? id with
+            | some cur => cur.isOnBattlefield && !g.enteringCausesNoTriggers cur
+            | none => false
+          (g, anyP || p)
+        else (g, anyP)
+      | none => (g, anyP)) (g, false)
+  if anyPrompt && g.currentBatch.isNone then
+    g.promptTriggerTargetsIfNeeded
+  else g
+
 /-- A token copy of each nontoken creature `p` controls, except it isn't
 legendary (Multiversal Incursion; rulings 468 / 508). -/
 def copyNontokenCreaturesYouControl (g : Game) (p : PlayerId) : Game :=
-  g.withBatch none fun g =>
+  let startEventIdx := g.events.size
+  let g := g.withBatch none fun g =>
     let snapshots :=
       ((g.creaturesControlledBy p).filter (fun o => !o.printed.isToken)).map fun src =>
         let cv := g.copiableValues src
@@ -344,6 +360,10 @@ def copyNontokenCreaturesYouControl (g : Game) (p : PlayerId) : Game :=
           supertypes := cv.supertypes.filter (· != .legendary)
           isToken := true }
     g.copyNontokenCreaturesStep p snapshots
+  if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement (.finishPostStep (.copyNontokenCreaturesAfterEnter startEventIdx))
+  else
+    g.finishCopyNontokenCreaturesAfterEnter startEventIdx
 
 /-- Gain control of the targeted creature until end of turn, or until the end
 of your next turn when you control a Villain with greater mana value. Untap
@@ -728,10 +748,21 @@ def proliferateTarget (g : Game) (controller : PlayerId) (targets : Array Target
         | none => g.logMsg "The target is no longer legal"
       | Target.player pid =>
         let pl := g.player pid
-        if pl.poison > 0 then
-          let g := g.record (GameEvent.poisoned g.turnNumber pid 1 (byPlayer := some controller) (cause := effCause))
-          (g.record (GameEvent.proliferated g.turnNumber controller (players := #[pid]) (cause := some effCause)))
-            |>.logMsg s!"{pl.name} gets a poison counter"
+        let hasPoison := g.teamPoison pid > 0
+        let otherKinds := pl.counters.filterMap fun (k, cnt) =>
+          if k != .poison && cnt > 0 then some k else none
+        if hasPoison || !otherKinds.isEmpty then
+          let g :=
+            if hasPoison then
+              (g.record (GameEvent.poisoned g.turnNumber pid 1 (byPlayer := some controller) (cause := effCause)))
+                |>.logMsg s!"{pl.name} gets a poison counter"
+            else g
+          let g :=
+            otherKinds.foldl (fun g kind =>
+              (g.record (GameEvent.playerCounters g.turnNumber pid kind (.put 1)
+                (byPlayer := some controller) (cause := effCause)))
+                |>.logMsg s!"{pl.name} gets another counter") g
+          g.record (GameEvent.proliferated g.turnNumber controller (players := #[pid]) (cause := some effCause))
         else g.logMsg s!"{pl.name} has no counters"
       | Target.card _ => g.logMsg "The target is no longer legal") sourceId
     (some "The target is no longer legal")
@@ -1309,6 +1340,61 @@ partial def eaglesReturnCreaturesLoop (g : Game) (controller : PlayerId)
           let g := if targeted then g.illegalAbilityTarget (Target.permanent id) else g
           g.eaglesReturnCreaturesLoop controller count sourceId rem cause targeted none
 
+/-- Put `n` counters of `kind` on each `remaining` target creature one at a
+time, pausing across `Pending.chooseReplacement` so subsequent target legality
+checks do not run before an earlier replacement resolves. -/
+partial def countersOnCreatureTargetsLoop (g : Game) (controller : PlayerId)
+    (remaining : Array Target) (kind : CounterKind) (n : Nat)
+    (sourceId : Option ObjectId) : Game :=
+  match remaining[0]? with
+  | none => g
+  | some t =>
+    let rest := remaining.extract 1 remaining.size
+    let creatureLegal := g.legalTargetsForAtomicKind controller .creature sourceId
+    let g :=
+      match t with
+      | Target.permanent oid =>
+        if creatureLegal.contains t then
+          match g.findObject? oid with
+          | some o => g.addCounters o kind n
+          | none => g.logMsg "The target is no longer in play"
+        else
+          g.illegalAbilityTarget t
+      | Target.card _ =>
+        g.illegalAbilityTarget t
+      | Target.player _ => g
+    if rest.isEmpty then g
+    else if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement
+        (.finishPostStep (.countersOnCreatureTargetsLoop controller rest kind n sourceId))
+    else
+      g.countersOnCreatureTargetsLoop controller rest kind n sourceId
+
+/-- Have each `remaining` target player gain `n` life one at a time, pausing
+across `Pending.chooseReplacement` before checking subsequent targets. -/
+partial def targetPlayersGainLifeLoop (g : Game) (controller : PlayerId)
+    (remaining : Array Target) (n : Nat) (sourceId : Option ObjectId)
+    (cause : Option EventCause) : Game :=
+  match remaining[0]? with
+  | none => g
+  | some t =>
+    let rest := remaining.extract 1 remaining.size
+    let playerLegal := g.legalTargetsForAtomicKind controller .player sourceId
+    let g :=
+      match t with
+      | Target.player pid =>
+        if playerLegal.contains t then
+          g.gainLife pid n (cause := cause)
+        else
+          g.illegalAbilityTarget t
+      | _ => g
+    if rest.isEmpty then g
+    else if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement
+        (.finishPostStep (.targetPlayersGainLifeLoop controller rest n sourceId cause))
+    else
+      g.targetPlayersGainLifeLoop controller rest n sourceId cause
+
 mutual
 /-- Execute `steps` sequentially for `applyUnified`, pausing on `Pending` or
 `afterRandom` and chaining `.continueUnified` so later steps run after the pause. -/
@@ -1590,25 +1676,10 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
         | none => g.illegalAbilityTarget t
       | _ => g.logMsg "The target is no longer legal"
     | .each =>
-      g.withBatch none fun g => Id.run do
-        let creatureLegal := g.legalTargetsForAtomicKind controller .creature sourceId
-        let mut g := g
-        for t in targets do
-          match t with
-          | Target.permanent oid =>
-            if creatureLegal.contains t then
-              match g.findObject? oid with
-              | some o => g := g.addCounters o kind n
-              | none => g := g.logMsg "The target is no longer in play"
-            else
-              g := g.illegalAbilityTarget t
-          | Target.card _ =>
-            g := g.illegalAbilityTarget t
-          | Target.player _ => pure ()
-        return g
+      g.withBatch none fun g =>
+        g.countersOnCreatureTargetsLoop controller targets kind n sourceId
   | .gainLife (.fixed n) => g.gainLife controller n.toNat
   | .targetPlayersGainLife n =>
-    let playerLegal := g.legalTargetsForAtomicKind controller .player sourceId
     let (g, cause?) : Game × Option EventCause :=
       if n == 0 || targets.isEmpty then (g, none)
       else
@@ -1617,17 +1688,8 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
           let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some controller)) src
           (g, some c)
         | none => (g, none)
-    g.withBatch cause? fun g => Id.run do
-      let mut g := g
-      for t in targets do
-        match t with
-        | Target.player pid =>
-          if playerLegal.contains t then
-            g := g.gainLife pid n (cause := cause?)
-          else
-            g := g.illegalAbilityTarget t
-        | _ => pure ()
-      return g
+    g.withBatch cause? fun g =>
+      g.targetPlayersGainLifeLoop controller targets n sourceId cause?
   | .amass (.fixed n) subtype =>
     g.amass controller subtype n.toNat
   | .searchCard s ty how =>
@@ -1839,16 +1901,12 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     if kicked then
       match targets[0]? with
       | some (Target.player pid) =>
-        g.withBatch cause fun g =>
-          (g.permanentsOf pid).foldl (fun acc o =>
-            if acc.isCreature o then acc.phaseOut o (cause := cause) else acc) g
+        g.phaseOutPermanents ((g.permanentsOf pid).filter (g.isCreature ·)) (cause := cause)
       | some (Target.permanent oid) =>
         match g.findObject? oid with
         | some o =>
           let pid := (g.controllerOf o).getD controller
-          g.withBatch cause fun g =>
-            (g.permanentsOf pid).foldl (fun acc x =>
-              if acc.isCreature x then acc.phaseOut x (cause := cause) else acc) g
+          g.phaseOutPermanents ((g.permanentsOf pid).filter (g.isCreature ·)) (cause := cause)
         | none => g.logMsg "The target is no longer legal"
       | _ => g.logMsg "The target is no longer legal"
     else
@@ -2124,20 +2182,29 @@ def returnSourceFromGraveyard (g : Game) (sourceId : Option ObjectId)
 def cardHasLookType (g : Game) (o : GameObject) (t : CardSubtype) : Bool :=
   g.hasSubtype o t || (t == .equipment && g.isEquipment o)
 
+/-- Draw 1 card for the second player of `.twoPlayersDraw` after the first
+player's draw (and any replacement choice) completes (CR 101.4 / 121.2c). -/
+def twoPlayersDrawSecond (g : Game) (controller second : PlayerId)
+    (sourceId : Option ObjectId) (cause? : Option EventCause) : Game :=
+  if g.playerCanBeTargetedBy controller second sourceId then
+    g.draw second 1 (cause := cause?)
+  else
+    g.illegalAbilityTarget (Target.player second)
+
 /-- Put `ids` on the bottom. One card needs no order. Two or more are ordered
 by the player, first card on the bottom. -/
 def offerBottomAnyOrder (g : Game) (p : PlayerId) (ids : Array ObjectId)
     (cause : Option EventCause := none) : Game :=
   if ids.size ≤ 1 then
-    (g.moveIdsInOrder ids (.library p) (cause := cause)).logMsg
-      s!"{(g.player p).name} puts the rest on the bottom of their library"
+    g.moveIdsInOrder ids (.library p) (cause := cause)
+      (log := s!"{(g.player p).name} puts the rest on the bottom of their library")
   else
     let g :=
-      match cause with
-      | some c => g.change (.stashedCause (some c))
-      | none => g
-    g.beginFraChoice p (.orderLibraryBottom ids)
-      s!"{(g.player p).name} puts the rest on the bottom of their library in any order"
+      g.beginFraChoice p (.orderLibraryBottom ids)
+        s!"{(g.player p).name} puts the rest on the bottom of their library in any order"
+    match cause with
+    | some c => g.change (.stashedCause (some c))
+    | none => g
 
 /-- Look at the top `n` cards. You may reveal one matching card to your hand. -/
 def beginLookRevealToHand (g : Game) (p : PlayerId) (n : Nat)
@@ -2431,14 +2498,27 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
             let bOk := g.playerCanBeTargetedBy controller b sourceId
             if !aOk && !bOk then g.logMsg "The targets are no longer legal"
             else
+              let order := g.apnapOrder
+              let (first, second) :=
+                if (order.findIdx? (· == b)).getD 0 < (order.findIdx? (· == a)).getD 0 then
+                  (b, a)
+                else
+                  (a, b)
+              let firstOk := g.playerCanBeTargetedBy controller first sourceId
               let (g, cause?) : Game × Option EventCause :=
                 match g.currentResolvingContext? with
                 | some (src, ctrl) =>
                   let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some controller)) (src.orElse (fun _ => sourceId))
                   (g, some c)
                 | none => (g, none)
-              let g := if aOk then g.draw a 1 (cause := cause?) else g.illegalAbilityTarget (Target.player a)
-              if bOk then g.draw b 1 (cause := cause?) else g.illegalAbilityTarget (Target.player b)
+              let g :=
+                if firstOk then g.draw first 1 (cause := cause?)
+                else g.illegalAbilityTarget (Target.player first)
+              if let .chooseReplacement .. := g.pending then
+                g.chainPendingReplacement
+                  (.finishPostStep (.twoPlayersDrawSecond controller second sourceId cause?))
+              else
+                g.twoPlayersDrawSecond controller second sourceId cause?
         | _, _ => g.logMsg "The targets are no longer legal"
       | .discardLegendarySameNameDraw =>
         g.draw controller 2

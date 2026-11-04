@@ -452,7 +452,7 @@ def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
           else g
         else g
       else g
-    g.logMsg msg
+    if amt > 0 && !msg.isEmpty then g.logMsg msg else g
   else
   -- CR 120.3c / 120.3e: damage dealt to a creature is marked on it; damage
   -- dealt to a planeswalker removes up to its remaining loyalty counters.
@@ -474,7 +474,7 @@ def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
         else g
       else g
     else g
-  g.logMsg msg
+  if amt > 0 && !msg.isEmpty then g.logMsg msg else g
 
 /-- Increase `p`'s life total (CR 119.3), running the CR 616.1 replacement loop
 for any active `.modifyLifeGain` replacement effects. Gaining 0 life does
@@ -685,7 +685,28 @@ def dealDamageFrom (g : Game) (sourceName : String) (o : GameObject) (n : Int)
           if dealtAmt > 0 && !prevented then g.gainLife c dealtAmt.toNat (cause := some dmgCause) else g
         | none => g
   | none =>
-    g.markDamageOn o n s!"{sourceName} deals {n} damage to {g.name o}" deathtouch (cause := cause)
+    let srcSnap := sourceSnap.map g.refreshOrKeepDamageSnapshot |>.getD default
+    let rep := g.replaceDamage n (srcEvent? := some srcSnap) (recipientPerm? := some o) (cause := cause)
+    match rep.choice? with
+    | some (chooser, choices) =>
+      g.promptChooseReplacement chooser choices
+        (.dealDamageFrom sourceName srcSnap o.id n.toNat deathtouch cause)
+    | none =>
+      let g := g.consumeReplacementOrder rep.applied
+      if rep.prevented && !rep.shieldRemoved && !g.preventsAllDamageTo o then
+        let g :=
+          if rep.preventedAmount > 0 then
+            let prevCause :=
+              g.resolveOptionalCause rep.cause (fallbackSrc := srcSnap.id)
+                (fallbackCtrl := srcSnap.controller.orElse (fun _ => g.controllerOf o))
+            g.record (GameEvent.damagePrevented g.turnNumber srcSnap (.permanent (g.snapshot o))
+              rep.preventedAmount prevCause)
+          else g
+        g.logMsg s!"damage from {sourceName} is prevented"
+      else
+        let dealtAmt := rep.amount
+        g.markDamageOn o n s!"{sourceName} deals {dealtAmt} damage to {g.name o}" deathtouch
+          (source := some srcSnap) (replaced := some rep) (consumeOrder := false) (cause := rep.cause)
 
 /-- Deal `n` damage to a player and log the resulting life total (CR 120). -/
 def dealDamageToPlayer (g : Game) (pid : PlayerId) (n : Int)
@@ -972,6 +993,16 @@ def dealDamageToTarget (g : Game) (t : Target) (n : Int)
       | none => g.dealDamageToPermanent o n (cause := cause)
     | none => g.logMsg "The target is no longer in play"
   | Target.card _ => g.logMsg "The target is no longer legal"
+
+/-- Total unprevented damage dealt across all recipients in `g.events[startIdx:]`
+(CR 120.2 / 615.6). -/
+def damageDealtSince (g : Game) (startIdx : Nat) : Nat := Id.run do
+  let mut total : Nat := 0
+  for i in [startIdx : g.events.size] do
+    if let .rules (.damage (.dealt pkts)) := g.events[i]!.change then
+      for pkt in pkts do
+        total := total + pkt.amount
+  return total
 
 /-- Total damage dealt to permanent `oid` recorded in `g.events[startIdx:]`
 (CR 120.2 / 120.10). -/

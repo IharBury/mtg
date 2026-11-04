@@ -242,6 +242,8 @@ inductive EffectTargetKind where
   | planeswalkerYouControlThenOppCreatureOrPlaneswalker
   /-- Target creature you control that's attacking alone. -/
   | attackingAloneCreatureYouControl
+  /-- Target worthy creature you control (MSH Equip worthy, CR 702.6c). -/
+  | worthyCreatureYouControl
   /-- Target noncreature artifact or noncreature enchantment. -/
   | noncreatureArtifactOrEnchantment
   /-- Target permanent or player. -/
@@ -471,6 +473,8 @@ def spec : EffectTargetKind → Spec
       slots := #[.artifactYouControl, .artifactYouControl] }
   | .attackingAloneCreatureYouControl =>
     { noun := "target creature you control that's attacking alone", prefer := .own }
+  | .worthyCreatureYouControl =>
+    { noun := "target worthy creature you control", prefer := .own }
   | .noncreatureArtifactOrEnchantment =>
     { noun := "target noncreature artifact or noncreature enchantment" }
   | .permanentOrPlayer =>
@@ -604,6 +608,7 @@ def closedKinds : List EffectTargetKind := [
   .creatureYouControlThenOppCreatureOrPlaneswalker,
   .planeswalkerYouControlThenOppCreatureOrPlaneswalker,
   .attackingAloneCreatureYouControl,
+  .worthyCreatureYouControl,
   .noncreatureArtifactOrEnchantment,
   .permanentOrPlayer,
 ]

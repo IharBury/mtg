@@ -629,17 +629,15 @@ def blueSymbolsInCastSpell (g : Game) (lastKnownPower : Option Int) : Nat :=
 /-- Create one 1/1 blue Merfolk for each blue mana symbol in the causing spell. -/
 def createMerfolkForBlueSymbols (g : Game) (controller : PlayerId)
     (lastKnownPower : Option Int) : Game :=
-  let n := g.blueSymbolsInCastSpell lastKnownPower
-  if n == 0 then
-    g.logMsg "No blue mana symbols. No Merfolk are created."
+  if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement (.finishPostStep (.createMerfolkForBlueSymbols controller lastKnownPower))
   else
-    g.withBatch none fun g =>
-      Id.run do
-        let mut g := g
-        for _ in [0:n] do
-          let (g', _) := g.createToken controller merfolk11blueToken
-          g := g'
-        return g
+    let n := g.blueSymbolsInCastSpell lastKnownPower
+    if n == 0 then
+      g.logMsg "No blue mana symbols. No Merfolk are created."
+    else
+      g.withBatch none fun g =>
+        (g.createToken controller merfolk11blueToken (count := n)).1
 
 /-- Ask for one Vision mode that has not been chosen this turn. The chosen
 resolution is `TriggerResolution.visionModes`. -/
@@ -747,14 +745,16 @@ def offerMayCreateWall (g : Game) (controller : PlayerId) : Game :=
     |>.logMsg
       s!"{(g.player controller).name} may create a 0/4 Wall creature token with defender"
 
-/-- Put a +1/+1 counter on each announced creature you control, up to the
-life gained in that event (the trigger's last-known power). -/
-def putPlusOnesUpToLastKnown (g : Game) (controller : PlayerId)
-    (targets : Array Target) (lastKnownPower : Option Int)
-    (sourceId : Option ObjectId := none) : Game :=
-  let n := (lastKnownPower.getD 0).toNat
-  g.withBatch none fun g =>
-    (targets.extract 0 n).foldl (fun (g : Game) t =>
+/-- Put a +1/+1 counter on each `remaining` target creature `controller`
+controls one at a time, pausing across `Pending.chooseReplacement` so subsequent
+target legality checks do not run before an earlier replacement resolves. -/
+partial def putPlusOnesUpToLastKnownLoop (g : Game) (controller : PlayerId)
+    (remaining : Array Target) (sourceId : Option ObjectId := none) : Game :=
+  match remaining[0]? with
+  | none => g
+  | some t =>
+    let rest := remaining.extract 1 remaining.size
+    let g :=
       match t with
       | Target.permanent id =>
         match g.findObject? id with
@@ -764,7 +764,22 @@ def putPlusOnesUpToLastKnown (g : Game) (controller : PlayerId)
             g.addPlusOnePlusOneTo o 1
           else g.logMsg "The target is no longer legal"
         | none => g.logMsg "The target is no longer legal"
-      | _ => g.logMsg "The target is no longer legal") g
+      | _ => g.logMsg "The target is no longer legal"
+    if rest.isEmpty then g
+    else if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement
+        (.finishPostStep (.putPlusOnesUpToLastKnownLoop controller rest sourceId))
+    else
+      g.putPlusOnesUpToLastKnownLoop controller rest sourceId
+
+/-- Put a +1/+1 counter on each announced creature you control, up to the
+life gained in that event (the trigger's last-known power). -/
+def putPlusOnesUpToLastKnown (g : Game) (controller : PlayerId)
+    (targets : Array Target) (lastKnownPower : Option Int)
+    (sourceId : Option ObjectId := none) : Game :=
+  let n := (lastKnownPower.getD 0).toNat
+  g.withBatch none fun g =>
+    g.putPlusOnesUpToLastKnownLoop controller (targets.extract 0 n) sourceId
 
 /-- Finish registering `.endStepReturn` for `(.casting .exileFlicker)` after
 `g.move` to `.exile` completes (CR 614.6 / 616.1). -/
@@ -931,12 +946,20 @@ def applyOwnerPutsLibraryThenConnive (g : Game) (controller : PlayerId)
       | some o =>
         if o.isOnBattlefield && g.canBeTargetedBy controller o srcId then
           let owner := o.owner
-          if putOnBottom then
-            let (g, _) := g.move id (.library owner) none (libraryPosition := some .bottom)
-            g.logMsg s!"{o.name} is put on the bottom of {(g.player owner).name}'s library"
-          else
-            let (g, _) := g.move id (.library owner) none (libraryPosition := some (.fromTop 1))
-            g.logMsg s!"{o.name} is put second from the top of {(g.player owner).name}'s library"
+          let name := g.name o
+          let pos : LibraryPosition := if putOnBottom then .bottom else .fromTop 1
+          let msg :=
+            if putOnBottom then
+              s!"{name} is put on the bottom of {(g.player owner).name}'s library"
+            else
+              s!"{name} is put second from the top of {(g.player owner).name}'s library"
+          let (g, _) := g.move id (.library owner) none (libraryPosition := some pos)
+          if let .chooseReplacement .. := g.pending then
+            g.chainPendingReplacement
+              (.finishPostStep (.logPutOnOwnerLibrary id owner name (!putOnBottom) (some msg)))
+          else if (g.followMovedToZone? id (· == .library owner)).isSome then
+            g.logMsg msg
+          else g
         else g.logMsg "The target is no longer legal"
       | none => g.logMsg "The target is no longer legal"
     | _ => g.logMsg "The target is no longer legal"
@@ -980,10 +1003,6 @@ def applyAvengersDisassembled (g : Game) (controller : PlayerId)
 /-- Whether the resolving stack object paid its teamwork cost. -/
 def resolvingTeamworkPaid (g : Game) : Bool :=
   g.spellPaidTeamwork
-
-/-- `alt` if the resolving spell paid teamwork; otherwise `base`. -/
-def teamworkAmount (g : Game) (base alt : Nat) : Nat :=
-  if g.resolvingTeamworkPaid then alt else base
 
 /-- Add `types` to `p`'s mana pool and log it (shared `.addMana` resolution). -/
 def addManaLogged (g : Game) (p : PlayerId) (types : Array ManaType)
