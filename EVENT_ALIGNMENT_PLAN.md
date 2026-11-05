@@ -7598,13 +7598,17 @@ expiry / active-team `"during your turn"` / starting team / extra turns /
        has a valid completion across the remaining required slots (preventing
        `.twoNonlandsSharingType` slot-0 picks whose type has no second matching
        nonland permanent); and
-     - switch `SpellTargets.kickedFaceHasLegalTarget` (which already takes
-       `tcs` and `sourceId` and applies `TextChange.applyEffect`) to check
-       `g.effectHasEnoughTargets p k' sourceId` on the adjusted kicked effect,
-       extend `Casting.castFaceHasLegalTarget` with optional `(tcs : Array
-       TextChange := #[]) (sourceId : Option ObjectId := none)` so it checks
-       `g.effectHasEnoughTargets` on `c.spellEffect` (after `TextChange.applyEffect
-       tcs`, falling back to `!(g.legalAuraTargets p c sourceId).isEmpty` for
+     - in `SpellTargets.kickedFaceHasLegalTarget` (which already takes `tcs`
+       and `sourceId`), keep `!k'.requiresTarget || k'.allowsZeroTargets` on the
+       `tcs`-adjusted kicked effect `k'` and replace only the non-empty target
+       check with `g.effectHasEnoughTargets p k' sourceId` (so "any number" /
+       "up to N" kickers such as *The Eagles Are Coming!* stay legal with zero
+       targets), extend `Casting.castFaceHasLegalTarget` with optional
+       `(tcs : Array TextChange := #[]) (sourceId : Option ObjectId := none)` so
+       on `c.spellEffect = some e` (`e' := TextChange.applyEffect tcs e`) it
+       checks `!e'.requiresTarget || e'.allowsZeroTargets ||
+       g.effectHasEnoughTargets p e' sourceId` (falling back to
+       `c.allowsZeroTargets || !(g.legalAuraTargets p c sourceId).isEmpty` for
        Auras without `spellEffect`) or `g.kickedFaceHasLegalTarget p c tcs
        sourceId`, pass `(g.evalLayer3 o)` / `(some o.id)` (or `card` /
        `some checkId`) across `Casting.canCastFrontFace` (replacing
@@ -7616,13 +7620,18 @@ expiry / active-team `"during your turn"` / starting team / extra turns /
        `.mayCastFromGraveyard`, and `defaultFraAction` `.mayCastCards` /
        `.mayCastFromGraveyard`, also pre-applying `TextChange.applyEffect
        (g.evalLayer3 o)` and passing `some o.id` in their modal
-       `spellModeIsChoosable` pre-checks), and check `g.effectHasEnoughTargets`
-       on `g.currentSpellEffect spell` (with `some spell.id`) in
+       `spellModeIsChoosable` pre-checks), keep the existing `zeroOk` bypass in
        `Decisions.beginResolutionCastTargets` and
-       `Decisions.afterAdditionalCostAnnounced` and on `(e, obj.sourceId)` in
-       `Triggers.triggerModeChoosable` so multi-target spells (`targetCount ≥ 2`,
-       e.g. *Seeds of Strength* / *Arc Trail* / *Cone of Flame*) are rejected
-       upfront whenever fewer than `targetCount` distinct legal targets exist.
+       `Decisions.afterAdditionalCostAnnounced` while adding
+       `(g.currentSpellEffect spell).any (fun eff => eff.requiresTarget &&
+       !g.effectHasEnoughTargets p eff (some spell.id))` alongside
+       `(g.legalProposedTargets p spell).isEmpty`, and keep
+       `!e.requiresTarget || e.allowsZeroTargets` in
+       `Triggers.triggerModeChoosable` while replacing its non-empty test with
+       `g.effectHasEnoughTargets p e obj.sourceId` so mandatory multi-target
+       effects (`targetCount ≥ 2`, e.g. *Seeds of Strength* / *Arc Trail* /
+       *Cone of Flame*) are rejected upfront whenever fewer than `targetCount`
+       distinct legal targets exist without rejecting zero-allowed effects.
    - Enforce CR 118.9a,c alternative-cost exclusivity & actual spell mana value
      in `Costs.playManaCost`, and wire `perm.payLifeEqualManaValue` into
      one-shot resolution casts without leaking onto `withoutManaCost` casts
@@ -7761,19 +7770,18 @@ expiry / active-team `"during your turn"` / starting team / extra turns /
        keeps it from going on the stack or resolving if that combat damage
        causes the monarch or their team to lose the game, CR 113.8 / 725.2 /
        Rulings 937, 939); and
-     - gate the active-team fallback in `Leaving.playerLeavesGameCore`'s CR 725.4
-       monarch succession check (after `g.stillInGame g.activePlayer &&
-       g.activePlayer != p`, once `GameEvent.playerLeftGame` has set
-       `(g.player p).lost`) on `!g.isSharedTurnFinalSeat` and unbegun seats in
-       `let seats := g.currentSharedTurnSeats` (`if !g.isSharedTurnFinalSeat then
-       ((g.teamMembers g.activePlayer).find? (fun q => q != p && g.stillInGame q
-       && !seats.contains q)).getD (g.nextLiving p) else g.nextLiving p`) so a
-       later living teammate whose seat in this shared turn has not yet begun
-       inherits the monarchy (whether the monarch left on the first seat or an
-       opponent monarch left after `g.activePlayer` had already departed earlier
-       in the shared turn), while a monarch leaving on the final seat passes the
-       monarchy to `g.nextLiving p` rather than back to an earlier teammate whose
-       seat already finished (CR 725.4 / 805.4a).
+     - use `else if !g.isSharedTurnFinalSeat then g.nextLiving g.activePlayer
+       else g.nextLiving p` after `if g.stillInGame g.activePlayer &&
+       g.activePlayer != p then g.activePlayer` in `Leaving.playerLeavesGameCore`'s
+       CR 725.4 monarch succession check (which runs after
+       `GameEvent.playerLeftGame` has set `(g.player p).lost`) so whenever a
+       later living teammate seat in this shared turn has not yet begun
+       (`!g.isSharedTurnFinalSeat`), that exact next shared-turn seat
+       (`g.nextLiving g.activePlayer`, even on multi-seat teams whose shared
+       turn started mid-team) inherits the monarchy—whether the monarch left on
+       an earlier seat or an opponent monarch left after `g.activePlayer` had
+       already departed—while leaving on the final seat passes the monarchy to
+       `g.nextLiving p` (CR 725.4 / 805.4a).
    - Complete 2HG shared-turn summoning sickness, active-team restrictions, and
      multiplayer combat / *Jace, Multiverse Architect* / *Garruk, Curse Breaker*
      scoping (`Core.lean`, `Casting.lean`, `Costs.lean`, `Turns.lean`,
