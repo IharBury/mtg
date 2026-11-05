@@ -500,9 +500,9 @@ partial def resumePendingReplacement (g : Game) (pr : PendingReplacement)
     g.drawSubDraws p remaining applied (cause := cause)
   | .connive controller sourceId =>
     g.applyConnive controller sourceId
-  | .finishSbaSweep moves preBattlefield stage pwMoves sagaMoves tokensOutsideBf copiesOutside illegalAuras illegalEquips illegalCreatureAtts =>
+  | .finishSbaSweep moves preBattlefield stage pwMoves sagaMoves tokensOutsideBf copiesOutside illegalAuras illegalEquips illegalCreatureAtts legendGroups =>
     (g.finishSbaSweep moves preBattlefield stage pwMoves sagaMoves tokensOutsideBf
-      copiesOutside illegalAuras illegalEquips illegalCreatureAtts).1
+      copiesOutside illegalAuras illegalEquips illegalCreatureAtts legendGroups).1
   | .untapPermanent targetId duringUntapStep logUntap cause =>
     match g.findObject? targetId with
     | some tgt =>
@@ -812,8 +812,6 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
       let g := g.afterPermanentEnters entered
       if let some hid := hostId then g.change (.putArtifactThisWay (some (entered.id, hid))) else g
     | none => g
-  | .worldsWithinWorldsTail exiled sourceId =>
-    g.finishWorldsWithinWorldsTail exiled sourceId
   | .copyEnteredArtifact controller artifactId =>
     g.copyEnteredArtifact controller artifactId
   | .grantHandSizePower sourceId =>
@@ -2435,7 +2433,7 @@ partial def finishAfterRandom (g : Game) (grantPriority : Bool) : Game :=
     | .setStartingPlayer i =>
       let n := g.players.size
       let i := if n == 0 then 0 else i % n
-      let sp0 : PlayerId := ⟨i⟩
+      let sp0 : PlayerId := ((g.teamMembers ⟨i⟩).find? g.stillInGame).getD ⟨i⟩
       let sp := if g.stillInGame sp0 then sp0 else g.nextLiving sp0
       let g := g.changes #[.startingPlayer sp, .priority sp]
       let g := g.logMsg s!"Starting player: {(g.player sp).name}"
@@ -3562,7 +3560,7 @@ def keepLegend (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game :=
       throw s!"Choose one of the legendary permanents named {name} (CR 704.5j)"
     let some kept := g.findObject? id | throw "no such object"
     if !kept.isOnBattlefield then
-      throw s!"{kept.name} is not on the battlefield"
+      throw s!"{g.name kept} is not on the battlefield"
     let outerCont? := g.pendingReplacement
     let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
     let others := ids.filter (· != id)
@@ -3578,7 +3576,7 @@ def keepLegend (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game :=
         (if g.currentBatch.isSome then g.openBatchObjects.filter GameObject.isOnBattlefield
          else g.battlefield)
     let g := (g.change (.pending .none) |>.logMsg
-      s!"{(g.player p).name} keeps {kept.name} (legend rule, CR 704.5j)").withBatch
+      s!"{(g.player p).name} keeps {g.name kept} (legend rule, CR 704.5j)").withBatch
       (some (.stateBased .legendRule)) fun g => Id.run do
         let mut g := g
         for i in [0:others.size] do
@@ -3587,7 +3585,7 @@ def keepLegend (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game :=
           | some o =>
             if o.isOnBattlefield then
               g := g.moveToOwnerGraveyard o
-                s!"{o.name} is put into its owner's graveyard (legend rule, CR 704.5j)"
+                s!"{g.name o} is put into its owner's graveyard (legend rule, CR 704.5j)"
                 (preBattlefield := some preBf)
                 (cause := some (.stateBased .legendRule))
               if let .chooseReplacement .. := g.pending then

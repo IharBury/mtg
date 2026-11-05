@@ -5123,10 +5123,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     if g.over || !g.stillInGame controller || teamCantWin then g
     else
       let mates := g.livingPlayers.filter (fun pl => pl.id != controller && g.areTeammates controller pl.id)
-      let msg :=
-        match mates[0]? with
-        | some mate => s!"{(g.player controller).name} and {mate.name} win the game"
-        | none => s!"{(g.player controller).name} wins the game"
+      let msg := g.formatWinMessage (#[controller] ++ mates.map (·.id))
       g.record (GameEvent.gameEnded g.turnNumber (.won controller)
         (cause := g.resolvingOneShotCause controller sourceId))
         |>.logMsg msg

@@ -148,7 +148,7 @@ def finishSagaFinalChapter (g : Game) (controller : PlayerId)
         (sourceId := sourceId) (ability := ability)
         (cause := some (.gameRule .abilityFinishedResolving)))
   match (g.permanentsOf controller).find? (fun o =>
-    (g.baseCard o).hexproofIndestructibleIfLore.isSome) with
+    (g.baseCard o).hexproofIndestructibleIfLore.isSome && g.retainsPrintedAbilities o) with
   | none => g
   | some tom => g.logMsg s!"{g.name tom}'s last ability triggers"
 
@@ -259,9 +259,12 @@ def finishOneResolution (g : Game) (fin : ResolutionFinish) : Game :=
     let finalSagaPlayer? :=
       match sagaChapter, sourceId.bind g.findObject? with
       | some n, some src =>
-        match (g.baseCard src).saga, g.controllerOf src with
-        | some s, some p => if n == s.finalChapterNumber then some p else none
-        | _, _ => none
+        if src.isOnBattlefield && g.hasSubtype src .saga && g.retainsPrintedAbilities src then
+          match (g.baseCard src).saga, g.controllerOf src with
+          | some s, some p =>
+            if s.finalChapterNumber > 0 && n == s.finalChapterNumber then some p else none
+          | _, _ => none
+        else none
       | _, _ => none
     match finalSagaPlayer? with
     | some p =>

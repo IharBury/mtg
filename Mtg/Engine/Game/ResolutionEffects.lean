@@ -495,21 +495,6 @@ def incrementPlanSource (g : Game) (controller : PlayerId) (sourceId : Option Ob
       g.change (.skipTriggerSequenceRest true)
         |>.logMsg "The ability's source is no longer in play"
 
-/-- Increment the source's plan counter, queue the matching chapter trigger,
-then run `k`. -/
-def incrementPlanThen (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
-    (k : Game → GameObject → Game) : Game :=
-  if let .chooseReplacement .. := g.pending then
-    g.chainPendingReplacement (.finishPostStep (.incrementPlanSource controller sourceId))
-  else
-    g.withSourceOnBattlefield sourceId fun g o =>
-      let cause := g.resolveOptionalCause none (fallbackSrc := sourceId) (fallbackCtrl := some controller)
-      let g := g.withBatch (g.resolvingBatchCause controller sourceId) fun g =>
-        g.recordPutCounters o.id .plan 1 (byPlayer := some controller) (cause := some cause)
-      match g.findObject? o.id with
-      | some cur => k g cur
-      | none => g
-
 /-- Current power of `sourceId` if it is still on the battlefield; otherwise
 last-known power, falling back to the object's current power. -/
 def sourcePowerAtResolution (g : Game) (sourceId : Option ObjectId)

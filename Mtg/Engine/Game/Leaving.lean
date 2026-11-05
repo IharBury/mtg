@@ -41,11 +41,7 @@ def decideGameIfFinished (g : Game) : Option Game :=
       let w := living[0]!
       if living.any (fun pl => g.playerCantWin pl.id) then none
       else
-        let msg :=
-          if living.size == 2 then
-            s!"{w.name} and {living[1]!.name} win the game"
-          else
-            s!"{w.name} wins the game"
+        let msg := g.formatWinMessage (living.map (·.id))
         some (g.record (GameEvent.gameEnded g.turnNumber (.won w.id)) |>.logMsg msg)
     else none
 

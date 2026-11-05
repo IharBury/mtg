@@ -126,8 +126,15 @@ def applyFraResolution? (g : Game) (controller : PlayerId) (effect : Effect)
   | .createTigerGod => some (g.createNamedToken controller tigerGodToken)
   | .extraTurn =>
     let (g, cause) := g.allocDelayedCause (some controller) sourceId
-    some (g.record (GameEvent.extraTurnAdded g.turnNumber controller (cause := cause))
-      |>.logMsg s!"{(g.player controller).name} takes an extra turn after this one. During that turn, power-up abilities can't be activated.")
+    let teamSeats := (g.teamMembers controller).filter g.stillInGame
+    let firstSeat := teamSeats[0]?.getD controller
+    let whoVerb :=
+      if teamSeats.size ≤ 1 then
+        s!"{(g.player controller).name} takes"
+      else
+        s!"{g.formatPlayerNames teamSeats} take"
+    some (g.record (GameEvent.extraTurnAdded g.turnNumber firstSeat (cause := cause))
+      |>.logMsg s!"{whoVerb} an extra turn after this one. During that turn, power-up abilities can't be activated.")
   | .drawEqualToBurdenCounters =>
     some (g.withSourceOnBattlefield sourceId fun g o => g.draw controller o.status.burden)
   | .creaturesWithoutFlyingCantBlock =>

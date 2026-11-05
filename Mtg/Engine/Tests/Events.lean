@@ -17562,6 +17562,534 @@ def startThreePlayer24i3 : Game :=
 
 end Phase24Item3EventAlignment
 
+section Phase24Item4EventAlignment
+
+def opp24i4 : PlayerId := ⟨1⟩
+
+def mustHold24i4 (label : String) (ok : Bool) : Bool :=
+  if ok then true else panic! s!"Phase 24 item 4 guard failed: {label}"
+
+def replayOk24i4 (gs : Array Game) : Bool :=
+  gs.all (fun g => Game.replayEvents g.events == g && allRulesEventsClassified g)
+
+def mkTwoHeadedGiant24i4 (seed : UInt64 := 244) : Game :=
+  let cfg : StartConfig := {
+    seats := #[
+      { name := "Chandra", deck := testRedDeck, teammate := some ⟨1⟩ },
+      { name := "Nissa", deck := testGreenDeck, teammate := some ⟨0⟩ },
+      { name := "Liliana", deck := testRedDeck, teammate := some ⟨3⟩ },
+      { name := "Jace", deck := testGreenDeck, teammate := some ⟨2⟩ }
+    ]
+    format := .constructed
+    seed
+    startingPlayer := some 0
+  }
+  match Start.start cfg with
+  | .ok g => (keepOpeningHands g 30).advanceStep
+  | .error e => panic! e
+
+def mkThreePlayer24i4 (seed : UInt64 := 245) : Game :=
+  let cfg : StartConfig := {
+    seats := #[
+      { name := "Chandra", deck := testRedDeck },
+      { name := "Nissa", deck := testGreenDeck },
+      { name := "Liliana", deck := testRedDeck }
+    ]
+    format := .constructed
+    seed
+    startingPlayer := some 0
+  }
+  match Start.start cfg with
+  | .ok g => (keepOpeningHands g 24).advanceStep
+  | .error e => panic! e
+
+-- 1. CR 514.2 / 602.5b / 603.2h / 606.3 / 805.4 / 805.4c / 810.2:
+--    Two-Headed Giant shared-turn `turnNumber`, `"this turn"` queries, cleanup expiry, and `damageMarkedCleared`.
+#guard
+  let zeroZero24i4 : CardDef := creature "P24i4 0/0" ManaCost.empty #["Spirit"] 0 0
+  let onceAbDef : CardDef := {
+    bear with
+    name := "P24i4 Once-Per-Turn Bear"
+    activatedAbilities := #[
+      activated (Effect.gainLife 1) (ManaCost.empty) (onceEachTurn := true)
+    ]
+  }
+  let pwDef : CardDef := {
+    name := "P24i4 Shared-Turn Walker"
+    types := #[.planeswalker]
+    loyalty := some 4
+    activatedAbilities := #[
+      { cost := { loyalty := some (.plus 1) }, effect := Effect.gainLife 1 }
+    ]
+  }
+  let g0 : Game :=
+    addPermanent
+      (insertObject (addPermanent mkTwoHeadedGiant24i4 onceAbDef ⟨0⟩ ⟨0⟩) pwDef ⟨0⟩ .battlefield (some ⟨0⟩)
+        { summoningSick := false, counters := #[(.loyalty, 4)] })
+      zeroZero24i4 ⟨0⟩ ⟨0⟩
+  let bearId := (g0.battlefield.filter (·.name == onceAbDef.name))[0]!.id
+  let pwId := (g0.battlefield.filter (·.name == pwDef.name))[0]!.id
+  -- Mark 1 nonlethal damage, grant +1/+1 until EOT, die 1 creature, activate once-each-turn & loyalty, play 1 land for `⟨0⟩`:
+  let g1 : Game :=
+    let g := g0.checkSBA
+    let g := g.dealDamageToPermanent (g.object! bearId) 1 (cause := some testCause)
+    let g := g.createEffect (.pump bearId 1 1) (cause := some testCause)
+    let g := mustApply g ⟨0⟩ (.activate bearId 0)
+    let g := mustApply (mustApply (mustApply (mustApply g ⟨0⟩ .pass) ⟨1⟩ .pass) ⟨2⟩ .pass) ⟨3⟩ .pass
+    let g := mustApply g ⟨0⟩ (.activate pwId 0)
+    let g := mustApply (mustApply (mustApply (mustApply g ⟨0⟩ .pass) ⟨1⟩ .pass) ⟨2⟩ .pass) ⟨3⟩ .pass
+    let mtnCard := insertObject g mountain ⟨0⟩ (.hand ⟨0⟩)
+    let mtnId := ((mtnCard.player ⟨0⟩).hand.filter (fun id => (mtnCard.object! id).name == mountain.name))[0]!
+    mustApply mtnCard ⟨0⟩ (.playLand mtnId)
+  let preAdvanceIdx := g1.events.size
+  -- Run Seat `⟨0⟩`'s cleanup step -> advances to teammate Seat `⟨1⟩` (still the same shared turn!):
+  let gSeat1 : Game := g1.beginStep .cleanup
+  let midClearedEvts := (gSeat1.events.extract preAdvanceIdx gSeat1.events.size).filter fun e =>
+    match e.change with | .rules (.damage (.markedCleared _)) => true | _ => false
+  -- Run Seat `⟨1⟩`'s cleanup step (`isSharedTurnFinalSeat`) -> clears EOT & damage and advances to opposing Seat `⟨2⟩`:
+  let preFinalIdx := gSeat1.events.size
+  let gSeat2 : Game := gSeat1.beginStep .cleanup
+  let finalClearedEvts := (gSeat2.events.extract preFinalIdx gSeat2.events.size).filter fun e =>
+    match e.change with | .rules (.damage (.markedCleared _)) => true | _ => false
+
+  let sharedTurnLifecycleOk :=
+    !g1.isSharedTurnFinalSeat &&
+    g1.turnNumber == 1 &&
+    -- On Seat `⟨1⟩`, `turnNumber` stays 1, EOT pump & marked damage persist, and `"this turn"` queries stay active:
+    gSeat1.activePlayer == ⟨1⟩ &&
+    gSeat1.turnNumber == 1 &&
+    gSeat1.isSharedTurnFinalSeat &&
+    (gSeat1.object! bearId).status.damage == 1 &&
+    gSeat1.power (gSeat1.object! bearId) == 3 &&
+    midClearedEvts.isEmpty &&
+    gSeat1.activationsThisTurn bearId == 1 &&
+    (gSeat1.abilitiesActivatedThisTurn bearId).contains 0 &&
+    gSeat1.loyaltyActivatedThisTurn pwId &&
+    gSeat1.loggedCreatureDeaths == 1 &&
+    -- Per-player land play count (CR 805.4c): `⟨0⟩` played 1 land this turn, while `⟨1⟩` played 0:
+    gSeat1.loggedLandsPlayed ⟨0⟩ == 1 &&
+    gSeat1.loggedLandsPlayed ⟨1⟩ == 0 &&
+    -- After Seat `⟨1⟩` finishes the shared turn, `turnNumber` increments to 2, EOT & damage clear, and `"this turn"` resets:
+    gSeat2.activePlayer == ⟨2⟩ &&
+    gSeat2.turnNumber == 2 &&
+    (gSeat2.object! bearId).status.damage == 0 &&
+    gSeat2.power (gSeat2.object! bearId) == 2 &&
+    finalClearedEvts.size == 1 &&
+    gSeat2.activationsThisTurn bearId == 0 &&
+    !gSeat2.loyaltyActivatedThisTurn pwId &&
+    gSeat2.loggedCreatureDeaths == 0
+
+  mustHold24i4 "1.sharedTurnLifecycleOk" sharedTurnLifecycleOk &&
+  mustHold24i4 "1.replay" (replayOk24i4 #[g1, gSeat1, gSeat2])
+
+-- 2. CR 805.4a / 810.2: Active-team `"during your turn"` / `"on your turn"` checks across all 7 sites.
+#guard
+  let duringAbDef : CardDef := {
+    bear with
+    name := "P24i4 During-Your-Turn Bear"
+    activatedAbilities := #[
+      activated (Effect.gainLife 1) (ManaCost.empty) (onlyDuringYourTurn := true)
+    ]
+  }
+  let fsSelfDef : CardDef := {
+    bear with
+    name := "P24i4 First Strike Self"
+    staticAbilities := #[.fra .firstStrikeDuringYourTurn]
+  }
+  let eqLordDef : CardDef := {
+    bear with
+    name := "P24i4 Equipped Team Lord"
+    staticAbilities := #[.equippedCreaturesHaveKeywordsDuringYourTurn Keyword.vigilance]
+  }
+  let eqHexUnblockDef : CardDef := {
+    name := "P24i4 Cloak Equipment"
+    types := #[.artifact]
+    subtypes := #["Equipment"]
+    staticAbilities := #[.equippedHexproofUnblockableDuringYourTurn]
+  }
+  let plainEqDef : CardDef := {
+    name := "P24i4 Plain Equipment"
+    types := #[.artifact]
+    subtypes := #["Equipment"]
+  }
+  let oppCombatDmgWatcherDef : CardDef := {
+    bear with
+    name := "P24i4 Combat Dmg Watcher"
+    triggeredAbilities := #[
+      .triggered .opponentsDealtCombatDamageYourTurn
+        { resolution := .gainLife (.fixed 1), phrase := "You gain 1 life." } {}
+    ]
+  }
+  -- Active player is `⟨0⟩` (Team A = `⟨0⟩, ⟨1⟩`; Team B = `⟨2⟩, ⟨3⟩`):
+  let gBase := mkTwoHeadedGiant24i4
+  let gAct :=
+    (addPermanent (addPermanent gBase duringAbDef ⟨1⟩ ⟨1⟩) duringAbDef ⟨2⟩ ⟨2⟩)
+  let mateAbId := (gAct.battlefield.filter (fun o => o.name == duringAbDef.name && o.controller == some ⟨1⟩))[0]!.id
+  let oppAbId := (gAct.battlefield.filter (fun o => o.name == duringAbDef.name && o.controller == some ⟨2⟩))[0]!.id
+  let mateActOk := ((gAct.change (.priority ⟨1⟩)).apply ⟨1⟩ (.activate mateAbId 0)).isOk
+  let oppActBlocked := !((gAct.change (.priority ⟨2⟩)).apply ⟨2⟩ (.activate oppAbId 0)).isOk
+
+  let gKw :=
+    let g := addPermanent (addPermanent gBase fsSelfDef ⟨1⟩ ⟨1⟩) fsSelfDef ⟨2⟩ ⟨2⟩
+    let g := addPermanent (addPermanent g eqLordDef ⟨1⟩ ⟨1⟩) eqLordDef ⟨2⟩ ⟨2⟩
+    let g := addPermanent (addPermanent g bear ⟨1⟩ ⟨1⟩) bear ⟨2⟩ ⟨2⟩
+    let g := addPermanent (addPermanent g plainEqDef ⟨1⟩ ⟨1⟩) plainEqDef ⟨2⟩ ⟨2⟩
+    let g := addPermanent (addPermanent g eqHexUnblockDef ⟨1⟩ ⟨1⟩) eqHexUnblockDef ⟨2⟩ ⟨2⟩
+    let mateBear := (g.battlefield.filter (fun o => o.name == bear.name && o.controller == some ⟨1⟩))[0]!
+    let oppBear := (g.battlefield.filter (fun o => o.name == bear.name && o.controller == some ⟨2⟩))[0]!
+    let mateEq := (g.battlefield.filter (fun o => o.name == plainEqDef.name && o.controller == some ⟨1⟩))[0]!
+    let oppEq := (g.battlefield.filter (fun o => o.name == plainEqDef.name && o.controller == some ⟨2⟩))[0]!
+    let mateCloak := (g.battlefield.filter (fun o => o.name == eqHexUnblockDef.name && o.controller == some ⟨1⟩))[0]!
+    let oppCloak := (g.battlefield.filter (fun o => o.name == eqHexUnblockDef.name && o.controller == some ⟨2⟩))[0]!
+    let g := ((g.attachSourceTo mateEq mateBear).attachSourceTo oppEq oppBear)
+    let g := ((g.attachSourceTo mateCloak (g.object! mateBear.id)).attachSourceTo oppCloak (g.object! oppBear.id))
+    (g.createEffect (.firstStrikeOnYourTurn mateBear.id) (cause := some testCause)).createEffect
+      (.firstStrikeOnYourTurn oppBear.id) (cause := some testCause)
+  let mateSelf := (gKw.battlefield.filter (fun o => o.name == fsSelfDef.name && o.controller == some ⟨1⟩))[0]!
+  let oppSelf := (gKw.battlefield.filter (fun o => o.name == fsSelfDef.name && o.controller == some ⟨2⟩))[0]!
+  let mateHost := (gKw.battlefield.filter (fun o => o.name == bear.name && o.controller == some ⟨1⟩))[0]!
+  let oppHost := (gKw.battlefield.filter (fun o => o.name == bear.name && o.controller == some ⟨2⟩))[0]!
+
+  -- `.opponentsDealtCombatDamageYourTurn`: combat damage to `⟨2⟩` during `⟨0⟩`'s turn fires `⟨1⟩`'s watcher, not `⟨3⟩`'s:
+  let gTrig0 :=
+    addPermanent (addPermanent gBase oppCombatDmgWatcherDef ⟨1⟩ ⟨1⟩) oppCombatDmgWatcherDef ⟨3⟩ ⟨3⟩
+  let mateWId := (gTrig0.battlefield.filter (fun o => o.name == oppCombatDmgWatcherDef.name && o.controller == some ⟨1⟩))[0]!.id
+  let gTrig1 := gTrig0.withBatch (some testCause) fun g =>
+    g.record (GameEvent.damagedPlayer g.turnNumber (g.snapshot (g.object! mateWId)) ⟨2⟩ 2 (combat := true) (cause := testCause))
+
+  -- `Triggers.becomeTapped`: `during == true` for teammate `⟨1⟩` and `false` for opponent `⟨2⟩`:
+  let gTap1 := gKw.becomeTapped mateHost (cause := some testCause)
+  let gTap2 := gTap1.becomeTapped oppHost (cause := some testCause)
+  let tapDuringOf (oid : ObjectId) : Option Bool :=
+    gTap2.events.findSomeRev? fun e =>
+      match e.change with
+      | .rules (.permanent (.tapped eo d)) => if eo.id == some oid then some d else none
+      | _ => none
+
+  -- `FrcResolve.applyFrc` `.jaceTax`: no-op for active teammate `⟨1⟩`, creates `.cantAttackJacesThisTurn ⟨0⟩` for opponent `⟨2⟩`:
+  let gJaceMate := gBase.applyFrc ⟨1⟩ {} .jaceTax #[] none
+  let gJaceOpp := gBase.applyFrc ⟨2⟩ {} .jaceTax #[] none
+
+  let activeTeamDuringYourTurnOk :=
+    gBase.isOnActiveTeam ⟨0⟩ &&
+    gBase.isOnActiveTeam ⟨1⟩ &&
+    !gBase.isOnActiveTeam ⟨2⟩ &&
+    mateActOk &&
+    oppActBlocked &&
+    gKw.hasFirstStrike mateSelf &&
+    !gKw.hasFirstStrike oppSelf &&
+    gKw.hasVigilance mateHost &&
+    !gKw.hasVigilance oppHost &&
+    gKw.hasHexproof mateHost &&
+    gKw.hasKeyword mateHost (·.cantBeBlocked) &&
+    !gKw.hasHexproof oppHost &&
+    !gKw.hasKeyword oppHost (·.cantBeBlocked) &&
+    gKw.hasFirstStrike mateHost &&
+    !gKw.hasFirstStrike oppHost &&
+    gTrig1.waitingTriggers.size == 1 &&
+    gTrig1.waitingTriggers[0]!.controller == ⟨1⟩ &&
+    tapDuringOf mateHost.id == some true &&
+    tapDuringOf oppHost.id == some false &&
+    !gJaceMate.cantAttackJaces ⟨0⟩ &&
+    gJaceOpp.cantAttackJaces ⟨0⟩
+
+  mustHold24i4 "2.activeTeamDuringYourTurnOk" activeTeamDuringYourTurnOk &&
+  mustHold24i4 "2.replay" (replayOk24i4 #[gKw, gTrig1, gTap2, gJaceMate, gJaceOpp])
+
+-- 3. CR 102.3 / 103.1a / 723.5 / 800.4a,m / 805.3 / 805.8 / 805.10a / 810.2 / 810.8a / 810.11:
+--    Starting team first seat (`Start.startWithRng`), CR 805.8 shared team extra turns,
+--    all 6 `matchesTrigger` `opp` arms, player-control edge cases, and `3+`-seat team win logs.
+#guard
+  -- 3a. `Start.startWithRng` with `startingPlayer := none` picks only team first seats (`⟨0⟩` or `⟨2⟩`):
+  let startSeats := (Array.range 16).map fun s =>
+    match Start.start {
+      seats := #[
+        { name := "Chandra", deck := testRedDeck, teammate := some ⟨1⟩ },
+        { name := "Nissa", deck := testGreenDeck, teammate := some ⟨0⟩ },
+        { name := "Liliana", deck := testRedDeck, teammate := some ⟨3⟩ },
+        { name := "Jace", deck := testGreenDeck, teammate := some ⟨2⟩ }
+      ]
+      format := .constructed
+      seed := (s + 1).toUInt64
+      startingPlayer := none
+    } with
+    | .ok g => g.startingPlayer
+    | .error e => panic! e
+  let startTeamFirstSeatOk :=
+    startSeats.all (fun p => p == ⟨0⟩ || p == ⟨2⟩) &&
+    startSeats.contains ⟨0⟩ &&
+    startSeats.contains ⟨2⟩
+
+  -- 3b. CR 805.8 shared team extra turns:
+  --     On Seat `⟨0⟩`'s regular turn 1, `Effect.extraTurn` for teammate `⟨1⟩` queues `#[⟨0⟩, ⟨1⟩]`,
+  --     finishes regular Seat `⟨1⟩` (turn 1) first, then runs extra Seat `⟨0⟩` -> extra Seat `⟨1⟩` (both turn 2,
+  --     `powerUpsForbidden`), then advances to opposing Seat `⟨2⟩` (turn 3, `!powerUpsForbidden`):
+  let gEx0 := mkTwoHeadedGiant24i4
+  let gExQueued := gEx0.applyEffect ⟨1⟩ { resolution := .extraTurn } #[]
+  let gExRegMate := gExQueued.startNextTurnAndBegin
+  let gExTurnSeat0 := gExRegMate.startNextTurnAndBegin
+  let gExTurnSeat1 := gExTurnSeat0.startNextTurnAndBegin
+  let gExAfter := gExTurnSeat1.startNextTurnAndBegin
+  let sharedExtraTurnOk :=
+    gExQueued.log.any (·.contains "Chandra and Nissa take an extra turn") &&
+    gExQueued.extraTurns == #[⟨0⟩, ⟨1⟩] &&
+    gExRegMate.activePlayer == ⟨1⟩ &&
+    gExRegMate.turnNumber == 1 &&
+    !gExRegMate.powerUpsForbidden &&
+    gExRegMate.extraTurns == #[⟨0⟩, ⟨1⟩] &&
+    gExTurnSeat0.activePlayer == ⟨0⟩ &&
+    gExTurnSeat0.turnNumber == 2 &&
+    gExTurnSeat0.powerUpsForbidden &&
+    gExTurnSeat0.extraTurns == #[⟨1⟩] &&
+    !gExTurnSeat0.isSharedTurnFinalSeat &&
+    gExTurnSeat1.activePlayer == ⟨1⟩ &&
+    gExTurnSeat1.turnNumber == 2 &&
+    gExTurnSeat1.powerUpsForbidden &&
+    gExTurnSeat1.extraTurns.isEmpty &&
+    gExTurnSeat1.isSharedTurnFinalSeat &&
+    gExAfter.activePlayer == ⟨2⟩ &&
+    gExAfter.turnNumber == 3 &&
+    !gExAfter.powerUpsForbidden
+
+  -- 3c. All 6 `GameEvent.matchesTrigger` `opp` arms exclude teammates (`⟨1⟩`) and match opponents (`⟨2⟩`):
+  let gSnap := addPermanent gEx0 bear ⟨1⟩ ⟨1⟩
+  let smallSnap := { (gSnap.snapshot (gSnap.battlefield[0]!)) with power := some 1 }
+  let isMate := fun (p : PlayerId) => p == ⟨1⟩
+  let eAtkYouMate := GameEvent.attackersDeclared 1 ⟨1⟩ #[(smallSnap, .player ⟨0⟩)]
+  let eAtkYouOpp := GameEvent.attackersDeclared 1 ⟨2⟩ #[(smallSnap, .player ⟨0⟩)]
+  let eAtkOppVsMate := GameEvent.attackersDeclared 1 ⟨0⟩ #[(smallSnap, .player ⟨1⟩)]
+  let eAtkOppVsOpp := GameEvent.attackersDeclared 1 ⟨0⟩ #[(smallSnap, .player ⟨2⟩)]
+  let eBlkMate := GameEvent.blockersDeclared 1 ⟨1⟩ #[({ smallSnap with controller := some ⟨1⟩ }, ⟨99⟩)]
+  let eBlkOpp := GameEvent.blockersDeclared 1 ⟨2⟩ #[({ smallSnap with controller := some ⟨2⟩ }, ⟨99⟩)]
+  let eBegCombatMate := GameEvent.stepBegan 1 .beginningOfCombat (active := ⟨1⟩)
+  let eBegCombatOpp := GameEvent.stepBegan 1 .beginningOfCombat (active := ⟨2⟩)
+  let eDrawStepMate := GameEvent.stepBegan 1 .draw (active := ⟨1⟩)
+  let eDrawStepOpp := GameEvent.stepBegan 1 .draw (active := ⟨2⟩)
+  let eLoyaltyMate := GameEvent.abilityActivated 1 ⟨99002⟩ smallSnap ⟨1⟩
+    (.nonMana (some 1) false false false none false) (cause := some testCause)
+  let eLoyaltyOpp := GameEvent.abilityActivated 1 ⟨99003⟩ smallSnap ⟨2⟩
+    (.nonMana (some 1) false false false none false) (cause := some testCause)
+  let matchesOppArmsOk :=
+    !eAtkYouMate.matchesTrigger ⟨0⟩ none (.fra .creatureAttacksYouOrYourPlaneswalker) isMate &&
+    eAtkYouOpp.matchesTrigger ⟨0⟩ none (.fra .creatureAttacksYouOrYourPlaneswalker) isMate &&
+    !eAtkOppVsMate.matchesTrigger ⟨0⟩ none (.fra .creaturesAttackYourOpponent) isMate &&
+    eAtkOppVsOpp.matchesTrigger ⟨0⟩ none (.fra .creaturesAttackYourOpponent) isMate &&
+    !eBlkMate.matchesTrigger ⟨0⟩ none (.fra .opponentSmallCreatureBlocks) isMate &&
+    eBlkOpp.matchesTrigger ⟨0⟩ none (.fra .opponentSmallCreatureBlocks) isMate &&
+    !eBegCombatMate.matchesTrigger ⟨0⟩ none (.fra .opponentBeginCombat) isMate &&
+    eBegCombatOpp.matchesTrigger ⟨0⟩ none (.fra .opponentBeginCombat) isMate &&
+    !eDrawStepMate.matchesTrigger ⟨0⟩ none .eachOpponentDrawStep isMate &&
+    eDrawStepOpp.matchesTrigger ⟨0⟩ none .eachOpponentDrawStep isMate &&
+    !eLoyaltyMate.matchesTrigger ⟨0⟩ none (.fra .opponentActivatesLoyaltyAbility) isMate &&
+    eLoyaltyOpp.matchesTrigger ⟨0⟩ none (.fra .opponentActivatesLoyaltyAbility) isMate
+
+  -- 3d. Player-control edge cases:
+  --     (i) `.controlsPlayer ⟨2⟩ true` in `expireUntilNextTurnEffects ⟨3⟩` stays while teammate `⟨2⟩` lives,
+  --         and expires via `g.areTeammates ⟨2⟩ ⟨3⟩` once both teammates have `.lost == true`;
+  --     (ii) `controllingPlayerOf?` returns `some ⟨1⟩` while `⟨1⟩` lives and `none` once `(g.player ⟨1⟩).lost`:
+  let gCtrlEdge0 :=
+    gEx0.createEffect (.playerControl ⟨0⟩ ⟨2⟩ true) (cause := some testCause)
+  let gCtrlMateAlive := gCtrlEdge0.expireUntilNextTurnEffects ⟨3⟩
+  let gCtrlTeamLost :=
+    ((gCtrlEdge0.record (GameEvent.playerLost 1 ⟨2⟩ .lifeZeroOrLess (cause := some (.stateBased .lifeZeroOrLess)))).record
+      (GameEvent.playerLost 1 ⟨3⟩ .lifeZeroOrLess (cause := some (.stateBased .lifeZeroOrLess)))).expireUntilNextTurnEffects ⟨3⟩
+  let gLiveCtrl0 := mkThreePlayer24i4.createEffect (.playerControl ⟨1⟩ ⟨2⟩ false) (cause := some testCause)
+  let gLostCtrl0 :=
+    gLiveCtrl0.record (GameEvent.playerLost 1 ⟨1⟩ .lifeZeroOrLess (cause := some (.stateBased .lifeZeroOrLess)))
+  let playerControlEdgeOk :=
+    !gCtrlMateAlive.controlOnNextTakenTurn.isEmpty &&
+    gCtrlTeamLost.controlOnNextTakenTurn.isEmpty &&
+    gLiveCtrl0.controllingPlayerOf? ⟨2⟩ == some ⟨1⟩ &&
+    gLostCtrl0.controllingPlayerOf? ⟨2⟩ == none
+
+  -- 3e. `3+`-seat team win logs in `Leaving.decideGameIfFinished` and `TriggeredAbilities`:
+  let gTriTeam : Game :=
+    match Start.start {
+      seats := #[
+        { name := "P0", deck := testRedDeck, teammate := some ⟨1⟩ },
+        { name := "P1", deck := testGreenDeck, teammate := some ⟨2⟩ },
+        { name := "P2", deck := testRedDeck, teammate := some ⟨0⟩ },
+        { name := "P3", deck := testGreenDeck }
+      ]
+      format := .constructed
+      seed := 246
+      startingPlayer := some 0
+    } with
+    | .ok g => (keepOpeningHands g 30).advanceStep
+    | .error e => panic! e
+  let gTriConcede := gTriTeam.concede ⟨3⟩
+  let winTrigAb : TriggeredAbility :=
+    .triggered .yourUpkeep (Effect.gainLife 1) {}
+  let gTriTrigWin := gTriTeam.applyTriggeredAbility ⟨0⟩ winTrigAb none (resolutionOverride := some .winTheGame)
+  let threeSeatWinLogsOk :=
+    gTriConcede.over &&
+    gTriConcede.log.any (· == "P0, P1, and P2 win the game") &&
+    gTriTrigWin.over &&
+    gTriTrigWin.log.any (· == "P0, P1, and P2 win the game")
+
+  mustHold24i4 "3a.startTeamFirstSeatOk" startTeamFirstSeatOk &&
+  mustHold24i4 "3b.sharedExtraTurnOk" sharedExtraTurnOk &&
+  mustHold24i4 "3c.matchesOppArmsOk" matchesOppArmsOk &&
+  mustHold24i4 "3d.playerControlEdgeOk" playerControlEdgeOk &&
+  mustHold24i4 "3e.threeSeatWinLogsOk" threeSeatWinLogsOk &&
+  mustHold24i4 "3.replay" (replayOk24i4 #[gExQueued, gExRegMate, gExTurnSeat0, gExTurnSeat1, gExAfter, gCtrlMateAlive, gCtrlTeamLost, gLiveCtrl0, gLostCtrl0, gTriConcede, gTriTrigWin])
+
+-- 4. CR 704.3 / 704.5j / 704.8 / 800.4a:
+--    Start-of-pass CR 704.5j `legendRuleGroups` / `firstLegendRuleChoice?` evaluated before
+--    `GameEvent.playerLost`, CR 704.5q counter annihilation, `dyingCreatures`, and `pwMoves`.
+#guard
+  let zeroZero24i4 : CardDef := creature "P24i4 0/0" ManaCost.empty #["Spirit"] 0 0
+  let legDiesWatcherDef : CardDef := {
+    legendaryCreature "P24i4 Dying Legend" ManaCost.empty #["Spirit"] 2 2 with
+    triggeredAbilities := #[
+      .triggered .dies { resolution := .gainLife (.fixed 1), phrase := "You gain 1 life." } {}
+    ]
+  }
+  -- 4a. Before `GameEvent.playerLost`: in a 3-player game, `⟨1⟩` at 0 life controls two copies of `⟨0⟩`'s
+  --     legendary creature; Pass 1 still applies CR 704.5j before `⟨1⟩` leaves the game at end of Pass 1:
+  let gLostLeg0 : Game :=
+    let g := addPermanent (addPermanent mkThreePlayer24i4 legDiesWatcherDef ⟨0⟩ ⟨1⟩) legDiesWatcherDef ⟨0⟩ ⟨1⟩
+    g.loseLife ⟨1⟩ 20 (cause := some testCause)
+  let gLostLeg1 := gLostLeg0.checkSBA
+  let beforePlayerLostOk :=
+    (gLostLeg1.player ⟨1⟩).lost &&
+    (gLostLeg1.player ⟨1⟩).leftTheGame &&
+    ((gLostLeg1.player ⟨0⟩).graveyard.any (fun id => (gLostLeg1.object! id).name == legDiesWatcherDef.name)) &&
+    gLostLeg1.log.any (·.contains "legend rule, CR 704.5j")
+
+  -- 4b. Before CR 704.5q counter annihilation: `annihHost` loses its `+1/+1` counter in 704.5q,
+  --     yet two `Grizzly Bears` made Legendary by `.whileSourceHasCounter annihHostId .plusOnePlusOne`
+  --     at start of Pass 1 still pause on `Pending.chooseLegend`:
+  let gAnnih0 : Game :=
+    let g := addPermanent (addPermanent (addPermanent afterDraw hero me me) bear me me) bear me me
+    let hostId := (g.battlefield.filter (·.name == hero.name))[0]!.id
+    let bIds := (g.battlefield.filter (·.name == bear.name)).map (·.id)
+    let g := (g.recordPutCounters hostId .plusOnePlusOne 1).recordPutCounters hostId .minusOneMinusOne 1
+    g.createEffect (.layered (.objects bIds) (.types .add #[] #[] #[.legendary])
+      (.whileSourceHasCounter hostId .plusOnePlusOne)) (cause := some testCause)
+  let gAnnih1 := gAnnih0.checkSBA
+  let gAnnihKept :=
+    match gAnnih1.pending with
+    | .chooseLegend p _ ids => mustApply gAnnih1 p (.keepLegend ids[0]!)
+    | _ => gAnnih1
+  let beforeCounterAnnihOk :=
+    (match gAnnih1.pending with
+     | .chooseLegend p nm ids => p == me && nm == bear.name && ids.size == 2
+     | _ => false) &&
+    (gAnnihKept.battlefield.filter (·.name == bear.name)).size == 1
+
+  -- 4c. Before `dyingCreatures` (both directions):
+  --     (i) 0/0 `zeroZero24i4` granting `.legendary` dies in `dyingCreatures`, yet Pass 1 still pauses on `chooseLegend`;
+  --     (ii) 0/0 `zeroZero24i4` suppressing legend rule (`.legendRuleOff`) keeps Pass 1 from prompting `chooseLegend`,
+  --          then Pass 2 prompts `chooseLegend` after the 0/0 dies!
+  let gZeroGrant0 : Game :=
+    let g := addPermanent (addPermanent (addPermanent afterDraw zeroZero24i4 me me) bear me me) bear me me
+    let zId := (g.battlefield.filter (·.name == zeroZero24i4.name))[0]!.id
+    let bIds := (g.battlefield.filter (·.name == bear.name)).map (·.id)
+    g.createEffect (.layered (.objects bIds) (.types .add #[] #[] #[.legendary])
+      (.whileSourceOnBattlefield zId)) (cause := some testCause)
+  let gZeroGrant1 := gZeroGrant0.checkSBA
+  let gZeroBox0 : Game :=
+    let g := addPermanent (addPermanent (addPermanent afterDraw zeroZero24i4 me me) legDiesWatcherDef me me) legDiesWatcherDef me me
+    let zId := (g.battlefield.filter (·.name == zeroZero24i4.name))[0]!.id
+    g.createEffect (.playerRule me .legendRuleOff (.whileSourceOnBattlefield zId)) (cause := some testCause)
+  let (gZeroBoxPass1, _) := gZeroBox0.checkSBACounted
+  let gZeroBoxAll := gZeroBox0.checkSBA
+  let beforeDyingCreaturesOk :=
+    !(gZeroGrant1.battlefield.any (·.name == zeroZero24i4.name)) &&
+    (match gZeroGrant1.pending with
+     | .chooseLegend p nm ids => p == me && nm == bear.name && ids.size == 2
+     | _ => false) &&
+    !(gZeroBoxPass1.battlefield.any (·.name == zeroZero24i4.name)) &&
+    gZeroBoxPass1.pending == .none &&
+    (match gZeroBoxAll.pending with
+     | .chooseLegend p nm ids => p == me && nm == legDiesWatcherDef.name && ids.size == 2
+     | _ => false)
+
+  -- 4d. Before `pwMoves`: 0-loyalty planeswalker granting `.legendary` leaves in `pwMoves`, yet Pass 1 still pauses on `chooseLegend`:
+  let zeroPwDef : CardDef := {
+    name := "P24i4 Zero Loyalty PW"
+    types := #[.planeswalker]
+    loyalty := some 0
+  }
+  let gPwGrant0 : Game :=
+    let g := addPermanent (addPermanent (addPermanent afterDraw zeroPwDef me me) bear me me) bear me me
+    let pwId := (g.battlefield.filter (·.name == zeroPwDef.name))[0]!.id
+    let bIds := (g.battlefield.filter (·.name == bear.name)).map (·.id)
+    g.createEffect (.layered (.objects bIds) (.types .add #[] #[] #[.legendary])
+      (.whileSourceOnBattlefield pwId)) (cause := some testCause)
+  let gPwGrant1 := gPwGrant0.checkSBA
+  let beforePwMovesOk :=
+    !(gPwGrant1.battlefield.any (·.name == zeroPwDef.name)) &&
+    (match gPwGrant1.pending with
+     | .chooseLegend p nm ids => p == me && nm == bear.name && ids.size == 2
+     | _ => false)
+
+  mustHold24i4 "4a.beforePlayerLostOk" beforePlayerLostOk &&
+  mustHold24i4 "4b.beforeCounterAnnihOk" beforeCounterAnnihOk &&
+  mustHold24i4 "4c.beforeDyingCreaturesOk" beforeDyingCreaturesOk &&
+  mustHold24i4 "4d.beforePwMovesOk" beforePwMovesOk &&
+  mustHold24i4 "4.replay" (replayOk24i4 #[gLostLeg1, gAnnih1, gAnnihKept, gZeroGrant1, gZeroBoxPass1, gZeroBoxAll, gPwGrant1])
+
+-- 5. CR 613.1d,f / 703.4f / 704.5s / 714.2d / 714.3c / 714.4:
+--    Layer 4 (`g.hasSubtype o .saga`) and Layer 6 (`g.retainsPrintedAbilities o`) Saga checks across
+--    `StateBasedActions.checkSBACounted`, `Triggers.addLoreAfterDrawStep`, `Core.loreAmongSagas`, and `Entering.finishOneResolution`.
+#guard
+  let sagaDef24 : CardDef :=
+    saga "P24i4 Saga" ManaCost.empty "" "I" #[chapter "I" "You gain 1 life." (Effect.gainLife 1)]
+  let tomDef24 : CardDef := {
+    legendaryCreature "P24i4 Tom Watcher" ManaCost.empty #["God", "Bard"] 4 4 with
+    hexproofIndestructibleIfLore := some 4
+  }
+  let gBase :=
+    insertObject (addPermanent afterDraw tomDef24 me me) sagaDef24 me .battlefield (some me)
+      { summoningSick := false, counters := #[(.lore, 1)] }
+  let sagaId := (gBase.battlefield.filter (·.name == sagaDef24.name))[0]!.id
+  let sagaSnap := gBase.snapshot (gBase.object! sagaId)
+
+  -- 5a. Layer 6 ability removal (`.abilities {} .all`): retains `.saga` subtype (`loreAmongSagas == 1`),
+  --     but `retainsPrintedAbilities == false`, so `addLoreAfterDrawStep`, `checkSBA` 704.5s, and `finalSagaPlayer?` do NOT fire:
+  let gL6 := gBase.createEffect (.layered (.objects #[sagaId]) (.abilities {} .all) .indefinite) (cause := some testCause)
+  let gL6AfterDraw := gL6.addLoreAfterDrawStep
+  let gL6AfterSba := gL6.checkSBA
+  let gL6Fin := gL6.finishOneResolution (.ability ⟨99901⟩ sagaSnap me (some sagaId) (some 1))
+  let layer6SagaOk :=
+    gL6.hasSubtype (gL6.object! sagaId) .saga &&
+    !gL6.retainsPrintedAbilities (gL6.object! sagaId) &&
+    gL6.loreAmongSagas me == 1 &&
+    (gL6AfterDraw.object! sagaId).status.lore == 1 &&
+    (gL6AfterSba.object! sagaId).isOnBattlefield &&
+    !gL6Fin.log.any (·.contains "last ability triggers")
+
+  -- 5b. Layer 4 subtype removal (`.types .set #[.artifact] #[] #[]`): loses `.saga` subtype (`loreAmongSagas == 0`),
+  --     even while `retainsPrintedAbilities == true`, so `addLoreAfterDrawStep`, `checkSBA` 704.5s, and `finalSagaPlayer?` do NOT fire:
+  let gL4 := gBase.createEffect (.layered (.objects #[sagaId]) (.types .set #[.artifact] #[] #[]) .indefinite) (cause := some testCause)
+  let gL4AfterDraw := gL4.addLoreAfterDrawStep
+  let gL4AfterSba := gL4.checkSBA
+  let gL4Fin := gL4.finishOneResolution (.ability ⟨99902⟩ sagaSnap me (some sagaId) (some 1))
+  let layer4SagaOk :=
+    !gL4.hasSubtype (gL4.object! sagaId) .saga &&
+    gL4.retainsPrintedAbilities (gL4.object! sagaId) &&
+    gL4.loreAmongSagas me == 0 &&
+    (gL4AfterDraw.object! sagaId).status.lore == 1 &&
+    (gL4AfterSba.object! sagaId).isOnBattlefield &&
+    !gL4Fin.log.any (·.contains "last ability triggers")
+
+  -- Control check: without Layer 4/6 overrides, `finishOneResolution` logs Tom's trigger and `checkSBA` sacrifices the Saga!
+  let gNormalFin := gBase.finishOneResolution (.ability ⟨99903⟩ sagaSnap me (some sagaId) (some 1))
+  let gNormalSba := gBase.checkSBA
+  let normalControlOk :=
+    gNormalFin.log.any (·.contains "last ability triggers") &&
+    !gNormalSba.battlefield.any (·.id == sagaId)
+
+  mustHold24i4 "5a.layer6SagaOk" layer6SagaOk &&
+  mustHold24i4 "5b.layer4SagaOk" layer4SagaOk &&
+  mustHold24i4 "5c.normalControlOk" normalControlOk &&
+  mustHold24i4 "5.replay" (replayOk24i4 #[gL6AfterDraw, gL6AfterSba, gL6Fin, gL4AfterDraw, gL4AfterSba, gL4Fin, gNormalFin, gNormalSba])
+
+end Phase24Item4EventAlignment
+
 end Mtg.Engine.EventTests
+
 
 

@@ -1581,7 +1581,7 @@ def docSamsonYouPutAllKindsOk : Bool :=
   let notTheirs := (gTheirs.object! oppId).status.plusOnePlusOne == 1
   let gPlan := addPermanent g claimTheKingdom ⟨0⟩ ⟨0⟩
   let plan := namedPermanent gPlan "Claim the Kingdom"
-  let gPlan := gPlan.incrementPlanThen ⟨0⟩ (some plan.id) (fun g _ => g)
+  let gPlan := gPlan.incrementPlanSource ⟨0⟩ (some plan.id)
   let planOk := (gPlan.object! plan.id).status.plan == 2
   let gCap := addPermanent afterDraw docSamsonSuperPsychiatrist ⟨0⟩ ⟨0⟩
   let (gCap, capObj) := gCap.allocObject captainAmericaSuperSoldier ⟨0⟩ (.outside ⟨0⟩) none

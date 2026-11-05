@@ -3,7 +3,7 @@ import Mtg.Engine.Game.Combat
 /-!
 # Turn structure (CR 500 / 514)
 
-End-of-turn and cleanup clearing (CR 514.3), discarding to maximum hand
+End-of-turn and cleanup clearing (CR 514.2), discarding to maximum hand
 size, expiring play permissions and until-next-turn effects, starting
 the next turn, `beginStep`, and step advancement.
 -/
@@ -104,7 +104,7 @@ def expirePlayPermissions (g : Game) (endingPlayer : PlayerId)
       if perm.fromAdventure || perm.whileExiled || !matchesTeam then g
       else
         let expires :=
-          (d == .untilEndOfTurn && (departed || p == some endingPlayer)) ||
+          (d == .untilEndOfTurn && (departed || g.isSharedTurnFinalSeat)) ||
           match d with
           | .untilEndOfNextTurnOf q =>
             if departed then q == endingPlayer
@@ -125,120 +125,123 @@ def expirePlayPermissions (g : Game) (endingPlayer : PlayerId)
 /-- Clear “once each turn” activation counts and `"this turn"` / `"until end of turn"`
 player rules, permissions, and delayed triggers as a turn ends (CR 514.2 / 805.4 / 810.2). -/
 def clearTurnActivations (g : Game) : Game :=
-  let cause := some (EventCause.turnBased .cleanupClear)
-  let finalSeat := g.isSharedTurnFinalSeat
-  Id.run do
-    let mut g := g
-    g := g.expireAll .powerUpsForbiddenThisTurn (cause := cause)
-    g := g.expireMatching (fun | .playerRule _ .pendingFreeRGCreature .untilEndOfTurn => true | _ => false) (cause := cause)
-    -- Stingcaster Mage: flashback granted until end of turn ends.
-    g := g.expireMatching (fun
-      | .permission _ (.flashback _) .untilEndOfTurn
-      | .permission _ (.freeCastFromGraveyard _) .untilEndOfTurn => true
-      | _ => false) (cause := cause)
-    for pl in g.players do
-      if pl.lost then
-        -- Keep last-known this-turn info until that turn would have begun
-        -- (CR 800.4i).
-        pure ()
-      else do
-        g := g.expireMatching (fun
-          | .playerRule p (.additionalLands _) .untilEndOfTurn
-          | .playerRule p .jaceLoyaltyAtInstantSpeed .untilEndOfTurn
-          | .playerRule p (.mountainExtraRed _) .untilEndOfTurn
-          | .playerRule p .cantAttackJaces .untilEndOfTurn
-          | .playerRule p .cantCastSpells .untilEndOfTurn
-          | .playerRule p .nextSpellCantBeCountered .untilEndOfTurn
-          | .playerRule p (.typeSpellCostLess _ _) .untilEndOfTurn
-          | .playerRule p (.supertypeSpellCostLess _ _) .untilEndOfTurn => p == pl.id
-          | .playerRule p .lifeLocked .untilEndOfTurn
-          | .playerRule p (.controlsPlayer _ false) .untilEndOfTurn => p == pl.id && finalSeat
-          | _ => false) (cause := cause)
-    let expiredDt := g.delayedTriggers.filter (fun dt =>
-      !(g.player dt.controller).lost &&
-      (match dt.kind with
-       | .attackPumpPerPlains
-       | .copyNextInstantSorceryThisTurn
-       | .lokiCopyNextInstantSorceryThisTurn _ _ => true
-       | _ => false))
-    for dt in expiredDt do
-      g := g.record (GameEvent.delayedTriggerExpired g.turnNumber dt (.turnBased .cleanupClear))
-    return g
-
-def clearEOT (g : Game) : Game :=
-  g.withBatch none fun g =>
+  if !g.isSharedTurnFinalSeat then g
+  else
     let cause := some (EventCause.turnBased .cleanupClear)
     Id.run do
       let mut g := g
-      g := g.expireAll .creaturesWithoutFlyingCantBlockUntilEot (cause := cause)
       g := g.expireAll .powerUpsForbiddenThisTurn (cause := cause)
-      g := g.expireMatching (fun | .playerRule _ .assignCombatDamageEqualToughness .untilEndOfTurn => true | _ => false)
-        (cause := cause)
+      g := g.expireMatching (fun | .playerRule _ .pendingFreeRGCreature .untilEndOfTurn => true | _ => false) (cause := cause)
+      -- Stingcaster Mage: flashback granted until end of turn ends.
       g := g.expireMatching (fun
-        | .replacement _ .untilEndOfTurn | .prevention _ .untilEndOfTurn => true
+        | .permission _ (.flashback _) .untilEndOfTurn
+        | .permission _ (.freeCastFromGraveyard _) .untilEndOfTurn => true
         | _ => false) (cause := cause)
-      g := g.restoreCopiesUntilEot
       for pl in g.players do
-        g := g.expireAll (.legendRuleOffThisTurn pl.id) (cause := cause)
-      -- Each control-changing effect ends or counts down on its own across all
-      -- ObjectScopes, so another control effect on the same permanent keeps
-      -- applying (CR 514.2 / 613.7 / 800.4c).
-      let effs := g.activeEffects
-      for (eid, e) in effs do
-        match e with
-        | .layered _ (.control _) d =>
-          if d == .untilEndOfTurn then
-            g := g.endControlEffectById eid (cause := cause)
-          else if let .untilEndOfNextTurnOf q := d then
-            if (q == g.activePlayer || g.areTeammates q g.activePlayer) &&
-                g.isSharedTurnFinalSeat && g.hasTurnBegunSince eid q then
-              g := g.endControlEffectById eid (cause := cause)
-        | _ => pure ()
-      g := g.expirePlayPermissions g.activePlayer (cause := cause)
-      for pl in g.players do
-        if pl.id != g.activePlayer && !pl.lost then
-          g := g.activeEffects.foldl (fun g (eid, e) =>
-            match e with
-            | .permission p (.playFromExile oid perm) .untilEndOfTurn =>
-              if perm.fromAdventure || perm.whileExiled || p != some pl.id then g
-              else
-                let g := g.expireEffectById eid (cause := cause)
-                match g.findObject? oid with
-                | some o =>
-                  if o.zone == .exile then g.logMsg s!"{o.name} can no longer be played from exile"
-                  else g
-                | none => g
-            | _ => g) g
-      g := g.clearTurnActivations
-      for o in g.battlefield do
-        -- Ending a control effect can exile the permanent (CR 800.4c).
-        match g.findObject? o.id with
-        | none => pure ()
-        | some cur =>
-          g := g.expireObjectUntilEotEffects cur
-      g := g.activeEffects.foldl (fun acc (eid, e) =>
-        match e with
-        | .layered _ (.copy ..) _ | .layered _ (.control _) _
-        | .permission _ (.playFromExile ..) _ => acc
-        | _ =>
-          match effectDuration e with
-          | .untilEndOfNextTurnOf q =>
-            if (q == acc.activePlayer || acc.areTeammates q acc.activePlayer) &&
-                acc.isSharedTurnFinalSeat && acc.hasTurnBegunSince eid q then
-              acc.expireEffectById eid (cause := cause)
-            else acc
-          | _ => acc) g
-      g := g.expireMatching (fun
-        | .layered _ (.copy ..) _ | .layered _ (.control _) _ => false
-        | .layered _ _ .untilEndOfTurn | .gameRule _ .untilEndOfTurn => true
-        | _ => false) (cause := cause)
-      -- CR 514.2 / 702.26d: remove marked damage from all permanents, including phased-out ones.
-      let damagedIds :=
-        (g.objects.filter (fun o => o.zone == .battlefield && o.status.damage != 0)).map (·.id)
-      if !damagedIds.isEmpty then
-        g := g.record (GameEvent.damageMarkedCleared g.turnNumber damagedIds
-          (cause := .turnBased .cleanupClear))
+        if pl.lost then
+          -- Keep last-known this-turn info until that turn would have begun
+          -- (CR 800.4i).
+          pure ()
+        else do
+          g := g.expireMatching (fun
+            | .playerRule p (.additionalLands _) .untilEndOfTurn
+            | .playerRule p .jaceLoyaltyAtInstantSpeed .untilEndOfTurn
+            | .playerRule p (.mountainExtraRed _) .untilEndOfTurn
+            | .playerRule p .cantAttackJaces .untilEndOfTurn
+            | .playerRule p .cantCastSpells .untilEndOfTurn
+            | .playerRule p .nextSpellCantBeCountered .untilEndOfTurn
+            | .playerRule p (.typeSpellCostLess _ _) .untilEndOfTurn
+            | .playerRule p (.supertypeSpellCostLess _ _) .untilEndOfTurn
+            | .playerRule p .lifeLocked .untilEndOfTurn
+            | .playerRule p (.controlsPlayer _ false) .untilEndOfTurn => p == pl.id
+            | _ => false) (cause := cause)
+      let expiredDt := g.delayedTriggers.filter (fun dt =>
+        !(g.player dt.controller).lost &&
+        (match dt.kind with
+         | .attackPumpPerPlains
+         | .copyNextInstantSorceryThisTurn
+         | .lokiCopyNextInstantSorceryThisTurn _ _ => true
+         | _ => false))
+      for dt in expiredDt do
+        g := g.record (GameEvent.delayedTriggerExpired g.turnNumber dt (.turnBased .cleanupClear))
       return g
+
+def clearEOT (g : Game) : Game :=
+  if !g.isSharedTurnFinalSeat then g
+  else
+    g.withBatch none fun g =>
+      let cause := some (EventCause.turnBased .cleanupClear)
+      Id.run do
+        let mut g := g
+        g := g.expireAll .creaturesWithoutFlyingCantBlockUntilEot (cause := cause)
+        g := g.expireAll .powerUpsForbiddenThisTurn (cause := cause)
+        g := g.expireMatching (fun | .playerRule _ .assignCombatDamageEqualToughness .untilEndOfTurn => true | _ => false)
+          (cause := cause)
+        g := g.expireMatching (fun
+          | .replacement _ .untilEndOfTurn | .prevention _ .untilEndOfTurn => true
+          | _ => false) (cause := cause)
+        g := g.restoreCopiesUntilEot
+        for pl in g.players do
+          g := g.expireAll (.legendRuleOffThisTurn pl.id) (cause := cause)
+        -- Each control-changing effect ends or counts down on its own across all
+        -- ObjectScopes, so another control effect on the same permanent keeps
+        -- applying (CR 514.2 / 613.7 / 800.4c).
+        let effs := g.activeEffects
+        for (eid, e) in effs do
+          match e with
+          | .layered _ (.control _) d =>
+            if d == .untilEndOfTurn then
+              g := g.endControlEffectById eid (cause := cause)
+            else if let .untilEndOfNextTurnOf q := d then
+              if (q == g.activePlayer || g.areTeammates q g.activePlayer) &&
+                  g.isSharedTurnFinalSeat && g.hasTurnBegunSince eid q then
+                g := g.endControlEffectById eid (cause := cause)
+          | _ => pure ()
+        g := g.expirePlayPermissions g.activePlayer (cause := cause)
+        for pl in g.players do
+          if pl.id != g.activePlayer && !pl.lost then
+            g := g.activeEffects.foldl (fun g (eid, e) =>
+              match e with
+              | .permission p (.playFromExile oid perm) .untilEndOfTurn =>
+                if perm.fromAdventure || perm.whileExiled || p != some pl.id then g
+                else
+                  let g := g.expireEffectById eid (cause := cause)
+                  match g.findObject? oid with
+                  | some o =>
+                    if o.zone == .exile then g.logMsg s!"{o.name} can no longer be played from exile"
+                    else g
+                  | none => g
+              | _ => g) g
+        g := g.clearTurnActivations
+        for o in g.battlefield do
+          -- Ending a control effect can exile the permanent (CR 800.4c).
+          match g.findObject? o.id with
+          | none => pure ()
+          | some cur =>
+            g := g.expireObjectUntilEotEffects cur
+        g := g.activeEffects.foldl (fun acc (eid, e) =>
+          match e with
+          | .layered _ (.copy ..) _ | .layered _ (.control _) _
+          | .permission _ (.playFromExile ..) _ => acc
+          | _ =>
+            match effectDuration e with
+            | .untilEndOfNextTurnOf q =>
+              if (q == acc.activePlayer || acc.areTeammates q acc.activePlayer) &&
+                  acc.isSharedTurnFinalSeat && acc.hasTurnBegunSince eid q then
+                acc.expireEffectById eid (cause := cause)
+              else acc
+            | _ => acc) g
+        g := g.expireMatching (fun
+          | .layered _ (.copy ..) _ | .layered _ (.control _) _ => false
+          | .layered _ _ .untilEndOfTurn | .gameRule _ .untilEndOfTurn => true
+          | _ => false) (cause := cause)
+        -- CR 514.2 / 702.26d: remove marked damage from all permanents, including phased-out ones.
+        let damagedIds :=
+          (g.objects.filter (fun o => o.zone == .battlefield && o.status.damage != 0)).map (·.id)
+        if !damagedIds.isEmpty then
+          g := g.record (GameEvent.damageMarkedCleared g.turnNumber damagedIds
+            (cause := .turnBased .cleanupClear))
+        return g
 
 /-- Discard `ids` during cleanup (CR 514.1), pausing and chaining
 `.finishPostStep .discardCleanupIds` if a discard replacement opens
@@ -360,7 +363,7 @@ def expireUntilNextTurnEffects (g : Game) (p : PlayerId) : Game :=
       | .playerRule q (.controlsPlayer them false) .untilEndOfTurn =>
         q == p || ((them == p || g.areTeammates them p) && !teamHasLiving)
       | .playerRule q (.controlsPlayer them true) _ =>
-        q == p || (them == p && !teamHasLiving)
+        q == p || ((them == p || g.areTeammates them p) && !teamHasLiving)
       | _ => false) (cause := cause)
     let expiredDt := g.delayedTriggers.filter (fun dt =>
       (match dt.kind with
@@ -371,7 +374,8 @@ def expireUntilNextTurnEffects (g : Game) (p : PlayerId) : Game :=
     expiredDt.foldl (fun g dt =>
       g.record (GameEvent.delayedTriggerExpired g.turnNumber dt (.turnBased .expireAtStepBegin))) g
 
-/-- Pending extra-turn causes reconstructed from `g.events`, aligned with `g.extraTurns`. -/
+/-- Pending extra-turn causes reconstructed from `g.events`, aligned with `g.extraTurns`
+(including CR 805.8 team extra turns). -/
 private def pendingExtraTurnCauses (g : Game) : Array EventCause :=
   let dropLost (stk : Array (PlayerId × EventCause)) (lost : Array PlayerId) :
       Array (PlayerId × EventCause) :=
@@ -379,28 +383,54 @@ private def pendingExtraTurnCauses (g : Game) : Array EventCause :=
   let updateLost (lost : Array PlayerId) (p : PlayerId) (isLost : Bool) : Array PlayerId :=
     if isLost then (if lost.contains p then lost else lost.push p)
     else lost.filter (· != p)
-  let (stk, _) := g.events.foldl
-    (fun ((stk, lost) : Array (PlayerId × EventCause) × Array PlayerId) e =>
+  let (stk, _, _, _) := g.events.foldl
+    (fun ((stk, lost, seats, seatsExtra) :
+        Array (PlayerId × EventCause) × Array PlayerId × Array PlayerId × Bool) e =>
       match e.change with
+      | .engine (.startingPlayer v) =>
+        (stk, lost, #[v], false)
       | .rules (.player (.lost p _)) | .rules (.player (.leftGame p)) =>
-        (stk, updateLost lost p true)
+        (stk, updateLost lost p true, seats, seatsExtra)
       | .engine (.addPlayer pl) =>
-        (stk, updateLost lost pl.id pl.lost)
+        (stk, updateLost lost pl.id pl.lost, seats, seatsExtra)
       | .rules (.turn (.extraTurnAdded p _)) =>
         match e.cause? with
-        | some c => (#[(p, c)] ++ stk, lost)
-        | none => (stk, lost)
-      | .rules (.turn (.turnBegan p true)) =>
-        let trimmed := dropLost stk lost
-        let next :=
-          match trimmed.findIdx? (fun (q, _) => q == p) with
-          | some idx => trimmed.extract (idx + 1) trimmed.size
-          | none => trimmed.extract 1 trimmed.size
-        (next, lost)
-      | .rules (.turn (.turnBegan _ false)) =>
-        (dropLost stk lost, lost)
-      | _ => (stk, lost))
-    (#[], #[])
+        | some c =>
+          let team := (g.teamMembers p).map (fun q => (q, c))
+          let inProgress :=
+            if seatsExtra && !seats.isEmpty then
+              Id.run do
+                let mut seen := seats
+                let mut cnt := 0
+                let mut keepGoing := true
+                for (q, _) in stk do
+                  if keepGoing && g.areTeammates seats[0]! q && !seen.contains q then
+                    seen := seen.push q
+                    cnt := cnt + 1
+                  else
+                    keepGoing := false
+                return cnt
+            else 0
+          let stk' := stk.extract 0 inProgress ++ team ++ stk.extract inProgress stk.size
+          (stk', lost, seats, seatsExtra)
+        | none => (stk, lost, seats, seatsExtra)
+      | .rules (.turn (.turnBegan p extra)) =>
+        let sameShared :=
+          extra == seatsExtra && !seats.isEmpty &&
+            g.areTeammates seats[0]! p && !seats.contains p
+        let seats' := if sameShared then seats.push p else #[p]
+        if extra then
+          let trimmed := dropLost stk lost
+          let next :=
+            if (trimmed[0]?.map Prod.fst) == some p then trimmed.extract 1 trimmed.size
+            else trimmed
+          (next, lost, seats', true)
+        else if sameShared then
+          (stk, lost, seats', false)
+        else
+          (dropLost stk lost, lost, seats', false)
+      | _ => (stk, lost, seats, seatsExtra))
+    (#[], #[], #[⟨0⟩], false)
   stk.map Prod.snd
 
 /-- Whether `st` is the first step of its phase (CR 500.1). -/
@@ -479,15 +509,24 @@ partial def continueStartNextTurn (g : Game) (nextP : PlayerId)
     if let .chooseReplacement .. := g.pending then
       let rem := remainingDeparted.extract (i + 1) remainingDeparted.size
       return g.chainPendingReplacement (.continueStartNextTurn nextP rem runBeginTurn)
+  let (seats, seatsExtra) := g.currentSharedTurnState
+  let midRegularShared := !seatsExtra && !g.isSharedTurnFinalSeat
   let pendingExtraCauses := pendingExtraTurnCauses g
   let mut skipIdx := 0
-  while skipIdx < g.extraTurns.size && (g.player g.extraTurns[skipIdx]!).lost do
-    skipIdx := skipIdx + 1
+  if !midRegularShared then
+    while skipIdx < g.extraTurns.size && (g.player g.extraTurns[skipIdx]!).lost do
+      skipIdx := skipIdx + 1
+  let nextExtra? :=
+    if midRegularShared then none
+    else (g.extraTurns.extract skipIdx g.extraTurns.size)[0]?
   let gNext :=
-    match (g.extraTurns.extract skipIdx g.extraTurns.size)[0]? with
+    match nextExtra? with
     | some q =>
       let extraCause? := (pendingExtraCauses.extract skipIdx pendingExtraCauses.size)[0]?
-      let g := g.record (GameEvent.turnBegan (g.turnNumber + 1) q (extra := true))
+      let sameShared :=
+        seatsExtra && !seats.isEmpty && g.areTeammates seats[0]! q && !seats.contains q
+      let nextTurnNum := if sameShared then g.turnNumber else g.turnNumber + 1
+      let g := g.record (GameEvent.turnBegan nextTurnNum q (extra := true))
       let g := g.expireFinishedNextTurnPlayerControl
       let g := g.change (.cleanupGivesPriority false)
       let g :=
@@ -498,7 +537,11 @@ partial def continueStartNextTurn (g : Game) (nextP : PlayerId)
       g.logMsg s!"It is now {(g.player q).name}'s extra turn {g.turnNumber}"
     | none =>
       if !(g.player nextP).lost then
-        let g := g.record (GameEvent.turnBegan (g.turnNumber + 1) nextP (extra := false))
+        let sameShared :=
+          !seatsExtra && !seats.isEmpty &&
+            g.areTeammates seats[0]! nextP && !seats.contains nextP
+        let nextTurnNum := if sameShared then g.turnNumber else g.turnNumber + 1
+        let g := g.record (GameEvent.turnBegan nextTurnNum nextP (extra := false))
         let g := g.expireFinishedNextTurnPlayerControl
         let g := g.change (.cleanupGivesPriority false)
         g.logMsg s!"It is now {(g.player nextP).name}'s turn {g.turnNumber}"
@@ -509,27 +552,32 @@ partial def continueStartNextTurn (g : Game) (nextP : PlayerId)
 
 partial def startNextTurnCore (g : Game) (runBeginTurn : Bool) : Game :=
   let ending := g.activePlayer
-  let g := g.withBatch none fun g =>
-    g.expirePlayPermissions ending (cause := some (.turnBased .cleanupClear))
-      |>.clearTurnActivations
+  let finalSeat := g.isSharedTurnFinalSeat
+  let midRegularShared := !g.currentSharedTurnIsExtra && !finalSeat
+  let g :=
+    if finalSeat then
+      g.withBatch none fun g =>
+        g.expirePlayPermissions ending (cause := some (.turnBased .cleanupClear))
+          |>.clearTurnActivations
+    else g
   let g := g.record (GameEvent.turnEnded g.turnNumber ending)
   let (nextP, departed) := Id.run do
     let mut departed : Array PlayerId := #[]
-    let mut skipIdx := 0
-    while skipIdx < g.extraTurns.size && (g.player g.extraTurns[skipIdx]!).lost do
-      departed := departed.push g.extraTurns[skipIdx]!
-      skipIdx := skipIdx + 1
-    match (g.extraTurns.extract skipIdx g.extraTurns.size)[0]? with
-    | some q => return (q, departed)
-    | none =>
-      let n := g.players.size
-      for k in [1:n+1] do
-        let q : PlayerId := ⟨(ending.idx + k) % n⟩
-        if (g.player q).lost then
-          departed := departed.push q
-        else
-          return (q, departed)
-      return (ending, departed)
+    if !midRegularShared then
+      let mut skipIdx := 0
+      while skipIdx < g.extraTurns.size && (g.player g.extraTurns[skipIdx]!).lost do
+        departed := departed.push g.extraTurns[skipIdx]!
+        skipIdx := skipIdx + 1
+      if let some q := (g.extraTurns.extract skipIdx g.extraTurns.size)[0]? then
+        return (q, departed)
+    let n := g.players.size
+    for k in [1:n+1] do
+      let q : PlayerId := ⟨(ending.idx + k) % n⟩
+      if (g.player q).lost then
+        departed := departed.push q
+      else
+        return (q, departed)
+    return (ending, departed)
   g.continueStartNextTurn nextP departed runBeginTurn
 
 /-- Advance to the next living player's turn after a cleanup step ends, and begin that turn. -/

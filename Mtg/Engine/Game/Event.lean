@@ -1187,7 +1187,6 @@ set_option maxRecDepth 2048 in
 `Pending.chooseReplacement` pause finishes. -/
 inductive PostStep where
   | putArtifactOntoBattlefield (p : PlayerId) (cardId : ObjectId) (hostId : Option ObjectId)
-  | worldsWithinWorldsTail (exiled : Array ObjectId) (sourceId : Option ObjectId)
   | copyEnteredArtifact (controller : PlayerId) (artifactId : ObjectId)
   | grantHandSizePower (sourceId : Option ObjectId)
   | beginScryOne (p : PlayerId)
@@ -1625,6 +1624,7 @@ inductive PendingReplacement where
       (illegalAuras : Array ObjectId := #[])
       (illegalEquips : Array (ObjectId × ObjectId) := #[])
       (illegalCreatureAtts : Array (ObjectId × ObjectId) := #[])
+      (legendGroups : Array (PlayerId × String × Array ObjectId) := #[])
   | untapPermanent (targetId : ObjectId) (duringUntapStep : Bool := false)
       (logUntap : Bool := true) (cause : Option EventCause := none)
   | untapStepPermanents (ids : Array ObjectId)
@@ -3315,7 +3315,7 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : Option Obje
             | .player d => !decls.any (fun (a', tgt') => a'.id != attacker.id && tgt' == .player d)
             | _ => false)
     | .combat (.attackersDeclared p decls), .fra .creatureAttacksYouOrYourPlaneswalker =>
-      !you p &&
+      opp p &&
         decls.any (fun (attacker, tgt) =>
           attacker.creature &&
             match tgt with
@@ -3326,7 +3326,7 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : Option Obje
       decls.any (fun (attacker, tgt) =>
         attacker.creature &&
           match tgt with
-          | .player d => !you d
+          | .player d => opp d
           | _ => false)
     | .combat (.attackersDeclared p decls), .fra .zombieTokenAttacks =>
       you p && decls.any (fun (attacker, _) =>
@@ -3339,7 +3339,7 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : Option Obje
       decls.any (fun (blocker, _) => blocker.creature)
     | .combat (.blockersDeclared _ decls), .fra .opponentSmallCreatureBlocks =>
       decls.any (fun (blocker, _) =>
-        blocker.controller.any (!you ·) && blocker.creature &&
+        blocker.controller.any opp && blocker.creature &&
           (blocker.power.any (· ≤ 1) || blocker.toughness.any (· ≤ 1)))
     | .combat (.becameBlocked attacker _), .becomesBlocked =>
       this attacker
@@ -3377,9 +3377,9 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : Option Obje
     | .turn (.stepBegan .beginningOfCombat active), .yourBeginCombat => you active
     | .turn (.stepBegan .beginningOfCombat active), .fra .yourBeginCombatFromGraveyard => you active
     | .turn (.stepBegan .beginningOfCombat _), .eachBeginCombat => true
-    | .turn (.stepBegan .beginningOfCombat active), .fra .opponentBeginCombat => !you active
+    | .turn (.stepBegan .beginningOfCombat active), .fra .opponentBeginCombat => opp active
     | .turn (.stepBegan .precombatMain active), .yourFirstMain => you active
-    | .turn (.stepBegan .draw active), .eachOpponentDrawStep => !you active
+    | .turn (.stepBegan .draw active), .eachOpponentDrawStep => opp active
     | .turn (.stepBegan .upkeep _), .eaglesCreateBirds => true
     | .turn (.stepBegan .upkeep active), .enchantedControllerUpkeep => you active
     | .zone (.moved before _ .battlefield toZone .sacrifice actor _ _), .youSacrificeToken =>
@@ -3391,7 +3391,7 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : Option Obje
     | .cast (.abilityActivated _ _ p (.nonMana (some _) ..)), .youActivateLoyaltyAbility => you p
     | .cast (.abilityActivated _ source p _), .youActivateCreatureAbility =>
       you p && source.creature
-    | .cast (.abilityActivated _ _ p (.nonMana (some _) ..)), .fra .opponentActivatesLoyaltyAbility => !you p
+    | .cast (.abilityActivated _ _ p (.nonMana (some _) ..)), .fra .opponentActivatesLoyaltyAbility => opp p
     | .cast (.abilityActivated _ _ p (.nonMana ..)), .youTargetSomething => you p
     | .cast (.abilityActivated _ _ p (.nonMana ..)), .becomesTarget =>
       sourceId.isSome && opp p

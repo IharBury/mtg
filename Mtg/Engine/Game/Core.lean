@@ -1311,6 +1311,32 @@ def livingPlayers (g : Game) : Array Player :=
 def stillInGame (g : Game) (p : PlayerId) : Bool :=
   !(g.player p).lost
 
+/-- True when living player `p` is the active player or a teammate of the active
+player, i.e., it is `p`'s team's turn (CR 805.4a / 810.2). -/
+def isOnActiveTeam (g : Game) (p : PlayerId) : Bool :=
+  p.idx < g.players.size && !(g.player p).lost &&
+    (g.activePlayer == p || g.areTeammates g.activePlayer p)
+
+/-- Format a list of player seats' names with English conjunctions
+(`"A"`, `"A and B"`, `"A, B, and C"`). -/
+def formatPlayerNames (g : Game) (pids : Array PlayerId) : String :=
+  let names := pids.map (fun p => (g.player p).name)
+  match names.size with
+  | 0 => ""
+  | 1 => names[0]!
+  | 2 => s!"{names[0]!} and {names[1]!}"
+  | n =>
+    let prefixNames := (names.extract 0 (n - 1)).toList
+    s!"{String.intercalate ", " prefixNames}, and {names[n - 1]!}"
+
+/-- Format the win-the-game log message for one or more winning teammates
+(CR 104.1 / 810.8a / 810.11). -/
+def formatWinMessage (g : Game) (winners : Array PlayerId) : String :=
+  if winners.size ≤ 1 then
+    s!"{g.formatPlayerNames winners} wins the game"
+  else
+    s!"{g.formatPlayerNames winners} win the game"
+
 /-- Living opponents of `p` (CR 102.2 / 810). -/
 def livingOpponents (g : Game) (p : PlayerId) : Array Player :=
   g.livingPlayers.filter (fun pl => pl.id != p && !g.areTeammates p pl.id)
@@ -1323,18 +1349,38 @@ def opponentPoisonedAtLeast (g : Game) (p : PlayerId) (n : Nat) : Bool :=
 def battlefield (g : Game) : Array GameObject :=
   g.objects.filter GameObject.isOnBattlefield
 
+/-- `(seats, isExtra)` for the current shared turn in `g.events` (up to `limit?`,
+defaulting to all of `g.events`), tracking whether the shared turn is an extra
+turn (CR 805.4 / 805.8 / 810.2). -/
+def currentSharedTurnState (g : Game) (limit? : Option Nat := none) :
+    Array PlayerId × Bool :=
+  let endIdx := min (limit?.getD g.events.size) g.events.size
+  Id.run do
+    let mut seats : Array PlayerId := #[⟨0⟩]
+    let mut seatsExtra : Bool := false
+    for i in [0:endIdx] do
+      match g.events[i]!.change with
+      | .engine (.startingPlayer v) =>
+        seats := #[v]
+        seatsExtra := false
+      | .rules (.turn (.turnBegan q extra)) =>
+        if extra == seatsExtra && !seats.isEmpty &&
+            g.areTeammates seats[0]! q && !seats.contains q then
+          seats := seats.push q
+        else
+          seats := #[q]
+          seatsExtra := extra
+      | _ => pure ()
+    return (seats, seatsExtra)
+
 /-- Seats that have begun as part of the current shared turn in `g.events`
-(CR 805.4 / 810.2). In non-team games this has size 1 (`#[g.activePlayer]`). -/
+(CR 805.4 / 805.8 / 810.2). In non-team games this has size 1 (`#[g.activePlayer]`). -/
 def currentSharedTurnSeats (g : Game) : Array PlayerId :=
-  g.events.foldl (fun seats ev =>
-    match ev.change with
-    | .engine (.startingPlayer v) => #[v]
-    | .rules (.turn (.turnBegan q extra)) =>
-      if !extra && !seats.isEmpty && g.areTeammates seats[0]! q && !seats.contains q then
-        seats.push q
-      else
-        #[q]
-    | _ => seats) #[⟨0⟩]
+  (g.currentSharedTurnState).1
+
+/-- True when the current shared turn is an extra turn (CR 500.7 / 805.8). -/
+def currentSharedTurnIsExtra (g : Game) : Bool :=
+  (g.currentSharedTurnState).2
 
 /-- True when `g.activePlayer` is the first living seat of the current shared turn
 (CR 805.4 / 810.2). Always true in non-team games. -/
@@ -1342,62 +1388,66 @@ def isSharedTurnFirstSeat (g : Game) : Bool :=
   g.currentSharedTurnSeats.size ≤ 1
 
 /-- True when no further living teammate seat remains in the current shared turn
-(CR 805.4 / 810.2). Always true in non-team games or when a living extra turn is queued. -/
+(CR 805.4 / 805.8 / 810.2). Always true in non-team games. -/
 def isSharedTurnFinalSeat (g : Game) : Bool :=
-  if g.extraTurns.any (fun q => !(g.player q).lost) then true
+  let n := g.players.size
+  if n == 0 then true
   else
-    let n := g.players.size
-    if n == 0 then true
-    else
-      let seats := g.currentSharedTurnSeats
-      Id.run do
-        for k in [1:n+1] do
-          let q : PlayerId := ⟨(g.activePlayer.idx + k) % n⟩
-          if !(g.player q).lost then
-            return !(g.areTeammates g.activePlayer q && !seats.contains q)
-        return true
+    let seats := g.currentSharedTurnSeats
+    Id.run do
+      for k in [1:n+1] do
+        let q : PlayerId := ⟨(g.activePlayer.idx + k) % n⟩
+        if !(g.player q).lost then
+          return !(g.areTeammates g.activePlayer q && !seats.contains q)
+      return true
 
 /-- Whether a new shared turn of `p` (or `p`'s Two-Headed Giant teammate, CR 805.4 /
-810.2) has begun (`TurnEvent.turnBegan`) in `g.events` after the creation of continuous
-effect `eid` (CR 611.2a). -/
+805.8 / 810.2) has begun (`TurnEvent.turnBegan`) in `g.events` after the creation of
+continuous effect `eid` (CR 611.2a). -/
 def hasTurnBegunSince (g : Game) (eid : EffectId) (p : PlayerId) : Bool :=
-  g.events.foldl (fun (seats, seenCreate, seenTurn) ev =>
+  g.events.foldl (fun (seats, seatsExtra, seenCreate, seenTurn) ev =>
     match ev.change with
-    | .engine (.startingPlayer v) => (#[v], seenCreate, seenTurn)
+    | .engine (.startingPlayer v) => (#[v], false, seenCreate, seenTurn)
     | .rules (.continuousEffect (.created id _)) =>
-      if id == eid then (seats, true, false) else (seats, seenCreate, seenTurn)
+      if id == eid then (seats, seatsExtra, true, false)
+      else (seats, seatsExtra, seenCreate, seenTurn)
     | .rules (.turn (.turnBegan q extra)) =>
-      let sameSharedTurn := !extra && !seats.isEmpty && g.areTeammates seats[0]! q && !seats.contains q
+      let sameSharedTurn :=
+        extra == seatsExtra && !seats.isEmpty &&
+          g.areTeammates seats[0]! q && !seats.contains q
       let seats' := if sameSharedTurn then seats.push q else #[q]
       if !sameSharedTurn && seenCreate && (q == p || g.areTeammates q p) then
-        (seats', seenCreate, true)
+        (seats', extra, seenCreate, true)
       else
-        (seats', seenCreate, seenTurn)
-    | _ => (seats, seenCreate, seenTurn)) (#[⟨0⟩], false, false) |>.2.2
+        (seats', extra, seenCreate, seenTurn)
+    | _ => (seats, seatsExtra, seenCreate, seenTurn)) (#[⟨0⟩], false, false, false) |>.2.2.2
 
 /-- Whether another shared turn has begun (`TurnEvent.turnBegan _ _`) in `g.events`
 after the first new shared turn of `p` (and `p`'s Two-Headed Giant teammate, CR 805.4 /
-810.2) that began since continuous effect `eid` was created (CR 723.1: "during
+805.8 / 810.2) that began since continuous effect `eid` was created (CR 723.1: "during
 their next turn" lasts until the beginning of the next turn). -/
 def hasTurnAfterBegunSince (g : Game) (eid : EffectId) (p : PlayerId) : Bool :=
-  g.events.foldl (fun (seats, seenCreate, seenTeamTurn, seenAfter) ev =>
+  g.events.foldl (fun (seats, seatsExtra, seenCreate, seenTeamTurn, seenAfter) ev =>
     match ev.change with
-    | .engine (.startingPlayer v) => (#[v], seenCreate, seenTeamTurn, seenAfter)
+    | .engine (.startingPlayer v) => (#[v], false, seenCreate, seenTeamTurn, seenAfter)
     | .rules (.continuousEffect (.created id _)) =>
-      if id == eid then (seats, true, false, false)
-      else (seats, seenCreate, seenTeamTurn, seenAfter)
+      if id == eid then (seats, seatsExtra, true, false, false)
+      else (seats, seatsExtra, seenCreate, seenTeamTurn, seenAfter)
     | .rules (.turn (.turnBegan q extra)) =>
-      let sameSharedTurn := !extra && !seats.isEmpty && g.areTeammates seats[0]! q && !seats.contains q
+      let sameSharedTurn :=
+        extra == seatsExtra && !seats.isEmpty &&
+          g.areTeammates seats[0]! q && !seats.contains q
       let seats' := if sameSharedTurn then seats.push q else #[q]
       if sameSharedTurn || !seenCreate || seenAfter then
-        (seats', seenCreate, seenTeamTurn, seenAfter)
+        (seats', extra, seenCreate, seenTeamTurn, seenAfter)
       else if seenTeamTurn then
-        (seats', seenCreate, seenTeamTurn, true)
+        (seats', extra, seenCreate, seenTeamTurn, true)
       else if q == p || g.areTeammates q p then
-        (seats', seenCreate, true, false)
+        (seats', extra, seenCreate, true, false)
       else
-        (seats', seenCreate, seenTeamTurn, seenAfter)
-    | _ => (seats, seenCreate, seenTeamTurn, seenAfter)) (#[⟨0⟩], false, false, false) |>.2.2.2
+        (seats', extra, seenCreate, seenTeamTurn, seenAfter)
+    | _ => (seats, seatsExtra, seenCreate, seenTeamTurn, seenAfter))
+    (#[⟨0⟩], false, false, false, false) |>.2.2.2.2
 
 /-- Timestamp `(tier, sub)` of `k` counters on `oid` (CR 613.7c): putting a new
 counter of kind `k` on `oid` gives all `k` counters on `oid` that new timestamp. -/
@@ -1818,23 +1868,35 @@ private def clearSummoningSickFor (g : Game) (ap : PlayerId) : Game :=
         { o with status := { o.status with summoningSick := false } }
       else o }
 
-/-- Apply a `TurnEvent` to `g` (CR 500 / 302.6). -/
+/-- Apply a `TurnEvent` to `g` (CR 500 / 302.6 / 805.4 / 805.8 / 810.2). -/
 def applyTurnEvent (g : Game) (e : TurnEvent) : Game :=
+  let priorLimit : Nat :=
+    match g.events.back? with
+    | some last =>
+      if last.change == .rules (.turn e) then g.events.size - 1 else g.events.size
+    | none => 0
   match e with
   | .turnBegan player extra =>
+    let (seats, seatsExtra) := g.currentSharedTurnState (some priorLimit)
+    let sameShared :=
+      extra == seatsExtra && !seats.isEmpty &&
+        g.areTeammates seats[0]! player && !seats.contains player
+    let dropLost (xs : Array PlayerId) : Array PlayerId :=
+      (xs.toList.dropWhile (fun q =>
+        if h : q.idx < g.players.size then g.players[q.idx].lost else true)).toArray
     let restExtra :=
       if extra then
-        let trimmed := (g.extraTurns.toList.dropWhile (fun q =>
-          if h : q.idx < g.players.size then g.players[q.idx].lost else true)).toArray
+        let trimmed := dropLost g.extraTurns
         if trimmed[0]? == some player then trimmed.extract 1 trimmed.size
         else trimmed
+      else if sameShared then
+        g.extraTurns
       else
-        (g.extraTurns.toList.dropWhile (fun q =>
-          if h : q.idx < g.players.size then g.players[q.idx].lost else true)).toArray
+        dropLost g.extraTurns
     ({ g with
-      turnNumber := g.turnNumber + 1
+      turnNumber := if sameShared then g.turnNumber else g.turnNumber + 1
       activePlayer := player
-      isFirstTurn := false
+      isFirstTurn := g.isFirstTurn && sameShared
       extraTurns := restExtra }).clearSummoningSickFor player
   | .phaseBegan phase =>
     if phase == .combat && g.step == .endOfCombat && g.additionalCombatPhases > 0 then
@@ -1855,7 +1917,26 @@ def applyTurnEvent (g : Game) (e : TurnEvent) : Game :=
   | .dayNightChanged night =>
     { g with isNight := night }
   | .extraTurnAdded player _ =>
-    { g with extraTurns := #[player] ++ g.extraTurns }
+    let (seats, seatsExtra) := g.currentSharedTurnState (some priorLimit)
+    let team := g.teamMembers player
+    let inProgress :=
+      if seatsExtra && !seats.isEmpty then
+        Id.run do
+          let mut seen := seats
+          let mut cnt := 0
+          let mut keepGoing := true
+          for q in g.extraTurns do
+            if keepGoing && g.areTeammates seats[0]! q && !seen.contains q then
+              seen := seen.push q
+              cnt := cnt + 1
+            else
+              keepGoing := false
+          return cnt
+      else 0
+    { g with
+      extraTurns :=
+        g.extraTurns.extract 0 inProgress ++ team ++
+          g.extraTurns.extract inProgress g.extraTurns.size }
   | .extraPhaseAdded phase _ =>
     if phase == .combat then
       { g with additionalCombatPhases := g.additionalCombatPhases + 1 }
@@ -3627,10 +3708,10 @@ def drewFromEmpty (g : Game) (p : PlayerId) : Bool :=
 
 -- Layer 6: Ability-adding and ability-removing effects (CR 613.1f / 613.7 / 613.7a / 613.7e / 613.8)
 
-/-- Lore counters among Sagas `p` controls (evaluated via Layer 1 `baseCard`). -/
+/-- Lore counters among Sagas `p` controls after Layer 4 (CR 613.1d). -/
 def loreAmongSagas (g : Game) (p : PlayerId) : Nat :=
   (g.permanentsOf p).foldl (fun acc o =>
-    if (g.baseCard o).saga.isSome then acc + o.status.lore else acc) 0
+    if g.hasSubtype o .saga then acc + o.status.lore else acc) 0
 
 /-- Whether `o` currently has hexproof and indestructible from Tom Bombadil's
 lore-threshold static. -/
@@ -3717,7 +3798,7 @@ private def evalSelfStaticKeywords (g : Game) (o : GameObject) (abs : Array Stat
               Keyword.indestructible
             else Keywords.none
         | .fra .firstStrikeDuringYourTurn =>
-          if ctrl? == some g.activePlayer then Keyword.firstStrike else Keywords.none
+          if ctrl?.any g.isOnActiveTeam then Keyword.firstStrike else Keywords.none
         | .fra .vigilanceIfJace =>
           match ctrl? with
           | some p => if g.controlsJacePlaneswalker p then Keyword.vigilance else Keywords.none
@@ -3774,7 +3855,7 @@ private def evalTeamStaticOn (g : Game) (o : GameObject) (p : PlayerId) (other :
     Keywords × Nat × Array WardCost × Array ManaType :=
   let eqKw := ab.equippedTeamKeywordsDuringYourTurn
   let eqTeam :=
-    if eqKw != Keywords.none && g.activePlayer == p && g.isCreature o && g.attachedEquipmentCount o > 0 then
+    if eqKw != Keywords.none && g.isOnActiveTeam p && g.isCreature o && g.attachedEquipmentCount o > 0 then
       eqKw
     else Keywords.none
   let menacePlus :=
@@ -4229,7 +4310,7 @@ private def evalLayer6Aux (g : Game) (needStaticsTs kwOnly : Bool) : Nat → Gam
                       | .fra .equippedMedicsKitesail => Keyword.flying
                       | .fra .enchantedGetsOneAndDeathtouch => Keyword.deathtouch
                       | .equippedHexproofUnblockableDuringYourTurn =>
-                        if g.controllerOf att == some g.activePlayer then
+                        if (g.controllerOf att).any g.isOnActiveTeam then
                           { hexproof := true, cantBeBlocked := true }
                         else Keywords.none
                       | .equippedGetsTrampleAndCombatTreasures _ _ => Keyword.trample
@@ -4280,7 +4361,7 @@ private def evalLayer6Aux (g : Game) (needStaticsTs kwOnly : Bool) : Nat → Gam
                     | .fra .equippedMedicsKitesail => Keyword.flying
                     | .fra .enchantedGetsOneAndDeathtouch => Keyword.deathtouch
                     | .equippedHexproofUnblockableDuringYourTurn =>
-                      if g.controllerOf att == some g.activePlayer then
+                      if (g.controllerOf att).any g.isOnActiveTeam then
                         { hexproof := true, cantBeBlocked := true }
                       else Keywords.none
                     | .equippedGetsTrampleAndCombatTreasures _ _ => Keyword.trample
@@ -4447,7 +4528,7 @@ private def evalLayer6Aux (g : Game) (needStaticsTs kwOnly : Bool) : Nat → Gam
           if g.durationActive d then
             let grantedStatics := add.staticAbilities
             let fsKw :=
-              if add.firstStrikeOnYourTurn && ctrl? == some g.activePlayer then
+              if add.firstStrikeOnYourTurn && ctrl?.any g.isOnActiveTeam then
                 Keyword.firstStrike
               else Keywords.none
             let stKw :=
@@ -5607,6 +5688,7 @@ def controllingPlayerOf? (g : Game) (whose : PlayerId) : Option PlayerId :=
     | .playerRule you (.controlsPlayer them onNextTurn) d =>
       let inWindow := !onNextTurn || (g.hasTurnBegunSince eid them && !g.hasTurnAfterBegunSince eid them)
       if g.durationActive d && inWindow &&
+          you.idx < g.players.size && !(g.player you).lost &&
           (them == whose || g.areTeammates them whose) then
         some you
       else acc
@@ -8157,12 +8239,13 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
             (w := waiting) (fs := firedSources)
         waiting := w; firedSources := fs
     -- 8. “Whenever one or more opponents are dealt combat damage during your turn” (post-batch).
-    let pid := post.activePlayer
-    if pid.idx < post.players.size && !(post.player pid).lost &&
-        batch.any (·.matchesTrigger pid none .opponentsDealtCombatDamageYourTurn
-          (isTeammate := post.areTeammates pid)) then
-      let (w, fs) := queueCtrl post pid .opponentsDealtCombatDamageYourTurn (w := waiting) (fs := firedSources)
-      waiting := w; firedSources := fs
+    for pl in post.livingPlayers do
+      let pid := pl.id
+      if post.isOnActiveTeam pid &&
+          batch.any (·.matchesTrigger pid none .opponentsDealtCombatDamageYourTurn
+            (isTeammate := post.areTeammates pid)) then
+        let (w, fs) := queueCtrl post pid .opponentsDealtCombatDamageYourTurn (w := waiting) (fs := firedSources)
+        waiting := w; firedSources := fs
     -- 9. “Whenever one or more opponents are dealt noncombat damage” (post-batch).
     for pl in post.livingPlayers do
       let q := pl.id
@@ -8791,12 +8874,14 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
                       waiting := w; firedSources := fs
               for opp in post.livingOpponents p do
                 for o in post.permanentsOf opp.id do
-                  if e.matchesTrigger opp.id (some o.id) .opponentDrawsExceptFirstDrawStep then
+                  if e.matchesTrigger opp.id (some o.id) .opponentDrawsExceptFirstDrawStep
+                      (isTeammate := post.areTeammates opp.id) then
                     let (w, fs) :=
                       queueSrc post opp.id o .opponentDrawsExceptFirstDrawStep
                         (w := waiting) (fs := firedSources)
                     waiting := w; firedSources := fs
-                  if e.matchesTrigger opp.id (some o.id) .opponentDrawsSecondCard then
+                  if e.matchesTrigger opp.id (some o.id) .opponentDrawsSecondCard
+                      (isTeammate := post.areTeammates opp.id) then
                     let (w, fs) :=
                       queueSrc post opp.id o .opponentDrawsSecondCard
                         (w := waiting) (fs := firedSources)
@@ -9657,7 +9742,8 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
             | some k =>
               for opp in post.livingOpponents controller do
                 for o in post.permanentsOf opp.id do
-                  if e.matchesTrigger opp.id (some srcObj.id) (.fra .opponentActivatesLoyaltyAbility) then
+                  if e.matchesTrigger opp.id (some srcObj.id) (.fra .opponentActivatesLoyaltyAbility)
+                      (isTeammate := post.areTeammates opp.id) then
                     let (w, fs) :=
                       queueSrc post opp.id o (.fra .opponentActivatesLoyaltyAbility)
                         (cause := some srcObj) (w := waiting) (fs := firedSources)

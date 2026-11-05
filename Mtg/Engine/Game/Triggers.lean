@@ -380,7 +380,8 @@ def addLoreAfterDrawStepIds (g : Game) (sagaIds : Array ObjectId) : Game :=
       idx := idx + 1
       match g.findObject? sid with
       | some o =>
-        if o.isOnBattlefield && (g.baseCard o).saga.isSome then
+        if o.isOnBattlefield && g.hasSubtype o .saga &&
+            g.retainsPrintedAbilities o && (g.baseCard o).saga.isSome then
           g := g.addOneLoreCounter o
           if let .chooseReplacement .. := g.pending then
             let rest := sagaIds.extract idx sagaIds.size
@@ -391,9 +392,10 @@ def addLoreAfterDrawStepIds (g : Game) (sagaIds : Array ObjectId) : Game :=
     return g
 
 /-- After the draw step / as first main begins, add a lore counter to each
-Saga the active player controls simultaneously in one batch (CR 703.4f / 714.3c). -/
+Saga the active player controls simultaneously in one batch (CR 613.1d,f / 703.4f / 714.3c). -/
 def addLoreAfterDrawStep (g : Game) : Game :=
-  let sagaIds := ((g.permanentsOf g.activePlayer).filter (fun o => (g.baseCard o).saga.isSome)).map (·.id)
+  let sagaIds := ((g.permanentsOf g.activePlayer).filter (fun o =>
+    g.hasSubtype o .saga && g.retainsPrintedAbilities o && (g.baseCard o).saga.isSome)).map (·.id)
   if sagaIds.isEmpty then g
   else
     g.withBatchCore (some (.turnBased .sagaLoreOnMain)) fun g =>
@@ -424,10 +426,7 @@ def becomeTapped (g : Game) (o : GameObject)
   if o.status.tapped then
     g.logMsg s!"{oName} is already tapped"
   else
-    let during :=
-      match g.controllerOf o with
-      | some p => g.activePlayer == p
-      | none => false
+    let during := (g.controllerOf o).any g.isOnActiveTeam
     let happened := GameEvent.tapped g.turnNumber (g.snapshot o) true during
       (cause := g.resolveOptionalCause cause (fallbackCtrl := g.controllerOf o))
     (g.record happened).logMsg s!"{oName} becomes tapped"
