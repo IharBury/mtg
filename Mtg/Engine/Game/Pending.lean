@@ -234,7 +234,7 @@ deriving DecidableEq, Repr, Inhabited, BEq
 attacking (CR 508.4 / ruling 181). -/
 inductive EnteringAttackItem where
   | token (controller : PlayerId) (kind : TokenKind) (tapped : Bool)
-      (options : Array AttackTarget)
+      (options : Array AttackTarget) (tokenName : Option String := none)
   | card (cardId : ObjectId) (enteringController : PlayerId)
       (effectController : PlayerId) (tapped : Bool) (returnedAsArtifact : Bool)
       (extraEntersWith : CounterBag)
@@ -251,7 +251,7 @@ def controller : EnteringAttackItem → PlayerId
 
 /-- The legal attack targets to choose from (`options.size > 1` requires a player choice). -/
 def options : EnteringAttackItem → Array AttackTarget
-  | .token _ _ _ opts => opts
+  | .token _ _ _ opts _ => opts
   | .card _ _ _ _ _ _ _ _ opts => opts
 
 end EnteringAttackItem

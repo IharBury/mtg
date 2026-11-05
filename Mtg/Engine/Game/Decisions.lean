@@ -285,7 +285,11 @@ partial def concedePlayersLoop (g : Game) (remaining : Array PlayerId)
       let rem := remaining.extract (i + 1) remaining.size
       if let .chooseReplacement r _ := g.pending then
         if !rem.contains r then
-          if !rem.isEmpty || wasPregame || !midResolutionOrBatch || saved?.isSome || g.unlessPaysDue then
+          let alreadyGrants :=
+            g.pendingReplacement.any PendingReplacement.endsWithPriorityGrant ||
+              g.outerPendingReplacements.any PendingReplacement.endsWithPriorityGrant
+          if !rem.isEmpty || wasPregame || !midResolutionOrBatch || !alreadyGrants ||
+              wasAssigningCombatDamage.isSome || saved?.isSome || g.unlessPaysDue then
             g := g.chainPendingReplacement
               (.concedePlayersLoop rem wasPregame midResolutionOrBatch wasIdlePriority
                 savedPendingPrio wasAssigningCombatDamage saved? popOuter)
@@ -314,7 +318,10 @@ partial def concedePlayersLoop (g : Game) (remaining : Array PlayerId)
     else return g.beginMulliganRound
   else if midResolutionOrBatch then
     if g.sbaPaused then
-      if saved?.isSome || g.unlessPaysDue then
+      let alreadyGrants :=
+        g.pendingReplacement.any PendingReplacement.endsWithPriorityGrant ||
+          g.outerPendingReplacements.any PendingReplacement.endsWithPriorityGrant
+      if !alreadyGrants || wasAssigningCombatDamage.isSome || saved?.isSome || g.unlessPaysDue then
         return g.chainPendingReplacement
           (.concedePlayersLoop #[] false true wasIdlePriority
             savedPendingPrio wasAssigningCombatDamage saved? popOuter)
@@ -573,6 +580,8 @@ partial def resumePendingReplacement (g : Game) (pr : PendingReplacement)
     | _ => openPrompt g
   | .closeBatch batchId startIdx =>
     g.finishOpenBatchAndLinkedExile batchId startIdx
+  | .restorePausedDiscardBatch batchId startIdx cause objects players effects pending stack =>
+    g.restorePausedDiscardBatch batchId startIdx cause objects players effects pending stack
   | .checkSBA =>
     g.checkSBA
   | .receivePriority p =>
@@ -1117,8 +1126,8 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
     g.change (.milledIdsThisWay milled)
   | .noteOpponentsMilled opponents startIdx =>
     g.change (.opponentsMilledThisWay (g.anyOpponentMilledSince opponents startIdx))
-  | .logTwoTappedAttackingSpirits controller =>
-    g.logMsg s!"{(g.player controller).name} creates two tapped and attacking Spirit tokens"
+  | .logCreatedTokensSummary controller startEventIdx =>
+    g.logCreatedTokensSummary controller startEventIdx
   | .offerWorldsCreatures controller startIdx creatureIds sourceId =>
     let exiled := creatureIds.filterMap (fun id =>
       if g.wasPermanentExiled id startIdx then

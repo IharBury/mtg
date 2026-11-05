@@ -880,6 +880,64 @@ def tokensCreatedSince (g : Game) (startEventIdx : Nat) : Array ObjectId :=
       | none => acc
     | _ => acc) #[]
 
+/-- Log a summary of the tokens `controller` actually created on the battlefield
+since `startEventIdx` (grouping by `(name, tapped, attacking)`), used by
+`commitEnteringAttackItems` and its replacement-pause continuation so token
+replacements, multipliers, and Food riders report their actual count, printed
+name, and tapped / attacking state. -/
+def logCreatedTokensSummary (g : Game) (controller : PlayerId) (startEventIdx : Nat) : Game :=
+  let snaps : Array EventObject :=
+    (g.events.extract startEventIdx g.events.size).foldl (fun acc e =>
+      match e.change with
+      | .rules (.zone (.created eo _)) =>
+        if eo.zone == .battlefield && eo.controller == some controller then
+          acc.push eo
+        else acc
+      | _ => acc) #[]
+  if snaps.isEmpty then g
+  else
+    let groups : Array (String × Bool × Bool × Nat) :=
+      snaps.foldl (fun acc eo =>
+        let nm := (eo.printed.map (·.name)).getD eo.name
+        let key := (nm, eo.tapped, eo.attacking)
+        match acc.findIdx? (fun (n0, t0, a0, _) => (n0, t0, a0) == key) with
+        | some idx =>
+          let (n0, t0, a0, cnt) := acc[idx]!
+          acc.set! idx (n0, t0, a0, cnt + 1)
+        | none => acc.push (nm, eo.tapped, eo.attacking, 1)) #[]
+    let countWord : Nat → String
+      | 2 => "two"
+      | 3 => "three"
+      | 4 => "four"
+      | n => toString n
+    let phraseFor (nm : String) (tapped attacking : Bool) (cnt : Nat) : String :=
+      let stateAdj :=
+        match tapped, attacking with
+        | true, true => "tapped and attacking "
+        | true, false => "tapped "
+        | false, true => "attacking "
+        | false, false => ""
+      if cnt == 1 then
+        let full := s!"{stateAdj}{nm} token"
+        let article :=
+          match full.toList.head? with
+          | some ch =>
+            if ['a', 'e', 'i', 'o', 'u', 'A', 'E', 'I', 'O', 'U'].contains ch then "an" else "a"
+          | none => "a"
+        s!"{article} {full}"
+      else
+        s!"{countWord cnt} {stateAdj}{nm} tokens"
+    let phrases := groups.map fun (nm, tap, atk, cnt) => phraseFor nm tap atk cnt
+    let joined :=
+      match phrases.size with
+      | 0 => ""
+      | 1 => phrases[0]!
+      | 2 => s!"{phrases[0]!} and {phrases[1]!}"
+      | k =>
+        let pre := (phrases.extract 0 (k - 1)).toList
+        s!"{String.intercalate ", " pre}, and {phrases[k - 1]!}"
+    g.logMsg s!"{(g.player controller).name} creates {joined}"
+
 /-- Create `n` tokens of `kind`. -/
 def createKindTokens (g : Game) (controller : PlayerId) (kind : TokenKind)
     (n : Nat) (tapped := false) (attacking := false)

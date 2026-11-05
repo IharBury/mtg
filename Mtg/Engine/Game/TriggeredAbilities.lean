@@ -4506,8 +4506,13 @@ def createAndMarkTokensAttacking (g : Game) (controller : PlayerId)
     }
     match choice? with
     | some (chooser, choices) =>
-      g.promptChooseReplacement chooser choices
+      let outerCont? := g.pendingReplacement
+      let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
+      let g := g.promptChooseReplacement chooser choices
         (.createAndMarkTokensAttacking controller kind n tapped holds sourceId cause)
+      match outerCont? with
+      | some outer => g.chainPendingReplacement outer
+      | none => g
     | none =>
       let g := g.consumeReplacementOrder applied
       let expanded : Array ProposedTokenBatch := batches.foldl (fun acc b =>
@@ -4525,7 +4530,7 @@ def createAndMarkTokensAttacking (g : Game) (controller : PlayerId)
           let isCreature := g.isCreature (g.tokenBatchProbe b.controller b.printed)
           let opts := if isCreature then g.legalEnteringAttackTargets b.controller else #[]
           let itemKind := (tokenKindOfCardDef? b.printed).getD kind
-          EnteringAttackItem.token b.controller itemKind b.tapped opts
+          EnteringAttackItem.token b.controller itemKind b.tapped opts (some b.printed.name)
         g.promptEnteringAttackItems items (cause := cause)
 
 /-- Run `applyConnive` across `ids` sequentially, pausing and chaining

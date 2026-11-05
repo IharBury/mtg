@@ -1076,7 +1076,7 @@ def logForPlayers (g : Game) (ps : Array PlayerId) (msg : PlayerId → String) :
 
 /-- Display name for an `EnteringAttackItem` in choice logs. -/
 def enteringAttackItemName (g : Game) : EnteringAttackItem → String
-  | .token _ kind _ _ => (tokenPrinted kind).name
+  | .token _ kind _ _ tokenName => tokenName.getD (tokenPrinted kind).name
   | .card cardId .. =>
     match g.findObject? cardId with
     | some o => o.name

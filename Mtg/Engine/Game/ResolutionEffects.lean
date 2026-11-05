@@ -989,7 +989,7 @@ def commitEnteringAttackItems (g : Game)
   let hasTokens := chosen.any (fun | (.token .., _) => true | _ => false)
   if hasTokens then
     match chosen[0]? with
-    | some (EnteringAttackItem.token controller _ _ _, _) =>
+    | some (EnteringAttackItem.token controller .., _) =>
       if (g.player controller).lost then
         let g := if g.stagedAttackTokenBatches.isEmpty then g else g.change (.stagedAttackTokenBatches #[])
         let g := if resetRecent then g.change (.recentTokenIds #[]) else g
@@ -999,55 +999,63 @@ def commitEnteringAttackItems (g : Game)
         let g := if staged.isEmpty then g else g.change (.stagedAttackTokenBatches #[])
         let g := if g.continuations.isEmpty && resetRecent then g.change (.pushContinuationFrame {}) else g
         let g := if resetRecent then g.change (.recentTokenIds #[]) else g
-        if !staged.isEmpty then
-          let n := min staged.size chosen.size
-          let finalBatches : Array ProposedTokenBatch := (List.range n).toArray.map fun i =>
-            let b := staged[i]!
-            let atkTgt := chosen[i]!.2
-            { b with
-              attacking := atkTgt.isSome
-              attackingTarget := atkTgt }
-          let g :=
-            g.withBatch cause fun g =>
-              (g.createTokenBatches finalBatches (recordRecent := true) (cause := cause)).1
-          if let .chooseReplacement .. := g.pending then
-            g.chainPendingReplacement (.finishPostStep (.logTwoTappedAttackingSpirits controller))
-          else
-            g.logMsg s!"{(g.player controller).name} creates two tapped and attacking Spirit tokens"
-        else
-          let initialBatches : Array ProposedTokenBatch := chosen.filterMap fun (item, atkTgt) =>
-            match item with
-            | .token ctrl kind tapped _ =>
-              some {
-                controller := ctrl
-                printed := tokenPrinted kind
-                count := 1
-                tapped := tapped
+        let outerCont? := g.pendingReplacement
+        let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
+        let g :=
+          if !staged.isEmpty then
+            let n := min staged.size chosen.size
+            let finalBatches : Array ProposedTokenBatch := (List.range n).toArray.map fun i =>
+              let b := staged[i]!
+              let atkTgt := chosen[i]!.2
+              { b with
                 attacking := atkTgt.isSome
-                attackingTarget := atkTgt
-                cause := cause
-              }
-            | _ => none
-          let (batches, applied, choice?) := g.replaceTokenBatchesChoice initialBatches
-          match choice? with
-          | some (chooser, choices) =>
-            g.promptChooseReplacement chooser choices
-              (.commitEnteringAttackItems chosen cause false)
-          | none =>
-            let g := g.consumeReplacementOrder applied
-            let expanded := batches.foldl (fun acc b =>
-              Id.run do
-                let mut acc := acc
-                for _ in [0:b.count] do
-                  acc := acc.push { b with count := 1 }
-                return acc) #[]
+                attackingTarget := atkTgt }
+            let startEventIdx := g.events.size
             let g :=
               g.withBatch cause fun g =>
-                (g.createTokenBatches expanded (recordRecent := true) (cause := cause)).1
+                (g.createTokenBatches finalBatches (recordRecent := true) (cause := cause)).1
             if let .chooseReplacement .. := g.pending then
-              g.chainPendingReplacement (.finishPostStep (.logTwoTappedAttackingSpirits controller))
+              g.chainPendingReplacement (.finishPostStep (.logCreatedTokensSummary controller startEventIdx))
             else
-              g.logMsg s!"{(g.player controller).name} creates two tapped and attacking Spirit tokens"
+              g.logCreatedTokensSummary controller startEventIdx
+          else
+            let initialBatches : Array ProposedTokenBatch := chosen.filterMap fun (item, atkTgt) =>
+              match item with
+              | .token ctrl kind tapped _ _ =>
+                some {
+                  controller := ctrl
+                  printed := tokenPrinted kind
+                  count := 1
+                  tapped := tapped
+                  attacking := atkTgt.isSome
+                  attackingTarget := atkTgt
+                  cause := cause
+                }
+              | _ => none
+            let (batches, applied, choice?) := g.replaceTokenBatchesChoice initialBatches
+            match choice? with
+            | some (chooser, choices) =>
+              g.promptChooseReplacement chooser choices
+                (.commitEnteringAttackItems chosen cause false)
+            | none =>
+              let g := g.consumeReplacementOrder applied
+              let expanded := batches.foldl (fun acc b =>
+                Id.run do
+                  let mut acc := acc
+                  for _ in [0:b.count] do
+                    acc := acc.push { b with count := 1 }
+                  return acc) #[]
+              let startEventIdx := g.events.size
+              let g :=
+                g.withBatch cause fun g =>
+                  (g.createTokenBatches expanded (recordRecent := true) (cause := cause)).1
+              if let .chooseReplacement .. := g.pending then
+                g.chainPendingReplacement (.finishPostStep (.logCreatedTokensSummary controller startEventIdx))
+              else
+                g.logCreatedTokensSummary controller startEventIdx
+        match outerCont? with
+        | some outer => g.chainPendingReplacement outer
+        | none => g
     | _ => g
   else
     let g :=

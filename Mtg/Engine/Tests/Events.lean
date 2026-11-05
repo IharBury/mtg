@@ -17183,7 +17183,13 @@ def startThreePlayer24i3 : Game :=
     gAtkRepPaused.pending == .chooseReplacement me #[idExtraBear, idAsDragon] &&
     (match gAtkChoose1.pending with | .fraChoice p (.chooseEnteringAttackTarget ..) => p == me | _ => false) &&
     (match gAtkChoose2.pending with | .fraChoice p (.chooseEnteringAttackTarget ..) => p == me | _ => false) &&
+    gAtkChoose1.log.any (·.contains "chooses what P24i3 Dragon Token enters attacking") &&
+    !gAtkChoose1.log.any (·.contains "chooses what Food enters attacking") &&
+    gAtkChoose2.log.any (·.contains "chooses P1 for P24i3 Dragon Token to attack") &&
+    gAtkChoose2.log.any (·.contains "chooses what P24i3 Bonus Bear enters attacking") &&
     gAtkDone.pending == .none &&
+    gAtkDone.log.any (·.contains "creates an attacking P24i3 Dragon Token token and an attacking P24i3 Bonus Bear token") &&
+    !gAtkDone.log.any (·.contains "Spirit") &&
     createdDragons.size == 1 &&
     createdBonusBears.size == 1 &&
     atkCreatedEvts.size == 2 &&
@@ -17230,8 +17236,11 @@ def startThreePlayer24i3 : Game :=
     gRiderCreature1.recentTokenIds.size == 2 &&
     gRiderCreature1.recentTokenIds.contains primaryFoodObj.id &&
     gRiderCreature1.recentTokenIds.contains bonusBearObj.id &&
-    -- Noncreature Food + noncreature Treasure in 3p `createAndMarkTokensAttacking` opens NO attack-target prompt:
+    -- Noncreature Food + noncreature Treasure in 3p `createAndMarkTokensAttacking` opens NO attack-target prompt
+    -- and logs the actual tapped Food + tapped Treasure tokens rather than Spirit tokens:
     gRiderTreasureAtk.pending == .none &&
+    gRiderTreasureAtk.log.any (·.contains "creates a tapped Food token and a tapped Treasure token") &&
+    !gRiderTreasureAtk.log.any (·.contains "Spirit") &&
     (gRiderTreasureAtk.battlefield.filter (·.name == treasureToken.name)).all (fun o => !o.status.attacking && o.status.attackingTarget.isNone) &&
     bonusTreasureObj.status.tapped &&
     !bonusTreasureObj.status.attacking &&
@@ -17239,13 +17248,49 @@ def startThreePlayer24i3 : Game :=
     bonusTreasureObj.status.shield == 1 &&
     gRiderTreasure1.recentTokenIds.contains bonusTreasureObj.id
 
+  -- 4d. Standard Andúril 2-Spirit creation, unstaged fallback, and ETB replacement-pause continuation
+  --     all log the actual created token summary via `logCreatedTokensSummary`:
+  let gSpiritStd := afterDraw.createAndMarkTokensAttacking me .spirit 2 true true (cause := some cTok)
+  let prismDragonTokDef : CardDef := {
+    bear with
+    name := "P24i3 Prism Dragon"
+    types := #[.artifact, .creature]
+    staticAbilities := #[.fra .entersTappedChooseColor]
+    isToken := true
+  }
+  let specAsPrismDragon : ReplacementSpec := {
+    id := idAsDragon, source := none, controller := some me, affectedPlayer := me,
+    kind := .artifactTokensBecome me prismDragonTokDef
+  }
+  let gPrism0 := afterDraw.createEffect (.replacement specAsPrismDragon) (cause := some cTok)
+  let prismCandId : ObjectId := ⟨gPrism0.nextObjectId⟩
+  let gPrismPaused := gPrism0.createAndMarkTokensAttacking me .food 1 false true (cause := some cTok)
+  let idPrismRed : ReplacementId := {
+    kind := .asEntersChooseColor .red, object := some prismCandId, player := some me
+  }
+  let gPrismDone := mustApply gPrismPaused me (.chooseReplacement idPrismRed)
+  let gUnstagedFallback :=
+    (afterDraw.createEffect (.replacement specAsDragon) (cause := some cTok)).promptEnteringAttackItems
+      #[.token me .food false #[.player opp24i3]] (cause := some cTok)
+  let summaryLogsOk :=
+    gSpiritStd.log.any (·.contains "creates two tapped and attacking Spirit tokens") &&
+    (match gPrismPaused.pending with | .chooseReplacement q cs => q == me && cs.contains idPrismRed | _ => false) &&
+    !gPrismPaused.log.any (·.contains "creates a tapped and attacking P24i3 Prism Dragon token") &&
+    gPrismDone.pending == .none &&
+    gPrismDone.log.any (·.contains "creates a tapped and attacking P24i3 Prism Dragon token") &&
+    !gPrismDone.log.any (·.contains "Spirit") &&
+    gUnstagedFallback.log.any (·.contains "creates an attacking P24i3 Dragon Token token") &&
+    !gUnstagedFallback.log.any (·.contains "Spirit")
+
   mustHold24i3 "4a.multiCopySingleChoiceOk" multiCopySingleChoiceOk &&
   mustHold24i3 "4b.enteringAttackUnifiedOk" enteringAttackUnifiedOk &&
   mustHold24i3 "4c.foodRiderPropagationOk" foodRiderPropagationOk &&
+  mustHold24i3 "4d.summaryLogsOk" summaryLogsOk &&
   mustHold24i3 "4.replay" (replayOk24i3 #[
     gYouPaused, gYouDone, gEachPaused, gEachDone,
     gAtkRepPaused, gAtkChoose1, gAtkChoose2, gAtkDone,
-    gRiderCreature1, gRiderTreasureAtk, gRiderTreasure1
+    gRiderCreature1, gRiderTreasureAtk, gRiderTreasure1,
+    gSpiritStd, gPrismPaused, gPrismDone, gUnstagedFallback
   ])
 
 -- 5. CR 701.14a,c self-fight single `2 * power` event and mutual fight upfront power snapshots.
@@ -17557,8 +17602,113 @@ def startThreePlayer24i3 : Game :=
     (gDis4.waitingTriggers.size + gDis4.stack.size) == 2 &&
     (gGyDone.waitingTriggers.size + gGyDone.stack.size) == 1
 
-  mustHold24i3 "8.multiDiscardBatchOk" multiDiscardBatchOk &&
-  mustHold24i3 "8.replay" (replayOk24i3 #[gDisStart, gDis1, gDis2, gDis3, gDis4, gGyDone])
+  -- 8b. Mid-`beginDiscardCards` departure that pauses on `Pending.chooseReplacement` (CR 610.3
+  --     `linkedExile` return with `.entersTappedChooseColor`) returns the exiled permanent in its
+  --     own batch, chains `.restorePausedDiscardBatch`, and restores `dbBid` so remaining discards
+  --     still share `dbBid` and batch triggers fire once per batch/player:
+  let p1 : PlayerId := ⟨1⟩
+  let p2 : PlayerId := ⟨2⟩
+  let jailerDef : CardDef := { name := "P24i3 Jailer", types := #[.enchantment] }
+  let colorPrisonerDef : CardDef := {
+    bear with
+    name := "P24i3 Color Prisoner"
+    staticAbilities := #[.fra .entersTappedChooseColor]
+  }
+  let gLvBase :=
+    insertObject
+      (addPermanent
+        (addPermanent
+          (addPermanent startThreePlayer24i3 playerDiscardWatcherDef me me)
+          creatureGyWatcherDef me me)
+        jailerDef p1 p1)
+      colorPrisonerDef p2 .exile
+  let lvJailerId := (gLvBase.battlefield.filter (·.name == jailerDef.name))[0]!.id
+  let lvPrisonerId := (gLvBase.objects.filter (fun o => o.name == colorPrisonerDef.name && o.zone == .exile))[0]!.id
+  let gLv0 :=
+    insertObject
+      (insertObject
+        (insertObject
+          (insertObject (gLvBase.changeObject lvJailerId (.pushLinkedExile lvPrisonerId)) bear me (.hand me))
+          hero me (.hand me))
+        bear p2 (.hand p2))
+      hero p2 (.hand p2)
+  let lvM1 := ((gLv0.player me).hand.filter (fun id => (gLv0.object! id).name == bear.name))[0]!
+  let lvM2 := ((gLv0.player me).hand.filter (fun id => (gLv0.object! id).name == hero.name))[0]!
+  let lvP2_1 := ((gLv0.player p2).hand.filter (fun id => (gLv0.object! id).name == bear.name))[0]!
+  let lvP2_2 := ((gLv0.player p2).hand.filter (fun id => (gLv0.object! id).name == hero.name))[0]!
+  let gLvStart := gLv0.beginDiscardCards #[me, p1, p2] 2
+  let lvDbBid := gLvStart.discardBatch.map Prod.fst
+  let gLv1 := mustApply gLvStart me (.discard lvM1)
+  let gLvConceded := mustApply gLv1 p1 .concede
+  let lvRepChoices := match gLvConceded.pending with | .chooseReplacement _ cs => cs | _ => #[]
+  let gLvResumed := mustApply gLvConceded p2 (.chooseReplacement lvRepChoices[0]!)
+  let gLv2 := mustApply gLvResumed me (.discard lvM2)
+  let gLv3 := mustApply gLv2 p2 (.discard lvP2_1)
+  let gLvDone := mustApply gLv3 p2 (.discard lvP2_2)
+  let lvDiscardMoves := (gLvDone.events.extract gLv0.events.size gLvDone.events.size).filter (fun e =>
+    match e.change with
+    | .rules (.zone (.moved _ _ (.hand _) (.graveyard _) .discard ..)) => true
+    | _ => false)
+  let lvReturnMoves := (gLvDone.events.extract gLv0.events.size gLvDone.events.size).filter (fun e =>
+    match e.change with
+    | .rules (.zone (.moved _ _ .exile .battlefield ..)) => true
+    | _ => false)
+  let pausedLeaveKeepsDiscardBatchOk :=
+    lvDbBid.isSome &&
+    (match gLvConceded.pending with | .chooseReplacement q cs => q == p2 && !cs.isEmpty | _ => false) &&
+    gLvConceded.hasNonDiscardOpenBatch &&
+    gLvResumed.pending == .chooseDiscardCard me #[p2] &&
+    gLvResumed.pendingDiscardsLeft == 1 &&
+    gLvResumed.currentBatch.map Prod.fst == lvDbBid &&
+    (gLvResumed.permanentsOf p2).any (·.name == colorPrisonerDef.name) &&
+    lvReturnMoves.size == 1 &&
+    lvReturnMoves[0]!.batch.isSome &&
+    lvReturnMoves[0]!.batch != lvDbBid &&
+    lvDiscardMoves.size == 4 &&
+    lvDiscardMoves.all (fun e => e.batch == lvDbBid) &&
+    gLvDone.pending == .chooseTriggerToStack me &&
+    gLvDone.discardBatch.isNone &&
+    gLvDone.currentBatch.isNone &&
+    -- 2 `.playerDiscards` (`me` and `p2`) + 1 `.creatureCardsPutIntoYourGy` (`me`'s 2 creatures) = 3:
+    (gLvDone.waitingTriggers.size + gLvDone.stack.size) == 3
+
+  -- 8c. Mid-`beginDiscardCards` departure that ENDS the `.chooseDiscardCard` prompt while pausing
+  --     on `Pending.chooseReplacement` closes `dbBid` once the replacement finishes and stacks
+  --     batch triggers onto `stack`:
+  let gEndBase :=
+    insertObject
+      (addPermanent
+        (addPermanent startThreePlayer24i3 playerDiscardWatcherDef me me)
+        jailerDef p1 p1)
+      colorPrisonerDef p2 .exile
+  let endJailerId := (gEndBase.battlefield.filter (·.name == jailerDef.name))[0]!.id
+  let endPrisonerId := (gEndBase.objects.filter (fun o => o.name == colorPrisonerDef.name && o.zone == .exile))[0]!.id
+  let gEnd0 := gEndBase.changeObject endJailerId (.pushLinkedExile endPrisonerId)
+  let meEndCard := (gEnd0.player me).hand[0]!
+  let gEndStart := gEnd0.beginDiscardCards #[me, p1] 1
+  let gEnd1 := mustApply gEndStart me (.discard meEndCard)
+  let gEndConceded := mustApply gEnd1 p1 .concede
+  let endRepChoices := match gEndConceded.pending with | .chooseReplacement _ cs => cs | _ => #[]
+  let gEndDone := mustApply gEndConceded p2 (.chooseReplacement endRepChoices[0]!)
+  let pausedLeaveEndsDiscardBatchOk :=
+    gEnd1.pending == .chooseDiscardCard p1 #[] &&
+    (match gEndConceded.pending with | .chooseReplacement q cs => q == p2 && !cs.isEmpty | _ => false) &&
+    gEndConceded.discardBatch.isNone &&
+    gEndDone.pending == .none &&
+    gEndDone.discardBatch.isNone &&
+    gEndDone.currentBatch.isNone &&
+    gEndDone.continuations.isEmpty &&
+    (gEndDone.permanentsOf p2).any (·.name == colorPrisonerDef.name) &&
+    gEndDone.stack.size == 1
+
+  mustHold24i3 "8a.multiDiscardBatchOk" multiDiscardBatchOk &&
+  mustHold24i3 "8b.pausedLeaveKeepsDiscardBatchOk" pausedLeaveKeepsDiscardBatchOk &&
+  mustHold24i3 "8c.pausedLeaveEndsDiscardBatchOk" pausedLeaveEndsDiscardBatchOk &&
+  mustHold24i3 "8.replay" (replayOk24i3 #[
+    gDisStart, gDis1, gDis2, gDis3, gDis4, gGyDone,
+    gLvStart, gLv1, gLvConceded, gLvResumed, gLv2, gLv3, gLvDone,
+    gEndStart, gEnd1, gEndConceded, gEndDone
+  ])
 
 end Phase24Item3EventAlignment
 
