@@ -18,14 +18,15 @@ def apnapOrder (g : Game) : Array PlayerId :=
 def legendaryPermanentsOf (g : Game) (p : PlayerId) : Array GameObject :=
   (g.permanentsOf p).filter (g.treatedAsLegendary)
 
-/-- First legend-rule group that needs a choice (CR 704.5j / 201.2a): two or
+/-- All legend-rule groups that need a choice (CR 704.5j / 201.2a): two or
 more legendary permanents with the same name controlled by the same player,
 taking players in APNAP order. When `onlyIds` is supplied, restricts candidate
 permanents to those present at the start of the SBA pass (CR 704.3). -/
-def firstLegendRuleChoice? (g : Game)
+def legendRuleGroups (g : Game)
     (onlyIds : Option (Array ObjectId) := none) :
-    Option (PlayerId × String × Array ObjectId) :=
+    Array (PlayerId × String × Array ObjectId) :=
   Id.run do
+    let mut out : Array (PlayerId × String × Array ObjectId) := #[]
     for p in g.apnapPlayers.filter (fun p => !g.legendRuleOffThisTurn p) do
       let legs := (g.legendaryPermanentsOf p).filter (fun o =>
         match onlyIds with
@@ -38,8 +39,17 @@ def firstLegendRuleChoice? (g : Game)
           seen := seen.push nm
           let group := legs.filter (fun x => g.name x == nm)
           if group.size ≥ 2 then
-            return some (p, nm, group.map (·.id))
-    return none
+            out := out.push (p, nm, group.map (·.id))
+    return out
+
+/-- First legend-rule group that needs a choice (CR 704.5j / 201.2a): two or
+more legendary permanents with the same name controlled by the same player,
+taking players in APNAP order. When `onlyIds` is supplied, restricts candidate
+permanents to those present at the start of the SBA pass (CR 704.3). -/
+def firstLegendRuleChoice? (g : Game)
+    (onlyIds : Option (Array ObjectId) := none) :
+    Option (PlayerId × String × Array ObjectId) :=
+  (g.legendRuleGroups onlyIds)[0]?
 
 /-- True while a player must choose which legendary permanent to keep. -/
 def legendChoicePending? (g : Game) : Bool :=
@@ -153,6 +163,7 @@ def finishSbaSweep (g : Game) (moves : Array SbaGraveyardMove)
     (illegalAuras : Array ObjectId := #[])
     (illegalEquips : Array (ObjectId × ObjectId) := #[])
     (illegalCreatureAtts : Array (ObjectId × ObjectId) := #[])
+    (legendGroups : Array (PlayerId × String × Array ObjectId) := #[])
     (changedIn : Bool := false) :
     Game × (Bool × Bool) := Id.run do
   let mut g := g
@@ -175,7 +186,7 @@ def finishSbaSweep (g : Game) (moves : Array SbaGraveyardMove)
             let rem := moves.extract (i + 1) moves.size
             return (g.chainPendingReplacement (.finishSbaSweep rem preBf .dyingCreatures
               pwMoves sagaMoves tokensOutsideBf copiesOutside illegalAuras
-              illegalEquips illegalCreatureAtts), (true, true))
+              illegalEquips illegalCreatureAtts legendGroups), (true, true))
       | none => pure ()
     g := g.change .sbaChecked
   if stage == .dyingCreatures || stage == .planeswalkersAndLegend then
@@ -195,21 +206,51 @@ def finishSbaSweep (g : Game) (moves : Array SbaGraveyardMove)
             let rem := pwList.extract (i + 1) pwList.size
             return (g.chainPendingReplacement (.finishSbaSweep rem preBf .planeswalkersAndLegend
               #[] sagaMoves tokensOutsideBf copiesOutside illegalAuras
-              illegalEquips illegalCreatureAtts), (true, true))
+              illegalEquips illegalCreatureAtts legendGroups), (true, true))
       | none => pure ()
-    -- Legend rule (CR 704.5j): pause so the controller chooses one to keep,
-    -- chaining the rest of this SBA pass so `keepLegend` finishes the pass in
-    -- the same batch before Pass 2 runs (CR 704.3 / 603.2c).
-    match g.firstLegendRuleChoice? (some (preBf.map (·.id))) with
-    | some (p, name, ids) =>
-      g := g.change (.pending (.chooseLegend p name ids))
-      g := g.logMsg
-        s!"{(g.player p).name} chooses which {name} to keep (legend rule, CR 704.5j)"
-      g := g.chainPendingReplacement (.finishSbaSweep #[] preBf .planeswalkersAndLegend
-        #[] sagaMoves tokensOutsideBf copiesOutside illegalAuras
-        illegalEquips illegalCreatureAtts)
-      return (g, (true, true))
-    | none => pure ()
+    -- Legend rule (CR 704.5j): groups captured at the start of the pass before
+    -- `playerLost`, CR 704.5q counter annihilation, `dyingCreatures`, and `pwMoves`
+    -- (CR 704.3 / 704.8 / 800.4a). Pause so a living controller chooses one to
+    -- keep, chaining the rest of this SBA pass so `keepLegend` finishes the pass
+    -- in the same batch before Pass 2 runs (CR 704.3 / 603.2c).
+    for gi in [0:legendGroups.size] do
+      let (p, name, rawIds) := legendGroups[gi]!
+      let ids := rawIds.filter (fun id => (g.findObject? id).any GameObject.isOnBattlefield)
+      if ids.size ≥ 2 then
+        let restGroups := legendGroups.extract (gi + 1) legendGroups.size
+        if !(g.player p).lost then
+          g := g.change (.pending (.chooseLegend p name ids))
+          g := g.logMsg
+            s!"{(g.player p).name} chooses which {name} to keep (legend rule, CR 704.5j)"
+          g := g.chainPendingReplacement (.finishSbaSweep #[] preBf .planeswalkersAndLegend
+            #[] sagaMoves tokensOutsideBf copiesOutside illegalAuras
+            illegalEquips illegalCreatureAtts restGroups)
+          return (g, (true, true))
+        else
+          let keptId := g.defaultLegendToKeep ids
+          let others := ids.filter (· != keptId)
+          if let some kept := g.findObject? keptId then
+            g := g.logMsg s!"{(g.player p).name} keeps {g.name kept} (legend rule, CR 704.5j)"
+          for oi in [0:others.size] do
+            let other := others[oi]!
+            match g.findObject? other with
+            | some o =>
+              if o.isOnBattlefield then
+                g := g.moveToOwnerGraveyard o
+                  s!"{g.name o} is put into its owner's graveyard (legend rule, CR 704.5j)"
+                  (preBattlefield := some preBf)
+                  (cause := some (.stateBased .legendRule))
+                changed := true
+                if let .chooseReplacement _ _ := g.pending then
+                  let remOthers := others.extract (oi + 1) others.size
+                  let tail := PendingReplacement.finishSbaSweep #[] preBf .planeswalkersAndLegend
+                    #[] sagaMoves tokensOutsideBf copiesOutside illegalAuras
+                    illegalEquips illegalCreatureAtts restGroups
+                  let cont :=
+                    if remOthers.isEmpty then tail
+                    else .seq (.moveSimultaneousToGraveyard remOthers (some preBf) (some (.stateBased .legendRule))) tail
+                  return (g.chainPendingReplacement cont, (true, true))
+            | none => pure ()
     -- Tokens in zones other than the battlefield at start of pass cease to exist (CR 704.5d).
     for tid in tokensOutsideBf do
       match g.findObject? tid with
@@ -324,7 +365,9 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
         let still := ids.filter (fun id =>
           match g.findObject? id with
           | some o =>
-            o.isOnBattlefield && g.controlledBy o p && g.treatedAsLegendary o && g.name o == name
+            o.isOnBattlefield && !(g.player p).lost &&
+              (if g.currentBatch.isSome then true
+               else g.controlledBy o p && g.treatedAsLegendary o && g.name o == name)
           | none => false)
         if still.size ≥ 2 then
           return (g, (changed, true))
@@ -376,6 +419,8 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
               sba := .zeroLoyalty
             }
           else none)
+      let legendGroups : Array (PlayerId × String × Array ObjectId) :=
+        g.legendRuleGroups (some (preBf.map (·.id)))
       let tokensOutsideBf : Array ObjectId :=
         g.objects.filterMap (fun o =>
           if o.printed.isToken && o.zone != .battlefield then some o.id else none)
@@ -387,19 +432,21 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
           else none)
       let sagaMoves : Array SbaGraveyardMove :=
         preBf.filterMap (fun o =>
-          match (g.baseCard o).saga, g.controllerOf o with
-          | some sdef, some ctrl =>
-            if o.status.lore ≥ sdef.finalChapterNumber && sdef.finalChapterNumber > 0 &&
-                !g.sagaChapterPending o.id then
-              some {
-                objectId := o.id
-                reason := s!"{g.name o} is sacrificed (CR 714.4)"
-                verb := some .sacrifice
-                actor := some ctrl
-                sba := .sagaFinalChapter
-              }
-            else none
-          | _, _ => none)
+          if g.hasSubtype o .saga && g.retainsPrintedAbilities o then
+            match (g.baseCard o).saga, g.controllerOf o with
+            | some sdef, some ctrl =>
+              if o.status.lore ≥ sdef.finalChapterNumber && sdef.finalChapterNumber > 0 &&
+                  !g.sagaChapterPending o.id then
+                some {
+                  objectId := o.id
+                  reason := s!"{g.name o} is sacrificed (CR 714.4)"
+                  verb := some .sacrifice
+                  actor := some ctrl
+                  sba := .sagaFinalChapter
+                }
+              else none
+            | _, _ => none
+          else none)
       let illegalAuras : Array ObjectId :=
         preBf.filterMap (fun o =>
           if !g.isAura o then none
@@ -491,7 +538,7 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
           g := g.logMsg s!"{k} +1/+1 and -1/-1 counter pair(s) are removed from {o.name}"
           changed := true
       return g.finishSbaSweep victims preBf .dyingCreatures pwMoves sagaMoves tokensOutsideBf
-        copiesOutside illegalAuras illegalEquips illegalCreatureAtts
+        copiesOutside illegalAuras illegalEquips illegalCreatureAtts legendGroups
         (changedIn := changed)
     match g.pending with
     | .chooseReplacement .. | .chooseLegend .. =>

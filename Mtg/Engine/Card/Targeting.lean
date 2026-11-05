@@ -418,7 +418,9 @@ def spec : EffectTargetKind → Spec
     { count := 2
       noun := "target Equipment you control and up to one target creature you control"
       prefer := .own
-      slots := #[.equipmentYouControl, .creatureYouControl] }
+      slots := #[.equipmentYouControl, .creatureYouControl]
+      -- Only the creature is “up to one”; the Equipment is required (CR 115.1c / 603.3d).
+      optionalSlots := #[1] }
   | .upToOneEquipmentThenCreatureYouControl =>
     { count := 2
       noun := "up to one target Equipment you control and target creature you control"

@@ -148,7 +148,7 @@ def finishSagaFinalChapter (g : Game) (controller : PlayerId)
         (sourceId := sourceId) (ability := ability)
         (cause := some (.gameRule .abilityFinishedResolving)))
   match (g.permanentsOf controller).find? (fun o =>
-    (g.baseCard o).hexproofIndestructibleIfLore.isSome) with
+    (g.baseCard o).hexproofIndestructibleIfLore.isSome && g.retainsPrintedAbilities o) with
   | none => g
   | some tom => g.logMsg s!"{g.name tom}'s last ability triggers"
 
@@ -259,9 +259,12 @@ def finishOneResolution (g : Game) (fin : ResolutionFinish) : Game :=
     let finalSagaPlayer? :=
       match sagaChapter, sourceId.bind g.findObject? with
       | some n, some src =>
-        match (g.baseCard src).saga, g.controllerOf src with
-        | some s, some p => if n == s.finalChapterNumber then some p else none
-        | _, _ => none
+        if src.isOnBattlefield && g.hasSubtype src .saga && g.retainsPrintedAbilities src then
+          match (g.baseCard src).saga, g.controllerOf src with
+          | some s, some p =>
+            if s.finalChapterNumber > 0 && n == s.finalChapterNumber then some p else none
+          | _, _ => none
+        else none
       | _, _ => none
     match finalSagaPlayer? with
     | some p =>
@@ -273,7 +276,7 @@ def finishOneResolution (g : Game) (fin : ResolutionFinish) : Game :=
         g.record (GameEvent.resolved g.turnNumber controller 0 snap
           (sourceId := sourceId) (ability := ab?)
           (cause := some (.gameRule .abilityFinishedResolving)))
-  | .spell entry snap fromGy =>
+  | .spell entry snap _fromGy =>
     match g.findObject? entry.objectId with
     | none =>
       let g :=
@@ -296,10 +299,9 @@ def finishOneResolution (g : Game) (fin : ResolutionFinish) : Game :=
           else if g.isAura obj || (g.isPermanentCard obj && !g.isLand obj) then
             .gameRule .permanentSpellResolved
           else .gameRule .instantOrSorceryFinishedResolving
-        let hasFlashback :=
-          GameEvent.castWithFlashback g.events obj.id || g.flashbackUntilEot obj ||
-            (fromGy && !g.freeCastFromGraveyard obj &&
-              ((g.baseCard obj).flashback.isSome || g.hasFlashbackPermission obj))
+        -- CR 702.34a: only a spell actually cast via Flashback is exiled; a non-Flashback
+        -- graveyard cast (Bilbo's `mayCastFromGraveyard`) goes to the graveyard as usual.
+        let hasFlashback := g.castViaFlashback obj
         let g :=
           if obj.isAdventureSpell then
             g.resolveAdventureSpell entry obj
@@ -522,6 +524,20 @@ def putCountersDeferredLog (g : Game) (oid : ObjectId) (kind : CounterKind)
       g.chainPendingReplacement (.logPutCounterDelta oid kind before logKind)
     else
       g.logPutCounterDelta oid kind before logKind
+
+/-- Whether some counter kind on `oid` now exceeds its count in `before`, i.e.
+counters were actually placed after replacements (CR 122.1 / 614.6). -/
+def countersIncreasedSince (g : Game) (oid : ObjectId) (before : CounterBag) : Bool :=
+  match g.findObject? oid with
+  | none => false
+  | some o =>
+    o.status.toCounterBag.any fun (k, n) =>
+      n > ((before.find? (·.1 == k)).map (·.2)).getD 0
+
+/-- Log `msg` only when `countersIncreasedSince oid before` (CR 122.1 / 614.6). -/
+def logIfCountersIncreased (g : Game) (oid : ObjectId) (before : CounterBag)
+    (msg : String) : Game :=
+  if g.countersIncreasedSince oid before then g.logMsg msg else g
 
 end Game
 end Mtg.Engine

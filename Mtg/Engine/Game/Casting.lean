@@ -142,7 +142,10 @@ def canCastFrontFace (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
       g.spellModeIsChoosable p m (some o.id)) ||
       isReturnUpToTwoGyModal bc || bc.allowsZeroTargets
   else if bc.requiresTarget then
-    bc.allowsZeroTargets || !(g.legalSpellTargets p o |>.isEmpty)
+    -- CR 601.2b–c / 702.33d,g: a target-replacing kicker may be chosen, so legal kicked
+    -- targets (Galadriel's Dismissal's player) suffice when no unkicked target is legal.
+    bc.allowsZeroTargets || !(g.legalSpellTargets p o |>.isEmpty) ||
+      g.kickedFaceHasLegalTarget p bc (g.evalLayer3 o) (some o.id)
   else bc.isPermanentCard || bc.spellEffect.isSome || isModalSpellFace bc
 
 /-- Whether `p` may begin to cast `o` (CR 601.3 / 702.37a). Having enough mana
@@ -157,14 +160,26 @@ alternative). Mana abilities are not activated here. -/
 def canPayAnnouncedAdditional (g : Game) (p : PlayerId) (o : GameObject)
     (available : ManaPool) : Bool :=
   let bc := g.baseCard o
+  -- CR 106.6: the same spending restrictions as `proposedAllowances` for this spell —
+  -- Elf, instant/sorcery, Hero, Villain, and artifact-spell mana may pay; creature-source
+  -- mana pays only activated abilities, never a spell (MSH 75).
   let allowElf := g.hasSubtype o .elf
+  let allowInst := g.isInstantOrSorcery o
+  let allowHero := g.hasSubtype o .hero
+  let allowVillain := g.hasSubtype o .villain
+  let allowCantNonartifact := g.isArtifact o
+  let spend : ManaSpend :=
+    { spell := true, fromHand := o.zone == .hand p
+      supertypes := g.supertypes o, types := g.types o, subtypes := g.subtypes o }
   let free := (g.playPermission o).any (fun perm => perm.withoutManaCost || perm.payLifeEqualManaValue)
+  let canPay (cost : ManaCost) : Bool :=
+    available.canPay cost (allowElfRestricted := allowElf) (allowInstRestricted := allowInst)
+      (allowHeroRestricted := allowHero) (allowVillainRestricted := allowVillain)
+      (allowCantNonartifact := allowCantNonartifact) (allowCreatureRestricted := false)
+      (spend := spend)
   let payExtra (n : Nat) : Bool :=
-    if free then
-      available.canPay (ManaCost.ofGeneric n) (allowElfRestricted := allowElf)
-    else
-      available.canPay (bc.manaCost.addGeneric n)
-        (allowElfRestricted := allowElf)
+    if free then canPay (ManaCost.ofGeneric n)
+    else canPay (bc.manaCost.addGeneric n)
   match bc.additionalCostBeholdOrPay with
   | some (quality, n) =>
     let hasPerm := (g.permanentsOf p).any (fun perm => g.hasSubtype perm quality)
@@ -196,16 +211,25 @@ def adventureExileForbidsRecast (g : Game) (o : GameObject) : Bool :=
 def legalCastTargets (g : Game) (p : PlayerId) (c : CardDef) : Array Target :=
   g.legalTargetsForFace p c none
 
+/-- Whether card face `c` has a legal target to begin casting it: an unkicked target,
+or — when `c` has a target-replacing kicker that may be chosen — a kicked target
+(CR 601.2b–c / 702.33d,g). -/
+def castFaceHasLegalTarget (g : Game) (p : PlayerId) (c : CardDef) : Bool :=
+  !(g.legalCastTargets p c).isEmpty || g.kickedFaceHasLegalTarget p c
+
 /-- Validate front-face timing, prohibitions, targets, and mandatory additional
 costs when casting `card` as `face` (either upfront in `castSpell` or when
 choosing the printed cost instead of Morph at `announceKicker`; CR 601.2b–c /
 601.3 / 702.37a). -/
 def validateFrontFaceCast (g : Game) (p : PlayerId) (card : GameObject) (face : CardDef)
-    (asAdventure : Bool := false) (sneakCost : Option ManaCost := none)
+    (sneakCost : Option ManaCost := none)
     (origPermOverride : Option PlayPermission := none)
     (excludeIdOverride : Option ObjectId := none) : Except String Unit := do
   let checkId := excludeIdOverride.getD card.id
-  if card.zone == .library p && !asAdventure && !face.isCreature then
+  -- CR 601.3e / 715.3a: an Adventure is cast with only its alternative (Instant /
+  -- Sorcery) characteristics, so a creature-only top-of-library permission (Elven Chorus)
+  -- can't cast it.
+  if card.zone == .library p && !face.isCreature then
     throw "You may only cast creature spells from the top of your library"
   if g.spellNameForbidden face.name then
     throw s!"Spells named {face.name} can't be cast"
@@ -233,7 +257,9 @@ def validateFrontFaceCast (g : Game) (p : PlayerId) (card : GameObject) (face : 
       throw s!"{face.name} requires a target"
   else if face.requiresTarget &&
       (g.legalTargetsForFace p face none (tcs := g.evalLayer3 card) (sourceId := some checkId)).isEmpty &&
-      !face.allowsZeroTargets then
+      !face.allowsZeroTargets &&
+      -- CR 601.2b–c / 702.33d,g: kicker may still be chosen to announce kicked targets.
+      !g.kickedFaceHasLegalTarget p face (g.evalLayer3 card) (some checkId) then
     throw s!"{face.name} requires a target"
   if face.additionalCostSacrificeArtifactOrCreature &&
       face.additionalCostOrPayGeneric.isNone &&
@@ -265,6 +291,9 @@ def canCastAdventure (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
     !g.spellNameForbidden face.name &&
     !g.cantCastSpellsThisTurn p &&
     !g.adventureExileForbidsRecast o &&
+    -- CR 601.3e / 715.3a: the Adventure's own (Instant / Sorcery) characteristics decide
+    -- whether a creature-only library-top permission applies.
+    (o.zone != .library p || face.isCreature) &&
     g.mayPlay p o &&
     g.graveyardCastThresholdMet p o.id face &&
     (match g.playPermission o with
@@ -287,7 +316,7 @@ def canCastAdventure (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
       (effectiveSpellModes face).any (g.spellModeIsChoosable p · (some o.id)) ||
         isReturnUpToTwoGyModal face || face.allowsZeroTargets
     else if face.requiresTarget then
-      face.allowsZeroTargets || !(g.legalCastTargets p face).isEmpty
+      face.allowsZeroTargets || g.castFaceHasLegalTarget p face
     else true
 
 /-- Whether paying this proposed spell or ability may spend Elf-restricted mana

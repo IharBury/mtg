@@ -317,25 +317,25 @@ deriving DecidableEq, Repr, Inhabited, BEq
 /-- The rule or effect kind that a `ReplacementId` identifies (CR 614 / 615). -/
 inductive ReplacementEffectKind where
   | entersTappedSelf                     -- 616.1e / 614.1c / 614.12
-  | entersUntappedPayLife (life : Nat)   -- 616.1a / 614.12
-  | entersTappedDeclinePayLife           -- 616.1a / 614.12
-  | entersUntappedBehold (beholdId : ObjectId) (subtype : CardSubtype) -- 616.1a / 614.12
-  | entersTappedDeclineBehold            -- 616.1a / 614.12
-  | asEntersChooseColor (color : Color)  -- 616.1a / 614.12
-  | asEntersChooseCreatureTypePrompt     -- 616.1a / 614.12
-  | asEntersChooseCreatureType (subtype : CardSubtype) -- 616.1a / 614.12
-  | asEntersChooseOdd (odd : Bool)       -- 616.1a / 614.12
-  | asEntersChooseCardNamePrompt         -- 616.1a / 614.12
-  | asEntersChooseCardName (name : String) -- 616.1a / 614.12
-  | asEntersChooseCardType (cardType : CardType) -- 616.1a / 614.12
-  | asEntersChooseAnchor (anchor : String) -- 616.1a / 614.12
-  | entersWithLoyalty                    -- 306.5b / 616.1a
-  | entersWithPlusOneCounters            -- 616.1a
-  | entersWithXPlusOne                   -- 616.1a
-  | entersWithIndestructibleCounter      -- 616.1a
-  | entersWithShield                     -- 616.1a
-  | entersWithHopePerCreature            -- 616.1a
-  | entersWithSagaLore                   -- 714.3a / 616.1a
+  | entersUntappedPayLife (life : Nat)   -- 616.1e / 614.1c / 614.12
+  | entersTappedDeclinePayLife           -- 616.1e / 614.1c / 614.12
+  | entersUntappedBehold (beholdId : ObjectId) (subtype : CardSubtype) -- 616.1e / 614.1c / 614.12
+  | entersTappedDeclineBehold            -- 616.1e / 614.1c / 614.12
+  | asEntersChooseColor (color : Color)  -- 616.1e / 614.1c / 614.12
+  | asEntersChooseCreatureTypePrompt     -- 616.1e / 614.1c / 614.12
+  | asEntersChooseCreatureType (subtype : CardSubtype) -- 616.1e / 614.1c / 614.12
+  | asEntersChooseOdd (odd : Bool)       -- 616.1e / 614.1c / 614.12
+  | asEntersChooseCardNamePrompt         -- 616.1e / 614.1c / 614.12
+  | asEntersChooseCardName (name : String) -- 616.1e / 614.1c / 614.12
+  | asEntersChooseCardType (cardType : CardType) -- 616.1e / 614.1c / 614.12
+  | asEntersChooseAnchor (anchor : String) -- 616.1e / 614.1c / 614.12
+  | entersWithLoyalty                    -- 306.5b / 616.1e / 614.1c / 614.12
+  | entersWithPlusOneCounters            -- 616.1e / 614.1c / 614.12
+  | entersWithXPlusOne                   -- 616.1e / 614.1c / 614.12
+  | entersWithIndestructibleCounter      -- 616.1e / 614.1c / 614.12
+  | entersWithShield                     -- 616.1e / 614.1c / 614.12
+  | entersWithHopePerCreature            -- 616.1e / 614.1c / 614.12
+  | entersWithSagaLore                   -- 714.3a / 616.1e / 614.1c / 614.12
   | entersUnderControl                   -- 616.1b
   | entersAsCopy                         -- 616.1c / 707.5
   | entersAsCopyCreatureUntilEot (targetId : ObjectId) -- 616.1c / 614.1c / 614.12
@@ -353,7 +353,7 @@ inductive ReplacementEffectKind where
   | artifactTokensBecome                 -- 111 / 614.1a
   | tokenDoubling                        -- 111 / 614.1a (Bard, King of Dale)
   | multiplyTokenCreation                -- 111 / 614.1a
-  | flashbackExile                       -- 702.34a
+  | flashbackExile                       -- 616.1e / 702.34a
   | exileInstantSorceryInstead           -- 614.1a (Bilbo, Thief in the Night)
   | untilEotExileIfDies                  -- 614.1a (Smite, etc.)
   | finalityCounterExile                 -- 122.1h

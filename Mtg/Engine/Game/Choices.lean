@@ -118,18 +118,19 @@ def discardHandIdsLoop (g : Game) (p : PlayerId) (ids : Array ObjectId)
     | some o =>
       if o.zone == .hand p then
         let msg := s!"{(g.player p).name} discards {o.name}"
-        let (g', _) := g.move id (.graveyard o.owner) none (verb := some .discard)
+        let owner := o.owner
+        let (g', _) := g.move id (.graveyard owner) none (verb := some .discard)
           (actor := some p) (cause := cause)
         g := g'
         if let .chooseReplacement .. := g.pending then
           if logEach then
-            g := g.chainPendingReplacement (.logMessage msg)
+            g := g.chainPendingReplacement (.finishPostStep (.logDiscardIfInGraveyard id owner msg))
           let rem := ids.extract (i + 1) ids.size
           if !rem.isEmpty then
             g := g.chainPendingReplacement
               (.finishPostStep (.discardHandIdsLoop p rem logEach cause))
           return g
-        if logEach then
+        if logEach && (g.followMovedToZone? id (· == .graveyard owner)).isSome then
           g := g.logMsg msg
   return g
 

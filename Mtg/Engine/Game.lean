@@ -130,7 +130,7 @@ put it into your hand, then shuffle),
 combat (CR 506–510, including combat damage assignment under
 CR 510.1c–d, deathtouch as lethal for trample, CR 702.2c / 702.19b, and lifelink,
 CR 702.15b), Saga lore counters and chapter abilities (CR 714), cleanup
-(CR 514.3), and the state-based actions we implement
+(CR 514.1–3), and the state-based actions we implement
 (CR 704.5, including deathtouch, CR 704.5h, the legend rule, CR 704.5j,
 and sacrificing a Saga after its final chapter, CR 714.4),
 and a player leaving a multiplayer game (CR 800.4 and 800.4a–p).

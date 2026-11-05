@@ -97,8 +97,11 @@ def startWithRng (cfg : StartConfig) : Except String (Game × Rng) := do
         (rng, g1)
       else
         let (rng, r) := rng.next
-        let startIdx := r.toNat % g.players.size
-        let sp : PlayerId := ⟨startIdx⟩
+        let teamFirstSeats : Array PlayerId :=
+          g.players.foldl (fun reps pl =>
+            if reps.any (fun rep => rep == pl.id || g.areTeammates rep pl.id) then reps
+            else reps.push pl.id) #[]
+        let sp : PlayerId := teamFirstSeats[r.toNat % teamFirstSeats.size]!
         let g1 := g.changes #[.startingPlayer sp, .priority sp]
         let g1 := g1.logMsg s!"Rules: {Mtg.Engine.Rules.identification}"
         let g1 := g1.logMsg s!"Starting player: {g1.player sp |>.name}"

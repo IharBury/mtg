@@ -551,10 +551,15 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
     | some st, some o =>
       if !o.isOnBattlefield then g
       else
+        let before := o.status.toCounterBag
+        let msg := s!"Counters are put on {g.name o}"
         g.withBatch none fun g =>
           let g := g.putCountersExceptPlusOne o.id st (byPlayer := g.controllerOf o)
           let g := if st.plusOnePlusOne > 0 then g.addPlusOnePlusOneTo (g.object! o.id) st.plusOnePlusOne else g
-          g.logMsg s!"Counters are put on {g.name o}"
+          if let .chooseReplacement .. := g.pending then
+            g.chainPendingReplacement (.finishPostStep (.logIfCountersIncreased o.id before msg))
+          else
+            g.logIfCountersIncreased o.id before msg
     | _, _ => g
   | .mayMoveSourceCountersToTarget =>
     match source? with

@@ -61,21 +61,46 @@ def finishExileTopMayCastElseDamage (g : Game) (controller : PlayerId)
   | none =>
     g.dealDamageToEachOpponent controller n (source := src?)
 
-/-- Step through `snapshots`, creating a token copy of each source under `p`
-via `createToken` and pausing on `Pending.chooseReplacement`
-(`PendingReplacement.copyNontokenCreatures`) if CR 616.1 choice is required. -/
+/-- Evaluate CR 616.1 token-creation replacements once across the combined
+`snapshots` instruction under `p`, then create all resulting tokens via
+`createTokenBatches` (pausing on `.copyNontokenCreatures` if a token-creation
+replacement choice opens, or `.createTokenBatches` if an ETB choice opens;
+CR 608.2c / 614.1a / 616.1 / 701.7a). -/
 partial def copyNontokenCreaturesStep (g : Game) (p : PlayerId)
     (snapshots : Array CardDef) (cause : Option EventCause := none) : Game :=
-  match snapshots[0]? with
-  | none => g
-  | some printed =>
-    let rem := snapshots.extract 1 snapshots.size
-    let (g, _) := g.createToken p printed (recordRecent := true) (cause := cause)
-    if let .chooseReplacement .. := g.pending then
-      if rem.isEmpty then g
-      else g.chainPendingReplacement (.copyNontokenCreatures p rem cause)
-    else
-      g.copyNontokenCreaturesStep p rem cause
+  if snapshots.isEmpty then g
+  else if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement (.copyNontokenCreatures p snapshots cause)
+  else if (g.player p).lost then
+    g.logMsg "no token is created (CR 800.4b)"
+  else
+    let baseCause :=
+      cause.orElse (fun _ =>
+        match g.currentBatch.bind (·.2) with
+        | some bc => some bc
+        | none => g.resolvingBatchCause p)
+    let initialBatches : Array ProposedTokenBatch :=
+      snapshots.map fun printed => {
+        controller := p
+        printed := printed
+        count := 1
+        cause := baseCause
+      }
+    let (batches, applied, choice?) := g.replaceTokenBatchesChoice initialBatches
+    match choice? with
+    | some (chooser, choices) =>
+      g.promptChooseReplacement chooser choices (.copyNontokenCreatures p snapshots baseCause)
+    | none =>
+      let g := g.consumeReplacementOrder applied
+      let expanded := batches.foldl (fun acc b =>
+        Id.run do
+          let mut acc := acc
+          for _ in [0:b.count] do
+            acc := acc.push { b with count := 1 }
+          return acc) #[]
+      if expanded.isEmpty then g
+      else
+        (g.createTokenBatches expanded (recordRecent := true) (cause := baseCause)).1
 
 /-- Resolutions added for Reality Fracture, shared by spells and activated
 abilities. `none` for every other resolution. -/
@@ -101,8 +126,15 @@ def applyFraResolution? (g : Game) (controller : PlayerId) (effect : Effect)
   | .createTigerGod => some (g.createNamedToken controller tigerGodToken)
   | .extraTurn =>
     let (g, cause) := g.allocDelayedCause (some controller) sourceId
-    some (g.record (GameEvent.extraTurnAdded g.turnNumber controller (cause := cause))
-      |>.logMsg s!"{(g.player controller).name} takes an extra turn after this one. During that turn, power-up abilities can't be activated.")
+    let teamSeats := (g.teamMembers controller).filter g.stillInGame
+    let firstSeat := teamSeats[0]?.getD controller
+    let whoVerb :=
+      if teamSeats.size ≤ 1 then
+        s!"{(g.player controller).name} takes"
+      else
+        s!"{g.formatPlayerNames teamSeats} take"
+    some (g.record (GameEvent.extraTurnAdded g.turnNumber firstSeat (cause := cause))
+      |>.logMsg s!"{whoVerb} an extra turn after this one. During that turn, power-up abilities can't be activated.")
   | .drawEqualToBurdenCounters =>
     some (g.withSourceOnBattlefield sourceId fun g o => g.draw controller o.status.burden)
   | .creaturesWithoutFlyingCantBlock =>
@@ -241,8 +273,9 @@ def applyFraResolution? (g : Game) (controller : PlayerId) (effect : Effect)
           keywords := cv.keywords.merge Keyword.haste
           triggeredAbilities := cv.triggeredAbilities.push sacrifice
           isToken := true }
+      let g := if g.continuations.isEmpty && !snapshots.isEmpty then g.change (.pushContinuationFrame {}) else g
       let g := g.change (.recentTokenIds #[])
-      let g := g.withBatch none fun g =>
+      let g := g.withBatch (g.resolvingBatchCause controller sourceId) fun g =>
         g.copyNontokenCreaturesStep controller snapshots
       if let .chooseReplacement .. := g.pending then
         g.chainPendingReplacement (.finishPostStep .afterRecentTokensEnter)
@@ -352,7 +385,7 @@ def finishCopyNontokenCreaturesAfterEnter (g : Game) (startEventIdx : Nat) : Gam
 legendary (Multiversal Incursion; rulings 468 / 508). -/
 def copyNontokenCreaturesYouControl (g : Game) (p : PlayerId) : Game :=
   let startEventIdx := g.events.size
-  let g := g.withBatch none fun g =>
+  let g := g.withBatch (g.resolvingBatchCause p) fun g =>
     let snapshots :=
       ((g.creaturesControlledBy p).filter (fun o => !o.printed.isToken)).map fun src =>
         let cv := g.copiableValues src
@@ -926,6 +959,44 @@ def finishRevealPutCreatures (g : Game) (p : PlayerId) (looked put : Array Objec
   g0.withBatch cause? fun g =>
     g.finishRevealPutCreaturesStep p looked put #[] (cause := cause?)
 
+/-- Log `p` putting `name` into `owner`'s hand only if `id` arrived there
+(CR 400.3 / 614.6 / 616.1 / 800.4a). -/
+private def logChosenCardToHand (g : Game) (p : PlayerId) (id : ObjectId)
+    (owner : PlayerId) (name : String) : Game :=
+  if (g.followMovedToZone? id (· == .hand owner)).isSome then
+    if owner == p then g.logMsg s!"{(g.player p).name} puts {name} into their hand"
+    else g.logMsg s!"{(g.player p).name} puts {name} into {(g.player owner).name}'s hand"
+  else g
+
+/-- Pause-safe loop for `CardChoice.toHand`: move each chosen card still in a
+public zone (or its owner's hand) into its owner's hand (CR 400.3), pausing on
+`Pending.chooseReplacement` and logging only on arrival (CR 614.6 / 616.1). -/
+def chooseCardsToHandLoop (g : Game) (p : PlayerId) (remainingIds : Array ObjectId)
+    (cause : Option EventCause) (pendingCard : Option (ObjectId × PlayerId × String) := none) :
+    Game := Id.run do
+  if let .chooseReplacement .. := g.pending then
+    return g.chainPendingReplacement
+      (.finishPostStep (.chooseCardsToHandLoop p remainingIds cause pendingCard))
+  let mut g := g
+  if let some (cid, owner, name) := pendingCard then
+    g := g.logChosenCardToHand p cid owner name
+  for i in [0:remainingIds.size] do
+    let id := remainingIds[i]!
+    match g.findObject? id with
+    | some o =>
+      if isPublicZone o.zone || o.zone == .hand o.owner then
+        let owner := o.owner
+        let name := o.name
+        let (g', _) := g.move id (.hand owner) none (cause := cause)
+        g := g'
+        if let .chooseReplacement .. := g.pending then
+          let rem := remainingIds.extract (i + 1) remainingIds.size
+          return g.chainPendingReplacement
+            (.finishPostStep (.chooseCardsToHandLoop p rem cause (some (id, owner, name))))
+        g := g.logChosenCardToHand p id owner name
+    | none => pure ()
+  return g
+
 /-- Carry out a `chooseCards` answer. -/
 def finishChooseCards (g : Game) (p : PlayerId) (chosen : Array ObjectId)
     (purpose : CardChoice) (cause : Option EventCause := none) : Game :=
@@ -945,15 +1016,7 @@ def finishChooseCards (g : Game) (p : PlayerId) (chosen : Array ObjectId)
         match stashed with
         | some c => (g, some c)
         | none => allocIfResolving g
-    g.withBatch cause? fun g =>
-      chosen.foldl (fun g id =>
-        match g.findObject? id with
-        | some o =>
-          if isPublicZone o.zone || o.zone == .hand o.owner then
-            let name := o.name
-            (g.move id (.hand p) none (cause := cause?)).1.logMsg s!"{(g.player p).name} puts {name} into their hand"
-          else g
-        | none => g) g
+    g.withBatch cause? fun g => g.chooseCardsToHandLoop p chosen cause?
   | .creaturesToBattlefield =>
     let valid := chosen.filter fun id =>
       (g.findObject? id).any (fun o => o.zone == .hand o.owner && g.isCreature o)
@@ -2575,8 +2638,9 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
         let opps := (g.livingOpponents controller).map (·.id)
         let g := g.change (.plusOneAfterDiscards sourceId)
         let g := g.beginDiscardCards opps
-        if g.pending == .none then
-          (g.finishPlusOneAfterDiscards).receivePriority g.activePlayer
+        -- CR 117.3b / 608.2c,n / 704.4: no priority or SBAs mid-resolution; later
+        -- modes of the resolving spell still have to run.
+        if g.pending == .none then g.finishPlusOneAfterDiscards
         else g
       | .lookAtTopPutTypes n types =>
         g.beginLookPutTypes controller n types

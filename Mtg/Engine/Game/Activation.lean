@@ -114,7 +114,7 @@ def validateActivation (g : Game) (p : PlayerId) (o : GameObject) (ab : Activate
         throw s!"{g.name o} doesn't have {-k} loyalty counters to remove (CR 606.4)"
     | none =>
       if sym != .minusX then throw s!"{g.name o}'s X loyalty cost is not supported"
-  if ab.onlyDuringYourTurn && g.activePlayer != p then
+  if ab.onlyDuringYourTurn && !g.isOnActiveTeam p then
     throw s!"{g.name o}'s ability can be activated only during your turn"
   if ab.onceEachTurn &&
       (match (g.activatedAbilitiesOf o).findIdx? (· == ab) with

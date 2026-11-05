@@ -116,6 +116,31 @@ def createOneToken (g : Game) (controller : PlayerId) (printed : CardDef)
         (g.logMsg s!"{obj.name} token can't be attached legally and isn't created (CR 303.4f)",
          noTokenCreated controller printed)
       else
+      -- CR 508.4a,c: a token that enters the battlefield as a noncreature (or whose
+      -- entering controller cannot legally attack `resolvedAttackTarget`) enters not attacking.
+      let gProbe : Game :=
+        match etb.tempCopyUntilEot with
+        | some (_, copyCard) =>
+          let copyTok := { copyCard with
+            isToken := true
+            otherFace := copyCard.otherFace.map (fun f => { f with isToken := true }) }
+          let objCopy := { obj with printed := copyTok }
+          { g with
+            objects := g.objects.push objCopy
+            activeEffects := g.activeEffects.push (⟨g.nextEffectId⟩, .copy newId copyTok (untilEot := true))
+            nextEffectId := g.nextEffectId + 1 }
+        | none => { g with objects := g.objects.push obj }
+      let probeObj := (gProbe.findObject? newId).getD obj
+      let finalCtrl := obj.controller.getD controller
+      let effectiveAttackTarget : Option AttackTarget :=
+        if gProbe.isCreature probeObj then
+          gProbe.resolveEnteringAttackTarget? finalCtrl isAttacking resolvedAttackTarget
+        else none
+      let obj :=
+        if effectiveAttackTarget == obj.status.attackingTarget && effectiveAttackTarget.isSome == obj.status.attacking then
+          obj
+        else
+          { obj with status := { obj.status with attacking := effectiveAttackTarget.isSome, attackingTarget := effectiveAttackTarget } }
       let resolvedEtbCause := g.resolveOptionalCause etb.cause (fallbackCtrl := some controller)
       let snapObj : EventObject :=
         match etb.tempCopyUntilEot with
@@ -146,7 +171,7 @@ def createOneToken (g : Game) (controller : PlayerId) (printed : CardDef)
           g.createEffect (.copy newId copyTok (untilEot := true)) (cause := some baseHappenedCause)
         | none => g
       let g : Game :=
-        match resolvedAttackTarget with
+        match effectiveAttackTarget with
         | some tgt =>
           g.record (GameEvent.becameAttacking g.turnNumber (g.snapshot (g.object! newId)) tgt
             (cause := resolvedEtbCause))
@@ -168,7 +193,7 @@ def createOneToken (g : Game) (controller : PlayerId) (printed : CardDef)
 token's own template and changeling subtypes without pulling in battlefield-scoped
 Layer 1–6 effects on permanents `controller` already controls (Draconic Visitor
 ruling 782). -/
-private def tokenBatchProbe (g : Game) (controller : PlayerId) (printed : CardDef) : GameObject :=
+def tokenBatchProbe (g : Game) (controller : PlayerId) (printed : CardDef) : GameObject :=
   let initPrinted := { printed with
     isToken := true
     otherFace := printed.otherFace.map (fun f => { f with isToken := true }) }
@@ -214,28 +239,33 @@ private def tokenBatchIsFood (g : Game) (controller : PlayerId) (printed : CardD
 private def tokenBatchIsArtifact (g : Game) (controller : PlayerId) (printed : CardDef) : Bool :=
   g.isArtifact (g.tokenBatchProbe controller printed)
 
-/-- Run the CR 616.1 replacement loop on a proposed token-creation batch
-(CR 614.1a / 614.5 / 614.6 / 616.1), returning `(batches, applied, choice?)`.
+/-- Run the CR 616.1 replacement loop across a combined proposed token-creation
+instruction `initialBatches` (CR 608.2c / 614.1a / 614.5 / 614.6 / 616.1),
+returning `(batches, applied, choice?)`.
 Handles:
 - Bilbo, Fellow Conspirator (`foodAlsoCreatesTreasure` / `.createExtraTokenWithFood`)
 - Draconic Visitor (`artifactTokensBecomeDragons` / `.artifactTokensBecome`, rulings 780–782)
 - Bard, King of Dale (`tokenDoubling` / `.multiplyTokenCreation`, rulings 180 / 190)
 - Active `ContinuousEffect.replacement` specs for token creation. -/
-def replaceTokenCreationChoice (g : Game) (initial : ProposedTokenBatch)
+def replaceTokenBatchesChoice (g : Game) (initialBatches : Array ProposedTokenBatch)
     (applied : Array ReplacementId := #[])
+    (applyFoodBonus : Bool := true)
     (includeKindReplacements : Bool := true)
     (includeMultiplier : Bool := true) :
     Array ProposedTokenBatch × Array ReplacementId × Option (PlayerId × Array ReplacementId) := Id.run do
-  if initial.count == 0 then
+  let nonEmpty := initialBatches.filter (·.count > 0)
+  if nonEmpty.isEmpty then
     return (#[], applied, none)
-  let mut batches : Array ProposedTokenBatch := #[initial]
+  if !applyFoodBonus then
+    return (nonEmpty, applied, none)
+  let mut batches : Array ProposedTokenBatch := nonEmpty
   let mut curApplied := applied
   let mut curOrder := g.replacementOrder
   let mut choice? : Option (PlayerId × Array ReplacementId) := none
   let mut fuel := 32
   while fuel > 0 do
     fuel := fuel - 1
-    let ctrl := initial.controller
+    let ctrl := nonEmpty[0]!.controller
     let anyWatch := batches.any (fun b => g.tokenBatchWatchesCreation b.controller b.printed)
     if !anyWatch then
       fuel := 0
@@ -305,35 +335,53 @@ def replaceTokenCreationChoice (g : Game) (initial : ProposedTokenBatch)
           curApplied := curApplied.push chosen.id
           match spec.kind with
           | .createExtraTokenWithFood _ extraCard =>
-            let foodCount := batches.foldl (fun acc b =>
-              if g.tokenBatchIsFood b.controller b.printed then acc + b.count else acc) 0
-            batches := batches.map (fun b =>
+            let mut updated : Array ProposedTokenBatch := #[]
+            let mut bonuses : Array ProposedTokenBatch := #[]
+            for b in batches do
               if g.tokenBatchIsFood b.controller b.printed then
-                { b with cause := g.wrapReplacedCause chosen.id b.cause (some ctrl) }
-              else b)
-            if foodCount > 0 then
-              let baseCause := batches[0]!.cause
-              batches := batches.push {
-                controller := ctrl
-                printed := extraCard
-                count := foodCount
-                tapped := initial.tapped
-                cause := baseCause
-              }
+                let c' := g.wrapReplacedCause chosen.id b.cause (some b.controller)
+                updated := updated.push { b with cause := c' }
+                bonuses := bonuses.push {
+                  controller := b.controller
+                  printed := extraCard
+                  count := b.count
+                  tapped := b.tapped
+                  attacking := b.attacking
+                  attackingTarget := b.attackingTarget
+                  extraCounters := b.extraCounters
+                  cause := c'
+                  isBonus := true
+                }
+              else
+                updated := updated.push b
+            batches := updated ++ bonuses
           | .artifactTokensBecome _ newCard =>
             batches := batches.map (fun b =>
               if g.tokenBatchIsArtifact b.controller b.printed then
                 { b with
                   printed := newCard
-                  cause := g.wrapReplacedCause chosen.id b.cause (some ctrl) }
+                  cause := g.wrapReplacedCause chosen.id b.cause (some b.controller) }
               else b)
           | .multiplyTokenCreation _ factor =>
             batches := batches.map (fun b =>
               { b with
                 count := b.count * factor
-                cause := g.wrapReplacedCause chosen.id b.cause (some ctrl) })
+                cause := g.wrapReplacedCause chosen.id b.cause (some b.controller) })
           | _ => pure ()
   return (batches, curApplied, choice?)
+
+/-- Run the CR 616.1 replacement loop on a proposed token-creation batch
+(CR 614.1a / 614.5 / 614.6 / 616.1), returning `(batches, applied, choice?)`. -/
+def replaceTokenCreationChoice (g : Game) (initial : ProposedTokenBatch)
+    (applied : Array ReplacementId := #[])
+    (includeKindReplacements : Bool := true)
+    (includeMultiplier : Bool := true) :
+    Array ProposedTokenBatch × Array ReplacementId × Option (PlayerId × Array ReplacementId) :=
+  if initial.count == 0 then (#[], applied, none)
+  else
+    g.replaceTokenBatchesChoice #[initial] (applied := applied)
+      (includeKindReplacements := includeKindReplacements)
+      (includeMultiplier := includeMultiplier)
 
 /-- Run the CR 616.1 replacement loop on a proposed token-creation batch
 (CR 614.1a / 614.5 / 614.6 / 616.1), returning `(batches, applied, choice?)`. -/
@@ -359,12 +407,12 @@ def createTokenBatches (g : Game) (batches : Array ProposedTokenBatch)
     for i in [0:batches.size] do
       let b := batches[i]!
       let isPrimary :=
-        b.attacking == attacking && b.attackingTarget == attackingTarget &&
+        !b.isBonus && b.attacking == attacking && b.attackingTarget == attackingTarget &&
           b.extraCounters == extraCounters
       let (g', obj) := g.createOneToken b.controller b.printed (tapped := b.tapped)
         (attacking := b.attacking)
         (attackingTarget := b.attackingTarget)
-        (extraCounters := b.extraCounters) (recordRecent := recordRecent && isPrimary)
+        (extraCounters := b.extraCounters) (recordRecent := recordRecent)
         (cause := b.cause)
       g := g'
       if obj.zone == .battlefield then
@@ -424,7 +472,7 @@ def createToken (g : Game) (controller : PlayerId) (printed : CardDef)
         (attackingTarget := attackingTarget) (extraCounters := extraCounters)
         (recordRecent := recordRecent) (cause := cause)
   else
-    let (batches, applied, choice?) := g.replaceTokenCreationChoice {
+    let (batches, applied, choice?) := g.replaceTokenBatchesChoice #[{
       controller := controller
       printed := printed
       count := count
@@ -433,7 +481,7 @@ def createToken (g : Game) (controller : PlayerId) (printed : CardDef)
       attackingTarget := attackingTarget
       extraCounters := extraCounters
       cause := cause
-    }
+    }] (applyFoodBonus := applyFoodBonus)
     match choice? with
     | some (chooser, choices) =>
       (g.promptChooseReplacement chooser choices
@@ -805,6 +853,23 @@ def tokenPrinted (k : TokenKind) : CardDef :=
   | .leviathan88hexproof =>
     creatureToken "Leviathan" #[.leviathan] 8 8 (some .blue) (keywords := Keyword.hexproof)
 
+/-- Reverse lookup of a `TokenKind` matching `c` (ignoring `isToken`), if any. -/
+def tokenKindOfCardDef? (c : CardDef) : Option TokenKind :=
+  let allKinds : Array TokenKind := #[
+    .treasure, .food, .humanSoldier, .wolf, .dwarf, .bear, .elf, .spirit,
+    .birdSoldier, .wall, .dragon, .clue, .hero32vigilance, .villain21menace,
+    .robotVillain22, .leviathan65hexproof, .soldier11white, .squirrel11green,
+    .wall04defender, .doombot, .insect11green, .vibranium, .moloid, .cadet,
+    .heartwood, .lotus, .jace, .sculpture, .mowu, .pridemate,
+    .beast44trample, .dragon55flying, .forestTentacle, .thopter,
+    .angel33blue, .illusion11blue, .leviathan88hexproof
+  ]
+  allKinds.find? (fun k =>
+    let tk := tokenPrinted k
+    { c with isToken := tk.isToken } == tk)
+    |>.orElse (fun _ =>
+      allKinds.find? (fun k => (tokenPrinted k).name == c.name))
+
 /-- Token `ObjectId`s created on the battlefield since `startEventIdx` in `g.events`. -/
 def tokensCreatedSince (g : Game) (startEventIdx : Nat) : Array ObjectId :=
   (g.events.extract startEventIdx g.events.size).foldl (fun acc e =>
@@ -814,6 +879,64 @@ def tokensCreatedSince (g : Game) (startEventIdx : Nat) : Array ObjectId :=
       | some tid => if eo.zone == .battlefield && !acc.contains tid then acc.push tid else acc
       | none => acc
     | _ => acc) #[]
+
+/-- Log a summary of the tokens `controller` actually created on the battlefield
+since `startEventIdx` (grouping by `(name, tapped, attacking)`), used by
+`commitEnteringAttackItems` and its replacement-pause continuation so token
+replacements, multipliers, and Food riders report their actual count, printed
+name, and tapped / attacking state. -/
+def logCreatedTokensSummary (g : Game) (controller : PlayerId) (startEventIdx : Nat) : Game :=
+  let snaps : Array EventObject :=
+    (g.events.extract startEventIdx g.events.size).foldl (fun acc e =>
+      match e.change with
+      | .rules (.zone (.created eo _)) =>
+        if eo.zone == .battlefield && eo.controller == some controller then
+          acc.push eo
+        else acc
+      | _ => acc) #[]
+  if snaps.isEmpty then g
+  else
+    let groups : Array (String × Bool × Bool × Nat) :=
+      snaps.foldl (fun acc eo =>
+        let nm := (eo.printed.map (·.name)).getD eo.name
+        let key := (nm, eo.tapped, eo.attacking)
+        match acc.findIdx? (fun (n0, t0, a0, _) => (n0, t0, a0) == key) with
+        | some idx =>
+          let (n0, t0, a0, cnt) := acc[idx]!
+          acc.set! idx (n0, t0, a0, cnt + 1)
+        | none => acc.push (nm, eo.tapped, eo.attacking, 1)) #[]
+    let countWord : Nat → String
+      | 2 => "two"
+      | 3 => "three"
+      | 4 => "four"
+      | n => toString n
+    let phraseFor (nm : String) (tapped attacking : Bool) (cnt : Nat) : String :=
+      let stateAdj :=
+        match tapped, attacking with
+        | true, true => "tapped and attacking "
+        | true, false => "tapped "
+        | false, true => "attacking "
+        | false, false => ""
+      if cnt == 1 then
+        let full := s!"{stateAdj}{nm} token"
+        let article :=
+          match full.toList.head? with
+          | some ch =>
+            if ['a', 'e', 'i', 'o', 'u', 'A', 'E', 'I', 'O', 'U'].contains ch then "an" else "a"
+          | none => "a"
+        s!"{article} {full}"
+      else
+        s!"{countWord cnt} {stateAdj}{nm} tokens"
+    let phrases := groups.map fun (nm, tap, atk, cnt) => phraseFor nm tap atk cnt
+    let joined :=
+      match phrases.size with
+      | 0 => ""
+      | 1 => phrases[0]!
+      | 2 => s!"{phrases[0]!} and {phrases[1]!}"
+      | k =>
+        let pre := (phrases.extract 0 (k - 1)).toList
+        s!"{String.intercalate ", " pre}, and {phrases[k - 1]!}"
+    g.logMsg s!"{(g.player controller).name} creates {joined}"
 
 /-- Create `n` tokens of `kind`. -/
 def createKindTokens (g : Game) (controller : PlayerId) (kind : TokenKind)

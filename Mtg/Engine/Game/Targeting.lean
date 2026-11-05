@@ -406,24 +406,49 @@ def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTarge
   | .filtered f => g.legalFilteredTargets caster f sourceId
   | .multi .. | .pair .. => #[]
 
+/-- Whether required slots `rest` of `kind` can each be given a target from their
+candidate list, extending the partial assignment `chosen` (slot index × target), such
+that targets within each `kind.distinctSlots` group are pairwise different (CR 115.3)
+and `.twoNonlandsSharingType` targets share a card type (CR 205.2a). Optional (“up to
+one”) slots may stay empty (CR 115.1c). -/
+def slotAssignmentExists (g : Game) (kind : EffectTargetKind) :
+    List (Nat × Array Target) → Array (Nat × Target) → Bool
+  | [], _ => true
+  | (i, part) :: rest, chosen =>
+    let groups := kind.distinctSlots
+    let sharesType (a b : Target) : Bool :=
+      match a, b with
+      | .permanent x, .permanent y =>
+        match g.findObject? x, g.findObject? y with
+        | some ox, some oy => (g.types ox).any (fun ty => (g.types oy).contains ty)
+        | _, _ => false
+      | _, _ => false
+    let compatible (t : Target) : Bool :=
+      chosen.all (fun (j, u) =>
+        !(u == t && groups.any (fun grp => grp.contains i && grp.contains j))) &&
+      match kind with
+      | .twoNonlandsSharingType => chosen.all (fun (_, u) => sharesType t u)
+      | _ => true
+    (kind.isOptionalSlot i && g.slotAssignmentExists kind rest chosen) ||
+      part.any (fun t => compatible t && g.slotAssignmentExists kind rest (chosen.push (i, t)))
+
 /-- Legal targets for a targeting shape (CR 115.1 / 601.2c / 603.3d).
 `sourceId` excludes the source of an “another” creature. Shapes with
 multiple instances of the word “target” read `spec.slots` instead of
-restating each slot. -/
+restating each slot; such a shape has legal targets only when every required
+slot can be filled at once with targets that respect `kind.distinctSlots` and
+`.twoNonlandsSharingType` (CR 115.1a–d / 115.3 / 700.2a–b). -/
 def legalTargetsForKind (g : Game) (caster : PlayerId) (kind : EffectTargetKind)
     (sourceId : Option ObjectId := none) : Array Target :=
   if kind.spec.slots.isEmpty then
     g.legalTargetsForAtomicKind caster kind sourceId
   else
-    Id.run do
-      let mut acc : Array Target := #[]
-      let mut requiredMissing := false
-      for i in [0:kind.spec.slots.size] do
-        let part := g.legalTargetsForAtomicKind caster kind.spec.slots[i]! sourceId
-        if part.isEmpty && !kind.isOptionalSlot i then
-          requiredMissing := true
-        acc := acc ++ part
-      if requiredMissing then #[] else acc
+    let parts : Array (Array Target) :=
+      kind.spec.slots.map (fun s => g.legalTargetsForAtomicKind caster s sourceId)
+    let indexed := (List.range parts.size).map (fun i => (i, parts[i]!))
+    if g.slotAssignmentExists kind indexed #[] then
+      parts.foldl (· ++ ·) #[]
+    else #[]
 
 /-- Legal targets for a triggered ability (CR 603.3d / 601.2c). `sourceId` is
 the object that generated the ability, used to exclude “another” creature. -/

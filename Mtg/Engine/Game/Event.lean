@@ -104,7 +104,7 @@ deriving Repr, Inhabited, BEq
 /-- Priority tiers for choosing among multiple applicable replacement or
 prevention effects on the same event (CR 616.1a–e). -/
 inductive ReplacementTier where
-  /-- CR 616.1a: Self-replacement effects. -/
+  /-- CR 616.1a: Self-replacement effects of a resolving spell or ability (CR 614.15). -/
   | self
   /-- CR 616.1b: Effects modifying under whose control an object enters the battlefield. -/
   | control
@@ -132,27 +132,27 @@ def ReplacementTier.rank : ReplacementTier → Nat
 inductive ReplacementKind where
   /-- CR 616.1e / 614.1c / 614.12: Intrinsic enters-tapped replacement on `object`. -/
   | entersTappedSelf (object : ObjectId)
-  /-- CR 616.1a / 614.12: Pay `life` life as `object` enters so it doesn't enter tapped. -/
+  /-- CR 616.1e / 614.1c / 614.12: Pay `life` life as `object` enters so it doesn't enter tapped. -/
   | entersUntappedPayLife (object : ObjectId) (life : Nat)
-  /-- CR 616.1a / 614.12: Decline to pay life as `object` enters, so it enters tapped. -/
+  /-- CR 616.1e / 614.1c / 614.12: Decline to pay life as `object` enters, so it enters tapped. -/
   | entersTappedDeclinePayLife (object : ObjectId)
-  /-- CR 616.1a / 614.12: Behold `beholdId` of `subtype` as `object` enters so it doesn't enter tapped. -/
+  /-- CR 616.1e / 614.1c / 614.12: Behold `beholdId` of `subtype` as `object` enters so it doesn't enter tapped. -/
   | entersUntappedBehold (object beholdId : ObjectId) (subtype : CardSubtype)
-  /-- CR 616.1a / 614.12: Decline to behold as `object` enters, so it enters tapped. -/
+  /-- CR 616.1e / 614.1c / 614.12: Decline to behold as `object` enters, so it enters tapped. -/
   | entersTappedDeclineBehold (object : ObjectId)
-  /-- CR 616.1a / 614.12: Choose `color` as `object` enters. -/
+  /-- CR 616.1e / 614.1c / 614.12: Choose `color` as `object` enters. -/
   | asEntersChooseColor (object : ObjectId) (color : Color)
-  /-- CR 616.1a / 614.12: Choose creature `subtype` as `object` enters. -/
+  /-- CR 616.1e / 614.1c / 614.12: Choose creature `subtype` as `object` enters. -/
   | asEntersChooseCreatureType (object : ObjectId) (subtype : CardSubtype)
-  /-- CR 616.1a / 614.12: Choose odd (`true`) or even (`false`) as `object` enters. -/
+  /-- CR 616.1e / 614.1c / 614.12: Choose odd (`true`) or even (`false`) as `object` enters. -/
   | asEntersChooseOdd (object : ObjectId) (odd : Bool)
-  /-- CR 616.1a / 614.12: Name nonland card `name` as `object` enters. -/
+  /-- CR 616.1e / 614.1c / 614.12: Name nonland card `name` as `object` enters. -/
   | asEntersChooseCardName (object : ObjectId) (name : String)
-  /-- CR 616.1a / 614.12: Choose `cardType` as `object` enters. -/
+  /-- CR 616.1e / 614.1c / 614.12: Choose `cardType` as `object` enters. -/
   | asEntersChooseCardType (object : ObjectId) (cardType : CardType)
-  /-- CR 616.1a / 614.12: Choose `anchor` as `object` enters. -/
+  /-- CR 616.1e / 614.1c / 614.12: Choose `anchor` as `object` enters. -/
   | asEntersChooseAnchor (object : ObjectId) (anchor : String)
-  /-- CR 616.1a: Intrinsic enters-with-counters replacement on `object`. -/
+  /-- CR 616.1e / 614.1c / 614.12: Intrinsic enters-with-counters replacement on `object`. -/
   | entersWithCountersSelf (object : ObjectId) (kind : CounterKind) (amount : Nat)
   /-- CR 616.1b: Modifies under whose control `object` enters the battlefield. -/
   | entersUnderControl (object : Option ObjectId) (newController : PlayerId)
@@ -170,7 +170,7 @@ inductive ReplacementKind where
   | entersWithExtraCounters (object : Option ObjectId) (kind : CounterKind) (amount : Nat)
   /-- CR 616.1e / 122.6: Modifies the number of counters put on `object` (`count * mult + add`). -/
   | modifyCountersPut (object : Option ObjectId) (kind : Option CounterKind) (add : Nat := 0) (mult : Nat := 1)
-  /-- CR 616.1a / 702.34a: Exiles `object` when leaving the stack instead of going elsewhere. -/
+  /-- CR 616.1e / 702.34a: Exiles `object` when leaving the stack instead of going elsewhere. -/
   | exileInsteadOfStackLeave (object : Option ObjectId)
   /-- CR 616.1e / 614.1a: Exiles `object` instead of putting it into a graveyard (optionally queueing a reflexive Wolf trigger). -/
   | exileInsteadOfGraveyard (object : Option ObjectId) (createsWolf : Bool := false)
@@ -198,18 +198,6 @@ deriving Repr, Inhabited, BEq
 
 /-- Priority tier of a `ReplacementKind` under CR 616.1a–e. -/
 def ReplacementKind.tier : ReplacementKind → ReplacementTier
-  | .entersUntappedPayLife .. => .self
-  | .entersTappedDeclinePayLife _ => .self
-  | .entersUntappedBehold .. => .self
-  | .entersTappedDeclineBehold _ => .self
-  | .asEntersChooseColor .. => .self
-  | .asEntersChooseCreatureType .. => .self
-  | .asEntersChooseOdd .. => .self
-  | .asEntersChooseCardName .. => .self
-  | .asEntersChooseCardType .. => .self
-  | .asEntersChooseAnchor .. => .self
-  | .entersWithCountersSelf .. => .self
-  | .exileInsteadOfStackLeave _ => .self
   | .entersUnderControl .. => .control
   | .entersAsCopy .. => .copy
   | .entersAsCopyCreatureUntilEot .. => .copy
@@ -1073,6 +1061,7 @@ structure ProposedTokenBatch where
   attackingTarget : Option AttackTarget := none
   extraCounters : CounterBag := #[]
   cause : Option EventCause := none
+  isBonus : Bool := false
 deriving Repr, Inhabited, BEq
 
 /-- One pending graveyard move determined during a single CR 704.3 state-based
@@ -1198,7 +1187,6 @@ set_option maxRecDepth 2048 in
 `Pending.chooseReplacement` pause finishes. -/
 inductive PostStep where
   | putArtifactOntoBattlefield (p : PlayerId) (cardId : ObjectId) (hostId : Option ObjectId)
-  | worldsWithinWorldsTail (exiled : Array ObjectId) (sourceId : Option ObjectId)
   | copyEnteredArtifact (controller : PlayerId) (artifactId : ObjectId)
   | grantHandSizePower (sourceId : Option ObjectId)
   | beginScryOne (p : PlayerId)
@@ -1241,12 +1229,12 @@ inductive PostStep where
   | treasureThenDragonCreateDragon (controller : PlayerId)
   | logAndEnterRecentTokens
   | dealDamageToEachOpponent (p : PlayerId) (amount : Nat) (sourceId : Option ObjectId)
-      (cause : Option EventCause)
+      (cause : Option EventCause) (startEventIdx : Option Nat := none)
   | noteExcessDamageDealt (targetId : ObjectId) (lethal startIdx : Nat)
   | notePermanentDealtDamage (targetId : ObjectId) (startIdx : Nat)
   | logTwoNonlegendaryCopyTokens (sourceId : Option ObjectId) (startEventIdx : Nat := 0)
   | discardCleanupIds (p : PlayerId) (remainingIds : Array ObjectId)
-      (justDiscarded : Option ObjectId := none)
+      (justDiscarded : Option (ObjectId × PlayerId) := none)
   | postSbaCleanup (sba : Bool)
   | cleanupStepAfterDiscard
   | wheelDrawThenOfferNext (p : PlayerId) (cards : Nat) (rest : Array PlayerId := #[])
@@ -1269,15 +1257,16 @@ inductive PostStep where
       (pendingReturn : Option (ObjectId × PlayerId × String) := none)
   | addPlusOnesToSource (sourceId : ObjectId) (count : Nat)
   | beginDiscardCardsStep (players : Array PlayerId)
-  | continueAfterDiscardStep (remaining : Array PlayerId)
+  | continueAfterDiscardStep (remaining : Array PlayerId) (samePlayer : Bool := false)
+      (count : Nat := 1)
   | discardHandIdsLoop (p : PlayerId) (ids : Array ObjectId) (logEach : Bool)
       (cause : Option EventCause)
-  | logInfluenceThenScryTwo (sourceId : ObjectId)
+  | logInfluenceThenScryTwo (sourceId : ObjectId) (beforeInfluence : Nat)
   | finishPalantirInfluence (controller : PlayerId) (sourceId : ObjectId)
       (beforeInfluence : Nat) (targetOpponent : Option PlayerId)
   | noteMilledIds (tops : Array ObjectId)
   | noteOpponentsMilled (opponents : Array PlayerId) (startIdx : Nat)
-  | logTwoTappedAttackingSpirits (controller : PlayerId)
+  | logCreatedTokensSummary (controller : PlayerId) (startEventIdx : Nat)
   | offerWorldsCreatures (controller : PlayerId) (startIdx : Nat)
       (creatureIds : Array ObjectId) (sourceId : Option ObjectId)
   | identityEchoAfterExile (controller : PlayerId) (exiledId : ObjectId)
@@ -1323,7 +1312,6 @@ inductive PostStep where
   | recordUntapStepEnded
   | beginStepAfterPhaseBegan (st : Step)
   | beginStepBody (st : Step)
-  | logChosenCardDiscarded (chooser victim : PlayerId) (cardId : ObjectId)
   | tapAndStunTargetsLoop (controller : PlayerId) (remaining : Array (Nat × Target))
       (sourceId : Option ObjectId) (cause : Option EventCause)
   | exileZemoBoastCards (p : PlayerId) (abilityId : ObjectId) (remainingIds : Array ObjectId)
@@ -1445,6 +1433,7 @@ inductive PostStep where
       (remaining : Array (Nat × Target)) (x : Nat) (sourceId : Option ObjectId)
   | divideSevenDamageLoop (controller : PlayerId) (kind : EffectTargetKind)
       (remaining : Array (Nat × Target)) (division : Array Nat) (sourceId : Option ObjectId)
+      (startEventIdx : Option Nat := none)
   | returnInstantsLoop (controller : PlayerId) (kind : EffectTargetKind)
       (remaining : Array Target) (sourceId : Option ObjectId)
   | putPlusOnesUpToLastKnownLoop (controller : PlayerId) (remaining : Array Target)
@@ -1471,7 +1460,17 @@ inductive PostStep where
       (movedAnyForCur : Bool := false) (pendingId : Option ObjectId := none)
   | worldsWithinWorldsAfterPut (exiled : Array ObjectId)
       (validChosen : Array (ObjectId × PlayerId × String)) (sourceId : Option ObjectId)
+  /-- Log `msg` only if `cardId` arrived in `owner`'s graveyard (CR 614.6); also
+  used for the CR 303.4g stack-Aura graveyard log. -/
   | logDiscardIfInGraveyard (cardId : ObjectId) (owner : PlayerId) (msg : String)
+  /-- Resume `EffectResolution.chooseCardsToHandLoop`; `pendingCard` is the card
+  whose owner's-hand arrival (CR 400.3 / 614.6) is still to be logged. -/
+  | chooseCardsToHandLoop (p : PlayerId) (remainingIds : Array ObjectId)
+      (cause : Option EventCause)
+      (pendingCard : Option (ObjectId × PlayerId × String) := none)
+  /-- Log `msg` only if some counter kind on `targetId` increased over `before`
+  (CR 122.1 / 614.6). -/
+  | logIfCountersIncreased (targetId : ObjectId) (before : CounterBag) (msg : String)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- Stage of `StateBasedActions.finishSbaSweep` across `Pending.chooseReplacement` pauses. -/
@@ -1531,16 +1530,18 @@ inductive PendingReplacement where
   | seq (first rest : PendingReplacement)
   | dealDamageToPlayer (p : PlayerId) (n : Nat)
       (source : Option EventObject) (unpreventable : Bool)
-      (cause : Option EventCause)
+      (cause : Option EventCause) (suppressLifelink : Bool := false)
   | dealDamageToPlayers (players : Array PlayerId) (n : Nat)
       (source : Option EventObject) (cause : Option EventCause)
+      (startEventIdx : Option Nat := none) (suppressLifelink : Bool := false)
   | dealDamageFrom (sourceName : String) (source : EventObject) (targetId : ObjectId)
       (n : Nat) (deathtouch : Bool)
-      (cause : Option EventCause)
+      (cause : Option EventCause) (suppressLifelink : Bool := false)
   | dealFightDamage (sourceId targetId : ObjectId) (cause : Option EventCause)
+      (amount : Option Nat := none)
   | dealDamageToPermanent (targetId : ObjectId) (n : Nat)
       (source : Option EventObject)
-      (cause : Option EventCause)
+      (cause : Option EventCause) (suppressLifelink : Bool := false)
   | markDamageOn (targetId : ObjectId) (n : Nat) (msg : String)
       (deathtouch : Bool) (source : Option EventObject) (combat : Bool)
       (unpreventable : Bool) (cause : Option EventCause)
@@ -1623,6 +1624,7 @@ inductive PendingReplacement where
       (illegalAuras : Array ObjectId := #[])
       (illegalEquips : Array (ObjectId × ObjectId) := #[])
       (illegalCreatureAtts : Array (ObjectId × ObjectId) := #[])
+      (legendGroups : Array (PlayerId × String × Array ObjectId) := #[])
   | untapPermanent (targetId : ObjectId) (duringUntapStep : Bool := false)
       (logUntap : Bool := true) (cause : Option EventCause := none)
   | untapStepPermanents (ids : Array ObjectId)
@@ -1637,6 +1639,10 @@ inductive PendingReplacement where
   | restorePending (p : Pending) (popOuter : Bool := false)
       (promptLog : Option String := none)
   | closeBatch (batchId : BatchId) (startIdx : Nat)
+  | restorePausedDiscardBatch (batchId : BatchId) (startIdx : Nat)
+      (cause : Option EventCause) (objects : Array GameObject)
+      (players : Array Player) (effects : Array (EffectId × ContinuousEffectSpec))
+      (pending : Pending) (stack : Array StackEntry := #[])
   | checkSBA
   | receivePriority (p : PlayerId)
   | completeActivation (hadOuterReplacement hadOpenContinuation : Bool)
@@ -1750,6 +1756,7 @@ inductive PendingReplacement where
       (onlyNonSubtype : Option CardSubtype := none)
       (exceptControllerTokens : Option PlayerId := none)
       (source : Option EventObject := none) (cause : Option EventCause := none)
+      (startEventIdx : Option Nat := none) (suppressLifelink : Bool := false)
   | destroyPermanentsLoop (remainingIds : Array ObjectId)
       (allCandidates : Array ObjectId := #[]) (countNote : Bool := false)
       (obGainLifeFor : Option PlayerId := none)
@@ -2046,6 +2053,14 @@ structure ContinuationFrame where
   thirstDiscardType : CardType := .artifact
   /-- Remaining discards for a required multi-card discard. -/
   pendingDiscardsLeft : Nat := 0
+  /-- Per-player discard count for a multi-player `beginDiscardCards` instruction. -/
+  discardCountPerPlayer : Nat := 0
+  /-- Shared `(batchId, startEventIdx)` kept open across non-Thirst multi-card /
+  multi-player `beginDiscardCards` prompts (CR 603.2c / 701.9b). -/
+  discardBatch : Option (BatchId × Nat) := none
+  /-- Pre-replaced single-token `ProposedTokenBatch`es staged across entering-attacking
+  target choices (`createAndMarkTokensAttacking` -> `commitEnteringAttackItems`). -/
+  stagedAttackTokenBatches : Array ProposedTokenBatch := #[]
   /-- After the current search, untap the land if its controller has this many lands. -/
   untapSearchedIfLands : Option Nat := none
   /-- Active resolving source object id and controller across pending resolution
@@ -2154,6 +2169,9 @@ inductive ContinuationChange where
   | thirstDiscardsLeft (v : Nat)
   | thirstDiscardType (v : CardType)
   | pendingDiscardsLeft (v : Nat)
+  | discardCountPerPlayer (v : Nat)
+  | discardBatch (v : Option (BatchId × Nat))
+  | stagedAttackTokenBatches (v : Array ProposedTokenBatch)
   | untapSearchedIfLands (v : Option Nat)
   | stashedCause (v : Option EventCause)
   | resolvingSpell (v : Option ObjectId)
@@ -2316,6 +2334,9 @@ namespace EngineChange
 @[inline] def thirstDiscardsLeft (v : Nat) : EngineChange := .continuation (.thirstDiscardsLeft v)
 @[inline] def thirstDiscardType (v : CardType) : EngineChange := .continuation (.thirstDiscardType v)
 @[inline] def pendingDiscardsLeft (v : Nat) : EngineChange := .continuation (.pendingDiscardsLeft v)
+@[inline] def discardCountPerPlayer (v : Nat) : EngineChange := .continuation (.discardCountPerPlayer v)
+@[inline] def discardBatch (v : Option (BatchId × Nat)) : EngineChange := .continuation (.discardBatch v)
+@[inline] def stagedAttackTokenBatches (v : Array ProposedTokenBatch) : EngineChange := .continuation (.stagedAttackTokenBatches v)
 @[inline] def untapSearchedIfLands (v : Option Nat) : EngineChange := .continuation (.untapSearchedIfLands v)
 @[inline] def stashedCause (v : Option EventCause) : EngineChange := .continuation (.stashedCause v)
 @[inline] def resolvingSpell (v : Option ObjectId) : EngineChange := .continuation (.resolvingSpell v)
@@ -3298,7 +3319,7 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : Option Obje
             | .player d => !decls.any (fun (a', tgt') => a'.id != attacker.id && tgt' == .player d)
             | _ => false)
     | .combat (.attackersDeclared p decls), .fra .creatureAttacksYouOrYourPlaneswalker =>
-      !you p &&
+      opp p &&
         decls.any (fun (attacker, tgt) =>
           attacker.creature &&
             match tgt with
@@ -3309,7 +3330,7 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : Option Obje
       decls.any (fun (attacker, tgt) =>
         attacker.creature &&
           match tgt with
-          | .player d => !you d
+          | .player d => opp d
           | _ => false)
     | .combat (.attackersDeclared p decls), .fra .zombieTokenAttacks =>
       you p && decls.any (fun (attacker, _) =>
@@ -3322,7 +3343,7 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : Option Obje
       decls.any (fun (blocker, _) => blocker.creature)
     | .combat (.blockersDeclared _ decls), .fra .opponentSmallCreatureBlocks =>
       decls.any (fun (blocker, _) =>
-        blocker.controller.any (!you ·) && blocker.creature &&
+        blocker.controller.any opp && blocker.creature &&
           (blocker.power.any (· ≤ 1) || blocker.toughness.any (· ≤ 1)))
     | .combat (.becameBlocked attacker _), .becomesBlocked =>
       this attacker
@@ -3360,9 +3381,9 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : Option Obje
     | .turn (.stepBegan .beginningOfCombat active), .yourBeginCombat => you active
     | .turn (.stepBegan .beginningOfCombat active), .fra .yourBeginCombatFromGraveyard => you active
     | .turn (.stepBegan .beginningOfCombat _), .eachBeginCombat => true
-    | .turn (.stepBegan .beginningOfCombat active), .fra .opponentBeginCombat => !you active
+    | .turn (.stepBegan .beginningOfCombat active), .fra .opponentBeginCombat => opp active
     | .turn (.stepBegan .precombatMain active), .yourFirstMain => you active
-    | .turn (.stepBegan .draw active), .eachOpponentDrawStep => !you active
+    | .turn (.stepBegan .draw active), .eachOpponentDrawStep => opp active
     | .turn (.stepBegan .upkeep _), .eaglesCreateBirds => true
     | .turn (.stepBegan .upkeep active), .enchantedControllerUpkeep => you active
     | .zone (.moved before _ .battlefield toZone .sacrifice actor _ _), .youSacrificeToken =>
@@ -3374,7 +3395,7 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : Option Obje
     | .cast (.abilityActivated _ _ p (.nonMana (some _) ..)), .youActivateLoyaltyAbility => you p
     | .cast (.abilityActivated _ source p _), .youActivateCreatureAbility =>
       you p && source.creature
-    | .cast (.abilityActivated _ _ p (.nonMana (some _) ..)), .fra .opponentActivatesLoyaltyAbility => !you p
+    | .cast (.abilityActivated _ _ p (.nonMana (some _) ..)), .fra .opponentActivatesLoyaltyAbility => opp p
     | .cast (.abilityActivated _ _ p (.nonMana ..)), .youTargetSomething => you p
     | .cast (.abilityActivated _ _ p (.nonMana ..)), .becomesTarget =>
       sourceId.isSome && opp p
