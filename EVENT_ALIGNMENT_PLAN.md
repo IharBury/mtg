@@ -7598,18 +7598,31 @@ expiry / active-team `"during your turn"` / starting team / extra turns /
        has a valid completion across the remaining required slots (preventing
        `.twoNonlandsSharingType` slot-0 picks whose type has no second matching
        nonland permanent); and
-     - wire `g.effectHasEnoughTargets p eff (some o.id)` (pre-applying Layer 3
-       text changes via `TextChange.applyEffect (g.evalLayer3 o)` to `eff`—matching
-       `SpellTargets.legalModes`—in callers holding `o : GameObject` and
-       `face : CardDef`) across `Decisions.beginResolutionCastTargets`,
-       `Decisions.afterAdditionalCostAnnounced`, `Triggers.triggerModeChoosable`,
-       `Casting.canCastFrontFace` / `castFaceHasLegalTarget` /
-       `validateFrontFaceCast` / `canCastAdventure`,
-       `SpellTargets.kickedFaceHasLegalTarget`, and `spellModeIsChoosable`
-       pre-checks in `FraChoices.lean`, `Decisions.lean`, and
-       `ResolutionEffects.lean` so multi-target spells (`targetCount ≥ 2`, e.g.
-       *Seeds of Strength* / *Arc Trail* / *Cone of Flame*) are rejected upfront
-       whenever fewer than `targetCount` distinct legal targets exist.
+     - switch `SpellTargets.kickedFaceHasLegalTarget` (which already takes
+       `tcs` and `sourceId` and applies `TextChange.applyEffect`) to check
+       `g.effectHasEnoughTargets p k' sourceId` on the adjusted kicked effect,
+       extend `Casting.castFaceHasLegalTarget` with optional `(tcs : Array
+       TextChange := #[]) (sourceId : Option ObjectId := none)` so it checks
+       `g.effectHasEnoughTargets` on `c.spellEffect` (after `TextChange.applyEffect
+       tcs`, falling back to `!(g.legalAuraTargets p c sourceId).isEmpty` for
+       Auras without `spellEffect`) or `g.kickedFaceHasLegalTarget p c tcs
+       sourceId`, pass `(g.evalLayer3 o)` / `(some o.id)` (or `card` /
+       `some checkId`) across `Casting.canCastFrontFace` (replacing
+       `!(g.legalSpellTargets p o |>.isEmpty) || g.kickedFaceHasLegalTarget …`),
+       `Casting.validateFrontFaceCast`, `Casting.canCastAdventure`,
+       `Decisions.castExiledAsAbilityResolves`,
+       `ResolutionEffects.mayCastFromLookedError`, and `FraChoices.lean`
+       (`castFreeCopy`, `.mayCastInstantSorceryFromHand`, `.mayCastCards`,
+       `.mayCastFromGraveyard`, and `defaultFraAction` `.mayCastCards` /
+       `.mayCastFromGraveyard`, also pre-applying `TextChange.applyEffect
+       (g.evalLayer3 o)` and passing `some o.id` in their modal
+       `spellModeIsChoosable` pre-checks), and check `g.effectHasEnoughTargets`
+       on `g.currentSpellEffect spell` (with `some spell.id`) in
+       `Decisions.beginResolutionCastTargets` and
+       `Decisions.afterAdditionalCostAnnounced` and on `(e, obj.sourceId)` in
+       `Triggers.triggerModeChoosable` so multi-target spells (`targetCount ≥ 2`,
+       e.g. *Seeds of Strength* / *Arc Trail* / *Cone of Flame*) are rejected
+       upfront whenever fewer than `targetCount` distinct legal targets exist.
    - Enforce CR 118.9a,c alternative-cost exclusivity & actual spell mana value
      in `Costs.playManaCost`, and wire `perm.payLifeEqualManaValue` into
      one-shot resolution casts without leaking onto `withoutManaCost` casts
@@ -7748,16 +7761,19 @@ expiry / active-team `"during your turn"` / starting team / extra turns /
        keeps it from going on the stack or resolving if that combat damage
        causes the monarch or their team to lose the game, CR 113.8 / 725.2 /
        Rulings 937, 939); and
-     - fall back to the first still-living non-`p` member of
-       `g.teamMembers g.activePlayer`
-       (`((g.teamMembers g.activePlayer).find? (fun q => q != p && g.stillInGame q)).getD (g.nextLiving p)`)
-       after `g.stillInGame g.activePlayer && g.activePlayer != p` in
-       `Leaving.playerLeavesGameCore`'s CR 725.4 monarch succession check (which
-       runs after `GameEvent.playerLeftGame` has already set `(g.player p).lost`)
-       so an opponent monarch leaving after `g.activePlayer` has already left
-       earlier in the same shared turn still passes the monarchy to a living
-       teammate on the active team before falling back to `g.nextLiving p` (CR
-       725.4 / 805.4a).
+     - gate the active-team fallback in `Leaving.playerLeavesGameCore`'s CR 725.4
+       monarch succession check (after `g.stillInGame g.activePlayer &&
+       g.activePlayer != p`, once `GameEvent.playerLeftGame` has set
+       `(g.player p).lost`) on `!g.isSharedTurnFinalSeat` and unbegun seats in
+       `let seats := g.currentSharedTurnSeats` (`if !g.isSharedTurnFinalSeat then
+       ((g.teamMembers g.activePlayer).find? (fun q => q != p && g.stillInGame q
+       && !seats.contains q)).getD (g.nextLiving p) else g.nextLiving p`) so a
+       later living teammate whose seat in this shared turn has not yet begun
+       inherits the monarchy (whether the monarch left on the first seat or an
+       opponent monarch left after `g.activePlayer` had already departed earlier
+       in the shared turn), while a monarch leaving on the final seat passes the
+       monarchy to `g.nextLiving p` rather than back to an earlier teammate whose
+       seat already finished (CR 725.4 / 805.4a).
    - Complete 2HG shared-turn summoning sickness, active-team restrictions, and
      multiplayer combat / *Jace, Multiverse Architect* / *Garruk, Curse Breaker*
      scoping (`Core.lean`, `Casting.lean`, `Costs.lean`, `Turns.lean`,
@@ -7765,15 +7781,27 @@ expiry / active-team `"during your turn"` / starting team / extra turns /
      `Event.lean`, `Decisions.lean`, `Agent.lean`, `Tests/Events.lean`, CR
      101.2 / 109.2 / 118.12a / 205.3j / 302.6 / 508.1d / 508.4c / 603.7c /
      608.2h / 800.4k,m / 805.4a,d / 805.10 / 810.2):
-     - clear `summoningSick` across `g.teamMembers player` only when a team's
-       shared turn begins (`!sameShared` in `Core.applyTurnEvent`) and scan for
-       the start of `ctrl`'s team's shared turn in `Core.lastTurnStartIdx?` so a
-       creature gained during seat `⟨0⟩` stays summoning-sick during teammate
-       `⟨1⟩`'s seat of the same shared turn while losing summoning sickness when
-       either teammate's shared turn begins (CR 302.6 / 805.4a / 810.2);
-     - check living `(g.teamMembers g.activePlayer).any` in
-       `Casting.opponentsCantCastOnActiveTurn` (`Casting.lean`, CR 101.2 /
-       805.4a / 810.2), check `g.isOnActiveTeam p` in `Costs.canCastForSneak`
+     - clear `summoningSick` across `g.teamMembers` only when a team's shared
+       turn begins in `Core.applyTurnEvent`—gating *both* `.turnBegan player
+       extra` (`!sameShared`, clearing across `g.teamMembers player`) and
+       `.stepBegan .untap active` (`let (seats, _) := g.currentSharedTurnState
+       (some priorLimit); seats.isEmpty || seats == #[active] ||
+       !g.areTeammates seats[0]! active`, clearing across `g.teamMembers active`
+       so a second seat's untap step does not re-clear sickness)—and scan only
+       for the first-seat `.turnBegan` / standalone `.stepBegan .untap` of
+       `ctrl`'s team's shared turn in `Core.lastTurnStartIdx?` so a creature
+       that entered or changed control during seat `⟨0⟩` stays summoning-sick
+       through teammate `⟨1⟩`'s untap step and seat of the same shared turn
+       while losing summoning sickness when either teammate's next shared turn
+       begins (CR 302.6 / 805.4a / 810.2);
+     - keep the `!g.isOnActiveTeam p` (`p != g.activePlayer &&
+       !g.areTeammates p g.activePlayer`) caster check and widen the permanent
+       scan in `Casting.opponentsCantCastOnActiveTurn` from
+       `g.permanentsOf g.activePlayer` to living teammates on the active team
+       (`(g.teamMembers g.activePlayer).any (fun tm => g.stillInGame tm &&
+       (g.permanentsOf tm).any (fun o => (g.staticAbilities o).any (· ==
+       .opponentsCantCastOnYourTurn)))`, `Casting.lean`, CR 101.2 / 805.4a /
+       810.2), check `g.isOnActiveTeam p` in `Costs.canCastForSneak`
        (`Costs.lean`, CR 805.4a / 810.2), and deduplicate `departed` in
        `Turns.startNextTurnCore` (`Turns.lean`, CR 800.4k,m); and
      - offer the active opponent a `{2}` payment prompt (`offerMayPayPick`, CR
