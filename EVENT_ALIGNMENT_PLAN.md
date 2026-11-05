@@ -7812,34 +7812,54 @@ expiry / active-team `"during your turn"` / starting team / extra turns /
        810.2), check `g.isOnActiveTeam p` in `Costs.canCastForSneak`
        (`Costs.lean`, CR 805.4a / 810.2), and deduplicate `departed` in
        `Turns.startNextTurnCore` (`Turns.lean`, CR 800.4k,m); and
-     - offer the active opponent a `{2}` payment prompt (`offerMayPayPick`, CR
-       118.12a) and scope `PlayerRule.cantAttackJaces` to Jace planeswalkers
-       controlled by `controller` (`g.controlledBy pw jaceCtrl && g.hasSubtype
-       pw .jace`, CR 109.2 / 205.3j / 508.1d) on *Jace, Multiverse Architect*'s
-       `.jaceTax` (updating `Tests/Events.lean`), require
-       `eo.attackingPlaneswalker?.isNone` on `.merfolkAttackPlayer` in
-       `Core.matchTriggers` and `GameEvent.matchesTrigger` (CR 508.4c), check
-       planeswalker controller `you` on `.fra .creatureAttacksYouOrYourPlaneswalker`
-       in `GameEvent.matchesTrigger`, and lock in the triggering declared
-       attacker `ObjectId`s from `CombatEvent.attackersDeclared` for *Garruk,
-       Curse Breaker* `.attackersOfPlayerGetTwoTwoTrample` (CR 603.7c / 608.2h).
+     - prompt the active opponent `g.activePlayer` (when
+       `!g.isOnActiveTeam controller && !(g.player g.activePlayer).lost`) via
+       `Pending.payOrLetCounter g.activePlayer 2 none` (`unlessPaysController :=
+       controller`, `unlessPaysTargets := #[.player g.activePlayer]`,
+       `unlessPaysSource := sourceId`, and `unlessPaysInstead` applying the
+       `PlayerRule.cantAttackJaces controller` restriction on `g.activePlayer`
+       on decline / CR 800.4f `flushUnlessPays` while paying `{2}` in
+       `Decisions.payGeneric` clears `unlessPays` without drawing, CR 118.12a)
+       and scope `PlayerRule.cantAttackJaces` to Jace planeswalkers controlled
+       by `controller` (`g.controlledBy pw jaceCtrl && g.hasSubtype pw .jace`,
+       CR 109.2 / 205.3j / 508.1d) on *Jace, Multiverse Architect*'s `.jaceTax`
+       (updating `Tests/Events.lean`), filter `merfolkDefenders` with
+       `o.status.attackingPlaneswalker?.isNone` before `post.defendingPlayerOf o`
+       in `Core.matchTriggers` and match `| .player _ => true | _ => false` on
+       `(attacker, tgt)` in `GameEvent.matchesTrigger` for `.merfolkAttackPlayer`
+       (CR 508.4c), gate the `.fra .creatureAttacksYouOrYourPlaneswalker` enqueue
+       in `Core.matchTriggers` on `post.isLivingOpponentOf whom activePlayer` and
+       a `.player whom` (or default `none` when `whom == post.defendingPlayer`)
+       or `.planeswalker pwId` with `(post.findObject? pwId).any
+       (post.controlledBy · whom)` (excluding `.battle` and planeswalkers `whom`
+       does not control), and lock in the triggering declared attacker
+       `ObjectId`s from `CombatEvent.attackersDeclared` for *Garruk, Curse
+       Breaker* `.attackersOfPlayerGetTwoTwoTrample` (CR 603.7c / 608.2h).
    - Route shield, stun, and CR 704.5q counter removals through
-     `Core.recordRemoveCounters`, route `.whileSourceHasCounter` Layer 2 expiry
-     through `endControlEffectById`, use layer-resolved `g.name` in SBA / Saga
-     logs, and retire the four remaining orphaned helpers (`StateBasedActions.lean`,
-     `Turns.lean`, `Core.lean`, `Entering.lean`, `Chapters.lean`, `Pumps.lean`,
+     `recordRemoveCounters`, run `endControlEffectById` before `expireMatching`
+     on `.whileSourceHasCounter` Layer 2 expiry, use layer-resolved `g.name` in
+     SBA / Saga logs, and retire the four remaining orphaned helpers
+     (`Leaving.lean`, `Core.lean`, `StateBasedActions.lean`, `Damage.lean`,
+     `Turns.lean`, `Entering.lean`, `Chapters.lean`, `Pumps.lean`,
      `Tokens.lean`, `SpellTargets.lean`, `ResolutionEffects.lean`,
      `Tests/Auras.lean`, `MshOracleTests.lean`, `OracleRulingTests.lean`, CR
      122.1c–d / 611.2a / 613.1a,c / 704.5q / 800.4c):
-     - route shield-counter destruction/damage removal (`StateBasedActions.lean`,
-       `Core.lean`, CR 122.1c), CR 704.5q `+1/+1`/`-1/-1` annihilation
-       (`StateBasedActions.lean`), and untap-step stun-counter removal
-       (`Turns.lean`, CR 122.1d) through `Core.recordRemoveCounters` so
+     - move `recordRemoveCounters` (and `removeAllCountersFrom`) from `Core.lean`
+       to `Leaving.lean` (after `endControlEffectById`, keeping
+       `Game.recordRemoveCounters` in scope for `StateBasedActions`, `Damage`,
+       `Turns`, and all downstream callers), route shield-counter destruction
+       removal (`StateBasedActions.destroyPermanent`) and both prevented and
+       unpreventable damage shield-counter removals (`Damage.markDamageOn` in
+       `Damage.lean`, CR 122.1c), CR 704.5q `+1/+1`/`-1/-1` annihilation
+       (`StateBasedActions.lean`), and untap-step / effect stun-counter removal
+       (`Turns.lean`, `Pumps.lean`, CR 122.1d) through `recordRemoveCounters` so
        `.whileSourceHasCounter` continuous effects expire immediately when a
-       counter kind reaches `0` (CR 611.2a), and route expired `.layered _
-       (.control _) (.whileSourceHasCounter ..)` effects in
-       `Core.recordRemoveCounters` through `endControlEffectById` so a permanent
-       whose new controller has left the game is exiled under CR 800.4c;
+       counter kind reaches `0` (CR 611.2a), and in `recordRemoveCounters` invoke
+       `endControlEffectById` on every matching `.layered _ (.control _)
+       (.whileSourceHasCounter id kind)` effect *before* `expireMatching` removes
+       the remaining `.whileSourceHasCounter` effects so `endControlEffectById`
+       still sees the active control effect and exiles any permanent whose
+       resulting controller has left the game under CR 800.4c;
      - replace raw `o.name` with layer-resolved `g.name o` across SBA, Saga, and
        pump logs in `StateBasedActions.lean`, `Entering.lean`, `Chapters.lean`,
        and `Pumps.lean` (CR 613.1a,c); and
