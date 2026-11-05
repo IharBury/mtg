@@ -24,31 +24,74 @@ def beginSacrificeCreatures (g : Game) (players : Array PlayerId)
       s!"{(g.player p).name} must sacrifice a creature"
 
 /-- Ask the next player who has a card to discard, or resume priority.
-`count` is how many cards that player must discard, one at a time. Calling
-this twice does not queue two discards; it would replace the pending choice. -/
-def beginDiscardCards (g : Game) (players : Array PlayerId) (count : Nat := 1) :
-    Game :=
-  let g :=
-    if count > 1 && g.continuations.isEmpty then
-      g.change (.pushContinuationFrame {})
-    else g
-  let g :=
-    if count > 1 then g.change (.pendingDiscardsLeft count) else g
-  match g.nextActorWithHandCard players with
-  | none =>
-    let skipped := players.filter (fun p => (g.player p).hand.isEmpty)
-    let g := g.logForPlayers skipped (fun p =>
-      s!"{(g.player p).name} has no card to discard")
-    let g :=
-      if g.conniveSource.isSome then
-        (g.change (.conniveSource none)).logMsg
-          "No card is discarded; the conniving creature does not receive a +1/+1 counter"
-      else g
-    let g := g.changes #[.pending .none, .thirstDiscardsLeft 0, .pendingDiscardsLeft 0]
-    g
-  | some (p, rest) =>
-    (g.change (.pending (.chooseDiscardCard p rest))).logMsg
-      s!"{(g.player p).name} must discard a card"
+`count` is how many cards each player in `players` must discard, one at a time.
+Across non-Thirst multi-card / multi-player prompts (`count > 1` or multiple
+players), `discardCountPerPlayer` preserves `count` for later players in
+`players` and a shared `pausedBatch` (`discardBatch`) stays open across the
+individual per-card `.discard` moves so batch-level discard / graveyard-arrival
+triggers evaluate once when the instruction finishes (CR 101.4 / 603.2c / 701.9b). -/
+def beginDiscardCards (g : Game) (players : Array PlayerId) (count : Nat := 1)
+    (samePlayer : Bool := false) (resuming : Bool := false) : Game :=
+  if !resuming && count == 0 && g.thirstDiscardsLeft == 0 then g
+  else
+    let closeDiscardBatch (g : Game) : Game :=
+      match g.discardBatch with
+      | some (dbBid, dbStartIdx) =>
+        let g := g.change (.discardBatch none)
+        if g.currentBatch.map Prod.fst == some dbBid then
+          g.finishOpenBatchAndLinkedExile dbBid dbStartIdx
+        else g
+      | none => g
+    match g.nextActorWithHandCard players with
+    | none =>
+      let skipped := players.filter (fun p => g.stillInGame p && (g.player p).hand.isEmpty)
+      let g := g.logForPlayers skipped (fun p =>
+        s!"{(g.player p).name} has no card to discard")
+      let g :=
+        if g.conniveSource.isSome then
+          (g.change (.conniveSource none)).logMsg
+            "No card is discarded; the conniving creature does not receive a +1/+1 counter"
+        else g
+      let g := g.changes #[
+        .pending .none, .thirstDiscardsLeft 0,
+        .pendingDiscardsLeft 0, .discardCountPerPlayer 0]
+      closeDiscardBatch g
+    | some (p, rest) =>
+      let prefixIdx := players.findIdx? (· == p) |>.getD 0
+      let skipped := (players.extract 0 prefixIdx).filter (fun q =>
+        g.stillInGame q && (g.player q).hand.isEmpty)
+      let g := g.logForPlayers skipped (fun q =>
+        s!"{(g.player q).name} has no card to discard")
+      let keptSamePlayer := resuming && samePlayer && players[0]? == some p
+      let isNonThirstMulti := g.thirstDiscardsLeft == 0 && (count > 1 || !rest.isEmpty)
+      let g :=
+        if (count > 1 || isNonThirstMulti) && g.continuations.isEmpty then
+          g.change (.pushContinuationFrame {})
+        else g
+      let g :=
+        if !resuming && g.thirstDiscardsLeft == 0 then
+          let perPlayer := if count > 1 then count else 0
+          if g.discardCountPerPlayer != perPlayer then g.change (.discardCountPerPlayer perPlayer)
+          else g
+        else g
+      let g :=
+        if !keptSamePlayer && g.thirstDiscardsLeft == 0 then
+          let nextLeft := if count > 1 then count else 0
+          if g.pendingDiscardsLeft != nextLeft then g.change (.pendingDiscardsLeft nextLeft)
+          else g
+        else g
+      let g :=
+        if !resuming && isNonThirstMulti && g.currentBatch.isNone && g.discardBatch.isNone then
+          let batchId : BatchId := ⟨g.nextBatchId⟩
+          let startIdx := g.events.size
+          let batchCause :=
+            g.currentResolvingContext?.map fun (src, ctrl) => .oneShotEffect none src ctrl
+          let g := g.change (.pauseBatch batchId batchCause
+            g.objects g.players g.activeEffects g.pending g.stack)
+          g.change (.discardBatch (some (batchId, startIdx)))
+        else g
+      (g.change (.pending (.chooseDiscardCard p rest))).logMsg
+        s!"{(g.player p).name} must discard a card"
 
 /-- Draw `cards`, then start `discardRounds` discard choices for `p`. -/
 def drawThenBeginDiscard (g : Game) (p : PlayerId) (cards : Nat := 1)

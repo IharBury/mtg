@@ -279,23 +279,30 @@ def applyChapterEffect (g : Game) (controller : PlayerId) (e : Effect)
   | .gainControlOfUpToTwoCreaturesTotalMvAtMost n =>
     g.gainControlWhileSource controller sourceId targets (maxTotalMv := some n)
   | .dealDamageToEachNonSubtypeAndOpponents n subtype =>
-    let src? := sourceId.bind g.damageSourceById?
-    let srcSnap? := sourceId.bind g.damageSourceEventById?
-    let (g, cause?) : Game × Option EventCause :=
-      if n == 0 then (g, none)
-      else
+    if n == 0 then g
+    else
+      let src? := sourceId.bind g.damageSourceById?
+      let srcSnap? := sourceId.bind g.damageSourceEventById?
+      let (g, cause?) : Game × Option EventCause :=
         match g.currentResolvingContext? with
         | some (src, ctrl) =>
           let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some controller)) (src.orElse (fun _ => sourceId))
           (g, some c)
-        | none => (g, none)
-    let g :=
-      g.dealDamageToEachCreatureMatching n (fun o => !g.hasSubtype o subtype)
-        (source := srcSnap?) (cause := cause?)
-    if let .chooseReplacement .. := g.pending then
-      g.chainPendingReplacement (.finishPostStep (.dealDamageToEachOpponent controller n sourceId cause?))
-    else
-      g.dealDamageToEachOpponent controller n (source := src?) (cause := cause?)
+        | none =>
+          let (g, c) := g.allocDelayedCause (some controller) sourceId
+          (g, some c)
+      let startIdx := g.events.size
+      g.withBatch cause? fun g =>
+        let batchCause := cause?.orElse (fun _ => g.currentBatch.bind (·.2))
+        let g :=
+          g.dealDamageToEachCreatureMatching n (fun o => !g.hasSubtype o subtype)
+            (source := srcSnap?) (cause := batchCause) (suppressLifelink := true)
+        if let .chooseReplacement .. := g.pending then
+          g.chainPendingReplacement
+            (.finishPostStep (.dealDamageToEachOpponent controller n sourceId batchCause (some startIdx)))
+        else
+          g.dealDamageToEachOpponent controller n (source := src?) (cause := batchCause)
+            (startEventIdx := some startIdx)
   | .dealXDamageToTargetOpponentGreatestArtifactMv =>
     let x := g.greatestManaValueAmong controller (g.isArtifact ·)
     g.withLegalKindPlayer controller .opponent targets

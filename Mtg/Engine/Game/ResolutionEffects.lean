@@ -637,20 +637,35 @@ def exileTopPlayThisTurn (g : Game) (p : PlayerId) (n : Nat) : Game :=
     s!"{owner} exiles {card} and may play it this turn"
 
 /-- Extort is paid: each opponent loses 1 life and `controller` gains the
-life actually lost (CR 702.101a / MSH 292). Extort does not target (MSH 296). -/
+life actually lost in a single simultaneous event batch / cause (CR 702.101a /
+608.2c / MSH 292). Extort does not target (MSH 296). -/
 def extortDrain (g : Game) (controller : PlayerId) : Game :=
-  let cause := g.resolvingBatchCause controller
-  let (g, lost) :=
-    g.withBatchReturn cause fun g =>
-      (g.livingOpponents controller).foldl (fun (acc : Game × Nat) pl =>
-        let before := (acc.1.player pl.id).life
-        let g := acc.1.loseLife pl.id 1
-        let after := (g.player pl.id).life
-        let delta := if before > after then (before - after).toNat else 0
-        (g, acc.2 + delta)) (g, 0)
+  let opps := g.livingOpponents controller
+  let (g, cause?) : Game × Option EventCause :=
+    match g.currentBatch.bind (·.2) with
+    | some bc => (g, some bc)
+    | none =>
+      match g.resolvingBatchCause controller with
+      | some rc => (g, some rc)
+      | none =>
+        if opps.isEmpty then (g, none)
+        else
+          let (g, c) := g.allocDelayedCause (some controller)
+          (g, some c)
   let g :=
-    if lost == 0 then g
-    else g.withBatch (g.resolvingBatchCause controller) fun g => g.gainLife controller lost
+    g.withBatch cause? fun g =>
+      let batchCause := cause?.orElse (fun _ => g.currentBatch.bind (·.2))
+      let (g, lost) :=
+        opps.foldl (fun (acc : Game × Nat) pl =>
+          let before := (acc.1.player pl.id).life
+          let g := acc.1.loseLife pl.id 1 (cause := batchCause)
+          let after := (g.player pl.id).life
+          let delta := if before > after then (before - after).toNat else 0
+          (g, acc.2 + delta)) (g, 0)
+      if lost == 0 then g
+      else
+        let c := batchCause.orElse (fun _ => g.currentBatch.bind (·.2))
+        g.gainLife controller lost (cause := c)
   if let .chooseReplacement .. := g.pending then
     g.chainPendingReplacement (.logMessage "Extort is paid")
   else
@@ -991,53 +1006,63 @@ def commitEnteringAttackItems (g : Game)
     match chosen[0]? with
     | some (EnteringAttackItem.token controller _ _ _, _) =>
       if (g.player controller).lost then
+        let g := if g.stagedAttackTokenBatches.isEmpty then g else g.change (.stagedAttackTokenBatches #[])
         let g := if resetRecent then g.change (.recentTokenIds #[]) else g
         g.logMsg "no token is created (CR 800.4b)"
       else
+        let staged := g.stagedAttackTokenBatches
+        let g := if staged.isEmpty then g else g.change (.stagedAttackTokenBatches #[])
+        let g := if g.continuations.isEmpty && resetRecent then g.change (.pushContinuationFrame {}) else g
         let g := if resetRecent then g.change (.recentTokenIds #[]) else g
-        let g :=
-          g.withBatch cause fun g => Id.run do
-            let mut g := g
-            for i in [0:chosen.size] do
-              let (item, atkTgt) := chosen[i]!
-              if let .token ctrl kind tapped _ := item then
-                let rawPrinted := tokenPrinted kind
-                let (batches, applied, choice?) := g.replaceTokenCreation {
-                  controller := ctrl
-                  printed := rawPrinted
-                  count := 1
-                  tapped := tapped
-                  attacking := atkTgt.isSome
-                  attackingTarget := atkTgt
-                  cause := cause
-                } (includeMultiplier := false)
-                match choice? with
-                | some (chooser, choices) =>
-                  let rem := chosen.extract i chosen.size
-                  return g.promptChooseReplacement chooser choices
-                    (.commitEnteringAttackItems rem cause false)
-                | none =>
-                  g := g.consumeReplacementOrder applied
-                  let expanded := batches.foldl (fun acc b =>
-                    Id.run do
-                      let mut acc := acc
-                      for _ in [0:b.count] do
-                        acc := acc.push { b with count := 1 }
-                      return acc) #[]
-                  let (g', _) := g.createTokenBatches expanded
-                    (attacking := atkTgt.isSome) (attackingTarget := atkTgt)
-                    (recordRecent := true) (cause := cause)
-                  g := g'
-                  if let .chooseReplacement .. := g.pending then
-                    let rem := chosen.extract (i + 1) chosen.size
-                    if !rem.isEmpty then
-                      g := g.chainPendingReplacement (.commitEnteringAttackItems rem cause false)
-                    else
-                      g := g.chainPendingReplacement (.finishPostStep (.logTwoTappedAttackingSpirits controller))
-                    return g
-            return g
-        if let .chooseReplacement .. := g.pending then g
-        else g.logMsg s!"{(g.player controller).name} creates two tapped and attacking Spirit tokens"
+        if !staged.isEmpty then
+          let n := min staged.size chosen.size
+          let finalBatches : Array ProposedTokenBatch := (List.range n).toArray.map fun i =>
+            let b := staged[i]!
+            let atkTgt := chosen[i]!.2
+            { b with
+              attacking := atkTgt.isSome
+              attackingTarget := atkTgt }
+          let g :=
+            g.withBatch cause fun g =>
+              (g.createTokenBatches finalBatches (recordRecent := true) (cause := cause)).1
+          if let .chooseReplacement .. := g.pending then
+            g.chainPendingReplacement (.finishPostStep (.logTwoTappedAttackingSpirits controller))
+          else
+            g.logMsg s!"{(g.player controller).name} creates two tapped and attacking Spirit tokens"
+        else
+          let initialBatches : Array ProposedTokenBatch := chosen.filterMap fun (item, atkTgt) =>
+            match item with
+            | .token ctrl kind tapped _ =>
+              some {
+                controller := ctrl
+                printed := tokenPrinted kind
+                count := 1
+                tapped := tapped
+                attacking := atkTgt.isSome
+                attackingTarget := atkTgt
+                cause := cause
+              }
+            | _ => none
+          let (batches, applied, choice?) := g.replaceTokenBatchesChoice initialBatches
+          match choice? with
+          | some (chooser, choices) =>
+            g.promptChooseReplacement chooser choices
+              (.commitEnteringAttackItems chosen cause false)
+          | none =>
+            let g := g.consumeReplacementOrder applied
+            let expanded := batches.foldl (fun acc b =>
+              Id.run do
+                let mut acc := acc
+                for _ in [0:b.count] do
+                  acc := acc.push { b with count := 1 }
+                return acc) #[]
+            let g :=
+              g.withBatch cause fun g =>
+                (g.createTokenBatches expanded (recordRecent := true) (cause := cause)).1
+            if let .chooseReplacement .. := g.pending then
+              g.chainPendingReplacement (.finishPostStep (.logTwoTappedAttackingSpirits controller))
+            else
+              g.logMsg s!"{(g.player controller).name} creates two tapped and attacking Spirit tokens"
     | _ => g
   else
     let g :=
@@ -1112,27 +1137,42 @@ def returnFromGyTappedAttackingFinality (g : Game) (controller : PlayerId)
       g.promptEnteringAttackItems #[item] (cause := some c)
 
 /-- Deal divided damage across `remaining` targets one at a time, pausing across
-`Pending.chooseReplacement` so subsequent target legality checks do not run early. -/
+`Pending.chooseReplacement` so subsequent target legality checks do not run early,
+and aggregating CR 702.15b lifelink life gain once after all targets' damage has
+been dealt. -/
 partial def divideSevenDamageLoop (g : Game) (controller : PlayerId) (kind : EffectTargetKind)
     (remaining : Array (Nat × Target)) (division : Array Nat)
-    (sourceId : Option ObjectId) : Game :=
-  match remaining[0]? with
-  | none => g
-  | some (i, tgt) =>
-    let rest := remaining.extract 1 remaining.size
-    let legal := g.legalTargetsForKind controller kind sourceId
-    let g :=
-      if legal.contains tgt then
-        g.dealDamageToTarget tgt (Int.ofNat (division[i]?.getD 0))
-          (source := sourceId.bind g.findObject?)
-      else
-        g.illegalAbilityTarget tgt
-    if rest.isEmpty then g
-    else if let .chooseReplacement .. := g.pending then
+    (sourceId : Option ObjectId) (startEventIdx : Option Nat := none) : Game :=
+  if startEventIdx.isNone && g.currentBatch.isNone && !remaining.isEmpty then
+    let sIdx := g.events.size
+    g.withBatch (g.resolvingBatchCause controller sourceId) fun g =>
+      g.divideSevenDamageLoop controller kind remaining division sourceId (some sIdx)
+  else
+    let sIdx := startEventIdx.getD g.events.size
+    if let .chooseReplacement .. := g.pending then
       g.chainPendingReplacement
-        (.finishPostStep (.divideSevenDamageLoop controller kind rest division sourceId))
+        (.finishPostStep (.divideSevenDamageLoop controller kind remaining division sourceId (some sIdx)))
     else
-      g.divideSevenDamageLoop controller kind rest division sourceId
+      let batchCause :=
+        (g.currentBatch.bind (·.2)).orElse (fun _ => g.resolvingBatchCause controller sourceId)
+      match remaining[0]? with
+      | none =>
+        g.applyAggregatedLifelinkSince sIdx (cause := batchCause)
+      | some (i, tgt) =>
+        let rest := remaining.extract 1 remaining.size
+        let legal := g.legalTargetsForKind controller kind sourceId
+        let g :=
+          if legal.contains tgt then
+            g.dealDamageToTarget tgt (Int.ofNat (division[i]?.getD 0))
+              (source := sourceId.bind g.findObject?) (cause := batchCause)
+              (suppressLifelink := true)
+          else
+            g.illegalAbilityTarget tgt
+        if let .chooseReplacement .. := g.pending then
+          g.chainPendingReplacement
+            (.finishPostStep (.divideSevenDamageLoop controller kind rest division sourceId (some sIdx)))
+        else
+          g.divideSevenDamageLoop controller kind rest division sourceId (some sIdx)
 
 /-- Return targeted graveyard instant cards to `controller`'s hand one at a time,
 pausing across `Pending.chooseReplacement` before checking subsequent targets. -/

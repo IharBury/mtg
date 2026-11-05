@@ -61,21 +61,46 @@ def finishExileTopMayCastElseDamage (g : Game) (controller : PlayerId)
   | none =>
     g.dealDamageToEachOpponent controller n (source := src?)
 
-/-- Step through `snapshots`, creating a token copy of each source under `p`
-via `createToken` and pausing on `Pending.chooseReplacement`
-(`PendingReplacement.copyNontokenCreatures`) if CR 616.1 choice is required. -/
+/-- Evaluate CR 616.1 token-creation replacements once across the combined
+`snapshots` instruction under `p`, then create all resulting tokens via
+`createTokenBatches` (pausing on `.copyNontokenCreatures` if a token-creation
+replacement choice opens, or `.createTokenBatches` if an ETB choice opens;
+CR 608.2c / 614.1a / 616.1 / 701.7a). -/
 partial def copyNontokenCreaturesStep (g : Game) (p : PlayerId)
     (snapshots : Array CardDef) (cause : Option EventCause := none) : Game :=
-  match snapshots[0]? with
-  | none => g
-  | some printed =>
-    let rem := snapshots.extract 1 snapshots.size
-    let (g, _) := g.createToken p printed (recordRecent := true) (cause := cause)
-    if let .chooseReplacement .. := g.pending then
-      if rem.isEmpty then g
-      else g.chainPendingReplacement (.copyNontokenCreatures p rem cause)
-    else
-      g.copyNontokenCreaturesStep p rem cause
+  if snapshots.isEmpty then g
+  else if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement (.copyNontokenCreatures p snapshots cause)
+  else if (g.player p).lost then
+    g.logMsg "no token is created (CR 800.4b)"
+  else
+    let baseCause :=
+      cause.orElse (fun _ =>
+        match g.currentBatch.bind (·.2) with
+        | some bc => some bc
+        | none => g.resolvingBatchCause p)
+    let initialBatches : Array ProposedTokenBatch :=
+      snapshots.map fun printed => {
+        controller := p
+        printed := printed
+        count := 1
+        cause := baseCause
+      }
+    let (batches, applied, choice?) := g.replaceTokenBatchesChoice initialBatches
+    match choice? with
+    | some (chooser, choices) =>
+      g.promptChooseReplacement chooser choices (.copyNontokenCreatures p snapshots baseCause)
+    | none =>
+      let g := g.consumeReplacementOrder applied
+      let expanded := batches.foldl (fun acc b =>
+        Id.run do
+          let mut acc := acc
+          for _ in [0:b.count] do
+            acc := acc.push { b with count := 1 }
+          return acc) #[]
+      if expanded.isEmpty then g
+      else
+        (g.createTokenBatches expanded (recordRecent := true) (cause := baseCause)).1
 
 /-- Resolutions added for Reality Fracture, shared by spells and activated
 abilities. `none` for every other resolution. -/
@@ -241,8 +266,9 @@ def applyFraResolution? (g : Game) (controller : PlayerId) (effect : Effect)
           keywords := cv.keywords.merge Keyword.haste
           triggeredAbilities := cv.triggeredAbilities.push sacrifice
           isToken := true }
+      let g := if g.continuations.isEmpty && !snapshots.isEmpty then g.change (.pushContinuationFrame {}) else g
       let g := g.change (.recentTokenIds #[])
-      let g := g.withBatch none fun g =>
+      let g := g.withBatch (g.resolvingBatchCause controller sourceId) fun g =>
         g.copyNontokenCreaturesStep controller snapshots
       if let .chooseReplacement .. := g.pending then
         g.chainPendingReplacement (.finishPostStep .afterRecentTokensEnter)
@@ -352,7 +378,7 @@ def finishCopyNontokenCreaturesAfterEnter (g : Game) (startEventIdx : Nat) : Gam
 legendary (Multiversal Incursion; rulings 468 / 508). -/
 def copyNontokenCreaturesYouControl (g : Game) (p : PlayerId) : Game :=
   let startEventIdx := g.events.size
-  let g := g.withBatch none fun g =>
+  let g := g.withBatch (g.resolvingBatchCause p) fun g =>
     let snapshots :=
       ((g.creaturesControlledBy p).filter (fun o => !o.printed.isToken)).map fun src =>
         let cv := g.copiableValues src

@@ -394,14 +394,24 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
         let skipped := livingRem.filter (fun r => (g.player r).hand.isEmpty)
         let g := g.logForPlayers skipped (fun r =>
           s!"{(g.player r).name} has no card to discard")
-        g.changes #[.pending .none, .pendingDiscardsLeft 0]
+        let g := g.changes #[
+          .pending .none, .thirstDiscardsLeft 0,
+          .pendingDiscardsLeft 0, .discardCountPerPlayer 0]
+        match g.discardBatch with
+        | some (dbBid, dbStartIdx) =>
+          let g := g.change (.discardBatch none)
+          if g.currentBatch.map Prod.fst == some dbBid then
+            g.finishOpenBatchAndLinkedExile dbBid dbStartIdx
+          else g
+        | none => g
       | some (np, rest) =>
         let prefixIdx := livingRem.findIdx? (· == np) |>.getD 0
         let skipped := (livingRem.extract 0 prefixIdx).filter (fun r => (g.player r).hand.isEmpty)
         let g := g.logForPlayers skipped (fun r =>
           s!"{(g.player r).name} has no card to discard")
+        let nextLeft := if g.discardCountPerPlayer > 1 then g.discardCountPerPlayer else 0
         (g.changes #[
-          .pendingDiscardsLeft 0,
+          .pendingDiscardsLeft nextLeft,
           .pending (.chooseDiscardCard np (rest.filter g.stillInGame))]).logMsg
           s!"{(g.player np).name} must discard a card"
   | .chooseTriggerToStack q =>
@@ -824,13 +834,19 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
         g.changes #[.pending .none, .afterRandom .none]
       else g
 
+/-- True when `g.currentBatch` holds an open batch other than `g.discardBatch`. -/
+def hasNonDiscardOpenBatch (g : Game) : Bool :=
+  match g.currentBatch with
+  | none => false
+  | some (bid, _) => g.discardBatch.map Prod.fst != some bid
+
 /-- Restore a non-SBA pending decision saved across `playerLeavesGameCore`,
 popping any pushed outer `pendingReplacement` when unpaused (CR 800.4a). -/
 def restoreSavedPostLeave (g : Game) (saved? : Option Pending) (popOuter : Bool) : Game :=
   match saved? with
   | none => g
   | some saved =>
-    if g.sbaPaused || g.currentBatch.isSome then
+    if g.sbaPaused || g.hasNonDiscardOpenBatch then
       g.chainPendingReplacement (.restorePending saved popOuter)
     else
       let g :=
@@ -855,6 +871,15 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
     let owned := g.objects.filter (fun o => o.owner == p && o.zone != .ante)
     let linkedExileIds := owned.foldl (fun acc o =>
       if o.zone == .battlefield then acc ++ o.linkedExile else acc) #[]
+    let savedDiscardBatch? :=
+      match g.discardBatch, g.currentBatch with
+      | some (dbBid, dbStartIdx), some (curBid, curCause) =>
+        if dbBid == curBid then
+          some (dbBid, dbStartIdx, curCause, g.openBatchObjects, g.openBatchPlayers,
+            g.openBatchEffects, g.openBatchPending, g.openBatchStack)
+        else none
+      | _, _ => none
+    let g := if savedDiscardBatch?.isSome then g.change .clearPausedBatch else g
     let (g, (savedNonSbaPending?, pushedOuterCont?)) := g.withBatchCoreReturn cause fun g =>
       let g := g.record (GameEvent.playerLeftGame g.turnNumber p (cause := cause))
       let g := g.logMsg s!"{(g.player p).name} leaves the game"
@@ -948,6 +973,16 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
         | none => g
       let g := g.runEndControlExileLoop exileQueue (cause := cause)
       (g, (savedNonSbaPending?, pushedOuterCont?))
+    let g :=
+      match savedDiscardBatch? with
+      | some (dbBid, dbStartIdx, dbCause, dbObjs, dbPls, dbEffs, dbPend, dbStk) =>
+        if !g.hasNonDiscardOpenBatch then
+          let g := g.change (.pauseBatch dbBid dbCause dbObjs dbPls dbEffs dbPend dbStk)
+          if g.discardBatch.isNone then
+            g.finishOpenBatchAndLinkedExile dbBid dbStartIdx
+          else g
+        else g
+      | none => g
     let popOuter := pushedOuterCont?.isSome
     let deferredInfo := savedNonSbaPending?.map (·, popOuter)
     let finish (g : Game) : Game × Option (Pending × Bool) :=
@@ -957,7 +992,7 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
     let g := if g.queuedLinkedExile.isEmpty then g else g.change .clearQueuedLinkedExile
     if allLinked.isEmpty then
       finish g
-    else if g.sbaPaused || g.currentBatch.isSome then
+    else if g.sbaPaused || g.hasNonDiscardOpenBatch then
       finish (g.chainPendingReplacement (.finishLinkedExileMove allLinked))
     else if savedNonSbaPending?.isSome then
       finish (g.returnLinkedExileMoves allLinked)
@@ -1003,7 +1038,7 @@ def leavePlayersWhoLost (g : Game)
       if g.over then
         return g
       if pl.lost && !(g.player pl.id).leftTheGame then
-        if saved?.isSome && !g.sbaPaused && g.currentBatch.isNone then
+        if saved?.isSome && !g.sbaPaused && !g.hasNonDiscardOpenBatch then
           g := g.restoreSavedPostLeave saved? popOuter
           saved? := none
           popOuter := false

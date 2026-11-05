@@ -552,12 +552,13 @@ def gainLife (g : Game) (p : PlayerId) (n : Nat)
 /-- Deal `n` damage to a creature and log the generic “is dealt” message. -/
 def dealDamageToPermanent (g : Game) (o : GameObject) (n : Int)
     (source : Option EventObject := none)
-    (cause : Option EventCause := none) : Game :=
+    (cause : Option EventCause := none)
+    (suppressLifelink : Bool := false) : Game :=
   let srcEvent? :=
     (source.map g.refreshOrKeepDamageSnapshot).orElse (fun _ => g.resolvingDamageSourceEvent?)
   if let .chooseReplacement .. := g.pending then
     g.chainPendingReplacement
-      (.dealDamageToPermanent o.id n.toNat srcEvent? cause)
+      (.dealDamageToPermanent o.id n.toNat srcEvent? cause suppressLifelink)
   else
   let srcObj? :=
     (g.damageSourceObjFromSnapshot? srcEvent?).orElse (fun _ => g.resolvingMovedDamageSource?)
@@ -567,7 +568,7 @@ def dealDamageToPermanent (g : Game) (o : GameObject) (n : Int)
   match rep.choice? with
   | some (chooser, choices) =>
     g.promptChooseReplacement chooser choices
-      (.dealDamageToPermanent o.id n.toNat srcEvent? cause)
+      (.dealDamageToPermanent o.id n.toNat srcEvent? cause suppressLifelink)
   | none =>
     let g := g.consumeReplacementOrder rep.applied
     let dealtAmt := rep.amount
@@ -583,26 +584,29 @@ def dealDamageToPermanent (g : Game) (o : GameObject) (n : Int)
     let g :=
       g.markDamageOn o n s!"{g.name o} is dealt {dealtAmt} damage"
         (source := srcEvent?) (sourceObj := srcObj?) (replaced := some rep) (cause := cause)
-    let dmgCause :=
-      g.resolveOptionalCause rep.cause (fallbackSrc := srcEvent?.bind (·.id))
-        (fallbackCtrl := (srcObj?.bind g.controllerOf).orElse (fun _ => srcEvent?.bind (·.controller)))
-    -- CR 702.15b: damage dealt by a source with lifelink.
-    let lifelinkCtrl? : Option PlayerId :=
-      match (srcEvent?.bind (·.id)).bind g.findObject? |>.filter (·.isOnBattlefield) with
-      | some liveSrc =>
-        if g.hasLifelink liveSrc then g.controllerOf liveSrc else none
-      | none =>
-        srcEvent?.bind (fun src => if src.keywords.lifelink then src.controller else none)
-    match lifelinkCtrl? with
-    | some c =>
-      if dealtAmt > 0 && !prevented then g.gainLife c dealtAmt.toNat (cause := some dmgCause) else g
-    | none => g
+    if suppressLifelink then g
+    else
+      let dmgCause :=
+        g.resolveOptionalCause rep.cause (fallbackSrc := srcEvent?.bind (·.id))
+          (fallbackCtrl := (srcObj?.bind g.controllerOf).orElse (fun _ => srcEvent?.bind (·.controller)))
+      -- CR 702.15b: damage dealt by a source with lifelink.
+      let lifelinkCtrl? : Option PlayerId :=
+        match (srcEvent?.bind (·.id)).bind g.findObject? |>.filter (·.isOnBattlefield) with
+        | some liveSrc =>
+          if g.hasLifelink liveSrc then g.controllerOf liveSrc else none
+        | none =>
+          srcEvent?.bind (fun src => if src.keywords.lifelink then src.controller else none)
+      match lifelinkCtrl? with
+      | some c =>
+        if dealtAmt > 0 && !prevented then g.gainLife c dealtAmt.toNat (cause := some dmgCause) else g
+      | none => g
 
 /-- Deal `n` damage from a named source (fight, dies trigger, blocked trigger). -/
 def dealDamageFrom (g : Game) (sourceName : String) (o : GameObject) (n : Int)
     (deathtouch := false) (source : Option GameObject := none)
     (sourceSnap : Option EventObject := none)
-    (cause : Option EventCause := none) : Game :=
+    (cause : Option EventCause := none)
+    (suppressLifelink : Bool := false) : Game :=
   let resolvedSrc? :=
     source.orElse (fun _ => g.damageSourceObjFromSnapshot? sourceSnap)
       |>.orElse (fun _ => g.resolvingMovedDamageSource?)
@@ -612,7 +616,7 @@ def dealDamageFrom (g : Game) (sourceName : String) (o : GameObject) (n : Int)
         |>.orElse (fun _ => resolvedSrc?.map g.snapshotDamageSource)
         |>.getD default
     g.chainPendingReplacement
-      (.dealDamageFrom sourceName srcEvent o.id n.toNat deathtouch cause)
+      (.dealDamageFrom sourceName srcEvent o.id n.toNat deathtouch cause suppressLifelink)
   else
   match resolvedSrc? with
   | some src =>
@@ -624,7 +628,7 @@ def dealDamageFrom (g : Game) (sourceName : String) (o : GameObject) (n : Int)
     match rep.choice? with
     | some (chooser, choices) =>
       g.promptChooseReplacement chooser choices
-        (.dealDamageFrom sourceName srcSnap o.id n.toNat deathtouch cause)
+        (.dealDamageFrom sourceName srcSnap o.id n.toNat deathtouch cause suppressLifelink)
     | none =>
       let g := g.consumeReplacementOrder rep.applied
       if rep.prevented && !rep.shieldRemoved && !g.preventsAllDamageTo o then
@@ -673,24 +677,26 @@ def dealDamageFrom (g : Game) (sourceName : String) (o : GameObject) (n : Int)
           g.markDamageOn o n s!"{sourceName} deals {dealtAmt} damage to {g.name o}"
             (deathtouch || hasDt) (source := some srcEvent)
             (sourceObj := liveSrc?.orElse (fun _ => some src)) (replaced := some rep) (cause := rep.cause)
-        let dmgCause :=
-          g.resolveOptionalCause rep.cause (fallbackSrc := srcEvent.id) (fallbackCtrl := ctrl?)
-        -- CR 702.15b: damage dealt by a source with lifelink.
-        let lifelinkCtrl? : Option PlayerId :=
-          match (g.findObject? src.id).filter (·.isOnBattlefield) with
-          | some liveSrc => if g.hasLifelink liveSrc then g.controllerOf liveSrc else none
-          | none => if hasLl then ctrl? else none
-        match lifelinkCtrl? with
-        | some c =>
-          if dealtAmt > 0 && !prevented then g.gainLife c dealtAmt.toNat (cause := some dmgCause) else g
-        | none => g
+        if suppressLifelink then g
+        else
+          let dmgCause :=
+            g.resolveOptionalCause rep.cause (fallbackSrc := srcEvent.id) (fallbackCtrl := ctrl?)
+          -- CR 702.15b: damage dealt by a source with lifelink.
+          let lifelinkCtrl? : Option PlayerId :=
+            match (g.findObject? src.id).filter (·.isOnBattlefield) with
+            | some liveSrc => if g.hasLifelink liveSrc then g.controllerOf liveSrc else none
+            | none => if hasLl then ctrl? else none
+          match lifelinkCtrl? with
+          | some c =>
+            if dealtAmt > 0 && !prevented then g.gainLife c dealtAmt.toNat (cause := some dmgCause) else g
+          | none => g
   | none =>
     let srcSnap := sourceSnap.map g.refreshOrKeepDamageSnapshot |>.getD default
     let rep := g.replaceDamage n (srcEvent? := some srcSnap) (recipientPerm? := some o) (cause := cause)
     match rep.choice? with
     | some (chooser, choices) =>
       g.promptChooseReplacement chooser choices
-        (.dealDamageFrom sourceName srcSnap o.id n.toNat deathtouch cause)
+        (.dealDamageFrom sourceName srcSnap o.id n.toNat deathtouch cause suppressLifelink)
     | none =>
       let g := g.consumeReplacementOrder rep.applied
       if rep.prevented && !rep.shieldRemoved && !g.preventsAllDamageTo o then
@@ -712,7 +718,8 @@ def dealDamageFrom (g : Game) (sourceName : String) (o : GameObject) (n : Int)
 def dealDamageToPlayer (g : Game) (pid : PlayerId) (n : Int)
     (preventable := true) (source : Option GameObject := none)
     (sourceSnap : Option EventObject := none)
-    (cause : Option EventCause := none) : Game :=
+    (cause : Option EventCause := none)
+    (suppressLifelink : Bool := false) : Game :=
   let source :=
     source.orElse (fun _ => g.damageSourceObjFromSnapshot? sourceSnap)
       |>.orElse (fun _ => g.resolvingMovedDamageSource?)
@@ -723,7 +730,7 @@ def dealDamageToPlayer (g : Game) (pid : PlayerId) (n : Int)
   let pl := g.player pid
   if let .chooseReplacement .. := g.pending then
     g.chainPendingReplacement
-      (.dealDamageToPlayer pid n.toNat srcSnap (!preventable) cause)
+      (.dealDamageToPlayer pid n.toNat srcSnap (!preventable) cause suppressLifelink)
   else if !g.stillInGame pid then g
   else
   let rep :=
@@ -732,7 +739,7 @@ def dealDamageToPlayer (g : Game) (pid : PlayerId) (n : Int)
   match rep.choice? with
   | some (chooser, choices) =>
     g.promptChooseReplacement chooser choices
-      (.dealDamageToPlayer pid n.toNat srcSnap (!preventable) cause)
+      (.dealDamageToPlayer pid n.toNat srcSnap (!preventable) cause suppressLifelink)
   | none =>
   let g := g.consumeReplacementOrder rep.applied
   let recordPlayerPrevented (g : Game) : Game :=
@@ -792,23 +799,68 @@ def dealDamageToPlayer (g : Game) (pid : PlayerId) (n : Int)
           s!"{pl.name} is dealt {n} damage ({pl.life - n} life)"
       else
         g.logMsg s!"{pl.name} is dealt {n} damage ({pl.life - n} life)"
-    -- CR 702.15b: damage dealt by a source with lifelink (including departed LKI, CR 113.7a).
-    let lifelinkCtrl? : Option PlayerId :=
-      match (source.map (·.id) |>.orElse (fun _ => srcEvent.id)).bind g.findObject? |>.filter (·.isOnBattlefield) with
-      | some liveSrc =>
-        if g.hasLifelink liveSrc then g.controllerOf liveSrc else none
-      | none =>
-        if srcEvent.keywords.lifelink then srcEvent.controller else none
-    match lifelinkCtrl? with
-    | some c => if n > 0 then g.gainLife c n.toNat (cause := some dmgCause) else g
-    | none => g
+    if suppressLifelink then g
+    else
+      -- CR 702.15b: damage dealt by a source with lifelink (including departed LKI, CR 113.7a).
+      let lifelinkCtrl? : Option PlayerId :=
+        match (source.map (·.id) |>.orElse (fun _ => srcEvent.id)).bind g.findObject? |>.filter (·.isOnBattlefield) with
+        | some liveSrc =>
+          if g.hasLifelink liveSrc then g.controllerOf liveSrc else none
+        | none =>
+          if srcEvent.keywords.lifelink then srcEvent.controller else none
+      match lifelinkCtrl? with
+      | some c => if n > 0 then g.gainLife c n.toNat (cause := some dmgCause) else g
+      | none => g
+
+/-- Aggregate noncombat lifelink life gain across all simultaneous damage events
+recorded in `g.events[startIdx:]` (CR 119.9 / 120.3f / 603.2c / 616.1 / 702.15b). -/
+def applyAggregatedLifelinkSince (g : Game) (startIdx : Nat)
+    (cause : Option EventCause := none) : Game := Id.run do
+  if startIdx >= g.events.size then
+    return g
+  let mut gains : Array (PlayerId × Nat × Option EventCause × Bool) := #[]
+  for i in [startIdx : g.events.size] do
+    let ev := g.events[i]!
+    if let .rules (.damage (.dealt pkts)) := ev.change then
+      for pkt in pkts do
+        if !pkt.combat && pkt.amount > 0 then
+          let lifelinkCtrl? : Option PlayerId :=
+            match pkt.source.id.bind g.findObject? |>.filter (·.isOnBattlefield) with
+            | some liveSrc =>
+              if g.hasLifelink liveSrc then g.controllerOf liveSrc else none
+            | none =>
+              if pkt.source.keywords.lifelink then pkt.source.controller else none
+          if let some ctrl := lifelinkCtrl? then
+            match gains.findIdx? (fun (p, _, _, _) => p == ctrl) with
+            | some idx =>
+              let (_, prevAmt, prevCause?, allSame) := gains[idx]!
+              let sameNow := allSame && prevCause? == ev.cause?
+              gains := gains.set! idx (ctrl, prevAmt + pkt.amount, prevCause?, sameNow)
+            | none =>
+              gains := gains.push (ctrl, pkt.amount, ev.cause?, true)
+  let mut g := g
+  let rec stripReplaced : EventCause → EventCause
+    | .replaced _ inner => stripReplaced inner
+    | c => c
+  for (ctrl, totalAmt, firstCause?, allSame) in gains do
+    if totalAmt > 0 && g.stillInGame ctrl then
+      let gainCause : Option EventCause :=
+        if allSame && firstCause?.isSome then firstCause?
+        else
+          cause.orElse (fun _ => g.currentBatch.bind (·.2))
+            |>.orElse (fun _ => firstCause?.map stripReplaced)
+      g := g.gainLife ctrl totalAmt (cause := gainCause)
+  return g
 
 /-- Deal `n` damage to each living player in `players`, stopping if a replacement
-choice opens so the remaining players resume after the choice is answered. -/
+choice opens so the remaining players resume after the choice is answered, and
+aggregating lifelink life gain once after all recipients' damage (CR 119.9 / 702.15b). -/
 def dealDamageToPlayers (g : Game) (players : Array PlayerId) (n : Int)
     (source : Option GameObject := none)
     (sourceSnap : Option EventObject := none)
-    (cause : Option EventCause := none) : Game :=
+    (cause : Option EventCause := none)
+    (startEventIdx : Option Nat := none)
+    (suppressLifelink : Bool := false) : Game :=
   let source :=
     source.orElse (fun _ => g.damageSourceObjFromSnapshot? sourceSnap)
       |>.orElse (fun _ => g.resolvingMovedDamageSource?)
@@ -817,46 +869,59 @@ def dealDamageToPlayers (g : Game) (players : Array PlayerId) (n : Int)
       |>.orElse (fun _ => source.map g.snapshotDamageSource)
       |>.orElse (fun _ => g.resolvingDamageSourceEvent?)
   if let .chooseReplacement .. := g.pending then
-    g.chainPendingReplacement (.dealDamageToPlayers players n.toNat srcSnap cause)
+    g.chainPendingReplacement
+      (.dealDamageToPlayers players n.toNat srcSnap cause startEventIdx suppressLifelink)
   else
   g.withBatch cause fun g => Id.run do
     let mut g := g
+    let sIdx := startEventIdx.getD g.events.size
     let c := cause.orElse (fun _ => g.currentBatch.bind (·.2))
     for i in [0:players.size] do
       let pid := players[i]!
       if !(g.player pid).lost then
-        g := g.dealDamageToPlayer pid n (source := source) (sourceSnap := srcSnap) (cause := c)
+        g := g.dealDamageToPlayer pid n (source := source) (sourceSnap := srcSnap)
+          (cause := c) (suppressLifelink := true)
         if let .chooseReplacement .. := g.pending then
           let rem := players.extract (i + 1) players.size
-          if !rem.isEmpty then
+          if !rem.isEmpty || !suppressLifelink then
             g := g.chainPendingReplacement
-              (.dealDamageToPlayers rem n.toNat srcSnap c)
+              (.dealDamageToPlayers rem n.toNat srcSnap c (some sIdx) suppressLifelink)
           return g
+    if !suppressLifelink then
+      g := g.applyAggregatedLifelinkSince sIdx (cause := c)
     return g
 
 /-- Deal `n` damage to each opponent of `controller` under a single shared
 `.oneShotEffect` cause when resolving (CR 120 / 610.1). -/
 def dealDamageToEachOpponent (g : Game) (controller : PlayerId) (n : Int)
     (source : Option GameObject := none)
-    (cause : Option EventCause := none) : Game :=
+    (cause : Option EventCause := none)
+    (startEventIdx : Option Nat := none)
+    (suppressLifelink : Bool := false) : Game :=
   let source := source.orElse (fun _ => g.resolvingMovedDamageSource?)
   let defaultCause :=
     cause.orElse (fun _ =>
-      if n <= 0 || (g.livingOpponents controller).isEmpty then none
+      if n <= 0 && startEventIdx.isNone then none
+      else if (g.livingOpponents controller).isEmpty && startEventIdx.isNone then none
       else g.currentResolvingContext?.map fun (ctxSrc, ctrl) =>
         .oneShotEffect none
           (ctxSrc.orElse (fun _ => source.map (·.id)))
           (ctrl.orElse (fun _ => some controller)))
   g.dealDamageToPlayers ((g.livingOpponents controller).map (·.id)) n
     (source := source) (cause := defaultCause)
+    (startEventIdx := startEventIdx) (suppressLifelink := suppressLifelink)
 
-/-- Deal this creature's power as damage to `dest` (one side of a fight). -/
+/-- Deal this creature's power (or pre-snapshotted `amount`) as damage to `dest` (one side of a fight). -/
 def dealFightDamage (g : Game) (src dest : GameObject)
-    (cause : Option EventCause := none) : Game :=
-  g.dealDamageFrom (g.name src) dest (g.power src).toNat (source := some src) (cause := cause)
+    (cause : Option EventCause := none)
+    (amount : Option Nat := none) : Game :=
+  let amt : Int := Int.ofNat (amount.getD (g.power src).toNat)
+  g.dealDamageFrom (g.name src) dest amt (source := some src) (cause := cause)
 
-/-- Both sides of a fight deal damage simultaneously-looking: `src` first,
-then `dest` if both are still creatures on the battlefield (CR 701.14b). -/
+/-- Both sides of a fight deal damage simultaneously (CR 701.14a–c): if a
+creature fights itself (`src.id == dest.id`), it deals a single `2 * power`
+damage event to itself (CR 701.14c); otherwise both creatures' powers are
+snapshotted upfront before dealing either side's damage / lifelink (CR 701.14a). -/
 def fightCreatures (g : Game) (src dest : GameObject)
     (cause : Option EventCause := none) : Game :=
   if !src.isOnBattlefield || !dest.isOnBattlefield || !g.isCreature src || !g.isCreature dest then
@@ -870,16 +935,22 @@ def fightCreatures (g : Game) (src dest : GameObject)
             (ctrl.orElse (fun _ => g.controllerOf src)))
     g.withBatch defaultCause fun g =>
     let c := cause.orElse (fun _ => g.currentBatch.bind (·.2))
-    let g := g.dealFightDamage src dest (cause := c)
-    if let .chooseReplacement .. := g.pending then
-      g.chainPendingReplacement (.dealFightDamage dest.id src.id c)
+    if src.id == dest.id then
+      let selfAmt := 2 * (g.power src).toNat
+      g.dealFightDamage src src (cause := c) (amount := some selfAmt)
     else
-      match g.findObject? dest.id, g.findObject? src.id with
-      | some dest, some src =>
-        if dest.isOnBattlefield && src.isOnBattlefield && g.isCreature dest && g.isCreature src then
-          g.dealFightDamage dest src (cause := c)
-        else g
-      | _, _ => g
+      let srcAmt := (g.power src).toNat
+      let destAmt := (g.power dest).toNat
+      let g := g.dealFightDamage src dest (cause := c) (amount := some srcAmt)
+      if let .chooseReplacement .. := g.pending then
+        g.chainPendingReplacement (.dealFightDamage dest.id src.id c (some destAmt))
+      else
+        match g.findObject? dest.id, g.findObject? src.id with
+        | some dest, some src =>
+          if dest.isOnBattlefield && src.isOnBattlefield && g.isCreature dest && g.isCreature src then
+            g.dealFightDamage dest src (cause := c) (amount := some destAmt)
+          else g
+        | _, _ => g
 
 /-- Decrease `p`'s life total (CR 119.3). Losing 0 life does nothing
 (CR 119.3). Loss of life is not damage (CR 119.3 / 120.3). -/
@@ -946,21 +1017,28 @@ def eachOpponentLosesYouGain (g : Game) (controller : PlayerId) (n : Nat)
   let g := g.forEachOpponent controller (fun g pid => g.loseLife pid n (cause := cause))
   g.gainLife controller n (cause := cause)
 
-/-- Draw `cards`, then lose `life` (Night's Whisper, MSH draw-and-lose). -/
+/-- Draw `cards`, then lose `life` (Night's Whisper, MSH draw-and-lose, CR 121.2 / 608.2c):
+individual card draws and subsequent life loss remain in separate batches while
+sharing one `.oneShotEffect` cause allocated via `allocDelayedCause`. -/
 def drawThenLoseLife (g : Game) (p : PlayerId) (cards life : Nat) : Game :=
-  let defaultCause :=
-    g.currentResolvingContext?.map fun (src, ctrl) =>
-      .oneShotEffect none src (ctrl.orElse (fun _ => some p))
+  let (g, sharedCause?) : Game × Option EventCause :=
+    if cards == 0 && life == 0 then (g, none)
+    else
+      match g.currentBatch with
+      | some (_, some (.oneShotEffect (some bid) bsrc bctrl)) =>
+        (g, some (.oneShotEffect (some bid) bsrc (bctrl.orElse (fun _ => some p))))
+      | _ =>
+        let (g, c) := g.allocDelayedCause (some p)
+        (g, some c)
   if let .chooseReplacement .. := g.pending then
-    let g := g.chainPendingReplacement (.draw p cards defaultCause)
-    g.chainPendingReplacement (.loseLifeAfterDraw p life defaultCause)
+    let g := g.chainPendingReplacement (.draw p cards sharedCause?)
+    g.chainPendingReplacement (.loseLifeAfterDraw p life sharedCause?)
   else
-    g.withBatch defaultCause fun g =>
-      let g := g.draw p cards (cause := defaultCause)
-      if let .chooseReplacement .. := g.pending then
-        g.chainPendingReplacement (.loseLifeAfterDraw p life defaultCause)
-      else
-        g.loseLife p life (cause := defaultCause)
+    let g := g.draw p cards (cause := sharedCause?)
+    if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement (.loseLifeAfterDraw p life sharedCause?)
+    else
+      g.loseLife p life (cause := sharedCause?)
 
 /-- If a shuffle is waiting for a `--norandom` result, leave it. Otherwise
 run a stored draw or life-gain after-action. -/
@@ -978,19 +1056,23 @@ def continueIfShuffled (g : Game) : Game :=
 /-- Deal `n` damage to an already-legal player or permanent target. -/
 def dealDamageToTarget (g : Game) (t : Target) (n : Int)
     (source : Option GameObject := none)
-    (cause : Option EventCause := none) : Game :=
+    (cause : Option EventCause := none)
+    (suppressLifelink : Bool := false) : Game :=
   -- The source is the resolving spell, or the source of the resolving
   -- ability (CR 609.7 / 113.7); departed sources are resolved via LKI inside
   -- `dealDamageToPlayer` / `dealDamageToPermanent` (CR 113.7a).
   let src := source.orElse (fun _ => g.resolvingDamageSource?)
   match t with
-  | Target.player pid => g.dealDamageToPlayer pid n (source := src) (cause := cause)
+  | Target.player pid =>
+    g.dealDamageToPlayer pid n (source := src) (cause := cause) (suppressLifelink := suppressLifelink)
   | Target.permanent oid =>
     match g.findObject? oid with
     | some o =>
       match src with
-      | some s => g.dealDamageFrom s.name o n (source := some s) (cause := cause)
-      | none => g.dealDamageToPermanent o n (cause := cause)
+      | some s =>
+        g.dealDamageFrom s.name o n (source := some s) (cause := cause) (suppressLifelink := suppressLifelink)
+      | none =>
+        g.dealDamageToPermanent o n (cause := cause) (suppressLifelink := suppressLifelink)
     | none => g.logMsg "The target is no longer in play"
   | Target.card _ => g.logMsg "The target is no longer legal"
 

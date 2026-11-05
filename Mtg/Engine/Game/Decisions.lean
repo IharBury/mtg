@@ -146,8 +146,9 @@ partial def declineMayThen (g : Game) : Game :=
 
 /-- Continue a discard chain. When no one is left to discard, put the waiting
 +1/+1 counter (Ninja of the Hand) if any. -/
-partial def continueAfterDiscard (g : Game) (players : Array PlayerId) : Game :=
-  let g := g.beginDiscardCards players
+partial def continueAfterDiscard (g : Game) (players : Array PlayerId)
+    (samePlayer : Bool := false) (count : Nat := 1) : Game :=
+  let g := g.beginDiscardCards players (count := count) (samePlayer := samePlayer) (resuming := true)
   if g.pending != .none then g
   else if g.plusOneAfterDiscards.isSome then g.finishPlusOneAfterDiscards
   else g
@@ -271,7 +272,7 @@ partial def concedePlayersLoop (g : Game) (remaining : Array PlayerId)
       return g
     let pid := remaining[i]!
     if !(g.player pid).leftTheGame then
-      if saved?.isSome && !g.sbaPaused && g.currentBatch.isNone then
+      if saved?.isSome && !g.sbaPaused && !g.hasNonDiscardOpenBatch then
         g := g.restoreSavedPostLeave saved? popOuter
         saved? := none
         popOuter := false
@@ -365,32 +366,35 @@ partial def resumePendingReplacement (g : Game) (pr : PendingReplacement)
       g.resumePendingReplacement rest (followedByFinishFra := followedByFinishFra)
   | .shuffleThen p onDone =>
     g.shuffleThen p onDone
-  | .dealDamageToPlayer p n source unpreventable cause =>
+  | .dealDamageToPlayer p n source unpreventable cause suppressLifelink =>
     let srcObj := g.damageSourceObjFromSnapshot? source
     g.dealDamageToPlayer p (Int.ofNat n) (preventable := !unpreventable)
       (source := srcObj) (sourceSnap := source) (cause := cause)
-  | .dealDamageToPlayers players n source cause =>
+      (suppressLifelink := suppressLifelink)
+  | .dealDamageToPlayers players n source cause startEventIdx suppressLifelink =>
     let srcObj := g.damageSourceObjFromSnapshot? source
     g.dealDamageToPlayers players (Int.ofNat n) (source := srcObj) (sourceSnap := source)
-      (cause := cause)
-  | .dealDamageFrom sourceName source targetId n deathtouch cause =>
+      (cause := cause) (startEventIdx := startEventIdx) (suppressLifelink := suppressLifelink)
+  | .dealDamageFrom sourceName source targetId n deathtouch cause suppressLifelink =>
     match g.findObject? targetId with
     | some tgt =>
       let src := g.damageSourceFromSnapshot source
       g.dealDamageFrom sourceName tgt (Int.ofNat n) (deathtouch := deathtouch)
         (source := some src) (sourceSnap := some source) (cause := cause)
+        (suppressLifelink := suppressLifelink)
     | none => g
-  | .dealFightDamage sourceId targetId cause =>
+  | .dealFightDamage sourceId targetId cause amount =>
     match g.findObject? sourceId, g.findObject? targetId with
     | some src, some dest =>
       if src.isOnBattlefield && dest.isOnBattlefield && g.isCreature src && g.isCreature dest then
-        g.dealFightDamage src dest (cause := cause)
+        g.dealFightDamage src dest (cause := cause) (amount := amount)
       else g
     | _, _ => g
-  | .dealDamageToPermanent targetId n source cause =>
+  | .dealDamageToPermanent targetId n source cause suppressLifelink =>
     match g.findObject? targetId with
     | some tgt =>
       g.dealDamageToPermanent tgt (Int.ofNat n) (source := source) (cause := cause)
+        (suppressLifelink := suppressLifelink)
     | none => g
   | .markDamageOn targetId n msg deathtouch source combat unpreventable cause =>
     match g.findObject? targetId with
@@ -698,11 +702,12 @@ partial def resumePendingReplacement (g : Game) (pr : PendingReplacement)
     g.runChosenTriggeredModes controller ab remainingModes sourceId targets dividedDamage lastKnownPower lastKnownToughness sourceName
   | .continueConnives controller remainingIds =>
     g.runConniveObjects controller remainingIds
-  | .dealDamageToEachCreatureMatching remainingIds n onlyNonSubtype exceptControllerTokens source cause =>
+  | .dealDamageToEachCreatureMatching remainingIds n onlyNonSubtype exceptControllerTokens source cause startEventIdx suppressLifelink =>
     g.dealDamageToEachCreatureMatchingIds remainingIds n
       (onlyNonSubtype := onlyNonSubtype)
       (exceptControllerTokens := exceptControllerTokens)
       (source := source) (cause := cause)
+      (startEventIdx := startEventIdx) (suppressLifelink := suppressLifelink)
   | .destroyPermanentsLoop remainingIds allCandidates countNote obGainLifeFor logMsgAfter preBattlefield cause =>
     g.destroyPermanentsLoop remainingIds
       (allCandidates := allCandidates) (countNote := countNote)
@@ -969,8 +974,9 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
           (g.logMsg s!"{entered.name} enters the battlefield").afterPermanentEnters entered
         else g
       | none => g) g
-  | .dealDamageToEachOpponent p amount sourceId cause =>
-    g.dealDamageToEachOpponent p amount (source := sourceId.bind g.damageSourceById?) (cause := cause)
+  | .dealDamageToEachOpponent p amount sourceId cause startEventIdx =>
+    g.dealDamageToEachOpponent p amount (source := sourceId.bind g.damageSourceById?)
+      (cause := cause) (startEventIdx := startEventIdx)
   | .noteExcessDamageDealt targetId lethal startIdx =>
     let dealt := g.damageDealtToPermanentSince targetId startIdx
     g.change (.excessDamageThisWay (dealt - lethal))
@@ -1078,8 +1084,8 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
     | none => g
   | .beginDiscardCardsStep players =>
     g.beginDiscardCards players
-  | .continueAfterDiscardStep remaining =>
-    g.continueAfterDiscard remaining
+  | .continueAfterDiscardStep remaining samePlayer count =>
+    g.continueAfterDiscard remaining (samePlayer := samePlayer) (count := count)
   | .discardHandIdsLoop p ids logEach cause =>
     g.discardHandIdsLoop p ids (logEach := logEach) (cause := cause)
   | .logInfluenceThenScryTwo sourceId beforeInfluence =>
@@ -1544,8 +1550,8 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
     g.plusOneOnEachTargetLoop controller kind remaining n sourceId
   | .minusOnesPerOpponentLoop controller kind remaining x sourceId =>
     g.minusOnesPerOpponentLoop controller kind remaining x sourceId
-  | .divideSevenDamageLoop controller kind remaining division sourceId =>
-    g.divideSevenDamageLoop controller kind remaining division sourceId
+  | .divideSevenDamageLoop controller kind remaining division sourceId startEventIdx =>
+    g.divideSevenDamageLoop controller kind remaining division sourceId startEventIdx
   | .returnInstantsLoop controller kind remaining sourceId =>
     g.returnInstantsLoop controller kind remaining sourceId
   | .putPlusOnesUpToLastKnownLoop controller remaining sourceId =>
@@ -1839,15 +1845,21 @@ partial def finishChooseDiscardCard (g : Game) (p : PlayerId) (card : GameObject
   else if g.pendingDiscardsLeft > 0 then
     let left := g.pendingDiscardsLeft - 1
     let g := g.change (.pendingDiscardsLeft left)
-    let next := if left == 0 then remaining else #[p]
+    let perPlayer := max 1 g.discardCountPerPlayer
+    let (next, samePlayer) :=
+      if left == 0 then (remaining, false) else (#[p] ++ remaining, true)
     if let .chooseReplacement .. := g.pending then
-      g.chainPendingReplacement (.finishPostStep (.continueAfterDiscardStep next))
+      g.chainPendingReplacement
+        (.finishPostStep (.continueAfterDiscardStep next samePlayer perPlayer))
     else
-      g.continueAfterDiscard next
-  else if let .chooseReplacement .. := g.pending then
-    g.chainPendingReplacement (.finishPostStep (.continueAfterDiscardStep remaining))
+      g.continueAfterDiscard next (samePlayer := samePlayer) (count := perPlayer)
   else
-    g.continueAfterDiscard remaining
+    let perPlayer := max 1 g.discardCountPerPlayer
+    if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement
+        (.finishPostStep (.continueAfterDiscardStep remaining false perPlayer))
+    else
+      g.continueAfterDiscard remaining (samePlayer := false) (count := perPlayer)
 
 /-- Finish the post-discard token creation of `.recruitDiscard`. -/
 partial def finishRecruitDiscard (g : Game) (p : PlayerId) (isLand : Bool) : Game :=
@@ -3826,13 +3838,18 @@ def chooseReplacement (g : Game) (p : PlayerId) (id : ReplacementId) : Except St
           throw s!"{nm} isn't the name of a nonland card (CR 201.4a)"
         pure (choices.contains { id with kind := .asEntersChooseCardNamePrompt })
       | _ => pure false
-    if !choices.contains id && !validOpenPrompt then
+    let effectiveId :=
+      if choices.contains id then id
+      else if id.counterKind.isNone then
+        (choices.find? (fun c => { c with counterKind := none } == id)).getD id
+      else id
+    if !choices.contains effectiveId && !validOpenPrompt then
       throw "Replacement effect is not among the applicable choices"
-    let chooser := id.player.getD q
+    let chooser := effectiveId.player.getD q
     let g ←
-      match id.kind with
+      match effectiveId.kind with
       | .entersUntappedPayLife n =>
-        g.payLifeCost chooser n (forObject := id.object)
+        g.payLifeCost chooser n (forObject := effectiveId.object)
       | .entersUntappedBehold beholdId subtype =>
         let okPerm :=
           (g.findObject? beholdId).any (fun o =>
@@ -3842,7 +3859,7 @@ def chooseReplacement (g : Game) (p : PlayerId) (id : ReplacementId) : Except St
             (g.findObject? beholdId).any (fun o => g.hasSubtype o subtype)
         if !okPerm && !okHand then
           throw s!"{(g.player chooser).name} cannot behold that {subtype}"
-        let cause := EventCause.costPayment .behold chooser id.object
+        let cause := EventCause.costPayment .behold chooser effectiveId.object
         let g := g.withBatch (some cause) fun g =>
           let g :=
             if okHand then
@@ -3870,7 +3887,7 @@ def chooseReplacement (g : Game) (p : PlayerId) (id : ReplacementId) : Except St
         let nm := ((g.findObject? hid).map g.name).getD "a permanent"
         pure (g.logMsg s!"{(g.player chooser).name} attaches it to {nm}")
       | _ => pure g
-    let order := (g.replacementOrder.filter (· != id)).push id
+    let order := (g.replacementOrder.filter (· != effectiveId)).push effectiveId
     let cont? := g.pendingReplacement
     let g := g.changes #[.replacementOrder order, .pending .none, .pendingReplacement none]
     let g :=

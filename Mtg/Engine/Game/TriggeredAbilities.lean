@@ -1052,11 +1052,18 @@ def applyTriggerDamage (g : Game) (controller : PlayerId) (ab : TriggeredAbility
     let src? := sourceId.bind g.findObject?
     if n == 0 then g
     else
+      let startIdx := g.events.size
       g.withBatch (g.resolvingBatchCause controller sourceId) fun g =>
+        let batchCause := g.currentBatch.bind (·.2)
         let g :=
           g.dealDamageToEachCreatureMatching n (fun o => !g.hasSubtype o subtype)
-            (source := src?.map g.snapshot)
-        g.dealDamageToEachOpponent controller n (source := src?)
+            (source := src?.map g.snapshot) (cause := batchCause) (suppressLifelink := true)
+        if let .chooseReplacement .. := g.pending then
+          g.chainPendingReplacement
+            (.finishPostStep (.dealDamageToEachOpponent controller n sourceId batchCause (some startIdx)))
+        else
+          g.dealDamageToEachOpponent controller n (source := src?) (cause := batchCause)
+            (startEventIdx := some startIdx)
   | .player (.target .opponent), .fixed n, _ =>
     let n := n.toNat
     g.withLegalTriggerPlayer controller ab sourceId targets (fun g pid =>
@@ -4489,24 +4496,37 @@ def createAndMarkTokensAttacking (g : Game) (controller : PlayerId)
     else g.logMsg "no token is created (CR 800.4b)"
   else
     let rawPrinted := tokenPrinted kind
-    let (batches, applied, choice?) := g.replaceTokenCreation {
+    let (batches, applied, choice?) := g.replaceTokenCreationChoice {
       controller := controller
       printed := rawPrinted
       count := n
       tapped := tapped
+      attacking := true
       cause := cause
-    } (includeKindReplacements := false)
+    }
     match choice? with
     | some (chooser, choices) =>
       g.promptChooseReplacement chooser choices
         (.createAndMarkTokensAttacking controller kind n tapped holds sourceId cause)
     | none =>
       let g := g.consumeReplacementOrder applied
-      let total := batches.foldl (fun acc b => acc + b.count) 0
-      let cause' := (batches[0]?.bind (·.cause)).orElse (fun _ => cause)
-      let options := g.legalEnteringAttackTargets controller
-      let items := Array.replicate total (EnteringAttackItem.token controller kind tapped options)
-      g.promptEnteringAttackItems items (cause := cause')
+      let expanded : Array ProposedTokenBatch := batches.foldl (fun acc b =>
+        Id.run do
+          let mut acc := acc
+          for _ in [0:b.count] do
+            acc := acc.push { b with count := 1 }
+          return acc) #[]
+      if expanded.isEmpty then
+        g.change (.recentTokenIds #[])
+      else
+        let g := if g.continuations.isEmpty then g.change (.pushContinuationFrame {}) else g
+        let g := g.change (.stagedAttackTokenBatches expanded)
+        let items := expanded.map fun b =>
+          let isCreature := g.isCreature (g.tokenBatchProbe b.controller b.printed)
+          let opts := if isCreature then g.legalEnteringAttackTargets b.controller else #[]
+          let itemKind := (tokenKindOfCardDef? b.printed).getD kind
+          EnteringAttackItem.token b.controller itemKind b.tapped opts
+        g.promptEnteringAttackItems items (cause := cause)
 
 /-- Run `applyConnive` across `ids` sequentially, pausing and chaining
 `.continueConnives` if a step opens a pending choice or `--norandom` request. -/

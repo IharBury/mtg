@@ -251,6 +251,9 @@ namespace Game
 @[inline] def thirstDiscardsLeft (g : Game) := g.topFrame.thirstDiscardsLeft
 @[inline] def thirstDiscardType (g : Game) := g.topFrame.thirstDiscardType
 @[inline] def pendingDiscardsLeft (g : Game) := g.topFrame.pendingDiscardsLeft
+@[inline] def discardCountPerPlayer (g : Game) := g.topFrame.discardCountPerPlayer
+@[inline] def discardBatch (g : Game) := g.topFrame.discardBatch
+@[inline] def stagedAttackTokenBatches (g : Game) := g.topFrame.stagedAttackTokenBatches
 @[inline] def untapSearchedIfLands (g : Game) := g.topFrame.untapSearchedIfLands
 @[inline] def resolvingContext (g : Game) := g.topFrame.resolvingContext
 @[inline] def stashedCause (g : Game) := g.topFrame.stashedCause
@@ -2168,6 +2171,9 @@ def applyEngineChange (g : Game) (c : EngineChange) : Game :=
       | .thirstDiscardsLeft v => { f with thirstDiscardsLeft := v }
       | .thirstDiscardType v => { f with thirstDiscardType := v }
       | .pendingDiscardsLeft v => { f with pendingDiscardsLeft := v }
+      | .discardCountPerPlayer v => { f with discardCountPerPlayer := v }
+      | .discardBatch v => { f with discardBatch := v }
+      | .stagedAttackTokenBatches v => { f with stagedAttackTokenBatches := v }
       | .untapSearchedIfLands v => { f with untapSearchedIfLands := v }
       | .stashedCause v => { f with stashedCause := v }
       | .resolvingSpell v => { f with resolvingSpell := v }
@@ -5701,35 +5707,46 @@ produce an identical outcome regardless of application order, so the engine
 can apply either first without pausing for `Pending.chooseReplacement` when no
 explicit `g.replacementOrder` preference is set. -/
 def replacementPairCommutes (a b : ReplacementOrPrevention) : Bool :=
-  let isTapOrCounter616a : ReplacementKind → Bool
+  let isTapOrCounter616e : ReplacementKind → Bool
+    | .entersTappedSelf _
     | .entersTappedDeclinePayLife _ | .entersUntappedPayLife ..
     | .entersTappedDeclineBehold _ | .entersUntappedBehold ..
-    | .entersWithCountersSelf .. => true
+    | .entersWithCountersSelf .. | .entersWithExtraCounters .. => true
     | _ => false
-  let isChoose616a : ReplacementKind → Bool
+  let isChoose616e : ReplacementKind → Bool
     | .asEntersChooseColor .. | .asEntersChooseCreatureType ..
     | .asEntersChooseOdd .. | .asEntersChooseCardName ..
     | .asEntersChooseCardType .. | .asEntersChooseAnchor .. => true
     | _ => false
+  let isTap616e : ReplacementKind → Bool
+    | .entersTappedSelf _
+    | .entersTappedDeclinePayLife _ | .entersUntappedPayLife ..
+    | .entersTappedDeclineBehold _ | .entersUntappedBehold .. => true
+    | _ => false
+  let isCounter616e : ReplacementKind → Bool
+    | .entersWithCountersSelf .. | .entersWithExtraCounters .. => true
+    | _ => false
   match a, b with
   | .replacement sa, .replacement sb =>
-    if (isTapOrCounter616a sa.kind && isChoose616a sb.kind) ||
-        (isChoose616a sa.kind && isTapOrCounter616a sb.kind) then
+    if (isTapOrCounter616e sa.kind && isChoose616e sb.kind) ||
+        (isChoose616e sa.kind && isTapOrCounter616e sb.kind) ||
+        (isTap616e sa.kind && isCounter616e sb.kind) ||
+        (isCounter616e sa.kind && isTap616e sb.kind) then
       true
     else
       match sa.kind, sb.kind with
       | .entersTappedSelf _, .entersTappedSelf _
-      | .entersTappedSelf _, .entersWithExtraCounters ..
-      | .entersWithExtraCounters .., .entersTappedSelf _ => true
-      | .entersUntappedPayLife .., .entersWithCountersSelf ..
-      | .entersWithCountersSelf .., .entersUntappedPayLife ..
-      | .entersTappedDeclinePayLife _, .entersWithCountersSelf ..
-      | .entersWithCountersSelf .., .entersTappedDeclinePayLife _
-      | .entersUntappedBehold .., .entersWithCountersSelf ..
-      | .entersWithCountersSelf .., .entersUntappedBehold ..
-      | .entersTappedDeclineBehold _, .entersWithCountersSelf ..
-      | .entersWithCountersSelf .., .entersTappedDeclineBehold _ => true
+      | .entersTappedSelf _, .entersUntappedPayLife ..
+      | .entersUntappedPayLife .., .entersTappedSelf _
+      | .entersTappedSelf _, .entersTappedDeclinePayLife _
+      | .entersTappedDeclinePayLife _, .entersTappedSelf _
+      | .entersTappedSelf _, .entersUntappedBehold ..
+      | .entersUntappedBehold .., .entersTappedSelf _
+      | .entersTappedSelf _, .entersTappedDeclineBehold _
+      | .entersTappedDeclineBehold _, .entersTappedSelf _ => true
       | .entersWithCountersSelf _ ka _, .entersWithCountersSelf _ kb _ => ka != kb
+      | .entersWithCountersSelf .., .entersWithExtraCounters ..
+      | .entersWithExtraCounters .., .entersWithCountersSelf .. => true
       | .entersWithExtraCounters _ ka na, .entersWithExtraCounters _ kb nb => ka != kb || na == nb
       | .modifyCountersPut _ ka addA multA, .modifyCountersPut _ kb addB multB =>
         (ka.isSome && kb.isSome && ka != kb) ||
@@ -5744,6 +5761,8 @@ def replacementPairCommutes (a b : ReplacementOrPrevention) : Bool :=
       | .multiplyTokenCreation _ _, .multiplyTokenCreation _ _ => true
       | .createExtraTokenWithFood _ _, .multiplyTokenCreation _ _
       | .multiplyTokenCreation _ _, .createExtraTokenWithFood _ _ => true
+      | .artifactTokensBecome _ _, .multiplyTokenCreation _ _
+      | .multiplyTokenCreation _ _, .artifactTokensBecome _ _ => true
       | _, _ => false
   | .prevention pa, .replacement sb =>
     match pa.kind, sb.kind with
@@ -5809,8 +5828,16 @@ def selectNextReplacementStep (g : Game) (candidates : Array ReplacementCandidat
       match chooser? with
       | some p => inTier.filter (fun (c : ReplacementCandidate) => effectivePlayer c == p)
       | none => inTier
-    match order.findSome? (fun prefId => pool.find? (fun (c : ReplacementCandidate) => c.id == prefId)) with
-    | some c => .chosen c (order.filter (· != c.id))
+    let matchesPref (prefId : ReplacementId) (cid : ReplacementId) : Bool :=
+      cid == prefId ||
+        (prefId.counterKind.isNone && cid.counterKind.isSome && { cid with counterKind := none } == prefId)
+    match order.findSome? (fun prefId => pool.find? (fun (c : ReplacementCandidate) => matchesPref prefId c.id)) with
+    | some c =>
+      let rem :=
+        match order.findIdx? (fun prefId => matchesPref prefId c.id) with
+        | some idx => order.eraseIdx! idx
+        | none => order
+      .chosen c rem
     | none =>
       let nonPrompts := pool.filter (!isOpenPrompt ·)
       match nonPrompts.find? (fun d =>
@@ -5879,9 +5906,13 @@ def replaceCountersPutChoice (g : Game) (target : GameObject) (kind : CounterKin
                   perms.push ent
                 else perms
               | none => perms
+            let notSelfEntering (o : GameObject) : Bool :=
+              match entering with
+              | some ent => o.id != ent.id
+              | none => true
             for o in allPerms do
-              -- Doc Samson: `.extraCounterOnPermanents` (requires putter == controller)
-              if who == some c && !o.status.faceDown &&
+              -- Doc Samson: `.extraCounterOnPermanents` (requires putter == controller; CR 614.12 excludes `entering` itself)
+              if notSelfEntering o && who == some c && !o.status.faceDown &&
                   (g.staticAbilities o).any (· == .extraCounterOnPermanents) then
                 let rid : ReplacementId := { kind := .extraCounterOnPermanents, object := some o.id, counterKind := some kind }
                 specs := specs.push (
@@ -5890,8 +5921,8 @@ def replaceCountersPutChoice (g : Game) (target : GameObject) (kind : CounterKin
                     controller := some c
                     affectedPlayer := affected
                     kind := .modifyCountersPut (some target.id) (some kind) 1 1 }, 1, 1)
-              -- The Golden Gear: `.fra .extraPlusOneCounter` on a creature you control
-              if kind == .plusOnePlusOne && g.isCreature target &&
+              -- The Golden Gear: `.fra .extraPlusOneCounter` on a creature you control (CR 614.12 excludes `entering` itself)
+              if notSelfEntering o && kind == .plusOnePlusOne && g.isCreature target &&
                   (!o.status.faceDown && (g.staticAbilities o).any (· == .fra .extraPlusOneCounter)) then
                 let rid : ReplacementId := { kind := .extraPlusOneCounter, object := some o.id }
                 specs := specs.push (
@@ -5909,7 +5940,10 @@ def replaceCountersPutChoice (g : Game) (target : GameObject) (kind : CounterKin
                 match spec.kind with
                 | .modifyCountersPut tid k? add mult =>
                   if (tid.isNone || tid == some target.id) && (k?.isNone || k? == some kind) then
-                    specs := specs.push (spec, add, mult)
+                    let spec' :=
+                      if k?.isNone then { spec with id := { spec.id with counterKind := some kind } }
+                      else spec
+                    specs := specs.push (spec', add, mult)
                 | _ => pure ()
             | _ => pure ()
           let candidates := specs.map (fun (s, _, _) => (ReplacementOrPrevention.replacement s).toCandidate)
@@ -5932,7 +5966,7 @@ def replaceCountersPutChoice (g : Game) (target : GameObject) (kind : CounterKin
 /-- CR 616.1 replacement loop for putting `n` counters of `kind` on `target`
 (CR 122.6 / 614.1a / 614.12). Supports printed static abilities
 (`.extraCounterOnPermanents`, `.extraPlusOneCounter`) on battlefield permanents
-and on `entering?` (when `target` is about to enter the battlefield, CR 614.12),
+(excluding `entering` itself per CR 614.12),
 as well as active `ContinuousEffect.replacement` specs with `.modifyCountersPut`.
 Returns the modified count, the updated `applied` list (CR 614.5), and the
 updated `EventCause` (CR 614.6). -/
@@ -6723,17 +6757,18 @@ structure EtbReplacementResult where
 
 /-- Run the CR 616.1a–g replacement loop for `candidate` about to enter the
 battlefield (CR 614.1c / 614.12 / 614.15 / 616.1):
-- `616.1a` (`self`): `entersUntappedPayLife` / `entersTappedDeclinePayLife`,
-  `entersUntappedBehold` / `entersTappedDeclineBehold`, `asEntersChoose*`, and
-  `entersWithCountersSelf` (loyalty, printed +1/+1, X +1/+1, indestructible,
-  shield, hope-per-creature, Saga lore).
+- `616.1a` (`self`): self-replacement effects of a resolving spell or ability (CR 614.15).
 - `616.1b` (`control`): `entersUnderControl`.
 - `616.1c` (`copy`): `entersAsCopy`, `entersAsCopyCreatureUntilEot` / `declineEntersAsCopy`.
 - `616.1d` (`backFaceUp`): `entersBackFaceUp` (including daybound entering
   transformed when `g.isNight`, CR 702.145b).
 - `303.4f–g` (`auraHost`): non-cast Aura host selection.
-- `616.1e` (`other`): `entersTappedSelf` and `entersWithExtraCounters`
-  (including Arwen, Weaver of Hope, `othersEnterWithPlusOneEqualToughness`).
+- `616.1e` (`other`): `entersTappedSelf`, `entersUntappedPayLife` /
+  `entersTappedDeclinePayLife`, `entersUntappedBehold` / `entersTappedDeclineBehold`,
+  `asEntersChoose*`, `entersWithCountersSelf` (loyalty, printed +1/+1, X +1/+1,
+  indestructible, shield, hope-per-creature, Saga lore), and
+  `entersWithExtraCounters` (including Arwen, Weaver of Hope,
+  `othersEnterWithPlusOneEqualToughness`).
 - `616.1g`: unified contained counter-putting replacements via
   `replaceCountersPutChoice` once per `CounterKind` on the combined entering
   counter bag after CR 616.1a–f modifications. -/
@@ -6781,23 +6816,8 @@ def applyEtbReplacements (g : Game) (candidate : GameObject)
     let bc := board.baseCard curBf
     let retains := board.retainsPrintedAbilities curBf
     let sas := board.staticAbilities curBf
-    let hasPendingExternalCopyOrBackFace : Bool :=
-      let backIntrinsic :=
-        !cur.status.transformed && (board.unmaskedCopiableValues curBf).otherFace.isSome &&
-          (forceBackFace || (!leavingPlay && retains && bc.daybound && board.isNight)) &&
-          !curApplied.contains { kind := .entersBackFaceUp, object := some cur.id }
-      let extEff :=
-        board.activeEffects.any fun (_, eff) =>
-          match eff with
-          | .replacement spec d =>
-            board.durationActive d && !curApplied.contains spec.id &&
-              match spec.kind with
-              | .entersAsCopy tid _ | .entersBackFaceUp tid => tid.isNone || tid == some cur.id
-              | _ => false
-          | _ => false
-      backIntrinsic || extEff
     let mut specs : Array ReplacementSpec := #[]
-    let mut pushedInteractive616a : Bool := false
+    let mut pushedInteractive616e : Bool := false
     -- 616.1e / 614.12: intrinsic enters-tapped replacement
     let selfTap := !cur.status.faceDown && !cur.status.tapped && board.selfEntersTapped ctrl curBf preBfOk
     if selfTap then
@@ -6808,15 +6828,15 @@ def applyEtbReplacements (g : Game) (candidate : GameObject)
         affectedPlayer := ctrl
         kind := .entersTappedSelf cur.id
       }
-    -- 616.1a / 614.12: “As this enters, you may pay N life. If you don't, it enters tapped.”
-    if !cur.status.faceDown && retains && !cur.status.tapped && !selfTap && !hasPendingExternalCopyOrBackFace then
+    -- 616.1e / 614.12: “As this enters, you may pay N life. If you don't, it enters tapped.”
+    if !cur.status.faceDown && retains then
       if let some n := bc.entersTappedUnlessPayLife then
         let idPay : ReplacementId :=
           { kind := .entersUntappedPayLife n, object := some cur.id, player := some ctrl }
         let idTap : ReplacementId :=
           { kind := .entersTappedDeclinePayLife, object := some cur.id, player := some ctrl }
         if !curApplied.contains idPay && !curApplied.contains idTap then
-          pushedInteractive616a := true
+          pushedInteractive616e := true
           let canPay :=
             n == 0 || ((g.player ctrl).life ≥ (n : Int) && !g.lifeLocked ctrl && !g.lifeCantChange ctrl)
           if canPay || curOrder.contains idPay then
@@ -6834,9 +6854,8 @@ def applyEtbReplacements (g : Game) (candidate : GameObject)
             affectedPlayer := ctrl
             kind := .entersTappedDeclinePayLife cur.id
           }
-    -- 616.1a / 614.12: “As this land enters, you may behold a <Subtype>. If you don't, it enters tapped.”
-    if !cur.status.faceDown && retains && !cur.status.tapped && !selfTap &&
-        !hasPendingExternalCopyOrBackFace && !pushedInteractive616a then
+    -- 616.1e / 614.12: “As this land enters, you may behold a <Subtype>. If you don't, it enters tapped.”
+    if !cur.status.faceDown && retains && !pushedInteractive616e then
       if let some sub := bc.entersTappedUnlessBehold then
         let idTap : ReplacementId :=
           { kind := .entersTappedDeclineBehold, object := some cur.id, player := some ctrl }
@@ -6848,7 +6867,7 @@ def applyEtbReplacements (g : Game) (candidate : GameObject)
                 | .entersUntappedBehold _ _ => true
                 | _ => false)
         if !beheldAlready then
-          pushedInteractive616a := true
+          pushedInteractive616e := true
           let bfMatches :=
             (board.permanentsOf ctrl).filter (fun o => preBfOk o && board.hasSubtype o sub)
           let handMatches :=
@@ -6875,15 +6894,15 @@ def applyEtbReplacements (g : Game) (candidate : GameObject)
             affectedPlayer := ctrl
             kind := .entersTappedDeclineBehold cur.id
           }
-    -- 616.1a / 614.12: interactive “As ~ enters, choose ...” self-replacement choices
-    if !cur.status.faceDown && !hasPendingExternalCopyOrBackFace then
+    -- 616.1e / 614.12: interactive “As ~ enters, choose ...” printed ETB choices
+    if !cur.status.faceDown then
       -- Room of Refuge: “As it enters, choose a color.”
-      if !pushedInteractive616a && sas.any (· == .fra .entersTappedChooseColor) &&
+      if !pushedInteractive616e && sas.any (· == .fra .entersTappedChooseColor) &&
           cur.status.chosenColor.isNone &&
           !curApplied.any (fun rid =>
             rid.object == some cur.id &&
               match rid.kind with | .asEntersChooseColor _ => true | _ => false) then
-        pushedInteractive616a := true
+        pushedInteractive616e := true
         for col in Color.all do
           specs := specs.push {
             id := { kind := .asEntersChooseColor col, object := some cur.id, player := some ctrl }
@@ -6893,12 +6912,12 @@ def applyEtbReplacements (g : Game) (candidate : GameObject)
             kind := .asEntersChooseColor cur.id col
           }
       -- An Unexpected Party: “As ~ enters, choose a creature type.”
-      if !pushedInteractive616a && retains && bc.asEntersChooseCreatureType &&
+      if !pushedInteractive616e && retains && bc.asEntersChooseCreatureType &&
           cur.status.chosenCreatureType.isNone &&
           !curApplied.any (fun rid =>
             rid.object == some cur.id &&
               match rid.kind with | .asEntersChooseCreatureType _ => true | _ => false) then
-        pushedInteractive616a := true
+        pushedInteractive616e := true
         match curOrder.findSome? (fun rid =>
           if rid.object == some cur.id && rid.player == some ctrl then
             match rid.kind with
@@ -6922,12 +6941,12 @@ def applyEtbReplacements (g : Game) (candidate : GameObject)
             kind := .asEntersChooseCreatureType cur.id .human
           }
       -- Gollum, Riddle-Master: “As ~ enters, choose odd or even.”
-      if !pushedInteractive616a && retains && bc.asEntersChooseOddEven &&
+      if !pushedInteractive616e && retains && bc.asEntersChooseOddEven &&
           cur.status.chosenOdd.isNone &&
           !curApplied.any (fun rid =>
             rid.object == some cur.id &&
               match rid.kind with | .asEntersChooseOdd _ => true | _ => false) then
-        pushedInteractive616a := true
+        pushedInteractive616e := true
         for odd in #[true, false] do
           specs := specs.push {
             id := { kind := .asEntersChooseOdd odd, object := some cur.id, player := some ctrl }
@@ -6937,12 +6956,12 @@ def applyEtbReplacements (g : Game) (candidate : GameObject)
             kind := .asEntersChooseOdd cur.id odd
           }
       -- Meddling Mage: “As ~ enters, choose a nonland card name.”
-      if !pushedInteractive616a && sas.any (· == .fra .entersChooseNonlandCardName) &&
+      if !pushedInteractive616e && sas.any (· == .fra .entersChooseNonlandCardName) &&
           cur.status.chosenName.isNone &&
           !curApplied.any (fun rid =>
             rid.object == some cur.id &&
               match rid.kind with | .asEntersChooseCardName _ => true | _ => false) then
-        pushedInteractive616a := true
+        pushedInteractive616e := true
         match curOrder.findSome? (fun rid =>
           if rid.object == some cur.id && rid.player == some ctrl then
             match rid.kind with
@@ -6966,12 +6985,12 @@ def applyEtbReplacements (g : Game) (candidate : GameObject)
             kind := .asEntersChooseCardName cur.id ""
           }
       -- Serra's Emissary: “As ~ enters, choose a card type.”
-      if !pushedInteractive616a && retains && bc.asEntersChooseCardType &&
+      if !pushedInteractive616e && retains && bc.asEntersChooseCardType &&
           cur.status.chosenCardType.isNone &&
           !curApplied.any (fun rid =>
             rid.object == some cur.id &&
               match rid.kind with | .asEntersChooseCardType _ => true | _ => false) then
-        pushedInteractive616a := true
+        pushedInteractive616e := true
         for ct in chosableCardTypes do
           specs := specs.push {
             id := { kind := .asEntersChooseCardType ct, object := some cur.id, player := some ctrl }
@@ -6981,12 +7000,12 @@ def applyEtbReplacements (g : Game) (candidate : GameObject)
             kind := .asEntersChooseCardType cur.id ct
           }
       -- Windcrag Siege: “As ~ enters, choose Mardu or Jeskai.”
-      if !pushedInteractive616a && retains && bc.asEntersChooseMarduOrJeskai &&
+      if !pushedInteractive616e && retains && bc.asEntersChooseMarduOrJeskai &&
           cur.status.chosenAnchor.isNone &&
           !curApplied.any (fun rid =>
             rid.object == some cur.id &&
               match rid.kind with | .asEntersChooseAnchor _ => true | _ => false) then
-        pushedInteractive616a := true
+        pushedInteractive616e := true
         for anch in #["Mardu", "Jeskai"] do
           specs := specs.push {
             id := { kind := .asEntersChooseAnchor anch, object := some cur.id, player := some ctrl }
@@ -6995,8 +7014,8 @@ def applyEtbReplacements (g : Game) (candidate : GameObject)
             affectedPlayer := ctrl
             kind := .asEntersChooseAnchor cur.id anch
           }
-    -- 616.1a: self enters-with-counters replacements
-    if !cur.status.faceDown && !hasPendingExternalCopyOrBackFace then
+    -- 616.1e / 614.12: printed enters-with-counters replacements
+    if !cur.status.faceDown then
       if board.isPlaneswalker curBf then
         if let some loy := bc.loyalty then
           if loy > 0 then
@@ -7134,14 +7153,7 @@ def applyEtbReplacements (g : Game) (candidate : GameObject)
     if nonCastBattlefield && !cur.status.faceDown && cur.attachedTo.isNone &&
         board.isAura curBf then
       let pendingCtrlCopyFace :=
-        hasPendingExternalCopyOrBackFace ||
-          specs.any (fun s =>
-            !curApplied.contains s.id &&
-              match s.kind with
-              | .entersUnderControl .. | .entersAsCopy ..
-              | .entersAsCopyCreatureUntilEot .. | .declineEntersAsCopy ..
-              | .entersBackFaceUp .. => true
-              | _ => false)
+        specs.any (fun s => !curApplied.contains s.id && s.tier.rank < ReplacementTier.auraHost.rank)
       let hostDecided :=
         curApplied.any (fun rid =>
           rid.object == some cur.id &&
