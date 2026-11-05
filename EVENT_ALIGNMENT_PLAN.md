@@ -1131,13 +1131,16 @@ def Game.commitBatch (g : Game) (cause : EventCause) (events : Array RulesEvent)
   `currentResolvingContext?` to `.oneShotEffect none` via `cause.orElse`;
   `fightCreatures` always passes that `defaultCause`, whereas the other seven
   pass `none` under their helper-specific zero-amount / `preventsAllDamageTo` /
-  empty-`livingOpponents` guards after any early-return prevention checks, so
-  shield-counter removal still opens a batch, while in Phase 24, #616,
-  `drawThenLoseLife` dropped its `withBatch` wrapper and re-introduced
-  `allocDelayedCause (some p)` so individual CR 121.2 draws and subsequent life
-  loss commit in separate batches sharing one `.oneShotEffect` cause per CR
-  608.2c, and `dealDamageToEachOpponent` gained `startEventIdx` and
-  `suppressLifelink` for aggregated CR 702.15b noncombat lifelink). After Phase 10 (#588),
+  empty-`livingOpponents` guards—also gated by `startEventIdx.isNone` on
+  `dealDamageToEachOpponent` since Phase 24, #616, so a resumed call with
+  `startEventIdx.isSome` still builds `defaultCause` even when `n <= 0`—after
+  any early-return prevention checks, so shield-counter removal still opens a
+  batch, while in Phase 24, #616, `drawThenLoseLife` dropped its `withBatch`
+  wrapper and re-introduced `allocDelayedCause (some p)` so individual CR 121.2
+  draws and subsequent life loss commit in separate batches sharing one
+  `.oneShotEffect` cause per CR 608.2c, and `dealDamageToEachOpponent` gained
+  `startEventIdx` and `suppressLifelink` for aggregated CR 702.15b noncombat
+  lifelink). After Phase 10 (#588),
   `resolvingOneShotCause` returns `Option EventCause`: when `currentBatch` holds
   `some (_, some (.oneShotEffect bid bsrc bctrl))`, it returns
   `some (.oneShotEffect bid (bsrc.orElse (fun _ => source)) (bctrl.orElse (fun _ => some p)))`;
@@ -1786,7 +1789,7 @@ Each field is put in exactly one category. "Log" means a query over
 | **Game effect mirrors → specs (deleted in Phase 8)** | `creaturesWithoutFlyingCantBlock : Bool`, `powerUpsForbidden : Bool`, `playerControl : Option (PlayerId × PlayerId)`, `controlOnNextTakenTurn : Bool`, `pendingLokiCopy : Option (PlayerId × Option ObjectId × Int)`, `assignCombatDamageEqualToughness : Option PlayerId`, `pendingFreeRGCreature : Option PlayerId` | Replaced in Phase 8 (#584) by `ContinuousEffectSpec.gameRule` / `.playerRule`. |
 | **Game LKI / identity — deleted in Phase 2** | `lastKnownStatus : Array (ObjectId × Status)`, `movedTo : Array (ObjectId × ObjectId)` | `moved.before` / `moved.after`. |
 | **Batch / trigger suppression — deleted in Phase 4 / 6 / 7** | `suppressOthersDie : Bool`, `suppressCreatureCardsToGy : Bool`, `pendingCreatureTokenCreators : Array PlayerId` (deleted in Phase 4); `pendingTokenEnters : Array ObjectId` (kept in Phase 4 for per-token enter triggers in `afterPermanentEnters`, while Mister Fantastic's `.watch .tokensEnterMayDraw` moved to `evaluateBatchTriggers`; deleted in Phase 6); `lockedDeathReplacements : Option (Array GameObject)` (deleted in Phase 7) | Replaced by `withBatch` / `commitBatch`, `matchTriggers pre post batch`, and the 616.1 replacement pipeline. |
-| **Continuation registers — moved to continuation stack in Phase 8 / 10 / 13 / 15 / 17 / 18 / 20 / 21 / 22 / 24** | `pendingDrawAfterScry : Option (PlayerId × Nat)`, `discardedCardThisWay : Option (PlayerId × ObjectId)`, `palantirAfterScry : Option (PlayerId × PlayerId × ObjectId)`, `recentTokenIds : Array ObjectId`, `fraAfterLook : Option (PlayerId × Option ObjectId × FraNext)`, `pendingFreeCopies : Option (PlayerId × Array ObjectId × Nat × Nat)`, `pendingMayCastFromExile : Option (PlayerId × Array ObjectId × Nat)`, `mayPayAlsoPlusOneOn : Option ObjectId` (retired in Phase 21, #610), `humansTappedThisWay : Nat`, `permanentsDestroyedThisWay : Nat`, `removedHopeThisWay : Bool`, `permanentDealtDamageThisWay : Option ObjectId`, `returnedPermanentThisWay : Bool`, `nthResolveThisWay : Option Nat`, `skipTriggerSequenceRest : Bool`, `excessDamageThisWay : Nat`, `destroyedForAmassThisWay : Bool`, `amassControllerThisWay : Option PlayerId` (retired in Phase 15, #598), `amassAmountThisWay : Nat`, `amassYouControlledThisWay : Bool`, `milledIdsThisWay : Array ObjectId`, `revealedIdsThisWay : Array ObjectId`, `opponentsMilledThisWay : Bool`, `palantirChoiceReady : Option (PlayerId × PlayerId × ObjectId)`, `grimaImpulseReady : Bool`, `grimaImpulseVictim : Option PlayerId`, `grimaImpulseFound : Option ObjectId`, `grimaImpulseOthers : Array ObjectId`, `planWasSacrificed : Bool`, `sourceWasSacrificed : Bool`, `exiledIdsThisWay : Array ObjectId`, `notedCopyObject : Option GameObject`, `notedHostId : Option ObjectId`, `handDiscardedThisWay : Option Nat`, `notedSourceThisWay : Option ObjectId`, `equipmentAttachedHost : Option ObjectId`, `notedCountThisWay : Nat`, `createdTokenThisWay : Option ObjectId` (widened to `createdTokensThisWay : Array ObjectId := #[]` in Phase 22, #612), `putArtifactThisWay : Option (ObjectId × ObjectId)`, `playExiledThisWay : Option ObjectId`, `armSurveilReturn : Bool`, `triggerSequenceRest : Option TriggerSequenceRest`, `mayThenDrop : Nat`, `mayThenSkip : Nat`, `mayThenConditional : Option TriggeredAbility.TriggerResolution`, `mayOnAccept : Option TriggeredAbility.TriggerResolution`, `mayOnDecline : Option TriggeredAbility.TriggerResolution`, `mayContext : Option TriggerSequenceRest`, `sacrificedPowerThisWay : Option Nat`, `mayThenResume : Bool`, `triggerOr : Option TriggerOrRest`, `chooseModesRest : Option ChooseModesRest`, `unlessPaysInstead : Option Effect`, `unlessPaysController : PlayerId`, `unlessPaysTargets : Array Target`, `unlessPaysDue : Bool`, `mayEffect : Option Effect`, `mayController : PlayerId`, `mayTargets : Array Target`, `spellOr : Array Effect`, `spellOrController : PlayerId`, `spellOrTargets : Array Target`, `spellOrLibrary : Bool`, `surveilReturnMvAtMost : Option Nat`, `surveilReturnNoncreatureNonland : Bool`, `conniveSource : Option ObjectId`, `plusOneAfterDiscards : Option ObjectId`, `plusOneAfterSearch : Option ObjectId` (widened on `ContinuationFrame` to `Option (ObjectId × PlayerId × Option ObjectId)` alongside `AfterRandom.plusOne` in Phase 19, #606), `thirstDiscardsLeft : Nat`, `thirstDiscardType : CardType`, `pendingDiscardsLeft : Nat`, `untapSearchedIfLands : Option Nat`; plus `resolvingSpell : Option ObjectId`, `resolvingAbility : Option ObjectId`, `resolvingDivision : Array Nat`, and `afterRandom : AfterRandom` in Phase 10 (#588), `pendingCastExiledQueue : Option (PlayerId × Array ObjectId)` (retired in Phase 16, #600) and `postCastCleanup : Option PostCastCleanup` in Phase 13 (#594), `outerPendingReplacements : Array PendingReplacement` in Phase 15 (#598), `resolvingModes : Option (Array Nat)` in Phase 17 (#602), `resolvingSkippedSlots : Array Nat` in Phase 18 (#604), `unlessPaysSource : Option ObjectId`, `maySource : Option ObjectId`, and `spellOrSource : Option ObjectId` in Phase 20 (#608), and `discardCountPerPlayer : Nat`, `discardBatch : Option (BatchId × Nat)`, and `stagedAttackTokenBatches : Array ProposedTokenBatch` in Phase 24 (#616) | Moved in Phase 8 (#584), Phase 10 (#588), Phase 13 (#594), Phase 15 (#598), Phase 17 (#602), Phase 18 (#604), Phase 20 (#608), Phase 21 (#610), Phase 22 (#612), and Phase 24 (#616) into `ContinuationFrame` (89 fields after Phase 21, #610, retired `mayPayAlsoPlusOneOn`, Phase 22, #612, widened `createdTokenThisWay` to `createdTokensThisWay`, and Phase 24, #616, added `discardCountPerPlayer`, `discardBatch`, and `stagedAttackTokenBatches`, including `postCastCleanup`, `pendingReplacement`, `outerPendingReplacements`, `resolvingContext`, `stashedCause`, `resolvingSpell`, `resolvingAbility`, `resolvingModes`, `resolvingSkippedSlots`, `resolvingDivision`, `afterRandom`, `resolutionFinish`, and `pendingResolvedEvent`, updated via `ContinuationChange` on `Game.continuations`; CR 608.2n / 608.2p / 608.3 stack-residence and `completeActiveResolutions` frame-drain lifecycle completed in Phase 10, #588). |
+| **Continuation registers — moved to continuation stack in Phase 8 / 10 / 13 / 15 / 17 / 18 / 20 / 21 / 22 / 24** | `pendingDrawAfterScry : Option (PlayerId × Nat)`, `discardedCardThisWay : Option (PlayerId × ObjectId)`, `palantirAfterScry : Option (PlayerId × PlayerId × ObjectId)`, `recentTokenIds : Array ObjectId`, `fraAfterLook : Option (PlayerId × Option ObjectId × FraNext)`, `pendingFreeCopies : Option (PlayerId × Array ObjectId × Nat × Nat)`, `pendingMayCastFromExile : Option (PlayerId × Array ObjectId × Nat)`, `mayPayAlsoPlusOneOn : Option ObjectId` (retired in Phase 21, #610), `humansTappedThisWay : Nat`, `permanentsDestroyedThisWay : Nat`, `removedHopeThisWay : Bool`, `permanentDealtDamageThisWay : Option ObjectId`, `returnedPermanentThisWay : Bool`, `nthResolveThisWay : Option Nat`, `skipTriggerSequenceRest : Bool`, `excessDamageThisWay : Nat`, `destroyedForAmassThisWay : Bool`, `amassControllerThisWay : Option PlayerId` (retired in Phase 15, #598), `amassAmountThisWay : Nat`, `amassYouControlledThisWay : Bool`, `milledIdsThisWay : Array ObjectId`, `revealedIdsThisWay : Array ObjectId`, `opponentsMilledThisWay : Bool`, `palantirChoiceReady : Option (PlayerId × PlayerId × ObjectId)`, `grimaImpulseReady : Bool`, `grimaImpulseVictim : Option PlayerId`, `grimaImpulseFound : Option ObjectId`, `grimaImpulseOthers : Array ObjectId`, `planWasSacrificed : Bool`, `sourceWasSacrificed : Bool`, `exiledIdsThisWay : Array ObjectId`, `notedCopyObject : Option GameObject`, `notedHostId : Option ObjectId`, `handDiscardedThisWay : Option Nat`, `notedSourceThisWay : Option ObjectId`, `equipmentAttachedHost : Option ObjectId`, `notedCountThisWay : Nat`, `createdTokenThisWay : Option ObjectId` (widened to `createdTokensThisWay : Array ObjectId := #[]` in Phase 22, #612), `putArtifactThisWay : Option (ObjectId × ObjectId)`, `playExiledThisWay : Option ObjectId`, `armSurveilReturn : Bool`, `triggerSequenceRest : Option TriggerSequenceRest`, `mayThenDrop : Nat`, `mayThenSkip : Nat`, `mayThenConditional : Option TriggeredAbility.TriggerResolution`, `mayOnAccept : Option TriggeredAbility.TriggerResolution`, `mayOnDecline : Option TriggeredAbility.TriggerResolution`, `mayContext : Option TriggerSequenceRest`, `sacrificedPowerThisWay : Option Nat`, `mayThenResume : Bool`, `triggerOr : Option TriggerOrRest`, `chooseModesRest : Option ChooseModesRest`, `unlessPaysInstead : Option Effect`, `unlessPaysController : PlayerId`, `unlessPaysTargets : Array Target`, `unlessPaysDue : Bool`, `mayEffect : Option Effect`, `mayController : PlayerId`, `mayTargets : Array Target`, `spellOr : Array Effect`, `spellOrController : PlayerId`, `spellOrTargets : Array Target`, `spellOrLibrary : Bool`, `surveilReturnMvAtMost : Option Nat`, `surveilReturnNoncreatureNonland : Bool`, `conniveSource : Option ObjectId`, `plusOneAfterDiscards : Option ObjectId`, `plusOneAfterSearch : Option ObjectId` (widened on `ContinuationFrame` to `Option (ObjectId × PlayerId × Option ObjectId)` alongside `AfterRandom.plusOne` in Phase 19, #606), `thirstDiscardsLeft : Nat`, `thirstDiscardType : CardType`, `pendingDiscardsLeft : Nat`, `untapSearchedIfLands : Option Nat`; plus `resolvingSpell : Option ObjectId`, `resolvingAbility : Option ObjectId`, `resolvingDivision : Array Nat`, and `afterRandom : AfterRandom` in Phase 10 (#588), `pendingCastExiledQueue : Option (PlayerId × Array ObjectId)` (retired in Phase 16, #600) and `postCastCleanup : Option PostCastCleanup` in Phase 13 (#594), `outerPendingReplacements : Array PendingReplacement` in Phase 15 (#598), `resolvingModes : Option (Array Nat)` in Phase 17 (#602), `resolvingSkippedSlots : Array Nat` in Phase 18 (#604), `unlessPaysSource : Option ObjectId`, `maySource : Option ObjectId`, and `spellOrSource : Option ObjectId` in Phase 20 (#608), and `discardCountPerPlayer : Nat`, `discardBatch : Option (BatchId × Nat)`, and `stagedAttackTokenBatches : Array ProposedTokenBatch` in Phase 24 (#616) | Moved in Phase 8 (#584), Phase 10 (#588), Phase 13 (#594), Phase 15 (#598), Phase 17 (#602), Phase 18 (#604), Phase 20 (#608), Phase 21 (#610), Phase 22 (#612), and Phase 24 (#616) into `ContinuationFrame` (86 fields after Phase 21, #610, retired `mayPayAlsoPlusOneOn` and Phase 22, #612, widened `createdTokenThisWay` to `createdTokensThisWay`, and 89 fields in Phase 24, #616, when `discardCountPerPlayer`, `discardBatch`, and `stagedAttackTokenBatches` were added, including `postCastCleanup`, `pendingReplacement`, `outerPendingReplacements`, `resolvingContext`, `stashedCause`, `resolvingSpell`, `resolvingAbility`, `resolvingModes`, `resolvingSkippedSlots`, `resolvingDivision`, `afterRandom`, `resolutionFinish`, and `pendingResolvedEvent`, updated via `ContinuationChange` on `Game.continuations`; CR 608.2n / 608.2p / 608.3 stack-residence and `completeActiveResolutions` frame-drain lifecycle completed in Phase 10, #588). |
 
 ---
 
@@ -1961,16 +1964,21 @@ game has `.unclassified`, migrated `.looked` (folded into `PlayerEvent.scried` /
    `ResolutionEffects.lean`, while in `Damage.lean`, `markDamageOn`,
    `dealDamageToPermanent`, `dealDamageToPlayer`, `dealDamageFrom`'s `some src`
    branch—with `none` delegating to `markDamageOn`—`dealDamageToEachOpponent`,
-   `fightCreatures`, `loseLifeEachOpponent`, `eachOpponentLosesYouGain`, and
-   `drawThenLoseLife` replaced their manual `allocDelayedCause` pre-allocation by
-   running inside `withBatch` with an inline `defaultCause` mapped from
-   `currentResolvingContext?` to `.oneShotEffect none`: `cause.orElse` on the
-   eight helpers that take `cause` and `currentResolvingContext?.map` directly on
-   `drawThenLoseLife`, which has no `cause` parameter; `fightCreatures` and
-   `drawThenLoseLife` always pass that `defaultCause`, whereas the other seven
+   `fightCreatures`, `loseLifeEachOpponent`, `eachOpponentLosesYouGain`, and,
+   prior to Phase 24 (#616), `drawThenLoseLife` replaced their manual
+   `allocDelayedCause` pre-allocation by running inside `withBatch` with an
+   inline `defaultCause` mapped from `currentResolvingContext?` to
+   `.oneShotEffect none`: `cause.orElse` on the eight helpers that take `cause`
+   and `currentResolvingContext?.map` directly on `drawThenLoseLife`, which had
+   no `cause` parameter; `fightCreatures`—and, prior to Phase 24 (#616),
+   `drawThenLoseLife`—always passed that `defaultCause`, whereas the other seven
    pass `none` under their helper-specific zero-amount / `preventsAllDamageTo` /
-   empty-`livingOpponents` guards after any early-return prevention checks, so
-   shield-counter removal still opens a batch), while
+   empty-`livingOpponents` guards—also gated by `startEventIdx.isNone` on
+   `dealDamageToEachOpponent` since Phase 24, #616—after any early-return
+   prevention checks, so shield-counter removal still opens a batch, while Phase
+   24, #616, dropped `drawThenLoseLife`'s `withBatch` wrapper in favor of
+   `allocDelayedCause (some p)` per CR 121.2 / 608.2c and added `startEventIdx`
+   and `suppressLifelink` to `dealDamageToEachOpponent`), while
    each SBA pass in `checkSBACounted` (`StateBasedActions.lean`) runs inside
    `withBatchReturn none` to keep per-event `.stateBased` causes under one
    `BatchId` per pass and standalone `.rules` events in `applyEvent` form a
@@ -7518,18 +7526,26 @@ expiry / active-team `"during your turn"` / starting team / extra turns /
      `ResolutionEffects.lean`, CR 400.3 / 608.2c / 614.6 / 616.1 / 701.50 /
      800.4a,f–h):
      - stash and re-chain outer `g.pendingReplacement` around `chainPendingReplacement`
-       across the remaining 11 continuation branches of
+       across the remaining 11 unguarded `chainPendingReplacement` call sites in
        `Leaving.redirectPendingAfterLeave` (`.chooseMode` when `q != p`,
-       `.chooseTargets` when `q != p`, `.fraChoice _ (.discardTwo ..)`,
-       `.worldsPutCreatures`, `.chooseEnteringAttackTarget` when
-       `restAfter.isEmpty`, `.palantirMayDraw`, `.tricksterLibrary`,
-       `.triggerModes`, and the three `.mayCastExiledElseDamage` sub-branches)
-       plus its two synchronous movement branches (`.extrapolatePick`—also
+       `.chooseTargets` when `q != p`, the two `.fraChoice _ (.discardTwo ..)`
+       arms when `q == p` for `(g.player next).hand.size ≤ 2` and `none` with
+       `g.stillInGame controller && draws > 0`, `.fraChoice _ (.worldsPutCreatures ..)`
+       `offerNext []`, the two `.fraChoice _ (.chooseEnteringAttackTarget ..)`
+       arms when `restAfter.isEmpty` for `q != p` and `q == p`,
+       `.fraChoice _ (.palantirMayDraw ..)` when `q == p`,
+       `.fraChoice _ (.tricksterLibrary ..)` when `q == p`,
+       `.fraChoice _ (.triggerModes ..)` when `q != p`, and
+       `.mayCastExiledElseDamage` when `q == p && n > 0`) plus its three
+       synchronous movement arms (`.fraChoice _ (.extrapolatePick ..)`—also
        gating its `"puts ... into their hand"` log on
        `(g.followMovedToZone? id (· == .hand revealer)).isSome` per CR 400.3 /
-       614.6—and `.resolveRandom (.orderInto ..)`) and the `.card` branch of
-       `ResolutionEffects.commitEnteringAttackItems` (matching its `.token`
-       branch); and
+       614.6—`.fraChoice _ (.mayCastGrima ..)` when `q == p`, whose immediate
+       `g.requestOrderInto live (.library victim)` enters `moveIdsInOrder` /
+       `moveIdsInOrderLoop` synchronously when `live.size == 1`, and
+       `.resolveRandom (.orderInto ..)` when `liveIds.size == 1`) and the
+       `.card` branch of `ResolutionEffects.commitEnteringAttackItems` (matching
+       its `.token` branch); and
      - clear `.conniveSource none` and invoke/chain `finishPlusOneAfterDiscards`
        when `.chooseDiscardCard` departure cleanup finds
        `nextActorWithHandCard livingRem == none` so a departing final discarder
@@ -7572,16 +7588,20 @@ expiry / active-team `"during your turn"` / starting team / extra turns /
      603.3c–d / 608.2b / 700.2a–b / 733.1):
      - validate `totalMv ≤ n` across chosen targets for
        `.upToTwoCreaturesTotalMvAtMost n` in `CastSpell.announceTargetChoices`
-       (`CastSpell.lean`, matching its existing `.creaturesTotalPowerAtMost 4`
-       check);
+       (`CastSpell.lean`, mirroring the total-MV fold in
+       `SpellTargets.validTargetArrayForEntry` and resolution checks in
+       `Chapters.gainControlWhileSource` / `SpellResolution`, since simultaneous
+       `count := 2` announcement against `legalProposedTargets` sees empty
+       `already` and otherwise accepts any pair whose individual MVs are `≤ n`);
      - filter multi-slot candidates in `SpellTargets.legalProposedTargets` so a
        choice `t` at `curSlot` is legal only when `slotAssignmentExists` still
        has a valid completion across the remaining required slots (preventing
        `.twoNonlandsSharingType` slot-0 picks whose type has no second matching
        nonland permanent); and
-     - wire `g.effectHasEnoughTargets` (passing `sourceId := some o.id` and
-       `tcs := g.evalLayer3 o` where an object is in hand/exile/stack) across
-       `Decisions.beginResolutionCastTargets`,
+     - wire `g.effectHasEnoughTargets p eff (some o.id)` (pre-applying Layer 3
+       text changes via `TextChange.applyEffect (g.evalLayer3 o)` to `eff`—matching
+       `SpellTargets.legalModes`—in callers holding `o : GameObject` and
+       `face : CardDef`) across `Decisions.beginResolutionCastTargets`,
        `Decisions.afterAdditionalCostAnnounced`, `Triggers.triggerModeChoosable`,
        `Casting.canCastFrontFace` / `castFaceHasLegalTarget` /
        `validateFrontFaceCast` / `canCastAdventure`,
@@ -7603,10 +7623,14 @@ expiry / active-team `"during your turn"` / starting team / extra turns /
        `pendingFreeRGCreature`) so they cannot stack onto a spell already cast
        via another alternative cost (Morph `{3}`, Impending, Sneak, Flashback,
        or `withoutManaCost` / `payLifeEqualManaValue` permissions per CR 118.9a);
-     - compute the spell's actual mana value (`g.objectManaValue card`, `0` for
-       face-down Morph per CR 702.37c / 708.2a, and printed mana cost under
-       alternative costs per CR 118.9c) rather than reading a substituted
-       `bc.manaValue` in `omnipresent` and `witchLess`; and
+     - compute the spell's actual mana value in `Costs.playManaCost`
+       (`omnipresent`) and `Costs.applyCastCostReductions` (`witchLess`) from its
+       un-substituted printed cost plus `card.chosenX.getD 0` (or `0` when cast
+       face-down via Morph per CR 702.37c / 708.2a; CR 118.9c / 202.3e) rather
+       than reading `face.manaValue` after Sneak/Morph cost substitution on
+       `face` in `CastSpell.castSpell` / `chooseX` (without calling
+       `g.objectManaValue` on pre-stack `casterCard`, which would drop `chosenX`
+       while `casterCard.zone != .stack`); and
      - thread explicit alternative-cost selection for `perm.payLifeEqualManaValue`
        (*Inside Information*) so `withoutManaCost := true` casts never pay life
        from an unrelated active permission while `Decisions.castAsPartOfResolution`
@@ -7648,15 +7672,15 @@ expiry / active-team `"during your turn"` / starting team / extra turns /
      `chooseActivate`, and `chooseCast`), and pass `{ o with controller := some
      p }` to `g.playManaCost` in `Casting.canPayAnnouncedAdditional`.
 3. Fix wildcard `consumeReplacementOrder` cleanup, `ZoneEvent.created`
-   creator-vs-controller & `.wouldPutCounter` semantics, Andúril premature
+   creator-vs-controller & `.wouldPutCounter` semantics, Andúril `triggerIfHolds`
    Spirit log, `applyTriggerDraw` CR 121.2 / 121.2c batching & APNAP order, and
    remaining noncombat lifelink & pause-safe damage loops (§2.2, §2.3, §2.6,
    §3.1, §3.2, §3.4, §3.6):
    - Fix wildcard `consumeReplacementOrder` stripping, `ZoneEvent.created`
      creator-vs-controller matching, counter-bearing token `.wouldPutCounter`
-     watching, and premature Andúril token logging (`Core.lean`, `Event.lean`,
-     `Tokens.lean`, `TriggeredAbilities.lean`, CR 111.2 / 122.6 / 122.6a /
-     603.6a / 614.6 / 616.1b,g / 701.7a / 800.4b):
+     watching, and Andúril's hardcoded `triggerIfHolds` token log (`Core.lean`,
+     `Event.lean`, `Tokens.lean`, `TriggeredAbilities.lean`, CR 111.2 / 122.6 /
+     122.6a / 603.6a / 614.6 / 616.1b,g / 701.7a / 800.4b):
      - strip unstamped `prefId` (`prefId.counterKind.isNone`) in
        `Core.consumeReplacementOrder` whenever `applied` contains a stamped
        `cid` with `{ cid with counterKind := none } == prefId` so pre-seeded
@@ -7672,18 +7696,23 @@ expiry / active-team `"during your turn"` / starting team / extra turns /
      - match counter-bearing `.rules (.zone (.created object _))` (`!object.counters.isEmpty`)
        in `GameEvent.watches` `.wouldPutCounter` so tokens entering with
        counters satisfy CR 122.6 / 122.6a; and
-     - delete the premature `"creates two tapped Spirit tokens"` log emitted
-       inside `TriggeredAbilities.evalTriggerCondition` `.createTwoSpiritsTappedAttacking`
-       before `createAndMarkTokensAttacking` runs CR 800.4b / 614.6 token
-       creation and `PostStep.logCreatedTokensSummary`.
+     - replace `(g.logMsg s!"{(g.player controller).name} creates two tapped Spirit tokens", false)`
+       with `(g, false)` in the failure arm of `TriggeredAbilities.triggerIfHolds`
+       on `.atLeast (.count (.intersection [.equipped, .legendaryCreaturesYouControl])) (.fixed 1)`
+       so non-legendary / opponent-equipped Andúril triggers rely on
+       `Tokens.createKindTokens` / `createOneToken` for actual post-replacement
+       / CR 800.4b token logs (matching how `logCreatedTokensSummary` handles
+       the `holds == true` entering-attacking path, CR 614.6 / 800.4b).
    - Unbatch individual triggered draws and enforce CR 101.4 / 121.2c APNAP draw
      order (`TriggeredAbilities.lean`, `TriggerArgs.lean`, `Decisions.lean`, CR
-     101.4 / 121.2 / 121.2c / 603.2c / 616.1): drop `g.withBatch` around
-     `g.draw` in `TriggeredAbilities.applyTriggerDraw` (threading one shared
-     `.oneShotEffect` cause via `allocDelayedCause` without merging individual
-     CR 121.2 draws into a single `BatchId`, matching `Damage.drawThenLoseLife`
-     in Phase 24), and order multi-player drawers via `g.apnapOrder` across
-     `TriggeredAbilities.applyTriggerDraw` / `TriggerArgs.collectPlayers` and
+     101.4 / 121.2 / 121.2c / 603.2c / 616.1): drop both `g.withBatch` wrappers
+     in `TriggeredAbilities.applyTriggerDraw` (both the `.eachOpponent, .fixed n`
+     arm wrapping `forEachOpponent` and the `who, amount` catch-all arm,
+     threading one shared `.oneShotEffect` cause via `allocDelayedCause` without
+     merging individual CR 121.2 draws into a single `BatchId`, matching
+     `Damage.drawThenLoseLife` in Phase 24), and order multi-player drawers via
+     `g.apnapOrder` across `TriggeredAbilities.applyTriggerDraw`'s
+     `.eachOpponent, .fixed n` arm, `TriggerArgs.collectPlayers`, and
      `Decisions.runPostStep` `.checkDrawThenOpponentsDraw`.
    - Complete CR 702.15b lifelink aggregation & pause-safe loops across the
      remaining multi-recipient noncombat damage sites (`FraResolve.lean`,
@@ -7719,11 +7748,16 @@ expiry / active-team `"during your turn"` / starting team / extra turns /
        keeps it from going on the stack or resolving if that combat damage
        causes the monarch or their team to lose the game, CR 113.8 / 725.2 /
        Rulings 937, 939); and
-     - check `!g.isOnActiveTeam p` instead of `g.activePlayer != p` in
-       `Leaving.playerLeavesGameCore`'s CR 725.4 monarch succession fallback so
-       a monarch leaving during their teammate's seat passes the monarchy to the
-       active teammate rather than skipping to the next turn's player (CR 725.4 /
-       805.4a).
+     - fall back to the first still-living non-`p` member of
+       `g.teamMembers g.activePlayer`
+       (`((g.teamMembers g.activePlayer).find? (fun q => q != p && g.stillInGame q)).getD (g.nextLiving p)`)
+       after `g.stillInGame g.activePlayer && g.activePlayer != p` in
+       `Leaving.playerLeavesGameCore`'s CR 725.4 monarch succession check (which
+       runs after `GameEvent.playerLeftGame` has already set `(g.player p).lost`)
+       so an opponent monarch leaving after `g.activePlayer` has already left
+       earlier in the same shared turn still passes the monarchy to a living
+       teammate on the active team before falling back to `g.nextLiving p` (CR
+       725.4 / 805.4a).
    - Complete 2HG shared-turn summoning sickness, active-team restrictions, and
      multiplayer combat / *Jace, Multiverse Architect* / *Garruk, Curse Breaker*
      scoping (`Core.lean`, `Casting.lean`, `Costs.lean`, `Turns.lean`,
@@ -7796,12 +7830,13 @@ resolution casts without `withoutManaCost` leakage, CR 733.1 proposal-checkpoint
 reversal & upfront cast-prohibition / sacrifice checks across `mayCast*`
 prompts, CR 106.6 agent/default mana restrictions, wildcard
 `consumeReplacementOrder` cleanup, `ZoneEvent.created` creator-vs-controller
-ETB/token triggers & counter-bearing token `.wouldPutCounter` watching,
-unbatched APNAP `applyTriggerDraw`, remaining noncombat lifelink aggregation &
-pause-safe damage loops, CR 725.2 inherent monarch end-step draw & combat-damage
-triggers + CR 725.4 2HG succession, 2HG shared-turn summoning sickness,
-active-team `opponentsCantCastOnActiveTurn` / `canCastForSneak`, *Jace,
-Multiverse Architect* `{2}` tax & controller-scoped `cantAttackJaces`,
+ETB/token triggers, counter-bearing token `.wouldPutCounter` watching &
+Andúril `triggerIfHolds` Spirit log cleanup, unbatched APNAP `applyTriggerDraw`,
+remaining noncombat lifelink aggregation & pause-safe damage loops, CR 725.2
+inherent monarch end-step draw & combat-damage triggers + CR 725.4 2HG
+active-team succession, 2HG shared-turn summoning sickness, active-team
+`opponentsCantCastOnActiveTurn` / `canCastForSneak`, *Jace, Multiverse
+Architect* `{2}` tax & controller-scoped `cantAttackJaces`,
 `.merfolkAttackPlayer` / `.creatureAttacksYouOrYourPlaneswalker` / *Garruk,
 Curse Breaker* combat scoping, and shield/stun/704.5q `.whileSourceHasCounter` +
 CR 800.4c expiry), `Abilities.lean`, `Auras.lean`, `Casting.lean`,
