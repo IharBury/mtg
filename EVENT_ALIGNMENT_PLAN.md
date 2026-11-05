@@ -7785,10 +7785,11 @@ expiry / active-team `"during your turn"` / starting team / extra turns /
    - Complete 2HG shared-turn summoning sickness, active-team restrictions, and
      multiplayer combat / *Jace, Multiverse Architect* / *Garruk, Curse Breaker*
      scoping (`Core.lean`, `Casting.lean`, `Costs.lean`, `Turns.lean`,
-     `FrcResolve.lean`, `FraAbilities.lean`, `Combat.lean`, `Choices.lean`,
-     `Event.lean`, `Decisions.lean`, `Agent.lean`, `Tests/Events.lean`, CR
-     101.2 / 109.2 / 118.12a / 205.3j / 302.6 / 508.1d / 508.4c / 603.7c /
-     608.2h / 800.4k,m / 805.4a,d / 805.10 / 810.2):
+     `Card/FrcEffect.lean`, `FrcResolve.lean`, `FraAbilities.lean`,
+     `Combat.lean`, `Choices.lean`, `Event.lean`, `Decisions.lean`,
+     `Agent.lean`, `Tests/Events.lean`, CR 101.2 / 109.2 / 118.12a / 205.3j /
+     302.6 / 508.1d / 508.4c / 603.7c / 608.2h / 800.4k,m / 805.4a,d / 805.10 /
+     810.2):
      - clear `summoningSick` across `g.teamMembers` only when a team's shared
        turn begins in `Core.applyTurnEvent`—gating *both* `.turnBegan player
        extra` (`!sameShared`, clearing across `g.teamMembers player`) and
@@ -7812,18 +7813,29 @@ expiry / active-team `"during your turn"` / starting team / extra turns /
        810.2), check `g.isOnActiveTeam p` in `Costs.canCastForSneak`
        (`Costs.lean`, CR 805.4a / 810.2), and deduplicate `departed` in
        `Turns.startNextTurnCore` (`Turns.lean`, CR 800.4k,m); and
-     - prompt the active opponent `g.activePlayer` (when
+     - parameterize `PlayerRule.cantAttackJaces (jaceController : PlayerId)` and
+       `ContinuousEffectSpec.cantAttackJacesThisTurn (player jaceController :
+       PlayerId)` (matching `.playerRule q (.cantAttackJaces jaceCtrl) d =>
+       q == attacker && g.durationActive d && g.controlledBy pw jaceCtrl &&
+       g.hasSubtype pw .jace` via `Game.cantAttackJace` across
+       `Combat.declareAttackers`, `Choices.everyAttackCosts` /
+       `hasCostFreeLegalAttackTarget`, `Agent.choose`, and
+       `Core.legalEnteringAttackTargets` / `resolveEnteringAttackTarget?`, plus
+       `.cantAttackJaces _` expiry in `Turns.lean`, CR 109.2 / 205.3j / 508.1d),
+       add `FrcEffect.jaceTaxApply` (`Card/FrcEffect.lean`, resolved by
+       `FrcResolve.applyFrc` via `applyUnified` to call
+       `g.createEffect (.cantAttackJacesThisTurn attacker controller)` for
+       `targets[0]? = some (.player attacker)`), and have *Jace, Multiverse
+       Architect*'s `.jaceTax` prompt `g.activePlayer` (when
        `!g.isOnActiveTeam controller && !(g.player g.activePlayer).lost`) via
-       `Pending.payOrLetCounter g.activePlayer 2 none` (`unlessPaysController :=
-       controller`, `unlessPaysTargets := #[.player g.activePlayer]`,
-       `unlessPaysSource := sourceId`, and `unlessPaysInstead` applying the
-       `PlayerRule.cantAttackJaces controller` restriction on `g.activePlayer`
-       on decline / CR 800.4f `flushUnlessPays` while paying `{2}` in
-       `Decisions.payGeneric` clears `unlessPays` without drawing, CR 118.12a)
-       and scope `PlayerRule.cantAttackJaces` to Jace planeswalkers controlled
-       by `controller` (`g.controlledBy pw jaceCtrl && g.hasSubtype pw .jace`,
-       CR 109.2 / 205.3j / 508.1d) on *Jace, Multiverse Architect*'s `.jaceTax`
-       (updating `Tests/Events.lean`), filter `merfolkDefenders` with
+       `Pending.payOrLetCounter g.activePlayer 2 none` with
+       `unlessPaysController := controller`, `unlessPaysTargets :=
+       #[.player g.activePlayer]`, `unlessPaysSource := sourceId`, and
+       `unlessPaysInstead := some { resolution := .frc .jaceTaxApply }` so both
+       `Decisions.decline` and CR 800.4f `Leaving` / `flushUnlessPays` resolve
+       that `Effect` while `Decisions.payGeneric` pays `{2}` and clears
+       `unlessPays` without drawing (CR 118.12a; updating `Tests/Events.lean`),
+       filter `merfolkDefenders` with
        `o.status.attackingPlaneswalker?.isNone` before `post.defendingPlayerOf o`
        in `Core.matchTriggers` and match `| .player _ => true | _ => false` on
        `(attacker, tgt)` in `GameEvent.matchesTrigger` for `.merfolkAttackPlayer`
