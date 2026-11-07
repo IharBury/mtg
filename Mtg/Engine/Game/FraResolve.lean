@@ -134,11 +134,11 @@ def causeDealsDamageToOpponentsLoop (g : Game) (remainingOpps : Array PlayerId)
     (cause : Option EventCause)
     (pendingDmg : Option (PlayerId × Nat) := none)
     (startEventIdx : Option Nat := none) : Game := Id.run do
-  let sIdx := startEventIdx.getD g.events.size
   if let .chooseReplacement .. := g.pending then
     return g.chainPendingReplacement
-      (.causeDealsDamageToOpponentsLoop remainingOpps n name causeSrc cause pendingDmg (some sIdx))
+      (.causeDealsDamageToOpponentsLoop remainingOpps n name causeSrc cause pendingDmg startEventIdx)
   let mut g := g
+  let sIdx := startEventIdx.getD g.events.size
   let c := cause.orElse (fun _ => g.currentBatch.bind (·.2))
   if let some (_, startIdx) := pendingDmg then
     let dealt := g.damageDealtSince startIdx
@@ -165,13 +165,14 @@ def causeDealsDamageToOpponentsLoop (g : Game) (remainingOpps : Array PlayerId)
 CR 702.15b lifelink life gain once after all recipients' damage has been dealt. -/
 def dealDamageFromPermanentsLoop (g : Game) (remainingIds : Array ObjectId)
     (n : Nat) (srcName : String) (source : Option EventObject)
-    (cause : Option EventCause) (startEventIdx : Nat)
+    (cause : Option EventCause) (startEventIdx : Option Nat := none)
     (note : PermanentDamageLoopNote := .none)
     (pendingTarget : Option (ObjectId × Nat × Nat) := none) : Game := Id.run do
   if let .chooseReplacement .. := g.pending then
     return g.chainPendingReplacement
       (.finishPostStep (.dealDamageFromPermanentsLoop remainingIds n srcName source cause startEventIdx note pendingTarget))
   let mut g := g
+  let sIdx := startEventIdx.getD g.events.size
   let c := cause.orElse (fun _ => g.currentBatch.bind (·.2))
   let finishNote (game : Game) (oid : ObjectId) (lethal pIdx : Nat) : Game :=
     match note with
@@ -211,10 +212,10 @@ def dealDamageFromPermanentsLoop (g : Game) (remainingIds : Array ObjectId)
             | .excess | .markedPermanent => some (oid, lethal, pIdx)
             | _ => none
           return g.chainPendingReplacement
-            (.finishPostStep (.dealDamageFromPermanentsLoop rem n srcName source c startEventIdx note pend))
+            (.finishPostStep (.dealDamageFromPermanentsLoop rem n srcName source c (some sIdx) note pend))
         g := finishNote g oid lethal pIdx
     | none => pure ()
-  g := g.applyAggregatedLifelinkSince startEventIdx (cause := c)
+  g := g.applyAggregatedLifelinkSince sIdx (cause := c)
   return g
 
 /-- Reveal and move each searched card in `remainingIds` to `controller`'s hand
@@ -513,10 +514,13 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     else
       let batchCause := g.resolvingBatchCause controller sourceId
       let srcSnap := src?.map g.snapshotDamageSource
-      let sIdx := g.events.size
-      g.withBatch batchCause fun g =>
-        g.dealDamageFromPermanentsLoop victimIds n srcName srcSnap batchCause sIdx
+      if let .chooseReplacement .. := g.pending then
+        g.dealDamageFromPermanentsLoop victimIds n srcName srcSnap batchCause
           (note := .oppCreatureOrPlaneswalker controller)
+      else
+        g.withBatch batchCause fun g =>
+          g.dealDamageFromPermanentsLoop victimIds n srcName srcSnap batchCause
+            (note := .oppCreatureOrPlaneswalker controller)
   | .loseAbilitiesAt index =>
     match g.legalPermanentAt? controller kind targets index sourceId with
     | none => g.logMsg "The target is no longer legal"
@@ -793,9 +797,11 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     else
       let opps := g.apnapOrder.filter (g.isLivingOpponentOf controller ·)
       let batchCause := g.resolvingBatchCause controller sourceId
-      let sIdx := g.events.size
-      g.withBatch batchCause fun g =>
-        g.causeDealsDamageToOpponentsLoop opps n name causeSnap batchCause none (some sIdx)
+      if let .chooseReplacement .. := g.pending then
+        g.causeDealsDamageToOpponentsLoop opps n name causeSnap batchCause
+      else
+        g.withBatch batchCause fun g =>
+          g.causeDealsDamageToOpponentsLoop opps n name causeSnap batchCause
   | .exileFromHandUntilLeaves =>
     g.withLegalKindPlayer controller kind targets (fun g pid =>
       let g := g.revealHand pid
@@ -885,22 +891,21 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
   | .eyeOfJaceCheck =>
     if (g.player controller).graveyard.size < 7 then g
     else
-      match sourceId.bind g.findObject? with
-      | some o =>
-        if !o.isOnBattlefield then g
-        else
-          let (g, cause?) : Game × Option EventCause :=
-            match g.currentResolvingContext? with
-            | some (src, ctrl) =>
-              let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some controller)) (src.orElse (fun _ => sourceId))
-              (g, some c)
-            | none => (g, none)
-          let g := g.sacrificeToGraveyard o s!"{(g.player controller).name} sacrifices {o.name}" (cause := cause?)
-          if let .chooseReplacement .. := g.pending then
-            g.chainPendingReplacement (.finishPostStep (.drainOpponents controller 2 (some o.id) cause?))
-          else
-            g.drainOpponents controller 2 (some o) (cause := cause?)
-      | none => g
+      let (g, cause?) : Game × Option EventCause :=
+        match g.currentResolvingContext? with
+        | some (src, ctrl) =>
+          let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some controller)) (src.orElse (fun _ => sourceId))
+          (g, some c)
+        | none => (g, none)
+      let g :=
+        match sourceId.bind (fun id => (g.findObject? id).filter (·.isOnBattlefield)) with
+        | some o =>
+          g.sacrificeToGraveyard o s!"{(g.player controller).name} sacrifices {g.name o}" (cause := cause?)
+        | none => g
+      if let .chooseReplacement .. := g.pending then
+        g.chainPendingReplacement (.finishPostStep (.drainOpponents controller 2 sourceId cause?))
+      else
+        g.drainOpponents controller 2 (sourceId.bind g.damageSourceById?) (cause := cause?)
   | .loyaltyOnEachPlaneswalkerYouControl => g.loyaltyOnEachPlaneswalkerOf controller
   | .causeGains k =>
     match g.fraCause? with

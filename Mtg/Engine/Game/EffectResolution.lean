@@ -1781,7 +1781,8 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
       | .each => g.dealDamageToEachCreatureMatching n (source := srcEvent?)
       | .opponentsControl =>
         g.dealDamageToEachCreatureMatching n
-          (fun o => (g.controllerOf o).any (g.isLivingOpponentOf controller ·)) (source := srcEvent?)
+          (fun o => (g.controllerOf o).any (g.isLivingOpponentOf controller ·))
+          (onlyOpponentsOf := some controller) (source := srcEvent?)
       | .nonSubtype subtype => g.dealDamageToEachNonDragon n subtype (source := srcEvent?)
     match amount, which with
     | .otherSpellsManaValue, .opponentsControl =>

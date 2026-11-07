@@ -6883,9 +6883,10 @@ def applyEtbReplacements (g : Game) (candidate : GameObject)
   let chosableCardTypes : Array CardType :=
     #[.creature, .artifact, .battle, .enchantment, .instant, .kindred, .land, .planeswalker, .sorcery]
   let mut cur := candidate
-  let mut bag : CounterBag :=
-    if fromStackTime > 0 then #[(.time, fromStackTime)] else #[]
+  let mut bag : CounterBag := #[]
   let mut rawCounters : CounterBag := #[]
+  if fromStackTime > 0 then
+    rawCounters := rawCounters.add .time fromStackTime
   let mut rawWeaverBonus : Nat := 0
   for (k, n) in extraCounters do
     if n > 0 then
@@ -9001,10 +9002,6 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
             if e.matchesTrigger p (some tObj.id) .sourceBecomesTapped then
               let (w, fs) := queueSrc post p tObj .sourceBecomesTapped (w := waiting) (fs := firedSources)
               waiting := w; firedSources := fs
-            for eq in post.attachmentsOf tObj do
-              if post.isEquipment eq && e.matchesTrigger p (some eq.id) .equippedBecomesTapped then
-                let (w, fs) := queueSrc post p eq .equippedBecomesTapped (w := waiting) (fs := firedSources)
-                waiting := w; firedSources := fs
             let wasAlreadyTapped :=
               pre.becameTappedThisTurn tObj.id ||
                 tappedInBatch.contains tObj.id
@@ -9022,6 +9019,14 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
                 waiting := w; firedSources := fs
             | _ => pure ()
           | none => pure ()
+          for eq in post.attachmentsOf tObj do
+            if post.isEquipment eq then
+              if let some eqCtrl := post.controllerOf eq then
+                if e.matchesTrigger eqCtrl (some eq.id) .equippedBecomesTapped then
+                  let (w, fs) :=
+                    queueSrc post eqCtrl eq .equippedBecomesTapped (cause := some tObj)
+                      (w := waiting) (fs := firedSources)
+                  waiting := w; firedSources := fs
         | .permanent (.untapped _)
         | .permanent (.phasedOut _ _)
         | .permanent (.phasedIn _ _)

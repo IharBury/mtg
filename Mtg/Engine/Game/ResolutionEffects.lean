@@ -1125,36 +1125,35 @@ been dealt. -/
 partial def divideSevenDamageLoop (g : Game) (controller : PlayerId) (kind : EffectTargetKind)
     (remaining : Array (Nat × Target)) (division : Array Nat)
     (sourceId : Option ObjectId) (startEventIdx : Option Nat := none) : Game :=
-  if startEventIdx.isNone && g.currentBatch.isNone && !remaining.isEmpty then
+  if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement
+      (.finishPostStep (.divideSevenDamageLoop controller kind remaining division sourceId startEventIdx))
+  else if startEventIdx.isNone && g.currentBatch.isNone && !remaining.isEmpty then
     let sIdx := g.events.size
     g.withBatch (g.resolvingBatchCause controller sourceId) fun g =>
       g.divideSevenDamageLoop controller kind remaining division sourceId (some sIdx)
   else
     let sIdx := startEventIdx.getD g.events.size
-    if let .chooseReplacement .. := g.pending then
-      g.chainPendingReplacement
-        (.finishPostStep (.divideSevenDamageLoop controller kind remaining division sourceId (some sIdx)))
-    else
-      let batchCause :=
-        (g.currentBatch.bind (·.2)).orElse (fun _ => g.resolvingBatchCause controller sourceId)
-      match remaining[0]? with
-      | none =>
-        g.applyAggregatedLifelinkSince sIdx (cause := batchCause)
-      | some (i, tgt) =>
-        let rest := remaining.extract 1 remaining.size
-        let legal := g.legalTargetsForKind controller kind sourceId
-        let g :=
-          if legal.contains tgt then
-            g.dealDamageToTarget tgt (Int.ofNat (division[i]?.getD 0))
-              (source := sourceId.bind g.findObject?) (cause := batchCause)
-              (suppressLifelink := true)
-          else
-            g.illegalAbilityTarget tgt
-        if let .chooseReplacement .. := g.pending then
-          g.chainPendingReplacement
-            (.finishPostStep (.divideSevenDamageLoop controller kind rest division sourceId (some sIdx)))
+    let batchCause :=
+      (g.currentBatch.bind (·.2)).orElse (fun _ => g.resolvingBatchCause controller sourceId)
+    match remaining[0]? with
+    | none =>
+      g.applyAggregatedLifelinkSince sIdx (cause := batchCause)
+    | some (i, tgt) =>
+      let rest := remaining.extract 1 remaining.size
+      let legal := g.legalTargetsForKind controller kind sourceId
+      let g :=
+        if legal.contains tgt then
+          g.dealDamageToTarget tgt (Int.ofNat (division[i]?.getD 0))
+            (source := sourceId.bind g.findObject?) (cause := batchCause)
+            (suppressLifelink := true)
         else
-          g.divideSevenDamageLoop controller kind rest division sourceId (some sIdx)
+          g.illegalAbilityTarget tgt
+      if let .chooseReplacement .. := g.pending then
+        g.chainPendingReplacement
+          (.finishPostStep (.divideSevenDamageLoop controller kind rest division sourceId (some sIdx)))
+      else
+        g.divideSevenDamageLoop controller kind rest division sourceId (some sIdx)
 
 /-- Return targeted graveyard instant cards to `controller`'s hand one at a time,
 pausing across `Pending.chooseReplacement` before checking subsequent targets. -/

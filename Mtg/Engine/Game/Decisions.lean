@@ -750,10 +750,11 @@ partial def resumePendingReplacement (g : Game) (pr : PendingReplacement)
     g.runChosenTriggeredModes controller ab remainingModes sourceId targets dividedDamage lastKnownPower lastKnownToughness sourceName
   | .continueConnives controller remainingIds =>
     g.runConniveObjects controller remainingIds
-  | .dealDamageToEachCreatureMatching remainingIds n onlyNonSubtype exceptControllerTokens source cause startEventIdx suppressLifelink =>
+  | .dealDamageToEachCreatureMatching remainingIds n onlyNonSubtype exceptControllerTokens onlyOpponentsOf source cause startEventIdx suppressLifelink =>
     g.dealDamageToEachCreatureMatchingIds remainingIds n
       (onlyNonSubtype := onlyNonSubtype)
       (exceptControllerTokens := exceptControllerTokens)
+      (onlyOpponentsOf := onlyOpponentsOf)
       (source := source) (cause := cause)
       (startEventIdx := startEventIdx) (suppressLifelink := suppressLifelink)
   | .destroyPermanentsLoop remainingIds allCandidates countNote obGainLifeFor logMsgAfter preBattlefield cause =>
@@ -922,7 +923,7 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
       | some entered => if entered.isOnBattlefield then g.afterPermanentEnters entered else g
       | none => g) g
   | .drainOpponents controller amount sourceId cause =>
-    g.drainOpponents controller amount (sourceId.bind g.findObject?) (cause := cause)
+    g.drainOpponents controller amount (sourceId.bind g.damageSourceById?) (cause := cause)
   | .addPlusOnesForLoggedDiscards p sourceId =>
     let cnt := g.loggedDiscards p
     match sourceId.bind (fun id => (g.findObject? id).filter (·.isOnBattlefield)) with
@@ -1632,11 +1633,18 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
     g.damageUpToOneAndPlayerLoop controller kind remaining n srcName sourceId cause startEventIdx
   | .applyAggregatedLifelink startEventIdx cause =>
     g.applyAggregatedLifelinkSince startEventIdx (cause := cause)
+  | .dealDamageLoseIndestructibleExileTo targetId n source =>
+    match (g.findObject? targetId).filter (·.isOnBattlefield) with
+    | some o => g.dealDamageLoseIndestructibleExileTo o n source
+    | none => g
+  | .dealDamageToEachNonSubtypeAndOpponents controller n subtype sourceId cause =>
+    g.dealDamageToEachNonSubtypeAndOpponents controller n subtype sourceId (cause := cause)
   | .dealDamageFromPermanentsLoop remainingIds n srcName source cause startEventIdx note pendingTarget =>
     g.dealDamageFromPermanentsLoop remainingIds n srcName source cause startEventIdx
       (note := note) (pendingTarget := pendingTarget)
-  | .triggerDividedDamageLoop remaining srcName source cause startEventIdx =>
+  | .triggerDividedDamageLoop remaining srcName source cause startEventIdx targetCheck =>
     g.triggerDividedDamageLoop remaining srcName source cause startEventIdx
+      (targetCheck := targetCheck)
   | .plusOneOnEachTargetLoop controller kind remaining n sourceId =>
     g.plusOneOnEachTargetLoop controller kind remaining n sourceId
   | .minusOnesPerOpponentLoop controller kind remaining x sourceId =>

@@ -1443,12 +1443,17 @@ inductive PostStep where
       (sourceId : Option ObjectId) (cause : Option EventCause)
       (startEventIdx : Option Nat := none)
   | applyAggregatedLifelink (startEventIdx : Nat) (cause : Option EventCause)
+  | dealDamageLoseIndestructibleExileTo (targetId : ObjectId) (n : Nat) (source : EventObject)
+  | dealDamageToEachNonSubtypeAndOpponents (controller : PlayerId) (n : Nat)
+      (subtype : CardSubtype) (sourceId : Option ObjectId) (cause : Option EventCause)
   | dealDamageFromPermanentsLoop (remainingIds : Array ObjectId) (n : Nat)
       (srcName : String) (source : Option EventObject) (cause : Option EventCause)
-      (startEventIdx : Nat) (note : PermanentDamageLoopNote := .none)
+      (startEventIdx : Option Nat := none) (note : PermanentDamageLoopNote := .none)
       (pendingTarget : Option (ObjectId × Nat × Nat) := none)
   | triggerDividedDamageLoop (remaining : Array (Target × Nat)) (srcName : String)
-      (source : Option EventObject) (cause : Option EventCause) (startEventIdx : Nat)
+      (source : Option EventObject) (cause : Option EventCause)
+      (startEventIdx : Option Nat := none)
+      (targetCheck : Option (PlayerId × EffectTargetKind × Option ObjectId) := none)
   | plusOneOnEachTargetLoop (controller : PlayerId) (kind : EffectTargetKind)
       (remaining : Array (Nat × Target)) (n : Nat) (sourceId : Option ObjectId)
   | minusOnesPerOpponentLoop (controller : PlayerId) (kind : EffectTargetKind)
@@ -1777,6 +1782,7 @@ inductive PendingReplacement where
   | dealDamageToEachCreatureMatching (remainingIds : Array ObjectId) (n : Nat)
       (onlyNonSubtype : Option CardSubtype := none)
       (exceptControllerTokens : Option PlayerId := none)
+      (onlyOpponentsOf : Option PlayerId := none)
       (source : Option EventObject := none) (cause : Option EventCause := none)
       (startEventIdx : Option Nat := none) (suppressLifelink : Bool := false)
   | destroyPermanentsLoop (remainingIds : Array ObjectId)
@@ -2974,7 +2980,8 @@ def entersOwnGraveyardFromStack (e : GameEvent) : Bool :=
 /-- A permanent entered the battlefield. -/
 def enteredBattlefield (e : GameEvent) : Bool :=
   match e.change with
-  | .rules (.zone (.moved _ _ _ .battlefield _ _ _ _)) => true
+  | .rules (.zone (.moved _ _ fromZone .battlefield _ _ _ _)) => fromZone != .battlefield
+  | .rules (.zone (.created obj _)) => obj.zone == .battlefield
   | _ => false
 
 /-- The kind of event a replacement effect watches (CR 614.1). -/

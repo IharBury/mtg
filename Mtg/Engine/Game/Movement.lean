@@ -358,7 +358,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
           fromStackTime?.getD (if targetZone == .battlefield && old.zone == .stack then old.status.time else 0)
         let prepared :=
           targetZone == .battlefield && !faceDown && printed.entersPrepared
-        let impendingNotCreature :=
+        let preImpendingNotCreature :=
           (old.zone == .stack || fromStackTime?.isSome) && targetZone == .battlefield &&
             printed.impending.isSome && fromStackTime > 0
         let baseStatus : Status :=
@@ -393,7 +393,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
         if targetZone == .battlefield then
           let gForArrival : Game := Id.run do
             let mut g' := g
-            if impendingNotCreature then
+            if preImpendingNotCreature then
               g' := { g' with activeEffects := g'.activeEffects.push (⟨g'.nextEffectId⟩, .notACreature newId), nextEffectId := g'.nextEffectId + 1 }
             if returnedAsArtifact then
               g' := { g' with activeEffects := g'.activeEffects.push (⟨g'.nextEffectId⟩, .returnedAsArtifact newId), nextEffectId := g'.nextEffectId + 1 }
@@ -421,9 +421,11 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
               (cause := curCause)
               (nonCastBattlefield := old.zone != .stack || attachedTo.isNone)
               (preBattlefield := preBattlefield)
-          (etb.candidate, etb.entersWith, etb.weaverBonus, impendingNotCreature, faceDown, etb.applied, etb.cause, etb.choice?, etb.tempCopyUntilEot, etb.stayInOriginNoAuraHost)
+          let postImpendingNotCreature :=
+            preImpendingNotCreature && (etb.choice?.isSome || etb.entersWith.count .time > 0)
+          (etb.candidate, etb.entersWith, etb.weaverBonus, postImpendingNotCreature, faceDown, etb.applied, etb.cause, etb.choice?, etb.tempCopyUntilEot, etb.stayInOriginNoAuraHost)
         else
-          (candidate, #[], 0, impendingNotCreature, faceDown, applied, curCause, none, none, false)
+          (candidate, #[], 0, preImpendingNotCreature, faceDown, applied, curCause, none, none, false)
       -- Run the CR 616.1 replacement loop for leaving/destination replacements (CR 614.6).
       let origDest := dest
       let moveRep :=
