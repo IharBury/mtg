@@ -8432,14 +8432,15 @@ starting-team first seat, battle-excluded attack triggers &
        (`Leaving.lean:1085`, `Decisions.lean:239, 325, 359`) runs after
        `runEndControlExileLoop`, `returnLinkedExileMoves`, and `checkSBA` have
        all completed; and
-     - in `Core.reverseToProposalCheckpointCore?` (`Core.lean:10560–10620`),
-       track `depReplacementPending : Bool` (set to `true` when `.engine _
-       (.pending (.chooseReplacement ..))` or `.engine _ (.pending
-       (.chooseLegend ..))` is seen while `inDepSpan` is `true`, and cleared to
-       `false` on any other `.engine _ (.pending _)`), and gate both
-       `isProposalResumeEvent`'s `.rules _ _ (.costPayment ..) _` arm and the
-       `Core.lean:10614` `.popOuterPendingReplacement` exit on
-       `!depReplacementPending`.
+     - in `Core.reverseToProposalCheckpointCore?` (`Core.lean:10568–10620`),
+       track `let mut depReplacementPending : Bool := false` inside the `Id.run`
+       loop (set to `true` when `.engine _ (.pending (.chooseReplacement ..))`
+       or `.engine _ (.pending (.chooseLegend ..))` is seen while `inDepSpan` is
+       `true`, and cleared to `false` on any other `.engine _ (.pending _)`),
+       gate the `isProposalResumeEvent ev` exit at `Core.lean:10598–10600` on
+       `!(depReplacementPending && match ev with | .rules _ _ (.costPayment ..)
+       _ => true | _ => false)`, and gate the `Core.lean:10614`
+       `.popOuterPendingReplacement` exit on `!depReplacementPending`.
    - Complete `cleanupRemappedLeavingId` and `applyKeptEvent` in
      `Core.reverseToProposalCheckpointCore?` (`Core.lean:10809–10935`, CR
      611.2a / 707.12 / 733.1 / 800.4a):
@@ -8618,11 +8619,14 @@ starting-team first seat, battle-excluded attack triggers &
      - in the final `else` branch of `CastSpell.enterProposalWindow`
        (`CastSpell.lean:46–48`, after the mode, additional-cost, kicker, gift,
        teamwork, and target checks), when `prop.kind == .activatedAbility &&
-       !prop.cost.includesManaPayment`, call `g.beginActivationPayment prop` and
-       match `.ok g' => g' | .error _ => g.reverseProposedSpell
-       (resumeContinuation := true)` (matching `Decisions.afterTargetsChosen` at
-       `Decisions.lean:2447–2450`) instead of opening `.pending
-       (.activateManaAbilities p)` (CR 602.2b).
+       !prop.cost.includesManaPayment`, first set `let g := g.change
+       (.proposedSpell (some prop))` (matching `Activation.lean:257–258`) and
+       then call `g.beginActivationPayment prop`, matching `.ok g' => g' |
+       .error _ => g.reverseProposedSpell (resumeContinuation := true)`
+       (matching `Decisions.afterTargetsChosen` at `Decisions.lean:2447–2450`),
+       while keeping `g.changes #[.pending (.activateManaAbilities p),
+       .proposedSpell (some prop)]` for spells and for activated abilities whose
+       cost includes a mana payment (CR 602.2b).
 3. Stamp `affectedPlayer` across the 5 remaining replacement gatherers, make
    `FrcResolve.makeFrc` & `Choices.exileTopPlayIfYouControlSubtype`
    replacement-pause safe, preserve LKI damage-source / power / counter /
