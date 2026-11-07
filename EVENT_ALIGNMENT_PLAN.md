@@ -8064,16 +8064,18 @@ CR 800.4c expiry), `Abilities.lean`, `Auras.lean`, `Casting.lean`,
      `FraChoices`, `FraAbilities`, and `Library` (`Leaving.lean`,
      `Decisions.lean`, `FraChoices.lean`, `FraAbilities.lean`, `Library.lean`,
      CR 608.2b / 701.22 / 701.25 / 800.4a,c,f):
-     - carry the existing `popOuter : Bool` flag across
-       `Leaving.playerLeavesGameCore` (returning `(savedPreLeavePending?,
-       popOuter)` even when `savedPreLeavePending?.isNone` instead of dropping
-       `popOuter` via `savedPreLeavePending?.map (·, popOuter)`),
-       `Leaving.restoreSavedPostLeave`, `Leaving.leavePlayersWhoLost`,
-       `Decisions.concedePlayersLoop`, and `PendingReplacement.restorePending`
-       (skipping `openPrompt` when `p == .none`) without adding a new
-       `PendingReplacement` constructor, popping via
-       `EngineChange.popOuterPendingReplacement` once `!g.sbaPaused &&
-       g.pendingReplacement.isNone` so an outer continuation stashed before
+     - keep `popOuter` as its own `Bool` beside `Option Pending` by changing
+       `Leaving.playerLeavesGameCore` from `Game × Option (Pending × Bool)` to
+       `Game × Option Pending × Bool` (returning `popOuter` even when
+       `savedPreLeavePending?` is `none`, without wrapping `Pending.none` inside
+       `some`), and pop via `EngineChange.popOuterPendingReplacement` once
+       `!g.sbaPaused && g.pendingReplacement.isNone` in
+       `Leaving.restoreSavedPostLeave` when `saved?` is `none` and in the
+       `Decisions.concedePlayersLoop` / `Decisions.finishConcedePriority` tails
+       that previously passed `false` or returned `g` when `savedPending` is
+       `none` (while chaining `PendingReplacement.restorePending .none true`
+       across pauses and skipping both `openPrompt` and `g.change (.pending p)`
+       when `p == .none`) so an outer continuation stashed before
        `redirectPendingAfterLeave` is never stranded on
        `outerPendingReplacements`;
      - replace `g.object!` with `g.findObject?` in `Decisions.surveilMoveLoop`
@@ -8082,20 +8084,20 @@ CR 800.4c expiry), `Abilities.lean`, `Auras.lean`, `Casting.lean`,
        `.finishPostStep (.conniveTricksterTarget caster connive sourceId)` when
        `.tricksterLibrary` target `q == p` leaves the game so the spell's
        remaining `connive` tail still resolves (CR 608.2b / 800.4a); and
-     - in `Leaving.redirectPendingAfterLeave`'s `.scry q .. | .surveil q ..`
-       arm (when `q == p`), call `Core.declineMayThenCore` when
-       `g.mayThenDrop > 0` (else clear `.pending .none`), clear
+     - split `.scry q .. | .surveil q ..` out of the shared clear-`pending`
+       alternative in `Leaving.redirectPendingAfterLeave` into its own
+       alternative so when `q == p` it calls `Core.declineMayThenCore` when
+       `g.mayThenDrop > 0` (else clears `.pending .none`), clears
        `surveilReturnMvAtMost` and `surveilReturnNoncreatureNonland` on every
-       `q == p` departure (not only inside `mayThenDrop > 0`), and run
-       `Decisions.finishLibraryLookCore` (with outer continuation stashed),
-       where `finishLibraryLookCore` drops `fraAfterLook` `(c, src, next)` only
-       when `!g.stillInGame c` and drops `pendingDrawAfterScry` `(drawP, n)`
-       only when `!g.stillInGame drawP` while still running any follow-up whose
-       player remains in the game (CR 701.22 / 701.25 / 800.4a,f); guard
-       `g.stillInGame opp && nonlandDiscardedBy opp < 2` in
-       `FraAbilities.finishDiscardTwoDraws`'s `oppIds.filter` so a departed
-       opponent does not increment `shortCount`; and guard
-       `if !g.stillInGame p then g` in `Library.draw` /
+       `q == p` departure, and runs `Decisions.finishLibraryLookCore` (with
+       outer continuation stashed), where `finishLibraryLookCore` drops
+       `fraAfterLook` `(c, src, next)` only when `!g.stillInGame c` and drops
+       `pendingDrawAfterScry` `(drawP, n)` only when `!g.stillInGame drawP`
+       while still running any follow-up whose player remains in the game (CR
+       701.22 / 701.25 / 800.4a,f); guard `g.stillInGame opp &&
+       nonlandDiscardedBy opp < 2` in `FraAbilities.finishDiscardTwoDraws`'s
+       `oppIds.filter` so a departed opponent does not increment `shortCount`;
+       and guard `if !g.stillInGame p then g` in `Library.draw` /
        `drawOneWithReplacements` / `drawOneCard` (CR 800.4a).
 2. Fix modal `allowsZeroTargets` & Layer-3 `announceMode`, CR 118.9a,d / 118.14
    Sneak / `anyMana` / `canPayAnnouncedAdditional` / *The Ur-Sphinx* Ruling 942
@@ -8175,9 +8177,12 @@ CR 800.4c expiry), `Abilities.lean`, `Auras.lean`, `Casting.lean`,
      `fromStackTime > 0` `.time` seed out of `bag` (`bag := #[]`) and into
      `rawCounters` inside `Core.applyEtbReplacements` so CR 616.1g
      `replaceCountersPutChoice` is the sole write into `bag` (without
-     double-counting), and in `Movement.move` compute `impendingNotCreature`
-     after `applyEtbReplacements` from `etb.entersWith.count .time > 0` on the
-     replacement result rather than pre-replacement `fromStackTime > 0` so
+     double-counting), and in `Movement.move`'s `buildArrival` keep the
+     pre-replacement `printed.impending.isSome && fromStackTime > 0` check for
+     the temporary `gForArrival` `.notACreature` push while keying the
+     post-replacement effect that sticks (`gWithFresh` and
+     `createEffect (.notACreature newId)`) off `etb.entersWith.count .time > 0`
+     once `choice?` is `none` and the CR 616.1g loop has finished so
      counter-modifying and counter-preventing ETB replacements (*Vorinclex*,
      *Solemnity*, *Doubling Season*, *Doc Samson*) apply to Impending time
      counters and `0` placed time counters leaves the permanent a creature
@@ -8254,27 +8259,35 @@ CR 800.4c expiry), `Abilities.lean`, `Auras.lean`, `Casting.lean`,
      - order `Core.apnapPlayers` so all living members of the active team (in
        seat order starting from the active team's first seat) precede nonactive
        teams in turn order (CR 805.6–7);
-     - accept `you active || isTeammate active` on `"your"` `stepBegan` arms in
-       `GameEvent.matchesTrigger`, and in `Core.matchTriggers`'s `stepBegan` arm
-       replace the single-`ap` enqueues: per CR 805.4 / 805.4a, on
-       `post.isSharedTurnFirstSeat` iterate every living member `m` of
-       `post.teamMembers ap` (passing `isTeammate := post.areTeammates m` into
-       `e.matchesTrigger`) to queue `.yourUpkeep`,
-       `.enchantedControllerUpkeep` (matching hosts controlled by any living
-       member of `post.teamMembers ap`), and `.yourFirstMain`, on
-       `post.isSharedTurnFirstSeat || isExtraCombat` (where `isExtraCombat`
-       holds when `beginStepCont` starts `.beginningOfCombat` after
-       `TurnEvent.extraPhaseAdded` / a prior `.phaseEnded .combat` on the
-       current seat, so neither first-seat nor later-seat extra combats are
-       suppressed) iterate every living member `m` of `post.teamMembers ap`
-       (including each `(post.player m).graveyard` and passing
-       `isTeammate := post.areTeammates m`) to queue `.yourBeginCombat` and
-       `.fra .yourBeginCombatFromGraveyard`, and on `post.isSharedTurnFinalSeat`
-       iterate every living member `m` of `post.teamMembers ap` (passing
-       `isTeammate := post.areTeammates m`) to queue `.yourEndStep` alongside
-       delayed `.endStep*`; and per CR 805.4d, gate `.eachUpkeep`,
-       `.fra .eachUpkeepFromGraveyard`, delayed `.eaglesBirds`, and
-       `.eachOpponentDrawStep` on `post.isSharedTurnFirstSeat`,
+     - accept `you active || isTeammate active` on `.yourUpkeep`,
+       `.yourBeginCombat`, `.fra .yourBeginCombatFromGraveyard`,
+       `.yourFirstMain`, and `.yourEndStep` in `GameEvent.matchesTrigger`
+       (leaving `.enchantedControllerUpkeep` untouched so an opponent's Aura on
+       a teammate's creature is not filtered out), and in
+       `Core.matchTriggers`'s `stepBegan` arm replace the single-`ap` enqueues:
+       per CR 805.4 / 805.4a, on `post.isSharedTurnFirstSeat` iterate every
+       living member `m` of `post.teamMembers ap` calling
+       `e.matchesTrigger m none .yourUpkeep (isTeammate := post.areTeammates m)`
+       with `queueCtrl post m .yourUpkeep` and direct
+       `queueCtrl post m .yourFirstMain` while queueing
+       `.enchantedControllerUpkeep` for the Aura's controller `c` whenever
+       `host` is controlled by any living member of `post.teamMembers ap`, on
+       `post.isSharedTurnFirstSeat || isExtraCombat` (where `isExtraCombat` is
+       whether a `TurnEvent.phaseEnded .combat` has been recorded since the
+       current seat's `TurnEvent.turnBegan`—the
+       `g.step == .endOfCombat && g.additionalCombatPhases > 0` transition in
+       `Turns.advanceStep` and `Decisions.advanceAfterStepEnded`) iterate every
+       living member `m` of `post.teamMembers ap` calling
+       `e.matchesTrigger m none .yourBeginCombat
+       (isTeammate := post.areTeammates m)` with `queueCtrl post m
+       .yourBeginCombat` and walking `(post.player m).graveyard` to
+       `queueSrc post m card (.fra .yourBeginCombatFromGraveyard)`, and on
+       `post.isSharedTurnFinalSeat` iterate every living member `m` of
+       `post.teamMembers ap` calling `e.matchesTrigger m none .yourEndStep
+       (isTeammate := post.areTeammates m)` with `queueCtrl post m
+       .yourEndStep` alongside delayed `.endStep*`; and per CR 805.4d, gate
+       `.eachUpkeep`, `.fra .eachUpkeepFromGraveyard`, delayed `.eaglesBirds`,
+       and `.eachOpponentDrawStep` on `post.isSharedTurnFirstSeat`,
        `.opponentBeginCombat` and `.eachBeginCombat` on
        `post.isSharedTurnFirstSeat || isExtraCombat`, and `.eachEndStep` on
        `post.isSharedTurnFinalSeat`;
