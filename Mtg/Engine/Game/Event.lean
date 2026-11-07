@@ -99,6 +99,8 @@ inductive ProposalChange where
   | teamworkCreatures (v : Array ObjectId)
   | additionalGeneric (n : Nat)
   | needsBehold (v : Option CardSubtype)
+  | payLife (n : Nat)
+  | alternativeCost (v : Bool)
 deriving Repr, Inhabited, BEq
 
 /-- Priority tiers for choosing among multiple applicable replacement or

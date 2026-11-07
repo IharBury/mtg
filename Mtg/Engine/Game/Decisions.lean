@@ -2133,7 +2133,10 @@ partial def beginResolutionCastTargets (g : Game) (p : PlayerId) (prop : Propose
     g.change (.pending (.chooseX p))
       |>.logMsg s!"{(g.player p).name} must choose a value for X (CR 107.3a / 601.2b)"
   else if isModalSpellFace face then
-    if !(effectiveSpellModes face).any (g.spellModeIsChoosable p · (some prop.spellId)) &&
+    let tcs := g.evalLayer3 spell
+    if !(effectiveSpellModes face).any (fun e =>
+        let m := if tcs.isEmpty then e else TextChange.applyEffect tcs e
+        g.spellModeIsChoosable p m (some prop.spellId)) &&
         !isReturnUpToTwoGyModal face && !face.allowsZeroTargets then
       g.reverseProposedSpell (resumeContinuation := true)
     else
@@ -2157,8 +2160,11 @@ partial def beginResolutionCastTargets (g : Game) (p : PlayerId) (prop : Propose
       (g.currentSpellEffect spell).any (·.allowsZeroTargets)
     let noLegal :=
       if g.isAura spell && (g.currentSpellEffect spell).isNone then
-        (g.legalCastTargets p face).isEmpty
-      else (g.legalProposedTargets p spell).isEmpty
+        (g.legalAuraTargets p face (some spell.id)).isEmpty
+      else
+        (g.legalProposedTargets p spell).isEmpty ||
+          (g.currentSpellEffect spell).any (fun eff =>
+            eff.requiresTarget && !g.effectHasEnoughTargets p eff (some spell.id))
     if noLegal && !zeroOk then
       g.reverseProposedSpell (resumeContinuation := true)
         (extraLog := some s!"{face.name} has no legal target and can't be cast")
@@ -2219,6 +2225,12 @@ partial def castAsPartOfResolution (g : Game) (p : PlayerId) (id : ObjectId)
   | none => (clearCkpt g).logMsg "There is no card to cast"
   | some o =>
     let face := g.baseCard o
+    let rawPerm := if withoutManaCost then none else g.playPermission o
+    let canMorph :=
+      !withoutManaCost && face.morph.isSome && face.kicker.isNone &&
+        o.zone != .graveyard o.owner &&
+        !(rawPerm.any (fun pm => pm.withoutManaCost || pm.payLifeEqualManaValue)) &&
+        !g.spellNameForbidden ""
     if g.cantCastSpellsThisTurn p then
       (clearCkpt g).logMsg "You can't cast spells this turn (CR 101.2)"
     else if g.splitSecondOnStack then
@@ -2227,10 +2239,15 @@ partial def castAsPartOfResolution (g : Game) (p : PlayerId) (id : ObjectId)
       (clearCkpt g).logMsg "During combat, players can't cast spells (Yuriko, Blade of the Mighty)"
     else if g.opponentsCantCastOnActiveTurn p then
       (clearCkpt g).logMsg "Opponents can't cast spells during that player's turn"
-    else if g.spellNameForbidden face.name then
+    else if !canMorph && g.spellNameForbidden face.name then
       (clearCkpt g).logMsg s!"Spells named {face.name} can't be cast"
-    else if !ignoreTiming && !g.timingAllowsCast p face then
+    else if !canMorph && !g.graveyardCastThresholdMet p o.id face then
+      (clearCkpt g).logMsg s!"{face.name} cannot be cast right now"
+    else if !ignoreTiming && !g.timingAllowsCast p (if canMorph then morphSpellFace else face) then
       (clearCkpt g).logMsg s!"{o.name} cannot be cast now (timing)"
+    else if !withoutManaCost && rawPerm.any (·.payLifeEqualManaValue) &&
+        !g.canPayLife p (g.objectManaValue o) then
+      (clearCkpt g).logMsg s!"{(g.player p).name} can't pay {g.objectManaValue o} life to cast {o.name} (CR 119.4)"
     else
       let name := o.name
       let original := o
@@ -2239,7 +2256,10 @@ partial def castAsPartOfResolution (g : Game) (p : PlayerId) (id : ObjectId)
       let isFreeFromGy := !withoutManaCost && fromGy && g.freeCastFromGraveyard original
       let origPerm : Option PlayPermission :=
         if withoutManaCost then some { player := p, withoutManaCost := true }
-        else g.playPermission original
+        else rawPerm
+      let altCostUsed :=
+        withoutManaCost || isFreeFromGy ||
+          origPerm.any (fun pm => pm.withoutManaCost || pm.payLifeEqualManaValue)
       let wasCopy := original.isCopy
       let g :=
         if callerCheckpoint && g.proposalCheckpoint.isSome then g
@@ -2254,7 +2274,9 @@ partial def castAsPartOfResolution (g : Game) (p : PlayerId) (id : ObjectId)
       let stackFace := g.baseCard spellObj
       let g := g.putStackEntry p newId
       let way : CastWay :=
-        if withoutManaCost then .alternative "withoutManaCost" else .normal
+        if withoutManaCost then .alternative "withoutManaCost"
+        else if isFreeFromGy || origPerm.isSome then .alternative "permission"
+        else .normal
       let g := g.record (GameEvent.proposed g.turnNumber newId p original.zone way)
       let g := g.logMsg s!"{(g.player p).name} casts {name} as the ability resolves"
       let preSpell := { spellObj with
@@ -2266,6 +2288,11 @@ partial def castAsPartOfResolution (g : Game) (p : PlayerId) (id : ObjectId)
       -- graveyard card (Bilbo's `mayCastFromGraveyard`) pays its normal mana cost.
       let cost := g.playManaCost preSpell stackFace (origPerm := origPerm)
         (isFreeFromGy := some isFreeFromGy) (flashback := some false)
+        (explicitAltCost := altCostUsed)
+      let lifeInstead :=
+        if !withoutManaCost && origPerm.any (·.payLifeEqualManaValue) then
+          g.objectManaValue spellObj
+        else 0
       let needsSacrifice :=
         stackFace.additionalCostSacrificeCreature ||
           (stackFace.additionalCostSacrificeArtifactOrCreature && stackFace.additionalCostOrPayGeneric.isNone)
@@ -2278,7 +2305,8 @@ partial def castAsPartOfResolution (g : Game) (p : PlayerId) (id : ObjectId)
         origPerm
         isFreeFromGy
         needsSacrificeOther := needsSacrifice
-        alternativeCost := withoutManaCost
+        payLife := lifeInstead
+        alternativeCost := altCostUsed
         resolutionCast := true
       }
 
@@ -2421,8 +2449,11 @@ partial def afterAdditionalCostAnnounced (g : Game) : Game :=
         (g.currentSpellEffect spell).any (·.allowsZeroTargets)
       let noLegal :=
         if g.isAura spell && (g.currentSpellEffect spell).isNone then
-          (g.legalCastTargets p face).isEmpty
-        else (g.legalProposedTargets p spell).isEmpty
+          (g.legalAuraTargets p face (some spell.id)).isEmpty
+        else
+          (g.legalProposedTargets p spell).isEmpty ||
+            (g.currentSpellEffect spell).any (fun eff =>
+              eff.requiresTarget && !g.effectHasEnoughTargets p eff (some spell.id))
       if prop.kind == .spell && noLegal && !zeroOk then
         g.reverseProposedSpell (resumeContinuation := true)
           (extraLog := some s!"{face.name} has no legal target and can't be cast")
@@ -3334,17 +3365,32 @@ def castExiledAsAbilityResolves (g : Game) (p : PlayerId) (id : ObjectId) :
     if !canMorph then
       if g.spellNameForbidden face.name then
         throw s!"Spells named {face.name} can't be cast"
-      if isModalSpellFace face && !(effectiveSpellModes face).any (g.spellModeIsChoosable p) &&
+      if !g.graveyardCastThresholdMet p card.id face then
+        let n := face.castOnlyIfGraveyardAtLeast.getD 0
+        throw s!"{face.name} can be cast only with {n} or more other cards in your graveyard"
+      let tcs := g.evalLayer3 card
+      if isModalSpellFace face &&
+          !(effectiveSpellModes face).any (fun e =>
+            let m := if tcs.isEmpty then e else TextChange.applyEffect tcs e
+            g.spellModeIsChoosable p m (some card.id)) &&
           !isReturnUpToTwoGyModal face && !face.allowsZeroTargets then
         throw s!"{face.name} has no mode with a legal target"
       if !isModalSpellFace face && (face.requiresTarget || face.isAura) &&
-          !g.castFaceHasLegalTarget p face && !face.allowsZeroTargets then
+          !g.castFaceHasLegalTarget p face tcs (some card.id) && !face.allowsZeroTargets then
         throw s!"{face.name} requires a target"
+      if let some err := g.mandatorySacrificeError? p card.id face then
+        throw err
+      if origPerm.any (·.payLifeEqualManaValue) &&
+          !g.canPayLife p (g.objectManaValue card) then
+        throw s!"{(g.player p).name} can't pay {g.objectManaValue card} life to cast {face.name} (CR 119.4)"
+    let g := g.change .saveProposalCheckpoint
     let g :=
       match g.pendingReplacement with
-      | some outer => g.changes #[.pushOuterPendingReplacement outer, .pendingReplacement none]
+      | some outer =>
+        let g := if g.continuations.isEmpty then g.change (.pushContinuationFrame {}) else g
+        g.changes #[.pushOuterPendingReplacement outer, .pendingReplacement none]
       | none => g
-    let g := (g.change .saveProposalCheckpoint).change (.pending .none)
+    let g := g.change (.pending .none)
     let (g, newId) := g.move id .stack (some p) (verb := some .cast) (actor := some p)
       (cause := some (.gameRule .spellCast))
     let spellObj := g.object! newId
@@ -3358,8 +3404,11 @@ def castExiledAsAbilityResolves (g : Game) (p : PlayerId) (id : ObjectId) :
       zone := card.zone
       exiledBy := card.exiledBy
       controller := some p }
+    let altCostUsed := origPerm.any (fun pm => pm.withoutManaCost || pm.payLifeEqualManaValue)
     let cost := g.playManaCost preSpell stackFace (origPerm := origPerm) (isFreeFromGy := some false)
-      (flashback := some false)
+      (flashback := some false) (explicitAltCost := altCostUsed)
+    let lifeInstead :=
+      if origPerm.any (·.payLifeEqualManaValue) then g.objectManaValue spellObj else 0
     let needsSacrifice :=
       stackFace.additionalCostSacrificeCreature ||
         (stackFace.additionalCostSacrificeArtifactOrCreature && stackFace.additionalCostOrPayGeneric.isNone)
@@ -3371,6 +3420,8 @@ def castExiledAsAbilityResolves (g : Game) (p : PlayerId) (id : ObjectId) :
       originalSnapshot := origSnap
       origPerm
       needsSacrificeOther := needsSacrifice
+      payLife := lifeInstead
+      alternativeCost := altCostUsed
       resolutionCast := true
     }
     let g' := g.beginResolutionCastTargets p prop

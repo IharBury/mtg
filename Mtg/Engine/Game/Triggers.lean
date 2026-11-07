@@ -79,7 +79,7 @@ def hawkeyeModeEffects : Array Effect :=
 /-- Whether `p` may choose this mode of a triggered ability (CR 603.3c / 700.2b). -/
 def triggerModeChoosable (g : Game) (p : PlayerId) (obj : GameObject) (e : Effect) : Bool :=
   !e.requiresTarget || e.allowsZeroTargets ||
-    !(g.legalTargetsForKind p e.targetKind obj.sourceId).isEmpty
+    g.effectHasEnoughTargets p e obj.sourceId
 
 /-- Ask for the modes of a modal triggered ability just put on the stack. -/
 def beginTriggerModeChoice (g : Game) (p : PlayerId) (obj : GameObject) (count : Nat) : Game :=

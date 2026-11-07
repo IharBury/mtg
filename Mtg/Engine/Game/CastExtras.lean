@@ -172,8 +172,10 @@ def applyKickerToProposed (g : Game) (kick : Bool) : Except String Game := do
       g.playManaCost preSpell morphSpellFace extraGen
         (origPerm := prop.origPerm) (isFreeFromGy := some false)
         (flashback := some (GameEvent.castWithFlashback g.events prop.spellId))
+        (explicitAltCost := true)
     return g.changeProposals
-      #[.kicked true, .kickerAnnounced true, .cost cost, .needsSacrificeOther false, .needsDiscardCard false]
+      #[.kicked true, .kickerAnnounced true, .cost cost, .alternativeCost true,
+        .needsSacrificeOther false, .needsDiscardCard false]
   | _, some (n, alt), none =>
     let g := g.record (GameEvent.announced g.turnNumber spell.id (costs := #[.impending n]))
     let impFace : CardDef := { face with manaCost := alt }
@@ -181,7 +183,9 @@ def applyKickerToProposed (g : Game) (kick : Bool) : Except String Game := do
       g.playManaCost preSpell impFace extraGen
         (origPerm := prop.origPerm) (isFreeFromGy := some false)
         (flashback := some (GameEvent.castWithFlashback g.events prop.spellId))
-    return g.changeProposals #[.kicked true, .kickerAnnounced true, .cost cost]
+        (explicitAltCost := true)
+    return g.changeProposals
+      #[.kicked true, .kickerAnnounced true, .cost cost, .alternativeCost true]
   | _, _, none => throw "That spell has no kicker"
   | _, _, some kicker =>
     let g := g.record (GameEvent.announced g.turnNumber spell.id (costs := #[.kicker]))
@@ -196,6 +200,7 @@ def applyKickerToProposed (g : Game) (kick : Bool) : Except String Game := do
       g.playManaCost preSpell face (kicker.addCost extraGen)
         (origPerm := effPerm) (isFreeFromGy := some prop.isFreeFromGy)
         (flashback := some (GameEvent.castWithFlashback g.events prop.spellId))
+        (explicitAltCost := prop.alternativeCost)
     return g.changeProposals #[.kicked true, .kickerAnnounced true, .cost cost]
 
 /-- Promise a gift to `to`. Cannot promise more than once. -/

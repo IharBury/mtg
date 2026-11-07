@@ -329,6 +329,8 @@ def applyChange (p : ProposedSpell) (c : ProposalChange) : ProposedSpell :=
   | .teamworkCreatures v => { p with teamworkCreatures := v }
   | .additionalGeneric v => { p with additionalGeneric := v }
   | .needsBehold v => { p with needsBehold := v }
+  | .payLife v => { p with payLife := v }
+  | .alternativeCost v => { p with alternativeCost := v }
 
 end ProposedSpell
 

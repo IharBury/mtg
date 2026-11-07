@@ -18544,6 +18544,289 @@ def mkThreePlayer25i1 (seed : UInt64 := 251) : Game :=
 
 end Phase25Item1EventAlignment
 
+section Phase25Item2EventAlignment
+
+def mustHold25i2 (label : String) (ok : Bool) : Bool :=
+  if ok then true else panic! s!"Phase 25 item 2 guard failed: {label}"
+
+def replayOk25i2 (gs : Array Game) : Bool :=
+  gs.all (fun g => Game.replayEvents g.events == g && allRulesEventsClassified g)
+
+-- 1. Multi-target / multi-slot target announcement & castability legality:
+--    `.upToTwoCreaturesTotalMvAtMost` announcement cap, `.twoNonlandsSharingType` lookahead,
+--    and `effectHasEnoughTargets` across cast / mode / trigger / resolution-cast entry points.
+#guard
+  let p0 : PlayerId := ⟨0⟩
+  let p1 : PlayerId := ⟨1⟩
+  let mvCapSpell : CardDef := {
+    name := "P25i2 Cap Grab"
+    types := #[.sorcery]
+    spellEffect := some {
+      targeting := .of (.upToTwoCreaturesTotalMvAtMost 3)
+      allowsZeroTargets := true
+      maxTargets := 2
+    }
+  }
+  let oneMvCub : CardDef := {
+    name := "P25i2 Cub"
+    manaCost := { symbols := #[.colored .green] }
+    types := #[.creature]
+    power := some 1
+    toughness := some 1
+  }
+  let g0 := emptyHand afterDraw p0
+  let (gMv, mvCapObj) :=
+    (addPermanent (addPermanent (addPermanent g0 grizzlyBears p0 p0) grizzlyBears p1 p1) oneMvCub p0 p0).allocObject
+      mvCapSpell p0 (.hand p0)
+  let bears := gMv.battlefield.filter (·.name == grizzlyBears.name)
+  let cubId := (gMv.battlefield.filter (·.name == "P25i2 Cub"))[0]!.id
+  let gMvProp := mustApply gMv p0 (.cast mvCapObj.id)
+  let mvOverRejected :=
+    (gMvProp.announceTargetChoices p0
+      #[(Target.permanent bears[0]!.id, none), (Target.permanent bears[1]!.id, none)]).toOption.isNone
+  let gMvOk :=
+    match gMvProp.announceTargetChoices p0
+        #[(Target.permanent bears[0]!.id, none), (Target.permanent cubId, none)] with
+    | .ok g' => g'
+    | .error e => panic! e
+
+  let shareSpell : CardDef := {
+    name := "P25i2 Share"
+    types := #[.sorcery]
+    spellEffect := some { targeting := .of .twoNonlandsSharingType }
+  }
+  let artA : CardDef := { name := "P25i2 Art A", types := #[.artifact] }
+  let artB : CardDef := { name := "P25i2 Art B", types := #[.artifact] }
+  let loneEnch : CardDef := { name := "P25i2 Ench", types := #[.enchantment] }
+  let (gSh, shareObj) :=
+    (addPermanent (addPermanent (addPermanent g0 artA p0 p0) artB p0 p0) loneEnch p0 p0).allocObject
+      shareSpell p0 (.hand p0)
+  let artAId := (gSh.battlefield.filter (·.name == "P25i2 Art A"))[0]!.id
+  let artBId := (gSh.battlefield.filter (·.name == "P25i2 Art B"))[0]!.id
+  let enchId := (gSh.battlefield.filter (·.name == "P25i2 Ench"))[0]!.id
+  let gShProp := mustApply gSh p0 (.cast shareObj.id)
+  let slot0 := gShProp.legalProposedTargets p0 (gShProp.object! gShProp.stack.back!.objectId)
+  let gShSlot1 := mustApply gShProp p0 (.target (.permanent artAId))
+  let slot1 := gShSlot1.legalProposedTargets p0 (gShSlot1.object! gShSlot1.stack.back!.objectId)
+  let lookaheadOk :=
+    slot0.contains (.permanent artAId) &&
+    slot0.contains (.permanent artBId) &&
+    !slot0.contains (.permanent enchId) &&
+    slot1 == #[.permanent artBId]
+
+  -- Trigger mode and resolution-cast `effectHasEnoughTargets`:
+  let twoArtEff : Effect := { targeting := .of .twoArtifactsYouControl, phrase := "Tap two target artifacts you control" }
+  let gOneArt := addPermanent g0 artA p0 p0
+  let oneArtObj := (gOneArt.battlefield.filter (·.name == "P25i2 Art A"))[0]!
+  let trigNotChoosable := !gOneArt.triggerModeChoosable p0 oneArtObj twoArtEff
+  let twoArtSpell : CardDef := { name := "P25i2 Dual Art", types := #[.sorcery], spellEffect := some twoArtEff }
+  let (gOneArtHand, twoArtCard) := gOneArt.allocObject twoArtSpell p0 (.hand p0)
+  let twoArtCardId := twoArtCard.id
+  let gResReversed := gOneArtHand.castAsPartOfResolution p0 twoArtCardId
+  let resCastReversedOk :=
+    !gOneArtHand.canCastFrontFace p0 (gOneArtHand.object! twoArtCardId) &&
+    gResReversed.proposedSpell.isNone &&
+    gResReversed.stack.isEmpty &&
+    (gResReversed.object! twoArtCardId).zone == .hand p0
+
+  mustHold25i2 "1.mvCap" (mvOverRejected && gMvOk.stack.back!.targets.size == 2) &&
+  mustHold25i2 "1.lookahead" lookaheadOk &&
+  mustHold25i2 "1.enoughTargets" (trigNotChoosable && resCastReversedOk) &&
+  mustHold25i2 "1.replay" (replayOk25i2 #[gMvProp, gMvOk, gShProp, gShSlot1, gResReversed])
+
+-- 2. CR 118.9a,c alternative-cost exclusivity, `actualCastManaValue`, and `payLifeEqualManaValue`
+--    resolution casts (including `{X}` updating `payLife` via `ProposalChange.payLife`) without
+--    leaking onto `withoutManaCost := true` casts.
+#guard
+  let p0 : PlayerId := ⟨0⟩
+  let xSpell : CardDef := {
+    name := "P25i2 X Drain"
+    manaCost := { symbols := #[.x, .colored .black] }
+    types := #[.sorcery]
+    spellEffect := some { resolution := .draw 1 }
+  }
+  let fixedThreeMv : CardDef := {
+    name := "P25i2 Three Drop"
+    manaCost := { symbols := #[.generic 2, .colored .blue] }
+    types := #[.sorcery]
+    spellEffect := some { resolution := .draw 1 }
+  }
+  let g0 := emptyHand afterDraw p0
+  let (gHand0, xCard) := g0.allocObject xSpell p0 (.hand p0)
+  let (gHand, threeCard) := gHand0.allocObject fixedThreeMv p0 (.hand p0)
+  let xId := xCard.id
+  let threeId := threeCard.id
+  let lifePerm : PlayPermission := { player := p0, payLifeEqualManaValue := true }
+  let gPerm :=
+    (gHand.createEffect (.playPermission xId lifePerm) (cause := some testCause)).createEffect
+      (.playPermission threeId lifePerm) (cause := some testCause)
+
+  -- 2a. `withoutManaCost := true` resolution cast ignores unrelated `payLifeEqualManaValue` permission:
+  let gFreeRes := gPerm.castAsPartOfResolution p0 threeId (withoutManaCost := true)
+  let freeNoLifeLeak :=
+    (gFreeRes.player p0).life == 20 &&
+    gFreeRes.stack.size == 1 &&
+    gFreeRes.proposedSpell.isNone
+
+  -- 2b. `withoutManaCost := false` resolution cast with `payLifeEqualManaValue` pays 3 life for MV 3,
+  --     and `{X}{B}` forces X=0 (CR 107.3b / Ruling 153) paying 1 life:
+  let gLifeThreeProp := gPerm.castAsPartOfResolution p0 threeId (withoutManaCost := false)
+  let gLifeThreePaid := mustApply gLifeThreeProp p0 .pay
+  let gLifeXProp := gPerm.castAsPartOfResolution p0 xId (withoutManaCost := false)
+  let gLifeXPaid := mustApply gLifeXProp p0 .pay
+  let lifePermOk :=
+    gLifeThreeProp.proposedSpell.any (·.payLife == 3) &&
+    (gLifeThreePaid.player p0).life == 17 &&
+    gLifeXProp.proposedSpell.any (·.payLife == 1) &&
+    (gLifeXPaid.player p0).life == 19
+
+  -- 2c. CR 119.4: player at 2 life cannot cast MV 3 spell via `payLifeEqualManaValue`:
+  let gLowLife := gPerm.setLifeTotal p0 2
+  let gLowRejected := gLowLife.castAsPartOfResolution p0 threeId (withoutManaCost := false)
+  let lowLifeRejectedOk :=
+    gLowRejected.stack.isEmpty &&
+    (gLowRejected.object! threeId).zone == .hand p0 &&
+    (gLowRejected.player p0).life == 2
+
+  mustHold25i2 "2a.freeNoLifeLeak" freeNoLifeLeak &&
+  mustHold25i2 "2b.lifePermOk" lifePermOk &&
+  mustHold25i2 "2c.lowLifeRejectedOk" lowLifeRejectedOk &&
+  mustHold25i2 "2.replay" (replayOk25i2 #[
+    gFreeRes, gLifeThreeProp, gLifeThreePaid, gLifeXProp, gLifeXPaid, gLowRejected
+  ])
+
+-- 3. CR 733.1 proposal-checkpoint ordering & upfront `mayCast*` checks:
+--    - reversing an unpayable/targetless Cascade cast restores `Pending.fraChoice p0 (.mayCastCascade ...)`
+--      with `postCastCleanup == none` and card still in `.exile`;
+--    - `defaultFraAction` declines uncastable Cascade hits cleanly;
+--    - `mayCastFromLookedError` rejects under `splitSecondOnStack` (CR 702.61a);
+--    - `.mayCastUpToFromExile` preserves `left` on an illegal pick (mandatory sacrifice unpayable / prohibited).
+#guard
+  let p0 : PlayerId := ⟨0⟩
+  let needCreatureTarget : CardDef := {
+    name := "P25i2 Target Creature Spell"
+    manaCost := { symbols := #[.colored .red] }
+    types := #[.sorcery]
+    spellEffect := some { targeting := .of .creature, resolution := .draw 1 }
+  }
+  let sacCostSpell : CardDef := {
+    name := "P25i2 Sac Creature Spell"
+    manaCost := { symbols := #[.colored .black] }
+    types := #[.sorcery]
+    additionalCostSacrificeCreature := true
+    spellEffect := some { resolution := .draw 1 }
+  }
+  let drawSpell : CardDef := {
+    name := "P25i2 Clean Draw"
+    manaCost := { symbols := #[.colored .blue] }
+    types := #[.sorcery]
+    spellEffect := some { resolution := .draw 1 }
+  }
+  let samutGrant : CardDef := {
+    name := "P25i2 Samut"
+    types := #[.creature]
+    power := some 2
+    toughness := some 2
+    staticAbilities := #[.instantSorcerySplitSecond]
+  }
+  let g0 := emptyHand afterDraw p0
+  let (gEx0, hitCard) := g0.allocObject needCreatureTarget p0 .exile none
+  let (gEx1, otherEx) := gEx0.allocObject drawSpell p0 .exile none
+  let (gEx2, sacEx) := gEx1.allocObject sacCostSpell p0 .exile none
+
+  -- 3a. `.mayCastCascade` on targetless `hitCard`: `defaultFraAction` declines, and accepting reverses cleanly to `.mayCastCascade`!
+  let cascChoice : FraChoice := .mayCastCascade hitCard.id #[otherEx.id]
+  let gCascPrompt := gEx2.change (.pending (.fraChoice p0 cascChoice))
+  let defaultDeclines :=
+    match gCascPrompt.defaultFraAction p0 cascChoice with
+    | .decline => true
+    | _ => false
+  let gCascAccepted := mustApply gCascPrompt p0 .accept
+  let cascReversedCleanly :=
+    gCascAccepted.pending == Pending.fraChoice p0 cascChoice &&
+    gCascAccepted.postCastCleanup.isNone &&
+    gCascAccepted.continuations.isEmpty &&
+    (gCascAccepted.object! hitCard.id).zone == Zone.exile
+
+  -- 3b. `.mayCastUpToFromExile` with `left := 2`: picking `sacEx` (no creature to sacrifice) throws upfront
+  --     and preserves `left == 2`, allowing `otherEx` to still be cast without paying mana!
+  let exFreeSpell : CardDef := {
+    name := "P25i2 Zero Mana Draw"
+    types := #[.sorcery]
+    spellEffect := some { resolution := .draw 1 }
+  }
+  let (gEx3, freeEx) := gEx2.allocObject exFreeSpell p0 .exile none
+  let exChoice : FraChoice := .mayCastUpToFromExile #[sacEx.id, freeEx.id] 2
+  let gUpToPrompt := (gEx3.change (.pushContinuationFrame {})).change (.pending (.fraChoice p0 exChoice))
+  let sacPickRejected := (gUpToPrompt.apply p0 (.choosePermanents #[sacEx.id])).toOption.isNone
+  let gUpToValid := mustApply gUpToPrompt p0 (.choosePermanents #[freeEx.id])
+  let upToPreservedOk :=
+    sacPickRejected &&
+    gUpToValid.pending == Pending.fraChoice p0 (.mayCastUpToFromExile #[sacEx.id] 1)
+
+  -- 3c. `mayCastFromLookedError` rejects when a spell with split second is on the stack (CR 702.61a):
+  let gSamut := addPermanent g0 samutGrant p0 p0
+  let (gLib0, topLooked) := gSamut.allocObject drawSpell p0 (.library p0) none
+  let (gLib1, ssObj) := gLib0.allocObject drawSpell p0 .stack (some p0)
+  let gLibSs := gLib1.putStackEntry p0 ssObj.id
+  let splitSecLookedRejected :=
+    gLibSs.splitSecondOnStack && (gLibSs.mayCastFromLookedError p0 #[topLooked.id] 10 topLooked.id).isSome
+
+  mustHold25i2 "3a.cascadeCheckpointAndDefault" (defaultDeclines && cascReversedCleanly) &&
+  mustHold25i2 "3b.upToFromExileLeftPreserved" upToPreservedOk &&
+  mustHold25i2 "3c.splitSecLookedRejected" splitSecLookedRejected &&
+  mustHold25i2 "3.replay" (replayOk25i2 #[gCascPrompt, gCascAccepted, gUpToPrompt, gUpToValid, gLibSs])
+
+-- 4. CR 106.6 agent/default mana restrictions across `defaultFraAction` and `Agent`:
+--    `.cantNonartifact` mana cannot pay for a nonartifact sorcery in `.mayCastFromGraveyard` / `Agent.choose`,
+--    while paying cleanly for an artifact card!
+#guard
+  let p0 : PlayerId := ⟨0⟩
+  let sorcOne : CardDef := {
+    name := "P25i2 One Mana Sorc"
+    manaCost := ManaCost.ofGeneric 1
+    types := #[.sorcery]
+    spellEffect := some { resolution := .draw 1 }
+  }
+  let artOne : CardDef := {
+    name := "P25i2 One Mana Construct"
+    manaCost := ManaCost.ofGeneric 1
+    types := #[.artifact, .creature]
+    power := some 2
+    toughness := some 2
+  }
+  let g0 := emptyHand afterDraw p0
+  let (gGy0, sorcGy) := g0.allocObject sorcOne p0 (.graveyard p0) none
+  let (gGy1, artGy) := gGy0.allocObject artOne p0 (.graveyard p0) none
+  let gRestrictedPool := gGy1.addMana p0 .colorless 1 (restriction := some .cantNonartifact) (cause := some testCause)
+  let gySorcOnly : FraChoice := .mayCastFromGraveyard #[sorcGy.id]
+  let gyBoth : FraChoice := .mayCastFromGraveyard #[sorcGy.id, artGy.id]
+  let defaultSorcDeclines :=
+    match gRestrictedPool.defaultFraAction p0 gySorcOnly with
+    | .decline => true
+    | _ => false
+  let defaultPicksArt :=
+    match gRestrictedPool.defaultFraAction p0 gyBoth with
+    | .cast cid => cid == artGy.id
+    | _ => false
+
+  let (gHandSorc, _) := gRestrictedPool.allocObject sorcOne p0 (.hand p0)
+  let agentSkipsNonartifact :=
+    match Agent.choose gHandSorc p0 with
+    | some (.cast _) => false
+    | _ => true
+  let (gHandArt, artHand) := gRestrictedPool.allocObject artOne p0 (.hand p0)
+  let agentCastsArtifact :=
+    match Agent.choose gHandArt p0 with
+    | some (.cast cid) => cid == artHand.id
+    | _ => false
+
+  mustHold25i2 "4.defaultFraManaRestrictions" (defaultSorcDeclines && defaultPicksArt) &&
+  mustHold25i2 "4.agentManaRestrictions" (agentSkipsNonartifact && agentCastsArtifact) &&
+  mustHold25i2 "4.replay" (replayOk25i2 #[gRestrictedPool, gHandSorc, gHandArt])
+
+end Phase25Item2EventAlignment
+
 end Mtg.Engine.EventTests
 
 

@@ -24,9 +24,9 @@ import Mtg.Engine.Game.Triggers
 import Mtg.Engine.Game.Entering
 import Mtg.Engine.Game.LandsAndMana
 import Mtg.Engine.Game.SpellTargets
+import Mtg.Engine.Game.Costs
 import Mtg.Engine.Game.Casting
 import Mtg.Engine.Game.Choices
-import Mtg.Engine.Game.Costs
 import Mtg.Engine.Game.SacrificeDiscard
 import Mtg.Engine.Game.Damage
 import Mtg.Engine.Game.Pumps

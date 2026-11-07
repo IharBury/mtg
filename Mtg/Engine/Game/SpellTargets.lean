@@ -186,20 +186,10 @@ def kickedFaceHasLegalTarget (g : Game) (p : PlayerId) (c : CardDef)
     if isModalSpellFace c then false
     else
       let k := kickedSpellEffect e
-      !k.requiresTarget || k.allowsZeroTargets ||
-        !(g.legalKickedTargetsForFace p c tcs sourceId).isEmpty
+      let k' := if tcs.isEmpty then k else TextChange.applyEffect tcs k
+      !k'.requiresTarget || k'.allowsZeroTargets ||
+        g.effectHasEnoughTargets p k' sourceId
   | _, _ => false
-
-/-- Whether enough distinct legal targets exist for `e` (CR 115.3 / 601.2c): a
-single-instance shape announcing `e.targetCount > 1` targets of one word “target”
-(`kind.spec.slots.isEmpty`) needs that many distinct legal targets unless it allows
-zero; multi-slot shapes are checked slot by slot in `legalTargetsForKind`. -/
-def effectHasEnoughTargets (g : Game) (p : PlayerId) (e : Effect)
-    (sourceId : Option ObjectId := none) : Bool :=
-  let legal := g.legalTargetsForKind p e.targetKind sourceId
-  if e.targetKind.spec.slots.isEmpty && !e.allowsZeroTargets then
-    legal.size >= max 1 e.targetCount
-  else !legal.isEmpty
 
 /-- True when this mode can be announced: it needs no target, or enough legal
 ones exist (CR 700.2a / 601.2c / 115.3). -/
@@ -251,11 +241,6 @@ def defaultMode (g : Game) (p : PlayerId) (spell : GameObject) : Option Nat :=
   match preferredIdx with
   | some i => some i
   | none => pool[0]?
-
-/-- Legal targets for an activated-ability effect (CR 115.1 / 601.2c / 702.11b / 702.16b). -/
-def legalAbilityTargets (g : Game) (p : PlayerId) (e : Effect)
-    (sourceId : Option ObjectId := none) : Array Target :=
-  g.legalTargetsForKind p e.targetKind sourceId
 
 /-- The spell, activated ability, or triggered ability currently waiting for
 targets (CR 601.2c / 603.3d). -/
@@ -362,37 +347,48 @@ def legalProposedTargets (g : Game) (p : PlayerId) (o : GameObject) : Array Targ
                 out := out.push already[idx]!
         return out
   let legal := (g.legalTargetsForKind p slot selfSource).filter (fun t => !forbidden.contains t)
-  match kind with
-  | .twoNonlandsSharingType =>
-    match already[0]? with
-    | some (Target.permanent id) =>
-      match g.findObject? id with
-      | some first =>
-        legal.filter (fun t =>
-          match t with
-          | Target.permanent oid =>
-            match g.findObject? oid with
-            | some other => g.sharesCardType first other
-            | none => false
-          | _ => false)
-      | none => legal
+  let priorChosen : Array (Nat × Target) :=
+    (List.range already.size).toArray.map (fun idx => (priorSlots[idx]?.getD idx, already[idx]!))
+  let legal :=
+    match kind with
+    | .twoNonlandsSharingType =>
+      legal.filter (fun t =>
+        match t with
+        | Target.permanent oid =>
+          match g.findObject? oid with
+          | some cand =>
+            priorChosen.all (fun (_, u) =>
+              match u with
+              | Target.permanent pid =>
+                (g.findObject? pid).any (g.sharesCardType · cand)
+              | _ => false)
+          | none => false
+        | _ => priorChosen.isEmpty)
+    | .upToTwoCreaturesTotalMvAtMost n =>
+      match already[0]? with
+      | some (Target.permanent id) =>
+        match g.findObject? id with
+        | some first =>
+          legal.filter (fun t =>
+            match t with
+            | Target.permanent oid =>
+              match g.findObject? oid with
+              | some other =>
+                g.objectManaValue first + g.objectManaValue other ≤ n
+              | none => false
+            | _ => false)
+        | none => legal
+      | _ => legal
     | _ => legal
-  | .upToTwoCreaturesTotalMvAtMost n =>
-    match already[0]? with
-    | some (Target.permanent id) =>
-      match g.findObject? id with
-      | some first =>
-        legal.filter (fun t =>
-          match t with
-          | Target.permanent oid =>
-            match g.findObject? oid with
-            | some other =>
-              g.objectManaValue first + g.objectManaValue other ≤ n
-            | none => false
-          | _ => false)
-      | none => legal
-    | _ => legal
-  | _ => legal
+  if kind.spec.slots.isEmpty || curSlot >= kind.spec.slots.size then legal
+  else
+    let remainingSlots : List (Nat × Array Target) :=
+      ((List.range kind.spec.slots.size).drop (curSlot + 1)).map (fun s =>
+        (s, g.legalTargetsForAtomicKind p (kind.slotKind s) selfSource))
+    if remainingSlots.isEmpty then legal
+    else
+      legal.filter (fun t =>
+        g.slotAssignmentExists kind remainingSlots (priorChosen.push (curSlot, t)))
 
 /-- Required and maximum announced targets for `obj` (CR 601.2c). Spells
 such as Gaze in Wonder require one target and allow a second; every target

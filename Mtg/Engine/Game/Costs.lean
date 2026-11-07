@@ -1,4 +1,4 @@
-import Mtg.Engine.Game.Choices
+import Mtg.Engine.Game.SpellTargets
 
 /-!
 # Total costs (CR 601.2f–h)
@@ -71,6 +71,22 @@ def playCostStart (g : Game) (card : GameObject) (face : CardDef)
   else if flashback.getD (inGy || GameEvent.castWithFlashback g.events card.id) then
     face.flashback.getD face.manaCost
   else face.manaCost
+
+/-- Un-substituted printed mana cost of `card` when cast as `face` (`none` when
+cast face-down via Morph, whose mana value is `0` per CR 702.37c / 708.2a). -/
+def actualPrintedManaCost? (g : Game) (card : GameObject) (face : CardDef) : Option ManaCost :=
+  if card.status.faceDown || (face.name == "" && card.printed.name != "") then none
+  else
+    let bc := g.baseCard card
+    match bc.adventure.filter (·.name == face.name) with
+    | some adv => some adv.manaCost
+    | none => some bc.manaCost
+
+/-- Actual spell mana value of `card` cast as `face` (CR 118.9c / 202.3e / 702.37c). -/
+def actualCastManaValue (g : Game) (card : GameObject) (face : CardDef) : Nat :=
+  match g.actualPrintedManaCost? card face with
+  | none => 0
+  | some mc => (mc.substituteX (card.chosenX.getD 0)).manaValue
 
 /-- Apply cost reductions to `start` (CR 118.7 / 601.2f). Increases such as
 kicker must already be included in `start`. -/
@@ -177,8 +193,7 @@ def applyCastCostReductions (g : Game) (card : GameObject) (face : CardDef)
   let afterNotHand := afterFirst.reduceGeneric notFromHand
   let witchLess :=
     if face.isInstant || face.isSorcery then
-      let mv := face.manaValue + card.chosenX.getD 0
-      if mv < 4 then 0
+      if g.actualCastManaValue card face < 4 then 0
       else
         (g.permanentsOf caster).foldl (fun acc o =>
           let reduces :=
@@ -220,14 +235,15 @@ def applyCastCostReductions (g : Game) (card : GameObject) (face : CardDef)
   (afterWitch.reduceGeneric (subtypeLess + selfLess + thisTurnLess)).reduceGeneric sphinxLess
 
 /-- Mana to pay for `face` after alternative costs and pre-target reductions
-(CR 118.7 / 601.2f). `withoutManaCost` and a reduction that removes every
-mana symbol become `{0}`, not an unpayable empty cost (CR 107.4d / 202.1b).
+(CR 118.7 / 118.9a,c / 601.2f). `withoutManaCost` and a reduction that removes
+every mana symbol become `{0}`, not an unpayable empty cost (CR 107.4d / 202.1b).
 Target-based reductions lock in after CR 601.2c. Cost increases (kicker)
 are applied before these reductions. -/
 def playManaCost (g : Game) (card : GameObject) (face : CardDef)
     (increase : ManaCost := ManaCost.empty)
     (origPerm : Option PlayPermission := none)
-    (isFreeFromGy : Option Bool := none) (flashback : Option Bool := none) : ManaCost :=
+    (isFreeFromGy : Option Bool := none) (flashback : Option Bool := none)
+    (explicitAltCost : Bool := false) : ManaCost :=
   let caster := card.controller.getD card.owner
   -- Thalia, the Survivor: each one an opponent controls adds {1}.
   let tax :=
@@ -237,20 +253,34 @@ def playManaCost (g : Game) (card : GameObject) (face : CardDef)
         acc + ((g.permanentsOf pl.id).filter (fun o => (g.staticAbilities o).any
           (· == .fra .opponentsNoncreatureSpellsCostMore))).size) 0
   let increase := if tax == 0 then increase else increase.addCost (ManaCost.ofGeneric tax)
+  let inGy := match card.zone with | .graveyard _ => true | _ => false
+  let effPerm := origPerm <|> g.playPermission card
+  let usedFreeGy := isFreeFromGy.getD (g.freeCastFromGraveyard card && inGy)
+  let hasFb := face.flashback.isSome || g.flashbackUntilEot card
+  let usedFlashback :=
+    !usedFreeGy && hasFb && flashback.getD (inGy || GameEvent.castWithFlashback g.events card.id)
+  let usedPermAlt := effPerm.any (fun pm => pm.withoutManaCost || pm.payLifeEqualManaValue)
+  let printedMc? := g.actualPrintedManaCost? card face
+  let usedMorph := printedMc?.isNone
+  let usedSubstitutedAlt := printedMc?.any (fun mc => mc != face.manaCost)
+  -- CR 118.9a: only one alternative cost can be applied to any one spell.
+  let usedAltCost :=
+    explicitAltCost || usedFreeGy || usedFlashback || usedPermAlt || usedMorph || usedSubstitutedAlt
   let start := g.playCostStart card face isFreeFromGy flashback
   let afterIncrease := start.addCost increase
   let afterEquip := g.applyCastCostReductions card face afterIncrease
   let freeRG :=
-    match g.pendingFreeRGCreature with
-    | some p =>
-      (card.controller == some p || card.owner == p) && face.isCreature &&
-        (face.colors.contains .red || face.colors.contains .green)
-    | none => false
+    !usedAltCost &&
+      match g.pendingFreeRGCreature with
+      | some p =>
+        caster == p && face.isCreature &&
+          (face.colors.contains .red || face.colors.contains .green)
+      | none => false
   let cost :=
     if freeRG then
       g.applyCastCostReductions card face (ManaCost.empty.addCost increase)
     else
-      match origPerm <|> g.playPermission card with
+      match effPerm with
       | some perm =>
         if perm.withoutManaCost || perm.payLifeEqualManaValue then
           g.applyCastCostReductions card face (ManaCost.empty.addCost increase)
@@ -264,10 +294,12 @@ def playManaCost (g : Game) (card : GameObject) (face : CardDef)
   -- Omnipresence: from hand, a spell with mana value at most the number of
   -- creatures you control is cast without paying its mana cost. Spells with
   -- `{X}` are cast normally, so X is never forced to 0. Additional costs are
-  -- still paid (rulings 794 / 795).
+  -- still paid (rulings 794 / 795; CR 118.9a,c).
   let omnipresent :=
-    card.zone == .hand caster && !face.manaCost.containsX &&
-      face.manaValue ≤ (g.creaturesControlledBy caster).size &&
+    !usedAltCost && !freeRG &&
+      card.zone == .hand caster &&
+      printedMc?.any (fun mc => !mc.containsX) &&
+      g.actualCastManaValue card face ≤ (g.creaturesControlledBy caster).size &&
       (g.permanentsOf caster).any (fun o =>
         (g.staticAbilities o).any (fun
           | .castFromHandFreeUpToCreatures => true
@@ -275,12 +307,14 @@ def playManaCost (g : Game) (card : GameObject) (face : CardDef)
   let cost :=
     if omnipresent then g.applyCastCostReductions card face (ManaCost.empty.addCost increase)
     else cost
+  -- Flawless Maneuver: if you control a commander, you may cast this spell
+  -- without paying its mana cost unless another alternative cost was chosen (CR 118.9a).
   let freeCommander :=
-    face.freeCastIfControlCommander &&
+    !usedAltCost && !freeRG && !omnipresent &&
+      face.freeCastIfControlCommander &&
       (g.permanentsOf caster).any (·.isCommander)
-  let freeGy := isFreeFromGy.getD (g.freeCastFromGraveyard card)
   let cost :=
-    if freeCommander || freeGy then
+    if freeCommander || usedFreeGy then
       g.applyCastCostReductions card face (ManaCost.empty.addCost increase)
     else cost
   ManaCost.afterReduction face.manaCost cost

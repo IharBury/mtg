@@ -139,10 +139,10 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
     match sneakCost with
     | some c => g.playManaCost casterCard { face with manaCost := c }
         (origPerm := origPerm) (isFreeFromGy := some isFreeFromGy)
-        (flashback := some isFlashbackCast)
+        (flashback := some isFlashbackCast) (explicitAltCost := true)
     | none => g.playManaCost casterCard face
         (origPerm := origPerm) (isFreeFromGy := some isFreeFromGy)
-        (flashback := some isFlashbackCast)
+        (flashback := some isFlashbackCast) (explicitAltCost := altCost)
   -- Casting the exiled copy of a prepare spell unprepares its permanent. The
   -- spell on the stack is a copy, so it isn't put into a graveyard later
   -- (CR 707.10 / 704.5e).
@@ -309,8 +309,13 @@ def announceX (g : Game) (p : PlayerId) (x : Nat) : Except String Game := do
         g.playManaCost preSpell face (ManaCost.ofGeneric prop.additionalGeneric)
           (origPerm := prop.origPerm) (isFreeFromGy := some prop.isFreeFromGy)
           (flashback := some (GameEvent.castWithFlashback g.events prop.spellId))
+          (explicitAltCost := prop.alternativeCost)
       | _, _, _ => prop.cost.substituteX x
-    let g := g.changeProposal (.cost cost)
+    let extraChanges : Array ProposalChange :=
+      if prop.kind == .spell && prop.origPerm.any (·.payLifeEqualManaValue) then
+        #[.payLife (g.objectManaValue (g.object! prop.spellId))]
+      else #[]
+    let g := g.changeProposals (#[.cost cost] ++ extraChanges)
     let prop := g.proposedSpell.getD prop
     let g := g.logMsg
       s!"{(g.player p).name} chooses X = {x} (CR 107.3a / 601.2b)"
@@ -426,6 +431,14 @@ def announceTargetChoices (g : Game) (p : PlayerId)
           if targets.contains t then
             throw "Illegal target (CR 601.2c)"
           targets := targets.push t
+        if let .upToTwoCreaturesTotalMvAtMost n := kind then
+          let totalMv :=
+            targets.foldl (fun acc t =>
+              match t with
+              | .permanent oid => acc + ((g.findObject? oid).map g.objectManaValue).getD 0
+              | _ => acc) 0
+          if totalMv > n then
+            throw "Illegal target (CR 601.2c)"
         let mut g := g.setStackEntryTargets obj.id targets
         for t in targets do
           g := g.logMsg
