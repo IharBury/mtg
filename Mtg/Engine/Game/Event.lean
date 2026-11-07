@@ -1942,9 +1942,6 @@ structure ContinuationFrame where
   /-- Card discarded while a later `.put .discardedLand (how := .tapped)`
   may put that land onto the battlefield tapped (Silvan Reveler). -/
   discardedCardThisWay : Option (PlayerId × ObjectId) := none
-  /-- After Palantír of Orthanc finishes scrying, this opponent may have
-  the controller draw. Stores controller, opponent, and the Palantír. -/
-  palantirAfterScry : Option (PlayerId × PlayerId × ObjectId) := none
   /-- Tokens created by the most recent `createKindTokens` call, so a following
   sequence step can haste them or leave them out of a plus-one. -/
   recentTokenIds : Array ObjectId := #[]
@@ -2121,7 +2118,6 @@ deriving Repr, Inhabited, BEq
 inductive ContinuationChange where
   | pendingDrawAfterScry (v : Option (PlayerId × Nat))
   | discardedCardThisWay (v : Option (PlayerId × ObjectId))
-  | palantirAfterScry (v : Option (PlayerId × PlayerId × ObjectId))
   | recentTokenIds (v : Array ObjectId)
   | fraAfterLook (v : Option (PlayerId × Option ObjectId × FraNext))
   | pendingFreeCopies (v : Option (PlayerId × Array ObjectId × Nat × Nat))
@@ -2286,7 +2282,6 @@ deriving Repr, Inhabited, BEq
 namespace EngineChange
 @[inline] def pendingDrawAfterScry (v : Option (PlayerId × Nat)) : EngineChange := .continuation (.pendingDrawAfterScry v)
 @[inline] def discardedCardThisWay (v : Option (PlayerId × ObjectId)) : EngineChange := .continuation (.discardedCardThisWay v)
-@[inline] def palantirAfterScry (v : Option (PlayerId × PlayerId × ObjectId)) : EngineChange := .continuation (.palantirAfterScry v)
 @[inline] def recentTokenIds (v : Array ObjectId) : EngineChange := .continuation (.recentTokenIds v)
 @[inline] def fraAfterLook (v : Option (PlayerId × Option ObjectId × FraNext)) : EngineChange := .continuation (.fraAfterLook v)
 @[inline] def pendingFreeCopies (v : Option (PlayerId × Array ObjectId × Nat × Nat)) : EngineChange := .continuation (.pendingFreeCopies v)
@@ -3410,16 +3405,16 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : Option Obje
       this object && n > 0
     | .permanent (.counters (.object object) .lore (.put n) _), .sagaChapter =>
       this object && n > 0
-    | .turn (.stepBegan .upkeep active), .yourUpkeep => you active
+    | .turn (.stepBegan .upkeep active), .yourUpkeep => you active || isTeammate active
     | .turn (.stepBegan .upkeep _), .eachUpkeep => true
     | .turn (.stepBegan .upkeep _), .fra .eachUpkeepFromGraveyard => true
-    | .turn (.stepBegan .end active), .yourEndStep => you active
+    | .turn (.stepBegan .end active), .yourEndStep => you active || isTeammate active
     | .turn (.stepBegan .end _), .eachEndStep => true
-    | .turn (.stepBegan .beginningOfCombat active), .yourBeginCombat => you active
-    | .turn (.stepBegan .beginningOfCombat active), .fra .yourBeginCombatFromGraveyard => you active
+    | .turn (.stepBegan .beginningOfCombat active), .yourBeginCombat => you active || isTeammate active
+    | .turn (.stepBegan .beginningOfCombat active), .fra .yourBeginCombatFromGraveyard => you active || isTeammate active
     | .turn (.stepBegan .beginningOfCombat _), .eachBeginCombat => true
     | .turn (.stepBegan .beginningOfCombat active), .fra .opponentBeginCombat => opp active
-    | .turn (.stepBegan .precombatMain active), .yourFirstMain => you active
+    | .turn (.stepBegan .precombatMain active), .yourFirstMain => you active || isTeammate active
     | .turn (.stepBegan .draw active), .eachOpponentDrawStep => opp active
     | .turn (.stepBegan .upkeep _), .eaglesCreateBirds => true
     | .turn (.stepBegan .upkeep active), .enchantedControllerUpkeep => you active

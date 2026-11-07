@@ -227,7 +227,7 @@ def endControlChangingEffect (g : Game) (o : GameObject)
 /-- Gain control of `o` until end of turn (CR 611.2a). -/
 def giveControlUntilEot (g : Game) (o : GameObject) (p : PlayerId) : Game :=
   if (g.player p).lost then
-    g.logMsg s!"{o.name} does not change control (CR 800.4b)"
+    g.logMsg s!"{g.name o} does not change control (CR 800.4b)"
   else
     g.changeControl o p (untilEot := true)
 
@@ -1058,12 +1058,6 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
       if g.pregameRandom == .none && (g.currentResolvingContext?.bind Prod.snd) == some p then
         g.changes #[.pending .none, .afterRandom .none]
       else g
-
-/-- True when `g.currentBatch` holds an open batch other than `g.discardBatch`. -/
-def hasNonDiscardOpenBatch (g : Game) : Bool :=
-  match g.currentBatch with
-  | none => false
-  | some (bid, _) => g.discardBatch.map Prod.fst != some bid
 
 /-- Re-pause a saved `currentBatch` snapshot once a departing player's leave /
 linked-exile batch has closed, or finish `batchId` immediately when

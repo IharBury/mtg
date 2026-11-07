@@ -227,7 +227,6 @@ def applyFraResolution? (g : Game) (controller : PlayerId) (effect : Effect)
     match sourceId.bind g.findObject? with
     | some o =>
       if o.zone == .graveyard o.owner then
-        let name := o.name
         let (g, newId) := g.putOntoBattlefield o.id controller
           (extraEntersWith := #[(.finality, 1)])
         if let .chooseReplacement .. := g.pending then
@@ -235,7 +234,7 @@ def applyFraResolution? (g : Game) (controller : PlayerId) (effect : Effect)
         else
           let entered := g.object! newId
           if entered.isOnBattlefield then
-            some ((g.logMsg s!"{name} returns to the battlefield").afterPermanentEnters entered)
+            some ((g.logMsg s!"{g.name entered} returns to the battlefield").afterPermanentEnters entered)
           else some g
       else some (g.logMsg s!"{o.name} is no longer in the graveyard")
     | none => some (g.logMsg "The card is no longer in the graveyard")
@@ -827,7 +826,6 @@ def finishVisionQuest (g : Game) (p : PlayerId) (id? : Option ObjectId)
       if (o.zone == .library p || o.zone == .graveyard p) &&
           g.isArtifact o && g.isCreature o &&
           g.objectManaValue o ≤ x then
-        let name := o.name
         let (g, newId) := g.putOntoBattlefield id p
           (extraEntersWith := if x > 0 then #[(.plusOnePlusOne, x)] else #[])
         if let .chooseReplacement .. := g.pending then
@@ -836,6 +834,7 @@ def finishVisionQuest (g : Game) (p : PlayerId) (id? : Option ObjectId)
           let entered := g.object! newId
           let g :=
             if entered.isOnBattlefield then
+              let name := g.name entered
               let g := g.afterPermanentEnters entered
               let g :=
                 if x ≥ 4 then g.grantUntilEotLogged (g.object! newId) Keyword.haste else g

@@ -674,14 +674,14 @@ def offerVisionModes (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
 def grantIronFistTap (g : Game) (sourceId : Option ObjectId) : Game :=
   g.withSourceOnBattlefield sourceId (fun g o =>
     g.createEffect (.ironFistTapUntilEot o.id)
-      |>.logMsg s!"{o.name} gains a tap ability until end of turn")
+      |>.logMsg s!"{g.name o} gains a tap ability until end of turn")
     "The source is no longer in play"
 
 /-- Until end of turn, the source's base power is the cards in hand. -/
 def grantHandSizePower (g : Game) (sourceId : Option ObjectId) : Game :=
   g.withSourceOnBattlefield sourceId (fun g o =>
     g.createEffect (.cardsInHandPowerUntilEot o.id)
-      |>.logMsg s!"{o.name}'s base power is the number of cards in your hand until end of turn")
+      |>.logMsg s!"{g.name o}'s base power is the number of cards in your hand until end of turn")
     "The source is no longer in play"
 
 /-- Grant `k` until end of turn to each creature the causing spell targets. -/
@@ -825,7 +825,7 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
     g.withSourceOnBattlefield sourceId (fun g o =>
       g.createEffects
         #[.setBasePTUntilEot o.id (6, 6), .keywordsUntilEot o.id Keyword.trample]
-        |>.logMsg s!"{o.name}'s base power and toughness become 6/6")
+        |>.logMsg s!"{g.name o}'s base power and toughness become 6/6")
       "The source is no longer in play"
   | (.casting .visionModes) =>
     g.offerVisionModes controller t sourceId targets lastKnownPower sourceName
@@ -871,7 +871,7 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
       noun := "another target nonland, nontoken permanent"
       nonTypes := #[.land], nontoken := true, another := true }
     g.withLegalKindPermanent controller kind targets (fun g o =>
-      let name := o.name
+      let name := g.name o
       let (g, cause) := g.allocDelayedCause (some controller) sourceId
       let (g, _) := g.move o.id .exile none (cause := some cause)
       if let .chooseReplacement .. := g.pending then

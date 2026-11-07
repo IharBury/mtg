@@ -748,8 +748,12 @@ def applyFrc (g : Game) (controller : PlayerId) (effect : Effect) (e : FrcEffect
           |>.logMsg s!"{(g.player attacker).name}'s creatures can't attack Jaces {(g.player controller).name} controls this turn"
     | _ => g
   | .monarch =>
-    let heir := (g.resolvingAbilityObject?.bind (·.fraCauseController)).getD controller
-    if (g.player heir).lost || (g.player heir).leftTheGame then g
+    let abObj? := g.resolvingAbilityObject?
+    let heir :=
+      ((abObj?.bind (·.fraCauseId)).bind g.followToBattlefield? |>.bind g.controllerOf).orElse
+        (fun _ => abObj?.bind (·.fraCauseController))
+        |>.getD controller
+    if (g.player heir).lost || (g.player heir).leftTheGame || (g.player heir).isMonarch then g
     else
       let prev := (g.players.find? (·.isMonarch)).map (·.id)
       g.record (GameEvent.becameMonarch g.turnNumber heir prev

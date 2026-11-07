@@ -97,7 +97,7 @@ def finishBeginOnBattlefield (g : Game) (fromId : ObjectId) (remainingIds : Arra
     match g.followMovedToZone? fromId (· == Zone.battlefield) with
     | some newObj =>
       if newObj.isOnBattlefield then
-        (g.logMsg s!"{newObj.name} begins the game on the battlefield").afterPermanentEnters newObj
+        (g.logMsg s!"{g.name newObj} begins the game on the battlefield").afterPermanentEnters newObj
       else g
     | none => g
   if let .chooseReplacement .. := g.pending then

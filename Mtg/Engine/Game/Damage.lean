@@ -401,7 +401,7 @@ def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
         g.record (GameEvent.damagePrevented g.turnNumber srcEvent (.permanent (g.snapshot o))
           rep.preventedAmount prevCause)
       else g
-    g.logMsg s!"Damage that would be dealt to {o.name} is prevented"
+    g.logMsg s!"Damage that would be dealt to {g.name o} is prevented"
   else
   let cause := rep.cause
   let defaultCause :=
@@ -451,7 +451,7 @@ def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
         if g.isPlaneswalker cur then
           let lose := min amt (cur.status.counterCount .loyalty)
           if lose > 0 then
-            g.record (GameEvent.counters g.turnNumber none (g.snapshot cur) .loyalty lose true (cause := dmgCause))
+            g.recordRemoveCounters cur.id .loyalty lose (noActor := true) (cause := some dmgCause)
           else g
         else g
       else g
@@ -473,7 +473,7 @@ def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
       if g.isPlaneswalker cur then
         let lose := min amt (cur.status.counterCount .loyalty)
         if lose > 0 then
-          g.record (GameEvent.counters g.turnNumber none (g.snapshot cur) .loyalty lose true (cause := dmgCause))
+          g.recordRemoveCounters cur.id .loyalty lose (noActor := true) (cause := some dmgCause)
         else g
       else g
     else g

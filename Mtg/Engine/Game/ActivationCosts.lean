@@ -16,11 +16,12 @@ def payRemoveIndestructibleCounter (g : Game) (o : GameObject)
     (forObject : Option ObjectId := none) : Except String Game := do
   if o.status.indestructibleCounters == 0 then
     throw s!"{g.name o} has no indestructible counter"
+  let oName := g.name o
   let ctrl := g.controllerOf o
   let p := ctrl.getD o.owner
-  let g := g.record (GameEvent.counters g.turnNumber ctrl (g.snapshot o) .indestructible 1 true
-    (cause := .costPayment .removeCounters p forObject))
-  return g.logMsg s!"{g.name o} loses an indestructible counter"
+  let g := g.recordRemoveCounters o.id .indestructible 1 (byPlayer := ctrl) (noActor := ctrl.isNone)
+    (cause := some (.costPayment .removeCounters p forObject))
+  return g.logMsg s!"{oName} loses an indestructible counter"
 
 /-- Whether `p` can pay `n` life (CR 119.4 / 119.8). Paying 0 life is always legal. -/
 def canPayLife (g : Game) (p : PlayerId) (n : Nat) : Bool :=
@@ -310,8 +311,8 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
     if a.cost.removeStoryCounter then
       let src := g.object! sourceId
       let srcName := g.name src
-      g := g.record (GameEvent.counters g.turnNumber (some p) (g.snapshot src) .story 1 true
-        (cause := .costPayment .removeCounters p forObject))
+      g := g.recordRemoveCounters sourceId .story 1 (byPlayer := some p)
+        (cause := some (.costPayment .removeCounters p forObject))
       g := g.logMsg s!"{(g.player p).name} removes a story counter from {srcName}"
     if a.cost.removeIndestructibleCounter then
       g := (← g.payRemoveIndestructibleCounter (g.object! sourceId) forObject)
@@ -320,8 +321,8 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
       let srcName := g.name src
       let g' :=
         if removePlusOnes > 0 then
-          g.record (GameEvent.counters g.turnNumber (some p) (g.snapshot src) .plusOnePlusOne removePlusOnes true
-            (cause := .costPayment .removeCounters p forObject))
+          g.recordRemoveCounters sourceId .plusOnePlusOne removePlusOnes (byPlayer := some p)
+            (cause := some (.costPayment .removeCounters p forObject))
         else g
       g := g'.logMsg
         s!"{(g.player p).name} removes {removePlusOnes} +1/+1 counters from {srcName}"

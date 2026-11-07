@@ -102,10 +102,6 @@ def mandatorySacrificeError? (g : Game) (p : PlayerId) (checkId : ObjectId)
     some s!"{displayName} requires sacrificing a creature"
   else none
 
-/-- Legal targets for beginning to cast card `c` (from hand or as an Adventure). -/
-def legalCastTargets (g : Game) (p : PlayerId) (c : CardDef) : Array Target :=
-  g.legalTargetsForFace p c none
-
 /-- Whether card face `c` has a legal target to begin casting it: enough unkicked
 targets (or an Aura target when `c.spellEffect = none`), or — when `c` has a
 target-replacing kicker that may be chosen — enough kicked targets
@@ -870,8 +866,8 @@ def payLoyaltyCost (g : Game) (p : PlayerId) (o : GameObject) (sym : LoyaltySymb
         (cause := some (.costPayment .loyalty p forObject))
   else if k < 0 then
     let g := g.withProposalAction .costAction fun g =>
-      g.record (GameEvent.counters g.turnNumber (some p) (g.snapshot o) .loyalty k.natAbs true
-        (cause := .costPayment .loyalty p forObject))
+      g.recordRemoveCounters o.id .loyalty k.natAbs (byPlayer := some p)
+        (cause := some (.costPayment .loyalty p forObject))
     g.logMsg s!"{-k} loyalty counter(s) are removed from {oName}"
   else g
 

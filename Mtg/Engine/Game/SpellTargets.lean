@@ -200,21 +200,6 @@ def legalTargetsForFace (g : Game) (p : PlayerId) (c : CardDef)
 def legalSpellTargets (g : Game) (p : PlayerId) (o : GameObject) : Array Target :=
   g.legalTargetsForFace p (g.baseCard o) (g.chosenModeOf o) (g.evalLayer3 o) (some o.id)
 
-/-- Legal targets of card face `c`'s kicked spell effect (`kickedSpellEffect`). A
-target-replacing kicker (*Galadriel's Dismissal* `.phaseOutKicker`, *The Eagles Are
-Coming!*) announces those targets instead of the unkicked ones (CR 601.2b–c /
-702.33d,g). Empty when `c` has no kicker or announces modes. -/
-def legalKickedTargetsForFace (g : Game) (p : PlayerId) (c : CardDef)
-    (tcs : Array TextChange := #[]) (sourceId : Option ObjectId := none) : Array Target :=
-  match c.kicker, c.spellEffect with
-  | some _, some e =>
-    if isModalSpellFace c then #[]
-    else
-      let k := kickedSpellEffect e
-      let k' := g.expandEachOpponentEffect p (if tcs.isEmpty then k else TextChange.applyEffect tcs k)
-      g.legalEffectTargets p k' sourceId
-  | _, _ => #[]
-
 /-- Whether `c` may be proposed kicked with legal targets even when none of its unkicked
 targets are legal: kicker may be chosen at CR 601.2b, and the kicked effect then announces
 its own targets at CR 601.2c (CR 702.33d,g). Choosing not to kick afterwards with no legal

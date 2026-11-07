@@ -241,8 +241,7 @@ def resolveRandomCreatureReveal (g : Game) (p : PlayerId) (revealed : Array Obje
     | some o => o.owner
     | none => p
   match g.findObject? chosen with
-  | some o =>
-    let name := o.name
+  | some _ =>
     let (g, newId) := g.putOntoBattlefield chosen p (cause := cause)
     if let .chooseReplacement .. := g.pending then
       g.chainPendingReplacement
@@ -252,7 +251,7 @@ def resolveRandomCreatureReveal (g : Game) (p : PlayerId) (revealed : Array Obje
         match g.findObject? newId with
         | some entered =>
           if entered.isOnBattlefield then
-            (g.logMsg s!"{name} enters the battlefield").afterPermanentEnters entered
+            (g.logMsg s!"{g.name entered} enters the battlefield").afterPermanentEnters entered
           else g
         | none => g
       g.putRestOnBottomRandom libraryOwner rest (cause := cause)
@@ -3032,7 +3031,7 @@ partial def finishNotedLandsEntered (g : Game) (entered : Array ObjectId) : Game
       match g.followMovedToZone? fromId (· == .battlefield) with
       | some land =>
         if land.isOnBattlefield then
-          (g.logMsg s!"{land.name} is exiled, then returned tapped").afterLandEnters land
+          (g.logMsg s!"{g.name land} is exiled, then returned tapped").afterLandEnters land
         else g
       | none => g
     if rest.isEmpty then g
@@ -3089,8 +3088,7 @@ def applyPut (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         | Target.card oid =>
           match g.findObject? oid with
           | none => g.logMsg "The target is no longer in the graveyard"
-          | some o =>
-            let name := o.name
+          | some _ =>
             let (g, newId) := g.putOntoBattlefield oid controller
             if let .chooseReplacement .. := g.pending then
               g.chainPendingReplacement (.finishPostStep (.logReturnsToBattlefieldAndEnter oid))
@@ -3098,7 +3096,7 @@ def applyPut (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
               match g.findObject? newId with
               | some entered =>
                 if entered.isOnBattlefield then
-                  (g.logMsg s!"{name} returns to the battlefield").afterPermanentEnters entered
+                  (g.logMsg s!"{g.name entered} returns to the battlefield").afterPermanentEnters entered
                 else g
               | none => g
         | _ => g.logMsg "The target is no longer legal")
@@ -3120,7 +3118,7 @@ def applyPut (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
               match g.findObject? newId with
               | some entered =>
                 if entered.isOnBattlefield then
-                  (g.logMsg s!"{name} is put onto the battlefield under its owner's control").afterPermanentEnters entered
+                  (g.logMsg s!"{g.name entered} is put onto the battlefield under its owner's control").afterPermanentEnters entered
                 else g
               | none => g
         | none => g
@@ -3139,7 +3137,7 @@ def applyPut (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
           match g.findObject? newId with
           | some entered =>
             if entered.isOnBattlefield then
-              (g.logMsg s!"{entered.name} returns as an artifact").afterPermanentEnters entered
+              (g.logMsg s!"{g.name entered} returns as an artifact").afterPermanentEnters entered
             else g
           | none => g
   | .notedLands, .tapped, _ =>
@@ -3155,14 +3153,13 @@ def applyPut (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       | some o =>
         if g.isLand o && o.zone == .graveyard o.owner then
           let fromId := o.id
-          let name := o.name
           let (g, newId) := g.putOntoBattlefield fromId pid (tapped := true)
           if let .chooseReplacement .. := g.pending then
             g.chainPendingReplacement (.finishPostStep (.enteredBattlefieldTapped fromId true))
           else
             let entered := g.object! newId
             if entered.isOnBattlefield then
-              (g.logMsg s!"{name} enters the battlefield tapped").afterLandEnters entered
+              (g.logMsg s!"{g.name entered} enters the battlefield tapped").afterLandEnters entered
             else g
         else g
       | none => g

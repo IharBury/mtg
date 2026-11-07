@@ -178,7 +178,6 @@ namespace Game
 
 @[inline] def pendingDrawAfterScry (g : Game) := g.topFrame.pendingDrawAfterScry
 @[inline] def discardedCardThisWay (g : Game) := g.topFrame.discardedCardThisWay
-@[inline] def palantirAfterScry (g : Game) := g.topFrame.palantirAfterScry
 @[inline] def recentTokenIds (g : Game) := g.topFrame.recentTokenIds
 @[inline] def fraAfterLook (g : Game) := g.topFrame.fraAfterLook
 @[inline] def pendingFreeCopies (g : Game) := g.topFrame.pendingFreeCopies
@@ -1023,6 +1022,11 @@ def followMovedToZone? (g : Game) (id : ObjectId) (expectedZone : Zone → Bool)
       if !expectedZone toZone then none
       else (g.objects.find? (·.id == afterId)).filter (·.zone == toZone)
     | none => none
+
+/-- Resolve `id` on the battlefield when it is still a battlefield permanent
+(CR 400.7 / 608.2h). -/
+def followToBattlefield? (g : Game) (id : ObjectId) : Option GameObject :=
+  (g.findObject? id).filter (·.isOnBattlefield)
 
 /-- Like `followMovedToZone?`, also returning the `fromZone` recorded on `id`'s
 immediate `ZoneEvent.moved` (or `o.zone` when `id` itself is in `expectedZone`). -/
@@ -2179,7 +2183,6 @@ def applyEngineChange (g : Game) (c : EngineChange) : Game :=
       match cc with
       | .pendingDrawAfterScry v => { f with pendingDrawAfterScry := v }
       | .discardedCardThisWay v => { f with discardedCardThisWay := v }
-      | .palantirAfterScry v => { f with palantirAfterScry := v }
       | .recentTokenIds v => { f with recentTokenIds := v }
       | .fraAfterLook v => { f with fraAfterLook := v }
       | .pendingFreeCopies v => { f with pendingFreeCopies := v }
@@ -5776,15 +5779,25 @@ def counterPutter (g : Game) (fallback : Option PlayerId) : Option PlayerId :=
     |>.orElse (fun _ => g.currentResolvingContext?.bind Prod.snd)
     |>.orElse (fun _ => fallback)
 
-/-- Living players in APNAP order (CR 101.4), starting from `g.activePlayer`. -/
+/-- Living players in APNAP order (CR 101.4 / 805.6–7), with all living members
+of the active team (in seat order starting from the active team's first seat)
+preceding nonactive teams in turn order. -/
 def apnapPlayers (g : Game) : Array PlayerId :=
   let n := g.players.size
   if n == 0 then #[]
-  else
-    let start := g.activePlayer.idx
-    (List.range n).toArray.filterMap fun offset =>
-      let pl := g.players[(start + offset) % n]!
-      if pl.lost then none else some pl.id
+  else Id.run do
+    let firstActiveSeat := (g.teamMembers g.activePlayer)[0]?.getD g.activePlayer
+    let start := firstActiveSeat.idx % n
+    let mut seen : Array PlayerId := #[]
+    let mut out : Array PlayerId := #[]
+    for offset in [0:n] do
+      let pid : PlayerId := ⟨(start + offset) % n⟩
+      if !seen.contains pid then
+        for m in g.teamMembers pid do
+          seen := seen.push m
+          if !(g.player m).lost then
+            out := out.push m
+    return out
 
 /-- Wrap `cause` in `EventCause.replaced id orig` when replacement or prevention
 effect `id` applies (CR 614.6 / 615.6). Preserves batch/resolving-context cause
@@ -8250,11 +8263,11 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
             (cause := firstDamager) (causeIds := damagerIds)
             (w := waiting) (fs := firedSources)
         waiting := w; firedSources := fs
-    -- 7b. Inherent monarch combat-damage trigger (CR 725.2 / 113.8 / 800.4a,d; Rulings 937, 940):
-    --     controlled by the monarch and queued once per distinct controller of creatures
-    --     that dealt combat damage to the monarch in `batch`.
+    -- 7b. Inherent monarch combat-damage trigger (CR 603.2c,e / 608.2h / 725.2–3 / 113.8 / 800.4a,d; Rulings 935, 937, 940):
+    --     controlled by the monarch and queued once per creature that dealt combat damage
+    --     to the monarch in `batch`.
     if let some monarchPl := post.players.find? (fun pl => pl.isMonarch && !pl.lost && !pl.leftTheGame) then
-      let attCtrls : Array PlayerId :=
+      let attackers : Array (Option GameObject × Option ObjectId × PlayerId) :=
         batch.foldl (fun acc e =>
           match e.change with
           | .rules (.damage (.dealt pkts)) =>
@@ -8262,6 +8275,11 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
               if pkt.combat && pkt.amount > 0 && pkt.recipient == .player monarchPl.id then
                 let srcPost? := pkt.source.id.bind post.findObject?
                 let srcPre? := pkt.source.id.bind pre.findObject?
+                let srcObj? : Option GameObject :=
+                  match srcPost? with
+                  | some so =>
+                    if so.isOnBattlefield then some so else srcPre?.orElse (fun _ => some so)
+                  | none => srcPre?
                 let wasCreature :=
                   pkt.source.creature ||
                     (pkt.source.types.isEmpty &&
@@ -8280,11 +8298,13 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
                     | none => srcPre?.bind pre.controllerOf)
                 match wasCreature, ctrl? with
                 | true, some attCtrl =>
-                  if acc.contains attCtrl then acc else acc.push attCtrl
+                  let sid? := (srcObj?.map (·.id)).orElse (fun _ => pkt.source.id)
+                  if sid?.isSome && acc.any (fun (_, prevSid?, _) => prevSid? == sid?) then acc
+                  else acc.push (srcObj?, sid?, attCtrl)
                 | _, _ => acc
               else acc) acc
           | _ => acc) #[]
-      if !attCtrls.isEmpty then
+      if !attackers.isEmpty then
         let src : GameObject :=
           { printed := { name := "The monarch", types := #[] }
             id := noSourceSentinelId
@@ -8295,12 +8315,14 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
           TriggeredAbility.fra .combatDamageToYou
             "Whenever a creature deals combat damage to the monarch, its controller becomes the monarch."
             (.frc .monarch)
-        for attCtrl in attCtrls do
+        for (srcObj?, sid?, attCtrl) in attackers do
           waiting := waiting.push
             { controller := monarchPl.id
               source := src
               ability := ab
               event := .combatDamageToYou
+              causeId := sid?
+              cause := srcObj?
               causeController := some attCtrl
               checked := true }
     -- 8. “Whenever one or more opponents are dealt combat damage during your turn” (post-batch).
@@ -9258,134 +9280,156 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
         | .turn (.stepBegan step ap) =>
           match step with
           | .upkeep =>
-            if e.matchesTrigger ap none .yourUpkeep then
-              let (w, fs) := queueCtrl post ap .yourUpkeep (w := waiting) (fs := firedSources)
-              waiting := w; firedSources := fs
-            for pl in post.livingPlayers do
-              if e.matchesTrigger pl.id none .eachUpkeep then
-                let (w, fs) := queueCtrl post pl.id .eachUpkeep (w := waiting) (fs := firedSources)
-                waiting := w; firedSources := fs
-            -- Abilities that trigger from a graveyard (Command the Stage)
-            for pl in post.livingPlayers do
-              for gid in (post.player pl.id).graveyard do
-                match post.findObject? gid with
-                | some card =>
-                  let (w, fs) :=
-                    queueSrc post pl.id card (.fra .eachUpkeepFromGraveyard)
-                      (w := waiting) (fs := firedSources)
+            if post.isSharedTurnFirstSeat then
+              for m in post.teamMembers ap do
+                if post.stillInGame m &&
+                    e.matchesTrigger m none .yourUpkeep (isTeammate := post.areTeammates m) then
+                  let (w, fs) := queueCtrl post m .yourUpkeep (w := waiting) (fs := firedSources)
                   waiting := w; firedSources := fs
-                | none => pure ()
-            -- Auras with “at the beginning of the upkeep of enchanted creature's controller”
-            for aura in post.battlefield do
-              match aura.attachedTo.bind post.findObject?, post.controllerOf aura with
-              | some host, some c =>
-                if post.controlledBy host ap then
-                  let (w, fs) :=
-                    queueSrc post c aura .enchantedControllerUpkeep
-                      (w := waiting) (fs := firedSources)
+              for pl in post.livingPlayers do
+                if e.matchesTrigger pl.id none .eachUpkeep then
+                  let (w, fs) := queueCtrl post pl.id .eachUpkeep (w := waiting) (fs := firedSources)
                   waiting := w; firedSources := fs
-              | _, _ => pure ()
-            -- Delayed upkeep triggers (CR 603.7 / 800.4d; The Eagles Are Coming!)
-            for dt in post.delayedTriggers do
-              if !(post.player dt.controller).lost && !(post.player dt.controller).leftTheGame then
-                match dt.kind with
-                | .eaglesBirds n =>
-                  let src := dt.source.getD
-                    { printed := { name := "The Eagles Are Coming!", types := #[.sorcery] }
-                      id := noSourceSentinelId, owner := dt.controller, controller := some dt.controller, zone := .exile }
-                  let ab : TriggeredAbility :=
-                    .triggered .eachUpkeep
-                      { phrase := s!"Create {n} 1/1 white Bird Soldier creature token(s) with flying" } {}
-                  waiting := waiting.push
-                    { controller := dt.controller
-                      source := src
-                      ability := ab
-                      event := .eachUpkeep
-                      eventCause := some dt.cause
-                      delayedTrigger := some (dt.kind, dt.cause)
-                      checked := true }
-                | _ => pure ()
+              -- Abilities that trigger from a graveyard (Command the Stage)
+              for pl in post.livingPlayers do
+                for gid in (post.player pl.id).graveyard do
+                  match post.findObject? gid with
+                  | some card =>
+                    let (w, fs) :=
+                      queueSrc post pl.id card (.fra .eachUpkeepFromGraveyard)
+                        (w := waiting) (fs := firedSources)
+                    waiting := w; firedSources := fs
+                  | none => pure ()
+              -- Auras with “at the beginning of the upkeep of enchanted creature's controller”
+              for aura in post.battlefield do
+                match aura.attachedTo.bind post.findObject?, post.controllerOf aura with
+                | some host, some c =>
+                  if (post.teamMembers ap).any (fun m => post.stillInGame m && post.controlledBy host m) then
+                    let (w, fs) :=
+                      queueSrc post c aura .enchantedControllerUpkeep
+                        (w := waiting) (fs := firedSources)
+                    waiting := w; firedSources := fs
+                | _, _ => pure ()
+              -- Delayed upkeep triggers (CR 603.7 / 800.4d; The Eagles Are Coming!)
+              for dt in post.delayedTriggers do
+                if !(post.player dt.controller).lost && !(post.player dt.controller).leftTheGame then
+                  match dt.kind with
+                  | .eaglesBirds n =>
+                    let src := dt.source.getD
+                      { printed := { name := "The Eagles Are Coming!", types := #[.sorcery] }
+                        id := noSourceSentinelId, owner := dt.controller, controller := some dt.controller, zone := .exile }
+                    let ab : TriggeredAbility :=
+                      .triggered .eachUpkeep
+                        { phrase := s!"Create {n} 1/1 white Bird Soldier creature token(s) with flying" } {}
+                    waiting := waiting.push
+                      { controller := dt.controller
+                        source := src
+                        ability := ab
+                        event := .eachUpkeep
+                        eventCause := some dt.cause
+                        delayedTrigger := some (dt.kind, dt.cause)
+                        checked := true }
+                  | _ => pure ()
           | .draw =>
-            for opp in post.livingOpponents ap do
-              let (w, fs) :=
-                queueCtrl post opp.id .eachOpponentDrawStep (w := waiting) (fs := firedSources)
-              waiting := w; firedSources := fs
+            if post.isSharedTurnFirstSeat then
+              for opp in post.livingOpponents ap do
+                let (w, fs) :=
+                  queueCtrl post opp.id .eachOpponentDrawStep (w := waiting) (fs := firedSources)
+                waiting := w; firedSources := fs
           | .precombatMain =>
-            let (w, fs) := queueCtrl post ap .yourFirstMain (w := waiting) (fs := firedSources)
-            waiting := w; firedSources := fs
+            if post.isSharedTurnFirstSeat then
+              for m in post.teamMembers ap do
+                if post.stillInGame m then
+                  let (w, fs) := queueCtrl post m .yourFirstMain (w := waiting) (fs := firedSources)
+                  waiting := w; firedSources := fs
           | .beginningOfCombat =>
-            for pl in post.livingPlayers do
-              if post.isLivingOpponentOf pl.id ap then
-                let (w, fs) :=
-                  queueFra post pl.id .opponentBeginCombat (w := waiting) (fs := firedSources)
-                waiting := w; firedSources := fs
-            if e.matchesTrigger ap none .yourBeginCombat then
-              let (w, fs) := queueCtrl post ap .yourBeginCombat (w := waiting) (fs := firedSources)
-              waiting := w; firedSources := fs
-            for pl in post.livingPlayers do
-              if e.matchesTrigger pl.id none .eachBeginCombat then
-                let (w, fs) := queueCtrl post pl.id .eachBeginCombat (w := waiting) (fs := firedSources)
-                waiting := w; firedSources := fs
-            for gid in (post.player ap).graveyard do
-              match post.findObject? gid with
-              | some card =>
-                let (w, fs) :=
-                  queueSrc post ap card (.fra .yourBeginCombatFromGraveyard)
-                    (w := waiting) (fs := firedSources)
-                waiting := w; firedSources := fs
-              | none => pure ()
+            let isExtraCombat :=
+              (post.events.reverse.findSome? fun ev =>
+                match ev.change with
+                | .rules (.turn (.phaseEnded .combat)) => some true
+                | .rules (.turn (.turnBegan _ _)) => some false
+                | _ => none).getD false
+            if post.isSharedTurnFirstSeat || isExtraCombat then
+              for pl in post.livingPlayers do
+                if post.isLivingOpponentOf pl.id ap then
+                  let (w, fs) :=
+                    queueFra post pl.id .opponentBeginCombat (w := waiting) (fs := firedSources)
+                  waiting := w; firedSources := fs
+              for m in post.teamMembers ap do
+                if post.stillInGame m &&
+                    e.matchesTrigger m none .yourBeginCombat (isTeammate := post.areTeammates m) then
+                  let (w, fs) := queueCtrl post m .yourBeginCombat (w := waiting) (fs := firedSources)
+                  waiting := w; firedSources := fs
+              for pl in post.livingPlayers do
+                if e.matchesTrigger pl.id none .eachBeginCombat then
+                  let (w, fs) := queueCtrl post pl.id .eachBeginCombat (w := waiting) (fs := firedSources)
+                  waiting := w; firedSources := fs
+              for m in post.teamMembers ap do
+                if post.stillInGame m &&
+                    e.matchesTrigger m none (.fra .yourBeginCombatFromGraveyard) (isTeammate := post.areTeammates m) then
+                  for gid in (post.player m).graveyard do
+                    match post.findObject? gid with
+                    | some card =>
+                      let (w, fs) :=
+                        queueSrc post m card (.fra .yourBeginCombatFromGraveyard)
+                          (w := waiting) (fs := firedSources)
+                      waiting := w; firedSources := fs
+                    | none => pure ()
           | .end =>
-            for pl in post.livingPlayers do
-              if e.matchesTrigger pl.id none .eachEndStep then
-                let (w, fs) := queueCtrl post pl.id .eachEndStep (w := waiting) (fs := firedSources)
-                waiting := w; firedSources := fs
-            if e.matchesTrigger ap none .yourEndStep then
-              let (w, fs) := queueCtrl post ap .yourEndStep (w := waiting) (fs := firedSources)
-              waiting := w; firedSources := fs
-            -- Inherent monarch end-step draw trigger (CR 725.2 / 113.8 / 805.4c; Ruling 938)
-            if let some monarchPl := post.players.find? (fun pl => pl.isMonarch && !pl.lost && !pl.leftTheGame) then
-              if post.isOnActiveTeam monarchPl.id && post.isSharedTurnFinalSeat then
-                let src : GameObject :=
-                  { printed := { name := "The monarch", types := #[] }
-                    id := noSourceSentinelId
-                    owner := monarchPl.id
-                    controller := some monarchPl.id
-                    zone := .command }
-                let ab : TriggeredAbility :=
-                  TriggeredAbility.fra .yourEndStep
-                    "At the beginning of the monarch's end step, that player draws a card."
-                    (.draw 1)
-                waiting := waiting.push
-                  { controller := monarchPl.id
-                    source := src
-                    ability := ab
-                    event := .yourEndStep
-                    checked := true }
-            -- Delayed end-step triggers (CR 603.7 / 800.4d)
-            for dt in post.delayedTriggers do
-              if !(post.player dt.controller).lost && !(post.player dt.controller).leftTheGame then
-                match dt.kind with
-                | .endStepReturn _ | .endStepExile _ | .endStepSacrifice _
-                | .endStepGraveReturn _ _ | .endStepSynthetic _ =>
-                  let obj? : Option GameObject :=
-                    match dt.kind with
-                    | .endStepReturn oid | .endStepExile oid | .endStepSacrifice oid
-                    | .endStepGraveReturn oid _ => post.findObject? oid
-                    | _ => none
-                  let src := (dt.source.orElse (fun _ => obj?)).getD
-                    { printed := { name := "Delayed Trigger", types := #[] }
-                      id := noSourceSentinelId, owner := dt.controller, controller := some dt.controller, zone := .exile }
+            if post.isSharedTurnFinalSeat then
+              for pl in post.livingPlayers do
+                if e.matchesTrigger pl.id none .eachEndStep then
+                  let (w, fs) := queueCtrl post pl.id .eachEndStep (w := waiting) (fs := firedSources)
+                  waiting := w; firedSources := fs
+              for m in post.teamMembers ap do
+                if post.stillInGame m &&
+                    e.matchesTrigger m none .yourEndStep (isTeammate := post.areTeammates m) then
+                  let (w, fs) := queueCtrl post m .yourEndStep (w := waiting) (fs := firedSources)
+                  waiting := w; firedSources := fs
+              -- Inherent monarch end-step draw trigger (CR 725.2 / 113.8 / 805.4; Ruling 938)
+              if let some monarchPl := post.players.find? (fun pl => pl.isMonarch && !pl.lost && !pl.leftTheGame) then
+                if post.isOnActiveTeam monarchPl.id then
+                  let src : GameObject :=
+                    { printed := { name := "The monarch", types := #[] }
+                      id := noSourceSentinelId
+                      owner := monarchPl.id
+                      controller := some monarchPl.id
+                      zone := .command }
                   let ab : TriggeredAbility :=
-                    .triggered .eachEndStep { phrase := "At the beginning of the next end step" } {}
+                    TriggeredAbility.fra .yourEndStep
+                      "At the beginning of the monarch's end step, that player draws a card."
+                      (.draw 1)
                   waiting := waiting.push
-                    { controller := dt.controller
+                    { controller := monarchPl.id
                       source := src
                       ability := ab
-                      event := .eachEndStep
-                      eventCause := some dt.cause
-                      delayedTrigger := some (dt.kind, dt.cause)
+                      event := .yourEndStep
                       checked := true }
-                | _ => pure ()
+              -- Delayed end-step triggers (CR 603.7 / 800.4d)
+              for dt in post.delayedTriggers do
+                if !(post.player dt.controller).lost && !(post.player dt.controller).leftTheGame then
+                  match dt.kind with
+                  | .endStepReturn _ | .endStepExile _ | .endStepSacrifice _
+                  | .endStepGraveReturn _ _ | .endStepSynthetic _ =>
+                    let obj? : Option GameObject :=
+                      match dt.kind with
+                      | .endStepReturn oid | .endStepExile oid | .endStepSacrifice oid
+                      | .endStepGraveReturn oid _ => post.findObject? oid
+                      | _ => none
+                    let src := (dt.source.orElse (fun _ => obj?)).getD
+                      { printed := { name := "Delayed Trigger", types := #[] }
+                        id := noSourceSentinelId, owner := dt.controller, controller := some dt.controller, zone := .exile }
+                    let ab : TriggeredAbility :=
+                      .triggered .eachEndStep { phrase := "At the beginning of the next end step" } {}
+                    waiting := waiting.push
+                      { controller := dt.controller
+                        source := src
+                        ability := ab
+                        event := .eachEndStep
+                        eventCause := some dt.cause
+                        delayedTrigger := some (dt.kind, dt.cause)
+                        checked := true }
+                  | _ => pure ()
           | _ => pure ()
         | .turn (.turnBegan _ _)
         | .turn (.phaseBegan _)
@@ -9399,6 +9443,11 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
         | .combat (.attackersDeclared activePlayer decls) =>
           let attackerIds := decls.filterMap (·.1.id)
           let attackers := attackerIds.filterMap post.findObject?
+          let attackedPlayer? (o : GameObject) : Option PlayerId :=
+            match o.status.attackingTarget with
+            | some (.player d) => some d
+            | none => some post.defendingPlayer
+            | some (.planeswalker _) | some (.battle _) => none
           if !attackers.isEmpty then
             -- Zombie token with power >= 6 and Sphinxes count (from declareAttackers)
             let mut sphinxes := 0
@@ -9435,10 +9484,10 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
                     (w := waiting) (fs := firedSources)
                 waiting := w; firedSources := fs
               let alone :=
-                !attackers.any (fun a' =>
-                  a'.id != a.id && post.defendingPlayerOf a' == whom &&
-                    a'.status.attackingPlaneswalker?.isNone) &&
-                  a.status.attackingPlaneswalker?.isNone
+                match attackedPlayer? a with
+                | some d =>
+                  !attackers.any (fun a' => a'.id != a.id && attackedPlayer? a' == some d)
+                | none => false
               if alone then
                 let (w, fs) :=
                   queueFra post activePlayer .creatureYouControlAttacksPlayerAlone (cause := some a)
@@ -9486,14 +9535,16 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
               let (w, fs) :=
                 queueCtrl post activePlayer .youAttackWithElves (w := waiting) (fs := firedSources)
               waiting := w; firedSources := fs
-            let attacksSamePlayer :=
-              attackers.any (fun o =>
-                match o.status.attackingPlayer? with
-                | none =>
-                  o.status.attackingPlaneswalker?.isNone && attackers.size >= 2
+            let twoOrMoreDefenders :=
+              attackers.foldl (fun (acc : Array PlayerId) o =>
+                match attackedPlayer? o with
                 | some d =>
-                  (attackers.filter (fun o' => o'.status.attackingPlayer? == some d)).size >= 2)
-            if attacksSamePlayer then
+                  if acc.contains d then acc
+                  else if (attackers.filter (fun o' => attackedPlayer? o' == some d)).size >= 2 then
+                    acc.push d
+                  else acc
+                | none => acc) #[]
+            for _ in twoOrMoreDefenders do
               let (w, fs) :=
                 queueCtrl post activePlayer .youAttackWithTwoOrMore (w := waiting) (fs := firedSources)
               waiting := w; firedSources := fs
@@ -9536,16 +9587,19 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
               post.battlefield.filter (fun o => post.isCreature o && o.status.attacking)
             if allAttacking.size == 1 && post.controlledBy allAttacking[0]! activePlayer then
               let attacker := allAttacking[0]!
-              let aid := attacker.id
               for o in post.permanentsOf activePlayer do
                 let (w, fs) :=
                   queueSrc post activePlayer o .creatureYouControlAttacksAlone
                     (cause := some attacker) (w := waiting) (fs := firedSources)
-                let (w, fs) :=
-                  if o.attachedTo == some aid then
-                    queueSrc post activePlayer o .equippedAttacksAlone (w := w) (fs := fs)
-                  else (w, fs)
                 waiting := w; firedSources := fs
+            if decls.size == 1 && allAttacking.size == 1 then
+              let aid := allAttacking[0]!.id
+              for eq in post.battlefield do
+                if eq.attachedTo == some aid then
+                  if let some c := post.controllerOf eq then
+                    let (w, fs) :=
+                      queueSrc post c eq .equippedAttacksAlone (w := waiting) (fs := firedSources)
+                    waiting := w; firedSources := fs
             let totalPower :=
               attackers.foldl (fun acc o => acc + post.snapshotPower o) 0
             if totalPower >= 12 then
@@ -11227,7 +11281,7 @@ def applyBlackGateUnblockable (g : Game) (attackerId : ObjectId)
       else
         let g := g.createEffect (.cantBeBlockedByPlayerUntilEot attackerId chosen)
         g.logMsg
-          s!"{o.name} can't be blocked by creatures {(g.player chosen).name} controls this turn"
+          s!"{g.name o} can't be blocked by creatures {(g.player chosen).name} controls this turn"
 
 /-- Record and apply the creation of multiple continuous effects in order (CR 611). -/
 def createEffects (g : Game) (effs : Array ContinuousEffect)

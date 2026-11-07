@@ -108,7 +108,7 @@ def startWithRng (cfg : StartConfig) : Except String (Game × Rng) := do
         (rng, g1.continueOpeningShuffles 0)
     | some i =>
       let startIdx := i % g.players.size
-      let sp : PlayerId := ⟨startIdx⟩
+      let sp : PlayerId := ((g.teamMembers ⟨startIdx⟩).find? g.stillInGame).getD ⟨startIdx⟩
       let g1 := g.changes #[.startingPlayer sp, .priority sp]
       let g1 := g1.logMsg s!"Rules: {Mtg.Engine.Rules.identification}"
       let g1 := g1.logMsg s!"Starting player: {g1.player sp |>.name}"

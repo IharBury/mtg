@@ -27,7 +27,7 @@ def drawOneCard (g : Game) (p : PlayerId)
       let nth := GameEvent.draws g.events g.turnNumber p + 1
       let firstOfTheirDrawStep :=
         firstOfTheirDrawStep?.getD
-          (g.step == .draw && g.activePlayer == p &&
+          (g.step == .draw && g.isOnActiveTeam p &&
             !GameEvent.drewFirstOfDrawStep g.events g.turnNumber p)
       -- Opening hands are drawn before anyone keeps (CR 103.5). They are not
       -- “cards drawn this turn” once that counter is cleared for the first turn.
@@ -57,7 +57,7 @@ partial def drawOneWithReplacements (g : Game) (p : PlayerId)
     let pl := g.player p
     let firstOfYourDrawStep :=
       firstOfYourDrawStep?.getD
-        (g.step == .draw && g.activePlayer == p &&
+        (g.step == .draw && g.isOnActiveTeam p &&
           !GameEvent.drewFirstOfDrawStep g.events g.turnNumber p)
     let cause := cause.orElse (fun _ =>
       if !pl.keptOpeningHand then
@@ -140,7 +140,7 @@ def draw (g : Game) (p : PlayerId) (n : Nat := 1)
     | none =>
       let pl := g.player p
       let firstOfTheirDrawStep :=
-        g.step == .draw && g.activePlayer == p &&
+        g.step == .draw && g.isOnActiveTeam p &&
           !GameEvent.drewFirstOfDrawStep g.events g.turnNumber p
       if n == 0 || g.drewFromEmpty p || pl.library.isEmpty || !pl.keptOpeningHand ||
           firstOfTheirDrawStep then

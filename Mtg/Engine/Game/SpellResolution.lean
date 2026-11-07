@@ -126,9 +126,9 @@ def resolveDelayedTrigger (g : Game) (controller : PlayerId) (kind : DelayedTrig
                 match back.attachedTo with
                 | some hid =>
                   let hostName := (g'.findObject? hid).map g'.name |>.getD "permanent"
-                  g'.logMsg s!"{back.name} returns to the battlefield attached to {hostName} (beginning of end step)"
+                  g'.logMsg s!"{g'.name back} returns to the battlefield attached to {hostName} (beginning of end step)"
                 | none =>
-                  g'.logMsg s!"{back.name} returns to the battlefield (beginning of end step)"
+                  g'.logMsg s!"{g'.name back} returns to the battlefield (beginning of end step)"
               if g'.isLand back then g'.afterLandEnters back else g'.afterPermanentEnters back
             | none => g'
       else g
@@ -136,7 +136,7 @@ def resolveDelayedTrigger (g : Game) (controller : PlayerId) (kind : DelayedTrig
     match g.findObject? id with
     | some o =>
       if o.isOnBattlefield then
-        let msg := s!"{o.name} is exiled (beginning of end step)"
+        let msg := s!"{g.name o} is exiled (beginning of end step)"
         let (g', _) := g.move id .exile none (cause := some cause)
         if let .chooseReplacement .. := g'.pending then
           g'.chainPendingReplacement (.finishPostStep (.logExiledIfInExile id msg))
@@ -149,7 +149,7 @@ def resolveDelayedTrigger (g : Game) (controller : PlayerId) (kind : DelayedTrig
     match g.findObject? id with
     | some o =>
       if o.isOnBattlefield then
-        g.sacrificeToGraveyard o s!"{o.name} is sacrificed" (cause := some cause)
+        g.sacrificeToGraveyard o s!"{g.name o} is sacrificed" (cause := some cause)
       else g
     | none => g
   | .endStepGraveReturn id who =>
@@ -167,9 +167,9 @@ def resolveDelayedTrigger (g : Game) (controller : PlayerId) (kind : DelayedTrig
               match back.attachedTo with
               | some hid =>
                 let hostName := (g'.findObject? hid).map g'.name |>.getD "permanent"
-                g'.logMsg s!"{back.name} returns to the battlefield attached to {hostName}"
+                g'.logMsg s!"{g'.name back} returns to the battlefield attached to {hostName}"
               | none =>
-                g'.logMsg s!"{back.name} returns to the battlefield"
+                g'.logMsg s!"{g'.name back} returns to the battlefield"
             if g'.isLand back then g'.afterLandEnters back else g'.afterPermanentEnters back
           | none => g'
       else g

@@ -64,7 +64,7 @@ def temptWithTheRing (g : Game) (p : PlayerId) (chosen : Option ObjectId := none
     let g :=
       match pick with
       | some id =>
-        g.logMsg s!"{(g.player p).name} chooses {(g.object! id).name} as their Ring-bearer"
+        g.logMsg s!"{(g.player p).name} chooses {g.name (g.object! id)} as their Ring-bearer"
       | none =>
         g.logMsg s!"{(g.player p).name} controls no creature to become Ring-bearer"
     g.record (GameEvent.ringTempted g.turnNumber p pick nextAbilities

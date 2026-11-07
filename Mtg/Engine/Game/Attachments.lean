@@ -37,7 +37,7 @@ def attachSourceTo (g : Game) (src host : GameObject)
     else
       let effCause := g.resolveOptionalCause cause (fallbackSrc := some src.id) (fallbackCtrl := g.controllerOf src)
       let g := g.record (GameEvent.attached g.turnNumber (g.snapshot src) host.id (previous := src.attachedTo) (cause := effCause))
-      g.logMsg s!"{src.name} attaches to {host.name}"
+      g.logMsg s!"{g.name (g.object! src.id)} attaches to {g.name (g.object! host.id)}"
   | _, _ => g
 
 /-- An object ceases to exist (CR 111.7 / 704.5d / 704.5e).
@@ -66,9 +66,10 @@ def unattachFrom (g : Game) (hostId : ObjectId) : Game :=
     let mut g := g
     for o in g.objects.filter (·.isBattlefieldObject) do
       if o.attachedTo == some hostId then
+        let oName := g.name o
         g := g.record (GameEvent.unattached g.turnNumber (g.snapshot o) hostId
           (cause := .gameRule .unattachOnHostLeave))
-        g := g.logMsg s!"{o.name} becomes unattached"
+        g := g.logMsg s!"{oName} becomes unattached"
     return g
 
 end Game

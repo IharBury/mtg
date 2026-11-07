@@ -150,7 +150,7 @@ def declareBlockers (g : Game) (p : PlayerId) (assignments : Array (ObjectId × 
           (g.controlledBy b p ||
             g.livingPlayers.any (fun m => g.areTeammates p m.id && g.controlledBy b m.id))
       if !onDefendingTeam || !g.canBlock b a then
-        throw s!"{b.name} cannot block {a.name}"
+        throw s!"{g.name b} cannot block {g.name a}"
       decls := decls.push (g.snapshot b, attackerId)
     if !decls.isEmpty then
       g := g.record (GameEvent.blockersDeclared g.turnNumber p decls
@@ -161,7 +161,7 @@ def declareBlockers (g : Game) (p : PlayerId) (assignments : Array (ObjectId × 
       let a := g.object! attackerId
       if !blockedAttackers.contains attackerId then
         blockedAttackers := blockedAttackers.push attackerId
-      g := g.logMsg s!"{b.name} blocks {a.name}"
+      g := g.logMsg s!"{g.name b} blocks {g.name a}"
     for attackerId in blockedAttackers do
       let a := g.object! attackerId
       let bs := (assignments.filter (·.2 == attackerId)).map (·.1)
@@ -175,10 +175,10 @@ def declareBlockers (g : Game) (p : PlayerId) (assignments : Array (ObjectId × 
         let need := g.minBlockersRequired o
         if n > 0 && n < need then
           let word := if need == 2 then "two" else toString need
-          throw s!"{o.name} can't be blocked except by {word} or more creatures"
+          throw s!"{g.name o} can't be blocked except by {word} or more creatures"
         if n > 0 && !g.legalBlockerCount o n then
           let cap := (g.maxBlockersAllowed o).getD 0
-          throw s!"{o.name} can't be blocked by more than {cap} creature(s)"
+          throw s!"{g.name o} can't be blocked by more than {cap} creature(s)"
     let rest := g.blockersQueue.extract 1 g.blockersQueue.size
     if rest.isEmpty then
       for o in g.battlefield do
@@ -268,7 +268,8 @@ def checkCombatAssignment (g : Game) (asgn : CreatureCombatAssignment) (forAttac
     (batch : Array CreatureCombatAssignment) : Except String Unit := do
   let some src := g.findObject? asgn.source | throw "no such object"
   if !src.isOnBattlefield then
-    throw s!"{src.name} is not on the battlefield"
+    throw s!"{g.name src} is not on the battlefield"
+  let srcName := g.name src
   let defender := g.defendingPlayerOf src
   let dmg := g.combatDamageAmount src
   if asgn.toPlayer < 0 || asgn.toCreatures.any (fun (_, n) => n < 0) then
@@ -282,54 +283,54 @@ def checkCombatAssignment (g : Game) (asgn : CreatureCombatAssignment) (forAttac
   for (tid, _) in asgn.toCreatures do
     if !recipients.any (fun r => r.id == tid) then
       if forAttackers then
-        throw s!"{src.name} must assign combat damage to the creatures blocking it (CR 510.1c)"
+        throw s!"{srcName} must assign combat damage to the creatures blocking it (CR 510.1c)"
       else
-        throw s!"{src.name} must assign combat damage to the creatures it's blocking (CR 510.1d)"
+        throw s!"{srcName} must assign combat damage to the creatures it's blocking (CR 510.1d)"
   let toCreatures := creatureDamageTotal asgn
   let liveDest := g.hasLiveAttackDestination src
   if forAttackers then
     if !src.status.attacking then
-      throw s!"{src.name} is not attacking"
+      throw s!"{srcName} is not attacking"
     if recipients.isEmpty then
       if asgn.toCreatures.size != 0 then
-        throw s!"{src.name} has no blocking creatures to assign combat damage to"
+        throw s!"{srcName} has no blocking creatures to assign combat damage to"
       if src.status.blocked && !g.hasTrample src then
         if asgn.toPlayer != 0 then
-          throw s!"{src.name} is blocked with no remaining blockers and assigns no combat damage (CR 510.1c)"
+          throw s!"{srcName} is blocked with no remaining blockers and assigns no combat damage (CR 510.1c)"
       else if !liveDest then
         if asgn.toPlayer != 0 then
           if (g.player defender).lost then
             throw s!"combat damage isn't assigned to a player who has left the game (CR 800.4e)"
           else
-            throw s!"{src.name} has no remaining player, planeswalker, or battle in combat to assign damage to (CR 506.4c / 702.19f)"
+            throw s!"{srcName} has no remaining player, planeswalker, or battle in combat to assign damage to (CR 506.4c / 702.19f)"
       else if asgn.toPlayer != dmg then
-        throw s!"{src.name} must assign combat damage equal to its power (CR 510.1a)"
+        throw s!"{srcName} must assign combat damage equal to its power (CR 510.1a)"
     else
       if !liveDest then
         if asgn.toPlayer != 0 then
           if (g.player defender).lost then
             throw s!"combat damage isn't assigned to a player who has left the game (CR 800.4e)"
           else
-            throw s!"{src.name} cannot assign combat damage to the defending player when the planeswalker it was attacking left combat (CR 702.19b / 702.19f)"
+            throw s!"{srcName} cannot assign combat damage to the defending player when the planeswalker it was attacking left combat (CR 702.19b / 702.19f)"
         if toCreatures != dmg then
-          throw s!"{src.name} must assign combat damage equal to its power (CR 510.1a)"
+          throw s!"{srcName} must assign combat damage equal to its power (CR 510.1a)"
       else if toCreatures + asgn.toPlayer != dmg then
-        throw s!"{src.name} must assign combat damage equal to its power (CR 510.1a)"
+        throw s!"{srcName} must assign combat damage equal to its power (CR 510.1a)"
       if asgn.toPlayer > 0 then
         if !g.hasTrample src then
-          throw s!"{src.name} cannot assign combat damage to the defending player"
+          throw s!"{srcName} cannot assign combat damage to the defending player"
         if recipients.any (fun b => g.lethalRemaining b batch > 0) then
-          throw s!"{src.name} must assign lethal damage to each blocking creature before trampling (CR 702.19b)"
+          throw s!"{srcName} must assign lethal damage to each blocking creature before trampling (CR 702.19b)"
   else
     if src.status.blocking.isEmpty then
-      throw s!"{src.name} is not blocking"
+      throw s!"{srcName} is not blocking"
     if asgn.toPlayer != 0 then
-      throw s!"{src.name} assigns combat damage to the creatures it's blocking (CR 510.1d)"
+      throw s!"{srcName} assigns combat damage to the creatures it's blocking (CR 510.1d)"
     if recipients.isEmpty then
       if toCreatures != 0 then
-        throw s!"{src.name} is not blocking any creatures and assigns no combat damage (CR 510.1d)"
+        throw s!"{srcName} is not blocking any creatures and assigns no combat damage (CR 510.1d)"
     else if toCreatures != dmg then
-      throw s!"{src.name} must assign combat damage equal to its power (CR 510.1a)"
+      throw s!"{srcName} must assign combat damage equal to its power (CR 510.1a)"
 
 /-- CR 510.1e: the total assignment is legal only if every creature complies. -/
 def checkCombatAssignmentBatch (g : Game) (forAttackers : Bool)
@@ -378,10 +379,10 @@ def dealAssignedCombatDamage (g : Game) (startIdx : Nat := 0) : Game :=
           if src.status.attacking && src.status.blocked && recipients.isEmpty &&
               toPlayer == 0 then
             g := g.logMsg
-              s!"{src.name} is blocked with no remaining blockers and assigns no combat damage (CR 510.1c)"
+              s!"{g.name src} is blocked with no remaining blockers and assigns no combat damage (CR 510.1c)"
           else if !src.status.blocking.isEmpty && recipients.isEmpty then
             g := g.logMsg
-              s!"{src.name} is not blocking any creatures and assigns no combat damage (CR 510.1d)"
+              s!"{g.name src} is not blocking any creatures and assigns no combat damage (CR 510.1d)"
       | .toCreature srcId tid amt =>
         if let (some src, some t) :=
             ((g.findObject? srcId).filter (·.isOnBattlefield),
@@ -393,7 +394,7 @@ def dealAssignedCombatDamage (g : Game) (startIdx : Nat := 0) : Game :=
             return g.promptChooseReplacement chooser choices (.dealAssignedCombatDamage k)
           let dealtAmt := rep.amount
           g := g.markDamageOn t amt
-            s!"{src.name} deals {dealtAmt} combat damage to {t.name}"
+            s!"{g.name src} deals {dealtAmt} combat damage to {g.name t}"
             (deathtouch := g.hasDeathtouch src) (combat := true)
             (source := some srcEvent) (sourceObj := some src)
             (replaced := some rep) (consumeOrder := true) (cause := rep.cause)
@@ -414,7 +415,7 @@ def dealAssignedCombatDamage (g : Game) (startIdx : Nat := 0) : Game :=
                 if let some (chooser, choices) := rep.choice? then
                   return g.promptChooseReplacement chooser choices (.dealAssignedCombatDamage k)
                 let dealtAmt := rep.amount
-                g := g.markDamageOn pw amt s!"{src.name} deals {dealtAmt} combat damage to {pw.name}"
+                g := g.markDamageOn pw amt s!"{g.name src} deals {dealtAmt} combat damage to {g.name pw}"
                   (deathtouch := g.hasDeathtouch src) (combat := true)
                   (source := some srcEvent) (sourceObj := some src)
                   (replaced := some rep) (consumeOrder := true) (cause := rep.cause)
@@ -438,7 +439,7 @@ def dealAssignedCombatDamage (g : Game) (startIdx : Nat := 0) : Game :=
               if g.protectionFromEverything defn then
                 g := g.logMsg s!"combat damage to {pl.name} is prevented"
               else
-                g := g.logMsg s!"combat damage from {src.name} is prevented"
+                g := g.logMsg s!"combat damage from {g.name src} is prevented"
             else
               let toPlayer := rep.amount
               let dealtCause := rep.cause.getD (.turnBased (.dealCombatDamage fs))

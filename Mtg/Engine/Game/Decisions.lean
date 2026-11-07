@@ -508,13 +508,13 @@ partial def resumePendingReplacement (g : Game) (pr : PendingReplacement)
     match fromId.bind (fun id => g.followMovedToZone? id (· == .battlefield)) with
     | some entered =>
       if isPlayLand then
-        let g := if entered.status.tapped then g.logMsg s!"{entered.name} enters tapped" else g
+        let g := if entered.status.tapped then g.logMsg s!"{g.name entered} enters tapped" else g
         g.afterLandEnters entered
       else
         let g :=
           match (attachedToHost <|> entered.attachedTo).bind g.findObject? with
           | some host => g.logMsg s!"{g.name entered} enters the battlefield attached to {g.name host}"
-          | none => g.logMsg s!"{entered.name} enters the battlefield"
+          | none => g.logMsg s!"{g.name entered} enters the battlefield"
         g.afterPermanentEnters entered
     | none => g
   | .addExtraCombatDamageStep =>
@@ -890,7 +890,7 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
   | .enteredBattlefieldPutRestBottomRandom p cardId rest cause =>
     let g :=
       match g.followMovedToZone? cardId (· == .battlefield) with
-      | some entered => (g.logMsg s!"{entered.name} enters the battlefield").afterPermanentEnters entered
+      | some entered => (g.logMsg s!"{g.name entered} enters the battlefield").afterPermanentEnters entered
       | none => g
     if rest.isEmpty then g
     else
@@ -905,7 +905,7 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
   | .returnTappedWithEndStepExile controller cardId sourceId cause =>
     match g.followMovedToZone? cardId (· == .battlefield) with
     | some entered =>
-      let g := g.logMsg s!"{entered.name} returns to the battlefield tapped under {(g.player controller).name}'s control"
+      let g := g.logMsg s!"{g.name entered} returns to the battlefield tapped under {(g.player controller).name}'s control"
       let src := (sourceId.bind g.findObject?).orElse (fun _ => some entered)
       let g := g.registerDelayedTrigger
         { controller, source := src, kind := .endStepExile entered.id, cause }
@@ -943,19 +943,19 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
         | .returnedBattlefieldEndStep .. =>
           match entered.attachedTo.bind g.findObject? with
           | some host =>
-            g.logMsg s!"{entered.name} returns to the battlefield attached to {g.name host} (beginning of end step)"
+            g.logMsg s!"{g.name entered} returns to the battlefield attached to {g.name host} (beginning of end step)"
           | none =>
-            g.logMsg s!"{entered.name} returns to the battlefield (beginning of end step)"
+            g.logMsg s!"{g.name entered} returns to the battlefield (beginning of end step)"
         | .returnedToBattlefield .. =>
           match entered.attachedTo.bind g.findObject? with
           | some host =>
-            g.logMsg s!"{entered.name} returns to the battlefield attached to {g.name host}"
+            g.logMsg s!"{g.name entered} returns to the battlefield attached to {g.name host}"
           | none =>
-            g.logMsg s!"{entered.name} returns to the battlefield"
+            g.logMsg s!"{g.name entered} returns to the battlefield"
         | .returnedToBattlefieldTapped .. =>
-          g.logMsg s!"{entered.name} returns to the battlefield tapped"
+          g.logMsg s!"{g.name entered} returns to the battlefield tapped"
         | .enteredBattlefieldTapped .. =>
-          g.logMsg s!"{entered.name} enters the battlefield tapped"
+          g.logMsg s!"{g.name entered} enters the battlefield tapped"
         | _ => g
       if isLand then g.afterLandEnters entered else g.afterPermanentEnters entered
     | none => g
@@ -977,7 +977,7 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
   | .enteredOfferAttachEquipment controller cardId =>
     match g.followMovedToZone? cardId (· == .battlefield) with
     | some entered =>
-      let name := entered.name
+      let name := g.name entered
       let g := g.afterPermanentEnters entered
       if g.pending != .none then g
       else if (g.permanentsOf controller).any (g.isEquipment ·) then
@@ -989,7 +989,7 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
     let g :=
       match g.followMovedToZone? cardId (· == .battlefield) with
       | some entered =>
-        let name := entered.name
+        let name := g.name entered
         let g := g.afterPermanentEnters entered
         let g := if x >= 4 then g.grantUntilEotLogged (g.object! entered.id) Keyword.haste else g
         g.logMsg s!"{name} is put onto the battlefield"
@@ -1020,7 +1020,7 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
       match g.findObject? tid with
       | some entered =>
         if entered.isOnBattlefield then
-          (g.logMsg s!"{entered.name} enters the battlefield").afterPermanentEnters entered
+          (g.logMsg s!"{g.name entered} enters the battlefield").afterPermanentEnters entered
         else g
       | none => g) g
   | .dealDamageToEachOpponent p amount sourceId cause startEventIdx =>
@@ -1259,12 +1259,12 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
   | .logReturnsToBattlefieldAndEnter cardId =>
     match g.followMovedToZone? cardId (· == .battlefield) with
     | some entered =>
-      (g.logMsg s!"{entered.name} returns to the battlefield").afterPermanentEnters entered
+      (g.logMsg s!"{g.name entered} returns to the battlefield").afterPermanentEnters entered
     | none => g
   | .logPutUnderOwnerControlAndEnter cardId =>
     match g.followMovedToZone? cardId (· == .battlefield) with
     | some entered =>
-      (g.logMsg s!"{entered.name} is put onto the battlefield under its owner's control").afterPermanentEnters entered
+      (g.logMsg s!"{g.name entered} is put onto the battlefield under its owner's control").afterPermanentEnters entered
     | none => g
   | .returnNotedLandsStep remaining entered =>
     g.returnNotedLandsStep remaining entered
@@ -1284,7 +1284,7 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
     match g.followMovedToZone? cardId (· == .battlefield) with
     | some entered =>
       if entered.isOnBattlefield then
-        (g.logMsg s!"{entered.name} returns as an artifact").afterPermanentEnters entered
+        (g.logMsg s!"{g.name entered} returns as an artifact").afterPermanentEnters entered
       else g
     | none => g
   | .worldsWithinWorldsExileSelf sourceId =>
@@ -1580,7 +1580,7 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
         g.logMsg s!"{(g.player p).name} exiles {exiledCount} card(s) from their graveyard"
       else g
     match g.findObject? sourceId with
-    | some src => g.logMsg s!"{src.name}'s boast ability is activated"
+    | some src => g.logMsg s!"{g.name src}'s boast ability is activated"
     | none => g
   | .plusOneOnCreatedTokensLoop controller remainingIds amount =>
     g.plusOneOnCreatedTokensLoop controller remainingIds amount
@@ -1743,9 +1743,8 @@ partial def continueCostPicks (g : Game) (prop : ProposedSpell) (picks : Array C
       | .ok g' => return g'
       | .error _ => g.reverseProposedSpell? (resumeContinuation := true)
 
-/-- Clear the finished scry or surveil, draw any follow-up cards, and offer
-Palantír's opponent their choice without draining outer continuations or
-granting priority. -/
+/-- Clear the finished scry or surveil and draw any follow-up cards without
+draining outer continuations or granting priority. -/
 partial def finishLibraryLookCore (g : Game) : Game :=
   if let .chooseReplacement .. := g.pending then
     g.chainPendingReplacement .finishLibraryLook
@@ -1771,15 +1770,10 @@ partial def finishLibraryLookCore (g : Game) : Game :=
         | none => g
       if let .chooseReplacement .. := g.pending then
         g.chainPendingReplacement .finishLibraryLook
-      else if g.pending != .none then g
-      else
-        match g.palantirAfterScry with
-        | some (controller, opp, sid) =>
-          (g.change (.palantirAfterScry none)).offerPalantirChoice controller opp sid
-        | none => g
+      else g
 
-/-- Clear the finished scry or surveil, draw any follow-up cards, offer
-Palantír's opponent their choice, and give the active player priority. -/
+/-- Clear the finished scry or surveil, draw any follow-up cards, and give the
+active player priority. -/
 partial def finishLibraryLook (g : Game) : Game :=
   g.finishLibraryLookCore.finishAndGrantPriority
 
@@ -1854,12 +1848,12 @@ partial def finishProliferateTarget (g : Game) (p : PlayerId) (targetId : Object
         g.chainPendingReplacement (.finishProliferateTarget p targetId #[] false
           remainingTargets permIds playerIds chosenEmpty remainingRounds cause)
       else
-        let oName := ((g.findObject? targetId).map (·.name)).getD "permanent"
+        let oName := ((g.findObject? targetId).map g.name).getD "permanent"
         let g := g.logMsg s!"{(g.player p).name} proliferates {oName}"
         g.finishProliferateLoop p remainingTargets (permIds.push targetId) playerIds
           chosenEmpty remainingRounds cause
     else
-      let oName := ((g.findObject? targetId).map (·.name)).getD "permanent"
+      let oName := ((g.findObject? targetId).map g.name).getD "permanent"
       let g := g.logMsg s!"{(g.player p).name} proliferates {oName}"
       g.finishProliferateLoop p remainingTargets (permIds.push targetId) playerIds
         chosenEmpty remainingRounds cause
@@ -2903,9 +2897,9 @@ def finishProliferate (g : Game) (p : PlayerId) (chosen : Array Target) :
       | .permanent id =>
         let some o := g.findObject? id | throw "no such object"
         if !o.isOnBattlefield then
-          throw s!"{o.name} is not a permanent on the battlefield (CR 701.34a)"
+          throw s!"{g.name o} is not a permanent on the battlefield (CR 701.34a)"
         if !o.status.hasCounters then
-          throw s!"{o.name} has no counters"
+          throw s!"{g.name o} has no counters"
       | .player pid =>
         let pl := g.player pid
         if g.teamPoison pid == 0 && !pl.counters.any (fun (_, c) => c > 0) then
@@ -3226,7 +3220,7 @@ def chooseSpellOr (g : Game) (p : PlayerId) (idx : Nat) : Except String Game := 
       let some id := id? | throw "no such object"
       let some o := g.findObject? id | throw "no such object"
       if !o.isOnBattlefield then
-        throw s!"{o.name} is no longer on the battlefield"
+        throw s!"{g.name o} is no longer on the battlefield"
     let outerCont? := g.pendingReplacement
     let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
     let effect := g.spellOr[idx]!
@@ -3255,7 +3249,7 @@ def chooseLibrarySide (g : Game) (p : PlayerId) (top : Bool) : Except String Gam
       let some id := id? | throw "no such object"
       let some o := g.findObject? id | throw "no such object"
       if !o.isOnBattlefield then
-        throw s!"{o.name} is no longer on the battlefield"
+        throw s!"{g.name o} is no longer on the battlefield"
       let outerCont? := g.pendingReplacement
       let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
       let g := (g.change (.pending .none)).putOnOwnerLibrary o (top := top)

@@ -281,7 +281,7 @@ def finishFraExileUntilSourceLeaves (g : Game) (srcId fromId : ObjectId) : Game 
       | none => g
     let srcName :=
       match g.findObject? srcId with
-      | some src => src.name
+      | some src => g.name src
       | none => ((g.lastKnownBefore? srcId).map (fun (eo : EventObject) => eo.name)).getD "the source"
     g.logMsg s!"{moved.name} is exiled until {srcName} leaves the battlefield"
 
@@ -384,7 +384,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
       | Target.player _ => g) sourceId illegal
   | .exileTarget =>
     g.withLegalKindPermanent controller kind targets (fun g o =>
-      let oName := o.name
+      let oName := g.name o
       let (g, _) := g.move o.id .exile none
       if let .chooseReplacement .. := g.pending then
         g.chainPendingReplacement (.finishPostStep (.logExiledIfInExile o.id s!"{oName} is exiled"))
@@ -583,7 +583,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
       -- Ruling: the mana value is that of the permanent as it last existed
       -- on the battlefield.
       let mv := g.objectManaValue o
-      let oName := o.name
+      let oName := g.name o
       let returnable := mv ≤ n && !o.printed.isToken
       let (g, cause) := g.allocDelayedCause (some controller) sourceId
       let (g, _) := g.move o.id .exile none (cause := some cause)
@@ -650,7 +650,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     | some o =>
       if o.isOnBattlefield && o.status.plusOnePlusOne > 0 then
         g.beginFraChoice controller (.mayMovePlusOne o.id)
-          s!"{(g.player controller).name} may remove a +1/+1 counter from {o.name}"
+          s!"{(g.player controller).name} may remove a +1/+1 counter from {g.name o}"
       else g
     | none => g
   | .empowerJacePerCreature =>
@@ -666,7 +666,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     else
       g.withLegalKindPermanent controller kind targets (fun g o =>
         g.beginFraChoice o.owner (.topOrBottomDamage o.id 0)
-          s!"{(g.player o.owner).name} puts {o.name} on the top or bottom of their library")
+          s!"{(g.player o.owner).name} puts {g.name o} on the top or bottom of their library")
         sourceId illegal
   | .drawTwoDiscardTwoStun =>
     let g := g.draw controller 2
@@ -772,21 +772,20 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
         (fun id => g.followMovedToZone? id (fun | .graveyard _ => true | _ => false)) with
     | some card =>
       if card.zone == .graveyard card.owner then
-        let cardName := card.name
         let (g, newId) := g.putOntoBattlefield card.id card.owner (tapped := true)
         if let .chooseReplacement .. := g.pending then
           g.chainPendingReplacement (.finishPostStep (.returnedToBattlefieldTapped card.id false))
         else
           let entered := g.object! newId
           if entered.isOnBattlefield then
-            (g.logMsg s!"{cardName} returns to the battlefield tapped").afterPermanentEnters entered
+            (g.logMsg s!"{g.name entered} returns to the battlefield tapped").afterPermanentEnters entered
           else g
       else g.logMsg s!"{card.name} is no longer in the graveyard"
     | none => g.logMsg "The card is no longer in the graveyard"
   | .sacrificeSource =>
     match sourceId.bind g.findObject? with
     | some o =>
-      if o.isOnBattlefield then g.sacrificeToGraveyard o s!"{(g.player controller).name} sacrifices {o.name}"
+      if o.isOnBattlefield then g.sacrificeToGraveyard o s!"{(g.player controller).name} sacrifices {g.name o}"
       else g
     | none => g
   | .causeDealsDamageToEachOpponent n =>
@@ -1059,7 +1058,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
   | .exileUntilSourceLeaves =>
     match sourceId.bind g.findObject? with
     | some src =>
-      if !src.isOnBattlefield then g.logMsg s!"{src.name} has left the battlefield"
+      if !src.isOnBattlefield then g.logMsg s!"{g.name src} has left the battlefield"
       else
         g.withLegalKindPermanent controller kind targets (fun g o =>
           let (g, linkCause) := g.allocDelayedCause (some controller) sourceId

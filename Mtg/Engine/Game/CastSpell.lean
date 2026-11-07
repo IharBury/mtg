@@ -153,9 +153,10 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
     | some src =>
       match g.findObject? src with
       | some perm =>
+        let permName := g.name perm
         (g.record (GameEvent.designation g.turnNumber (g.snapshot perm) .prepared false
           (cause := .gameRule .spellCast))).logMsg
-          s!"{perm.name} is no longer prepared"
+          s!"{permName} is no longer prepared"
       | none => g
     | none => g
   let g := g.change (.castingFromTop (fromTop || g.castingFromTop))
@@ -292,13 +293,13 @@ def announceX (g : Game) (p : PlayerId) (x : Nat) : Except String Game := do
         let some src := prop.sourceId.bind g.findObject?
           | throw "The planeswalker left the battlefield"
         if src.status.loyaltyCounters < x then
-          throw s!"{src.name} doesn't have {x} loyalty counters to remove (CR 606.4)"
+          throw s!"{g.name src} doesn't have {x} loyalty counters to remove (CR 606.4)"
         pure g
       else if prop.removePlusOneX then
         let some src := prop.sourceId.bind g.findObject?
           | throw "The source left the battlefield"
         if src.status.plusOnePlusOne < x then
-          throw s!"{src.name} doesn't have {x} +1/+1 counters to remove"
+          throw s!"{g.name src} doesn't have {x} +1/+1 counters to remove"
         pure g
       else pure g
     let cost :=
