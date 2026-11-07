@@ -229,18 +229,6 @@ def millOpponentsOnly (g : Game) (opponents : Array PlayerId) (n : Nat)
     g.withBatch cause fun g =>
       opponents.foldl (fun acc pid => acc.mill pid n (cause := cause)) g
 
-/-- Mill opponents, then a reflexive trigger exists only if cards were milled. -/
-def millThenReflexive (g : Game) (opponents : Array PlayerId) (n : Nat)
-    (cause : Option EventCause := none) : Game × Bool :=
-  if let .chooseReplacement .. := g.pending then
-    (g.chainPendingReplacement (.finishPostStep (.millOpponentsOnly opponents n cause)), false)
-  else
-    let startIdx := g.events.size
-    let g :=
-      g.withBatch cause fun g =>
-        opponents.foldl (fun acc pid => acc.mill pid n (cause := cause)) g
-    (g, g.anyOpponentMilledSince opponents startIdx)
-
 /-- Put +1/+1 and lifelink until end of turn on a creature (Bard the Bowman). -/
 def applyBardBowman (g : Game) (targetId : ObjectId) : Game :=
   match g.findObject? targetId with

@@ -147,7 +147,7 @@ def clearTurnActivations (g : Game) : Game :=
             | .playerRule p (.additionalLands _) .untilEndOfTurn
             | .playerRule p .jaceLoyaltyAtInstantSpeed .untilEndOfTurn
             | .playerRule p (.mountainExtraRed _) .untilEndOfTurn
-            | .playerRule p .cantAttackJaces .untilEndOfTurn
+            | .playerRule p (.cantAttackJaces _) .untilEndOfTurn
             | .playerRule p .cantCastSpells .untilEndOfTurn
             | .playerRule p .nextSpellCantBeCountered .untilEndOfTurn
             | .playerRule p (.typeSpellCostLess _ _) .untilEndOfTurn
@@ -354,7 +354,7 @@ def expireUntilNextTurnEffects (g : Game) (p : PlayerId) : Game :=
       | .playerRule q (.additionalLands _) .untilEndOfTurn
       | .playerRule q .jaceLoyaltyAtInstantSpeed .untilEndOfTurn
       | .playerRule q (.mountainExtraRed _) .untilEndOfTurn
-      | .playerRule q .cantAttackJaces .untilEndOfTurn
+      | .playerRule q (.cantAttackJaces _) .untilEndOfTurn
       | .playerRule q .cantCastSpells .untilEndOfTurn
       | .playerRule q .nextSpellCantBeCountered .untilEndOfTurn
       | .playerRule q .lifeLocked .untilEndOfTurn
@@ -476,9 +476,10 @@ def untapStepPermanents (g : Game) (ids : Array ObjectId) : Game :=
           | none =>
             g := g.consumeReplacementOrder applied
             if stunned then
-              g := g.logMsg s!"A stun counter is removed from {g.name o} instead of untapping it"
-              g := g.record (GameEvent.counters g.turnNumber (some ap) (g.snapshot o) .stun 1 true
-                (cause := cause'.getD baseCause))
+              let oName := g.name o
+              g := g.logMsg s!"A stun counter is removed from {oName} instead of untapping it"
+              g := g.recordRemoveCounters o.id .stun 1 (byPlayer := some ap)
+                (cause := some (cause'.getD baseCause))
             else
               g := g.logMsg s!"{apName} untaps {g.name o}"
               if untap.watches .wouldUntap then
@@ -566,7 +567,8 @@ partial def startNextTurnCore (g : Game) (runBeginTurn : Bool) : Game :=
     if !midRegularShared then
       let mut skipIdx := 0
       while skipIdx < g.extraTurns.size && (g.player g.extraTurns[skipIdx]!).lost do
-        departed := departed.push g.extraTurns[skipIdx]!
+        let d := g.extraTurns[skipIdx]!
+        if !departed.contains d then departed := departed.push d
         skipIdx := skipIdx + 1
       if let some q := (g.extraTurns.extract skipIdx g.extraTurns.size)[0]? then
         return (q, departed)
@@ -574,7 +576,7 @@ partial def startNextTurnCore (g : Game) (runBeginTurn : Bool) : Game :=
     for k in [1:n+1] do
       let q : PlayerId := ⟨(ending.idx + k) % n⟩
       if (g.player q).lost then
-        departed := departed.push q
+        if !departed.contains q then departed := departed.push q
       else
         return (q, departed)
     return (ending, departed)

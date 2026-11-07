@@ -19,7 +19,7 @@ def gainLandfallCreateElf (g : Game) (sourceId : Option ObjectId) : Game :=
       let landfall : TriggeredAbility :=
         .onLandYouControlEntersCreateTokens TokenKind.elf 1
       let g := g.createEffect (.grantedTriggered src.id landfall false)
-      g.logMsg s!"{src.name} gains landfall"
+      g.logMsg s!"{g.name src} gains landfall"
   | none => g
 
 /-- Elves the controller controls get +P/+0 and vigilance until end of turn. -/
@@ -28,7 +28,7 @@ def elvesGetVigilance (g : Game) (controller : PlayerId) (power : Int) : Game :=
     if g.hasSubtype o .elf then
       let g := g.pumpPermanent o power 0
       g.createEffect (.keywordsUntilEot o.id Keyword.vigilance)
-        |>.logMsg s!"{o.name} gets {signedStat power}/+0 and gains vigilance until end of turn"
+        |>.logMsg s!"{g.name o} gets {signedStat power}/+0 and gains vigilance until end of turn"
     else g
 
 /-- The announced creature gains hexproof while the source remains. -/
@@ -40,7 +40,7 @@ def grantHexproofWhileSource (g : Game) (controller : PlayerId)
   | some sid =>
     g.withLegalKindPermanent controller kind targets (fun g o =>
       let g := g.createEffect (.hexproofWhileSource o.id sid)
-      g.logMsg s!"{o.name} gains hexproof for as long as the Saga remains")
+      g.logMsg s!"{g.name o} gains hexproof for as long as the Saga remains")
       sourceId (some "The target is no longer legal")
 
 /-- Damage the announced creature would deal is prevented while the source remains. -/
@@ -52,7 +52,7 @@ def preventDamageWhileSource (g : Game) (controller : PlayerId)
   | some sid =>
     g.withLegalKindPermanent controller kind targets (fun g o =>
       let g := g.createEffect (.preventDamageWhileSource o.id sid)
-      g.logMsg s!"damage that would be dealt by {o.name} is prevented while the Saga remains")
+      g.logMsg s!"damage that would be dealt by {g.name o} is prevented while the Saga remains")
       sourceId none
 
 /-- Finish or run sequential exile-to-hand moves for `returnLinkedExileToHand`,
@@ -127,7 +127,7 @@ def treasureThenDragonCreateDragon (g : Game) (controller : PlayerId) : Game :=
       match g.findObject? tid with
       | some entered =>
         if entered.isOnBattlefield then
-          (g.logMsg s!"{entered.name} enters the battlefield").afterPermanentEnters entered
+          (g.logMsg s!"{g.name entered} enters the battlefield").afterPermanentEnters entered
         else g
       | none => g) g
 
@@ -140,7 +140,7 @@ def treasureThenDragonAfterCreate (g : Game) (controller : PlayerId)
     if !src.isOnBattlefield then g
     else if g.countSubtype controller .treasure < 4 then g
     else
-      let name := src.name
+      let name := g.name src
       let g := g.sacrificeToGraveyard src s!"{name} is sacrificed"
       if let .chooseReplacement .. := g.pending then
         g.chainPendingReplacement (.finishPostStep (.treasureThenDragonCreateDragon controller))
@@ -186,10 +186,10 @@ def gainControlWhileSource (g : Game) (controller : PlayerId)
           match g.findObject? id with
           | some o =>
             if (g.player controller).lost then
-              g.logMsg s!"{o.name} does not change control (CR 800.4b)"
+              g.logMsg s!"{g.name o} does not change control (CR 800.4b)"
             else
               g.createEffect (.controlWhileSource o.id controller src.id)
-                |>.logMsg s!"{(g.player controller).name} gains control of {o.name}"
+                |>.logMsg s!"{(g.player controller).name} gains control of {g.name o}"
           | none => g) g)
     "The Super Hero Civil War has left the battlefield. You won't gain control."
 
@@ -261,15 +261,14 @@ def applyChapterEffect (g : Game) (controller : PlayerId) (e : Effect)
         | Target.card oid =>
           match g.findObject? oid with
           | none => g.logMsg "The target is no longer in the graveyard"
-          | some o =>
-            let name := o.name
+          | some _ =>
             let (g, newId) := g.putOntoBattlefield oid controller
             if let .chooseReplacement .. := g.pending then
               g.chainPendingReplacement (.finishPostStep (.returnedToBattlefield oid false))
             else
               let entered := g.object! newId
               if entered.isOnBattlefield then
-                (g.logMsg s!"{name} returns to the battlefield").afterPermanentEnters entered
+                (g.logMsg s!"{g.name entered} returns to the battlefield").afterPermanentEnters entered
               else g
         | _ => g.logMsg "The target is no longer legal")
       sourceId (some "The target is no longer legal")

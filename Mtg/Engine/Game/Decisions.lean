@@ -3101,7 +3101,7 @@ def payGeneric (g : Game) (p : PlayerId) : Except String Game := do
     let outerCont? := g.pendingReplacement
     let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
     let forObj :=
-      (g.currentResolvingContext?.bind Prod.fst) <|> g.resolvingAbility <|> g.resolvingSpell
+      g.unlessPaysSource <|> (g.currentResolvingContext?.bind Prod.fst) <|> g.resolvingAbility <|> g.resolvingSpell
     let g ← g.payCost p (ManaCost.ofGeneric n) (allowCantNonartifact := true) (forObject := forObj)
     let g := g.logMsg s!"{(g.player p).name} pays \{{n}}"
     let g := (g.change (.pending .none)).clearUnlessPays

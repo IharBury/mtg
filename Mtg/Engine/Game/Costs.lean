@@ -26,9 +26,9 @@ def returnToHand (g : Game) (id : ObjectId) (to : PlayerId)
       g.logMsg s!"{name} is returned to {(g.player to).name}'s hand"
     else g
 
-/-- Legal only during the declare blockers step of the caster's turn. -/
+/-- Legal only during the declare blockers step of the caster's (or shared team's) turn (CR 805.4a / 810.2). -/
 def canCastForSneak (g : Game) (p : PlayerId) : Bool :=
-  g.activePlayer == p && g.step == .declareBlockers
+  g.isOnActiveTeam p && g.step == .declareBlockers
 
 /-- Pay sneak: return an unblocked attacker you control to hand and mark
 the spell. The creature enters tapped and attacking the same player. -/

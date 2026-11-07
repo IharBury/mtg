@@ -383,17 +383,6 @@ def replaceTokenCreationChoice (g : Game) (initial : ProposedTokenBatch)
       (includeKindReplacements := includeKindReplacements)
       (includeMultiplier := includeMultiplier)
 
-/-- Run the CR 616.1 replacement loop on a proposed token-creation batch
-(CR 614.1a / 614.5 / 614.6 / 616.1), returning `(batches, applied, choice?)`. -/
-def replaceTokenCreation (g : Game) (initial : ProposedTokenBatch)
-    (applied : Array ReplacementId := #[])
-    (includeKindReplacements : Bool := true)
-    (includeMultiplier : Bool := true) :
-    Array ProposedTokenBatch × Array ReplacementId × Option (PlayerId × Array ReplacementId) :=
-  g.replaceTokenCreationChoice initial (applied := applied)
-    (includeKindReplacements := includeKindReplacements)
-    (includeMultiplier := includeMultiplier)
-
 /-- Create each single-token batch in `batches`, stopping if an ETB replacement
 choice opens so the remaining batches can resume after the choice is answered. -/
 def createTokenBatches (g : Game) (batches : Array ProposedTokenBatch)

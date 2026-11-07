@@ -335,7 +335,7 @@ def twoBofursSBA : Game := twoBofurs.checkSBA
 #guard (namedPermanent twoBofurs "Bofur, Reliable Guardian").isLegendary
 #guard (twoBofurs.battlefield.filter (·.name == "Bofur, Reliable Guardian")).size == 2
 #guard twoBofurs.pending == .none
-#guard twoBofurs.firstLegendRuleChoice?.isSome
+#guard !(twoBofurs.legendRuleGroups).isEmpty
 #guard
   match twoBofursSBA.pending with
   | .chooseLegend p name ids =>

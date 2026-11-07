@@ -101,8 +101,10 @@ inductive FrcEffect where
   /-- Exile another planeswalker or creature you control, then reveal until a
   creature or planeswalker. -/
   | jaceMinus
-  /-- That opponent's creatures can't attack Jaces you control this combat. -/
+  /-- That opponent's creatures can't attack Jaces you control this turn unless they pay {2}. -/
   | jaceTax
+  /-- Apply Jace, Multiverse Architect's cantAttackJaces restriction when {2} is not paid. -/
+  | jaceTaxApply
   /-- You become the monarch. -/
   | monarch
   /-- Create a Gingerbrute token. -/

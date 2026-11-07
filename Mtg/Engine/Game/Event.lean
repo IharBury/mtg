@@ -389,7 +389,7 @@ inductive PlayerRule where
   | legendRuleOff
   | mountainExtraRed (n : Nat := 1)
   | nextSpellCantBeCountered
-  | cantAttackJaces
+  | cantAttackJaces (jaceController : PlayerId)
   | assignCombatDamageEqualToughness
   | pendingFreeRGCreature
   | controlsPlayer (controlled : PlayerId) (onNextTurn : Bool := false)
@@ -673,9 +673,9 @@ the battlefield (CR 611.2b / 613.1b / 702.26f). -/
 @[inline] def nextSpellCantBeCounteredThisTurn (player : PlayerId) : ContinuousEffectSpec :=
   .playerRule player .nextSpellCantBeCountered .untilEndOfTurn
 
-/-- Creatures can't attack `player` or Jace planeswalkers `player` controls this turn (CR 611.2). -/
-@[inline] def cantAttackJacesThisTurn (player : PlayerId) : ContinuousEffectSpec :=
-  .playerRule player .cantAttackJaces .untilEndOfTurn
+/-- `player`'s creatures can't attack Jace planeswalkers `jaceController` controls this turn (CR 611.2). -/
+@[inline] def cantAttackJacesThisTurn (player jaceController : PlayerId) : ContinuousEffectSpec :=
+  .playerRule player (.cantAttackJaces jaceController) .untilEndOfTurn
 
 /-- Creatures without flying can't block this turn (CR 611.2). -/
 @[inline] def creaturesWithoutFlyingCantBlockUntilEot : ContinuousEffectSpec :=
@@ -3096,7 +3096,9 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : Option Obje
           (pkt.source.controller.isNone || yours pkt.source || this pkt.source) &&
           match pkt.recipient with | .player _ | .battle _ => true | _ => false)
     | .damage (.dealt pkts), .combatDamageToYou =>
-      pkts.any (fun pkt => pkt.combat && pkt.amount > 0 && match pkt.recipient with | .player p => you p | _ => false)
+      pkts.any (fun pkt =>
+        pkt.combat && pkt.amount > 0 && (pkt.source.types.isEmpty || pkt.source.creature) &&
+          match pkt.recipient with | .player p => you p | _ => false)
     | .damage (.dealt pkts), .opponentsDealtCombatDamageYourTurn =>
       pkts.any (fun pkt => pkt.combat && pkt.amount > 0 && match pkt.recipient with | .player p => opp p | _ => false)
     | .damage (.dealt pkts), .fra .opponentsDealtNoncombatDamage =>
@@ -3340,7 +3342,8 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : Option Obje
     | .combat (.attackersDeclared p decls), .equippedCreatureYouControlAttacks =>
       you p && decls.any (fun (attacker, _) => attacker.creature)
     | .combat (.attackersDeclared p decls), .merfolkAttackPlayer =>
-      you p && decls.any (fun (attacker, _) => attacker.merfolk)
+      you p && decls.any (fun (attacker, tgt) =>
+        attacker.merfolk && match tgt with | .player _ => true | _ => false)
     | .combat (.attackersDeclared p decls), .fra .creatureYouControlAttacks =>
       you p && decls.any (fun (attacker, _) => attacker.creature)
     | .combat (.attackersDeclared p decls), .fra .creatureYouControlAttacksPlayerAlone =>

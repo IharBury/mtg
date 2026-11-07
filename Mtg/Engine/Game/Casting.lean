@@ -69,12 +69,14 @@ def spellNameForbidden (g : Game) (name : String) : Bool :=
     o.status.chosenName == some name &&
       (g.staticAbilities o).any (· == .fra .chosenNameSpellsCantBeCast))
 
-/-- Whether `g.activePlayer` controls a permanent forbidding opponents from
-casting spells during that player's turn (CR 101.2). -/
+/-- Whether any living member of the active team controls a permanent forbidding
+opponents from casting spells during that player's turn (CR 101.2 / 805.4a / 810.2). -/
 def opponentsCantCastOnActiveTurn (g : Game) (p : PlayerId) : Bool :=
-  p != g.activePlayer && !g.areTeammates p g.activePlayer &&
-    (g.permanentsOf g.activePlayer).any (fun o =>
-      (g.staticAbilities o).any (· == .opponentsCantCastOnYourTurn))
+  !g.isOnActiveTeam p &&
+    (g.teamMembers g.activePlayer).any (fun tm =>
+      g.stillInGame tm &&
+        (g.permanentsOf tm).any (fun o =>
+          (g.staticAbilities o).any (· == .opponentsCantCastOnYourTurn)))
 
 /-- Whether `p`'s graveyard has enough other cards to cast `face` (Ruling 852). -/
 def graveyardCastThresholdMet (g : Game) (p : PlayerId) (cardId : ObjectId) (face : CardDef) : Bool :=

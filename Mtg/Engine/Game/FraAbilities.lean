@@ -735,13 +735,25 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
     | some o => if o.isOnBattlefield then g.pumpPermanent o p t else g
     | none => g
   | .attackersOfPlayerGetTwoTwoTrample =>
-    match g.fraCauseController? with
-    | some defender =>
+    let lockedIds := (g.resolvingAbilityObject?.map (·.fraCauseIds)).getD #[]
+    if !lockedIds.isEmpty then
       g.withBatch none fun g =>
-        (g.creaturesAttackingPlayer defender).foldl (fun g o =>
-          let g := g.pumpPermanent (g.object! o.id) 2 2
-          g.grantKeywordsUntilEot (g.object! o.id) Keyword.trample) g
-    | none => g
+        lockedIds.foldl (fun g aid =>
+          match g.findObject? aid with
+          | some o =>
+            if o.isOnBattlefield && g.isCreature o then
+              let g := g.pumpPermanent o 2 2
+              g.grantKeywordsUntilEot (g.object! aid) Keyword.trample
+            else g
+          | none => g) g
+    else
+      match g.fraCauseController? with
+      | some defender =>
+        g.withBatch none fun g =>
+          (g.creaturesAttackingPlayer defender).foldl (fun g o =>
+            let g := g.pumpPermanent (g.object! o.id) 2 2
+            g.grantKeywordsUntilEot (g.object! o.id) Keyword.trample) g
+      | none => g
   | _ => g
 
 end Game

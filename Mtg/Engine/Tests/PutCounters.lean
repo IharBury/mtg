@@ -269,4 +269,17 @@ in Layer 4 snapshots `.planeswalker` on `PermanentEvent.counters` and triggers
   snapHasPw &&
     g2.waitingTriggers.any (·.event == .fra .youPutLoyaltyCounters)
 
+/- Phase 25: Removing the last shield counter via `destroyPermanent` routes through
+`recordRemoveCounters` and immediately expires `.whileSourceHasCounter` effects (CR 122.1c / 611.2a). -/
+#guard
+  let rockId := pid board "Counter Rock"
+  let g1 := board.recordPutCounters rockId .shield 1 (byPlayer := some caster)
+  let g2 := g1.createEffect
+    (.layered (.objects #[rockId]) (.types .add #[.creature] #[] #[]) (.whileSourceHasCounter rockId .shield))
+  let g3 := g2.destroyPermanent (g2.object! rockId)
+  g2.isCreature (g2.object! rockId) &&
+    (g3.object! rockId).isOnBattlefield &&
+    (g3.object! rockId).status.shield == 0 &&
+    !g3.isCreature (g3.object! rockId)
+
 end Mtg.Engine.PutCountersTests

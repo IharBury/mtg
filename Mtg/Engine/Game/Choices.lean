@@ -498,12 +498,10 @@ def everyAttackCosts (g : Game) (o : GameObject) : Bool :=
   | none => false
   | some p =>
     let opps := g.livingOpponents p
-    let noJace := g.cantAttackJaces p
     !opps.isEmpty && opps.all (fun pl =>
       g.attackTaxPerCreature pl.id > 0 &&
         !(g.permanentsOf pl.id).any (fun pw =>
-          g.isPlaneswalker pw &&
-            !(noJace && ((g.name pw).startsWith "Jace" || g.hasSubtype pw .jace))))
+          g.isPlaneswalker pw && !(g.cantAttackJace p pw)))
 
 /-- Whether `o` has at least one legal attack target (an opponent player or
 opponent-controlled planeswalker) that does not charge an attack cost
@@ -514,12 +512,10 @@ def hasCostFreeLegalAttackTarget (g : Game) (o : GameObject) : Bool :=
   | some p =>
     let opps := g.livingOpponents p
     let flyer := g.hasFlying o
-    let noJace := g.cantAttackJaces p
     opps.any fun pl =>
       (g.attackTaxPerCreature pl.id == 0 && !(flyer && g.leftoverFlyingRestriction pl.id)) ||
         (g.permanentsOf pl.id).any (fun pw =>
-          g.isPlaneswalker pw &&
-            !(noJace && ((g.name pw).startsWith "Jace" || g.hasSubtype pw .jace)))
+          g.isPlaneswalker pw && !(g.cantAttackJace p pw))
 
 /-- True when `o` must attack this combat. Summoning sickness, being tapped,
 having no legal attack target, or an unpaid attack cost means it does not have

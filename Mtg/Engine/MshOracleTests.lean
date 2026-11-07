@@ -4499,7 +4499,7 @@ def serumLegendarySoldierOk : Bool :=
     g.hasFirstStrike host && g.hasVigilance host &&
     g.hasSubtype host .soldier && g.hasSubtype host .bear &&
     g.treatedAsLegendary host &&
-    match g.firstLegendRuleChoice? with
+    match (g.legendRuleGroups)[0]? with
     | some (_, name, ids) => name == "Grizzly Bears" && ids.size == 2
     | none => false
 

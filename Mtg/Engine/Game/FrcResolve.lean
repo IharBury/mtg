@@ -704,15 +704,33 @@ def applyFrc (g : Game) (controller : PlayerId) (effect : Effect) (e : FrcEffect
           g.restBottom controller rest false (cause := some revealCause)
     | _ => g
   | .jaceTax =>
-    if g.isOnActiveTeam controller then g
+    if g.isOnActiveTeam controller || (g.player g.activePlayer).lost then g
     else
-      g.createEffect (.cantAttackJacesThisTurn g.activePlayer)
-        |>.logMsg s!"{(g.player g.activePlayer).name}'s creatures can't attack Jaces this turn"
+      let ap := g.activePlayer
+      (g.changes #[
+        .pending (.payOrLetCounter ap 2 none),
+        .unlessPaysInstead (some { resolution := .frc .jaceTaxApply }),
+        .unlessPaysController controller,
+        .unlessPaysTargets #[.player ap],
+        .unlessPaysSource sourceId,
+        .unlessPaysDue false]).logMsg
+        s!"{(g.player ap).name} may pay \{2} or their creatures can't attack Jaces {(g.player controller).name} controls this turn"
+  | .jaceTaxApply =>
+    match targets[0]? with
+    | some (Target.player attacker) =>
+      if (g.player attacker).lost then g
+      else
+        g.createEffect (.cantAttackJacesThisTurn attacker controller)
+          |>.logMsg s!"{(g.player attacker).name}'s creatures can't attack Jaces {(g.player controller).name} controls this turn"
+    | _ => g
   | .monarch =>
-    let prev := (g.players.find? (·.isMonarch)).map (·.id)
-    g.record (GameEvent.becameMonarch g.turnNumber controller prev
-      (cause := some (g.resolvingOrRuleCause controller sourceId)))
-      |>.logMsg s!"{pl.name} becomes the monarch"
+    let heir := (g.resolvingAbilityObject?.bind (·.fraCauseController)).getD controller
+    if (g.player heir).lost || (g.player heir).leftTheGame then g
+    else
+      let prev := (g.players.find? (·.isMonarch)).map (·.id)
+      g.record (GameEvent.becameMonarch g.turnNumber heir prev
+        (cause := some (g.resolvingOrRuleCause controller sourceId)))
+        |>.logMsg s!"{(g.player heir).name} becomes the monarch"
   | .gingerbrute =>
     if (g.player controller).isMonarch then g.makeFrc controller .gingerbrute
     else g

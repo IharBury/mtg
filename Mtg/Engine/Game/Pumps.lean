@@ -23,7 +23,7 @@ def pumpPermanent (g : Game) (o : GameObject) (p t : Int) (trample := false) : G
     else
       g.createEffect (.pump o.id p t)
   let gain := if trample then " and gains trample" else ""
-  g.logMsg s!"{o.name} gets {signedStat p}/{signedStat t}{gain} until end of turn"
+  g.logMsg s!"{g.name o} gets {signedStat p}/{signedStat t}{gain} until end of turn"
 
 /-- Until-end-of-turn +P/+T on each creature `p` controls. -/
 def pumpControlledCreatures (g : Game) (p : PlayerId) (pw tw : Int) : Game :=
@@ -35,7 +35,7 @@ def grantUntilEotToControlledCreatures (g : Game) (p : PlayerId) (kw : Keywords)
   g.forEachControlledCreature p fun g o =>
     if pred g o then
       (g.createEffect (.keywordsUntilEot o.id kw))
-        |>.logMsg s!"{o.name} gains {label} until end of turn"
+        |>.logMsg s!"{g.name o} gains {label} until end of turn"
     else g
 
 /-- Grant each keyword in `kws` until end of turn, re-reading `o` after each. -/
@@ -48,7 +48,7 @@ def grantUntilEotKeywords (g : Game) (o : GameObject) (kws : List Keywords) : Ga
 /-- Grant `k` until end of turn and log the standard “gains … until end of turn”. -/
 def grantUntilEotLogged (g : Game) (o : GameObject) (k : Keywords) : Game :=
   (g.createEffect (.keywordsUntilEot o.id k))
-    |>.logMsg s!"{o.name} gains {k} until end of turn"
+    |>.logMsg s!"{g.name o} gains {k} until end of turn"
 
 /-- Set base P/T, optional creature types, and keywords until end of turn. -/
 def setUntilEotForm (g : Game) (o : GameObject) (pt : Int × Int)
@@ -195,9 +195,11 @@ def untapPermanent (g : Game) (o : GameObject)
       | none =>
         let g := g.consumeReplacementOrder applied
         if stunned then
-          let g := g.record (GameEvent.counters g.turnNumber (g.controllerOf o) (g.snapshot o) .stun 1 true
-            (cause := cause'.getD defaultCause))
-          g.logMsg s!"A stun counter is removed from {g.name o} instead of untapping it (CR 122.1d)"
+          let oName := g.name o
+          let ctrl := g.controllerOf o
+          let g := g.recordRemoveCounters o.id .stun 1 (byPlayer := ctrl) (noActor := ctrl.isNone)
+            (cause := some (cause'.getD defaultCause))
+          g.logMsg s!"A stun counter is removed from {oName} instead of untapping it (CR 122.1d)"
         else
           let g := g.record untap
           if logUntap then g.logMsg s!"{g.name o} untaps" else g
@@ -398,7 +400,7 @@ def addCounters (g : Game) (o : GameObject) (kind : CounterKind) (n : Nat := 1)
 private def finishAmassOnPost (g : Game) (controller : PlayerId) (armyId : ObjectId)
     (subtype : CardSubtype) (n : Nat) (attach : Option ObjectId := none)
     (cause : Option EventCause := none) : Game :=
-  let armyName := (g.findObject? armyId).map (·.name) |>.getD "Army"
+  let armyName := (g.findObject? armyId).map g.name |>.getD "Army"
   let g := g.logMsg
     s!"{(g.player controller).name} amasses {subtype}s {n} ({armyName} is the amassed Army)"
   match attach with
@@ -580,7 +582,7 @@ def dealDamageLoseIndestructibleExileTo (g : Game) (o : GameObject) (n : Nat)
 /-- Until-end-of-turn “can't be blocked” (CR 509.1b / 611.2a). -/
 def grantCantBeBlockedThisTurn (g : Game) (o : GameObject) : Game :=
   let g := g.createEffect (.keywordsUntilEot o.id Keyword.cantBeBlocked)
-  g.logMsg s!"{o.name} can't be blocked this turn"
+  g.logMsg s!"{g.name o} can't be blocked this turn"
 
 /-- Until-end-of-turn +P/+T and trample (e.g. Oliphaunt). -/
 def pumpAndGrantTrample (g : Game) (o : GameObject) (p t : Int) : Game :=

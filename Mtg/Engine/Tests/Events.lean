@@ -11056,12 +11056,15 @@ private def mustHold17 (label : String) (ok : Bool) : Bool :=
       g.record (GameEvent.damagedPlayer g.turnNumber
         (g.snapshotDamageSource (g.object! oppHero)) me 2 true (cause := combatCause))
   let gTamNoMonarch : Game := dealCombatBatch gTam0
-  let gTamMonarch : Game := (dealCombatBatch (gTam0.becomeMonarch me)).receivePriority me
-  -- Even after `opp` steals the monarchy before `tamiyoStun` resolves, `tamiyoStun` STILL resolves and stuns BOTH `oppBear` and `oppHero`!
-  let gTamRes : Game := (gTamMonarch.becomeMonarch opp).resolveTop
+  let gTamMonarch0 : Game := (dealCombatBatch (gTam0.becomeMonarch me)).receivePriority me
+  let gTamMonarch : Game := mustApply gTamMonarch0 me (.stackTriggers #[0, 1])
+  -- Top of stack is the inherent monarch trigger (`opp` steals the monarchy); `tamiyoStun` STILL resolves next and stuns BOTH `oppBear` and `oppHero`!
+  let gTamRes1 : Game := gTamMonarch.resolveTop
+  let gTamRes : Game := gTamRes1.resolveTop
   let tamiyoOk : Bool :=
     gTamNoMonarch.waitingTriggers.isEmpty &&
-    gTamMonarch.stack.size == 1 &&
+    gTamMonarch.stack.size == 2 &&
+    (gTamRes1.player opp).isMonarch &&
     (gTamRes.object! oppBear).status.tapped && (gTamRes.object! oppBear).status.stun == 1 &&
     (gTamRes.object! oppHero).status.tapped && (gTamRes.object! oppHero).status.stun == 1
 
@@ -17916,9 +17919,17 @@ def mkThreePlayer24i4 (seed : UInt64 := 245) : Game :=
       | .rules (.permanent (.tapped eo d)) => if eo.id == some oid then some d else none
       | _ => none
 
-  -- `FrcResolve.applyFrc` `.jaceTax`: no-op for active teammate `⟨1⟩`, creates `.cantAttackJacesThisTurn ⟨0⟩` for opponent `⟨2⟩`:
-  let gJaceMate := gBase.applyFrc ⟨1⟩ {} .jaceTax #[] none
-  let gJaceOpp := gBase.applyFrc ⟨2⟩ {} .jaceTax #[] none
+  -- `FrcResolve.applyFrc` `.jaceTax`: no-op for active teammate `⟨1⟩`, prompts `⟨0⟩` with `{2}` for opponent `⟨2⟩`, and scopes `.cantAttackJaces` to `⟨2⟩`'s Jaces on decline:
+  let jacePw24i4 : CardDef := { name := "Jace, Test Sculptor", types := #[.planeswalker], subtypes := #["Jace"], loyalty := some 3 }
+  let gJaceBoard :=
+    insertObject
+      (insertObject gBase jacePw24i4 ⟨2⟩ .battlefield (some ⟨2⟩) { summoningSick := false, counters := #[(.loyalty, 3)] })
+      jacePw24i4 ⟨3⟩ .battlefield (some ⟨3⟩) { summoningSick := false, counters := #[(.loyalty, 3)] }
+  let jace2Obj := (gJaceBoard.battlefield.filter (fun o => o.name == jacePw24i4.name && o.controller == some ⟨2⟩))[0]!
+  let jace3Obj := (gJaceBoard.battlefield.filter (fun o => o.name == jacePw24i4.name && o.controller == some ⟨3⟩))[0]!
+  let gJaceMate := gJaceBoard.applyFrc ⟨1⟩ {} .jaceTax #[] none
+  let gJacePrompt := (gJaceBoard.change (.pushContinuationFrame {})).applyFrc ⟨2⟩ {} .jaceTax #[] none
+  let gJaceOpp := mustApply gJacePrompt ⟨0⟩ .decline
 
   let activeTeamDuringYourTurnOk :=
     gBase.isOnActiveTeam ⟨0⟩ &&
@@ -17940,11 +17951,14 @@ def mkThreePlayer24i4 (seed : UInt64 := 245) : Game :=
     gTrig1.waitingTriggers[0]!.controller == ⟨1⟩ &&
     tapDuringOf mateHost.id == some true &&
     tapDuringOf oppHost.id == some false &&
-    !gJaceMate.cantAttackJaces ⟨0⟩ &&
-    gJaceOpp.cantAttackJaces ⟨0⟩
+    gJaceMate.pending == .none &&
+    !gJaceMate.cantAttackJace ⟨0⟩ jace2Obj &&
+    (match gJacePrompt.pending with | .payOrLetCounter ⟨0⟩ 2 none => true | _ => false) &&
+    gJaceOpp.cantAttackJace ⟨0⟩ (gJaceOpp.object! jace2Obj.id) &&
+    !gJaceOpp.cantAttackJace ⟨0⟩ (gJaceOpp.object! jace3Obj.id)
 
   mustHold24i4 "2.activeTeamDuringYourTurnOk" activeTeamDuringYourTurnOk &&
-  mustHold24i4 "2.replay" (replayOk24i4 #[gKw, gTrig1, gTap2, gJaceMate, gJaceOpp])
+  mustHold24i4 "2.replay" (replayOk24i4 #[gKw, gTrig1, gTap2, gJaceMate, gJacePrompt, gJaceOpp])
 
 -- 3. CR 102.3 / 103.1a / 723.5 / 800.4a,m / 805.3 / 805.8 / 805.10a / 810.2 / 810.8a / 810.11:
 --    Starting team first seat (`Start.startWithRng`), CR 805.8 shared team extra turns,
@@ -18085,7 +18099,7 @@ def mkThreePlayer24i4 (seed : UInt64 := 245) : Game :=
   mustHold24i4 "3.replay" (replayOk24i4 #[gExQueued, gExRegMate, gExTurnSeat0, gExTurnSeat1, gExAfter, gCtrlMateAlive, gCtrlTeamLost, gLiveCtrl0, gLostCtrl0, gTriConcede, gTriTrigWin])
 
 -- 4. CR 704.3 / 704.5j / 704.8 / 800.4a:
---    Start-of-pass CR 704.5j `legendRuleGroups` / `firstLegendRuleChoice?` evaluated before
+--    Start-of-pass CR 704.5j `legendRuleGroups` evaluated before
 --    `GameEvent.playerLost`, CR 704.5q counter annihilation, `dyingCreatures`, and `pwMoves`.
 #guard
   let zeroZero24i4 : CardDef := creature "P24i4 0/0" ManaCost.empty #["Spirit"] 0 0
@@ -19219,6 +19233,383 @@ private def replayOk25i3 (gs : Array Game) : Bool :=
     (replayOk25i3 #[gEachPlDone, gExceptDone, gOppCpDone, gUpToDone, gCauseOppDone, gDivDone, gObjsDone, gSmiteDone])
 
 end Phase25Item3EventAlignment
+
+section Phase25Item4EventAlignment
+
+def mustHold25i4 (label : String) (ok : Bool) : Bool :=
+  if ok then true else panic! s!"Phase 25 item 4 guard failed: {label}"
+
+def replayOk25i4 (gs : Array Game) : Bool :=
+  gs.all (fun g => Game.replayEvents g.events == g && allRulesEventsClassified g)
+
+def mkSixSeatThreeTeams25i4 (seed : UInt64 := 2540) : Game :=
+  let cfg : StartConfig := {
+    seats := #[
+      { name := "Chandra", deck := testRedDeck, teammate := some ⟨1⟩ },
+      { name := "Nissa", deck := testGreenDeck, teammate := some ⟨0⟩ },
+      { name := "Liliana", deck := testRedDeck, teammate := some ⟨3⟩ },
+      { name := "Jace", deck := testGreenDeck, teammate := some ⟨2⟩ },
+      { name := "Ajani", deck := testRedDeck, teammate := some ⟨5⟩ },
+      { name := "Gideon", deck := testGreenDeck, teammate := some ⟨4⟩ }
+    ]
+    format := .constructed
+    seed
+    startingPlayer := some 0
+  }
+  match Start.start cfg with
+  | .ok g => (keepOpeningHands g 40).advanceStep
+  | .error e => panic! e
+
+-- 1. CR 725.2 / 725.4 / 113.8 / 800.4a,d / 805.4a,c (Rulings 937, 938, 940):
+--    Inherent sourceless monarch end-step draw & combat-damage triggers + 2HG succession.
+#guard
+  -- 1a. 2HG monarch end-step draw fires once on the shared turn's final seat (`⟨1⟩`),
+  --     stays sourceless (`ctxSrc = none`, CR 113.8), and still draws for `⟨0⟩` if `⟨2⟩`
+  --     steals the monarchy before resolution (Ruling 938):
+  let gMon2hg0 := (mkTwoHeadedGiant24i4 2541).becomeMonarch ⟨0⟩
+  let gSeat0End := gMon2hg0.record (GameEvent.stepped gMon2hg0.turnNumber .end ⟨0⟩)
+  let gSeat1 := (gSeat0End.startNextTurnCore false).record (GameEvent.stepped gMon2hg0.turnNumber .end ⟨1⟩)
+  let seat1TrigQueued :=
+    gSeat0End.waitingTriggers.isEmpty &&
+    gSeat1.waitingTriggers.size == 1 &&
+    gSeat1.waitingTriggers[0]!.controller == ⟨0⟩ &&
+    gSeat1.waitingTriggers[0]!.source.id == noSourceSentinelId
+  let gSeat1Stacked := gSeat1.receivePriority ⟨1⟩
+  let stackObj? := gSeat1Stacked.stack.back?.bind (fun se => gSeat1Stacked.findObject? se.objectId)
+  let sourcelessOnStack := stackObj?.any (fun so => so.sourceId == none)
+  let hand0Before := (gSeat1Stacked.player ⟨0⟩).hand.size
+  let sDraw := gSeat1Stacked.events.size
+  let gSeat1StolenRes := (gSeat1Stacked.becomeMonarch ⟨2⟩).resolveTop
+  let drawMovedSourceless :=
+    (gSeat1StolenRes.events.extract sDraw gSeat1StolenRes.events.size).any fun e =>
+      match e.change, e.cause? with
+      | .rules (.zone (.moved _ _ (.library ⟨0⟩) (.hand ⟨0⟩) ..)), some (.oneShotEffect _ src _) =>
+        src == none
+      | _, _ => false
+  let endStepDrawOk :=
+    seat1TrigQueued &&
+    sourcelessOnStack &&
+    (gSeat1StolenRes.player ⟨2⟩).isMonarch &&
+    (gSeat1StolenRes.player ⟨0⟩).hand.size == hand0Before + 1 &&
+    drawMovedSourceless
+
+  -- 1b. Multiple controllers dealing combat damage to the monarch queue one sourceless
+  --     monarch trigger per distinct controller (ordered by the monarch, Ruling 940);
+  --     lethal combat damage removes the monarch's waiting trigger via CR 800.4a,d (Ruling 937):
+  let g3 := (mkThreePlayer24i4 2542).becomeMonarch ⟨0⟩
+  let g3Bears := addPermanent (addPermanent g3 bear ⟨1⟩ ⟨1⟩) bear ⟨2⟩ ⟨2⟩
+  let b1 := (g3Bears.battlefield.filter (fun o => o.name == bear.name && o.controller == some ⟨1⟩))[0]!.id
+  let b2 := (g3Bears.battlefield.filter (fun o => o.name == bear.name && o.controller == some ⟨2⟩))[0]!.id
+  let combatCause : EventCause := .turnBased (.dealCombatDamage false)
+  let g3Hit := g3Bears.withBatch (some combatCause) fun g =>
+    let g := g.record (GameEvent.damagedPlayer g.turnNumber
+      (g.snapshotDamageSource (g.object! b1)) ⟨0⟩ 2 true (cause := combatCause))
+    g.record (GameEvent.damagedPlayer g.turnNumber
+      (g.snapshotDamageSource (g.object! b2)) ⟨0⟩ 2 true (cause := combatCause))
+  let g3Prio := g3Hit.receivePriority ⟨0⟩
+  let twoPrompted :=
+    g3Hit.waitingTriggers.size == 2 &&
+    g3Hit.waitingTriggers.all (fun w => w.controller == ⟨0⟩ && w.source.id == noSourceSentinelId) &&
+    (match g3Prio.pending with | .chooseTriggerToStack ⟨0⟩ => true | _ => false)
+  let g3Stacked := mustApply g3Prio ⟨0⟩ (.stackTriggers #[0, 1])
+  let g3ResTop := g3Stacked.resolveTop
+  let g3ResBot := g3ResTop.resolveTop
+  let monarchCauseSourceless :=
+    match g3ResBot.events.findRev? (fun e => match e.change with | .rules (.player (.becameMonarch ..)) => true | _ => false) with
+    | some e => match e.cause? with | some (.oneShotEffect _ src _) => src == none | _ => false
+    | none => false
+  let multiHitOk :=
+    twoPrompted &&
+    (g3ResTop.player ⟨2⟩).isMonarch &&
+    (g3ResBot.player ⟨1⟩).isMonarch &&
+    monarchCauseSourceless
+
+  -- Lethal combat damage: `⟨0⟩` is at 2 life on `⟨2⟩`'s turn; `⟨1⟩`'s bear deals 2 combat damage to `⟨0⟩`.
+  -- `⟨0⟩`'s monarch trigger is removed when `⟨0⟩` loses/leaves (CR 800.4a,d), so active player `⟨2⟩`
+  -- inherits the monarchy via CR 725.4 and `⟨1⟩` never steals it from a dead trigger!
+  let g3Lethal0 := ((g3Bears.startNextTurnCore false).startNextTurnCore false).loseLife ⟨0⟩ 18 (cause := some testCause)
+  let g3LethalHit := g3Lethal0.withBatch (some combatCause) fun g =>
+    let g := g.record (GameEvent.damagedPlayer g.turnNumber
+      (g.snapshotDamageSource (g.object! b1)) ⟨0⟩ 2 true (cause := combatCause))
+    g.record (GameEvent.life g.turnNumber ⟨0⟩ 2 false true true (cause := combatCause))
+  let g3LethalAfter := g3LethalHit.receivePriority ⟨2⟩
+  let lethalOk :=
+    g3LethalHit.waitingTriggers.size == 1 &&
+    (g3LethalAfter.player ⟨0⟩).leftTheGame &&
+    g3LethalAfter.waitingTriggers.isEmpty &&
+    g3LethalAfter.stack.isEmpty &&
+    (g3LethalAfter.player ⟨2⟩).isMonarch &&
+    !(g3LethalAfter.player ⟨1⟩).isMonarch
+
+  -- 1c. CR 725.4 2HG succession: when active player `⟨0⟩` has already departed on Seat `⟨0⟩`
+  --     while teammate `⟨1⟩`'s seat has not yet begun (`!isSharedTurnFinalSeat`), an opponent
+  --     monarch `⟨4⟩` leaving passes monarchy to `⟨1⟩` (`nextLiving activePlayer`), whereas on
+  --     final Seat `⟨1⟩` (`isSharedTurnFinalSeat`), `⟨1⟩` leaving passes monarchy to `⟨2⟩`:
+  let g6 := (mkSixSeatThreeTeams25i4 2543).becomeMonarch ⟨4⟩
+  let g6MidLeave := (g6.playerLeavesGame ⟨0⟩).playerLeavesGame ⟨4⟩
+  let g6FinalSeat := ((mkSixSeatThreeTeams25i4 2544).startNextTurnCore false).becomeMonarch ⟨1⟩
+  let g6FinalLeave := g6FinalSeat.playerLeavesGame ⟨1⟩
+  let successionOk :=
+    (g6MidLeave.player ⟨1⟩).isMonarch &&
+    (g6FinalLeave.player ⟨2⟩).isMonarch
+
+  mustHold25i4 "1a.endStepDraw" endStepDrawOk &&
+  mustHold25i4 "1b.multiHitAndLethal" (multiHitOk && lethalOk) &&
+  mustHold25i4 "1c.succession2hg" successionOk &&
+  mustHold25i4 "1.replay" (replayOk25i4 #[gSeat1StolenRes, g3ResBot, g3LethalAfter, g6MidLeave, g6FinalLeave])
+
+-- 2. CR 302.6 / 101.2 / 800.4k,m / 805.4a / 810.2:
+--    2HG shared-turn summoning sickness, active-team `opponentsCantCastOnActiveTurn` / `canCastForSneak`,
+--    and `startNextTurnCore` `departed` deduplication.
+#guard
+  let g0 := mkTwoHeadedGiant24i4 2545
+  let gIns := insertObject (insertObject g0 bear ⟨0⟩ (.hand ⟨0⟩)) bear ⟨1⟩ (.hand ⟨1⟩)
+  let c0Card := (gIns.player ⟨0⟩).hand.back!
+  let c1Card := (gIns.player ⟨1⟩).hand.back!
+  let (gPut0, c0Id) := gIns.putOntoBattlefield c0Card ⟨0⟩ (cause := some testCause)
+  let (gPut1, c1Id) := gPut0.putOntoBattlefield c1Card ⟨1⟩ (cause := some testCause)
+  let gWithOpp := addPermanent gPut1 bear ⟨2⟩ ⟨2⟩
+  let stolenId := (gWithOpp.battlefield.filter (fun o => o.name == bear.name && o.controller == some ⟨2⟩))[0]!.id
+  let gStolen := gWithOpp.createEffect (.layered (.objects #[stolenId]) (.control ⟨1⟩) .indefinite) (cause := some testCause)
+  -- Advance from Seat `⟨0⟩` into Seat `⟨1⟩` of the SAME shared turn (including `⟨1⟩`'s untap step):
+  let gMateSeat := gStolen.startNextTurnAndBegin
+  let stillSickOnMateSeat :=
+    gMateSeat.activePlayer == ⟨1⟩ &&
+    (gMateSeat.object! c0Id).status.summoningSick &&
+    (gMateSeat.object! c1Id).status.summoningSick &&
+    gMateSeat.hasSummoningSickness (gMateSeat.object! c0Id) &&
+    gMateSeat.hasSummoningSickness (gMateSeat.object! c1Id) &&
+    gMateSeat.hasSummoningSickness (gMateSeat.object! stolenId)
+  -- Advance through Team B (`⟨2⟩`, `⟨3⟩`) back to Team A's next shared turn (`⟨0⟩`):
+  let gNextTeamA := ((gMateSeat.startNextTurnAndBegin).startNextTurnAndBegin).startNextTurnAndBegin
+  let clearedOnNextSharedTurn :=
+    gNextTeamA.activePlayer == ⟨0⟩ &&
+    !(gNextTeamA.object! c0Id).status.summoningSick &&
+    !(gNextTeamA.object! c1Id).status.summoningSick &&
+    !gNextTeamA.hasSummoningSickness (gNextTeamA.object! c0Id) &&
+    !gNextTeamA.hasSummoningSickness (gNextTeamA.object! c1Id) &&
+    !gNextTeamA.hasSummoningSickness (gNextTeamA.object! stolenId)
+
+  -- Active-team `opponentsCantCastOnActiveTurn` & `canCastForSneak`:
+  let grandAbolisherDef : CardDef := {
+    bear with
+    name := "P25i4 Team Abolisher"
+    staticAbilities := #[.opponentsCantCastOnYourTurn]
+  }
+  let gAbol := addPermanent g0 grandAbolisherDef ⟨1⟩ ⟨1⟩
+  let gBlk := gAbol.record (GameEvent.stepped gAbol.turnNumber .declareBlockers ⟨0⟩)
+  let activeTeamChecksOk :=
+    !gBlk.opponentsCantCastOnActiveTurn ⟨0⟩ &&
+    !gBlk.opponentsCantCastOnActiveTurn ⟨1⟩ &&
+    gBlk.opponentsCantCastOnActiveTurn ⟨2⟩ &&
+    gBlk.canCastForSneak ⟨0⟩ &&
+    gBlk.canCastForSneak ⟨1⟩ &&
+    !gBlk.canCastForSneak ⟨2⟩
+
+  -- `Turns.startNextTurnCore` deduplicates `departed` when a player with multiple queued extra turns leaves:
+  let g3Ex0 := addPermanent (mkThreePlayer24i4 2546) bear ⟨0⟩ ⟨0⟩
+  let exBearId := (g3Ex0.battlefield.filter (·.name == bear.name))[0]!.id
+  let g3Ex1 := (g3Ex0.record (GameEvent.extraTurnAdded g3Ex0.turnNumber ⟨1⟩ (cause := testCause)))
+    |>.record (GameEvent.extraTurnAdded g3Ex0.turnNumber ⟨1⟩ (cause := testCause))
+  let g3Ex3 := g3Ex1.createEffect
+    (.layered (.objects #[exBearId]) (.ptModify 1 1) (.untilEndOfNextTurnOf ⟨1⟩))
+    (cause := some testCause)
+  let g3ExDeparted := (g3Ex3.concede ⟨1⟩).startNextTurnCore false
+  let departedDedupOk :=
+    g3ExDeparted.activePlayer == ⟨2⟩ &&
+    g3ExDeparted.activeEffects.isEmpty &&
+    g3ExDeparted.power (g3ExDeparted.object! exBearId) == 2
+
+  mustHold25i4 "2a.sharedTurnSummoningSickness" (stillSickOnMateSeat && clearedOnNextSharedTurn) &&
+  mustHold25i4 "2b.activeTeamAndDeparted" (activeTeamChecksOk && departedDedupOk) &&
+  mustHold25i4 "2.replay" (replayOk25i4 #[gStolen, gMateSeat, gNextTeamA, gBlk, g3ExDeparted])
+
+-- 3. CR 109.2 / 118.12a / 205.3j / 508.1d / 508.4c / 603.7c / 608.2h:
+--    *Jace, Multiverse Architect* `{2}` tax & controller/subtype-scoped `cantAttackJace`,
+--    plus `.merfolkAttackPlayer`, `.creatureAttacksYouOrYourPlaneswalker`, and *Garruk, Curse Breaker* scoping.
+#guard
+  let jaceSubDef : CardDef := { name := "Sculptor of Minds", types := #[.planeswalker], subtypes := #["Jace"], loyalty := some 4 }
+  let fakeJaceNameDef : CardDef := { name := "Jace Impostor", types := #[.planeswalker], subtypes := #["Bolas"], loyalty := some 4 }
+  let addPw4 (g : Game) (c : CardDef) (p : PlayerId) : Game :=
+    insertObject g c p .battlefield (some p) { summoningSick := false, counters := #[(.loyalty, 4)] }
+  let g2hg := mkTwoHeadedGiant24i4 2547
+  let gJ0 := addPw4 (addPw4 (addPw4 g2hg jaceSubDef ⟨2⟩) jaceSubDef ⟨3⟩) fakeJaceNameDef ⟨2⟩
+  let j2Id := (gJ0.battlefield.filter (fun o => o.name == jaceSubDef.name && o.controller == some ⟨2⟩))[0]!.id
+  let j3Id := (gJ0.battlefield.filter (fun o => o.name == jaceSubDef.name && o.controller == some ⟨3⟩))[0]!.id
+  let fakeId := (gJ0.battlefield.filter (fun o => o.name == fakeJaceNameDef.name))[0]!.id
+  let handBeforePay := (gJ0.player ⟨0⟩).hand.size
+  let gJWithMana := gJ0.addMana ⟨0⟩ .colorless 2
+  let gJPromptPay := (gJWithMana.change (.pushContinuationFrame {})).applyFrc ⟨2⟩ {} .jaceTax #[] (some j2Id)
+  let gJPaid := mustApply gJPromptPay ⟨0⟩ .payGeneric
+  let paidOk :=
+    gJPaid.pending == .none &&
+    (gJPaid.player ⟨0⟩).hand.size == handBeforePay &&
+    !gJPaid.cantAttackJace ⟨0⟩ (gJPaid.object! j2Id)
+
+  let gJPromptDec := (gJ0.change (.pushContinuationFrame {})).applyFrc ⟨2⟩ {} .jaceTax #[] (some j2Id)
+  let gJDeclined := mustApply gJPromptDec ⟨0⟩ .decline
+  let declinedScopedOk :=
+    gJDeclined.cantAttackJace ⟨0⟩ (gJDeclined.object! j2Id) &&
+    !gJDeclined.cantAttackJace ⟨0⟩ (gJDeclined.object! j3Id) &&
+    !gJDeclined.cantAttackJace ⟨0⟩ (gJDeclined.object! fakeId)
+
+  -- Conceding in a 3-player game while `.payOrLetCounter` is pending cleanly flushes `unlessPays`:
+  let g3J0 := addPw4 (mkThreePlayer24i4 2548) jaceSubDef ⟨1⟩
+  let j3pId := (g3J0.battlefield.filter (·.name == jaceSubDef.name))[0]!.id
+  let g3JPrompt := (g3J0.change (.pushContinuationFrame {})).applyFrc ⟨1⟩ {} .jaceTax #[] (some j3pId)
+  let g3JConcede := g3JPrompt.concede ⟨0⟩
+  let concedeFlushOk :=
+    (g3JConcede.player ⟨0⟩).leftTheGame &&
+    g3JConcede.pending != .payOrLetCounter ⟨0⟩ 2 none &&
+    g3JConcede.unlessPaysInstead.isNone
+
+  -- `.merfolkAttackPlayer`, `.creatureAttacksYouOrYourPlaneswalker`, and *Garruk, Curse Breaker* locked attackers:
+  let merfolkDef : CardDef := creature "P25i4 Merfolk" ManaCost.empty #["Merfolk"] 2 2
+  let merfolkWatcherDef : CardDef := {
+    bear with
+    name := "P25i4 Merfolk Watcher"
+    triggeredAbilities := #[TriggeredAbility.onWatch Effect.watchMerfolkAttackDraw]
+  }
+  let revengeWatcherDef : CardDef := {
+    bear with
+    name := "P25i4 Revenge Watcher"
+    triggeredAbilities := #[TriggeredAbility.fra (.fra .creatureAttacksYouOrYourPlaneswalker) "" (.gainLife 1)]
+  }
+  let garrukWatcherDef : CardDef := {
+    bear with
+    name := "P25i4 Garruk Watcher"
+    triggeredAbilities := #[TriggeredAbility.fra (.fra .creaturesAttackYourOpponent) "" .attackersOfPlayerGetTwoTwoTrample]
+  }
+  let battleDef : CardDef := {
+    name := "P25i4 Siege Battle"
+    types := #[.battle]
+    subtypes := #["Siege"]
+    defense := some 4
+  }
+  let gComb0 :=
+    let g := mkThreePlayer24i4 2549
+    let g := addPermanent (addPermanent g merfolkDef ⟨0⟩ ⟨0⟩) merfolkWatcherDef ⟨0⟩ ⟨0⟩
+    let g := addPermanent (addPermanent (addPw4 g jaceSubDef ⟨1⟩) battleDef ⟨1⟩ ⟨1⟩) revengeWatcherDef ⟨1⟩ ⟨1⟩
+    addPermanent g garrukWatcherDef ⟨2⟩ ⟨2⟩
+  let mfId := (gComb0.battlefield.filter (·.name == merfolkDef.name))[0]!.id
+  let pw1Id := (gComb0.battlefield.filter (·.name == jaceSubDef.name))[0]!.id
+  let bat1Id := (gComb0.battlefield.filter (·.name == battleDef.name))[0]!.id
+  let declCause := some (EventCause.turnBased .declareAttackers)
+  -- Attacking a planeswalker: fires `.creatureAttacksYouOrYourPlaneswalker` for `⟨1⟩`, NOT `.merfolkAttackPlayer` or Garruk!
+  let mfSnapPw := { (gComb0.snapshot (gComb0.object! mfId)) with attacking := true, attackingTarget := some (.planeswalker pw1Id) }
+  let gAtkPw := gComb0.record (GameEvent.attackersDeclared gComb0.turnNumber ⟨0⟩ #[(mfSnapPw, .planeswalker pw1Id)] (cause := declCause))
+  let atkPwOk :=
+    gAtkPw.waitingTriggers.size == 1 &&
+    gAtkPw.waitingTriggers[0]!.controller == ⟨1⟩ &&
+    gAtkPw.waitingTriggers[0]!.event == .fra .creatureAttacksYouOrYourPlaneswalker
+  -- Attacking a battle: fires NEITHER `.merfolkAttackPlayer` NOR `.creatureAttacksYouOrYourPlaneswalker` NOR Garruk!
+  let mfSnapBat := { (gComb0.snapshot (gComb0.object! mfId)) with attacking := true, attackingTarget := some (.battle bat1Id) }
+  let gAtkBat := gComb0.record (GameEvent.attackersDeclared gComb0.turnNumber ⟨0⟩ #[(mfSnapBat, .battle bat1Id)] (cause := declCause))
+  let atkBatOk := gAtkBat.waitingTriggers.isEmpty
+  -- Attacking player `⟨1⟩`: fires `.merfolkAttackPlayer`, `.creatureAttacksYouOrYourPlaneswalker`, AND `⟨2⟩`'s Garruk (locking `#[mfId]`):
+  let mfSnapPl := { (gComb0.snapshot (gComb0.object! mfId)) with attacking := true, attackingTarget := some (.player ⟨1⟩) }
+  let gAtkPl0 := gComb0.record (GameEvent.attackersDeclared gComb0.turnNumber ⟨0⟩ #[(mfSnapPl, .player ⟨1⟩)] (cause := declCause))
+  let gAtkPlStacked := gAtkPl0.receivePriority ⟨0⟩
+  -- Put a second creature onto the battlefield tapped & attacking `⟨1⟩` BEFORE Garruk's trigger on top of stack resolves:
+  let gAtkWithLate := insertObject gAtkPlStacked bear ⟨0⟩ (.hand ⟨0⟩)
+  let lateCard := (gAtkWithLate.player ⟨0⟩).hand.back!
+  let (gAtkLateEntered, lateId) := gAtkWithLate.putOntoBattlefield lateCard ⟨0⟩
+    (tapped := true) (attacking := true) (attackingTarget := some (.player ⟨1⟩)) (cause := some testCause)
+  -- APNAP puts `⟨0⟩` bottom, `⟨1⟩` middle, `⟨2⟩` (Garruk) on top! Resolve top (Garruk):
+  let gGarrukRes := gAtkLateEntered.resolveTop
+  let garrukLockedOk :=
+    gGarrukRes.power (gGarrukRes.object! mfId) == 4 &&
+    gGarrukRes.toughness (gGarrukRes.object! mfId) == 4 &&
+    gGarrukRes.hasTrample (gGarrukRes.object! mfId) &&
+    gGarrukRes.power (gGarrukRes.object! lateId) == 2 &&
+    !gGarrukRes.hasTrample (gGarrukRes.object! lateId)
+
+  mustHold25i4 "3a.jaceTaxPayDeclineConcede" (paidOk && declinedScopedOk && concedeFlushOk) &&
+  mustHold25i4 "3b.combatTriggerScoping" (atkPwOk && atkBatOk && garrukLockedOk) &&
+  mustHold25i4 "3.replay" (replayOk25i4 #[gJPaid, gJDeclined, g3JConcede, gAtkPw, gAtkBat, gGarrukRes])
+
+-- 4. CR 122.1c–d / 611.2a / 613.1a,c / 704.5q / 800.4c:
+--    Shield, stun, and CR 704.5q counter removals routed through `recordRemoveCounters`
+--    (`.whileSourceHasCounter` expiry + CR 800.4c control exile) and layer-resolved `g.name` logs.
+#guard
+  let gBase := addPermanent afterDraw bear me me
+  let bId := (gBase.battlefield.filter (·.name == bear.name))[0]!.id
+  -- 4a. Shield counter removals (`destroyPermanent`, prevented `markDamageOn`, unpreventable `markDamageOn`):
+  let mkShielded : Game :=
+    let g := gBase.recordPutCounters bId .shield 1 (byPlayer := some me) (cause := some testCause)
+    g.createEffect (.layered (.objects #[bId]) (.ptModify 3 3) (.whileSourceHasCounter bId .shield))
+      (cause := some testCause)
+  let gShieldDestroy := mkShielded.destroyPermanent (mkShielded.object! bId) (cause := some testCause)
+  let gShieldPrevDmg := mkShielded.markDamageOn (mkShielded.object! bId) 2 "" (cause := some testCause)
+  let gShieldUnprevDmg := mkShielded.markDamageOn (mkShielded.object! bId) 1 "" (unpreventable := true) (cause := some testCause)
+  let shieldExpiryOk :=
+    gShieldDestroy.power (gShieldDestroy.object! bId) == 2 &&
+    gShieldPrevDmg.power (gShieldPrevDmg.object! bId) == 2 &&
+    gShieldUnprevDmg.power (gShieldUnprevDmg.object! bId) == 2 &&
+    (gShieldUnprevDmg.object! bId).status.damage == 1
+
+  -- 4b. Stun counter removals (`untapStepPermanents` and `untapPermanent`):
+  let mkStunned : Game :=
+    let g := (gBase.becomeTapped (gBase.object! bId) (cause := some testCause))
+      |>.recordPutCounters bId .stun 1 (byPlayer := some me) (cause := some testCause)
+    g.createEffect (.layered (.objects #[bId]) (.ptModify 2 2) (.whileSourceHasCounter bId .stun))
+      (cause := some testCause)
+  let gStunStep := mkStunned.untapStepPermanents #[bId]
+  let gStunEffect := mkStunned.untapPermanent (mkStunned.object! bId) (cause := some testCause)
+  let stunExpiryOk :=
+    (gStunStep.object! bId).status.tapped &&
+    (gStunStep.object! bId).status.stun == 0 &&
+    gStunStep.power (gStunStep.object! bId) == 2 &&
+    (gStunEffect.object! bId).status.tapped &&
+    (gStunEffect.object! bId).status.stun == 0 &&
+    gStunEffect.power (gStunEffect.object! bId) == 2
+
+  -- 4c. CR 704.5q counter annihilation expires `.whileSourceHasCounter` Layer 2 control
+  --     via `endControlEffectById` BEFORE `expireMatching`, exiling `victimId` under CR 800.4c
+  --     when its default controller `⟨1⟩` has left the game:
+  let g3 := mkThreePlayer24i4 2550
+  let g3Src := addPermanent g3 bear ⟨0⟩ ⟨0⟩
+  let srcId := (g3Src.battlefield.filter (·.name == bear.name))[0]!.id
+  let g3Ins := insertObject g3Src bear ⟨0⟩ (.hand ⟨0⟩)
+  let vCard := (g3Ins.player ⟨0⟩).hand.back!
+  -- `⟨0⟩` owns `vCard`, put onto battlefield under `⟨1⟩`'s control (`defaultController = some ⟨1⟩`):
+  let (g3Put, victimId) := g3Ins.putOntoBattlefield vCard ⟨1⟩ (cause := some testCause)
+  let g3Plus := g3Put.recordPutCounters srcId .plusOnePlusOne 1 (byPlayer := some ⟨0⟩) (cause := some testCause)
+  let g3Ctrl := g3Plus.createEffect
+    (.layered (.objects #[victimId]) (.control ⟨2⟩) (.whileSourceHasCounter srcId .plusOnePlusOne))
+    (cause := some testCause)
+  -- `⟨1⟩` concedes (`victimId` is owned by `⟨0⟩` and controlled by `⟨2⟩`, so it remains on battlefield):
+  let g3AfterConcede := g3Ctrl.concede ⟨1⟩
+  let stillOnBfBefore7045q := (g3AfterConcede.object! victimId).isOnBattlefield
+  -- Put a `-1/-1` counter on `srcId` and run SBAs (CR 704.5q removes `+1/+1` & `-1/-1` pair -> CR 800.4c exiles `victimId`!):
+  let g3Annihilated := (g3AfterConcede.recordPutCounters srcId .minusOneMinusOne 1
+    (byPlayer := some ⟨0⟩) (cause := some testCause)).checkSBA
+  let cr7045q8004cOk :=
+    stillOnBfBefore7045q &&
+    (g3Annihilated.object! srcId).status.plusOnePlusOne == 0 &&
+    (g3Annihilated.object! srcId).status.minusOneMinusOne == 0 &&
+    (g3Annihilated.findObject? victimId).isNone &&
+    (g3Annihilated.object! (g3Annihilated.followMoved victimId)).zone == .exile &&
+    g3Annihilated.log.any (fun s => s.contains "CR 800.4c")
+
+  -- 4d. Layer-resolved `g.name` in pump & lethal-damage SBA logs (CR 613.1a,c):
+  let renamedDef : CardDef := creature "Renamed Champion" ManaCost.empty #["Hero"] 2 2
+  let gCopy := gBase.createEffect
+    (.layered (.objects #[bId]) (.copy renamedDef) .untilEndOfTurn)
+    (cause := some testCause)
+  let gPumped := gCopy.pumpPermanent (gCopy.object! bId) 1 1
+  let gLethal := (gPumped.markDamageOn (gPumped.object! bId) 3 "" (cause := some testCause)).checkSBA
+  let layerNameLogOk :=
+    gPumped.log.any (fun s => s.contains "Renamed Champion gets +1/+1") &&
+    gLethal.log.any (fun s => s.contains "Renamed Champion dies from lethal damage")
+
+  mustHold25i4 "4a.shieldExpiry" shieldExpiryOk &&
+  mustHold25i4 "4b.stunExpiry" stunExpiryOk &&
+  mustHold25i4 "4c.cr7045qAnd8004c" cr7045q8004cOk &&
+  mustHold25i4 "4d.layerNameLog" layerNameLogOk &&
+  mustHold25i4 "4.replay" (replayOk25i4 #[gShieldDestroy, gShieldPrevDmg, gShieldUnprevDmg, gStunStep, gStunEffect, g3Annihilated, gLethal])
+
+end Phase25Item4EventAlignment
 
 end Mtg.Engine.EventTests
 

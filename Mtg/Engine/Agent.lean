@@ -75,7 +75,7 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
       let legalPwFor (plId : PlayerId) (usedTomik : Array ObjectId) : Option GameObject :=
         (g.permanentsOf plId).find? fun pw =>
           g.isPlaneswalker pw &&
-            !(g.cantAttackJaces p && ((g.name pw).startsWith "Jace" || g.hasSubtype pw .jace)) &&
+            !(g.cantAttackJace p pw) &&
             !(g.planeswalkerAttackedByOneAtMost pw && usedTomik.contains pw.id)
       let pickDestFor (o : GameObject) (usedTomik : Array ObjectId) :
           Option (PlayerId × Option ObjectId) :=

@@ -161,6 +161,55 @@ def endControlEffectById (g : Game) (eid : EffectId)
               else (acc, exiles)) (g, #[])
     g.runEndControlExileLoop exileQueue (cause := some (.gameRule .playerLeftGame))
 
+/-- Record removing up to `n` counters of `kind` from `id` via
+`PermanentEvent.counters` (CR 122.1). Clamps to the current counter count,
+does nothing when `0` counters are removed, and expires `.whileSourceHasCounter`
+effects immediately when `kind` reaches `0` (running `endControlEffectById` on
+matching Layer 2 control effects before `expireMatching` so CR 800.4c applies). -/
+def recordRemoveCounters (g : Game) (id : ObjectId) (kind : CounterKind) (n : Nat := 1)
+    (byPlayer : Option PlayerId := none) (cause : Option EventCause := none)
+    (noActor : Bool := false) : Game :=
+  match g.findObject? id with
+  | none => g
+  | some o =>
+    let actual := min n (o.status.counterCount kind)
+    if actual == 0 then g
+    else
+      let actor :=
+        if noActor then none
+        else byPlayer.orElse (fun _ => g.counterPutter (g.controllerOf o))
+      let finalCause := g.resolveOptionalCause cause (fallbackCtrl := actor)
+      let g := g.record (GameEvent.counters g.turnNumber actor (g.snapshot o) kind actual (removed := true) (cause := finalCause))
+      let g := if kind == .time then g.syncImpendingNotACreature id (cause := some finalCause) else g
+      if (g.findObject? id).all (fun cur => cur.status.counterCount kind == 0) then
+        let expCause := some (EventCause.gameRule .continuousEffect)
+        let g := g.restoreCopiesWhere (fun _ _ _ d => d == .whileSourceHasCounter id kind) (cause := expCause)
+        let ctrlEids := g.activeEffects.filterMap fun (eid, e) =>
+          match e with
+          | .layered _ (.control _) (.whileSourceHasCounter src k) =>
+            if src == id && k == kind then some eid else none
+          | _ => none
+        let g := ctrlEids.foldl (fun acc eid => acc.endControlEffectById eid (cause := expCause)) g
+        g.expireMatching (fun s =>
+          match s.duration with
+          | .whileSourceHasCounter src k => src == id && k == kind
+          | _ => false) (cause := expCause)
+      else g
+
+/-- Remove all counters currently on `id`, emitting one `PermanentEvent.counters`
+removal per non-zero counter kind in a single batch (CR 122.1). -/
+def removeAllCountersFrom (g : Game) (id : ObjectId)
+    (byPlayer : Option PlayerId := none) (cause : Option EventCause := none) : Game :=
+  match g.findObject? id with
+  | none => g
+  | some o =>
+    let bag := o.status.toCounterBag
+    if bag.isEmpty then g
+    else
+      g.withBatchCore cause (fun g =>
+        bag.foldl (fun acc (kind, cnt) =>
+          acc.recordRemoveCounters id kind cnt (byPlayer := byPlayer) (cause := cause)) g)
+
 /-- End every control-changing effect applying to `o`, each under its own
 `EffectId` (CR 800.4a / 800.4c). -/
 def endControlChangingEffect (g : Game) (o : GameObject)
@@ -987,6 +1036,7 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
         if wasMonarch && !g.over && g.livingPlayers.size > 1 then
           let heir :=
             if g.stillInGame g.activePlayer && g.activePlayer != p then g.activePlayer
+            else if !g.isSharedTurnFinalSeat then g.nextLiving g.activePlayer
             else g.nextLiving p
           (g.record (GameEvent.becameMonarch g.turnNumber heir (some p) (cause := cause))).logMsg
             s!"{(g.player heir).name} becomes the monarch (CR 725.4)"
