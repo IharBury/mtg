@@ -8384,66 +8384,60 @@ starting-team first seat, battle-excluded attack triggers &
 `PutCounters.lean`, `Targets.lean`, `Turns.lean`, `MshOracleTests.lean`,
 `OracleRulingTests.lean`.
 
-### Phase 27 — Non-replacement `inDepSpan` & `cleanupRemappedLeavingId` completion, multi-departure `popOuter` accumulation, stack-ability `representedByCard` ownership & departed-player guards, modal / optional-slot `Action.decline` (`GameEvent.targeted` & `prevDone`) / retargeting & `canPayAnnouncedAdditional` `flashback` forwarding, CR 616.1 replacement `affectedPlayer` stamping, pause-safe `makeFrc` / `exileTopPlayIfYouControlSubtype`, LKI damage-source / power / counter / MV fallbacks, and CR 701.15b Goad vs Battle, 2HG combat `matchesTrigger`, remaining `g.name` / `g.baseCard` & dead-helper retirement
+### Phase 27 — Non-replacement `inDepSpan` & `cleanupRemappedLeavingId` completion, multi-departure `popOuter` accumulation, stack-ability `representedByCard` ownership & departed-player guards, modal / optional-slot `Action.decline` (`GameEvent.targeted` & `prevDone`) / retargeting & `canPayAnnouncedAdditional` `flashback` forwarding, CR 616.1 replacement `affectedPlayer` stamping, pause-safe `makeFrc` / `exileTopPlayIfYouControlSubtype`, LKI damage-source / power / counter / MV fallbacks, and 2HG combat `matchesTrigger` / `matchTriggers`, remaining `g.name` / `g.baseCard` & dead-helper retirement
 
 1. Complete `Core.reverseToProposalCheckpointCore?` non-replacement departure
    span (`inDepSpan`) & `cleanupRemappedLeavingId`, multi-departure `popOuter`
    accumulation, stack-ability `representedByCard` ownership, and
    departed-player guards (§2.4, §2.5, §2.9, §3.1, §3.2, §3.4, §3.8):
-   - Prevent premature `inDepSpan` termination in
+   - Prevent premature `inDepSpan` termination in `Leaving.playerLeavesGameCore`
+     (`Leaving.lean:414, 1398–1452`) and
      `Core.reverseToProposalCheckpointCore?` (`Core.lean:10547–10621`, CR
      104.3a / 610.3 / 704.3 / 733.1 / 800.4a):
      - when `preBodyPending` is a proposal prompt (`isProposalPromptPending
        preBodyPending == true`, such as `.activateManaAbilities`,
        `.chooseTargets`, `.chooseMode`, or `.sacrificePermanent`), the
        non-replacement `| _ =>` branch in `Leaving.playerLeavesGameCore`
-       (`Leaving.lean:1398–1452`) temporarily emits `g.change (.pending
-       preBodyPending)` at `Leaving.lean:1400` before `redirectPendingAfterLeave`
-       (and clears it to `.pending .none` at `Leaving.lean:1430` or replaces it
-       with `.chooseReplacement` at `1401/1417`) while `depOuterDepth == 0` and
-       `pendingDepPlayers` was already emptied by `.playerLeftGame` at
-       `Leaving.lean:1156`; likewise `Decisions.finishConcedePriority`
-       (`Decisions.lean:239`) and `Decisions.concedePlayersLoop`
-       (`Decisions.lean:325, 359`) emit `g.change .popOuterPendingReplacement`
-       before `g.chainPendingReplacement popped` + `g.finishFraChoice` executes
-       `popped` (such as `.finishPostStep (.resumeChooseTargetsAfterLeave p0)` or
-       `.finishPostStep (.resumeChooseModeAfterLeave p0)`), and a
-       departure-triggered replacement choice (e.g., `.entersUntappedPayLife` on
-       a shock land returning via `returnLinkedExileMoves`) can emit a
+       (`Leaving.lean:1398–1452`) currently emits a transient `g.change
+       (.pending preBodyPending)` at `Leaving.lean:1400` solely so
+       `redirectPendingAfterLeave` (`1401`) can inspect `g.pending` (before
+       `Leaving.lean:1430` clears it back to `.pending .none` or `1441` pushes
+       `combinedOuter?` onto `outerPendingReplacements`), while `depOuterDepth
+       == 0` and `pendingDepPlayers` was already emptied by `.playerLeftGame` at
+       `Leaving.lean:1156`—which prematurely ends `inDepSpan` at
+       `Core.lean:10616–10619` before `redirectPendingAfterLeave` (`1401`),
+       `runEndControlExileLoop` (`1451`), `returnLinkedExileMoves` (`1460`), and
+       `finishConcedePriority`'s `g.checkSBA` (`Decisions.lean:218`) run; in
+       addition, a departure-triggered replacement choice (such as
+       `.entersUntappedPayLife` on a shock land returning via
+       `returnLinkedExileMoves`, where `Decisions.lean:4083–4124` calls
+       `payLifeCost` before journaling `.pending .none`) can emit a
        `.costPayment` event while `depOuterDepth == 0`;
-     - track `depReplacementPending : Bool` in
-       `reverseToProposalCheckpointCore?` (set to `true` when `.engine _
+     - add `(pending : Pending := g.pending)` to
+       `Leaving.redirectPendingAfterLeave` (`Leaving.lean:414`, matching
+       `pending` instead of `g.pending`, and in branches that leave `pending`
+       unchanged when `q != p && !abortedProp` setting `g.pending` to `pending`
+       only if needed or returning the post-redirect `Pending` to
+       `playerLeavesGameCore`), and in `Leaving.playerLeavesGameCore`
+       (`Leaving.lean:1398–1431`) pass `(pending := preBodyPending)` to
+       `redirectPendingAfterLeave` without emitting the transient `g.change
+       (.pending preBodyPending)` at `Leaving.lean:1400` (stashing any surviving
+       non-replacement post-redirect prompt directly in `savedPreLeavePending?`
+       while keeping `g.pending == .none`), so no proposal-prompt `.pending`
+       event is journaled until `Leaving.restoreSavedPostLeave`
+       (`Leaving.lean:1097`, called from `Leaving.lean:1472, 1515` or
+       `Decisions.lean:235, 321, 355`) or `.popOuterPendingReplacement`
+       (`Leaving.lean:1085`, `Decisions.lean:239, 325, 359`) runs after
+       `runEndControlExileLoop`, `returnLinkedExileMoves`, and `checkSBA` have
+       all completed; and
+     - in `Core.reverseToProposalCheckpointCore?` (`Core.lean:10560–10620`),
+       track `depReplacementPending : Bool` (set to `true` when `.engine _
        (.pending (.chooseReplacement ..))` or `.engine _ (.pending
        (.chooseLegend ..))` is seen while `inDepSpan` is `true`, and cleared to
-       `false` on any other `.engine _ (.pending _)`), and gate
-       `isProposalResumeEvent`'s `.rules _ _ (.costPayment ..) _` match on
-       `!depReplacementPending`;
-     - define `isDepartureCoreEvent (ev : GameEvent) : Bool` matching `.rules _
-       (.player (.lost ..)) _ _`, `.rules _ (.player (.leftGame ..)) _ _`,
-       `.rules _ (.player (.gameEnded ..)) _ _`, `.rules _ _ cause _` where
-       `cause.unreplaced` is `.gameRule .playerLeftGame`, `.gameRule
-       .returnExiled`, `.gameRule .controlEndedAfterLeave`, or `.stateBased ..`,
-       `.engine _ (.removeStackEntry _)`, `.engine _ (.continuation
-       (.pushOuterPendingReplacement _))`, `.engine _ (.continuation
-       .popOuterPendingReplacement)`, `.engine _ (.continuation
-       (.restorePausedBatch ..))`, `.engine _ .clearPausedBatch`, and `.engine _
-       .clearQueuedLinkedExile`, together with `hasMoreDepartureWorkAfter
-       (fromIdx : Nat) : Bool` scanning `j` in `[(fromIdx + 1):slice.size]`
-       (tracking local replacement/legend pending state and stopping if it
-       encounters an `isProposalResumeEvent` outside a replacement/legend
-       prompt) for any `evJ` satisfying `isDepartureCoreEvent evJ` or `.engine _
-       (.pending .none)` / `.engine _ (.pending (.chooseReplacement ..))` /
-       `.engine _ (.pending (.chooseLegend ..))`; and
-     - on `.engine _ (.continuation .popOuterPendingReplacement)`
-       (`Core.lean:10611`), decrement `depOuterDepth` (`if depOuterDepth > 0
-       then depOuterDepth := depOuterDepth - 1`) and only set `inDepSpan :=
-       false` when `depOuterDepth == 0 && pendingDepPlayers.isEmpty &&
-       !gameEndedInDep && !depReplacementPending &&
-       !hasMoreDepartureWorkAfter idx`; and on `.engine _ (.pending p)`
-       (`Core.lean:10616`), only set `inDepSpan := false` when `depOuterDepth ==
-       0 && pendingDepPlayers.isEmpty && !gameEndedInDep &&
-       !depReplacementPending && isProposalPromptPending p &&
-       !hasMoreDepartureWorkAfter idx`.
+       `false` on any other `.engine _ (.pending _)`), and gate both
+       `isProposalResumeEvent`'s `.rules _ _ (.costPayment ..) _` arm and the
+       `Core.lean:10614` `.popOuterPendingReplacement` exit on
+       `!depReplacementPending`.
    - Complete `cleanupRemappedLeavingId` and `applyKeptEvent` in
      `Core.reverseToProposalCheckpointCore?` (`Core.lean:10809–10935`, CR
      611.2a / 707.12 / 733.1 / 800.4a):
@@ -8605,9 +8599,9 @@ starting-team first seat, battle-excluded attack triggers &
      - add `(flashback : Option Bool := none)` to
        `Casting.canPayAnnouncedAdditional` (`Casting.lean:190–212`), forwarding
        `(flashback := flashback)` to `g.playManaCost` in `payExtra`, and pass
-       `(flashback := some false)` from `FraChoices.canCastForMayCast`
-       (`FraChoices.lean:2041`) and `FraChoices.canCastFromGyWithCost`
-       (`FraChoices.lean:2082`); and
+       `(flashback := some false)` from the `.mayCastCards`
+       (`FraChoices.lean:2041`) and `.mayCastFromGraveyard`
+       (`FraChoices.lean:2082`) arms of `FraChoices.defaultFraAction`; and
      - in `CastSpell.enterProposalWindow` (`CastSpell.lean:34–48`), when
        `!needsMode && !needsTarget && prop.kind == .activatedAbility &&
        !prop.cost.includesManaPayment`, call `g.beginActivationPayment prop`
@@ -8620,16 +8614,16 @@ starting-team first seat, battle-excluded attack triggers &
    - Stamp `affectedPlayer` on active `.replacement` continuous effects across
      the 5 remaining replacement gatherers (`Core.lean`, `Damage.lean`,
      `Library.lean`, `SacrificeDiscard.lean`, `Tokens.lean`, CR 616.1 / 616.1g):
-     update `Core.replaceCountersPutChoice` (`Core.lean:6049`, `{ spec' with
-     affectedPlayer := affected }`), `Damage.replaceLifeGainChoice`
-     (`Damage.lean:523`, `{ spec with affectedPlayer := p }`), `Library.drawOne`
+     update the active-effect `.replacement` pushes in
+     `Core.replaceCountersPutChoice` (`Core.lean:6049–6052`, `{ spec' with
+     affectedPlayer := affected }`), `Damage.gainLife` (`Damage.lean:523`,
+     `{ spec with affectedPlayer := p }`), `Library.drawOneWithReplacements`
      (`Library.lean:92`, `{ spec with affectedPlayer := p }`),
-     `SacrificeDiscard.replaceConniveDrawsChoice` (`SacrificeDiscard.lean:173`,
-     `{ spec with affectedPlayer := controller }`), and
-     `Tokens.replaceTokenCreationBatchChoice` (`Tokens.lean:316–320`, `{ spec'
-     with affectedPlayer := ctrl }`) so `selectNextReplacementStep` partitions
-     replacement choices under the currently affected player/controller in APNAP
-     order.
+     `SacrificeDiscard.applyConnive` (`SacrificeDiscard.lean:173`, `{ spec with
+     affectedPlayer := controller }`), and `Tokens.replaceTokenBatchesChoice`
+     (`Tokens.lean:316–320`, `{ spec with affectedPlayer := ctrl }`) so
+     `selectNextReplacementStep` partitions replacement choices under the
+     currently affected player/controller in APNAP order.
    - Make `FrcResolve.makeFrc` (`FrcResolve.lean:131–139`),
      `Choices.exileTopPlayIfYouControlSubtype` (`Choices.lean:304–323`), and
      `PendingReplacement.untapPermanent` (`Decisions.lean:542`) replacement-pause
@@ -8692,37 +8686,50 @@ starting-team first seat, battle-excluded attack triggers &
        back to `(g.lastKnownBefore? sid).map (·.manaValue) |>.getD 0`; and in
        `Chapters.applyChapterEffect` (`Chapters.lean:200, 288–292`), forward
        `(sourceId := sourceId)` to `g.applyEffect`.
-4. Fix CR 701.15b Goad vs Battle attack validation, align 2HG & multiplayer
-   `Event.matchesTrigger` / `Core.matchTriggers` / `Turns.lean`, complete
-   remaining battlefield/stack `g.name` & `g.baseCard` reads, and retire dead
-   helpers (§2.7, §2.10, §3.2, §3.3, §3.5, §3.7, §3.8):
-   - Fix Goad + Battle target check in `Combat.declareAttackers`
-     (`Combat.lean:66–77`, CR 701.15b): compute `chosenSat` as `match tgt with
-     | .player whom => (o.status.goadedBy.filter (· != whom)).size | _ => 0`
-     (instead of `if pw?.isNone then (o.status.goadedBy.filter (· !=
-     whom)).size else 0`, which treated `tgt == .battle _` with `whom = p` as
-     satisfying every opponent goader).
-   - Align 2HG & multiplayer combat trigger matching (`Event.lean:3310–3370,
-     3420` & `Core.lean:9470–9535`) and `Turns.lean` cleanup/turn transitions
+4. Align 2HG & multiplayer `Event.matchesTrigger` / `Core.matchTriggers` /
+   `Turns.lean`, complete remaining battlefield/stack `g.name` & `g.baseCard`
+   reads, and retire dead helpers (§2.7, §2.10, §3.2, §3.3, §3.5, §3.7, §3.8):
+   - Align 2HG & multiplayer combat trigger matching (`Event.lean:3319–3371` &
+     `Core.lean:9443–9608`) and `Turns.lean` cleanup/turn transitions
      (`Turns.lean:95–121, 146–155, 183–184, 352–366, 558–562, 683–695`, CR
      506.4c / 508.1 / 800.4i / 805.4a / 805.10):
-     - in `Event.matchesTrigger` (`Event.lean`), accept `you active ||
-       isTeammate active` on `.enchantedControllerUpkeep` (`Event.lean:3420`)
-       and `you p || isTeammate p` on the 12 active-team `attackersDeclared`
-       branches (`Event.lean:3310–3352, 3368`: `.youAttack`,
-       `.creatureYouControlAttacks`, `.creatureWithCounterYouControlAttacks`,
-       `.equippedCreatureYouControlAttacks`, `.otherCreaturesYouControlAttack`,
-       `.youAttackWithTwoOrMore`, `.fra .twoOrMoreCreaturesYouControlAttack`,
-       `.fra .threeOrMoreCreaturesYouControlAttack`,
-       `.fra .nonTokenCreatureYouControlAttacks`,
-       `.fra .creatureYouControlWithPower4OrGreaterAttacks`,
-       `.fra .creatureYouControlAttacksPlayerAlone`, and
-       `.fra .merfolkAttackPlayer`); accept `you d || isTeammate d` on `.fra
-       .creatureAttacksYouOrYourPlaneswalker` (`Event.lean:3353–3360`) and queue
-       for each living member of `whom`'s team in `Core.lean:9470, 9505–9516`
-       (CR 805.10b); and drop the `!you p` guard on `.fra
-       .creaturesAttackYourOpponent` (`Event.lean:3361–3366`) so
-       `Event.matchesTrigger` matches `Core.lean:9522–9533`; and
+     - in `Event.matchesTrigger` (`Event.lean:3319–3371`), accept `(you p ||
+       isTeammate p)` on the 13 `attackersDeclared` arms that test `you p`
+       (`.attacking` at `3319`, `.youAttack` at `3321`, `.youAttackWithElves` at
+       `3323`, `.youAttackWithTwoOrMore` at `3325`,
+       `.creatureYouControlAttacksAlone` at `3331`, `.youAttackWithTotalPower` at
+       `3335`, `.equippedAttacks` at `3337`, `.equippedCreatureYouControlAttacks`
+       at `3339`, `.merfolkAttackPlayer` at `3341`, `.fra
+       .creatureYouControlAttacks` at `3344`, `.fra
+       .creatureYouControlAttacksPlayerAlone` at `3346`, `.fra
+       .zombieTokenAttacks` at `3367`, and `.fra .sphinxesAttack` at `3370`) and
+       accept `(you d || isTeammate d)` on `| .player d =>` in `.fra
+       .creatureAttacksYouOrYourPlaneswalker` (`Event.lean:3353–3360`);
+     - in `Core.matchTriggers` on `.combat (.attackersDeclared activePlayer
+       decls)` (`Core.lean:9443–9608`), use each attacker's controller `attCtrl
+       := (post.controllerOf a).getD activePlayer` (passing `isTeammate :=
+       post.areTeammates attCtrl` to `e.matchesTrigger`) for per-attacker
+       controller triggers (`.zombieTokenAttacks` at `9455–9459`, `.attacking`
+       at `9471–9480`, `.fra .creatureYouControlAttacks` at `9481–9485`, `.fra
+       .creatureYouControlAttacksPlayerAlone` at `9491–9495`,
+       `.equippedCreatureYouControlAttacks` at `9563–9569`, and
+       `.creatureYouControlAttacksAlone` at `9588–9594` when `allAttacking.size
+       == 1`); iterate living members `m` of `post.teamMembers activePlayer`
+       (filtering `attackers` to `let mAttackers := attackers.filter
+       (post.controlledBy · m)` when `!mAttackers.isEmpty`) for
+       controller-scoped active-team attack triggers (`.sphinxesAttack` at
+       `9460–9467`, `.youAttackWithElves` at `9534–9537`,
+       `.youAttackWithTwoOrMore` at `9538–9550`, `.merfolkAttackPlayer` at
+       `9551–9562`, `.youAttack` at `9570`, delayed `.attackPumpPerPlains` at
+       `9572–9585`, and `.youAttackWithTotalPower` at `9603–9608`); and on
+       `.fra .creatureAttacksYouOrYourPlaneswalker` (`Core.lean:9505–9516`),
+       when `a` attacks a player `d` (`some (.player d)` or `none` with `d =
+       post.defendingPlayer`), queue `.creatureAttacksYouOrYourPlaneswalker` for
+       each living member `m` of `post.teamMembers d` where
+       `post.isLivingOpponentOf m activePlayer` (CR 805.10b), and when `a`
+       attacks `some (.planeswalker pwId)`, queue for the planeswalker's
+       controller `pwCtrl` when `post.isLivingOpponentOf pwCtrl activePlayer`;
+       and
      - in `Turns.lean`, move `.legendRuleOffThisTurn pl.id` into
        `clearTurnActivations` (`Turns.lean:146–155`, gated by `if !pl.lost` per
        CR 800.4i) and `expireUntilNextTurnEffects` (`Turns.lean:352–366`),
@@ -8754,8 +8761,14 @@ starting-team first seat, battle-excluded attack triggers &
      `EventCause.replacedBy` (`Object.lean:419–421`),
      `SpellTargets.spellEffectOfCard` (`SpellTargets.lean:133–145`),
      `Status.attackingPlayer?` (`Status.lean:133–136`), `ManaPool.fraCount`
-     (`Mana.lean:573–574`), the 20 unused `ManaRestriction` color-subset helpers
-     in `Mana.lean:522–556`, and `CastSpell.finishTriggerTargets`
+     (`Mana.lean:573–574`), the 20 unused `ManaPool` color-subset wrappers in
+     `Mana.lean:522–556` (`elfBlue`, `elfBlack`, `elfRed`, `instWhite`,
+     `instBlue`, `instBlack`, `instRed`, `instGreen`, `heroBlue`, `heroBlack`,
+     `heroRed`, `heroGreen`, `villainWhite`, `villainBlue`, `villainRed`,
+     `villainGreen`, `creatureWhite`, `creatureBlue`, `creatureBlack`, and
+     `creatureRed`, keeping `getElf`, `getInst`, `getHero`, `getVillain`,
+     `getCreature`, `elfWhite`, `elfGreen`, `heroWhite`, `villainBlack`, and
+     `creatureGreen`), and `CastSpell.finishTriggerTargets`
      (`CastSpell.lean:372–373`, calling `g.afterTriggerTargetsChosen` directly).
 
 Tests: `Events.lean` (isolation tests for `reverseToProposalCheckpointCore?`
@@ -8778,14 +8791,14 @@ termination, `triggerModesOf` Layer-3 & `triggerModeChoosable` `eachOpponent` /
 non-mana ability activation, CR 616.1 `affectedPlayer` stamping across the 5
 replacement gatherers, pause-safe `makeFrc` &
 `exileTopPlayIfYouControlSubtypeLoop`, LKI damage-source / power / counter / MV
-fallbacks & Saga `applyChapterEffect` `sourceId` forwarding, CR 701.15b Goad vs
-Battle attack validation, 2HG combat `Event.matchesTrigger` /
-`creatureAttacksYouOrYourPlaneswalker` & `Turns.lean` `.legendRuleOffThisTurn` /
-`.playFromExile` / `.declareBlockers` alignment, remaining battlefield/stack
-`g.name` & `g.baseCard` reads, and retired dead helpers), `Abilities.lean`,
-`Casting.lean`, `Combat.lean`, `Damage.lean`, `Discard.lean`, `Draw.lean`,
-`Equipment.lean`, `GainLife.lean`, `Leaving.lean`, `PutCounters.lean`,
-`Targets.lean`, `Turns.lean`, `MshOracleTests.lean`, `OracleRulingTests.lean`.
+fallbacks & Saga `applyChapterEffect` `sourceId` forwarding, 2HG combat
+`Event.matchesTrigger` / `Core.matchTriggers` & `Turns.lean`
+`.legendRuleOffThisTurn` / `.playFromExile` / `.declareBlockers` alignment,
+remaining battlefield/stack `g.name` & `g.baseCard` reads, and retired dead
+helpers), `Abilities.lean`, `Casting.lean`, `Combat.lean`, `Damage.lean`,
+`Discard.lean`, `Draw.lean`, `Equipment.lean`, `GainLife.lean`, `Leaving.lean`,
+`PutCounters.lean`, `Targets.lean`, `Turns.lean`, `MshOracleTests.lean`,
+`OracleRulingTests.lean`.
 
 Final check (after Phase 27): `lake build`, `lake exe mtg-demo`,
 `lake exe oracle-roundtrip`, no `EventCause.unclassified` constructor, no
