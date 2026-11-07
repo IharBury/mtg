@@ -1876,7 +1876,7 @@ flowchart TD
   P22 --> P23["Phase 23: Continuation/ward/cast pause-safety & CR 614.6/615.6/608.2b deferred logs,\nCR 106.6/601.2/602.2/702.37/707.2,10/603.6c,10a mana, cast, equip, morph, copy & trigger alignment,\nCR 614.1c,12,15/616.1a-g ETB ordering, shockland re-entry, unified ETB counters, token & combat/phasing/Saga/APNAP batches,\nand CR 810 2HG shared life/draw/poison, simultaneous CR 704.3 SBA, amass/LKI sentinel & dead-helper cleanup"]
   P23 --> P24["Phase 24: Remaining pause/Leaving continuation safety & CR 400.3/614.6/700.4/701.9a,21a/122.1 arrival logs,\nCR 601.2-3/702.33-34/715.3/733.1/115.1,3 Flashback, Kicker, Adventure, Cosmic Cube & multi-slot target legality,\nCR 614.1c,5,12,15/616.1a-g/701.14/702.15b/121.2 ETB self-exclusion, wildcard counters, 616.1e ETB tiers & token/fight/lifelink/discard batches,\nand CR 805.3-4,8/810.2 2HG shared-turn lifecycle, start-of-pass CR 704.5j/s legend & Saga SBAs, and scaffolding/CR cleanup"]
   P24 --> P25["Phase 25: Generalized Leaving paused-batch/continuation safety & CR 101.4/118.12a/603.2c/701.9b Thirst & APNAP discard/wheel batches,\nCR 106.6/115.1,3/118.9a,c/601.2-3/733.1 multi-target/slot legality, alt-cost exclusivity, payLifeEqualManaValue, cast checkpoints & agent mana,\nCR 121.2/603.6a/616.1b,g/701.7a/702.15b/800.4b wildcard order cleanup, ZoneEvent.created controller vs creator, trigger draws & noncombat lifelink,\nand CR 725.2,4/302.6/805.4a,10/810.2/611.2a/800.4c monarch triggers, 2HG summoning sickness/combat, counter-removal expiry & orphaned-helper cleanup"]
-  P25 --> P26["Phase 26: Leaving x CR 733.1/800.4a departure-reversal, non-owner/2HG proposal abort, stack-card exile & continuation safety,\nCR 115.1c/612/118.9a/608.2g/700.2d modal zero-target/Layer-3, Sneak/anyMana/Ur-Sphinx cast, multi-mode/eachOpponent target & Agent mana alignment,\nCR 614.1c/702.176a/702.15b/608.2h Impending ETB .time replacements, created ETB watching, pause-safe divided/lifelink & Bow/Balin/Jace LKI,\nand CR 611.2a/800.4c remaining counter-removal expiry, CR 725.2-3 per-creature monarch, CR 805.3-7 2HG APNAP/shared-step/combat & dead-scaffolding cleanup"]
+  P25 --> P26["Phase 26: Leaving x CR 733.1/800.4a departure-reversal, non-owner/2HG proposal abort, stack-card exile & continuation safety,\nCR 115.1c/612/118.9a,d/118.14/608.2g/700.2d modal zero-target/Layer-3, Sneak/anyMana/Ur-Sphinx cast, multi-mode/eachOpponent target & Agent mana alignment,\nCR 614.1c/702.176a/702.15b/608.2h Impending ETB .time replacements, created ETB watching, pause-safe divided/lifelink & Bow/Balin/Jace LKI,\nand CR 611.2a/800.4c remaining counter-removal expiry, CR 725.2-3 per-creature monarch, CR 805.3-7 2HG APNAP/shared-step/combat & dead-scaffolding cleanup"]
 ```
 
 ### Phase 1 — Envelope and durable single-writer constructors
@@ -7853,14 +7853,15 @@ expiry / active-team `"during your turn"` / starting team / extra turns /
    - Implement CR 725.2's two sourceless inherent monarch triggered abilities
      and align CR 725.4 monarch departure inheritance in 2HG (`Core.lean`,
      `Event.lean`, `FrcResolve.lean`, `SpellResolution.lean`, `Leaving.lean`, CR
-     113.8 / 603.3a / 725.1–4 / 800.4a,d / 805.4a,d / 810.2; Rulings 936–940):
+     113.8 / 603.3a / 725.1–4 / 800.4a,d / 805.4 / 805.4a / 810.2; Rulings
+     936–940):
      - preserve sourceless `o.sourceId` (`none`) on `resolvingAbility` in
        `SpellResolution.resolveTop` / `Core.currentResolvingContext?`, and queue
        and resolve *"At the beginning of the monarch's end step, that player
        draws a card"* on `TurnEvent.stepBegan .end` when
        `post.isOnActiveTeam monarch && post.isSharedTurnFinalSeat` (controlled
        by `monarch` and drawing a card for `monarch` even if the monarchy
-       changes before resolution, CR 725.2 / 805.4a,d / Ruling 938);
+       changes before resolution, CR 725.2 / 805.4 / 805.4a / Ruling 938);
      - queue and resolve *"Whenever a creature deals combat damage to the
        monarch, its controller becomes the monarch"* on `.damage (.dealt pkts)`
        for each distinct controller of a creature source with `pkt.combat &&
@@ -7887,7 +7888,7 @@ expiry / active-team `"during your turn"` / starting team / extra turns /
      `Card/FrcEffect.lean`, `FrcResolve.lean`, `FraAbilities.lean`,
      `Combat.lean`, `Choices.lean`, `Event.lean`, `Decisions.lean`,
      `Agent.lean`, `Tests/Events.lean`, CR 101.2 / 109.2 / 118.12a / 205.3j /
-     302.6 / 508.1d / 508.4c / 603.7c / 608.2h / 800.4k,m / 805.4a,d / 805.10 /
+     302.6 / 508.1d / 508.4c / 603.7c / 608.2h / 800.4k,m / 805.4a / 805.10 /
      810.2):
      - clear `summoningSick` across `g.teamMembers` only when a team's shared
        turn begins in `Core.applyTurnEvent`—gating *both* `.turnBegan player
@@ -8017,7 +8018,7 @@ CR 800.4c expiry), `Abilities.lean`, `Auras.lean`, `Casting.lean`,
 `Effects.lean`, `GainLife.lean`, `Leaving.lean`, `PutCounters.lean`,
 `Targets.lean`, `Turns.lean`, `MshOracleTests.lean`, `OracleRulingTests.lean`.
 
-### Phase 26 — `Leaving` × CR 733.1 / 800.4a checkpoint-reversal departure preservation, non-owner / 2HG proposal abort & stack-card exile, CR 115.1c / 118.9a,14 / 608.2g / 700.2 modal zero-target / Layer-3 / multi-mode / `eachOpponent` targeting, Sneak / `anyMana` / *The Ur-Sphinx* Ruling 942 casts & `Agent` mana, CR 122.6 / 614.1c,12 / 702.176a Impending ETB counters, `ZoneEvent.created` ETB watching, pause-safe lifelink & equipment/source LKI, and CR 122.1 / 611.2a / 725.2–3 / 800.4c / 805.3–7 remaining `recordRemoveCounters` sites, per-creature monarch triggers, 2HG APNAP / shared-step / combat triggers, battlefield `g.name` & dead-scaffolding cleanup
+### Phase 26 — `Leaving` × CR 733.1 / 800.4a checkpoint-reversal departure preservation, non-owner / 2HG proposal abort & stack-card exile, CR 115.1c / 118.9a,d / 118.14 / 608.2g / 700.2 modal zero-target / Layer-3 / multi-mode / `eachOpponent` targeting, Sneak / `anyMana` / *The Ur-Sphinx* Ruling 942 casts & `Agent` mana, CR 122.6 / 614.1c,12 / 702.176a Impending ETB counters, `ZoneEvent.created` ETB watching, pause-safe lifelink & equipment/source LKI, and CR 122.1 / 611.2a / 725.2–3 / 800.4c / 805.3–7 remaining `recordRemoveCounters` sites, per-creature monarch triggers, 2HG APNAP / shared-step / combat triggers, battlefield `g.name` & dead-scaffolding cleanup
 
 1. Preserve mid-proposal player departures across CR 733.1 checkpoint reversal,
    complete `Leaving` non-owner / 2HG proposal abort & CR 800.4a stack-card exile,
@@ -8083,10 +8084,10 @@ CR 800.4c expiry), `Abilities.lean`, `Auras.lean`, `Casting.lean`,
        `FraAbilities.finishDiscardTwoDraws`, and guard `if !g.stillInGame p then
        g` in `Library.draw` / `drawOneWithReplacements` / `drawOneCard` (CR
        800.4a).
-2. Fix modal `allowsZeroTargets` & Layer-3 `announceMode`, CR 118.9a,14 Sneak /
-   `anyMana` / `canPayAnnouncedAdditional` / *The Ur-Sphinx* Ruling 942 casts,
-   multi-mode / `eachOpponent` targeting, and `Agent` mana checks (§2.8, §2.9,
-   §3.3, §3.5, §3.7, §3.8):
+2. Fix modal `allowsZeroTargets` & Layer-3 `announceMode`, CR 118.9a,d / 118.14
+   Sneak / `anyMana` / `canPayAnnouncedAdditional` / *The Ur-Sphinx* Ruling 942
+   casts, multi-mode / `eachOpponent` targeting, and `Agent` mana checks (§2.8,
+   §2.9, §3.3, §3.5, §3.7, §3.8):
    - Align modal zero-target choosability and Layer-3 text changes at mode
      announcement (`SpellTargets.lean`, `Targeting.lean`, `CastSpell.lean`,
      `Decisions.lean`, CR 115.1c / 612 / 613.1c / 700.2a–b): add
@@ -8198,17 +8199,21 @@ CR 800.4c expiry), `Abilities.lean`, `Auras.lean`, `Casting.lean`,
    - Route the remaining 6 counter-removal sites through
      `Leaving.recordRemoveCounters` (`Damage.lean`, `ActivationCosts.lean`,
      `Casting.lean`, CR 118.3 / 120.3c / 122.1 / 606.4 / 611.2a / 800.4c):
-     planeswalker damage loyalty-counter removal in `Damage.markDamageOn`
-     (clamped to `o.status.loyaltyCounters`), `ActivationCosts.payLoyalty`,
-     `ActivationCosts.payActivationCost` (`removePlusOnes`—skipping `0`-counter
-     no-ops—and `removeCounterKind`), and `Casting.paySpellAdditionalCosts`
-     (`removePlusOnes`) so `.whileSourceHasCounter` effects expire immediately
-     and CR 800.4c exiles any permanent whose resulting controller left the game.
+     both planeswalker loyalty-removal arms in `Damage.markDamageOn`
+     (`noActor := true`, already using `min amt (cur.status.counterCount
+     .loyalty)`), `ActivationCosts.payRemoveIndestructibleCounter`, the
+     story-counter removal (`a.cost.removeStoryCounter`) and `removePlusOnes`
+     arm (`{X}` `+1/+1` cost reached from `Casting.completeActivation` when
+     `prop.removePlusOneX`, skipping `0`-counter no-ops) inside
+     `ActivationCosts.payActivationExtraCosts`, and `Casting.payLoyaltyCost`
+     when `k < 0` (called from `Casting.becomeActivated`) so
+     `.whileSourceHasCounter` effects expire immediately and CR 800.4c exiles
+     any permanent whose resulting controller left the game.
    - Align CR 725.2–3 monarch combat-damage triggers per attacking creature and
      resolution-time controller (`Core.lean`, `FrcResolve.lean`,
-     `Tests/Events.lean`, CR 603.2c,e / 608.2h / 725.2–3 / 805.4d; Rulings 935,
-     940): queue one inherent CR 725.2 combat-damage trigger *per creature* that
-     dealt combat damage to the monarch (rather than deduplicating per
+     `Tests/Events.lean`, CR 603.2c,e / 608.2h / 725.2–3 / 805.4; Rulings 935,
+     938, 940): queue one inherent CR 725.2 combat-damage trigger *per creature*
+     that dealt combat damage to the monarch (rather than deduplicating per
      controller) with `cause := srcObj?` and `causeController := some attCtrl`,
      resolve the new monarch in `FrcResolve.applyFrc .monarch` from the
      creature's battlefield controller at resolution (`followToBattlefield?` /
@@ -8216,52 +8221,56 @@ CR 800.4c expiry), `Abilities.lean`, `Auras.lean`, `Casting.lean`,
      has left the battlefield (CR 608.2h), no-op in `FrcResolve.applyFrc
      .monarch` when `(g.player heir).isMonarch` is already `true` so a redundant
      trigger does not re-emit `PlayerEvent.becameMonarch` or re-fire
-     `becameTheMonarch` triggers (CR 725.3), and update `CR 805.4c` → `CR 805.4d`
-     in `Core.lean` and `Tests/Events.lean`.
+     `becameTheMonarch` triggers (CR 725.3), and replace the monarch end-step
+     comment's `CR 805.4c` with `CR 805.4` in `Core.lean` and the monarch test
+     header's `805.4a,c` with `805.4, 805.4a` in `Tests/Events.lean` (keeping
+     `Tests/Events.lean`'s per-player land-play `CR 805.4c` citations intact).
    - Complete Two-Headed Giant CR 805.3–7 APNAP ordering, shared-step trigger
-     gating, `firstOfYourDrawStep`, starting-team seat normalization, and
-     multiplayer combat triggers (`Core.lean`, `Library.lean`, `Start.lean`,
-     `Decisions.lean`, CR 103.1a / 301.5d / 506.5–6 / 508.3d / 603.2c /
-     805.3 / 805.4a,d / 805.6–7 / 810.2):
+     gating, `firstOfTheirDrawStep` / `firstOfYourDrawStep`, `Start.startWithRng`
+     starting-team seat normalization, and multiplayer combat triggers
+     (`Core.lean`, `Library.lean`, `Start.lean`, CR 103.1a / 301.5d / 506.5–6 /
+     508.3d / 603.2c / 805.3 / 805.4 / 805.4a,b,d / 805.6–7 / 810.2):
      - order `Core.apnapPlayers` so all living members of the active team (in
        seat order starting from the active team's first seat) precede nonactive
        teams in turn order (CR 805.6–7);
-     - gate shared-step triggers in `Core.matchTriggers` per CR 805.4a,d
-       (`post.isSharedTurnFirstSeat` on `.yourUpkeep` /
-       `.enchantedControllerUpkeep` across living active-team members,
+     - gate shared-step triggers in `Core.matchTriggers` per CR 805.4 / 805.4a
+       on active-team `"your"` / next-end-step triggers
+       (`post.isSharedTurnFirstSeat` on `.yourUpkeep` and
+       `.enchantedControllerUpkeep` across living active-team members, and
+       `post.isSharedTurnFinalSeat` on `.yourEndStep` across living active-team
+       members and delayed `.endStep*`) and per CR 805.4d on `"each player's"` /
+       `"each opponent's"` step triggers (`post.isSharedTurnFirstSeat` on
        `.eachUpkeep`, `.fra .eachUpkeepFromGraveyard`, delayed `.eaglesBirds`,
        `.eachOpponentDrawStep`, and regular-combat `.opponentBeginCombat` /
        `.eachBeginCombat` while preserving additional combat phases, plus
-       `post.isSharedTurnFinalSeat` on `.eachEndStep`, `.yourEndStep` across
-       living active-team members, and delayed `.endStep*`);
-     - check `g.isOnActiveTeam p` in `Library.drawOneCard`'s
-       `firstOfYourDrawStep` (CR 805.4a / 805.6a), and normalize the starting
-       player in both `Start.startWithRng` (`cfg.startingPlayer = some i`) and
-       `Decisions.finishAfterRandom` `.setStartingPlayer` to the first living
-       seat of `⟨i⟩`'s team in `g.players` rather than `(g.teamMembers ⟨i⟩)[0]!`
-       (which returns `⟨i⟩` itself, CR 103.1a / 805.3); and
+       `post.isSharedTurnFinalSeat` on `.eachEndStep`);
+     - check `g.isOnActiveTeam p` across `firstOfTheirDrawStep` in
+       `Library.drawOneCard` and `Library.draw` and `firstOfYourDrawStep` in
+       `Library.drawOneWithReplacements` (CR 805.4b), and normalize
+       `Start.startWithRng` when `cfg.startingPlayer = some i` via
+       `((g.teamMembers ⟨startIdx⟩).find? g.stillInGame).getD ⟨startIdx⟩`
+       (matching `Decisions.finishAfterRandom`'s existing `.setStartingPlayer`
+       normalization since `Core.teamMembers` already returns teammates in
+       `g.players` seat order, CR 103.1a / 805.3); and
      - exclude `AttackTarget.battle` from `.fra
        .creatureYouControlAttacksPlayerAlone` (CR 506.6) and
        `.youAttackWithTwoOrMore` (queuing once per attacked player per CR
-       508.3d / 603.2c), scan `post.battlefield` under `post.controllerOf eq`
-       with `decls.size == 1` on `.equippedAttacksAlone` (CR 301.5d / 506.5),
-       and verify `(post.findObject? pwId).any (post.controlledBy · whom)` in
-       `GameEvent.matchesTrigger` `.fra .creatureAttacksYouOrYourPlaneswalker`.
+       508.3d / 603.2c), and scan `post.battlefield` under `post.controllerOf eq`
+       with `decls.size == 1` on `.equippedAttacksAlone` (CR 301.5d / 506.5).
    - Complete layer-resolved `g.name` on battlefield permanents and retire dead
      scaffolding (`Combat.lean`, `Attachments.lean`, `CastExtras.lean`,
      `CastSpell.lean`, `Movement.lean`, `Leaving.lean`, `Choices.lean`,
      `Decisions.lean`, `Core.lean`, `FraResolve.lean`, `SpellResolution.lean`,
      `ResolutionEffects.lean`, `ModeledTriggers.lean`, `TriggeredAbilities.lean`,
      `EffectResolution.lean`, `Mulligans.lean`, `Casting.lean`,
-     `SpellTargets.lean`, `Pending.lean`, `Event.lean`, `Tests/Events.lean`, CR
-     613.1a,c / 707.2 / 708.2a): replace remaining raw `.name` reads on
-     battlefield permanents with `g.name`, and delete zero-caller
-     `Casting.legalCastTargets` (`Casting.lean`),
-     `SpellTargets.legalKickedTargetsForFace` (`SpellTargets.lean`), write-free
-     `ContinuationFrame.palantirAfterScry` (`Pending.lean`, `Event.lean`,
-     `Core.lean`, `Decisions.lean`, bringing `ContinuationFrame` from 89 to 88
-     fields), and test-only `Leaving.hasNonDiscardOpenBatch` (`Leaving.lean`,
-     updating `Tests/Events.lean`).
+     `SpellTargets.lean`, `Event.lean`, `Tests/Events.lean`, CR 613.1a,c /
+     707.2 / 708.2a): replace remaining raw `.name` reads on battlefield
+     permanents with `g.name`, and delete zero-caller `Casting.legalCastTargets`
+     (`Casting.lean`), `SpellTargets.legalKickedTargetsForFace`
+     (`SpellTargets.lean`), write-free `ContinuationFrame.palantirAfterScry`
+     (`Event.lean`, `Core.lean`, `Decisions.lean`, bringing `ContinuationFrame`
+     from 89 to 88 fields), and test-only `Leaving.hasNonDiscardOpenBatch`
+     (`Leaving.lean`, updating `Tests/Events.lean`).
 
 Tests: `Events.lean` (isolation tests for CR 733.1 / 800.4a mid-proposal player
 concession/departure preservation across `reverseToProposalCheckpointCore?`
@@ -8281,9 +8290,10 @@ CR 702.176a Impending ETB `.time` counter replacements & `0`-counter creature
 entry, `GameEvent.enteredBattlefield` token `.created` matching, pause-safe
 `TriggerResolution.dividedDamage` & tight `startEventIdx` lifelink windows,
 *Hawkeye's Bow* `.equippedBecomesTapped` & *Balin* / *Eye of Jace* LKI,
-remaining 6 `recordRemoveCounters` loyalty/cost sites with CR 800.4c expiry,
-CR 725.2–3 per-creature / resolution-controller / idempotent monarch triggers,
-CR 805.3–7 2HG `apnapPlayers` / shared-step triggers / `firstOfYourDrawStep` /
+remaining 6 `recordRemoveCounters` loyalty/indestructible/story/`removePlusOnes`
+sites with CR 800.4c expiry, CR 725.2–3 per-creature / resolution-controller /
+idempotent monarch triggers, CR 805.3–7 2HG `apnapPlayers` / shared-step
+triggers / `firstOfTheirDrawStep` & `firstOfYourDrawStep` / `Start.startWithRng`
 starting-team first seat, battle-excluded attack triggers &
 `.equippedAttacksAlone`, and layer-resolved battlefield `g.name`),
 `Abilities.lean`, `Casting.lean`, `Combat.lean`, `Damage.lean`, `Discard.lean`,
