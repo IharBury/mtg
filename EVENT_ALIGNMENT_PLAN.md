@@ -1891,7 +1891,7 @@ flowchart TD
   P23 --> P24["Phase 24: Remaining pause/Leaving continuation safety & CR 400.3/614.6/700.4/701.9a,21a/122.1 arrival logs,\nCR 601.2-3/702.33-34/715.3/733.1/115.1,3 Flashback, Kicker, Adventure, Cosmic Cube & multi-slot target legality,\nCR 614.1c,5,12,15/616.1a-g/701.14/702.15b/121.2 ETB self-exclusion, wildcard counters, 616.1e ETB tiers & token/fight/lifelink/discard batches,\nand CR 805.3-4,8/810.2 2HG shared-turn lifecycle, start-of-pass CR 704.5j/s legend & Saga SBAs, and scaffolding/CR cleanup"]
   P24 --> P25["Phase 25: Generalized Leaving paused-batch/continuation safety & CR 101.4/118.12a/603.2c/701.9b Thirst & APNAP discard/wheel batches,\nCR 106.6/115.1,3/118.9a,c/601.2-3/733.1 multi-target/slot legality, alt-cost exclusivity, payLifeEqualManaValue, cast checkpoints & agent mana,\nCR 121.2/603.6a/616.1b,g/701.7a/702.15b/800.4b wildcard order cleanup, ZoneEvent.created controller vs creator, trigger draws & noncombat lifelink,\nand CR 725.2,4/302.6/805.4a,10/810.2/611.2a/800.4c monarch triggers, 2HG summoning sickness/combat, counter-removal expiry & orphaned-helper cleanup"]
   P25 --> P26["Phase 26: Leaving x CR 733.1/800.4a departure-reversal, non-owner/2HG proposal abort, stack-card exile & continuation safety,\nCR 115.1c/612/118.9a,d/118.14/608.2g/700.2d modal zero-target/Layer-3, Sneak/anyMana/Ur-Sphinx cast, multi-mode/eachOpponent target & Agent mana alignment,\nCR 614.1c/702.176a/702.15b/608.2h Impending ETB .time replacements, created ETB watching, pause-safe divided/lifelink & Bow/Balin/Jace LKI,\nand CR 611.2a/800.4c remaining counter-removal expiry, CR 725.2-3 per-creature monarch, CR 805.3-7 2HG APNAP/shared-step/combat & dead-scaffolding cleanup"]
-  P26 --> P27["Phase 27: Non-replacement inDepSpan/cleanupRemappedLeavingId, multi-departure popOuter, stack-ability ownership & stillInGame/FraChoices guards,\nCR 115.1c-d/115.7d/601.2b-c/602.2b/603.3c-d/700.2/702.21a/702.34a optional-slot decline, modal trigger Layer-3/eachOpponent, retargeting & flashback,\nCR 120.2/608.2h/616.1/714 replacement affectedPlayer stamping, pause-safe makeFrc/exileTopPlayIfYouControlSubtype, LKI fallbacks & Saga sourceId,\nand CR 506.4c/613.1a,c/800.4i/805.10 2HG/multiplayer combat triggers & Turns expiry, g.name/g.baseCard & dead-helper cleanup"]
+  P26 --> P27["Phase 27: Non-replacement inDepSpan/cleanupRemappedLeavingId, multi-departure popOuter, stack-ability ownership & stillInGame/FraChoices guards,\nCR 115.1c-d/115.7d/601.2b-c/602.2b/603.3c-d/700.2/702.21a/702.34a optional-slot decline, modal trigger Layer-3/eachOpponent, retargeting & flashback,\nCR 120.2/608.2h/616.1/714 replacement affectedPlayer stamping, pause-safe makeFrc/exileTopPlayIfYouControlSubtype, LKI fallbacks & Saga sourceId,\nand CR 506.4c/613.1a,c/800.4i/805.10 2HG/multiplayer combat triggers & Turns expiry, g.name reads & dead-helper cleanup"]
 ```
 
 ### Phase 1 — Envelope and durable single-writer constructors
@@ -8384,7 +8384,7 @@ starting-team first seat, battle-excluded attack triggers &
 `PutCounters.lean`, `Targets.lean`, `Turns.lean`, `MshOracleTests.lean`,
 `OracleRulingTests.lean`.
 
-### Phase 27 — Non-replacement `inDepSpan` & `cleanupRemappedLeavingId` completion, multi-departure `popOuter` accumulation, stack-ability `representedByCard` ownership & departed-player guards, modal / optional-slot `Action.decline` (`GameEvent.targeted` & `prevDone`) / retargeting & `canPayAnnouncedAdditional` `flashback` forwarding, CR 616.1 replacement `affectedPlayer` stamping, pause-safe `makeFrc` / `exileTopPlayIfYouControlSubtype`, LKI damage-source / power / counter / MV fallbacks, and 2HG combat `matchesTrigger` / `matchTriggers`, remaining `g.name` / `g.baseCard` & dead-helper retirement
+### Phase 27 — Non-replacement `inDepSpan` & `cleanupRemappedLeavingId` completion, multi-departure `popOuter` accumulation, stack-ability `representedByCard` ownership & departed-player guards, modal / optional-slot `Action.decline` (`GameEvent.targeted` & `prevDone`) / retargeting & `canPayAnnouncedAdditional` `flashback` forwarding, CR 616.1 replacement `affectedPlayer` stamping, pause-safe `makeFrc` / `exileTopPlayIfYouControlSubtype`, LKI damage-source / power / counter / MV fallbacks, and 2HG combat `matchesTrigger` / `matchTriggers`, remaining `g.name` reads & dead-helper retirement
 
 1. Complete `Core.reverseToProposalCheckpointCore?` non-replacement departure
    span (`inDepSpan`) & `cleanupRemappedLeavingId`, multi-departure `popOuter`
@@ -8548,16 +8548,19 @@ starting-team first seat, battle-excluded attack triggers &
        `GameEvent.targeted` records the final `skippedOptionalSlots` and sets
        `targetsAnnounced := true` for deterministic replay (`Core.lean:5187`);
        and
-     - in `Core.lean:9984–9991` (`Game.record` for `GameEvent.targeted`), check
-       `pe.targetsAnnounced` for `prevDone` instead of `pe.targets.size +
+     - in `Core.matchTriggers` on `.stackObject (.targeted ..)`
+       (`Core.lean:9984–9991`), check `pe.targetsAnnounced` for `prevDone`
+       (`prevEntry?.any (fun pe => pe.targetsAnnounced && !pe.targets.isEmpty
+       && pe.targets.size + pe.skippedOptionalSlots.size >= totalSlots)`)
+       instead of `!pe.targets.isEmpty && pe.targets.size +
        pe.skippedOptionalSlots.size >= totalSlots` alone—because
        `announceTargetChoices` (`CastSpell.lean:489`) sets `targetsAnnounced :=
        false` when earlier slots are chosen and `skipOptionalTargetSlot` mutates
-       `se.skippedOptionalSlots` in memory before `setStackEntryTargets` records
-       `GameEvent.targeted`, checking `pe.targetsAnnounced` ensures `prevDone` is
-       `false` when the final optional slot is declined, so `.ward`,
-       `.becomesTarget`, and `.youTargetSomething` fire for the targets chosen in
-       the earlier slots.
+       `se.skippedOptionalSlots` in memory before `setStackEntryTargets`
+       captures `prevEntry?` and records `GameEvent.targeted`, checking
+       `pe.targetsAnnounced` ensures `prevDone` is `false` when the final
+       optional slot is declined, so `.ward`, `.becomesTarget`, and
+       `.youTargetSomething` fire for the targets chosen in the earlier slots.
    - Fix modal triggered abilities (`obj.triggeredAbility.isSome &&
      obj.abilityEffect.isSome`) with a single optional-target mode
      (`eff.allowsZeroTargets == true`) in `Decisions.decline`
@@ -8646,28 +8649,34 @@ starting-team first seat, battle-excluded attack triggers &
      `selectNextReplacementStep` partitions replacement choices under the
      currently affected player/controller in APNAP order.
    - Make `FrcResolve.makeFrc` (`FrcResolve.lean:131–139`),
-     `Choices.exileTopPlayIfYouControlSubtype` (`Choices.lean:304–323`), and
-     `PendingReplacement.untapPermanent` (`Decisions.lean:542`) replacement-pause
-     and rule-check safe (`FrcResolve.lean`, `Choices.lean`, `Event.lean`,
-     `Decisions.lean`, `ResolutionHelpers.lean`, CR 608.2c / 616.1):
+     `Choices.exileTopPlayIfYouControlSubtype` (`Choices.lean:295–323`), and
+     `Decisions.resumePendingReplacement`'s `.untapPermanent` arm
+     (`Decisions.lean:537–542`) replacement-pause and rule-check safe
+     (`FrcResolve.lean`, `Choices.lean`, `Event.lean`, `Decisions.lean`,
+     `ResolutionHelpers.lean`, CR 608.2c / 616.1):
      - in `FrcResolve.makeFrc` (`FrcResolve.lean:131–139`), check `if let
        .chooseReplacement .. := g.pending then g.chainPendingReplacement
        (.makeFrcLoop p k n x extraCounters cause)` *before* `g.change
        (.recentTokenIds #[])` so an already-paused replacement prompt does not
        wipe `recentTokenIds` before chaining;
-     - convert `Choices.exileTopPlayIfYouControlSubtype` (`Choices.lean:304–323`)
+     - convert `Choices.exileTopPlayIfYouControlSubtype` (`Choices.lean:295–323`)
        into a step-by-step continuation loop (via
-       `PostStep.exileTopPlayIfYouControlSubtypeLoop p sub remaining duration
-       cause? movedId?`) that pauses when `g.pending` is `.chooseReplacement`,
-       resolves the post-move exile ID via `g.followMovedToZone? top (· ==
-       .exile)` after any replacement choice finishes, grants `.playPermission`
-       on that post-move exile ID if `g.controlsPermanentWith`, and then
-       advances to the next card; and
-     - in `Decisions.lean:542` (`PendingReplacement.untapPermanent`), route
-       non-untap-step deferred untaps (`!duringUntapStep && logIt`) through the
-       same `hostCantBecomeUntapped` and `o.status.tapped` checks/logs as
+       `PostStep.exileTopPlayIfYouControlSubtypeLoop p subtype remaining cause?
+       movedId?`) that pauses when `g.pending` is `.chooseReplacement`, resolves
+       the post-move exile ID `postMoveId` via `g.followMovedToZone? top (· ==
+       .exile)` after any replacement choice finishes, grants `g.createEffect
+       (.playPermission postMoveId { player := p, whileExiled := true,
+       requireSubtype := some subtype, faceDown := true }) (cause := cause?)`,
+       logs `s!"{pl.name} exiles a card face down"`, and then advances to the
+       next card; and
+     - in `Decisions.resumePendingReplacement`'s `.untapPermanent` arm
+       (`Decisions.lean:537–542`), when `tgt.isOnBattlefield && !duringUntapStep
+       && logUntap`, route through the same `g.hostCantBecomeUntapped tgt` and
+       `!tgt.status.tapped` checks/logs as
        `ResolutionHelpers.applyPermanentAction` `.untap`
-       (`ResolutionHelpers.lean:197–211`).
+       (`ResolutionHelpers.lean:203–206`) before calling `g.untapPermanent tgt
+       (duringUntapStep := duringUntapStep) (logUntap := logUntap) (cause :=
+       cause)`.
    - Preserve LKI damage-source, power, counter, and mana-value fallbacks when a
      source permanent or spell leaves the battlefield/stack before resolution,
      and forward `sourceId` in `Chapters.applyChapterEffect` (`Damage.lean`,
@@ -8708,8 +8717,8 @@ starting-team first seat, battle-excluded attack triggers &
        `Chapters.applyChapterEffect` (`Chapters.lean:200, 288–292`), forward
        `(sourceId := sourceId)` to `g.applyEffect`.
 4. Align 2HG & multiplayer `Event.matchesTrigger` / `Core.matchTriggers` /
-   `Turns.lean`, complete remaining battlefield/stack `g.name` & `g.baseCard`
-   reads, and retire dead helpers (§2.7, §2.10, §3.2, §3.3, §3.5, §3.7, §3.8):
+   `Turns.lean`, complete remaining battlefield/stack `g.name` reads, and retire
+   dead helpers (§2.7, §2.10, §3.2, §3.3, §3.5, §3.7, §3.8):
    - Align 2HG & multiplayer combat trigger matching (`Event.lean:3319–3371` &
      `Core.lean:9443–9608`) and `Turns.lean` cleanup/turn transitions
      (`Turns.lean:95–121, 146–155, 183–184, 352–366, 558–562, 683–695`, CR
@@ -8778,16 +8787,15 @@ starting-team first seat, battle-excluded attack triggers &
        g.activePlayer`) when checking `attackers.any
        (·.status.attackingTarget.isNone)` in `beginStepBody` `.declareBlockers`
        (`Turns.lean:683–695`).
-   - Complete remaining layer-resolved `g.name` and `g.baseCard` reads on
-     battlefield and stack objects across 15 files (`Triggers.lean:147`,
-     `Library.lean:207, 209`, `Turns.lean:119, 210, 319`,
+   - Complete remaining layer-resolved `g.name` reads across 14 files
+     (`Triggers.lean:147`, `Library.lean:207, 209`, `Turns.lean:119, 210, 319`,
      `StateBasedActions.lean:263`, `Damage.lean:1076`, `Allocation.lean:103`,
-     `Choices.lean:51`, `Entering.lean:113`, `LandsAndMana.lean:39`,
+     `Choices.lean:51`, `LandsAndMana.lean:39`,
      `Decisions.lean:860, 1051, 2849, 2868, 2876`, `EffectResolution.lean:940`,
      `FraAbilities.lean:21, 132, 221, 628, 638`, `FraChoices.lean:531, 1026,
      1097`, `FrcResolve.lean:618, 784`, `Movement.lean:972, 974, 987`, and
      `SpellResolution.lean:268, 307, 333, 354, 420, 426, 428, 431, 439, 443`,
-     CR 613.1a,c).
+     CR 613.1c).
    - Retire dead / unreachable helpers and constructors
      (`TriggeredAbilities.lean`, `Core.lean`, `Event.lean`, `Object.lean`,
      `SpellTargets.lean`, `Status.lean`, `Mana.lean`, `CastSpell.lean`): delete
@@ -8831,7 +8839,7 @@ replacement gatherers, pause-safe `makeFrc` &
 fallbacks & Saga `applyChapterEffect` `sourceId` forwarding, 2HG combat
 `Event.matchesTrigger` / `Core.matchTriggers` & `Turns.lean`
 `.legendRuleOffThisTurn` / `.playFromExile` / `.declareBlockers` alignment,
-remaining battlefield/stack `g.name` & `g.baseCard` reads, and retired dead
+remaining battlefield/stack `g.name` reads, and retired dead
 helpers), `Abilities.lean`, `Casting.lean`, `Combat.lean`, `Damage.lean`,
 `Discard.lean`, `Draw.lean`, `Equipment.lean`, `GainLife.lean`, `Leaving.lean`,
 `PutCounters.lean`, `Targets.lean`, `Turns.lean`, `MshOracleTests.lean`,
