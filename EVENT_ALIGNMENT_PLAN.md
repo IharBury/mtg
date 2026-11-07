@@ -8424,9 +8424,11 @@ starting-team first seat, battle-excluded attack triggers &
        (.pending preBodyPending)` at `Leaving.lean:1400` (stashing any surviving
        non-replacement post-redirect prompt directly in `savedPreLeavePending?`
        while keeping `g.pending == .none`), so no proposal-prompt `.pending`
-       event is journaled until `Leaving.restoreSavedPostLeave`
-       (`Leaving.lean:1097`, called from `Leaving.lean:1472, 1515` or
-       `Decisions.lean:235, 321, 355`) or `.popOuterPendingReplacement`
+       event is journaled until `Leaving.restoreSavedPostLeave` (defined at
+       `Leaving.lean:1077`, journaling `g.change (.pending saved)` at `1097`;
+       called from `Leaving.lean:1472, 1502, 1515` and `Decisions.lean:287`),
+       `Decisions.resumePendingReplacement (.restorePending sp popOuter)`
+       (`Decisions.lean:235, 321, 355`), or `.popOuterPendingReplacement`
        (`Leaving.lean:1085`, `Decisions.lean:239, 325, 359`) runs after
        `runEndControlExileLoop`, `returnLinkedExileMoves`, and `checkSBA` have
        all completed; and
@@ -8484,24 +8486,30 @@ starting-team first seat, battle-excluded attack triggers &
        `(g.findObject? prop.spellId).any (fun o => o.owner == p && ...)`.
    - Guard `LibrarySearch.beginLibrarySearch` (`LibrarySearch.lean:421–450`),
      `Triggers.beginScry` (`Triggers.lean:593–605`),
-     `ResolutionHelpers.beginSurveil` (`ResolutionHelpers.lean:248–260`), 12
-     `.lost` vs `!g.stillInGame` CR 800.4 sites, and 6 accept-cast `FraChoices`
-     branches (`Leaving.lean`, `Tokens.lean`, `FrcResolve.lean`,
+     `ResolutionHelpers.beginSurveil` (`ResolutionHelpers.lean:248–260`),
+     `Core.stillInGame` / `Core.livingPlayers` (`Core.lean:1318–1324`) and 12
+     `.lost` vs `g.stillInGame` CR 800.4 sites, and 6 accept-cast `FraChoices`
+     branches (`Core.lean`, `Leaving.lean`, `Tokens.lean`, `FrcResolve.lean`,
      `LibrarySearch.lean`, `SpellResolution.lean`, `Triggers.lean`,
      `ResolutionHelpers.lean`, `FraChoices.lean`, CR 608.2g / 701.22 / 701.23 /
      701.25 / 800.4a,c–d):
-     - early-return `g` when `!g.stillInGame p` at the top of
-       `beginLibrarySearch` (`LibrarySearch.lean:424`), `beginScry`
-       (`Triggers.lean:594`), and `beginSurveil` (`ResolutionHelpers.lean:249`);
-     - replace `(g.player ...).lost` with `!g.stillInGame ...` at the 12 CR
-       800.4 guard sites (`Leaving.lean:58` in `changeControl`,
-       `Leaving.lean:157` in `endControlEffectById`, `Leaving.lean:229` in
-       `giveControlUntilEot`, `Leaving.lean:269` in `objectLeavesTheGame`,
-       `Leaving.lean:1178` in `playerLeavesGameCore`, `Tokens.lean:75` in
-       `createTokenObjects`, `Tokens.lean:441` in `createOneToken`,
-       `Tokens.lean:941` in `createCopyOfPermanent`, `FrcResolve.lean:133` in
-       `makeFrc`, `LibrarySearch.lean:444` in `offerMaySearchBasics`, and
-       `SpellResolution.lean:115, 158` in `resolveTop`); and
+     - update `Core.stillInGame` (`Core.lean:1322–1323`) to `!(g.player p).lost
+       && !(g.player p).leftTheGame` (and `Core.livingPlayers` at
+       `Core.lean:1318–1319` to `!pl.lost && !pl.leftTheGame`), and early-return
+       `g` when `!g.stillInGame p` at the top of `beginLibrarySearch`
+       (`LibrarySearch.lean:424`), `beginScry` (`Triggers.lean:594`), and
+       `beginSurveil` (`ResolutionHelpers.lean:249`);
+     - replace `(g.player ...).lost` / `!(g.player ...).lost` with
+       `!g.stillInGame ...` / `g.stillInGame ...` at the 12 CR 800.4 guard sites
+       (`Leaving.lean:58` in `changeControl`, `Leaving.lean:157` in
+       `endControlEffectById`, `Leaving.lean:229` in `giveControlUntilEot`,
+       `Leaving.lean:269` in `objectLeavesTheGame`, `Leaving.lean:1178` in
+       `playerLeavesGameCore`, `Tokens.lean:75` in `createTokenObjects`,
+       `Tokens.lean:441` in `createOneToken`, `Tokens.lean:941` in
+       `createCopyOfPermanent`, `FrcResolve.lean:133` in `makeFrc`,
+       `LibrarySearch.lean:444` in `offerMaySearchBasics`, and
+       `SpellResolution.lean:115, 158` in the `.endStepReturn` and
+       `.endStepGraveReturn` arms of `resolveDelayedTrigger`); and
      - in `FraChoices.answerFraChoice`, stash `g.pendingReplacement` onto
        `outerPendingReplacements` after `gPre.change .saveProposalCheckpoint` in
        `.mayCastCascade` (`1130`), `.mayCastGrima` (`1152`), `.mayCastCopy`
@@ -8607,10 +8615,14 @@ starting-team first seat, battle-excluded attack triggers &
        `(flashback := some false)` from the `.mayCastCards`
        (`FraChoices.lean:2041`) and `.mayCastFromGraveyard`
        (`FraChoices.lean:2082`) arms of `FraChoices.defaultFraAction`; and
-     - in `CastSpell.enterProposalWindow` (`CastSpell.lean:34–48`), when
-       `!needsMode && !needsTarget && prop.kind == .activatedAbility &&
-       !prop.cost.includesManaPayment`, call `g.beginActivationPayment prop`
-       instead of opening `.pending (.activateManaAbilities p)` (CR 602.2b).
+     - in the final `else` branch of `CastSpell.enterProposalWindow`
+       (`CastSpell.lean:46–48`, after the mode, additional-cost, kicker, gift,
+       teamwork, and target checks), when `prop.kind == .activatedAbility &&
+       !prop.cost.includesManaPayment`, call `g.beginActivationPayment prop` and
+       match `.ok g' => g' | .error _ => g.reverseProposedSpell
+       (resumeContinuation := true)` (matching `Decisions.afterTargetsChosen` at
+       `Decisions.lean:2447–2450`) instead of opening `.pending
+       (.activateManaAbilities p)` (CR 602.2b).
 3. Stamp `affectedPlayer` across the 5 remaining replacement gatherers, make
    `FrcResolve.makeFrc` & `Choices.exileTopPlayIfYouControlSubtype`
    replacement-pause safe, preserve LKI damage-source / power / counter /
@@ -8707,9 +8719,9 @@ starting-team first seat, battle-excluded attack triggers &
        at `3339`, `.merfolkAttackPlayer` at `3341`, `.fra
        .creatureYouControlAttacks` at `3344`, `.fra
        .creatureYouControlAttacksPlayerAlone` at `3346`, `.fra
-       .zombieTokenAttacks` at `3367`, and `.fra .sphinxesAttack` at `3370`) and
-       accept `(you d || isTeammate d)` on `| .player d =>` in `.fra
-       .creatureAttacksYouOrYourPlaneswalker` (`Event.lean:3353–3360`);
+       .zombieTokenAttacks` at `3367`, and `.fra .sphinxesAttack` at `3370`,
+       leaving `| .player d => you d` on `.fra
+       .creatureAttacksYouOrYourPlaneswalker` at `3358`);
      - in `Core.matchTriggers` on `.combat (.attackersDeclared activePlayer
        decls)` (`Core.lean:9443–9608`):
        - for per-attacker controller triggers on each attacker `a` with
@@ -8719,14 +8731,15 @@ starting-team first seat, battle-excluded attack triggers &
          (`9471–9480`, `queueSrc post attCtrl a .attacking`) and `.fra
          .creatureYouControlAttacks` (`9481–9485`, `queueFra post attCtrl
          .creatureYouControlAttacks`), queue directly for `attCtrl` on
-         `.zombieTokenAttacks` (`9455–9459`, `queueFra post attCtrl`), `.fra
+         `.zombieTokenAttacks` (`9455–9459`, `queueFra post attCtrl`) and `.fra
          .creatureYouControlAttacksPlayerAlone` (`9491–9495`, `queueFra post
-         attCtrl`), and `.equippedCreatureYouControlAttacks` (`9563–9569`,
-         `queueCtrl post oCtrl`), and on `.creatureYouControlAttacksAlone`
-         (`9588–9594`) when `allAttacking.size == 1`, bind `if let some attCtrl
-         := post.controllerOf allAttacking[0]!` and iterate `for o in
-         post.permanentsOf attCtrl` calling `queueSrc post attCtrl o
-         .creatureYouControlAttacksAlone (cause := some attacker)`;
+         attCtrl`), in the `for o in attackers` loop (`9563–9569`) call
+         `queueCtrl post ((post.controllerOf o).getD activePlayer)
+         .equippedCreatureYouControlAttacks`, and on
+         `.creatureYouControlAttacksAlone` (`9588–9594`) when `allAttacking.size
+         == 1`, bind `if let some attCtrl := post.controllerOf allAttacking[0]!`
+         and iterate `for o in post.permanentsOf attCtrl` calling `queueSrc post
+         attCtrl o .creatureYouControlAttacksAlone (cause := some attacker)`;
        - for controller-scoped attack triggers across living members `m` of
          `post.teamMembers activePlayer`, compute `let mAttackers :=
          attackers.filter (post.controlledBy · m)` and when
@@ -8745,13 +8758,11 @@ starting-team first seat, battle-excluded attack triggers &
          `mAttackers.foldl (fun acc o => acc + post.snapshotPower o) 0 >= 12`;
          and
        - on `.fra .creatureAttacksYouOrYourPlaneswalker` (`Core.lean:9505–9516`),
-         when `a` attacks a player `d` (`some (.player d)` or `none` with `d =
-         post.defendingPlayer`), queue `.creatureAttacksYouOrYourPlaneswalker`
-         for each living member `m` of `post.teamMembers d` where
-         `post.isLivingOpponentOf m activePlayer` (CR 805.10b), and when `a`
-         attacks `some (.planeswalker pwId)`, queue for the planeswalker's
-         controller `pwCtrl` when `post.isLivingOpponentOf pwCtrl activePlayer`;
-       and
+         keep the single-defender enqueue `queueFra post whom
+         .creatureAttacksYouOrYourPlaneswalker` for the attacked player `d` or
+         the attacked planeswalker's controller `pwCtrl` (`whom :=
+         post.defendingPlayerOf a`, without walking `post.teamMembers d` per CR
+         805.10b / 805.10e); and
      - in `Turns.lean`, move `.legendRuleOffThisTurn pl.id` into
        `clearTurnActivations` (`Turns.lean:146–155`, gated by `if !pl.lost` per
        CR 800.4i) and `expireUntilNextTurnEffects` (`Turns.lean:352–366`),
