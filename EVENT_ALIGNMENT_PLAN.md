@@ -8064,20 +8064,33 @@ CR 800.4c expiry), `Abilities.lean`, `Auras.lean`, `Casting.lean`,
      `FraChoices`, `FraAbilities`, and `Library` (`Leaving.lean`,
      `Decisions.lean`, `FraChoices.lean`, `FraAbilities.lean`, `Library.lean`,
      CR 608.2b / 701.22 / 701.25 / 800.4a,c,f):
-     - keep `popOuter` as its own `Bool` beside `Option Pending` by changing
-       `Leaving.playerLeavesGameCore` from `Game × Option (Pending × Bool)` to
-       `Game × Option Pending × Bool` (returning `popOuter` even when
-       `savedPreLeavePending?` is `none`, without wrapping `Pending.none` inside
-       `some`), and pop via `EngineChange.popOuterPendingReplacement` once
-       `!g.sbaPaused && g.pendingReplacement.isNone` in
-       `Leaving.restoreSavedPostLeave` when `saved?` is `none` and in the
-       `Decisions.concedePlayersLoop` / `Decisions.finishConcedePriority` tails
-       that previously passed `false` or returned `g` when `savedPending` is
-       `none` (while chaining `PendingReplacement.restorePending .none true`
-       across pauses and skipping both `openPrompt` and `g.change (.pending p)`
-       when `p == .none`) so an outer continuation stashed before
-       `redirectPendingAfterLeave` is never stranded on
-       `outerPendingReplacements`;
+     - change `Leaving.playerLeavesGameCore` from
+       `Game × Option (Pending × Bool)` to `Game × Option Pending × Bool` and
+       delete its immediate `savedPreLeavePending?.isNone && popOuter &&
+       !g.sbaPaused && g.pendingReplacement.isNone` pop block so the returned
+       `popOuter` plus `Leaving.restoreSavedPostLeave` own the pop without
+       popping twice; destructure `(g', newlySaved?, po)` in
+       `Leaving.leavePlayersWhoLost` and `Decisions.concedePlayersLoop` and
+       record `popOuter` (via `popOuter || po`) inside `if saved?.isNone` even
+       when `newlySaved?` is `none` (including `|| popOuter` alongside
+       `saved?.isSome` / `savedIn.isSome` on mid-loop flushes and
+       `.leavePlayersWhoLost` / `.concedePlayersLoop` pause chains while keeping
+       `.finishConcede` / `.concedePlayersLoop` carrying `popOuter` across
+       `g.sbaPaused`); in `Leaving.restoreSavedPostLeave`, when `saved?` is
+       `none` and `popOuter` is `true`, chain
+       `PendingReplacement.restorePending .none true` if
+       `g.sbaPaused || g.pendingReplacement.isSome` (skipping both `openPrompt`
+       and `g.change (.pending p)` when `p == .none`) and otherwise pop and
+       chain `outerPendingReplacements.back?` via
+       `EngineChange.popOuterPendingReplacement` + `chainPendingReplacement`;
+       and in `Decisions.concedePlayersLoop` and
+       `Decisions.finishConcedePriority`, pop and chain
+       `outerPendingReplacements.back?` in the unpaused `| none =>` `saved?` /
+       `savedPending` arms when `popOuter` is `true` (and before
+       `flushUnlessPays` on their `g.unlessPaysDue` branches when `saved?` /
+       `savedPending` is `none` and `popOuter` is `true`), leaving
+       `concedePlayersLoop`'s post-match `finishConcedePriority … none false`
+       passing `false` so a `some` restore does not pop a second time;
      - replace `g.object!` with `g.findObject?` in `Decisions.surveilMoveLoop`
        and `FraChoices` `.mayMoveAllCounters` (`toId` after
        `removeAllCountersFrom` triggers CR 800.4c exile of `toId`), and chain
