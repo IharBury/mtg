@@ -410,7 +410,6 @@ deriving Repr, Inhabited, BEq
 /-- Continuous permission to play or cast an object or spend mana on it (CR 611.2 / 701.18). -/
 inductive PlayPermissionSpec where
   | playFromExile (object : ObjectId) (perm : PlayPermission)
-  | freeCastFromGraveyard (object : ObjectId)
   | flashback (object : ObjectId)
   | colorlessGrant (object : ObjectId) (card : ObjectId)
 deriving Repr, Inhabited, BEq
@@ -559,10 +558,6 @@ namespace ContinuousEffectSpec
 /-- `object` gains `{T}: Add {C}{C}` until `card` is cast from exile (CR 611.2, ruling 729). -/
 @[inline] def colorlessGrantUntilCast (object : ObjectId) (card : ObjectId) : ContinuousEffectSpec :=
   .permission none (.colorlessGrant object card) .indefinite
-
-/-- `object` may be cast from the graveyard without paying its mana cost this turn (CR 611.2). -/
-@[inline] def freeCastFromGraveyardUntilEot (object : ObjectId) : ContinuousEffectSpec :=
-  .permission none (.freeCastFromGraveyard object) .untilEndOfTurn
 
 /-- `object` gains flashback until end of turn (CR 611.2). -/
 @[inline] def flashbackUntilEot (object : ObjectId) : ContinuousEffectSpec :=
@@ -1122,7 +1117,7 @@ inductive FrcPostStep where
   | discardHand (controller : PlayerId)
   | currencyReturnCreateToken (controller : PlayerId) (exiledId sourceId : ObjectId)
       (isLand : Bool)
-  | grantMilledFreeCastUntilEot (preIds : Array ObjectId)
+  | urSphinxCastNext (controller : PlayerId) (buckets : Array (Array ObjectId))
   | factOrFictionHandInnerLoop (controller : PlayerId) (handIds : Array ObjectId)
       (pendingCard : Option ObjectId := none)
   | factOrFictionGyInnerLoop (controller : PlayerId) (gyIds : Array ObjectId)
@@ -1448,12 +1443,17 @@ inductive PostStep where
       (sourceId : Option ObjectId) (cause : Option EventCause)
       (startEventIdx : Option Nat := none)
   | applyAggregatedLifelink (startEventIdx : Nat) (cause : Option EventCause)
+  | dealDamageLoseIndestructibleExileTo (targetId : ObjectId) (n : Nat) (source : EventObject)
+  | dealDamageToEachNonSubtypeAndOpponents (controller : PlayerId) (n : Nat)
+      (subtype : CardSubtype) (sourceId : Option ObjectId) (cause : Option EventCause)
   | dealDamageFromPermanentsLoop (remainingIds : Array ObjectId) (n : Nat)
       (srcName : String) (source : Option EventObject) (cause : Option EventCause)
-      (startEventIdx : Nat) (note : PermanentDamageLoopNote := .none)
+      (startEventIdx : Option Nat := none) (note : PermanentDamageLoopNote := .none)
       (pendingTarget : Option (ObjectId × Nat × Nat) := none)
   | triggerDividedDamageLoop (remaining : Array (Target × Nat)) (srcName : String)
-      (source : Option EventObject) (cause : Option EventCause) (startEventIdx : Nat)
+      (source : Option EventObject) (cause : Option EventCause)
+      (startEventIdx : Option Nat := none)
+      (targetCheck : Option (PlayerId × EffectTargetKind × Option ObjectId) := none)
   | plusOneOnEachTargetLoop (controller : PlayerId) (kind : EffectTargetKind)
       (remaining : Array (Nat × Target)) (n : Nat) (sourceId : Option ObjectId)
   | minusOnesPerOpponentLoop (controller : PlayerId) (kind : EffectTargetKind)
@@ -1782,6 +1782,7 @@ inductive PendingReplacement where
   | dealDamageToEachCreatureMatching (remainingIds : Array ObjectId) (n : Nat)
       (onlyNonSubtype : Option CardSubtype := none)
       (exceptControllerTokens : Option PlayerId := none)
+      (onlyOpponentsOf : Option PlayerId := none)
       (source : Option EventObject := none) (cause : Option EventCause := none)
       (startEventIdx : Option Nat := none) (suppressLifelink : Bool := false)
   | destroyPermanentsLoop (remainingIds : Array ObjectId)
@@ -1941,9 +1942,6 @@ structure ContinuationFrame where
   /-- Card discarded while a later `.put .discardedLand (how := .tapped)`
   may put that land onto the battlefield tapped (Silvan Reveler). -/
   discardedCardThisWay : Option (PlayerId × ObjectId) := none
-  /-- After Palantír of Orthanc finishes scrying, this opponent may have
-  the controller draw. Stores controller, opponent, and the Palantír. -/
-  palantirAfterScry : Option (PlayerId × PlayerId × ObjectId) := none
   /-- Tokens created by the most recent `createKindTokens` call, so a following
   sequence step can haste them or leave them out of a plus-one. -/
   recentTokenIds : Array ObjectId := #[]
@@ -2120,7 +2118,6 @@ deriving Repr, Inhabited, BEq
 inductive ContinuationChange where
   | pendingDrawAfterScry (v : Option (PlayerId × Nat))
   | discardedCardThisWay (v : Option (PlayerId × ObjectId))
-  | palantirAfterScry (v : Option (PlayerId × PlayerId × ObjectId))
   | recentTokenIds (v : Array ObjectId)
   | fraAfterLook (v : Option (PlayerId × Option ObjectId × FraNext))
   | pendingFreeCopies (v : Option (PlayerId × Array ObjectId × Nat × Nat))
@@ -2285,7 +2282,6 @@ deriving Repr, Inhabited, BEq
 namespace EngineChange
 @[inline] def pendingDrawAfterScry (v : Option (PlayerId × Nat)) : EngineChange := .continuation (.pendingDrawAfterScry v)
 @[inline] def discardedCardThisWay (v : Option (PlayerId × ObjectId)) : EngineChange := .continuation (.discardedCardThisWay v)
-@[inline] def palantirAfterScry (v : Option (PlayerId × PlayerId × ObjectId)) : EngineChange := .continuation (.palantirAfterScry v)
 @[inline] def recentTokenIds (v : Array ObjectId) : EngineChange := .continuation (.recentTokenIds v)
 @[inline] def fraAfterLook (v : Option (PlayerId × Option ObjectId × FraNext)) : EngineChange := .continuation (.fraAfterLook v)
 @[inline] def pendingFreeCopies (v : Option (PlayerId × Array ObjectId × Nat × Nat)) : EngineChange := .continuation (.pendingFreeCopies v)
@@ -2979,7 +2975,8 @@ def entersOwnGraveyardFromStack (e : GameEvent) : Bool :=
 /-- A permanent entered the battlefield. -/
 def enteredBattlefield (e : GameEvent) : Bool :=
   match e.change with
-  | .rules (.zone (.moved _ _ _ .battlefield _ _ _ _)) => true
+  | .rules (.zone (.moved _ _ fromZone .battlefield _ _ _ _)) => fromZone != .battlefield
+  | .rules (.zone (.created obj _)) => obj.zone == .battlefield
   | _ => false
 
 /-- The kind of event a replacement effect watches (CR 614.1). -/
@@ -3408,16 +3405,16 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : Option Obje
       this object && n > 0
     | .permanent (.counters (.object object) .lore (.put n) _), .sagaChapter =>
       this object && n > 0
-    | .turn (.stepBegan .upkeep active), .yourUpkeep => you active
+    | .turn (.stepBegan .upkeep active), .yourUpkeep => you active || isTeammate active
     | .turn (.stepBegan .upkeep _), .eachUpkeep => true
     | .turn (.stepBegan .upkeep _), .fra .eachUpkeepFromGraveyard => true
-    | .turn (.stepBegan .end active), .yourEndStep => you active
+    | .turn (.stepBegan .end active), .yourEndStep => you active || isTeammate active
     | .turn (.stepBegan .end _), .eachEndStep => true
-    | .turn (.stepBegan .beginningOfCombat active), .yourBeginCombat => you active
-    | .turn (.stepBegan .beginningOfCombat active), .fra .yourBeginCombatFromGraveyard => you active
+    | .turn (.stepBegan .beginningOfCombat active), .yourBeginCombat => you active || isTeammate active
+    | .turn (.stepBegan .beginningOfCombat active), .fra .yourBeginCombatFromGraveyard => you active || isTeammate active
     | .turn (.stepBegan .beginningOfCombat _), .eachBeginCombat => true
     | .turn (.stepBegan .beginningOfCombat active), .fra .opponentBeginCombat => opp active
-    | .turn (.stepBegan .precombatMain active), .yourFirstMain => you active
+    | .turn (.stepBegan .precombatMain active), .yourFirstMain => you active || isTeammate active
     | .turn (.stepBegan .draw active), .eachOpponentDrawStep => opp active
     | .turn (.stepBegan .upkeep _), .eaglesCreateBirds => true
     | .turn (.stepBegan .upkeep active), .enchantedControllerUpkeep => you active

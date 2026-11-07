@@ -102,10 +102,6 @@ def mandatorySacrificeError? (g : Game) (p : PlayerId) (checkId : ObjectId)
     some s!"{displayName} requires sacrificing a creature"
   else none
 
-/-- Legal targets for beginning to cast card `c` (from hand or as an Adventure). -/
-def legalCastTargets (g : Game) (p : PlayerId) (c : CardDef) : Array Target :=
-  g.legalTargetsForFace p c none
-
 /-- Whether card face `c` has a legal target to begin casting it: enough unkicked
 targets (or an Aura target when `c.spellEffect = none`), or — when `c` has a
 target-replacing kicker that may be chosen — enough kicked targets
@@ -153,10 +149,8 @@ def canCastMorphFaceDown (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
 def canCastFrontFace (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
   let bc := { g.baseCard o with keywords := g.currentKeywords o }
   let fromGraveyard := o.zone == .graveyard o.owner
-  let isFreeFromGy := fromGraveyard && g.freeCastFromGraveyard o
-  let hadFlashbackPerm := fromGraveyard && !isFreeFromGy && g.flashbackUntilEot o
-  let isFlashbackCast := fromGraveyard && !isFreeFromGy && (bc.flashback.isSome || hadFlashbackPerm)
-  let freeGyTiming := g.hasPriority p && g.freeCastFromGraveyard o && o.zone == .graveyard p
+  let hadFlashbackPerm := fromGraveyard && g.flashbackUntilEot o
+  let isFlashbackCast := fromGraveyard && (bc.flashback.isSome || hadFlashbackPerm)
   !g.isLand o && !g.splitSecondOnStack && !g.combatLocksNonManaAbilities &&
   !g.opponentsCantCastOnActiveTurn p && !g.spellNameForbidden (g.name o) &&
   !g.cantCastSpellsThisTurn p &&
@@ -165,9 +159,9 @@ def canCastFrontFace (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
   g.graveyardCastThresholdMet p o.id bc &&
   (match g.playPermission o with
    | some perm =>
-     (perm.ignoreTiming || freeGyTiming || g.timingAllowsCast p bc) &&
+     (perm.ignoreTiming || g.timingAllowsCast p bc) &&
        (!perm.payLifeEqualManaValue || g.canPayLife p (g.objectManaValue o))
-   | none => freeGyTiming || g.timingAllowsCast p bc) &&
+   | none => g.timingAllowsCast p bc) &&
   (g.mandatorySacrificeError? p o.id bc).isNone &&
   (!(isFlashbackCast && bc.flashbackDiscard) || (g.player p).hand.any (· != o.id)) &&
   -- Untargeted permanents, and untargeted instants/sorceries with a modeled
@@ -194,7 +188,8 @@ def canCast (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
 (another card to discard, a permanent to sacrifice, or the generic
 alternative). Mana abilities are not activated here. -/
 def canPayAnnouncedAdditional (g : Game) (p : PlayerId) (o : GameObject)
-    (available : ManaPool) : Bool :=
+    (available : ManaPool) (origPerm : Option PlayPermission := none)
+    (explicitAltCost : Bool := false) : Bool :=
   let bc := g.baseCard o
   -- CR 106.6: the same spending restrictions as `proposedAllowances` for this spell —
   -- Elf, instant/sorcery, Hero, Villain, and artifact-spell mana may pay; creature-source
@@ -213,7 +208,8 @@ def canPayAnnouncedAdditional (g : Game) (p : PlayerId) (o : GameObject)
       (allowCantNonartifact := allowCantNonartifact) (allowCreatureRestricted := false)
       (spend := spend)
   let payExtra (n : Nat) : Bool :=
-    canPay (g.playManaCost { o with controller := some p } bc (ManaCost.ofGeneric n))
+    canPay (g.playManaCost { o with controller := some p } bc (ManaCost.ofGeneric n)
+      (origPerm := origPerm) (explicitAltCost := explicitAltCost))
   match bc.additionalCostBeholdOrPay with
   | some (quality, n) =>
     let hasPerm := (g.permanentsOf p).any (fun perm => g.hasSubtype perm quality)
@@ -263,14 +259,8 @@ def validateFrontFaceCast (g : Game) (p : PlayerId) (card : GameObject) (face : 
     let n := face.castOnlyIfGraveyardAtLeast.getD 0
     throw s!"{face.name} can be cast only with {n} or more other cards in your graveyard"
   let origPerm := origPermOverride.orElse (fun _ => g.playPermission card)
-  let fromGraveyard := card.zone == .graveyard card.owner
-  let isFreeFromGy := fromGraveyard && g.freeCastFromGraveyard card
-  let prioOk :=
-    if excludeIdOverride.isSome then !g.over && g.priority == p && g.playersReceivePriority
-    else g.hasPriority p
   if !(g.timingAllowsCast p face (excludeStackId := excludeIdOverride) ||
-      origPerm.any (·.ignoreTiming) || sneakCost.isSome ||
-      (isFreeFromGy && card.zone == .graveyard p && prioOk)) then
+      origPerm.any (·.ignoreTiming) || sneakCost.isSome) then
     throw s!"{face.name} has sorcery speed"
   if isModalSpellFace face then
     let tcs := g.evalLayer3 card
@@ -279,9 +269,14 @@ def validateFrontFaceCast (g : Game) (p : PlayerId) (card : GameObject) (face : 
         g.spellModeIsChoosable p m (some checkId)) &&
         !isReturnUpToTwoGyModal face && !face.allowsZeroTargets then
       throw s!"{face.name} requires a target"
-  else if face.requiresTarget && !face.allowsZeroTargets &&
-      !g.castFaceHasLegalTarget p face (g.evalLayer3 card) (some checkId) then
-    throw s!"{face.name} requires a target"
+  else
+    let tcs := g.evalLayer3 card
+    let eff? := face.spellEffect.map (fun e =>
+      g.expandEachOpponentEffect p (if tcs.isEmpty then e else TextChange.applyEffect tcs e))
+    let reqTarget := eff?.map (·.requiresTarget) |>.getD face.requiresTarget
+    if reqTarget && !face.allowsZeroTargets &&
+        !g.castFaceHasLegalTarget p face tcs (some checkId) then
+      throw s!"{face.name} requires a target"
   if let some err := g.mandatorySacrificeError? p checkId face then
     throw err
 
@@ -292,10 +287,8 @@ def canCastAdventure (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
   | some adv =>
     let face := adv.toCardDef
     let fromGraveyard := o.zone == .graveyard o.owner
-    let isFreeFromGy := fromGraveyard && g.freeCastFromGraveyard o
-    let hadFlashbackPerm := fromGraveyard && !isFreeFromGy && g.flashbackUntilEot o
-    let isFlashbackCast := fromGraveyard && !isFreeFromGy && (face.flashback.isSome || hadFlashbackPerm)
-    let freeGyTiming := g.hasPriority p && g.freeCastFromGraveyard o && o.zone == .graveyard p
+    let hadFlashbackPerm := fromGraveyard && g.flashbackUntilEot o
+    let isFlashbackCast := fromGraveyard && (face.flashback.isSome || hadFlashbackPerm)
     !g.splitSecondOnStack &&
     !g.combatLocksNonManaAbilities &&
     !g.opponentsCantCastOnActiveTurn p &&
@@ -309,9 +302,9 @@ def canCastAdventure (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
     g.graveyardCastThresholdMet p o.id face &&
     (match g.playPermission o with
      | some perm =>
-       (perm.ignoreTiming || freeGyTiming || g.timingAllowsCast p face) &&
+       (perm.ignoreTiming || g.timingAllowsCast p face) &&
          (!perm.payLifeEqualManaValue || g.canPayLife p face.manaValue)
-     | none => freeGyTiming || g.timingAllowsCast p face) &&
+     | none => g.timingAllowsCast p face) &&
     (g.mandatorySacrificeError? p o.id face).isNone &&
     (!(isFlashbackCast && face.flashbackDiscard) || (g.player p).hand.any (· != o.id)) &&
     let tcs := g.evalLayer3 o
@@ -320,9 +313,13 @@ def canCastAdventure (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
         let m := if tcs.isEmpty then e else TextChange.applyEffect tcs e
         g.spellModeIsChoosable p m (some o.id)) ||
         isReturnUpToTwoGyModal face || face.allowsZeroTargets
-    else if face.requiresTarget then
-      face.allowsZeroTargets || g.castFaceHasLegalTarget p face tcs (some o.id)
-    else true
+    else
+      let eff? := face.spellEffect.map (fun e =>
+        g.expandEachOpponentEffect p (if tcs.isEmpty then e else TextChange.applyEffect tcs e))
+      let reqTarget := eff?.map (·.requiresTarget) |>.getD face.requiresTarget
+      if reqTarget then
+        face.allowsZeroTargets || g.castFaceHasLegalTarget p face tcs (some o.id)
+      else true
 
 /-- Whether paying this proposed spell or ability may spend Elf-restricted mana
 (CR 106.6): Elf spells, and activated abilities of Elf sources. -/
@@ -869,8 +866,8 @@ def payLoyaltyCost (g : Game) (p : PlayerId) (o : GameObject) (sym : LoyaltySymb
         (cause := some (.costPayment .loyalty p forObject))
   else if k < 0 then
     let g := g.withProposalAction .costAction fun g =>
-      g.record (GameEvent.counters g.turnNumber (some p) (g.snapshot o) .loyalty k.natAbs true
-        (cause := .costPayment .loyalty p forObject))
+      g.recordRemoveCounters o.id .loyalty k.natAbs (byPlayer := some p)
+        (cause := some (.costPayment .loyalty p forObject))
     g.logMsg s!"{-k} loyalty counter(s) are removed from {oName}"
   else g
 

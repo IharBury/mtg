@@ -227,7 +227,6 @@ def applyFraResolution? (g : Game) (controller : PlayerId) (effect : Effect)
     match sourceId.bind g.findObject? with
     | some o =>
       if o.zone == .graveyard o.owner then
-        let name := o.name
         let (g, newId) := g.putOntoBattlefield o.id controller
           (extraEntersWith := #[(.finality, 1)])
         if let .chooseReplacement .. := g.pending then
@@ -235,7 +234,7 @@ def applyFraResolution? (g : Game) (controller : PlayerId) (effect : Effect)
         else
           let entered := g.object! newId
           if entered.isOnBattlefield then
-            some ((g.logMsg s!"{name} returns to the battlefield").afterPermanentEnters entered)
+            some ((g.logMsg s!"{g.name entered} returns to the battlefield").afterPermanentEnters entered)
           else some g
       else some (g.logMsg s!"{o.name} is no longer in the graveyard")
     | none => some (g.logMsg "The card is no longer in the graveyard")
@@ -827,7 +826,6 @@ def finishVisionQuest (g : Game) (p : PlayerId) (id? : Option ObjectId)
       if (o.zone == .library p || o.zone == .graveyard p) &&
           g.isArtifact o && g.isCreature o &&
           g.objectManaValue o ≤ x then
-        let name := o.name
         let (g, newId) := g.putOntoBattlefield id p
           (extraEntersWith := if x > 0 then #[(.plusOnePlusOne, x)] else #[])
         if let .chooseReplacement .. := g.pending then
@@ -836,6 +834,7 @@ def finishVisionQuest (g : Game) (p : PlayerId) (id? : Option ObjectId)
           let entered := g.object! newId
           let g :=
             if entered.isOnBattlefield then
+              let name := g.name entered
               let g := g.afterPermanentEnters entered
               let g :=
                 if x ≥ 4 then g.grantUntilEotLogged (g.object! newId) Keyword.haste else g
@@ -1781,7 +1780,8 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
       | .each => g.dealDamageToEachCreatureMatching n (source := srcEvent?)
       | .opponentsControl =>
         g.dealDamageToEachCreatureMatching n
-          (fun o => (g.controllerOf o).any (g.isLivingOpponentOf controller ·)) (source := srcEvent?)
+          (fun o => (g.controllerOf o).any (g.isLivingOpponentOf controller ·))
+          (onlyOpponentsOf := some controller) (source := srcEvent?)
       | .nonSubtype subtype => g.dealDamageToEachNonDragon n subtype (source := srcEvent?)
     match amount, which with
     | .otherSpellsManaValue, .opponentsControl =>
@@ -1946,19 +1946,19 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
         s!"{(g.player controller).name} may put any number of land cards from among them onto the battlefield tapped"
   | .gainControlOppArtifacts =>
     let cause := g.resolvingBatchCause controller sourceId
+    let expKind := (g.expandEachOpponentEffect controller effect g.resolvingSpell).targetKind
     g.withBatch cause fun g =>
-      targets.foldl (fun g t =>
-        match t with
-        | Target.permanent id =>
-          match g.findObject? id with
-          | some o =>
-            if o.isOnBattlefield && g.isArtifact o &&
-                (g.livingOpponents controller).any (fun opp => g.controlledBy o opp.id) &&
-                g.canBeTargetedBy controller o sourceId then
-              g.changeControl o controller (cause := g.currentBatch.bind (·.2))
-            else g.illegalAbilityTarget t
-          | none => g.illegalAbilityTarget t
-        | _ => g) g
+      (List.range targets.size).foldl (fun g idx =>
+        let t := targets[idx]!
+        if !g.targetLegalAt controller expKind idx t sourceId then
+          g.illegalAbilityTarget t
+        else
+          match t with
+          | Target.permanent id =>
+            match g.findObject? id with
+            | some o => g.changeControl o controller (cause := g.currentBatch.bind (·.2))
+            | none => g.illegalAbilityTarget t
+          | _ => g) g
   | .phaseOutKicker =>
     let cause := g.resolvingOneShotCause controller sourceId
     if kicked then

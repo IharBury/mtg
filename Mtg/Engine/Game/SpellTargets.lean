@@ -47,19 +47,32 @@ def chosenModesOf (g : Game) (o : GameObject) : Array Nat :=
   | some e => ((e.chosenMode.toArray ++ e.extraModes).qsort (· < ·))
   | none => #[]
 
+/-- Wrap a mode's `EffectTargetKind` in `.instanceSlots` when its single
+`"target"` instance allows zero or variable targets (`allowsZeroTargets` or
+`maxTargetCount > 1`), so combining modes preserves optionality and upper
+bounds (CR 115.1c / 601.2c / 700.2). -/
+def modeTargetKind (m : Effect) : EffectTargetKind :=
+  if m.targetKind.spec.slots.isEmpty && (m.allowsZeroTargets || m.maxTargetCount > 1) then
+    .instanceSlots m.targetKind (if m.allowsZeroTargets then 0 else m.targetCount) m.maxTargetCount
+  else m.targetKind
+
 /-- One effect standing for several chosen modes while targets are
 announced: the instances of “target” of each mode, in printed order. -/
 def combinedModesEffect (modes : Array Effect) : Option Effect :=
   match modes.toList with
   | [] => none
   | [e] => some e
-  | e :: rest =>
-    let kind := rest.foldl (fun k m => EffectTargetKind.pair k m.targetKind) e.targetKind
-    some { e with
-      targeting := .of kind
-      allowsZeroTargets := modes.any (·.requiresTarget) &&
-        modes.all (fun m => !m.requiresTarget || m.allowsZeroTargets)
-      maxTargets := modes.foldl (fun acc m => acc + m.maxTargetCount) 0 }
+  | e :: _ =>
+    let targeted := modes.filter (·.requiresTarget)
+    match targeted.toList with
+    | [] =>
+      some { e with targeting := .of .none, allowsZeroTargets := false, maxTargets := 0 }
+    | t0 :: tRest =>
+      let kind := tRest.foldl (fun k m => EffectTargetKind.pair k (modeTargetKind m)) (modeTargetKind t0)
+      some { e with
+        targeting := .of kind
+        allowsZeroTargets := targeted.all (·.allowsZeroTargets)
+        maxTargets := targeted.foldl (fun acc m => acc + m.maxTargetCount) 0 }
 
 /-- The targets a kicked spell announces instead (CR 702.33g / 601.2c): The
 Eagles Are Coming! chooses any number of creatures you own, and Galadriel's
@@ -105,6 +118,16 @@ def effectiveSpellModes (c : CardDef) : Array Effect :=
 def isModalSpellFace (c : CardDef) : Bool :=
   c.isModal || isReturnUpToTwoGyModal c
 
+/-- Modes of `spell` after Layer 1 copy, Layer 3 text-changing effects, and
+`eachOpponent` target expansion (CR 612 / 613.1c / 700.2). -/
+def evalSpellModes (g : Game) (p : PlayerId) (spell : GameObject) : Array Effect :=
+  let bc := g.baseCard spell
+  let tcs := g.evalLayer3 spell
+  let stackId := if spell.zone == .stack then some spell.id else none
+  (effectiveSpellModes bc).map fun e =>
+    let m := if tcs.isEmpty then e else TextChange.applyEffect tcs e
+    g.expandEachOpponentEffect p m stackId
+
 /-- Spell effect of `c` after a modal choice, if one has been announced (CR 700.2).
 With `extra` modes, the combined effect of all of them. -/
 def spellEffectOfCard (c : CardDef) (chosenMode : Option Nat) (extra : Array Nat := #[])
@@ -128,8 +151,23 @@ def spellEffectOf (g : Game) (o : GameObject) (chosenMode : Option Nat)
     (extra : Array Nat := #[]) (kicked : Bool := false) : Option Effect :=
   let bc := g.baseCard o
   let tcs := g.evalLayer3 o
-  let raw := spellEffectOfCard bc chosenMode extra (kicked := kicked)
-  if tcs.isEmpty then raw else raw.map (TextChange.applyEffect tcs)
+  let caster :=
+    ((g.stackEntry? o.id).map (·.controller)).orElse (fun _ => g.controllerOf o)
+      |>.getD o.owner
+  let stackId := if o.zone == .stack then some o.id else none
+  let evalEff (e : Effect) : Effect :=
+    let e' := if kicked then kickedSpellEffect e else e
+    let e'' := if tcs.isEmpty then e' else TextChange.applyEffect tcs e'
+    g.expandEachOpponentEffect caster e'' stackId
+  if isModalSpellFace bc then
+    let modes := effectiveSpellModes bc
+    match chosenMode with
+    | some i =>
+      if extra.isEmpty then modes[i]?.map evalEff
+      else combinedModesEffect ((((#[i] ++ extra).qsort (· < ·)).filterMap (modes[·]?)).map evalEff)
+    | none => none
+  else
+    bc.spellEffect.map evalEff
 
 /-- Spell effect of `o` using the mode announced on the stack, if any (CR 700.2),
 after Layer 1 copy and Layer 3 text-changing effects (CR 612 / 613.1c). -/
@@ -145,35 +183,22 @@ mode's targets (used when beginning to cast). -/
 def legalTargetsForFace (g : Game) (p : PlayerId) (c : CardDef)
     (chosenMode : Option Nat := none) (tcs : Array TextChange := #[])
     (sourceId : Option ObjectId := none) : Array Target :=
+  let evalEff (e : Effect) : Effect :=
+    g.expandEachOpponentEffect p (if tcs.isEmpty then e else TextChange.applyEffect tcs e)
   let modes := effectiveSpellModes c
   if isModalSpellFace c && chosenMode.isNone then
-    modes.foldl (fun acc e =>
-      acc ++ g.legalEffectTargets p (if tcs.isEmpty then e else TextChange.applyEffect tcs e) sourceId) #[]
+    modes.foldl (fun acc e => acc ++ g.legalEffectTargets p (evalEff e) sourceId) #[]
   else
     let effect :=
       if isModalSpellFace c then chosenMode.bind (fun i => modes[i]?)
       else c.spellEffect
     match effect with
-    | some e => g.legalEffectTargets p (if tcs.isEmpty then e else TextChange.applyEffect tcs e) sourceId
+    | some e => g.legalEffectTargets p (evalEff e) sourceId
     | none => if c.isAura then g.legalAuraTargets p c sourceId else #[]
 
 /-- Legal targets for beginning to cast `o`, or for the chosen mode (CR 115.1, 303.4, 601.2c). -/
 def legalSpellTargets (g : Game) (p : PlayerId) (o : GameObject) : Array Target :=
   g.legalTargetsForFace p (g.baseCard o) (g.chosenModeOf o) (g.evalLayer3 o) (some o.id)
-
-/-- Legal targets of card face `c`'s kicked spell effect (`kickedSpellEffect`). A
-target-replacing kicker (*Galadriel's Dismissal* `.phaseOutKicker`, *The Eagles Are
-Coming!*) announces those targets instead of the unkicked ones (CR 601.2b–c /
-702.33d,g). Empty when `c` has no kicker or announces modes. -/
-def legalKickedTargetsForFace (g : Game) (p : PlayerId) (c : CardDef)
-    (tcs : Array TextChange := #[]) (sourceId : Option ObjectId := none) : Array Target :=
-  match c.kicker, c.spellEffect with
-  | some _, some e =>
-    if isModalSpellFace c then #[]
-    else
-      let k := kickedSpellEffect e
-      g.legalEffectTargets p (if tcs.isEmpty then k else TextChange.applyEffect tcs k) sourceId
-  | _, _ => #[]
 
 /-- Whether `c` may be proposed kicked with legal targets even when none of its unkicked
 targets are legal: kicker may be chosen at CR 601.2b, and the kicked effect then announces
@@ -186,7 +211,7 @@ def kickedFaceHasLegalTarget (g : Game) (p : PlayerId) (c : CardDef)
     if isModalSpellFace c then false
     else
       let k := kickedSpellEffect e
-      let k' := if tcs.isEmpty then k else TextChange.applyEffect tcs k
+      let k' := g.expandEachOpponentEffect p (if tcs.isEmpty then k else TextChange.applyEffect tcs k)
       !k'.requiresTarget || k'.allowsZeroTargets ||
         g.effectHasEnoughTargets p k' sourceId
   | _, _ => false
@@ -195,7 +220,8 @@ def kickedFaceHasLegalTarget (g : Game) (p : PlayerId) (c : CardDef)
 ones exist (CR 700.2a / 601.2c / 115.3). -/
 def spellModeIsChoosable (g : Game) (p : PlayerId) (e : Effect)
     (sourceId : Option ObjectId := none) : Bool :=
-  !e.requiresTarget || g.effectHasEnoughTargets p e sourceId
+  let e := g.expandEachOpponentEffect p e
+  !e.requiresTarget || e.allowsZeroTargets || g.effectHasEnoughTargets p e sourceId
 
 /-- Legal mode indices for a modal spell (CR 700.2a). Untargeted modes stay
 choosable even when another mode has no legal target. -/
@@ -203,13 +229,11 @@ def legalModes (g : Game) (p : PlayerId) (o : GameObject) : Array Nat :=
   let bc := g.baseCard o
   if !isModalSpellFace bc then #[]
   else
-    let modes := effectiveSpellModes bc
-    let tcs := g.evalLayer3 o
+    let modes := g.evalSpellModes p o
     Id.run do
       let mut acc : Array Nat := #[]
       for i in [0:modes.size] do
-        let m := if tcs.isEmpty then modes[i]! else TextChange.applyEffect tcs modes[i]!
-        if g.spellModeIsChoosable p m (some o.id) then
+        if g.spellModeIsChoosable p modes[i]! (some o.id) then
           acc := acc.push i
       return acc
 
@@ -223,11 +247,8 @@ mode. Spell-counter modes are skipped unless an opponent's spell is a legal
 target, so the demonstration agent does not counter its own spells. -/
 def defaultMode (g : Game) (p : PlayerId) (spell : GameObject) : Option Nat :=
   let legal := g.legalModes p spell
-  let bc := g.baseCard spell
-  let modes := effectiveSpellModes bc
-  let tcs := g.evalLayer3 spell
-  let modeAt? (i : Nat) : Option Effect :=
-    modes[i]?.map (fun e => if tcs.isEmpty then e else TextChange.applyEffect tcs e)
+  let modes := g.evalSpellModes p spell
+  let modeAt? (i : Nat) : Option Effect := modes[i]?
   let avoidOwnCounter (i : Nat) : Bool :=
     match modeAt? i with
     | some e => e.targetKind.targetsStackSpell && !g.effectHasOppSpellTarget p e
@@ -349,37 +370,50 @@ def legalProposedTargets (g : Game) (p : PlayerId) (o : GameObject) : Array Targ
   let legal := (g.legalTargetsForKind p slot selfSource).filter (fun t => !forbidden.contains t)
   let priorChosen : Array (Nat × Target) :=
     (List.range already.size).toArray.map (fun idx => (priorSlots[idx]?.getD idx, already[idx]!))
+  let shareGroups := kind.sharesTypeGroups
+  let mvGroups := kind.totalMvCapGroups
   let legal :=
-    match kind with
-    | .twoNonlandsSharingType =>
+    if shareGroups.any (·.contains curSlot) then
       legal.filter (fun t =>
         match t with
         | Target.permanent oid =>
           match g.findObject? oid with
           | some cand =>
-            priorChosen.all (fun (_, u) =>
-              match u with
-              | Target.permanent pid =>
-                (g.findObject? pid).any (g.sharesCardType · cand)
-              | _ => false)
+            shareGroups.all (fun grp =>
+              !grp.contains curSlot ||
+                priorChosen.all (fun (j, u) =>
+                  !grp.contains j ||
+                    match u with
+                    | Target.permanent pid =>
+                      (g.findObject? pid).any (g.sharesCardType · cand)
+                    | _ => false))
           | none => false
         | _ => priorChosen.isEmpty)
-    | .upToTwoCreaturesTotalMvAtMost n =>
-      match already[0]? with
-      | some (Target.permanent id) =>
-        match g.findObject? id with
-        | some first =>
-          legal.filter (fun t =>
-            match t with
-            | Target.permanent oid =>
-              match g.findObject? oid with
-              | some other =>
-                g.objectManaValue first + g.objectManaValue other ≤ n
-              | none => false
-            | _ => false)
-        | none => legal
-      | _ => legal
-    | _ => legal
+    else legal
+  let legal :=
+    if mvGroups.any (fun (_, grp) => grp.contains curSlot) then
+      legal.filter (fun t =>
+        let tMv :=
+          match t with
+          | Target.permanent oid => ((g.findObject? oid).map g.objectManaValue).getD 0
+          | _ => 0
+        mvGroups.all (fun (cap, grp) =>
+          !grp.contains curSlot ||
+            let priorMv :=
+              if kind.spec.slots.isEmpty then
+                already.foldl (fun acc u =>
+                  match u with
+                  | Target.permanent pid => acc + ((g.findObject? pid).map g.objectManaValue).getD 0
+                  | _ => acc) 0
+              else
+                priorChosen.foldl (fun acc (j, u) =>
+                  if grp.contains j then
+                    match u with
+                    | Target.permanent pid => acc + ((g.findObject? pid).map g.objectManaValue).getD 0
+                    | _ => acc
+                  else acc) 0
+            priorMv + tMv ≤ cap))
+    else legal
   if kind.spec.slots.isEmpty || curSlot >= kind.spec.slots.size then legal
   else
     let remainingSlots : List (Nat × Array Target) :=
@@ -426,25 +460,33 @@ def canFinishOptionalTargets (g : Game) (obj : GameObject) : Bool :=
   match g.stackEntry? obj.id with
   | none => false
   | some e =>
-    if (g.targetingOf obj).kind.spec.slots.isEmpty then false
+    let kind := (g.targetingOf obj).kind
+    if kind.spec.slots.isEmpty then false
     else
       let (minN, maxN) := g.announcedTargetBounds obj
-      e.targets.size >= minN && e.targets.size < maxN
+      let cur := g.currentTargetSlot obj
+      e.targets.size >= minN && e.targets.size < maxN &&
+        cur < kind.spec.slots.size &&
+        ((List.range kind.spec.slots.size).drop cur).all kind.isOptionalSlot
 
 /-- True while announcing several targets of one instance of the word “target”
 that is not a damage division (e.g. “one or two target creatures”). -/
 def announcingSameWordMultiTargets (g : Game) : Bool :=
   match g.objectAwaitingTargets with
   | some o =>
-    (g.targetingOf o).kind.spec.slots.isEmpty &&
-      (g.announcedTargetBounds o).2 > 1 &&
-      !g.announcingDividedDamage
+    let kind := (g.targetingOf o).kind
+    if kind.spec.slots.isEmpty then
+      (g.announcedTargetBounds o).2 > 1 && !g.announcingDividedDamage
+    else
+      let (s, e) := kind.instanceGroupBounds (g.currentTargetSlot o)
+      e - s > 1 && !g.announcingDividedDamage
   | none => false
 
 /-- Whether `e` currently has enough legal targets, or does not require one
 (CR 601.2c / 602.2b / 115.3). -/
 def modeIsChoosable (g : Game) (p : PlayerId) (e : Effect)
     (sourceId : Option ObjectId := none) : Bool :=
+  let e := g.expandEachOpponentEffect p e
   !e.requiresTarget || e.allowsZeroTargets || g.effectHasEnoughTargets p e sourceId
 
 /-- Whether this activated ability currently has a legal target, or does not
@@ -583,22 +625,26 @@ def validTargetArrayForEntry (g : Game) (e : StackEntry) (obj : GameObject)
           picked.eraseDups.length == picked.length
     let relationOk :=
       (allowUnchangedIllegal && candidate == e.targets) ||
-        match kind with
-      | .twoNonlandsSharingType =>
-        match candidate[0]?, candidate[1]? with
-        | some (Target.permanent a), some (Target.permanent b) =>
-          match g.findObject? a, g.findObject? b with
-          | some oa, some ob => g.sharesCardType oa ob
-          | _, _ => false
-        | _, _ => candidate.size < 2
-      | .upToTwoCreaturesTotalMvAtMost n =>
-        let totalMv := candidate.foldl (fun acc t =>
-          match t with
-          | Target.permanent oid =>
-            acc + ((g.findObject? oid).map g.objectManaValue |>.getD 0)
-          | _ => acc) 0
-        totalMv ≤ n
-      | _ => true
+        (kind.sharesTypeGroups.all (fun grp =>
+          let picked := (List.range candidate.size).filterMap fun idx =>
+            if grp.contains slotIndices[idx]! then some candidate[idx]! else none
+          match picked[0]?, picked[1]? with
+          | some (Target.permanent a), some (Target.permanent b) =>
+            match g.findObject? a, g.findObject? b with
+            | some oa, some ob => g.sharesCardType oa ob
+            | _, _ => false
+          | _, _ => picked.length < 2) &&
+         kind.totalMvCapGroups.all (fun (cap, grp) =>
+          let picked :=
+            if kind.spec.slots.isEmpty then candidate
+            else ((List.range candidate.size).filterMap fun idx =>
+              if grp.contains slotIndices[idx]! then some candidate[idx]! else none).toArray
+          let totalMv := picked.foldl (fun acc t =>
+            match t with
+            | Target.permanent oid =>
+              acc + ((g.findObject? oid).map g.objectManaValue |>.getD 0)
+            | _ => acc) 0
+          totalMv ≤ cap))
     slotsOk && distinctOk && relationOk
 
 end Game

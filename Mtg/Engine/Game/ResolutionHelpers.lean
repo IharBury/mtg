@@ -402,15 +402,16 @@ combined damage instruction). -/
 def dealDamageToEachCreatureMatchingIds (g : Game) (remainingIds : Array ObjectId) (n : Nat)
     (onlyNonSubtype : Option CardSubtype := none)
     (exceptControllerTokens : Option PlayerId := none)
+    (onlyOpponentsOf : Option PlayerId := none)
     (source : Option EventObject := none)
     (cause : Option EventCause := none)
     (startEventIdx : Option Nat := none)
     (suppressLifelink : Bool := false) : Game := Id.run do
-  let sIdx := startEventIdx.getD g.events.size
   if let .chooseReplacement .. := g.pending then
     return g.chainPendingReplacement
-      (.dealDamageToEachCreatureMatching remainingIds n onlyNonSubtype exceptControllerTokens source cause (some sIdx) suppressLifelink)
+      (.dealDamageToEachCreatureMatching remainingIds n onlyNonSubtype exceptControllerTokens onlyOpponentsOf source cause startEventIdx suppressLifelink)
   let mut g := g
+  let sIdx := startEventIdx.getD g.events.size
   let c := cause.orElse (fun _ => g.currentBatch.bind (·.2))
   for i in [0:remainingIds.size] do
     let id := remainingIds[i]!
@@ -418,13 +419,14 @@ def dealDamageToEachCreatureMatchingIds (g : Game) (remainingIds : Array ObjectI
     | some o =>
       if o.isOnBattlefield && g.isCreature o &&
           (onlyNonSubtype.all (fun s => !g.hasSubtype o s)) &&
-          (exceptControllerTokens.all (fun p => !(o.printed.isToken && g.controlledBy o p))) then
+          (exceptControllerTokens.all (fun p => !(o.printed.isToken && g.controlledBy o p))) &&
+          (onlyOpponentsOf.all (fun p => (g.controllerOf o).any (g.isLivingOpponentOf p ·))) then
         g := g.dealDamageToPermanent o n (source := source) (cause := c) (suppressLifelink := true)
         if let .chooseReplacement .. := g.pending then
           let rem := remainingIds.extract (i + 1) remainingIds.size
           if !rem.isEmpty || !suppressLifelink then
             g := g.chainPendingReplacement
-              (.dealDamageToEachCreatureMatching rem n onlyNonSubtype exceptControllerTokens source c (some sIdx) suppressLifelink)
+              (.dealDamageToEachCreatureMatching rem n onlyNonSubtype exceptControllerTokens onlyOpponentsOf source c (some sIdx) suppressLifelink)
           return g
     | none => pure ()
   if !suppressLifelink then
@@ -434,6 +436,7 @@ def dealDamageToEachCreatureMatchingIds (g : Game) (remainingIds : Array ObjectI
 /-- Deal `n` damage to each creature matching `pred`. -/
 def dealDamageToEachCreatureMatching (g : Game) (n : Nat)
     (pred : GameObject → Bool := fun _ => true)
+    (onlyOpponentsOf : Option PlayerId := none)
     (source : Option EventObject := none)
     (cause : Option EventCause := none)
     (suppressLifelink : Bool := false) : Game :=
@@ -442,9 +445,13 @@ def dealDamageToEachCreatureMatching (g : Game) (n : Nat)
       if n == 0 then none
       else g.currentResolvingContext?.map fun (src, ctrl) => .oneShotEffect none src ctrl)
   let ids := (g.battlefield.filter (fun o => g.isCreature o && pred o)).map (·.id)
-  g.withBatch defaultCause fun g =>
-    g.dealDamageToEachCreatureMatchingIds ids n (source := source) (cause := defaultCause)
-      (suppressLifelink := suppressLifelink)
+  if let .chooseReplacement .. := g.pending then
+    g.dealDamageToEachCreatureMatchingIds ids n (onlyOpponentsOf := onlyOpponentsOf)
+      (source := source) (cause := defaultCause) (suppressLifelink := suppressLifelink)
+  else
+    g.withBatch defaultCause fun g =>
+      g.dealDamageToEachCreatureMatchingIds ids n (onlyOpponentsOf := onlyOpponentsOf)
+        (source := source) (cause := defaultCause) (suppressLifelink := suppressLifelink)
 
 /-- Deal `n` damage to each creature that is not `subtype`. -/
 def dealDamageToEachNonDragon (g : Game) (n : Nat) (subtype : CardSubtype := .dragon)
@@ -456,9 +463,50 @@ def dealDamageToEachNonDragon (g : Game) (n : Nat) (subtype : CardSubtype := .dr
       if n == 0 then none
       else g.currentResolvingContext?.map fun (src, ctrl) => .oneShotEffect none src ctrl)
   let ids := (g.battlefield.filter (fun o => g.isCreature o && !g.hasSubtype o subtype)).map (·.id)
-  g.withBatch defaultCause fun g =>
+  if let .chooseReplacement .. := g.pending then
     g.dealDamageToEachCreatureMatchingIds ids n (onlyNonSubtype := some subtype)
       (source := source) (cause := defaultCause) (suppressLifelink := suppressLifelink)
+  else
+    g.withBatch defaultCause fun g =>
+      g.dealDamageToEachCreatureMatchingIds ids n (onlyNonSubtype := some subtype)
+        (source := source) (cause := defaultCause) (suppressLifelink := suppressLifelink)
+
+/-- Deal `n` damage to each creature that isn't `subtype` and each opponent of
+`controller`, deferring `startIdx` capture if an earlier step is paused on
+`Pending.chooseReplacement` and aggregating CR 702.15b lifelink once across both. -/
+def dealDamageToEachNonSubtypeAndOpponents (g : Game) (controller : PlayerId)
+    (n : Nat) (subtype : CardSubtype) (sourceId : Option ObjectId)
+    (cause : Option EventCause := none) : Game :=
+  if n == 0 then g
+  else if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement
+      (.finishPostStep (.dealDamageToEachNonSubtypeAndOpponents controller n subtype sourceId cause))
+  else
+    let src? := sourceId.bind g.damageSourceById?
+    let srcSnap? := sourceId.bind g.damageSourceEventById?
+    let (g, cause?) : Game × Option EventCause :=
+      match cause with
+      | some c => (g, some c)
+      | none =>
+        match g.currentResolvingContext? with
+        | some (src, ctrl) =>
+          let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some controller)) (src.orElse (fun _ => sourceId))
+          (g, some c)
+        | none =>
+          let (g, c) := g.allocDelayedCause (some controller) sourceId
+          (g, some c)
+    let startIdx := g.events.size
+    g.withBatch cause? fun g =>
+      let batchCause := cause?.orElse (fun _ => g.currentBatch.bind (·.2))
+      let g :=
+        g.dealDamageToEachNonDragon n subtype
+          (source := srcSnap?) (cause := batchCause) (suppressLifelink := true)
+      if let .chooseReplacement .. := g.pending then
+        g.chainPendingReplacement
+          (.finishPostStep (.dealDamageToEachOpponent controller n sourceId batchCause (some startIdx)))
+      else
+        g.dealDamageToEachOpponent controller n (source := src?) (cause := batchCause)
+          (startEventIdx := some startIdx)
 
 /-- True when permanent `id` was actually destroyed (CR 701.8a–c): its departure
 `ZoneEvent.moved` moved it from `.battlefield` with verb `.destroy`. Indestructible

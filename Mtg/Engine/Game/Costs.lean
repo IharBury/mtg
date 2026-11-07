@@ -64,11 +64,9 @@ graveyard card with flashback), and a spell already cast reads
 `GameEvent.castWithFlashback` rather than any graveyard origin (so *Bilbo, Thief in
 the Night*'s `mayCastFromGraveyard` pays the normal mana cost). -/
 def playCostStart (g : Game) (card : GameObject) (face : CardDef)
-    (isFreeFromGy : Option Bool := none) (flashback : Option Bool := none) : ManaCost :=
+    (flashback : Option Bool := none) : ManaCost :=
   let inGy := match card.zone with | .graveyard _ => true | _ => false
-  if isFreeFromGy.getD (g.freeCastFromGraveyard card && inGy) then
-    ManaCost.empty
-  else if flashback.getD (inGy || GameEvent.castWithFlashback g.events card.id) then
+  if flashback.getD (inGy || GameEvent.castWithFlashback g.events card.id) then
     face.flashback.getD face.manaCost
   else face.manaCost
 
@@ -242,7 +240,7 @@ are applied before these reductions. -/
 def playManaCost (g : Game) (card : GameObject) (face : CardDef)
     (increase : ManaCost := ManaCost.empty)
     (origPerm : Option PlayPermission := none)
-    (isFreeFromGy : Option Bool := none) (flashback : Option Bool := none)
+    (flashback : Option Bool := none)
     (explicitAltCost : Bool := false) : ManaCost :=
   let caster := card.controller.getD card.owner
   -- Thalia, the Survivor: each one an opponent controls adds {1}.
@@ -255,18 +253,17 @@ def playManaCost (g : Game) (card : GameObject) (face : CardDef)
   let increase := if tax == 0 then increase else increase.addCost (ManaCost.ofGeneric tax)
   let inGy := match card.zone with | .graveyard _ => true | _ => false
   let effPerm := origPerm <|> g.playPermission card
-  let usedFreeGy := isFreeFromGy.getD (g.freeCastFromGraveyard card && inGy)
   let hasFb := face.flashback.isSome || g.flashbackUntilEot card
   let usedFlashback :=
-    !usedFreeGy && hasFb && flashback.getD (inGy || GameEvent.castWithFlashback g.events card.id)
+    hasFb && flashback.getD (inGy || GameEvent.castWithFlashback g.events card.id)
   let usedPermAlt := effPerm.any (fun pm => pm.withoutManaCost || pm.payLifeEqualManaValue)
   let printedMc? := g.actualPrintedManaCost? card face
   let usedMorph := printedMc?.isNone
   let usedSubstitutedAlt := printedMc?.any (fun mc => mc != face.manaCost)
   -- CR 118.9a: only one alternative cost can be applied to any one spell.
   let usedAltCost :=
-    explicitAltCost || usedFreeGy || usedFlashback || usedPermAlt || usedMorph || usedSubstitutedAlt
-  let start := g.playCostStart card face isFreeFromGy flashback
+    explicitAltCost || usedFlashback || usedPermAlt || usedMorph || usedSubstitutedAlt
+  let start := g.playCostStart card face flashback
   let afterIncrease := start.addCost increase
   let afterEquip := g.applyCastCostReductions card face afterIncrease
   let freeRG :=
@@ -282,14 +279,15 @@ def playManaCost (g : Game) (card : GameObject) (face : CardDef)
     else
       match effPerm with
       | some perm =>
-        if perm.withoutManaCost || perm.payLifeEqualManaValue then
+        if (perm.withoutManaCost || perm.payLifeEqualManaValue) &&
+            !(explicitAltCost || usedFlashback || usedMorph || usedSubstitutedAlt) then
           g.applyCastCostReductions card face (ManaCost.empty.addCost increase)
-        else if perm.anyMana then ManaCost.ofGeneric afterEquip.manaValue
+        else if perm.anyMana then afterEquip.asAnyMana
         else afterEquip
       | none =>
         -- Null Summoner: mana of any type can be spent.
         if card.zone == .exile && card.exiledBy.isSome then
-          ManaCost.ofGeneric afterEquip.manaValue
+          afterEquip.asAnyMana
         else afterEquip
   -- Omnipresence: from hand, a spell with mana value at most the number of
   -- creatures you control is cast without paying its mana cost. Spells with
@@ -314,7 +312,7 @@ def playManaCost (g : Game) (card : GameObject) (face : CardDef)
       face.freeCastIfControlCommander &&
       (g.permanentsOf caster).any (·.isCommander)
   let cost :=
-    if freeCommander || usedFreeGy then
+    if freeCommander then
       g.applyCastCostReductions card face (ManaCost.empty.addCost increase)
     else cost
   ManaCost.afterReduction face.manaCost cost

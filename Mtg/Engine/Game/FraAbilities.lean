@@ -69,7 +69,7 @@ def finishDiscardTwoDraws (g : Game) (controller : PlayerId) (baseDraws : Nat)
           acc + 1
         else acc
       | _ => acc) 0
-  let shortCount := (oppIds.filter (fun opp => nonlandDiscardedBy opp < 2)).size
+  let shortCount := (oppIds.filter (fun opp => g.stillInGame opp && nonlandDiscardedBy opp < 2)).size
   let totalDraws := baseDraws + shortCount
   if g.stillInGame controller && totalDraws > 0 then
     g.draw controller totalDraws
@@ -292,11 +292,11 @@ partial def damageUpToOneAndPlayerLoop (g : Game) (controller : PlayerId)
     (srcName : String) (sourceId : Option ObjectId)
     (cause? : Option EventCause)
     (startEventIdx : Option Nat := none) : Game :=
-  let sIdx := startEventIdx.getD g.events.size
   if let .chooseReplacement .. := g.pending then
     g.chainPendingReplacement
-      (.finishPostStep (.damageUpToOneAndPlayerLoop controller kind remaining n srcName sourceId cause? (some sIdx)))
+      (.finishPostStep (.damageUpToOneAndPlayerLoop controller kind remaining n srcName sourceId cause? startEventIdx))
   else
+    let sIdx := startEventIdx.getD g.events.size
     let c := cause?.orElse (fun _ => g.currentBatch.bind (·.2))
     match remaining[0]? with
     | none =>
@@ -542,13 +542,16 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
           let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some controller)) (src.orElse (fun _ => sourceId))
           (g, some c)
         | none => (g, none)
-      let sIdx := g.events.size
-      g.withBatch cause? fun g =>
+      let srcSnap := src?.map g.snapshotDamageSource
+      if let .chooseReplacement .. := g.pending then
         g.dealDamageToEachCreatureMatchingIds victimIds n
           (exceptControllerTokens := some controller)
-          (source := src?.map g.snapshotDamageSource)
-          (cause := cause?)
-          (startEventIdx := some sIdx)
+          (source := srcSnap) (cause := cause?)
+      else
+        g.withBatch cause? fun g =>
+          g.dealDamageToEachCreatureMatchingIds victimIds n
+            (exceptControllerTokens := some controller)
+            (source := srcSnap) (cause := cause?)
   | .emblemCreaturesGetTwoTwo =>
     let emblem : CardDef := {
       name := s!"{srcName} Emblem", types := #[]
@@ -586,9 +589,11 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
           (g, some c)
         | none => (g, none)
     let indexed := (List.range targets.size).toArray.map fun i => (i, targets[i]!)
-    let sIdx := g.events.size
-    g.withBatch cause? fun g =>
-      g.damageUpToOneAndPlayerLoop controller kind indexed n srcName sourceId cause? (some sIdx)
+    if let .chooseReplacement .. := g.pending then
+      g.damageUpToOneAndPlayerLoop controller kind indexed n srcName sourceId cause?
+    else
+      g.withBatch cause? fun g =>
+        g.damageUpToOneAndPlayerLoop controller kind indexed n srcName sourceId cause?
   | .beastToken => g.createKindTokens controller .beast44trample 1
   | .putCauseCountersOnSource =>
     match g.resolvingAbilityObject?.bind (·.fraCauseStatus), source? with

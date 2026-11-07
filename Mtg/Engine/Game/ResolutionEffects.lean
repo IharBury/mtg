@@ -367,9 +367,9 @@ def returnLinkedExileLoop (g : Game) (remainingIds : Array ObjectId)
     if let some enteredObj := g.followMovedToZone? fromId (· == .battlefield) then
       if let some hid := enteredObj.attachedTo then
         let hostName := (g.findObject? hid).map g.name |>.getD (toString hid)
-        g := g.logMsg s!"{enteredObj.name} returns attached to {hostName} (does not target)"
+        g := g.logMsg s!"{g.name enteredObj} returns attached to {hostName} (does not target)"
       else
-        g := g.logMsg s!"{enteredObj.name} returns to the battlefield"
+        g := g.logMsg s!"{g.name enteredObj} returns to the battlefield"
       g := g.afterPermanentEnters (g.object! enteredObj.id)
       if let .chooseReplacement .. := g.pending then
         let remEntered := entered.extract (j + 1) entered.size
@@ -928,16 +928,19 @@ def finishEnteringAttackCard (g : Game) (newId : ObjectId)
       | [] =>
         match logKind with
         | .putOntoBattlefield =>
-          let g := g.logMsg s!"{cardName} is put onto the battlefield"
-          g.afterPermanentEnters (g.object! newId)
+          let entered := g.object! newId
+          let g := g.logMsg s!"{g.name entered} is put onto the battlefield"
+          g.afterPermanentEnters entered
         | .grimReaper =>
           let entered := g.object! newId
-          let g := g.logMsg s!"{entered.name} gets a finality counter"
-          g.afterPermanentEnters entered |>.logMsg s!"{entered.name} enters tapped and attacking"
+          let enteredName := g.name entered
+          let g := g.logMsg s!"{enteredName} gets a finality counter"
+          g.afterPermanentEnters entered |>.logMsg s!"{enteredName} enters tapped and attacking"
         | .ownerGraveyard loses =>
+          let enteredName := g.name (g.object! newId)
           let g := g.afterPermanentEnters (g.object! newId)
           if loses then
-            g.logMsg s!"{(g.object! newId).name} returns, loses all abilities, and gains haste"
+            g.logMsg s!"{enteredName} returns, loses all abilities, and gains haste"
           else g
 
 /-- Run post-entry modifications, logs, and `afterPermanentEnters` for all
@@ -1062,7 +1065,7 @@ def commitEnteringAttackItems (g : Game)
                 (preBattlefield := some preBf)
                 (cause := cause)
               g := g'
-              entries := entries.push (o.id, effectController, o.name, mods, logKind)
+              entries := entries.push (o.id, effectController, g.name o, mods, logKind)
               if let .chooseReplacement .. := g.pending then
                 let rem := chosen.extract (i + 1) chosen.size
                 if !rem.isEmpty then
@@ -1125,36 +1128,35 @@ been dealt. -/
 partial def divideSevenDamageLoop (g : Game) (controller : PlayerId) (kind : EffectTargetKind)
     (remaining : Array (Nat × Target)) (division : Array Nat)
     (sourceId : Option ObjectId) (startEventIdx : Option Nat := none) : Game :=
-  if startEventIdx.isNone && g.currentBatch.isNone && !remaining.isEmpty then
+  if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement
+      (.finishPostStep (.divideSevenDamageLoop controller kind remaining division sourceId startEventIdx))
+  else if startEventIdx.isNone && g.currentBatch.isNone && !remaining.isEmpty then
     let sIdx := g.events.size
     g.withBatch (g.resolvingBatchCause controller sourceId) fun g =>
       g.divideSevenDamageLoop controller kind remaining division sourceId (some sIdx)
   else
     let sIdx := startEventIdx.getD g.events.size
-    if let .chooseReplacement .. := g.pending then
-      g.chainPendingReplacement
-        (.finishPostStep (.divideSevenDamageLoop controller kind remaining division sourceId (some sIdx)))
-    else
-      let batchCause :=
-        (g.currentBatch.bind (·.2)).orElse (fun _ => g.resolvingBatchCause controller sourceId)
-      match remaining[0]? with
-      | none =>
-        g.applyAggregatedLifelinkSince sIdx (cause := batchCause)
-      | some (i, tgt) =>
-        let rest := remaining.extract 1 remaining.size
-        let legal := g.legalTargetsForKind controller kind sourceId
-        let g :=
-          if legal.contains tgt then
-            g.dealDamageToTarget tgt (Int.ofNat (division[i]?.getD 0))
-              (source := sourceId.bind g.findObject?) (cause := batchCause)
-              (suppressLifelink := true)
-          else
-            g.illegalAbilityTarget tgt
-        if let .chooseReplacement .. := g.pending then
-          g.chainPendingReplacement
-            (.finishPostStep (.divideSevenDamageLoop controller kind rest division sourceId (some sIdx)))
+    let batchCause :=
+      (g.currentBatch.bind (·.2)).orElse (fun _ => g.resolvingBatchCause controller sourceId)
+    match remaining[0]? with
+    | none =>
+      g.applyAggregatedLifelinkSince sIdx (cause := batchCause)
+    | some (i, tgt) =>
+      let rest := remaining.extract 1 remaining.size
+      let legal := g.legalTargetsForKind controller kind sourceId
+      let g :=
+        if legal.contains tgt then
+          g.dealDamageToTarget tgt (Int.ofNat (division[i]?.getD 0))
+            (source := sourceId.bind g.findObject?) (cause := batchCause)
+            (suppressLifelink := true)
         else
-          g.divideSevenDamageLoop controller kind rest division sourceId (some sIdx)
+          g.illegalAbilityTarget tgt
+      if let .chooseReplacement .. := g.pending then
+        g.chainPendingReplacement
+          (.finishPostStep (.divideSevenDamageLoop controller kind rest division sourceId (some sIdx)))
+      else
+        g.divideSevenDamageLoop controller kind rest division sourceId (some sIdx)
 
 /-- Return targeted graveyard instant cards to `controller`'s hand one at a time,
 pausing across `Pending.chooseReplacement` before checking subsequent targets. -/
@@ -1222,7 +1224,7 @@ def resolveModeledReflexive (g : Game) (controller : PlayerId) (sourceId : Optio
     g.withLegalKindPermanent controller tkind targets
       (fun g o =>
         g.createEffect (.cantBeBlockedExceptByHasteUntilEot o.id)
-          |>.logMsg s!"{o.name} can't be blocked this turn except by creatures with haste")
+          |>.logMsg s!"{g.name o} can't be blocked this turn except by creatures with haste")
       sourceId illegal
   | .divideSevenDamage =>
     if targets.isEmpty then g

@@ -117,8 +117,6 @@ structure ProposedSpell where
   /-- Active play permission captured on the pre-move card before `Movement.move`
   expires zone-scoped permissions on leaving its origin zone (CR 601.2a,f). -/
   origPerm : Option PlayPermission := none
-  /-- Whether `freeCastFromGraveyard` applied to the pre-move card (CR 601.2a,f). -/
-  isFreeFromGy : Bool := false
   /-- Generic mana chosen for an optional/alternative additional cost at CR 601.2b
   so CR 601.2f cost recomputations apply reductions after increases. -/
   additionalGeneric : Nat := 0

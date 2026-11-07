@@ -221,13 +221,24 @@ partial def finishConcedePriority (g : Game) (wasIdlePriority : Bool)
     g.chainPendingReplacement
       (.finishConcede wasIdlePriority savedPendingPrio wasAssigningCombatDamage savedPending popOuter)
   else if g.unlessPaysDue then
+    let g :=
+      if savedPending.isNone && popOuter then
+        match g.outerPendingReplacements.back? with
+        | some popped => (g.change .popOuterPendingReplacement).chainPendingReplacement popped
+        | none => g
+      else g
     g.flushUnlessPays
   else
     let g :=
       match savedPending with
       | some sp =>
         if g.pending == .none then g.resumePendingReplacement (.restorePending sp popOuter) else g
-      | none => g
+      | none =>
+        if popOuter then
+          match g.outerPendingReplacements.back? with
+          | some popped => (g.change .popOuterPendingReplacement).chainPendingReplacement popped
+          | none => g
+        else g
     if g.pending != .none then g
     else if let some fa := wasAssigningCombatDamage then
       if fa then g.beginCombatDamageAssignment else g.continueBlockerCombatAssignment
@@ -272,16 +283,16 @@ partial def concedePlayersLoop (g : Game) (remaining : Array PlayerId)
       return g
     let pid := remaining[i]!
     if !(g.player pid).leftTheGame then
-      if saved?.isSome && !g.sbaPaused && g.pendingReplacement.isNone then
+      if (saved?.isSome || popOuter) && !g.sbaPaused && g.pendingReplacement.isNone then
         g := g.restoreSavedPostLeave saved? popOuter
         saved? := none
         popOuter := false
-      let (g', newlySaved?) := g.playerLeavesGameCore pid (deferRestore := true)
+      let (g', newlySaved?, po) := g.playerLeavesGameCore pid (deferRestore := true)
       g := g'
-      if let some (sp, po) := newlySaved? then
-        if saved?.isNone then
+      if saved?.isNone then
+        if let some sp := newlySaved? then
           saved? := some sp
-          popOuter := po
+        popOuter := popOuter || po
       let rem := remaining.extract (i + 1) remaining.size
       if let .chooseReplacement r _ := g.pending then
         if !rem.contains r then
@@ -289,7 +300,7 @@ partial def concedePlayersLoop (g : Game) (remaining : Array PlayerId)
             g.pendingReplacement.any PendingReplacement.endsWithPriorityGrant ||
               g.outerPendingReplacements.any PendingReplacement.endsWithPriorityGrant
           if !rem.isEmpty || wasPregame || !midResolutionOrBatch || !alreadyGrants ||
-              wasAssigningCombatDamage.isSome || saved?.isSome || g.unlessPaysDue then
+              wasAssigningCombatDamage.isSome || saved?.isSome || popOuter || g.unlessPaysDue then
             g := g.chainPendingReplacement
               (.concedePlayersLoop rem wasPregame midResolutionOrBatch wasIdlePriority
                 savedPendingPrio wasAssigningCombatDamage saved? popOuter)
@@ -308,7 +319,12 @@ partial def concedePlayersLoop (g : Game) (remaining : Array PlayerId)
       match saved? with
       | some sp =>
         if g.pending == .none then g.resumePendingReplacement (.restorePending sp popOuter) else g
-      | none => g
+      | none =>
+        if popOuter then
+          match g.outerPendingReplacements.back? with
+          | some popped => (g.change .popOuterPendingReplacement).chainPendingReplacement popped
+          | none => g
+        else g
     if g.pending != .none then return g
     else if g.pregameRandom != .none then return finishAfterRandom g true
     else if !g.mulliganToDeclare.isEmpty then return g.promptMulligan g.mulliganToDeclare[0]!
@@ -321,20 +337,28 @@ partial def concedePlayersLoop (g : Game) (remaining : Array PlayerId)
       let alreadyGrants :=
         g.pendingReplacement.any PendingReplacement.endsWithPriorityGrant ||
           g.outerPendingReplacements.any PendingReplacement.endsWithPriorityGrant
-      if !alreadyGrants || wasAssigningCombatDamage.isSome || saved?.isSome || g.unlessPaysDue then
+      if !alreadyGrants || wasAssigningCombatDamage.isSome || saved?.isSome || popOuter || g.unlessPaysDue then
         return g.chainPendingReplacement
           (.concedePlayersLoop #[] false true wasIdlePriority
             savedPendingPrio wasAssigningCombatDamage saved? popOuter)
       else
         return g
     else if g.unlessPaysDue then
+      if saved?.isNone && popOuter then
+        if let some popped := g.outerPendingReplacements.back? then
+          g := (g.change .popOuterPendingReplacement).chainPendingReplacement popped
       return g.flushUnlessPays
     else
       g :=
         match saved? with
         | some sp =>
           if g.pending == .none then g.resumePendingReplacement (.restorePending sp popOuter) else g
-        | none => g
+        | none =>
+          if popOuter then
+            match g.outerPendingReplacements.back? with
+            | some popped => (g.change .popOuterPendingReplacement).chainPendingReplacement popped
+            | none => g
+          else g
       if g.pending != .none then return g
       else
         return g.finishConcedePriority wasIdlePriority savedPendingPrio wasAssigningCombatDamage
@@ -484,13 +508,13 @@ partial def resumePendingReplacement (g : Game) (pr : PendingReplacement)
     match fromId.bind (fun id => g.followMovedToZone? id (· == .battlefield)) with
     | some entered =>
       if isPlayLand then
-        let g := if entered.status.tapped then g.logMsg s!"{entered.name} enters tapped" else g
+        let g := if entered.status.tapped then g.logMsg s!"{g.name entered} enters tapped" else g
         g.afterLandEnters entered
       else
         let g :=
           match (attachedToHost <|> entered.attachedTo).bind g.findObject? with
           | some host => g.logMsg s!"{g.name entered} enters the battlefield attached to {g.name host}"
-          | none => g.logMsg s!"{entered.name} enters the battlefield"
+          | none => g.logMsg s!"{g.name entered} enters the battlefield"
         g.afterPermanentEnters entered
     | none => g
   | .addExtraCombatDamageStep =>
@@ -559,6 +583,7 @@ partial def resumePendingReplacement (g : Game) (pr : PendingReplacement)
       | some msg => g.logMsg msg
       | none => g
     match p with
+    | .none => g
     | .fraChoice caster (.costPicks sid picks _) =>
       match picks[0]? with
       | some pick =>
@@ -725,10 +750,11 @@ partial def resumePendingReplacement (g : Game) (pr : PendingReplacement)
     g.runChosenTriggeredModes controller ab remainingModes sourceId targets dividedDamage lastKnownPower lastKnownToughness sourceName
   | .continueConnives controller remainingIds =>
     g.runConniveObjects controller remainingIds
-  | .dealDamageToEachCreatureMatching remainingIds n onlyNonSubtype exceptControllerTokens source cause startEventIdx suppressLifelink =>
+  | .dealDamageToEachCreatureMatching remainingIds n onlyNonSubtype exceptControllerTokens onlyOpponentsOf source cause startEventIdx suppressLifelink =>
     g.dealDamageToEachCreatureMatchingIds remainingIds n
       (onlyNonSubtype := onlyNonSubtype)
       (exceptControllerTokens := exceptControllerTokens)
+      (onlyOpponentsOf := onlyOpponentsOf)
       (source := source) (cause := cause)
       (startEventIdx := startEventIdx) (suppressLifelink := suppressLifelink)
   | .destroyPermanentsLoop remainingIds allCandidates countNote obGainLifeFor logMsgAfter preBattlefield cause =>
@@ -864,7 +890,7 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
   | .enteredBattlefieldPutRestBottomRandom p cardId rest cause =>
     let g :=
       match g.followMovedToZone? cardId (· == .battlefield) with
-      | some entered => (g.logMsg s!"{entered.name} enters the battlefield").afterPermanentEnters entered
+      | some entered => (g.logMsg s!"{g.name entered} enters the battlefield").afterPermanentEnters entered
       | none => g
     if rest.isEmpty then g
     else
@@ -879,7 +905,7 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
   | .returnTappedWithEndStepExile controller cardId sourceId cause =>
     match g.followMovedToZone? cardId (· == .battlefield) with
     | some entered =>
-      let g := g.logMsg s!"{entered.name} returns to the battlefield tapped under {(g.player controller).name}'s control"
+      let g := g.logMsg s!"{g.name entered} returns to the battlefield tapped under {(g.player controller).name}'s control"
       let src := (sourceId.bind g.findObject?).orElse (fun _ => some entered)
       let g := g.registerDelayedTrigger
         { controller, source := src, kind := .endStepExile entered.id, cause }
@@ -897,7 +923,7 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
       | some entered => if entered.isOnBattlefield then g.afterPermanentEnters entered else g
       | none => g) g
   | .drainOpponents controller amount sourceId cause =>
-    g.drainOpponents controller amount (sourceId.bind g.findObject?) (cause := cause)
+    g.drainOpponents controller amount (sourceId.bind g.damageSourceById?) (cause := cause)
   | .addPlusOnesForLoggedDiscards p sourceId =>
     let cnt := g.loggedDiscards p
     match sourceId.bind (fun id => (g.findObject? id).filter (·.isOnBattlefield)) with
@@ -917,19 +943,19 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
         | .returnedBattlefieldEndStep .. =>
           match entered.attachedTo.bind g.findObject? with
           | some host =>
-            g.logMsg s!"{entered.name} returns to the battlefield attached to {g.name host} (beginning of end step)"
+            g.logMsg s!"{g.name entered} returns to the battlefield attached to {g.name host} (beginning of end step)"
           | none =>
-            g.logMsg s!"{entered.name} returns to the battlefield (beginning of end step)"
+            g.logMsg s!"{g.name entered} returns to the battlefield (beginning of end step)"
         | .returnedToBattlefield .. =>
           match entered.attachedTo.bind g.findObject? with
           | some host =>
-            g.logMsg s!"{entered.name} returns to the battlefield attached to {g.name host}"
+            g.logMsg s!"{g.name entered} returns to the battlefield attached to {g.name host}"
           | none =>
-            g.logMsg s!"{entered.name} returns to the battlefield"
+            g.logMsg s!"{g.name entered} returns to the battlefield"
         | .returnedToBattlefieldTapped .. =>
-          g.logMsg s!"{entered.name} returns to the battlefield tapped"
+          g.logMsg s!"{g.name entered} returns to the battlefield tapped"
         | .enteredBattlefieldTapped .. =>
-          g.logMsg s!"{entered.name} enters the battlefield tapped"
+          g.logMsg s!"{g.name entered} enters the battlefield tapped"
         | _ => g
       if isLand then g.afterLandEnters entered else g.afterPermanentEnters entered
     | none => g
@@ -951,7 +977,7 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
   | .enteredOfferAttachEquipment controller cardId =>
     match g.followMovedToZone? cardId (· == .battlefield) with
     | some entered =>
-      let name := entered.name
+      let name := g.name entered
       let g := g.afterPermanentEnters entered
       if g.pending != .none then g
       else if (g.permanentsOf controller).any (g.isEquipment ·) then
@@ -963,7 +989,7 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
     let g :=
       match g.followMovedToZone? cardId (· == .battlefield) with
       | some entered =>
-        let name := entered.name
+        let name := g.name entered
         let g := g.afterPermanentEnters entered
         let g := if x >= 4 then g.grantUntilEotLogged (g.object! entered.id) Keyword.haste else g
         g.logMsg s!"{name} is put onto the battlefield"
@@ -994,7 +1020,7 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
       match g.findObject? tid with
       | some entered =>
         if entered.isOnBattlefield then
-          (g.logMsg s!"{entered.name} enters the battlefield").afterPermanentEnters entered
+          (g.logMsg s!"{g.name entered} enters the battlefield").afterPermanentEnters entered
         else g
       | none => g) g
   | .dealDamageToEachOpponent p amount sourceId cause startEventIdx =>
@@ -1233,12 +1259,12 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
   | .logReturnsToBattlefieldAndEnter cardId =>
     match g.followMovedToZone? cardId (· == .battlefield) with
     | some entered =>
-      (g.logMsg s!"{entered.name} returns to the battlefield").afterPermanentEnters entered
+      (g.logMsg s!"{g.name entered} returns to the battlefield").afterPermanentEnters entered
     | none => g
   | .logPutUnderOwnerControlAndEnter cardId =>
     match g.followMovedToZone? cardId (· == .battlefield) with
     | some entered =>
-      (g.logMsg s!"{entered.name} is put onto the battlefield under its owner's control").afterPermanentEnters entered
+      (g.logMsg s!"{g.name entered} is put onto the battlefield under its owner's control").afterPermanentEnters entered
     | none => g
   | .returnNotedLandsStep remaining entered =>
     g.returnNotedLandsStep remaining entered
@@ -1258,7 +1284,7 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
     match g.followMovedToZone? cardId (· == .battlefield) with
     | some entered =>
       if entered.isOnBattlefield then
-        (g.logMsg s!"{entered.name} returns as an artifact").afterPermanentEnters entered
+        (g.logMsg s!"{g.name entered} returns as an artifact").afterPermanentEnters entered
       else g
     | none => g
   | .worldsWithinWorldsExileSelf sourceId =>
@@ -1294,7 +1320,7 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
         | none => g.reverseProposedSpell (resumeContinuation := true)
         | some spell =>
           let face := g.baseCard spell
-          let effModes := effectiveSpellModes face
+          let effModes := g.evalSpellModes p spell
           let chosen := g.chosenModesOf spell
           let more := (List.range effModes.size).any (fun i =>
             !chosen.contains i && g.spellModeIsChoosable p effModes[i]! (some spell.id))
@@ -1554,7 +1580,7 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
         g.logMsg s!"{(g.player p).name} exiles {exiledCount} card(s) from their graveyard"
       else g
     match g.findObject? sourceId with
-    | some src => g.logMsg s!"{src.name}'s boast ability is activated"
+    | some src => g.logMsg s!"{g.name src}'s boast ability is activated"
     | none => g
   | .plusOneOnCreatedTokensLoop controller remainingIds amount =>
     g.plusOneOnCreatedTokensLoop controller remainingIds amount
@@ -1607,11 +1633,18 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
     g.damageUpToOneAndPlayerLoop controller kind remaining n srcName sourceId cause startEventIdx
   | .applyAggregatedLifelink startEventIdx cause =>
     g.applyAggregatedLifelinkSince startEventIdx (cause := cause)
+  | .dealDamageLoseIndestructibleExileTo targetId n source =>
+    match (g.findObject? targetId).filter (·.isOnBattlefield) with
+    | some o => g.dealDamageLoseIndestructibleExileTo o n source
+    | none => g
+  | .dealDamageToEachNonSubtypeAndOpponents controller n subtype sourceId cause =>
+    g.dealDamageToEachNonSubtypeAndOpponents controller n subtype sourceId (cause := cause)
   | .dealDamageFromPermanentsLoop remainingIds n srcName source cause startEventIdx note pendingTarget =>
     g.dealDamageFromPermanentsLoop remainingIds n srcName source cause startEventIdx
       (note := note) (pendingTarget := pendingTarget)
-  | .triggerDividedDamageLoop remaining srcName source cause startEventIdx =>
+  | .triggerDividedDamageLoop remaining srcName source cause startEventIdx targetCheck =>
     g.triggerDividedDamageLoop remaining srcName source cause startEventIdx
+      (targetCheck := targetCheck)
   | .plusOneOnEachTargetLoop controller kind remaining n sourceId =>
     g.plusOneOnEachTargetLoop controller kind remaining n sourceId
   | .minusOnesPerOpponentLoop controller kind remaining x sourceId =>
@@ -1710,9 +1743,8 @@ partial def continueCostPicks (g : Game) (prop : ProposedSpell) (picks : Array C
       | .ok g' => return g'
       | .error _ => g.reverseProposedSpell? (resumeContinuation := true)
 
-/-- Clear the finished scry or surveil, draw any follow-up cards, and offer
-Palantír's opponent their choice without draining outer continuations or
-granting priority. -/
+/-- Clear the finished scry or surveil and draw any follow-up cards without
+draining outer continuations or granting priority. -/
 partial def finishLibraryLookCore (g : Game) : Game :=
   if let .chooseReplacement .. := g.pending then
     g.chainPendingReplacement .finishLibraryLook
@@ -1724,7 +1756,8 @@ partial def finishLibraryLookCore (g : Game) : Game :=
     let g :=
       match g.fraAfterLook with
       | some (c, src, next) =>
-        (g.change (.fraAfterLook none)).applyFra c default next.toResolution #[] src
+        let g := g.change (.fraAfterLook none)
+        if g.stillInGame c then g.applyFra c default next.toResolution #[] src else g
       | none => g
     if let .chooseReplacement .. := g.pending then
       g.chainPendingReplacement .finishLibraryLook
@@ -1733,19 +1766,14 @@ partial def finishLibraryLookCore (g : Game) : Game :=
         match g.pendingDrawAfterScry with
         | some (q, n) =>
           let g := g.change (.pendingDrawAfterScry none)
-          g.draw q n
+          if g.stillInGame q then g.draw q n else g
         | none => g
       if let .chooseReplacement .. := g.pending then
         g.chainPendingReplacement .finishLibraryLook
-      else if g.pending != .none then g
-      else
-        match g.palantirAfterScry with
-        | some (controller, opp, sid) =>
-          (g.change (.palantirAfterScry none)).offerPalantirChoice controller opp sid
-        | none => g
+      else g
 
-/-- Clear the finished scry or surveil, draw any follow-up cards, offer
-Palantír's opponent their choice, and give the active player priority. -/
+/-- Clear the finished scry or surveil, draw any follow-up cards, and give the
+active player priority. -/
 partial def finishLibraryLook (g : Game) : Game :=
   g.finishLibraryLookCore.finishAndGrantPriority
 
@@ -1757,12 +1785,14 @@ partial def surveilMoveLoop (g : Game) (p : PlayerId) (remainingGy : Array Objec
   | none => g
   | some id =>
     let rest := remainingGy.extract 1 remainingGy.size
-    let card := g.object! id
-    let (g, _) := g.move id (.graveyard p) none (cause := cause)
-    if let .chooseReplacement .. := g.pending then
-      g.chainPendingReplacement (.finishSurveilPostMove p card id rest cause)
-    else
-      g.finishSurveilPostMove p card id rest cause
+    match g.findObject? id with
+    | none => g.surveilMoveLoop p rest cause
+    | some card =>
+      let (g, _) := g.move id (.graveyard p) none (cause := cause)
+      if let .chooseReplacement .. := g.pending then
+        g.chainPendingReplacement (.finishSurveilPostMove p card id rest cause)
+      else
+        g.finishSurveilPostMove p card id rest cause
 
 /-- Run post-graveyard-move surveil-to-hand checks and continue `surveilMoveLoop`. -/
 partial def finishSurveilPostMove (g : Game) (p : PlayerId) (card : GameObject)
@@ -1818,12 +1848,12 @@ partial def finishProliferateTarget (g : Game) (p : PlayerId) (targetId : Object
         g.chainPendingReplacement (.finishProliferateTarget p targetId #[] false
           remainingTargets permIds playerIds chosenEmpty remainingRounds cause)
       else
-        let oName := ((g.findObject? targetId).map (·.name)).getD "permanent"
+        let oName := ((g.findObject? targetId).map g.name).getD "permanent"
         let g := g.logMsg s!"{(g.player p).name} proliferates {oName}"
         g.finishProliferateLoop p remainingTargets (permIds.push targetId) playerIds
           chosenEmpty remainingRounds cause
     else
-      let oName := ((g.findObject? targetId).map (·.name)).getD "permanent"
+      let oName := ((g.findObject? targetId).map g.name).getD "permanent"
       let g := g.logMsg s!"{(g.player p).name} proliferates {oName}"
       g.finishProliferateLoop p remainingTargets (permIds.push targetId) playerIds
         chosenEmpty remainingRounds cause
@@ -2259,12 +2289,11 @@ partial def castAsPartOfResolution (g : Game) (p : PlayerId) (id : ObjectId)
       let original := o
       let origSnap := g.snapshot o
       let fromGy := original.zone == .graveyard original.owner
-      let isFreeFromGy := !withoutManaCost && fromGy && g.freeCastFromGraveyard original
       let origPerm : Option PlayPermission :=
         if withoutManaCost then some { player := p, withoutManaCost := true }
         else rawPerm
       let altCostUsed :=
-        withoutManaCost || isFreeFromGy ||
+        withoutManaCost ||
           origPerm.any (fun pm => pm.withoutManaCost || pm.payLifeEqualManaValue)
       let wasCopy := original.isCopy
       let g :=
@@ -2281,7 +2310,7 @@ partial def castAsPartOfResolution (g : Game) (p : PlayerId) (id : ObjectId)
       let g := g.putStackEntry p newId
       let way : CastWay :=
         if withoutManaCost then .alternative "withoutManaCost"
-        else if isFreeFromGy || origPerm.isSome then .alternative "permission"
+        else if origPerm.isSome then .alternative "permission"
         else .normal
       let g := g.record (GameEvent.proposed g.turnNumber newId p original.zone way)
       let g := g.logMsg s!"{(g.player p).name} casts {name} as the ability resolves"
@@ -2293,8 +2322,8 @@ partial def castAsPartOfResolution (g : Game) (p : PlayerId) (id : ObjectId)
       -- CR 702.34a: casting as an ability resolves is never a Flashback cast, so a
       -- graveyard card (Bilbo's `mayCastFromGraveyard`) pays its normal mana cost.
       let cost := g.playManaCost preSpell stackFace (origPerm := origPerm)
-        (isFreeFromGy := some isFreeFromGy) (flashback := some false)
-        (explicitAltCost := altCostUsed)
+        (flashback := some false)
+        (explicitAltCost := false)
       let lifeInstead :=
         if !withoutManaCost && origPerm.any (·.payLifeEqualManaValue) then
           g.objectManaValue spellObj
@@ -2309,7 +2338,6 @@ partial def castAsPartOfResolution (g : Game) (p : PlayerId) (id : ObjectId)
         original
         originalSnapshot := origSnap
         origPerm
-        isFreeFromGy
         needsSacrificeOther := needsSacrifice
         payLife := lifeInstead
         alternativeCost := altCostUsed
@@ -2596,7 +2624,7 @@ def announceKicker (g : Game) (p : PlayerId) (kick : Bool) : Except String Game 
             |>.logMsg s!"{(g.player p).name} must choose a value for X (CR 107.3a / 601.2b)"
         else if isModalSpellFace face then
           if prop.resolutionCast &&
-              !(effectiveSpellModes face).any (g.spellModeIsChoosable p · (some prop.spellId)) &&
+              !(g.evalSpellModes p spell).any (g.spellModeIsChoosable p · (some prop.spellId)) &&
               !isReturnUpToTwoGyModal face && !face.allowsZeroTargets then
             return g.reverseProposedSpell (resumeContinuation := true)
           else
@@ -2680,7 +2708,7 @@ def payTeamworkCreatures (g : Game) (p : PlayerId) (ids : Array ObjectId) :
       |>.changeProposals #[.teamworkPaid true, .teamworkAnnounced true, .teamworkCreatures ids]
     g := g.logMsg s!"{(g.player p).name} announces teamwork"
     -- “If this spell was cast using teamwork, choose both instead.”
-    let effModes := effectiveSpellModes face
+    let effModes := g.evalSpellModes p spell
     if face.chooseBothIfTeamwork &&
         effModes.all (fun m => g.spellModeIsChoosable p m (some spell.id)) then
       let chosen := g.chosenModesOf spell
@@ -2869,9 +2897,9 @@ def finishProliferate (g : Game) (p : PlayerId) (chosen : Array Target) :
       | .permanent id =>
         let some o := g.findObject? id | throw "no such object"
         if !o.isOnBattlefield then
-          throw s!"{o.name} is not a permanent on the battlefield (CR 701.34a)"
+          throw s!"{g.name o} is not a permanent on the battlefield (CR 701.34a)"
         if !o.status.hasCounters then
-          throw s!"{o.name} has no counters"
+          throw s!"{g.name o} has no counters"
       | .player pid =>
         let pl := g.player pid
         if g.teamPoison pid == 0 && !pl.counters.any (fun (_, c) => c > 0) then
@@ -3192,7 +3220,7 @@ def chooseSpellOr (g : Game) (p : PlayerId) (idx : Nat) : Except String Game := 
       let some id := id? | throw "no such object"
       let some o := g.findObject? id | throw "no such object"
       if !o.isOnBattlefield then
-        throw s!"{o.name} is no longer on the battlefield"
+        throw s!"{g.name o} is no longer on the battlefield"
     let outerCont? := g.pendingReplacement
     let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
     let effect := g.spellOr[idx]!
@@ -3221,7 +3249,7 @@ def chooseLibrarySide (g : Game) (p : PlayerId) (top : Bool) : Except String Gam
       let some id := id? | throw "no such object"
       let some o := g.findObject? id | throw "no such object"
       if !o.isOnBattlefield then
-        throw s!"{o.name} is no longer on the battlefield"
+        throw s!"{g.name o} is no longer on the battlefield"
       let outerCont? := g.pendingReplacement
       let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
       let g := (g.change (.pending .none)).putOnOwnerLibrary o (top := top)
@@ -3411,8 +3439,8 @@ def castExiledAsAbilityResolves (g : Game) (p : PlayerId) (id : ObjectId) :
       exiledBy := card.exiledBy
       controller := some p }
     let altCostUsed := origPerm.any (fun pm => pm.withoutManaCost || pm.payLifeEqualManaValue)
-    let cost := g.playManaCost preSpell stackFace (origPerm := origPerm) (isFreeFromGy := some false)
-      (flashback := some false) (explicitAltCost := altCostUsed)
+    let cost := g.playManaCost preSpell stackFace (origPerm := origPerm)
+      (flashback := some false) (explicitAltCost := false)
     let lifeInstead :=
       if origPerm.any (·.payLifeEqualManaValue) then g.objectManaValue spellObj else 0
     let needsSacrifice :=
@@ -3481,10 +3509,17 @@ def decline (g : Game) (p : PlayerId) : Except String Game := do
       throw s!"Only {(g.player caster).name} may choose targets (CR 601.2c)"
     let some obj := g.objectAwaitingTargets | throw "No spell is waiting for a target (CR 601.2c)"
     if g.canSkipCurrentOptionalSlot obj then
-      let g := g.skipOptionalTargetSlot obj.id
+      let kind := (g.targetingOf obj).kind
+      let curSlot := g.currentTargetSlot obj
+      let (_, grpEnd) := kind.instanceGroupBounds curSlot
+      let span := ((List.range grpEnd).drop curSlot)
+      if !span.all kind.isOptionalSlot then
+        let reqCount := span.filter (!kind.isOptionalSlot ·) |>.length
+        throw s!"Choose at least {reqCount} target(s) (CR 601.2c)"
+      let g := span.foldl (fun acc _ => acc.skipOptionalTargetSlot obj.id) g
       let g := g.logMsg
         s!"{(g.player p).name} chooses no target (CR 603.3d / 601.2c)"
-      if g.currentTargetSlot obj < (g.targetingOf obj).kind.spec.slots.size then
+      if g.currentTargetSlot obj < kind.spec.slots.size then
         return g.change (.pending (.chooseTargets p))
       if g.proposedSpell.isSome then
         return g.afterTargetsChosen

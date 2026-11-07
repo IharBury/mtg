@@ -64,7 +64,7 @@ def temptWithTheRing (g : Game) (p : PlayerId) (chosen : Option ObjectId := none
     let g :=
       match pick with
       | some id =>
-        g.logMsg s!"{(g.player p).name} chooses {(g.object! id).name} as their Ring-bearer"
+        g.logMsg s!"{(g.player p).name} chooses {g.name (g.object! id)} as their Ring-bearer"
       | none =>
         g.logMsg s!"{(g.player p).name} controls no creature to become Ring-bearer"
     g.record (GameEvent.ringTempted g.turnNumber p pick nextAbilities
@@ -170,7 +170,7 @@ def applyKickerToProposed (g : Game) (kick : Bool) : Except String Game := do
     let g := g.record (GameEvent.announced g.turnNumber spell.id (costs := #[.morph]))
     let cost :=
       g.playManaCost preSpell morphSpellFace extraGen
-        (origPerm := prop.origPerm) (isFreeFromGy := some false)
+        (origPerm := prop.origPerm)
         (flashback := some (GameEvent.castWithFlashback g.events prop.spellId))
         (explicitAltCost := true)
     return g.changeProposals
@@ -181,7 +181,7 @@ def applyKickerToProposed (g : Game) (kick : Bool) : Except String Game := do
     let impFace : CardDef := { face with manaCost := alt }
     let cost :=
       g.playManaCost preSpell impFace extraGen
-        (origPerm := prop.origPerm) (isFreeFromGy := some false)
+        (origPerm := prop.origPerm)
         (flashback := some (GameEvent.castWithFlashback g.events prop.spellId))
         (explicitAltCost := true)
     return g.changeProposals
@@ -191,16 +191,16 @@ def applyKickerToProposed (g : Game) (kick : Bool) : Except String Game := do
     let g := g.record (GameEvent.announced g.turnNumber spell.id (costs := #[.kicker]))
     let effPerm :=
       prop.origPerm <|>
-        (if prop.alternativeCost && prop.sneakAttacker.isNone && !prop.isFreeFromGy &&
+        (if prop.alternativeCost && prop.sneakAttacker.isNone &&
             !g.castFromGraveyard spell.id &&
             !(match prop.original.zone with | .graveyard _ => true | _ => false) then
           some { player := prop.caster, withoutManaCost := true }
         else none)
     let cost :=
       g.playManaCost preSpell face (kicker.addCost extraGen)
-        (origPerm := effPerm) (isFreeFromGy := some prop.isFreeFromGy)
+        (origPerm := effPerm)
         (flashback := some (GameEvent.castWithFlashback g.events prop.spellId))
-        (explicitAltCost := prop.alternativeCost)
+        (explicitAltCost := prop.sneakAttacker.isSome)
     return g.changeProposals #[.kicked true, .kickerAnnounced true, .cost cost]
 
 /-- Promise a gift to `to`. Cannot promise more than once. -/

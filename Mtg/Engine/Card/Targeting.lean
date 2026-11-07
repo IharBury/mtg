@@ -258,6 +258,9 @@ inductive EffectTargetKind where
   /-- The instances of “target” of `a`, then those of `b`: two modes of one
   modal spell chosen together (CR 700.2). -/
   | pair (a b : EffectTargetKind)
+  /-- One instance of “target” choosing between `minCount` and `maxCount`
+  targets of `inner` together (CR 115.1c / 601.2c), used when combining modes. -/
+  | instanceSlots (inner : EffectTargetKind) (minCount maxCount : Nat)
 deriving Repr, Inhabited, BEq, DecidableEq
 
 /-- Default demonstration-agent choice among legal targets (CR 601.2c).
@@ -536,6 +539,14 @@ def spec : EffectTargetKind → Spec
       slots := la ++ lb
       optionalSlots := sa.optionalSlots ++ sb.optionalSlots.map (· + la.size)
       stackSpell := sa.stackSpell || sb.stackSpell }
+  | .instanceSlots inner minCount maxCount =>
+    let si := spec inner
+    { count := maxCount
+      noun := si.noun
+      prefer := si.prefer
+      slots := Array.replicate maxCount inner
+      optionalSlots := ((List.range maxCount).drop minCount).toArray
+      stackSpell := si.stackSpell }
 
 /-- How many targets must be announced for this shape (CR 601.2c). -/
 def targetCount (k : EffectTargetKind) : Nat :=
@@ -642,6 +653,8 @@ def distinctSlots : EffectTargetKind → Array (Array Nat)
   | .twoCreaturesOrLandsYouControl
   | .twoPlayers
   | .twoArtifactsYouControl => #[#[0, 1]]
+  | .instanceSlots _ _ maxCount =>
+    if maxCount > 1 then #[(List.range maxCount).toArray] else #[]
   | .pair a b =>
     let sa := a.spec
     let sb := b.spec
@@ -656,6 +669,47 @@ def distinctSlots : EffectTargetKind → Array (Array Nat)
         if nb > 1 then #[(List.range nb).toArray] else #[]
       else b.distinctSlots).map (fun grp => grp.map (· + na))
     ga ++ gb
+  | _ => #[]
+
+/-- Half-open `[start, stop)` slot range sharing one instance of the word
+“target” around `slot` (CR 601.2c). Separate instances have width `1`;
+`.instanceSlots` groups all of its `maxCount` slots into one announcement. -/
+def instanceGroupBounds : EffectTargetKind → Nat → Nat × Nat
+  | .instanceSlots _ _ maxCount, _ => (0, maxCount)
+  | .pair a b, slot =>
+    let sa := a.spec
+    let na := if sa.slots.isEmpty then sa.count else sa.slots.size
+    if slot < na then
+      if sa.slots.isEmpty then (0, na) else a.instanceGroupBounds slot
+    else
+      let sb := b.spec
+      let nb := if sb.slots.isEmpty then sb.count else sb.slots.size
+      if sb.slots.isEmpty then (na, na + nb)
+      else
+        let (s, e) := b.instanceGroupBounds (slot - na)
+        (s + na, e + na)
+  | _, slot => (slot, slot + 1)
+
+/-- 0-based slot-index groups whose chosen permanent targets must share a card
+type (`.twoNonlandsSharingType`). -/
+def sharesTypeGroups : EffectTargetKind → Array (Array Nat)
+  | .twoNonlandsSharingType => #[#[0, 1]]
+  | .pair a b =>
+    let sa := a.spec
+    let na := if sa.slots.isEmpty then sa.count else sa.slots.size
+    a.sharesTypeGroups ++ b.sharesTypeGroups.map (fun grp => grp.map (· + na))
+  | _ => #[]
+
+/-- `(cap, slots)` groups whose chosen permanent targets must have combined mana
+value at most `cap` (`.upToTwoCreaturesTotalMvAtMost`). -/
+def totalMvCapGroups : EffectTargetKind → Array (Nat × Array Nat)
+  | .upToTwoCreaturesTotalMvAtMost n => #[(n, #[0, 1])]
+  | .instanceSlots (.upToTwoCreaturesTotalMvAtMost n) _ maxCount =>
+    #[(n, (List.range maxCount).toArray)]
+  | .pair a b =>
+    let sa := a.spec
+    let na := if sa.slots.isEmpty then sa.count else sa.slots.size
+    a.totalMvCapGroups ++ b.totalMvCapGroups.map (fun (n, grp) => (n, grp.map (· + na)))
   | _ => #[]
 
 /-- Oracle-style noun for the `i`th instance, with “up to one” when optional. -/

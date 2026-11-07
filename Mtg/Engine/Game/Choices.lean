@@ -264,13 +264,13 @@ def putToBattlefieldLoop (g : Game) (controller : PlayerId)
     | some enteredObj =>
       match entryLog with
       | .none => pure ()
-      | .enters => g := g.logMsg s!"{enteredObj.name} enters the battlefield"
-      | .entersTapped => g := g.logMsg s!"{enteredObj.name} enters tapped"
+      | .enters => g := g.logMsg s!"{g.name enteredObj} enters the battlefield"
+      | .entersTapped => g := g.logMsg s!"{g.name enteredObj} enters tapped"
       if haste then
         g := g.createEffect (.keywordsUntilEot enteredObj.id { haste := true }) (cause := cause)
       if onlyFoodArtifact then
         if let some cur := g.findObject? enteredObj.id then
-          g := g.logMsg s!"{cur.name} returns as a Food artifact"
+          g := g.logMsg s!"{g.name cur} returns as a Food artifact"
       g :=
         if isLandEnters then g.afterLandEnters (g.object! enteredObj.id)
         else g.afterPermanentEnters (g.object! enteredObj.id)

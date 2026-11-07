@@ -404,7 +404,7 @@ def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTarge
   | .upToTwoCreaturesTotalMvAtMost n =>
     g.legalCreatureTargets caster (fun o => g.objectManaValue o ≤ n) sourceId
   | .filtered f => g.legalFilteredTargets caster f sourceId
-  | .multi .. | .pair .. => #[]
+  | .multi .. | .pair .. | .instanceSlots .. => #[]
 
 /-- Whether required slots `rest` of `kind` can each be given a target from their
 candidate list, extending the partial assignment `chosen` (slot index × target), such
@@ -416,6 +416,8 @@ def slotAssignmentExists (g : Game) (kind : EffectTargetKind) :
   | [], _ => true
   | (i, part) :: rest, chosen =>
     let groups := kind.distinctSlots
+    let shareGroups := kind.sharesTypeGroups
+    let mvGroups := kind.totalMvCapGroups
     let sharesType (a b : Target) : Bool :=
       match a, b with
       | .permanent x, .permanent y =>
@@ -423,12 +425,20 @@ def slotAssignmentExists (g : Game) (kind : EffectTargetKind) :
         | some ox, some oy => (g.types ox).any (fun ty => (g.types oy).contains ty)
         | _, _ => false
       | _, _ => false
+    let mvOf : Target → Nat
+      | .permanent oid => ((g.findObject? oid).map g.objectManaValue).getD 0
+      | _ => 0
     let compatible (t : Target) : Bool :=
       chosen.all (fun (j, u) =>
         !(u == t && groups.any (fun grp => grp.contains i && grp.contains j))) &&
-      match kind with
-      | .twoNonlandsSharingType => chosen.all (fun (_, u) => sharesType t u)
-      | _ => true
+      shareGroups.all (fun grp =>
+        !grp.contains i ||
+          chosen.all (fun (j, u) => !grp.contains j || sharesType t u)) &&
+      mvGroups.all (fun (cap, grp) =>
+        !grp.contains i ||
+          let subtotal := chosen.foldl (fun acc (j, u) =>
+            if grp.contains j then acc + mvOf u else acc) (mvOf t)
+          subtotal ≤ cap)
     (kind.isOptionalSlot i && g.slotAssignmentExists kind rest chosen) ||
       part.any (fun t => compatible t && g.slotAssignmentExists kind rest (chosen.push (i, t)))
 
@@ -450,16 +460,52 @@ def legalTargetsForKind (g : Game) (caster : PlayerId) (kind : EffectTargetKind)
       parts.foldl (· ++ ·) #[]
     else #[]
 
+/-- “For each opponent, (up to one) target … that player controls” as one
+target slot per opponent (CR 601.2c / 602.2b). When `stackObjId` has a recorded
+`CastEvent.proposed`, preserves opponents who were in the game when that spell
+was proposed so mid-stack player departures do not shift slot indices. -/
+def expandEachOpponentEffect (g : Game) (p : PlayerId) (e : Effect)
+    (stackObjId : Option ObjectId := none) : Effect :=
+  match e.targetKind with
+  | .filtered f =>
+    if f.controller == .eachOpponent then
+      let propIdx? :=
+        stackObjId.bind fun oid =>
+          let rootId := GameEvent.rootCopiedSpellId g.events oid
+          g.events.findIdx? fun ev =>
+            match ev.change with
+            | .rules (.cast (.proposed sid ..)) => sid == rootId
+            | _ => false
+      let opps : Array Player :=
+        match propIdx? with
+        | some idx =>
+          let later := g.events.extract (idx + 1) g.events.size
+          g.players.filter fun (pl : Player) =>
+            pl.id != p && !g.areTeammates p pl.id &&
+              (!pl.lost || later.any fun ev =>
+                match ev.change with
+                | .rules (.player (.lost q _)) | .rules (.player (.leftGame q)) => q == pl.id
+                | _ => false)
+        | none => g.livingOpponents p
+      let fs := opps.map (fun (pl : Player) => { f with controller := .specific pl.id.idx })
+      let optional := if e.allowsZeroTargets then (List.range fs.size).toArray else #[]
+      { e with targeting := .of (.multi fs optional), maxTargets := fs.size }
+    else e
+  | _ => e
+
 /-- Whether enough distinct legal targets exist for `e` (CR 115.3 / 601.2c): a
 single-instance shape announcing `e.targetCount > 1` targets of one word “target”
 (`kind.spec.slots.isEmpty`) needs that many distinct legal targets unless it allows
 zero; multi-slot shapes are checked slot by slot in `legalTargetsForKind`. -/
 def effectHasEnoughTargets (g : Game) (p : PlayerId) (e : Effect)
     (sourceId : Option ObjectId := none) : Bool :=
-  let legal := g.legalTargetsForKind p e.targetKind sourceId
-  if e.targetKind.spec.slots.isEmpty && !e.allowsZeroTargets then
-    legal.size >= max 1 e.targetCount
-  else !legal.isEmpty
+  let e := g.expandEachOpponentEffect p e
+  if e.allowsZeroTargets then true
+  else
+    let legal := g.legalTargetsForKind p e.targetKind sourceId
+    if e.targetKind.spec.slots.isEmpty then
+      legal.size >= max 1 e.targetCount
+    else !legal.isEmpty
 
 /-- Legal targets for a triggered ability (CR 603.3d / 601.2c). `sourceId` is
 the object that generated the ability, used to exclude “another” creature. -/

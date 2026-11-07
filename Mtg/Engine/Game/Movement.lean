@@ -24,10 +24,11 @@ creature without a prepare spell can't become prepared (ruling 747), and a
 prepared creature can't become prepared again (ruling 743). Only the printed
 prepare spell is copied, so copy exceptions on `o` don't apply (ruling 741). -/
 def becomePrepared (g : Game) (o : GameObject) (cause : Option EventCause := none) : Game :=
+  let oName := g.name o
   match (g.baseCard o).prepareFace with
-  | none => g.logMsg s!"{o.name} has no prepare spell and can't become prepared"
+  | none => g.logMsg s!"{oName} has no prepare spell and can't become prepared"
   | some face =>
-    if o.status.prepared then g.logMsg s!"{o.name} is already prepared"
+    if o.status.prepared then g.logMsg s!"{oName} is already prepared"
     else
       let p := (g.controllerOf o).getD o.owner
       let srcFallback := (g.currentResolvingContext?.bind Prod.fst).orElse (fun _ => some o.id)
@@ -40,19 +41,20 @@ def becomePrepared (g : Game) (o : GameObject) (cause : Option EventCause := non
           g.resolveOptionalCause cause (fallbackSrc := srcFallback) (fallbackCtrl := some p)
             (defaultCause := .gameRule .spellCast)
         g.record (GameEvent.designation g.turnNumber (g.snapshot o) .prepared true (cause := prepCause))
-      g.logMsg s!"{o.name} becomes prepared. A copy of {face.name} is exiled"
+      g.logMsg s!"{oName} becomes prepared. A copy of {face.name} is exiled"
 
 /-- `o` stops being prepared and the copy of its prepare spell in exile
 ceases to exist. Nothing happens if it isn't prepared (ruling 737). -/
 def unprepare (g : Game) (o : GameObject) (cause : Option EventCause := none) : Game :=
   if !o.status.prepared then g
   else
+    let oName := g.name o
     let srcFallback := (g.currentResolvingContext?.bind Prod.fst).orElse (fun _ => some o.id)
     let resolvedCause :=
       g.resolveOptionalCause cause (fallbackSrc := srcFallback) (fallbackCtrl := g.controllerOf o)
         (defaultCause := .gameRule .spellCast)
     let g := g.record (GameEvent.designation g.turnNumber (g.snapshot o) .prepared false (cause := resolvedCause))
-    (g.removePreparedCopy o.id).logMsg s!"{o.name} is no longer prepared"
+    (g.removePreparedCopy o.id).logMsg s!"{oName} is no longer prepared"
 
 /-- True when `o` replaces an opposing creature dying with exile. -/
 def exilesOppDeath? (g : Game) (o : GameObject) : Bool :=
@@ -358,7 +360,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
           fromStackTime?.getD (if targetZone == .battlefield && old.zone == .stack then old.status.time else 0)
         let prepared :=
           targetZone == .battlefield && !faceDown && printed.entersPrepared
-        let impendingNotCreature :=
+        let preImpendingNotCreature :=
           (old.zone == .stack || fromStackTime?.isSome) && targetZone == .battlefield &&
             printed.impending.isSome && fromStackTime > 0
         let baseStatus : Status :=
@@ -393,7 +395,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
         if targetZone == .battlefield then
           let gForArrival : Game := Id.run do
             let mut g' := g
-            if impendingNotCreature then
+            if preImpendingNotCreature then
               g' := { g' with activeEffects := g'.activeEffects.push (⟨g'.nextEffectId⟩, .notACreature newId), nextEffectId := g'.nextEffectId + 1 }
             if returnedAsArtifact then
               g' := { g' with activeEffects := g'.activeEffects.push (⟨g'.nextEffectId⟩, .returnedAsArtifact newId), nextEffectId := g'.nextEffectId + 1 }
@@ -421,9 +423,11 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
               (cause := curCause)
               (nonCastBattlefield := old.zone != .stack || attachedTo.isNone)
               (preBattlefield := preBattlefield)
-          (etb.candidate, etb.entersWith, etb.weaverBonus, impendingNotCreature, faceDown, etb.applied, etb.cause, etb.choice?, etb.tempCopyUntilEot, etb.stayInOriginNoAuraHost)
+          let postImpendingNotCreature :=
+            preImpendingNotCreature && (etb.choice?.isSome || etb.entersWith.count .time > 0)
+          (etb.candidate, etb.entersWith, etb.weaverBonus, postImpendingNotCreature, faceDown, etb.applied, etb.cause, etb.choice?, etb.tempCopyUntilEot, etb.stayInOriginNoAuraHost)
         else
-          (candidate, #[], 0, impendingNotCreature, faceDown, applied, curCause, none, none, false)
+          (candidate, #[], 0, preImpendingNotCreature, faceDown, applied, curCause, none, none, false)
       -- Run the CR 616.1 replacement loop for leaving/destination replacements (CR 614.6).
       let origDest := dest
       let moveRep :=
@@ -482,9 +486,10 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
           match old.zone, origDest with
           | .hand p, .graveyard q => p == q
           | _, _ => false
+      let oldName := g.name old
       let g :=
         if finalityExile then
-          g.logMsg s!"A finality counter exiles {old.name} instead of putting it into a graveyard"
+          g.logMsg s!"A finality counter exiles {oldName} instead of putting it into a graveyard"
         else g
       let g :=
         if old.zone == .battlefield then g.unattachFrom id else g
@@ -501,14 +506,14 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
         if exileInstead then
           -- CR 700.4: only a battlefield-to-graveyard move is "dying".
           if old.zone == .battlefield then
-            g.logMsg s!"{old.name} is exiled instead of dying (CR 614.6)"
+            g.logMsg s!"{oldName} is exiled instead of dying (CR 614.6)"
           else
             match origDest with
             | .graveyard _ =>
-              g.logMsg s!"{old.name} is exiled instead of going to a graveyard (CR 614.6)"
+              g.logMsg s!"{oldName} is exiled instead of going to a graveyard (CR 614.6)"
             | _ =>
               -- CR 702.34a: a stack-leave replacement to a non-graveyard zone.
-              g.logMsg s!"{old.name} is exiled instead of leaving the stack (CR 614.6)"
+              g.logMsg s!"{oldName} is exiled instead of leaving the stack (CR 614.6)"
         else g
       let freshForSnap : GameObject :=
         match tempCopyUntilEot with
@@ -702,9 +707,9 @@ private partial def logLinkedExileReturn (g : Game) (fromId : ObjectId) (dest : 
       match moved.attachedTo with
       | some hid =>
         let hostName := (g.findObject? hid).map g.name |>.getD (toString hid)
-        g.logMsg s!"{moved.name} returns attached to {hostName} (does not target)"
+        g.logMsg s!"{g.name moved} returns attached to {hostName} (does not target)"
       | none =>
-        g.logMsg s!"{moved.name} returns to the battlefield"
+        g.logMsg s!"{g.name moved} returns to the battlefield"
     | _ => g
 
 /-- Execute a batch of CR 610.3 linked-exile returns inside an open post-departure
@@ -890,7 +895,7 @@ def moveSimultaneousToGraveyard (g : Game) (ids : Array ObjectId)
     for i in [0:ids.size] do
       let id := ids[i]!
       if let some o := g.findObject? id then
-        g := g.moveToOwnerGraveyard o s!"{o.name} is put into its owner's graveyard"
+        g := g.moveToOwnerGraveyard o s!"{g.name o} is put into its owner's graveyard"
           (preBattlefield := some preBf) (cause := batchCause)
         if let .chooseReplacement .. := g.pending then
           let rem := ids.extract (i + 1) ids.size
@@ -916,7 +921,7 @@ def putOntoBattlefield (g : Game) (id : ObjectId) (controller : PlayerId)
     (verb : Option ZoneVerb := none) (actor : Option PlayerId := none)
     (cause : Option EventCause := none) : Game × ObjectId :=
   if (g.player controller).lost then
-    let name := (g.object! id).name
+    let name := g.name (g.object! id)
     (g.logMsg s!"{name} remains in its current zone (CR 800.4b)", id)
   else
     g.move id .battlefield (some controller)

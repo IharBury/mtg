@@ -13,11 +13,10 @@ namespace Game
 
 /-- The target opponent may have `controller` draw a card (Palantír). -/
 def offerPalantirChoice (g : Game) (controller opp : PlayerId) (sid : ObjectId) : Game :=
-  if !g.stillInGame opp then
-    if g.stillInGame controller then
-      let n := ((g.findObject? sid).map (·.status.influence)).getD 0
-      g.mill controller n
-    else g
+  if !g.stillInGame controller then g
+  else if !g.stillInGame opp then
+    let n := ((g.findObject? sid).map (·.status.influence)).getD 0
+    g.mill controller n
   else
     g.beginFraChoice opp (.palantirMayDraw controller sid)
       s!"{(g.player opp).name} may have {(g.player controller).name} draw a card"
@@ -242,8 +241,7 @@ def resolveRandomCreatureReveal (g : Game) (p : PlayerId) (revealed : Array Obje
     | some o => o.owner
     | none => p
   match g.findObject? chosen with
-  | some o =>
-    let name := o.name
+  | some _ =>
     let (g, newId) := g.putOntoBattlefield chosen p (cause := cause)
     if let .chooseReplacement .. := g.pending then
       g.chainPendingReplacement
@@ -253,7 +251,7 @@ def resolveRandomCreatureReveal (g : Game) (p : PlayerId) (revealed : Array Obje
         match g.findObject? newId with
         | some entered =>
           if entered.isOnBattlefield then
-            (g.logMsg s!"{name} enters the battlefield").afterPermanentEnters entered
+            (g.logMsg s!"{g.name entered} enters the battlefield").afterPermanentEnters entered
           else g
         | none => g
       g.putRestOnBottomRandom libraryOwner rest (cause := cause)
@@ -413,10 +411,7 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     match g.handDiscardedThisWay with
     | none => (g.change (.notedSourceThisWay none), false)
     | some n =>
-      let srcId := g.notedSourceThisWay
-      let holds :=
-        g.hasEnduringStory controller && n != 0 &&
-          (srcId.bind g.findObject?).any (·.isOnBattlefield)
+      let holds := g.hasEnduringStory controller && n != 0
       if holds then (g, true)
       else (g.changes #[.handDiscardedThisWay none, .notedSourceThisWay none], false)
   | (.atLeast (.count (.youControl (.subtype .bear))) (.fixed n)) =>
@@ -949,30 +944,39 @@ pausing across `Pending.chooseReplacement` and aggregating CR 702.15b lifelink
 life gain once after all shares have been dealt. -/
 def triggerDividedDamageLoop (g : Game) (remaining : Array (Target × Nat))
     (srcName : String) (source : Option EventObject)
-    (cause : Option EventCause) (startEventIdx : Nat) : Game := Id.run do
+    (cause : Option EventCause) (startEventIdx : Option Nat := none)
+    (targetCheck : Option (PlayerId × EffectTargetKind × Option ObjectId) := none) : Game := Id.run do
   if let .chooseReplacement .. := g.pending then
     return g.chainPendingReplacement
-      (.finishPostStep (.triggerDividedDamageLoop remaining srcName source cause startEventIdx))
+      (.finishPostStep (.triggerDividedDamageLoop remaining srcName source cause startEventIdx targetCheck))
   let mut g := g
+  let sIdx := startEventIdx.getD g.events.size
   let c := cause.orElse (fun _ => g.currentBatch.bind (·.2))
   for i in [0:remaining.size] do
     let (tgt, share) := remaining[i]!
     if share > 0 then
-      match tgt with
-      | .player pid =>
-        if g.stillInGame pid then
-          g := g.dealDamageToPlayer pid share (sourceSnap := source) (cause := c)
-            (suppressLifelink := true)
-      | .permanent oid =>
-        if let some o := (g.findObject? oid).filter (·.isOnBattlefield) then
-          g := g.dealDamageFrom srcName o (Int.ofNat share) (sourceSnap := source)
-            (cause := c) (suppressLifelink := true)
-      | .card _ => pure ()
+      let targetLegal : Bool :=
+        match targetCheck with
+        | some (ctrl, tkind, sid) => (g.legalTargetsForKind ctrl tkind sid).contains tgt
+        | none => true
+      if !targetLegal then
+        g := g.illegalAbilityTarget tgt
+      else
+        match tgt with
+        | .player pid =>
+          if g.stillInGame pid then
+            g := g.dealDamageToPlayer pid share (sourceSnap := source) (cause := c)
+              (suppressLifelink := true)
+        | .permanent oid =>
+          if let some o := (g.findObject? oid).filter (·.isOnBattlefield) then
+            g := g.dealDamageFrom srcName o (Int.ofNat share) (sourceSnap := source)
+              (cause := c) (suppressLifelink := true)
+        | .card _ => pure ()
       if let .chooseReplacement .. := g.pending then
         let rest := remaining.extract (i + 1) remaining.size
         return g.chainPendingReplacement
-          (.finishPostStep (.triggerDividedDamageLoop rest srcName source c startEventIdx))
-  g := g.applyAggregatedLifelinkSince startEventIdx (cause := c)
+          (.finishPostStep (.triggerDividedDamageLoop rest srcName source c (some sIdx) targetCheck))
+  g := g.applyAggregatedLifelinkSince sIdx (cause := c)
   return g
 
 /-- Resolve `TriggerResolution.dealDamage`. Each printed combination keeps
@@ -994,16 +998,18 @@ def applyTriggerDamage (g : Game) (controller : PlayerId) (ab : TriggeredAbility
       else
         let batchCause := g.resolvingBatchCause controller sourceId
         let srcSnap := some (g.snapshotDamageSource o)
-        let sIdx := g.events.size
-        g.withBatch batchCause fun g =>
-          g.dealDamageFromPermanentsLoop blockerIds n (g.name o) srcSnap batchCause sIdx
+        if let .chooseReplacement .. := g.pending then
+          g.dealDamageFromPermanentsLoop blockerIds n (g.name o) srcSnap batchCause
+        else
+          g.withBatch batchCause fun g =>
+            g.dealDamageFromPermanentsLoop blockerIds n (g.name o) srcSnap batchCause
   | .permanent, .lastKnownPower, .excess =>
     let amt := lastKnownPower.getD 0
     g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
       let startIdx := g.events.size
       let lethal := g.lethalDamageThreshold o
       let g := g.change (.excessDamageThisWay 0)
-      let g := g.dealDamageFrom sourceName o amt (source := sourceId.bind g.findObject?)
+      let g := g.dealDamageFrom sourceName o amt (source := sourceId.bind g.damageSourceById?)
       if let .chooseReplacement .. := g.pending then
         g.chainPendingReplacement
           (.finishPostStep (.noteExcessDamageDealt o.id lethal startIdx))
@@ -1014,17 +1020,17 @@ def applyTriggerDamage (g : Game) (controller : PlayerId) (ab : TriggeredAbility
   | .permanent, .lastKnownPower, _ =>
     let amt := (lastKnownPower.getD 0).toNat
     g.withLegalTriggerPermanent controller ab sourceId targets fun g o =>
-      g.dealDamageFrom sourceName o amt (source := sourceId.bind g.findObject?)
+      g.dealDamageFrom sourceName o amt (source := sourceId.bind g.damageSourceById?)
   | .player .eachOpponent, .fixed n, .fromEquipped =>
     let n := n.toNat
-    let src :=
-      match g.attachedHost? sourceId with
-      | some host => some host
-      | none => none
+    let eqHostId :=
+      (g.resolvingAbilityObject?.bind (·.fraCauseId)).orElse (fun _ =>
+        (g.attachedHost? sourceId).map (·.id))
+    let src := eqHostId.bind g.damageSourceById?
     g.dealDamageToEachOpponent controller n (source := src)
   | .player .eachOpponent, .fixed n, _ =>
     let n := n.toNat
-    let src := sourceId.bind g.findObject?
+    let src := sourceId.bind g.damageSourceById?
     if ab.opts.untargeted || !ab.requiresTarget then
       g.dealDamageToEachOpponent controller n (source := src)
     else
@@ -1032,22 +1038,17 @@ def applyTriggerDamage (g : Game) (controller : PlayerId) (ab : TriggeredAbility
         g.dealDamageToPlayer pid n (source := src))
   | .player .eachOpponent, .subtypeCount subtype, _ =>
     let amt := g.countSubtype controller subtype
-    let src := sourceId.bind g.findObject?
+    let src := sourceId.bind g.damageSourceById?
     g.dealDamageToEachOpponent controller amt (source := src)
   | .player .eachOpponent, .discardedHand, _ =>
     match g.handDiscardedThisWay with
     | none => g.change (.notedSourceThisWay none)
     | some discarded =>
-      let srcId := g.notedSourceThisWay
+      let src := (g.notedSourceThisWay.orElse (fun _ => sourceId)).bind g.damageSourceById?
       let g := g.changes #[.handDiscardedThisWay none, .notedSourceThisWay none]
       if !g.hasEnduringStory controller || discarded == 0 then g
       else
-        match srcId.bind g.findObject? with
-        | some src =>
-          if src.isOnBattlefield then
-            g.dealDamageToEachOpponent controller (discarded : Int) (source := some src)
-          else g
-        | none => g
+        g.dealDamageToEachOpponent controller (discarded : Int) (source := src)
   | .target, .subtypeCount subtype, _ =>
     let amt := g.countSubtype controller subtype
     g.applyEffect controller (Effect.dealDamage amt) targets (sourceId := sourceId)
@@ -1075,28 +1076,14 @@ def applyTriggerDamage (g : Game) (controller : PlayerId) (ab : TriggeredAbility
   | .player (.target .opponent), .greatestArtifactMv, _ =>
     let x := g.greatestManaValueAmong controller (g.isArtifact ·)
     g.withLegalTriggerPlayer controller ab sourceId targets (fun g pid =>
-      g.dealDamageToPlayer pid x (source := sourceId.bind g.findObject?))
+      g.dealDamageToPlayer pid x (source := sourceId.bind g.damageSourceById?))
   | .eachNonSubtypeAndOpponents subtype, .fixed n, _ =>
-    let n := n.toNat
-    let src? := sourceId.bind g.findObject?
-    if n == 0 then g
-    else
-      let startIdx := g.events.size
-      g.withBatch (g.resolvingBatchCause controller sourceId) fun g =>
-        let batchCause := g.currentBatch.bind (·.2)
-        let g :=
-          g.dealDamageToEachCreatureMatching n (fun o => !g.hasSubtype o subtype)
-            (source := src?.map g.snapshot) (cause := batchCause) (suppressLifelink := true)
-        if let .chooseReplacement .. := g.pending then
-          g.chainPendingReplacement
-            (.finishPostStep (.dealDamageToEachOpponent controller n sourceId batchCause (some startIdx)))
-        else
-          g.dealDamageToEachOpponent controller n (source := src?) (cause := batchCause)
-            (startEventIdx := some startIdx)
+    g.dealDamageToEachNonSubtypeAndOpponents controller n.toNat subtype sourceId
+      (cause := g.resolvingBatchCause controller sourceId)
   | .player (.target .opponent), .fixed n, _ =>
     let n := n.toNat
     g.withLegalTriggerPlayer controller ab sourceId targets (fun g pid =>
-      g.dealDamageToPlayer pid n (source := sourceId.bind g.findObject?))
+      g.dealDamageToPlayer pid n (source := sourceId.bind g.damageSourceById?))
   | .target, .fixed n, .none =>
     let n := n.toNat
     g.applyDamageToKindTarget controller ab.targetKind targets n sourceId
@@ -1155,22 +1142,30 @@ def applyTriggerDamage (g : Game) (controller : PlayerId) (ab : TriggeredAbility
         else
           let batchCause := g.resolvingBatchCause controller sourceId
           let srcSnap := sourceId.bind g.damageSourceEventById?
-          let sIdx := g.events.size
-          g.withBatch batchCause fun g =>
-            g.triggerDividedDamageLoop shares sourceName srcSnap batchCause sIdx
+          if let .chooseReplacement .. := g.pending then
+            g.triggerDividedDamageLoop shares sourceName srcSnap batchCause
+          else
+            g.withBatch batchCause fun g =>
+              g.triggerDividedDamageLoop shares sourceName srcSnap batchCause
   | who, amount, note =>
     let ctx : TriggerRead :=
       { controller, sourceId, targets, lastKnownPower }
     match g.triggerCount ctx amount with
     | none => g
     | some n =>
+      let eqHostId :=
+        (g.resolvingAbilityObject?.bind (·.fraCauseId)).orElse (fun _ =>
+          (g.attachedHost? sourceId).map (·.id))
       let src :=
         match note with
-        | .fromEquipped => g.attachedHost? sourceId
-        | _ => sourceId.bind g.findObject?
+        | .fromEquipped => eqHostId.bind g.damageSourceById?
+        | _ => sourceId.bind g.damageSourceById?
       let srcSnap :=
         (src.map g.snapshotDamageSource).orElse fun _ =>
-          if note == .fromEquipped then none else sourceId.bind g.damageSourceEventById?
+          if note == .fromEquipped then eqHostId.bind g.damageSourceEventById?
+          else sourceId.bind g.damageSourceEventById?
+      let dmgSrcName :=
+        if note == .fromEquipped then (src.map g.name).getD sourceName else sourceName
       let loopNote : PermanentDamageLoopNote :=
         match note with
         | .excess => .excess
@@ -1188,27 +1183,34 @@ def applyTriggerDamage (g : Game) (controller : PlayerId) (ab : TriggeredAbility
         | none => g
       | .target =>
         match note with
-        | .none | .fromEquipped =>
+        | .none =>
           g.applyDamageToKindTarget controller ab.targetKind targets n sourceId none
+        | .fromEquipped =>
+          g.withLegalKindTarget controller ab.targetKind targets
+            (fun g t => g.dealDamageToTarget t n (source := src)) sourceId none
         | _ =>
           match g.permanentsNamed ctx .target with
           | some objs =>
             if n == 0 || objs.isEmpty then g
+            else if let .chooseReplacement .. := g.pending then
+              g.dealDamageFromPermanentsLoop (objs.map (·.id)) n dmgSrcName srcSnap
+                batchCause (note := loopNote)
             else
-              let sIdx := g.events.size
               g.withBatch batchCause fun g =>
-                g.dealDamageFromPermanentsLoop (objs.map (·.id)) n sourceName srcSnap
-                  batchCause sIdx (note := loopNote)
+                g.dealDamageFromPermanentsLoop (objs.map (·.id)) n dmgSrcName srcSnap
+                  batchCause (note := loopNote)
           | none => g
       | _ =>
         match g.permanentsNamed ctx who with
         | some objs =>
           if n == 0 || objs.isEmpty then g
+          else if let .chooseReplacement .. := g.pending then
+            g.dealDamageFromPermanentsLoop (objs.map (·.id)) n dmgSrcName srcSnap
+              batchCause (note := loopNote)
           else
-            let sIdx := g.events.size
             g.withBatch batchCause fun g =>
-              g.dealDamageFromPermanentsLoop (objs.map (·.id)) n sourceName srcSnap
-                batchCause sIdx (note := loopNote)
+              g.dealDamageFromPermanentsLoop (objs.map (·.id)) n dmgSrcName srcSnap
+                batchCause (note := loopNote)
         | none => g
 
 def keywordCounterSpecs : Array ((Game → GameObject → Bool) × CounterKind) := #[
@@ -3029,7 +3031,7 @@ partial def finishNotedLandsEntered (g : Game) (entered : Array ObjectId) : Game
       match g.followMovedToZone? fromId (· == .battlefield) with
       | some land =>
         if land.isOnBattlefield then
-          (g.logMsg s!"{land.name} is exiled, then returned tapped").afterLandEnters land
+          (g.logMsg s!"{g.name land} is exiled, then returned tapped").afterLandEnters land
         else g
       | none => g
     if rest.isEmpty then g
@@ -3086,8 +3088,7 @@ def applyPut (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         | Target.card oid =>
           match g.findObject? oid with
           | none => g.logMsg "The target is no longer in the graveyard"
-          | some o =>
-            let name := o.name
+          | some _ =>
             let (g, newId) := g.putOntoBattlefield oid controller
             if let .chooseReplacement .. := g.pending then
               g.chainPendingReplacement (.finishPostStep (.logReturnsToBattlefieldAndEnter oid))
@@ -3095,7 +3096,7 @@ def applyPut (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
               match g.findObject? newId with
               | some entered =>
                 if entered.isOnBattlefield then
-                  (g.logMsg s!"{name} returns to the battlefield").afterPermanentEnters entered
+                  (g.logMsg s!"{g.name entered} returns to the battlefield").afterPermanentEnters entered
                 else g
               | none => g
         | _ => g.logMsg "The target is no longer legal")
@@ -3117,7 +3118,7 @@ def applyPut (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
               match g.findObject? newId with
               | some entered =>
                 if entered.isOnBattlefield then
-                  (g.logMsg s!"{name} is put onto the battlefield under its owner's control").afterPermanentEnters entered
+                  (g.logMsg s!"{g.name entered} is put onto the battlefield under its owner's control").afterPermanentEnters entered
                 else g
               | none => g
         | none => g
@@ -3136,7 +3137,7 @@ def applyPut (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
           match g.findObject? newId with
           | some entered =>
             if entered.isOnBattlefield then
-              (g.logMsg s!"{entered.name} returns as an artifact").afterPermanentEnters entered
+              (g.logMsg s!"{g.name entered} returns as an artifact").afterPermanentEnters entered
             else g
           | none => g
   | .notedLands, .tapped, _ =>
@@ -3152,14 +3153,13 @@ def applyPut (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       | some o =>
         if g.isLand o && o.zone == .graveyard o.owner then
           let fromId := o.id
-          let name := o.name
           let (g, newId) := g.putOntoBattlefield fromId pid (tapped := true)
           if let .chooseReplacement .. := g.pending then
             g.chainPendingReplacement (.finishPostStep (.enteredBattlefieldTapped fromId true))
           else
             let entered := g.object! newId
             if entered.isOnBattlefield then
-              (g.logMsg s!"{name} enters the battlefield tapped").afterLandEnters entered
+              (g.logMsg s!"{g.name entered} enters the battlefield tapped").afterLandEnters entered
             else g
         else g
       | none => g
@@ -4683,22 +4683,31 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .putOnLibrary place what =>
     g.applyPutOnLibrary controller ab sourceId targets place what
   | .dividedDamage =>
-    let (g, cause?) : Game × Option EventCause :=
-      if targets.isEmpty then (g, none)
-      else
+    let shares : Array (Target × Nat) :=
+      (List.range targets.size).toArray.filterMap fun i =>
+        let share := dividedDamage[i]?.getD 0
+        if share == 0 then none else some (targets[i]!, share)
+    if shares.isEmpty then g
+    else
+      let (g, cause?) : Game × Option EventCause :=
         match g.currentResolvingContext? with
         | some (src, ctrl) =>
           let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some controller)) (src.orElse (fun _ => sourceId))
           (g, some c)
-        | none => (g, none)
-    g.withBatch cause? fun g => Id.run do
-      let mut g := g
-      for i in [0:targets.size] do
-        let t := targets[i]!
-        let n := dividedDamage[i]?.getD 0
-        if n > 0 then
-          g := g.applyDamageToKindTarget controller .playerOrCreature #[t] n sourceId (cause := cause?)
-      return g
+        | none =>
+          (g, g.resolvingBatchCause controller sourceId)
+      let srcSnap := sourceId.bind g.damageSourceEventById?
+      let tkind : EffectTargetKind :=
+        match ab.targetKind with
+        | .none => .playerOrCreature
+        | k => k
+      if let .chooseReplacement .. := g.pending then
+        g.triggerDividedDamageLoop shares sourceName srcSnap cause?
+          (targetCheck := some (controller, tkind, sourceId))
+      else
+        g.withBatch cause? fun g =>
+          g.triggerDividedDamageLoop shares sourceName srcSnap cause?
+            (targetCheck := some (controller, tkind, sourceId))
   | .sequence rs =>
     -- One legality check for the whole sequence (CR 608.2b). Power is read
     -- before any step moves the card, then each step runs in order. A step

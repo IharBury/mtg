@@ -22,38 +22,52 @@ def targetsAllIllegalForKind (g : Game) (controller : PlayerId)
     let chosenSlots : Array Nat :=
       if kind.spec.slots.isEmpty then #[]
       else (List.range kind.spec.slots.size).toArray.filter (fun s => !skippedOptionalSlots.contains s)
-    let surviving : Array Target :=
+    let survivingPairs : Array (Nat × Target) :=
       (List.range targets.size).toArray.filterMap fun i =>
         let t := targets[i]!
+        let slotIdx := chosenSlots[i]?.getD i
         let legal :=
           if kind.spec.slots.isEmpty then
             g.legalTargetsForKind controller kind sourceId
           else
-            let slotKind := kind.slotKind (chosenSlots[i]?.getD i)
+            let slotKind := kind.slotKind slotIdx
             if slotKind.spec.slots.isEmpty then
               g.legalTargetsForAtomicKind controller slotKind sourceId
             else
               g.legalTargetsForKind controller slotKind sourceId
-        if legal.contains t then some t else none
-    if surviving.isEmpty then true
+        if legal.contains t then some (slotIdx, t) else none
+    if survivingPairs.isEmpty then true
     else
-      match kind with
-      | .twoNonlandsSharingType =>
-        match surviving[0]?, surviving[1]? with
-        | some (Target.permanent a), some (Target.permanent b) =>
-          a == b ||
-            match g.findObject? a, g.findObject? b with
-            | some oa, some ob => !g.sharesCardType oa ob
-            | _, _ => true
-        | _, _ => surviving.size >= 2
-      | .upToTwoCreaturesTotalMvAtMost n =>
-        let totalMv := surviving.foldl (fun acc t =>
-          match t with
-          | Target.permanent id =>
-            acc + ((g.findObject? id).map g.objectManaValue |>.getD 0)
-          | _ => acc) 0
-        totalMv > n
-      | _ => false
+      let badShareSlots : Array Nat :=
+        kind.sharesTypeGroups.foldl (fun acc grp =>
+          let picked :=
+            if kind.spec.slots.isEmpty then survivingPairs.map Prod.snd
+            else survivingPairs.filterMap fun (s, t) => if grp.contains s then some t else none
+          let invalid : Bool :=
+            match picked[0]?, picked[1]? with
+            | some (Target.permanent a), some (Target.permanent b) =>
+              a == b ||
+                match g.findObject? a, g.findObject? b with
+                | some oa, some ob => !g.sharesCardType oa ob
+                | _, _ => true
+            | _, _ => decide (picked.size >= 2)
+          if invalid == true then acc ++ grp else acc) #[]
+      let badMvSlots : Array Nat :=
+        kind.totalMvCapGroups.foldl (fun acc (cap, grp) =>
+          let picked :=
+            if kind.spec.slots.isEmpty then survivingPairs.map Prod.snd
+            else survivingPairs.filterMap fun (s, t) => if grp.contains s then some t else none
+          let totalMv := picked.foldl (fun sum t =>
+            match t with
+            | Target.permanent id =>
+              sum + ((g.findObject? id).map g.objectManaValue |>.getD 0)
+            | _ => sum) 0
+          if totalMv > cap then acc ++ grp else acc) #[]
+      if kind.spec.slots.isEmpty then
+        !badShareSlots.isEmpty || !badMvSlots.isEmpty
+      else
+        (survivingPairs.filter fun (s, _) =>
+          !badShareSlots.contains s && !badMvSlots.contains s).isEmpty
 
 /-- CR 608.2b: an activated or triggered ability with targets whose targets are
 all illegal doesn't resolve. Each announced target is checked against its own
@@ -66,7 +80,7 @@ def abilityTargetsAllIllegal (g : Game) (controller : PlayerId) (obj : GameObjec
     | some eff => eff.targetKind
     | none =>
       match t with
-      | some ab => ab.targetKind
+      | some ab => (g.expandEachOpponentEffect controller ab.effect (some obj.id)).targetKind
       | none => .none
   g.targetsAllIllegalForKind controller kind targets
     (skippedOptionalSlots := skippedOptionalSlots)
@@ -112,9 +126,9 @@ def resolveDelayedTrigger (g : Game) (controller : PlayerId) (kind : DelayedTrig
                 match back.attachedTo with
                 | some hid =>
                   let hostName := (g'.findObject? hid).map g'.name |>.getD "permanent"
-                  g'.logMsg s!"{back.name} returns to the battlefield attached to {hostName} (beginning of end step)"
+                  g'.logMsg s!"{g'.name back} returns to the battlefield attached to {hostName} (beginning of end step)"
                 | none =>
-                  g'.logMsg s!"{back.name} returns to the battlefield (beginning of end step)"
+                  g'.logMsg s!"{g'.name back} returns to the battlefield (beginning of end step)"
               if g'.isLand back then g'.afterLandEnters back else g'.afterPermanentEnters back
             | none => g'
       else g
@@ -122,7 +136,7 @@ def resolveDelayedTrigger (g : Game) (controller : PlayerId) (kind : DelayedTrig
     match g.findObject? id with
     | some o =>
       if o.isOnBattlefield then
-        let msg := s!"{o.name} is exiled (beginning of end step)"
+        let msg := s!"{g.name o} is exiled (beginning of end step)"
         let (g', _) := g.move id .exile none (cause := some cause)
         if let .chooseReplacement .. := g'.pending then
           g'.chainPendingReplacement (.finishPostStep (.logExiledIfInExile id msg))
@@ -135,7 +149,7 @@ def resolveDelayedTrigger (g : Game) (controller : PlayerId) (kind : DelayedTrig
     match g.findObject? id with
     | some o =>
       if o.isOnBattlefield then
-        g.sacrificeToGraveyard o s!"{o.name} is sacrificed" (cause := some cause)
+        g.sacrificeToGraveyard o s!"{g.name o} is sacrificed" (cause := some cause)
       else g
     | none => g
   | .endStepGraveReturn id who =>
@@ -153,9 +167,9 @@ def resolveDelayedTrigger (g : Game) (controller : PlayerId) (kind : DelayedTrig
               match back.attachedTo with
               | some hid =>
                 let hostName := (g'.findObject? hid).map g'.name |>.getD "permanent"
-                g'.logMsg s!"{back.name} returns to the battlefield attached to {hostName}"
+                g'.logMsg s!"{g'.name back} returns to the battlefield attached to {hostName}"
               | none =>
-                g'.logMsg s!"{back.name} returns to the battlefield"
+                g'.logMsg s!"{g'.name back} returns to the battlefield"
             if g'.isLand back then g'.afterLandEnters back else g'.afterPermanentEnters back
           | none => g'
       else g
@@ -189,10 +203,14 @@ partial def runSpellModesAndEmpower (g : Game) (controller : PlayerId)
     | some n => g.empowerJace controller n
     | none => g
   | some e =>
+    let e := g.expandEachOpponentEffect controller e
+      (if g.resolvingAbility.isSome then g.resolvingAbility else g.resolvingSpell)
     let restModes := modeEffects.extract 1 modeEffects.size
     let modeSlots :=
-      if e.targetKind.spec.slots.isEmpty then e.targetKind.targetCount
-      else e.targetKind.spec.slots.size
+      if !e.requiresTarget then 0
+      else
+        let ek := modeTargetKind e
+        if ek.spec.slots.isEmpty then ek.targetCount else ek.spec.slots.size
     let curSkipped := skippedOptionalSlots.filter (· < modeSlots)
     let skippedHere := curSkipped.size
     let restSkipped :=
@@ -262,7 +280,8 @@ def resolveTop (g : Game) : Game :=
           g.completeActiveResolutions
       else if let some rawE := obj.abilityEffect then
         let tcs := g.evalLayer3 obj
-        let e := if tcs.isEmpty then rawE else TextChange.applyEffect tcs rawE
+        let e0 := if tcs.isEmpty then rawE else TextChange.applyEffect tcs rawE
+        let e := g.expandEachOpponentEffect entry.controller e0 (some obj.id)
         let runAbilityBody (g : Game) : Game :=
           let chosenX := (g.chosenXOf? obj.id).getD 0
           let trigModes := g.triggerModesOf obj
@@ -436,13 +455,12 @@ def resolveTop (g : Game) : Game :=
             resolvingSkippedSlots := entry.skippedOptionalSlots
             resolutionFinish := some (.spell entry snap fromGy) })
           let bc := g.baseCard obj
-          let tcs := g.evalLayer3 obj
           let modeEffects : Array Effect :=
             if entry.extraModes.isEmpty || isReturnUpToTwoGyModal bc then
               (g.spellEffectOf obj entry.chosenMode entry.extraModes (kicked := kicked)).toArray
             else
-              ((entry.chosenMode.toArray ++ entry.extraModes).qsort (· < ·)).filterMap fun i =>
-                bc.spellModes[i]?.map fun e => if tcs.isEmpty then e else TextChange.applyEffect tcs e
+              let evalModes := g.evalSpellModes entry.controller obj
+              ((entry.chosenMode.toArray ++ entry.extraModes).qsort (· < ·)).filterMap (evalModes[·]?)
           let empowerJaceN := bc.empowerJace
           -- CR 702.131a: Ascend on a resolving instant or sorcery spell is a spell ability.
           let g :=

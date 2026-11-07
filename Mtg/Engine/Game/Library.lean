@@ -15,31 +15,33 @@ namespace Game
 def drawOneCard (g : Game) (p : PlayerId)
     (firstOfTheirDrawStep? : Option Bool := none)
     (cause : Option EventCause := none) : Game :=
-  let pl := g.player p
-  if pl.library.isEmpty then
-    let g := g.record (GameEvent.drawFromEmptyAttempted g.turnNumber p (cause := cause))
-    g.logMsg s!"{pl.name} tries to draw from an empty library"
+  if !g.stillInGame p then g
   else
-    let top := pl.library.back!
-    let cardName := (g.object! top).name
-    let nth := GameEvent.draws g.events g.turnNumber p + 1
-    let firstOfTheirDrawStep :=
-      firstOfTheirDrawStep?.getD
-        (g.step == .draw && g.activePlayer == p &&
-          !GameEvent.drewFirstOfDrawStep g.events g.turnNumber p)
-    -- Opening hands are drawn before anyone keeps (CR 103.5). They are not
-    -- “cards drawn this turn” once that counter is cleared for the first turn.
-    let verb : Option ZoneVerb :=
-      if pl.keptOpeningHand then some (.draw nth firstOfTheirDrawStep) else some .put
-    let cause := cause.orElse (fun _ =>
-      if !pl.keptOpeningHand then
-        some (.gameRule (if pl.mulligansTaken > 0 then .mulligan else .openingHandDraw))
-      else if firstOfTheirDrawStep then
-        some (.turnBased .drawStepDraw)
-      else none)
-    let (g, _) := g.move top (.hand p) none (verb := verb) (actor := some p) (cause := cause)
     let pl := g.player p
-    g.logMsg s!"{pl.name} draws {cardName}"
+    if pl.library.isEmpty then
+      let g := g.record (GameEvent.drawFromEmptyAttempted g.turnNumber p (cause := cause))
+      g.logMsg s!"{pl.name} tries to draw from an empty library"
+    else
+      let top := pl.library.back!
+      let cardName := (g.object! top).name
+      let nth := GameEvent.draws g.events g.turnNumber p + 1
+      let firstOfTheirDrawStep :=
+        firstOfTheirDrawStep?.getD
+          (g.step == .draw && g.isOnActiveTeam p &&
+            !GameEvent.drewFirstOfDrawStep g.events g.turnNumber p)
+      -- Opening hands are drawn before anyone keeps (CR 103.5). They are not
+      -- “cards drawn this turn” once that counter is cleared for the first turn.
+      let verb : Option ZoneVerb :=
+        if pl.keptOpeningHand then some (.draw nth firstOfTheirDrawStep) else some .put
+      let cause := cause.orElse (fun _ =>
+        if !pl.keptOpeningHand then
+          some (.gameRule (if pl.mulligansTaken > 0 then .mulligan else .openingHandDraw))
+        else if firstOfTheirDrawStep then
+          some (.turnBased .drawStepDraw)
+        else none)
+      let (g, _) := g.move top (.hand p) none (verb := verb) (actor := some p) (cause := cause)
+      let pl := g.player p
+      g.logMsg s!"{pl.name} draws {cardName}"
 
 mutual
 /-- Run the CR 616.1 replacement loop for a single card draw by `p`
@@ -50,12 +52,12 @@ partial def drawOneWithReplacements (g : Game) (p : PlayerId)
     (applied : Array ReplacementId := #[])
     (firstOfYourDrawStep? : Option Bool := none)
     (cause : Option EventCause := none) : Game :=
-  let pl := g.player p
-  if g.drewFromEmpty p then g
+  if !g.stillInGame p || g.drewFromEmpty p then g
   else
+    let pl := g.player p
     let firstOfYourDrawStep :=
       firstOfYourDrawStep?.getD
-        (g.step == .draw && g.activePlayer == p &&
+        (g.step == .draw && g.isOnActiveTeam p &&
           !GameEvent.drewFirstOfDrawStep g.events g.turnNumber p)
     let cause := cause.orElse (fun _ =>
       if !pl.keptOpeningHand then
@@ -115,7 +117,7 @@ partial def drawSubDraws (g : Game) (p : PlayerId) (remaining : Nat)
     (applied : Array ReplacementId) (cause : Option EventCause := none) : Game := Id.run do
   let mut g := g
   for i in [0:remaining] do
-    if g.drewFromEmpty p then
+    if !g.stillInGame p || g.drewFromEmpty p then
       return g
     g := g.drawOneWithReplacements p (applied := applied) (cause := cause)
     if g.pending != .none then
@@ -128,7 +130,8 @@ end
 
 def draw (g : Game) (p : PlayerId) (n : Nat := 1)
     (cause : Option EventCause := none) : Game :=
-  if let .chooseReplacement .. := g.pending then
+  if !g.stillInGame p then g
+  else if let .chooseReplacement .. := g.pending then
     if n == 0 then g else g.chainPendingReplacement (.draw p n cause)
   else
   let (g0, cause?) : Game × Option EventCause :=
@@ -137,7 +140,7 @@ def draw (g : Game) (p : PlayerId) (n : Nat := 1)
     | none =>
       let pl := g.player p
       let firstOfTheirDrawStep :=
-        g.step == .draw && g.activePlayer == p &&
+        g.step == .draw && g.isOnActiveTeam p &&
           !GameEvent.drewFirstOfDrawStep g.events g.turnNumber p
       if n == 0 || g.drewFromEmpty p || pl.library.isEmpty || !pl.keptOpeningHand ||
           firstOfTheirDrawStep then
@@ -155,7 +158,7 @@ def draw (g : Game) (p : PlayerId) (n : Nat := 1)
   Id.run do
     let mut g := g0
     for i in [0:n] do
-      if g.drewFromEmpty p then
+      if !g.stillInGame p || g.drewFromEmpty p then
         return g
       g := g.drawOneWithReplacements p (cause := cause?)
       if g.pending != .none then

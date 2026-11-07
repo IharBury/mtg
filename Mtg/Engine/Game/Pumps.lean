@@ -558,26 +558,30 @@ def finishDealDamageLoseIndestructibleExile (g : Game) (targetId : ObjectId)
 Spells apply those three steps in order. This sets the same flags at once. -/
 def dealDamageLoseIndestructibleExileTo (g : Game) (o : GameObject) (n : Nat)
     (source : EventObject) : Game :=
-  let (g, cause) := g.allocDelayedCause source.controller source.id
-  let srcObj := g.damageSourceObjFromSnapshot? (some source)
-  let oName := g.name o
-  let g :=
-    if n == 0 then
-      g.markDamageOn o 0 "" (source := some source) (sourceObj := srcObj) (cause := some cause)
-    else
-      let startIdx := g.events.size
-      g.withBatch (some cause) fun g =>
-        let g := g.markDamageOn o (Int.ofNat n) ""
-          (source := some source) (sourceObj := srcObj) (cause := some cause)
-        if let .chooseReplacement .. := g.pending then
-          g.chainPendingReplacement
-            (.finishPostStep (.applyAggregatedLifelink startIdx (some cause)))
-        else
-          g.applyAggregatedLifelinkSince startIdx (cause := some cause)
   if let .chooseReplacement .. := g.pending then
-    g.chainPendingReplacement (.finishDealDamageLoseIndestructibleExile o.id oName n cause)
+    g.chainPendingReplacement
+      (.finishPostStep (.dealDamageLoseIndestructibleExileTo o.id n source))
   else
-    g.finishDealDamageLoseIndestructibleExile o.id oName n cause
+    let (g, cause) := g.allocDelayedCause source.controller source.id
+    let srcObj := g.damageSourceObjFromSnapshot? (some source)
+    let oName := g.name o
+    let g :=
+      if n == 0 then
+        g.markDamageOn o 0 "" (source := some source) (sourceObj := srcObj) (cause := some cause)
+      else
+        let startIdx := g.events.size
+        g.withBatch (some cause) fun g =>
+          let g := g.markDamageOn o (Int.ofNat n) ""
+            (source := some source) (sourceObj := srcObj) (cause := some cause)
+          if let .chooseReplacement .. := g.pending then
+            g.chainPendingReplacement
+              (.finishPostStep (.applyAggregatedLifelink startIdx (some cause)))
+          else
+            g.applyAggregatedLifelinkSince startIdx (cause := some cause)
+    if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement (.finishDealDamageLoseIndestructibleExile o.id oName n cause)
+    else
+      g.finishDealDamageLoseIndestructibleExile o.id oName n cause
 
 /-- Until-end-of-turn “can't be blocked” (CR 509.1b / 611.2a). -/
 def grantCantBeBlockedThisTurn (g : Game) (o : GameObject) : Game :=
