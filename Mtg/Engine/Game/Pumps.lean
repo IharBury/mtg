@@ -559,8 +559,19 @@ def dealDamageLoseIndestructibleExileTo (g : Game) (o : GameObject) (n : Nat)
   let (g, cause) := g.allocDelayedCause source.controller source.id
   let srcObj := g.damageSourceObjFromSnapshot? (some source)
   let oName := g.name o
-  let g := g.markDamageOn o (Int.ofNat n) ""
-    (source := some source) (sourceObj := srcObj) (cause := some cause)
+  let g :=
+    if n == 0 then
+      g.markDamageOn o 0 "" (source := some source) (sourceObj := srcObj) (cause := some cause)
+    else
+      let startIdx := g.events.size
+      g.withBatch (some cause) fun g =>
+        let g := g.markDamageOn o (Int.ofNat n) ""
+          (source := some source) (sourceObj := srcObj) (cause := some cause)
+        if let .chooseReplacement .. := g.pending then
+          g.chainPendingReplacement
+            (.finishPostStep (.applyAggregatedLifelink startIdx (some cause)))
+        else
+          g.applyAggregatedLifelinkSince startIdx (cause := some cause)
   if let .chooseReplacement .. := g.pending then
     g.chainPendingReplacement (.finishDealDamageLoseIndestructibleExile o.id oName n cause)
   else

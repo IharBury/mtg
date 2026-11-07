@@ -304,11 +304,14 @@ def collectPlayers (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.Player
       | _ => none with
     | some pid => one pid
     | none => none
+  let inApnap (pids : Array PlayerId) : Array PlayerId :=
+    let ordered := g.apnapOrder.filter pids.contains
+    pids.foldl (fun acc p => if acc.contains p then acc else acc.push p) ordered
   match who with
   | .you => one controller
-  | .eachOpponent => some ((g.livingOpponents controller).map (·.id))
+  | .eachOpponent => some (g.apnapOrder.filter (g.isLivingOpponentOf controller ·))
   | .player | .opponent | .target .player | .target .opponent => announcedPlayer
-  | .controller what => g.controllersNamed ctx what
+  | .controller what => (g.controllersNamed ctx what).map inApnap
   | .target _ => none
   | .thatPlayer =>
     match g.resolvingAbilityObject?.bind (·.fraCauseController) with

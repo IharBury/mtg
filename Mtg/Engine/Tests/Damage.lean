@@ -642,4 +642,29 @@ def hunterSacrificesFireleaper : Game :=
 #guard hunterSacrificesFireleaper.log.any (fun s => mentions s "sacrifices Goblin Fireleaper")
 #guard hunterSacrificesFireleaper.log.any (fun s => mentions s "dies trigger is put on the stack")
 
+/- CR 702.15b: `dealDamageLoseIndestructibleExileTo` from a source with lifelink
+gains life in the same batch as the damage while creating Smite's continuous effects. -/
+#guard
+  let llSrc : CardDef :=
+    creature "Lifelink Smiter" ManaCost.empty #[] 2 2 (keywords := Keyword.lifelink)
+  let g0 := addPermanent (addPermanent afterDraw llSrc ⟨0⟩ ⟨0⟩) grizzlyBears ⟨1⟩ ⟨1⟩
+  let src := namedPermanent g0 "Lifelink Smiter"
+  let tgt := namedPermanent g0 "Grizzly Bears"
+  let beforeLife := (g0.player ⟨0⟩).life
+  let startIdx := g0.events.size
+  let g1 := g0.dealDamageLoseIndestructibleExileTo tgt 2 (g0.snapshot src)
+  let newEvs := g1.events.extract startIdx g1.events.size
+  let dmgBatch := newEvs.findSome? fun e =>
+    match e.change with
+    | .rules (.damage (.dealt _)) => e.batch
+    | _ => none
+  let gainBatch := newEvs.findSome? fun e =>
+    match e.change with
+    | .rules (.life (.gained p n)) => if p == ⟨0⟩ && n == 2 then e.batch else none
+    | _ => none
+  (g1.player ⟨0⟩).life == beforeLife + 2 &&
+    dmgBatch.isSome && dmgBatch == gainBatch &&
+    g1.untilEotLosesIndestructible (namedPermanent g1 "Grizzly Bears") &&
+    g1.untilEotExileIfDies (namedPermanent g1 "Grizzly Bears")
+
 end Mtg.Engine.Tests

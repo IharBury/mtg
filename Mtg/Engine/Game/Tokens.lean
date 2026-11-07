@@ -889,8 +889,8 @@ def logCreatedTokensSummary (g : Game) (controller : PlayerId) (startEventIdx : 
   let snaps : Array EventObject :=
     (g.events.extract startEventIdx g.events.size).foldl (fun acc e =>
       match e.change with
-      | .rules (.zone (.created eo _)) =>
-        if eo.zone == .battlefield && eo.controller == some controller then
+      | .rules (.zone (.created eo c)) =>
+        if eo.zone == .battlefield && c == controller then
           acc.push eo
         else acc
       | _ => acc) #[]

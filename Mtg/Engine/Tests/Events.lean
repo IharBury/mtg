@@ -18827,6 +18827,399 @@ def replayOk25i2 (gs : Array Game) : Bool :=
 
 end Phase25Item2EventAlignment
 
+section Phase25Item3EventAlignment
+
+private def mustHold25i3 (label : String) (ok : Bool) : Bool :=
+  if ok then true else panic! s!"Phase25Item3EventAlignment failed: {label}"
+
+private def replayOk25i3 (gs : Array Game) : Bool :=
+  gs.all fun g => Game.replayEvents g.events == g && allRulesEventsClassified g
+
+-- 1. Wildcard `consumeReplacementOrder` cleanup, `ZoneEvent.created` creator-vs-controller
+--    matching, `.wouldPutCounter` watching on counter-bearing created tokens, and
+--    Andúril `triggerIfHolds` failure-arm log cleanup:
+#guard
+  let p0 : PlayerId := ⟨0⟩
+  let p1 : PlayerId := ⟨1⟩
+  let g0 := addPermanent (addPermanent afterDraw bear p0 p0) bear p1 p1
+  let p0Bear := (g0.permanentsOf p0).find? (·.name == bear.name) |>.get!
+
+  -- 1a. Pre-seeded unstamped wildcard `ReplacementId` (`counterKind := none`) is stripped
+  --     by `consumeReplacementOrder` when `applied` contains a stamped `cid` with
+  --     `{ cid with counterKind := none } == prefId` (CR 616.1 / 616.1g):
+  let wildPref : ReplacementId := { kind := .addCountersPut, object := some p0Bear.id, counterKind := none }
+  let stampedApp : ReplacementId := { kind := .addCountersPut, object := some p0Bear.id, counterKind := some .plusOnePlusOne }
+  let otherPref : ReplacementId := { kind := .multiplyDamage, object := some p0Bear.id, counterKind := none }
+  let gSeeded := g0.change (.replacementOrder #[wildPref, otherPref])
+  let gConsumed := gSeeded.consumeReplacementOrder #[stampedApp]
+  let wildcardStrippedOk := gConsumed.replacementOrder == #[otherPref]
+
+  -- 1b. `ZoneEvent.created` creator `ctrl` vs entering battlefield controller `enterCtrl`,
+  --     `Tokens.logCreatedTokensSummary` creator filter, and `.wouldPutCounter` watching:
+  let creatorWatcher : CardDef := {
+    name := "P25i3 Creator Watcher", types := #[.enchantment]
+    triggeredAbilities := #[TriggeredAbility.fra (.fra .youCreateCreatureTokens)
+      "Whenever you create one or more creature tokens, draw a card." (.draw 1)]
+  }
+  let mrFantasticWatcher : CardDef := {
+    name := "P25i3 Tokens Enter Watcher", types := #[.enchantment]
+    triggeredAbilities := #[.triggered .fromEffect (Effect.ofTrigger (.watch .tokensEnterMayDraw)) {}]
+  }
+  let plusOneWatcher : CardDef := {
+    name := "P25i3 PlusOne Watcher", types := #[.enchantment]
+    triggeredAbilities := #[.triggered .fromEffect (Effect.ofTrigger (.resource .plusOneCreateInsectOnce)) {}]
+  }
+  let gWatch0 :=
+    addPermanent
+      (addPermanent
+        (addPermanent
+          (addPermanent
+            (addPermanent
+              (addPermanent g0 creatorWatcher p0 p0)
+              creatorWatcher p1 p1)
+            mrFantasticWatcher p0 p0)
+          mrFantasticWatcher p1 p1)
+        plusOneWatcher p0 p0)
+      plusOneWatcher p1 p1
+  let armyTokDef : CardDef := {
+    name := "Orc Army"
+    types := #[.creature, .artifact]
+    subtypes := #["Orc", "Army"]
+    power := some 0
+    toughness := some 0
+    isToken := true
+  }
+  let armySnap : EventObject := {
+    id := some ⟨gWatch0.nextObjectId⟩
+    name := armyTokDef.name
+    owner := p1
+    controller := some p1
+    zone := .battlefield
+    types := armyTokDef.types
+    subtypes := #[.orc, .army]
+    power := some 0
+    toughness := some 0
+    counters := #[(.plusOnePlusOne, 2)]
+    token := true
+    printed := some armyTokDef
+  }
+  let (gWatch0, createCause) := gWatch0.allocDelayedCause (some p0)
+  let preCreateIdx := gWatch0.events.size
+  let createdRaw := GameEvent.created gWatch0.turnNumber p0 armySnap (cause := createCause)
+  let watchesCounterOk := createdRaw.watches .wouldPutCounter
+  let matchesDirectOk :=
+    createdRaw.matchesTrigger p0 none (.fra .youCreateCreatureTokens) &&
+    !createdRaw.matchesTrigger p1 none (.fra .youCreateCreatureTokens) &&
+    createdRaw.matchesTrigger p1 none .tokenYouControlEnters &&
+    !createdRaw.matchesTrigger p0 none .tokenYouControlEnters &&
+    createdRaw.matchesTrigger p1 none .youPutPlusOne &&
+    !createdRaw.matchesTrigger p0 none .youPutPlusOne &&
+    createdRaw.matchesTrigger p1 none .youPutCountersOnGoblinOrcArmy &&
+    !createdRaw.matchesTrigger p0 none .youPutCountersOnGoblinOrcArmy
+  let gWatch1 := gWatch0.record createdRaw
+  let putInEv := gWatch1.events[preCreateIdx]!.countersPutInEvent
+  let enterTriggerRoutingOk :=
+    putInEv.size == 1 && putInEv[0]!.2.2.2 == some p1 &&
+    GameEvent.artifactEntered gWatch1.events gWatch1.turnNumber p1 &&
+    !GameEvent.artifactEntered gWatch1.events gWatch1.turnNumber p0 &&
+    GameEvent.subtypeEntered gWatch1.events gWatch1.turnNumber p1 .orc &&
+    !GameEvent.subtypeEntered gWatch1.events gWatch1.turnNumber p0 .orc &&
+    gWatch1.waitingTriggers.any (fun wt => wt.controller == p0 && wt.source.name == "P25i3 Creator Watcher") &&
+    !gWatch1.waitingTriggers.any (fun wt => wt.controller == p1 && wt.source.name == "P25i3 Creator Watcher") &&
+    gWatch1.waitingTriggers.any (fun wt => wt.controller == p1 && wt.source.name == "P25i3 Tokens Enter Watcher") &&
+    !gWatch1.waitingTriggers.any (fun wt => wt.controller == p0 && wt.source.name == "P25i3 Tokens Enter Watcher") &&
+    gWatch1.waitingTriggers.any (fun wt => wt.controller == p1 && wt.source.name == "P25i3 PlusOne Watcher") &&
+    !gWatch1.waitingTriggers.any (fun wt => wt.controller == p0 && wt.source.name == "P25i3 PlusOne Watcher")
+  let logStart0 := gWatch1.log.size
+  let gLoggedP0 := gWatch1.logCreatedTokensSummary p0 preCreateIdx
+  let gLoggedP1 := gWatch1.logCreatedTokensSummary p1 preCreateIdx
+  let creatorSummaryOk :=
+    gLoggedP0.log.size == logStart0 + 1 &&
+    gLoggedP1.log.size == logStart0
+
+  -- 1c. Andúril `triggerIfHolds` failure arm emits no premature Spirit-tokens log:
+  let swordDef : CardDef := { name := "P25i3 Sword", types := #[.artifact], subtypes := #["Equipment"] }
+  let gAnd0 := addPermanent g0 swordDef p0 p0
+  let swordObj := (gAnd0.permanentsOf p0).find? (·.name == "P25i3 Sword") |>.get!
+  let gAnd1 := gAnd0.attachSourceTo swordObj p0Bear
+  let andLogBefore := gAnd1.log.size
+  let (gAnd2, holdsNonLegend) :=
+    gAnd1.triggerIfHolds p0 (.onEnterDraw 1) (some swordObj.id) #[] none
+      (.atLeast (.count (.intersection [.equipped, .legendaryCreaturesYouControl])) (.fixed 1))
+  let andurilNoPrematureLog := !holdsNonLegend && gAnd2.log.size == andLogBefore
+
+  mustHold25i3 "1a.wildcardConsume" wildcardStrippedOk &&
+  mustHold25i3 "1b.watchesAndDirect" (watchesCounterOk && matchesDirectOk) &&
+  mustHold25i3 "1b.enterTriggerRouting" (enterTriggerRoutingOk && creatorSummaryOk) &&
+  mustHold25i3 "1c.andurilLog" andurilNoPrematureLog &&
+  mustHold25i3 "1.replay" (replayOk25i3 #[gConsumed, gWatch1, gLoggedP0, gAnd2])
+
+-- 2. Unbatched CR 121.2 / 101.4 APNAP `applyTriggerDraw` & `.checkDrawThenOpponentsDraw`:
+#guard
+  let p0 : PlayerId := ⟨0⟩
+  let p1 : PlayerId := ⟨1⟩
+  let p2 : PlayerId := ⟨2⟩
+  let p3 : PlayerId := ⟨3⟩
+  let g4 :=
+    match Start.start {
+      seats := #[{ name := "P0", deck := testRedDeck },
+                 { name := "P1", deck := testRedDeck },
+                 { name := "P2", deck := testRedDeck },
+                 { name := "P3", deck := testRedDeck }]
+      startingPlayer := some 2
+      seed := 19 } with
+    | .ok g => keepOpeningHands g 24
+    | .error e => panic! e
+  let g4 := g4.change (.pushContinuationFrame {})
+  -- Active player is `p2`, so APNAP order of `p0`'s opponents is `[p2, p3, p1]`!
+  let idxFixed := g4.events.size
+  let gFixed := g4.applyTriggerDraw p0 none (.fixed 1) .eachOpponent
+  let fixedDraws := (gFixed.events.extract idxFixed gFixed.events.size).filter fun e =>
+    match e.change with
+    | .rules (.zone (.moved _ _ _ _ (.draw _ _) _ _ _)) => true
+    | _ => false
+  let fixedDrawers := fixedDraws.filterMap fun e =>
+    match e.change with
+    | .rules (.zone (.moved _ _ _ _ (.draw _ _) q _ _)) => q
+    | _ => none
+  let fixedBatches := fixedDraws.filterMap (·.batch)
+  let fixedCauses := fixedDraws.filterMap (·.cause?)
+  let fixedOk :=
+    fixedDrawers == #[p2, p3, p1] &&
+    fixedBatches.size == 3 &&
+    fixedBatches[0]! != fixedBatches[1]! &&
+    fixedBatches[1]! != fixedBatches[2]! &&
+    fixedCauses.size == 3 &&
+    fixedCauses.all (· == fixedCauses[0]!)
+
+  -- Catch-all `(who, amount)` arm (`perControlled` for `.eachOpponent`) also unbatches & follows APNAP:
+  let gWithArt := addPermanent g4 { name := "P25i3 Relic", types := #[.artifact] } p0 p0
+  let idxCatch := gWithArt.events.size
+  let gCatch := gWithArt.applyTriggerDraw p0 none (.perControlled .artifact) .eachOpponent
+  let catchDraws := (gCatch.events.extract idxCatch gCatch.events.size).filter fun e =>
+    match e.change with
+    | .rules (.zone (.moved _ _ _ _ (.draw _ _) _ _ _)) => true
+    | _ => false
+  let catchDrawers := catchDraws.filterMap fun e =>
+    match e.change with
+    | .rules (.zone (.moved _ _ _ _ (.draw _ _) q _ _)) => q
+    | _ => none
+  let catchBatches := catchDraws.filterMap (·.batch)
+  let catchCauses := catchDraws.filterMap (·.cause?)
+  let catchOk :=
+    catchDrawers == #[p2, p3, p1] &&
+    catchBatches.size == 3 &&
+    catchBatches[0]! != catchBatches[1]! &&
+    catchBatches[1]! != catchBatches[2]! &&
+    catchCauses.size == 3 &&
+    catchCauses.all (· == catchCauses[0]!)
+
+  -- `.checkDrawThenOpponentsDraw` in `Decisions.runPostStep` also draws in APNAP order `[p2, p3, p1]`:
+  let (gBefore0, drawCause) := g4.allocDelayedCause (some p0)
+  let gBeforeDraw := gBefore0.draw p0 1 (cause := some drawCause)
+  let idxOppLoop := gBeforeDraw.events.size
+  let gOppLoop := gBeforeDraw.runPostStep (.checkDrawThenOpponentsDraw p0 0)
+  let loopDraws := (gOppLoop.events.extract idxOppLoop gOppLoop.events.size).filter fun e =>
+    match e.change with
+    | .rules (.zone (.moved _ _ _ _ (.draw _ _) _ _ _)) => true
+    | _ => false
+  let loopDrawers := loopDraws.filterMap fun e =>
+    match e.change with
+    | .rules (.zone (.moved _ _ _ _ (.draw _ _) q _ _)) => q
+    | _ => none
+  let loopBatches := loopDraws.filterMap (·.batch)
+  let loopCauses := loopDraws.filterMap (·.cause?)
+  let oppLoopOk :=
+    loopDrawers == #[p2, p3, p1] &&
+    loopBatches.size == 3 &&
+    loopBatches[0]! != loopBatches[1]! &&
+    loopBatches[1]! != loopBatches[2]! &&
+    loopCauses.size == 3 &&
+    loopCauses.all (· == loopCauses[0]!)
+
+  mustHold25i3 "2a.fixedEachOppUnbatchedApnap" fixedOk &&
+  mustHold25i3 "2b.catchAllUnbatchedApnap" catchOk &&
+  mustHold25i3 "2c.checkDrawThenOpponentsDrawApnap" oppLoopOk &&
+  mustHold25i3 "2.replay" (replayOk25i3 #[gFixed, gCatch, gOppLoop])
+
+-- 3. CR 702.15b lifelink aggregation & `Pending.chooseReplacement` pause-safety across
+--    remaining multi-recipient noncombat damage sites + `dealDamageLoseIndestructibleExileTo`:
+#guard
+  let p0 : PlayerId := ⟨0⟩
+  let p1 : PlayerId := ⟨1⟩
+  let p2 : PlayerId := ⟨2⟩
+  let llSourceDef : CardDef := {
+    bear with
+    name := "P25i3 Lifelink Source"
+    keywords := Keyword.lifelink
+  }
+  let toughVictimDef : CardDef := {
+    bear with
+    name := "P25i3 Tough Victim"
+    power := some 1
+    toughness := some 6
+  }
+  let g3 :=
+    match Start.start {
+      seats := #[{ name := "P0", deck := testRedDeck },
+                 { name := "P1", deck := testRedDeck },
+                 { name := "P2", deck := testRedDeck }]
+      startingPlayer := some 0
+      seed := 23 } with
+    | .ok g => keepOpeningHands g 16
+    | .error e => panic! e
+  let gBase :=
+    (addPermanent
+      (addPermanent
+        (addPermanent g3 llSourceDef p0 p0)
+        toughVictimDef p1 p1)
+      toughVictimDef p2 p2).change (.pushContinuationFrame {})
+  let llSrc := (gBase.permanentsOf p0).find? (·.name == "P25i3 Lifelink Source") |>.get!
+  let v1 := (gBase.permanentsOf p1).find? (·.name == "P25i3 Tough Victim") |>.get!
+  let _ := (gBase.permanentsOf p2).find? (·.name == "P25i3 Tough Victim") |>.get!
+
+  -- Helper: install two competing non-commuting damage replacement effects (+1 vs ×2)
+  -- controlled by `p0` on `llSrc` so every noncombat damage packet opens `Pending.chooseReplacement`!
+  let addTwoDmgReps (g : Game) : Game :=
+    let add1 : ReplacementSpec := {
+      id := { kind := .addNoncombatDamage, object := some llSrc.id }
+      source := some llSrc.id, controller := some p0, affectedPlayer := p0
+      kind := .addNoncombatDamage (some llSrc.id) 1 }
+    let dbl : ReplacementSpec := {
+      id := { kind := .multiplyDamage, object := some v1.id }
+      source := some v1.id, controller := some p0, affectedPlayer := p0
+      kind := .multiplyDamage (some llSrc.id) 2 }
+    (g.createEffect (.replacement add1) (cause := some testCause)).createEffect
+      (.replacement dbl) (cause := some testCause)
+
+  let resolveAllRepChoices (g : Game) : Game := Id.run do
+    let mut cur := g
+    let mut fuel := 16
+    while fuel > 0 do
+      fuel := fuel - 1
+      match cur.pending with
+      | .chooseReplacement chooser choices =>
+        cur := mustApply cur chooser (.chooseReplacement choices[0]!)
+      | _ => fuel := 0
+    return cur
+
+  let countLifeGainsSince (g : Game) (sIdx : Nat) : Array (PlayerId × Nat × Option BatchId) :=
+    (g.events.extract sIdx g.events.size).filterMap fun e =>
+      match e.change with
+      | .rules (.life (.gained q amt)) => some (q, amt, e.batch)
+      | _ => none
+
+  -- 3a. `FraResolve` `.damageEachPlayer`:
+  let gEachPl0 := addTwoDmgReps gBase
+  let sEachPl := gEachPl0.events.size
+  let gEachPlPaused := gEachPl0.applyFra p0 {} (.damageEachPlayer 1) #[] (some llSrc.id)
+  let eachPlPausedOk := match gEachPlPaused.pending with | .chooseReplacement .. => true | _ => false
+  let gEachPlDone := resolveAllRepChoices gEachPlPaused
+  let eachPlGains := countLifeGainsSince gEachPlDone sEachPl
+  -- Selecting `+1` then `×2` deals `(1 + 1) * 2 = 4` to each of the 3 players => single `12` life gain!
+  let eachPlOk := eachPlPausedOk && eachPlGains.size == 1 && eachPlGains[0]!.1 == p0 && eachPlGains[0]!.2.1 == 12
+
+  -- 3b. `FraAbilities` `.damageEachCreatureExceptYourTokens`:
+  let gTok0 := addTwoDmgReps gBase
+  let (gTok1, _) := gTok0.createToken p0 Game.humanSoldierToken (cause := some testCause)
+  let sExceptTok := gTok1.events.size
+  let gExceptPaused := gTok1.applyFraAbility p0 {} (.damageEachCreatureExceptYourTokens 1) #[] (some llSrc.id)
+  let exceptPausedOk := match gExceptPaused.pending with | .chooseReplacement .. => true | _ => false
+  let gExceptDone := resolveAllRepChoices gExceptPaused
+  let exceptGains := countLifeGainsSince gExceptDone sExceptTok
+  -- Hits `llSrc`, `v1`, `v2` (3 non-token creatures, skipping `p0`'s Soldier token) for 4 each => single `12` life gain!
+  let soldierStillUndamaged :=
+    gExceptDone.battlefield.any (fun o => o.printed.isToken && o.status.damage == 0)
+  let exceptTokOk :=
+    exceptPausedOk && soldierStillUndamaged &&
+    exceptGains.size == 1 && exceptGains[0]!.1 == p0 && exceptGains[0]!.2.1 == 12
+
+  -- 3c. `FraResolve` `.damageEachOppCreatureAndPlaneswalker`:
+  let gOppCp0 := addTwoDmgReps gBase
+  let sOppCp := gOppCp0.events.size
+  let gOppCpPaused := gOppCp0.applyFra p0 {} (.damageEachOppCreatureAndPlaneswalker 1) #[] (some llSrc.id)
+  let oppCpPausedOk := match gOppCpPaused.pending with | .chooseReplacement .. => true | _ => false
+  let gOppCpDone := resolveAllRepChoices gOppCpPaused
+  let oppCpGains := countLifeGainsSince gOppCpDone sOppCp
+  -- Hits `v1` and `v2` for 4 each => single `8` life gain!
+  let oppCpOk := oppCpPausedOk && oppCpGains.size == 1 && oppCpGains[0]!.1 == p0 && oppCpGains[0]!.2.1 == 8
+
+  -- 3d. `FraAbilities` `.damageUpToOneAndPlayer`:
+  let upToOneAndPlEff : Effect :=
+    FraCandidates.ab (.damageUpToOneAndPlayer 1)
+      "Deal 1 damage to up to one target creature or planeswalker and 1 damage to target player"
+      (.multi #[
+        { TargetFilter.creatureOrPlaneswalker with noun := "up to one target creature or planeswalker" },
+        { noun := "target player", zone := .player }
+      ] #[0])
+  let gUpTo0 := addTwoDmgReps gBase
+  let sUpTo := gUpTo0.events.size
+  let gUpToPaused :=
+    gUpTo0.applyFraAbility p0 upToOneAndPlEff
+      (.damageUpToOneAndPlayer 1) #[Target.permanent v1.id, Target.player p2] (some llSrc.id)
+  let upToPausedOk := match gUpToPaused.pending with | .chooseReplacement .. => true | _ => false
+  let gUpToDone := resolveAllRepChoices gUpToPaused
+  let upToGains := countLifeGainsSince gUpToDone sUpTo
+  let upToOk := upToPausedOk && upToGains.size == 1 && upToGains[0]!.1 == p0 && upToGains[0]!.2.1 == 8
+
+  -- 3e. `FraResolve.causeDealsDamageToOpponentsLoop`:
+  let gCauseOpp0 := addTwoDmgReps gBase
+  let sCauseOpp := gCauseOpp0.events.size
+  let gCauseOppPaused :=
+    gCauseOpp0.withBatch (some testCause) fun g =>
+      g.causeDealsDamageToOpponentsLoop #[p1, p2] 1 "P25i3 Lifelink Source"
+        (some (g.snapshot llSrc)) (some testCause) none (some sCauseOpp)
+  let causeOppPausedOk := match gCauseOppPaused.pending with | .chooseReplacement .. => true | _ => false
+  let gCauseOppDone := resolveAllRepChoices gCauseOppPaused
+  let causeOppGains := countLifeGainsSince gCauseOppDone sCauseOpp
+  let causeOppOk :=
+    causeOppPausedOk && causeOppGains.size == 1 && causeOppGains[0]!.1 == p0 && causeOppGains[0]!.2.1 == 8
+
+  -- 3f. `TriggeredAbilities.applyTriggerDamage` (`.divided` and multi-permanent `objs`) +
+  --     `Pumps.dealDamageLoseIndestructibleExileTo` across `Pending.chooseReplacement`:
+  let gTrig0 := addTwoDmgReps gBase
+  let sDiv := gTrig0.events.size
+  let divAb : TriggeredAbility := .onEnterDraw 1
+  let gDivPaused :=
+    gTrig0.applyTriggerDamage p0 divAb (some llSrc.id)
+      #[Target.permanent v1.id, Target.player p2] none "P25i3 Lifelink Source"
+      (.fixed 2) .target .divided
+  let divPausedOk := match gDivPaused.pending with | .chooseReplacement .. => true | _ => false
+  let gDivDone := resolveAllRepChoices gDivPaused
+  let divGains := countLifeGainsSince gDivDone sDiv
+  let divOk := divPausedOk && divGains.size == 1 && divGains[0]!.1 == p0 && divGains[0]!.2.1 == 8
+
+  let sObjs := gTrig0.events.size
+  let gObjsPaused :=
+    gTrig0.applyTriggerDamage p0 divAb (some llSrc.id)
+      #[] none "P25i3 Lifelink Source"
+      (.fixed 1) .opponentsCreatures .none
+  let objsPausedOk := match gObjsPaused.pending with | .chooseReplacement .. => true | _ => false
+  let gObjsDone := resolveAllRepChoices gObjsPaused
+  let objsGains := countLifeGainsSince gObjsDone sObjs
+  let objsOk := objsPausedOk && objsGains.size == 1 && objsGains[0]!.1 == p0 && objsGains[0]!.2.1 == 8
+
+  let sSmite := gTrig0.events.size
+  let gSmitePaused := gTrig0.dealDamageLoseIndestructibleExileTo v1 1 (gTrig0.snapshot llSrc)
+  let smitePausedOk := match gSmitePaused.pending with | .chooseReplacement .. => true | _ => false
+  let gSmiteDone := resolveAllRepChoices gSmitePaused
+  let smiteGains := countLifeGainsSince gSmiteDone sSmite
+  let smiteOk :=
+    smitePausedOk && smiteGains.size == 1 && smiteGains[0]!.1 == p0 && smiteGains[0]!.2.1 == 4 &&
+    gSmiteDone.untilEotLosesIndestructible (gSmiteDone.object! v1.id) &&
+    gSmiteDone.untilEotExileIfDies (gSmiteDone.object! v1.id)
+
+  mustHold25i3 "3a.damageEachPlayer" eachPlOk &&
+  mustHold25i3 "3b.damageEachCreatureExceptYourTokens" exceptTokOk &&
+  mustHold25i3 "3c.damageEachOppCreatureAndPw" oppCpOk &&
+  mustHold25i3 "3d.damageUpToOneAndPlayer" upToOk &&
+  mustHold25i3 "3e.causeDealsDamageToOpponents" causeOppOk &&
+  mustHold25i3 "3f.triggerDividedAndSmite" (divOk && objsOk && smiteOk) &&
+  mustHold25i3 "3.replay"
+    (replayOk25i3 #[gEachPlDone, gExceptDone, gOppCpDone, gUpToDone, gCauseOppDone, gDivDone, gObjsDone, gSmiteDone])
+
+end Phase25Item3EventAlignment
+
 end Mtg.Engine.EventTests
 
 

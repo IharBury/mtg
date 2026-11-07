@@ -769,8 +769,8 @@ partial def resumePendingReplacement (g : Game) (pr : PendingReplacement)
   | .exilePermanentsLoop remainingIds logExile cause logCard =>
     g.exilePermanentsLoop remainingIds (logExile := logExile) (cause := cause)
       (logCard := logCard)
-  | .causeDealsDamageToOpponentsLoop remainingOpps n name causeSrc cause pendingDmg =>
-    g.causeDealsDamageToOpponentsLoop remainingOpps n name causeSrc cause pendingDmg
+  | .causeDealsDamageToOpponentsLoop remainingOpps n name causeSrc cause pendingDmg startEventIdx =>
+    g.causeDealsDamageToOpponentsLoop remainingOpps n name causeSrc cause pendingDmg startEventIdx
   | .flickerLoop remainingIds exiledPreIds enteredFromIds logText stage tapped onlyLandTapped clearExileFields cause preBattlefield =>
     g.resumeFlickerLoop remainingIds exiledPreIds enteredFromIds logText stage
       tapped onlyLandTapped clearExileFields cause preBattlefield
@@ -1103,14 +1103,13 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
   | .checkDrawThenOpponentsDraw p beforeDraws =>
     if g.loggedDraws p == beforeDraws then g
     else
-      let (g, oppCause?) : Game × Option EventCause :=
+      let (src, ctrl) :=
         match g.currentResolvingContext? with
-        | some (src, ctrl) =>
-          let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some p)) src
-          (g, some c)
-        | none => (g, none)
-      let opps := (g.livingOpponents p).map (·.id)
-      g.runPostStep (.opponentsDrawOneLoop p opps oppCause?)
+        | some (s, c) => (s, c.orElse (fun _ => some p))
+        | none => (none, some p)
+      let (g, c) := g.allocDelayedCause ctrl src
+      let opps := g.apnapOrder.filter (g.isLivingOpponentOf p ·)
+      g.runPostStep (.opponentsDrawOneLoop p opps (some c))
   | .opponentsDrawOneLoop drawer remainingOpponents cause =>
     match remainingOpponents[0]? with
     | none =>
@@ -1604,8 +1603,15 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
     g.bounceEachTargetLoop controller kind remaining sourceId
   | .untapTargetsLoop controller kind remaining sourceId =>
     g.untapTargetsLoop controller kind remaining sourceId
-  | .damageUpToOneAndPlayerLoop controller kind remaining n srcName sourceId cause =>
-    g.damageUpToOneAndPlayerLoop controller kind remaining n srcName sourceId cause
+  | .damageUpToOneAndPlayerLoop controller kind remaining n srcName sourceId cause startEventIdx =>
+    g.damageUpToOneAndPlayerLoop controller kind remaining n srcName sourceId cause startEventIdx
+  | .applyAggregatedLifelink startEventIdx cause =>
+    g.applyAggregatedLifelinkSince startEventIdx (cause := cause)
+  | .dealDamageFromPermanentsLoop remainingIds n srcName source cause startEventIdx note pendingTarget =>
+    g.dealDamageFromPermanentsLoop remainingIds n srcName source cause startEventIdx
+      (note := note) (pendingTarget := pendingTarget)
+  | .triggerDividedDamageLoop remaining srcName source cause startEventIdx =>
+    g.triggerDividedDamageLoop remaining srcName source cause startEventIdx
   | .plusOneOnEachTargetLoop controller kind remaining n sourceId =>
     g.plusOneOnEachTargetLoop controller kind remaining n sourceId
   | .minusOnesPerOpponentLoop controller kind remaining x sourceId =>

@@ -8202,7 +8202,7 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
         else
           match e.change with
           | .rules (.zone (.created obj ctrl)) =>
-            ctrl == p && obj.zone == .battlefield && obj.token
+            (obj.controller.getD ctrl) == p && obj.zone == .battlefield && obj.token
           | .rules (.zone (.moved _ after _ .battlefield ..)) =>
             after.controller == some p && after.token
           | _ => false)
@@ -8414,34 +8414,35 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
         match r with
         | .zone (.created obj ctrl) =>
           if obj.zone == .battlefield && !post.eventSuppressedByKarn e then
+            let enterCtrl := obj.controller.getD ctrl
             let entered := findEventObj post obj
             -- Self enters triggers
-            let (w, fs) := queueSrc post ctrl entered .entering (w := waiting) (fs := firedSources)
+            let (w, fs) := queueSrc post enterCtrl entered .entering (w := waiting) (fs := firedSources)
             waiting := w; firedSources := fs
             -- Another Elf you control enters (respecting Layer 3 text changes on each watcher)
-            for src in post.permanentsOf ctrl ++
-                post.objects.filter (fun o => o.zone == .command && post.controlledBy o ctrl) do
+            for src in post.permanentsOf enterCtrl ++
+                post.objects.filter (fun o => o.zone == .command && post.controlledBy o enterCtrl) do
               if src.id != entered.id then
                 let elfSub := TextChange.applySubtype (post.evalLayer3 src) .elf
                 if post.hasSubtype entered elfSub then
-                  let (w, fs) := queueSrc post ctrl src .anotherElfYouControlEnters (w := waiting) (fs := firedSources)
+                  let (w, fs) := queueSrc post enterCtrl src .anotherElfYouControlEnters (w := waiting) (fs := firedSources)
                   waiting := w; firedSources := fs
             -- Another creature you control enters
             if post.isCreature entered then
               let (w, fs) :=
-                queueCtrl post ctrl .anotherCreatureYouControlEnters
+                queueCtrl post enterCtrl .anotherCreatureYouControlEnters
                   (excludeId := some entered.id) (cause := some entered)
                   (w := waiting) (fs := firedSources)
               waiting := w; firedSources := fs
             -- Subtype enter triggers (Balin, Fíli, Kíli, Thorin)
-            for src in post.permanentsOf ctrl do
+            for src in post.permanentsOf enterCtrl do
               let self := src.id == entered.id
               for ab in post.triggeredAbilities src do
                 let opts := ab.opts
                 let fireSub (ev : TriggerEvent) (cond : Bool)
                     (w : Array WaitingTrigger) (fs : Array (ObjectId × TriggeredAbility)) :=
                   if ab.firesOn ev && cond then
-                    queueAb post ctrl src ab ev (cause := some entered) (w := w) (fs := fs)
+                    queueAb post enterCtrl src ab ev (cause := some entered) (w := w) (fs := fs)
                   else (w, fs)
                 let (w, fs) :=
                   match opts.thisOrNontokenSubtype with
@@ -8466,78 +8467,78 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
             -- Per-token enter triggers (Belladonna Took; Mister Fantastic is batch group 5)
             if entered.printed.isToken then
               let (w, fs) :=
-                queueCtrl post ctrl .tokenYouControlEnters
+                queueCtrl post enterCtrl .tokenYouControlEnters
                   (keep := fun ab => ab.shared != .watch .tokensEnterMayDraw)
                   (w := waiting) (fs := firedSources)
               waiting := w; firedSources := fs
             if post.isArtifact entered then
-              let (w, fs) := queueCtrl post ctrl .artifactYouControlEnters (w := waiting) (fs := firedSources)
+              let (w, fs) := queueCtrl post enterCtrl .artifactYouControlEnters (w := waiting) (fs := firedSources)
               waiting := w; firedSources := fs
             if post.isCreature entered then
-              let (w, fs) := queueCtrl post ctrl .creatureYouControlEnters (w := waiting) (fs := firedSources)
+              let (w, fs) := queueCtrl post enterCtrl .creatureYouControlEnters (w := waiting) (fs := firedSources)
               waiting := w; firedSources := fs
             for sub in post.subtypes entered do
-              let (w, fs) := queueCtrl post ctrl (.subtypeYouControlEnters sub) (w := waiting) (fs := firedSources)
+              let (w, fs) := queueCtrl post enterCtrl (.subtypeYouControlEnters sub) (w := waiting) (fs := firedSources)
               waiting := w; firedSources := fs
             if post.isEquipment entered then
-              let (w, fs) := queueCtrl post ctrl .equipmentYouControlEnters (w := waiting) (fs := firedSources)
+              let (w, fs) := queueCtrl post enterCtrl .equipmentYouControlEnters (w := waiting) (fs := firedSources)
               waiting := w; firedSources := fs
             if post.hasSubtype entered .villain || post.isArtifact entered then
               let (w, fs) :=
-                queueCtrl post ctrl .anotherVillainOrArtifactEnters (excludeId := some entered.id)
+                queueCtrl post enterCtrl .anotherVillainOrArtifactEnters (excludeId := some entered.id)
                   (w := waiting) (fs := firedSources)
               waiting := w; firedSources := fs
             if post.hasSubtype entered .villain then
               let (w, fs) :=
-                queueCtrl post ctrl .anotherVillainEnters
+                queueCtrl post enterCtrl .anotherVillainEnters
                   (excludeId := some entered.id) (cause := some entered)
                   (w := waiting) (fs := firedSources)
               waiting := w; firedSources := fs
             if post.isArtifact entered then
               let (w, fs) :=
-                queueCtrl post ctrl .anotherArtifactEnters
+                queueCtrl post enterCtrl .anotherArtifactEnters
                   (excludeId := some entered.id) (cause := some entered)
                   (w := waiting) (fs := firedSources)
               waiting := w; firedSources := fs
             if !entered.printed.isToken && post.hasSubtype entered .hero then
               let (w, fs) :=
-                queueCtrl post ctrl .anotherNontokenHeroEnters
+                queueCtrl post enterCtrl .anotherNontokenHeroEnters
                   (excludeId := some entered.id) (cause := some entered)
                   (w := waiting) (fs := firedSources)
               waiting := w; firedSources := fs
             if !entered.printed.isToken && post.isArtifact entered then
               let (w, fs) :=
-                queueCtrl post ctrl .anotherNontokenArtifactEnters
+                queueCtrl post enterCtrl .anotherNontokenArtifactEnters
                   (excludeId := some entered.id) (cause := some entered)
                   (w := waiting) (fs := firedSources)
               waiting := w; firedSources := fs
             let isCreature := post.isCreature entered
             if isCreature || post.isPlaneswalker entered then
               let (w, fs) :=
-                queueFra post ctrl .anotherCreatureOrPlaneswalkerYouControlEnters
+                queueFra post enterCtrl .anotherCreatureOrPlaneswalkerYouControlEnters
                   (cause := some entered) (excludeId := some entered.id)
                   (w := waiting) (fs := firedSources)
               waiting := w; firedSources := fs
             if isCreature then
               let (w, fs) :=
-                queueFra post ctrl .thisOrAnotherCreatureYouControlEnters
+                queueFra post enterCtrl .thisOrAnotherCreatureYouControlEnters
                   (cause := some entered) (w := waiting) (fs := firedSources)
               waiting := w; firedSources := fs
             if isCreature && !entered.printed.isToken then
               let (w, fs) :=
-                queueFra post ctrl .anotherNontokenCreatureYouControlEnters
+                queueFra post enterCtrl .anotherNontokenCreatureYouControlEnters
                   (cause := some entered) (excludeId := some entered.id)
                   (w := waiting) (fs := firedSources)
               waiting := w; firedSources := fs
             if isCreature then
-              for opp in post.livingOpponents ctrl do
+              for opp in post.livingOpponents enterCtrl do
                 let (w, fs) :=
                   queueFra post opp.id .creatureOpponentControlsEnters
                     (cause := some entered) (w := waiting) (fs := firedSources)
                 waiting := w; firedSources := fs
               let pw := post.power entered
               let (w, fs) :=
-                queueFraWhere post ctrl (fun
+                queueFraWhere post enterCtrl (fun
                   | .creatureYouControlPowerAtLeastEnters n => pw ≥ n
                   | _ => false) (cause := some entered) (w := waiting) (fs := firedSources)
               waiting := w; firedSources := fs
@@ -8548,23 +8549,23 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
                 | .payReturnFromGy => true
                 | _ => false
               let (w, fs) :=
-                queueCtrl post ctrl .landYouControlEnters
+                queueCtrl post enterCtrl .landYouControlEnters
                   (cause := some entered) (keep := (!fromGraveyard ·))
                   (w := waiting) (fs := firedSources)
               waiting := w; firedSources := fs
               if post.hasSubtype entered .mountain then
-                let (w, fs) := queueCtrl post ctrl .mountainYouControlEnters (w := waiting) (fs := firedSources)
+                let (w, fs) := queueCtrl post enterCtrl .mountainYouControlEnters (w := waiting) (fs := firedSources)
                 waiting := w; firedSources := fs
               if post.hasSubtype entered .forest then
                 let (w, fs) :=
-                  queueCtrl post ctrl .forestYouControlEnters (cause := some entered)
+                  queueCtrl post enterCtrl .forestYouControlEnters (cause := some entered)
                     (w := waiting) (fs := firedSources)
                 waiting := w; firedSources := fs
-              for gid in (post.player ctrl).graveyard do
+              for gid in (post.player enterCtrl).graveyard do
                 match post.findObject? gid with
                 | some gyObj =>
                   let (w, fs) :=
-                    queueSrc post ctrl gyObj .landYouControlEnters (keep := fromGraveyard)
+                    queueSrc post enterCtrl gyObj .landYouControlEnters (keep := fromGraveyard)
                       (w := waiting) (fs := firedSources)
                   waiting := w; firedSources := fs
                 | none => pure ()
@@ -10806,7 +10807,10 @@ and do not stick across subsequent events (CR 616.1). -/
 def consumeReplacementOrder (g : Game) (applied : Array ReplacementId) : Game :=
   if g.replacementOrder.isEmpty || applied.isEmpty then g
   else
-    let next := g.replacementOrder.filter (fun id => !applied.contains id)
+    let next := g.replacementOrder.filter fun prefId =>
+      !applied.contains prefId &&
+        !(prefId.counterKind.isNone &&
+          applied.any (fun cid => { cid with counterKind := none } == prefId))
     if next == g.replacementOrder then g
     else g.change (.replacementOrder next)
 

@@ -1921,4 +1921,45 @@ def targetPlayerCreatesLeviathan : Game :=
     (leviathans[0]!).controlledBy ⟨1⟩ &&
     !(leviathans[0]!).controlledBy ⟨0⟩
 
+/- CR 111.2 / 603.6a / 701.7a: when player 0 creates a creature token that enters
+under player 1's control, `.fra .youCreateCreatureTokens` matches player 0 while
+`.creatureYouControlEnters` matches player 1. -/
+#guard
+  let creatorWatcher : CardDef := {
+    name := "Creator Watcher", types := #[.enchantment]
+    triggeredAbilities := #[TriggeredAbility.fra (.fra .youCreateCreatureTokens)
+      "Whenever you create one or more creature tokens, draw a card." (.draw 1)]
+  }
+  let enterWatcher : CardDef := {
+    name := "Enter Watcher", types := #[.enchantment]
+    triggeredAbilities := #[.triggered .creatureYouControlEnters (Effect.ofTrigger (.gainLife 1)) {}]
+  }
+  let g0 :=
+    addPermanent
+      (addPermanent
+        (addPermanent
+          (addPermanent afterDraw creatorWatcher ⟨0⟩ ⟨0⟩)
+          creatorWatcher ⟨1⟩ ⟨1⟩)
+        enterWatcher ⟨0⟩ ⟨0⟩)
+      enterWatcher ⟨1⟩ ⟨1⟩
+  let tokDef := Game.humanSoldierToken
+  let tokSnap : EventObject := {
+    id := some ⟨g0.nextObjectId⟩
+    name := tokDef.name
+    owner := ⟨1⟩
+    controller := some ⟨1⟩
+    zone := .battlefield
+    types := tokDef.types
+    subtypes := #[.human, .soldier]
+    power := tokDef.power
+    toughness := tokDef.toughness
+    token := true
+    printed := some tokDef
+  }
+  let g1 := g0.record (GameEvent.created g0.turnNumber ⟨0⟩ tokSnap
+    (cause := .oneShotEffect (some ⟨999⟩) none (some ⟨0⟩)))
+  g1.waitingTriggers.size == 2 &&
+    g1.waitingTriggers.any (fun wt => wt.controller == ⟨0⟩ && wt.source.name == "Creator Watcher") &&
+    g1.waitingTriggers.any (fun wt => wt.controller == ⟨1⟩ && wt.source.name == "Enter Watcher")
+
 end Mtg.Engine.Tests

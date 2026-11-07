@@ -195,4 +195,23 @@ opposing creatures are not counted. None gains nothing. -/
 #guard (SharedTrigger.timing .plusOneEachOtherGainLife).resolution ==
   .sequence [.putCounters (.ofKind .plusOnePlusOne) .eachOther, perOther]
 
+/- CR 702.15b: divided trigger damage from a lifelink source aggregates life gain
+into a single `LifeEvent.gained` event across multiple recipients. -/
+#guard
+  let llSrc : CardDef :=
+    creature "Divided Lifelinker" ManaCost.empty #[] 3 3 (keywords := Keyword.lifelink)
+  let g0 := addPermanent (addPermanent afterDraw llSrc caster caster) bear opp opp
+  let src := g0.battlefield.find? (·.name == "Divided Lifelinker") |>.get!
+  let oppBear := g0.battlefield.find? (·.name == "Cave Bear") |>.get!
+  let ab : TriggeredAbility := .onEnterDraw 1
+  let startIdx := g0.events.size
+  let g1 := g0.applyTriggerDamage caster ab (some src.id)
+    #[Target.player opp, Target.permanent oppBear.id] none "Divided Lifelinker"
+    (.fixed 3) .target .divided
+  let gains := (g1.events.extract startIdx g1.events.size).filter fun e =>
+    match e.change with
+    | .rules (.life (.gained _ _)) => true
+    | _ => false
+  gains.size == 1 && life g1 == life g0 + 3
+
 end Mtg.Engine.GainLifeTests
