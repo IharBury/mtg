@@ -233,7 +233,11 @@ def resolveTop (g : Game) : Game :=
     match g.findObject? entry.objectId with
     | none => (g.change .popStack).logMsg "The spell left the stack unexpectedly"
     | some obj =>
-      let ctxSrc := obj.sourceId.orElse (fun _ => some obj.id)
+      let isAbility :=
+        entry.delayedTrigger.isSome || obj.abilityEffect.isSome || obj.triggeredAbility.isSome
+      let ctxSrc :=
+        if isAbility then obj.sourceId
+        else obj.sourceId.orElse (fun _ => some obj.id)
       let resolvingModes? : Option (Array Nat) :=
         let ms := entry.chosenMode.toArray ++ entry.extraModes
         if ms.isEmpty then none else some ms

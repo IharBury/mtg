@@ -257,4 +257,77 @@ def meagerMealNoCreatureAfterSkip : Game :=
     !(gFourStack.legalTargetsForAtomicKind ⟨0⟩ (.creatureSpellPTAtMost 2) none).contains (.card spellFour.id) &&
     (gAnim.legalTargetsForAtomicKind ⟨0⟩ (.creatureYouControlSubtype .golem) none).contains (.permanent rockObj.id)
 
+-- Phase 25 Item 2:
+-- 1. `.upToTwoCreaturesTotalMvAtMost n` simultaneous announcement enforces `totalMv ≤ n`
+--    (rejecting two 2-MV bears against cap 3 while accepting a 2-MV + 1-MV pair).
+-- 2. `.twoNonlandsSharingType` lookahead filters out slot-0 nonlands with no type-mate.
+-- 3. `effectHasEnoughTargets` rejects mandatory `targetCount == 2` spells/modes when only
+--    1 legal target exists while keeping `allowsZeroTargets` ("up to") spells castable.
+#guard
+  let p0 : PlayerId := ⟨0⟩
+  let mvCapSpell : CardDef := {
+    name := "Mv Cap Grab"
+    types := #[.sorcery]
+    spellEffect := some {
+      targeting := .of (.upToTwoCreaturesTotalMvAtMost 3)
+      allowsZeroTargets := true
+      maxTargets := 2
+    }
+  }
+  let oneDrop : CardDef := {
+    name := "Tiny Cub"
+    manaCost := { symbols := #[.colored .green] }
+    types := #[.creature]
+    power := some 1
+    toughness := some 1
+  }
+  let gMv0 := readyMain (emptyHand afterDraw p0)
+  let gMv1 := addPermanent (addPermanent (addPermanent gMv0 grizzlyBears p0 p0) grizzlyBears ⟨1⟩ ⟨1⟩) oneDrop p0 p0
+  let bears := gMv1.battlefield.filter (·.name == "Grizzly Bears")
+  let cub := namedPermanent gMv1 "Tiny Cub"
+  let gMvHand := addToHand gMv1 mvCapSpell p0
+  let gMvProp := mustApply gMvHand p0 (.cast (handCardNamed gMvHand p0 "Mv Cap Grab").id)
+  let overCapRejected :=
+    match gMvProp.announceTargetChoices p0
+        #[(Target.permanent bears[0]!.id, none), (Target.permanent bears[1]!.id, none)] with
+    | .error _ => true
+    | .ok _ => false
+  let withinCapAccepted :=
+    (gMvProp.announceTargetChoices p0
+      #[(Target.permanent bears[0]!.id, none), (Target.permanent cub.id, none)]).isOk
+  let shareSpell : CardDef := {
+    name := "Twin Polish"
+    types := #[.sorcery]
+    spellEffect := some { targeting := .of .twoNonlandsSharingType }
+  }
+  let rockA : CardDef := { name := "Polish Rock A", types := #[.artifact] }
+  let rockB : CardDef := { name := "Polish Rock B", types := #[.artifact] }
+  let loneEnch : CardDef := { name := "Lone Seal", types := #[.enchantment] }
+  let gSh0 := readyMain (emptyHand afterDraw p0)
+  let gSh1 := addPermanent (addPermanent (addPermanent gSh0 rockA p0 p0) rockB p0 p0) loneEnch p0 p0
+  let rA := (namedPermanent gSh1 "Polish Rock A").id
+  let rB := (namedPermanent gSh1 "Polish Rock B").id
+  let enchId := (namedPermanent gSh1 "Lone Seal").id
+  let gShHand := addToHand gSh1 shareSpell p0
+  let gShProp := mustApply gShHand p0 (.cast (handCardNamed gShHand p0 "Twin Polish").id)
+  let slot0Legal := gShProp.legalProposedTargets p0 (gShProp.object! gShProp.stack.back!.objectId)
+  let lookaheadOk :=
+    slot0Legal.contains (.permanent rA) &&
+    slot0Legal.contains (.permanent rB) &&
+    !slot0Legal.contains (.permanent enchId)
+  let twoArtsSpell : CardDef := {
+    name := "Dual Tinker"
+    types := #[.sorcery]
+    spellEffect := some { targeting := .of .twoArtifactsYouControl }
+  }
+  let gOneArt := addToHand (addPermanent (readyMain (emptyHand afterDraw p0)) rockA p0 p0) twoArtsSpell p0
+  let oneArtCard := handCardNamed gOneArt p0 "Dual Tinker"
+  let gTwoArt := addPermanent gOneArt rockB p0 p0
+  let twoArtCard := handCardNamed gTwoArt p0 "Dual Tinker"
+  let enoughTargetsOk :=
+    !gOneArt.canCastFrontFace p0 oneArtCard &&
+    gTwoArt.canCastFrontFace p0 twoArtCard &&
+    gMvHand.canCastFrontFace p0 (handCardNamed gMvHand p0 "Mv Cap Grab")
+  overCapRejected && withinCapAccepted && lookaheadOk && enoughTargetsOk
+
 end Mtg.Engine.Tests

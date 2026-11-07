@@ -132,26 +132,89 @@ only when unprevented damage `dealt > 0` was dealt (CR 615.6). -/
 def causeDealsDamageToOpponentsLoop (g : Game) (remainingOpps : Array PlayerId)
     (n : Nat) (name : String) (causeSrc : Option EventObject)
     (cause : Option EventCause)
-    (pendingDmg : Option (PlayerId × Nat) := none) : Game := Id.run do
+    (pendingDmg : Option (PlayerId × Nat) := none)
+    (startEventIdx : Option Nat := none) : Game := Id.run do
+  let sIdx := startEventIdx.getD g.events.size
   if let .chooseReplacement .. := g.pending then
     return g.chainPendingReplacement
-      (.causeDealsDamageToOpponentsLoop remainingOpps n name causeSrc cause pendingDmg)
+      (.causeDealsDamageToOpponentsLoop remainingOpps n name causeSrc cause pendingDmg (some sIdx))
   let mut g := g
+  let c := cause.orElse (fun _ => g.currentBatch.bind (·.2))
   if let some (_, startIdx) := pendingDmg then
     let dealt := g.damageDealtSince startIdx
     if dealt > 0 then
       g := g.logMsg s!"{name} deals {dealt} damage"
   for i in [0:remainingOpps.size] do
     let pid := remainingOpps[i]!
-    let startIdx := g.events.size
-    g := g.dealDamageToPlayer pid n (sourceSnap := causeSrc) (cause := cause)
-    if let .chooseReplacement .. := g.pending then
-      let rem := remainingOpps.extract (i + 1) remainingOpps.size
-      return g.chainPendingReplacement
-        (.causeDealsDamageToOpponentsLoop rem n name causeSrc cause (some (pid, startIdx)))
-    let dealt := g.damageDealtSince startIdx
-    if dealt > 0 then
-      g := g.logMsg s!"{name} deals {dealt} damage"
+    if !(g.player pid).lost then
+      let startIdx := g.events.size
+      g := g.dealDamageToPlayer pid n (sourceSnap := causeSrc) (cause := c)
+        (suppressLifelink := true)
+      if let .chooseReplacement .. := g.pending then
+        let rem := remainingOpps.extract (i + 1) remainingOpps.size
+        return g.chainPendingReplacement
+          (.causeDealsDamageToOpponentsLoop rem n name causeSrc c (some (pid, startIdx)) (some sIdx))
+      let dealt := g.damageDealtSince startIdx
+      if dealt > 0 then
+        g := g.logMsg s!"{name} deals {dealt} damage"
+  g := g.applyAggregatedLifelinkSince sIdx (cause := c)
+  return g
+
+/-- Deal `n` damage from `srcName` / `source` to each still-eligible permanent in
+`remainingIds`, pausing across `Pending.chooseReplacement` and aggregating
+CR 702.15b lifelink life gain once after all recipients' damage has been dealt. -/
+def dealDamageFromPermanentsLoop (g : Game) (remainingIds : Array ObjectId)
+    (n : Nat) (srcName : String) (source : Option EventObject)
+    (cause : Option EventCause) (startEventIdx : Nat)
+    (note : PermanentDamageLoopNote := .none)
+    (pendingTarget : Option (ObjectId × Nat × Nat) := none) : Game := Id.run do
+  if let .chooseReplacement .. := g.pending then
+    return g.chainPendingReplacement
+      (.finishPostStep (.dealDamageFromPermanentsLoop remainingIds n srcName source cause startEventIdx note pendingTarget))
+  let mut g := g
+  let c := cause.orElse (fun _ => g.currentBatch.bind (·.2))
+  let finishNote (game : Game) (oid : ObjectId) (lethal pIdx : Nat) : Game :=
+    match note with
+    | .excess =>
+      let dealt := game.damageDealtToPermanentSince oid pIdx
+      game.change (.excessDamageThisWay (dealt - lethal))
+    | .markedPermanent =>
+      let marked :=
+        (game.findObject? oid).any (·.isOnBattlefield) &&
+          game.damageDealtToPermanentSince oid pIdx > 0
+      if marked then game.change (.permanentDealtDamageThisWay (some oid)) else game
+    | _ => game
+  if let some (oid, lethal, pIdx) := pendingTarget then
+    g := finishNote g oid lethal pIdx
+  for i in [0:remainingIds.size] do
+    let oid := remainingIds[i]!
+    match g.findObject? oid with
+    | some o =>
+      let eligible : Bool :=
+        o.isOnBattlefield &&
+          match note with
+          | .oppCreatureOrPlaneswalker ctrl =>
+            (g.isCreature o || g.isPlaneswalker o) &&
+              (g.controllerOf o).any (g.isLivingOpponentOf ctrl ·)
+          | _ => true
+      if eligible then
+        let lethal := if note == .excess then g.lethalDamageThreshold o else 0
+        if note == .excess then
+          g := g.change (.excessDamageThisWay 0)
+        let pIdx := g.events.size
+        g := g.dealDamageFrom srcName o (Int.ofNat n) (sourceSnap := source)
+          (cause := c) (suppressLifelink := true)
+        if let .chooseReplacement .. := g.pending then
+          let rem := remainingIds.extract (i + 1) remainingIds.size
+          let pend :=
+            match note with
+            | .excess | .markedPermanent => some (oid, lethal, pIdx)
+            | _ => none
+          return g.chainPendingReplacement
+            (.finishPostStep (.dealDamageFromPermanentsLoop rem n srcName source c startEventIdx note pend))
+        g := finishNote g oid lethal pIdx
+    | none => pure ()
+  g := g.applyAggregatedLifelinkSince startEventIdx (cause := c)
   return g
 
 /-- Reveal and move each searched card in `remainingIds` to `controller`'s hand
@@ -336,8 +399,8 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
   | .damageEachPlayer n =>
     if n == 0 then g
     else
-      g.withBatch (g.resolvingBatchCause controller sourceId) fun g =>
-        g.livingPlayers.foldl (fun g pl => g.dealDamageToPlayer pl.id n (source := src?)) g
+      g.dealDamageToPlayers g.apnapOrder n (source := src?)
+        (cause := g.resolvingBatchCause controller sourceId)
   | .damageSourceAt index n =>
     match g.legalPermanentAt? controller kind targets index sourceId with
     | some o => g.dealDamageFrom srcName o n (source := src?)
@@ -443,16 +506,17 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
           g.addPlusOnePlusOneTo o 1
         else g) g
   | .damageEachOppCreatureAndPlaneswalker n =>
-    let victims := g.battlefield.filter (fun o =>
+    let victimIds := (g.battlefield.filter (fun o =>
       (g.isCreature o || g.isPlaneswalker o) &&
-        (g.controllerOf o).any (g.isLivingOpponentOf controller ·))
-    if n == 0 || victims.isEmpty then g
+        (g.controllerOf o).any (g.isLivingOpponentOf controller ·))).map (·.id)
+    if n == 0 || victimIds.isEmpty then g
     else
-      g.withBatch (g.resolvingBatchCause controller sourceId) fun g =>
-        victims.foldl (fun g o =>
-          match g.findObject? o.id with
-          | some o => g.dealDamageFrom srcName o n (source := src?)
-          | none => g) g
+      let batchCause := g.resolvingBatchCause controller sourceId
+      let srcSnap := src?.map g.snapshotDamageSource
+      let sIdx := g.events.size
+      g.withBatch batchCause fun g =>
+        g.dealDamageFromPermanentsLoop victimIds n srcName srcSnap batchCause sIdx
+          (note := .oppCreatureOrPlaneswalker controller)
   | .loseAbilitiesAt index =>
     match g.legalPermanentAt? controller kind targets index sourceId with
     | none => g.logMsg "The target is no longer legal"
@@ -528,7 +592,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     match g.apnapFrom.toList with
     | [] => g
     | p :: rest =>
-      g.beginFraChoice p (.mayWheel n rest.toArray)
+      g.beginFraChoice p (.mayWheel n rest.toArray #[])
         s!"{(g.player p).name} may discard their hand and draw {n} cards"
   | .mountainsAddExtraRed =>
     let g := g.createEffect (.mountainExtraRedThisTurn controller)
@@ -729,8 +793,9 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     else
       let opps := g.apnapOrder.filter (g.isLivingOpponentOf controller ·)
       let batchCause := g.resolvingBatchCause controller sourceId
+      let sIdx := g.events.size
       g.withBatch batchCause fun g =>
-        g.causeDealsDamageToOpponentsLoop opps n name causeSnap batchCause
+        g.causeDealsDamageToOpponentsLoop opps n name causeSnap batchCause none (some sIdx)
   | .exileFromHandUntilLeaves =>
     g.withLegalKindPlayer controller kind targets (fun g pid =>
       let g := g.revealHand pid

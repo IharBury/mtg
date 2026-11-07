@@ -1045,4 +1045,15 @@ def discardOneStillOne : Bool :=
 
 #guard discardOneStillOne
 
+/- CR 725.2 / Ruling 938: Inherent monarch end-step trigger is sourceless and draws for that monarch even if monarchy changes before resolution. -/
+#guard
+  let g0 := afterDraw.becomeMonarch ⟨0⟩
+  let hand0 := (g0.player ⟨0⟩).hand.size
+  let gEnd := (g0.record (GameEvent.stepped g0.turnNumber .end ⟨0⟩)).receivePriority ⟨0⟩
+  let gRes := (gEnd.becomeMonarch ⟨1⟩).resolveTop
+  gEnd.stack.size == 1 &&
+    (gEnd.object! gEnd.stack.back!.objectId).sourceId == none &&
+    (gRes.player ⟨1⟩).isMonarch &&
+    (gRes.player ⟨0⟩).hand.size == hand0 + 1
+
 end Mtg.Engine.Tests

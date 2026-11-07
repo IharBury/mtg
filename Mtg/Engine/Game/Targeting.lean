@@ -450,6 +450,17 @@ def legalTargetsForKind (g : Game) (caster : PlayerId) (kind : EffectTargetKind)
       parts.foldl (· ++ ·) #[]
     else #[]
 
+/-- Whether enough distinct legal targets exist for `e` (CR 115.3 / 601.2c): a
+single-instance shape announcing `e.targetCount > 1` targets of one word “target”
+(`kind.spec.slots.isEmpty`) needs that many distinct legal targets unless it allows
+zero; multi-slot shapes are checked slot by slot in `legalTargetsForKind`. -/
+def effectHasEnoughTargets (g : Game) (p : PlayerId) (e : Effect)
+    (sourceId : Option ObjectId := none) : Bool :=
+  let legal := g.legalTargetsForKind p e.targetKind sourceId
+  if e.targetKind.spec.slots.isEmpty && !e.allowsZeroTargets then
+    legal.size >= max 1 e.targetCount
+  else !legal.isEmpty
+
 /-- Legal targets for a triggered ability (CR 603.3d / 601.2c). `sourceId` is
 the object that generated the ability, used to exclude “another” creature. -/
 def legalTriggerTargets (g : Game) (p : PlayerId) (ab : TriggeredAbility)

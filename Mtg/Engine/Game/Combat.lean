@@ -52,12 +52,11 @@ def declareAttackers (g : Game) (p : PlayerId) (ids : Array ObjectId)
             else pure (some pw)
           | none => throw "no such planeswalker"
         | _ => pure none
-      if g.cantAttackJaces p then
-        match pw? with
-        | some pw =>
-          if (g.name pw).startsWith "Jace" || g.hasSubtype pw .jace then
-            throw s!"{g.name o} can't attack {g.name pw} this turn"
-        | none => pure ()
+      match pw? with
+      | some pw =>
+        if g.cantAttackJace p pw then
+          throw s!"{g.name o} can't attack {g.name pw} this turn"
+      | none => pure ()
       let dest ←
         match pw? with
         | some pw => pure ((g.controllerOf pw).getD pw.owner)
@@ -109,7 +108,7 @@ def declareAttackers (g : Game) (p : PlayerId) (ids : Array ObjectId)
             !(g.hasFlying o && g.leftoverFlyingRestriction pl.id)) ||
           (g.permanentsOf pl.id).any fun pw =>
             g.isPlaneswalker pw &&
-              !(g.cantAttackJaces p && ((g.name pw).startsWith "Jace" || g.hasSubtype pw .jace)) &&
+              !(g.cantAttackJace p pw) &&
               !(g.planeswalkerAttackedByOneAtMost pw &&
                 g.battlefield.any (fun a =>
                   a.status.attacking && a.status.attackingPlaneswalker? == some pw.id))

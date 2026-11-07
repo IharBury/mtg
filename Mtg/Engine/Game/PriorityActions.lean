@@ -150,6 +150,7 @@ def announceAdditionalCost (g : Game) (p : PlayerId) (payGeneric : Bool) :
       let newCost := g.playManaCost preSpell costFace (ManaCost.ofGeneric n)
         (origPerm := prop.origPerm) (isFreeFromGy := some prop.isFreeFromGy)
         (flashback := some (GameEvent.castWithFlashback g.events prop.spellId))
+        (explicitAltCost := prop.alternativeCost)
       g.changeProposals #[
         .cost newCost,
         .additionalGeneric n,

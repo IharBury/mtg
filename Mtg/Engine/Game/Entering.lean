@@ -121,7 +121,7 @@ def enterFromNickFury (g : Game) (controller : PlayerId) (id : ObjectId)
         else
           let g :=
             if nightBack then
-              g.logMsg s!"{entered.name} enters back face up (night / daybound)"
+              g.logMsg s!"{g.name entered} enters back face up (night / daybound)"
             else g
           g.afterPermanentEnters (g.object! newId)
       | none => g
@@ -330,7 +330,7 @@ def finishOneResolution (g : Game) (fin : ResolutionFinish) : Game :=
                   let g :=
                     match o.attachedTo.bind g.findObject? with
                     | some host => g.logMsg s!"{g.name o} enters the battlefield attached to {g.name host}"
-                    | none => g.logMsg s!"{o.name} enters the battlefield"
+                    | none => g.logMsg s!"{g.name o} enters the battlefield"
                   g.afterPermanentEnters (g.object! newId)
                 else g
               | none => g

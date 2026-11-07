@@ -161,13 +161,13 @@ four others. The cause's id is `fraCauseId` on the resolving ability. -/
   let eq := named g "Count Sword"
   let g := g.attachSourceTo eq host
   let (g, bearHost) := holds g (.atLeast (.count (.intersection [.equipped, .legendaryCreaturesYouControl])) (.fixed 1)) (some eq.id)
-  let spirits := logContains g "Spirit tokens"
+  let noSpirits := !logContains g "Spirit tokens"
   let g := addPermanent g hero caster caster
   let legend := named g "Count Hero"
   let g := g.attachSourceTo (named g "Count Sword") legend
   let (g, legendHost) := holds g (.atLeast (.count (.intersection [.equipped, .legendaryCreaturesYouControl])) (.fixed 1)) (some eq.id)
   let (g, missing) := holds g (.atLeast (.count (.intersection [.equipped, .legendaryCreaturesYouControl])) (.fixed 1)) none
-  !bearHost && spirits && legendHost && !missing &&
+  !bearHost && noSpirits && legendHost && !missing &&
     logContains g "no longer in play"
 
 /- Creature cards in the graveyard. A land in the graveyard does not count. -/

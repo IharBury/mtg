@@ -423,16 +423,19 @@ def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
     else g
   let o := g.findObject? o.id |>.getD o
   let oName := g.name o
+  let ctrl := g.controllerOf o
   if n > 0 && rep.shieldRemoved && !unpreventable then
     let g :=
       if rep.preventedAmount > 0 then
         g.record (GameEvent.damagePrevented g.turnNumber srcEvent (.permanent (g.snapshot o))
           rep.preventedAmount shieldCause)
       else g
-    let g := g.record (GameEvent.counters g.turnNumber (g.controllerOf o) (g.snapshot o) .shield 1 true (cause := shieldCause))
+    let g := g.recordRemoveCounters o.id .shield 1 (byPlayer := ctrl) (noActor := ctrl.isNone)
+      (cause := some shieldCause)
     g.logMsg s!"A shield counter is removed from {oName} instead of damage"
   else if n > 0 && rep.shieldRemoved && unpreventable then
-    let g := g.record (GameEvent.counters g.turnNumber (g.controllerOf o) (g.snapshot o) .shield 1 true (cause := shieldCause))
+    let g := g.recordRemoveCounters o.id .shield 1 (byPlayer := ctrl) (noActor := ctrl.isNone)
+      (cause := some shieldCause)
     let g := g.logMsg s!"A shield counter is removed from {oName} (unpreventable damage)"
     let marked := g.object! o.id
     let amt := rep.amount.toNat

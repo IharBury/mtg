@@ -263,8 +263,9 @@ inductive FraChoice where
   /-- Choose a card from `target`'s revealed hand for them to discard: a
   nonland permanent card if `permanentOnly`, else a nonland card. -/
   | discardFromRevealedHand (target : PlayerId) (permanentOnly : Bool)
-  /-- The player may discard their hand and draw `n`; `rest` choose after. -/
-  | mayWheel (n : Nat) (rest : Array PlayerId)
+  /-- The player may discard their hand and draw `n`; `rest` choose after, and
+  `accepted` players discard simultaneously in one batch once all have answered. -/
+  | mayWheel (n : Nat) (rest : Array PlayerId) (accepted : Array PlayerId := #[])
   /-- You may sacrifice a planeswalker to search for one (Entrust the Spark). -/
   | maySacrificePlaneswalker
   /-- The owner of `id` puts it on top (accept) or on the bottom (decline) of
@@ -333,9 +334,11 @@ inductive FraChoice where
   sacrificed together once everyone has chosen. -/
   | sacrificeCreatureEach (controller : PlayerId) (rest : Array PlayerId)
     (chosen : Array ObjectId)
-  /-- The choosing opponent discards two cards; `controller` draws a card for
+  /-- The choosing opponent picks two cards to discard; all chosen cards are
+  discarded simultaneously in one batch, then `controller` draws a card for
   each opponent who didn't discard two nonland cards. -/
   | discardTwo (controller : PlayerId) (rest : Array PlayerId) (draws : Nat)
+      (chosen : Array (PlayerId × Array ObjectId) := #[])
   /-- You may move all counters from `fromId` onto `toId` (The Ozolith). -/
   | mayMoveAllCounters (fromId toId : ObjectId)
   /-- Tap untapped creatures with total power `power` or more to pay the crew

@@ -423,4 +423,17 @@ def emptiedPool : Game := tappedMountain.emptyManaPools
 #guard (emptiedPool.player ⟨0⟩).manaPool.isEmpty
 #guard emptiedPool.log.any (fun s => mentions s "empties mana pool")
 
+/- CR 122.1d / 611.2a: Untap-step stun-counter removal expires `.whileSourceHasCounter` effects immediately. -/
+#guard
+  let g0 := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let b := namedPermanent g0 "Grizzly Bears"
+  let g1 := (setTapped g0 b.id true).recordPutCounters b.id .stun 1 (byPlayer := some ⟨0⟩)
+  let g2 := g1.createEffect
+    (.layered (.objects #[b.id]) (.ptModify 2 2) (.whileSourceHasCounter b.id .stun))
+  let g3 := g2.untapStepPermanents #[b.id]
+  g2.power (g2.object! b.id) == 4 &&
+    (g3.object! b.id).status.tapped &&
+    (g3.object! b.id).status.stun == 0 &&
+    g3.power (g3.object! b.id) == 2
+
 end Mtg.Engine.Tests

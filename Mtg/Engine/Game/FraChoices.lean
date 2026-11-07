@@ -65,23 +65,34 @@ def castFreeCopy (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game 
     throw "Opponents can't cast spells during that player's turn"
   if g.spellNameForbidden face.name then
     throw s!"Spells named {face.name} can't be cast"
+  if !g.graveyardCastThresholdMet p card.id face then
+    let n := face.castOnlyIfGraveyardAtLeast.getD 0
+    throw s!"{face.name} can be cast only with {n} or more other cards in your graveyard"
   let mv := g.objectManaValue card
   if mv > budget then
     throw s!"{face.name} has mana value {mv}; only {budget} is left"
   if face.isLand then throw "A land can't be cast"
-  if isModalSpellFace face && !(effectiveSpellModes face).any (g.spellModeIsChoosable p) &&
+  let tcs := g.evalLayer3 card
+  if isModalSpellFace face &&
+      !(effectiveSpellModes face).any (fun e =>
+        let m := if tcs.isEmpty then e else TextChange.applyEffect tcs e
+        g.spellModeIsChoosable p m (some card.id)) &&
       !isReturnUpToTwoGyModal face && !face.allowsZeroTargets then
     throw s!"{face.name} requires a target"
   if !isModalSpellFace face && (face.requiresTarget || face.isAura) &&
-      !g.castFaceHasLegalTarget p face && !face.allowsZeroTargets then
+      !g.castFaceHasLegalTarget p face tcs (some card.id) && !face.allowsZeroTargets then
     throw s!"{face.name} requires a target"
+  if let some err := g.mandatorySacrificeError? p card.id face then
+    throw err
   let origPerm : Option PlayPermission := some { player := p, withoutManaCost := true }
   let rest := ids.filter (· != id)
+  let g := g.change .saveProposalCheckpoint
   let g :=
     match g.pendingReplacement with
-    | some outer => g.changes #[.pushOuterPendingReplacement outer, .pendingReplacement none]
+    | some outer =>
+      let g := if g.continuations.isEmpty then g.change (.pushContinuationFrame {}) else g
+      g.changes #[.pushOuterPendingReplacement outer, .pendingReplacement none]
     | none => g
-  let g := g.change .saveProposalCheckpoint
   let (g, newId) := g.move id .stack (some p) (verb := some .cast) (actor := some p)
     (isCopy := some true) (cause := some (.gameRule .spellCast))
   let g := g.putStackEntry p newId
@@ -90,6 +101,7 @@ def castFreeCopy (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game 
   let g := g.logMsg s!"{(g.player p).name} casts a copy of {face.name} without paying its mana cost"
   let cost := g.playManaCost { card with controller := some p } face
     (origPerm := origPerm) (isFreeFromGy := some false) (flashback := some false)
+    (explicitAltCost := true)
   let needsSacrifice :=
     face.additionalCostSacrificeCreature ||
       (face.additionalCostSacrificeArtifactOrCreature && face.additionalCostOrPayGeneric.isNone)
@@ -280,20 +292,13 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       throw "That card can't be chosen"
     return (g.discardFromHand victim id (chooser := some p)).finishFraChoice
   | .discardFromRevealedHand .., _ => throw "Choose one card from the revealed hand"
-  | .mayWheel n rest, .accept | .mayWheel n rest, .decline =>
-    if answer == .accept then
-      let hand := (g.player p).hand
-      let g := g.withBatch none fun g =>
-        g.discardHandIdsLoop p hand (logEach := true)
-      let g :=
-        if let .chooseReplacement .. := g.pending then
-          g.chainPendingReplacement (.finishPostStep (.wheelDrawThenOfferNext p n rest))
-        else
-          g.runPostStep (.wheelDrawThenOfferNext p n rest)
-      return g.finishFraChoice
-    else
-      let g := (g.logMsg s!"{(g.player p).name} keeps their hand").runPostStep (.wheelOfferNext n rest)
-      return g.finishFraChoice
+  | .mayWheel n rest accepted, .accept | .mayWheel n rest accepted, .decline =>
+    let accepted' := if answer == .accept then accepted.push p else accepted
+    let g :=
+      if answer == .decline then g.logMsg s!"{(g.player p).name} keeps their hand"
+      else g
+    let g := g.runPostStep (.wheelOfferNext n rest accepted')
+    return g.finishFraChoice
   | .mayWheel .., _ => throw "Answer accept or decline"
   | .maySacrificePlaneswalker, .objects #[id] =>
     let some pw := g.findObject? id | throw "no such object"
@@ -376,7 +381,12 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     if !ids.contains id then throw "Choose one of the revealed cards"
     let name := (g.object! id).name
     let (g, _) := g.move id (.hand revealer) none
-    let g := g.logMsg s!"{(g.player revealer).name} puts {name} into their hand"
+    let g :=
+      if let .chooseReplacement .. := g.pending then
+        g.chainPendingReplacement (.finishPostStep (.logPutsIntoHand revealer id name))
+      else if (g.followMovedToZone? id (· == Zone.hand revealer)).isSome then
+        g.logMsg s!"{(g.player revealer).name} puts {name} into their hand"
+      else g
     return g.finishFraChoice
   | .extrapolatePick .., _ => throw "Choose one of the revealed cards"
   | .mayPutMilledPermanent ids life, .objects #[id] =>
@@ -607,19 +617,11 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let g := g.logMsg s!"{(g.player p).name} chooses {g.name o}"
     return (g.continueSacrificeEach controller rest (chosen.push id)).finishFraChoice
   | .sacrificeCreatureEach .., _ => throw "Choose a creature to sacrifice"
-  | .discardTwo controller rest draws, .objects ids =>
+  | .discardTwo controller rest draws chosen, .objects ids =>
     let hand := (g.player p).hand
     if ids.size != 2 || ids[0]! == ids[1]! || !ids.all hand.contains then
       throw "Choose two different cards from your hand"
-    let nonland := (ids.filter (fun id => !g.isLand (g.object! id))).size
-    let nextDraws := if nonland < 2 then draws + 1 else draws
-    let g := g.withBatch none fun g =>
-      g.discardHandIdsLoop p ids (logEach := true)
-    let g :=
-      if let .chooseReplacement .. := g.pending then
-        g.chainPendingReplacement (.finishPostStep (.continueDiscardTwo controller rest nextDraws))
-      else
-        g.continueDiscardTwo controller rest nextDraws
+    let g := g.continueDiscardTwo controller rest draws (chosen.push (p, ids))
     return g.finishFraChoice
   | .discardTwo .., _ => throw "Choose two cards to discard"
   | .mayMoveAllCounters fromId toId, .accept =>
@@ -1115,19 +1117,21 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       throw "Choose cards to exile to pay the boast cost (CR 602.2b)"
   | .zemoBoastExile .., _ => throw "Choose the cards to exile, or decline"
   | .mayCastCascade cardId others, .accept =>
+    let g := gPre.change .saveProposalCheckpoint
     let g :=
       if g.continuations.isEmpty then g.change (.pushContinuationFrame {}) else g
     let g := g.changes #[
       .postCastCleanup (some (.cascadeBottom p cardId others)),
-      .pending .none,
-      .saveProposalCheckpoint
+      .pending .none
     ]
     let g := g.castAsPartOfResolution p cardId (callerCheckpoint := true)
-    let g :=
-      if g.proposedSpell.isNone && g.postCastCleanup.isSome then
-        g.runPostCastCleanup
-      else g
-    return g.finishFraChoice
+    if g.pending != .none then
+      return g
+    else if g.proposedSpell.isNone && g.postCastCleanup.isSome then
+      let g := g.runPostCastCleanup
+      return if g.pending != .none then g else g.finishFraChoice
+    else
+      return g.finishFraChoice
   | .mayCastCascade cardId others, .decline =>
     let cause := g.lastMoveCauseOf? cardId
     return (g.requestOrderInto (others.push cardId) (.library p)
@@ -1135,19 +1139,21 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       (cause := cause)).finishFraChoice
   | .mayCastCascade .., _ => throw "Cast it (accept), or decline"
   | .mayCastGrima cardId others victim, .accept =>
+    let g := gPre.change .saveProposalCheckpoint
     let g :=
       if g.continuations.isEmpty then g.change (.pushContinuationFrame {}) else g
     let g := g.changes #[
       .postCastCleanup (some (.grimaBottom victim cardId others)),
-      .pending .none,
-      .saveProposalCheckpoint
+      .pending .none
     ]
     let g := g.castAsPartOfResolution p cardId (callerCheckpoint := true)
-    let g :=
-      if g.proposedSpell.isNone && g.postCastCleanup.isSome then
-        g.runPostCastCleanup
-      else g
-    return g.finishFraChoice
+    if g.pending != .none then
+      return g
+    else if g.proposedSpell.isNone && g.postCastCleanup.isSome then
+      let g := g.runPostCastCleanup
+      return if g.pending != .none then g else g.finishFraChoice
+    else
+      return g.finishFraChoice
   | .mayCastGrima cardId others victim, .decline =>
     let cause := g.lastMoveCauseOf? cardId
     return (g.requestOrderInto (others.push cardId) (.library victim)
@@ -1155,19 +1161,21 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       (cause := cause)).finishFraChoice
   | .mayCastGrima .., _ => throw "Cast it (accept), or decline"
   | .mayCastCopy copyId, .accept =>
+    let g := gPre.change .saveProposalCheckpoint
     let g :=
       if g.continuations.isEmpty then g.change (.pushContinuationFrame {}) else g
     let g := g.changes #[
       .postCastCleanup (some (.copyCeaseToExist copyId)),
-      .pending .none,
-      .saveProposalCheckpoint
+      .pending .none
     ]
     let g := g.castAsPartOfResolution p copyId (callerCheckpoint := true)
-    let g :=
-      if g.proposedSpell.isNone && g.postCastCleanup.isSome then
-        g.runPostCastCleanup
-      else g
-    return g.finishFraChoice
+    if g.pending != .none then
+      return g
+    else if g.proposedSpell.isNone && g.postCastCleanup.isSome then
+      let g := g.runPostCastCleanup
+      return if g.pending != .none then g else g.finishFraChoice
+    else
+      return g.finishFraChoice
   | .mayCastCopy copyId, .decline =>
     let g :=
       match g.findObject? copyId with
@@ -1210,16 +1218,33 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     if !eligible.contains id then throw "That card can't be cast this way"
     if g.cantCastSpellsThisTurn p then
       throw "You can't cast spells this turn (CR 101.2)"
+    if g.splitSecondOnStack then
+      throw "A spell with split second is on the stack (CR 702.61a)"
+    if g.combatLocksNonManaAbilities then
+      throw "During combat, players can't cast spells (Yuriko, Blade of the Mighty)"
+    if g.opponentsCantCastOnActiveTurn p then
+      throw "Opponents can't cast spells during that player's turn"
     let some o := g.findObject? id | throw "no such object"
     if o.zone != .hand p || !g.isInstantOrSorcery o then
       throw s!"{o.name} is no longer an instant or sorcery in your hand"
     let face := g.baseCard o
-    if isModalSpellFace face && !(effectiveSpellModes face).any (g.spellModeIsChoosable p) &&
+    if g.spellNameForbidden face.name then
+      throw s!"Spells named {face.name} can't be cast"
+    if !g.graveyardCastThresholdMet p o.id face then
+      let n := face.castOnlyIfGraveyardAtLeast.getD 0
+      throw s!"{face.name} can be cast only with {n} or more other cards in your graveyard"
+    let tcs := g.evalLayer3 o
+    if isModalSpellFace face &&
+        !(effectiveSpellModes face).any (fun e =>
+          let m := if tcs.isEmpty then e else TextChange.applyEffect tcs e
+          g.spellModeIsChoosable p m (some o.id)) &&
         !isReturnUpToTwoGyModal face && !face.allowsZeroTargets then
       throw s!"{face.name} has no mode with a legal target"
     if !isModalSpellFace face && (face.requiresTarget || face.isAura) &&
-        !g.castFaceHasLegalTarget p face && !face.allowsZeroTargets then
+        !g.castFaceHasLegalTarget p face tcs (some o.id) && !face.allowsZeroTargets then
       throw s!"{face.name} has no legal target"
+    if let some err := g.mandatorySacrificeError? p o.id face then
+      throw err
     let g := (gPre.change .saveProposalCheckpoint).change (.pending .none)
     return (g.castAsPartOfResolution p id (callerCheckpoint := true)).finishFraChoice
   | .mayCastInstantSorceryFromHand _, .decline =>
@@ -1229,9 +1254,33 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     if left == 0 || !eligible.contains id then throw "That card can't be cast this way"
     if g.cantCastSpellsThisTurn p then
       throw "You can't cast spells this turn (CR 101.2)"
+    if g.splitSecondOnStack then
+      throw "A spell with split second is on the stack (CR 702.61a)"
+    if g.combatLocksNonManaAbilities then
+      throw "During combat, players can't cast spells (Yuriko, Blade of the Mighty)"
+    if g.opponentsCantCastOnActiveTurn p then
+      throw "Opponents can't cast spells during that player's turn"
     let some o := g.findObject? id | throw "no such object"
     if o.zone != .exile || g.isLand o then
       throw s!"{o.name} can't be cast this way"
+    let face := g.baseCard o
+    if g.spellNameForbidden face.name then
+      throw s!"Spells named {face.name} can't be cast"
+    if !g.graveyardCastThresholdMet p o.id face then
+      let n := face.castOnlyIfGraveyardAtLeast.getD 0
+      throw s!"{face.name} can be cast only with {n} or more other cards in your graveyard"
+    let tcs := g.evalLayer3 o
+    if isModalSpellFace face &&
+        !(effectiveSpellModes face).any (fun e =>
+          let m := if tcs.isEmpty then e else TextChange.applyEffect tcs e
+          g.spellModeIsChoosable p m (some o.id)) &&
+        !isReturnUpToTwoGyModal face && !face.allowsZeroTargets then
+      throw s!"{face.name} has no mode with a legal target"
+    if !isModalSpellFace face && (face.requiresTarget || face.isAura) &&
+        !g.castFaceHasLegalTarget p face tcs (some o.id) && !face.allowsZeroTargets then
+      throw s!"{face.name} has no legal target"
+    if let some err := g.mandatorySacrificeError? p o.id face then
+      throw err
     let rest := eligible.filter (· != id)
     let g := (gPre.change .saveProposalCheckpoint).changes #[
       .pending .none,
@@ -1472,14 +1521,42 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     if !eligible.contains id then throw "That card can't be cast this way"
     if g.cantCastSpellsThisTurn p then
       throw "You can't cast spells this turn (CR 101.2)"
+    if g.splitSecondOnStack then
+      throw "A spell with split second is on the stack (CR 702.61a)"
+    if g.combatLocksNonManaAbilities then
+      throw "During combat, players can't cast spells (Yuriko, Blade of the Mighty)"
+    if g.opponentsCantCastOnActiveTurn p then
+      throw "Opponents can't cast spells during that player's turn"
     let some o := g.findObject? id | throw "no such object"
+    if g.isLand o then throw s!"{o.name} can't be cast this way"
     let face := g.baseCard o
-    if isModalSpellFace face && !(effectiveSpellModes face).any (g.spellModeIsChoosable p) &&
-        !isReturnUpToTwoGyModal face && !face.allowsZeroTargets then
-      throw s!"{face.name} has no mode with a legal target"
-    if !isModalSpellFace face && (face.requiresTarget || face.isAura) &&
-        !g.castFaceHasLegalTarget p face && !face.allowsZeroTargets then
-      throw s!"{face.name} has no legal target"
+    let rawPerm := if withoutPaying then none else g.playPermission o
+    let canMorph :=
+      !withoutPaying && face.morph.isSome && face.kicker.isNone &&
+        o.zone != .graveyard o.owner &&
+        !(rawPerm.any (fun pm => pm.withoutManaCost || pm.payLifeEqualManaValue)) &&
+        !g.spellNameForbidden ""
+    if !canMorph then
+      if g.spellNameForbidden face.name then
+        throw s!"Spells named {face.name} can't be cast"
+      if !g.graveyardCastThresholdMet p o.id face then
+        let n := face.castOnlyIfGraveyardAtLeast.getD 0
+        throw s!"{face.name} can be cast only with {n} or more other cards in your graveyard"
+      let tcs := g.evalLayer3 o
+      if isModalSpellFace face &&
+          !(effectiveSpellModes face).any (fun e =>
+            let m := if tcs.isEmpty then e else TextChange.applyEffect tcs e
+            g.spellModeIsChoosable p m (some o.id)) &&
+          !isReturnUpToTwoGyModal face && !face.allowsZeroTargets then
+        throw s!"{face.name} has no mode with a legal target"
+      if !isModalSpellFace face && (face.requiresTarget || face.isAura) &&
+          !g.castFaceHasLegalTarget p face tcs (some o.id) && !face.allowsZeroTargets then
+        throw s!"{face.name} has no legal target"
+      if let some err := g.mandatorySacrificeError? p o.id face then
+        throw err
+      if !withoutPaying && rawPerm.any (·.payLifeEqualManaValue) &&
+          !g.canPayLife p (g.objectManaValue o) then
+        throw s!"{(g.player p).name} can't pay {g.objectManaValue o} life to cast {face.name} (CR 119.4)"
     let g := (gPre.change .saveProposalCheckpoint).change (.pending .none)
     return (g.castAsPartOfResolution p id (withoutManaCost := withoutPaying)
       (exileInstantSorceryInstead := exileInstead) (callerCheckpoint := true)).finishFraChoice
@@ -1490,17 +1567,38 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     if !eligible.contains id then throw "That card can't be cast this way"
     if g.cantCastSpellsThisTurn p then
       throw "You can't cast spells this turn (CR 101.2)"
+    if g.splitSecondOnStack then
+      throw "A spell with split second is on the stack (CR 702.61a)"
+    if g.combatLocksNonManaAbilities then
+      throw "During combat, players can't cast spells (Yuriko, Blade of the Mighty)"
+    if g.opponentsCantCastOnActiveTurn p then
+      throw "Opponents can't cast spells during that player's turn"
     let some o := g.findObject? id | throw "no such object"
     if o.zone != .graveyard o.owner then throw s!"{o.name} is no longer in the graveyard"
     if !(g.isArtifact o || g.isInstantOrSorcery o) then
       throw s!"{o.name} is not an artifact, instant, or sorcery"
+    if g.isLand o then throw s!"{o.name} can't be cast this way"
     let face := g.baseCard o
-    if isModalSpellFace face && !(effectiveSpellModes face).any (g.spellModeIsChoosable p) &&
+    if g.spellNameForbidden face.name then
+      throw s!"Spells named {face.name} can't be cast"
+    if !g.graveyardCastThresholdMet p o.id face then
+      let n := face.castOnlyIfGraveyardAtLeast.getD 0
+      throw s!"{face.name} can be cast only with {n} or more other cards in your graveyard"
+    let tcs := g.evalLayer3 o
+    if isModalSpellFace face &&
+        !(effectiveSpellModes face).any (fun e =>
+          let m := if tcs.isEmpty then e else TextChange.applyEffect tcs e
+          g.spellModeIsChoosable p m (some o.id)) &&
         !isReturnUpToTwoGyModal face && !face.allowsZeroTargets then
       throw s!"{face.name} has no mode with a legal target"
     if !isModalSpellFace face && (face.requiresTarget || face.isAura) &&
-        !g.castFaceHasLegalTarget p face && !face.allowsZeroTargets then
+        !g.castFaceHasLegalTarget p face tcs (some o.id) && !face.allowsZeroTargets then
       throw s!"{face.name} has no legal target"
+    if let some err := g.mandatorySacrificeError? p o.id face then
+      throw err
+    if (g.playPermission o).any (·.payLifeEqualManaValue) &&
+        !g.canPayLife p (g.objectManaValue o) then
+      throw s!"{(g.player p).name} can't pay {g.objectManaValue o} life to cast {face.name} (CR 119.4)"
     let g := (gPre.change .saveProposalCheckpoint).change (.pending .none)
     return (g.castAsPartOfResolution p id (withoutManaCost := false)
       (exileInstantSorceryInstead := true) (callerCheckpoint := true)).finishFraChoice
@@ -1811,7 +1909,31 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
     | some m => .chooseMode m
     | none => .decline
   | .discardThenDraw => .choosePermanents ((g.player p).hand.extract 0 1)
-  | .mayCastCascade .. => .accept
+  | .mayCastCascade cardId _ =>
+    if g.cantCastSpellsThisTurn p || g.splitSecondOnStack || g.combatLocksNonManaAbilities ||
+        g.opponentsCantCastOnActiveTurn p then
+      .decline
+    else
+      let available := g.availableMana p
+      let castable :=
+        (g.findObject? cardId).any (fun o =>
+          let face := g.baseCard o
+          let tcs := g.evalLayer3 o
+          let hasTargets :=
+            if isModalSpellFace face then
+              (effectiveSpellModes face).any (fun e =>
+                let m := if tcs.isEmpty then e else TextChange.applyEffect tcs e
+                g.spellModeIsChoosable p m (some o.id)) ||
+                isReturnUpToTwoGyModal face || face.allowsZeroTargets
+            else if face.requiresTarget || face.isAura then
+              g.castFaceHasLegalTarget p face tcs (some o.id) || face.allowsZeroTargets
+            else true
+          !g.isLand o && !g.spellNameForbidden face.name &&
+            g.graveyardCastThresholdMet p o.id face &&
+            (g.mandatorySacrificeError? p o.id face).isNone &&
+            hasTargets &&
+            g.canPayAnnouncedAdditional p o available)
+      if castable then .accept else .decline
   | .mayCastGrima .. => .decline
   | .palantirMayDraw .. => .decline
   | .mayCastCopy _ => .decline
@@ -1850,12 +1972,17 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
     else
       let hasTargets (o : GameObject) : Bool :=
         let face := g.baseCard o
-        !g.spellNameForbidden face.name &&
+        let tcs := g.evalLayer3 o
+        !g.isLand o && !g.spellNameForbidden face.name &&
+          g.graveyardCastThresholdMet p o.id face &&
+          (g.mandatorySacrificeError? p o.id face).isNone &&
           if isModalSpellFace face then
-            (effectiveSpellModes face).any (g.spellModeIsChoosable p) ||
+            (effectiveSpellModes face).any (fun e =>
+              let m := if tcs.isEmpty then e else TextChange.applyEffect tcs e
+              g.spellModeIsChoosable p m (some o.id)) ||
               isReturnUpToTwoGyModal face || face.allowsZeroTargets
           else if face.requiresTarget || face.isAura then
-            g.castFaceHasLegalTarget p face || face.allowsZeroTargets
+            g.castFaceHasLegalTarget p face tcs (some o.id) || face.allowsZeroTargets
           else true
       let available := g.availableMana p
       match eligible.find? (fun id =>
@@ -1865,8 +1992,26 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
             if withoutPaying then some { player := p, withoutManaCost := true }
             else g.playPermission o
           let isFreeFromGy := !withoutPaying && o.zone == .graveyard o.owner && g.freeCastFromGraveyard o
-          hasTargets o && available.canPay (g.playManaCost { o with controller := some p } face
-            (origPerm := origPerm) (isFreeFromGy := some isFreeFromGy) (flashback := some false)))) with
+          let altCostUsed :=
+            withoutPaying || isFreeFromGy ||
+              origPerm.any (fun pm => pm.withoutManaCost || pm.payLifeEqualManaValue)
+          let spend : ManaSpend :=
+            { spell := true, fromHand := o.zone == .hand p
+              supertypes := g.supertypes o, types := g.types o, subtypes := g.subtypes o }
+          hasTargets o &&
+            (!origPerm.any (·.payLifeEqualManaValue) || g.canPayLife p (g.objectManaValue o)) &&
+            available.canPay
+              (g.playManaCost { o with controller := some p } face
+                (origPerm := origPerm) (isFreeFromGy := some isFreeFromGy)
+                (flashback := some false) (explicitAltCost := altCostUsed))
+              (allowElfRestricted := g.hasSubtype o .elf)
+              (allowInstRestricted := g.isInstantOrSorcery o)
+              (allowHeroRestricted := g.hasSubtype o .hero)
+              (allowVillainRestricted := g.hasSubtype o .villain)
+              (allowCantNonartifact := g.isArtifact o)
+              (allowCreatureRestricted := false)
+              (spend := spend) &&
+            g.canPayAnnouncedAdditional p o available)) with
       | some id => .cast id
       | none => .decline
   | .mayCastFromGraveyard eligible =>
@@ -1878,18 +2023,40 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
       match eligible.find? (fun id =>
         (g.findObject? id).any (fun o =>
           let face := g.baseCard o
+          let tcs := g.evalLayer3 o
+          let origPerm := g.playPermission o
           let hasTargets :=
-            !g.spellNameForbidden face.name &&
+            !g.isLand o && !g.spellNameForbidden face.name &&
+              g.graveyardCastThresholdMet p o.id face &&
+              (g.mandatorySacrificeError? p o.id face).isNone &&
               if isModalSpellFace face then
-                (effectiveSpellModes face).any (g.spellModeIsChoosable p) ||
+                (effectiveSpellModes face).any (fun e =>
+                  let m := if tcs.isEmpty then e else TextChange.applyEffect tcs e
+                  g.spellModeIsChoosable p m (some o.id)) ||
                   isReturnUpToTwoGyModal face || face.allowsZeroTargets
               else if face.requiresTarget || face.isAura then
-                g.castFaceHasLegalTarget p face || face.allowsZeroTargets
+                g.castFaceHasLegalTarget p face tcs (some o.id) || face.allowsZeroTargets
               else true
           let isFreeFromGy := o.zone == .graveyard o.owner && g.freeCastFromGraveyard o
-          hasTargets && available.canPay (g.playManaCost { o with controller := some p } face
-            (origPerm := g.playPermission o) (isFreeFromGy := some isFreeFromGy)
-            (flashback := some false)))) with
+          let altCostUsed :=
+            isFreeFromGy || origPerm.any (fun pm => pm.withoutManaCost || pm.payLifeEqualManaValue)
+          let spend : ManaSpend :=
+            { spell := true, fromHand := o.zone == .hand p
+              supertypes := g.supertypes o, types := g.types o, subtypes := g.subtypes o }
+          hasTargets &&
+            (!origPerm.any (·.payLifeEqualManaValue) || g.canPayLife p (g.objectManaValue o)) &&
+            available.canPay
+              (g.playManaCost { o with controller := some p } face
+                (origPerm := origPerm) (isFreeFromGy := some isFreeFromGy)
+                (flashback := some false) (explicitAltCost := altCostUsed))
+              (allowElfRestricted := g.hasSubtype o .elf)
+              (allowInstRestricted := g.isInstantOrSorcery o)
+              (allowHeroRestricted := g.hasSubtype o .hero)
+              (allowVillainRestricted := g.hasSubtype o .villain)
+              (allowCantNonartifact := g.isArtifact o)
+              (allowCreatureRestricted := false)
+              (spend := spend) &&
+            g.canPayAnnouncedAdditional p o available)) with
       | some id => .cast id
       | none => .decline
   | .maySearchLibrary eligible .. =>

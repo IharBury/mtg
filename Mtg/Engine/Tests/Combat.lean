@@ -743,4 +743,20 @@ def agentWargPumpOnly : Game :=
   | some (.cast id) => (agentWargPumpOnly.object! id).name == "Warg Tactics"
   | _ => false
 
+/- CR 109.2 / 205.3j / 508.1d: `cantAttackJace` scopes to Jace subtype planeswalkers controlled by `jaceController`. -/
+#guard
+  let jaceCard : CardDef := { name := "Test Jace", types := #[.planeswalker], subtypes := #["Jace"], loyalty := some 3 }
+  let nonJaceNamedJace : CardDef := { name := "Jace Imitator", types := #[.planeswalker], subtypes := #["Chandra"], loyalty := some 3 }
+  let g0 :=
+    insertObject
+      (insertObject afterDraw jaceCard ⟨1⟩ .battlefield (some ⟨1⟩) { summoningSick := false, counters := #[(.loyalty, 3)] })
+      nonJaceNamedJace ⟨1⟩ .battlefield (some ⟨1⟩) { summoningSick := false, counters := #[(.loyalty, 3)] }
+  let jObj := namedPermanent g0 "Test Jace"
+  let fakeObj := namedPermanent g0 "Jace Imitator"
+  let gRestricted := g0.createEffect (.cantAttackJacesThisTurn ⟨0⟩ ⟨1⟩)
+  let gOtherCtrl := g0.createEffect (.cantAttackJacesThisTurn ⟨0⟩ ⟨0⟩)
+  gRestricted.cantAttackJace ⟨0⟩ jObj &&
+    !gRestricted.cantAttackJace ⟨0⟩ fakeObj &&
+    !gOtherCtrl.cantAttackJace ⟨0⟩ jObj
+
 end Mtg.Engine.Tests

@@ -42,15 +42,6 @@ def legendRuleGroups (g : Game)
             out := out.push (p, nm, group.map (·.id))
     return out
 
-/-- First legend-rule group that needs a choice (CR 704.5j / 201.2a): two or
-more legendary permanents with the same name controlled by the same player,
-taking players in APNAP order. When `onlyIds` is supplied, restricts candidate
-permanents to those present at the start of the SBA pass (CR 704.3). -/
-def firstLegendRuleChoice? (g : Game)
-    (onlyIds : Option (Array ObjectId) := none) :
-    Option (PlayerId × String × Array ObjectId) :=
-  (g.legendRuleGroups onlyIds)[0]?
-
 /-- True while a player must choose which legendary permanent to keep. -/
 def legendChoicePending? (g : Game) : Bool :=
   match g.pending with
@@ -140,7 +131,8 @@ def destroyPermanent (g : Game) (o : GameObject)
     let cause' := g.wrapReplacedCause chosen.id cause ctrl
     let finalCause := g.resolveOptionalCause cause' (fallbackCtrl := ctrl)
     let oName := g.name o
-    let g := g.record (GameEvent.counters g.turnNumber ctrl (g.snapshot o) .shield 1 true (cause := finalCause))
+    let g := g.recordRemoveCounters o.id .shield 1 (byPlayer := ctrl) (noActor := ctrl.isNone)
+      (cause := some finalCause)
     g.logMsg s!"A shield counter is removed from {oName} instead of destroying it"
   | .none =>
     g.moveToOwnerGraveyard o (reason.getD s!"{g.name o} is destroyed") (verb := some .destroy)
@@ -390,21 +382,21 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
             if t ≤ 0 then
               some {
                 objectId := o.id
-                reason := s!"{o.name} dies (toughness {t})"
+                reason := s!"{g.name o} dies (toughness {t})"
                 verb := some .put
                 sba := .zeroOrLessToughness
               }
             else if o.status.damage ≥ t && !g.hasIndestructible o then
               some {
                 objectId := o.id
-                reason := s!"{o.name} dies from lethal damage"
+                reason := s!"{g.name o} dies from lethal damage"
                 verb := some .destroy
                 sba := .lethalDamage
               }
             else if g.deathtouchDealtSinceLastSba o.id && !g.hasIndestructible o then
               some {
                 objectId := o.id
-                reason := s!"{o.name} dies from deathtouch"
+                reason := s!"{g.name o} dies from deathtouch"
                 verb := some .destroy
                 sba := .deathtouchDamage
               }
@@ -528,14 +520,18 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
       -- CR 704.5q: +1/+1 and -1/-1 counters on one permanent are removed in
       -- pairs.
       for o in preBf do
-        let k := Nat.min o.status.plusOnePlusOne o.status.minusOneMinusOne
+        let curBefore := g.findObject? o.id |>.getD o
+        let k := Nat.min curBefore.status.plusOnePlusOne curBefore.status.minusOneMinusOne
         if k > 0 then
+          let oName0 := g.name curBefore
           let cause := EventCause.stateBased .counterAnnihilation
-          g := g.record (GameEvent.counters g.turnNumber none (g.snapshot o) .plusOnePlusOne k true
-            (cause := cause))
-          g := g.record (GameEvent.counters g.turnNumber none (g.snapshot (g.object! o.id)) .minusOneMinusOne k true
-            (cause := cause))
-          g := g.logMsg s!"{k} +1/+1 and -1/-1 counter pair(s) are removed from {o.name}"
+          g := g.recordRemoveCounters o.id .plusOnePlusOne k (noActor := true) (cause := some cause)
+          g := g.recordRemoveCounters o.id .minusOneMinusOne k (noActor := true) (cause := some cause)
+          let oName :=
+            match g.findObject? o.id with
+            | some cur => if cur.isOnBattlefield then g.name cur else oName0
+            | none => oName0
+          g := g.logMsg s!"{k} +1/+1 and -1/-1 counter pair(s) are removed from {oName}"
           changed := true
       return g.finishSbaSweep victims preBf .dyingCreatures pwMoves sagaMoves tokensOutsideBf
         copiesOutside illegalAuras illegalEquips illegalCreatureAtts legendGroups

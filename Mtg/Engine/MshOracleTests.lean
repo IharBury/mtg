@@ -546,7 +546,21 @@ def thirstDiscardUnlessArtifactOk : Bool :=
        (let gTwo := mustApply gTwo ⟨0⟩
           (.discard (handCardNamed gTwo ⟨0⟩ "Mountain").id)
         gTwo.thirstDiscardsLeft == 0 &&
-          gTwo.pending == .none)) &&
+          gTwo.pending == .none &&
+          gTwo.discardBatch.isNone)) &&
+    -- CR 118.12a / Ruling 696: declining the optional 1-artifact escape or selecting 2 cards at once
+    -- allows discarding two artifacts instead of one:
+    (let gTwoArts0 := addToHand g0 theMindStone ⟨0⟩
+     let gDec := mustApply (gTwoArts0.applyEffect ⟨0⟩ Effect.drawThreeDiscardUnlessArtifact #[]) ⟨0⟩ .decline
+     let stoneIds := (gDec.player ⟨0⟩).hand.filter (fun id => (gDec.object! id).name == "The Mind Stone")
+     let gDec1 := mustApply gDec ⟨0⟩ (.discard stoneIds[0]!)
+     let gDec2 := mustApply gDec1 ⟨0⟩ (.discard stoneIds[1]!)
+     let gSim0 := gTwoArts0.applyEffect ⟨0⟩ Effect.drawThreeDiscardUnlessArtifact #[]
+     let simIds := ((gSim0.player ⟨0⟩).hand.filter (fun id => (gSim0.object! id).name == "The Mind Stone")).extract 0 2
+     let gSim := mustApply gSim0 ⟨0⟩ (.choosePermanents simIds)
+     gDec1.pending != .none && gDec2.pending == .none && gDec2.discardBatch.isNone &&
+       gSim.pending == .none && gSim.discardBatch.isNone &&
+       ((gSim.player ⟨0⟩).graveyard.filter (fun id => (gSim.object! id).name == "The Mind Stone")).size == 2) &&
     (mshRuling 696).comment.contains "one artifact card or two cards"
 
 #guard thirstDiscardUnlessArtifactOk
@@ -4485,7 +4499,7 @@ def serumLegendarySoldierOk : Bool :=
     g.hasFirstStrike host && g.hasVigilance host &&
     g.hasSubtype host .soldier && g.hasSubtype host .bear &&
     g.treatedAsLegendary host &&
-    match g.firstLegendRuleChoice? with
+    match (g.legendRuleGroups)[0]? with
     | some (_, name, ids) => name == "Grizzly Bears" && ids.size == 2
     | none => false
 

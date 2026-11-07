@@ -134,6 +134,37 @@ def discardHandIdsLoop (g : Game) (p : PlayerId) (ids : Array ObjectId)
           g := g.logMsg msg
   return g
 
+/-- Pause-safe loop discarding `(p, id)` pairs across multiple players inside a
+single shared open batch (CR 101.4 / 603.2c / 701.9b). -/
+def discardMultiHandIdsLoop (g : Game) (remaining : Array (PlayerId × ObjectId))
+    (logEach : Bool := false) (cause : Option EventCause := none) : Game := Id.run do
+  if let .chooseReplacement .. := g.pending then
+    return g.chainPendingReplacement
+      (.finishPostStep (.discardMultiHandIdsLoop remaining logEach cause))
+  let mut g := g
+  for i in [0:remaining.size] do
+    let (p, id) := remaining[i]!
+    match g.findObject? id with
+    | none => pure ()
+    | some o =>
+      if g.stillInGame p && o.zone == .hand p then
+        let msg := s!"{(g.player p).name} discards {o.name}"
+        let owner := o.owner
+        let (g', _) := g.move id (.graveyard owner) none (verb := some .discard)
+          (actor := some p) (cause := cause)
+        g := g'
+        if let .chooseReplacement .. := g.pending then
+          if logEach then
+            g := g.chainPendingReplacement (.finishPostStep (.logDiscardIfInGraveyard id owner msg))
+          let rem := remaining.extract (i + 1) remaining.size
+          if !rem.isEmpty then
+            g := g.chainPendingReplacement
+              (.finishPostStep (.discardMultiHandIdsLoop rem logEach cause))
+          return g
+        if logEach && (g.followMovedToZone? id (· == .graveyard owner)).isSome then
+          g := g.logMsg msg
+  return g
+
 /-- Discard every card in `p`'s hand. Zero cards is a legal discard and is
 logged (Sauron, the Dark Lord). -/
 def discardEntireHand (g : Game) (p : PlayerId) (cause : Option EventCause := none) : Game :=
@@ -467,12 +498,10 @@ def everyAttackCosts (g : Game) (o : GameObject) : Bool :=
   | none => false
   | some p =>
     let opps := g.livingOpponents p
-    let noJace := g.cantAttackJaces p
     !opps.isEmpty && opps.all (fun pl =>
       g.attackTaxPerCreature pl.id > 0 &&
         !(g.permanentsOf pl.id).any (fun pw =>
-          g.isPlaneswalker pw &&
-            !(noJace && ((g.name pw).startsWith "Jace" || g.hasSubtype pw .jace))))
+          g.isPlaneswalker pw && !(g.cantAttackJace p pw)))
 
 /-- Whether `o` has at least one legal attack target (an opponent player or
 opponent-controlled planeswalker) that does not charge an attack cost
@@ -483,12 +512,10 @@ def hasCostFreeLegalAttackTarget (g : Game) (o : GameObject) : Bool :=
   | some p =>
     let opps := g.livingOpponents p
     let flyer := g.hasFlying o
-    let noJace := g.cantAttackJaces p
     opps.any fun pl =>
       (g.attackTaxPerCreature pl.id == 0 && !(flyer && g.leftoverFlyingRestriction pl.id)) ||
         (g.permanentsOf pl.id).any (fun pw =>
-          g.isPlaneswalker pw &&
-            !(noJace && ((g.name pw).startsWith "Jace" || g.hasSubtype pw .jace)))
+          g.isPlaneswalker pw && !(g.cantAttackJace p pw))
 
 /-- True when `o` must attack this combat. Summoning sickness, being tapped,
 having no legal attack target, or an unpaid attack cost means it does not have

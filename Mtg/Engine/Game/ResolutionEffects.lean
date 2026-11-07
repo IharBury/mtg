@@ -118,6 +118,8 @@ def mayCastFromLookedError (g : Game) (p : PlayerId) (ids : Array ObjectId)
     some "That card is not among the cards you looked at"
   else if g.cantCastSpellsThisTurn p then
     some "You can't cast spells this turn (CR 101.2)"
+  else if g.splitSecondOnStack then
+    some "A spell with split second is on the stack (CR 702.61a)"
   else if g.combatLocksNonManaAbilities then
     some "During combat, players can't cast spells (Yuriko, Blade of the Mighty)"
   else if g.opponentsCantCastOnActiveTurn p then
@@ -127,6 +129,7 @@ def mayCastFromLookedError (g : Game) (p : PlayerId) (ids : Array ObjectId)
     | none => some "There is no card to cast"
     | some o =>
       let bc := g.baseCard o
+      let tcs := g.evalLayer3 o
       if o.zone != .library p then
         some s!"{o.name} is no longer among the cards you looked at"
       else if g.isLand o then
@@ -138,29 +141,21 @@ def mayCastFromLookedError (g : Game) (p : PlayerId) (ids : Array ObjectId)
       else if (g.objectManaValue o : Int) > maxMv then
         some s!"{o.name}'s mana value is greater than the greatest power among attacking creatures you control"
       else if g.isAura o && !bc.allowsZeroTargets &&
-          (g.legalCastTargets p bc).isEmpty then
+          (g.legalAuraTargets p bc (some o.id)).isEmpty then
         some s!"{o.name} requires a target to enchant"
       -- CR 601.2b–c / 115.1 / 733.1: a spell that can't announce a legal target (kicked
       -- or not) or a choosable mode can't be cast from among the looked-at cards.
       else if isModalSpellFace bc &&
-          !(effectiveSpellModes bc).any (g.spellModeIsChoosable p · (some o.id)) &&
+          !(effectiveSpellModes bc).any (fun e =>
+            let m := if tcs.isEmpty then e else TextChange.applyEffect tcs e
+            g.spellModeIsChoosable p m (some o.id)) &&
           !isReturnUpToTwoGyModal bc && !bc.allowsZeroTargets then
         some s!"{o.name} has no legal target and can't be cast"
       else if !g.isAura o && !isModalSpellFace bc && bc.requiresTarget &&
-          !bc.allowsZeroTargets && !g.castFaceHasLegalTarget p bc then
+          !bc.allowsZeroTargets && !g.castFaceHasLegalTarget p bc tcs (some o.id) then
         some s!"{o.name} has no legal target and can't be cast"
       -- CR 601.2b / 601.2h: a mandatory sacrifice additional cost must be payable.
-      else if bc.additionalCostSacrificeArtifactOrCreature &&
-          bc.additionalCostOrPayGeneric.isNone &&
-          !(g.permanentsOf p).any (fun perm =>
-            if bc.additionalCostSacrificeCreatureOrPlaneswalker then
-              g.isCreature perm || g.isPlaneswalker perm
-            else if bc.additionalCostSacrificeCreature then g.isCreature perm
-            else g.isCreature perm || g.isArtifact perm) then
-        some s!"{o.name} requires sacrificing an artifact or creature"
-      else if bc.additionalCostSacrificeCreature && (g.creaturesControlledBy p).isEmpty then
-        some s!"{o.name} requires sacrificing a creature"
-      else none
+      else g.mandatorySacrificeError? p o.id bc o.name
 
 /-- Look at the top `n` cards and wait for the controller to choose whether
 to cast one with mana value at most `maxMv` (Cosmic Cube; MSH 356). -/
@@ -233,18 +228,6 @@ def millOpponentsOnly (g : Game) (opponents : Array PlayerId) (n : Nat)
   else
     g.withBatch cause fun g =>
       opponents.foldl (fun acc pid => acc.mill pid n (cause := cause)) g
-
-/-- Mill opponents, then a reflexive trigger exists only if cards were milled. -/
-def millThenReflexive (g : Game) (opponents : Array PlayerId) (n : Nat)
-    (cause : Option EventCause := none) : Game × Bool :=
-  if let .chooseReplacement .. := g.pending then
-    (g.chainPendingReplacement (.finishPostStep (.millOpponentsOnly opponents n cause)), false)
-  else
-    let startIdx := g.events.size
-    let g :=
-      g.withBatch cause fun g =>
-        opponents.foldl (fun acc pid => acc.mill pid n (cause := cause)) g
-    (g, g.anyOpponentMilledSince opponents startIdx)
 
 /-- Put +1/+1 and lifelink until end of turn on a creature (Bard the Bowman). -/
 def applyBardBowman (g : Game) (targetId : ObjectId) : Game :=
@@ -1058,6 +1041,8 @@ def commitEnteringAttackItems (g : Game)
         | none => g
     | _ => g
   else
+    let outerCont? := g.pendingReplacement
+    let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
     let g :=
       g.withBatch cause fun g => Id.run do
         let preBf := preBattlefield.getD g.battlefield
@@ -1087,7 +1072,11 @@ def commitEnteringAttackItems (g : Game)
                   g := g.chainPendingReplacement (.finishEnteringAttackCards entries cause)
                 return g
         return g.finishEnteringAttackCards entries cause
-    if g.currentBatch.isNone && g.pending == .none then
+    let g :=
+      match outerCont? with
+      | some outer => g.chainPendingReplacement outer
+      | none => g
+    if g.currentBatch.isNone && g.pending == .none && g.pendingReplacement.isNone then
       g.promptTriggerTargetsIfNeeded
     else g
 

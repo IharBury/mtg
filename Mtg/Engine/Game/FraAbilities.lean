@@ -54,28 +54,59 @@ def continueSacrificeEach (g : Game) (controller : PlayerId) (players : Array Pl
       g.sacrificePermanentsLoop pairs (preBattlefield := some preBf)
         (createBeastFor := if youSacrificed then some controller else none)
 
-/-- Ask the next opponent in `players` to discard two cards for Garruk,
-Veiled Butcher, or draw `draws` cards for `controller` and finish. -/
+/-- Count nonland cards actually discarded by each opponent in `oppIds` since
+`startIdx` (CR 701.9c: face-up nonland cards moved from that opponent's hand to
+a different public zone with `.discard`) and draw `baseDraws + shortCount`
+cards for `controller` (CR 101.4 / 603.2c / 614.6 / 701.9b–c). -/
+def finishDiscardTwoDraws (g : Game) (controller : PlayerId) (baseDraws : Nat)
+    (oppIds : Array PlayerId) (startIdx : Nat) : Game :=
+  let nonlandDiscardedBy (opp : PlayerId) : Nat :=
+    (g.events.extract startIdx g.events.size).foldl (fun acc e =>
+      match e.change with
+      | .rules (.zone (.moved _ after (.hand q) toZone .discard _ _ _)) =>
+        if q == opp && toZone != .hand q && isPublicZone toZone &&
+            !after.faceDown && !after.types.contains .land then
+          acc + 1
+        else acc
+      | _ => acc) 0
+  let shortCount := (oppIds.filter (fun opp => nonlandDiscardedBy opp < 2)).size
+  let totalDraws := baseDraws + shortCount
+  if g.stillInGame controller && totalDraws > 0 then
+    g.draw controller totalDraws
+  else g
+
+/-- Collect each living opponent's two-card discard choice in APNAP order for
+Garruk, Veiled Butcher, then discard all chosen cards simultaneously inside one
+shared batch and draw a card for each opponent who didn't discard two nonland
+cards (CR 101.4 / 603.2c / 614.6 / 701.9b–c). -/
 partial def continueDiscardTwo (g : Game) (controller : PlayerId) (players : Array PlayerId)
-    (draws : Nat) : Game :=
-  match players.toList with
-  | [] => g.draw controller draws
+    (draws : Nat) (chosen : Array (PlayerId × Array ObjectId) := #[]) : Game :=
+  let living := players.filter g.stillInGame
+  match living.toList with
+  | [] =>
+    let livingChosen := chosen.filter (fun (p, _) => g.stillInGame p)
+    let oppIds := livingChosen.map Prod.fst
+    let pairs := livingChosen.foldl (fun acc (p, ids) =>
+      acc ++ ids.map (fun id => (p, id))) #[]
+    let startIdx := g.events.size
+    let g :=
+      if pairs.isEmpty then g
+      else
+        g.withBatch none fun g =>
+          g.discardMultiHandIdsLoop pairs (logEach := true)
+    if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement
+        (.finishPostStep (.finishDiscardTwoDraws controller draws oppIds startIdx))
+    else
+      g.finishDiscardTwoDraws controller draws oppIds startIdx
   | p :: rest =>
     let hand := (g.player p).hand
     if hand.size ≤ 2 then
-      let nonland := (hand.filter (fun id => !g.isLand (g.object! id))).size
-      let nextDraws := if nonland < 2 then draws + 1 else draws
-      let g := g.withBatch none fun g =>
-        g.discardHandIdsLoop p hand (logEach := true)
       let g :=
         if hand.isEmpty then g.logMsg s!"{(g.player p).name} has no cards to discard" else g
-      if let .chooseReplacement .. := g.pending then
-        g.chainPendingReplacement
-          (.finishPostStep (.continueDiscardTwo controller rest.toArray nextDraws))
-      else
-        g.continueDiscardTwo controller rest.toArray nextDraws
+      g.continueDiscardTwo controller rest.toArray draws (chosen.push (p, hand))
     else
-      g.beginFraChoice p (.discardTwo controller rest.toArray draws)
+      g.beginFraChoice p (.discardTwo controller rest.toArray draws chosen)
         s!"{(g.player p).name} discards two cards"
 
 /-- Creatures attacking `p` directly (not a planeswalker). -/
@@ -259,32 +290,42 @@ targets. -/
 partial def damageUpToOneAndPlayerLoop (g : Game) (controller : PlayerId)
     (kind : EffectTargetKind) (remaining : Array (Nat × Target)) (n : Nat)
     (srcName : String) (sourceId : Option ObjectId)
-    (cause? : Option EventCause) : Game :=
-  match remaining[0]? with
-  | none => g
-  | some (i, t) =>
-    let rest := remaining.extract 1 remaining.size
-    let src? :=
-      (g.resolvingSpell.bind g.damageSourceById?).orElse (fun _ => sourceId.bind g.damageSourceById?)
-    let g :=
-      match t with
-      | Target.permanent id =>
-        if g.targetLegalAt controller kind i t sourceId then
-          match g.findObject? id with
-          | some o => g.dealDamageFrom srcName o n (source := src?) (cause := cause?)
-          | none => g
-        else g.illegalAbilityTarget t
-      | Target.player pid =>
-        if g.targetLegalAt controller kind i t sourceId then
-          g.dealDamageToPlayer pid n (source := src?) (cause := cause?)
-        else g.illegalAbilityTarget t
-      | _ => g
-    if rest.isEmpty then g
-    else if let .chooseReplacement .. := g.pending then
-      g.chainPendingReplacement
-        (.finishPostStep (.damageUpToOneAndPlayerLoop controller kind rest n srcName sourceId cause?))
-    else
-      g.damageUpToOneAndPlayerLoop controller kind rest n srcName sourceId cause?
+    (cause? : Option EventCause)
+    (startEventIdx : Option Nat := none) : Game :=
+  let sIdx := startEventIdx.getD g.events.size
+  if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement
+      (.finishPostStep (.damageUpToOneAndPlayerLoop controller kind remaining n srcName sourceId cause? (some sIdx)))
+  else
+    let c := cause?.orElse (fun _ => g.currentBatch.bind (·.2))
+    match remaining[0]? with
+    | none =>
+      g.applyAggregatedLifelinkSince sIdx (cause := c)
+    | some (i, t) =>
+      let rest := remaining.extract 1 remaining.size
+      let src? :=
+        (g.resolvingSpell.bind g.damageSourceById?).orElse (fun _ => sourceId.bind g.damageSourceById?)
+      let g :=
+        match t with
+        | Target.permanent id =>
+          if g.targetLegalAt controller kind i t sourceId then
+            match g.findObject? id with
+            | some o =>
+              g.dealDamageFrom srcName o n (source := src?) (cause := c)
+                (suppressLifelink := true)
+            | none => g
+          else g.illegalAbilityTarget t
+        | Target.player pid =>
+          if g.targetLegalAt controller kind i t sourceId then
+            g.dealDamageToPlayer pid n (source := src?) (cause := c)
+              (suppressLifelink := true)
+          else g.illegalAbilityTarget t
+        | _ => g
+      if let .chooseReplacement .. := g.pending then
+        g.chainPendingReplacement
+          (.finishPostStep (.damageUpToOneAndPlayerLoop controller kind rest n srcName sourceId c (some sIdx)))
+      else
+        g.damageUpToOneAndPlayerLoop controller kind rest n srcName sourceId c (some sIdx)
 
 /-- Exile all but the bottom card of each opponent's library, pausing across
 `Pending.chooseReplacement` and logging per opponent only when at least one
@@ -491,21 +532,23 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
   | .eachOpponentDiscardsTwoDrawPerShort =>
     g.continueDiscardTwo controller (g.apnapOrder.filter (g.isLivingOpponentOf controller ·)) 0
   | .damageEachCreatureExceptYourTokens n =>
-    let victims := g.battlefield.filter (fun o =>
-      g.isCreature o && !(o.printed.isToken && g.controlledBy o controller))
-    let (g, cause?) : Game × Option EventCause :=
-      if n == 0 || victims.isEmpty then (g, none)
-      else
+    let victimIds := (g.battlefield.filter (fun o =>
+      g.isCreature o && !(o.printed.isToken && g.controlledBy o controller))).map (·.id)
+    if n == 0 || victimIds.isEmpty then g
+    else
+      let (g, cause?) : Game × Option EventCause :=
         match g.currentResolvingContext? with
         | some (src, ctrl) =>
           let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some controller)) (src.orElse (fun _ => sourceId))
           (g, some c)
         | none => (g, none)
-    g.withBatch cause? fun g =>
-      victims.foldl (fun g o =>
-        match g.findObject? o.id with
-        | some o => if o.isOnBattlefield then g.dealDamageFrom srcName o n (source := src?) (cause := cause?) else g
-        | none => g) g
+      let sIdx := g.events.size
+      g.withBatch cause? fun g =>
+        g.dealDamageToEachCreatureMatchingIds victimIds n
+          (exceptControllerTokens := some controller)
+          (source := src?.map g.snapshotDamageSource)
+          (cause := cause?)
+          (startEventIdx := some sIdx)
   | .emblemCreaturesGetTwoTwo =>
     let emblem : CardDef := {
       name := s!"{srcName} Emblem", types := #[]
@@ -543,8 +586,9 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
           (g, some c)
         | none => (g, none)
     let indexed := (List.range targets.size).toArray.map fun i => (i, targets[i]!)
+    let sIdx := g.events.size
     g.withBatch cause? fun g =>
-      g.damageUpToOneAndPlayerLoop controller kind indexed n srcName sourceId cause?
+      g.damageUpToOneAndPlayerLoop controller kind indexed n srcName sourceId cause? (some sIdx)
   | .beastToken => g.createKindTokens controller .beast44trample 1
   | .putCauseCountersOnSource =>
     match g.resolvingAbilityObject?.bind (·.fraCauseStatus), source? with
@@ -691,13 +735,25 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
     | some o => if o.isOnBattlefield then g.pumpPermanent o p t else g
     | none => g
   | .attackersOfPlayerGetTwoTwoTrample =>
-    match g.fraCauseController? with
-    | some defender =>
+    let lockedIds := (g.resolvingAbilityObject?.map (·.fraCauseIds)).getD #[]
+    if !lockedIds.isEmpty then
       g.withBatch none fun g =>
-        (g.creaturesAttackingPlayer defender).foldl (fun g o =>
-          let g := g.pumpPermanent (g.object! o.id) 2 2
-          g.grantKeywordsUntilEot (g.object! o.id) Keyword.trample) g
-    | none => g
+        lockedIds.foldl (fun g aid =>
+          match g.findObject? aid with
+          | some o =>
+            if o.isOnBattlefield && g.isCreature o then
+              let g := g.pumpPermanent o 2 2
+              g.grantKeywordsUntilEot (g.object! aid) Keyword.trample
+            else g
+          | none => g) g
+    else
+      match g.fraCauseController? with
+      | some defender =>
+        g.withBatch none fun g =>
+          (g.creaturesAttackingPlayer defender).foldl (fun g o =>
+            let g := g.pumpPermanent (g.object! o.id) 2 2
+            g.grantKeywordsUntilEot (g.object! o.id) Keyword.trample) g
+      | none => g
   | _ => g
 
 end Game

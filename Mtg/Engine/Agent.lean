@@ -24,7 +24,19 @@ def chooseManaPayment (g : Game) (p : PlayerId) : Option Action :=
   | some prop =>
     let allowElf := g.proposedAllowsElfRestricted prop
     let allowInst := g.proposedAllowsInstRestricted prop
-    if (g.player p).manaPool.canPay prop.cost allowElf allowInst then
+    let allowHero := g.proposedAllowsHeroRestricted prop
+    let allowVillain := g.proposedAllowsVillainRestricted prop
+    let allowCantNonartifact := g.proposedAllowsCantNonartifact prop
+    let allowCreature := g.proposedAllowsCreatureRestricted prop
+    let spend := g.proposedManaSpend prop
+    if (g.player p).manaPool.canPay prop.cost
+        (allowElfRestricted := allowElf)
+        (allowInstRestricted := allowInst)
+        (allowHeroRestricted := allowHero)
+        (allowVillainRestricted := allowVillain)
+        (allowCantNonartifact := allowCantNonartifact)
+        (allowCreatureRestricted := allowCreature)
+        (spend := spend) then
       some .pay
     else
       match g.preferredManaTap p prop with
@@ -63,7 +75,7 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
       let legalPwFor (plId : PlayerId) (usedTomik : Array ObjectId) : Option GameObject :=
         (g.permanentsOf plId).find? fun pw =>
           g.isPlaneswalker pw &&
-            !(g.cantAttackJaces p && ((g.name pw).startsWith "Jace" || g.hasSubtype pw .jace)) &&
+            !(g.cantAttackJace p pw) &&
             !(g.planeswalkerAttackedByOneAtMost pw && usedTomik.contains pw.id)
       let pickDestFor (o : GameObject) (usedTomik : Array ObjectId) :
           Option (PlayerId × Option ObjectId) :=
@@ -148,7 +160,15 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
           some (.chooseX (loyalty - 1))
         else if prop.removePlusOneX then
           some (.chooseX (((prop.sourceId.bind g.findObject?).map (·.status.plusOnePlusOne)).getD 0))
-        else some (.chooseX (maxAffordableX g p prop.cost))
+        else
+          some (.chooseX (maxAffordableX g p prop.cost
+            (allowElfRestricted := g.proposedAllowsElfRestricted prop)
+            (allowInstRestricted := g.proposedAllowsInstRestricted prop)
+            (allowHeroRestricted := g.proposedAllowsHeroRestricted prop)
+            (allowVillainRestricted := g.proposedAllowsVillainRestricted prop)
+            (allowCantNonartifact := g.proposedAllowsCantNonartifact prop)
+            (allowCreatureRestricted := g.proposedAllowsCreatureRestricted prop)
+            (spend := g.proposedManaSpend prop)))
       | none => some (.chooseX 0)
     | .chooseTargets _ =>
       chooseSpellTarget g p
@@ -257,10 +277,21 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
           | some prop =>
             let face := g.baseCard prop.original
             if !prop.alternativeCost && face.morph.isSome && face.kicker.isNone then
+              let spell := (g.findObject? prop.spellId).getD prop.original
               let available := g.availableMana p
+              let spend : ManaSpend :=
+                { spell := true, fromHand := prop.original.zone == .hand p
+                  supertypes := g.supertypes spell
+                  types := g.types spell
+                  subtypes := g.subtypes spell }
               !available.canPay prop.cost
-                (allowElfRestricted := g.hasSubtype prop.original .elf)
-                (allowInstRestricted := face.types.any CardType.isInstantOrSorcery) &&
+                (allowElfRestricted := g.hasSubtype spell .elf)
+                (allowInstRestricted := g.isInstantOrSorcery spell)
+                (allowHeroRestricted := g.hasSubtype spell .hero)
+                (allowVillainRestricted := g.hasSubtype spell .villain)
+                (allowCantNonartifact := g.isArtifact spell)
+                (allowCreatureRestricted := false)
+                (spend := spend) &&
                 (g.apply actor (.announceKicker true)).isOk
             else false
           | none => false
@@ -304,9 +335,20 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
       let affordable :=
         (g.findObject? cardId).any (fun o =>
           let available := g.availableMana p
-          available.canPay (g.playManaCost { o with controller := some p } (g.baseCard o))
+          let origPerm := g.playPermission o
+          let spend : ManaSpend :=
+            { spell := true, fromHand := o.zone == .hand p
+              supertypes := g.supertypes o, types := g.types o, subtypes := g.subtypes o }
+          (!origPerm.any (·.payLifeEqualManaValue) || g.canPayLife p (g.objectManaValue o)) &&
+          available.canPay (g.playManaCost { o with controller := some p } (g.baseCard o)
+              (origPerm := origPerm) (isFreeFromGy := some false) (flashback := some false))
             (allowElfRestricted := g.hasSubtype o .elf)
-            (allowInstRestricted := g.isInstantOrSorcery o) &&
+            (allowInstRestricted := g.isInstantOrSorcery o)
+            (allowHeroRestricted := g.hasSubtype o .hero)
+            (allowVillainRestricted := g.hasSubtype o .villain)
+            (allowCantNonartifact := g.isArtifact o)
+            (allowCreatureRestricted := false)
+            (spend := spend) &&
             g.canPayAnnouncedAdditional p o available)
       if !affordable then some .decline
       else
@@ -374,13 +416,24 @@ where
       match g.defaultAbilityMode p prop.abilityModes prop.sourceId with
       | some idx => some (.chooseMode idx)
       | none => some .pass
-  /-- Largest `{X}` `p` can currently pay for `cost` (CR 107.3a). -/
-  maxAffordableX (g : Game) (p : PlayerId) (cost : ManaCost) : Nat :=
+  /-- Largest `{X}` `p` can currently pay for `cost` (CR 107.3a / 106.6). -/
+  maxAffordableX (g : Game) (p : PlayerId) (cost : ManaCost)
+      (allowElfRestricted := false) (allowInstRestricted := false)
+      (allowHeroRestricted := false) (allowVillainRestricted := false)
+      (allowCantNonartifact := false) (allowCreatureRestricted := false)
+      (spend : ManaSpend := {}) : Nat :=
     let available := g.availableMana p
     Id.run do
       let mut best : Nat := 0
       for x in [0:available.total + 1] do
-        if available.canPay (cost.substituteX x) then
+        if available.canPay (cost.substituteX x)
+            (allowElfRestricted := allowElfRestricted)
+            (allowInstRestricted := allowInstRestricted)
+            (allowHeroRestricted := allowHeroRestricted)
+            (allowVillainRestricted := allowVillainRestricted)
+            (allowCantNonartifact := allowCantNonartifact)
+            (allowCreatureRestricted := allowCreatureRestricted)
+            (spend := spend) then
           best := x
       return best
   /-- Activate a non-mana ability if the available mana covers its cost. -/
@@ -389,13 +442,35 @@ where
       let available :=
         g.availableManaExcept p (if ab.cost.tap then some o.id else none)
       let manaCost := g.activationManaCost p ab (some o)
+      let allowElf := g.hasSubtype o .elf
+      let allowHero := g.hasSubtype o .hero
+      let allowVillain := g.hasSubtype o .villain
+      let allowCreature := g.isCreature o
+      let actSpend : ManaSpend := { equip := ab.isEquip }
+      let spellSpend : ManaSpend :=
+        { spell := true, fromHand := o.zone == .hand p
+          supertypes := g.supertypes o, types := g.types o, subtypes := g.subtypes o }
       g.canActivate p o ab &&
-      available.canPay ab.cost.mana (allowElfRestricted := g.hasSubtype o .elf)
-        (allowCantNonartifact := true) &&
+      available.canPay manaCost
+        (allowElfRestricted := allowElf)
+        (allowInstRestricted := false)
+        (allowHeroRestricted := allowHero)
+        (allowVillainRestricted := allowVillain)
+        (allowCantNonartifact := true)
+        (allowCreatureRestricted := allowCreature)
+        (spend := actSpend) &&
       -- Don't pay life that would reduce the player to 0 or less.
       (ab.cost.payLife == 0 || (g.player p).life > (ab.cost.payLife : Int)) &&
       -- Don't spend a once-only X power-up at X = 0.
-      !(ab.effect == Effect.plusOneX && maxAffordableX g p manaCost == 0) &&
+      !(ab.effect == Effect.plusOneX &&
+        maxAffordableX g p manaCost
+          (allowElfRestricted := allowElf)
+          (allowInstRestricted := false)
+          (allowHeroRestricted := allowHero)
+          (allowVillainRestricted := allowVillain)
+          (allowCantNonartifact := true)
+          (allowCreatureRestricted := allowCreature)
+          (spend := actSpend) == 0) &&
       -- Don't spend mana re-equipping a creature that is already equipped.
       !(ab.isEquip && o.attachedTo.isSome) &&
       -- Spend {4}{T} on Rogue's Passage only after attackers are declared.
@@ -403,8 +478,14 @@ where
         !(g.permanentsOf p).any (fun c => g.isCreature c && c.status.attacking)) &&
       -- Don't typecycle a card you can currently afford to cast.
       !(ab.activateFromHand && g.canCast p o &&
-        (g.availableMana p).canPay (g.baseCard o).manaCost
-          (allowElfRestricted := g.hasSubtype o .elf))
+        (g.availableMana p).canPay (g.playManaCost { o with controller := some p } (g.baseCard o))
+          (allowElfRestricted := allowElf)
+          (allowInstRestricted := g.isInstantOrSorcery o)
+          (allowHeroRestricted := allowHero)
+          (allowVillainRestricted := allowVillain)
+          (allowCantNonartifact := g.isArtifact o)
+          (allowCreatureRestricted := false)
+          (spend := spellSpend))
     let firstAbility (o : GameObject) : Option Nat :=
       (g.activatedAbilitiesOf o).findIdx? (shouldActivate o)
     let gy := (g.player p).graveyard.filterMap (fun id => g.findObject? id)
@@ -421,18 +502,43 @@ where
   chooseCast (g : Game) (p : PlayerId) : Option Action :=
     let available := g.availableMana p
     let playable := (g.handObjects p ++ g.exiledPlayable p).filter (fun o =>
+      let perm? := g.playPermission o
+      let spend : ManaSpend :=
+        { spell := true, fromHand := o.zone == .hand p
+          supertypes := g.supertypes o, types := g.types o, subtypes := g.subtypes o }
       g.canCast p o &&
-        ((g.playPermission o).any (·.withoutManaCost) ||
-          available.canPay (g.baseCard o).manaCost
+        (!perm?.any (·.payLifeEqualManaValue) || g.canPayLife p (g.objectManaValue o)) &&
+        (perm?.any (·.withoutManaCost) ||
+          available.canPay (g.playManaCost { o with controller := some p } (g.baseCard o)
+              (origPerm := perm?))
             (allowElfRestricted := g.hasSubtype o .elf)
-            (allowInstRestricted := g.isInstantOrSorcery o)) &&
+            (allowInstRestricted := g.isInstantOrSorcery o)
+            (allowHeroRestricted := g.hasSubtype o .hero)
+            (allowVillainRestricted := g.hasSubtype o .villain)
+            (allowCantNonartifact := g.isArtifact o)
+            (allowCreatureRestricted := false)
+            (spend := spend)) &&
         g.canPayAnnouncedAdditional p o available)
     let adventurePlayable := (g.handObjects p ++ g.exiledPlayable p).filter (fun o =>
       g.canCastAdventure p o &&
         match (g.baseCard o).adventure with
         | some adv =>
-          available.canPay adv.manaCost
-            (allowInstRestricted := adv.types.any CardType.isInstantOrSorcery)
+          let face := adv.toCardDef
+          let advObj := { o with controller := some p, printed := face, adventurerCard := some o.printed }
+          let perm? := g.playPermission o
+          let spend : ManaSpend :=
+            { spell := true, fromHand := o.zone == .hand p
+              supertypes := g.supertypes advObj, types := g.types advObj, subtypes := g.subtypes advObj }
+          (!perm?.any (·.payLifeEqualManaValue) || g.canPayLife p face.manaValue) &&
+          (perm?.any (·.withoutManaCost) ||
+            available.canPay (g.playManaCost { o with controller := some p } face (origPerm := perm?))
+              (allowElfRestricted := g.hasSubtype advObj .elf)
+              (allowInstRestricted := g.isInstantOrSorcery advObj)
+              (allowHeroRestricted := g.hasSubtype advObj .hero)
+              (allowVillainRestricted := g.hasSubtype advObj .villain)
+              (allowCantNonartifact := g.isArtifact advObj)
+              (allowCreatureRestricted := false)
+              (spend := spend))
         | none => false)
     let oppHasCreature := !(g.creaturesControlledBy (g.opponent p)).isEmpty
     let ownCreature := (g.creaturesControlledBy p).back?

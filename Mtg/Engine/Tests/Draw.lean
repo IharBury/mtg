@@ -134,4 +134,33 @@ the rest of the sequence. -/
   let g := afterDraw.applyTriggeredAbility caster .onAttackTapHumansDraw none
   g.pending == .tapHumans caster && g.humansTappedThisWay == 0
 
+/- CR 101.4 / 121.2 / 121.2c: triggered multi-opponent draws are unbatched
+per card, share one `.oneShotEffect` cause, and draw in APNAP order. -/
+#guard
+  let g3 :=
+    match Start.start {
+      seats := #[{ name := "P0", deck := testRedDeck },
+                 { name := "P1", deck := testRedDeck },
+                 { name := "P2", deck := testRedDeck }]
+      startingPlayer := some 2
+      seed := 11 } with
+    | .ok g => keepOpeningHands g 16
+    | .error e => panic! e
+  let startIdx := g3.events.size
+  let gAfter := g3.applyTriggerDraw ⟨0⟩ none (.fixed 1) .eachOpponent
+  let drawEvs := (gAfter.events.extract startIdx gAfter.events.size).filter fun e =>
+    match e.change with
+    | .rules (.zone (.moved _ _ _ _ (.draw _ _) _ _ _)) => true
+    | _ => false
+  let drawers := drawEvs.filterMap fun e =>
+    match e.change with
+    | .rules (.zone (.moved _ _ _ _ (.draw _ _) p _ _)) => p
+    | _ => none
+  drawEvs.size == 2 &&
+    drawers == #[⟨2⟩, ⟨1⟩] &&
+    drawEvs[0]!.batch.isSome &&
+    drawEvs[0]!.batch != drawEvs[1]!.batch &&
+    drawEvs[0]!.cause?.isSome &&
+    drawEvs[0]!.cause? == drawEvs[1]!.cause?
+
 end Mtg.Engine.DrawTests

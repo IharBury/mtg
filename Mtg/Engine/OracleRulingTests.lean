@@ -4494,8 +4494,8 @@ def uncastCopyCeasesOk : Bool :=
 #guard uncastCopyCeasesOk
 
 def sarumanReflexiveAfterMillOk : Bool :=
-  let (g, fired) := afterDraw.millThenReflexive #[⟨1⟩] 2
-  fired &&
+  let g := (afterDraw.change (.pushContinuationFrame {})).millOpponentsAndNote #[⟨1⟩] #[⟨1⟩] 2
+  g.opponentsMilledThisWay &&
     (g.player ⟨1⟩).graveyard.size >= 2 &&
     (ruling 343).comment.contains "reflexive"
 

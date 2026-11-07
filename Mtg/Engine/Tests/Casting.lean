@@ -425,4 +425,65 @@ def quakeMisses : Game :=
   !(named quakeMisses "Heroic Feast").status.tapped &&
   logContains quakeMisses "no longer legal"
 
+-- Phase 25 Item 2: CR 118.9a,c alternative-cost exclusivity & actualCastManaValue,
+-- Flawless Maneuver (`freeCastIfControlCommander`) from hand, and `canPayAnnouncedAdditional`
+-- passing `{ o with controller := some p }` to `playManaCost`.
+#guard
+  let rgMorpher : CardDef := {
+    name := "RG Morpher"
+    manaCost := { symbols := #[.generic 2, .colored .red] }
+    types := #[.creature]
+    power := some 2
+    toughness := some 2
+    morph := some (ManaCost.ofGeneric 3)
+    staticAbilities := #[.sneak { symbols := #[.colored .red] }]
+  }
+  let flawless : CardDef := {
+    name := "Test Flawless Maneuver"
+    manaCost := { symbols := #[.generic 2, .colored .white] }
+    types := #[.instant]
+    freeCastIfControlCommander := true
+  }
+  let omniPerm : CardDef := {
+    name := "Test Omnipresence"
+    types := #[.enchantment]
+    staticAbilities := #[.castFromHandFreeUpToCreatures]
+  }
+  let cmdrCard : CardDef := {
+    name := "Test Commander"
+    types := #[.creature]
+    supertypes := #[.legendary]
+    power := some 3
+    toughness := some 3
+  }
+  let morphFace : CardDef := {
+    name := ""
+    manaCost := ManaCost.ofGeneric 3
+    types := #[.creature]
+    power := some 2
+    toughness := some 2
+  }
+  let g0 := emptyHand Mtg.Engine.Tests.afterDraw me
+  let gOmni := addPermanent (addPermanent g0 omniPerm me me) grizzlyBears me me
+  let (gOmni, _) := gOmni.allocObject cmdrCard me .battlefield (some me)
+    { summoningSick := false } (isCommander := true)
+  let (gHand0, rgCard) := gOmni.allocObject rgMorpher me (.hand me)
+  let (gHand, flawCard) := gHand0.allocObject flawless me (.hand me)
+  -- Flawless Maneuver in hand with a commander controlled pays {0}, whereas Morph {3} and Sneak {R}
+  -- do NOT get overwritten by `pendingFreeRGCreature` or `Omnipresence` (CR 118.9a,c):
+  let gFreeRG := gHand.createEffect (.pendingFreeRGCreatureThisTurn me)
+    (cause := some (.gameRule .staticAbility))
+  let normalRgCost := gFreeRG.playManaCost { rgCard with controller := some me } rgMorpher
+  let sneakRgCost :=
+    gFreeRG.playManaCost { rgCard with controller := some me }
+      { rgMorpher with manaCost := { symbols := #[.colored .red] } } (explicitAltCost := true)
+  let morphRgCost :=
+    gFreeRG.playManaCost { rgCard with controller := some me, status := { rgCard.status with faceDown := true } }
+      morphFace (explicitAltCost := true)
+  let flawlessCost := gHand.playManaCost { flawCard with controller := some me } flawless
+  !normalRgCost.includesManaPayment &&
+    sneakRgCost == { symbols := #[.colored .red] } &&
+    morphRgCost == ManaCost.ofGeneric 3 &&
+    !flawlessCost.includesManaPayment
+
 end Mtg.Engine.CastingTests

@@ -1,4 +1,4 @@
-import Mtg.Engine.Game.Costs
+import Mtg.Engine.Game.Choices
 
 /-!
 # Sacrifice and discard prompts (CR 701.21 / 701.9)
@@ -23,25 +23,29 @@ def beginSacrificeCreatures (g : Game) (players : Array PlayerId)
     (g.change (.pending (.chooseSacrificeCreature p chosen rest))).logMsg
       s!"{(g.player p).name} must sacrifice a creature"
 
+/-- Close `g.discardBatch` when it owns `g.currentBatch`, evaluating batch-level
+discard and graveyard-arrival triggers once (CR 603.2c / 701.9b). -/
+def closeCurrentDiscardBatch (g : Game) : Game :=
+  match g.discardBatch with
+  | some (dbBid, dbStartIdx) =>
+    let g := g.change (.discardBatch none)
+    if g.currentBatch.map Prod.fst == some dbBid then
+      g.finishOpenBatchAndLinkedExile dbBid dbStartIdx
+    else g
+  | none => g
+
 /-- Ask the next player who has a card to discard, or resume priority.
 `count` is how many cards each player in `players` must discard, one at a time.
-Across non-Thirst multi-card / multi-player prompts (`count > 1` or multiple
-players), `discardCountPerPlayer` preserves `count` for later players in
-`players` and a shared `pausedBatch` (`discardBatch`) stays open across the
+Across multi-card / multi-player prompts (`count > 1`, `thirstDiscardsLeft > 1`,
+or multiple players), `discardCountPerPlayer` preserves `count` for later players
+in `players` and a shared `pausedBatch` (`discardBatch`) stays open across the
 individual per-card `.discard` moves so batch-level discard / graveyard-arrival
-triggers evaluate once when the instruction finishes (CR 101.4 / 603.2c / 701.9b). -/
+triggers evaluate once when the instruction finishes (CR 101.4 / 118.12a /
+603.2c / 701.9b). -/
 def beginDiscardCards (g : Game) (players : Array PlayerId) (count : Nat := 1)
     (samePlayer : Bool := false) (resuming : Bool := false) : Game :=
   if !resuming && count == 0 && g.thirstDiscardsLeft == 0 then g
   else
-    let closeDiscardBatch (g : Game) : Game :=
-      match g.discardBatch with
-      | some (dbBid, dbStartIdx) =>
-        let g := g.change (.discardBatch none)
-        if g.currentBatch.map Prod.fst == some dbBid then
-          g.finishOpenBatchAndLinkedExile dbBid dbStartIdx
-        else g
-      | none => g
     match g.nextActorWithHandCard players with
     | none =>
       let skipped := players.filter (fun p => g.stillInGame p && (g.player p).hand.isEmpty)
@@ -55,7 +59,7 @@ def beginDiscardCards (g : Game) (players : Array PlayerId) (count : Nat := 1)
       let g := g.changes #[
         .pending .none, .thirstDiscardsLeft 0,
         .pendingDiscardsLeft 0, .discardCountPerPlayer 0]
-      closeDiscardBatch g
+      g.closeCurrentDiscardBatch
     | some (p, rest) =>
       let prefixIdx := players.findIdx? (· == p) |>.getD 0
       let skipped := (players.extract 0 prefixIdx).filter (fun q =>
@@ -64,8 +68,9 @@ def beginDiscardCards (g : Game) (players : Array PlayerId) (count : Nat := 1)
         s!"{(g.player q).name} has no card to discard")
       let keptSamePlayer := resuming && samePlayer && players[0]? == some p
       let isNonThirstMulti := g.thirstDiscardsLeft == 0 && (count > 1 || !rest.isEmpty)
+      let needsBatch := isNonThirstMulti || g.thirstDiscardsLeft > 1
       let g :=
-        if (count > 1 || isNonThirstMulti) && g.continuations.isEmpty then
+        if (count > 1 || needsBatch) && g.continuations.isEmpty then
           g.change (.pushContinuationFrame {})
         else g
       let g :=
@@ -81,7 +86,7 @@ def beginDiscardCards (g : Game) (players : Array PlayerId) (count : Nat := 1)
           else g
         else g
       let g :=
-        if !resuming && isNonThirstMulti && g.currentBatch.isNone && g.discardBatch.isNone then
+        if !resuming && needsBatch && g.currentBatch.isNone && g.discardBatch.isNone then
           let batchId : BatchId := ⟨g.nextBatchId⟩
           let startIdx := g.events.size
           let batchCause :=

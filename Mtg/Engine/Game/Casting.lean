@@ -1,4 +1,4 @@
-import Mtg.Engine.Game.SpellTargets
+import Mtg.Engine.Game.Costs
 
 /-!
 # Casting legality and payment (CR 601)
@@ -69,18 +69,64 @@ def spellNameForbidden (g : Game) (name : String) : Bool :=
     o.status.chosenName == some name &&
       (g.staticAbilities o).any (· == .fra .chosenNameSpellsCantBeCast))
 
-/-- Whether `g.activePlayer` controls a permanent forbidding opponents from
-casting spells during that player's turn (CR 101.2). -/
+/-- Whether any living member of the active team controls a permanent forbidding
+opponents from casting spells during that player's turn (CR 101.2 / 805.4a / 810.2). -/
 def opponentsCantCastOnActiveTurn (g : Game) (p : PlayerId) : Bool :=
-  p != g.activePlayer && !g.areTeammates p g.activePlayer &&
-    (g.permanentsOf g.activePlayer).any (fun o =>
-      (g.staticAbilities o).any (· == .opponentsCantCastOnYourTurn))
+  !g.isOnActiveTeam p &&
+    (g.teamMembers g.activePlayer).any (fun tm =>
+      g.stillInGame tm &&
+        (g.permanentsOf tm).any (fun o =>
+          (g.staticAbilities o).any (· == .opponentsCantCastOnYourTurn)))
 
 /-- Whether `p`'s graveyard has enough other cards to cast `face` (Ruling 852). -/
 def graveyardCastThresholdMet (g : Game) (p : PlayerId) (cardId : ObjectId) (face : CardDef) : Bool :=
   match face.castOnlyIfGraveyardAtLeast with
   | some n => ((g.player p).graveyard.filter (· != cardId)).size >= n
   | none => true
+
+/-- Why a mandatory sacrifice additional cost of `face` cannot be paid, if it cannot
+(CR 601.2b / 601.2h / 601.3). -/
+def mandatorySacrificeError? (g : Game) (p : PlayerId) (checkId : ObjectId)
+    (face : CardDef) (displayName : String := face.name) : Option String :=
+  if face.additionalCostSacrificeArtifactOrCreature &&
+      face.additionalCostOrPayGeneric.isNone &&
+      !(g.permanentsOf p).any (fun perm =>
+        perm.id != checkId &&
+          if face.additionalCostSacrificeCreatureOrPlaneswalker then
+            g.isCreature perm || g.isPlaneswalker perm
+          else if face.additionalCostSacrificeCreature then g.isCreature perm
+          else g.isCreature perm || g.isArtifact perm) then
+    some s!"{displayName} requires sacrificing an artifact or creature"
+  else if face.additionalCostSacrificeCreature &&
+      !(g.creaturesControlledBy p).any (·.id != checkId) then
+    some s!"{displayName} requires sacrificing a creature"
+  else none
+
+/-- Legal targets for beginning to cast card `c` (from hand or as an Adventure). -/
+def legalCastTargets (g : Game) (p : PlayerId) (c : CardDef) : Array Target :=
+  g.legalTargetsForFace p c none
+
+/-- Whether card face `c` has a legal target to begin casting it: enough unkicked
+targets (or an Aura target when `c.spellEffect = none`), or — when `c` has a
+target-replacing kicker that may be chosen — enough kicked targets
+(CR 115.1 / 601.2b–c / 702.33d,g). -/
+def castFaceHasLegalTarget (g : Game) (p : PlayerId) (c : CardDef)
+    (tcs : Array TextChange := #[]) (sourceId : Option ObjectId := none) : Bool :=
+  let unkickedOk :=
+    if isModalSpellFace c then
+      (effectiveSpellModes c).any (fun e =>
+        let m := if tcs.isEmpty then e else TextChange.applyEffect tcs e
+        g.spellModeIsChoosable p m sourceId) ||
+        isReturnUpToTwoGyModal c || c.allowsZeroTargets
+    else
+      match c.spellEffect with
+      | some e =>
+        let e' := if tcs.isEmpty then e else TextChange.applyEffect tcs e
+        !e'.requiresTarget || e'.allowsZeroTargets || g.effectHasEnoughTargets p e' sourceId
+      | none =>
+        if c.isAura then c.allowsZeroTargets || !(g.legalAuraTargets p c sourceId).isEmpty
+        else !(g.legalTargetsForFace p c none tcs sourceId).isEmpty
+  unkickedOk || g.kickedFaceHasLegalTarget p c tcs sourceId
 
 /-- Characteristics of a face-down Morph spell on the stack (CR 702.37a / 708.2a). -/
 def morphSpellFace : CardDef :=
@@ -122,16 +168,7 @@ def canCastFrontFace (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
      (perm.ignoreTiming || freeGyTiming || g.timingAllowsCast p bc) &&
        (!perm.payLifeEqualManaValue || g.canPayLife p (g.objectManaValue o))
    | none => freeGyTiming || g.timingAllowsCast p bc) &&
-  (if bc.additionalCostSacrificeArtifactOrCreature &&
-      bc.additionalCostOrPayGeneric.isNone then
-    (g.permanentsOf p).any (fun perm =>
-      perm.id != o.id &&
-        if bc.additionalCostSacrificeCreatureOrPlaneswalker then
-          g.isCreature perm || g.isPlaneswalker perm
-        else if bc.additionalCostSacrificeCreature then g.isCreature perm
-        else g.isCreature perm || g.isArtifact perm)
-   else true) &&
-  (!bc.additionalCostSacrificeCreature || !(g.creaturesControlledBy p).isEmpty) &&
+  (g.mandatorySacrificeError? p o.id bc).isNone &&
   (!(isFlashbackCast && bc.flashbackDiscard) || (g.player p).hand.any (· != o.id)) &&
   -- Untargeted permanents, and untargeted instants/sorceries with a modeled
   -- effect (e.g. Night's Whisper), may be proposed (CR 601.3).
@@ -144,8 +181,7 @@ def canCastFrontFace (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
   else if bc.requiresTarget then
     -- CR 601.2b–c / 702.33d,g: a target-replacing kicker may be chosen, so legal kicked
     -- targets (Galadriel's Dismissal's player) suffice when no unkicked target is legal.
-    bc.allowsZeroTargets || !(g.legalSpellTargets p o |>.isEmpty) ||
-      g.kickedFaceHasLegalTarget p bc (g.evalLayer3 o) (some o.id)
+    bc.allowsZeroTargets || g.castFaceHasLegalTarget p bc (g.evalLayer3 o) (some o.id)
   else bc.isPermanentCard || bc.spellEffect.isSome || isModalSpellFace bc
 
 /-- Whether `p` may begin to cast `o` (CR 601.3 / 702.37a). Having enough mana
@@ -171,15 +207,13 @@ def canPayAnnouncedAdditional (g : Game) (p : PlayerId) (o : GameObject)
   let spend : ManaSpend :=
     { spell := true, fromHand := o.zone == .hand p
       supertypes := g.supertypes o, types := g.types o, subtypes := g.subtypes o }
-  let free := (g.playPermission o).any (fun perm => perm.withoutManaCost || perm.payLifeEqualManaValue)
   let canPay (cost : ManaCost) : Bool :=
     available.canPay cost (allowElfRestricted := allowElf) (allowInstRestricted := allowInst)
       (allowHeroRestricted := allowHero) (allowVillainRestricted := allowVillain)
       (allowCantNonartifact := allowCantNonartifact) (allowCreatureRestricted := false)
       (spend := spend)
   let payExtra (n : Nat) : Bool :=
-    if free then canPay (ManaCost.ofGeneric n)
-    else canPay (bc.manaCost.addGeneric n)
+    canPay (g.playManaCost { o with controller := some p } bc (ManaCost.ofGeneric n))
   match bc.additionalCostBeholdOrPay with
   | some (quality, n) =>
     let hasPerm := (g.permanentsOf p).any (fun perm => g.hasSubtype perm quality)
@@ -206,16 +240,6 @@ def adventureExileForbidsRecast (g : Game) (o : GameObject) : Bool :=
   match g.playPermission o with
   | some perm => perm.fromAdventure
   | none => false
-
-/-- Legal targets for beginning to cast card `c` (from hand or as an Adventure). -/
-def legalCastTargets (g : Game) (p : PlayerId) (c : CardDef) : Array Target :=
-  g.legalTargetsForFace p c none
-
-/-- Whether card face `c` has a legal target to begin casting it: an unkicked target,
-or — when `c` has a target-replacing kicker that may be chosen — a kicked target
-(CR 601.2b–c / 702.33d,g). -/
-def castFaceHasLegalTarget (g : Game) (p : PlayerId) (c : CardDef) : Bool :=
-  !(g.legalCastTargets p c).isEmpty || g.kickedFaceHasLegalTarget p c
 
 /-- Validate front-face timing, prohibitions, targets, and mandatory additional
 costs when casting `card` as `face` (either upfront in `castSpell` or when
@@ -255,24 +279,11 @@ def validateFrontFaceCast (g : Game) (p : PlayerId) (card : GameObject) (face : 
         g.spellModeIsChoosable p m (some checkId)) &&
         !isReturnUpToTwoGyModal face && !face.allowsZeroTargets then
       throw s!"{face.name} requires a target"
-  else if face.requiresTarget &&
-      (g.legalTargetsForFace p face none (tcs := g.evalLayer3 card) (sourceId := some checkId)).isEmpty &&
-      !face.allowsZeroTargets &&
-      -- CR 601.2b–c / 702.33d,g: kicker may still be chosen to announce kicked targets.
-      !g.kickedFaceHasLegalTarget p face (g.evalLayer3 card) (some checkId) then
+  else if face.requiresTarget && !face.allowsZeroTargets &&
+      !g.castFaceHasLegalTarget p face (g.evalLayer3 card) (some checkId) then
     throw s!"{face.name} requires a target"
-  if face.additionalCostSacrificeArtifactOrCreature &&
-      face.additionalCostOrPayGeneric.isNone &&
-      !(g.permanentsOf p).any (fun perm =>
-        perm.id != checkId &&
-          if face.additionalCostSacrificeCreatureOrPlaneswalker then
-            g.isCreature perm || g.isPlaneswalker perm
-          else if face.additionalCostSacrificeCreature then g.isCreature perm
-          else g.isCreature perm || g.isArtifact perm) then
-    throw s!"{face.name} requires sacrificing an artifact or creature"
-  if face.additionalCostSacrificeCreature &&
-      !(g.creaturesControlledBy p).any (·.id != checkId) then
-    throw s!"{face.name} requires sacrificing a creature"
+  if let some err := g.mandatorySacrificeError? p checkId face then
+    throw err
 
 /-- Whether `p` may begin to cast `o` as an Adventure (CR 715.3). -/
 def canCastAdventure (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
@@ -301,22 +312,16 @@ def canCastAdventure (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
        (perm.ignoreTiming || freeGyTiming || g.timingAllowsCast p face) &&
          (!perm.payLifeEqualManaValue || g.canPayLife p face.manaValue)
      | none => freeGyTiming || g.timingAllowsCast p face) &&
-    (if face.additionalCostSacrificeArtifactOrCreature &&
-        face.additionalCostOrPayGeneric.isNone then
-      (g.permanentsOf p).any (fun perm =>
-        perm.id != o.id &&
-          if face.additionalCostSacrificeCreatureOrPlaneswalker then
-            g.isCreature perm || g.isPlaneswalker perm
-          else if face.additionalCostSacrificeCreature then g.isCreature perm
-          else g.isCreature perm || g.isArtifact perm)
-     else true) &&
-    (!face.additionalCostSacrificeCreature || !(g.creaturesControlledBy p).isEmpty) &&
+    (g.mandatorySacrificeError? p o.id face).isNone &&
     (!(isFlashbackCast && face.flashbackDiscard) || (g.player p).hand.any (· != o.id)) &&
+    let tcs := g.evalLayer3 o
     if isModalSpellFace face then
-      (effectiveSpellModes face).any (g.spellModeIsChoosable p · (some o.id)) ||
+      (effectiveSpellModes face).any (fun e =>
+        let m := if tcs.isEmpty then e else TextChange.applyEffect tcs e
+        g.spellModeIsChoosable p m (some o.id)) ||
         isReturnUpToTwoGyModal face || face.allowsZeroTargets
     else if face.requiresTarget then
-      face.allowsZeroTargets || g.castFaceHasLegalTarget p face
+      face.allowsZeroTargets || g.castFaceHasLegalTarget p face tcs (some o.id)
     else true
 
 /-- Whether paying this proposed spell or ability may spend Elf-restricted mana
