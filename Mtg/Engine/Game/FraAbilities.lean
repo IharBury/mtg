@@ -69,7 +69,7 @@ def finishDiscardTwoDraws (g : Game) (controller : PlayerId) (baseDraws : Nat)
           acc + 1
         else acc
       | _ => acc) 0
-  let shortCount := (oppIds.filter (fun opp => nonlandDiscardedBy opp < 2)).size
+  let shortCount := (oppIds.filter (fun opp => g.stillInGame opp && nonlandDiscardedBy opp < 2)).size
   let totalDraws := baseDraws + shortCount
   if g.stillInGame controller && totalDraws > 0 then
     g.draw controller totalDraws

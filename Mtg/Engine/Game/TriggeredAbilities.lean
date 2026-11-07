@@ -13,11 +13,10 @@ namespace Game
 
 /-- The target opponent may have `controller` draw a card (Palantír). -/
 def offerPalantirChoice (g : Game) (controller opp : PlayerId) (sid : ObjectId) : Game :=
-  if !g.stillInGame opp then
-    if g.stillInGame controller then
-      let n := ((g.findObject? sid).map (·.status.influence)).getD 0
-      g.mill controller n
-    else g
+  if !g.stillInGame controller then g
+  else if !g.stillInGame opp then
+    let n := ((g.findObject? sid).map (·.status.influence)).getD 0
+    g.mill controller n
   else
     g.beginFraChoice opp (.palantirMayDraw controller sid)
       s!"{(g.player opp).name} may have {(g.player controller).name} draw a card"

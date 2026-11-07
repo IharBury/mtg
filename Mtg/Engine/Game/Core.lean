@@ -10493,37 +10493,108 @@ def reverseToProposalCheckpointCore? (g : Game)
         if afterId == oid then some origId else none) with
     | some origId => origId
     | none => oid
-  -- 1. Partition `slice` into outermost bracketed proposal actions and standalone events.
-  let units : Array ProposalSliceUnit := Id.run do
+  -- 1. Partition `slice` into outermost bracketed proposal actions and standalone
+  --    events, keeping mid-proposal player departures outside `depth > 0` `.action`
+  --    brackets so a concession during a paused cost/mana replacement prompt stays
+  --    irreversible without retaining the proposer's unfinished cost action
+  --    (CR 104.3a / 610.3 / 733.1 / 800.4a).
+  let firstDepIdx? : Option Nat := slice.findIdx? fun ev =>
+    match ev with
+    | .rules _ (.player (.lost ..)) _ _
+    | .rules _ (.player (.leftGame ..)) _ _ => true
+    | _ => false
+  let isProposalResumeEvent : GameEvent → Bool
+    | .engine _ (.beginProposalAction _)
+    | .engine _ .endProposalAction
+    | .engine _ (.proposal _)
+    | .engine _ (.proposalChanges _)
+    | .engine _ (.proposedSpell (some _))
+    | .engine _ (.stackEntry ..)
+    | .rules _ (.cast _) _ _
+    | .rules _ _ (.costPayment ..) _
+    | .rules _ (.player (.manaAdded ..)) _ _
+    | .rules _ (.player (.manaSpent ..)) _ _ => true
+    | _ => false
+  let isProposalPromptPending : Pending → Bool
+    | .none | .chooseReplacement .. | .chooseLegend ..
+    | .resolveRandom (.orderInto ..) => false
+    | _ => true
+  let (units, depStIdxs) : Array ProposalSliceUnit × Array Nat := Id.run do
     let mut out : Array ProposalSliceUnit := #[]
+    let mut depSt : Array Nat := #[]
     let mut depth : Nat := 0
-    let mut nextActIdx : Nat := 0
+    let mut curActIdx : Nat := 0
     let mut curKind : ProposalActionKind := .costAction
     let mut curEvs : Array GameEvent := #[]
     let mut nextStIdx : Nat := 0
-    for ev in slice do
-      match ev.change with
-      | .engine (.beginProposalAction kind) =>
-        if depth == 0 then
-          curKind := kind
+    let mut inDepSpan : Bool := false
+    let mut depOuterDepth : Nat := 0
+    let mut pendingDepPlayers : Array PlayerId := #[]
+    let mut gameEndedInDep : Bool := false
+    for idx in [0:slice.size] do
+      let ev := slice[idx]!
+      if firstDepIdx?.any (idx ≥ ·) then
+        match ev with
+        | .rules _ (.player (.lost p ..)) _ _ =>
+          inDepSpan := true
+          if !pendingDepPlayers.contains p then
+            pendingDepPlayers := pendingDepPlayers.push p
+        | .rules _ (.player (.leftGame p)) _ _ =>
+          inDepSpan := true
+          pendingDepPlayers := pendingDepPlayers.filter (· != p)
+        | .rules _ (.player (.gameEnded ..)) _ _ =>
+          inDepSpan := true
+          gameEndedInDep := true
+          pendingDepPlayers := #[]
+        | .engine _ (.removeStackEntry _) =>
+          inDepSpan := true
+        | _ => pure ()
+        if inDepSpan && depOuterDepth == 0 && pendingDepPlayers.isEmpty && !gameEndedInDep &&
+            isProposalResumeEvent ev then
+          inDepSpan := false
+      if inDepSpan then
+        if depth > 0 && !curEvs.isEmpty then
+          out := out.push (.action curActIdx curKind curEvs)
           curEvs := #[]
-        depth := depth + 1
-      | .engine .endProposalAction =>
-        if depth > 0 then
-          depth := depth - 1
+        out := out.push (.standalone nextStIdx ev)
+        depSt := depSt.push nextStIdx
+        nextStIdx := nextStIdx + 1
+        match ev with
+        | .engine _ (.continuation (.pushOuterPendingReplacement _)) =>
+          depOuterDepth := depOuterDepth + 1
+        | .engine _ (.continuation .popOuterPendingReplacement) =>
+          if depOuterDepth > 0 then
+            depOuterDepth := depOuterDepth - 1
+          if depOuterDepth == 0 && pendingDepPlayers.isEmpty && !gameEndedInDep then
+            inDepSpan := false
+        | .engine _ (.pending p) =>
+          if depOuterDepth == 0 && pendingDepPlayers.isEmpty && !gameEndedInDep &&
+              isProposalPromptPending p then
+            inDepSpan := false
+        | _ => pure ()
+      else
+        match ev.change with
+        | .engine (.beginProposalAction kind) =>
           if depth == 0 then
-            out := out.push (.action nextActIdx curKind curEvs)
-            nextActIdx := nextActIdx + 1
+            curKind := kind
             curEvs := #[]
-      | _ =>
-        if depth > 0 then
-          curEvs := curEvs.push ev
-        else
-          out := out.push (.standalone nextStIdx ev)
-          nextStIdx := nextStIdx + 1
+          depth := depth + 1
+        | .engine .endProposalAction =>
+          if depth > 0 then
+            depth := depth - 1
+            if depth == 0 then
+              out := out.push (.action curActIdx curKind curEvs)
+              curActIdx := curActIdx + 1
+              curEvs := #[]
+        | _ =>
+          if depth > 0 then
+            curEvs := curEvs.push ev
+          else
+            out := out.push (.standalone nextStIdx ev)
+            nextStIdx := nextStIdx + 1
     if depth > 0 && !curEvs.isEmpty then
-      out := out.push (.action nextActIdx curKind curEvs)
-    return out
+      out := out.push (.action curActIdx curKind curEvs)
+    return (out, depSt)
   -- 2. Chronological simulation of `liveLibIds` and FIFO tagged mana pools to
   --    identify library-irreversible actions/events and upstream mana dependencies.
   let mut liveLibIds : Array ObjectId :=
@@ -10533,7 +10604,7 @@ def reverseToProposalCheckpointCore? (g : Game)
     ckpt.players.map (fun pl => pl.manaPool.units.map (·, none))
   let mut actionKinds : Array (Nat × ProposalActionKind) := #[]
   let mut irrevActs : Array Nat := #[]
-  let mut irrevStIdxs : Array Nat := #[]
+  let mut irrevStIdxs : Array Nat := depStIdxs
   let mut deps : Array (Nat × Nat) := #[]
   let markIrrev (act? : Option Nat) (stIdx? : Option Nat)
       (ia : Array Nat) (ist : Array Nat) : Array Nat × Array Nat :=
@@ -10547,7 +10618,8 @@ def reverseToProposalCheckpointCore? (g : Game)
       | .action idx _ es => (some idx, none, es)
       | .standalone idx ev => (none, some idx, #[ev])
     if let .action idx kind _ := u then
-      actionKinds := actionKinds.push (idx, kind)
+      if !actionKinds.any (·.1 == idx) then
+        actionKinds := actionKinds.push (idx, kind)
     for ev in evs do
       match ev with
       | .rules _ (.zone (.moved before after _ (.library _) ..)) _ _ =>
@@ -10642,7 +10714,7 @@ def reverseToProposalCheckpointCore? (g : Game)
         irrevActs := irrevActs.push pAct
         changed := true
   -- 3. Build `revIdMap` from `ZoneEvent.moved` in REVERSED units only so any
-  --    kept move to `.library` referencing a post-proposal `ObjectId` remaps cleanly.
+  --    kept move or departure referencing a post-proposal `ObjectId` remaps cleanly.
   let mut revIdMap : Array (ObjectId × ObjectId) := #[]
   for u in units do
     let isKept :=
@@ -10662,7 +10734,7 @@ def reverseToProposalCheckpointCore? (g : Game)
   let skipActionScaffolding : GameEvent → Bool
     | .rules _ (.triggerQueue (.triggered ..)) _ _
     | .rules _ (.delayedTrigger (.consumed ..)) _ _ => true
-    | .engine _ c _ =>
+    | .engine _ c =>
       match c with
       | .enqueueWaitingTriggers _ | .waitingTriggers _
       | .queueLinkedExile _ | .clearQueuedLinkedExile
@@ -10688,6 +10760,37 @@ def reverseToProposalCheckpointCore? (g : Game)
       if irrevStIdxs.contains idx && !skipActionScaffolding ev then
         keptStream := keptStream.push (false, ev)
   let finalKeptStream := keptStream
+  let effObjId? : ContinuousEffectSpec → Option ObjectId
+    | .layered (.objects #[id]) _ _ => some id
+    | .permission _ (.playFromExile id _) _
+    | .permission _ (.freeCastFromGraveyard id) _
+    | .permission _ (.flashback id) _
+    | .permission _ (.colorlessGrant id _) _ => some id
+    | .gameRule (.cantUntap id _) _
+    | .gameRule (.cantBeBlockedByPlayer id _) _
+    | .gameRule (.cantBeBlockedExceptByHaste id) _
+    | .gameRule (.cantBlock id) _
+    | .gameRule (.uncounterable id) _
+    | .gameRule (.fraEmblem id) _ => some id
+    | .replacement r _ => r.id.object
+    | .prevention p _ => p.id.object
+    | _ => none
+  let cleanupRemappedLeavingId (origId : ObjectId) (cause : EventCause) (g0 : Game) : Game :=
+    let g0 := g0.objects.foldl (fun acc a =>
+      if a.attachedTo == some origId then
+        acc.record (GameEvent.unattached acc.turnNumber (acc.snapshot a) origId
+          (cause := .gameRule .unattachOnHostLeave))
+      else acc) g0
+    g0.activeEffects.foldl (fun acc (eid, eff) =>
+      let tied :=
+        effObjId? eff == some origId ||
+          (match eff.duration with | .whileInZone wid _ => wid == origId | _ => false) ||
+          (match eff with
+           | .layered (.objects ids) _ _ =>
+             ids.contains origId && ids.all (fun id => id == origId || (acc.findObject? id).isNone)
+           | _ => false)
+      if tied then acc.record (GameEvent.effectExpired acc.turnNumber eid (cause := cause))
+      else acc) g0
   let applyKeptEvent (fromAction : Bool) (gCur : Game) (ev : GameEvent) : Game :=
     if skipActionScaffolding ev then gCur
     else
@@ -10702,28 +10805,70 @@ def reverseToProposalCheckpointCore? (g : Game)
                 (g0.findObject? lid).any (·.zone == .exile) &&
                   !finalKeptStream.any fun (_, kev) =>
                     match kev with
-                    | .rules _ (.zone (.moved lb _ .exile ..)) _ _ => lb.id == some lid
+                    | .rules _ (.zone (.moved lb _ .exile ..)) _ _ =>
+                      lb.id.map (resolveRevId finalRevMap) == some lid
                     | _ => false
             if unret.isEmpty then g0 else g0.change (.queueLinkedExile unret)
       match ev with
       | .engine t (.nextEffectId v) =>
         gCur.record (.engine t (.nextEffectId (max gCur.nextEffectId v)))
-      | .rules t (.zone (.moved before after _ (.library libP) verb actor entersWith libPos)) cause batch =>
-        let b' :=
+      | .engine t (.removeStackEntry oid) =>
+        let origId := resolveRevId finalRevMap oid
+        if gCur.stack.any (·.objectId == origId) then
+          gCur.record (.engine t (.removeStackEntry origId))
+        else gCur
+      | .engine t (.priority nextP) =>
+        if fromAction || (gCur.player gCur.priority).leftTheGame then
+          gCur.record (.engine t (.priority nextP))
+        else gCur
+      | .engine t (.pendingPriority (some nextP)) =>
+        if fromAction || gCur.pendingPriority.any (fun q => (gCur.player q).leftTheGame) then
+          gCur.record (.engine t (.pendingPriority (some nextP)))
+        else gCur
+      | .rules t (.zone (.moved before after fromZ toZ verb actor entersWith libPos)) cause batch =>
+        let (b', remapped, hasLiveOrig) :=
           match before.id with
           | some bid =>
             let origId := resolveRevId finalRevMap bid
-            if origId == bid then before
-            else
-              match gCur.findObject? origId with
-              | some origObj => { before with id := some origId, zone := origObj.zone }
-              | none => { before with id := some origId }
-          | none => before
-        let gCur := queueUnreturnedLinked b' b'.zone (.library libP) gCur
-        gCur.record (.rules t (.zone (.moved b' after b'.zone (.library libP) verb actor entersWith libPos)) cause batch)
-      | .rules _ (.zone (.moved before _ fromZ toZ ..)) _ _ =>
-        let gCur := queueUnreturnedLinked before fromZ toZ gCur
-        gCur.record ev
+            match gCur.findObject? origId with
+            | some origObj =>
+              let bRemap :=
+                if origId == bid && origObj.zone == before.zone then before
+                else { before with id := some origId, zone := origObj.zone }
+              (bRemap, origId != bid, true)
+            | none =>
+              (if origId == bid then before else { before with id := some origId }, origId != bid, false)
+          | none => (before, false, true)
+        if !fromAction && before.id.isSome && !hasLiveOrig then
+          gCur
+        else
+          let fromZ' := if hasLiveOrig && before.id.isSome then b'.zone else fromZ
+          let gCur := queueUnreturnedLinked b' fromZ' toZ gCur
+          let gCur :=
+            match b'.id with
+            | some oid =>
+              if remapped && hasLiveOrig && fromZ' != toZ then
+                cleanupRemappedLeavingId oid cause gCur
+              else gCur
+            | none => gCur
+          gCur.record (.rules t (.zone (.moved b' after fromZ' toZ verb actor entersWith libPos)) cause batch)
+      | .rules t (.zone (.ceasedToExist obj)) cause batch =>
+        match obj.id with
+        | none => gCur.record ev
+        | some oid =>
+          let origId := resolveRevId finalRevMap oid
+          match gCur.findObject? origId with
+          | none =>
+            if fromAction then gCur.record ev else gCur
+          | some origObj =>
+            let obj' :=
+              if origId == oid && origObj.zone == obj.zone then obj
+              else { obj with id := some origId, zone := origObj.zone }
+            let gCur := queueUnreturnedLinked obj' origObj.zone (.outside origObj.owner) gCur
+            let gCur :=
+              if origId == oid then gCur
+              else cleanupRemappedLeavingId origId cause gCur
+            gCur.record (.rules t (.zone (.ceasedToExist obj')) cause batch)
       | .rules t (.player (.shuffled p newOrder)) cause batch =>
         let curLib := (gCur.player p).library
         let kept := newOrder.filter curLib.contains
