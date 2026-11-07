@@ -8063,7 +8063,7 @@ CR 800.4c expiry), `Abilities.lean`, `Auras.lean`, `Casting.lean`,
      stale-ID / departed-player hazards across `Leaving`, `Decisions`,
      `FraChoices`, `FraAbilities`, and `Library` (`Leaving.lean`,
      `Decisions.lean`, `FraChoices.lean`, `FraAbilities.lean`, `Library.lean`,
-     CR 608.2b / 701.22 / 701.45 / 800.4a,c,f):
+     CR 608.2b / 701.22 / 701.25 / 800.4a,c,f):
      - preserve `popOuter` when `savedPreLeavePending?.isNone && (g.sbaPaused ||
        g.pendingReplacement.isSome)` in `Leaving.playerLeavesGameCore` (chaining
        `PendingReplacement.popOuterContinuation` after the pause tail finishes)
@@ -8075,15 +8075,17 @@ CR 800.4c expiry), `Abilities.lean`, `Auras.lean`, `Casting.lean`,
        `.finishPostStep (.conniveTricksterTarget caster connive sourceId)` when
        `.tricksterLibrary` target `q == p` leaves the game so the spell's
        remaining `connive` tail still resolves (CR 608.2b / 800.4a); and
-     - route `.scry` / `.surveil` departure in `Leaving.redirectPendingAfterLeave`
-       and `Decisions.decline` `.scry` when `g.mayThenDrop > 0` through
-       `Decisions.declineMayThenCore` while clearing `libraryLookIds` /
-       `libraryLookSource` / `libraryLookIsSurveil` and guarding
-       `g.stillInGame p` in `Decisions.finishLibraryLookCore` (CR 701.22 /
-       701.45 / 800.4f), guard `g.stillInGame opp` in
-       `FraAbilities.finishDiscardTwoDraws`, and guard `if !g.stillInGame p then
-       g` in `Library.draw` / `drawOneWithReplacements` / `drawOneCard` (CR
-       800.4a).
+     - route `.scry q .. | .surveil q ..` departure in
+       `Leaving.redirectPendingAfterLeave` through `Core.declineMayThenCore`
+       when `g.mayThenDrop > 0` (matching the `_` `FraChoice` and
+       `.mayDiscardDraw` / `.maySacArtifactOrDiscard` arms) while clearing
+       `surveilReturnMvAtMost`, `surveilReturnNoncreatureNonland`,
+       `fraAfterLook`, and `pendingDrawAfterScry`, guard `g.stillInGame c` on
+       `fraAfterLook` (and `g.stillInGame q` on `pendingDrawAfterScry`) in
+       `Decisions.finishLibraryLookCore` (CR 701.22 / 701.25 / 800.4a,f), guard
+       `g.stillInGame opp` in `FraAbilities.finishDiscardTwoDraws`, and guard
+       `if !g.stillInGame p then g` in `Library.draw` /
+       `drawOneWithReplacements` / `drawOneCard` (CR 800.4a).
 2. Fix modal `allowsZeroTargets` & Layer-3 `announceMode`, CR 118.9a,d / 118.14
    Sneak / `anyMana` / `canPayAnnouncedAdditional` / *The Ur-Sphinx* Ruling 942
    casts, multi-mode / `eachOpponent` targeting, and `Agent` mana checks (§2.8,
@@ -8168,19 +8170,22 @@ CR 800.4c expiry), `Abilities.lean`, `Auras.lean`, `Casting.lean`,
      match `.rules (.zone (.created obj _))` (`obj.zone == .battlefield`) while
      requiring `fromZone != .battlefield` on `.moved` in
      `GameEvent.enteredBattlefield` (`Event.lean`, CR 111.6 / 614.1c).
-   - Route `TriggerResolution.dividedDamage` through
-     `TriggeredAbilities.triggerDividedDamageLoop` and capture `startEventIdx`
-     at the start of each actual damage loop / step (`TriggeredAbilities.lean`,
+   - Route `TriggeredAbilities.applyTriggeredAbility`'s `.dividedDamage` arm
+     through `triggerDividedDamageLoop` and capture `startEventIdx` at the start
+     of each actual damage loop / step (`TriggeredAbilities.lean`,
      `FraResolve.lean`, `FraAbilities.lean`, `ResolutionHelpers.lean`,
      `ResolutionEffects.lean`, `EffectResolution.lean`, `Pumps.lean`, CR 119.9 /
      120.3f / 608.2c / 616.1 / 702.15b): dispatch
-     `TriggeredAbilities.applyTriggerResolution` `.dividedDamage` through the
-     pause-safe `triggerDividedDamageLoop` (instead of dropping `div` / skipping
-     `applyAggregatedLifelinkSince`), capture `startEventIdx := g.events.size`
-     when each damage batch begins rather than before an earlier paused step
-     (preventing unrelated mid-pause damage from same-`ObjectId` sources from
-     inflating lifelink), and re-verify `.opponentsControl` / `!hasSubtype`
-     recipient predicates after `Pending.chooseReplacement` pauses.
+     `TriggeredAbilities.applyTriggeredAbility` `.dividedDamage` through the
+     pause-safe `triggerDividedDamageLoop` (matching `applyTriggerDamage`'s
+     `.divided` arm, instead of looping `dividedDamage[i]` synchronously via
+     `applyDamageToKindTarget` inside `withBatch` without calling
+     `triggerDividedDamageLoop` or `applyAggregatedLifelinkSince`), capture
+     `startEventIdx := g.events.size` when each damage batch begins rather than
+     before an earlier paused step (preventing unrelated mid-pause damage from
+     same-`ObjectId` sources from inflating lifelink), and re-verify
+     `.opponentsControl` / `!hasSubtype` recipient predicates after
+     `Pending.chooseReplacement` pauses.
    - Fix `.equippedBecomesTapped` controller/source attribution and *Balin,
      Loremaster* / *Eye of Jace* LKI damage & drain resolution (`Core.lean`,
      `TriggeredAbilities.lean`, `FraResolve.lean`, `Decisions.lean`, CR 101.3 /
@@ -8228,19 +8233,24 @@ CR 800.4c expiry), `Abilities.lean`, `Auras.lean`, `Casting.lean`,
    - Complete Two-Headed Giant CR 805.3–7 APNAP ordering, shared-step trigger
      gating, `firstOfTheirDrawStep` / `firstOfYourDrawStep`, `Start.startWithRng`
      starting-team seat normalization, and multiplayer combat triggers
-     (`Core.lean`, `Library.lean`, `Start.lean`, CR 103.1a / 301.5d / 506.5–6 /
-     508.3d / 603.2c / 805.3 / 805.4 / 805.4a,b,d / 805.6–7 / 810.2):
+     (`Core.lean`, `Event.lean`, `Library.lean`, `Start.lean`, CR 103.1a /
+     301.5d / 506.5–6 / 508.3d / 603.2c / 805.3 / 805.4 / 805.4a,b,d / 805.6–7 /
+     810.2):
      - order `Core.apnapPlayers` so all living members of the active team (in
        seat order starting from the active team's first seat) precede nonactive
        teams in turn order (CR 805.6–7);
-     - gate shared-step triggers in `Core.matchTriggers` per CR 805.4 / 805.4a
-       on active-team `"your"` / next-end-step triggers
-       (`post.isSharedTurnFirstSeat` on `.yourUpkeep` and
-       `.enchantedControllerUpkeep` across living active-team members, and
-       `post.isSharedTurnFinalSeat` on `.yourEndStep` across living active-team
-       members and delayed `.endStep*`) and per CR 805.4d on `"each player's"` /
-       `"each opponent's"` step triggers (`post.isSharedTurnFirstSeat` on
-       `.eachUpkeep`, `.fra .eachUpkeepFromGraveyard`, delayed `.eaglesBirds`,
+     - gate shared-step triggers in `Core.matchTriggers` (and accept
+       `you active || isTeammate active` on `"your"` `stepBegan` arms in
+       `GameEvent.matchesTrigger`) per CR 805.4 / 805.4a on active-team `"your"`
+       / next-end-step triggers (`post.isSharedTurnFirstSeat` on `.yourUpkeep`,
+       `.enchantedControllerUpkeep`, and `.yourFirstMain`, plus regular-combat
+       `.yourBeginCombat` and `.fra .yourBeginCombatFromGraveyard` while
+       preserving additional combat phases across living active-team members,
+       and `post.isSharedTurnFinalSeat` on `.yourEndStep` across living
+       active-team members and delayed `.endStep*`) and per CR 805.4d on
+       `"each player's"` / `"each opponent's"` step triggers
+       (`post.isSharedTurnFirstSeat` on `.eachUpkeep`,
+       `.fra .eachUpkeepFromGraveyard`, delayed `.eaglesBirds`,
        `.eachOpponentDrawStep`, and regular-combat `.opponentBeginCombat` /
        `.eachBeginCombat` while preserving additional combat phases, plus
        `post.isSharedTurnFinalSeat` on `.eachEndStep`);
@@ -8278,18 +8288,19 @@ including remapped `ceasedToExist` / departure moves, `Leaving` non-owner & 2HG
 `concedePlayersLoop` proposal abort, CR 800.4a opponent-owned stack-card exile,
 `popOuter` preservation across paused post-leave continuations, stale-ID-safe
 `surveilMoveLoop` / `.mayMoveAllCounters`, `.tricksterLibrary` connive tail,
-`.scry` / `.surveil` `declineMayThenCore` & `Library.draw` departed-player
-guards, modal `allowsZeroTargets` & Layer-3 `announceMode`, CR 118.9a Sneak /
-permission / Flashback exclusivity & `canPayAnnouncedAdditional` `origPerm`,
-CR 107.3 / 107.4e / 118.14 `anyMana` / *Null Summoner* `.x` & `.twobrid`
-conversion, *The Ur-Sphinx* Ruling 942 resolution-time free casts & retired
+`.scry` / `.surveil` departure `Core.declineMayThenCore` &
+`finishLibraryLookCore` / `Library.draw` departed-player guards, modal
+`allowsZeroTargets` & Layer-3 `announceMode`, CR 118.9a Sneak / permission /
+Flashback exclusivity & `canPayAnnouncedAdditional` `origPerm`, CR 107.3 /
+107.4e / 118.14 `anyMana` / *Null Summoner* `.x` & `.twobrid` conversion, *The
+Ur-Sphinx* Ruling 942 resolution-time free casts & retired
 `freeCastFromGraveyard` scaffolding, multi-mode *Atlantis Attacks* variable
 targeting & `eachOpponent` *Bilbo's Burglaring* / modal activated-ability
-targeting, `Agent` face-up / `withoutManaCost` tax / restricted-mana checks,
-CR 702.176a Impending ETB `.time` counter replacements & `0`-counter creature
+targeting, `Agent` face-up / `withoutManaCost` tax / restricted-mana checks, CR
+702.176a Impending ETB `.time` counter replacements & `0`-counter creature
 entry, `GameEvent.enteredBattlefield` token `.created` matching, pause-safe
-`TriggerResolution.dividedDamage` & tight `startEventIdx` lifelink windows,
-*Hawkeye's Bow* `.equippedBecomesTapped` & *Balin* / *Eye of Jace* LKI,
+`applyTriggeredAbility` `.dividedDamage` & tight `startEventIdx` lifelink
+windows, *Hawkeye's Bow* `.equippedBecomesTapped` & *Balin* / *Eye of Jace* LKI,
 remaining 6 `recordRemoveCounters` loyalty/indestructible/story/`removePlusOnes`
 sites with CR 800.4c expiry, CR 725.2–3 per-creature / resolution-controller /
 idempotent monarch triggers, CR 805.3–7 2HG `apnapPlayers` / shared-step
