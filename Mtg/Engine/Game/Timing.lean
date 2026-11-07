@@ -156,7 +156,7 @@ def controlsPlayLandsFromGraveyard (g : Game) (p : PlayerId) : Bool :=
 
 def mayPlayFromGraveyard (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
   o.zone == .graveyard p && o.owner == p &&
-    ((g.baseCard o).flashback.isSome || g.flashbackUntilEot o || g.freeCastFromGraveyard o ||
+    ((g.baseCard o).flashback.isSome || g.flashbackUntilEot o ||
       (g.isLand o && g.controlsPlayLandsFromGraveyard p))
 
 /-- True when `p` controls a permanent that lets them look at the library top. -/

@@ -19975,6 +19975,405 @@ def openProposalActionDepth26i1 (g : Game) : Nat :=
 
 end Phase26Item1EventAlignment
 
+/-!
+## Phase 26 Item 2 — Modal `allowsZeroTargets` & Layer-3 `announceMode`, CR 118.9a,d / 118.14 Sneak / `anyMana` / *The Ur-Sphinx* Ruling 942, multi-mode / `eachOpponent` targeting, and `Agent` mana checks
+-/
+section Phase26Item2EventAlignment
+
+def mustHold26i2 (label : String) (ok : Bool) : Bool :=
+  if ok then true else panic! s!"Phase 26 item 2 guard failed: {label}"
+
+def replayOk26i2 (gs : Array Game) : Bool :=
+  gs.all (fun g => Game.replayEvents g.events == g && allRulesEventsClassified g)
+
+-- 1. CR 115.1c / 612 / 613.1c / 700.2a–b:
+--    Modal `allowsZeroTargets` choosability (`spellModeIsChoosable`, `effectHasEnoughTargets`) and
+--    Layer-3 `TextChange` evaluation at `announceMode` `.spell` and resolution.
+#guard
+  let p0 : PlayerId := ⟨0⟩
+  let p1 : PlayerId := ⟨1⟩
+  let zeroMode : Effect := {
+    targeting := .of .creature
+    resolution := .onPermanent .destroy
+    phrase := "Destroy up to one target creature"
+    allowsZeroTargets := true
+  }
+  let reqElfMode : Effect := {
+    targeting := .of (.filtered { noun := "target Elf", types := #[.creature], subtypes := #[.elf] })
+    resolution := .onPermanent (.plusOne 1)
+    phrase := "Put a +1/+1 counter on target Elf"
+  }
+  let modalZeroDef : CardDef := {
+    name := "P26i2 Modal Zero"
+    manaCost := ManaCost.empty
+    types := #[.instant]
+    spellModes := #[zeroMode, reqElfMode]
+  }
+  let gEmpty := insertObject afterDraw modalZeroDef p0 (.hand p0)
+  let zeroSpellId := (gEmpty.player p0).hand.back!
+  -- With 0 creatures on the battlefield, mode 0 (`allowsZeroTargets := true`) is choosable, mode 1 is not:
+  let gCast0 := mustApply gEmpty p0 (.cast zeroSpellId)
+  let zeroChoosableOk :=
+    gEmpty.effectHasEnoughTargets p0 zeroMode &&
+    !gEmpty.effectHasEnoughTargets p0 reqElfMode &&
+    gCast0.pending == .chooseMode p0 &&
+    !(gCast0.apply p0 (.chooseMode 1)).isOk
+  let gMode0 := mustApply gCast0 p0 (.chooseMode 0)
+  let gDecl0 := mustApply gMode0 p0 .decline
+  let gRes0 := mustApply (mustApply gDecl0 p0 .pass) p1 .pass
+  -- Layer 3 text change (`Elf` -> `Bear`) on the proposed modal spell makes mode 1 choosable against a Bear:
+  let gWithBear := insertObject (addPermanent afterDraw bear p1 p1) modalZeroDef p0 (.hand p0)
+  let bearId := (gWithBear.battlefield.filter (·.name == bear.name))[0]!.id
+  let bearSpellId := (gWithBear.player p0).hand.back!
+  let gCastL3 := mustApply gWithBear p0 (.cast bearSpellId)
+  let stackSpellId := gCastL3.proposedSpell.get!.spellId
+  let gTextChanged :=
+    gCastL3.createEffect
+      (.layered (.objects #[stackSpellId]) (.text (.replaceCreatureType .elf .bear)) .indefinite)
+      (cause := some testCause)
+  let gMode1 := mustApply gTextChanged p0 (.chooseMode 1)
+  let gTgt1 := mustApply gMode1 p0 (.target (.permanent bearId))
+  let gRes1 := mustApply (mustApply gTgt1 p0 .pass) p1 .pass
+  let layer3ModalOk :=
+    !(gCastL3.apply p0 (.chooseMode 1)).isOk &&
+    (gRes1.object! bearId).status.plusOnePlusOne == 1 &&
+    gRes0.stack.isEmpty && gRes1.stack.isEmpty
+  mustHold26i2 "1.zeroChoosableOk" zeroChoosableOk &&
+  mustHold26i2 "1.layer3ModalOk" layer3ModalOk &&
+  mustHold26i2 "1.replay" (replayOk26i2 #[gRes0, gRes1])
+
+-- 2. CR 107.3 / 107.4e / 109.5 / 118.8 / 118.9 / 118.9a,d / 118.14 / 400.7h / 608.2g / 701.17c; Ruling 942:
+--    Sneak + permission / Flashback rejection, `ManaCost.asAnyMana` (`.x` + `.twobrid`), and *The Ur-Sphinx*.
+#guard
+  let p0 : PlayerId := ⟨0⟩
+  let p1 : PlayerId := ⟨1⟩
+  -- 2a. `ManaCost.asAnyMana` preserves `.x` and converts `.twobrid` to `{1}`:
+  let xTwobridCost : ManaCost := ⟨#[.x, .twobrid .white, .colored .blue]⟩
+  let twobridCard : CardDef := {
+    name := "P26i2 X Twobrid"
+    manaCost := xTwobridCost
+    types := #[.instant]
+    spellEffect := some { resolution := .draw 1, phrase := "Draw a card" }
+  }
+  let gAny0 := insertObject afterDraw twobridCard p0 .exile
+  let exTwobridId := gAny0.objects.back!.id
+  let anyPerm : PlayPermission := { player := p0, anyMana := true }
+  let computedAnyCost :=
+    gAny0.playManaCost { (gAny0.object! exTwobridId) with controller := some p0 } twobridCard
+      (origPerm := some anyPerm)
+  let gNull0 := addPermanent afterDraw bear p0 p0
+  let summonerId := (gNull0.battlefield.filter (·.name == bear.name))[0]!.id
+  let nullExiledObj : GameObject :=
+    { (gAny0.object! exTwobridId) with controller := some p0, exiledBy := some summonerId }
+  let computedNullCost := gNull0.playManaCost nullExiledObj twobridCard
+  let asAnyManaOk :=
+    xTwobridCost.asAnyMana == ⟨#[.x, .generic 2]⟩ &&
+    computedAnyCost == ⟨#[.x, .generic 2]⟩ &&
+    computedNullCost == ⟨#[.x, .generic 2]⟩
+
+  -- 2b. CR 118.9a: `.castWithSneak` cannot combine with `origPerm` (`withoutManaCost`) or `Flashback`:
+  let sneakFlashDef : CardDef := {
+    name := "P26i2 Sneak Creature"
+    manaCost := ManaCost.ofGeneric 3
+    types := #[.creature]
+    subtypes := #["Ninja"]
+    power := some 2
+    toughness := some 2
+    staticAbilities := #[.sneak ManaCost.empty]
+    flashback := some ManaCost.empty
+  }
+  let gSnkSetup : Game :=
+    let g := addPermanent afterDraw { bear with keywords := Keyword.haste } p0 p0
+    let atkId := (g.battlefield.filter (·.name == bear.name))[0]!.id
+    let g := mustApply (mustApply (g.beginStep .beginningOfCombat) p0 .pass) p1 .pass
+    let g := mustApply g p0 (.declareAttackers #[atkId] none #[] #[])
+    let g := mustApply (mustApply g p0 .pass) p1 .pass
+    mustApply g p1 (.declareBlockers #[])
+  let atkBearId := (gSnkSetup.battlefield.filter (·.name == bear.name))[0]!.id
+  let gSnkEx := insertObject gSnkSetup sneakFlashDef p0 .exile
+  let exSnkId := gSnkEx.objects.back!.id
+  let gSnkPerm :=
+    gSnkEx.createEffect
+      (.permission (some p0) (.playFromExile exSnkId { player := p0, withoutManaCost := true }) .untilEndOfTurn)
+      (cause := some testCause)
+  let gSnkGy := insertObject gSnkSetup sneakFlashDef p0 (.graveyard p0)
+  let gySnkId := (gSnkGy.player p0).graveyard.back!
+  let gSnkHand := insertObject gSnkSetup sneakFlashDef p0 (.hand p0)
+  let handSnkId := (gSnkHand.player p0).hand.back!
+  let gSnkLegal := mustApply (mustApply gSnkHand p0 (.castWithSneak handSnkId atkBearId)) p0 .pay
+  let sneakAltExclusionOk :=
+    !(gSnkPerm.apply p0 (.castWithSneak exSnkId atkBearId)).isOk &&
+    !(gSnkGy.apply p0 (.castWithSneak gySnkId atkBearId)).isOk &&
+    gSnkLegal.stack.size == 1
+
+  -- 2c. *The Ur-Sphinx* Ruling 942: simultaneous mill, `controller` casts up to one milled card per player
+  --     (`withoutPaying := true`, sorcery timing ignored, `X = 0`) while the trigger is still on the stack,
+  --     and no residual graveyard cast permission persists once the trigger finishes resolving:
+  let urSphinxDef : CardDef :=
+    fromOracleKeeping [
+      "The Ur-Sphinx",
+      "{6}{W}{U}{B}",
+      "Legendary Creature — Sphinx Avatar",
+      "10/10",
+      "Flying",
+      "Whenever one or more Sphinxes you control attack, each player mills that many cards. For each player, you may cast a card that player milled this way without paying its mana cost."
+    ]
+  let sorcGain3Def : CardDef := {
+    name := "P26i2 Milled Sorcery"
+    manaCost := ManaCost.ofGeneric 4
+    types := #[.sorcery]
+    spellEffect := some { resolution := .gainLife 3, phrase := "You gain 3 life" }
+  }
+  let sorcXDrawDef : CardDef := {
+    name := "P26i2 Milled X Sorcery"
+    manaCost := ⟨#[.x, .colored .blue]⟩
+    types := #[.sorcery]
+    spellEffect := some { resolution := .gainLife 2, phrase := "You gain 2 life" }
+  }
+  let gUr0 : Game :=
+    let g := addPermanent afterDraw { urSphinxDef with keywords := Keywords.merge Keyword.flying Keyword.haste } p0 p0
+    let g := insertObject g sorcGain3Def p0 (.library p0)
+    let g := insertObject g sorcXDrawDef p1 (.library p1)
+    mustApply (mustApply (g.beginStep .beginningOfCombat) p0 .pass) p1 .pass
+  let sphinxId := (gUr0.battlefield.filter (·.name == "The Ur-Sphinx"))[0]!.id
+  let gUrAtk := mustApply gUr0 p0 (.declareAttackers #[sphinxId] none #[] #[])
+  -- Pass priority so *The Ur-Sphinx*'s attack trigger begins resolving:
+  let gUrTrigRes := mustApply (mustApply gUrAtk p0 .pass) p1 .pass
+  -- Trigger is STILL on the stack while `p0` is prompted to cast from `p0`'s milled bucket:
+  let bucket0Id :=
+    match gUrTrigRes.pending with
+    | .fraChoice q (.mayCastCards ids true false) => if q == p0 && ids.size == 1 then ids[0]! else ⟨0⟩
+    | _ => ⟨0⟩
+  let triggerOnStackDuringBucket0 :=
+    bucket0Id != ⟨0⟩ && !gUrTrigRes.stack.isEmpty && gUrTrigRes.resolvingAbility.isSome
+  -- `p0` casts `sorcGain3Def` (`withoutPaying := true`, sorcery during declareAttackers!), which then advances to `p1`'s bucket:
+  let gAfterBucket0 := mustApply gUrTrigRes p0 (.cast bucket0Id)
+  let bucket1Id :=
+    match gAfterBucket0.pending with
+    | .fraChoice q (.mayCastCards ids true false) => if q == p0 && ids.size == 1 then ids[0]! else ⟨0⟩
+    | _ => ⟨0⟩
+  let triggerStillOnStackDuringBucket1 :=
+    bucket1Id != ⟨0⟩ && gAfterBucket0.stack.size == 2 && gAfterBucket0.resolvingAbility.isSome
+  -- `p0` declines `p1`'s bucket (`sorcXDrawDef` stays in `p1`'s graveyard); trigger finishes resolving, leaving only `sorcGain3Def` on the stack, and neither `p0` nor `p1` can cast `sorcXDrawDef` from graveyard afterwards:
+  let gAfterBucket1 := mustApply gAfterBucket0 p0 .decline
+  let urSphinxOk :=
+    triggerOnStackDuringBucket0 &&
+    triggerStillOnStackDuringBucket1 &&
+    gAfterBucket1.pending == .none &&
+    gAfterBucket1.stack.size == 1 &&
+    (gAfterBucket1.object! gAfterBucket1.stack[0]!.objectId).name == sorcGain3Def.name &&
+    !(gAfterBucket1.apply p0 (.cast bucket1Id)).isOk &&
+    !(gAfterBucket1.apply p1 (.cast bucket1Id)).isOk
+
+  mustHold26i2 "2a.asAnyManaOk" asAnyManaOk &&
+  mustHold26i2 "2b.sneakAltExclusionOk" sneakAltExclusionOk &&
+  mustHold26i2 "2c.urSphinxOk" urSphinxOk &&
+  mustHold26i2 "2.replay" (replayOk26i2 #[gSnkLegal, gUrTrigRes, gAfterBucket0, gAfterBucket1])
+
+-- 3. CR 115.1c / 601.2c / 602.2b / 608.2b / 700.2d:
+--    Multi-mode variable target structure (*Atlantis Attacks* Teamwork) and `controller := .eachOpponent`
+--    per-opponent expansion (*Bilbo's Burglaring* with CR 608.2b per-slot controller check, plus modal activated ability).
+#guard
+  let p0 : PlayerId := ⟨0⟩
+  let p1 : PlayerId := ⟨1⟩
+  let p2 : PlayerId := ⟨2⟩
+  -- 3a. *Atlantis Attacks* cast with Teamwork chooses both modes (1 player slot + 1-or-2 nonland slots):
+  let atlantisDef : CardDef :=
+    fromOracle [
+      "Atlantis Attacks",
+      "{5}{U}{U}",
+      "Sorcery",
+      "Teamwork 4 (As an additional cost to cast this spell, you may tap any number of creatures you control with total power 4 or more.)",
+      "Choose one. If this spell was cast using teamwork, choose both instead.",
+      "• Target player creates a 6/5 blue Leviathan creature token with hexproof.",
+      "• Return one or two target nonland permanents to their owners' hands."
+    ]
+  let bigHelper : CardDef := creature "P26i2 Helper 4/4" ManaCost.empty #["Merfolk"] 4 4
+  let artDef1 : CardDef := { name := "P26i2 Relic One", types := #[.artifact] }
+  let artDef2 : CardDef := { name := "P26i2 Relic Two", types := #[.artifact] }
+  let gAtl0 : Game :=
+    let g := addPermanent (addPermanent (addPermanent afterDraw bigHelper p0 p0) artDef1 p1 p1) artDef2 p1 p1
+    insertObject g { atlantisDef with manaCost := ManaCost.empty } p0 (.hand p0)
+  let helperId := (gAtl0.battlefield.filter (·.name == bigHelper.name))[0]!.id
+  let relic1Id := (gAtl0.battlefield.filter (·.name == artDef1.name))[0]!.id
+  let relic2Id := (gAtl0.battlefield.filter (·.name == artDef2.name))[0]!.id
+  let atlId := (gAtl0.player p0).hand.back!
+  let gAtlCast := mustApply gAtl0 p0 (.cast atlId)
+  let gAtlMode := mustApply gAtlCast p0 (.chooseMode 0)
+  let gAtlAnnTeam := mustApply gAtlMode p0 (.announceTeamwork true)
+  let gAtlTeam := mustApply gAtlAnnTeam p0 (.choosePermanents #[helperId])
+  -- Mode 0 takes `Target.player p0`; Mode 1 ("one or two target nonland permanents") accepts either
+  -- 1 target via `.target` (auto-skipping optional slot 2) or 2 targets simultaneously via `.targets`:
+  let gAtlT0 := mustApply gAtlTeam p0 (.target (.player p0))
+  let gAtlT1 := mustApply gAtlT0 p0 (.target (.permanent relic1Id))
+  let gAtlRes1 := mustApply (mustApply gAtlT1 p0 .pass) p1 .pass
+  let gAtlBoth := mustApply gAtlT0 p0 (.targets #[.permanent relic1Id, .permanent relic2Id])
+  let gAtlRes2 := mustApply (mustApply gAtlBoth p0 .pass) p1 .pass
+  let atlantisTeamworkOk :=
+    gAtlRes1.battlefield.any (fun o => o.controller == some p0 && o.name == "Leviathan") &&
+    !(gAtlRes1.battlefield.any (·.id == relic1Id)) &&
+    gAtlRes1.battlefield.any (·.id == relic2Id) &&
+    (gAtlRes1.player p1).hand.any (fun id => (gAtlRes1.object! id).name == artDef1.name) &&
+    gAtlRes2.battlefield.any (fun o => o.controller == some p0 && o.name == "Leviathan") &&
+    !(gAtlRes2.battlefield.any (·.id == relic1Id)) &&
+    !(gAtlRes2.battlefield.any (·.id == relic2Id))
+
+  -- 3b. *Bilbo's Burglaring* (`controller := .eachOpponent`, `allowsZeroTargets := true`) in 3-player game:
+  --     `p0` targets `p1`'s artifact for slot 0 and `p2`'s artifact for slot 1; if `p1`'s artifact changes
+  --     control to `p2` before resolution, slot 0 becomes illegal under CR 608.2b while slot 1 still resolves!
+  let bilboDef : CardDef :=
+    fromOracle [
+      "Bilbo's Burglaring",
+      "{4}{U}{U}",
+      "Sorcery",
+      "For each opponent, gain control of up to one target artifact that player controls."
+    ]
+  let gBilbo0 : Game :=
+    let g := (mkThreePlayer26i1 2623).beginStep .precombatMain
+    let g := addPermanent (addPermanent g artDef1 p1 p1) artDef2 p2 p2
+    insertObject g { bilboDef with manaCost := ManaCost.empty } p0 (.hand p0)
+  let bArt1Id := (gBilbo0.battlefield.filter (·.name == artDef1.name))[0]!.id
+  let bArt2Id := (gBilbo0.battlefield.filter (·.name == artDef2.name))[0]!.id
+  let bilboSpellId := (gBilbo0.player p0).hand.back!
+  let gBCast := mustApply gBilbo0 p0 (.cast bilboSpellId)
+  -- Slot 0 rejects `bArt2Id` (controlled by `p2`, not `p1`!):
+  let slot0RejectsWrongOpp := !(gBCast.apply p0 (.target (.permanent bArt2Id))).isOk
+  let gBT0 := mustApply gBCast p0 (.target (.permanent bArt1Id))
+  let gBT1 := mustApply gBT0 p0 (.target (.permanent bArt2Id))
+  -- Before resolution, `p2` gains control of `bArt1Id` (so `bArt1Id` is still controlled by an opponent,
+  -- yet NO LONGER controlled by slot 0's opponent `p1`!):
+  let gBShifted :=
+    gBT1.createEffect (.layered (.objects #[bArt1Id]) (.control p2) .untilEndOfTurn) (cause := some testCause)
+  let gBRes := mustApply (mustApply (mustApply gBShifted p0 .pass) p1 .pass) p2 .pass
+  let bilboPerSlotOk :=
+    slot0RejectsWrongOpp &&
+    gBRes.controlledBy (gBRes.object! bArt1Id) p2 &&
+    gBRes.controlledBy (gBRes.object! bArt2Id) p0
+
+  -- 3c. Modal activated ability with `controller := .eachOpponent` expands per-opponent slots at `announceMode` and resolution:
+  let modalEachOppActivator : CardDef := {
+    name := "P26i2 Modal EachOpp Rod"
+    types := #[.artifact]
+    activatedAbilities := #[{
+      cost := { mana := ManaCost.empty }
+      effect := {
+        targeting := .of (.filtered {
+          noun := "target creature that player controls"
+          types := #[.creature]
+          controller := .eachOpponent })
+        resolution := .tapAndStunPerOpponent
+        phrase := "For each opponent, tap target creature that player controls and put a stun counter on it" }
+      otherModes := #[
+        { resolution := .gainLife 1, phrase := "You gain 1 life" }
+      ]
+    }]
+  }
+  let gAct0 : Game :=
+    let g := mkThreePlayer26i1 2624
+    addPermanent (addPermanent (addPermanent g modalEachOppActivator p0 p0) bear p1 p1) hero p2 p2
+  let rodId := (gAct0.battlefield.filter (·.name == modalEachOppActivator.name))[0]!.id
+  let p1BearId := (gAct0.battlefield.filter (·.name == bear.name))[0]!.id
+  let p2HeroId := (gAct0.battlefield.filter (·.name == hero.name))[0]!.id
+  let gAct1 := mustApply gAct0 p0 (.activate rodId 0)
+  let gActMode0 := mustApply gAct1 p0 (.chooseMode 0)
+  let gActT0 := mustApply gActMode0 p0 (.target (.permanent p1BearId))
+  let gActT1 := mustApply gActT0 p0 (.target (.permanent p2HeroId))
+  let gActRes := mustApply (mustApply (mustApply gActT1 p0 .pass) p1 .pass) p2 .pass
+  let modalActivatedEachOppOk :=
+    (gActRes.object! p1BearId).status.tapped &&
+    (gActRes.object! p1BearId).status.stun == 1 &&
+    (gActRes.object! p2HeroId).status.tapped &&
+    (gActRes.object! p2HeroId).status.stun == 1
+
+  mustHold26i2 "3a.atlantisTeamworkOk" atlantisTeamworkOk &&
+  mustHold26i2 "3b.bilboPerSlotOk" bilboPerSlotOk &&
+  mustHold26i2 "3c.modalActivatedEachOppOk" modalActivatedEachOppOk &&
+  mustHold26i2 "3.replay" (replayOk26i2 #[gAtlRes1, gAtlRes2, gBRes, gActRes])
+
+-- 4. `Agent.lean` CR 106.6 / 116.2b / 118.9d mana checks:
+--    `chooseActivate` rejects creature-only mana for synthetic `.frc .turnFaceUp`,
+--    `chooseCast` checks taxes under `withoutManaCost`, and `payGenericOrTapFirstSource` declines
+--    when only restricted or insufficient mana is available.
+#guard
+  let p0 : PlayerId := ⟨0⟩
+  let p1 : PlayerId := ⟨1⟩
+  let emptyHand (g : Game) (pl : PlayerId) : Game :=
+    (g.player pl).hand.foldl (fun acc hid =>
+      (acc.move hid (.graveyard pl) none (cause := some testCause)).1) g
+  -- 4a. Face-down Morph permanent with `{1}` morph cost cannot be turned face up using `.creatureSource` mana,
+  --     whereas unrestricted `{C}` mana DOES let `Agent.choose` turn it face up:
+  let morphDef : CardDef := {
+    name := "P26i2 Morph Spy"
+    manaCost := ManaCost.ofGeneric 3
+    types := #[.creature]
+    subtypes := #["Elf"]
+    power := some 2
+    toughness := some 2
+    morph := some (ManaCost.ofGeneric 1)
+  }
+  let gMorphBase : Game :=
+    let g := emptyHand (addPermanent afterDraw morphDef p0 p0) p0
+    let mid := (g.battlefield.filter (·.name == morphDef.name))[0]!.id
+    setFaceDown g mid true
+  let morphPermId := (gMorphBase.battlefield.filter (·.status.faceDown))[0]!.id
+  let gMorphRestricted :=
+    gMorphBase.record (GameEvent.manaAdded gMorphBase.turnNumber p0
+      #[{ mana := .colorless, restriction := some .creatureSource }] (cause := some testCause))
+  let gMorphUnrestricted := gMorphBase.addMana p0 .colorless 1
+  let agentSkipsTurnFaceUpWithCreatureMana :=
+    (match Agent.choose gMorphRestricted p0 with | some .pass => true | _ => false) &&
+    (match Agent.choose gMorphUnrestricted p0 with
+     | some (.activate id 0) => id == morphPermId
+     | _ => false)
+
+  -- 4b. Exiled noncreature draw spell with `withoutManaCost := true`:
+  --     castable at 0 mana when untaxed, skipped by `chooseCast` at 0 mana under opponent's `{1}` tax:
+  let taxPermDef : CardDef := {
+    name := "P26i2 Tax Statue"
+    types := #[.artifact]
+    staticAbilities := #[.fra .opponentsNoncreatureSpellsCostMore]
+  }
+  let freeSorcDef : CardDef := {
+    name := "P26i2 Taxed Free Sorcery"
+    manaCost := ManaCost.ofGeneric 2
+    types := #[.sorcery]
+    spellEffect := some { spellCastKind := .draw, resolution := .draw 1, phrase := "Draw a card" }
+  }
+  let gUntaxedFree : Game :=
+    let g := insertObject (emptyHand afterDraw p0) freeSorcDef p0 .exile
+    let exId := g.objects.back!.id
+    g.createEffect
+      (.permission (some p0) (.playFromExile exId { player := p0, withoutManaCost := true }) .untilEndOfTurn)
+      (cause := some testCause)
+  let untaxedExId := gUntaxedFree.objects.back!.id
+  let gTax0 := addPermanent gUntaxedFree taxPermDef p1 p1
+  let agentSkipsUnpayableTaxedFreeCast :=
+    (match Agent.choose gUntaxedFree p0 with
+     | some (.cast id) => id == untaxedExId
+     | _ => false) &&
+    (match Agent.choose gTax0 p0 with | some .pass => true | _ => false)
+
+  -- 4c. `payGenericOrTapFirstSource` declines without tapping a restricted mana source or single land for `{2}`:
+  let instOnlyManaLand : CardDef := {
+    name := "P26i2 Spell Haven"
+    types := #[.land]
+    tapAddAnyColorForInstantOrSorcery := true
+  }
+  let gRestrictedLand := addPermanent afterDraw instOnlyManaLand p0 p0
+  let gOneForest := addPermanent afterDraw forest p0 p0
+  let payGenericCheckOk :=
+    (match Agent.payGenericOrTapFirstSource gRestrictedLand p0 1 with | some .decline => true | _ => false) &&
+    (match Agent.payGenericOrTapFirstSource gOneForest p0 2 with | some .decline => true | _ => false) &&
+    (match Agent.payGenericOrTapFirstSource gOneForest p0 1 with
+     | some (.tapForMana _ _) => true
+     | _ => false)
+
+  mustHold26i2 "4a.turnFaceUpManaOk" agentSkipsTurnFaceUpWithCreatureMana &&
+  mustHold26i2 "4b.taxedFreeCastOk" agentSkipsUnpayableTaxedFreeCast &&
+  mustHold26i2 "4c.payGenericCheckOk" payGenericCheckOk
+
+end Phase26Item2EventAlignment
+
 end Mtg.Engine.EventTests
 
 

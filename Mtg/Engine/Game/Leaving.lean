@@ -938,6 +938,18 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
       else if players' != players then
         g.change (.pending (.fraChoice q (.blackGatePlayer oid players')))
       else g
+    | .mayCastCards ids withoutPaying exileInstead =>
+      if q == p then
+        let g := g.changes (#[.chooseModesRest none] ++ clearProp)
+        if g.mayThenDrop > 0 then g.declineMayThenCore
+        else g.change (.pending .none)
+      else
+        let ids' := ids.filter (fun id => (g.findObject? id).isSome)
+        if ids'.isEmpty then
+          g.changes #[.pending .none, .chooseModesRest none]
+        else if ids' != ids then
+          g.change (.pending (.fraChoice q (.mayCastCards ids' withoutPaying exileInstead)))
+        else g
     | _ =>
       if q == p then
         let g := g.changes (#[.chooseModesRest none] ++ clearProp)

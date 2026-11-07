@@ -47,17 +47,6 @@ def canPayFraCost (g : Game) (p : PlayerId) (o : GameObject) (c : FraCost) : Boo
     ((g.creaturesControlledBy p).filter (fun c => c.id != o.id && !c.status.tapped)).foldl
       (fun acc c => acc + (g.power c).toNat) 0 ≥ n
 
-/-- “For each opponent, up to one target … that player controls” as one
-optional target slot per opponent (CR 601.2c). -/
-def expandEachOpponentEffect (g : Game) (p : PlayerId) (e : Effect) : Effect :=
-  match e.targetKind with
-  | .filtered f =>
-    if f.controller == .eachOpponent then
-      let fs := (g.livingOpponents p).map (fun pl => { f with controller := .specific pl.id.idx })
-      { e with targeting := .of (.multi fs ((List.range fs.size).toArray)) }
-    else e
-  | _ => e
-
 /-- Shared activation legality (CR 602.5a / 602.5d). `canActivate` is this check as a
 `Bool`; `activateAbility` reports the first failing reason. -/
 def validateActivation (g : Game) (p : PlayerId) (o : GameObject) (ab : ActivatedAbility) :
@@ -261,7 +250,7 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
       .proposedSpell (some prop),
       .pending (.fraChoice p (.crew newId id n))]).logMsg
       s!"{pl.name} chooses untapped creatures with total power {n} or more to crew {g.name o}"
-  if !ab.isModal && !ab.effect.requiresTarget && !loyaltyX &&
+  if !ab.isModal && !effect.requiresTarget && !loyaltyX &&
       !ab.cost.removeAnyNumberPlusOne &&
       !manaCost.includesManaPayment && !manaCost.containsX &&
       !ab.cost.sacrificeAnotherCreatureOrArtifact then
@@ -270,7 +259,7 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
   if loyaltyX || ab.cost.removeAnyNumberPlusOne then
     let g := g.changes #[.pending (.chooseX p), .proposedSpell (some prop)]
     return g.logMsg s!"{pl.name} must choose a value for X (CR 107.3a / 601.2b)"
-  return g.enterProposalWindow p pl prop ab.isModal ab.effect.requiresTarget "CR 601.2b"
+  return g.enterProposalWindow p pl prop ab.isModal effect.requiresTarget "CR 601.2b"
 
 end Game
 end Mtg.Engine

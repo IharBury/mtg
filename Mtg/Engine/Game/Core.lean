@@ -2504,20 +2504,6 @@ def castViaFlashback (g : Game) (o : GameObject) : Bool :=
           | .permission _ (.flashback id) d => id == o.id && g.durationActive d
           | _ => false))
 
-def freeCastFromGraveyard (g : Game) (o : GameObject) : Bool :=
-  let active :=
-    g.activeEffects.any fun (_, s) =>
-      match s with
-      | .permission _ (.freeCastFromGraveyard id) d => id == o.id && g.durationActive d
-      | _ => false
-  if active || (g.findObject? o.id).isSome then active
-  else
-    g.events.any fun e =>
-      match e.change with
-      | .rules (.continuousEffect (.created _ (.permission _ (.freeCastFromGraveyard id) _))) =>
-        id == o.id
-      | _ => false
-
 def colorlessGrantUntilCast (g : Game) (o : GameObject) : Array ObjectId :=
   g.activeEffects.filterMap fun (_, s) =>
     match s with
@@ -2844,6 +2830,7 @@ def TextChange.applyTargetKind (tcs : Array TextChange) : EffectTargetKind → E
   | .filtered f => .filtered (TextChange.applyTargetFilter tcs f)
   | .multi fs opt => .multi (fs.map (TextChange.applyTargetFilter tcs)) opt
   | .pair a b => .pair (TextChange.applyTargetKind tcs a) (TextChange.applyTargetKind tcs b)
+  | .instanceSlots inner minC maxC => .instanceSlots (TextChange.applyTargetKind tcs inner) minC maxC
   | k => k
 
 /-- Apply Layer 3 text changes to a one-shot `Effect` (CR 612.2 / 613.1c). -/
@@ -10763,7 +10750,6 @@ def reverseToProposalCheckpointCore? (g : Game)
   let effObjId? : ContinuousEffectSpec → Option ObjectId
     | .layered (.objects #[id]) _ _ => some id
     | .permission _ (.playFromExile id _) _
-    | .permission _ (.freeCastFromGraveyard id) _
     | .permission _ (.flashback id) _
     | .permission _ (.colorlessGrant id _) _ => some id
     | .gameRule (.cantUntap id _) _
@@ -11099,7 +11085,6 @@ permission/rule). `none` for effects on players or the whole game. -/
 def effectObject? : ContinuousEffectSpec → Option ObjectId
   | .layered (.objects #[id]) _ _ => some id
   | .permission _ (.playFromExile id _) _
-  | .permission _ (.freeCastFromGraveyard id) _
   | .permission _ (.flashback id) _
   | .permission _ (.colorlessGrant id _) _ => some id
   | .gameRule (.cantUntap id _) _

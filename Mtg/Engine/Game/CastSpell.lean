@@ -96,11 +96,13 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
     | none => throw "The prepared permanent is gone"
   | none => pure ()
   let fromGraveyard := card.zone == .graveyard card.owner
-  let isFreeFromGy := fromGraveyard && g.freeCastFromGraveyard card
-  let hadFlashbackPerm := fromGraveyard && !isFreeFromGy && g.flashbackUntilEot card
-  let isFlashbackCast := fromGraveyard && !isFreeFromGy && (face.flashback.isSome || hadFlashbackPerm)
+  let hadFlashbackPerm := fromGraveyard && g.flashbackUntilEot card
+  let isFlashbackCast := fromGraveyard && (face.flashback.isSome || hadFlashbackPerm)
+  if sneakCost.isSome &&
+      (isFlashbackCast || origPerm.any (fun pm => pm.withoutManaCost || pm.payLifeEqualManaValue)) then
+    throw "You can't apply more than one alternative cost to a spell (CR 118.9a)"
   let altCost :=
-    sneakCost.isSome || isFlashbackCast || isFreeFromGy ||
+    sneakCost.isSome || isFlashbackCast ||
       origPerm.any (fun pm => pm.withoutManaCost || pm.payLifeEqualManaValue)
   let hasMorphChoice :=
     !asAdventure && !altCost && face.morph.isSome && face.kicker.isNone &&
@@ -138,11 +140,11 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
   let cost :=
     match sneakCost with
     | some c => g.playManaCost casterCard { face with manaCost := c }
-        (origPerm := origPerm) (isFreeFromGy := some isFreeFromGy)
+        (origPerm := origPerm)
         (flashback := some isFlashbackCast) (explicitAltCost := true)
     | none => g.playManaCost casterCard face
-        (origPerm := origPerm) (isFreeFromGy := some isFreeFromGy)
-        (flashback := some isFlashbackCast) (explicitAltCost := altCost)
+        (origPerm := origPerm)
+        (flashback := some isFlashbackCast) (explicitAltCost := false)
   -- Casting the exiled copy of a prepare spell unprepares its permanent. The
   -- spell on the stack is a copy, so it isn't put into a graveyard later
   -- (CR 707.10 / 704.5e).
@@ -163,11 +165,14 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
     else if asAdventure then .alternative "adventure"
     else if sneakAttacker.isSome then .alternative "sneak"
     else if isFlashbackCast then .alternative "flashback"
-    else if isFreeFromGy || origPerm.isSome then .alternative "permission"
+    else if origPerm.isSome then .alternative "permission"
     else .normal
   let g := g.record (GameEvent.proposed g.turnNumber newId p original.zone way)
   let needsMode := isModalSpellFace face
-  let needsTarget := face.requiresTarget && !needsMode
+  let spellObj := g.object! newId
+  let needsTarget :=
+    !needsMode &&
+      ((g.currentSpellEffect spellObj).any (·.requiresTarget) || g.isAura spellObj)
   let needsAdditionalCostChoice := face.announcesAdditionalCost
   let needsKicker :=
     face.kicker.isSome || (!altCost && (face.morph.isSome || face.impending.isSome))
@@ -192,7 +197,7 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
       lifeInstead == 0 && !needsSacrifice && !needsFlashbackDiscard &&
       !needsAdditionalCostChoice && !needsKicker && !needsGift && !needsTeamwork &&
       sneakAttacker.isNone then
-    return (g.becomeCast p (g.object! newId)).resumeAfterBecomeCast
+    return (g.becomeCast p spellObj).resumeAfterBecomeCast
   let prop : ProposedSpell := {
     caster := p
     cost := cost
@@ -200,7 +205,6 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
     original := original
     originalSnapshot := origSnap
     origPerm
-    isFreeFromGy
     needsSacrificeOther := needsSacrifice
     needsDiscardCard := needsFlashbackDiscard
     payLife := lifeInstead
@@ -225,15 +229,22 @@ def announceMode (g : Game) (p : PlayerId) (mode : Nat) : Except String Game := 
       | throw "No spell or ability is waiting for a mode (CR 601.2b)"
     match prop.kind with
     | .activatedAbility =>
-      let some chosen := prop.abilityModes[mode]?
+      let some rawChosen := prop.abilityModes[mode]?
         | throw "No such mode (CR 601.2b)"
+      let chosen := g.expandEachOpponentEffect p rawChosen
       if !g.modeIsChoosable p chosen prop.sourceId then
         throw "That mode requires a target (CR 700.2a)"
       let some _obj := g.findObject? prop.spellId | throw "The ability left the stack"
       let g := g.record (GameEvent.announced g.turnNumber prop.spellId (modes := #[mode]))
       let g := g.changeObject prop.spellId (.abilityEffect (some chosen))
+      let nextOverride :=
+        if chosen.targetKind != rawChosen.targetKind then some chosen.targetKind else none
+      let g :=
+        if prop.targetKindOverride != nextOverride then
+          g.change (.proposedSpell (some { prop with targetKindOverride := nextOverride }))
+        else g
       let g := g.logMsg
-        s!"{(g.player p).name} chooses a mode: {chosen.toNotation} (CR 601.2b)"
+        s!"{(g.player p).name} chooses a mode: {rawChosen.toNotation} (CR 601.2b)"
       if chosen.requiresTarget then
         let g := g.change (.pending (.chooseTargets p))
         return g.logMsg s!"{(g.player p).name} must choose a target (CR 601.2c)"
@@ -241,9 +252,9 @@ def announceMode (g : Game) (p : PlayerId) (mode : Nat) : Except String Game := 
     | .spell =>
       let some spell := g.findObject? prop.spellId | throw "The spell left the stack"
       let face := g.baseCard spell
-      let effModes := effectiveSpellModes face
       if !isModalSpellFace face then
         throw "That spell is not modal (CR 700.2)"
+      let effModes := g.evalSpellModes p spell
       let some effect := effModes[mode]? | throw "No such mode (CR 700.2)"
       if !g.spellModeIsChoosable p effect (some spell.id) then
         throw "That mode has no legal target (CR 700.2a)"
@@ -307,9 +318,9 @@ def announceX (g : Game) (p : PlayerId) (x : Nat) : Except String Game := do
           | some _, some sc => { baseFace with manaCost := sc }
           | _, _ => baseFace
         g.playManaCost preSpell face (ManaCost.ofGeneric prop.additionalGeneric)
-          (origPerm := prop.origPerm) (isFreeFromGy := some prop.isFreeFromGy)
+          (origPerm := prop.origPerm)
           (flashback := some (GameEvent.castWithFlashback g.events prop.spellId))
-          (explicitAltCost := prop.alternativeCost)
+          (explicitAltCost := prop.sneakAttacker.isSome)
       | _, _, _ => prop.cost.substituteX x
     let extraChanges : Array ProposalChange :=
       if prop.kind == .spell && prop.origPerm.any (·.payLifeEqualManaValue) then
@@ -328,7 +339,7 @@ def announceX (g : Game) (p : PlayerId) (x : Nat) : Except String Game := do
         | none => false
       let needsTarget :=
         match prop.activation with
-        | some ab => ab.effect.requiresTarget
+        | some ab => (g.expandEachOpponentEffect p ab.effect).requiresTarget
         | none => false
       return g.enterProposalWindow p pl prop needsMode needsTarget "CR 601.2b"
     | .spell =>
@@ -341,8 +352,11 @@ def announceX (g : Game) (p : PlayerId) (x : Nat) : Except String Game := do
         let spell := g.object! prop.spellId
         let face := g.baseCard spell
         let modal := isModalSpellFace face
+        let needsTarget :=
+          !modal &&
+            ((g.currentSpellEffect spell).any (·.requiresTarget) || g.isAura spell)
         return g.enterProposalWindow p pl prop modal
-          (face.requiresTarget && !modal) "CR 601.2b / 700.2"
+          needsTarget "CR 601.2b / 700.2"
           (needsAdditionalCost := face.announcesAdditionalCost)
           (needsKicker := !prop.kickerAnnounced &&
             (face.kicker.isSome || (!prop.alternativeCost && (face.morph.isSome || face.impending.isSome))))
@@ -446,14 +460,30 @@ def announceTargetChoices (g : Game) (p : PlayerId)
         if g.proposedSpell.isSome then
           return g.afterTargetsChosen
         return g.finishTriggerTargets p obj
-      if choices.size != 1 then
+      let curSlot := g.currentTargetSlot obj
+      let (grpStart, grpEnd) := kind.instanceGroupBounds curSlot
+      if curSlot != grpStart || choices.size > grpEnd - grpStart then
         throw "Choose each instance of the word \"target\" separately (CR 601.2c)"
-      let t := choices[0]!.1
-      if !(g.legalProposedTargets p obj).contains t then
-        throw "Illegal target (CR 601.2c)"
-      let g := g.setStackEntryTargets obj.id (e.targets.push t)
-      let g := g.logMsg
-        s!"{(g.player p).name} chooses {g.targetLogName t} as a target (CR 601.2c)"
+      let trailingSlots := (List.range grpEnd).drop (curSlot + choices.size)
+      if !trailingSlots.all kind.isOptionalSlot then
+        let reqCount := ((List.range grpEnd).drop grpStart).filter (!kind.isOptionalSlot ·) |>.length
+        throw s!"Choose at least {reqCount} target(s) (CR 601.2c)"
+      let mut gCheck := g
+      let mut curTargets := e.targets
+      for (t, _) in choices do
+        let some curObj := gCheck.findObject? obj.id
+          | throw "The ability left the stack"
+        if !(gCheck.legalProposedTargets p curObj).contains t then
+          throw "Illegal target (CR 601.2c)"
+        curTargets := curTargets.push t
+        gCheck := gCheck.setStackEntryTargets obj.id curTargets
+      let mut g := g
+      for slotIdx in trailingSlots do
+        g := g.change (.stackEntry obj.id (.skipOptionalSlot slotIdx))
+      g := g.setStackEntryTargets obj.id curTargets
+      for (t, _) in choices do
+        g := g.logMsg
+          s!"{(g.player p).name} chooses {g.targetLogName t} as a target (CR 601.2c)"
       if g.currentTargetSlot obj < kind.spec.slots.size then
         return (g.markTargetsAnnounced obj.id false).change (.pending (.chooseTargets p))
       if g.proposedSpell.isSome then

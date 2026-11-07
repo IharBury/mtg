@@ -35,9 +35,10 @@ def combineTriggerModes (modes : Array Effect) (chosen : Array Nat) : Option Eff
     let targeting : EffectTargeting :=
       match targeted.toList with
       | [] => .of .none
-      | [t0] => t0.targeting
+      | [t0] =>
+        if es.length == 1 then t0.targeting else .of (modeTargetKind t0)
       | t0 :: tRest =>
-        let kind := tRest.foldl (fun k m => EffectTargetKind.pair k m.targetKind) t0.targetKind
+        let kind := tRest.foldl (fun k m => EffectTargetKind.pair k (modeTargetKind m)) (modeTargetKind t0)
         .of kind
     some { es.head! with
       targeting
@@ -100,8 +101,8 @@ def castFreeCopy (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game 
   let g := g.changes #[.pending .none, .pendingFreeCopies (some (p, rest, budget - mv, castsLeft - 1))]
   let g := g.logMsg s!"{(g.player p).name} casts a copy of {face.name} without paying its mana cost"
   let cost := g.playManaCost { card with controller := some p } face
-    (origPerm := origPerm) (isFreeFromGy := some false) (flashback := some false)
-    (explicitAltCost := true)
+    (origPerm := origPerm) (flashback := some false)
+    (explicitAltCost := false)
   let needsSacrifice :=
     face.additionalCostSacrificeCreature ||
       (face.additionalCostSacrificeArtifactOrCreature && face.additionalCostOrPayGeneric.isNone)
@@ -532,7 +533,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       return g.change (.pending (.fraChoice p (.triggerModes objId left chosen)))
     let sorted := chosen.qsort (· < ·)
     let g := g.record (GameEvent.announced g.turnNumber obj.id (modes := sorted))
-    match combineTriggerModes modes sorted with
+    match combineTriggerModes (modes.map (fun m => g.expandEachOpponentEffect p m (some obj.id))) sorted with
     | none => return g.finishFraChoice
     | some eff =>
       let g := g.changeObject obj.id (.abilityEffect (some eff))
@@ -554,7 +555,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       return g.change (.pending (.fraChoice p (.upToTriggerModes objId left chosen)))
     let sorted := chosen.qsort (· < ·)
     let g := g.record (GameEvent.announced g.turnNumber obj.id (modes := sorted))
-    match combineTriggerModes modes sorted with
+    match combineTriggerModes (modes.map (fun m => g.expandEachOpponentEffect p m (some obj.id))) sorted with
     | none => return g.finishFraChoice
     | some eff =>
       let g := g.changeObject obj.id (.abilityEffect (some eff))
@@ -571,7 +572,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       return g.finishFraChoice
     let sorted := chosen.qsort (· < ·)
     let g := g.record (GameEvent.announced g.turnNumber obj.id (modes := sorted))
-    match combineTriggerModes modes sorted with
+    match combineTriggerModes (modes.map (fun m => g.expandEachOpponentEffect p m (some obj.id))) sorted with
     | none => return g.finishFraChoice
     | some eff =>
       let g := g.changeObject obj.id (.abilityEffect (some eff))
@@ -1566,9 +1567,17 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       if !withoutPaying && rawPerm.any (·.payLifeEqualManaValue) &&
           !g.canPayLife p (g.objectManaValue o) then
         throw s!"{(g.player p).name} can't pay {g.objectManaValue o} life to cast {face.name} (CR 119.4)"
-    let g := (gPre.change .saveProposalCheckpoint).change (.pending .none)
-    return (g.castAsPartOfResolution p id (withoutManaCost := withoutPaying)
-      (exileInstantSorceryInstead := exileInstead) (callerCheckpoint := true)).finishFraChoice
+    let g := gPre.change .saveProposalCheckpoint
+    let g :=
+      match g.pendingReplacement with
+      | some outer =>
+        let g := if g.continuations.isEmpty then g.change (.pushContinuationFrame {}) else g
+        g.changes #[.pushOuterPendingReplacement outer, .pendingReplacement none]
+      | none => g
+    let g := g.change (.pending .none)
+    let g' := g.castAsPartOfResolution p id (withoutManaCost := withoutPaying)
+      (exileInstantSorceryInstead := exileInstead) (callerCheckpoint := true)
+    return if g'.pending == .none then g'.finishFraChoice else g'
   | .mayCastCards _ _ _, .decline =>
     return (g.logMsg s!"{(g.player p).name} declines to cast a spell").finishFraChoice
   | .mayCastCards _ _ _, _ => throw "Choose a spell to cast, or decline"
@@ -1924,10 +1933,14 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
       .decline
     else
       let available := g.availableMana p
+      let origPerm : Option PlayPermission := some { player := p, withoutManaCost := true }
       let castable :=
         (g.findObject? cardId).any (fun o =>
           let face := g.baseCard o
           let tcs := g.evalLayer3 o
+          let spend : ManaSpend :=
+            { spell := true, fromHand := o.zone == .hand p
+              supertypes := g.supertypes o, types := g.types o, subtypes := g.subtypes o }
           let hasTargets :=
             if isModalSpellFace face then
               (effectiveSpellModes face).any (fun e =>
@@ -1941,7 +1954,17 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
             g.graveyardCastThresholdMet p o.id face &&
             (g.mandatorySacrificeError? p o.id face).isNone &&
             hasTargets &&
-            g.canPayAnnouncedAdditional p o available)
+            available.canPay
+              (g.playManaCost { o with controller := some p } face
+                (origPerm := origPerm) (flashback := some false))
+              (allowElfRestricted := g.hasSubtype o .elf)
+              (allowInstRestricted := g.isInstantOrSorcery o)
+              (allowHeroRestricted := g.hasSubtype o .hero)
+              (allowVillainRestricted := g.hasSubtype o .villain)
+              (allowCantNonartifact := g.isArtifact o)
+              (allowCreatureRestricted := false)
+              (spend := spend) &&
+            g.canPayAnnouncedAdditional p o available (origPerm := origPerm))
       if castable then .accept else .decline
   | .mayCastGrima .. => .decline
   | .palantirMayDraw .. => .decline
@@ -2000,10 +2023,6 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
           let origPerm : Option PlayPermission :=
             if withoutPaying then some { player := p, withoutManaCost := true }
             else g.playPermission o
-          let isFreeFromGy := !withoutPaying && o.zone == .graveyard o.owner && g.freeCastFromGraveyard o
-          let altCostUsed :=
-            withoutPaying || isFreeFromGy ||
-              origPerm.any (fun pm => pm.withoutManaCost || pm.payLifeEqualManaValue)
           let spend : ManaSpend :=
             { spell := true, fromHand := o.zone == .hand p
               supertypes := g.supertypes o, types := g.types o, subtypes := g.subtypes o }
@@ -2011,8 +2030,7 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
             (!origPerm.any (·.payLifeEqualManaValue) || g.canPayLife p (g.objectManaValue o)) &&
             available.canPay
               (g.playManaCost { o with controller := some p } face
-                (origPerm := origPerm) (isFreeFromGy := some isFreeFromGy)
-                (flashback := some false) (explicitAltCost := altCostUsed))
+                (origPerm := origPerm) (flashback := some false) (explicitAltCost := false))
               (allowElfRestricted := g.hasSubtype o .elf)
               (allowInstRestricted := g.isInstantOrSorcery o)
               (allowHeroRestricted := g.hasSubtype o .hero)
@@ -2020,7 +2038,7 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
               (allowCantNonartifact := g.isArtifact o)
               (allowCreatureRestricted := false)
               (spend := spend) &&
-            g.canPayAnnouncedAdditional p o available)) with
+            g.canPayAnnouncedAdditional p o available (origPerm := origPerm))) with
       | some id => .cast id
       | none => .decline
   | .mayCastFromGraveyard eligible =>
@@ -2046,9 +2064,6 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
               else if face.requiresTarget || face.isAura then
                 g.castFaceHasLegalTarget p face tcs (some o.id) || face.allowsZeroTargets
               else true
-          let isFreeFromGy := o.zone == .graveyard o.owner && g.freeCastFromGraveyard o
-          let altCostUsed :=
-            isFreeFromGy || origPerm.any (fun pm => pm.withoutManaCost || pm.payLifeEqualManaValue)
           let spend : ManaSpend :=
             { spell := true, fromHand := o.zone == .hand p
               supertypes := g.supertypes o, types := g.types o, subtypes := g.subtypes o }
@@ -2056,8 +2071,7 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
             (!origPerm.any (·.payLifeEqualManaValue) || g.canPayLife p (g.objectManaValue o)) &&
             available.canPay
               (g.playManaCost { o with controller := some p } face
-                (origPerm := origPerm) (isFreeFromGy := some isFreeFromGy)
-                (flashback := some false) (explicitAltCost := altCostUsed))
+                (origPerm := origPerm) (flashback := some false) (explicitAltCost := false))
               (allowElfRestricted := g.hasSubtype o .elf)
               (allowInstRestricted := g.isInstantOrSorcery o)
               (allowHeroRestricted := g.hasSubtype o .hero)
@@ -2065,7 +2079,7 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
               (allowCantNonartifact := g.isArtifact o)
               (allowCreatureRestricted := false)
               (spend := spend) &&
-            g.canPayAnnouncedAdditional p o available)) with
+            g.canPayAnnouncedAdditional p o available (origPerm := origPerm))) with
       | some id => .cast id
       | none => .decline
   | .maySearchLibrary eligible .. =>

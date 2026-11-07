@@ -410,7 +410,6 @@ deriving Repr, Inhabited, BEq
 /-- Continuous permission to play or cast an object or spend mana on it (CR 611.2 / 701.18). -/
 inductive PlayPermissionSpec where
   | playFromExile (object : ObjectId) (perm : PlayPermission)
-  | freeCastFromGraveyard (object : ObjectId)
   | flashback (object : ObjectId)
   | colorlessGrant (object : ObjectId) (card : ObjectId)
 deriving Repr, Inhabited, BEq
@@ -559,10 +558,6 @@ namespace ContinuousEffectSpec
 /-- `object` gains `{T}: Add {C}{C}` until `card` is cast from exile (CR 611.2, ruling 729). -/
 @[inline] def colorlessGrantUntilCast (object : ObjectId) (card : ObjectId) : ContinuousEffectSpec :=
   .permission none (.colorlessGrant object card) .indefinite
-
-/-- `object` may be cast from the graveyard without paying its mana cost this turn (CR 611.2). -/
-@[inline] def freeCastFromGraveyardUntilEot (object : ObjectId) : ContinuousEffectSpec :=
-  .permission none (.freeCastFromGraveyard object) .untilEndOfTurn
 
 /-- `object` gains flashback until end of turn (CR 611.2). -/
 @[inline] def flashbackUntilEot (object : ObjectId) : ContinuousEffectSpec :=
@@ -1122,7 +1117,7 @@ inductive FrcPostStep where
   | discardHand (controller : PlayerId)
   | currencyReturnCreateToken (controller : PlayerId) (exiledId sourceId : ObjectId)
       (isLand : Bool)
-  | grantMilledFreeCastUntilEot (preIds : Array ObjectId)
+  | urSphinxCastNext (controller : PlayerId) (buckets : Array (Array ObjectId))
   | factOrFictionHandInnerLoop (controller : PlayerId) (handIds : Array ObjectId)
       (pendingCard : Option ObjectId := none)
   | factOrFictionGyInnerLoop (controller : PlayerId) (gyIds : Array ObjectId)

@@ -262,6 +262,30 @@ private def creatureOrWalker (c : CardDef) : Bool :=
 private def basicOf (kinds : Array CardSubtype) (c : CardDef) : Bool :=
   isBasicLandCard c && kinds.any fun k => c.hasSubtype k
 
+/-- Offer `controller` up to one free cast (`withoutPaying := true`) from the
+next milled player bucket in `buckets` whose milled cards include at least one
+nonland card still in the public zone it entered (CR 109.5 / 118.9 / 400.7h /
+608.2g / 701.17c; Ruling 942). -/
+partial def urSphinxCastNext (g : Game) (controller : PlayerId)
+    (buckets : Array (Array ObjectId)) : Game :=
+  if !g.stillInGame controller || g.cantCastSpellsThisTurn controller ||
+      g.splitSecondOnStack || g.combatLocksNonManaAbilities ||
+      g.opponentsCantCastOnActiveTurn controller then
+    g
+  else
+    let hit? := (List.range buckets.size).findSome? fun i =>
+      let eligible :=
+        (buckets[i]!.filterMap g.followMilledPublic?).filter (fun o => !g.isLand o) |>.map (·.id)
+      if eligible.isEmpty then none
+      else some (eligible, buckets.extract (i + 1) buckets.size)
+    match hit? with
+    | none => g
+    | some (eligible, rest) =>
+      let g := g.beginFraChoice controller (.mayCastCards eligible true false)
+        s!"{(g.player controller).name} may cast a spell from among those cards without paying its mana cost"
+      if rest.isEmpty then g
+      else g.chainPendingReplacement (.finishFrcPostStep (.urSphinxCastNext controller rest))
+
 /-- Move each card in `gyIds` into `controller`'s graveyard inside the active
 `Fact or Fiction` graveyard batch, logging only once each zone change places the
 card into `controller`'s graveyard. -/
@@ -758,21 +782,18 @@ def applyFrc (g : Game) (controller : PlayerId) (effect : Effect) (e : FrcEffect
     | _ => g
   | .urSphinx =>
     let n := nKnown
-    let preIds := g.livingPlayers.foldl (fun acc q =>
-      let lib := (g.player q.id).library
+    let players := g.apnapPlayers
+    let buckets := players.map fun pid =>
+      let lib := (g.player pid).library
       let count := min n lib.size
-      acc ++ (lib.extract (lib.size - count) lib.size).reverse) #[]
+      (lib.extract (lib.size - count) lib.size).reverse
     let g := g.withBatch none fun g =>
-      g.livingPlayers.foldl (fun g q => g.mill q.id n) g
+      players.foldl (fun g pid => g.mill pid n) g
     if let .chooseReplacement .. := g.pending then
       g.chainPendingReplacement
-        (.finishFrcPostStep (.grantMilledFreeCastUntilEot preIds))
+        (.finishFrcPostStep (.urSphinxCastNext controller buckets))
     else
-      g.withBatch none fun g =>
-        preIds.foldl (fun acc id =>
-          match acc.followMilledPublic? id with
-          | some card => acc.createEffect (.freeCastFromGraveyardUntilEot card.id)
-          | none => acc) g
+      g.urSphinxCastNext controller buckets
   | .venserSpell =>
     match targets[0]? with
     | some t@(Target.card id) =>
@@ -1175,12 +1196,8 @@ partial def runFrcPostStep (g : Game) (step : FrcPostStep) : Game :=
       let g := g.pruneLinkedExileId sourceId exiledId
       if isLand then g.makeFrc controller .treasure else g.makeFrc controller .rogue
     else g
-  | .grantMilledFreeCastUntilEot preIds =>
-    g.withBatch none fun g =>
-      preIds.foldl (fun acc id =>
-        match acc.followMilledPublic? id with
-        | some card => acc.createEffect (.freeCastFromGraveyardUntilEot card.id)
-        | none => acc) g
+  | .urSphinxCastNext controller buckets =>
+    g.urSphinxCastNext controller buckets
   | .factOrFictionHandInnerLoop controller handIds pendingCard =>
     g.factOrFictionHandInnerLoop controller handIds pendingCard
   | .factOrFictionGyInnerLoop controller gyIds pendingCard =>

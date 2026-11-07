@@ -1946,19 +1946,19 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
         s!"{(g.player controller).name} may put any number of land cards from among them onto the battlefield tapped"
   | .gainControlOppArtifacts =>
     let cause := g.resolvingBatchCause controller sourceId
+    let expKind := (g.expandEachOpponentEffect controller effect g.resolvingSpell).targetKind
     g.withBatch cause fun g =>
-      targets.foldl (fun g t =>
-        match t with
-        | Target.permanent id =>
-          match g.findObject? id with
-          | some o =>
-            if o.isOnBattlefield && g.isArtifact o &&
-                (g.livingOpponents controller).any (fun opp => g.controlledBy o opp.id) &&
-                g.canBeTargetedBy controller o sourceId then
-              g.changeControl o controller (cause := g.currentBatch.bind (·.2))
-            else g.illegalAbilityTarget t
-          | none => g.illegalAbilityTarget t
-        | _ => g) g
+      (List.range targets.size).foldl (fun g idx =>
+        let t := targets[idx]!
+        if !g.targetLegalAt controller expKind idx t sourceId then
+          g.illegalAbilityTarget t
+        else
+          match t with
+          | Target.permanent id =>
+            match g.findObject? id with
+            | some o => g.changeControl o controller (cause := g.currentBatch.bind (·.2))
+            | none => g.illegalAbilityTarget t
+          | _ => g) g
   | .phaseOutKicker =>
     let cause := g.resolvingOneShotCause controller sourceId
     if kicked then

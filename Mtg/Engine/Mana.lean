@@ -123,6 +123,24 @@ def manaValue (cost : ManaCost) : Nat :=
       | .x => acc)
     0
 
+/-- Convert colored, colorless, hybrid, and twobrid mana symbols to `{1}` each
+while preserving `{X}` symbols (CR 107.3 / 107.4e / 118.14 / 609.4b: spending
+mana as though it were mana of any type/color). -/
+def asAnyMana (cost : ManaCost) : ManaCost :=
+  if cost.symbols.isEmpty then empty
+  else
+    let gen := cost.symbols.foldl
+      (fun acc s =>
+        match s with
+        | .generic n => acc + n
+        | .colored _ | .colorless | .hybrid _ _ | .twobrid _ => acc + 1
+        | .x => acc)
+      0
+    let xs := cost.symbols.filter (· == .x)
+    if gen == 0 && xs.isEmpty then zero
+    else if gen == 0 then { symbols := xs }
+    else { symbols := xs ++ #[.generic gen] }
+
 /-- Whether paying this cost requires spending mana (CR 601.2g). `{X}` is 0 until chosen. -/
 def includesManaPayment (cost : ManaCost) : Bool :=
   cost.manaValue > 0

@@ -134,8 +134,7 @@ def clearTurnActivations (g : Game) : Game :=
       g := g.expireMatching (fun | .playerRule _ .pendingFreeRGCreature .untilEndOfTurn => true | _ => false) (cause := cause)
       -- Stingcaster Mage: flashback granted until end of turn ends.
       g := g.expireMatching (fun
-        | .permission _ (.flashback _) .untilEndOfTurn
-        | .permission _ (.freeCastFromGraveyard _) .untilEndOfTurn => true
+        | .permission _ (.flashback _) .untilEndOfTurn => true
         | _ => false) (cause := cause)
       for pl in g.players do
         if pl.lost then

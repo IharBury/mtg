@@ -426,7 +426,10 @@ def lookAtTopLandsGainLife (n life : Nat) : Effect :=
     (castKind := .draw)
 
 def gainControlOppArtifacts : Effect :=
-  mkSpell (.of .artifact) (.gainControlOppArtifacts)
+  mkSpell (.of (.filtered {
+    noun := "target artifact that player controls"
+    types := #[.artifact]
+    controller := .eachOpponent })) (.gainControlOppArtifacts)
     (castKind := .counter)
     (allowsZeroTargets := true)
 

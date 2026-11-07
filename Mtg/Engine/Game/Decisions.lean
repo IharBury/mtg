@@ -1319,7 +1319,7 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
         | none => g.reverseProposedSpell (resumeContinuation := true)
         | some spell =>
           let face := g.baseCard spell
-          let effModes := effectiveSpellModes face
+          let effModes := g.evalSpellModes p spell
           let chosen := g.chosenModesOf spell
           let more := (List.range effModes.size).any (fun i =>
             !chosen.contains i && g.spellModeIsChoosable p effModes[i]! (some spell.id))
@@ -2287,12 +2287,11 @@ partial def castAsPartOfResolution (g : Game) (p : PlayerId) (id : ObjectId)
       let original := o
       let origSnap := g.snapshot o
       let fromGy := original.zone == .graveyard original.owner
-      let isFreeFromGy := !withoutManaCost && fromGy && g.freeCastFromGraveyard original
       let origPerm : Option PlayPermission :=
         if withoutManaCost then some { player := p, withoutManaCost := true }
         else rawPerm
       let altCostUsed :=
-        withoutManaCost || isFreeFromGy ||
+        withoutManaCost ||
           origPerm.any (fun pm => pm.withoutManaCost || pm.payLifeEqualManaValue)
       let wasCopy := original.isCopy
       let g :=
@@ -2309,7 +2308,7 @@ partial def castAsPartOfResolution (g : Game) (p : PlayerId) (id : ObjectId)
       let g := g.putStackEntry p newId
       let way : CastWay :=
         if withoutManaCost then .alternative "withoutManaCost"
-        else if isFreeFromGy || origPerm.isSome then .alternative "permission"
+        else if origPerm.isSome then .alternative "permission"
         else .normal
       let g := g.record (GameEvent.proposed g.turnNumber newId p original.zone way)
       let g := g.logMsg s!"{(g.player p).name} casts {name} as the ability resolves"
@@ -2321,8 +2320,8 @@ partial def castAsPartOfResolution (g : Game) (p : PlayerId) (id : ObjectId)
       -- CR 702.34a: casting as an ability resolves is never a Flashback cast, so a
       -- graveyard card (Bilbo's `mayCastFromGraveyard`) pays its normal mana cost.
       let cost := g.playManaCost preSpell stackFace (origPerm := origPerm)
-        (isFreeFromGy := some isFreeFromGy) (flashback := some false)
-        (explicitAltCost := altCostUsed)
+        (flashback := some false)
+        (explicitAltCost := false)
       let lifeInstead :=
         if !withoutManaCost && origPerm.any (·.payLifeEqualManaValue) then
           g.objectManaValue spellObj
@@ -2337,7 +2336,6 @@ partial def castAsPartOfResolution (g : Game) (p : PlayerId) (id : ObjectId)
         original
         originalSnapshot := origSnap
         origPerm
-        isFreeFromGy
         needsSacrificeOther := needsSacrifice
         payLife := lifeInstead
         alternativeCost := altCostUsed
@@ -2624,7 +2622,7 @@ def announceKicker (g : Game) (p : PlayerId) (kick : Bool) : Except String Game 
             |>.logMsg s!"{(g.player p).name} must choose a value for X (CR 107.3a / 601.2b)"
         else if isModalSpellFace face then
           if prop.resolutionCast &&
-              !(effectiveSpellModes face).any (g.spellModeIsChoosable p · (some prop.spellId)) &&
+              !(g.evalSpellModes p spell).any (g.spellModeIsChoosable p · (some prop.spellId)) &&
               !isReturnUpToTwoGyModal face && !face.allowsZeroTargets then
             return g.reverseProposedSpell (resumeContinuation := true)
           else
@@ -2708,7 +2706,7 @@ def payTeamworkCreatures (g : Game) (p : PlayerId) (ids : Array ObjectId) :
       |>.changeProposals #[.teamworkPaid true, .teamworkAnnounced true, .teamworkCreatures ids]
     g := g.logMsg s!"{(g.player p).name} announces teamwork"
     -- “If this spell was cast using teamwork, choose both instead.”
-    let effModes := effectiveSpellModes face
+    let effModes := g.evalSpellModes p spell
     if face.chooseBothIfTeamwork &&
         effModes.all (fun m => g.spellModeIsChoosable p m (some spell.id)) then
       let chosen := g.chosenModesOf spell
@@ -3439,8 +3437,8 @@ def castExiledAsAbilityResolves (g : Game) (p : PlayerId) (id : ObjectId) :
       exiledBy := card.exiledBy
       controller := some p }
     let altCostUsed := origPerm.any (fun pm => pm.withoutManaCost || pm.payLifeEqualManaValue)
-    let cost := g.playManaCost preSpell stackFace (origPerm := origPerm) (isFreeFromGy := some false)
-      (flashback := some false) (explicitAltCost := altCostUsed)
+    let cost := g.playManaCost preSpell stackFace (origPerm := origPerm)
+      (flashback := some false) (explicitAltCost := false)
     let lifeInstead :=
       if origPerm.any (·.payLifeEqualManaValue) then g.objectManaValue spellObj else 0
     let needsSacrifice :=
@@ -3509,10 +3507,17 @@ def decline (g : Game) (p : PlayerId) : Except String Game := do
       throw s!"Only {(g.player caster).name} may choose targets (CR 601.2c)"
     let some obj := g.objectAwaitingTargets | throw "No spell is waiting for a target (CR 601.2c)"
     if g.canSkipCurrentOptionalSlot obj then
-      let g := g.skipOptionalTargetSlot obj.id
+      let kind := (g.targetingOf obj).kind
+      let curSlot := g.currentTargetSlot obj
+      let (_, grpEnd) := kind.instanceGroupBounds curSlot
+      let span := ((List.range grpEnd).drop curSlot)
+      if !span.all kind.isOptionalSlot then
+        let reqCount := span.filter (!kind.isOptionalSlot ·) |>.length
+        throw s!"Choose at least {reqCount} target(s) (CR 601.2c)"
+      let g := span.foldl (fun acc _ => acc.skipOptionalTargetSlot obj.id) g
       let g := g.logMsg
         s!"{(g.player p).name} chooses no target (CR 603.3d / 601.2c)"
-      if g.currentTargetSlot obj < (g.targetingOf obj).kind.spec.slots.size then
+      if g.currentTargetSlot obj < kind.spec.slots.size then
         return g.change (.pending (.chooseTargets p))
       if g.proposedSpell.isSome then
         return g.afterTargetsChosen
