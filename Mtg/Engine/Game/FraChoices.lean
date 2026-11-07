@@ -280,20 +280,13 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       throw "That card can't be chosen"
     return (g.discardFromHand victim id (chooser := some p)).finishFraChoice
   | .discardFromRevealedHand .., _ => throw "Choose one card from the revealed hand"
-  | .mayWheel n rest, .accept | .mayWheel n rest, .decline =>
-    if answer == .accept then
-      let hand := (g.player p).hand
-      let g := g.withBatch none fun g =>
-        g.discardHandIdsLoop p hand (logEach := true)
-      let g :=
-        if let .chooseReplacement .. := g.pending then
-          g.chainPendingReplacement (.finishPostStep (.wheelDrawThenOfferNext p n rest))
-        else
-          g.runPostStep (.wheelDrawThenOfferNext p n rest)
-      return g.finishFraChoice
-    else
-      let g := (g.logMsg s!"{(g.player p).name} keeps their hand").runPostStep (.wheelOfferNext n rest)
-      return g.finishFraChoice
+  | .mayWheel n rest accepted, .accept | .mayWheel n rest accepted, .decline =>
+    let accepted' := if answer == .accept then accepted.push p else accepted
+    let g :=
+      if answer == .decline then g.logMsg s!"{(g.player p).name} keeps their hand"
+      else g
+    let g := g.runPostStep (.wheelOfferNext n rest accepted')
+    return g.finishFraChoice
   | .mayWheel .., _ => throw "Answer accept or decline"
   | .maySacrificePlaneswalker, .objects #[id] =>
     let some pw := g.findObject? id | throw "no such object"
@@ -376,7 +369,12 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     if !ids.contains id then throw "Choose one of the revealed cards"
     let name := (g.object! id).name
     let (g, _) := g.move id (.hand revealer) none
-    let g := g.logMsg s!"{(g.player revealer).name} puts {name} into their hand"
+    let g :=
+      if let .chooseReplacement .. := g.pending then
+        g.chainPendingReplacement (.finishPostStep (.logPutsIntoHand revealer id name))
+      else if (g.followMovedToZone? id (· == Zone.hand revealer)).isSome then
+        g.logMsg s!"{(g.player revealer).name} puts {name} into their hand"
+      else g
     return g.finishFraChoice
   | .extrapolatePick .., _ => throw "Choose one of the revealed cards"
   | .mayPutMilledPermanent ids life, .objects #[id] =>
@@ -607,19 +605,11 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let g := g.logMsg s!"{(g.player p).name} chooses {g.name o}"
     return (g.continueSacrificeEach controller rest (chosen.push id)).finishFraChoice
   | .sacrificeCreatureEach .., _ => throw "Choose a creature to sacrifice"
-  | .discardTwo controller rest draws, .objects ids =>
+  | .discardTwo controller rest draws chosen, .objects ids =>
     let hand := (g.player p).hand
     if ids.size != 2 || ids[0]! == ids[1]! || !ids.all hand.contains then
       throw "Choose two different cards from your hand"
-    let nonland := (ids.filter (fun id => !g.isLand (g.object! id))).size
-    let nextDraws := if nonland < 2 then draws + 1 else draws
-    let g := g.withBatch none fun g =>
-      g.discardHandIdsLoop p ids (logEach := true)
-    let g :=
-      if let .chooseReplacement .. := g.pending then
-        g.chainPendingReplacement (.finishPostStep (.continueDiscardTwo controller rest nextDraws))
-      else
-        g.continueDiscardTwo controller rest nextDraws
+    let g := g.continueDiscardTwo controller rest draws (chosen.push (p, ids))
     return g.finishFraChoice
   | .discardTwo .., _ => throw "Choose two cards to discard"
   | .mayMoveAllCounters fromId toId, .accept =>

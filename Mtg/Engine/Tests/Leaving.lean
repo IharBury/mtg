@@ -209,4 +209,21 @@ def mayLeft : Game :=
     mayLeft.mayEffect.isNone &&
     !mayLeft.over
 
+-- Final discarder leaving during `chooseDiscardCard` clears `conniveSource` and
+-- runs `plusOneAfterDiscards` (CR 701.50 / 800.4a).
+#guard
+  let g0 := addPermanent threeStarted grayOgre ⟨0⟩ ⟨0⟩
+  let ogreId := (namedPermanent g0 "Gray Ogre").id
+  let gAsk :=
+    ((g0.change (.pushContinuationFrame {})).changes #[
+      .conniveSource (some ogreId),
+      .plusOneAfterDiscards (some ogreId),
+      .pending (.chooseDiscardCard ⟨1⟩ #[])])
+  let gLeft := mustApply gAsk ⟨1⟩ .concede
+  gLeft.pending == .none &&
+    gLeft.conniveSource.isNone &&
+    gLeft.plusOneAfterDiscards.isNone &&
+    (gLeft.object! ogreId).status.plusOnePlusOne == 1 &&
+    gLeft.log.any (fun s => mentions s "does not receive a +1/+1 counter")
+
 end Mtg.Engine.Tests

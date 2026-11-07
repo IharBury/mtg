@@ -777,7 +777,7 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
       let what :=
         match choice with
         | .discardFromRevealedHand v _ => s!"choose a card from {(g.player v).name}'s hand to discard"
-        | .mayWheel n _ => s!"may discard your hand and draw {n}"
+        | .mayWheel n .. => s!"may discard your hand and draw {n}"
         | .maySacrificePlaneswalker => "may sacrifice a planeswalker"
         | .topOrBottomDamage id .. =>
           let name := ((g.findObject? id).map (fun (o : GameObject) => o.nameWithToken)).getD "the card"

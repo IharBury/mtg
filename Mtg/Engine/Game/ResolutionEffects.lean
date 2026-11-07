@@ -1058,6 +1058,8 @@ def commitEnteringAttackItems (g : Game)
         | none => g
     | _ => g
   else
+    let outerCont? := g.pendingReplacement
+    let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
     let g :=
       g.withBatch cause fun g => Id.run do
         let preBf := preBattlefield.getD g.battlefield
@@ -1087,7 +1089,11 @@ def commitEnteringAttackItems (g : Game)
                   g := g.chainPendingReplacement (.finishEnteringAttackCards entries cause)
                 return g
         return g.finishEnteringAttackCards entries cause
-    if g.currentBatch.isNone && g.pending == .none then
+    let g :=
+      match outerCont? with
+      | some outer => g.chainPendingReplacement outer
+      | none => g
+    if g.currentBatch.isNone && g.pending == .none && g.pendingReplacement.isNone then
       g.promptTriggerTargetsIfNeeded
     else g
 

@@ -238,4 +238,18 @@ Spending none discards nothing and leaves an earlier note alone. -/
 #guard TriggeredAbility.resolutionPhrase
     { resolution := .discard .source } == "discard cards"
 
+/- CR 118.12a / 701.9b: Thirst for Knowledge's two-card discard shares a single
+batch whether paid one card at a time after declining or chosen simultaneously. -/
+#guard
+  let g0 := insertObject (insertObject Mtg.Engine.Tests.afterDraw pebble caster (.hand caster)) pebble caster (.hand caster)
+  let g1 := g0.applyEffect caster Effect.drawThreeDiscardUnlessArtifact #[]
+  let pebbles := ((g1.player caster).hand.filter (fun id => (g1.object! id).name == pebble.name)).extract 0 2
+  let gSim := mustApply g1 caster (.choosePermanents pebbles)
+  let moves := (gSim.events.extract g0.events.size gSim.events.size).filter (fun e =>
+    match e.change with
+    | .rules (.zone (.moved _ _ (.hand _) (.graveyard _) .discard ..)) => true
+    | _ => false)
+  gSim.pending == .none && gSim.discardBatch.isNone &&
+    moves.size == 2 && moves[0]!.batch.isSome && moves[0]!.batch == moves[1]!.batch
+
 end Mtg.Engine.DiscardTests

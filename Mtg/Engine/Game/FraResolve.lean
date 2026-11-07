@@ -528,7 +528,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     match g.apnapFrom.toList with
     | [] => g
     | p :: rest =>
-      g.beginFraChoice p (.mayWheel n rest.toArray)
+      g.beginFraChoice p (.mayWheel n rest.toArray #[])
         s!"{(g.player p).name} may discard their hand and draw {n} cards"
   | .mountainsAddExtraRed =>
     let g := g.createEffect (.mountainExtraRedThisTurn controller)

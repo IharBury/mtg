@@ -134,6 +134,37 @@ def discardHandIdsLoop (g : Game) (p : PlayerId) (ids : Array ObjectId)
           g := g.logMsg msg
   return g
 
+/-- Pause-safe loop discarding `(p, id)` pairs across multiple players inside a
+single shared open batch (CR 101.4 / 603.2c / 701.9b). -/
+def discardMultiHandIdsLoop (g : Game) (remaining : Array (PlayerId × ObjectId))
+    (logEach : Bool := false) (cause : Option EventCause := none) : Game := Id.run do
+  if let .chooseReplacement .. := g.pending then
+    return g.chainPendingReplacement
+      (.finishPostStep (.discardMultiHandIdsLoop remaining logEach cause))
+  let mut g := g
+  for i in [0:remaining.size] do
+    let (p, id) := remaining[i]!
+    match g.findObject? id with
+    | none => pure ()
+    | some o =>
+      if g.stillInGame p && o.zone == .hand p then
+        let msg := s!"{(g.player p).name} discards {o.name}"
+        let owner := o.owner
+        let (g', _) := g.move id (.graveyard owner) none (verb := some .discard)
+          (actor := some p) (cause := cause)
+        g := g'
+        if let .chooseReplacement .. := g.pending then
+          if logEach then
+            g := g.chainPendingReplacement (.finishPostStep (.logDiscardIfInGraveyard id owner msg))
+          let rem := remaining.extract (i + 1) remaining.size
+          if !rem.isEmpty then
+            g := g.chainPendingReplacement
+              (.finishPostStep (.discardMultiHandIdsLoop rem logEach cause))
+          return g
+        if logEach && (g.followMovedToZone? id (· == .graveyard owner)).isSome then
+          g := g.logMsg msg
+  return g
+
 /-- Discard every card in `p`'s hand. Zero cards is a legal discard and is
 logged (Sauron, the Dark Lord). -/
 def discardEntireHand (g : Game) (p : PlayerId) (cause : Option EventCause := none) : Game :=

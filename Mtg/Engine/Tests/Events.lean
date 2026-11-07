@@ -18239,6 +18239,311 @@ def mkThreePlayer24i4 (seed : UInt64 := 245) : Game :=
 
 end Phase24Item4EventAlignment
 
+section Phase25Item1EventAlignment
+
+def mustHold25i1 (label : String) (ok : Bool) : Bool :=
+  if ok then true else panic! s!"Phase 25 item 1 guard failed: {label}"
+
+def replayOk25i1 (gs : Array Game) : Bool :=
+  gs.all (fun g => Game.replayEvents g.events == g && allRulesEventsClassified g)
+
+def mkThreePlayer25i1 (seed : UInt64 := 251) : Game :=
+  let cfg : StartConfig := {
+    seats := #[
+      { name := "Chandra", deck := testRedDeck },
+      { name := "Nissa", deck := testGreenDeck },
+      { name := "Liliana", deck := testRedDeck }
+    ]
+    format := .constructed
+    seed
+    startingPlayer := some 0
+  }
+  match Start.start cfg with
+  | .ok g => (keepOpeningHands g 24).advanceStep
+  | .error e => panic! e
+
+-- 1. CR 117.3 / 603.2c / 603.3b / 610.3 / 616.1 / 800.4a,f,h:
+--    Generalized paused-batch preservation (`restorePausedBatch` for non-discard `currentBatch`)
+--    and brand-new `Pending.chooseReplacement` opened inside `redirectPendingAfterLeave`.
+#guard
+  let p0 : PlayerId := ⟨0⟩
+  let p1 : PlayerId := ⟨1⟩
+  let p2 : PlayerId := ⟨2⟩
+  let gBase := mkThreePlayer25i1
+  let leylineA : CardDef := { name := "P25i1 Leyline A", types := #[.enchantment] }
+  let leylineB : CardDef := { name := "P25i1 Leyline B", types := #[.enchantment] }
+  let gWithBears :=
+    addPermanent (addPermanent (addPermanent (addPermanent gBase bear p0 p0) bear p2 p2) leylineA p0 p0) leylineB p0 p0
+  let b0 := (gWithBears.battlefield.filter (fun o => o.name == bear.name && o.controller == some p0))[0]!.id
+  let b2 := (gWithBears.battlefield.filter (fun o => o.name == bear.name && o.controller == some p2))[0]!.id
+  let leyA := (gWithBears.battlefield.filter (·.name == leylineA.name))[0]!.id
+  let leyB := (gWithBears.battlefield.filter (·.name == leylineB.name))[0]!.id
+  let ridExileA : ReplacementId := { kind := .exileOppDeath, object := some leyA }
+  let ridExileB : ReplacementId := { kind := .exileOppDeath, object := some leyB }
+  let gTwoExiles :=
+    (gWithBears.createEffect
+      (.replacement { id := ridExileA, source := some leyA, controller := some p0, affectedPlayer := p2,
+                      kind := .exileInsteadOfGraveyard (some b2) false }) (cause := some testCause)).createEffect
+      (.replacement { id := ridExileB, source := some leyB, controller := some p0, affectedPlayer := p2,
+                      kind := .exileInsteadOfGraveyard (some b2) false }) (cause := some testCause)
+
+  -- 1a. Non-discard `origBid` paused on `Pending.chooseReplacement p2`: `p1` concedes mid-batch;
+  --     `leaveBid` runs independently (`leaveBid != origBid`), `origBid` is restored via `restorePausedBatch`,
+  --     and once `p2` resolves the replacement choice both `b0` and `b2` share `origBid`:
+  let preSacIdx := gTwoExiles.events.size
+  let gPausedBatch :=
+    gTwoExiles.withBatch (some testCause) fun g =>
+      g.sacrificePermanentsLoop #[(p0, b0), (p2, b2)] (preBattlefield := some g.battlefield) (cause := some testCause)
+  let origBid? := gPausedBatch.currentBatch.map Prod.fst
+  let gAfterP1Concede := mustApply gPausedBatch p1 .concede
+  let leaveEvtBatch? :=
+    ((gAfterP1Concede.events.extract preSacIdx gAfterP1Concede.events.size).find? (fun e =>
+      match e.change with
+      | .rules (.player (.leftGame q)) => q == p1
+      | _ => false)).bind (·.batch)
+  let gResolvedBatch :=
+    match gAfterP1Concede.pending with
+    | .chooseReplacement chooser cs => mustApply gAfterP1Concede chooser (.chooseReplacement cs[0]!)
+    | _ => gAfterP1Concede
+  let b0MoveBatch? :=
+    ((gResolvedBatch.events.extract preSacIdx gResolvedBatch.events.size).find? (fun e =>
+      match e.change with
+      | .rules (.zone (.moved prev _ .battlefield ..)) => prev.id == some b0
+      | _ => false)).bind (·.batch)
+  let b2MoveBatch? :=
+    ((gResolvedBatch.events.extract preSacIdx gResolvedBatch.events.size).find? (fun e =>
+      match e.change with
+      | .rules (.zone (.moved prev _ .battlefield .exile ..)) => prev.id == some b2
+      | _ => false)).bind (·.batch)
+  let nonDiscardPausedBatchOk :=
+    origBid?.isSome &&
+    leaveEvtBatch?.isSome &&
+    leaveEvtBatch? != origBid? &&
+    gAfterP1Concede.currentBatch.map Prod.fst == origBid? &&
+    (match gAfterP1Concede.pending with | .chooseReplacement q _ => q == p2 | _ => false) &&
+    gResolvedBatch.currentBatch.isNone &&
+    gResolvedBatch.pending == .none &&
+    b0MoveBatch? == origBid? &&
+    b2MoveBatch? == origBid?
+
+  -- 1b. Brand-new `Pending.chooseReplacement` opened inside `redirectPendingAfterLeave`
+  --     (`.chooseSacrificeCreature p1 #[b2] #[]` when `p1` concedes): `leaveBid` stays paused on
+  --     `Pending.chooseReplacement p2` instead of stashing `.chooseReplacement` into `savedPreLeavePending?`,
+  --     and once `p2` resolves it `leaveBid` closes and priority is granted to a living player:
+  let gRedirAsk := gTwoExiles.change (.pending (.chooseSacrificeCreature p1 #[b2] #[]))
+  let gRedirConcede := mustApply gRedirAsk p1 .concede
+  let gRedirDone :=
+    match gRedirConcede.pending with
+    | .chooseReplacement chooser cs => mustApply gRedirConcede chooser (.chooseReplacement cs[0]!)
+    | _ => gRedirConcede
+  let redirectNewReplacementOk :=
+    (match gRedirConcede.pending with | .chooseReplacement q _ => q == p2 | _ => false) &&
+    gRedirConcede.currentBatch.isSome &&
+    gRedirDone.currentBatch.isNone &&
+    gRedirDone.pending == .none &&
+    !(gRedirDone.findObject? b2).any (·.isOnBattlefield) &&
+    gRedirDone.stillInGame gRedirDone.priority
+
+  mustHold25i1 "1a.nonDiscardPausedBatchOk" nonDiscardPausedBatchOk &&
+  mustHold25i1 "1b.redirectNewReplacementOk" redirectNewReplacementOk &&
+  mustHold25i1 "1.replay" (replayOk25i1 #[gPausedBatch, gAfterP1Concede, gResolvedBatch, gRedirConcede, gRedirDone])
+
+-- 2. CR 400.3 / 608.2c / 614.6 / 616.1 / 701.50 / 800.4a,f–h:
+--    Outer `g.pendingReplacement` preservation across `redirectPendingAfterLeave` & `commitEnteringAttackItems`,
+--    `.chooseDiscardCard` departure cleanup (`conniveSource` + `plusOneAfterDiscards`), and arrival-gated `.extrapolatePick`.
+#guard
+  let p0 : PlayerId := ⟨0⟩
+  let p1 : PlayerId := ⟨1⟩
+  let gBase := mkThreePlayer25i1
+
+  -- 2a. `.chooseDiscardCard` final-discarder departure clears `conniveSource` and runs `finishPlusOneAfterDiscards`:
+  let gConn0 := addPermanent gBase bear p0 p0
+  let connBearId := (gConn0.battlefield.filter (·.name == bear.name))[0]!.id
+  let gConnAsk :=
+    ((gConn0.change (.pushContinuationFrame {})).changes #[
+      .conniveSource (some connBearId),
+      .plusOneAfterDiscards (some connBearId),
+      .pending (.chooseDiscardCard p1 #[])])
+  let gConnLeft := mustApply gConnAsk p1 .concede
+  let discardCleanupOk :=
+    gConnLeft.pending == .none &&
+    gConnLeft.conniveSource.isNone &&
+    gConnLeft.plusOneAfterDiscards.isNone &&
+    (gConnLeft.object! connBearId).status.plusOnePlusOne == 1 &&
+    gConnLeft.log.any (·.contains "No card is discarded; the conniving creature does not receive a +1/+1 counter")
+
+  -- 2b. Outer `g.pendingReplacement` preserved across `redirectPendingAfterLeave` (`.palantirMayDraw`)
+  --     and `ResolutionEffects.commitEnteringAttackItems` `.card` branch:
+  let palDef : CardDef := { name := "P25i1 Palantir", types := #[.artifact] }
+  let gPal0 := insertObject gBase palDef p0 .battlefield (some p0) { counters := #[(.influence, 2)] }
+  let palId := (gPal0.battlefield.filter (·.name == palDef.name))[0]!.id
+  let p0LifeBefore := (gPal0.player p0).life
+  let p0LibBefore := (gPal0.player p0).library.size
+  let gPalAsk :=
+    (gPal0.chainPendingReplacement (.finishPostStep (.gainLifePlayer p0 5))).change
+      (.pending (.fraChoice p1 (.palantirMayDraw p0 palId)))
+  let gPalLeft := mustApply gPalAsk p1 .concede
+
+  let colorCardDef : CardDef := {
+    bear with
+    name := "P25i1 Entering Attacker"
+    entersTappedUnlessPayLife := some 2
+  }
+  let gAtk0 := insertObject gBase colorCardDef p0 (.graveyard p0)
+  let atkCardId := (gAtk0.player p0).graveyard.back!
+  let atkLifeBefore := (gAtk0.player p0).life
+  let atkItem : EnteringAttackItem :=
+    .card atkCardId p0 p0 false false #[] [] .putOntoBattlefield #[.player p1]
+  let gAtkPaused :=
+    (gAtk0.chainPendingReplacement (.finishPostStep (.gainLifePlayer p0 4))).commitEnteringAttackItems
+      #[(atkItem, some (.player p1))] (some testCause)
+  let gAtkDone :=
+    match gAtkPaused.pending with
+    | .chooseReplacement chooser _ => mustApply gAtkPaused chooser .decline
+    | _ => gAtkPaused
+
+  mustHold25i1 "2a.discardCleanupOk" discardCleanupOk &&
+  mustHold25i1 s!"2b.palLife:{(gPalLeft.player p0).life}!={p0LifeBefore + 5}" ((gPalLeft.player p0).life == p0LifeBefore + 5) &&
+  mustHold25i1 s!"2b.palLib:{(gPalLeft.player p0).library.size}!={p0LibBefore - 2}" ((gPalLeft.player p0).library.size == p0LibBefore - 2) &&
+  mustHold25i1 "2b.atkPaused" (match gAtkPaused.pending with | .chooseReplacement q _ => q == p0 | _ => false) &&
+  mustHold25i1 "2b.atkDonePending" (gAtkDone.pending == .none) &&
+  mustHold25i1 s!"2b.atkDoneLife:{(gAtkDone.player p0).life}!={atkLifeBefore + 4}" ((gAtkDone.player p0).life == atkLifeBefore + 4) &&
+  mustHold25i1 "2b.atkDoneBf" (gAtkDone.battlefield.any (fun o => o.name == colorCardDef.name && o.status.attacking)) &&
+  mustHold25i1 "2.replay" (replayOk25i1 #[gConnLeft, gPalLeft, gAtkPaused, gAtkDone])
+
+-- 3. CR 101.4 / 118.12a / 121.2 / 121.2c / 603.2c / 701.9b–c:
+--    Simultaneous discard batching for *Thirst for Knowledge*, *Garruk, Veiled Butcher* (`continueDiscardTwo`),
+--    and *Variable Chaser // Arc of Fortune* (`eachPlayerMayWheel`).
+#guard
+  let p0 : PlayerId := ⟨0⟩
+  let p1 : PlayerId := ⟨1⟩
+  let p2 : PlayerId := ⟨2⟩
+  let discardWatcherDef : CardDef := {
+    bear with
+    name := "P25i1 Discard Watcher"
+    triggeredAbilities := #[
+      TriggeredAbility.fra (.fra .playerDiscards)
+        "Whenever a player discards one or more cards, you gain 1 life." (.gainLife 1)
+    ]
+  }
+
+  -- 3a. *Thirst for Knowledge*: single `discardBatch` across two non-artifacts, `.decline` + two artifacts,
+  --     and simultaneous `.choosePermanents #[art1, art2]`, firing `.playerDiscards` once in each case:
+  let thirstStoneDef : CardDef := { name := "P25i1 Mind Stone", types := #[.artifact] }
+  let gThirst0 :=
+    insertObject
+      (insertObject
+        (insertObject
+          (insertObject (addPermanent afterDraw discardWatcherDef p0 p0) thirstStoneDef p0 (.hand p0))
+          thirstStoneDef p0 (.hand p0))
+        bear p0 (.hand p0))
+      hero p0 (.hand p0)
+  let stones := ((gThirst0.player p0).hand.filter (fun id => (gThirst0.object! id).name == thirstStoneDef.name)).extract 0 2
+  let nonArts := #[
+    ((gThirst0.player p0).hand.filter (fun id => (gThirst0.object! id).name == bear.name))[0]!,
+    ((gThirst0.player p0).hand.filter (fun id => (gThirst0.object! id).name == hero.name))[0]!
+  ]
+  let runThirstSeq :=
+    let g1 := gThirst0.applyEffect p0 Effect.drawThreeDiscardUnlessArtifact #[]
+    let g2 := mustApply g1 p0 (.discard nonArts[0]!)
+    mustApply g2 p0 (.discard nonArts[1]!)
+  let runThirstDeclineTwoArts :=
+    let g1 := mustApply (gThirst0.applyEffect p0 Effect.drawThreeDiscardUnlessArtifact #[]) p0 .decline
+    let g2 := mustApply g1 p0 (.discard stones[0]!)
+    mustApply g2 p0 (.discard stones[1]!)
+  let runThirstSimultaneousTwoArts :=
+    let g1 := gThirst0.applyEffect p0 Effect.drawThreeDiscardUnlessArtifact #[]
+    mustApply g1 p0 (.choosePermanents stones)
+  let oneDiscardTrig (g : Game) : Bool :=
+    let moves := (g.events.extract gThirst0.events.size g.events.size).filter (fun e =>
+      match e.change with
+      | .rules (.zone (.moved _ _ (.hand _) (.graveyard _) .discard ..)) => true
+      | _ => false)
+    g.pending == .none && g.discardBatch.isNone &&
+      moves.size == 2 && moves[0]!.batch.isSome && moves[0]!.batch == moves[1]!.batch &&
+      (g.waitingTriggers.size + g.stack.size) == 1
+  let thirstBatchOk :=
+    oneDiscardTrig runThirstSeq &&
+    oneDiscardTrig runThirstDeclineTwoArts &&
+    oneDiscardTrig runThirstSimultaneousTwoArts
+
+  -- 3b. *Garruk, Veiled Butcher* (`continueDiscardTwo`): APNAP choices collected before moving any card,
+  --     all 4 chosen cards discarded in one shared batch, and `controller` draws 1 card for `p1` (< 2 nonlands):
+  let gGarruk0 :=
+    insertObject
+      (insertObject
+        (insertObject
+          (insertObject (addPermanent mkThreePlayer25i1 discardWatcherDef p0 p0) bear p1 (.hand p1))
+          mountain p1 (.hand p1))
+        bear p2 (.hand p2))
+      hero p2 (.hand p2)
+  let p0HandBefore := (gGarruk0.player p0).hand.size
+  let p1Pick := #[
+    ((gGarruk0.player p1).hand.filter (fun id => (gGarruk0.object! id).name == bear.name))[0]!,
+    ((gGarruk0.player p1).hand.filter (fun id => (gGarruk0.object! id).name == mountain.name))[0]!
+  ]
+  let p2Pick := #[
+    ((gGarruk0.player p2).hand.filter (fun id => (gGarruk0.object! id).name == bear.name))[0]!,
+    ((gGarruk0.player p2).hand.filter (fun id => (gGarruk0.object! id).name == hero.name))[0]!
+  ]
+  let gGarrukStart := gGarruk0.continueDiscardTwo p0 #[p1, p2] 0
+  let gGarrukMid := mustApply gGarrukStart p1 (.choosePermanents p1Pick)
+  let p1StillInHandMid := p1Pick.all (gGarrukMid.player p1).hand.contains
+  let gGarrukDone := mustApply gGarrukMid p2 (.choosePermanents p2Pick)
+  let garrukMoves := (gGarrukDone.events.extract gGarruk0.events.size gGarrukDone.events.size).filter (fun e =>
+    match e.change with
+    | .rules (.zone (.moved _ _ (.hand _) (.graveyard _) .discard ..)) => true
+    | _ => false)
+  let garrukBatchOk :=
+    p1StillInHandMid &&
+    gGarrukDone.pending == .none &&
+    garrukMoves.size == 4 &&
+    garrukMoves[0]!.batch.isSome &&
+    garrukMoves.all (fun e => e.batch == garrukMoves[0]!.batch) &&
+    (gGarrukDone.player p0).hand.size == p0HandBefore + 1 &&
+    (gGarrukDone.waitingTriggers.size + gGarrukDone.stack.size) == 2
+
+  -- 3c. *Variable Chaser // Arc of Fortune* (`eachPlayerMayWheel`): APNAP yes/no choices collected before
+  --     discarding all accepting players' hands in one shared batch, followed by individual CR 121.2 draws:
+  let gWheel0 := addPermanent mkThreePlayer25i1 discardWatcherDef p0 p0
+  let p0HandPreWheel := (gWheel0.player p0).hand
+  let gWheelAsk0 := gWheel0.applyFra p0 default (.eachPlayerMayWheel 2) #[] none
+  let gWheelAsk1 := mustApply gWheelAsk0 p0 .accept
+  let p0IntactDuringChoices := (gWheelAsk1.player p0).hand == p0HandPreWheel
+  let gWheelAsk2 := mustApply gWheelAsk1 p1 .decline
+  let gWheelDone := mustApply gWheelAsk2 p2 .accept
+  let wheelMoves := (gWheelDone.events.extract gWheel0.events.size gWheelDone.events.size).filter (fun e =>
+    match e.change with
+    | .rules (.zone (.moved _ _ (.hand _) (.graveyard _) .discard ..)) => true
+    | _ => false)
+  let wheelDraws := (gWheelDone.events.extract gWheel0.events.size gWheelDone.events.size).filter (fun e =>
+    match e.change with
+    | .rules (.zone (.moved _ _ (.library _) (.hand _) (.draw ..) ..)) => true
+    | _ => false)
+  let wheelBatchOk :=
+    p0IntactDuringChoices &&
+    gWheelDone.pending == .none &&
+    !wheelMoves.isEmpty &&
+    wheelMoves[0]!.batch.isSome &&
+    wheelMoves.all (fun e => e.batch == wheelMoves[0]!.batch) &&
+    wheelDraws.size == 4 &&
+    wheelDraws.all (fun e => e.batch != wheelMoves[0]!.batch) &&
+    (gWheelDone.player p0).hand.size == 2 &&
+    (gWheelDone.player p2).hand.size == 2 &&
+    gWheelDone.log.any (·.contains "keeps their hand") &&
+    (gWheelDone.waitingTriggers.size + gWheelDone.stack.size) == 2
+
+  mustHold25i1 "3a.thirstBatchOk" thirstBatchOk &&
+  mustHold25i1 "3b.garrukBatchOk" garrukBatchOk &&
+  mustHold25i1 "3c.wheelBatchOk" wheelBatchOk &&
+  mustHold25i1 "3.replay" (replayOk25i1 #[
+    runThirstSeq, runThirstDeclineTwoArts, runThirstSimultaneousTwoArts,
+    gGarrukStart, gGarrukMid, gGarrukDone,
+    gWheelAsk0, gWheelAsk1, gWheelAsk2, gWheelDone
+  ])
+
+end Phase25Item1EventAlignment
+
 end Mtg.Engine.EventTests
 
 

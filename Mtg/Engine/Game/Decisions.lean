@@ -272,7 +272,7 @@ partial def concedePlayersLoop (g : Game) (remaining : Array PlayerId)
       return g
     let pid := remaining[i]!
     if !(g.player pid).leftTheGame then
-      if saved?.isSome && !g.sbaPaused && !g.hasNonDiscardOpenBatch then
+      if saved?.isSome && !g.sbaPaused && g.pendingReplacement.isNone then
         g := g.restoreSavedPostLeave saved? popOuter
         saved? := none
         popOuter := false
@@ -577,11 +577,25 @@ partial def resumePendingReplacement (g : Game) (pr : PendingReplacement)
         g.reverseProposedSpell (resumeContinuation := true)
       else
         openPrompt g
+    | .chooseLegend q name ids =>
+      let liveIds := ids.filter fun id =>
+        (g.findObject? id).any (fun o => o.isOnBattlefield && g.controlledBy o q)
+      if !g.stillInGame q || liveIds.size < 2 then g
+      else
+        let g := g.change (.pending (.chooseLegend q name liveIds))
+        match promptLog with
+        | some msg => g.logMsg msg
+        | none => g
+    | .chooseReplacement q choices =>
+      if g.stillInGame q &&
+          choices.all (fun c => c.object.all (fun oid => (g.findObject? oid).isSome)) then
+        openPrompt g
+      else g
     | _ => openPrompt g
   | .closeBatch batchId startIdx =>
     g.finishOpenBatchAndLinkedExile batchId startIdx
-  | .restorePausedDiscardBatch batchId startIdx cause objects players effects pending stack =>
-    g.restorePausedDiscardBatch batchId startIdx cause objects players effects pending stack
+  | .restorePausedBatch batchId startIdx wasDiscard cause objects players effects pending stack =>
+    g.restorePausedBatch batchId startIdx wasDiscard cause objects players effects pending stack
   | .checkSBA =>
     g.checkSBA
   | .receivePriority p =>
@@ -843,8 +857,10 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
     | none => g.logMsg "The target is no longer legal"
   | .offerMaySearchBasics owner =>
     g.offerMaySearchBasics owner
-  | .continueDiscardTwo controller rest draws =>
-    g.continueDiscardTwo controller rest draws
+  | .continueDiscardTwo controller rest draws chosen =>
+    g.continueDiscardTwo controller rest draws chosen
+  | .finishDiscardTwoDraws controller baseDraws oppIds startIdx =>
+    g.finishDiscardTwoDraws controller baseDraws oppIds startIdx
   | .enteredBattlefieldPutRestBottomRandom p cardId rest cause =>
     let g :=
       match g.followMovedToZone? cardId (· == .battlefield) with
@@ -1019,15 +1035,42 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
   | .wheelDrawThenOfferNext p cards rest =>
     let g := g.draw p cards
     if let .chooseReplacement .. := g.pending then
-      g.chainPendingReplacement (.finishPostStep (.wheelOfferNext cards rest))
+      g.chainPendingReplacement (.finishPostStep (.wheelOfferNext cards rest #[]))
     else
-      g.runPostStep (.wheelOfferNext cards rest)
-  | .wheelOfferNext cards rest =>
-    match rest.toList with
-    | [] => g
-    | next :: more =>
-      g.beginFraChoice next (.mayWheel cards more.toArray)
+      g.runPostStep (.wheelOfferNext cards rest #[])
+  | .wheelOfferNext cards rest accepted =>
+    let restLiving := rest.filter g.stillInGame
+    match restLiving[0]? with
+    | some next =>
+      g.beginFraChoice next (.mayWheel cards (restLiving.extract 1 restLiving.size) accepted)
         s!"{(g.player next).name} may discard their hand and draw {cards} cards"
+    | none =>
+      let acceptedLiving := accepted.filter g.stillInGame
+      if acceptedLiving.isEmpty then g
+      else
+        let pairs := acceptedLiving.foldl (fun acc q =>
+          acc ++ ((g.player q).hand.map (fun id => (q, id)))) #[]
+        let g :=
+          if pairs.isEmpty then g
+          else
+            g.withBatch none fun g =>
+              g.discardMultiHandIdsLoop pairs (logEach := true)
+        if let .chooseReplacement .. := g.pending then
+          g.chainPendingReplacement (.finishPostStep (.wheelDrawsLoop cards acceptedLiving))
+        else
+          g.runPostStep (.wheelDrawsLoop cards acceptedLiving)
+  | .wheelDrawsLoop cards remainingPlayers =>
+    let living := remainingPlayers.filter g.stillInGame
+    match living[0]? with
+    | none => g
+    | some q =>
+      let more := living.extract 1 living.size
+      let g := if cards > 0 then g.draw q cards else g
+      if more.isEmpty then g
+      else if let .chooseReplacement .. := g.pending then
+        g.chainPendingReplacement (.finishPostStep (.wheelDrawsLoop cards more))
+      else
+        g.runPostStep (.wheelDrawsLoop cards more)
   | .searchLibraryPlaneswalker p =>
     g.resolveSearchLibrary p (·.isPlaneswalker) false "planeswalker card"
   | .searchLibrarySphinx p =>
@@ -1090,11 +1133,21 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
     | some src => if src.isOnBattlefield then g.addPlusOnePlusOneTo src count else g
     | none => g
   | .beginDiscardCardsStep players =>
-    g.beginDiscardCards players
+    g.beginDiscardCards players (resuming := g.thirstDiscardsLeft > 0 || g.discardBatch.isSome)
   | .continueAfterDiscardStep remaining samePlayer count =>
     g.continueAfterDiscard remaining (samePlayer := samePlayer) (count := count)
   | .discardHandIdsLoop p ids logEach cause =>
     g.discardHandIdsLoop p ids (logEach := logEach) (cause := cause)
+  | .discardMultiHandIdsLoop remaining logEach cause =>
+    g.discardMultiHandIdsLoop remaining (logEach := logEach) (cause := cause)
+  | .finishPlusOneAfterDiscards =>
+    g.finishPlusOneAfterDiscards
+  | .closeDiscardBatchStep =>
+    g.closeCurrentDiscardBatch
+  | .logPutsIntoHand revealer fromId cardName =>
+    if g.stillInGame revealer && (g.followMovedToZone? fromId (· == .hand revealer)).isSome then
+      g.logMsg s!"{(g.player revealer).name} puts {cardName} into their hand"
+    else g
   | .logInfluenceThenScryTwo sourceId beforeInfluence =>
     match g.findObject? sourceId with
     | some src =>
@@ -1843,12 +1896,14 @@ partial def finishChooseDiscardCard (g : Game) (p : PlayerId) (card : GameObject
       if g.hasType card g.thirstDiscardType then 0 else g.thirstDiscardsLeft - 1
     let g := g.change (.thirstDiscardsLeft left)
     if left == 0 then
-      if let .chooseReplacement .. := g.pending then g
-      else g.change (.pending .none)
+      if let .chooseReplacement .. := g.pending then
+        g.chainPendingReplacement (.finishPostStep .closeDiscardBatchStep)
+      else
+        (g.change (.pending .none)).closeCurrentDiscardBatch
     else if let .chooseReplacement .. := g.pending then
       g.chainPendingReplacement (.finishPostStep (.beginDiscardCardsStep #[p]))
     else
-      g.beginDiscardCards #[p]
+      g.beginDiscardCards #[p] (resuming := true)
   else if g.pendingDiscardsLeft > 0 then
     let left := g.pendingDiscardsLeft - 1
     let g := g.change (.pendingDiscardsLeft left)
@@ -3196,6 +3251,55 @@ def choosePermanents (g : Game) (p : PlayerId) (ids : Array ObjectId) :
     return g.finishAndGrantPriority
   | .chooseTeamworkCreatures _ _ =>
     g.payTeamworkCreatures p ids
+  | .chooseDiscardCard q remaining =>
+    if g.thirstDiscardsLeft == 0 then
+      throw "Not time to choose permanents"
+    if p != q then
+      throw s!"Only {(g.player q).name} may discard"
+    if !uniqueObjectIds ids then
+      throw "Duplicate card"
+    let hand := (g.player p).hand
+    if !ids.all hand.contains then
+      throw "That card is not in your hand"
+    let nReq := Nat.min g.thirstDiscardsLeft hand.size
+    let isSingleEscape :=
+      ids.size == 1 && (g.findObject? ids[0]!).any (fun c => g.hasType c g.thirstDiscardType)
+    let isFullDiscard := ids.size == nReq && ids.size > 0
+    if !isSingleEscape && !isFullDiscard then
+      throw s!"Choose one {g.thirstDiscardType.oracleWord} card or {nReq} card(s) from your hand"
+    let outerCont? := g.pendingReplacement
+    let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
+    let g := g.changes #[.pending .none, .thirstDiscardsLeft 0]
+    let pairs := ids.map (fun cid => (p, cid))
+    let g :=
+      if g.discardBatch.isSome then
+        let g := g.discardMultiHandIdsLoop pairs (logEach := true)
+        if let .chooseReplacement .. := g.pending then
+          let g := g.chainPendingReplacement (.finishPostStep .closeDiscardBatchStep)
+          if !remaining.isEmpty || g.plusOneAfterDiscards.isSome then
+            g.chainPendingReplacement
+              (.finishPostStep (.continueAfterDiscardStep remaining false (max 1 g.discardCountPerPlayer)))
+          else g
+        else
+          let g := g.closeCurrentDiscardBatch
+          if !remaining.isEmpty || g.plusOneAfterDiscards.isSome then
+            g.continueAfterDiscard remaining (samePlayer := false) (count := max 1 g.discardCountPerPlayer)
+          else g
+      else
+        let g := g.withBatch none fun g =>
+          g.discardMultiHandIdsLoop pairs (logEach := true)
+        if !remaining.isEmpty || g.plusOneAfterDiscards.isSome then
+          if let .chooseReplacement .. := g.pending then
+            g.chainPendingReplacement
+              (.finishPostStep (.continueAfterDiscardStep remaining false (max 1 g.discardCountPerPlayer)))
+          else
+            g.continueAfterDiscard remaining (samePlayer := false) (count := max 1 g.discardCountPerPlayer)
+        else g
+    let g :=
+      match outerCont? with
+      | some outer => g.chainPendingReplacement outer
+      | none => g
+    return g.finishAndGrantPriority
   | _ => throw "Not time to choose permanents"
 
 /-- Cast the card Chandra, Torch of Defiance exiled, as her ability resolves.
@@ -3543,6 +3647,35 @@ def decline (g : Game) (p : PlayerId) : Except String Game := do
     if !(g.player q).hand.isEmpty then
       throw "You must discard a card"
     g.reverseProposedSpell? (resumeContinuation := true)
+  | .chooseDiscardCard q remaining =>
+    if g.thirstDiscardsLeft == 0 then
+      throw "Not time to decline"
+    if p != q then
+      throw s!"Only {(g.player q).name} may decline"
+    let n := g.thirstDiscardsLeft
+    let perPlayer := if n > 1 then n else 0
+    let tyWord := g.thirstDiscardType.oracleWord
+    let art :=
+      match tyWord.toList[0]? with
+      | some 'a' | some 'e' | some 'i' | some 'o' | some 'u' => "an"
+      | _ => "a"
+    let g := g.changes #[
+      .thirstDiscardsLeft 0,
+      .discardCountPerPlayer perPlayer,
+      .pendingDiscardsLeft perPlayer]
+    let g := g.logMsg
+      s!"{(g.player p).name} declines to discard {art} {tyWord} card; {(g.player p).name} must discard {n} card(s)"
+    if (g.player p).hand.isEmpty then
+      let outerCont? := g.pendingReplacement
+      let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
+      let g := g.continueAfterDiscard (#[p] ++ remaining) (samePlayer := true) (count := max 1 n)
+      let g :=
+        match outerCont? with
+        | some outer => g.chainPendingReplacement outer
+        | none => g
+      return g.finishAndGrantPriority
+    else
+      return g
   | _ => throw "Not time to decline"
 
 def keepOpeningHand (g : Game) (p : PlayerId) : Except String Game := do

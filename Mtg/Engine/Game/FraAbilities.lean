@@ -54,28 +54,59 @@ def continueSacrificeEach (g : Game) (controller : PlayerId) (players : Array Pl
       g.sacrificePermanentsLoop pairs (preBattlefield := some preBf)
         (createBeastFor := if youSacrificed then some controller else none)
 
-/-- Ask the next opponent in `players` to discard two cards for Garruk,
-Veiled Butcher, or draw `draws` cards for `controller` and finish. -/
+/-- Count nonland cards actually discarded by each opponent in `oppIds` since
+`startIdx` (CR 701.9c: face-up nonland cards moved from that opponent's hand to
+a different public zone with `.discard`) and draw `baseDraws + shortCount`
+cards for `controller` (CR 101.4 / 603.2c / 614.6 / 701.9b–c). -/
+def finishDiscardTwoDraws (g : Game) (controller : PlayerId) (baseDraws : Nat)
+    (oppIds : Array PlayerId) (startIdx : Nat) : Game :=
+  let nonlandDiscardedBy (opp : PlayerId) : Nat :=
+    (g.events.extract startIdx g.events.size).foldl (fun acc e =>
+      match e.change with
+      | .rules (.zone (.moved _ after (.hand q) toZone .discard _ _ _)) =>
+        if q == opp && toZone != .hand q && isPublicZone toZone &&
+            !after.faceDown && !after.types.contains .land then
+          acc + 1
+        else acc
+      | _ => acc) 0
+  let shortCount := (oppIds.filter (fun opp => nonlandDiscardedBy opp < 2)).size
+  let totalDraws := baseDraws + shortCount
+  if g.stillInGame controller && totalDraws > 0 then
+    g.draw controller totalDraws
+  else g
+
+/-- Collect each living opponent's two-card discard choice in APNAP order for
+Garruk, Veiled Butcher, then discard all chosen cards simultaneously inside one
+shared batch and draw a card for each opponent who didn't discard two nonland
+cards (CR 101.4 / 603.2c / 614.6 / 701.9b–c). -/
 partial def continueDiscardTwo (g : Game) (controller : PlayerId) (players : Array PlayerId)
-    (draws : Nat) : Game :=
-  match players.toList with
-  | [] => g.draw controller draws
+    (draws : Nat) (chosen : Array (PlayerId × Array ObjectId) := #[]) : Game :=
+  let living := players.filter g.stillInGame
+  match living.toList with
+  | [] =>
+    let livingChosen := chosen.filter (fun (p, _) => g.stillInGame p)
+    let oppIds := livingChosen.map Prod.fst
+    let pairs := livingChosen.foldl (fun acc (p, ids) =>
+      acc ++ ids.map (fun id => (p, id))) #[]
+    let startIdx := g.events.size
+    let g :=
+      if pairs.isEmpty then g
+      else
+        g.withBatch none fun g =>
+          g.discardMultiHandIdsLoop pairs (logEach := true)
+    if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement
+        (.finishPostStep (.finishDiscardTwoDraws controller draws oppIds startIdx))
+    else
+      g.finishDiscardTwoDraws controller draws oppIds startIdx
   | p :: rest =>
     let hand := (g.player p).hand
     if hand.size ≤ 2 then
-      let nonland := (hand.filter (fun id => !g.isLand (g.object! id))).size
-      let nextDraws := if nonland < 2 then draws + 1 else draws
-      let g := g.withBatch none fun g =>
-        g.discardHandIdsLoop p hand (logEach := true)
       let g :=
         if hand.isEmpty then g.logMsg s!"{(g.player p).name} has no cards to discard" else g
-      if let .chooseReplacement .. := g.pending then
-        g.chainPendingReplacement
-          (.finishPostStep (.continueDiscardTwo controller rest.toArray nextDraws))
-      else
-        g.continueDiscardTwo controller rest.toArray nextDraws
+      g.continueDiscardTwo controller rest.toArray draws (chosen.push (p, hand))
     else
-      g.beginFraChoice p (.discardTwo controller rest.toArray draws)
+      g.beginFraChoice p (.discardTwo controller rest.toArray draws chosen)
         s!"{(g.player p).name} discards two cards"
 
 /-- Creatures attacking `p` directly (not a planeswalker). -/
