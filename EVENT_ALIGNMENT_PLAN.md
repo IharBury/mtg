@@ -1891,7 +1891,7 @@ flowchart TD
   P23 --> P24["Phase 24: Remaining pause/Leaving continuation safety & CR 400.3/614.6/700.4/701.9a,21a/122.1 arrival logs,\nCR 601.2-3/702.33-34/715.3/733.1/115.1,3 Flashback, Kicker, Adventure, Cosmic Cube & multi-slot target legality,\nCR 614.1c,5,12,15/616.1a-g/701.14/702.15b/121.2 ETB self-exclusion, wildcard counters, 616.1e ETB tiers & token/fight/lifelink/discard batches,\nand CR 805.3-4,8/810.2 2HG shared-turn lifecycle, start-of-pass CR 704.5j/s legend & Saga SBAs, and scaffolding/CR cleanup"]
   P24 --> P25["Phase 25: Generalized Leaving paused-batch/continuation safety & CR 101.4/118.12a/603.2c/701.9b Thirst & APNAP discard/wheel batches,\nCR 106.6/115.1,3/118.9a,c/601.2-3/733.1 multi-target/slot legality, alt-cost exclusivity, payLifeEqualManaValue, cast checkpoints & agent mana,\nCR 121.2/603.6a/616.1b,g/701.7a/702.15b/800.4b wildcard order cleanup, ZoneEvent.created controller vs creator, trigger draws & noncombat lifelink,\nand CR 725.2,4/302.6/805.4a,10/810.2/611.2a/800.4c monarch triggers, 2HG summoning sickness/combat, counter-removal expiry & orphaned-helper cleanup"]
   P25 --> P26["Phase 26: Leaving x CR 733.1/800.4a departure-reversal, non-owner/2HG proposal abort, stack-card exile & continuation safety,\nCR 115.1c/612/118.9a,d/118.14/608.2g/700.2d modal zero-target/Layer-3, Sneak/anyMana/Ur-Sphinx cast, multi-mode/eachOpponent target & Agent mana alignment,\nCR 614.1c/702.176a/702.15b/608.2h Impending ETB .time replacements, created ETB watching, pause-safe divided/lifelink & Bow/Balin/Jace LKI,\nand CR 611.2a/800.4c remaining counter-removal expiry, CR 725.2-3 per-creature monarch, CR 805.3-7 2HG APNAP/shared-step/combat & dead-scaffolding cleanup"]
-  P26 --> P27["Phase 27: Non-replacement inDepSpan/cleanupRemappedLeavingId, multi-departure popOuter, stack-ability ownership & stillInGame/FraChoices guards,\nCR 115.1c-d/115.7d/601.2b-c/602.2b/603.3c-d/700.2/702.21a/702.34a optional-slot decline, modal trigger Layer-3/eachOpponent, retargeting & flashback,\nCR 120.2/608.2h/616.1/714 replacement affectedPlayer stamping, pause-safe makeFrc/exileTopPlayIfYouControlSubtype, LKI fallbacks & Saga sourceId,\nand CR 506.4c/613.1a,c/701.15b/800.4i/805.10 Goad-vs-Battle attack validation, 2HG/multiplayer combat triggers & Turns expiry, g.name/g.baseCard & dead-helper cleanup"]
+  P26 --> P27["Phase 27: Non-replacement inDepSpan/cleanupRemappedLeavingId, multi-departure popOuter, stack-ability ownership & stillInGame/FraChoices guards,\nCR 115.1c-d/115.7d/601.2b-c/602.2b/603.3c-d/700.2/702.21a/702.34a optional-slot decline, modal trigger Layer-3/eachOpponent, retargeting & flashback,\nCR 120.2/608.2h/616.1/714 replacement affectedPlayer stamping, pause-safe makeFrc/exileTopPlayIfYouControlSubtype, LKI fallbacks & Saga sourceId,\nand CR 506.4c/613.1a,c/800.4i/805.10 2HG/multiplayer combat triggers & Turns expiry, g.name/g.baseCard & dead-helper cleanup"]
 ```
 
 ### Phase 1 — Envelope and durable single-writer constructors
@@ -8568,13 +8568,18 @@ starting-team first seat, battle-excluded attack triggers &
        trigger in a 2-player game after declining slot 0) checks
        `!e.targetsAnnounced` rather than looping on `eff.requiresTarget &&
        e.targets.isEmpty`; and
-     - in `Agent.chooseSpellTarget` (`Agent.lean:411–425`), check
-       `(g.currentSpellEffect spell).any (·.allowsZeroTargets) ||
-       spell.abilityEffect.any (·.allowsZeroTargets)` in `allowsZero`, and when
+     - in `Agent.chooseSpellTarget` (`Agent.lean:411–425`), when
        `announceTargetChoices` requires multiple targets at once (`reqCount > 1`
        on the current `instanceGroupBounds` or `(g.announcedTargetBounds
-       spell).1 > 1` when `slots.isEmpty`), emit `Action.targets (legal.extract
-       0 reqCount)` instead of single-target `Action.target`.
+       spell).1 > 1` when `slots.isEmpty`) and `(g.legalProposedTargets p
+       spell).size >= reqCount`, return `some (.targets (legal.extract 0
+       reqCount))` before falling back to `g.defaultTarget p spell`; and in the
+       `defaultTarget == none` fallback (`Agent.lean:421–424`), keep
+       `ab.allowsZeroTargets` on `| some ab =>` (`if ab.allowsZeroTargets ||
+       spell.abilityEffect.any (·.allowsZeroTargets) then some .decline else
+       some .pass`) and in `| none =>` return `if (g.currentSpellEffect
+       spell).any (·.allowsZeroTargets) || spell.abilityEffect.any
+       (·.allowsZeroTargets) then some .decline else some .pass`.
    - Align modal triggered ability helpers (`Triggers.lean:62–85`,
      `FraChoices.lean:538–579`, `Core.lean:7698–7709`,
      `Targeting.lean:472–478`), retargeting relational groups
@@ -8706,29 +8711,46 @@ starting-team first seat, battle-excluded attack triggers &
        accept `(you d || isTeammate d)` on `| .player d =>` in `.fra
        .creatureAttacksYouOrYourPlaneswalker` (`Event.lean:3353–3360`);
      - in `Core.matchTriggers` on `.combat (.attackersDeclared activePlayer
-       decls)` (`Core.lean:9443–9608`), use each attacker's controller `attCtrl
-       := (post.controllerOf a).getD activePlayer` (passing `isTeammate :=
-       post.areTeammates attCtrl` to `e.matchesTrigger`) for per-attacker
-       controller triggers (`.zombieTokenAttacks` at `9455–9459`, `.attacking`
-       at `9471–9480`, `.fra .creatureYouControlAttacks` at `9481–9485`, `.fra
-       .creatureYouControlAttacksPlayerAlone` at `9491–9495`,
-       `.equippedCreatureYouControlAttacks` at `9563–9569`, and
-       `.creatureYouControlAttacksAlone` at `9588–9594` when `allAttacking.size
-       == 1`); iterate living members `m` of `post.teamMembers activePlayer`
-       (filtering `attackers` to `let mAttackers := attackers.filter
-       (post.controlledBy · m)` when `!mAttackers.isEmpty`) for
-       controller-scoped active-team attack triggers (`.sphinxesAttack` at
-       `9460–9467`, `.youAttackWithElves` at `9534–9537`,
-       `.youAttackWithTwoOrMore` at `9538–9550`, `.merfolkAttackPlayer` at
-       `9551–9562`, `.youAttack` at `9570`, delayed `.attackPumpPerPlains` at
-       `9572–9585`, and `.youAttackWithTotalPower` at `9603–9608`); and on
-       `.fra .creatureAttacksYouOrYourPlaneswalker` (`Core.lean:9505–9516`),
-       when `a` attacks a player `d` (`some (.player d)` or `none` with `d =
-       post.defendingPlayer`), queue `.creatureAttacksYouOrYourPlaneswalker` for
-       each living member `m` of `post.teamMembers d` where
-       `post.isLivingOpponentOf m activePlayer` (CR 805.10b), and when `a`
-       attacks `some (.planeswalker pwId)`, queue for the planeswalker's
-       controller `pwCtrl` when `post.isLivingOpponentOf pwCtrl activePlayer`;
+       decls)` (`Core.lean:9443–9608`):
+       - for per-attacker controller triggers on each attacker `a` with
+         `attCtrl := (post.controllerOf a).getD activePlayer`, pass `attCtrl` as
+         the listener (`e.matchesTrigger attCtrl (some a.id) ... (isTeammate :=
+         post.areTeammates attCtrl)`) and queue for `attCtrl` on `.attacking`
+         (`9471–9480`, `queueSrc post attCtrl a .attacking`) and `.fra
+         .creatureYouControlAttacks` (`9481–9485`, `queueFra post attCtrl
+         .creatureYouControlAttacks`), queue directly for `attCtrl` on
+         `.zombieTokenAttacks` (`9455–9459`, `queueFra post attCtrl`), `.fra
+         .creatureYouControlAttacksPlayerAlone` (`9491–9495`, `queueFra post
+         attCtrl`), and `.equippedCreatureYouControlAttacks` (`9563–9569`,
+         `queueCtrl post oCtrl`), and on `.creatureYouControlAttacksAlone`
+         (`9588–9594`) when `allAttacking.size == 1`, bind `if let some attCtrl
+         := post.controllerOf allAttacking[0]!` and iterate `for o in
+         post.permanentsOf attCtrl` calling `queueSrc post attCtrl o
+         .creatureYouControlAttacksAlone (cause := some attacker)`;
+       - for controller-scoped attack triggers across living members `m` of
+         `post.teamMembers activePlayer`, compute `let mAttackers :=
+         attackers.filter (post.controlledBy · m)` and when
+         `!mAttackers.isEmpty`: queue `.sphinxesAttack` (`9460–9467`) for `m`
+         with `lastKnownPower := some (Int.ofNat mSphinxes)` when `mSphinxes :=
+         (mAttackers.filter (post.hasSubtype · .sphinx)).size > 0`; queue
+         `.youAttackWithElves` (`9534–9537`) for `m` when `mAttackers.any
+         (post.hasSubtype · .elf)`; queue `.youAttackWithTwoOrMore`
+         (`9538–9550`) for `m` once for each defending player `d` attacked by 2
+         or more creatures in `mAttackers`; queue `.merfolkAttackPlayer`
+         (`9551–9562`) for `m` once for each defending player `d` attacked by a
+         Merfolk in `mAttackers` (excluding planeswalker and battle targets);
+         queue `.youAttack` (`9570`) and fire `.attackPumpPerPlains` delayed
+         triggers (`9572–9585`) with `dt.controller == m`; and queue
+         `.youAttackWithTotalPower` (`9603–9608`) for `m` when
+         `mAttackers.foldl (fun acc o => acc + post.snapshotPower o) 0 >= 12`;
+         and
+       - on `.fra .creatureAttacksYouOrYourPlaneswalker` (`Core.lean:9505–9516`),
+         when `a` attacks a player `d` (`some (.player d)` or `none` with `d =
+         post.defendingPlayer`), queue `.creatureAttacksYouOrYourPlaneswalker`
+         for each living member `m` of `post.teamMembers d` where
+         `post.isLivingOpponentOf m activePlayer` (CR 805.10b), and when `a`
+         attacks `some (.planeswalker pwId)`, queue for the planeswalker's
+         controller `pwCtrl` when `post.isLivingOpponentOf pwCtrl activePlayer`;
        and
      - in `Turns.lean`, move `.legendRuleOffThisTurn pl.id` into
        `clearTurnActivations` (`Turns.lean:146–155`, gated by `if !pl.lost` per
