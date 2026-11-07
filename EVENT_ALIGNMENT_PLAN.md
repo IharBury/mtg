@@ -8537,30 +8537,34 @@ starting-team first seat, battle-excluded attack triggers &
    - Fix `Action.decline` on `.chooseTargets` (`Decisions.lean:3511–3565`) so
      skipping final optional slot(s) records `GameEvent.targeted` and fires
      deferred `.ward` / `.becomesTarget` / `.youTargetSomething` triggers
-     (`Core.lean:9984–10028`, CR 115.1c–d / 601.2c / 603.2 / 702.21a):
-     - in `Decisions.lean:3519–3548` (`canSkipCurrentOptionalSlot` and
-       `canFinishOptionalTargets`, unifying `Decisions.decline`'s inline
-       duplicate at `3533` onto `g.canFinishOptionalTargets obj`), when
-       `g.currentTargetSlot obj >= kind.spec.slots.size`, always call
-       `g.setStackEntryTargets obj.id e.targets e.dividedDamage` (both when
-       `g.proposedSpell.isSome` before `g.afterTargetsChosen` and when
-       `g.proposedSpell.isNone`, including when `e.targets.isEmpty`) so
-       `GameEvent.targeted` records the final `skippedOptionalSlots` and sets
-       `targetsAnnounced := true` for deterministic replay (`Core.lean:5187`);
-       and
-     - in `Core.matchTriggers` on `.stackObject (.targeted ..)`
-       (`Core.lean:9984–9991`), check `pe.targetsAnnounced` for `prevDone`
+     (`Core.lean:9950–10028`, CR 115.1c–d / 601.2c / 603.2 / 702.21a):
+     - in the two optional-target decline tails in `Decisions.decline`
+       (`Decisions.lean:3519–3531` for `canSkipCurrentOptionalSlot` when
+       `g.currentTargetSlot obj >= kind.spec.slots.size`, and `3536–3548` for
+       `canFinishOptionalTargets`), always call `g.setStackEntryTargets obj.id
+       e.targets e.dividedDamage` (both when `g.proposedSpell.isSome` before
+       `g.afterTargetsChosen` and when `g.proposedSpell.isNone`, including when
+       `e.targets.isEmpty`) so `GameEvent.targeted` (`Event.lean:2547–2551`,
+       `Casting.lean:1135–1139`) records the final `skippedOptionalSlots` and
+       `applyCastEvent` sets `targetsAnnounced := true` for deterministic replay
+       (`Core.lean:5187–5196`); and
+     - in `Core.matchTriggers` on `| .cast (.targeted objId rawTargets ..)`
+       (`Core.lean:9950`, with `prevEntry? := pre.stackEntry? objId` at `9955`),
+       include `pe.targetsAnnounced` in `prevDone` at `Core.lean:9988–9991`
        (`prevEntry?.any (fun pe => pe.targetsAnnounced && !pe.targets.isEmpty
        && pe.targets.size + pe.skippedOptionalSlots.size >= totalSlots)`)
        instead of `!pe.targets.isEmpty && pe.targets.size +
        pe.skippedOptionalSlots.size >= totalSlots` alone—because
-       `announceTargetChoices` (`CastSpell.lean:489`) sets `targetsAnnounced :=
-       false` when earlier slots are chosen and `skipOptionalTargetSlot` mutates
-       `se.skippedOptionalSlots` in memory before `setStackEntryTargets`
-       captures `prevEntry?` and records `GameEvent.targeted`, checking
-       `pe.targetsAnnounced` ensures `prevDone` is `false` when the final
-       optional slot is declined, so `.ward`, `.becomesTarget`, and
-       `.youTargetSomething` fire for the targets chosen in the earlier slots.
+       `announceTargetChoices` (`CastSpell.lean:489`) calls
+       `g.markTargetsAnnounced obj.id false` (`SpellTargets.lean:332–334`) while
+       `currentTargetSlot < slots.size` and `skipOptionalTargetSlot`
+       (`SpellTargets.lean:322–326`, applied in `applyChange` at
+       `Core.lean:2126–2128`) already appends the skipped slot to
+       `skippedOptionalSlots` on `pre` before `setStackEntryTargets` records
+       `GameEvent.targeted`, checking `pe.targetsAnnounced` ensures `prevDone` is
+       `false` when the final optional slot is declined, so `.ward`,
+       `.becomesTarget`, and `.youTargetSomething` fire for the targets chosen in
+       the earlier slots.
    - Fix modal triggered abilities (`obj.triggeredAbility.isSome &&
      obj.abilityEffect.isSome`) with a single optional-target mode
      (`eff.allowsZeroTargets == true`) in `Decisions.decline`
@@ -8787,15 +8791,17 @@ starting-team first seat, battle-excluded attack triggers &
        g.activePlayer`) when checking `attackers.any
        (·.status.attackingTarget.isNone)` in `beginStepBody` `.declareBlockers`
        (`Turns.lean:683–695`).
-   - Complete remaining layer-resolved `g.name` reads across 14 files
+   - Complete remaining Layer-1-resolved `g.name` reads across 14 files
      (`Triggers.lean:147`, `Library.lean:207, 209`, `Turns.lean:119, 210, 319`,
-     `StateBasedActions.lean:263`, `Damage.lean:1076`, `Allocation.lean:103`,
-     `Choices.lean:51`, `LandsAndMana.lean:39`,
+     `StateBasedActions.lean:263`, `Damage.lean:1076`, `Allocation.lean:103` on
+     `o.name` while keeping `face.name`, `Choices.lean:51`,
+     `LandsAndMana.lean:39` using `g.name entered` instead of `card.name`,
      `Decisions.lean:860, 1051, 2849, 2868, 2876`, `EffectResolution.lean:940`,
      `FraAbilities.lean:21, 132, 221, 628, 638`, `FraChoices.lean:531, 1026,
      1097`, `FrcResolve.lean:618, 784`, `Movement.lean:972, 974, 987`, and
-     `SpellResolution.lean:268, 307, 333, 354, 420, 426, 428, 431, 439, 443`,
-     CR 613.1c).
+     `SpellResolution.lean:268, 307, 333, 354, 420, 426, 428, 431, 439` while
+     keeping `(obj.adventurerCard.getD obj.printed).name` at `443`, CR 201 /
+     613.1a / 708.2a).
    - Retire dead / unreachable helpers and constructors
      (`TriggeredAbilities.lean`, `Core.lean`, `Event.lean`, `Object.lean`,
      `SpellTargets.lean`, `Status.lean`, `Mana.lean`, `CastSpell.lean`): delete
