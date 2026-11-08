@@ -9546,26 +9546,33 @@ reads),
        `Decisions.lean:262–263` advances via
        `continueBlockerCombatAssignment`); and
      - in `Leaving.redirectPendingAfterLeave` (`Leaving.lean:934–945`,
-       `.tricksterLibrary caster id connive sourceId`), when `p != caster` and
+       `.tricksterLibrary caster id connive sourceId`), keep the `if p == caster
+       then` branch (`935–936`) unchanged, and in the `p != caster` branch, when
        `q == p || !(g.findObject? id).any (fun o => o.isOnBattlefield &&
        g.isCreature o)` (e.g., `id` was owned by `p` and controlled by `q != p`,
-       or `q == p`), clear `.pending` with `if q == p then clearProp else #[]`,
-       log `"The target is no longer legal"` when `q != p && g.stillInGame
-       caster`, and chain `.finishPostStep (.conniveTricksterTarget caster
-       connive sourceId)` when `g.stillInGame caster && connive.isSome`; and in
-       `Decisions.resumePendingReplacement` `.restorePending`
-       (`Decisions.lean:691–700`), add an arm for `.fraChoice q
-       (.tricksterLibrary caster id connive sourceId)` so if `!g.stillInGame q ||
-       !g.stillInGame caster || !(g.findObject? id).any (fun o =>
-       o.isOnBattlefield && g.isCreature o)` (e.g. `id` was owned by `q` and
-       controlled by departing opponent `p` and exiled by
-       `runEndControlExileLoop` after `redirectPendingAfterLeave`), it clears
-       `.chooseModesRest none`, logs `"The target is no longer legal"` when
-       `g.stillInGame q && g.stillInGame caster && !(g.findObject? id).any (fun
-       o => o.isOnBattlefield && g.isCreature o)`, chains `.finishPostStep
-       (.conniveTricksterTarget caster connive sourceId)` when `g.stillInGame
-       caster && connive.isSome`, and calls `resumePoppedIfNoPrompt` instead of
-       reopening a stale prompt.
+       or `q == p`), clear via `let g := clearPendingAnd g (#[.chooseModesRest
+       none] ++ (if q == p then clearProp else #[]))`, log `"The target is no
+       longer legal"` when `q != p && g.stillInGame caster`, chain
+       `g.withOuterContStashed fun g => g.chainPendingReplacement
+       (.finishPostStep (.conniveTricksterTarget caster connive sourceId))` when
+       `g.stillInGame caster && connive.isSome`, and return `(g, .none)` (else
+       `(g, pending)`); and in `Decisions.resumePendingReplacement`
+       `.restorePending` (`Decisions.lean:691–700`), add an arm for `.fraChoice
+       q (.tricksterLibrary caster id connive sourceId)` that calls `openPrompt
+       g` when `g.stillInGame q && g.stillInGame caster && (g.findObject?
+       id).any (fun o => o.isOnBattlefield && g.isCreature o)` and otherwise
+       (e.g. `id` was owned by `q` and controlled by departing opponent `p` and
+       exiled by `runEndControlExileLoop` after `redirectPendingAfterLeave`)
+       clears `.pending` and `.chooseModesRest none` first (`let g := g.changes
+       #[.pending .none, .chooseModesRest none]`), logs `"The target is no
+       longer legal"` when `g.stillInGame q && g.stillInGame caster &&
+       !(g.findObject? id).any (fun o => o.isOnBattlefield && g.isCreature o)`,
+       chains `g.chainPendingReplacement (.finishPostStep
+       (.conniveTricksterTarget caster connive sourceId))` when `g.stillInGame
+       caster && connive.isSome`, and calls `resumePoppedIfNoPrompt g` (leaving
+       `g.pending == .none` when no replacement pause opened so
+       `finishConcedePriority` at `Decisions.lean:254` does not overwrite a
+       connive pause).
    - In `Leaving.redirectPendingAfterLeave`, revalidate non-departing choosers
      (`q != p`) whose eligible permanents were owned by `p` and left the
      battlefield at `Leaving.lean:1279–1282` (CR 800.4a):
@@ -9583,17 +9590,21 @@ reads),
        `if q != p then` (`753`) to `if q != p && hasNontoken q then` (using `if
        q == p then clearProp else #[]` at `756`);
      - in `.sacrificeDamager ids rest controller chosen`
-       (`Leaving.lean:773–779`), filter `let liveIds := ids.filter (fun id =>
-       (g.findObject? id).any (fun o => o.isOnBattlefield && g.isCreature o &&
-       g.controlledBy o q))`; if `q != p && liveIds.size > 1`, return `(g,
-       pending)` when `liveIds == ids && living == rest` and `(g,
-       .sacrificeDamager liveIds living controller chosen)` otherwise; only
-       when `q == p || liveIds.size ≤ 1`, clear `.pending` (with `if q == p
-       then clearProp else #[]`), log `s!"{(g.player q).name} controls no
+       (`Leaving.lean:773–779`), keep `let living := rest.filter g.stillInGame`
+       (`774`) and filter `let liveIds := ids.filter (fun id => (g.findObject?
+       id).any (fun o => o.isOnBattlefield && g.isCreature o && g.controlledBy o
+       q))`; if `q != p && liveIds.size > 1`, return `(g, pending)` when
+       `liveIds == ids && living == rest` and `(g, .fraChoice q
+       (.sacrificeDamager liveIds living controller chosen))` otherwise; only
+       when `q == p || liveIds.size ≤ 1`, clear via `let g := clearPendingAnd g
+       (#[.chooseModesRest none] ++ (if q == p then clearProp else #[]))`
+       (preserving `#[.chooseModesRest none]` on both `q == p` and `q != p`, and
+       `clearProp` only when `q == p`), log `s!"{(g.player q).name} controls no
        creature that dealt combat damage this turn"` when `q != p &&
-       liveIds.isEmpty`, push `(q, liveIds[0]!)` onto `chosen` when `q != p &&
-       liveIds.size == 1`, and call `advanceSacDamagersAfterLeave g controller
-       living chosen'`;
+       liveIds.isEmpty`, set `let chosen' := if q != p && liveIds.size == 1 then
+       chosen.push (q, liveIds[0]!) else chosen`, and return the `(Game ×
+       Pending)` pair from `advanceSacDamagersAfterLeave g controller living
+       chosen'`;
      - in `.fraChoice q choice` (`Leaving.lean:1045`), add arms before the `| _
        =>` fallback for:
        - `.sacrificeLeastPower ids` (`Choices.lean:38–58`): if `q == p`, clear
@@ -9623,7 +9634,7 @@ reads),
        has no creature to sacrifice"` and returns `(clearPendingAnd g
        #[.chooseModesRest none], .none)` (else `(g, pending)`).
 2. Complete `beginFraChoice` & `ContinuationFrame` pushing across `Core`,
-   `TriggeredAbilities`, `Triggers`, `Choices`, `CastExtras`, and
+   `TriggeredAbilities`, `Triggers`, `Choices`, `CastExtras`, `Casting`, and
    `EffectResolution` (§2.1, §2.5, §2.9, §3.2):
    - In `Core.beginFraChoice` (`Core.lean:11820–11824`), default `(msg : String
      := "")` and only call `.logMsg msg` when `!msg.isEmpty` (`let g := g.change
@@ -9661,7 +9672,10 @@ reads),
      - `Choices.lean`: `sacrificeLeastPowerCreature` (`56–57`,
        `.sacrificeLeastPower ids`);
      - `CastExtras.lean`: `resolveCascadeLoop` (`108–109`, `.mayCastCascade
-       card.id others`, using `g.name card` in the log string); and
+       card.id others`, using `g.name card` in the log string);
+     - `Casting.lean`: `finishPostCast` (`720–721` `.mayCastUpToFromExile alive
+       left` and `741` `.castCopiesFree alive budget castsLeft`, using the `msg
+       := ""` default at `741`); and
      - `EffectResolution.lean`: `.chooseOddOrEvenDestroy` (`165–166`),
        `finishMillMayPutPermanentGainLife` (`435–436`),
        `finishMillSubtypeOrEnchantment` (`461–462`), `mayDrawPerArtifact`
@@ -9690,12 +9704,15 @@ reads),
        heir).isMonarch`).
    - Add departed-player `stillInGame` guards across remaining library, mill,
      hand, and exile helpers and post-steps:
-     - `ResolutionHelpers.millCardsLoop` (`ResolutionHelpers.lean:273`, returning
-       `g` after the `.chooseReplacement` pause chain when `!g.stillInGame p`),
-       `ResolutionHelpers.mill` (`305`, returning `g` at entry when
+     - `ResolutionHelpers.millCardsLoop` (`ResolutionHelpers.lean:273–275`,
+       logging `logCard` at `274–275` for the card that already milled before
+       the `.chooseReplacement` pause and then returning `g` at `276` when
+       `!g.stillInGame p` before reading `freshCount` or milling `remainingIds`),
+       `ResolutionHelpers.mill` (`305`, returning `g` immediately at entry when
        `!g.stillInGame p`), and `ResolutionHelpers.movePublicCardsToHandLoop`
-       (`333`, returning `g` after the `.chooseReplacement` pause chain when
-       `!g.stillInGame p`);
+       (`333–339`, logging `pendingCard` at `335–339` when that card entered
+       `.hand p` before the `.chooseReplacement` pause and then returning `g` at
+       `340` when `!g.stillInGame p` before moving `remainingIds`);
      - `Library.moveIdsInOrderLoop` (`Library.lean:261`, returning `g` after the
        `.chooseReplacement` pause chain when `dest` is `.library p | .hand p |
        .graveyard p | .outside p` and `!g.stillInGame p`) and
