@@ -8966,14 +8966,19 @@ helpers), `Abilities.lean`, `Casting.lean`, `Combat.lean`, `Damage.lean`,
        .leavePlayersWhoLost savedIn popOuterIn else .checkSBA` (re-entering
        `checkSBACountedWithLeaves savedIn popOuterIn` via `Decisions.lean:853–854`
        without leaving a bare `.checkSBA` in front of it); in
-       `checkSBACountedWithLeaves` at `548–549` (`let wasPaused := g.sbaPaused;
-       let (g, didSba) := g.checkSBACounted savedIn popOuterIn`), when
-       `wasPaused` (the `345` early return where `checkSBACounted` returned
-       `(g, false)` and chained nothing) and `savedIn.isSome || popOuterIn`,
-       chain `.leavePlayersWhoLost savedIn popOuterIn` and return `(g, didSba)`,
-       and keep the early `(g, didSba)` return for `g.over` and for
-       `g.pending != .none`; at `552`, call `let (g, saved?, popOuter) :=
-       g.leavePlayersWhoLostCore savedIn popOuterIn`; at `555` (`else if
+       `checkSBACountedWithLeaves` at `548–550` (`let wasPaused := g.sbaPaused;
+       let (g, didSba) := g.checkSBACounted savedIn popOuterIn`), replace `if
+       g.over || g.pending != .none then (g, didSba)` with the ordered checks
+       `if g.over then (g, didSba) else if wasPaused && (savedIn.isSome ||
+       popOuterIn) then (g.chainPendingReplacement (.leavePlayersWhoLost savedIn
+       popOuterIn), didSba) else if g.pending != .none then (g, didSba)` (since
+       `wasPaused` means `g.pending` is `.chooseReplacement` or `.chooseLegend`,
+       checking `g.over` first, `wasPaused && (savedIn.isSome || popOuterIn)`
+       second for the `345` return where `checkSBACounted` chained nothing, and
+       `g.pending != .none` third for prompts where `wasPaused` was false or no
+       saved state needs queuing ensures the `345` chain runs before `g.pending
+       != .none` without re-chaining the `539–541` path); at `552`, call `let
+       (g, saved?, popOuter) := g.leavePlayersWhoLostCore savedIn popOuterIn`; at `555` (`else if
        g.sbaPaused then`, which catches `.chooseReplacement` and `.chooseLegend`
        returns from `leavePlayersWhoLostCore`), chain
        `g.chainPendingReplacement (if g.players.any (fun r => r.lost &&
