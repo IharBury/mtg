@@ -102,7 +102,7 @@ def applyDamageToKindTarget (g : Game) (controller : PlayerId) (kind : EffectTar
     (missing : Option String := none)
     (cause : Option EventCause := none) : Game :=
   g.withLegalKindTarget controller kind targets
-    (fun g t => g.dealDamageToTarget t n (source := sourceId.bind g.findObject?) (cause := cause))
+    (fun g t => g.dealDamageToTarget t n (source := sourceId.bind g.damageSourceById?) (cause := cause))
     sourceId missing
 
 /-- Sequential pause-safe loop for `exileCreaturesFromGraveyard`. -/
@@ -181,7 +181,7 @@ def applyPermanentAction (g : Game) (o : GameObject) (action : PermanentAction)
   | .destroy => g.destroyPermanent o
   | .plusOne n => g.addPlusOnePlusOneTo o n
   | .dealDamage n =>
-    g.dealDamageToPermanent o n (source := (sourceId.bind g.findObject?).map g.snapshot)
+    g.dealDamageToPermanent o n (source := sourceId.bind g.damageSourceEventById?)
   | .loseIndestructible =>
     let g := g.createEffect (.loseIndestructibleUntilEot o.id)
     g.logMsg s!"{g.name o} loses indestructible until end of turn"
@@ -246,18 +246,20 @@ def applyOnPermanent (g : Game) (controller : PlayerId) (kind : EffectTargetKind
 `n` cards, put any number into the graveyard and the rest back on top in any
 order. -/
 def beginSurveil (g : Game) (p : PlayerId) (n : Nat) : Game :=
-  let pl := g.player p
-  let count := min n pl.library.size
-  if n == 0 then
-    g.logMsg s!"{pl.name} surveils {n} (no cards to look at)"
-  else if count == 0 then
-    let happened :=
-      GameEvent.looked g.turnNumber p 0 true n (cause := some (g.resolvingOrRuleCause p))
-    let g := g.record happened
-    g.logMsg s!"{pl.name} surveils {n} (no cards to look at)"
+  if !g.stillInGame p then g
   else
-    (g.change (.pending (.surveil p count n))).logMsg
-      s!"{pl.name} surveils {n}"
+    let pl := g.player p
+    let count := min n pl.library.size
+    if n == 0 then
+      g.logMsg s!"{pl.name} surveils {n} (no cards to look at)"
+    else if count == 0 then
+      let happened :=
+        GameEvent.looked g.turnNumber p 0 true n (cause := some (g.resolvingOrRuleCause p))
+      let g := g.record happened
+      g.logMsg s!"{pl.name} surveils {n} (no cards to look at)"
+    else
+      (g.change (.pending (.surveil p count n))).logMsg
+        s!"{pl.name} surveils {n}"
 
 /-- Mill each card in `remainingIds` (or `freshCount` top cards when resuming a
 deferred player mill) sequentially inside an open or standalone batch, pausing

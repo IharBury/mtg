@@ -287,12 +287,16 @@ partial def concedePlayersLoop (g : Game) (remaining : Array PlayerId)
         g := g.restoreSavedPostLeave saved? popOuter
         saved? := none
         popOuter := false
+      else if popOuter && (g.sbaPaused || g.pendingReplacement.isSome) then
+        if let some popped := g.outerPendingReplacements.back? then
+          g := (g.change .popOuterPendingReplacement).chainPendingReplacement popped
+        popOuter := false
       let (g', newlySaved?, po) := g.playerLeavesGameCore pid (deferRestore := true)
       g := g'
       if saved?.isNone then
         if let some sp := newlySaved? then
           saved? := some sp
-        popOuter := popOuter || po
+      popOuter := popOuter || po
       let rem := remaining.extract (i + 1) remaining.size
       if let .chooseReplacement r _ := g.pending then
         if !rem.contains r then
@@ -537,8 +541,17 @@ partial def resumePendingReplacement (g : Game) (pr : PendingReplacement)
   | .untapPermanent targetId duringUntapStep logUntap cause =>
     match g.findObject? targetId with
     | some tgt =>
-      g.untapPermanent tgt (duringUntapStep := duringUntapStep)
-        (logUntap := logUntap) (cause := cause)
+      if tgt.isOnBattlefield && !duringUntapStep && logUntap then
+        if g.hostCantBecomeUntapped tgt then
+          g.logMsg s!"{g.name tgt} can't become untapped"
+        else if !tgt.status.tapped then
+          g.logMsg s!"{g.name tgt} is already untapped"
+        else
+          g.untapPermanent tgt (duringUntapStep := duringUntapStep)
+            (logUntap := logUntap) (cause := cause)
+      else
+        g.untapPermanent tgt (duringUntapStep := duringUntapStep)
+          (logUntap := logUntap) (cause := cause)
     | none => g
   | .untapStepPermanents ids =>
     g.untapStepPermanents ids
@@ -857,7 +870,7 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
   | .putArtifactOntoBattlefield p cardId hostId =>
     match g.followMovedToZone? cardId (· == .battlefield) with
     | some entered =>
-      let g := g.logMsg s!"{(g.player p).name} puts {entered.name} onto the battlefield"
+      let g := g.logMsg s!"{(g.player p).name} puts {g.name entered} onto the battlefield"
       let g := g.afterPermanentEnters entered
       if let some hid := hostId then g.change (.putArtifactThisWay (some (entered.id, hid))) else g
     | none => g
@@ -1048,7 +1061,7 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
         | some _ =>
           let name :=
             match g.findObject? cid with
-            | some o => o.name
+            | some o => g.name o
             | none => ((g.lastKnownBefore? cid).map (fun (eo : EventObject) => eo.name)).getD "card"
           g.logMsg s!"{(g.player p).name} discards {name} (cleanup)"
         | none => g
@@ -1342,7 +1355,7 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
       let hasLegal := !(g.legalProposedTargets p obj).isEmpty
       let allowZero :=
         match obj.triggeredAbility with
-        | some ab => ab.allowsZeroTargets
+        | some ab => ab.allowsZeroTargets || obj.abilityEffect.any (·.allowsZeroTargets)
         | none =>
           match g.currentSpellEffect obj with
           | some e => e.allowsZeroTargets
@@ -1446,6 +1459,8 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
     g.finishExileForLeaveTrigger sourceId fromId
   | .exileTopForPlayLoop fromPlayer caster remaining mayCastStyle cause pendingFromId =>
     g.exileTopForPlayLoop fromPlayer caster remaining mayCastStyle cause pendingFromId
+  | .exileTopPlayIfYouControlSubtypeLoop p subtype remaining cause movedId =>
+    g.exileTopPlayIfYouControlSubtypeLoop p subtype remaining cause movedId
   | .exileTopMayCastUpToLoop fromPlayer caster remaining casts cause exiled pendingFromId =>
     g.exileTopMayCastUpToLoop fromPlayer caster remaining casts cause exiled pendingFromId
   | .offerMayCastUpToFromExile caster preIds casts =>
@@ -2193,7 +2208,8 @@ partial def beginResolutionCastTargets (g : Game) (p : PlayerId) (prop : Propose
   else if g.proposedNeedsTarget prop then
     -- CR 601.2c / 702.33d,g: check the targeting of the spell as proposed (kicked or not).
     let zeroOk := face.allowsZeroTargets ||
-      (g.currentSpellEffect spell).any (·.allowsZeroTargets)
+      (g.currentSpellEffect spell).any (·.allowsZeroTargets) ||
+      g.canSkipCurrentOptionalSlot spell
     let noLegal :=
       if g.isAura spell && (g.currentSpellEffect spell).isNone then
         (g.legalAuraTargets p face (some spell.id)).isEmpty
@@ -2480,7 +2496,8 @@ partial def afterAdditionalCostAnnounced (g : Game) : Game :=
       -- a legal target; declining it (or kicking with no kicked target) leaves no legal
       -- choice, so the proposal is reversed for every cast, not only resolution casts.
       let zeroOk := face.allowsZeroTargets ||
-        (g.currentSpellEffect spell).any (·.allowsZeroTargets)
+        (g.currentSpellEffect spell).any (·.allowsZeroTargets) ||
+        g.canSkipCurrentOptionalSlot spell
       let noLegal :=
         if g.isAura spell && (g.currentSpellEffect spell).isNone then
           (g.legalAuraTargets p face (some spell.id)).isEmpty
@@ -2846,7 +2863,7 @@ def convoke (g : Game) (p : PlayerId) (ids : Array ObjectId) : Except String Gam
     let hasConvoke := prop.kind == .spell && (g.currentKeywords spell).convoke
     let hasImprovise := prop.kind == .spell && g.spellHasImprovise (g.baseCard spell) p
     if !hasConvoke && !hasImprovise then
-      throw s!"{spell.name} doesn't have convoke or improvise (CR 702.51 / 702.126)"
+      throw s!"{g.name spell} doesn't have convoke or improvise (CR 702.51 / 702.126)"
     g.withProposalActionM .costAction fun g => do
       let (g, (cost, tapped)) ← g.withBatchExcept none fun g => do
         let mut g := g
@@ -2865,7 +2882,7 @@ def convoke (g : Game) (p : PlayerId) (ids : Array ObjectId) : Except String Gam
             | none => throw s!"{g.name o} can't pay for any of the remaining cost"
             | some c => cost := c
             g := g.becomeTapped o (cause := some (.costPayment .convoke p (some prop.spellId)))
-            g := g.logMsg s!"{(g.player p).name} taps {g.name o} to convoke {spell.name}"
+            g := g.logMsg s!"{(g.player p).name} taps {g.name o} to convoke {g.name spell}"
           else if hasImprovise && g.isArtifact o then
             if cost.genericCount == 0 then
               throw s!"No generic mana is left for {g.name o} to pay (CR 702.126a)"
@@ -2873,7 +2890,7 @@ def convoke (g : Game) (p : PlayerId) (ids : Array ObjectId) : Except String Gam
             g := g.becomeTapped o (cause := some (.costPayment .tap p (some prop.spellId)))
             g := g.logMsg s!"{(g.player p).name} taps {g.name o} for improvise"
           else
-            throw s!"{g.name o} can't help pay for {spell.name}"
+            throw s!"{g.name o} can't help pay for {g.name spell}"
           tapped := tapped.push id
         return (g, (cost, tapped))
       return g.changeProposals #[.cost cost, .tapped tapped]
@@ -3521,14 +3538,12 @@ def decline (g : Game) (p : PlayerId) : Except String Game := do
         s!"{(g.player p).name} chooses no target (CR 603.3d / 601.2c)"
       if g.currentTargetSlot obj < kind.spec.slots.size then
         return g.change (.pending (.chooseTargets p))
-      if g.proposedSpell.isSome then
-        return g.afterTargetsChosen
       let g :=
         match g.stackEntry? obj.id with
-        | some e =>
-          if e.targets.isEmpty then g.markTargetsAnnounced obj.id true
-          else g.setStackEntryTargets obj.id e.targets e.dividedDamage
+        | some e => g.setStackEntryTargets obj.id e.targets e.dividedDamage
         | none => g
+      if g.proposedSpell.isSome then
+        return g.afterTargetsChosen
       return g.afterTriggerTargetsChosen
     else if g.canFinishOptionalTargets obj then
       let startSlot := g.currentTargetSlot obj
@@ -3537,19 +3552,17 @@ def decline (g : Game) (p : PlayerId) : Except String Game := do
         (fun acc _ => acc.skipOptionalTargetSlot obj.id) g
       let g := g.logMsg
         s!"{(g.player p).name} finishes choosing targets (CR 601.2c)"
-      if g.proposedSpell.isSome then
-        return g.afterTargetsChosen
       let g :=
         match g.stackEntry? obj.id with
-        | some e =>
-          if e.targets.isEmpty then g.markTargetsAnnounced obj.id true
-          else g.setStackEntryTargets obj.id e.targets e.dividedDamage
+        | some e => g.setStackEntryTargets obj.id e.targets e.dividedDamage
         | none => g
+      if g.proposedSpell.isSome then
+        return g.afterTargetsChosen
       return g.afterTriggerTargetsChosen
     else
       match obj.triggeredAbility with
       | some ab =>
-        if !ab.allowsZeroTargets then
+        if !(ab.allowsZeroTargets || obj.abilityEffect.any (·.allowsZeroTargets)) then
           throw "That ability requires a target (CR 601.2c)"
         let g := g.setStackEntryTargets obj.id #[]
         let g := g.logMsg

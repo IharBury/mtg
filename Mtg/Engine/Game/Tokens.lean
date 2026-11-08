@@ -72,7 +72,7 @@ def createOneToken (g : Game) (controller : PlayerId) (printed : CardDef)
     (g.chainPendingReplacement
       (.createToken controller printed tapped isAttacking resolvedAttackTarget false extraCounters recordRecent cause),
      noTokenCreated controller printed)
-  else if (g.player controller).lost then
+  else if !g.stillInGame controller then
     (g.logMsg "no token is created (CR 800.4b)", noTokenCreated controller printed)
   else
     g.withBatchCoreReturn cause fun g =>
@@ -313,11 +313,14 @@ def replaceTokenBatchesChoice (g : Game) (initialBatches : Array ProposedTokenBa
           if g.durationActive d then
             match spec.kind with
             | .createExtraTokenWithFood p _ =>
-              if includeKindReplacements && p == ctrl && hasFood then specs := specs.push spec
+              if includeKindReplacements && p == ctrl && hasFood then
+                specs := specs.push { spec with affectedPlayer := ctrl }
             | .artifactTokensBecome p _ =>
-              if includeKindReplacements && p == ctrl && hasArtifact then specs := specs.push spec
+              if includeKindReplacements && p == ctrl && hasArtifact then
+                specs := specs.push { spec with affectedPlayer := ctrl }
             | .multiplyTokenCreation p _ =>
-              if includeMultiplier && p == ctrl then specs := specs.push spec
+              if includeMultiplier && p == ctrl then
+                specs := specs.push { spec with affectedPlayer := ctrl }
             | _ => pure ()
         | _ => pure ()
       let candidates := specs.map (fun s => (ReplacementOrPrevention.replacement s).toCandidate)
@@ -438,7 +441,7 @@ def createToken (g : Game) (controller : PlayerId) (printed : CardDef)
     (g.chainPendingReplacement
       (.createToken controller printed tapped attacking attackingTarget applyFoodBonus extraCounters recordRecent cause count),
      noTokenCreated controller printed)
-  else if (g.player controller).lost then
+  else if !g.stillInGame controller then
     (g.logMsg "no token is created (CR 800.4b)", noTokenCreated controller printed)
   else if !applyFoodBonus then
     if count == 1 then
@@ -938,7 +941,7 @@ def createKindTokens (g : Game) (controller : PlayerId) (kind : TokenKind)
     else
       g.chainPendingReplacement
         (.createKindTokens controller kind n tapped attacking attackingTarget resetRecent cause)
-  else if (g.player controller).lost then
+  else if !g.stillInGame controller then
     let g := if resetRecent then g.change (.recentTokenIds #[]) else g
     if n == 0 then g
     else g.logMsg "no token is created (CR 800.4b)"

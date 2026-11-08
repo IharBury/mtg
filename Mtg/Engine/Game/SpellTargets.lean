@@ -128,22 +128,6 @@ def evalSpellModes (g : Game) (p : PlayerId) (spell : GameObject) : Array Effect
     let m := if tcs.isEmpty then e else TextChange.applyEffect tcs e
     g.expandEachOpponentEffect p m stackId
 
-/-- Spell effect of `c` after a modal choice, if one has been announced (CR 700.2).
-With `extra` modes, the combined effect of all of them. -/
-def spellEffectOfCard (c : CardDef) (chosenMode : Option Nat) (extra : Array Nat := #[])
-    (kicked : Bool := false) : Option Effect :=
-  let base :=
-    if isModalSpellFace c then
-      let modes := effectiveSpellModes c
-      match chosenMode with
-      | some i =>
-        if extra.isEmpty then modes[i]?
-        else combinedModesEffect (((#[i] ++ extra).qsort (· < ·)).filterMap (modes[·]?))
-      | none => none
-    else
-      c.spellEffect
-  if kicked then base.map kickedSpellEffect else base
-
 /-- Spell effect of `o` after a modal choice, if one has been announced (CR 700.2),
 after Layer 1 copy and Layer 3 text-changing effects (CR 612 / 613.1c).
 With `extra` modes, the combined effect of all of them. -/
@@ -623,28 +607,33 @@ def validTargetArrayForEntry (g : Game) (e : StackEntry) (obj : GameObject)
           let picked := (List.range candidate.size).filterMap fun idx =>
             if grp.contains slotIndices[idx]! then some candidate[idx]! else none
           picked.eraseDups.length == picked.length
+    let slotTargetAt (arr : Array Target) (s : Nat) : Option Target :=
+      if kind.spec.slots.isEmpty then arr[s]?
+      else (slotIndices.findIdx? (· == s)).bind (fun idx => arr[idx]?)
     let relationOk :=
       (allowUnchangedIllegal && candidate == e.targets) ||
         (kind.sharesTypeGroups.all (fun grp =>
-          let picked := (List.range candidate.size).filterMap fun idx =>
-            if grp.contains slotIndices[idx]! then some candidate[idx]! else none
-          match picked[0]?, picked[1]? with
-          | some (Target.permanent a), some (Target.permanent b) =>
-            match g.findObject? a, g.findObject? b with
-            | some oa, some ob => g.sharesCardType oa ob
-            | _, _ => false
-          | _, _ => picked.length < 2) &&
+          (allowUnchangedIllegal && grp.all (fun s => slotTargetAt candidate s == slotTargetAt e.targets s)) ||
+            let picked := (List.range candidate.size).filterMap fun idx =>
+              if grp.contains slotIndices[idx]! then some candidate[idx]! else none
+            match picked[0]?, picked[1]? with
+            | some (Target.permanent a), some (Target.permanent b) =>
+              match g.findObject? a, g.findObject? b with
+              | some oa, some ob => g.sharesCardType oa ob
+              | _, _ => false
+            | _, _ => picked.length < 2) &&
          kind.totalMvCapGroups.all (fun (cap, grp) =>
-          let picked :=
-            if kind.spec.slots.isEmpty then candidate
-            else ((List.range candidate.size).filterMap fun idx =>
-              if grp.contains slotIndices[idx]! then some candidate[idx]! else none).toArray
-          let totalMv := picked.foldl (fun acc t =>
-            match t with
-            | Target.permanent oid =>
-              acc + ((g.findObject? oid).map g.objectManaValue |>.getD 0)
-            | _ => acc) 0
-          totalMv ≤ cap))
+          (allowUnchangedIllegal && grp.all (fun s => slotTargetAt candidate s == slotTargetAt e.targets s)) ||
+            let picked :=
+              if kind.spec.slots.isEmpty then candidate
+              else ((List.range candidate.size).filterMap fun idx =>
+                if grp.contains slotIndices[idx]! then some candidate[idx]! else none).toArray
+            let totalMv := picked.foldl (fun acc t =>
+              match t with
+              | Target.permanent oid =>
+                acc + ((g.findObject? oid).map g.objectManaValue |>.getD 0)
+              | _ => acc) 0
+            totalMv ≤ cap))
     slotsOk && distinctOk && relationOk
 
 end Game

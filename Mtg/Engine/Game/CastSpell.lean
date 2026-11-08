@@ -43,6 +43,11 @@ def enterProposalWindow (g : Game) (p : PlayerId) (pl : Player) (prop : Proposed
   else if needsTarget then
     let g := g.changes #[.pending (.chooseTargets p), .proposedSpell (some prop)]
     g.logMsg s!"{pl.name} must choose a target (CR 601.2c)"
+  else if prop.kind == .activatedAbility && !prop.cost.includesManaPayment && !prop.needsSacrificeOther then
+    let g := g.change (.proposedSpell (some prop))
+    match g.beginActivationPayment prop with
+    | .ok g' => g'
+    | .error _ => g.reverseProposedSpell (resumeContinuation := true)
   else
     let g := g.changes #[.pending (.activateManaAbilities p), .proposedSpell (some prop)]
     g.logMsg s!"{pl.name} may activate mana abilities (CR 601.2g)"
@@ -367,11 +372,6 @@ def announceX (g : Game) (p : PlayerId) (x : Nat) : Except String Game := do
       throw "Not time to choose X (CR 601.2b)"
   | _ => throw "Not time to choose X (CR 601.2b)"
 
-/-- Finish announcing a triggered ability's targets (CR 603.3d); target and
-Ward triggers are matched directly on `CastEvent.targeted` in `matchTriggers`. -/
-def finishTriggerTargets (g : Game) (_p : PlayerId) (_obj : GameObject) : Game :=
-  g.afterTriggerTargetsChosen
-
 /-- Announce targets for the current instance of the word “target”
 (CR 601.2c / 603.3d). Multiple targets of one instance (including a
 “divided as you choose” division, CR 601.2d) are chosen together. Each
@@ -424,7 +424,7 @@ def announceTargetChoices (g : Game) (p : PlayerId)
       for (t, n) in assignments do
         g := g.logMsg
           s!"{(g.player p).name} chooses {g.targetLogName t} to be dealt {n} damage (CR 601.2d)"
-      return g.finishTriggerTargets p obj
+      return g.afterTriggerTargetsChosen
     | none =>
       if choices.any (fun c => c.2.isSome) then
         throw "That spell or ability does not divide damage (CR 601.2d)"
@@ -460,7 +460,7 @@ def announceTargetChoices (g : Game) (p : PlayerId)
             s!"{(g.player p).name} chooses {g.targetLogName t} as a target (CR 601.2c)"
         if g.proposedSpell.isSome then
           return g.afterTargetsChosen
-        return g.finishTriggerTargets p obj
+        return g.afterTriggerTargetsChosen
       let curSlot := g.currentTargetSlot obj
       let (grpStart, grpEnd) := kind.instanceGroupBounds curSlot
       if curSlot != grpStart || choices.size > grpEnd - grpStart then
@@ -489,7 +489,7 @@ def announceTargetChoices (g : Game) (p : PlayerId)
         return (g.markTargetsAnnounced obj.id false).change (.pending (.chooseTargets p))
       if g.proposedSpell.isSome then
         return g.afterTargetsChosen
-      return g.finishTriggerTargets p obj
+      return g.afterTriggerTargetsChosen
   | _ => throw "Not time to choose targets (CR 601.2c)"
 
 /-- Announce one target of the current instance of the word “target”

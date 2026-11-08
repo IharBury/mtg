@@ -55,7 +55,7 @@ def changeControl (g : Game) (o : GameObject) (p : PlayerId)
     (untilEot : Bool := false) (turnEndsLeft : Nat := 0)
     (untilSourceLeaves : Option ObjectId := none)
     (cause : Option EventCause := none) : Game :=
-  if (g.player p).lost then
+  if !g.stillInGame p then
     g.logMsg s!"{g.name o} does not change control (CR 800.4b)"
   else if g.controlledBy o p then
     if untilEot || turnEndsLeft > 0 || untilSourceLeaves.isSome then
@@ -154,7 +154,7 @@ def endControlEffectById (g : Game) (eid : EffectId)
             else if !hadControlChange then (acc, exiles)
             else
               let dest := curCtrl.getD (cur.defaultController.getD cur.owner)
-              if (acc.player dest).lost then
+              if !acc.stillInGame dest then
                 (acc, exiles.push (oid, s!"{acc.name cur} is exiled (CR 800.4c)"))
               else if curCtrl != prevCtrl || prevCtrl != some dest then
                 (acc.logMsg s!"{acc.name cur} reverts to {(acc.player dest).name}'s control", exiles)
@@ -226,7 +226,7 @@ def endControlChangingEffect (g : Game) (o : GameObject)
 
 /-- Gain control of `o` until end of turn (CR 611.2a). -/
 def giveControlUntilEot (g : Game) (o : GameObject) (p : PlayerId) : Game :=
-  if (g.player p).lost then
+  if !g.stillInGame p then
     g.logMsg s!"{g.name o} does not change control (CR 800.4b)"
   else
     g.changeControl o p (untilEot := true)
@@ -266,7 +266,7 @@ def objectLeavesTheGame (g : Game) (o : GameObject) (_leavingPlayer : PlayerId) 
           if !cur.isBattlefieldObject || !(g.appliedControlEffectIds cur).isEmpty then none
           else
             let destP := (g.controllerOf cur).getD (cur.defaultController.getD cur.owner)
-            if (g.player destP).lost then some (tid, s!"{g.name cur} is exiled (CR 800.4c)") else none
+            if !g.stillInGame destP then some (tid, s!"{g.name cur} is exiled (CR 800.4c)") else none
       g.runEndControlExileLoop exileQueue (cause := cause)
     if !o.linkedExile.isEmpty && g.currentBatch.isNone then
       g.returnLinkedExileMoves o.linkedExile
@@ -362,7 +362,8 @@ the card being proposed as a spell / turned face up (CR 601.2 / 800.4a). -/
 private def isProposalAbortedByLeave (g : Game) (p : PlayerId) : Bool :=
   g.proposedSpell.any fun prop =>
     prop.caster == p ||
-      (g.findObject? prop.spellId).any (·.owner == p) ||
+      (g.findObject? prop.spellId).any (fun o =>
+        o.owner == p && (prop.kind != .activatedAbility || g.controlledBy o p)) ||
       (prop.kind != .activatedAbility && prop.original.owner == p)
 
 private def isProposalPromptFor (caster : PlayerId) : Pending → Bool
@@ -412,9 +413,9 @@ private def stripAbortedProposalCont (caster : PlayerId) :
 and other pending choices they would make are skipped or passed on
 (CR 800.4g / 800.4h / 800.4j). Does not grant priority. -/
 def redirectPendingAfterLeave (g : Game) (p : PlayerId)
-    (abortedProposal : Bool := false) : Game :=
+    (abortedProposal : Bool := false) (pending : Pending := g.pending) : Game :=
   let abortedProp := abortedProposal || g.isProposalAbortedByLeave p
-  match g.pending with
+  match pending with
   | .none => g
   | .declareAttackers =>
     if g.activePlayer == p then
@@ -1107,7 +1108,9 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
   else
     let cause := some (EventCause.gameRule .playerLeftGame)
     let wasMonarch := (g.player p).isMonarch
-    let owned := g.objects.filter (fun o => o.owner == p && o.zone != .ante)
+    let owned := g.objects.filter (fun o =>
+      o.owner == p && o.zone != .ante &&
+        (o.zone != .stack || representedByCard o || g.controlledBy o p))
     let linkedExileIds := owned.foldl (fun acc o =>
       if o.zone == .battlefield then acc ++ o.linkedExile else acc) #[]
     let savedPausedBatch? :=
@@ -1175,7 +1178,7 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
           | .layered _ (.control c) _ =>
             if c == p then acc.endControlEffectById eid (cause := cause) else acc
           | .playerRule you (.controlsPlayer them _) _ =>
-            if you == p || them == p || (acc.areTeammates them p && (acc.player them).lost) then
+            if you == p || them == p || (acc.areTeammates them p && !acc.stillInGame them) then
               acc.expireEffectById eid (cause := cause)
             else acc
           | _ => acc) g
@@ -1396,12 +1399,18 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
           let g := g.runEndControlExileLoop exileQueue (cause := cause)
           (g, (none, combinedOuter?))
       | _ =>
-        let g :=
-          if preBodyPending != .none then g.change (.pending preBodyPending) else g
-        let g := g.redirectPendingAfterLeave p (abortedProposal := wasAbortedProposal)
+        let preRedirEvCount := g.events.size
+        let g := g.redirectPendingAfterLeave p (abortedProposal := wasAbortedProposal) (pending := preBodyPending)
         let g := runPostCastAndPropCleanup g
+        let touchedPending :=
+          (g.events.extract preRedirEvCount g.events.size).any fun ev =>
+            match ev with
+            | .engine _ (.pending _) _ => true
+            | _ => false
+        let postRedirPending : Pending :=
+          if touchedPending then g.pending else preBodyPending
         let openedNewReplacement :=
-          match g.pending with
+          match postRedirPending with
           | .chooseReplacement .. => true
           | _ => false
         if openedNewReplacement then
@@ -1412,7 +1421,7 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
           let g :=
             match bodyExilePending? with
             | some bp =>
-              let redirP := g.pending
+              let redirP := postRedirPending
               let redirC? := g.pendingReplacement
               let g := g.changes #[.pending bp, .pendingReplacement bodyExileCont?]
               let g := g.chainPendingReplacement (.restorePending redirP false)
@@ -1424,11 +1433,9 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
           (g, (none, preBodyCont?))
         else
           let savedPreLeavePending? : Option Pending :=
-            if g.pending != .none then some g.pending else none
+            if postRedirPending != .none then some postRedirPending else none
           let g :=
-            match savedPreLeavePending? with
-            | some _ => g.change (.pending .none)
-            | none => g
+            if g.pending != .none then g.change (.pending .none) else g
           let combinedOuter? : Option PendingReplacement :=
             match g.pendingReplacement, preBodyCont? with
             | some rCont, some preCont => some (.seq rCont preCont)
@@ -1502,12 +1509,16 @@ def leavePlayersWhoLost (g : Game)
           g := g.restoreSavedPostLeave saved? popOuter
           saved? := none
           popOuter := false
+        else if popOuter && (g.sbaPaused || g.pendingReplacement.isSome) then
+          if let some popped := g.outerPendingReplacements.back? then
+            g := (g.change .popOuterPendingReplacement).chainPendingReplacement popped
+          popOuter := false
         let (g', newlySaved?, po) := g.playerLeavesGameCore pl.id (deferRestore := true)
         g := g'
         if saved?.isNone then
           if let some sp := newlySaved? then
             saved? := some sp
-          popOuter := popOuter || po
+        popOuter := popOuter || po
         if let .chooseReplacement .. := g.pending then
           if g.players.any (fun r => r.lost && !r.leftTheGame) || saved?.isSome || popOuter then
             g := g.chainPendingReplacement (.leavePlayersWhoLost saved? popOuter)

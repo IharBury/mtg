@@ -412,16 +412,33 @@ where
     match g.objectAwaitingTargets with
     | none => some .pass
     | some spell =>
-      match g.defaultTarget p spell with
-      | some t => some (.target t)
-      | none =>
-        if g.canSkipCurrentOptionalSlot spell then some .decline
-        else if g.canFinishOptionalTargets spell then some .decline
+      let kind := (g.targetingOf spell).kind
+      let reqCount : Nat :=
+        if kind.spec.slots.isEmpty then (g.announcedTargetBounds spell).1
         else
-          match spell.triggeredAbility with
-          | some ab =>
-            if ab.allowsZeroTargets then some .decline else some .pass
-          | none => some .pass
+          let curSlot := g.currentTargetSlot spell
+          let (grpStart, grpEnd) := kind.instanceGroupBounds curSlot
+          ((List.range grpEnd).drop grpStart).filter (!kind.isOptionalSlot ·) |>.length
+      let legal := g.legalProposedTargets p spell
+      if reqCount > 1 && legal.size >= reqCount then
+        some (.targets (legal.extract 0 reqCount))
+      else
+        match g.defaultTarget p spell with
+        | some t => some (.target t)
+        | none =>
+          if g.canSkipCurrentOptionalSlot spell then some .decline
+          else if g.canFinishOptionalTargets spell then some .decline
+          else
+            match spell.triggeredAbility with
+            | some ab =>
+              if ab.allowsZeroTargets || spell.abilityEffect.any (·.allowsZeroTargets) then
+                some .decline
+              else some .pass
+            | none =>
+              if (g.currentSpellEffect spell).any (·.allowsZeroTargets) ||
+                  spell.abilityEffect.any (·.allowsZeroTargets) then
+                some .decline
+              else some .pass
   /-- During CR 601.2b, announce a mode of a modal activated ability. -/
   chooseAbilityMode (g : Game) (p : PlayerId) : Option Action :=
     match g.proposedSpell with

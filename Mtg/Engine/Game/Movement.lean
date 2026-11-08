@@ -969,9 +969,9 @@ def counterStackSpell (g : Game) (spellId : ObjectId) (exilePermanent := false)
   | none => g.logMsg "The spell is no longer on the stack"
   | some o =>
     if o.zone != .stack then
-      g.logMsg s!"{o.name} is no longer on the stack"
+      g.logMsg s!"{g.name o} is no longer on the stack"
     else if o.abilityEffect.isSome || o.triggeredAbility.isSome then
-      let name := o.name
+      let name := g.name o
       let cause : Option EventCause :=
         some (match ctrl with
           | some c => g.resolvingOrRuleCause c
@@ -984,7 +984,7 @@ def counterStackSpell (g : Game) (spellId : ObjectId) (exilePermanent := false)
       let dest :=
         if exilePermanent && g.isPermanentCard o then Zone.exile
         else Zone.graveyard o.owner
-      let name := o.name
+      let name := g.name o
       let (g, cause) : Game × EventCause :=
         match g.currentResolvingContext? with
         | some _ => g.allocDelayedCause ctrl

@@ -197,7 +197,7 @@ def gainControlWhileSource (g : Game) (controller : PlayerId)
 def applyChapterEffect (g : Game) (controller : PlayerId) (e : Effect)
     (sourceId : Option ObjectId) (targets : Array Target) : Game :=
   match e.asChapter? with
-  | none => g.applyEffect controller e targets
+  | none => g.applyEffect controller e targets (sourceId := sourceId)
   | some ch =>
   match ch with
   | .dealDamageToOppCreature n =>
@@ -289,7 +289,7 @@ def applyChapterEffect (g : Game) (controller : PlayerId) (e : Effect)
       targeting := s.targeting
       allowsZeroTargets := s.allowsZeroTargets
       phrase := s.phrase
-      resolution := Resolution.ofSpell s.resolution } targets
+      resolution := Resolution.ofSpell s.resolution } targets (sourceId := sourceId)
 
 /-- Intervening “if” conditions rechecked on resolution (CR 608.2a).
 “While you control” attack triggers are not rechecked. -/

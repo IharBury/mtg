@@ -421,27 +421,29 @@ search entirely, and then the library is not shuffled. -/
 def beginLibrarySearch (g : Game) (p : PlayerId) (pred : CardDef → Bool) (kind : String)
     (dest : SearchDest) (count : Nat := 1) (after : Option FraNext := none)
     (alsoHand : Bool := false) (optional : Bool := false) : Game :=
-  let keep (id : ObjectId) := (g.findObject? id).any (fun o => pred (g.baseCard o))
-  let pl := g.player p
-  let eligible := (if alsoHand then pl.hand.filter keep else #[]) ++ pl.library.filter keep
-  if optional then
-    (g.change (.pending (.fraChoice p (.maySearchLibrary eligible count dest after kind)))).logMsg
-      s!"{pl.name} may search for {kind}"
-  else if eligible.isEmpty then
-    let g := g.record (GameEvent.searched g.turnNumber p p #[] (cause := some (g.resolvingOrRuleCause p)))
-    let g := g.logMsg s!"{pl.name} finds no {searchNoun kind}"
-    match dest with
-    | .handThenDiscardRandom => g.shuffleThen p (.discardRandom p)
-    | _ => g.shuffleSearch p after
+  if !g.stillInGame p then g
   else
-    (g.change (.pending (.fraChoice p (.searchLibrary eligible count dest after kind)))).logMsg
-      s!"{pl.name} searches for {kind}"
+    let keep (id : ObjectId) := (g.findObject? id).any (fun o => pred (g.baseCard o))
+    let pl := g.player p
+    let eligible := (if alsoHand then pl.hand.filter keep else #[]) ++ pl.library.filter keep
+    if optional then
+      (g.change (.pending (.fraChoice p (.maySearchLibrary eligible count dest after kind)))).logMsg
+        s!"{pl.name} may search for {kind}"
+    else if eligible.isEmpty then
+      let g := g.record (GameEvent.searched g.turnNumber p p #[] (cause := some (g.resolvingOrRuleCause p)))
+      let g := g.logMsg s!"{pl.name} finds no {searchNoun kind}"
+      match dest with
+      | .handThenDiscardRandom => g.shuffleThen p (.discardRandom p)
+      | _ => g.shuffleSearch p after
+    else
+      (g.change (.pending (.fraChoice p (.searchLibrary eligible count dest after kind)))).logMsg
+        s!"{pl.name} searches for {kind}"
 
 /-- `p` may search for `count` basic land cards and put them onto the
 battlefield tapped (Settle the Wreckage, Avengers Disassembled). Declining
 does not shuffle. -/
 def offerMaySearchBasics (g : Game) (p : PlayerId) (count : Nat := 1) : Game :=
-  if count == 0 || (g.player p).lost then g
+  if count == 0 || !g.stillInGame p then g
   else
     let kind :=
       if count == 1 then "a basic land card"

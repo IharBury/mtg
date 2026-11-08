@@ -129,12 +129,6 @@ def attackingPlaneswalker? (s : Status) : Option ObjectId :=
   | some (.planeswalker pw) => some pw
   | _ => none
 
-/-- The player `s` is directly attacking, if any (CR 508.1b). -/
-def attackingPlayer? (s : Status) : Option PlayerId :=
-  match s.attackingTarget with
-  | some (.player p) => some p
-  | _ => none
-
 end Status
 
 #guard

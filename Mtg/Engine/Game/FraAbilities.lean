@@ -18,7 +18,7 @@ def beginChooseKeyword (g : Game) (p : PlayerId) (id : ObjectId) (options : Arra
     else
       let names := String.intercalate ", " (options.toList.map KeywordChoice.name)
       g.beginFraChoice p (.chooseKeyword id options)
-        s!"{(g.player p).name} chooses {names} for {o.name}"
+        s!"{(g.player p).name} chooses {names} for {g.name o}"
   | none => g
 
 /-- Give `p` an emblem or effect object in the command zone (CR 114.1–114.5). -/
@@ -129,7 +129,7 @@ def runHawkeyeArrows (g : Game) (controller : PlayerId) (modes : Array Nat)
     | 0 =>
       g := g.withLegalKindPermanent controller .creature slice (fun g o =>
         (g.createEffect (.cantBlockUntilEot o.id)).logMsg
-          s!"{o.name} can't block this turn") sourceId illegal
+          s!"{g.name o} can't block this turn") sourceId illegal
       idx := idx + 1
     | 1 =>
       g := g.withLegalKindPlayer controller .player slice
@@ -218,7 +218,7 @@ def finishIdentityEchoAfterExile (g : Game) (controller : PlayerId)
         match g.findObject? newId with
         | some entered =>
           if entered.isOnBattlefield then
-            let g := g.logMsg s!"{entered.name} enters the battlefield"
+            let g := g.logMsg s!"{g.name entered} enters the battlefield"
             g.afterPermanentEnters entered
           else g
         | none => g
@@ -625,7 +625,7 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
   | .becomeArtifactCreatureUntilEot =>
     onSource (fun g o =>
       (g.createEffect (.additionalCreature o.id true)).logMsg
-        s!"{o.name} becomes an artifact creature until end of turn")
+        s!"{g.name o} becomes an artifact creature until end of turn")
   | .queueMshReflexive kind paid =>
     g.queueModeledReflexive controller sourceId kind paid
   | .mshReflexive kind paid =>
@@ -635,7 +635,7 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
   | .copySourceSpellXTimes =>
     match sourceId.bind g.findObject? with
     | some spell =>
-      if spell.zone != .stack then g.logMsg s!"{spell.name} is no longer on the stack"
+      if spell.zone != .stack then g.logMsg s!"{g.name spell} is no longer on the stack"
       else
         let x := spell.chosenX.getD 0
         let (g, copies) := (List.range x).foldl (fun (acc : Game × Array ObjectId) _ =>

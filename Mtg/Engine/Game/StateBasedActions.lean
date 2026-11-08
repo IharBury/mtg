@@ -260,7 +260,7 @@ def finishSbaSweep (g : Game) (moves : Array SbaGraveyardMove)
         if o.isCopy && !o.printed.isToken && o.zone != .stack && o.zone != .battlefield &&
             !(o.zone == .exile && ((g.playPermission o).bind (·.prepareSource)).isSome) then
           g := g.ceaseToExist o.id (cause := some (.stateBased .copyOutsideStackOrBf))
-          g := g.logMsg s!"{o.name} ceases to exist (copy outside stack or battlefield, CR 704.5e)"
+          g := g.logMsg s!"{g.name o} ceases to exist (copy outside stack or battlefield, CR 704.5e)"
           changed := true
       | none => pure ()
   if stage != .illegalAttachments then

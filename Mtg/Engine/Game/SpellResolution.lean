@@ -112,7 +112,7 @@ def resolveDelayedTrigger (g : Game) (controller : PlayerId) (kind : DelayedTrig
     | some o =>
       if o.zone == .exile then
         let owner := o.owner
-        if (g.player owner).lost then
+        if !g.stillInGame owner then
           g.logMsg s!"{o.name} remains in its current zone (CR 800.4b)"
         else
           let isLand := g.isLand o
@@ -155,7 +155,7 @@ def resolveDelayedTrigger (g : Game) (controller : PlayerId) (kind : DelayedTrig
   | .endStepGraveReturn id who =>
     match g.findObject? id with
     | some o =>
-      if o.zone == .graveyard o.owner && !(g.player who).lost then
+      if o.zone == .graveyard o.owner && g.stillInGame who then
         let isLand := g.isLand o
         let (g', _) := g.putOntoBattlefield id who (cause := some cause)
         if let .chooseReplacement .. := g'.pending then
@@ -265,7 +265,7 @@ def resolveTop (g : Game) : Game :=
           let g := g.withResolvingContext ctxSrc entry.controller fun g =>
             let g := g.record (GameEvent.removedOnResolution g.turnNumber (g.snapshot obj))
             let g := entry.targets.foldl (fun (g : Game) (tg : Target) => g.illegalAbilityTarget tg) g
-            g.logMsg s!"{obj.name} doesn't resolve because all its targets are illegal (CR 608.2b)"
+            g.logMsg s!"{g.name obj} doesn't resolve because all its targets are illegal (CR 608.2b)"
           g.ceaseToExist obj.id (cause := some (.gameRule .abilityFinishedResolving))
         else
           let snap := g.snapshot obj
@@ -304,7 +304,7 @@ def resolveTop (g : Game) : Game :=
             let g := g.withResolvingContext ctxSrc entry.controller fun g =>
               let g := g.record (GameEvent.removedOnResolution g.turnNumber (g.snapshot obj))
               let g := entry.targets.foldl (fun (g : Game) (tg : Target) => g.illegalAbilityTarget tg) g
-              g.logMsg s!"{obj.name} doesn't resolve because all its targets are illegal (CR 608.2b)"
+              g.logMsg s!"{g.name obj} doesn't resolve because all its targets are illegal (CR 608.2b)"
             g.ceaseToExist obj.id (cause := some (.gameRule .abilityFinishedResolving))
           else if obj.reflexiveResolution.isNone &&
               !g.triggerInterveningHolds entry.controller t obj.sourceId
@@ -330,7 +330,7 @@ def resolveTop (g : Game) : Game :=
             let g := g.withResolvingContext ctxSrc entry.controller fun g =>
               let g := g.record (GameEvent.removedOnResolution g.turnNumber (g.snapshot obj))
               let g := entry.targets.foldl (fun (g : Game) (tg : Target) => g.illegalAbilityTarget tg) g
-              g.logMsg s!"{obj.name} doesn't resolve because all its targets are illegal (CR 608.2b)"
+              g.logMsg s!"{g.name obj} doesn't resolve because all its targets are illegal (CR 608.2b)"
             g.ceaseToExist obj.id (cause := some (.gameRule .abilityFinishedResolving))
           else
             let snap := g.snapshot obj
@@ -351,7 +351,7 @@ def resolveTop (g : Game) : Game :=
           let g := g.withResolvingContext ctxSrc entry.controller fun g =>
             let g := g.record (GameEvent.removedOnResolution g.turnNumber (g.snapshot obj))
             let g := entry.targets.foldl (fun (g : Game) (tg : Target) => g.illegalAbilityTarget tg) g
-            g.logMsg s!"{obj.name} doesn't resolve because all its targets are illegal (CR 608.2b)"
+            g.logMsg s!"{g.name obj} doesn't resolve because all its targets are illegal (CR 608.2b)"
           g.ceaseToExist obj.id (cause := some (.gameRule .abilityFinishedResolving))
         else if obj.reflexiveResolution.isNone &&
             !g.triggerInterveningHolds entry.controller t obj.sourceId
@@ -417,18 +417,18 @@ def resolveTop (g : Game) : Game :=
             (cause := finishCause))
           let g := entry.targets.foldl (fun g t => g.illegalAbilityTarget t) g
           let g := g.logMsg
-            s!"{obj.name} doesn't resolve because all its targets are illegal (CR 608.2b)"
+            s!"{g.name obj} doesn't resolve because all its targets are illegal (CR 608.2b)"
           -- CR 702.34a: only a spell actually cast via Flashback is exiled.
           let hasFlashback := g.castViaFlashback obj
           if obj.isCopy then
             let copyMsg :=
               if auraTargetsAllIllegal then
-                s!"{obj.name} ceases to exist (illegal Aura target, CR 704.5e)"
+                s!"{g.name obj} ceases to exist (illegal Aura target, CR 704.5e)"
               else
-                s!"The copy of {obj.name} ceases to exist (CR 704.5e)"
+                s!"The copy of {g.name obj} ceases to exist (CR 704.5e)"
             (g.ceaseToExist obj.id (cause := some (.stateBased .copyOutsideStackOrBf))).logMsg copyMsg
           else if hasFlashback then
-            let msg := s!"{obj.name} is exiled (flashback)"
+            let msg := s!"{g.name obj} is exiled (flashback)"
             let (g, _) := g.move obj.id .exile none (cause := finishCause)
             if let .chooseReplacement .. := g.pending then
               g.chainPendingReplacement (.finishPostStep (.logExiledIfInExile obj.id msg))
@@ -436,7 +436,7 @@ def resolveTop (g : Game) : Game :=
               g.logMsg msg
             else g
           else if auraTargetsAllIllegal then
-            g.moveToOwnerGraveyard obj s!"{obj.name} goes to the graveyard (illegal Aura target)"
+            g.moveToOwnerGraveyard obj s!"{g.name obj} goes to the graveyard (illegal Aura target)"
               (cause := finishCause)
           else
             -- An Adventure that doesn't resolve isn't exiled (ruling 5).
