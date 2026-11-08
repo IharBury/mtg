@@ -210,7 +210,7 @@ def finishSbaSweep (g : Game) (moves : Array SbaGraveyardMove)
       let ids := rawIds.filter (fun id => (g.findObject? id).any GameObject.isOnBattlefield)
       if ids.size ≥ 2 then
         let restGroups := legendGroups.extract (gi + 1) legendGroups.size
-        if !(g.player p).lost then
+        if g.stillInGame p then
           g := g.change (.pending (.chooseLegend p name ids))
           g := g.logMsg
             s!"{(g.player p).name} chooses which {name} to keep (legend rule, CR 704.5j)"
@@ -341,7 +341,8 @@ any state-based action was performed (used by CR 514.3a). If a legend-rule
 choice is required (CR 704.5j), the check pauses: that SBA is not finished,
 so CR 704.3 does not yet repeat, put triggers on the stack, or grant
 priority. `keepLegend` resumes the loop. -/
-partial def checkSBACounted (g : Game) : Game × Bool :=
+partial def checkSBACounted (g : Game)
+    (savedIn : Option Pending := none) (popOuterIn : Bool := false) : Game × Bool :=
   if g.over || g.sbaPaused then (g, false)
   else
     let (g, (changed, _paused)) := g.withBatchReturn none fun g => Id.run do
@@ -357,7 +358,7 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
         let still := ids.filter (fun id =>
           match g.findObject? id with
           | some o =>
-            o.isOnBattlefield && !(g.player p).lost &&
+            o.isOnBattlefield && g.stillInGame p &&
               (if g.currentBatch.isSome then true
                else g.controlledBy o p && g.treatedAsLegendary o && g.name o == name)
           | none => false)
@@ -538,26 +539,39 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
         (changedIn := changed)
     match g.pending with
     | .chooseReplacement .. | .chooseLegend .. =>
-      (g.chainPendingReplacement .checkSBA, true)
+      (g.chainPendingReplacement
+        (if savedIn.isSome || popOuterIn then .leavePlayersWhoLost savedIn popOuterIn else .checkSBA),
+       true)
     | _ =>
       (g, changed)
 
-/-- Repeat `checkSBACounted` and `leavePlayersWhoLost` until neither performs an
-action or the game ends / pauses on a pending choice (CR 704.3 / 800.4a). -/
-partial def checkSBACountedWithLeaves (g : Game) : Game × Bool :=
-  let (g, didSba) := g.checkSBACounted
-  if g.over || g.pending != .none then (g, didSba)
+/-- Repeat `checkSBACounted` and `leavePlayersWhoLostCore` until neither performs
+an action or the game ends / pauses on a pending choice, restoring any deferred
+saved pending decision once at the end of the fixpoint (CR 704.3 / 800.4a). -/
+partial def checkSBACountedWithLeaves (g : Game)
+    (savedIn : Option Pending := none) (popOuterIn : Bool := false) : Game × Bool :=
+  let wasPaused := g.sbaPaused
+  let (g, didSba) := g.checkSBACounted savedIn popOuterIn
+  if g.over then (g, didSba)
+  else if wasPaused && (savedIn.isSome || popOuterIn) then
+    (g.chainPendingReplacement (.leavePlayersWhoLost savedIn popOuterIn), didSba)
+  else if g.pending != .none then (g, didSba)
   else
     let leftBefore := (g.players.filter (·.leftTheGame)).size
-    let g := g.leavePlayersWhoLost
+    let (g, saved?, popOuter) := g.leavePlayersWhoLostCore savedIn popOuterIn
     let anyLeft := (g.players.filter (·.leftTheGame)).size > leftBefore
     if g.over then (g, didSba || anyLeft)
-    else if g.sbaPaused then (g.chainPendingReplacement .checkSBA, true)
+    else if g.sbaPaused then
+      (g.chainPendingReplacement
+        (if g.players.any (fun r => r.lost && !r.leftTheGame) || saved?.isSome || popOuter then
+          .leavePlayersWhoLost saved? popOuter
+        else .checkSBA),
+       true)
     else if g.pending != .none then (g, didSba || anyLeft)
     else if didSba || anyLeft then
-      let (g', didMore) := g.checkSBACountedWithLeaves
+      let (g', didMore) := g.checkSBACountedWithLeaves saved? popOuter
       (g', didSba || anyLeft || didMore)
-    else (g, false)
+    else (g.restoreSavedPostLeave saved? popOuter, false)
 
 def checkSBA (g : Game) : Game :=
   (g.checkSBACountedWithLeaves).1

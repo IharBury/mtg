@@ -185,7 +185,7 @@ def gainControlWhileSource (g : Game) (controller : PlayerId)
         legalIds.foldl (fun (g : Game) id =>
           match g.findObject? id with
           | some o =>
-            if (g.player controller).lost then
+            if !g.stillInGame controller then
               g.logMsg s!"{g.name o} does not change control (CR 800.4b)"
             else
               g.createEffect (.controlWhileSource o.id controller src.id)

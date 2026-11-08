@@ -26,7 +26,7 @@ def putPalantirInfluence (g : Game) (sourceId : ObjectId) (target : Option Playe
   match target with
   | none => refuse
   | some pid =>
-    if (g.player pid).lost then refuse
+    if !g.stillInGame pid then refuse
     else
       match g.findObject? sourceId with
       | none => refuse
@@ -65,7 +65,7 @@ is not cast. -/
 def copyStackSpellWithId (g : Game) (src : GameObject) (controller : PlayerId)
     (cause : Option EventCause := none) : Game × Option ObjectId :=
   let dispName := if src.status.faceDown then "face-down spell" else src.name
-  if (g.player controller).lost then
+  if !g.stillInGame controller then
     (g.logMsg s!"A copy of {dispName} is not created (CR 800.4d)", none)
   else
     let copyId : ObjectId := ⟨g.nextObjectId⟩
@@ -976,7 +976,7 @@ def commitEnteringAttackItems (g : Game)
   if hasTokens then
     match chosen[0]? with
     | some (EnteringAttackItem.token controller .., _) =>
-      if (g.player controller).lost then
+      if !g.stillInGame controller then
         let g := if g.stagedAttackTokenBatches.isEmpty then g else g.change (.stagedAttackTokenBatches #[])
         let g := if resetRecent then g.change (.recentTokenIds #[]) else g
         g.logMsg "no token is created (CR 800.4b)"
@@ -1312,7 +1312,7 @@ activated (MSH 34 / 40 / 66) and uses the same source and X
 (MSH 47 / 302 / 303). -/
 def copyStackAbilityWithId (g : Game) (src : GameObject) (controller : PlayerId) :
     Game × Option ObjectId :=
-  if (g.player controller).lost then
+  if !g.stillInGame controller then
     (g.logMsg s!"A copy of {src.name} is not created (CR 800.4d)", none)
   else
     let copyId : ObjectId := ⟨g.nextObjectId⟩

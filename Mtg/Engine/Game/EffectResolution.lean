@@ -71,7 +71,7 @@ partial def copyNontokenCreaturesStep (g : Game) (p : PlayerId)
   if snapshots.isEmpty then g
   else if let .chooseReplacement .. := g.pending then
     g.chainPendingReplacement (.copyNontokenCreatures p snapshots cause)
-  else if (g.player p).lost then
+  else if !g.stillInGame p then
     g.logMsg "no token is created (CR 800.4b)"
   else
     let baseCause :=
@@ -1700,7 +1700,7 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
           | some pa, some pb =>
             -- CR 701.12a / 104.5 / 800.4a–b: if the entire exchange can't be
             -- completed (e.g. a controller has left the game), no part occurs.
-            if (g.player pa).lost || (g.player pb).lost then
+            if !g.stillInGame pa || !g.stillInGame pb then
               g.logMsg "The exchange can't be completed (CR 701.12a)."
             -- CR 701.12b: if both permanents are controlled by the same player,
             -- the exchange effect does nothing.
@@ -1897,7 +1897,7 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
   | .exileTopXOppPlayForLife =>
     match targets[0]? with
     | some (Target.player pid) =>
-      if (g.player pid).lost || !g.playerCanBeTargetedBy controller pid sourceId then
+      if !g.stillInGame pid || !g.playerCanBeTargetedBy controller pid sourceId then
         g.logMsg "The target is no longer legal"
       else if chosenX == 0 then g
       else
@@ -2051,7 +2051,7 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
       | .player =>
         match targets.findSome? (fun | Target.player p => some p | _ => none) with
         | some p =>
-          if !(g.player p).lost && g.playerCanBeTargetedBy controller p sourceId then
+          if g.stillInGame p && g.playerCanBeTargetedBy controller p sourceId then
             some p
           else none
         | none => none
@@ -2084,7 +2084,7 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
         | Target.player pid => some pid
         | _ => none) with
     | some pid =>
-      if (g.player pid).lost || !g.playerCanBeTargetedBy controller pid sourceId then
+      if !g.stillInGame pid || !g.playerCanBeTargetedBy controller pid sourceId then
         g.logMsg "The target is no longer legal"
       else (g.createToken pid clueToken).1
     | none => g.logMsg "The target is no longer legal"

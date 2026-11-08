@@ -170,7 +170,8 @@ def draw (g : Game) (p : PlayerId) (n : Nat := 1)
 
 /-- Finish the post-draw discard prompt of `beginRecruit`. -/
 def finishBeginRecruit (g : Game) (p : PlayerId) : Game :=
-  if (g.player p).hand.isEmpty then
+  if !g.stillInGame p then g
+  else if (g.player p).hand.isEmpty then
     g.logMsg s!"{(g.player p).name} has no card to discard"
   else
     g.change (.pending (.recruitDiscard p)) |>.logMsg
@@ -224,18 +225,20 @@ def pendingRandom? (g : Game) : Option RandomRequest :=
 card is shuffled for rules/event purposes (CR 701.24e); a library of two or more
 cards becomes `Pending.resolveRandom`. -/
 def shuffleLibrary (g : Game) (p : PlayerId) : Game :=
-  let pl := g.player p
-  if pl.library.size ≤ 1 then
-    let shuffleCause : EventCause :=
-      match g.pregameRandom with
-      | .openingShuffles _ => .gameRule .openingHandDraw
-      | .mulliganDraw .. | .mulliganQueue .. => .gameRule .mulligan
-      | _ => g.resolvingOrRuleCause p
-    (g.record (GameEvent.shuffled g.turnNumber p pl.library (cause := some shuffleCause)))
-      |>.logMsg s!"{pl.name} shuffles their library"
+  if !g.stillInGame p then g
   else
-    g.change (.pending (.resolveRandom (.shuffleLibrary p)))
-      |>.logMsg s!"{pl.name} shuffles their library"
+    let pl := g.player p
+    if pl.library.size ≤ 1 then
+      let shuffleCause : EventCause :=
+        match g.pregameRandom with
+        | .openingShuffles _ => .gameRule .openingHandDraw
+        | .mulliganDraw .. | .mulliganQueue .. => .gameRule .mulligan
+        | _ => g.resolvingOrRuleCause p
+      (g.record (GameEvent.shuffled g.turnNumber p pl.library (cause := some shuffleCause)))
+        |>.logMsg s!"{pl.name} shuffles their library"
+    else
+      g.change (.pending (.resolveRandom (.shuffleLibrary p)))
+        |>.logMsg s!"{pl.name} shuffles their library"
 
 /-- Record `after` and shuffle. If `--norandom` pauses, `after` stays on the
 game until the host supplies an order. -/

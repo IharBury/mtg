@@ -151,7 +151,7 @@ def applyCastCostReductions (g : Game) (card : GameObject) (face : CardDef)
     if face.costReductionEqualOppArtifacts then
       let n :=
         g.players.foldl (fun acc pl =>
-          if pl.id == caster || pl.lost || g.areTeammates caster pl.id then acc
+          if pl.id == caster || !g.stillInGame pl.id || g.areTeammates caster pl.id then acc
           else
             let arts :=
               (g.permanentsOf pl.id).filter (fun o => g.isArtifact o) |>.size

@@ -772,7 +772,7 @@ def becomeCast (g : Game) (p : PlayerId) (spell : GameObject)
       if g.nextSpellCantBeCountered p && !GameEvent.isUncastStackCopy g.events spell.id then
         let g := g.expireEffect (.nextSpellCantBeCounteredThisTurn p)
         (g.createEffect (.uncounterableThisCast spell.id)).logMsg
-          s!"{spell.name} can't be countered"
+          s!"{g.name spell} can't be countered"
       else g
     let g := g.putCastTriggersOnStack p spell
     let liveCmds := g.objects.filter (fun o => o.owner == p && o.isCommander)

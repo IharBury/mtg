@@ -146,7 +146,7 @@ def causeDealsDamageToOpponentsLoop (g : Game) (remainingOpps : Array PlayerId)
       g := g.logMsg s!"{name} deals {dealt} damage"
   for i in [0:remainingOpps.size] do
     let pid := remainingOpps[i]!
-    if !(g.player pid).lost then
+    if g.stillInGame pid then
       let startIdx := g.events.size
       g := g.dealDamageToPlayer pid n (sourceSnap := causeSrc) (cause := c)
         (suppressLifelink := true)
@@ -377,7 +377,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
           if o.zone == .stack then
             if o.isCopy then
               (g.ceaseToExist o.id (cause := some (.stateBased .copyOutsideStackOrBf))).logMsg
-                s!"The copy of {o.name} ceases to exist (CR 704.5e)"
+                s!"The copy of {g.name o} ceases to exist (CR 704.5e)"
             else g.returnToHand id o.owner
           else g
         | none => g
@@ -656,7 +656,13 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
   | .empowerJacePerCreature =>
     g.empowerJace controller (g.creaturesControlledBy controller).size
   | .tapEnchantedUnprepare =>
-    match (sourceId.bind g.findObject?).bind (·.attachedTo) |>.bind g.findObject? with
+    let host? : Option GameObject :=
+      match sourceId.bind g.findObject? with
+      | some src => src.attachedTo.bind g.findObject? |>.filter (·.isOnBattlefield)
+      | none =>
+        ((sourceId.bind g.lastKnownBefore?).bind (·.attachedTo)).bind g.findObject?
+          |>.filter (·.isOnBattlefield)
+    match host? with
     | some host =>
       let g := if host.status.tapped then g else g.becomeTapped host
       g.unprepare (g.object! host.id)
@@ -864,11 +870,11 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
           else g
         | _ => g) sourceId illegal
   | .copyCauseSpell =>
-    if (g.player controller).lost then g
+    if !g.stillInGame controller then g
     else
       match g.fraCause? with
       | some spell =>
-        if spell.zone != .stack then g.logMsg s!"{spell.name} is no longer on the stack"
+        if spell.zone != .stack then g.logMsg s!"{g.name spell} is no longer on the stack"
         else
           let cause := g.resolveOptionalCause (g.resolvingOneShotCause controller sourceId)
             (fallbackSrc := sourceId) (fallbackCtrl := some controller)

@@ -1325,7 +1325,7 @@ def stillInGame (g : Game) (p : PlayerId) : Bool :=
 /-- True when living player `p` is the active player or a teammate of the active
 player, i.e., it is `p`'s team's turn (CR 805.4a / 810.2). -/
 def isOnActiveTeam (g : Game) (p : PlayerId) : Bool :=
-  p.idx < g.players.size && !(g.player p).lost &&
+  p.idx < g.players.size && g.stillInGame p &&
     (g.activePlayer == p || g.areTeammates g.activePlayer p)
 
 /-- Format a list of player seats' names with English conjunctions
@@ -1408,7 +1408,7 @@ def isSharedTurnFinalSeat (g : Game) : Bool :=
     Id.run do
       for k in [1:n+1] do
         let q : PlayerId := ⟨(g.activePlayer.idx + k) % n⟩
-        if !(g.player q).lost then
+        if g.stillInGame q then
           return !(g.areTeammates g.activePlayer q && !seats.contains q)
       return true
 
@@ -1897,7 +1897,7 @@ def applyTurnEvent (g : Game) (e : TurnEvent) : Game :=
         g.areTeammates seats[0]! player && !seats.contains player
     let dropLost (xs : Array PlayerId) : Array PlayerId :=
       (xs.toList.dropWhile (fun q =>
-        if h : q.idx < g.players.size then g.players[q.idx].lost else true)).toArray
+        if h : q.idx < g.players.size then g.players[q.idx].lost || g.players[q.idx].leftTheGame else true)).toArray
     let restExtra :=
       if extra then
         let trimmed := dropLost g.extraTurns
@@ -5406,7 +5406,7 @@ def opponent (g : Game) (p : PlayerId) : PlayerId :=
   match g.firstLivingOpponent? p with
   | some q => q
   | none =>
-    if !(g.player p).lost then p
+    if g.stillInGame p then p
     else
       let n := g.players.size
       if n == 0 then p
@@ -5414,7 +5414,7 @@ def opponent (g : Game) (p : PlayerId) : PlayerId :=
         Id.run do
           for k in [1:n+1] do
             let q : PlayerId := ⟨(p.idx + k) % n⟩
-            if !(g.player q).lost then
+            if g.stillInGame q then
               return q
           return p
 
@@ -5647,7 +5647,7 @@ def defendingPlayers (g : Game) : Array PlayerId :=
     let mut acc : Array PlayerId := #[]
     for k in [0:n] do
       let q : PlayerId := ⟨(g.activePlayer.idx + k) % n⟩
-      if q != g.activePlayer && !(g.player q).lost && attacked.contains q then
+      if q != g.activePlayer && g.stillInGame q && attacked.contains q then
         acc := acc.push q
     return acc
 
@@ -5662,12 +5662,12 @@ def resolveAttackDestination (g : Game) (p : PlayerId) (defender : Option Player
   match defender with
   | none =>
     let d := g.opponent p
-    if d == p || (g.player d).lost || !(g.livingOpponents p).any (fun pl => pl.id == d) then
+    if d == p || !g.stillInGame d || !(g.livingOpponents p).any (fun pl => pl.id == d) then
       throw "no living opponent to attack"
     else .ok d
   | some d =>
     if d == p then throw "cannot attack yourself"
-    else if (g.player d).lost then throw s!"{(g.player d).name} has already lost"
+    else if !g.stillInGame d then throw s!"{(g.player d).name} has already lost"
     else if !(g.livingOpponents p).any (fun pl => pl.id == d) then
       throw s!"{(g.player d).name} is not an opponent"
     else .ok d
@@ -5677,13 +5677,13 @@ def nextLiving (g : Game) (p : PlayerId) : PlayerId :=
   Id.run do
     for k in [1:n+1] do
       let q : PlayerId := ⟨(p.idx + k) % n⟩
-      if !(g.player q).lost then
+      if g.stillInGame q then
         return q
     return p
 
 /-- Player who receives priority in place of `p` when `p` has left (CR 800.4j). -/
 def priorityInstead (g : Game) (p : PlayerId) : PlayerId :=
-  if (g.player p).lost then g.nextLiving p else p
+  if !g.stillInGame p then g.nextLiving p else p
 
 /-- How many creatures `p` currently controls. -/
 def countCreaturesControlledBy (g : Game) (p : PlayerId) : Nat :=
@@ -5707,7 +5707,7 @@ def controllingPlayerOf? (g : Game) (whose : PlayerId) : Option PlayerId :=
     | .playerRule you (.controlsPlayer them onNextTurn) d =>
       let inWindow := !onNextTurn || (g.hasTurnBegunSince eid them && !g.hasTurnAfterBegunSince eid them)
       if g.durationActive d && inWindow &&
-          you.idx < g.players.size && !(g.player you).lost &&
+          you.idx < g.players.size && g.stillInGame you &&
           (them == whose || g.areTeammates them whose) then
         some you
       else acc
@@ -5800,7 +5800,7 @@ def apnapPlayers (g : Game) : Array PlayerId :=
       if !seen.contains pid then
         for m in g.teamMembers pid do
           seen := seen.push m
-          if !(g.player m).lost then
+          if g.stillInGame m then
             out := out.push m
     return out
 
@@ -8223,7 +8223,7 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
     for o in pre.battlefield do
       match pre.controllerOf o with
       | some p =>
-        if !(post.player p).lost && batch.any (·.matchesTrigger p (some o.id) .oneOrMoreOtherCreaturesDie) then
+        if post.stillInGame p && batch.any (·.matchesTrigger p (some o.id) .oneOrMoreOtherCreaturesDie) then
           let (w, fs) := queueSrc pre p o .oneOrMoreOtherCreaturesDie (w := waiting) (fs := firedSources)
           waiting := w; firedSources := fs
       | none => pure ()
@@ -8231,7 +8231,7 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
     for o in post.battlefield do
       match post.controllerOf o with
       | some p =>
-        if !(post.player p).lost && batch.any (·.matchesTrigger p (some o.id) .creatureCardsPutIntoYourGy) then
+        if post.stillInGame p && batch.any (·.matchesTrigger p (some o.id) .creatureCardsPutIntoYourGy) then
           let (w, fs) := queueSrc post p o .creatureCardsPutIntoYourGy (w := waiting) (fs := firedSources)
           waiting := w; firedSources := fs
       | none => pure ()
@@ -8241,7 +8241,7 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
         for o in post.battlefield do
           match post.controllerOf o with
           | some c =>
-            if !(post.player c).lost then
+            if post.stillInGame c then
               let (w, fs) := queueSrc post c o (.fra .playerDiscards) (w := waiting) (fs := firedSources)
               waiting := w; firedSources := fs
           | none => pure ()
@@ -9151,7 +9151,7 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
                 | none => pure ()
               | .player defn =>
                 if pkt.combat then
-                  if !(post.player defn).lost then
+                  if post.stillInGame defn then
                     match srcCtrl? with
                     | some pid =>
                       let srcObj := srcObj?.getD (findEventObj post pkt.source)
@@ -11377,7 +11377,11 @@ def applyBlackGateUnblockable (g : Game) (attackerId : ObjectId)
       if !o.isOnBattlefield then
         g.logMsg "The target is no longer legal"
       else
-        let g := g.createEffect (.cantBeBlockedByPlayerUntilEot attackerId chosen)
+        let (g, effCause) : Game × EventCause :=
+          match g.currentResolvingContext? with
+          | some (src, ctrl) => g.allocDelayedCause ctrl src
+          | none => (g, .gameRule .continuousEffect)
+        let g := g.createEffect (.cantBeBlockedByPlayerUntilEot attackerId chosen) (cause := some effCause)
         g.logMsg
           s!"{g.name o} can't be blocked by creatures {(g.player chosen).name} controls this turn"
 
@@ -11506,7 +11510,7 @@ def markAttacking (g : Game) (id : ObjectId) (target : Option AttackTarget := no
     let tgt? : Option AttackTarget :=
       match target with
       | some (.player p) =>
-        if !(g.player p).lost then some (.player p)
+        if g.stillInGame p then some (.player p)
         else (g.defaultAttackOpponent? ctrl).map .player
       | some (.planeswalker pwId) =>
         if (g.findObject? pwId).any (fun pw => pw.isOnBattlefield && g.isPlaneswalker pw) then
@@ -11713,7 +11717,7 @@ def restoreControlUntilSourceLeaves (g : Game) (srcId : ObjectId)
             match (acc.findObject? id).bind acc.controllerOf with
             | some q => acc.logMsg s!"{objName} returns to {(acc.player q).name}'s control"
             | none => acc
-          else if (acc.player p).lost then
+          else if !acc.stillInGame p then
             acc.logMsg s!"{objName} does not change control (CR 800.4b)"
           else
             acc.logMsg s!"{objName} returns to {(acc.player p).name}'s control"

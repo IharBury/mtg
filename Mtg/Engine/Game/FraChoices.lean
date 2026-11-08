@@ -1533,10 +1533,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .palantirMayDraw controller _, .accept =>
     return (g.draw controller 1).finishFraChoice
   | .palantirMayDraw controller sourceId, .decline =>
-    let n :=
-      match g.findObject? sourceId with
-      | some src => src.status.influence
-      | none => 0
+    let n := ((g.damageSourceById? sourceId).map (·.status.influence)).getD 0
     let lib := (g.player controller).library
     let count := min n lib.size
     let tops := (lib.extract (lib.size - count) lib.size).reverse

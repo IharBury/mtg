@@ -181,7 +181,7 @@ def rawActor (g : Game) : Option PlayerId :=
   if g.over then none
   else
     let who (p : PlayerId) : Option PlayerId :=
-      if (g.player p).lost then some (g.nextLiving p) else some p
+      if !g.stillInGame p then some (g.nextLiving p) else some p
     match g.pending with
     | .declareAttackers => who g.activePlayer
     | .declareBlockers => who g.currentBlockersPlayer
@@ -243,7 +243,7 @@ def rawActor (g : Game) : Option PlayerId :=
 def actor (g : Game) : Option PlayerId :=
   g.rawActor.map fun whose =>
     match g.controllingPlayerOf? whose with
-    | some ctrl => if (g.player ctrl).lost then whose else ctrl
+    | some ctrl => if !g.stillInGame ctrl then whose else ctrl
     | none => whose
 
 /-- Dispatch `action` for `caller`, routing decisions for any controlled player

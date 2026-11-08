@@ -731,7 +731,7 @@ def applyFrc (g : Game) (controller : PlayerId) (effect : Effect) (e : FrcEffect
           g.restBottom controller rest false (cause := some revealCause)
     | _ => g
   | .jaceTax =>
-    if g.isOnActiveTeam controller || (g.player g.activePlayer).lost then g
+    if g.isOnActiveTeam controller || !g.stillInGame g.activePlayer then g
     else
       let ap := g.activePlayer
       (g.changes #[
@@ -745,7 +745,7 @@ def applyFrc (g : Game) (controller : PlayerId) (effect : Effect) (e : FrcEffect
   | .jaceTaxApply =>
     match targets[0]? with
     | some (Target.player attacker) =>
-      if (g.player attacker).lost then g
+      if !g.stillInGame attacker then g
       else
         g.createEffect (.cantAttackJacesThisTurn attacker controller)
           |>.logMsg s!"{(g.player attacker).name}'s creatures can't attack Jaces {(g.player controller).name} controls this turn"
