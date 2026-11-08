@@ -9585,13 +9585,15 @@ reads),
      - in `.sacrificeDamager ids rest controller chosen`
        (`Leaving.lean:773–779`), filter `let liveIds := ids.filter (fun id =>
        (g.findObject? id).any (fun o => o.isOnBattlefield && g.isCreature o &&
-       g.controlledBy o q))`; if `q != p && liveIds.size > 1`, update
-       `.sacrificeDamager liveIds living controller chosen` when `liveIds != ids
-       || living != rest`; otherwise clear `.pending` (with `if q == p then
-       clearProp else #[]`), log `s!"{(g.player q).name} controls no creature
-       that dealt combat damage this turn"` when `q != p && liveIds.isEmpty`,
-       push `(q, liveIds[0]!)` onto `chosen` when `q != p && liveIds.size == 1`,
-       and call `advanceSacDamagersAfterLeave g controller living chosen'`;
+       g.controlledBy o q))`; if `q != p && liveIds.size > 1`, return `(g,
+       pending)` when `liveIds == ids && living == rest` and `(g,
+       .sacrificeDamager liveIds living controller chosen)` otherwise; only
+       when `q == p || liveIds.size ≤ 1`, clear `.pending` (with `if q == p
+       then clearProp else #[]`), log `s!"{(g.player q).name} controls no
+       creature that dealt combat damage this turn"` when `q != p &&
+       liveIds.isEmpty`, push `(q, liveIds[0]!)` onto `chosen` when `q != p &&
+       liveIds.size == 1`, and call `advanceSacDamagersAfterLeave g controller
+       living chosen'`;
      - in `.fraChoice q choice` (`Leaving.lean:1045`), add arms before the `| _
        =>` fallback for:
        - `.sacrificeLeastPower ids` (`Choices.lean:38–58`): if `q == p`, clear
@@ -9612,11 +9614,14 @@ reads),
          `(g, pending)`; and
      - split `| .sacrificeCreature q` (`Leaving.lean:1079`,
        `CastExtras.lean:24–30`) out of the shared `| .mayAttachEquipment q ..`
-       or-pattern (`1080–1090`) into its own arm that clears as before when `q ==
-       p || abortedProp` and, when `q != p && (g.sacrificeCreatureChoices
-       q).isEmpty`, logs `s!"{(g.player q).name} has no creature to sacrifice"`
-       and returns `(clearPendingAnd g #[.chooseModesRest none], .none)`
-       (otherwise `(g, pending)`).
+       or-pattern (`1080–1090`) into its own arm that keeps `if q == p then`
+       with `let clearProp : Array GameChange := if abortedProp then
+       #[.proposedSpell none, .clearProposalCheckpoint] else #[]` returning
+       `(clearPendingAnd g (#[.chooseModesRest none] ++ clearProp), .none)`
+       (`1085–1089`) and, in the `else` (`q != p`) branch, when
+       `(g.sacrificeCreatureChoices q).isEmpty`, logs `s!"{(g.player q).name}
+       has no creature to sacrifice"` and returns `(clearPendingAnd g
+       #[.chooseModesRest none], .none)` (else `(g, pending)`).
 2. Complete `beginFraChoice` & `ContinuationFrame` pushing across `Core`,
    `TriggeredAbilities`, `Triggers`, `Choices`, `CastExtras`, and
    `EffectResolution` (§2.1, §2.5, §2.9, §3.2):
@@ -9667,15 +9672,22 @@ reads),
    and departed-player entry-point / post-pause guards (§2.5, §3.1, §3.4, CR
    800.4a):
    - Replace remaining `!pl.lost && !pl.leftTheGame` / `(g.player ...).lost ||
-     (g.player ...).leftTheGame` checks with `stillInGame` in
-     `Core.lean:1657, 1900, 7940, 8097, 8137, 8303, 9349, 9424, 9444, 9620,
-     9761, 10170, 10225` (keeping the `q.idx < g.players.size` bounds check in
-     `dropLost` at `Core.lean:1900`: `if q.idx < g.players.size then
-     !g.stillInGame q else true`), `Triggers.lean:313, 534`
-     (`putQueuedTrigger` and `putWaitingTrigger`), and `FrcResolve.lean:759`
-     (the `.monarch` arm of `applyFrc`, replacing `(g.player heir).lost ||
-     (g.player heir).leftTheGame` with `!g.stillInGame heir` in
-     `!g.stillInGame heir || (g.player heir).isMonarch`).
+     (g.player ...).leftTheGame` checks with `stillInGame`:
+     - in `Core.lean`: `playerAlive` inside `initialControllerOf` (`1654–1658`,
+       keeping the bounds check and `else true` out-of-range result: `if h :
+       p.idx < g.players.size then g.stillInGame p else true`), `dropLost`
+       (`1900`, keeping the bounds check and `else true` out-of-range result:
+       `if q.idx < g.players.size then !g.stillInGame q else true`),
+       `g.stillInGame` at `7940, 10170, 10225`, and `post.stillInGame` inside
+       `matchTriggers (pre : GameSnapshot) (post : Game)` (`8082`) at `8097,
+       8137, 8303, 9349, 9424, 9444, 9620, 9761` (`pl.isMonarch &&
+       post.stillInGame pl.id` at `8303` and `9424`);
+     - in `Triggers.lean:313, 534` (`putQueuedTrigger` and
+       `putWaitingTrigger`); and
+     - in `FrcResolve.lean:759` (the `.monarch` arm of `applyFrc`, replacing
+       `(g.player heir).lost || (g.player heir).leftTheGame` with
+       `!g.stillInGame heir` in `!g.stillInGame heir || (g.player
+       heir).isMonarch`).
    - Add departed-player `stillInGame` guards across remaining library, mill,
      hand, and exile helpers and post-steps:
      - `ResolutionHelpers.millCardsLoop` (`ResolutionHelpers.lean:273`, returning
