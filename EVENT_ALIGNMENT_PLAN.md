@@ -1915,7 +1915,7 @@ flowchart TD
   P26 --> P27["Phase 27: Non-replacement inDepSpan/cleanupRemappedLeavingId, multi-departure popOuter, stack-ability ownership & stillInGame/FraChoices guards,\nCR 115.1c-d/115.7d/601.2b-c/602.2b/603.3c-d/700.2/702.21a/702.34a optional-slot decline, modal trigger Layer-3/eachOpponent, retargeting & flashback,\nCR 120.2/608.2h/616.1/714 replacement affectedPlayer stamping, pause-safe makeFrc/exileTopPlayIfYouControlSubtype, LKI fallbacks & Saga sourceId,\nand CR 506.4c/613.1a,c/800.4i/805.10 2HG/multiplayer combat triggers & Turns expiry, g.name reads & dead-helper cleanup"]
   P27 --> P28["Phase 28: Multi-departure pendingIn forwarding, checkSBACountedWithLeaves/restorePending alignment, Leaving batch-cause/pending hygiene & concede priority,\nCR 608.2g/510.1c/805.10d/800.4a-i chooseCastFromLooked/castAsPartOfResolution outerPendingReplacements, 2HG assignCombatDamage & stillInGame completion,\nCR 608.2h Palantir influence-counter, Aura/Equipment attachedHost? & sourcePowerNatAtResolution LKI fallbacks,\nand CR 201/613.1a/707.10/715 remaining battlefield/stack g.name/g.nameWithToken reads"]
   P28 --> P29["Phase 29: Co-departing .chooseReplacement preservation, redirectPendingAfterLeave retarget cleanup, .crew/.zemoBoastExile/.chooseTeamworkCreatures revalidation,\nmoveIdsInOrder/offerBottomAnyOrder/offerCardChoice/beginFraChoice EventCause & ContinuationFrame alignment,\nremaining stillInGame entry & post-pause guards, and CR 608.2h sourcePTAtResolution & Layer 1 g.name/type/MV completion"]
-  P29 --> P30["Phase 30: Post-exile/SBA & non-departing redirectPendingAfterLeave/.restorePending revalidation,\nremaining beginFraChoice & applyTriggeredAbility/offerChooseModes ContinuationFrame completion,\nremaining stillInGame unifications & departed-player entry/post-pause guards,\nand CR 107.3k/201/608.2h/613.1/702.85a Layer 1-6 characteristic/cascade MV reads & rawEventSnapshot/printed-helper retirement"]
+  P29 --> P30["Phase 30: Post-exile/SBA & non-departing redirectPendingAfterLeave/.restorePending revalidation,\nremaining beginFraChoice & applyTriggeredAbility/offerChooseModes ContinuationFrame completion,\nremaining stillInGame unifications & departed-player entry/post-pause guards,\nand CR 201/202.3e/608.2h/613.1/702.85a Layer 1-6 characteristic/cascade MV reads & rawEventSnapshot/printed-helper retirement"]
 ```
 
 ### Phase 1 — Envelope and durable single-writer constructors
@@ -9313,9 +9313,9 @@ guards, *Palantír* influence-counter / Aura & Equipment `attachedHost?` /
      `Game.applyIdle` (`Game.lean:258–261`), and `Agent.choose`
      (`Agent.lean:318–321`, CR 601.2b,h / 602.2b / 702.122a / 702.142a / 733.1):
      - in `Decisions.checkReversal` (`Decisions.lean:410–421`), add
-       `| .restorePending (.fraChoice _ (.crew ..)) _ | .restorePending
-       (.fraChoice _ (.zemoBoastExile ..)) _ | .restorePending
-       (.chooseTeamworkCreatures ..) _ => g.proposedSpell.isSome` alongside
+       `| .restorePending (.fraChoice _ (.crew ..)) _ _ | .restorePending
+       (.fraChoice _ (.zemoBoastExile ..)) _ _ | .restorePending
+       (.chooseTeamworkCreatures ..) _ _ => g.proposedSpell.isSome` alongside
        `.costPicks`, `.sacrificePermanent`, and `.discardForAdditionalCost` so
        `.seq` checks whether an active proposal was reversed by `.restorePending`
        without skipping `rest` when `g.proposedSpell` was already `none`;
@@ -9494,7 +9494,7 @@ reads),
 `PutCounters.lean`, `Targets.lean`, `Turns.lean`, `MshOracleTests.lean`,
 `OracleRulingTests.lean`.
 
-### Phase 30 — Post-exile/SBA & non-departing `redirectPendingAfterLeave` / `.restorePending` revalidation, remaining `beginFraChoice` & `applyTriggeredAbility` / `offerChooseModes` `ContinuationFrame` completion, remaining `stillInGame` unifications & departed-player entry/post-pause guards, and CR 107.3k / 201 / 608.2h / 613.1 / 702.85a Layer 1–6 characteristic / cascade mana-value reads & `rawEventSnapshot` / printed-helper retirement
+### Phase 30 — Post-exile/SBA & non-departing `redirectPendingAfterLeave` / `.restorePending` revalidation, remaining `beginFraChoice` & `applyTriggeredAbility` / `offerChooseModes` `ContinuationFrame` completion, remaining `stillInGame` unifications & departed-player entry/post-pause guards, and CR 201 / 202.3e / 608.2h / 613.1 / 702.85a Layer 1–6 characteristic / cascade mana-value reads & `rawEventSnapshot` / printed-helper retirement
 
 1. Revalidate `.assignCombatDamage` and `.tricksterLibrary` after
    `runEndControlExileLoop` / post-departure SBAs in
@@ -9516,26 +9516,34 @@ reads),
      (`Decisions.lean:617–700`) executes:
      - in `Decisions.resumePendingReplacement` `.restorePending`
        (`Decisions.lean:691–700`), add an arm for `.assignCombatDamage q
-       forAttackers` (mirroring `Leaving.redirectPendingAfterLeave` at
-       `Leaving.lean:599–645`, CR 506.4 / 510.1c–d / 800.4h,j): filter
+       forAttackers` (mirroring the `q != p` branch of
+       `Leaving.redirectPendingAfterLeave` at `Leaving.lean:600–613, 634–645`
+       since `q == p` was already handed off or cleared by
+       `redirectPendingAfterLeave`, CR 506.4 / 510.1c–d / 800.4h): filter
        `cleanAsgns := g.pendingBlockerAssignments.filter fun a =>
        (g.findObject? a.source).any (·.isOnBattlefield) && a.toCreatures.all
        (fun (tid, _) => (g.findObject? tid).any (·.isOnBattlefield))` (updating
-       `.pendingBlockerAssignments cleanAsgns` when changed), compute
-       `playerStillNeeds r`, and if `g.stillInGame q && playerStillNeeds q` call
-       `openPrompt g`; else if `forAttackers`, find `nextAtk? := (g.teamMembers
-       q).find? (fun r => r != q && g.stillInGame r && playerStillNeeds r)` and
-       either call `openPromptWith (g.logMsg s!"{(g.player nextAtk).name}
-       assigns combat damage (CR 800.4h)") (.assignCombatDamage nextAtk true)`
-       or clear `.pendingBlockerAssignments #[]` (logging `"no active player
-       assigns combat damage (CR 800.4j)"` when `!g.stillInGame q`) and call
-       `resumePoppedIfNoPrompt`; else (`!forAttackers`), find `nextP? :=
+       `.pendingBlockerAssignments cleanAsgns` when changed), bind `let already
+       := cleanAsgns.map (·.source)` and local `let playerStillNeeds (r :
+       PlayerId) : Bool := (g.creaturesAssigningCombatDamage forAttackers).any
+       fun o => (if forAttackers then g.isOnActiveTeam r && (g.controllerOf
+       o).any g.isOnActiveTeam else g.controlledBy o r) && !already.contains
+       o.id && (g.legalCombatDamageRecipients o forAttackers).size ≥ 2 &&
+       g.combatDamageAmount o > 0`, and if `g.stillInGame q && playerStillNeeds
+       q` call `openPrompt g`; else if `forAttackers`, keep the filtered
+       `cleanAsgns` on `pendingBlockerAssignments` and call
+       `resumePoppedIfNoPrompt (if g.pending == .none then g else g.change
+       (.pending .none))` (matching `else if forAttackers then (clearPending g,
+       .none)` at `Leaving.lean:635–636` and ensuring `g.pending == .none` when
+       `finishConcedePriority` at `Decisions.lean:262–263` runs
+       `beginCombatDamageAssignment`); else (`!forAttackers`), find `nextP? :=
        g.apnapPlayers.find? (fun r => r != q && !g.isOnActiveTeam r &&
        g.stillInGame r && playerStillNeeds r)` and either call `openPromptWith
        (g.logMsg s!"{(g.player nextP).name} assigns combat damage (CR 800.4h)")
-       (.assignCombatDamage nextP false)` or call `resumePoppedIfNoPrompt g`
-       (leaving `g.pending == .none` so `finishConcedePriority` at
-       `Decisions.lean:262–263` advances via `beginCombatDamageAssignment` /
+       (.assignCombatDamage nextP false)` or call `resumePoppedIfNoPrompt (if
+       g.pending == .none then g else g.change (.pending .none))` (leaving
+       `g.pending == .none` so `finishConcedePriority` at
+       `Decisions.lean:262–263` advances via
        `continueBlockerCombatAssignment`); and
      - in `Leaving.redirectPendingAfterLeave` (`Leaving.lean:934–945`,
        `.tricksterLibrary caster id connive sourceId`), when `p != caster` and
@@ -9602,10 +9610,13 @@ reads),
          #[Target.permanent liveIds[0]!]; (g, g.pending)`; else if `liveIds !=
          ids`, return `(g, .fraChoice q (.hydeRemoveCounter liveIds))`; else
          `(g, pending)`; and
-     - in `.sacrificeCreature q` (`Leaving.lean:1079`, `CastExtras.lean:24–30`),
-       if `q != p && (g.sacrificeCreatureChoices q).isEmpty`, log
-       `s!"{(g.player q).name} has no creature to sacrifice"` and return
-       `(clearPendingAnd g #[.chooseModesRest none], .none)`.
+     - split `| .sacrificeCreature q` (`Leaving.lean:1079`,
+       `CastExtras.lean:24–30`) out of the shared `| .mayAttachEquipment q ..`
+       or-pattern (`1080–1090`) into its own arm that clears as before when `q ==
+       p || abortedProp` and, when `q != p && (g.sacrificeCreatureChoices
+       q).isEmpty`, logs `s!"{(g.player q).name} has no creature to sacrifice"`
+       and returns `(clearPendingAnd g #[.chooseModesRest none], .none)`
+       (otherwise `(g, pending)`).
 2. Complete `beginFraChoice` & `ContinuationFrame` pushing across `Core`,
    `TriggeredAbilities`, `Triggers`, `Choices`, `CastExtras`, and
    `EffectResolution` (§2.1, §2.5, §2.9, §3.2):
@@ -9650,17 +9661,21 @@ reads),
        `finishMillMayPutPermanentGainLife` (`435–436`),
        `finishMillSubtypeOrEnchantment` (`461–462`), `mayDrawPerArtifact`
        (`530–531`), `mayPutHeroOrDraw` (`543–544`), `beginVisionQuest`
-       (`863–864`), `.ownerPutsLibraryThenConnive` (`2171–2172`), and
-       `.copyControlledAbility` (`2716–2717`).
+       (`863–864`), `.ownerPutsLibraryThenConnive` (`2172–2173`), and
+       `.copyControlledAbility` (`2707–2708`).
 3. Complete remaining `.lost || .leftTheGame` vs `g.stillInGame` unifications
    and departed-player entry-point / post-pause guards (§2.5, §3.1, §3.4, CR
    800.4a):
    - Replace remaining `!pl.lost && !pl.leftTheGame` / `(g.player ...).lost ||
      (g.player ...).leftTheGame` checks with `stillInGame` in
-     `Core.lean:1657, 7940, 8097, 8137, 8303, 9349, 9424, 9444, 9620, 9761,
-     10170, 10225`, `Triggers.lean:314, 535` (`queueTriggerIfControllerInGame`
-     and `flushWaitingTriggersFor`), and `FrcResolve.lean:759`
-     (`giveMonarchTo`).
+     `Core.lean:1657, 1900, 7940, 8097, 8137, 8303, 9349, 9424, 9444, 9620,
+     9761, 10170, 10225` (keeping the `q.idx < g.players.size` bounds check in
+     `dropLost` at `Core.lean:1900`: `if q.idx < g.players.size then
+     !g.stillInGame q else true`), `Triggers.lean:313, 534`
+     (`putQueuedTrigger` and `putWaitingTrigger`), and `FrcResolve.lean:759`
+     (the `.monarch` arm of `applyFrc`, replacing `(g.player heir).lost ||
+     (g.player heir).leftTheGame` with `!g.stillInGame heir` in
+     `!g.stillInGame heir || (g.player heir).isMonarch`).
    - Add departed-player `stillInGame` guards across remaining library, mill,
      hand, and exile helpers and post-steps:
      - `ResolutionHelpers.millCardsLoop` (`ResolutionHelpers.lean:273`, returning
@@ -9694,18 +9709,18 @@ reads),
        `millMayPutPermanentGainLife` (`441`), `finishMillSubtypeOrEnchantment`
        (`453`), `millMayPutSubtypeOrEnchantment` (`467`), `mayDrawPerArtifact`
        (`525`), `mayPutHeroOrDraw` (`538`), `beginVisionQuest` (`854`),
-       `offerBottomAnyOrder` (`2260`), `beginLookRevealToHand` (`2295`), and
-       `beginLookPutTypes` (`2310`); and
+       `offerBottomAnyOrder` (`2260`), `beginLookRevealToHand` (`2285`), and
+       `beginLookPutTypes` (`2300`); and
      - `Entering.lean:229` and `Decisions.runPostStep` (`.opponentsDrawOneLoop`
-       at `Decisions.lean:1224` filtering `remainingOpponents.filter
-       g.stillInGame`, `.nickFuryMayTransformOrBottom` at `1204`,
-       `.loseLifeForMilledManaValue` at `1235`, `.logShuffleIntoLibrary` at
-       `1304`, `.offerPutMilledPermanentOrGainLife` at `1316`, and
-       `.grantAdventureExilePermission` at `1540`).
+       at `Decisions.lean:1220` filtering `remainingOpponents.filter
+       g.stillInGame` before matching `[0]?`, `.nickFuryMayTransformOrBottom` at
+       `1200`, `.loseLifeForMilledManaValue` at `1231`, `.logShuffleIntoLibrary`
+       at `1300`, `.offerPutMilledPermanentOrGainLife` at `1312`, and
+       `.grantAdventureExilePermission` at `1510`).
 4. Complete Layer 1–6 characteristic reads (`g.name`, `g.isLegendary`,
    `g.hasSubtype`, `g.objectManaValue`), cascade stack/LKI mana-value reads, and
    `Core.rawEventSnapshot` / dead `GameObject` printed-helper retirement (§2.2,
-   §2.3, §2.6, §2.10, §3.5, §3.7, CR 107.3k / 201 / 608.2h / 613.1 / 702.85a):
+   §2.3, §2.6, §2.10, §3.5, §3.7, CR 201 / 202.3e / 608.2h / 613.1 / 702.85a):
    - Replace `o.isLegendary` with `g.isLegendary o` and `g.name x == o.name`
      with `g.name x == g.name o` in `ActivationCosts.costPickAllows`
      (`ActivationCosts.lean:78, 80, 81`, `.discardLegendaryCard` and
@@ -9719,42 +9734,49 @@ reads),
      (`TriggeredAbilities.lean:504`), replace `(g.baseCard o).saga.isSome` with
      `g.hasSubtype o .saga` in `TriggeredAbilities.lean:3980, 4113`
      (`.untilSaga`), and in `TriggeredAbilities.applyTriggeredAbility` `.cascade`
-     (`TriggeredAbilities.lean:4932–4938`), compute `maxMv` via `if src.zone ==
-     .stack then g.objectManaValue src else ((g.lastKnownBefore? sid).map
+     (`TriggeredAbilities.lean:4932–4938`), inside the `| some src =>` arm of
+     `g.findObject? sid` (`4935–4936`, keeping the `| none =>
+     (g.lastKnownBefore? sid).map (·.manaValue) |>.getD 0` arm at `4937` for
+     departed ids), compute `maxMv` via `if src.zone == .stack then
+     g.objectManaValue src else ((g.lastKnownBefore? sid).map
      (·.manaValue)).getD (g.objectManaValue src (includeLkiX := true))` so `{X}`
      spells on the stack and spells that left the stack before their cascade
-     trigger resolves use their stack/LKI mana value (CR 107.3k / 608.2h /
+     trigger resolves use their stack/LKI mana value (CR 202.3e / 608.2h /
      702.85a).
    - Replace remaining raw `.name` reads on stack, battlefield, and zone-moving
      objects with `g.name`:
-     - `FraChoices.lean:529–531` (`.triggerModes`, binding `let objName :=
-       g.name obj` *before* `g.ceaseToExist objId`);
      - `CastExtras.lean:109, 275` (`resolveCascadeLoop` and
        `finishExileUntilNextEndStep`);
      - `Choices.lean:370, 394, 401, 408, 579` (`finishGrimaDirectCast`,
        `exileUntilInstantOrSorceryLoop`, and `exileFailedAdventureFromBilbo`);
      - `Costs.lean:21` (`returnToHand`);
-     - `Decisions.lean:1123, 1390, 1543, 1553` (`.logTwoNonlegendaryCopyTokens`,
+     - `Decisions.lean:1120, 1387, 1514, 1524` (`.logTwoNonlegendaryCopyTokens`,
        `.logMovedToExile`, `.grantAdventureExilePermission`, and
        `.grantPlayUntilEndOfNextTurn`);
-     - `EffectResolution.lean:239, 2234, 2238, 2525, 2530`;
+     - `EffectResolution.lean:239, 2225, 2229, 2516, 2521`;
      - `Entering.lean:235`;
      - `Leaving.lean:886, 984` and `Mulligans.lean:90`;
-     - `ModeledTriggers.lean:76, 103, 559, 736`;
-     - `ResolutionEffects.lean:270, 299, 329, 331, 347, 357, 1356, 1371, 1386,
-       1399, 1438` and `ResolutionHelpers.lean:635, 683`; and
+     - `ModeledTriggers.lean:76, 103, 559, 738`;
+     - `ResolutionEffects.lean:268, 297, 327, 329, 345, 355, 1352, 1367, 1382,
+       1395, 1434` and `ResolutionHelpers.lean:635, 683`; and
      - `TriggeredAbilities.lean:291, 432, 617, 1469, 1472, 1895, 2403, 2526,
        4026, 4945, 5132, 5237, 5301, 5315`.
    - Inline `Core.rawEventSnapshot` (`Core.lean:7816–7861`, which was only called
-     at `Core.lean:7865` inside `Core.snapshot` and whose characteristic fields
-     were immediately overwritten at `7880–7905`) into `Core.snapshot`
-     (`Core.lean:7864–7905`), and delete the now-unused `Core.rawEventSnapshot`
-     helper along with the unreferenced `GameObject.power` (`Object.lean:164–165`),
-     `GameObject.toughness` (`Object.lean:167–168`), `GameObject.you`
-     (`Object.lean:182–183`), `GameObject.isLegendary` (`Object.lean:191–192`,
-     updating the 3 test assertions in `OracleRulingTests.lean:347` and
+     at `Core.lean:7865` inside `Core.snapshot` and whose characteristic fields —
+     including `o.power` and `o.toughness` at `7829–7830` — were immediately
+     overwritten at `7880–7905`) into `Core.snapshot` (`Core.lean:7864–7905`,
+     setting `power := pw` and `toughness := tg` directly), and delete the
+     now-unused `Core.rawEventSnapshot` helper along with `GameObject.power`
+     (`Object.lean:164–165`) and `GameObject.toughness` (`Object.lean:167–168`,
+     updating `Tests/Equipment.lean:224, 569, 570`,
+     `Tests/Activation.lean:502`, `Tests/Auras.lean:236`, and
+     `Tests/Pathmaker.lean:237` to `g.power` / `g.toughness` while keeping
+     `CardDef.power` on `.printed`), `GameObject.you` (`Object.lean:182–183`,
+     updating `Tests/Pathmaker.lean:264` to `g.you`), `GameObject.isLegendary`
+     (`Object.lean:191–192`, updating `OracleRulingTests.lean:347` and
      `Tests/Auras.lean:335, 377` to `g.isLegendary`), and
-     `GameObject.hasSupertype` (`Object.lean:154–155`).
+     `GameObject.hasSupertype` (`Object.lean:154–155`, keeping
+     `EventObject.hasSupertype` at `Object.lean:567`).
 
 Tests: `Events.lean` (isolation tests for post-`runEndControlExileLoop` /
 post-SBA `.assignCombatDamage` & `.tricksterLibrary` revalidation in
@@ -9763,10 +9785,10 @@ revalidation in `redirectPendingAfterLeave`, `beginFraChoice` /
 `applyTriggeredAbility` / `offerChooseModes` `ContinuationFrame` completion,
 remaining `stillInGame` unifications & departed-player entry/post-pause guards,
 and Layer 1–6 characteristic / cascade stack & LKI mana-value reads),
-`Abilities.lean`, `Auras.lean`, `Casting.lean`, `Combat.lean`, `Damage.lean`,
-`Discard.lean`, `Draw.lean`, `Equipment.lean`, `GainLife.lean`, `Leaving.lean`,
-`PutCounters.lean`, `Targets.lean`, `Turns.lean`, `MshOracleTests.lean`,
-`OracleRulingTests.lean`.
+`Abilities.lean`, `Activation.lean`, `Auras.lean`, `Casting.lean`,
+`Combat.lean`, `Damage.lean`, `Discard.lean`, `Draw.lean`, `Equipment.lean`,
+`GainLife.lean`, `Leaving.lean`, `Pathmaker.lean`, `PutCounters.lean`,
+`Targets.lean`, `Turns.lean`, `MshOracleTests.lean`, `OracleRulingTests.lean`.
 
 Final check (after Phase 30): `lake build`, `lake exe mtg-demo`,
 `lake exe oracle-roundtrip`, no `EventCause.unclassified` constructor, no
