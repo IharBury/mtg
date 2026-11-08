@@ -9567,12 +9567,19 @@ reads),
        #[.pending .none, .chooseModesRest none]`), logs `"The target is no
        longer legal"` when `g.stillInGame q && g.stillInGame caster &&
        !(g.findObject? id).any (fun o => o.isOnBattlefield && g.isCreature o)`,
-       chains `g.chainPendingReplacement (.finishPostStep
-       (.conniveTricksterTarget caster connive sourceId))` when `g.stillInGame
-       caster && connive.isSome`, and calls `resumePoppedIfNoPrompt g` (leaving
-       `g.pending == .none` when no replacement pause opened so
-       `finishConcedePriority` at `Decisions.lean:254` does not overwrite a
-       connive pause).
+       when `g.stillInGame caster && connive.isSome`, queues `let g :=
+       g.chainPendingReplacement (.finishPostStep (.conniveTricksterTarget
+       caster connive sourceId))` and either calls `resumePoppedIfNoPrompt g`
+       when `popped?.isSome` (so `.seq prior popped` runs the connive step and
+       sequences `popped` if connive pauses) or, when `popped?.isNone` (as when
+       `restoreSavedPostLeave` calls `.restorePending saved false` at
+       `Leaving.lean:1204–1205`), immediately runs the queued connive step via
+       `if let some cont := g.pendingReplacement then (g.change
+       (.pendingReplacement none)).resumePendingReplacement cont
+       (followedByFinishFra := followedByFinishFra) else g` (so connive runs
+       before `finishConcedePriority` checks `g.pending != .none` at
+       `Decisions.lean:261`), and when `!(g.stillInGame caster &&
+       connive.isSome)`, calls `resumePoppedIfNoPrompt g`.
    - In `Leaving.redirectPendingAfterLeave`, revalidate non-departing choosers
      (`q != p`) whose eligible permanents were owned by `p` and left the
      battlefield at `Leaving.lean:1279–1282` (CR 800.4a):
@@ -9637,10 +9644,14 @@ reads),
    `TriggeredAbilities`, `Triggers`, `Choices`, `CastExtras`, `Casting`, and
    `EffectResolution` (§2.1, §2.5, §2.9, §3.2):
    - In `Core.beginFraChoice` (`Core.lean:11820–11824`), default `(msg : String
-     := "")` and only call `.logMsg msg` when `!msg.isEmpty` (`let g := g.change
-     (.pending (.fraChoice p choice)); if msg.isEmpty then g else g.logMsg msg`)
-     so callers that open `.fraChoice` without a log line still push a
-     `ContinuationFrame` when `g.continuations.isEmpty`.
+     := "")`, keep the `let g := if g.continuations.isEmpty then g.change
+     (.pushContinuationFrame {}) else g` frame push (`11821–11823`), and on that
+     post-push `g` replace `(g.change (.pending (.fraChoice p choice))).logMsg
+     msg` (`11824`) with `let g := g.change (.pending (.fraChoice p choice)); if
+     msg.isEmpty then g else g.logMsg msg` so callers that open `.fraChoice`
+     without a log line (such as `runTriggerExileLoop` at `1844–1845` and
+     `Casting.finishPostCast` at `741`) still push a `ContinuationFrame` when
+     `g.continuations.isEmpty`.
    - In `TriggeredAbilities.applyTriggeredAbility`
      (`TriggeredAbilities.lean:4651`), change `if resolutionOverride.isNone &&
      g.continuations.isEmpty then` to `if g.continuations.isEmpty then` so any
@@ -9740,12 +9751,27 @@ reads),
        (`525`), `mayPutHeroOrDraw` (`538`), `beginVisionQuest` (`854`),
        `offerBottomAnyOrder` (`2260`), `beginLookRevealToHand` (`2285`), and
        `beginLookPutTypes` (`2300`); and
-     - `Entering.lean:229` and `Decisions.runPostStep` (`.opponentsDrawOneLoop`
-       at `Decisions.lean:1220` filtering `remainingOpponents.filter
-       g.stillInGame` before matching `[0]?`, `.nickFuryMayTransformOrBottom` at
-       `1200`, `.loseLifeForMilledManaValue` at `1231`, `.logShuffleIntoLibrary`
-       at `1300`, `.offerPutMilledPermanentOrGainLife` at `1312`, and
-       `.grantAdventureExilePermission` at `1510`).
+     - `Entering.resolveAdventureSpell` (`Entering.lean:228–235`) and
+       `Decisions.runPostStep`:
+       - `.nickFuryMayTransformOrBottom` (`Decisions.lean:1200`),
+         `.loseLifeForMilledManaValue` (`1231`), and
+         `.offerPutMilledPermanentOrGainLife` (`1312`): return `g` immediately
+         when the player (`p` / `controller`) has left (`!g.stillInGame`);
+       - `.opponentsDrawOneLoop` (`1220`): filter `remainingOpponents.filter
+         g.stillInGame` before matching `[0]?`;
+       - `.logShuffleIntoLibrary owner cardId` (`1300–1306`): log the arrival
+         (`1301–1305`) first when `followMovedToZone? cardId (· == .library
+         owner)` is `some`, and only call `g.shuffleThen owner .none` (`1306`)
+         when `g.stillInGame owner` (returning `g` otherwise); and
+       - `Entering.resolveAdventureSpell` (`Entering.lean:228–235`) and
+         `.grantAdventureExilePermission controller cardId cause`
+         (`Decisions.lean:1510–1515`): after `followMovedToZone? ... (· ==
+         .exile)` finds `some o`, gate `g.createEffect (.playPermission o.id {
+         player := ..., fromAdventure := true }) (cause := ...)` on
+         `g.stillInGame entry.controller` / `g.stillInGame controller` while
+         still logging `s!"{g.name o} is exiled..."` (`Entering.lean:235`,
+         `Decisions.lean:1514`) for the adventure card that already moved to
+         exile.
 4. Complete Layer 1–6 characteristic reads (`g.name`, `g.isLegendary`,
    `g.hasSubtype`, `g.objectManaValue`), cascade stack/LKI mana-value reads, and
    `Core.rawEventSnapshot` / dead `GameObject` printed-helper retirement (§2.2,
