@@ -9261,23 +9261,27 @@ guards, *Palantír* influence-counter / Aura & Equipment `attachedHost?` /
    - In `Leaving.replacementChoiceValid` (`Leaving.lean:1151–1160`), add
      `(allowLost : Bool := false)` and check `(if allowLost then !(g.player
      q).leftTheGame else g.stillInGame q)` (passing `(allowLost := true)` at
-     `Leaving.lean:1467, 1492` inside `Leaving.playerLeavesGameCore` while
-     keeping `allowLost := false` in `Decisions.resumePendingReplacement`
-     `.restorePending` at `Decisions.lean:671`), so when multiple players lose or
-     concede together (2HG teammates in `PriorityActions.concede` at
+     `Leaving.lean:1467, 1492` inside the `if q != p &&
+     !abortingReplacementProposal` arm at `Leaving.lean:1466` of
+     `Leaving.playerLeavesGameCore` while keeping `allowLost := false` in
+     `Decisions.resumePendingReplacement` `.restorePending` at
+     `Decisions.lean:671`), so when multiple players lose or concede together
+     (2HG teammates in `PriorityActions.concede` at
      `PriorityActions.lean:248–253` or simultaneous SBA losers in
      `StateBasedActions.checkSBACounted` at `StateBasedActions.lean:503–517`) and
      the first departing player `p0` leaves while `preBodyPending` is
      `.chooseReplacement p1 choices` for a co-departing player `p1` (`p1.lost ==
-     true && !p1.leftTheGame`), `playerLeavesGameCore` preserves
-     `savedPreLeavePending? := some preBodyPending` across `p0`'s leave batch so
-     `p1`'s iteration receives `pendingIn = some (.chooseReplacement p1 choices)`
-     (`preBodyPending = .chooseReplacement p1 choices`), where `q == p1` takes
-     the `else` branch at `Leaving.lean:1498` (`runPostCastAndPropCleanup g
-     .none` without keeping `p1`'s prompt) and, when `p1` is also the aborted
-     proposer (`wasAbortedProposal` via `isProposalAbortedByLeave` at
-     `364–369`), sets `abortingReplacementProposal` (`Leaving.lean:1218–1221`,
-     CR 616.1 / 733.1 / 800.4a / 810.8a).
+     true && !p1.leftTheGame`, with `q == p1 != p0` and `p0` not aborting a
+     proposal), `p0`'s `if q != p && !abortingReplacementProposal` arm at
+     `Leaving.lean:1466` saves `savedPreLeavePending? := some preBodyPending`
+     (`1493–1494`) via `allowLost := true` at `1467` and `1492` so it can be
+     forwarded as `pendingIn` to `p1`'s later departure (where `q == p1` takes
+     the `else` branch at `Leaving.lean:1498`, calling `runPostCastAndPropCleanup
+     g .none` and keeping `postCleanupPending` rather than retaining `p1`'s
+     prompt, and where `abortingReplacementProposal` at `1218–1221` is set only
+     when that departing player is also the aborted proposer via
+     `isProposalAbortedByLeave` at `364–369`, CR 616.1 / 733.1 / 800.4a /
+     810.8a).
    - In `Leaving.redirectPendingAfterLeave` (`Leaving.lean:1021–1026`), when the
      departing player `p` is not the chooser `q` of `.fraChoice q choice` (`q !=
      p`), revalidate stack-object retarget prompts whose target spell or copy was
