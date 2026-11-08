@@ -8945,9 +8945,9 @@ helpers), `Abilities.lean`, `Casting.lean`, `Combat.lean`, `Damage.lean`,
        `Leaving.leavePlayersWhoLostCore (g : Game) (savedIn : Option Pending :=
        none) (popOuterIn : Bool := false) : Game × Option Pending × Bool`
        (returning `(g, none, false)` on `g.over` at `1635, 1644`, returning `(g,
-       savedIn, popOuterIn)` at `1636` and `(g, saved?, popOuter)` at `1658` on
-       `.chooseReplacement` *without* chaining `.leavePlayersWhoLost` inside the
-       core, and returning `(g, saved?, popOuter)` at the end of the loop at
+       savedIn, popOuterIn)` at `1636` and `(g, saved?, popOuter)` at `1659–1660`
+       on `.chooseReplacement` *without* chaining `.leavePlayersWhoLost` inside
+       the core, and returning `(g, saved?, popOuter)` at the end of the loop at
        `1661` instead of calling `g.restoreSavedPostLeave saved? popOuter`), and
        keep `Leaving.leavePlayersWhoLost` (`Leaving.lean:1668–1676`) as the
        wrapper that calls `let (g, saved?, popOuter) :=
@@ -8978,17 +8978,17 @@ helpers), `Abilities.lean`, `Casting.lean`, `Combat.lean`, `Damage.lean`,
        second for the `346` return where `checkSBACounted` chained nothing, and
        `g.pending != .none` third for prompts where `wasPaused` was false or no
        saved state needs queuing ensures the `346` chain runs before `g.pending
-       != .none` without re-chaining the `541–544` path); at `559`, call `let
+       != .none` without re-chaining the `541–544` path); at `561`, call `let
        (g, saved?, popOuter) := g.leavePlayersWhoLostCore savedIn popOuterIn`; at
-       `562–568` (`else if g.sbaPaused then`, which catches `.chooseReplacement`
+       `564–569` (`else if g.sbaPaused then`, which catches `.chooseReplacement`
        and `.chooseLegend` returns from `leavePlayersWhoLostCore`), chain
        `g.chainPendingReplacement (if g.players.any (fun r => r.lost &&
        !r.leftTheGame) || saved?.isSome || popOuter then .leavePlayersWhoLost
        saved? popOuter else .checkSBA)` so remaining losers, `saved?`, and
-       `popOuter` are preserved without double-chaining; at `569–570` (`else if
-       g.pending != .none then`), return `(g, didSba || anyLeft)`; at `571–572`
+       `popOuter` are preserved without double-chaining; at `570` (`else if
+       g.pending != .none then`), return `(g, didSba || anyLeft)`; at `571–573`
        (`else if didSba || anyLeft then`), recurse with
-       `g.checkSBACountedWithLeaves saved? popOuter`; and at `573–574`, return
+       `g.checkSBACountedWithLeaves saved? popOuter`; and at `574`, return
        `(g.restoreSavedPostLeave saved? popOuter, false)` (and in
        `Decisions.resumePendingReplacement` at `Decisions.lean:895–896`,
        dispatch `| .leavePlayersWhoLost savedPending popOuter =>
@@ -9032,7 +9032,7 @@ helpers), `Abilities.lean`, `Casting.lean`, `Combat.lean`, `Damage.lean`,
    - Prevent transient `.pending` journaling and `.playerLeftGame` batch-cause
      inheritance inside `Leaving.redirectPendingAfterLeave` &
      `Leaving.runPostCastAndPropCleanup` (`Leaving.lean:512, 554, 949–952, 986,
-     1301–1411`, `Movement.lean:1074`, `Core.lean:11375–11387`, CR 608.2g /
+     1301–1411`, `Movement.lean:1074`, `Core.lean:11369–11386`, CR 608.2g /
      611.2 / 733.1 / 800.4a):
      - in `Leaving.redirectPendingAfterLeave`:
        - at `Leaving.lean:554` (`.chooseDiscardCard`), return `(g, g.pending)`
@@ -9075,15 +9075,15 @@ helpers), `Abilities.lean`, `Casting.lean`, `Combat.lean`, `Damage.lean`,
        g.pending != .none then g.change (.pending .none) else g` so calling
        `finishChosenSacrifices` from `Leaving.lean:512` (after `clearPending`)
        does not emit a duplicate `.pending .none` inside the leave batch; and
-     - in `Core.applyBlackGateUnblockable` (`Core.lean:11375–11387`), match
-       `g.currentResolvingContext?` (matching `createEffect`'s `batchCause? ==
-       none` fallback at `Core.lean:11352–11355`): when `some (src, ctrl)`, bind
-       `let (g, c) := g.allocDelayedCause ctrl src` and pass `(cause := some c)`
-       to `g.createEffect`; when `none`, pass `(cause := some (.gameRule
-       .continuousEffect))` so calling `applyBlackGateUnblockable` from
-       `Leaving.lean:986` inside the leave batch skips `batchCause?` at
-       `11349–11350` without bumping `nextEffectId` or stamping `.gameRule
-       .playerLeftGame`.
+     - in `Core.applyBlackGateUnblockable` (`Core.lean:11369–11386`, with the
+       `g.currentResolvingContext?` match at `11380–11384`, matching
+       `createEffect`'s `batchCause? == none` fallback at `Core.lean:11345–11349`):
+       when `some (src, ctrl)`, bind `let (g, c) := g.allocDelayedCause ctrl src`
+       and pass `(cause := some c)` to `g.createEffect`; when `none`, pass
+       `(cause := some (.gameRule .continuousEffect))` so calling
+       `applyBlackGateUnblockable` from `Leaving.lean:986` inside the leave
+       batch skips `batchCause?` (`| some bc => (g, bc)` at `11343–11344`)
+       without bumping `nextEffectId` or stamping `.gameRule .playerLeftGame`.
    - Fix `Decisions.concedePlayersLoop` (`Decisions.lean:366–402`) and
      `Decisions.finishConcedePriority` (`Decisions.lean:230–287`) when a player
      concedes at idle priority or mid-proposal (keeping `wasIdlePriority :=
@@ -9270,8 +9270,10 @@ guards, *Palantír* influence-counter / Aura & Equipment `attachedHost?` /
    - In `Leaving.redirectPendingAfterLeave` (`Leaving.lean:1021–1026`), when the
      departing player `p` is not the chooser `q` of `.fraChoice q choice` (`q !=
      p`), revalidate stack-object retarget prompts whose target spell or copy was
-     owned by `p` and removed from the stack during `p`'s leave batch
-     (`Leaving.lean:1286–1288`, CR 800.4a):
+     owned or controlled by `p` and removed from the stack during `p`'s leave
+     batch (`Leaving.lean:1254–1257` via `objectLeavesTheGame` at `274–275` for
+     owned stack objects and `Leaving.lean:1274–1278` for controlled non-card
+     stack objects, CR 800.4a):
      - for `.mayChangeSpellTarget spellId index staged`, if
        `!(g.findObject? spellId).any (fun o => o.zone == .stack)`, clear the
        prompt via `(clearPendingAnd g #[.chooseModesRest none], .none)`;
@@ -9288,36 +9290,46 @@ guards, *Palantír* influence-counter / Aura & Equipment `attachedHost?` /
    - Revalidate `.fraChoice _ (.crew ..)`, `.fraChoice _ (.zemoBoastExile ..)`,
      and `.chooseTeamworkCreatures` in `Decisions.resumePendingReplacement`
      `.restorePending` (`Decisions.lean:648–664`), `Decisions.checkReversal`
-     (`Decisions.lean:410–418`), `Decisions.decline` (`Decisions.lean:3796–3808`),
+     (`Decisions.lean:410–418`), `Decisions.decline` (`Decisions.lean:3836–3837`),
      `CastExtras.pickTeamworkCreatures` (`CastExtras.lean:221–232`),
      `Game.applyIdle` (`Game.lean:258–259`), and `Agent.defaultAction`
      (`Agent.lean:318–319`, CR 601.2b,h / 602.2b / 702.122a / 702.142a / 733.1):
+     - in `Decisions.checkReversal` (`Decisions.lean:410–418`), add
+       `| .restorePending (.fraChoice _ (.crew ..)) _ _ | .restorePending
+       (.fraChoice _ (.zemoBoastExile ..)) _ _ | .restorePending
+       (.chooseTeamworkCreatures ..) _ _ => g.proposedSpell.isSome` alongside
+       `.costPicks`, `.sacrificePermanent`, and `.discardForAdditionalCost` so
+       `.seq` checks whether an active proposal was reversed by `.restorePending`
+       without skipping `rest` when `g.proposedSpell` was already `none`;
      - in `Decisions.resumePendingReplacement` `.restorePending`
-       (`Decisions.lean:648–664`) and `Decisions.checkReversal`
-       (`Decisions.lean:410–418`), also check:
+       (`Decisions.lean:648–664`), add validity arms matching `.costPicks`:
        - `.fraChoice caster (.crew _ vehicleId n)`: if `!(g.findObject?
          vehicleId).any (·.isOnBattlefield)` or `((g.creaturesControlledBy
          caster).filter (fun c => c.id != vehicleId &&
          !c.status.tapped)).foldl (fun acc c => acc + (g.power c).toNat) 0 < n`,
-         reverse or resume via `reverseOrResumePopped g` / `true`;
+         call `reverseOrResumePopped g`; otherwise restore the prompt via
+         `g.change (.pending p)`;
        - `.fraChoice caster (.zemoBoastExile _ sourceId)`: bind `let col :=
          match g.findObject? sourceId with | some src => TextChange.applyColor
          (g.evalLayer3 src) .black | none => .black` and `let allCands :=
          (g.player caster).graveyard.filter (fun id => (g.findObject? id).any
          (fun card => (g.colors card).contains col))`; if `!g.canPayZemoBoast
-         caster allCands col`, reverse or resume via `reverseOrResumePopped g` /
-         `true`; and
+         caster allCands col`, call `reverseOrResumePopped g`; otherwise restore
+         the prompt via `g.change (.pending p)`; and
        - `.chooseTeamworkCreatures caster need`: if `((g.creaturesControlledBy
          caster).filter (fun c => !c.status.tapped && g.power c > 0)).foldl (fun
-         acc c => acc + g.power c) 0 < (need : Int)`, reverse or resume via
-         `reverseOrResumePopped g` / `true`;
-     - in `Decisions.decline` (`Decisions.lean:3808`), add an arm for
-       `.chooseTeamworkCreatures q need` that checks `if p != q then throw
-       s!"Only {(g.player q).name} may act on that cost"`, checks `if
-       ((g.creaturesControlledBy q).filter (fun c => !c.status.tapped && g.power
-       c > 0)).foldl (fun acc c => acc + g.power c) 0 ≥ (need : Int) then throw
-       s!"Tapped creatures must have total power {need} or more"`, and otherwise
-       calls `g.reverseProposedSpell? (resumeContinuation := true)`; and
+         acc c => acc + g.power c) 0 < (need : Int)`, call
+         `reverseOrResumePopped g`; otherwise restore the prompt via `g.change
+         (.pending p)`;
+     - in `Decisions.decline` (before `| _ => throw "Not time to decline"` at
+       `Decisions.lean:3837`), add an arm for `.chooseTeamworkCreatures q need`
+       that checks `if p != q then throw s!"Only {(g.player q).name} may act on
+       that cost"`, checks `if ((g.creaturesControlledBy q).filter (fun c =>
+       !c.status.tapped && g.power c > 0)).foldl (fun acc c => acc + g.power c)
+       0 ≥ (need : Int) then throw s!"You must tap creatures with total power
+       {need} or more"` (the must-pay case when legal untapped creatures can pay
+       the cost, matching `.sacrificePermanent` at `3805`), and otherwise calls
+       `g.reverseProposedSpell? (resumeContinuation := true)`; and
      - in `CastExtras.pickTeamworkCreatures` (`CastExtras.lean:221–232`), skip
        creatures with `g.power o ≤ 0` (`if o.status.tapped || g.power o ≤ 0 then
        pick rest acc total`), and in `Game.applyIdle` (`Game.lean:258–259`) and
@@ -9328,8 +9340,7 @@ guards, *Palantír* influence-counter / Aura & Equipment `attachedHost?` /
 2. Align `EventCause` allocation & `ContinuationFrame` pushing in
    `Library.moveIdsInOrder`, `EffectResolution.offerBottomAnyOrder`,
    `EffectResolution.offerCardChoice`, `LibrarySearch.beginLibrarySearch`,
-   `ModeledTriggers.offerSpellRetarget`, and `ResolutionEffects` (§2.1, §2.5,
-   §2.9, §3.2):
+   `ModeledTriggers`, and `ResolutionEffects` (§2.1, §2.5, §2.9, §3.2):
    - In `Library.moveIdsInOrder` (`Library.lean:309–316`), resolve `(g,
      defaultCause) : Game × Option EventCause` via `match cause with | some c =>
      (g, some c) | none => if ids.isEmpty then (g, none) else match
@@ -9341,12 +9352,16 @@ guards, *Palantír* influence-counter / Aura & Equipment `attachedHost?` /
      `.chooseReplacement` (`Library.lean:283, 301`) carry the allocated
      `EventCause`.
    - In `EffectResolution.offerBottomAnyOrder` (`EffectResolution.lean:2259–2270`),
-     when `cause` is `none` and `!ids.isEmpty`, resolve `cause` from
-     `ids[0]?.bind g.lastMoveCauseOf?` or `g.currentResolvingContext?` (`let (g,
-     c) := g.allocDelayedCause ctrl src`) before branching on `ids.size ≤ 1` so
+     resolve `(g, cause) : Game × Option EventCause` via `match cause with |
+     some c => (g, some c) | none => if ids.isEmpty then (g, none) else match
+     g.currentResolvingContext? with | some (src, ctrl) => let (g, c) :=
+     g.allocDelayedCause ctrl src; (g, some c) | none => (g, none)` (matching
+     `Library.requestOrderInto` at `Library.lean:345–355`, without consulting
+     `lastMoveCauseOf?` so an earlier move into `.library` is not stamped onto a
+     resolving look instruction) before branching on `ids.size ≤ 1`, ensuring
      `.orderLibraryBottom` (`FraChoices.lean:990, 995`) has `stashedCause`
-     populated even when the looked-at cards stayed in `.library`
-     (`EffectResolution.lean:2281`, `FraChoices.lean:959`).
+     populated from the resolving instruction when the looked-at cards stayed in
+     `.library` (`EffectResolution.lean:2281`, `FraChoices.lean:959`).
    - In `EffectResolution.offerCardChoice` (`EffectResolution.lean:1067–1075`),
      call `let g := g.beginFraChoice p (.chooseCards ids max purpose) msg`
      *before* `match cause with | some c => g.change (.stashedCause (some c)) |
@@ -9355,37 +9370,46 @@ guards, *Palantír* influence-counter / Aura & Equipment `attachedHost?` /
      rather than being dropped by `modifyTopFrame` when `g.continuations` was
      empty.
    - In `LibrarySearch.beginLibrarySearch` (`LibrarySearch.lean:430, 439`),
-     `ModeledTriggers.offerSpellRetarget` (`ModeledTriggers.lean:260`), and
-     `ResolutionEffects` (`offerPayForReflexive` at `775`, `offerExileCasts` at
-     `793`, `promptEnteringAttackItems` at `1099`, and `offerWorldsCreatures` at
-     `1454`), open `.fraChoice` prompts via `g.beginFraChoice`
-     (`Core.lean:11820–11824`) instead of bare `(g.change (.pending (.fraChoice
-     ...))).logMsg ...` so a `ContinuationFrame` is always active when
-     `finishFraChoice` runs.
+     `ModeledTriggers` (`52` `.sacrificeNontokenEach`, `85` `.widowMayCounter`,
+     `260` `offerSpellRetarget`, `380` `.hydeMode`, `581` `.daredevilMayExile`,
+     `588` `.kingpinMayPay2Life`, `664` `.visionMode`, `725`
+     `.newTargetsForCopies`, `739` `.moonstoneMayExile`, and `749`
+     `.mayCreateTokens`), and `ResolutionEffects` (`offerPayForReflexive` at
+     `775`, `offerExileCasts` at `793`, `promptEnteringAttackItems` at `1099`,
+     and `offerWorldsCreatures` at `1454`), open `.fraChoice` prompts via
+     `g.beginFraChoice` (`Core.lean:11820–11824`) instead of bare `g.change` /
+     `g.changes` `.pending (.fraChoice ...)` writes so a `ContinuationFrame` is
+     always active when `finishFraChoice` runs.
 3. Complete remaining `.lost` vs `g.stillInGame` (`!pl.lost && !pl.leftTheGame`)
-   checks and departed-player entry-point guards (§2.5, §3.1, §3.4, CR 800.4a):
+   checks and departed-player entry-point / post-pause guards (§2.5, §3.1, §3.4,
+   CR 800.4a):
    - Replace `!curPl.lost` and `!(g.player mate.id).lost` with `g.stillInGame
      pl.id` and `g.stillInGame mate.id` in `StateBasedActions.checkSBACounted`
-     (`StateBasedActions.lean:483, 513`), replace `!pl.lost` with `g.stillInGame
-     pl.id` in `Targeting.expandEachOpponentEffect` (`Targeting.lean:486`), and
-     replace `(g.player controller).lost || (g.player controller).leftTheGame`
-     with `!g.stillInGame controller` in `Triggers.putTriggeredAbilityOnStack`
-     (`Triggers.lean:124`) and `ResolutionEffects` (`queueFollowupReflexive` at
-     `665` and `putReflexiveTrigger` at `692`).
-   - Add early `!g.stillInGame` no-op guards on
-     `SacrificeDiscard.finishConniveDraws` (`SacrificeDiscard.lean:113`),
-     `SacrificeDiscard.applyConnive` (`SacrificeDiscard.lean:143`),
+     (`StateBasedActions.lean:483, 513`), replace the `!pl.lost` disjunct in
+     `!pl.lost || later.any ...` with `g.stillInGame pl.id` (preserving the
+     `|| later.any ...` disjunct for opponents who lost or left after the
+     proposal, CR 601.2c / 608.2c) in `Targeting.expandEachOpponentEffect`
+     (`Targeting.lean:486`), and replace `(g.player controller).lost ||
+     (g.player controller).leftTheGame` with `!g.stillInGame controller` in
+     `Triggers.putTriggeredAbilityOnStack` (`Triggers.lean:124`) and
+     `ResolutionEffects` (`queueFollowupReflexive` at `665` and
+     `putReflexiveTrigger` at `692`).
+   - Add `!g.stillInGame` no-op guards *after* the `.chooseReplacement` pause
+     chain in `SacrificeDiscard.finishConniveDraws` (`SacrificeDiscard.lean:120`,
+     after `117–119`), `SacrificeDiscard.applyConnive`
+     (`SacrificeDiscard.lean:146`, after `144–145`),
+     `Choices.exileTopPlayIfYouControlSubtypeLoop` (`Choices.lean:304`, after
+     `301–303`), and `Choices.exileUntilInstantOrSorceryLoop`
+     (`Choices.lean:376`, after `373–375`, returning `g` when `!g.stillInGame
+     victim`); and add early `!g.stillInGame` no-op guards at entry on
      `Choices.beholdQuality` (`Choices.lean:75`),
      `Choices.drawPerSevenCardGraveyard` (`Choices.lean:102`),
      `Choices.mayDiscardHandDrawThatMany` (`Choices.lean:198`),
      `Choices.discardHandThenDraw` (`Choices.lean:211`),
-     `Choices.exileTopPlayIfYouControlSubtypeLoop` (`Choices.lean:298`),
      `Choices.finishGrimaDirectCast` (`Choices.lean:353`, guarding
      `requestOrderInto` on `g.stillInGame victim` and logging the cast only if
-     `g.stillInGame controller`), `Choices.exileUntilInstantOrSorceryLoop`
-     (`Choices.lean:369`, returning `g` when `!g.stillInGame victim`),
-     `Choices.grimaExileUntilInstantOrSorcery` (`Choices.lean:433`, returning `g`
-     when `!g.stillInGame victim`),
+     `g.stillInGame controller`), `Choices.grimaExileUntilInstantOrSorcery`
+     (`Choices.lean:433`, returning `g` when `!g.stillInGame victim`),
      `LibrarySearch.resolveExileTopPlayUntilEndOfNextTurn`
      (`LibrarySearch.lean:487`), `Decisions.runPostStep`
      `.grantPlayUntilEndOfNextTurn` (`Decisions.lean:1490`), and
@@ -9404,15 +9428,16 @@ guards, *Palantír* influence-counter / Aura & Equipment `attachedHost?` /
    - Replace remaining raw `.name` reads on stack/battlefield/copy objects with
      `g.name` in `Decisions.lean:1411, 1414, 1427`
      (`.resumeChooseTargetsAfterLeave` and `.resumeTriggerModesAfterLeave`,
-     binding `let objName := g.name obj` before `g.ceaseToExist`),
-     `Triggers.lean:106, 110, 187, 204, 207, 217, 230, 232, 234`
+     using `g.name obj` in the `reverseProposedSpell` extra log at `1411` and
+     binding `let objName := g.name obj` before `g.ceaseToExist` at `1414` and
+     `1427`), `Triggers.lean:106, 110, 187, 204, 207, 217, 230, 232, 234`
      (`beginTriggerModeChoice` and `putTriggeredAbilityOnStack`),
      `ResolutionEffects.lean:67, 450, 476, 786, 1316, 1331`
      (`copyStackSpellWithId`, `withSourceOnBattlefield`, `incrementPlanSource`,
      `sacrificePlanIfOnBattlefield`, `copyStackAbilityWithId`),
      `Casting.lean:606, 611` (`runPostCastCleanup` `.copyCeaseToExist`),
-     `FraChoices.lean:1101, 1209` (`.zemoBoastExile` `pr.originalSnapshot.name`
-     and `.mayCastCopy` decline `g.name o`), and `Movement.lean:459, 464, 475`
+     `FraChoices.lean:1209` (`.mayCastCopy` decline, binding `let objName :=
+     g.name o` before `g.ceaseToExist`), and `Movement.lean:459, 464, 475`
      (`preCheckStayNoAuraHost`, binding `let oldName := g.name old` before
      moving/ceasing `old`).
    - In `TriggeredAbilities.lean:3972, 3988, 3996, 4028, 4059, 4070`, use
@@ -9423,10 +9448,11 @@ guards, *Palantír* influence-counter / Aura & Equipment `attachedHost?` /
 Tests: `Events.lean` (isolation tests for co-departing `.chooseReplacement`
 preservation in `playerLeavesGameCore`, `redirectPendingAfterLeave` retarget
 cleanup when `q != p`, `.crew` / `.zemoBoastExile` / `.chooseTeamworkCreatures`
-`.restorePending` & `decline` revalidation, `moveIdsInOrder` /
+`.restorePending`, `checkReversal`, & `decline` revalidation, `moveIdsInOrder` /
 `offerBottomAnyOrder` / `offerCardChoice` / `beginFraChoice` `EventCause` &
-`ContinuationFrame` alignment, remaining `g.stillInGame` entry guards, and
-`sourcePTAtResolution` LKI & Layer 1 `g.name` / type / mana-value reads),
+`ContinuationFrame` alignment, remaining `g.stillInGame` entry & post-pause
+guards, and `sourcePTAtResolution` LKI & Layer 1 `g.name` / type / mana-value
+reads),
 `Abilities.lean`, `Casting.lean`, `Combat.lean`, `Damage.lean`, `Discard.lean`,
 `Draw.lean`, `Equipment.lean`, `GainLife.lean`, `Leaving.lean`,
 `PutCounters.lean`, `Targets.lean`, `Turns.lean`, `MshOracleTests.lean`,
