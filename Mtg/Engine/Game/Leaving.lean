@@ -1215,7 +1215,8 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
         if g.priority == p then g.change (.priority (g.nextLiving p)) else g
       let g :=
         if g.pendingPriority == some p then g.change (.pendingPriority (some (g.nextLiving p))) else g
-      let runPostCastAndPropCleanup (g : Game) : Game :=
+      let runPostCastAndPropCleanup (g : Game) (curPending : Pending := g.pending) : Game × Pending :=
+        let prePostCastEvCount := g.events.size
         let g :=
           match g.postCastCleanup with
           | some (.grimaBottom victim cardId others) =>
@@ -1295,26 +1296,34 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
               else g
             else g
           | none => g
+        let postCastTouchedPending :=
+          (g.events.extract prePostCastEvCount g.events.size).any fun ev =>
+            match ev with
+            | .engine _ (.pending _) _ => true
+            | _ => false
+        let curPending := if postCastTouchedPending then g.pending else curPending
         let g :=
           if (wasAbortedProposal && (g.proposedSpell.isSome || g.proposalCheckpoint.isSome)) ||
               g.proposedSpell.any (fun (prop : ProposedSpell) => prop.caster == p) then
             g.changes #[.proposedSpell none, .clearProposalCheckpoint]
           else g
-        let g :=
+        let (g, curPending) :=
           match g.pendingMayCastFromExile with
           | some (q, ids, left) =>
             let alive := ids.filter (fun id =>
               (g.findObject? id).any (fun (o : GameObject) => o.zone == Zone.exile && !g.isLand o))
             if q == p || !g.stillInGame q || alive.isEmpty || left == 0 then
-              g.change (.pendingMayCastFromExile none)
-            else if wasAbortedProposal && g.pending == Pending.none then
-              (g.changes #[.pendingMayCastFromExile none,
-                .pending (.fraChoice q (.mayCastUpToFromExile alive left))]).logMsg
-                s!"{(g.player q).name} may cast up to {left} more spells from among the exiled cards without paying their mana costs"
+              (g.change (.pendingMayCastFromExile none), curPending)
+            else if wasAbortedProposal && curPending == Pending.none then
+              let nextP := Pending.fraChoice q (.mayCastUpToFromExile alive left)
+              let g :=
+                (g.changes #[.pendingMayCastFromExile none, .pending nextP]).logMsg
+                  s!"{(g.player q).name} may cast up to {left} more spells from among the exiled cards without paying their mana costs"
+              (g, nextP)
             else if alive != ids then
-              g.change (.pendingMayCastFromExile (some (q, alive, left)))
-            else g
-          | none => g
+              (g.change (.pendingMayCastFromExile (some (q, alive, left))), curPending)
+            else (g, curPending)
+          | none => (g, curPending)
         match g.pendingFreeCopies with
         | some (q, ids, budget, castsLeft) =>
           let alive := ids.filter (fun id =>
@@ -1326,7 +1335,7 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
                 g.withBatch (some (.stateBased .copyOutsideStackOrBf)) fun g =>
                   alive.foldl (fun g id =>
                     g.ceaseToExist id (cause := some (.stateBased .copyOutsideStackOrBf))) g
-            g.change (.pendingFreeCopies none)
+            (g.change (.pendingFreeCopies none), curPending)
           else
             let castable := alive.filter (fun id =>
               (g.findObject? id).any (fun o => g.objectManaValue o ≤ budget))
@@ -1337,18 +1346,19 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
                   g.withBatch (some (.stateBased .copyOutsideStackOrBf)) fun g =>
                     alive.foldl (fun g id =>
                       g.ceaseToExist id (cause := some (.stateBased .copyOutsideStackOrBf))) g
-              g.change (.pendingFreeCopies none)
-            else if wasAbortedProposal && g.pending == Pending.none then
-              g.changes #[.pendingFreeCopies none,
-                .pending (.fraChoice q (.castCopiesFree alive budget castsLeft))]
+              (g.change (.pendingFreeCopies none), curPending)
+            else if wasAbortedProposal && curPending == Pending.none then
+              let nextP := Pending.fraChoice q (.castCopiesFree alive budget castsLeft)
+              let g := g.changes #[.pendingFreeCopies none, .pending nextP]
+              (g, nextP)
             else if alive != ids then
-              g.change (.pendingFreeCopies (some (q, alive, budget, castsLeft)))
-            else g
-        | none => g
+              (g.change (.pendingFreeCopies (some (q, alive, budget, castsLeft))), curPending)
+            else (g, curPending)
+        | none => (g, curPending)
       match preBodyPending with
       | .chooseReplacement q choices =>
         if q != p && !abortingReplacementProposal then
-          let g := runPostCastAndPropCleanup g
+          let (g, _) := runPostCastAndPropCleanup g preBodyPending
           let choicesStillValid :=
             g.stillInGame q &&
               choices.all (fun c => c.object.all (fun oid => (g.findObject? oid).isSome))
@@ -1376,7 +1386,7 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
           let g := g.runEndControlExileLoop exileQueue (cause := cause)
           (g, (savedPreLeavePending?, combinedOuter?))
         else
-          let g := runPostCastAndPropCleanup g
+          let (g, _) := runPostCastAndPropCleanup g .none
           let combinedOuter? : Option PendingReplacement :=
             match g.pendingReplacement, preBodyCont? with
             | some rCont, some preCont => some (.seq rCont preCont)
@@ -1401,14 +1411,14 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
       | _ =>
         let preRedirEvCount := g.events.size
         let g := g.redirectPendingAfterLeave p (abortedProposal := wasAbortedProposal) (pending := preBodyPending)
-        let g := runPostCastAndPropCleanup g
         let touchedPending :=
           (g.events.extract preRedirEvCount g.events.size).any fun ev =>
             match ev with
             | .engine _ (.pending _) _ => true
             | _ => false
-        let postRedirPending : Pending :=
+        let redirPending : Pending :=
           if touchedPending then g.pending else preBodyPending
+        let (g, postRedirPending) := runPostCastAndPropCleanup g redirPending
         let openedNewReplacement :=
           match postRedirPending with
           | .chooseReplacement .. => true

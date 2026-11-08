@@ -35,8 +35,7 @@ def resolvingDamageSource? (g : Game) : Option GameObject :=
   | none =>
   match g.fraAfterLook.bind (fun (_, sid?, _) => sid?.bind g.damageSourceById?) with
   | some s => some s
-  | none =>
-    (g.currentResolvingContext?.bind Prod.fst).bind g.damageSourceById?
+  | none => none
 
 /-- Snapshot a damage source by `id`: live `g.snapshot` if still at `id`,
 otherwise `g.lastKnownBefore? sid` (CR 113.7a / 608.2h). -/

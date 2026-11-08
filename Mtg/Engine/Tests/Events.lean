@@ -22108,13 +22108,24 @@ private def replayOk27i3 (gs : Array Game) : Bool :=
     (gSagaChap.player p1).life == 18 &&
     (gSagaChap.player p0).life == 22
 
+  -- `resolvingDamageSource?` does not widen to `currentResolvingContext?` (`maySource` / bare
+  -- `resolvingContext`), while `resolvingMovedDamageSource?` and `resolvingDamageSourceEvent?`
+  -- still resolve a departed `resolvingContext` source via `resolvingDepartedSourceId?`:
+  let gLiveMaySrc := gBase.change (.maySource (some p0BearId))
+  let gDepCtx := gDepartedBear.change (.pushContinuationFrame { resolvingContext := some (some p0BearId, p0) })
+  let contextDamageSourceScopeOk :=
+    gLiveMaySrc.resolvingDamageSource?.isNone &&
+    gDepCtx.resolvingDamageSource?.isNone &&
+    (gDepCtx.resolvingMovedDamageSource?.map (·.id)) == some p0BearId &&
+    (gDepCtx.resolvingDamageSourceEvent?.bind (·.id)) == some p0BearId
+
   mustHold27i3 "2a.makeFrcPreservesRecentOk" makeFrcPreservesRecentOk &&
   mustHold27i3 "2b.exileTopLoopOk" exileTopLoopOk &&
   mustHold27i3 "2c.untapGuardOk" untapGuardOk &&
   mustHold27i3 "2d.manaLkiOk" ((gManaLki.player p0).manaPool.green == 4) &&
   mustHold27i3 "2d.alienLkiOk" (gAlienLki.notedCountThisWay == 3 && !gAlienLki.createdTokensThisWay.isEmpty) &&
   mustHold27i3 "2d.cascadeLkiOk" cascadeLkiOk &&
-  mustHold27i3 "2d.sagaSourceForwardedOk" sagaSourceForwardedOk &&
+  mustHold27i3 "2d.sagaSourceForwardedOk" (sagaSourceForwardedOk && contextDamageSourceScopeOk) &&
   mustHold27i3 "2.replay"
     (replayOk27i3 #[gExSubPaused, gExSubDone, gResumeUntap, gManaLki, gAlienLki, gCascResolved, gSagaChap])
 
