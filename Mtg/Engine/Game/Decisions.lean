@@ -636,51 +636,32 @@ partial def resumePendingReplacement (g : Game) (pr : PendingReplacement)
           | none => popped
         g.resumePendingReplacement toRun (followedByFinishFra := followedByFinishFra)
       | none => g
+    let reverseOrResumePopped (g : Game) : Game :=
+      if g.proposedSpell.isSome then
+        let g :=
+          match popped? with
+          | some popped => g.chainPendingReplacement popped
+          | none => g
+        g.reverseProposedSpell (resumeContinuation := true)
+      else
+        resumePoppedIfNoPrompt g
     match p with
     | .none => resumePoppedIfNoPrompt g
     | .fraChoice caster (.costPicks sid picks _) =>
-      let g :=
-        match popped? with
-        | some popped => g.chainPendingReplacement popped
-        | none => g
       match picks[0]? with
       | some pick =>
         if (g.costPickCandidates caster (some sid) pick).size < pick.count then
-          g.reverseProposedSpell (resumeContinuation := true)
-        else
-          let g := g.change (.pending p)
-          match promptLog with
-          | some msg => g.logMsg msg
-          | none => g
-      | none =>
-        let g := g.change (.pending p)
-        match promptLog with
-        | some msg => g.logMsg msg
-        | none => g
+          reverseOrResumePopped g
+        else openPrompt g
+      | none => openPrompt g
     | .sacrificePermanent caster excludeId =>
-      let g :=
-        match popped? with
-        | some popped => g.chainPendingReplacement popped
-        | none => g
       if (g.sacrificeCreatureOrArtifactChoices caster excludeId).isEmpty then
-        g.reverseProposedSpell (resumeContinuation := true)
-      else
-        let g := g.change (.pending p)
-        match promptLog with
-        | some msg => g.logMsg msg
-        | none => g
+        reverseOrResumePopped g
+      else openPrompt g
     | .discardForAdditionalCost caster =>
-      let g :=
-        match popped? with
-        | some popped => g.chainPendingReplacement popped
-        | none => g
       if (g.player caster).hand.isEmpty then
-        g.reverseProposedSpell (resumeContinuation := true)
-      else
-        let g := g.change (.pending p)
-        match promptLog with
-        | some msg => g.logMsg msg
-        | none => g
+        reverseOrResumePopped g
+      else openPrompt g
     | .chooseLegend q name ids =>
       let liveIds := ids.filter fun id =>
         (g.findObject? id).any (fun o => o.isOnBattlefield && g.controlledBy o q)

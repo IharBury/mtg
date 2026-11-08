@@ -491,7 +491,7 @@ def applyGainLifeSearchBasicPlusOne (g : Game) (controller : PlayerId)
     let legalPlayer? :=
       match player? with
       | some pid =>
-        if !(g.player pid).lost && g.playerCanBeTargetedBy controller pid sourceId then
+        if g.stillInGame pid && g.playerCanBeTargetedBy controller pid sourceId then
           some pid
         else none
       | none => none

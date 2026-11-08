@@ -22440,15 +22440,24 @@ private def replayOk28i1 (gs : Array Game) : Bool :=
     !gWithDrawSpec.replacementChoiceValid p0 #[rCopyStale]
 
   -- When `.restorePending (.chooseReplacement p0 #[rColorStale]) true` runs and all choices are
-  -- filtered out (`valid.isEmpty`), `resumePoppedIfNoPrompt` pops `outerPendingReplacements` and
-  -- immediately executes the popped continuation (`.finishPostStep (.beginScryOne p0)`):
+  -- filtered out (`valid.isEmpty`), or when `.restorePending (.sacrificePermanent p1 none) true`
+  -- runs with `g.proposedSpell.isNone` and no legal sacrifice candidates, `resumePoppedIfNoPrompt`
+  -- pops `outerPendingReplacements` and immediately executes the popped continuation
+  -- (`.finishPostStep (.beginScryOne p0)`):
   let gRestorePopped0 :=
     ((gWithDrawSpec.change (.pushContinuationFrame {})).change
       (.pushOuterPendingReplacement (.finishPostStep (.beginScryOne p0)))).resumePendingReplacement
       (.restorePending (.chooseReplacement p0 #[rColorStale]) true)
+  let gRestoreCostNoProp :=
+    ((gWithDrawSpec.change (.pushContinuationFrame {})).change
+      (.pushOuterPendingReplacement (.finishPostStep (.beginScryOne p0)))).resumePendingReplacement
+      (.restorePending (.sacrificePermanent p1 p0BearId) true)
   let restorePoppedImmediateOk :=
     gRestorePopped0.outerPendingReplacements.isEmpty &&
-    gRestorePopped0.pending == .scry p0 1
+    gRestorePopped0.pending == .scry p0 1 &&
+    gRestoreCostNoProp.outerPendingReplacements.isEmpty &&
+    gRestoreCostNoProp.pendingReplacement.isNone &&
+    gRestoreCostNoProp.pending == .scry p0 1
 
   -- When `checkSBACountedWithLeaves` causes `p1` (at 0 life) to lose and leave while `p0` had
   -- `.scry p0 1` saved in `savedIn`, it defers `restoreSavedPostLeave` until the end of the SBA fixpoint:
@@ -22464,7 +22473,7 @@ private def replayOk28i1 (gs : Array Game) : Bool :=
   mustHold28i1 "1c.replacementChoiceValidOk" replacementChoiceValidOk &&
   mustHold28i1 "1c.restorePoppedImmediateOk" restorePoppedImmediateOk &&
   mustHold28i1 "1c.sbaDeferredRestoreOk" sbaDeferredRestoreOk &&
-  mustHold28i1 "1.replay" (replayOk28i1 #[gAfterBothLostLeave, g2hgAfterConcede, gRestorePopped0, gSbaDefer1])
+  mustHold28i1 "1.replay" (replayOk28i1 #[gAfterBothLostLeave, g2hgAfterConcede, gRestorePopped0, gRestoreCostNoProp, gSbaDefer1])
 
 -- 2. `Leaving.redirectPendingAfterLeave` (`.chooseDiscardCard`, `.mayCastGrima`),
 --    `orderBottomInCleanup`, `Decisions` `.orderInto` (`moveIdsInOrder`), `Movement.finishChosenSacrifices`,
@@ -22676,7 +22685,7 @@ private def replayOk28i3 (gs : Array Game) : Bool :=
 
 -- 1. 2HG `.assignCombatDamage` `redirectPendingAfterLeave` teammate takeover & defender-stillInGame
 --    check, plus `g.stillInGame` guards across `Core`, `Library`, `SacrificeDiscard`, `Choices`,
---    and `Tokens` when `leftTheGame == true` (CR 510.1c / 800.4a,c–d / 810.7).
+--    `EffectResolution`, and `Tokens` when `leftTheGame == true` (CR 510.1c / 800.4a,c–d / 810.7).
 #guard
   let p0 : PlayerId := ⟨0⟩
   let p1 : PlayerId := ⟨1⟩
@@ -22723,6 +22732,7 @@ private def replayOk28i3 (gs : Array Game) : Bool :=
   let gExSub := gLeftOnly.exileTopPlayIfYouControlSubtype p1 2 .elf
   let gRiddles := gLeftOnly.riddlesInTheDark p1 2 false
   let gTreasures := gLeftOnly.createTreasureTokens p1 2
+  let gGainLifeSearch := gLeftOnly.applyGainLifeSearchBasicPlusOne p0 #[.player p1] 2 (some atkId)
   let stillInGameGuardsOk :=
     !gLeftOnly.stillInGame p1 &&
     (gLeftOnly.player p1).leftTheGame &&
@@ -22739,11 +22749,12 @@ private def replayOk28i3 (gs : Array Game) : Bool :=
     gExSub.events.size == sIdx &&
     gRiddles.events.size == sIdx &&
     gTreasures.battlefield.size == gLeftOnly.battlefield.size &&
-    gTreasures.log.back? == some "no token is created (CR 800.4b)"
+    gTreasures.log.back? == some "no token is created (CR 800.4b)" &&
+    gGainLifeSearch.log.back? == some "The target is no longer legal"
 
   mustHold28i3 "1a.teammateTakeoverOk" teammateTakeoverOk &&
   mustHold28i3 "1b.stillInGameGuardsOk" stillInGameGuardsOk &&
-  mustHold28i3 "1.replay" (replayOk28i3 #[gAfterP0Leave, gLeftOnly, gSacCreats, gTreasures])
+  mustHold28i3 "1.replay" (replayOk28i3 #[gAfterP0Leave, gLeftOnly, gSacCreats, gTreasures, gGainLifeSearch])
 
 end Phase28Item3EventAlignment
 
