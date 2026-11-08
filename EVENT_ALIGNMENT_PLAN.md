@@ -8944,35 +8944,42 @@ helpers), `Abilities.lean`, `Casting.lean`, `Combat.lean`, `Damage.lean`,
        `return g.restoreSavedPostLeave saved? popOuter` at `1635`) with
        `Leaving.leavePlayersWhoLostCore (g : Game) (savedIn : Option Pending :=
        none) (popOuterIn : Bool := false) : Game × Option Pending × Bool`
-       (returning `(g, saved?, popOuter)` at the end of the loop instead of
-       calling `g.restoreSavedPostLeave saved? popOuter` at `1635`, and
-       returning `(g, none, false)` on the early `g.over` / `.chooseReplacement`
-       returns after chaining `.leavePlayersWhoLost saved? popOuter` at `1607,
-       1633`), and keep `Leaving.leavePlayersWhoLost` as the wrapper that calls
-       `let (g, saved?, popOuter) := g.leavePlayersWhoLostCore savedIn
-       popOuterIn` followed by `g.restoreSavedPostLeave saved? popOuter` once
-       after the loop; thread `(savedIn : Option Pending := none) (popOuterIn :
-       Bool := false)` through `StateBasedActions.checkSBACountedWithLeaves`
+       (returning `(g, none, false)` on `g.over` at `1604, 1614`, returning `(g,
+       savedIn, popOuterIn)` at `1605` and `(g, saved?, popOuter)` at `1631` on
+       `.chooseReplacement` *without* chaining `.leavePlayersWhoLost` inside the
+       core, and returning `(g, saved?, popOuter)` at the end of the loop at
+       `1635` instead of calling `g.restoreSavedPostLeave saved? popOuter`), and
+       keep `Leaving.leavePlayersWhoLost` as the wrapper that calls `let (g,
+       saved?, popOuter) := g.leavePlayersWhoLostCore savedIn popOuterIn`,
+       chains `g.chainPendingReplacement (.leavePlayersWhoLost saved? popOuter)`
+       when `g.sbaPaused` (`Leaving.lean:16–19`, true for `.chooseReplacement`
+       and `.chooseLegend`) and `g.players.any (fun r => r.lost &&
+       !r.leftTheGame) || saved?.isSome || popOuter` (returning `g` when
+       `g.sbaPaused` and none of those hold), and otherwise calls
+       `g.restoreSavedPostLeave saved? popOuter` once after the loop; thread
+       `(savedIn : Option Pending := none) (popOuterIn : Bool := false)` through
+       `StateBasedActions.checkSBACountedWithLeaves`
        (`StateBasedActions.lean:547–560`): at `549` (after `let (g, didSba) :=
-       g.checkSBACounted`, which returns `(g, false)` when `g.sbaPaused` at
-       `345` or chains bare `.checkSBA` on `.chooseReplacement` /
-       `.chooseLegend` at `539–541`), when `g.pending` is `.chooseReplacement`
-       or `.chooseLegend` and `savedIn.isSome || popOuterIn`, chain
+       g.checkSBACounted`, which returns `(g, false)` without chaining when
+       `g.sbaPaused` on entry at `345`, or chains bare `.checkSBA` at `539–541`
+       when the sweep opened `.chooseReplacement` / `.chooseLegend`), when
+       `g.sbaPaused` and `savedIn.isSome || popOuterIn`, chain
        `.leavePlayersWhoLost savedIn popOuterIn` so `savedIn` and `popOuterIn`
        are preserved across that SBA prompt; at `552`, call `let (g, saved?,
        popOuter) := g.leavePlayersWhoLostCore savedIn popOuterIn`; at `555`
-       (`else if g.sbaPaused then`), chain `g.chainPendingReplacement (if
-       saved?.isSome || popOuter then .leavePlayersWhoLost saved? popOuter else
-       .checkSBA)` so `saved?` and `popOuter` are not dropped on the
-       `g.sbaPaused` path (while `556` `else if g.pending != .none then (g,
-       didSba || anyLeft)` handles the `.chooseReplacement` return where
-       `leavePlayersWhoLostCore` already chained `.leavePlayersWhoLost saved?
-       popOuter` at `Leaving.lean:1607, 1633`); at `557–559` (`else if didSba ||
-       anyLeft then`), recurse with `g.checkSBACountedWithLeaves saved?
-       popOuter`; and at `560`, return `(g.restoreSavedPostLeave saved?
-       popOuter, false)` (and in `Decisions.resumePendingReplacement` at
-       `Decisions.lean:853–854`, dispatch `| .leavePlayersWhoLost savedPending
-       popOuter => (g.checkSBACountedWithLeaves savedPending popOuter).1`);
+       (`else if g.sbaPaused then`, which catches `.chooseReplacement` and
+       `.chooseLegend` returns from `leavePlayersWhoLostCore`), chain
+       `g.chainPendingReplacement (if g.players.any (fun r => r.lost &&
+       !r.leftTheGame) || saved?.isSome || popOuter then .leavePlayersWhoLost
+       saved? popOuter else .checkSBA)` so remaining losers, `saved?`, and
+       `popOuter` are preserved without double-chaining; at `556` (`else if
+       g.pending != .none then`), return `(g, didSba || anyLeft)`; at `557–559`
+       (`else if didSba || anyLeft then`), recurse with
+       `g.checkSBACountedWithLeaves saved? popOuter`; and at `560`, return
+       `(g.restoreSavedPostLeave saved? popOuter, false)` (and in
+       `Decisions.resumePendingReplacement` at `Decisions.lean:853–854`,
+       dispatch `| .leavePlayersWhoLost savedPending popOuter =>
+       (g.checkSBACountedWithLeaves savedPending popOuter).1`);
      - extract a shared helper `Game.replacementChoiceValid (g : Game) (q :
        PlayerId) (choices : Array ReplacementId) : Bool` (`Leaving.lean` /
        `Decisions.lean`) that checks `g.stillInGame q` and verifies that for
@@ -9028,12 +9035,17 @@ helpers), `Abilities.lean`, `Casting.lean`, `Combat.lean`, `Damage.lean`,
          `Game × Pending` and thread `(g, curPending)` out of the `match
          g.postCastCleanup with` block at `1291–1369` across the `.grimaBottom`
          (`1309–1312`), `.cascadeBottom` (`1331–1334`), and `.lookedBottom`
-         (`1364–1366`, passing `(cause := some c)` after `let (g, c) :=
-         g.allocDelayedCause (some caster) (some _cardId)`) call sites: in
-         `orderBottomInCleanup`, resolve `(g, cause)` via `allocDelayedCause`
-         when `cause` is `none` and `!ids.isEmpty` (`1276–1286`) before
-         branching, call `g.withOuterContStashed fun g => g.requestOrderInto ids
-         dest log (cause := cause)` when `g.pending` is `.chooseReplacement`
+         (`1364–1366`) call sites: in `orderBottomInCleanup`, hoist the existing
+         `let (g, cause) : Game × Option EventCause := match cause with | some c
+         => (g, some c) | none => if ids.isEmpty then (g, none) else match
+         g.currentResolvingContext? with | some (src, ctrl) => let (g, c) :=
+         g.allocDelayedCause ctrl src; (g, some c) | none => (g, none)` binding
+         (`1276–1286`) unchanged to before the `orderBottomInCleanup` branches
+         (keeping `.lookedBottom` at `1364–1366` passing no `cause`, so the
+         hoisted match fills `cause` only when `g.currentResolvingContext?` is
+         `some (src, ctrl)` and leaves `cause := none` otherwise), call
+         `g.withOuterContStashed fun g => g.requestOrderInto ids dest log
+         (cause := cause)` when `g.pending` is `.chooseReplacement`
          (`1273–1274`), call `g.withOuterContStashed fun g => g.moveIdsInOrder
          ids dest (cause := cause) (log := log)` when `curPending != .none` or
          `ids.size <= 1` (`1275–1287`, matching `Library.requestOrderInto` at
@@ -9062,36 +9074,39 @@ helpers), `Abilities.lean`, `Casting.lean`, `Combat.lean`, `Damage.lean`,
      - add a helper `Game.popEmptyContinuationFrames (g : Game) : Game` that
        pops any trailing empty `ContinuationFrame` (`f == {}`, such as one
        pushed by `promptChooseReplacement` at `Core.lean:11211` or left after an
-       aborted proposal) with `.popContinuationFrame` while
-       `g.pendingReplacement.isNone && g.outerPendingReplacements.isEmpty &&
-       g.triggerSequenceRest.isNone && !g.mayThenResume`;
+       aborted proposal) with `.popContinuationFrame` while `g.pending == .none
+       && g.pendingReplacement.isNone && g.outerPendingReplacements.isEmpty &&
+       g.triggerSequenceRest.isNone && !g.mayThenResume` (stopping whenever
+       `g.pending != .none` or a non-empty frame is reached);
      - in `Decisions.concedePlayersLoop` (`Decisions.lean:356–369`, inside `else
        if midResolutionOrBatch then`, where `saved?` and `popOuter` have already
-       been restored at `356–365`), call `g := g.popEmptyContinuationFrames`
-       after `356–365` and pass `none false (runSba := g.continuations.isEmpty
-       && g.currentBatch.isNone && g.pendingReplacement.isNone &&
-       g.outerPendingReplacements.isEmpty && g.triggerSequenceRest.isNone &&
-       !g.mayThenResume)` to `g.finishConcedePriority` at `368–369`, keeping
-       `runSba` `false` whenever a non-empty `ContinuationFrame` or continuation
-       remains active, while running `checkSBA` when a mid-proposal concession
-       aborted a non-resolution proposal and left only an empty
-       `ContinuationFrame`; and
+       been restored at `356–365`), after `if g.pending != .none then return g`
+       at `366` (so a prompt opened by `356–365` keeps its sentinel frame), call
+       `let g := g.popEmptyContinuationFrames` and pass `none false (runSba :=
+       g.continuations.isEmpty && g.currentBatch.isNone &&
+       g.pendingReplacement.isNone && g.outerPendingReplacements.isEmpty &&
+       g.triggerSequenceRest.isNone && !g.mayThenResume)` to
+       `g.finishConcedePriority` at `368–369`, keeping `runSba` `false` whenever
+       a non-empty `ContinuationFrame` or continuation remains active, while
+       running `checkSBA` when a mid-proposal concession aborted a
+       non-resolution proposal and left only an empty `ContinuationFrame`; and
      - in `Decisions.finishConcedePriority` (`Decisions.lean:212–264`), call
-       `let g := g.popEmptyContinuationFrames` before `checkSBA` (`218`), and at
-       `245–248`, when `g.pendingReplacement.isSome ||
+       `let g := g.popEmptyContinuationFrames` before `checkSBA` (`218`), and
+       before `245–248` call `let g := g.popEmptyContinuationFrames` and keep
+       the `!g.continuations.isEmpty` disjunct in `else if
+       !g.continuations.isEmpty || g.pendingReplacement.isSome ||
        !g.outerPendingReplacements.isEmpty || g.triggerSequenceRest.isSome ||
-       g.mayThenResume`, drain continuations via `g.drainPendingContinuations`
-       (chaining `.finishConcede` if `.chooseReplacement` opens, or returning
-       `g` if `g.pending != .none || g.afterRandom != .none || g.over`), call
-       `let g := g.popEmptyContinuationFrames`, and only call `g.finishFraChoice`
-       when `!g.continuations.isEmpty` (a non-empty `ContinuationFrame` remains),
-       falling through when `g.continuations.isEmpty` to the `wasIdlePriority &&
-       g.consecutivePasses >= g.livingPlayers.size` step-advance / stack-resolve
-       check (`249–259`) and the `rawPrio := (savedPendingPrio.orElse (fun _ =>
-       g.pendingPriority)).getD g.priority` (`nextP := if g.stillInGame rawPrio
-       then rawPrio else g.nextLiving rawPrio`) priority grant (`260–264`,
-       calling `g.promptTriggerTargetsIfNeeded` before `g.receivePriority
-       nextP`).
+       g.mayThenResume then g.finishFraChoice` (`245–248`, where
+       `finishFraChoice` drains continuations, pops empty trailing frames, or
+       resumes a real non-empty `ContinuationFrame` such as a resolving spell's
+       frame from `SpellResolution.lean:272`), falling through when no
+       non-empty `ContinuationFrame` or continuation remains to the
+       `wasIdlePriority && g.consecutivePasses >= g.livingPlayers.size`
+       step-advance / stack-resolve check (`249–259`) and the `rawPrio :=
+       (savedPendingPrio.orElse (fun _ => g.pendingPriority)).getD g.priority`
+       (`nextP := if g.stillInGame rawPrio then rawPrio else g.nextLiving
+       rawPrio`) priority grant (`260–264`, calling
+       `g.promptTriggerTargetsIfNeeded` before `g.receivePriority nextP`).
 2. Stash `pendingReplacement` onto `outerPendingReplacements` in
    `Decisions.chooseCastFromLooked` & `Decisions.castAsPartOfResolution`, align
    2HG `.assignCombatDamage` in `Leaving.redirectPendingAfterLeave`, and
