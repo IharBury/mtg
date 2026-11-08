@@ -9567,19 +9567,27 @@ reads),
        #[.pending .none, .chooseModesRest none]`), logs `"The target is no
        longer legal"` when `g.stillInGame q && g.stillInGame caster &&
        !(g.findObject? id).any (fun o => o.isOnBattlefield && g.isCreature o)`,
-       when `g.stillInGame caster && connive.isSome`, queues `let g :=
+       when `g.stillInGame caster && connive.isSome`, stashes any existing `let
+       outerCont? := g.pendingReplacement` and clears it first (`let g := if
+       outerCont?.isSome then g.change (.pendingReplacement none) else g`,
+       matching `withOuterContStashed` at `Leaving.lean:326–332` and the
+       redirect arm at `940–942`), then if `popped?.isSome`, queues `let g :=
        g.chainPendingReplacement (.finishPostStep (.conniveTricksterTarget
-       caster connive sourceId))` and either calls `resumePoppedIfNoPrompt g`
-       when `popped?.isSome` (so `.seq prior popped` runs the connive step and
-       sequences `popped` if connive pauses) or, when `popped?.isNone` (as when
-       `restoreSavedPostLeave` calls `.restorePending saved false` at
-       `Leaving.lean:1204–1205`), immediately runs the queued connive step via
-       `if let some cont := g.pendingReplacement then (g.change
-       (.pendingReplacement none)).resumePendingReplacement cont
-       (followedByFinishFra := followedByFinishFra) else g` (so connive runs
-       before `finishConcedePriority` checks `g.pending != .none` at
-       `Decisions.lean:261`), and when `!(g.stillInGame caster &&
-       connive.isSome)`, calls `resumePoppedIfNoPrompt g`.
+       caster connive sourceId))`, re-chains `outerCont?` (`match outerCont?
+       with | some outer => g.chainPendingReplacement outer | none => g`), and
+       calls `resumePoppedIfNoPrompt g` (so `.seq prior popped` runs the connive
+       step first with `outerCont?` and `popped` sequenced after it if connive
+       pauses), whereas if `popped?.isNone` (as when `restoreSavedPostLeave`
+       calls `.restorePending saved false` at `Leaving.lean:1204–1205`),
+       launches connive the way `FraChoices.lean:1421–1426` does (`if let
+       .chooseReplacement .. := g.pending then g.chainPendingReplacement
+       (.finishPostStep (.conniveTricksterTarget caster connive sourceId)) else
+       g.conniveTricksterTarget caster connive (sourceId := sourceId)`, avoiding
+       `chainPendingReplacement`'s empty-frame push at `Core.lean:10347` when
+       connive does not pause) and then re-chains `outerCont?` (`match
+       outerCont? with | some outer => g.chainPendingReplacement outer | none =>
+       g`); and when `!(g.stillInGame caster && connive.isSome)`, calls
+       `resumePoppedIfNoPrompt g`.
    - In `Leaving.redirectPendingAfterLeave`, revalidate non-departing choosers
      (`q != p`) whose eligible permanents were owned by `p` and left the
      battlefield at `Leaving.lean:1279–1282` (CR 800.4a):
@@ -9685,8 +9693,10 @@ reads),
      - `CastExtras.lean`: `resolveCascadeLoop` (`108–109`, `.mayCastCascade
        card.id others`, using `g.name card` in the log string);
      - `Casting.lean`: `finishPostCast` (`720–721` `.mayCastUpToFromExile alive
-       left` and `741` `.castCopiesFree alive budget castsLeft`, using the `msg
-       := ""` default at `741`); and
+       left`, passing the existing `s!"{(g.player q).name} may cast up to {left}
+       more spells from among the exiled cards without paying their mana costs"`
+       log string as `msg` to `g.beginFraChoice`, and `741` `.castCopiesFree
+       alive budget castsLeft`, using the `msg := ""` default at `741`); and
      - `EffectResolution.lean`: `.chooseOddOrEvenDestroy` (`165–166`),
        `finishMillMayPutPermanentGainLife` (`435–436`),
        `finishMillSubtypeOrEnchantment` (`461–462`), `mayDrawPerArtifact`
