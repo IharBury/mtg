@@ -64,7 +64,7 @@ costs (CR 707.10), returning the new copy's `ObjectId` (if created). The copy
 is not cast. -/
 def copyStackSpellWithId (g : Game) (src : GameObject) (controller : PlayerId)
     (cause : Option EventCause := none) : Game × Option ObjectId :=
-  let dispName := if src.status.faceDown then "face-down spell" else src.name
+  let dispName := if src.status.faceDown then "face-down spell" else g.name src
   if !g.stillInGame controller then
     (g.logMsg s!"A copy of {dispName} is not created (CR 800.4d)", none)
   else
@@ -161,16 +161,18 @@ def mayCastFromLookedError (g : Game) (p : PlayerId) (ids : Array ObjectId)
 to cast one with mana value at most `maxMv` (Cosmic Cube; MSH 356). -/
 def beginMayCastFromLooked (g : Game) (p : PlayerId) (n : Nat) (maxMv : Int) :
     Game :=
-  let lib := (g.player p).library
-  let take := min n lib.size
-  let ids := lib.extract (lib.size - take) lib.size
-  if ids.isEmpty then
-    g.logMsg "No cards to look at"
+  if !g.stillInGame p then g
   else
-    let g := g.record (GameEvent.lookedAt g.turnNumber p ids
-      (cause := some (g.resolvingOrRuleCause p)))
-    (g.change (.pending (.mayCastFromLooked p ids maxMv))).logMsg
-      s!"{(g.player p).name} looks at the top {ids.size} cards. You may cast a spell from among them with mana value {maxMv} or less as this ability resolves"
+    let lib := (g.player p).library
+    let take := min n lib.size
+    let ids := lib.extract (lib.size - take) lib.size
+    if ids.isEmpty then
+      g.logMsg "No cards to look at"
+    else
+      let g := g.record (GameEvent.lookedAt g.turnNumber p ids
+        (cause := some (g.resolvingOrRuleCause p)))
+      (g.change (.pending (.mayCastFromLooked p ids maxMv))).logMsg
+        s!"{(g.player p).name} looks at the top {ids.size} cards. You may cast a spell from among them with mana value {maxMv} or less as this ability resolves"
 
 /-- Put an artifact from hand onto the battlefield.
 `.«if» (.atLeast (.count .putEquipment) (.fixed 1)) (.attach .putArtifact .notedHost)` attaches it when it is
@@ -447,7 +449,7 @@ def withSourceOnBattlefield (g : Game) (sourceId : Option ObjectId)
   match sourceId.bind g.findObject? with
   | some o =>
     if o.isOnBattlefield then f g o
-    else g.logMsg (leftMsg.getD s!"{o.name} is no longer on the battlefield")
+    else g.logMsg (leftMsg.getD s!"{g.name o} is no longer on the battlefield")
   | none =>
     g.logMsg missing
 
@@ -473,7 +475,7 @@ def incrementPlanSource (g : Game) (controller : PlayerId) (sourceId : Option Ob
           g.recordPutCounters o.id .plan 1 (byPlayer := some controller) (cause := some cause)
       else
         g.change (.skipTriggerSequenceRest true)
-          |>.logMsg s!"{o.name} is no longer on the battlefield"
+          |>.logMsg s!"{g.name o} is no longer on the battlefield"
     | none =>
       g.change (.skipTriggerSequenceRest true)
         |>.logMsg "The ability's source is no longer in play"
@@ -526,14 +528,16 @@ def sourcePowerNatAtResolution (g : Game) (sourceId : Option ObjectId)
   (g.sourcePowerAtResolution sourceId lastKnownPower).toNat
 
 /-- Current P/T of `sourceId` if it is still on the battlefield; otherwise
-last-known values (defaulting to 0). -/
+last-known values, falling back to the object's current P/T. -/
 def sourcePTAtResolution (g : Game) (sourceId : Option ObjectId)
     (lastKnownPower lastKnownToughness : Option Int := none) : Int × Int :=
+  let lkp := lastKnownPower.orElse (fun _ => sourceId.bind g.lastKnownPowerOf?)
+  let lkt := lastKnownToughness.orElse (fun _ => sourceId.bind g.lastKnownToughnessOf?)
   match sourceId.bind g.findObject? with
   | some src =>
     if src.isOnBattlefield then (g.power src, g.toughness src)
-    else (lastKnownPower.getD 0, lastKnownToughness.getD 0)
-    | none => (lastKnownPower.getD 0, lastKnownToughness.getD 0)
+    else (lkp.getD (g.snapshotPower src), lkt.getD (g.snapshotToughness src))
+  | none => (lkp.getD 0, lkt.getD 0)
 
 /-- Top `count` cards of `p`'s library (last = current top). -/
 def scryLookedIds (g : Game) (p : PlayerId) (count : Nat) : Array ObjectId :=
@@ -662,7 +666,7 @@ Flushes immediately only when invoked outside an active resolution/batch with
 def queueFollowupReflexive (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
     (followup : TriggeredAbility.TriggerResolution)
     (deferToPriority : Bool := false) : Game :=
-  if (g.player controller).lost || (g.player controller).leftTheGame then g
+  if !g.stillInGame controller then g
   else
     let src := g.abilitySourceFor controller sourceId
     let effect : Effect := {
@@ -689,7 +693,7 @@ CR 603.3c–d / 603.12). Its targets are chosen when put on the stack. -/
 def putReflexiveTrigger (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
     (effect : Effect) (deferToPriority : Bool := false)
     (causeIds : Array ObjectId := #[]) : Game :=
-  if (g.player controller).lost || (g.player controller).leftTheGame then g
+  if !g.stillInGame controller then g
   else
     let src := g.abilitySourceFor controller sourceId
     let marker : TriggeredAbility := .triggered .enter effect {}
@@ -772,8 +776,8 @@ def offerPayForReflexive (g : Game) (controller : PlayerId) (sourceId : Option O
     (maxTimes : Nat := 1) : Game :=
   let shown := String.join (cost.toList.map toString)
   let times := if maxTimes > 1 then s!" up to {maxTimes} times" else ""
-  g.change (.pending (.fraChoice controller (.mayPayManaForReflexive cost maxTimes kind sourceId)))
-    |>.logMsg s!"{(g.player controller).name} may pay {shown}{times}"
+  g.beginFraChoice controller (.mayPayManaForReflexive cost maxTimes kind sourceId)
+    s!"{(g.player controller).name} may pay {shown}{times}"
 
 /-- Sacrifice the Plan if it is still on the battlefield. `gone` is logged
 when the source left; `missing` when it was never found. -/
@@ -783,15 +787,15 @@ def sacrificePlanIfOnBattlefield (g : Game) (sourceId : Option ObjectId)
   match sourceId.bind g.findObject? with
   | some o =>
     if o.isOnBattlefield then g.sacrificeToGraveyard o "the Plan is completed"
-    else g.logMsg (gone o.name)
+    else g.logMsg (gone (g.name o))
   | none =>
     g.logMsg missing
 
 /-- Ask `caster` to cast up to `casts` of the exiled nonland cards. -/
 def offerExileCasts (g : Game) (caster : PlayerId) (spells : Array ObjectId)
     (casts : Nat) : Game :=
-  g.change (.pending (.fraChoice caster (.mayCastUpToFromExile spells casts)))
-    |>.logMsg s!"{(g.player caster).name} may cast up to {casts} spells from among the exiled cards without paying their mana costs"
+  g.beginFraChoice caster (.mayCastUpToFromExile spells casts)
+    s!"{(g.player caster).name} may cast up to {casts} spells from among the exiled cards without paying their mana costs"
 
 /-- Pause-safe loop for `exileTopMayCastUpTo`, running inside an open batch and
 offering up to `casts` free spell casts once all moves complete. -/
@@ -1096,7 +1100,7 @@ def promptEnteringAttackItems (g : Game) (items : Array EnteringAttackItem)
     | some first =>
       let ctrl := first.controller
       let nm := g.enteringAttackItemName first
-      (g.change (.pending (.fraChoice ctrl (.chooseEnteringAttackTarget rest chosen cause)))).logMsg
+      g.beginFraChoice ctrl (.chooseEnteringAttackTarget rest chosen cause)
         s!"{(g.player ctrl).name} chooses what {nm} enters attacking"
     | none =>
       g.commitEnteringAttackItems chosen cause
@@ -1313,7 +1317,7 @@ activated (MSH 34 / 40 / 66) and uses the same source and X
 def copyStackAbilityWithId (g : Game) (src : GameObject) (controller : PlayerId) :
     Game × Option ObjectId :=
   if !g.stillInGame controller then
-    (g.logMsg s!"A copy of {src.name} is not created (CR 800.4d)", none)
+    (g.logMsg s!"A copy of {g.name src} is not created (CR 800.4d)", none)
   else
     let copyId : ObjectId := ⟨g.nextObjectId⟩
     let copySnap : EventObject := {
@@ -1328,7 +1332,7 @@ def copyStackAbilityWithId (g : Game) (src : GameObject) (controller : PlayerId)
     let g := g.record (GameEvent.stackObjectCopied g.turnNumber src.id copySnap controller
       (cause := g.resolveOptionalCause (g.resolvingOneShotCause controller (some src.id))
         (fallbackSrc := some src.id) (fallbackCtrl := some controller)))
-    (g.logMsg s!"A copy of {src.name} is created", some copyId)
+    (g.logMsg s!"A copy of {g.name src} is created", some copyId)
 
 /-- Copy an activated or triggered ability on the stack. -/
 def copyStackAbility (g : Game) (src : GameObject) (controller : PlayerId) : Game :=
@@ -1451,10 +1455,8 @@ def offerWorldsCreatures (g : Game) (rest : List PlayerId)
     if eligible.isEmpty then
       g.offerWorldsCreatures more exiled chosen sourceId
     else
-      g.change (.pending
-          (.fraChoice pid (.worldsPutCreatures eligible more.toArray exiled chosen sourceId)))
-        |>.logMsg
-          s!"{(g.player pid).name} may put any number of creature cards from their hand onto the battlefield"
+      g.beginFraChoice pid (.worldsPutCreatures eligible more.toArray exiled chosen sourceId)
+        s!"{(g.player pid).name} may put any number of creature cards from their hand onto the battlefield"
 
 /-- Worlds Within Worlds (MSH 96 / ruling 449): exile creatures, then each
 player may put any number of creature cards from hand. Those creatures enter

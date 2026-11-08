@@ -99,15 +99,16 @@ def beginTriggerModeChoice (g : Game) (p : PlayerId) (obj : GameObject) (count :
   let modes := g.triggerModesOf obj
   let choosable := modes.filter (g.triggerModeChoosable p obj)
   if choosable.size < count then
+    let objName := g.name obj
     let g := g.ceaseToExist obj.id (cause := some (.gameRule .noLegalMode))
     let detail :=
       if choosable.isEmpty then "has no mode that can be chosen"
       else s!"has fewer than {count} modes that can be chosen"
-    g.logMsg s!"{obj.name} {detail} and is removed from the stack (CR 603.3c / 700.2b)"
+    g.logMsg s!"{objName} {detail} and is removed from the stack (CR 603.3c / 700.2b)"
   else
     let what := if count == 2 then "two modes" else "a mode"
     (g.change (.pending (.fraChoice p (.triggerModes obj.id count #[])))).logMsg
-      s!"{(g.player p).name} chooses {what} for {obj.name} (CR 603.3c)"
+      s!"{(g.player p).name} chooses {what} for {g.name obj} (CR 603.3c)"
 
 /-- Put a triggered ability of `source` onto the stack (CR 603.3). A modal
 ability's modes are chosen as it is put on the stack (CR 603.3c). -/
@@ -121,7 +122,7 @@ def putTriggeredAbilityOnStack (g : Game) (controller : PlayerId) (source : Game
     (delayedTrigger : Option (DelayedTriggerKind × EventCause) := none)
     (abilityEffectOverride : Option Effect := none)
     (reflexiveResolution : Option TriggeredAbility.TriggerResolution := none) : Game :=
-  if (g.player controller).lost || (g.player controller).leftTheGame then g
+  if !g.stillInGame controller then g
   else
     -- “For each opponent, up to one target … that player controls”: one
     -- optional instance per opponent (CR 601.2c).
@@ -184,7 +185,7 @@ def putTriggeredAbilityOnStack (g : Game) (controller : PlayerId) (source : Game
         let g := g.changes #[
           .object obj.id (.abilityEffect (some noop)),
           .stackEntry obj.id (.targetsAnnounced true)]
-        g.logMsg s!"{(g.player controller).name} chooses 0 modes for {obj.name} (CR 603.3c)"
+        g.logMsg s!"{(g.player controller).name} chooses 0 modes for {g.name obj} (CR 603.3c)"
       else
         (g.change (.pending (.fraChoice controller (.hawkeyeModes maxModes #[] (some obj.id))))).logMsg
           s!"{(g.player controller).name} chooses up to {maxModes} Trick Arrows modes (CR 603.3c)"
@@ -201,10 +202,10 @@ def putTriggeredAbilityOnStack (g : Game) (controller : PlayerId) (source : Game
         let g := g.changes #[
           .object obj.id (.abilityEffect (some noop)),
           .stackEntry obj.id (.targetsAnnounced true)]
-        g.logMsg s!"{(g.player controller).name} chooses 0 modes for {obj.name} (CR 603.3c)"
+        g.logMsg s!"{(g.player controller).name} chooses 0 modes for {g.name obj} (CR 603.3c)"
       else
         (g.change (.pending (.fraChoice controller (.upToTriggerModes obj.id maxModes #[])))).logMsg
-          s!"{(g.player controller).name} chooses up to {maxModes} mode(s) for {obj.name} (CR 603.3c)"
+          s!"{(g.player controller).name} chooses up to {maxModes} mode(s) for {g.name obj} (CR 603.3c)"
     | _ =>
       match ab.effect.resolution with
       | .chooseTriggerModes n => g.beginTriggerModeChoice controller obj n
@@ -214,7 +215,7 @@ def putTriggeredAbilityOnStack (g : Game) (controller : PlayerId) (source : Game
           match how with
           | .plusOneOrRemoveCounter =>
             (g.change (.pending (.fraChoice controller (.stackHydeMode obj.id)))).logMsg
-              s!"{(g.player controller).name} chooses a mode for {obj.name} — 0 put a +1/+1 counter, 1 remove a counter and draw (CR 603.3c)"
+              s!"{(g.player controller).name} chooses a mode for {g.name obj} — 0 put a +1/+1 counter, 1 remove a counter and draw (CR 603.3c)"
           | .vision | .oneUnused | .oneUnusedThisTurn =>
             let lifetime := how == .oneUnused
             let memory :=
@@ -223,15 +224,16 @@ def putTriggeredAbilityOnStack (g : Game) (controller : PlayerId) (source : Game
               | none => #[]
             let available := (List.range modes.length).toArray.filter (fun m => !memory.contains m)
             if available.isEmpty then
+              let objName := g.name obj
               let g := g.ceaseToExist obj.id (cause := some (.gameRule .noLegalMode))
               let msg :=
                 match how with
                 | .oneUnusedThisTurn =>
-                  s!"all three modes have been chosen this turn. {obj.name} is removed from the stack (CR 603.3c)"
+                  s!"all three modes have been chosen this turn. {objName} is removed from the stack (CR 603.3c)"
                 | .vision =>
-                  s!"{obj.name} has no unused mode and is removed from the stack (CR 603.3c)"
+                  s!"{objName} has no unused mode and is removed from the stack (CR 603.3c)"
                 | _ =>
-                  s!"all three modes have been chosen. {obj.name} is removed from the stack (CR 603.3c)"
+                  s!"all three modes have been chosen. {objName} is removed from the stack (CR 603.3c)"
               g.logMsg msg
             else
               let prompt :=

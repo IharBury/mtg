@@ -1018,6 +1018,30 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
         else if ids' != ids then
           (g, .fraChoice q (.mayCastCards ids' withoutPaying exileInstead))
         else (g, pending)
+    | .mayChangeSpellTarget spellId _ _ =>
+      if q == p then
+        let g := g.changes (#[.chooseModesRest none] ++ clearProp)
+        let g := if g.mayThenDrop > 0 then g.declineMayThenCore else clearPending g
+        (g, .none)
+      else if !(g.findObject? spellId).any (fun o => o.zone == .stack) then
+        (clearPendingAnd g #[.chooseModesRest none], .none)
+      else (g, pending)
+    | .newTargetsForCopies copies | .newTargetsForCopySlot copies _ _ =>
+      if q == p then
+        let g := g.changes (#[.chooseModesRest none] ++ clearProp)
+        let g := if g.mayThenDrop > 0 then g.declineMayThenCore else clearPending g
+        (g, .none)
+      else
+        let live := copies.filter (fun cid => (g.findObject? cid).any (fun o => o.zone == .stack))
+        if live.isEmpty then
+          (clearPendingAnd g #[.chooseModesRest none], .none)
+        else if live[0]? != copies[0]? then
+          (g, .fraChoice q (.newTargetsForCopies live))
+        else if live != copies then
+          (g, .fraChoice q (match choice with
+            | .newTargetsForCopySlot _ s st => .newTargetsForCopySlot live s st
+            | _ => .newTargetsForCopies live))
+        else (g, pending)
     | _ =>
       if q == p then
         let g := g.changes (#[.chooseModesRest none] ++ clearProp)
@@ -1148,8 +1172,9 @@ def restorePausedBatch (g : Game) (batchId : BatchId) (startIdx : Nat) (wasDisca
 `g`: `q` is still in the game and every choice's referenced subject, grantor,
 and kind-specific object IDs still exist (and any `.asEntersAttachAura` host is
 still on the battlefield) (CR 616.1 / 800.4a). -/
-def replacementChoiceValid (g : Game) (q : PlayerId) (choices : Array ReplacementId) : Bool :=
-  g.stillInGame q &&
+def replacementChoiceValid (g : Game) (q : PlayerId) (choices : Array ReplacementId)
+    (allowLost : Bool := false) : Bool :=
+  (if allowLost then !(g.player q).leftTheGame else g.stillInGame q) &&
     choices.all fun c =>
       c.object.all (fun oid => (g.findObject? oid).isSome) &&
         c.grantor.all (fun gid => (g.findObject? gid).isSome) &&
@@ -1464,7 +1489,7 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
       match preBodyPending with
       | .chooseReplacement q choices =>
         if q != p && !abortingReplacementProposal then
-          let choicesStillValidPre := g.replacementChoiceValid q choices
+          let choicesStillValidPre := g.replacementChoiceValid q choices (allowLost := true)
           let (g, postCleanupPending) :=
             runPostCastAndPropCleanup g (if choicesStillValidPre then preBodyPending else .none)
           let g :=
@@ -1489,7 +1514,7 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
               | none => g
             | none => g
           let g := g.runEndControlExileLoop exileQueue (cause := cause)
-          let choicesStillValid := g.replacementChoiceValid q choices
+          let choicesStillValid := g.replacementChoiceValid q choices (allowLost := true)
           let savedPreLeavePending? : Option Pending :=
             if choicesStillValid then some preBodyPending
             else if postCleanupPending != .none && postCleanupPending != preBodyPending then some postCleanupPending

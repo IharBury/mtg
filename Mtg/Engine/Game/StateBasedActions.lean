@@ -480,7 +480,7 @@ partial def checkSBACounted (g : Game)
             (g.baseCard o).cantLoseGame && g.retainsPrintedAbilities o)
       for pl in g.players do
         let curPl := g.player pl.id
-        if !curPl.lost then
+        if g.stillInGame pl.id then
           let shielded :=
             hasCantLose g pl.id ||
               g.livingPlayers.any (fun mate =>
@@ -510,7 +510,7 @@ partial def checkSBACounted (g : Game)
                 | _ => "state-based action"
               g := g.logMsg s!"{curPl.name} loses the game ({detail})"
               for mate in g.players do
-                if mate.id != pl.id && !(g.player mate.id).lost && g.areTeammates pl.id mate.id then
+                if mate.id != pl.id && g.stillInGame mate.id && g.areTeammates pl.id mate.id then
                   g := g.record (GameEvent.playerLost g.turnNumber mate.id lossReason
                     (cause := some (.stateBased sbaKind)))
                   g := g.logMsg s!"{mate.name} loses the game (teammate lost; CR 810.8a)"

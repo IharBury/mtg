@@ -117,6 +117,8 @@ def finishConniveDraws (g : Game) (controller : PlayerId)
   if let .chooseReplacement .. := g.pending then
     return g.chainPendingReplacement
       (.finishConniveDraws controller extraDraws conniveDrawCause stage)
+  if !g.stillInGame controller then
+    return g
   let mut g := g
   if stage == .draws then
     for i in [0:extraDraws.size] do
@@ -143,6 +145,7 @@ has left (MSH / CR 701.50). -/
 def applyConnive (g : Game) (controller : PlayerId) (sourceId : Option ObjectId) : Game :=
   if let .chooseReplacement .. := g.pending then
     g.chainPendingReplacement (.connive controller sourceId)
+  else if !g.stillInGame controller then g
   else
   let run (g : Game) : Game :=
     -- CR 616.1 replacement loop for Leader's `.extraDrawOnConnive` ("If a

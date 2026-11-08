@@ -226,7 +226,7 @@ def pickTeamworkCreatures (g : Game) (p : PlayerId) (need : Nat) : Array ObjectI
       match cs with
       | [] => acc
       | o :: rest =>
-        if o.status.tapped then pick rest acc total
+        if o.status.tapped || g.power o ≤ 0 then pick rest acc total
         else pick rest (acc.push o.id) (total + g.power o)
   pick (g.creaturesControlledBy p).toList #[] 0
 

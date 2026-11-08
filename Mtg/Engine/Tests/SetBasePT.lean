@@ -222,10 +222,16 @@ an opponent's creature, and a creature that has left are not set. -/
   let g0 := addPermanent board ogre caster caster
   let id := pid g0 "Titan"
   let (g1, newId) := g0.move id (.graveyard caster) none
-  let g := step g1 equalSource (some newId) #[Target.permanent (pid g1 "Ogre")]
+  let gLki := step g1 equalSource (some id) #[Target.permanent (pid g1 "Ogre")]
     (ab := .onAttackSetOtherBasePT)
-  base g "Ogre" == some (0, 0) &&
-    logContains g "Ogre's base power and toughness become 0/0 until end of turn"
+  let gSnap := step g1 equalSource (some newId) #[Target.permanent (pid g1 "Ogre")]
+    (ab := .onAttackSetOtherBasePT)
+  let gNone := step g1 equalSource none #[Target.permanent (pid g1 "Ogre")]
+    (ab := .onAttackSetOtherBasePT)
+  base gLki "Ogre" == some (4, 4) &&
+    base gSnap "Ogre" == some (4, 4) &&
+    base gNone "Ogre" == some (0, 0) &&
+    logContains gNone "Ogre's base power and toughness become 0/0 until end of turn"
 
 #guard
   let g0 := addPermanent board ogre caster caster

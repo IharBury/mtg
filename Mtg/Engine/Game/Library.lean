@@ -308,12 +308,19 @@ def moveIdsInOrderLoop (g : Game) (ids : Array ObjectId) (dest : Zone)
 the new bottom of that group. -/
 def moveIdsInOrder (g : Game) (ids : Array ObjectId) (dest : Zone)
     (cause : Option EventCause := none) (log : String := "") : Game :=
-  let defaultCause :=
-    cause.orElse (fun _ =>
-      if ids.isEmpty then none
-      else g.currentResolvingContext?.map fun (src, ctrl) => .oneShotEffect none src ctrl)
+  let (g, defaultCause) : Game × Option EventCause :=
+    match cause with
+    | some c => (g, some c)
+    | none =>
+      if ids.isEmpty then (g, none)
+      else
+        match g.currentResolvingContext? with
+        | some (src, ctrl) =>
+          let (g, c) := g.allocDelayedCause ctrl src
+          (g, some c)
+        | none => (g, none)
   g.withBatch defaultCause fun g =>
-    g.moveIdsInOrderLoop ids dest log cause
+    g.moveIdsInOrderLoop ids dest log defaultCause
 
 /-- Put `ids` on top of `p`'s library, last listed on top. Cards that are no
 longer in that library are skipped (CR 401.4). -/
