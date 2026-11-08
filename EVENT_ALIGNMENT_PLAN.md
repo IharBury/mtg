@@ -8958,17 +8958,24 @@ helpers), `Abilities.lean`, `Casting.lean`, `Combat.lean`, `Damage.lean`,
        `g.sbaPaused` and none of those hold), and otherwise calls
        `g.restoreSavedPostLeave saved? popOuter` once after the loop; thread
        `(savedIn : Option Pending := none) (popOuterIn : Bool := false)` through
-       `StateBasedActions.checkSBACountedWithLeaves`
-       (`StateBasedActions.lean:547–560`): at `549` (after `let (g, didSba) :=
-       g.checkSBACounted`, which returns `(g, false)` without chaining when
-       `g.sbaPaused` on entry at `345`, or chains bare `.checkSBA` at `539–541`
-       when the sweep opened `.chooseReplacement` / `.chooseLegend`), when
-       `g.sbaPaused` and `savedIn.isSome || popOuterIn`, chain
-       `.leavePlayersWhoLost savedIn popOuterIn` so `savedIn` and `popOuterIn`
-       are preserved across that SBA prompt; at `552`, call `let (g, saved?,
-       popOuter) := g.leavePlayersWhoLostCore savedIn popOuterIn`; at `555`
-       (`else if g.sbaPaused then`, which catches `.chooseReplacement` and
-       `.chooseLegend` returns from `leavePlayersWhoLostCore`), chain
+       `StateBasedActions.checkSBACounted` (`StateBasedActions.lean:344–543`)
+       and `StateBasedActions.checkSBACountedWithLeaves`
+       (`StateBasedActions.lean:547–560`): in `checkSBACounted` at `539–541`
+       (when the sweep itself opens `.chooseReplacement` / `.chooseLegend`),
+       replace bare `.checkSBA` with `if savedIn.isSome || popOuterIn then
+       .leavePlayersWhoLost savedIn popOuterIn else .checkSBA` (re-entering
+       `checkSBACountedWithLeaves savedIn popOuterIn` via `Decisions.lean:853–854`
+       without leaving a bare `.checkSBA` in front of it); in
+       `checkSBACountedWithLeaves` at `548–549` (`let wasPaused := g.sbaPaused;
+       let (g, didSba) := g.checkSBACounted savedIn popOuterIn`), when
+       `wasPaused` (the `345` early return where `checkSBACounted` returned
+       `(g, false)` and chained nothing) and `savedIn.isSome || popOuterIn`,
+       chain `.leavePlayersWhoLost savedIn popOuterIn` and return `(g, didSba)`,
+       and keep the early `(g, didSba)` return for `g.over` and for
+       `g.pending != .none`; at `552`, call `let (g, saved?, popOuter) :=
+       g.leavePlayersWhoLostCore savedIn popOuterIn`; at `555` (`else if
+       g.sbaPaused then`, which catches `.chooseReplacement` and `.chooseLegend`
+       returns from `leavePlayersWhoLostCore`), chain
        `g.chainPendingReplacement (if g.players.any (fun r => r.lost &&
        !r.leftTheGame) || saved?.isSome || popOuter then .leavePlayersWhoLost
        saved? popOuter else .checkSBA)` so remaining losers, `saved?`, and
@@ -9096,11 +9103,13 @@ helpers), `Abilities.lean`, `Casting.lean`, `Combat.lean`, `Damage.lean`,
        the `!g.continuations.isEmpty` disjunct in `else if
        !g.continuations.isEmpty || g.pendingReplacement.isSome ||
        !g.outerPendingReplacements.isEmpty || g.triggerSequenceRest.isSome ||
-       g.mayThenResume then g.finishFraChoice` (`245–248`, where
-       `finishFraChoice` drains continuations, pops empty trailing frames, or
-       resumes a real non-empty `ContinuationFrame` such as a resolving spell's
-       frame from `SpellResolution.lean:272`), falling through when no
-       non-empty `ContinuationFrame` or continuation remains to the
+       g.mayThenResume then g.finishFraChoice` (`245–248`, so once trailing
+       `f == {}` frames have been removed by `popEmptyContinuationFrames`, any
+       real non-empty `ContinuationFrame`—such as a resolving ability frame at
+       `SpellResolution.lean:272` or a resolving spell frame at
+       `SpellResolution.lean:451–456`—still takes `g.finishFraChoice` at
+       `Decisions.lean:159–172`), falling through when no non-empty
+       `ContinuationFrame` or continuation remains to the
        `wasIdlePriority && g.consecutivePasses >= g.livingPlayers.size`
        step-advance / stack-resolve check (`249–259`) and the `rawPrio :=
        (savedPendingPrio.orElse (fun _ => g.pendingPriority)).getD g.priority`
