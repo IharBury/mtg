@@ -15,7 +15,7 @@ namespace Game
 def offerPalantirChoice (g : Game) (controller opp : PlayerId) (sid : ObjectId) : Game :=
   if !g.stillInGame controller then g
   else if !g.stillInGame opp then
-    let n := ((g.findObject? sid).map (·.status.influence)).getD 0
+    let n := ((g.damageSourceById? sid).map (·.status.influence)).getD 0
     g.mill controller n
   else
     g.beginFraChoice opp (.palantirMayDraw controller sid)
@@ -2194,7 +2194,7 @@ def applySacrifice (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       | some src =>
         if src.status.attackingTarget.isSome then
           let d := g.defendingPlayerOf src
-          if !(g.player d).lost then some d else none
+          if g.stillInGame d then some d else none
         else g.firstLivingOpponent? controller
       | none => g.firstLivingOpponent? controller
     match defn? with
@@ -2453,17 +2453,19 @@ def applyAttach (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       | none => (g.illegalAbilityTarget t0).logMsg "The Equipment won't move"
     | _ => g.logMsg "The Equipment won't move"
   | .eachEquipment, .enchantedCreature | .target .eachEquipment, .enchantedCreature =>
-    match sourceId.bind g.findObject? with
-    | some src =>
-      match src.attachedTo.bind g.findObject? with
+    let host? : Option GameObject :=
+      match sourceId.bind g.findObject? with
+      | some src => src.attachedTo.bind g.findObject?
       | none =>
-        g.logMsg "The enchanted creature has left. Equipment stays where it is."
-      | some host =>
-        let indexed := (List.range targets.size).toArray.map fun i => (i, targets[i]!)
-        g.withBatch none fun g =>
-          g.attachEquipmentToHostLoop controller ab.targetKind host.id indexed sourceId
+        ((sourceId.bind g.lastKnownBefore?).bind (·.attachedTo)).bind g.findObject?
+          |>.filter (·.isOnBattlefield)
+    match host? with
     | none =>
       g.logMsg "The enchanted creature has left. Equipment stays where it is."
+    | some host =>
+      let indexed := (List.range targets.size).toArray.map fun i => (i, targets[i]!)
+      g.withBatch none fun g =>
+        g.attachEquipmentToHostLoop controller ab.targetKind host.id indexed sourceId
   | what, hostSel =>
     let ctx : TriggerRead := { controller, sourceId, targets }
     match g.permanentsNamed ctx what, g.permanentsNamed ctx hostSel with
@@ -3108,7 +3110,7 @@ def applyPut (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         match g.findObject? id with
         | some card =>
           let name := card.name
-          if (g.player card.owner).lost then
+          if !g.stillInGame card.owner then
             g.logMsg s!"{name} remains in its current zone (CR 800.4b)"
           else
             let (g, newId) := g.putOntoBattlefield id card.owner
@@ -3700,12 +3702,19 @@ def applyTap (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     g.changes #[.pending (.tapHumans controller), .humansTappedThisWay 0]
       |>.logMsg s!"{(g.player controller).name} may tap any number of untapped Humans they control"
   | .enchanted =>
-    match sourceId.bind g.findObject? with
+    match sourceId with
     | none => g
-    | some src =>
-      match src.attachedTo.bind g.findObject? with
-      | none => g.logMsg "Nothing is enchanted"
-      | some host => g.applyPermanentAction host .tap
+    | some sid =>
+      match g.findObject? sid with
+      | none =>
+        match ((g.lastKnownBefore? sid).bind (·.attachedTo)).bind g.findObject?
+            |>.filter GameObject.isOnBattlefield with
+        | none => g.logMsg "Nothing is enchanted"
+        | some host => g.applyPermanentAction host .tap
+      | some src =>
+        match src.attachedTo.bind g.findObject? with
+        | none => g.logMsg "Nothing is enchanted"
+        | some host => g.applyPermanentAction host .tap
   | .ifPresent | .target .ifPresent =>
     match targets[0]? with
     | some (Target.permanent id) =>
@@ -3766,14 +3775,17 @@ def applyRemoveCounters (g : Game) (controller : PlayerId)
         let g := g.logMsg s!"{g.name src} loses a hope counter"
         g.change (.removedHopeThisWay true)
   | .all, .enchanted =>
-    match sourceId.bind g.findObject? with
+    let host? : Option GameObject :=
+      match sourceId.bind g.findObject? with
+      | some src => src.attachedTo.bind g.findObject?
+      | none =>
+        ((sourceId.bind g.lastKnownBefore?).bind (·.attachedTo)).bind g.findObject?
+          |>.filter (·.isOnBattlefield)
+    match host? with
     | none => g
-    | some src =>
-      match src.attachedTo.bind g.findObject? with
-      | none => g
-      | some host =>
-        let g := g.removeAllCountersFrom host.id (byPlayer := some controller)
-        g.logMsg s!"counters are removed from {g.name host}"
+    | some host =>
+      let g := g.removeAllCountersFrom host.id (byPlayer := some controller)
+      g.logMsg s!"counters are removed from {g.name host}"
   | what, who =>
     let ctx : TriggerRead := { controller, sourceId, targets }
     match g.permanentsNamed ctx who with
@@ -4517,7 +4529,7 @@ def createAndMarkTokensAttacking (g : Game) (controller : PlayerId)
         (.createAndMarkTokensAttacking controller kind n tapped holds sourceId cause)
   else if !holds then
     g.createKindTokens controller kind n (tapped := tapped) (attacking := false) (cause := cause)
-  else if (g.player controller).lost then
+  else if !g.stillInGame controller then
     let g := g.change (.recentTokenIds #[])
     if n == 0 then g
     else g.logMsg "no token is created (CR 800.4b)"

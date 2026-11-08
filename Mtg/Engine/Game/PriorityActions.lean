@@ -60,7 +60,7 @@ def finishProposedSpell (g : Game) : Except String Game := do
       | .spell, some o =>
         if spent .legendarySpell then
           paid.createEffect (.uncounterableThisCast o.id)
-            |>.logMsg s!"{o.name} can't be countered (Delighted Halfling)"
+            |>.logMsg s!"{paid.name o} can't be countered (Delighted Halfling)"
         else paid
       | _, _ => paid
   if prop.kind == .turnFaceUp && !prop.needsSacrificeOther && !prop.needsDiscardCard then
@@ -169,7 +169,7 @@ def announceAdditionalCost (g : Game) (p : PlayerId) (payGeneric : Bool) :
           (g.player p).hand.any (fun id =>
             (g.findObject? id).any (fun card => g.hasSubtype card quality))
         if !(hasPerm || hasHand) then
-          throw s!"{spell.name} requires beholding a {quality}"
+          throw s!"{g.name spell} requires beholding a {quality}"
         let g := g.changeProposals #[
           .additionalGeneric 0,
           .needsBehold (some quality),
@@ -186,7 +186,7 @@ def announceAdditionalCost (g : Game) (p : PlayerId) (payGeneric : Bool) :
         return (announceExtraGeneric g n).afterAdditionalCostAnnounced
       else
         if (g.sacrificeCreatureOrArtifactChoices p prop.spellId).isEmpty then
-          throw s!"{spell.name} requires sacrificing an artifact or creature"
+          throw s!"{g.name spell} requires sacrificing an artifact or creature"
         let g := g.changeProposals #[
           .additionalGeneric 0,
           .needsBehold none,
@@ -200,7 +200,7 @@ def announceAdditionalCost (g : Game) (p : PlayerId) (payGeneric : Bool) :
         return (announceExtraGeneric g n).afterAdditionalCostAnnounced
       else
         if (g.player p).hand.isEmpty then
-          throw s!"{spell.name} requires discarding a card"
+          throw s!"{g.name spell} requires discarding a card"
         let g := g.changeProposals #[
           .additionalGeneric 0,
           .needsBehold none,
@@ -238,11 +238,11 @@ def pass (g : Game) (p : PlayerId) : Except String Game := do
     return g.change (.priority (g.nextLiving p))
 
 def concede (g : Game) (p : PlayerId) : Game :=
-  if (g.player p).lost then g
+  if !g.stillInGame p then g
   else
     let pl := g.player p
     let mates :=
-      g.players.filter (fun m => m.id != p && !m.lost && g.areTeammates p m.id) |>.map (·.id)
+      g.players.filter (fun m => m.id != p && g.stillInGame m.id && g.areTeammates p m.id) |>.map (·.id)
     let g := g.record (GameEvent.playerLost g.turnNumber p .conceded (cause := some (.gameRule .playerLeftGame)))
     let g := g.logMsg s!"{pl.name} concedes (CR 104.3a)"
     let g :=

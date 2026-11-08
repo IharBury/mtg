@@ -22,7 +22,7 @@ def openingHandsPending (g : Game) : Bool :=
 /-- Players who have not yet kept an opening hand, in turn order from the
 starting player (CR 103.5). -/
 def playersStillDecidingMulligan (g : Game) : Array PlayerId :=
-  g.playersInOrderFrom g.startingPlayer (fun pl => !pl.lost && !pl.keptOpeningHand)
+  g.playersInOrderFrom g.startingPlayer (fun pl => g.stillInGame pl.id && !pl.keptOpeningHand)
 
 def promptMulligan (g : Game) (p : PlayerId) : Game :=
   g.change (.pending (.declareMulligan p))
@@ -57,7 +57,7 @@ player first (MSH 84). -/
 def openingBeginCandidates (g : Game) : Array ObjectId :=
   Id.run do
     let mut ids : Array ObjectId := #[]
-    for pid in g.playersInOrderFrom g.startingPlayer (fun pl => !pl.lost) do
+    for pid in g.playersInOrderFrom g.startingPlayer (fun pl => g.stillInGame pl.id) do
       for id in (g.player pid).hand do
         match g.findObject? id with
         | some o =>

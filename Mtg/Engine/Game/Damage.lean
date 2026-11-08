@@ -882,7 +882,7 @@ def dealDamageToPlayers (g : Game) (players : Array PlayerId) (n : Int)
     let c := cause.orElse (fun _ => g.currentBatch.bind (·.2))
     for i in [0:players.size] do
       let pid := players[i]!
-      if !(g.player pid).lost then
+      if g.stillInGame pid then
         g := g.dealDamageToPlayer pid n (source := source) (sourceSnap := srcSnap)
           (cause := c) (suppressLifelink := true)
         if let .chooseReplacement .. := g.pending then

@@ -16,9 +16,14 @@ def attackingAlone? (g : Game) (p : PlayerId) : Option GameObject :=
   let all := g.battlefield.filter (fun o => g.isCreature o && o.status.attacking)
   if all.size == 1 && g.controlledBy all[0]! p then some all[0]! else none
 
-/-- Permanent this Aura or Equipment is attached to. -/
+/-- Permanent this Aura or Equipment is attached to, falling back to LKI when
+the source left the battlefield before its ability resolves (CR 608.2h). -/
 def attachedHost? (g : Game) (sourceId : Option ObjectId) : Option GameObject :=
-  sourceId.bind g.findObject? |>.bind (fun src => src.attachedTo.bind g.findObject?)
+  match sourceId.bind g.findObject? with
+  | some src => src.attachedTo.bind g.findObject? |>.filter (·.isOnBattlefield)
+  | none =>
+    ((sourceId.bind g.lastKnownBefore?).bind (·.attachedTo)).bind g.findObject?
+      |>.filter (·.isOnBattlefield)
 
 /-- The spell that caused the resolving cast trigger, if still on the stack. -/
 def castTriggerSpell? (g : Game) : Option GameObject :=
@@ -711,7 +716,7 @@ def grantKeywordsToSpellCreatureTargets (g : Game) (k : Keywords) : Game :=
 def copyCastTriggerSpell (g : Game) (controller : PlayerId) : Game :=
   match g.castTriggerSpell? with
   | some spell =>
-    if spell.zone != .stack then g.logMsg s!"{spell.name} is no longer on the stack"
+    if spell.zone != .stack then g.logMsg s!"{g.name spell} is no longer on the stack"
     else
       let (g, copyId?) := g.copyStackSpellWithId spell controller
       match copyId? with
@@ -1019,7 +1024,7 @@ def beginPayOrLetCounter (g : Game) (targets : Array Target) (n : Nat) : Game :=
     | some o =>
       let ctrl := o.controller.getD o.owner
       ((g.clearUnlessPays).change (.pending (.payOrLetCounter ctrl n (some id)))).logMsg
-        s!"{(g.player ctrl).name} may pay \{{n}} or {o.name} is countered"
+        s!"{(g.player ctrl).name} may pay \{{n}} or {g.name o} is countered"
     | none => g.logMsg "The target is no longer legal"
   | _ => g.logMsg "The target is no longer legal"
 
@@ -1044,7 +1049,7 @@ def beginUnlessPays (g : Game) (controller : PlayerId) (effect : Effect)
           else (g.lastControllerOf? o).map (fun pid => (pid, none))
         | none => none
       | some (Target.player pid) =>
-        if (g.player pid).lost || !g.playerCanBeTargetedBy controller pid sourceId then none
+        if !g.stillInGame pid || !g.playerCanBeTargetedBy controller pid sourceId then none
         else some (pid, none)
       | _ => none
     match payer? with

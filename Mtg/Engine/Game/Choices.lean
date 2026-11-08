@@ -37,22 +37,24 @@ def leastPowerCreatures (g : Game) (p : PlayerId) : Array GameObject :=
 `chosen` is none, the player still chooses (logged; no sacrifice yet). -/
 def sacrificeLeastPowerCreature (g : Game) (p : PlayerId)
     (chosen : Option ObjectId := none) : Game :=
-  let tied := g.leastPowerCreatures p
-  if tied.isEmpty then
-    g.logMsg s!"{(g.player p).name} controls no creatures to sacrifice"
+  if !g.stillInGame p then g
   else
-    let pick :=
-      match chosen with
-      | some chosenId => tied.find? (fun (o : GameObject) => o.id == chosenId)
-      | none => if tied.size == 1 then some tied[0]! else none
-    match pick with
-    | some o =>
-      g.sacrificeToGraveyard o
-        s!"{(g.player p).name} sacrifices {g.name o} (least power)"
-    | none =>
-      let ids : Array ObjectId := tied.map (fun (o : GameObject) => o.id)
-      (g.change (.pending (.fraChoice p (.sacrificeLeastPower ids)))).logMsg
-        s!"{(g.player p).name} chooses one of the creatures tied for least power to sacrifice"
+    let tied := g.leastPowerCreatures p
+    if tied.isEmpty then
+      g.logMsg s!"{(g.player p).name} controls no creatures to sacrifice"
+    else
+      let pick :=
+        match chosen with
+        | some chosenId => tied.find? (fun (o : GameObject) => o.id == chosenId)
+        | none => if tied.size == 1 then some tied[0]! else none
+      match pick with
+      | some o =>
+        g.sacrificeToGraveyard o
+          s!"{(g.player p).name} sacrifices {g.name o} (least power)"
+      | none =>
+        let ids : Array ObjectId := tied.map (fun (o : GameObject) => o.id)
+        (g.change (.pending (.fraChoice p (.sacrificeLeastPower ids)))).logMsg
+          s!"{(g.player p).name} chooses one of the creatures tied for least power to sacrifice"
 
 /-- Modes in `all` that have not yet been chosen. -/
 def unusedModes (chosen : Array Nat) (all : Array Nat := #[0, 1, 2]) : Array Nat :=
@@ -168,26 +170,28 @@ def discardMultiHandIdsLoop (g : Game) (remaining : Array (PlayerId × ObjectId)
 /-- Discard every card in `p`'s hand. Zero cards is a legal discard and is
 logged (Sauron, the Dark Lord). -/
 def discardEntireHand (g : Game) (p : PlayerId) (cause : Option EventCause := none) : Game :=
-  let ids := (g.player p).hand
-  let preDiscards := g.loggedDiscards p
-  let (g, cause?) : Game × Option EventCause :=
-    match cause with
-    | some c => (g, some c)
-    | none =>
-      if ids.isEmpty then (g, none)
-      else
-        match g.currentResolvingContext? with
-        | some (src, ctrl) =>
-          let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some p)) src
-          (g, some c)
-        | none => (g, none)
-  let g := g.withBatch cause? fun g =>
-    g.discardHandIdsLoop p ids (logEach := false) (cause := cause?)
-  if let .chooseReplacement .. := g.pending then
-    g.chainPendingReplacement (.finishPostStep (.logDiscardedCount p preDiscards))
+  if !g.stillInGame p then g
   else
-    let discarded := g.loggedDiscards p - preDiscards
-    g.logMsg s!"{(g.player p).name} discards {discarded} card(s)"
+    let ids := (g.player p).hand
+    let preDiscards := g.loggedDiscards p
+    let (g, cause?) : Game × Option EventCause :=
+      match cause with
+      | some c => (g, some c)
+      | none =>
+        if ids.isEmpty then (g, none)
+        else
+          match g.currentResolvingContext? with
+          | some (src, ctrl) =>
+            let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some p)) src
+            (g, some c)
+          | none => (g, none)
+    let g := g.withBatch cause? fun g =>
+      g.discardHandIdsLoop p ids (logEach := false) (cause := cause?)
+    if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement (.finishPostStep (.logDiscardedCount p preDiscards))
+    else
+      let discarded := g.loggedDiscards p - preDiscards
+      g.logMsg s!"{(g.player p).name} discards {discarded} card(s)"
 
 /-- Discard the hand (zero cards is legal) and draw that many. The choice is
 made during resolution; nothing happens between discard and draw. -/
@@ -333,7 +337,7 @@ def exileTopPlayIfYouControlSubtypeLoop (g : Game) (p : PlayerId)
 control `subtype` (CR 610.1 / 701.18). Timing and costs are unchanged. -/
 def exileTopPlayIfYouControlSubtype (g : Game) (p : PlayerId) (n : Nat)
     (subtype : CardSubtype) : Game :=
-  if n == 0 then g
+  if n == 0 || !g.stillInGame p then g
   else
     let (g0, cause?) : Game × Option EventCause :=
       if (g.player p).library.isEmpty then (g, none)
@@ -483,17 +487,19 @@ A 4/0 split is legal. The face-down pile is not revealed if it is put into
 hand. -/
 def riddlesInTheDark (g : Game) (p : PlayerId) (faceUpCount : Nat)
     (chooseFaceDown : Bool) : Game :=
-  let lib := (g.player p).library
-  let n := min 4 lib.size
-  let taken := lib.extract (lib.size - n) lib.size
-  let g :=
-    if !taken.isEmpty then
-      g.record (GameEvent.lookedAt g.turnNumber p taken (cause := some (g.resolvingOrRuleCause p)))
-    else g
-  let faceUpN := min faceUpCount taken.size
-  let faceUp := taken.extract (taken.size - faceUpN) taken.size
-  let faceDown := taken.extract 0 (taken.size - faceUpN)
-  g.applyRiddlesPiles p faceUp faceDown chooseFaceDown
+  if !g.stillInGame p then g
+  else
+    let lib := (g.player p).library
+    let n := min 4 lib.size
+    let taken := lib.extract (lib.size - n) lib.size
+    let g :=
+      if !taken.isEmpty then
+        g.record (GameEvent.lookedAt g.turnNumber p taken (cause := some (g.resolvingOrRuleCause p)))
+      else g
+    let faceUpN := min faceUpCount taken.size
+    let faceUp := taken.extract (taken.size - faceUpN) taken.size
+    let faceDown := taken.extract 0 (taken.size - faceUpN)
+    g.applyRiddlesPiles p faceUp faceDown chooseFaceDown
 
 /-- Linked activated abilities last only while the copier still has them. -/
 def linkedAbilitiesStillLinked (stillHasThoseAbilities : Bool) : Bool :=

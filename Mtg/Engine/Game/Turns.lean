@@ -137,7 +137,7 @@ def clearTurnActivations (g : Game) : Game :=
         | .permission _ (.flashback _) .untilEndOfTurn => true
         | _ => false) (cause := cause)
       for pl in g.players do
-        if pl.lost then
+        if !g.stillInGame pl.id then
           -- Keep last-known this-turn info until that turn would have begun
           -- (CR 800.4i).
           pure ()
@@ -156,7 +156,7 @@ def clearTurnActivations (g : Game) : Game :=
             | .playerRule p (.controlsPlayer _ false) .untilEndOfTurn => p == pl.id
             | _ => false) (cause := cause)
       let expiredDt := g.delayedTriggers.filter (fun dt =>
-        !(g.player dt.controller).lost &&
+        g.stillInGame dt.controller &&
         (match dt.kind with
          | .attackPumpPerPlains
          | .copyNextInstantSorceryThisTurn
@@ -197,7 +197,7 @@ def clearEOT (g : Game) : Game :=
           | _ => pure ()
         g := g.expirePlayPermissions g.activePlayer (cause := cause)
         for pl in g.players do
-          if pl.id != g.activePlayer && !pl.lost then
+          if pl.id != g.activePlayer && g.stillInGame pl.id then
             g := g.activeEffects.foldl (fun g (eid, e) =>
               match e with
               | .permission p (.playFromExile oid perm) .untilEndOfTurn =>
@@ -323,7 +323,7 @@ that player's last-turn information (CR 800.4i). -/
 def expireUntilNextTurnEffects (g : Game) (p : PlayerId) : Game :=
   g.withBatch none fun g =>
     let cause := some (EventCause.turnBased .expireAtStepBegin)
-    let teamHasLiving := g.players.any (fun m => !m.lost && g.areTeammates p m.id)
+    let teamHasLiving := g.players.any (fun m => g.stillInGame m.id && g.areTeammates p m.id)
     let g :=
       if teamHasLiving then g
       else
@@ -391,7 +391,7 @@ private def pendingExtraTurnCauses (g : Game) : Array EventCause :=
       | .rules (.player (.lost p _)) | .rules (.player (.leftGame p)) =>
         (stk, updateLost lost p true, seats, seatsExtra)
       | .engine (.addPlayer pl) =>
-        (stk, updateLost lost pl.id pl.lost, seats, seatsExtra)
+        (stk, updateLost lost pl.id (pl.lost || pl.leftTheGame), seats, seatsExtra)
       | .rules (.turn (.extraTurnAdded p _)) =>
         match e.cause? with
         | some c =>
@@ -514,7 +514,7 @@ partial def continueStartNextTurn (g : Game) (nextP : PlayerId)
   let pendingExtraCauses := pendingExtraTurnCauses g
   let mut skipIdx := 0
   if !midRegularShared then
-    while skipIdx < g.extraTurns.size && (g.player g.extraTurns[skipIdx]!).lost do
+    while skipIdx < g.extraTurns.size && !g.stillInGame g.extraTurns[skipIdx]! do
       skipIdx := skipIdx + 1
   let nextExtra? :=
     if midRegularShared then none
@@ -536,7 +536,7 @@ partial def continueStartNextTurn (g : Game) (nextP : PlayerId)
         else g
       g.logMsg s!"It is now {(g.player q).name}'s extra turn {g.turnNumber}"
     | none =>
-      if !(g.player nextP).lost then
+      if g.stillInGame nextP then
         let sameShared :=
           !seatsExtra && !seats.isEmpty &&
             g.areTeammates seats[0]! nextP && !seats.contains nextP
@@ -546,7 +546,7 @@ partial def continueStartNextTurn (g : Game) (nextP : PlayerId)
         let g := g.change (.cleanupGivesPriority false)
         g.logMsg s!"It is now {(g.player nextP).name}'s turn {g.turnNumber}"
       else g
-  if runBeginTurn && !(gNext.player gNext.activePlayer).lost then
+  if runBeginTurn && g.stillInGame gNext.activePlayer then
     gNext.beginTurn
   else gNext
 
@@ -560,7 +560,7 @@ partial def startNextTurnCore (g : Game) (runBeginTurn : Bool) : Game :=
         let cause := some (EventCause.turnBased .cleanupClear)
         let g := g.expirePlayPermissions ending (cause := cause)
         let g := g.players.foldl (fun g pl =>
-          if pl.id != ending && !pl.lost then
+          if pl.id != ending && g.stillInGame pl.id then
             g.activeEffects.foldl (fun g (eid, e) =>
               match e with
               | .permission p (.playFromExile oid perm) .untilEndOfTurn =>
@@ -581,7 +581,7 @@ partial def startNextTurnCore (g : Game) (runBeginTurn : Bool) : Game :=
     let mut departed : Array PlayerId := #[]
     if !midRegularShared then
       let mut skipIdx := 0
-      while skipIdx < g.extraTurns.size && (g.player g.extraTurns[skipIdx]!).lost do
+      while skipIdx < g.extraTurns.size && !g.stillInGame g.extraTurns[skipIdx]! do
         let d := g.extraTurns[skipIdx]!
         if !departed.contains d then departed := departed.push d
         skipIdx := skipIdx + 1
@@ -590,7 +590,7 @@ partial def startNextTurnCore (g : Game) (runBeginTurn : Bool) : Game :=
     let n := g.players.size
     for k in [1:n+1] do
       let q : PlayerId := ⟨(ending.idx + k) % n⟩
-      if (g.player q).lost then
+      if !g.stillInGame q then
         if !departed.contains q then departed := departed.push q
       else
         return (q, departed)
@@ -684,7 +684,7 @@ partial def beginStepBody (g : Game) (st : Step) : Game :=
       else
         g.receivePriority g.activePlayer
   | .declareAttackers =>
-    if (g.player g.activePlayer).lost then
+    if !g.stillInGame g.activePlayer then
       g.receivePriority g.activePlayer
     else
       g.change (.pending .declareAttackers)

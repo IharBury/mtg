@@ -497,7 +497,7 @@ def createTreasureTokens (g : Game) (controller : PlayerId) (n : Nat)
   if n == 0 then g
   else if let .chooseReplacement .. := g.pending then
     g.chainPendingReplacement (.createTreasureTokens controller n tapped cause)
-  else if (g.player controller).lost then
+  else if !g.stillInGame controller then
     g.logMsg "no token is created (CR 800.4b)"
   else
     (g.createToken controller treasureToken (tapped := tapped) (cause := cause) (count := n)).1

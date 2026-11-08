@@ -652,13 +652,7 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
     | none => g
   | .damageEqualSourcePower =>
     let src := sourceId.bind g.damageSourceById?
-    let n :=
-      match sourceId.bind g.findObject? with
-      | some o => (g.power o).toNat
-      | none =>
-        match sourceId.bind g.lastKnownBefore? with
-        | some eo => (eo.power.getD 0).toNat
-        | none => 0
+    let n := g.sourcePowerNatAtResolution sourceId
     let srcName := (src.map g.name).getD "The creature"
     g.withLegalKindPermanent controller .creature targets (fun g o =>
       g.dealDamageFrom srcName o n (source := src))

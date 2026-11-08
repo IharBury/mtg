@@ -13,6 +13,7 @@ namespace Game
 /-- Ask the next player who can sacrifice a creature, or finish if none remain. -/
 def beginSacrificeCreatures (g : Game) (players : Array PlayerId)
     (chosen : Array ObjectId := #[]) : Game :=
+  let players := players.filter g.stillInGame
   match g.nextActorWithCreatures players with
   | none =>
     let skipped := players.filter (fun p => (g.creaturesControlledBy p).isEmpty)
@@ -239,12 +240,14 @@ def villainConniveTarget? (g : Game) (controller : PlayerId) (sourceId : ObjectI
 /-- Ask whether to have the entering Villain connive (MSH 422). -/
 def beginMayHaveVillainConnive (g : Game) (controller : PlayerId)
     (sourceId villainId : ObjectId) : Game :=
-  let who :=
-    match g.findObject? villainId with
-    | some o => if o.isOnBattlefield then g.name o else o.name
-    | none => "the Villain"
-  (g.change (.pending (.mayHaveVillainConnive controller sourceId villainId))).logMsg
-    s!"{(g.player controller).name} may have {who} connive (do this only once each turn)"
+  if !g.stillInGame controller then g
+  else
+    let who :=
+      match g.findObject? villainId with
+      | some o => if o.isOnBattlefield then g.name o else o.name
+      | none => "the Villain"
+    (g.change (.pending (.mayHaveVillainConnive controller sourceId villainId))).logMsg
+      s!"{(g.player controller).name} may have {who} connive (do this only once each turn)"
 
 /-- Accept Baron Strucker's optional connive (MSH 422). -/
 def haveVillainConnive (g : Game) (p : PlayerId) : Except String Game := do

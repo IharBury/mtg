@@ -299,7 +299,7 @@ def checkCombatAssignment (g : Game) (asgn : CreatureCombatAssignment) (forAttac
           throw s!"{srcName} is blocked with no remaining blockers and assigns no combat damage (CR 510.1c)"
       else if !liveDest then
         if asgn.toPlayer != 0 then
-          if (g.player defender).lost then
+          if !g.stillInGame defender then
             throw s!"combat damage isn't assigned to a player who has left the game (CR 800.4e)"
           else
             throw s!"{srcName} has no remaining player, planeswalker, or battle in combat to assign damage to (CR 506.4c / 702.19f)"
@@ -308,7 +308,7 @@ def checkCombatAssignment (g : Game) (asgn : CreatureCombatAssignment) (forAttac
     else
       if !liveDest then
         if asgn.toPlayer != 0 then
-          if (g.player defender).lost then
+          if !g.stillInGame defender then
             throw s!"combat damage isn't assigned to a player who has left the game (CR 800.4e)"
           else
             throw s!"{srcName} cannot assign combat damage to the defending player when the planeswalker it was attacking left combat (CR 702.19b / 702.19f)"

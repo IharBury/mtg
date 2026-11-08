@@ -43,7 +43,7 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
         ((g.colors spell).contains .red ||
           (g.colors spell).contains .green) then
       g.expireEffect (.pendingFreeRGCreatureThisTurn p) (cause := some (.gameRule .spellCast))
-        |>.logMsg s!"World War Hulk's free-cast permission is used on {spell.name}"
+        |>.logMsg s!"World War Hulk's free-cast permission is used on {g.name spell}"
     else g
   | none => g
 
@@ -159,9 +159,9 @@ def resolveAuraSpell (g : Game) (entry : StackEntry) (obj : GameObject) : Game :
   let toGraveyard (g : Game) : Game :=
     if obj.isCopy then
       (g.ceaseToExist obj.id (cause := some (.stateBased .copyOutsideStackOrBf))).logMsg
-        s!"{obj.name} ceases to exist (illegal Aura target, CR 704.5e)"
+        s!"{g.name obj} ceases to exist (illegal Aura target, CR 704.5e)"
     else
-      g.moveToOwnerGraveyard obj s!"{obj.name} goes to the graveyard (illegal Aura target)"
+      g.moveToOwnerGraveyard obj s!"{g.name obj} goes to the graveyard (illegal Aura target)"
         (cause := finishCause)
   if entry.targets.isEmpty then
     -- CR 303.4f,g,i: untargeted Aura spell or copy attaches via `.asEntersAttachAura`.
@@ -216,7 +216,7 @@ not cast as an Adventure and ceases to exist instead (CR 704.5e / 707.10). -/
 def resolveAdventureSpell (g : Game) (entry : StackEntry) (obj : GameObject) : Game :=
   if obj.isCopy then
     (g.ceaseToExist obj.id (cause := some (.stateBased .copyOutsideStackOrBf))).logMsg
-      s!"The copy of {obj.name} ceases to exist (CR 704.5e)"
+      s!"The copy of {g.name obj} ceases to exist (CR 704.5e)"
   else
     let finishCause := some (EventCause.gameRule .adventureSpellResolved)
     let (g, _) := g.move obj.id .exile none
@@ -336,18 +336,19 @@ def finishOneResolution (g : Game) (fin : ResolutionFinish) : Game :=
               | none => g
           else if obj.isCopy then
             (g.ceaseToExist obj.id (cause := some (.stateBased .copyOutsideStackOrBf))).logMsg
-              s!"The copy of {obj.name} ceases to exist (CR 704.5e)"
+              s!"The copy of {g.name obj} ceases to exist (CR 704.5e)"
           else if hasFlashback then
+            let objName := g.name obj
             let (g, _) := g.move obj.id .exile none
               (verb := some .resolve) (actor := some entry.controller) (cause := some finishCause)
             if let .chooseReplacement .. := g.pending then
               g.chainPendingReplacement
-                (.finishPostStep (.logExiledIfInExile obj.id s!"{obj.name} is exiled (flashback)"))
+                (.finishPostStep (.logExiledIfInExile obj.id s!"{objName} is exiled (flashback)"))
             else if (g.followMovedToZone? obj.id (· == .exile)).isSome then
-              g.logMsg s!"{obj.name} is exiled (flashback)"
+              g.logMsg s!"{objName} is exiled (flashback)"
             else g
           else
-            g.moveToOwnerGraveyard obj s!"{obj.name} goes to the graveyard"
+            g.moveToOwnerGraveyard obj s!"{g.name obj} goes to the graveyard"
               (verb := some .resolve) (actor := some entry.controller) (cause := some finishCause)
         if g.pending == .none && g.afterRandom == .none then
           g.record (GameEvent.resolved g.turnNumber entry.controller 0 snap

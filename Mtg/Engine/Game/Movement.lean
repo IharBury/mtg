@@ -594,7 +594,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
               if let some cur := acc.findObject? tid then
                 if cur.isBattlefieldObject && (acc.appliedControlEffectIds cur).isEmpty then
                   let destP := (acc.controllerOf cur).getD (cur.defaultController.getD cur.owner)
-                  if (acc.player destP).lost then
+                  if !acc.stillInGame destP then
                     let name := acc.name cur
                     let (acc', _) := acc.move tid .exile none (cause := some (.gameRule .playerLeftGame))
                     acc := acc'
@@ -603,7 +603,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
                         (acc.findObject? rid).bind fun ro =>
                           if ro.isBattlefieldObject && (acc.appliedControlEffectIds ro).isEmpty then
                             let dp := (acc.controllerOf ro).getD (ro.defaultController.getD ro.owner)
-                            if (acc.player dp).lost then some (rid, s!"{acc.name ro} is exiled (CR 800.4c)") else none
+                            if !acc.stillInGame dp then some (rid, s!"{acc.name ro} is exiled (CR 800.4c)") else none
                           else none
                       acc := acc.chainPendingReplacement
                         (.endControlExileLoop rem (some (.gameRule .playerLeftGame))
@@ -661,7 +661,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
         | none => g
       let g :=
         if weaverBonus > 0 then
-          g.logMsg s!"{freshForSnap.nameWithToken} enters with {weaverBonus} additional +1/+1 counter(s)"
+          g.logMsg s!"{g.nameWithToken (g.object! newId)} enters with {weaverBonus} additional +1/+1 counter(s)"
         else g
       (g, (newId, headSource, true))
   if !didMove then (g, newId)
@@ -678,7 +678,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
       if g.createsWolfOnOppExileDeath? src then
         match g.controllerOf src with
         | some p =>
-          if (g.player p).lost || (g.player p).leftTheGame then g
+          if !g.stillInGame p then g
           else
             let ab := TriggeredAbility.fra .fromEffect
               "When you do, create a 2/2 green Wolf creature token."
@@ -738,13 +738,19 @@ partial def runLinkedExileBatch (g : Game) (ids : Array ObjectId)
           let (g', movedDest?) : Game × Option Zone :=
             match o.returnToZone with
             | some (.hand p) =>
-              let (g', _) := g.move o.id (.hand p) none (cause := linkCause)
-              (g', some (.hand p))
+              if !g.stillInGame p then
+                (g.logMsg s!"{name} remains in its current zone (CR 800.4a)", none)
+              else
+                let (g', _) := g.move o.id (.hand p) none (cause := linkCause)
+                (g', some (.hand p))
             | some (.graveyard p) =>
-              let (g', _) := g.move o.id (.graveyard p) none (cause := linkCause)
-              (g', some (.graveyard p))
+              if !g.stillInGame p then
+                (g.logMsg s!"{name} remains in its current zone (CR 800.4a)", none)
+              else
+                let (g', _) := g.move o.id (.graveyard p) none (cause := linkCause)
+                (g', some (.graveyard p))
             | _ =>
-              if (g.player o.owner).lost then
+              if !g.stillInGame o.owner then
                 (g.logMsg s!"{name} remains in its current zone (CR 800.4b)", none)
               else
                 let (g', _) :=
@@ -920,7 +926,7 @@ def putOntoBattlefield (g : Game) (id : ObjectId) (controller : PlayerId)
     (preBattlefield : Option (Array GameObject) := none)
     (verb : Option ZoneVerb := none) (actor : Option PlayerId := none)
     (cause : Option EventCause := none) : Game × ObjectId :=
-  if (g.player controller).lost then
+  if !g.stillInGame controller then
     let name := g.name (g.object! id)
     (g.logMsg s!"{name} remains in its current zone (CR 800.4b)", id)
   else
@@ -1071,7 +1077,7 @@ def finishChosenSacrifices (g : Game) (chosen : Array ObjectId) : Game :=
       else none
     | none => none)
   let preBf := g.battlefield
-  let g := g.change (.pending .none)
+  let g := if g.pending != .none then g.change (.pending .none) else g
   g.withBatch none fun g =>
     g.sacrificePermanentsLoop pairs (preBattlefield := some preBf)
 
