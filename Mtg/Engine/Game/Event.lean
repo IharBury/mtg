@@ -1341,6 +1341,8 @@ inductive PostStep where
   | finishExileForLeaveTrigger (sourceId : Option ObjectId) (fromId : ObjectId)
   | exileTopForPlayLoop (fromPlayer caster : PlayerId) (remaining : Nat) (mayCastStyle : Bool)
       (cause : Option EventCause) (pendingFromId : Option ObjectId := none)
+  | exileTopPlayIfYouControlSubtypeLoop (p : PlayerId) (subtype : CardSubtype)
+      (remaining : Nat) (cause : Option EventCause) (movedId : Option ObjectId := none)
   | exileTopMayCastUpToLoop (fromPlayer caster : PlayerId) (remaining casts : Nat)
       (cause : Option EventCause) (exiled : Array ObjectId)
       (pendingFromId : Option ObjectId := none)
@@ -2402,12 +2404,6 @@ namespace GameEvent
   | .rules t r c _ => .rules t r c (some b)
   | .engine t c _ => .engine t c (some b)
 
-/-- Return `e` with its `EventCause` replaced (no-op on `.engine`). -/
-@[inline] def withCause (e : GameEvent) (c : EventCause) : GameEvent :=
-  match e with
-  | .rules t r _ b => .rules t r c b
-  | .engine .. => e
-
 /-- Tagged rules/engine payload of `e`. -/
 @[inline] def change : GameEvent → GameChange
   | .rules _ r .. => .rules r
@@ -3317,34 +3313,34 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : Option Obje
     | .cast (.spellCast _ _ _), .spellTargetsSource =>
       sourceId.isSome
     | .combat (.attackersDeclared p decls), .attacking =>
-      you p && decls.any (fun (attacker, _) => this attacker)
+      (you p || isTeammate p) && decls.any (fun (attacker, _) => this attacker)
     | .combat (.attackersDeclared p decls), .youAttack =>
-      you p && !decls.isEmpty
+      (you p || isTeammate p) && !decls.isEmpty
     | .combat (.attackersDeclared p decls), .youAttackWithElves =>
-      you p && decls.any (fun (attacker, _) => attacker.elf)
+      (you p || isTeammate p) && decls.any (fun (attacker, _) => attacker.elf)
     | .combat (.attackersDeclared p decls), .youAttackWithTwoOrMore =>
-      you p && decls.size ≥ 2 &&
+      (you p || isTeammate p) && decls.size ≥ 2 &&
         decls.any (fun (_, tgt) =>
           match tgt with
           | .player d => (decls.filter (fun (_, tgt') => tgt' == .player d)).size ≥ 2
           | _ => false)
     | .combat (.attackersDeclared p decls), .creatureYouControlAttacksAlone =>
-      you p && decls.size == 1 && decls[0]!.1.creature
+      (you p || isTeammate p) && decls.size == 1 && decls[0]!.1.creature
     | .combat (.attackersDeclared _ decls), .equippedAttacksAlone =>
       decls.size == 1 && decls[0]!.1.creature
     | .combat (.attackersDeclared p decls), .youAttackWithTotalPower =>
-      you p && !decls.isEmpty
+      (you p || isTeammate p) && !decls.isEmpty
     | .combat (.attackersDeclared p decls), .equippedAttacks =>
-      you p && !decls.isEmpty
+      (you p || isTeammate p) && !decls.isEmpty
     | .combat (.attackersDeclared p decls), .equippedCreatureYouControlAttacks =>
-      you p && decls.any (fun (attacker, _) => attacker.creature)
+      (you p || isTeammate p) && decls.any (fun (attacker, _) => attacker.creature)
     | .combat (.attackersDeclared p decls), .merfolkAttackPlayer =>
-      you p && decls.any (fun (attacker, tgt) =>
+      (you p || isTeammate p) && decls.any (fun (attacker, tgt) =>
         attacker.merfolk && match tgt with | .player _ => true | _ => false)
     | .combat (.attackersDeclared p decls), .fra .creatureYouControlAttacks =>
-      you p && decls.any (fun (attacker, _) => attacker.creature)
+      (you p || isTeammate p) && decls.any (fun (attacker, _) => attacker.creature)
     | .combat (.attackersDeclared p decls), .fra .creatureYouControlAttacksPlayerAlone =>
-      you p &&
+      (you p || isTeammate p) &&
         decls.any (fun (attacker, tgt) =>
           attacker.creature &&
             match tgt with
@@ -3365,10 +3361,10 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : Option Obje
           | .player d => opp d
           | _ => false)
     | .combat (.attackersDeclared p decls), .fra .zombieTokenAttacks =>
-      you p && decls.any (fun (attacker, _) =>
+      (you p || isTeammate p) && decls.any (fun (attacker, _) =>
         attacker.token && attacker.hasSubtype .zombie && attacker.power.any (· ≥ 6))
     | .combat (.attackersDeclared p decls), .fra .sphinxesAttack =>
-      you p && decls.any (fun (attacker, _) => attacker.hasSubtype .sphinx)
+      (you p || isTeammate p) && decls.any (fun (attacker, _) => attacker.hasSubtype .sphinx)
     | .combat (.attackersDeclared _ decls), .enchantedAttacksOrBlocks =>
       decls.any (fun (attacker, _) => attacker.creature)
     | .combat (.blockersDeclared _ decls), .enchantedAttacksOrBlocks =>

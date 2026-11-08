@@ -170,7 +170,7 @@ def applyConnive (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
             if g.durationActive d then
               match spec.kind with
               | .extraDrawOnConnive who n =>
-                if who == controller then specs := specs.push (spec, n)
+                if who == controller then specs := specs.push ({ spec with affectedPlayer := controller }, n)
               | _ => pure ()
           | _ => pure ()
         let candidates := specs.map (fun (s, _) => (ReplacementOrPrevention.replacement s).toCandidate)

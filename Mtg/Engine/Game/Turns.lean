@@ -116,7 +116,7 @@ def expirePlayPermissions (g : Game) (endingPlayer : PlayerId)
           let g := g.expireEffectById eid (cause := cause)
           match g.findObject? oid with
           | some o =>
-            if o.zone == .exile then g.logMsg s!"{o.name} can no longer be played from exile"
+            if o.zone == .exile then g.logMsg s!"{g.name o} can no longer be played from exile"
             else g
           | none => g
         else g
@@ -145,6 +145,7 @@ def clearTurnActivations (g : Game) : Game :=
           g := g.expireMatching (fun
             | .playerRule p (.additionalLands _) .untilEndOfTurn
             | .playerRule p .jaceLoyaltyAtInstantSpeed .untilEndOfTurn
+            | .playerRule p .legendRuleOff .untilEndOfTurn
             | .playerRule p (.mountainExtraRed _) .untilEndOfTurn
             | .playerRule p (.cantAttackJaces _) .untilEndOfTurn
             | .playerRule p .cantCastSpells .untilEndOfTurn
@@ -180,8 +181,6 @@ def clearEOT (g : Game) : Game :=
           | .replacement _ .untilEndOfTurn | .prevention _ .untilEndOfTurn => true
           | _ => false) (cause := cause)
         g := g.restoreCopiesUntilEot
-        for pl in g.players do
-          g := g.expireAll (.legendRuleOffThisTurn pl.id) (cause := cause)
         -- Each control-changing effect ends or counts down on its own across all
         -- ObjectScopes, so another control effect on the same permanent keeps
         -- applying (CR 514.2 / 613.7 / 800.4c).
@@ -207,7 +206,7 @@ def clearEOT (g : Game) : Game :=
                   let g := g.expireEffectById eid (cause := cause)
                   match g.findObject? oid with
                   | some o =>
-                    if o.zone == .exile then g.logMsg s!"{o.name} can no longer be played from exile"
+                    if o.zone == .exile then g.logMsg s!"{g.name o} can no longer be played from exile"
                     else g
                   | none => g
               | _ => g) g
@@ -316,7 +315,7 @@ def expireFraUntilTurnEffects (g : Game) (p : PlayerId) (includeTeammates : Bool
       | _ => false) (cause := cause)
   endingEmblems.foldl (fun g o =>
     if (g.findObject? o.id).any (·.zone == .command) then
-      (g.ceaseToExist o.id (cause := cause)).logMsg s!"{o.name} ends"
+      (g.ceaseToExist o.id (cause := cause)).logMsg s!"{g.name o} ends"
     else g) g
 
 /-- Expire effects that last until `p`'s next turn (CR 800.4m) and clear
@@ -352,6 +351,7 @@ def expireUntilNextTurnEffects (g : Game) (p : PlayerId) : Game :=
     let g := g.expireMatching (fun
       | .playerRule q (.additionalLands _) .untilEndOfTurn
       | .playerRule q .jaceLoyaltyAtInstantSpeed .untilEndOfTurn
+      | .playerRule q .legendRuleOff .untilEndOfTurn
       | .playerRule q (.mountainExtraRed _) .untilEndOfTurn
       | .playerRule q (.cantAttackJaces _) .untilEndOfTurn
       | .playerRule q .cantCastSpells .untilEndOfTurn
@@ -557,8 +557,24 @@ partial def startNextTurnCore (g : Game) (runBeginTurn : Bool) : Game :=
   let g :=
     if finalSeat then
       g.withBatch none fun g =>
-        g.expirePlayPermissions ending (cause := some (.turnBased .cleanupClear))
-          |>.clearTurnActivations
+        let cause := some (EventCause.turnBased .cleanupClear)
+        let g := g.expirePlayPermissions ending (cause := cause)
+        let g := g.players.foldl (fun g pl =>
+          if pl.id != ending && !pl.lost then
+            g.activeEffects.foldl (fun g (eid, e) =>
+              match e with
+              | .permission p (.playFromExile oid perm) .untilEndOfTurn =>
+                if perm.fromAdventure || perm.whileExiled || p != some pl.id then g
+                else
+                  let g := g.expireEffectById eid (cause := cause)
+                  match g.findObject? oid with
+                  | some o =>
+                    if o.zone == .exile then g.logMsg s!"{g.name o} can no longer be played from exile"
+                    else g
+                  | none => g
+              | _ => g) g
+          else g) g
+        g.clearTurnActivations
     else g
   let g := g.record (GameEvent.turnEnded g.turnNumber ending)
   let (nextP, departed) := Id.run do
@@ -685,7 +701,7 @@ partial def beginStepBody (g : Game) (st : Step) : Game :=
         if acc.any (fun q => q == pid || g.areTeammates q pid) then acc
         else acc.push pid) #[]
       if teamQueue.isEmpty then
-        let opp := g.opponent g.activePlayer
+        let opp := g.defendingPlayer
         if attackers.any (·.status.attackingTarget.isNone) &&
             (g.livingOpponents g.activePlayer).any (fun pl => pl.id == opp) then
           g.changes #[.pending .declareBlockers, .blockersQueue #[opp]]

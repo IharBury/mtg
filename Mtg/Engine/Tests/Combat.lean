@@ -148,7 +148,7 @@ def paidCratermaker : Game :=
 def resolvedCratermaker : Game := passBoth paidCratermaker
 
 #guard resolvedCratermaker.stack.isEmpty
-#guard resolvedCratermaker.log.any (fun s => mentions s "Grizzly Bears is dealt 2 damage")
+#guard resolvedCratermaker.log.any (fun s => mentions s "Goblin Cratermaker deals 2 damage to Grizzly Bears")
 #guard resolvedCratermaker.log.any (fun s => mentions s "Grizzly Bears dies from lethal damage")
 #guard !(resolvedCratermaker.battlefield.any (fun o => o.name == "Grizzly Bears"))
 #guard resolvedCratermaker.objects.any (fun o =>
@@ -172,7 +172,7 @@ def resolvedCratermakerVsGiant : Game :=
 
 #guard (namedPermanent resolvedCratermakerVsGiant "Hill Giant").status.damage == 2
 #guard resolvedCratermakerVsGiant.battlefield.any (fun o => o.name == "Hill Giant")
-#guard resolvedCratermakerVsGiant.log.any (fun s => mentions s "Hill Giant is dealt 2 damage")
+#guard resolvedCratermakerVsGiant.log.any (fun s => mentions s "Goblin Cratermaker deals 2 damage to Hill Giant")
 #guard !resolvedCratermakerVsGiant.log.any (fun s => mentions s "Hill Giant dies")
 
 /-- Targeting the Cratermaker itself: it is sacrificed as a cost, so the ability

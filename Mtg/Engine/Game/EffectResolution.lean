@@ -937,7 +937,7 @@ def finishRevealPutCreaturesStep (g : Game) (p : PlayerId)
     let fromId := entered[k]!
     match g.followMovedToZone? fromId (· == .battlefield) with
     | some enteredObj =>
-      g := g.logMsg s!"{(g.player p).name} puts {enteredObj.name} onto the battlefield"
+      g := g.logMsg s!"{(g.player p).name} puts {g.name enteredObj} onto the battlefield"
       g := g.afterPermanentEnters enteredObj
       if let .chooseReplacement .. := g.pending then
         let remEntered := entered.extract (k + 1) entered.size
@@ -2098,7 +2098,7 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
       match g.findObject? id with
       | some o =>
         if o.isOnBattlefield && g.isCreature o && g.canBeTargetedBy controller o sourceId then
-          g.applyPermanentAction o action (sourceId := g.resolvingDamageSource?.map (·.id))
+          g.applyPermanentAction o action (sourceId := sourceId)
         else g.illegalAbilityTarget (Target.permanent id)
       | none => g.illegalAbilityTarget (Target.permanent id)
   | .returnGySubtypeToHand subtype =>
@@ -2665,10 +2665,7 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
       | .addBlueCantNonartifact =>
         g.addMana controller (.colored .blue) 1 (source := sourceId) (restriction := some .cantNonartifact)
       | .addAnyColorEqualToSourcePower =>
-        let x :=
-          match sourceId.bind g.findObject? with
-          | some o => (g.power o).toNat
-          | none => 0
+        let x := g.sourcePowerNatAtResolution sourceId lastKnownPower
         g.addMana controller (.colored .green) x (source := sourceId)
       | .addFourAnyCombination =>
         g.addMana controller (.colored .white) 4 (source := sourceId)

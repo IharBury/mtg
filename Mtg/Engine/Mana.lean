@@ -519,41 +519,21 @@ def countRestricted (p : ManaPool) (t : ManaType) (r : ManaRestriction) : Nat :=
 /-- Restricted Elf-only amount of this type. -/
 def getElf (p : ManaPool) (t : ManaType) : Nat := p.countRestricted t .elf
 def elfWhite (p : ManaPool) : Nat := p.getElf (.colored .white)
-def elfBlue (p : ManaPool) : Nat := p.getElf (.colored .blue)
-def elfBlack (p : ManaPool) : Nat := p.getElf (.colored .black)
-def elfRed (p : ManaPool) : Nat := p.getElf (.colored .red)
 def elfGreen (p : ManaPool) : Nat := p.getElf (.colored .green)
 
 /-- Restricted instant-or-sorcery-only amount of this type. -/
 def getInst (p : ManaPool) (t : ManaType) : Nat := p.countRestricted t .instantOrSorcery
-def instWhite (p : ManaPool) : Nat := p.getInst (.colored .white)
-def instBlue (p : ManaPool) : Nat := p.getInst (.colored .blue)
-def instBlack (p : ManaPool) : Nat := p.getInst (.colored .black)
-def instRed (p : ManaPool) : Nat := p.getInst (.colored .red)
-def instGreen (p : ManaPool) : Nat := p.getInst (.colored .green)
 
 /-- Restricted Hero-source amount of this type. -/
 def getHero (p : ManaPool) (t : ManaType) : Nat := p.countRestricted t .hero
 def heroWhite (p : ManaPool) : Nat := p.getHero (.colored .white)
-def heroBlue (p : ManaPool) : Nat := p.getHero (.colored .blue)
-def heroBlack (p : ManaPool) : Nat := p.getHero (.colored .black)
-def heroRed (p : ManaPool) : Nat := p.getHero (.colored .red)
-def heroGreen (p : ManaPool) : Nat := p.getHero (.colored .green)
 
 /-- Restricted Villain-source amount of this type. -/
 def getVillain (p : ManaPool) (t : ManaType) : Nat := p.countRestricted t .villain
-def villainWhite (p : ManaPool) : Nat := p.getVillain (.colored .white)
-def villainBlue (p : ManaPool) : Nat := p.getVillain (.colored .blue)
 def villainBlack (p : ManaPool) : Nat := p.getVillain (.colored .black)
-def villainRed (p : ManaPool) : Nat := p.getVillain (.colored .red)
-def villainGreen (p : ManaPool) : Nat := p.getVillain (.colored .green)
 
 /-- Restricted creature-source activation amount of this type. -/
 def getCreature (p : ManaPool) (t : ManaType) : Nat := p.countRestricted t .creatureSource
-def creatureWhite (p : ManaPool) : Nat := p.getCreature (.colored .white)
-def creatureBlue (p : ManaPool) : Nat := p.getCreature (.colored .blue)
-def creatureBlack (p : ManaPool) : Nat := p.getCreature (.colored .black)
-def creatureRed (p : ManaPool) : Nat := p.getCreature (.colored .red)
 def creatureGreen (p : ManaPool) : Nat := p.getCreature (.colored .green)
 
 /-- Colorless mana that cannot be spent to cast a nonartifact spell (Vibranium tokens). -/
@@ -568,14 +548,6 @@ def fraRestricted (p : ManaPool) : Array (ManaType × FraManaUse) :=
     match u.restriction with
     | some (.fra fu) => some (u.mana, fu)
     | _ => none
-
-/-- Restricted Reality Fracture mana of this type. -/
-def fraCount (p : ManaPool) (t : ManaType) : Nat :=
-  p.countWhere fun u =>
-    u.mana == t &&
-      match u.restriction with
-      | some (.fra _) => true
-      | _ => false
 
 /-- Restricted Reality Fracture mana of this type that may pay for `spend`. -/
 def fraUsable (p : ManaPool) (t : ManaType) (spend : ManaSpend) : Nat :=

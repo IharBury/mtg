@@ -89,7 +89,7 @@ partial def drawOneWithReplacements (g : Game) (p : PlayerId)
               match spec.kind with
               | .replaceDraw who factor exceptFirst =>
                 if who == p && (!exceptFirst || !firstOfYourDrawStep) then
-                  acc := acc.push (spec, factor)
+                  acc := acc.push ({ spec with affectedPlayer := p }, factor)
               | _ => pure ()
           | _ => pure ()
         return acc
@@ -197,16 +197,16 @@ def finishReturnStackSpell (g : Game) (spellId : ObjectId) (owner : PlayerId)
 def returnStackSpell (g : Game) (spellId : ObjectId) : Game :=
   if let .chooseReplacement .. := g.pending then
     let owner := (g.findObject? spellId).map (·.owner) |>.getD g.activePlayer
-    let name := (g.findObject? spellId).map (·.name) |>.getD ""
+    let name := (g.findObject? spellId).map g.name |>.getD ""
     g.chainPendingReplacement (.returnStackSpell spellId owner name false)
   else
   match g.findObject? spellId with
   | none => g.logMsg "The spell is no longer on the stack"
   | some o =>
     if o.zone != .stack then
-      g.logMsg s!"{o.name} is no longer on the stack"
+      g.logMsg s!"{g.name o} is no longer on the stack"
     else
-      let name := o.name
+      let name := g.name o
       let owner := o.owner
       let (g, _) := g.move spellId (.hand owner) none
       if let .chooseReplacement .. := g.pending then

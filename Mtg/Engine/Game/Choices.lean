@@ -48,7 +48,7 @@ def sacrificeLeastPowerCreature (g : Game) (p : PlayerId)
     match pick with
     | some o =>
       g.sacrificeToGraveyard o
-        s!"{(g.player p).name} sacrifices {o.name} (least power)"
+        s!"{(g.player p).name} sacrifices {g.name o} (least power)"
     | none =>
       let ids : Array ObjectId := tied.map (fun (o : GameObject) => o.id)
       (g.change (.pending (.fraChoice p (.sacrificeLeastPower ids)))).logMsg
@@ -290,6 +290,45 @@ def supperForSpidersReturn (g : Game) (controller : PlayerId)
   g.withBatch none fun g =>
     g.putToBattlefieldLoop controller ids (onlyFoodArtifact := true)
 
+/-- Pause-safe loop for `exileTopPlayIfYouControlSubtype`. -/
+def exileTopPlayIfYouControlSubtypeLoop (g : Game) (p : PlayerId)
+    (subtype : CardSubtype) (remaining : Nat) (cause? : Option EventCause)
+    (movedId? : Option ObjectId := none) : Game := Id.run do
+  if let .chooseReplacement .. := g.pending then
+    return g.chainPendingReplacement
+      (.finishPostStep (.exileTopPlayIfYouControlSubtypeLoop p subtype remaining cause? movedId?))
+  let mut g := g
+  if let some fid := movedId? then
+    if let some moved := g.followMovedToZone? fid (· == .exile) then
+      g := g.createEffect (.playPermission moved.id {
+          player := p
+          whileExiled := true
+          requireSubtype := some subtype
+          faceDown := true })
+        (cause := cause?)
+      g := g.logMsg s!"{(g.player p).name} exiles a card face down"
+  for i in [0:remaining] do
+    let pl := g.player p
+    if pl.library.isEmpty then
+      g := g.logMsg s!"{pl.name} has no cards in their library to exile"
+    else
+      let top := pl.library.back!
+      let (g', _) := g.move top .exile none (cause := cause?)
+      g := g'
+      if let .chooseReplacement .. := g.pending then
+        let rem := remaining - (i + 1)
+        return g.chainPendingReplacement
+          (.finishPostStep (.exileTopPlayIfYouControlSubtypeLoop p subtype rem cause? (some top)))
+      if let some moved := g.followMovedToZone? top (· == .exile) then
+        g := g.createEffect (.playPermission moved.id {
+            player := p
+            whileExiled := true
+            requireSubtype := some subtype
+            faceDown := true })
+          (cause := cause?)
+        g := g.logMsg s!"{pl.name} exiles a card face down"
+  return g
+
 /-- Exile the top `n` cards face down. They may be played while exiled if you
 control `subtype` (CR 610.1 / 701.18). Timing and costs are unchanged. -/
 def exileTopPlayIfYouControlSubtype (g : Game) (p : PlayerId) (n : Nat)
@@ -301,26 +340,8 @@ def exileTopPlayIfYouControlSubtype (g : Game) (p : PlayerId) (n : Nat)
       else
         let (g, c) := g.allocDelayedCause (some p)
         (g, some c)
-    g0.withBatch cause? fun g0 => Id.run do
-      let mut g := g0
-      for _ in List.range n do
-        let pl := g.player p
-        if pl.library.isEmpty then
-          g := g.logMsg s!"{pl.name} has no cards in their library to exile"
-        else
-          let top := pl.library.back!
-          let cardName := (g.object! top).name
-          let (g', newId) := g.move top .exile none (cause := cause?)
-          g := g'
-          g := g.createEffect (.playPermission newId {
-              player := p
-              whileExiled := true
-              requireSubtype := some subtype
-              faceDown := true })
-            (cause := cause?)
-          g := g.logMsg s!"{pl.name} exiles a card face down"
-          let _ := cardName
-      return g
+    g0.withBatch cause? fun g =>
+      g.exileTopPlayIfYouControlSubtypeLoop p subtype n cause?
 
 /-- Finish the direct-cast step of `grimaExileUntilInstantOrSorcery` once
 moving `fromId` to `.stack` completes, then put `others` on the bottom of

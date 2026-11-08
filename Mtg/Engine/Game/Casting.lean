@@ -189,7 +189,7 @@ def canCast (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
 alternative). Mana abilities are not activated here. -/
 def canPayAnnouncedAdditional (g : Game) (p : PlayerId) (o : GameObject)
     (available : ManaPool) (origPerm : Option PlayPermission := none)
-    (explicitAltCost : Bool := false) : Bool :=
+    (explicitAltCost : Bool := false) (flashback : Option Bool := none) : Bool :=
   let bc := g.baseCard o
   -- CR 106.6: the same spending restrictions as `proposedAllowances` for this spell —
   -- Elf, instant/sorcery, Hero, Villain, and artifact-spell mana may pay; creature-source
@@ -209,7 +209,7 @@ def canPayAnnouncedAdditional (g : Game) (p : PlayerId) (o : GameObject)
       (spend := spend)
   let payExtra (n : Nat) : Bool :=
     canPay (g.playManaCost { o with controller := some p } bc (ManaCost.ofGeneric n)
-      (origPerm := origPerm) (explicitAltCost := explicitAltCost))
+      (origPerm := origPerm) (flashback := flashback) (explicitAltCost := explicitAltCost))
   match bc.additionalCostBeholdOrPay with
   | some (quality, n) =>
     let hasPerm := (g.permanentsOf p).any (fun perm => g.hasSubtype perm quality)

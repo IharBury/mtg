@@ -1316,11 +1316,11 @@ def player (g : Game) (p : PlayerId) : Player :=
   g.players[p.idx]!
 
 def livingPlayers (g : Game) : Array Player :=
-  g.players.filter (fun pl => !pl.lost)
+  g.players.filter (fun pl => !pl.lost && !pl.leftTheGame)
 
-/-- True while `p` has not lost and therefore has not left (CR 104 / 800.4). -/
+/-- True while `p` has neither lost nor left the game (CR 104 / 800.4). -/
 def stillInGame (g : Game) (p : PlayerId) : Bool :=
-  !(g.player p).lost
+  !(g.player p).lost && !(g.player p).leftTheGame
 
 /-- True when living player `p` is the active player or a teammate of the active
 player, i.e., it is `p`'s team's turn (CR 805.4a / 810.2). -/
@@ -2457,6 +2457,11 @@ def playPermissionOf? (g : Game) (o : GameObject) : Option PlayPermission :=
 
 def playPermissionDuration (g : Game) (o : GameObject) : Option EffectDuration :=
   (g.playPermissionEntryOf? o.id).map fun (_, _, _, d) => d
+
+/-- The copy of `srcId`'s prepare spell in exile, if any. -/
+def preparedCopyOf? (g : Game) (srcId : ObjectId) : Option GameObject :=
+  g.objects.find? (fun o =>
+    o.zone == .exile && ((g.playPermission o).bind (·.prepareSource)) == some srcId)
 
 def flashbackUntilEot (g : Game) (o : GameObject) : Bool :=
   let originId := GameEvent.castOriginIdOf g.events o.id
@@ -6047,8 +6052,9 @@ def replaceCountersPutChoice (g : Game) (target : GameObject) (kind : CounterKin
                 | .modifyCountersPut tid k? add mult =>
                   if (tid.isNone || tid == some target.id) && (k?.isNone || k? == some kind) then
                     let spec' :=
-                      if k?.isNone then { spec with id := { spec.id with counterKind := some kind } }
-                      else spec
+                      if k?.isNone then
+                        { spec with id := { spec.id with counterKind := some kind }, affectedPlayer := affected }
+                      else { spec with affectedPlayer := affected }
                     specs := specs.push (spec', add, mult)
                 | _ => pure ()
             | _ => pure ()
@@ -6165,10 +6171,6 @@ def landsYouControl (g : Game) (p : PlayerId) : Nat :=
 This characteristic-defining ability functions in all zones (CR 208.2a / 604.3). -/
 def hasLandsYouControlPT (g : Game) (o : GameObject) : Bool :=
   (g.staticAbilities o).any StaticAbility.isLandsYouControlPT
-
-/-- Power or toughness from a lands-you-control CDA (CR 208.2a / 604.3). -/
-def landsYouControlPT (g : Game) (o : GameObject) : Int :=
-  Int.ofNat (g.landsYouControl (g.you o))
 
 /-- Number of card types among cards in all graveyards (Tarmogoyf). Card
 types, not cards, are counted, and supertypes are not card types (rulings
@@ -7666,6 +7668,41 @@ def damageSourceById? (g : Game) (sid : ObjectId) : Option GameObject :=
     (g.lastKnownBefore? sid).map (fun eo =>
       damageSourceObjectFromLki eo (prepared := g.wasPreparedAtDeparture sid)))
 
+/-- Damage already assigned on a “divided as you choose” stack entry (CR 601.2d). -/
+def assignedDividedDamage (e : StackEntry) : Nat :=
+  e.dividedDamage.foldl (· + ·) 0
+
+/-- Whether this stacked triggered ability still needs targets or a damage
+division announced (CR 603.3d / 601.2d). -/
+def triggerStillNeedsTargets (e : StackEntry) (ab : TriggeredAbility) : Bool :=
+  match ab.dividedDamage? with
+  | some (amount, _) => assignedDividedDamage e < amount
+  | none =>
+    if ab.allowsZeroTargets || !ab.targeting.kind.spec.slots.isEmpty then !e.targetsAnnounced
+    else ab.requiresTarget && e.targets.isEmpty
+
+/-- Stack entry for a triggered ability that still needs targets announced
+(CR 603.3d). Oldest first so targets are chosen in the order abilities were
+put on the stack. -/
+def triggerNeedingTargets (g : Game) : Option StackEntry :=
+  g.stack.find? (fun e =>
+    match g.findObject? e.objectId with
+    | some o =>
+      match o.triggeredAbility, o.abilityEffect with
+      | some _, some eff =>
+        -- A modal trigger whose modes were chosen (CR 603.3c).
+        match eff.dividedDamage with
+        | some (amount, _) => assignedDividedDamage e < amount
+        | none =>
+          if eff.allowsZeroTargets || !eff.targetKind.spec.slots.isEmpty then !e.targetsAnnounced
+          else eff.requiresTarget && e.targets.isEmpty
+      | some ab, none =>
+        match ab.effect.resolution with
+        | .chooseTriggerModes _ => false
+        | _ => triggerStillNeedsTargets e ab
+      | none, _ => false
+    | none => false)
+
 /-- Resolve the spell or ability source `GameObject` (live or LKI) for CR 702.16b
 protection checks during target announcement and resolution. -/
 def targetingSourceObject? (g : Game) (sourceId : Option ObjectId := none) : Option GameObject :=
@@ -7697,15 +7734,12 @@ def targetingSourceObject? (g : Game) (sourceId : Option ObjectId := none) : Opt
           | _ =>
             match g.pending with
             | .chooseTargets _ =>
-              g.stack.findSome? fun e =>
-                if e.targetsAnnounced then none
-                else
-                  match g.findObject? e.objectId with
-                  | some o =>
-                    if o.triggeredAbility.isSome || o.abilityEffect.isSome then
-                      o.sourceId.bind g.damageSourceById?
-                    else none
-                  | none => none
+              match g.triggerNeedingTargets with
+              | some e =>
+                match g.findObject? e.objectId with
+                | some o => o.sourceId.bind g.damageSourceById?
+                | none => none
+              | none => none
             | _ => none
 
 /-- Hexproof stops an opponent from targeting that player (CR 702.11c). -/
@@ -9450,27 +9484,31 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
             | some (.planeswalker _) | some (.battle _) => none
           if !attackers.isEmpty then
             -- Zombie token with power >= 6 and Sphinxes count (from declareAttackers)
-            let mut sphinxes := 0
             for a in attackers do
+              let attCtrl := (post.controllerOf a).getD activePlayer
               if a.printed.isToken && post.hasSubtype a .zombie && post.snapshotPower a >= 6 then
                 let (w, fs) :=
-                  queueFra post activePlayer .zombieTokenAttacks (cause := some a)
+                  queueFra post attCtrl .zombieTokenAttacks (cause := some a)
                     (w := waiting) (fs := firedSources)
                 waiting := w; firedSources := fs
-              if post.hasSubtype a .sphinx then
-                sphinxes := sphinxes + 1
-            if sphinxes > 0 then
-              let (w, fs) :=
-                queueFra post activePlayer .sphinxesAttack
-                  (lastKnownPower := some (Int.ofNat sphinxes))
-                  (w := waiting) (fs := firedSources)
-              waiting := w; firedSources := fs
+            for m in post.teamMembers activePlayer do
+              if post.stillInGame m then
+                let mSphinxes :=
+                  (attackers.filter (fun a => post.controlledBy a m && post.hasSubtype a .sphinx)).size
+                if mSphinxes > 0 then
+                  let (w, fs) :=
+                    queueFra post m .sphinxesAttack
+                      (lastKnownPower := some (Int.ofNat mSphinxes))
+                      (w := waiting) (fs := firedSources)
+                  waiting := w; firedSources := fs
             -- Per-attacker triggers (CR 508.1m / 508.3a)
             for a in attackers do
+              let attCtrl := (post.controllerOf a).getD activePlayer
               let whom := post.defendingPlayerOf a
-              if e.matchesTrigger activePlayer (some a.id) .attacking then
+              if e.matchesTrigger attCtrl (some a.id) .attacking
+                  (isTeammate := post.areTeammates attCtrl) then
                 let (w, fs) :=
-                  queueSrc post activePlayer a .attacking
+                  queueSrc post attCtrl a .attacking
                     (lastKnownPower := some (post.snapshotPower a))
                     (lastKnownToughness := some (post.snapshotToughness a))
                     (keep := fun ab =>
@@ -9478,9 +9516,10 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
                         attackers.size == 1)
                     (w := waiting) (fs := firedSources)
                 waiting := w; firedSources := fs
-              if e.matchesTrigger activePlayer (some a.id) (.fra .creatureYouControlAttacks) then
+              if e.matchesTrigger attCtrl (some a.id) (.fra .creatureYouControlAttacks)
+                  (isTeammate := post.areTeammates attCtrl) then
                 let (w, fs) :=
-                  queueFra post activePlayer .creatureYouControlAttacks (cause := some a)
+                  queueFra post attCtrl .creatureYouControlAttacks (cause := some a)
                     (w := waiting) (fs := firedSources)
                 waiting := w; firedSources := fs
               let alone :=
@@ -9490,7 +9529,7 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
                 | none => false
               if alone then
                 let (w, fs) :=
-                  queueFra post activePlayer .creatureYouControlAttacksPlayerAlone (cause := some a)
+                  queueFra post attCtrl .creatureYouControlAttacksPlayerAlone (cause := some a)
                     (w := waiting) (fs := firedSources)
                 waiting := w; firedSources := fs
               for aura in post.battlefield do
@@ -9531,67 +9570,75 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
                         (cause := firstAttacker?) (causeController := some d) (causeIds := dIds)
                         (w := waiting) (fs := firedSources)
                     waiting := w; firedSources := fs
-            if e.matchesTrigger activePlayer (some attackers[0]!.id) .youAttackWithElves then
-              let (w, fs) :=
-                queueCtrl post activePlayer .youAttackWithElves (w := waiting) (fs := firedSources)
-              waiting := w; firedSources := fs
-            let twoOrMoreDefenders :=
-              attackers.foldl (fun (acc : Array PlayerId) o =>
-                match attackedPlayer? o with
-                | some d =>
-                  if acc.contains d then acc
-                  else if (attackers.filter (fun o' => attackedPlayer? o' == some d)).size >= 2 then
-                    acc.push d
-                  else acc
-                | none => acc) #[]
-            for _ in twoOrMoreDefenders do
-              let (w, fs) :=
-                queueCtrl post activePlayer .youAttackWithTwoOrMore (w := waiting) (fs := firedSources)
-              waiting := w; firedSources := fs
-            let merfolkDefenders :=
-              attackers.foldl (fun acc o =>
-                if !post.hasSubtype o .merfolk || !o.status.attackingPlaneswalker?.isNone ||
-                    (match o.status.attackingTarget with | some (.battle _) => true | _ => false) then acc
-                else
-                  let d := post.defendingPlayerOf o
-                  if acc.any (· == d) then acc else acc.push d)
-                (#[] : Array PlayerId)
-            for _ in merfolkDefenders do
-              let (w, fs) :=
-                queueCtrl post activePlayer .merfolkAttackPlayer (w := waiting) (fs := firedSources)
-              waiting := w; firedSources := fs
+            for m in post.teamMembers activePlayer do
+              if post.stillInGame m then
+                let mAttackers := attackers.filter (post.controlledBy · m)
+                if !mAttackers.isEmpty then
+                  if mAttackers.any (post.hasSubtype · .elf) then
+                    let (w, fs) :=
+                      queueCtrl post m .youAttackWithElves (w := waiting) (fs := firedSources)
+                    waiting := w; firedSources := fs
+                  let twoOrMoreDefenders :=
+                    mAttackers.foldl (fun (acc : Array PlayerId) o =>
+                      match attackedPlayer? o with
+                      | some d =>
+                        if acc.contains d then acc
+                        else if (mAttackers.filter (fun o' => attackedPlayer? o' == some d)).size >= 2 then
+                          acc.push d
+                        else acc
+                      | none => acc) #[]
+                  for _ in twoOrMoreDefenders do
+                    let (w, fs) :=
+                      queueCtrl post m .youAttackWithTwoOrMore (w := waiting) (fs := firedSources)
+                    waiting := w; firedSources := fs
+                  let merfolkDefenders :=
+                    mAttackers.foldl (fun acc o =>
+                      if !post.hasSubtype o .merfolk || !o.status.attackingPlaneswalker?.isNone ||
+                          (match o.status.attackingTarget with | some (.battle _) => true | _ => false) then acc
+                      else
+                        let d := post.defendingPlayerOf o
+                        if acc.any (· == d) then acc else acc.push d)
+                      (#[] : Array PlayerId)
+                  for _ in merfolkDefenders do
+                    let (w, fs) :=
+                      queueCtrl post m .merfolkAttackPlayer (w := waiting) (fs := firedSources)
+                    waiting := w; firedSources := fs
             for o in attackers do
+              let attCtrl := (post.controllerOf o).getD activePlayer
               if post.battlefield.any (fun eq =>
                   post.isEquipment eq && eq.attachedTo == some o.id) then
                 let (w, fs) :=
-                  queueCtrl post activePlayer .equippedCreatureYouControlAttacks
+                  queueCtrl post attCtrl .equippedCreatureYouControlAttacks
                     (w := waiting) (fs := firedSources)
                 waiting := w; firedSources := fs
-            let (w, fs) := queueCtrl post activePlayer .youAttack (w := waiting) (fs := firedSources)
-            waiting := w; firedSources := fs
-            for dt in post.delayedTriggers do
-              if dt.kind == .attackPumpPerPlains && dt.controller == activePlayer &&
-                  !(post.player dt.controller).lost && !(post.player dt.controller).leftTheGame then
-                let src := dt.source.getD
-                  { printed := { name := "Roads Go Ever, Ever On", types := #[.enchantment], subtypes := #["Saga"] }
-                    id := noSourceSentinelId, owner := activePlayer, controller := some activePlayer, zone := .graveyard activePlayer }
-                waiting := waiting.push
-                  { controller := activePlayer
-                    source := src
-                    ability := .onYouAttackPumpTargetPerPlains
-                    event := .youAttack
-                    eventCause := some dt.cause
-                    delayedTrigger := some (dt.kind, dt.cause)
-                    checked := true }
+            for m in post.teamMembers activePlayer do
+              if post.stillInGame m && attackers.any (post.controlledBy · m) then
+                let (w, fs) := queueCtrl post m .youAttack (w := waiting) (fs := firedSources)
+                waiting := w; firedSources := fs
+                for dt in post.delayedTriggers do
+                  if dt.kind == .attackPumpPerPlains && dt.controller == m &&
+                      !(post.player dt.controller).lost && !(post.player dt.controller).leftTheGame then
+                    let src := dt.source.getD
+                      { printed := { name := "Roads Go Ever, Ever On", types := #[.enchantment], subtypes := #["Saga"] }
+                        id := noSourceSentinelId, owner := m, controller := some m, zone := .graveyard m }
+                    waiting := waiting.push
+                      { controller := m
+                        source := src
+                        ability := .onYouAttackPumpTargetPerPlains
+                        event := .youAttack
+                        eventCause := some dt.cause
+                        delayedTrigger := some (dt.kind, dt.cause)
+                        checked := true }
             let allAttacking :=
               post.battlefield.filter (fun o => post.isCreature o && o.status.attacking)
-            if allAttacking.size == 1 && post.controlledBy allAttacking[0]! activePlayer then
+            if allAttacking.size == 1 then
               let attacker := allAttacking[0]!
-              for o in post.permanentsOf activePlayer do
-                let (w, fs) :=
-                  queueSrc post activePlayer o .creatureYouControlAttacksAlone
-                    (cause := some attacker) (w := waiting) (fs := firedSources)
-                waiting := w; firedSources := fs
+              if let some attCtrl := post.controllerOf attacker then
+                for o in post.permanentsOf attCtrl do
+                  let (w, fs) :=
+                    queueSrc post attCtrl o .creatureYouControlAttacksAlone
+                      (cause := some attacker) (w := waiting) (fs := firedSources)
+                  waiting := w; firedSources := fs
             if decls.size == 1 && allAttacking.size == 1 then
               let aid := allAttacking[0]!.id
               for eq in post.battlefield do
@@ -9600,12 +9647,15 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
                     let (w, fs) :=
                       queueSrc post c eq .equippedAttacksAlone (w := waiting) (fs := firedSources)
                     waiting := w; firedSources := fs
-            let totalPower :=
-              attackers.foldl (fun acc o => acc + post.snapshotPower o) 0
-            if totalPower >= 12 then
-              let (w, fs) :=
-                queueCtrl post activePlayer .youAttackWithTotalPower (w := waiting) (fs := firedSources)
-              waiting := w; firedSources := fs
+            for m in post.teamMembers activePlayer do
+              if post.stillInGame m then
+                let mAttackers := attackers.filter (post.controlledBy · m)
+                let totalPower :=
+                  mAttackers.foldl (fun acc o => acc + post.snapshotPower o) 0
+                if totalPower >= 12 then
+                  let (w, fs) :=
+                    queueCtrl post m .youAttackWithTotalPower (w := waiting) (fs := firedSources)
+                  waiting := w; firedSources := fs
             for a in attackers do
               for eq in post.battlefield do
                 if eq.attachedTo == some a.id then
@@ -9987,7 +10037,8 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
                 let totalSlots := targeting.kind.spec.slots.size
                 let prevDone :=
                   prevEntry?.any (fun pe =>
-                    !pe.targets.isEmpty && pe.targets.size + pe.skippedOptionalSlots.size ≥ totalSlots)
+                    pe.targetsAnnounced && !pe.targets.isEmpty &&
+                      pe.targets.size + pe.skippedOptionalSlots.size ≥ totalSlots)
                 if !prevDone && se.targets.size + se.skippedOptionalSlots.size ≥ totalSlots then
                   if se.targets.any isPlayerOrPermTarget then
                     let (w, fs) :=
@@ -10577,6 +10628,7 @@ def reverseToProposalCheckpointCore? (g : Game)
     let mut depOuterDepth : Nat := 0
     let mut pendingDepPlayers : Array PlayerId := #[]
     let mut gameEndedInDep : Bool := false
+    let mut depReplacementPending : Bool := false
     for idx in [0:slice.size] do
       let ev := slice[idx]!
       if firstDepIdx?.any (idx ≥ ·) then
@@ -10595,9 +10647,15 @@ def reverseToProposalCheckpointCore? (g : Game)
         | .engine _ (.removeStackEntry _) =>
           inDepSpan := true
         | _ => pure ()
+        let blockedByDepRep :=
+          depReplacementPending &&
+            match ev with
+            | .rules _ _ (.costPayment ..) _ => true
+            | _ => false
         if inDepSpan && depOuterDepth == 0 && pendingDepPlayers.isEmpty && !gameEndedInDep &&
-            isProposalResumeEvent ev then
+            !blockedByDepRep && isProposalResumeEvent ev then
           inDepSpan := false
+          depReplacementPending := false
       if inDepSpan then
         if depth > 0 && !curEvs.isEmpty then
           out := out.push (.action curActIdx curKind curEvs)
@@ -10611,12 +10669,18 @@ def reverseToProposalCheckpointCore? (g : Game)
         | .engine _ (.continuation .popOuterPendingReplacement) =>
           if depOuterDepth > 0 then
             depOuterDepth := depOuterDepth - 1
-          if depOuterDepth == 0 && pendingDepPlayers.isEmpty && !gameEndedInDep then
+          if depOuterDepth == 0 && pendingDepPlayers.isEmpty && !gameEndedInDep &&
+              !depReplacementPending then
             inDepSpan := false
         | .engine _ (.pending p) =>
-          if depOuterDepth == 0 && pendingDepPlayers.isEmpty && !gameEndedInDep &&
-              isProposalPromptPending p then
-            inDepSpan := false
+          match p with
+          | .chooseReplacement .. | .chooseLegend .. =>
+            depReplacementPending := true
+          | _ =>
+            depReplacementPending := false
+            if depOuterDepth == 0 && pendingDepPlayers.isEmpty && !gameEndedInDep &&
+                isProposalPromptPending p then
+              inDepSpan := false
         | _ => pure ()
       else
         match ev.change with
@@ -10826,11 +10890,26 @@ def reverseToProposalCheckpointCore? (g : Game)
         acc.record (GameEvent.unattached acc.turnNumber (acc.snapshot a) origId
           (cause := .gameRule .unattachOnHostLeave))
       else acc) g0
+    let (g0, prepCopyId?) : Game × Option ObjectId :=
+      match g0.preparedCopyOf? origId with
+      | some c =>
+        let g1 := g0.record (GameEvent.ceasedToExist g0.turnNumber (g0.snapshot c)
+          (cause := .stateBased .copyOutsideStackOrBf))
+        (g1, some c.id)
+      | none => (g0, none)
     g0.activeEffects.foldl (fun acc (eid, eff) =>
       let tied :=
         effObjId? eff == some origId ||
-          (match eff.duration with | .whileInZone wid _ => wid == origId | _ => false) ||
+          (prepCopyId?.isSome && effObjId? eff == prepCopyId?) ||
+          (match eff.duration with
+           | .whileInZone wid _
+           | .whileSourceOnBattlefield wid
+           | .untilSourceLeaves wid
+           | .whileSourceHasCounter wid _ => wid == origId
+           | _ => false) ||
           (match eff with
+           | .gameRule (.cantUntap _ src) _ => src == origId
+           | .permission _ (.playFromExile _ perm) _ => perm.prepareSource == some origId
            | .layered (.objects ids) _ _ =>
              ids.contains origId && ids.all (fun id => id == origId || (acc.findObject? id).isNone)
            | _ => false)
@@ -10931,6 +11010,25 @@ def reverseToProposalCheckpointCore? (g : Game)
           else cardIds.filter (inLibraryObjs gCur.objects ·)
         if validIds.isEmpty then gCur
         else gCur.record (.rules t (.player (.lookedAt p validIds)) cause batch)
+      | .rules t (.permanent (.unattached att fromHost)) cause batch =>
+        let att' :=
+          match att.id with
+          | some aid =>
+            let origAid := resolveRevId finalRevMap aid
+            if origAid == aid then att else { att with id := some origAid }
+          | none => att
+        let fromHost' := resolveRevId finalRevMap fromHost
+        if att'.id.isNone || (att'.id.bind gCur.findObject?).any (·.attachedTo == some fromHost') then
+          gCur.record (.rules t (.permanent (.unattached att' fromHost')) cause batch)
+        else gCur
+      | .rules t (.permanent (.designation obj d v)) cause batch =>
+        let obj' :=
+          match obj.id with
+          | some oid =>
+            let origOid := resolveRevId finalRevMap oid
+            if origOid == oid then obj else { obj with id := some origOid }
+          | none => obj
+        gCur.record (.rules t (.permanent (.designation obj' d v)) cause batch)
       | _ =>
         gCur.record ev
   let mut gAcc := g.restoreProposalCheckpoint ckpt
@@ -11703,12 +11801,13 @@ def putCountersExceptPlusOne (g : Game) (id : ObjectId) («from» : Status)
 or granting priority. -/
 def declineMayThenCore (g : Game) : Game :=
   let n := g.mayThenDrop
-  let g := g.changes #[
-    .pending .none,
+  let clearP : Array EngineChange :=
+    if g.pending != .none then #[.pending .none] else #[]
+  let g := g.changes (clearP ++ #[
     .mayThenDrop 0,
     .mayThenConditional none,
     .mayThenResume false,
-    .sacrificedPowerThisWay none ]
+    .sacrificedPowerThisWay none ])
   match g.triggerSequenceRest with
   | none => g
   | some rest => g.change (.setTriggerSequenceRestSteps (rest.steps.drop n))

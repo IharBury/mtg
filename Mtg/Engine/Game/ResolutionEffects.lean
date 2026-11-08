@@ -1148,7 +1148,7 @@ partial def divideSevenDamageLoop (g : Game) (controller : PlayerId) (kind : Eff
       let g :=
         if legal.contains tgt then
           g.dealDamageToTarget tgt (Int.ofNat (division[i]?.getD 0))
-            (source := sourceId.bind g.findObject?) (cause := batchCause)
+            (source := sourceId.bind g.damageSourceById?) (cause := batchCause)
             (suppressLifelink := true)
         else
           g.illegalAbilityTarget tgt
@@ -1192,7 +1192,7 @@ def resolveModeledReflexive (g : Game) (controller : PlayerId) (sourceId : Optio
       (fun g o => g.grantUntilEotLogged o Keyword.indestructible) sourceId illegal
   | .dealTwoDamage =>
     g.withLegalKindTarget controller tkind targets
-      (fun g tgt => g.dealDamageToTarget tgt 2 (source := sourceId.bind g.findObject?)) sourceId illegal
+      (fun g tgt => g.dealDamageToTarget tgt 2 (source := sourceId.bind g.damageSourceById?)) sourceId illegal
   | .trickArrows => g
   | .indestructibleCounter =>
     g.withLegalKindPermanent controller tkind targets
@@ -1215,10 +1215,13 @@ def resolveModeledReflexive (g : Game) (controller : PlayerId) (sourceId : Optio
   | .countersDamage =>
     let counters :=
       match sourceId.bind g.findObject? with
-      | some o => if o.isOnBattlefield then o.status.plusOnePlusOne else paid
-      | none => paid
+      | some o =>
+        if o.isOnBattlefield then o.status.plusOnePlusOne
+        else (sourceId.bind g.lastKnownCounterStatus?).map (·.plusOnePlusOne) |>.getD paid
+      | none =>
+        (sourceId.bind g.lastKnownCounterStatus?).map (·.plusOnePlusOne) |>.getD paid
     g.withLegalKindTarget controller tkind targets
-      (fun g tgt => g.dealDamageToTarget tgt (Int.ofNat counters) (source := sourceId.bind g.findObject?))
+      (fun g tgt => g.dealDamageToTarget tgt (Int.ofNat counters) (source := sourceId.bind g.damageSourceById?))
       sourceId illegal
   | .hasteUnblockable =>
     g.withLegalKindPermanent controller tkind targets

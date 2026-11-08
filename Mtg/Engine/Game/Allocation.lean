@@ -64,11 +64,6 @@ def putStackAbility (g : Game) (source : GameObject) (controller : PlayerId)
   let (g, obj) := g.allocStackAbility source controller abilityEffect triggeredAbility
   (g.putStackEntry controller obj.id delayedTrigger lastKnownPower lastKnownToughness, obj)
 
-/-- The copy of `srcId`'s prepare spell in exile, if any. -/
-def preparedCopyOf? (g : Game) (srcId : ObjectId) : Option GameObject :=
-  g.objects.find? (fun o =>
-    o.zone == .exile && ((g.playPermission o).bind (·.prepareSource)) == some srcId)
-
 /-- Create the exiled copy of `o`'s prepare spell and grant permission to cast
 it while `o` remains prepared (ruling 742). -/
 def createPreparedCopy (g : Game) (o : GameObject) (face : AdventureFace)
@@ -100,7 +95,7 @@ def ensurePreparedCopy (g : Game) (o : GameObject) : Game :=
     | none => g
     | some face =>
       let g := g.createPreparedCopy o face (cause := some (.gameRule .staticAbility))
-      g.logMsg s!"{o.name} becomes prepared. A copy of {face.name} is exiled"
+      g.logMsg s!"{g.name o} becomes prepared. A copy of {face.name} is exiled"
 
 /-- Karn, Argent Defender: an artifact or creature entering doesn't cause
 abilities to trigger. Checked with the permanent as it exists on the

@@ -43,11 +43,14 @@ def legalPermanentAt? (g : Game) (controller : PlayerId) (kind : EffectTargetKin
 /-- The source's name for damage logs. -/
 def fraSourceName (g : Game) (sourceId : Option ObjectId) : String :=
   match g.resolvingSpell.bind g.findObject? with
-  | some o => o.name
+  | some o => g.name o
   | none =>
     match sourceId.bind g.findObject? with
-    | some o => o.name
-    | none => "The effect"
+    | some o => g.name o
+    | none =>
+      ((sourceId.bind g.damageSourceById?).map (·.name)).orElse
+        (fun _ => (sourceId.bind g.lastKnownBefore?).map (·.name))
+        |>.getD "The effect"
 
 /-- Deal `n` damage to each opponent of `controller`, then `controller` gains
 `n` life. -/

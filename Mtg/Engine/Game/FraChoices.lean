@@ -528,7 +528,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       if choosableLeft < left then
         let g := g.ceaseToExist objId (cause := some (.gameRule .noLegalMode))
         let g := g.logMsg
-          s!"{obj.name} has fewer than {chosen.size + left} modes that can be chosen and is removed from the stack (CR 603.3c / 700.2b)"
+          s!"{g.name obj} has fewer than {chosen.size + left} modes that can be chosen and is removed from the stack (CR 603.3c / 700.2b)"
         return g.finishFraChoice
       return g.change (.pending (.fraChoice p (.triggerModes objId left chosen)))
     let sorted := chosen.qsort (· < ·)
@@ -537,6 +537,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     | none => return g.finishFraChoice
     | some eff =>
       let g := g.changeObject obj.id (.abilityEffect (some eff))
+      let g := if !eff.requiresTarget then g.change (.stackEntry obj.id (.targetsAnnounced true)) else g
       return g.finishFraChoice
   | .triggerModes .., _ => throw "Choose a mode"
   | .upToTriggerModes objId remaining chosen, .mode idx =>
@@ -559,6 +560,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     | none => return g.finishFraChoice
     | some eff =>
       let g := g.changeObject obj.id (.abilityEffect (some eff))
+      let g := if !eff.requiresTarget then g.change (.stackEntry obj.id (.targetsAnnounced true)) else g
       return g.finishFraChoice
   | .upToTriggerModes objId _ chosen, .decline =>
     let some obj := g.findObject? objId | return g.finishFraChoice
@@ -576,6 +578,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     | none => return g.finishFraChoice
     | some eff =>
       let g := g.changeObject obj.id (.abilityEffect (some eff))
+      let g := if !eff.requiresTarget then g.change (.stackEntry obj.id (.targetsAnnounced true)) else g
       return g.finishFraChoice
   | .upToTriggerModes .., _ => throw "Choose a mode, or decline to finish"
   | .stackTriggerUnusedMode objId srcIdOpt available lifetime, .mode idx =>
@@ -1023,7 +1026,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
           return g.acceptMayThen
         else
           return (g.applyFra p default next.toResolution #[] (some sourceId)).finishFraChoice
-      else throw s!"{o.name} can't be tapped"
+      else throw s!"{g.name o} can't be tapped"
     | none => throw "The source is gone"
   | .mayTapSourceThen .., .decline =>
     if g.mayThenDrop > 0 then return g.declineMayThen else return g.finishFraChoice
@@ -1094,7 +1097,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
         match outerCont? with
         | some outer => g.chainPendingReplacement outer
         | none => g
-    let name := ((g.findObject? sourceId).map (fun o => o.name)).getD
+    let name := ((g.findObject? sourceId).map g.name).getD
       ((prop?.map (fun pr => pr.original.name)).getD "Baron Helmut Zemo")
     let g := if g.proposedSpell.isSome then g.change (.proposedSpell none) else g
     let g := g.becomeActivated p name (some sourceId)
@@ -1130,6 +1133,10 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let g := gPre.change .saveProposalCheckpoint
     let g :=
       if g.continuations.isEmpty then g.change (.pushContinuationFrame {}) else g
+    let g :=
+      match g.pendingReplacement with
+      | some outer => g.changes #[.pushOuterPendingReplacement outer, .pendingReplacement none]
+      | none => g
     let g := g.changes #[
       .postCastCleanup (some (.cascadeBottom p cardId others)),
       .pending .none
@@ -1152,6 +1159,10 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let g := gPre.change .saveProposalCheckpoint
     let g :=
       if g.continuations.isEmpty then g.change (.pushContinuationFrame {}) else g
+    let g :=
+      match g.pendingReplacement with
+      | some outer => g.changes #[.pushOuterPendingReplacement outer, .pendingReplacement none]
+      | none => g
     let g := g.changes #[
       .postCastCleanup (some (.grimaBottom victim cardId others)),
       .pending .none
@@ -1174,6 +1185,10 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let g := gPre.change .saveProposalCheckpoint
     let g :=
       if g.continuations.isEmpty then g.change (.pushContinuationFrame {}) else g
+    let g :=
+      match g.pendingReplacement with
+      | some outer => g.changes #[.pushOuterPendingReplacement outer, .pendingReplacement none]
+      | none => g
     let g := g.changes #[
       .postCastCleanup (some (.copyCeaseToExist copyId)),
       .pending .none
@@ -1255,8 +1270,16 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       throw s!"{face.name} has no legal target"
     if let some err := g.mandatorySacrificeError? p o.id face then
       throw err
-    let g := (gPre.change .saveProposalCheckpoint).change (.pending .none)
-    return (g.castAsPartOfResolution p id (callerCheckpoint := true)).finishFraChoice
+    let g := gPre.change .saveProposalCheckpoint
+    let g :=
+      match g.pendingReplacement with
+      | some outer =>
+        let g := if g.continuations.isEmpty then g.change (.pushContinuationFrame {}) else g
+        g.changes #[.pushOuterPendingReplacement outer, .pendingReplacement none]
+      | none => g
+    let g := g.change (.pending .none)
+    let g' := g.castAsPartOfResolution p id (callerCheckpoint := true)
+    return if g'.pending == .none then g'.finishFraChoice else g'
   | .mayCastInstantSorceryFromHand _, .decline =>
     return (g.logMsg s!"{(g.player p).name} declines to cast a spell").finishFraChoice
   | .mayCastInstantSorceryFromHand _, _ => throw "Choose a spell to cast, or decline"
@@ -1292,7 +1315,14 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     if let some err := g.mandatorySacrificeError? p o.id face then
       throw err
     let rest := eligible.filter (· != id)
-    let g := (gPre.change .saveProposalCheckpoint).changes #[
+    let g := gPre.change .saveProposalCheckpoint
+    let g :=
+      match g.pendingReplacement with
+      | some outer =>
+        let g := if g.continuations.isEmpty then g.change (.pushContinuationFrame {}) else g
+        g.changes #[.pushOuterPendingReplacement outer, .pendingReplacement none]
+      | none => g
+    let g := g.changes #[
       .pending .none,
       .pendingMayCastFromExile (if left > 1 && !rest.isEmpty then some (p, rest, left - 1) else none)
     ]
@@ -1302,7 +1332,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
           (g.followMovedToZone? id (· == .stack)).isNone then
         g.change (.pendingMayCastFromExile none)
       else g
-    return g.finishFraChoice
+    return if g.pending == .none then g.finishFraChoice else g
   | .mayCastUpToFromExile _ _, .decline =>
     return ((g.change (.pendingMayCastFromExile none))
       |>.logMsg s!"{(g.player p).name} declines to cast a spell").finishFraChoice
@@ -1617,9 +1647,17 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     if (g.playPermission o).any (·.payLifeEqualManaValue) &&
         !g.canPayLife p (g.objectManaValue o) then
       throw s!"{(g.player p).name} can't pay {g.objectManaValue o} life to cast {face.name} (CR 119.4)"
-    let g := (gPre.change .saveProposalCheckpoint).change (.pending .none)
-    return (g.castAsPartOfResolution p id (withoutManaCost := false)
-      (exileInstantSorceryInstead := true) (callerCheckpoint := true)).finishFraChoice
+    let g := gPre.change .saveProposalCheckpoint
+    let g :=
+      match g.pendingReplacement with
+      | some outer =>
+        let g := if g.continuations.isEmpty then g.change (.pushContinuationFrame {}) else g
+        g.changes #[.pushOuterPendingReplacement outer, .pendingReplacement none]
+      | none => g
+    let g := g.change (.pending .none)
+    let g' := g.castAsPartOfResolution p id (withoutManaCost := false)
+      (exileInstantSorceryInstead := true) (callerCheckpoint := true)
+    return if g'.pending == .none then g'.finishFraChoice else g'
   | .mayCastFromGraveyard _, .decline =>
     return (g.logMsg s!"{(g.player p).name} declines to cast a spell").finishFraChoice
   | .mayCastFromGraveyard _, _ => throw "Choose a card to cast, or decline"
@@ -2038,7 +2076,8 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
               (allowCantNonartifact := g.isArtifact o)
               (allowCreatureRestricted := false)
               (spend := spend) &&
-            g.canPayAnnouncedAdditional p o available (origPerm := origPerm))) with
+            g.canPayAnnouncedAdditional p o available (origPerm := origPerm)
+              (flashback := some false))) with
       | some id => .cast id
       | none => .decline
   | .mayCastFromGraveyard eligible =>
@@ -2079,7 +2118,8 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
               (allowCantNonartifact := g.isArtifact o)
               (allowCreatureRestricted := false)
               (spend := spend) &&
-            g.canPayAnnouncedAdditional p o available (origPerm := origPerm))) with
+            g.canPayAnnouncedAdditional p o available (origPerm := origPerm)
+              (flashback := some false))) with
       | some id => .cast id
       | none => .decline
   | .maySearchLibrary eligible .. =>

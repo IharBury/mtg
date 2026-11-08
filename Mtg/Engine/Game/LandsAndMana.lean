@@ -36,7 +36,7 @@ def finishPlayLand (g : Game) (p : PlayerId) (id : ObjectId) (tapped : Bool := f
       | some entered =>
         if !entered.isOnBattlefield then g
         else
-          let g := if entered.status.tapped then g.logMsg s!"{card.name} enters tapped" else g
+          let g := if entered.status.tapped then g.logMsg s!"{g.name entered} enters tapped" else g
           g.afterLandEnters entered
       | none => g
 

@@ -15,25 +15,25 @@ namespace Game
 default damage source when an effect deals damage without naming another
 source (CR 609.7 / 113.7 / 120.2). -/
 def resolvingDamageSource? (g : Game) : Option GameObject :=
-  match g.resolvingSpell.bind g.findObject? with
+  match g.resolvingSpell.bind g.damageSourceById? with
   | some s => some s
   | none =>
-  match (g.resolvingAbility.bind g.findObject?).bind (fun ab => ab.sourceId.bind g.findObject?) with
+  match (g.resolvingAbility.bind g.findObject?).bind (fun ab => ab.sourceId.bind g.damageSourceById?) with
   | some s => some s
   | none =>
-  match g.triggerSequenceRest.bind (fun r => r.sourceId.bind g.findObject?) with
+  match g.triggerSequenceRest.bind (fun r => r.sourceId.bind g.damageSourceById?) with
   | some s => some s
   | none =>
-  match g.mayContext.bind (fun r => r.sourceId.bind g.findObject?) with
+  match g.mayContext.bind (fun r => r.sourceId.bind g.damageSourceById?) with
   | some s => some s
   | none =>
-  match g.triggerOr.bind (fun r => r.sourceId.bind g.findObject?) with
+  match g.triggerOr.bind (fun r => r.sourceId.bind g.damageSourceById?) with
   | some s => some s
   | none =>
-  match g.chooseModesRest.bind (fun r => r.sourceId.bind g.findObject?) with
+  match g.chooseModesRest.bind (fun r => r.sourceId.bind g.damageSourceById?) with
   | some s => some s
   | none =>
-  match g.fraAfterLook.bind (fun (_, sid?, _) => sid?.bind g.findObject?) with
+  match g.fraAfterLook.bind (fun (_, sid?, _) => sid?.bind g.damageSourceById?) with
   | some s => some s
   | none => none
 
@@ -80,6 +80,7 @@ private def resolvingDepartedSourceId? (g : Game) : Option ObjectId :=
     |>.orElse (fun _ => g.triggerOr.bind (·.sourceId))
     |>.orElse (fun _ => g.chooseModesRest.bind (·.sourceId))
     |>.orElse (fun _ => g.fraAfterLook.bind (fun (_, s, _) => s))
+    |>.orElse (fun _ => g.currentResolvingContext?.bind Prod.fst)
 
 /-- The resolving damage source object, using `lastKnownBefore?` LKI if the
 source left its zone before its ability resolved (CR 113.7a / 608.2h). -/
@@ -520,7 +521,7 @@ def gainLife (g : Game) (p : PlayerId) (n : Nat)
                 if g.durationActive d then
                   match spec.kind with
                   | .modifyLifeGain who add mult =>
-                    if who == p then specs := specs.push (spec, add, mult)
+                    if who == p then specs := specs.push ({ spec with affectedPlayer := p }, add, mult)
                   | _ => pure ()
               | _ => pure ()
             let candidates := specs.map (fun (s, _, _) => (ReplacementOrPrevention.replacement s).toCandidate)
@@ -1073,7 +1074,7 @@ def dealDamageToTarget (g : Game) (t : Target) (n : Int)
     | some o =>
       match src with
       | some s =>
-        g.dealDamageFrom s.name o n (source := some s) (cause := cause) (suppressLifelink := suppressLifelink)
+        g.dealDamageFrom (g.name s) o n (source := some s) (cause := cause) (suppressLifelink := suppressLifelink)
       | none =>
         g.dealDamageToPermanent o n (cause := cause) (suppressLifelink := suppressLifelink)
     | none => g.logMsg "The target is no longer in play"

@@ -1669,7 +1669,7 @@ def applyCreateTokens (g : Game) (controller : PlayerId)
     let inv :=
       match sourceId.bind g.findObject? with
       | some src => src.status.invasion
-      | none => 0
+      | none => (sourceId.bind g.lastKnownCounterStatus?).map (·.invasion) |>.getD 0
     let startEventIdx := g.events.size
     let (g, _) :=
       g.spawnFace (recipients .alien who) alien11redHasteToken (counted.getD 0)
@@ -1724,7 +1724,7 @@ def applyCreateTokens (g : Game) (controller : PlayerId)
       let inv :=
         match sourceId.bind g.findObject? with
         | some src => src.status.invasion
-        | none => 0
+        | none => (sourceId.bind g.lastKnownCounterStatus?).map (·.invasion) |>.getD 0
       let (g, _) :=
         match token with
         | .kind =>
@@ -4922,7 +4922,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       | some sid =>
         match g.findObject? sid with
         | some src => (g.copiableValues src).manaCost.manaValue
-        | none => 0
+        | none => (g.lastKnownBefore? sid).map (·.manaValue) |>.getD 0
       | none => 0
     g.resolveCascade controller maxMv
   | .noteResolveThisTurn limit =>
@@ -5667,18 +5667,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .amass (.fixed n) .goblin false .you => g.amassGoblins controller n.toNat
   | .createTokens kind (.fixed n) tapped .kind .you .none =>
     g.createKindTokens controller kind n.toNat (tapped := tapped)
-  | .markRecentTokensAttacking =>
-    let options := g.legalEnteringAttackTargets controller
-    match options[0]? with
-    | none => g
-    | some tgt =>
-      let cause := g.resolveOptionalCause (g.resolvingOneShotCause controller sourceId)
-        (fallbackSrc := sourceId) (fallbackCtrl := some controller)
-      g.withBatch (some cause) fun g =>
-        g.recentTokenIds.foldl (fun g id =>
-          match g.findObject? id with
-          | some o => g.record (GameEvent.becameAttacking g.turnNumber (g.snapshot o) tgt (cause := cause))
-          | none => g) g
   | .addMana types (.fixed 1) =>
     g.addManaLogged controller types (source := sourceId)
   | .discard (.cards n) => g.beginDiscardCards #[controller] n

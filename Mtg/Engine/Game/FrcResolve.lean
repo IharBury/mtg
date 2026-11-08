@@ -130,7 +130,10 @@ def makeFrcLoop (g : Game) (p : PlayerId) (k : FrcToken) (remaining : Nat) (x : 
 
 private def makeFrc (g : Game) (p : PlayerId) (k : FrcToken) (n : Nat := 1) (x : Nat := 0)
     (extraCounters : CounterBag := #[]) (cause : Option EventCause := none) : Game :=
-  if n == 0 || (g.player p).lost then g.change (.recentTokenIds #[])
+  if let .chooseReplacement .. := g.pending then
+    if n == 0 || !g.stillInGame p then g
+    else g.chainPendingReplacement (.makeFrcLoop p k n x extraCounters cause)
+  else if n == 0 || !g.stillInGame p then g.change (.recentTokenIds #[])
   else
     let g := g.change (.recentTokenIds #[])
     let batchCause := cause.orElse (fun _ => g.resolvingBatchCause p none)
@@ -615,7 +618,7 @@ def applyFrc (g : Game) (controller : PlayerId) (effect : Effect) (e : FrcEffect
         let (g, cause) := g.allocDelayedCause (some controller) sourceId
         let src := (sourceId.bind g.findObject?).orElse (fun _ => some o)
         g.registerDelayedTrigger { controller, source := src, kind := .endStepGraveReturn o.id controller, cause }
-          |>.logMsg s!"{o.name} returns at the beginning of the next end step"
+          |>.logMsg s!"{g.name o} returns at the beginning of the next end step"
       else g
     | none => g
   | .dack =>
@@ -781,7 +784,7 @@ def applyFrc (g : Game) (controller : PlayerId) (effect : Effect) (e : FrcEffect
       match g.resolvingSpell.bind g.findObject? with
       | some spell =>
         g.createEffect (.exileInstantSorceryInstead spell.id)
-          |>.logMsg s!"{spell.name} will be exiled"
+          |>.logMsg s!"{g.name spell} will be exiled"
       | none => g
     | _ => g
   | .urSphinx =>

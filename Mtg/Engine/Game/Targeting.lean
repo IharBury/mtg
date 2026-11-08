@@ -474,7 +474,8 @@ def expandEachOpponentEffect (g : Game) (p : PlayerId) (e : Effect)
           let rootId := GameEvent.rootCopiedSpellId g.events oid
           g.events.findIdx? fun ev =>
             match ev.change with
-            | .rules (.cast (.proposed sid ..)) => sid == rootId
+            | .rules (.cast (.proposed sid ..))
+            | .rules (.triggerQueue (.putOnStack sid ..)) => sid == rootId
             | _ => false
       let opps : Array Player :=
         match propIdx? with
@@ -512,41 +513,6 @@ the object that generated the ability, used to exclude “another” creature. -
 def legalTriggerTargets (g : Game) (p : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId := none) : Array Target :=
   g.legalTargetsForKind p ab.targetKind sourceId
-
-/-- Damage already assigned on a “divided as you choose” stack entry (CR 601.2d). -/
-def assignedDividedDamage (e : StackEntry) : Nat :=
-  e.dividedDamage.foldl (· + ·) 0
-
-/-- Whether this stacked triggered ability still needs targets or a damage
-division announced (CR 603.3d / 601.2d). -/
-def triggerStillNeedsTargets (e : StackEntry) (ab : TriggeredAbility) : Bool :=
-  match ab.dividedDamage? with
-  | some (amount, _) => assignedDividedDamage e < amount
-  | none =>
-    if ab.allowsZeroTargets || ab.targeting.kind.spec.slots.size > 1 then !e.targetsAnnounced
-    else ab.requiresTarget && e.targets.isEmpty
-
-/-- Stack entry for a triggered ability that still needs targets announced
-(CR 603.3d). Oldest first so targets are chosen in the order abilities were
-put on the stack. -/
-def triggerNeedingTargets (g : Game) : Option StackEntry :=
-  g.stack.find? (fun e =>
-    match g.findObject? e.objectId with
-    | some o =>
-      match o.triggeredAbility, o.abilityEffect with
-      | some _, some eff =>
-        -- A modal trigger whose modes were chosen (CR 603.3c).
-        match eff.dividedDamage with
-        | some (amount, _) => assignedDividedDamage e < amount
-        | none =>
-          if eff.allowsZeroTargets || eff.targetKind.spec.slots.size > 1 then !e.targetsAnnounced
-          else eff.requiresTarget && e.targets.isEmpty
-      | some ab, none =>
-        match ab.effect.resolution with
-        | .chooseTriggerModes _ => false
-        | _ => triggerStillNeedsTargets e ab
-      | none, _ => false
-    | none => false)
 
 end Game
 end Mtg.Engine

@@ -60,12 +60,19 @@ def sharedTriggerModes (ab : TriggeredAbility) : Array Effect :=
 
 /-- Modes of the triggered ability `obj` (from its source). -/
 def triggerModesOf (g : Game) (obj : GameObject) : Array Effect :=
+  let src? := obj.sourceId.bind g.damageSourceById?
+  let tcs :=
+    match src? with
+    | some src => g.evalLayer3 src
+    | none => g.evalLayer3 obj
   let fra :=
-    match obj.sourceId.bind g.damageSourceById? with
+    match src? with
     | some src => (g.baseCard src).fraTriggerModes
     | none => (g.baseCard obj).fraTriggerModes
-  if !fra.isEmpty then fra
-  else (obj.triggeredAbility.map sharedTriggerModes).getD #[]
+  let raw :=
+    if !fra.isEmpty then fra
+    else (obj.triggeredAbility.map sharedTriggerModes).getD #[]
+  if tcs.isEmpty then raw else raw.map (TextChange.applyEffect tcs)
 
 /-- Individual mode effects for Hawkeye's Trick Arrows reflexive trigger (CR 603.3c / 700.2b). -/
 def hawkeyeModeEffects : Array Effect :=
@@ -78,8 +85,14 @@ def hawkeyeModeEffects : Array Effect :=
 
 /-- Whether `p` may choose this mode of a triggered ability (CR 603.3c / 700.2b). -/
 def triggerModeChoosable (g : Game) (p : PlayerId) (obj : GameObject) (e : Effect) : Bool :=
-  !e.requiresTarget || e.allowsZeroTargets ||
-    g.effectHasEnoughTargets p e obj.sourceId
+  let e := g.expandEachOpponentEffect p e (some obj.id)
+  let divOk :=
+    e.dividedDamage.all (fun (n, _) =>
+      e.allowsZeroTargets ||
+        let legal := g.legalTargetsForKind p e.targetKind obj.sourceId
+        !legal.isEmpty && e.targetCount ≤ n)
+  divOk && (!e.requiresTarget || e.allowsZeroTargets ||
+    g.effectHasEnoughTargets p e obj.sourceId)
 
 /-- Ask for the modes of a modal triggered ability just put on the stack. -/
 def beginTriggerModeChoice (g : Game) (p : PlayerId) (obj : GameObject) (count : Nat) : Game :=
@@ -144,7 +157,7 @@ def putTriggeredAbilityOnStack (g : Game) (controller : PlayerId) (source : Game
       abilityEffect := abilityEffect
       reflexiveResolution := reflexiveResolution
       sourceId := srcIdOpt
-      abilityName := some s!"{source.name}'s ability"
+      abilityName := some s!"{g.name source}'s ability"
       delayedTrigger := delayedTrigger
       lastKnownPower := lastKnownPower
       lastKnownToughness := lastKnownToughness
@@ -179,7 +192,7 @@ def putTriggeredAbilityOnStack (g : Game) (controller : PlayerId) (source : Game
     match ab.shared with
     | .enter .chooseUpToXModes =>
       let x := (source.chosenX.orElse (fun _ => g.chosenXOf? source.id)).getD 0
-      let modes := sharedTriggerModes ab
+      let modes := g.triggerModesOf obj
       let choosable := modes.filter (g.triggerModeChoosable controller obj)
       let maxModes := Nat.min x modes.size
       if maxModes == 0 || choosable.isEmpty then
@@ -591,17 +604,19 @@ def putTriggerBatch (g : Game) (wts : Array WaitingTrigger) : Game :=
 /-- Start scrying `n` as a keyword action (CR 701.22).
 Scry 0 is skipped and does not trigger “whenever you scry” (CR 701.22b). -/
 def beginScry (g : Game) (p : PlayerId) (n : Nat) : Game :=
-  let pl := g.player p
-  let count := min n pl.library.size
-  if n == 0 then
-    g.logMsg s!"{pl.name} scries {n} (no cards to look at)"
-  else if count == 0 then
-    let happened :=
-      GameEvent.looked g.turnNumber p 0 false n (cause := some (g.resolvingOrRuleCause p))
-    let g := g.record happened
-    g.logMsg s!"{pl.name} scries {n} (no cards to look at)"
+  if !g.stillInGame p then g
   else
-    (g.changes #[.pending (.scry p count n), .surveilReturnMvAtMost none]).logMsg s!"{pl.name} scries {n}"
+    let pl := g.player p
+    let count := min n pl.library.size
+    if n == 0 then
+      g.logMsg s!"{pl.name} scries {n} (no cards to look at)"
+    else if count == 0 then
+      let happened :=
+        GameEvent.looked g.turnNumber p 0 false n (cause := some (g.resolvingOrRuleCause p))
+      let g := g.record happened
+      g.logMsg s!"{pl.name} scries {n} (no cards to look at)"
+    else
+      (g.changes #[.pending (.scry p count n), .surveilReturnMvAtMost none]).logMsg s!"{pl.name} scries {n}"
 
 /-- Scry `scryN`, then draw `drawN`. An empty library draws immediately.
 The draw waits on `pendingDrawAfterScry` while the scry choice is open. -/
