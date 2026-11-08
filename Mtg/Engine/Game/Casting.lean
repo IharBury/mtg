@@ -603,12 +603,16 @@ def runPostCastCleanup (g : Game) : Game :=
         let copyCause := some (EventCause.stateBased .copyOutsideStackOrBf)
         match g.findObject? copyId with
         | some o =>
-          if o.isCopy then (g.ceaseToExist o.id (cause := copyCause)).logMsg s!"The copy of {o.name} ceases to exist"
+          if o.isCopy then
+            let objName := g.name o
+            (g.ceaseToExist o.id (cause := copyCause)).logMsg s!"The copy of {objName} ceases to exist"
           else g
         | none =>
           match g.findObject? landed with
           | some o =>
-            if o.isCopy then (g.ceaseToExist o.id (cause := copyCause)).logMsg s!"The copy of {o.name} ceases to exist"
+            if o.isCopy then
+              let objName := g.name o
+              (g.ceaseToExist o.id (cause := copyCause)).logMsg s!"The copy of {objName} ceases to exist"
             else g
           | none => g
     | .lookedBottom caster cardId allLooked =>

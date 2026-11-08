@@ -1068,11 +1068,10 @@ def offerCardChoice (g : Game) (p : PlayerId) (ids : Array ObjectId) (max : Nat)
     (purpose : CardChoice) (msg : String) (cause : Option EventCause := none) : Game :=
   if ids.isEmpty || max == 0 then g.finishChooseCards p #[] purpose (cause := cause)
   else
-    let g :=
-      match cause with
-      | some c => g.change (.stashedCause (some c))
-      | none => g
-    g.beginFraChoice p (.chooseCards ids max purpose) msg
+    let g := g.beginFraChoice p (.chooseCards ids max purpose) msg
+    match cause with
+    | some c => g.change (.stashedCause (some c))
+    | none => g
 
 /-- Finish `millThenChooseForHand` once `mill` completes (CR 701.17c). -/
 def finishMillChooseForHand (g : Game) (p : PlayerId) (preIds : Array ObjectId)
@@ -2258,6 +2257,17 @@ def twoPlayersDrawSecond (g : Game) (controller second : PlayerId)
 by the player, first card on the bottom. -/
 def offerBottomAnyOrder (g : Game) (p : PlayerId) (ids : Array ObjectId)
     (cause : Option EventCause := none) : Game :=
+  let (g, cause) : Game × Option EventCause :=
+    match cause with
+    | some c => (g, some c)
+    | none =>
+      if ids.isEmpty then (g, none)
+      else
+        match g.currentResolvingContext? with
+        | some (src, ctrl) =>
+          let (g, c) := g.allocDelayedCause ctrl src
+          (g, some c)
+        | none => (g, none)
   if ids.size ≤ 1 then
     g.moveIdsInOrder ids (.library p) (cause := cause)
       (log := s!"{(g.player p).name} puts the rest on the bottom of their library")

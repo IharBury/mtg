@@ -1205,8 +1205,9 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let g :=
       match g.findObject? copyId with
       | some o =>
+        let objName := g.name o
         (g.ceaseToExist o.id (cause := some (.stateBased .copyOutsideStackOrBf))).logMsg
-          s!"The copy of {o.name} ceases to exist"
+          s!"The copy of {objName} ceases to exist"
       | none => g
     return g.finishFraChoice
   | .mayCastCopy _, _ => throw "Cast the copy (accept), or decline"

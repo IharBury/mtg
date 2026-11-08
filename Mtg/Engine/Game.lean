@@ -256,7 +256,9 @@ def mustApply (g : Game) (p : PlayerId) (a : Action) : Game :=
   | .chooseTeamwork _, some actor =>
     mustApply g actor (.announceTeamwork false)
   | .chooseTeamworkCreatures _ need, some actor =>
-    mustApply g actor (.choosePermanents (g.pickTeamworkCreatures p need))
+    let picked := g.pickTeamworkCreatures p need
+    let total := picked.foldl (fun acc id => acc + ((g.findObject? id).map g.power |>.getD 0)) 0
+    mustApply g actor (if total < (need : Int) then .decline else .choosePermanents picked)
   | .chooseAdditionalCost _, some actor =>
     match g.proposedSpell with
     | none => panic! "expected a proposed spell while choosing an additional cost"

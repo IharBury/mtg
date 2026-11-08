@@ -3969,7 +3969,7 @@ def noteRevealedLibraries (g : Game) (controller : PlayerId)
           found := found ++ ids
         | .untilCreature =>
           let (g', hit, rest) :=
-            revealUntil g pid (g.player pid).library.size (fun o => (g.baseCard o).isCreature) #[] (cause := cause)
+            revealUntil g pid (g.player pid).library.size (fun o => g.isCreature o) #[] (cause := cause)
           g := g'
           if !rest.isEmpty then rests := rests.push (pid, rest)
           match hit with
@@ -3985,7 +3985,7 @@ def noteRevealedLibraries (g : Game) (controller : PlayerId)
           | none => pure ()
         | .untilInstantOrSorcery =>
           let (g', hit, rest) :=
-            revealUntil g pid (g.player pid).library.size (fun o => (g.baseCard o).isInstantOrSorcery) #[] (cause := cause)
+            revealUntil g pid (g.player pid).library.size (fun o => g.isInstantOrSorcery o) #[] (cause := cause)
           g := g'
           if !rest.isEmpty then rests := rests.push (pid, rest)
           match hit with
@@ -3993,7 +3993,7 @@ def noteRevealedLibraries (g : Game) (controller : PlayerId)
           | none => pure ()
         | .untilNonland =>
           let (g', hit, rest) :=
-            revealUntil g pid (g.player pid).library.size (fun o => !(g.baseCard o).isLand) #[] (cause := cause)
+            revealUntil g pid (g.player pid).library.size (fun o => !g.isLand o) #[] (cause := cause)
           g := g'
           if !rest.isEmpty then rests := rests.push (pid, rest)
           match hit with
@@ -4025,7 +4025,7 @@ partial def applyRevealLibrary (g : Game) (controller : PlayerId)
       match g.findObject? id with
       | some o => g.logMsg s!"{(g.player controller).name} reveals {o.name}"
       | none => g) g
-    let creatures := ids.filter (fun id => (g.findObject? id).any (fun o => (g.baseCard o).isCreature))
+    let creatures := ids.filter (fun id => (g.findObject? id).any (fun o => g.isCreature o))
     if creatures.isEmpty then
       (g.logMsg "No creature card was revealed").putRestOnBottomRandom controller ids
         (cause := some cause)
@@ -4056,7 +4056,7 @@ partial def applyRevealLibrary (g : Game) (controller : PlayerId)
         let o := g.object! top
         shown := shown.push top
         g := g.logMsg s!"{(g.player controller).name} reveals {g.name o}"
-        if (g.baseCard o).isCreature then
+        if g.isCreature o then
           found := some top
         else
           rest := rest.push top
@@ -4067,7 +4067,7 @@ partial def applyRevealLibrary (g : Game) (controller : PlayerId)
         return g.putRestOnBottomRandom controller rest (cause := some cause)
       | some cid =>
         let o := g.object! cid
-        let mv := (g.baseCard o).manaValue
+        let mv := g.objectManaValue o
         let lands := g.landsYouControl controller
         if mv <= lands then
           let (g', newId) := g.putOntoBattlefield cid controller (cause := some cause)

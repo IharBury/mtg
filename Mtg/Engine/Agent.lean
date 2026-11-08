@@ -316,7 +316,9 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
     | .chooseTeamwork _ =>
       some (.announceTeamwork false)
     | .chooseTeamworkCreatures _ need =>
-      some (.choosePermanents (g.pickTeamworkCreatures p need))
+      let picked := g.pickTeamworkCreatures p need
+      let total := picked.foldl (fun acc id => acc + ((g.findObject? id).map g.power |>.getD 0)) 0
+      some (if total < (need : Int) then .decline else .choosePermanents picked)
     | .maySacrificeAnotherBolg _ bolgId =>
       match (g.permanentsOf p).find? (fun o => g.isCreature o && o.id != bolgId) with
       | some o => some (.sacrifice o.id)

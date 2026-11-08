@@ -483,7 +483,7 @@ def expandEachOpponentEffect (g : Game) (p : PlayerId) (e : Effect)
           let later := g.events.extract (idx + 1) g.events.size
           g.players.filter fun (pl : Player) =>
             pl.id != p && !g.areTeammates p pl.id &&
-              (!pl.lost || later.any fun ev =>
+              (g.stillInGame pl.id || later.any fun ev =>
                 match ev.change with
                 | .rules (.player (.lost q _)) | .rules (.player (.leftGame q)) => q == pl.id
                 | _ => false)

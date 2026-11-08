@@ -410,6 +410,9 @@ partial def resumePendingReplacement (g : Game) (pr : PendingReplacement)
     let checkReversal : Bool :=
       match first with
       | .restorePending (.fraChoice _ (.costPicks ..)) ..
+      | .restorePending (.fraChoice _ (.crew ..)) _ _
+      | .restorePending (.fraChoice _ (.zemoBoastExile ..)) _ _
+      | .restorePending (.chooseTeamworkCreatures ..) _ _
       | .restorePending (.sacrificePermanent ..) ..
       | .restorePending (.discardForAdditionalCost ..) ..
       | .completeActivation ..
@@ -654,6 +657,29 @@ partial def resumePendingReplacement (g : Game) (pr : PendingReplacement)
           reverseOrResumePopped g
         else openPrompt g
       | none => openPrompt g
+    | .fraChoice caster (.crew _ vehicleId n) =>
+      if !(g.findObject? vehicleId).any (·.isOnBattlefield) ||
+          ((g.creaturesControlledBy caster).filter (fun c =>
+            c.id != vehicleId && !c.status.tapped)).foldl
+            (fun acc c => acc + (g.power c).toNat) 0 < n then
+        reverseOrResumePopped g
+      else openPrompt g
+    | .fraChoice caster (.zemoBoastExile _ sourceId) =>
+      let col :=
+        match g.findObject? sourceId with
+        | some src => TextChange.applyColor (g.evalLayer3 src) .black
+        | none => .black
+      let allCands := (g.player caster).graveyard.filter (fun id =>
+        (g.findObject? id).any (fun card => (g.colors card).contains col))
+      if !g.canPayZemoBoast caster allCands col then
+        reverseOrResumePopped g
+      else openPrompt g
+    | .chooseTeamworkCreatures caster need =>
+      if ((g.creaturesControlledBy caster).filter (fun c =>
+          !c.status.tapped && g.power c > 0)).foldl
+          (fun acc c => acc + g.power c) 0 < (need : Int) then
+        reverseOrResumePopped g
+      else openPrompt g
     | .sacrificePermanent caster excludeId =>
       if (g.sacrificeCreatureOrArtifactChoices caster excludeId).isEmpty then
         reverseOrResumePopped g
@@ -1408,10 +1434,11 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
         g.change (.pending (.chooseTargets p))
       else if g.proposedSpell.isSome then
         g.reverseProposedSpell (resumeContinuation := true)
-          (extraLog := some s!"{obj.name} has no legal target and can't be cast")
+          (extraLog := some s!"{g.name obj} has no legal target and can't be cast")
       else
+        let objName := g.name obj
         let g := g.ceaseToExist obj.id (cause := some (.gameRule .triggeredAbility))
-          |>.logMsg s!"{obj.name}'s triggered ability has no legal target and is removed from the stack (CR 603.3d)"
+          |>.logMsg s!"{objName}'s triggered ability has no legal target and is removed from the stack (CR 603.3d)"
         g.afterTriggerTargetsChosen
   | .resumeTriggerModesAfterLeave p objectId remaining chosen =>
     match g.findObject? objectId with
@@ -1423,8 +1450,9 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
           ((List.range tModes.size).filter (fun i =>
             !chosen.contains i && (tModes[i]?.any (g.triggerModeChoosable p obj)))).length
         if choosableLeft < remaining then
+          let objName := g.name obj
           (g.ceaseToExist obj.id (cause := some (.gameRule .noLegalMode))
-            |>.logMsg s!"{obj.name}'s triggered ability has too few legal modes and is removed from the stack (CR 603.3c)").finishFraChoice
+            |>.logMsg s!"{objName}'s triggered ability has too few legal modes and is removed from the stack (CR 603.3c)").finishFraChoice
         else
           g.change (.pending (.fraChoice p (.triggerModes obj.id remaining chosen)))
     | none => g.finishFraChoice
@@ -1488,11 +1516,13 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
   | .exileSearchedLinkedLoop p remainingIds sourceId cause pendingFromId =>
     g.exileSearchedLinkedLoop p remainingIds sourceId cause pendingFromId
   | .grantPlayUntilEndOfNextTurn p cardId cause =>
-    match g.followMovedToZone? cardId (· == .exile) with
-    | some moved =>
-      (g.createEffect (.playPermission moved.id { player := p } (turnEnds := 2)) (cause := cause))
-        |>.logMsg s!"{(g.player p).name} exiles {moved.name} and may play it until the end of their next turn"
-    | none => g
+    if !g.stillInGame p then g
+    else
+      match g.followMovedToZone? cardId (· == .exile) with
+      | some moved =>
+        (g.createEffect (.playPermission moved.id { player := p } (turnEnds := 2)) (cause := cause))
+          |>.logMsg s!"{(g.player p).name} exiles {moved.name} and may play it until the end of their next turn"
+      | none => g
   | .exileCreaturesFromGraveyardLoop controller remainingIds cause pendingFromId =>
     g.exileCreaturesFromGraveyardLoop controller remainingIds cause pendingFromId
   | .finishExileUntilSourceLeaves sourceId fromId =>
@@ -3834,6 +3864,14 @@ def decline (g : Game) (p : PlayerId) : Except String Game := do
       return g.finishAndGrantPriority
     else
       return g
+  | .chooseTeamworkCreatures q need =>
+    if p != q then
+      throw s!"Only {(g.player q).name} may act on that cost"
+    if ((g.creaturesControlledBy q).filter (fun c =>
+        !c.status.tapped && g.power c > 0)).foldl
+        (fun acc c => acc + g.power c) 0 ≥ (need : Int) then
+      throw s!"You must tap creatures with total power {need} or more"
+    g.reverseProposedSpell? (resumeContinuation := true)
   | _ => throw "Not time to decline"
 
 def keepOpeningHand (g : Game) (p : PlayerId) : Except String Game := do

@@ -453,15 +453,16 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
       | none =>
       if preCheckStayNoAuraHost then
         let g := g.consumeReplacementOrder preCheckAllApplied
+        let oldName := g.name old
         if old.zone == .stack then
           if old.isCopy then
             (g.ceaseToExist old.id (cause := some (.stateBased .copyOutsideStackOrBf))
-              |>.logMsg s!"{old.name} ceases to exist (can't be attached legally; CR 303.4g / 704.5e)",
+              |>.logMsg s!"{oldName} ceases to exist (can't be attached legally; CR 303.4g / 704.5e)",
              (old.id, none, false))
           else
             let (g', gyId) :=
               g.move old.id (.graveyard old.owner) none (verb := verb) (actor := actor) (cause := cause)
-            let msg := s!"{old.name} goes to the graveyard (can't be attached legally; CR 303.4g)"
+            let msg := s!"{oldName} goes to the graveyard (can't be attached legally; CR 303.4g)"
             -- CR 614.6: log only once the Aura actually reaches its owner's graveyard.
             if let .chooseReplacement .. := g'.pending then
               (g'.chainPendingReplacement
@@ -472,10 +473,10 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
             else
               (g', (gyId, none, false))
         else if old.zone == .exile then
-          (g.logMsg s!"{old.name} remains in exile (can't be attached legally; CR 303.4f / CR 614.6)",
+          (g.logMsg s!"{oldName} remains in exile (can't be attached legally; CR 303.4f / CR 614.6)",
            (id, none, false))
         else
-          (g.logMsg s!"{old.name} remains in its current zone (can't be attached legally; CR 303.4f)",
+          (g.logMsg s!"{oldName} remains in its current zone (can't be attached legally; CR 303.4f)",
            (id, none, false))
       else
       let exileInstead := moveRep.exileInstead

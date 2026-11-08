@@ -427,7 +427,7 @@ def beginLibrarySearch (g : Game) (p : PlayerId) (pred : CardDef → Bool) (kind
     let pl := g.player p
     let eligible := (if alsoHand then pl.hand.filter keep else #[]) ++ pl.library.filter keep
     if optional then
-      (g.change (.pending (.fraChoice p (.maySearchLibrary eligible count dest after kind)))).logMsg
+      g.beginFraChoice p (.maySearchLibrary eligible count dest after kind)
         s!"{pl.name} may search for {kind}"
     else if eligible.isEmpty then
       let g := g.record (GameEvent.searched g.turnNumber p p #[] (cause := some (g.resolvingOrRuleCause p)))
@@ -436,7 +436,7 @@ def beginLibrarySearch (g : Game) (p : PlayerId) (pred : CardDef → Bool) (kind
       | .handThenDiscardRandom => g.shuffleThen p (.discardRandom p)
       | _ => g.shuffleSearch p after
     else
-      (g.change (.pending (.fraChoice p (.searchLibrary eligible count dest after kind)))).logMsg
+      g.beginFraChoice p (.searchLibrary eligible count dest after kind)
         s!"{pl.name} searches for {kind}"
 
 /-- `p` may search for `count` basic land cards and put them onto the
@@ -485,24 +485,26 @@ def resolveSearchBasicLandToHand (g : Game) (p : PlayerId) : Game :=
 /-- Exile the top card of `p`'s library and grant permission to play it until
 the end of that player's next turn (CR 701.18). -/
 def resolveExileTopPlayUntilEndOfNextTurn (g : Game) (p : PlayerId) : Game :=
-  let pl := g.player p
-  if pl.library.isEmpty then
-    g.logMsg s!"{pl.name} has no cards in their library to exile"
+  if !g.stillInGame p then g
   else
-    let top := pl.library.back!
-    let (g, cause) := g.allocDelayedCause (some p)
-    let (g, _) := g.move top .exile none (cause := some cause)
-    if let .chooseReplacement .. := g.pending then
-      g.chainPendingReplacement
-        (.finishPostStep (.grantPlayUntilEndOfNextTurn p top (some cause)))
+    let pl := g.player p
+    if pl.library.isEmpty then
+      g.logMsg s!"{pl.name} has no cards in their library to exile"
     else
-      match g.followMovedToZone? top (· == .exile) with
-      | some moved =>
-        let g := g.createEffect (.playPermission moved.id { player := p } (turnEnds := 2))
-          (cause := some cause)
-        g.logMsg
-          s!"{pl.name} exiles {moved.name} and may play it until the end of their next turn"
-      | none => g
+      let top := pl.library.back!
+      let (g, cause) := g.allocDelayedCause (some p)
+      let (g, _) := g.move top .exile none (cause := some cause)
+      if let .chooseReplacement .. := g.pending then
+        g.chainPendingReplacement
+          (.finishPostStep (.grantPlayUntilEndOfNextTurn p top (some cause)))
+      else
+        match g.followMovedToZone? top (· == .exile) with
+        | some moved =>
+          let g := g.createEffect (.playPermission moved.id { player := p } (turnEnds := 2))
+            (cause := some cause)
+          g.logMsg
+            s!"{pl.name} exiles {moved.name} and may play it until the end of their next turn"
+        | none => g
 
 end Game
 end Mtg.Engine

@@ -49,7 +49,7 @@ def continueNontokenSacrifices (g : Game) (players : Array PlayerId) (chosen : A
   let hasOne (p : PlayerId) := (g.permanentsOf p).any (fun o => g.isCreature o && !o.printed.isToken)
   match (players.filter hasOne).toList with
   | p :: rest =>
-    (g.change (.pending (.fraChoice p (.sacrificeNontokenEach rest.toArray chosen)))).logMsg
+    g.beginFraChoice p (.sacrificeNontokenEach rest.toArray chosen)
       s!"{(g.player p).name} sacrifices a nontoken creature"
   | [] =>
     let pairs := chosen.filterMap (fun id =>
@@ -82,8 +82,8 @@ def finishExileLibraryUntilNonland (g : Game) (controller : PlayerId)
     (cause : Option EventCause) : Game :=
   let onBf := (sourceId.bind g.findObject?).any (·.isOnBattlefield)
   if onBf then
-    g.change (.pending (.fraChoice controller (.widowMayCounter sourceId nonland?)))
-      |>.logMsg "You may put a +1/+1 counter on Black Widow"
+    g.beginFraChoice controller (.widowMayCounter sourceId nonland?)
+      "You may put a +1/+1 counter on Black Widow"
   else
     g.grantWidowCast controller nonland? (cause := cause)
 
@@ -257,8 +257,8 @@ def offerSpellRetarget (g : Game) (controller : PlayerId) (spellId : ObjectId)
   | some e =>
     if index < e.targets.size then
       let curStaged := if staged.isEmpty then e.targets else staged
-      g.change (.pending (.fraChoice controller (.mayChangeSpellTarget spellId index curStaged)))
-        |>.logMsg "You may choose a new target for the spell"
+      g.beginFraChoice controller (.mayChangeSpellTarget spellId index curStaged)
+        "You may choose a new target for the spell"
     else
       g.commitStagedSpellTargets spellId staged
 
@@ -377,8 +377,8 @@ def drawUpToHandSize (g : Game) (controller : PlayerId) (n : Nat) : Game :=
 /-- Ask the controller to put a +1/+1 counter on the source, or to remove a
 counter from a creature they control and draw. -/
 def offerHydeChoice (g : Game) (controller : PlayerId) (sourceId : Option ObjectId) : Game :=
-  g.change (.pending (.fraChoice controller (.hydeMode sourceId)))
-    |>.logMsg s!"{(g.player controller).name} chooses one — 0 put a +1/+1 counter, 1 remove a counter and draw"
+  g.beginFraChoice controller (.hydeMode sourceId)
+    s!"{(g.player controller).name} chooses one — 0 put a +1/+1 counter, 1 remove a counter and draw"
 
 /-- Something becomes a copy, as `of` says. The source copies an announced
 object until the controller's next turn and keeps the printed exception
@@ -578,15 +578,14 @@ def resolveHarnessedFlicker (g : Game) (controller : PlayerId) (sourceId : Optio
 +2/+1 until end of turn, and the card may be played this turn (Daredevil). -/
 def offerExileTopHeroPump (g : Game) (controller : PlayerId)
     (sourceId : Option ObjectId) : Game :=
-  g.change (.pending (.fraChoice controller (.daredevilMayExile sourceId)))
-    |>.logMsg "You may exile the top card of your library"
+  g.beginFraChoice controller (.daredevilMayExile sourceId)
+    "You may exile the top card of your library"
 
 /-- You may pay 2 life. If you do, creatures you control assign combat damage
 equal to their toughness this turn (The Kingpin of Crime). -/
 def offerPay2LifeToughness (g : Game) (controller : PlayerId) : Game :=
   if g.canPayLife controller 2 then
-    g.change (.pending (.fraChoice controller .kingpinMayPay2Life))
-      |>.logMsg "You may pay 2 life"
+    g.beginFraChoice controller .kingpinMayPay2Life "You may pay 2 life"
   else
     g.logMsg "The Kingpin's cost wasn't paid"
 
@@ -660,9 +659,9 @@ def offerVisionModes (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       if available.isEmpty then
         g.logMsg "The Vision's ability is removed from the stack with no effect"
       else
-        g.changes #[
-          .pending (.fraChoice controller (.visionMode sid available)),
-          .chooseModesRest (some {
+        g.beginFraChoice controller (.visionMode sid available)
+          "Choose one that hasn't been chosen this turn"
+          |>.change (.chooseModesRest (some {
             controller
             ability := ab
             sourceId
@@ -670,8 +669,7 @@ def offerVisionModes (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
             lastKnownPower
             sourceName
             modes := TriggeredAbility.TriggerResolution.visionModes
-            how := .vision })]
-          |>.logMsg "Choose one that hasn't been chosen this turn"
+            how := .vision }))
   | none =>
     g.logMsg "The Vision is no longer in play"
 
@@ -722,7 +720,7 @@ def copyCastTriggerSpell (g : Game) (controller : PlayerId) : Game :=
       match copyId? with
       | some copyId =>
         if (g.stackEntry? copyId).any (!·.targets.isEmpty) then
-          (g.change (.pending (.fraChoice controller (.newTargetsForCopies #[copyId])))).logMsg
+          g.beginFraChoice controller (.newTargetsForCopies #[copyId])
             s!"{(g.player controller).name} may choose new targets for the copy"
         else g
       | none => g
@@ -736,8 +734,8 @@ def offerMayExileDiscarded (g : Game) (controller : PlayerId) : Game :=
     causeId?.bind (fun cid => g.followMovedToZone? cid (· == Zone.graveyard controller))
   match obj? with
   | some o =>
-    g.change (.pending (.fraChoice controller (.moonstoneMayExile o.id)))
-      |>.logMsg s!"You may exile {o.name} from your graveyard"
+    g.beginFraChoice controller (.moonstoneMayExile o.id)
+      s!"You may exile {o.name} from your graveyard"
   | none =>
     if causeId?.isSome then
       g.logMsg "The discarded card is no longer in your graveyard"
@@ -746,9 +744,8 @@ def offerMayExileDiscarded (g : Game) (controller : PlayerId) : Game :=
 
 /-- You may create a 0/4 Wall creature token with defender. -/
 def offerMayCreateWall (g : Game) (controller : PlayerId) : Game :=
-  g.change (.pending (.fraChoice controller (.mayCreateTokens .wall04defender 1)))
-    |>.logMsg
-      s!"{(g.player controller).name} may create a 0/4 Wall creature token with defender"
+  g.beginFraChoice controller (.mayCreateTokens .wall04defender 1)
+    s!"{(g.player controller).name} may create a 0/4 Wall creature token with defender"
 
 /-- Put a +1/+1 counter on each `remaining` target creature `controller`
 controls one at a time, pausing across `Pending.chooseReplacement` so subsequent
