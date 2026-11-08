@@ -11801,12 +11801,13 @@ def putCountersExceptPlusOne (g : Game) (id : ObjectId) («from» : Status)
 or granting priority. -/
 def declineMayThenCore (g : Game) : Game :=
   let n := g.mayThenDrop
-  let g := g.changes #[
-    .pending .none,
+  let clearP : Array EngineChange :=
+    if g.pending != .none then #[.pending .none] else #[]
+  let g := g.changes (clearP ++ #[
     .mayThenDrop 0,
     .mayThenConditional none,
     .mayThenResume false,
-    .sacrificedPowerThisWay none ]
+    .sacrificedPowerThisWay none ])
   match g.triggerSequenceRest with
   | none => g
   | some rest => g.change (.setTriggerSequenceRestSteps (rest.steps.drop n))

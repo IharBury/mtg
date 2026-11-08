@@ -16298,7 +16298,7 @@ def replayOk24i1 (gs : Array Game) : Bool :=
   let bearId := (base.battlefield.filter (·.name == bear.name))[0]!.id
   let spId := (base.objects.filter (fun o => o.name == hero.name && o.zone == .stack))[0]!.id
   let run (pending : Pending) (movedId : ObjectId) : Game × Game × Bool :=
-    let g1 := (base.change (.pending pending)).redirectPendingAfterLeave opp24i1
+    let (g1, _) := (base.change (.pending pending)).redirectPendingAfterLeave opp24i1
     let g2 := resolveChoice24i1 g1
     (g1, g2,
       paused24i1 g1 && g2.pending == .scry me 1 &&
@@ -21576,11 +21576,34 @@ private def mkThreePlayer27i1 (seed : UInt64 := 2710) : Game :=
     | some eIdx, some pIdx => eIdx < pIdx
     | _, _ => false
 
+  -- 2e. When `redirectPendingAfterLeave` hands off a prompt to the next player
+  --     (e.g. `.chooseDiscardCard p1 #[p2]` -> `.chooseDiscardCard p2 #[]`), it returns the
+  --     next `Pending` without journaling `.pending` inside `playerLeavesGameCore`'s batch, so
+  --     control-loss exiles still precede `restoreSavedPostLeave`'s `.pending` event:
+  let gDiscHandoff0 :=
+    (insertObject gMayEx0 bear p2 (.hand p2)).change
+      (.pending (.chooseDiscardCard p1 #[p2]))
+  let gAfterDiscHandoffLeave := gDiscHandoff0.playerLeavesGame p1
+  let expectedDisc := Pending.chooseDiscardCard p2 #[]
+  let discExileIdx? := gAfterDiscHandoffLeave.events.findIdx? (fun ev =>
+    match ev with
+    | .rules _ (.zone (.moved _ _ .battlefield .exile ..)) _ _ => true
+    | _ => false)
+  let discPendingIdx? := gAfterDiscHandoffLeave.events.findIdx? (fun ev =>
+    ev == .engine gAfterDiscHandoffLeave.turnNumber (.pending expectedDisc) none)
+  let discardHandoffDepSpanOk :=
+    gAfterDiscHandoffLeave.pending == expectedDisc &&
+    (gAfterDiscHandoffLeave.followMovedToZone? p2PermId (· == .exile)).isSome &&
+    match discExileIdx?, discPendingIdx? with
+    | some eIdx, some pIdx => eIdx < pIdx
+    | _, _ => false
+
   mustHold27i1 "2a.multiLeavePopOuterOk" multiLeavePopOuterOk &&
   mustHold27i1 "2b.stackAbSurvivesOk" stackAbSurvivesOk &&
   mustHold27i1 "2c.keepArmAndBottomOrderPreservedOk" keepArmAndBottomOrderPreservedOk &&
   mustHold27i1 "2d.mayCastFromExileDepSpanOk" mayCastFromExileDepSpanOk &&
-  mustHold27i1 "2.replay" (replayOk27i1 #[gAfterBothLeft, gActivated, gOwnerConceded, gAbResolved, gPropAb, gPropAfterP1Leaves, gPropAfterP0Leaves, gAfterCascLeave, gAfterMayExLeave])
+  mustHold27i1 "2e.discardHandoffDepSpanOk" discardHandoffDepSpanOk &&
+  mustHold27i1 "2.replay" (replayOk27i1 #[gAfterBothLeft, gActivated, gOwnerConceded, gAbResolved, gPropAb, gPropAfterP1Leaves, gPropAfterP0Leaves, gAfterCascLeave, gAfterMayExLeave, gAfterDiscHandoffLeave])
 
 -- 3. CR 608.2g / 701.22 / 701.23 / 701.25 / 800.4a,c–d:
 --    `beginLibrarySearch` / `beginScry` / `beginSurveil` & `!g.stillInGame` guards on a player
