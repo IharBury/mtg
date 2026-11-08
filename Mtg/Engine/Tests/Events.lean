@@ -21505,9 +21505,82 @@ private def mkThreePlayer27i1 (seed : UInt64 := 2710) : Game :=
     (gAbResolved.player p0).life == 22 &&
     abNotAbortedByOwnerLeave
 
+  -- 2c. When `redirectPendingAfterLeave` preserves a surviving player's prompt in `curPending`
+  --     (e.g. `.payWard p0 ...`) while `wasAbortedProposal == true` and `postCastCleanup` has 2+
+  --     exiled cards (`.cascadeBottom`), `orderBottomInCleanup` orders the cards directly via
+  --     `moveIdsInOrder` instead of opening `.resolveRandom (.orderInto ...)`, preserving `.payWard`:
+  let gCasc0 :=
+    insertObject
+      (insertObject
+        (insertObject (gBase.change (.pushContinuationFrame {})) bear p0 .exile)
+        bear p0 .exile)
+      bear p1 (.hand p1)
+  let cascExIds := (gCasc0.objects.filter (fun o => o.zone == .exile && o.owner == p0)).map (·.id)
+  let cCard0 := cascExIds[0]!
+  let cCard1 := cascExIds[1]!
+  let p1HandSpellId := (gCasc0.player p1).hand.back!
+  let propP1 : ProposedSpell := {
+    caster := p1
+    cost := default
+    spellId := p1HandSpellId
+    original := gCasc0.object! p1HandSpellId
+  }
+  let gCascWard :=
+    (gCasc0.changes #[
+      .pending (.payWard p0 cCard0 default),
+      .proposedSpell (some propP1),
+      .postCastCleanup (some (.cascadeBottom p0 cCard0 #[cCard1]))
+    ])
+  let gAfterCascLeave := gCascWard.playerLeavesGame p1
+  let keepArmAndBottomOrderPreservedOk :=
+    gAfterCascLeave.pending == .payWard p0 cCard0 default &&
+    gAfterCascLeave.postCastCleanup.isNone &&
+    (gAfterCascLeave.followMovedToZone? cCard0 (· == .library p0)).isSome &&
+    (gAfterCascLeave.followMovedToZone? cCard1 (· == .library p0)).isSome
+
+  -- 2d. When an aborted proposal (`wasAbortedProposal == true`, including from `.chooseReplacement`)
+  --     activates `pendingMayCastFromExile`, `.pending (.fraChoice ...)` is restored via
+  --     `savedPreLeavePending?` AFTER `runEndControlExileLoop` so control-loss exiles remain inside
+  --     `inDepSpan`:
+  let nonLandSpellDef : CardDef := {
+    name := "P27i1 Exiled Bolt"
+    manaCost := ⟨#[.colored .red]⟩
+    types := #[.instant]
+    spellEffect := some { resolution := .gainLife 1, phrase := "You gain 1 life" }
+  }
+  let gMayEx0 :=
+    insertObject
+      (addPermanent gCasc0 bear p2 p1)
+      nonLandSpellDef p0 .exile
+  let p2PermId := (gMayEx0.permanentsOf p1).find? (fun o => o.name == bear.name && o.owner == p2) |>.get!.id
+  let exBoltId := (gMayEx0.objects.filter (fun o => o.zone == .exile && o.name == nonLandSpellDef.name))[0]!.id
+  let gMayEx1 :=
+    gMayEx0.changes #[
+      .pending (.chooseReplacement p1 #[]),
+      .proposedSpell (some propP1),
+      .pendingMayCastFromExile (some (p0, #[exBoltId], 1))
+    ]
+  let gAfterMayExLeave := gMayEx1.playerLeavesGame p1
+  let expectedFra := Pending.fraChoice p0 (.mayCastUpToFromExile #[exBoltId] 1)
+  let exileIdx? := gAfterMayExLeave.events.findIdx? (fun ev =>
+    match ev with
+    | .rules _ (.zone (.moved _ _ .battlefield .exile ..)) _ _ => true
+    | _ => false)
+  let fraPendingIdx? := gAfterMayExLeave.events.findIdx? (fun ev =>
+    ev == .engine gAfterMayExLeave.turnNumber (.pending expectedFra) none)
+  let mayCastFromExileDepSpanOk :=
+    gAfterMayExLeave.pending == expectedFra &&
+    gAfterMayExLeave.pendingMayCastFromExile.isNone &&
+    (gAfterMayExLeave.followMovedToZone? p2PermId (· == .exile)).isSome &&
+    match exileIdx?, fraPendingIdx? with
+    | some eIdx, some pIdx => eIdx < pIdx
+    | _, _ => false
+
   mustHold27i1 "2a.multiLeavePopOuterOk" multiLeavePopOuterOk &&
   mustHold27i1 "2b.stackAbSurvivesOk" stackAbSurvivesOk &&
-  mustHold27i1 "2.replay" (replayOk27i1 #[gAfterBothLeft, gActivated, gOwnerConceded, gAbResolved, gPropAb, gPropAfterP1Leaves, gPropAfterP0Leaves])
+  mustHold27i1 "2c.keepArmAndBottomOrderPreservedOk" keepArmAndBottomOrderPreservedOk &&
+  mustHold27i1 "2d.mayCastFromExileDepSpanOk" mayCastFromExileDepSpanOk &&
+  mustHold27i1 "2.replay" (replayOk27i1 #[gAfterBothLeft, gActivated, gOwnerConceded, gAbResolved, gPropAb, gPropAfterP1Leaves, gPropAfterP0Leaves, gAfterCascLeave, gAfterMayExLeave])
 
 -- 3. CR 608.2g / 701.22 / 701.23 / 701.25 / 800.4a,c–d:
 --    `beginLibrarySearch` / `beginScry` / `beginSurveil` & `!g.stillInGame` guards on a player

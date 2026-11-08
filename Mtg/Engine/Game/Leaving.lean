@@ -1216,6 +1216,25 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
       let g :=
         if g.pendingPriority == some p then g.change (.pendingPriority (some (g.nextLiving p))) else g
       let runPostCastAndPropCleanup (g : Game) (curPending : Pending := g.pending) : Game × Pending :=
+        let orderBottomInCleanup (g : Game) (ids : Array ObjectId) (dest : Zone)
+            (log : String) (cause : Option EventCause := none) : Game :=
+          if let .chooseReplacement .. := g.pending then
+            g.requestOrderInto ids dest log (cause := cause)
+          else if curPending != .none then
+            let (g, cause) : Game × Option EventCause :=
+              match cause with
+              | some c => (g, some c)
+              | none =>
+                if ids.isEmpty then (g, none)
+                else
+                  match g.currentResolvingContext? with
+                  | some (src, ctrl) =>
+                    let (g, c) := g.allocDelayedCause ctrl src
+                    (g, some c)
+                  | none => (g, none)
+            g.moveIdsInOrder ids dest (cause := cause) (log := log)
+          else
+            g.requestOrderInto ids dest log (cause := cause)
         let prePostCastEvCount := g.events.size
         let g :=
           match g.postCastCleanup with
@@ -1236,7 +1255,7 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
                 else
                   let c := g.lastMoveCauseOf? cardId
                   g.withOuterContStashed fun g =>
-                    g.requestOrderInto live (.library victim)
+                    orderBottomInCleanup g live (.library victim)
                       s!"{(g.player victim).name} puts the exiled cards on the bottom of their library in a random order"
                       (cause := c)
               else g
@@ -1258,7 +1277,7 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
                 else
                   let c := g.lastMoveCauseOf? cardId
                   g.withOuterContStashed fun g =>
-                    g.requestOrderInto live (.library caster)
+                    orderBottomInCleanup g live (.library caster)
                       s!"{(g.player caster).name} puts the exiled cards on the bottom of their library in a random order"
                       (cause := c)
               else g
@@ -1291,7 +1310,7 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
                 if unchosen.isEmpty then g
                 else
                   g.withOuterContStashed fun g =>
-                    g.requestOrderInto unchosen (.library caster)
+                    orderBottomInCleanup g unchosen (.library caster)
                       s!"{(g.player caster).name} puts the rest on the bottom of their library in a random order"
               else g
             else g
@@ -1301,7 +1320,7 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
             match ev with
             | .engine _ (.pending _) _ => true
             | _ => false
-        let curPending := if postCastTouchedPending then g.pending else curPending
+        let curPending := if curPending == .none && postCastTouchedPending then g.pending else curPending
         let g :=
           if (wasAbortedProposal && (g.proposedSpell.isSome || g.proposalCheckpoint.isSome)) ||
               g.proposedSpell.any (fun (prop : ProposedSpell) => prop.caster == p) then
@@ -1317,7 +1336,7 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
             else if wasAbortedProposal && curPending == Pending.none then
               let nextP := Pending.fraChoice q (.mayCastUpToFromExile alive left)
               let g :=
-                (g.changes #[.pendingMayCastFromExile none, .pending nextP]).logMsg
+                (g.change (.pendingMayCastFromExile none)).logMsg
                   s!"{(g.player q).name} may cast up to {left} more spells from among the exiled cards without paying their mana costs"
               (g, nextP)
             else if alive != ids then
@@ -1349,7 +1368,7 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
               (g.change (.pendingFreeCopies none), curPending)
             else if wasAbortedProposal && curPending == Pending.none then
               let nextP := Pending.fraChoice q (.castCopiesFree alive budget castsLeft)
-              let g := g.changes #[.pendingFreeCopies none, .pending nextP]
+              let g := g.change (.pendingFreeCopies none)
               (g, nextP)
             else if alive != ids then
               (g.change (.pendingFreeCopies (some (q, alive, budget, castsLeft))), curPending)
@@ -1358,12 +1377,20 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
       match preBodyPending with
       | .chooseReplacement q choices =>
         if q != p && !abortingReplacementProposal then
-          let (g, _) := runPostCastAndPropCleanup g preBodyPending
+          let choicesStillValidPre :=
+            g.stillInGame q &&
+              choices.all (fun c => c.object.all (fun oid => (g.findObject? oid).isSome))
+          let (g, postCleanupPending) :=
+            runPostCastAndPropCleanup g (if choicesStillValidPre then preBodyPending else .none)
           let choicesStillValid :=
             g.stillInGame q &&
               choices.all (fun c => c.object.all (fun oid => (g.findObject? oid).isSome))
           let savedPreLeavePending? : Option Pending :=
-            if choicesStillValid then some preBodyPending else none
+            if choicesStillValid then some preBodyPending
+            else if postCleanupPending != .none && postCleanupPending != preBodyPending then some postCleanupPending
+            else none
+          let g :=
+            if g.pending != .none then g.change (.pending .none) else g
           let combinedOuter? : Option PendingReplacement :=
             match g.pendingReplacement, preBodyCont? with
             | some rCont, some preCont => some (.seq rCont preCont)
@@ -1386,28 +1413,55 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
           let g := g.runEndControlExileLoop exileQueue (cause := cause)
           (g, (savedPreLeavePending?, combinedOuter?))
         else
-          let (g, _) := runPostCastAndPropCleanup g .none
-          let combinedOuter? : Option PendingReplacement :=
-            match g.pendingReplacement, preBodyCont? with
-            | some rCont, some preCont => some (.seq rCont preCont)
-            | some rCont, none => some rCont
-            | none, some preCont => some preCont
-            | none, none => none
-          let g := if g.pendingReplacement.isSome then g.change (.pendingReplacement none) else g
-          let g :=
-            match combinedOuter? with
-            | some outer => g.change (.pushOuterPendingReplacement outer)
-            | none => g
-          let g :=
-            match bodyExilePending? with
-            | some bp =>
-              let g := g.change (.pending bp)
-              match bodyExileCont? with
-              | some bc => g.change (.pendingReplacement (some bc))
+          let (g, postCleanupPending) := runPostCastAndPropCleanup g .none
+          let openedNewReplacement :=
+            match postCleanupPending with
+            | .chooseReplacement .. => true
+            | _ => false
+          if openedNewReplacement then
+            let g :=
+              match preBodyCont? with
+              | some outer => g.change (.pushOuterPendingReplacement outer)
               | none => g
-            | none => g
-          let g := g.runEndControlExileLoop exileQueue (cause := cause)
-          (g, (none, combinedOuter?))
+            let g :=
+              match bodyExilePending? with
+              | some bp =>
+                let redirP := postCleanupPending
+                let redirC? := g.pendingReplacement
+                let g := g.changes #[.pending bp, .pendingReplacement bodyExileCont?]
+                let g := g.chainPendingReplacement (.restorePending redirP false)
+                match redirC? with
+                | some rc => g.chainPendingReplacement rc
+                | none => g
+              | none => g
+            let g := g.runEndControlExileLoop exileQueue (cause := cause)
+            (g, (none, preBodyCont?))
+          else
+            let savedPreLeavePending? : Option Pending :=
+              if postCleanupPending != .none then some postCleanupPending else none
+            let g :=
+              if g.pending != .none then g.change (.pending .none) else g
+            let combinedOuter? : Option PendingReplacement :=
+              match g.pendingReplacement, preBodyCont? with
+              | some rCont, some preCont => some (.seq rCont preCont)
+              | some rCont, none => some rCont
+              | none, some preCont => some preCont
+              | none, none => none
+            let g := if g.pendingReplacement.isSome then g.change (.pendingReplacement none) else g
+            let g :=
+              match combinedOuter? with
+              | some outer => g.change (.pushOuterPendingReplacement outer)
+              | none => g
+            let g :=
+              match bodyExilePending? with
+              | some bp =>
+                let g := g.change (.pending bp)
+                match bodyExileCont? with
+                | some bc => g.change (.pendingReplacement (some bc))
+                | none => g
+              | none => g
+            let g := g.runEndControlExileLoop exileQueue (cause := cause)
+            (g, (savedPreLeavePending?, combinedOuter?))
       | _ =>
         let preRedirEvCount := g.events.size
         let g := g.redirectPendingAfterLeave p (abortedProposal := wasAbortedProposal) (pending := preBodyPending)
