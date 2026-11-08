@@ -9388,14 +9388,23 @@ guards, *Palantír* influence-counter / Aura & Equipment `attachedHost?` /
    - In `LibrarySearch.beginLibrarySearch` (`LibrarySearch.lean:430, 439`),
      `ModeledTriggers` (`52` `.sacrificeNontokenEach`, `85` `.widowMayCounter`,
      `260` `offerSpellRetarget`, `380` `.hydeMode`, `581` `.daredevilMayExile`,
-     `588` `.kingpinMayPay2Life`, `664` `.visionMode`, `725`
-     `.newTargetsForCopies`, `739` `.moonstoneMayExile`, and `749`
+     `588` `.kingpinMayPay2Life`, `663–674` `offerVisionModes` `.visionMode`,
+     `725` `.newTargetsForCopies`, `739` `.moonstoneMayExile`, and `749`
      `.mayCreateTokens`), and `ResolutionEffects` (`offerPayForReflexive` at
      `775`, `offerExileCasts` at `793`, `promptEnteringAttackItems` at `1099`,
      and `offerWorldsCreatures` at `1454`), open `.fraChoice` prompts via
-     `g.beginFraChoice` (`Core.lean:11820–11824`) instead of bare `g.change` /
-     `g.changes` `.pending (.fraChoice ...)` writes so a `ContinuationFrame` is
-     always active when `finishFraChoice` runs.
+     `g.beginFraChoice` (`Core.lean:11820–11824`, passing each site's log string
+     as `beginFraChoice`'s `msg`) instead of bare `g.change` / `g.changes`
+     `.pending (.fraChoice ...)` writes so a `ContinuationFrame` is always
+     active when `finishFraChoice` runs; in `ModeledTriggers.offerVisionModes`
+     (`ModeledTriggers.lean:663–674`), call `g.beginFraChoice controller
+     (.visionMode sid available) "Choose one that hasn't been chosen this turn"`
+     first and then `|>.change (.chooseModesRest (some { controller, ability :=
+     ab, sourceId, targets, lastKnownPower, sourceName, modes :=
+     TriggeredAbility.TriggerResolution.visionModes, how := .vision }))` so the
+     `.chooseModesRest` continuation payload (`Core.lean:2247`) is written after
+     a `ContinuationFrame` exists (`modifyTopFrame`, `Core.lean:174–177`) rather
+     than being dropped.
 3. Complete remaining `.lost` vs `g.stillInGame` (`!pl.lost && !pl.leftTheGame`)
    checks and departed-player entry-point / post-pause guards (§2.5, §3.1, §3.4,
    CR 800.4a):
@@ -9413,11 +9422,19 @@ guards, *Palantír* influence-counter / Aura & Equipment `attachedHost?` /
    - Add `!g.stillInGame` no-op guards *after* the `.chooseReplacement` pause
      chain in `SacrificeDiscard.finishConniveDraws` (`SacrificeDiscard.lean:120`,
      after `117–119`), `SacrificeDiscard.applyConnive`
-     (`SacrificeDiscard.lean:146`, after `144–145`),
+     (`SacrificeDiscard.lean:146`, after `144–145`), and
      `Choices.exileTopPlayIfYouControlSubtypeLoop` (`Choices.lean:304`, after
-     `301–303`), and `Choices.exileUntilInstantOrSorceryLoop`
-     (`Choices.lean:376`, after `373–375`, returning `g` when `!g.stillInGame
-     victim`); and add early `!g.stillInGame` no-op guards at entry on
+     `301–303`); in `Choices.exileUntilInstantOrSorceryLoop`
+     (`Choices.lean:369–427`), after the `.chooseReplacement` pause chain
+     (`373–375`), still apply `pendingFromId` (`379–385`) to record the exile
+     that just finished across that pause, skip the `while` loop (`386–399`) that
+     exiles more of `victim`'s library when `!g.stillInGame victim` (`while
+     found.isNone && g.stillInGame victim && !(g.player victim).library.isEmpty
+     do`), still run `match mode` (`400–427`) so `.impulseState` (`401–408`) and
+     `.directCastOrBottom` (`409–427`) finish, and gate the library moves and
+     `requestOrderInto` calls inside `.directCastOrBottom` (`412–414`, `424–427`)
+     on `g.stillInGame victim` (matching `finishGrimaDirectCast` at
+     `Choices.lean:353`); and add early `!g.stillInGame` no-op guards at entry on
      `Choices.beholdQuality` (`Choices.lean:75`),
      `Choices.drawPerSevenCardGraveyard` (`Choices.lean:102`),
      `Choices.mayDiscardHandDrawThatMany` (`Choices.lean:198`),
