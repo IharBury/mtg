@@ -10698,16 +10698,23 @@ object-referencing `FraChoice` revalidation & `beginMayDiscardDraw` /
        - `Decisions.chooseReplacement` (`Decisions.lean:4413–4424`),
          `Decisions.drainPendingContinuations` (`Decisions.lean:97, 106`), and
          `Decisions.resumePendingReplacement` `.restorePending`
-         (`Decisions.lean:646–657`): call `g.popEmptyContinuationFrames`
-         (`Decisions.lean:72–84`, whose `g.pending == .none` and empty-queue
-         guards hold) *before* running the resumed continuation — right after
-         `g.changes #[.replacementOrder order, .pending .none,
-         .pendingReplacement none]` in `chooseReplacement` (`4414`), right after
-         `g.change (.pendingReplacement none)` / `g.change
-         .popOuterPendingReplacement` in `drainPendingContinuations` (`97, 106`),
-         and right after popping `popOuter` when `popped?.isNone` in
-         `.restorePending` (`648`) — so any empty `ContinuationFrame {}` pushed
-         by `Core.promptChooseReplacement` (`Core.lean:11181–11187`) is popped
+         (`Decisions.lean:646–657`): add a helper
+         `popEmptyTopContinuationFrames (g : Game) : Game` next to
+         `popEmptyContinuationFrames` (`Decisions.lean:72–84`) that loops `while
+         g.continuations.back? == some {} do g := g.change
+         .popContinuationFrame` (checking only `g.continuations.back? == some
+         {}` without `popEmptyContinuationFrames`'s `pending` /
+         `pendingReplacement` / `outerPendingReplacements` /
+         `triggerSequenceRest` / `mayThenResume` guards), and call it *before*
+         running the resumed continuation — right after `g.changes
+         #[.replacementOrder order, .pending .none, .pendingReplacement none]`
+         in `chooseReplacement` (`4414`), right after `g.change
+         (.pendingReplacement none)` and `g.change .popOuterPendingReplacement`
+         in `drainPendingContinuations` (`97, 106`), and right after `let g :=
+         if popped?.isSome then g.change .popOuterPendingReplacement else g` in
+         `.restorePending` (`648`, before `openPrompt` / `openPromptWith` sets
+         `g.pending`) — so any empty `ContinuationFrame {}` pushed by
+         `Core.promptChooseReplacement` (`Core.lean:11181–11187`) is popped
          before the resumed continuation opens or restores a non-`.none`
          `Pending`; ensure `.restorePending`'s `openPromptWith` (`649–657`)
          pushes `{}` when `g.continuations.isEmpty` and `p'` is `.fraChoice ..`
@@ -10829,32 +10836,48 @@ object-referencing `FraChoice` revalidation & `beginMayDiscardDraw` /
          p`, call `g.finishFraChoice`.
      - Revalidate already-selected modes in `chosen` during mode announcement
        when another player leaves the game (CR 601.2b / 603.3c / 700.2b):
-       - in `.resumeChooseModeAfterLeave p`'s `.spell` arm (`1532–1545`), filter
-         `let validChosen := chosen.filter (fun i => effModes[i]?.any (fun m =>
-         g.spellModeIsChoosable p m (some spell.id)))`, record `let g := if
-         validChosen != chosen then g.record (GameEvent.announced g.turnNumber
-         spell.id (modes := validChosen)) else g`, compute `let more :=
-         (List.range effModes.size).any (fun i => !validChosen.contains i &&
-         g.spellModeIsChoosable p effModes[i]! (some spell.id))`, and check `if
-         validChosen.size < g.maxModesFor p face && more then g.change (.pending
-         (.chooseMode p)) else if !validChosen.isEmpty then g.afterModesChosen p
-         else if isReturnUpToTwoGyModal face || face.allowsZeroTargets then
-         g.change (.pending (.chooseMode p)) else g.reverseProposedSpell
+       - in `.resumeChooseModeAfterLeave p`'s `.spell` arm (`1532–1545`), add a
+         `StackEntryChange.clearChosenModes` constructor (`Event.lean:2252–2256`,
+         handled in `Core.applyChange` at `Core.lean:2118–2133` as `|
+         .clearChosenModes => { e with chosenMode := none, extraModes := #[] }`
+         since `Core.applyCastEvent` `.announced` at `Core.lean:5185–5193`
+         ignores `modes := #[]` so `x`/`costs` announcements do not wipe
+         `chosenModesOf` at `SpellTargets.lean:45–48`), filter `let validChosen
+         := chosen.filter (fun i => effModes[i]?.any (fun m =>
+         g.spellModeIsChoosable p m (some spell.id)))`, update the stack entry
+         when `validChosen != chosen` via `let g := if validChosen.isEmpty then
+         g.change (.stackEntry spell.id .clearChosenModes) else g.record
+         (GameEvent.announced g.turnNumber spell.id (modes := validChosen))`,
+         compute `let more := (List.range effModes.size).any (fun i =>
+         !validChosen.contains i && g.spellModeIsChoosable p effModes[i]! (some
+         spell.id))`, and check `if validChosen.size < g.maxModesFor p face &&
+         more then g.change (.pending (.chooseMode p)) else if
+         !validChosen.isEmpty then g.afterModesChosen p else if
+         isReturnUpToTwoGyModal face || face.allowsZeroTargets then g.change
+         (.pending (.chooseMode p)) else g.reverseProposedSpell
          (resumeContinuation := true)` (bounding the reopen check by
          `g.maxModesFor p face` as in `CastSpell.chooseMode` at
-         `CastSpell.lean:274–279` and preserving the `Decisions.lean:1540–1545`
+         `CastSpell.lean:267–279` and preserving the `Decisions.lean:1540–1545`
          branches);
        - in `.resumeTriggerModesAfterLeave p objectId remaining chosen`
          (`1578–1587`), filter `let validChosen := chosen.filter (fun i =>
          tModes[i]?.any (g.triggerModeChoosable p obj))` and `let needed :=
          remaining + (chosen.size - validChosen.size)`, compute `choosableLeft`
          against `!validChosen.contains i`, and if `needed == 0`, finalize
-         `validChosen` via `combineTriggerModes`; else if `choosableLeft <
-         needed`, keep the CR 603.3c stack removal `(g.ceaseToExist obj.id
-         (cause := some (.gameRule .noLegalMode)) |>.logMsg s!"{objName}'s
-         triggered ability has too few legal modes and is removed from the stack
-         (CR 603.3c)").finishFraChoice` (`Decisions.lean:1582–1585`); else
-         re-open `g.change (.pending (.fraChoice p (.triggerModes obj.id needed
+         `validChosen` matching the accept path at `FraChoices.lean:491–498`
+         (sort `let sorted := validChosen.qsort (· < ·)`, record
+         `GameEvent.announced g.turnNumber obj.id (modes := sorted)`, and match
+         `combineTriggerModes (tModes.map (fun m => g.expandEachOpponentEffect p
+         m (some obj.id))) sorted` (`SpellTargets.lean:79–99`): on `none`, call
+         `g.finishFraChoice`, and on `some eff`, apply `g.changeObject obj.id
+         (.abilityEffect (some eff))`, set `let g := if !eff.requiresTarget then
+         g.change (.stackEntry obj.id (.targetsAnnounced true)) else g`, and
+         call `g.finishFraChoice`); else if `choosableLeft < needed`, keep the
+         CR 603.3c stack removal `(g.ceaseToExist obj.id (cause := some
+         (.gameRule .noLegalMode)) |>.logMsg s!"{objName}'s triggered ability
+         has too few legal modes and is removed from the stack (CR
+         603.3c)").finishFraChoice` (`Decisions.lean:1582–1585`); else re-open
+         `g.change (.pending (.fraChoice p (.triggerModes obj.id needed
          validChosen)))`;
        - in `.resumeUpToTriggerModesAfterLeave p objectId remaining chosen`
          (`1594–1615`), filter `let validChosen := chosen.filter (fun i =>
