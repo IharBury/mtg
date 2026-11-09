@@ -23421,22 +23421,26 @@ private def replayOk30i1 (gs : Array Game) : Bool :=
   -- 1d. `.fraChoice p0 (.sacrificeLeastPower #[p0BearId, p1BearId])`: when `p1` (`q != leaver`)
   --     leaves and only `p0BearId` remains tied for least power under `p0`'s control
   --     (`liveTied.size <= 1`), `redirectPendingAfterLeave` delegates to
-  --     `sacrificeLeastPowerCreature p0`, sacrificing `p0BearId` and finishing the choice frame:
+  --     `sacrificeLeastPowerCreature p0` via `clearPending` inside `withOuterContStashed`,
+  --     sacrificing `p0BearId` without journaling `.chooseModesRest none`:
   let gPendLeastPower := gBase.beginFraChoice p0 (.sacrificeLeastPower #[p0BearId, p1BearId])
   let gAfterLeastPowerLeave := gPendLeastPower.concede p1
   let leastPowerLeaveOk :=
     (gAfterLeastPowerLeave.followMovedToZone? p0BearId (· == .graveyard p0)).isSome &&
+    !gAfterLeastPowerLeave.events.any (fun e => e.change == .engine (.chooseModesRest none)) &&
     gAfterLeastPowerLeave.continuations.isEmpty
 
   -- 1e. `.fraChoice p0 (.hydeRemoveCounter #[p0BearId, p1BearId])`: when `p1` (`q != leaver`)
   --     leaves while `p0BearId` has a `+1/+1` counter (`live.size == 1 <= 1`),
-  --     `redirectPendingAfterLeave` runs `applyHydeMode p0 none 1 #[Target.permanent p0BearId]`
-  --     (removing the `+1/+1` counter from `p0BearId`):
+  --     `redirectPendingAfterLeave` runs `(clearPending g).applyHydeMode p0 none 1 #[Target.permanent p0BearId]`
+  --     inside `withOuterContStashed` (removing the `+1/+1` counter from `p0BearId` without
+  --     journaling `.chooseModesRest none`):
   let gWithCounter := gBase.addPlusOnePlusOneTo (gBase.object! p0BearId) 1 (cause := some testCause)
   let gPendHyde := gWithCounter.beginFraChoice p0 (.hydeRemoveCounter #[p0BearId, p1BearId])
   let gAfterHydeLeave := gPendHyde.concede p1
   let hydeLeaveOk :=
     (gAfterHydeLeave.object! p0BearId).status.plusOnePlusOne == 0 &&
+    !gAfterHydeLeave.events.any (fun e => e.change == .engine (.chooseModesRest none)) &&
     gAfterHydeLeave.continuations.isEmpty
 
   -- 1f. `.sacrificeCreature p0`: when `p1` leaves while `p0` (`q != leaver`) has no remaining
@@ -23553,8 +23557,29 @@ private def replayOk30i3 (gs : Array Game) : Bool :=
   let gPostShuffle := gLeft.runPostStep (.logShuffleIntoLibrary p1 p0BearId)
   let gPostPutMill := gLeft.runPostStep (.offerPutMilledPermanentOrGainLife p1 #[p0BearId] 3)
 
-  -- Also verify `.grantAdventureExilePermission` when `controller` (`p1`) has left the game:
-  -- logs `"{name} is exiled"` without creating a `.playPermission` effect for `p1`:
+  -- 2. Verify pending-arrival logs in `millCardsLoop`, `movePublicCardsToHandLoop`, and
+  --    `.logShuffleIntoLibrary` still emit when the card already arrived before `p1` left,
+  --    then return before further departed-player actions:
+  let gMillWithLog := gLeft.millCardsLoop p1 #[p0BearId] (logCard := some bear.name)
+  let gMovedToP1Hand := (gBase.move p0BearId (.hand p1) none (cause := some testCause)).1.playerLeavesGame p1
+  let sIdxHand := gMovedToP1Hand.events.size
+  let gMovePubWithPending :=
+    gMovedToP1Hand.movePublicCardsToHandLoop p1 #[p0BearId] 1 true none
+      (pendingCard := some (p0BearId, bear.name))
+  let gMovedToP1Lib := (gBase.move p0BearId (.library p1) none (cause := some testCause)).1.playerLeavesGame p1
+  let sIdxLib := gMovedToP1Lib.events.size
+  let gPostShuffleArrived := gMovedToP1Lib.runPostStep (.logShuffleIntoLibrary p1 p0BearId)
+  let pendingArrivalLogsOk :=
+    gMillWithLog.log.back? == some s!"{(gLeft.player p1).name} mills {bear.name}" &&
+    gMillWithLog.events.size == sIdx + 1 &&
+    gMovePubWithPending.log.back? == some s!"{(gLeft.player p1).name} puts {bear.name} into their hand" &&
+    gMovePubWithPending.events.size == sIdxHand + 1 &&
+    gPostShuffleArrived.log.back? == some s!"{(gLeft.player p1).name} shuffles {bear.name} into their library" &&
+    gPostShuffleArrived.events.size == sIdxLib + 1 &&
+    gPostShuffleArrived.pending == .none
+
+  -- 3. Also verify `.grantAdventureExilePermission` when `controller` (`p1`) has left the game:
+  --    logs `"{name} is exiled"` without creating a `.playPermission` effect for `p1`:
   let (gExBear, exBearId) := gLeft.move p0BearId .exile none (cause := some testCause)
   let effCountBefore := gExBear.activeEffects.size
   let gAdvGone := gExBear.runPostStep (.grantAdventureExilePermission p1 p0BearId (some testCause))
@@ -23566,10 +23591,13 @@ private def replayOk30i3 (gs : Array Game) : Bool :=
     #[gCascadeLoop, gCascade, gMayCastLooked, gMill, gMillLoop, gMovePubHand,
       gMoveOrder, gReqOrder, gWidowCast, gFinWidow, gPostNick, gPostOppDraw,
       gPostLoseMill, gPostShuffle, gPostPutMill].all (fun g => g.events.size == sIdx) &&
+    pendingArrivalLogsOk &&
     advGoneOk
 
   mustHold30i3 "1.departedGuardsOk" departedGuardsOk &&
-  mustHold30i3 "1.replay" (replayOk30i3 #[gLeft, gExBear, gAdvGone])
+  mustHold30i3 "1.replay"
+    (replayOk30i3 #[gLeft, gMillWithLog, gMovedToP1Hand, gMovePubWithPending,
+      gMovedToP1Lib, gPostShuffleArrived, gExBear, gAdvGone])
 
 end Phase30Item3EventAlignment
 

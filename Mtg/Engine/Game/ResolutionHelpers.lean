@@ -270,11 +270,11 @@ def millCardsLoop (g : Game) (p : PlayerId) (remainingIds : Array ObjectId)
   if let .chooseReplacement .. := g.pending then
     return g.chainPendingReplacement
       (.millCardsLoop p remainingIds emptyTail cause logCard freshCount)
-  if !g.stillInGame p then
-    return g
   let mut g := g
   if let some name := logCard then
     g := g.logMsg s!"{(g.player p).name} mills {name}"
+  if !g.stillInGame p then
+    return g
   let mut ids := remainingIds
   let mut tail := emptyTail
   if let some n := freshCount then
@@ -334,8 +334,6 @@ def movePublicCardsToHandLoop (g : Game) (p : PlayerId) (remainingIds : Array Ob
   if let .chooseReplacement .. := g.pending then
     return g.chainPendingReplacement
       (.finishPostStep (.movePublicCardsToHandLoop p remainingIds maxLeft playerPutsStyle cause pendingCard requirePublicZone))
-  if !g.stillInGame p then
-    return g
   let mut g := g
   let mut left := maxLeft
   if let some (cid, cname) := pendingCard then
@@ -343,6 +341,8 @@ def movePublicCardsToHandLoop (g : Game) (p : PlayerId) (remainingIds : Array Ob
       g := g.logMsg
         (if playerPutsStyle then s!"{(g.player p).name} puts {cname} into their hand"
          else s!"{cname} is put into {(g.player p).name}'s hand")
+  if !g.stillInGame p then
+    return g
   for i in [0:remainingIds.size] do
     let id := remainingIds[i]!
     match g.findObject? id with

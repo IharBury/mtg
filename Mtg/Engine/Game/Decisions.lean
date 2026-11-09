@@ -1368,14 +1368,12 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
     let oName := (g.lastKnownBefore? exiledId).map (·.name) |>.getD "The permanent"
     g.finishIdentityEchoAfterExile controller exiledId sourceId oName
   | .logShuffleIntoLibrary owner cardId =>
-    if !g.stillInGame owner then g
-    else
-      let g :=
-        if (g.followMovedToZone? cardId (· == .library owner)).isSome then
-          let oName := (g.lastKnownBefore? cardId).map (·.name) |>.getD "it"
-          g.logMsg s!"{(g.player owner).name} shuffles {oName} into their library"
-        else g
-      g.shuffleThen owner .none
+    let g :=
+      if (g.followMovedToZone? cardId (· == .library owner)).isSome then
+        let oName := (g.lastKnownBefore? cardId).map (·.name) |>.getD "it"
+        g.logMsg s!"{(g.player owner).name} shuffles {oName} into their library"
+      else g
+    if !g.stillInGame owner then g else g.shuffleThen owner .none
   | .empowerJaceExiledCount controller startIdx creatureIds =>
     let count := creatureIds.foldl (fun acc id => if g.wasPermanentExiled id startIdx then acc + 1 else acc) 0
     g.empowerJace controller count

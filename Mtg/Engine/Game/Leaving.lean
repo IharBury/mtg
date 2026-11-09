@@ -1196,8 +1196,8 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
       else
         let liveTied := (g.leastPowerCreatures q).map (·.id)
         if liveTied.size ≤ 1 then
-          let g := clearPendingAnd g #[.chooseModesRest none]
-          let g := g.withOuterContStashed fun g => g.sacrificeLeastPowerCreature q
+          let g := g.withOuterContStashed fun g =>
+            (clearPending g).sacrificeLeastPowerCreature q
           (g, g.pending)
         else if liveTied != ids then
           (g, .fraChoice q (.sacrificeLeastPower liveTied))
@@ -1210,9 +1210,9 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
       else
         let live := (g.permanentsOf q).filter (fun o => g.isCreature o && o.status.hasCounters) |>.map (·.id)
         if live.size ≤ 1 then
-          let g := clearPendingAnd g #[.chooseModesRest none]
-          let targets := match live[0]? with | some id => #[Target.permanent id] | none => #[]
-          let g := g.withOuterContStashed fun g => g.applyHydeMode q none 1 targets
+          let targets := if live.isEmpty then #[] else #[Target.permanent live[0]!]
+          let g := g.withOuterContStashed fun g =>
+            (clearPending g).applyHydeMode q none 1 targets
           (g, g.pending)
         else if live != ids then
           (g, .fraChoice q (.hydeRemoveCounter live))
