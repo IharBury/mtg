@@ -1916,6 +1916,7 @@ flowchart TD
   P27 --> P28["Phase 28: Multi-departure pendingIn forwarding, checkSBACountedWithLeaves/restorePending alignment, Leaving batch-cause/pending hygiene & concede priority,\nCR 608.2g/510.1c/805.10d/800.4a-i chooseCastFromLooked/castAsPartOfResolution outerPendingReplacements, 2HG assignCombatDamage & stillInGame completion,\nCR 608.2h Palantir influence-counter, Aura/Equipment attachedHost? & sourcePowerNatAtResolution LKI fallbacks,\nand CR 201/613.1a/707.10/715 remaining battlefield/stack g.name/g.nameWithToken reads"]
   P28 --> P29["Phase 29: Co-departing .chooseReplacement preservation, redirectPendingAfterLeave retarget cleanup, .crew/.zemoBoastExile/.chooseTeamworkCreatures revalidation,\nmoveIdsInOrder/offerBottomAnyOrder/offerCardChoice/beginFraChoice EventCause & ContinuationFrame alignment,\nremaining stillInGame entry & post-pause guards, and CR 608.2h sourcePTAtResolution & Layer 1 g.name/type/MV completion"]
   P29 --> P30["Phase 30: Post-exile/SBA & non-departing redirectPendingAfterLeave/.restorePending revalidation,\nremaining beginFraChoice & applyTriggeredAbility/offerChooseModes ContinuationFrame completion,\nremaining stillInGame unifications & departed-player entry/post-pause guards,\nand CR 201/202.3e/608.2h/613.1/702.85a Layer 1-6 characteristic/cascade MV reads & rawEventSnapshot/printed-helper retirement"]
+  P30 --> P31["Phase 31: Remaining redirectPendingAfterLeave (q != p / mayThenDrop / abortedProp) & .restorePending post-exile/SBA revalidation,\nremaining ContinuationFrame entry guards (beginScry, beginSurveil, Chapters, FraResolve, FrcResolve, beginMay/beginSpellOr, beginUnlessPays),\npost-pause arrival logging order & remaining departed-player stillInGame guards,\nand CR 608.2h equalSourceToughness/TriggerRead/hulklingCompare LKI & remaining Layer 1-6 characteristic/GameObject printed-helper retirement"]
 ```
 
 ### Phase 1 — Envelope and durable single-writer constructors
@@ -8543,7 +8544,7 @@ starting-team first seat, battle-excluded attack triggers &
        `SpellResolution.lean:115, 158` in the `.endStepReturn` and
        `.endStepGraveReturn` arms of `resolveDelayedTrigger`; the remaining
        `.lost` vs `g.stillInGame` sites follow in Phase 28, #624, Phase 29,
-       #626, and Phase 30); and
+       #626, and Phase 30, #628); and
      - in `FraChoices.answerFraChoice`, stash `g.pendingReplacement` onto
        `outerPendingReplacements` after `gPre.change .saveProposalCheckpoint` in
        `.mayCastCascade` (`1137–1139`, accept arm at `1132–1151`),
@@ -9191,8 +9192,8 @@ helpers), `Abilities.lean`, `Casting.lean`, `Combat.lean`, `Damage.lean`,
      (`Library.lean:226`), `SacrificeDiscard.beginSacrificeCreatures`
      (`SacrificeDiscard.lean:14`, filtering `players.filter g.stillInGame`),
      `SacrificeDiscard.beginMayHaveVillainConnive`
-     (`SacrificeDiscard.lean:240`), `Choices.sacrificeLeastPowerCreature`
-     (`Choices.lean:38`), `Choices.discardEntireHand` (`Choices.lean:170`),
+     (`SacrificeDiscard.lean:240`), `Leaving.sacrificeLeastPowerCreature`
+     (`Leaving.lean:320`), `Choices.discardEntireHand` (`Choices.lean:170`),
      `Choices.exileTopPlayIfYouControlSubtype` (`Choices.lean:334`), and
      `Choices.riddlesInTheDark` (`Choices.lean:484`, CR 800.4a–i).
 3. Preserve CR 608.2h LKI for *Palantír of Orthanc* influence counters, Aura /
@@ -9498,26 +9499,27 @@ reads),
 
 1. Revalidate `.assignCombatDamage` and `.tricksterLibrary` after
    `runEndControlExileLoop` / post-departure SBAs in
-   `Decisions.resumePendingReplacement` `.restorePending` (`Decisions.lean:691–700`)
-   and `Leaving.redirectPendingAfterLeave` (`Leaving.lean:934–945`), and
+   `Decisions.resumePendingReplacement` `.restorePending` (`Decisions.lean:700–762`)
+   and `Leaving.redirectPendingAfterLeave` (`Leaving.lean:1076–1091`), and
    revalidate non-departing choosers (`q != p`) in
-   `Leaving.redirectPendingAfterLeave` (`Leaving.lean:499–520, 723–779,
-   1045–1050, 1079–1090`) when permanents owned by departing player `p` and
+   `Leaving.redirectPendingAfterLeave` (`Leaving.lean:627–652, 855–921,
+   1191–1219, 1254–1264`) when permanents owned by departing player `p` and
    controlled by `q` leave the battlefield (§2.4, §2.5, §2.9, §3.1, §3.4, §3.8,
    CR 506.4 / 510.1c–d / 603.3c / 700.2 / 733.1 / 800.4a,h):
-   - Because `Leaving.redirectPendingAfterLeave` (`Leaving.lean:1575`) runs
-     *before* `runEndControlExileLoop exileQueue` (`Leaving.lean:1597, 1623`,
-     which exiles non-owned permanents controlled by departing player `p`) and
-     *before* post-departure SBAs in `Decisions.finishConcedePriority`
-     (`Decisions.lean:237`) and `StateBasedActions.checkSBACountedWithLeaves`
+   - Because `Leaving.redirectPendingAfterLeave` (`Leaving.lean:1760`) runs
+     *before* `runEndControlExileLoop exileQueue` (`Leaving.lean:1701, 1730,
+     1756, 1782, 1808`, which exiles non-owned permanents controlled by
+     departing player `p`) and *before* post-departure SBAs in
+     `Decisions.finishConcedePriority` (`Decisions.lean:237`) and
+     `StateBasedActions.checkSBACountedWithLeaves`
      (`StateBasedActions.lean:551–574`), a permanent in `exileQueue` (or one
      removed by SBAs) is still on the battlefield when
      `redirectPendingAfterLeave` runs and only leaves before `.restorePending`
-     (`Decisions.lean:617–700`) executes:
+     (`Decisions.lean:617–763`) executes:
      - in `Decisions.resumePendingReplacement` `.restorePending`
-       (`Decisions.lean:691–700`), add an arm for `.assignCombatDamage q
+       (`Decisions.lean:700–730`), add an arm for `.assignCombatDamage q
        forAttackers` (mirroring the `q != p` branch of
-       `Leaving.redirectPendingAfterLeave` at `Leaving.lean:600–613, 634–645`
+       `Leaving.redirectPendingAfterLeave` at `Leaving.lean:732–745, 766–777`
        since `q == p` was already handed off or cleared by
        `redirectPendingAfterLeave`, CR 506.4 / 510.1c–d / 800.4h): filter
        `cleanAsgns := g.pendingBlockerAssignments.filter fun a =>
@@ -9534,7 +9536,7 @@ reads),
        `cleanAsgns` on `pendingBlockerAssignments` and call
        `resumePoppedIfNoPrompt (if g.pending == .none then g else g.change
        (.pending .none))` (matching `else if forAttackers then (clearPending g,
-       .none)` at `Leaving.lean:635–636` and ensuring `g.pending == .none` when
+       .none)` at `Leaving.lean:767–768` and ensuring `g.pending == .none` when
        `finishConcedePriority` at `Decisions.lean:262–263` runs
        `beginCombatDamageAssignment`); else (`!forAttackers`), find `nextP? :=
        g.apnapPlayers.find? (fun r => r != q && !g.isOnActiveTeam r &&
@@ -9545,10 +9547,10 @@ reads),
        `g.pending == .none` so `finishConcedePriority` at
        `Decisions.lean:262–263` advances via
        `continueBlockerCombatAssignment`); and
-     - in `Leaving.redirectPendingAfterLeave` (`Leaving.lean:934–945`,
+     - in `Leaving.redirectPendingAfterLeave` (`Leaving.lean:1076–1091`,
        `.tricksterLibrary caster id connive sourceId`), keep the `if p == caster
-       then` branch (`935–936`) unchanged, and in the `p != caster` branch, when
-       `q == p || !(g.findObject? id).any (fun o => o.isOnBattlefield &&
+       then` branch (`1077–1078`) unchanged, and in the `p != caster` branch,
+       when `q == p || !(g.findObject? id).any (fun o => o.isOnBattlefield &&
        g.isCreature o)` (e.g., `id` was owned by `p` and controlled by `q != p`,
        or `q == p`), clear via `let g := clearPendingAnd g (#[.chooseModesRest
        none] ++ (if q == p then clearProp else #[]))`, log `"The target is no
@@ -9557,7 +9559,7 @@ reads),
        (.finishPostStep (.conniveTricksterTarget caster connive sourceId))` when
        `g.stillInGame caster && connive.isSome`, and return `(g, .none)` (else
        `(g, pending)`); and in `Decisions.resumePendingReplacement`
-       `.restorePending` (`Decisions.lean:691–700`), add an arm for `.fraChoice
+       `.restorePending` (`Decisions.lean:731–762`), add an arm for `.fraChoice
        q (.tricksterLibrary caster id connive sourceId)` that calls `openPrompt
        g` when `g.stillInGame q && g.stillInGame caster && (g.findObject?
        id).any (fun o => o.isOnBattlefield && g.isCreature o)` and otherwise
@@ -9570,43 +9572,47 @@ reads),
        when `g.stillInGame caster && connive.isSome`, stashes any existing `let
        outerCont? := g.pendingReplacement` and clears it first (`let g := if
        outerCont?.isSome then g.change (.pendingReplacement none) else g`,
-       matching `withOuterContStashed` at `Leaving.lean:326–332` and the
-       redirect arm at `940–942`), then if `popped?.isSome`, queues `let g :=
+       matching `withOuterContStashed` at `Leaving.lean:454–460` and the
+       redirect arm at `1086–1089`), then if `popped?.isSome`, queues `let g :=
        g.chainPendingReplacement (.finishPostStep (.conniveTricksterTarget
        caster connive sourceId))`, re-chains `outerCont?` (`match outerCont?
        with | some outer => g.chainPendingReplacement outer | none => g`), and
        calls `resumePoppedIfNoPrompt g` (so `.seq prior popped` runs the connive
        step first with `outerCont?` and `popped` sequenced after it if connive
        pauses), whereas if `popped?.isNone` (as when `restoreSavedPostLeave`
-       calls `.restorePending saved false` at `Leaving.lean:1204–1205`),
+       calls `.restorePending saved false` at `Leaving.lean:1388–1390`),
        launches connive the way `FraChoices.lean:1421–1426` does (`if let
        .chooseReplacement .. := g.pending then g.chainPendingReplacement
        (.finishPostStep (.conniveTricksterTarget caster connive sourceId)) else
        g.conniveTricksterTarget caster connive (sourceId := sourceId)`, avoiding
-       `chainPendingReplacement`'s empty-frame push at `Core.lean:10347` when
+       `chainPendingReplacement`'s empty-frame push at `Core.lean:10318` when
        connive does not pause) and then re-chains `outerCont?` (`match
        outerCont? with | some outer => g.chainPendingReplacement outer | none =>
        g`); and when `!(g.stillInGame caster && connive.isSome)`, calls
        `resumePoppedIfNoPrompt g`.
-   - In `Leaving.redirectPendingAfterLeave`, revalidate non-departing choosers
-     (`q != p`) whose eligible permanents were owned by `p` and left the
-     battlefield at `Leaving.lean:1279–1282` (CR 800.4a):
-     - in `.chooseSacrificeCreature q chosen remaining` (`Leaving.lean:499–520`),
-       change `if q != p then` (`501`) to `if q != p && !(g.creaturesControlledBy
+   - In `Leaving.redirectPendingAfterLeave` (moving `addPlusOnePlusOneTo`,
+     `withSourceOnBattlefield`, `applyHydeMode`, `sacrificeCreatureChoices`,
+     `canSacrificeCreature`, `leastPowerCreatures`, and
+     `sacrificeLeastPowerCreature` into `Leaving.lean:217–339` so
+     `redirectPendingAfterLeave` can invoke them directly), revalidate
+     non-departing choosers (`q != p`) whose eligible permanents were owned by
+     `p` and left the battlefield at `Leaving.lean:1464–1467` (CR 800.4a):
+     - in `.chooseSacrificeCreature q chosen remaining` (`Leaving.lean:627–652`),
+       change `if q != p then` (`629`) to `if q != p && !(g.creaturesControlledBy
        q).isEmpty then`, and in the `else` branch when `q != p`, log
        `s!"{(g.player q).name} has no creature to sacrifice"` before advancing
        to `g.nextActorWithCreatures livingRem` or `g.finishChosenSacrifices
        chosen`;
      - in `.sacrificeCreatureEach controller rest chosen`
-       (`Leaving.lean:723–748`), change `if q != p then` (`725`) to `if q != p
+       (`Leaving.lean:855–880`), change `if q != p then` (`857`) to `if q != p
        && !(g.creaturesControlledBy q).isEmpty then` (using `if q == p then
-       clearProp else #[]` at `728`);
-     - in `.sacrificeNontokenEach rest chosen` (`Leaving.lean:749–772`), change
-       `if q != p then` (`753`) to `if q != p && hasNontoken q then` (using `if
-       q == p then clearProp else #[]` at `756`);
+       clearProp else #[]` at `860`);
+     - in `.sacrificeNontokenEach rest chosen` (`Leaving.lean:881–904`), change
+       `if q != p then` (`885`) to `if q != p && hasNontoken q then` (using `if
+       q == p then clearProp else #[]` at `888`);
      - in `.sacrificeDamager ids rest controller chosen`
-       (`Leaving.lean:773–779`), keep `let living := rest.filter g.stillInGame`
-       (`774`) and filter `let liveIds := ids.filter (fun id => (g.findObject?
+       (`Leaving.lean:905–921`), keep `let living := rest.filter g.stillInGame`
+       (`906`) and filter `let liveIds := ids.filter (fun id => (g.findObject?
        id).any (fun o => o.isOnBattlefield && g.isCreature o && g.controlledBy o
        q))`; if `q != p && liveIds.size > 1`, return `(g, pending)` when
        `liveIds == ids && living == rest` and `(g, .fraChoice q
@@ -9620,77 +9626,78 @@ reads),
        chosen.push (q, liveIds[0]!) else chosen`, and return the `(Game ×
        Pending)` pair from `advanceSacDamagersAfterLeave g controller living
        chosen'`;
-     - in `.fraChoice q choice` (`Leaving.lean:1045`), add arms before the `| _
-       =>` fallback for:
-       - `.sacrificeLeastPower ids` (`Choices.lean:38–58`): if `q == p`, clear
-         as before; else compute `let tied := (g.leastPowerCreatures q).map
-         (·.id)`: if `tied.size ≤ 1`, run `let g := g.withOuterContStashed fun g
-         => (clearPending g).sacrificeLeastPowerCreature q; (g, g.pending)`;
-         else if `tied != ids`, return `(g, .fraChoice q (.sacrificeLeastPower
-         tied))`; else `(g, pending)`; and
-       - `.hydeRemoveCounter ids` (`TriggeredAbilities.lean:5036–5043`,
+     - in `.fraChoice q choice` (`Leaving.lean:1191–1219`), add arms before the
+       `| _ =>` fallback (`1220–1225`) for:
+       - `.sacrificeLeastPower ids` (`Leaving.lean:1191–1204`,
+         `Leaving.lean:310–339`): if `q == p`, clear as before; else compute
+         `let liveTied := (g.leastPowerCreatures q).map (·.id)`: if
+         `liveTied.size ≤ 1`, run `let g := g.withOuterContStashed fun g =>
+         (clearPending g).sacrificeLeastPowerCreature q; (g, g.pending)`; else
+         if `liveTied != ids`, return `(g, .fraChoice q (.sacrificeLeastPower
+         liveTied))`; else `(g, pending)`; and
+       - `.hydeRemoveCounter ids` (`Leaving.lean:1205–1219`,
+         `Leaving.lean:264–299`, `TriggeredAbilities.lean:5034–5041`,
          `FraChoices.lean:1344–1356`): if `q == p`, clear as before; else
-         compute `let liveIds := ((g.creaturesControlledBy q).filter
-         (·.status.hasCounters)).map (·.id)`: if `liveIds.isEmpty`, run `let g
-         := g.withOuterContStashed fun g => (clearPending g).applyHydeMode q
-         none 1 #[]; (g, g.pending)`; else if `liveIds.size == 1`, run `let g :=
-         g.withOuterContStashed fun g => (clearPending g).applyHydeMode q none 1
-         #[Target.permanent liveIds[0]!]; (g, g.pending)`; else if `liveIds !=
-         ids`, return `(g, .fraChoice q (.hydeRemoveCounter liveIds))`; else
-         `(g, pending)`; and
-     - split `| .sacrificeCreature q` (`Leaving.lean:1079`,
+         compute `let live := (g.permanentsOf q).filter (fun o => g.isCreature o
+         && o.status.hasCounters) |>.map (·.id)`: if `live.size ≤ 1`, bind `let
+         targets := if live.isEmpty then #[] else #[Target.permanent live[0]!]`,
+         run `let g := g.withOuterContStashed fun g => (clearPending
+         g).applyHydeMode q none 1 targets`, and return `(g, g.pending)`; else
+         if `live != ids`, return `(g, .fraChoice q (.hydeRemoveCounter live))`;
+         else `(g, pending)`; and
+     - split `| .sacrificeCreature q` (`Leaving.lean:1254–1264`,
        `CastExtras.lean:24–30`) out of the shared `| .mayAttachEquipment q ..`
-       or-pattern (`1080–1090`) into its own arm that keeps `if q == p then`
-       with `let clearProp : Array GameChange := if abortedProp then
+       or-pattern (`1265–1275`) into its own arm that keeps `if q == p then`
+       with `let clearProp : Array EngineChange := if abortedProp then
        #[.proposedSpell none, .clearProposalCheckpoint] else #[]` returning
        `(clearPendingAnd g (#[.chooseModesRest none] ++ clearProp), .none)`
-       (`1085–1089`) and, in the `else` (`q != p`) branch, when
+       (`1256–1259`) and, in the `else` (`q != p`) branch, when
        `(g.sacrificeCreatureChoices q).isEmpty`, logs `s!"{(g.player q).name}
        has no creature to sacrifice"` and returns `(clearPendingAnd g
-       #[.chooseModesRest none], .none)` (else `(g, pending)`).
+       #[.chooseModesRest none], .none)` (`1260–1263`, else `(g, pending)`).
 2. Complete `beginFraChoice` & `ContinuationFrame` pushing across `Core`,
-   `TriggeredAbilities`, `Triggers`, `Choices`, `CastExtras`, `Casting`, and
+   `TriggeredAbilities`, `Triggers`, `Leaving`, `CastExtras`, `Casting`, and
    `EffectResolution` (§2.1, §2.5, §2.9, §3.2):
-   - In `Core.beginFraChoice` (`Core.lean:11820–11824`), default `(msg : String
+   - In `Core.beginFraChoice` (`Core.lean:11791–11796`), default `(msg : String
      := "")`, keep the `let g := if g.continuations.isEmpty then g.change
-     (.pushContinuationFrame {}) else g` frame push (`11821–11823`), and on that
+     (.pushContinuationFrame {}) else g` frame push (`11792–11794`), and on that
      post-push `g` replace `(g.change (.pending (.fraChoice p choice))).logMsg
-     msg` (`11824`) with `let g := g.change (.pending (.fraChoice p choice)); if
-     msg.isEmpty then g else g.logMsg msg` so callers that open `.fraChoice`
-     without a log line (such as `runTriggerExileLoop` at `1844–1845` and
-     `Casting.finishPostCast` at `741`) still push a `ContinuationFrame` when
-     `g.continuations.isEmpty`.
+     msg` with `let g := g.change (.pending (.fraChoice p choice)); if
+     msg.isEmpty then g else g.logMsg msg` (`11795–11796`) so callers that open
+     `.fraChoice` without a log line (such as `runTriggerExileLoop` at `1841`
+     and `Casting.finishPostCast` at `741`) still push a `ContinuationFrame`
+     when `g.continuations.isEmpty`.
    - In `TriggeredAbilities.applyTriggeredAbility`
-     (`TriggeredAbilities.lean:4651`), change `if resolutionOverride.isNone &&
+     (`TriggeredAbilities.lean:4647`), change `if resolutionOverride.isNone &&
      g.continuations.isEmpty then` to `if g.continuations.isEmpty then` so any
      entry into `applyTriggeredAbility` when `g.continuations` is empty
      (including `resolutionOverride.isSome` follow-ups and resumes) runs inside
      `withContinuationFrame` (while recursive calls inside an active frame see
      `!g.continuations.isEmpty` and do not push a duplicate frame).
-   - In `TriggeredAbilities.offerChooseModes` (`TriggeredAbilities.lean:160–175`),
+   - In `TriggeredAbilities.offerChooseModes` (`TriggeredAbilities.lean:160–172`),
      replace the three `g.changes #[.pending (.fraChoice p ...),
      .chooseModesRest (some rest)] |>.logMsg ...` branches (`.oneUnusedThisTurn`
-     at `160–164`, `.oneUnused` at `165–169`, and `.vision` at `170–174`) with
+     at `160–163`, `.oneUnused` at `164–167`, and `.vision` at `168–171`) with
      `g.beginFraChoice p ... msg |>.change (.chooseModesRest (some rest))` so
      `.chooseModesRest (some rest)` is written onto the `ContinuationFrame`
-     pushed by `beginFraChoice` (`modifyTopFrame`, `Core.lean:174–177`) rather
-     than being dropped when `g.continuations` was empty (matching
+     pushed by `beginFraChoice` (`modifyTopFrame`, `Core.lean:174–177, 2245`)
+     rather than being dropped when `g.continuations` was empty (matching
      `ModeledTriggers.offerVisionModes` in Phase 29).
    - Replace the remaining initial `.fraChoice` writes (`g.change (.pending
      (.fraChoice ...))`) with `g.beginFraChoice` in:
-     - `TriggeredAbilities.lean`: `applyUltronCopy` (`822–823`, `.ultronMayPay
-       id`), `runTriggerExileLoop` (`1844–1845`, `.mayCastUpToFromExile arrived
-       casts`), `applyMayCast` (`2496–2497` `.mayCastFromGraveyard eligible` and
-       `2549–2550` `.mayCastCards eligible withoutPaying exileInstead`),
-       `.chooseModes` `.plusOneOrRemoveCounter` (`5043`, `.hydeRemoveCounter
-       ids`), and `.sheHulkMayDamage` (`5385–5386`);
+     - `TriggeredAbilities.lean`: `applyUltronCopy` (`818–819`, `.ultronMayPay
+       id`), `runTriggerExileLoop` (`1841`, `.mayCastUpToFromExile arrived
+       casts`), `applyMayCast` (`2492–2493` `.mayCastFromGraveyard eligible` and
+       `2545–2546` `.mayCastCards eligible withoutPaying exileInstead`),
+       `.chooseModes` `.plusOneOrRemoveCounter` (`5041`, `.hydeRemoveCounter
+       ids`), and `.sheHulkMayDamage` (`5383–5384`);
      - `Triggers.lean`: `beginTriggerModeChoice` (`110–111`, `.triggerModes
        obj.id count #[]`) and `putTriggeredAbilityOnStack` (`190–191`
        `.hawkeyeModes`, `207–208` `.upToTriggerModes`, `217–218`
        `.stackHydeMode`, and `247–248` `.stackTriggerUnusedMode`);
-     - `Choices.lean`: `sacrificeLeastPowerCreature` (`56–57`,
-       `.sacrificeLeastPower ids`);
-     - `CastExtras.lean`: `resolveCascadeLoop` (`108–109`, `.mayCastCascade
+     - `Leaving.lean`: `sacrificeLeastPowerCreature` (`338–339`,
+       `.sacrificeLeastPower ids`, moved from `Choices.lean:56–57`);
+     - `CastExtras.lean`: `resolveCascadeLoop` (`109–110`, `.mayCastCascade
        card.id others`, using `g.name card` in the log string);
      - `Casting.lean`: `finishPostCast` (`720–721` `.mayCastUpToFromExile alive
        left`, passing the existing `s!"{(g.player q).name} may cast up to {left}
@@ -9698,25 +9705,25 @@ reads),
        log string as `msg` to `g.beginFraChoice`, and `741` `.castCopiesFree
        alive budget castsLeft`, using the `msg := ""` default at `741`); and
      - `EffectResolution.lean`: `.chooseOddOrEvenDestroy` (`165–166`),
-       `finishMillMayPutPermanentGainLife` (`435–436`),
-       `finishMillSubtypeOrEnchantment` (`461–462`), `mayDrawPerArtifact`
-       (`530–531`), `mayPutHeroOrDraw` (`543–544`), `beginVisionQuest`
-       (`863–864`), `.ownerPutsLibraryThenConnive` (`2172–2173`), and
-       `.copyControlledAbility` (`2707–2708`).
+       `finishMillMayPutPermanentGainLife` (`442–443`),
+       `finishMillSubtypeOrEnchantment` (`470–471`), `mayDrawPerArtifact`
+       (`541–542`), `mayPutHeroOrDraw` (`555–556`), `beginVisionQuest`
+       (`878–879`), `.ownerPutsLibraryThenConnive` (`2193–2194`), and
+       `.copyControlledAbility` (`2734–2735`).
 3. Complete remaining `.lost || .leftTheGame` vs `g.stillInGame` unifications
    and departed-player entry-point / post-pause guards (§2.5, §3.1, §3.4, CR
    800.4a):
    - Replace remaining `!pl.lost && !pl.leftTheGame` / `(g.player ...).lost ||
      (g.player ...).leftTheGame` checks with `stillInGame`:
-     - in `Core.lean`: `playerAlive` inside `initialControllerOf` (`1654–1658`,
-       keeping the bounds check and `else true` out-of-range result: `if h :
-       p.idx < g.players.size then g.stillInGame p else true`), `dropLost`
-       (`1900`, keeping the bounds check and `else true` out-of-range result:
-       `if q.idx < g.players.size then !g.stillInGame q else true`),
-       `g.stillInGame` at `7940, 10170, 10225`, and `post.stillInGame` inside
-       `matchTriggers (pre : GameSnapshot) (post : Game)` (`8082`) at `8097,
-       8137, 8303, 9349, 9424, 9444, 9620, 9761` (`pl.isMonarch &&
-       post.stillInGame pl.id` at `8303` and `9424`);
+     - in `Core.lean`: `playerAlive` inside `initialControllerOf` (`1654–1656`,
+       keeping the bounds check and `else true` out-of-range result: `if p.idx <
+       g.players.size then g.stillInGame p else true`), `dropLost` (`1898`,
+       keeping the bounds check and `else true` out-of-range result: `if q.idx <
+       g.players.size then !g.stillInGame q else true`), `g.stillInGame` at
+       `7912, 10141, 10196`, and `post.stillInGame` inside `matchTriggers (pre :
+       GameSnapshot) (post : Game)` (`8054`) at `8069, 8109, 8275, 9321, 9396,
+       9416, 9592, 9732` (`pl.isMonarch && post.stillInGame pl.id` at `8275` and
+       `9396`);
      - in `Triggers.lean:313, 534` (`putQueuedTrigger` and
        `putWaitingTrigger`); and
      - in `FrcResolve.lean:759` (the `.monarch` arm of `applyFrc`, replacing
@@ -9725,63 +9732,63 @@ reads),
        heir).isMonarch`).
    - Add departed-player `stillInGame` guards across remaining library, mill,
      hand, and exile helpers and post-steps:
-     - `ResolutionHelpers.millCardsLoop` (`ResolutionHelpers.lean:273–275`,
+     - `ResolutionHelpers.millCardsLoop` (`ResolutionHelpers.lean:274–277`,
        logging `logCard` at `274–275` for the card that already milled before
-       the `.chooseReplacement` pause and then returning `g` at `276` when
+       the `.chooseReplacement` pause and then returning `g` at `276–277` when
        `!g.stillInGame p` before reading `freshCount` or milling `remainingIds`),
-       `ResolutionHelpers.mill` (`305`, returning `g` immediately at entry when
+       `ResolutionHelpers.mill` (`307`, returning `g` immediately at entry when
        `!g.stillInGame p`), and `ResolutionHelpers.movePublicCardsToHandLoop`
-       (`333–339`, logging `pendingCard` at `335–339` when that card entered
+       (`339–345`, logging `pendingCard` at `339–343` when that card entered
        `.hand p` before the `.chooseReplacement` pause and then returning `g` at
-       `340` when `!g.stillInGame p` before moving `remainingIds`);
-     - `Library.moveIdsInOrderLoop` (`Library.lean:261`, returning `g` after the
-       `.chooseReplacement` pause chain when `dest` is `.library p | .hand p |
-       .graveyard p | .outside p` and `!g.stillInGame p`) and
-       `Library.requestOrderInto` (`Library.lean:352`, returning `g` when `dest`
-       is `.library p | .hand p | .graveyard p | .outside p` and `!g.stillInGame
-       p`);
-     - `CastExtras.resolveCascadeLoop` (`CastExtras.lean:101, 118`, returning `g`
+       `344–345` when `!g.stillInGame p` before moving `remainingIds`);
+     - `Library.moveIdsInOrderLoop` (`Library.lean:260–262`, returning `g` after
+       the `.chooseReplacement` pause chain when `dest` is `.library p | .hand p
+       | .graveyard p | .outside p` and `!g.stillInGame p`) and
+       `Library.requestOrderInto` (`Library.lean:355–357`, returning `g` when
+       `dest` is `.library p | .hand p | .graveyard p | .outside p` and
+       `!g.stillInGame p`);
+     - `CastExtras.resolveCascadeLoop` (`CastExtras.lean:101, 119`, returning `g`
        after the `.chooseReplacement` pause chains when `!g.stillInGame p`) and
-       `CastExtras.resolveCascade` (`137`, returning `g` when `!g.stillInGame
+       `CastExtras.resolveCascade` (`139`, returning `g` when `!g.stillInGame
        p`);
      - `ModeledTriggers.grantWidowCast` (`ModeledTriggers.lean:69`, returning `g`
        when `!g.stillInGame controller`),
-       `ModeledTriggers.finishExileLibraryUntilNonland` (`83`, returning `g`
+       `ModeledTriggers.finishExileLibraryUntilNonland` (`85`, returning `g`
        when `!g.stillInGame controller`), and
-       `ModeledTriggers.exileLibraryUntilNonlandLoop` (`115`, when
+       `ModeledTriggers.exileLibraryUntilNonlandLoop` (`118–119`, when
        `!g.stillInGame pid`, calling `g.finishExileLibraryUntilNonland
        controller sourceId none cause` instead of exiling from `pid`'s library);
-     - `EffectResolution.exileHandDrawLoop` (`EffectResolution.lean:315, 322`,
+     - `EffectResolution.exileHandDrawLoop` (`EffectResolution.lean:315, 323`,
        gating `.playPermission` on `g.stillInGame p` and returning `g` after the
        `.chooseReplacement` pause chain when `!g.stillInGame p`),
-       `finishExileHandDrawPlayUntilNext` (`339`), `exileHandDrawPlayUntilNext`
-       (`347`), `finishMillMayPutPermanentGainLife` (`429`),
-       `millMayPutPermanentGainLife` (`441`), `finishMillSubtypeOrEnchantment`
-       (`453`), `millMayPutSubtypeOrEnchantment` (`467`), `mayDrawPerArtifact`
-       (`525`), `mayPutHeroOrDraw` (`538`), `beginVisionQuest` (`854`),
-       `offerBottomAnyOrder` (`2260`), `beginLookRevealToHand` (`2285`), and
-       `beginLookPutTypes` (`2300`); and
-     - `Entering.resolveAdventureSpell` (`Entering.lean:228–235`) and
+       `finishExileHandDrawPlayUntilNext` (`341`), `exileHandDrawPlayUntilNext`
+       (`351`), `finishMillMayPutPermanentGainLife` (`436`),
+       `millMayPutPermanentGainLife` (`448`), `finishMillSubtypeOrEnchantment`
+       (`462`), `millMayPutSubtypeOrEnchantment` (`476`), `mayDrawPerArtifact`
+       (`536`), `mayPutHeroOrDraw` (`550`), `beginVisionQuest` (`869`),
+       `offerBottomAnyOrder` (`2281`), `beginLookRevealToHand` (`2308`), and
+       `beginLookPutTypes` (`2325`); and
+     - `Entering.resolveAdventureSpell` (`Entering.lean:190–201`) and
        `Decisions.runPostStep`:
-       - `.nickFuryMayTransformOrBottom` (`Decisions.lean:1200`),
-         `.loseLifeForMilledManaValue` (`1231`), and
-         `.offerPutMilledPermanentOrGainLife` (`1312`): return `g` immediately
+       - `.nickFuryMayTransformOrBottom` (`Decisions.lean:1264`),
+         `.loseLifeForMilledManaValue` (`1300`), and
+         `.offerPutMilledPermanentOrGainLife` (`1383`): return `g` immediately
          when the player (`p` / `controller`) has left (`!g.stillInGame`);
-       - `.opponentsDrawOneLoop` (`1220`): filter `remainingOpponents.filter
-         g.stillInGame` before matching `[0]?`;
-       - `.logShuffleIntoLibrary owner cardId` (`1300–1306`): log the arrival
-         (`1301–1305`) first when `followMovedToZone? cardId (· == .library
-         owner)` is `some`, and only call `g.shuffleThen owner .none` (`1306`)
+       - `.opponentsDrawOneLoop` (`1286–1291`): filter `remainingOpponents.filter
+         g.stillInGame` before matching `[0]?` and gate the `none =>` drawer log
+         on `g.stillInGame drawer`;
+       - `.logShuffleIntoLibrary owner cardId` (`1370–1376`): log the arrival
+         (`1371–1375`) first when `followMovedToZone? cardId (· == .library
+         owner)` is `some`, and only call `g.shuffleThen owner .none` (`1376`)
          when `g.stillInGame owner` (returning `g` otherwise); and
-       - `Entering.resolveAdventureSpell` (`Entering.lean:228–235`) and
+       - `Entering.resolveAdventureSpell` (`Entering.lean:190–201`) and
          `.grantAdventureExilePermission controller cardId cause`
-         (`Decisions.lean:1510–1515`): after `followMovedToZone? ... (· ==
+         (`Decisions.lean:1582–1590`): after `followMovedToZone? ... (· ==
          .exile)` finds `some o`, gate `g.createEffect (.playPermission o.id {
          player := ..., fromAdventure := true }) (cause := ...)` on
          `g.stillInGame entry.controller` / `g.stillInGame controller` while
-         still logging `s!"{g.name o} is exiled..."` (`Entering.lean:235`,
-         `Decisions.lean:1514`) for the adventure card that already moved to
-         exile.
+         still logging `s!"{g.name o} is exiled"` when `!g.stillInGame` (`193`,
+         `1586`) or the full permission log when `g.stillInGame` (`200`, `1589`).
 4. Complete Layer 1–6 characteristic reads (`g.name`, `g.isLegendary`,
    `g.hasSubtype`, `g.objectManaValue`), cascade stack/LKI mana-value reads, and
    `Core.rawEventSnapshot` / dead `GameObject` printed-helper retirement (§2.2,
@@ -9791,17 +9798,17 @@ reads),
      (`ActivationCosts.lean:78, 80, 81`, `.discardLegendaryCard` and
      `.discardLegendarySameName`).
    - Replace `(g.copiableValues o).manaValue <= n` with `g.objectManaValue o <=
-     n` in `EffectResolution.lean:2000` (`.exileCreatureMvAtMostOrAnyIfTeamwork`,
+     n` in `EffectResolution.lean:2021` (`.exileCreatureMvAtMostOrAnyIfTeamwork`,
      so face-down creatures on the battlefield use mana value 0 per CR 708.2a),
      replace `(g.baseCard o).manaValue <= g.landsYouControl controller` with
      `g.objectManaValue o <= g.landsYouControl controller` in
      `TriggeredAbilities.triggerIfHolds` `.revealedManaValueAtMostLands`
-     (`TriggeredAbilities.lean:504`), replace `(g.baseCard o).saga.isSome` with
-     `g.hasSubtype o .saga` in `TriggeredAbilities.lean:3980, 4113`
+     (`TriggeredAbilities.lean:501`), replace `(g.baseCard o).saga.isSome` with
+     `g.hasSubtype o .saga` in `TriggeredAbilities.lean:3976, 4109`
      (`.untilSaga`), and in `TriggeredAbilities.applyTriggeredAbility` `.cascade`
-     (`TriggeredAbilities.lean:4932–4938`), inside the `| some src =>` arm of
-     `g.findObject? sid` (`4935–4936`, keeping the `| none =>
-     (g.lastKnownBefore? sid).map (·.manaValue) |>.getD 0` arm at `4937` for
+     (`TriggeredAbilities.lean:4930–4936`), inside the `| some src =>` arm of
+     `g.findObject? sid` (`4932–4934`, keeping the `| none =>
+     (g.lastKnownBefore? sid).map (·.manaValue) |>.getD 0` arm at `4935` for
      departed ids), compute `maxMv` via `if src.zone == .stack then
      g.objectManaValue src else ((g.lastKnownBefore? sid).map
      (·.manaValue)).getD (g.objectManaValue src (includeLkiX := true))` so `{X}`
@@ -9810,38 +9817,34 @@ reads),
      702.85a).
    - Replace remaining raw `.name` reads on stack, battlefield, and zone-moving
      objects with `g.name`:
-     - `CastExtras.lean:109, 275` (`resolveCascadeLoop` and
+     - `CastExtras.lean:110, 279` (`resolveCascadeLoop` and
        `finishExileUntilNextEndStep`);
-     - `Choices.lean:370, 394, 401, 408, 579` (`finishGrimaDirectCast`,
+     - `Choices.lean:330, 354, 361, 442, 539` (`finishGrimaDirectCast`,
        `exileUntilInstantOrSorceryLoop`, and `exileFailedAdventureFromBilbo`);
      - `Costs.lean:21` (`returnToHand`);
-     - `Decisions.lean:1120, 1387, 1514, 1524` (`.logTwoNonlegendaryCopyTokens`,
-       `.logMovedToExile`, `.grantAdventureExilePermission`, and
-       `.grantPlayUntilEndOfNextTurn`);
-     - `EffectResolution.lean:239, 2225, 2229, 2516, 2521`;
-     - `Entering.lean:235`;
-     - `Leaving.lean:886, 984` and `Mulligans.lean:90`;
-     - `ModeledTriggers.lean:76, 103, 559, 738`;
-     - `ResolutionEffects.lean:268, 297, 327, 329, 345, 355, 1352, 1367, 1382,
-       1395, 1434` and `ResolutionHelpers.lean:635, 683`; and
-     - `TriggeredAbilities.lean:291, 432, 617, 1469, 1472, 1895, 2403, 2526,
-       4026, 4945, 5132, 5237, 5301, 5315`.
-   - Inline `Core.rawEventSnapshot` (`Core.lean:7816–7861`, which was only called
-     at `Core.lean:7865` inside `Core.snapshot` and whose characteristic fields —
-     including `o.power` and `o.toughness` at `7829–7830` — were immediately
-     overwritten at `7880–7905`) into `Core.snapshot` (`Core.lean:7864–7905`,
+     - `Decisions.lean:1183, 1459, 1586, 1589, 1599`
+       (`.logTwoNonlegendaryCopyTokens`, `.logMovedToExile`,
+       `.grantAdventureExilePermission`, and `.grantPlayUntilEndOfNextTurn`);
+     - `EffectResolution.lean:239, 2246, 2250, 2543, 2548`;
+     - `Entering.lean:193, 200`;
+     - `Leaving.lean:1028, 1130` and `Mulligans.lean:90`;
+     - `ModeledTriggers.lean:78, 107, 526, 705`;
+     - `ResolutionEffects.lean:268, 297, 327, 329, 345, 355, 1341, 1356, 1371,
+       1384, 1423` and `ResolutionHelpers.lean:641, 689`; and
+     - `TriggeredAbilities.lean:288, 429, 614, 1466, 1891, 2399, 2522, 4022,
+       4943, 5130, 5235, 5299, 5313`.
+   - Inline `Core.rawEventSnapshot` into `Core.snapshot` (`Core.lean:7814–7884`,
      setting `power := pw` and `toughness := tg` directly), and delete the
-     now-unused `Core.rawEventSnapshot` helper along with `GameObject.power`
-     (`Object.lean:164–165`) and `GameObject.toughness` (`Object.lean:167–168`,
-     updating `Tests/Equipment.lean:224, 569, 570`,
-     `Tests/Activation.lean:502`, `Tests/Auras.lean:236`, and
-     `Tests/Pathmaker.lean:237` to `g.power` / `g.toughness` while keeping
-     `CardDef.power` on `.printed`), `GameObject.you` (`Object.lean:182–183`,
-     updating `Tests/Pathmaker.lean:264` to `g.you`), `GameObject.isLegendary`
-     (`Object.lean:191–192`, updating `OracleRulingTests.lean:347` and
+     now-unused `Core.rawEventSnapshot` helper along with `GameObject.power` and
+     `GameObject.toughness` (updating `Tests/Equipment.lean:224, 569, 570` and
+     `Tests/Auras.lean:236` to `g.basePower` / `g.baseToughness`,
+     `Tests/Activation.lean:502` and `Demo/RenderTests.lean:437` to `g.power` /
+     `g.toughness`, and `Tests/Pathmaker.lean:237` to `.printed.power.isNone`),
+     `GameObject.you` (updating `Tests/Pathmaker.lean:264` to `g.you`),
+     `GameObject.isLegendary` (updating `OracleRulingTests.lean:347` and
      `Tests/Auras.lean:335, 377` to `g.isLegendary`), and
-     `GameObject.hasSupertype` (`Object.lean:154–155`, keeping
-     `EventObject.hasSupertype` at `Object.lean:567`).
+     `GameObject.hasSupertype` (keeping `EventObject.hasSupertype` at
+     `Object.lean:546`).
 
 Tests: `Events.lean` (isolation tests for post-`runEndControlExileLoop` /
 post-SBA `.assignCombatDamage` & `.tricksterLibrary` revalidation in
@@ -9853,9 +9856,533 @@ and Layer 1–6 characteristic / cascade stack & LKI mana-value reads),
 `Abilities.lean`, `Activation.lean`, `Auras.lean`, `Casting.lean`,
 `Combat.lean`, `Damage.lean`, `Discard.lean`, `Draw.lean`, `Equipment.lean`,
 `GainLife.lean`, `Leaving.lean`, `Pathmaker.lean`, `PutCounters.lean`,
-`Targets.lean`, `Turns.lean`, `MshOracleTests.lean`, `OracleRulingTests.lean`.
+`Targets.lean`, `Turns.lean`, `MshOracleTests.lean`, `OracleRulingTests.lean`,
+`RenderTests.lean`.
 
-Final check (after Phase 30): `lake build`, `lake exe mtg-demo`,
+### Phase 31 — Remaining `redirectPendingAfterLeave` (`q != p` / `mayThenDrop` / `abortedProp`) & `.restorePending` post-exile/SBA revalidation, remaining `ContinuationFrame` entry guards, post-pause arrival logging order & departed-player `stillInGame` guards, and CR 608.2h `.equalSourceToughness` / `TriggerRead` LKI & remaining Layer 1–6 characteristic / `GameObject` printed-helper retirement
+
+1. Complete `Leaving.redirectPendingAfterLeave` (`q != p` candidate/target
+   revalidation, `mayThenDrop > 0` `declineMayThenCore` handling, and
+   `abortedProp` cleanup) and `Decisions.resumePendingReplacement`
+   `.restorePending` post-`runEndControlExileLoop` / post-SBA revalidation
+   (§2.4, §2.5, §2.9, §3.1, §3.4, §3.8, CR 603.3c / 608.2b / 700.2 / 733.1 /
+   800.4a,f,h):
+   - In `Leaving.redirectPendingAfterLeave` (`Leaving.lean:1144–1304`):
+     - When `g.mayThenDrop > 0` and a prompt is auto-cleared during a player's
+       departure, call `g.declineMayThenCore` (`Core.lean:11777`, while applying
+       `clearProp` first when `abortedProp` is true since `declineMayThenCore`
+       only clears `.pending .none`) instead of leaving `mayThenDrop > 0` and
+       `mayThenConditional` stale on the active `ContinuationFrame`:
+       - in `.mayCastCards` (`Leaving.lean:1162–1163`), `.mayChangeSpellTarget`
+         (`1172–1173`), and `.newTargetsForCopies` / `.newTargetsForCopySlot`
+         (`1182–1183`), when `q != p` and all candidate cards/spells/copies have
+         left (`ids'.isEmpty` / `!(g.findObject? spellId).any ...` /
+         `live.isEmpty`), clear via `let g := g.change (.chooseModesRest none);
+         let g := if g.mayThenDrop > 0 then g.declineMayThenCore else
+         clearPending g; (g, .none)` (matching the `q == p` branches at
+         `1157–1159, 1169–1171, 1177–1179`); and
+       - in `.sacrificeCreature q` (`1254–1264`, both `q == p` and `q != p &&
+         (g.sacrificeCreatureChoices q).isEmpty`), the split
+         `| .mayAttachEquipment q hostId sourceId` and
+         `| .maySacrificeAnotherBolg q bolgId` arms (split out of `1265–1275`),
+         and the remaining `| .recruitDiscard q | .mayCastFromLooked q _ _ |
+         .putOnBottom q _ | .mayPutLandFromHand q | .mayHaveVillainConnive q _ _
+         | .declareMulligan q | .chooseProliferate q _` arms (`1266–1275`),
+         apply `let g := g.changes (#[.chooseModesRest none] ++ clearProp)` and
+         then `let g := if g.mayThenDrop > 0 then g.declineMayThenCore else
+         clearPending g` before returning `(g, .none)`.
+     - Revalidate additional `q != p` prompts whose targets or candidate objects
+       were owned by departing player `p` and left the game at
+       `Leaving.lean:1464–1487` (CR 800.4a):
+       - in `.blackGatePlayer oid players` (`Leaving.lean:1144–1154`), when `q !=
+         p` and `!(g.findObject? oid).any (fun o => o.isOnBattlefield &&
+         g.isCreature o)` (e.g., `oid` was owned by `p` and left the
+         battlefield), clear via `let g := (clearPendingAnd g #[.chooseModesRest
+         none]).logMsg "The target is no longer legal"; (g, .none)` instead of
+         offering or applying `applyBlackGateUnblockable` to a departed creature;
+       - in `.chooseCards ids max purpose` (before `| _ =>` at
+         `Leaving.lean:1220`, matching `EffectResolution.finishChooseCards` at
+         `EffectResolution.lean:1021–1084`, with `.keepDestroyRest` at `1068`
+         and `.amassArmy` at `1081`, and `FraChoices.answerFraChoice` at
+         `FraChoices.lean:1722–1744, 1926–1948`): when `q == p`, clear via
+         `clearProp` and `declineMayThenCore` as in `| _ =>`; when `q != p`:
+         - for `.amassArmy subtype n attach`, filter `let liveIds := ids.filter
+           (fun id => (g.findObject? id).any (fun o => o.isOnBattlefield &&
+           g.controlledBy o q && g.hasSubtype o .army))`; if `liveIds.isEmpty`,
+           run `let g := g.withOuterContStashed fun g => let cause :=
+           g.stashedCause; let g := (clearPending g).change (.stashedCause
+           none); g.amass q subtype n attach (cause := cause); (g, g.pending)`;
+           else if `liveIds.size == 1`, run `let g := g.withOuterContStashed fun
+           g => let cause := g.stashedCause; let g := (clearPending g).change
+           (.stashedCause none); g.finishAmassOn q liveIds[0]! subtype n attach
+           (cause := cause); (g, g.pending)`; else if `liveIds != ids`, return
+           `(g, .fraChoice q (.chooseCards liveIds max purpose))`; else `(g,
+           pending)`;
+         - for `.keepDestroyRest`, compute `let liveIds := (g.battlefield.filter
+           (g.isCreature ·)).map (·.id)`; if `liveIds.size ≤ max`, run `let g :=
+           g.withOuterContStashed fun g => (clearPending g).finishChooseCards q
+           liveIds liveIds .keepDestroyRest; (g, g.pending)`; else if `liveIds !=
+           ids`, return `(g, .fraChoice q (.chooseCards liveIds max
+           .keepDestroyRest))`; else `(g, pending)`; and
+         - for other `purpose` values, filter `let liveIds := ids.filter (fun id
+           => (g.findObject? id).isSome)`: if `liveIds.isEmpty`, clear via `let
+           g := (g.change (.chooseModesRest none)).change (.stashedCause none);
+           let g := if g.mayThenDrop > 0 then g.declineMayThenCore else
+           clearPending g; (g, .none)`; else if `liveIds != ids`, return `(g,
+           .fraChoice q (.chooseCards liveIds max purpose))`; else `(g,
+           pending)`;
+       - in `.fraChoice q choice` (`Leaving.lean:1220`), add `q != p`
+         revalidation arms for:
+         - `.attachAnyEquipment hostId eligible`: filter `let liveEligible :=
+           eligible.filter (fun id => (g.findObject? id).any (fun o =>
+           o.isOnBattlefield && g.isEquipment o))`; if `!(g.findObject?
+           hostId).any (fun o => o.isOnBattlefield && g.isCreature o &&
+           g.controlledBy o q)` or `liveEligible.isEmpty`, clear via `let g :=
+           g.change (.chooseModesRest none); let g := if g.mayThenDrop > 0 then
+           g.declineMayThenCore else clearPending g; (g, .none)`; else if
+           `liveEligible != eligible`, return `(g, .fraChoice q
+           (.attachAnyEquipment hostId liveEligible))`; else `(g, pending)`;
+         - `.maySacrificeAnotherCreatureForPower sid`: if `!((g.creaturesControlledBy
+           q).any (·.id != sid))`, log `"No other creature to sacrifice"` and
+           clear via `declineMayThenCore` / `clearPending`;
+         - `.maySacrificeAnotherForDrawTreasure sid`: if `!((g.permanentsOf
+           q).any (fun o => o.id != sid && (g.isCreature o || g.isArtifact o)))`,
+           log `"Nothing to sacrifice"` and clear via `declineMayThenCore` /
+           `clearPending`;
+         - `.maySacrificeThese n ids`: filter `let liveIds := ids.filter (fun id
+           => (g.findObject? id).any (fun o => o.isOnBattlefield &&
+           g.controlledBy o q))`; if `liveIds.size < n`, log `"Nothing to
+           sacrifice"` and clear via `declineMayThenCore` / `clearPending`; else
+           if `liveIds != ids`, return `(g, .fraChoice q (.maySacrificeThese n
+           liveIds))`; else `(g, pending)`;
+         - `.sheHulkMayDamage amt target sourceId`: if `!(g.legalTargetsForKind
+           q .playerOrCreature sourceId).contains target`, log `"The target is
+           no longer legal"` and clear via `declineMayThenCore` / `clearPending`;
+           and
+         - `.widowMayCounter sourceId exiled` (`ModeledTriggers.lean:82–92`,
+           `FraChoices.lean:1357–1368`, Black Widow's `"You may put a +1/+1
+           counter on Black Widow"` prompt, where accepting while Black Widow is
+           on the battlefield at `1360–1361` only puts the `+1/+1` counter and
+           `grantWidowCast` at `ModeledTriggers.lean:67–78` is the `"If you
+           don't"` / source-gone fallback at `91–92, 1362–1367`): if
+           `!(sourceId.bind g.findObject?).any (·.isOnBattlefield)`, run the
+           source-gone fallback `let g := g.withOuterContStashed fun g =>
+           (clearPending g).grantWidowCast q exiled; (g, g.pending)` (where
+           `grantWidowCast` matches `exiled.bind g.findObject?` without checking
+           `zone == .exile`, logging `"No nonland card was exiled"` only when
+           `exiled.bind g.findObject?` is `none` and otherwise granting the
+           `anyMana` play permission); else if `exiled.any (fun id =>
+           (g.findObject? id).isNone)` (the exiled card left the game because it
+           was owned by `p`), rewrite to `(g, .fraChoice q (.widowMayCounter
+           sourceId none))`; else `(g, pending)`; and
+       - split `| .mayAttachEquipment q hostId sourceId` and
+         `| .maySacrificeAnotherBolg q bolgId` out of the shared
+         `| .recruitDiscard q | ...` or-pattern at `Leaving.lean:1265–1275` into
+         their own arms (keeping the `q == p` `clearProp` + `declineMayThenCore`
+         handling on each split arm and on the remaining `1266–1275`
+         or-pattern), and in those two arms plus the existing
+         `| .chooseLibraryPlacement q id?` arm at `Leaving.lean:1303–1304`
+         (where `id?` is `some id` for library top/bottom placement and `none`
+         for non-library `beginSpellOr` at `EffectResolution.lean:1229`), when
+         `q != p`:
+         - for `.mayAttachEquipment q hostId sourceId`, if `!(g.findObject?
+           hostId).any (fun o => o.isOnBattlefield && g.isCreature o &&
+           g.controlledBy o q)` or `!(sourceId.bind g.findObject?).any (fun o =>
+           o.isOnBattlefield && g.isEquipment o && g.controlledBy o q)`, clear
+           via `declineMayThenCore` / `clearPending`;
+         - for `.maySacrificeAnotherBolg q bolgId`, if `!((g.creaturesControlledBy
+           q).any (·.id != bolgId))`, clear via `declineMayThenCore` /
+           `clearPending`; and
+         - for `.chooseLibraryPlacement q id?`, if `g.spellOrLibrary` (or
+           `id?.isSome`) and `id?.any (fun id => !(g.findObject? id).any
+           (·.isOnBattlefield))`, log `"The target is no longer legal"` and
+           return `((clearPending g).clearSpellOr, .none)`; else if
+           `!g.spellOrLibrary && !g.spellOr.isEmpty && !g.spellOrTargets.isEmpty`
+           (`id? == none`) and all targets in `g.spellOrTargets` have become
+           illegal for `g.spellOr[0]!` (`g.sequenceAllTargetsIllegal
+           g.spellOrController g.spellOr[0]! g.spellOrTargets g.spellOrSource`),
+           log `"The target is no longer legal"` and return `((clearPending
+           g).clearSpellOr, .none)`.
+   - In `Decisions.resumePendingReplacement` `.restorePending`
+     (`Decisions.lean:617–763`, where post-departure `.restorePending` runs
+     *after* `runEndControlExileLoop`, `returnLinkedExileMoves`, and
+     post-departure SBAs in `finishConcedePriority` at `Decisions.lean:237–254`,
+     `leavePlayersWhoLost` at `Leaving.lean:1886`, and
+     `checkSBACountedWithLeaves` at `StateBasedActions.lean:551–574`):
+     - add `(departed : Array PlayerId := #[])` to
+       `PendingReplacement.restorePending` (`Event.lean:1668–1669`),
+       `Leaving.restoreSavedPostLeave` (`Leaving.lean:1378–1390`, forwarding
+       `(departed := departed)` to `.restorePending saved popOuter (departed :=
+       departed)` at `1388, 1390`), `Leaving.playerLeavesGameCore`
+       (`Leaving.lean:1397–1830`, taking `(departedIn : Array PlayerId := #[])`
+       with `let departed := if departedIn.contains p then departedIn else
+       departedIn.push p`, recursively walking `.seq` via
+       `PendingReplacement.appendDeparted` /
+       `PendingReplacement.appendDepartedMany` to append `departed` (when not
+       already present) to the `departed` array of any `.restorePending`,
+       `.leavePlayersWhoLost`, `.finishConcede`, or `.concedePlayersLoop`
+       inside `preBodyCont?` and every entry of `g.outerPendingReplacements`,
+       and passing `(departed := departed)` to `.restorePending redirP false
+       (departed := departed)` at `1725, 1777` and to `g.restoreSavedPostLeave
+       savedPreLeavePending? popOuter (departed := departed)` at `1829`),
+       `Leaving.leavePlayersWhoLostCore` (`Leaving.lean:1842–1871`, taking
+       `(departedIn : Array PlayerId := #[])` and returning `Game × Option
+       Pending × Bool × Array PlayerId` from all exits—returning `(g, none,
+       false, departedIn)` at `1845`, `(g, savedIn, popOuterIn, departedIn)` at
+       `1847`, `(g, none, false, departed)` at `1854`, and `(g, saved?,
+       popOuter, departed)` at `1870, 1871`, while passing `(departedIn :=
+       departed)` into `playerLeavesGameCore pl.id` at `1864` before updating
+       `departed := if departed.contains pl.id then departed else departed.push
+       pl.id`) & `Leaving.leavePlayersWhoLost` (`Leaving.lean:1878–1886`,
+       taking `(departedIn : Array PlayerId := #[])`, destructuring `let (g,
+       saved?, popOuter, departed) := g.leavePlayersWhoLostCore savedIn
+       popOuterIn departedIn` at `1880`, chaining `.leavePlayersWhoLost saved?
+       popOuter departed` when `g.players.any (fun r => r.lost &&
+       !r.leftTheGame) || saved?.isSome || popOuter || !departed.isEmpty` at
+       `1882–1883`, and calling `g.restoreSavedPostLeave saved? popOuter
+       (departed := departed)` at `1886`),
+       `PendingReplacement.leavePlayersWhoLost` (`Event.lean:1858`, taking
+       `(departed : Array PlayerId := #[])` and resumed at
+       `Decisions.lean:984–985` by running `let (g, _, departed) :=
+       g.checkSBACountedWithLeaves savedPending popOuter departed` and writing
+       `departed` via `PendingReplacement.appendDepartedMany departed` into any
+       already-queued `.finishConcede`, `.concedePlayersLoop`,
+       `.leavePlayersWhoLost`, or `.restorePending` inside
+       `g.pendingReplacement` and `g.outerPendingReplacements`),
+       `PendingReplacement.checkSBA` (`Decisions.lean:768–769`, running `let
+       (g, _, departed) := g.checkSBACountedWithLeaves` and writing `departed`
+       via `PendingReplacement.appendDepartedMany departed` into
+       `g.pendingReplacement` and `g.outerPendingReplacements`),
+       `Decisions.resumePendingReplacement`'s `| .seq first rest =>` arm
+       (`Decisions.lean:409–432`, capturing `let g0 := g` before
+       `g.resumePendingReplacement first`, collecting any players who left the
+       game during `first` along with `first.collectDeparted` via `let
+       newlyDeparted := g.players.foldl (fun acc pl => if pl.leftTheGame &&
+       !(g0.player pl.id).leftTheGame && !acc.contains pl.id then acc.push
+       pl.id else acc) first.collectDeparted`, and folding
+       `PendingReplacement.appendDepartedMany newlyDeparted` into `rest`,
+       `g.pendingReplacement`, and `g.outerPendingReplacements` before chaining
+       or resuming `rest` at `430–432`, so a post-pause `.checkSBA` or
+       `.leavePlayersWhoLost` writes its returned `departed` array into the
+       already-queued `.finishConcede`, `.concedePlayersLoop`, and any
+       `.restorePending` behind it before that concede step runs),
+       `StateBasedActions.checkSBACounted` (`StateBasedActions.lean:344–345`,
+       taking `(departedIn : Array PlayerId := #[])` and chaining `if
+       savedIn.isSome || popOuterIn || !departedIn.isEmpty then
+       .leavePlayersWhoLost savedIn popOuterIn departedIn else .checkSBA` at
+       `542–544`) & `StateBasedActions.checkSBACountedWithLeaves`
+       (`StateBasedActions.lean:551–574`, taking `(departedIn : Array PlayerId
+       := #[])` and returning `Game × Bool × Array PlayerId` from every exit:
+       passing `departedIn` into `g.checkSBACounted savedIn popOuterIn
+       departedIn` at `554`, returning `(g, didSba, departedIn)` at `555`,
+       `((g.chainPendingReplacement (.leavePlayersWhoLost savedIn popOuterIn
+       departedIn)), didSba, departedIn)` when `wasPaused && (savedIn.isSome ||
+       popOuterIn || !departedIn.isEmpty)` at `556–557`, and `(g, didSba,
+       departedIn)` at `558`, receiving `(g, saved?, popOuter, departed)` from
+       `g.leavePlayersWhoLostCore savedIn popOuterIn departedIn` at `561`,
+       returning `(g, didSba || anyLeft, departed)` at `563`, chaining `if
+       g.players.any (fun r => r.lost && !r.leftTheGame) || saved?.isSome ||
+       popOuter || !departed.isEmpty then .leavePlayersWhoLost saved? popOuter
+       departed else .checkSBA` and returning `(..., true, departed)` at
+       `565–569`, returning `(g, didSba || anyLeft, departed)` at `570`,
+       recursing `let (g', didMore, departed') := g.checkSBACountedWithLeaves
+       saved? popOuter departed; (g', didSba || anyLeft || didMore, departed')`
+       at `572–573`, and returning `(g.restoreSavedPostLeave saved? popOuter
+       (departed := departed), false, departed)` at `574`, while keeping `.1`
+       in `StateBasedActions.checkSBA` at `576–577` and updating pair
+       destructures in `Turns.finishCleanupAfterClearEot` at `Turns.lean:630`
+       (`let (g, sba, _) := g.checkSBACountedWithLeaves`) and
+       `Events.lean:22466` (`let (gSbaDefer1, _, _) :=
+       gSbaDefer0.checkSBACountedWithLeaves (some (.scry p0 1)) false`)),
+       `Decisions.concedePlayersLoop` (`Decisions.lean:293–402`, taking
+       `(departedIn : Array PlayerId := #[])`, passing `(departedIn :=
+       departed)` into `g.playerLeavesGameCore pid (deferRestore := true)
+       (pendingIn := pendingIn) (departedIn := departed)` at `317` before
+       updating `departed := if departed.contains pid then departed else
+       departed.push pid`, forwarding `departed` in the pause chains at
+       `331–332`, `341–343`, `367–369`, `398–399` and the tail calls to
+       `finishConcedePriority` at `395–396, 401–402`, and passing `(departed :=
+       departed)` to `.restorePending sp popOuter (departed := departed)` at
+       `347, 381`),
+       `Decisions.finishConcedePriority` (`Decisions.lean:230–254`, taking
+       `(departed : Array PlayerId := #[])`, calling `let (g, _, departed) :=
+       if runSba && !g.over then g.checkSBACountedWithLeaves (departedIn :=
+       departed) else (g, false, departed)` at `237` so any players who lose and
+       leave during that SBA pass are folded into `departed`, forwarding
+       `departed` in `.finishConcede` at `240–241`, and passing `(departed :=
+       departed)` to `.restorePending sp popOuter (departed := departed)` at
+       `254`), `PendingReplacement.finishConcede` (`Event.lean:1872–1874`,
+       taking `(departed : Array PlayerId := #[])` and resumed at
+       `Decisions.lean:595–597` by explicitly passing `(departed := departed)`
+       to `finishConcedePriority`), and
+       `PendingReplacement.concedePlayersLoop` (`Event.lean:1875–1879`, taking
+       `(departed : Array PlayerId := #[])` and resumed at
+       `Decisions.lean:598–600` by explicitly passing `(departedIn :=
+       departed)` to `concedePlayersLoop`), while non-departure
+       `.restorePending` callers (`ManaAbilities.lean:382`,
+       `Decisions.lean:1890, 3092`, `Casting.lean:1038`) keep `departed := #[]`
+       (never scanning `g.players` for `leftTheGame` or `lost`);
+     - keep `.chooseMode q | .chooseTargets q | .fraChoice q (.triggerModes ..)`
+       calling `if g.stillInGame q then openPrompt g else
+       resumePoppedIfNoPrompt (if g.pending == .none then g else g.change
+       (.pending .none))` (since those stack-proposal / stack-trigger mode
+       prompts are only redirected when `q` leaves); and
+     - for all other prompts reaching `| _ =>` (`Decisions.lean:763`), if
+       `departed.isEmpty` call `openPrompt g`; else fold
+       `redirectPendingAfterLeave` over every `dep` in `departed` (`let (g,
+       nextP) := departed.foldl (fun (g, curP) dep => if curP == .none then (g,
+       .none) else g.redirectPendingAfterLeave dep (pending := curP)) (g, p)`,
+       `Leaving.lean:548–549`) and if `nextP != .none` call `openPromptWith g
+       nextP` else call `resumePoppedIfNoPrompt g` (since
+       `redirectPendingAfterLeave` returns the surviving or rewritten prompt in
+       `nextP` without clearing `g.pending` when keeping/rewriting a prompt,
+       whereas when it clears a prompt it returns `nextP == .none` and may have
+       queued a replacement or post-step continuation onto `g.pending` /
+       `g.pendingReplacement`).
+2. Complete `ContinuationFrame` entry and exit guards across `Triggers.beginScry`
+   / `scryThenDraw`, `ResolutionHelpers.beginSurveil`, `Chapters`, `FraResolve`,
+   `FrcResolve`, `EffectResolution.beginMay` / `beginSpellOr`,
+   `ModeledTriggers.beginUnlessPays`, `Core.clearMay` / `clearSpellOr` /
+   `clearUnlessPays`, and `Decisions.finishAndGrantPriority` (§2.1, §2.5, §2.9,
+   §3.2):
+   - Wrap `Triggers.beginScry` (`Triggers.lean:607–622`),
+     `Triggers.scryThenDraw` (`Triggers.lean:625–632`),
+     `ResolutionHelpers.beginSurveil` (`ResolutionHelpers.lean:248–262`),
+     `Chapters.treasureThenDragonCreateDragon` (`Chapters.lean:120`), the
+     `| some ch =>` branch of `Chapters.applyChapterEffect`
+     (`Chapters.lean:201–293`), `FraResolve.applyFra` (`FraResolve.lean:358`),
+     `FrcResolve.applyFrc` (`FrcResolve.lean:389`), `EffectResolution.beginMay`
+     (`EffectResolution.lean:1177–1195`, covering both the
+     `| .attachEquipment =>` arm at `1181–1184`, which writes `.pending
+     (.mayAttachEquipment controller o.id sourceId)`, and the `| r =>` arm at
+     `1185–1195`, which writes `.pending (.mayResolve controller)`, `.mayEffect
+     (some inner)`, `.mayController controller`, `.mayTargets targets`, and
+     `.maySource sourceId`), `EffectResolution.beginSpellOr`
+     (`EffectResolution.lean:1200–1235`), and `ModeledTriggers.beginUnlessPays`
+     (`ModeledTriggers.lean:997–1030`) in `g.withContinuationFrame fun g => ...`
+     (`Core.lean:11086–11093`, matching `EffectResolution.applyUnified` at
+     `EffectResolution.lean:1511–1516`, `EffectResolution.applyEffect` at
+     `2224–2228`, and `TriggeredAbilities.applyTriggeredAbility` at
+     `TriggeredAbilities.lean:4647`, where `withContinuationFrame` is a no-op
+     when `!g.continuations.isEmpty`, pushes `{}` when
+     `g.continuations.isEmpty`, and immediately pops that frame via
+     `.popContinuationFrame` when `g.pending == .none && g.afterRandom == .none`
+     — including `beginScry` / `beginSurveil` with `n == 0` or empty library,
+     `scryThenDraw`'s immediate draw branch after clearing `.pendingDrawAfterScry
+     none`, `beginMay .attachEquipment` or `beginSpellOr` when no legal target
+     exists, and `beginUnlessPays` when `n == 0`).
+   - In `Core.clearUnlessPays` (`Core.lean:11591–11592`), reset
+     `.unlessPaysController ⟨0⟩`; in `Core.clearMay` (`Core.lean:11595–11596`),
+     reset `.mayController ⟨0⟩`; and in `Core.clearSpellOr`
+     (`Core.lean:11599–11600`), reset `.spellOrController ⟨0⟩` (matching the
+     `ContinuationFrame` field defaults at `Event.lean:2046, 2053, 2058` so
+     frames pushed for a non-`⟨0⟩` controller return to `{}` when cleared); and
+     in `Decisions.finishAndGrantPriority` (`Decisions.lean:94–110`, which ends
+     `finishScry` at `2954`, `finishSurveil` at `2979`, `choosePermanents`'s
+     `.mayAttachEquipment` arm at `3466`, `acceptMay` at `3362`, `decline`'s
+     `.mayAttachEquipment` arm at `3801` (`3791–3801`) and `.mayResolve` arm at
+     `3823`, `chooseSpellOr` at `3411`, `chooseLibrarySide` at `3435` (and via
+     `chooseSpellOr` at `3418`), and `flushUnlessPays` at `207`), call
+     `g.popEmptyContinuationFrames` (`Decisions.lean:213`, moved above the
+     `mutual` block at `Decisions.lean:68`) after `g.drainPendingContinuations`
+     when `g.pending == .none && g.afterRandom == .none` so any frame pushed by
+     `withContinuationFrame` while a prompt was open is popped once its
+     scratch fields have been cleared, rather than remaining on `g.continuations`
+     and causing the next `withContinuationFrame` call to skip pushing/popping.
+3. Fix post-pause arrival logging order across `.chooseReplacement` and complete
+   remaining departed-player `stillInGame` guards (§2.5, §3.1, §3.4, CR 616.1 /
+   800.4a):
+   - Process and log the card that *already* moved before a `.chooseReplacement`
+     pause before checking `!g.stillInGame` for subsequent steps (matching
+     `ResolutionHelpers.millCardsLoop` at `274–277`,
+     `ResolutionHelpers.movePublicCardsToHandLoop` at `339–345`, and
+     `Choices.exileUntilInstantOrSorceryLoop` at `351–359`):
+     - in `Choices.exileTopPlayIfYouControlSubtypeLoop` (`Choices.lean:271–283`),
+       process `movedId?` (`273–282`) *before* `if !g.stillInGame p then return
+       g` (`271`), gating `g.createEffect (.playPermission moved.id { player :=
+       p, whileExiled := true, requireSubtype := some subtype, faceDown := true
+       }) (cause := cause?)` (`Choices.lean:276–281`) on `g.stillInGame p` while
+       still logging `s!"{(g.player p).name} exiles a card face down"` when
+       `followMovedToZone? fid (· == .exile)` is `some moved`;
+     - in `Choices.finishGrimaDirectCast` (`Choices.lean:325–336`), log
+       `s!"{(g.player controller).name} casts {g.name moved} as the ability
+       resolves"` whenever `followMovedToZone? fromId (· == .stack)` is `some
+       moved` (without gating that arrival log on `g.stillInGame controller`);
+     - in `Library.moveIdsInOrderLoop` (`Library.lean:254–308`), thread
+       `placedCount` across non-library `.chooseReplacement` pauses as well
+       (passing `placed` instead of `0` at line `304` and tracking `prevMoved :
+       Option (ObjectId × Zone)` for all `dest` zones so `placedCount` is
+       incremented at `264–269` whenever the card that paused before
+       `.chooseReplacement` arrived in `dest`), update `placedCount` *before*
+       checking `dest` (`260–262`), and when `dest` is `.library p | .hand p |
+       .graveyard p | .outside p` and `!g.stillInGame p`, emit `log` if
+       `!log.isEmpty && placedCount > 0` before returning `g`;
+     - in `Decisions.runPostStep` `.logPutsIntoHand revealer fromId cardName`
+       (`Decisions.lean:1323–1326`), log `s!"{(g.player revealer).name} puts
+       {cardName} into their hand"` whenever `(g.followMovedToZone? fromId (· ==
+       .hand revealer)).isSome` (without gating on `g.stillInGame revealer`,
+       matching `Choices.exileUntilInstantOrSorceryLoop` at `Choices.lean:352–354`
+       and `ResolutionHelpers.movePublicCardsToHandLoop` at
+       `ResolutionHelpers.lean:339–343`); and
+     - in `Decisions.runPostStep` `.grantPlayUntilEndOfNextTurn p cardId cause`
+       (`Decisions.lean:1593–1600`), match `g.followMovedToZone? cardId (· ==
+       .exile)` first, logging `s!"{(g.player p).name} exiles {g.name moved}"`
+       when `!g.stillInGame p` and creating `.playPermission` + logging the full
+       `"may play it until the end of their next turn"` message when
+       `g.stillInGame p` (matching `.grantAdventureExilePermission` at
+       `1582–1590`).
+   - Add departed-player `stillInGame` guards across the remaining library,
+     graveyard, hand, exile, surveil, and token/counter helpers and post-steps
+     (CR 800.4a):
+     - `Library.requestShuffle` (`Library.lean:245`, returning `g` immediately
+       when `!g.stillInGame p`);
+     - `ResolutionHelpers.exileCreaturesFromGraveyardLoop` &
+       `exileCreaturesFromGraveyard` (`ResolutionHelpers.lean:109–159`, logging
+       `pendingMoved` when it entered `.exile` before the pause, gating follow-up
+       token/counter actions on `g.stillInGame controller`, and returning `g` at
+       entry when `!g.stillInGame fromPlayer && !g.stillInGame controller`);
+     - `Tokens.empowerJaceStep` & `empowerJace` (`Tokens.lean:738–803`, logging
+       `.afterPutCounters` if counters were already placed before the pause and
+       returning `g` when `!g.stillInGame controller` before creating a token or
+       putting loyalty counters);
+     - `ResolutionEffects.exileTopForPlayLoop` & `exileTopForPlay`
+       (`ResolutionEffects.lean:548–594`, processing `pendingMoved` first with
+       `.playPermission` gated on `g.stillInGame caster`, then stopping further
+       library exiles when `!g.stillInGame fromPlayer || !g.stillInGame caster`,
+       and returning `g` at entry when `!g.stillInGame fromPlayer ||
+       !g.stillInGame caster`) and `offerExileCasts` & `exileTopMayCastUpToLoop`
+       (`784–820`, returning `g` in `offerExileCasts` when `!g.stillInGame
+       caster`, recording `pendingMoved` after a pause in
+       `exileTopMayCastUpToLoop`, and stopping further library exiles when
+       `!g.stillInGame fromPlayer` while still offering casts of already-exiled
+       cards if `g.stillInGame caster`);
+     - `EffectResolution.finishExileTopMayCastElseDamage`
+       (`EffectResolution.lean:49–62`, returning `g` when `!g.stillInGame
+       controller`) and `exileTopXOppPlayForLifeLoop` (`1270–1300`, processing
+       `pendingMoved` first with `.playPermission` gated on `g.stillInGame
+       controller`, and returning `g` when `!g.stillInGame pid` or
+       `!g.stillInGame controller`);
+     - `FraAbilities.finishSarumanExileCopyMayCast` (`FraAbilities.lean:155–180`,
+       logging the exiled card when `followMovedToZone? fromId (· == .exile)` is
+       `some` and returning `g` before creating the copy when `!g.stillInGame
+       controller`), `finishIdentityEchoAfterExile` (`183–237`, returning `g`
+       when `!g.stillInGame controller`), and `exileOpponentLibrariesLoop`
+       (`333–374`, processing `pendingFrom` first with `.playPermission` gated on
+       `g.stillInGame controller`, returning `g` when `!g.stillInGame
+       controller`, and advancing to `restOpps` when `!g.stillInGame opp`);
+     - `FraResolve.fblthpMoveToHandLoop` (`FraResolve.lean:223–244`, logging
+       `pendingMoved` first and returning `g` when `!g.stillInGame controller`)
+       and `makeUldarosExiledCopy` / `uldarosCopiesLoop` /
+       `finishUldarosCopiesOffer` (`290–356`, returning `(g, none)` / `g` when
+       `!g.stillInGame controller`);
+     - `TriggeredAbilities.runTriggerExileLoop`
+       (`TriggeredAbilities.lean:1760–1845`, recording `pendingMoved` first and
+       stopping further moves when `!g.stillInGame controller` or, for
+       `.opponentTop` / `.top`, when the library owner has left, and gating the
+       post-loop permission/cast offer on `g.stillInGame controller`) and
+       `.grantPlayNotedUntilNextTurn` (`5228–5241`, gating `.playPermission` on
+       `g.stillInGame controller`);
+     - `FrcResolve.handDiscard` & `handDiscardToBottomOf`
+       (`FrcResolve.lean:45–57, 213–226`, returning `g` when `!g.stillInGame p` /
+       `!g.stillInGame controller`), `putBackOnTopLoop` & `.putDrawnBackOnTop`
+       (`231–258, 1062–1067`, updating `cnt` from `pendingId` first, logging `cnt
+       > 0` before returning `g` when `!g.stillInGame p`, and returning `g` in
+       `.putDrawnBackOnTop` when `!g.stillInGame p`),
+       `factOrFictionGyInnerLoop` & `factOrFictionHandInnerLoop` (`295–351`,
+       logging `pendingCard` first and returning `g` when `!g.stillInGame
+       controller`), and `.polymorphRevealCreatures`,
+       `.polymorphSingleTargetReveal`, `.optionalOncePolymorphReveal`, &
+       `.revealCreatureOrPlaneswalker` (`529–546, 568–581, 659–676, 723–741,
+       1130–1140, 1150–1157, 1167–1180, 1182–1189`, returning `g` when the
+       revealing player has left); and
+     - `Decisions.surveilMoveLoop` & `finishSurveilPostMove`
+       (`Decisions.lean:1944–1982`, returning `g` immediately in
+       `surveilMoveLoop` at `1944` when `!g.stillInGame p`, and in
+       `finishSurveilPostMove` at `1960–1982`, logging `s!"{(g.player p).name}
+       puts {card.name} into their graveyard (surveil)"` at `1966` when
+       `followMovedToZone? fromId (· == Zone.graveyard p)` is `some gyObj` and
+       then returning `g` when `!g.stillInGame p` before checking `returnToHand`
+       or moving `gyObj.id` to `.hand p`, while `finishLibraryLookCore` at
+       `1928–1932` already checks `if g.stillInGame q` for
+       `pendingDrawAfterScry`), `.beginDiscardThenStun` (`1058–1064`, returning
+       `g` when `!g.stillInGame controller`), `.addPlusOnesForLoggedDiscards`
+       (`1071–1075`, returning `g` when `!g.stillInGame p`), and
+       `.drawOneThenPlusOnesForDiscards` (`1249–1254`, returning `g` when
+       `!g.stillInGame p`).
+4. Complete CR 608.2h `.equalSourceToughness` / `TriggerRead` LKI propagation,
+   remaining Layer 1–6 characteristic reads (`eo.name`, `g.baseCard`, `g.name`,
+   `g.nameWithToken`, `g.isCreature`, `g.types`, `g.isInstantOrSorcery`,
+   `g.isPlaneswalker`), and unused `GameObject` printed-helper retirement (§2.2,
+   §2.3, §2.6, §2.10, §3.5, §3.7, CR 201 / 205 / 608.2h / 613.1):
+   - In `TriggerArgs.triggerInt` `.equalSourceToughness`
+     (`TriggerArgs.lean:389–395`), replace the manual `sourceId.bind
+     g.findObject?` match with `some (g.sourcePTAtResolution sourceId
+     ctx.lastKnownPower ctx.lastKnownToughness).2` (`ResolutionEffects.lean:521`,
+     matching `.equalSourcePower` at `388` so event-log `lastKnownToughnessOf?`
+     and `snapshotToughness` fallbacks are used when `src` left the battlefield,
+     CR 608.2h); and thread `(lastKnownToughness : Option Int := none)` through
+     `TriggeredAbilities.triggerIfHolds` (`TriggeredAbilities.lean:315, 322,
+     335, 567, 640, 4739, 4963, 4972, 4979, 5656`), `applyTriggerDamage` (`981,
+     1104–1105, 1148–1149, 4658`), `applyPutCounters` (`1290, 1494–1495,
+     1503–1504, 4840`), `applyLoseLife` (`3816, 3839–3840, 4767–4768, 5151`),
+     and `applyGainLife` (`3861, 3893–3894, 4770–4771, 4821–4822`).
+   - Replace `eo.printed.map (·.name)` with `some eo.name` in
+     `Tokens.logCreatedTokenBatchSummary` (`Tokens.lean:893`, so token batch
+     summaries use the created token's Layer 1 / copiable `EventObject.name`
+     rather than raw `printed`), replace `let face : CardDef := card.printed`
+     with `let face : CardDef := g.baseCard card` in
+     `Costs.playsWithoutPayingManaCost` (`Costs.lean:322`), replace
+     `o.printed.daybound && o.printed.otherFace.isSome` with `(g.baseCard
+     o).daybound && (g.baseCard o).otherFace.isSome` in
+     `Entering.enterFromNickFury` (`Entering.lean:75`), replace
+     `(obj.adventurerCard.getD obj.printed).name` with `(obj.adventurerCard.map
+     (·.name)).getD (g.name obj)` in `SpellResolution.lean:443`, and replace raw
+     `g.baseCard` reads with layered `Game` queries in `Core.lean:2941`
+     (`g.isCreature c` instead of `(g.baseCard c).isCreature` in
+     `gyCreatureCards`), `Core.lean:6179` (`g.types o` instead of `(g.baseCard
+     o).types` in `graveyardCardTypeCount`), `Core.lean:6470–6471`
+     (`g.isInstantOrSorcery card` instead of `let bc := g.baseCard card;
+     bc.isInstant || bc.isSorcery` in `instantSorceryInGraveyard`),
+     `Core.lean:6631–6632` (`g.isCreature c || g.isPlaneswalker c` instead of
+     `let bc := g.baseCard c; bc.isCreature || bc.isPlaneswalker` in
+     `.powerPerCreatureAndPlaneswalkerCard`), `Core.lean:11624` (`g.name o`
+     instead of `(acc.baseCard o).name` in `restoreCopiesWhere`), and
+     `Turns.lean:34` (`acc.name o` instead of `(acc.baseCard o).name` in
+     `expireEffectsByDuration`).
+   - Keep `printedFace` (`Render.lean:251–258`) and `printedCardLine` (`264`,
+     called from `handLine` at `270` and `exileLine` at `297–298`) using
+     `o.name` / `o.nameWithToken` to splice the printed name prefix of
+     `o.printed.summary`, and thread `(g : Game)` into `waitingTriggerLine`
+     (`Render.lean:606`, used at `608` and called from `triggerOrderBlock` at
+     `618`, updating `RenderTests.lean:134, 461`) so the display lines not
+     slicing `o.printed.summary` in `Mtg/Demo/Render.lean` (`stackObjectLine` at
+     `150`, `waitingTriggerLine` at `608`, `header` at `771, 783, 950, 959`, and
+     `zoneLine` at `1156, 1158`) and remaining `GameObject.name` reads on
+     zone-moving/non-battlefield objects in `Mtg/Engine/Game/` use
+     `g.nameWithToken` / `g.name`, and delete
+     the remaining unused printed-characteristic helpers on `GameObject` in
+     `Object.lean` (`GameObject.types` at `141–142`, `GameObject.subtypes` at
+     `146–147`, `GameObject.supertypes` at `151–152`, `GameObject.typeLine` at
+     `155–156`, `GameObject.controlledBy` at `165–166`, `GameObject.isCreature`
+     at `170–171`, `GameObject.hasType` at `177–178`, `GameObject.hasSubtype` at
+     `180–182`, and `GameObject.staticAbilities` at `186–187`, updating test and
+     demo callers in `RenderTests.lean`, `MshOracleTests.lean`,
+     `MshOracleTests2.lean`, `OracleRulingTests.lean`, and `Tests/` to use the
+     corresponding `Game` methods).
+
+Tests: `Events.lean` (isolation tests for `redirectPendingAfterLeave` `q != p`
+revalidation & `mayThenDrop > 0` `declineMayThenCore` cleanup,
+`.restorePending` post-exile/post-SBA revalidation, `beginScry` /
+`scryThenDraw` / `beginSurveil` / `Chapters` / `FraResolve` / `FrcResolve` /
+`beginMay` / `beginSpellOr` / `beginUnlessPays` `ContinuationFrame` guards,
+post-pause arrival logging order & departed-player `stillInGame` guards, and
+`.equalSourceToughness` / `TriggerRead` LKI & Layer 1–6 characteristic reads),
+`Abilities.lean`, `Attach.lean`, `Death.lean`, `Destroy.lean`, `Effects.lean`,
+`Elves.lean`, `EnterOrAttack.lean`, `Equipment.lean`, `Leaving.lean`,
+`Modes.lean`, `PutCounters.lean`, `MshOracleTests.lean`,
+`MshOracleTests2.lean`, `OracleRulingTests.lean`, `RenderTests.lean`.
+
+Final check (after Phase 31): `lake build`, `lake exe mtg-demo`,
 `lake exe oracle-roundtrip`, no `EventCause.unclassified` constructor, no
 `ObjectId ⟨0⟩` or `BatchId ⟨0⟩` wildcard/sentinel defaults (unbatched/proposed
 events and unstamped `.engine` changes carry `batch := none` via
@@ -9866,7 +10393,10 @@ rather than `noSourceSentinelId` or `{ raw := g.nextObjectId }`, LKI
 use `tokensCreatedSince` rather than `minId := g.nextObjectId` /
 `o.id.raw ≥ minId`), no `GameObject.asEvent` or `Core.rawEventSnapshot` helper
 (only `Core.snapshot`), no `GameObject.power` / `GameObject.toughness` /
-`GameObject.you` / `GameObject.isLegendary` / `GameObject.hasSupertype`
+`GameObject.you` / `GameObject.isLegendary` / `GameObject.hasSupertype` /
+`GameObject.types` / `GameObject.subtypes` / `GameObject.supertypes` /
+`GameObject.typeLine` / `GameObject.controlledBy` / `GameObject.isCreature` /
+`GameObject.hasType` / `GameObject.hasSubtype` / `GameObject.staticAbilities`
 printed-characteristic bypass helpers on `GameObject`, no
 `ZoneEvent.created` emissions for non-token cards/abilities/emblems/fixtures, no
 `StatusChange` type or post-entry `chosen*` `ObjectChange` mutators, no
