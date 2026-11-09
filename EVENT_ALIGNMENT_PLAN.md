@@ -9192,9 +9192,8 @@ helpers), `Abilities.lean`, `Casting.lean`, `Combat.lean`, `Damage.lean`,
      (`Library.lean:226`), `SacrificeDiscard.beginSacrificeCreatures`
      (`SacrificeDiscard.lean:14`, filtering `players.filter g.stillInGame`),
      `SacrificeDiscard.beginMayHaveVillainConnive`
-     (`SacrificeDiscard.lean:240`), `Choices.sacrificeLeastPowerCreature`
-     (`Choices.lean:38`, moved in Phase 30, #628, to `Leaving.lean:320–339`),
-     `Choices.discardEntireHand` (`Choices.lean:170`),
+     (`SacrificeDiscard.lean:240`), `Leaving.sacrificeLeastPowerCreature`
+     (`Leaving.lean:320`), `Choices.discardEntireHand` (`Choices.lean:170`),
      `Choices.exileTopPlayIfYouControlSubtype` (`Choices.lean:334`), and
      `Choices.riddlesInTheDark` (`Choices.lean:484`, CR 800.4a–i).
 3. Preserve CR 608.2h LKI for *Palantír of Orthanc* influence counters, Aura /
@@ -9832,8 +9831,8 @@ reads),
      - `ModeledTriggers.lean:78, 107, 526, 705`;
      - `ResolutionEffects.lean:268, 297, 327, 329, 345, 355, 1341, 1356, 1371,
        1384, 1423` and `ResolutionHelpers.lean:641, 689`; and
-     - `TriggeredAbilities.lean:288, 429, 614, 1466, 1469, 1891, 2399, 2522,
-       4022, 4943, 5130, 5235, 5299, 5313`.
+     - `TriggeredAbilities.lean:288, 429, 614, 1466, 1891, 2399, 2522, 4022,
+       4943, 5130, 5235, 5299, 5313`.
    - Inline `Core.rawEventSnapshot` into `Core.snapshot` (`Core.lean:7814–7884`,
      setting `power := pw` and `toughness := tg` directly), and delete the
      now-unused `Core.rawEventSnapshot` helper along with `GameObject.power` and
@@ -9860,7 +9859,7 @@ and Layer 1–6 characteristic / cascade stack & LKI mana-value reads),
 `Targets.lean`, `Turns.lean`, `MshOracleTests.lean`, `OracleRulingTests.lean`,
 `RenderTests.lean`.
 
-### Phase 31 — Remaining `redirectPendingAfterLeave` (`q != p` / `mayThenDrop` / `abortedProp`) & `.restorePending` post-exile/SBA revalidation, remaining `ContinuationFrame` entry guards, post-pause arrival logging order & departed-player `stillInGame` guards, and CR 608.2h `.equalSourceToughness` / `TriggerRead` / `.hulklingCompare` LKI & remaining Layer 1–6 characteristic / `GameObject` printed-helper retirement
+### Phase 31 — Remaining `redirectPendingAfterLeave` (`q != p` / `mayThenDrop` / `abortedProp`) & `.restorePending` post-exile/SBA revalidation, remaining `ContinuationFrame` entry guards, post-pause arrival logging order & departed-player `stillInGame` guards, and CR 608.2h `.equalSourceToughness` / `TriggerRead` LKI & remaining Layer 1–6 characteristic / `GameObject` printed-helper retirement
 
 1. Complete `Leaving.redirectPendingAfterLeave` (`q != p` candidate/target
    revalidation, `mayThenDrop > 0` `declineMayThenCore` handling, and
@@ -9883,13 +9882,15 @@ and Layer 1–6 characteristic / cascade stack & LKI mana-value reads),
          clearPending g; (g, .none)` (matching the `q == p` branches at
          `1157–1159, 1169–1171, 1177–1179`); and
        - in `.sacrificeCreature q` (`1254–1264`, both `q == p` and `q != p &&
-         (g.sacrificeCreatureChoices q).isEmpty`) and the `| .mayAttachEquipment
-         q .. | .recruitDiscard q | .maySacrificeAnotherBolg q _ |
-         .mayCastFromLooked q _ _ | .putOnBottom q _ | .mayPutLandFromHand q |
-         .mayHaveVillainConnive q _ _ | .declareMulligan q | .chooseProliferate
-         q _` arms (`1265–1275`), apply `let g := g.changes (#[.chooseModesRest
-         none] ++ clearProp)` and then `let g := if g.mayThenDrop > 0 then
-         g.declineMayThenCore else clearPending g` before returning `(g, .none)`.
+         (g.sacrificeCreatureChoices q).isEmpty`), the split
+         `| .mayAttachEquipment q hostId sourceId` and
+         `| .maySacrificeAnotherBolg q bolgId` arms (split out of `1265–1275`),
+         and the remaining `| .recruitDiscard q | .mayCastFromLooked q _ _ |
+         .putOnBottom q _ | .mayPutLandFromHand q | .mayHaveVillainConnive q _ _
+         | .declareMulligan q | .chooseProliferate q _` arms (`1266–1275`),
+         apply `let g := g.changes (#[.chooseModesRest none] ++ clearProp)` and
+         then `let g := if g.mayThenDrop > 0 then g.declineMayThenCore else
+         clearPending g` before returning `(g, .none)`.
      - Revalidate additional `q != p` prompts whose targets or candidate objects
        were owned by departing player `p` and left the game at
        `Leaving.lean:1464–1487` (CR 800.4a):
@@ -9901,9 +9902,10 @@ and Layer 1–6 characteristic / cascade stack & LKI mana-value reads),
          offering or applying `applyBlackGateUnblockable` to a departed creature;
        - in `.chooseCards ids max purpose` (before `| _ =>` at
          `Leaving.lean:1220`, matching `EffectResolution.finishChooseCards` at
-         `EffectResolution.lean:1079–1205` and `FraChoices.answerFraChoice` at
-         `FraChoices.lean:1058–1095`): when `q == p`, clear via `clearProp` and
-         `declineMayThenCore` as in `| _ =>`; when `q != p`:
+         `EffectResolution.lean:1021–1084`, with `.keepDestroyRest` at `1068`
+         and `.amassArmy` at `1081`, and `FraChoices.answerFraChoice` at
+         `FraChoices.lean:1722–1744, 1926–1948`): when `q == p`, clear via
+         `clearProp` and `declineMayThenCore` as in `| _ =>`; when `q != p`:
          - for `.amassArmy subtype n attach`, filter `let liveIds := ids.filter
            (fun id => (g.findObject? id).any (fun o => o.isOnBattlefield &&
            g.controlledBy o q && g.hasSubtype o .army))`; if `liveIds.isEmpty`,
@@ -9957,13 +9959,28 @@ and Layer 1–6 characteristic / cascade stack & LKI mana-value reads),
            q .playerOrCreature sourceId).contains target`, log `"The target is
            no longer legal"` and clear via `declineMayThenCore` / `clearPending`;
            and
-         - `.widowMayCounter sourceId exiled`: if `!(g.findObject? exiled).any
-           (fun o => o.zone == .exile)` or `!g.stack.any (fun e => e.isSpell &&
-           g.isLivingOpponentOf q e.controller)`, clear via `declineMayThenCore`
-           / `clearPending`; and
-       - in `.mayAttachEquipment q hostId sourceId`, `.maySacrificeAnotherBolg q
-         bolgId`, and `.chooseLibraryPlacement q id?` (`Leaving.lean:1265–1304`),
-         when `q != p`:
+         - `.widowMayCounter sourceId exiled` (`ModeledTriggers.lean:82–92`,
+           `FraChoices.lean:1357–1368`, Black Widow's `"You may put a +1/+1
+           counter on Black Widow"` prompt followed by `grantWidowCast`): if
+           `!(sourceId.bind g.findObject?).any (·.isOnBattlefield)`, run the
+           source-gone fallback `let g := g.withOuterContStashed fun g =>
+           (clearPending g).grantWidowCast q exiled; (g, g.pending)` (which logs
+           `"No nonland card was exiled"` if `exiled` is `none` or left exile,
+           or grants the `anyMana` play permission if `exiled` is still in
+           exile); else if `exiled.any (fun id => (g.findObject? id).isNone)`
+           (the exiled card left the game because it was owned by `p`), rewrite
+           to `(g, .fraChoice q (.widowMayCounter sourceId none))`; else `(g,
+           pending)`; and
+       - split `| .mayAttachEquipment q hostId sourceId` and
+         `| .maySacrificeAnotherBolg q bolgId` out of the shared
+         `| .recruitDiscard q | ...` or-pattern at `Leaving.lean:1265–1275` into
+         their own arms (keeping the `q == p` `clearProp` + `declineMayThenCore`
+         handling on each split arm and on the remaining `1266–1275`
+         or-pattern), and in those two arms plus the existing
+         `| .chooseLibraryPlacement q id?` arm at `Leaving.lean:1303–1304`
+         (where `id?` is `some id` for library top/bottom placement and `none`
+         for non-library `beginSpellOr` at `EffectResolution.lean:1229`), when
+         `q != p`:
          - for `.mayAttachEquipment q hostId sourceId`, if `!(g.findObject?
            hostId).any (fun o => o.isOnBattlefield && g.isCreature o &&
            g.controlledBy o q)` or `!(sourceId.bind g.findObject?).any (fun o =>
@@ -9972,9 +9989,16 @@ and Layer 1–6 characteristic / cascade stack & LKI mana-value reads),
          - for `.maySacrificeAnotherBolg q bolgId`, if `!((g.creaturesControlledBy
            q).any (·.id != bolgId))`, clear via `declineMayThenCore` /
            `clearPending`; and
-         - for `.chooseLibraryPlacement q id?`, if `id?.any (fun id =>
-           !(g.findObject? id).any (·.isOnBattlefield))`, log `"The target is no
-           longer legal"` and return `((clearPending g).clearSpellOr, .none)`.
+         - for `.chooseLibraryPlacement q id?`, if `g.spellOrLibrary` (or
+           `id?.isSome`) and `id?.any (fun id => !(g.findObject? id).any
+           (·.isOnBattlefield))`, log `"The target is no longer legal"` and
+           return `((clearPending g).clearSpellOr, .none)`; else if
+           `!g.spellOrLibrary && !g.spellOr.isEmpty && !g.spellOrTargets.isEmpty`
+           (`id? == none`) and all targets in `g.spellOrTargets` have become
+           illegal for `g.spellOr[0]!` (`g.sequenceAllTargetsIllegal
+           g.spellOrController g.spellOr[0]! g.spellOrTargets g.spellOrSource`),
+           log `"The target is no longer legal"` and return `((clearPending
+           g).clearSpellOr, .none)`.
    - In `Decisions.resumePendingReplacement` `.restorePending`
      (`Decisions.lean:763`, the `| _ => openPrompt g` fallback that runs *after*
      `runEndControlExileLoop`, `returnLinkedExileMoves`, and post-departure SBAs
@@ -9986,55 +10010,75 @@ and Layer 1–6 characteristic / cascade stack & LKI mana-value reads),
        (.pending .none))` (since those stack-proposal / stack-trigger mode
        prompts are only redirected when `q` leaves); and
      - for all other prompts reaching `| _ =>`, revalidate `p` against the
-       post-exile / post-SBA game state by binding the prompt chooser `q? :=
-       p.chooserPlayer?` (or inline chooser extraction), passing `dep := match
-       q? with | some q => if g.stillInGame q then ⟨g.players.size⟩ else q |
-       none => ⟨g.players.size⟩` to `let (g, nextP) :=
-       g.redirectPendingAfterLeave dep (pendingOverride := some p)`, and if
-       `g.pending == .none && nextP != .none` calling `openPromptWith g nextP`
-       else calling `resumePoppedIfNoPrompt g` (so any permanent exiled by
-       `runEndControlExileLoop` or destroyed/sacrificed by post-departure SBAs
-       re-triggers the same `q != p` revalidation and auto-advance logic as
-       `redirectPendingAfterLeave`).
+       post-exile / post-SBA game state by finding a departed player `let dep?
+       := (g.players.find? (fun pl => pl.leftTheGame || pl.lost)).map (·.id)`:
+       if `dep?` is `some dep`, run `let (g, nextP) :=
+       g.redirectPendingAfterLeave dep (pending := p)` (`Leaving.lean:548–549`,
+       since any chooser `q` with `g.stillInGame q` satisfies `q != dep` while
+       any departed chooser matches `dep` or has already been cleared), and if
+       `nextP != .none` call `openPromptWith g nextP` else call
+       `resumePoppedIfNoPrompt g` (since `redirectPendingAfterLeave` returns the
+       surviving or rewritten prompt in `nextP` without clearing `g.pending`
+       when keeping/rewriting a prompt, whereas when it clears a prompt it
+       returns `nextP == .none` and may have queued a replacement or post-step
+       continuation onto `g.pending` / `g.pendingReplacement`; if `dep?` is
+       `none`, call `openPrompt g`).
 2. Complete `ContinuationFrame` entry guards across `Triggers.beginScry` /
    `scryThenDraw`, `ResolutionHelpers.beginSurveil`, `Chapters`, `FraResolve`,
    `FrcResolve`, `EffectResolution.beginMay` / `beginSpellOr`, and
    `ModeledTriggers.beginUnlessPays` (§2.1, §2.5, §2.9, §3.2):
-   - In `Triggers.beginScry` (`Triggers.lean:621`) and
-     `ResolutionHelpers.beginSurveil` (`ResolutionHelpers.lean:261`), push a
-     `ContinuationFrame` when `g.continuations.isEmpty` (`let g := if
-     g.continuations.isEmpty then g.change (.pushContinuationFrame {}) else g`)
-     before writing `.scryCards` / `.pending (.scry ..)` or
-     `.surveilReturnMvAtMost` / `.surveilReturnNoncreatureNonland` / `.scryCards`
-     / `.pending (.surveil ..)` onto `topFrame` (`modifyTopFrame`,
-     `Core.lean:174–177`, so direct/test/Saga/chapter calls when
-     `g.continuations` is empty do not drop `scryCards` or surveil frame state),
-     and in `Decisions.lean:1994, 2046` (`scry` and `surveil`), call
-     `g.popContinuationFrameIfIdle` when `resumePendingAfterScry` finishes with
-     `g.pending == .none && g.pendingReplacement.isNone && g.afterRandom ==
-     .none`; and in `Triggers.scryThenDraw` (`Triggers.lean:625–632`), wrap the
-     body in `if g.continuations.isEmpty then g.withContinuationFrame ... else
-     ...` so `.scryFollowUpDraw drawCount` (`629`) is never dropped when
-     `scryThenDraw` is called with `g.continuations.isEmpty`.
+   - In `Triggers.beginScry` (`Triggers.lean:621`), push a `ContinuationFrame`
+     when `g.continuations.isEmpty` (`let g := if g.continuations.isEmpty then
+     g.change (.pushContinuationFrame {}) else g`) before `g.changes #[.pending
+     (.scry p count n), .surveilReturnMvAtMost none]`; in
+     `Triggers.scryThenDraw` (`Triggers.lean:625–632`), push
+     `.pushContinuationFrame {}` when `g.continuations.isEmpty` at the top of
+     `scryThenDraw` before `g.change (.pendingDrawAfterScry (some (p, drawN)))`
+     (`626`) and `g.beginScry p scryN` (`627`), and in the `| .none =>`
+     immediate-completion branch (`629–632`), call `g.popEmptyContinuationFrames`
+     (`Decisions.lean:213`, moved to `Core.lean`) after `g.draw p drawN` (`631`)
+     when `g.pending == .none` (while the `| _ => g` branch finishes via
+     `Decisions.finishScry` at `Decisions.lean:2949–2954` → `finishLibraryLook`
+     at `1939–1940` → `finishLibraryLookCore` at `1910–1936` →
+     `finishAndGrantPriority` at `160`, which calls
+     `popEmptyContinuationFrames`); and in `ResolutionHelpers.beginSurveil`
+     (`ResolutionHelpers.lean:261`), push `.pushContinuationFrame {}` when
+     `g.continuations.isEmpty` before `g.change (.pending (.surveil p count n))`
+     so `.surveilReturnMvAtMost` / `.surveilReturnNoncreatureNonland` and
+     follow-up state on `topFrame` (`modifyTopFrame`, `Core.lean:174–177`) are
+     preserved until `Decisions.finishSurveil` (`Decisions.lean:2974–2979`) →
+     `finishLibraryLook` (`1939–1940`) → `finishAndGrantPriority` (`160`) pops
+     empty continuation frames via `popEmptyContinuationFrames` (`213`).
    - In `Chapters.treasureThenDragonCreateDragon` (`Chapters.lean:120`) and the
      `| some ch =>` branch of `Chapters.applyChapterEffect`
-     (`Chapters.lean:201–328`), `FraResolve.applyFra` (`FraResolve.lean:358`),
+     (`Chapters.lean:201–293`), `FraResolve.applyFra` (`FraResolve.lean:358`),
      and `FrcResolve.applyFrc` (`FrcResolve.lean:389`), wrap execution in `if
      g.continuations.isEmpty then g.withContinuationFrame fun g => ... else ...`
-     (matching `EffectResolution.applyEffect` at `EffectResolution.lean:1525`
-     and `TriggeredAbilities.applyTriggeredAbility` at
-     `TriggeredAbilities.lean:4647`) so frame-local state (`.createdTokensThisWay`,
+     (matching `EffectResolution.applyUnified` at `EffectResolution.lean:1511–1516`,
+     `EffectResolution.applyEffect` at `2224–2228`, and
+     `TriggeredAbilities.applyTriggeredAbility` at
+     `TriggeredAbilities.lean:4647`, where `withContinuationFrame` at
+     `Core.lean:11086` automatically pops the frame when `pending == .none &&
+     afterRandom == .none`) so frame-local state (`.createdTokensThisWay`,
      `.stashedCause`, `.surveilReturnMvAtMost`, `.handDiscardedThisWay`,
      `.pendingReplacement`, etc.) is always backed by a `ContinuationFrame`.
-   - In `EffectResolution.beginMay` (`EffectResolution.lean:1189`),
-     `EffectResolution.beginSpellOr` (`EffectResolution.lean:1214, 1228`), and
-     `ModeledTriggers.beginUnlessPays` (`ModeledTriggers.lean:1022`), push a
-     `ContinuationFrame` when `g.continuations.isEmpty` before writing
-     `.mayOnAccept` / `.mayOnDecline` / `.mayContext`, `.spellOrEffect` /
-     `.spellOrTargets` / `.spellOrSourceId`, or `.unlessPaysQueue` onto
-     `topFrame`, and call `g.popContinuationFrameIfIdle` when `mayResolve`,
-     `chooseLibraryPlacement`, or `flushUnlessPays` finishes with no pending
-     work (`Decisions.lean:1803, 1823, 1852`, `ModeledTriggers.lean:994`).
+   - In `EffectResolution.beginMay` (`EffectResolution.lean:1189–1195`, which
+     writes `.pending (.mayResolve controller)`, `.mayEffect (some inner)`,
+     `.mayController controller`, `.mayTargets targets`, and `.maySource
+     sourceId`), `EffectResolution.beginSpellOr`
+     (`EffectResolution.lean:1214–1223, 1228–1235`, which writes `.pending
+     (.chooseLibraryPlacement ...)`, `.spellOr ...`, `.spellOrController
+     controller`, `.spellOrTargets targets`, `.spellOrLibrary ...`, and
+     `.spellOrSource sourceId`), and `ModeledTriggers.beginUnlessPays`
+     (`ModeledTriggers.lean:997–1030`, where lines `1023–1029` write `.pending
+     (.payOrLetCounter payer n spellId?)`, `.unlessPaysInstead (some inner)`,
+     `.unlessPaysController controller`, `.unlessPaysTargets targets`,
+     `.unlessPaysSource sourceId`, and `.unlessPaysDue false`), push a
+     `ContinuationFrame` when `g.continuations.isEmpty` before those `g.changes`
+     calls (their completion paths `acceptMay` at `Decisions.lean:3331`,
+     `decline` at `3809`, `chooseSpellOr` / `chooseLibrarySide` at `3386` /
+     `3416`, and `flushUnlessPays` at `189` finish via `finishAndGrantPriority`,
+     which calls `popEmptyContinuationFrames` at `Decisions.lean:160, 213`).
 3. Fix post-pause arrival logging order across `.chooseReplacement` and complete
    remaining departed-player `stillInGame` guards (§2.5, §3.1, §3.4, CR 616.1 /
    800.4a):
@@ -10046,24 +10090,30 @@ and Layer 1–6 characteristic / cascade stack & LKI mana-value reads),
      - in `Choices.exileTopPlayIfYouControlSubtypeLoop` (`Choices.lean:271–283`),
        process `movedId?` (`273–282`) *before* `if !g.stillInGame p then return
        g` (`271`), gating `g.createEffect (.playPermission moved.id { player :=
-       p, faceDownExile := true, requiresControlledSubtype := some subtype }
-       .untilEndOfTurn) (cause := cause)` on `g.stillInGame p` while still
-       logging `s!"{(g.player p).name} exiles a card face down"` when
+       p, whileExiled := true, requireSubtype := some subtype, faceDown := true
+       }) (cause := cause?)` (`Choices.lean:276–281`) on `g.stillInGame p` while
+       still logging `s!"{(g.player p).name} exiles a card face down"` when
        `followMovedToZone? fid (· == .exile)` is `some moved`;
      - in `Choices.finishGrimaDirectCast` (`Choices.lean:325–336`), log
        `s!"{(g.player controller).name} casts {g.name moved} as the ability
        resolves"` whenever `followMovedToZone? fromId (· == .stack)` is `some
        moved` (without gating that arrival log on `g.stillInGame controller`);
-     - in `Library.moveIdsInOrderLoop` (`Library.lean:260–292`), update
-       `placedCount` from `prevLibraryMoved` (`264–269`) *before* checking
-       `dest`, and when `dest` is `.library p | .hand p | .graveyard p |
-       .outside p` and `!g.stillInGame p`, emit `log` if `!log.isEmpty &&
-       placedCount > 0` before returning `g`;
+     - in `Library.moveIdsInOrderLoop` (`Library.lean:254–308`), thread
+       `placedCount` across non-library `.chooseReplacement` pauses as well
+       (passing `placed` instead of `0` at line `304` and tracking `prevMoved :
+       Option (ObjectId × Zone)` for all `dest` zones so `placedCount` is
+       incremented at `264–269` whenever the card that paused before
+       `.chooseReplacement` arrived in `dest`), update `placedCount` *before*
+       checking `dest` (`260–262`), and when `dest` is `.library p | .hand p |
+       .graveyard p | .outside p` and `!g.stillInGame p`, emit `log` if
+       `!log.isEmpty && placedCount > 0` before returning `g`;
      - in `Decisions.runPostStep` `.logPutsIntoHand revealer fromId cardName`
        (`Decisions.lean:1323–1326`), log `s!"{(g.player revealer).name} puts
        {cardName} into their hand"` whenever `(g.followMovedToZone? fromId (· ==
        .hand revealer)).isSome` (without gating on `g.stillInGame revealer`,
-       matching `.logRevealedToHand` at `1276–1281`); and
+       matching `Choices.exileUntilInstantOrSorceryLoop` at `Choices.lean:352–354`
+       and `ResolutionHelpers.movePublicCardsToHandLoop` at
+       `ResolutionHelpers.lean:339–343`); and
      - in `Decisions.runPostStep` `.grantPlayUntilEndOfNextTurn p cardId cause`
        (`Decisions.lean:1593–1600`), match `g.followMovedToZone? cardId (· ==
        .exile)` first, logging `s!"{(g.player p).name} exiles {g.name moved}"`
@@ -10136,35 +10186,36 @@ and Layer 1–6 characteristic / cascade stack & LKI mana-value reads),
        1130–1140, 1150–1157, 1167–1180, 1182–1189`, returning `g` when the
        revealing player has left); and
      - `Decisions.surveilMoveLoop` & `finishSurveilPostMove`
-       (`Decisions.lean:1944–1982`, logging `pendingCard` first and returning
-       `g.change (.scryFollowUpDraw 0)` when `!g.stillInGame p`),
-       `.beginDiscardThenStun` (`1058–1064`, returning `g` when `!g.stillInGame
-       controller`), `.addPlusOnesForLoggedDiscards` (`1071–1075`, returning `g`
-       when `!g.stillInGame p`), and `.drawOneThenPlusOnesForDiscards`
-       (`1249–1254`, returning `g` when `!g.stillInGame p`).
-4. Complete CR 608.2h `.equalSourceToughness` / `TriggerRead` /
-   `causeAndSourcePT?` / `.hulklingCompare` LKI propagation, remaining Layer 1–6
-   characteristic reads (`eo.name`, `g.baseCard`, `g.name`, `g.nameWithToken`,
-   `g.isCreature`, `g.types`, `g.isInstantOrSorcery`, `g.isPlaneswalker`), and
-   unused `GameObject` printed-helper retirement (§2.2, §2.3, §2.6, §2.10, §3.5,
-   §3.7, CR 201 / 205 / 608.2h / 613.1):
+       (`Decisions.lean:1944–1982`, returning `g` immediately in
+       `surveilMoveLoop` at `1944` when `!g.stillInGame p`, and in
+       `finishSurveilPostMove` at `1960–1982`, logging `s!"{(g.player p).name}
+       puts {card.name} into their graveyard (surveil)"` at `1966` when
+       `followMovedToZone? fromId (· == Zone.graveyard p)` is `some gyObj` and
+       then returning `g` when `!g.stillInGame p` before checking `returnToHand`
+       or moving `gyObj.id` to `.hand p`, while `finishLibraryLookCore` at
+       `1928–1932` already checks `if g.stillInGame q` for
+       `pendingDrawAfterScry`), `.beginDiscardThenStun` (`1058–1064`, returning
+       `g` when `!g.stillInGame controller`), `.addPlusOnesForLoggedDiscards`
+       (`1071–1075`, returning `g` when `!g.stillInGame p`), and
+       `.drawOneThenPlusOnesForDiscards` (`1249–1254`, returning `g` when
+       `!g.stillInGame p`).
+4. Complete CR 608.2h `.equalSourceToughness` / `TriggerRead` LKI propagation,
+   remaining Layer 1–6 characteristic reads (`eo.name`, `g.baseCard`, `g.name`,
+   `g.nameWithToken`, `g.isCreature`, `g.types`, `g.isInstantOrSorcery`,
+   `g.isPlaneswalker`), and unused `GameObject` printed-helper retirement (§2.2,
+   §2.3, §2.6, §2.10, §3.5, §3.7, CR 201 / 205 / 608.2h / 613.1):
    - In `TriggerArgs.triggerInt` `.equalSourceToughness`
      (`TriggerArgs.lean:389–395`), replace the manual `sourceId.bind
      g.findObject?` match with `some (g.sourcePTAtResolution sourceId
-     ctx.lastKnownPower ctx.lastKnownToughness).2` (matching `.equalSourcePower`
-     at `388` so event-log `lastKnownToughnessOf?` and `snapshotToughness`
-     fallbacks are used when `src` left the battlefield, CR 608.2h); thread
-     `(lastKnownToughness : Option Int := none)` through
+     ctx.lastKnownPower ctx.lastKnownToughness).2` (`ResolutionEffects.lean:521`,
+     matching `.equalSourcePower` at `388` so event-log `lastKnownToughnessOf?`
+     and `snapshotToughness` fallbacks are used when `src` left the battlefield,
+     CR 608.2h); and thread `(lastKnownToughness : Option Int := none)` through
      `TriggeredAbilities.triggerIfHolds` (`TriggeredAbilities.lean:315, 322,
      335, 567, 640, 4739, 4963, 4972, 4979, 5656`), `applyTriggerDamage` (`981,
      1104–1105, 1148–1149, 4658`), `applyPutCounters` (`1290, 1494–1495,
      1503–1504, 4840`), `applyLoseLife` (`3816, 3839–3840, 4767–4768, 5151`),
-     and `applyGainLife` (`3861, 3893–3894, 4770–4771, 4821–4822`); and in
-     `TriggeredAbilities.causeAndSourcePT?` (`TriggeredAbilities.lean:303, 306`)
-     and `Chapters.triggerInterveningHolds` `.hulklingCompare`
-     (`Chapters.lean:356`), fall back to `g.snapshotPower other` /
-     `g.snapshotToughness other` when `other` is off the battlefield and
-     `lastKnownPowerOf?` / `lastKnownToughnessOf?` is `none`.
+     and `applyGainLife` (`3861, 3893–3894, 4770–4771, 4821–4822`).
    - Replace `eo.printed.map (·.name)` with `some eo.name` in
      `Tokens.logCreatedTokenBatchSummary` (`Tokens.lean:893`, so token batch
      summaries use the created token's Layer 1 / copiable `EventObject.name`
@@ -10177,15 +10228,26 @@ and Layer 1–6 characteristic / cascade stack & LKI mana-value reads),
      `(obj.adventurerCard.getD obj.printed).name` with `(obj.adventurerCard.map
      (·.name)).getD (g.name obj)` in `SpellResolution.lean:443`, and replace raw
      `g.baseCard` reads with layered `Game` queries in `Core.lean:2941`
-     (`g.isCreature o` in `attach`), `Core.lean:6179` (`(g.types o).isEmpty` in
-     `objectManaValue`), `Core.lean:6470–6471` (`g.isInstantOrSorcery card` and
-     `g.name card == g.name o`), `Core.lean:6631–6632` (`g.isCreature o ||
-     g.isPlaneswalker o`), `Core.lean:11624` (`g.name`), and `Turns.lean:34`
-     (`g.isCreature o` in `clearSummoningSickness`).
-   - Replace remaining `o.nameWithToken` / `wt.source.nameWithToken` / `o.name`
-     reads in `Mtg/Demo/Render.lean` (`150, 254, 256, 608, 771, 783, 959, 1156,
+     (`g.isCreature c` instead of `(g.baseCard c).isCreature` in
+     `gyCreatureCards`), `Core.lean:6179` (`g.types o` instead of `(g.baseCard
+     o).types` in `graveyardCardTypeCount`), `Core.lean:6470–6471`
+     (`g.isInstantOrSorcery card` instead of `let bc := g.baseCard card;
+     bc.isInstant || bc.isSorcery` in `instantSorceryInGraveyard`),
+     `Core.lean:6631–6632` (`g.isCreature c || g.isPlaneswalker c` instead of
+     `let bc := g.baseCard c; bc.isCreature || bc.isPlaneswalker` in
+     `.powerPerCreatureAndPlaneswalkerCard`), `Core.lean:11624` (`g.name o`
+     instead of `(acc.baseCard o).name` in `restoreCopiesWhere`), and
+     `Turns.lean:34` (`acc.name o` instead of `(acc.baseCard o).name` in
+     `expireEffectsByDuration`).
+   - Thread `(g : Game)` into `printedFace` (`Render.lean:251`, used at `253,
+     254, 256`), `printedCardLine` (`264`, called from `handLine` at `270` and
+     `exileCardLine` at `298`, updating `RenderTests.lean:114, 122, 133, 154`),
+     and `waitingTriggerLine` (`606`, used at `608` and called from
+     `triggerOrderBlock` at `618`, updating `RenderTests.lean:134, 461`) so all
+     `o.nameWithToken` / `wt.source.nameWithToken` / `o.name` reads in
+     `Mtg/Demo/Render.lean` (`150, 253, 254, 256, 608, 771, 783, 959, 1156,
      1158`) and remaining `GameObject.name` reads on zone-moving/non-battlefield
-     objects in `Mtg/Engine/Game/` with `g.nameWithToken` / `g.name`, and delete
+     objects in `Mtg/Engine/Game/` use `g.nameWithToken` / `g.name`, and delete
      the remaining unused printed-characteristic helpers on `GameObject` in
      `Object.lean` (`GameObject.types` at `141–142`, `GameObject.subtypes` at
      `146–147`, `GameObject.supertypes` at `151–152`, `GameObject.typeLine` at
@@ -10202,12 +10264,11 @@ revalidation & `mayThenDrop > 0` `declineMayThenCore` cleanup,
 `scryThenDraw` / `beginSurveil` / `Chapters` / `FraResolve` / `FrcResolve` /
 `beginMay` / `beginSpellOr` / `beginUnlessPays` `ContinuationFrame` guards,
 post-pause arrival logging order & departed-player `stillInGame` guards, and
-`.equalSourceToughness` / `TriggerRead` / `.hulklingCompare` LKI & Layer 1–6
-characteristic reads), `Abilities.lean`, `Attach.lean`, `Death.lean`,
-`Destroy.lean`, `Effects.lean`, `Elves.lean`, `EnterOrAttack.lean`,
-`Equipment.lean`, `Leaving.lean`, `Modes.lean`, `PutCounters.lean`,
-`MshOracleTests.lean`, `MshOracleTests2.lean`, `OracleRulingTests.lean`,
-`RenderTests.lean`.
+`.equalSourceToughness` / `TriggerRead` LKI & Layer 1–6 characteristic reads),
+`Abilities.lean`, `Attach.lean`, `Death.lean`, `Destroy.lean`, `Effects.lean`,
+`Elves.lean`, `EnterOrAttack.lean`, `Equipment.lean`, `Leaving.lean`,
+`Modes.lean`, `PutCounters.lean`, `MshOracleTests.lean`,
+`MshOracleTests2.lean`, `OracleRulingTests.lean`, `RenderTests.lean`.
 
 Final check (after Phase 31): `lake build`, `lake exe mtg-demo`,
 `lake exe oracle-roundtrip`, no `EventCause.unclassified` constructor, no
