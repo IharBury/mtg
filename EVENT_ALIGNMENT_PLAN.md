@@ -10686,10 +10686,13 @@ object-referencing `FraChoice` revalidation & `beginMayDiscardDraw` /
          concession mid-resolution or mid-proposal tears down active resolving
          stack entries, `ContinuationFrame`s, and open prompts/proposals (CR
          104.1 / 104.3a / 810.8a);
-       - `Entering.receivePriority` (`Entering.lean:382–386`): change `if
-         g.pending == .none && g.afterRandom == .none then
+       - `Entering.receivePriority` (`Entering.lean:382–386, 395, 416, 437`):
+         change `if g.pending == .none && g.afterRandom == .none then
          g.completeActiveResolutions` (`383–384`) to `if g.over || (g.pending ==
-         .none && g.afterRandom == .none) then g.completeActiveResolutions`;
+         .none && g.afterRandom == .none) then g.completeActiveResolutions`, and
+         replace `if g.over then g` after `checkSBA` (`395`) and after
+         `putTriggerBatch` (`416, 437`) with `if g.over then
+         g.completeActiveResolutions`;
        - `Decisions.finishConcedePriority` (`Decisions.lean:244`),
          `Decisions.concedePlayersLoop` (`Decisions.lean:308–309, 315–316,
          346–347`), and `Decisions.finishHostRandom` (`Decisions.lean:2821–2828`):
@@ -10781,34 +10784,47 @@ object-referencing `FraChoice` revalidation & `beginMayDiscardDraw` /
      - in `Leaving.redirectPendingAfterLeave` `| .fraChoice q choice =>`:
        - in `.chooseCards ids max purpose` (`Leaving.lean:1282–1286`), include
          `.stashedCause none` in the `q == p` clear;
-       - add an `.orderLibraryBottom ids` arm (`EffectResolution.lean:2310–2315`):
-         when `q == p`, clear `.chooseModesRest none, .stashedCause none` +
-         `clearProp` and `declineMayThenCore` / `clearPending`; when `q != p`,
-         filter `let liveIds := ids.filter (fun id => (g.findObject? id).any
-         (·.zone == .library q))`; if `liveIds.size ≤ 1`, inside
-         `withOuterContStashed` read `let cause := g.stashedCause`, clear
-         `.chooseModesRest none, .stashedCause none` + `declineMayThenCore` /
-         `clearPending`, and when `!liveIds.isEmpty` run `g.moveIdsInOrder
-         liveIds (.library q) (cause := cause) (log := s!"{(g.player q).name}
-         puts the rest on the bottom of their library")`, returning `(g,
-         g.pending)`; else if `liveIds != ids`, return `(g, .fraChoice q
-         (.orderLibraryBottom liveIds))`; else `(g, pending)`; and
-       - add a `.searchLibrary .. | .maySearchLibrary ..` arm
-         (`LibrarySearch.lean:227–242`, `EffectResolution.lean:531–539`): when
+       - add an `.orderLibraryBottom ids` arm (`EffectResolution.lean:2310–2315`,
+         `FraChoices.lean:947, 952`): when `q == p`, clear `.chooseModesRest
+         none, .stashedCause none` + `clearProp` and `declineMayThenCore` /
+         `clearPending`; when `q != p`, filter `let liveIds := ids.filter (fun
+         id => (g.findObject? id).any (·.zone == .library q))`; if
+         `liveIds.size ≤ 1`, inside `withOuterContStashed` read `let cause :=
+         g.stashedCause.orElse (fun _ => liveIds[0]?.bind g.lastMoveCauseOf?)`,
+         clear `.chooseModesRest none, .stashedCause none` +
+         `declineMayThenCore` / `clearPending`, and when `!liveIds.isEmpty` run
+         `g.moveIdsInOrder liveIds (.library q) (cause := cause) (log :=
+         s!"{(g.player q).name} puts the rest on the bottom of their
+         library")`, returning `(g, g.pending)`; else if `liveIds != ids`,
+         return `(g, .fraChoice q (.orderLibraryBottom liveIds))`; else `(g,
+         pending)`; and
+       - add a `.searchLibrary eligible count dest after kind |
+         .maySearchLibrary eligible count dest after kind` arm
+         (`Pending.lean:414–419`, `LibrarySearch.applyWaitingPlusOne` at
+         `LibrarySearch.lean:238–242`, `LibrarySearch.shuffleSearch` at
+         `LibrarySearch.lean:232–235`, `EffectResolution.lean:531–539`): when
          `q == p`, capture `let waitingPlusOne := g.plusOneAfterSearch`, clear
          `#[.chooseModesRest none, .untapSearchedIfLands none,
          .plusOneAfterSearch none] ++ clearProp` + `declineMayThenCore` /
          `clearPending`, and if `waitingPlusOne` is `some (cid, ctrl, srcId)`
-         with `ctrl != p && g.stillInGame ctrl`, chain `.finishPostStep` (via a
-         new `PostStep.applyPlusOneAfterSearch (id : ObjectId) (controller :
+         with `ctrl != p && g.stillInGame ctrl`, chain `.finishPostStep
+         (.applyPlusOneAfterSearch cid ctrl srcId)` (via a new
+         `PostStep.applyPlusOneAfterSearch (id : ObjectId) (controller :
          PlayerId) (sourceId : Option ObjectId)` constructor in `Event.lean`
          handled in `Decisions.runPostStep` by `g.addPlusOneIfStillCreature id
-         controller sourceId`, `Pumps.lean:274`) inside `withOuterContStashed`
-         so a surviving spell controller still places their post-search `+1/+1`
-         counter when target player `p` leaves during the search; and when `q !=
-         p`, if `g.plusOneAfterSearch.any (fun (_, ctrl, _) => ctrl == p ||
-         !g.stillInGame ctrl)`, clear `(g.change (.plusOneAfterSearch none),
-         pending)`, else return `(g, pending)`.
+         controller sourceId`, `Pumps.lean:274`, matching
+         `LibrarySearch.applyWaitingPlusOne` at `LibrarySearch.lean:238–242`)
+         inside `withOuterContStashed` so a surviving spell controller still
+         places their post-search `+1/+1` counter when target player `p` leaves
+         during the search; and when `q != p`, let `g := if
+         g.plusOneAfterSearch.any (fun (_, ctrl, _) => ctrl == p ||
+         !g.stillInGame ctrl) then g.change (.plusOneAfterSearch none) else g`,
+         filter `let liveEligible := eligible.filter (fun id => (g.findObject?
+         id).isSome)` to drop vanished cards owned by departed `p`, and return
+         `(g, if liveEligible != eligible then .fraChoice q (match choice with
+         | .searchLibrary .. => .searchLibrary liveEligible count dest after
+         kind | _ => .maySearchLibrary liveEligible count dest after kind) else
+         pending)`.
 2. Revalidate already-announced modes `chosen` and guard departed prompt seats
    in `Decisions.runPostStep`, and complete `Decisions.resumePendingReplacement`
    `.restorePending` for proposal-cost prompts, 2HG attacker
