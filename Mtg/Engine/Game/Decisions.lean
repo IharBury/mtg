@@ -479,9 +479,6 @@ partial def resumePendingReplacement (g : Game) (pr : PendingReplacement)
       | .restorePending (.chooseTeamworkCreatures ..) ..
       | .restorePending (.sacrificePermanent ..) ..
       | .restorePending (.discardForAdditionalCost ..) ..
-      | .finishPostStep (.resumeProposalCostAfterLeave ..)
-      | .finishPostStep (.resumeChooseModeAfterLeave ..)
-      | .finishPostStep (.resumeChooseTargetsAfterLeave ..)
       | .completeActivation ..
       | .finishProposedSpellCosts .. =>
         g.proposedSpell.isSome
@@ -1667,38 +1664,44 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
       if g.proposedSpell.any (·.caster == p) then
         g.reverseProposedSpell (resumeContinuation := true)
       else g.afterTriggerTargetsChosen
+    else if g.proposedSpell.any (fun prop => (g.findObject? prop.spellId).isNone) then
+      if g.proposedSpell.any (·.caster == p) then
+        g.reverseProposedSpell (resumeContinuation := true)
+      else g
     else
       match g.objectAwaitingTargets with
       | none =>
-        if g.proposedSpell.any (·.caster == p) then
-          g.reverseProposedSpell (resumeContinuation := true)
+        if g.proposedSpell.isSome then g
         else g.afterTriggerTargetsChosen
       | some obj =>
-        if g.proposedSpell.any (·.caster != p) then g
-        else if g.proposedSpell.isNone &&
+        if g.proposedSpell.isNone &&
             (g.stack.find? (·.objectId == obj.id)).any (·.controller != p) then
           g.afterTriggerTargetsChosen
         else
-          let hasLegal := !(g.legalProposedTargets p obj).isEmpty
-          let allowZero :=
-            match obj.triggeredAbility with
-            | some ab => ab.allowsZeroTargets || obj.abilityEffect.any (·.allowsZeroTargets)
-            | none =>
-              match g.currentSpellEffect obj with
-              | some e => e.allowsZeroTargets
-              | none => obj.abilityEffect.any (·.allowsZeroTargets)
-          let canDeclineOrPick :=
-            hasLegal || g.canSkipCurrentOptionalSlot obj || g.canFinishOptionalTargets obj || allowZero
-          if canDeclineOrPick then
-            g.change (.pending (.chooseTargets p))
-          else if g.proposedSpell.isSome then
+          let caster := (g.proposedSpell.map (·.caster)).getD p
+          if !g.stillInGame caster then
             g.reverseProposedSpell (resumeContinuation := true)
-              (extraLog := some s!"{g.name obj} has no legal target and can't be cast")
           else
-            let objName := g.name obj
-            let g := g.ceaseToExist obj.id (cause := some (.gameRule .triggeredAbility))
-              |>.logMsg s!"{objName}'s triggered ability has no legal target and is removed from the stack (CR 603.3d)"
-            g.afterTriggerTargetsChosen
+            let hasLegal := !(g.legalProposedTargets caster obj).isEmpty
+            let allowZero :=
+              match obj.triggeredAbility with
+              | some ab => ab.allowsZeroTargets || obj.abilityEffect.any (·.allowsZeroTargets)
+              | none =>
+                match g.currentSpellEffect obj with
+                | some e => e.allowsZeroTargets
+                | none => obj.abilityEffect.any (·.allowsZeroTargets)
+            let canDeclineOrPick :=
+              hasLegal || g.canSkipCurrentOptionalSlot obj || g.canFinishOptionalTargets obj || allowZero
+            if canDeclineOrPick then
+              g.change (.pending (.chooseTargets caster))
+            else if g.proposedSpell.isSome then
+              g.reverseProposedSpell (resumeContinuation := true)
+                (extraLog := some s!"{g.name obj} has no legal target and can't be cast")
+            else
+              let objName := g.name obj
+              let g := g.ceaseToExist obj.id (cause := some (.gameRule .triggeredAbility))
+                |>.logMsg s!"{objName}'s triggered ability has no legal target and is removed from the stack (CR 603.3d)"
+              g.afterTriggerTargetsChosen
   | .resumeTriggerModesAfterLeave p objectId remaining chosen =>
     if !g.stillInGame p then g.finishFraChoice
     else
@@ -1795,7 +1798,7 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
       g.reverseProposedSpell (resumeContinuation := true)
     else g
   | .runAfterRandom after =>
-    g.runInGameAfterRandom after
+    g.runInGameAfterRandom after (guardDeparted := true)
   | .grantLifelinkUntilEot cardId cause =>
     match g.findObject? cardId with
     | some cur =>
@@ -2995,18 +2998,19 @@ partial def finishHostRandom (g : Game) : Game :=
 
 /-- Execute an in-game `AfterRandom` continuation (used by `finishAfterRandom`
 and `PostStep.runAfterRandom`). -/
-partial def runInGameAfterRandom (g : Game) (after : AfterRandom) : Game :=
-  if after.player?.any (fun r => !g.stillInGame r) then g
-  else
-    match after with
-    | .none => g
-    | .draw p n => g.draw p n
-    | .gainLife p n => g.gainLife p n
-    | .revealRandomCreatureThenBottom _ _ => g
-    | .putOnTop p ids => g.putIdsOnTop p ids
-    | .beholdUntap p landId subtype => g.beholdAndMaybeUntap p landId subtype
-    | .plusOne id ctrl srcId => g.addPlusOneIfStillCreature id ctrl srcId
-    | .discardRandom p =>
+partial def runInGameAfterRandom (g : Game) (after : AfterRandom)
+    (guardDeparted : Bool := false) : Game :=
+  match after with
+  | .none => g
+  | .draw p n => if guardDeparted && !g.stillInGame p then g else g.draw p n
+  | .gainLife p n => if guardDeparted && !g.stillInGame p then g else g.gainLife p n
+  | .revealRandomCreatureThenBottom _ _ => g
+  | .putOnTop p ids => g.putIdsOnTop p ids
+  | .beholdUntap p landId subtype => g.beholdAndMaybeUntap p landId subtype
+  | .plusOne id ctrl srcId => g.addPlusOneIfStillCreature id ctrl srcId
+  | .discardRandom p =>
+    if guardDeparted && !g.stillInGame p then g
+    else
       let hand := (g.player p).hand
       if hand.isEmpty then g
       else if hand.size == 1 then g.discardFromHandRandomly p hand[0]!

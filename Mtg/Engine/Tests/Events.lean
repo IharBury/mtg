@@ -24631,9 +24631,24 @@ private def mustApply33i2 (g : Game) (p : PlayerId) (a : Action) : Game :=
   let gP0TrigAwaiting := gLeftP1.putTriggeredAbilityOnStack p0 p0Bear oppTrig "triggers" (eventCause := some testCause)
   let p0TrigId := gP0TrigAwaiting.stack.back!.objectId
   -- Calling `.resumeChooseTargetsAfterLeave p1` (departed) or `.resumeChooseTargetsAfterLeave p2`
-  -- (living non-controller) does NOT remove `p0`'s trigger or prompt `p1` / `p2`:
+  -- (living non-controller) prompts `p0` via `afterTriggerTargetsChosen` instead of removing `p0`'s trigger:
   let gTargetPostDeparted := (gP0TrigAwaiting.change (.pending .none)).runPostStep (.resumeChooseTargetsAfterLeave p1)
   let gTargetPostWrongSeat := (gP0TrigAwaiting.change (.pending .none)).runPostStep (.resumeChooseTargetsAfterLeave p2)
+  -- When `p0` has an open `proposedSpell`, `.resumeChooseTargetsAfterLeave p2` neither reverses/grants priority
+  -- when `prop.spellId` is gone nor leaves `p0`'s live targeted proposal without `.chooseTargets p0`:
+  let tapSpellDef : CardDef := {
+    name := "P33 Tap Spell"
+    manaCost := ManaCost.empty
+    types := #[.sorcery]
+    spellEffect := some { targeting := .of .creature, resolution := .onPermanent .tap, phrase := "Tap target creature" }
+  }
+  let gTap0 := insertObject gLeftP1 tapSpellDef p0 (.hand p0)
+  let gTapCast := mustApply33i2 gTap0 p0 (.cast (gTap0.player p0).hand.back!)
+  let gTargetOtherPropLive := (gTapCast.change (.pending .none)).runPostStep (.resumeChooseTargetsAfterLeave p2)
+  let vanishedProp : ProposedSpell := { gTapCast.proposedSpell.get! with spellId := ⟨999999⟩ }
+  let gTargetOtherPropGone :=
+    ((gLeftP1.changes #[.proposedSpell (some vanishedProp), .pending .none]).runPostStep
+      (.resumeChooseTargetsAfterLeave p2))
   let gModePostDeparted :=
     ((gLeftP1.change (.pushContinuationFrame {})).runPostStep (.resumeTriggerModesAfterLeave p1 p0TrigId 1 #[]))
   let gUpToPostDeparted :=
@@ -24642,9 +24657,13 @@ private def mustApply33i2 (g : Game) (p : PlayerId) (a : Action) : Game :=
     ((gLeftP1.change (.pushContinuationFrame {})).runPostStep (.resumeHawkeyeModesAfterLeave p1 p0TrigId 1 #[]))
   let departedSeatGuardsOk :=
     (gTargetPostDeparted.findObject? p0TrigId).any (·.zone == .stack) &&
-    gTargetPostDeparted.pending != .chooseTargets p1 &&
+    gTargetPostDeparted.pending == .chooseTargets p0 &&
     (gTargetPostWrongSeat.findObject? p0TrigId).any (·.zone == .stack) &&
-    gTargetPostWrongSeat.pending != .chooseTargets p2 &&
+    gTargetPostWrongSeat.pending == .chooseTargets p0 &&
+    gTargetOtherPropLive.pending == .chooseTargets p0 &&
+    gTargetOtherPropLive.proposedSpell.isSome &&
+    gTargetOtherPropGone.pending == .none &&
+    gTargetOtherPropGone.proposedSpell.isSome &&
     gModePostDeparted.pending == .none && gModePostDeparted.continuations.isEmpty &&
     gUpToPostDeparted.pending == .none && gUpToPostDeparted.continuations.isEmpty &&
     gHkPostDeparted.pending == .none && gHkPostDeparted.continuations.isEmpty
@@ -24797,6 +24816,7 @@ private def mustApply33i2 (g : Game) (p : PlayerId) (a : Action) : Game :=
   mustHold33i2 "2c.restorePendingCompleteOk" restorePendingCompleteOk &&
   mustHold33i2 "2.replay"
     (replayOk33i2 #[gLeftP1, gP0TrigAwaiting, gTargetPostDeparted, gTargetPostWrongSeat,
+      gTargetOtherPropLive, gTargetOtherPropGone,
       gModePostDeparted, gUpToPostDeparted, gHkPostDeparted,
       gModal0, gModalCast, gModalPicked0, gModalAfterLeave,
       gTrigModes0, gTrigModesStack, gTrigModesPicked0, gTrigModesAfterLeave, gTrigModesFinalize0,
@@ -24846,6 +24866,14 @@ private def mustApply33i3 (g : Game) (p : PlayerId) (a : Action) : Game :=
   let stolenVehId := (gStolenVeh0.permanentsOf p0).find? (·.name == "P33 Skiff") |>.get!.id
   let gCrewStolen := mustApply33i3 gStolenVeh0 p0 (.activate stolenVehId 0)
   let gCrewStolenAfterLeave := gCrewStolen.concede p1
+  -- When `.resumeProposalCostAfterLeave` reverses a living caster's proposal inside `.seq first rest`,
+  -- `checkReversal` must NOT drop the stashed pre-leave continuation `rest`:
+  let savedCrewPending := gCrewStolen.pending
+  let (gCrewVehGone, _) := (gCrewStolen.change (.pending .none)).move stolenVehId .exile none (cause := some testCause)
+  let gCrewSeqTail :=
+    gCrewVehGone.resumePendingReplacement
+      (.seq (.finishPostStep (.resumeProposalCostAfterLeave p0 savedCrewPending))
+            (.finishPostStep (.applyPlusOneAfterSearch p0Bear.id p0 none)))
 
   let gOwnVeh0 := addPermanent gBase vehicleDef p0 p0
   let ownVehId := (gOwnVeh0.permanentsOf p0).find? (·.name == "P33 Skiff") |>.get!.id
@@ -24857,6 +24885,8 @@ private def mustApply33i3 (g : Game) (p : PlayerId) (a : Action) : Game :=
     gCrewStolenAfterLeave.pending == .none &&
     gCrewStolenAfterLeave.proposedSpell.isNone &&
     gCrewStolenAfterLeave.stack.isEmpty &&
+    gCrewSeqTail.proposedSpell.isNone &&
+    (gCrewSeqTail.object! p0Bear.id).status.plusOnePlusOne == 1 &&
     (match gCrewOwnAfterLeave.pending with | .fraChoice q (.crew _ vid 2) => q == p0 && vid == ownVehId | _ => false) &&
     gCrewOwnAfterLeave.proposedSpell.isSome
 
@@ -24973,6 +25003,17 @@ private def mustApply33i3 (g : Game) (p : PlayerId) (a : Action) : Game :=
   let p1LibTop := (gBase.player p1).library.back!
   let gLeftP1 := gBase.playerLeavesGame p1
   let gRevealFiltered := gLeftP1.resolveRandomCreatureReveal p0 #[p0Bear.id, p0LibTop, p1LibTop] p0Bear.id
+  -- Surviving creature (`p0Bear`) still gets its `.plusOne` counter when former controller `p1` left,
+  -- in both `finishAfterRandom` and `PostStep.runAfterRandom`, while `PostStep.runAfterRandom` skips
+  -- `.gainLife` for departed `p1`:
+  let gFinishPlusOneDeparted :=
+    ((gLeftP1.change (.pushContinuationFrame {})).change
+      (.afterRandom (.plusOne p0Bear.id p1 none))).finishAfterRandom false
+  let gPostRunPlusOneDeparted :=
+    gLeftP1.runPostStep (.runAfterRandom (.plusOne p0Bear.id p1 none))
+  let p1LifeDeadBefore := (gLeftP1.player p1).life
+  let gPostRunGainDeparted :=
+    gLeftP1.runPostStep (.runAfterRandom (.gainLife p1 5))
   -- `Actions.rawActor` on `.resolveRandom (.orderInto #[] (.outside p2) none)` returns `some p2`:
   let gOrderOutside := gBase.change (.pending (.resolveRandom (.orderInto #[] (.outside p2) none)))
 
@@ -24981,6 +25022,9 @@ private def mustApply33i3 (g : Game) (p : PlayerId) (a : Action) : Game :=
     gShufRunAfter.pending == .none &&
     gShufRunAfter.afterRandom == .none &&
     (gShufRunAfter.object! p0Bear.id).status.plusOnePlusOne == 1 &&
+    (gFinishPlusOneDeparted.object! p0Bear.id).status.plusOnePlusOne == 1 &&
+    (gPostRunPlusOneDeparted.object! p0Bear.id).status.plusOnePlusOne == 1 &&
+    (gPostRunGainDeparted.player p1).life == p1LifeDeadBefore &&
     gShufDropAfter.pending == .resolveRandom (.shuffleLibrary p0) &&
     gShufDropAfter.afterRandom == .none &&
     gChooseObjAuto.pending == .none &&
@@ -24993,10 +25037,11 @@ private def mustApply33i3 (g : Game) (p : PlayerId) (a : Action) : Game :=
   mustHold33i3 "3b.equipWardAndRetargetOk" equipWardAndRetargetOk &&
   mustHold33i3 "3c.norandomRevalOk" norandomRevalOk &&
   mustHold33i3 "3.replay"
-    (replayOk33i3 #[gCrewStolen, gCrewStolenAfterLeave, gCrewOwn, gCrewOwnAfterLeave,
+    (replayOk33i3 #[gCrewStolen, gCrewStolenAfterLeave, gCrewSeqTail, gCrewOwn, gCrewOwnAfterLeave,
       gEquipStolenGone, gEquipOwnKept, gWardSpellGone, gWardPartialUnpayable,
       gTwinOnStack, gRetargetAfterLeave, gCopySlotAfterLeave,
-      gShufRunAfter, gShufDropAfter, gChooseObjAuto, gRevealFiltered, gOrderOutside])
+      gShufRunAfter, gFinishPlusOneDeparted, gPostRunPlusOneDeparted, gPostRunGainDeparted,
+      gShufDropAfter, gChooseObjAuto, gRevealFiltered, gOrderOutside])
 
 end Phase33Item3EventAlignment
 
