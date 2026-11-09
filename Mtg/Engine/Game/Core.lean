@@ -10726,12 +10726,24 @@ def reverseToProposalCheckpointCore? (g : Game)
           liveLibIds := setInLib liveLibIds bid false
         if let some aid := after.id then
           liveLibIds := setInLib liveLibIds aid false
-      | .rules _ (.zone (.created obj _)) _ _
-      | .rules _ (.zone (.ceasedToExist obj)) _ _ =>
+      | .rules _ (.zone (.created obj _)) _ _ =>
         if let some oid := obj.id then
           liveLibIds := setInLib liveLibIds oid false
+      | .rules _ (.zone (.ceasedToExist obj)) cause _ =>
+        if let some oid := obj.id then
+          liveLibIds := setInLib liveLibIds oid false
+        if act?.isNone && cause == .gameRule .triggeredAbility &&
+            !obj.id.any (fun oid => g.proposedSpell.any (·.spellId == oid)) then
+          let (ia, ist) := markIrrev act? st? irrevActs irrevStIdxs
+          irrevActs := ia; irrevStIdxs := ist
       | .engine _ (.materializeObject obj _) =>
         liveLibIds := setInLib liveLibIds obj.id (isLibZone obj.zone)
+      | .rules _ (.cast (.targeted oid ..)) _ _
+      | .rules _ (.cast (.announced oid ..)) _ _
+      | .engine _ (.stackEntry oid _) =>
+        if act?.isNone && !g.proposedSpell.any (·.spellId == oid) then
+          let (ia, ist) := markIrrev act? st? irrevActs irrevStIdxs
+          irrevActs := ia; irrevStIdxs := ist
       | .rules _ (.player (.shuffled ..)) _ _ =>
         let (ia, ist) := markIrrev act? st? irrevActs irrevStIdxs
         irrevActs := ia; irrevStIdxs := ist

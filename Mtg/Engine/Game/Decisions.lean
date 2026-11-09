@@ -1676,8 +1676,16 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
     else
       match g.objectAwaitingTargets with
       | none =>
-        if ownPropNeedsReverse || g.proposedSpell.isSome then
-          if g.pending == .none then g else g.change (.pending .none)
+        let hadVanishedProp :=
+          g.proposedSpell.any (fun prop => (g.findObject? prop.spellId).isNone)
+        let g :=
+          if hadVanishedProp then
+            (if g.pending == .none then g else g.change (.pending .none)).reverseProposedSpell
+              (resumeContinuation := true)
+          else g
+        if (ownPropNeedsReverse || hadVanishedProp) &&
+            (g.over || g.pending != .none || g.afterRandom != .none) then
+          g
         else
           g.afterTriggerTargetsChosen
       | some obj =>
@@ -2880,7 +2888,16 @@ partial def afterTriggerTargetsChosen (g : Game) : Game :=
   | some _ =>
     promptTriggerTargetsIfNeeded (g.change (.pending .none))
   | none =>
-    if g.proposedSpell.isSome then
+    let hadVanishedProp :=
+      g.proposedSpell.any (fun prop => (g.findObject? prop.spellId).isNone)
+    let g :=
+      if hadVanishedProp then
+        (if g.pending == .none then g else g.change (.pending .none)).reverseProposedSpell
+          (resumeContinuation := true)
+      else g
+    if hadVanishedProp && (g.over || g.pending != .none || g.afterRandom != .none) then
+      g
+    else if g.proposedSpell.isSome then
       if g.pending == .none then g else g.change (.pending .none)
     else
       let prio := g.pendingPriority.getD g.activePlayer
