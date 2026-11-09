@@ -448,6 +448,7 @@ multiple instances of the word “target” read `spec.slots` instead of
 restating each slot; such a shape has legal targets only when every required
 slot can be filled at once with targets that respect `kind.distinctSlots` and
 `.twoNonlandsSharingType` (CR 115.1a–d / 115.3 / 700.2a–b). -/
+@[export mtg_game_legal_targets_for_kind]
 def legalTargetsForKind (g : Game) (caster : PlayerId) (kind : EffectTargetKind)
     (sourceId : Option ObjectId := none) : Array Target :=
   if kind.spec.slots.isEmpty then

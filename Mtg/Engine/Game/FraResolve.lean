@@ -225,12 +225,14 @@ def fblthpMoveToHandLoop (g : Game) (controller : PlayerId)
   if let .chooseReplacement .. := g.pending then
     return g.chainPendingReplacement
       (.finishPostStep (.fblthpMoveToHandLoop controller remainingIds cause))
+  if !g.stillInGame controller then
+    return g
   let mut g := g
   for i in [0:remainingIds.size] do
     let id := remainingIds[i]!
     match g.findObject? id with
     | some o =>
-      let name := o.name
+      let name := g.name o
       g := g.logMsg s!"{(g.player controller).name} reveals {name}"
       let (g', _) := g.move id (.hand controller) none (cause := some cause)
       g := g'
@@ -239,6 +241,8 @@ def fblthpMoveToHandLoop (g : Game) (controller : PlayerId)
         if !rem.isEmpty then
           g := g.chainPendingReplacement
             (.finishPostStep (.fblthpMoveToHandLoop controller rem cause))
+        return g
+      if !g.stillInGame controller then
         return g
     | none => pure ()
   return g
@@ -283,33 +287,35 @@ def finishFraExileUntilSourceLeaves (g : Game) (srcId fromId : ObjectId) : Game 
       match g.findObject? srcId with
       | some src => g.name src
       | none => ((g.lastKnownBefore? srcId).map (fun (eo : EventObject) => eo.name)).getD "the source"
-    g.logMsg s!"{moved.name} is exiled until {srcName} leaves the battlefield"
+    g.logMsg s!"{g.name moved} is exiled until {srcName} leaves the battlefield"
 
 /-- Create an exiled card-copy and free-cast permission for an exiled card in
 `uldarosCopiesLoop` (CR 707.12 / 608.3f). -/
 private def makeUldarosExiledCopy (g : Game) (controller : PlayerId)
     (sourceId : Option ObjectId) (exObj : GameObject) (cause? : Option EventCause) : Game :=
-  let g := g.logMsg s!"{exObj.name} is exiled"
-  let printed := g.copiableValues exObj
-  let copyId : ObjectId := ⟨g.nextObjectId⟩
-  let copyTs := g.timestamp + 1
-  let copyObj : GameObject := {
-    id := copyId
-    printed := { printed with
-      isToken := false
-      otherFace := printed.otherFace.map (fun f => { f with isToken := false }) }
-    owner := controller
-    controller := some controller
-    zone := .exile
-    timestamp := copyTs
-    isCopy := true
-  }
-  let g := g.record (GameEvent.created g.turnNumber controller (g.snapshot copyObj)
-    (cause := g.resolveOptionalCause cause? (fallbackSrc := sourceId) (fallbackCtrl := some controller)))
-  g.createEffect (.playPermission copyId {
-    player := controller
-    whileExiled := true, withoutManaCost := true, ignoreTiming := true })
-    (cause := cause?)
+  let g := g.logMsg s!"{g.name exObj} is exiled"
+  if !g.stillInGame controller then g
+  else
+    let printed := g.copiableValues exObj
+    let copyId : ObjectId := ⟨g.nextObjectId⟩
+    let copyTs := g.timestamp + 1
+    let copyObj : GameObject := {
+      id := copyId
+      printed := { printed with
+        isToken := false
+        otherFace := printed.otherFace.map (fun f => { f with isToken := false }) }
+      owner := controller
+      controller := some controller
+      zone := .exile
+      timestamp := copyTs
+      isCopy := true
+    }
+    let g := g.record (GameEvent.created g.turnNumber controller (g.snapshot copyObj)
+      (cause := g.resolveOptionalCause cause? (fallbackSrc := sourceId) (fallbackCtrl := some controller)))
+    g.createEffect (.playPermission copyId {
+      player := controller
+      whileExiled := true, withoutManaCost := true, ignoreTiming := true })
+      (cause := cause?)
 
 /-- Pause-safe inner loop for `.uldarosCopies` inside the active batch. -/
 def uldarosCopiesLoop (g : Game) (controller : PlayerId)
@@ -322,6 +328,8 @@ def uldarosCopiesLoop (g : Game) (controller : PlayerId)
   if let some fid := pendingFromId then
     if let some exObj := g.followMovedToZone? fid (· == .exile) then
       g := makeUldarosExiledCopy g controller sourceId exObj cause?
+  if !g.stillInGame controller then
+    return g
   for i in [0:ids.size] do
     let id := ids[i]!
     if (g.findObject? id).isSome then
@@ -333,31 +341,36 @@ def uldarosCopiesLoop (g : Game) (controller : PlayerId)
           (.finishPostStep (.uldarosCopiesLoop controller sourceId rem cause? (some id)))
       if let some exObj := g.followMovedToZone? id (· == .exile) then
         g := makeUldarosExiledCopy g controller sourceId exObj cause?
+      if !g.stillInGame controller then
+        return g
   return g
 
 /-- Offer `.castCopiesFree` on all exiled card-copies created under `cause?` once
 `uldarosCopiesLoop`'s batch has closed. -/
 def finishUldarosCopiesOffer (g : Game) (controller : PlayerId)
     (cause? : Option EventCause) : Game :=
-  let copies : Array ObjectId :=
-    match cause? with
-    | none => #[]
-    | some c =>
-      g.events.filterMap fun e =>
-        match e with
-        | .rules _ (.zone (.created eo _)) ec _ =>
-          if ec == c && eo.zone == .exile then
-            eo.id.filter fun cid => (g.findObject? cid).any (fun o => o.zone == .exile && o.isCopy)
-          else none
-        | _ => none
-  if copies.isEmpty then g
+  if !g.stillInGame controller then g
   else
-    g.beginFraChoice controller (.castCopiesFree copies 6 copies.size)
-      s!"{(g.player controller).name} may cast copies with total mana value 6 or less"
+    let copies : Array ObjectId :=
+      match cause? with
+      | none => #[]
+      | some c =>
+        g.events.filterMap fun e =>
+          match e with
+          | .rules _ (.zone (.created eo _)) ec _ =>
+            if ec == c && eo.zone == .exile then
+              eo.id.filter fun cid => (g.findObject? cid).any (fun o => o.zone == .exile && o.isCopy)
+            else none
+          | _ => none
+    if copies.isEmpty then g
+    else
+      g.beginFraChoice controller (.castCopiesFree copies 6 copies.size)
+        s!"{(g.player controller).name} may cast copies with total mana value 6 or less"
 
 partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : Resolution)
     (targets : Array Target) (sourceId : Option ObjectId)
     (lastKnownPower : Option Int := none) : Game :=
+  g.withContinuationFrame fun g =>
   let kind := effect.targetKind
   let illegal := some "The target is no longer legal"
   let srcName := g.fraSourceName sourceId
@@ -485,7 +498,8 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
   | .extrapolate =>
     let g := g.materializeSideboard controller
     let names := (g.outsideCards controller).foldl (fun acc o =>
-      if acc.contains o.name then acc else acc.push o.name) (#[] : Array String)
+      let nm := g.name o
+      if acc.contains nm then acc else acc.push nm) (#[] : Array String)
     if names.size < 2 then
       g.logMsg s!"{(g.player controller).name} has no two cards with different names outside the game"
     else
@@ -713,7 +727,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
   | .returnSourceFromGy toHand tapped plusOnes =>
     match sourceId.bind g.findObject? with
     | some o =>
-      if o.zone != .graveyard o.owner then g.logMsg s!"{o.name} is no longer in the graveyard"
+      if o.zone != .graveyard o.owner then g.logMsg s!"{g.name o} is no longer in the graveyard"
       else if toHand then g.returnToHand o.id o.owner
       else
         let (g, newId) := g.returnCardToBattlefield controller o.id plusOnes (tapped := tapped)
@@ -756,7 +770,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
         match g.findObject? id with
         | some o =>
           (g.createEffect (.flashbackUntilEot o.id)).logMsg
-            s!"{o.name} gains flashback until end of turn"
+            s!"{g.name o} gains flashback until end of turn"
         | none => g
       | _ => g) sourceId illegal
   | .mayDiscardThenDamage n =>
@@ -786,7 +800,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
           if entered.isOnBattlefield then
             (g.logMsg s!"{g.name entered} returns to the battlefield tapped").afterPermanentEnters entered
           else g
-      else g.logMsg s!"{card.name} is no longer in the graveyard"
+      else g.logMsg s!"{g.name card} is no longer in the graveyard"
     | none => g.logMsg "The card is no longer in the graveyard"
   | .sacrificeSource =>
     match sourceId.bind g.findObject? with
@@ -861,7 +875,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
       g.withLegalKindTarget controller kind targets (fun g t =>
         match t with
         | Target.card id =>
-          let name := (g.object! id).name
+          let name := g.name (g.object! id)
           let (g, _) := g.move id .exile none
           if let .chooseReplacement .. := g.pending then
             g.chainPendingReplacement (.finishPostStep (.logExiledIfInExile id s!"{name} is exiled"))

@@ -440,7 +440,7 @@ def controlAnotherPlayerOk : Bool :=
   let g := g.setPlayerControl ⟨0⟩ ⟨1⟩
   g.controlsPlayer ⟨0⟩ ⟨1⟩ &&
     g.activePlayer == ⟨0⟩ &&
-    (namedPermanent g "Grizzly Bears").controlledBy ⟨1⟩ &&
+    g.controlledBy (namedPermanent g "Grizzly Bears") ⟨1⟩ &&
     g.resourcesFor ⟨1⟩ == ⟨1⟩ &&
     (let gNext := afterDraw.createEffect (.playerControl ⟨0⟩ ⟨1⟩ true)
      let gOppTurn := gNext.startNextTurnAndBegin
@@ -608,9 +608,9 @@ def quicksilverOpeningHandOk : Bool :=
   let g := mustApply g ⟨0⟩ .accept
   let g := mustApply g ⟨1⟩ .accept
   let p0 := g.battlefield.find? (fun o =>
-    o.name == "Quicksilver, Brash Blur" && o.controlledBy ⟨0⟩)
+    o.name == "Quicksilver, Brash Blur" && g.controlledBy o ⟨0⟩)
   let p1 := g.battlefield.find? (fun o =>
-    o.name == "Quicksilver, Brash Blur" && o.controlledBy ⟨1⟩)
+    o.name == "Quicksilver, Brash Blur" && g.controlledBy o ⟨1⟩)
   p0.isSome && p1.isSome &&
     (match p0, p1 with
      | some a, some b => a.timestamp < b.timestamp
@@ -727,7 +727,7 @@ resolves. -/
 def squirrelGirlXOnceOk : Bool :=
   let g := addPermanent afterDraw theUnbeatableSquirrelGirl ⟨0⟩ ⟨0⟩
   let squirrels (g : Game) : Nat :=
-    (g.battlefield.filter (fun o => o.hasSubtype .squirrel)).size
+    (g.battlefield.filter (fun o => g.hasSubtype o .squirrel)).size
   let n0 := squirrels g
   let g := g.applyAbilityEffect ⟨0⟩ (Effect.createTokensEqualSubtype .squirrel11green "Squirrel") #[] none
   let n1 := squirrels g

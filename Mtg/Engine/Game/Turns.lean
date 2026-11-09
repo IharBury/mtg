@@ -627,7 +627,7 @@ partial def finishPostSbaCleanup (g : Game) (sba : Bool) : Game :=
 
 /-- Run cleanup SBAs after `clearEOT` completes (CR 514.3 / 514.3a / 704.3). -/
 partial def finishCleanupAfterClearEot (g : Game) : Game :=
-  let (g, sba) := g.checkSBACountedWithLeaves
+  let (g, sba, _) := g.checkSBACountedWithLeaves
   if g.over then g
   else
     match g.pending with

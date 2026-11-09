@@ -113,7 +113,7 @@ def resolveDelayedTrigger (g : Game) (controller : PlayerId) (kind : DelayedTrig
       if o.zone == .exile then
         let owner := o.owner
         if !g.stillInGame owner then
-          g.logMsg s!"{o.name} remains in its current zone (CR 800.4b)"
+          g.logMsg s!"{g.name o} remains in its current zone (CR 800.4b)"
         else
           let isLand := g.isLand o
           let (g', _) := g.putOntoBattlefield id owner (cause := some cause)
@@ -440,7 +440,7 @@ def resolveTop (g : Game) : Game :=
               (cause := finishCause)
           else
             -- An Adventure that doesn't resolve isn't exiled (ruling 5).
-            let permName := (obj.adventurerCard.getD obj.printed).name
+            let permName := (obj.adventurerCard.map (·.name)).getD (g.name obj)
             g.moveToOwnerGraveyard obj s!"{permName} goes to the graveyard"
               (cause := finishCause)
         else

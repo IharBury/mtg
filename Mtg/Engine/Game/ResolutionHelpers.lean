@@ -115,18 +115,23 @@ def exileCreaturesFromGraveyardLoop (g : Game) (controller : PlayerId)
   let mut g := g
   if let some fid := pendingFromId then
     if let some moved := g.followMovedToZone? fid (· == .exile) then
-      g := g.createEffect (.playPermission moved.id {
-        player := controller
-        whileExiled := true
-        anyMana := true }) (cause := cause)
-      g := g.logMsg
-        s!"{moved.name} is exiled. {(g.player controller).name} may cast it for as long as it remains exiled"
+      if g.stillInGame controller then
+        g := g.createEffect (.playPermission moved.id {
+          player := controller
+          whileExiled := true
+          anyMana := true }) (cause := cause)
+        g := g.logMsg
+          s!"{g.name moved} is exiled. {(g.player controller).name} may cast it for as long as it remains exiled"
+      else
+        g := g.logMsg s!"{g.name moved} is exiled"
+  if !g.stillInGame controller then
+    return g
   for i in [0:ids.size] do
     let id := ids[i]!
     match g.findObject? id with
     | none => pure ()
     | some o =>
-      let name := o.name
+      let name := g.name o
       let (g', _) := g.move id .exile none (cause := cause)
       g := g'
       if let .chooseReplacement .. := g.pending then
@@ -134,35 +139,42 @@ def exileCreaturesFromGraveyardLoop (g : Game) (controller : PlayerId)
         return g.chainPendingReplacement
           (.finishPostStep (.exileCreaturesFromGraveyardLoop controller rem cause (some id)))
       if let some moved := g.followMovedToZone? id (· == .exile) then
-        g := g.createEffect (.playPermission moved.id {
-          player := controller
-          whileExiled := true
-          anyMana := true }) (cause := cause)
-        g := g.logMsg
-          s!"{name} is exiled. {(g.player controller).name} may cast it for as long as it remains exiled"
+        if g.stillInGame controller then
+          g := g.createEffect (.playPermission moved.id {
+            player := controller
+            whileExiled := true
+            anyMana := true }) (cause := cause)
+          g := g.logMsg
+            s!"{name} is exiled. {(g.player controller).name} may cast it for as long as it remains exiled"
+        else
+          g := g.logMsg s!"{name} is exiled"
+      if !g.stillInGame controller then
+        return g
   return g
 
 /-- Exile creature cards from `fromPlayer`'s graveyard and grant `controller`
 permission to cast them, spending mana as though it were any type (CR 610.1 / 701.18). -/
 def exileCreaturesFromGraveyard (g : Game) (controller fromPlayer : PlayerId)
     (ty : CardType := .creature) : Game :=
-  let ids :=
-    (g.player fromPlayer).graveyard.filter (fun id =>
-      match g.findObject? id with
-      | some o => g.hasType o ty
-      | none => false)
-  if ids.isEmpty then g
+  if !g.stillInGame fromPlayer && !g.stillInGame controller then g
   else
-    let (g, cause) := g.allocDelayedCause (some controller)
-    g.withBatch (some cause) fun g =>
-      g.exileCreaturesFromGraveyardLoop controller ids (some cause)
+    let ids :=
+      (g.player fromPlayer).graveyard.filter (fun id =>
+        match g.findObject? id with
+        | some o => g.hasType o ty
+        | none => false)
+    if ids.isEmpty then g
+    else
+      let (g, cause) := g.allocDelayedCause (some controller)
+      g.withBatch (some cause) fun g =>
+        g.exileCreaturesFromGraveyardLoop controller ids (some cause)
 
 /-- Put `o` on the top (`top`) or bottom of its owner's library, deferring the
 log across `Pending.chooseReplacement` and emitting it only if `o` actually
 arrives in `.library owner`. -/
 def putOnOwnerLibrary (g : Game) (o : GameObject) (top : Bool) : Game :=
   let side := if top then "top" else "bottom"
-  let name := o.name
+  let name := g.name o
   let owner := o.owner
   let pos : LibraryPosition := if top then .top else .bottom
   let (g, _) := g.move o.id (.library owner) none (libraryPosition := some pos)
@@ -246,20 +258,21 @@ def applyOnPermanent (g : Game) (controller : PlayerId) (kind : EffectTargetKind
 `n` cards, put any number into the graveyard and the rest back on top in any
 order. -/
 def beginSurveil (g : Game) (p : PlayerId) (n : Nat) : Game :=
-  if !g.stillInGame p then g
-  else
-    let pl := g.player p
-    let count := min n pl.library.size
-    if n == 0 then
-      g.logMsg s!"{pl.name} surveils {n} (no cards to look at)"
-    else if count == 0 then
-      let happened :=
-        GameEvent.looked g.turnNumber p 0 true n (cause := some (g.resolvingOrRuleCause p))
-      let g := g.record happened
-      g.logMsg s!"{pl.name} surveils {n} (no cards to look at)"
+  g.withContinuationFrame fun g =>
+    if !g.stillInGame p then g
     else
-      (g.change (.pending (.surveil p count n))).logMsg
-        s!"{pl.name} surveils {n}"
+      let pl := g.player p
+      let count := min n pl.library.size
+      if n == 0 then
+        g.logMsg s!"{pl.name} surveils {n} (no cards to look at)"
+      else if count == 0 then
+        let happened :=
+          GameEvent.looked g.turnNumber p 0 true n (cause := some (g.resolvingOrRuleCause p))
+        let g := g.record happened
+        g.logMsg s!"{pl.name} surveils {n} (no cards to look at)"
+      else
+        (g.change (.pending (.surveil p count n))).logMsg
+          s!"{pl.name} surveils {n}"
 
 /-- Mill each card in `remainingIds` (or `freshCount` top cards when resuming a
 deferred player mill) sequentially inside an open or standalone batch, pausing

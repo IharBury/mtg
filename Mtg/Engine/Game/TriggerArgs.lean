@@ -387,12 +387,7 @@ def triggerInt (g : Game) (ctx : TriggerRead) (amount : TriggeredAbility.NumberS
   | .perPlains => some (g.countSubtype controller .plains)
   | .equalSourcePower => some (g.sourcePowerAtResolution sourceId ctx.lastKnownPower)
   | .equalSourceToughness =>
-    some <|
-      match sourceId.bind g.findObject? with
-      | some src =>
-        if src.isOnBattlefield then g.toughness src
-        else ctx.lastKnownToughness.getD (g.toughness src)
-      | none => ctx.lastKnownToughness.getD 0
+    some (g.sourcePTAtResolution sourceId ctx.lastKnownPower ctx.lastKnownToughness).2
   | .lastKnownPower => some (ctx.lastKnownPower.getD 0)
   | .subtypeCount subtype | .perSubtype subtype =>
     some (g.countSubtype controller subtype)

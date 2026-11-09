@@ -189,7 +189,7 @@ def copiedGraveyard : Game :=
   let tm := named copiedGraveyard "Taskmaster, Mercenary Mimic"
   tm.name == "Taskmaster, Mercenary Mimic" &&
     tm.printed.power == hillGiant.power &&
-    tm.subtypes == #[.human, .mercenary, .villain]
+    copiedGraveyard.subtypes tm == #[.human, .mercenary, .villain]
 
 /- Mister Hyde's upkeep asks for a mode. The first mode puts a +1/+1 counter. -/
 def hydeAsks : Game :=

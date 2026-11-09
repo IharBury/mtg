@@ -28,7 +28,7 @@ def finishPlayLand (g : Game) (p : PlayerId) (id : ObjectId) (tapped : Bool := f
       (tapped := tapped)
       (verb := some .playLand) (actor := some p)
       (cause := some (.specialAction .playLand p))
-    let g := g.logMsg s!"{(g.player p).name} plays {card.name}"
+    let g := g.logMsg s!"{(g.player p).name} plays {g.name card}"
     if let .chooseReplacement .. := g.pending then
       g.chainPendingReplacement (.afterLastPermanentEnters (some id) (isPlayLand := true))
     else
@@ -47,7 +47,7 @@ def playLand (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game := d
   if !g.mayPlay p card then
     throw (g.playZoneError p card)
   if !g.isLand card then
-    throw s!"{card.name} is not a land"
+    throw s!"{g.name card} is not a land"
   let g := g.finishPlayLand p id
   if let .chooseReplacement .. := g.pending then
     return g.chainPendingReplacement (.receivePriority p)

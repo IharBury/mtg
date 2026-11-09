@@ -249,7 +249,7 @@ creatures; {6} puts a counter on a legendary creature. -/
   let g := addPermanent (pw ajaniResolute 10) grizzlyBears me me
   let g := resolved (loyaltyAbility g "Ajani Resolute" (.minus 10))
   power g "Grizzly Bears" == 4 && toughness g "Grizzly Bears" == 4 &&
-    g.objects.any (fun o => o.zone == .command && o.controlledBy me)
+    g.objects.any (fun o => o.zone == .command && o.controller == some me)
 
 /-! ## Blue -/
 

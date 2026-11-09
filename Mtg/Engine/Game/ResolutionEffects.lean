@@ -131,7 +131,7 @@ def mayCastFromLookedError (g : Game) (p : PlayerId) (ids : Array ObjectId)
       let bc := g.baseCard o
       let tcs := g.evalLayer3 o
       if o.zone != .library p then
-        some s!"{o.name} is no longer among the cards you looked at"
+        some s!"{g.name o} is no longer among the cards you looked at"
       else if g.isLand o then
         some "A land cannot be cast"
       else if g.spellNameForbidden bc.name then
@@ -139,10 +139,10 @@ def mayCastFromLookedError (g : Game) (p : PlayerId) (ids : Array ObjectId)
       else if !g.graveyardCastThresholdMet p o.id bc then
         some s!"{bc.name} cannot be cast right now"
       else if (g.objectManaValue o : Int) > maxMv then
-        some s!"{o.name}'s mana value is greater than the greatest power among attacking creatures you control"
+        some s!"{g.name o}'s mana value is greater than the greatest power among attacking creatures you control"
       else if g.isAura o && !bc.allowsZeroTargets &&
           (g.legalAuraTargets p bc (some o.id)).isEmpty then
-        some s!"{o.name} requires a target to enchant"
+        some s!"{g.name o} requires a target to enchant"
       -- CR 601.2b–c / 115.1 / 733.1: a spell that can't announce a legal target (kicked
       -- or not) or a choosable mode can't be cast from among the looked-at cards.
       else if isModalSpellFace bc &&
@@ -150,12 +150,12 @@ def mayCastFromLookedError (g : Game) (p : PlayerId) (ids : Array ObjectId)
             let m := if tcs.isEmpty then e else TextChange.applyEffect tcs e
             g.spellModeIsChoosable p m (some o.id)) &&
           !isReturnUpToTwoGyModal bc && !bc.allowsZeroTargets then
-        some s!"{o.name} has no legal target and can't be cast"
+        some s!"{g.name o} has no legal target and can't be cast"
       else if !g.isAura o && !isModalSpellFace bc && bc.requiresTarget &&
           !bc.allowsZeroTargets && !g.castFaceHasLegalTarget p bc tcs (some o.id) then
-        some s!"{o.name} has no legal target and can't be cast"
+        some s!"{g.name o} has no legal target and can't be cast"
       -- CR 601.2b / 601.2h: a mandatory sacrifice additional cost must be payable.
-      else g.mandatorySacrificeError? p o.id bc o.name
+      else g.mandatorySacrificeError? p o.id bc (g.name o)
 
 /-- Look at the top `n` cards and wait for the controller to choose whether
 to cast one with mana value at most `maxMv` (Cosmic Cube; MSH 356). -/
@@ -185,10 +185,10 @@ def choosePutArtifactFromHand (g : Game) (p : PlayerId) (cardId : ObjectId) :
       throw s!"Only {(g.player q).name} may put an artifact onto the battlefield"
     let some o := g.findObject? cardId | throw "no such object"
     if o.zone != .hand p then
-      throw s!"{o.name} is not in your hand"
+      throw s!"{g.name o} is not in your hand"
     if !g.isArtifact o then
-      throw s!"{o.name} is not an artifact card"
-    let name := o.name
+      throw s!"{g.name o} is not an artifact card"
+    let name := g.name o
     let outerCont? := g.pendingReplacement
     let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
     let g := g.change (.pending .none)
@@ -559,15 +559,20 @@ def exileTopForPlayLoop (g : Game) (fromPlayer caster : PlayerId)
   let mut g := g
   if let some fid := pendingFromId then
     if let some moved := g.followMovedToZone? fid (· == .exile) then
-      g := g.createEffect (.playPermission moved.id { player := caster }) (cause := cause?)
-      g := g.logMsg (fmtMsg g (g.player fromPlayer).name moved.name)
+      if g.stillInGame caster then
+        g := g.createEffect (.playPermission moved.id { player := caster }) (cause := cause?)
+      g := g.logMsg (fmtMsg g (g.player fromPlayer).name (g.name moved))
+  if !g.stillInGame fromPlayer || !g.stillInGame caster then
+    return g
   for i in [0:remaining] do
+    if !g.stillInGame fromPlayer || !g.stillInGame caster then
+      return g
     let pl := g.player fromPlayer
     if pl.library.isEmpty then
       g := g.logMsg s!"{pl.name} has no cards in their library to exile"
     else
       let top := pl.library.back!
-      let cardName := (g.object! top).name
+      let cardName := g.name (g.object! top)
       let (g', _) := g.move top .exile none (cause := cause?)
       g := g'
       if let .chooseReplacement .. := g.pending then
@@ -575,7 +580,8 @@ def exileTopForPlayLoop (g : Game) (fromPlayer caster : PlayerId)
         return g.chainPendingReplacement
           (.finishPostStep (.exileTopForPlayLoop fromPlayer caster rem mayCastStyle cause? (some top)))
       if let some moved := g.followMovedToZone? top (· == .exile) then
-        g := g.createEffect (.playPermission moved.id { player := caster }) (cause := cause?)
+        if g.stillInGame caster then
+          g := g.createEffect (.playPermission moved.id { player := caster }) (cause := cause?)
         g := g.logMsg (fmtMsg g pl.name cardName)
   return g
 
@@ -584,13 +590,15 @@ them this turn. `logAfter ownerName cardName` is the per-card message. -/
 def exileTopForPlay (g : Game) (fromPlayer caster : PlayerId) (n : Nat)
     (logAfter : String → String → String) (mayCastStyle : Bool := false) : Game :=
   let _ := logAfter
-  let (g0, cause?) : Game × Option EventCause :=
-    if n > 0 && !(g.player fromPlayer).library.isEmpty then
-      let (g, c) := g.allocDelayedCause (some caster)
-      (g, some c)
-    else (g, none)
-  g0.withBatch cause? fun g =>
-    g.exileTopForPlayLoop fromPlayer caster n mayCastStyle cause?
+  if !g.stillInGame fromPlayer || !g.stillInGame caster then g
+  else
+    let (g0, cause?) : Game × Option EventCause :=
+      if n > 0 && !(g.player fromPlayer).library.isEmpty then
+        let (g, c) := g.allocDelayedCause (some caster)
+        (g, some c)
+      else (g, none)
+    g0.withBatch cause? fun g =>
+      g.exileTopForPlayLoop fromPlayer caster n mayCastStyle cause?
 
 /-- Exile the top `n` cards of `p`'s library. They may be played this turn. -/
 def exileTopPlayThisTurn (g : Game) (p : PlayerId) (n : Nat) : Game :=
@@ -783,8 +791,10 @@ def sacrificePlanIfOnBattlefield (g : Game) (sourceId : Option ObjectId)
 /-- Ask `caster` to cast up to `casts` of the exiled nonland cards. -/
 def offerExileCasts (g : Game) (caster : PlayerId) (spells : Array ObjectId)
     (casts : Nat) : Game :=
-  g.beginFraChoice caster (.mayCastUpToFromExile spells casts)
-    s!"{(g.player caster).name} may cast up to {casts} spells from among the exiled cards without paying their mana costs"
+  if !g.stillInGame caster then g
+  else
+    g.beginFraChoice caster (.mayCastUpToFromExile spells casts)
+      s!"{(g.player caster).name} may cast up to {casts} spells from among the exiled cards without paying their mana costs"
 
 /-- Pause-safe loop for `exileTopMayCastUpTo`, running inside an open batch and
 offering up to `casts` free spell casts once all moves complete. -/
@@ -800,14 +810,18 @@ def exileTopMayCastUpToLoop (g : Game) (fromPlayer caster : PlayerId)
   if let some fid := pendingFromId then
     if let some moved := g.followMovedToZone? fid (· == .exile) then
       ids := ids.push moved.id
-      g := g.logMsg s!"{(g.player fromPlayer).name} exiles {moved.name}"
+      g := g.logMsg s!"{(g.player fromPlayer).name} exiles {g.name moved}"
+  if !g.stillInGame fromPlayer then
+    return g
   for i in [0:remaining] do
+    if !g.stillInGame fromPlayer then
+      return g
     let pl := g.player fromPlayer
     if pl.library.isEmpty then
       g := g.logMsg s!"{pl.name} has no cards in their library to exile"
     else
       let top := pl.library.back!
-      let name := (g.object! top).name
+      let name := g.name (g.object! top)
       let (g', _) := g.move top .exile none (cause := cause?)
       g := g'
       if let .chooseReplacement .. := g.pending then

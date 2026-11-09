@@ -314,12 +314,13 @@ def causeAndSourcePT? (g : Game) (sourceId : Option ObjectId) (targets : Array T
 action does not read are cleared here. -/
 def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target) (lastKnownPower : Option Int)
-    (cond : TriggeredAbility.ConditionSelector) : Game × Bool :=
+    (cond : TriggeredAbility.ConditionSelector)
+    (lastKnownToughness : Option Int := none) : Game × Bool :=
   match cond with
   | (.atLeast (.count .legendaryCreaturesYouControl) (.fixed 1)) => (g, g.controlsLegendaryCreature controller)
   | .not cond =>
     let (g, holds) :=
-      g.triggerIfHolds controller ab sourceId targets lastKnownPower cond
+      g.triggerIfHolds controller ab sourceId targets lastKnownPower cond lastKnownToughness
     (g, !holds)
   | .or conds =>
     -- Once one condition holds, later ones are not checked. A later condition
@@ -332,7 +333,7 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       | c :: rest =>
         let start := g.log.size
         let (g, holds) :=
-          g.triggerIfHolds controller ab sourceId targets lastKnownPower c
+          g.triggerIfHolds controller ab sourceId targets lastKnownPower c lastKnownToughness
         if holds then (g, true)
         else
           let added := g.log.extract start g.log.size
@@ -564,7 +565,7 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
   | .atLeast (.count what) amount =>
     -- Printed counts above keep their logs and notes. Every other counted
     -- selector is the number of objects `what` names, compared with `amount`.
-    let ctx : TriggerRead := { controller, sourceId, targets, lastKnownPower }
+    let ctx : TriggerRead := { controller, sourceId, targets, lastKnownPower, lastKnownToughness }
     let (g, counted) :=
       match what with
       | .creature | .target .creature =>
@@ -637,7 +638,7 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
   | .atLeast left right =>
     -- Printed pairs above keep their logs. Every other pair compares the
     -- two numbers. A number that cannot be read does not hold.
-    let ctx : TriggerRead := { controller, sourceId, targets, lastKnownPower }
+    let ctx : TriggerRead := { controller, sourceId, targets, lastKnownPower, lastKnownToughness }
     match g.triggerInt ctx left, g.triggerInt ctx right with
     | some a, some b => (g, a ≥ b)
     | _, _ => (g, false)
@@ -983,7 +984,8 @@ def applyTriggerDamage (g : Game) (controller : PlayerId) (ab : TriggeredAbility
     (lastKnownPower : Option Int) (sourceName : String)
     (amount : TriggeredAbility.NumberSelector)
     (who : TriggeredAbility.ObjectSelector)
-    (note : TriggeredAbility.TriggerDamageNote) : Game :=
+    (note : TriggeredAbility.TriggerDamageNote)
+    (lastKnownToughness : Option Int := none) : Game :=
   match who, amount, note with
   | .blockers, .fixed n, _ =>
     let n := n.toNat
@@ -1102,7 +1104,7 @@ def applyTriggerDamage (g : Game) (controller : PlayerId) (ab : TriggeredAbility
       g.applyPermanentAction o (.dealDamage n) (sourceId := sourceId)
   | who, amount, .divided =>
     let ctx : TriggerRead :=
-      { controller, sourceId, targets, lastKnownPower }
+      { controller, sourceId, targets, lastKnownPower, lastKnownToughness }
     match g.triggerCount ctx amount with
     | none => g
     | some n =>
@@ -1146,7 +1148,7 @@ def applyTriggerDamage (g : Game) (controller : PlayerId) (ab : TriggeredAbility
               g.triggerDividedDamageLoop shares sourceName srcSnap batchCause
   | who, amount, note =>
     let ctx : TriggerRead :=
-      { controller, sourceId, targets, lastKnownPower }
+      { controller, sourceId, targets, lastKnownPower, lastKnownToughness }
     match g.triggerCount ctx amount with
     | none => g
     | some n =>
@@ -1291,7 +1293,8 @@ def applyPutCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target)
     (lastKnownPower : Option Int)
     (what : TriggeredAbility.CounterSelector)
-    (who : TriggeredAbility.ObjectSelector) : Game :=
+    (who : TriggeredAbility.ObjectSelector)
+    (lastKnownToughness : Option Int := none) : Game :=
   match what, who with
   | .ofKind .plusOnePlusOne _, .youControl which =>
     match which with
@@ -1492,7 +1495,7 @@ def applyPutCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       "The source is no longer in play"
   | .ofKind kind n, who =>
     let ctx : TriggerRead :=
-      { controller, sourceId, targets, lastKnownPower }
+      { controller, sourceId, targets, lastKnownPower, lastKnownToughness }
     match g.permanentsNamed ctx who with
     | some objs =>
       g.withBatch none fun g =>
@@ -1501,7 +1504,7 @@ def applyPutCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     | none => g
   | what, who =>
     let ctx : TriggerRead :=
-      { controller, sourceId, targets, lastKnownPower }
+      { controller, sourceId, targets, lastKnownPower, lastKnownToughness }
     let putN (kind : CounterKind) (n : Nat) : Game :=
       match g.permanentsNamed ctx who with
       | some objs =>
@@ -1770,19 +1773,25 @@ partial def runTriggerExileLoop (g : Game) (controller : PlayerId)
       | .playUntilNextTurn =>
         match g.followMovedToZone? fid (· == Zone.exile) with
         | some moved =>
-          let g := g.createEffect
-            (.playPermission moved.id { player := controller } (turnEnds := 2))
-            (cause := cause)
-          g.logMsg
-            s!"{(g.player controller).name} exiles {movedName} and may play it until the end of their next turn"
+          if g.stillInGame controller then
+            let g := g.createEffect
+              (.playPermission moved.id { player := controller } (turnEnds := 2))
+              (cause := cause)
+            g.logMsg
+              s!"{(g.player controller).name} exiles {movedName} and may play it until the end of their next turn"
+          else
+            g.logMsg s!"{(g.player controller).name} exiles {movedName}"
         | none => g
       | .playThisTurn =>
         match g.followMovedToZone? fid (· == Zone.exile) with
         | some moved =>
-          let g := g.createEffect
-            (.playPermission moved.id { player := controller })
-            (cause := cause)
-          g.logMsg s!"{(g.player controller).name} exiles {movedName} and may play it this turn"
+          if g.stillInGame controller then
+            let g := g.createEffect
+              (.playPermission moved.id { player := controller })
+              (cause := cause)
+            g.logMsg s!"{(g.player controller).name} exiles {movedName} and may play it this turn"
+          else
+            g.logMsg s!"{(g.player controller).name} exiles {movedName}"
         | none => g
       | .forLater =>
         if (g.followMovedToZone? fid (· == Zone.exile)).isSome then
@@ -1820,7 +1829,10 @@ partial def runTriggerExileLoop (g : Game) (controller : PlayerId)
         else g
       | .forLaterAnyManaThisTurn =>
         match g.followMovedToZone? fid (· == Zone.exile) with
-        | some moved => g.grantWidowCast controller (some moved.id) (cause := cause)
+        | some moved =>
+          if g.stillInGame controller then
+            g.grantWidowCast controller (some moved.id) (cause := cause)
+          else g
         | none => g
       | .leaveTrigger | .untilSourceLeaves | .nextEndStep | .forLaterCopyAndHost | .mayCastUpTo _ => g
   let isMayCastUpTo := match mode with | .mayCastUpTo _ => true | _ => false
@@ -1829,6 +1841,7 @@ partial def runTriggerExileLoop (g : Game) (controller : PlayerId)
     else
       g.chainPendingReplacement
         (.finishPostStep (.triggerExileLoop controller sourceId mode ids accMovedPreIds cause))
+  else if !g.stillInGame controller then g
   else
     match ids[0]? with
     | none =>
@@ -1846,6 +1859,9 @@ partial def runTriggerExileLoop (g : Game) (controller : PlayerId)
       | none =>
         g.runTriggerExileLoop controller sourceId mode rem accMovedPreIds cause
       | some o =>
+        if match o.zone with | .library p => !g.stillInGame p | _ => false then
+          g.runTriggerExileLoop controller sourceId mode rem accMovedPreIds cause
+        else
         match mode with
         | .leaveTrigger =>
           let g := g.exileForLeaveTrigger sourceId o (cause := cause)
@@ -2039,9 +2055,11 @@ def applyExile (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
             if g.revealedIdsThisWay.isEmpty then none
             else fromIds g.revealedIdsThisWay
           | _ =>
-            match (g.player controller).library.back?.bind g.findObject? with
-            | some o => some #[o]
-            | none => some #[]
+            if !g.stillInGame controller then some #[]
+            else
+              match (g.player controller).library.back?.bind g.findObject? with
+              | some o => some #[o]
+              | none => some #[]
         | .linkedExile =>
           match sourceId with
           | some sid => fromIds (g.allLinkedExilesOf sid)
@@ -2058,7 +2076,7 @@ def applyExile (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
             match targets.findSome? fun
               | Target.player p => some p
               | _ => none with
-            | some p => some p
+            | some p => if g.stillInGame p then some p else none
             | none => g.firstLivingOpponent? controller
           match pid? with
           | some pid => fromIds (g.scryLookedIds pid n)
@@ -2968,7 +2986,7 @@ def applyReturnToHand (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     match sourceId.bind g.findObject? with
     | some o =>
       if o.zone == .graveyard o.owner then g.returnToHand o.id o.owner
-      else g.logMsg s!"{o.name} is no longer in the graveyard"
+      else g.logMsg s!"{g.name o} is no longer in the graveyard"
     | none => g.logMsg "The ability's source is no longer in the graveyard"
   | .linkedExile, .none =>
     g.returnLinkedExileToHand sourceId
@@ -3105,7 +3123,7 @@ def applyPut (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       | Target.card id =>
         match g.findObject? id with
         | some card =>
-          let name := card.name
+          let name := g.name card
           if !g.stillInGame card.owner then
             g.logMsg s!"{name} remains in its current zone (CR 800.4b)"
           else
@@ -3818,7 +3836,8 @@ def applyLoseLife (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (amount : TriggeredAbility.NumberSelector)
     (who : TriggeredAbility.PlayerSelector)
     (lastKnownPower : Option Int := none)
-    (cause : Option EventCause := none) : Game :=
+    (cause : Option EventCause := none)
+    (lastKnownToughness : Option Int := none) : Game :=
   match amount, who with
   | .fixed n, .you =>
     g.loseLife controller n.toNat (cause := cause)
@@ -3837,7 +3856,7 @@ def applyLoseLife (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     else g.loseLifeEachOpponent controller x (cause := cause)
   | amount, who =>
     let ctx : TriggerRead :=
-      { controller, sourceId, targets, lastKnownPower }
+      { controller, sourceId, targets, lastKnownPower, lastKnownToughness }
     match g.triggerCount ctx amount with
     | none => g
     | some n =>
@@ -3863,7 +3882,8 @@ def applyGainLife (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (amount : TriggeredAbility.NumberSelector)
     (sequencedCardPower : Option Nat)
     (lastKnownPower : Option Int := none)
-    (cause : Option EventCause := none) : Game :=
+    (cause : Option EventCause := none)
+    (lastKnownToughness : Option Int := none) : Game :=
   match amount with
   | .fixed n =>
     g.gainLife controller n.toNat (cause := cause)
@@ -3891,7 +3911,7 @@ def applyGainLife (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     if k == 0 then g else g.gainLife controller k (cause := cause)
   | amount =>
     let ctx : TriggerRead := {
-      controller, sourceId, targets, lastKnownPower, sequencedCardPower }
+      controller, sourceId, targets, lastKnownPower, lastKnownToughness, sequencedCardPower }
     match amount with
     | .forEachDestroyedThisWay =>
       let k := (g.triggerCount ctx amount).getD 0
@@ -3960,7 +3980,7 @@ def noteRevealedLibraries (g : Game) (controller : PlayerId)
               (cause := some (cause.getD (g.resolvingOrRuleCause controller sourceId))))
           for id in ids do
             match g.findObject? id with
-            | some o => g := g.logMsg s!"{(g.player pid).name} reveals {o.name}"
+            | some o => g := g.logMsg s!"{(g.player pid).name} reveals {g.name o}"
             | none => pure ()
           found := found ++ ids
         | .untilCreature =>
@@ -4656,7 +4676,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       power toughness who
   | .dealDamage amount who note =>
     g.applyTriggerDamage controller ab sourceId targets lastKnownPower sourceName
-      amount who note
+      amount who note lastKnownToughness
   | .scry amount =>
     let ctx : TriggerRead := {
       controller, sourceId, targets, lastKnownPower, lastKnownToughness,
@@ -4736,7 +4756,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       | [.createTokens kind (.fixed n) tapped .kind .you .none,
           .«if» cond .markRecentTokensAttacking] =>
         let (g, holds) :=
-          g.triggerIfHolds controller ab sourceId targets lastKnownPower cond
+          g.triggerIfHolds controller ab sourceId targets lastKnownPower cond lastKnownToughness
         g.createAndMarkTokensAttacking controller kind n.toNat tapped holds sourceId
       | steps =>
       let rec runSteps (g : Game) (waiting : List TriggeredAbility.TriggerResolution)
@@ -4765,10 +4785,10 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
                 | none => (g, none)
               let g :=
                 g.applyLoseLife controller ab sourceId targets loseAmt who
-                  lastKnownPower (cause := cause?)
+                  lastKnownPower (cause := cause?) (lastKnownToughness := lastKnownToughness)
               let g :=
                 g.applyGainLife controller ab sourceId targets gainAmt
-                  cardPower lastKnownPower (cause := cause?)
+                  cardPower lastKnownPower (cause := cause?) (lastKnownToughness := lastKnownToughness)
               let opened := g.pending != pendingBefore && g.pending != .none
               runSteps g waiting opened false tail
             | _ =>
@@ -4819,7 +4839,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
             steps := combined }))
   | .gainLife amount =>
     g.applyGainLife controller ab sourceId targets amount sequencedCardPower
-      lastKnownPower
+      lastKnownPower (lastKnownToughness := lastKnownToughness)
   | .exile what how note =>
     g.applyExile controller ab sourceId targets what how note
   | .may (.put (.creatureFromHand subtype maxMv) _ _) (.draw (.fixed _) _) =>
@@ -4838,6 +4858,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.beginRecruit controller
   | .putCounters what who =>
     g.applyPutCounters controller ab sourceId targets lastKnownPower what who
+      lastKnownToughness
   | .amass amount subtype attachSource who =>
     g.applyAmass controller sourceId lastKnownPower amount subtype attachSource who
       targets lastKnownToughness
@@ -4960,7 +4981,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     else g
   | .«if» (.atLeast (.count (.othersOfSubtype .hero)) (.fixed 1)) (.dealDamage (.fixed 1) (.player (.target .opponent))) =>
     let (g, holds) :=
-      g.triggerIfHolds controller ab sourceId targets lastKnownPower (.atLeast (.count (.othersOfSubtype .hero)) (.fixed 1))
+      g.triggerIfHolds controller ab sourceId targets lastKnownPower (.atLeast (.count (.othersOfSubtype .hero)) (.fixed 1)) lastKnownToughness
     if holds then
       g.applyTriggeredAbility controller ab sourceId targets dividedDamage
         lastKnownPower lastKnownToughness sourceName
@@ -4969,14 +4990,14 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       g.logMsg "Human Torch's ability has no effect"
   | .«if» cond thenDo =>
     let (g, holds) :=
-      g.triggerIfHolds controller ab sourceId targets lastKnownPower cond
+      g.triggerIfHolds controller ab sourceId targets lastKnownPower cond lastKnownToughness
     if holds then
       g.applyTriggeredAbility controller ab sourceId targets dividedDamage
         lastKnownPower lastKnownToughness sourceName (some thenDo) sequencedCardPower
     else g
   | .ifElse cond whenTrue whenFalse =>
     let (g, holds) :=
-      g.triggerIfHolds controller ab sourceId targets lastKnownPower cond
+      g.triggerIfHolds controller ab sourceId targets lastKnownPower cond lastKnownToughness
     let branch := if holds then whenTrue else whenFalse
     g.applyTriggeredAbility controller ab sourceId targets dividedDamage
       lastKnownPower lastKnownToughness sourceName (some branch) sequencedCardPower
@@ -5149,6 +5170,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
           else g
   | .loseLife amount who =>
     g.applyLoseLife controller ab sourceId targets amount who lastKnownPower
+      (lastKnownToughness := lastKnownToughness)
   | .may (.draw _ .opponentHasYou) _ =>
     g.applyTriggerDraw controller sourceId (.fixed 1) .opponentHasYou
   | .may (.sequence [.draw .equalToManaSpent _, .«if» .manaSpent (.discard (.cards n))]) _ =>
@@ -5221,7 +5243,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
           | none => g.logMsg "The Villain does not connive"
           | some vid => g.beginMayHaveVillainConnive controller src.id vid
     | who =>
-      let ctx : TriggerRead := { controller, sourceId, targets, lastKnownPower }
+      let ctx : TriggerRead := { controller, sourceId, targets, lastKnownPower, lastKnownToughness }
       match g.permanentsNamed ctx who with
       | some objs => g.runConniveObjects controller (objs.map (·.id))
       | none => g
@@ -5233,11 +5255,14 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       match g.findObject? newId with
       | some o =>
         let name := g.name o
-        let g := g.createEffect
-          (.playPermission o.id { player := controller } (turnEnds := 2))
-          (cause := g.lastMoveCauseOf? o.id)
-        g.logMsg
-          s!"{(g.player controller).name} exiles {name} and may play it until the end of their next turn"
+        if !g.stillInGame controller then
+          g.logMsg s!"{(g.player controller).name} exiles {name}"
+        else
+          let g := g.createEffect
+            (.playPermission o.id { player := controller } (turnEnds := 2))
+            (cause := g.lastMoveCauseOf? o.id)
+          g.logMsg
+            s!"{(g.player controller).name} exiles {name} and may play it until the end of their next turn"
       | none => g
   | .revealFromHand count thenDo =>
     match count, thenDo with
@@ -5431,11 +5456,11 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
               (g.logMsg "The ability's source is no longer in the graveyard").failMayThen
             | some src =>
               if src.zone != .graveyard src.owner then
-                (g.logMsg s!"{src.name} is no longer in the graveyard").failMayThen
+                (g.logMsg s!"{g.name src} is no longer in the graveyard").failMayThen
               else
                 let shown := String.join (symbols.toList.map ManaSymbol.toNotation)
                 g.beginFraChoice controller (.mayPaySymbolsThen symbols .returnSourceToHand src.id)
-                  s!"{(g.player controller).name} may pay {shown} to return {src.name} to their hand"
+                  s!"{(g.player controller).name} may pay {shown} to return {g.name src} to their hand"
       | some (.becomeCopy (.cause none)), [.generic 2] =>
         g.offerCopyCause controller sourceId targets
       | _, _ =>
@@ -5457,11 +5482,11 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
             (g.logMsg "The ability's source is no longer in the graveyard").failMayThen
           | some src =>
             if src.zone != .graveyard src.owner then
-              (g.logMsg s!"{src.name} is no longer in the graveyard").failMayThen
+              (g.logMsg s!"{g.name src} is no longer in the graveyard").failMayThen
             else
               let shown := String.join (symbols.toList.map ManaSymbol.toNotation)
               g.beginFraChoice controller (.mayPaySymbolsThen symbols .returnSourceToHand src.id)
-                s!"{(g.player controller).name} may pay {shown} to return {src.name} to their hand"
+                s!"{(g.player controller).name} may pay {shown} to return {g.name src} to their hand"
     | .sacrifice (.fixed 1) .another =>
       let reflexive :=
         match g.mayThenConditional with
@@ -5653,7 +5678,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         | [.createTokens kind (.fixed n) tapped .kind .you .none,
             .«if» cond .markRecentTokensAttacking] =>
           let (g, holds) :=
-            g.triggerIfHolds controller ab sourceId targets lastKnownPower cond
+            g.triggerIfHolds controller ab sourceId targets lastKnownPower cond lastKnownToughness
           g.createAndMarkTokensAttacking controller kind n.toNat tapped holds sourceId
         | steps =>
           let stepAbs := steps.toArray.map fun r =>

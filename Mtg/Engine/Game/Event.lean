@@ -1415,7 +1415,7 @@ inductive PostStep where
       (amount : Nat)
   | moveIdsInOrderLoop (ids : Array ObjectId) (dest : Zone) (log : String)
       (cause : Option EventCause) (placedCount : Nat := 0)
-      (prevLibraryMoved : Option (ObjectId × PlayerId) := none)
+      (prevMoved : Option (ObjectId × Zone) := none)
   | createMerfolkForBlueSymbols (controller : PlayerId) (lastKnownPower : Option Int)
   | incrementPlanSource (controller : PlayerId) (sourceId : Option ObjectId)
   | millOpponentsOnly (opponents : Array PlayerId) (n : Nat) (cause : Option EventCause)
@@ -1666,7 +1666,7 @@ inductive PendingReplacement where
   | finishArtifactCopyToken
   | finishManaAbilityMountainTrigger (player : PlayerId) (sourceId : ObjectId)
   | restorePending (p : Pending) (popOuter : Bool := false)
-      (promptLog : Option String := none)
+      (promptLog : Option String := none) (departed : Array PlayerId := #[])
   | closeBatch (batchId : BatchId) (startIdx : Nat)
   | restorePausedBatch (batchId : BatchId) (startIdx : Nat) (wasDiscard : Bool)
       (cause : Option EventCause) (objects : Array GameObject)
@@ -1856,6 +1856,7 @@ inductive PendingReplacement where
   | returnStackSpell (spellId : ObjectId) (owner : PlayerId) (name : String)
       (postMove : Bool := false)
   | leavePlayersWhoLost (savedPending : Option Pending := none) (popOuter : Bool := false)
+      (departed : Array PlayerId := #[])
   | endControlExileLoop (remaining : Array (ObjectId × String))
       (cause : Option EventCause := none)
       (pendingLog : Option (ObjectId × String) := none)
@@ -1872,11 +1873,13 @@ inductive PendingReplacement where
   | finishConcede (wasIdlePriority : Bool) (savedPendingPrio : Option PlayerId)
       (wasAssigningCombatDamage : Option Bool := none)
       (savedPending : Option Pending := none) (popOuter : Bool := false)
+      (departed : Array PlayerId := #[])
   | concedePlayersLoop (remaining : Array PlayerId)
       (wasPregame midResolutionOrBatch wasIdlePriority : Bool)
       (savedPendingPrio : Option PlayerId)
       (wasAssigningCombatDamage : Option Bool := none)
       (savedPending : Option Pending := none) (popOuter : Bool := false)
+      (departed : Array PlayerId := #[])
   | afterWardResolved
 deriving Repr, Inhabited, BEq
 
@@ -1906,6 +1909,37 @@ def PendingReplacement.ensureEndsWithFinishFra : PendingReplacement → PendingR
   | .finishFraChoice => .finishFraChoice
   | .seq a b => .seq a b.ensureEndsWithFinishFra
   | other => .seq other .finishFraChoice
+
+/-- Record that `p` left the game on any nested `.restorePending`,
+`.leavePlayersWhoLost`, `.finishConcede`, or `.concedePlayersLoop`
+continuation so `.restorePending` re-runs `redirectPendingAfterLeave`
+once the replacement pause finishes (CR 616.1 / 800.4). -/
+def PendingReplacement.appendDeparted (p : PlayerId) : PendingReplacement → PendingReplacement
+  | .restorePending pend popOuter promptLog dep =>
+    .restorePending pend popOuter promptLog (if dep.contains p then dep else dep.push p)
+  | .leavePlayersWhoLost saved popOuter dep =>
+    .leavePlayersWhoLost saved popOuter (if dep.contains p then dep else dep.push p)
+  | .finishConcede wasIdle prio wasCombat saved popOuter dep =>
+    .finishConcede wasIdle prio wasCombat saved popOuter (if dep.contains p then dep else dep.push p)
+  | .concedePlayersLoop rem wp mid wasIdle prio wasCombat saved popOuter dep =>
+    .concedePlayersLoop rem wp mid wasIdle prio wasCombat saved popOuter
+      (if dep.contains p then dep else dep.push p)
+  | .seq a b => .seq (a.appendDeparted p) (b.appendDeparted p)
+  | other => other
+
+def PendingReplacement.appendDepartedMany (dep : Array PlayerId) (cont : PendingReplacement) :
+    PendingReplacement :=
+  dep.foldl (fun c p => c.appendDeparted p) cont
+
+/-- Collect any departed players already recorded on a `PendingReplacement` tree. -/
+def PendingReplacement.collectDeparted : PendingReplacement → Array PlayerId
+  | .restorePending _ _ _ dep => dep
+  | .leavePlayersWhoLost _ _ dep => dep
+  | .finishConcede _ _ _ _ _ dep => dep
+  | .concedePlayersLoop _ _ _ _ _ _ _ _ dep => dep
+  | .seq a b =>
+    b.collectDeparted.foldl (fun acc p => if acc.contains p then acc else acc.push p) a.collectDeparted
+  | _ => #[]
 
 /-- Deferred library-bottoming or CR 704.5e copy cleanup run once a mid-resolution
 proposed spell finishes casting (`becomeCast`) or is reversed (`reverseProposedSpell?`). -/

@@ -1589,7 +1589,7 @@ def docSamsonYouPutAllKindsOk : Bool :=
   let gTheirs := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
   let oppId :=
     ((gTheirs.battlefield.filter (fun o =>
-      o.name == "Grizzly Bears" && o.controlledBy ⟨1⟩)).map
+      o.name == "Grizzly Bears" && gTheirs.controlledBy o ⟨1⟩)).map
         (fun (o : GameObject) => o.id))[0]!
   let gTheirs := gTheirs.addPlusOnePlusOneTo (gTheirs.object! oppId) 1 (byPlayer := some ⟨0⟩)
   let notTheirs := (gTheirs.object! oppId).status.plusOnePlusOne == 1
@@ -2263,7 +2263,7 @@ def alienInvasionCombatTokenOk : Bool :=
   let firstOk :=
     tok.printed.isToken && tok.status.plusOnePlusOne == 0 &&
       tok.printed.keywords.haste &&
-      tok.staticAbilities.contains .attacksEachCombatIfAble &&
+      (g.staticAbilities tok).contains .attacksEachCombatIfAble &&
       (namedPermanent g "Alien Invasion").status.invasion == 1
   let src := namedPermanent g "Alien Invasion"
   let g := g.applyTriggeredAbility ⟨0⟩ .onCombatCreateAlienPerInvasion (some src.id)
@@ -2781,7 +2781,7 @@ def blackPantherModeOk : Bool :=
   let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
   let g := mshEnter g sheHulkJadeDefender
   let soldiers (g : Game) :=
-    (g.battlefield.filter (fun o => o.printed.isToken && o.hasSubtype .soldier)).size
+    (g.battlefield.filter (fun o => o.printed.isToken && g.hasSubtype o .soldier)).size
   match g.pending with
   | .fraChoice _ (.triggerModes _ 1 _) =>
     let soldier := (mustApply g ⟨0⟩ (.chooseMode 0)).resolveTop
@@ -2962,7 +2962,7 @@ def namorTriggeringSpellOk : Bool :=
   let (g, bolt) := g.allocObject lightningBolt ⟨0⟩ .stack (some ⟨0⟩)
   let g := g.putStackEntry ⟨0⟩ bolt.id
   let merfolk (g : Game) :=
-    (g.battlefield.filter (fun o => o.printed.isToken && o.hasSubtype .merfolk)).size
+    (g.battlefield.filter (fun o => o.printed.isToken && g.hasSubtype o .merfolk)).size
   let abBlueId : ObjectId := ⟨g.nextObjectId⟩
   let gBlue := g.record (GameEvent.triggerPutOnStack g.turnNumber abBlueId (g.snapshot namor) ⟨0⟩
     (spec := { sourceId := some namor.id, fraCauseId := some aura.id }))
@@ -3507,7 +3507,7 @@ def settleSearchOk : Bool :=
         pick.size == 2 &&
           (let g := mustApply g ⟨1⟩ (.choosePermanents pick)
            (g.battlefield.filter (fun o =>
-              o.printed.isLand && o.status.tapped && o.controlledBy ⟨1⟩)).size == 2)
+              o.printed.isLand && o.status.tapped && g.controlledBy o ⟨1⟩)).size == 2)
       | _ => false
     | _ => false
 
@@ -3892,7 +3892,7 @@ def tigerGodOneBlockerOk : Bool :=
   let tiger := namedPermanent g "White Tiger, Ava Ayala"
   let g := g.applyAbilityEffect ⟨0⟩ Effect.plusOneAndCreateTigerGod #[] (some tiger.id)
   let god := namedPermanent g "The Tiger God"
-  god.staticAbilities == #[.cantBeBlockedByMoreThan 1] &&
+  g.staticAbilities god == #[.cantBeBlockedByMoreThan 1] &&
     g.legalBlockerCount god 0 && g.legalBlockerCount god 1 &&
     !g.legalBlockerCount god 2
 

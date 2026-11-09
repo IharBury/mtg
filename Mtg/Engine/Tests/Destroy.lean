@@ -198,7 +198,7 @@ controller still amasses when the creature is indestructible. -/
   let before := (g0.player caster).hand.size
   let g := step g0 amassSeq (targets := #[Target.permanent id])
   !onBoard g "Mine" &&
-    onBoard g "Goblin Army" && (obj g "Goblin Army").controlledBy caster &&
+    onBoard g "Goblin Army" && g.controlledBy (obj g "Goblin Army") caster &&
     (obj g "Goblin Army").status.plusOnePlusOne == 3 &&
     (g.player caster).hand.size == before + 1 &&
     !g.destroyedForAmassThisWay &&
@@ -210,7 +210,7 @@ controller still amasses when the creature is indestructible. -/
   let before := (g0.player caster).hand.size
   let g := step g0 amassSeq (targets := #[Target.permanent id]) (lastKnownPower := some 5)
   !onBoard g "Ogre" &&
-    g.battlefield.any (fun o => o.name == "Goblin Army" && o.controlledBy opp) &&
+    g.battlefield.any (fun o => o.name == "Goblin Army" && g.controlledBy o opp) &&
     (g.battlefield.find? (·.name == "Goblin Army")).any
       (·.status.plusOnePlusOne == 5) &&
     (g.player caster).hand.size == before && !g.destroyedForAmassThisWay
@@ -300,7 +300,7 @@ controller still amasses when the creature is indestructible. -/
   let g := step afterDraw (.amass .perOtherCreature)
   onBoard g "Goblin Army" &&
     (g.battlefield.find? (·.name == "Goblin Army")).any
-      (fun o => o.status.plusOnePlusOne == 0 && o.controlledBy caster) &&
+      (fun o => o.status.plusOnePlusOne == 0 && g.controlledBy o caster) &&
     logContains g "amasses Goblins 0"
 
 end Mtg.Engine.DestroyTests

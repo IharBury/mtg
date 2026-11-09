@@ -131,7 +131,7 @@ control with `plusOnes` +1/+1 counters, logging arrival only when synchronous
 entry onto `.battlefield` succeeded (CR 800.4b / 616.1). -/
 def returnCardToBattlefield (g : Game) (controller : PlayerId) (id : ObjectId)
     (plusOnes : Nat := 0) (tapped := false) : Game × ObjectId :=
-  let name := (g.object! id).name
+  let name := g.name (g.object! id)
   let (g, newId) := g.putOntoBattlefield id controller (tapped := tapped)
     (extraEntersWith := if plusOnes > 0 then #[(.plusOnePlusOne, plusOnes)] else #[])
   let paused := match g.pending with | .chooseReplacement .. => true | _ => false

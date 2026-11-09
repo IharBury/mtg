@@ -15,7 +15,9 @@ namespace Game
 def removePreparedCopy (g : Game) (srcId : ObjectId)
     (cause : Option EventCause := some (.stateBased .copyOutsideStackOrBf)) : Game :=
   match g.preparedCopyOf? srcId with
-  | some c => (g.ceaseToExist c.id (cause := cause)).logMsg s!"The copy of {c.name} in exile ceases to exist"
+  | some c =>
+    let cName := g.name c
+    (g.ceaseToExist c.id (cause := cause)).logMsg s!"The copy of {cName} in exile ceases to exist"
   | none => g
 
 /-- `o` becomes prepared: its controller creates a copy of its prepare spell
@@ -701,9 +703,9 @@ private partial def logLinkedExileReturn (g : Game) (fromId : ObjectId) (dest : 
   | some moved =>
     match dest with
     | .hand p =>
-      g.logMsg s!"{moved.name} returns to {(g.player p).name}'s hand"
+      g.logMsg s!"{g.name moved} returns to {(g.player p).name}'s hand"
     | .graveyard p =>
-      g.logMsg s!"{moved.name} returns to {(g.player p).name}'s graveyard"
+      g.logMsg s!"{g.name moved} returns to {(g.player p).name}'s graveyard"
     | .battlefield =>
       match moved.attachedTo with
       | some hid =>
@@ -734,7 +736,7 @@ partial def runLinkedExileBatch (g : Game) (ids : Array ObjectId)
       match g.findObject? exId with
       | some o =>
         if o.zone == .exile then
-          let name := o.name
+          let name := g.name o
           let linkCause := g.lastMoveCauseOf? o.id
           let (g', movedDest?) : Game × Option Zone :=
             match o.returnToZone with
@@ -1091,7 +1093,7 @@ def enteringAttackItemName (g : Game) : EnteringAttackItem → String
   | .token _ kind _ _ tokenName => tokenName.getD (tokenPrinted kind).name
   | .card cardId .. =>
     match g.findObject? cardId with
-    | some o => o.name
+    | some o => g.name o
     | none => "the creature"
 
 /-- Advance `remaining` past any items whose attack target is already fixed

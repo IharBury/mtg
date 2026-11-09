@@ -310,7 +310,7 @@ the deck list's sideboard, which a game puts outside the game. -/
   let g := addPermanent withBears grizzlyBears me me
   let g := addPermanent g hillGiant opp opp
   let g := resolved (castFra g overwriteTheMultiverse)
-  !g.battlefield.any (·.isCreature) && (jaceTokenOf g).status.loyaltyCounters == 3
+  !g.battlefield.any (g.isCreature ·) && (jaceTokenOf g).status.loyaltyCounters == 3
 
 #guard
   let g := addToGraveyard afterDraw jaceRealitySculptor me
@@ -625,7 +625,7 @@ under your control and is exiled at the next end step. -/
 #guard
   let g := resolved (castFra withBears vindictiveTriumph [tgt withBears "Grizzly Bears"])
   let o := namedPermanent g "Grizzly Bears"
-  o.controlledBy me && o.status.tapped &&
+  g.controlledBy o me && o.status.tapped &&
     let g := passBoth (skipTo g .end 80)
     inExile g "Grizzly Bears"
 #guard

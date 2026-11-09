@@ -944,7 +944,7 @@ def completeTurnFaceUp (g : Game) (caster : PlayerId) (spellId : ObjectId)
           let g := g.record
             (GameEvent.turnedFaceUp g.turnNumber (g.snapshot o)
               (cause := .specialAction .turnFaceUp caster))
-          g.logMsg s!"{(g.player caster).name} turns {(g.object! spellId).name} face up"
+          g.logMsg s!"{(g.player caster).name} turns {g.name (g.object! spellId)} face up"
         else g
       | none => g
     if g.pending != .none then g

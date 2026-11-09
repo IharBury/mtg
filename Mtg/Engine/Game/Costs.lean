@@ -319,7 +319,7 @@ def playManaCost (g : Game) (card : GameObject) (face : CardDef)
 
 /-- True when `face` has a mana cost that would not be paid to play `card`. -/
 def playsWithoutPayingManaCost (g : Game) (card : GameObject)
-    (face : CardDef := card.printed) : Bool :=
+    (face : CardDef := g.baseCard card) : Bool :=
   face.manaCost.includesManaPayment && !(g.playManaCost card face).includesManaPayment
 
 /-- Extra lifetime power-up activations granted by Wonder Man (MSH). -/

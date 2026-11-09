@@ -899,7 +899,7 @@ def hospitalityAnimateSetup : Game :=
 #guard hospitalityAnimateSetup.canActivate ⟨0⟩
   (namedPermanent hospitalityAnimateSetup "Beorn's Hospitality")
   (beornsHospitality.activatedAbilities[0]!)
-#guard !(namedPermanent hospitalityAnimateSetup "Beorn's Hospitality").isCreature
+#guard !hospitalityAnimateSetup.isCreature (namedPermanent hospitalityAnimateSetup "Beorn's Hospitality")
 #guard hospitalityAnimateSetup.landsYouControl ⟨0⟩ == 3
 
 def proposedHospitalityAnimate : Game :=

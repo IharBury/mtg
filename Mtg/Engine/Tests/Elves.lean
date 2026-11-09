@@ -169,7 +169,7 @@ def elkSetup : Game :=
 #guard elkSetup.canCast ⟨0⟩ (handCardNamed elkSetup ⟨0⟩ "Mirkwood Elk")
 #guard elkSetup.asSorcery? ⟨0⟩
 #guard mirkwoodElk.hasSorcerySpeed
-#guard (namedGraveyardCard elkSetup ⟨0⟩ "Llanowar Elves").hasSubtype .elf
+#guard elkSetup.hasSubtype (namedGraveyardCard elkSetup ⟨0⟩ "Llanowar Elves") .elf
 #guard (elkSetup.legalTriggerTargets ⟨0⟩ .onEnterOrAttackReturnElfGainLife).contains
   (Target.card (namedGraveyardCard elkSetup ⟨0⟩ "Llanowar Elves").id)
 

@@ -1918,8 +1918,8 @@ def targetPlayerCreatesLeviathan : Game :=
   let leviathans :=
     targetPlayerCreatesLeviathan.battlefield.filter (fun o => o.name == "Leviathan")
   leviathans.size == 1 &&
-    (leviathans[0]!).controlledBy ⟨1⟩ &&
-    !(leviathans[0]!).controlledBy ⟨0⟩
+    targetPlayerCreatesLeviathan.controlledBy (leviathans[0]!) ⟨1⟩ &&
+    !targetPlayerCreatesLeviathan.controlledBy (leviathans[0]!) ⟨0⟩
 
 /- CR 111.2 / 603.6a / 701.7a: when player 0 creates a creature token that enters
 under player 1's control, `.fra .youCreateCreatureTokens` matches player 0 while

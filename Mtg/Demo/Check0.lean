@@ -947,7 +947,7 @@ Nissa (CR 506.3). -/
 
 #guard
   let g := Tests.readyToDeclareBlockers.objects.foldl (fun g o =>
-    if o.controlledBy ⟨1⟩ then Tests.setTapped g o.id true else g)
+    if g.controlledBy o ⟨1⟩ then Tests.setTapped g o.id true else g)
     Tests.readyToDeclareBlockers
   shouldAutoNoBlock g []
 

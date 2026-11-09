@@ -157,26 +157,28 @@ def finishSarumanExileCopyMayCast (g : Game) (controller : PlayerId) (fromId : O
   match g.followMovedToZone? fromId (· == .exile) with
   | none => g
   | some card =>
-    let name := card.name
+    let name := g.name card
     let g := g.logMsg s!"{name} is exiled"
-    let base := g.copiableValues card
-    let copyId : ObjectId := ⟨g.nextObjectId⟩
-    let copyTs := g.timestamp + 1
-    let copyObj : GameObject := {
-      id := copyId
-      printed := { base with
-        isToken := false
-        otherFace := base.otherFace.map (fun f => { f with isToken := false }) }
-      owner := controller
-      controller := some controller
-      zone := .exile
-      timestamp := copyTs
-      isCopy := true
-    }
-    let g := g.record (GameEvent.created g.turnNumber controller (g.snapshot copyObj)
-      (cause := cause))
-    g.beginFraChoice controller (.mayCastCopy copyId)
-      s!"{(g.player controller).name} may cast the copy of {name} without paying its mana cost"
+    if !g.stillInGame controller then g
+    else
+      let base := g.copiableValues card
+      let copyId : ObjectId := ⟨g.nextObjectId⟩
+      let copyTs := g.timestamp + 1
+      let copyObj : GameObject := {
+        id := copyId
+        printed := { base with
+          isToken := false
+          otherFace := base.otherFace.map (fun f => { f with isToken := false }) }
+        owner := controller
+        controller := some controller
+        zone := .exile
+        timestamp := copyTs
+        isCopy := true
+      }
+      let g := g.record (GameEvent.created g.turnNumber controller (g.snapshot copyObj)
+        (cause := cause))
+      g.beginFraChoice controller (.mayCastCopy copyId)
+        s!"{(g.player controller).name} may cast the copy of {name} without paying its mana cost"
 
 /-- Run the library-reveal, put-onto-battlefield, and bottoming tail of
 `.identityEcho` once the target permanent's exile completes. -/
@@ -186,6 +188,8 @@ def finishIdentityEchoAfterExile (g : Game) (controller : PlayerId)
     if (g.followMovedToZone? exiledId (· == .exile)).isSome then
       g.logMsg s!"{oName} is exiled"
     else g
+  if !g.stillInGame controller then g
+  else
   let lib := (g.player controller).library
   let (revealed, hit) := Id.run do
     let mut revealed : Array ObjectId := #[]
@@ -206,7 +210,7 @@ def finishIdentityEchoAfterExile (g : Game) (controller : PlayerId)
     if allRevealed.isEmpty then g
     else g.record (GameEvent.revealed g.turnNumber controller allRevealed (cause := revealCause?))
   let g := allRevealed.foldl (fun g id =>
-    g.logMsg s!"{(g.player controller).name} reveals {(g.object! id).name}") g
+    g.logMsg s!"{(g.player controller).name} reveals {g.name (g.object! id)}") g
   match hit with
   | some id =>
     let (g, newId) := g.putOntoBattlefield id controller (cause := revealCause?)
@@ -352,25 +356,31 @@ partial def exileOpponentLibrariesLoop (g : Game) (remainingOpps : Array PlayerI
       | none => return g
       | some pid =>
         opps := opps.extract 1 opps.size
-        let lib := (g.player pid).library
-        cOpp := some pid
-        ids := lib.extract 1 lib.size
-        anyMoved := ids.isEmpty
+        if g.stillInGame pid then
+          let lib := (g.player pid).library
+          cOpp := some pid
+          ids := lib.extract 1 lib.size
+          anyMoved := ids.isEmpty
     | some pid =>
-      match ids[0]? with
-      | none =>
+      if !g.stillInGame pid then
         if anyMoved then
           g := g.logMsg s!"All but the bottom card of {(g.player pid).name}'s library are exiled"
         cOpp := none
-      | some cid =>
-        ids := ids.extract 1 ids.size
-        let (g', _) := g.move cid .exile none
-        g := g'
-        if let .chooseReplacement .. := g.pending then
-          return g.chainPendingReplacement
-            (.finishPostStep (.exileOpponentLibrariesLoop opps (some pid) ids anyMoved (some cid)))
-        if (g.followMovedToZone? cid (· == .exile)).isSome then
-          anyMoved := true
+      else
+        match ids[0]? with
+        | none =>
+          if anyMoved then
+            g := g.logMsg s!"All but the bottom card of {(g.player pid).name}'s library are exiled"
+          cOpp := none
+        | some cid =>
+          ids := ids.extract 1 ids.size
+          let (g', _) := g.move cid .exile none
+          g := g'
+          if let .chooseReplacement .. := g.pending then
+            return g.chainPendingReplacement
+              (.finishPostStep (.exileOpponentLibrariesLoop opps (some pid) ids anyMoved (some cid)))
+          if (g.followMovedToZone? cid (· == .exile)).isSome then
+            anyMoved := true
   return g
 
 /-- Resolve an FRA activated or loyalty ability resolution. -/
@@ -396,10 +406,10 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
         let perm : PlayPermission :=
           { player := controller, whileExiled := true }
         let g := (g.createEffect (.playPermission card.id perm)).logMsg
-          s!"{(g.player controller).name} may cast {card.name} for as long as it remains exiled"
+          s!"{(g.player controller).name} may cast {g.name card} for as long as it remains exiled"
         g.withLegalKindPermanent controller kind targets (fun g land =>
           let g := g.createEffect (.colorlessGrantUntilCast land.id card.id)
-          g.logMsg s!"{g.name land} gains \"\{T}: Add \{C}\{C}\" until {card.name} is cast from exile")
+          g.logMsg s!"{g.name land} gains \"\{T}: Add \{C}\{C}\" until {g.name card} is cast from exile")
           sourceId illegal
   | .nextSpellCantBeCountered =>
     (g.createEffect (.nextSpellCantBeCounteredThisTurn controller)).logMsg
@@ -433,7 +443,7 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
       | Target.card id =>
         let card := g.object! id
         g.moveIdsInOrder #[id] (.library card.owner)
-          (log := s!"{card.name} is put on the bottom of {(g.player card.owner).name}'s library")
+          (log := s!"{g.name card} is put on the bottom of {(g.player card.owner).name}'s library")
       | _ => g) sourceId illegal
   | .destroyAllCreatures =>
     let preBf := g.battlefield
@@ -661,7 +671,7 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
     match sourceId.bind (fun id => g.followMovedToZone? id (fun | .graveyard _ => true | _ => false)) with
     | some o =>
       if o.zone == .graveyard o.owner then g.returnToHand o.id o.owner
-      else g.logMsg s!"{o.name} is no longer in the graveyard"
+      else g.logMsg s!"{g.name o} is no longer in the graveyard"
     | none => g.logMsg "The ability's source is no longer in the graveyard"
   | .sarumanExileCopyMayCast =>
     g.withLegalKindTarget controller kind targets (fun g t =>
