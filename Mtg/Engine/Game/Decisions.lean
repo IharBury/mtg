@@ -1664,21 +1664,23 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
       if g.proposedSpell.any (·.caster == p) then
         g.reverseProposedSpell (resumeContinuation := true)
       else g.afterTriggerTargetsChosen
-    else if g.proposedSpell.any (fun prop => (g.findObject? prop.spellId).isNone) then
-      if g.proposedSpell.any (·.caster == p) then
-        g.reverseProposedSpell (resumeContinuation := true)
-      else g
     else
       match g.objectAwaitingTargets with
       | none =>
-        if g.proposedSpell.isSome then g
+        if g.proposedSpell.any (·.caster == p) then
+          g.reverseProposedSpell (resumeContinuation := true)
+        else if g.proposedSpell.isSome then g
         else g.afterTriggerTargetsChosen
       | some obj =>
-        if g.proposedSpell.isNone &&
+        let isPropSpell := g.proposedSpell.any (·.spellId == obj.id)
+        if !isPropSpell &&
             (g.stack.find? (·.objectId == obj.id)).any (·.controller != p) then
           g.afterTriggerTargetsChosen
         else
-          let caster := (g.proposedSpell.map (·.caster)).getD p
+          let caster :=
+            match g.proposedSpell with
+            | some prop => if prop.spellId == obj.id then prop.caster else p
+            | none => p
           if !g.stillInGame caster then
             g.reverseProposedSpell (resumeContinuation := true)
           else
@@ -1694,7 +1696,7 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
               hasLegal || g.canSkipCurrentOptionalSlot obj || g.canFinishOptionalTargets obj || allowZero
             if canDeclineOrPick then
               g.change (.pending (.chooseTargets caster))
-            else if g.proposedSpell.isSome then
+            else if isPropSpell then
               g.reverseProposedSpell (resumeContinuation := true)
                 (extraLog := some s!"{g.name obj} has no legal target and can't be cast")
             else

@@ -24646,9 +24646,12 @@ private def mustApply33i2 (g : Game) (p : PlayerId) (a : Action) : Game :=
   let gTapCast := mustApply33i2 gTap0 p0 (.cast (gTap0.player p0).hand.back!)
   let gTargetOtherPropLive := (gTapCast.change (.pending .none)).runPostStep (.resumeChooseTargetsAfterLeave p2)
   let vanishedProp : ProposedSpell := { gTapCast.proposedSpell.get! with spellId := ⟨999999⟩ }
-  let gTargetOtherPropGone :=
-    ((gLeftP1.changes #[.proposedSpell (some vanishedProp), .pending .none]).runPostStep
-      (.resumeChooseTargetsAfterLeave p2))
+  let gVanishedOnCast := gTapCast.changes #[.proposedSpell (some vanishedProp), .pending .none]
+  let gTargetOwnPropGone := gVanishedOnCast.runPostStep (.resumeChooseTargetsAfterLeave p0)
+  let gTargetOtherPropGone := gVanishedOnCast.runPostStep (.resumeChooseTargetsAfterLeave p2)
+  let gVanishedWithTrig := gP0TrigAwaiting.changes #[.proposedSpell (some vanishedProp), .pending .none]
+  let gTargetOtherPropGoneWithTrig := gVanishedWithTrig.runPostStep (.resumeChooseTargetsAfterLeave p2)
+  let gTargetOwnSeatWithTrig := gVanishedWithTrig.runPostStep (.resumeChooseTargetsAfterLeave p0)
   let gModePostDeparted :=
     ((gLeftP1.change (.pushContinuationFrame {})).runPostStep (.resumeTriggerModesAfterLeave p1 p0TrigId 1 #[]))
   let gUpToPostDeparted :=
@@ -24662,8 +24665,11 @@ private def mustApply33i2 (g : Game) (p : PlayerId) (a : Action) : Game :=
     gTargetPostWrongSeat.pending == .chooseTargets p0 &&
     gTargetOtherPropLive.pending == .chooseTargets p0 &&
     gTargetOtherPropLive.proposedSpell.isSome &&
+    gTargetOwnPropGone.proposedSpell.isNone &&
     gTargetOtherPropGone.pending == .none &&
     gTargetOtherPropGone.proposedSpell.isSome &&
+    gTargetOtherPropGoneWithTrig.pending == .chooseTargets p0 &&
+    gTargetOwnSeatWithTrig.pending == .chooseTargets p0 &&
     gModePostDeparted.pending == .none && gModePostDeparted.continuations.isEmpty &&
     gUpToPostDeparted.pending == .none && gUpToPostDeparted.continuations.isEmpty &&
     gHkPostDeparted.pending == .none && gHkPostDeparted.continuations.isEmpty
@@ -24816,7 +24822,8 @@ private def mustApply33i2 (g : Game) (p : PlayerId) (a : Action) : Game :=
   mustHold33i2 "2c.restorePendingCompleteOk" restorePendingCompleteOk &&
   mustHold33i2 "2.replay"
     (replayOk33i2 #[gLeftP1, gP0TrigAwaiting, gTargetPostDeparted, gTargetPostWrongSeat,
-      gTargetOtherPropLive, gTargetOtherPropGone,
+      gTargetOtherPropLive, gTargetOwnPropGone, gTargetOtherPropGone,
+      gTargetOtherPropGoneWithTrig, gTargetOwnSeatWithTrig,
       gModePostDeparted, gUpToPostDeparted, gHkPostDeparted,
       gModal0, gModalCast, gModalPicked0, gModalAfterLeave,
       gTrigModes0, gTrigModesStack, gTrigModesPicked0, gTrigModesAfterLeave, gTrigModesFinalize0,
