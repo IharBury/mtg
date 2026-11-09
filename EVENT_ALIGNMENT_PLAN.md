@@ -10015,47 +10015,64 @@ and Layer 1–6 characteristic / cascade stack & LKI mana-value reads),
        `(departed := departed)` to `.restorePending saved popOuter (departed :=
        departed)` at `1388, 1390`), `Leaving.playerLeavesGameCore`
        (`Leaving.lean:1397–1830`, taking `(departedIn : Array PlayerId := #[])`
-       with `let departed := departedIn.push p`, appending `p` to any
-       `.restorePending`'s `departed` array inside `preBodyCont?` /
-       `g.outerPendingReplacements`, and passing `(departed := departed)` to
-       `.restorePending redirP false (departed := departed)` at `1725, 1777` and
-       to `g.restoreSavedPostLeave savedPreLeavePending? popOuter (departed :=
-       departed)` at `1829`), `Leaving.leavePlayersWhoLostCore`
-       (`Leaving.lean:1842–1871`, taking `(departedIn : Array PlayerId := #[])`,
-       passing `(departedIn := departed)` into `playerLeavesGameCore pl.id` at
-       `1864` and updating `departed := departed.push pl.id`, and returning
-       `(g, saved?, popOuter, departed)`) &
-       `Leaving.leavePlayersWhoLost` (`Leaving.lean:1878–1886`, taking
-       `(departedIn : Array PlayerId := #[])`, forwarding `departed` to
+       with `let departed := departedIn.push p`, recursively walking `.seq` via
+       `PendingReplacement.appendDepartedToRestorePending` to append `p` to any
+       `.restorePending`'s `departed` array inside `preBodyCont?` and every
+       entry of `g.outerPendingReplacements`, and passing `(departed :=
+       departed)` to `.restorePending redirP false (departed := departed)` at
+       `1725, 1777` and to `g.restoreSavedPostLeave savedPreLeavePending?
+       popOuter (departed := departed)` at `1829`),
+       `Leaving.leavePlayersWhoLostCore` (`Leaving.lean:1842–1871`, taking
+       `(departedIn : Array PlayerId := #[])`, passing `(departedIn :=
+       departed)` into `playerLeavesGameCore pl.id` at `1864` before updating
+       `departed := departed.push pl.id`, and returning `(g, saved?, popOuter,
+       departed)`) & `Leaving.leavePlayersWhoLost` (`Leaving.lean:1878–1886`,
+       taking `(departedIn : Array PlayerId := #[])`, forwarding `departed` to
        `.leavePlayersWhoLost saved? popOuter departed` at `1883` and to
        `g.restoreSavedPostLeave saved? popOuter (departed := departed)` at
        `1886`), `PendingReplacement.leavePlayersWhoLost` (`Event.lean:1858`,
-       resumed at `Decisions.lean:984–985` by calling
+       resumed at `Decisions.lean:984–985` by explicitly passing `departed` to
        `(g.checkSBACountedWithLeaves savedPending popOuter departed).1`),
        `StateBasedActions.checkSBACounted` (`StateBasedActions.lean:344–345`,
-       taking `(departedIn : Array PlayerId := #[])` and forwarding `departedIn`
-       in the pause chain at `542–544`) &
-       `StateBasedActions.checkSBACountedWithLeaves`
+       taking `(departedIn : Array PlayerId := #[])` and chaining `if
+       savedIn.isSome || popOuterIn || !departedIn.isEmpty then
+       .leavePlayersWhoLost savedIn popOuterIn departedIn else .checkSBA` at
+       `542–544`) & `StateBasedActions.checkSBACountedWithLeaves`
        (`StateBasedActions.lean:551–574`, taking `(departedIn : Array PlayerId
-       := #[])`, forwarding `departedIn` at `557`, receiving `departed` from
+       := #[])` and returning `Game × Bool × Array PlayerId`, passing
+       `departedIn` into `g.checkSBACounted savedIn popOuterIn departedIn` at
+       `554`, chaining `.leavePlayersWhoLost savedIn popOuterIn departedIn`
+       when `wasPaused && (savedIn.isSome || popOuterIn || !departedIn.isEmpty)`
+       at `557`, receiving `(g, saved?, popOuter, departed)` from
        `g.leavePlayersWhoLostCore savedIn popOuterIn departedIn` at `561`,
-       forwarding `departed` at `566–568` and `572`, and calling
-       `g.restoreSavedPostLeave saved? popOuter (departed := departed)` at
-       `574`), `Decisions.concedePlayersLoop` (`Decisions.lean:293–395`, taking
-       `(departedIn : Array PlayerId := #[])`, pushing `pid` onto `departed` in
-       the `for` loop at `304–322` when `playerLeavesGameCore pid` runs at
-       `317`, forwarding `departed` in the pause chains at `331–332`, `341–343`,
-       `367–369` and the tail call to `finishConcedePriority` at `395`, and
-       passing `(departed := departed)` to `.restorePending sp popOuter
-       (departed := departed)` at `347, 381`),
+       chaining `if g.players.any (fun r => r.lost && !r.leftTheGame) ||
+       saved?.isSome || popOuter || !departed.isEmpty then
+       .leavePlayersWhoLost saved? popOuter departed else .checkSBA` at
+       `566–568`, recursing `g.checkSBACountedWithLeaves saved? popOuter
+       departed` at `572`, and calling `(g.restoreSavedPostLeave saved? popOuter
+       (departed := departed), false, departed)` at `574`),
+       `Decisions.concedePlayersLoop` (`Decisions.lean:293–395`, taking
+       `(departedIn : Array PlayerId := #[])`, passing `(departedIn :=
+       departed)` into `g.playerLeavesGameCore pid (deferRestore := true)
+       (pendingIn := pendingIn) (departedIn := departed)` at `317` before
+       updating `departed := departed.push pid`, forwarding `departed` in the
+       pause chains at `331–332`, `341–343`, `367–369` and the tail call to
+       `finishConcedePriority` at `395`, and passing `(departed := departed)` to
+       `.restorePending sp popOuter (departed := departed)` at `347, 381`),
        `Decisions.finishConcedePriority` (`Decisions.lean:230–254`, taking
-       `(departed : Array PlayerId := #[])`, forwarding `departed` in
-       `.finishConcede` at `240–241`, and passing `(departed := departed)` to
-       `.restorePending sp popOuter (departed := departed)` at `254`),
-       `PendingReplacement.finishConcede` (`Event.lean:1872–1874`, resumed at
-       `Decisions.lean:595–597`), and `PendingReplacement.concedePlayersLoop`
-       (`Event.lean:1875–1879`, resumed at `Decisions.lean:598–600`), while
-       non-departure `.restorePending` callers (`ManaAbilities.lean:382`,
+       `(departed : Array PlayerId := #[])`, calling `let (g, _, departed) :=
+       if runSba && !g.over then g.checkSBACountedWithLeaves (departedIn :=
+       departed) else (g, false, departed)` at `237` so any players who lose and
+       leave during that SBA pass are folded into `departed`, forwarding
+       `departed` in `.finishConcede` at `240–241`, and passing `(departed :=
+       departed)` to `.restorePending sp popOuter (departed := departed)` at
+       `254`), `PendingReplacement.finishConcede` (`Event.lean:1872–1874`,
+       resumed at `Decisions.lean:595–597` by explicitly passing `(departed :=
+       departed)` to `finishConcedePriority`), and
+       `PendingReplacement.concedePlayersLoop` (`Event.lean:1875–1879`, resumed
+       at `Decisions.lean:598–600` by explicitly passing `(departedIn :=
+       departed)` to `concedePlayersLoop`), while non-departure
+       `.restorePending` callers (`ManaAbilities.lean:382`,
        `Decisions.lean:1890, 3092`, `Casting.lean:1038`) keep `departed := #[]`
        (never scanning `g.players` for `leftTheGame` or `lost`);
      - keep `.chooseMode q | .chooseTargets q | .fraChoice q (.triggerModes ..)`
