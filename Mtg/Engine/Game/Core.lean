@@ -2129,6 +2129,7 @@ def applyEngineChange (g : Game) (c : EngineChange) : Game :=
           { e with
             lastKnownPower := pw.orElse (fun _ => e.lastKnownPower)
             lastKnownToughness := tg.orElse (fun _ => e.lastKnownToughness) }
+        | .clearChosenModes => { e with chosenMode := none, extraModes := #[] }
       { g with stack := g.stack.set! i e' }
     | none => g
   | .proposedSpell v => { g with proposedSpell := v }
@@ -7754,7 +7755,8 @@ def playerCanBeTargetedBy (g : Game) (caster target : PlayerId)
           match em.status.chosenCardType with
           | some t => g.hasType src t
           | none => false)
-  (caster == target || g.areTeammates caster target || !g.playerHasHexproof target) &&
+  g.stillInGame target &&
+    (caster == target || g.areTeammates caster target || !g.playerHasHexproof target) &&
     !(g.protectionFromEverything target) && !typeBlock
 
 /-- Mana value of `o` (CR 202.3 / 613.1a / 708.2a). `{X}` is the chosen value
@@ -11599,7 +11601,14 @@ def clearUnlessPays (g : Game) : Game :=
 
 /-- Drop a stashed `SpellResolution.may` after the player accepts or declines. -/
 def clearMay (g : Game) : Game :=
-  g.changes #[.mayController ⟨0⟩, .mayEffect none, .mayTargets #[], .maySource none]
+  g.changes #[
+    .mayController ⟨0⟩,
+    .mayEffect none,
+    .mayTargets #[],
+    .maySource none,
+    .mayOnAccept none,
+    .mayOnDecline none,
+    .mayContext none]
 
 /-- Drop a stashed `SpellResolution.or` after the player has chosen. -/
 def clearSpellOr (g : Game) : Game :=

@@ -23,9 +23,10 @@ def payRemoveIndestructibleCounter (g : Game) (o : GameObject)
     (cause := some (.costPayment .removeCounters p forObject))
   return g.logMsg s!"{oName} loses an indestructible counter"
 
-/-- Whether `p` can pay `n` life (CR 119.4 / 119.8). Paying 0 life is always legal. -/
+/-- Whether `p` can pay `n` life (CR 119.4 / 119.8 / 800.4a). Paying 0 life is always legal for a player in the game. -/
 def canPayLife (g : Game) (p : PlayerId) (n : Nat) : Bool :=
-  n == 0 || ((g.player p).life ≥ (n : Int) && !g.lifeLocked p && !g.lifeCantChange p)
+  g.stillInGame p &&
+    (n == 0 || ((g.player p).life ≥ (n : Int) && !g.lifeLocked p && !g.lifeCantChange p))
 
 /-- Pay `n` life as a cost (CR 118.3b / 119.4 / 119.8). Payment of life is not damage. -/
 def payLifeCost (g : Game) (p : PlayerId) (n : Nat)

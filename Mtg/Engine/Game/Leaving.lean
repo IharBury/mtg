@@ -425,12 +425,6 @@ private def findEarliestBatchIdx (g : Game) (target : BatchId) : Nat := Id.run d
       if e.batch == some target then return i
   return g.events.size
 
-private def afterRandomReferencesPlayer (p : PlayerId) : AfterRandom → Bool
-  | .none => false
-  | .draw q _ | .gainLife q _ | .revealRandomCreatureThenBottom q _
-  | .putOnTop q _ | .beholdUntap q _ _ | .discardRandom q => q == p
-  | .plusOne .. => false
-
 private def filterLivingAttackTargets (g : Game) (controller : PlayerId)
     (opts : Array AttackTarget) : Array AttackTarget :=
   opts.filter fun
@@ -518,6 +512,9 @@ private def isProposalBoundaryStep (caster : PlayerId) : PendingReplacement → 
   | .finishActivateManaAbilityPicks ..
   | .finishActivateManaAbilityPostSac ..
   | .finishManaAbilityMountainTrigger .. => true
+  | .finishPostStep (.resumeProposalCostAfterLeave q _)
+  | .finishPostStep (.resumeChooseModeAfterLeave q)
+  | .finishPostStep (.resumeChooseTargetsAfterLeave q) => q == caster
   | .restorePending rp .. => isProposalPromptFor caster rp
   | _ => false
 
@@ -538,6 +535,20 @@ private def stripAbortedProposalCont (caster : PlayerId) :
       some (.seq a b)
   | step =>
     if isProposalBoundaryStep caster step then none else some step
+
+private def revertGoneStagedTargets (g : Game) (e? : Option StackEntry)
+    (staged : Array Target) : Array Target :=
+  match e? with
+  | none => staged
+  | some e =>
+    let gone : Target → Bool
+      | .player pid => !g.stillInGame pid
+      | .permanent oid => !(g.findObject? oid).any (·.isOnBattlefield)
+      | .card oid => (g.findObject? oid).isNone
+    staged.mapIdx fun i st =>
+      match e.targets[i]? with
+      | some orig => if st != orig && gone st then orig else st
+      | none => st
 
 @[extern "mtg_game_amass"]
 private opaque amass (g : Game) (controller : PlayerId) (subtype : CardSubtype) (n : Nat)
@@ -563,6 +574,12 @@ private opaque sequenceAllTargetsIllegal (g : Game) (controller : PlayerId) (eff
 @[extern "mtg_game_grant_widow_cast"]
 private opaque grantWidowCast (g : Game) (controller : PlayerId) (exiled : Option ObjectId)
     (cause : Option EventCause := none) : Game := g
+
+@[extern "mtg_game_resume_trigger_sequence"]
+private opaque resumeTriggerSequence (g : Game) : Game := g
+
+@[extern "mtg_game_auto_resolve_choose_object"]
+private opaque autoResolveSingleChooseObject (g : Game) (id : ObjectId) : Game := g
 
 /-- After `p` leaves, pending costs they would pay are not paid (CR 800.4f)
 and other pending choices they would make are skipped or passed on
@@ -628,7 +645,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
                 g.counterStackSpell o.id (controller := some caster)
             (g, g.pending)
     else (g, pending)
-  | .payWard q spellId _ =>
+  | .payWard q spellId cost =>
     if q == p then
       let g := clearPending g
       let g := g.logMsg s!"{(g.player p).name} does not pay (CR 800.4f)"
@@ -642,7 +659,20 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
             g.withOuterContStashed fun g =>
               g.counterStackSpell spellId (controller := some wardCtrl)
           (g, g.pending)
-    else (g, pending)
+    else if !(g.findObject? spellId).any (·.zone == .stack) then
+      (clearPending g, .none)
+    else
+      match cost with
+      | .sacrificePermanents left paid chosen =>
+        if paid > 0 && ((g.permanentsOf q).filter (fun o => !chosen.contains o.id)).size < left then
+          let g := (clearPending g).logMsg s!"{(g.player q).name} cannot finish paying ward"
+          let wardCtrl := ((g.resolvingAbility.bind g.findObject?).bind (·.controller)).getD (g.opponent q)
+          let g :=
+            g.withOuterContStashed fun g =>
+              g.counterStackSpell spellId (controller := some wardCtrl)
+          (g, g.pending)
+        else (g, pending)
+      | _ => (g, pending)
   | .mayPayGeneric q _ =>
     if q == p then
       let g := clearPending g
@@ -824,14 +854,25 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
       (g, .none)
   | .activateManaAbilities q | .chooseX q
   | .chooseAdditionalCost q | .chooseKicker q | .chooseGift q
-  | .chooseTeamwork q | .chooseTeamworkCreatures q _
-  | .sacrificePermanent q _ | .discardForAdditionalCost q =>
+  | .chooseTeamwork q =>
     if q == p || abortedProp then
       let clearProp : Array EngineChange :=
         if abortedProp then #[.proposedSpell none, .clearProposalCheckpoint]
         else #[]
       (clearPendingAnd g clearProp, .none)
     else (g, pending)
+  | .chooseTeamworkCreatures q _
+  | .sacrificePermanent q _ | .discardForAdditionalCost q =>
+    if q == p || abortedProp then
+      let clearProp : Array EngineChange :=
+        if abortedProp then #[.proposedSpell none, .clearProposalCheckpoint]
+        else #[]
+      (clearPendingAnd g clearProp, .none)
+    else
+      let g :=
+        g.withOuterContStashed fun g =>
+          (clearPending g).chainPendingReplacement (.finishPostStep (.resumeProposalCostAfterLeave q pending))
+      (g, .none)
   | .fraChoice q choice =>
     let clearProp : Array EngineChange :=
       if abortedProp then #[.proposedSpell none, .clearProposalCheckpoint]
@@ -840,7 +881,11 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
     | .costPicks .. | .crew .. | .zemoBoastExile .. =>
       if q == p || abortedProp then
         (clearPendingAnd g (#[.chooseModesRest none] ++ clearProp), .none)
-      else (g, pending)
+      else
+        let g :=
+          g.withOuterContStashed fun g =>
+            (clearPending g).chainPendingReplacement (.finishPostStep (.resumeProposalCostAfterLeave q pending))
+        (g, .none)
     | .mayCastUpToFromExile ids left =>
       if q == p then
         let g := g.changes (#[.chooseModesRest none, .pendingMayCastFromExile none] ++ clearProp)
@@ -1222,7 +1267,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
         else if ids' != ids then
           (g, .fraChoice q (.mayCastCards ids' withoutPaying exileInstead))
         else (g, pending)
-    | .mayChangeSpellTarget spellId _ _ =>
+    | .mayChangeSpellTarget spellId index staged =>
       if q == p then
         let g := g.changes (#[.chooseModesRest none] ++ clearProp)
         let g := if g.mayThenDrop > 0 then g.declineMayThenCore else clearPending g
@@ -1231,7 +1276,11 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
         let g := g.change (.chooseModesRest none)
         let g := if g.mayThenDrop > 0 then g.declineMayThenCore else clearPending g
         (g, .none)
-      else (g, pending)
+      else
+        let staged' := g.revertGoneStagedTargets (g.stackEntry? spellId) staged
+        if staged' != staged then
+          (g, .fraChoice q (.mayChangeSpellTarget spellId index staged'))
+        else (g, pending)
     | .newTargetsForCopies copies | .newTargetsForCopySlot copies _ _ =>
       if q == p then
         let g := g.changes (#[.chooseModesRest none] ++ clearProp)
@@ -1245,11 +1294,17 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
           (g, .none)
         else if live[0]? != copies[0]? then
           (g, .fraChoice q (.newTargetsForCopies live))
-        else if live != copies then
-          (g, .fraChoice q (match choice with
-            | .newTargetsForCopySlot _ s st => .newTargetsForCopySlot live s st
-            | _ => .newTargetsForCopies live))
-        else (g, pending)
+        else
+          match choice with
+          | .newTargetsForCopySlot _ s st =>
+            let st' := g.revertGoneStagedTargets (copies[0]?.bind g.stackEntry?) st
+            if live != copies || st' != st then
+              (g, .fraChoice q (.newTargetsForCopySlot live s st'))
+            else (g, pending)
+          | _ =>
+            if live != copies then
+              (g, .fraChoice q (.newTargetsForCopies live))
+            else (g, pending)
     | .sacrificeLeastPower ids =>
       if q == p then
         let g := g.changes (#[.chooseModesRest none] ++ clearProp)
@@ -1281,7 +1336,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
         else (g, pending)
     | .chooseCards ids max purpose =>
       if q == p then
-        let g := g.changes (#[.chooseModesRest none] ++ clearProp)
+        let g := g.changes (#[.chooseModesRest none, .stashedCause none] ++ clearProp)
         let g := if g.mayThenDrop > 0 then g.declineMayThenCore else clearPending g
         (g, .none)
       else
@@ -1465,6 +1520,56 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
           g.putRestOnBottomRandom q rest (cause := cause)
         (g, g.pending)
       else (g, pending)
+    | .orderLibraryBottom ids =>
+      if q == p then
+        let g := g.changes (#[.chooseModesRest none, .stashedCause none] ++ clearProp)
+        let g := if g.mayThenDrop > 0 then g.declineMayThenCore else clearPending g
+        (g, .none)
+      else
+        let liveIds := ids.filter (fun id => (g.findObject? id).any (·.zone == .library q))
+        if liveIds.size ≤ 1 then
+          let g := g.withOuterContStashed fun g =>
+            let cause := g.stashedCause.orElse (fun _ => liveIds[0]?.bind g.lastMoveCauseOf?)
+            let g := g.changes #[.chooseModesRest none, .stashedCause none]
+            let g := if g.mayThenDrop > 0 then g.declineMayThenCore else clearPending g
+            if !liveIds.isEmpty then
+              g.moveIdsInOrder liveIds (.library q) (cause := cause)
+                (log := s!"{(g.player q).name} puts the rest on the bottom of their library")
+            else g
+          (g, g.pending)
+        else if liveIds != ids then
+          (g, .fraChoice q (.orderLibraryBottom liveIds))
+        else (g, pending)
+    | .searchLibrary eligible count dest after kind
+    | .maySearchLibrary eligible count dest after kind =>
+      if q == p then
+        let waitingPlusOne := g.plusOneAfterSearch
+        let g := g.changes (#[
+          .chooseModesRest none,
+          .untapSearchedIfLands none,
+          .plusOneAfterSearch none] ++ clearProp)
+        let g := if g.mayThenDrop > 0 then g.declineMayThenCore else clearPending g
+        let g :=
+          match waitingPlusOne with
+          | some (cid, ctrl, srcId) =>
+            if ctrl != p && g.stillInGame ctrl then
+              g.withOuterContStashed fun g =>
+                g.chainPendingReplacement (.finishPostStep (.applyPlusOneAfterSearch cid ctrl srcId))
+            else g
+          | none => g
+        (g, .none)
+      else
+        let g :=
+          if g.plusOneAfterSearch.any (fun (_, ctrl, _) => ctrl == p || !g.stillInGame ctrl) then
+            g.change (.plusOneAfterSearch none)
+          else g
+        let liveEligible := eligible.filter (fun id => (g.findObject? id).isSome)
+        (g,
+          if liveEligible != eligible then
+            .fraChoice q (match choice with
+              | .searchLibrary .. => .searchLibrary liveEligible count dest after kind
+              | _ => .maySearchLibrary liveEligible count dest after kind)
+          else pending)
     | _ =>
       if q == p then
         let g := g.changes (#[.chooseModesRest none] ++ clearProp)
@@ -1521,10 +1626,9 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
       let g := g.changes (#[.chooseModesRest none] ++ clearProp)
       let g := if g.mayThenDrop > 0 then g.declineMayThenCore else clearPending g
       (g, .none)
-    else if !(g.findObject? hostId).any (fun o =>
-        o.isOnBattlefield && g.isCreature o && g.controlledBy o q) ||
-        !(sourceId.bind g.findObject?).any (fun o =>
-          o.isOnBattlefield && g.isEquipment o && g.controlledBy o q) then
+    else if !(g.findObject? hostId).any (fun o => o.isOnBattlefield && g.isCreature o) ||
+        (sourceId.isSome && !(g.legalTargetsForKind q .permanent sourceId).contains (Target.permanent hostId)) ||
+        !(g.permanentsOf q).any g.isEquipment then
       let g := g.change (.chooseModesRest none)
       let g := if g.mayThenDrop > 0 then g.declineMayThenCore else clearPending g
       (g, .none)
@@ -1595,7 +1699,24 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
         .putArtifactThisWay none], .none)
     else (g, pending)
   | .mayResolve q =>
-    if q == p then ((clearPending g).clearMay, .none) else (g, pending)
+    if q == p then
+      match g.mayOnDecline with
+      | some follow =>
+        if g.mayContext.isSome then
+          let g := g.withOuterContStashed fun g =>
+            (((clearPendingAnd g #[.setTriggerSequenceRestFromMay [follow]]).clearMay).logMsg
+              s!"{(g.player p).name} declines (CR 800.4f)").resumeTriggerSequence
+          (g, g.pending)
+        else ((clearPending g).clearMay, .none)
+      | none => ((clearPending g).clearMay, .none)
+    else
+      match g.mayEffect with
+      | some me =>
+        if !g.mayTargets.isEmpty &&
+            g.sequenceAllTargetsIllegal g.mayController me g.mayTargets g.maySource then
+          (((clearPending g).clearMay).logMsg "The target is no longer legal", .none)
+        else (g, pending)
+      | none => (g, pending)
   | .chooseLibraryPlacement q id? =>
     if q == p then ((clearPending g).clearSpellOr, .none)
     else if (g.spellOrLibrary || id?.isSome) &&
@@ -1609,10 +1730,19 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
     match req with
     | .shuffleLibrary q =>
       if q == p then
-        let clearAfter : Array EngineChange :=
-          if afterRandomReferencesPlayer p g.afterRandom then #[.afterRandom .none] else #[]
-        (clearPendingAnd g clearAfter, .none)
-      else if afterRandomReferencesPlayer p g.afterRandom then
+        if g.pregameRandom != .none then
+          (clearPending g, .none)
+        else if g.afterRandom == .none ||
+            g.afterRandom.player?.any (fun r => r == p || !g.stillInGame r) then
+          (clearPendingAnd g (if g.afterRandom != .none then #[.afterRandom .none] else #[]), .none)
+        else
+          let after := g.afterRandom
+          let g :=
+            g.withOuterContStashed fun g =>
+              (clearPendingAnd g #[.afterRandom .none]).chainPendingReplacement
+                (.finishPostStep (.runAfterRandom after))
+          (g, .none)
+      else if g.afterRandom.player?.any (fun r => r == p || !g.stillInGame r) then
         (g.change (.afterRandom .none), pending)
       else (g, pending)
     | .orderInto ids dest cause =>
@@ -1622,24 +1752,62 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
         | _ => false
       let liveIds := ids.filter (fun id => (g.findObject? id).isSome)
       if destGone || liveIds.isEmpty then
-        (clearPending g, .none)
+        if g.afterRandom == .none ||
+            g.afterRandom.player?.any (fun r => r == p || !g.stillInGame r) then
+          (clearPendingAnd g (if g.afterRandom != .none then #[.afterRandom .none] else #[]), .none)
+        else
+          let after := g.afterRandom
+          let g :=
+            g.withOuterContStashed fun g =>
+              (clearPendingAnd g #[.afterRandom .none]).chainPendingReplacement
+                (.finishPostStep (.runAfterRandom after))
+          (g, .none)
       else if liveIds.size == 1 then
         let g :=
           g.withOuterContStashed fun g =>
-            (clearPending g).moveIdsInOrder liveIds dest (cause := cause)
+            let after := g.afterRandom
+            let clearAfter : Array EngineChange :=
+              if after != .none then #[.afterRandom .none] else #[]
+            let g := (clearPendingAnd g clearAfter).moveIdsInOrder liveIds dest (cause := cause)
+            if after != .none && !after.player?.any (fun r => r == p || !g.stillInGame r) then
+              g.chainPendingReplacement (.finishPostStep (.runAfterRandom after))
+            else g
         (g, g.pending)
       else if liveIds != ids then
         (g, .resolveRandom (.orderInto liveIds dest cause))
       else (g, pending)
     | .chooseObject ids =>
       let liveIds := ids.filter (fun id => (g.findObject? id).isSome)
-      if afterRandomReferencesPlayer p g.afterRandom || liveIds.isEmpty then
-        (clearPendingAnd g #[.afterRandom .none], .none)
+      if g.afterRandom.player?.any (fun r => r == p || !g.stillInGame r) then
+        (clearPendingAnd g #[.afterRandom .none, .stashedCause none], .none)
+      else if liveIds.isEmpty then
+        match g.afterRandom with
+        | .revealRandomCreatureThenBottom ctrl revealed =>
+          if ctrl != p && g.stillInGame ctrl then
+            let g :=
+              g.withOuterContStashed fun g =>
+                let cause := g.stashedCause
+                let g := clearPendingAnd g #[.afterRandom .none, .stashedCause none]
+                g.putRestOnBottomRandom ctrl
+                  (revealed.filter (fun id => (g.findObject? id).isSome))
+                  (cause := cause)
+            (g, g.pending)
+          else
+            (clearPendingAnd g #[.afterRandom .none, .stashedCause none], .none)
+        | _ =>
+          (clearPendingAnd g #[.afterRandom .none, .stashedCause none], .none)
+      else if liveIds.size == 1 then
+        let g :=
+          g.withOuterContStashed fun g =>
+            g.autoResolveSingleChooseObject liveIds[0]!
+        (g, g.pending)
       else if liveIds != ids then
         (g, .resolveRandom (.chooseObject liveIds))
       else (g, pending)
     | .chooseIndex _ =>
-      if g.pregameRandom == .none && (g.currentResolvingContext?.bind Prod.snd) == some p then
+      if g.pregameRandom == .none &&
+          (g.afterRandom.player?.any (fun r => r == p || !g.stillInGame r) ||
+            (g.currentResolvingContext?.bind Prod.snd) == some p) then
         (clearPendingAnd g #[.afterRandom .none], .none)
       else (g, pending)
 
@@ -1759,6 +1927,10 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
       let g := g.appendDepartedManyToContinuations departed
       let g := g.record (GameEvent.playerLeftGame g.turnNumber p (cause := cause))
       let g := g.logMsg s!"{(g.player p).name} leaves the game"
+      let g :=
+        if !(g.player p).manaPool.isEmpty then
+          g.record (GameEvent.manaEmptied g.turnNumber p (g.player p).manaPool.toUnits false (cause := cause))
+        else g
       let g :=
         if wasMonarch && !g.over && g.livingPlayers.size > 1 then
           let heir :=
@@ -2199,14 +2371,14 @@ def leavePlayersWhoLost (g : Game)
     g.restoreSavedPostLeave saved? popOuter (departed := departed)
 
 def emptyManaPools (g : Game) : Game :=
-  if !g.players.any (fun pl => !pl.manaPool.isEmpty) then g
+  if !g.players.any (fun pl => g.stillInGame pl.id && !pl.manaPool.isEmpty) then g
   else
     let cause := some (EventCause.turnBased .emptyManaPools)
     g.withBatch cause fun g =>
       Id.run do
         let mut g := g
         for pl in g.players do
-          if !pl.manaPool.isEmpty then
+          if g.stillInGame pl.id && !pl.manaPool.isEmpty then
             let colorless :=
               (g.permanentsOf pl.id).any (fun o =>
                 (g.baseCard o).unspentManaBecomesColorless && g.retainsPrintedAbilities o)

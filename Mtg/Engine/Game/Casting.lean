@@ -682,7 +682,7 @@ def afterWardResolved (g : Game) : Game :=
     g.chainPendingReplacement .afterWardResolved
   else
     let g := g.completeActiveResolutions
-    if g.pending != .none then g
+    if g.over || g.pending != .none || g.afterRandom != .none then g
     else if g.triggerNeedingTargets.isSome then g.promptTriggerTargetsIfNeeded
     else
       let prio := g.pendingPriority.getD g.activePlayer

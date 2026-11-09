@@ -62,6 +62,14 @@ inductive AfterRandom where
   | discardRandom (p : PlayerId)
 deriving DecidableEq, Repr, Inhabited, BEq
 
+/-- Player whose in-game library, hand, life total, or target control this
+`AfterRandom` follow-up acts on, or `none` for `.none` (CR 800.4a). -/
+def AfterRandom.player? : AfterRandom → Option PlayerId
+  | .none => Option.none
+  | .draw q _ | .gainLife q _ | .revealRandomCreatureThenBottom q _
+  | .putOnTop q _ | .beholdUntap q _ _ | .discardRandom q => some q
+  | .plusOne _ ctrl _ => some ctrl
+
 /-- What happens after a Reality Fracture choice is made. Each one is also a
 `Resolution` step, run through the same interpreter. -/
 inductive FraNext where

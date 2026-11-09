@@ -248,8 +248,9 @@ def finishSbaSweep (g : Game) (moves : Array SbaGraveyardMove)
       match g.findObject? tid with
       | some o =>
         if o.printed.isToken && o.zone != .battlefield then
+          let oName := g.name o
           g := g.ceaseToExist o.id (cause := some (.stateBased .tokenOutsideBattlefield))
-          g := g.logMsg s!"{o.name} ceases to exist (token left the battlefield)"
+          g := g.logMsg s!"{oName} ceases to exist (token left the battlefield)"
           changed := true
       | none => pure ()
     -- Non-token copies outside stack and battlefield at start of pass cease to exist (CR 704.5e;
@@ -259,8 +260,9 @@ def finishSbaSweep (g : Game) (moves : Array SbaGraveyardMove)
       | some o =>
         if o.isCopy && !o.printed.isToken && o.zone != .stack && o.zone != .battlefield &&
             !(o.zone == .exile && ((g.playPermission o).bind (·.prepareSource)).isSome) then
+          let oName := g.name o
           g := g.ceaseToExist o.id (cause := some (.stateBased .copyOutsideStackOrBf))
-          g := g.logMsg s!"{g.name o} ceases to exist (copy outside stack or battlefield, CR 704.5e)"
+          g := g.logMsg s!"{oName} ceases to exist (copy outside stack or battlefield, CR 704.5e)"
           changed := true
       | none => pure ()
   if stage != .illegalAttachments then

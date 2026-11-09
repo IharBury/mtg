@@ -1055,7 +1055,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
         | some outer => g.chainPendingReplacement outer
         | none => g
     let name := ((g.findObject? sourceId).map g.name).getD
-      ((prop?.map (fun pr => pr.original.name)).getD "Baron Helmut Zemo")
+      ((prop?.map (fun pr => pr.originalSnapshot.name)).getD "Baron Helmut Zemo")
     let g := if g.proposedSpell.isSome then g.change (.proposedSpell none) else g
     let g := g.becomeActivated p name (some sourceId)
       (some (prop?.bind (fun pr => pr.activation) |>.getD ActivatedAbility.zemoBoastAbility))

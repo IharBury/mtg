@@ -1322,6 +1322,9 @@ inductive PostStep where
       (chosen : Array Nat)
   | resumeHawkeyeModesAfterLeave (p : PlayerId) (objectId : ObjectId) (left : Nat)
       (chosen : Array Nat)
+  | applyPlusOneAfterSearch (id : ObjectId) (controller : PlayerId) (sourceId : Option ObjectId)
+  | resumeProposalCostAfterLeave (p : PlayerId) (savedP : Pending)
+  | runAfterRandom (after : AfterRandom)
   | grantLifelinkUntilEot (cardId : ObjectId) (cause : Option EventCause)
   | grantHasteUntilEotSilent (cardId : ObjectId) (cause : Option EventCause)
   | endTurnAfterCleanupStepEnded
@@ -2253,6 +2256,7 @@ inductive StackEntryChange where
   | skipOptionalSlot (slot : Nat)
   | targetsAnnounced (done : Bool)
   | lastKnownPT (power toughness : Option Int)
+  | clearChosenModes
 deriving Repr, Inhabited, BEq
 
 /-- Internal engine state mutations that are not rules-level occurrences. -/

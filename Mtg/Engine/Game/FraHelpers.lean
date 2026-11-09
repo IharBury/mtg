@@ -48,7 +48,7 @@ def fraSourceName (g : Game) (sourceId : Option ObjectId) : String :=
     match sourceId.bind g.findObject? with
     | some o => g.name o
     | none =>
-      ((sourceId.bind g.damageSourceById?).map (·.name)).orElse
+      ((sourceId.bind g.damageSourceById?).map g.name).orElse
         (fun _ => (sourceId.bind g.lastKnownBefore?).map (·.name))
         |>.getD "The effect"
 
@@ -120,7 +120,7 @@ def materializeSideboard (g : Game) (p : PlayerId) : Game :=
 /-- Cards named Sphinx's Approach in `p`'s graveyard. -/
 def sphinxsApproachesInGraveyard (g : Game) (p : PlayerId) : Array ObjectId :=
   (g.player p).graveyard.filter (fun id =>
-    (g.findObject? id).any (·.name == "Sphinx's Approach"))
+    (g.findObject? id).any (fun o => g.name o == "Sphinx's Approach"))
 
 /-- Next player after `p` in turn order among `ps`, starting with the active
 player (CR 101.4). -/
