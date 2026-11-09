@@ -10437,18 +10437,20 @@ post-pause arrival logging order & departed-player `stillInGame` guards, and
      `.shuffleThenGainLife p life` arm (`Decisions.lean:1194–1195`):
      - Wrap `(g.requestShuffle p (.gainLife p life)).continueIfShuffled` in
        `g.withContinuationFrame fun g => (g.requestShuffle p (.gainLife p
-       life)).continueIfShuffled` (`Core.lean:11087–11094`, matching the other
-       two `requestShuffle` + `continueIfShuffled` call sites in
+       life)).continueIfShuffled` (`Core.lean:11087–11094`, matching
+       `LibrarySearch.shuffleThen` at `LibrarySearch.lean:218–223`, whereas
        `EffectResolution.applyUnified`'s `.lookAtTopLandsGainLife` arm at
-       `EffectResolution.lean:1511, 1972–1973` and `LibrarySearch.shuffleThen`
-       at `LibrarySearch.lean:218–223`), so when `(g.player p).library.size ≤ 1`
-       in `Library.shuffleLibrary` (`Library.lean:231`) and `Library.requestShuffle`
-       (`Library.lean:245–250`) does not open a `--norandom` prompt, the outer
-       `withContinuationFrame` pops the `ContinuationFrame` once
-       `Damage.continueIfShuffled` (`Damage.lean:1049–1059`) clears
-       `.afterRandom .none` and runs `g.gainLife p life` (without popping inside
-       `continueIfShuffled` before `LibrarySearch.shuffleThen` runs
-       `g.applySearchAfter` at `LibrarySearch.lean:223`).
+       `EffectResolution.lean:1967–1976` executes `requestShuffle` +
+       `continueIfShuffled` at `1972–1973` inside `applyUnified`'s outer
+       `withContinuationFrame` at `EffectResolution.lean:1521–1526`), so when
+       `(g.player p).library.size ≤ 1` in `Library.shuffleLibrary`
+       (`Library.lean:231`) and `Library.requestShuffle` (`Library.lean:245–250`)
+       does not open a `--norandom` prompt, the outer `withContinuationFrame`
+       pops the `ContinuationFrame` once `Damage.continueIfShuffled`
+       (`Damage.lean:1049–1059`) clears `.afterRandom .none` and runs `g.gainLife
+       p life` (without popping inside `continueIfShuffled` before
+       `LibrarySearch.shuffleThen` runs `g.applySearchAfter` at
+       `LibrarySearch.lean:223`).
 2. Complete stack-placed modal trigger prompt revalidation in
    `Leaving.redirectPendingAfterLeave` & `Decisions.runPostStep` and unify
    `.restorePending` departed-player revalidation in
@@ -10523,9 +10525,9 @@ post-pause arrival logging order & departed-player `stillInGame` guards, and
        clearProp), .none)`; else if `!(g.findObject? objId).any (·.zone ==
        .stack)`, return `(clearPendingAnd g #[.chooseModesRest none], .none)`;
        else return `(g, pending)`.
-   - In `Pending.lean` (`Pending.lean:735`) and
-     `Decisions.resumePendingReplacement` `.restorePending`
-     (`Decisions.lean:789–808`):
+   - In `Pending.lean` (immediately after `inductive Pending` at
+     `Pending.lean:557–672`) and `Decisions.resumePendingReplacement`
+     `.restorePending` (`Decisions.lean:789–808`):
      - Define `Pending.promptPlayer? : Pending → Option PlayerId` in
        `Pending.lean` returning `some q` for every `Pending` constructor that
        stores a prompt player `q` directly on `p` (including `some q` on
