@@ -499,7 +499,7 @@ def siegeAttackDeclared : Game :=
 #guard (siegeAttackDeclared.object! siegeAttackDeclared.stack.back!.objectId).sourceId ==
   some (namedPermanent siegeAttackDeclared "Orcish Siegemaster").id
 #guard siegeAttackDeclared.log.any (fun s => mentions s "attack trigger is put on the stack")
-#guard (namedPermanent siegeAttackDeclared "Orcish Siegemaster").power == 0
+#guard siegeAttackDeclared.power (namedPermanent siegeAttackDeclared "Orcish Siegemaster") == 0
 #guard siegeAttackDeclared.step == .declareAttackers
 #guard siegeAttackDeclared.hasPriority ⟨0⟩
 

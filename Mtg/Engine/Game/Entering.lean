@@ -47,44 +47,6 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
     else g
   | none => g
 
-/-- Put `n` +1/+1 counters on `o` (CR 122.1). When `entersWith` is true, the
-counters have already been placed in `o`'s arrival `ZoneEvent.moved` via
-`extraEntersWith` or `ZoneEvent.created` (CR 614.1c); `.youPutPlusOne`
-triggers are evaluated from the recorded event batch in `matchTriggers`. -/
-def addPlusOnePlusOneTo (g : Game) (o : GameObject) (n : Nat := 1)
-    (entersWith := false) (byPlayer : Option PlayerId := none)
-    (cause : Option EventCause := none) : Game :=
-  if let .chooseReplacement .. := g.pending then
-    g.chainPendingReplacement (.addPlusOnePlusOneTo o.id n entersWith byPlayer cause)
-  else if n == 0 then g
-  else
-  let putter0 := byPlayer.orElse (fun _ => g.counterPutter (g.controllerOf o))
-  let propCause := g.resolveOptionalCause cause (fallbackCtrl := putter0)
-  let proposed :=
-    GameEvent.counters g.turnNumber putter0 (g.snapshot o) .plusOnePlusOne n (cause := propCause)
-  let (n', applied, cause', choice?, _) :=
-    if proposed.watches .wouldPutCounter then
-      g.replaceCountersPutChoice o .plusOnePlusOne n (putter := byPlayer)
-        (entersWith := entersWith) (cause := cause)
-    else
-      (g.countersYouPut o n (putter := byPlayer) (entersWith := entersWith), #[], cause, none, #[])
-  match choice? with
-  | some (chooser, choices) =>
-    g.promptChooseReplacement chooser choices
-      (.addPlusOnePlusOneTo o.id n entersWith byPlayer cause)
-  | none =>
-    let g := g.consumeReplacementOrder applied
-    if n' == 0 then g
-    else
-      let finalCause := g.resolveOptionalCause cause' (fallbackCtrl := putter0)
-      let happened := GameEvent.counters g.turnNumber putter0 (g.snapshot (g.object! o.id)) .plusOnePlusOne n'
-        (cause := finalCause)
-      let g := if !entersWith then g.record happened else g
-      let phrase :=
-        if entersWith then s!"{g.name o} enters with {plusOnePlusOneCountersPhrase n'}"
-        else s!"{g.name o} gets {plusOnePlusOneCountersPhrase n'}"
-      g.logMsg phrase
-
 /-- After a permanent enters, put its enters triggers and “another … enters”
 triggers (CR 603.6a). -/
 def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
@@ -227,12 +189,15 @@ def resolveAdventureSpell (g : Game) (entry : StackEntry) (obj : GameObject) : G
     else
       match g.followMovedToZone? obj.id (· == .exile) with
       | some o =>
-        let g := g.createEffect (.playPermission o.id {
-            player := entry.controller
-            fromAdventure := true })
-          (cause := finishCause)
-        g.logMsg
-          s!"{o.name} is exiled. {(g.player entry.controller).name} may cast it for as long as it remains exiled (CR 715.3d)"
+        if !g.stillInGame entry.controller then
+          g.logMsg s!"{g.name o} is exiled"
+        else
+          let g := g.createEffect (.playPermission o.id {
+              player := entry.controller
+              fromAdventure := true })
+            (cause := finishCause)
+          g.logMsg
+            s!"{g.name o} is exiled. {(g.player entry.controller).name} may cast it for as long as it remains exiled (CR 715.3d)"
       | none => g
 
 /-- Perform the final CR 608.2n / 608.2p / 608.3 stack-exit and `StackObjectEvent.resolved`

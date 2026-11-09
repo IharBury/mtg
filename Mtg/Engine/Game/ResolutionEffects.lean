@@ -265,7 +265,7 @@ def finishExileUntilSourceLeaves (g : Game) (sourceId : Option ObjectId)
       match sourceId.bind g.findObject? with
       | some src => g.changeObject src.id (.pushLinkedExile moved.id)
       | none => g
-    g.logMsg s!"{moved.name} is exiled until the source leaves the battlefield"
+    g.logMsg s!"{g.name moved} is exiled until the source leaves the battlefield"
 
 /-- Exile `o` until `source` leaves the battlefield, linking the new exile id
 and storing the exiling one-shot `EventCause` for the return (CR 610.3). -/
@@ -294,7 +294,7 @@ def finishExileForLeaveTrigger (g : Game) (sourceId : Option ObjectId)
       match sourceId.bind g.findObject? with
       | some src => g.changeObject src.id (.pushLeaveTriggerExile moved.id)
       | none => g
-    g.logMsg s!"{moved.name} is exiled"
+    g.logMsg s!"{g.name moved} is exiled"
 
 /-- Exile `o` for a leave-the-battlefield trigger (Fiend Hunter). The card
 does not return automatically when the source leaves. -/
@@ -324,9 +324,9 @@ def returnLinkedExileLoop (g : Game) (remainingIds : Array ObjectId)
     if let some moved := g.followMovedToZone? fromId (· == dest) then
       match dest with
       | .hand p =>
-        g := g.logMsg s!"{moved.name} returns to {(g.player p).name}'s hand"
+        g := g.logMsg s!"{g.name moved} returns to {(g.player p).name}'s hand"
       | .graveyard p =>
-        g := g.logMsg s!"{moved.name} returns to {(g.player p).name}'s graveyard"
+        g := g.logMsg s!"{g.name moved} returns to {(g.player p).name}'s graveyard"
       | _ => pure ()
   let mut entered := enteredFromIds
   for i in [0:remainingIds.size] do
@@ -342,7 +342,7 @@ def returnLinkedExileLoop (g : Game) (remainingIds : Array ObjectId)
             return g'.chainPendingReplacement
               (.returnLinkedExileLoop rem cause entered (some preBf) (some (id, .hand p)))
           if let some moved := g'.followMovedToZone? id (· == .hand p) then
-            g := g'.logMsg s!"{moved.name} returns to {(g'.player p).name}'s hand"
+            g := g'.logMsg s!"{g'.name moved} returns to {(g'.player p).name}'s hand"
           else
             g := g'
         | some (.graveyard p) =>
@@ -352,7 +352,7 @@ def returnLinkedExileLoop (g : Game) (remainingIds : Array ObjectId)
             return g'.chainPendingReplacement
               (.returnLinkedExileLoop rem cause entered (some preBf) (some (id, .graveyard p)))
           if let some moved := g'.followMovedToZone? id (· == .graveyard p) then
-            g := g'.logMsg s!"{moved.name} returns to {(g'.player p).name}'s graveyard"
+            g := g'.logMsg s!"{g'.name moved} returns to {(g'.player p).name}'s graveyard"
           else
             g := g'
         | _ =>
@@ -441,17 +441,6 @@ def sturdyShieldToken : CardDef :=
 def createNamedToken (g : Game) (controller : PlayerId) (printed : CardDef) : Game :=
   let (g, _) := g.createToken controller printed
   g
-
-def withSourceOnBattlefield (g : Game) (sourceId : Option ObjectId)
-    (f : Game → GameObject → Game)
-    (missing := "The ability's source is no longer in play")
-    (leftMsg : Option String := none) : Game :=
-  match sourceId.bind g.findObject? with
-  | some o =>
-    if o.isOnBattlefield then f g o
-    else g.logMsg (leftMsg.getD s!"{g.name o} is no longer on the battlefield")
-  | none =>
-    g.logMsg missing
 
 /-- Run `f` if the source is still on the battlefield; otherwise log the same
 `missing` message whether the source is gone or was never found. -/
@@ -1349,7 +1338,7 @@ def revealHand (g : Game) (p : PlayerId) (recordEvent : Bool := true) : Game :=
   let names :=
     hand.foldl (fun acc id =>
       match g.findObject? id with
-      | some o => if acc == "" then o.name else s!"{acc}, {o.name}"
+      | some o => if acc == "" then g.name o else s!"{acc}, {g.name o}"
       | none => acc) ""
   g.logMsg s!"{(g.player p).name} reveals their hand ({names})"
 
@@ -1364,7 +1353,7 @@ def finishWorldsWithinWorldsExileSelf (g : Game) (sourceId : Option ObjectId) : 
         if let .chooseReplacement .. := g'.pending then
           g'.chainPendingReplacement (.finishPostStep (.logMovedToExile src.id))
         else if let some moved := g'.followMovedToZone? src.id (· == .exile) then
-          g'.logMsg s!"{moved.name} is exiled"
+          g'.logMsg s!"{g'.name moved} is exiled"
         else g'
   | none => g
 
@@ -1379,7 +1368,7 @@ def worldsReturnExiledLoop (g : Game) (remainingIds : Array ObjectId)
   let mut g := g
   if let some (fromId, owner) := pendingCard then
     if let some moved := g.followMovedToZone? fromId (· == .hand owner) then
-      g := g.logMsg s!"{moved.name} is returned to its owner's hand"
+      g := g.logMsg s!"{g.name moved} is returned to its owner's hand"
   for i in [0:remainingIds.size] do
     let nid := remainingIds[i]!
     if let some o := g.findObject? nid then
@@ -1392,7 +1381,7 @@ def worldsReturnExiledLoop (g : Game) (remainingIds : Array ObjectId)
           return g.chainPendingReplacement
             (.finishPostStep (.worldsReturnExiledLoop rem (some (o.id, owner))))
         if let some moved := g.followMovedToZone? o.id (· == .hand owner) then
-          g := g.logMsg s!"{moved.name} is returned to its owner's hand"
+          g := g.logMsg s!"{g.name moved} is returned to its owner's hand"
   return g
 
 /-- Return exiled cards to their owners' hands and exile `sourceId` in separate
@@ -1431,7 +1420,7 @@ def finishWorldsWithinWorlds (g : Game) (exiled chosen : Array ObjectId)
       match g.findObject? id with
       | some o =>
         if o.zone == .hand o.owner && g.isCreature o then
-          some (id, o.owner, o.name)
+          some (id, o.owner, g.name o)
         else none
       | none => none
   let validIds := validChosen.map (·.1)

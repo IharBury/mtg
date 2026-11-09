@@ -11,50 +11,10 @@ quality, Riddles in the Dark, The Black Gate, and Gríma's exile.
 namespace Mtg.Engine
 namespace Game
 
-/-- Creatures `p` may sacrifice to a “sacrifices a creature of their choice” effect. -/
-def sacrificeCreatureChoices (g : Game) (p : PlayerId) : Array GameObject :=
-  g.creaturesControlledBy p
-
 /-- Whether `sac` is a legal “another creature or artifact” sacrifice for `sourceId`. -/
 def canSacrificeAsCreatureOrArtifact (g : Game) (p : PlayerId) (sourceId : ObjectId)
     (sac : GameObject) : Bool :=
   (g.sacrificeCreatureOrArtifactChoices p sourceId).any (·.id == sac.id)
-
-/-- Whether `sac` is a legal creature for `p` to sacrifice to an edict. -/
-def canSacrificeCreature (g : Game) (p : PlayerId) (sac : GameObject) : Bool :=
-  (g.sacrificeCreatureChoices p).any (·.id == sac.id)
-
-/-- Creatures `p` controls that are tied for least power. -/
-def leastPowerCreatures (g : Game) (p : PlayerId) : Array GameObject :=
-  let cs := g.sacrificeCreatureChoices p
-  match cs[0]? with
-  | none => #[]
-  | some first =>
-    let minP := cs.foldl (fun acc o => min acc (g.power o)) (g.power first)
-    cs.filter (fun o => g.power o == minP)
-
-/-- Sacrifice a least-power creature `p` controls. If several are tied and
-`chosen` is none, the player still chooses (logged; no sacrifice yet). -/
-def sacrificeLeastPowerCreature (g : Game) (p : PlayerId)
-    (chosen : Option ObjectId := none) : Game :=
-  if !g.stillInGame p then g
-  else
-    let tied := g.leastPowerCreatures p
-    if tied.isEmpty then
-      g.logMsg s!"{(g.player p).name} controls no creatures to sacrifice"
-    else
-      let pick :=
-        match chosen with
-        | some chosenId => tied.find? (fun (o : GameObject) => o.id == chosenId)
-        | none => if tied.size == 1 then some tied[0]! else none
-      match pick with
-      | some o =>
-        g.sacrificeToGraveyard o
-          s!"{(g.player p).name} sacrifices {g.name o} (least power)"
-      | none =>
-        let ids : Array ObjectId := tied.map (fun (o : GameObject) => o.id)
-        (g.change (.pending (.fraChoice p (.sacrificeLeastPower ids)))).logMsg
-          s!"{(g.player p).name} chooses one of the creatures tied for least power to sacrifice"
 
 /-- Modes in `all` that have not yet been chosen. -/
 def unusedModes (chosen : Array Nat) (all : Array Nat := #[0, 1, 2]) : Array Nat :=
@@ -367,7 +327,7 @@ def finishGrimaDirectCast (g : Game) (controller victim : PlayerId)
     else
       match g.followMovedToZone? fromId (· == .stack) with
       | some moved =>
-        g.logMsg s!"{(g.player controller).name} casts {moved.name} as the ability resolves"
+        g.logMsg s!"{(g.player controller).name} casts {g.name moved} as the ability resolves"
       | none => g
   if !g.stillInGame victim then g
   else
@@ -378,7 +338,7 @@ def finishGrimaDirectCast (g : Game) (controller victim : PlayerId)
 /-- Pause-safe loop exiling cards from the top of `victim`'s library face up
 until an instant or sorcery card is exiled (or the library is empty), following
 each moved card via `followMovedToZone?` across `Pending.chooseReplacement`
-pauses and then finishing via `mode` (`GrimaExileMode`). -/
+pausing and then finishing via `mode` (`GrimaExileMode`). -/
 partial def exileUntilInstantOrSorceryLoop (g : Game) (victim : PlayerId)
     (mode : GrimaExileMode) (cause : Option EventCause := none)
     (others : Array ObjectId := #[])
@@ -391,14 +351,14 @@ partial def exileUntilInstantOrSorceryLoop (g : Game) (victim : PlayerId)
   let mut found : Option ObjectId := none
   if let some fid := pendingFromId then
     if let some moved := g.followMovedToZone? fid (· == .exile) then
-      g := g.logMsg s!"{(g.player victim).name} exiles {moved.name} face up"
+      g := g.logMsg s!"{(g.player victim).name} exiles {g.name moved} face up"
       if g.isInstantOrSorcery moved then
         found := some moved.id
       else
         others := others.push moved.id
   while found.isNone && g.stillInGame victim && !(g.player victim).library.isEmpty do
     let top := (g.player victim).library.back!
-    let name := (g.object! top).name
+    let name := g.name (g.object! top)
     let (g', _) := g.move top .exile none (cause := cause)
     g := g'
     if let .chooseReplacement .. := g.pending then
@@ -479,7 +439,7 @@ def applyRiddlesPiles (g : Game) (p : PlayerId) (faceUp faceDown : Array ObjectI
         (cause := some (g.resolvingOrRuleCause p)))
       faceUp.foldl (fun acc id =>
         match acc.findObject? id with
-        | some o => acc.logMsg s!"{(acc.player p).name} reveals {o.name}"
+        | some o => acc.logMsg s!"{(acc.player p).name} reveals {acc.name o}"
         | none => acc) g
     else g
   let toHand := if chooseFaceDown then faceDown else faceUp
@@ -576,7 +536,7 @@ def exileFailedAdventureFromBilbo (g : Game) (id : ObjectId) : Game :=
   match g.findObject? id with
   | none => g
   | some o =>
-    let name := o.name
+    let name := g.name o
     let (g, _) := g.move id .exile none
     g.logMsg s!"{name} is exiled (Bilbo's replacement). It cannot be cast as a permanent"
 

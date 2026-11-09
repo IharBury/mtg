@@ -87,7 +87,7 @@ partial def continueOpeningBegin (g : Game) (rest : Array ObjectId) : Game :=
         g.continueOpeningBegin (rest.extract 1 rest.size)
       else
         g.change (.pending (.fraChoice o.owner (.mayBeginOnBattlefield rest)))
-          |>.logMsg s!"{(g.player o.owner).name} may begin the game with {o.name} on the battlefield"
+          |>.logMsg s!"{(g.player o.owner).name} may begin the game with {g.name o} on the battlefield"
     | none => g.continueOpeningBegin (rest.extract 1 rest.size)
 
 /-- Finish putting an opening-hand card onto the battlefield (`fromId`), then

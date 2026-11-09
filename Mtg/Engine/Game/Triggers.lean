@@ -107,7 +107,7 @@ def beginTriggerModeChoice (g : Game) (p : PlayerId) (obj : GameObject) (count :
     g.logMsg s!"{objName} {detail} and is removed from the stack (CR 603.3c / 700.2b)"
   else
     let what := if count == 2 then "two modes" else "a mode"
-    (g.change (.pending (.fraChoice p (.triggerModes obj.id count #[])))).logMsg
+    g.beginFraChoice p (.triggerModes obj.id count #[])
       s!"{(g.player p).name} chooses {what} for {g.name obj} (CR 603.3c)"
 
 /-- Put a triggered ability of `source` onto the stack (CR 603.3). A modal
@@ -187,7 +187,7 @@ def putTriggeredAbilityOnStack (g : Game) (controller : PlayerId) (source : Game
           .stackEntry obj.id (.targetsAnnounced true)]
         g.logMsg s!"{(g.player controller).name} chooses 0 modes for {g.name obj} (CR 603.3c)"
       else
-        (g.change (.pending (.fraChoice controller (.hawkeyeModes maxModes #[] (some obj.id))))).logMsg
+        g.beginFraChoice controller (.hawkeyeModes maxModes #[] (some obj.id))
           s!"{(g.player controller).name} chooses up to {maxModes} Trick Arrows modes (CR 603.3c)"
     | _ =>
     match ab.shared with
@@ -204,7 +204,7 @@ def putTriggeredAbilityOnStack (g : Game) (controller : PlayerId) (source : Game
           .stackEntry obj.id (.targetsAnnounced true)]
         g.logMsg s!"{(g.player controller).name} chooses 0 modes for {g.name obj} (CR 603.3c)"
       else
-        (g.change (.pending (.fraChoice controller (.upToTriggerModes obj.id maxModes #[])))).logMsg
+        g.beginFraChoice controller (.upToTriggerModes obj.id maxModes #[])
           s!"{(g.player controller).name} chooses up to {maxModes} mode(s) for {g.name obj} (CR 603.3c)"
     | _ =>
       match ab.effect.resolution with
@@ -214,7 +214,7 @@ def putTriggeredAbilityOnStack (g : Game) (controller : PlayerId) (source : Game
         | .chooseModes modes how =>
           match how with
           | .plusOneOrRemoveCounter =>
-            (g.change (.pending (.fraChoice controller (.stackHydeMode obj.id)))).logMsg
+            g.beginFraChoice controller (.stackHydeMode obj.id)
               s!"{(g.player controller).name} chooses a mode for {g.name obj} — 0 put a +1/+1 counter, 1 remove a counter and draw (CR 603.3c)"
           | .vision | .oneUnused | .oneUnusedThisTurn =>
             let lifetime := how == .oneUnused
@@ -244,7 +244,7 @@ def putTriggeredAbilityOnStack (g : Game) (controller : PlayerId) (source : Game
                   "Choose one that hasn't been chosen this turn (CR 603.3c)"
                 | _ =>
                   s!"{(g.player controller).name} chooses a mode that hasn't been chosen (CR 603.3c)"
-              (g.change (.pending (.fraChoice controller (.stackTriggerUnusedMode obj.id srcIdOpt available lifetime)))).logMsg
+              g.beginFraChoice controller (.stackTriggerUnusedMode obj.id srcIdOpt available lifetime)
                 prompt
           | _ =>
             if (sharedTriggerModes ab).isEmpty then g else g.beginTriggerModeChoice controller obj 1
@@ -310,7 +310,7 @@ def putQueuedTrigger (g : Game) (controller : PlayerId) (source : GameObject)
     (delayedTrigger : Option (DelayedTriggerKind × EventCause) := none)
     (abilityEffectOverride : Option Effect := none)
     (reflexiveResolution : Option TriggeredAbility.TriggerResolution := none) : Game :=
-  if (g.player controller).lost || (g.player controller).leftTheGame then g
+  if !g.stillInGame controller then g
   else
     let label :=
       if abilityEffectOverride.isSome || reflexiveResolution.isSome then "reflexive ability"
@@ -531,7 +531,7 @@ def removeWaitingTrigger (g : Game) (wt : WaitingTrigger) : Game :=
 `checked := true` is checked here for “only once each turn” (CR 603.2h) and
 gets its extra copies (Chief of the Wilds, Bifur). -/
 def putWaitingTrigger (g : Game) (wt : WaitingTrigger) (event : TriggerEvent) : Game :=
-  if (g.player wt.controller).lost || (g.player wt.controller).leftTheGame then g
+  if !g.stillInGame wt.controller then g
   else
   let put (g : Game) :=
     g.putQueuedTrigger wt.controller wt.source wt.ability event

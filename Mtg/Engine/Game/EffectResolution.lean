@@ -162,8 +162,8 @@ def applyFraResolution? (g : Game) (controller : PlayerId) (effect : Effect)
       | some (Target.card id) => g.returnStackSpell id
       | _ => g.logMsg "The target is no longer legal")
   | .chooseOddOrEvenDestroy =>
-    some (g.change (.pending (.fraChoice controller (.oddOrEvenDestroy sourceId)))
-      |>.logMsg s!"{(g.player controller).name} chooses odd or even")
+    some (g.beginFraChoice controller (.oddOrEvenDestroy sourceId)
+      s!"{(g.player controller).name} chooses odd or even")
   | .eachCreatureYouControlBecomesPrepared =>
     some (g.withBatch none fun g =>
       (g.permanentsOf controller).foldl (fun g o =>
@@ -236,7 +236,7 @@ def applyFraResolution? (g : Game) (controller : PlayerId) (effect : Effect)
           if entered.isOnBattlefield then
             some ((g.logMsg s!"{g.name entered} returns to the battlefield").afterPermanentEnters entered)
           else some g
-      else some (g.logMsg s!"{o.name} is no longer in the graveyard")
+      else some (g.logMsg s!"{g.name o} is no longer in the graveyard")
     | none => some (g.logMsg "The card is no longer in the graveyard")
   | .copyNextInstantSorceryThisTurn =>
     let (g, cause) := g.allocDelayedCause (some controller) sourceId
@@ -313,12 +313,15 @@ partial def exileHandDrawLoop (g : Game) (p : PlayerId) (ids : Array ObjectId)
   let g :=
     match justMovedFrom.bind (fun fid => g.followMovedToZone? fid (· == .exile)) with
     | some moved =>
-      g.createEffect (.playPermission moved.id { player := p } (turnEnds := 2))
-        (cause := cause)
+      if !g.stillInGame p then g
+      else
+        g.createEffect (.playPermission moved.id { player := p } (turnEnds := 2))
+          (cause := cause)
     | none => g
   if let .chooseReplacement .. := g.pending then
     if ids.isEmpty then g
     else g.chainPendingReplacement (.finishPostStep (.exileHandDrawLoop p ids cause none))
+  else if !g.stillInGame p then g
   else
     match ids[0]? with
     | none => g
@@ -336,23 +339,27 @@ partial def exileHandDrawLoop (g : Game) (p : PlayerId) (ids : Array ObjectId)
 /-- Finish logging and drawing `n` cards after `exileHandDrawLoop` completes. -/
 def finishExileHandDrawPlayUntilNext (g : Game) (p : PlayerId) (n : Nat)
     (cause : Option EventCause) : Game :=
-  let g :=
-    if n == 0 then g
-    else g.logMsg s!"{(g.player p).name} may play the exiled cards until the end of their next turn"
-  g.draw p n (cause := cause)
+  if !g.stillInGame p then g
+  else
+    let g :=
+      if n == 0 then g
+      else g.logMsg s!"{(g.player p).name} may play the exiled cards until the end of their next turn"
+    g.draw p n (cause := cause)
 
 /-- Exile every card in `p`'s hand, then draw that many. Those cards may be
 played until the end of `p`'s next turn (Hex Magic; ruling 421). -/
 def exileHandDrawPlayUntilNext (g : Game) (p : PlayerId) : Game :=
-  let ids := (g.player p).hand
-  let n := ids.size
-  let (g, cause?) : Game × Option EventCause :=
-    if ids.isEmpty then (g, none)
-    else
-      let (g, c) := g.allocDelayedCause (some p)
-      (g, some c)
-  let g := g.withBatch cause? fun g =>
-    g.exileHandDrawLoop p ids cause? none
+  if !g.stillInGame p then g
+  else
+    let ids := (g.player p).hand
+    let n := ids.size
+    let (g, cause?) : Game × Option EventCause :=
+      if ids.isEmpty then (g, none)
+      else
+        let (g, c) := g.allocDelayedCause (some p)
+        (g, some c)
+    let g := g.withBatch cause? fun g =>
+      g.exileHandDrawLoop p ids cause? none
   if let .chooseReplacement .. := g.pending then
     g.chainPendingReplacement (.finishPostStep (.finishExileHandDrawPlayUntilNext p n cause?))
   else
@@ -426,50 +433,58 @@ def applyEvilsThrall (g : Game) (controller : PlayerId) (targets : Array Target)
 /-- Finish `millMayPutPermanentGainLife` once `mill` completes (CR 701.17c). -/
 def finishMillMayPutPermanentGainLife (g : Game) (p : PlayerId)
     (preIds : Array ObjectId) (life : Nat) : Game :=
-  let permanents := preIds.filterMap (fun id =>
-    match g.followMilledPublic? id with
-    | some o => if g.isPermanentCard o then some o.id else none
-    | none => none)
-  if permanents.isEmpty then g.gainLife p life
+  if !g.stillInGame p then g
   else
-    g.change (.pending (.fraChoice p (.mayTakeMilled permanents life)))
-      |>.logMsg s!"{(g.player p).name} may put a permanent card from among the milled cards into their hand"
+    let permanents := preIds.filterMap (fun id =>
+      match g.followMilledPublic? id with
+      | some o => if g.isPermanentCard o then some o.id else none
+      | none => none)
+    if permanents.isEmpty then g.gainLife p life
+    else
+      g.beginFraChoice p (.mayTakeMilled permanents life)
+        s!"{(g.player p).name} may put a permanent card from among the milled cards into their hand"
 
 /-- Mill `n`, then you may put one permanent card from among them into your
 hand. `life` is gained either way (Rapid Rescue). -/
 def millMayPutPermanentGainLife (g : Game) (p : PlayerId) (n life : Nat) : Game :=
-  let lib := (g.player p).library
-  let count := min n lib.size
-  let tops := (lib.extract (lib.size - count) lib.size).reverse
-  let g := g.mill p n
-  if let .chooseReplacement .. := g.pending then
-    g.chainPendingReplacement (.finishPostStep (.millMayPutPermanentGainLife p tops life))
+  if !g.stillInGame p then g
   else
-    g.finishMillMayPutPermanentGainLife p tops life
+    let lib := (g.player p).library
+    let count := min n lib.size
+    let tops := (lib.extract (lib.size - count) lib.size).reverse
+    let g := g.mill p n
+    if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement (.finishPostStep (.millMayPutPermanentGainLife p tops life))
+    else
+      g.finishMillMayPutPermanentGainLife p tops life
 
 /-- Finish `millMayPutSubtypeOrEnchantment` once `mill` completes (CR 701.17c). -/
 def finishMillSubtypeOrEnchantment (g : Game) (p : PlayerId)
     (preIds : Array ObjectId) (subtype : CardSubtype) : Game :=
-  let eligible := preIds.filterMap (fun id =>
-    match g.followMilledPublic? id with
-    | some o =>
-      if g.hasSubtype o subtype || g.isEnchantment o then some o.id else none
-    | none => none)
-  if eligible.isEmpty then
-    g.logMsg s!"{(g.player p).name} has no {subtype} or enchantment card among the milled cards"
+  if !g.stillInGame p then g
   else
-    g.change (.pending (.fraChoice p (.mayTakeMilled eligible 0)))
-      |>.logMsg s!"{(g.player p).name} may put a {subtype} or enchantment card into their hand"
+    let eligible := preIds.filterMap (fun id =>
+      match g.followMilledPublic? id with
+      | some o =>
+        if g.hasSubtype o subtype || g.isEnchantment o then some o.id else none
+      | none => none)
+    if eligible.isEmpty then
+      g.logMsg s!"{(g.player p).name} has no {subtype} or enchantment card among the milled cards"
+    else
+      g.beginFraChoice p (.mayTakeMilled eligible 0)
+        s!"{(g.player p).name} may put a {subtype} or enchantment card into their hand"
 
 /-- Mill `n`. You may put a card of subtype `subtype`, or an enchantment, from
 among those cards into your hand (Rick Jones). -/
 def millMayPutSubtypeOrEnchantment (g : Game) (p : PlayerId) (n : Nat) (subtype : CardSubtype) : Game :=
-  let lib := (g.player p).library
-  let count := min n lib.size
-  let tops := (lib.extract (lib.size - count) lib.size).reverse
-  let g := g.mill p n
-  if let .chooseReplacement .. := g.pending then
-    g.chainPendingReplacement (.finishMillSubtypeOrEnchantment p tops subtype)
+  if !g.stillInGame p then g
+  else
+    let lib := (g.player p).library
+    let count := min n lib.size
+    let tops := (lib.extract (lib.size - count) lib.size).reverse
+    let g := g.mill p n
+    if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement (.finishMillSubtypeOrEnchantment p tops subtype)
   else
     g.finishMillSubtypeOrEnchantment p tops subtype
 
@@ -522,26 +537,30 @@ def applyGainLifeSearchBasicPlusOne (g : Game) (controller : PlayerId)
 /-- You may draw one card for each permanent of type `ty` you control. If you
 do, each opponent draws a card (Armor Wars). -/
 def mayDrawPerArtifact (g : Game) (p : PlayerId) (ty : CardType := .artifact) : Game :=
-  let n := ((g.permanentsOf p).filter (fun o => g.hasType o ty)).size
-  if n == 0 then
-    let what := if ty == .artifact then "artifacts" else ty.pluralName
-    g.logMsg s!"{(g.player p).name} controls no {what}, so no cards are drawn"
+  if !g.stillInGame p then g
   else
-    g.change (.pending (.fraChoice p (.mayDrawThenEachOpponentDraws n)))
-      |>.logMsg s!"{(g.player p).name} may draw {n}"
+    let n := ((g.permanentsOf p).filter (fun o => g.hasType o ty)).size
+    if n == 0 then
+      let what := if ty == .artifact then "artifacts" else ty.pluralName
+      g.logMsg s!"{(g.player p).name} controls no {what}, so no cards are drawn"
+    else
+      g.beginFraChoice p (.mayDrawThenEachOpponentDraws n)
+        s!"{(g.player p).name} may draw {n}"
 
 /-- You may put a Hero creature card with mana value `maxMv` or less from
 your hand onto the battlefield. If you don't, draw a card (Origin of the
 Avengers; ruling 507). -/
 def mayPutHeroOrDraw (g : Game) (p : PlayerId) (maxMv : Nat)
     (subtype : CardSubtype := .hero) : Game :=
-  let ids := (g.player p).hand.filter (fun id =>
-    (g.findObject? id).any (fun o =>
-      g.isCreature o && g.hasSubtype o subtype && g.objectManaValue o ≤ maxMv))
-  if ids.isEmpty then g.draw p 1
+  if !g.stillInGame p then g
   else
-    g.change (.pending (.fraChoice p (.mayPutHeroFromHandOrDraw ids)))
-      |>.logMsg s!"{(g.player p).name} may put {indefinite subtype.englishName} {subtype} creature card onto the battlefield"
+    let ids := (g.player p).hand.filter (fun id =>
+      (g.findObject? id).any (fun o =>
+        g.isCreature o && g.hasSubtype o subtype && g.objectManaValue o ≤ maxMv))
+    if ids.isEmpty then g.draw p 1
+    else
+      g.beginFraChoice p (.mayPutHeroFromHandOrDraw ids)
+        s!"{(g.player p).name} may put {indefinite subtype.englishName} {subtype} creature card onto the battlefield"
 
 /-- Spells of type `ty` cost `{n}` less this turn. -/
 def grantTypeCostLessThisTurn (g : Game) (p : PlayerId) (ty : CardType) (n : Nat) : Game :=
@@ -851,17 +870,19 @@ def finishVisionQuest (g : Game) (p : PlayerId) (id? : Option ObjectId)
 /-- Search the library and/or graveyard for an artifact creature with mana
 value `x` or less (Vision Quest). -/
 def beginVisionQuest (g : Game) (p : PlayerId) (x : Nat) : Game :=
-  let ok (o : GameObject) : Bool :=
-    g.isArtifact o && g.isCreature o && g.objectManaValue o ≤ x
-  let lib := (g.player p).library.filter (fun id => (g.findObject? id).any ok)
-  let gy := (g.player p).graveyard.filter (fun id => (g.findObject? id).any ok)
-  if lib.isEmpty && gy.isEmpty then
-    let g := g.record (GameEvent.searched g.turnNumber p p #[]
-      (cause := some (g.resolvingOrRuleCause p)))
-    (g.logMsg s!"{(g.player p).name} finds no artifact creature card").shuffleThen p .none
+  if !g.stillInGame p then g
   else
-    g.change (.pending (.fraChoice p (.visionQuestZones lib gy x)))
-      |>.logMsg s!"{(g.player p).name} may search their library and their graveyard"
+    let ok (o : GameObject) : Bool :=
+      g.isArtifact o && g.isCreature o && g.objectManaValue o ≤ x
+    let lib := (g.player p).library.filter (fun id => (g.findObject? id).any ok)
+    let gy := (g.player p).graveyard.filter (fun id => (g.findObject? id).any ok)
+    if lib.isEmpty && gy.isEmpty then
+      let g := g.record (GameEvent.searched g.turnNumber p p #[]
+        (cause := some (g.resolvingOrRuleCause p)))
+      (g.logMsg s!"{(g.player p).name} finds no artifact creature card").shuffleThen p .none
+    else
+      g.beginFraChoice p (.visionQuestZones lib gy x)
+        s!"{(g.player p).name} may search their library and their graveyard"
 
 /-- Connive `id` when it is still a creature the spell's controller controls. -/
 def conniveTricksterTarget (g : Game) (controller : PlayerId) (id? : Option ObjectId)
@@ -1997,7 +2018,7 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     g.withLegalKindPermanent controller effect.targetKind targets (fun g o =>
       let teamwork := g.resolvingTeamworkPaid
       if o.isOnBattlefield && g.isCreature o &&
-          (teamwork || (g.copiableValues o).manaValue ≤ n) then
+          (teamwork || g.objectManaValue o ≤ n) then
         let (g, cause?) : Game × Option EventCause :=
           match g.currentResolvingContext? with
           | some (src, ctrl) =>
@@ -2169,8 +2190,8 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
         if o.isOnBattlefield && g.isCreature o &&
             (g.controllerOf o).any (g.isLivingOpponentOf controller ·) &&
             g.canBeTargetedBy controller o sourceId then
-          g.change (.pending (.fraChoice o.owner (.tricksterLibrary controller id connive sourceId)))
-            |>.logMsg s!"{(g.player o.owner).name} puts {g.name o} second from the top or on the bottom of their library"
+          g.beginFraChoice o.owner (.tricksterLibrary controller id connive sourceId)
+            s!"{(g.player o.owner).name} puts {g.name o} second from the top or on the bottom of their library"
         else
           let g := g.logMsg "The target is no longer legal"
           g.conniveTricksterTarget controller connive sourceId
@@ -2222,11 +2243,11 @@ def returnSourceFromGraveyard (g : Game) (sourceId : Option ObjectId)
   | none => g.logMsg "The ability's source is no longer in the graveyard"
   | some o =>
     if o.zone != .graveyard o.owner then
-      g.logMsg s!"{o.name} is no longer in the graveyard"
+      g.logMsg s!"{g.name o} is no longer in the graveyard"
     else if toHand then
       g.returnToHand o.id o.owner
     else
-      let name := o.name
+      let name := g.name o
       let (g, newId) := g.putOntoBattlefield o.id controller (tapped := tapped)
       if let .chooseReplacement .. := g.pending then
         g.chainPendingReplacement
@@ -2257,56 +2278,62 @@ def twoPlayersDrawSecond (g : Game) (controller second : PlayerId)
 by the player, first card on the bottom. -/
 def offerBottomAnyOrder (g : Game) (p : PlayerId) (ids : Array ObjectId)
     (cause : Option EventCause := none) : Game :=
-  let (g, cause) : Game × Option EventCause :=
-    match cause with
-    | some c => (g, some c)
-    | none =>
-      if ids.isEmpty then (g, none)
-      else
-        match g.currentResolvingContext? with
-        | some (src, ctrl) =>
-          let (g, c) := g.allocDelayedCause ctrl src
-          (g, some c)
-        | none => (g, none)
-  if ids.size ≤ 1 then
-    g.moveIdsInOrder ids (.library p) (cause := cause)
-      (log := s!"{(g.player p).name} puts the rest on the bottom of their library")
+  if !g.stillInGame p then g
   else
-    let g :=
-      g.beginFraChoice p (.orderLibraryBottom ids)
-        s!"{(g.player p).name} puts the rest on the bottom of their library in any order"
-    match cause with
-    | some c => g.change (.stashedCause (some c))
-    | none => g
+    let (g, cause) : Game × Option EventCause :=
+      match cause with
+      | some c => (g, some c)
+      | none =>
+        if ids.isEmpty then (g, none)
+        else
+          match g.currentResolvingContext? with
+          | some (src, ctrl) =>
+            let (g, c) := g.allocDelayedCause ctrl src
+            (g, some c)
+          | none => (g, none)
+    if ids.size ≤ 1 then
+      g.moveIdsInOrder ids (.library p) (cause := cause)
+        (log := s!"{(g.player p).name} puts the rest on the bottom of their library")
+    else
+      let g :=
+        g.beginFraChoice p (.orderLibraryBottom ids)
+          s!"{(g.player p).name} puts the rest on the bottom of their library in any order"
+      match cause with
+      | some c => g.change (.stashedCause (some c))
+      | none => g
 
 /-- Look at the top `n` cards. You may reveal one matching card to your hand. -/
 def beginLookRevealToHand (g : Game) (p : PlayerId) (n : Nat)
     (ok : GameObject → Bool) (anyOrder : Bool) : Game :=
-  let looked := g.scryLookedIds p n
-  let g := g.logLookAtTop p looked.size looked
-  if looked.isEmpty then g
+  if !g.stillInGame p then g
   else
-    let eligible := looked.filter (fun id => (g.findObject? id).any ok)
-    if eligible.isEmpty then
-      if anyOrder then g.offerBottomAnyOrder p looked
-      else g.putRestOnBottomRandom p looked
+    let looked := g.scryLookedIds p n
+    let g := g.logLookAtTop p looked.size looked
+    if looked.isEmpty then g
     else
-      g.beginFraChoice p (.mayRevealToHand looked eligible anyOrder)
-        s!"{(g.player p).name} may reveal a card from among them and put it into their hand"
+      let eligible := looked.filter (fun id => (g.findObject? id).any ok)
+      if eligible.isEmpty then
+        if anyOrder then g.offerBottomAnyOrder p looked
+        else g.putRestOnBottomRandom p looked
+      else
+        g.beginFraChoice p (.mayRevealToHand looked eligible anyOrder)
+          s!"{(g.player p).name} may reveal a card from among them and put it into their hand"
 
 /-- Look at the top `n` cards. You may put one card of `types` onto the
 battlefield (Nick Fury). -/
 def beginLookPutTypes (g : Game) (p : PlayerId) (n : Nat) (types : Array CardSubtype) : Game :=
-  let looked := g.scryLookedIds p n
-  let g := g.logLookAtTop p looked.size looked
-  if looked.isEmpty then g
+  if !g.stillInGame p then g
   else
-    let eligible := looked.filter (fun id =>
-      (g.findObject? id).any (fun o => types.any (g.cardHasLookType o)))
-    if eligible.isEmpty then g.putRestOnBottomRandom p looked
+    let looked := g.scryLookedIds p n
+    let g := g.logLookAtTop p looked.size looked
+    if looked.isEmpty then g
     else
-      g.beginFraChoice p (.nickFuryPut looked eligible)
-        s!"{(g.player p).name} may put a card from among them onto the battlefield"
+      let eligible := looked.filter (fun id =>
+        (g.findObject? id).any (fun o => types.any (g.cardHasLookType o)))
+      if eligible.isEmpty then g.putRestOnBottomRandom p looked
+      else
+        g.beginFraChoice p (.nickFuryPut looked eligible)
+          s!"{(g.player p).name} may put a card from among them onto the battlefield"
 
 /-- Resolve Arwen, Mortal Queen's activated ability. An illegal target means
 no counters are put on Arwen or the target (ruling 189). -/
@@ -2513,12 +2540,12 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
         | none => g.logMsg "The source is no longer in the graveyard"
         | some src =>
           if src.zone != .graveyard src.owner then
-            g.logMsg s!"{src.name} is no longer in the graveyard"
+            g.logMsg s!"{g.name src} is no longer in the graveyard"
           else
             g.withLegalKindPermanent controller effect.targetKind targets (fun g host =>
               let auraProbe := { src with controller := some controller }
               if g.isAura src && !g.auraObjCanEnchant host auraProbe then
-                g.logMsg s!"{src.name} remains in the graveyard (can't be attached legally; CR 303.4f)"
+                g.logMsg s!"{g.name src} remains in the graveyard (can't be attached legally; CR 303.4f)"
               else
                 let (g, newId) := g.putOntoBattlefield src.id controller
                   (attachedTo := some host.id)
@@ -2704,8 +2731,8 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
               match copyId? with
               | some copyId =>
                 if (g.stackEntry? copyId).any (!·.targets.isEmpty) then
-                  g.change (.pending (.fraChoice controller (.newTargetsForCopies #[copyId])))
-                    |>.logMsg s!"{(g.player controller).name} may choose new targets for the copy"
+                  g.beginFraChoice controller (.newTargetsForCopies #[copyId])
+                    s!"{(g.player controller).name} may choose new targets for the copy"
                 else g
               | none => g
             else g.logMsg "The target is no longer legal"

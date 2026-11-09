@@ -151,21 +151,9 @@ are evaluated in `Game.supertypes` (CR 613.1d). -/
 def supertypes (o : GameObject) : Array Supertype :=
   o.printed.supertypes
 
-def hasSupertype (o : GameObject) (s : Supertype) : Bool :=
-  o.supertypes.any (· == s)
-
 /-- Type line from printed types and subtypes (CR 205.1a). -/
 def typeLine (o : GameObject) : String :=
   formatTypeLine o.supertypes o.types (o.subtypes.map CardSubtype.englishName)
-
-/-- Printed power/toughness plus +1/+1 counters. Layer 7a–7d effects, attached
-Aura/Equipment bonuses, and lord bonuses are evaluated in `Game.power` /
-`Game.toughness` (CR 613.4). -/
-def power (o : GameObject) : Int :=
-  (o.printed.power.getD 0) + (o.status.plusOnePlusOne : Int) - (o.status.minusOneMinusOne : Int)
-
-def toughness (o : GameObject) : Int :=
-  (o.printed.toughness.getD 0) + (o.status.plusOnePlusOne : Int) - (o.status.minusOneMinusOne : Int)
 
 def isOnBattlefield (o : GameObject) : Bool :=
   o.zone == .battlefield && !o.status.phasedOut
@@ -177,19 +165,10 @@ def isBattlefieldObject (o : GameObject) : Bool :=
 def controlledBy (o : GameObject) (p : PlayerId) : Bool :=
   o.controller == some p
 
-/-- The player “you” and “your” refer to on this object (CR 109.5): its
-controller, or its owner if it has none. -/
-def you (o : GameObject) : PlayerId :=
-  o.controller.getD o.owner
-
 /-- Whether this object has the printed creature card type (CR 205.2a / 302).
 Prefer `Game.isCreature` when `Game` is in scope to include Layer-4 effects. -/
 def isCreature (o : GameObject) : Bool :=
   o.printed.isCreature
-
-/-- Whether this permanent has the legendary supertype (CR 205.4d / 704.5j). -/
-def isLegendary (o : GameObject) : Bool :=
-  o.hasSupertype .legendary
 
 /-- True while this spell is on the stack as an Adventure (CR 715.3b). -/
 def isAdventureSpell (o : GameObject) : Bool :=

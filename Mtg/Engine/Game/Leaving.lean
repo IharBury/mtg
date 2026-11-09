@@ -210,6 +210,134 @@ def removeAllCountersFrom (g : Game) (id : ObjectId)
         bag.foldl (fun acc (kind, cnt) =>
           acc.recordRemoveCounters id kind cnt (byPlayer := byPlayer) (cause := cause)) g)
 
+/-- Put `n` +1/+1 counters on `o` (CR 122.1). When `entersWith` is true, the
+counters have already been placed in `o`'s arrival `ZoneEvent.moved` via
+`extraEntersWith` or `ZoneEvent.created` (CR 614.1c); `.youPutPlusOne`
+triggers are evaluated from the recorded event batch in `matchTriggers`. -/
+def addPlusOnePlusOneTo (g : Game) (o : GameObject) (n : Nat := 1)
+    (entersWith := false) (byPlayer : Option PlayerId := none)
+    (cause : Option EventCause := none) : Game :=
+  if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement (.addPlusOnePlusOneTo o.id n entersWith byPlayer cause)
+  else if n == 0 then g
+  else
+  let putter0 := byPlayer.orElse (fun _ => g.counterPutter (g.controllerOf o))
+  let propCause := g.resolveOptionalCause cause (fallbackCtrl := putter0)
+  let proposed :=
+    GameEvent.counters g.turnNumber putter0 (g.snapshot o) .plusOnePlusOne n (cause := propCause)
+  let (n', applied, cause', choice?, _) :=
+    if proposed.watches .wouldPutCounter then
+      g.replaceCountersPutChoice o .plusOnePlusOne n (putter := byPlayer)
+        (entersWith := entersWith) (cause := cause)
+    else
+      (g.countersYouPut o n (putter := byPlayer) (entersWith := entersWith), #[], cause, none, #[])
+  match choice? with
+  | some (chooser, choices) =>
+    g.promptChooseReplacement chooser choices
+      (.addPlusOnePlusOneTo o.id n entersWith byPlayer cause)
+  | none =>
+    let g := g.consumeReplacementOrder applied
+    if n' == 0 then g
+    else
+      let finalCause := g.resolveOptionalCause cause' (fallbackCtrl := putter0)
+      let happened := GameEvent.counters g.turnNumber putter0 (g.snapshot (g.object! o.id)) .plusOnePlusOne n'
+        (cause := finalCause)
+      let g := if !entersWith then g.record happened else g
+      let phrase :=
+        if entersWith then s!"{g.name o} enters with {plusOnePlusOneCountersPhrase n'}"
+        else s!"{g.name o} gets {plusOnePlusOneCountersPhrase n'}"
+      g.logMsg phrase
+
+def withSourceOnBattlefield (g : Game) (sourceId : Option ObjectId)
+    (f : Game → GameObject → Game)
+    (missing := "The ability's source is no longer in play")
+    (leftMsg : Option String := none) : Game :=
+  match sourceId.bind g.findObject? with
+  | some o =>
+    if o.isOnBattlefield then f g o
+    else g.logMsg (leftMsg.getD s!"{g.name o} is no longer on the battlefield")
+  | none =>
+    g.logMsg missing
+
+/-- Mister Hyde's chosen mode. Mode 0 puts a +1/+1 counter on the source.
+Mode 1 removes a counter from the chosen creature, then draws. -/
+def applyHydeMode (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
+    (mode : Nat) (targets : Array Target) : Game :=
+  if mode == 0 then
+    g.withSourceOnBattlefield sourceId (fun g o =>
+      g.addPlusOnePlusOneTo o 1) "The source is no longer in play"
+  else
+    match targets[0]? with
+    | some (Target.permanent id) =>
+      match g.findObject? id with
+      | some o =>
+        if o.isOnBattlefield && g.isCreature o && g.controlledBy o controller && o.status.hasCounters then
+          let kind? : Option CounterKind :=
+            if o.status.plusOnePlusOne > 0 then some .plusOnePlusOne
+            else if o.status.indestructibleCounters > 0 then some .indestructible
+            else o.status.toCounterBag[0]?.map (·.1)
+          match kind? with
+          | some kind =>
+            let nm := g.name o
+            let before := o.status.counterCount kind
+            let g := g.recordRemoveCounters o.id kind 1 (byPlayer := some controller)
+              |>.logMsg s!"A counter is removed from {nm}"
+            let removed : Bool :=
+              match g.findObject? o.id with
+              | some cur => decide (cur.status.counterCount kind < before)
+              | none => true
+            if removed then g.draw controller 1 else g
+          | none => g
+        else
+          g.logMsg "You must remove a counter from a creature you control if you can"
+      | none =>
+        g.logMsg "You must remove a counter from a creature you control if you can"
+    | _ =>
+      if (g.permanentsOf controller).any (fun o =>
+          g.isCreature o && o.status.hasCounters) then
+        g.logMsg "You must remove a counter from a creature you control if you can"
+      else g
+
+/-- Creatures `p` may sacrifice to a “sacrifices a creature of their choice” effect. -/
+def sacrificeCreatureChoices (g : Game) (p : PlayerId) : Array GameObject :=
+  g.creaturesControlledBy p
+
+/-- Whether `sac` is a legal creature for `p` to sacrifice to an edict. -/
+def canSacrificeCreature (g : Game) (p : PlayerId) (sac : GameObject) : Bool :=
+  (g.sacrificeCreatureChoices p).any (·.id == sac.id)
+
+/-- Creatures `p` controls that are tied for least power. -/
+def leastPowerCreatures (g : Game) (p : PlayerId) : Array GameObject :=
+  let cs := g.sacrificeCreatureChoices p
+  match cs[0]? with
+  | none => #[]
+  | some first =>
+    let minP := cs.foldl (fun acc o => min acc (g.power o)) (g.power first)
+    cs.filter (fun o => g.power o == minP)
+
+/-- Sacrifice a least-power creature `p` controls. If several are tied and
+`chosen` is none, the player still chooses (logged; no sacrifice yet). -/
+def sacrificeLeastPowerCreature (g : Game) (p : PlayerId)
+    (chosen : Option ObjectId := none) : Game :=
+  if !g.stillInGame p then g
+  else
+    let tied := g.leastPowerCreatures p
+    if tied.isEmpty then
+      g.logMsg s!"{(g.player p).name} controls no creatures to sacrifice"
+    else
+      let pick :=
+        match chosen with
+        | some chosenId => tied.find? (fun (o : GameObject) => o.id == chosenId)
+        | none => if tied.size == 1 then some tied[0]! else none
+      match pick with
+      | some o =>
+        g.sacrificeToGraveyard o
+          s!"{(g.player p).name} sacrifices {g.name o} (least power)"
+      | none =>
+        let ids : Array ObjectId := tied.map (fun (o : GameObject) => o.id)
+        g.beginFraChoice p (.sacrificeLeastPower ids)
+          s!"{(g.player p).name} chooses one of the creatures tied for least power to sacrifice"
+
 /-- End every control-changing effect applying to `o`, each under its own
 `EffectId` (CR 800.4a / 800.4c). -/
 def endControlChangingEffect (g : Game) (o : GameObject)
@@ -498,11 +626,15 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
     else (g, pending)
   | .chooseSacrificeCreature q chosen remaining =>
     let livingRem := remaining.filter g.stillInGame
-    if q != p then
+    if q != p && !(g.creaturesControlledBy q).isEmpty then
       if livingRem != remaining then
         (g, .chooseSacrificeCreature q chosen livingRem)
       else (g, pending)
     else
+      let g :=
+        if q != p then
+          g.logMsg s!"{(g.player q).name} has no creature to sacrifice"
+        else g
       match g.nextActorWithCreatures livingRem with
       | none =>
         let skipped := livingRem.filter (fun r => (g.creaturesControlledBy r).isEmpty)
@@ -722,10 +854,10 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
            .fraChoice next (.mayWheel n (living.extract 1 living.size) acceptedLiving))
     | .sacrificeCreatureEach controller rest chosen =>
       let living := rest.filter (fun r => g.stillInGame r && !(g.creaturesControlledBy r).isEmpty)
-      if q != p then
+      if q != p && !(g.creaturesControlledBy q).isEmpty then
         if living != rest then (g, .fraChoice q (.sacrificeCreatureEach controller living chosen)) else (g, pending)
       else
-        let g := g.changes (#[.chooseModesRest none] ++ clearProp)
+        let g := g.changes (#[.chooseModesRest none] ++ (if q == p then clearProp else #[]))
         match living[0]? with
         | some next =>
           (g.logMsg s!"{(g.player next).name} sacrifices a creature",
@@ -750,10 +882,10 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
       let hasNontoken (r : PlayerId) :=
         g.stillInGame r && (g.permanentsOf r).any (fun o => g.isCreature o && !o.printed.isToken)
       let living := rest.filter hasNontoken
-      if q != p then
+      if q != p && hasNontoken q then
         if living != rest then (g, .fraChoice q (.sacrificeNontokenEach living chosen)) else (g, pending)
       else
-        let g := g.changes (#[.chooseModesRest none] ++ clearProp)
+        let g := g.changes (#[.chooseModesRest none] ++ (if q == p then clearProp else #[]))
         match living[0]? with
         | some next =>
           (g.logMsg s!"{(g.player next).name} sacrifices a nontoken creature",
@@ -772,11 +904,21 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
           (g, g.pending)
     | .sacrificeDamager ids rest controller chosen =>
       let living := rest.filter g.stillInGame
-      if q != p then
-        if living != rest then (g, .fraChoice q (.sacrificeDamager ids living controller chosen)) else (g, pending)
+      let liveIds := ids.filter (fun id =>
+        (g.findObject? id).any (fun o => o.isOnBattlefield && g.isCreature o && g.controlledBy o q))
+      if q != p && liveIds.size > 1 then
+        if liveIds == ids && living == rest then (g, pending)
+        else (g, .fraChoice q (.sacrificeDamager liveIds living controller chosen))
       else
-        let g := clearPendingAnd g (#[.chooseModesRest none] ++ clearProp)
-        advanceSacDamagersAfterLeave g controller living chosen
+        let g := clearPendingAnd g (#[.chooseModesRest none] ++ (if q == p then clearProp else #[]))
+        let g :=
+          if q != p && liveIds.isEmpty then
+            g.logMsg s!"{(g.player q).name} controls no creature that dealt combat damage this turn"
+          else g
+        let chosen' :=
+          if q != p && liveIds.size == 1 then chosen.push (q, liveIds[0]!)
+          else chosen
+        advanceSacDamagersAfterLeave g controller living chosen'
     | .discardTwo controller rest draws chosen =>
       let living := rest.filter g.stillInGame
       let chosenLiving := chosen.filter (fun (r, _) => g.stillInGame r)
@@ -883,7 +1025,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
           let g := clearPending g
           match ids.find? (fun id => (g.findObject? id).isSome) with
           | some id =>
-            let name := (g.object! id).name
+            let name := g.name (g.object! id)
             let g :=
               g.withOuterContStashed fun g =>
                 let (g, _) := g.move id (.hand revealer) none
@@ -931,11 +1073,15 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
           else g
         (g, .none)
       else (g, pending)
-    | .tricksterLibrary caster _id connive sourceId =>
+    | .tricksterLibrary caster id connive sourceId =>
       if p == caster then
         (clearPendingAnd g (#[.chooseModesRest none] ++ (if q == p then clearProp else #[])), .none)
-      else if q == p then
-        let g := clearPendingAnd g (#[.chooseModesRest none] ++ clearProp)
+      else if q == p || !(g.findObject? id).any (fun o => o.isOnBattlefield && g.isCreature o) then
+        let g := clearPendingAnd g (#[.chooseModesRest none] ++ (if q == p then clearProp else #[]))
+        let g :=
+          if q != p && g.stillInGame caster then
+            g.logMsg "The target is no longer legal"
+          else g
         let g :=
           if g.stillInGame caster && connive.isSome then
             g.withOuterContStashed fun g =>
@@ -981,7 +1127,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
         let nextOwner := firstObj.owner
         if q == p then
           let g := (g.changes (#[.chooseModesRest none] ++ clearProp)).logMsg
-            s!"{(g.player nextOwner).name} may begin the game with {firstObj.name} on the battlefield"
+            s!"{(g.player nextOwner).name} may begin the game with {g.name firstObj} on the battlefield"
           (g, .fraChoice nextOwner (.mayBeginOnBattlefield liveCards))
         else if liveCards != cards then
           (g, .fraChoice nextOwner (.mayBeginOnBattlefield liveCards))
@@ -1042,6 +1188,35 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
             | .newTargetsForCopySlot _ s st => .newTargetsForCopySlot live s st
             | _ => .newTargetsForCopies live))
         else (g, pending)
+    | .sacrificeLeastPower ids =>
+      if q == p then
+        let g := g.changes (#[.chooseModesRest none] ++ clearProp)
+        let g := if g.mayThenDrop > 0 then g.declineMayThenCore else clearPending g
+        (g, .none)
+      else
+        let liveTied := (g.leastPowerCreatures q).map (·.id)
+        if liveTied.size ≤ 1 then
+          let g := clearPendingAnd g #[.chooseModesRest none]
+          let g := g.withOuterContStashed fun g => g.sacrificeLeastPowerCreature q
+          (g, g.pending)
+        else if liveTied != ids then
+          (g, .fraChoice q (.sacrificeLeastPower liveTied))
+        else (g, pending)
+    | .hydeRemoveCounter ids =>
+      if q == p then
+        let g := g.changes (#[.chooseModesRest none] ++ clearProp)
+        let g := if g.mayThenDrop > 0 then g.declineMayThenCore else clearPending g
+        (g, .none)
+      else
+        let live := (g.permanentsOf q).filter (fun o => g.isCreature o && o.status.hasCounters) |>.map (·.id)
+        if live.size ≤ 1 then
+          let g := clearPendingAnd g #[.chooseModesRest none]
+          let targets := match live[0]? with | some id => #[Target.permanent id] | none => #[]
+          let g := g.withOuterContStashed fun g => g.applyHydeMode q none 1 targets
+          (g, g.pending)
+        else if live != ids then
+          (g, .fraChoice q (.hydeRemoveCounter live))
+        else (g, pending)
     | _ =>
       if q == p then
         let g := g.changes (#[.chooseModesRest none] ++ clearProp)
@@ -1076,7 +1251,17 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
           g.chainPendingReplacement .finishLibraryLook
       (g, .none)
     else (g, pending)
-  | .sacrificeCreature q
+  | .sacrificeCreature q =>
+    if q == p then
+      let clearProp : Array EngineChange :=
+        if abortedProp then #[.proposedSpell none, .clearProposalCheckpoint]
+        else #[]
+      (clearPendingAnd g (#[.chooseModesRest none] ++ clearProp), .none)
+    else if (g.sacrificeCreatureChoices q).isEmpty then
+      let g := (clearPendingAnd g #[.chooseModesRest none]).logMsg
+        s!"{(g.player q).name} has no creature to sacrifice"
+      (g, .none)
+    else (g, pending)
   | .mayAttachEquipment q ..
   | .recruitDiscard q
   | .maySacrificeAnotherBolg q _ | .mayCastFromLooked q _ _ | .putOnBottom q _

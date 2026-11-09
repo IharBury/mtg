@@ -1652,9 +1652,7 @@ private def initialControllerOf (g : Game) (o : GameObject) : Option PlayerId :=
   if o.zone != .battlefield then o.controller
   else
     let playerAlive (p : PlayerId) : Bool :=
-      if h : p.idx < g.players.size then
-        let pl := g.players[p.idx]
-        !pl.lost && !pl.leftTheGame
+      if p.idx < g.players.size then g.stillInGame p
       else true
     let defP := (o.defaultController.orElse (fun _ => o.controller)).getD o.owner
     if playerAlive defP then some defP else none
@@ -1897,7 +1895,7 @@ def applyTurnEvent (g : Game) (e : TurnEvent) : Game :=
         g.areTeammates seats[0]! player && !seats.contains player
     let dropLost (xs : Array PlayerId) : Array PlayerId :=
       (xs.toList.dropWhile (fun q =>
-        if h : q.idx < g.players.size then g.players[q.idx].lost || g.players[q.idx].leftTheGame else true)).toArray
+        if q.idx < g.players.size then !g.stillInGame q else true)).toArray
     let restExtra :=
       if extra then
         let trimmed := dropLost g.extraTurns
@@ -7812,57 +7810,8 @@ def creaturesBlockedBy (g : Game) (blocker : GameObject) : Array GameObject :=
       if a.isOnBattlefield && a.status.attacking then some a else none
     | none => none)
 
-/-- Base printed/status `EventObject` fields for `Core.snapshot` before Layer 1–7 evaluation. -/
-private def rawEventSnapshot (o : GameObject) : EventObject :=
-  { id := some o.id
-    controller := o.controller
-    owner := o.owner
-    name := o.printed.name
-    colors := o.printed.colors
-    manaValue := o.printed.manaValue + o.chosenX.getD 0
-    supertypes := o.supertypes
-    types := o.types
-    subtypes :=
-      if o.printed.keywords.changeling && (o.types.contains .creature || o.types.contains .kindred) then
-        CardSubtype.allCreatureSubtypes.foldl (fun acc s => if acc.contains s then acc else acc.push s) o.subtypes
-      else o.subtypes
-    power := if o.isCreature || o.printed.power.isSome then some o.power else none
-    toughness := if o.isCreature || o.printed.toughness.isSome then some o.toughness else none
-    loyalty := o.printed.loyalty.map Int.toNat
-    keywords := o.printed.keywords
-    toxic := o.printed.toxic
-    commanderIdentityScryCreature := !o.status.faceDown && o.printed.commanderIdentityScryCreature
-    staticAbilities := o.staticAbilities
-    zone := o.zone
-    tapped := o.status.tapped
-    attacking := o.status.attacking
-    blocking := !o.status.blocking.isEmpty
-    blockingIds := o.status.blocking
-    phasedOut := o.status.phasedOut
-    faceDown := o.status.faceDown
-    transformed := o.status.transformed
-    attachedTo := o.attachedTo
-    counters := o.status.toCounterBag
-    token := o.printed.isToken
-    isCopy := o.isCopy
-    isCommander := o.isCommander
-    changeling := o.printed.keywords.changeling
-    chosenOdd := o.status.chosenOdd
-    chosenCreatureType := o.status.chosenCreatureType
-    chosenColor := o.status.chosenColor
-    chosenName := o.status.chosenName
-    chosenCardType := o.status.chosenCardType
-    chosenAnchor := o.status.chosenAnchor
-    summoningSick := o.status.summoningSick
-    attackingTarget := o.status.attackingTarget
-    printed := some o.printed
-    copiable := some o.printed
-    adventurerCard := o.adventurerCard
-    chosenX := o.chosenX }
-
 /-- Snapshot `o` as an `EventObject` with Layer 1–7 characteristics (CR 113.7a / 613.1). -/
 def snapshot (g : Game) (o : GameObject) : EventObject :=
-  let base := rawEventSnapshot o
   let bc := g.baseCard o
   let pw : Option Int :=
     if o.zone == .battlefield then
@@ -7877,23 +7826,18 @@ def snapshot (g : Game) (o : GameObject) : EventObject :=
       (g.lastKnownToughnessOf? o.id).orElse (fun _ =>
         if g.isCreature o || bc.toughness.isSome then some (g.snapshotToughness o) else none)
   let curKw := g.currentKeywords o
-  { base with
+  { id := some o.id
     controller := g.controllerOf o
+    owner := o.owner
     name := g.name o
-    manaValue := g.objectManaValue o
     colors := g.colors o
-    types := g.types o
+    manaValue := g.objectManaValue o
     supertypes := g.supertypes o
+    types := g.types o
     subtypes := g.subtypes o
-    changeling := curKw.changeling
-    isCopy := base.isCopy || g.hasActiveCopy o
-    copiable := some (g.copiableValues o)
     power := pw
     toughness := tg
     loyalty := bc.loyalty.map Int.toNat
-    toxic := if g.retainsPrintedAbilities o then bc.toxic else 0
-    commanderIdentityScryCreature := g.retainsPrintedAbilities o && bc.commanderIdentityScryCreature
-    staticAbilities := g.staticAbilities o
     keywords := { curKw with
       haste := g.hasHaste o
       vigilance := g.hasVigilance o
@@ -7908,7 +7852,36 @@ def snapshot (g : Game) (o : GameObject) : EventObject :=
       lifelink := g.hasLifelink o
       firstStrike := g.hasFirstStrike o
       doubleStrike := g.hasDoubleStrike o
-      shadow := g.hasShadow o } }
+      shadow := g.hasShadow o }
+    toxic := if g.retainsPrintedAbilities o then bc.toxic else 0
+    commanderIdentityScryCreature := g.retainsPrintedAbilities o && bc.commanderIdentityScryCreature
+    staticAbilities := g.staticAbilities o
+    zone := o.zone
+    tapped := o.status.tapped
+    attacking := o.status.attacking
+    blocking := !o.status.blocking.isEmpty
+    blockingIds := o.status.blocking
+    phasedOut := o.status.phasedOut
+    faceDown := o.status.faceDown
+    transformed := o.status.transformed
+    attachedTo := o.attachedTo
+    counters := o.status.toCounterBag
+    token := o.printed.isToken
+    isCopy := o.isCopy || g.hasActiveCopy o
+    isCommander := o.isCommander
+    changeling := curKw.changeling
+    chosenOdd := o.status.chosenOdd
+    chosenCreatureType := o.status.chosenCreatureType
+    chosenColor := o.status.chosenColor
+    chosenName := o.status.chosenName
+    chosenCardType := o.status.chosenCardType
+    chosenAnchor := o.status.chosenAnchor
+    summoningSick := o.status.summoningSick
+    attackingTarget := o.status.attackingTarget
+    printed := some o.printed
+    copiable := some (g.copiableValues o)
+    adventurerCard := o.adventurerCard
+    chosenX := o.chosenX }
 
 /-- Extra times a trigger of `source` fires from Bifur / Chief / Wizard's Staff
 statics. Each such ability adds one additional instance; they stack. -/
@@ -7936,8 +7909,7 @@ def extraTriggerCopies (g : Game) (controller : PlayerId) (source : GameObject) 
 /-- Append waiting-trigger snapshots, skipping any controller who has already
 lost or left the game (CR 800.4d). -/
 def enqueueWaitingTriggers (g : Game) (wts : Array WaitingTrigger) : Game :=
-  let wts := wts.filter (fun wt =>
-    !(g.player wt.controller).lost && !(g.player wt.controller).leftTheGame)
+  let wts := wts.filter (fun wt => g.stillInGame wt.controller)
   if wts.isEmpty then g
   else
     let e := GameEvent.engine g.turnNumber (.enqueueWaitingTriggers wts)
@@ -8094,7 +8066,7 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
         (causeIds : Array ObjectId := #[])
         (w : Array WaitingTrigger) (fs : Array (ObjectId × TriggeredAbility)) :
         Array WaitingTrigger × Array (ObjectId × TriggeredAbility) :=
-      if (post.player controller).lost || (post.player controller).leftTheGame then (w, fs)
+      if !post.stillInGame controller then (w, fs)
       else if !board.triggerConditionHolds controller ab cause (some source) then (w, fs)
       else if ab.onceEachTurn &&
           (post.loggedTriggeredThisTurn source.id ab ||
@@ -8134,7 +8106,7 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
         (keep : TriggeredAbility → Bool := fun _ => true)
         (w : Array WaitingTrigger) (fs : Array (ObjectId × TriggeredAbility)) :
         Array WaitingTrigger × Array (ObjectId × TriggeredAbility) :=
-      if (post.player controller).lost || (post.player controller).leftTheGame then (w, fs)
+      if !post.stillInGame controller then (w, fs)
       else
         let abs :=
           (board.matchingTriggers source event ++
@@ -8300,7 +8272,7 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
     -- 7b. Inherent monarch combat-damage trigger (CR 603.2c,e / 608.2h / 725.2–3 / 113.8 / 800.4a,d; Rulings 935, 937, 940):
     --     controlled by the monarch and queued once per creature that dealt combat damage
     --     to the monarch in `batch`.
-    if let some monarchPl := post.players.find? (fun pl => pl.isMonarch && !pl.lost && !pl.leftTheGame) then
+    if let some monarchPl := post.players.find? (fun pl => pl.isMonarch && post.stillInGame pl.id) then
       let attackers : Array (Option GameObject × Option ObjectId × PlayerId) :=
         batch.foldl (fun acc e =>
           match e.change with
@@ -9346,7 +9318,7 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
                 | _, _ => pure ()
               -- Delayed upkeep triggers (CR 603.7 / 800.4d; The Eagles Are Coming!)
               for dt in post.delayedTriggers do
-                if !(post.player dt.controller).lost && !(post.player dt.controller).leftTheGame then
+                if post.stillInGame dt.controller then
                   match dt.kind with
                   | .eaglesBirds n =>
                     let src := dt.source.getD
@@ -9421,7 +9393,7 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
                   let (w, fs) := queueCtrl post m .yourEndStep (w := waiting) (fs := firedSources)
                   waiting := w; firedSources := fs
               -- Inherent monarch end-step draw trigger (CR 725.2 / 113.8 / 805.4; Ruling 938)
-              if let some monarchPl := post.players.find? (fun pl => pl.isMonarch && !pl.lost && !pl.leftTheGame) then
+              if let some monarchPl := post.players.find? (fun pl => pl.isMonarch && post.stillInGame pl.id) then
                 if post.isOnActiveTeam monarchPl.id then
                   let src : GameObject :=
                     { printed := { name := "The monarch", types := #[] }
@@ -9441,7 +9413,7 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
                       checked := true }
               -- Delayed end-step triggers (CR 603.7 / 800.4d)
               for dt in post.delayedTriggers do
-                if !(post.player dt.controller).lost && !(post.player dt.controller).leftTheGame then
+                if post.stillInGame dt.controller then
                   match dt.kind with
                   | .endStepReturn _ | .endStepExile _ | .endStepSacrifice _
                   | .endStepGraveReturn _ _ | .endStepSynthetic _ =>
@@ -9617,7 +9589,7 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
                 waiting := w; firedSources := fs
                 for dt in post.delayedTriggers do
                   if dt.kind == .attackPumpPerPlains && dt.controller == m &&
-                      !(post.player dt.controller).lost && !(post.player dt.controller).leftTheGame then
+                      post.stillInGame dt.controller then
                     let src := dt.source.getD
                       { printed := { name := "Roads Go Ever, Ever On", types := #[.enchantment], subtypes := #["Saga"] }
                         id := noSourceSentinelId, owner := m, controller := some m, zone := .graveyard m }
@@ -9757,8 +9729,7 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
           -- Delayed spell-copy triggers (CR 603.7 / 707.10 / 707.12 / 800.4d): Way of the Cryomancer & Loki Laufeyson
           if !isUncastCopy && post.isInstantOrSorcery castObj then
             for dt in post.delayedTriggers do
-              if dt.controller == caster &&
-                  !(post.player dt.controller).lost && !(post.player dt.controller).leftTheGame then
+              if dt.controller == caster && post.stillInGame dt.controller then
                 match dt.kind with
                 | .copyNextInstantSorceryThisTurn =>
                   let src := dt.source.getD
@@ -10167,7 +10138,7 @@ def closeBatch (g : Game) (pre : GameSnapshot) (batchId : BatchId)
                 (cause := .gameRule .staticAbility))) g
     let wts :=
       (matchTriggers pre g batchEvents).filter (fun wt =>
-        !(g.player wt.controller).lost && !(g.player wt.controller).leftTheGame)
+        g.stillInGame wt.controller)
     if wts.isEmpty then g
     else
       let firedDelayed := wts.filterMap (fun wt =>
@@ -10222,7 +10193,7 @@ resolution (CR 603.12 / 603.3c–d): allocates a fresh `origin : BatchId`, recor
 `TriggerQueueEvent.triggered`, and enqueues `wt` onto `g.waitingTriggers`.
 Skipped if `wt.controller` has already lost or left the game (CR 800.4d). -/
 def recordReflexiveTrigger (g : Game) (wt : WaitingTrigger) : Game :=
-  if (g.player wt.controller).lost || (g.player wt.controller).leftTheGame then g
+  if !g.stillInGame wt.controller then g
   else
     let origin : BatchId :=
       match g.currentBatch with
@@ -11817,11 +11788,12 @@ def declineMayThenCore (g : Game) : Game :=
   | some rest => g.change (.setTriggerSequenceRestSteps (rest.steps.drop n))
 
 /-- Begin a `FraChoice` for `p`, opening a `ContinuationFrame` if none is active. -/
-def beginFraChoice (g : Game) (p : PlayerId) (choice : FraChoice) (msg : String) : Game :=
+def beginFraChoice (g : Game) (p : PlayerId) (choice : FraChoice) (msg : String := "") : Game :=
   let g :=
     if g.continuations.isEmpty then g.change (.pushContinuationFrame {})
     else g
-  (g.change (.pending (.fraChoice p choice))).logMsg msg
+  let g := g.change (.pending (.fraChoice p choice))
+  if msg.isEmpty then g else g.logMsg msg
 
 end Game
 end Mtg.Engine
