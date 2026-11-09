@@ -51,15 +51,18 @@ def finishExileTopMayCastElseDamage (g : Game) (controller : PlayerId)
   let src? := sid.bind g.damageSourceById?
   match g.followMovedToZone? fromId (· == .exile) with
   | some card =>
-    let g := g.logMsg s!"{(g.player controller).name} exiles {card.name}"
-    if g.isLand card then
+    let name := g.name card
+    let g := g.logMsg s!"{(g.player controller).name} exiles {name}"
+    if !g.stillInGame controller then g
+    else if g.isLand card then
       -- Ruling 855: a land can't be cast, so the damage is dealt.
       g.dealDamageToEachOpponent controller n (source := src?)
     else
       (g.change (.pending (.mayCastExiledElseDamage controller card.id n sid))).logMsg
-        s!"{(g.player controller).name} may cast {card.name}"
+        s!"{(g.player controller).name} may cast {name}"
   | none =>
-    g.dealDamageToEachOpponent controller n (source := src?)
+    if !g.stillInGame controller then g
+    else g.dealDamageToEachOpponent controller n (source := src?)
 
 /-- Evaluate CR 616.1 token-creation replacements once across the combined
 `snapshots` instruction under `p`, then create all resulting tokens via
@@ -637,7 +640,7 @@ def returnChosenGraveyardCards (g : Game) (controller : PlayerId)
                   g := g.returnToHand o.id controller
                   used := used.push ty
                 | none =>
-                  g := g.logMsg s!"{o.name} doesn't match a mode that is still available"
+                  g := g.logMsg s!"{g.name o} doesn't match a mode that is still available"
               else
                 g := g.logMsg "The target is no longer legal"
             | none =>
@@ -700,7 +703,7 @@ def revealTopDrawIfArtifact (g : Game) (p : PlayerId) : Game :=
     let o := g.object! id
     let g := g.record (GameEvent.revealed g.turnNumber p #[id]
       (cause := some (g.resolvingOrRuleCause p)))
-    let g := g.logMsg s!"{(g.player p).name} reveals {o.name}"
+    let g := g.logMsg s!"{(g.player p).name} reveals {g.name o}"
     if g.isArtifact o then g.draw p 1 else g
 
 /-- Return up to one creature card from your graveyard, then put `n` +1/+1
@@ -729,9 +732,9 @@ def returnFromGyFinalityAttach (g : Game) (controller : PlayerId)
   | none => g.logMsg "The card is no longer in the graveyard"
   | some o =>
     if o.zone != .graveyard o.owner then
-      g.logMsg s!"{o.name} is no longer in the graveyard"
+      g.logMsg s!"{g.name o} is no longer in the graveyard"
     else
-      let name := o.name
+      let name := g.name o
       let (g, newId) := g.putOntoBattlefield o.id controller
         (extraEntersWith := #[(.finality, 1)])
       if let .chooseReplacement .. := g.pending then
@@ -1006,7 +1009,7 @@ def chooseCardsToHandLoop (g : Game) (p : PlayerId) (remainingIds : Array Object
     | some o =>
       if isPublicZone o.zone || o.zone == .hand o.owner then
         let owner := o.owner
-        let name := o.name
+        let name := g.name o
         let (g', _) := g.move id (.hand owner) none (cause := cause)
         g := g'
         if let .chooseReplacement .. := g.pending then
@@ -1018,6 +1021,7 @@ def chooseCardsToHandLoop (g : Game) (p : PlayerId) (remainingIds : Array Object
   return g
 
 /-- Carry out a `chooseCards` answer. -/
+@[export mtg_game_finish_choose_cards]
 def finishChooseCards (g : Game) (p : PlayerId) (chosen : Array ObjectId)
     (purpose : CardChoice) (cause : Option EventCause := none) : Game :=
   let stashed := cause.orElse (fun _ => g.stashedCause.orElse (fun _ => chosen[0]?.bind g.lastMoveCauseOf?))
@@ -1137,6 +1141,7 @@ def millThenChooseForHand (g : Game) (p : PlayerId) (n : Nat)
 A missing or illegal required target means none of the steps happen, so
 destroy-then-surveil does not surveil and pump-then-draw does not draw.
 “Up to” effects with no announced target still resolve. -/
+@[export mtg_game_sequence_all_targets_illegal]
 def sequenceAllTargetsIllegal (g : Game) (controller : PlayerId) (effect : Effect)
     (targets : Array Target) (sourceId : Option ObjectId := none) : Bool :=
   let kind := effect.targetKind
@@ -1177,22 +1182,23 @@ accept or decline. -/
 def beginMay (g : Game) (controller : PlayerId) (effect : Effect)
     (targets : Array Target) (r : SpellResolution)
     (sourceId : Option ObjectId := none) : Game :=
-  match r with
-  | .attachEquipment =>
-    g.withLegalKindPermanent controller effect.targetKind targets (fun g o =>
-      ((g.clearMay).change (.pending (.mayAttachEquipment controller o.id sourceId))).logMsg
-        s!"{(g.player controller).name} may attach an Equipment to {g.name o}") sourceId
-  | r =>
-    let phrase := SpellResolution.toPhrase r effect.targeting.kind.noun
-    let phrase := if phrase.startsWith "you " then (phrase.drop 4).toString else phrase
-    let inner := { effect with resolution := Resolution.ofSpell r }
-    (g.changes #[
-      .pending (.mayResolve controller),
-      .mayEffect (some inner),
-      .mayController controller,
-      .mayTargets targets,
-      .maySource sourceId]).logMsg
-      s!"{(g.player controller).name} may {phrase}"
+  g.withContinuationFrame fun g =>
+    match r with
+    | .attachEquipment =>
+      g.withLegalKindPermanent controller effect.targetKind targets (fun g o =>
+        ((g.clearMay).change (.pending (.mayAttachEquipment controller o.id sourceId))).logMsg
+          s!"{(g.player controller).name} may attach an Equipment to {g.name o}") sourceId
+    | r =>
+      let phrase := SpellResolution.toPhrase r effect.targeting.kind.noun
+      let phrase := if phrase.startsWith "you " then (phrase.drop 4).toString else phrase
+      let inner := { effect with resolution := Resolution.ofSpell r }
+      (g.changes #[
+        .pending (.mayResolve controller),
+        .mayEffect (some inner),
+        .mayController controller,
+        .mayTargets targets,
+        .maySource sourceId]).logMsg
+        s!"{(g.player controller).name} may {phrase}"
 
 /-- Ask a player to choose one resolution in `rs`. A library top-or-bottom
 pair is the owner's choice; any other list is the caster's. One alternative
@@ -1200,39 +1206,40 @@ is applied by `applyUnified` before this is called. -/
 def beginSpellOr (g : Game) (controller : PlayerId) (effect : Effect)
     (targets : Array Target) (rs : List SpellResolution)
     (sourceId : Option ObjectId := none) : Game :=
-  let asEffect (r : SpellResolution) : Effect :=
-    { effect with resolution := Resolution.ofSpell r }
-  let g := g.clearSpellOr
-  match rs with
-  | [.onPermanent .putOnTopOfLibrary, .onPermanent .putOnBottomOfLibrary]
-  | [.onPermanent .putOnBottomOfLibrary, .onPermanent .putOnTopOfLibrary] =>
-    match targets[0]? with
-    | some (Target.permanent id) =>
-      match g.findObject? id with
-      | some o =>
-        if o.isOnBattlefield && g.canBeTargetedBy controller o sourceId then
-          (g.changes #[
-            .pending (.chooseLibraryPlacement o.owner (some id)),
-            .spellOr #[
-              asEffect (.onPermanent .putOnTopOfLibrary),
-              asEffect (.onPermanent .putOnBottomOfLibrary)],
-            .spellOrController controller,
-            .spellOrTargets targets,
-            .spellOrLibrary true,
-            .spellOrSource sourceId]).logMsg
-            s!"{(g.player o.owner).name} chooses top or bottom of their library for {g.name o}"
-        else g.logMsg "The target is no longer legal"
-      | none => g.logMsg "The target is no longer legal"
-    | _ => g.logMsg "The target is no longer legal"
-  | _ =>
-    (g.changes #[
-      .pending (.chooseLibraryPlacement controller none),
-      .spellOr (rs.map asEffect).toArray,
-      .spellOrController controller,
-      .spellOrTargets targets,
-      .spellOrLibrary false,
-      .spellOrSource sourceId]).logMsg
-      s!"{(g.player controller).name} chooses {SpellResolution.toPhrase (.or rs) effect.targeting.kind.noun}"
+  g.withContinuationFrame fun g =>
+    let asEffect (r : SpellResolution) : Effect :=
+      { effect with resolution := Resolution.ofSpell r }
+    let g := g.clearSpellOr
+    match rs with
+    | [.onPermanent .putOnTopOfLibrary, .onPermanent .putOnBottomOfLibrary]
+    | [.onPermanent .putOnBottomOfLibrary, .onPermanent .putOnTopOfLibrary] =>
+      match targets[0]? with
+      | some (Target.permanent id) =>
+        match g.findObject? id with
+        | some o =>
+          if o.isOnBattlefield && g.canBeTargetedBy controller o sourceId then
+            (g.changes #[
+              .pending (.chooseLibraryPlacement o.owner (some id)),
+              .spellOr #[
+                asEffect (.onPermanent .putOnTopOfLibrary),
+                asEffect (.onPermanent .putOnBottomOfLibrary)],
+              .spellOrController controller,
+              .spellOrTargets targets,
+              .spellOrLibrary true,
+              .spellOrSource sourceId]).logMsg
+              s!"{(g.player o.owner).name} chooses top or bottom of their library for {g.name o}"
+          else g.logMsg "The target is no longer legal"
+        | none => g.logMsg "The target is no longer legal"
+      | _ => g.logMsg "The target is no longer legal"
+    | _ =>
+      (g.changes #[
+        .pending (.chooseLibraryPlacement controller none),
+        .spellOr (rs.map asEffect).toArray,
+        .spellOrController controller,
+        .spellOrTargets targets,
+        .spellOrLibrary false,
+        .spellOrSource sourceId]).logMsg
+        s!"{(g.player controller).name} chooses {SpellResolution.toPhrase (.or rs) effect.targeting.kind.noun}"
 
 /-- Apply `whenHolds` when `cond` is true and `whenNot` otherwise.
 An illegal target applies neither (CR 608.2b). -/
@@ -1276,15 +1283,18 @@ partial def exileTopXOppPlayForLifeLoop (g : Game) (controller pid : PlayerId)
     | some fid =>
       match g.followMovedToZone? fid (· == Zone.exile) with
       | some moved =>
-        let g := g.createEffect (.playPermission moved.id {
-          player := controller,
-          payLifeEqualManaValue := true }) (cause := cause)
-        g.logMsg s!"{(g.player controller).name} exiles {moved.name}"
+        let g :=
+          if g.stillInGame controller then
+            g.createEffect (.playPermission moved.id {
+              player := controller,
+              payLifeEqualManaValue := true }) (cause := cause)
+          else g
+        g.logMsg s!"{(g.player controller).name} exiles {g.name moved}"
       | none => g
   if let .chooseReplacement .. := g.pending then
     g.chainPendingReplacement
       (.finishPostStep (.exileTopXOppPlayForLifeLoop controller pid remaining cause none))
-  else if remaining == 0 then g
+  else if remaining == 0 || !g.stillInGame pid || !g.stillInGame controller then g
   else
     let pl := g.player pid
     if pl.library.isEmpty then
@@ -2055,7 +2065,7 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     let g :=
       top.foldl (fun g id =>
         match g.findObject? id with
-        | some o => g.logMsg s!"{(g.player controller).name} reveals {o.name}"
+        | some o => g.logMsg s!"{(g.player controller).name} reveals {g.name o}"
         | none => g) g
     let creatures :=
       top.filter (fun id => (g.findObject? id).any (g.isCreature ·))

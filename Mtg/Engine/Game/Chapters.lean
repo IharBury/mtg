@@ -74,7 +74,7 @@ def returnLinkedExileToHandLoop (g : Game) (srcId : ObjectId) (ids : Array Objec
     | none => pure ()
     | some card =>
       let owner := card.owner
-      let name := card.name
+      let name := g.name card
       let (g', _) := g.move eid (.hand owner) none
       g := g'
       if let .chooseReplacement .. := g.pending then
@@ -118,18 +118,19 @@ def attackPumpPerPlains (g : Game) (controller : PlayerId) : Game :=
 /-- Create the 6/6 Dragon token for `treasureThenDragon`, guarding CR 616.1
 choices and prevented token creation. -/
 def treasureThenDragonCreateDragon (g : Game) (controller : PlayerId) : Game :=
-  let g := g.change (.recentTokenIds #[])
-  let (g, _) := g.createToken controller dragonToken (recordRecent := true)
-  if let .chooseReplacement .. := g.pending then
-    g.chainPendingReplacement (.finishPostStep .logAndEnterRecentTokens)
-  else
-    g.recentTokenIds.foldl (fun g tid =>
-      match g.findObject? tid with
-      | some entered =>
-        if entered.isOnBattlefield then
-          (g.logMsg s!"{g.name entered} enters the battlefield").afterPermanentEnters entered
-        else g
-      | none => g) g
+  g.withContinuationFrame fun g =>
+    let g := g.change (.recentTokenIds #[])
+    let (g, _) := g.createToken controller dragonToken (recordRecent := true)
+    if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement (.finishPostStep .logAndEnterRecentTokens)
+    else
+      g.recentTokenIds.foldl (fun g tid =>
+        match g.findObject? tid with
+        | some entered =>
+          if entered.isOnBattlefield then
+            (g.logMsg s!"{g.name entered} enters the battlefield").afterPermanentEnters entered
+          else g
+        | none => g) g
 
 /-- Finish `treasureThenDragon` once the Treasure token creation completes. -/
 def treasureThenDragonAfterCreate (g : Game) (controller : PlayerId)
@@ -199,97 +200,98 @@ def applyChapterEffect (g : Game) (controller : PlayerId) (e : Effect)
   match e.asChapter? with
   | none => g.applyEffect controller e targets (sourceId := sourceId)
   | some ch =>
-  match ch with
-  | .dealDamageToOppCreature n =>
-    g.withLegalKindPermanent controller .oppCreature targets (fun g o =>
-      g.dealDamageToPermanent o n (source := sourceId.bind g.damageSourceEventById?))
-      sourceId (some "The target is no longer legal")
-  | .destroyOppArtifact =>
-    g.withLegalKindPermanent controller .oppArtifact targets (fun g o =>
-      g.destroyPermanent o) sourceId (some "The target is no longer legal")
-  | .addMana mana =>
-    g.addMana controller mana 1 (source := sourceId)
-      |>.logMsg s!"{(g.player controller).name} adds {mana}"
-  | .searchBasicLandToHand =>
-    g.resolveSearchBasicLandToHand controller
-  | .gainLandfallCreateElf =>
-    g.gainLandfallCreateElf sourceId
-  | .elvesGetVigilance p =>
-    g.elvesGetVigilance controller p
-  | .opponentDiscardsNonland =>
-    g.withLegalKindPlayer controller .opponent targets
-      (fun g pid => g.discardNonlandFrom controller pid)
-      sourceId (some "The target is no longer legal")
-  | .amass n =>
-    g.amassGoblins controller n
-  | .opponentLosesYouGain n =>
-    g.withLegalKindPlayer controller .opponent targets
-      (fun g pid =>
-        let (g, cause?) : Game × Option EventCause :=
-          if n == 0 then (g, none)
-          else
-            match g.currentResolvingContext? with
-            | some (src, ctrl) =>
-              let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some controller)) (src.orElse (fun _ => sourceId))
-              (g, some c)
-            | none => (g, none)
-        g.loseLife pid n (cause := cause?) |>.gainLife controller n (cause := cause?))
-      sourceId (some "The target is no longer legal")
-  | .grantHexproofWhileRemains =>
-    g.grantHexproofWhileSource controller sourceId targets .creatureYouControl
-  | .preventDamageWhileRemains =>
-    g.preventDamageWhileSource controller sourceId targets .creature
-  | .draw n =>
-    g.draw controller n
-  | .searchBasicPlainsExileGainLife max life =>
-    g.resolveSearchBasicPlainsExile controller sourceId max life
-  | .returnLinkedExileToHand =>
-    g.returnLinkedExileToHand sourceId
-  | .grantAttackPumpPerPlainsThisTurn =>
-    g.attackPumpPerPlains controller
-  | .blinkUntilEndStep =>
-    g.withLegalKindPermanent controller .creatureOrLandYouControl targets
-      (fun g o => g.exileUntilNextEndStep o) sourceId none
-  | .treasureThenDragonIfFour =>
-    g.treasureThenDragon controller sourceId
-  | .recruit =>
-    g.beginRecruit controller
-  | .returnCreatureFromGyMvAtMost n =>
-    g.withLegalKindTarget controller (.creatureCardInYourGraveyardMvAtMost n) targets
-      (fun g t =>
-        match t with
-        | Target.card oid =>
-          match g.findObject? oid with
-          | none => g.logMsg "The target is no longer in the graveyard"
-          | some _ =>
-            let (g, newId) := g.putOntoBattlefield oid controller
-            if let .chooseReplacement .. := g.pending then
-              g.chainPendingReplacement (.finishPostStep (.returnedToBattlefield oid false))
-            else
-              let entered := g.object! newId
-              if entered.isOnBattlefield then
-                (g.logMsg s!"{g.name entered} returns to the battlefield").afterPermanentEnters entered
-              else g
-        | _ => g.logMsg "The target is no longer legal")
-      sourceId (some "The target is no longer legal")
-  | .plusOneUpToOne =>
-    g.withLegalKindPermanent controller .creature targets (fun g o =>
-      g.addPlusOnePlusOneTo o 1) sourceId none
-  | .gainControlOfUpToTwoCreaturesTotalMvAtMost n =>
-    g.gainControlWhileSource controller sourceId targets (maxTotalMv := some n)
-  | .dealDamageToEachNonSubtypeAndOpponents n subtype =>
-    g.dealDamageToEachNonSubtypeAndOpponents controller n subtype sourceId
-  | .dealXDamageToTargetOpponentGreatestArtifactMv =>
-    let x := g.greatestManaValueAmong controller (g.isArtifact ·)
-    g.withLegalKindPlayer controller .opponent targets
-      (fun g pid => g.dealDamageToPlayer pid x (source := sourceId.bind g.damageSourceById?))
-      sourceId (some "The target is no longer legal")
-  | .spell s =>
-    g.applyEffect controller {
-      targeting := s.targeting
-      allowsZeroTargets := s.allowsZeroTargets
-      phrase := s.phrase
-      resolution := Resolution.ofSpell s.resolution } targets (sourceId := sourceId)
+    g.withContinuationFrame fun g =>
+      match ch with
+      | .dealDamageToOppCreature n =>
+        g.withLegalKindPermanent controller .oppCreature targets (fun g o =>
+          g.dealDamageToPermanent o n (source := sourceId.bind g.damageSourceEventById?))
+          sourceId (some "The target is no longer legal")
+      | .destroyOppArtifact =>
+        g.withLegalKindPermanent controller .oppArtifact targets (fun g o =>
+          g.destroyPermanent o) sourceId (some "The target is no longer legal")
+      | .addMana mana =>
+        g.addMana controller mana 1 (source := sourceId)
+          |>.logMsg s!"{(g.player controller).name} adds {mana}"
+      | .searchBasicLandToHand =>
+        g.resolveSearchBasicLandToHand controller
+      | .gainLandfallCreateElf =>
+        g.gainLandfallCreateElf sourceId
+      | .elvesGetVigilance p =>
+        g.elvesGetVigilance controller p
+      | .opponentDiscardsNonland =>
+        g.withLegalKindPlayer controller .opponent targets
+          (fun g pid => g.discardNonlandFrom controller pid)
+          sourceId (some "The target is no longer legal")
+      | .amass n =>
+        g.amassGoblins controller n
+      | .opponentLosesYouGain n =>
+        g.withLegalKindPlayer controller .opponent targets
+          (fun g pid =>
+            let (g, cause?) : Game × Option EventCause :=
+              if n == 0 then (g, none)
+              else
+                match g.currentResolvingContext? with
+                | some (src, ctrl) =>
+                  let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some controller)) (src.orElse (fun _ => sourceId))
+                  (g, some c)
+                | none => (g, none)
+            g.loseLife pid n (cause := cause?) |>.gainLife controller n (cause := cause?))
+          sourceId (some "The target is no longer legal")
+      | .grantHexproofWhileRemains =>
+        g.grantHexproofWhileSource controller sourceId targets .creatureYouControl
+      | .preventDamageWhileRemains =>
+        g.preventDamageWhileSource controller sourceId targets .creature
+      | .draw n =>
+        g.draw controller n
+      | .searchBasicPlainsExileGainLife max life =>
+        g.resolveSearchBasicPlainsExile controller sourceId max life
+      | .returnLinkedExileToHand =>
+        g.returnLinkedExileToHand sourceId
+      | .grantAttackPumpPerPlainsThisTurn =>
+        g.attackPumpPerPlains controller
+      | .blinkUntilEndStep =>
+        g.withLegalKindPermanent controller .creatureOrLandYouControl targets
+          (fun g o => g.exileUntilNextEndStep o) sourceId none
+      | .treasureThenDragonIfFour =>
+        g.treasureThenDragon controller sourceId
+      | .recruit =>
+        g.beginRecruit controller
+      | .returnCreatureFromGyMvAtMost n =>
+        g.withLegalKindTarget controller (.creatureCardInYourGraveyardMvAtMost n) targets
+          (fun g t =>
+            match t with
+            | Target.card oid =>
+              match g.findObject? oid with
+              | none => g.logMsg "The target is no longer in the graveyard"
+              | some _ =>
+                let (g, newId) := g.putOntoBattlefield oid controller
+                if let .chooseReplacement .. := g.pending then
+                  g.chainPendingReplacement (.finishPostStep (.returnedToBattlefield oid false))
+                else
+                  let entered := g.object! newId
+                  if entered.isOnBattlefield then
+                    (g.logMsg s!"{g.name entered} returns to the battlefield").afterPermanentEnters entered
+                  else g
+            | _ => g.logMsg "The target is no longer legal")
+          sourceId (some "The target is no longer legal")
+      | .plusOneUpToOne =>
+        g.withLegalKindPermanent controller .creature targets (fun g o =>
+          g.addPlusOnePlusOneTo o 1) sourceId none
+      | .gainControlOfUpToTwoCreaturesTotalMvAtMost n =>
+        g.gainControlWhileSource controller sourceId targets (maxTotalMv := some n)
+      | .dealDamageToEachNonSubtypeAndOpponents n subtype =>
+        g.dealDamageToEachNonSubtypeAndOpponents controller n subtype sourceId
+      | .dealXDamageToTargetOpponentGreatestArtifactMv =>
+        let x := g.greatestManaValueAmong controller (g.isArtifact ·)
+        g.withLegalKindPlayer controller .opponent targets
+          (fun g pid => g.dealDamageToPlayer pid x (source := sourceId.bind g.damageSourceById?))
+          sourceId (some "The target is no longer legal")
+      | .spell s =>
+        g.applyEffect controller {
+          targeting := s.targeting
+          allowsZeroTargets := s.allowsZeroTargets
+          phrase := s.phrase
+          resolution := Resolution.ofSpell s.resolution } targets (sourceId := sourceId)
 
 /-- Intervening “if” conditions rechecked on resolution (CR 608.2a).
 “While you control” attack triggers are not rechecked. -/

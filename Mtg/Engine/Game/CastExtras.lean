@@ -312,7 +312,7 @@ def putLandFromHandTapped (g : Game) (p : PlayerId) (id : ObjectId) :
       throw "That card is not in your hand"
     let some land := g.findObject? id | throw "no such object"
     if !g.isLand land then
-      throw s!"{land.name} is not a land card"
+      throw s!"{g.name land} is not a land card"
     let outerCont? := g.pendingReplacement
     let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
     let g := g.change (.pending .none)

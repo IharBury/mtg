@@ -247,7 +247,7 @@ def beginMayHaveVillainConnive (g : Game) (controller : PlayerId)
   else
     let who :=
       match g.findObject? villainId with
-      | some o => if o.isOnBattlefield then g.name o else o.name
+      | some o => g.name o
       | none => "the Villain"
     (g.change (.pending (.mayHaveVillainConnive controller sourceId villainId))).logMsg
       s!"{(g.player controller).name} may have {who} connive (do this only once each turn)"
@@ -472,8 +472,8 @@ def discardFromHand (g : Game) (p : PlayerId) (id : ObjectId) (chooser : Option 
   let owner := card.owner
   let msg :=
     match chooser with
-    | some c => s!"{(g.player c).name} chooses {card.name}. {(g.player p).name} discards it"
-    | none => s!"{(g.player p).name} discards {card.name}"
+    | some c => s!"{(g.player c).name} chooses {g.name card}. {(g.player p).name} discards it"
+    | none => s!"{(g.player p).name} discards {g.name card}"
   let randomMsg := s!"{(g.player p).name} discards a card at random"
   let (g, _) := g.move id (.graveyard owner) none (verb := some .discard)
     (actor := some p) (cause := cause)

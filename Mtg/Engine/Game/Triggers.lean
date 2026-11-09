@@ -606,30 +606,32 @@ def putTriggerBatch (g : Game) (wts : Array WaitingTrigger) : Game :=
 /-- Start scrying `n` as a keyword action (CR 701.22).
 Scry 0 is skipped and does not trigger “whenever you scry” (CR 701.22b). -/
 def beginScry (g : Game) (p : PlayerId) (n : Nat) : Game :=
-  if !g.stillInGame p then g
-  else
-    let pl := g.player p
-    let count := min n pl.library.size
-    if n == 0 then
-      g.logMsg s!"{pl.name} scries {n} (no cards to look at)"
-    else if count == 0 then
-      let happened :=
-        GameEvent.looked g.turnNumber p 0 false n (cause := some (g.resolvingOrRuleCause p))
-      let g := g.record happened
-      g.logMsg s!"{pl.name} scries {n} (no cards to look at)"
+  g.withContinuationFrame fun g =>
+    if !g.stillInGame p then g
     else
-      (g.changes #[.pending (.scry p count n), .surveilReturnMvAtMost none]).logMsg s!"{pl.name} scries {n}"
+      let pl := g.player p
+      let count := min n pl.library.size
+      if n == 0 then
+        g.logMsg s!"{pl.name} scries {n} (no cards to look at)"
+      else if count == 0 then
+        let happened :=
+          GameEvent.looked g.turnNumber p 0 false n (cause := some (g.resolvingOrRuleCause p))
+        let g := g.record happened
+        g.logMsg s!"{pl.name} scries {n} (no cards to look at)"
+      else
+        (g.changes #[.pending (.scry p count n), .surveilReturnMvAtMost none]).logMsg s!"{pl.name} scries {n}"
 
 /-- Scry `scryN`, then draw `drawN`. An empty library draws immediately.
 The draw waits on `pendingDrawAfterScry` while the scry choice is open. -/
 def scryThenDraw (g : Game) (p : PlayerId) (scryN drawN : Nat) : Game :=
-  let g := g.change (.pendingDrawAfterScry (some (p, drawN)))
-  let g := g.beginScry p scryN
-  if g.pendingDrawAfterScry.isSome &&
-      (match g.pending with | .scry .. => false | _ => true) then
-    let g := g.change (.pendingDrawAfterScry none)
-    g.draw p drawN
-  else g
+  g.withContinuationFrame fun g =>
+    let g := g.change (.pendingDrawAfterScry (some (p, drawN)))
+    let g := g.beginScry p scryN
+    if g.pendingDrawAfterScry.isSome &&
+        (match g.pending with | .scry .. => false | _ => true) then
+      let g := g.change (.pendingDrawAfterScry none)
+      g.draw p drawN
+    else g
 
 end Game
 end Mtg.Engine

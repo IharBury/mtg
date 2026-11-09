@@ -136,25 +136,6 @@ def nameWithToken (o : GameObject) : String :=
       owner := ⟨0⟩, zone := .battlefield }
   card.nameWithToken == "Grizzly Bears"
 
-/-- Printed card types of this object (CR 205.2). Layer-4 type-changing effects
-are evaluated in `Game.objectTypes` (CR 613.1d). -/
-def types (o : GameObject) : Array CardType :=
-  o.printed.types
-
-/-- Printed subtypes of this object (CR 205.3). Layer-3 and Layer-4 subtype
-effects are evaluated in `Game.currentSubtypes` (CR 613.1c–d). -/
-def subtypes (o : GameObject) : Array CardSubtype :=
-  CardSubtype.ofSubtypes o.printed.subtypes
-
-/-- Printed supertypes of this object (CR 205.4). Layer-4 supertype effects
-are evaluated in `Game.supertypes` (CR 613.1d). -/
-def supertypes (o : GameObject) : Array Supertype :=
-  o.printed.supertypes
-
-/-- Type line from printed types and subtypes (CR 205.1a). -/
-def typeLine (o : GameObject) : String :=
-  formatTypeLine o.supertypes o.types (o.subtypes.map CardSubtype.englishName)
-
 def isOnBattlefield (o : GameObject) : Bool :=
   o.zone == .battlefield && !o.status.phasedOut
 
@@ -162,29 +143,9 @@ def isOnBattlefield (o : GameObject) : Bool :=
 def isBattlefieldObject (o : GameObject) : Bool :=
   o.zone == .battlefield
 
-def controlledBy (o : GameObject) (p : PlayerId) : Bool :=
-  o.controller == some p
-
-/-- Whether this object has the printed creature card type (CR 205.2a / 302).
-Prefer `Game.isCreature` when `Game` is in scope to include Layer-4 effects. -/
-def isCreature (o : GameObject) : Bool :=
-  o.printed.isCreature
-
 /-- True while this spell is on the stack as an Adventure (CR 715.3b). -/
 def isAdventureSpell (o : GameObject) : Bool :=
   o.adventurerCard.isSome
-
-def hasType (o : GameObject) (t : CardType) : Bool :=
-  o.types.any (· == t)
-
-def hasSubtype (o : GameObject) (s : CardSubtype) : Bool :=
-  o.subtypes.any (· == s) ||
-    (o.printed.keywords.changeling && (o.hasType .creature || o.hasType .kindred) && !s.isNoncreature)
-
-/-- Printed static abilities of this object. Layer-6 ability grants and
-removals are evaluated in `Game.staticAbilitiesOf` (CR 613.1f). -/
-def staticAbilities (o : GameObject) : Array StaticAbility :=
-  o.printed.staticAbilities
 
 end GameObject
 

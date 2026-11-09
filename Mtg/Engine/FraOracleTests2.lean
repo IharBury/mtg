@@ -162,7 +162,7 @@ X as 0, so Guiding Hydra returns tapped even if a value was chosen for X. -/
     g.objectManaValue (g.object! id) == 1 &&
       (let g := g.applyEffect ⟨0⟩ e #[Target.permanent id]
        let back := namedPermanent g "Guiding Hydra"
-       back.controlledBy ⟨0⟩ && back.status.tapped) &&
+       g.controlledBy back ⟨0⟩ && back.status.tapped) &&
       (fraRuling 807).comment.contains "mana value" &&
       (fraRuling 807).comment.contains "X is 0"
   | none => false

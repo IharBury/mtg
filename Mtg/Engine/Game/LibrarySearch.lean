@@ -77,7 +77,7 @@ def placeSearched (g : Game) (p : PlayerId) (id : ObjectId) (tapped : Bool)
   match g.findObject? id with
   | none => (g, none)
   | some o =>
-    let name := o.name
+    let name := g.name o
     let (g, newId) := g.putOntoBattlefield id p (tapped := tapped)
       (cause := cause)
     if g.pending != .none then
@@ -91,7 +91,7 @@ def placeSearchedHand (g : Game) (p : PlayerId) (id : ObjectId)
   match g.findObject? id with
   | none => g
   | some o =>
-    let name := o.name
+    let name := g.name o
     let revCause := some (cause.getD (g.resolvingOrRuleCause p))
     let g := g.record (GameEvent.revealed g.turnNumber p #[id] (cause := revCause))
     let (g, _) := g.move id (.hand p) none (cause := cause)
@@ -119,7 +119,7 @@ def placeSearchedGraveyardLoop (g : Game) (ids : Array ObjectId)
     match g.findObject? id with
     | none => pure ()
     | some o =>
-      let name := o.name
+      let name := g.name o
       let owner := o.owner
       let (g', _) := g.move id (.graveyard owner) none (cause := cause)
       g := g'
@@ -145,13 +145,13 @@ def exileSearchedLinkedLoop (g : Game) (p : PlayerId) (ids : Array ObjectId)
     if let some moved := g.followMovedToZone? fid (· == .exile) then
       if let some src := source.bind g.findObject? then
         g := g.changeObject src.id (.pushLeaveTriggerExile moved.id)
-      g := g.logMsg s!"{(g.player p).name} exiles {moved.name}"
+      g := g.logMsg s!"{(g.player p).name} exiles {g.name moved}"
   for i in [0:ids.size] do
     let id := ids[i]!
     match g.findObject? id with
     | none => pure ()
     | some o =>
-      let name := o.name
+      let name := g.name o
       let (g1, linkCause) : Game × EventCause :=
         match cause with
         | some c => (g, c)
@@ -258,7 +258,7 @@ def placeSearchedBatchCore (g : Game) (p : PlayerId) (remainingIds : Array Objec
     match g.findObject? id with
     | none => pure ()
     | some o =>
-      let name := o.name
+      let name := g.name o
       let (g', _) := g.putOntoBattlefield id p (tapped := tapped)
         (preBattlefield := some preBf) (cause := cause)
       g := g'
@@ -365,7 +365,7 @@ def finishLibrarySearch (g : Game) (p : PlayerId) (ids : Array ObjectId)
       let g := g.record (GameEvent.revealed g.turnNumber p ids (cause := some cause))
       let g := ids.foldl (fun g id =>
         match g.findObject? id with
-        | some o => g.logMsg s!"{(g.player p).name} reveals {o.name}"
+        | some o => g.logMsg s!"{(g.player p).name} reveals {g.name o}"
         | none => g) g
       g.shuffleThen p (.putOnTop p ids)
     | .exileLinked source =>
@@ -503,7 +503,7 @@ def resolveExileTopPlayUntilEndOfNextTurn (g : Game) (p : PlayerId) : Game :=
           let g := g.createEffect (.playPermission moved.id { player := p } (turnEnds := 2))
             (cause := some cause)
           g.logMsg
-            s!"{pl.name} exiles {moved.name} and may play it until the end of their next turn"
+            s!"{pl.name} exiles {g.name moved} and may play it until the end of their next turn"
         | none => g
 
 end Game

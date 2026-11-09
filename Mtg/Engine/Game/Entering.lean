@@ -72,7 +72,7 @@ def enterFromNickFury (g : Game) (controller : PlayerId) (id : ObjectId)
   match g.findObject? id with
   | none => g.logMsg "No card to put onto the battlefield"
   | some o =>
-    let nightBack := g.isNight && o.printed.daybound && o.printed.otherFace.isSome
+    let nightBack := g.isNight && (g.baseCard o).daybound && (g.baseCard o).otherFace.isSome
     let (g, newId) := g.putOntoBattlefield id controller (nightBack := nightBack) (cause := cause)
     if let .chooseReplacement .. := g.pending then
       g.chainPendingReplacement (.afterLastPermanentEnters (some id))

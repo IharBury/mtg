@@ -62,7 +62,7 @@ def threeTreasonReverts : Game :=
   let g := g.giveControlUntilEot (namedPermanent g "Grizzly Bears") ⟨0⟩
   g.playerLeavesGame ⟨0⟩
 
-#guard (namedPermanent threeTreasonReverts "Grizzly Bears").controlledBy ⟨1⟩
+#guard threeTreasonReverts.controlledBy (namedPermanent threeTreasonReverts "Grizzly Bears") ⟨1⟩
 #guard threeTreasonReverts.log.any (fun s => mentions s "reverts to Nissa's control")
 
 /-- When a control effect ends and the default controller has left, exile
@@ -91,7 +91,7 @@ def threeNoControlToLeftPlayer : Game :=
   let g := g.playerLeavesGame ⟨0⟩
   g.changeControl (namedPermanent g "Grizzly Bears") ⟨0⟩
 
-#guard (namedPermanent threeNoControlToLeftPlayer "Grizzly Bears").controlledBy ⟨1⟩
+#guard threeNoControlToLeftPlayer.controlledBy (namedPermanent threeNoControlToLeftPlayer "Grizzly Bears") ⟨1⟩
 #guard threeNoControlToLeftPlayer.log.any (fun s => mentions s "CR 800.4b")
 
 /-- Ante objects owned by the leaving player stay (CR 800.4n). -/

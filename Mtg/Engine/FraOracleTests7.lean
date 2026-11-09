@@ -115,7 +115,7 @@ def chandraEmblem : Game :=
 
 /- Ruling 858: the emblem is colorless. -/
 #guard chandraEmblem.objects.any (fun o =>
-  o.zone == .command && o.controlledBy ⟨0⟩ && o.printed.colors.isColorless)
+  o.zone == .command && o.controller == some ⟨0⟩ && o.printed.colors.isColorless)
 #guard (fraRuling 858).comment.contains "The emblem created by Chandra's last ability is colorless"
 
 /- Ruling 860: the emblem's trigger resolves before the spell. -/

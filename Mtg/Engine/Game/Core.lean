@@ -2935,10 +2935,8 @@ def evalLayer3 (g : Game) (o : GameObject) : Array TextChange :=
           rem := rem.filter (fun e => e.idx != chosen.idx)
         return cur
 
-/-- Creature cards in `p`'s graveyard (evaluated via Layer 1 `baseCard`, CR 113.6). -/
-def gyCreatureCards (g : Game) (p : PlayerId) : Nat :=
-  (g.player p).graveyard.filter (fun id =>
-    (g.findObject? id).any (fun c => (g.baseCard c).isCreature)) |>.size
+@[extern "mtg_game_gy_creature_cards"]
+private opaque gyCreatureCardsFwd (g : Game) (p : PlayerId) : Nat
 
 -- Layer 4: Type-changing effects (CR 613.1d / 205.3d / 613.3 / 613.7 / 613.8 / 702.73a)
 
@@ -3041,7 +3039,7 @@ def evalLayer4 (g : Game) (o : GameObject) : Array CardType × Array CardSubtype
           | .getsAndAllTypesIfGyCreatureCards min _ _ =>
             let condOk : Bool :=
               match g.controllerOf o with
-              | some p => decide (g.gyCreatureCards p >= min)
+              | some p => decide (gyCreatureCardsFwd g p >= min)
               | none => false
             if condOk then
               pending := pending.push (.base, {
@@ -3161,6 +3159,12 @@ def hasType (g : Game) (o : GameObject) (t : CardType) : Bool :=
 
 def isCreature (g : Game) (o : GameObject) : Bool :=
   g.hasType o .creature
+
+/-- Creature cards in `p`'s graveyard (evaluated via Layer 1–4 `g.isCreature`, CR 113.6). -/
+@[export mtg_game_gy_creature_cards]
+def gyCreatureCards (g : Game) (p : PlayerId) : Nat :=
+  (g.player p).graveyard.filter (fun id =>
+    (g.findObject? id).any (fun c => g.isCreature c)) |>.size
 
 def isArtifact (g : Game) (o : GameObject) : Bool :=
   g.hasType o .artifact
@@ -6176,7 +6180,7 @@ types, not cards, are counted, and supertypes are not card types (rulings
 def graveyardCardTypeCount (g : Game) : Nat :=
   let types := g.objects.foldl (fun acc o =>
     match o.zone with
-    | .graveyard _ => (g.baseCard o).types.foldl (fun acc t =>
+    | .graveyard _ => (g.types o).foldl (fun acc t =>
         if acc.contains t then acc else acc.push t) acc
     | _ => acc) (#[] : Array CardType)
   types.size
@@ -6466,9 +6470,7 @@ def auraStatBonus (g : Game) (aura : GameObject) : Int × Int :=
 def instantSorceryInGraveyard (g : Game) (p : PlayerId) : Nat :=
   (g.player p).graveyard.filter (fun id =>
     match g.findObject? id with
-    | some c =>
-      let bc := g.baseCard c
-      bc.isInstant || bc.isSorcery
+    | some c => g.isInstantOrSorcery c
     | none => false) |>.size
 
 /-- Static power/toughness from Auras and Equipment attached to `o`. -/
@@ -6628,8 +6630,7 @@ def fraStatBonus (g : Game) (o : GameObject) : Int × Int :=
         | .fra .powerPerCreatureAndPlaneswalkerCard =>
           let n := (gyIds.filter (fun id =>
             (g.findObject? id).any (fun c =>
-              let bc := g.baseCard c
-              bc.isCreature || bc.isPlaneswalker))).size
+              g.isCreature c || g.isPlaneswalker c))).size
           addStats acc (Int.ofNat n, 0)
         | _ => acc) (0, 0)
       let (fromObjs, hasFlyingEmblem) := g.objects.foldl (fun (acc, sawFlyEmb) src =>
@@ -11589,15 +11590,25 @@ def pruneLinkedExileId (g : Game) (sid eid : ObjectId) : Game :=
 /-- Drop a stashed `unlessPays` effect. Paying, or countering for real,
 clears it; leaving without paying sets `unlessPaysDue` instead. -/
 def clearUnlessPays (g : Game) : Game :=
-  g.changes #[.unlessPaysInstead none, .unlessPaysDue false, .unlessPaysTargets #[], .unlessPaysSource none]
+  g.changes #[
+    .unlessPaysController ⟨0⟩,
+    .unlessPaysInstead none,
+    .unlessPaysDue false,
+    .unlessPaysTargets #[],
+    .unlessPaysSource none]
 
 /-- Drop a stashed `SpellResolution.may` after the player accepts or declines. -/
 def clearMay (g : Game) : Game :=
-  g.changes #[.mayEffect none, .mayTargets #[], .maySource none]
+  g.changes #[.mayController ⟨0⟩, .mayEffect none, .mayTargets #[], .maySource none]
 
 /-- Drop a stashed `SpellResolution.or` after the player has chosen. -/
 def clearSpellOr (g : Game) : Game :=
-  g.changes #[.spellOr #[], .spellOrTargets #[], .spellOrSource none, .spellOrLibrary false]
+  g.changes #[
+    .spellOrController ⟨0⟩,
+    .spellOr #[],
+    .spellOrTargets #[],
+    .spellOrSource none,
+    .spellOrLibrary false]
 
 /-- Record that combat damage was dealt to `p`. -/
 def noteCombatDamageTo (g : Game) (p : PlayerId) (source : EventObject)
@@ -11621,7 +11632,7 @@ def restoreCopiesWhere (g : Game)
         let acc := acc.expireEffectById eid (cause := cause)
         match obj? with
         | some o =>
-          let restName := (acc.baseCard o).name
+          let restName := acc.name o
           acc.logMsg s!"{restName} is no longer a copy of {printed.name}"
         | none => acc
       else acc
@@ -11794,6 +11805,27 @@ def beginFraChoice (g : Game) (p : PlayerId) (choice : FraChoice) (msg : String 
     else g
   let g := g.change (.pending (.fraChoice p choice))
   if msg.isEmpty then g else g.logMsg msg
+
+/-- Append departed player `p` to any `.restorePending`, `.leavePlayersWhoLost`,
+`.finishConcede`, or `.concedePlayersLoop` continuation in `g.pendingReplacement`
+or `g.outerPendingReplacements` so `.restorePending` re-runs
+`redirectPendingAfterLeave` after the replacement pause finishes (CR 616.1 / 800.4). -/
+def appendDepartedToContinuations (g : Game) (p : PlayerId) : Game :=
+  let g :=
+    match g.pendingReplacement with
+    | some cont =>
+      let cont' := cont.appendDeparted p
+      if cont' != cont then g.change (.pendingReplacement (some cont')) else g
+    | none => g
+  let outers := g.outerPendingReplacements
+  let outers' := outers.map (·.appendDeparted p)
+  if outers' == outers then g
+  else
+    let g := (List.range outers.size).foldl (fun acc _ => acc.change .popOuterPendingReplacement) g
+    outers'.foldl (fun acc c => acc.change (.pushOuterPendingReplacement c)) g
+
+def appendDepartedManyToContinuations (g : Game) (dep : Array PlayerId) : Game :=
+  dep.foldl (fun acc p => acc.appendDepartedToContinuations p) g
 
 end Game
 end Mtg.Engine

@@ -124,7 +124,7 @@ def payCostPickItems (g : Game) (p : PlayerId) (abilityId sourceId : Option Obje
             g := (g.becomeTapped o (cause := some (.costPayment .tap p forObj))).logMsg
               s!"{name} taps {oName} to pay a cost"
           | .exileAnotherCreatureCardFromGraveyard =>
-            let msg := s!"{name} exiles {o.name} from their graveyard"
+            let msg := s!"{name} exiles {g.name o} from their graveyard"
             g := (g.move id .exile none (cause := some (.costPayment .exile p forObj))).1
             if let .chooseReplacement .. := g.pending then
               g := g.chainPendingReplacement (.finishPostStep (.logExiledIfInExile id msg))
@@ -149,7 +149,7 @@ def payCostPickItems (g : Game) (p : PlayerId) (abilityId sourceId : Option Obje
                     if (g.findObject? aid).isSome then
                       g := g.setStackEntryLastKnown aid (lastKnownPower := some pw)
             else
-              let msg := s!"{name} discards {o.name}"
+              let msg := s!"{name} discards {g.name o}"
               let owner := o.owner
               g := (g.move id (.graveyard owner) none (verb := some .discard) (actor := some p)
                 (cause := some (.costPayment .discard p forObj))).1
@@ -236,11 +236,11 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
   let forObject := g.proposedSpell.map (·.spellId) <|> some sourceId
   if ab.any (·.cost.fra == .exileSourceFromHand) then
     if !(src.zone == .hand src.owner && src.owner == p) then
-      throw s!"{src.name} is not in your hand"
+      throw s!"{g.name src} is not in your hand"
     let g ← g.payLifeCost p payLife (forObject := forObject)
     let outer? := g.pendingReplacement
     let g := if outer?.isSome then g.change (.pendingReplacement none) else g
-    let msg := s!"{(g.player p).name} exiles {src.name} from their hand"
+    let msg := s!"{(g.player p).name} exiles {g.name src} from their hand"
     let g := (g.move sourceId .exile none (cause := some (.costPayment .exile p forObject))).1
     let g :=
       if let .chooseReplacement .. := g.pending then
@@ -251,12 +251,12 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
     return match outer? with | some outer => g.chainPendingReplacement outer | none => g
   if discardSource then
     if !(src.zone == .hand src.owner && src.owner == p) then
-      throw s!"{src.name} is not in your hand"
+      throw s!"{g.name src} is not in your hand"
     let g ← g.payLifeCost p payLife (forObject := forObject)
     let src := g.object! sourceId
     let outer? := g.pendingReplacement
     let g := if outer?.isSome then g.change (.pendingReplacement none) else g
-    let msg := s!"{(g.player p).name} discards {src.name}"
+    let msg := s!"{(g.player p).name} discards {g.name src}"
     let costKind : CostKind := if ab.any (·.isCycling) then .cycle else .discard
     let (g, _) := g.move sourceId (.graveyard src.owner) none (verb := some .discard)
       (actor := some p) (cause := some (.costPayment costKind p forObject))
@@ -275,7 +275,7 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
     if ab.any (·.cost.exileSourceFromGraveyard) then
       let outer? := g.pendingReplacement
       let g := if outer?.isSome then g.change (.pendingReplacement none) else g
-      let msg := s!"{(g.player p).name} exiles {src.name} from their graveyard"
+      let msg := s!"{(g.player p).name} exiles {g.name src} from their graveyard"
       let g := (g.move sourceId .exile none (cause := some (.costPayment .exile p forObject))).1
       let g :=
         if let .chooseReplacement .. := g.pending then

@@ -93,7 +93,7 @@ def visitorTreasure : Game := withVisitor.createTreasureTokens ⟨0⟩ 1 (tapped
 /- Ruling 781: only tokens created under your control are replaced. -/
 #guard
   let g := withVisitor.createTreasureTokens ⟨1⟩ 1
-  g.battlefield.any (fun o => o.name == "Treasure" && o.controlledBy ⟨1⟩)
+  g.battlefield.any (fun o => o.name == "Treasure" && g.controlledBy o ⟨1⟩)
 #guard (fraRuling 781).comment.contains "under whose control a token would be created"
 
 /- Ruling 782: the token's own characteristics as created decide; a Cadet
@@ -140,7 +140,7 @@ def vraskaShock : Game := castShockAtNissa (addPermanent afterDraw vraskaSoulOfS
   let g := passBoth vraskaShock
   topOfStack g == "Shock" &&
     (let s := namedPermanent g "Sculpture"
-     s.printed.isArtifact && s.isCreature && s.printed.tapSacrificeAddAnyColor &&
+     s.printed.isArtifact && g.isCreature s && s.printed.tapSacrificeAddAnyColor &&
        g.hasSubtype s .treasure)
 #guard (fraRuling 887).comment.contains "resolves before the spell that caused it to trigger"
 

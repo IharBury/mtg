@@ -400,7 +400,7 @@ def storyGranted : Game :=
 
 def storyThenLostPermanents : Game :=
   storyGranted.battlefield.foldl (fun acc o =>
-    if o.controlledBy ⟨0⟩ then (acc.move o.id (.graveyard o.owner) none).1 else acc)
+    if acc.controlledBy o ⟨0⟩ then (acc.move o.id (.graveyard o.owner) none).1 else acc)
     storyGranted
 
 #guard storyGranted.hasEnduringStory ⟨0⟩
@@ -894,7 +894,7 @@ def giftGivenOnResolve : Game :=
   let spell := g.object! g.stack.back!.objectId
   g.givePromisedGift ((g.giftPromisedTo? spell.id).getD ⟨1⟩)
 
-#guard giftGivenOnResolve.battlefield.any (fun o => o.name == "Treasure" && o.controlledBy ⟨1⟩)
+#guard giftGivenOnResolve.battlefield.any (fun o => o.name == "Treasure" && giftGivenOnResolve.controlledBy o ⟨1⟩)
 
 /-- Ruling 152: if the spell is removed without resolving, the gift is not given. -/
 def giftCountered : Game :=
@@ -1215,7 +1215,7 @@ def blessingFromZero : Game :=
 /-- Ruling 251: the designation stays after the permanents leave. -/
 def blessingThenLost : Game :=
   tenWithAscend.battlefield.foldl (fun acc o =>
-    if o.controlledBy ⟨0⟩ then (acc.move o.id (.graveyard o.owner) none).1 else acc)
+    if acc.controlledBy o ⟨0⟩ then (acc.move o.id (.graveyard o.owner) none).1 else acc)
     tenWithAscend
 
 #guard blessingThenLost.hasCitysBlessing ⟨0⟩
@@ -2712,9 +2712,9 @@ def cavernHoardResolveCount : Game :=
 
 def cavernHoardResolveCountOk : Bool :=
   (cavernHoardResolveCount.battlefield.filter (fun o =>
-    o.name == "Treasure" && o.controlledBy ⟨0⟩)).size == 1 &&
+    o.name == "Treasure" && cavernHoardResolveCount.controlledBy o ⟨0⟩)).size == 1 &&
     (cavernHoardResolveCount.battlefield.filter (fun o =>
-      o.name == "Treasure" && o.controlledBy ⟨1⟩)).size == 1 &&
+      o.name == "Treasure" && cavernHoardResolveCount.controlledBy o ⟨1⟩)).size == 1 &&
     (ruling 103).comment.contains "as the ability resolves"
 
 #guard cavernHoardResolveCountOk
@@ -2869,7 +2869,7 @@ def andurilOppSpiritsOk : Bool :=
     andurilOppSpirits.battlefield.filter (fun o => o.name == "Spirit")
   spirits.size == 2 &&
     spirits.all (fun o => o.status.tapped && !o.status.attacking &&
-      o.controlledBy ⟨0⟩) &&
+      andurilOppSpirits.controlledBy o ⟨0⟩) &&
     (ruling 132).comment.contains "would not enter the battlefield attacking"
 
 #guard andurilOppSpiritsOk

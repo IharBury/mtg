@@ -415,6 +415,7 @@ private def finishAmassOnPost (g : Game) (controller : PlayerId) (armyId : Objec
     | _, _ => g
 
 /-- Put the amass counters and subtype on `armyId`. -/
+@[export mtg_game_finish_amass_on]
 def finishAmassOn (g : Game) (controller : PlayerId) (armyId : ObjectId)
     (subtype : CardSubtype) (n : Nat) (attach : Option ObjectId := none)
     (stage : AmassStage := .putCounters) (cause : Option EventCause := none) : Game :=
@@ -477,6 +478,7 @@ def finishFreshAmass (g : Game) (controller : PlayerId) (subtype : CardSubtype)
 
 /-- Amass `subtype` `n`, choosing which Army when `controller` controls more
 than one (CR 701.47). -/
+@[export mtg_game_amass]
 def amass (g : Game) (controller : PlayerId) (subtype : CardSubtype) (n : Nat)
     (attach : Option ObjectId := none)
     (cause : Option EventCause := none) : Game :=

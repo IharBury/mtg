@@ -97,7 +97,7 @@ def mountainLine (g : Game) : String :=
   objectLine g (lastPermanent g)
 
 #guard mountainLine withMountain ==
-  s!"{(lastPermanent withMountain).id} Mountain {(lastPermanent withMountain).typeLine} (\{T}: Add \{R}.) (owned by Chandra, controlled by Chandra)"
+  s!"{(lastPermanent withMountain).id} Mountain {withMountain.typeLine (lastPermanent withMountain)} (\{T}: Add \{R}.) (owned by Chandra, controlled by Chandra)"
 #guard mentions (mountainLine withMountain) "Land"
 #guard mentions (mountainLine withMountain) "{T}: Add {R}"
 -- Tokens are marked so a token copy is not mistaken for the card it copies.
@@ -124,14 +124,14 @@ def mountainLine (g : Game) : String :=
     tok.name == "Grizzly Bears" &&
     tok.nameWithToken == "Grizzly Bears (token)" &&
     mentions (objectLine g tok) "Grizzly Bears (token)" &&
-    mentions (objectLine g tok) host.typeLine &&
+    mentions (objectLine g tok) (bearsBlockOgre.typeLine host) &&
     !mentions (objectLine bearsBlockOgre host) "(token)" &&
     face.startsWith s!"{tok.id} Grizzly Bears (token) " &&
     mentions face "{1}{G}" &&
     mentions face "Creature — Bear" &&
     mentions face "2/2" &&
     !mentions (printedCardLine host) "(token)" &&
-    mentions (waitingTriggerLine {
+    mentions (waitingTriggerLine g {
       controller := ⟨1⟩, source := tok,
       ability := .onEnterCreateTokens .treasure 1 }) "Grizzly Bears (token)" &&
     g.log.any (fun s => mentions s "creates Grizzly Bears (token)")
@@ -237,7 +237,7 @@ def mountainLine (g : Game) : String :=
   let g := insertObject started mountain ⟨0⟩ .battlefield (some ⟨0⟩)
   let o := lastPermanent g
   o.status.summoningSick &&
-    !o.isCreature &&
+    !g.isCreature o &&
     !mentions (objectLine g o) "(summoning sickness)"
 
 -- Tapped and summoning-sick print as adjacent status markers.
@@ -288,7 +288,7 @@ def mountainLine (g : Game) : String :=
 #guard !mentions (stackBlock guideEntered) "(summoning sickness)"
 
 #guard mountainLine stolenMountain ==
-  s!"{(lastPermanent stolenMountain).id} Mountain {(lastPermanent stolenMountain).typeLine} (\{T}: Add \{R}.) (owned by Chandra, controlled by Nissa)"
+  s!"{(lastPermanent stolenMountain).id} Mountain {stolenMountain.typeLine (lastPermanent stolenMountain)} (\{T}: Add \{R}.) (owned by Chandra, controlled by Nissa)"
 -- Grouped under Nissa: owner differs, so it is printed; controller matches.
 -- The shared battlefield is not listed under either player block.
 #guard !mentions (playerBlock stolenMountain (stolenMountain.player ⟨0⟩)) "Battlefield"
@@ -434,7 +434,7 @@ def mountainLine (g : Game) : String :=
   let bears := namedPermanent g "Grizzly Bears"
   let ogre := namedPermanent g "Gray Ogre"
   objectLine g bears ==
-    s!"{bears.id} Grizzly Bears {bears.typeLine} {g.power bears}/{g.toughness bears} (owned by Nissa, controlled by Nissa) *blocking {ogre.id} Gray Ogre*" &&
+    s!"{bears.id} Grizzly Bears {g.typeLine bears} {g.power bears}/{g.toughness bears} (owned by Nissa, controlled by Nissa) *blocking {ogre.id} Gray Ogre*" &&
   mentions (zoneBlock g .battlefield) s!"*blocking {ogre.id} Gray Ogre*" &&
   mentions (battlefieldBlock g) s!"*blocking {ogre.id} Gray Ogre*" &&
   mentions (snapshot g) s!"*blocking {ogre.id} Gray Ogre*" &&
@@ -458,7 +458,7 @@ def mountainLine (g : Game) : String :=
 #guard
   let wts := twoAttercopsLandPending.waitingTriggersOf ⟨0⟩
   wts.size == 2 &&
-    waitingTriggerLine wts[0]! ==
+    waitingTriggerLine twoAttercopsLandPending wts[0]! ==
       s!"{wts[0]!.source.id} Attercop Whenever a land you control enters, this creature gets +1/+1 until end of turn."
 #guard
   match triggerOrderBlock twoAttercopsLandPending with
@@ -815,7 +815,7 @@ def mountainLine (g : Game) : String :=
   let bears := namedPermanent g "Grizzly Bears"
   let aura := namedPermanent g "Gift of Strands"
   objectLine g bears ==
-    s!"{bears.id} Grizzly Bears {bears.typeLine} 5/5 (owned by Chandra, controlled by Chandra)" &&
+    s!"{bears.id} Grizzly Bears {g.typeLine bears} 5/5 (owned by Chandra, controlled by Chandra)" &&
   mentions (objectLine g aura) s!"*enchanting {bears.id} Grizzly Bears*" &&
   mentions (header giftScrying) "scry 2" &&
   mentions (snapshot giftScrying) "Looking at (scry 2, top last):"
@@ -825,7 +825,7 @@ def mountainLine (g : Game) : String :=
   let bears := namedPermanent g "Grizzly Bears"
   let spear := namedPermanent g "Ragged Short Spear"
   objectLine g bears ==
-    s!"{bears.id} Grizzly Bears {bears.typeLine} 4/2 (owned by Chandra, controlled by Chandra)" &&
+    s!"{bears.id} Grizzly Bears {g.typeLine bears} 4/2 (owned by Chandra, controlled by Chandra)" &&
   mentions (objectLine g spear) s!"*equipping {bears.id} Grizzly Bears*" &&
   mentions (header spearMayDiscard) "may discard a card, then draw 2"
 
@@ -935,14 +935,14 @@ def mountainLine (g : Game) : String :=
   let bauble := namedPermanent g "Wayfarer's Bauble"
   let bears := namedPermanent g "Grizzly Bears"
   let hosp := namedPermanent g "Beorn's Hospitality"
-  land.typeLine == "Basic Land — Mountain" &&
-    bauble.typeLine == "Artifact" &&
-    bears.typeLine == "Creature — Bear" &&
-    hosp.typeLine == "Enchantment" &&
-    mentions (objectLine g land) land.typeLine &&
-    mentions (objectLine g bauble) bauble.typeLine &&
-    mentions (objectLine g bears) bears.typeLine &&
-    mentions (objectLine g hosp) hosp.typeLine &&
+  g.typeLine land == "Basic Land — Mountain" &&
+    g.typeLine bauble == "Artifact" &&
+    g.typeLine bears == "Creature — Bear" &&
+    g.typeLine hosp == "Enchantment" &&
+    mentions (objectLine g land) (g.typeLine land) &&
+    mentions (objectLine g bauble) (g.typeLine bauble) &&
+    mentions (objectLine g bears) (g.typeLine bears) &&
+    mentions (objectLine g hosp) (g.typeLine hosp) &&
     mentions (zoneBlock g .battlefield) "Creature — Bear" &&
     mentions (zoneBlock g .battlefield) "Artifact" &&
     mentions (zoneBlock g .battlefield) "Enchantment" &&
@@ -1082,8 +1082,8 @@ def mountainLine (g : Game) : String :=
 #guard
   let g := paidGuide
   let o := g.object! g.stack.back!.objectId
-  o.isCreature &&
-    o.typeLine == "Creature — Elf Scout" &&
+  g.isCreature o &&
+    g.typeLine o == "Creature — Elf Scout" &&
     g.power o == 3 && g.toughness o == 4 &&
     mentions (stackBlock g) "Creature — Elf Scout" &&
     mentions (stackBlock g) "3/4" &&
@@ -1094,14 +1094,14 @@ def mountainLine (g : Game) : String :=
 #guard
   let g := proposedOgre
   let o := g.object! g.stack.back!.objectId
-  o.typeLine == "Creature — Ogre" &&
+  g.typeLine o == "Creature — Ogre" &&
     g.power o == 2 && g.toughness o == 2 &&
     mentions (stackBlock g) "Creature — Ogre" &&
     mentions (stackBlock g) "2/2"
 #guard
   let g := paidGandalf
   let o := g.object! g.stack.back!.objectId
-  o.typeLine == "Legendary Creature — Avatar Wizard" &&
+  g.typeLine o == "Legendary Creature — Avatar Wizard" &&
     g.power o == 4 && g.toughness o == 3 &&
     mentions (stackBlock g) "Legendary Creature — Avatar Wizard" &&
     mentions (stackBlock g) "4/3" &&
@@ -1110,7 +1110,7 @@ def mountainLine (g : Game) : String :=
 #guard
   let g := paidPathmaker
   let o := g.object! g.stack.back!.objectId
-  o.typeLine == "Creature — Elf Ranger" &&
+  g.typeLine o == "Creature — Elf Ranger" &&
     g.power o == 2 && g.toughness o == 2 &&
     mentions (stackBlock g) "Creature — Elf Ranger" &&
     mentions (stackBlock g) "2/2"

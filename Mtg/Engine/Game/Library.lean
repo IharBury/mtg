@@ -23,7 +23,7 @@ def drawOneCard (g : Game) (p : PlayerId)
       g.logMsg s!"{pl.name} tries to draw from an empty library"
     else
       let top := pl.library.back!
-      let cardName := (g.object! top).name
+      let cardName := g.name (g.object! top)
       let nth := GameEvent.draws g.events g.turnNumber p + 1
       let firstOfTheirDrawStep :=
         firstOfTheirDrawStep?.getD
@@ -243,36 +243,45 @@ def shuffleLibrary (g : Game) (p : PlayerId) : Game :=
 /-- Record `after` and shuffle. If `--norandom` pauses, `after` stays on the
 game until the host supplies an order. -/
 def requestShuffle (g : Game) (p : PlayerId) (after : AfterRandom := .none) : Game :=
-  let run (g : Game) : Game := (g.change (.afterRandom after)).shuffleLibrary p
-  if after != .none then g.withContinuationFrame run
-  else run g
+  if !g.stillInGame p then g
+  else
+    let run (g : Game) : Game := (g.change (.afterRandom after)).shuffleLibrary p
+    if after != .none then g.withContinuationFrame run
+    else run g
 
 /-- Pause-safe loop for `moveIdsInOrder`, tracking `placedCount` of cards that
-actually entered `.library p` across `Pending.chooseReplacement` pauses so
-`LibraryPosition.fromTop` offsets stay accurate (CR 401.4 / 616.1). -/
+actually entered `dest` across `Pending.chooseReplacement` pauses so
+`LibraryPosition.fromTop` offsets stay accurate and arrival logs emit when at
+least one card was placed (CR 401.4 / 616.1). -/
 def moveIdsInOrderLoop (g : Game) (ids : Array ObjectId) (dest : Zone)
     (log : String := "") (cause : Option EventCause := none)
     (placedCount : Nat := 0)
-    (prevLibraryMoved : Option (ObjectId × PlayerId) := none) : Game :=
+    (prevMoved : Option (ObjectId × Zone) := none) : Game :=
   if let .chooseReplacement .. := g.pending then
     g.chainPendingReplacement
-      (.finishPostStep (.moveIdsInOrderLoop ids dest log cause placedCount prevLibraryMoved))
-  else if match dest with
-    | .library p | .hand p | .graveyard p | .outside p => !g.stillInGame p
-    | _ => false then g
+      (.finishPostStep (.moveIdsInOrderLoop ids dest log cause placedCount prevMoved))
   else
   let placedCount :=
-    match prevLibraryMoved with
-    | some (prevId, p) =>
-      if (g.followMovedToZone? prevId (· == .library p)).isSome then placedCount + 1
+    match prevMoved with
+    | some (prevId, z) =>
+      if (g.followMovedToZone? prevId (· == z)).isSome then placedCount + 1
       else placedCount
     | none => placedCount
+  if match dest with
+    | .library p | .hand p | .graveyard p | .outside p => !g.stillInGame p
+    | _ => false then
+    if !log.isEmpty && placedCount > 0 then g.logMsg log else g
+  else
   match dest with
   | .library p =>
     Id.run do
       let mut g := g
       let mut placed := placedCount
       for i in [0:ids.size] do
+        if !g.stillInGame p then
+          if !log.isEmpty && placed > 0 then
+            g := g.logMsg log
+          return g
         let id := ids[i]!
         let libSize := ((g.player p).library.filter (· != id)).size
         let pos : LibraryPosition :=
@@ -283,17 +292,24 @@ def moveIdsInOrderLoop (g : Game) (ids : Array ObjectId) (dest : Zone)
         if let .chooseReplacement .. := g.pending then
           let rem := ids.extract (i + 1) ids.size
           g := g.chainPendingReplacement
-            (.finishPostStep (.moveIdsInOrderLoop rem dest log cause placed (some (id, p))))
+            (.finishPostStep (.moveIdsInOrderLoop rem dest log cause placed (some (id, .library p))))
           return g
         if (g.followMovedToZone? id (· == .library p)).isSome then
           placed := placed + 1
-      if !log.isEmpty && (placed > 0 || (ids.isEmpty && prevLibraryMoved.isNone)) then
+      if !log.isEmpty && (placed > 0 || (ids.isEmpty && prevMoved.isNone)) then
         g := g.logMsg log
       return g
   | _ =>
     Id.run do
       let mut g := g
+      let mut placed := placedCount
       for i in [0:ids.size] do
+        if match dest with
+          | .hand p | .graveyard p | .outside p => !g.stillInGame p
+          | _ => false then
+          if !log.isEmpty && placed > 0 then
+            g := g.logMsg log
+          return g
         let id := ids[i]!
         let (g', _) := g.move id dest none (cause := cause)
         g := g'
@@ -301,9 +317,11 @@ def moveIdsInOrderLoop (g : Game) (ids : Array ObjectId) (dest : Zone)
           let rem := ids.extract (i + 1) ids.size
           if !rem.isEmpty || !log.isEmpty then
             g := g.chainPendingReplacement
-              (.finishPostStep (.moveIdsInOrderLoop rem dest log cause 0 none))
+              (.finishPostStep (.moveIdsInOrderLoop rem dest log cause placed (some (id, dest))))
           return g
-      if !log.isEmpty then
+        if (g.followMovedToZone? id (· == dest)).isSome then
+          placed := placed + 1
+      if !log.isEmpty && (placed > 0 || (ids.isEmpty && prevMoved.isNone)) then
         g := g.logMsg log
       return g
 
@@ -337,7 +355,7 @@ def putIdsOnTop (g : Game) (p : PlayerId) (ids : Array ObjectId) : Game :=
           match g.findObject? id with
           | some o =>
             if o.zone == .library p then
-              let name := o.name
+              let name := g.name o
               let snap := g.snapshot o
               let moveCause := g.resolvingOrRuleCause p
               g := g.record (GameEvent.moved g.turnNumber snap (.library p) (.library p)

@@ -64,6 +64,7 @@ def continueNontokenSacrifices (g : Game) (players : Array PlayerId) (chosen : A
       g.sacrificePermanentsLoop pairs (preBattlefield := some preBf)
 
 /-- Let `controller` cast the exiled nonland with any type of mana until end of turn. -/
+@[export mtg_game_grant_widow_cast]
 def grantWidowCast (g : Game) (controller : PlayerId) (exiled : Option ObjectId)
     (cause : Option EventCause := none) : Game :=
   if !g.stillInGame controller then g
@@ -997,37 +998,38 @@ Countering uses the existing “pay or let the spell be countered” choice. -/
 def beginUnlessPays (g : Game) (controller : PlayerId) (effect : Effect)
     (targets : Array Target) (r : SpellResolution) (n : Nat)
     (sourceId : Option ObjectId := none) : Game :=
-  match r with
-  | .counter => g.beginPayOrLetCounter targets n
-  | _ =>
-    let payer? : Option (PlayerId × Option ObjectId) :=
-      match targets[0]? with
-      | some (Target.card id) =>
-        match g.findObject? id with
-        | some o => some (o.controller.getD o.owner, some id)
-        | none => none
-      | some (Target.permanent id) =>
-        match g.findObject? id with
-        | some o =>
-          if o.isOnBattlefield && !g.canBeTargetedBy controller o sourceId then none
-          else (g.lastControllerOf? o).map (fun pid => (pid, none))
-        | none => none
-      | some (Target.player pid) =>
-        if !g.stillInGame pid || !g.playerCanBeTargetedBy controller pid sourceId then none
-        else some (pid, none)
-      | _ => none
-    match payer? with
-    | none => g.logMsg "The target is no longer legal"
-    | some (payer, spellId?) =>
-      let inner := { effect with resolution := Resolution.ofSpell r }
-      (g.changes #[
-        .pending (.payOrLetCounter payer n spellId?),
-        .unlessPaysInstead (some inner),
-        .unlessPaysController controller,
-        .unlessPaysTargets targets,
-        .unlessPaysSource sourceId,
-        .unlessPaysDue false]).logMsg
-        s!"{(g.player payer).name} may pay \{{n}} or {SpellResolution.toPhrase r effect.targeting.kind.noun}"
+  g.withContinuationFrame fun g =>
+    match r with
+    | .counter => g.beginPayOrLetCounter targets n
+    | _ =>
+      let payer? : Option (PlayerId × Option ObjectId) :=
+        match targets[0]? with
+        | some (Target.card id) =>
+          match g.findObject? id with
+          | some o => some (o.controller.getD o.owner, some id)
+          | none => none
+        | some (Target.permanent id) =>
+          match g.findObject? id with
+          | some o =>
+            if o.isOnBattlefield && !g.canBeTargetedBy controller o sourceId then none
+            else (g.lastControllerOf? o).map (fun pid => (pid, none))
+          | none => none
+        | some (Target.player pid) =>
+          if !g.stillInGame pid || !g.playerCanBeTargetedBy controller pid sourceId then none
+          else some (pid, none)
+        | _ => none
+      match payer? with
+      | none => g.logMsg "The target is no longer legal"
+      | some (payer, spellId?) =>
+        let inner := { effect with resolution := Resolution.ofSpell r }
+        (g.changes #[
+          .pending (.payOrLetCounter payer n spellId?),
+          .unlessPaysInstead (some inner),
+          .unlessPaysController controller,
+          .unlessPaysTargets targets,
+          .unlessPaysSource sourceId,
+          .unlessPaysDue false]).logMsg
+          s!"{(g.player payer).name} may pay \{{n}} or {SpellResolution.toPhrase r effect.targeting.kind.noun}"
 
 /-- Exile `o`, then immediately return it to the battlefield under its
 owner's control. `clearExileFields` drops a play permission or linked exile

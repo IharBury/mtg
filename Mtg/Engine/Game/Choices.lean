@@ -83,7 +83,7 @@ def discardHandIdsLoop (g : Game) (p : PlayerId) (ids : Array ObjectId)
     | none => pure ()
     | some o =>
       if o.zone == .hand p then
-        let msg := s!"{(g.player p).name} discards {o.name}"
+        let msg := s!"{(g.player p).name} discards {g.name o}"
         let owner := o.owner
         let (g', _) := g.move id (.graveyard owner) none (verb := some .discard)
           (actor := some p) (cause := cause)
@@ -114,7 +114,7 @@ def discardMultiHandIdsLoop (g : Game) (remaining : Array (PlayerId × ObjectId)
     | none => pure ()
     | some o =>
       if g.stillInGame p && o.zone == .hand p then
-        let msg := s!"{(g.player p).name} discards {o.name}"
+        let msg := s!"{(g.player p).name} discards {g.name o}"
         let owner := o.owner
         let (g', _) := g.move id (.graveyard owner) none (verb := some .discard)
           (actor := some p) (cause := cause)
@@ -268,19 +268,22 @@ def exileTopPlayIfYouControlSubtypeLoop (g : Game) (p : PlayerId)
   if let .chooseReplacement .. := g.pending then
     return g.chainPendingReplacement
       (.finishPostStep (.exileTopPlayIfYouControlSubtypeLoop p subtype remaining cause? movedId?))
-  if !g.stillInGame p then
-    return g
   let mut g := g
   if let some fid := movedId? then
     if let some moved := g.followMovedToZone? fid (· == .exile) then
-      g := g.createEffect (.playPermission moved.id {
-          player := p
-          whileExiled := true
-          requireSubtype := some subtype
-          faceDown := true })
-        (cause := cause?)
+      if g.stillInGame p then
+        g := g.createEffect (.playPermission moved.id {
+            player := p
+            whileExiled := true
+            requireSubtype := some subtype
+            faceDown := true })
+          (cause := cause?)
       g := g.logMsg s!"{(g.player p).name} exiles a card face down"
+  if !g.stillInGame p then
+    return g
   for i in [0:remaining] do
+    if !g.stillInGame p then
+      return g
     let pl := g.player p
     if pl.library.isEmpty then
       g := g.logMsg s!"{pl.name} has no cards in their library to exile"
@@ -293,12 +296,13 @@ def exileTopPlayIfYouControlSubtypeLoop (g : Game) (p : PlayerId)
         return g.chainPendingReplacement
           (.finishPostStep (.exileTopPlayIfYouControlSubtypeLoop p subtype rem cause? (some top)))
       if let some moved := g.followMovedToZone? top (· == .exile) then
-        g := g.createEffect (.playPermission moved.id {
-            player := p
-            whileExiled := true
-            requireSubtype := some subtype
-            faceDown := true })
-          (cause := cause?)
+        if g.stillInGame p then
+          g := g.createEffect (.playPermission moved.id {
+              player := p
+              whileExiled := true
+              requireSubtype := some subtype
+              faceDown := true })
+            (cause := cause?)
         g := g.logMsg s!"{pl.name} exiles a card face down"
   return g
 
@@ -323,12 +327,10 @@ def finishGrimaDirectCast (g : Game) (controller victim : PlayerId)
     (fromId : ObjectId) (others : Array ObjectId)
     (cause : Option EventCause) : Game :=
   let g :=
-    if !g.stillInGame controller then g
-    else
-      match g.followMovedToZone? fromId (· == .stack) with
-      | some moved =>
-        g.logMsg s!"{(g.player controller).name} casts {g.name moved} as the ability resolves"
-      | none => g
+    match g.followMovedToZone? fromId (· == .stack) with
+    | some moved =>
+      g.logMsg s!"{(g.player controller).name} casts {g.name moved} as the ability resolves"
+    | none => g
   if !g.stillInGame victim then g
   else
     g.requestOrderInto others (.library victim)

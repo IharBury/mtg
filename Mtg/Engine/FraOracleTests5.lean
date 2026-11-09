@@ -126,7 +126,7 @@ def krakenAtNissaUpkeep : Game :=
 #guard
   let g := krakenAtNissaUpkeep
   let t := namedPermanent g "Forest Tentacle"
-  t.controlledBy ⟨0⟩ && t.printed.isLand && t.isCreature && g.hasSubtype t .forest &&
+  g.controlledBy t ⟨0⟩ && t.printed.isLand && g.isCreature t && g.hasSubtype t .forest &&
     !t.printed.hasSupertype .basic && g.power t == 3
 #guard (fraRuling 802).comment.contains "isn't a basic land"
 
@@ -192,14 +192,14 @@ def vraskaEnters (lands : Nat) : Game :=
 #guard
   let g := resolveStack (vraskaEnters 6) 20
   !g.battlefield.any (fun o => o.name == "Grizzly Bears") &&
-    g.battlefield.any (fun o => o.name == "Treasure" && o.controlledBy ⟨1⟩)
+    g.battlefield.any (fun o => o.name == "Treasure" && g.controlledBy o ⟨1⟩)
 /- Indestructible stays, and its controller still creates a Treasure. -/
 #guard
   let g := vraskaEnters 6
   let g := g.grantUntilEotLogged (namedPermanent g "Grizzly Bears") Keyword.indestructible
   let g := resolveStack g 20
   g.battlefield.any (fun o => o.name == "Grizzly Bears") &&
-    g.battlefield.any (fun o => o.name == "Treasure" && o.controlledBy ⟨1⟩)
+    g.battlefield.any (fun o => o.name == "Treasure" && g.controlledBy o ⟨1⟩)
 /- Destroying a token still has that token's controller create a Treasure. -/
 #guard
   let g := withLands (afterDraw.createTreasureTokens ⟨1⟩ 1) 6
@@ -322,7 +322,7 @@ def faceYourselfAt (g : Game) : Game :=
 
 /-- Tokens Chandra controls named `name`. -/
 def chandraTokens (g : Game) (name : String) : Array GameObject :=
-  g.battlefield.filter (fun o => o.name == name && o.printed.isToken && o.controlledBy ⟨0⟩)
+  g.battlefield.filter (fun o => o.name == name && o.printed.isToken && g.controlledBy o ⟨0⟩)
 
 /-- Ruling 784: an enters ability of the copied creature triggers. Ruling
 787: counters and tapped status aren't copied. -/

@@ -113,7 +113,7 @@ def createOneToken (g : Game) (controller : PlayerId) (printed : CardDef)
       let g := g.consumeReplacementOrder etb.applied
       let obj := etb.candidate
       if etb.stayInOriginNoAuraHost then
-        (g.logMsg s!"{obj.name} token can't be attached legally and isn't created (CR 303.4f)",
+        (g.logMsg s!"{g.name obj} token can't be attached legally and isn't created (CR 303.4f)",
          noTokenCreated controller printed)
       else
       -- CR 508.4a,c: a token that enters the battlefield as a noncreature (or whose
@@ -758,7 +758,8 @@ def empowerJaceStep (g : Game) (controller : PlayerId) (n : Nat)
              g.logMsg s!"{(g.player controller).name} creates a Jace planeswalker token"
            else g, false)
         | _ =>
-          if (g.jacePlaneswalkerTokens controller).isEmpty then
+          if !g.stillInGame controller then (g, false)
+          else if (g.jacePlaneswalkerTokens controller).isEmpty then
             let (g, _) := g.createToken controller jacePlaneswalkerToken (cause := cause)
             if let .chooseReplacement .. := g.pending then
               (g.chainPendingReplacement (.empowerJace controller n .afterTokenCreate chosen cause), true)
@@ -768,7 +769,7 @@ def empowerJaceStep (g : Game) (controller : PlayerId) (n : Nat)
                  g.logMsg s!"{(g.player controller).name} creates a Jace planeswalker token"
                else g, false)
           else (g, false)
-      if justCreated then g
+      if justCreated || !g.stillInGame controller then g
       else
         let tokens := g.jacePlaneswalkerTokens controller
         let pick :=
@@ -799,7 +800,8 @@ token while you control one; with several, `chosen` picks which (ruling
 731), defaulting to the one that entered most recently. -/
 def empowerJace (g : Game) (controller : PlayerId) (n : Nat)
     (chosen : Option ObjectId := none) (cause : Option EventCause := none) : Game :=
-  g.empowerJaceStep controller n .initial chosen cause
+  if !g.stillInGame controller then g
+  else g.empowerJaceStep controller n .initial chosen cause
 
 /-- Printed characteristics for a `TokenKind`. -/
 def tokenPrinted (k : TokenKind) : CardDef :=
@@ -890,7 +892,7 @@ def logCreatedTokensSummary (g : Game) (controller : PlayerId) (startEventIdx : 
   else
     let groups : Array (String × Bool × Bool × Nat) :=
       snaps.foldl (fun acc eo =>
-        let nm := (eo.printed.map (·.name)).getD eo.name
+        let nm := eo.name
         let key := (nm, eo.tapped, eo.attacking)
         match acc.findIdx? (fun (n0, t0, a0, _) => (n0, t0, a0) == key) with
         | some idx =>

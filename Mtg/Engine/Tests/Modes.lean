@@ -115,7 +115,7 @@ three Alliance modes. The source remembers the choice. -/
   let g := modeStep g0 (allianceModes)
     (some (allyOf g0).id)
   let g := mustApply g caster (.chooseMode 1)
-  (g.battlefield.filter (·.isCreature)).all (·.status.plusOnePlusOne == 1) &&
+  (g.battlefield.filter g.isCreature).all (·.status.plusOnePlusOne == 1) &&
     g.modesChosenThisTurn (allyOf g).id == #[1]
 
 #guard

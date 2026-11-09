@@ -145,7 +145,7 @@ def continueRiddlesSplit (g : Game) (controller : PlayerId)
   let g :=
     faceUp.foldl (fun acc id =>
       match acc.findObject? id with
-      | some o => acc.logMsg s!"{(acc.player controller).name} reveals {o.name}"
+      | some o => acc.logMsg s!"{(acc.player controller).name} reveals {acc.name o}"
       | none => acc) g
   match (g.livingOpponents controller)[0]? with
   | some opp =>
@@ -366,11 +366,11 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .extrapolateReveal, .objects #[a, b] =>
     let ok (id : ObjectId) := (g.findObject? id).any (·.zone == .outside p)
     if !ok a || !ok b then throw "Choose two cards you own from outside the game"
-    if (g.object! a).name == (g.object! b).name then
+    if g.name (g.object! a) == g.name (g.object! b) then
       throw "The two cards must have different names"
     let g := g.record (GameEvent.revealed g.turnNumber p #[a, b]
       (cause := some (g.resolvingOrRuleCause p)))
-    let g := g.logMsg s!"{(g.player p).name} reveals {(g.object! a).name} and {(g.object! b).name}"
+    let g := g.logMsg s!"{(g.player p).name} reveals {g.name (g.object! a)} and {g.name (g.object! b)}"
     match (g.livingOpponents p)[0]? with
     | none => return g.finishFraChoice
     | some opp =>
@@ -380,7 +380,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .extrapolateReveal, _ => throw "Choose two cards from outside the game, or decline"
   | .extrapolatePick revealer ids, .objects #[id] =>
     if !ids.contains id then throw "Choose one of the revealed cards"
-    let name := (g.object! id).name
+    let name := g.name (g.object! id)
     let (g, _) := g.move id (.hand revealer) none
     let g :=
       if let .chooseReplacement .. := g.pending then
@@ -393,7 +393,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .mayPutMilledPermanent ids life, .objects #[id] =>
     if !ids.contains id then throw "Choose a permanent card milled this way"
     let some o := g.findObject? id | throw "no such object"
-    if !isPublicZone o.zone then throw s!"{o.name} is no longer in a public zone"
+    if !isPublicZone o.zone then throw s!"{g.name o} is no longer in a public zone"
     let g := g.returnToHand id p
     let g :=
       if let .chooseReplacement .. := g.pending then
@@ -483,7 +483,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .mayMovePlusOne _, _ => throw "Answer accept or decline"
   | .exileFromRevealedHand victim sourceId, .objects #[id] =>
     if !(g.revealedHandChoices victim false).contains id then throw "Choose a nonland card"
-    let name := (g.object! id).name
+    let name := g.name (g.object! id)
     let (g, _) := g.move id .exile none
     let g :=
       if let .chooseReplacement .. := g.pending then
@@ -836,7 +836,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     for id in chosen do
       let some o := g.findObject? id | throw "no such object"
       if o.owner != p || o.zone != .hand p then
-        throw s!"Can't discard {o.name}"
+        throw s!"Can't discard {g.name o}"
     let g := g.withBatch none fun g =>
       g.discardHandIdsLoop p chosen (logEach := true)
     if g.mayThenDrop > 0 then
@@ -942,7 +942,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .mayBecomeBasePT .., _ => throw "Answer accept or decline"
   | .mayRevealToHand looked eligible anyOrder, .objects #[id] =>
     if !eligible.contains id then throw "Choose one of the eligible cards"
-    let name := (g.object! id).name
+    let name := g.name (g.object! id)
     let (g, cause) := g.allocDelayedCause (some p)
     let g := g.record (GameEvent.revealed g.turnNumber p #[id] (cause := some cause))
     let (g, _) := g.move id (.hand p) none (cause := some cause)
@@ -1252,7 +1252,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       throw "Opponents can't cast spells during that player's turn"
     let some o := g.findObject? id | throw "no such object"
     if o.zone != .hand p || !g.isInstantOrSorcery o then
-      throw s!"{o.name} is no longer an instant or sorcery in your hand"
+      throw s!"{g.name o} is no longer an instant or sorcery in your hand"
     let face := g.baseCard o
     if g.spellNameForbidden face.name then
       throw s!"Spells named {face.name} can't be cast"
@@ -1296,7 +1296,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       throw "Opponents can't cast spells during that player's turn"
     let some o := g.findObject? id | throw "no such object"
     if o.zone != .exile || g.isLand o then
-      throw s!"{o.name} can't be cast this way"
+      throw s!"{g.name o} can't be cast this way"
     let face := g.baseCard o
     if g.spellNameForbidden face.name then
       throw s!"Spells named {face.name} can't be cast"
@@ -1384,7 +1384,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .moonstoneMayExile cardId, .accept =>
     match g.findObject? cardId with
     | some o =>
-      if o.zone != .graveyard p then throw s!"{o.name} is no longer in your graveyard"
+      if o.zone != .graveyard p then throw s!"{g.name o} is no longer in your graveyard"
       let oldId := o.id
       let (g, cause) := g.allocDelayedCause (some p)
       let (g, _) := g.move oldId .exile none (cause := some cause)
@@ -1397,7 +1397,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
           | some moved =>
             (g.createEffect (.playPermission moved.id { player := p } (turnEnds := 2))
               (cause := some cause))
-              |>.logMsg s!"{moved.name} is exiled. {(g.player p).name} may play it until the end of their next turn"
+              |>.logMsg s!"{g.name moved} is exiled. {(g.player p).name} may play it until the end of their next turn"
           | none => g
       return g.finishFraChoice
     | none => return g.finishFraChoice
@@ -1430,7 +1430,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .mayTakeMilled ids life, .objects #[id] =>
     if !ids.contains id then throw "That card wasn't milled"
     let some o := g.findObject? id | throw "no such object"
-    if !isPublicZone o.zone then throw s!"{o.name} is no longer in a public zone"
+    if !isPublicZone o.zone then throw s!"{g.name o} is no longer in a public zone"
     let g := g.returnToHand o.id p
     let g :=
       if let .chooseReplacement .. := g.pending then
@@ -1457,7 +1457,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     if !ids.contains id then throw "That card can't be put onto the battlefield"
     let some o := g.findObject? id | throw "no such object"
     if o.zone != .hand p || !g.isCreature o || !g.hasSubtype o .hero then
-      throw s!"{o.name} is not a Hero creature card in your hand"
+      throw s!"{g.name o} is not a Hero creature card in your hand"
     let (g, _) := g.putOntoBattlefield id p
     let g :=
       if let .chooseReplacement .. := g.pending then
@@ -1566,7 +1566,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     if g.opponentsCantCastOnActiveTurn p then
       throw "Opponents can't cast spells during that player's turn"
     let some o := g.findObject? id | throw "no such object"
-    if g.isLand o then throw s!"{o.name} can't be cast this way"
+    if g.isLand o then throw s!"{g.name o} can't be cast this way"
     let face := g.baseCard o
     let rawPerm := if withoutPaying then none else g.playPermission o
     let canMorph :=
@@ -1620,10 +1620,10 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     if g.opponentsCantCastOnActiveTurn p then
       throw "Opponents can't cast spells during that player's turn"
     let some o := g.findObject? id | throw "no such object"
-    if o.zone != .graveyard o.owner then throw s!"{o.name} is no longer in the graveyard"
+    if o.zone != .graveyard o.owner then throw s!"{g.name o} is no longer in the graveyard"
     if !(g.isArtifact o || g.isInstantOrSorcery o) then
-      throw s!"{o.name} is not an artifact, instant, or sorcery"
-    if g.isLand o then throw s!"{o.name} can't be cast this way"
+      throw s!"{g.name o} is not an artifact, instant, or sorcery"
+    if g.isLand o then throw s!"{g.name o} can't be cast this way"
     let face := g.baseCard o
     if g.spellNameForbidden face.name then
       throw s!"Spells named {face.name} can't be cast"
@@ -1813,7 +1813,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       match ids[0]? with
       | some id =>
         match g.findObject? id with
-        | some o => g.logMsg s!"{(g.player o.owner).name} leaves {o.name} in their hand"
+        | some o => g.logMsg s!"{(g.player o.owner).name} leaves {g.name o} in their hand"
         | none => g
       | none => g
     let g := g.continueOpeningBegin (ids.extract 1 ids.size)
@@ -1834,7 +1834,7 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
   | .sphinxsApproach _ => .accept
   | .extrapolateReveal =>
     let picks := (g.outsideCards p).foldl (fun (acc : Array GameObject) o =>
-      if acc.size < 2 && !acc.any (·.name == o.name) then acc.push o else acc) #[]
+      if acc.size < 2 && !acc.any (fun a => g.name a == g.name o) then acc.push o else acc) #[]
     .choosePermanents (picks.map (·.id))
   | .extrapolatePick _ ids => .choosePermanents (ids.extract 0 1)
   | .mayPutMilledPermanent ids _ => .choosePermanents (ids.extract 0 1)

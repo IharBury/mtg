@@ -19,7 +19,7 @@ open Mtg.Engine.FraCardTests2
 open Mtg.Engine.FraCardTests3
 
 def creatureTokens (g : Game) (p : PlayerId) : Nat :=
-  ((g.permanentsOf p).filter (fun o => o.isCreature && o.printed.isToken)).size
+  ((g.permanentsOf p).filter (fun o => g.isCreature o && o.printed.isToken)).size
 
 def treasures (g : Game) (p : PlayerId) : Nat :=
   ((g.permanentsOf p).filter (fun o => g.hasSubtype o .treasure)).size
@@ -934,7 +934,7 @@ the copy may get a new target. -/
     | _ => false
   let g := settle (mustApply g me (.choosePermanents #[(theirs g "Forest").id]))
   offered && counters g "Fin Fang Foom" == 2 &&
-    !g.objects.any (fun o => o.isOnBattlefield && (o.name == "Forest" || o.name == "Murmuring Volume") && o.controlledBy opp)
+    !g.objects.any (fun o => o.isOnBattlefield && (o.name == "Forest" || o.name == "Murmuring Volume") && g.controlledBy o opp)
 #guard
   let g := addPermanent (addPermanent afterDraw finFangFoom me me) grizzlyBears opp opp
   let g := stackTriggers (castFra g shock [.target (.permanent (theirs g "Grizzly Bears").id)])
@@ -1587,8 +1587,8 @@ line is Human Mercenary Villain. -/
       (some (idOf g "Taskmaster, Mercenary Mimic")) #[Target.card bearId]
     let tm := namedPermanent g "Taskmaster, Mercenary Mimic"
     tm.name == "Taskmaster, Mercenary Mimic" &&
-      tm.subtypes == #[.human, .mercenary, .villain] &&
-      !tm.subtypes.contains .bear && g.power tm == 2
+      g.subtypes tm == #[.human, .mercenary, .villain] &&
+      !(g.subtypes tm).contains .bear && g.power tm == 2
   | none => false
 
 /- Mister Hyde's upkeep ability asks which mode to use. -/
