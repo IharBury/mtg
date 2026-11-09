@@ -1166,6 +1166,34 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
             (clearPending g).chainPendingReplacement
               (.finishPostStep (.resumeTriggerModesAfterLeave q objId remaining chosen))
         (g, .none)
+    | .upToTriggerModes objId remaining chosen =>
+      if q == p then
+        (clearPendingAnd g (#[.chooseModesRest none] ++ clearProp), .none)
+      else
+        let g :=
+          g.withOuterContStashed fun g =>
+            (clearPending g).chainPendingReplacement
+              (.finishPostStep (.resumeUpToTriggerModesAfterLeave q objId remaining chosen))
+        (g, .none)
+    | .hawkeyeModes left chosen objId? =>
+      if q == p then
+        (clearPendingAnd g (#[.chooseModesRest none] ++ clearProp), .none)
+      else
+        match objId? with
+        | none =>
+          (clearPendingAnd g #[.chooseModesRest none], .none)
+        | some objId =>
+          let g :=
+            g.withOuterContStashed fun g =>
+              (clearPending g).chainPendingReplacement
+                (.finishPostStep (.resumeHawkeyeModesAfterLeave q objId left chosen))
+          (g, .none)
+    | .stackHydeMode objId | .stackTriggerUnusedMode objId _ _ _ =>
+      if q == p then
+        (clearPendingAnd g (#[.chooseModesRest none] ++ clearProp), .none)
+      else if !(g.findObject? objId).any (·.zone == .stack) then
+        (clearPendingAnd g #[.chooseModesRest none], .none)
+      else (g, pending)
     | .blackGatePlayer oid players =>
       let players' := players.filter g.stillInGame
       if q == p then
@@ -1370,6 +1398,73 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
       else if exiled.any (fun id => (g.findObject? id).isNone) then
         (g, .fraChoice q (.widowMayCounter sourceId none))
       else (g, pending)
+    | .topOrBottomDamage id _ _ =>
+      if q == p then
+        let g := g.changes (#[.chooseModesRest none] ++ clearProp)
+        let g := if g.mayThenDrop > 0 then g.declineMayThenCore else clearPending g
+        (g, .none)
+      else if !(g.findObject? id).any (·.isOnBattlefield) then
+        let g := g.change (.chooseModesRest none)
+        let g := if g.mayThenDrop > 0 then g.declineMayThenCore else clearPending g
+        (g, .none)
+      else (g, pending)
+    | .chooseKeyword objectId _ | .mayBecomeBasePT objectId _ _ =>
+      if q == p then
+        let g := g.changes (#[.chooseModesRest none] ++ clearProp)
+        let g := if g.mayThenDrop > 0 then g.declineMayThenCore else clearPending g
+        (g, .none)
+      else if !(g.findObject? objectId).any (·.isOnBattlefield) then
+        let g := g.change (.chooseModesRest none)
+        let g := if g.mayThenDrop > 0 then g.declineMayThenCore else clearPending g
+        (g, .none)
+      else (g, pending)
+    | .mayMovePlusOne sourceId =>
+      if q == p then
+        let g := g.changes (#[.chooseModesRest none] ++ clearProp)
+        let g := if g.mayThenDrop > 0 then g.declineMayThenCore else clearPending g
+        (g, .none)
+      else if !(g.findObject? sourceId).any (fun o =>
+          o.isOnBattlefield && o.status.plusOnePlusOne > 0) then
+        let g := g.change (.chooseModesRest none)
+        let g := if g.mayThenDrop > 0 then g.declineMayThenCore else clearPending g
+        (g, .none)
+      else (g, pending)
+    | .mayMoveAllCounters fromId toId =>
+      if q == p then
+        let g := g.changes (#[.chooseModesRest none] ++ clearProp)
+        let g := if g.mayThenDrop > 0 then g.declineMayThenCore else clearPending g
+        (g, .none)
+      else if !(g.findObject? fromId).any (·.isOnBattlefield) ||
+          !(g.findObject? toId).any (·.isOnBattlefield) then
+        let g := g.change (.chooseModesRest none)
+        let g := if g.mayThenDrop > 0 then g.declineMayThenCore else clearPending g
+        (g, .none)
+      else (g, pending)
+    | .mayTapSourceThen _ sourceId =>
+      if q == p then
+        let g := g.changes (#[.chooseModesRest none] ++ clearProp)
+        let g := if g.mayThenDrop > 0 then g.declineMayThenCore else clearPending g
+        (g, .none)
+      else if !(g.findObject? sourceId).any (fun o =>
+          o.isOnBattlefield && !o.status.tapped) then
+        let g := g.change (.chooseModesRest none)
+        let g := if g.mayThenDrop > 0 then g.declineMayThenCore else clearPending g
+        (g, .none)
+      else (g, pending)
+    | .nickFuryMayTransform id rest =>
+      if q == p then
+        let g := g.changes (#[.chooseModesRest none] ++ clearProp)
+        let g := if g.mayThenDrop > 0 then g.declineMayThenCore else clearPending g
+        (g, .none)
+      else if !(g.findObject? id).any (fun o =>
+          o.isOnBattlefield && (g.baseCard o).otherFace.isSome && !g.cantTransform o) then
+        let g := g.withOuterContStashed fun g =>
+          let cause := g.lastMoveCauseOf? id
+          let g := g.change (.chooseModesRest none)
+          let g := if g.mayThenDrop > 0 then g.declineMayThenCore else clearPending g
+          g.putRestOnBottomRandom q rest (cause := cause)
+        (g, g.pending)
+      else (g, pending)
     | _ =>
       if q == p then
         let g := g.changes (#[.chooseModesRest none] ++ clearProp)
@@ -1459,14 +1554,29 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
       let g := if g.mayThenDrop > 0 then g.declineMayThenCore else clearPending g
       (g, .none)
     else (g, pending)
-  | .mayCastExiledElseDamage q _ n sid =>
+  | .mayCastExiledElseDamage q cardId n sid =>
     if q == p then
-      let g := (clearPending g).logMsg s!"{(g.player p).name} declines (CR 800.4f)"
+      let clearProp : Array EngineChange :=
+        if abortedProp then #[.proposedSpell none, .clearProposalCheckpoint]
+        else #[]
+      let g := g.changes (#[.chooseModesRest none] ++ clearProp)
+      let g := if g.mayThenDrop > 0 then g.declineMayThenCore else clearPending g
+      let g := g.logMsg s!"{(g.player p).name} declines (CR 800.4f)"
       let g :=
         if n > 0 then
           g.withOuterContStashed fun g =>
             g.chainPendingReplacement
               (.finishPostStep (.dealDamageToEachOpponent p n sid (some (g.resolvingOrRuleCause p sid))))
+        else g
+      (g, .none)
+    else if !(g.findObject? cardId).any (·.zone == .exile) then
+      let g := g.change (.chooseModesRest none)
+      let g := if g.mayThenDrop > 0 then g.declineMayThenCore else clearPending g
+      let g :=
+        if n > 0 then
+          g.withOuterContStashed fun g =>
+            g.chainPendingReplacement
+              (.finishPostStep (.dealDamageToEachOpponent q n sid (some (g.resolvingOrRuleCause q sid))))
         else g
       (g, .none)
     else (g, pending)

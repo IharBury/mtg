@@ -23992,4 +23992,394 @@ private def replayOk31i4 (gs : Array Game) : Bool :=
 
 end Phase31Item4EventAlignment
 
+/-! ### Phase 32 Item 1: `ContinuationFrame` exit cleanup and game-over resolution teardown -/
+section Phase32Item1EventAlignment
+
+private def mustHold32i1 (label : String) (ok : Bool) : Bool :=
+  if ok then true else panic! s!"Phase32Item1EventAlignment failed: {label}"
+
+private def replayOk32i1 (gs : Array Game) : Bool :=
+  gs.all (fun g => Game.replayEvents g.events == g && allRulesEventsClassified g)
+
+#guard
+  let p0 : PlayerId := ⟨0⟩
+  let p1 : PlayerId := ⟨1⟩
+  let gBase := addPermanent (addPermanent afterDraw bear p0 p0) hero p1 p1
+  let p0Bear := (gBase.permanentsOf p0).find? (·.name == bear.name) |>.get!
+
+  -- 1a. `finishFraChoice` pops an empty `ContinuationFrame {}` pushed by `beginFraChoice`
+  --     before `promptTriggerTargetsIfNeeded` opens `Pending.chooseTargets`:
+  let gHkStack :=
+    gBase.putReflexiveTrigger p0 (some p0Bear.id)
+      { resolution := .mshReflexive .trickArrows 1, phrase := "Choose up to 1 Trick Arrows mode" }
+  let gHkChoseNet := mustApply gHkStack p0 (.chooseMode 0)
+  let emptyFramePoppedBeforeTargetsOk :=
+    gBase.continuations.isEmpty &&
+    gHkStack.continuations.size == 1 &&
+    (match gHkStack.pending with | .fraChoice q (.hawkeyeModes 1 #[] (some _)) => q == p0 | _ => false) &&
+    gHkChoseNet.pending == .chooseTargets p0 &&
+    gHkChoseNet.continuations.isEmpty
+
+  -- 1b. `finishFraChoice` and `finishAndGrantPriority` tear down active resolving stack entries
+  --     and pop all `ContinuationFrame`s when `g.over` becomes true during `drainPendingContinuations`:
+  let simpleAb : TriggeredAbility := .triggered .youGainLife (Effect.gainLife 1) {}
+  let gWithAbOnStack := gBase.putTriggeredAbilityOnStack p0 p0Bear simpleAb "triggers" (eventCause := some testCause)
+  let abObjId := gWithAbOnStack.stack.back!.objectId
+  let abSnap := gWithAbOnStack.snapshot (gWithAbOnStack.object! abObjId)
+  let gResolvingLethal :=
+    (((gWithAbOnStack.loseLife p1 20 (cause := some testCause)).change
+      (.pushContinuationFrame {
+        resolutionFinish := some (.ability abObjId abSnap p0 (some p0Bear.id) none)
+      })).change (.pushContinuationFrame {})).change (.pendingReplacement (some .checkSBA))
+  let gFraGameOver := gResolvingLethal.finishFraChoice
+  let gPrioGameOver := gResolvingLethal.finishAndGrantPriority p0
+  let gameOverTeardownOk :=
+    gFraGameOver.over &&
+    gFraGameOver.continuations.isEmpty &&
+    gFraGameOver.stack.isEmpty &&
+    (gFraGameOver.findObject? abObjId).isNone &&
+    gPrioGameOver.over &&
+    gPrioGameOver.continuations.isEmpty &&
+    gPrioGameOver.stack.isEmpty &&
+    (gPrioGameOver.findObject? abObjId).isNone
+
+  -- 1c. `EffectResolution.finishChooseCards` `.landsTappedGainLife` and
+  --     `Decisions.runPostStep` `.shuffleThenGainLife` pop their `ContinuationFrame` when
+  --     `(g.player p0).library.size ≤ 1` and `g.continuations.isEmpty`:
+  let gOneCardLib := gBase.mill p0 ((gBase.player p0).library.size - 1) (cause := some testCause)
+  let gTwoCardWithForest := insertObject gOneCardLib forest p0 (.library p0)
+  let forestId := (gTwoCardWithForest.player p0).library.back!
+  let lifeBefore := (gTwoCardWithForest.player p0).life
+  let gAfterLandsGain :=
+    gTwoCardWithForest.finishChooseCards p0 #[forestId] (.landsTappedGainLife 3) (cause := some testCause)
+  let gAfterShuffleGain :=
+    gOneCardLib.runPostStep (.shuffleThenGainLife p0 4)
+  let smallLibShuffleFrameOk :=
+    (gOneCardLib.player p0).library.size == 1 &&
+    gOneCardLib.continuations.isEmpty &&
+    gAfterLandsGain.pending == .none &&
+    gAfterLandsGain.afterRandom == .none &&
+    gAfterLandsGain.continuations.isEmpty &&
+    (gAfterLandsGain.player p0).life == lifeBefore + 3 &&
+    (gAfterLandsGain.permanentsOf p0).any (fun o => o.name == forest.name && o.status.tapped) &&
+    gAfterShuffleGain.pending == .none &&
+    gAfterShuffleGain.afterRandom == .none &&
+    gAfterShuffleGain.continuations.isEmpty &&
+    (gAfterShuffleGain.player p0).life == (gOneCardLib.player p0).life + 4
+
+  mustHold32i1 "1a.emptyFramePoppedBeforeTargetsOk" emptyFramePoppedBeforeTargetsOk &&
+  mustHold32i1 "1b.gameOverTeardownOk" gameOverTeardownOk &&
+  mustHold32i1 "1c.smallLibShuffleFrameOk" smallLibShuffleFrameOk &&
+  mustHold32i1 "1.replay"
+    (replayOk32i1 #[gHkStack, gHkChoseNet, gResolvingLethal, gFraGameOver, gPrioGameOver,
+      gOneCardLib, gTwoCardWithForest, gAfterLandsGain, gAfterShuffleGain])
+
+end Phase32Item1EventAlignment
+
+/-! ### Phase 32 Item 2: Stack-placed modal trigger prompt revalidation and unified `.restorePending` departed-player revalidation -/
+section Phase32Item2EventAlignment
+
+private def mustHold32i2 (label : String) (ok : Bool) : Bool :=
+  if ok then true else panic! s!"Phase32Item2EventAlignment failed: {label}"
+
+private def replayOk32i2 (gs : Array Game) : Bool :=
+  gs.all (fun g => Game.replayEvents g.events == g && allRulesEventsClassified g)
+
+#guard
+  let p0 : PlayerId := ⟨0⟩
+  let p1 : PlayerId := ⟨1⟩
+  let p2 : PlayerId := ⟨2⟩
+  let g3 := afterDraw.change (.addPlayer { id := p2, name := "Liliana" })
+  let gBase := addPermanent (addPermanent g3 bear p0 p0) hero p1 p1
+  let p0Bear := (gBase.permanentsOf p0).find? (·.name == bear.name) |>.get!
+
+  -- 2a. `.upToTriggerModes` revalidation on `q != p` and `q == p`:
+  --     (i) Re-opens `.upToTriggerModes` when remaining choosable modes still exist;
+  --     (ii) Finalizes `chosen == #[]` (recording `announced #[]` and `targetsAnnounced := true`)
+  --          when no choosable mode remains after `p1` leaves;
+  --     (iii) Finalizes non-empty `chosen == #[0]` when no further mode is choosable after `p1` leaves;
+  --     (iv) Clears pending when `q == p` (`p0` concedes).
+  let upToAb : TriggeredAbility := .triggered .enter Effect.enterChooseUpToXModes {}
+  let xTwoSrc : GameObject := { p0Bear with chosenX := some 2 }
+  let gUpToReopen0 := gBase.putTriggeredAbilityOnStack p0 xTwoSrc upToAb "enters" (eventCause := some testCause)
+  let upToObjId1 := gUpToReopen0.stack.back!.objectId
+  let gUpToReopen1 := gUpToReopen0.concede p1
+  let gUpToLeaverConcede := gUpToReopen0.concede p0
+
+  let tokenOnlyModesDef : CardDef := {
+    bear with
+    name := "P32 UpTo Token Modal"
+    fraTriggerModes := #[
+      { targeting := .of (.filtered { noun := "target token", tokenOnly := true })
+        resolution := .onPermanent .destroy
+        phrase := "Destroy target token" }
+    ]
+  }
+  let (gWithP1Tok0, _) := (addPermanent g3 tokenOnlyModesDef p0 p0).createOneToken p1
+    { bear with name := "P32 Token", isToken := true } (cause := some testCause)
+  let tokModalSrc := { (gWithP1Tok0.permanentsOf p0).find? (·.name == "P32 UpTo Token Modal") |>.get! with chosenX := some 1 }
+  let gUpToEmpty0 := gWithP1Tok0.putTriggeredAbilityOnStack p0 tokModalSrc upToAb "enters" (eventCause := some testCause)
+  let upToEmptyId := gUpToEmpty0.stack.back!.objectId
+  let preEmptyLeaveIdx := gUpToEmpty0.events.size
+  let gUpToEmptyAfterLeave := gUpToEmpty0.concede p1
+  let emptyFinalizedAnnounced :=
+    (gUpToEmptyAfterLeave.events.extract preEmptyLeaveIdx gUpToEmptyAfterLeave.events.size).any fun e =>
+      match e.change with
+      | .rules (.cast (.announced oid #[] _ _)) => oid == upToEmptyId
+      | _ => false
+
+  let twoModesDef : CardDef := {
+    bear with
+    name := "P32 UpTo Two Modal"
+    fraTriggerModes := #[
+      { resolution := .gainLife (.fixed 2), phrase := "Gain 2 life" },
+      { targeting := .of (.filtered { noun := "target token", tokenOnly := true })
+        resolution := .onPermanent .destroy
+        phrase := "Destroy target token" }
+    ]
+  }
+  let (gWithTwoModal0, _) := (addPermanent g3 twoModesDef p0 p0).createOneToken p1
+    { bear with name := "P32 Token 2", isToken := true } (cause := some testCause)
+  let twoModalSrc := { (gWithTwoModal0.permanentsOf p0).find? (·.name == "P32 UpTo Two Modal") |>.get! with chosenX := some 2 }
+  let gUpToChosen0 := gWithTwoModal0.putTriggeredAbilityOnStack p0 twoModalSrc upToAb "enters" (eventCause := some testCause)
+  let upToChosenId := gUpToChosen0.stack.back!.objectId
+  let gUpToPicked0 := mustApply gUpToChosen0 p0 (.chooseMode 0)
+  let preChosenLeaveIdx := gUpToPicked0.events.size
+  let gUpToChosenAfterLeave := gUpToPicked0.concede p1
+  let nonEmptyFinalizedAnnounced :=
+    (gUpToChosenAfterLeave.events.extract preChosenLeaveIdx gUpToChosenAfterLeave.events.size).any fun e =>
+      match e.change with
+      | .rules (.cast (.announced oid #[0] _ _)) => oid == upToChosenId
+      | _ => false
+
+  let upToModesLeaveOk :=
+    gUpToReopen1.pending == .fraChoice p0 (.upToTriggerModes upToObjId1 2 #[]) &&
+    gUpToLeaverConcede.pending == .none &&
+    gUpToEmptyAfterLeave.pending == .none &&
+    emptyFinalizedAnnounced &&
+    (gUpToEmptyAfterLeave.stack.find? (·.objectId == upToEmptyId)).any (·.targetsAnnounced) &&
+    gUpToChosenAfterLeave.pending == .none &&
+    nonEmptyFinalizedAnnounced &&
+    (gUpToChosenAfterLeave.stack.find? (·.objectId == upToChosenId)).any (·.targetsAnnounced)
+
+  -- 2b. `.hawkeyeModes` revalidation on `q != p`:
+  --     (i) Re-opens `.hawkeyeModes` when modes remain choosable;
+  --     (ii) Finalizes `chosen == #[1, 2]` (when `left == 3` and mode 0 `Net — Target creature`
+  --          loses the only creature on the battlefield with `p1`), announcing `#[1, 2]` and
+  --          transitioning to `Pending.chooseTargets p0` for mode 1 (`Explosive`);
+  --     (iii) Clears `.hawkeyeModes` when `objId? == none`.
+  let gHkReopen0 :=
+    gBase.putReflexiveTrigger p0 (some p0Bear.id)
+      { resolution := .mshReflexive .trickArrows 2, phrase := "Choose up to 2 Trick Arrows modes" }
+  let hkObjId1 := gHkReopen0.stack.back!.objectId
+  let gHkReopen1 := gHkReopen0.concede p1
+
+  let gNoP0Creature := addPermanent g3 hero p1 p1
+  let gHkFin0 :=
+    gNoP0Creature.putReflexiveTrigger p0 none
+      { resolution := .mshReflexive .trickArrows 3, phrase := "Choose up to 3 Trick Arrows modes" }
+  let hkFinObjId := gHkFin0.stack.back!.objectId
+  let gHkPicked12 := mustApply (mustApply gHkFin0 p0 (.chooseMode 1)) p0 (.chooseMode 2)
+  let preHkLeaveIdx := gHkPicked12.events.size
+  let gHkAfterP1Leave := gHkPicked12.concede p1
+  let hkFinalizedAnnounced :=
+    (gHkAfterP1Leave.events.extract preHkLeaveIdx gHkAfterP1Leave.events.size).any fun e =>
+      match e.change with
+      | .rules (.cast (.announced oid #[1, 2] _ _)) => oid == hkFinObjId
+      | _ => false
+  let gHkNoneObj :=
+    ((gBase.change (.pushContinuationFrame {})).change
+      (.pending (.fraChoice p0 (.hawkeyeModes 2 #[] none)))).concede p1
+
+  let hawkeyeLeaveOk :=
+    gHkReopen1.pending == .fraChoice p0 (.hawkeyeModes 2 #[] (some hkObjId1)) &&
+    hkFinalizedAnnounced &&
+    gHkAfterP1Leave.pending == .chooseTargets p0 &&
+    gHkAfterP1Leave.continuations.isEmpty &&
+    gHkNoneObj.pending == .none
+
+  -- 2c. `.stackHydeMode` and `.stackTriggerUnusedMode` on `q != p` (on-stack vs off-stack) and `q == p`:
+  let unusedAb : TriggeredAbility := .triggered .youGainLife (Effect.ofTrigger .gollumMode) {}
+  let gUnused0 := gBase.putTriggeredAbilityOnStack p0 p0Bear unusedAb "triggers" (eventCause := some testCause)
+  let unusedObjId := gUnused0.stack.back!.objectId
+  let gUnusedKeep := gUnused0.concede p1
+  let gUnusedGone := (gUnused0.ceaseToExist unusedObjId (cause := some testCause)).concede p1
+  let gHydeOnStack :=
+    ((gBase.change (.pushContinuationFrame {})).change
+      (.pending (.fraChoice p0 (.stackHydeMode unusedObjId))))
+  let gHydeGone := gHydeOnStack.concede p1
+  let stackHydeAndUnusedOk :=
+    (match gUnusedKeep.pending with | .fraChoice q (.stackTriggerUnusedMode oid ..) => q == p0 && oid == unusedObjId | _ => false) &&
+    gUnusedGone.pending == .none &&
+    gHydeGone.pending == .none
+
+  -- 2d. `Pending.promptPlayer?` and unified `Decisions.resumePendingReplacement` `.restorePending`:
+  let promptPlayerHelperOk :=
+    Pending.none.promptPlayer? == none &&
+    Pending.declareAttackers.promptPlayer? == none &&
+    Pending.declareBlockers.promptPlayer? == none &&
+    (Pending.resolveRandom (.chooseIndex 2)).promptPlayer? == none &&
+    (Pending.chooseMode p0).promptPlayer? == some p0 &&
+    (Pending.chooseTargets p0).promptPlayer? == some p0 &&
+    (Pending.mayDiscardDraw p1 2).promptPlayer? == some p1 &&
+    (Pending.resolveRandom (.shuffleLibrary p1)).promptPlayer? == some p1 &&
+    (Pending.resolveRandom (.orderInto #[] (.library p1) none)).promptPlayer? == some p1 &&
+    (Pending.resolveRandom (.orderInto #[] (.hand p1) none)).promptPlayer? == some p1 &&
+    (Pending.resolveRandom (.orderInto #[] (.graveyard p1) none)).promptPlayer? == some p1 &&
+    (Pending.resolveRandom (.orderInto #[] (.outside p1) none)).promptPlayer? == some p1
+
+  -- When `p0` is still in game and `p1` departed (`departed == #[p1]`), `.restorePending (.chooseTargets p0)`
+  -- runs `redirectPendingAfterLeave p1` -> `.resumeChooseTargetsAfterLeave p0`, removing `p0`'s targetless
+  -- stack trigger (CR 603.3d) rather than short-circuiting to `openPrompt`:
+  let oppCreatureTrig : TriggeredAbility :=
+    .triggered .youGainLife { targeting := .of .oppCreature, resolution := .onPermanent .tap, phrase := "Tap target opponent creature" } {}
+  let gTrigOnP1 := gBase.putTriggeredAbilityOnStack p0 p0Bear oppCreatureTrig "triggers" (eventCause := some testCause)
+  let trigTargetId := gTrigOnP1.stack.back!.objectId
+  let gP1Gone := gTrigOnP1.playerLeavesGame p1
+  let gRestoreTargetsAfterDep :=
+    (gP1Gone.resumePendingReplacement (.restorePending (.chooseTargets p0) false none #[p1])).drainPendingContinuations
+  -- When `p1` ALREADY left the game before `.restorePending` was queued (`departed == #[]`),
+  -- `effectiveDeparted` prepends `p1` from `p.promptPlayer?` so `.mayDiscardDraw p1 1` is declined:
+  let gLeftP1 := gBase.playerLeavesGame p1
+  let gRestorePreDeparted :=
+    gLeftP1.resumePendingReplacement (.restorePending (.mayDiscardDraw p1 1) false none #[])
+  let gLeftP0 := gBase.playerLeavesGame p0
+  let gRestorePreDepartedAttackers :=
+    gLeftP0.resumePendingReplacement (.restorePending .declareAttackers false none #[])
+
+  let unifiedRestorePendingOk :=
+    promptPlayerHelperOk &&
+    gRestoreTargetsAfterDep.pending != .chooseTargets p0 &&
+    (gRestoreTargetsAfterDep.findObject? trigTargetId).isNone &&
+    gRestorePreDeparted.pending == .none &&
+    gRestorePreDeparted.log.back? == some s!"{(gLeftP1.player p1).name} declines (CR 800.4f)" &&
+    gRestorePreDepartedAttackers.pending != .declareAttackers
+
+  mustHold32i2 "2a.upToModesLeaveOk" upToModesLeaveOk &&
+  mustHold32i2 "2b.hawkeyeLeaveOk" hawkeyeLeaveOk &&
+  mustHold32i2 "2c.stackHydeAndUnusedOk" stackHydeAndUnusedOk &&
+  mustHold32i2 "2d.unifiedRestorePendingOk" unifiedRestorePendingOk &&
+  mustHold32i2 "2.replay"
+    (replayOk32i2 #[gUpToReopen0, gUpToReopen1, gUpToLeaverConcede,
+      gUpToEmpty0, gUpToEmptyAfterLeave, gUpToChosen0, gUpToPicked0, gUpToChosenAfterLeave,
+      gHkReopen0, gHkReopen1, gHkFin0, gHkPicked12, gHkAfterP1Leave, gHkNoneObj,
+      gUnused0, gUnusedKeep, gUnusedGone, gHydeGone,
+      gTrigOnP1, gP1Gone, gRestoreTargetsAfterDep, gLeftP1, gRestorePreDeparted,
+      gLeftP0, gRestorePreDepartedAttackers])
+
+end Phase32Item2EventAlignment
+
+/-! ### Phase 32 Item 3: `redirectPendingAfterLeave` `q != p` `.mayCastExiledElseDamage` & object-referencing `FraChoice` revalidation, and `stillInGame` entry guards -/
+section Phase32Item3EventAlignment
+
+private def mustHold32i3 (label : String) (ok : Bool) : Bool :=
+  if ok then true else panic! s!"Phase32Item3EventAlignment failed: {label}"
+
+private def replayOk32i3 (gs : Array Game) : Bool :=
+  gs.all (fun g => Game.replayEvents g.events == g && allRulesEventsClassified g)
+
+#guard
+  let p0 : PlayerId := ⟨0⟩
+  let p1 : PlayerId := ⟨1⟩
+  let p2 : PlayerId := ⟨2⟩
+  let g3 := afterDraw.change (.addPlayer { id := p2, name := "Liliana" })
+  let dfcDef : CardDef := { bear with name := "P32 DFC", otherFace := some { hero with name := "P32 Back" } }
+  let gBase :=
+    addPermanent
+      (addPermanent (addPermanent g3 bear p0 p0) bear p1 p1)
+      dfcDef p1 p1
+  let p0BearId := (gBase.permanentsOf p0).find? (·.name == bear.name) |>.get!.id
+  let p1BearId := (gBase.permanentsOf p1).find? (·.name == bear.name) |>.get!.id
+  let p1DfcId := (gBase.permanentsOf p1).find? (·.name == "P32 DFC") |>.get!.id
+
+  -- 3a. `.mayCastExiledElseDamage`:
+  --     (i) `q != p` when `cardId` (owned by `p1` in `.exile`) leaves the game with `p1`:
+  --         clears the prompt and deals `n` damage to remaining opponent `p2`;
+  --     (ii) `q != p` when `cardId` is owned by `p0` (still in `.exile`): keeps the prompt open;
+  --     (iii) `q == p` when `mayThenDrop > 0`: clears `mayThenDrop` via `declineMayThenCore`, logs
+  --         `"declines (CR 800.4f)"`, and deals `n` damage to remaining opponents.
+  let gWithP1Exiled := insertObject gBase bear p1 .exile
+  let p1ExiledId := (gWithP1Exiled.objects.filter (fun o => o.owner == p1 && o.zone == .exile))[0]!.id
+  let p2LifeBefore := (gWithP1Exiled.player p2).life
+  let gCastExP1Card :=
+    ((gWithP1Exiled.change (.pushContinuationFrame {})).change
+      (.pending (.mayCastExiledElseDamage p0 p1ExiledId 3 (some p0BearId)))).concede p1
+
+  let gWithP0Exiled := insertObject gBase bear p0 .exile
+  let p0ExiledId := (gWithP0Exiled.objects.filter (fun o => o.owner == p0 && o.zone == .exile))[0]!.id
+  let gCastExP0Card :=
+    ((gWithP0Exiled.change (.pushContinuationFrame {})).change
+      (.pending (.mayCastExiledElseDamage p0 p0ExiledId 3 (some p0BearId)))).concede p1
+
+  let gCastExSelfLeave :=
+    ((gWithP0Exiled.change (.pushContinuationFrame {
+      mayThenDrop := 1
+      mayThenConditional := some (.draw (.fixed 1) .you)
+    })).change (.pending (.mayCastExiledElseDamage p1 p0ExiledId 2 none))).concede p1
+
+  let mayCastExiledLeaveOk :=
+    gCastExP1Card.pending != .mayCastExiledElseDamage p0 p1ExiledId 3 (some p0BearId) &&
+    (gCastExP1Card.player p2).life == p2LifeBefore - 3 &&
+    gCastExP0Card.pending == .mayCastExiledElseDamage p0 p0ExiledId 3 (some p0BearId) &&
+    gCastExSelfLeave.mayThenDrop == 0 &&
+    gCastExSelfLeave.mayThenConditional.isNone &&
+    gCastExSelfLeave.log.any (·.endsWith "declines (CR 800.4f)") &&
+    (gCastExSelfLeave.player p0).life == (gWithP0Exiled.player p0).life - 2 &&
+    (gCastExSelfLeave.player p2).life == (gWithP0Exiled.player p2).life - 2
+
+  -- 3b. Object-referencing `FraChoice` prompts on `q != p` when `p1`'s permanent leaves with `p1`:
+  let gTopBot := (gBase.beginFraChoice p0 (.topOrBottomDamage p1BearId 2 none)).concede p1
+  let gChooseKw := (gBase.beginFraChoice p0 (.chooseKeyword p1BearId #[.trample, .deathtouch])).concede p1
+  let gBecomePT := (gBase.beginFraChoice p0 (.mayBecomeBasePT p1BearId 4 4)).concede p1
+  let gPlusOne :=
+    ((gBase.addPlusOnePlusOneTo (gBase.object! p1BearId) 1 (cause := some testCause)).beginFraChoice
+      p0 (.mayMovePlusOne p1BearId)).concede p1
+  let gMoveAll := (gBase.beginFraChoice p0 (.mayMoveAllCounters p0BearId p1BearId)).concede p1
+  let gTapSrc := (gBase.beginFraChoice p0 (.mayTapSourceThen (.gainLife 2) p1BearId)).concede p1
+
+  let gWithRestCard := insertObject gBase hero p0 .exile
+  let restCardId := (gWithRestCard.objects.filter (fun o => o.owner == p0 && o.zone == .exile && o.name == hero.name))[0]!.id
+  let gNickFury :=
+    (gWithRestCard.beginFraChoice p0 (.nickFuryMayTransform p1DfcId #[restCardId])).concede p1
+  let gWithTwoRestCards := insertObject gWithRestCard forest p0 .exile
+  let restCard2Id := (gWithTwoRestCards.objects.filter (fun o => o.owner == p0 && o.zone == .exile && o.name == forest.name))[0]!.id
+  let gNickFuryTwoRest :=
+    (gWithTwoRestCards.beginFraChoice p0 (.nickFuryMayTransform p1DfcId #[restCardId, restCard2Id])).concede p1
+  let nickFuryTwoRestRandomOk :=
+    match gNickFuryTwoRest.pending with
+    | .resolveRandom (.orderInto ids (.library q) _) =>
+      q == p0 && ids == #[restCardId, restCard2Id]
+    | _ => false
+
+  let objFraChoicesLeaveOk :=
+    gTopBot.pending == .none && gTopBot.continuations.isEmpty &&
+    gChooseKw.pending == .none && gChooseKw.continuations.isEmpty &&
+    gBecomePT.pending == .none && gBecomePT.continuations.isEmpty &&
+    gPlusOne.pending == .none && gPlusOne.continuations.isEmpty &&
+    gMoveAll.pending == .none && gMoveAll.continuations.isEmpty &&
+    gTapSrc.pending == .none && gTapSrc.continuations.isEmpty &&
+    gNickFury.pending == .none && gNickFury.continuations.isEmpty &&
+    (gNickFury.followMovedToZone? restCardId (· == .library p0)).isSome &&
+    (gNickFury.player p0).library[0]? == (gNickFury.followMovedToZone? restCardId (· == .library p0)).map (·.id) &&
+    nickFuryTwoRestRandomOk
+
+  -- 3c. Departed-player `stillInGame` guards on `beginMayDiscardDraw`, `beginSacrificeCreature`,
+  --     and `sacrificeGreatestManaValue`:
+  let gLeft := gBase.playerLeavesGame p1
+  let sIdx := gLeft.events.size
+  let gMayDisc := gLeft.beginMayDiscardDraw p1 2
+  let gSacCr := gLeft.beginSacrificeCreature p1
+  let gSacGreatest := gLeft.sacrificeGreatestManaValue p1
+  let stillInGameGuardsOk :=
+    #[gMayDisc, gSacCr, gSacGreatest].all (fun g => g.events.size == sIdx && g.pending == .none)
+
+  mustHold32i3 "3a.mayCastExiledLeaveOk" mayCastExiledLeaveOk &&
+  mustHold32i3 "3b.objFraChoicesLeaveOk" objFraChoicesLeaveOk &&
+  mustHold32i3 "3c.stillInGameGuardsOk" stillInGameGuardsOk &&
+  mustHold32i3 "3.replay"
+    (replayOk32i3 #[gCastExP1Card, gCastExP0Card, gCastExSelfLeave,
+      gTopBot, gChooseKw, gBecomePT, gPlusOne, gMoveAll, gTapSrc, gNickFury, gNickFuryTwoRest, gLeft])
+
+end Phase32Item3EventAlignment
+
 end Mtg.Engine.EventTests

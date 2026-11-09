@@ -74,6 +74,30 @@ def combinedModesEffect (modes : Array Effect) : Option Effect :=
         allowsZeroTargets := targeted.all (·.allowsZeroTargets)
         maxTargets := targeted.foldl (fun acc m => acc + m.maxTargetCount) 0 }
 
+/-- Combine the chosen modes of a modal triggered ability into one effect,
+preserving the targeting shapes of every targeted mode in printed order (CR 700.2). -/
+def combineTriggerModes (modes : Array Effect) (chosen : Array Nat) : Option Effect :=
+  let picked := (chosen.qsort (· < ·)).filterMap (modes[·]?)
+  match picked.toList with
+  | [] => none
+  | [e] => some e
+  | es =>
+    let targeted := picked.filter (·.requiresTarget)
+    let targeting : EffectTargeting :=
+      match targeted.toList with
+      | [] => .of .none
+      | [t0] =>
+        if es.length == 1 then t0.targeting else .of (modeTargetKind t0)
+      | t0 :: tRest =>
+        let kind := tRest.foldl (fun k m => EffectTargetKind.pair k (modeTargetKind m)) (modeTargetKind t0)
+        .of kind
+    some { es.head! with
+      targeting
+      allowsZeroTargets := !targeted.isEmpty && targeted.all (·.allowsZeroTargets)
+      maxTargets := targeted.foldl (fun acc m => acc + m.maxTargetCount) 0
+      resolution := .sequence (es.map (·.resolution))
+      phrase := String.intercalate ". " (es.map (·.phrase)) }
+
 /-- The targets a kicked spell announces instead (CR 702.33g / 601.2c): The
 Eagles Are Coming! chooses any number of creatures you own, and Galadriel's
 Dismissal targets a player. -/

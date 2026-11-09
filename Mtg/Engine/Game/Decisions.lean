@@ -121,7 +121,7 @@ partial def finishAndGrantPriority (g : Game)
     g.pending == .none && g.afterRandom == .none && anyContinuationGrantsPriority g
   let g := g.drainPendingContinuations
   let g := if g.pending == .none && g.afterRandom == .none then g.popEmptyContinuationFrames else g
-  if g.over then g
+  if g.over then g.completeActiveResolutions
   else if let .chooseReplacement .. := g.pending then
     if anyContinuationGrantsPriority g then g
     else g.chainPendingReplacement (.receivePriority p)
@@ -182,10 +182,12 @@ partial def finishFraChoice (g : Game) : Game :=
   else if g.pending != .none then g
   else
     let g := g.drainPendingContinuations
-    if let .chooseReplacement .. := g.pending then
+    if g.over then (g.popEmptyContinuationFrames).completeActiveResolutions
+    else if let .chooseReplacement .. := g.pending then
       g.chainPendingReplacement .finishFraChoice
-    else if g.pending != .none || g.afterRandom != .none || g.over then g
+    else if g.pending != .none || g.afterRandom != .none then g
     else
+      let g := g.popEmptyContinuationFrames
       let prio := g.pendingPriority.getD g.activePlayer
       let g := g.promptTriggerTargetsIfNeeded
       if g.pending == .none then g.receivePriority prio else g
@@ -786,19 +788,22 @@ partial def resumePendingReplacement (g : Game) (pr : PendingReplacement)
             | none => g
         else
           resumePoppedIfNoPrompt g
-    | .chooseMode q
-    | .chooseTargets q
-    | .fraChoice q (.triggerModes ..) =>
-      if g.stillInGame q then
-        openPrompt g
-      else
-        let g := if g.pending == .none then g else g.change (.pending .none)
-        resumePoppedIfNoPrompt g
     | _ =>
-      if departed.isEmpty then
+      let promptSeat? : Option PlayerId :=
+        match p with
+        | .declareAttackers => some g.activePlayer
+        | .declareBlockers => some g.currentBlockersPlayer
+        | _ => p.promptPlayer?
+      let effectiveDeparted :=
+        match promptSeat? with
+        | some q =>
+          if !g.stillInGame q && !departed.contains q then #[q] ++ departed
+          else departed
+        | none => departed
+      if effectiveDeparted.isEmpty then
         openPrompt g
       else
-        let (g, nextP) := departed.foldl (fun (g, curP) dep =>
+        let (g, nextP) := effectiveDeparted.foldl (fun (g, curP) dep =>
           if curP == .none then (g, .none)
           else g.redirectPendingAfterLeave dep (pending := curP)) (g, p)
         if nextP != .none then
@@ -1192,7 +1197,8 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
   | .revealPutCreaturesStep p remaining put enteredFromIds cause =>
     g.finishRevealPutCreaturesStep p remaining put enteredFromIds (cause := cause)
   | .shuffleThenGainLife p life =>
-    (g.requestShuffle p (.gainLife p life)).continueIfShuffled
+    g.withContinuationFrame fun g =>
+      (g.requestShuffle p (.gainLife p life)).continueIfShuffled
   | .offerCreaturesFromHandToBattlefield controller cause =>
     let creatures := (g.player controller).hand.filter (fun id => (g.findObject? id).any (g.isCreature ·))
     g.offerCardChoice controller creatures creatures.size .creaturesToBattlefield
@@ -1579,6 +1585,54 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
             |>.logMsg s!"{objName}'s triggered ability has too few legal modes and is removed from the stack (CR 603.3c)").finishFraChoice
         else
           g.change (.pending (.fraChoice p (.triggerModes obj.id remaining chosen)))
+    | none => g.finishFraChoice
+  | .resumeUpToTriggerModesAfterLeave p objectId remaining chosen =>
+    match g.findObject? objectId with
+    | some obj =>
+      if obj.zone != .stack then g.finishFraChoice
+      else
+        let modes := g.triggerModesOf obj
+        let anyChoosableLeft :=
+          (List.range modes.size).any (fun i =>
+            !chosen.contains i && (modes[i]?.any (g.triggerModeChoosable p obj)))
+        if remaining > 0 && anyChoosableLeft then
+          g.change (.pending (.fraChoice p (.upToTriggerModes obj.id remaining chosen)))
+        else if chosen.isEmpty then
+          let noop : Effect := { resolution := .sequence [], phrase := "" }
+          let g := g.record (GameEvent.announced g.turnNumber obj.id (modes := #[]))
+          let g := g.changes #[
+            .object obj.id (.abilityEffect (some noop)),
+            .stackEntry obj.id (.targetsAnnounced true)]
+          g.finishFraChoice
+        else
+          let sorted := chosen.qsort (· < ·)
+          let g := g.record (GameEvent.announced g.turnNumber obj.id (modes := sorted))
+          match combineTriggerModes (modes.map (fun m => g.expandEachOpponentEffect p m (some obj.id))) sorted with
+          | none => g.finishFraChoice
+          | some eff =>
+            let g := g.changeObject obj.id (.abilityEffect (some eff))
+            let g := if !eff.requiresTarget then g.change (.stackEntry obj.id (.targetsAnnounced true)) else g
+            g.finishFraChoice
+    | none => g.finishFraChoice
+  | .resumeHawkeyeModesAfterLeave p objectId left chosen =>
+    match g.findObject? objectId with
+    | some obj =>
+      if obj.zone != .stack then g.finishFraChoice
+      else
+        let anyMoreChoosable :=
+          (List.range hawkeyeModeEffects.size).any (fun i =>
+            !chosen.contains i && (hawkeyeModeEffects[i]?.any (g.triggerModeChoosable p obj)))
+        if chosen.size < left && anyMoreChoosable then
+          g.change (.pending (.fraChoice p (.hawkeyeModes left chosen (some obj.id))))
+        else
+          let sorted := chosen.qsort (· < ·)
+          let eff : Effect :=
+            if sorted.isEmpty then { resolution := Resolution.hawkeyeArrows [], phrase := "" }
+            else hawkeyeArrowsEffect sorted
+          let g := g.record (GameEvent.announced g.turnNumber obj.id (modes := sorted))
+          let g := g.changeObject obj.id (.abilityEffect (some eff))
+          let g := if !eff.requiresTarget then g.change (.stackEntry obj.id (.targetsAnnounced true)) else g
+          g.finishFraChoice
     | none => g.finishFraChoice
   | .grantLifelinkUntilEot cardId cause =>
     match g.findObject? cardId with

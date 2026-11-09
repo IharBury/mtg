@@ -1318,6 +1318,10 @@ inductive PostStep where
   | resumeChooseTargetsAfterLeave (p : PlayerId)
   | resumeTriggerModesAfterLeave (p : PlayerId) (objectId : ObjectId) (remaining : Nat)
       (chosen : Array Nat)
+  | resumeUpToTriggerModesAfterLeave (p : PlayerId) (objectId : ObjectId) (remaining : Nat)
+      (chosen : Array Nat)
+  | resumeHawkeyeModesAfterLeave (p : PlayerId) (objectId : ObjectId) (left : Nat)
+      (chosen : Array Nat)
   | grantLifelinkUntilEot (cardId : ObjectId) (cause : Option EventCause)
   | grantHasteUntilEotSilent (cardId : ObjectId) (cause : Option EventCause)
   | endTurnAfterCleanupStepEnded
