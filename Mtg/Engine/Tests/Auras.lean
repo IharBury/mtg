@@ -233,7 +233,7 @@ def giftEntered : Game := passBoth paidGift
   some (namedPermanent giftEntered "Grizzly Bears").id
 #guard giftEntered.power (namedPermanent giftEntered "Grizzly Bears") == 5
 #guard giftEntered.toughness (namedPermanent giftEntered "Grizzly Bears") == 5
-#guard (namedPermanent giftEntered "Grizzly Bears").power == 2
+#guard giftEntered.basePower (namedPermanent giftEntered "Grizzly Bears") == 2
 #guard giftEntered.stack.size == 1
 #guard giftEntered.log.any (fun s => mentions s "attached to Grizzly Bears")
 #guard giftEntered.log.any (fun s => mentions s "enters trigger is put on the stack")
@@ -332,7 +332,7 @@ def twoBofurs : Game :=
 
 def twoBofursSBA : Game := twoBofurs.checkSBA
 
-#guard (namedPermanent twoBofurs "Bofur, Reliable Guardian").isLegendary
+#guard twoBofurs.isLegendary (namedPermanent twoBofurs "Bofur, Reliable Guardian")
 #guard (twoBofurs.battlefield.filter (·.name == "Bofur, Reliable Guardian")).size == 2
 #guard twoBofurs.pending == .none
 #guard !(twoBofurs.legendRuleGroups).isEmpty
@@ -374,7 +374,7 @@ def twoDifferentLegends : Game :=
     landrovalHorizonWitness ⟨0⟩ ⟨0⟩
 
 #guard (twoDifferentLegends.checkSBA).pending == .none
-#guard (twoDifferentLegends.checkSBA.battlefield.filter (·.isLegendary)).size == 2
+#guard (twoDifferentLegends.checkSBA.battlefield.filter twoDifferentLegends.checkSBA.isLegendary).size == 2
 
 /-- Three copies: keep one, two go to the graveyard. -/
 def threeBofursSBA : Game :=

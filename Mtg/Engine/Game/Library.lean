@@ -257,6 +257,9 @@ def moveIdsInOrderLoop (g : Game) (ids : Array ObjectId) (dest : Zone)
   if let .chooseReplacement .. := g.pending then
     g.chainPendingReplacement
       (.finishPostStep (.moveIdsInOrderLoop ids dest log cause placedCount prevLibraryMoved))
+  else if match dest with
+    | .library p | .hand p | .graveyard p | .outside p => !g.stillInGame p
+    | _ => false then g
   else
   let placedCount :=
     match prevLibraryMoved with
@@ -349,6 +352,10 @@ def putIdsOnTop (g : Game) (p : PlayerId) (ids : Array ObjectId) : Game :=
 other pending choice, becomes `Pending.resolveRandom`. -/
 def requestOrderInto (g : Game) (ids : Array ObjectId) (dest : Zone)
     (log : String) (cause : Option EventCause := none) : Game :=
+  if match dest with
+    | .library p | .hand p | .graveyard p | .outside p => !g.stillInGame p
+    | _ => false then g
+  else
   let (g, cause) : Game × Option EventCause :=
     match cause with
     | some c => (g, some c)

@@ -273,6 +273,8 @@ def millCardsLoop (g : Game) (p : PlayerId) (remainingIds : Array ObjectId)
   let mut g := g
   if let some name := logCard then
     g := g.logMsg s!"{(g.player p).name} mills {name}"
+  if !g.stillInGame p then
+    return g
   let mut ids := remainingIds
   let mut tail := emptyTail
   if let some n := freshCount then
@@ -302,23 +304,25 @@ def millCardsLoop (g : Game) (p : PlayerId) (remainingIds : Array ObjectId)
 
 /-- Put the top `n` cards of `p`'s library into their graveyard (CR 701.17). -/
 def mill (g : Game) (p : PlayerId) (n : Nat) (cause : Option EventCause := none) : Game :=
-  let defaultCause :=
-    cause.orElse (fun _ =>
-      if n == 0 || (g.player p).library.isEmpty then none
-      else g.currentResolvingContext?.map fun (src, ctrl) =>
-        .oneShotEffect none src (ctrl.orElse (fun _ => some p)))
-  if let .chooseReplacement .. := g.pending then
-    if n == 0 then g
-    else g.chainPendingReplacement (.millCardsLoop p #[] false defaultCause none (some n))
+  if !g.stillInGame p then g
   else
-    g.withBatch defaultCause fun g =>
-      let pl := g.player p
-      if n > 0 && pl.library.isEmpty then
-        g.logMsg s!"{pl.name} mills nothing (empty library)"
-      else
-        let count := min n pl.library.size
-        let tops := (pl.library.extract (pl.library.size - count) pl.library.size).reverse
-        g.millCardsLoop p tops (emptyTail := count < n) (cause := defaultCause)
+    let defaultCause :=
+      cause.orElse (fun _ =>
+        if n == 0 || (g.player p).library.isEmpty then none
+        else g.currentResolvingContext?.map fun (src, ctrl) =>
+          .oneShotEffect none src (ctrl.orElse (fun _ => some p)))
+    if let .chooseReplacement .. := g.pending then
+      if n == 0 then g
+      else g.chainPendingReplacement (.millCardsLoop p #[] false defaultCause none (some n))
+    else
+      g.withBatch defaultCause fun g =>
+        let pl := g.player p
+        if n > 0 && pl.library.isEmpty then
+          g.logMsg s!"{pl.name} mills nothing (empty library)"
+        else
+          let count := min n pl.library.size
+          let tops := (pl.library.extract (pl.library.size - count) pl.library.size).reverse
+          g.millCardsLoop p tops (emptyTail := count < n) (cause := defaultCause)
 
 /-- Move up to `maxLeft` public cards from `remainingIds` into `p`'s hand inside
 an open or standalone batch, pausing on `Pending.chooseReplacement` and logging
@@ -337,6 +341,8 @@ def movePublicCardsToHandLoop (g : Game) (p : PlayerId) (remainingIds : Array Ob
       g := g.logMsg
         (if playerPutsStyle then s!"{(g.player p).name} puts {cname} into their hand"
          else s!"{cname} is put into {(g.player p).name}'s hand")
+  if !g.stillInGame p then
+    return g
   for i in [0:remainingIds.size] do
     let id := remainingIds[i]!
     match g.findObject? id with
@@ -632,7 +638,7 @@ private def flickerPostReturn (g : Game) (enteredFromIds : Array ObjectId)
     let eid := enteredFromIds[k]!
     match g.followMovedToZone? eid (· == .battlefield) with
     | some retObj =>
-      g := g.logMsg s!"{retObj.name} {logText}"
+      g := g.logMsg s!"{g.name retObj} {logText}"
       g := g.afterPermanentEnters retObj
       if let .chooseReplacement .. := g.pending then
         let rem := enteredFromIds.extract (k + 1) enteredFromIds.size
@@ -680,7 +686,7 @@ private def flickerStartReturnBatch (g : Game) (exiledPreIds : Array ObjectId)
   let exiledObjs := exiledPreIds.filterMap (fun id => g.followMovedToZone? id (· == .exile))
   let g :=
     exiledObjs.foldl (fun acc o =>
-      if o.printed.isToken then acc.logMsg s!"{o.name} is exiled" else acc) g
+      if o.printed.isToken then acc.logMsg s!"{acc.name o} is exiled" else acc) g
   let returnableIds := (exiledObjs.filter (fun o => !o.printed.isToken)).map (·.id)
   if returnableIds.isEmpty then g
   else

@@ -717,7 +717,7 @@ def finishPostCast (g : Game) (p : PlayerId)
         let g := g.change (.pendingMayCastFromExile none)
         if q != p || alive.isEmpty || left == 0 then g
         else
-          (g.change (.pending (.fraChoice q (.mayCastUpToFromExile alive left)))).logMsg
+          g.beginFraChoice q (.mayCastUpToFromExile alive left)
             s!"{(g.player q).name} may cast up to {left} more spells from among the exiled cards without paying their mana costs"
     | none => g
   -- Uldaros Theorix: offer the remaining copies until none can be cast.
@@ -738,7 +738,7 @@ def finishPostCast (g : Game) (p : PlayerId)
                   g.ceaseToExist id (cause := some (.stateBased .copyOutsideStackOrBf))) g
           g.change (.pendingFreeCopies none)
         else
-          g.change (.pending (.fraChoice q (.castCopiesFree alive budget castsLeft)))
+          g.beginFraChoice q (.castCopiesFree alive budget castsLeft)
     | none => g
   if !grantPriority then g
   else if let .chooseReplacement .. := g.pending then

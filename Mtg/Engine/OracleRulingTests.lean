@@ -344,7 +344,7 @@ def permanentsVsSpell : Game :=
 /-- Ruling 24: a legendary artifact counts once, not once per quality. -/
 def stingAlone : Game := addPermanent started stingBilboSSword ⟨0⟩ ⟨0⟩
 
-#guard (namedPermanent stingAlone "Sting, Bilbo's Sword").isLegendary
+#guard stingAlone.isLegendary (namedPermanent stingAlone "Sting, Bilbo's Sword")
 #guard (namedPermanent stingAlone "Sting, Bilbo's Sword").printed.isArtifact
 #guard stingAlone.countsTowardStoried (namedPermanent stingAlone "Sting, Bilbo's Sword")
 #guard stingAlone.storiedPermanentCount ⟨0⟩ == 1

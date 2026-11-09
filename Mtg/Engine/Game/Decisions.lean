@@ -697,6 +697,69 @@ partial def resumePendingReplacement (g : Game) (pr : PendingReplacement)
       if g.replacementChoiceValid q choices then
         openPrompt g
       else resumePoppedIfNoPrompt g
+    | .assignCombatDamage q forAttackers =>
+      let cleanAsgns := g.pendingBlockerAssignments.filter fun a =>
+        (g.findObject? a.source).any (·.isOnBattlefield) &&
+          a.toCreatures.all (fun (tid, _) => (g.findObject? tid).any (·.isOnBattlefield))
+      let g :=
+        if cleanAsgns != g.pendingBlockerAssignments then
+          g.change (.pendingBlockerAssignments cleanAsgns)
+        else g
+      let already := cleanAsgns.map (·.source)
+      let playerStillNeeds (r : PlayerId) : Bool :=
+        (g.creaturesAssigningCombatDamage forAttackers).any fun o =>
+          (if forAttackers then g.isOnActiveTeam r && (g.controllerOf o).any g.isOnActiveTeam
+           else g.controlledBy o r) &&
+            !already.contains o.id &&
+            (g.legalCombatDamageRecipients o forAttackers).size ≥ 2 &&
+            g.combatDamageAmount o > 0
+      if g.stillInGame q && playerStillNeeds q then
+        openPrompt g
+      else if forAttackers then
+        let g := if g.pending == .none then g else g.change (.pending .none)
+        resumePoppedIfNoPrompt g
+      else
+        let nextP? := g.apnapPlayers.find? fun r =>
+          r != q && !g.isOnActiveTeam r && g.stillInGame r && playerStillNeeds r
+        match nextP? with
+        | some nextP =>
+          openPromptWith (g.logMsg s!"{(g.player nextP).name} assigns combat damage (CR 800.4h)")
+            (.assignCombatDamage nextP false)
+        | none =>
+          let g := if g.pending == .none then g else g.change (.pending .none)
+          resumePoppedIfNoPrompt g
+    | .fraChoice q (.tricksterLibrary caster id connive sourceId) =>
+      if g.stillInGame q && g.stillInGame caster &&
+          (g.findObject? id).any (fun o => o.isOnBattlefield && g.isCreature o) then
+        openPrompt g
+      else
+        let g := g.changes #[.pending .none, .chooseModesRest none]
+        let g :=
+          if g.stillInGame q && g.stillInGame caster &&
+              !(g.findObject? id).any (fun o => o.isOnBattlefield && g.isCreature o) then
+            g.logMsg "The target is no longer legal"
+          else g
+        if g.stillInGame caster && connive.isSome then
+          let outerCont? := g.pendingReplacement
+          let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
+          if popped?.isSome then
+            let g := g.chainPendingReplacement (.finishPostStep (.conniveTricksterTarget caster connive sourceId))
+            let g :=
+              match outerCont? with
+              | some outer => g.chainPendingReplacement outer
+              | none => g
+            resumePoppedIfNoPrompt g
+          else
+            let g :=
+              if let .chooseReplacement .. := g.pending then
+                g.chainPendingReplacement (.finishPostStep (.conniveTricksterTarget caster connive sourceId))
+              else
+                g.conniveTricksterTarget caster connive (sourceId := sourceId)
+            match outerCont? with
+            | some outer => g.chainPendingReplacement outer
+            | none => g
+        else
+          resumePoppedIfNoPrompt g
     | _ => openPrompt g
   | .closeBatch batchId startIdx =>
     g.finishOpenBatchAndLinkedExile batchId startIdx
@@ -1117,7 +1180,7 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
     if !(g.tokensCreatedSince startEventIdx).isEmpty then
       let srcName :=
         match sourceId.bind g.findObject? with
-        | some src => if src.isOnBattlefield then g.name src else src.name
+        | some src => g.name src
         | none => ((sourceId.bind g.lastKnownBefore?).map (fun (eo : EventObject) => eo.name)).getD "source"
       g.logMsg s!"two nonlegendary tokens that are copies of {srcName} are created"
     else g
@@ -1198,13 +1261,15 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
           phrase := "Tap up to that many target creatures and put a stun counter on each of them" }
         (deferToPriority := true)
   | .nickFuryMayTransformOrBottom p cardId rest cause =>
-    match g.followMovedToZone? cardId (· == .battlefield) with
-    | some o =>
-      if (g.baseCard o).otherFace.isSome && !g.cantTransform o then
-        g.beginFraChoice p (.nickFuryMayTransform o.id rest)
-          s!"{(g.player p).name} may transform {g.name o}"
-      else g.putRestOnBottomRandom p rest (cause := cause)
-    | none => g.putRestOnBottomRandom p rest (cause := cause)
+    if !g.stillInGame p then g
+    else
+      match g.followMovedToZone? cardId (· == .battlefield) with
+      | some o =>
+        if (g.baseCard o).otherFace.isSome && !g.cantTransform o then
+          g.beginFraChoice p (.nickFuryMayTransform o.id rest)
+            s!"{(g.player p).name} may transform {g.name o}"
+        else g.putRestOnBottomRandom p rest (cause := cause)
+      | none => g.putRestOnBottomRandom p rest (cause := cause)
   | .noteHandDiscardedCount count sourceId =>
     g.changes #[.handDiscardedThisWay (some count), .notedSourceThisWay sourceId]
   | .checkDrawThenOpponentsDraw p beforeDraws =>
@@ -1218,20 +1283,25 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
       let opps := g.apnapOrder.filter (g.isLivingOpponentOf p ·)
       g.runPostStep (.opponentsDrawOneLoop p opps (some c))
   | .opponentsDrawOneLoop drawer remainingOpponents cause =>
-    match remainingOpponents[0]? with
+    let living := remainingOpponents.filter g.stillInGame
+    match living[0]? with
     | none =>
-      g.logMsg s!"{(g.player drawer).name} draws, so each opponent draws a card"
+      if g.stillInGame drawer then
+        g.logMsg s!"{(g.player drawer).name} draws, so each opponent draws a card"
+      else g
     | some opp =>
-      let rest := remainingOpponents.extract 1 remainingOpponents.size
+      let rest := living.extract 1 living.size
       let g := g.draw opp 1 (cause := cause)
       if let .chooseReplacement .. := g.pending then
         g.chainPendingReplacement (.finishPostStep (.opponentsDrawOneLoop drawer rest cause))
       else
         g.runPostStep (.opponentsDrawOneLoop drawer rest cause)
   | .loseLifeForMilledManaValue p tops cause =>
-    let milled := tops.filterMap (fun id => g.followMilledPublic? id)
-    let mv := milled.foldl (fun acc o => acc + g.objectManaValue o) 0
-    g.loseLife p mv (cause := cause)
+    if !g.stillInGame p then g
+    else
+      let milled := tops.filterMap (fun id => g.followMilledPublic? id)
+      let mv := milled.foldl (fun acc o => acc + g.objectManaValue o) 0
+      g.loseLife p mv (cause := cause)
   | .eaglesReturnCreaturesLoop controller returnedCount sourceId remainingIds cause targeted pendingReturn =>
     g.eaglesReturnCreaturesLoop controller returnedCount sourceId remainingIds cause targeted pendingReturn
   | .addPlusOnesToSource sourceId count =>
@@ -1303,21 +1373,23 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
         let oName := (g.lastKnownBefore? cardId).map (·.name) |>.getD "it"
         g.logMsg s!"{(g.player owner).name} shuffles {oName} into their library"
       else g
-    g.shuffleThen owner .none
+    if !g.stillInGame owner then g else g.shuffleThen owner .none
   | .empowerJaceExiledCount controller startIdx creatureIds =>
     let count := creatureIds.foldl (fun acc id => if g.wasPermanentExiled id startIdx then acc + 1 else acc) 0
     g.empowerJace controller count
   | .reflexiveReturnLandTapped controller sourceId =>
     g.applyFra controller default .reflexiveReturnLandTapped #[] sourceId
   | .offerPutMilledPermanentOrGainLife controller preIds life =>
-    let choices := preIds.filterMap (fun id =>
-      match g.followMilledPublic? id with
-      | some o => if g.isPermanentCard o then some o.id else none
-      | none => none)
-    if choices.isEmpty then g.gainLife controller life
+    if !g.stillInGame controller then g
     else
-      g.beginFraChoice controller (.mayPutMilledPermanent choices life)
-        s!"{(g.player controller).name} may put a permanent card milled this way into their hand"
+      let choices := preIds.filterMap (fun id =>
+        match g.followMilledPublic? id with
+        | some o => if g.isPermanentCard o then some o.id else none
+        | none => none)
+      if choices.isEmpty then g.gainLife controller life
+      else
+        g.beginFraChoice controller (.mayPutMilledPermanent choices life)
+          s!"{(g.player controller).name} may put a permanent card milled this way into their hand"
   | .worldsWithinWorlds exiled chosen sourceId =>
     g.finishWorldsWithinWorlds exiled chosen sourceId
   | .millMayPutPermanentGainLife p tops life =>
@@ -1384,7 +1456,7 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
     g.worldsReturnExiledLoop remainingIds pendingCard
   | .logMovedToExile cardId =>
     match g.followMovedToZone? cardId (· == .exile) with
-    | some moved => g.logMsg s!"{moved.name} is exiled"
+    | some moved => g.logMsg s!"{g.name moved} is exiled"
     | none => g
   | .resumeChooseModeAfterLeave p =>
     match g.proposedSpell with
@@ -1510,8 +1582,11 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
   | .grantAdventureExilePermission controller cardId cause =>
     match g.followMovedToZone? cardId (· == .exile) with
     | some o =>
-      (g.createEffect (.playPermission o.id { player := controller, fromAdventure := true }) (cause := cause))
-        |>.logMsg s!"{o.name} is exiled. {(g.player controller).name} may cast it for as long as it remains exiled (CR 715.3d)"
+      if !g.stillInGame controller then
+        g.logMsg s!"{g.name o} is exiled"
+      else
+        (g.createEffect (.playPermission o.id { player := controller, fromAdventure := true }) (cause := cause))
+          |>.logMsg s!"{g.name o} is exiled. {(g.player controller).name} may cast it for as long as it remains exiled (CR 715.3d)"
     | none => g
   | .exileSearchedLinkedLoop p remainingIds sourceId cause pendingFromId =>
     g.exileSearchedLinkedLoop p remainingIds sourceId cause pendingFromId
@@ -1521,7 +1596,7 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
       match g.followMovedToZone? cardId (· == .exile) with
       | some moved =>
         (g.createEffect (.playPermission moved.id { player := p } (turnEnds := 2)) (cause := cause))
-          |>.logMsg s!"{(g.player p).name} exiles {moved.name} and may play it until the end of their next turn"
+          |>.logMsg s!"{(g.player p).name} exiles {g.name moved} and may play it until the end of their next turn"
       | none => g
   | .exileCreaturesFromGraveyardLoop controller remainingIds cause pendingFromId =>
     g.exileCreaturesFromGraveyardLoop controller remainingIds cause pendingFromId

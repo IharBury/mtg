@@ -434,7 +434,7 @@ def mountainLine (g : Game) : String :=
   let bears := namedPermanent g "Grizzly Bears"
   let ogre := namedPermanent g "Gray Ogre"
   objectLine g bears ==
-    s!"{bears.id} Grizzly Bears {bears.typeLine} {bears.power}/{bears.toughness} (owned by Nissa, controlled by Nissa) *blocking {ogre.id} Gray Ogre*" &&
+    s!"{bears.id} Grizzly Bears {bears.typeLine} {g.power bears}/{g.toughness bears} (owned by Nissa, controlled by Nissa) *blocking {ogre.id} Gray Ogre*" &&
   mentions (zoneBlock g .battlefield) s!"*blocking {ogre.id} Gray Ogre*" &&
   mentions (battlefieldBlock g) s!"*blocking {ogre.id} Gray Ogre*" &&
   mentions (snapshot g) s!"*blocking {ogre.id} Gray Ogre*" &&

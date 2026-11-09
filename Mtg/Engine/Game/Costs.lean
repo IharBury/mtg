@@ -18,7 +18,7 @@ def returnToHand (g : Game) (id : ObjectId) (to : PlayerId)
   match g.findObject? id with
   | none => g
   | some o =>
-    let name := o.name
+    let name := g.name o
     let (g, _) := g.move id (.hand to) none (verb := some .returnToHand) (cause := cause)
     if let .chooseReplacement .. := g.pending then
       g.chainPendingReplacement (.finishPostStep (.logReturnedToHand id to name))

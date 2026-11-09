@@ -221,7 +221,7 @@ def spearEquipped : Game := passBoth paidEquip
   some (namedPermanent spearEquipped "Grizzly Bears").id
 #guard spearEquipped.power (namedPermanent spearEquipped "Grizzly Bears") == 4
 #guard spearEquipped.toughness (namedPermanent spearEquipped "Grizzly Bears") == 2
-#guard (namedPermanent spearEquipped "Grizzly Bears").power == 2
+#guard spearEquipped.basePower (namedPermanent spearEquipped "Grizzly Bears") == 2
 #guard spearEquipped.log.any (fun s => mentions s "attaches to Grizzly Bears")
 
 -- The heuristic does not re-equip a creature that is already equipped.
@@ -566,8 +566,8 @@ def bladeEquipped : Game := passBoth paidBladeEquip
   some (namedPermanent bladeEquipped "Grizzly Bears").id
 #guard bladeEquipped.power (namedPermanent bladeEquipped "Grizzly Bears") == 4
 #guard bladeEquipped.toughness (namedPermanent bladeEquipped "Grizzly Bears") == 3
-#guard (namedPermanent bladeEquipped "Grizzly Bears").power == 2
-#guard (namedPermanent bladeEquipped "Grizzly Bears").toughness == 2
+#guard bladeEquipped.basePower (namedPermanent bladeEquipped "Grizzly Bears") == 2
+#guard bladeEquipped.baseToughness (namedPermanent bladeEquipped "Grizzly Bears") == 2
 #guard bladeEquipped.log.any (fun s => mentions s "attaches to Grizzly Bears")
 
 -- The heuristic does not re-equip a creature that is already equipped.

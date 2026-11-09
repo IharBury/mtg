@@ -66,26 +66,30 @@ def continueNontokenSacrifices (g : Game) (players : Array PlayerId) (chosen : A
 /-- Let `controller` cast the exiled nonland with any type of mana until end of turn. -/
 def grantWidowCast (g : Game) (controller : PlayerId) (exiled : Option ObjectId)
     (cause : Option EventCause := none) : Game :=
-  match exiled.bind g.findObject? with
-  | none => g.logMsg "No nonland card was exiled"
-  | some o =>
-    let cause := cause.orElse (fun _ => g.lastMoveCauseOf? o.id)
-    g.createEffect (.playPermission o.id {
-      player := controller
-      anyMana := true }) (cause := cause)
-      |>.logMsg s!"{(g.player controller).name} may cast {o.name} until end of turn"
+  if !g.stillInGame controller then g
+  else
+    match exiled.bind g.findObject? with
+    | none => g.logMsg "No nonland card was exiled"
+    | some o =>
+      let cause := cause.orElse (fun _ => g.lastMoveCauseOf? o.id)
+      g.createEffect (.playPermission o.id {
+        player := controller
+        anyMana := true }) (cause := cause)
+        |>.logMsg s!"{(g.player controller).name} may cast {g.name o} until end of turn"
 
 /-- Finish Black Widow's combat-damage trigger once `exileLibraryUntilNonlandLoop`
 stops on a nonland card or an empty library (CR 616.1). -/
 def finishExileLibraryUntilNonland (g : Game) (controller : PlayerId)
     (sourceId : Option ObjectId) (nonland? : Option ObjectId)
     (cause : Option EventCause) : Game :=
-  let onBf := (sourceId.bind g.findObject?).any (·.isOnBattlefield)
-  if onBf then
-    g.beginFraChoice controller (.widowMayCounter sourceId nonland?)
-      "You may put a +1/+1 counter on Black Widow"
+  if !g.stillInGame controller then g
   else
-    g.grantWidowCast controller nonland? (cause := cause)
+    let onBf := (sourceId.bind g.findObject?).any (·.isOnBattlefield)
+    if onBf then
+      g.beginFraChoice controller (.widowMayCounter sourceId nonland?)
+        "You may put a +1/+1 counter on Black Widow"
+    else
+      g.grantWidowCast controller nonland? (cause := cause)
 
 /-- Pause-safe loop exiling from `pid`'s library until a nonland card is exiled,
 then finishing Black Widow's counter/cast prompt (CR 614.6 / 616.1). -/
@@ -100,7 +104,7 @@ partial def exileLibraryUntilNonlandLoop (g : Game) (pid controller : PlayerId)
     else
       match g.followMovedToZone? fid (· == .exile) with
       | some o =>
-        let g := g.logMsg s!"{(g.player pid).name} exiles {o.name}"
+        let g := g.logMsg s!"{(g.player pid).name} exiles {g.name o}"
         if !g.isLand o then
           g.finishExileLibraryUntilNonland controller sourceId (some o.id) cause
         else
@@ -111,6 +115,8 @@ partial def exileLibraryUntilNonlandLoop (g : Game) (pid controller : PlayerId)
     if let .chooseReplacement .. := g.pending then
       g.chainPendingReplacement
         (.finishPostStep (.exileLibraryUntilNonlandLoop pid controller sourceId cause none))
+    else if !g.stillInGame pid then
+      g.finishExileLibraryUntilNonland controller sourceId none cause
     else
       match (g.player pid).library.back? with
       | none =>
@@ -313,45 +319,6 @@ def setSpellTargetAt (g : Game) (spellId : ObjectId) (index : Nat) (neu : Target
           g.logMsg "That target stays unchanged"
       else
         g.logMsg "That target stays unchanged"
-
-/-- Mister Hyde's chosen mode. Mode 0 puts a +1/+1 counter on the source.
-Mode 1 removes a counter from the chosen creature, then draws. -/
-def applyHydeMode (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
-    (mode : Nat) (targets : Array Target) : Game :=
-  if mode == 0 then
-    g.withSourceOnBattlefield sourceId (fun g o =>
-      g.addPlusOnePlusOneTo o 1) "The source is no longer in play"
-  else
-    match targets[0]? with
-    | some (Target.permanent id) =>
-      match g.findObject? id with
-      | some o =>
-        if o.isOnBattlefield && g.isCreature o && g.controlledBy o controller && o.status.hasCounters then
-          let kind? : Option CounterKind :=
-            if o.status.plusOnePlusOne > 0 then some .plusOnePlusOne
-            else if o.status.indestructibleCounters > 0 then some .indestructible
-            else o.status.toCounterBag[0]?.map (·.1)
-          match kind? with
-          | some kind =>
-            let nm := g.name o
-            let before := o.status.counterCount kind
-            let g := g.recordRemoveCounters o.id kind 1 (byPlayer := some controller)
-              |>.logMsg s!"A counter is removed from {nm}"
-            let removed : Bool :=
-              match g.findObject? o.id with
-              | some cur => decide (cur.status.counterCount kind < before)
-              | none => true
-            if removed then g.draw controller 1 else g
-          | none => g
-        else
-          g.logMsg "You must remove a counter from a creature you control if you can"
-      | none =>
-        g.logMsg "You must remove a counter from a creature you control if you can"
-    | _ =>
-      if (g.permanentsOf controller).any (fun o =>
-          g.isCreature o && o.status.hasCounters) then
-        g.logMsg "You must remove a counter from a creature you control if you can"
-      else g
 
 /-- Draw one card for the controller of the creature the source enchants.
 Nothing enchanted draws nothing. -/
@@ -556,7 +523,7 @@ def returnCauseToOwnerHand (g : Game) (targets : Array Target) : Game :=
   | none => g.logMsg "The attacking creature is no longer in the graveyard"
   | some o =>
     if o.printed.isToken then
-      g.logMsg s!"{o.name} ceases to exist"
+      g.logMsg s!"{g.name o} ceases to exist"
     else if o.zone != .graveyard o.owner then
       g.logMsg "The attacking creature is no longer in the graveyard"
     else
@@ -735,7 +702,7 @@ def offerMayExileDiscarded (g : Game) (controller : PlayerId) : Game :=
   match obj? with
   | some o =>
     g.beginFraChoice controller (.moonstoneMayExile o.id)
-      s!"You may exile {o.name} from your graveyard"
+      s!"You may exile {g.name o} from your graveyard"
   | none =>
     if causeId?.isSome then
       g.logMsg "The discarded card is no longer in your graveyard"

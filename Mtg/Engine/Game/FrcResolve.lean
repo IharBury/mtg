@@ -756,7 +756,7 @@ def applyFrc (g : Game) (controller : PlayerId) (effect : Effect) (e : FrcEffect
       ((abObj?.bind (·.fraCauseId)).bind g.followToBattlefield? |>.bind g.controllerOf).orElse
         (fun _ => abObj?.bind (·.fraCauseController))
         |>.getD controller
-    if (g.player heir).lost || (g.player heir).leftTheGame || (g.player heir).isMonarch then g
+    if !g.stillInGame heir || (g.player heir).isMonarch then g
     else
       let prev := (g.players.find? (·.isMonarch)).map (·.id)
       g.record (GameEvent.becameMonarch g.turnNumber heir prev

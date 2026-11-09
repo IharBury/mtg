@@ -23359,4 +23359,303 @@ private def replayOk29i4 (gs : Array Game) : Bool :=
 
 end Phase29Item4EventAlignment
 
+/-! ### Phase 30 Item 1: `Leaving.redirectPendingAfterLeave` and `Decisions.resumePendingReplacement` `.restorePending` revalidation -/
+section Phase30Item1EventAlignment
+
+private def mustHold30i1 (label : String) (ok : Bool) : Bool :=
+  if ok then true else panic! s!"Phase30Item1EventAlignment failed: {label}"
+
+private def replayOk30i1 (gs : Array Game) : Bool :=
+  gs.all (fun g => Game.replayEvents g.events == g && allRulesEventsClassified g)
+
+#guard
+  let p0 : PlayerId := ⟨0⟩
+  let p1 : PlayerId := ⟨1⟩
+  let g3 := mkThreePlayer27i1 3011
+  let gBase := addPermanent (addPermanent g3 bear p0 p0) bear p1 p1
+  let p0BearId := (gBase.permanentsOf p0).find? (·.name == bear.name) |>.get!.id
+  let p1BearId := (gBase.permanentsOf p1).find? (·.name == bear.name) |>.get!.id
+
+  -- 1a. `.chooseSacrificeCreature q chosen remaining`: when `p1` leaves while `p0` (`q != leaver`)
+  --     has no sacrificeable creatures (`gNoP0Bear`), `redirectPendingAfterLeave` filters `p1` from
+  --     `remaining` and finishes the batch via `finishChosenSacrifices`!
+  let (gNoP0Bear, _) := gBase.move p0BearId (.graveyard p0) none (cause := some testCause)
+  let gPendChooseSac :=
+    gNoP0Bear.changes #[
+      .pushContinuationFrame {},
+      .pending (.chooseSacrificeCreature p0 #[] #[p1])]
+  let gAfterChooseSacLeave := gPendChooseSac.concede p1
+  let chooseSacNonLeaverOk :=
+    gAfterChooseSacLeave.pending != Pending.chooseSacrificeCreature p0 #[] #[] &&
+    gAfterChooseSacLeave.continuations.isEmpty
+
+  -- 1b. `.fraChoice p0 (.sacrificeCreatureEach p0 #[p1] #[])` and `.sacrificeNontokenEach #[p1] #[]`:
+  --     when `p1` leaves while `p0` (`q != leaver`) has no sacrificeable creatures (`gNoP0Bear`),
+  --     `redirectPendingAfterLeave` filters `p1` from `rest` and runs `finishChosenSacrifices`:
+  let gPendSacEach :=
+    gNoP0Bear.beginFraChoice p0 (.sacrificeCreatureEach p0 #[p1] #[])
+  let gAfterSacEachLeave := gPendSacEach.concede p1
+  let gPendSacNontoken :=
+    gNoP0Bear.beginFraChoice p0 (.sacrificeNontokenEach #[p1] #[])
+  let gAfterSacNontokenLeave := gPendSacNontoken.concede p1
+  let sacEachNonLeaverOk :=
+    gAfterSacEachLeave.pending != Pending.fraChoice p0 (.sacrificeCreatureEach p0 #[] #[]) &&
+    gAfterSacEachLeave.continuations.isEmpty &&
+    gAfterSacNontokenLeave.pending != Pending.fraChoice p0 (.sacrificeNontokenEach #[] #[]) &&
+    gAfterSacNontokenLeave.continuations.isEmpty
+
+  -- 1c. `.fraChoice p0 (.sacrificeDamager #[p1BearId] #[] p0 #[])` and
+  --     `.fraChoice p0 (.tricksterLibrary p0 p1BearId none)`:
+  --     when `p1` leaves and `p1BearId` leaves the battlefield with `p1`, `redirectPendingAfterLeave`
+  --     finishes the stale `fraChoice` for `p0`:
+  let gPendDamager := gBase.beginFraChoice p0 (.sacrificeDamager #[p1BearId] #[] p0 #[])
+  let gAfterDamagerLeave := gPendDamager.concede p1
+  let gPendTrickster := gBase.beginFraChoice p0 (.tricksterLibrary p0 p1BearId none)
+  let gAfterTricksterLeave := gPendTrickster.concede p1
+  let damagerAndTricksterLeaveOk :=
+    gAfterDamagerLeave.pending != Pending.fraChoice p0 (.sacrificeDamager #[] #[] p0 #[]) &&
+    gAfterDamagerLeave.continuations.isEmpty &&
+    gAfterTricksterLeave.pending != Pending.fraChoice p0 (.tricksterLibrary p0 p1BearId none) &&
+    gAfterTricksterLeave.continuations.isEmpty
+
+  -- 1d. `.fraChoice p0 (.sacrificeLeastPower #[p0BearId, p1BearId])`: when `p1` (`q != leaver`)
+  --     leaves and only `p0BearId` remains tied for least power under `p0`'s control
+  --     (`liveTied.size <= 1`), `redirectPendingAfterLeave` delegates to
+  --     `sacrificeLeastPowerCreature p0` via `clearPending` inside `withOuterContStashed`,
+  --     sacrificing `p0BearId` without journaling `.chooseModesRest none`:
+  let gPendLeastPower := gBase.beginFraChoice p0 (.sacrificeLeastPower #[p0BearId, p1BearId])
+  let gAfterLeastPowerLeave := gPendLeastPower.concede p1
+  let leastPowerLeaveOk :=
+    (gAfterLeastPowerLeave.followMovedToZone? p0BearId (· == .graveyard p0)).isSome &&
+    !gAfterLeastPowerLeave.events.any (fun e => e.change == .engine (.chooseModesRest none)) &&
+    gAfterLeastPowerLeave.continuations.isEmpty
+
+  -- 1e. `.fraChoice p0 (.hydeRemoveCounter #[p0BearId, p1BearId])`: when `p1` (`q != leaver`)
+  --     leaves while `p0BearId` has a `+1/+1` counter (`live.size == 1 <= 1`),
+  --     `redirectPendingAfterLeave` runs `(clearPending g).applyHydeMode p0 none 1 #[Target.permanent p0BearId]`
+  --     inside `withOuterContStashed` (removing the `+1/+1` counter from `p0BearId` without
+  --     journaling `.chooseModesRest none`):
+  let gWithCounter := gBase.addPlusOnePlusOneTo (gBase.object! p0BearId) 1 (cause := some testCause)
+  let gPendHyde := gWithCounter.beginFraChoice p0 (.hydeRemoveCounter #[p0BearId, p1BearId])
+  let gAfterHydeLeave := gPendHyde.concede p1
+  let hydeLeaveOk :=
+    (gAfterHydeLeave.object! p0BearId).status.plusOnePlusOne == 0 &&
+    !gAfterHydeLeave.events.any (fun e => e.change == .engine (.chooseModesRest none)) &&
+    gAfterHydeLeave.continuations.isEmpty
+
+  -- 1f. `.sacrificeCreature p0`: when `p1` leaves while `p0` (`q != leaver`) has no remaining
+  --     creatures (`gNoP0Bear`), `redirectPendingAfterLeave` advances priority instead of stranding
+  --     `.sacrificeCreature p0`:
+  let gPendSacCreature := gNoP0Bear.change (.pending (.sacrificeCreature p0))
+  let gAfterSacCreatureLeave := gPendSacCreature.concede p1
+  let sacCreatureNonLeaverOk :=
+    gAfterSacCreatureLeave.pending != Pending.sacrificeCreature p0
+
+  -- 1g. `Decisions.resumePendingReplacement` `.restorePending` for `.assignCombatDamage p0 true`
+  --     (when no combat damage assignment is needed) and
+  --     `.fraChoice p0 (.tricksterLibrary p0 p1BearId none)` (when `p1BearId` left the battlefield):
+  let (gBlockersGone, _) := gBase.move p1BearId (.graveyard p1) none (cause := some testCause)
+  let gRestoreCombat :=
+    gBlockersGone.resumePendingReplacement (.restorePending (.assignCombatDamage p0 true) false)
+  let gRestoreTrickster :=
+    gBlockersGone.resumePendingReplacement
+      (.restorePending (.fraChoice p0 (.tricksterLibrary p0 p1BearId none)) false)
+  let restorePendingOk :=
+    gRestoreCombat.pending != Pending.assignCombatDamage p0 true &&
+    gRestoreTrickster.pending != Pending.fraChoice p0 (.tricksterLibrary p0 p1BearId none) &&
+    gRestoreTrickster.log.back? == some "The target is no longer legal"
+
+  mustHold30i1 "1a.chooseSacNonLeaverOk" chooseSacNonLeaverOk &&
+  mustHold30i1 "1b.sacEachNonLeaverOk" sacEachNonLeaverOk &&
+  mustHold30i1 "1c.damagerAndTricksterLeaveOk" damagerAndTricksterLeaveOk &&
+  mustHold30i1 "1d.leastPowerLeaveOk" leastPowerLeaveOk &&
+  mustHold30i1 "1e.hydeLeaveOk" hydeLeaveOk &&
+  mustHold30i1 "1f.sacCreatureNonLeaverOk" sacCreatureNonLeaverOk &&
+  mustHold30i1 "1g.restorePendingOk" restorePendingOk &&
+  mustHold30i1 "1.replay"
+    (replayOk30i1 #[gAfterChooseSacLeave, gAfterSacEachLeave, gAfterSacNontokenLeave,
+      gAfterDamagerLeave, gAfterTricksterLeave, gAfterLeastPowerLeave, gAfterHydeLeave,
+      gAfterSacCreatureLeave, gRestoreCombat, gRestoreTrickster])
+
+end Phase30Item1EventAlignment
+
+/-! ### Phase 30 Item 2: `Core.beginFraChoice` frame-push invariant across all `.fraChoice` writers -/
+section Phase30Item2EventAlignment
+
+private def mustHold30i2 (label : String) (ok : Bool) : Bool :=
+  if ok then true else panic! s!"Phase30Item2EventAlignment failed: {label}"
+
+private def replayOk30i2 (gs : Array Game) : Bool :=
+  gs.all (fun g => Game.replayEvents g.events == g && allRulesEventsClassified g)
+
+#guard
+  let p0 : PlayerId := ⟨0⟩
+  let p1 : PlayerId := ⟨1⟩
+  let gBase := addPermanent (addPermanent afterDraw bear p0 p0) bear p1 p1
+  let p0BearId := (gBase.permanentsOf p0).find? (·.name == bear.name) |>.get!.id
+
+  -- 1a. `g.beginFraChoice p choice` (default `msg := ""`) pushes a continuation frame when
+  --     `g.continuations.isEmpty` and does not log an empty message:
+  let logSize0 := gBase.log.size
+  let gSilentChoice := gBase.beginFraChoice p0 (.hydeRemoveCounter #[p0BearId])
+  let gSilentFinished := (gSilentChoice.change (.pending .none)).finishFraChoice
+  let silentBeginFraChoiceOk :=
+    gBase.continuations.isEmpty &&
+    gSilentChoice.continuations.size == 1 &&
+    gSilentChoice.log.size == logSize0 &&
+    gSilentChoice.pending == Pending.fraChoice p0 (.hydeRemoveCounter #[p0BearId]) &&
+    gSilentFinished.continuations.isEmpty &&
+    gSilentFinished.pending == .none
+
+  -- 1b. Direct calls to `EffectResolution.beginVisionQuest` and `EffectResolution.offerBottomAnyOrder`
+  --     when `g.continuations.isEmpty` push a frame via `beginFraChoice`:
+  let gLib2 := insertObject (insertObject gBase bear p0 (.library p0)) bear p0 (.library p0)
+  let topTwo := (gLib2.player p0).library.extract ((gLib2.player p0).library.size - 2) (gLib2.player p0).library.size
+  let gBottomChoice := gLib2.offerBottomAnyOrder p0 topTwo
+  let directWritersPushFrameOk :=
+    gBottomChoice.continuations.size == 1 &&
+    gBottomChoice.pending == Pending.fraChoice p0 (.orderLibraryBottom topTwo)
+
+  mustHold30i2 "1a.silentBeginFraChoiceOk" silentBeginFraChoiceOk &&
+  mustHold30i2 "1b.directWritersPushFrameOk" directWritersPushFrameOk &&
+  mustHold30i2 "1.replay"
+    (replayOk30i2 #[gSilentChoice, gSilentFinished, gLib2, gBottomChoice])
+
+end Phase30Item2EventAlignment
+
+/-! ### Phase 30 Item 3: Unified `stillInGame` checks and departed-player guards -/
+section Phase30Item3EventAlignment
+
+private def mustHold30i3 (label : String) (ok : Bool) : Bool :=
+  if ok then true else panic! s!"Phase30Item3EventAlignment failed: {label}"
+
+private def replayOk30i3 (gs : Array Game) : Bool :=
+  gs.all (fun g => Game.replayEvents g.events == g && allRulesEventsClassified g)
+
+#guard
+  let p0 : PlayerId := ⟨0⟩
+  let p1 : PlayerId := ⟨1⟩
+  let gBase := addPermanent (addPermanent afterDraw bear p0 p0) bear p1 p1
+  let p0BearId := (gBase.permanentsOf p0).find? (·.name == bear.name) |>.get!.id
+  let gLeft := gBase.playerLeavesGame p1
+  let sIdx := gLeft.events.size
+
+  -- 1. All departed-player entrypoints / loops / PostSteps return `gLeft` without emitting new events:
+  let gCascadeLoop := gLeft.resolveCascadeLoop p1 3 testCause #[] none
+  let gCascade := gLeft.resolveCascade p1 3
+  let gMayCastLooked := gLeft.beginMayCastFromLooked p1 3 3
+  let gMill := gLeft.mill p1 2
+  let gMillLoop := gLeft.millCardsLoop p1 #[] (freshCount := some 2)
+  let gMovePubHand := gLeft.movePublicCardsToHandLoop p1 #[p0BearId] 1 true none
+  let gMoveOrder := gLeft.moveIdsInOrderLoop #[p0BearId] (.library p1) "ordered"
+  let gReqOrder := gLeft.requestOrderInto #[p0BearId] (.library p1) "ordered"
+  let gWidowCast := gLeft.grantWidowCast p1 (some p0BearId)
+  let gFinWidow := gLeft.finishExileLibraryUntilNonland p1 (some p0BearId) (some p0BearId) none
+  let gPostNick := gLeft.runPostStep (.nickFuryMayTransformOrBottom p1 p0BearId #[] none)
+  let gPostOppDraw := gLeft.runPostStep (.opponentsDrawOneLoop p1 #[p1] none)
+  let gPostLoseMill := gLeft.runPostStep (.loseLifeForMilledManaValue p1 #[p0BearId] none)
+  let gPostShuffle := gLeft.runPostStep (.logShuffleIntoLibrary p1 p0BearId)
+  let gPostPutMill := gLeft.runPostStep (.offerPutMilledPermanentOrGainLife p1 #[p0BearId] 3)
+
+  -- 2. Verify pending-arrival logs in `millCardsLoop`, `movePublicCardsToHandLoop`, and
+  --    `.logShuffleIntoLibrary` still emit when the card already arrived before `p1` left,
+  --    then return before further departed-player actions:
+  let gMillWithLog := gLeft.millCardsLoop p1 #[p0BearId] (logCard := some bear.name)
+  let gMovedToP1Hand := (gBase.move p0BearId (.hand p1) none (cause := some testCause)).1.playerLeavesGame p1
+  let sIdxHand := gMovedToP1Hand.events.size
+  let gMovePubWithPending :=
+    gMovedToP1Hand.movePublicCardsToHandLoop p1 #[p0BearId] 1 true none
+      (pendingCard := some (p0BearId, bear.name))
+  let gMovedToP1Lib := (gBase.move p0BearId (.library p1) none (cause := some testCause)).1.playerLeavesGame p1
+  let sIdxLib := gMovedToP1Lib.events.size
+  let gPostShuffleArrived := gMovedToP1Lib.runPostStep (.logShuffleIntoLibrary p1 p0BearId)
+  let pendingArrivalLogsOk :=
+    gMillWithLog.log.back? == some s!"{(gLeft.player p1).name} mills {bear.name}" &&
+    gMillWithLog.events.size == sIdx + 1 &&
+    gMovePubWithPending.log.back? == some s!"{(gLeft.player p1).name} puts {bear.name} into their hand" &&
+    gMovePubWithPending.events.size == sIdxHand + 1 &&
+    gPostShuffleArrived.log.back? == some s!"{(gLeft.player p1).name} shuffles {bear.name} into their library" &&
+    gPostShuffleArrived.events.size == sIdxLib + 1 &&
+    gPostShuffleArrived.pending == .none
+
+  -- 3. Also verify `.grantAdventureExilePermission` when `controller` (`p1`) has left the game:
+  --    logs `"{name} is exiled"` without creating a `.playPermission` effect for `p1`:
+  let (gExBear, exBearId) := gLeft.move p0BearId .exile none (cause := some testCause)
+  let effCountBefore := gExBear.activeEffects.size
+  let gAdvGone := gExBear.runPostStep (.grantAdventureExilePermission p1 p0BearId (some testCause))
+  let advGoneOk :=
+    gAdvGone.activeEffects.size == effCountBefore &&
+    gAdvGone.log.back? == some s!"{gExBear.name (gExBear.object! exBearId)} is exiled"
+
+  let departedGuardsOk :=
+    #[gCascadeLoop, gCascade, gMayCastLooked, gMill, gMillLoop, gMovePubHand,
+      gMoveOrder, gReqOrder, gWidowCast, gFinWidow, gPostNick, gPostOppDraw,
+      gPostLoseMill, gPostShuffle, gPostPutMill].all (fun g => g.events.size == sIdx) &&
+    pendingArrivalLogsOk &&
+    advGoneOk
+
+  mustHold30i3 "1.departedGuardsOk" departedGuardsOk &&
+  mustHold30i3 "1.replay"
+    (replayOk30i3 #[gLeft, gMillWithLog, gMovedToP1Hand, gMovePubWithPending,
+      gMovedToP1Lib, gPostShuffleArrived, gExBear, gAdvGone])
+
+end Phase30Item3EventAlignment
+
+/-! ### Phase 30 Item 4: Single `Core.snapshot` constructor and Layer 1–6 characteristic reads -/
+section Phase30Item4EventAlignment
+
+private def mustHold30i4 (label : String) (ok : Bool) : Bool :=
+  if ok then true else panic! s!"Phase30Item4EventAlignment failed: {label}"
+
+private def replayOk30i4 (gs : Array Game) : Bool :=
+  gs.all (fun g => Game.replayEvents g.events == g && allRulesEventsClassified g)
+
+#guard
+  let p0 : PlayerId := ⟨0⟩
+  let gBase := addPermanent afterDraw bear p0 p0
+  let p0BearId := (gBase.permanentsOf p0).find? (·.name == bear.name) |>.get!.id
+
+  -- 1a. `ActivationCosts.costPickAllows` `.discardLegendaryCard` and `.discardLegendarySameName`
+  --     use `g.isLegendary` and `g.name`:
+  let legBearDef : CardDef := {
+    bear with
+    name := "P30i4 Legendary Bear"
+    supertypes := #[.legendary]
+  }
+  let gWithHandBear := insertObject gBase bear p0 (.hand p0)
+  let handBearId := (gWithHandBear.player p0).hand.back!
+  let gCopiedLeg :=
+    (gWithHandBear.createEffect
+      (.layered (.objects #[p0BearId]) (.copy legBearDef) .indefinite)
+      (cause := some testCause)).createEffect
+      (.layered (.objects #[handBearId]) (.copy legBearDef) .indefinite)
+      (cause := some testCause)
+  let handObj := gCopiedLeg.object! handBearId
+  let costPickLayerOk :=
+    gCopiedLeg.costPickAllows p0 none .discardLegendaryCard handObj &&
+    gCopiedLeg.costPickAllows p0 none .discardLegendarySameName handObj
+
+  -- 1b. `Costs.returnToHand`, `ResolutionEffects.revealHand`, and `Decisions` `.logMovedToExile`
+  --     log `g.name` (Layer 1 copy name):
+  let gRevealed := gCopiedLeg.revealHand p0
+  let gReturned := gCopiedLeg.returnToHand p0BearId p0 (cause := some testCause)
+  let (gMovedEx, _) := gCopiedLeg.move p0BearId .exile none (cause := some testCause)
+  let exId := (gMovedEx.followMovedToZone? p0BearId (· == .exile)).get!.id
+  let gExCopied :=
+    gMovedEx.createEffect
+      (.layered (.objects #[exId]) (.copy legBearDef) .indefinite)
+      (cause := some testCause)
+  let gLogMovedEx := gExCopied.runPostStep (.logMovedToExile p0BearId)
+  let layer1NamesOk :=
+    (gRevealed.log.back?.getD "").endsWith s!"{legBearDef.name})" &&
+    gReturned.log.back? == some s!"{legBearDef.name} is returned to {(gReturned.player p0).name}'s hand" &&
+    gLogMovedEx.log.back? == some s!"{legBearDef.name} is exiled"
+
+  mustHold30i4 "1a.costPickLayerOk" costPickLayerOk &&
+  mustHold30i4 "1b.layer1NamesOk" layer1NamesOk &&
+  mustHold30i4 "1.replay"
+    (replayOk30i4 #[gCopiedLeg, gRevealed, gReturned, gMovedEx, gExCopied, gLogMovedEx])
+
+end Phase30Item4EventAlignment
+
 end Mtg.Engine.EventTests

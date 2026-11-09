@@ -98,6 +98,7 @@ partial def resolveCascadeLoop (g : Game) (p : PlayerId) (maxMv : Nat)
     if let .chooseReplacement .. := g.pending then
       g.chainPendingReplacement
         (.finishPostStep (.resolveCascadeLoop p maxMv cause exiled (some fid)))
+    else if !g.stillInGame p then g
     else
       match g.followMovedToZone? fid (· == .exile) with
       | some card =>
@@ -105,8 +106,8 @@ partial def resolveCascadeLoop (g : Game) (p : PlayerId) (maxMv : Nat)
         if !g.isLand card && g.objectManaValue card < maxMv then
           let g := g.logMsg s!"{(g.player p).name} exiles cards for cascade (less than {maxMv})"
           let others := exiled.filter (· != card.id)
-          g.change (.pending (.fraChoice p (.mayCastCascade card.id others)))
-            |>.logMsg s!"{(g.player p).name} may cast {card.name} without paying its mana cost (cascade)"
+          g.beginFraChoice p (.mayCastCascade card.id others)
+            s!"{(g.player p).name} may cast {g.name card} without paying its mana cost (cascade)"
         else
           g.resolveCascadeLoop p maxMv cause exiled none
       | none =>
@@ -115,6 +116,7 @@ partial def resolveCascadeLoop (g : Game) (p : PlayerId) (maxMv : Nat)
     if let .chooseReplacement .. := g.pending then
       g.chainPendingReplacement
         (.finishPostStep (.resolveCascadeLoop p maxMv cause exiled none))
+    else if !g.stillInGame p then g
     else
       match (g.player p).library.back? with
       | none =>
@@ -134,8 +136,10 @@ partial def resolveCascadeLoop (g : Game) (p : PlayerId) (maxMv : Nat)
 value less than `maxMv`. The player may cast it without paying its mana
 cost; the other exiled cards go on the bottom in a random order. -/
 def resolveCascade (g : Game) (p : PlayerId) (maxMv : Nat) : Game :=
-  let (g, cause) := g.allocDelayedCause (some p)
-  g.resolveCascadeLoop p maxMv cause
+  if !g.stillInGame p then g
+  else
+    let (g, cause) := g.allocDelayedCause (some p)
+    g.resolveCascadeLoop p maxMv cause
 
 /-- Mark the proposed spell kicked and add the kicker cost. Cannot kick twice. -/
 def applyKickerToProposed (g : Game) (kick : Bool) : Except String Game := do
@@ -272,7 +276,7 @@ def finishExileUntilNextEndStep (g : Game) (ctrl : PlayerId) (fromId : ObjectId)
   | some moved =>
     let g := g.registerDelayedTrigger
       { controller := ctrl, source := some moved, kind := .endStepReturn moved.id, cause }
-    g.logMsg s!"{moved.name} is exiled until the beginning of the next end step"
+    g.logMsg s!"{g.name moved} is exiled until the beginning of the next end step"
 
 /-- Exile `o` and return it at the beginning of the next end step. -/
 def exileUntilNextEndStep (g : Game) (o : GameObject)

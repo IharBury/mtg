@@ -75,10 +75,10 @@ def costPickAllows (g : Game) (p : PlayerId) (sourceId : Option ObjectId) (pick 
     (perm && artifact) || (inHand && !g.isLand o)
   | .discardACard => inHand
   | .discardNonland => inHand && !g.isLand o
-  | .discardLegendaryCard => inHand && o.isLegendary
+  | .discardLegendaryCard => inHand && g.isLegendary o
   | .discardLegendarySameName =>
-    inHand && o.isLegendary &&
-      (g.permanentsOf p).any (fun x => g.isLegendary x && g.name x == o.name)
+    inHand && g.isLegendary o &&
+      (g.permanentsOf p).any (fun x => g.isLegendary x && g.name x == g.name o)
   | .exileAnotherCreatureCardFromGraveyard =>
     other && o.owner == p && o.zone == .graveyard p && g.isCreature o
   | .tapUntappedCreature => perm && g.isCreature o && !o.status.tapped

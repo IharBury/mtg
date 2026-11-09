@@ -234,7 +234,7 @@ zones (CR 208.2a / 604.3). -/
   (namedPermanent pathmakerWithLands "Mirkwood Pathmaker") == 2
 #guard pathmakerWithLands.snapshotToughness
   (namedPermanent pathmakerWithLands "Mirkwood Pathmaker") == 2
-#guard (namedPermanent pathmakerWithLands "Mirkwood Pathmaker").power == 0
+#guard (namedPermanent pathmakerWithLands "Mirkwood Pathmaker").printed.power.isNone
 #guard pathmakerWithLands.landsYouControl ⟨0⟩ == 2
 
 /-- Opponent lands do not count. -/
@@ -261,7 +261,7 @@ def pathmakerInHand : Game :=
 #guard pathmakerInHand.power (handCardNamed pathmakerInHand ⟨0⟩ "Mirkwood Pathmaker") == 2
 #guard pathmakerInHand.toughness (handCardNamed pathmakerInHand ⟨0⟩ "Mirkwood Pathmaker") == 2
 #guard (handCardNamed pathmakerInHand ⟨0⟩ "Mirkwood Pathmaker").controller.isNone
-#guard (handCardNamed pathmakerInHand ⟨0⟩ "Mirkwood Pathmaker").you == ⟨0⟩
+#guard pathmakerInHand.you (handCardNamed pathmakerInHand ⟨0⟩ "Mirkwood Pathmaker") == ⟨0⟩
 
 def pathmakerInGraveyard : Game :=
   addToGraveyard (addForests afterDraw ⟨0⟩ 3) mirkwoodPathmaker ⟨0⟩
