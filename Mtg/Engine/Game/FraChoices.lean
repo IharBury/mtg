@@ -23,30 +23,6 @@ inductive FraAnswer where
   | name (name : String)
 deriving Repr, BEq
 
-/-- Combine the chosen modes of a modal triggered ability into one effect,
-preserving the targeting shapes of every targeted mode in printed order (CR 700.2). -/
-def combineTriggerModes (modes : Array Effect) (chosen : Array Nat) : Option Effect :=
-  let picked := (chosen.qsort (· < ·)).filterMap (modes[·]?)
-  match picked.toList with
-  | [] => none
-  | [e] => some e
-  | es =>
-    let targeted := picked.filter (·.requiresTarget)
-    let targeting : EffectTargeting :=
-      match targeted.toList with
-      | [] => .of .none
-      | [t0] =>
-        if es.length == 1 then t0.targeting else .of (modeTargetKind t0)
-      | t0 :: tRest =>
-        let kind := tRest.foldl (fun k m => EffectTargetKind.pair k (modeTargetKind m)) (modeTargetKind t0)
-        .of kind
-    some { es.head! with
-      targeting
-      allowsZeroTargets := !targeted.isEmpty && targeted.all (·.allowsZeroTargets)
-      maxTargets := targeted.foldl (fun acc m => acc + m.maxTargetCount) 0
-      resolution := .sequence (es.map (·.resolution))
-      phrase := String.intercalate ". " (es.map (·.phrase)) }
-
 /-- Cast one of the copies of a pending “cast copies without paying their mana
 costs” choice (Uldaros Theorix). X is 0 (ruling 806). -/
 def castFreeCopy (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game := do
@@ -115,25 +91,6 @@ def castFreeCopy (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game 
   return if g'.pending == .none && (g'.findObject? newId).any (·.zone == .stack) then
     g'.finishFraChoice
   else g'
-
-/-- Hawkeye's Trick Arrows with the chosen modes, in printed order. -/
-def hawkeyeArrowsEffect (modes : Array Nat) : Effect :=
-  let sorted := modes.qsort (· < ·)
-  let kinds := sorted.filterMap (fun m =>
-    if m == 0 then some EffectTargetKind.creature
-    else if m == 1 then some EffectTargetKind.player
-    else none)
-  let targeting : EffectTargeting :=
-    match kinds.toList with
-    | [k] => .of k
-    | [a, b] => .of (.pair a b)
-    | _ => .of .none
-  let names := sorted.toList.map (fun m =>
-    if m == 0 then "Net — Target creature can't block this turn"
-    else if m == 1 then "Explosive — Hawkeye deals 2 damage to target player"
-    else "Boomerang — Discard a card, then draw a card")
-  { targeting, resolution := .hawkeyeArrows sorted.toList
-    phrase := String.intercalate ". " names }
 
 /-- Reveal the face-up pile, then let an opponent choose which pile goes to hand. -/
 def continueRiddlesSplit (g : Game) (controller : PlayerId)

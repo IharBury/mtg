@@ -671,4 +671,57 @@ inductive Pending where
   | resolveRandom (req : RandomRequest)
 deriving DecidableEq, Repr, Inhabited, BEq
 
+/-- The prompt player stored directly on `p` (`none` when `p` does not store a
+player id directly, such as `.none`, `.declareAttackers`, `.declareBlockers`, or
+a `.resolveRandom` without a player zone). -/
+def Pending.promptPlayer? : Pending → Option PlayerId
+  | .none | .declareAttackers | .declareBlockers => Option.none
+  | .activateManaAbilities q
+  | .chooseMode q
+  | .chooseX q
+  | .chooseTargets q
+  | .sacrificePermanent q _
+  | .discardForAdditionalCost q
+  | .sacrificeCreature q
+  | .declareMulligan q
+  | .putOnBottom q _
+  | .scry q ..
+  | .surveil q ..
+  | .mayDiscardDraw q _
+  | .chooseAdditionalCost q
+  | .chooseSacrificeCreature q ..
+  | .chooseDiscardCard q _
+  | .assignCombatDamage q _
+  | .chooseLegend q ..
+  | .chooseTriggerToStack q
+  | .mayPayGeneric q _
+  | .chooseLibraryPlacement q _
+  | .mayAttachEquipment q ..
+  | .mayResolve q
+  | .tapHumans q
+  | .payOrLetCounter q ..
+  | .payWard q ..
+  | .recruitDiscard q
+  | .chooseKicker q
+  | .chooseGift q
+  | .chooseTeamwork q
+  | .chooseTeamworkCreatures q _
+  | .maySacrificeAnotherBolg q _
+  | .mayCastFromLooked q ..
+  | .mayPutLandFromHand q
+  | .chooseTriggerOr q
+  | .maySacArtifactOrDiscard q _
+  | .mayPutArtifactFromHand q _
+  | .mayHaveVillainConnive q ..
+  | .mayCastExiledElseDamage q ..
+  | .chooseProliferate q _
+  | .fraChoice q _
+  | .chooseReplacement q _ => some q
+  | .resolveRandom (.shuffleLibrary q) => some q
+  | .resolveRandom (.orderInto _ (.library q) _)
+  | .resolveRandom (.orderInto _ (.hand q) _)
+  | .resolveRandom (.orderInto _ (.graveyard q) _)
+  | .resolveRandom (.orderInto _ (.outside q) _) => some q
+  | .resolveRandom _ => Option.none
+
 end Mtg.Engine

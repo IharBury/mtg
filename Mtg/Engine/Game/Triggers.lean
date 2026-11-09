@@ -83,6 +83,25 @@ def hawkeyeModeEffects : Array Effect :=
     { resolution := .hawkeyeArrows [2]
       phrase := "Boomerang — Discard a card, then draw a card" }]
 
+/-- Hawkeye's Trick Arrows with the chosen modes, in printed order. -/
+def hawkeyeArrowsEffect (modes : Array Nat) : Effect :=
+  let sorted := modes.qsort (· < ·)
+  let kinds := sorted.filterMap (fun m =>
+    if m == 0 then some EffectTargetKind.creature
+    else if m == 1 then some EffectTargetKind.player
+    else none)
+  let targeting : EffectTargeting :=
+    match kinds.toList with
+    | [k] => .of k
+    | [a, b] => .of (.pair a b)
+    | _ => .of .none
+  let names := sorted.toList.map (fun m =>
+    if m == 0 then "Net — Target creature can't block this turn"
+    else if m == 1 then "Explosive — Hawkeye deals 2 damage to target player"
+    else "Boomerang — Discard a card, then draw a card")
+  { targeting, resolution := .hawkeyeArrows sorted.toList
+    phrase := String.intercalate ". " names }
+
 /-- Whether `p` may choose this mode of a triggered ability (CR 603.3c / 700.2b). -/
 def triggerModeChoosable (g : Game) (p : PlayerId) (obj : GameObject) (e : Effect) : Bool :=
   let e := g.expandEachOpponentEffect p e (some obj.id)

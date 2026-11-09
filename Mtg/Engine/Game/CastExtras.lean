@@ -13,16 +13,19 @@ namespace Game
 
 /-- Start an optional “discard a card. If you do, draw `n`” (CR 701.9 / 608.2d). -/
 def beginMayDiscardDraw (g : Game) (p : PlayerId) (n : Nat) : Game :=
-  let pl := g.player p
-  if pl.hand.isEmpty then
-    g.logMsg s!"{pl.name} has no card to discard"
+  if !g.stillInGame p then g
   else
-    g.change (.pending (.mayDiscardDraw p n))
-      |>.logMsg s!"{pl.name} may discard a card. If they do, they draw {n}"
+    let pl := g.player p
+    if pl.hand.isEmpty then
+      g.logMsg s!"{pl.name} has no card to discard"
+    else
+      g.change (.pending (.mayDiscardDraw p n))
+        |>.logMsg s!"{pl.name} may discard a card. If they do, they draw {n}"
 
 /-- Start “sacrifices a creature of their choice” for `p` (CR 701.21 / 608.2d). -/
 def beginSacrificeCreature (g : Game) (p : PlayerId) : Game :=
-  if (g.sacrificeCreatureChoices p).isEmpty then
+  if !g.stillInGame p then g
+  else if (g.sacrificeCreatureChoices p).isEmpty then
     g.logMsg s!"{(g.player p).name} has no creature to sacrifice"
   else
     g.change (.pending (.sacrificeCreature p))

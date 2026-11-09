@@ -32,18 +32,20 @@ def shuffleSourceIntoLibrary (g : Game) (sourceId : Option ObjectId)
 among creatures and planeswalkers they control, as one group (rulings
 771–773). With a tie, the most recent of them is sacrificed. -/
 def sacrificeGreatestManaValue (g : Game) (pid : PlayerId) : Game :=
-  let candidates := (g.permanentsOf pid).filter (fun o =>
-    g.isCreature o || g.isPlaneswalker o)
-  let best := candidates.foldl (fun best o =>
+  if !g.stillInGame pid then g
+  else
+    let candidates := (g.permanentsOf pid).filter (fun o =>
+      g.isCreature o || g.isPlaneswalker o)
+    let best := candidates.foldl (fun best o =>
+      match best with
+      | none => some o
+      | some b =>
+        let mo := g.objectManaValue o
+        let mb := g.objectManaValue b
+        if mo > mb || (mo == mb && o.timestamp ≥ b.timestamp) then some o else best) none
     match best with
-    | none => some o
-    | some b =>
-      let mo := g.objectManaValue o
-      let mb := g.objectManaValue b
-      if mo > mb || (mo == mb && o.timestamp ≥ b.timestamp) then some o else best) none
-  match best with
-  | none => g.logMsg s!"{(g.player pid).name} has no creature or planeswalker to sacrifice"
-  | some o => g.sacrificeToGraveyard o s!"{(g.player pid).name} sacrifices {g.name o}"
+    | none => g.logMsg s!"{(g.player pid).name} has no creature or planeswalker to sacrifice"
+    | some o => g.sacrificeToGraveyard o s!"{(g.player pid).name} sacrifices {g.name o}"
 
 /-- Finish `.exileTopMayCastElseDamageOpponents` after `g.move top .exile` completes (CR 616.1). -/
 def finishExileTopMayCastElseDamage (g : Game) (controller : PlayerId)
@@ -1067,8 +1069,8 @@ def finishChooseCards (g : Game) (p : PlayerId) (chosen : Array ObjectId)
     if let .chooseReplacement .. := g.pending then
       g.chainPendingReplacement (.finishPostStep (.shuffleThenGainLife p life))
     else
-      let g := g.requestShuffle p (.gainLife p life)
-      g.continueIfShuffled
+      g.withContinuationFrame fun g =>
+        (g.requestShuffle p (.gainLife p life)).continueIfShuffled
   | .keepDestroyRest =>
     let preBf := g.battlefield
     let doomed := (preBf.filter (fun o => g.isCreature o && !chosen.contains o.id)).map (·.id)
