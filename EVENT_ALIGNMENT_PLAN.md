@@ -10006,45 +10006,81 @@ and Layer 1–6 characteristic / cascade stack & LKI mana-value reads),
    - In `Decisions.resumePendingReplacement` `.restorePending`
      (`Decisions.lean:617–763`, where post-departure `.restorePending` runs
      *after* `runEndControlExileLoop`, `returnLinkedExileMoves`, and
-     post-departure SBAs in `finishConcedePriority` at `Decisions.lean:237` and
+     post-departure SBAs in `finishConcedePriority` at `Decisions.lean:237–254`,
+     `leavePlayersWhoLost` at `Leaving.lean:1886`, and
      `checkSBACountedWithLeaves` at `StateBasedActions.lean:551–574`):
-     - add `(departed : Option PlayerId := none)` to
+     - add `(departed : Array PlayerId := #[])` to
        `PendingReplacement.restorePending` (`Event.lean:1668–1669`),
-       `Leaving.restoreSavedPostLeave` (`Leaving.lean:1378–1390`),
-       `Leaving.leavePlayersWhoLostCore` & `leavePlayersWhoLost`
-       (`Leaving.lean:1842–1886`), `PendingReplacement.leavePlayersWhoLost`
-       (`Event.lean:1858`), `StateBasedActions.checkSBACounted` &
-       `checkSBACountedWithLeaves` (`StateBasedActions.lean:411, 543,
-       551–574`), `Decisions.concedePlayersLoop` & `finishConcedePriority`
-       (`Decisions.lean:230–254, 293–395`), `PendingReplacement.finishConcede`
-       (`Event.lean:1872–1874`), and `PendingReplacement.concedePlayersLoop`
-       (`Event.lean:1875–1879`), threading the departing `PlayerId` (`some p`
-       from `playerLeavesGameCore` at `Leaving.lean:1725, 1777, 1829, 1864` and
-       `Decisions.lean:317`) into the post-departure `.restorePending` calls
-       (`Leaving.lean:1388, 1390, 1725, 1777`, `Decisions.lean:254, 347, 381`),
-       while non-departure `.restorePending` callers (`ManaAbilities.lean:382`,
-       `Decisions.lean:1890, 3092`, `Casting.lean:1038`) keep `departed := none`
+       `Leaving.restoreSavedPostLeave` (`Leaving.lean:1378–1390`, forwarding
+       `(departed := departed)` to `.restorePending saved popOuter (departed :=
+       departed)` at `1388, 1390`), `Leaving.playerLeavesGameCore`
+       (`Leaving.lean:1397–1830`, taking `(departedIn : Array PlayerId := #[])`
+       with `let departed := departedIn.push p`, appending `p` to any
+       `.restorePending`'s `departed` array inside `preBodyCont?` /
+       `g.outerPendingReplacements`, and passing `(departed := departed)` to
+       `.restorePending redirP false (departed := departed)` at `1725, 1777` and
+       to `g.restoreSavedPostLeave savedPreLeavePending? popOuter (departed :=
+       departed)` at `1829`), `Leaving.leavePlayersWhoLostCore`
+       (`Leaving.lean:1842–1871`, taking `(departedIn : Array PlayerId := #[])`,
+       passing `(departedIn := departed)` into `playerLeavesGameCore pl.id` at
+       `1864` and updating `departed := departed.push pl.id`, and returning
+       `(g, saved?, popOuter, departed)`) &
+       `Leaving.leavePlayersWhoLost` (`Leaving.lean:1878–1886`, taking
+       `(departedIn : Array PlayerId := #[])`, forwarding `departed` to
+       `.leavePlayersWhoLost saved? popOuter departed` at `1883` and to
+       `g.restoreSavedPostLeave saved? popOuter (departed := departed)` at
+       `1886`), `PendingReplacement.leavePlayersWhoLost` (`Event.lean:1858`,
+       resumed at `Decisions.lean:984–985` by calling
+       `(g.checkSBACountedWithLeaves savedPending popOuter departed).1`),
+       `StateBasedActions.checkSBACounted` (`StateBasedActions.lean:344–345`,
+       taking `(departedIn : Array PlayerId := #[])` and forwarding `departedIn`
+       in the pause chain at `542–544`) &
+       `StateBasedActions.checkSBACountedWithLeaves`
+       (`StateBasedActions.lean:551–574`, taking `(departedIn : Array PlayerId
+       := #[])`, forwarding `departedIn` at `557`, receiving `departed` from
+       `g.leavePlayersWhoLostCore savedIn popOuterIn departedIn` at `561`,
+       forwarding `departed` at `566–568` and `572`, and calling
+       `g.restoreSavedPostLeave saved? popOuter (departed := departed)` at
+       `574`), `Decisions.concedePlayersLoop` (`Decisions.lean:293–395`, taking
+       `(departedIn : Array PlayerId := #[])`, pushing `pid` onto `departed` in
+       the `for` loop at `304–322` when `playerLeavesGameCore pid` runs at
+       `317`, forwarding `departed` in the pause chains at `331–332`, `341–343`,
+       `367–369` and the tail call to `finishConcedePriority` at `395`, and
+       passing `(departed := departed)` to `.restorePending sp popOuter
+       (departed := departed)` at `347, 381`),
+       `Decisions.finishConcedePriority` (`Decisions.lean:230–254`, taking
+       `(departed : Array PlayerId := #[])`, forwarding `departed` in
+       `.finishConcede` at `240–241`, and passing `(departed := departed)` to
+       `.restorePending sp popOuter (departed := departed)` at `254`),
+       `PendingReplacement.finishConcede` (`Event.lean:1872–1874`, resumed at
+       `Decisions.lean:595–597`), and `PendingReplacement.concedePlayersLoop`
+       (`Event.lean:1875–1879`, resumed at `Decisions.lean:598–600`), while
+       non-departure `.restorePending` callers (`ManaAbilities.lean:382`,
+       `Decisions.lean:1890, 3092`, `Casting.lean:1038`) keep `departed := #[]`
        (never scanning `g.players` for `leftTheGame` or `lost`);
      - keep `.chooseMode q | .chooseTargets q | .fraChoice q (.triggerModes ..)`
        calling `if g.stillInGame q then openPrompt g else
        resumePoppedIfNoPrompt (if g.pending == .none then g else g.change
        (.pending .none))` (since those stack-proposal / stack-trigger mode
        prompts are only redirected when `q` leaves); and
-     - for all other prompts reaching `| _ =>` (`Decisions.lean:763`), match
-       `departed`: when `some dep`, run `let (g, nextP) :=
-       g.redirectPendingAfterLeave dep (pending := p)` (`Leaving.lean:548–549`)
-       and if `nextP != .none` call `openPromptWith g nextP` else call
-       `resumePoppedIfNoPrompt g` (since `redirectPendingAfterLeave` returns the
-       surviving or rewritten prompt in `nextP` without clearing `g.pending`
-       when keeping/rewriting a prompt, whereas when it clears a prompt it
-       returns `nextP == .none` and may have queued a replacement or post-step
-       continuation onto `g.pending` / `g.pendingReplacement`); when `none`,
-       call `openPrompt g`.
+     - for all other prompts reaching `| _ =>` (`Decisions.lean:763`), if
+       `departed.isEmpty` call `openPrompt g`; else fold
+       `redirectPendingAfterLeave` over every `dep` in `departed` (`let (g,
+       nextP) := departed.foldl (fun (g, curP) dep => if curP == .none then (g,
+       .none) else g.redirectPendingAfterLeave dep (pending := curP)) (g, p)`,
+       `Leaving.lean:548–549`) and if `nextP != .none` call `openPromptWith g
+       nextP` else call `resumePoppedIfNoPrompt g` (since
+       `redirectPendingAfterLeave` returns the surviving or rewritten prompt in
+       `nextP` without clearing `g.pending` when keeping/rewriting a prompt,
+       whereas when it clears a prompt it returns `nextP == .none` and may have
+       queued a replacement or post-step continuation onto `g.pending` /
+       `g.pendingReplacement`).
 2. Complete `ContinuationFrame` entry and exit guards across `Triggers.beginScry`
    / `scryThenDraw`, `ResolutionHelpers.beginSurveil`, `Chapters`, `FraResolve`,
    `FrcResolve`, `EffectResolution.beginMay` / `beginSpellOr`,
-   `ModeledTriggers.beginUnlessPays`, and `Decisions.finishAndGrantPriority`
-   (§2.1, §2.5, §2.9, §3.2):
+   `ModeledTriggers.beginUnlessPays`, `Core.clearMay` / `clearSpellOr` /
+   `clearUnlessPays`, and `Decisions.finishAndGrantPriority` (§2.1, §2.5, §2.9,
+   §3.2):
    - Wrap `Triggers.beginScry` (`Triggers.lean:607–622`),
      `Triggers.scryThenDraw` (`Triggers.lean:625–632`),
      `ResolutionHelpers.beginSurveil` (`ResolutionHelpers.lean:248–262`),
@@ -10071,11 +10107,18 @@ and Layer 1–6 characteristic / cascade stack & LKI mana-value reads),
      `scryThenDraw`'s immediate draw branch after clearing `.pendingDrawAfterScry
      none`, `beginMay .attachEquipment` or `beginSpellOr` when no legal target
      exists, and `beginUnlessPays` when `n == 0`).
-   - In `Decisions.finishAndGrantPriority` (`Decisions.lean:94–110`, which ends
-     `finishScry` at `2954`, `finishSurveil` at `2979`, `attachEquipmentChoice`
-     at `3328`, `acceptMay` at `3362`, `decline`'s `.mayResolve` arm at `3823`
-     and `.mayAttachEquipment` arm at `3913`, `chooseSpellOr` at `3411`,
-     `chooseLibrarySide` at `3447`, and `flushUnlessPays` at `207`), call
+   - In `Core.clearUnlessPays` (`Core.lean:11591–11592`), reset
+     `.unlessPaysController ⟨0⟩`; in `Core.clearMay` (`Core.lean:11595–11596`),
+     reset `.mayController ⟨0⟩`; and in `Core.clearSpellOr`
+     (`Core.lean:11599–11600`), reset `.spellOrController ⟨0⟩` (matching the
+     `ContinuationFrame` field defaults at `Event.lean:2046, 2053, 2058` so
+     frames pushed for a non-`⟨0⟩` controller return to `{}` when cleared); and
+     in `Decisions.finishAndGrantPriority` (`Decisions.lean:94–110`, which ends
+     `finishScry` at `2954`, `finishSurveil` at `2979`, `choosePermanents`'s
+     `.mayAttachEquipment` arm at `3466`, `acceptMay` at `3362`, `decline`'s
+     `.mayAttachEquipment` arm at `3801` (`3791–3801`) and `.mayResolve` arm at
+     `3823`, `chooseSpellOr` at `3411`, `chooseLibrarySide` at `3435` (and via
+     `chooseSpellOr` at `3418`), and `flushUnlessPays` at `207`), call
      `g.popEmptyContinuationFrames` (`Decisions.lean:213`, moved above the
      `mutual` block at `Decisions.lean:68`) after `g.drainPendingContinuations`
      when `g.pending == .none && g.afterRandom == .none` so any frame pushed by
