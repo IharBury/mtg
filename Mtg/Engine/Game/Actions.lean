@@ -283,7 +283,8 @@ def apply (g : Game) (p : PlayerId) (a : Action) : Except String Game := do
       g.drainPendingContinuations
     else g
   let g :=
-    if g.pending == .none && g.waitingTriggers.size > beforeWaiting && !g.over then
+    if g.pending == .none && g.proposedSpell.isNone &&
+        g.waitingTriggers.size > beforeWaiting && !g.over then
       g.receivePriority g.priority
     else g
   return g.flushUnlessPays

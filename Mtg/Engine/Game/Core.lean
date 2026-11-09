@@ -9972,7 +9972,7 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
                   (w := waiting) (fs := firedSources)
               waiting := w; firedSources := fs
         | .cast (.targeted objId rawTargets ..) =>
-          if post.proposedSpell.isNone && !rawTargets.isEmpty then
+          if !post.proposedSpell.any (·.spellId == objId) && !rawTargets.isEmpty then
             match post.findObject? objId, post.stackEntry? objId with
             | some obj, some se =>
               let ctrl := se.controller

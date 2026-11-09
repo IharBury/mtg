@@ -1660,50 +1660,62 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
                 g.reverseProposedSpell (resumeContinuation := true)
           | .turnFaceUp => g
   | .resumeChooseTargetsAfterLeave p =>
-    if !g.stillInGame p then
-      if g.proposedSpell.any (·.caster == p) then
+    let ownPropNeedsReverse :=
+      g.proposedSpell.any (fun prop =>
+        prop.caster == p && (!g.stillInGame p || (g.findObject? prop.spellId).isNone))
+    let g :=
+      if ownPropNeedsReverse then
         g.reverseProposedSpell (resumeContinuation := true)
-      else g.afterTriggerTargetsChosen
+      else g
+    let pendingBlocksTargets :=
+      match g.pending with
+      | .none | .chooseTargets _ => false
+      | _ => true
+    if ownPropNeedsReverse && (g.over || pendingBlocksTargets || g.afterRandom != .none) then
+      g
     else
       match g.objectAwaitingTargets with
       | none =>
-        if g.proposedSpell.any (·.caster == p) then
-          g.reverseProposedSpell (resumeContinuation := true)
-        else if g.proposedSpell.isSome then g
-        else g.afterTriggerTargetsChosen
+        if ownPropNeedsReverse || g.proposedSpell.isSome then
+          if g.pending == .none then g else g.change (.pending .none)
+        else
+          g.afterTriggerTargetsChosen
       | some obj =>
         let isPropSpell := g.proposedSpell.any (·.spellId == obj.id)
-        if !isPropSpell &&
-            (g.stack.find? (·.objectId == obj.id)).any (·.controller != p) then
-          g.afterTriggerTargetsChosen
-        else
-          let caster :=
-            match g.proposedSpell with
-            | some prop => if prop.spellId == obj.id then prop.caster else p
-            | none => p
-          if !g.stillInGame caster then
+        let caster :=
+          match g.proposedSpell with
+          | some prop =>
+            if prop.spellId == obj.id then prop.caster
+            else (g.stack.find? (·.objectId == obj.id)).map (·.controller) |>.getD p
+          | none =>
+            (g.stack.find? (·.objectId == obj.id)).map (·.controller) |>.getD p
+        if !g.stillInGame caster then
+          if isPropSpell then
             g.reverseProposedSpell (resumeContinuation := true)
           else
-            let hasLegal := !(g.legalProposedTargets caster obj).isEmpty
-            let allowZero :=
-              match obj.triggeredAbility with
-              | some ab => ab.allowsZeroTargets || obj.abilityEffect.any (·.allowsZeroTargets)
-              | none =>
-                match g.currentSpellEffect obj with
-                | some e => e.allowsZeroTargets
-                | none => obj.abilityEffect.any (·.allowsZeroTargets)
-            let canDeclineOrPick :=
-              hasLegal || g.canSkipCurrentOptionalSlot obj || g.canFinishOptionalTargets obj || allowZero
-            if canDeclineOrPick then
-              g.change (.pending (.chooseTargets caster))
-            else if isPropSpell then
-              g.reverseProposedSpell (resumeContinuation := true)
-                (extraLog := some s!"{g.name obj} has no legal target and can't be cast")
-            else
-              let objName := g.name obj
-              let g := g.ceaseToExist obj.id (cause := some (.gameRule .triggeredAbility))
-                |>.logMsg s!"{objName}'s triggered ability has no legal target and is removed from the stack (CR 603.3d)"
-              g.afterTriggerTargetsChosen
+            (g.ceaseToExist obj.id (cause := some (.gameRule .triggeredAbility))).afterTriggerTargetsChosen
+        else
+          let hasLegal := !(g.legalProposedTargets caster obj).isEmpty
+          let allowZero :=
+            match obj.triggeredAbility with
+            | some ab => ab.allowsZeroTargets || obj.abilityEffect.any (·.allowsZeroTargets)
+            | none =>
+              match g.currentSpellEffect obj with
+              | some e => e.allowsZeroTargets
+              | none => obj.abilityEffect.any (·.allowsZeroTargets)
+          let canDeclineOrPick :=
+            hasLegal || g.canSkipCurrentOptionalSlot obj || g.canFinishOptionalTargets obj || allowZero
+          if canDeclineOrPick then
+            if g.pending == .chooseTargets caster then g
+            else g.change (.pending (.chooseTargets caster))
+          else if isPropSpell then
+            g.reverseProposedSpell (resumeContinuation := true)
+              (extraLog := some s!"{g.name obj} has no legal target and can't be cast")
+          else
+            let objName := g.name obj
+            let g := g.ceaseToExist obj.id (cause := some (.gameRule .triggeredAbility))
+              |>.logMsg s!"{objName}'s triggered ability has no legal target and is removed from the stack (CR 603.3d)"
+            g.afterTriggerTargetsChosen
   | .resumeTriggerModesAfterLeave p objectId remaining chosen =>
     if !g.stillInGame p then g.finishFraChoice
     else
@@ -2868,8 +2880,11 @@ partial def afterTriggerTargetsChosen (g : Game) : Game :=
   | some _ =>
     promptTriggerTargetsIfNeeded (g.change (.pending .none))
   | none =>
-    let prio := g.pendingPriority.getD g.activePlayer
-    receivePriority (g.change (.pending .none)) prio false
+    if g.proposedSpell.isSome then
+      if g.pending == .none then g else g.change (.pending .none)
+    else
+      let prio := g.pendingPriority.getD g.activePlayer
+      receivePriority (g.change (.pending .none)) prio false
 
 /-- Start paying the proposed activation's costs that need chosen objects,
 reversing it if they can't be paid (CR 601.2h / 733.1). -/
@@ -4009,7 +4024,7 @@ def decline (g : Game) (p : PlayerId) : Except String Game := do
         match g.stackEntry? obj.id with
         | some e => g.setStackEntryTargets obj.id e.targets e.dividedDamage
         | none => g
-      if g.proposedSpell.isSome then
+      if g.proposedSpell.any (·.spellId == obj.id) then
         return g.afterTargetsChosen
       return g.afterTriggerTargetsChosen
     else if g.canFinishOptionalTargets obj then
@@ -4023,7 +4038,7 @@ def decline (g : Game) (p : PlayerId) : Except String Game := do
         match g.stackEntry? obj.id with
         | some e => g.setStackEntryTargets obj.id e.targets e.dividedDamage
         | none => g
-      if g.proposedSpell.isSome then
+      if g.proposedSpell.any (·.spellId == obj.id) then
         return g.afterTargetsChosen
       return g.afterTriggerTargetsChosen
     else
@@ -4047,7 +4062,7 @@ def decline (g : Game) (p : PlayerId) : Except String Game := do
           let g := g.setStackEntryTargets obj.id #[]
           let g := g.logMsg
             s!"{(g.player p).name} chooses no target (CR 603.3d / 601.2c)"
-          if g.proposedSpell.isSome then
+          if g.proposedSpell.any (·.spellId == obj.id) then
             return g.afterTargetsChosen
           return g.afterTriggerTargetsChosen
         throw "That spell requires a target (CR 601.2c)"

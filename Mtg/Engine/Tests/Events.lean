@@ -24646,12 +24646,49 @@ private def mustApply33i2 (g : Game) (p : PlayerId) (a : Action) : Game :=
   let gTapCast := mustApply33i2 gTap0 p0 (.cast (gTap0.player p0).hand.back!)
   let gTargetOtherPropLive := (gTapCast.change (.pending .none)).runPostStep (.resumeChooseTargetsAfterLeave p2)
   let vanishedProp : ProposedSpell := { gTapCast.proposedSpell.get! with spellId := ⟨999999⟩ }
+  let vanishedPropP2 : ProposedSpell := { vanishedProp with caster := p2 }
   let gVanishedOnCast := gTapCast.changes #[.proposedSpell (some vanishedProp), .pending .none]
   let gTargetOwnPropGone := gVanishedOnCast.runPostStep (.resumeChooseTargetsAfterLeave p0)
   let gTargetOtherPropGone := gVanishedOnCast.runPostStep (.resumeChooseTargetsAfterLeave p2)
-  let gVanishedWithTrig := gP0TrigAwaiting.changes #[.proposedSpell (some vanishedProp), .pending .none]
-  let gTargetOtherPropGoneWithTrig := gVanishedWithTrig.runPostStep (.resumeChooseTargetsAfterLeave p2)
-  let gTargetOwnSeatWithTrig := gVanishedWithTrig.runPostStep (.resumeChooseTargetsAfterLeave p0)
+  -- Queued waiting trigger proves whether `receivePriority` ran (which stacks waiting triggers):
+  let probeWt : WaitingTrigger := {
+    controller := p0
+    source := p0Bear
+    ability := .triggered .youGainLife (Effect.gainLife 1) {}
+    event := .entering
+    checked := true
+    eventCause := some testCause
+  }
+  let gTrigWithProbe := (gP0TrigAwaiting.change (.pending .none)).change (.waitingTriggers #[probeWt])
+  let gOwnVanishedWithTrig := gTrigWithProbe.changes #[.saveProposalCheckpoint, .proposedSpell (some vanishedProp)]
+  let gOtherCasterVanishedWithTrig := gTrigWithProbe.changes #[.saveProposalCheckpoint, .proposedSpell (some vanishedPropP2)]
+  -- (1) Own vanished proposal (`caster == p0`) + `p0`'s trigger: reverses `p0`'s proposal, still prompts
+  --     `.chooseTargets p0`, and announcing `p0Bear.id` completes cleanly via `afterTriggerTargetsChosen`:
+  let gTargetOwnSeatWithTrig := gOwnVanishedWithTrig.runPostStep (.resumeChooseTargetsAfterLeave p0)
+  let gTargetOwnSeatAnnounced := mustApply33i2 gTargetOwnSeatWithTrig p0 (.target (.permanent p0Bear.id))
+  -- (2) Other player's vanished proposal (`caster != p` on both `p == p2` and `caster == p2, p == p0`) + `p0`'s trigger:
+  --     keeps the vanished proposal open, prompts `.chooseTargets p0`, and announcing `p0Bear.id` finishes the trigger
+  --     via `afterTriggerTargetsChosen` without panicking in `object!` and without calling `receivePriority`:
+  let gTargetOtherPropGoneWithTrig := gOwnVanishedWithTrig.runPostStep (.resumeChooseTargetsAfterLeave p2)
+  let gTargetOtherAnnouncedA := mustApply33i2 gTargetOtherPropGoneWithTrig p0 (.target (.permanent p0Bear.id))
+  let gTargetOtherCasterSameSeat := gOtherCasterVanishedWithTrig.runPostStep (.resumeChooseTargetsAfterLeave p0)
+  let gTargetOtherAnnouncedB := mustApply33i2 gTargetOtherCasterSameSeat p0 (.target (.permanent p0Bear.id))
+  -- (3) No-legal-target trigger (`ceaseToExist` CR 603.3d) alongside own vs other vanished `proposedSpell`:
+  let tokOnlyTrig : TriggeredAbility :=
+    .triggered .youGainLife
+      { targeting := .of (.filtered { noun := "target token", tokenOnly := true })
+        resolution := .onPermanent .tap
+        phrase := "Tap target token" } {}
+  let gNoLegalTrig0 :=
+    ((gLeftP1.putTriggeredAbilityOnStack p0 p0Bear tokOnlyTrig "triggers" (eventCause := some testCause)).change
+      (.pending .none)).change (.waitingTriggers #[probeWt])
+  let noLegalTrigId := gNoLegalTrig0.stack.back!.objectId
+  let gNoLegalOwnRemoved :=
+    (gNoLegalTrig0.changes #[.saveProposalCheckpoint, .proposedSpell (some vanishedProp)]).runPostStep
+      (.resumeChooseTargetsAfterLeave p0)
+  let gNoLegalOtherRemoved :=
+    (gNoLegalTrig0.changes #[.saveProposalCheckpoint, .proposedSpell (some vanishedPropP2)]).runPostStep
+      (.resumeChooseTargetsAfterLeave p0)
   let gModePostDeparted :=
     ((gLeftP1.change (.pushContinuationFrame {})).runPostStep (.resumeTriggerModesAfterLeave p1 p0TrigId 1 #[]))
   let gUpToPostDeparted :=
@@ -24668,8 +24705,34 @@ private def mustApply33i2 (g : Game) (p : PlayerId) (a : Action) : Game :=
     gTargetOwnPropGone.proposedSpell.isNone &&
     gTargetOtherPropGone.pending == .none &&
     gTargetOtherPropGone.proposedSpell.isSome &&
-    gTargetOtherPropGoneWithTrig.pending == .chooseTargets p0 &&
+    gTargetOwnSeatWithTrig.proposedSpell.isNone &&
     gTargetOwnSeatWithTrig.pending == .chooseTargets p0 &&
+    gTargetOwnSeatAnnounced.pending == .none &&
+    gTargetOwnSeatAnnounced.proposedSpell.isNone &&
+    (gTargetOwnSeatAnnounced.stack.find? (·.objectId == p0TrigId)).any (fun se =>
+      se.targetsAnnounced && se.targets == #[.permanent p0Bear.id]) &&
+    gTargetOwnSeatAnnounced.waitingTriggers.isEmpty &&
+    gTargetOtherPropGoneWithTrig.proposedSpell.isSome &&
+    gTargetOtherPropGoneWithTrig.pending == .chooseTargets p0 &&
+    gTargetOtherAnnouncedA.pending == .none &&
+    gTargetOtherAnnouncedA.proposedSpell.isSome &&
+    (gTargetOtherAnnouncedA.stack.find? (·.objectId == p0TrigId)).any (fun se =>
+      se.targetsAnnounced && se.targets == #[.permanent p0Bear.id]) &&
+    gTargetOtherAnnouncedA.waitingTriggers.size == 1 &&
+    gTargetOtherCasterSameSeat.proposedSpell.isSome &&
+    gTargetOtherCasterSameSeat.pending == .chooseTargets p0 &&
+    gTargetOtherAnnouncedB.pending == .none &&
+    gTargetOtherAnnouncedB.proposedSpell.isSome &&
+    (gTargetOtherAnnouncedB.stack.find? (·.objectId == p0TrigId)).any (fun se =>
+      se.targetsAnnounced && se.targets == #[.permanent p0Bear.id]) &&
+    gTargetOtherAnnouncedB.waitingTriggers.size == 1 &&
+    gNoLegalOwnRemoved.proposedSpell.isNone &&
+    (gNoLegalOwnRemoved.findObject? noLegalTrigId).isNone &&
+    gNoLegalOwnRemoved.waitingTriggers.isEmpty &&
+    gNoLegalOtherRemoved.proposedSpell.isSome &&
+    gNoLegalOtherRemoved.pending == .none &&
+    (gNoLegalOtherRemoved.findObject? noLegalTrigId).isNone &&
+    gNoLegalOtherRemoved.waitingTriggers.size == 1 &&
     gModePostDeparted.pending == .none && gModePostDeparted.continuations.isEmpty &&
     gUpToPostDeparted.pending == .none && gUpToPostDeparted.continuations.isEmpty &&
     gHkPostDeparted.pending == .none && gHkPostDeparted.continuations.isEmpty
@@ -24823,7 +24886,10 @@ private def mustApply33i2 (g : Game) (p : PlayerId) (a : Action) : Game :=
   mustHold33i2 "2.replay"
     (replayOk33i2 #[gLeftP1, gP0TrigAwaiting, gTargetPostDeparted, gTargetPostWrongSeat,
       gTargetOtherPropLive, gTargetOwnPropGone, gTargetOtherPropGone,
-      gTargetOtherPropGoneWithTrig, gTargetOwnSeatWithTrig,
+      gTargetOwnSeatWithTrig, gTargetOwnSeatAnnounced,
+      gTargetOtherPropGoneWithTrig, gTargetOtherAnnouncedA,
+      gTargetOtherCasterSameSeat, gTargetOtherAnnouncedB,
+      gNoLegalOwnRemoved, gNoLegalOtherRemoved,
       gModePostDeparted, gUpToPostDeparted, gHkPostDeparted,
       gModal0, gModalCast, gModalPicked0, gModalAfterLeave,
       gTrigModes0, gTrigModesStack, gTrigModesPicked0, gTrigModesAfterLeave, gTrigModesFinalize0,
