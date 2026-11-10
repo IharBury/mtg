@@ -10665,45 +10665,52 @@ object-referencing `FraChoice` revalidation & `beginMayDiscardDraw` /
 1. Complete game-over active-resolution teardown, ward `outerCont?` continuation
    ordering, `Core.clearMay`, and `Leaving.redirectPendingAfterLeave`
    `ContinuationFrame` scratch-field cleanup (§2.1, §2.5, §2.9, §3.2, §3.8, CR
-   104.1 / 104.3a / 608.2b,n / 702.21a / 800.4a,f):
-   - In `Entering.completeActiveResolutions` (`Entering.lean:327–370`):
+   104.1 / 104.3a / 608.2b,n / 702.21a / 800.4a,f / 810.8a):
+   - In `Entering.completeActiveResolutions` (`Entering.lean:327–388`):
      - When `g.over` is true and `g.continuations.back?` reaches `none` (`333`),
        also clear any remaining `Game`-level transient prompt, proposal, or
        continuation state via journaled `EngineChange`s (`if g.pending != .none`
        → `.pending .none`, `if g.afterRandom != .none` → `.afterRandom .none`,
        `if g.proposedSpell.isSome` → `.proposedSpell none,
-       .clearProposalCheckpoint`, `if g.pendingReplacement.isSome` →
-       `.pendingReplacement none`, and popping any remaining entries of
-       `g.outerPendingReplacements` via `.popOuterPendingReplacement`), so any
-       caller invoking `g.completeActiveResolutions` on a finished game leaves
-       no open `Pending`, `afterRandom`, `proposedSpell`, or queued
-       `PendingReplacement` alongside tearing down active resolving stack
-       entries and `ContinuationFrame`s (`335–355`, CR 104.1 / 104.3a).
+       .clearProposalCheckpoint`, `while g.proposalCheckpoint.isSome` →
+       `.clearProposalCheckpoint` to drain nested `outerProposalCheckpoints`,
+       `if g.pendingReplacement.isSome` → `.pendingReplacement none`, and
+       popping any remaining entries of `g.outerPendingReplacements` via
+       `.popOuterPendingReplacement`), so any caller invoking
+       `g.completeActiveResolutions` on a finished game leaves no open
+       `Pending`, `afterRandom`, `proposedSpell`, nested `proposalCheckpoint`,
+       or queued `PendingReplacement` alongside tearing down active resolving
+       stack entries and `ContinuationFrame`s (`335–350`, CR 104.1 / 104.3a).
      - Call `completeActiveResolutions` on the remaining `g.over` exit paths:
-       - `PriorityActions.concede` (`PriorityActions.lean:254–255`): replace `|
+       - `PriorityActions.concede` (`PriorityActions.lean:244–276`): record
+         `p`'s concession (`246`) and simultaneous team concession across
+         `mates := g.players.filter (fun m => m.id != p && g.stillInGame m.id &&
+         g.areTeammates p m.id) |>.map (·.id)` (`244–253`, CR 810.8a), replace `|
          some finished => finished` with `| some finished =>
-         finished.completeActiveResolutions` so a 2-player or last-opponent
-         concession mid-resolution or mid-proposal tears down active resolving
-         stack entries, `ContinuationFrame`s, and open prompts/proposals (CR
-         104.1 / 104.3a / 810.8a);
-       - `Entering.receivePriority` (`Entering.lean:382–386, 395, 416, 437`):
+         finished.completeActiveResolutions` (`255`) so a 2-player or
+         last-opponent concession mid-resolution or mid-proposal tears down
+         active resolving stack entries, `ContinuationFrame`s, and open
+         prompts/proposals, and pass `#[p] ++ mates` into `concedePlayersLoop`
+         (`274`, CR 104.1 / 104.3a / 810.8a);
+       - `Entering.receivePriority` (`Entering.lean:400–402, 412, 433, 454`):
          change `if g.pending == .none && g.afterRandom == .none then
-         g.completeActiveResolutions` (`383–384`) to `if g.over || (g.pending ==
-         .none && g.afterRandom == .none) then g.completeActiveResolutions`, and
-         replace `if g.over then g` after `checkSBA` (`395`) and after
-         `putTriggerBatch` (`416, 437`) with `if g.over then
+         g.completeActiveResolutions` to `if g.over || (g.pending == .none &&
+         g.afterRandom == .none) then g.completeActiveResolutions` (`400–401`),
+         and replace `if g.over then g` after `checkSBA` (`412`) and after
+         `putTriggerBatch` (`433, 454`) with `if g.over then
          g.completeActiveResolutions`;
-       - `Decisions.finishConcedePriority` (`Decisions.lean:244`),
-         `Decisions.concedePlayersLoop` (`Decisions.lean:308–309, 315–316,
-         346–347`), and `Decisions.finishHostRandom` (`Decisions.lean:2821–2828`):
-         when `g.over` is true, return `g.completeActiveResolutions` rather than
-         `g`; and
-       - `Decisions.chooseReplacement` (`Decisions.lean:4413–4424`),
-         `Decisions.drainPendingContinuations` (`Decisions.lean:97, 106`), and
+       - `Decisions.finishConcedePriority` (`Decisions.lean:292`),
+         `Decisions.concedePlayersLoop` (`Decisions.lean:356–357, 363–364,
+         394–395`), and `Decisions.finishHostRandom`
+         (`Decisions.lean:3032–3040`, both at entry `3033` and after
+         `finishAndGrantPriority g` at `3037`): when `g.over` is true, return
+         `g.completeActiveResolutions` rather than `g`; and
+       - `Decisions.chooseReplacement` (`Decisions.lean:4640–4650`),
+         `Decisions.drainPendingContinuations` (`Decisions.lean:142, 151`), and
          `Decisions.resumePendingReplacement` `.restorePending`
-         (`Decisions.lean:646–657`): add a helper
+         (`Decisions.lean:696–711`): add a helper
          `popEmptyTopContinuationFrames (g : Game) : Game` next to
-         `popEmptyContinuationFrames` (`Decisions.lean:72–84`) that loops `while
+         `popEmptyContinuationFrames` (`Decisions.lean:72–92`) that loops `while
          g.continuations.back? == some {} do g := g.change
          .popContinuationFrame` (checking only `g.continuations.back? == some
          {}` without `popEmptyContinuationFrames`'s `pending` /
@@ -10711,60 +10718,61 @@ object-referencing `FraChoice` revalidation & `beginMayDiscardDraw` /
          `triggerSequenceRest` / `mayThenResume` guards), and call it *before*
          running the resumed continuation — right after `g.changes
          #[.replacementOrder order, .pending .none, .pendingReplacement none]`
-         in `chooseReplacement` (`4414`), right after `g.change
+         in `chooseReplacement` (`4640`), right after `g.change
          (.pendingReplacement none)` and `g.change .popOuterPendingReplacement`
-         in `drainPendingContinuations` (`97, 106`), and right after `let g :=
-         if popped?.isSome then g.change .popOuterPendingReplacement else g` in
-         `.restorePending` (`648`, before `openPrompt` / `openPromptWith` sets
-         `g.pending`) — so any empty `ContinuationFrame {}` pushed by
-         `Core.promptChooseReplacement` (`Core.lean:11181–11187`) is popped
-         before the resumed continuation opens or restores a non-`.none`
-         `Pending`; ensure `.restorePending`'s `openPromptWith` (`649–657`)
-         pushes `{}` when `g.continuations.isEmpty` and `p'` is `.fraChoice ..`
-         or `.chooseReplacement ..` (matching `Core.beginFraChoice` at
-         `Core.lean:11802–11805` and `Core.promptChooseReplacement` at
-         `Core.lean:11183`); and at `chooseReplacement` `4421–4423` replace `if
+         in `drainPendingContinuations` (`142, 151`), and right after `let g :=
+         if popped?.isSome then g.change .popOuterPendingReplacement else g`
+         (`696`) in `.restorePending` (`697`, before `openPrompt` /
+         `openPromptWith` sets `g.pending` at `708`) — so any empty
+         `ContinuationFrame {}` pushed by `Core.promptChooseReplacement`
+         (`Core.lean:11195–11201`) is popped before the resumed continuation
+         opens or restores a non-`.none` `Pending`; ensure `.restorePending`'s
+         `openPromptWith` (`698–711`, at `704–707`) pushes `{}` when
+         `g.continuations.isEmpty` and `p'` is `.fraChoice ..` or
+         `.chooseReplacement ..` (matching `Core.beginFraChoice` at
+         `Core.lean:11824–11827` and `Core.promptChooseReplacement` at
+         `Core.lean:11197`); and at `chooseReplacement` `4647–4649` replace `if
          g.pending == .none && g.afterRandom == .none then
          g.completeActiveResolutions else g` with `if g.over || (g.pending ==
          .none && g.afterRandom == .none) then g.completeActiveResolutions else
          g`.
-   - In `Decisions.finishWardAndDrain` (`Decisions.lean:197–204`),
+   - In `Decisions.finishWardAndDrain` (`Decisions.lean:242–252`),
      `SacrificeDiscard.sacrificeForActivation`'s `.payWard` arms
-     (`SacrificeDiscard.lean:423–428, 440–445`, drained at `Actions.lean:80`),
-     and `Casting.afterWardResolved` (`Casting.lean:672–689`):
+     (`SacrificeDiscard.lean:423–431, 440–448`, drained at `Actions.lean:80–85`),
+     and `Casting.afterWardResolved` (`Casting.lean:693–710`):
      - Re-attach `outerCont?` (`match outerCont? with | some outer =>
        g.chainPendingReplacement outer | none => g`) *before* calling
-       `g.afterWardResolved` in both `finishWardAndDrain` (`Decisions.lean:199–203`)
-       and `sacrificeForActivation` (`SacrificeDiscard.lean:423–427, 440–444`)
-       so `afterWardResolved` (`Casting.lean:677–679`) chains `.afterWardResolved`
-       behind `outer` rather than running `completeActiveResolutions` +
-       `receivePriority` prematurely before `outer` executes;
-     - in `Casting.afterWardResolved` (`Casting.lean:685`), guard `if g.over ||
+       `g.afterWardResolved` in both `finishWardAndDrain`
+       (`Decisions.lean:244–248`) and `sacrificeForActivation`
+       (`SacrificeDiscard.lean:423–427, 440–444`) so `afterWardResolved`
+       (`Casting.lean:698–700`) chains `.afterWardResolved` behind `outer`
+       rather than running `completeActiveResolutions` + `receivePriority`
+       prematurely before `outer` executes;
+     - in `Casting.afterWardResolved` (`Casting.lean:706`), guard `if g.over ||
        g.pending != .none || g.afterRandom != .none then g` before
        `g.triggerNeedingTargets.isSome` / `g.receivePriority prio`; and
      - after `g.drainPendingContinuations` in `finishWardAndDrain`
-       (`Decisions.lean:204`) and `Actions.lean:80`, tear down via `if g.over
-       then g.completeActiveResolutions else if g.pending == .none &&
+       (`Decisions.lean:250–252`) and `Actions.lean:81–85`, tear down via `if
+       g.over then g.completeActiveResolutions else if g.pending == .none &&
        g.afterRandom == .none then g.popEmptyContinuationFrames else g`.
-   - In `Core.clearMay` (`Core.lean:11601–11602`), `EffectResolution.beginMay`
+   - In `Core.clearMay` (`Core.lean:11615–11623`), `EffectResolution.beginMay`
      (`EffectResolution.lean:1197–1202`), and `Leaving.redirectPendingAfterLeave`
-     (`Leaving.lean:1282–1286, 1468–1473, 1597–1598`):
-     - Extend `Core.clearMay` (`Core.lean:11601–11602`) to reset
+     (`Leaving.lean:1338–1341, 1524–1560, 1701–1719`):
+     - Extend `Core.clearMay` (`Core.lean:11615–11623`) to reset
        `.mayOnAccept none, .mayOnDecline none, .mayContext none` alongside
        `.mayController ⟨0⟩, .mayEffect none, .mayTargets #[], .maySource none`
-       (safe for `Decisions.lean:3455, 3926`, which apply
+       (safe for `Decisions.lean:3694, 4163`, which apply
        `.setTriggerSequenceRestFromMay` consuming `f.mayContext` at
-       `Core.lean:2229–2234` before `.clearMay`, and simplifying
-       `Decisions.lean:3929`), and call `g.clearMay` before populating
-       `.mayEffect` in `EffectResolution.beginMay`'s `| r =>` arm
+       `Core.lean:2231–2236` before `.clearMay`), and call `g.clearMay` before
+       populating `.mayEffect` in `EffectResolution.beginMay`'s `| r =>` arm
        (`EffectResolution.lean:1197–1202`, matching `| .attachEquipment =>` at
        `1191`);
      - declare `@[extern "mtg_game_resume_trigger_sequence"] private opaque
-       resumeTriggerSequence (g : Game) : Game` in `Leaving.lean:542–565` paired
+       resumeTriggerSequence (g : Game) : Game` in `Leaving.lean:578–579` paired
        with `@[export mtg_game_resume_trigger_sequence]` on
        `TriggeredAbilities.resumeTriggerSequence`
        (`TriggeredAbilities.lean:5720`), and in `Leaving.redirectPendingAfterLeave`
-       `| .mayResolve q =>` (`Leaving.lean:1597–1598`): when `q == p`, if `let
+       `| .mayResolve q =>` (`Leaving.lean:1701–1719`): when `q == p`, if `let
        some follow := g.mayOnDecline` and `g.mayContext.isSome` (from
        `TriggeredAbilities.lean:5658–5661`), resume the `.ifYouDont` decline
        branch inside `withOuterContStashed` via `let g := g.withOuterContStashed
@@ -10772,47 +10780,47 @@ object-referencing `FraChoice` revalidation & `beginMayDiscardDraw` /
        [follow]]).clearMay).logMsg s!"{(g.player p).name} declines (CR
        800.4f)").resumeTriggerSequence` and return `(g, g.pending)` outside the
        `withOuterContStashed` lambda (matching `Decisions.decline` at
-       `Decisions.lean:3920–3927` and `.widowMayCounter` at
-       `Leaving.lean:1395–1397` so `playerLeavesGameCore` at
-       `Leaving.lean:2067–2094` preserves any prompt opened by the resumed step,
+       `Decisions.lean:4159–4166` and `.widowMayCounter` at
+       `Leaving.lean:1450–1452` so `playerLeavesGameCore` at
+       `Leaving.lean:2239–2266` preserves any prompt opened by the resumed step,
        CR 800.4f), else return `((clearPending g).clearMay, .none)`; and when `q
        != p`, if `let some me := g.mayEffect` and `!g.mayTargets.isEmpty &&
        g.sequenceAllTargetsIllegal g.mayController me g.mayTargets g.maySource`,
        cancel via `(((clearPending g).clearMay).logMsg "The target is no longer
        legal", .none)` (matching `.chooseLibraryPlacement` at
-       `Leaving.lean:1604–1606`, CR 608.2b), else return `(g, pending)`; and
+       `Leaving.lean:1725–1727`, CR 608.2b), else return `(g, pending)`; and
      - in `Leaving.redirectPendingAfterLeave` `| .fraChoice q choice =>`:
-       - in `.chooseCards ids max purpose` (`Leaving.lean:1282–1286`), include
+       - in `.chooseCards ids max purpose` (`Leaving.lean:1338–1341`), include
          `.stashedCause none` in the `q == p` clear;
-       - add an `.orderLibraryBottom ids` arm (`EffectResolution.lean:2310–2315`,
-         `FraChoices.lean:947, 952`): when `q == p`, clear `.chooseModesRest
-         none, .stashedCause none` + `clearProp` and `declineMayThenCore` /
-         `clearPending`; when `q != p`, filter `let liveIds := ids.filter (fun
-         id => (g.findObject? id).any (·.zone == .library q))`; if
-         `liveIds.size ≤ 1`, inside `withOuterContStashed` read `let cause :=
-         g.stashedCause.orElse (fun _ => liveIds[0]?.bind g.lastMoveCauseOf?)`,
-         clear `.chooseModesRest none, .stashedCause none` +
-         `declineMayThenCore` / `clearPending`, and when `!liveIds.isEmpty` run
-         `g.moveIdsInOrder liveIds (.library q) (cause := cause) (log :=
-         s!"{(g.player q).name} puts the rest on the bottom of their
-         library")`, returning `(g, g.pending)`; else if `liveIds != ids`,
-         return `(g, .fraChoice q (.orderLibraryBottom liveIds))`; else `(g,
-         pending)`; and
+       - add an `.orderLibraryBottom ids` arm (`Leaving.lean:1523–1542`,
+         `EffectResolution.lean:2310–2315`, `FraChoices.lean:947, 952`): when `q
+         == p`, clear `.chooseModesRest none, .stashedCause none` + `clearProp`
+         and `declineMayThenCore` / `clearPending`; when `q != p`, filter `let
+         liveIds := ids.filter (fun id => (g.findObject? id).any (·.zone ==
+         .library q))`; if `liveIds.size ≤ 1`, inside `withOuterContStashed`
+         read `let cause := g.stashedCause.orElse (fun _ => liveIds[0]?.bind
+         g.lastMoveCauseOf?)`, clear `.chooseModesRest none, .stashedCause none`
+         + `declineMayThenCore` / `clearPending`, and when `!liveIds.isEmpty`
+         run `g.moveIdsInOrder liveIds (.library q) (cause := cause) (log :=
+         s!"{(g.player q).name} puts the rest on the bottom of their library")`,
+         returning `(g, g.pending)`; else if `liveIds != ids`, return `(g,
+         .fraChoice q (.orderLibraryBottom liveIds))`; else `(g, pending)`; and
        - add a `.searchLibrary eligible count dest after kind |
          .maySearchLibrary eligible count dest after kind` arm
-         (`Pending.lean:414–419`, `LibrarySearch.applyWaitingPlusOne` at
-         `LibrarySearch.lean:238–242`, `LibrarySearch.shuffleSearch` at
-         `LibrarySearch.lean:232–235`, `EffectResolution.lean:531–539`): when
-         `q == p`, capture `let waitingPlusOne := g.plusOneAfterSearch`, clear
-         `#[.chooseModesRest none, .untapSearchedIfLands none,
-         .plusOneAfterSearch none] ++ clearProp` + `declineMayThenCore` /
-         `clearPending`, and if `waitingPlusOne` is `some (cid, ctrl, srcId)`
-         with `ctrl != p && g.stillInGame ctrl`, chain `.finishPostStep
-         (.applyPlusOneAfterSearch cid ctrl srcId)` (via a new
-         `PostStep.applyPlusOneAfterSearch (id : ObjectId) (controller :
-         PlayerId) (sourceId : Option ObjectId)` constructor in `Event.lean`
-         handled in `Decisions.runPostStep` by `g.addPlusOneIfStillCreature id
-         controller sourceId`, `Pumps.lean:274`, matching
+         (`Leaving.lean:1543–1572`, `Pending.lean:422–427`,
+         `LibrarySearch.applyWaitingPlusOne` at `LibrarySearch.lean:238–242`,
+         `LibrarySearch.shuffleSearch` at `LibrarySearch.lean:232–235`,
+         `EffectResolution.lean:531–539`): when `q == p`, capture `let
+         waitingPlusOne := g.plusOneAfterSearch`, clear `#[.chooseModesRest
+         none, .untapSearchedIfLands none, .plusOneAfterSearch none] ++
+         clearProp` + `declineMayThenCore` / `clearPending`, and if
+         `waitingPlusOne` is `some (cid, ctrl, srcId)` with `ctrl != p &&
+         g.stillInGame ctrl`, chain `.finishPostStep (.applyPlusOneAfterSearch
+         cid ctrl srcId)` (via a new `PostStep.applyPlusOneAfterSearch (id :
+         ObjectId) (controller : PlayerId) (sourceId : Option ObjectId)`
+         constructor in `Event.lean:1325` handled in `Decisions.runPostStep` at
+         `Decisions.lean:1810–1811` by `g.addPlusOneIfStillCreature id controller
+         sourceId`, `Pumps.lean:274`, matching
          `LibrarySearch.applyWaitingPlusOne` at `LibrarySearch.lean:238–242`)
          inside `withOuterContStashed` so a surviving spell controller still
          places their post-search `+1/+1` counter when target player `p` leaves
@@ -10826,37 +10834,97 @@ object-referencing `FraChoice` revalidation & `beginMayDiscardDraw` /
          kind | _ => .maySearchLibrary liveEligible count dest after kind) else
          pending)`.
 2. Revalidate already-announced modes `chosen` and guard departed prompt seats
-   in `Decisions.runPostStep`, and complete `Decisions.resumePendingReplacement`
-   `.restorePending` for proposal-cost prompts, 2HG attacker
-   `.assignCombatDamage`, and deferred `unlessPaysDue` flushing (§2.4, §2.5,
-   §2.9, §3.1, §3.8, CR 601.2b–c / 603.3c–d / 700.2b / 800.4a,f,h,j):
-   - In `Decisions.runPostStep` (`Decisions.lean:1519–1636`):
-     - Guard `!g.stillInGame p` at entry of the five `.resume*AfterLeave` post
-       steps so a second departure during a CR 616.1 pause before the post-step
-       executes never opens a prompt for departed `p` or mutates another
-       player's stack object:
-       - `.resumeChooseModeAfterLeave p` (`1519–1546`): if `!g.stillInGame p`,
+   in `Decisions.runPostStep`, preserve standalone non-proposal trigger target
+   announcements across proposal reversal, and complete
+   `Decisions.resumePendingReplacement` `.restorePending` for proposal-cost
+   prompts, 2HG attacker `.assignCombatDamage`, and deferred `unlessPaysDue`
+   flushing (§2.4, §2.5, §2.8, §2.9, §3.1, §3.8, CR 601.2b–c / 603.3c–d /
+   700.2b / 733.1 / 800.4a,f,h,j):
+   - In `Decisions.runPostStep` (`Decisions.lean:1619–1817`),
+     `Decisions.afterTriggerTargetsChosen` (`Decisions.lean:2886–2914`),
+     `Casting.reverseProposedSpellCore?` (`Casting.lean:634–689`),
+     `Decisions.reverseProposedSpell?` / `reverseProposedSpell`
+     (`Decisions.lean:2471–2486`), `CastSpell.announceTargetChoices`
+     (`CastSpell.lean:461, 490`), `Decisions.decline` `.chooseTargets`
+     (`Decisions.lean:4053, 4067, 4091`), `Core.matchTriggers`
+     (`Core.lean:9975`), and `Core.reverseToProposalCheckpointCore?`
+     (`Core.lean:10732–10746`):
+     - Scope `isPropSpell := g.proposedSpell.any (·.spellId == obj.id)` in
+       `CastSpell.announceTargetChoices` (`CastSpell.lean:461, 490`),
+       `Decisions.decline` `.chooseTargets` (`Decisions.lean:4053, 4067, 4091`),
+       `Core.matchTriggers` (`Core.lean:9975`), and
+       `Decisions.runPostStep` `.resumeChooseTargetsAfterLeave`
+       (`Decisions.lean:1688–1722`) so a triggered ability whose targets are
+       being announced while an outer `proposedSpell` is open routes through the
+       trigger target pipeline rather than `afterTargetsChosen` /
+       `reverseProposedSpell`;
+     - in `Core.reverseToProposalCheckpointCore?` (`Core.lean:10732–10746`), mark
+       standalone (`act?.isNone`) non-proposal (`!g.proposedSpell.any (·.spellId
+       == oid)`) `.ceasedToExist` (`cause == .gameRule .triggeredAbility`),
+       `.cast (.targeted oid ..)`, `.cast (.announced oid ..)`, and `.engine _
+       (.stackEntry oid _)` events as irreversible (`markIrrev`) so reversing a
+       spell/ability proposal does not undo trigger target announcements or CR
+       603.3d stack removals completed during the proposal;
+     - in `Casting.reverseProposedSpellCore?` (`Casting.lean:634–689`) and
+       `Decisions.reverseProposedSpell?` / `reverseProposedSpell`
+       (`Decisions.lean:2471–2486`), add `(alwaysGrantPriority : Bool := false)`,
+       compute `prio := g.priorityInstead prop.caster` (`656`), skip
+       `runPostCastCleanup` and return `(g.receivePriority prio, false)` when
+       `g.over` (`655, 660–661`), stash `pendingPriority (some prio)` when
+       `alwaysGrantPriority && !g.over && g.triggerNeedingTargets.isSome` else
+       call `g.receivePriority prio` (`671–675`), and when `!alwaysGrantPriority`
+       call `(stashPendingPrio g).promptTriggerTargetsIfNeeded` if `!g.over &&
+       g.pending == .none && g.continuations.isEmpty &&
+       g.triggerNeedingTargets.isSome` (`677–686`); and in
+       `Decisions.afterTriggerTargetsChosen` (`Decisions.lean:2886–2914`), tear
+       down via `completeActiveResolutions` when `g.over` (`2887–2894`, after
+       reversing any vanished/departed-caster `proposedSpell`) and on `| none =>`
+       reverse any vanished/departed-caster `proposedSpell` with
+       `(resumeContinuation := true) (alwaysGrantPriority := true)` (`2900–2908`)
+       or clear `.pending .none` when a live `proposedSpell` is open
+       (`2909–2910`);
+     - guard `!g.stillInGame p` at entry of the five `.resume*AfterLeave` post
+       steps (`Decisions.lean:1619–1809`) so a second departure during a CR
+       616.1 pause before the post-step executes never opens a prompt for
+       departed `p` or mutates another player's stack object:
+       - `.resumeChooseModeAfterLeave p` (`1619–1661`): if `!g.stillInGame p`,
          `if g.proposedSpell.any (·.caster == p) then g.reverseProposedSpell
          (resumeContinuation := true) else g` (and when `g.stillInGame p`,
          require `prop.caster == p` on `| some prop =>`);
-       - `.resumeChooseTargetsAfterLeave p` (`1547–1572`): if `!g.stillInGame
-         p`, `if g.proposedSpell.any (·.caster == p) then g.reverseProposedSpell
-         (resumeContinuation := true) else g.afterTriggerTargetsChosen` (and on
-         `| some obj =>`, if `g.proposedSpell.isNone && (g.stack.find?
-         (·.objectId == obj.id)).any (·.controller != p)`, call
-         `g.afterTriggerTargetsChosen` rather than prompting `p` for or removing
-         another player's trigger); and
-       - `.resumeTriggerModesAfterLeave p ..` (`1573–1588`),
-         `.resumeUpToTriggerModesAfterLeave p ..` (`1589–1616`), and
-         `.resumeHawkeyeModesAfterLeave p ..` (`1617–1636`): if `!g.stillInGame
+       - `.resumeChooseTargetsAfterLeave p` (`1662–1722`): up front, compute
+         `ownPropNeedsReverse := g.proposedSpell.any (fun prop => prop.caster ==
+         p && (!g.stillInGame p || (g.findObject? prop.spellId).isNone))` and
+         when true reverse via `(if g.pending == .none then g else g.change
+         (.pending .none)).reverseProposedSpell (resumeContinuation := true)
+         (alwaysGrantPriority := true)` (`1663–1670`); if `g.over`, return `if
+         ownPropNeedsReverse then g else g.afterTriggerTargetsChosen`
+         (`1675–1677`); else if `ownPropNeedsReverse && (pendingBlocksTargets ||
+         g.afterRandom != .none)`, return `g` (`1678–1679`); else match
+         `g.objectAwaitingTargets` (`1681–1722`): on `none`, return `if
+         ownPropNeedsReverse then g else g.afterTriggerTargetsChosen`
+         (`1682–1686`); and on `some obj`, bind `isPropSpell :=
+         g.proposedSpell.any (·.spellId == obj.id)` and `caster` (from
+         `prop.caster` when `isPropSpell`, else `(g.stack.find? (·.objectId ==
+         obj.id)).map (·.controller) |>.getD p`, `1688–1695`), and when
+         `!g.stillInGame caster` (`1696–1700`) reverse `g.reverseProposedSpell
+         (resumeContinuation := true)` if `isPropSpell` else remove `obj.id`
+         (`(g.ceaseToExist obj.id (cause := some (.gameRule
+         .triggeredAbility))).afterTriggerTargetsChosen`), whereas when
+         `g.stillInGame caster` (`1701–1722`) re-open `.chooseTargets caster` if
+         `canDeclineOrPick` (`1712–1714`) else reverse (if `isPropSpell`,
+         `1715–1717`) or remove `obj.id` under CR 603.3d and call
+         `g.afterTriggerTargetsChosen` (`1718–1722`); and
+       - `.resumeTriggerModesAfterLeave p ..` (`1723–1752`),
+         `.resumeUpToTriggerModesAfterLeave p ..` (`1753–1785`), and
+         `.resumeHawkeyeModesAfterLeave p ..` (`1786–1809`): if `!g.stillInGame
          p`, call `g.finishFraChoice`.
      - Revalidate already-selected modes in `chosen` during mode announcement
        when another player leaves the game (CR 601.2b / 603.3c / 700.2b):
-       - in `.resumeChooseModeAfterLeave p`'s `.spell` arm (`1532–1545`), add a
-         `StackEntryChange.clearChosenModes` constructor (`Event.lean:2252–2256`,
-         handled in `Core.applyChange` at `Core.lean:2118–2133` as `|
+       - in `.resumeChooseModeAfterLeave p`'s `.spell` arm (`1636–1657`), add a
+         `StackEntryChange.clearChosenModes` constructor (`Event.lean:2259`,
+         handled in `Core.applyChange` at `Core.lean:2132` as `|
          .clearChosenModes => { e with chosenMode := none, extraModes := #[] }`
-         since `Core.applyCastEvent` `.announced` at `Core.lean:5185–5193`
+         since `Core.applyCastEvent` `.announced` at `Core.lean:5187–5195`
          ignores `modes := #[]` so `x`/`costs` announcements do not wipe
          `chosenModesOf` at `SpellTargets.lean:45–48`), filter `let validChosen
          := chosen.filter (fun i => effModes[i]?.any (fun m =>
@@ -10873,10 +10941,9 @@ object-referencing `FraChoice` revalidation & `beginMayDiscardDraw` /
          (.pending (.chooseMode p)) else g.reverseProposedSpell
          (resumeContinuation := true)` (bounding the reopen check by
          `g.maxModesFor p face` as in `CastSpell.chooseMode` at
-         `CastSpell.lean:267–279` and preserving the `Decisions.lean:1540–1545`
-         branches);
+         `CastSpell.lean:267–279`);
        - in `.resumeTriggerModesAfterLeave p objectId remaining chosen`
-         (`1578–1587`), filter `let validChosen := chosen.filter (fun i =>
+         (`1723–1752`), filter `let validChosen := chosen.filter (fun i =>
          tModes[i]?.any (g.triggerModeChoosable p obj))` and `let needed :=
          remaining + (chosen.size - validChosen.size)`, compute `choosableLeft`
          against `!validChosen.contains i`, and if `needed == 0`, finalize
@@ -10892,64 +10959,66 @@ object-referencing `FraChoice` revalidation & `beginMayDiscardDraw` /
          CR 603.3c stack removal `(g.ceaseToExist obj.id (cause := some
          (.gameRule .noLegalMode)) |>.logMsg s!"{objName}'s triggered ability
          has too few legal modes and is removed from the stack (CR
-         603.3c)").finishFraChoice` (`Decisions.lean:1582–1585`); else re-open
+         603.3c)").finishFraChoice` (`Decisions.lean:1747–1750`); else re-open
          `g.change (.pending (.fraChoice p (.triggerModes obj.id needed
          validChosen)))`;
        - in `.resumeUpToTriggerModesAfterLeave p objectId remaining chosen`
-         (`1594–1615`), filter `let validChosen := chosen.filter (fun i =>
+         (`1753–1785`), filter `let validChosen := chosen.filter (fun i =>
          modes[i]?.any (g.triggerModeChoosable p obj))` and `let remaining :=
          remaining + (chosen.size - validChosen.size)`, compute
          `anyChoosableLeft` against `!validChosen.contains i`, re-open
          `.fraChoice p (.upToTriggerModes obj.id remaining validChosen)` when
          `remaining > 0 && anyChoosableLeft`, and otherwise finalize using
          `validChosen` (where `validChosen.isEmpty` records `modes := #[]` and
-         installs the no-op effect at `1600–1606`, matching the minimum-`0`
+         installs the no-op effect at `1769–1775`, matching the minimum-`0`
          "choose up to" contract at `Triggers.lean:218–224` and
          `FraChoices.lean:522–531`); and
-       - in `.resumeHawkeyeModesAfterLeave p objectId left chosen` (`1622–1635`),
+       - in `.resumeHawkeyeModesAfterLeave p objectId left chosen` (`1786–1809`),
          filter `let validChosen := chosen.filter (fun i =>
          hawkeyeModeEffects[i]?.any (g.triggerModeChoosable p obj))`, compute
          `anyMoreChoosable` against `!validChosen.contains i`, re-open
          `.fraChoice p (.hawkeyeModes left validChosen (some obj.id))` when
          `validChosen.size < left && anyMoreChoosable`, and otherwise finalize
          using `validChosen` (where `validChosen.isEmpty` installs
-         `Resolution.hawkeyeArrows []` at `1629–1635`, matching the minimum-`0`
+         `Resolution.hawkeyeArrows []` at `1802–1808`, matching the minimum-`0`
          "choose up to" contract at `Triggers.lean:201–207` and
          `FraChoices.lean:1010–1020`).
    - In `Decisions.resumePendingReplacement` `.restorePending`
-     (`Decisions.lean:681–758, 806–812`):
+     (`Decisions.lean:735–797, 830–912`):
      - Extract a shared helper `proposalCostPromptStillPayable (g : Game)
-       (caster : PlayerId) (p : Pending) : Bool` requiring `g.stillInGame
-       caster && g.proposedSpell.any (·.caster == caster)` together with the
-       existing live candidate checks for `.fraChoice caster (.costPicks sid
-       picks _)`, `.fraChoice caster (.crew _ vehicleId n)`, `.fraChoice caster
-       (.zemoBoastExile _ sourceId)`, `.chooseTeamworkCreatures caster need`,
-       `.sacrificePermanent caster excludeId`, and `.discardForAdditionalCost
-       caster`, and use it in `Decisions.lean:681–718` so `.restorePending`
-       never re-opens a proposal-cost prompt for a departed `caster` or after
-       `g.proposedSpell` was cleared;
-     - in `| .assignCombatDamage q forAttackers =>` (`Decisions.lean:744–748`),
+       (caster : PlayerId) (p : Pending) : Bool` (`Decisions.lean:97–129`)
+       requiring `g.stillInGame caster && g.proposedSpell.any (·.caster ==
+       caster)` together with the existing live candidate checks for `.fraChoice
+       caster (.costPicks sid picks _)`, `.fraChoice caster (.crew _ vehicleId
+       n)`, `.fraChoice caster (.zemoBoastExile _ sourceId)`,
+       `.chooseTeamworkCreatures caster need`, `.sacrificePermanent caster
+       excludeId`, and `.discardForAdditionalCost caster`, and use it in
+       `Decisions.lean:735–742` so `.restorePending` never re-opens a
+       proposal-cost prompt for a departed `caster` or after `g.proposedSpell`
+       was cleared;
+     - in `| .assignCombatDamage q forAttackers =>` (`Decisions.lean:752–797`),
        when `forAttackers` is true and `!(g.stillInGame q && playerStillNeeds
-       q)`, distinguish departed `q` from living `q` to match
-       `Leaving.redirectPendingAfterLeave` (`Leaving.lean:772–781` vs
-       `792–793`): when `!g.stillInGame q` (`772–781`), look up a living 2HG
+       q)` (`770–787`), distinguish departed `q` from living `q` to match
+       `Leaving.redirectPendingAfterLeave` (`Leaving.lean:802–811` vs
+       `822–823`): when `!g.stillInGame q` (`771–784`), look up a living 2HG
        teammate `let nextAtk? := (g.teamMembers q).find? (fun r => r != q &&
        g.stillInGame r && playerStillNeeds r)` and call `openPromptWith
        (g.logMsg s!"{(g.player nextAtk).name} assigns combat damage (CR
        800.4h)") (.assignCombatDamage nextAtk true)` on `some nextAtk`, else
        clear `.pending .none` (if non-`.none`) and `.pendingBlockerAssignments
        #[]`, log `"no active player assigns combat damage (CR 800.4j)"`, and
-       call `resumePoppedIfNoPrompt g`; whereas when `g.stillInGame q &&
-       !playerStillNeeds q` (`792–793`, `Decisions.lean:746–748`), keep the
-       existing clear of `.pending .none` (without teammate search or clearing
-       `pendingBlockerAssignments`) before `resumePoppedIfNoPrompt g`; and
-     - in `.restorePending`'s `| _ =>` arm (`Decisions.lean:811–812`), after
-       `let g := resumePoppedIfNoPrompt g`, if `g.unlessPaysDue && !g.sbaPaused
-       && g.pending == .none` (set when `redirectPendingAfterLeave` folded a
-       departed payer's `.payOrLetCounter` at `Leaving.lean:616–617` outside
+       call `resumePoppedIfNoPrompt g` (`784`); whereas when `g.stillInGame q &&
+       !playerStillNeeds q` (`785–787`), keep the existing clear of `.pending
+       .none` (without teammate search or clearing `pendingBlockerAssignments`)
+       before `resumePoppedIfNoPrompt g`; and
+     - in `.restorePending`'s `| _ =>` arm (`Decisions.lean:830–912`, at
+       `909–912`), after `let g := resumePoppedIfNoPrompt g` (`909`), if
+       `g.unlessPaysDue && !g.sbaPaused && g.pending == .none` (`910–912`, set
+       when `redirectPendingAfterLeave` folded a departed payer's
+       `.payOrLetCounter` at `Leaving.lean:633–634` outside
        `concedePlayersLoop` / `finishConcedePriority`, such as via
        `playerLeavesGame` or `leavePlayersWhoLost`), call `g.flushUnlessPays`
-       (`Decisions.lean:210–228`).
+       (`Decisions.lean:258–276`).
 3. Complete `Leaving.redirectPendingAfterLeave` `q != p` and `--norandom`
    `AfterRandom` revalidation for proposal-cost prompts, `.mayAttachEquipment`,
    `.payWard`, multi-slot retargeting prompts, and `.resolveRandom` (§2.4, §2.5,
@@ -10957,99 +11026,102 @@ object-referencing `FraChoice` revalidation & `beginMayDiscardDraw` /
    - In `Leaving.redirectPendingAfterLeave`:
      - split `.chooseTeamworkCreatures q _ | .sacrificePermanent q _ |
        .discardForAdditionalCost q` out of the shared or-pattern at
-       `Leaving.lean:825–834` (leaving `.activateManaAbilities q | .chooseX q |
+       `Leaving.lean:855–863` (leaving `.activateManaAbilities q | .chooseX q |
        .chooseAdditionalCost q | .chooseKicker q | .chooseGift q |
        .chooseTeamwork q` on their existing `(g, pending)` return when `q != p
-       && !abortedProp`), and for those three constructors as well as
+       && !abortedProp`), and for those three constructors (`864–875`) as well as
        `.fraChoice q (.costPicks .. | .crew .. | .zemoBoastExile ..)`
-       (`Leaving.lean:840–843`), when `q != p && !abortedProp`, instead of
-       returning `(g, pending)` unvalidated (which deadlocks `q` if `p`'s
-       departure removed the target `vehicleId` or stolen creatures/permanents
-       needed to finish crewing, teamwork, or a partially paid `.costPicks`),
-       chain `.finishPostStep (.resumeProposalCostAfterLeave q pending)` via
-       `withOuterContStashed` and return `(g, .none)`, where
-       `Decisions.runPostStep` `.resumeProposalCostAfterLeave q savedP` re-opens
-       `g.change (.pending savedP)` if `g.proposalCostPromptStillPayable q
-       savedP` else reverses via `if g.proposedSpell.any (·.caster == q) then
+       (`Leaving.lean:881–888`), when `q != p && !abortedProp` (recognizing
+       `.finishPostStep (.resumeProposalCostAfterLeave q _)` as a proposal
+       boundary step in `Leaving.isProposalBoundaryStep` at `Leaving.lean:515`),
+       instead of returning `(g, pending)` unvalidated (which deadlocks `q` if
+       `p`'s departure removed the target `vehicleId` or stolen
+       creatures/permanents needed to finish crewing, teamwork, or a partially
+       paid `.costPicks`), chain `.finishPostStep
+       (.resumeProposalCostAfterLeave q pending)` via `withOuterContStashed` and
+       return `(g, .none)`, where `Decisions.runPostStep`
+       `.resumeProposalCostAfterLeave q savedP` (`Decisions.lean:1812–1817`)
+       re-opens `g.change (.pending savedP)` if `g.proposalCostPromptStillPayable
+       q savedP` else reverses via `if g.proposedSpell.any (·.caster == q) then
        g.reverseProposedSpell (resumeContinuation := true) else g` (CR 601.2 /
        602.2 / 733.1 / 800.4a);
-     - in `| .mayAttachEquipment q hostId sourceId =>` (`Leaving.lean:1516–1531`),
-       replace the `q != p` condition (`1524–1527`, which checked
+     - in `| .mayAttachEquipment q hostId sourceId =>` (`Leaving.lean:1621–1635`),
+       replace the `q != p` condition (`1629–1631`, which checked
        `g.controlledBy o q` on `hostId` and treated `sourceId` — `none` at
-       `EffectResolution.lean:751` and `Decisions.lean:1183`, or the spell /
+       `EffectResolution.lean:751` and `Decisions.lean:1283`, or the spell /
        ability source at `EffectResolution.lean:1191` — as an Equipment) with
        `!(g.findObject? hostId).any (fun o => o.isOnBattlefield && g.isCreature
        o) || (sourceId.isSome && !(g.legalTargetsForKind q .permanent
        sourceId).contains (Target.permanent hostId)) || !(g.permanentsOf q).any
        g.isEquipment` (matching `Decisions.choosePermanents` at
-       `Decisions.lean:3558–3565` and the `(g.permanentsOf controller).any
+       `Decisions.lean:3798–3804` and the `(g.permanentsOf controller).any
        g.isEquipment` openers at `EffectResolution.lean:750` and
-       `Decisions.lean:1182`);
-     - in `| .payWard q spellId cost =>` (`Leaving.lean:631–645`), when `q != p`:
+       `Decisions.lean:1282`);
+     - in `| .payWard q spellId cost =>` (`Leaving.lean:648–675`), when `q != p`:
        if `!(g.findObject? spellId).any (·.zone == .stack)` (e.g., `spellId` was
        owned by `p` and left the stack under CR 800.4a), return `(clearPending
        g, .none)`; else if `cost` is `.sacrificePermanents left paid chosen`
-       with `paid > 0` (where `Decisions.decline` at `Decisions.lean:3891–3892`
+       with `paid > 0` (where `Decisions.decline` at `Decisions.lean:4130–4131`
        forbids declining) and `((g.permanentsOf q).filter (fun o =>
        !chosen.contains o.id)).size < left` (because stolen permanents owned by
        `p` left the battlefield), clear `.pending`, log `s!"{(g.player q).name}
        cannot finish paying ward"`, and counter `spellId` via `counterStackSpell`
-       inside `withOuterContStashed` (matching `640–644`, CR 702.21a / 800.4a);
+       inside `withOuterContStashed` (matching `657–661`, CR 702.21a / 800.4a);
        else return `(g, pending)`; and
-     - bind `index` and `staged` on `| .mayChangeSpellTarget spellId index
-       staged =>` (`Leaving.lean:1225–1234`), and in `| .newTargetsForCopies
-       copies | .newTargetsForCopySlot copies _ _ =>` (`1235–1252`), leave
-       `.newTargetsForCopies` and the `live[0]? != copies[0]?` reset (`1246–1247`,
+     - extract `Leaving.revertGoneStagedTargets` (`Leaving.lean:539–551`), bind
+       `index` and `staged` on `| .mayChangeSpellTarget spellId index staged =>`
+       (`Leaving.lean:1270–1283`), and in `| .newTargetsForCopies copies |
+       .newTargetsForCopySlot copies _ _ =>` (`1284–1307`), leave
+       `.newTargetsForCopies` and the `live[0]? != copies[0]?` reset (`1295–1296`,
        where `copies[0]` left so it resets to `.newTargetsForCopies live`) on
        the existing live-copy filter, while when `q != p` on
        `.mayChangeSpellTarget spellId index staged` (with `e? := g.stackEntry?
-       spellId`, `Core.lean:3368`) or on `.newTargetsForCopySlot _ slotIdx
-       staged` when `live[0]? == copies[0]?` (with `e? := copies[0]?.bind
-       g.stackEntry?`, since `staged` belongs to `copies[0]`), rewrite `staged`
-       when `e?` is `some e` via `staged.mapIdx fun i st => match e.targets[i]?
-       with | some orig => if st != orig && gone st then orig else st | none =>
-       st` (where `gone` is `!g.stillInGame pid` on `Target.player pid`,
-       `!(g.findObject? oid).any (·.isOnBattlefield)` on `Target.permanent oid`,
-       and `(g.findObject? oid).isNone` on `Target.card oid`, without `!`
-       indexing), so an earlier staged slot whose newly chosen target left with
-       `p` reverts to `orig` exempted by `allowUnchangedIllegal := true` in
-       `FraChoices.lean:140, 196` and `ModeledTriggers.lean:251` rather than
-       blocking later slot choices (CR 115.7d / 707.10c / 800.4a).
+       spellId`, `Core.lean:3369–3370`) or on `.newTargetsForCopySlot _ s st` when
+       `live[0]? == copies[0]?` (with `e? := copies[0]?.bind g.stackEntry?`,
+       since `st` belongs to `copies[0]`), rewrite `staged` / `st` via
+       `g.revertGoneStagedTargets e?` (which maps `staged.mapIdx fun i st =>
+       match e.targets[i]? with | some orig => if st != orig && gone st then
+       orig else st | none => st`, where `gone` is `!g.stillInGame pid` on
+       `Target.player pid`, `!(g.findObject? oid).any (·.isOnBattlefield)` on
+       `Target.permanent oid`, and `(g.findObject? oid).isNone` on `Target.card
+       oid`, without `!` indexing), so an earlier staged slot whose newly chosen
+       target left with `p` reverts to `orig` exempted by
+       `allowUnchangedIllegal := true` in `FraChoices.lean:140, 196` and
+       `ModeledTriggers.lean:251` rather than blocking later slot choices (CR
+       115.7d / 707.10c / 800.4a).
    - Define `AfterRandom.player? : AfterRandom → Option PlayerId` in
-     `Pending.lean` (right after `inductive AfterRandom` at `Pending.lean:45–63`,
-     returning `some q` for `.draw q _`, `.gainLife q _`,
-     `.revealRandomCreatureThenBottom q _`, `.putOnTop q _`, `.beholdUntap q _
-     _`, `.discardRandom q`, and `some ctrl` for `.plusOne _ ctrl _`, and `none`
-     for `.none`, replacing `Leaving.afterRandomReferencesPlayer` at
-     `Leaving.lean:428–432`, which returned `false` on `.plusOne`), and close
-     the remaining `--norandom` `Pending.resolveRandom` / `AfterRandom`
-     departure gaps:
+     `Pending.lean` (`Pending.lean:65–72`, returning `some q` for `.draw q _`,
+     `.gainLife q _`, `.revealRandomCreatureThenBottom q _`, `.putOnTop q _`,
+     `.beholdUntap q _ _`, `.discardRandom q`, and `some ctrl` for `.plusOne _
+     ctrl _`, and `none` for `.none`, replacing
+     `Leaving.afterRandomReferencesPlayer`), and close the remaining `--norandom`
+     `Pending.resolveRandom` / `AfterRandom` departure gaps:
      - in `Leaving.redirectPendingAfterLeave` `| .resolveRandom req =>`
-       (`Leaving.lean:1608–1644`), add `PostStep.runAfterRandom (after :
-       AfterRandom)` in `Event.lean` (executing `after` through the in-game
-       `AfterRandom` dispatch of `Decisions.finishAfterRandom` at
-       `Decisions.lean:2860–2872`) so clearing `.pending` never strands a
-       non-`.none` `g.afterRandom` (which blocks `drainPendingContinuations` at
-       `Decisions.lean:91`):
-       - `.shuffleLibrary q` (`1610–1617`): when `q == p`, if `g.pregameRandom
+       (`Leaving.lean:1729–1812`), add `PostStep.runAfterRandom (after :
+       AfterRandom)` in `Event.lean:1327` (handled at `Decisions.lean:1818–1819`
+       by `Decisions.runInGameAfterRandom` at `Decisions.lean:3044–3060`) so
+       clearing `.pending` never strands a non-`.none` `g.afterRandom` (which
+       blocks `drainPendingContinuations` at `Decisions.lean:136`):
+       - `.shuffleLibrary q` (`1731–1747`): when `q == p`, if `g.pregameRandom
          != .none` return `(clearPending g, .none)`; else if `g.afterRandom ==
          .none || g.afterRandom.player?.any (fun r => r == p || !g.stillInGame
-         r)` return `(clearPendingAnd g #[.afterRandom .none], .none)`; else
-         capture `let after := g.afterRandom`, clear `#[.afterRandom .none]` +
-         `clearPending`, chain `.finishPostStep (.runAfterRandom after)` via
-         `withOuterContStashed`, and return `(g, .none)`; when `q != p`, if
-         `g.afterRandom.player?.any (fun r => r == p || !g.stillInGame r)`
-         return `(g.change (.afterRandom .none), pending)` else `(g, pending)`;
-       - `.orderInto ids dest cause` (`1618–1633`): when `destGone ||
+         r)` return `(clearPendingAnd g (if g.afterRandom != .none then
+         #[.afterRandom .none] else #[]), .none)`; else capture `let after :=
+         g.afterRandom`, clear `#[.afterRandom .none]` + `clearPending`, chain
+         `.finishPostStep (.runAfterRandom after)` via `withOuterContStashed`,
+         and return `(g, .none)`; when `q != p`, if `g.afterRandom.player?.any
+         (fun r => r == p || !g.stillInGame r)` return `(g.change (.afterRandom
+         .none), pending)` else `(g, pending)`;
+       - `.orderInto ids dest cause` (`1748–1778`): when `destGone ||
          liveIds.isEmpty`, either clear `.afterRandom .none` (when `g.afterRandom
          == .none` or its player left) or capture `after`, clear `.afterRandom
          .none` + `clearPending`, and chain `.finishPostStep (.runAfterRandom
          after)` via `withOuterContStashed`; when `liveIds.size == 1`, inside
-         `withOuterContStashed` run `(clearPending g).moveIdsInOrder liveIds
-         dest (cause := cause)` and, if `g.afterRandom != .none`, clear
-         `.afterRandom .none` and either drop it (if its player left) or chain
+         `withOuterContStashed` run `(clearPendingAnd g clearAfter).moveIdsInOrder
+         liveIds dest (cause := cause)` and, if `after != .none &&
+         !after.player?.any (fun r => r == p || !g.stillInGame r)`, chain
          `.finishPostStep (.runAfterRandom after)`, returning `(g, g.pending)`;
-       - `.chooseObject ids` (`1634–1640`): filter `liveIds`; if
+       - `.chooseObject ids` (`1779–1806`): filter `liveIds`; if
          `g.afterRandom.player?.any (fun r => r == p || !g.stillInGame r)`,
          return `(clearPendingAnd g #[.afterRandom .none, .stashedCause none],
          .none)`; else if `liveIds.isEmpty`, when `g.afterRandom` is
@@ -11060,11 +11132,11 @@ object-referencing `FraChoice` revalidation & `beginMayDiscardDraw` /
          (fun id => (g.findObject? id).isSome)) (cause := cause)` returning `(g,
          g.pending)`, else return `(clearPendingAnd g #[.afterRandom .none,
          .stashedCause none], .none)`; else if `liveIds.size == 1`, extract a
-         shared helper `Decisions.autoResolveSingleChooseObject (g : Game) (id :
-         ObjectId) : Game` (exported via
-         `@[export mtg_game_auto_resolve_choose_object]` in `Decisions.lean` with
-         `@[extern "mtg_game_auto_resolve_choose_object"]` in
-         `Leaving.lean:542–565`) implementing the `Decisions.lean:4257–4268`
+         shared helper `Decisions.autoResolveSingleChooseObject` /
+         `autoResolveSingleChooseObjectCore` (`Decisions.lean:3065–3074,
+         3109–3111`, exported via `@[export mtg_game_auto_resolve_choose_object]`
+         with `@[extern "mtg_game_auto_resolve_choose_object"]` in
+         `Leaving.lean:581–582`) implementing the `Decisions.lean:4494`
          `g.afterRandom` dispatch (`.revealRandomCreatureThenBottom controller
          revealed` → `(g.changes #[.pending .none, .afterRandom
          .none]).resolveRandomCreatureReveal controller revealed id`;
@@ -11074,47 +11146,61 @@ object-referencing `FraChoice` revalidation & `beginMayDiscardDraw` /
          .none)).finishAfterRandom false`, without `reattachAndFinish`), run `let
          g := g.withOuterContStashed fun g => g.autoResolveSingleChooseObject
          liveIds[0]!`, and return `(g, g.pending)` so `playerLeavesGameCore`
-         (`Leaving.lean:2067–2094`) restores any prompt opened by that dispatch;
+         (`Leaving.lean:2239–2266`) restores any prompt opened by that dispatch;
          else if `liveIds != ids`, return `(g, .resolveRandom (.chooseObject
          liveIds))`; else `(g, pending)`;
      - in `Decisions.resumePendingReplacement` `.restorePending`
-       (`Decisions.lean:792–805`), fall back `promptSeat?` on `.resolveRandom
+       (`Decisions.lean:831–900`), fall back `promptSeat?` on `.resolveRandom
        (.chooseObject _)` / `.resolveRandom (.chooseIndex _)` when
        `g.pregameRandom == .none` to `g.afterRandom.player?.orElse (fun _ =>
        g.currentResolvingContext?.bind Prod.snd)`, and when `p` is
        `.resolveRandom (.chooseObject ids)` with `ids.any (fun id =>
        (g.findObject? id).isNone)` and `effectiveDeparted.isEmpty`, run the same
        `.chooseObject` live-ID filter / `autoResolveSingleChooseObject` path
-       before opening the prompt;
+       before opening the prompt (`855–895`);
      - in `TriggeredAbilities.resolveRandomCreatureReveal`
        (`TriggeredAbilities.lean:235`), filter `let rest := revealed.filter (fun
        id => id != chosen && (g.findObject? id).isSome)` so cards owned by a
        departed player are not passed to `putRestOnBottomRandom`; and
-     - in `Actions.rawActor` (`Actions.lean:234`), include `.outside p` alongside
+     - in `Actions.rawActor` (`Actions.lean:240`), include `.outside p` alongside
        `.library p | .hand p | .graveyard p` on `.resolveRandom (.orderInto _
-       dest _)` (matching `Pending.promptPlayer?` at `Pending.lean:721–724`).
+       dest _)` (matching `Pending.promptPlayer?` at `Pending.lean:729–732`).
 4. Enforce `g.stillInGame` in `Core.playerCanBeTargetedBy`,
    `Leaving.emptyManaPools`, `Decisions.finishProliferate` /
-   `finishProliferateLoop`, and `ActivationCosts.canPayLife`, and route the
-   remaining Layer 1 / Layer 4 characteristic bypasses in `Mtg/Engine/Game/` and
-   `Mtg/Demo.lean` through layered `Game` queries (§2.2, §2.4, §3.1, CR 115.1 /
-   119.4 / 201 / 205 / 500.5 / 608.2b / 613.1a,d / 701.34a / 707.2 / 708.2a /
-   800.4a):
-   - Add `g.stillInGame` guards to:
-     - `Core.playerCanBeTargetedBy` (`Core.lean:7745–7758`): require
+   `finishProliferateLoop`, `ActivationCosts.canPayLife`, and 2HG shared-turn
+   step/monarch transitions, and route the remaining Layer 1 / Layer 4
+   characteristic bypasses in `Mtg/Engine/Game/` and `Mtg/Demo.lean` through
+   layered `Game` queries (§2.2, §2.4, §3.1, CR 115.1 / 119.4 / 201 / 205 /
+   500.5 / 608.2b / 613.1a,d / 701.34a / 707.2 / 708.2a / 725.4 / 800.4a /
+   805.4 / 810.2):
+   - Add `g.stillInGame` and 2HG shared-turn departure guards to:
+     - `Core.playerCanBeTargetedBy` (`Core.lean:7746–7760`): require
        `g.stillInGame target && ...` so every caller checking player target
-       legality directly (including `EffectResolution.twoPlayersDrawSecond` at
-       `EffectResolution.lean:2284` and `.twoPlayersDraw` at `2609–2610, 2619`)
+       legality (including `Targeting.legalPlayerTargets` at
+       `Targeting.lean:26–28`, `EffectResolution.twoPlayersDrawSecond` at
+       `EffectResolution.lean:2284`, and `.twoPlayersDraw` at `2609–2610, 2619`)
        treats a player who has lost or left the game as an illegal target (CR
        115.1 / 608.2b / 800.4a);
-     - `Leaving.playerLeavesGameCore` (`Leaving.lean:1760–1775`) and
-       `Leaving.emptyManaPools` (`Leaving.lean:2201–2220`): empty `p`'s unspent
-       mana pool when `p` leaves the game (or skip `!g.stillInGame pl.id` in
-       `emptyManaPools` once emptied on departure) so step/phase transitions no
-       longer emit `GameEvent.manaEmptied` or log mana-pool emptying for
-       departed players on subsequent turns (CR 500.5 / 800.4a);
-     - `Decisions.finishProliferate` (`Decisions.lean:3189–3192`) and
-       `Decisions.finishProliferateLoop` (`Decisions.lean:2155–2170`): reject
+     - `Turns.beginStepBody` (`Turns.lean:686–690`), `Core.priorityInstead`
+       (`Core.lean:5688–5689`, called by `Entering.receivePriority` at
+       `Entering.lean:395`), `Core.isSharedTurnFinalSeat`
+       (`Core.lean:1403–1413`), and `Leaving.playerLeavesGameCore`
+       (`Leaving.lean:1936–1940`): when `!g.stillInGame g.activePlayer` in
+       `beginStepBody`'s `.declareAttackers` arm (`Turns.lean:687–688`), call
+       `g.receivePriority g.activePlayer` (which maps `!g.stillInGame p` to
+       `g.nextLiving p` via `Core.priorityInstead` at `Core.lean:5688–5689`),
+       evaluate `isSharedTurnFinalSeat` (`Core.lean:1403–1413`) against the next
+       living player in turn order, and pass the monarchy to `g.nextLiving
+       g.activePlayer` when `!g.isSharedTurnFinalSeat` (`Leaving.lean:1938`, CR
+       725.4 / 800.4a / 805.4 / 810.2);
+     - `Leaving.playerLeavesGameCore` (`Leaving.lean:1931–1933`) and
+       `Leaving.emptyManaPools` (`Leaving.lean:2373–2393`): empty `p`'s unspent
+       mana pool when `p` leaves the game and skip `!g.stillInGame pl.id` in
+       `emptyManaPools` so step/phase transitions no longer emit
+       `GameEvent.manaEmptied` or log mana-pool emptying for departed players on
+       subsequent turns (CR 500.5 / 800.4a);
+     - `Decisions.finishProliferate` (`Decisions.lean:3426–3430`) and
+       `Decisions.finishProliferateLoop` (`Decisions.lean:2338–2353`): reject
        `!g.stillInGame pid` in `finishProliferate` (`throw s!"{pl.name} is no
        longer in the game (CR 701.34a / 800.4a)"`) and skip `!g.stillInGame pid`
        in `finishProliferateLoop` so a player who left during an earlier
@@ -11139,9 +11225,9 @@ object-referencing `FraChoice` revalidation & `beginMayDiscardDraw` /
        `(g.findObject? id).map (·.name)` with `(g.findObject? id).map g.name`;
      - `ResolutionHelpers.lean:305, 364`: replace `let name := o.name` with `let
        name := g.name o`;
-     - `StateBasedActions.lean:251–252`: capture `let oName := g.name o` before
-       `g.ceaseToExist o.id` and log `s!"{oName} ceases to exist (token left the
-       battlefield)"`;
+     - `StateBasedActions.lean:251–253, 263–265`: capture `let oName := g.name
+       o` before `g.ceaseToExist o.id` on both CR 704.5d tokens (`251–253`) and
+       CR 704.5e non-token copies (`263–265`);
      - `FraChoices.lean:1058`: replace `pr.original.name` with
        `pr.originalSnapshot.name`; and
      - `Mtg/Demo.lean:326, 635, 637, 934, 938`: replace `o.nameWithToken` /
@@ -11153,15 +11239,443 @@ prompt/proposal teardown on `concede` / `receivePriority` / `chooseReplacement` 
 `finishConcedePriority` / `concedePlayersLoop` / `finishHostRandom`, ward
 `outerCont?` ordering & `clearMay` / `redirectPendingAfterLeave` `.mayResolve` /
 `.chooseCards` / `.orderLibraryBottom` / `.searchLibrary` cleanup, modal
-`chosen` revalidation & departed-seat guards in `.resume*AfterLeave` and
-`.restorePending` cost/2HG-combat/`unlessPaysDue` completion,
-`redirectPendingAfterLeave` `q != p` `.crew` / `.costPicks` /
-`.mayAttachEquipment` / `.payWard` / staged-retarget & `--norandom`
-`AfterRandom` revalidation, and `playerCanBeTargetedBy` / `emptyManaPools` /
-`finishProliferate` / `canPayLife` `stillInGame` guards & Layer 1/4 `g.name` /
-`g.nameWithToken` / `g.isPlaneswalker` reads), `Demo.lean`.
+`chosen` revalidation & departed-seat guards in `.resume*AfterLeave`, standalone
+trigger target preservation across proposal reversal, and `.restorePending`
+cost/2HG-combat/`unlessPaysDue` completion, `redirectPendingAfterLeave` `q != p`
+`.crew` / `.costPicks` / `.mayAttachEquipment` / `.payWard` / staged-retarget &
+`--norandom` `AfterRandom` revalidation, and `playerCanBeTargetedBy` /
+2HG shared-turn / `emptyManaPools` / `finishProliferate` / `canPayLife`
+`stillInGame` guards & Layer 1/4 `g.name` / `g.nameWithToken` /
+`g.isPlaneswalker` reads), `Demo.lean`.
 
-Final check (after Phase 33): `lake build`, `lake exe mtg-demo`,
+### Phase 34 — Non-proposal modal trigger preservation across proposal reversal, `finishFraChoice` / `finishAndGrantPriority` / `afterWardResolved` proposal-reversal & continuation hygiene, `.resume*AfterLeave` / `isProposalAbortedByLeave` / `redirectPendingAfterLeave` completion, and remaining `stillInGame` & Layer 1–6 characteristic guards
+
+1. Complete `Core.reverseToProposalCheckpointCore?` non-proposal modal trigger
+   preservation and `Decisions.finishFraChoice` / `finishAndGrantPriority` /
+   `finishWardAndDrain` / `Casting.afterWardResolved` proposal-reversal &
+   continuation hygiene (§2.1, §2.5, §2.8, §2.9, §3.2, §3.8, CR 104.1 / 601.2 /
+   603.3c–d / 608.2b–c,n / 700.2 / 700.2g / 702.21a / 733.1 / 800.4a):
+   - In `Core.reverseToProposalCheckpointCore?` (`Core.lean:10732–10746`):
+     - At `10735–10736`, extend the `if` condition on `.rules _ (.zone
+       (.ceasedToExist obj)) cause _` (`10732–10738`) to `act?.isNone && (cause
+       == .gameRule .triggeredAbility || cause == .gameRule .noLegalMode) &&
+       !obj.id.any (fun oid => g.proposedSpell.any (·.spellId == oid))` so CR
+       603.3c `.noLegalMode` stack removals of standalone modal triggers
+       (`Triggers.lean:122, 247`, `FraChoices.lean:486`, `Decisions.lean:1748`)
+       are not undone when an enclosing spell/ability proposal is reversed;
+     - at `10741–10746`, extend the `| .rules _ (.cast (.targeted oid ..)) _ _ |
+       .rules _ (.cast (.announced oid ..)) _ _ | .engine _ (.stackEntry oid _)
+       =>` or-pattern (`10741–10743`) with `| .engine _ (.object oid
+       (.abilityEffect _))` under `if act?.isNone && !g.proposedSpell.any
+       (·.spellId == oid) then` (`10744–10746`) so finalized modal trigger
+       effects installed on stack trigger objects (`FraChoices.lean:496, 519,
+       529, 537, 1007, 1018`, `Decisions.lean:1743, 1773, 1782, 1806`,
+       `Triggers.lean:205, 222`) are not stripped while `GameEvent.announced`
+       (`10742`) and `.stackEntry oid _` (`10743`, including `.targetsAnnounced
+       true` and `.clearChosenModes`) are kept; and
+     - also preserve `| .rules _ (.triggerQueue (.modeChosen ..)) _ _` when
+       `act?.isNone` (`FraChoices.lean:548` on `.stackTriggerUnusedMode`) so
+       `Core.modesChosenThisTurn` / `Core.modesChosenEver`
+       (`Core.lean:3687–3706`, CR 700.2g) stays consistent with the kept
+       `GameEvent.announced` on `objId`.
+   - In `Decisions.finishFraChoice` (`Decisions.lean:223–238`),
+     `Decisions.finishAndGrantPriority` (`Decisions.lean:157–175`),
+     `Decisions.finishWardAndDrain` (`Decisions.lean:242–252`), and
+     `Casting.afterWardResolved` (`Casting.lean:693–710`):
+     - In `Decisions.finishFraChoice` (`Decisions.lean:230–238`):
+       - when `g.over` is true (`230`), if `g.proposedSpell.any (fun prop =>
+         !g.stillInGame prop.caster || (g.findObject? prop.spellId).isNone)`,
+         reverse the orphaned proposal via `let g := (if g.pending == .none then
+         g else g.change (.pending .none)).reverseProposedSpell
+         (resumeContinuation := true) (alwaysGrantPriority := true)` before
+         `(g.popEmptyContinuationFrames).completeActiveResolutions` (matching
+         `Decisions.afterTriggerTargetsChosen` at `Decisions.lean:2887–2894` so
+         mana payments and costs paid before the game ended are rolled back or
+         cleaned up cleanly rather than only clearing `.proposedSpell none`);
+         and
+       - in the `else` branch (`235–238`), after `let g :=
+         g.popEmptyContinuationFrames`: if `g.triggerNeedingTargets.isSome`,
+         call `g.promptTriggerTargetsIfNeeded` (matching
+         `Decisions.afterTriggerTargetsChosen`'s `| some _ =>` arm at
+         `Decisions.lean:2897–2898`); else (when
+         `g.triggerNeedingTargets.isNone`, matching `| none =>` at
+         `Decisions.lean:2899–2913`), if `g.proposedSpell.any (fun prop =>
+         !g.stillInGame prop.caster || (g.findObject? prop.spellId).isNone)`,
+         reverse via `let g := (if g.pending == .none then g else g.change
+         (.pending .none)).reverseProposedSpell (resumeContinuation := true)
+         (alwaysGrantPriority := true)` and then `if !g.over && g.pending ==
+         .none && g.continuations.isEmpty && g.triggerNeedingTargets.isSome then
+         g.promptTriggerTargetsIfNeeded else g` (matching
+         `Decisions.lean:2900–2908`, since `alwaysGrantPriority := true` at
+         `Casting.lean:671–673` only stashes `pendingPriority` without
+         prompting); else if `g.proposedSpell.isSome`, return `if g.pending ==
+         .none then g else g.change (.pending .none)` without calling
+         `g.receivePriority prio` while a live proposal is open (matching
+         `Decisions.lean:2909–2910`); else compute `let prio :=
+         g.pendingPriority.getD g.activePlayer` and call `g.receivePriority
+         prio`;
+     - in `Decisions.finishAndGrantPriority` (`Decisions.lean:169–174`), apply
+       the same `Decisions.afterTriggerTargetsChosen` (`2887–2913`) handling: on
+       `if g.over then` (`169`), if `g.proposedSpell.any (fun prop =>
+       !g.stillInGame prop.caster || (g.findObject? prop.spellId).isNone)`,
+       reverse via `let g := (if g.pending == .none then g else g.change
+       (.pending .none)).reverseProposedSpell (resumeContinuation := true)
+       (alwaysGrantPriority := true)` before `g.completeActiveResolutions`; and
+       on the final `else` branch (`174`), if `g.triggerNeedingTargets.isSome`,
+       call `g.promptTriggerTargetsIfNeeded`, else if `g.proposedSpell.any (fun
+       prop => !g.stillInGame prop.caster || (g.findObject?
+       prop.spellId).isNone)`, run `let g := (if g.pending == .none then g else
+       g.change (.pending .none)).reverseProposedSpell (resumeContinuation :=
+       true) (alwaysGrantPriority := true)` followed by `if !g.over && g.pending
+       == .none && g.continuations.isEmpty && g.triggerNeedingTargets.isSome
+       then g.promptTriggerTargetsIfNeeded else g` (`2900–2908`), else if
+       `g.proposedSpell.isSome`, return `if g.pending == .none then g else
+       g.change (.pending .none)` (`2909–2910`), else call `g.receivePriority
+       p`; and
+     - in `Casting.afterWardResolved` (`Casting.lean:698–710`, declaring
+       `@[extern "mtg_game_drain_pending_continuations"] private opaque
+       drainPendingContinuations (g : Game) : Game` and
+       `@[extern "mtg_game_reverse_proposed_spell"] private opaque
+       reverseProposedSpell (g : Game) (resumeContinuation : Bool := false)
+       (extraLog : Option String := none) (alwaysGrantPriority : Bool := false)
+       : Game` in `Casting.lean` paired with `@[export]` on
+       `Decisions.drainPendingContinuations` at `Decisions.lean:135` and
+       `Decisions.reverseProposedSpell` at `Decisions.lean:2480`), do not
+       register `.afterWardResolved` as a `pendingReplacement` across `698–703`
+       while `mayThenResume` or `triggerSequenceRest` is set (since
+       `drainPendingContinuations` at `Decisions.lean:136–153` runs
+       `pendingReplacement` at `140–143` before `triggerSequenceRest` at
+       `145–147`, and `finishWardAndDrain` at `Decisions.lean:245–248` and
+       `SacrificeDiscard.sacrificeForActivation` at
+       `SacrificeDiscard.lean:423–427, 440–444` chain `outerCont?` onto
+       `pendingReplacement` before calling `afterWardResolved`); instead, right
+       after clearing `.payWard` (`694–697`, before `698–703`): first, if
+       `g.over` is true at entry, reverse any orphaned proposal when
+       `g.proposedSpell.any (fun prop => !g.stillInGame prop.caster ||
+       (g.findObject? prop.spellId).isNone)` via `let g := (if g.pending ==
+       .none then g else g.change (.pending .none)).reverseProposedSpell
+       (resumeContinuation := true) (alwaysGrantPriority := true)` and return
+       `g.completeActiveResolutions` (matching `finishAndGrantPriority` at
+       `11319–11323`); else if `g.mayThenResume || g.triggerSequenceRest.isSome`
+       and `g.pending != .none || g.afterRandom != .none` (for example,
+       `sacrificePermanentsLoop` at `SacrificeDiscard.lean:419–427` paused on
+       `.chooseReplacement` with its resume continuation in
+       `g.pendingReplacement`, or `g.afterRandom` is already set), leave
+       `g.pending`, `g.afterRandom`, and `g.pendingReplacement` in place, park
+       `.afterWardResolved` onto the current top frame's
+       `outerPendingReplacements` while keeping any `existing :=
+       g.outerPendingReplacements` at the back so `back?`
+       (`Decisions.lean:149–151`) resumes `existing` before `.afterWardResolved`
+       (ensuring `if g.continuations.isEmpty then g.change
+       (.pushContinuationFrame {}) else g`, popping `existing.size` entries via
+       `.popOuterPendingReplacement`, and pushing `#[.afterWardResolved] ++
+       existing` via `.pushOuterPendingReplacement`), and return `g` without
+       draining or entering `698–703`; else if `g.mayThenResume ||
+       g.triggerSequenceRest.isSome` (with `!g.over && g.pending == .none &&
+       g.afterRandom == .none`), stash `let stashedPending :=
+       g.pendingReplacement` and `let stashedOuters :=
+       g.outerPendingReplacements`, clear them via `if stashedPending.isSome
+       then g.change (.pendingReplacement none) else g` and popping
+       `stashedOuters.size` entries via `.popOuterPendingReplacement`, and run
+       `let g := g.drainPendingContinuations` to drain `mayThenResume` and
+       `triggerSequenceRest` first (without re-pushing an empty `{}` frame that
+       would hide the active top frame); if `g.over` after the drain, skip the
+       park/restore, reverse any orphaned proposal when `g.proposedSpell.any
+       (fun prop => !g.stillInGame prop.caster || (g.findObject?
+       prop.spellId).isNone)` via `let g := (if g.pending == .none then g else
+       g.change (.pending .none)).reverseProposedSpell (resumeContinuation :=
+       true) (alwaysGrantPriority := true)`, and return
+       `g.completeActiveResolutions`; otherwise (`!g.over`), snapshot `let
+       drainSuffix := if g.pending != .none || g.afterRandom != .none then
+       g.outerPendingReplacements else #[]` (treating the current top frame's
+       `outerPendingReplacements` as the unresumed suffix whenever the drain
+       stopped with `pending` or `afterRandom` set, including on a nested frame,
+       since a full drain already resumed any new outers at
+       `Decisions.lean:149–152`), and if `g.mayThenResume ||
+       g.triggerSequenceRest.isSome` is still set, leave the open prompt or
+       `afterRandom` (and any inner `g.pendingReplacement` from the paused step)
+       in place, park `let wardCont := match stashedPending with | some c =>
+       .seq c .afterWardResolved | none => .afterWardResolved` together with
+       `stashedOuters` onto `outerPendingReplacements` on the current top frame
+       (ensuring `if g.continuations.isEmpty then g.change
+       (.pushContinuationFrame {}) else g`, popping `drainSuffix.size` entries
+       via `.popOuterPendingReplacement`, and pushing `(stashedOuters.push
+       wardCont) ++ drainSuffix` via `.pushOuterPendingReplacement`, drained at
+       `Decisions.lean:149–152` after `triggerSequenceRest`), and return `g`
+       without entering `698–703` or popping that outer back into
+       `pendingReplacement`; otherwise (when `!g.mayThenResume &&
+       g.triggerSequenceRest.isNone`), restore `stashedPending` via `match
+       stashedPending with | some c => g.chainPendingReplacement c | none => g`
+       and restore `stashedOuters` below `drainSuffix` on the current top frame
+       (when `!stashedOuters.isEmpty`, ensuring `if g.continuations.isEmpty then
+       g.change (.pushContinuationFrame {}) else g`, popping `drainSuffix.size`
+       entries, and pushing `stashedOuters ++ drainSuffix` via
+       `.pushOuterPendingReplacement`), then enter `698–703` (`if (match
+       g.pending with | .chooseReplacement .. => true | _ => false) ||
+       g.pendingReplacement.isSome` → `g.chainPendingReplacement
+       .afterWardResolved`, `else if let some outer :=
+       g.outerPendingReplacements.back?` → pop `outer` into `pendingReplacement`
+       and `g.chainPendingReplacement .afterWardResolved`), and in the `else`
+       ward tail (`704–710`, when no `.chooseReplacement` / `pendingReplacement`
+       / `outerPendingReplacements` is open): if `g.pending != .none ||
+       g.afterRandom != .none` return `g` (without popping active resolutions
+       while an interactive prompt or `afterRandom` from the drained sequence is
+       open), else run `let g := g.completeActiveResolutions`, return `g` if
+       `g.over || g.pending != .none || g.afterRandom != .none` (`706`, so any
+       prompt or `afterRandom` opened
+       by `completeActiveResolutions` at `Entering.lean:350, 384–385` is
+       preserved), and otherwise (when `!g.over && g.pending == .none &&
+       g.afterRandom == .none`) apply the same
+       `Decisions.afterTriggerTargetsChosen` (`2897–2913`) tail: if
+       `g.triggerNeedingTargets.isSome` call `g.promptTriggerTargetsIfNeeded`,
+       else if `g.proposedSpell.any (fun prop => !g.stillInGame prop.caster ||
+       (g.findObject? prop.spellId).isNone)` reverse with `(resumeContinuation
+       := true) (alwaysGrantPriority := true)` and prompt
+       `g.promptTriggerTargetsIfNeeded` when `!g.over && g.pending == .none &&
+       g.continuations.isEmpty && g.triggerNeedingTargets.isSome`, else if
+       `g.proposedSpell.isSome` return `g`, else call `g.receivePriority
+       (g.pendingPriority.getD g.activePlayer)`.
+2. Complete `Decisions.proposalCostPromptStillPayable` & `Decisions.runPostStep`
+   `.resume*AfterLeave` game-over / vanished-proposal guards and
+   `Decisions.resumePendingReplacement` `.restorePending` departed-player
+   ordering (§2.4, §2.5, §2.9, §3.1, §3.8, CR 104.1 / 601.2b–h / 602.2b /
+   603.3c–d / 702.37e / 733.1 / 800.4a,f):
+   - In `Decisions.proposalCostPromptStillPayable` (`Decisions.lean:97–129`):
+     - Require `!g.over && g.stillInGame caster && g.proposedSpell.any (fun prop
+       => prop.caster == caster && (g.findObject? prop.spellId).any (fun o => if
+       prop.kind == .turnFaceUp then o.isOnBattlefield else o.zone == .stack))`
+       so neither `.restorePending` (`Decisions.lean:741`) nor
+       `.resumeProposalCostAfterLeave` (`Decisions.lean:1813`) re-opens a
+       proposal-cost prompt on an ended game or after `prop.spellId` left the
+       stack/battlefield.
+   - In `Decisions.runPostStep` (`Decisions.lean:1619–1817`):
+     - In `.resumeChooseModeAfterLeave p` (`1619–1661`),
+       `.resumeChooseTargetsAfterLeave p` (`1662–1722`), and
+       `.resumeProposalCostAfterLeave p savedP` (`1812–1817`), keeping the
+       `if g.over then return (g.receivePriority prio, false)` early return in
+       `Casting.reverseProposedSpellCore?` (`Casting.lean:660–661`) as the end
+       of the finished-game path (`needsFinish = false`): if `g.over` at entry
+       of `.resumeChooseModeAfterLeave p`, reverse any vanished/departed
+       `g.proposedSpell` with `(resumeContinuation := true) (alwaysGrantPriority
+       := true)` and return `g.completeActiveResolutions`; in
+       `.activatedAbility` (`1631–1635`), conjoin `(g.findObject?
+       prop.spellId).any (·.zone == .stack) &&` onto the choosable-mode `if`
+       condition (`1632`) so an ability object no longer on the stack falls into
+       the `else` reversal at `1635` (instead of returning `g` or re-opening
+       `.chooseMode p`), and in `.turnFaceUp` (`1661`), replace `| .turnFaceUp
+       => g` with `| .turnFaceUp => if (g.findObject? prop.spellId).any
+       (·.isOnBattlefield) then g else ...` reversing with `(resumeContinuation
+       := true) (alwaysGrantPriority := true)` when the permanent left the
+       battlefield; in `.resumeChooseTargetsAfterLeave p`, keep `1668–1669` as
+       the `let g :=` reversal binding only (and keep the `g.over` return at
+       `1676` as bare `g` without prompting, since `reverseProposedSpellCore?`
+       already ended that path at `Casting.lean:660–661`, and so
+       `pendingBlocksTargets` at `1671–1679` is not bypassed by opening
+       `.chooseTargets` before the `objectAwaitingTargets` check at `1681`); and
+       on the paths that return the reversed game—`.resumeChooseModeAfterLeave`
+       (`1622, 1635, 1638, 1660, 1661`), `.resumeChooseTargetsAfterLeave`'s `|
+       none =>` `if ownPropNeedsReverse then` return (`1683–1684`) and its later
+       reverses (`1698, 1716`, with `(alwaysGrantPriority := true)`), and
+       `.resumeProposalCostAfterLeave` (`1816`, plus `if g.over then
+       g.completeActiveResolutions` when `g.over` and no proposal was
+       reversed)—follow the reversal with `if !g.over && g.pending == .none &&
+       g.continuations.isEmpty && g.triggerNeedingTargets.isSome then
+       g.promptTriggerTargetsIfNeeded else g` (matching
+       `Decisions.afterTriggerTargetsChosen` at `Decisions.lean:2905–2908`,
+       since `alwaysGrantPriority := true` at `Casting.lean:671–673` only
+       stashes `pendingPriority` without prompting `triggerNeedingTargets`); and
+     - in `.resumeTriggerModesAfterLeave p ..` (`1724`),
+       `.resumeUpToTriggerModesAfterLeave p ..` (`1754`), and
+       `.resumeHawkeyeModesAfterLeave p ..` (`1787`): guard `if g.over ||
+       !g.stillInGame p then g.finishFraChoice` so a finished game immediately
+       tears down via `finishFraChoice` (`230`) without re-opening `.fraChoice`
+       or emitting post-`gameEnded` announcements or stack removals (CR 104.1).
+   - In `Decisions.resumePendingReplacement` `.restorePending`
+     (`Decisions.lean:840–845`):
+     - When `promptSeat?` is `some q` and `!g.stillInGame q`, always place `q`
+       first in `effectiveDeparted` via `#[q] ++ departed.filter (· != q)`
+       (instead of only prepending `q` when `!departed.contains q`), so when
+       `departed` contains both an earlier departed player `p1` and `q`
+       (`#[p1, q]`), `redirectPendingAfterLeave` folds `q` first (`q == dep`,
+       running CR 800.4f decline logic such as `.mayResolve`'s `mayOnDecline`
+       branch at `Leaving.lean:1703–1709`) before any `q != dep` target
+       invalidation for `p1`.
+3. Complete `Leaving.isProposalAbortedByLeave` source validation and
+   `Leaving.redirectPendingAfterLeave` for `.payOrLetCounter`,
+   `.castCopiesFree` / `.mayCastCopy` / `.mayCastCascade`, and
+   `.chooseTriggerOr` / `.tapHumans` / `.mayPutArtifactFromHand` (§2.4, §2.5,
+   §3.1, §3.8, CR 602.2b / 608.2b–c / 704.5e / 707.10a / 733.1 / 800.4a,f):
+   - In `Choices.sourceStillPayable` (`Choices.lean:600–628`) and
+     `Leaving.isProposalAbortedByLeave` (`Leaving.lean:486–491`):
+     - Extend `Choices.sourceStillPayable` (`Choices.lean:610–628`) to also
+       require `(!prop.removePlusOneX || (src.isOnBattlefield && g.controlledBy
+       src prop.caster && src.status.plusOnePlusOne ≥ ((g.findObject?
+       prop.spellId).bind (·.chosenX)).getD 0))` (matching the `x :=
+       ((g.findObject? prop.spellId).bind (·.chosenX)).getD 0` check on
+       `loyaltyPayable` at `Choices.lean:619–620`, set by `CastSpell.announceX`
+       → `applyCastEvent` at `Core.lean:5184`, so `x = 0` stays payable while an
+       announced `x > src.status.plusOnePlusOne` is rejected before
+       `ActivationCosts.lean:302, 320–327`), and in
+       `Leaving.isProposalAbortedByLeave` (`Leaving.lean:486–491`, without
+       folding `!g.sourceStillPayable prop` unconditionally, which is not tied
+       to departing player `p` and would cause an unrelated player's departure to
+       abort `q`'s proposal via `abortedProp` / `wasAbortedProposal` at
+       `Leaving.lean:1900`), add a `p`-scoped source clause `||
+       prop.sourceId.any (fun sid => (g.findObject? sid).any (fun src =>
+       src.owner == p || (src.isOnBattlefield && g.controlledBy src p)))` so
+       when `q != p` is in `.chooseX q` (`Leaving.lean:855–863`) or another
+       proposal prompt for an activated ability or face-up turn whose source
+       permanent (`prop.sourceId`) is owned or controlled by departing player
+       `p` (`.loyaltyX`, `.removePlusOneX`, `tapSource`, `sacrificeSource`,
+       etc.), the proposal is recognized as aborted by `p`'s departure and
+       reversed rather than failing at `CastSpell.announceX`
+       (`CastSpell.lean:286–312`, loyalty / `removePlusOneX` checks at
+       `297–308`) or cost payment (CR 602.2b / 733.1 / 800.4a).
+   - In `Leaving.redirectPendingAfterLeave` (`Leaving.lean:629–647, 1573–1578,
+     1687–1700`):
+     - In `| .payOrLetCounter q _ spellId? =>` (`629–647`), when `q != p`: if
+       `let some sid := spellId?` and `!(g.findObject? sid).any (·.zone ==
+       .stack)` (e.g., `sid` was owned by `p` and left the stack under CR
+       800.4a), return `((clearPending g).clearUnlessPays, .none)`; else if
+       `spellId?.isNone`, `let some eff := g.unlessPaysInstead`, and
+       `!g.stillInGame g.unlessPaysController || (!g.unlessPaysTargets.isEmpty
+       && g.sequenceAllTargetsIllegal g.unlessPaysController eff
+       g.unlessPaysTargets g.unlessPaysSource)`, return `((clearPending
+       g).clearUnlessPays, .none)`; else return `(g, pending)` (matching
+       `.payWard` at `Leaving.lean:662–663` and `.mayResolve` at `1713–1719`, CR
+       608.2b / 800.4a);
+     - in `| .fraChoice q choice =>` (before the `| _ =>` catch-all at
+       `Leaving.lean:1573–1578`), add explicit arms for `.castCopiesFree ids
+       budget castsLeft`, `.mayCastCopy copyId`, and `.mayCastCascade cardId
+       others` (matching `FraChoices.lean:453–460, 1109–1113, 1161–1169` and
+       `Leaving.lean:2040–2079, 2123–2153`, CR 704.5e / 707.10a / 800.4a,f):
+       - `.castCopiesFree ids budget castsLeft`: when `q == p`, cease any exiled
+         copies in `ids` (`(g.findObject? id).any (·.zone == .exile)`) to exist
+         with `cause := some (.stateBased .copyOutsideStackOrBf)` inside
+         `withBatch (some (.stateBased .copyOutsideStackOrBf))`, clear
+         `#[.chooseModesRest none, .pendingFreeCopies none] ++ clearProp`, and
+         return `(if g.mayThenDrop > 0 then g.declineMayThenCore else
+         clearPending g, .none)`; when `q != p`, filter `let alive := ids.filter
+         (fun id => (g.findObject? id).any (·.zone == .exile))` and `let
+         castable := alive.filter (fun id => (g.findObject? id).any (fun o =>
+         g.objectManaValue o ≤ budget))`; if `castable.isEmpty || castsLeft ==
+         0`, cease any remaining `alive` copies to exist in a batch, clear
+         `#[.chooseModesRest none, .pendingFreeCopies none]`, and return `(if
+         g.mayThenDrop > 0 then g.declineMayThenCore else clearPending g,
+         .none)`; else if `alive != ids`, return `(g, .fraChoice q
+         (.castCopiesFree alive budget castsLeft))`; else `(g, pending)`;
+       - `.mayCastCopy copyId`: when `q == p`, if `(g.findObject? copyId).any
+         (fun o => o.zone == .exile && o.isCopy)`, cease `copyId` to exist
+         (`cause := some (.stateBased .copyOutsideStackOrBf)`) and log `s!"The
+         copy of {objName} ceases to exist"`, then clear `#[.chooseModesRest
+         none] ++ clearProp` and `declineMayThenCore` / `clearPending`; when `q
+         != p`, if `!(g.findObject? copyId).any (·.zone == .exile)`, clear
+         `.chooseModesRest none` and `declineMayThenCore` / `clearPending`; else
+         `(g, pending)`; and
+       - `.mayCastCascade cardId others`: when `q == p`, clear
+         `#[.chooseModesRest none] ++ clearProp` and `declineMayThenCore` /
+         `clearPending`; when `q != p`, filter `let liveOthers := others.filter
+         (fun id => (g.findObject? id).any (·.zone == .exile))`; if
+         `!(g.findObject? cardId).any (·.zone == .exile)`, inside
+         `withOuterContStashed` read `let cause := g.lastMoveCauseOf? cardId`,
+         clear `.chooseModesRest none` and `declineMayThenCore` /
+         `clearPending`, and if `!liveOthers.isEmpty` run `g.requestOrderInto
+         liveOthers (.library q) s!"{(g.player q).name} puts the exiled cards on
+         the bottom of their library in a random order" (cause := cause)`,
+         returning `(g, g.pending)`; else if `liveOthers != others`, return `(g,
+         .fraChoice q (.mayCastCascade cardId liveOthers))`; else `(g,
+         pending)`; and
+     - in `| .chooseTriggerOr q =>`, `| .tapHumans q =>`, and `|
+       .mayPutArtifactFromHand q _ =>` (`Leaving.lean:1687–1700`), when `q ==
+       p`, preserve each arm's existing state resets (`.triggerOr none` on
+       `.chooseTriggerOr`, `.triggerSequenceRest none, .humansTappedThisWay 0`
+       on `.tapHumans`, and `.triggerSequenceRest none, .putArtifactThisWay
+       none` on `.mayPutArtifactFromHand`) and add `.chooseModesRest none` +
+       `clearProp` and the `if g.mayThenDrop > 0 then g.declineMayThenCore else
+       clearPending g` choice on top of those resets (matching `.mayDiscardDraw`
+       at `Leaving.lean:1580–1588`).
+4. Add remaining `g.stillInGame` guards on mana addition, Ring temptation,
+   emblem creation, delayed triggers, player control, and library
+   shuffle/search, and route remaining Layer 1–6 characteristic bypasses in
+   `Mtg/Engine/Game/`, `Mtg/Demo.lean`, and `Mtg/Demo/Render.lean` through
+   layered `Game` queries (§2.2, §2.4, §3.1, CR 106.4 / 114.1 / 201 / 202 / 205 /
+   603.7 / 613.1 / 701.20 / 701.23 / 701.54 / 707.2 / 708.2a / 800.4a):
+   - Add `g.stillInGame` guards to:
+     - `Core.addManaUnits` (`Core.lean:11134–11139`, which also covers
+       `Core.addMana` at `11142–11149`) and `ModeledTriggers.addManaLogged`
+       (`ModeledTriggers.lean:978–983`): return `g` when `!g.stillInGame p` so
+       mana is never added to or logged for a player who has lost or left the
+       game (CR 106.4 / 800.4a);
+     - `CastExtras.temptWithTheRing` (`CastExtras.lean:48–75`): return `g` when
+       `!g.stillInGame p` so a departed player cannot get The Ring emblem,
+       choose a Ring-bearer, or emit `GameEvent.ringTempted` (CR 701.54a /
+       800.4a);
+     - `FraAbilities.createCommandObject` (`FraAbilities.lean:25–33`),
+       `EffectResolution.applyEffect` `.emblemCastSpellDamage`
+       (`EffectResolution.lean:203–210`), and `FrcResolve.applyFrc`
+       `.elspethEmblem` (`FrcResolve.lean:728–734`): return `g` when
+       `!g.stillInGame p` / `!g.stillInGame controller` so emblems are never
+       created in the command zone for a player who has left the game (CR
+       114.1–114.5 / 800.4a);
+     - `Core.registerDelayedTrigger` (`Core.lean:11172–11173`): return `g` when
+       `!g.stillInGame dt.controller` so delayed triggered abilities are never
+       registered for a departed controller (CR 603.7 / 800.4a);
+     - `Core.setPlayerControl` (`Core.lean:11750–11761`): return `g` when
+       `!g.stillInGame you || !g.stillInGame them` so player-control continuous
+       effects are not created for or over a departed player (CR 800.4a); and
+     - `LibrarySearch.shuffleThen` (`LibrarySearch.lean:214–224`) and
+       `FraResolve.applyFra` `.fblthpSearch` (`FraResolve.lean:996–1022`):
+       return `g` when `!g.stillInGame p` / `!g.stillInGame controller`
+       (executing `onDone` if `onDone != .none && !onDone.player?.any (fun r =>
+       !g.stillInGame r)` in `shuffleThen`) so a departed player's library is
+       neither searched nor shuffled (CR 701.20 / 701.23 / 800.4a).
+   - Route the remaining Layer 1–6 characteristic bypasses in `Mtg/Engine/Game/`,
+     `Mtg/Demo.lean`, and `Mtg/Demo/Render.lean` through layered `Game` queries
+     (CR 201 / 202 / 205 / 613.1 / 707.2 / 708.2a):
+     - `Turns.expireEffectsByDuration` (`Turns.lean:34`): replace
+       `(acc.baseCard o).name` with `acc.name o` after expiring a single-target
+       `.copy` effect so any remaining copy or text-changing effect on `o` is
+       respected;
+     - `Turns.discardCleanupIds` (`Turns.lean:256`): replace `let name :=
+       card.name` with `let name := g.name card` (and remove the unused binding
+       if unneeded);
+     - `SpellResolution.resolveTop` (`SpellResolution.lean:369`): replace
+       `obj.printed.name.replace "'s ability" ""` with `(g.name obj).replace
+       "'s ability" ""`;
+     - `FraResolve.applyFra` `.fblthpSearch` (`FraResolve.lean:1005`): replace
+       `isBasicLandCard (g.baseCard o)` with `g.hasSupertype o .basic &&
+       g.isLand o`;
+     - `Mtg/Demo.lean:906, 1001, 1082, 1236, 2052, 2057`: replace
+       `o.printed.tapAddAnyColorEqualToPower` (`906`) with `(g.baseCard
+       o).tapAddAnyColorEqualToPower && g.retainsPrintedAbilities o`,
+       `spell.printed.additionalCostOrPayGeneric.isSome` (`1001`) with
+       `(g.baseCard spell).additionalCostOrPayGeneric.isSome`, `o.name.map
+       Char.toLower == lower` (`1082`) with `(g.name o).map Char.toLower ==
+       lower`, `spell.printed.additionalCostDiscardOrPayGeneric.isSome` (`1236`)
+       with `(g.baseCard spell).additionalCostDiscardOrPayGeneric.isSome`, and
+       `o.printed.manaCost` / `o.printed.adventure` (`2052, 2057`) with
+       `(g.baseCard o).manaCost` / `(g.baseCard o).adventure`; and
+     - `Mtg/Demo/Render.lean:128–134, 150, 279, 282, 1156, 1158`: pass `g` into
+       `stackFaceExtras (g : Game) (o : GameObject)` (`128–134`, called at
+       `150, 1156`) and use `g.baseCard o` instead of `o.printed`, and replace
+       `o.printed.manaCost` (`279, 282`) and `faceExtras o.printed` (`1158`)
+       with `(g.baseCard o).manaCost` and `faceExtras (g.baseCard o)`.
+
+Tests: `Events.lean` (isolation tests for non-proposal modal trigger
+`.noLegalMode` / `.abilityEffect` / `.modeChosen` preservation across proposal
+reversal, `finishFraChoice` / `finishAndGrantPriority` / `afterWardResolved`
+proposal reversal & `triggerSequenceRest` / `mayThenResume` ordering,
+`proposalCostPromptStillPayable` & `.resume*AfterLeave` game-over / vanished
+proposal guards and `.restorePending` departed-seat ordering,
+`isProposalAbortedByLeave` `sourceStillPayable` `.chooseX` reversal and
+`redirectPendingAfterLeave` `.payOrLetCounter` / `.castCopiesFree` /
+`.mayCastCopy` / `.mayCastCascade` / `.chooseTriggerOr` / `.tapHumans` /
+`.mayPutArtifactFromHand` cleanup, and `addManaUnits` / `temptWithTheRing` /
+`createCommandObject` / `registerDelayedTrigger` / `setPlayerControl` /
+`shuffleThen` `stillInGame` guards & Layer 1–6 characteristic queries),
+`Demo.lean`.
+
+Final check (after Phase 34): `lake build`, `lake exe mtg-demo`,
 `lake exe oracle-roundtrip`, no `EventCause.unclassified` constructor, no
 `ObjectId ⟨0⟩` or `BatchId ⟨0⟩` wildcard/sentinel defaults (unbatched/proposed
 events and unstamped `.engine` changes carry `batch := none` via
