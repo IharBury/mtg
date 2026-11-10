@@ -10748,7 +10748,7 @@ object-referencing `FraChoice` revalidation & `beginMayDiscardDraw` /
        (`Casting.lean:698–700`) chains `.afterWardResolved` behind `outer`
        rather than running `completeActiveResolutions` + `receivePriority`
        prematurely before `outer` executes;
-     - in `Casting.afterWardResolved` (`Casting.lean:705`), guard `if g.over ||
+     - in `Casting.afterWardResolved` (`Casting.lean:706`), guard `if g.over ||
        g.pending != .none || g.afterRandom != .none then g` before
        `g.triggerNeedingTargets.isSome` / `g.receivePriority prio`; and
      - after `g.drainPendingContinuations` in `finishWardAndDrain`
@@ -10761,7 +10761,7 @@ object-referencing `FraChoice` revalidation & `beginMayDiscardDraw` /
      - Extend `Core.clearMay` (`Core.lean:11615–11623`) to reset
        `.mayOnAccept none, .mayOnDecline none, .mayContext none` alongside
        `.mayController ⟨0⟩, .mayEffect none, .mayTargets #[], .maySource none`
-       (safe for `Decisions.lean:3692, 4163`, which apply
+       (safe for `Decisions.lean:3694, 4163`, which apply
        `.setTriggerSequenceRestFromMay` consuming `f.mayContext` at
        `Core.lean:2231–2236` before `.clearMay`), and call `g.clearMay` before
        populating `.mayEffect` in `EffectResolution.beginMay`'s `| r =>` arm
@@ -11349,21 +11349,43 @@ cost/2HG-combat/`unlessPaysDue` completion, `redirectPendingAfterLeave` `q != p`
        `SacrificeDiscard.sacrificeForActivation` at
        `SacrificeDiscard.lean:423–427, 440–444` chain `outerCont?` onto
        `pendingReplacement` before calling `afterWardResolved`); instead, right
-       after clearing `.payWard` (`694–697`, before `698–703`), when `g.pending
-       == .none && g.afterRandom == .none && (g.mayThenResume ||
-       g.triggerSequenceRest.isSome)`, stash `let stashedPending :=
-       g.pendingReplacement` and `let stashedOuters :=
-       g.outerPendingReplacements`, clear them via `if stashedPending.isSome
-       then g.change (.pendingReplacement none) else g` and popping
-       `stashedOuters.size` entries via `.popOuterPendingReplacement`, run `let
-       g := g.drainPendingContinuations` to drain `mayThenResume` and
-       `triggerSequenceRest` first, and when `!g.over` restore `stashedPending`
-       via `match stashedPending with | some c => g.chainPendingReplacement c |
-       none => g` and prepend `stashedOuters` below any `drainOuters :=
-       g.outerPendingReplacements` pushed during the drain (popping
-       `drainOuters` and pushing `stashedOuters ++ drainOuters` via
-       `.pushOuterPendingReplacement`); then proceed through `698–703` (`if
-       (match g.pending with | .chooseReplacement .. => true | _ => false) ||
+       after clearing `.payWard` (`694–697`, before `698–703`), when
+       `g.mayThenResume || g.triggerSequenceRest.isSome`, record `let
+       stashDepth := g.continuations.size`, `let stashedPending :=
+       g.pendingReplacement`, and `let stashedOuters :=
+       g.outerPendingReplacements`, clear them on that frame (`if
+       stashedPending.isSome then g.change (.pendingReplacement none) else g`
+       and popping `stashedOuters.size` entries via
+       `.popOuterPendingReplacement` so the stash frame's
+       `outerPendingReplacements` is `#[]`), and if `g.pending == .none &&
+       g.afterRandom == .none` run `let g := g.drainPendingContinuations` to
+       drain `mayThenResume` and `triggerSequenceRest` first; when `!g.over`,
+       re-push `{}` if `popEmptyTopContinuationFrames` popped the stash frame
+       during the drain (`while g.continuations.size < stashDepth do g :=
+       g.change (.pushContinuationFrame {})`) so the restore writes back onto
+       the same frame the stash was taken from, and snapshot `let drainSuffix :=
+       if (g.pending != .none || g.afterRandom != .none) &&
+       g.continuations.size == stashDepth then g.outerPendingReplacements else
+       #[]` (capturing only the unresumed suffix pushed onto that frame during
+       a paused drain, since a full drain already popped and resumed any new
+       outers at `Decisions.lean:149–152`); if `g.mayThenResume ||
+       g.triggerSequenceRest.isSome` is still set, leave the open prompt or
+       `afterRandom` (and any inner `g.pendingReplacement` from the paused step)
+       in place, park `let wardCont := match stashedPending with | some c =>
+       .seq c .afterWardResolved | none => .afterWardResolved` together with
+       `stashedOuters` onto `outerPendingReplacements` on the stash frame
+       (popping `drainSuffix.size` entries via `.popOuterPendingReplacement` and
+       pushing `(stashedOuters.push wardCont) ++ drainSuffix` via
+       `.pushOuterPendingReplacement`, drained at `Decisions.lean:149–152` after
+       `triggerSequenceRest`), and return `g` without entering `698–703` or
+       popping that outer back into `pendingReplacement`; otherwise (when
+       `!g.mayThenResume && g.triggerSequenceRest.isNone`), restore
+       `stashedPending` via `match stashedPending with | some c =>
+       g.chainPendingReplacement c | none => g` and restore `stashedOuters`
+       below `drainSuffix` on the stash frame (popping `drainSuffix.size`
+       entries and pushing `stashedOuters ++ drainSuffix` via
+       `.pushOuterPendingReplacement`), then enter `698–703` (`if (match
+       g.pending with | .chooseReplacement .. => true | _ => false) ||
        g.pendingReplacement.isSome` → `g.chainPendingReplacement
        .afterWardResolved`, `else if let some outer :=
        g.outerPendingReplacements.back?` → pop `outer` into `pendingReplacement`
