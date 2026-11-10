@@ -1665,7 +1665,8 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
         prop.caster == p && (!g.stillInGame p || (g.findObject? prop.spellId).isNone))
     let g :=
       if ownPropNeedsReverse then
-        g.reverseProposedSpell (resumeContinuation := true)
+        (if g.pending == .none then g else g.change (.pending .none)).reverseProposedSpell
+          (resumeContinuation := true) (alwaysGrantPriority := true)
       else g
     let pendingBlocksTargets :=
       match g.pending with
@@ -1676,15 +1677,7 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
     else
       match g.objectAwaitingTargets with
       | none =>
-        let hadVanishedProp :=
-          g.proposedSpell.any (fun prop => (g.findObject? prop.spellId).isNone)
-        let g :=
-          if hadVanishedProp then
-            (if g.pending == .none then g else g.change (.pending .none)).reverseProposedSpell
-              (resumeContinuation := true)
-          else g
-        if (ownPropNeedsReverse || hadVanishedProp) &&
-            (g.over || g.pending != .none || g.afterRandom != .none) then
+        if ownPropNeedsReverse then
           g
         else
           g.afterTriggerTargetsChosen
@@ -2473,15 +2466,19 @@ preserving CR 733.1 irreversible library actions, running any deferred post-cast
 cleanup, and resuming an active continuation via `finishFraChoice` when
 `resumeContinuation == true` (CR 601.2 / 602.2 / 733.1–733.2). -/
 partial def reverseProposedSpell? (g : Game) (resumeContinuation : Bool := false)
-    (extraLog : Option String := none) : Except String Game := do
+    (extraLog : Option String := none)
+    (alwaysGrantPriority : Bool := false) : Except String Game := do
   let (g, needsFinish) ← g.reverseProposedSpellCore?
     (resumeContinuation := resumeContinuation) (extraLog := extraLog)
+    (alwaysGrantPriority := alwaysGrantPriority)
   return if needsFinish then g.finishFraChoice else g
 
 /-- Non-monadic wrapper around `reverseProposedSpell?`. -/
 partial def reverseProposedSpell (g : Game) (resumeContinuation : Bool := false)
-    (extraLog : Option String := none) : Game :=
-  match g.reverseProposedSpell? (resumeContinuation := resumeContinuation) (extraLog := extraLog) with
+    (extraLog : Option String := none)
+    (alwaysGrantPriority : Bool := false) : Game :=
+  match g.reverseProposedSpell? (resumeContinuation := resumeContinuation)
+      (extraLog := extraLog) (alwaysGrantPriority := alwaysGrantPriority) with
   | .ok g' => g'
   | .error msg => g.logMsg msg
 
@@ -2888,15 +2885,10 @@ partial def afterTriggerTargetsChosen (g : Game) : Game :=
   | some _ =>
     promptTriggerTargetsIfNeeded (g.change (.pending .none))
   | none =>
-    let hadVanishedProp :=
-      g.proposedSpell.any (fun prop => (g.findObject? prop.spellId).isNone)
-    let g :=
-      if hadVanishedProp then
-        (if g.pending == .none then g else g.change (.pending .none)).reverseProposedSpell
-          (resumeContinuation := true)
-      else g
-    if hadVanishedProp && (g.over || g.pending != .none || g.afterRandom != .none) then
-      g
+    if g.proposedSpell.any (fun prop =>
+        !g.stillInGame prop.caster || (g.findObject? prop.spellId).isNone) then
+      (if g.pending == .none then g else g.change (.pending .none)).reverseProposedSpell
+        (resumeContinuation := true) (alwaysGrantPriority := true)
     else if g.proposedSpell.isSome then
       if g.pending == .none then g else g.change (.pending .none)
     else

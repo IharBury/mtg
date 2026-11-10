@@ -632,7 +632,8 @@ irreversible library actions, runs deferred `postCastCleanup`, and reports
 whether `Decisions.finishFraChoice` should resume an active continuation
 (CR 601.2 / 602.2 / 733.1–733.2). -/
 def reverseProposedSpellCore? (g : Game) (resumeContinuation : Bool := false)
-    (extraLog : Option String := none) : Except String (Game × Bool) := do
+    (extraLog : Option String := none)
+    (alwaysGrantPriority : Bool := false) : Except String (Game × Bool) := do
   match g.proposedSpell with
   | none => return (g, false)
   | some prop =>
@@ -652,17 +653,22 @@ def reverseProposedSpellCore? (g : Game) (resumeContinuation : Bool := false)
       | some msg => g.logMsg msg
       | none => g
     let g := g.runPostCastCleanup
+    let prio := g.priorityInstead prop.caster
     let g :=
       if g.pending == .none && g.continuations.isEmpty &&
-          g.priority != prop.caster then
-        g.change (.priority prop.caster)
+          g.priority != prio then
+        g.change (.priority prio)
       else g
     if resumeContinuation &&
         (!g.continuations.isEmpty || g.pendingReplacement.isSome) then
       return (g, true)
     else if g.pending == .none && g.continuations.isEmpty &&
-        (g.waitingTriggers.size > baseTriggers || hasUnreversedActions) then
-      return (g.receivePriority prop.caster, false)
+        g.triggerNeedingTargets.isNone &&
+        (alwaysGrantPriority || g.waitingTriggers.size > baseTriggers || hasUnreversedActions) then
+      return (g.receivePriority prio, false)
+    else if g.pending == .none && g.continuations.isEmpty &&
+        g.triggerNeedingTargets.isSome && g.pendingPriority.isNone then
+      return (g.change (.pendingPriority (some prio)), false)
     else
       return (g, false)
 

@@ -24647,9 +24647,9 @@ private def mustApply33i2 (g : Game) (p : PlayerId) (a : Action) : Game :=
   let gTargetOtherPropLive := (gTapCast.change (.pending .none)).runPostStep (.resumeChooseTargetsAfterLeave p2)
   let vanishedProp : ProposedSpell := { gTapCast.proposedSpell.get! with spellId := ⟨999999⟩ }
   let vanishedPropP2 : ProposedSpell := { vanishedProp with caster := p2 }
-  let gVanishedOnCast := gTapCast.changes #[.proposedSpell (some vanishedProp), .pending .none]
-  let gTargetOwnPropGone := gVanishedOnCast.runPostStep (.resumeChooseTargetsAfterLeave p0)
-  let gTargetOtherPropGone := gVanishedOnCast.runPostStep (.resumeChooseTargetsAfterLeave p2)
+  let gVanishedOnCastP2 := gTapCast.changes #[.proposedSpell (some vanishedPropP2), .pending .none]
+  let gTargetOwnPropGone := gVanishedOnCastP2.runPostStep (.resumeChooseTargetsAfterLeave p2)
+  let gTargetOtherPropGone := gVanishedOnCastP2.runPostStep (.resumeChooseTargetsAfterLeave p0)
   -- Queued waiting trigger proves whether `receivePriority` ran (which stacks waiting triggers):
   let probeWt : WaitingTrigger := {
     controller := p0
@@ -24662,13 +24662,15 @@ private def mustApply33i2 (g : Game) (p : PlayerId) (a : Action) : Game :=
   let gTrigWithProbe := (gP0TrigAwaiting.change (.pending .none)).change (.waitingTriggers #[probeWt])
   let gOwnVanishedWithTrig := gTrigWithProbe.changes #[.saveProposalCheckpoint, .proposedSpell (some vanishedProp)]
   let gOtherCasterVanishedWithTrig := gTrigWithProbe.changes #[.saveProposalCheckpoint, .proposedSpell (some vanishedPropP2)]
-  -- (1) Own vanished proposal (`caster == p0`) + `p0`'s trigger: reverses `p0`'s proposal, still prompts
-  --     `.chooseTargets p0`, and announcing `p0Bear.id` completes cleanly via `afterTriggerTargetsChosen`:
+  -- (1) Own vanished proposal (`caster == p2` while `activePlayer == p0`, and `caster == p0`) + `p0`'s trigger:
+  --     reverses the proposal, prompts `.chooseTargets p0`, and returns priority to the vanished caster once announced:
   let gTargetOwnSeatWithTrig := gOwnVanishedWithTrig.runPostStep (.resumeChooseTargetsAfterLeave p0)
   let gTargetOwnSeatAnnounced := mustApply33i2 gTargetOwnSeatWithTrig p0 (.target (.permanent p0Bear.id))
+  let gTargetOwnP2SeatWithTrig := gOtherCasterVanishedWithTrig.runPostStep (.resumeChooseTargetsAfterLeave p2)
+  let gTargetOwnP2SeatAnnounced := mustApply33i2 gTargetOwnP2SeatWithTrig p0 (.target (.permanent p0Bear.id))
   -- (2) Other player's vanished proposal (`caster != p` on both `p == p2` and `caster == p2, p == p0`) + `p0`'s trigger:
   --     prompts `.chooseTargets p0` first, and once `p0Bear.id` is announced, `afterTriggerTargetsChosen` reverses the
-  --     vanished proposal (preserving `p0TrigId`'s target) and runs `receivePriority` (draining `waitingTriggers`):
+  --     vanished proposal (preserving `p0TrigId`'s target) and runs `receivePriority` for the vanished caster:
   let gTargetOtherPropGoneWithTrig := gOwnVanishedWithTrig.runPostStep (.resumeChooseTargetsAfterLeave p2)
   let gTargetOtherAnnouncedA := mustApply33i2 gTargetOtherPropGoneWithTrig p0 (.target (.permanent p0Bear.id))
   let gTargetOtherCasterSameSeat := gOtherCasterVanishedWithTrig.runPostStep (.resumeChooseTargetsAfterLeave p0)
@@ -24684,8 +24686,8 @@ private def mustApply33i2 (g : Game) (p : PlayerId) (a : Action) : Game :=
       (.pending .none)).change (.waitingTriggers #[probeWt])
   let noLegalTrigId := gNoLegalTrig0.stack.back!.objectId
   let gNoLegalOwnRemoved :=
-    (gNoLegalTrig0.changes #[.saveProposalCheckpoint, .proposedSpell (some vanishedProp)]).runPostStep
-      (.resumeChooseTargetsAfterLeave p0)
+    (gNoLegalTrig0.changes #[.saveProposalCheckpoint, .proposedSpell (some vanishedPropP2)]).runPostStep
+      (.resumeChooseTargetsAfterLeave p2)
   let gNoLegalOtherRemoved :=
     (gNoLegalTrig0.changes #[.saveProposalCheckpoint, .proposedSpell (some vanishedPropP2)]).runPostStep
       (.resumeChooseTargetsAfterLeave p0)
@@ -24702,20 +24704,33 @@ private def mustApply33i2 (g : Game) (p : PlayerId) (a : Action) : Game :=
     gTargetPostWrongSeat.pending == .chooseTargets p0 &&
     gTargetOtherPropLive.pending == .chooseTargets p0 &&
     gTargetOtherPropLive.proposedSpell.isSome &&
+    gTargetOwnPropGone.pending == .none &&
     gTargetOwnPropGone.proposedSpell.isNone &&
+    gTargetOwnPropGone.priority == p2 &&
     gTargetOtherPropGone.pending == .none &&
     gTargetOtherPropGone.proposedSpell.isNone &&
+    gTargetOtherPropGone.priority == p2 &&
     gTargetOwnSeatWithTrig.proposedSpell.isNone &&
     gTargetOwnSeatWithTrig.pending == .chooseTargets p0 &&
     gTargetOwnSeatAnnounced.pending == .none &&
     gTargetOwnSeatAnnounced.proposedSpell.isNone &&
+    gTargetOwnSeatAnnounced.priority == p0 &&
     (gTargetOwnSeatAnnounced.stack.find? (·.objectId == p0TrigId)).any (fun se =>
       se.targetsAnnounced && se.targets == #[.permanent p0Bear.id]) &&
     gTargetOwnSeatAnnounced.waitingTriggers.isEmpty &&
+    gTargetOwnP2SeatWithTrig.proposedSpell.isNone &&
+    gTargetOwnP2SeatWithTrig.pending == .chooseTargets p0 &&
+    gTargetOwnP2SeatAnnounced.pending == .none &&
+    gTargetOwnP2SeatAnnounced.proposedSpell.isNone &&
+    gTargetOwnP2SeatAnnounced.priority == p2 &&
+    (gTargetOwnP2SeatAnnounced.stack.find? (·.objectId == p0TrigId)).any (fun se =>
+      se.targetsAnnounced && se.targets == #[.permanent p0Bear.id]) &&
+    gTargetOwnP2SeatAnnounced.waitingTriggers.isEmpty &&
     gTargetOtherPropGoneWithTrig.proposedSpell.isSome &&
     gTargetOtherPropGoneWithTrig.pending == .chooseTargets p0 &&
     gTargetOtherAnnouncedA.pending == .none &&
     gTargetOtherAnnouncedA.proposedSpell.isNone &&
+    gTargetOtherAnnouncedA.priority == p0 &&
     (gTargetOtherAnnouncedA.stack.find? (·.objectId == p0TrigId)).any (fun se =>
       se.targetsAnnounced && se.targets == #[.permanent p0Bear.id]) &&
     gTargetOtherAnnouncedA.waitingTriggers.isEmpty &&
@@ -24723,14 +24738,18 @@ private def mustApply33i2 (g : Game) (p : PlayerId) (a : Action) : Game :=
     gTargetOtherCasterSameSeat.pending == .chooseTargets p0 &&
     gTargetOtherAnnouncedB.pending == .none &&
     gTargetOtherAnnouncedB.proposedSpell.isNone &&
+    gTargetOtherAnnouncedB.priority == p2 &&
     (gTargetOtherAnnouncedB.stack.find? (·.objectId == p0TrigId)).any (fun se =>
       se.targetsAnnounced && se.targets == #[.permanent p0Bear.id]) &&
     gTargetOtherAnnouncedB.waitingTriggers.isEmpty &&
     gNoLegalOwnRemoved.proposedSpell.isNone &&
+    gNoLegalOwnRemoved.pending == .none &&
+    gNoLegalOwnRemoved.priority == p2 &&
     (gNoLegalOwnRemoved.findObject? noLegalTrigId).isNone &&
     gNoLegalOwnRemoved.waitingTriggers.isEmpty &&
     gNoLegalOtherRemoved.proposedSpell.isNone &&
     gNoLegalOtherRemoved.pending == .none &&
+    gNoLegalOtherRemoved.priority == p2 &&
     (gNoLegalOtherRemoved.findObject? noLegalTrigId).isNone &&
     gNoLegalOtherRemoved.waitingTriggers.isEmpty &&
     gModePostDeparted.pending == .none && gModePostDeparted.continuations.isEmpty &&
@@ -24887,6 +24906,7 @@ private def mustApply33i2 (g : Game) (p : PlayerId) (a : Action) : Game :=
     (replayOk33i2 #[gLeftP1, gP0TrigAwaiting, gTargetPostDeparted, gTargetPostWrongSeat,
       gTargetOtherPropLive, gTargetOwnPropGone, gTargetOtherPropGone,
       gTargetOwnSeatWithTrig, gTargetOwnSeatAnnounced,
+      gTargetOwnP2SeatWithTrig, gTargetOwnP2SeatAnnounced,
       gTargetOtherPropGoneWithTrig, gTargetOtherAnnouncedA,
       gTargetOtherCasterSameSeat, gTargetOtherAnnouncedB,
       gNoLegalOwnRemoved, gNoLegalOtherRemoved,
