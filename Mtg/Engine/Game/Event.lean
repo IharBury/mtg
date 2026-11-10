@@ -1674,7 +1674,7 @@ inductive PendingReplacement where
   | finishManaAbilityMountainTrigger (player : PlayerId) (sourceId : ObjectId)
   | restorePending (p : Pending) (popOuter : Bool := false)
       (promptLog : Option String := none) (departed : Array PlayerId := #[])
-      (rewindProposal : Bool := false)
+      (rewindProposal : Option Bool := none)
   | closeBatch (batchId : BatchId) (startIdx : Nat)
   | restorePausedBatch (batchId : BatchId) (startIdx : Nat) (wasDiscard : Bool)
       (cause : Option EventCause) (objects : Array GameObject)
@@ -1864,7 +1864,7 @@ inductive PendingReplacement where
   | returnStackSpell (spellId : ObjectId) (owner : PlayerId) (name : String)
       (postMove : Bool := false)
   | leavePlayersWhoLost (savedPending : Option Pending := none) (popOuter : Bool := false)
-      (departed : Array PlayerId := #[]) (rewindProposal : Bool := false)
+      (departed : Array PlayerId := #[]) (rewindProposal : Option Bool := none)
   | endControlExileLoop (remaining : Array (ObjectId × String))
       (cause : Option EventCause := none)
       (pendingLog : Option (ObjectId × String) := none)
@@ -1881,13 +1881,13 @@ inductive PendingReplacement where
   | finishConcede (wasIdlePriority : Bool) (savedPendingPrio : Option PlayerId)
       (wasAssigningCombatDamage : Option Bool := none)
       (savedPending : Option Pending := none) (popOuter : Bool := false)
-      (departed : Array PlayerId := #[]) (rewindProposal : Bool := false)
+      (departed : Array PlayerId := #[]) (rewindProposal : Option Bool := none)
   | concedePlayersLoop (remaining : Array PlayerId)
       (wasPregame midResolutionOrBatch wasIdlePriority : Bool)
       (savedPendingPrio : Option PlayerId)
       (wasAssigningCombatDamage : Option Bool := none)
       (savedPending : Option Pending := none) (popOuter : Bool := false)
-      (departed : Array PlayerId := #[]) (rewindProposal : Bool := false)
+      (departed : Array PlayerId := #[]) (rewindProposal : Option Bool := none)
   | afterWardResolved
 deriving Repr, Inhabited, BEq
 

@@ -25821,8 +25821,8 @@ private def replayOk34i3 (gs : Array Game) : Bool :=
     gStolenDeferred1.change (.proposedSpell (some stolenDefProp))
   let gStolenDeferredRewound :=
     gStolenDeferred2.resumePendingReplacement
-      (.restorePending .none false (departed := #[p1]) (rewindProposal := true))
-  -- Unrelated `restorePending .none` (`rewindProposal := false`) does NOT reverse a legal `{T}` activation
+      (.restorePending .none false (departed := #[p1]) (rewindProposal := some false))
+  -- Unrelated `restorePending .none` (`rewindProposal := none`) does NOT reverse a legal `{T}` activation
   -- whose `{T}` cost was already paid (`Comment 2`):
   let gTapPaid0 := gBase.change .saveProposalCheckpoint
   let (gTapPaid1, tapPaidAbObj) :=
@@ -25843,7 +25843,78 @@ private def replayOk34i3 (gs : Array Game) : Bool :=
   let gTapPaid3 := gTapPaid2.change (.proposedSpell (some tapPaidProp))
   let gTapPaidAfterUnrelatedRestore :=
     gTapPaid3.resumePendingReplacement
-      (.restorePending .none false (departed := #[p1]) (rewindProposal := false))
+      (.restorePending .none false (departed := #[p1]) (rewindProposal := none))
+  -- Deferred rewind on a `castAsPartOfResolution` checkpoint (`ckpt.pendingReplacement == some (.gainLife p0 2 ...)`
+  -- moved to `outerPendingReplacements` after `saveProposalCheckpoint`, so `hadPreBodyCont == false` at leave time)
+  -- when the departure also pushed a leave-built outer continuation (`popOuter == true`, `+3` life) preserves both
+  -- the checkpoint's resolution continuation AND the leave-built outer continuation (`Review #3 Comment 1`):
+  let gResCastCkpt0 :=
+    gBase.changes #[
+      .pushContinuationFrame {},
+      .pendingReplacement (some (.gainLife p0 2 (some testCause))),
+      .saveProposalCheckpoint,
+      .pushOuterPendingReplacement (.gainLife p0 2 (some testCause)),
+      .pendingReplacement none ]
+  let (gResCastCkpt1, resCastAbObj) :=
+    gResCastCkpt0.putStackAbility p0Bear p0 (abilityEffect := some (Effect.gainLife 1))
+  let resCastProp : ProposedSpell := {
+    caster := p0
+    cost := ManaCost.empty
+    spellId := resCastAbObj.id
+    original := resCastAbObj
+    originalSnapshot := gResCastCkpt1.snapshot resCastAbObj
+    kind := .activatedAbility
+    sourceId := some p0Bear.id
+    resolutionCast := true
+  }
+  let gResCastWithLeaveOuter :=
+    gResCastCkpt1.changes #[
+      .proposedSpell (some resCastProp),
+      .pushOuterPendingReplacement (.gainLife p0 3 (some testCause)) ]
+  let gResCastDeferredRestore :=
+    gResCastWithLeaveOuter.resumePendingReplacement
+      (.restorePending .none true (departed := #[p1]) (rewindProposal := some false))
+  -- Chaining `runPostCastCleanup`'s `.resolveRandom (.orderInto ...)` with an already-saved departure prompt
+  -- (`saved? == some (.scry p0 ...)`) keeps both prompts instead of dropping `.orderInto` (`Review #3 Comment 2`):
+  let gCasc2 :=
+    insertObject
+      (insertObject
+        (insertObject gBase bear p0 .exile)
+        bear p0 .exile)
+      bear p0 .exile
+  let cascExIds := (gCasc2.objects.filter (fun o => o.zone == .exile && o.owner == p0)).map (·.id)
+  let cascCard0 := cascExIds[0]!
+  let cascCard1 := cascExIds[1]!
+  let cascCard2 := cascExIds[2]!
+  let gCascCkpt :=
+    gCasc2.changes #[
+      .pushContinuationFrame {},
+      .postCastCleanup (some (.cascadeBottom p0 cascCard0 #[cascCard1, cascCard2])),
+      .saveProposalCheckpoint ]
+  let (gCascStack0, cascStackId) := gCascCkpt.move cascCard0 .stack (some p0) (cause := some testCause)
+  let cascProp : ProposedSpell := {
+    caster := p0
+    cost := ManaCost.empty
+    spellId := cascStackId
+    original := gCascCkpt.object! cascCard0
+    originalSnapshot := gCascCkpt.snapshot (gCascCkpt.object! cascCard0)
+    kind := .spell
+    resolutionCast := true
+  }
+  let savedScryPrompt : Pending := .scry p0 1
+  let gCascWithProp := gCascStack0.change (.proposedSpell (some cascProp))
+  let gCascRestored :=
+    gCascWithProp.resumePendingReplacement
+      (.restorePending savedScryPrompt false (departed := #[p1]) (rewindProposal := some false))
+  let cascOpenedOrderInto :=
+    match gCascRestored.pending with
+    | .resolveRandom (.orderInto ids (.library q) _) =>
+      q == p0 && ids.size == 3 && ids.contains cascCard0 && ids.contains cascCard1 && ids.contains cascCard2
+    | _ => false
+  let gCascAfterOrder :=
+    match gCascRestored.supplyOrder #[cascCard0, cascCard1, cascCard2] with
+    | .ok g' => g'
+    | .error _ => gCascRestored
 
   let sourceAndLeaveAbortOk :=
     !gBear1Counter.sourceStillPayable removeXProp &&
@@ -25868,7 +25939,12 @@ private def replayOk34i3 (gs : Array Game) : Bool :=
     gStolenDeferredRewound.proposalCheckpoint.isNone &&
     !gTapPaid3.sourceStillPayable tapPaidProp &&
     gTapPaidAfterUnrelatedRestore.proposedSpell.isSome &&
-    gTapPaidAfterUnrelatedRestore.proposalCheckpoint.isSome
+    gTapPaidAfterUnrelatedRestore.proposalCheckpoint.isSome &&
+    gResCastDeferredRestore.proposedSpell.isNone &&
+    gResCastDeferredRestore.proposalCheckpoint.isNone &&
+    (gResCastDeferredRestore.player p0).life == (gBase.player p0).life + 5 &&
+    cascOpenedOrderInto &&
+    gCascAfterOrder.pending == savedScryPrompt
 
   -- 3b. `redirectPendingAfterLeave`:
   -- (i) `.payOrLetCounter`:
