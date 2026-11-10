@@ -25735,31 +25735,44 @@ private def replayOk34i3 (gs : Array Game) : Bool :=
   let gBearStolen :=
     gBear2Counters.createEffect (.control p0Bear.id p1) (cause := some testCause)
   -- `p0` proposes an activated ability from `p1Hero` (`sourceId == some p1Hero.id`) while at `.chooseX p0`:
-  -- when `p1` concedes, `isProposalAbortedByLeave p1 == true` immediately reverses the proposal!
+  -- when `p1` concedes, `isProposalAbortedByLeave p1 == true` immediately reverses `p0`'s proposal
+  -- (rolling back journaled proposal actions and not emitting `.ceasedToExist` for `p0`'s stack ability)!
   let gCpChooseX0 := gBase.change .saveProposalCheckpoint
   let (gCpChooseX1, p1SrcAbObj) := gCpChooseX0.putStackAbility p1Hero p0 (abilityEffect := some (Effect.gainLife 1))
+  let gCpChooseX2 :=
+    gCpChooseX1.withProposalAction .costAction fun g =>
+      g.becomeTapped (g.object! p0Bear.id) (cause := some testCause)
   let p1SrcProp : ProposedSpell := {
     caster := p0
     cost := ManaCost.empty
     spellId := p1SrcAbObj.id
     original := p1SrcAbObj
-    originalSnapshot := gCpChooseX1.snapshot p1SrcAbObj
+    originalSnapshot := gCpChooseX2.snapshot p1SrcAbObj
     kind := .activatedAbility
     sourceId := some p1Hero.id
   }
   let gChooseXBorrowedSrc :=
-    gCpChooseX1.changes #[
+    gCpChooseX2.changes #[
       .proposedSpell (some p1SrcProp),
       .pending (.chooseX p0) ]
   let gChooseXAfterP1Leave := gChooseXBorrowedSrc.concede p1
+  let p1SrcAbCeasedOnP1Leave :=
+    gChooseXAfterP1Leave.events.any fun ev =>
+      match ev with
+      | .rules _ (.zone (.ceasedToExist snap)) _ _ => snap.id == some p1SrcAbObj.id
+      | _ => false
 
   let sourceAndLeaveAbortOk :=
     !gBear1Counter.sourceStillPayable removeXProp &&
     gBear2Counters.sourceStillPayable removeXProp &&
     !gBearStolen.sourceStillPayable removeXProp &&
     gChooseXAfterP1Leave.proposedSpell.isNone &&
+    gChooseXAfterP1Leave.proposalCheckpoint.isNone &&
     gChooseXAfterP1Leave.pending == .none &&
-    (gChooseXAfterP1Leave.findObject? p1SrcAbObj.id).isNone
+    (gChooseXAfterP1Leave.findObject? p1SrcAbObj.id).isNone &&
+    !(gChooseXAfterP1Leave.object! p0Bear.id).status.tapped &&
+    !p1SrcAbCeasedOnP1Leave &&
+    gChooseXAfterP1Leave.log.any (·.contains "the activation is reversed (CR 602.2 / 733.1)")
 
   -- 3b. `redirectPendingAfterLeave`:
   -- (i) `.payOrLetCounter`:

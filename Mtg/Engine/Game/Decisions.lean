@@ -775,8 +775,17 @@ partial def resumePendingReplacement (g : Game) (pr : PendingReplacement)
         g.reverseProposedSpell (resumeContinuation := true)
       else
         resumePoppedIfNoPrompt g
+    let shouldRewindDeferredProposal (g : Game) (deps : Array PlayerId) : Bool :=
+      g.proposalCheckpoint.isSome &&
+        g.proposedSpell.any (fun prop =>
+          g.stillInGame prop.caster &&
+            (deps.any g.isProposalAbortedByLeave ||
+              !g.sourceStillPayable prop ||
+              (g.findObject? prop.spellId).isNone))
     match p with
-    | .none => resumePoppedIfNoPrompt g
+    | .none =>
+      if shouldRewindDeferredProposal g departed then reverseOrResumePopped g
+      else resumePoppedIfNoPrompt g
     | .fraChoice caster (.costPicks ..)
     | .fraChoice caster (.crew ..)
     | .fraChoice caster (.zemoBoastExile ..)
@@ -951,7 +960,9 @@ partial def resumePendingReplacement (g : Game) (pr : PendingReplacement)
         if nextP != .none then
           openPromptWith g nextP
         else
-          let g := resumePoppedIfNoPrompt g
+          let g :=
+            if shouldRewindDeferredProposal g effectiveDeparted then reverseOrResumePopped g
+            else resumePoppedIfNoPrompt g
           if g.unlessPaysDue && !g.sbaPaused && g.pending == .none then
             g.flushUnlessPays
           else g
