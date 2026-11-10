@@ -446,7 +446,7 @@ partial def concedePlayersLoop (g : Game) (remaining : Array PlayerId)
         saved? := none
       let (g', newlySaved?, po, rw) :=
         g.playerLeavesGameCore pid (deferRestore := true) (pendingIn := pendingIn)
-          (departedIn := departed)
+          (departedIn := departed) (rewindProposalIn := rewindProposal)
       g := g'
       departed := if departed.contains pid then departed else departed.push pid
       popOuter := popOuter || po
@@ -472,8 +472,9 @@ partial def concedePlayersLoop (g : Game) (remaining : Array PlayerId)
       | some _, none => pure ()
       rewindProposal :=
         match rewindProposal, rw with
-        | some a, some b => some (a || b)
-        | some a, none => some a
+        | some a, some _ => some a
+        | some a, none =>
+          if g.proposedSpell.isSome && g.proposalCheckpoint.isSome then some a else none
         | none, some b => some b
         | none, none => none
       let rem := remaining.extract (i + 1) remaining.size

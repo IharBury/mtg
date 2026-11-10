@@ -2067,8 +2067,9 @@ post-departure SBAs before restoring `savedPreLeavePending?` / `popOuter`. -/
 def playerLeavesGameCore (g : Game) (p : PlayerId)
     (deferRestore : Bool := false)
     (pendingIn : Option Pending := none)
-    (departedIn : Array PlayerId := #[]) : Game × Option Pending × Bool × Option Bool :=
-  if (g.player p).leftTheGame then (g, none, false, none)
+    (departedIn : Array PlayerId := #[])
+    (rewindProposalIn : Option Bool := none) : Game × Option Pending × Bool × Option Bool :=
+  if (g.player p).leftTheGame then (g, none, false, rewindProposalIn)
   else
     let departed := if departedIn.contains p then departedIn else departedIn.push p
     let cause := some (EventCause.gameRule .playerLeftGame)
@@ -2112,7 +2113,7 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
           else some pr
         | _, pr? => if abortingReplacementProposal then none else pr?
       let preBodyCont? := preBodyCont?.map (PendingReplacement.appendDepartedMany departed)
-      let hadPreBodyCont := preBodyCont?.isSome
+      let hadPreBodyCont := rewindProposalIn.getD preBodyCont?.isSome
       let g :=
         match abortedCaster?, g.outerPendingReplacements.back? with
         | some c, some back =>
@@ -2599,7 +2600,7 @@ def leavePlayersWhoLostCore (g : Game)
           saved? := none
         let (g', newlySaved?, po, rw) :=
           g.playerLeavesGameCore pl.id (deferRestore := true) (pendingIn := pendingIn)
-            (departedIn := departed)
+            (departedIn := departed) (rewindProposalIn := rewindProposal)
         g := g'
         departed := if departed.contains pl.id then departed else departed.push pl.id
         popOuter := popOuter || po
@@ -2625,8 +2626,9 @@ def leavePlayersWhoLostCore (g : Game)
         | some _, none => pure ()
         rewindProposal :=
           match rewindProposal, rw with
-          | some a, some b => some (a || b)
-          | some a, none => some a
+          | some a, some _ => some a
+          | some a, none =>
+            if g.proposedSpell.isSome && g.proposalCheckpoint.isSome then some a else none
           | none, some b => some b
           | none, none => none
         if let .chooseReplacement .. := g.pending then

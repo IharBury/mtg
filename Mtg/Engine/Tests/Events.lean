@@ -25915,6 +25915,19 @@ private def replayOk34i3 (gs : Array Game) : Bool :=
     match gCascRestored.supplyOrder #[cascCard0, cascCard1, cascCard2] with
     | .ok g' => g'
     | .error _ => gCascRestored
+  -- A second departure in `leavePlayersWhoLostCore` while `rewindProposalIn == some false`
+  -- and `popOuterIn == true` keeps `hadPreBodyCont = false` instead of flipping to `true`
+  -- from the popped outer continuation (`Review #4`):
+  let gMultiLeave0 :=
+    (gResCastWithLeaveOuter.createEffect (.control p0Bear.id p2) (cause := some testCause)).record
+      (GameEvent.playerLost gResCastWithLeaveOuter.turnNumber p2 .conceded)
+  let (gMultiAfter, sMulti, poMulti, depMulti, rwMulti) :=
+    gMultiLeave0.withBatchReturn none fun g =>
+      let (g', s', po', dep', rw') :=
+        g.leavePlayersWhoLostCore none true #[p1] (some false)
+      (g', (s', po', dep', rw'))
+  let gMultiRestored :=
+    gMultiAfter.restoreSavedPostLeave sMulti poMulti (departed := depMulti) (rewindProposal := rwMulti)
 
   let sourceAndLeaveAbortOk :=
     !gBear1Counter.sourceStillPayable removeXProp &&
@@ -25944,7 +25957,11 @@ private def replayOk34i3 (gs : Array Game) : Bool :=
     gResCastDeferredRestore.proposalCheckpoint.isNone &&
     (gResCastDeferredRestore.player p0).life == (gBase.player p0).life + 5 &&
     cascOpenedOrderInto &&
-    gCascAfterOrder.pending == savedScryPrompt
+    gCascAfterOrder.pending == savedScryPrompt &&
+    poMulti &&
+    gMultiRestored.proposedSpell.isNone &&
+    gMultiRestored.proposalCheckpoint.isNone &&
+    (gMultiRestored.player p0).life == (gBase.player p0).life + 5
 
   -- 3b. `redirectPendingAfterLeave`:
   -- (i) `.payOrLetCounter`:
