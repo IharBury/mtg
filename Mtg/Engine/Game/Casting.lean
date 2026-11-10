@@ -654,6 +654,9 @@ def reverseProposedSpellCore? (g : Game) (resumeContinuation : Bool := false)
       | none => g
     let g := g.runPostCastCleanup
     let prio := g.priorityInstead prop.caster
+    let stashPendingPrio (g : Game) : Game :=
+      if g.pendingPriority == some prio then g
+      else g.change (.pendingPriority (some prio))
     let g :=
       if g.pending == .none && g.continuations.isEmpty &&
           g.priority != prio then
@@ -662,13 +665,23 @@ def reverseProposedSpellCore? (g : Game) (resumeContinuation : Bool := false)
     if resumeContinuation &&
         (!g.continuations.isEmpty || g.pendingReplacement.isSome) then
       return (g, true)
-    else if g.pending == .none && g.continuations.isEmpty &&
-        g.triggerNeedingTargets.isNone &&
-        (alwaysGrantPriority || g.waitingTriggers.size > baseTriggers || hasUnreversedActions) then
-      return (g.receivePriority prio, false)
-    else if g.pending == .none && g.continuations.isEmpty &&
-        g.triggerNeedingTargets.isSome && g.pendingPriority.isNone then
-      return (g.change (.pendingPriority (some prio)), false)
+    else if g.pending == .none && g.continuations.isEmpty then
+      if alwaysGrantPriority then
+        if g.triggerNeedingTargets.isSome then
+          return (stashPendingPrio g, false)
+        else
+          return (g.receivePriority prio, false)
+      else
+        let g :=
+          if g.waitingTriggers.size > baseTriggers || hasUnreversedActions then
+            g.receivePriority prio
+          else g
+        let g :=
+          if g.pending == .none && g.continuations.isEmpty &&
+              g.triggerNeedingTargets.isSome then
+            (stashPendingPrio g).promptTriggerTargetsIfNeeded
+          else g
+        return (g, false)
     else
       return (g, false)
 

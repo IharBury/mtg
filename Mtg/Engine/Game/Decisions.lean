@@ -2887,8 +2887,12 @@ partial def afterTriggerTargetsChosen (g : Game) : Game :=
   | none =>
     if g.proposedSpell.any (fun prop =>
         !g.stillInGame prop.caster || (g.findObject? prop.spellId).isNone) then
-      (if g.pending == .none then g else g.change (.pending .none)).reverseProposedSpell
-        (resumeContinuation := true) (alwaysGrantPriority := true)
+      let g :=
+        (if g.pending == .none then g else g.change (.pending .none)).reverseProposedSpell
+          (resumeContinuation := true) (alwaysGrantPriority := true)
+      if g.pending == .none && g.continuations.isEmpty && g.triggerNeedingTargets.isSome then
+        g.promptTriggerTargetsIfNeeded
+      else g
     else if g.proposedSpell.isSome then
       if g.pending == .none then g else g.change (.pending .none)
     else
