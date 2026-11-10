@@ -11269,7 +11269,7 @@ cost/2HG-combat/`unlessPaysDue` completion, `redirectPendingAfterLeave` `q != p`
      - also preserve `| .rules _ (.triggerQueue (.modeChosen ..)) _ _` when
        `act?.isNone` (`FraChoices.lean:548` on `.stackTriggerUnusedMode`) so
        `Core.modesChosenThisTurn` / `Core.modesChosenEver`
-       (`Core.lean:3692–3711`, CR 700.2g) stays consistent with the kept
+       (`Core.lean:3687–3706`, CR 700.2g) stays consistent with the kept
        `GameEvent.announced` on `objId`.
    - In `Decisions.finishFraChoice` (`Decisions.lean:223–239`),
      `Decisions.finishAndGrantPriority` (`Decisions.lean:157–175`),
@@ -11376,7 +11376,7 @@ cost/2HG-combat/`unlessPaysDue` completion, `redirectPendingAfterLeave` `q != p`
        stack/battlefield.
    - In `Decisions.runPostStep` (`Decisions.lean:1619–1817`):
      - In `.resumeChooseModeAfterLeave p` (`1619–1661`),
-       `.resumeChooseTargetsAfterLeave p` (`1666–1670, 1698, 1716`), and
+       `.resumeChooseTargetsAfterLeave p` (`1662–1722`), and
        `.resumeProposalCostAfterLeave p savedP` (`1812–1817`), keeping the
        `if g.over then return (g.receivePriority prio, false)` early return in
        `Casting.reverseProposedSpellCore?` (`Casting.lean:660–661`) as the end
@@ -11386,19 +11386,25 @@ cost/2HG-combat/`unlessPaysDue` completion, `redirectPendingAfterLeave` `q != p`
        := true)` and return `g.completeActiveResolutions`; require
        `(g.findObject? prop.spellId).any (·.zone == .stack)` in
        `.activatedAbility` (`1631–1635`) and `(g.findObject? prop.spellId).any
-       (·.isOnBattlefield)` in `.turnFaceUp` (`1661`); and whenever
-       `.resumeChooseModeAfterLeave` (`1622, 1635, 1638, 1660`),
-       `.resumeChooseTargetsAfterLeave` (`1668–1669, 1698, 1716`), or
+       (·.isOnBattlefield)` in `.turnFaceUp` (`1661`); in
+       `.resumeChooseTargetsAfterLeave p`, keep `1668–1669` as the `let g :=`
+       reversal binding only (and keep the `g.over` return at `1676` as bare `g`
+       without prompting, since `reverseProposedSpellCore?` already ended that
+       path at `Casting.lean:660–661`, and so `pendingBlocksTargets` at
+       `1671–1679` is not bypassed by opening `.chooseTargets` before the
+       `objectAwaitingTargets` check at `1681`); and on the paths that return
+       the reversed game—`.resumeChooseModeAfterLeave` (`1622, 1635, 1638,
+       1660`), `.resumeChooseTargetsAfterLeave`'s `| none =>` `if
+       ownPropNeedsReverse then` return (`1683–1684`) and its later reverses
+       (`1698, 1716`, with `(alwaysGrantPriority := true)`), and
        `.resumeProposalCostAfterLeave` (`1816`, plus `if g.over then
-       g.completeActiveResolutions` when `g.over` and no proposal was reversed)
-       reverses a proposal with `(resumeContinuation := true)
-       (alwaysGrantPriority := true)`, follow the reversal with `if !g.over &&
-       g.pending == .none && g.continuations.isEmpty &&
-       g.triggerNeedingTargets.isSome then g.promptTriggerTargetsIfNeeded else
-       g` (matching `Decisions.afterTriggerTargetsChosen` at
-       `Decisions.lean:2905–2908`, since `alwaysGrantPriority := true` at
-       `Casting.lean:671–673` only stashes `pendingPriority` without prompting
-       `triggerNeedingTargets`); and
+       g.completeActiveResolutions` when `g.over` and no proposal was
+       reversed)—follow the reversal with `if !g.over && g.pending == .none &&
+       g.continuations.isEmpty && g.triggerNeedingTargets.isSome then
+       g.promptTriggerTargetsIfNeeded else g` (matching
+       `Decisions.afterTriggerTargetsChosen` at `Decisions.lean:2905–2908`,
+       since `alwaysGrantPriority := true` at `Casting.lean:671–673` only
+       stashes `pendingPriority` without prompting `triggerNeedingTargets`); and
      - in `.resumeTriggerModesAfterLeave p ..` (`1724`),
        `.resumeUpToTriggerModesAfterLeave p ..` (`1754`), and
        `.resumeHawkeyeModesAfterLeave p ..` (`1787`): guard `if g.over ||
@@ -11424,7 +11430,13 @@ cost/2HG-combat/`unlessPaysDue` completion, `redirectPendingAfterLeave` `q != p`
      `Leaving.isProposalAbortedByLeave` (`Leaving.lean:486–491`):
      - Extend `Choices.sourceStillPayable` (`Choices.lean:610–628`) to also
        require `(!prop.removePlusOneX || (src.isOnBattlefield && g.controlledBy
-       src prop.caster && src.status.plusOnePlusOne > 0))`, and in
+       src prop.caster && src.status.plusOnePlusOne ≥ ((g.findObject?
+       prop.spellId).bind (·.chosenX)).getD 0))` (matching the `x :=
+       ((g.findObject? prop.spellId).bind (·.chosenX)).getD 0` check on
+       `loyaltyPayable` at `Choices.lean:619–620`, set by `CastSpell.announceX`
+       → `applyCastEvent` at `Core.lean:5184`, so `x = 0` stays payable while an
+       announced `x > src.status.plusOnePlusOne` is rejected before
+       `ActivationCosts.lean:302, 320–327`), and in
        `Leaving.isProposalAbortedByLeave` (`Leaving.lean:486–491`, without
        folding `!g.sourceStillPayable prop` unconditionally, which is not tied
        to departing player `p` and would cause an unrelated player's departure to
