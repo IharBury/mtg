@@ -24701,6 +24701,38 @@ private def mustApply33i2 (g : Game) (p : PlayerId) (a : Action) : Game :=
   let gPlainRevNoWt :=
     (gP0TrigAwaiting.changes #[.pending .none, .pendingPriority (some p0),
       .saveProposalCheckpoint, .proposedSpell (some vanishedPropP2)]).reverseProposedSpell
+  -- (5) Proposal reversal when a kept `.player (.gameEnded ..)` event is replayed while a non-proposal
+  --     stacked trigger still needs targets (`triggerNeedingTargets.isSome`): both `alwaysGrantPriority`
+  --     (`.resumeChooseTargetsAfterLeave` and `afterTriggerTargetsChosen`) and plain `reverseProposedSpell`
+  --     tear down continuation frames / resolving entries via `receivePriority` without opening `.chooseTargets`:
+  let simpleResAb : TriggeredAbility := .triggered .youGainLife (Effect.gainLife 1) {}
+  let gResAbStack := gLeftP1.putTriggeredAbilityOnStack p0 p0Bear simpleResAb "triggers" (eventCause := some testCause)
+  let resAbId := gResAbStack.stack.back!.objectId
+  let resAbSnap := gResAbStack.snapshot (gResAbStack.object! resAbId)
+  let gOverStackCont :=
+    (((gResAbStack.change (.pushContinuationFrame {
+      resolutionFinish := some (.ability resAbId resAbSnap p0 (some p0Bear.id) none)
+    })).putTriggeredAbilityOnStack p0 p0Bear oppTrig "triggers" (eventCause := some testCause)).change (.pending .none))
+  let overTrigId := gOverStackCont.stack.back!.objectId
+  let gOverBaseCont :=
+    ((gOverStackCont.changes #[.saveProposalCheckpoint, .proposedSpell (some vanishedProp)]).playerLeavesGame
+      p2).decideGameIfFinished.get!
+  let gOverBaseFlat :=
+    ((gP0TrigAwaiting.changes #[.pending .none, .saveProposalCheckpoint, .proposedSpell (some vanishedProp)]).playerLeavesGame
+      p2).decideGameIfFinished.get!
+  let gOverAlwaysGrantCont := gOverBaseCont.runPostStep (.resumeChooseTargetsAfterLeave p0)
+  let gOverAlwaysGrantFlat := gOverBaseFlat.runPostStep (.resumeChooseTargetsAfterLeave p0)
+  let gOverPlainRevCont := gOverBaseCont.reverseProposedSpell
+  let gOverPlainRevFlat := gOverBaseFlat.reverseProposedSpell
+  let gOverOtherSeatLeave := gOverBaseCont.runPostStep (.resumeChooseTargetsAfterLeave p2)
+  let gOverAfterTrigBracketed :=
+    (((gOverStackCont.changes #[
+      .saveProposalCheckpoint,
+      .proposedSpell (some vanishedProp),
+      .beginProposalAction .costAction,
+      .stackEntry overTrigId (.targetsAnnounced true),
+      .endProposalAction]).playerLeavesGame p2).decideGameIfFinished.get!).afterTriggerTargetsChosen
+  let gOverAfterTrigDirect := gOverBaseCont.afterTriggerTargetsChosen
   let gModePostDeparted :=
     ((gLeftP1.change (.pushContinuationFrame {})).runPostStep (.resumeTriggerModesAfterLeave p1 p0TrigId 1 #[]))
   let gUpToPostDeparted :=
@@ -24772,6 +24804,25 @@ private def mustApply33i2 (g : Game) (p : PlayerId) (a : Action) : Game :=
     gPlainRevNoWt.proposedSpell.isNone &&
     gPlainRevNoWt.pending == .chooseTargets p0 &&
     gPlainRevNoWt.pendingPriority == some p2 &&
+    gOverAlwaysGrantCont.over && gOverAlwaysGrantCont.pending == .none &&
+    gOverAlwaysGrantCont.continuations.isEmpty && gOverAlwaysGrantCont.proposedSpell.isNone &&
+    (gOverAlwaysGrantCont.findObject? resAbId).isNone &&
+    gOverAlwaysGrantFlat.over && gOverAlwaysGrantFlat.pending == .none &&
+    gOverAlwaysGrantFlat.continuations.isEmpty && gOverAlwaysGrantFlat.proposedSpell.isNone &&
+    gOverPlainRevCont.over && gOverPlainRevCont.pending == .none &&
+    gOverPlainRevCont.continuations.isEmpty && gOverPlainRevCont.proposedSpell.isNone &&
+    (gOverPlainRevCont.findObject? resAbId).isNone &&
+    gOverPlainRevFlat.over && gOverPlainRevFlat.pending == .none &&
+    gOverPlainRevFlat.continuations.isEmpty && gOverPlainRevFlat.proposedSpell.isNone &&
+    gOverOtherSeatLeave.over && gOverOtherSeatLeave.pending == .none &&
+    gOverOtherSeatLeave.continuations.isEmpty && gOverOtherSeatLeave.proposedSpell.isNone &&
+    (gOverOtherSeatLeave.findObject? resAbId).isNone &&
+    gOverAfterTrigBracketed.over && gOverAfterTrigBracketed.pending == .none &&
+    gOverAfterTrigBracketed.continuations.isEmpty && gOverAfterTrigBracketed.proposedSpell.isNone &&
+    (gOverAfterTrigBracketed.findObject? resAbId).isNone &&
+    gOverAfterTrigDirect.over && gOverAfterTrigDirect.pending == .none &&
+    gOverAfterTrigDirect.continuations.isEmpty && gOverAfterTrigDirect.proposedSpell.isNone &&
+    (gOverAfterTrigDirect.findObject? resAbId).isNone &&
     gModePostDeparted.pending == .none && gModePostDeparted.continuations.isEmpty &&
     gUpToPostDeparted.pending == .none && gUpToPostDeparted.continuations.isEmpty &&
     gHkPostDeparted.pending == .none && gHkPostDeparted.continuations.isEmpty
@@ -24931,6 +24982,8 @@ private def mustApply33i2 (g : Game) (p : PlayerId) (a : Action) : Game :=
       gTargetOtherCasterSameSeat, gTargetOtherAnnouncedB,
       gNoLegalOwnRemoved, gNoLegalOtherRemoved,
       gPlainRevWithTrig, gPlainRevAnnounced, gPlainRevNoWt,
+      gOverAlwaysGrantCont, gOverAlwaysGrantFlat, gOverPlainRevCont, gOverPlainRevFlat,
+      gOverOtherSeatLeave, gOverAfterTrigBracketed, gOverAfterTrigDirect,
       gModePostDeparted, gUpToPostDeparted, gHkPostDeparted,
       gModal0, gModalCast, gModalPicked0, gModalAfterLeave,
       gTrigModes0, gTrigModesStack, gTrigModesPicked0, gTrigModesAfterLeave, gTrigModesFinalize0,

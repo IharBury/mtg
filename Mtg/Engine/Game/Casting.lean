@@ -652,11 +652,13 @@ def reverseProposedSpellCore? (g : Game) (resumeContinuation : Bool := false)
       match extraLog with
       | some msg => g.logMsg msg
       | none => g
-    let g := g.runPostCastCleanup
+    let g := if g.over then g else g.runPostCastCleanup
     let prio := g.priorityInstead prop.caster
     let stashPendingPrio (g : Game) : Game :=
       if g.pendingPriority == some prio then g
       else g.change (.pendingPriority (some prio))
+    if g.over then
+      return (g.receivePriority prio, false)
     let g :=
       if g.pending == .none && g.continuations.isEmpty &&
           g.priority != prio then
@@ -667,7 +669,7 @@ def reverseProposedSpellCore? (g : Game) (resumeContinuation : Bool := false)
       return (g, true)
     else if g.pending == .none && g.continuations.isEmpty then
       if alwaysGrantPriority then
-        if g.triggerNeedingTargets.isSome then
+        if !g.over && g.triggerNeedingTargets.isSome then
           return (stashPendingPrio g, false)
         else
           return (g.receivePriority prio, false)
@@ -677,7 +679,7 @@ def reverseProposedSpellCore? (g : Game) (resumeContinuation : Bool := false)
             g.receivePriority prio
           else g
         let g :=
-          if g.pending == .none && g.continuations.isEmpty &&
+          if !g.over && g.pending == .none && g.continuations.isEmpty &&
               g.triggerNeedingTargets.isSome then
             (stashPendingPrio g).promptTriggerTargetsIfNeeded
           else g

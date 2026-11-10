@@ -1672,7 +1672,10 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
       match g.pending with
       | .none | .chooseTargets _ => false
       | _ => true
-    if ownPropNeedsReverse && (g.over || pendingBlocksTargets || g.afterRandom != .none) then
+    if g.over then
+      if ownPropNeedsReverse then g
+      else g.afterTriggerTargetsChosen
+    else if ownPropNeedsReverse && (pendingBlocksTargets || g.afterRandom != .none) then
       g
     else
       match g.objectAwaitingTargets with
@@ -2881,23 +2884,33 @@ partial def chooseCastFromLooked (g : Game) (p : PlayerId) (castId : Option Obje
 prompt the next trigger that needs targets or continue the CR 603.3b
 process (remaining waiting triggers, then SBAs). -/
 partial def afterTriggerTargetsChosen (g : Game) : Game :=
-  match g.triggerNeedingTargets with
-  | some _ =>
-    promptTriggerTargetsIfNeeded (g.change (.pending .none))
-  | none =>
-    if g.proposedSpell.any (fun prop =>
-        !g.stillInGame prop.caster || (g.findObject? prop.spellId).isNone) then
-      let g :=
+  if g.over then
+    let g :=
+      if g.proposedSpell.any (fun prop =>
+          !g.stillInGame prop.caster || (g.findObject? prop.spellId).isNone) then
         (if g.pending == .none then g else g.change (.pending .none)).reverseProposedSpell
           (resumeContinuation := true) (alwaysGrantPriority := true)
-      if g.pending == .none && g.continuations.isEmpty && g.triggerNeedingTargets.isSome then
-        g.promptTriggerTargetsIfNeeded
       else g
-    else if g.proposedSpell.isSome then
-      if g.pending == .none then g else g.change (.pending .none)
-    else
-      let prio := g.pendingPriority.getD g.activePlayer
-      receivePriority (g.change (.pending .none)) prio false
+    g.completeActiveResolutions
+  else
+    match g.triggerNeedingTargets with
+    | some _ =>
+      promptTriggerTargetsIfNeeded (g.change (.pending .none))
+    | none =>
+      if g.proposedSpell.any (fun prop =>
+          !g.stillInGame prop.caster || (g.findObject? prop.spellId).isNone) then
+        let g :=
+          (if g.pending == .none then g else g.change (.pending .none)).reverseProposedSpell
+            (resumeContinuation := true) (alwaysGrantPriority := true)
+        if !g.over && g.pending == .none && g.continuations.isEmpty &&
+            g.triggerNeedingTargets.isSome then
+          g.promptTriggerTargetsIfNeeded
+        else g
+      else if g.proposedSpell.isSome then
+        if g.pending == .none then g else g.change (.pending .none)
+      else
+        let prio := g.pendingPriority.getD g.activePlayer
+        receivePriority (g.change (.pending .none)) prio false
 
 /-- Start paying the proposed activation's costs that need chosen objects,
 reversing it if they can't be paid (CR 601.2h / 733.1). -/
