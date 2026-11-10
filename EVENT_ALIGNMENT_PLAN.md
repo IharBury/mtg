@@ -11349,11 +11349,30 @@ cost/2HG-combat/`unlessPaysDue` completion, `redirectPendingAfterLeave` `q != p`
        `SacrificeDiscard.sacrificeForActivation` at
        `SacrificeDiscard.lean:423–427, 440–444` chain `outerCont?` onto
        `pendingReplacement` before calling `afterWardResolved`); instead, right
-       after clearing `.payWard` (`694–697`, before `698–703`), when `!g.over &&
-       g.pending == .none && g.afterRandom == .none && (g.mayThenResume ||
-       g.triggerSequenceRest.isSome)` (so an already-open prompt's
-       `pendingReplacement`, such as `.chooseReplacement` from
-       `sacrificeForActivation`, is left in place), stash `let stashedPending :=
+       after clearing `.payWard` (`694–697`, before `698–703`): first, if
+       `g.over` is true at entry, reverse any orphaned proposal when
+       `g.proposedSpell.any (fun prop => !g.stillInGame prop.caster ||
+       (g.findObject? prop.spellId).isNone)` via `let g := (if g.pending ==
+       .none then g else g.change (.pending .none)).reverseProposedSpell
+       (resumeContinuation := true) (alwaysGrantPriority := true)` and return
+       `g.completeActiveResolutions` (matching `finishAndGrantPriority` at
+       `11319–11323`); else if `g.mayThenResume || g.triggerSequenceRest.isSome`
+       and `g.pending != .none || g.afterRandom != .none` (for example,
+       `sacrificePermanentsLoop` at `SacrificeDiscard.lean:419–427` paused on
+       `.chooseReplacement` with its resume continuation in
+       `g.pendingReplacement`, or `g.afterRandom` is already set), leave
+       `g.pending`, `g.afterRandom`, and `g.pendingReplacement` in place, park
+       `.afterWardResolved` onto the current top frame's
+       `outerPendingReplacements` while keeping any `existing :=
+       g.outerPendingReplacements` at the back so `back?`
+       (`Decisions.lean:149–151`) resumes `existing` before `.afterWardResolved`
+       (ensuring `if g.continuations.isEmpty then g.change
+       (.pushContinuationFrame {}) else g`, popping `existing.size` entries via
+       `.popOuterPendingReplacement`, and pushing `#[.afterWardResolved] ++
+       existing` via `.pushOuterPendingReplacement`), and return `g` without
+       draining or entering `698–703`; else if `g.mayThenResume ||
+       g.triggerSequenceRest.isSome` (with `!g.over && g.pending == .none &&
+       g.afterRandom == .none`), stash `let stashedPending :=
        g.pendingReplacement` and `let stashedOuters :=
        g.outerPendingReplacements`, clear them via `if stashedPending.isSome
        then g.change (.pendingReplacement none) else g` and popping
@@ -11361,8 +11380,11 @@ cost/2HG-combat/`unlessPaysDue` completion, `redirectPendingAfterLeave` `q != p`
        `let g := g.drainPendingContinuations` to drain `mayThenResume` and
        `triggerSequenceRest` first (without re-pushing an empty `{}` frame that
        would hide the active top frame); if `g.over` after the drain, skip the
-       park/restore, reverse any vanished/departed `g.proposedSpell` with
-       `(resumeContinuation := true) (alwaysGrantPriority := true)`, and return
+       park/restore, reverse any orphaned proposal when `g.proposedSpell.any
+       (fun prop => !g.stillInGame prop.caster || (g.findObject?
+       prop.spellId).isNone)` via `let g := (if g.pending == .none then g else
+       g.change (.pending .none)).reverseProposedSpell (resumeContinuation :=
+       true) (alwaysGrantPriority := true)`, and return
        `g.completeActiveResolutions`; otherwise (`!g.over`), snapshot `let
        drainSuffix := if g.pending != .none || g.afterRandom != .none then
        g.outerPendingReplacements else #[]` (treating the current top frame's
@@ -11395,14 +11417,12 @@ cost/2HG-combat/`unlessPaysDue` completion, `redirectPendingAfterLeave` `q != p`
        g.outerPendingReplacements.back?` → pop `outer` into `pendingReplacement`
        and `g.chainPendingReplacement .afterWardResolved`), and in the `else`
        ward tail (`704–710`, when no `.chooseReplacement` / `pendingReplacement`
-       / `outerPendingReplacements` is open): if `g.over` reverse any
-       vanished/departed `g.proposedSpell` with `(resumeContinuation := true)
-       (alwaysGrantPriority := true)` and return `g.completeActiveResolutions`,
-       else if `g.pending != .none || g.afterRandom != .none` return `g`
-       (without popping active resolutions while an interactive prompt or
-       `afterRandom` from the drained sequence is open), else run `let g :=
-       g.completeActiveResolutions`, return `g` if `g.over || g.pending != .none
-       || g.afterRandom != .none` (`706`, so any prompt or `afterRandom` opened
+       / `outerPendingReplacements` is open): if `g.pending != .none ||
+       g.afterRandom != .none` return `g` (without popping active resolutions
+       while an interactive prompt or `afterRandom` from the drained sequence is
+       open), else run `let g := g.completeActiveResolutions`, return `g` if
+       `g.over || g.pending != .none || g.afterRandom != .none` (`706`, so any
+       prompt or `afterRandom` opened
        by `completeActiveResolutions` at `Entering.lean:350, 384–385` is
        preserved), and otherwise (when `!g.over && g.pending == .none &&
        g.afterRandom == .none`) apply the same
