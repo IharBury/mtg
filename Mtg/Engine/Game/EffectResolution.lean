@@ -1194,7 +1194,7 @@ def beginMay (g : Game) (controller : PlayerId) (effect : Effect)
       let phrase := SpellResolution.toPhrase r effect.targeting.kind.noun
       let phrase := if phrase.startsWith "you " then (phrase.drop 4).toString else phrase
       let inner := { effect with resolution := Resolution.ofSpell r }
-      (g.changes #[
+      ((g.clearMay).changes #[
         .pending (.mayResolve controller),
         .mayEffect (some inner),
         .mayController controller,

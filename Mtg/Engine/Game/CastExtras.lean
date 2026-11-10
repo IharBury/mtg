@@ -250,7 +250,7 @@ def discardNonlandFrom (g : Game) (controller victim : PlayerId) : Game :=
   let handIds := (g.player victim).hand
   let names :=
     handIds.filterMap (fun id =>
-      (g.findObject? id).map (·.name))
+      (g.findObject? id).map g.name)
   let g :=
     if !handIds.isEmpty then
       g.record (GameEvent.revealed g.turnNumber victim handIds

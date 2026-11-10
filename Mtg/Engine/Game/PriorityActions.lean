@@ -252,7 +252,7 @@ def concede (g : Game) (p : PlayerId) : Game :=
           (cause := some (.gameRule .playerLeftGame)))
         acc.logMsg s!"{mpl.name} concedes with their team (CR 810.8a)") g
     match g.decideGameIfFinished with
-    | some finished => finished
+    | some finished => finished.completeActiveResolutions
     | none =>
       let wasPregame :=
         g.pregameRandom != .none || !g.mulliganToDeclare.isEmpty ||

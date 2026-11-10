@@ -420,11 +420,11 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
         g.sacrificePermanentsLoop (chosen'.map ((p, ·)))
           (preBattlefield := some preBf)
           (cause := some wardCause)
-      let g := g.afterWardResolved
       let g :=
         match outerCont? with
         | some outer => g.chainPendingReplacement outer
         | none => g
+      let g := g.afterWardResolved
       return g
   | .payWard q spellId .sacrificeLegendary =>
     if p != q then
@@ -437,11 +437,11 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
     let g := (g.change (.pending .none)).sacrificeToGraveyard sac
       s!"{(g.player p).name} sacrifices {g.name sac} (ward)"
       (cause := some (.costPayment .ward p (some spellId)))
-    let g := g.afterWardResolved
     let g :=
       match outerCont? with
       | some outer => g.chainPendingReplacement outer
       | none => g
+    let g := g.afterWardResolved
     return g
   | .maySacArtifactOrDiscard q n =>
     if p != q then

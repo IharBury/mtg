@@ -458,7 +458,7 @@ def announceTargetChoices (g : Game) (p : PlayerId)
         for t in targets do
           g := g.logMsg
             s!"{(g.player p).name} chooses {g.targetLogName t} as a target (CR 601.2c)"
-        if g.proposedSpell.isSome then
+        if g.proposedSpell.any (·.spellId == obj.id) then
           return g.afterTargetsChosen
         return g.afterTriggerTargetsChosen
       let curSlot := g.currentTargetSlot obj
@@ -487,7 +487,7 @@ def announceTargetChoices (g : Game) (p : PlayerId)
           s!"{(g.player p).name} chooses {g.targetLogName t} as a target (CR 601.2c)"
       if g.currentTargetSlot obj < kind.spec.slots.size then
         return (g.markTargetsAnnounced obj.id false).change (.pending (.chooseTargets p))
-      if g.proposedSpell.isSome then
+      if g.proposedSpell.any (·.spellId == obj.id) then
         return g.afterTargetsChosen
       return g.afterTriggerTargetsChosen
   | _ => throw "Not time to choose targets (CR 601.2c)"

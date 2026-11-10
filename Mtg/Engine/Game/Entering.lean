@@ -330,7 +330,24 @@ partial def completeActiveResolutions (g : Game) : Game :=
       g.triggerSequenceRest.isSome) then g
   else
     match g.continuations.back? with
-    | none => if g.over then g else g.promptTriggerTargetsIfNeeded
+    | none =>
+      if g.over then
+        Id.run do
+          let mut g := g
+          if g.pending != .none then
+            g := g.change (.pending .none)
+          if g.afterRandom != .none then
+            g := g.change (.afterRandom .none)
+          if g.proposedSpell.isSome then
+            g := g.changes #[.proposedSpell none, .clearProposalCheckpoint]
+          while g.proposalCheckpoint.isSome do
+            g := g.change .clearProposalCheckpoint
+          if g.pendingReplacement.isSome then
+            g := g.change (.pendingReplacement none)
+          while !g.outerPendingReplacements.isEmpty do
+            g := g.change .popOuterPendingReplacement
+          return g
+      else g.promptTriggerTargetsIfNeeded
     | some top =>
       if g.over then
         -- Game ended during resolution (CR 104.1): clean up any resolving stack
@@ -380,7 +397,7 @@ partial def receivePriority (g : Game) (p : PlayerId) (recheckSba := true) : Gam
     if g.pendingPriority == some p then g else g.change (.pendingPriority (some p))
   let hadEntryPending := g.pending != .none
   let g :=
-    if g.pending == .none && g.afterRandom == .none then
+    if g.over || (g.pending == .none && g.afterRandom == .none) then
       g.completeActiveResolutions
     else g
   if g.over then g
@@ -392,7 +409,7 @@ partial def receivePriority (g : Game) (p : PlayerId) (recheckSba := true) : Gam
     if hadEntryPending then g else savePendingP g
   else
     let g := if recheckSba then g.checkSBA else g
-    if g.over then g
+    if g.over then g.completeActiveResolutions
     -- CR 704.3 / 704.5j: a required legend-rule choice is part of performing
     -- the SBA. Do not put triggers on the stack or grant priority yet.
     else if g.legendChoicePending? then savePendingP g
@@ -413,7 +430,7 @@ partial def receivePriority (g : Game) (p : PlayerId) (recheckSba := true) : Gam
             receivePriority g p true
         else
           let g := g.putTriggerBatch g.currentTriggerBatch
-          if g.over then g
+          if g.over then g.completeActiveResolutions
           else if g.pending != .none then savePendingP g
           else receivePriority g p true
       | some q =>
@@ -434,7 +451,7 @@ partial def receivePriority (g : Game) (p : PlayerId) (recheckSba := true) : Gam
                 w.reflexiveResolution == mine[0]!.reflexiveResolution)
         if allIdentical || mine.all (·.ordered) then
           let g := g.putTriggerBatch mine
-          if g.over then g
+          if g.over then g.completeActiveResolutions
           else if g.pending != .none then savePendingP g
           else receivePriority g p false
         else

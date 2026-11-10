@@ -302,7 +302,7 @@ def millCardsLoop (g : Game) (p : PlayerId) (remainingIds : Array ObjectId)
     match g.findObject? top with
     | some o =>
       if o.zone == .library p then
-        let name := o.name
+        let name := g.name o
         let (g', _) := g.move top (.graveyard p) none (verb := some .mill) (actor := some p)
           (cause := cause)
         g := g'
@@ -361,7 +361,7 @@ def movePublicCardsToHandLoop (g : Game) (p : PlayerId) (remainingIds : Array Ob
     match g.findObject? id with
     | some o =>
       if left > 0 && (!requirePublicZone || isPublicZone o.zone) then
-        let name := o.name
+        let name := g.name o
         left := left - 1
         let (g', _) := g.move id (.hand p) none (cause := cause)
         g := g'

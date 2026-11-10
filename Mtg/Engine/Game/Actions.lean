@@ -77,7 +77,13 @@ private def applyActionFor (g : Game) (p : PlayerId) : Action → Except String 
       else
         return g.finishFraChoice
     else if wasWard then
-      return if (match g.pending with | .payWard .. => true | _ => false) then g else g.drainPendingContinuations
+      if (match g.pending with | .payWard .. => true | _ => false) then
+        return g
+      else
+        let g := g.drainPendingContinuations
+        return if g.over then g.completeActiveResolutions
+          else if g.pending == .none && g.afterRandom == .none then g.popEmptyContinuationFrames
+          else g
     else if wasProp then
       return g.resumeAfterBecomeCast
     else
@@ -231,7 +237,7 @@ def rawActor (g : Game) : Option PlayerId :=
       | .shuffleLibrary p => who p
       | .orderInto _ dest _ =>
         match dest with
-        | .library p | .hand p | .graveyard p => who p
+        | .library p | .hand p | .graveyard p | .outside p => who p
         | _ =>
           if g.players.isEmpty then none else who g.startingPlayer
       | .chooseObject _ | .chooseIndex _ =>

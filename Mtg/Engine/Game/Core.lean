@@ -2129,6 +2129,7 @@ def applyEngineChange (g : Game) (c : EngineChange) : Game :=
           { e with
             lastKnownPower := pw.orElse (fun _ => e.lastKnownPower)
             lastKnownToughness := tg.orElse (fun _ => e.lastKnownToughness) }
+        | .clearChosenModes => { e with chosenMode := none, extraModes := #[] }
       { g with stack := g.stack.set! i e' }
     | none => g
   | .proposedSpell v => { g with proposedSpell := v }
@@ -7754,7 +7755,8 @@ def playerCanBeTargetedBy (g : Game) (caster target : PlayerId)
           match em.status.chosenCardType with
           | some t => g.hasType src t
           | none => false)
-  (caster == target || g.areTeammates caster target || !g.playerHasHexproof target) &&
+  g.stillInGame target &&
+    (caster == target || g.areTeammates caster target || !g.playerHasHexproof target) &&
     !(g.protectionFromEverything target) && !typeBlock
 
 /-- Mana value of `o` (CR 202.3 / 613.1a / 708.2a). `{X}` is the chosen value
@@ -9970,7 +9972,7 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
                   (w := waiting) (fs := firedSources)
               waiting := w; firedSources := fs
         | .cast (.targeted objId rawTargets ..) =>
-          if post.proposedSpell.isNone && !rawTargets.isEmpty then
+          if !post.proposedSpell.any (·.spellId == objId) && !rawTargets.isEmpty then
             match post.findObject? objId, post.stackEntry? objId with
             | some obj, some se =>
               let ctrl := se.controller
@@ -10724,12 +10726,24 @@ def reverseToProposalCheckpointCore? (g : Game)
           liveLibIds := setInLib liveLibIds bid false
         if let some aid := after.id then
           liveLibIds := setInLib liveLibIds aid false
-      | .rules _ (.zone (.created obj _)) _ _
-      | .rules _ (.zone (.ceasedToExist obj)) _ _ =>
+      | .rules _ (.zone (.created obj _)) _ _ =>
         if let some oid := obj.id then
           liveLibIds := setInLib liveLibIds oid false
+      | .rules _ (.zone (.ceasedToExist obj)) cause _ =>
+        if let some oid := obj.id then
+          liveLibIds := setInLib liveLibIds oid false
+        if act?.isNone && cause == .gameRule .triggeredAbility &&
+            !obj.id.any (fun oid => g.proposedSpell.any (·.spellId == oid)) then
+          let (ia, ist) := markIrrev act? st? irrevActs irrevStIdxs
+          irrevActs := ia; irrevStIdxs := ist
       | .engine _ (.materializeObject obj _) =>
         liveLibIds := setInLib liveLibIds obj.id (isLibZone obj.zone)
+      | .rules _ (.cast (.targeted oid ..)) _ _
+      | .rules _ (.cast (.announced oid ..)) _ _
+      | .engine _ (.stackEntry oid _) =>
+        if act?.isNone && !g.proposedSpell.any (·.spellId == oid) then
+          let (ia, ist) := markIrrev act? st? irrevActs irrevStIdxs
+          irrevActs := ia; irrevStIdxs := ist
       | .rules _ (.player (.shuffled ..)) _ _ =>
         let (ia, ist) := markIrrev act? st? irrevActs irrevStIdxs
         irrevActs := ia; irrevStIdxs := ist
@@ -11599,7 +11613,14 @@ def clearUnlessPays (g : Game) : Game :=
 
 /-- Drop a stashed `SpellResolution.may` after the player accepts or declines. -/
 def clearMay (g : Game) : Game :=
-  g.changes #[.mayController ⟨0⟩, .mayEffect none, .mayTargets #[], .maySource none]
+  g.changes #[
+    .mayController ⟨0⟩,
+    .mayEffect none,
+    .mayTargets #[],
+    .maySource none,
+    .mayOnAccept none,
+    .mayOnDecline none,
+    .mayContext none]
 
 /-- Drop a stashed `SpellResolution.or` after the player has chosen. -/
 def clearSpellOr (g : Game) : Game :=

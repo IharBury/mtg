@@ -232,7 +232,7 @@ def resolveRandomCreatureReveal (g : Game) (p : PlayerId) (revealed : Array Obje
     | none =>
       let (g, c) := g.allocDelayedCause (some p)
       (g, some c)
-  let rest := revealed.filter (· != chosen)
+  let rest := revealed.filter (fun id => id != chosen && (g.findObject? id).isSome)
   let libraryOwner :=
     match rest[0]?.bind g.findObject? with
     | some o => o.owner
@@ -5717,6 +5717,7 @@ end
 
 /-- Finish trigger-sequence steps that waited on a pending choice.
 Those steps are still part of the resolution that opened the choice. -/
+@[export mtg_game_resume_trigger_sequence]
 def resumeTriggerSequence (g : Game) : Game :=
   match g.triggerSequenceRest with
   | none => g
