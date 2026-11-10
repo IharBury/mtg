@@ -46,32 +46,34 @@ def applyOnTriggerSource (g : Game) (sourceId : Option ObjectId) (action : Perma
 ability, then choose a Ring-bearer if `p` controls a creature. Re-choosing
 the same creature still counts as choosing it. -/
 def temptWithTheRing (g : Game) (p : PlayerId) (chosen : Option ObjectId := none) : Game :=
-  let pl := g.player p
-  let nextAbilities := min 4 (pl.theRingAbilities + 1)
-  let gainedEmblem := pl.theRingAbilities == 0
-  let g :=
-    if gainedEmblem then
-      g.logMsg s!"{(g.player p).name} gets an emblem named The Ring"
-    else g
-  let g := g.logMsg
-    s!"{(g.player p).name}'s emblem named The Ring gains its next ability ({nextAbilities})"
-  let choices := g.ringBearerChoices p
-  let pick :=
-    match chosen with
-    | some id =>
-      if choices.any (fun o => o.id == id) then some id else choices[0]?.map (·.id)
-    | none => choices[0]?.map (·.id)
-  let cause := some (g.resolvingOrRuleCause p)
-  g.withBatch cause fun g =>
-    let g := if pick.isSome then g.setRingBearer p pick (cause := cause) else g
+  if !g.stillInGame p then g
+  else
+    let pl := g.player p
+    let nextAbilities := min 4 (pl.theRingAbilities + 1)
+    let gainedEmblem := pl.theRingAbilities == 0
     let g :=
-      match pick with
+      if gainedEmblem then
+        g.logMsg s!"{(g.player p).name} gets an emblem named The Ring"
+      else g
+    let g := g.logMsg
+      s!"{(g.player p).name}'s emblem named The Ring gains its next ability ({nextAbilities})"
+    let choices := g.ringBearerChoices p
+    let pick :=
+      match chosen with
       | some id =>
-        g.logMsg s!"{(g.player p).name} chooses {g.name (g.object! id)} as their Ring-bearer"
-      | none =>
-        g.logMsg s!"{(g.player p).name} controls no creature to become Ring-bearer"
-    g.record (GameEvent.ringTempted g.turnNumber p pick nextAbilities
-      (cause := some (g.resolvingOrRuleCause p)))
+        if choices.any (fun o => o.id == id) then some id else choices[0]?.map (·.id)
+      | none => choices[0]?.map (·.id)
+    let cause := some (g.resolvingOrRuleCause p)
+    g.withBatch cause fun g =>
+      let g := if pick.isSome then g.setRingBearer p pick (cause := cause) else g
+      let g :=
+        match pick with
+        | some id =>
+          g.logMsg s!"{(g.player p).name} chooses {g.name (g.object! id)} as their Ring-bearer"
+        | none =>
+          g.logMsg s!"{(g.player p).name} controls no creature to become Ring-bearer"
+      g.record (GameEvent.ringTempted g.turnNumber p pick nextAbilities
+        (cause := some (g.resolvingOrRuleCause p)))
 
 /-- A targeted spell or ability that would tempt only does so if it resolves. -/
 def resolveTargetedTempt (g : Game) (p : PlayerId) (kind : EffectTargetKind)

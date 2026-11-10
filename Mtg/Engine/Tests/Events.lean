@@ -21492,11 +21492,13 @@ private def mkThreePlayer27i1 (seed : UInt64 := 2710) : Game :=
   let gAb2 := addPermanent gBase pingArtDef p1 p0
   let relicId2 := (gAb2.permanentsOf p0).find? (·.name == pingArtDef.name) |>.get!.id
   let gPropAb := mustApply gAb2 p0 (.activate relicId2 0)
+  let gPropAfterP2Leaves := mustApply gPropAb p2 .concede
   let gPropAfterP1Leaves := mustApply gPropAb p1 .concede
   let gPropAfterP0Leaves := mustApply gPropAb p0 .concede
   let abNotAbortedByOwnerLeave :=
     gPropAb.proposedSpell.isSome &&
-    gPropAfterP1Leaves.proposedSpell.isSome &&
+    gPropAfterP2Leaves.proposedSpell.isSome &&
+    gPropAfterP1Leaves.proposedSpell.isNone &&
     gPropAfterP0Leaves.proposedSpell.isNone
   let stackAbSurvivesOk :=
     (gActivated.object! stackAbId).owner == p1 &&
@@ -22986,11 +22988,14 @@ private def replayOk29i1 (gs : Array Game) : Bool :=
   let bearId := (gCost0.permanentsOf p0).find? (·.name == bear.name) |>.get!.id
   let vehId := (gCost0.permanentsOf p0).find? (·.name == vehicleDef.name) |>.get!.id
   let handBoltId := (gCost0.player p0).hand.back!
+  let (gCost1, stackBoltId) :=
+    ((gCost0.changes #[.pushContinuationFrame {}, .saveProposalCheckpoint]).move
+      handBoltId .stack (some p0) (cause := some testCause))
   let propCost : ProposedSpell := {
-    caster := p0, cost := default, spellId := handBoltId, original := gCost0.object! handBoltId
+    caster := p0, cost := default, spellId := stackBoltId, original := gCost0.object! handBoltId
   }
   let gWithProp :=
-    gCost0.changes #[.pushContinuationFrame {}, .saveProposalCheckpoint, .proposedSpell (some propCost)]
+    gCost1.changes #[.pushStack { objectId := stackBoltId, controller := p0, targets := #[] }, .proposedSpell (some propCost)]
 
   -- `.restorePending` + `checkReversal` inside `.seq`:
   -- Untapped power for `p0` is `0 + 2 = 2`. So `crew` / `chooseTeamworkCreatures` needing `3`
@@ -25360,5 +25365,864 @@ private def mustApply33i4 (g : Game) (p : PlayerId) (a : Action) : Game :=
       gGySphinx, gSrcCopied, gDiscRevealed, gMilled, gMovedToHand, gAfterSba, gZemoActivated])
 
 end Phase33Item4EventAlignment
+
+/-! ### Phase 34 Item 1: `reverseToProposalCheckpointCore?` non-proposal modal trigger preservation, `finishFraChoice` / `finishAndGrantPriority` / `afterWardResolved` proposal reversal & `mayThenResume` / `triggerSequenceRest` ordering -/
+section Phase34Item1EventAlignment
+
+private def mustHold34i1 (label : String) (ok : Bool) : Bool :=
+  if ok then true else panic! s!"Phase34Item1EventAlignment failed: {label}"
+
+private def replayOk34i1 (gs : Array Game) : Bool :=
+  gs.all (fun g => Game.replayEvents g.events == g && allRulesEventsClassified g)
+
+#guard
+  let p0 : PlayerId := ⟨0⟩
+  let p1 : PlayerId := ⟨1⟩
+  let p2 : PlayerId := ⟨2⟩
+  let g3 := afterDraw.change (.addPlayer { id := p2, name := "Liliana" })
+  let gBase :=
+    addPermanent
+      (addPermanent
+        (addPermanent (insertObject g3 bear p0 (.hand p0)) bear p0 p0)
+        hero p1 p1)
+      bear p2 p2
+  let p0Bear := (gBase.permanentsOf p0).find? (·.name == bear.name) |>.get!
+  let p1Hero := (gBase.permanentsOf p1).find? (·.name == hero.name) |>.get!
+  let handBoltId := (gBase.player p0).hand.back!
+
+  -- 1a. `Core.reverseToProposalCheckpointCore?` preserves:
+  --     - non-proposal modal trigger `.abilityEffect` and `TriggerQueueEvent.modeChosen` on stack, and
+  --     - non-proposal modal trigger `.noLegalMode` stack removal (`ZoneEvent.moved _ .stack .command`).
+  let simpleTrigAb : TriggeredAbility := .triggered .youGainLife (Effect.gainLife 1) {}
+  let gWithTrigs0 :=
+    (gBase.putTriggeredAbilityOnStack p0 p0Bear simpleTrigAb "triggers" (eventCause := some testCause)).putTriggeredAbilityOnStack
+      p0 p0Bear simpleTrigAb "triggers" (eventCause := some testCause)
+  let modalTrigId := gWithTrigs0.stack[0]!.objectId
+  let noLegalTrigId := gWithTrigs0.stack[1]!.objectId
+  let gModalCp0 := gWithTrigs0.change .saveProposalCheckpoint
+  let (gModalCp1, modalStackBoltId) := gModalCp0.move handBoltId .stack (some p0) (cause := some testCause)
+  let modalBoltProp : ProposedSpell := {
+    caster := p0
+    cost := ManaCost.ofColor .red
+    spellId := modalStackBoltId
+    original := gBase.object! handBoltId
+    originalSnapshot := gBase.snapshot (gBase.object! handBoltId)
+  }
+  let gModalWithProp :=
+    gModalCp1.changes #[
+      .pushStack { objectId := modalStackBoltId, controller := p0, targets := #[] },
+      .proposedSpell (some modalBoltProp),
+      .pending (.activateManaAbilities p0) ]
+  -- Install `.abilityEffect (some (Effect.gainLife 2))` and record `triggerModeChosen` on `modalTrigId`,
+  -- and remove `noLegalTrigId` with `.gameRule .noLegalMode` after the checkpoint:
+  let gWithModalTrig :=
+    (gModalWithProp.changeObject modalTrigId (.abilityEffect (some (Effect.gainLife 2)))).record
+      (GameEvent.triggerModeChosen gModalWithProp.turnNumber p0Bear.id 1 (lifetime := true)
+        (cause := some (.gameRule .triggeredAbility)))
+  let gWithBothModalTrigs :=
+    gWithModalTrig.ceaseToExist noLegalTrigId (cause := some (.gameRule .noLegalMode))
+  -- Reverse the spell proposal:
+  let gReversedModal := gWithBothModalTrigs.reverseProposedSpell (resumeContinuation := false)
+  let hasModeChosenEvent :=
+    gReversedModal.events.any fun e =>
+      match e.change with
+      | .rules (.triggerQueue (.modeChosen src m lt)) => src == p0Bear.id && m == 1 && lt
+      | _ => false
+  let checkpointPreservationOk :=
+    mustHold34i1 "1a.propNone" gReversedModal.proposedSpell.isNone &&
+    mustHold34i1 "1a.handBolt" ((gReversedModal.player p0).hand.contains handBoltId) &&
+    mustHold34i1 "1a.modalOnStack" (gReversedModal.stack.any (·.objectId == modalTrigId)) &&
+    mustHold34i1 "1a.modalAbEff" ((gReversedModal.object! modalTrigId).abilityEffect == some (Effect.gainLife 2)) &&
+    mustHold34i1 "1a.modeChosenEv" hasModeChosenEvent &&
+    mustHold34i1 "1a.noLegalRemoved" (!gReversedModal.stack.any (·.objectId == noLegalTrigId)) &&
+    mustHold34i1 "1a.noLegalGone" (gReversedModal.findObject? noLegalTrigId).isNone
+
+  let gCp0 := gBase.change .saveProposalCheckpoint
+  let (gCp1, stackBoltId) := gCp0.move handBoltId .stack (some p0) (cause := some testCause)
+  let boltProp : ProposedSpell := {
+    caster := p0
+    cost := ManaCost.ofColor .red
+    spellId := stackBoltId
+    original := gBase.object! handBoltId
+    originalSnapshot := gBase.snapshot (gBase.object! handBoltId)
+  }
+  let gWithProp :=
+    gCp1.changes #[
+      .pushStack { objectId := stackBoltId, controller := p0, targets := #[] },
+      .proposedSpell (some boltProp),
+      .pending (.activateManaAbilities p0) ]
+
+  -- 1b. `finishFraChoice` and `finishAndGrantPriority`:
+  -- (i) Game-over (`g.over`) with an orphaned `proposedSpell` reverses the proposal to hand BEFORE
+  --     `completeActiveResolutions.clearTransientPromptsOnGameOver`:
+  let (gVanishedProp0, _) := gWithProp.move stackBoltId (.graveyard p0) none (cause := some testCause)
+  let gVanishedProp := (gVanishedProp0.change (.removeStackEntry stackBoltId)).change (.pending .none)
+  let gOverWithProp :=
+    gVanishedProp.record (GameEvent.gameEnded gVanishedProp.turnNumber (.won p0))
+  let gFinishFraOver := gOverWithProp.finishFraChoice
+  let gFinishGrantOver := gOverWithProp.finishAndGrantPriority p0
+  -- (ii) `triggerNeedingTargets` is prompted before `waitingTriggers`:
+  let targTrigAb : TriggeredAbility :=
+    .triggered .youGainLife {
+      targeting := .of .creature
+      resolution := .onPermanent .tap
+      phrase := "Tap target creature"
+    } {}
+  let gUnannouncedTrig :=
+    (gBase.putTriggeredAbilityOnStack p0 p0Bear targTrigAb "triggers" (eventCause := some testCause)).changes #[
+      .waitingTriggers #[{ controller := p0, source := p0Bear, ability := simpleTrigAb },
+                         { controller := p0, source := p0Bear, ability := simpleTrigAb }],
+      .pushContinuationFrame {},
+      .pending .none ]
+  let gFraPromptsTarg := gUnannouncedTrig.finishFraChoice
+  let gGrantPromptsTarg := gUnannouncedTrig.finishAndGrantPriority p0
+  -- (iii) Vanished `proposedSpell` (`spellId` no longer on `.stack`) is reversed by both
+  --       `finishFraChoice` and `finishAndGrantPriority` (and live `proposedSpell` in
+  --       `finishAndGrantPriority` pops empty top continuation frames without granting idle priority):
+  let gFraRevVanished := gVanishedProp.finishFraChoice
+  let gGrantRevVanished := gVanishedProp.finishAndGrantPriority p0
+  let gLivePropGrant :=
+    ((gWithProp.change (.pushContinuationFrame {})).change (.pending .none)).finishAndGrantPriority p0
+
+  let finishFraAndGrantOk :=
+    gFinishFraOver.over && gFinishFraOver.proposedSpell.isNone &&
+    (gFinishFraOver.player p0).hand.contains handBoltId &&
+    gFinishGrantOver.over && gFinishGrantOver.proposedSpell.isNone &&
+    (gFinishGrantOver.player p0).hand.contains handBoltId &&
+    gFraPromptsTarg.pending == .chooseTargets p0 &&
+    gFraPromptsTarg.continuations.isEmpty &&
+    gGrantPromptsTarg.pending == .chooseTargets p0 &&
+    gGrantPromptsTarg.continuations.isEmpty &&
+    gFraRevVanished.proposedSpell.isNone &&
+    (gFraRevVanished.player p0).hand.contains handBoltId &&
+    gGrantRevVanished.proposedSpell.isNone &&
+    (gGrantRevVanished.player p0).hand.contains handBoltId &&
+    gLivePropGrant.proposedSpell.isSome &&
+    gLivePropGrant.continuations.isEmpty &&
+    gLivePropGrant.pending == .none
+
+  -- 1c. `Casting.afterWardResolved`:
+  --     - Game-over (`g.over`) reverses orphaned `proposedSpell` before `completeActiveResolutions`;
+  --     - Live `proposedSpell` returns without granting idle priority;
+  --     - Vanished `proposedSpell` reverses via `reverseProposedSpell`;
+  --     - `mayThenResume` + `triggerSequenceRest` drains `acceptMayThenCore` + `resumeTriggerSequence`
+  --       before popping the continuation frame;
+  --     - `triggerSequenceRest` resumes `resumeTriggerSequence` and drains `pendingReplacement` before popping.
+  let gWardOver := gOverWithProp.afterWardResolved
+  let gWardLiveProp :=
+    ((gWithProp.change (.pushContinuationFrame {})).change (.pending .none)).afterWardResolved
+  let gWardVanishedProp := gVanishedProp.afterWardResolved
+  let trigCtx : TriggerSequenceRest := {
+    controller := p0
+    ability := simpleTrigAb
+    sourceId := some p0Bear.id
+    targets := #[]
+    dividedDamage := #[]
+    lastKnownPower := none
+    lastKnownToughness := none
+    sourceName := bear.name
+    cardPower := none
+    steps := [.gainLife (.fixed 4)]
+  }
+  let gWardMayResume :=
+    ((gBase.change (.pushContinuationFrame {
+      mayThenResume := true
+      triggerSequenceRest := some trigCtx
+    })).change (.pending .none)).afterWardResolved
+  let gWardTrigSeqResume :=
+    ((gBase.change (.pushContinuationFrame {
+      triggerSequenceRest := some trigCtx
+    })).change (.pending .none)).afterWardResolved
+
+  let afterWardOk :=
+    gWardOver.over && gWardOver.proposedSpell.isNone &&
+    (gWardOver.player p0).hand.contains handBoltId &&
+    gWardLiveProp.proposedSpell.isSome &&
+    gWardLiveProp.continuations.isEmpty &&
+    gWardLiveProp.pending == .none &&
+    gWardVanishedProp.proposedSpell.isNone &&
+    (gWardVanishedProp.player p0).hand.contains handBoltId &&
+    (gWardMayResume.player p0).life == (gBase.player p0).life + 4 &&
+    !gWardMayResume.mayThenResume &&
+    gWardMayResume.continuations.isEmpty &&
+    (gWardTrigSeqResume.player p0).life == (gBase.player p0).life + 4 &&
+    gWardTrigSeqResume.continuations.isEmpty &&
+    (gBase.object! p1Hero.id).zone == .battlefield
+
+  mustHold34i1 "1a.checkpointPreservationOk" checkpointPreservationOk &&
+  mustHold34i1 "1b.finishFraAndGrantOk" finishFraAndGrantOk &&
+  mustHold34i1 "1c.afterWardOk" afterWardOk &&
+  mustHold34i1 "1.replay"
+    (replayOk34i1 #[gWithBothModalTrigs, gReversedModal, gFinishFraOver, gFinishGrantOver,
+      gFraPromptsTarg, gGrantPromptsTarg, gFraRevVanished, gGrantRevVanished, gLivePropGrant,
+      gWardOver, gWardLiveProp, gWardVanishedProp, gWardMayResume, gWardTrigSeqResume])
+
+end Phase34Item1EventAlignment
+
+/-! ### Phase 34 Item 2: `proposalCostPromptStillPayable`, `.restorePending` departed-seat ordering, and `.resume*AfterLeave` game-over / vanished-proposal guards -/
+section Phase34Item2EventAlignment
+
+private def mustHold34i2 (label : String) (ok : Bool) : Bool :=
+  if ok then true else panic! s!"Phase34Item2EventAlignment failed: {label}"
+
+private def replayOk34i2 (gs : Array Game) : Bool :=
+  gs.all (fun g => Game.replayEvents g.events == g && allRulesEventsClassified g)
+
+#guard
+  let p0 : PlayerId := ⟨0⟩
+  let p1 : PlayerId := ⟨1⟩
+  let p2 : PlayerId := ⟨2⟩
+  let g3 := afterDraw.change (.addPlayer { id := p2, name := "Liliana" })
+  let gBase :=
+    addPermanent
+      (addPermanent (insertObject g3 bear p0 (.hand p0)) bear p0 p0)
+      bear p1 p1
+  let handBoltId := (gBase.player p0).hand.back!
+  let p0Bear := (gBase.permanentsOf p0)[0]!
+
+  -- 2a. `proposalCostPromptStillPayable`:
+  --     Requires `!g.over && g.stillInGame caster` and a matching `g.proposedSpell` whose `spellId`
+  --     is still on `.stack` (or on `.battlefield` for `.turnFaceUp`).
+  let gCp0 := gBase.change .saveProposalCheckpoint
+  let (gCp1, stackBoltId) := gCp0.move handBoltId .stack (some p0) (cause := some testCause)
+  let boltProp : ProposedSpell := {
+    caster := p0
+    cost := ManaCost.ofColor .red
+    spellId := stackBoltId
+    original := gBase.object! handBoltId
+    originalSnapshot := gBase.snapshot (gBase.object! handBoltId)
+  }
+  let gLiveProp :=
+    gCp1.changes #[
+      .pushStack { objectId := stackBoltId, controller := p0, targets := #[] },
+      .proposedSpell (some boltProp) ]
+  let gOverLiveProp := gLiveProp.record (GameEvent.gameEnded gLiveProp.turnNumber (.won p0))
+  let (gVanished0, _) := gLiveProp.move stackBoltId (.graveyard p0) none (cause := some testCause)
+  let gVanishedProp := gVanished0.change (.removeStackEntry stackBoltId)
+  let gOverProp := gVanishedProp.record (GameEvent.gameEnded gVanishedProp.turnNumber (.won p0))
+  let gTurnFaceUpProp :=
+    gBase.change (.proposedSpell (some {
+      caster := p0
+      cost := ManaCost.empty
+      spellId := p0Bear.id
+      original := p0Bear
+      originalSnapshot := gBase.snapshot p0Bear
+      kind := .turnFaceUp
+    }))
+  let (gTurnFaceUpGone0, _) := gTurnFaceUpProp.move p0Bear.id (.graveyard p0) none (cause := some testCause)
+  let gRestoreVanishedCost :=
+    gVanishedProp.resumePendingReplacement (.restorePending (.discardForAdditionalCost p0) false none #[])
+
+  let proposalCostPayableOk :=
+    gLiveProp.proposalCostPromptStillPayable p0 (.discardForAdditionalCost p0) &&
+    !gLiveProp.proposalCostPromptStillPayable p1 (.discardForAdditionalCost p1) &&
+    !gBase.proposalCostPromptStillPayable p0 (.discardForAdditionalCost p0) &&
+    !gOverLiveProp.proposalCostPromptStillPayable p0 (.discardForAdditionalCost p0) &&
+    !gVanishedProp.proposalCostPromptStillPayable p0 (.discardForAdditionalCost p0) &&
+    gTurnFaceUpProp.proposalCostPromptStillPayable p0 (.discardForAdditionalCost p0) &&
+    !gTurnFaceUpGone0.proposalCostPromptStillPayable p0 (.discardForAdditionalCost p0) &&
+    gRestoreVanishedCost.proposedSpell.isNone &&
+    (gRestoreVanishedCost.player p0).hand.contains handBoltId
+
+  -- 2b. `resumePendingReplacement` `.restorePending` departed-seat ordering:
+  --     When `saved` has `promptSeat? == some p1` and `!g.stillInGame p1`, `effectiveDeparted`
+  --     prepends `p1` (`#[p1] ++ departed.filter (· != p1)`) even when `departed` was `#[p2]`!
+  let gLeftP1 := gBase.playerLeavesGame p1
+  let gRestoreDepartedSeat :=
+    ((gLeftP1.change (.pushContinuationFrame {})).change (.pending .none)).resumePendingReplacement
+      (.restorePending (.mayDiscardDraw p1 1) false none #[p2])
+  let departedSeatOrderOk :=
+    gRestoreDepartedSeat.pending == .none &&
+    gRestoreDepartedSeat.continuations.isEmpty &&
+    gRestoreDepartedSeat.log.any (·.endsWith "declines (CR 800.4f)")
+
+  -- 2c. `runPostStep` (`.resumeChooseModeAfterLeave`, `.resumeChooseTargetsAfterLeave`,
+  --     `.resumeTriggerModesAfterLeave`, `.resumeUpToTriggerModesAfterLeave`,
+  --     `.resumeHawkeyeModesAfterLeave`, and `.resumeProposalCostAfterLeave`):
+  --     - Game-over (`g.over`) reverses any orphaned `proposedSpell` before `completeActiveResolutions`;
+  --     - Departed `p1` tears down via `finishFraChoice` without re-opening `.fraChoice` or emitting
+  --       post-departure announcements or stack removals;
+  --     - Living `p0` with vanished `proposedSpell` reverses in `.resumeChooseModeAfterLeave`,
+  --       `.resumeChooseTargetsAfterLeave`, and `.resumeProposalCostAfterLeave`.
+  let gOverModePost := gOverProp.runPostStep (.resumeChooseModeAfterLeave p0)
+  let gOverTargPost := gOverProp.runPostStep (.resumeChooseTargetsAfterLeave p0)
+  let gOverTrigModePost := gOverProp.runPostStep (.resumeTriggerModesAfterLeave p0 stackBoltId 1 #[])
+  let gOverUpToModePost := gOverProp.runPostStep (.resumeUpToTriggerModesAfterLeave p0 stackBoltId 1 #[])
+  let gOverHkModePost := gOverProp.runPostStep (.resumeHawkeyeModesAfterLeave p0 stackBoltId 1 #[])
+  let gOverCostPost := gOverProp.runPostStep (.resumeProposalCostAfterLeave p0 (.discardForAdditionalCost p0))
+
+  let simpleTrigAb : TriggeredAbility := .triggered .youGainLife (Effect.gainLife 1) {}
+  let gP1TrigStack :=
+    gBase.putTriggeredAbilityOnStack p1 (gBase.permanentsOf p1)[0]! simpleTrigAb "triggers" (eventCause := some testCause)
+  let p1TrigId := gP1TrigStack.stack.back!.objectId
+  let gP1TrigLeft :=
+    (gP1TrigStack.record (GameEvent.playerLeftGame gP1TrigStack.turnNumber p1)).changes #[
+      .pushContinuationFrame {},
+      .pending .none ]
+  let gDepartedTrigModes :=
+    gP1TrigLeft.runPostStep (.resumeTriggerModesAfterLeave p1 p1TrigId 1 #[])
+  let gDepartedUpToModes :=
+    gP1TrigLeft.runPostStep (.resumeUpToTriggerModesAfterLeave p1 p1TrigId 1 #[])
+  let gDepartedHkModes :=
+    gP1TrigLeft.runPostStep (.resumeHawkeyeModesAfterLeave p1 p1TrigId 1 #[])
+
+  let gVanishedModePost := gVanishedProp.runPostStep (.resumeChooseModeAfterLeave p0)
+  let gVanishedTargPost := gVanishedProp.runPostStep (.resumeChooseTargetsAfterLeave p0)
+  let gVanishedCostPost := gVanishedProp.runPostStep (.resumeProposalCostAfterLeave p0 (.discardForAdditionalCost p0))
+
+  let resumePostStepsOk :=
+    mustHold34i2 "2c.overPostSteps"
+      ((#[gOverModePost, gOverTargPost, gOverTrigModePost, gOverUpToModePost, gOverHkModePost, gOverCostPost]).all
+        (fun g => g.over && g.proposedSpell.isNone && (g.player p0).hand.contains handBoltId)) &&
+    mustHold34i2 "2c.departedTrigModes"
+      ((#[gDepartedTrigModes, gDepartedUpToModes, gDepartedHkModes]).all
+        (fun g => g.pending == .none && g.continuations.isEmpty && g == gP1TrigLeft.finishFraChoice)) &&
+    mustHold34i2 "2c.vanishedPostSteps"
+      ((#[gVanishedModePost, gVanishedTargPost, gVanishedCostPost]).all
+        (fun g => g.proposedSpell.isNone && (g.player p0).hand.contains handBoltId))
+
+  mustHold34i2 "2a.proposalCostPayableOk" proposalCostPayableOk &&
+  mustHold34i2 "2b.departedSeatOrderOk" departedSeatOrderOk &&
+  mustHold34i2 "2c.resumePostStepsOk" resumePostStepsOk &&
+  mustHold34i2 "2.replay"
+    (replayOk34i2 #[gLiveProp, gOverLiveProp, gOverProp, gVanishedProp, gRestoreVanishedCost, gRestoreDepartedSeat,
+      gOverModePost, gOverTargPost, gOverTrigModePost, gOverUpToModePost, gOverHkModePost, gOverCostPost,
+      gDepartedTrigModes, gDepartedUpToModes, gDepartedHkModes,
+      gVanishedModePost, gVanishedTargPost, gVanishedCostPost])
+
+end Phase34Item2EventAlignment
+
+/-! ### Phase 34 Item 3: `sourceStillPayable` (`removePlusOneX`), `isProposalAbortedByLeave` (`sourceId`), and `redirectPendingAfterLeave` cleanup -/
+section Phase34Item3EventAlignment
+
+private def mustHold34i3 (label : String) (ok : Bool) : Bool :=
+  if ok then true else panic! s!"Phase34Item3EventAlignment failed: {label}"
+
+private def replayOk34i3 (gs : Array Game) : Bool :=
+  gs.all (fun g => Game.replayEvents g.events == g && allRulesEventsClassified g)
+
+#guard
+  let p0 : PlayerId := ⟨0⟩
+  let p1 : PlayerId := ⟨1⟩
+  let p2 : PlayerId := ⟨2⟩
+  let g3 := afterDraw.change (.addPlayer { id := p2, name := "Liliana" })
+  let gBase :=
+    addPermanent
+      (addPermanent
+        (addPermanent (insertObject g3 bear p0 (.hand p0)) bear p0 p0)
+        hero p1 p1)
+      bear p2 p2
+  let p0Bear := (gBase.permanentsOf p0).find? (·.name == bear.name) |>.get!
+  let p1Hero := (gBase.permanentsOf p1).find? (·.name == hero.name) |>.get!
+  let handBoltId := (gBase.player p0).hand.back!
+
+  -- 3a. `Choices.sourceStillPayable` (`removePlusOneX`) & `Leaving.isProposalAbortedByLeave` (`sourceId`):
+  let (gAbStack0, abObj) := gBase.putStackAbility p0Bear p0 (abilityEffect := some (Effect.gainLife 1))
+  let abId := abObj.id
+  let gAbX2 := gAbStack0.record (GameEvent.announced gAbStack0.turnNumber abId #[] (some 2) #[])
+  let removeXProp : ProposedSpell := {
+    caster := p0
+    cost := ManaCost.empty
+    spellId := abId
+    original := abObj
+    originalSnapshot := gAbX2.snapshot abObj
+    kind := .activatedAbility
+    sourceId := some p0Bear.id
+    removePlusOneX := true
+  }
+  let gBear1Counter := gAbX2.addCounters (gAbX2.object! p0Bear.id) .plusOnePlusOne 1 (cause := some testCause)
+  let gBear2Counters := gBear1Counter.addCounters (gBear1Counter.object! p0Bear.id) .plusOnePlusOne 1 (cause := some testCause)
+  let gBearStolen :=
+    gBear2Counters.createEffect (.control p0Bear.id p1) (cause := some testCause)
+  -- `p0` proposes an activated ability from `p1Hero` (`sourceId == some p1Hero.id`) while at `.chooseX p0`:
+  -- when `p1` concedes, `isProposalAbortedByLeave p1 == true` immediately reverses `p0`'s proposal
+  -- (rolling back journaled proposal actions and not emitting `.ceasedToExist` for `p0`'s stack ability)!
+  let gCpChooseX0 := gBase.change .saveProposalCheckpoint
+  let (gCpChooseX1, p1SrcAbObj) := gCpChooseX0.putStackAbility p1Hero p0 (abilityEffect := some (Effect.gainLife 1))
+  let gCpChooseX2 :=
+    gCpChooseX1.withProposalAction .costAction fun g =>
+      g.becomeTapped (g.object! p0Bear.id) (cause := some testCause)
+  let p1SrcProp : ProposedSpell := {
+    caster := p0
+    cost := ManaCost.empty
+    spellId := p1SrcAbObj.id
+    original := p1SrcAbObj
+    originalSnapshot := gCpChooseX2.snapshot p1SrcAbObj
+    kind := .activatedAbility
+    sourceId := some p1Hero.id
+  }
+  let gChooseXBorrowedSrc :=
+    gCpChooseX2.changes #[
+      .proposedSpell (some p1SrcProp),
+      .pending (.chooseX p0) ]
+  let gChooseXAfterP1Leave := gChooseXBorrowedSrc.concede p1
+  let p1SrcAbCeasedOnP1Leave :=
+    gChooseXAfterP1Leave.events.any fun ev =>
+      match ev with
+      | .rules _ (.zone (.ceasedToExist snap)) _ _ => snap.id == some p1SrcAbObj.id
+      | _ => false
+  -- Outer non-proposal continuation preserved across unpaused leave rewind (`Comment 1`):
+  let gWithOuter0 :=
+    gBase.changes #[
+      .pushContinuationFrame {},
+      .pendingReplacement (some (.gainLife p0 2 (some testCause))),
+      .saveProposalCheckpoint ]
+  let (gWithOuter1, outerSrcAbObj) :=
+    gWithOuter0.putStackAbility p1Hero p0 (abilityEffect := some (Effect.gainLife 1))
+  let outerSrcProp : ProposedSpell := {
+    caster := p0
+    cost := ManaCost.empty
+    spellId := outerSrcAbObj.id
+    original := outerSrcAbObj
+    originalSnapshot := gWithOuter1.snapshot outerSrcAbObj
+    kind := .activatedAbility
+    sourceId := some p1Hero.id
+  }
+  let gChooseXWithOuter :=
+    gWithOuter1.changes #[
+      .proposedSpell (some outerSrcProp),
+      .pending (.chooseX p0) ]
+  let gChooseXWithOuterAfterLeave := gChooseXWithOuter.playerLeavesGame p1
+  -- Deferred rewind (`rewindProposal := true`) still rewinds when `p1` only controlled `p0Bear`
+  -- and control returned to `p0` during `p1`'s departure (`Comment 2`):
+  let gStolenSrc0 := gBearStolen.change .saveProposalCheckpoint
+  let (gStolenSrc1, stolenSrcAbObj) :=
+    gStolenSrc0.putStackAbility p0Bear p0 (abilityEffect := some (Effect.gainLife 1))
+  let stolenSrcProp : ProposedSpell := {
+    caster := p0
+    cost := ManaCost.empty
+    spellId := stolenSrcAbObj.id
+    original := stolenSrcAbObj
+    originalSnapshot := gStolenSrc1.snapshot stolenSrcAbObj
+    kind := .activatedAbility
+    sourceId := some p0Bear.id
+  }
+  let gStolenSrcChooseX :=
+    gStolenSrc1.changes #[
+      .proposedSpell (some stolenSrcProp),
+      .pending (.chooseX p0) ]
+  let (gStolenLeaveCore, savedStolen?, popOuterStolen, _) :=
+    gStolenSrcChooseX.playerLeavesGameCore p1 (deferRestore := true)
+  -- Also test `restorePending .none` with `rewindProposal := true` after `p1` left (when `sourceStillPayable` is true again):
+  let gStolenDeferred0 :=
+    (gBearStolen.concede p1).change .saveProposalCheckpoint
+  let (gStolenDeferred1, stolenDefAbObj) :=
+    gStolenDeferred0.putStackAbility p0Bear p0 (abilityEffect := some (Effect.gainLife 1))
+  let stolenDefProp : ProposedSpell := {
+    caster := p0
+    cost := ManaCost.empty
+    spellId := stolenDefAbObj.id
+    original := stolenDefAbObj
+    originalSnapshot := gStolenDeferred1.snapshot stolenDefAbObj
+    kind := .activatedAbility
+    sourceId := some p0Bear.id
+  }
+  let gStolenDeferred2 :=
+    gStolenDeferred1.change (.proposedSpell (some stolenDefProp))
+  let gStolenDeferredRewound :=
+    gStolenDeferred2.resumePendingReplacement
+      (.restorePending .none false (departed := #[p1]) (rewindProposal := some false))
+  -- Unrelated `restorePending .none` (`rewindProposal := none`) does NOT reverse a legal `{T}` activation
+  -- whose `{T}` cost was already paid (`Comment 2`):
+  let gTapPaid0 := gBase.change .saveProposalCheckpoint
+  let (gTapPaid1, tapPaidAbObj) :=
+    gTapPaid0.putStackAbility p0Bear p0 (abilityEffect := some (Effect.gainLife 1))
+  let gTapPaid2 :=
+    gTapPaid1.withProposalAction .costAction fun g =>
+      g.becomeTapped (g.object! p0Bear.id) (cause := some testCause)
+  let tapPaidProp : ProposedSpell := {
+    caster := p0
+    cost := ManaCost.empty
+    spellId := tapPaidAbObj.id
+    original := tapPaidAbObj
+    originalSnapshot := gTapPaid2.snapshot tapPaidAbObj
+    kind := .activatedAbility
+    sourceId := some p0Bear.id
+    tapSource := true
+  }
+  let gTapPaid3 := gTapPaid2.change (.proposedSpell (some tapPaidProp))
+  let gTapPaidAfterUnrelatedRestore :=
+    gTapPaid3.resumePendingReplacement
+      (.restorePending .none false (departed := #[p1]) (rewindProposal := none))
+  -- Deferred rewind on a `castAsPartOfResolution` checkpoint (`ckpt.pendingReplacement == some (.gainLife p0 2 ...)`
+  -- moved to `outerPendingReplacements` after `saveProposalCheckpoint`, so `hadPreBodyCont == false` at leave time)
+  -- when the departure also pushed a leave-built outer continuation (`popOuter == true`, `+3` life) preserves both
+  -- the checkpoint's resolution continuation AND the leave-built outer continuation (`Review #3 Comment 1`):
+  let gResCastCkpt0 :=
+    gBase.changes #[
+      .pushContinuationFrame {},
+      .pendingReplacement (some (.gainLife p0 2 (some testCause))),
+      .saveProposalCheckpoint,
+      .pushOuterPendingReplacement (.gainLife p0 2 (some testCause)),
+      .pendingReplacement none ]
+  let (gResCastCkpt1, resCastAbObj) :=
+    gResCastCkpt0.putStackAbility p0Bear p0 (abilityEffect := some (Effect.gainLife 1))
+  let resCastProp : ProposedSpell := {
+    caster := p0
+    cost := ManaCost.empty
+    spellId := resCastAbObj.id
+    original := resCastAbObj
+    originalSnapshot := gResCastCkpt1.snapshot resCastAbObj
+    kind := .activatedAbility
+    sourceId := some p0Bear.id
+    resolutionCast := true
+  }
+  let gResCastWithLeaveOuter :=
+    gResCastCkpt1.changes #[
+      .proposedSpell (some resCastProp),
+      .pushOuterPendingReplacement (.gainLife p0 3 (some testCause)) ]
+  let gResCastDeferredRestore :=
+    gResCastWithLeaveOuter.resumePendingReplacement
+      (.restorePending .none true (departed := #[p1]) (rewindProposal := some false))
+  -- Chaining `runPostCastCleanup`'s `.resolveRandom (.orderInto ...)` with an already-saved departure prompt
+  -- (`saved? == some (.scry p0 ...)`) keeps both prompts instead of dropping `.orderInto` (`Review #3 Comment 2`):
+  let gCasc2 :=
+    insertObject
+      (insertObject
+        (insertObject gBase bear p0 .exile)
+        bear p0 .exile)
+      bear p0 .exile
+  let cascExIds := (gCasc2.objects.filter (fun o => o.zone == .exile && o.owner == p0)).map (·.id)
+  let cascCard0 := cascExIds[0]!
+  let cascCard1 := cascExIds[1]!
+  let cascCard2 := cascExIds[2]!
+  let gCascCkpt :=
+    gCasc2.changes #[
+      .pushContinuationFrame {},
+      .postCastCleanup (some (.cascadeBottom p0 cascCard0 #[cascCard1, cascCard2])),
+      .saveProposalCheckpoint ]
+  let (gCascStack0, cascStackId) := gCascCkpt.move cascCard0 .stack (some p0) (cause := some testCause)
+  let cascProp : ProposedSpell := {
+    caster := p0
+    cost := ManaCost.empty
+    spellId := cascStackId
+    original := gCascCkpt.object! cascCard0
+    originalSnapshot := gCascCkpt.snapshot (gCascCkpt.object! cascCard0)
+    kind := .spell
+    resolutionCast := true
+  }
+  let savedScryPrompt : Pending := .scry p0 1
+  let gCascWithProp := gCascStack0.change (.proposedSpell (some cascProp))
+  let gCascRestored :=
+    gCascWithProp.resumePendingReplacement
+      (.restorePending savedScryPrompt false (departed := #[p1]) (rewindProposal := some false))
+  let cascOpenedOrderInto :=
+    match gCascRestored.pending with
+    | .resolveRandom (.orderInto ids (.library q) _) =>
+      q == p0 && ids.size == 3 && ids.contains cascCard0 && ids.contains cascCard1 && ids.contains cascCard2
+    | _ => false
+  let gCascAfterOrder :=
+    match gCascRestored.supplyOrder #[cascCard0, cascCard1, cascCard2] with
+    | .ok g' => g'
+    | .error _ => gCascRestored
+  -- A second departure in `leavePlayersWhoLostCore` while `rewindProposalIn == some false`
+  -- and `popOuterIn == true` keeps `hadPreBodyCont = false` instead of flipping to `true`
+  -- from the popped outer continuation (`Review #4`):
+  let gMultiLeave0 :=
+    (gResCastWithLeaveOuter.createEffect (.control p0Bear.id p2) (cause := some testCause)).record
+      (GameEvent.playerLost gResCastWithLeaveOuter.turnNumber p2 .conceded)
+  let (gMultiAfter, sMulti, poMulti, depMulti, rwMulti) :=
+    gMultiLeave0.withBatchReturn none fun g =>
+      let (g', s', po', dep', rw') :=
+        g.leavePlayersWhoLostCore none true #[p1] (some false)
+      (g', (s', po', dep', rw'))
+  let gMultiRestored :=
+    gMultiAfter.restoreSavedPostLeave sMulti poMulti (departed := depMulti) (rewindProposal := rwMulti)
+
+  let sourceAndLeaveAbortOk :=
+    !gBear1Counter.sourceStillPayable removeXProp &&
+    gBear2Counters.sourceStillPayable removeXProp &&
+    !gBearStolen.sourceStillPayable removeXProp &&
+    gChooseXAfterP1Leave.proposedSpell.isNone &&
+    gChooseXAfterP1Leave.proposalCheckpoint.isNone &&
+    gChooseXAfterP1Leave.pending == .none &&
+    (gChooseXAfterP1Leave.findObject? p1SrcAbObj.id).isNone &&
+    !(gChooseXAfterP1Leave.object! p0Bear.id).status.tapped &&
+    !p1SrcAbCeasedOnP1Leave &&
+    gChooseXAfterP1Leave.log.any (·.contains "the activation is reversed (CR 602.2 / 733.1)") &&
+    gChooseXWithOuterAfterLeave.proposedSpell.isNone &&
+    gChooseXWithOuterAfterLeave.proposalCheckpoint.isNone &&
+    (gChooseXWithOuterAfterLeave.player p0).life == (gBase.player p0).life + 2 &&
+    gStolenLeaveCore.proposedSpell.isNone &&
+    gStolenLeaveCore.proposalCheckpoint.isNone &&
+    savedStolen?.isNone &&
+    !popOuterStolen &&
+    gStolenDeferred2.sourceStillPayable stolenDefProp &&
+    gStolenDeferredRewound.proposedSpell.isNone &&
+    gStolenDeferredRewound.proposalCheckpoint.isNone &&
+    !gTapPaid3.sourceStillPayable tapPaidProp &&
+    gTapPaidAfterUnrelatedRestore.proposedSpell.isSome &&
+    gTapPaidAfterUnrelatedRestore.proposalCheckpoint.isSome &&
+    gResCastDeferredRestore.proposedSpell.isNone &&
+    gResCastDeferredRestore.proposalCheckpoint.isNone &&
+    (gResCastDeferredRestore.player p0).life == (gBase.player p0).life + 5 &&
+    cascOpenedOrderInto &&
+    gCascAfterOrder.pending == savedScryPrompt &&
+    poMulti &&
+    gMultiRestored.proposedSpell.isNone &&
+    gMultiRestored.proposalCheckpoint.isNone &&
+    (gMultiRestored.player p0).life == (gBase.player p0).life + 5
+
+  -- 3b. `redirectPendingAfterLeave`:
+  -- (i) `.payOrLetCounter`:
+  --     - `q == p1` with `p0`'s spell on stack counters `p0`'s spell (unless `controlledBy o p1`);
+  --     - `q == p0` when `spellId` left `.stack` clears `.payOrLetCounter` & `clearUnlessPays`;
+  --     - `q == p0` with `spellId == none` and `unlessPaysInstead` whose target left (or controller left)
+  --       clears `.payOrLetCounter` & `clearUnlessPays`.
+  let (gBoltStack0, stackBoltId) := gBase.move handBoltId .stack (some p0) (cause := some testCause)
+  let gBoltOnStack :=
+    gBoltStack0.change (.pushStack {
+      objectId := stackBoltId
+      controller := p0
+      targets := #[Target.player p2]
+      targetsAnnounced := true
+    })
+  let gPayOrCounterP1Leaves :=
+    ((gBoltOnStack.change (.pushContinuationFrame { unlessPaysController := p0 })).change
+      (.pending (.payOrLetCounter p1 2 (some stackBoltId)))).concede p1
+  let gPayOrCounterSpellGone :=
+    ((gBase.change (.pushContinuationFrame {
+      unlessPaysController := p1
+      unlessPaysInstead := some (Effect.gainLife 1)
+    })).change (.pending (.payOrLetCounter p0 2 (some stackBoltId)))).concede p1
+  let tapCreatureEff : Effect := {
+    targeting := .of .creature
+    resolution := .onPermanent .tap
+    phrase := "Tap target creature"
+  }
+  let gPayOrCounterInsteadIllegal :=
+    ((gBase.change (.pushContinuationFrame {
+      unlessPaysController := p0
+      unlessPaysInstead := some tapCreatureEff
+      unlessPaysTargets := #[Target.permanent p1Hero.id]
+    })).change (.pending (.payOrLetCounter p0 2 none))).concede p1
+
+  -- (ii) `.castCopiesFree`, `.mayCastCopy`, and `.mayCastCascade`:
+  let dummyModesRest : ChooseModesRest := {
+    controller := p0
+    ability := .triggered .enter { resolution := .gainLife 1 } {}
+    sourceName := "Test"
+    how := .vision
+  }
+  let dummyTrigOr : TriggerOrRest := {
+    controller := p1
+    alternatives := #[.gainLife (.fixed 2)]
+    ability := .triggered .enter { resolution := .gainLife 1 } {}
+    sourceId := some p0Bear.id
+    targets := #[]
+    dividedDamage := #[]
+    lastKnownPower := none
+    lastKnownToughness := none
+    sourceName := "Test"
+    cardPower := none
+  }
+  let (gCopy0, exCopyId1) := gBase.move handBoltId .exile none (isCopy := some true) (cause := some testCause)
+  let gCopiesFreeP1Leaves :=
+    ((gCopy0.change (.pushContinuationFrame {
+      chooseModesRest := some dummyModesRest
+      pendingFreeCopies := some (p1, #[exCopyId1], 3, 1)
+    })).change (.pending (.fraChoice p1 (.castCopiesFree #[exCopyId1] 3 1)))).concede p1
+  let gCopiesFreeUnpayable :=
+    ((gCopy0.change (.pushContinuationFrame {
+      chooseModesRest := some dummyModesRest
+      pendingFreeCopies := some (p0, #[exCopyId1], 0, 0)
+    })).change (.pending (.fraChoice p0 (.castCopiesFree #[exCopyId1] 0 0)))).concede p1
+  let gMayCastCopyP1Leaves :=
+    ((gCopy0.change (.pushContinuationFrame {
+      chooseModesRest := some dummyModesRest
+    })).change (.pending (.fraChoice p1 (.mayCastCopy exCopyId1)))).concede p1
+  let gMayCastCopyGone :=
+    ((gBase.change (.pushContinuationFrame {
+      chooseModesRest := some dummyModesRest
+    })).change (.pending (.fraChoice p0 (.mayCastCopy handBoltId)))).concede p1
+  let p0TopLibId := (gBase.player p0).library.back!
+  let (gCasc0, exOtherId) := gBase.move p0TopLibId .exile none (cause := some testCause)
+  let gCascadeCardGone :=
+    ((gCasc0.change (.pushContinuationFrame {
+      chooseModesRest := some dummyModesRest
+    })).change (.pending (.fraChoice p0 (.mayCastCascade handBoltId #[exOtherId, p1Hero.id])))).concede p1
+
+  -- (iii) `.chooseTriggerOr`, `.tapHumans`, and `.mayPutArtifactFromHand`:
+  let gTrigOrP1Leaves :=
+    ((gBase.change (.pushContinuationFrame {
+      triggerOr := some dummyTrigOr
+      chooseModesRest := some dummyModesRest
+    })).change (.pending (.chooseTriggerOr p1))).concede p1
+  let gTapHumansP1Leaves :=
+    ((gBase.change (.pushContinuationFrame {
+      chooseModesRest := some dummyModesRest
+    })).changes #[
+      .humansTappedThisWay 2,
+      .pending (.tapHumans p1) ]).concede p1
+  let gPutArtP1Leaves :=
+    ((gBase.change (.pushContinuationFrame {
+      putArtifactThisWay := some (p0Bear.id, p0Bear.id)
+      chooseModesRest := some dummyModesRest
+    })).change (.pending (.mayPutArtifactFromHand p1 (some p0Bear.id)))).concede p1
+
+  let redirectCleanupOk :=
+    mustHold34i3 "3b.payOrCounterP1" (gPayOrCounterP1Leaves.pending == .none &&
+      (gPayOrCounterP1Leaves.player p0).graveyard.size == 1) &&
+    mustHold34i3 "3b.payOrCounterSpellGone" (gPayOrCounterSpellGone.pending == .none &&
+      gPayOrCounterSpellGone.continuations.isEmpty) &&
+    mustHold34i3 "3b.payOrCounterInsteadIllegal" (gPayOrCounterInsteadIllegal.pending == .none &&
+      gPayOrCounterInsteadIllegal.continuations.isEmpty) &&
+    mustHold34i3 "3b.copiesFreeP1" (gCopiesFreeP1Leaves.pending == .none &&
+      (gCopiesFreeP1Leaves.findObject? exCopyId1).isNone &&
+      gCopiesFreeP1Leaves.continuations.isEmpty) &&
+    mustHold34i3 "3b.copiesFreeUnpayable" (gCopiesFreeUnpayable.pending == .none &&
+      (gCopiesFreeUnpayable.findObject? exCopyId1).isNone &&
+      gCopiesFreeUnpayable.continuations.isEmpty) &&
+    mustHold34i3 "3b.mayCastCopyP1" (gMayCastCopyP1Leaves.pending == .none &&
+      (gMayCastCopyP1Leaves.findObject? exCopyId1).isNone &&
+      gMayCastCopyP1Leaves.log.any (·.endsWith "ceases to exist")) &&
+    mustHold34i3 "3b.mayCastCopyGone" (gMayCastCopyGone.pending == .none &&
+      gMayCastCopyGone.continuations.isEmpty) &&
+    mustHold34i3 "3b.cascadeCardGone" (gCascadeCardGone.pending == .none &&
+      (gCascadeCardGone.findObject? exOtherId).isNone &&
+      (gCascadeCardGone.player p0).library.size == (gCasc0.player p0).library.size + 1 &&
+      gCascadeCardGone.continuations.isEmpty) &&
+    mustHold34i3 "3b.trigOrP1" (gTrigOrP1Leaves.pending == .none && gTrigOrP1Leaves.continuations.isEmpty) &&
+    mustHold34i3 "3b.tapHumansP1" (gTapHumansP1Leaves.pending == .none && gTapHumansP1Leaves.continuations.isEmpty) &&
+    mustHold34i3 "3b.putArtP1" (gPutArtP1Leaves.pending == .none && gPutArtP1Leaves.continuations.isEmpty)
+
+  mustHold34i3 "3a.sourceAndLeaveAbortOk" sourceAndLeaveAbortOk &&
+  mustHold34i3 "3b.redirectCleanupOk" redirectCleanupOk &&
+  mustHold34i3 "3.replay"
+    (replayOk34i3 #[gBear1Counter, gBear2Counters, gBearStolen, gChooseXAfterP1Leave,
+      gChooseXWithOuterAfterLeave, gStolenLeaveCore, gStolenDeferredRewound,
+      gTapPaidAfterUnrelatedRestore,
+      gPayOrCounterP1Leaves, gPayOrCounterSpellGone, gPayOrCounterInsteadIllegal,
+      gCopiesFreeP1Leaves, gCopiesFreeUnpayable, gMayCastCopyP1Leaves, gMayCastCopyGone,
+      gCascadeCardGone, gTrigOrP1Leaves, gTapHumansP1Leaves, gPutArtP1Leaves])
+
+end Phase34Item3EventAlignment
+
+/-! ### Phase 34 Item 4: `stillInGame` guards (`addManaUnits`, `addManaLogged`, `temptWithTheRing`, `createCommandObject`, `.emblemCastSpellDamage`, `.elspethEmblem`, `registerDelayedTrigger`, `setPlayerControl`, `shuffleThen`, `.fblthpSearch`) and Layer 1–6 characteristic queries (`FraResolve`, `Turns`, `SpellResolution`) -/
+section Phase34Item4EventAlignment
+
+private def mustHold34i4 (label : String) (ok : Bool) : Bool :=
+  if ok then true else panic! s!"Phase34Item4EventAlignment failed: {label}"
+
+private def replayOk34i4 (gs : Array Game) : Bool :=
+  gs.all (fun g => Game.replayEvents g.events == g && allRulesEventsClassified g)
+
+#guard
+  let p0 : PlayerId := ⟨0⟩
+  let p1 : PlayerId := ⟨1⟩
+  let p2 : PlayerId := ⟨2⟩
+  let g3 := afterDraw.change (.addPlayer { id := p2, name := "Liliana" })
+  let gBase := addPermanent (addPermanent g3 bear p0 p0) bear p2 p2
+  let p0Bear := (gBase.permanentsOf p0)[0]!
+  let gLeftP1 := gBase.concede p1
+  let dummyEff : Effect := Effect.gainLife 1
+
+  -- 4a. `g.stillInGame` guards on departed `p1`:
+  let gAddManaDead := gLeftP1.addMana p1 (.colored .green) 2
+  let gAddManaLoggedDead := gLeftP1.addManaLogged p1 #[.colored .red]
+  let gTemptDead := gLeftP1.temptWithTheRing p1
+  let gCmdObjDead := gLeftP1.createCommandObject p1 { name := "Dead Emblem", types := #[] }
+  let gChandraEmblemDead :=
+    (gLeftP1.applyFraResolution? p1 { resolution := .emblemCastSpellDamage 2, phrase := "Emblem" } #[] none).getD gLeftP1
+  let gElspethEmblemDead :=
+    gLeftP1.applyFrc p1 dummyEff .elspethEmblem #[] none
+  let gDelayTrigDead :=
+    gLeftP1.registerDelayedTrigger {
+      controller := p1
+      source := some p0Bear
+      kind := .endStepExile p0Bear.id
+      cause := testCause
+    }
+  let gCtrlTargetDead := gLeftP1.setPlayerControl p1 p0
+  let gCtrlByDead := gLeftP1.setPlayerControl p0 p1
+  -- `shuffleThen` on departed `p1` skips `shuffleLibrary p1` and runs `PostStep.runAfterRandom`
+  -- so `p0Bear` receives its `+1/+1` counter without opening `.resolveRandom (.shuffleLibrary p1)`:
+  let gShuffleThenDead := gLeftP1.shuffleThen p1 (.plusOne p0Bear.id p0 none)
+  let gFblthpDead := gLeftP1.applyFra p1 dummyEff .fblthpSearch #[] (some p0Bear.id)
+
+  let stillInGameGuardsOk :=
+    mustHold34i4 "4a.addMana" (gAddManaDead == gLeftP1) &&
+    mustHold34i4 "4a.addManaLogged" (gAddManaLoggedDead == gLeftP1) &&
+    mustHold34i4 "4a.tempt" (gTemptDead == gLeftP1) &&
+    mustHold34i4 "4a.cmdObj" (gCmdObjDead == gLeftP1) &&
+    mustHold34i4 "4a.chandra" (gChandraEmblemDead == gLeftP1) &&
+    mustHold34i4 "4a.elspeth" (gElspethEmblemDead.objects == gLeftP1.objects && gElspethEmblemDead.log == gLeftP1.log) &&
+    mustHold34i4 "4a.delayTrig" (gDelayTrigDead == gLeftP1) &&
+    mustHold34i4 "4a.ctrlTarget" (gCtrlTargetDead == gLeftP1) &&
+    mustHold34i4 "4a.ctrlBy" (gCtrlByDead == gLeftP1) &&
+    mustHold34i4 "4a.shufflePending" (gShuffleThenDead.pending == .none) &&
+    mustHold34i4 "4a.shuffleCounter" ((gShuffleThenDead.object! p0Bear.id).status.plusOnePlusOne == 1) &&
+    mustHold34i4 "4a.fblthp" (gFblthpDead.objects == gLeftP1.objects && gFblthpDead.log == gLeftP1.log && gFblthpDead.pending == .none)
+
+  -- 4b. Layer 1–6 characteristic queries in `FraResolve`, `Turns`, and `SpellResolution`:
+  -- (i) `FraResolve` `.fblthpSearch`: checks `g.hasSupertype o .basic && g.isLand o`:
+  --     Insert a non-land card (`bear`) into `p0`'s library and apply Layer 1 copy effects so
+  --     `targetLibId` becomes a basic land (`mountain`) while all other library cards become `bear`;
+  --     `.fblthpSearch` with `X = 1` finds `targetLibId` and puts it into `p0`'s hand!
+  let gFblthpLib := insertObject gBase bear p0 (.library p0)
+  let libIds := (gFblthpLib.player p0).library
+  let targetLibId := libIds.back!
+  let otherLibIds := libIds.pop
+  let gFblthp0 :=
+    otherLibIds.foldl
+      (fun g id => g.createEffect (ContinuousEffectSpec.copy id bear) (cause := some testCause))
+      ((gFblthpLib.record (GameEvent.announced gFblthpLib.turnNumber p0Bear.id #[] (some 1) #[])).createEffect
+        (ContinuousEffectSpec.copy targetLibId mountain) (cause := some testCause))
+  let gFblthp1 := gFblthp0.applyFra p0 dummyEff .fblthpSearch #[] (some p0Bear.id)
+  let fblthpLayeredOk :=
+    mustHold34i4 "4b.fblthp" ((gFblthp1.followMovedToZone? targetLibId (· == .hand p0)).isSome)
+
+  -- (ii) `Turns.expireEffectsByDuration`: logs `{acc.name o} is no longer a copy of {printed.name}`
+  --      using the remaining Layer 1 name (`"Indefinite Clone"`) after the `.untilEndOfTurn` copy expires:
+  let cloneIndefDef : CardDef := { bear with name := "Indefinite Clone" }
+  let cloneEotDef : CardDef := { bear with name := "EOT Clone" }
+  let gExpire0 :=
+    (gBase.createEffect (ContinuousEffectSpec.copy p0Bear.id cloneIndefDef) (cause := some testCause)).createEffect
+      (ContinuousEffectSpec.copy p0Bear.id cloneEotDef (untilEot := true))
+      (cause := some testCause)
+  let gExpired := gExpire0.expireEffectsByDuration (fun _ d => d == .untilEndOfTurn) (some testCause)
+  let expireLogOk :=
+    mustHold34i4 "4b.expire"
+      (gExpired.log.any (· == "Indefinite Clone is no longer a copy of EOT Clone"))
+
+  -- (iii) `Turns.discardCleanupIds`: logs `g.name card` (`"Cloned Cleanup Card"`) when discarding:
+  let p0HandId := (gBase.player p0).hand.back!
+  let cloneCleanupDef : CardDef := { bear with name := "Cloned Cleanup Card" }
+  let gCleanup0 := gBase.createEffect (ContinuousEffectSpec.copy p0HandId cloneCleanupDef) (cause := some testCause)
+  let gCleanedUp := gCleanup0.discardCleanupIds p0 #[p0HandId]
+  let cleanupLogOk :=
+    mustHold34i4 "4b.cleanup"
+      (gCleanedUp.log.any (·.endsWith "discards Cloned Cleanup Card (cleanup)"))
+
+  -- (iv) `SpellResolution.resolveTop`: computes `srcName := (g.name obj).replace "'s ability" ""`
+  --      from the stack ability's Layer 1 name (`"Cloned Trigger Source's ability"` -> `"Cloned Trigger Source"`):
+  let pauseRes : TriggeredAbility.TriggerResolution :=
+    .may (.draw (.fixed 1) .you) (.sequence []) .ifYouDont
+  let pauseTrigAb : TriggeredAbility :=
+    .triggered .youGainLife {
+      resolution := pauseRes
+      phrase := "You may draw a card"
+    } {}
+  let gTrigStack0 :=
+    gBase.putTriggeredAbilityOnStack p0 p0Bear pauseTrigAb "triggers"
+      (eventCause := some testCause) (reflexiveResolution := some pauseRes)
+  let stackTrigId := gTrigStack0.stack.back!.objectId
+  let cloneAbDef : CardDef := { bear with name := "Cloned Trigger Source's ability" }
+  let gTrigCopied :=
+    gTrigStack0.createEffect (ContinuousEffectSpec.copy stackTrigId cloneAbDef) (cause := some testCause)
+  let gTrigResolving := gTrigCopied.resolveTop
+  let resolveTopSrcNameOk :=
+    mustHold34i4 "4b.resolveTop"
+      (gTrigResolving.mayContext.map (·.sourceName) == some "Cloned Trigger Source")
+
+  let layeredQueriesOk :=
+    fblthpLayeredOk && expireLogOk && cleanupLogOk && resolveTopSrcNameOk
+
+  mustHold34i4 "4a.stillInGameGuardsOk" stillInGameGuardsOk &&
+  mustHold34i4 "4b.layeredQueriesOk" layeredQueriesOk &&
+  mustHold34i4 "4.replay"
+    (replayOk34i4 #[gLeftP1, gShuffleThenDead, gFblthp1, gExpired, gCleanedUp, gTrigResolving])
+
+end Phase34Item4EventAlignment
 
 end Mtg.Engine.EventTests

@@ -726,12 +726,14 @@ def applyFrc (g : Game) (controller : PlayerId) (effect : Effect) (e : FrcEffect
   | .elspethDestroy =>
     g.destroyIds (g.battlefield.filter (fun o => g.isCreature o && g.snapshotPower o >= 4) |>.map (·.id))
   | .elspethEmblem =>
-    let (g, emb) := g.allocObject {
-        name := "Elspeth emblem"
-        types := #[.enchantment]
-        grantTeamPlusTwoFlying := true
-      } controller .command (some controller)
-    g.logMsg s!"{pl.name} gets an emblem ({g.name emb})"
+    if !g.stillInGame controller then g
+    else
+      let (g, emb) := g.allocObject {
+          name := "Elspeth emblem"
+          types := #[.enchantment]
+          grantTeamPlusTwoFlying := true
+        } controller .command (some controller)
+      g.logMsg s!"{pl.name} gets an emblem ({g.name emb})"
   | .jacePlus =>
     let g := g.draw controller 2
     if let .chooseReplacement .. := g.pending then

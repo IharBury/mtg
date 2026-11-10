@@ -212,7 +212,16 @@ def applySearchAfter (g : Game) : Game :=
 host supplies the order. An as-enters or replacement choice already waiting
 completes first and then runs the shuffle via `PendingReplacement.shuffleThen`. -/
 def shuffleThen (g : Game) (p : PlayerId) (onDone : AfterRandom) : Game :=
-  if g.pending != .none && g.pendingRandom?.isNone then
+  if !g.stillInGame p then
+    if onDone != .none && !onDone.player?.any (fun r => !g.stillInGame r) then
+      if g.pending != .none && g.pendingRandom?.isNone then
+        g.chainPendingReplacement (.shuffleThen p onDone)
+      else
+        g.withContinuationFrame fun g =>
+          let g := (g.change (.afterRandom onDone)).continueIfShuffled
+          g.applySearchAfter
+    else g
+  else if g.pending != .none && g.pendingRandom?.isNone then
     g.chainPendingReplacement (.shuffleThen p onDone)
   else
     g.withContinuationFrame fun g =>

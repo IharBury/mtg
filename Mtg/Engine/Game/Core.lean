@@ -10572,7 +10572,8 @@ def reverseToProposalCheckpointCore? (g : Game)
   let firstDepIdx? : Option Nat := slice.findIdx? fun ev =>
     match ev with
     | .rules _ (.player (.lost ..)) _ _
-    | .rules _ (.player (.leftGame ..)) _ _ => true
+    | .rules _ (.player (.leftGame ..)) _ _
+    | .rules _ (.player (.gameEnded ..)) _ _ => true
     | _ => false
   let isProposalResumeEvent : GameEvent → Bool
     | .engine _ (.beginProposalAction _)
@@ -10732,7 +10733,8 @@ def reverseToProposalCheckpointCore? (g : Game)
       | .rules _ (.zone (.ceasedToExist obj)) cause _ =>
         if let some oid := obj.id then
           liveLibIds := setInLib liveLibIds oid false
-        if act?.isNone && cause == .gameRule .triggeredAbility &&
+        if act?.isNone &&
+            (cause == .gameRule .triggeredAbility || cause == .gameRule .noLegalMode) &&
             !obj.id.any (fun oid => g.proposedSpell.any (·.spellId == oid)) then
           let (ia, ist) := markIrrev act? st? irrevActs irrevStIdxs
           irrevActs := ia; irrevStIdxs := ist
@@ -10740,8 +10742,13 @@ def reverseToProposalCheckpointCore? (g : Game)
         liveLibIds := setInLib liveLibIds obj.id (isLibZone obj.zone)
       | .rules _ (.cast (.targeted oid ..)) _ _
       | .rules _ (.cast (.announced oid ..)) _ _
-      | .engine _ (.stackEntry oid _) =>
+      | .engine _ (.stackEntry oid _)
+      | .engine _ (.object oid (.abilityEffect _)) =>
         if act?.isNone && !g.proposedSpell.any (·.spellId == oid) then
+          let (ia, ist) := markIrrev act? st? irrevActs irrevStIdxs
+          irrevActs := ia; irrevStIdxs := ist
+      | .rules _ (.triggerQueue (.modeChosen ..)) _ _ =>
+        if act?.isNone then
           let (ia, ist) := markIrrev act? st? irrevActs irrevStIdxs
           irrevActs := ia; irrevStIdxs := ist
       | .rules _ (.player (.shuffled ..)) _ _ =>
@@ -11133,7 +11140,7 @@ def resolvingOrRuleCause (g : Game) (p : PlayerId)
 /-- Record `PlayerEvent.manaAdded` for `units` on `p` (skipping empty arrays; CR 106.4). -/
 def addManaUnits (g : Game) (p : PlayerId) (units : Array ManaUnit)
     (cause : Option EventCause := none) : Game :=
-  if units.isEmpty then g
+  if !g.stillInGame p || units.isEmpty then g
   else
     let c := cause.orElse (fun _ => g.resolvingOneShotCause p (units[0]?.bind (·.source)))
     g.record (GameEvent.manaAdded g.turnNumber p units (cause := c))
@@ -11170,7 +11177,8 @@ def allocDelayedCause (g : Game) (fallbackCtrl : Option PlayerId := none)
 
 /-- Record and apply the creation of a delayed triggered ability (CR 603.7). -/
 def registerDelayedTrigger (g : Game) (dt : DelayedTrigger) : Game :=
-  g.record (GameEvent.delayedTriggerCreated g.turnNumber dt)
+  if !g.stillInGame dt.controller then g
+  else g.record (GameEvent.delayedTriggerCreated g.turnNumber dt)
 
 /-- Add and process a sequence of `EngineChange`s on the current turn. -/
 def changes (g : Game) (cs : Array EngineChange) : Game :=
@@ -11748,17 +11756,19 @@ remains the active player on their turn (MSH 300) and still controls their
 permanents (MSH 358). `onNextTurn` makes the control start on the controlled
 player's next turn they actually take. -/
 def setPlayerControl (g : Game) (you them : PlayerId) (onNextTurn : Bool := false) : Game :=
-  let g :=
-    g.createEffect (.playerControl you them onNextTurn)
-      |>.logMsg
-        s!"{(g.player you).name} controls {(g.player them).name} during their next turn"
-  match g.players.find? (fun pl => g.areTeammates them pl.id) with
-  | some mate =>
-    if mate.id == you then g
-    else
-      g.logMsg
-        s!"{(g.player you).name} also controls {mate.name} (Two-Headed Giant team)"
-  | none => g
+  if !g.stillInGame you || !g.stillInGame them then g
+  else
+    let g :=
+      g.createEffect (.playerControl you them onNextTurn)
+        |>.logMsg
+          s!"{(g.player you).name} controls {(g.player them).name} during their next turn"
+    match g.players.find? (fun pl => g.areTeammates them pl.id) with
+    | some mate =>
+      if mate.id == you then g
+      else
+        g.logMsg
+          s!"{(g.player you).name} also controls {mate.name} (Two-Headed Giant team)"
+    | none => g
 
 /-- Record putting `n` counters of `kind` on `id` via `PermanentEvent.counters`
 (CR 122.1). Does nothing when `n == 0`. -/

@@ -561,6 +561,7 @@ def payCost (g : Game) (p : PlayerId) (cost : ManaCost)
 /-- Run any deferred mid-resolution post-cast cleanup (`PostCastCleanup`) once
 a cast-during-resolution spell finishes casting (`becomeCast`) or reverses
 (`reverseProposedSpellCore?`). -/
+@[export mtg_game_run_post_cast_cleanup]
 def runPostCastCleanup (g : Game) : Game :=
   match g.postCastCleanup with
   | none => g
@@ -687,27 +688,94 @@ def reverseProposedSpellCore? (g : Game) (resumeContinuation : Bool := false)
     else
       return (g, false)
 
+@[extern "mtg_game_drain_pending_continuations"]
+private opaque drainPendingContinuations (g : Game) : Game := g
+
+@[extern "mtg_game_reverse_proposed_spell"]
+private opaque reverseProposedSpell (g : Game) (resumeContinuation : Bool := false)
+    (extraLog : Option String := none) (alwaysGrantPriority : Bool := false) : Game := g
+
 /-- Clear `.payWard` once a ward cost is paid or declined, draining any active
 `pendingReplacement` / `outerPendingReplacements` continuations before finishing
 active resolutions, trigger target announcements, or priority (CR 702.21a / 608.2n). -/
 def afterWardResolved (g : Game) : Game :=
+  let reverseOrphanedIfOver (g : Game) : Game :=
+    let g :=
+      if g.proposedSpell.any (fun prop =>
+          !g.stillInGame prop.caster || (g.findObject? prop.spellId).isNone) then
+        (if g.pending == .none then g else g.change (.pending .none)).reverseProposedSpell
+          (resumeContinuation := true) (alwaysGrantPriority := true)
+      else g
+    g.completeActiveResolutions
+  let replaceTopOuters (g : Game) (popCount : Nat) (nextOuters : Array PendingReplacement) : Game :=
+    let g := if g.continuations.isEmpty then g.change (.pushContinuationFrame {}) else g
+    let g := (Array.replicate popCount EngineChange.popOuterPendingReplacement).foldl Game.change g
+    (nextOuters.map EngineChange.pushOuterPendingReplacement).foldl Game.change g
+  let finishWardTail (g : Game) : Game :=
+    if (match g.pending with | .chooseReplacement .. => true | _ => false) ||
+        g.pendingReplacement.isSome then
+      g.chainPendingReplacement .afterWardResolved
+    else if let some outer := g.outerPendingReplacements.back? then
+      let g := g.changes #[.popOuterPendingReplacement, .pendingReplacement (some outer)]
+      g.chainPendingReplacement .afterWardResolved
+    else if g.pending != .none || g.afterRandom != .none then
+      g
+    else
+      let g := g.completeActiveResolutions
+      if g.over || g.pending != .none || g.afterRandom != .none then g
+      else if g.triggerNeedingTargets.isSome then g.promptTriggerTargetsIfNeeded
+      else if g.proposedSpell.any (fun prop =>
+          !g.stillInGame prop.caster || (g.findObject? prop.spellId).isNone) then
+        let g :=
+          (if g.pending == .none then g else g.change (.pending .none)).reverseProposedSpell
+            (resumeContinuation := true) (alwaysGrantPriority := true)
+        if !g.over && g.pending == .none && g.continuations.isEmpty &&
+            g.triggerNeedingTargets.isSome then
+          g.promptTriggerTargetsIfNeeded
+        else g
+      else if g.proposedSpell.isSome then g
+      else
+        let prio := g.pendingPriority.getD g.activePlayer
+        g.receivePriority prio
   let g :=
     match g.pending with
     | .payWard .. => g.change (.pending .none)
     | _ => g
-  if (match g.pending with | .chooseReplacement .. => true | _ => false) ||
-      g.pendingReplacement.isSome then
-    g.chainPendingReplacement .afterWardResolved
-  else if let some outer := g.outerPendingReplacements.back? then
-    let g := g.changes #[.popOuterPendingReplacement, .pendingReplacement (some outer)]
-    g.chainPendingReplacement .afterWardResolved
-  else
-    let g := g.completeActiveResolutions
-    if g.over || g.pending != .none || g.afterRandom != .none then g
-    else if g.triggerNeedingTargets.isSome then g.promptTriggerTargetsIfNeeded
+  if g.over then
+    reverseOrphanedIfOver g
+  else if (g.mayThenResume || g.triggerSequenceRest.isSome) &&
+      (g.pending != .none || g.afterRandom != .none) then
+    let existing := g.outerPendingReplacements
+    replaceTopOuters g existing.size (#[.afterWardResolved] ++ existing)
+  else if g.mayThenResume || g.triggerSequenceRest.isSome then
+    let stashedPending := g.pendingReplacement
+    let stashedOuters := g.outerPendingReplacements
+    let g := if stashedPending.isSome then g.change (.pendingReplacement none) else g
+    let g := (Array.replicate stashedOuters.size EngineChange.popOuterPendingReplacement).foldl Game.change g
+    let g := g.drainPendingContinuations
+    if g.over then
+      reverseOrphanedIfOver g
     else
-      let prio := g.pendingPriority.getD g.activePlayer
-      g.receivePriority prio
+      let drainSuffix :=
+        if g.pending != .none || g.afterRandom != .none then g.outerPendingReplacements
+        else #[]
+      if g.mayThenResume || g.triggerSequenceRest.isSome then
+        let wardCont :=
+          match stashedPending with
+          | some c => .seq c .afterWardResolved
+          | none => .afterWardResolved
+        replaceTopOuters g drainSuffix.size ((stashedOuters.push wardCont) ++ drainSuffix)
+      else
+        let g :=
+          match stashedPending with
+          | some c => g.chainPendingReplacement c
+          | none => g
+        let g :=
+          if stashedOuters.isEmpty then g
+          else replaceTopOuters g drainSuffix.size (stashedOuters ++ drainSuffix)
+        finishWardTail g
+  else
+    finishWardTail g
 
 /-- Whether an active resolution or pending choice was already open before the
 current spell or ability proposal began (ignoring any `ContinuationFrame` pushed

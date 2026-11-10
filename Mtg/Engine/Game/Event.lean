@@ -1674,6 +1674,7 @@ inductive PendingReplacement where
   | finishManaAbilityMountainTrigger (player : PlayerId) (sourceId : ObjectId)
   | restorePending (p : Pending) (popOuter : Bool := false)
       (promptLog : Option String := none) (departed : Array PlayerId := #[])
+      (rewindProposal : Option Bool := none)
   | closeBatch (batchId : BatchId) (startIdx : Nat)
   | restorePausedBatch (batchId : BatchId) (startIdx : Nat) (wasDiscard : Bool)
       (cause : Option EventCause) (objects : Array GameObject)
@@ -1863,7 +1864,7 @@ inductive PendingReplacement where
   | returnStackSpell (spellId : ObjectId) (owner : PlayerId) (name : String)
       (postMove : Bool := false)
   | leavePlayersWhoLost (savedPending : Option Pending := none) (popOuter : Bool := false)
-      (departed : Array PlayerId := #[])
+      (departed : Array PlayerId := #[]) (rewindProposal : Option Bool := none)
   | endControlExileLoop (remaining : Array (ObjectId × String))
       (cause : Option EventCause := none)
       (pendingLog : Option (ObjectId × String) := none)
@@ -1880,13 +1881,13 @@ inductive PendingReplacement where
   | finishConcede (wasIdlePriority : Bool) (savedPendingPrio : Option PlayerId)
       (wasAssigningCombatDamage : Option Bool := none)
       (savedPending : Option Pending := none) (popOuter : Bool := false)
-      (departed : Array PlayerId := #[])
+      (departed : Array PlayerId := #[]) (rewindProposal : Option Bool := none)
   | concedePlayersLoop (remaining : Array PlayerId)
       (wasPregame midResolutionOrBatch wasIdlePriority : Bool)
       (savedPendingPrio : Option PlayerId)
       (wasAssigningCombatDamage : Option Bool := none)
       (savedPending : Option Pending := none) (popOuter : Bool := false)
-      (departed : Array PlayerId := #[])
+      (departed : Array PlayerId := #[]) (rewindProposal : Option Bool := none)
   | afterWardResolved
 deriving Repr, Inhabited, BEq
 
@@ -1922,15 +1923,15 @@ def PendingReplacement.ensureEndsWithFinishFra : PendingReplacement → PendingR
 continuation so `.restorePending` re-runs `redirectPendingAfterLeave`
 once the replacement pause finishes (CR 616.1 / 800.4). -/
 def PendingReplacement.appendDeparted (p : PlayerId) : PendingReplacement → PendingReplacement
-  | .restorePending pend popOuter promptLog dep =>
-    .restorePending pend popOuter promptLog (if dep.contains p then dep else dep.push p)
-  | .leavePlayersWhoLost saved popOuter dep =>
-    .leavePlayersWhoLost saved popOuter (if dep.contains p then dep else dep.push p)
-  | .finishConcede wasIdle prio wasCombat saved popOuter dep =>
-    .finishConcede wasIdle prio wasCombat saved popOuter (if dep.contains p then dep else dep.push p)
-  | .concedePlayersLoop rem wp mid wasIdle prio wasCombat saved popOuter dep =>
+  | .restorePending pend popOuter promptLog dep rw =>
+    .restorePending pend popOuter promptLog (if dep.contains p then dep else dep.push p) rw
+  | .leavePlayersWhoLost saved popOuter dep rw =>
+    .leavePlayersWhoLost saved popOuter (if dep.contains p then dep else dep.push p) rw
+  | .finishConcede wasIdle prio wasCombat saved popOuter dep rw =>
+    .finishConcede wasIdle prio wasCombat saved popOuter (if dep.contains p then dep else dep.push p) rw
+  | .concedePlayersLoop rem wp mid wasIdle prio wasCombat saved popOuter dep rw =>
     .concedePlayersLoop rem wp mid wasIdle prio wasCombat saved popOuter
-      (if dep.contains p then dep else dep.push p)
+      (if dep.contains p then dep else dep.push p) rw
   | .seq a b => .seq (a.appendDeparted p) (b.appendDeparted p)
   | other => other
 
@@ -1940,10 +1941,10 @@ def PendingReplacement.appendDepartedMany (dep : Array PlayerId) (cont : Pending
 
 /-- Collect any departed players already recorded on a `PendingReplacement` tree. -/
 def PendingReplacement.collectDeparted : PendingReplacement → Array PlayerId
-  | .restorePending _ _ _ dep => dep
-  | .leavePlayersWhoLost _ _ dep => dep
-  | .finishConcede _ _ _ _ _ dep => dep
-  | .concedePlayersLoop _ _ _ _ _ _ _ _ dep => dep
+  | .restorePending _ _ _ dep _ => dep
+  | .leavePlayersWhoLost _ _ dep _ => dep
+  | .finishConcede _ _ _ _ _ dep _ => dep
+  | .concedePlayersLoop _ _ _ _ _ _ _ _ dep _ => dep
   | .seq a b =>
     b.collectDeparted.foldl (fun acc p => if acc.contains p then acc else acc.push p) a.collectDeparted
   | _ => #[]

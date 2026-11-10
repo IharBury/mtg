@@ -994,32 +994,34 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     else
       g.addManaLogged controller #[.colored .red] (source := sourceId)
   | .fblthpSearch =>
-    let x := (sourceId.bind g.chosenXOf?).getD 0
-    let (pickedIds, _) := (g.player controller).library.foldl
-      (fun (acc : Array ObjectId × Array String) id =>
-        let (picked, names) := acc
-        if names.size ≥ x then acc
-        else
-          match g.findObject? id with
-          | some o =>
-            if isBasicLandCard (g.baseCard o) && !names.contains (g.name o) then
-              (picked.push id, names.push (g.name o))
-            else acc
-          | none => acc) (#[], #[])
-    let (g, cause) := g.allocDelayedCause (some controller) sourceId
-    let g := g.record (GameEvent.searched g.turnNumber controller controller pickedIds (cause := some cause))
-    let g :=
-      if pickedIds.isEmpty then g
-      else g.record (GameEvent.revealed g.turnNumber controller pickedIds (cause := some cause))
-    let g :=
-      if pickedIds.isEmpty then g
-      else
-        g.withBatch (some cause) fun g =>
-          g.fblthpMoveToHandLoop controller pickedIds cause
-    if let .chooseReplacement .. := g.pending then
-      g.chainPendingReplacement (.finishPostStep (.fblthpShuffleAfterHand controller))
+    if !g.stillInGame controller then g
     else
-      g.shuffleThen controller .none
+      let x := (sourceId.bind g.chosenXOf?).getD 0
+      let (pickedIds, _) := (g.player controller).library.foldl
+        (fun (acc : Array ObjectId × Array String) id =>
+          let (picked, names) := acc
+          if names.size ≥ x then acc
+          else
+            match g.findObject? id with
+            | some o =>
+              if g.hasSupertype o .basic && g.isLand o && !names.contains (g.name o) then
+                (picked.push id, names.push (g.name o))
+              else acc
+            | none => acc) (#[], #[])
+      let (g, cause) := g.allocDelayedCause (some controller) sourceId
+      let g := g.record (GameEvent.searched g.turnNumber controller controller pickedIds (cause := some cause))
+      let g :=
+        if pickedIds.isEmpty then g
+        else g.record (GameEvent.revealed g.turnNumber controller pickedIds (cause := some cause))
+      let g :=
+        if pickedIds.isEmpty then g
+        else
+          g.withBatch (some cause) fun g =>
+            g.fblthpMoveToHandLoop controller pickedIds cause
+      if let .chooseReplacement .. := g.pending then
+        g.chainPendingReplacement (.finishPostStep (.fblthpShuffleAfterHand controller))
+      else
+        g.shuffleThen controller .none
   | .untapAllTokensYouControl =>
     g.withBatch none fun g =>
       (g.permanentsOf controller).foldl (fun g o =>

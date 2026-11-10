@@ -977,9 +977,11 @@ def resolvingTeamworkPaid (g : Game) : Bool :=
 /-- Add `types` to `p`'s mana pool and log it (shared `.addMana` resolution). -/
 def addManaLogged (g : Game) (p : PlayerId) (types : Array ManaType)
     (source : Option ObjectId := none) : Game :=
-  let g := g.addManaUnits p (types.map fun t => { mana := t, source })
-    (cause := g.resolvingOneShotCause p source)
-  g.logMsg s!"{(g.player p).name} adds mana"
+  if !g.stillInGame p then g
+  else
+    let g := g.addManaUnits p (types.map fun t => { mana := t, source })
+      (cause := g.resolvingOneShotCause p source)
+    g.logMsg s!"{(g.player p).name} adds mana"
 
 /-- Ask the target spell's controller to pay `{n}` or let it be countered. -/
 def beginPayOrLetCounter (g : Game) (targets : Array Target) (n : Nat) : Game :=

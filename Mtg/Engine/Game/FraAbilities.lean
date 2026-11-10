@@ -24,13 +24,15 @@ def beginChooseKeyword (g : Game) (p : PlayerId) (id : ObjectId) (options : Arra
 /-- Give `p` an emblem or effect object in the command zone (CR 114.1–114.5). -/
 def createCommandObject (g : Game) (p : PlayerId) (card : CardDef)
     (untilTurnOf : Option PlayerId := none) : Game :=
-  let (g, obj) := g.allocObject card p .command (some p)
-  match untilTurnOf with
-  | some q =>
-    let effCause :=
-      g.resolveOptionalCause none (fallbackCtrl := some p) (defaultCause := .gameRule .spellCast)
-    g.createEffect (.fraEmblemUntilTurnOf obj.id q) (cause := some effCause)
-  | none => g
+  if !g.stillInGame p then g
+  else
+    let (g, obj) := g.allocObject card p .command (some p)
+    match untilTurnOf with
+    | some q =>
+      let effCause :=
+        g.resolveOptionalCause none (fallbackCtrl := some p) (defaultCause := .gameRule .spellCast)
+      g.createEffect (.fraEmblemUntilTurnOf obj.id q) (cause := some effCause)
+    | none => g
 
 /-- Ask the next player in `players` to sacrifice a creature for Garruk,
 Veiled Butcher, or sacrifice the chosen creatures and finish. -/
