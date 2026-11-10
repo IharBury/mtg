@@ -10682,9 +10682,11 @@ object-referencing `FraChoice` revalidation & `beginMayDiscardDraw` /
        or queued `PendingReplacement` alongside tearing down active resolving
        stack entries and `ContinuationFrame`s (`335–350`, CR 104.1 / 104.3a).
      - Call `completeActiveResolutions` on the remaining `g.over` exit paths:
-       - `PriorityActions.concede` (`PriorityActions.lean:245–276`): record
-         simultaneous team concession across `g.teamMembers p` (`245–253`, CR
-         810.8a), replace `| some finished => finished` with `| some finished =>
+       - `PriorityActions.concede` (`PriorityActions.lean:244–276`): record
+         `p`'s concession (`246`) and simultaneous team concession across
+         `mates := g.players.filter (fun m => m.id != p && g.stillInGame m.id &&
+         g.areTeammates p m.id) |>.map (·.id)` (`244–253`, CR 810.8a), replace `|
+         some finished => finished` with `| some finished =>
          finished.completeActiveResolutions` (`255`) so a 2-player or
          last-opponent concession mid-resolution or mid-proposal tears down
          active resolving stack entries, `ContinuationFrame`s, and open
@@ -10704,7 +10706,7 @@ object-referencing `FraChoice` revalidation & `beginMayDiscardDraw` /
          `finishAndGrantPriority g` at `3037`): when `g.over` is true, return
          `g.completeActiveResolutions` rather than `g`; and
        - `Decisions.chooseReplacement` (`Decisions.lean:4640–4650`),
-         `Decisions.drainPendingContinuations` (`Decisions.lean:133, 142`), and
+         `Decisions.drainPendingContinuations` (`Decisions.lean:142, 151`), and
          `Decisions.resumePendingReplacement` `.restorePending`
          (`Decisions.lean:705–716`): add a helper
          `popEmptyTopContinuationFrames (g : Game) : Game` next to
@@ -10918,8 +10920,8 @@ object-referencing `FraChoice` revalidation & `beginMayDiscardDraw` /
      - Revalidate already-selected modes in `chosen` during mode announcement
        when another player leaves the game (CR 601.2b / 603.3c / 700.2b):
        - in `.resumeChooseModeAfterLeave p`'s `.spell` arm (`1636–1657`), add a
-         `StackEntryChange.clearChosenModes` constructor (`Event.lean:2257`,
-         handled in `Core.applyChange` at `Core.lean:2123` as `|
+         `StackEntryChange.clearChosenModes` constructor (`Event.lean:2259`,
+         handled in `Core.applyChange` at `Core.lean:2132` as `|
          .clearChosenModes => { e with chosenMode := none, extraModes := #[] }`
          since `Core.applyCastEvent` `.announced` at `Core.lean:5187–5195`
          ignores `modes := #[]` so `x`/`costs` announcements do not wipe
@@ -11252,20 +11254,23 @@ cost/2HG-combat/`unlessPaysDue` completion, `redirectPendingAfterLeave` `q != p`
    continuation hygiene (§2.1, §2.5, §2.8, §2.9, §3.2, §3.8, CR 104.1 / 601.2 /
    603.3c–d / 608.2b–c,n / 700.2 / 700.2g / 702.21a / 733.1 / 800.4a):
    - In `Core.reverseToProposalCheckpointCore?` (`Core.lean:10732–10746`):
-     - At `10734–10739`, also preserve `.rules _ (.zone (.ceasedToExist obj))
-       cause _` when `act?.isNone && (cause == .gameRule .triggeredAbility ||
-       cause == .gameRule .noLegalMode) && !obj.id.any (fun oid =>
-       g.proposedSpell.any (·.spellId == oid))` so CR 603.3c `.noLegalMode`
-       stack removals of standalone modal triggers (`Triggers.lean:122, 247`,
-       `FraChoices.lean:486`, `Decisions.lean:1748`) are not undone when an
-       enclosing spell/ability proposal is reversed;
-     - at `10740–10745`, also match `| .engine _ (.object oid (.abilityEffect _))`
-       under `if act?.isNone && !g.proposedSpell.any (·.spellId == oid) then
-       markIrrev else pure ()` so finalized modal trigger effects installed on
-       stack trigger objects (`FraChoices.lean:496, 519, 529, 537, 1007, 1018`,
-       `Decisions.lean:1743, 1773, 1782, 1806`, `Triggers.lean:205, 222`) are
-       not stripped while `GameEvent.announced` (`10742`) and `.stackEntry oid
-       (.targetsAnnounced true)` (`10743`) are kept; and
+     - At `10735–10736`, extend the `if` condition on `.rules _ (.zone
+       (.ceasedToExist obj)) cause _` (`10732–10738`) to `act?.isNone && (cause
+       == .gameRule .triggeredAbility || cause == .gameRule .noLegalMode) &&
+       !obj.id.any (fun oid => g.proposedSpell.any (·.spellId == oid))` so CR
+       603.3c `.noLegalMode` stack removals of standalone modal triggers
+       (`Triggers.lean:122, 247`, `FraChoices.lean:486`, `Decisions.lean:1748`)
+       are not undone when an enclosing spell/ability proposal is reversed;
+     - at `10741–10746`, extend the `| .rules _ (.cast (.targeted oid ..)) _ _ |
+       .rules _ (.cast (.announced oid ..)) _ _ | .engine _ (.stackEntry oid _)
+       =>` or-pattern (`10741–10743`) with `| .engine _ (.object oid
+       (.abilityEffect _))` under `if act?.isNone && !g.proposedSpell.any
+       (·.spellId == oid) then` (`10744–10746`) so finalized modal trigger
+       effects installed on stack trigger objects (`FraChoices.lean:496, 519,
+       529, 537, 1007, 1018`, `Decisions.lean:1743, 1773, 1782, 1806`,
+       `Triggers.lean:205, 222`) are not stripped while `GameEvent.announced`
+       (`10742`) and `.stackEntry oid _` (`10743`, including `.targetsAnnounced
+       true` and `.clearChosenModes`) are kept; and
      - also preserve `| .rules _ (.triggerQueue (.modeChosen ..)) _ _` when
        `act?.isNone` (`FraChoices.lean:548` on `.stackTriggerUnusedMode`) so
        `Core.modesChosenThisTurn` / `Core.modesChosenEver`
@@ -11383,20 +11388,25 @@ cost/2HG-combat/`unlessPaysDue` completion, `redirectPendingAfterLeave` `q != p`
        of the finished-game path (`needsFinish = false`): if `g.over` at entry
        of `.resumeChooseModeAfterLeave p`, reverse any vanished/departed
        `g.proposedSpell` with `(resumeContinuation := true) (alwaysGrantPriority
-       := true)` and return `g.completeActiveResolutions`; require
-       `(g.findObject? prop.spellId).any (·.zone == .stack)` in
-       `.activatedAbility` (`1631–1635`) and `(g.findObject? prop.spellId).any
-       (·.isOnBattlefield)` in `.turnFaceUp` (`1661`); in
-       `.resumeChooseTargetsAfterLeave p`, keep `1668–1669` as the `let g :=`
-       reversal binding only (and keep the `g.over` return at `1676` as bare `g`
-       without prompting, since `reverseProposedSpellCore?` already ended that
-       path at `Casting.lean:660–661`, and so `pendingBlocksTargets` at
-       `1671–1679` is not bypassed by opening `.chooseTargets` before the
-       `objectAwaitingTargets` check at `1681`); and on the paths that return
-       the reversed game—`.resumeChooseModeAfterLeave` (`1622, 1635, 1638,
-       1660`), `.resumeChooseTargetsAfterLeave`'s `| none =>` `if
-       ownPropNeedsReverse then` return (`1683–1684`) and its later reverses
-       (`1698, 1716`, with `(alwaysGrantPriority := true)`), and
+       := true)` and return `g.completeActiveResolutions`; in
+       `.activatedAbility` (`1631–1635`), conjoin `(g.findObject?
+       prop.spellId).any (·.zone == .stack) &&` onto the choosable-mode `if`
+       condition (`1632`) so an ability object no longer on the stack falls into
+       the `else` reversal at `1635` (instead of returning `g` or re-opening
+       `.chooseMode p`), and in `.turnFaceUp` (`1661`), replace `| .turnFaceUp
+       => g` with `| .turnFaceUp => if (g.findObject? prop.spellId).any
+       (·.isOnBattlefield) then g else ...` reversing with `(resumeContinuation
+       := true) (alwaysGrantPriority := true)` when the permanent left the
+       battlefield; in `.resumeChooseTargetsAfterLeave p`, keep `1668–1669` as
+       the `let g :=` reversal binding only (and keep the `g.over` return at
+       `1676` as bare `g` without prompting, since `reverseProposedSpellCore?`
+       already ended that path at `Casting.lean:660–661`, and so
+       `pendingBlocksTargets` at `1671–1679` is not bypassed by opening
+       `.chooseTargets` before the `objectAwaitingTargets` check at `1681`); and
+       on the paths that return the reversed game—`.resumeChooseModeAfterLeave`
+       (`1622, 1635, 1638, 1660, 1661`), `.resumeChooseTargetsAfterLeave`'s `|
+       none =>` `if ownPropNeedsReverse then` return (`1683–1684`) and its later
+       reverses (`1698, 1716`, with `(alwaysGrantPriority := true)`), and
        `.resumeProposalCostAfterLeave` (`1816`, plus `if g.over then
        g.completeActiveResolutions` when `g.over` and no proposal was
        reversed)—follow the reversal with `if !g.over && g.pending == .none &&
