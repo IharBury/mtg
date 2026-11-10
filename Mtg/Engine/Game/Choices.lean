@@ -618,7 +618,11 @@ def sourceStillPayable (g : Game) (prop : ProposedSpell) : Bool :=
           | none =>
             let x := ((g.findObject? prop.spellId).bind (·.chosenX)).getD 0
             sym == LoyaltySymbol.minusX && src.status.loyaltyCounters ≥ x
-      loyaltyPayable &&
+      let removePlusOneXPayable :=
+        !prop.removePlusOneX ||
+          (src.isOnBattlefield && g.controlledBy src prop.caster &&
+           src.status.plusOnePlusOne ≥ ((g.findObject? prop.spellId).bind (·.chosenX)).getD 0)
+      loyaltyPayable && removePlusOneXPayable &&
       ((src.isOnBattlefield && g.controlledBy src prop.caster &&
         (!prop.tapSource || !src.status.tapped) && !prop.discardSource) ||
       (src.zone == .graveyard src.owner && src.owner == prop.caster &&

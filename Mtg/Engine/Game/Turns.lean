@@ -31,7 +31,7 @@ def expireEffectsByDuration (g : Game) (pred : EffectId → EffectDuration → B
         match acc.findObject? id with
         | some o =>
           if o.zone == .battlefield then
-            acc.logMsg s!"{(acc.baseCard o).name} is no longer a copy of {printed.name}"
+            acc.logMsg s!"{acc.name o} is no longer a copy of {printed.name}"
           else acc
         | none => acc
       | _ =>
@@ -253,7 +253,7 @@ def discardCleanupIds (g : Game) (p : PlayerId) (ids : Array ObjectId) : Game :=
     let pl := g.player p
     if pl.hand.contains id then
       let card := g.object! id
-      let name := card.name
+      let name := g.name card
       let owner := card.owner
       let (g', _) := g.move id (.graveyard owner) none (verb := some .discard) (actor := some p)
         (cause := some (.turnBased .cleanupDiscard))

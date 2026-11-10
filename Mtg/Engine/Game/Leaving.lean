@@ -488,7 +488,10 @@ private def isProposalAbortedByLeave (g : Game) (p : PlayerId) : Bool :=
     prop.caster == p ||
       (g.findObject? prop.spellId).any (fun o =>
         o.owner == p && (prop.kind != .activatedAbility || g.controlledBy o p)) ||
-      (prop.kind != .activatedAbility && prop.original.owner == p)
+      (prop.kind != .activatedAbility && prop.original.owner == p) ||
+      prop.sourceId.any (fun sid =>
+        (g.findObject? sid).any (fun src =>
+          src.owner == p || (src.isOnBattlefield && g.controlledBy src p)))
 
 private def isProposalPromptFor (caster : PlayerId) : Pending → Bool
   | .chooseMode q | .chooseTargets q | .activateManaAbilities q | .chooseX q
@@ -644,7 +647,21 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
               g.withOuterContStashed fun g =>
                 g.counterStackSpell o.id (controller := some caster)
             (g, g.pending)
-    else (g, pending)
+    else
+      match spellId? with
+      | some sid =>
+        if !(g.findObject? sid).any (·.zone == .stack) then
+          ((clearPending g).clearUnlessPays, .none)
+        else (g, pending)
+      | none =>
+        match g.unlessPaysInstead with
+        | some eff =>
+          if !g.stillInGame g.unlessPaysController ||
+              (!g.unlessPaysTargets.isEmpty &&
+               g.sequenceAllTargetsIllegal g.unlessPaysController eff g.unlessPaysTargets g.unlessPaysSource) then
+            ((clearPending g).clearUnlessPays, .none)
+          else (g, pending)
+        | none => (g, pending)
   | .payWard q spellId cost =>
     if q == p then
       let g := clearPending g
@@ -1570,6 +1587,76 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
               | .searchLibrary .. => .searchLibrary liveEligible count dest after kind
               | _ => .maySearchLibrary liveEligible count dest after kind)
           else pending)
+    | .castCopiesFree ids budget castsLeft =>
+      if q == p then
+        let alive := ids.filter (fun id => (g.findObject? id).any (·.zone == .exile))
+        let g :=
+          if alive.isEmpty then g
+          else
+            g.withBatch (some (.stateBased .copyOutsideStackOrBf)) fun g =>
+              alive.foldl (fun g id =>
+                g.ceaseToExist id (cause := some (.stateBased .copyOutsideStackOrBf))) g
+        let g := g.changes (#[.chooseModesRest none, .pendingFreeCopies none] ++ clearProp)
+        let g := if g.mayThenDrop > 0 then g.declineMayThenCore else clearPending g
+        (g, .none)
+      else
+        let alive := ids.filter (fun id => (g.findObject? id).any (·.zone == .exile))
+        let castable := alive.filter (fun id =>
+          (g.findObject? id).any (fun o => g.objectManaValue o ≤ budget))
+        if castable.isEmpty || castsLeft == 0 then
+          let g :=
+            if alive.isEmpty then g
+            else
+              g.withBatch (some (.stateBased .copyOutsideStackOrBf)) fun g =>
+                alive.foldl (fun g id =>
+                  g.ceaseToExist id (cause := some (.stateBased .copyOutsideStackOrBf))) g
+          let g := g.changes #[.chooseModesRest none, .pendingFreeCopies none]
+          let g := if g.mayThenDrop > 0 then g.declineMayThenCore else clearPending g
+          (g, .none)
+        else if alive != ids then
+          (g, .fraChoice q (.castCopiesFree alive budget castsLeft))
+        else (g, pending)
+    | .mayCastCopy copyId =>
+      if q == p then
+        let g : Game :=
+          match g.findObject? copyId with
+          | some (o : GameObject) =>
+            if o.zone == Zone.exile && o.isCopy then
+              let objName := g.name o
+              (g.ceaseToExist o.id (cause := some (.stateBased .copyOutsideStackOrBf))).logMsg
+                s!"The copy of {objName} ceases to exist"
+            else g
+          | none => g
+        let g := g.changes (#[.chooseModesRest none] ++ clearProp)
+        let g := if g.mayThenDrop > 0 then g.declineMayThenCore else clearPending g
+        (g, .none)
+      else if !(g.findObject? copyId).any (·.zone == .exile) then
+        let g := g.change (.chooseModesRest none)
+        let g := if g.mayThenDrop > 0 then g.declineMayThenCore else clearPending g
+        (g, .none)
+      else (g, pending)
+    | .mayCastCascade cardId others =>
+      if q == p then
+        let g := g.changes (#[.chooseModesRest none] ++ clearProp)
+        let g := if g.mayThenDrop > 0 then g.declineMayThenCore else clearPending g
+        (g, .none)
+      else
+        let liveOthers := others.filter (fun id => (g.findObject? id).any (·.zone == .exile))
+        if !(g.findObject? cardId).any (·.zone == .exile) then
+          let g :=
+            g.withOuterContStashed fun g =>
+              let cause := g.lastMoveCauseOf? cardId
+              let g := g.change (.chooseModesRest none)
+              let g := if g.mayThenDrop > 0 then g.declineMayThenCore else clearPending g
+              if liveOthers.isEmpty then g
+              else
+                g.requestOrderInto liveOthers (.library q)
+                  s!"{(g.player q).name} puts the exiled cards on the bottom of their library in a random order"
+                  (cause := cause)
+          (g, g.pending)
+        else if liveOthers != others then
+          (g, .fraChoice q (.mayCastCascade cardId liveOthers))
+        else (g, pending)
     | _ =>
       if q == p then
         let g := g.changes (#[.chooseModesRest none] ++ clearProp)
@@ -1685,18 +1772,37 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
       (g, .none)
     else (g, pending)
   | .chooseTriggerOr q =>
-    if q == p then (clearPendingAnd g #[.triggerOr none], .none) else (g, pending)
+    if q == p then
+      let clearProp : Array EngineChange :=
+        if abortedProp then #[.proposedSpell none, .clearProposalCheckpoint]
+        else #[]
+      let g := g.changes (#[.triggerOr none, .chooseModesRest none] ++ clearProp)
+      let g := if g.mayThenDrop > 0 then g.declineMayThenCore else clearPending g
+      (g, .none)
+    else (g, pending)
   | .tapHumans q =>
     if q == p then
-      (clearPendingAnd g #[
+      let clearProp : Array EngineChange :=
+        if abortedProp then #[.proposedSpell none, .clearProposalCheckpoint]
+        else #[]
+      let g := g.changes (#[
         .triggerSequenceRest none,
-        .humansTappedThisWay 0], .none)
+        .humansTappedThisWay 0,
+        .chooseModesRest none] ++ clearProp)
+      let g := if g.mayThenDrop > 0 then g.declineMayThenCore else clearPending g
+      (g, .none)
     else (g, pending)
   | .mayPutArtifactFromHand q _ =>
     if q == p then
-      (clearPendingAnd g #[
+      let clearProp : Array EngineChange :=
+        if abortedProp then #[.proposedSpell none, .clearProposalCheckpoint]
+        else #[]
+      let g := g.changes (#[
         .triggerSequenceRest none,
-        .putArtifactThisWay none], .none)
+        .putArtifactThisWay none,
+        .chooseModesRest none] ++ clearProp)
+      let g := if g.mayThenDrop > 0 then g.declineMayThenCore else clearPending g
+      (g, .none)
     else (g, pending)
   | .mayResolve q =>
     if q == p then
@@ -1963,7 +2069,9 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
            (if bodyExileCont?.isSome then #[EngineChange.pendingReplacement none] else #[]))
       let g :=
         g.objects.foldl (fun acc o =>
-          if o.zone == .stack && acc.controlledBy o p && !representedByCard o then
+          if o.zone == .stack && !representedByCard o &&
+              (acc.controlledBy o p ||
+                (wasAbortedProposal && acc.proposedSpell.any (·.spellId == o.id))) then
             acc.ceaseToExist o.id (cause := cause)
           else acc) g
       let still := g.objects.filter (fun o =>

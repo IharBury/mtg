@@ -903,7 +903,7 @@ def defaultTapMana (g : Game) (p : PlayerId) (o : GameObject) : Option ManaType 
   match (g.manaAbilitiesOf o)[0]? with
   | none => none
   | some first =>
-    if o.printed.tapAddAnyColorEqualToPower then
+    if (g.baseCard o).tapAddAnyColorEqualToPower && g.retainsPrintedAbilities o then
       match g.proposedSpell with
       | some prop =>
         some ((g.preferredManaType p o (g.manaAbilitiesOf o) prop.cost
@@ -998,7 +998,7 @@ def applySacrifice (g : Game) (p : PlayerId) (tokens : List String) : Except Str
   | [] =>
     match g.pending, g.proposedSpell.bind (fun prop => g.findObject? prop.spellId) with
     | .chooseAdditionalCost _, some spell =>
-      if spell.printed.additionalCostOrPayGeneric.isSome then
+      if (g.baseCard spell).additionalCostOrPayGeneric.isSome then
         g.apply p (.chooseAdditionalCost false)
       else throw sacrificeUsage
     | _, _ => throw sacrificeUsage
@@ -1079,7 +1079,7 @@ def parseTarget (g : Game) (p : PlayerId) (token : String) : Except String Targe
           | .player pid => (g.player pid).name.map Char.toLower == lower
           | .permanent oid | .card oid =>
             match g.findObject? oid with
-            | some o => o.name.map Char.toLower == lower
+            | some o => (g.name o).map Char.toLower == lower
             | none => false)
         match named.back? with
         | some t => return t
@@ -1233,7 +1233,7 @@ def applyDiscard (g : Game) (p : PlayerId) (tokens : List String) : Except Strin
   | [] =>
     match g.pending, g.proposedSpell.bind (fun prop => g.findObject? prop.spellId) with
     | .chooseAdditionalCost _, some spell =>
-      if spell.printed.additionalCostDiscardOrPayGeneric.isSome then
+      if (g.baseCard spell).additionalCostDiscardOrPayGeneric.isSome then
         g.apply p (.chooseAdditionalCost false)
       else throw discardUsage
     | _, _ => throw discardUsage
@@ -2049,12 +2049,12 @@ def hasGameStatePriorityAction (g : Game) (p : PlayerId) : Bool :=
       g.canPlayLand p && playable.any g.isLand
     let canCast := playable.any (fun o =>
       g.canCast p o &&
-        available.canPay o.printed.manaCost
+        available.canPay (g.baseCard o).manaCost
           (allowElfRestricted := g.hasSubtype o .elf) &&
         g.canPayAnnouncedAdditional p o available)
     let canCastAdventure := playable.any (fun o =>
       g.canCastAdventure p o &&
-        match o.printed.adventure with
+        match (g.baseCard o).adventure with
         | some adv => available.canPay adv.manaCost
         | none => false)
     let canActivate := g.objects.any (fun o =>

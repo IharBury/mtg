@@ -125,12 +125,13 @@ def textForStackedAbility (c : CardDef) (abilityText : String) : String :=
 /-- Extras after a stack object's name (and, for a creature spell, types and
 P/T). An ability on the stack shows only that ability, not other abilities
 printed on the source card. Spells still show their full printed extras. -/
-def stackFaceExtras (o : GameObject) : String :=
+def stackFaceExtras (g : Game) (o : GameObject) : String :=
+  let face := g.baseCard o
   let s :=
     match o.triggeredAbility, o.abilityEffect with
-    | some t, _ => textForStackedAbility o.printed (TriggeredAbility.toNotation t)
-    | none, some e => textForStackedAbility o.printed (Effect.toNotation e)
-    | none, none => o.printed.keywordsAndAbilities
+    | some t, _ => textForStackedAbility face (TriggeredAbility.toNotation t)
+    | none, some e => textForStackedAbility face (Effect.toNotation e)
+    | none, none => face.keywordsAndAbilities
   spacedSuffix s
 
 /-- Type line and current P/T of a creature spell on the stack (CR 205.1a /
@@ -147,7 +148,7 @@ def stackObjectLine (g : Game) (e : StackEntry) (withId : Bool := true) : String
   | none => if withId then s!"{e.objectId} (missing)" else "(missing)"
   | some o =>
     let id := if withId then s!"{o.id} " else ""
-    s!"{id}{g.nameWithToken o}{stackCreatureStats g o}{stackFaceExtras o}{targetClause g e}{sourceClause g o} (controlled by {g.player e.controller |>.name})"
+    s!"{id}{g.nameWithToken o}{stackCreatureStats g o}{stackFaceExtras g o}{targetClause g e}{sourceClause g o} (controlled by {g.player e.controller |>.name})"
 
 /-- Like `faceExtras`, but includes keywords granted by other permanents. -/
 def objectFaceExtras (g : Game) (o : GameObject) : String :=
@@ -276,10 +277,11 @@ prints `{0}` (CR 107.4d / 118.5 / 118.9). -/
 def exilePlayManaCost (g : Game) (o : GameObject) : String :=
   match g.playPermission o with
   | some perm =>
-    if perm.withoutManaCost && o.printed.manaCost.includesManaPayment then
+    let mc := (g.baseCard o).manaCost
+    if perm.withoutManaCost && mc.includesManaPayment then
       toString ManaCost.zero
     else
-      toString o.printed.manaCost
+      toString mc
   | none => ""
 
 /-- Who may play `o` from exile, if anyone (CR 701.18 / 715.3d), including
@@ -1153,9 +1155,9 @@ def zoneLine (g : Game) (z : Zone) (id : ObjectId) : String :=
     | .stack =>
       match g.stack.find? (fun e => e.objectId == o.id) with
       | some e => stackObjectLine g e true
-      | none => s!"{o.id} {g.nameWithToken o}{stackCreatureStats g o}{stackFaceExtras o}{sourceClause g o}"
+      | none => s!"{o.id} {g.nameWithToken o}{stackCreatureStats g o}{stackFaceExtras g o}{sourceClause g o}"
     | .exile => exileLine g o
-    | _ => s!"{o.id} {g.nameWithToken o}{faceExtras o.printed}"
+    | _ => s!"{o.id} {g.nameWithToken o}{faceExtras (g.baseCard o)}"
 
 /-- Current contents of `z`. Hidden zones show only their size (CR 400.2),
 except that a scrying player (or omniscient view) sees the looked-at library

@@ -95,7 +95,11 @@ def popEmptyTopContinuationFrames (g : Game) : Game := Id.run do
 active `g.proposedSpell` of `caster` and still has enough live candidates to be
 payable (CR 601.2f–h / 602.2b / 733.1 / 800.4a). -/
 def proposalCostPromptStillPayable (g : Game) (caster : PlayerId) (p : Pending) : Bool :=
-  g.stillInGame caster && g.proposedSpell.any (·.caster == caster) &&
+  !g.over && g.stillInGame caster &&
+    g.proposedSpell.any (fun prop =>
+      prop.caster == caster &&
+        (g.findObject? prop.spellId).any (fun o =>
+          if prop.kind == .turnFaceUp then o.isOnBattlefield else o.zone == .stack)) &&
     match p with
     | .fraChoice q (.costPicks sid picks _) =>
       q == caster &&
@@ -132,6 +136,7 @@ mutual
 /-- Drain queued `g.pendingReplacement` continuations and paused
 `triggerSequenceRest` steps while no interactive `Pending` or `afterRandom`
 choice is open. -/
+@[export mtg_game_drain_pending_continuations]
 partial def drainPendingContinuations (g : Game) : Game :=
   if g.over || g.pending != .none || g.afterRandom != .none then g
   else if g.mayThenResume then
@@ -166,11 +171,31 @@ partial def finishAndGrantPriority (g : Game)
     g.pending == .none && g.afterRandom == .none && anyContinuationGrantsPriority g
   let g := g.drainPendingContinuations
   let g := if g.pending == .none && g.afterRandom == .none then g.popEmptyContinuationFrames else g
-  if g.over then g.completeActiveResolutions
+  if g.over then
+    let g :=
+      if g.proposedSpell.any (fun prop =>
+          !g.stillInGame prop.caster || (g.findObject? prop.spellId).isNone) then
+        (if g.pending == .none then g else g.change (.pending .none)).reverseProposedSpell
+          (resumeContinuation := true) (alwaysGrantPriority := true)
+      else g
+    g.completeActiveResolutions
   else if let .chooseReplacement .. := g.pending then
     if anyContinuationGrantsPriority g then g
     else g.chainPendingReplacement (.receivePriority p)
   else if g.pending != .none || g.afterRandom != .none || alreadyGrants then g
+  else if g.triggerNeedingTargets.isSome then
+    g.promptTriggerTargetsIfNeeded
+  else if g.proposedSpell.any (fun prop =>
+      !g.stillInGame prop.caster || (g.findObject? prop.spellId).isNone) then
+    let g :=
+      (if g.pending == .none then g else g.change (.pending .none)).reverseProposedSpell
+        (resumeContinuation := true) (alwaysGrantPriority := true)
+    if !g.over && g.pending == .none && g.continuations.isEmpty &&
+        g.triggerNeedingTargets.isSome then
+      g.promptTriggerTargetsIfNeeded
+    else g
+  else if g.proposedSpell.isSome then
+    if g.pending == .none then g else g.change (.pending .none)
   else g.receivePriority p
 
 /-- Run trigger-sequence steps and pending continuations, then give priority when
@@ -227,15 +252,35 @@ partial def finishFraChoice (g : Game) : Game :=
   else if g.pending != .none then g
   else
     let g := g.drainPendingContinuations
-    if g.over then (g.popEmptyContinuationFrames).completeActiveResolutions
+    if g.over then
+      let g :=
+        if g.proposedSpell.any (fun prop =>
+            !g.stillInGame prop.caster || (g.findObject? prop.spellId).isNone) then
+          (if g.pending == .none then g else g.change (.pending .none)).reverseProposedSpell
+            (resumeContinuation := true) (alwaysGrantPriority := true)
+        else g
+      (g.popEmptyContinuationFrames).completeActiveResolutions
     else if let .chooseReplacement .. := g.pending then
       g.chainPendingReplacement .finishFraChoice
     else if g.pending != .none || g.afterRandom != .none then g
     else
       let g := g.popEmptyContinuationFrames
-      let prio := g.pendingPriority.getD g.activePlayer
-      let g := g.promptTriggerTargetsIfNeeded
-      if g.pending == .none then g.receivePriority prio else g
+      if g.triggerNeedingTargets.isSome then
+        g.promptTriggerTargetsIfNeeded
+      else if g.proposedSpell.any (fun prop =>
+          !g.stillInGame prop.caster || (g.findObject? prop.spellId).isNone) then
+        let g :=
+          (if g.pending == .none then g else g.change (.pending .none)).reverseProposedSpell
+            (resumeContinuation := true) (alwaysGrantPriority := true)
+        if !g.over && g.pending == .none && g.continuations.isEmpty &&
+            g.triggerNeedingTargets.isSome then
+          g.promptTriggerTargetsIfNeeded
+        else g
+      else if g.proposedSpell.isSome then
+        if g.pending == .none then g else g.change (.pending .none)
+      else
+        let prio := g.pendingPriority.getD g.activePlayer
+        g.receivePriority prio
 
 /-- Clear `.payWard` and drain any queued `pendingReplacement` /
 `outerPendingReplacements` continuations before priority or trigger targets. -/
@@ -840,7 +885,7 @@ partial def resumePendingReplacement (g : Game) (pr : PendingReplacement)
       let effectiveDeparted :=
         match promptSeat? with
         | some q =>
-          if !g.stillInGame q && !departed.contains q then #[q] ++ departed
+          if !g.stillInGame q then #[q] ++ departed.filter (· != q)
           else departed
         | none => departed
       if effectiveDeparted.isEmpty then
@@ -1617,9 +1662,23 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
     | some moved => g.logMsg s!"{g.name moved} is exiled"
     | none => g
   | .resumeChooseModeAfterLeave p =>
-    if !g.stillInGame p then
+    let promptIfTriggersNeedTargets (g : Game) : Game :=
+      if !g.over && g.pending == .none && g.continuations.isEmpty &&
+          g.triggerNeedingTargets.isSome then
+        g.promptTriggerTargetsIfNeeded
+      else g
+    if g.over then
+      let g :=
+        if g.proposedSpell.any (fun prop =>
+            !g.stillInGame prop.caster || (g.findObject? prop.spellId).isNone) then
+          (if g.pending == .none then g else g.change (.pending .none)).reverseProposedSpell
+            (resumeContinuation := true) (alwaysGrantPriority := true)
+        else g
+      g.completeActiveResolutions
+    else if !g.stillInGame p then
       if g.proposedSpell.any (·.caster == p) then
-        g.reverseProposedSpell (resumeContinuation := true)
+        promptIfTriggersNeedTargets
+          (g.reverseProposedSpell (resumeContinuation := true) (alwaysGrantPriority := true))
       else g
     else
       match g.proposedSpell with
@@ -1629,13 +1688,17 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
         else
           match prop.kind with
           | .activatedAbility =>
-            if prop.abilityModes.any (fun m => g.modeIsChoosable p m prop.sourceId) then
+            if (g.findObject? prop.spellId).any (·.zone == .stack) &&
+                prop.abilityModes.any (fun m => g.modeIsChoosable p m prop.sourceId) then
               g.change (.pending (.chooseMode p))
             else
-              g.reverseProposedSpell (resumeContinuation := true)
+              promptIfTriggersNeedTargets
+                (g.reverseProposedSpell (resumeContinuation := true) (alwaysGrantPriority := true))
           | .spell =>
             match g.findObject? prop.spellId with
-            | none => g.reverseProposedSpell (resumeContinuation := true)
+            | none =>
+              promptIfTriggersNeedTargets
+                (g.reverseProposedSpell (resumeContinuation := true) (alwaysGrantPriority := true))
             | some spell =>
               let face := g.baseCard spell
               let effModes := g.evalSpellModes p spell
@@ -1657,9 +1720,19 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
               else if isReturnUpToTwoGyModal face || face.allowsZeroTargets then
                 g.change (.pending (.chooseMode p))
               else
-                g.reverseProposedSpell (resumeContinuation := true)
-          | .turnFaceUp => g
+                promptIfTriggersNeedTargets
+                  (g.reverseProposedSpell (resumeContinuation := true) (alwaysGrantPriority := true))
+          | .turnFaceUp =>
+            if (g.findObject? prop.spellId).any (·.isOnBattlefield) then g
+            else
+              promptIfTriggersNeedTargets
+                (g.reverseProposedSpell (resumeContinuation := true) (alwaysGrantPriority := true))
   | .resumeChooseTargetsAfterLeave p =>
+    let promptIfTriggersNeedTargets (g : Game) : Game :=
+      if !g.over && g.pending == .none && g.continuations.isEmpty &&
+          g.triggerNeedingTargets.isSome then
+        g.promptTriggerTargetsIfNeeded
+      else g
     let ownPropNeedsReverse :=
       g.proposedSpell.any (fun prop =>
         prop.caster == p && (!g.stillInGame p || (g.findObject? prop.spellId).isNone))
@@ -1681,7 +1754,7 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
       match g.objectAwaitingTargets with
       | none =>
         if ownPropNeedsReverse then
-          g
+          promptIfTriggersNeedTargets g
         else
           g.afterTriggerTargetsChosen
       | some obj =>
@@ -1695,7 +1768,8 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
             (g.stack.find? (·.objectId == obj.id)).map (·.controller) |>.getD p
         if !g.stillInGame caster then
           if isPropSpell then
-            g.reverseProposedSpell (resumeContinuation := true)
+            promptIfTriggersNeedTargets
+              (g.reverseProposedSpell (resumeContinuation := true) (alwaysGrantPriority := true))
           else
             (g.ceaseToExist obj.id (cause := some (.gameRule .triggeredAbility))).afterTriggerTargetsChosen
         else
@@ -1713,15 +1787,17 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
             if g.pending == .chooseTargets caster then g
             else g.change (.pending (.chooseTargets caster))
           else if isPropSpell then
-            g.reverseProposedSpell (resumeContinuation := true)
-              (extraLog := some s!"{g.name obj} has no legal target and can't be cast")
+            promptIfTriggersNeedTargets
+              (g.reverseProposedSpell (resumeContinuation := true)
+                (extraLog := some s!"{g.name obj} has no legal target and can't be cast")
+                (alwaysGrantPriority := true))
           else
             let objName := g.name obj
             let g := g.ceaseToExist obj.id (cause := some (.gameRule .triggeredAbility))
               |>.logMsg s!"{objName}'s triggered ability has no legal target and is removed from the stack (CR 603.3d)"
             g.afterTriggerTargetsChosen
   | .resumeTriggerModesAfterLeave p objectId remaining chosen =>
-    if !g.stillInGame p then g.finishFraChoice
+    if g.over || !g.stillInGame p then g.finishFraChoice
     else
       match g.findObject? objectId with
       | some obj =>
@@ -1751,7 +1827,7 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
             g.change (.pending (.fraChoice p (.triggerModes obj.id needed validChosen)))
       | none => g.finishFraChoice
   | .resumeUpToTriggerModesAfterLeave p objectId remaining chosen =>
-    if !g.stillInGame p then g.finishFraChoice
+    if g.over || !g.stillInGame p then g.finishFraChoice
     else
       match g.findObject? objectId with
       | some obj =>
@@ -1784,7 +1860,7 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
               g.finishFraChoice
       | none => g.finishFraChoice
   | .resumeHawkeyeModesAfterLeave p objectId left chosen =>
-    if !g.stillInGame p then g.finishFraChoice
+    if g.over || !g.stillInGame p then g.finishFraChoice
     else
       match g.findObject? objectId with
       | some obj =>
@@ -1813,7 +1889,13 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
     if g.proposalCostPromptStillPayable p savedP then
       g.change (.pending savedP)
     else if g.proposedSpell.any (·.caster == p) then
-      g.reverseProposedSpell (resumeContinuation := true)
+      let g := g.reverseProposedSpell (resumeContinuation := true) (alwaysGrantPriority := true)
+      if !g.over && g.pending == .none && g.continuations.isEmpty &&
+          g.triggerNeedingTargets.isSome then
+        g.promptTriggerTargetsIfNeeded
+      else g
+    else if g.over then
+      g.completeActiveResolutions
     else g
   | .runAfterRandom after =>
     g.runInGameAfterRandom after (guardDeparted := true)
@@ -2477,6 +2559,7 @@ partial def reverseProposedSpell? (g : Game) (resumeContinuation : Bool := false
   return if needsFinish then g.finishFraChoice else g
 
 /-- Non-monadic wrapper around `reverseProposedSpell?`. -/
+@[export mtg_game_reverse_proposed_spell]
 partial def reverseProposedSpell (g : Game) (resumeContinuation : Bool := false)
     (extraLog : Option String := none)
     (alwaysGrantPriority : Bool := false) : Game :=

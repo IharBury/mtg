@@ -201,13 +201,15 @@ def applyFraResolution? (g : Game) (controller : PlayerId) (effect : Effect)
       else
         some (g.finishExileTopMayCastElseDamage controller top n sid)
   | .emblemCastSpellDamage n =>
-    -- Ruling 858: the emblem is colorless.
-    let emblem : CardDef := {
-      name := "Chandra Emblem", types := #[]
-      triggeredAbilities := #[.triggered .youCastSpell
-        (Effect.ofTrigger (.onPermanent .playerOrCreature (.dealDamage n)))] }
-    let (g, _) := g.allocObject emblem controller .command (some controller)
-    some (g.logMsg s!"{(g.player controller).name} gets an emblem")
+    if !g.stillInGame controller then some g
+    else
+      -- Ruling 858: the emblem is colorless.
+      let emblem : CardDef := {
+        name := "Chandra Emblem", types := #[]
+        triggeredAbilities := #[.triggered .youCastSpell
+          (Effect.ofTrigger (.onPermanent .playerOrCreature (.dealDamage n)))] }
+      let (g, _) := g.allocObject emblem controller .command (some controller)
+      some (g.logMsg s!"{(g.player controller).name} gets an emblem")
   | .firstDealsStatDamageToSecond useLoyalty =>
     -- Ruling 791: the power or loyalty is checked as the spell resolves; if
     -- that permanent is gone, no damage is dealt.
