@@ -10807,7 +10807,7 @@ object-referencing `FraChoice` revalidation & `beginMayDiscardDraw` /
          .fraChoice q (.orderLibraryBottom liveIds))`; else `(g, pending)`; and
        - add a `.searchLibrary eligible count dest after kind |
          .maySearchLibrary eligible count dest after kind` arm
-         (`Leaving.lean:1543–1572`, `Pending.lean:432–437`,
+         (`Leaving.lean:1543–1572`, `Pending.lean:422–427`,
          `LibrarySearch.applyWaitingPlusOne` at `LibrarySearch.lean:238–242`,
          `LibrarySearch.shuffleSearch` at `LibrarySearch.lean:232–235`,
          `EffectResolution.lean:531–539`): when `q == p`, capture `let
@@ -11278,11 +11278,11 @@ cost/2HG-combat/`unlessPaysDue` completion, `redirectPendingAfterLeave` `q != p`
        `Core.modesChosenThisTurn` / `Core.modesChosenEver`
        (`Core.lean:3687–3706`, CR 700.2g) stays consistent with the kept
        `GameEvent.announced` on `objId`.
-   - In `Decisions.finishFraChoice` (`Decisions.lean:223–239`),
+   - In `Decisions.finishFraChoice` (`Decisions.lean:223–238`),
      `Decisions.finishAndGrantPriority` (`Decisions.lean:157–175`),
      `Decisions.finishWardAndDrain` (`Decisions.lean:242–252`), and
      `Casting.afterWardResolved` (`Casting.lean:693–710`):
-     - In `Decisions.finishFraChoice` (`Decisions.lean:230–239`):
+     - In `Decisions.finishFraChoice` (`Decisions.lean:230–238`):
        - when `g.over` is true (`230`), if `g.proposedSpell.any (fun prop =>
          !g.stillInGame prop.caster || (g.findObject? prop.spellId).isNone)`,
          reverse the orphaned proposal via `let g := (if g.pending == .none then
@@ -11293,12 +11293,11 @@ cost/2HG-combat/`unlessPaysDue` completion, `redirectPendingAfterLeave` `q != p`
          mana payments and costs paid before the game ended are rolled back or
          cleaned up cleanly rather than only clearing `.proposedSpell none`);
          and
-       - in the `else` branch (`235–239`), after `let g :=
+       - in the `else` branch (`235–238`), after `let g :=
          g.popEmptyContinuationFrames`: if `g.triggerNeedingTargets.isSome`,
          call `g.promptTriggerTargetsIfNeeded` (matching
          `Decisions.afterTriggerTargetsChosen`'s `| some _ =>` arm at
-         `Decisions.lean:2897–2898`, so `.chooseTargets` is not opened inside
-         the checkpoint slice before a reversal rolls it back); else (when
+         `Decisions.lean:2897–2898`); else (when
          `g.triggerNeedingTargets.isNone`, matching `| none =>` at
          `Decisions.lean:2899–2913`), if `g.proposedSpell.any (fun prop =>
          !g.stillInGame prop.caster || (g.findObject? prop.spellId).isNone)`,
@@ -11341,26 +11340,44 @@ cost/2HG-combat/`unlessPaysDue` completion, `redirectPendingAfterLeave` `q != p`
        (extraLog : Option String := none) (alwaysGrantPriority : Bool := false)
        : Game` in `Casting.lean` paired with `@[export]` on
        `Decisions.drainPendingContinuations` at `Decisions.lean:135` and
-       `Decisions.reverseProposedSpell` at `Decisions.lean:2481`), do not
-       register `.afterWardResolved` as a `pendingReplacement` while
-       `mayThenResume` or `triggerSequenceRest` is set (since
+       `Decisions.reverseProposedSpell` at `Decisions.lean:2480`), do not
+       register `.afterWardResolved` as a `pendingReplacement` across `698–703`
+       while `mayThenResume` or `triggerSequenceRest` is set (since
        `drainPendingContinuations` at `Decisions.lean:136–153` runs
-       `pendingReplacement` before `triggerSequenceRest`); instead, in the `else`
-       ward tail (`704–710`, when no `.chooseReplacement` / `pendingReplacement` /
-       `outerPendingReplacements` is open), first drain `mayThenResume` and
-       `triggerSequenceRest` via `let g := if g.mayThenResume ||
-       g.triggerSequenceRest.isSome then g.drainPendingContinuations else g`,
-       then if `(match g.pending with | .chooseReplacement .. => true | _ =>
-       false) || g.pendingReplacement.isSome` chain `g.chainPendingReplacement
-       .afterWardResolved`, else if `g.over` reverse any vanished/departed
-       `g.proposedSpell` with `(resumeContinuation := true) (alwaysGrantPriority
-       := true)` and return `g.completeActiveResolutions`, else if `g.pending !=
-       .none || g.afterRandom != .none` return `g` (without popping active
-       resolutions while an interactive prompt or `afterRandom` from the drained
-       sequence is open), else run `let g := g.completeActiveResolutions`,
-       return `g` if `g.over || g.pending != .none || g.afterRandom != .none`
-       (`706`, so any prompt or `afterRandom` opened by
-       `completeActiveResolutions` at `Entering.lean:350, 384–385` is
+       `pendingReplacement` at `140–143` before `triggerSequenceRest` at
+       `145–147`, and `finishWardAndDrain` at `Decisions.lean:245–248` and
+       `SacrificeDiscard.sacrificeForActivation` at
+       `SacrificeDiscard.lean:423–427, 440–444` chain `outerCont?` onto
+       `pendingReplacement` before calling `afterWardResolved`); instead, right
+       after clearing `.payWard` (`694–697`, before `698–703`), when `g.pending
+       == .none && g.afterRandom == .none && (g.mayThenResume ||
+       g.triggerSequenceRest.isSome)`, stash `let stashedPending :=
+       g.pendingReplacement` and `let stashedOuters :=
+       g.outerPendingReplacements`, clear them via `if stashedPending.isSome
+       then g.change (.pendingReplacement none) else g` and popping
+       `stashedOuters.size` entries via `.popOuterPendingReplacement`, run `let
+       g := g.drainPendingContinuations` to drain `mayThenResume` and
+       `triggerSequenceRest` first, and when `!g.over` restore `stashedPending`
+       via `match stashedPending with | some c => g.chainPendingReplacement c |
+       none => g` and prepend `stashedOuters` below any `drainOuters :=
+       g.outerPendingReplacements` pushed during the drain (popping
+       `drainOuters` and pushing `stashedOuters ++ drainOuters` via
+       `.pushOuterPendingReplacement`); then proceed through `698–703` (`if
+       (match g.pending with | .chooseReplacement .. => true | _ => false) ||
+       g.pendingReplacement.isSome` → `g.chainPendingReplacement
+       .afterWardResolved`, `else if let some outer :=
+       g.outerPendingReplacements.back?` → pop `outer` into `pendingReplacement`
+       and `g.chainPendingReplacement .afterWardResolved`), and in the `else`
+       ward tail (`704–710`, when no `.chooseReplacement` / `pendingReplacement`
+       / `outerPendingReplacements` is open): if `g.over` reverse any
+       vanished/departed `g.proposedSpell` with `(resumeContinuation := true)
+       (alwaysGrantPriority := true)` and return `g.completeActiveResolutions`,
+       else if `g.pending != .none || g.afterRandom != .none` return `g`
+       (without popping active resolutions while an interactive prompt or
+       `afterRandom` from the drained sequence is open), else run `let g :=
+       g.completeActiveResolutions`, return `g` if `g.over || g.pending != .none
+       || g.afterRandom != .none` (`706`, so any prompt or `afterRandom` opened
+       by `completeActiveResolutions` at `Entering.lean:350, 384–385` is
        preserved), and otherwise (when `!g.over && g.pending == .none &&
        g.afterRandom == .none`) apply the same
        `Decisions.afterTriggerTargetsChosen` (`2897–2913`) tail: if
