@@ -561,6 +561,7 @@ def payCost (g : Game) (p : PlayerId) (cost : ManaCost)
 /-- Run any deferred mid-resolution post-cast cleanup (`PostCastCleanup`) once
 a cast-during-resolution spell finishes casting (`becomeCast`) or reverses
 (`reverseProposedSpellCore?`). -/
+@[export mtg_game_run_post_cast_cleanup]
 def runPostCastCleanup (g : Game) : Game :=
   match g.postCastCleanup with
   | none => g

@@ -345,7 +345,8 @@ so CR 704.3 does not yet repeat, put triggers on the stack, or grant
 priority. `keepLegend` resumes the loop. -/
 partial def checkSBACounted (g : Game)
     (savedIn : Option Pending := none) (popOuterIn : Bool := false)
-    (departedIn : Array PlayerId := #[]) : Game × Bool :=
+    (departedIn : Array PlayerId := #[])
+    (rewindProposalIn : Bool := false) : Game × Bool :=
   if g.over || g.sbaPaused then (g, false)
   else
     let (g, (changed, _paused)) := g.withBatchReturn none fun g => Id.run do
@@ -543,8 +544,8 @@ partial def checkSBACounted (g : Game)
     match g.pending with
     | .chooseReplacement .. | .chooseLegend .. =>
       (g.chainPendingReplacement
-        (if savedIn.isSome || popOuterIn || !departedIn.isEmpty then
-          .leavePlayersWhoLost savedIn popOuterIn departedIn
+        (if savedIn.isSome || popOuterIn || !departedIn.isEmpty || rewindProposalIn then
+          .leavePlayersWhoLost savedIn popOuterIn departedIn rewindProposalIn
         else .checkSBA),
        true)
     | _ =>
@@ -555,29 +556,44 @@ an action or the game ends / pauses on a pending choice, restoring any deferred
 saved pending decision once at the end of the fixpoint (CR 704.3 / 800.4a). -/
 partial def checkSBACountedWithLeaves (g : Game)
     (savedIn : Option Pending := none) (popOuterIn : Bool := false)
-    (departedIn : Array PlayerId := #[]) : Game × Bool × Array PlayerId :=
+    (departedIn : Array PlayerId := #[])
+    (rewindProposalIn : Bool := false) : Game × Bool × Array PlayerId :=
+  let (g, savedIn, popOuterIn, rewindProposalIn) :=
+    if rewindProposalIn && !g.sbaPaused && g.currentBatch.isNone then
+      let (g', s', po') := g.applyDeferredProposalRewind savedIn popOuterIn departedIn
+      (g', s', po', false)
+    else
+      (g, savedIn, popOuterIn, rewindProposalIn)
   let wasPaused := g.sbaPaused
-  let (g, didSba) := g.checkSBACounted savedIn popOuterIn departedIn
+  let (g, didSba) := g.checkSBACounted savedIn popOuterIn departedIn rewindProposalIn
   if g.over then (g, didSba, departedIn)
-  else if wasPaused && (savedIn.isSome || popOuterIn || !departedIn.isEmpty) then
-    (g.chainPendingReplacement (.leavePlayersWhoLost savedIn popOuterIn departedIn), didSba, departedIn)
+  else if wasPaused && (savedIn.isSome || popOuterIn || !departedIn.isEmpty || rewindProposalIn) then
+    (g.chainPendingReplacement
+      (.leavePlayersWhoLost savedIn popOuterIn departedIn rewindProposalIn),
+     didSba, departedIn)
   else if g.pending != .none then (g, didSba, departedIn)
   else
     let leftBefore := (g.players.filter (·.leftTheGame)).size
-    let (g, saved?, popOuter, departed) := g.leavePlayersWhoLostCore savedIn popOuterIn departedIn
+    let (g, saved?, popOuter, departed, rewindProposal) :=
+      g.leavePlayersWhoLostCore savedIn popOuterIn departedIn rewindProposalIn
     let anyLeft := (g.players.filter (·.leftTheGame)).size > leftBefore
     if g.over then (g, didSba || anyLeft, departed)
     else if g.sbaPaused then
       (g.chainPendingReplacement
-        (if g.players.any (fun r => r.lost && !r.leftTheGame) || saved?.isSome || popOuter || !departed.isEmpty then
-          .leavePlayersWhoLost saved? popOuter departed
+        (if g.players.any (fun r => r.lost && !r.leftTheGame) || saved?.isSome || popOuter ||
+            !departed.isEmpty || rewindProposal then
+          .leavePlayersWhoLost saved? popOuter departed rewindProposal
         else .checkSBA),
        true, departed)
     else if g.pending != .none then (g, didSba || anyLeft, departed)
     else if didSba || anyLeft then
-      let (g', didMore, departed') := g.checkSBACountedWithLeaves saved? popOuter departed
+      let (g', didMore, departed') :=
+        g.checkSBACountedWithLeaves saved? popOuter departed rewindProposal
       (g', didSba || anyLeft || didMore, departed')
-    else (g.restoreSavedPostLeave saved? popOuter (departed := departed), false, departed)
+    else
+      (g.restoreSavedPostLeave saved? popOuter
+         (departed := departed) (rewindProposal := rewindProposal),
+       false, departed)
 
 def checkSBA (g : Game) : Game :=
   (g.checkSBACountedWithLeaves).1

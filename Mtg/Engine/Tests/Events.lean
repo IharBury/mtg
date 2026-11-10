@@ -25761,6 +25761,89 @@ private def replayOk34i3 (gs : Array Game) : Bool :=
       match ev with
       | .rules _ (.zone (.ceasedToExist snap)) _ _ => snap.id == some p1SrcAbObj.id
       | _ => false
+  -- Outer non-proposal continuation preserved across unpaused leave rewind (`Comment 1`):
+  let gWithOuter0 :=
+    gBase.changes #[
+      .pushContinuationFrame {},
+      .pendingReplacement (some (.gainLife p0 2 (some testCause))),
+      .saveProposalCheckpoint ]
+  let (gWithOuter1, outerSrcAbObj) :=
+    gWithOuter0.putStackAbility p1Hero p0 (abilityEffect := some (Effect.gainLife 1))
+  let outerSrcProp : ProposedSpell := {
+    caster := p0
+    cost := ManaCost.empty
+    spellId := outerSrcAbObj.id
+    original := outerSrcAbObj
+    originalSnapshot := gWithOuter1.snapshot outerSrcAbObj
+    kind := .activatedAbility
+    sourceId := some p1Hero.id
+  }
+  let gChooseXWithOuter :=
+    gWithOuter1.changes #[
+      .proposedSpell (some outerSrcProp),
+      .pending (.chooseX p0) ]
+  let gChooseXWithOuterAfterLeave := gChooseXWithOuter.playerLeavesGame p1
+  -- Deferred rewind (`rewindProposal := true`) still rewinds when `p1` only controlled `p0Bear`
+  -- and control returned to `p0` during `p1`'s departure (`Comment 2`):
+  let gStolenSrc0 := gBearStolen.change .saveProposalCheckpoint
+  let (gStolenSrc1, stolenSrcAbObj) :=
+    gStolenSrc0.putStackAbility p0Bear p0 (abilityEffect := some (Effect.gainLife 1))
+  let stolenSrcProp : ProposedSpell := {
+    caster := p0
+    cost := ManaCost.empty
+    spellId := stolenSrcAbObj.id
+    original := stolenSrcAbObj
+    originalSnapshot := gStolenSrc1.snapshot stolenSrcAbObj
+    kind := .activatedAbility
+    sourceId := some p0Bear.id
+  }
+  let gStolenSrcChooseX :=
+    gStolenSrc1.changes #[
+      .proposedSpell (some stolenSrcProp),
+      .pending (.chooseX p0) ]
+  let (gStolenLeaveCore, savedStolen?, popOuterStolen, _) :=
+    gStolenSrcChooseX.playerLeavesGameCore p1 (deferRestore := true)
+  -- Also test `restorePending .none` with `rewindProposal := true` after `p1` left (when `sourceStillPayable` is true again):
+  let gStolenDeferred0 :=
+    (gBearStolen.concede p1).change .saveProposalCheckpoint
+  let (gStolenDeferred1, stolenDefAbObj) :=
+    gStolenDeferred0.putStackAbility p0Bear p0 (abilityEffect := some (Effect.gainLife 1))
+  let stolenDefProp : ProposedSpell := {
+    caster := p0
+    cost := ManaCost.empty
+    spellId := stolenDefAbObj.id
+    original := stolenDefAbObj
+    originalSnapshot := gStolenDeferred1.snapshot stolenDefAbObj
+    kind := .activatedAbility
+    sourceId := some p0Bear.id
+  }
+  let gStolenDeferred2 :=
+    gStolenDeferred1.change (.proposedSpell (some stolenDefProp))
+  let gStolenDeferredRewound :=
+    gStolenDeferred2.resumePendingReplacement
+      (.restorePending .none false (departed := #[p1]) (rewindProposal := true))
+  -- Unrelated `restorePending .none` (`rewindProposal := false`) does NOT reverse a legal `{T}` activation
+  -- whose `{T}` cost was already paid (`Comment 2`):
+  let gTapPaid0 := gBase.change .saveProposalCheckpoint
+  let (gTapPaid1, tapPaidAbObj) :=
+    gTapPaid0.putStackAbility p0Bear p0 (abilityEffect := some (Effect.gainLife 1))
+  let gTapPaid2 :=
+    gTapPaid1.withProposalAction .costAction fun g =>
+      g.becomeTapped (g.object! p0Bear.id) (cause := some testCause)
+  let tapPaidProp : ProposedSpell := {
+    caster := p0
+    cost := ManaCost.empty
+    spellId := tapPaidAbObj.id
+    original := tapPaidAbObj
+    originalSnapshot := gTapPaid2.snapshot tapPaidAbObj
+    kind := .activatedAbility
+    sourceId := some p0Bear.id
+    tapSource := true
+  }
+  let gTapPaid3 := gTapPaid2.change (.proposedSpell (some tapPaidProp))
+  let gTapPaidAfterUnrelatedRestore :=
+    gTapPaid3.resumePendingReplacement
+      (.restorePending .none false (departed := #[p1]) (rewindProposal := false))
 
   let sourceAndLeaveAbortOk :=
     !gBear1Counter.sourceStillPayable removeXProp &&
@@ -25772,7 +25855,20 @@ private def replayOk34i3 (gs : Array Game) : Bool :=
     (gChooseXAfterP1Leave.findObject? p1SrcAbObj.id).isNone &&
     !(gChooseXAfterP1Leave.object! p0Bear.id).status.tapped &&
     !p1SrcAbCeasedOnP1Leave &&
-    gChooseXAfterP1Leave.log.any (·.contains "the activation is reversed (CR 602.2 / 733.1)")
+    gChooseXAfterP1Leave.log.any (·.contains "the activation is reversed (CR 602.2 / 733.1)") &&
+    gChooseXWithOuterAfterLeave.proposedSpell.isNone &&
+    gChooseXWithOuterAfterLeave.proposalCheckpoint.isNone &&
+    (gChooseXWithOuterAfterLeave.player p0).life == (gBase.player p0).life + 2 &&
+    gStolenLeaveCore.proposedSpell.isNone &&
+    gStolenLeaveCore.proposalCheckpoint.isNone &&
+    savedStolen?.isNone &&
+    !popOuterStolen &&
+    gStolenDeferred2.sourceStillPayable stolenDefProp &&
+    gStolenDeferredRewound.proposedSpell.isNone &&
+    gStolenDeferredRewound.proposalCheckpoint.isNone &&
+    !gTapPaid3.sourceStillPayable tapPaidProp &&
+    gTapPaidAfterUnrelatedRestore.proposedSpell.isSome &&
+    gTapPaidAfterUnrelatedRestore.proposalCheckpoint.isSome
 
   -- 3b. `redirectPendingAfterLeave`:
   -- (i) `.payOrLetCounter`:
@@ -25901,6 +25997,8 @@ private def replayOk34i3 (gs : Array Game) : Bool :=
   mustHold34i3 "3b.redirectCleanupOk" redirectCleanupOk &&
   mustHold34i3 "3.replay"
     (replayOk34i3 #[gBear1Counter, gBear2Counters, gBearStolen, gChooseXAfterP1Leave,
+      gChooseXWithOuterAfterLeave, gStolenLeaveCore, gStolenDeferredRewound,
+      gTapPaidAfterUnrelatedRestore,
       gPayOrCounterP1Leaves, gPayOrCounterSpellGone, gPayOrCounterInsteadIllegal,
       gCopiesFreeP1Leaves, gCopiesFreeUnpayable, gMayCastCopyP1Leaves, gMayCastCopyGone,
       gCascadeCardGone, gTrigOrP1Leaves, gTapHumansP1Leaves, gPutArtP1Leaves])
