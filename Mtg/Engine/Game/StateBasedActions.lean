@@ -580,8 +580,11 @@ partial def checkSBACountedWithLeavesCore (g : Game)
     | none =>
       (g, savedIn, popOuterIn, none)
   let wasPaused := g.sbaPaused
+  let hasPendingLosers :=
+    !g.over && !wasPaused && g.players.any (fun r => r.lost && !r.leftTheGame)
   let (g, didSba) :=
-    g.checkSBACounted savedIn popOuterIn departedIn rewindProposalIn (deferRestore := deferRestore)
+    if hasPendingLosers then (g, false)
+    else g.checkSBACounted savedIn popOuterIn departedIn rewindProposalIn (deferRestore := deferRestore)
   if g.over then (g, didSba, none, false, departedIn, none)
   else if wasPaused && (savedIn.isSome || popOuterIn || !departedIn.isEmpty || rewindProposalIn.isSome) then
     let g :=
@@ -610,7 +613,7 @@ partial def checkSBACountedWithLeavesCore (g : Game)
       (g, true, saved?, popOuter, departed, rewindProposal)
     else if g.pending != .none then
       (g, didSba || anyLeft, saved?, popOuter, departed, rewindProposal)
-    else if didSba || anyLeft then
+    else if didSba || anyLeft || hasPendingLosers then
       let (g', didMore, saved'?, popOuter', departed', rewindProposal') :=
         g.checkSBACountedWithLeavesCore saved? popOuter departed rewindProposal
           (deferRestore := deferRestore)

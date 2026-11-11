@@ -292,6 +292,8 @@ def announceX (g : Game) (p : PlayerId) (x : Nat) : Except String Game := do
       | throw "No spell or ability is waiting for X (CR 601.2b)"
     let some _obj := g.findObject? prop.spellId
       | throw "The spell or ability left the stack"
+    if !g.sourceStillPayable prop then
+      return (← g.reverseProposedSpell? (resumeContinuation := true))
     let g := g.record (GameEvent.announced g.turnNumber prop.spellId (x := some x))
     let g ←
       if prop.loyaltyX then

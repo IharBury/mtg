@@ -676,13 +676,24 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .costPicks sourceId picks _, .objects ids =>
     let some prop := g.proposedSpell | throw "No activation is being paid for"
     let some pick := picks[0]? | throw "No cost is left to pay"
-    if (gPre.costPickCandidates p (some sourceId) pick).size < pick.count then
+    let tapSrc := prop.tapSource
+    let sacSrc :=
+      prop.sacrificeSource ||
+        prop.activation.any (fun a => a.cost.sacrificeSource || a.cost.fra == .exileSource)
+    let discSrc :=
+      prop.discardSource ||
+        prop.activation.any (fun a => a.cost.discardSource || a.cost.fra == .exileSourceFromHand)
+    if !gPre.costPicksPayable p (some sourceId) picks
+        (tapSource := tapSrc) (sacrificeOrExileSource := sacSrc)
+        (discardOrExileHandSource := discSrc) then
       return (← gPre.reverseProposedSpell? (resumeContinuation := true))
     let outerCont? := g.pendingReplacement
     let openCont := g.proposalHadOpenContinuation
     let g0 := if outerCont?.isSome then g.change (.pendingReplacement none) else g
     let g ← g0.withProposalActionM .costAction fun g =>
       g.payCostPick p (some prop.spellId) (some sourceId) pick ids
+        (tapSource := tapSrc) (sacrificeOrExileSource := sacSrc)
+        (discardOrExileHandSource := discSrc)
     let restPicks := picks.extract 1 picks.size
     let pausedBeforeContinue := match g.pending with | .chooseReplacement .. => true | _ => false
     if restPicks.isEmpty && !pausedBeforeContinue then
@@ -712,9 +723,20 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .costPicks _ _ false, .decline =>
     g.reverseProposedSpell? (resumeContinuation := true)
   | .costPicks sourceId picks true, .decline =>
-    if let some pick := picks[0]? then
-      if (gPre.costPickCandidates p (some sourceId) pick).size < pick.count then
-        return (← gPre.reverseProposedSpell? (resumeContinuation := true))
+    let tapSrc := gPre.proposedSpell.any (·.tapSource)
+    let sacSrc :=
+      gPre.proposedSpell.any fun prop =>
+        prop.sacrificeSource ||
+          prop.activation.any (fun a => a.cost.sacrificeSource || a.cost.fra == .exileSource)
+    let discSrc :=
+      gPre.proposedSpell.any fun prop =>
+        prop.discardSource ||
+          prop.activation.any (fun a => a.cost.discardSource || a.cost.fra == .exileSourceFromHand)
+    if !picks.isEmpty &&
+        !gPre.costPicksPayable p (some sourceId) picks
+          (tapSource := tapSrc) (sacrificeOrExileSource := sacSrc)
+          (discardOrExileHandSource := discSrc) then
+      return (← gPre.reverseProposedSpell? (resumeContinuation := true))
     throw "Part of the cost is already paid; the activation can't be cancelled"
   | .costPicks .., _ => throw "Choose what to pay the cost with, or decline to cancel"
   | .chooseCreatureType types, .mode idx =>
@@ -1849,11 +1871,19 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
       if acc.2 ≥ n then acc else (acc.1.push c.id, acc.2 + (g.power c).toNat)) (#[], 0)
     if total < n then .decline else .choosePermanents picked
   | .costPicks sourceId picks _ =>
-    match picks[0]? with
-    | some pick =>
-      let cands := g.costPickCandidates p (some sourceId) pick
-      if cands.size < pick.count then .decline
-      else .choosePermanents (cands.extract 0 pick.count)
+    let tapSrc := g.proposedSpell.any (·.tapSource)
+    let sacSrc :=
+      g.proposedSpell.any fun prop =>
+        prop.sacrificeSource ||
+          prop.activation.any (fun a => a.cost.sacrificeSource || a.cost.fra == .exileSource)
+    let discSrc :=
+      g.proposedSpell.any fun prop =>
+        prop.discardSource ||
+          prop.activation.any (fun a => a.cost.discardSource || a.cost.fra == .exileSourceFromHand)
+    match g.firstPayableCostPickSlice? p (some sourceId) picks
+        (tapSource := tapSrc) (sacrificeOrExileSource := sacSrc)
+        (discardOrExileHandSource := discSrc) with
+    | some chosen => .choosePermanents chosen
     | none => .decline
   | .mayPayPickThen .. => .decline
   | .chooseCreatureType _ => .chooseMode 0
