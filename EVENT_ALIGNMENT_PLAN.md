@@ -12056,30 +12056,43 @@ control-loss source invalidation across `isProposalAbortedByLeave`,
        departures from the previous SBA pass first, and recurse at `613` on
        `else if didSba || anyLeft || hasPendingLosers then`.
 2. Fix continuation preservation, wrapper stripping, and checkpoint-replay batch
-   handling across proposal rewinds (`Leaving.lean:581–601, 2036–2129`,
-   `Decisions.lean:884–898, 935–943`, `Core.lean:10602–10668`,
+   handling across proposal rewinds (`Leaving.lean:581–601, 2036–2129,
+   2736–2747`, `Decisions.lean:884–898, 935–943`, `Core.lean:10602–10668`,
    `Movement.lean:844–845`, §2.1, §2.4, §2.5, §3.8, CR 601.2 / 602.2 / 608.2 /
    610.3 / 616.1 / 733.1–733.2 / 800.4a):
-   - In `Leaving.rewindAbortedProposalOnLeave` (`Leaving.lean:2036–2129`) and
+   - In `Leaving.rewindAbortedProposalOnLeave` (`Leaving.lean:2036–2129`),
+     `Leaving.playerLeavesGameCore` (`Leaving.lean:2736–2747`), and
      `Decisions.resumePendingReplacement` `.restorePending` (`Decisions.lean:884–898`):
      - Fix `dropCkptPrefix` (`2082–2089`) to test `if cur == target then none`
-       before recursing into `.seq a b` (returning `none` when `dropCkptPrefix
-       target a` returns `none` with `a == target`, or stripping a compound
-       `target = .seq x y` when `cur == target` or `a == target`), so a compound
-       `ckptOrigCont? = some (.seq x y)` already present in `pushedOuterCont?`
-       (`ckptAlreadyInPushed == true`) is stripped instead of executed twice;
-     - before `g.reverseToProposalCheckpoint?` (`2076`), snapshot `ckptOuters :=
+       at the top level and, in the `| .seq a b =>` arm, match
+       `dropCkptPrefix target a` with `| none => some b` and `| some a' => some
+       (.seq a' b)` (`| step => some step`), so a compound `ckptOrigCont? = some
+       (.seq x y)` matching either the whole `curCont` (`cur == target`) or a
+       nested left prefix (`none => some b`, while an unmatched left child
+       returns `some a` and preserves `some (.seq a b)`) is stripped cleanly
+       instead of executed twice;
+     - on the immediate rewind path in `Leaving.playerLeavesGameCore`
+       (`2736–2738`), pop `pushedOuterCont?` from `g.outerPendingReplacements`
+       (`if pushedOuterCont?.isSome && g.outerPendingReplacements.back? ==
+       pushedOuterCont? then g.change .popOuterPendingReplacement else g`,
+       matching `applyDeferredProposalRewind` at `2179–2183` and
+       `.restorePending` at `Decisions.lean:853–855` before `2741–2746` pushes
+       the rewound continuation back), and in `Leaving.rewindAbortedProposalOnLeave`
+       before `g.reverseToProposalCheckpoint?` (`2076`), snapshot `ckptOuters :=
        g.proposalCheckpoint.map (fun ckpt => (ckpt.continuations.back?.getD
-       {}).outerPendingReplacements) |>.getD #[]` and `preRewindOuters :=
+       {}).outerPendingReplacements) |>.getD #[]` and `preRewindOuters := if
+       pushedOuterCont?.isSome && g.outerPendingReplacements.back? ==
+       pushedOuterCont? then g.outerPendingReplacements.pop else
        g.outerPendingReplacements`, extract any live mid-proposal departure
        entries pushed above `ckptOuters` (`extraDepartureOuters`, skipping index
        `ckptOuters.size` when `ckptMovedToOuter` holds `ckptOrigCont?` there and
        mapping `PendingReplacement.appendDepartedMany departed`), and re-push
        `extraDepartureOuters` onto `g.outerPendingReplacements` after
-       `reverseToProposalCheckpoint?` so a deferred rewind after an earlier
-       non-aborting departure does not lose in-flight `outerPendingReplacements`
-       entries when `restoreProposalCheckpoint` (`Core.lean:2067`) restores
-       `ckpt.continuations`;
+       `reverseToProposalCheckpoint?` so a rewind after an earlier non-aborting
+       departure neither loses in-flight `outerPendingReplacements` entries when
+       `restoreProposalCheckpoint` (`Core.lean:2067`) restores
+       `ckpt.continuations` nor double-schedules `pushedOuterCont?` on the
+       immediate path;
      - do not erase fresh continuations queued during `keptStream` replay when
        `ckptOrigCont? == none` (remove the `| _, _ => g.change
        (.pendingReplacement none)` clobber at `2105`), separate any post-replay
@@ -12089,16 +12102,19 @@ control-loss source invalidation across `isProposalAbortedByLeave`,
        ckptUntouchedBeforeLeave))` and not already contained in
        `pushedOuterCont?` or `extraDepartureOuters`), and combine continuations in
        LIFO inner-to-outer order (`freshKeptCont?` → `pushedOuterCont?` →
-       `keepOrigCont?`) so an outer resolution continuation moved via
-       `ckptMovedToOuter` (such as `.finishFraChoice`) runs **after** any inner
-       `freshKeptCont?` and `pushedOuterCont?` rather than draining resolution
-       and granting priority before the mid-proposal departure continuation
-       finishes; and in `Decisions.lean:884–898`, when `splitAfterCloseBatchFor?
-       curBid popped` yields `some (closePrefix, some after)`, push `after` onto
-       `g.outerPendingReplacements` and construct `tailRewind := .restorePending
-       .none true none departed rewindProposal` (`popOuter := true`) with `some
-       (.seq closePrefix tailRewind)` so `after` is passed as `pushedOuterCont?`
-       ahead of `keepOrigCont?`.
+       `keepOrigCont?` when `extraDepartureOuters` is empty, or `freshKeptCont?`
+       → `pushedOuterCont?` with `keepOrigCont?` appended onto the tail of
+       `extraDepartureOuters[0]` when `extraDepartureOuters` is non-empty) so an
+       outer resolution continuation moved via `ckptMovedToOuter` (such as
+       `.finishFraChoice`) runs **after** any inner `freshKeptCont?`,
+       `pushedOuterCont?`, and `extraDepartureOuters` rather than draining
+       resolution and granting priority before the mid-proposal departure
+       continuations finish; and in `Decisions.lean:884–898`, when
+       `splitAfterCloseBatchFor? curBid popped` yields `some (closePrefix, some
+       after)`, push `after` onto `g.outerPendingReplacements` and construct
+       `tailRewind := .restorePending .none true none departed rewindProposal`
+       (`popOuter := true`) with `some (.seq closePrefix tailRewind)` so `after`
+       is passed as `pushedOuterCont?` ahead of `keepOrigCont?`.
    - In `Leaving.isProposalBoundaryStep` (`Leaving.lean:581`),
      `Leaving.clearAbortedSavedInCont` (`Leaving.lean:588–601`), and
      `Decisions.resumePendingReplacement` `.restorePending` `reverseOrResumePopped`
@@ -12224,7 +12240,7 @@ control-loss source invalidation across `isProposalAbortedByLeave`,
    `{T}`-before-self-sacrifice payment, multi-pick disjointness, and pre-extra-cost
    `canPayLife` checks (`Core.lean:1327, 5453`, `Costs.lean:30–45`,
    `Choices.lean:601–641`, `Leaving.lean:518–554`,
-   `ActivationCosts.lean:56–193, 271–327`, `Activation.lean:33–40, 126`,
+   `ActivationCosts.lean:56–193, 271–327`, `Activation.lean:33–49, 87, 126`,
    `ManaAbilities.lean:405–434, 465–477`, `Decisions.lean:97–151, 1877, 2444,
    3181–3186`, `FraChoices.lean:676–718, 1851–1857`, §2.4, §2.5, §3.8,
    CR 118.3 / 118.10 / 601.2b,f–h / 602.2b / 605.3 / 702.37e / 708.8 / 733.1 /
@@ -12277,8 +12293,8 @@ control-loss source invalidation across `isProposalAbortedByLeave`,
        its owner's graveyard is not treated as payable.
    - In `ActivationCosts.costPickAllows` / `costPickCandidates` /
      `costPicksPayable` / `payCostPick` (`ActivationCosts.lean:56–193`),
-     `Activation.canPayFraCost` / `validateActivation` (`Activation.lean:33–40,
-     126`), `ManaAbilities` (`ManaAbilities.lean:405–434, 465–477`),
+     `Activation.canPayFraCost` / `validateActivation` (`Activation.lean:33–49,
+     87, 126`), `ManaAbilities` (`ManaAbilities.lean:405–434, 465–477`),
      `Decisions` (`Decisions.lean:107–127, 2444, 3181–3186`), and `FraChoices`
      (`FraChoices.lean:676–718, 1851–1857`):
      - Thread optional source-cost flags `(tapSource : Bool := false)
@@ -12295,9 +12311,12 @@ control-loss source invalidation across `isProposalAbortedByLeave`,
        ability), and from `.discardACard`, `.discardNonland`,
        `.discardLegendaryCard`, `.discardLegendarySameName`, and the hand branch
        of `.sacrificeArtifactOrDiscardNonland` when `discardOrExileHandSource` is
-       true, passing the ability/proposal flags from `Activation.canPayFraCost`
-       (`Activation.lean:33–40`, forwarding `ab : ActivatedAbility` rather than a
-       stripped `{ cost := { fra := c } }`) and `validateActivation` (`126`),
+       true, changing `Activation.canPayFraCost` (`Activation.lean:33–49`) to
+       take `(ab : ActivatedAbility)` instead of `(c : FraCost)` (matching
+       `ab.cost.fra` and passing `costPicksOf ab` with `ab`'s source-cost flags
+       at `39` instead of `{ cost := { fra := c }, effect := default }`),
+       updating `Activation.validateActivation` at `87` (`g.canPayFraCost p o
+       ab`) and `126`, and passing the ability/proposal flags from
        `ManaAbilities.activateManaAbility` (`465, 475`), `Decisions` (`109–111,
        2444, 3183–3185`), and `FraChoices` (`679, 685, 716, 1854`);
      - when `!sacrificeOrExileSource` and the player legally chooses `sid` itself
