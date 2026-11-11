@@ -12461,15 +12461,17 @@ multi-pick disjointness, and `canPayLife`).
 1. Isolate `ckpt` continuations and paused batches during `keptStream` replay,
    flush CR 610.3 `queuedLinkedExile` per replayed batch in chronological order,
    and track `nonDepBatches` dynamically across inter-departure proposal actions
-   (`Event.lean:1679`, `Core.lean:10497–10506, 10606–10705, 11055–11103`,
-   `Movement.lean:784–837`, `Leaving.lean:438–440, 2018–2025, 2141–2156`,
-   `Decisions.lean:992–1001, 1245–1246`, §2.1, §2.4, §2.5, §3.8,
+   (`Event.lean:1679`, `Core.lean:2069–2071, 10497–10506, 10606–10705,
+   10940–11103`, `Movement.lean:784–837`, `Leaving.lean:438–440, 2018–2025,
+   2141–2156`, `Casting.lean:565–568`, `Decisions.lean:690–693, 992–1001,
+   1245–1246`, §2.1, §2.4, §2.5, §3.8,
    CR 603.2c / 603.3 / 610.3 / 616.1 / 733.1–733.2 / 800.4a):
    - In `Core.reverseToProposalCheckpointCore?` (`Core.lean:11055–11103`) and
      `Movement.reverseToProposalCheckpoint?` (`Movement.lean:835–837`):
-     - `restoreProposalCheckpoint` (`Core.lean:2071, 11055`) restores
-       `ckpt.continuations`, `ckpt.pending`, and `ckpt.currentBatch` before
-       replaying `keptStream`. Whenever `ckpt` has a non-`none`
+     - `restoreProposalCheckpoint` (`Core.lean:2069–2071, 11055`) restores
+       `ckpt.queuedLinkedExile`, `ckpt.continuations`, `ckpt.pending`, and
+       `ckpt.currentBatch` before replaying `keptStream`. Whenever `ckpt` has a
+       non-`none`
        `pendingReplacement` (every resolution-cast checkpoint at
        `CastSpell.lean:132`, `Decisions.lean:3147, 3240, 4334`, and
        `FraChoices.lean:66, 1112, 1138, 1164, 1253, 1298, 1577, 1627`),
@@ -12486,7 +12488,10 @@ multi-pick disjointness, and `canPayLife`).
        in `.exile` while post-cast cleanup runs inside unclosed `batchId_1`).
        Similarly, when `ckpt.currentBatch.isSome` (`11058–11061`), all
        `keptStream` events replay directly inside `ckpt`'s pre-proposal batch
-       without per-batch trigger evaluation or `flushQueuedLinkedExile`; and even
+       without per-batch trigger evaluation or `flushQueuedLinkedExile`; if
+       `ckpt.queuedLinkedExile` is non-empty (`Core.lean:2069`), the first
+       replayed batch that closes would prematurely flush those pre-proposal ids
+       while `ckpt`'s batch is still supposed to reopen at the tail; and even
        with a single departure when `ckpt` had no open batch, flushing
        `queuedLinkedExile` only once after the entire `keptStream` finishes
        (`Movement.lean:836`) inverts multi-departure CR 610.3 chronology
@@ -12498,29 +12503,40 @@ multi-pick disjointness, and `canPayLife`).
          (`11056–11102`), snapshot `ckpt`'s pre-proposal `ckptPausedBatch?`
          (`origBid, origStartIdx, wasDiscard, origCause, openBatchObjects,
          openBatchPlayers, openBatchEffects, openBatchPending, openBatchStack`),
+         `ckptQueuedLinkedExile := gAcc.queuedLinkedExile` (`Core.lean:2069`),
          `ckptPending := gAcc.pending`, and `ckptCont? :=
          gAcc.pendingReplacement`, journal-clear any active `currentBatch` via
          `.clearPausedBatch` **without** clearing `discardBatch` (matching
          `Leaving.playerLeavesGameCore` at `Leaving.lean:2385`, since
          `keptStream` replay only uses `withBatch` / `withBatchCore` and never
          touches `discardBatch`, keeping `ckpt`'s `discardBatch` intact across
-         both idle and paused replay outcomes), journal-clear `pending`
-         (`.pending .none`) and `pendingReplacement` (`.pendingReplacement none`)
-         on `gAcc`, and remove the `if gAcc.currentBatch.isSome` unbatched
-         shortcut (`11058–11061`) so every `keptStream` batch replays in
-         isolation with `currentBatch == none`, `pending == .none`, and
-         `pendingReplacement == none`;
-       - add `(closeIfOrphaned : Bool := true)` to
-         `PendingReplacement.restorePausedBatch` (`Event.lean:1679`,
-         `Decisions.lean:1245–1246`, `Leaving.lean:2018–2025`) so when
-         `closeIfOrphaned == false` `Leaving.restorePausedBatch` performs a pure
-         `g.change (.pauseBatch batchId cause objects players effects pending
-         stack)` without calling `finishOpenBatchAndLinkedExile` (which otherwise
-         sees `hasCloseBatchFor == false` at `Leaving.lean:438–440` while
-         `.closeBatch` is still only in the outer `.seq` tail not yet installed
-         in `pendingReplacement` / `outerPendingReplacements` by
-         `Decisions.lean:673, 690–693`, prematurely closing the batch and
-         evaluating triggers); pass `runBatch := fun g0 f => g0.withBatch none f`
+         both idle and paused replay outcomes), journal-clear
+         `.clearQueuedLinkedExile` (when `!ckptQueuedLinkedExile.isEmpty`, so
+         each replayed batch flushes **only** the `queuedLinkedExile` ids queued
+         by that batch itself via `Core.lean:10940–10956`), `pending` (`.pending
+         .none`), and `pendingReplacement` (`.pendingReplacement none`) on
+         `gAcc`, and remove the `if gAcc.currentBatch.isSome` unbatched shortcut
+         (`11058–11061`) so every `keptStream` batch replays in isolation with
+         `currentBatch == none`, `queuedLinkedExile == #[]`, `pending == .none`,
+         and `pendingReplacement == none`;
+       - add `(closeIfOrphaned : Bool := true) (queuedLinkedExile : Array
+         ObjectId := #[])` to `PendingReplacement.restorePausedBatch`
+         (`Event.lean:1679`, `Decisions.lean:1245–1246`,
+         `Leaving.lean:2018–2025`) so when `closeIfOrphaned == false`
+         `Leaving.restorePausedBatch` performs a pure `g.change (.pauseBatch
+         batchId cause objects players effects pending stack)` (plus `g.change
+         (.queueLinkedExile queuedLinkedExile)` when
+         `!queuedLinkedExile.isEmpty`) without calling
+         `finishOpenBatchAndLinkedExile` (which otherwise sees `hasCloseBatchFor
+         == false` at `Leaving.lean:438–440` while `.closeBatch` is still only in
+         the outer `.seq` tail not yet installed in `pendingReplacement` /
+         `outerPendingReplacements` by `Decisions.lean:673, 690–693`, prematurely
+         closing the batch and evaluating triggers), and extract the `idx <
+         keptStream.size` replay loop into `Core.replayKeptStreamCore` backed by
+         `PendingReplacement.continueCheckpointReplay (remainingStream
+         fullKeptStream : Array (Bool × GameEvent)) (revMap : Array (ObjectId ×
+         ObjectId))` (`Event.lean`, `Decisions.lean`, `Core.lean` /
+         `Movement.lean`); pass `runBatch := fun g0 f => g0.withBatch none f`
          from `Movement.reverseToProposalCheckpoint?` (`Movement.lean:835–836`,
          keeping `.map Game.flushQueuedLinkedExile` as a trailing safety net) so
          each replayed `keptStream` batch closes synchronously and immediately
@@ -12528,18 +12544,39 @@ multi-pick disjointness, and `canPayLife`).
          post-departure batch before the next `keptStream` batch replays; if
          `runBatch` opens a pause (`gAcc.pending != .none ||
          gAcc.pendingReplacement.isSome || gAcc.currentBatch.isSome`, e.g.
-         `.chooseReplacement` on a replayed linked-exile return) while `idx <
-         keptStream.size`, stash that paused `(replayBatch?, gAcc.pending,
-         gAcc.pendingReplacement)` locally and journal-clear `.clearPausedBatch`,
-         `.pending .none`, and `.pendingReplacement none` before continuing
-         `keptStream`, then after `keptStream` finishes re-install any stashed
-         replay pauses in FIFO order followed at the tail by `ckptPausedBatch?`
-         (via `.pauseBatch` when idle, or `.restorePausedBatch ...
-         (closeIfOrphaned := false)` chained onto `pendingReplacement` when
-         paused), `ckptPending` (when `!gAcc.over && ckptPending != .none`, via
-         `.pending` when idle or `.restorePending ckptPending false` when
-         paused), and `ckptCont?` (when `!gAcc.over`, via
-         `chainPendingReplacement`); and
+         `.chooseReplacement` on `returnLinkedExileMoves` inside `withBatch`),
+         **stop replaying immediately, leave that live pause in place** (its open
+         `currentBatch` / `openBatch*`, live `gAcc.pending`, and live
+         `gAcc.pendingReplacement` including `.closeBatch`), and sequence behind
+         that batch's `.closeBatch`:
+         1. `.continueCheckpointReplay (keptStream.extract idx keptStream.size)
+            keptStream finalRevMap` when `idx < keptStream.size` (so `return(L)`
+            finishes and closes before `B2` replays—preserving `[B1, return(L),
+            B2]`—and if `B2` also pauses, `B2` becomes the live batch while
+            `Decisions.resumePendingReplacement` `.seq` at `Decisions.lean:690–693`
+            sequences the remaining tail behind `B2`'s `.closeBatch`),
+         2. deferred `PendingReplacement.runPostCastCleanup` (having
+            `Casting.runPostCastCleanup` at `Casting.lean:565` skip while
+            `g.sbaPaused` so `requestOrderInto` / `copyCeaseToExist` runs only
+            after `keptStream` finishes rather than overwriting the live replay
+            prompt or firing inside the paused replay batch),
+         3. `ckptPausedBatch?` + `ckptQueuedLinkedExile` (via `.restorePausedBatch
+            ... (closeIfOrphaned := false) (queuedLinkedExile :=
+            ckptQueuedLinkedExile)` when `ckptPausedBatch?.isSome`, or
+            `.finishLinkedExileMove ckptQueuedLinkedExile none` when
+            `ckptPausedBatch?.isNone && !ckptQueuedLinkedExile.isEmpty`),
+         4. `ckptPending` (when `!gAcc.over && ckptPending != .none`, via
+            `.restorePending ckptPending false`), and
+         5. `ckptCont?` (when `!gAcc.over`, via `chainPendingReplacement`);
+         whereas when the entire `keptStream` finishes synchronously without
+         pausing, install `ckptPausedBatch?` directly via `.pauseBatch`, restore
+         `ckptQueuedLinkedExile` via `.queueLinkedExile ckptQueuedLinkedExile`
+         (calling `flushQueuedLinkedExile` only when `ckptPausedBatch?.isNone`,
+         and if that flush pauses, leaving its live pause in place with
+         `.runPostCastCleanup` → `.restorePending ckptPending false` → `ckptCont?`
+         chained behind its `.closeBatch`), and when still idle install
+         `ckptPending` via `.pending` (when `!gAcc.over && ckptPending != .none`)
+         and `ckptCont?` via `chainPendingReplacement`; and
        - in `Leaving.rewindAbortedProposalOnLeave` (`Leaving.lean:2141–2156`) and
          `Decisions.resumePendingReplacement` `.restorePending`
          `reverseOrResumePopped` (`Decisions.lean:992–1001`), generalize
@@ -12578,9 +12615,9 @@ multi-pick disjointness, and `canPayLife`).
    preserve LIFO outer-continuation ordering in `.restorePending`
    `shouldSplitBatch`, clear aborted local `saved?` prompts across multi-player
    departure loops, and preserve SBA / priority / ward continuations across
-   `.chooseLegend` and pre-SBA flush pauses (`Decisions.lean:198–211, 280,
-   499–560, 884–904, 982–1046, 2856–2857`, `Entering.lean:395–405, 415`,
-   `Leaving.lean:568–575, 2080–2209, 2969–3020`,
+   `.chooseLegend` and pre-SBA flush pauses (`Core.lean:5692–5693`,
+   `Decisions.lean:198–211, 280, 499–560, 884–904, 982–1046, 2856–2857`,
+   `Entering.lean:395–405, 415`, `Leaving.lean:568–575, 2080–2209, 2969–3020`,
    `StateBasedActions.lean:571–598`, `Casting.lean:668–670, 715–725`, §2.4,
    §2.5, §3.6, §3.8, CR 601.2 / 602.2 / 608.2 / 616.1 / 702.21a / 704.3 /
    704.5j / 733.1 / 800.4a):
@@ -12694,18 +12731,21 @@ multi-pick disjointness, and `canPayLife`).
        `.leavePlayersWhoLost`) before returning at `596` so the deferred CR 704.3
        SBA pass runs once that choice resolves;
      - in `Decisions.finishAndGrantPriority` (`Decisions.lean:198–211`), record
-       `let hadEntryPending := g.pending != .none` before
-       `drainPendingContinuations` (`202`) and add an `else if let .chooseLegend
-       .. := g.pending then` arm before `211` computing `let target :=
-       g.priorityInstead p` and running `if hadEntryPending || g.pendingPriority
-       == some target then g else g.change (.pendingPriority (some target))`
-       (matching `Entering.receivePriority` at `Entering.lean:395–405, 415`,
-       including player-control priority redirection and overwriting any stale
-       `pendingPriority` even when `target == g.activePlayer`), so
-       `Decisions.keepLegend` (`Decisions.lean:4753–4754`) grants
-       post-legend-rule priority to the player who would have received priority
-       rather than defaulting to `g.activePlayer` or a stale `pendingPriority`
-       (CR 704.3); and
+       `let hadEntryPending := g.pending != .none` **before**
+       `g.drainPendingContinuations` (`198`) and add an `else if let
+       .chooseLegend .. := g.pending then` arm before `211` computing `let target
+       := g.priorityInstead p` (`Core.lean:5692–5693`, substituting `g.nextLiving
+       p` when `p` has left the game) and running `if hadEntryPending ||
+       g.pendingPriority == some target then g else g.change (.pendingPriority
+       (some target))` (matching `Entering.receivePriority` at
+       `Entering.lean:395–405, 415`: preserving an existing `pendingPriority`
+       when `hadEntryPending` was already true before the drain while overwriting
+       any stale `pendingPriority` via the `== some target` check whenever the
+       drain itself opened `.chooseLegend`, even when `target ==
+       g.activePlayer`), so `Decisions.keepLegend` (`Decisions.lean:4753–4754`)
+       grants post-legend-rule priority to the player who would have received
+       priority rather than defaulting to `g.activePlayer` or a stale
+       `pendingPriority` (CR 704.3); and
      - in `Casting.afterWardResolved` (`Casting.lean:715`), replace
        `match g.pending with | .chooseReplacement .. => true | _ => false` with
        `g.sbaPaused` so a `Pending.chooseLegend` pause opened while draining
@@ -12715,7 +12755,7 @@ multi-pick disjointness, and `canPayLife`).
    `Attachments.ceaseToExist`, `Phasing.phaseOut`, Layer 1 copiable-value
    (`.copy`, `turnedFaceUp`, `transformed`) transitions on scoped Layer 2
    `.control` effects, `Movement.move`, and `Core.restoreControlUntilSourceLeaves`
-   (`Core.lean:352–362, 1793–1806, 11327–11378, 11444–11466, 11681–11768`,
+   (`Core.lean:352–362, 1793–1806, 11327–11378, 11444–11465, 11681–11768`,
    `Attachments.lean:46–59`, `Movement.lean:582–609`, `Leaving.lean:88–197,
    386–403`, `Phasing.lean:45–79, 100–130`, `Turns.lean:20–38, 183, 349, 811`,
    `Casting.lean:1032–1038`, `Activation.lean:203–207`,
@@ -12751,11 +12791,11 @@ multi-pick disjointness, and `canPayLife`).
        `Leaving.playerLeavesGameCore` at `Leaving.lean:2476` where departure
        exile queues already run in batch) and in `Core.expireEffectById`'s
        `.gameRule (.fraEmblem id)` `ceasedToExist` branch
-       (`Core.lean:11459–11465`), run `reconcileControlAfterTransition pre g`
-       after expiring leaving-object / while-source effects so a token outside
-       `.battlefield`, copy, stack ability, or temporary emblem ceasing to exist
-       exiles any permanent whose last control effect ended onto a departed
-       fallback controller;
+       (`Core.lean:11459–11465`, when `reconcileControl == true`), run
+       `reconcileControlAfterTransition pre g` after expiring leaving-object /
+       while-source effects so a token outside `.battlefield`, copy, stack
+       ability, or temporary emblem ceasing to exist exiles any permanent whose
+       last control effect ended onto a departed fallback controller;
      - in `Phasing.phaseOut` (`Phasing.lean:55–79`, replacing bare
        `removeFromCombatOnControlChange pre g` at `78`, and likewise updating
        `Phasing.phaseIn` at `Phasing.lean:100–129` for combat removal +
@@ -12767,43 +12807,57 @@ multi-pick disjointness, and `canPayLife`).
        with `controllerOf == none`;
      - in `Core.createEffect` (`Core.lean:11375–11378`, widening the post-creation
        hook from `.layered _ (.control _) _` to `.layered _ (.control _) _ |
-       .layered _ (.copy _) _`), in `Core.expireEffectById`'s `.layered _ (.copy
-       _) _` branch (`Core.lean:11444–11466`, adding optional `(reconcileControl
-       : Bool := true)` threaded through `Core.restoreCopiesWhere` at
-       `11681–11701` and passed as `false` only from
-       `Core.restoreCopiesUntilSourceLeaves` at `11728–11734` where enclosing
-       `Movement.move` / `objectLeavesTheGame` / `ceaseToExist` /
+       .layered _ (.copy _) _`), in `Core.expireEffectById` (`Core.lean:11444–11465`,
+       adding optional `(reconcileControl : Bool := true)` threaded through
+       `Core.restoreCopiesWhere` at `11681–11701`—which forwards
+       `reconcileControl` without taking a snapshot of its own—and passed as
+       `false` only from `Core.restoreCopiesUntilSourceLeaves` at `11728–11734`
+       where enclosing `Movement.move` / `objectLeavesTheGame` / `ceaseToExist` /
        `playerLeavesGameCore` boundaries reconcile after
-       `expireWhileSourceEffects`—so `restoreCopiesUntilEot` at `Turns.lean:183`,
-       `Leaving.recordRemoveCounters`'s `restoreCopiesWhere` at
-       `Leaving.lean:186`, `restoreCopiesUntilNextTurn` at `Turns.lean:349, 811`,
-       `Turns.expireEffectsByDuration` at `Turns.lean:30, 38`, and standalone
-       `.layered _ (.copy _) _` expirations each reconcile strictly across their
-       own `pre -> g` copy-expiration step without wrapping an outer `pre`
-       snapshot across `endControlEffectById` calls that may pause on
-       `.chooseReplacement`), and after `GameEvent.turnedFaceUp` /
-       `GameEvent.transformed` in `Casting.completeTurnFaceUp`
-       (`Casting.lean:1032–1038`), `Activation.lean:203–207` (using
-       `finishAndGrantPriority p` rather than bare `receivePriority p` if
-       CR 800.4c exile pauses on `.chooseReplacement`),
-       `FrcResolve.lean:1035–1046`, and `EffectResolution.lean:2404–2408`, run
-       `reconcileControlAfterTransition pre g` so scoped Layer 2 `.control`
-       effects (`.creaturesWithout`, `.creaturesControlledBy`,
-       `.permanentsOfSubtype` at `Core.lean:1793–1806`, which inspect Layer 1
-       `g.baseCard o` per CR 613.1a–b) starting or stopping due to Layer 1 copy,
-       face-up, or transform changes enforce CR 506.4, ring-bearer loss, and
-       CR 800.4c exile.
-   - Fix misleading CR 800.4b / 800.4c log lines in
-     `Core.restoreControlUntilSourceLeaves` (`Core.lean:11739–11768`) and
-     `Movement.move` (`Movement.lean:607–608`):
-     - in `Core.restoreControlUntilSourceLeaves` (`11759–11760`), remove the
-       `"does not change control (CR 800.4b)"` log when `(acc.player
-       p).leftTheGame` (CR 800.4b governs *new* control-changing effects giving
-       control to a departed player, whereas an *ending* control effect with no
-       remaining control effects exiles the permanent under CR 800.4c in the
-       immediately following `Movement.move` / `objectLeavesTheGame` /
-       `ceaseToExist` step) and clear `.ringBearer` on control change across both
-       singleton and non-singleton scopes (`11763–11766`); and
+       `expireWhileSourceEffects`: **add a new `| .layered _ (.copy _) _ =>`
+       arm** to the `11454–11457` `match eff with` running `if reconcileControl
+       then reconcileControlAfterTransition pre g (cause := some expCause) else
+       g` against the existing `let pre := g` snapshot at `11449`, while keeping
+       `reconcileControlAfterTransition` strictly **off** `| .layered _
+       (.control _) _`—which keeps only `removeFromCombatOnControlChange pre g`
+       because `Leaving.endControlEffectById` calls `expireEffectById` at
+       `Leaving.lean:130` before running `runEndControlExileLoop` at `162`—and
+       **off** the `| _ => g` wildcard, so `restoreCopiesUntilEot` at
+       `Turns.lean:183`, `Leaving.recordRemoveCounters`'s `restoreCopiesWhere`
+       at `Leaving.lean:186`, `restoreCopiesUntilNextTurn` at `Turns.lean:349,
+       811`, `Turns.expireEffectsByDuration`'s singleton `.copy` call at
+       `Turns.lean:30` plus any non-singleton `.copy` hitting `38`, and
+       standalone `.layered _ (.copy _) _` expirations each reconcile strictly
+       across `expireEffectById`'s own `pre -> g` step), and after
+       `GameEvent.turnedFaceUp` / `GameEvent.transformed` in
+       `Casting.completeTurnFaceUp` (`Casting.lean:1032–1038`),
+       `Activation.lean:203–207` (using `finishAndGrantPriority p` rather than
+       bare `receivePriority p` if CR 800.4c exile pauses on
+       `.chooseReplacement`), `FrcResolve.lean:1035–1046`, and
+       `EffectResolution.lean:2404–2408`, run `reconcileControlAfterTransition
+       pre g` so scoped Layer 2 `.control` effects (`.creaturesWithout`,
+       `.creaturesControlledBy`, `.permanentsOfSubtype` at `Core.lean:1793–1806`,
+       which inspect Layer 1 `g.baseCard o` per CR 613.1a–b) starting or stopping
+       due to Layer 1 copy, face-up, or transform changes enforce CR 506.4,
+       ring-bearer loss, and CR 800.4c exile.
+   - Fix misleading CR 800.4b / 800.4c log lines and missing `.ringBearer`
+     designation loss in `Core.restoreControlUntilSourceLeaves`
+     (`Core.lean:11739–11768`) and `Movement.move` (`Movement.lean:607–608`):
+     - in `Core.restoreControlUntilSourceLeaves` (`11743–11766`), remove the
+       `"does not change control (CR 800.4b)"` log on the singleton arm
+       (`11759–11760`) when `(acc.player p).leftTheGame` (CR 800.4b governs *new*
+       control-changing effects giving control to a departed player, whereas an
+       *ending* control effect with no remaining control effects exiles the
+       permanent under CR 800.4c in the immediately following `Movement.move` /
+       `objectLeavesTheGame` / `ceaseToExist` step), and clear `.ringBearer` on
+       control change across **both** the singleton arm (`11743–11762`,
+       snapshotting `prevCtrl := acc.controllerOf o` before `expireEffectById` at
+       `11752`) and the non-singleton arm (`11763–11766`, snapshotting
+       `(o.id, acc.controllerOf o)` across battlefield permanents before
+       `expireEffectById` at `11766`), emitting `GameEvent.designation ...
+       .ringBearer false` whenever `prevCtrl = some prev`, `acc.controllerOf cur
+       != prevCtrl`, and `(acc.player prev).ringBearerId == some cur.id`
+       (matching `Leaving.endControlEffectById` at `Leaving.lean:141–146`); and
      - in `Movement.move` (`Movement.lean:607`), replace
        `!(acc.findObject? tid).any (·.isBattlefieldObject)` with
        `(acc.followMovedToZone? tid (· == .exile)).isSome` (matching
@@ -12931,10 +12985,12 @@ multi-pick disjointness, and `canPayLife`).
        `payLoyaltyCost` / `finishPostLoyaltyActivated`.
 
 Tests: `Events.lean` (isolation tests for `Core.reverseToProposalCheckpointCore?`
-`ckpt` continuation/batch isolation with `restorePausedBatch (closeIfOrphaned :=
-false)`, per-batch CR 610.3 `queuedLinkedExile` chronology across multi-departure
-`keptStream` replay, `dropCkptTarget`, and inter-departure `nonDepBatches`
-mana-sacrifice reversal; `Decisions.reverseOrResumePopped` `resumeContinuation :=
+`ckpt` continuation / batch / `queuedLinkedExile` isolation with
+`restorePausedBatch (closeIfOrphaned := false)`, per-batch CR 610.3
+`queuedLinkedExile` chronology and `.continueCheckpointReplay` mid-replay pause
+chaining across multi-departure `keptStream` replay, `dropCkptTarget`, and
+inter-departure `nonDepBatches` mana-sacrifice reversal;
+`Decisions.reverseOrResumePopped` `resumeContinuation :=
 false` `extraDepartureOuters` / consumed-`ckptOrigCont?` / outer `ckptPending`
 ordering across `| some popped =>` and `| none =>`, `.restorePending`
 `shouldSplitBatch` LIFO `outerPendingReplacements` split, multi-departure loop
