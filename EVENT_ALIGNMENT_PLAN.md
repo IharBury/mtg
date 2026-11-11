@@ -12102,14 +12102,16 @@ control-loss source invalidation across `isProposalAbortedByLeave`,
        ckptUntouchedBeforeLeave))` and not already contained in
        `pushedOuterCont?` or `extraDepartureOuters`), and combine continuations in
        LIFO inner-to-outer order (`freshKeptCont?` → `pushedOuterCont?` →
-       `keepOrigCont?` when `extraDepartureOuters` is empty, or `freshKeptCont?`
-       → `pushedOuterCont?` with `keepOrigCont?` appended onto the tail of
-       `extraDepartureOuters[0]` when `extraDepartureOuters` is non-empty) so an
-       outer resolution continuation moved via `ckptMovedToOuter` (such as
-       `.finishFraChoice`) runs **after** any inner `freshKeptCont?`,
-       `pushedOuterCont?`, and `extraDepartureOuters` rather than draining
-       resolution and granting priority before the mid-proposal departure
-       continuations finish; and in `Decisions.lean:884–898`, when
+       `keepOrigCont?` when `!ckptMovedToOuter || extraDepartureOuters.isEmpty`—so
+       a non-moved `pendingReplacement` continuation drains before
+       `extraDepartureOuters` in `Decisions.drainPendingContinuations` at
+       `Decisions.lean:163–176`—or `freshKeptCont?` → `pushedOuterCont?` with
+       `keepOrigCont?` appended onto the tail of `extraDepartureOuters[0]` when
+       `ckptMovedToOuter && !extraDepartureOuters.isEmpty`) so an outer resolution
+       continuation moved via `ckptMovedToOuter` (at index `ckptOuters.size`, such
+       as `.finishFraChoice`) runs **after** any inner `freshKeptCont?`,
+       `pushedOuterCont?`, and `extraDepartureOuters` and before the restored
+       `ckptOuters`; and in `Decisions.lean:884–898`, when
        `splitAfterCloseBatchFor? curBid popped` yields `some (closePrefix, some
        after)`, push `after` onto `g.outerPendingReplacements` and construct
        `tailRewind := .restorePending .none true none departed rewindProposal`
@@ -12240,7 +12242,7 @@ control-loss source invalidation across `isProposalAbortedByLeave`,
    `{T}`-before-self-sacrifice payment, multi-pick disjointness, and pre-extra-cost
    `canPayLife` checks (`Core.lean:1327, 5453`, `Costs.lean:30–45`,
    `Choices.lean:601–641`, `Leaving.lean:518–554`,
-   `ActivationCosts.lean:56–193, 271–327`, `Activation.lean:33–49, 87, 126`,
+   `ActivationCosts.lean:56–193, 271–327`, `Activation.lean:33–48, 87, 126`,
    `ManaAbilities.lean:405–434, 465–477`, `Decisions.lean:97–151, 1877, 2444,
    3181–3186`, `FraChoices.lean:676–718, 1851–1857`, §2.4, §2.5, §3.8,
    CR 118.3 / 118.10 / 601.2b,f–h / 602.2b / 605.3 / 702.37e / 708.8 / 733.1 /
@@ -12293,7 +12295,7 @@ control-loss source invalidation across `isProposalAbortedByLeave`,
        its owner's graveyard is not treated as payable.
    - In `ActivationCosts.costPickAllows` / `costPickCandidates` /
      `costPicksPayable` / `payCostPick` (`ActivationCosts.lean:56–193`),
-     `Activation.canPayFraCost` / `validateActivation` (`Activation.lean:33–49,
+     `Activation.canPayFraCost` / `validateActivation` (`Activation.lean:33–48,
      87, 126`), `ManaAbilities` (`ManaAbilities.lean:405–434, 465–477`),
      `Decisions` (`Decisions.lean:107–127, 2444, 3181–3186`), and `FraChoices`
      (`FraChoices.lean:676–718, 1851–1857`):
@@ -12311,7 +12313,7 @@ control-loss source invalidation across `isProposalAbortedByLeave`,
        ability), and from `.discardACard`, `.discardNonland`,
        `.discardLegendaryCard`, `.discardLegendarySameName`, and the hand branch
        of `.sacrificeArtifactOrDiscardNonland` when `discardOrExileHandSource` is
-       true, changing `Activation.canPayFraCost` (`Activation.lean:33–49`) to
+       true, changing `Activation.canPayFraCost` (`Activation.lean:33–48`) to
        take `(ab : ActivatedAbility)` instead of `(c : FraCost)` (matching
        `ab.cost.fra` and passing `costPicksOf ab` with `ab`'s source-cost flags
        at `39` instead of `{ cost := { fra := c }, effect := default }`),
