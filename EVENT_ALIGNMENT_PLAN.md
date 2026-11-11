@@ -11962,9 +11962,10 @@ control-loss source invalidation across `isProposalAbortedByLeave`,
 ### Phase 36 — Paused-batch `chooseLegend` & non-rewind flush handling and pending-loser SBA ordering, proposal-rewind continuation & checkpoint-replay integrity, post-departure proposal-prompt & cascaded CR 800.4c control-loss validation, and `sourceStillPayable` / `CostPick` payability completion
 
 1. Preserve live `Pending.chooseLegend` batch pauses, flush dismissed paused
-   batches even when `rewindProposal == none`, order `restoreOld` after open
-   `.closeBatch` prefixes, and finish pending Pass-1 loser departures before
-   starting the next SBA pass (`Leaving.lean:418–438, 2200–2222, 2770–2880`,
+   batches even when `rewindProposal == none` without closing live cost/mana
+   batches, order `restoreOld` after open `.closeBatch` prefixes, and finish
+   pending Pass-1 loser departures before starting the next SBA pass
+   (`Leaving.lean:418–438, 2200–2222, 2565–2689, 2770–2880`,
    `Decisions.lean:450–624, 852–908`, `StateBasedActions.lean:565–623`, §2.1,
    §2.4, §2.5, §3.5, §3.8, CR 101.4 / 104.3a / 104.5 / 603.2c / 603.10a /
    616.1 / 704.3 / 704.5a / 704.5j / 800.4a):
@@ -11984,18 +11985,24 @@ control-loss source invalidation across `isProposalAbortedByLeave`,
        `| .chooseReplacement q ch => g.replacementChoiceValid q ch` and
        `| .chooseLegend q _ ids => g.stillInGame q && (ids.filter fun id =>
        (g.findObject? id).any (fun o => o.isOnBattlefield && g.controlledBy o
-       q)).size ≥ 2` (`| _ => false`), use `g.batchPausePromptValid` in
-       `Leaving.flushDismissedPausedBatch` (`Leaving.lean:2203–2205`) and in
-       `validReplPrompt` / `validReplForDefer` in `.restorePending`
-       (`Decisions.lean:858–861, 880–882`), and pause on `g.sbaPaused`
-       (`Leaving.lean:16–19`, covering both `.chooseReplacement` and
-       `.chooseLegend`) in `Leaving.leavePlayersWhoLostCore`
+       q)).size ≥ 2` (`| _ => false`) together with
+       `Leaving.batchPausePromptGoneOrInvalid (g : Game) : Pending → Bool`
+       matching `| .none => true`, `| p@(.chooseReplacement ..) |
+       p@(.chooseLegend ..) => !g.batchPausePromptValid p`, and `| _ => false`
+       (so ordinary non-`.none` prompts return `false`), use
+       `g.batchPausePromptValid` in `validReplPrompt` / `validReplForDefer` in
+       `.restorePending` (`Decisions.lean:858–861, 880–882`) and
+       `saved?.all g.batchPausePromptGoneOrInvalid` in
+       `Leaving.flushDismissedPausedBatch` (`Leaving.lean:2203–2205`), and pause
+       on `g.sbaPaused` (`Leaving.lean:16–19`, covering both `.chooseReplacement`
+       and `.chooseLegend`) in `Leaving.leavePlayersWhoLostCore`
        (`Leaving.lean:2776, 2788, 2796, 2806, 2814, 2859`) and on
        `| .chooseReplacement r _ | .chooseLegend r _ _ =>` (when
        `!remHere.contains r` / `!rem.contains r`) in `Decisions.concedePlayersLoop`
        (`Decisions.lean:459–464, 515–526`).
    - In `Decisions.resumePendingReplacement` `.restorePending`
-     (`Decisions.lean:857–879`), `Leaving.leavePlayersWhoLostCore`
+     (`Decisions.lean:857–879`), `Leaving.playerLeavesGameCore`
+     (`Leaving.lean:2565–2689`), `Leaving.leavePlayersWhoLostCore`
      (`Leaving.lean:2784–2789, 2802–2807, 2861`), `Leaving.flushDismissedPausedBatch`
      (`Leaving.lean:2200–2222`), and `Decisions.concedePlayersLoop`
      (`Decisions.lean:455–465`), gating paused-batch flushing behind
@@ -12004,18 +12011,45 @@ control-loss source invalidation across `isProposalAbortedByLeave`,
      `playerLeavesGame p3` while `origBid` from `p2`'s departure was paused on
      `.chooseReplacement p3` and `p3`'s own `postCastCleanup` opens
      `Pending.resolveRandom (.orderInto ...)`, leaving `origBid` open while the
-     unrelated library-bottoming prompt runs):
-     - Remove the `if let some hadPreBodyCont := rewindProposal` gate around the
-       `!g.batchPausePromptValid p` + `if let some (curBid, _) := g.currentBatch`
-       `splitAfterCloseBatchFor? curBid` block in `.restorePending`
-       (`Decisions.lean:857–879`, passing `rewindProposal` into `tailRestore`);
+     unrelated library-bottoming prompt runs), whereas splitting unconditionally
+     on `!g.batchPausePromptValid p` would prematurely close live cost and mana
+     batches whose next step is an ordinary `.restorePending` (such as the next
+     cost prompt at `Casting.lean:1127` / `Decisions.lean:2442` or
+     `ManaAbilities.finishActivateManaAbilityPostSac`'s `.restorePending
+     prevPending` at `ManaAbilities.lean:374–382`, where `pauseBatch` at
+     `Core.lean:2157–2159` left `g.currentBatch` set with `.closeBatch` queued
+     behind the prompt at `Core.lean:10318–10324, 10497–10500`):
+     - In `.restorePending` (`Decisions.lean:857–879`), split `fullCont?` via
+       `splitAfterCloseBatchFor? curBid` (passing `rewindProposal` into
+       `tailRestore := .restorePending p false promptLog departed
+       rewindProposal`) when `(match rewindProposal with | some _ =>
+       !g.batchPausePromptValid p | none => g.pending == .none &&
+       g.batchPausePromptGoneOrInvalid p)`, so when `rewindProposal == none` the
+       split runs **only** if `curBid`'s own pause prompt is gone or invalid
+       (`g.pending == .none` and `p` is `.none` or an invalid
+       `.chooseReplacement` / `.chooseLegend`), keeping ordinary live
+       `.restorePending` prompts ahead of `.closeBatch`;
+     - in `Leaving.playerLeavesGameCore` (`Leaving.lean:2565–2689`), whenever
+       `savedPausedBatch?` (`2268–2280`) is `some (origBid, ...)` and `origBid`'s
+       own pre-leave prompt `preBodyPending` was dismissed (`!choicesStillValidPre`
+       at `2567–2596`, `q == p || abortingReplacementProposal` at `2598–2647`, or
+       `preBodyPending == .none || redirPending == .none` at `2648–2689`) while
+       `runPostCastAndPropCleanup` opened a new post-cleanup prompt
+       (`postCleanupPending != .none` / `postRedirPending != .none`), sequence
+       `.restorePending postCleanupPending false (departed := departed)` **after**
+       `origBid`'s `closePrefix` inside `combinedOuter?` via
+       `splitAfterCloseBatchFor? origBid` and set `savedPreLeavePending? := none`
+       so `origBid`'s own pause prompt is recorded as gone (`saved? == none` /
+       `p == .none`) and `origBid` closes before the post-cleanup prompt opens;
      - in `Leaving.flushDismissedPausedBatch` (`Leaving.lean:2200–2222`), drop
-       `|| !popOuter` from `2202` and check `g.pendingReplacement` (setting
-       `g.pendingReplacement` to `afterClose?` before `g.resumePendingReplacement
-       closePrefix`) before falling back (when `popOuter` is true) to
-       `g.outerPendingReplacements.back?` for `splitAfterCloseBatchFor? curBid`,
-       so a dismissed `curBid` whose `.closeBatch` is already on
-       `g.pendingReplacement` also flushes cleanly; and
+       `|| !popOuter` from `2202`, guard on `saved?.all
+       g.batchPausePromptGoneOrInvalid` at `2203–2205`, and check
+       `g.pendingReplacement` (setting `g.pendingReplacement` to `afterClose?`
+       before `g.resumePendingReplacement closePrefix`) before falling back (when
+       `popOuter` is true) to `g.outerPendingReplacements.back?` for
+       `splitAfterCloseBatchFor? curBid`, so a dismissed `curBid` whose
+       `.closeBatch` is already on `g.pendingReplacement` also flushes cleanly
+       without closing a live batch saved on an ordinary prompt; and
      - run `g.flushDismissedPausedBatch saved? popOuter` (with the immediate
        pause return when flushing opens `.chooseReplacement` / `.chooseLegend`)
        unconditionally before `if let some hadPreBodyCont := rewindProposal` in
@@ -12240,9 +12274,9 @@ control-loss source invalidation across `isProposalAbortedByLeave`,
 4. Complete `Choices.sourceStillPayable` (`sneakAttacker`, CR 702.37e morph
    copiable values, and ability-zone guards) and `CostPick` self-use exclusion,
    `{T}`-before-self-sacrifice payment, multi-pick disjointness, and pre-extra-cost
-   `canPayLife` checks (`Core.lean:1327, 5453`, `Costs.lean:30–45`,
-   `Choices.lean:601–641`, `Leaving.lean:518–554`,
-   `ActivationCosts.lean:56–193, 271–327`, `Activation.lean:33–48, 87, 126`,
+   `canPayLife` checks (`Core.lean:1327, 5453`, `Stack.lean:103`,
+   `Costs.lean:30–45`, `Choices.lean:601–641`, `Leaving.lean:518–554`,
+   `ActivationCosts.lean:56–193, 233, 271–327`, `Activation.lean:33–48, 87, 126`,
    `ManaAbilities.lean:405–434, 465–477`, `Decisions.lean:97–151, 1877, 2444,
    3181–3186`, `FraChoices.lean:676–718, 1851–1857`, §2.4, §2.5, §3.8,
    CR 118.3 / 118.10 / 601.2b,f–h / 602.2b / 605.3 / 702.37e / 708.8 / 733.1 /
@@ -12287,12 +12321,15 @@ control-loss source invalidation across `isProposalAbortedByLeave`,
      - on `.activatedAbility`, gate the graveyard disjunct in
        `Choices.sourceStillPayable` (`Choices.lean:637–638`) and `fromGraveyard`
        in `ActivationCosts.payActivationExtraCosts`
-       (`ActivationCosts.lean:271–274`) on `prop.activation.all
-       (·.activateFromGraveyard)` / `ab.all (·.activateFromGraveyard)`, and gate
-       the battlefield disjunct in `Choices.sourceStillPayable` (`635–636`) on
-       `!prop.activation.any (fun a => a.activateFromGraveyard ||
-       a.activateFromHand)`, so a battlefield-only ability whose source moved to
-       its owner's graveyard is not treated as payable.
+       (`ActivationCosts.lean:271–274`) on `prop.activation.any
+       (·.activateFromGraveyard)` / `ab.any (·.activateFromGraveyard)`
+       (`Option.any`, returning `false` when `prop.activation` at
+       `Stack.lean:103` or `ab` at `ActivationCosts.lean:233` is `none`), and
+       gate the battlefield disjunct in `Choices.sourceStillPayable` (`635–636`)
+       on `!prop.activation.any (fun a => a.activateFromGraveyard ||
+       a.activateFromHand)`, so a battlefield-only ability (or a proposal/call
+       with a missing `ActivatedAbility` payload) whose source moved to its
+       owner's graveyard is not treated as payable.
    - In `ActivationCosts.costPickAllows` / `costPickCandidates` /
      `costPicksPayable` / `payCostPick` (`ActivationCosts.lean:56–193`),
      `Activation.canPayFraCost` / `validateActivation` (`Activation.lean:33–48,
