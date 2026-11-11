@@ -27456,6 +27456,103 @@ private def lifeGainsSince36i2 (g : Game) (startIdx : Nat) (p : PlayerId) : Arra
     gRevPopDone.proposalCheckpoint.isNone &&
     lifeGainsSince36i2 gRevPopDone revPopStartIdx p0 == #[3, 7]
 
+  -- `reverseOrResumePopped` with `sbaPaused == true` and `followedByFinishFra := true`:
+  -- (i) open `.chooseReplacement` left by `reverseToProposalCheckpoint?` (`flushQueuedLinkedExile`) AND
+  -- (ii) open `.chooseLegend` where `ckpt`'s continuation remains in `pendingReplacement`:
+  -- neither resumes early while paused, and answering sequences `popped (+3)` BEFORE restored `ckpt (+7)`
+  -- and then `.finishFraChoice` (`+2` from `ckpt`'s `outerPendingReplacements`) -> `#[3, 7, 2]`:
+  let revSrcDef := creature "P36i2 RevSrc" ManaCost.empty #["Bear"] 2 2
+  let gRr0 :=
+    addPermanent
+      (addPermanent (addPermanent (addPermanent (addPermanent g4 bear p1 p1) bear p0 p0) revSrcDef p0 p0) leyA2 p0 p0)
+      leyB2 p0 p0
+  let rrJail := (gRr0.permanentsOf p1)[0]!
+  let rrVictim := (gRr0.permanentsOf p0).find? (·.name == bear.name) |>.get!
+  let rrSrc := (gRr0.permanentsOf p0).find? (·.name == revSrcDef.name) |>.get!
+  let rrLeyA := (gRr0.permanentsOf p0).find? (·.name == leyA2.name) |>.get!.id
+  let rrLeyB := (gRr0.permanentsOf p0).find? (·.name == leyB2.name) |>.get!.id
+  let gRrEx := gRr0.exileUntilSourceLeaves (some rrJail.id) rrVictim (cause := some testCause)
+  let rrRidA : ReplacementId := { kind := .entersWithExtraCounters, object := some rrLeyA, counterKind := some .plusOnePlusOne }
+  let rrRidB : ReplacementId := { kind := .entersWithExtraCounters, object := some rrLeyB, counterKind := some .plusOnePlusOne }
+  let gRrCkpt :=
+    ((gRrEx.createEffect
+      (.replacement {
+        id := rrRidA, source := some rrLeyA, controller := some p0, affectedPlayer := p0,
+        kind := .entersWithExtraCounters none .plusOnePlusOne 1 }) (cause := some testCause)).createEffect
+      (.replacement {
+        id := rrRidB, source := some rrLeyB, controller := some p0, affectedPlayer := p0,
+        kind := .entersWithExtraCounters none .plusOnePlusOne 2 }) (cause := some testCause)).changes #[
+      .pushContinuationFrame {},
+      .pushOuterPendingReplacement (.gainLife p0 2 (some testCause)),
+      .pendingReplacement (some (.gainLife p0 7 (some testCause))),
+      .saveProposalCheckpoint ]
+  let rrCkptIdx := gRrCkpt.events.size
+  let (gRrProp', rrAb) :=
+    (gRrCkpt.change (.beginProposalAction .costAction)).putStackAbility rrSrc p0
+      (abilityEffect := some (Effect.gainLife 1))
+  let rrProp : ProposedSpell := {
+    caster := p0, cost := ManaCost.empty, spellId := rrAb.id, original := rrAb
+    originalSnapshot := gRrProp'.snapshot rrAb, kind := .activatedAbility
+    sourceId := some rrSrc.id, tapSource := true
+  }
+  let gRrProp :=
+    (gRrProp'.changes #[.proposedSpell (some rrProp), .pending (.chooseX p0)]).change .endProposalAction
+  let gRrAfterLeave := mustApply gRrProp p1 .concede
+  let gRrTapped :=
+    (gRrAfterLeave.becomeTapped (gRrAfterLeave.object! rrSrc.id) (cause := some testCause)).change
+      (.pushOuterPendingReplacement (.gainLife p0 3 (some testCause)))
+  let gRrMid :=
+    gRrTapped.resumePendingReplacement
+      (.seq (.restorePending (.chooseX p0) true none #[p1] none) .finishFraChoice)
+  let gRrDone := mustApply gRrMid p0 (.chooseReplacement rrRidA)
+  let reverseOrResumePoppedReplOk :=
+    gRrMid.sbaPaused &&
+    gRrMid.pending == .chooseReplacement p0 #[rrRidA, rrRidB] &&
+    (lifeGainsSince36i2 gRrMid rrCkptIdx p0).isEmpty &&
+    gRrDone.proposedSpell.isNone &&
+    gRrDone.proposalCheckpoint.isNone &&
+    gRrDone.continuations.isEmpty &&
+    lifeGainsSince36i2 gRrDone rrCkptIdx p0 == #[3, 7, 2]
+
+  let legDef : CardDef := { (creature "P36i2 Legend" ManaCost.empty #["Bear"] 3 3) with supertypes := #[.legendary] }
+  let gLegBase := addPermanent (addPermanent (addPermanent g4 legDef p0 p0) legDef p0 p0) revSrcDef p0 p0
+  let legs := (gLegBase.permanentsOf p0).filter (fun o => o.name == legDef.name)
+  let leg1 := legs[0]!
+  let leg2 := legs[1]!
+  let legSrc := (gLegBase.permanentsOf p0).find? (fun o => o.name == revSrcDef.name) |>.get!
+  let gLegCkpt :=
+    gLegBase.changes #[
+      .pushContinuationFrame {},
+      .pushOuterPendingReplacement (.gainLife p0 2 (some testCause)),
+      .pending (.chooseLegend p0 legDef.name #[leg1.id, leg2.id]),
+      .pendingReplacement (some (.gainLife p0 7 (some testCause))),
+      .saveProposalCheckpoint ]
+  let legCkptIdx := gLegCkpt.events.size
+  let (gLegProp', legAb) :=
+    (gLegCkpt.change (.beginProposalAction .costAction)).putStackAbility legSrc p0
+      (abilityEffect := some (Effect.gainLife 1))
+  let legProp : ProposedSpell := {
+    caster := p0, cost := ManaCost.empty, spellId := legAb.id, original := legAb
+    originalSnapshot := gLegProp'.snapshot legAb, kind := .activatedAbility
+    sourceId := some legSrc.id, tapSource := true
+  }
+  let gLegProp := (gLegProp'.change (.proposedSpell (some legProp))).change .endProposalAction
+  let gLegTapped :=
+    (gLegProp.becomeTapped (gLegProp.object! legSrc.id) (cause := some testCause)).change
+      (.pushOuterPendingReplacement (.gainLife p0 3 (some testCause)))
+  let gLegMid :=
+    gLegTapped.resumePendingReplacement
+      (.seq (.restorePending (.chooseX p0) true none #[p1] none) .finishFraChoice)
+  let gLegDone := mustApply gLegMid p0 (.keepLegend leg1.id)
+  let reverseOrResumePoppedLegendOk :=
+    gLegMid.sbaPaused &&
+    gLegMid.pending == .chooseLegend p0 legDef.name #[leg1.id, leg2.id] &&
+    (lifeGainsSince36i2 gLegMid legCkptIdx p0).isEmpty &&
+    gLegDone.proposedSpell.isNone &&
+    gLegDone.proposalCheckpoint.isNone &&
+    gLegDone.continuations.isEmpty &&
+    lifeGainsSince36i2 gLegDone legCkptIdx p0 == #[3, 7, 2]
+
   -- 2c(i). `Core.reverseToProposalCheckpointCore?` `preDepBatches`: mana-ability sacrifice batch paused on
   --        `.chooseReplacement` before unrelated `p3` departs STILL reverses its sacrifice & wipes `.manaAdded`:
   let petal2Def : CardDef := { name := "P36i2 Petal", types := #[.artifact], tapSacrificeAddAnyColor := true }
@@ -27560,11 +27657,14 @@ private def lifeGainsSince36i2 (g : Game) (startIdx : Nat) (p : PlayerId) : Arra
   mustHold36i2 "2a.lifoUnmovedOrder" lifoUnmovedOrderOk &&
   mustHold36i2 "2b.boundaryAndClear" boundaryAndClearOk &&
   mustHold36i2 "2b.reverseOrResumePopped" reverseOrResumePoppedOk &&
+  mustHold36i2 "2b.reverseOrResumePoppedRepl" reverseOrResumePoppedReplOk &&
+  mustHold36i2 "2b.reverseOrResumePoppedLegend" reverseOrResumePoppedLegendOk &&
   mustHold36i2 "2c.preDepManaReversed" preDepManaReversedOk &&
   mustHold36i2 "2c.postReplayLinkedExile" postReplayLinkedExileOk &&
   mustHold36i2 "2.replay"
     (replayOk36i2 #[gCompRewound, gImmLeft, gLifoDrained, gUnmovedDone,
       gBoundAfterP1, gBoundAfterP2Choice, gRevPopDone,
+      gRrMid, gRrDone, gLegMid, gLegDone,
       gPreDepManaPaused, gPreDepAfterP3, gPreDepManaFinished, gPreDepAborted,
       gLinkAfterP1, gLinkAfterP2, gLinkAllDone])
 

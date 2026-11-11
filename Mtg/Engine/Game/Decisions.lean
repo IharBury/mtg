@@ -983,23 +983,65 @@ partial def resumePendingReplacement (g : Game) (pr : PendingReplacement)
       if g.proposedSpell.isSome then
         match popped? with
         | some popped =>
+          let ckptOrigCont? : Option PendingReplacement :=
+            g.proposalCheckpoint.bind fun ckpt =>
+              (ckpt.continuations.back?.getD {}).pendingReplacement
+          let rec contContains (target : PendingReplacement) : PendingReplacement → Bool
+            | .seq a b => a == target || b == target || contContains target a || contContains target b
+            | step => step == target
+          let rec dropCkptPrefix (target : PendingReplacement) (cur : PendingReplacement) :
+              Option PendingReplacement :=
+            if cur == target then none
+            else
+              match cur with
+              | .seq a b =>
+                match dropCkptPrefix target a with
+                | none => some b
+                | some a' => some (.seq a' b)
+              | step => some step
           let g := g.reverseProposedSpell (resumeContinuation := false)
-          if g.sbaPaused then
-            g.chainPendingReplacement popped
-          else
-            let restored? := g.pendingReplacement
-            let g := if restored?.isSome then g.change (.pendingReplacement none) else g
-            let toRun :=
+          let curCont? := g.pendingReplacement
+          let keepCkptOrig? (orig : PendingReplacement) : Option PendingReplacement :=
+            if g.over then none
+            else
+              let origDep := orig.appendDepartedMany departed
+              if contContains orig popped || contContains origDep popped then none
+              else some origDep
+          let hasBlockingPrompt : Bool := g.pending != .none || g.afterRandom != .none
+          let (promptCont?, restored?) : Option PendingReplacement × Option PendingReplacement :=
+            match ckptOrigCont?, curCont? with
+            | some orig, some cur => (dropCkptPrefix orig cur, keepCkptOrig? orig)
+            | some orig, none => (none, keepCkptOrig? orig)
+            | none, cur? =>
+              if hasBlockingPrompt then (cur?, none)
+              else (none, cur?)
+          let afterPrompt : PendingReplacement :=
+            let seq :=
               match restored? with
               | some restored => .seq popped restored
               | none => popped
-            if g.pending != .none then
-              let g := if g.continuations.isEmpty then g.change (.pushContinuationFrame {}) else g
-              g.change (.pendingReplacement (some toRun))
-            else
-              g.resumePendingReplacement toRun (followedByFinishFra := followedByFinishFra)
+            if followedByFinishFra then seq.ensureEndsWithFinishFra else seq
+          let toRun : PendingReplacement :=
+            match promptCont? with
+            | some pc => .seq pc afterPrompt
+            | none => afterPrompt
+          if hasBlockingPrompt then
+            let g := if g.continuations.isEmpty then g.change (.pushContinuationFrame {}) else g
+            if g.pendingReplacement == some toRun then g
+            else g.change (.pendingReplacement (some toRun))
+          else
+            let g := if curCont?.isSome then g.change (.pendingReplacement none) else g
+            g.resumePendingReplacement toRun (followedByFinishFra := followedByFinishFra)
         | none =>
-          g.reverseProposedSpell (resumeContinuation := true)
+          let g := g.reverseProposedSpell (resumeContinuation := true)
+          if followedByFinishFra && g.sbaPaused then
+            if let some cur := g.pendingReplacement then
+              let next := cur.ensureEndsWithFinishFra
+              if next == cur then g else g.change (.pendingReplacement (some next))
+            else
+              let g := if g.continuations.isEmpty then g.change (.pushContinuationFrame {}) else g
+              g.change (.pendingReplacement (some .finishFraChoice))
+          else g
       else
         resumePoppedIfNoPrompt g
     match p with
