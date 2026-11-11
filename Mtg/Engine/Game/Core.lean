@@ -10599,11 +10599,13 @@ def reverseToProposalCheckpointCore? (g : Game)
     let mut curKind : ProposalActionKind := .costAction
     let mut curEvs : Array GameEvent := #[]
     let mut nextStIdx : Nat := 0
+    let ckptBatchId? : Option BatchId := ckpt.currentBatch.map Prod.fst
     let mut inDepSpan : Bool := false
     let mut depOuterDepth : Nat := 0
     let mut pendingDepPlayers : Array PlayerId := #[]
     let mut gameEndedInDep : Bool := false
     let mut depReplacementPending : Bool := false
+    let mut depPausedBatch? : Option BatchId := none
     for idx in [0:slice.size] do
       let ev := slice[idx]!
       if firstDepIdx?.any (idx ≥ ·) then
@@ -10623,10 +10625,11 @@ def reverseToProposalCheckpointCore? (g : Game)
           inDepSpan := true
         | _ => pure ()
         let blockedByDepRep :=
-          depReplacementPending &&
-            match ev with
-            | .rules _ _ (.costPayment ..) _ => true
-            | _ => false
+          depPausedBatch?.isSome ||
+            (depReplacementPending &&
+              match ev with
+              | .rules _ _ (.costPayment ..) _ => true
+              | _ => false)
         if inDepSpan && depOuterDepth == 0 && pendingDepPlayers.isEmpty && !gameEndedInDep &&
             !blockedByDepRep && isProposalResumeEvent ev then
           inDepSpan := false
@@ -10639,13 +10642,18 @@ def reverseToProposalCheckpointCore? (g : Game)
         depSt := depSt.push nextStIdx
         nextStIdx := nextStIdx + 1
         match ev with
+        | .engine _ (.pauseBatch bid ..) =>
+          if ckptBatchId? != some bid then
+            depPausedBatch? := some bid
+        | .engine _ .clearPausedBatch =>
+          depPausedBatch? := none
         | .engine _ (.continuation (.pushOuterPendingReplacement _)) =>
           depOuterDepth := depOuterDepth + 1
         | .engine _ (.continuation .popOuterPendingReplacement) =>
           if depOuterDepth > 0 then
             depOuterDepth := depOuterDepth - 1
           if depOuterDepth == 0 && pendingDepPlayers.isEmpty && !gameEndedInDep &&
-              !depReplacementPending then
+              !depReplacementPending && depPausedBatch?.isNone then
             inDepSpan := false
         | .engine _ (.pending p) =>
           match p with
@@ -10654,7 +10662,7 @@ def reverseToProposalCheckpointCore? (g : Game)
           | _ =>
             depReplacementPending := false
             if depOuterDepth == 0 && pendingDepPlayers.isEmpty && !gameEndedInDep &&
-                isProposalPromptPending p then
+                depPausedBatch?.isNone && isProposalPromptPending p then
               inDepSpan := false
         | _ => pure ()
       else
@@ -10924,6 +10932,8 @@ def reverseToProposalCheckpointCore? (g : Game)
                     match kev with
                     | .rules _ (.zone (.moved lb _ .exile ..)) _ _ =>
                       lb.id.map (resolveRevId finalRevMap) == some lid
+                    | .rules _ (.zone (.ceasedToExist lo)) _ _ =>
+                      lo.id.map (resolveRevId finalRevMap) == some lid
                     | _ => false
             if unret.isEmpty then g0 else g0.change (.queueLinkedExile unret)
       match ev with

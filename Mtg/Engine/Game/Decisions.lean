@@ -96,41 +96,59 @@ active `g.proposedSpell` of `caster` and still has enough live candidates to be
 payable (CR 601.2f–h / 602.2b / 733.1 / 800.4a). -/
 def proposalCostPromptStillPayable (g : Game) (caster : PlayerId) (p : Pending) : Bool :=
   !g.over && g.stillInGame caster &&
-    g.proposedSpell.any (fun prop =>
+    match g.proposedSpell with
+    | none => false
+    | some prop =>
       prop.caster == caster &&
         (g.findObject? prop.spellId).any (fun o =>
-          if prop.kind == .turnFaceUp then o.isOnBattlefield else o.zone == .stack)) &&
-    match p with
-    | .fraChoice q (.costPicks sid picks _) =>
-      q == caster &&
-        match picks[0]? with
-        | some pick => (g.costPickCandidates caster (some sid) pick).size ≥ pick.count
-        | none => true
-    | .fraChoice q (.crew _ vehicleId n) =>
-      q == caster &&
-        (g.findObject? vehicleId).any (·.isOnBattlefield) &&
-        ((g.creaturesControlledBy caster).filter (fun c =>
-          c.id != vehicleId && !c.status.tapped)).foldl
-          (fun acc c => acc + (g.power c).toNat) 0 ≥ n
-    | .fraChoice q (.zemoBoastExile _ sourceId) =>
-      q == caster &&
-        let col :=
-          match g.findObject? sourceId with
-          | some src => TextChange.applyColor (g.evalLayer3 src) .black
-          | none => .black
-        let allCands := (g.player caster).graveyard.filter (fun id =>
-          (g.findObject? id).any (fun card => (g.colors card).contains col))
-        g.canPayZemoBoast caster allCands col
-    | .chooseTeamworkCreatures q need =>
-      q == caster &&
-        ((g.creaturesControlledBy caster).filter (fun c =>
-          !c.status.tapped && g.power c > 0)).foldl
-          (fun acc c => acc + g.power c) 0 ≥ (need : Int)
-    | .sacrificePermanent q excludeId =>
-      q == caster && !(g.sacrificeCreatureOrArtifactChoices caster excludeId).isEmpty
-    | .discardForAdditionalCost q =>
-      q == caster && !(g.player caster).hand.isEmpty
-    | _ => false
+          if prop.kind == .turnFaceUp then o.isOnBattlefield else o.zone == .stack) &&
+        (prop.kind != .turnFaceUp || g.sourceStillPayable prop) &&
+        match p with
+        | .fraChoice q (.costPicks sid picks _) =>
+          q == caster && g.sourceStillPayable prop &&
+            match picks[0]? with
+            | some pick => (g.costPickCandidates caster (some sid) pick).size ≥ pick.count
+            | none => true
+        | .fraChoice q (.crew _ vehicleId n) =>
+          q == caster && g.sourceStillPayable prop &&
+            (g.findObject? vehicleId).any (·.isOnBattlefield) &&
+            ((g.creaturesControlledBy caster).filter (fun c =>
+              c.id != vehicleId && !c.status.tapped)).foldl
+              (fun acc c => acc + (g.power c).toNat) 0 ≥ n
+        | .fraChoice q (.zemoBoastExile _ sourceId) =>
+          q == caster && g.sourceStillPayable prop &&
+            let col :=
+              match g.findObject? sourceId with
+              | some src => TextChange.applyColor (g.evalLayer3 src) .black
+              | none => .black
+            let allCands := (g.player caster).graveyard.filter (fun id =>
+              (g.findObject? id).any (fun card => (g.colors card).contains col))
+            g.canPayZemoBoast caster allCands col
+        | .chooseTeamworkCreatures q need =>
+          q == caster &&
+            ((g.creaturesControlledBy caster).filter (fun c =>
+              !c.status.tapped && g.power c > 0)).foldl
+              (fun acc c => acc + g.power c) 0 ≥ (need : Int)
+        | .sacrificePermanent q excludeId =>
+          let loyaltyOk :=
+            if prop.kind != .activatedAbility then true
+            else
+              match prop.activation.bind (·.cost.loyalty) with
+              | none => true
+              | some sym =>
+                (g.findObject? excludeId).any (fun src =>
+                  src.isOnBattlefield && g.controlledBy src caster &&
+                    !g.loyaltyActivatedThisTurn src.id &&
+                    match sym.counters with
+                    | some k => k ≥ 0 || (src.status.loyaltyCounters : Int) ≥ -k
+                    | none =>
+                      sym == LoyaltySymbol.minusX &&
+                        src.status.loyaltyCounters ≥
+                          ((g.findObject? prop.spellId).bind (·.chosenX)).getD 0)
+          q == caster && loyaltyOk && !(g.sacrificeCreatureOrArtifactChoices caster excludeId).isEmpty
+        | .discardForAdditionalCost q =>
+          q == caster && !(g.player caster).hand.isEmpty
+        | _ => false
 
 mutual
 /-- Drain queued `g.pendingReplacement` continuations and paused
@@ -332,6 +350,7 @@ partial def finishConcedePriority (g : Game) (wasIdlePriority : Bool)
     (departed : Array PlayerId := #[])
     (rewindProposal : Option Bool := none) : Game :=
   let g := g.popEmptyContinuationFrames
+  let (g, popOuter) := g.flushDismissedPausedBatch savedPending popOuter
   let (g, savedPending, popOuter, rewindProposal) :=
     match rewindProposal with
     | some hadPreBodyCont =>
@@ -342,9 +361,12 @@ partial def finishConcedePriority (g : Game) (wasIdlePriority : Bool)
         (g, savedPending, popOuter, rewindProposal)
     | none =>
       (g, savedPending, popOuter, none)
-  let (g, _, departed) :=
-    if runSba && !g.over then g.checkSBACountedWithLeaves (departedIn := departed)
-    else (g, false, departed)
+  let (g, _, savedPending, popOuter, departed, rewindProposal) :=
+    if runSba && !g.over && !g.sbaPaused then
+      g.checkSBACountedWithLeavesCore savedPending popOuter departed rewindProposal
+        (deferRestore := true)
+    else
+      (g, false, savedPending, popOuter, departed, rewindProposal)
   if g.over then g.completeActiveResolutions
   else if g.sbaPaused then
     g.chainPendingReplacement
@@ -431,12 +453,23 @@ partial def concedePlayersLoop (g : Game) (remaining : Array PlayerId)
     let pid := remaining[i]!
     if !(g.player pid).leftTheGame then
       if let some hadPreBodyCont := rewindProposal then
+        let (gf, pof) := g.flushDismissedPausedBatch saved? popOuter
+        g := gf
+        popOuter := pof
+        if let .chooseReplacement r _ := g.pending then
+          let remHere := remaining.extract i remaining.size
+          if !remHere.contains r then
+            return g.chainPendingReplacement
+              (.concedePlayersLoop remHere wasPregame midResolutionOrBatch wasIdlePriority
+                savedPendingPrio wasAssigningCombatDamage saved? popOuter departed rewindProposal)
         if !g.sbaPaused && g.currentBatch.isNone then
           let (g', s', po') := g.applyDeferredProposalRewind saved? popOuter departed hadPreBodyCont
           g := g'
           saved? := s'
           popOuter := po'
           rewindProposal := none
+      let prePopCont? : Option (Option PendingReplacement) :=
+        if popOuter then some g.pendingReplacement else none
       if popOuter then
         if let some popped := g.outerPendingReplacements.back? then
           g := (g.change .popOuterPendingReplacement).chainPendingReplacement popped
@@ -447,6 +480,7 @@ partial def concedePlayersLoop (g : Game) (remaining : Array PlayerId)
       let (g', newlySaved?, po, rw) :=
         g.playerLeavesGameCore pid (deferRestore := true) (pendingIn := pendingIn)
           (departedIn := departed) (rewindProposalIn := rewindProposal)
+          (prePopCont? := prePopCont?)
       g := g'
       departed := if departed.contains pid then departed else departed.push pid
       popOuter := popOuter || po
@@ -490,6 +524,9 @@ partial def concedePlayersLoop (g : Game) (remaining : Array PlayerId)
               (.concedePlayersLoop rem wasPregame midResolutionOrBatch wasIdlePriority
                 savedPendingPrio wasAssigningCombatDamage saved? popOuter departed rewindProposal)
           return g
+  let (gf, pof) := g.flushDismissedPausedBatch saved? popOuter
+  g := gf
+  popOuter := pof
   if g.over then
     return g.completeActiveResolutions
   if let some hadPreBodyCont := rewindProposal then
@@ -812,21 +849,63 @@ partial def resumePendingReplacement (g : Game) (pr : PendingReplacement)
     g.finishArtifactCopyTokens
   | .finishManaAbilityMountainTrigger player sourceId =>
     g.finishManaAbilityMountainTrigger player sourceId
-  | .restorePending p popOuter promptLog departed rewindProposal =>
+  | .restorePending p popOuter promptLog departed rewindProposal => Id.run do
     let popped? : Option PendingReplacement :=
       if popOuter then g.outerPendingReplacements.back? else none
     let g := if popped?.isSome then g.change .popOuterPendingReplacement else g
     let g := g.popEmptyTopContinuationFrames
+    if let some hadPreBodyCont := rewindProposal then
+      let validReplPrompt :=
+        match p with
+        | .chooseReplacement q choices => g.replacementChoiceValid q choices
+        | _ => false
+      if !validReplPrompt then
+        if let some (curBid, _) := g.currentBatch then
+          let fullCont? : Option PendingReplacement :=
+            match g.pendingReplacement, popped? with
+            | some prior, some popped => some (.seq prior popped)
+            | some prior, none => some prior
+            | none, some popped => some popped
+            | none, none => none
+          if let some (closePrefix, afterClose?) := fullCont?.bind (splitAfterCloseBatchFor? curBid) then
+            let tailRestore : PendingReplacement :=
+              .restorePending p false promptLog departed (some hadPreBodyCont)
+            let splitCont : PendingReplacement :=
+              match afterClose? with
+              | some after => .seq closePrefix (.seq tailRestore after)
+              | none => .seq closePrefix tailRestore
+            let g := if g.pendingReplacement.isSome then g.change (.pendingReplacement none) else g
+            return g.resumePendingReplacement splitCont (followedByFinishFra := followedByFinishFra)
+    let validReplForDefer :=
+      match rewindProposal, p with
+      | some _, .chooseReplacement q choices => g.replacementChoiceValid q choices
+      | _, _ => false
     let (g, popped?, p) : Game × Option PendingReplacement × Pending :=
-      match rewindProposal with
-      | some hadPreBodyCont =>
-        let (g, popped?) := g.rewindAbortedProposalOnLeave departed popped? hadPreBodyCont
-        let g := g.popEmptyTopContinuationFrames
-        let savedIn? := if p == .none then none else some p
-        let (g, savedOut?, popped?) := g.stashPostRewindPending savedIn? popped? departed
-        (g, popped?, savedOut?.getD Pending.none)
-      | none =>
+      if validReplForDefer then
+        let tailRewind : PendingReplacement :=
+          .restorePending .none false none departed rewindProposal
+        let popped? :=
+          match g.currentBatch, popped? with
+          | some (curBid, _), some popped =>
+            match splitAfterCloseBatchFor? curBid popped with
+            | some (closePrefix, some after) =>
+              some (.seq closePrefix (.seq tailRewind after))
+            | some (closePrefix, none) =>
+              some (.seq closePrefix tailRewind)
+            | none => some (.seq popped tailRewind)
+          | _, some popped => some (.seq popped tailRewind)
+          | _, none => some tailRewind
         (g, popped?, p)
+      else
+        match rewindProposal with
+        | some hadPreBodyCont =>
+          let (g, popped?) := g.rewindAbortedProposalOnLeave departed popped? hadPreBodyCont
+          let g := g.popEmptyTopContinuationFrames
+          let savedIn? := if p == .none then none else some p
+          let (g, savedOut?, popped?) := g.stashPostRewindPending savedIn? popped? departed
+          (g, popped?, savedOut?.getD Pending.none)
+        | none =>
+          (g, popped?, p)
     let openPromptWith (g : Game) (p' : Pending) : Game :=
       let g :=
         match popped? with
@@ -1034,6 +1113,14 @@ partial def resumePendingReplacement (g : Game) (pr : PendingReplacement)
               openPromptWith g (.resolveRandom (.chooseObject liveIds))
           else
             openPrompt g
+        | .activateManaAbilities caster | .chooseX caster
+        | .chooseAdditionalCost caster | .chooseKicker caster
+        | .chooseGift caster | .chooseTeamwork caster =>
+          if g.stillInGame caster &&
+              g.proposedSpell.any (fun prop => prop.caster == caster && (g.findObject? prop.spellId).isSome) then
+            openPrompt g
+          else
+            reverseOrResumePopped g
         | _ => openPrompt g
       else
         let (g, nextP) := effectiveDeparted.foldl (fun (g, curP) dep =>
@@ -1779,7 +1866,8 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
         else
           match prop.kind with
           | .activatedAbility =>
-            if (g.findObject? prop.spellId).any (·.zone == .stack) &&
+            if g.sourceStillPayable prop &&
+                (g.findObject? prop.spellId).any (·.zone == .stack) &&
                 prop.abilityModes.any (fun m => g.modeIsChoosable p m prop.sourceId) then
               g.change (.pending (.chooseMode p))
             else
@@ -1814,7 +1902,7 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
                 promptIfTriggersNeedTargets
                   (g.reverseProposedSpell (resumeContinuation := true) (alwaysGrantPriority := true))
           | .turnFaceUp =>
-            if (g.findObject? prop.spellId).any (·.isOnBattlefield) then g
+            if g.sourceStillPayable prop && (g.findObject? prop.spellId).any (·.isOnBattlefield) then g
             else
               promptIfTriggersNeedTargets
                 (g.reverseProposedSpell (resumeContinuation := true) (alwaysGrantPriority := true))
@@ -1826,7 +1914,8 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
       else g
     let ownPropNeedsReverse :=
       g.proposedSpell.any (fun prop =>
-        prop.caster == p && (!g.stillInGame p || (g.findObject? prop.spellId).isNone))
+        prop.caster == p &&
+          (!g.stillInGame p || (g.findObject? prop.spellId).isNone || !g.sourceStillPayable prop))
     let g :=
       if ownPropNeedsReverse then
         (if g.pending == .none then g else g.change (.pending .none)).reverseProposedSpell
