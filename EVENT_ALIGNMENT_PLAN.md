@@ -12198,11 +12198,13 @@ control-loss source invalidation across `isProposalAbortedByLeave`,
        batch's paused `returnLinkedExileMoves` batch from absorbing subsequent
        replayed departure batches.
 3. Validate post-departure proposal prompts & `CastSpell.announceX` source
-   payability and complete cascaded / prior-departed CR 800.4a / 800.4c
-   control-loss handling (`Decisions.lean:632–643, 950–957, 1116–1135`,
-   `CastSpell.lean:294–310`, `Leaving.lean:370–403, 513–554, 2333, 2374–2378`,
-   `Movement.lean:301–318, 590–618`, §2.4, §2.5, §3.1, §3.8, CR 601.2b–h /
-   602.2b / 606.3–606.4 / 613.1a–b / 613.7–613.8 / 702.37e / 733.1 / 800.4a,c):
+   payability and complete `.leftTheGame`-gated cascaded / prior-departed CR
+   800.4a / 800.4c control-loss handling (`Core.lean:1651–1658, 11735–11744`,
+   `Decisions.lean:632–643, 950–957, 1116–1135`, `CastSpell.lean:294–310`,
+   `Leaving.lean:156–161, 370–403, 513–554, 2333, 2349–2357, 2374–2378`,
+   `Movement.lean:301–318, 590–618`, `StateBasedActions.lean:508–521`,
+   `Fixture.lean:274–276`, §2.4, §2.5, §3.1, §3.8, CR 601.2b–h / 602.2b /
+   606.3–606.4 / 613.1a–b / 613.7–613.8 / 702.37e / 733.1 / 800.4a–c):
    - In `Decisions.resumePendingReplacement` `.restorePending`
      (`Decisions.lean:950–957, 1116–1135`), `Decisions.resumePendingReplacement`
      `.seq` (`Decisions.lean:632–643`), and `CastSpell.announceX`
@@ -12239,11 +12241,28 @@ control-loss source invalidation across `isProposalAbortedByLeave`,
          recording `GameEvent.announced (x := some x)` at `295`, while still
          throwing when `src` is payable at `x = 0` and the player announces `x`
          exceeding `src.status.loyaltyCounters` or `src.status.plusOnePlusOne`).
-   - In `Leaving.isProposalAbortedByLeave` (`Leaving.lean:528–554`),
-     `Leaving.playerLeavesGameCore` (`Leaving.lean:2374–2378`),
-     `Leaving.objectLeavesTheGame` (`Leaving.lean:370–403`), and `Movement.move`
-     (`Movement.lean:301–318, 590–618`):
-     - In `Leaving.isProposalAbortedByLeave` (`543–554`, where `plsAfterP` at
+   - In `Core.initialControllerOf` (`Core.lean:1651–1658`),
+     `Core.restoreControlUntilSourceLeaves` (`Core.lean:11735–11744`),
+     `Leaving.endControlEffectById` (`Leaving.lean:156–161`),
+     `Leaving.objectLeavesTheGame` (`Leaving.lean:370–403`),
+     `Leaving.isProposalAbortedByLeave` (`Leaving.lean:528–554`),
+     `Leaving.playerLeavesGameCore` (`Leaving.lean:2349–2357, 2374–2378`), and
+     `Movement.move` (`Movement.lean:301–318, 590–618`):
+     - In `Core.initialControllerOf` (`Core.lean:1654–1658`), make `playerAlive`
+       test `!(g.player p).leftTheGame` instead of `g.stillInGame p` (and in
+       `Core.restoreControlUntilSourceLeaves` at `Core.lean:11735, 11741`,
+       compute `p := (o.defaultController.orElse (fun _ => o.controller)).getD
+       o.owner` and check `(acc.player p).leftTheGame` rather than
+       `!acc.stillInGame p`), so a pending simultaneous loser (`lost &&
+       !leftTheGame`, `StateBasedActions.lean:508–521`) remains the controller of
+       their permanents until their own CR 800.4a departure records
+       `GameEvent.playerLeftGame` (`Leaving.lean:2333`), while updating synthetic
+       departed-player fixtures that previously recorded `GameEvent.playerLost`
+       alone (`Fixture.lean:274–276`, `Events.lean:500–501`, and
+       `Events.lean:4926–4930`, asserting both `gOppLost.controllerOf == some
+       opp` and `gOppLeft.controllerOf == none` at `4926–4930`) to also record
+       `GameEvent.playerLeftGame`;
+     - in `Leaving.isProposalAbortedByLeave` (`543–554`, where `plsAfterP` at
        `528–531` already marks `p` with `leftTheGame := true`), iterate the
        post-`p` board `g1` to a fixpoint (`for _ in [0:g1.objects.size]`),
        removing on each pass every object `o` where `let fallback :=
@@ -12259,9 +12278,14 @@ control-loss source invalidation across `isProposalAbortedByLeave`,
        `prop.caster`'s proposal without deleting permanents whose fallback
        controller is merely a pending simultaneous loser (`lost &&
        !leftTheGame`, `StateBasedActions.lean:508–521`);
-     - in `Leaving.playerLeavesGameCore` (`2377`, after `GameEvent.playerLeftGame`
-       at `2333` has already set `(g.player p).leftTheGame = true`), replace
-       `== p` with `(g.player fallback).leftTheGame` (where `fallback :=
+     - in `Leaving.endControlEffectById` (`Leaving.lean:156–161`, invoked at
+       `2356` before `2374–2378`) and `Leaving.playerLeavesGameCore` (`2377`,
+       after `GameEvent.playerLeftGame` at `2333` has already set `(g.player
+       p).leftTheGame = true`), compute `let dest := curCtrl.getD
+       ((cur.defaultController.orElse (fun _ => cur.controller)).getD
+       cur.owner)` and gate CR 800.4c exile at `157` on `(acc.player
+       dest).leftTheGame` instead of `!acc.stillInGame dest`, and replace `== p`
+       at `2377` with `(g.player fallback).leftTheGame` (where `fallback :=
        (o.defaultController.orElse (fun _ => o.controller)).getD o.owner`,
        gating on `.leftTheGame` rather than `!g.stillInGame` at
        `Core.lean:1322–1323`) so battlefield permanents whose
@@ -12269,18 +12293,27 @@ control-loss source invalidation across `isProposalAbortedByLeave`,
        and whose last remaining control effect ended during `p`'s departure are
        exiled under CR 800.4a / 800.4c instead of remaining on the battlefield
        with `controllerOf == none`, while keeping another pending simultaneous
-       loser's (`lost && !leftTheGame`) permanents off `p`'s `exileQueue` until
-       their own CR 800.4a departure; and
-     - in `Leaving.objectLeavesTheGame` (`Leaving.lean:370–403`) and
-       `Movement.move` (`Movement.lean:301–318, 590–618`), collect
-       `sourceCtrlTargets` before the object leaves as all battlefield objects
-       `pObj` (`pObj.id != o.id` / `old.id`) with `!(g.appliedControlEffectIds
-       pObj).isEmpty` (whenever `o.zone != .ante` in `objectLeavesTheGame`, and
-       whenever `!(old.zone == .battlefield && dest == .battlefield)` in
-       `Movement.move`, running the post-leave CR 800.4c check even when `o` /
-       `old` left a non-battlefield zone), so `.whileInZone` control effects and
-       indirect Layer 1/2 control-effect dependencies also exile permanents whose
-       fallback controller is no longer in the game (CR 800.4c).
+       loser's (`lost && !leftTheGame`) permanents under that loser's control
+       and off `p`'s exile queues until their own CR 800.4a departure; and
+     - in `Leaving.objectLeavesTheGame` (`Leaving.lean:370–403`, invoked for
+       `p`'s owned objects at `2349–2352`) and `Movement.move`
+       (`Movement.lean:301–318, 590–618`), collect `sourceCtrlTargets` before
+       the object leaves as all battlefield objects `pObj` (`pObj.id != o.id` /
+       `old.id`) with `!(g.appliedControlEffectIds pObj).isEmpty` (whenever
+       `o.zone != .ante` in `objectLeavesTheGame`, and whenever `!(old.zone ==
+       .battlefield && dest == .battlefield)` in `Movement.move`, running the
+       post-leave CR 800.4c check even when `o` / `old` left a non-battlefield
+       zone), compute the fallback controller via `(g.controllerOf cur).getD
+       ((cur.defaultController.orElse (fun _ => cur.controller)).getD
+       cur.owner)` (`Leaving.lean:396`, `Movement.lean:599, 608`), and gate CR
+       800.4c exile at `Leaving.lean:397` and `Movement.lean:600, 609` on
+       `(g.player destP).leftTheGame` / `(acc.player destP).leftTheGame` /
+       `(acc.player dp).leftTheGame` rather than `!stillInGame`, so
+       `.whileInZone` control effects and indirect Layer 1/2 control-effect
+       dependencies exile permanents whose fallback controller has left the game
+       (`.leftTheGame`, CR 800.4c) without exiling a pending simultaneous
+       loser's (`lost && !leftTheGame`) permanents during an earlier loser's
+       departure.
 4. Complete `Choices.sourceStillPayable` (`sneakAttacker`, CR 702.37e morph
    copiable values, and ability-zone guards) and `CostPick` self-use exclusion,
    `{T}`-before-self-sacrifice payment, multi-pick disjointness, and pre-extra-cost
