@@ -299,22 +299,13 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
       let isAttacking := resolvedAttackTarget.isSome
       let beforeSnap := board.snapshot boardOld
       let sourceCtrlTargets : Array ObjectId :=
-        if old.zone != .battlefield || dest == .battlefield then #[]
+        if old.zone == .battlefield && dest == .battlefield then #[]
         else
-          let sourceCtrlIds := g.activeEffects.filterMap fun (eid, e) =>
-            match e with
-            | .layered _ (.control _) (.whileSourceOnBattlefield s)
-            | .layered _ (.control _) (.untilSourceLeaves s)
-            | .layered _ (.control _) (.whileSourceHasCounter s _) =>
-              if s == old.id then some eid else none
-            | _ => none
-          if sourceCtrlIds.isEmpty then #[]
-          else
-            g.objects.filterMap fun pObj =>
-              if pObj.isBattlefieldObject && pObj.id != old.id &&
-                  (g.appliedControlEffectIds pObj).any (fun eid => sourceCtrlIds.contains eid) then
-                some pObj.id
-              else none
+          g.objects.filterMap fun pObj =>
+            if pObj.isBattlefieldObject && pObj.id != old.id &&
+                !(g.appliedControlEffectIds pObj).isEmpty then
+              some pObj.id
+            else none
       let buildArrival (g : Game) (targetZone : Zone) (asOf : Nat)
           (applied : Array ReplacementId := #[]) (curCause : Option EventCause := cause) :
           GameObject × CounterBag × Nat × Bool × Bool × Array ReplacementId × Option EventCause × Option (PlayerId × Array ReplacementId) × Option (CardDef × CardDef) × Bool :=
@@ -587,17 +578,18 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
             (cause := baseHappenedCause))
         | none => g
       let g := g.expireEffectsOnLeavingObject old
+      let g := if old.zone == .battlefield then g.expireWhileSourceEffects old.id else g
       let g :=
-        if old.zone == .battlefield then
-          let g := g.expireWhileSourceEffects old.id
+        if sourceCtrlTargets.isEmpty then g
+        else
           Id.run do
             let mut acc := g
             for i in [0:sourceCtrlTargets.size] do
               let tid := sourceCtrlTargets[i]!
               if let some cur := acc.findObject? tid then
                 if cur.isBattlefieldObject && (acc.appliedControlEffectIds cur).isEmpty then
-                  let destP := (acc.controllerOf cur).getD (cur.defaultController.getD cur.owner)
-                  if !acc.stillInGame destP then
+                  let fallback := (cur.defaultController.orElse (fun _ => cur.controller)).getD cur.owner
+                  if (acc.player fallback).leftTheGame then
                     let name := acc.name cur
                     let (acc', _) := acc.move tid .exile none (cause := some (.gameRule .playerLeftGame))
                     acc := acc'
@@ -605,8 +597,8 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
                       let rem := (sourceCtrlTargets.extract (i + 1) sourceCtrlTargets.size).filterMap fun rid =>
                         (acc.findObject? rid).bind fun ro =>
                           if ro.isBattlefieldObject && (acc.appliedControlEffectIds ro).isEmpty then
-                            let dp := (acc.controllerOf ro).getD (ro.defaultController.getD ro.owner)
-                            if !acc.stillInGame dp then some (rid, s!"{acc.name ro} is exiled (CR 800.4c)") else none
+                            let dp := (ro.defaultController.orElse (fun _ => ro.controller)).getD ro.owner
+                            if (acc.player dp).leftTheGame then some (rid, s!"{acc.name ro} is exiled (CR 800.4c)") else none
                           else none
                       acc := acc.chainPendingReplacement
                         (.endControlExileLoop rem (some (.gameRule .playerLeftGame))
@@ -615,7 +607,6 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
                     if !(acc.findObject? tid).any (·.isBattlefieldObject) then
                       acc := acc.logMsg s!"{name} is exiled (CR 800.4c)"
             return acc
-        else g
       let g :=
         match g.findObject? newId with
         | some _ =>
@@ -842,7 +833,7 @@ def withBatchM {ε : Type} (g : Game) (cause : Option EventCause := none)
 /-- Reverse to the saved CR 733.1–733.2 proposal checkpoint, re-running batches
 and flushing any CR 610.3 `linkedExile` returns from kept irreversible moves. -/
 def reverseToProposalCheckpoint? (g : Game) : Except String Game :=
-  g.reverseToProposalCheckpointCore? (fun g0 f => g0.withBatch none f)
+  (g.reverseToProposalCheckpointCore?).map Game.flushQueuedLinkedExile
 
 /-- Close a paused batch (`Core.finishOpenBatch`) and flush any CR 610.3
 `linkedExile` returns once the outermost batch closes. -/

@@ -56,6 +56,10 @@ def dummyProposal (_g : Game) (kind : ProposalKind) (src : GameObject) (cost : M
     original := src
     kind
     sourceId := if kind == .spell then none else some src.id
+    activation :=
+      if kind == .activatedAbility && src.zone == .graveyard ⟨0⟩ then
+        some { cost := {}, activateFromGraveyard := true, effect := default }
+      else none
     discardSource }
 
 /-- True when the proposed cost is paid (not reversed). -/

@@ -1072,7 +1072,10 @@ def becomeActivated (g : Game) (p : PlayerId) (sourceName : String)
       | some sym =>
         let actualSym := if sym == LoyaltySymbol.minusX then LoyaltySymbol.minus chosenX else sym
         match sourceId.bind g.findObject? with
-        | some src => g.payLoyaltyCost p src actualSym (forObject := abilityId)
+        | some src =>
+          if !g.sourceCounterCostPaidFor src.id abilityId .loyalty then
+            g.payLoyaltyCost p src actualSym (forObject := abilityId)
+          else g
         | none => g
       | none => g
     if let .chooseReplacement .. := g.pending then

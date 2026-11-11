@@ -52,9 +52,61 @@ def cheapestFirst (g : Game) (cands : Array GameObject) : Array GameObject :=
   let key (x : GameObject) : Nat := (if x.printed.isToken then 0 else 1000) + g.objectManaValue x
   cands.qsort (fun a b => key a < key b)
 
+private def unreplacedCostCause : EventCause → EventCause
+  | .replaced _ orig => unreplacedCostCause orig
+  | other => other
+
+/-- Whether `sid` was already sacrificed from the battlefield as a cost for
+`forObject` (CR 601.2h). -/
+def sourceSacrificedForCost (g : Game) (sid : ObjectId) (forObject : Option ObjectId) : Bool :=
+  match forObject with
+  | none => false
+  | some fid =>
+    fid != sid &&
+      g.events.any fun
+        | .rules _ (.zone (.moved before _ .battlefield _ ..)) cause _ =>
+          before.id == some sid &&
+            match unreplacedCostCause cause with
+            | .costPayment .sacrifice _ (some f) => f == fid
+            | _ => false
+        | _ => false
+
+/-- Whether `sid` was already tapped to pay `{T}` for `forObject` (CR 601.2h). -/
+def sourceTappedForCost (g : Game) (sid : ObjectId) (forObject : Option ObjectId) : Bool :=
+  match forObject with
+  | none => false
+  | some fid =>
+    fid != sid &&
+      g.events.any fun
+        | .rules _ (.permanent (.tapped snap _)) cause _ =>
+          snap.id == some sid &&
+            match unreplacedCostCause cause with
+            | .costPayment .tap _ (some f) => f == fid
+            | _ => false
+        | _ => false
+
+/-- Whether `sid` already paid a counter cost of `costKind` for `forObject`
+(CR 601.2h). -/
+def sourceCounterCostPaidFor (g : Game) (sid : ObjectId) (forObject : Option ObjectId)
+    (costKind : CostKind) : Bool :=
+  match forObject with
+  | none => false
+  | some fid =>
+    fid != sid &&
+      g.events.any fun
+        | .rules _ (.permanent (.counters (.object snap) ..)) cause _ =>
+          snap.id == some sid &&
+            match unreplacedCostCause cause with
+            | .costPayment k _ (some f) => k == costKind && f == fid
+            | _ => false
+        | _ => false
+
 /-- Whether `o` can pay `pick` for `p`'s ability of `sourceId`. -/
 def costPickAllows (g : Game) (p : PlayerId) (sourceId : Option ObjectId) (pick : CostPick)
-    (o : GameObject) : Bool :=
+    (o : GameObject)
+    (tapSource : Bool := false)
+    (sacrificeOrExileSource : Bool := false)
+    (discardOrExileHandSource : Bool := false) : Bool :=
   let perm := o.isOnBattlefield && g.controlledBy o p
   let inHand := o.owner == p && o.zone == .hand p
   let other := sourceId.all (o.id != ·)
@@ -63,46 +115,98 @@ def costPickAllows (g : Game) (p : PlayerId) (sourceId : Option ObjectId) (pick 
   | .sacrificeAnotherCreature => perm && other && g.isCreature o
   | .sacrificeAnotherSubtype t => perm && other && g.hasSubtype o t
 
-  | .sacrificeArtifact => perm && artifact
-  | .sacrificeLegendaryArtifact => perm && artifact && g.isLegendary o
-  | .sacrificeArtifactOrCreature => perm && (artifact || g.isCreature o)
+  | .sacrificeArtifact => perm && (!sacrificeOrExileSource || other) && artifact
+  | .sacrificeLegendaryArtifact =>
+    perm && (!sacrificeOrExileSource || other) && artifact && g.isLegendary o
+  | .sacrificeArtifactOrCreature =>
+    perm && (!sacrificeOrExileSource || other) && (artifact || g.isCreature o)
   | .sacrificeAnotherArtifact => perm && other && artifact
   | .sacrificeAnotherCreatureOrPlaneswalker =>
     perm && other && (g.isCreature o || g.isPlaneswalker o)
-  | .sacrificeArtifactOrLand => perm && (artifact || g.isLand o)
+  | .sacrificeArtifactOrLand =>
+    perm && (!sacrificeOrExileSource || other) && (artifact || g.isLand o)
   | .sacrificeEquipmentAttachedToSource =>
-    perm && g.isEquipment o && sourceId.isSome && o.attachedTo == sourceId
+    perm && (!sacrificeOrExileSource || other) && g.isEquipment o &&
+      sourceId.isSome && o.attachedTo == sourceId
   | .sacrificeArtifactOrDiscardNonland =>
-    (perm && artifact) || (inHand && !g.isLand o)
-  | .discardACard => inHand
-  | .discardNonland => inHand && !g.isLand o
-  | .discardLegendaryCard => inHand && g.isLegendary o
+    (perm && (!sacrificeOrExileSource || other) && artifact) ||
+      (inHand && (!discardOrExileHandSource || other) && !g.isLand o)
+  | .discardACard => inHand && (!discardOrExileHandSource || other)
+  | .discardNonland => inHand && (!discardOrExileHandSource || other) && !g.isLand o
+  | .discardLegendaryCard => inHand && (!discardOrExileHandSource || other) && g.isLegendary o
   | .discardLegendarySameName =>
-    inHand && g.isLegendary o &&
+    inHand && (!discardOrExileHandSource || other) && g.isLegendary o &&
       (g.permanentsOf p).any (fun x => g.isLegendary x && g.name x == g.name o)
   | .exileAnotherCreatureCardFromGraveyard =>
     other && o.owner == p && o.zone == .graveyard p && g.isCreature o
-  | .tapUntappedCreature => perm && g.isCreature o && !o.status.tapped
-  | .tapTwoUntappedArtifacts => perm && artifact && !o.status.tapped
+  | .tapUntappedCreature => perm && (!tapSource || other) && g.isCreature o && !o.status.tapped
+  | .tapTwoUntappedArtifacts => perm && (!tapSource || other) && artifact && !o.status.tapped
 
 /-- Objects that can pay `pick`, in a default order (tokens and cheaper
 permanents first). -/
-def costPickCandidates (g : Game) (p : PlayerId) (sourceId : Option ObjectId) (pick : CostPick) :
+def costPickCandidates (g : Game) (p : PlayerId) (sourceId : Option ObjectId) (pick : CostPick)
+    (tapSource : Bool := false)
+    (sacrificeOrExileSource : Bool := false)
+    (discardOrExileHandSource : Bool := false) :
     Array ObjectId :=
   let pl := g.player p
   let zoneCards (ids : Array ObjectId) := ids.filterMap g.findObject?
   let pool := g.cheapestFirst (g.permanentsOf p) ++ zoneCards pl.hand ++ zoneCards pl.graveyard
-  (pool.filter (g.costPickAllows p sourceId pick)).map (·.id)
+  (pool.filter (g.costPickAllows p sourceId pick
+    (tapSource := tapSource)
+    (sacrificeOrExileSource := sacrificeOrExileSource)
+    (discardOrExileHandSource := discardOrExileHandSource))).map (·.id)
 
-/-- Whether every pick can be paid by different objects, assuming the
-source is tapped or sacrificed separately (CR 602.2b). -/
-def costPicksPayable (g : Game) (p : PlayerId) (sourceId : Option ObjectId) (picks : Array CostPick) :
+private partial def assignDisjointPicks (g : Game) (p : PlayerId) (sourceId : Option ObjectId)
+    (picks : Array CostPick) (tapSource sacrificeOrExileSource discardOrExileHandSource : Bool)
+    (idx : Nat) (used : Array ObjectId) : Option (Array ObjectId) :=
+  if idx ≥ picks.size then some #[]
+  else
+    let pick := picks[idx]!
+    let cands :=
+      (g.costPickCandidates p sourceId pick
+        (tapSource := tapSource)
+        (sacrificeOrExileSource := sacrificeOrExileSource)
+        (discardOrExileHandSource := discardOrExileHandSource)).filter (!used.contains ·)
+    if cands.size < pick.count then none
+    else if idx + 1 == picks.size then
+      some (cands.extract 0 pick.count)
+    else
+      let rec chooseK (start left : Nat) (picked : Array ObjectId) : Option (Array ObjectId) :=
+        if left == 0 then
+          if (assignDisjointPicks g p sourceId picks tapSource sacrificeOrExileSource
+                discardOrExileHandSource (idx + 1) (used ++ picked)).isSome then
+            some picked
+          else none
+        else if start + left > cands.size then none
+        else
+          match chooseK (start + 1) (left - 1) (picked.push cands[start]!) with
+          | some chosen => some chosen
+          | none => chooseK (start + 1) left picked
+      chooseK 0 pick.count #[]
+
+/-- First valid candidate slice for `picks[0]` (in `cheapestFirst` order) that
+leaves the remaining `picks` payable with distinct objects (CR 602.2b / 118.10). -/
+def firstPayableCostPickSlice? (g : Game) (p : PlayerId) (sourceId : Option ObjectId)
+    (picks : Array CostPick)
+    (tapSource : Bool := false)
+    (sacrificeOrExileSource : Bool := false)
+    (discardOrExileHandSource : Bool := false) : Option (Array ObjectId) :=
+  if picks.isEmpty then none
+  else
+    assignDisjointPicks g p sourceId picks tapSource sacrificeOrExileSource
+      discardOrExileHandSource 0 #[]
+
+/-- Whether every pick can be paid by different objects, accounting for whether
+`sourceId` itself is separately tapped, sacrificed/exiled, or discarded/exiled
+from hand (CR 602.2b / 118.3 / 118.10). -/
+def costPicksPayable (g : Game) (p : PlayerId) (sourceId : Option ObjectId) (picks : Array CostPick)
+    (tapSource : Bool := false)
+    (sacrificeOrExileSource : Bool := false)
+    (discardOrExileHandSource : Bool := false) :
     Bool :=
-  let (ok, _) := picks.foldl (fun (acc : Bool × Array ObjectId) pick =>
-    let cands := (g.costPickCandidates p sourceId pick).filter (!acc.2.contains ·)
-    if cands.size < pick.count then (false, acc.2)
-    else (acc.1, acc.2 ++ cands.extract 0 pick.count)) (true, #[])
-  ok
+  (assignDisjointPicks g p sourceId picks tapSource sacrificeOrExileSource
+    discardOrExileHandSource 0 #[]).isSome
 
 /-- Pay one or more already-validated `ids` for `pick` on `abilityId` / `sourceId`,
 chaining `.payCostPickItems` if an earlier move or sacrifice pauses on
@@ -177,17 +281,114 @@ def payCostPickItems (g : Game) (p : PlayerId) (abilityId sourceId : Option Obje
 (CR 601.2h). The power of a creature sacrificed for an ability that refers
 to it is recorded on the ability (Tom, Bert, and William). -/
 def payCostPick (g : Game) (p : PlayerId) (abilityId sourceId : Option ObjectId) (pick : CostPick)
-    (ids : Array ObjectId) : Except String Game :=
+    (ids : Array ObjectId)
+    (tapSource : Bool := false)
+    (sacrificeOrExileSource : Bool := false)
+    (discardOrExileHandSource : Bool := false) : Except String Game :=
   g.withProposalActionM .costAction fun g => do
   if ids.size != pick.count || ids.toList.eraseDups.length != ids.size then
     throw s!"Choose {pick.count} to {pick.phrase}"
   for id in ids do
     let some o := g.findObject? id | throw "no such object"
-    if !g.costPickAllows p sourceId pick o then
+    if !g.costPickAllows p sourceId pick o
+        (tapSource := tapSource)
+        (sacrificeOrExileSource := sacrificeOrExileSource)
+        (discardOrExileHandSource := discardOrExileHandSource) then
       throw s!"{g.name o} can't be used to {pick.phrase}"
   let outer? := g.pendingReplacement
-  let g := if outer?.isSome then g.change (.pendingReplacement none) else g
-  let g := g.payCostPickItems p abilityId sourceId pick ids
+  let mut g := if outer?.isSome then g.change (.pendingReplacement none) else g
+  let isBfSacPick : Bool :=
+    match pick with
+    | .tapUntappedCreature | .tapTwoUntappedArtifacts
+    | .exileAnotherCreatureCardFromGraveyard => false
+    | _ => true
+  if !sacrificeOrExileSource && isBfSacPick then
+    if let some sid := sourceId then
+      if ids.contains sid then
+        if let some src := g.findObject? sid then
+          if src.isOnBattlefield then
+            let effTap :=
+              tapSource ||
+                g.proposedSpell.any (fun prop =>
+                  prop.sourceId == some sid &&
+                    (abilityId.isNone || abilityId == some prop.spellId) && prop.tapSource)
+            let effAb? :=
+              g.proposedSpell.bind fun prop =>
+                if prop.sourceId == some sid &&
+                    (abilityId.isNone || abilityId == some prop.spellId) then
+                  prop.activation
+                else none
+            let effX := (abilityId.bind g.findObject? |>.bind (·.chosenX)).getD 0
+            let effRemovePlusOnes :=
+              if g.proposedSpell.any (fun prop =>
+                  prop.sourceId == some sid &&
+                    (abilityId.isNone || abilityId == some prop.spellId) && prop.removePlusOneX) then
+                effX
+              else 0
+            let forObj := abilityId <|> some sid
+            let tapNeeded := effTap && !g.sourceTappedForCost sid forObj
+            if !g.controlledBy src p then
+              throw "You don't control that permanent"
+            if tapNeeded && src.status.tapped then
+              throw s!"{g.name src} is already tapped"
+            if let some a := effAb? then
+              if a.cost.removeStoryCounter &&
+                  !g.sourceCounterCostPaidFor sid forObj .removeCounters &&
+                  src.status.story == 0 then
+                throw s!"{g.name src} has no story counter"
+              if a.cost.removeIndestructibleCounter &&
+                  !g.sourceCounterCostPaidFor sid forObj .removeCounters &&
+                  src.status.indestructibleCounters == 0 then
+                throw s!"{g.name src} has no indestructible counter"
+              if a.cost.removeAnyNumberPlusOne &&
+                  !g.sourceCounterCostPaidFor sid forObj .removeCounters &&
+                  src.status.plusOnePlusOne < effRemovePlusOnes then
+                throw s!"{g.name src} doesn't have {effRemovePlusOnes} +1/+1 counters"
+              if let some sym := a.cost.loyalty then
+                let k := if sym == LoyaltySymbol.minusX then -(effX : Int) else sym.counters.getD 0
+                if !g.sourceCounterCostPaidFor sid forObj .loyalty &&
+                    k < 0 && (src.status.loyaltyCounters : Int) < -k then
+                  throw s!"{g.name src} doesn't have {-k} loyalty counters to remove (CR 606.4)"
+            if tapNeeded then
+              g := g.becomeTapped (g.object! sid) (cause := some (.costPayment .tap p forObj))
+            if let some a := effAb? then
+              if a.cost.removeStoryCounter &&
+                  !g.sourceCounterCostPaidFor sid forObj .removeCounters then
+                let curSrc := g.object! sid
+                let srcName := g.name curSrc
+                g := g.recordRemoveCounters sid .story 1 (byPlayer := some p)
+                  (cause := some (.costPayment .removeCounters p forObj))
+                g := g.logMsg s!"{(g.player p).name} removes a story counter from {srcName}"
+              if a.cost.removeIndestructibleCounter &&
+                  !g.sourceCounterCostPaidFor sid forObj .removeCounters then
+                g := (← g.payRemoveIndestructibleCounter (g.object! sid) forObj)
+              if a.cost.removeAnyNumberPlusOne &&
+                  !g.sourceCounterCostPaidFor sid forObj .removeCounters then
+                let curSrc := g.object! sid
+                let srcName := g.name curSrc
+                let g' :=
+                  if effRemovePlusOnes > 0 then
+                    g.recordRemoveCounters sid .plusOnePlusOne effRemovePlusOnes (byPlayer := some p)
+                      (cause := some (.costPayment .removeCounters p forObj))
+                  else g
+                g := g'.logMsg
+                  s!"{(g.player p).name} removes {effRemovePlusOnes} +1/+1 counters from {srcName}"
+              if let some sym := a.cost.loyalty then
+                if !g.sourceCounterCostPaidFor sid forObj .loyalty then
+                  let k := if sym == LoyaltySymbol.minusX then -(effX : Int) else sym.counters.getD 0
+                  let srcName := g.name (g.object! sid)
+                  if k > 0 then
+                    g := g.putCountersDeferredLog sid .loyalty k.natAbs (some p) .countArePutOn
+                      (cause := some (.costPayment .loyalty p forObj))
+                  else if k < 0 then
+                    g := (g.recordRemoveCounters sid .loyalty k.natAbs (byPlayer := some p)
+                      (cause := some (.costPayment .loyalty p forObj))).logMsg
+                      s!"{-k} loyalty counter(s) are removed from {srcName}"
+              if a.cost.putStunCounterOnSource &&
+                  !g.sourceCounterCostPaidFor sid forObj .putCounters then
+                g := g.putCountersDeferredLog sid .stun 1 (some p) (.playerPutsOn p)
+                  (cause := some (.costPayment .putCounters p forObj))
+  g := g.payCostPickItems p abilityId sourceId pick ids
   return match outer? with
     | some outer => g.chainPendingReplacement outer
     | none => g
@@ -230,11 +431,25 @@ Costs paid with chosen objects are paid by `payCostPick`. -/
 def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
     (tapSource sacrificeSource : Bool) (payLife : Nat := 0)
     (discardSource : Bool := false)
-    (ab : Option ActivatedAbility := none) (removePlusOnes : Nat := 0) :
+    (ab : Option ActivatedAbility := none) (removePlusOnes : Nat := 0)
+    (forObject? : Option ObjectId := none) :
     Except String Game :=
   g.withProposalActionM .costAction fun g => do
-  let some src := g.findObject? sourceId | throw "The source is no longer in play"
-  let forObject := g.proposedSpell.map (·.spellId) <|> some sourceId
+  let forObject := forObject? <|> g.proposedSpell.map (·.spellId) <|> some sourceId
+  let exileSource := ab.any (·.cost.fra == .exileSource)
+  let sacrificeOrExileSource :=
+    sacrificeSource || exileSource || ab.any (·.cost.sacrificeSource)
+  let alreadySacrificedForCost :=
+    !sacrificeOrExileSource && !discardSource &&
+      !ab.any (fun a =>
+        a.activateFromGraveyard || a.activateFromHand || a.cost.fra == .exileSourceFromHand) &&
+      g.sourceSacrificedForCost sourceId forObject
+  let some src := g.findObject? sourceId | do
+    if alreadySacrificedForCost then
+      if !g.canPayLife p payLife then
+        throw s!"{(g.player p).name} cannot pay {payLife} life"
+      return (← g.payLifeCost p payLife (forObject := forObject))
+    throw "The source is no longer in play"
   if ab.any (·.cost.fra == .exileSourceFromHand) then
     if !(src.zone == .hand src.owner && src.owner == p) then
       throw s!"{g.name src} is not in your hand"
@@ -269,7 +484,8 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
       else g
     return match outer? with | some outer => g.chainPendingReplacement outer | none => g
   let fromGraveyard :=
-    src.zone == .graveyard src.owner && src.owner == p &&
+    ab.any (·.activateFromGraveyard) &&
+      src.zone == .graveyard src.owner && src.owner == p &&
       !ab.any (·.cost.loyalty.isSome)
   if fromGraveyard && !tapSource && !sacrificeSource then
     let g ← g.payLifeCost p payLife (forObject := forObject)
@@ -287,37 +503,50 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
       return match outer? with | some outer => g.chainPendingReplacement outer | none => g
     return g
   if !src.isOnBattlefield then
+    if alreadySacrificedForCost then
+      if !g.canPayLife p payLife then
+        throw s!"{(g.player p).name} cannot pay {payLife} life"
+      return (← g.payLifeCost p payLife (forObject := forObject))
     throw "The source is no longer on the battlefield"
   if !g.controlledBy src p then
     throw "You don't control that permanent"
-  if tapSource && src.status.tapped then
+  let tapNeeded := tapSource && !g.sourceTappedForCost sourceId forObject
+  if tapNeeded && src.status.tapped then
     throw s!"{g.name src} is already tapped"
   if !g.canPayLife p payLife then
     throw s!"{(g.player p).name} cannot pay {payLife} life"
   if let some a := ab then
-    if a.cost.removeStoryCounter && src.status.story == 0 then
+    if a.cost.removeStoryCounter &&
+        !g.sourceCounterCostPaidFor sourceId forObject .removeCounters &&
+        src.status.story == 0 then
       throw s!"{g.name src} has no story counter"
-    if a.cost.removeIndestructibleCounter && src.status.indestructibleCounters == 0 then
+    if a.cost.removeIndestructibleCounter &&
+        !g.sourceCounterCostPaidFor sourceId forObject .removeCounters &&
+        src.status.indestructibleCounters == 0 then
       throw s!"{g.name src} has no indestructible counter"
-    if a.cost.removeAnyNumberPlusOne && src.status.plusOnePlusOne < removePlusOnes then
+    if a.cost.removeAnyNumberPlusOne &&
+        !g.sourceCounterCostPaidFor sourceId forObject .removeCounters &&
+        src.status.plusOnePlusOne < removePlusOnes then
       throw s!"{g.name src} doesn't have {removePlusOnes} +1/+1 counters"
-  let exileSource := ab.any (·.cost.fra == .exileSource)
   let outer? := g.pendingReplacement
   let mut g := if outer?.isSome then g.change (.pendingReplacement none) else g
-  if tapSource then
+  if tapNeeded then
     g := g.becomeTapped (g.object! sourceId) (cause := some (.costPayment .tap p forObject))
   g := (← g.payLifeCost p payLife (forObject := forObject))
   match ab with
   | some a =>
-    if a.cost.removeStoryCounter then
+    if a.cost.removeStoryCounter &&
+        !g.sourceCounterCostPaidFor sourceId forObject .removeCounters then
       let src := g.object! sourceId
       let srcName := g.name src
       g := g.recordRemoveCounters sourceId .story 1 (byPlayer := some p)
         (cause := some (.costPayment .removeCounters p forObject))
       g := g.logMsg s!"{(g.player p).name} removes a story counter from {srcName}"
-    if a.cost.removeIndestructibleCounter then
+    if a.cost.removeIndestructibleCounter &&
+        !g.sourceCounterCostPaidFor sourceId forObject .removeCounters then
       g := (← g.payRemoveIndestructibleCounter (g.object! sourceId) forObject)
-    if a.cost.removeAnyNumberPlusOne then
+    if a.cost.removeAnyNumberPlusOne &&
+        !g.sourceCounterCostPaidFor sourceId forObject .removeCounters then
       let src := g.object! sourceId
       let srcName := g.name src
       let g' :=
@@ -327,7 +556,8 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
         else g
       g := g'.logMsg
         s!"{(g.player p).name} removes {removePlusOnes} +1/+1 counters from {srcName}"
-    if a.cost.putStunCounterOnSource then
+    if a.cost.putStunCounterOnSource &&
+        !g.sourceCounterCostPaidFor sourceId forObject .putCounters then
       g := g.putCountersDeferredLog sourceId .stun 1 (some p) (.playerPutsOn p)
         (cause := some (.costPayment .putCounters p forObject))
       if let .chooseReplacement .. := g.pending then

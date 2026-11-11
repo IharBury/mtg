@@ -600,44 +600,72 @@ partial def createPermanentCopyTokens (g : Game) (controller : PlayerId) (templa
 still pay its source-bound costs (CR 602.2b / 606.3–606.4 / 702.37e / 733.1). -/
 def sourceStillPayable (g : Game) (prop : ProposedSpell) : Bool :=
   match prop.sourceId with
-  | none => true
+  | none =>
+    prop.sneakAttacker.all fun aid =>
+      g.sneakPaid prop.spellId ||
+        (g.canCastForSneak prop.caster &&
+          (g.findObject? aid).any (fun a =>
+            a.isOnBattlefield && g.isCreature a && g.controlledBy a prop.caster &&
+              a.status.attacking && !a.status.blocked))
   | some sid =>
+    let exileSource := prop.activation.any (·.cost.fra == .exileSource)
+    let sacrificeOrExileSource :=
+      prop.sacrificeSource || exileSource || prop.activation.any (·.cost.sacrificeSource)
+    let alreadySacrificedForCost :=
+      prop.kind == .activatedAbility &&
+        !sacrificeOrExileSource && !prop.discardSource &&
+        !prop.activation.any (fun a =>
+          a.activateFromGraveyard || a.activateFromHand || a.cost.fra == .exileSourceFromHand) &&
+        g.sourceSacrificedForCost sid (some prop.spellId)
     match g.findObject? sid with
-    | none => false
+    | none => alreadySacrificedForCost
     | some src =>
       if prop.kind == .turnFaceUp then
-        src.isOnBattlefield && g.controlledBy src prop.caster && src.status.faceDown
+        src.isOnBattlefield && g.controlledBy src prop.caster && src.status.faceDown &&
+          (g.unmaskedCopiableValues src).morph.isSome
+      else if !src.isOnBattlefield && alreadySacrificedForCost then
+        true
       else
+      let forObj := some prop.spellId
       let loyaltyPayable :=
         match prop.activation.bind (·.cost.loyalty) with
         | none => true
         | some sym =>
-          src.isOnBattlefield && g.controlledBy src prop.caster &&
-          !g.loyaltyActivatedThisTurn src.id &&
-          match sym.counters with
-          | some k => k ≥ 0 || (src.status.loyaltyCounters : Int) ≥ -k
-          | none =>
-            let x := ((g.findObject? prop.spellId).bind (·.chosenX)).getD 0
-            sym == LoyaltySymbol.minusX && src.status.loyaltyCounters ≥ x
+          g.sourceCounterCostPaidFor sid forObj .loyalty ||
+            (src.isOnBattlefield && g.controlledBy src prop.caster &&
+              !g.loyaltyActivatedThisTurn src.id &&
+              match sym.counters with
+              | some k => k ≥ 0 || (src.status.loyaltyCounters : Int) ≥ -k
+              | none =>
+                let x := ((g.findObject? prop.spellId).bind (·.chosenX)).getD 0
+                sym == LoyaltySymbol.minusX && src.status.loyaltyCounters ≥ x)
       let removePlusOneXPayable :=
         !prop.removePlusOneX ||
+          g.sourceCounterCostPaidFor sid forObj .removeCounters ||
           (src.isOnBattlefield && g.controlledBy src prop.caster &&
            src.status.plusOnePlusOne ≥ ((g.findObject? prop.spellId).bind (·.chosenX)).getD 0)
       let removeStoryPayable :=
         !prop.activation.any (·.cost.removeStoryCounter) ||
+          g.sourceCounterCostPaidFor sid forObj .removeCounters ||
           (src.isOnBattlefield && g.controlledBy src prop.caster && src.status.story > 0)
       let removeIndestructiblePayable :=
         !prop.activation.any (·.cost.removeIndestructibleCounter) ||
+          g.sourceCounterCostPaidFor sid forObj .removeCounters ||
           (src.isOnBattlefield && g.controlledBy src prop.caster &&
            src.status.indestructibleCounters > 0)
+      let fromGyAb := prop.activation.any (·.activateFromGraveyard)
+      let fromHandAb :=
+        prop.discardSource ||
+          prop.activation.any (fun a => a.activateFromHand || a.cost.fra == .exileSourceFromHand)
       loyaltyPayable && removePlusOneXPayable &&
       removeStoryPayable && removeIndestructiblePayable &&
       ((src.isOnBattlefield && g.controlledBy src prop.caster &&
-        (!prop.tapSource || !src.status.tapped) && !prop.discardSource) ||
-      (src.zone == .graveyard src.owner && src.owner == prop.caster &&
+        !prop.activation.any (fun a => a.activateFromGraveyard || a.activateFromHand) &&
+        (!prop.tapSource || !src.status.tapped || g.sourceTappedForCost sid forObj) &&
+        !prop.discardSource && !prop.activation.any (·.cost.fra == .exileSourceFromHand)) ||
+      (fromGyAb && src.zone == .graveyard src.owner && src.owner == prop.caster &&
         !prop.tapSource && !prop.sacrificeSource && !prop.discardSource) ||
-      (src.zone == .hand src.owner && src.owner == prop.caster &&
-        (prop.discardSource || prop.activation.any (·.cost.fra == .exileSourceFromHand)) &&
+      (fromHandAb && src.zone == .hand src.owner && src.owner == prop.caster &&
         !prop.tapSource && !prop.sacrificeSource))
 
 end Game

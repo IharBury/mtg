@@ -272,8 +272,9 @@ is no longer tapped. -/
 @[irreducible, noinline] def mixedControllers : Game := addPermanent stolenMountain forest ⟨0⟩ ⟨0⟩
 
 @[irreducible, noinline] def uncontrolledPermanent : Game :=
-  insertObject (started.record (GameEvent.playerLost started.turnNumber ⟨0⟩ .conceded))
-    mountain ⟨0⟩ .battlefield none { summoningSick := false }
+  let g0 := started.record (GameEvent.playerLost started.turnNumber ⟨0⟩ .conceded)
+  let g1 := g0.record (GameEvent.playerLeftGame g0.turnNumber ⟨0⟩)
+  insertObject g1 mountain ⟨0⟩ .battlefield none { summoningSick := false }
 
 @[irreducible, noinline] def withGoblin : Game := addPermanent started ragingGoblin ⟨0⟩ ⟨0⟩
 @[irreducible, noinline] def withElves : Game := addPermanent started llanowarElves ⟨0⟩ ⟨0⟩

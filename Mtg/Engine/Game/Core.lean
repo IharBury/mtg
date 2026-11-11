@@ -1328,6 +1328,10 @@ def isOnActiveTeam (g : Game) (p : PlayerId) : Bool :=
   p.idx < g.players.size && g.stillInGame p &&
     (g.activePlayer == p || g.areTeammates g.activePlayer p)
 
+/-- Legal only during the declare blockers step of the caster's (or shared team's) turn (CR 805.4a / 810.2). -/
+def canCastForSneak (g : Game) (p : PlayerId) : Bool :=
+  g.isOnActiveTeam p && g.step == .declareBlockers
+
 /-- Format a list of player seats' names with English conjunctions
 (`"A"`, `"A and B"`, `"A, B, and C"`). -/
 def formatPlayerNames (g : Game) (pids : Array PlayerId) : String :=
@@ -1652,7 +1656,7 @@ private def initialControllerOf (g : Game) (o : GameObject) : Option PlayerId :=
   if o.zone != .battlefield then o.controller
   else
     let playerAlive (p : PlayerId) : Bool :=
-      if p.idx < g.players.size then g.stillInGame p
+      if p.idx < g.players.size then !(g.player p).leftTheGame
       else true
     let defP := (o.defaultController.orElse (fun _ => o.controller)).getD o.owner
     if playerAlive defP then some defP else none
@@ -10599,7 +10603,21 @@ def reverseToProposalCheckpointCore? (g : Game)
     let mut curKind : ProposalActionKind := .costAction
     let mut curEvs : Array GameEvent := #[]
     let mut nextStIdx : Nat := 0
-    let ckptBatchId? : Option BatchId := ckpt.currentBatch.map Prod.fst
+    let preDepBatches : Array BatchId := Id.run do
+      let mut bs : Array BatchId :=
+        match ckpt.currentBatch with
+        | some (b, _) => #[b]
+        | none => #[]
+      let limit := firstDepIdx?.getD slice.size
+      for j in [0:limit] do
+        let preEv := slice[j]!
+        if let some b := preEv.batch then
+          if !bs.contains b then bs := bs.push b
+        match preEv with
+        | .engine _ (.pauseBatch b ..) =>
+          if !bs.contains b then bs := bs.push b
+        | _ => pure ()
+      return bs
     let mut inDepSpan : Bool := false
     let mut depOuterDepth : Nat := 0
     let mut pendingDepPlayers : Array PlayerId := #[]
@@ -10643,7 +10661,7 @@ def reverseToProposalCheckpointCore? (g : Game)
         nextStIdx := nextStIdx + 1
         match ev with
         | .engine _ (.pauseBatch bid ..) =>
-          if ckptBatchId? != some bid then
+          if !preDepBatches.contains bid then
             depPausedBatch? := some bid
         | .engine _ .clearPausedBatch =>
           depPausedBatch? := none
@@ -11732,13 +11750,13 @@ def restoreControlUntilSourceLeaves (g : Game) (srcId : ObjectId)
         | some o =>
           let objName := acc.name o
           let acc := acc.expireEffectById eid (cause := cause)
-          let p := o.defaultController.getD o.owner
+          let p := (o.defaultController.orElse (fun _ => o.controller)).getD o.owner
           let othersRemain := !(acc.appliedControlEffectIds o).isEmpty
           if othersRemain then
             match (acc.findObject? id).bind acc.controllerOf with
             | some q => acc.logMsg s!"{objName} returns to {(acc.player q).name}'s control"
             | none => acc
-          else if !acc.stillInGame p then
+          else if (acc.player p).leftTheGame then
             acc.logMsg s!"{objName} does not change control (CR 800.4b)"
           else
             acc.logMsg s!"{objName} returns to {(acc.player p).name}'s control"

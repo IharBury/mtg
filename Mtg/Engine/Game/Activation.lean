@@ -30,13 +30,18 @@ def fraActivationConditionHolds (g : Game) (p : PlayerId) : FraActivationConditi
   | .jaceLoyaltyAtLeast n => g.jaceLoyaltyAmong p ≥ n
 
 /-- Whether `p` can pay the Reality Fracture part of `o`'s activation cost. -/
-def canPayFraCost (g : Game) (p : PlayerId) (o : GameObject) (c : FraCost) : Bool :=
-  match c with
+def canPayFraCost (g : Game) (p : PlayerId) (o : GameObject) (ab : ActivatedAbility) : Bool :=
+  let sacOrExileSrc := ab.cost.sacrificeSource || ab.cost.fra == .exileSource
+  let discOrExileHandSrc := ab.cost.discardSource || ab.cost.fra == .exileSourceFromHand
+  match ab.cost.fra with
   | .none => true
   | .exileAnotherCreatureCardFromGraveyard | .sacrificeAnotherArtifact
   | .sacrificeAnotherCreatureOrPlaneswalker | .sacrificeArtifactOrLand
   | .discardLegendaryCard | .tapTwoUntappedArtifacts =>
-    g.costPicksPayable p (some o.id) (costPicksOf { cost := { fra := c }, effect := default })
+    g.costPicksPayable p (some o.id) (costPicksOf ab)
+      (tapSource := ab.cost.tap)
+      (sacrificeOrExileSource := sacOrExileSrc)
+      (discardOrExileHandSource := discOrExileHandSrc)
   | .exileSourceFromHand => o.zone == .hand o.owner
   | .exileSource => o.isOnBattlefield
   | .zemoBoast =>
@@ -84,7 +89,7 @@ def validateActivation (g : Game) (p : PlayerId) (o : GameObject) (ab : Activate
     throw s!"{g.name o}'s ability can't be activated now (its \"Activate only if\" condition isn't met)"
   if ab.cost.fra == .zemoBoast && !g.canActivateBoast o then
     throw s!"{g.name o}'s boast ability can be activated only if it attacked this turn and only once each turn"
-  if !g.canPayFraCost p o ab.cost.fra then
+  if !g.canPayFraCost p o ab then
     throw s!"{g.name o}'s ability has a cost that can't be paid"
   if g.combatLocksNonManaAbilities && !isManaActivation ab then
     throw "During combat, players can't activate abilities that aren't mana abilities (Yuriko)"
@@ -123,7 +128,10 @@ def validateActivation (g : Game) (p : PlayerId) (o : GameObject) (ab : Activate
   if ab.cost.sacrificeAnotherCreatureOrArtifact &&
       (g.sacrificeCreatureOrArtifactChoices p o.id).isEmpty then
     throw s!"{g.name o}'s ability requires sacrificing another creature or artifact"
-  if !g.costPicksPayable p (some o.id) (costPicksOf ab) then
+  if !g.costPicksPayable p (some o.id) (costPicksOf ab)
+      (tapSource := ab.cost.tap)
+      (sacrificeOrExileSource := ab.cost.sacrificeSource || ab.cost.fra == .exileSource)
+      (discardOrExileHandSource := ab.cost.discardSource || ab.cost.fra == .exileSourceFromHand) then
     throw s!"{g.name o}'s ability has a cost that can't be paid"
   if ab.cost.removeAnyNumberPlusOne && ab.cost.tap && o.status.tapped then
     throw s!"{g.name o} is already tapped"
