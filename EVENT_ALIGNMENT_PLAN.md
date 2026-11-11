@@ -11766,21 +11766,34 @@ proposal guards and `.restorePending` departed-seat ordering,
        `g.pendingReplacement` across `saveProposalCheckpoint` (so a pre-proposal
        `g.pendingReplacement` already captured in `preBodyCont?` is not
        duplicated); and
-     - add a separate optional parameter `(prePopHadCont? : Option Bool := none)`
-       to `Leaving.playerLeavesGameCore` (`Leaving.lean:2075–2116`, without
+     - add a separate optional parameter
+       `(prePopCont? : Option (Option PendingReplacement) := none)` to
+       `Leaving.playerLeavesGameCore` (`Leaving.lean:2075–2116`, without calling
+       private `hasProposalBoundaryStep` from `Decisions.lean` and without
        storing the pre-pop bit in `rewindProposal`, which would treat `some
        false` as a queued rewind in `leavePlayersWhoLostCore` at `2627–2632` /
        `concedePlayersLoop` at `473–478` and `applyDeferredProposalRewind` at
        `2572–2578` / `495–501`): in `leavePlayersWhoLostCore` (`2594–2604`) and
        `concedePlayersLoop` (`440–450`), before `if popOuter then ...`, snapshot
-       `let prePopHadCont? : Option Bool := if popOuter then some
-       (g.pendingReplacement.any (fun pr => !g.proposedSpell.any (fun prop =>
-       hasProposalBoundaryStep prop.caster pr))) else none`, pass
-       `(prePopHadCont? := prePopHadCont?)` to `playerLeavesGameCore`, and in
-       `playerLeavesGameCore` (`2116`) compute `let hadPreBodyCont :=
-       rewindProposalIn.getD (prePopHadCont?.getD preBodyCont?.isSome)` (leaving
-       the loop's `rewindProposal` at `none` unless the departure actually
-       aborts).
+       `let prePopCont? : Option (Option PendingReplacement) := if popOuter then
+       some g.pendingReplacement else none` and pass `(prePopCont? :=
+       prePopCont?)` to `playerLeavesGameCore`; and inside
+       `playerLeavesGameCore` (`2108–2116`, where `wasAbortedProposal`,
+       `abortedCaster?`, and `abortingReplacementProposal` are known), run the
+       same `stripAbortedProposalCont` helper (`Leaving.lean:528–540`) on
+       `prePopCont?` when `rewindProposalIn` is `none` (`let stripCont (pr? :
+       Option PendingReplacement) : Option PendingReplacement := match
+       abortedCaster?, pr? with | some c, some pr => if
+       abortingReplacementProposal || hasProposalBoundaryStep c pr then
+       stripAbortedProposalCont c pr else some pr | _, pr? => if
+       abortingReplacementProposal then none else pr?`, followed by `let
+       hadPreBodyCont := rewindProposalIn.getD (match prePopCont? with | some
+       prePop => (stripCont prePop).isSome | none => preBodyCont?.isSome)`) so a
+       pre-pop `none` stays `hadPreBodyCont = false` after the pop chains
+       `outerPendingReplacements.back?` in while a pre-pop `.seq a b` with a
+       proposal boundary in `a` and a keeper in `b` strips to `some b` (`true`),
+       leaving the loop's `rewindProposal` at `none` unless the departure
+       actually aborts.
 2. Preserve live non-proposal `savedPausedBatch?` across
    `Leaving.playerLeavesGameCore` when `shouldRewindProposal` is true
    (`Leaving.lean:2082–2108, 2508–2540`, §2.1, §2.5, §3.8, CR 601.2 / 616.1 /
@@ -11845,7 +11858,27 @@ proposal guards and `.restorePending` departed-seat ordering,
      returns `(g, didSba, saved?, popOuter, departed, rewindProposal)`:
      - when `deferRestore == true`, do not chain `.leavePlayersWhoLost` /
        `.checkSBA` on pause (`546–550, 574–577, 585–591`) and do not call
-       `restoreSavedPostLeave` at fixpoint completion (`598–600`);
+       `restoreSavedPostLeave` at fixpoint completion (`598–600`, returning
+       `(g, false, saved?, popOuter, departed, rewindProposal)` instead);
+     - on all pre-`leavePlayersWhoLostCore` early returns—`if g.over` (`573`:
+       `(g, didSba, none, false, departedIn, none)`), `else if wasPaused &&
+       (savedIn.isSome || popOuterIn || !departedIn.isEmpty ||
+       rewindProposalIn.isSome)` (`574–577`: chaining `.leavePlayersWhoLost` only
+       when `!deferRestore`, and returning `(g, didSba, savedIn, popOuterIn,
+       departedIn, rewindProposalIn)`), and `else if g.pending != .none` (`578`,
+       taken when `checkSBACounted` pauses on `.chooseLegend` /
+       `.chooseReplacement`: returning `(g, didSba, savedIn, popOuterIn,
+       departedIn, rewindProposalIn)`)—and on all post-`leavePlayersWhoLostCore`
+       early returns—`if g.over` (`584`: `(g, didSba || anyLeft, none, false,
+       departed, none)`), `else if g.sbaPaused` (`585–591`: chaining
+       `.leavePlayersWhoLost` / `.checkSBA` only when `!deferRestore`, and
+       returning `(g, true, saved?, popOuter, departed, rewindProposal)`), and
+       `else if g.pending != .none` (`592`: returning `(g, didSba || anyLeft,
+       saved?, popOuter, departed, rewindProposal)`)—return the live `savedIn` /
+       `popOuterIn` / `departedIn` / `rewindProposalIn` or `saved?` / `popOuter`
+       / `departed` / `rewindProposal` tuple so `finishConcedePriority` never
+       loses the concede continuation state when `checkSBACounted` or
+       `leavePlayersWhoLostCore` pauses;
      - in the recursive fixpoint branch (`else if didSba || anyLeft then` at
        `593–596`), recurse into `g.checkSBACountedWithLeavesCore saved? popOuter
        departed rewindProposal (deferRestore := deferRestore)` (forwarding the
@@ -11901,17 +11934,23 @@ proposal guards and `.restorePending` departed-seat ordering,
    - In `Decisions.proposalCostPromptStillPayable` (`Decisions.lean:97–134`):
      - Require `g.sourceStillPayable prop` on pre-`completeActivation` ability
        cost prompts (`.fraChoice q (.costPicks ..)`, `.fraChoice q (.crew ..)`,
-       and `.fraChoice q (.zemoBoastExile ..)`) and on `prop.kind ==
-       .turnFaceUp` prompts (`src.isOnBattlefield && g.controlledBy src caster
-       && src.status.faceDown`), and on `.sacrificePermanent q excludeId` when
-       `prop.kind == .activatedAbility && prop.activation.any
-       (·.cost.loyalty.isSome)` evaluate the loyalty-payability predicate from
+       and `.fraChoice q (.zemoBoastExile ..)`, which open at
+       `Activation.lean:246–251` before `payActivationExtraCosts`) and on
+       `prop.kind == .turnFaceUp` prompts (`src.isOnBattlefield && g.controlledBy
+       src caster && src.status.faceDown`), and on `.sacrificePermanent q
+       excludeId` (which opens in `completeActivation` at
+       `Casting.lean:1121–1123` after `payActivationExtraCosts` has already paid
+       tap / story / `+1/+1` counter costs on `excludeId`, so calling all of
+       `g.sourceStillPayable` would fail on a tapped source) when `prop.kind ==
+       .activatedAbility` check only the loyalty-payability conjunct from
        `Choices.sourceStillPayable` (`Choices.lean:610–620`) and
        `Activation.activateAbility` (`Activation.lean:96–103`) on `excludeId`
-       (i.e. `g.sourceStillPayable { prop with sourceId := some excludeId }`:
-       `src.isOnBattlefield && g.controlledBy src caster &&
-       !g.loyaltyActivatedThisTurn excludeId` and `src.status.loyaltyCounters`
-       against the loyalty symbol, where `minusX` uses `chosenX`).
+       (`match prop.activation.bind (·.cost.loyalty) with | none => true | some
+       sym => (g.findObject? excludeId).any (fun src => src.isOnBattlefield &&
+       g.controlledBy src caster && !g.loyaltyActivatedThisTurn src.id && match
+       sym.counters with | some k => k ≥ 0 || (src.status.loyaltyCounters : Int)
+       ≥ -k | none => sym == LoyaltySymbol.minusX && src.status.loyaltyCounters ≥
+       ((g.findObject? prop.spellId).bind (·.chosenX)).getD 0)`).
    - In `Decisions.runPostStep` (`Decisions.lean:1781–1834`):
      - In `.resumeChooseModeAfterLeave p`, conjoin `g.sourceStillPayable prop &&`
        onto the `.activatedAbility` (`1782`) and `.turnFaceUp` (`1817`) checks so
