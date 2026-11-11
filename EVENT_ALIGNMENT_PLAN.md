@@ -12200,7 +12200,7 @@ control-loss source invalidation across `isProposalAbortedByLeave`,
 3. Validate post-departure proposal prompts & `CastSpell.announceX` source
    payability and complete cascaded / prior-departed CR 800.4a / 800.4c
    control-loss handling (`Decisions.lean:632–643, 950–957, 1116–1135`,
-   `CastSpell.lean:294–310`, `Leaving.lean:370–403, 513–554, 2374–2378`,
+   `CastSpell.lean:294–310`, `Leaving.lean:370–403, 513–554, 2333, 2374–2378`,
    `Movement.lean:301–318, 590–618`, §2.4, §2.5, §3.1, §3.8, CR 601.2b–h /
    602.2b / 606.3–606.4 / 613.1a–b / 613.7–613.8 / 702.37e / 733.1 / 800.4a,c):
    - In `Decisions.resumePendingReplacement` `.restorePending`
@@ -12243,24 +12243,34 @@ control-loss source invalidation across `isProposalAbortedByLeave`,
      `Leaving.playerLeavesGameCore` (`Leaving.lean:2374–2378`),
      `Leaving.objectLeavesTheGame` (`Leaving.lean:370–403`), and `Movement.move`
      (`Movement.lean:301–318, 590–618`):
-     - In `Leaving.isProposalAbortedByLeave` (`543–554`), iterate the post-`p`
-       board `g1` to a fixpoint (`for _ in [0:g1.objects.size]`), removing on
-       each pass every object `o` where `cur.controlledBy o p ||
-       (o.isBattlefieldObject && (cur.appliedControlEffectIds o).isEmpty &&
-       !cur.stillInGame (((o.defaultController.orElse (fun _ =>
-       o.controller)).getD o.owner)))` until stable, and then check that `src` is
-       still on `gAfterLeave`'s battlefield with `gAfterLeave.effectiveController?
-       src == some prop.caster`, so multi-hop CR 800.4c control-exile cascades
-       (e.g. `p1`-default permanent `W1` granting `p2` control of `p1`-default
-       `W2`, which grants `p0` control of `src`) and permanents whose
+     - In `Leaving.isProposalAbortedByLeave` (`543–554`, where `plsAfterP` at
+       `528–531` already marks `p` with `leftTheGame := true`), iterate the
+       post-`p` board `g1` to a fixpoint (`for _ in [0:g1.objects.size]`),
+       removing on each pass every object `o` where `let fallback :=
+       (o.defaultController.orElse (fun _ => o.controller)).getD o.owner;
+       cur.controlledBy o p || (o.isBattlefieldObject &&
+       (cur.appliedControlEffectIds o).isEmpty && (cur.player
+       fallback).leftTheGame)` until stable, and then check that `src` is still
+       on `gAfterLeave`'s battlefield with `gAfterLeave.effectiveController? src
+       == some prop.caster`, so multi-hop CR 800.4c control-exile cascades (e.g.
+       `p1`-default permanent `W1` granting `p2` control of `p1`-default `W2`,
+       which grants `p0` control of `src`) and permanents whose
        `defaultController` departed in an earlier turn are detected as aborting
-       `prop.caster`'s proposal;
-     - in `Leaving.playerLeavesGameCore` (`2377`), replace `== p` with
-       `!g.stillInGame (((o.defaultController.orElse (fun _ =>
-       o.controller)).getD o.owner))` so battlefield permanents whose
-       `defaultController` already left the game earlier and whose last remaining
-       control effect ended during `p`'s departure are exiled under CR 800.4c
-       instead of remaining on the battlefield with `controllerOf == none`; and
+       `prop.caster`'s proposal without deleting permanents whose fallback
+       controller is merely a pending simultaneous loser (`lost &&
+       !leftTheGame`, `StateBasedActions.lean:508–521`);
+     - in `Leaving.playerLeavesGameCore` (`2377`, after `GameEvent.playerLeftGame`
+       at `2333` has already set `(g.player p).leftTheGame = true`), replace
+       `== p` with `(g.player fallback).leftTheGame` (where `fallback :=
+       (o.defaultController.orElse (fun _ => o.controller)).getD o.owner`,
+       gating on `.leftTheGame` rather than `!g.stillInGame` at
+       `Core.lean:1322–1323`) so battlefield permanents whose
+       `defaultController` is `p` or already left the game on an earlier turn
+       and whose last remaining control effect ended during `p`'s departure are
+       exiled under CR 800.4a / 800.4c instead of remaining on the battlefield
+       with `controllerOf == none`, while keeping another pending simultaneous
+       loser's (`lost && !leftTheGame`) permanents off `p`'s `exileQueue` until
+       their own CR 800.4a departure; and
      - in `Leaving.objectLeavesTheGame` (`Leaving.lean:370–403`) and
        `Movement.move` (`Movement.lean:301–318, 590–618`), collect
        `sourceCtrlTargets` before the object leaves as all battlefield objects
@@ -12392,8 +12402,9 @@ pending Pass-1 loser CR 800.4a departure before Pass 2 in
 fixes, `Core.reverseToProposalCheckpointCore?` `preDepBatches` mana-sacrifice
 reversal and `Movement.reverseToProposalCheckpoint?` post-replay
 `flushQueuedLinkedExile`, post-departure `.restorePending` / `announceX`
-`sourceStillPayable` reversal and cascaded / prior-departed CR 800.4c control
-exile, and `Choices.sourceStillPayable` `sneakAttacker` / morph / graveyard-zone
+`sourceStillPayable` reversal and `.leftTheGame`-gated cascaded / prior-departed
+CR 800.4c control exile (isolating pending simultaneous losers), and
+`Choices.sourceStillPayable` `sneakAttacker` / morph / graveyard-zone
 guards plus `CostPick` self-use exclusion, `{T}`-before-self-sacrifice payment,
 multi-pick disjointness, and `canPayLife`).
 
