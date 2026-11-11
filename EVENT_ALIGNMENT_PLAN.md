@@ -12200,11 +12200,12 @@ control-loss source invalidation across `isProposalAbortedByLeave`,
 3. Validate post-departure proposal prompts & `CastSpell.announceX` source
    payability and complete `.leftTheGame`-gated cascaded / prior-departed CR
    800.4a / 800.4c control-loss handling (`Core.lean:1651–1658, 11735–11744`,
-   `Decisions.lean:632–643, 950–957, 1116–1135`, `CastSpell.lean:294–310`,
-   `Leaving.lean:156–161, 370–403, 513–554, 2333, 2349–2357, 2374–2378`,
-   `Movement.lean:301–318, 590–618`, `StateBasedActions.lean:508–521`,
-   `Fixture.lean:274–276`, §2.4, §2.5, §3.1, §3.8, CR 601.2b–h / 602.2b /
-   606.3–606.4 / 613.1a–b / 613.7–613.8 / 702.37e / 733.1 / 800.4a–c):
+   `Attachments.lean:55–56`, `Decisions.lean:632–643, 950–957, 1116–1135`,
+   `CastSpell.lean:294–310`, `Leaving.lean:156–161, 370–403, 513–554, 2333,
+   2349–2357, 2374–2378`, `Movement.lean:301–318, 590–618`,
+   `StateBasedActions.lean:508–521`, `Fixture.lean:274–276`, §2.4, §2.5, §3.1,
+   §3.8, CR 601.2b–h / 602.2b / 606.3–606.4 / 613.1a–b / 613.7–613.8 /
+   702.37e / 733.1 / 800.4a–c):
    - In `Decisions.resumePendingReplacement` `.restorePending`
      (`Decisions.lean:950–957, 1116–1135`), `Decisions.resumePendingReplacement`
      `.seq` (`Decisions.lean:632–643`), and `CastSpell.announceX`
@@ -12279,15 +12280,16 @@ control-loss source invalidation across `isProposalAbortedByLeave`,
        controller is merely a pending simultaneous loser (`lost &&
        !leftTheGame`, `StateBasedActions.lean:508–521`);
      - in `Leaving.endControlEffectById` (`Leaving.lean:156–161`, invoked at
-       `2356` before `2374–2378`) and `Leaving.playerLeavesGameCore` (`2377`,
-       after `GameEvent.playerLeftGame` at `2333` has already set `(g.player
-       p).leftTheGame = true`), compute `let dest := curCtrl.getD
-       ((cur.defaultController.orElse (fun _ => cur.controller)).getD
-       cur.owner)` and gate CR 800.4c exile at `157` on `(acc.player
-       dest).leftTheGame` instead of `!acc.stillInGame dest`, and replace `== p`
-       at `2377` with `(g.player fallback).leftTheGame` (where `fallback :=
-       (o.defaultController.orElse (fun _ => o.controller)).getD o.owner`,
-       gating on `.leftTheGame` rather than `!g.stillInGame` at
+       `2356` before `2374–2378` and reached at `156` only when
+       `!othersRemain`, i.e., `(acc.appliedControlEffectIds cur).isEmpty`) and
+       `Leaving.playerLeavesGameCore` (`2377`, after `GameEvent.playerLeftGame`
+       at `2333` has already set `(g.player p).leftTheGame = true`), compute
+       `let dest := (cur.defaultController.orElse (fun _ =>
+       cur.controller)).getD cur.owner` and gate CR 800.4c exile at `157` on
+       `(acc.player dest).leftTheGame` instead of `!acc.stillInGame dest`, and
+       replace `== p` at `2377` with `(g.player fallback).leftTheGame` (where
+       `fallback := (o.defaultController.orElse (fun _ => o.controller)).getD
+       o.owner`, gating on `.leftTheGame` rather than `!g.stillInGame` at
        `Core.lean:1322–1323`) so battlefield permanents whose
        `defaultController` is `p` or already left the game on an earlier turn
        and whose last remaining control effect ended during `p`'s departure are
@@ -12296,24 +12298,34 @@ control-loss source invalidation across `isProposalAbortedByLeave`,
        loser's (`lost && !leftTheGame`) permanents under that loser's control
        and off `p`'s exile queues until their own CR 800.4a departure; and
      - in `Leaving.objectLeavesTheGame` (`Leaving.lean:370–403`, invoked for
-       `p`'s owned objects at `2349–2352`) and `Movement.move`
-       (`Movement.lean:301–318, 590–618`), collect `sourceCtrlTargets` before
-       the object leaves as all battlefield objects `pObj` (`pObj.id != o.id` /
-       `old.id`) with `!(g.appliedControlEffectIds pObj).isEmpty` (whenever
-       `o.zone != .ante` in `objectLeavesTheGame`, and whenever `!(old.zone ==
-       .battlefield && dest == .battlefield)` in `Movement.move`, running the
-       post-leave CR 800.4c check even when `o` / `old` left a non-battlefield
-       zone), compute the fallback controller via `(g.controllerOf cur).getD
-       ((cur.defaultController.orElse (fun _ => cur.controller)).getD
-       cur.owner)` (`Leaving.lean:396`, `Movement.lean:599, 608`), and gate CR
-       800.4c exile at `Leaving.lean:397` and `Movement.lean:600, 609` on
-       `(g.player destP).leftTheGame` / `(acc.player destP).leftTheGame` /
-       `(acc.player dp).leftTheGame` rather than `!stillInGame`, so
-       `.whileInZone` control effects and indirect Layer 1/2 control-effect
-       dependencies exile permanents whose fallback controller has left the game
-       (`.leftTheGame`, CR 800.4c) without exiling a pending simultaneous
-       loser's (`lost && !leftTheGame`) permanents during an earlier loser's
-       departure.
+       `p`'s owned objects at `2349–2352` before `2356` ends `.control p`
+       effects) and `Movement.move` (`Movement.lean:301–318, 590–618`), collect
+       `sourceCtrlTargets` before the object leaves as all battlefield objects
+       `pObj` (`pObj.isBattlefieldObject && pObj.id != o.id` / `old.id`) with
+       `!(g.appliedControlEffectIds pObj).isEmpty` (whenever `o.zone != .ante`
+       in `objectLeavesTheGame`, and whenever `!(old.zone == .battlefield &&
+       dest == .battlefield)` in `Movement.move`), and after `ceaseToExist`
+       (`Attachments.lean:55–56`) in `objectLeavesTheGame` (on both the
+       `o.zone == .battlefield` branch at `386–398` and the `o.zone !=
+       .battlefield` branch at `402–403`, running `withBatch cause` +
+       `runEndControlExileLoop` when `!exileQueue.isEmpty`) and after
+       `expireEffectsOnLeavingObject` (`589`) plus `if old.zone == .battlefield
+       then g.expireWhileSourceEffects old.id else g` (`591–592`) in
+       `Movement.move` (running the `593–617` loop whenever
+       `!sourceCtrlTargets.isEmpty`, even when `old.zone != .battlefield`),
+       exile a candidate `cur` / `ro` **only when** `cur.isBattlefieldObject &&
+       (g.appliedControlEffectIds cur).isEmpty` (`Leaving.lean:394` and the
+       `402–403` branch) / `cur.isBattlefieldObject &&
+       (acc.appliedControlEffectIds cur).isEmpty` (`Movement.lean:598, 607`) —
+       never exiling a permanent while any `.control` effect (including a
+       `.control p` effect not yet ended until `2356`) is still applied — and
+       gate CR 800.4c exile at `Leaving.lean:396–397` (plus `402–403`) and
+       `Movement.lean:599–600, 608–609` directly on `(g.player
+       fallback).leftTheGame` / `(acc.player fallback).leftTheGame` /
+       `(acc.player dp).leftTheGame` for `fallback :=
+       (cur.defaultController.orElse (fun _ => cur.controller)).getD cur.owner`
+       (`dp := (ro.defaultController.orElse (fun _ => ro.controller)).getD
+       ro.owner`, without reading `controllerOf`).
 4. Complete `Choices.sourceStillPayable` (`sneakAttacker`, CR 702.37e morph
    copiable values, and ability-zone guards) and `CostPick` self-use exclusion,
    `{T}`-before-self-sacrifice payment, multi-pick disjointness, and pre-extra-cost
