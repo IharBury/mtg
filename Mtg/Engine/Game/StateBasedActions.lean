@@ -346,7 +346,8 @@ priority. `keepLegend` resumes the loop. -/
 partial def checkSBACounted (g : Game)
     (savedIn : Option Pending := none) (popOuterIn : Bool := false)
     (departedIn : Array PlayerId := #[])
-    (rewindProposalIn : Option Bool := none) : Game × Bool :=
+    (rewindProposalIn : Option Bool := none)
+    (deferRestore : Bool := false) : Game × Bool :=
   if g.over || g.sbaPaused then (g, false)
   else
     let (g, (changed, _paused)) := g.withBatchReturn none fun g => Id.run do
@@ -543,21 +544,31 @@ partial def checkSBACounted (g : Game)
         (changedIn := changed)
     match g.pending with
     | .chooseReplacement .. | .chooseLegend .. =>
-      (g.chainPendingReplacement
-        (if savedIn.isSome || popOuterIn || !departedIn.isEmpty || rewindProposalIn.isSome then
-          .leavePlayersWhoLost savedIn popOuterIn departedIn rewindProposalIn
-        else .checkSBA),
-       true)
+      let g :=
+        if deferRestore then g
+        else
+          g.chainPendingReplacement
+            (if savedIn.isSome || popOuterIn || !departedIn.isEmpty || rewindProposalIn.isSome then
+              .leavePlayersWhoLost savedIn popOuterIn departedIn rewindProposalIn
+            else .checkSBA)
+      (g, true)
     | _ =>
       (g, changed)
 
-/-- Repeat `checkSBACounted` and `leavePlayersWhoLostCore` until neither performs
-an action or the game ends / pauses on a pending choice, restoring any deferred
-saved pending decision once at the end of the fixpoint (CR 704.3 / 800.4a). -/
-partial def checkSBACountedWithLeaves (g : Game)
+/-- Core of `checkSBACountedWithLeaves`: repeats `checkSBACounted` and
+`leavePlayersWhoLostCore` until neither performs an action or the game ends /
+pauses on a pending choice, returning the updated `(g, didSba, saved?, popOuter,
+departed, rewindProposal)` tuple. When `deferRestore` is `true`, suppresses
+internal `.leavePlayersWhoLost` / `.checkSBA` chaining on pause and skips
+`restoreSavedPostLeave` at fixpoint completion so callers such as
+`finishConcedePriority` own post-SBA restoration (CR 104.5 / 704.3 / 800.4a). -/
+partial def checkSBACountedWithLeavesCore (g : Game)
     (savedIn : Option Pending := none) (popOuterIn : Bool := false)
     (departedIn : Array PlayerId := #[])
-    (rewindProposalIn : Option Bool := none) : Game × Bool × Array PlayerId :=
+    (rewindProposalIn : Option Bool := none)
+    (deferRestore : Bool := false) :
+    Game × Bool × Option Pending × Bool × Array PlayerId × Option Bool :=
+  let (g, popOuterIn) := g.flushDismissedPausedBatch savedIn popOuterIn
   let (g, savedIn, popOuterIn, rewindProposalIn) :=
     match rewindProposalIn with
     | some hadPreBodyCont =>
@@ -569,35 +580,59 @@ partial def checkSBACountedWithLeaves (g : Game)
     | none =>
       (g, savedIn, popOuterIn, none)
   let wasPaused := g.sbaPaused
-  let (g, didSba) := g.checkSBACounted savedIn popOuterIn departedIn rewindProposalIn
-  if g.over then (g, didSba, departedIn)
+  let (g, didSba) :=
+    g.checkSBACounted savedIn popOuterIn departedIn rewindProposalIn (deferRestore := deferRestore)
+  if g.over then (g, didSba, none, false, departedIn, none)
   else if wasPaused && (savedIn.isSome || popOuterIn || !departedIn.isEmpty || rewindProposalIn.isSome) then
-    (g.chainPendingReplacement
-      (.leavePlayersWhoLost savedIn popOuterIn departedIn rewindProposalIn),
-     didSba, departedIn)
-  else if g.pending != .none then (g, didSba, departedIn)
+    let g :=
+      if deferRestore then g
+      else
+        g.chainPendingReplacement
+          (.leavePlayersWhoLost savedIn popOuterIn departedIn rewindProposalIn)
+    (g, didSba, savedIn, popOuterIn, departedIn, rewindProposalIn)
+  else if g.pending != .none then
+    (g, didSba, savedIn, popOuterIn, departedIn, rewindProposalIn)
   else
     let leftBefore := (g.players.filter (·.leftTheGame)).size
     let (g, saved?, popOuter, departed, rewindProposal) :=
       g.leavePlayersWhoLostCore savedIn popOuterIn departedIn rewindProposalIn
     let anyLeft := (g.players.filter (·.leftTheGame)).size > leftBefore
-    if g.over then (g, didSba || anyLeft, departed)
+    if g.over then (g, didSba || anyLeft, none, false, departed, none)
     else if g.sbaPaused then
-      (g.chainPendingReplacement
-        (if g.players.any (fun r => r.lost && !r.leftTheGame) || saved?.isSome || popOuter ||
-            !departed.isEmpty || rewindProposal.isSome then
-          .leavePlayersWhoLost saved? popOuter departed rewindProposal
-        else .checkSBA),
-       true, departed)
-    else if g.pending != .none then (g, didSba || anyLeft, departed)
+      let g :=
+        if deferRestore then g
+        else
+          g.chainPendingReplacement
+            (if g.players.any (fun r => r.lost && !r.leftTheGame) || saved?.isSome || popOuter ||
+                !departed.isEmpty || rewindProposal.isSome then
+              .leavePlayersWhoLost saved? popOuter departed rewindProposal
+            else .checkSBA)
+      (g, true, saved?, popOuter, departed, rewindProposal)
+    else if g.pending != .none then
+      (g, didSba || anyLeft, saved?, popOuter, departed, rewindProposal)
     else if didSba || anyLeft then
-      let (g', didMore, departed') :=
-        g.checkSBACountedWithLeaves saved? popOuter departed rewindProposal
-      (g', didSba || anyLeft || didMore, departed')
+      let (g', didMore, saved'?, popOuter', departed', rewindProposal') :=
+        g.checkSBACountedWithLeavesCore saved? popOuter departed rewindProposal
+          (deferRestore := deferRestore)
+      (g', didSba || anyLeft || didMore, saved'?, popOuter', departed', rewindProposal')
+    else if deferRestore then
+      (g, false, saved?, popOuter, departed, rewindProposal)
     else
       (g.restoreSavedPostLeave saved? popOuter
          (departed := departed) (rewindProposal := rewindProposal),
-       false, departed)
+       false, none, false, departed, none)
+
+/-- Repeat `checkSBACounted` and `leavePlayersWhoLostCore` until neither performs
+an action or the game ends / pauses on a pending choice, restoring any deferred
+saved pending decision once at the end of the fixpoint (CR 704.3 / 800.4a). -/
+def checkSBACountedWithLeaves (g : Game)
+    (savedIn : Option Pending := none) (popOuterIn : Bool := false)
+    (departedIn : Array PlayerId := #[])
+    (rewindProposalIn : Option Bool := none) : Game × Bool × Array PlayerId :=
+  let (g, didSba, _, _, departed, _) :=
+    g.checkSBACountedWithLeavesCore savedIn popOuterIn departedIn rewindProposalIn
+      (deferRestore := false)
+  (g, didSba, departed)
 
 def checkSBA (g : Game) : Game :=
   (g.checkSBACountedWithLeaves).1

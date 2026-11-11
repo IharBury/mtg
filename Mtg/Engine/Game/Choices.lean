@@ -596,7 +596,8 @@ partial def createPermanentCopyTokens (g : Game) (controller : PlayerId) (templa
     else if g.currentBatch.isNone then g.promptTriggerTargetsIfNeeded
     else g
 
-/-- Whether the source of a proposed activated ability can still pay tap/sacrifice/discard/loyalty. -/
+/-- Whether the source of a proposed activated ability or face-up action can
+still pay its source-bound costs (CR 602.2b / 606.3–606.4 / 702.37e / 733.1). -/
 def sourceStillPayable (g : Game) (prop : ProposedSpell) : Bool :=
   match prop.sourceId with
   | none => true
@@ -622,7 +623,15 @@ def sourceStillPayable (g : Game) (prop : ProposedSpell) : Bool :=
         !prop.removePlusOneX ||
           (src.isOnBattlefield && g.controlledBy src prop.caster &&
            src.status.plusOnePlusOne ≥ ((g.findObject? prop.spellId).bind (·.chosenX)).getD 0)
+      let removeStoryPayable :=
+        !prop.activation.any (·.cost.removeStoryCounter) ||
+          (src.isOnBattlefield && g.controlledBy src prop.caster && src.status.story > 0)
+      let removeIndestructiblePayable :=
+        !prop.activation.any (·.cost.removeIndestructibleCounter) ||
+          (src.isOnBattlefield && g.controlledBy src prop.caster &&
+           src.status.indestructibleCounters > 0)
       loyaltyPayable && removePlusOneXPayable &&
+      removeStoryPayable && removeIndestructiblePayable &&
       ((src.isOnBattlefield && g.controlledBy src prop.caster &&
         (!prop.tapSource || !src.status.tapped) && !prop.discardSource) ||
       (src.zone == .graveyard src.owner && src.owner == prop.caster &&
