@@ -13623,13 +13623,16 @@ unpayable-prompt `decline` reversals).
        `Leaving.batchPausePromptValid` (`Leaving.lean:2103–2106`, which matches
        `| .chooseLegend q _ ids =>`, discarding `name`, with no `currentBatch`
        check), `Decisions.resumePendingReplacement`'s `.restorePending
-       (.chooseLegend q name ids)` (`Decisions.lean:1238–1242`), and
-       `Decisions.keepLegend` (`Decisions.lean:4891–4925`) only filter `ids` by
-       `o.isOnBattlefield && g.controlledBy o q`, so if a departure or
-       continuous-effect expiry ends a copy/type/name effect and one of `ids` is
+       (.chooseLegend q name ids)` (`Decisions.lean:1238–1242`) only filter `ids` by
+       `o.isOnBattlefield && g.controlledBy o q`, while `Decisions.keepLegend`
+       (`Decisions.lean:4891–4939`) only checks `ids.contains id` /
+       `kept.isOnBattlefield` (`4894–4898`) and moves `others := ids.filter (· !=
+       id)` checking only `o.isOnBattlefield` (`4901, 4916–4922`), so if a departure
+       or continuous-effect expiry ends a copy/type/name effect and one of `ids` is
        no longer legendary or no longer named `name`, `.chooseLegend` stays open
-       and `keepLegend` puts a non-matching permanent into its owner's graveyard
-       under CR 704.5j; meanwhile `StateBasedActions.checkSBACounted`'s existing
+       and `keepLegend` allows keeping a non-matching choice or puts a non-matching
+       permanent into its owner's graveyard under CR 704.5j; meanwhile
+       `StateBasedActions.checkSBACounted`'s existing
        `| .chooseLegend p name ids =>` arm (`StateBasedActions.lean:362–373`—currently
        the only place with `g.currentBatch.isSome` leniency at `367–368`, and not
        narrowing `ids` when `still.size ≥ 2`) is **unreachable** because
@@ -13644,11 +13647,19 @@ unpayable-prompt `decline` reversals).
          `Leaving.redirectPendingAfterLeave` (`936–938`),
          `Leaving.batchPausePromptValid` (`2103–2106`), and
          `Decisions.resumePendingReplacement` `.restorePending (.chooseLegend q
-         name ids)` (`1238–1242`); in `Decisions.keepLegend` (`4891–4925`), filter
-         live candidates by `o.isOnBattlefield && g.controlledBy o p &&
-         g.treatedAsLegendary o && g.name o == name` and, if `< 2` remain, clear
-         `.pending .none` and resume the post-legend CR 704.3 loop without putting
-         any permanent into the graveyard; and in
+         name ids)` (`1238–1242`); in `Decisions.keepLegend` (`4891–4939`), compute
+         `let liveIds := ids.filter fun oid => (g.findObject? oid).any fun o =>
+         o.isOnBattlefield && g.controlledBy o p && g.treatedAsLegendary o &&
+         g.name o == name`: if `liveIds.size < 2` (CR 704.5j no longer applies),
+         clear `.pending .none` and resume the post-legend CR 704.3 loop
+         (`4934–4939`, preserving `outerCont?`) without putting any permanent into
+         the graveyard, and otherwise (`liveIds.size ≥ 2`) **require
+         `liveIds.contains id`** on the kept permanent (`4894–4898`), compute **`let
+         others := liveIds.filter (· != id)`** (`4901`), **and** require
+         `o.isOnBattlefield && g.controlledBy o p && g.treatedAsLegendary o &&
+         g.name o == name` on every object moved in the graveyard loop (`4916–4932`,
+         including filtering `rem` at `4927`) so a permanent that lost its
+         legendary status, name, or control can neither be kept nor buried; and in
          `StateBasedActions.checkSBACounted` (`351–374`), **replace** the
          unreachable `362–373` `.chooseLegend` arm with a pre-`g.sbaPaused` check
          ahead of line `351` (and before `withBatchReturn` at `353` opens a batch):
