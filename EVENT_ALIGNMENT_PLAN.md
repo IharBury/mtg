@@ -12461,11 +12461,11 @@ multi-pick disjointness, and `canPayLife`).
 1. Isolate `ckpt` continuations and paused batches during `keptStream` replay,
    flush CR 610.3 `queuedLinkedExile` per replayed batch in chronological order,
    and track `nonDepBatches` dynamically across inter-departure proposal actions
-   (`Event.lean:1679, 1954`, `Core.lean:2069–2071, 2943–2944, 10497–10506,
-   10606–10705, 10940–11103`, `Movement.lean:784–837`, `Leaving.lean:16–19,
-   438–440, 690–691, 2018–2025, 2061–2063, 2141–2164`, `Library.lean:390–393`,
-   `Casting.lean:564–584, 656, 688–689`, `Decisions.lean:171–175, 648–650,
-   690–693, 992–1001, 1243–1246`, §2.1, §2.4, §2.5, §3.8,
+   (`Event.lean:1679, 1954`, `Core.lean:2069–2071, 10497–10506, 10606–10705,
+   10940–11103`, `Movement.lean:784–837`, `Leaving.lean:16–19, 438–440,
+   690–691, 2018–2025, 2061–2063, 2141–2164, 2306–2347`, `Library.lean:390–393`,
+   `Casting.lean:564–584, 656, 688–689`, `Decisions.lean:88–92, 171–175,
+   648–650, 690–693, 992–1001, 1243–1246`, §2.1, §2.4, §2.5, §3.8,
    CR 603.2c / 603.3 / 610.3 / 616.1 / 733.1–733.2 / 800.4a):
    - In `Core.reverseToProposalCheckpointCore?` (`Core.lean:11055–11103`) and
      `Movement.reverseToProposalCheckpoint?` (`Movement.lean:835–837`):
@@ -12552,18 +12552,22 @@ multi-pick disjointness, and `canPayLife`).
          (`Leaving.lean:690–691`, backed by `Casting.lean:564`) and
          `@[extern "mtg_game_resume_pending_replacement"]`
          (`Leaving.lean:2061–2063`, backed by `Decisions.lean:648`) opaques out
-         of `Leaving.lean` into `Core.lean` (deleting the `Leaving.lean` copies
-         and naming them `runPostCastCleanupFwd` / `resumePendingReplacementFwd`
-         in `namespace Game` following `Core.lean:2943–2944` so `Core` and
-         `Leaving` share one extern pair without redeclaring
-         `Game.runPostCastCleanup` / `Game.resumePendingReplacement` ahead of
-         `Casting.lean:565` and `Decisions.lean:649`) along with a helper
-         `Core.drainLocalPendingReplacement` that drains **only**
+         of `Leaving.lean` into `Core.lean` as **non-`private`** public
+         `opaque runPostCastCleanupFwd` / `opaque resumePendingReplacementFwd`
+         in `namespace Game` (deleting the `Leaving.lean` copies and repointing
+         `Leaving.lean:2164` to `runPostCastCleanupFwd` and
+         `Leaving.lean:2306, 2326, 2339, 2346` to `resumePendingReplacementFwd`,
+         so both `Core` and `Leaving` see one shared extern pair without
+         redeclaring `Game.runPostCastCleanup` / `Game.resumePendingReplacement`
+         ahead of `Casting.lean:565` and `Decisions.lean:649`) along with a
+         helper `Core.drainLocalPendingReplacement` that drains **only**
          `g.pendingReplacement` while `!g.over && g.pending == .none &&
-         g.afterRandom == .none` (popping `.pendingReplacement none` +
-         `popEmptyTopContinuationFrames` and calling
-         `resumePendingReplacementFwd cont false`, without touching
-         `triggerSequenceRest` or `outerPendingReplacements`), and extract the
+         g.afterRandom == .none` (popping `.pendingReplacement none`, popping
+         any empty top frames inline via `while g.continuations.back? == some {}
+         do g := g.change .popContinuationFrame` matching `Decisions.lean:88–92`
+         without calling `Decisions`, and calling `resumePendingReplacementFwd
+         cont false`, without touching `triggerSequenceRest` or
+         `outerPendingReplacements`), and extract the
          `idx < remainingStream.size` replay loop into
          `Core.replayKeptStreamCore` backed by
          `PendingReplacement.continueCheckpointReplay (remainingStream
