@@ -13566,8 +13566,9 @@ unpayable-prompt `decline` reversals).
    re-validate `.chooseLegend` characteristics (`CR 704.5j`), and preserve
    `pendingPriority` / priority-grant detection in `Decisions`
    (`Event.lean:1722–1746, 2303–2312`, `Leaving.lean:16–19, 914–2027, 2103–2106,
-   2121–2325`, `Casting.lean:639–694, 1022–1062`, `Decisions.lean:17–24, 168–196,
-   286–298, 353, 548–549, 606–607, 683–703, 889–1469, 1540, 4891–4940, 5214`,
+   2121–2325`, `Casting.lean:639–694, 844–848, 1022–1185`, `Decisions.lean:17–24,
+   168–212, 286–298, 353, 548–549, 606–607, 683–703, 889–1469, 1540, 4891–4940,
+   5214–5217`,
    `TriggeredAbilities.lean:4598–4604`, `StateBasedActions.lean:346–374`, §2.4,
    §2.5, §3.6, §3.8, CR 104.3a / 601.2 / 602.2 / 704.3 / 704.5j / 733.1 / 800.4a):
    - Unify multi-departure `allDeparted` collection and post-reversal
@@ -13721,23 +13722,40 @@ unpayable-prompt `decline` reversals).
          g.pendingReplacement.isNone` (`1050`) and `let chainFinishFra := !skipTail &&
          (g.triggerSequenceRest.isSome || g.pendingReplacement.isSome)` (`1051`,
          branching at `1058–1062` between `g`, `g.chainPendingReplacement
-         .finishFraChoice`, and `g.receivePriority caster`). Because queued
-         continuations in `g.pendingReplacement` / `g.outerPendingReplacements` do
-         not start until `g.pending == .none` (`drainPendingContinuations` at
-         `Decisions.lean:168`, `chooseReplacement` clearing `pending` at `5214`
-         before resuming at `5217`, and `.seq` at `700–703`), every queued
-         activation/turn-face-up leaf runs `1023–1027` in
-         `finishPostLoyaltyActivated` or `1050–1051, 1058–1062` in
-         `completeTurnFaceUp`—chaining `.finishFraChoice` (`1026, 1060`, granting
-         priority via `finishFraChoice`) when `hadOuterReplacement` is `true` and
-         `g.pendingReplacement` is non-empty, and routing to `.finishFraChoice`
-         rather than direct `g.receivePriority` (`1027, 1062`) when
-         `hadOuterReplacement` is `false` and `g.triggerSequenceRest.isSome ||
-         g.pendingReplacement.isSome` holds:
+         .finishFraChoice`, and `g.receivePriority caster`). Queued continuations
+         in `g.pendingReplacement` / `g.outerPendingReplacements` do not start until
+         `g.pending == .none` (`drainPendingContinuations` at `Decisions.lean:168`,
+         `chooseReplacement` clearing `pending` at `5214` before resuming at `5217`,
+         and `.seq` at `700–703`), so a queued `.finishPostLoyaltyActivated`
+         (`Decisions.lean:1467–1468`) enters `finishPostLoyaltyActivated` with
+         `g.pending == .none` (reaching `1023–1027` when not reversed at entry),
+         whereas `.completeActivation` (`Decisions.lean:1417–1427`, which can open
+         `.pending (.sacrificePermanent …)` at `Casting.lean:1184–1185` or reverse on
+         `.error _` at `1426–1427`), `.finishBecomeActivated`
+         (`Decisions.lean:1428–1435`, which can return on `unpaidLoyaltyUnpayable` at
+         `Casting.lean:1101–1107`), and `.finishTurnFaceUp`
+         (`Decisions.lean:1459–1460`, which takes `Casting.lean:1039–1045` when the
+         `1037–1038` filter fails) either take those earlier exits or reach the
+         `1023–1027` / `1050–1051, 1058–1062` success tails—where both success tails
+         chain `.finishFraChoice` (`1026, 1060`, granting priority via
+         `finishFraChoice`) when `hadOuterReplacement` is `true` and
+         `g.pendingReplacement` is non-empty, and route to `.finishFraChoice` rather
+         than direct `g.receivePriority` (`1027, 1062`) when `hadOuterReplacement` is
+         `false` and `g.triggerSequenceRest.isSome || g.pendingReplacement.isSome`
+         holds:
        - in `Decisions.lean:1459–1460`, run `if hadOuter then g else
          resumeAfterBecomeCast g` after `g.completeTurnFaceUp` (matching `1425,
          1435, 1443, 1469` so a queued `.finishFraChoice` drains even when
-         `resumePendingReplacement` is called directly); in
+         `resumePendingReplacement` is called directly), and on the orphaned-proposal
+         clear-only arms `Casting.lean:1043–1045` (in `completeTurnFaceUp`) and
+         `Casting.lean:1105–1107` (in `becomeActivated`)—where `!hadOuter` leaves no
+         longer get a fallback `.receivePriority` chained by `Decisions.lean:210–212`—when
+         `!g.over && g.pending == .none` and `!(hadOuterReplacement &&
+         g.pendingReplacement.isNone)`, chain `.finishFraChoice` if
+         `g.triggerSequenceRest.isSome || g.pendingReplacement.isSome` or else grant
+         priority via `g.receivePriority (g.priorityInstead caster)` (at `1043–1045`)
+         / `g.receivePriority (g.priorityInstead (if openCont then g.activePlayer
+         else p))` (at `1105–1107`); in
          `PendingReplacement.endsWithPriorityGrant` (`Event.lean:2303–2312`, where
          `Game` is not in scope—leaving `Event.lean:2306`'s `.finishPostCast` arm
          `grantPriority && !hadOuter` untouched since `Casting.finishPostCast` at
@@ -14148,10 +14166,12 @@ unpayable-prompt `decline` reversals).
          `1019–1021` record `GameEvent.abilityActivated` and log and before `1022`'s
          terminal `if g.pending != .none then g` return—so every path that records
          `abilityActivated`, including `1022`, clears both `proposedSpell` and
-         `proposalCheckpoint`, while `becomeActivated`'s replacement pauses at
-         `1079–1081` and `1124–1126` chain `.finishBecomeActivated` /
+         `proposalCheckpoint`, while `becomeActivated`'s `1079–1081` pause chains
+         `.finishBecomeActivated`—resumed at `5217` into `becomeActivated` via
+         `Decisions.lean:1428–1435`—and `1124–1126`'s loyalty pause chains
          `.finishPostLoyaltyActivated` without entering `finishPostLoyaltyActivated`
-         until `chooseReplacement` clears `pending` at `5214` and resumes at `5217`);
+         until `chooseReplacement` clears `pending` at `5214` and resumes it at
+         `5217` via `Decisions.lean:1467–1468`);
          and at entry to `Decisions.resumePendingReplacement`'s `.finishBecomeCast`
          (`Decisions.lean:1436–1444`, when `g.pending` is not `.chooseReplacement`)
          and unconditionally at entry to `Casting.finishPostLoyaltyActivated`
