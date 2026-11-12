@@ -12693,16 +12693,18 @@ multi-pick disjointness, and `canPayLife`).
          `R_link` (`.seq R_link origCont`, where stripping `origCont` from `b`
          returns `none` and collapses `.seq R_link _` to `some R_link`) is
          stripped cleanly without dropping `R_link` or duplicating `origCont`.
-   - In `Core.reverseToProposalCheckpointCore?` (`Core.lean:10606–10705`),
-     `preDepBatches` (`10606–10620`) only scans `[0 : firstDepIdx?]`. If `p1`
-     departs without aborting `p0`'s proposal (`inDepSpan` returns to `false`),
-     `p0` then opens a reversible cost/mana batch `B_cost` that pauses on
+   - In `Core.reverseToProposalCheckpointCore?` (`Core.lean:10838–10986`),
+     scanning non-departure batches only across `[0 : firstDepIdx?]` misses
+     batches opened after an earlier non-aborting departure. If `p1` departs
+     without aborting `p0`'s proposal (`inDepSpan` returns to `false`), `p0`
+     then opens a reversible cost/mana batch `B_cost` that pauses on
      `.chooseReplacement` (`idx > firstDepIdx?`, `!inDepSpan`), and `p2`
      subsequently departs (`inDepSpan := true`) and `restorePausedBatch` emits
-     `.pauseBatch B_cost ..`, `!preDepBatches.contains B_cost` is `true`
-     (`10664`), setting `depPausedBatch? := some B_cost` and misclassifying `p0`'s
-     resumed reversible cost `.moved` event (emitted before `finishOpenBatch`'s
-     `.clearPausedBatch` at `Core.lean:10409`) into `depSt` (`10660`):
+     `.pauseBatch B_cost ..`, a static `[0 : firstDepIdx?]` batch set misses
+     `B_cost` at the `.pauseBatch` check (`10956`), setting `depPausedBatch? :=
+     some B_cost` (`10957`) and misclassifying `p0`'s resumed reversible cost
+     `.moved` event (emitted before `finishOpenBatch`'s `.clearPausedBatch` at
+     `Core.lean:10409`) into `depSt` (`10952`):
      - Collect `depTriggerBatches : Array BatchId` (`Core.lean:10890–10908`,
        tracking `curPaused : Option BatchId := ckpt.currentBatch.map Prod.fst`
        across `.pauseBatch` / `.clearPausedBatch`) as all `BatchId`s carried by
@@ -12716,10 +12718,10 @@ multi-pick disjointness, and `canPayLife`).
        proposal batch inside which a player concedes is not misclassified as a
        departure batch), replace the
        static `[0 : firstDepIdx?]` scan with a dynamic `nonDepBatches : Array
-       BatchId` seeded with `ckpt.currentBatch.map Prod.fst` (when not in
-       `depTriggerBatches`) and updated in the `!inDepSpan` branch (`10686–10705`)
-       with any `ev.batch` or `.engine _ (.pauseBatch b ..)` not in
-       `depTriggerBatches`, and test `!nonDepBatches.contains bid` at `10664`.
+       BatchId` (`10909–10912`) seeded with `ckpt.currentBatch.map Prod.fst`
+       (when not in `depTriggerBatches`) and updated in the `!inDepSpan` branch
+       (`10978–10986`) with any `ev.batch` or `.engine _ (.pauseBatch b ..)` not
+       in `depTriggerBatches`, and test `!nonDepBatches.contains bid` at `10956`.
 2. Align `Decisions.reverseOrResumePopped` with `Leaving.rewindAbortedProposalOnLeave`,
    preserve LIFO outer-continuation ordering in `.restorePending`
    `shouldSplitBatch`, clear aborted local `saved?` prompts across multi-player
