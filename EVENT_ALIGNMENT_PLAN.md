@@ -12842,11 +12842,12 @@ multi-pick disjointness, and `canPayLife`).
    `Attachments.ceaseToExist`, `Phasing.phaseOut`, Layer 1 copiable-value
    (`.copy`, `turnedFaceUp`, `transformed`) transitions on scoped Layer 2
    `.control` effects, `Movement.move`, and `Core.restoreControlUntilSourceLeaves`
-   (`Event.lean:1095–1136, 1827–1892`, `Core.lean:352–362, 1793–1806, 10497–10504,
-   11231–11237, 11327–11378, 11444–11465, 11681–11768`, `Attachments.lean:46–59`,
-   `Movement.lean:582–609`, `Leaving.lean:80–197, 386–403`, `Entering.lean:404–407`,
-   `Phasing.lean:45–97, 100–130`, `Turns.lean:20–38, 183, 349, 811`,
-   `Casting.lean:1021–1045`, `Activation.lean:203–207`,
+   (`Event.lean:1095–1136, 1827–1892`, `Core.lean:352–362, 1793–1806, 2161–2163,
+   10430–10504, 11231–11237, 11327–11378, 11444–11465, 11681–11768`,
+   `Attachments.lean:46–59`, `Movement.lean:582–609`, `Leaving.lean:80–197,
+   386–403`, `Entering.lean:404–407`, `Phasing.lean:45–97, 100–130`,
+   `Turns.lean:20–38, 183, 349, 811`, `Casting.lean:1021–1045`,
+   `Activation.lean:203–207`, `ResolutionHelpers.lean:577–583`,
    `FrcResolve.lean:802–816, 1035–1046, 1087`, `EffectResolution.lean:2001–2013,
    2404–2408`, `Decisions.lean:690–691, 1295, 1414–1421`, §2.2, §2.5, §3.3, §3.8,
    CR 110.2 / 506.4 / 514.2 / 611.2a–b / 613.1a–b / 613.7–613.8 / 614.6 /
@@ -12876,10 +12877,13 @@ multi-pick disjointness, and `canPayLife`).
      3. queues `(cur.id, s!"{post.name cur} is exiled (CR 800.4c)")` into
         `runEndControlExileLoop` (`cause := some (.gameRule .playerLeftGame)`,
         tightening `Leaving.runEndControlExileLoop` at `Leaving.lean:80–104` to
-        guard on `g.sbaPaused` at `84` and stash/re-chain any pre-existing
-        `priorCont? := g.pendingReplacement` around the `else` loop so
-        `promptChooseReplacement` at `Core.lean:11236` cannot overwrite a
-        pre-chained `outerCont?` before `.endControlExileLoop`) whenever
+        guard on `g.sbaPaused` at `84` without clearing `pendingReplacement` on
+        that entry arm, clear any pre-existing `priorCont? :=
+        g.pendingReplacement` before the `else` `for` loop at `91`, append
+        `priorCont?` **after** `.endControlExileLoop` before returning on the
+        `97–100` `.chooseReplacement` pause arm—where `promptChooseReplacement` at
+        `Core.lean:11234–11236` replaces `pendingReplacement` with only `.move`—and
+        append `priorCont?` once on the `103` no-pause fall-through) whenever
         `!(pre.appliedControlEffectIds cur).isEmpty &&
         (post.appliedControlEffectIds cur).isEmpty`, `(post.player
         fallback).leftTheGame` for `fallback :=
@@ -12914,27 +12918,33 @@ multi-pick disjointness, and `canPayLife`).
        CR 702.26b,f) exiles any permanent whose last control effect ended onto a
        departed fallback controller instead of stranding it with `controllerOf ==
        none`; make `Phasing.phaseOutPermanents` (`Phasing.lean:84–97`, factored
-       through `Phasing.phaseOutSortedIds` and a new
+       through `Phasing.phaseOutPermanentsLoop` and a new
        `PendingReplacement.phaseOutPermanentsLoop (remainingIds : Array ObjectId)
        (cause : Option EventCause := none)` constructor in `Event.lean` dispatched
-       in `Decisions.resumePendingReplacement`) pause-safe across CR 800.4c
-       choices by passing `(cause := cause)` to `phaseOut`, running the sorted
-       `ObjectId` loop inside `g.withBatchCoreReturn (some batchCause)` until
-       `match g.pending with | .chooseReplacement .. | .chooseLegend .. => true |
-       _ => false` opens (returning the unprocessed `remainingIds`), and—right
-       after `withBatchCoreReturn` pauses the batch and chains `.closeBatch
-       batchId startIdx` (`Core.lean:10497–10504`)—chaining
-       `.phaseOutPermanentsLoop remainingIds cause` **behind** that batch's
-       `.closeBatch` (single-target `phaseOut` at `EffectResolution.lean:2013`
-       already chains `.closeBatch` after `.endControlExileLoop` via its own
-       `withBatchCore`); and in `FrcResolve.lean:810–815` (`.teferi`), add
-       `FrcPostStep.teferiExileSpell` (`Event.lean`, handled in
-       `FrcResolve.runFrcPostStep` at `FrcResolve.lean:1087`) so when
-       `g.phaseOutPermanents targetsToPhase (cause := phaseCause)` leaves
-       `g.sbaPaused`, Teferi's `.exileInstantSorceryInstead spell.id` follow-up
-       chains via `PendingReplacement.finishFrcPostStep .teferiExileSpell` behind
-       `.closeBatch` (and any `.phaseOutPermanentsLoop`) instead of running while
-       the choice is pending;
+       in `Decisions.resumePendingReplacement`, matching
+       `ResolutionHelpers.destroyPermanentsLoop` at `ResolutionHelpers.lean:577–583`)
+       pause-safe across CR 800.4c choices by passing `(cause := cause)` to
+       `phaseOut`, running `phaseOutPermanentsLoop sortedIds (cause := cause)`
+       inside `g.withBatchCore (some batchCause)`, and—as soon as `match g.pending
+       with | .chooseReplacement .. | .chooseLegend .. => true | _ => false`
+       opens—chaining `.phaseOutPermanentsLoop rem cause` (when `!rem.isEmpty`)
+       **from inside the `withBatchCore` callback before returning** so
+       `withBatchCore` (`Core.lean:10497–10504`) emits `.pauseBatch` (leaving
+       `currentBatch` set at `Core.lean:2161–2163`) and appends the single
+       `.closeBatch batchId startIdx` **after** `.phaseOutPermanentsLoop`, any
+       subsequent pause in `rem` joins the still-open batch
+       (`Core.lean:10430–10478`) while `Decisions.resumePendingReplacement`'s
+       `.seq` arm (`Decisions.lean:690–691`) keeps that `.closeBatch` queued after
+       the new tail, and `finishOpenBatch` evaluates triggers and designation scans
+       only once the entire simultaneous phase-out has completed (CR 702.26g–h;
+       single-target `phaseOut` at `EffectResolution.lean:2013` is unchanged); and
+       in `FrcResolve.lean:810–815` (`.teferi`), add `FrcPostStep.teferiExileSpell`
+       (`Event.lean`, handled in `FrcResolve.runFrcPostStep` at
+       `FrcResolve.lean:1087`) and append
+       `PendingReplacement.finishFrcPostStep .teferiExileSpell` **after**
+       `g.phaseOutPermanents targetsToPhase (cause := phaseCause)` returns
+       whenever `g.sbaPaused`, placing Teferi's `.exileInstantSorceryInstead
+       spell.id` follow-up behind that `.closeBatch`;
      - in `Core.createEffect` (`Core.lean:11375–11378`, widening the post-creation
        hook from `.layered _ (.control _) _` to `.layered _ (.control _) _ |
        .layered _ (.copy _) _` and calling `reconcileControlAfterTransitionFwd pre
