@@ -13246,7 +13246,7 @@ unpayable-prompt `decline` reversals).
    953–985, 991–1004, 1072, 1655–1662, 1835–1860, 2028–2077, 2110, 2174–2185,
    2267–2269, 5211–5248, 7837, 10324–10328, 10372–10510, 10544–10552, 10599–10825,
    11175–11284, 11412–11418`, `Movement.lean:215–218, 265–282, 420–446, 570,
-   596–608, 675, 691–839`, `Decisions.lean:662–703, 1648–1650`, `Leaving.lean:33–47,
+   596–608, 675–683, 691–839`, `Decisions.lean:662–703, 1648–1650`, `Leaving.lean:33–47,
    178–218, 2506–2546`, §2.1, §2.4, §2.5, §3.8,
    CR 104.1 / 104.2a / 400.7 / 603.2c / 610.3 / 725.4 / 733.1–733.2 / 800.4a,c,j):
    - In `Core.replayKeptStreamCore` (`Core.lean:10599–10825`) and
@@ -13334,7 +13334,7 @@ unpayable-prompt `decline` reversals).
      (`Event.lean:833–835, 1930–1931, 2250–2251`, `Core.lean:90–94, 161–162,
      1655–1662, 1835–1860, 2028–2077, 2174–2185, 2267–2269, 7837, 10324–10328,
      10372–10510, 10544–10552, 10599–10825, 11175–11284, 11412–11418`,
-     `Movement.lean:215–218, 265–282, 420–446, 570, 596–608, 675, 691–839`,
+     `Movement.lean:215–218, 265–282, 420–446, 570, 596–608, 675–683, 691–839`,
      `Decisions.lean:662–703, 1648–1650`, `Leaving.lean:33–47, 178–218, 2506–2546`):
      - Existing game-over cleanup paths (`Decisions.finishAndGrantPriority` at
        `Decisions.lean:204–207`, `Decisions.finishFraChoice` at `291–292`,
@@ -13385,7 +13385,7 @@ unpayable-prompt `decline` reversals).
          `.pendingReplacement (some cont)` when `suppressInteractive ||
          g.openBatchSuppressInteractive || g.over || g.suppressInteractiveReplay`,
          **and** in `Movement.move` (`Movement.lean:265–282, 420–446, 570, 596–608,
-         675`), bind `let quietMove := g.openBatchSuppressInteractive || g.over ||
+         675–683`), bind `let quietMove := g.openBatchSuppressInteractive || g.over ||
          g.suppressInteractiveReplay`, skip the `.chooseReplacement` blocks at
          `265–282` and `596–606` (skipping both `chainPendingReplacement` and `return
          acc` at `596–606` so `607–608` logs and the loop finishes) when `quietMove`
@@ -13398,7 +13398,9 @@ unpayable-prompt `decline` reversals).
          `moveRep.applied`, and `moveRep.cause` without applying the unchosen
          replacement** (instead of returning `promptChooseReplacement`'s unchanged `g`
          with `(id, none, false)` and leaving a CR 610.3 linked card in `.exile`), and
-         skip `recordReflexiveTrigger` at `675` when `quietMove || !g.stillInGame p`;
+         widen the `675` guard to `if quietMove || !g.stillInGame p then g` so
+         `recordReflexiveTrigger` at `680` (`677–683`) is skipped when `quietMove` is
+         `true`;
          add `(suppressInteractive : Bool := false)` to **both**
          `finishOpenBatchSync` (`Core.lean:10372–10395`) and
          `Core.withBatchCoreReturn` / `Core.withBatchCore` (`Core.lean:10424–10510`)
@@ -13806,12 +13808,12 @@ unpayable-prompt `decline` reversals).
    transitions, align phased-out Layer 1/2 scope matching & CR 502.1 phase-in
    controller lookup, wire `flushQueuedLinkedExileFwd` after `withBatchCore` in
    `Phasing` / `Core.createEffects` / `Leaving.removeAllCountersFrom`, and make
-   remaining `ceaseToExist` callers pause-safe (`Event.lean:307–316, 1194`,
-   `Object.lean:139–144`, `Core.lean:1670–1689, 1785–1806, 11598–11626,
-   11909–11915, 11954–12020, 12042–12065`, `Phasing.lean:45–164`,
+   remaining `ceaseToExist` callers pause-safe (`Event.lean:307–316, 1194, 1932`,
+   `Object.lean:139–144`, `Core.lean:1670–1689, 1785–1806, 11598–11675,
+   11909–11915, 11954–12020, 12042–12065`, `Phasing.lean:45–162`,
    `Attachments.lean:46–65`, `Movement.lean:301–308, 570–660, 784`,
-   `Leaving.lean:118–168, 224–305, 422–456, 2515–2546`, `Entering.lean:205–244,
-   352–366`, `Decisions.lean:1656, 2241, 2263–2265, 3445–3473`, §2.2, §2.5, §3.3,
+   `Leaving.lean:118–167, 224–305, 422–456, 2515–2546`, `Entering.lean:205–244,
+   352–366`, `Decisions.lean:1651–1656, 2241, 2263–2265, 3445–3473`, §2.2, §2.5, §3.3,
    §3.8, CR 104.1 / 502.1 / 506.4 / 603.3d / 608.2n / 610.3 / 611.2a–b / 613.1a–b /
    701.54a / 702.26b,d,f–h / 800.4a,c):
    - Fix post-mutation `pre` snapshot timing across counter removal/addition and
@@ -13822,26 +13824,42 @@ unpayable-prompt `decline` reversals).
        `GameEvent.moved`, or `GameEvent.ceasedToExist` **before** snapshotting `pre`
        immediately flips `durationActive` to `false`, causing `pre.controllerOf` /
        `pre.appliedControlEffectIds` inside `Leaving.endControlEffectById`
-       (`Leaving.lean:118–168`) and `Core.expireEffectById` (`Core.lean:11631–11655`),
-       plus `prevCtrl` inside `Core.restoreControlUntilSourceLeaves`
-       (`Core.lean:11954–12006`, where `prevCtrl` at `11966, 11994` is already read
-       before `expireEffectById` at `11968, 11996` yet `durationActive` on `acc`
-       already sees the post-move / post-cease source), to read the already-reverted
-       post-transition controller and miss CR 800.4c exile, CR 506.4 combat removal,
-       `.ringBearer` loss, and control-revert logs:
-       - In `Leaving.endControlEffectById` (`Leaving.lean:118–168`), add optional
-         `(preState? : Option Game := none)` and compute `let pre := preState?.getD
-         g` before `expireEffectById` so `candidates` (`123–129`), `.ringBearer`
-         loss (`141–146`), and `removeFromCombatOnControlChange pre g` (`167`) all
-         consult `pre`; in `Leaving.recordRemoveCounters` (`Leaving.lean:224–252`),
-         capture `let pre := g` **before** recording `GameEvent.counters ...
-         (removed := true)` (`237`), pass `(reconcileControl := false)` to
-         `restoreCopiesWhere` (`241`) and `(preState? := some pre)` to
-         `expireMatching` / `endControlEffectById` (`248`), and run
-         `reconcileControlAfterTransition pre g (cause := expCause)` after
-         `expireMatching` when any `.whileSourceHasCounter` copy/control effect was
-         active on `pre`; and in `Core.recordPutCounters` (`Core.lean:12042–12065`)
-         and `Leaving.addPlusOnePlusOneTo` (`Leaving.lean:272–305`, when
+       (`Leaving.lean:118–167`, `candidates` at `127–134` before `expireEffectById`
+       at `135`) and `Core.expireEffectById` (`Core.lean:11631–11675`, where `let
+       pre := g` at `11636` feeds `.layered _ (.control _) _`'s
+       `removeFromCombatOnControlChange pre g` at `11642–11643`), plus `prevCtrl` /
+       `prevCtrls` inside `Core.restoreControlUntilSourceLeaves`
+       (`Core.lean:11954–12006`, where the first arm reads `prevCtrl` at `11966`
+       before `expireEffectById` at `11968` and the second arm builds `prevCtrls`
+       at `11992–11994`—reading `acc.controllerOf o` at `11994`—before
+       `expireEffectById` at `11995` and `prevCtrls.foldl` at `11996`, yet
+       `durationActive` on `acc` already sees the post-move / post-cease source),
+       to read the already-reverted post-transition controller and miss CR 800.4c
+       exile, CR 506.4 combat removal, `.ringBearer` loss, and control-revert logs:
+       - In `Core.expireEffectById` (`Core.lean:11631–11675`), add optional
+         `(preState? : Option Game := none)` and replace `let pre := g` at `11636`
+         with `let pre := preState?.getD g` so `.layered _ (.control _) _`'s
+         `removeFromCombatOnControlChange pre g (cause := some expCause)`
+         (`11642–11643`) compares against the pre-record game whenever `preState?`
+         is supplied; in `Leaving.endControlEffectById` (`Leaving.lean:118–167`),
+         add optional `(preState? : Option Game := none)`, compute `let pre :=
+         preState?.getD g` before `expireEffectById` (`135`) so `candidates`
+         (`127–134`, after `explicitIds` at `123–126`) consults `pre` (`pre.objects`,
+         `pre.appliedControlEffectIds`, `pre.controllerOf`, `pre.controlChanged`)
+         for `.ringBearer` loss (`148–150`), revert logs (`155–157, 164–165`), and
+         `exiles.push` (`162–163`, fed into `g.runEndControlExileLoop` at `167`),
+         and forward `(preState? := preState?)` into `g.expireEffectById eid
+         (cause := cause) (preState? := preState?)` at `135` so CR 506.4 combat
+         removal (`Core.lean:11642–11643`) also consults `pre`; in
+         `Leaving.recordRemoveCounters` (`Leaving.lean:224–252`), capture `let pre
+         := g` **before** recording `GameEvent.counters ... (removed := true)`
+         (`237`), pass `(reconcileControl := false)` to `restoreCopiesWhere` (`241`)
+         and `(preState? := some pre)` to `endControlEffectById` (`247`, ahead of
+         `expireMatching` at `248–251`), and run `reconcileControlAfterTransition
+         pre g (cause := expCause)` after `expireMatching` when any
+         `.whileSourceHasCounter` copy/control effect was active on `pre`; and in
+         `Core.recordPutCounters` (`Core.lean:12042–12065`) and
+         `Leaving.addPlusOnePlusOneTo` (`Leaving.lean:272–305`, when
          `!entersWith`), capture `let pre := g` before recording
          `GameEvent.counters` and run `reconcileControlAfterTransitionFwd pre g
          (cause := cause)` / `reconcileControlAfterTransition pre g (cause :=
@@ -13852,7 +13870,9 @@ unpayable-prompt `decline` reversals).
          `Core.expireWhileSourceEffects` (`Core.lean:12011–12020`, the sole caller
          of `restoreControlUntilSourceLeaves` at `12014`) into
          `Core.restoreControlUntilSourceLeaves` (`Core.lean:11954–12006`, consulting
-         `preState?` for initial pre-departure `prevCtrl` so `.whileSourceOnBattlefield`
+         `preState?.getD acc` for initial pre-departure `prevCtrl` at `11966` and
+         `prevCtrls` at `11992–11994` and forwarding `(preState? := preState?)` into
+         `acc.expireEffectById` at `11964, 11968, 11995` so `.whileSourceOnBattlefield`
          / `.whileSourceHasCounter` effects still see their pre-move / pre-cease
          controller), passing `(preState? := some preMove)` from `Movement.move`
          (`Movement.lean:581`) and `(preState? := some pre)` from
@@ -13885,9 +13905,10 @@ unpayable-prompt `decline` reversals).
          keeping CR 800.4c exile batched in `playerLeavesGameCore` when `(g.player
          _leavingPlayer).leftTheGame`, or running `reconcileControlAfterTransition
          pre g` when called standalone).
-   - Fix phased-out scope matching in Layer 1 / Layer 2 (`Event.lean:307–316`,
-     `Object.lean:139–144`, `Core.lean:1670–1689, 1785–1806`) and CR 502.1 phase-in
-     controller lookup in `Phasing.phaseInControlled` (`Phasing.lean:155–164`):
+   - Fix phased-out scope matching in Layer 1 / Layer 2 (`Event.lean:307–316, 1932`,
+     `Object.lean:139–144`, `Core.lean:1670–1689, 1785–1806`,
+     `Decisions.lean:1651–1652`) and CR 502.1 phase-in
+     controller lookup in `Phasing.phaseInControlled` (`Phasing.lean:155–162`):
      - Under CR 702.26b,d,f, phasing out a permanent does **not** end continuous
        effects affecting that permanent unless their duration expires, and
        phased-out permanents remain in `o.zone == .battlefield` (`Object.lean:139–144`,
@@ -13910,7 +13931,7 @@ unpayable-prompt `decline` reversals).
          `Core.lean:352–362` still keeps `.whileSourceOnBattlefield` /
          `.whileSourceHasCounter` inactive while the *source* is phased out per
          CR 702.26b,f); and
-       - in `Phasing.phaseInControlled` (`Phasing.lean:155–164`), CR 502.1 phases
+       - in `Phasing.phaseInControlled` (`Phasing.lean:155–162`), CR 502.1 phases
          in phased-out permanents *"that player controlled when they phased out"*,
          whereas `phaseInControlled` currently tests current `g.controlledBy o p`
          (missing permanents whose time-limited control effect expired while phased
@@ -13922,13 +13943,16 @@ unpayable-prompt `decline` reversals).
          (`eo.controller`, falling back to `g.controllerOf o` when synthesized
          without a `phasedOut` event), snapshot matching IDs up front, and drive
          them through a pause-safe `Phasing.phaseInControlledLoop` +
-         `PendingReplacement.phaseInControlledLoop (remainingIds : Array ObjectId)`
-         inside `withBatchCore (some (.turnStep g.turnNumber .untap p))` (mirroring
-         `phaseOutPermanentsLoop` at `Phasing.lean:83–120`).
+         `PendingReplacement.phaseInControlledLoop (remainingIds : Array ObjectId)
+         (cause : Option EventCause)` (`Event.lean:1932`, dispatched in
+         `Decisions.lean:1651–1652`) inside `g.withBatchCore cause` at `157`
+         (keeping `let cause := some (EventCause.turnBased .phaseInOut)` at `156`,
+         mirroring `phaseOutPermanentsLoop` at `Phasing.lean:83–100` and
+         `phaseOutPermanents` at `106–119`).
    - Flush `queuedLinkedExile` after `withBatchCore` in `Phasing`, `Core.createEffects`,
      and `Leaving.removeAllCountersFrom`, and make remaining `ceaseToExist` /
      resolution callers pause-safe (`Event.lean:1194`, `Core.lean:11598–11626`,
-     `Phasing.lean:54, 118, 132, 163`, `Attachments.lean:46–61`, `Leaving.lean:264`,
+     `Phasing.lean:54, 118, 132, 157`, `Attachments.lean:46–61`, `Leaving.lean:264`,
      `Entering.lean:205–244, 352–366`, `Decisions.lean:1656, 2241, 2263–2265,
      3445–3473`):
      - Expose one **non-`private`** public `opaque flushQueuedLinkedExileFwd (g :
@@ -13939,7 +13963,7 @@ unpayable-prompt `decline` reversals).
        `Movement.flushQueuedLinkedExile` at `Movement.lean:784`), pipe
        `Phasing.phaseOut` (`Phasing.lean:54`),
        `Phasing.phaseOutPermanents` (`118`), `Phasing.phaseIn` (`132`),
-       `Phasing.phaseInControlled` (`163`), and `Core.createEffects`
+       `Phasing.phaseInControlled` (`157`, with `cause` at `156`), and `Core.createEffects`
        (`Core.lean:11625`) through `|>.flushQueuedLinkedExileFwd` after
        `withBatchCore` (so a CR 800.4c exile of a CR 610.3 source inside those
        batches immediately returns its linked exiled cards when the batch closes),
