@@ -12862,11 +12862,15 @@ multi-pick disjointness, and `canPayLife`).
      `reconcileControlAfterTransitionFwd` without colliding with `Leaving`'s
      `def reconcileControlAfterTransition`) that compares `pre` and `post` across
      `post.objects.filter (·.isBattlefieldObject)`:
-     1. clears `.ringBearer` (`GameEvent.designation ... .ringBearer false`) when
+     1. clears `.ringBearer` (`GameEvent.designation ... .ringBearer false
+        (cause := cause.getD (.gameRule .staticAbility))`, matching
+        `Leaving.endControlEffectById` at `Leaving.lean:144–145`) when
         `pre.controllerOf cur = some prev`, `post.controllerOf cur != some prev`,
         and `(post.player prev).ringBearerId == some cur.id`;
-     2. removes `cur` from combat via `removeFromCombatOnControlChange pre post`
-        when `pre.controllerOf cur != post.controllerOf cur` (CR 506.4); and
+     2. removes `cur` from combat via `removeFromCombatOnControlChange pre post
+        (cause := cause)` (forwarding `cause` into `removeFromCombat` at
+        `Core.lean:11327–11332` so stamped callers keep their `EventCause`) when
+        `pre.controllerOf cur != post.controllerOf cur` (CR 506.4); and
      3. queues `(cur.id, s!"{post.name cur} is exiled (CR 800.4c)")` into
         `runEndControlExileLoop` (`cause := some (.gameRule .playerLeftGame)`)
         whenever `!(pre.appliedControlEffectIds cur).isEmpty &&
@@ -12886,19 +12890,23 @@ multi-pick disjointness, and `canPayLife`).
        exile queues already run in batch) and in `Core.expireEffectById`'s
        `.gameRule (.fraEmblem id)` `ceasedToExist` branch
        (`Core.lean:11459–11465`, when `reconcileControl == true`), run
-       `reconcileControlAfterTransitionFwd pre g` after expiring leaving-object /
-       while-source effects so a token outside `.battlefield`, copy, stack
-       ability, or temporary emblem ceasing to exist exiles any permanent whose
-       last control effect ended onto a departed fallback controller;
-     - in `Phasing.phaseOut` (`Phasing.lean:55–79`, replacing bare
-       `removeFromCombatOnControlChange pre g` at `78`, and likewise updating
-       `Phasing.phaseIn` at `Phasing.lean:100–129` for combat removal +
-       ring-bearer designation loss), run `reconcileControlAfterTransitionFwd pre
-       g` so phasing out a control-effect source (which stops
-       `.whileSourceOnBattlefield` and `.whileSourceHasCounter` in
-       `Core.durationActive` at `Core.lean:352–362`, CR 702.26b,f) exiles any
-       permanent whose last control effect ended onto a departed fallback
-       controller instead of stranding it with `controllerOf == none`;
+       `reconcileControlAfterTransitionFwd pre g (cause := expCause)` /
+       `(cause := some embCause)` after expiring leaving-object / while-source
+       effects so a token outside `.battlefield`, copy, stack ability, or
+       temporary emblem ceasing to exist exiles any permanent whose last control
+       effect ended onto a departed fallback controller;
+     - in `Phasing.phaseOut` (`Phasing.lean:55–79`, replacing
+       `removeFromCombatOnControlChange pre g (cause := some (stepCause g))` at
+       `78`, and likewise updating `Phasing.phaseIn` at `Phasing.lean:100–129`
+       replacing `removeFromCombatOnControlChange pre g (cause := some
+       resolvedCause)` at `129` for combat removal + ring-bearer designation
+       loss), run `reconcileControlAfterTransitionFwd pre g (cause := some
+       (stepCause g))` / `(cause := some resolvedCause)` so phasing out a
+       control-effect source (which stops `.whileSourceOnBattlefield` and
+       `.whileSourceHasCounter` in `Core.durationActive` at `Core.lean:352–362`,
+       CR 702.26b,f) exiles any permanent whose last control effect ended onto a
+       departed fallback controller instead of stranding it with `controllerOf ==
+       none`;
      - in `Core.createEffect` (`Core.lean:11375–11378`, widening the post-creation
        hook from `.layered _ (.control _) _` to `.layered _ (.control _) _ |
        .layered _ (.copy _) _` and calling `reconcileControlAfterTransitionFwd pre
@@ -12914,27 +12922,31 @@ multi-pick disjointness, and `canPayLife`).
        then reconcileControlAfterTransitionFwd pre g (cause := some expCause) else
        g` against the existing `let pre := g` snapshot at `11449`, while keeping
        `reconcileControlAfterTransitionFwd` strictly **off** `| .layered _
-       (.control _) _`—which keeps only `removeFromCombatOnControlChange pre g`
-       because `Leaving.endControlEffectById` calls `expireEffectById` at
-       `Leaving.lean:130` before running `runEndControlExileLoop` at `162`—and
-       **off** the `| _ => g` wildcard, so `restoreCopiesUntilEot` at
-       `Turns.lean:183`, `Leaving.recordRemoveCounters`'s `restoreCopiesWhere`
-       at `Leaving.lean:186`, `restoreCopiesUntilNextTurn` at `Turns.lean:349,
-       811`, `Turns.expireEffectsByDuration`'s singleton `.copy` call at
-       `Turns.lean:30` plus any non-singleton `.copy` hitting `38`, and
-       standalone `.layered _ (.copy _) _` expirations each reconcile strictly
-       across `expireEffectById`'s own `pre -> g` step), and after
+       (.control _) _`—which keeps only `removeFromCombatOnControlChange pre g
+       (cause := some expCause)` because `Leaving.endControlEffectById` calls
+       `expireEffectById` at `Leaving.lean:130` before running
+       `runEndControlExileLoop` at `162`—and **off** the `| _ => g` wildcard, so
+       `restoreCopiesUntilEot` at `Turns.lean:183`,
+       `Leaving.recordRemoveCounters`'s `restoreCopiesWhere` at
+       `Leaving.lean:186`, `restoreCopiesUntilNextTurn` at `Turns.lean:349, 811`,
+       `Turns.expireEffectsByDuration`'s singleton `.copy` call at `Turns.lean:30`
+       plus any non-singleton `.copy` hitting `38`, and standalone `.layered _
+       (.copy _) _` expirations each reconcile strictly across
+       `expireEffectById`'s own `pre -> g` step), and after
        `GameEvent.turnedFaceUp` / `GameEvent.transformed` in
-       `Casting.completeTurnFaceUp` (`Casting.lean:1032–1038`),
-       `Activation.lean:203–207` (using `finishAndGrantPriority p` rather than
-       bare `receivePriority p` if CR 800.4c exile pauses on
-       `.chooseReplacement`), `FrcResolve.lean:1035–1046`, and
-       `EffectResolution.lean:2404–2408`, run `reconcileControlAfterTransition
-       pre g` so scoped Layer 2 `.control` effects (`.creaturesWithout`,
-       `.creaturesControlledBy`, `.permanentsOfSubtype` at `Core.lean:1793–1806`,
-       which inspect Layer 1 `g.baseCard o` per CR 613.1a–b) starting or stopping
-       due to Layer 1 copy, face-up, or transform changes enforce CR 506.4,
-       ring-bearer loss, and CR 800.4c exile.
+       `Casting.completeTurnFaceUp` (`Casting.lean:1032–1038`, `cause := some
+       (.specialAction .turnFaceUp caster)`), `Activation.lean:203–207` (`cause :=
+       some (.specialAction .turnFaceUp p)`, using `finishAndGrantPriority p`
+       rather than bare `receivePriority p` if CR 800.4c exile pauses on
+       `.chooseReplacement`), `FrcResolve.lean:1035–1046` (`cause := some
+       transformCause` / the resolved face-up `EventCause`), and
+       `EffectResolution.lean:2404–2408` (`cause := some fallback`), run
+       `reconcileControlAfterTransition pre g (cause := ...)` so scoped Layer 2
+       `.control` effects (`.creaturesWithout`, `.creaturesControlledBy`,
+       `.permanentsOfSubtype` at `Core.lean:1793–1806`, which inspect Layer 1
+       `g.baseCard o` per CR 613.1a–b) starting or stopping due to Layer 1 copy,
+       face-up, or transform changes enforce CR 506.4, ring-bearer loss, and CR
+       800.4c exile.
    - Fix misleading CR 800.4b / 800.4c log lines and missing `.ringBearer`
      designation loss in `Core.restoreControlUntilSourceLeaves`
      (`Core.lean:11739–11768`) and `Movement.move` (`Movement.lean:607–608`):
@@ -12950,9 +12962,10 @@ multi-pick disjointness, and `canPayLife`).
        `11752`) and the non-singleton arm (`11763–11766`, snapshotting
        `(o.id, acc.controllerOf o)` across battlefield permanents before
        `expireEffectById` at `11766`), emitting `GameEvent.designation ...
-       .ringBearer false` whenever `prevCtrl = some prev`, `acc.controllerOf cur
-       != prevCtrl`, and `(acc.player prev).ringBearerId == some cur.id`
-       (matching `Leaving.endControlEffectById` at `Leaving.lean:141–146`); and
+       .ringBearer false (cause := cause.getD (.gameRule .leavingZone))` whenever
+       `prevCtrl = some prev`, `acc.controllerOf cur != prevCtrl`, and
+       `(acc.player prev).ringBearerId == some cur.id` (matching
+       `Leaving.endControlEffectById` at `Leaving.lean:141–146`); and
      - in `Movement.move` (`Movement.lean:607`), replace
        `!(acc.findObject? tid).any (·.isBattlefieldObject)` with
        `(acc.followMovedToZone? tid (· == .exile)).isSome` (matching
@@ -13024,8 +13037,9 @@ multi-pick disjointness, and `canPayLife`).
        the public `Core.resumePendingReplacementFwd` forwarder added in Item 1,
        since `Decisions.resumePendingReplacement` is downstream of
        `ManaAbilities.lean`) or (when `prevPending == .none && g.pending == .none
-       && !g.sbaPaused`) grant priority via `g.receivePriority g.activePlayer`
-       (`Entering.lean:394`, matching `ManaAbilities.lean:391`); and at `392–393`
+       && !g.sbaPaused`) grant priority via `g.receivePriority p`
+       (`Entering.lean:394–395`, which applies `g.priorityInstead p` per CR
+       800.4j, matching `ManaAbilities.lean:380, 391`); and at `392–393`
        when `g.stillInGame p && wasPaused`, replace `g := g.change (.pending
        prevPending)` with `g := g.resumePendingReplacementFwd (.restorePending
        prevPending false)`.
