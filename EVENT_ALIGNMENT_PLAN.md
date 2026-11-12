@@ -13809,12 +13809,12 @@ unpayable-prompt `decline` reversals).
    transitions, align phased-out Layer 1/2 scope matching & CR 502.1 phase-in
    controller lookup, wire `flushQueuedLinkedExileFwd` after `withBatchCore` in
    `Phasing` / `Core.createEffects` / `Leaving.removeAllCountersFrom`, and make
-   remaining `ceaseToExist` callers pause-safe (`Event.lean:307–316, 1194,
+   remaining `ceaseToExist` callers pause-safe (`Event.lean:307–316, 1194–1511,
    1933–1934`, `Object.lean:139–144`, `Core.lean:1670–1689, 1785–1806,
    11598–11675, 11909–11915, 11954–12020, 12042–12065`, `Phasing.lean:45–162`,
    `Attachments.lean:46–65`, `Movement.lean:301–308, 570–660, 784`,
    `Leaving.lean:118–167, 224–305, 422–456, 2515–2546`, `Entering.lean:205–244,
-   352–366`, `Decisions.lean:1652–1656, 2241, 2263–2265, 3445–3473`, §2.2, §2.5, §3.3,
+   352–366`, `Decisions.lean:1652–2715, 3445–3473`, §2.2, §2.5, §3.3,
    §3.8, CR 104.1 / 502.1 / 506.4 / 603.3d / 608.2n / 610.3 / 611.2a–b / 613.1a–b /
    701.54a / 702.26b,d,f–h / 800.4a,c):
    - Fix post-mutation `pre` snapshot timing across counter removal/addition and
@@ -13955,10 +13955,9 @@ unpayable-prompt `decline` reversals).
          at `106–119`).
    - Flush `queuedLinkedExile` after `withBatchCore` in `Phasing`, `Core.createEffects`,
      and `Leaving.removeAllCountersFrom`, and make remaining `ceaseToExist` /
-     resolution callers pause-safe (`Event.lean:1194`, `Core.lean:11598–11626`,
+     resolution callers pause-safe (`Event.lean:1194–1511`, `Core.lean:11598–11626`,
      `Phasing.lean:54, 118, 132, 157`, `Attachments.lean:46–61`, `Leaving.lean:264`,
-     `Entering.lean:205–244, 352–366`, `Decisions.lean:1656, 2241, 2263–2265,
-     3445–3473`):
+     `Entering.lean:205–244, 352–366`, `Decisions.lean:1656–2715, 3445–3473`):
      - Expose one **non-`private`** public `opaque flushQueuedLinkedExileFwd (g :
        Game) (suppressInteractive : Bool := false) : Game := g` with `@[extern
        "mtg_game_flush_queued_linked_exile"]` in `namespace Game` in `Core.lean`
@@ -13976,10 +13975,11 @@ unpayable-prompt `decline` reversals).
      - add `| afterTriggerTargetsChosen` and `| finishAbilityResolution (snap :
        EventObject) (controller : PlayerId) (sourceId : Option ObjectId)
        (sagaChapter : Option Nat) (ab? : Option TriggeredAbility) (alreadyResolved :
-       Bool)` to `PostStep` (`Event.lean:1194`, dispatched in `Decisions.runPostStep`
-       at `Decisions.lean:1656`); in `Decisions.afterTriggerTargetsChosen`
-       (`Decisions.lean:3445–3473`, invoked after `ceaseToExist` at
-       `Decisions.lean:2241, 2264`), guard on `g.sbaPaused` on entry—ahead of the
+       Bool)` to `PostStep` (`Event.lean:1194–1511`, after `1510` before `deriving`
+       at `1511`, dispatched as new arms in `Decisions.runPostStep` at
+       `Decisions.lean:1656–2715`, after `2715`); in `Decisions.afterTriggerTargetsChosen`
+       (`Decisions.lean:3445–3473`, invoked at `2241` and `2265` after `ceaseToExist`
+       at `2241` and `2263`), guard on `g.sbaPaused` on entry—ahead of the
        `.pending .none` clears at `3457` (`promptTriggerTargetsIfNeeded (g.change
        (.pending .none))`), `3469`, and `3472`, as well as `3450` and `3462` on the
        `reverseProposedSpell` arms—chaining `.finishPostStep
@@ -14059,8 +14059,11 @@ unpayable-prompt `decline` reversals).
          (keeping `1116`'s `minusX -> LoyaltySymbol.minus chosenX` conversion—extended
          to `.plusX -> LoyaltySymbol.plus chosenX`—in front of `1120`); test
          `prop.loyaltyPaid || g.sourceCounterCostPaidFor ...` in
-         `Choices.sourceStillPayable` (`641`), `Decisions.proposalCostPromptStillPayable`
-         (`145`), `ActivationCosts.payCostPick` (`364, 392`),
+         `Choices.sourceStillPayable` (`641–648`) and
+         `Decisions.proposalCostPromptStillPayable` (`145–156`, also accepting
+         `sym == LoyaltySymbol.plusX` in both functions' `| none =>` `sym.counters`
+         branch at `Choices.lean:646–648` and `Decisions.lean:153–156`),
+         `ActivationCosts.payCostPick` (`364, 392`),
          `ActivationCosts.payActivationExtraCosts`, and `Casting.becomeActivated`
          (`1089, 1119`); in `ActivationCosts.payActivationExtraCosts` (`547–602`),
          validate `a.cost.loyalty` (`!g.loyaltyActivatedThisTurn src.id` and
