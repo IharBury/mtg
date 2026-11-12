@@ -12581,15 +12581,19 @@ multi-pick disjointness, and `canPayLife`).
          `gCur.followMovedToZone? origId (fun _ => true)` on `.moved` /
          `.ceasedToExist`); pass `runBatch := fun g0 f => g0.withBatch none f` and
          `flushLinked := Game.flushQueuedLinkedExile` from
-         `Movement.reverseToProposalCheckpoint?` (`Movement.lean:835–836`, keeping
+         `Movement.reverseToProposalCheckpoint?` (`Movement.lean:835–838`, keeping
          `.map Game.flushQueuedLinkedExile` as a trailing safety net), and
          immediately after each `runBatch` call `gAcc :=
          gAcc.drainLocalPendingReplacement` so when `withBatchCoreReturn` kept the
          batch open solely because `pendingReplacement.isSome` while `pending ==
          .none` (`Core.lean:10497–10500`—not a player pause, and not drained by
-         `reverseProposedSpell (resumeContinuation := false)` at
-         `Casting.lean:688–689`), its `.closeBatch` (`Decisions.lean:1243–1244`)
-         and `finishOpenBatchAndLinkedExile` (`Movement.lean:784–786, 796–801`)
+         `reverseProposedSpellCore?` / `reverseProposedSpell` when
+         `resumeContinuation == false` at `Casting.lean:672–674`,
+         `Decisions.lean:3029–3045`), its `.closeBatch` (`Decisions.lean:1408–1409`)
+         and `finishOpenBatchAndLinkedExile` (`Movement.lean:842–843`, via
+         `flushQueuedLinkedExile` at `784–789` and `returnLinkedExileMoves` at
+         `794–802`—queueing while a batch is open at `796–797`, chaining
+         `.finishLinkedExileMove` at `798–799`, and opening the return batch at `801`)
          run immediately before advancing `idx` to the next `keptStream` batch.
          Stop replaying in `Core.replayKeptStreamCore` **only** when
          `isProposalReplayPaused gAcc` is `true`
@@ -12606,7 +12610,7 @@ multi-pick disjointness, and `canPayLife`).
          replays—preserving `[B1, return(L), B2]`—and on a nested pause in `B2`,
          `replayKeptStreamCore` attaches only `B2`'s remaining
          `.continueCheckpointReplay` tail while the enclosing
-         `Decisions.resumePendingReplacement` `.seq` at `Decisions.lean:690–693`
+         `Decisions.resumePendingReplacement` `.seq` at `Decisions.lean:700–703`
          appends the already-built outer cleanup/checkpoint `rest` once behind
          `B2`'s `.closeBatch`, without duplicating cleanup or checkpoint
          restoration):
@@ -12964,7 +12968,7 @@ multi-pick disjointness, and `canPayLife`).
        `.closeBatch batchId startIdx` **after** `.phaseOutPermanentsLoop`, any
        subsequent pause in `rem` joins the still-open batch
        (`Core.lean:10430–10478`) while `Decisions.resumePendingReplacement`'s
-       `.seq` arm (`Decisions.lean:690–691`) keeps that `.closeBatch` queued after
+       `.seq` arm (`Decisions.lean:700–701`) keeps that `.closeBatch` queued after
        the new tail, and `finishOpenBatch` evaluates triggers and designation scans
        only once the entire simultaneous phase-out has completed (CR 702.26g–h;
        single-target `phaseOut` at `EffectResolution.lean:2013` is unchanged); and
@@ -12983,7 +12987,7 @@ multi-pick disjointness, and `canPayLife`).
        but gating on `g.sbaPaused`): when `g.sbaPaused`, **only** call
        `g.chainPendingReplacement (.finishFrcPostStep .teferiExileSpell)`
        (`Core.lean:10324–10328`, placing the post-step behind `.closeBatch`, where
-       `Decisions.chooseReplacement` at `Decisions.lean:5029–5037` drains it
+       `Decisions.chooseReplacement` at `Decisions.lean:5213–5222` drains it
        before `completeActiveResolutions` clears `resolvingSpell` and moves the
        spell) without creating the effect immediately, and `else` run
        `g.teferiExileSpell` immediately;
@@ -13907,14 +13911,17 @@ unpayable-prompt `decline` reversals).
          _leavingPlayer).leftTheGame`, or running `reconcileControlAfterTransition
          pre g` when called standalone).
    - Fix phased-out scope matching in Layer 1 / Layer 2 (`Event.lean:307–316,
-     1933–1934`, `Object.lean:139–144`, `Core.lean:1670–1689, 1785–1806`,
+     1933–1934`, `Object.lean:139–144`, `Core.lean:1656, 1677–1689, 1785–1806`,
      `Decisions.lean:1652–1653`) and CR 502.1 phase-in
      controller lookup in `Phasing.phaseInControlled` (`Phasing.lean:155–162`):
      - Under CR 702.26b,d,f, phasing out a permanent does **not** end continuous
        effects affecting that permanent unless their duration expires, and
        phased-out permanents remain in `o.zone == .battlefield` (`Object.lean:139–144`,
-       passing the `o.zone != .battlefield` early returns at `Core.lean:1670, 1785`
-       and `.objects ids`'s `ids.contains o.id` arm at `1679, 1796`), yet the other
+       passing `effectiveControllerWithApplied`'s `o.zone != .battlefield` early
+       return at `Core.lean:1785`—while `initialControllerOf` at `1656` still
+       computes their battlefield controller and `unmaskedCopiableValuesWithTs` has
+       no zone early return—and matching `.objects ids`'s `ids.contains o.id` arm at
+       `1679, 1796`), yet the other
        three `ObjectScope` arms (`Event.lean:307–316`: `.creaturesControlledBy`,
        `.creaturesWithout`, and `.permanentsOfSubtype`) in `scopeMatchesL1`
        (`Core.lean:1680–1688`) and `scopeMatchesL2` (`Core.lean:1797–1805`) gate on
