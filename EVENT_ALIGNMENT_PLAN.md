@@ -13240,9 +13240,9 @@ unpayable-prompt `decline` reversals).
    `Core.replayKeptStreamCore`, tighten `queueUnreturnedLinked` & multi-hop
    `followMoved` resolution, and preserve CR 104.1 `g.over` & mid-pause 3rd-player
    departure invariants across `.continueCheckpointReplay` (`Event.lean:1930–1931,
-   2250–2251`, `Core.lean:160, 371–381, 675–855, 919–920, 953–985, 991–1004, 1072,
-   1655–1662, 1835–1860, 2052, 2110, 5211–5248, 5928–5975, 10372–10510, 10599–10825,
-   11175–11270, 11412–11418`, `Movement.lean:784–839`,
+   2250–2251`, `Core.lean:161–162, 371–381, 675–855, 919–920, 953–985, 991–1004,
+   1072, 1655–1662, 1835–1860, 2052, 2110, 2182–2183, 2267–2269, 5211–5248, 10372–10510,
+   10599–10825, 11175–11284, 11412–11418`, `Movement.lean:784–839`,
    `Decisions.lean:662–703, 1648–1650`, `Leaving.lean:33–47, 178–218, 2506–2546`,
    §2.1, §2.4, §2.5, §3.8, CR 104.1 / 104.2a / 400.7 / 603.2c / 610.3 / 725.4 /
    733.1–733.2 / 800.4a,c,j):
@@ -13323,9 +13323,10 @@ unpayable-prompt `decline` reversals).
        earlier replayed batches or live CR 610.3 returns is still located.
    - Preserve CR 104.1 game-end finality and mid-pause 3rd-player departure
      invariants across checkpoint reversal and `.continueCheckpointReplay`
-     (`Event.lean:2250–2251`, `Core.lean:160, 1655–1662, 1835–1860, 2052, 5928–5975,
-     10372–10510, 10653–10825, 11175–11270, 11412–11418`, `Movement.lean:784–839`,
-     `Decisions.lean:662–703, 1648–1650`, `Leaving.lean:33–47, 178–218, 2506–2546`):
+     (`Event.lean:1930–1931, 2250–2251`, `Core.lean:161–162, 1655–1662, 1835–1860,
+     2052, 2182–2183, 2267–2269, 10372–10510, 10653–10825, 11175–11284, 11412–11418`,
+     `Movement.lean:784–839`, `Decisions.lean:662–703, 1648–1650`,
+     `Leaving.lean:33–47, 178–218, 2506–2546`):
      - Existing game-over cleanup paths (`Decisions.finishAndGrantPriority` at
        `Decisions.lean:204–207`, `Decisions.finishFraChoice` at `291–292`,
        `Decisions.afterTriggerTargetsChosen` at `3448–3451`, and
@@ -13345,63 +13346,87 @@ unpayable-prompt `decline` reversals).
        disabling the `isProposalReplayPaused` break at `Core.lean:10781` while a
        prompt is open would replay the rest of `keptStream` on top of that pending
        choice):
-       - Keep `if isProposalReplayPaused gAcc then break` at `Core.lean:10781` intact
-         and instead **thread `wasOver` (`suppressInteractive : Bool := false`) into
-         `promptChooseReplacement` and `withBatchCoreReturn` / `withBatchCore`** (plus
-         a transient `suppressInteractiveReplay : Bool := false` field on `Game` at
-         `Core.lean:160`—cleared back to `false` before
-         `reverseToProposalCheckpointCore?` returns, matching transient
-         `openBatchObjects` in `finishOpenBatchSync` at `10381–10388` so
-         `Game.replayEvents g.events == g` holds—so indirect callers also see
-         `wasOver`): add `(suppressInteractive : Bool := false)` to
+       - Keep `if isProposalReplayPaused gAcc then break` at `Core.lean:10781` and
+         `Core.selectNextReplacementStep` (`5928–5975`, where `.needChoice` already
+         terminates replacement loops via `fuel := 0` at `Movement.lean:215–218` and
+         `Core.lean:6071–6074` without diverging from `keptStream`) intact, and
+         instead **thread `wasOver` (`suppressInteractive : Bool := false`) into
+         `promptChooseReplacement`, `withBatchCoreReturn` / `withBatchCore`,
+         `finishOpenBatchSync`, and `.continueCheckpointReplay`** alongside a
+         `suppressInteractiveReplay : Bool := false` field on `structure Game` after
+         `events : Array GameEvent := #[]` (`Core.lean:161`) and before `deriving
+         Repr, Inhabited, BEq` (`162`): add `(suppressInteractive : Bool := false)` to
          `Core.promptChooseReplacement` (`Core.lean:11412–11418`), returning `g`
          without pushing a frame or writing `.pending (.chooseReplacement ..)` /
          `.pendingReplacement (some cont)` when `g.over ||
-         g.suppressInteractiveReplay || suppressInteractive` (and in
-         `Core.selectNextReplacementStep` at `5928–5975`, when `g.over ||
-         g.suppressInteractiveReplay` would otherwise return `.needChoice`,
-         deterministically choose `pool[0]!` for non-prompt ties and drop open-prompt
-         candidates so replacement loops terminate without opening a prompt); add
-         `(suppressInteractive : Bool := false)` to `Core.withBatchCoreReturn` /
-         `Core.withBatchCore` (`Core.lean:10424–10510`) so when `g.over ||
-         g.suppressInteractiveReplay || suppressInteractive`, `keepOpen` (`10497–10504`)
-         is forced `false` and `finishOpenBatchSync` (`10372–10395, 10506`) clears the
-         transient `currentBatch` / `openBatch*` fields (`10381–10388`) without calling
-         `g2.closeBatch` (`10395`); in `Core.reverseToProposalCheckpointCore?`
-         (`Core.lean:11175–11270`) and `Movement.reverseToProposalCheckpoint?`
+         g.suppressInteractiveReplay || suppressInteractive`; add
+         `(suppressInteractive : Bool := false)` to **both** `finishOpenBatchSync`
+         (`Core.lean:10372–10395`) and `Core.withBatchCoreReturn` /
+         `Core.withBatchCore` (`Core.lean:10424–10510`) so when `let noInteractive :=
+         suppressInteractive || g1.over || g1.suppressInteractiveReplay` is `true`,
+         `keepOpen` (`10497–10504`) is forced `false`, `10506` calls
+         `g1.finishOpenBatchSync batchId startIdx (suppressInteractive :=
+         noInteractive)`, and `finishOpenBatchSync` clears `currentBatch` /
+         `openBatch*` (`10381–10388`) and takes an explicit early-return branch
+         (`if suppressInteractive || g2.over || g2.suppressInteractiveReplay ||
+         batchEvents.isEmpty then g2 else g2.closeBatch pre batchId batchEvents` at
+         `10394–10395`) that skips `g2.closeBatch`; carry `(suppressInteractive : Bool
+         := false)` on `PendingReplacement.continueCheckpointReplay`
+         (`Event.lean:1930–1931`, populated with `gAcc.suppressInteractiveReplay ||
+         gAcc.over` at `Core.lean:10824`), mirror `suppressInteractiveReplay` in
+         `Core.applyEngineChange` (`Core.lean:2182–2183, 2267–2269`) whenever
+         `g.continuations` holds a `.continueCheckpointReplay` with
+         `suppressInteractive == true` (so `Game.replayEvents g.events == g` holds
+         both mid-pause and after completion), and in
+         `Decisions.resumePendingReplacement`'s `| .continueCheckpointReplay
+         remainingStream fullKeptStream revMap effRevMap suppressInteractive =>`
+         (`Decisions.lean:1648–1650`) return `g` if `g.over` and otherwise keep
+         `suppressInteractiveReplay := g.suppressInteractiveReplay ||
+         suppressInteractive` set for that resumed `replayKeptStreamCore` (clearing it
+         back to `false` once no suppressed `.continueCheckpointReplay` remains) and
+         pass `runBatch := if g.suppressInteractiveReplay || suppressInteractive then
+         (fun g0 f => g0.withBatchCore none f (suppressInteractive := true)) else (fun
+         g0 f => g0.withBatch none f)`; in `Core.reverseToProposalCheckpointCore?`
+         (`Core.lean:11175–11284`) and `Movement.reverseToProposalCheckpoint?`
          (`Movement.lean:835–839`), snapshot `let wasOver := g.over` **before**
          `restoreProposalCheckpoint` (`11175`), set `suppressInteractiveReplay :=
-         wasOver` across `replayKeptStreamCore` (resetting it to `false` immediately
-         afterward), pass `runBatch := fun g0 f => g0.withBatchCore none f
-         (suppressInteractive := true)` and `flushLinked := id` (and skip trailing
-         `.map Game.flushQueuedLinkedExile` at `838`) when `wasOver` is `true`, and
-         skip restoring/chaining `postCastCleanup`, `ckptPausedBatch?`,
+         wasOver` across `replayKeptStreamCore` (clearing it back to `false` on return
+         unless a suppressed `.continueCheckpointReplay` pause remains queued), pass
+         `runBatch := fun g0 f => g0.withBatchCore none f (suppressInteractive :=
+         true)` and `flushLinked := id` (and skip trailing `.map
+         Game.flushQueuedLinkedExile` at `838`) when `wasOver` is `true`, and skip
+         restoring/chaining `postCastCleanup`, `ckptPausedBatch?`,
          `ckptQueuedLinkedExile`, `ckptPending`, and `ckptCont?` whenever `wasOver ||
          gAcc.over`; and guard `Movement.flushQueuedLinkedExile` (`785`: `if g.over ||
          g.suppressInteractiveReplay || ...`), `Movement.returnLinkedExileMoves`
-         (`795`), `Decisions.resumePendingReplacement`'s `| .continueCheckpointReplay
-         .. =>` (`1648`: `if g.over then g else ...`), and **insert** `else if g.over
-         then g` after `if reversed then g` (`699`) and **ahead of** `else if
-         g.pending != .none then g.chainPendingReplacement rest` (`700–701`) in
+         (`795`), and **insert** `else if g.over then g` after `if reversed then g`
+         (`699`) and **ahead of** `else if g.pending != .none then
+         g.chainPendingReplacement rest` (`700–701`) in
          `Decisions.resumePendingReplacement`'s `| .seq first rest =>` arm
          (`Decisions.lean:662–703`, preserving `700–701`'s `chainPendingReplacement
          rest` branch); and
      - when `.continueCheckpointReplay` pauses on `B1`'s `.chooseReplacement` /
        `.chooseLegend` and a **3rd player `p3` concedes or loses during that
        pause** before `B2` replays:
-       - in `Core.replayKeptStreamCore` (`Core.lean:10682–10790`), on the existing
+       - in `Core.replayKeptStreamCore` (`Core.lean:10682–10777`), on the existing
          `EngineChange.priority` (`.engine t (.priority nextP)` at `Event.lean:2250`,
          `Core.lean:10682–10685`) and `EngineChange.pendingPriority` (`.engine t
          (.pendingPriority (some nextP))` at `Event.lean:2251`, `Core.lean:10686–10689`)
          arms, redirect `nextP` via `gCur.nextLiving nextP` when `(gCur.player
-         nextP).leftTheGame` and a living player remains (CR 800.4j); on `ZoneEvent`
-         arms (`10690–10750`), skip replaying `ZoneEvent.moved` into a zone or
-         battlefield controller belonging to an already-departed player (`(gCur.player
-         ...).leftTheGame`) and `ZoneEvent.created` for a departed owner/controller;
-         and when replaying `PlayerEvent.becameMonarch heir prev` with `(gCur.player
-         heir).leftTheGame` while a living player remains, compute `let depMonarch :=
-         prev.getD heir` and redirect `heir` to `if gCur.stillInGame gCur.activePlayer
-         && gCur.activePlayer != depMonarch then gCur.activePlayer else if
+         nextP).leftTheGame` and a living player remains (CR 800.4j); on the existing
+         `ZoneEvent.moved` arm (`Core.lean:10690–10719`), skip replaying moves into a
+         zone or battlefield controller belonging to an already-departed player
+         (`(gCur.player ...).leftTheGame`); **add a new `| .rules t (.zone (.created
+         obj)) cause batch =>` arm ahead of `| _ => gCur.record ev`
+         (`Core.lean:10776–10777`)** (sharing Item 1a's minted `obj.id` remapping)
+         that skips recording when `(gCur.player obj.owner).leftTheGame` or
+         `obj.zone == .battlefield && obj.controller.any (fun c => (gCur.player
+         c).leftTheGame)`; and **add a new `| .rules t (.player (.becameMonarch heir
+         prev)) cause batch =>` arm ahead of `| _ => gCur.record ev`
+         (`Core.lean:10776–10777`)** that, when `(gCur.player heir).leftTheGame` while
+         a living player remains, computes `let depMonarch := prev.getD heir` and
+         redirects `heir` to `if gCur.stillInGame gCur.activePlayer &&
+         gCur.activePlayer != depMonarch then gCur.activePlayer else if
          !gCur.isSharedTurnFinalSeat then gCur.nextLiving gCur.activePlayer else
          gCur.nextLiving depMonarch` (matching `Leaving.lean:2508–2510` verbatim, CR
          725.4); and
@@ -13534,12 +13559,13 @@ unpayable-prompt `decline` reversals).
        `p : PlayerId` defaults to `(g.pendingReplacement.bind
        (priorityRecipientOfContinuation? g)).orElse (fun _ =>
        g.outerPendingReplacements.findSomeRev? (priorityRecipientOfContinuation?
-       g)) |>.getD g.activePlayer`, replace that default expression's trailing
-       `|>.getD g.activePlayer` at `193` with `|>.getD (g.pendingPriority.getD
-       g.activePlayer)` (matching `Decisions.finishFraChoice` at `314` and
-       `Decisions.keepLegend` at `4938`) so callers omitting `p` respect a recorded
-       `g.pendingPriority` instead of falling back directly to `g.activePlayer`;
-       and
+       g)) |>.getD g.activePlayer`, pass the initial root flag `(hasQueuedPending :=
+       false)` to `priorityRecipientOfContinuation? g false` at `191–192` and replace
+       that default expression's trailing `|>.getD g.activePlayer` at `193` with
+       `|>.getD (g.pendingPriority.getD g.activePlayer)` (matching
+       `Decisions.finishFraChoice` at `314` and `Decisions.keepLegend` at `4938`) so
+       callers omitting `p` respect a recorded `g.pendingPriority` instead of falling
+       back directly to `g.activePlayer`; and
      - extend `PendingReplacement.endsWithPriorityGrant` (`Event.lean:2303–2312`),
        `Decisions.priorityRecipientOfContinuation?` (`Decisions.lean:17–24`), and
        `Decisions.resumePendingReplacement`'s `.finishTurnFaceUp` arm
@@ -13569,34 +13595,66 @@ unpayable-prompt `decline` reversals).
          1435, 1443, 1469` so a queued `.finishFraChoice` drains even when
          `resumePendingReplacement` is called directly); in
          `PendingReplacement.endsWithPriorityGrant` (`Event.lean:2303–2312`, where
-         `Game` is not in scope), add optional `(hasQueuedPending : Bool := false)`
-         with `| .completeActivation hadOuter _ | .finishBecomeActivated _ ..
-         hadOuter _ | .finishPostLoyaltyActivated _ .. hadOuter _ | .finishTurnFaceUp
-         _ _ hadOuter => !hadOuter || hasQueuedPending` (and `| .finishPostCast _
-         grantPriority hadOuter _ => grantPriority && (!hadOuter ||
-         hasQueuedPending)`), paired with a `Game`-aware `Decisions` helper used at
-         `Decisions.lean:195–196, 548–549, 606–607` that starts with
-         `hasQueuedPending := false` at the root of `g.pendingReplacement` /
-         `g.outerPendingReplacements` (since `drainPendingContinuations` at `174,
-         181–183` and `chooseReplacement` at `5214` pop `g.pendingReplacement` to
-         `none` before resuming, avoiding self-matching `g.pendingReplacement == some
-         cont`) and sets `hasQueuedPending := true` on `b` in `.seq a b` whenever `a`
-         enqueues onto `g.pendingReplacement` without pausing (e.g.
-         `a.endsWithFinishFra` or `.restorePending .none true` with
-         `!g.outerPendingReplacements.isEmpty`); and in
-         `Decisions.priorityRecipientOfContinuation? (g : Game) (hasQueuedPending :
-         Bool := false)` (`Decisions.lean:17–24`, returning raw `Option PlayerId`
-         without pre-applying `priorityInstead` just like `18–21`, propagating the
-         same `hasQueuedPending` across `.seq a b` at `22–23`), add `|
-         .completeActivation false false => if g.triggerSequenceRest.isSome ||
-         hasQueuedPending then none else g.proposedSpell.map (·.caster)`, `|
-         .finishBecomeActivated caster .. false false | .finishPostLoyaltyActivated
-         caster .. false false => if g.triggerSequenceRest.isSome || hasQueuedPending
-         then none else some caster`, and `| .finishTurnFaceUp caster _ false => if
-         g.triggerSequenceRest.isSome || hasQueuedPending then none else some caster`
-         (returning `none` whenever `chainFinishFra` routes to `.finishFraChoice`,
-         whether from `g.triggerSequenceRest.isSome` or queued
-         `pendingReplacement.isSome`).
+         `Game` is not in scope—leaving `Event.lean:2306`'s `.finishPostCast` arm
+         `grantPriority && !hadOuter` untouched, since `Casting.finishPostCast` at
+         `844–848` chains `.finishFraChoice` / `.receivePriority` on `.chooseReplacement`
+         even when `hadOuterReplacement` is `true` and `pendingReplacement` is `none`,
+         unlike `Casting.lean:1022–1027, 1034–1062`), add optional `(hasQueuedPending
+         : Bool := false)`, add `| .completeActivation hadOuter _ |
+         .finishBecomeActivated _ .. hadOuter _ | .finishPostLoyaltyActivated _ ..
+         hadOuter _ | .finishTurnFaceUp _ _ hadOuter => !hadOuter ||
+         hasQueuedPending`, and **update `Event.lean:2311` from `| .seq _ b =>
+         b.endsWithPriorityGrant` to `| .seq a b => b.endsWithPriorityGrant
+         (a.nextQueuedPending hasQueuedPending)`** (where
+         `PendingReplacement.nextQueuedPending` threads `hasQueuedPending`
+         left-to-right across `.seq a1 a2`, sets `true` on syntactic queuing steps
+         such as `.restorePending p _ _ departed _` whose `p` is owned by `departed`
+         and redirected into a queued `.finishPostStep` / `.finishLibraryLook` /
+         `.finishLinkedExileMove` continuation with `pending == .none`, clears to
+         `false` on draining steps such as `.finishFraChoice` and `hadOuter == false`
+         cast/activation/turn-face-up completions, and preserves `hasQueuedPending` on
+         `hadOuter == true` leaves and neutral steps, so `.seq` nodes forward the
+         updated flag rather than falling back to default `false`);
+         define a shared `Game`-aware `nextQueuedPendingOnResume (g : Game)
+         (hasQueuedPending : Bool) : PendingReplacement → Bool` in `Decisions.lean`
+         (starting with `hasQueuedPending := false` at the root of
+         `g.pendingReplacement` and `g.outerPendingReplacements`, since
+         `drainPendingContinuations` at `174, 181–183` and `chooseReplacement` at
+         `5214` clear `g.pendingReplacement` to `none` before resuming, and setting
+         `true` when step `a` in `.seq a b` finishes with `g.pending == .none` while
+         queuing onto `g.pendingReplacement`—including `.restorePending` when
+         `redirectPendingAfterLeave` clears a departed seat's prompt to `.none` and
+         chains `.finishPostStep` / `.finishLibraryLook` / `.finishLinkedExileMove` at
+         `Decisions.lean:1398–1407` or when `g.sbaPaused || g.afterRandom != .none`
+         stashes the continuation at `1177–1202`, `.concedePlayersLoop` /
+         `.finishConcede` / `.leavePlayersWhoLost` when `g.sbaPaused` or `popOuter &&
+         !g.outerPendingReplacements.isEmpty` at `575, 593, 610, 618, 636, 650`, and
+         `.continueCheckpointReplay` when `g.afterRandom != .none`—while clearing to
+         `false` on draining steps when `!g.sbaPaused && g.afterRandom == .none` and
+         preserving `hasQueuedPending` on `hadOuter == true` leaves and neutral
+         steps), use it in `continuationGrantsPriority (g : Game) (hasQueuedPending :
+         Bool := false)` (`| .seq a b => continuationGrantsPriority g
+         (nextQueuedPendingOnResume g hasQueuedPending a) b`, delegating leaves to
+         `pr.endsWithPriorityGrant hasQueuedPending`) at `Decisions.lean:195–196,
+         548–549, 606–607` in place of `.any PendingReplacement.endsWithPriorityGrant`;
+         and in `Decisions.priorityRecipientOfContinuation? (g : Game)
+         (hasQueuedPending : Bool := false)` (`Decisions.lean:17–24`, called as
+         `priorityRecipientOfContinuation? g false` at `Decisions.lean:191–192` and
+         returning raw `Option PlayerId` without pre-applying `priorityInstead` just
+         like `18–21`), **update `.seq a b` at `22–23` to `let bQueued :=
+         nextQueuedPendingOnResume g hasQueuedPending a;
+         priorityRecipientOfContinuation? g bQueued b |>.orElse (fun _ =>
+         priorityRecipientOfContinuation? g hasQueuedPending a)`** (so `b` receives the
+         updated `bQueued` flag when `a` enqueues onto `g.pendingReplacement`, while
+         `a` receives `hasQueuedPending`) and add `| .completeActivation false false
+         => if g.triggerSequenceRest.isSome || hasQueuedPending then none else
+         g.proposedSpell.map (·.caster)`, `| .finishBecomeActivated caster .. false
+         false | .finishPostLoyaltyActivated caster .. false false => if
+         g.triggerSequenceRest.isSome || hasQueuedPending then none else some caster`,
+         and `| .finishTurnFaceUp caster _ false => if g.triggerSequenceRest.isSome ||
+         hasQueuedPending then none else some caster` (returning `none` whenever
+         `chainFinishFra` routes to `.finishFraChoice`, whether from
+         `g.triggerSequenceRest.isSome` or queued `pendingReplacement.isSome`).
 3. Capture pre-mutation `pre` snapshots across counter and zone-exit control/copy
    transitions, align phased-out Layer 1/2 scope matching & CR 502.1 phase-in
    controller lookup, wire `flushQueuedLinkedExileFwd` after `withBatchCore` in
