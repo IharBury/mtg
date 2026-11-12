@@ -13805,14 +13805,19 @@ unpayable-prompt `decline` reversals).
          `1468`), `return if callerShouldResume then g.resumeAfterBecomeCast else g`
          at `Decisions.lean:4148` (after `4142–4147` chains
          `outer.ensureEndsWithFinishFra` when `paused`) and at
-         `PriorityActions.lean:66–67`, applying `if callerShouldResume then
-         g.resumeAfterBecomeCastFwd else g` inside
-         `SacrificeDiscard.sacrificeForActivation` (`SacrificeDiscard.lean:327–329,
-         354–359`) **after** `354–357` while capturing `let isTurnFaceUpSac := wasProp
-         && g.proposedSpell.any (·.kind == .turnFaceUp)` before `Actions.lean:72` so
-         `Actions.lean:87–88` returns `g` when `isTurnFaceUpSac` and keeps
-         `g.resumeAfterBecomeCast` for the `.spell` (`333–338`), `.activatedAbility`
-         (`339–346`), and `none` (`349–352`) arms, and projecting `.1` in the unit
+         `PriorityActions.lean:66–67`, binding `let (g, callerShouldResume) := match
+         g.proposedSpell with …` across `SacrificeDiscard.sacrificeForActivation`'s
+         `324–352` match (`SacrificeDiscard.lean:324–359`—where `327–329` returns the
+         `completeTurnFaceUp` pair while `SacrificeDiscard.lean`'s `| .spell =>` at
+         `333–338`, `| .activatedAbility =>` at `339–346`, `| .turnFaceUp =>` at `347`,
+         and `| none =>` at `348–352` each return `(…, false)`) and applying `if
+         callerShouldResume then g.resumeAfterBecomeCastFwd else g` **after** `354–357`
+         so only `327–329` can resume there while capturing `let isTurnFaceUpSac :=
+         wasProp && g.proposedSpell.any (·.kind == .turnFaceUp)` before
+         `Actions.lean:72` so the single `else if wasProp` branch at `Actions.lean:87–88`
+         runs `return if isTurnFaceUpSac then g else g.resumeAfterBecomeCast` (returning
+         `g` for `isTurnFaceUpSac` and keeping `g.resumeAfterBecomeCast` for non-turn-face-up
+         sacrifices), and projecting `.1` in the unit
          test at `Events.lean:29022`; and on the orphaned-proposal
          clear-only arms `Casting.lean:1043–1045` (in `completeTurnFaceUp`, reading
          `g.pending == .none` **before** `1045`'s `#[.pending .none, …]` write) and
@@ -13822,7 +13827,7 @@ unpayable-prompt `decline` reversals).
          `.ok` at `1208` to `Decisions.lean:1424–1425` (`if hadOuter then g' else
          resumeAfterBecomeCast g'`), and `completeTurnFaceUp`'s callers at
          `PriorityActions.lean:66–67`, `Decisions.lean:4134–4148`, and
-         `SacrificeDiscard.lean:316–329, 354–359` consume `callerShouldResume == true`
+         `SacrificeDiscard.lean:316–359` consume `callerShouldResume == true`
          to continue any existing queue on `1043–1045`—grant
          priority on the idle-stall branch when `!g.over && !hadOuterReplacement &&
          g.pending == .none` (captured before `1045` in `completeTurnFaceUp`) `&&
