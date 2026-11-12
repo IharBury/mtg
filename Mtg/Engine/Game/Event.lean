@@ -1133,6 +1133,7 @@ inductive FrcPostStep where
   | logHandDiscardToBottom (p : PlayerId) (cardId : ObjectId) (destOwner : PlayerId)
       (cardName : String)
   | logExploreLandToHand (controller : PlayerId) (cardId : ObjectId) (cardName : String)
+  | teferiExileSpell
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- Exile follow-up mode for `TriggeredAbilities.runTriggerExileLoop`. -/
@@ -1560,6 +1561,41 @@ inductive ProposedSpellCostStage where
   | finalize
 deriving DecidableEq, Repr, Inhabited, BEq
 
+/-- Deferred library-bottoming or CR 704.5e copy cleanup run once a mid-resolution
+proposed spell finishes casting (`becomeCast`) or is reversed (`reverseProposedSpell?`). -/
+inductive PostCastCleanup where
+  | cascadeBottom (caster : PlayerId) (cardId : ObjectId) (others : Array ObjectId)
+  | grimaBottom (victim : PlayerId) (cardId : ObjectId) (others : Array ObjectId)
+  | copyCeaseToExist (copyId : ObjectId)
+  | lookedBottom (caster : PlayerId) (cardId : ObjectId) (allLooked : Array ObjectId)
+deriving Repr, Inhabited, BEq
+
+/-- Action boundary marker within a proposal slice so `reverseToProposalCheckpoint?`
+can reverse or retain discrete mana abilities and cost actions as whole CR 733.1
+actions. -/
+inductive ProposalActionKind where
+  | manaAbility (source : Option ObjectId := none)
+  | costAction
+deriving DecidableEq, Repr, Inhabited, BEq
+
+/-- Final CR 608.2n / 608.2p / 608.3 step run when a resolving stack object's
+`ContinuationFrame` completes all `Pending` and `resolveRandom` pauses. -/
+inductive ResolutionFinish where
+  | ability (objId : ObjectId) (snap : EventObject) (controller : PlayerId)
+      (sourceId : Option ObjectId := none) (sagaChapter : Option Nat := none)
+  | spell (entry : StackEntry) (snap : EventObject) (fromGy : Bool)
+deriving Repr, Inhabited, BEq
+
+/-- Structured mutation to a `StackEntry` identified by `objectId`. -/
+inductive StackEntryChange where
+  | skipOptionalSlot (slot : Nat)
+  | targetsAnnounced (done : Bool)
+  | lastKnownPT (power toughness : Option Int)
+  | clearChosenModes
+deriving Repr, Inhabited, BEq
+
+mutual
+
 /-- Continuation stored while waiting for a player to answer `Pending.chooseReplacement`
 when multiple replacement or prevention effects compete in the same CR 616.1a–e tier. -/
 inductive PendingReplacement where
@@ -1680,6 +1716,7 @@ inductive PendingReplacement where
       (cause : Option EventCause) (objects : Array GameObject)
       (players : Array Player) (effects : Array (EffectId × ContinuousEffectSpec))
       (pending : Pending) (stack : Array StackEntry := #[])
+      (closeIfOrphaned : Bool := true) (queuedLinkedExile : Array ObjectId := #[])
   | checkSBA
   | receivePriority (p : PlayerId)
   | completeActivation (hadOuterReplacement hadOpenContinuation : Bool)
@@ -1889,89 +1926,11 @@ inductive PendingReplacement where
       (savedPending : Option Pending := none) (popOuter : Bool := false)
       (departed : Array PlayerId := #[]) (rewindProposal : Option Bool := none)
   | afterWardResolved
-deriving Repr, Inhabited, BEq
-
-/-- Whether a `PendingReplacement` continuation ends with `.finishFraChoice`. -/
-def PendingReplacement.endsWithFinishFra : PendingReplacement → Bool
-  | .finishFraChoice => true
-  | .seq _ b => b.endsWithFinishFra
-  | _ => false
-
-/-- Whether a `PendingReplacement` continuation already ends by granting
-priority (`.receivePriority` / `.finishFraChoice` / `.finishPostCast` /
-`.finishBecomeCast` with `grantPriority == true` / `.finishConcede`). -/
-def PendingReplacement.endsWithPriorityGrant : PendingReplacement → Bool
-  | .receivePriority _ | .finishFraChoice | .finishConcede .. | .afterWardResolved => true
-  | .concedePlayersLoop _ wp mid .. => !wp && !mid
-  | .finishPostCast _ grantPriority hadOuter _ => grantPriority && !hadOuter
-  | .finishBecomeCast _ _ grantPriority hadOuter openCont =>
-    grantPriority && !hadOuter && !openCont
-  | .finishProposedSpellCosts _ grantPriority hadOuter openCont =>
-    grantPriority && !hadOuter && !openCont
-  | .seq _ b => b.endsWithPriorityGrant
-  | _ => false
-
-/-- Ensure a `PendingReplacement` continuation ends with `.finishFraChoice`
-without appending a duplicate `.finishFraChoice` when already present. -/
-def PendingReplacement.ensureEndsWithFinishFra : PendingReplacement → PendingReplacement
-  | .finishFraChoice => .finishFraChoice
-  | .seq a b => .seq a b.ensureEndsWithFinishFra
-  | other => .seq other .finishFraChoice
-
-/-- Record that `p` left the game on any nested `.restorePending`,
-`.leavePlayersWhoLost`, `.finishConcede`, or `.concedePlayersLoop`
-continuation so `.restorePending` re-runs `redirectPendingAfterLeave`
-once the replacement pause finishes (CR 616.1 / 800.4). -/
-def PendingReplacement.appendDeparted (p : PlayerId) : PendingReplacement → PendingReplacement
-  | .restorePending pend popOuter promptLog dep rw =>
-    .restorePending pend popOuter promptLog (if dep.contains p then dep else dep.push p) rw
-  | .leavePlayersWhoLost saved popOuter dep rw =>
-    .leavePlayersWhoLost saved popOuter (if dep.contains p then dep else dep.push p) rw
-  | .finishConcede wasIdle prio wasCombat saved popOuter dep rw =>
-    .finishConcede wasIdle prio wasCombat saved popOuter (if dep.contains p then dep else dep.push p) rw
-  | .concedePlayersLoop rem wp mid wasIdle prio wasCombat saved popOuter dep rw =>
-    .concedePlayersLoop rem wp mid wasIdle prio wasCombat saved popOuter
-      (if dep.contains p then dep else dep.push p) rw
-  | .seq a b => .seq (a.appendDeparted p) (b.appendDeparted p)
-  | other => other
-
-def PendingReplacement.appendDepartedMany (dep : Array PlayerId) (cont : PendingReplacement) :
-    PendingReplacement :=
-  dep.foldl (fun c p => c.appendDeparted p) cont
-
-/-- Collect any departed players already recorded on a `PendingReplacement` tree. -/
-def PendingReplacement.collectDeparted : PendingReplacement → Array PlayerId
-  | .restorePending _ _ _ dep _ => dep
-  | .leavePlayersWhoLost _ _ dep _ => dep
-  | .finishConcede _ _ _ _ _ dep _ => dep
-  | .concedePlayersLoop _ _ _ _ _ _ _ _ dep _ => dep
-  | .seq a b =>
-    b.collectDeparted.foldl (fun acc p => if acc.contains p then acc else acc.push p) a.collectDeparted
-  | _ => #[]
-
-/-- Deferred library-bottoming or CR 704.5e copy cleanup run once a mid-resolution
-proposed spell finishes casting (`becomeCast`) or is reversed (`reverseProposedSpell?`). -/
-inductive PostCastCleanup where
-  | cascadeBottom (caster : PlayerId) (cardId : ObjectId) (others : Array ObjectId)
-  | grimaBottom (victim : PlayerId) (cardId : ObjectId) (others : Array ObjectId)
-  | copyCeaseToExist (copyId : ObjectId)
-  | lookedBottom (caster : PlayerId) (cardId : ObjectId) (allLooked : Array ObjectId)
-deriving Repr, Inhabited, BEq
-
-/-- Action boundary marker within a proposal slice so `reverseToProposalCheckpoint?`
-can reverse or retain discrete mana abilities and cost actions as whole CR 733.1
-actions. -/
-inductive ProposalActionKind where
-  | manaAbility (source : Option ObjectId := none)
-  | costAction
-deriving DecidableEq, Repr, Inhabited, BEq
-
-/-- Final CR 608.2n / 608.2p / 608.3 step run when a resolving stack object's
-`ContinuationFrame` completes all `Pending` and `resolveRandom` pauses. -/
-inductive ResolutionFinish where
-  | ability (objId : ObjectId) (snap : EventObject) (controller : PlayerId)
-      (sourceId : Option ObjectId := none) (sagaChapter : Option Nat := none)
-  | spell (entry : StackEntry) (snap : EventObject) (fromGy : Bool)
+  | runPostCastCleanup (cleanup : PostCastCleanup)
+  | continueCheckpointReplay (remainingStream fullKeptStream : Array (Bool × GameEvent))
+      (revMap : Array (ObjectId × ObjectId))
+  | phaseOutPermanentsLoop (remainingIds : Array ObjectId)
+      (cause : Option EventCause := none)
 deriving Repr, Inhabited, BEq
 
 /-- One frame of mid-resolution continuation state (CR 608.2). Grouping the
@@ -2252,14 +2211,6 @@ inductive ContinuationChange where
   | pendingResolvedEvent (v : Option (EventObject × PlayerId × EventCause))
 deriving Repr, Inhabited, BEq
 
-/-- Structured mutation to a `StackEntry` identified by `objectId`. -/
-inductive StackEntryChange where
-  | skipOptionalSlot (slot : Nat)
-  | targetsAnnounced (done : Bool)
-  | lastKnownPT (power toughness : Option Int)
-  | clearChosenModes
-deriving Repr, Inhabited, BEq
-
 /-- Internal engine state mutations that are not rules-level occurrences. -/
 inductive EngineChange where
   /-- Update a player's pregame/format state. -/
@@ -2292,7 +2243,7 @@ inductive EngineChange where
   | setPausedBatchCause (cause : Option EventCause)
   | clearPausedBatch
   /-- Update the continuation frame stack. -/
-  | pushContinuationFrame (frame : ContinuationFrame := {})
+  | pushContinuationFrame (frame : ContinuationFrame)
   | popContinuationFrame
   | continuation (c : ContinuationChange)
   /-- Update game fields. -/
@@ -2323,6 +2274,80 @@ inductive EngineChange where
   | castingFromTop (v : Bool)
   | sbaChecked
 deriving Repr, Inhabited, BEq
+
+/-- One change to the game, without the turn number. -/
+inductive GameChange where
+  | rules (e : RulesEvent)
+  | engine (c : EngineChange)
+deriving Repr, Inhabited, BEq
+
+/-- A game state change on a given turn (CR 500). `Game.events` records each
+one that happens. Every `RulesEvent` carries an explicit `EventCause`;
+internal `EngineChange` mutations are cause-free. -/
+inductive GameEvent where
+  | rules (turn : Nat) (e : RulesEvent) (cause : EventCause) (batch : Option BatchId := none)
+  | engine (turn : Nat) (c : EngineChange) (batch : Option BatchId := none)
+deriving Repr, Inhabited, BEq
+
+end
+
+/-- Whether a `PendingReplacement` continuation ends with `.finishFraChoice`. -/
+def PendingReplacement.endsWithFinishFra : PendingReplacement → Bool
+  | .finishFraChoice => true
+  | .seq _ b => b.endsWithFinishFra
+  | _ => false
+
+/-- Whether a `PendingReplacement` continuation already ends by granting
+priority (`.receivePriority` / `.finishFraChoice` / `.finishPostCast` /
+`.finishBecomeCast` with `grantPriority == true` / `.finishConcede`). -/
+def PendingReplacement.endsWithPriorityGrant : PendingReplacement → Bool
+  | .receivePriority _ | .finishFraChoice | .finishConcede .. | .afterWardResolved => true
+  | .concedePlayersLoop _ wp mid .. => !wp && !mid
+  | .finishPostCast _ grantPriority hadOuter _ => grantPriority && !hadOuter
+  | .finishBecomeCast _ _ grantPriority hadOuter openCont =>
+    grantPriority && !hadOuter && !openCont
+  | .finishProposedSpellCosts _ grantPriority hadOuter openCont =>
+    grantPriority && !hadOuter && !openCont
+  | .seq _ b => b.endsWithPriorityGrant
+  | _ => false
+
+/-- Ensure a `PendingReplacement` continuation ends with `.finishFraChoice`
+without appending a duplicate `.finishFraChoice` when already present. -/
+def PendingReplacement.ensureEndsWithFinishFra : PendingReplacement → PendingReplacement
+  | .finishFraChoice => .finishFraChoice
+  | .seq a b => .seq a b.ensureEndsWithFinishFra
+  | other => .seq other .finishFraChoice
+
+/-- Record that `p` left the game on any nested `.restorePending`,
+`.leavePlayersWhoLost`, `.finishConcede`, or `.concedePlayersLoop`
+continuation so `.restorePending` re-runs `redirectPendingAfterLeave`
+once the replacement pause finishes (CR 616.1 / 800.4). -/
+def PendingReplacement.appendDeparted (p : PlayerId) : PendingReplacement → PendingReplacement
+  | .restorePending pend popOuter promptLog dep rw =>
+    .restorePending pend popOuter promptLog (if dep.contains p then dep else dep.push p) rw
+  | .leavePlayersWhoLost saved popOuter dep rw =>
+    .leavePlayersWhoLost saved popOuter (if dep.contains p then dep else dep.push p) rw
+  | .finishConcede wasIdle prio wasCombat saved popOuter dep rw =>
+    .finishConcede wasIdle prio wasCombat saved popOuter (if dep.contains p then dep else dep.push p) rw
+  | .concedePlayersLoop rem wp mid wasIdle prio wasCombat saved popOuter dep rw =>
+    .concedePlayersLoop rem wp mid wasIdle prio wasCombat saved popOuter
+      (if dep.contains p then dep else dep.push p) rw
+  | .seq a b => .seq (a.appendDeparted p) (b.appendDeparted p)
+  | other => other
+
+def PendingReplacement.appendDepartedMany (dep : Array PlayerId) (cont : PendingReplacement) :
+    PendingReplacement :=
+  dep.foldl (fun c p => c.appendDeparted p) cont
+
+/-- Collect any departed players already recorded on a `PendingReplacement` tree. -/
+def PendingReplacement.collectDeparted : PendingReplacement → Array PlayerId
+  | .restorePending _ _ _ dep _ => dep
+  | .leavePlayersWhoLost _ _ dep _ => dep
+  | .finishConcede _ _ _ _ _ dep _ => dep
+  | .concedePlayersLoop _ _ _ _ _ _ _ _ dep _ => dep
+  | .seq a b =>
+    b.collectDeparted.foldl (fun acc p => if acc.contains p then acc else acc.push p) a.collectDeparted
+  | _ => #[]
 
 namespace EngineChange
 @[inline] def pendingDrawAfterScry (v : Option (PlayerId × Nat)) : EngineChange := .continuation (.pendingDrawAfterScry v)
@@ -2416,20 +2441,6 @@ namespace EngineChange
 @[inline] def resolutionFinish (v : Option ResolutionFinish) : EngineChange := .continuation (.resolutionFinish v)
 @[inline] def pendingResolvedEvent (v : Option (EventObject × PlayerId × EventCause)) : EngineChange := .continuation (.pendingResolvedEvent v)
 end EngineChange
-
-/-- One change to the game, without the turn number. -/
-inductive GameChange where
-  | rules (e : RulesEvent)
-  | engine (c : EngineChange)
-deriving Repr, Inhabited, BEq
-
-/-- A game state change on a given turn (CR 500). `Game.events` records each
-one that happens. Every `RulesEvent` carries an explicit `EventCause`;
-internal `EngineChange` mutations are cause-free. -/
-inductive GameEvent where
-  | rules (turn : Nat) (e : RulesEvent) (cause : EventCause) (batch : Option BatchId := none)
-  | engine (turn : Nat) (c : EngineChange) (batch : Option BatchId := none)
-deriving Repr, Inhabited, BEq
 
 namespace GameEvent
 

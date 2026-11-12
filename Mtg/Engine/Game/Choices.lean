@@ -617,13 +617,20 @@ def sourceStillPayable (g : Game) (prop : ProposedSpell) : Bool :=
         !prop.activation.any (fun a =>
           a.activateFromGraveyard || a.activateFromHand || a.cost.fra == .exileSourceFromHand) &&
         g.sourceSacrificedForCost sid (some prop.spellId)
+    let alreadyDiscardedFromHandForCost :=
+      prop.kind == .activatedAbility &&
+        !sacrificeOrExileSource && !prop.discardSource &&
+        prop.activation.any (·.activateFromHand) &&
+        !prop.activation.any (·.cost.fra == .exileSourceFromHand) &&
+        g.sourceDiscardedFromHandForCost sid (some prop.spellId)
     match g.findObject? sid with
-    | none => alreadySacrificedForCost
+    | none => alreadySacrificedForCost || alreadyDiscardedFromHandForCost
     | some src =>
       if prop.kind == .turnFaceUp then
         src.isOnBattlefield && g.controlledBy src prop.caster && src.status.faceDown &&
           (g.unmaskedCopiableValues src).morph.isSome
-      else if !src.isOnBattlefield && alreadySacrificedForCost then
+      else if (!src.isOnBattlefield && alreadySacrificedForCost) ||
+          (src.zone != .hand src.owner && alreadyDiscardedFromHandForCost) then
         true
       else
       let forObj := some prop.spellId

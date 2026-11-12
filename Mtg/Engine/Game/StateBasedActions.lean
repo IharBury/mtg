@@ -568,6 +568,11 @@ partial def checkSBACountedWithLeavesCore (g : Game)
     (rewindProposalIn : Option Bool := none)
     (deferRestore : Bool := false) :
     Game × Bool × Option Pending × Bool × Array PlayerId × Option Bool :=
+  let rec contHasSbaOrLeave : PendingReplacement → Bool
+    | .checkSBA | .leavePlayersWhoLost .. => true
+    | .seq a b => contHasSbaOrLeave a || contHasSbaOrLeave b
+    | _ => false
+  let entryPaused := g.sbaPaused
   let (g, popOuterIn) := g.flushDismissedPausedBatch savedIn popOuterIn
   let (g, savedIn, popOuterIn, rewindProposalIn) :=
     match rewindProposalIn with
@@ -594,6 +599,12 @@ partial def checkSBACountedWithLeavesCore (g : Game)
           (.leavePlayersWhoLost savedIn popOuterIn departedIn rewindProposalIn)
     (g, didSba, savedIn, popOuterIn, departedIn, rewindProposalIn)
   else if g.pending != .none then
+    let g :=
+      if !entryPaused && wasPaused && !deferRestore &&
+          !(savedIn.isSome || popOuterIn || !departedIn.isEmpty || rewindProposalIn.isSome) &&
+          !g.pendingReplacement.any contHasSbaOrLeave then
+        g.chainPendingReplacement .checkSBA
+      else g
     (g, didSba, savedIn, popOuterIn, departedIn, rewindProposalIn)
   else
     let leftBefore := (g.players.filter (·.leftTheGame)).size

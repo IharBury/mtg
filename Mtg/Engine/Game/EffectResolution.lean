@@ -2401,10 +2401,12 @@ def transformPermanent (g : Game) (controller : PlayerId) (sourceId : Option Obj
               .oneShotEffect none (s.orElse (fun _ => some o.id)) (c.orElse (fun _ => some controller)))
         g.withBatch batchCause fun g =>
           let fallback := batchCause.getD (.gameRule .spellCast)
+          let pre := g
           let g := g.record
             (GameEvent.transformed g.turnNumber (g.snapshot o) (!o.status.transformed)
               (cause := fallback))
-          g.logMsg s!"{oldName} transforms into {face.name}"
+          let g := g.logMsg s!"{oldName} transforms into {face.name}"
+          reconcileControlAfterTransition pre g (cause := some fallback)
 
 mutual
 /-- Execute `steps` sequentially for `applyUnifiedAbility`, pausing on `Pending`

@@ -339,6 +339,18 @@ def finishManaAbilityMountainTrigger (g : Game) (p : PlayerId) (id : ObjectId) :
       (s!"{(g.player p).name} adds an additional " ++ String.join (List.replicate extraRed "{R}"))
   else g
 
+private def abortDepartedManaAbilityCont (g : Game) (p : PlayerId) (prevPending : Pending) : Game :=
+  Id.run do
+    let mut g := g
+    if g.proposalCheckpoint.isSome then
+      g := g.change .endProposalAction
+    if !g.over then
+      if prevPending != .none then
+        g := g.resumePendingReplacementFwd (.restorePending prevPending false)
+      else if g.pending == .none && !g.sbaPaused then
+        g := g.receivePriority p
+    return g
+
 /-- Finish the post-sacrifice steps (`abilityActivated`, `manaAdded`, pain-land
 damage, Mountain extra mana, and CR 733.1 / priority cleanup) of a mana ability. -/
 def finishActivateManaAbilityPostSac (g : Game) (p : PlayerId) (id : ObjectId) (oname : String)
@@ -346,6 +358,8 @@ def finishActivateManaAbilityPostSac (g : Game) (p : PlayerId) (id : ObjectId) (
     (activatedIdx : Option Nat) (restriction : ManaRestriction)
     (damageYou : Nat) (isMountain : Bool) (prevPending : Pending)
     (wasPaused : Bool := true) : Game := Id.run do
+  if g.over || !g.stillInGame p then
+    return abortDepartedManaAbilityCont g p prevPending
   let mut g := g
   g := g.record (GameEvent.abilityActivated g.turnNumber id srcSnap p (.mana activatedIdx))
   let rOpt : Option ManaRestriction := if restriction == .none then none else some restriction
@@ -390,7 +404,7 @@ def finishActivateManaAbilityPostSac (g : Game) (p : PlayerId) (id : ObjectId) (
       if g.pending == .none then
         g := g.receivePriority p
     else if wasPaused then
-      g := g.change (.pending prevPending)
+      g := g.resumePendingReplacementFwd (.restorePending prevPending false)
     return g
 
 /-- Execute the remaining `picks`, `{T}`, and `sacrificeSelf` steps of a mana
@@ -401,6 +415,8 @@ def finishActivateManaAbilityPicks (g : Game) (p : PlayerId) (id : ObjectId) (on
     (tap sacrificeSelf : Bool) (activatedIdx : Option Nat) (restriction : ManaRestriction)
     (damageYou : Nat) (isMountain : Bool) (prevPending : Pending)
     (wasPaused : Bool := true) : Game := Id.run do
+  if g.over || !g.stillInGame p then
+    return abortDepartedManaAbilityCont g p prevPending
   let mut g := g
   let mut rest := costIds
   for i in [0:picks.size] do

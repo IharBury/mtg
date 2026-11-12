@@ -406,6 +406,15 @@ partial def tamiyoStunLoop (g : Game) (controller : PlayerId)
           g := g.logMsg s!"{g.name curAfter} gets a stun counter"
   return g
 
+/-- Create the Teferi's Protection spell-exile replacement effect once its
+phase-out batch has completed (CR 608.2c / 614.6). -/
+def teferiExileSpell (g : Game) : Game :=
+  match g.resolvingSpell.bind g.findObject? with
+  | some spell =>
+    g.createEffect (.exileInstantSorceryInstead spell.id)
+      |>.logMsg s!"{g.name spell} will be exiled"
+  | none => g
+
 def applyFrc (g : Game) (controller : PlayerId) (effect : Effect) (e : FrcEffect)
     (targets : Array Target) (sourceId : Option ObjectId)
     (lastKnownPower : Option Int := none) : Game :=
@@ -808,11 +817,10 @@ def applyFrc (g : Game) (controller : PlayerId) (effect : Effect) (e : FrcEffect
       let targetsToPhase := (g.permanentsOf pid).filter (fun o => !g.isLand o)
       let phaseCause := g.resolvingOneShotCause controller sourceId
       let g := g.phaseOutPermanents targetsToPhase (cause := phaseCause)
-      match g.resolvingSpell.bind g.findObject? with
-      | some spell =>
-        g.createEffect (.exileInstantSorceryInstead spell.id)
-          |>.logMsg s!"{g.name spell} will be exiled"
-      | none => g
+      if g.sbaPaused then
+        g.chainPendingReplacement (.finishFrcPostStep .teferiExileSpell)
+      else
+        g.teferiExileSpell
     | _ => g
   | .urSphinx =>
     let n := nKnown
@@ -1032,17 +1040,22 @@ def applyFrc (g : Game) (controller : PlayerId) (effect : Effect) (e : FrcEffect
         | some (s, c) =>
           g.allocDelayedCause (c.orElse (fun _ => some controller)) (s.orElse (fun _ => some o.id))
         | none => (g, .gameRule .spellCast)
+      let pre := g
       let g := g.record
         (GameEvent.transformed g.turnNumber (g.snapshot o) (!o.status.transformed)
           (cause := transformCause))
-      g.logMsg s!"{oName} transforms into a 0/0 Phyrexian with {counters} +1/+1 counters"
+      let g := g.logMsg s!"{oName} transforms into a 0/0 Phyrexian with {counters} +1/+1 counters"
+      reconcileControlAfterTransition pre g (cause := some transformCause)
     | none => g
   | .turnFaceUp =>
     match g.srcObj? sourceId with
     | some o =>
+      let faceUpCause := g.resolveOptionalCause none (fallbackSrc := sourceId) (fallbackCtrl := some controller)
+      let pre := g
       let g := g.record (GameEvent.turnedFaceUp g.turnNumber (g.snapshot o)
-        (cause := g.resolveOptionalCause none (fallbackSrc := sourceId) (fallbackCtrl := some controller)))
-      g.logMsg s!"{g.name (g.object! o.id)} is turned face up"
+        (cause := faceUpCause))
+      let g := g.logMsg s!"{g.name (g.object! o.id)} is turned face up"
+      reconcileControlAfterTransition pre g (cause := some faceUpCause)
     | none => g
   | .gingerDash =>
     match g.srcObj? sourceId with
@@ -1086,6 +1099,8 @@ def applyFrc (g : Game) (controller : PlayerId) (effect : Effect) (e : FrcEffect
 /-- Resume a deferred `FrcPostStep` after a `Pending.chooseReplacement` pause. -/
 partial def runFrcPostStep (g : Game) (step : FrcPostStep) : Game :=
   match step with
+  | .teferiExileSpell =>
+    g.teferiExileSpell
   | .putDrawnBackOnTop p count =>
     if !g.stillInGame p then g
     else

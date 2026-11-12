@@ -75,7 +75,29 @@ def phaseOut (g : Game) (o : GameObject) (cause : Option EventCause := none) : G
                 let attName := acc.name att
                 acc.record (GameEvent.phasedOut acc.turnNumber (acc.snapshot att) true (cause := stepCause acc))
                   |>.logMsg s!"{attName} phases out attached to {hostName}") g
-        removeFromCombatOnControlChange pre g (cause := some (stepCause g))
+        reconcileControlAfterTransitionFwd pre g (cause := some (stepCause g))
+
+/-- Continue phasing out `remainingIds` sequentially inside the enclosing
+simultaneous phase-out batch, pausing and chaining `.phaseOutPermanentsLoop` if
+a CR 616.1 / 800.4c replacement or legend choice opens (CR 702.26g–h). -/
+def phaseOutPermanentsLoop (g : Game) (remainingIds : Array ObjectId)
+    (cause : Option EventCause := none) : Game := Id.run do
+  let mut g := g
+  for i in [0:remainingIds.size] do
+    let id := remainingIds[i]!
+    if let some o := g.findObject? id then
+      if o.isOnBattlefield then
+        g := g.phaseOut o (cause := cause)
+        let paused :=
+          match g.pending with
+          | .chooseReplacement .. | .chooseLegend .. => true
+          | _ => false
+        if paused then
+          let rem := remainingIds.extract (i + 1) remainingIds.size
+          if !rem.isEmpty then
+            g := g.chainPendingReplacement (.phaseOutPermanentsLoop rem cause)
+          return g
+  return g
 
 /-- Phase out all currently phased-in battlefield permanents in `targets`
 simultaneously as one batch, snapshotting the target set up front and processing
@@ -89,11 +111,12 @@ def phaseOutPermanents (g : Game) (targets : Array GameObject)
     let withDepth := live.mapIdx (fun idx o => (g.attachmentDepth o, idx, o))
     let sorted := (withDepth.qsort (fun (d1, i1, _) (d2, i2, _) =>
       d1 < d2 || (d1 == d2 && i1 < i2))).map (fun (_, _, o) => o)
+    let sortedIds := sorted.map (·.id)
     let batchCause :=
       g.resolveOptionalCause cause (fallbackCtrl := g.controllerOf sorted[0]!)
         (defaultCause := .turnBased .phaseInOut)
     g.withBatchCore (some batchCause) fun g =>
-      sorted.foldl (fun acc o => acc.phaseOut o) g
+      g.phaseOutPermanentsLoop sortedIds (cause := cause)
 
 /-- Phase `o` in, along with anything that phased out attached to it.
 Counters and “as this enters” choices are kept. Does not trigger enters (CR 702.26c / 702.26d / 702.26g). -/
@@ -126,7 +149,7 @@ def phaseIn (g : Game) (o : GameObject) (cause : Option EventCause := none) : Ga
                 acc := acc.logMsg s!"{acc.name (acc.object! att.id)} phases in still attached to {hostName}"
                 queue := queue.push att.id
           return acc
-        removeFromCombatOnControlChange pre g (cause := some resolvedCause)
+        reconcileControlAfterTransitionFwd pre g (cause := some resolvedCause)
 
 /-- Phase in every phased-out permanent `p` controls (CR 502.1 / 703.4a). -/
 def phaseInControlled (g : Game) (p : PlayerId) : Game :=

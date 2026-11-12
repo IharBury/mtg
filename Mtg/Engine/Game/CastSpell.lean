@@ -237,10 +237,12 @@ def announceMode (g : Game) (p : PlayerId) (mode : Nat) : Except String Game := 
     | .activatedAbility =>
       let some rawChosen := prop.abilityModes[mode]?
         | throw "No such mode (CR 601.2b)"
+      let some _obj := g.findObject? prop.spellId | throw "The ability left the stack"
+      if !g.sourceStillPayable prop then
+        return (← g.reverseProposedSpell? (resumeContinuation := true))
       let chosen := g.expandEachOpponentEffect p rawChosen
       if !g.modeIsChoosable p chosen prop.sourceId then
         throw "That mode requires a target (CR 700.2a)"
-      let some _obj := g.findObject? prop.spellId | throw "The ability left the stack"
       let g := g.record (GameEvent.announced g.turnNumber prop.spellId (modes := #[mode]))
       let g := g.changeObject prop.spellId (.abilityEffect (some chosen))
       let nextOverride :=
@@ -262,6 +264,8 @@ def announceMode (g : Game) (p : PlayerId) (mode : Nat) : Except String Game := 
         throw "That spell is not modal (CR 700.2)"
       let effModes := g.evalSpellModes p spell
       let some effect := effModes[mode]? | throw "No such mode (CR 700.2)"
+      if !g.sourceStillPayable prop then
+        return (← g.reverseProposedSpell? (resumeContinuation := true))
       if !g.spellModeIsChoosable p effect (some spell.id) then
         throw "That mode has no legal target (CR 700.2a)"
       let chosen := g.chosenModesOf spell

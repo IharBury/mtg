@@ -10036,7 +10036,8 @@ private def mustHold16 (label : String) (ok : Bool) : Bool :=
 
     -- 2d. `SacrificeDiscard.sacrificeForActivation` `.turnFaceUp` deferring `GameEvent.turnedFaceUp`
     --     across `Pending.chooseReplacement` when sacrificing a creature to turn face up:
-    let morphFaceDef : CardDef := creature "Phase16 MorphSpy" ManaCost.empty #["Human"] 3 3
+    let morphFaceDef : CardDef :=
+      { creature "Phase16 MorphSpy" ManaCost.empty #["Human"] 3 3 with morph := some ManaCost.empty }
     let gMf0 := addPermanent (addPermanent afterDraw morphFaceDef me me) bear me me
     let mId := (gMf0.battlefield.filter (·.name == "Phase16 MorphSpy"))[0]!.id
     let fodderId := (gMf0.battlefield.filter (·.name == bear.name))[0]!.id
@@ -27354,14 +27355,15 @@ private def lifeGainsSince36i2 (g : Game) (startIdx : Nat) (p : PlayerId) : Arra
     gLifoAfterP1.changes #[
       .pending (savedAfterP1?.getD .none),
       .pendingReplacement (some (.gainLife p0 1 (some testCause))) ]
-  let lifoStartIdx := gLifoBeforeP2.events.size
   let (gLifoAfterP2, _, popAfterP2, rwAfterP2) :=
     gLifoBeforeP2.playerLeavesGameCore p2 (deferRestore := true) (departedIn := #[p1])
+  let lifoStartIdx := gLifoAfterP2.events.size
   let gLifoDrained :=
     (gLifoAfterP2.restoreSavedPostLeave none popAfterP2 (departed := #[p1, p2]) (rewindProposal := rwAfterP2)).drainPendingContinuations
   let lifoMovedOrderOk :=
     gLifoDrained.proposedSpell.isNone &&
     gLifoDrained.proposalCheckpoint.isNone &&
+    lifeGainsSince36i2 gLifoAfterP2 0 p0 == #[] &&
     lifeGainsSince36i2 gLifoDrained lifoStartIdx p0 == #[1, 3, 7, 11]
 
   -- 2a(iv). Non-moved `!ckptMovedToOuter && !extraDepartureOuters.isEmpty`:
@@ -28199,5 +28201,1207 @@ private def replayOk36i4 (gs : Array Game) : Bool :=
       gManaTapSacDone, gDisjStarted, gDisjGreedy, gDisjPick0Ok, gDisjDone, gBearLife4, gVehLife4])
 
 end Phase36Item4EventAlignment
+
+/-! ### Phase 37 Item 1: Checkpoint-replay continuation/batch isolation, per-batch CR 610.3 `queuedLinkedExile` chronology, `runPostCastCleanup` ordering, `dropCkptTarget`, and dynamic `nonDepBatches` tracking -/
+section Phase37Item1EventAlignment
+
+private def mustHold37i1 (label : String) (ok : Bool) : Bool :=
+  if ok then true else panic! s!"Phase37Item1EventAlignment failed: {label}"
+
+private def replayOk37i1 (gs : Array Game) : Bool :=
+  gs.all (fun g => Game.replayEvents g.events == g && allRulesEventsClassified g)
+
+private def lifeGainsSince37i1 (g : Game) (startIdx : Nat) (p : PlayerId) : Array Nat :=
+  (g.events.extract startIdx g.events.size).filterMap fun e =>
+    match e.change with
+    | .rules (.life (.gained q amt)) => if q == p then some amt else none
+    | _ => none
+
+#guard
+  let p0 : PlayerId := ⟨0⟩
+  let p1 : PlayerId := ⟨1⟩
+  let p2 : PlayerId := ⟨2⟩
+  let p3 : PlayerId := ⟨3⟩
+  let g4 :=
+    (afterDraw.change (.addPlayer { id := p2, name := "Liliana" })).change
+      (.addPlayer { id := p3, name := "Jace" })
+  let auraDef : CardDef := { name := "P37i1 Aura", types := #[.enchantment] }
+  let leyADef : CardDef := { name := "P37i1 LeyA", types := #[.enchantment] }
+  let leyBDef : CardDef := { name := "P37i1 LeyB", types := #[.enchantment] }
+
+  -- 1a. `ckpt` continuation (`ckptCont? = some (.seq (+5) (.closeBatch origBid ...))`), paused batch (`origBid`),
+  --     and `queuedLinkedExile` isolation during multi-departure `keptStream` replay + `restorePausedBatch (closeIfOrphaned := false)`:
+  let gIso00 :=
+    addPermanent (addPermanent (addPermanent (addPermanent g4 bear p3 p3) auraDef p2 p2) bear p0 p0) bear p0 p0
+  let p3IsoBear := (gIso00.permanentsOf p3)[0]!
+  let p2IsoAura := (gIso00.permanentsOf p2)[0]!
+  let p0ExSrc := (gIso00.permanentsOf p0)[0]!
+  let p0ExTarget := (gIso00.permanentsOf p0)[1]!
+  let gIso0 := gIso00.exileUntilSourceLeaves (some p0ExSrc.id) p0ExTarget (cause := some testCause)
+  let preExId := (gIso0.objects.filter (fun o => o.zone == .exile && o.owner == p0))[0]!.id
+  let origBid : BatchId := ⟨900⟩
+  let origStartIdx := gIso0.events.size
+  let gIso1 :=
+    ((gIso0.logLookAtTop p0 1 (looked := gIso0.scryLookedIds p0 1)).createEffect
+      (.layered (.objects #[p3IsoBear.id]) (.control p0) (.whileSourceOnBattlefield p2IsoAura.id))
+      (cause := some testCause)).changes #[
+      .pushContinuationFrame {},
+      .pauseBatch origBid (some testCause) gIso0.objects gIso0.players gIso0.activeEffects (.scry p0 1) gIso0.stack,
+      .queueLinkedExile #[preExId],
+      .pending (.scry p0 1),
+      .pendingReplacement (some (.seq (.gainLife p0 5 (some testCause)) (.closeBatch origBid origStartIdx))),
+      .saveProposalCheckpoint ]
+  let isoCkptIdx := gIso1.events.size
+  let (gIso2, isoAb) := gIso1.putStackAbility p3IsoBear p0 (abilityEffect := some (Effect.gainLife 1))
+  let isoProp : ProposedSpell := {
+    caster := p0, cost := ManaCost.empty, spellId := isoAb.id, original := isoAb
+    originalSnapshot := gIso2.snapshot isoAb, kind := .activatedAbility
+    sourceId := some p3IsoBear.id, resolutionCast := true
+  }
+  let gIso3 :=
+    gIso2.changes #[
+      .pushOuterPendingReplacement (.seq (.gainLife p0 5 (some testCause)) (.closeBatch origBid origStartIdx)),
+      .pendingReplacement none,
+      .proposedSpell (some isoProp),
+      .pending (.chooseX p0) ]
+  let gIsoAfterP1 := mustApply gIso3 p1 .concede
+  let gIsoAfterP2 := mustApply gIsoAfterP1 p2 .concede
+  let isoSlice := gIsoAfterP2.events.extract isoCkptIdx gIsoAfterP2.events.size
+  let isoP1Batch? :=
+    (isoSlice.find? (fun e =>
+      match e.change with | .rules (.player (.leftGame q)) => q == p1 | _ => false)).bind (·.batch)
+  let isoP2Batch? :=
+    (isoSlice.find? (fun e =>
+      match e.change with | .rules (.player (.leftGame q)) => q == p2 | _ => false)).bind (·.batch)
+  let scryId := (gIso0.scryLookedIds p0 1)[0]!
+  let gIsoScryDone := mustApply gIsoAfterP2 p0 (.scry #[scryId] #[])
+  let ckptIsolationOk :=
+    isoP1Batch?.isSome && isoP2Batch?.isSome &&
+    isoP1Batch? != some origBid && isoP2Batch? != some origBid && isoP1Batch? != isoP2Batch? &&
+    gIsoAfterP2.proposedSpell.isNone &&
+    gIsoAfterP2.pending == .scry p0 1 &&
+    -- `preExId` from `ckpt.queuedLinkedExile` was NOT prematurely returned by `p1`/`p2`'s batches:
+    (gIsoAfterP2.findObject? preExId).any (·.zone == .exile) &&
+    gIsoAfterP2.queuedLinkedExile == #[preExId] &&
+    gIsoAfterP2.currentBatch.map Prod.fst == some origBid &&
+    -- Once `.scry p0 1` finishes, `.seq (+5) (.closeBatch origBid ...)` runs `+5`, closes `origBid`, and returns `preExId`!
+    gIsoScryDone.currentBatch.isNone &&
+    (gIsoScryDone.followMovedToZone? preExId (· == .battlefield)).isSome &&
+    lifeGainsSince37i1 gIsoScryDone isoCkptIdx p0 == #[5]
+
+  -- 1b. Per-batch CR 610.3 `queuedLinkedExile` chronology (`[B1, return(L), B2]`),
+  --     `.continueCheckpointReplay` pause chaining, and `dropCkptTarget` stripping tail `origCont` once:
+  let sacArtAb : ActivatedAbility := {
+    cost := { sacrificeArtifact := true }, effect := Effect.gainLife 1
+  }
+  let altarDef : CardDef := {
+    name := "P37i1 Altar", types := #[.enchantment], activatedAbilities := #[sacArtAb]
+  }
+  let cageDef : CardDef := { name := "P37i1 Cage", types := #[.artifact] }
+  let gChr0 :=
+    addPermanent
+      (addPermanent
+        (addPermanent
+          (addPermanent (addPermanent (addPermanent g4 cageDef p1 p1) bear p2 p2) altarDef p2 p2)
+          leyADef p0 p0)
+        leyBDef p0 p0)
+      bear p0 p0
+  let p1Cage := (gChr0.permanentsOf p1)[0]!
+  let p2Linked := (gChr0.permanentsOf p2).find? (·.name == bear.name) |>.get!
+  let twoPickAb : ActivatedAbility := {
+    cost := { sacrificeArtifact := true, tapAnUntappedCreatureYouControl := true }, effect := Effect.gainLife 1
+  }
+  let altar2Def : CardDef := {
+    name := "P37i1 Altar2", types := #[.enchantment], activatedAbilities := #[twoPickAb]
+  }
+  let gChrSync0 :=
+    ((addPermanent (gChr0.exileUntilSourceLeaves (some p1Cage.id) p2Linked (cause := some testCause)) altar2Def p2 p2).createEffect
+      (.control p1Cage.id p0) (cause := some testCause))
+  let p2Altar2 := (gChrSync0.permanentsOf p2).find? (·.name == altar2Def.name) |>.get!
+  let gChrSync1 := gChrSync0.createEffect (.control p2Altar2.id p0) (cause := some testCause)
+  let gChrStarted := mustApply gChrSync1 p0 (.activate p2Altar2.id 0)
+  let ckptSyncIdx := gChrStarted.proposalCheckpoint.get!.eventsSize
+  let gChrAfterPick0 :=
+    match gChrStarted.answerFraChoice p0 (.objects #[p1Cage.id]) with
+    | .ok g => g
+    | .error e => panic! e
+  let gChrAfterP1 := mustApply gChrAfterPick0 p1 .concede
+  let gChrAfterP2 := mustApply gChrAfterP1 p2 .concede
+  let syncSlice := gChrAfterP2.events.extract ckptSyncIdx gChrAfterP2.events.size
+  let b1Idx? := syncSlice.findIdx? (fun e =>
+    match e.change with | .rules (.player (.leftGame q)) => q == p1 | _ => false)
+  let retIdx? := syncSlice.findIdx? (fun e =>
+    match e.change with
+    | .rules (.zone (.moved prev _ .exile .battlefield ..)) => prev.name == bear.name && prev.owner == p2
+    | _ => false)
+  let b2Idx? := syncSlice.findIdx? (fun e =>
+    match e.change with | .rules (.player (.leftGame q)) => q == p2 | _ => false)
+  let b2RemovedFromBf := syncSlice.any (fun e =>
+    match e.change with
+    | .rules (.zone (.ceasedToExist obj)) => obj.name == bear.name && obj.owner == p2 && obj.zone == .battlefield
+    | _ => false)
+  let syncChronologyOk :=
+    match b1Idx?, retIdx?, b2Idx? with
+    | some i1, some ir, some i2 =>
+      i1 < ir && ir < i2 && b2RemovedFromBf && gChrAfterP2.proposedSpell.isNone
+    | _, _, _ => false
+
+  -- Paused `.continueCheckpointReplay` + `dropCkptTarget` tail stripping (`ckptOrigCont? = some (+9)`):
+  let gPauseBase0 :=
+    addPermanent
+      (addPermanent
+        (addPermanent (addPermanent (addPermanent g4 cageDef p1 p1) altar2Def p2 p2) leyADef p0 p0)
+        leyBDef p0 p0)
+      bear p0 p0
+  let p1PauseCage := (gPauseBase0.permanentsOf p1)[0]!
+  let p2PauseAltar := (gPauseBase0.permanentsOf p2)[0]!
+  let p0Victim := (gPauseBase0.permanentsOf p0).find? (·.name == bear.name) |>.get!
+  let chrLeyA := (gPauseBase0.permanentsOf p0).find? (·.name == leyADef.name) |>.get!.id
+  let chrLeyB := (gPauseBase0.permanentsOf p0).find? (·.name == leyBDef.name) |>.get!.id
+  let cRidA : ReplacementId := { kind := .entersWithExtraCounters, object := some chrLeyA, counterKind := some .plusOnePlusOne }
+  let cRidB : ReplacementId := { kind := .entersWithExtraCounters, object := some chrLeyB, counterKind := some .plusOnePlusOne }
+  let gPause0 :=
+    ((((((gPauseBase0.exileUntilSourceLeaves (some p1PauseCage.id) p0Victim (cause := some testCause)).createEffect
+      (.control p1PauseCage.id p0) (cause := some testCause)).createEffect
+      (.control p2PauseAltar.id p0) (cause := some testCause)).createEffect
+      (.replacement {
+        id := cRidA, source := some chrLeyA, controller := some p0, affectedPlayer := p0,
+        kind := .entersWithExtraCounters none .plusOnePlusOne 1 }) (cause := some testCause)).createEffect
+      (.replacement {
+        id := cRidB, source := some chrLeyB, controller := some p0, affectedPlayer := p0,
+        kind := .entersWithExtraCounters none .plusOnePlusOne 2 }) (cause := some testCause)).changes #[
+      .pushContinuationFrame {},
+      .pendingReplacement (some (.gainLife p0 9 (some testCause))),
+      .saveProposalCheckpoint ])
+  let pauseCkptIdx := gPause0.events.size
+  let gPause1 :=
+    gPause0.changes #[
+      .pushOuterPendingReplacement (.gainLife p0 9 (some testCause)),
+      .pendingReplacement none,
+      .beginProposalAction .costAction ]
+  let (gPause2, pauseAb) := gPause1.putStackAbility p2PauseAltar p0 (abilityEffect := some (Effect.gainLife 1))
+  let sacCause := some (EventCause.costPayment .sacrifice p0 (some pauseAb.id))
+  -- Sacrifice `p1PauseCage` inside `.costAction` batch so `queuedLinkedExile` flushes and pauses on `cRidA`/`cRidB`:
+  let gPauseSac :=
+    gPause2.withBatch sacCause fun g =>
+      g.sacrificeToGraveyard (g.object! p1PauseCage.id) "sac" (cause := sacCause)
+  let gPauseRet := mustApply gPauseSac p0 (.chooseReplacement cRidA)
+  let pauseProp : ProposedSpell := {
+    caster := p0, cost := ManaCost.empty, spellId := pauseAb.id, original := pauseAb
+    originalSnapshot := gPauseRet.snapshot pauseAb, kind := .activatedAbility
+    sourceId := some p2PauseAltar.id, resolutionCast := true
+  }
+  let gPauseReady :=
+    (gPauseRet.changes #[.proposedSpell (some pauseProp), .pending (.chooseX p0)]).change .endProposalAction
+  let gPauseP1 := mustApply gPauseReady p1 .concede
+  let gPauseP2 := mustApply gPauseP1 p2 .concede
+  let pausedBeforeB2 :=
+    gPauseP2.sbaPaused &&
+    !(gPauseP2.events.extract pauseCkptIdx gPauseP2.events.size).any (fun e =>
+      match e.change with | .rules (.player (.leftGame q)) => q == p2 | _ => false)
+  let gPauseDone := mustApply gPauseP2 p0 (.chooseReplacement cRidB)
+  let pSlice := gPauseDone.events.extract pauseCkptIdx gPauseDone.events.size
+  let pb1? := pSlice.findIdx? (fun e =>
+    match e.change with | .rules (.player (.leftGame q)) => q == p1 | _ => false)
+  let pret? := pSlice.findIdx? (fun e =>
+    match e.change with
+    | .rules (.zone (.moved prev _ .exile .battlefield ..)) => prev.owner == p0 && prev.name == bear.name
+    | _ => false)
+  let pb2? := pSlice.findIdx? (fun e =>
+    match e.change with | .rules (.player (.leftGame q)) => q == p2 | _ => false)
+  let pauseReplayAndDropOk :=
+    pausedBeforeB2 &&
+    (match pb1?, pret?, pb2? with
+     | some i1, some ir, some i2 => i1 < ir && ir < i2
+     | _, _, _ => false) &&
+    gPauseDone.proposedSpell.isNone &&
+    (gPauseDone.permanentsOf p0).any (fun o => o.name == bear.name && o.status.plusOnePlusOne == 3) &&
+    lifeGainsSince37i1 gPauseDone pauseCkptIdx p0 == #[9]
+
+  -- 1c. `runPostCastCleanup` runs BEFORE `ckptPending` on reversal so multi-card
+  --     `.cascadeBottom` opens `Pending.resolveRandom (.orderInto ...)` and chains `.restorePending ckptPending`:
+  let gClean00 :=
+    insertObject
+      (addPermanent
+        (addPermanent
+          (addPermanent (addPermanent (addPermanent g4 bear p3 p3) auraDef p1 p1) bear p0 p0)
+          bear p0 p0)
+        bear p0 p0)
+      bear p0 .exile
+  let cOuterCard := (gClean00.objects.filter (fun o => o.zone == .exile && o.owner == p0))[0]!
+  let p0Bears := gClean00.permanentsOf p0
+  let (gClean0a, cCardId) := gClean00.move p0Bears[0]!.id .exile (cause := some testCause)
+  let (gClean0b, cOther1) := gClean0a.move p0Bears[1]!.id .exile (cause := some testCause)
+  let (gClean0, cOther2) := gClean0b.move p0Bears[2]!.id .exile (cause := some testCause)
+  let p3CleanBear := (gClean0.permanentsOf p3)[0]!
+  let p1CleanAura := (gClean0.permanentsOf p1)[0]!
+  let outerPrompt : Pending := .fraChoice p0 (.mayCastCards #[cOuterCard.id] true false)
+  let gClean1 :=
+    (gClean0.createEffect (.layered (.objects #[p3CleanBear.id]) (.control p0) (.whileSourceOnBattlefield p1CleanAura.id))
+      (cause := some testCause)).changes #[
+      .pushContinuationFrame {},
+      .pending outerPrompt,
+      .postCastCleanup (some (.cascadeBottom p0 cCardId #[cOther1, cOther2])),
+      .saveProposalCheckpoint ]
+  let (gClean2, cleanAb) := gClean1.putStackAbility p3CleanBear p0 (abilityEffect := some (Effect.gainLife 1))
+  let cleanProp : ProposedSpell := {
+    caster := p0, cost := ManaCost.empty, spellId := cleanAb.id, original := cleanAb
+    originalSnapshot := gClean2.snapshot cleanAb, kind := .activatedAbility
+    sourceId := some p3CleanBear.id, resolutionCast := true
+  }
+  let gCleanReady := gClean2.changes #[.proposedSpell (some cleanProp), .pending (.chooseX p0)]
+  let gCleanAborted :=
+    match gCleanReady.apply p1 .concede with
+    | .ok g => g
+    | .error e => panic! e
+  let orderOpenedFirst :=
+    match gCleanAborted.pending with
+    | .resolveRandom (.orderInto ids (.library q) _) => q == p0 && ids.size == 3
+    | _ => false
+  let gCleanOrdered := mustApply gCleanAborted p0 (.supplyOrder #[cCardId, cOther1, cOther2])
+  let postCastCleanupBeforePendingOk :=
+    orderOpenedFirst &&
+    gCleanOrdered.pending == outerPrompt
+
+  -- 1d. Inter-departure `nonDepBatches`: `p1` departs -> `p0` opens reversible mana batch pausing on
+  --     `.chooseReplacement` -> `p2` departs -> `p0` finishes `.chooseReplacement` -> `p3` departs (aborting):
+  let petalDef : CardDef := { name := "P37i1 Petal", types := #[.artifact], tapSacrificeAddAnyColor := true }
+  let rgInstDef : CardDef := {
+    name := "P37i1 RG Instant", manaCost := ⟨#[.colored .red, .colored .green]⟩, types := #[.instant]
+    spellEffect := some (Effect.gainLife 1)
+  }
+  let p4 : PlayerId := ⟨4⟩
+  let g5 := g4.change (.addPlayer { id := p4, name := "Chandra" })
+  let gInter0 :=
+    insertObject
+      (addPermanent (addPermanent (addPermanent g5 petalDef p0 p0) leyADef p0 p0) leyBDef p0 p0)
+      rgInstDef p3 .exile
+  let iPetId := (gInter0.permanentsOf p0).find? (·.name == petalDef.name) |>.get!.id
+  let iLeyA := (gInter0.permanentsOf p0).find? (·.name == leyADef.name) |>.get!.id
+  let iLeyB := (gInter0.permanentsOf p0).find? (·.name == leyBDef.name) |>.get!.id
+  let p3SpellId := (gInter0.objects.filter (fun o => o.zone == .exile && o.owner == p3))[0]!.id
+  let iRidA : ReplacementId := { kind := .exileOppDeath, object := some iLeyA }
+  let iRidB : ReplacementId := { kind := .exileOppDeath, object := some iLeyB }
+  let gInter1 :=
+    (((gInter0.createEffect (.permission p0 (.playFromExile p3SpellId { player := p0 }) .untilEndOfTurn)
+      (cause := some testCause)).createEffect
+      (.replacement {
+        id := iRidA, source := some iLeyA, controller := some p0, affectedPlayer := p0,
+        kind := .exileInsteadOfGraveyard (some iPetId) false }) (cause := some testCause)).createEffect
+      (.replacement {
+        id := iRidB, source := some iLeyB, controller := some p0, affectedPlayer := p0,
+        kind := .exileInsteadOfGraveyard (some iPetId) false }) (cause := some testCause))
+  let gInterCast := mustApply gInter1 p0 (.cast p3SpellId)
+  let gInterAfterP1 := mustApply gInterCast p1 .concede
+  let gInterManaPaused := mustApply gInterAfterP1 p0 (.tapForMana iPetId (.colored .red))
+  let gInterAfterP2 := mustApply gInterManaPaused p2 .concede
+  let gInterManaDone := mustApply gInterAfterP2 p0 (.chooseReplacement iRidA)
+  let gInterAborted := mustApply gInterManaDone p3 .concede
+  let interDepManaReversedOk :=
+    (gInterManaDone.player p0).manaPool.red == 1 &&
+    (gInterAborted.player p1).leftTheGame &&
+    (gInterAborted.player p2).leftTheGame &&
+    (gInterAborted.player p3).leftTheGame &&
+    gInterAborted.proposedSpell.isNone &&
+    gInterAborted.proposalCheckpoint.isNone &&
+    (gInterAborted.player p0).manaPool.total == 0 &&
+    (gInterAborted.permanentsOf p0).any (fun o => o.id == iPetId && !o.status.tapped)
+
+  mustHold37i1 "1a.ckptIsolation" ckptIsolationOk &&
+  mustHold37i1 "1b.syncChronology" syncChronologyOk &&
+  mustHold37i1 "1b.pauseReplayAndDrop" pauseReplayAndDropOk &&
+  mustHold37i1 "1c.postCastCleanupBeforePending" postCastCleanupBeforePendingOk &&
+  mustHold37i1 "1d.interDepManaReversed" interDepManaReversedOk &&
+  mustHold37i1 "1.replay"
+    (replayOk37i1 #[gIsoAfterP1, gIsoAfterP2, gIsoScryDone, gChrAfterP1, gChrAfterP2,
+      gPauseP1, gPauseP2, gPauseDone, gCleanAborted, gCleanOrdered,
+      gInterAfterP1, gInterManaPaused, gInterAfterP2, gInterManaDone, gInterAborted])
+
+end Phase37Item1EventAlignment
+
+/-! ### Phase 37 Item 2: `Decisions.reverseOrResumePopped` alignment, `.restorePending` `shouldSplitBatch` LIFO split, multi-departure `saved?` clearing, and `.chooseLegend` / pre-SBA flush continuations -/
+section Phase37Item2EventAlignment
+
+private def mustHold37i2 (label : String) (ok : Bool) : Bool :=
+  if ok then true else panic! s!"Phase37Item2EventAlignment failed: {label}"
+
+private def replayOk37i2 (gs : Array Game) : Bool :=
+  gs.all (fun g => Game.replayEvents g.events == g && allRulesEventsClassified g)
+
+private def lifeGainsSince37i2 (g : Game) (startIdx : Nat) (p : PlayerId) : Array Nat :=
+  (g.events.extract startIdx g.events.size).filterMap fun e =>
+    match e.change with
+    | .rules (.life (.gained q amt)) => if q == p then some amt else none
+    | _ => none
+
+#guard
+  let p0 : PlayerId := ⟨0⟩
+  let p1 : PlayerId := ⟨1⟩
+  let p2 : PlayerId := ⟨2⟩
+  let p3 : PlayerId := ⟨3⟩
+  let g4 :=
+    (afterDraw.change (.addPlayer { id := p2, name := "Liliana" })).change
+      (.addPlayer { id := p3, name := "Jace" })
+  let auraDef : CardDef := { name := "P37i2 Aura", types := #[.enchantment] }
+  let leyADef : CardDef := { name := "P37i2 LeyA", types := #[.enchantment] }
+  let leyBDef : CardDef := { name := "P37i2 LeyB", types := #[.enchantment] }
+  let morphDef2 : CardDef := {
+    creature "P37i2 Morph" ManaCost.empty #["Human"] 2 2 with morph := some ManaCost.empty
+  }
+
+  -- 2a(i). `reverseOrResumePopped` (`| some popped =>`): preserves `extraDepartureOuters (+3)`,
+  --        clears already-consumed `ckptOrigCont? (+99)`, and sequences `ckptPending` (`.mayCastCards`)
+  --        AFTER `popped (+4)` and BEFORE `restored? (+8)`:
+  let gRr00 := insertObject (addPermanent (addPermanent g4 morphDef2 p0 p0) bear p0 p0) bear p0 .exile
+  let rrMorphInitId := (gRr00.permanentsOf p0).find? (fun (o : GameObject) => o.name == morphDef2.name) |>.get!.id
+  let gRr0 := setFaceDown gRr00 rrMorphInitId true
+  let rrMorph := gRr0.object! rrMorphInitId
+  let rrExCard := (gRr0.objects.filter (fun o => o.zone == .exile && o.owner == p0))[0]!
+  let rrOuterPrompt : Pending := .fraChoice p0 (.mayCastCards #[rrExCard.id] true false)
+  let gRr1 :=
+    gRr0.changes #[
+      .pushContinuationFrame {},
+      .pending rrOuterPrompt,
+      .pendingReplacement (some (.gainLife p0 99 (some testCause))),
+      .saveProposalCheckpoint,
+      -- Consume `ckptOrigCont? (+99)` during the proposal BEFORE any departure:
+      .pendingReplacement none ]
+  let rrProp : ProposedSpell := {
+    caster := p0, cost := ManaCost.empty, spellId := rrMorph.id, original := rrMorph
+    originalSnapshot := gRr1.snapshot rrMorph, kind := .turnFaceUp
+    sourceId := some rrMorph.id, resolutionCast := true
+  }
+  let gRr3 :=
+    ((gRr1.record (GameEvent.playerLeftGame gRr1.turnNumber p1 (cause := some (.gameRule .playerLeftGame)))).changes #[
+      .proposedSpell (some rrProp),
+      .pending (.fraChoice p0 (.costPicks rrMorph.id #[.tapUntappedCreature] false)),
+      -- Earlier non-aborting departure `p1` pushed `+3` onto `outerPendingReplacements`:
+      .pushOuterPendingReplacement (.gainLife p0 3 (some testCause)),
+      -- Current departure `p2` pushed `popped = +4` on top of `outerPendingReplacements`,
+      -- and stole `rrMorph` so `.restorePending` sees `!sourceStillPayable` and reverses via `reverseOrResumePopped`:
+      .pushOuterPendingReplacement (.gainLife p0 4 (some testCause)) ]).record
+      (GameEvent.playerLeftGame gRr1.turnNumber p2 (cause := some (.gameRule .playerLeftGame)))
+  let gRrStolen := gRr3.createEffect (.control rrMorph.id p2) (cause := some testCause)
+  let gRrResumed :=
+    (gRrStolen.resumePendingReplacement
+      (.seq
+        (.restorePending (.fraChoice p0 (.costPicks rrMorph.id #[.tapUntappedCreature] false)) true none #[p1, p2] none)
+        (.gainLife p0 88 (some testCause)))).drainPendingContinuations
+  -- `popped (+4)` ran BEFORE `rrOuterPrompt` reopened; `extraDepartureOuters (+3)` waits behind `rrOuterPrompt`;
+  -- and neither consumed `+99` nor aborted proposal-tail `+88` ran!
+  let rrBeforeDeclineOk :=
+    gRrResumed.proposedSpell.isNone &&
+    gRrResumed.pending == rrOuterPrompt &&
+    lifeGainsSince37i2 gRrResumed 0 p0 == #[4]
+  let gRrFinished := (mustApply gRrResumed p0 .decline).drainPendingContinuations
+  -- Also verify unconsumed `ckptOrigCont? = some (+8)` (`restored?`): `popped (+4)` -> `rrOuterPrompt` -> `restored (+8)`:
+  let gRrUncons1 :=
+    gRr0.changes #[
+      .pushContinuationFrame {},
+      .pending rrOuterPrompt,
+      .pendingReplacement (some (.gainLife p0 8 (some testCause))),
+      .saveProposalCheckpoint,
+      .pushOuterPendingReplacement (.gainLife p0 8 (some testCause)),
+      .pendingReplacement none ]
+  let rrUnconsProp : ProposedSpell := {
+    caster := p0, cost := ManaCost.empty, spellId := rrMorph.id, original := rrMorph
+    originalSnapshot := gRrUncons1.snapshot rrMorph, kind := .turnFaceUp
+    sourceId := some rrMorph.id, resolutionCast := true
+  }
+  let gRrUnconsStolen :=
+    (((gRrUncons1.changes #[
+      .proposedSpell (some rrUnconsProp),
+      .pending (.fraChoice p0 (.costPicks rrMorph.id #[.tapUntappedCreature] false)),
+      .pushOuterPendingReplacement (.gainLife p0 4 (some testCause)) ]).record
+      (GameEvent.playerLeftGame gRrUncons1.turnNumber p2 (cause := some (.gameRule .playerLeftGame)))).createEffect
+      (.control rrMorph.id p2) (cause := some testCause))
+  let gRrUnconsResumed :=
+    (gRrUnconsStolen.resumePendingReplacement
+      (.restorePending (.fraChoice p0 (.costPicks rrMorph.id #[.tapUntappedCreature] false)) true none #[p2] none)).drainPendingContinuations
+  let gRrUnconsFinished := (mustApply gRrUnconsResumed p0 .decline).drainPendingContinuations
+  let reverseOrResumeSomeOk :=
+    rrBeforeDeclineOk &&
+    lifeGainsSince37i2 gRrFinished 0 p0 == #[4, 3] &&
+    gRrUnconsResumed.pending == rrOuterPrompt &&
+    lifeGainsSince37i2 gRrUnconsResumed 0 p0 == #[4] &&
+    lifeGainsSince37i2 gRrUnconsFinished 0 p0 == #[4, 8] &&
+    replayOk37i2 #[gRrUnconsResumed, gRrUnconsFinished]
+
+  -- 2a(ii). `reverseOrResumePopped` (`| none =>`): clears consumed `ckptOrigCont? (+77)`,
+  --         preserves `extraDepartureOuters (+5)`, validates `ckptPending` against `departed`,
+  --         and grants priority when clearing consumed `ckptOrigCont?` empties `continuations`:
+  let gRn00 := addPermanent (addPermanent g4 morphDef2 p0 p0) bear p0 p0
+  let rnMorphInitId := (gRn00.permanentsOf p0).find? (fun (o : GameObject) => o.name == morphDef2.name) |>.get!.id
+  let gRn0 := setFaceDown gRn00 rnMorphInitId true
+  let rnMorph := gRn0.object! rnMorphInitId
+  let gRn1 :=
+    gRn0.changes #[
+      .pushContinuationFrame {},
+      .pendingReplacement (some (.gainLife p0 77 (some testCause))),
+      .saveProposalCheckpoint,
+      .pendingReplacement none ]
+  let rnProp : ProposedSpell := {
+    caster := p0, cost := ManaCost.empty, spellId := rnMorph.id, original := rnMorph
+    originalSnapshot := gRn1.snapshot rnMorph, kind := .turnFaceUp
+    sourceId := some rnMorph.id, resolutionCast := true
+  }
+  let gRn3 :=
+    (((gRn1.record (GameEvent.playerLeftGame gRn1.turnNumber p1 (cause := some (.gameRule .playerLeftGame)))).createEffect
+      (.control rnMorph.id p2) (cause := some testCause)).changes #[
+      .proposedSpell (some rnProp),
+      .pushOuterPendingReplacement (.gainLife p0 5 (some testCause)) ])
+  let gRnDone :=
+    (gRn3.resumePendingReplacement
+      (.restorePending (.fraChoice p0 (.costPicks rnMorph.id #[.tapUntappedCreature] false)) false none #[p1] none)).drainPendingContinuations
+  let reverseOrResumeNoneOk :=
+    gRnDone.proposedSpell.isNone &&
+    lifeGainsSince37i2 gRnDone 0 p0 == #[5]
+
+  -- 2b. `.restorePending` `shouldSplitBatch` LIFO `outerPendingReplacements` split when `rewindProposal.isSome`:
+  let gSp0 := addPermanent (addPermanent g4 bear p3 p3) auraDef p2 p2
+  let spBear := (gSp0.permanentsOf p3)[0]!
+  let spAura := (gSp0.permanentsOf p2)[0]!
+  let gSp1 :=
+    (gSp0.createEffect (.layered (.objects #[spBear.id]) (.control p0) (.whileSourceOnBattlefield spAura.id))
+      (cause := some testCause)).changes #[
+      .pushContinuationFrame {},
+      .pendingReplacement (some (.gainLife p0 9 (some testCause))),
+      .saveProposalCheckpoint,
+      .pushOuterPendingReplacement (.gainLife p0 9 (some testCause)),
+      .pendingReplacement none ]
+  let (gSp2, spAb) := gSp1.putStackAbility spBear p0 (abilityEffect := some (Effect.gainLife 1))
+  let spProp : ProposedSpell := {
+    caster := p0, cost := ManaCost.empty, spellId := spAb.id, original := spAb
+    originalSnapshot := gSp2.snapshot spAb, kind := .activatedAbility
+    sourceId := some spBear.id, resolutionCast := true
+  }
+  let splitBid : BatchId := ⟨910⟩
+  let (gSpAfterP2, _, _, _) :=
+    (gSp2.changes #[.proposedSpell (some spProp), .pending (.chooseX p0)]).playerLeavesGameCore p2
+      (deferRestore := true) (rewindProposalIn := some false)
+  let gSpSplitReady :=
+    gSpAfterP2.changes #[
+      .pauseBatch splitBid (some testCause) gSpAfterP2.objects gSpAfterP2.players gSpAfterP2.activeEffects .none gSpAfterP2.stack ]
+  let gSpDrained :=
+    (gSpSplitReady.resumePendingReplacement
+      (.seq
+        (.closeBatch splitBid gSpSplitReady.events.size)
+        (.seq
+          (.restorePending .none false none #[p2] (some true))
+          (.gainLife p0 6 (some testCause))))).drainPendingContinuations
+  let shouldSplitLifoOk :=
+    gSpDrained.proposedSpell.isNone &&
+    gSpDrained.currentBatch.isNone &&
+    lifeGainsSince37i2 gSpDrained 0 p0 == #[6, 9]
+
+  -- 2c. Multi-departure loop (`leavePlayersWhoLostCore`) clearing `saved?` proposal prompt when subsequent
+  --     departing player aborts `p0`'s proposal:
+  let gMd0 :=
+    addPermanent
+      (addPermanent
+        (addPermanent (addPermanent (addPermanent g4 bear p3 p3) auraDef p2 p2) bear p1 p1)
+        leyADef p0 p0)
+      leyBDef p0 p0
+  let mdBear := (gMd0.permanentsOf p3)[0]!
+  let mdAura := (gMd0.permanentsOf p2)[0]!
+  let mdP1Perm := (gMd0.permanentsOf p1)[0]!
+  let mdLeyA := (gMd0.permanentsOf p0).find? (fun (o : GameObject) => o.name == leyADef.name) |>.get!.id
+  let mdLeyB := (gMd0.permanentsOf p0).find? (fun (o : GameObject) => o.name == leyBDef.name) |>.get!.id
+  let mdRidA : ReplacementId := { kind := .entersWithExtraCounters, object := some mdLeyA, counterKind := some .plusOnePlusOne }
+  let mdRidB : ReplacementId := { kind := .entersWithExtraCounters, object := some mdLeyB, counterKind := some .plusOnePlusOne }
+  let p0Link := addPermanent gMd0 bear p0 p0
+  let p0LinkBear := (p0Link.permanentsOf p0).find? (fun (o : GameObject) => o.name == bear.name) |>.get!
+  let gMd1 :=
+    ((((p0Link.exileUntilSourceLeaves (some mdP1Perm.id) p0LinkBear (cause := some testCause)).createEffect
+      (.layered (.objects #[mdBear.id]) (.control p0) (.whileSourceOnBattlefield mdAura.id))
+      (cause := some testCause)).createEffect
+      (.replacement {
+        id := mdRidA, source := some mdLeyA, controller := some p0, affectedPlayer := p0,
+        kind := .entersWithExtraCounters none .plusOnePlusOne 1 }) (cause := some testCause)).createEffect
+      (.replacement {
+        id := mdRidB, source := some mdLeyB, controller := some p0, affectedPlayer := p0,
+        kind := .entersWithExtraCounters none .plusOnePlusOne 2 }) (cause := some testCause)).change
+      .saveProposalCheckpoint
+  let (gMd2, mdAb) := gMd1.putStackAbility mdBear p0 (abilityEffect := some (Effect.gainLife 1))
+  let mdProp : ProposedSpell := {
+    caster := p0, cost := ManaCost.empty, spellId := mdAb.id, original := mdAb
+    originalSnapshot := gMd2.snapshot mdAb, kind := .activatedAbility, sourceId := some mdBear.id
+  }
+  -- `p2` is at 0 life while `p1` concedes: `p1` leaves first (stashing `saved? = some (.chooseX p0)` and
+  -- pausing on `mdRidA`/`mdRidB`), then once `mdRidA` is chosen `checkSBACountedWithLeaves` processes `p2` at 0 life
+  -- via `leavePlayersWhoLostCore (savedIn := some (.chooseX p0))`, where `p2`'s departure aborts `mdProp` and clears `saved?`:
+  let gMdZeroP2 :=
+    (gMd2.changes #[.proposedSpell (some mdProp), .pending (.chooseX p0)]).loseLife p2 20 (cause := some testCause)
+  let gMdSbaPaused := mustApply gMdZeroP2 p1 .concede
+  let gMdResolved := mustApply gMdSbaPaused p0 (.chooseReplacement mdRidA)
+  let multiDepSavedClearOk :=
+    gMdSbaPaused.sbaPaused &&
+    (gMdResolved.player p1).leftTheGame &&
+    (gMdResolved.player p2).leftTheGame &&
+    gMdResolved.proposedSpell.isNone &&
+    gMdResolved.proposalCheckpoint.isNone &&
+    gMdResolved.pending == Pending.none
+
+  -- 2d. Pre-SBA flush `.checkSBA` chaining, `finishAndGrantPriority` `.chooseLegend` `pendingPriority`,
+  --     and `afterWardResolved` `.chooseLegend` chaining:
+  -- 2d(i) `checkSBA` flushes dismissed paused batch that opens `.chooseReplacement`, chaining `.checkSBA`
+  --       so 0-toughness creature dies once `.chooseReplacement` is answered:
+  let zeroDef : CardDef := creature "P37i2 Zero" ManaCost.empty #["Spirit"] 0 0
+  let gFl0 :=
+    addPermanent
+      (addPermanent (addPermanent (addPermanent g4 bear p1 p1) bear p0 p0) leyADef p0 p0)
+      leyBDef p0 p0
+  let flJail := (gFl0.permanentsOf p1)[0]!
+  let flVic := (gFl0.permanentsOf p0).find? (fun (o : GameObject) => o.name == bear.name) |>.get!
+  let flLeyA := (gFl0.permanentsOf p0).find? (fun (o : GameObject) => o.name == leyADef.name) |>.get!.id
+  let flLeyB := (gFl0.permanentsOf p0).find? (fun (o : GameObject) => o.name == leyBDef.name) |>.get!.id
+  let flRidA : ReplacementId := { kind := .entersWithExtraCounters, object := some flLeyA, counterKind := some .plusOnePlusOne }
+  let flRidB : ReplacementId := { kind := .entersWithExtraCounters, object := some flLeyB, counterKind := some .plusOnePlusOne }
+  let flBid : BatchId := ⟨920⟩
+  let gFlBase :=
+    addPermanent
+      (((gFl0.exileUntilSourceLeaves (some flJail.id) flVic (cause := some testCause)).createEffect
+        (.replacement {
+          id := flRidA, source := some flLeyA, controller := some p0, affectedPlayer := p0,
+          kind := .entersWithExtraCounters none .plusOnePlusOne 1 }) (cause := some testCause)).createEffect
+        (.replacement {
+          id := flRidB, source := some flLeyB, controller := some p0, affectedPlayer := p0,
+          kind := .entersWithExtraCounters none .plusOnePlusOne 2 }) (cause := some testCause))
+      zeroDef p0 p0
+  let gFlLeft := gFlBase.record (GameEvent.playerLeftGame gFlBase.turnNumber p1 (cause := some (.gameRule .playerLeftGame)))
+  let flExiledId := (gFlLeft.objects.filter (fun (o : GameObject) => o.zone == .exile && o.owner == p0))[0]!.id
+  let gFlPaused :=
+    gFlLeft.changes #[
+      .pushContinuationFrame {},
+      .pauseBatch flBid (some testCause) gFlLeft.objects gFlLeft.players gFlLeft.activeEffects
+        (.chooseReplacement p1 #[]) gFlLeft.stack,
+      .queueLinkedExile #[flExiledId],
+      .pendingReplacement (some (.closeBatch flBid gFlLeft.events.size)) ]
+  let gFlSba1 := gFlPaused.checkSBA
+  let gFlSbaDone := mustApply gFlSba1 p0 (.chooseReplacement flRidA)
+  let preSbaFlushChainsCheckSbaOk :=
+    gFlSba1.sbaPaused &&
+    (gFlSba1.permanentsOf p0).any (fun (o : GameObject) => o.name == zeroDef.name) &&
+    !(gFlSbaDone.permanentsOf p0).any (fun (o : GameObject) => o.name == zeroDef.name)
+
+  -- 2d(ii) `finishAndGrantPriority p1` stashes `pendingPriority = some p1` when drain opens `.chooseLegend`:
+  let legDef : CardDef := { bear with name := "P37i2 Legend", supertypes := #[.legendary] }
+  let gFg0 := addPermanent (addPermanent g4 legDef p0 p0) legDef p0 p0
+  let legs := gFg0.permanentsOf p0
+  let gFg1 :=
+    (gFg0.changes #[
+      .pushContinuationFrame {},
+      .pendingPriority (some p2),
+      .pendingReplacement (some .checkSBA) ]).finishAndGrantPriority p1
+  let gFgKept := mustApply gFg1 p0 (.keepLegend legs[0]!.id)
+  let finishGrantLegendPrioOk :=
+    (match gFg1.pending with | .chooseLegend q _ _ => q == p0 | _ => false) &&
+    gFg1.pendingPriority == some p1 &&
+    gFgKept.priority == p1
+
+  -- 2d(iii) `afterWardResolved` chains `.afterWardResolved` when draining opens `.chooseLegend`:
+  let gWd0 := addPermanent (addPermanent g4 legDef p0 p0) legDef p0 p0
+  let wdLegs := gWd0.permanentsOf p0
+  let gWd1 :=
+    (gWd0.changes #[
+      .pushContinuationFrame {},
+      .pushOuterPendingReplacement (.gainLife p0 4 (some testCause)),
+      .pushOuterPendingReplacement .checkSBA ]).afterWardResolved.drainPendingContinuations
+  let gWdKept := mustApply gWd1 p0 (.keepLegend wdLegs[0]!.id)
+  let afterWardLegendOk :=
+    (match gWd1.pending with | .chooseLegend q _ _ => q == p0 | _ => false) &&
+    gWdKept.pending == Pending.none &&
+    (gWdKept.player p0).life == (24 : Int)
+
+  mustHold37i2 "2a.reverseOrResumeSome" reverseOrResumeSomeOk &&
+  mustHold37i2 "2a.reverseOrResumeNone" reverseOrResumeNoneOk &&
+  mustHold37i2 "2b.shouldSplitLifo" shouldSplitLifoOk &&
+  mustHold37i2 "2c.multiDepSavedClear" multiDepSavedClearOk &&
+  mustHold37i2 "2d.preSbaFlushChainsCheckSba" preSbaFlushChainsCheckSbaOk &&
+  mustHold37i2 "2d.finishGrantLegendPrio" finishGrantLegendPrioOk &&
+  mustHold37i2 "2d.afterWardLegend" afterWardLegendOk &&
+  mustHold37i2 "2.replay"
+    (replayOk37i2 #[gRrResumed, gRrFinished, gRnDone, gSpDrained,
+      gMdSbaPaused, gMdResolved, gFlSba1, gFlSbaDone, gFg1, gFgKept, gWd1, gWdKept])
+
+end Phase37Item2EventAlignment
+
+/-! ### Phase 37 Item 3: `reconcileControlAfterTransition` CR 800.4c exile, CR 506.4 combat removal, `.ringBearer` loss, paused `phaseOutPermanents` / `.teferi` / `completeTurnFaceUp`, and accurate CR 800.4b/c logs -/
+section Phase37Item3EventAlignment
+
+private def mustHold37i3 (label : String) (ok : Bool) : Bool :=
+  if ok then true else panic! s!"Phase37Item3EventAlignment failed: {label}"
+
+private def replayOk37i3 (gs : Array Game) : Bool :=
+  gs.all (fun g => Game.replayEvents g.events == g && allRulesEventsClassified g)
+
+#guard
+  let p0 : PlayerId := ⟨0⟩
+  let p1 : PlayerId := ⟨1⟩
+  let p2 : PlayerId := ⟨2⟩
+  let p3 : PlayerId := ⟨3⟩
+  let g4 :=
+    (afterDraw.change (.addPlayer { id := p2, name := "Liliana" })).change
+      (.addPlayer { id := p3, name := "Jace" })
+  let leyADef : CardDef := { name := "P37i3 LeyA", types := #[.enchantment] }
+  let leyBDef : CardDef := { name := "P37i3 LeyB", types := #[.enchantment] }
+
+  -- Helper: `p3`-owned `p1Bear0` put onto `.battlefield` under `p1`'s control (`defaultController = some p1`),
+  -- stolen by `p0` before `p1` leaves so `p1Bear0` stays on `.battlefield` until `p0`'s control effect ends (CR 800.4c):
+  let auraDef : CardDef := { name := "P37i3 Anchor", types := #[.enchantment] }
+  let tokDef : CardDef := { bear with name := "P37i3 Token", isToken := true }
+  let gBase0 :=
+    addPermanent (addPermanent (addPermanent g4 bear p3 p1) auraDef p0 p0) tokDef p0 p0
+  let p1Bear0 := (gBase0.permanentsOf p1)[0]!
+  let p0Anchor := (gBase0.permanentsOf p0).find? (·.name == auraDef.name) |>.get!
+  let p0Tok := (gBase0.permanentsOf p0).find? (·.name == tokDef.name) |>.get!
+
+  -- 3a(i). `Attachments.ceaseToExist` (token outside `.battlefield` whose `.whileInZone` control effect kept
+  --        `p1Bear0` on `.battlefield`) + `.fraEmblem` expiry reconcile CR 800.4c exile, CR 506.4, and `.ringBearer`:
+  let gTokAnchored :=
+    (gBase0.createEffect (.layered (.objects #[p1Bear0.id]) (.control p0) (.whileSourceOnBattlefield p0Anchor.id))
+      (cause := some testCause)).concede p1
+  let (gTokMoved, tokInGyId) := gTokAnchored.move p0Tok.id (.graveyard p0) (cause := some testCause)
+  let gTokWithGyCtrl :=
+    gTokMoved.createEffect (.layered (.objects #[p1Bear0.id]) (.control p0) (.whileInZone tokInGyId (.graveyard p0)))
+      (cause := some testCause)
+  let (gTokAnchorGone, _) := gTokWithGyCtrl.move p0Anchor.id .exile (cause := some testCause)
+  -- Now `p1Bear0` is controlled ONLY by `.whileInZone tokInGyId (.graveyard p0)`! Mark it attacking & ring-bearer:
+  let gTokCombat :=
+    (gTokAnchorGone.record (GameEvent.becameAttacking gTokAnchorGone.turnNumber
+      (gTokAnchorGone.snapshot (gTokAnchorGone.object! p1Bear0.id)) (.player p2) (cause := testCause))).record
+      (GameEvent.ringTempted gTokAnchorGone.turnNumber p0 (some p1Bear0.id) 1 (cause := some testCause))
+  let gTokCeased := gTokCombat.ceaseToExist tokInGyId (cause := some (.stateBased .tokenOutsideBattlefield))
+  let ceaseReconcileOk :=
+    (gTokCombat.controllerOf (gTokCombat.object! p1Bear0.id)) == some p0 &&
+    (gTokCeased.player p0).ringBearerId.isNone &&
+    (gTokCeased.followMovedToZone? p1Bear0.id (· == .exile)).isSome &&
+    gTokCeased.events.any (fun e =>
+      match e.change with
+      | .rules (.combat (.removedFromCombat eo)) => eo.id == some p1Bear0.id
+      | _ => false)
+
+  -- Temporary `.fraEmblem` expiry reconciling CR 800.4c exile:
+  let embDef : CardDef := { name := "P37i3 Emblem", types := #[] }
+  let gEmb0 := insertObject (gBase0.createEffect
+    (.layered (.objects #[p1Bear0.id]) (.control p0) (.whileSourceOnBattlefield p0Anchor.id))
+    (cause := some testCause) |>.concede p1) embDef p0 .command
+  let embId := (gEmb0.objects.filter (fun o => o.zone == .command && o.name == embDef.name))[0]!.id
+  let embEffId : EffectId := ⟨1500⟩
+  let gEmb1 :=
+    (gEmb0.record (GameEvent.effectCreated gEmb0.turnNumber embEffId (.fraEmblemUntilTurnOf embId p2) testCause)).createEffect
+      (.layered (.objects #[p1Bear0.id]) (.control p0) (.whileInZone embId .command))
+      (cause := some testCause)
+  let (gEmb2, _) := gEmb1.move p0Anchor.id .exile (cause := some testCause)
+  let gEmbExpired := gEmb2.expireEffectById embEffId (cause := some (.turnBased .expireAtStepBegin))
+  let emblemReconcileOk :=
+    (gEmbExpired.findObject? embId).isNone &&
+    (gEmbExpired.followMovedToZone? p1Bear0.id (· == .exile)).isSome
+
+  -- 3a(ii). `Phasing.phaseOut` CR 800.4c exile and `Phasing.phaseIn` combat removal + `.ringBearer` loss:
+  let gPh0 :=
+    (gBase0.createEffect (.layered (.objects #[p1Bear0.id]) (.control p0) (.whileSourceOnBattlefield p0Anchor.id))
+      (cause := some testCause)).concede p1
+  let gPhOut := gPh0.phaseOut (gPh0.object! p0Anchor.id) (cause := some testCause)
+  let gPhIn0 := addPermanent (addPermanent g4 bear p2 p2) auraDef p0 p0
+  let p2PhBear := (gPhIn0.permanentsOf p2)[0]!
+  let p0PhSrc := (gPhIn0.permanentsOf p0)[0]!
+  let gPhIn1 :=
+    (gPhIn0.createEffect (.layered (.objects #[p2PhBear.id]) (.control p0) (.whileSourceOnBattlefield p0PhSrc.id))
+      (cause := some testCause)).phaseOut (gPhIn0.object! p0PhSrc.id) (cause := some testCause)
+  let gPhIn2 :=
+    (gPhIn1.record (GameEvent.becameAttacking gPhIn1.turnNumber
+      (gPhIn1.snapshot (gPhIn1.object! p2PhBear.id)) (.player p0) (cause := testCause))).record
+      (GameEvent.ringTempted gPhIn1.turnNumber p2 (some p2PhBear.id) 1 (cause := some testCause))
+  let gPhInDone := gPhIn2.phaseIn (gPhIn2.object! p0PhSrc.id) (cause := some testCause)
+  let phaseReconcileOk :=
+    (gPhOut.followMovedToZone? p1Bear0.id (· == .exile)).isSome &&
+    gPhInDone.controllerOf (gPhInDone.object! p2PhBear.id) == some p0 &&
+    !(gPhInDone.object! p2PhBear.id).status.attacking &&
+    (gPhInDone.player p2).ringBearerId.isNone
+
+  -- 3b(i). `phaseOutPermanents`, `phaseOutPermanentsLoop`, and `.teferi` (`FrcPostStep.teferiExileSpell`):
+  let gPop0 :=
+    addPermanent
+      (addPermanent
+        (addPermanent (addPermanent (addPermanent g4 bear p3 p1) auraDef p2 p2) bear p2 p2)
+        leyADef p0 p0)
+      leyBDef p0 p0
+  let popP1Bear := (gPop0.permanentsOf p1)[0]!
+  let popP2Anchor := (gPop0.permanentsOf p2).find? (·.name == auraDef.name) |>.get!
+  let popP2Second := (gPop0.permanentsOf p2).find? (·.name == bear.name) |>.get!
+  let teferiDef : CardDef := {
+    name := "P37i3 Protection", manaCost := ManaCost.empty, types := #[.instant]
+    spellEffect := some {
+      targeting := { kind := .player, prefer := .opponent }, maxTargets := 1
+      resolution := .frc .teferi
+    }
+  }
+  let gTef0 :=
+    insertObject
+      (gPop0.createEffect (.layered (.objects #[popP1Bear.id]) (.control p2) (.whileSourceOnBattlefield popP2Anchor.id))
+        (cause := some testCause) |>.concede p1)
+      teferiDef p0 (.hand p0)
+  let tefCardId := (gTef0.player p0).hand.find? (fun id => (gTef0.object! id).name == teferiDef.name) |>.get!
+  let gTefCast := mustApply (mustApply gTef0 p0 (.cast tefCardId)) p0 (.targets #[.player p2])
+  let tefStackId := gTefCast.stack[0]!.objectId
+  let gTefResolved := gTefCast.resolveTop
+  -- Also verify `phaseOutPermanentsLoop` resuming after a mid-batch pause inside the same `BatchId`:
+  let popPauseBid : BatchId := ⟨930⟩
+  let gPopLoop0 := addPermanent (addPermanent g4 bear p2 p2) auraDef p2 p2
+  let popA := (gPopLoop0.permanentsOf p2)[0]!
+  let popB := (gPopLoop0.permanentsOf p2)[1]!
+  let gPopLoop1 :=
+    (gPopLoop0.changes #[
+      .pauseBatch popPauseBid (some testCause) gPopLoop0.objects gPopLoop0.players gPopLoop0.activeEffects
+        (.chooseReplacement p0 #[]) gPopLoop0.stack ]).phaseOut popA (cause := some testCause)
+  let gPopLoopResumed :=
+    gPopLoop1.resumePendingReplacement
+      (.seq (.phaseOutPermanentsLoop #[popB.id] (some testCause)) (.closeBatch popPauseBid gPopLoop0.events.size))
+  let popPhasedBatches :=
+    gPopLoopResumed.events.filterMap fun e =>
+      match e.change with
+      | .rules (.permanent (.phasedOut _ _)) => some e.batch
+      | _ => none
+  let teferiAndPhaseOutOk :=
+    (gTefResolved.object! popP2Anchor.id).status.phasedOut &&
+    (gTefResolved.object! popP2Second.id).status.phasedOut &&
+    (gTefResolved.followMovedToZone? popP1Bear.id (· == .exile)).isSome &&
+    (gTefResolved.followMovedToZone? tefStackId (· == .exile)).isSome &&
+    (gPopLoopResumed.object! popA.id).status.phasedOut &&
+    (gPopLoopResumed.object! popB.id).status.phasedOut &&
+    popPhasedBatches == #[some popPauseBid, some popPauseBid] &&
+    gPopLoopResumed.currentBatch.isNone
+
+  -- Also test `FrcPostStep.teferiExileSpell` directly across a paused `.chooseReplacement` so the deferred post-step path is proven:
+  let gTefPause0 :=
+    insertObject
+      (addPermanent (addPermanent g4 leyADef p0 p0) leyBDef p0 p0)
+      teferiDef p0 .stack
+  let tefStackObj := (gTefPause0.objects.filter (fun o => o.zone == .stack && o.name == teferiDef.name))[0]!
+  let tpLeyA := (gTefPause0.permanentsOf p0).find? (·.name == leyADef.name) |>.get!.id
+  let tpLeyB := (gTefPause0.permanentsOf p0).find? (·.name == leyBDef.name) |>.get!.id
+  let tpRidA : ReplacementId := { kind := .exileOppDeath, object := some tpLeyA }
+  let tpRidB : ReplacementId := { kind := .exileOppDeath, object := some tpLeyB }
+  let gTefPause1 :=
+    gTefPause0.changes #[
+      .pushStack { objectId := tefStackObj.id, controller := p0, targets := #[.player p2] },
+      .pushContinuationFrame {
+        resolvingSpell := some tefStackObj.id
+        resolutionFinish := some (.spell { objectId := tefStackObj.id, controller := p0, targets := #[.player p2] }
+          (gTefPause0.snapshot tefStackObj) false) },
+      .pending (.chooseReplacement p0 #[tpRidA, tpRidB]),
+      .pendingReplacement (some (.finishFrcPostStep .teferiExileSpell)) ]
+  let gTefPostDone :=
+    ((gTefPause1.changes #[.pending Pending.none, .pendingReplacement none]).resumePendingReplacement
+      (.finishFrcPostStep .teferiExileSpell)).completeActiveResolutions
+  let teferiPostStepPausedOk :=
+    (gTefPostDone.followMovedToZone? tefStackObj.id (· == .exile)).isSome
+
+  -- 3b(ii). Scoped Layer 2 `.control` (`creaturesWithout Keyword.flying`) across Layer 1 `.copy`,
+  --         `completeTurnFaceUp`, and `transformPermanent`:
+  let flyerDef : CardDef := {
+    creature "P37i3 Flyer" ManaCost.empty #["Bird"] 2 2 with
+    keywords := { flying := true }, morph := some ManaCost.empty
+  }
+  let dfcDef : CardDef := {
+    creature "P37i3 WalkerFront" ManaCost.empty #["Human"] 2 2 with
+    otherFace := some flyerDef
+  }
+  let gL10 := addPermanent (addPermanent g4 flyerDef p3 p1) auraDef p0 p0
+  let p1Flyer := (gL10.permanentsOf p1)[0]!
+  let p0L1Src := (gL10.permanentsOf p0)[0]!
+  -- Face-down `p1Flyer` has NO flying in Layer 1, so `.creaturesWithout { flying := true }` gives `p0` control!
+  let gL1Fd :=
+    (setFaceDown gL10 p1Flyer.id true).createEffect
+      (.layered (.creaturesWithout { flying := true }) (.control p0) (.whileSourceOnBattlefield p0L1Src.id))
+      (cause := some testCause)
+  let gL1Left := gL1Fd.concede p1
+  -- Turning `p1Flyer` face up via `completeTurnFaceUp` restores `flying := true` in Layer 1, ending the scoped
+  -- Layer 2 `.control p0` effect onto departed `p1` -> exiled under CR 800.4c AND priority granted to `p0`!
+  let gL1TurnedUp := gL1Left.completeTurnFaceUp p0 p1Flyer.id
+  -- `transformPermanent` into back face `flyerDef` (`flying := true`) also ends `.creaturesWithout { flying := true }` control!
+  let gTr0 := addPermanent (addPermanent g4 dfcDef p3 p1) auraDef p0 p0
+  let trDfcId := (gTr0.permanentsOf p1)[0]!.id
+  let trSrcId := (gTr0.permanentsOf p0)[0]!.id
+  let gTrLeft :=
+    (gTr0.createEffect (.layered (.creaturesWithout { flying := true }) (.control p0) (.whileSourceOnBattlefield trSrcId))
+      (cause := some testCause)).concede p1
+  let gTrDone := gTrLeft.transformPermanent p0 (some trDfcId) (cause := some testCause)
+  -- Layer 1 `.copy` granting flying to `p3`-owned, `p1`-defaultControlled non-flying `bear`:
+  let gCpSetup := addPermanent (addPermanent g4 bear p3 p1) auraDef p0 p0
+  let cpBearId := (gCpSetup.permanentsOf p1)[0]!.id
+  let cpSrcId := (gCpSetup.permanentsOf p0)[0]!.id
+  let gCp0 :=
+    (gCpSetup.createEffect
+      (.layered (.creaturesWithout { flying := true }) (.control p0) (.whileSourceOnBattlefield cpSrcId))
+      (cause := some testCause)).concede p1
+  let gCpCopied := gCp0.createEffect (.copy cpBearId flyerDef (untilEot := true)) (cause := some testCause)
+  -- Layer 1 `.copy` EXPIRY restoring `flying` on `p3`-owned, `p1`-defaultControlled flyer:
+  let gCpExp0 := addPermanent (addPermanent g4 flyerDef p3 p1) auraDef p0 p0
+  let expFlyerId := (gCpExp0.permanentsOf p1)[0]!.id
+  let expSrcId := (gCpExp0.permanentsOf p0)[0]!.id
+  let gCpExp1 :=
+    ((gCpExp0.createEffect (.copy expFlyerId bear (untilEot := true)) (cause := some testCause)).createEffect
+      (.layered (.creaturesWithout { flying := true }) (.control p0) (.whileSourceOnBattlefield expSrcId))
+      (cause := some testCause)).concede p1
+  let copyEffId := (gCpExp1.activeEffects.find? (fun (_, s) =>
+    match s with | .layered _ (.copy _) _ => true | _ => false)).get!.1
+  let gCpExpired := gCpExp1.expireEffectById copyEffId (cause := some testCause)
+  let layer1ControlReconcileOk :=
+    (gL1TurnedUp.followMovedToZone? p1Flyer.id (· == .exile)).isSome &&
+    gL1TurnedUp.priority == p0 &&
+    (gTrDone.followMovedToZone? trDfcId (· == .exile)).isSome &&
+    (gCpCopied.followMovedToZone? cpBearId (· == .exile)).isSome &&
+    (gCpExpired.followMovedToZone? expFlyerId (· == .exile)).isSome
+
+  -- 3c. `restoreControlUntilSourceLeaves`: no false `"does not change control (CR 800.4b)"` log when fallback left,
+  --     `.ringBearer` cleared on both singleton and non-singleton arms, and `endControlExileLoop` suppresses
+  --     `"is exiled (CR 800.4c)"` log if target already left before its deferred step runs:
+  let gRc0 :=
+    ((gBase0.createEffect (.layered (.objects #[p1Bear0.id]) (.control p0) (.untilSourceLeaves p0Anchor.id))
+      (cause := some testCause)).concede p1).record
+      (GameEvent.ringTempted gBase0.turnNumber p0 (some p1Bear0.id) 1 (cause := some testCause))
+  let (gRcMoved, _) := gRc0.move p0Anchor.id .exile (cause := some testCause)
+  let gNs0 := addPermanent (addPermanent g4 bear p2 p2) auraDef p0 p0
+  let nsBear := (gNs0.permanentsOf p2)[0]!
+  let nsSrc := (gNs0.permanentsOf p0)[0]!
+  let gNs1 :=
+    (gNs0.createEffect (.layered (.creaturesWithout { flying := true }) (.control p0) (.whileSourceOnBattlefield nsSrc.id))
+      (cause := some testCause)).record
+      (GameEvent.ringTempted gNs0.turnNumber p0 (some nsBear.id) 1 (cause := some testCause))
+  let gNsRestored := gNs1.restoreControlUntilSourceLeaves nsSrc.id (cause := some testCause)
+  let gNoExLog :=
+    g4.resumePendingReplacement
+      (.endControlExileLoop #[] (some (.gameRule .playerLeftGame))
+        (some (⟨9999⟩, "Ghost is exiled (CR 800.4c)")))
+  let restoreLogsAndRingOk :=
+    (gRcMoved.followMovedToZone? p1Bear0.id (· == .exile)).isSome &&
+    (gRcMoved.player p0).ringBearerId.isNone &&
+    !gRcMoved.log.any (fun s => (s.splitOn "CR 800.4b").length > 1) &&
+    (gNsRestored.player p0).ringBearerId.isNone &&
+    !gNoExLog.log.any (fun s => (s.splitOn "CR 800.4c").length > 1)
+
+  mustHold37i3 "3a.ceaseReconcile" ceaseReconcileOk &&
+  mustHold37i3 "3a.emblemReconcile" emblemReconcileOk &&
+  mustHold37i3 "3a.phaseReconcile" phaseReconcileOk &&
+  mustHold37i3 "3b.teferiAndPhaseOut" teferiAndPhaseOutOk &&
+  mustHold37i3 "3b.teferiPostStepPaused" teferiPostStepPausedOk &&
+  mustHold37i3 "3b.layer1ControlReconcile" layer1ControlReconcileOk &&
+  mustHold37i3 "3c.restoreLogsAndRing" restoreLogsAndRingOk &&
+  mustHold37i3 "3.replay"
+    (replayOk37i3 #[gTokCeased, gEmbExpired, gPhOut, gPhInDone,
+      gTefResolved, gPopLoopResumed, gTefPostDone, gL1TurnedUp, gTrDone, gCpCopied, gCpExpired, gRcMoved, gNoExLog])
+
+end Phase37Item3EventAlignment
+
+/-! ### Phase 37 Item 4: `activateFromHand` / `sourceDiscardedFromHandForCost`, paused `ManaAbilities` continuations, and mid-proposal payability / `decline` / loyalty / `completeTurnFaceUp` reversals -/
+section Phase37Item4EventAlignment
+
+private def mustHold37i4 (label : String) (ok : Bool) : Bool :=
+  if ok then true else panic! s!"Phase37Item4EventAlignment failed: {label}"
+
+private def replayOk37i4 (gs : Array Game) : Bool :=
+  gs.all (fun g => Game.replayEvents g.events == g && allRulesEventsClassified g)
+
+#guard
+  let p0 : PlayerId := ⟨0⟩
+  let p1 : PlayerId := ⟨1⟩
+  let p2 : PlayerId := ⟨2⟩
+  let g3 := afterDraw.change (.addPlayer { id := p2, name := "Liliana" })
+  let leyADef : CardDef := { name := "P37i4 LeyA", types := #[.enchantment] }
+  let leyBDef : CardDef := { name := "P37i4 LeyB", types := #[.enchantment] }
+
+  -- 4a. `payActivationExtraCosts` + `sourceStillPayable` `activateFromHand` (source stays in hand AND
+  --     `sourceDiscardedFromHandForCost` across multi-pick `CostPick`):
+  let keepInHandAb : ActivatedAbility := {
+    activateFromHand := true, cost := { payLife := 2 }, effect := Effect.gainLife 5
+  }
+  let selfDiscMultiAb : ActivatedAbility := {
+    activateFromHand := true
+    cost := { payLife := 2, discardACard := true, tapAnUntappedCreatureYouControl := true }
+    effect := Effect.gainLife 5
+  }
+  let handKeepDef : CardDef := {
+    name := "P37i4 HandChannel", types := #[.creature], power := some 2, toughness := some 2
+    activatedAbilities := #[keepInHandAb]
+  }
+  let handMultiDef : CardDef := {
+    name := "P37i4 HandMulti", types := #[.creature], power := some 2, toughness := some 2
+    activatedAbilities := #[selfDiscMultiAb]
+  }
+  let gFh0 :=
+    insertObject
+      (insertObject (addPermanent g3 bear p0 p0) handKeepDef p0 (.hand p0))
+      handMultiDef p0 (.hand p0)
+  let fhBear := (gFh0.permanentsOf p0)[0]!
+  let fhKeepId := (gFh0.player p0).hand.find? (fun id => (gFh0.object! id).name == handKeepDef.name) |>.get!
+  let fhMultiId := (gFh0.player p0).hand.find? (fun id => (gFh0.object! id).name == handMultiDef.name) |>.get!
+  let gFhKeepActivated := mustApply gFh0 p0 (.activate fhKeepId 0)
+  let gFhMultiStarted := mustApply gFh0 p0 (.activate fhMultiId 0)
+  let gFhMultiPick0 :=
+    match gFhMultiStarted.answerFraChoice p0 (.objects #[fhMultiId]) with
+    | .ok g => g
+    | .error e => panic! e
+  let gFhMultiDone :=
+    match gFhMultiPick0.answerFraChoice p0 (.objects #[fhBear.id]) with
+    | .ok g => g
+    | .error e => panic! e
+  let activateFromHandOk :=
+    (gFhKeepActivated.player p0).hand.contains fhKeepId &&
+    (gFhKeepActivated.player p0).life == (18 : Int) &&
+    gFhKeepActivated.stack.size == 1 &&
+    gFhMultiPick0.sourceDiscardedFromHandForCost fhMultiId (some gFhMultiPick0.proposedSpell.get!.spellId) &&
+    gFhMultiPick0.proposalCostPromptStillPayable p0 gFhMultiPick0.pending &&
+    (gFhMultiDone.player p0).life == (18 : Int) &&
+    gFhMultiDone.proposedSpell.isNone &&
+    gFhMultiDone.stack.size == 1
+
+  -- 4b. Departed-player and `.restorePending`-validated paused `ManaAbilities` continuations:
+  let painPetalDef : CardDef := {
+    name := "P37i4 PainPetal", types := #[.artifact]
+    activatedAbilities := #[{
+      cost := { tap := true, sacrificeSource := true }
+      effect := { resolution := .addMana #[.colored .red] }
+    }]
+  }
+  -- Test 1: `p0` activates `PainPetal` at priority (`prevPending = .none`), pausing on `leyA`/`leyB`;
+  --         `p0` concedes; `finishActivateManaAbilityPostSac` skips `abilityActivated`/`manaAdded` and grants priority to `p1`!
+  let gMa0 :=
+    addPermanent (addPermanent (addPermanent g3 painPetalDef p0 p0) leyADef p0 p0) leyBDef p0 p0
+  let maPet := (gMa0.permanentsOf p0).find? (·.name == painPetalDef.name) |>.get!
+  let maLeyA := (gMa0.permanentsOf p0).find? (·.name == leyADef.name) |>.get!.id
+  let maLeyB := (gMa0.permanentsOf p0).find? (·.name == leyBDef.name) |>.get!.id
+  let maRidA : ReplacementId := { kind := .exileOppDeath, object := some maLeyA }
+  let maRidB : ReplacementId := { kind := .exileOppDeath, object := some maLeyB }
+  let gMa1 :=
+    (gMa0.createEffect
+      (.replacement {
+        id := maRidA, source := some maLeyA, controller := some p0, affectedPlayer := p0,
+        kind := .exileInsteadOfGraveyard (some maPet.id) false }) (cause := some testCause)).createEffect
+      (.replacement {
+        id := maRidB, source := some maLeyB, controller := some p0, affectedPlayer := p0,
+        kind := .exileInsteadOfGraveyard (some maPet.id) false }) (cause := some testCause)
+  let gMaPaused :=
+    match gMa1.activateManaAbility p0 maPet.id 0 #[.colored .red] with
+    | .ok g => g
+    | .error e => panic! e
+  let gMaConceded := mustApply gMaPaused p0 .concede
+  -- Test 2: living `p0` controls `p2`'s face-down morph creature `maMorph` ONLY via `.whileSourceOnBattlefield maPet.id`,
+  --         and opens `.activateManaAbilities p0` on `.turnFaceUp` (`cost := ManaCost.ofGeneric 1`).
+  --         When `p0` sacrifices `maPet` for mana (pausing on `maRidA`/`maRidB` with `prevPending = .activateManaAbilities p0`)
+  --         and chooses `maRidA`, `maPet` leaves `.battlefield`, `maMorph` returns to `p2`, and `finishActivateManaAbilityPostSac`
+  --         routes `prevPending` through `.restorePending`, which sees `!sourceStillPayable` and reverses cleanly!
+  let maMorphDef : CardDef := {
+    creature "P37i4 ManaMorph" ManaCost.empty #["Human"] 3 3 with morph := some (ManaCost.ofGeneric 1)
+  }
+  let gMaVal0 := addPermanent gMa1 maMorphDef p2 p2
+  let maMorphId := (gMaVal0.permanentsOf p2)[0]!.id
+  let gMaVal1 :=
+    (setFaceDown gMaVal0 maMorphId true).createEffect
+      (.layered (.objects #[maMorphId]) (.control p0) (.whileSourceOnBattlefield maPet.id))
+      (cause := some testCause)
+  let maMorphObj := gMaVal1.object! maMorphId
+  let maMorphProp : ProposedSpell := {
+    caster := p0, cost := ManaCost.ofGeneric 1, spellId := maMorphId, sourceId := some maMorphId
+    original := maMorphObj, originalSnapshot := gMaVal1.snapshot maMorphObj, kind := .turnFaceUp
+  }
+  let gMaValPrompt :=
+    gMaVal1.changes #[
+      .saveProposalCheckpoint,
+      .proposedSpell (some maMorphProp),
+      .pending (.activateManaAbilities p0) ]
+  let gMaValPaused :=
+    match gMaValPrompt.activateManaAbility p0 maPet.id 0 #[.colored .red] with
+    | .ok g => g
+    | .error e => panic! e
+  let gMaValResolved := mustApply gMaValPaused p0 (.chooseReplacement maRidA)
+  let manaAbilityGuardsOk :=
+    (gMaConceded.player p0).leftTheGame &&
+    (gMaConceded.player p0).manaPool.total == 0 &&
+    gMaConceded.priority == p1 &&
+    gMaValResolved.proposedSpell.isNone &&
+    gMaValResolved.pending == Pending.none &&
+    (gMaValResolved.player p0).manaPool.total == 0 &&
+    (gMaValResolved.permanentsOf p0).any (·.id == maPet.id) &&
+    (gMaValResolved.object! maMorphId).status.faceDown
+
+  -- 4c. Mid-proposal `announceMode`, multi-pick `CostPick` (`sourceStillPayable` + `canPayLife`),
+  --     `.discardForAdditionalCost`, `.sacrificePermanent`, `completeTurnFaceUp` (control loss vs morph-granter),
+  --     post-sacrifice loyalty `becomeActivated`, and unpayable-prompt `decline`:
+  -- (i) `announceMode` reverses when `sourceStillPayable` is false:
+  let modalAbDef : CardDef := {
+    name := "P37i4 ModalRod", types := #[.artifact]
+    activatedAbilities := #[{
+      cost := { tap := true }
+      effect := Effect.gainLife 1
+      otherModes := #[Effect.gainLife 2]
+    }]
+  }
+  let gAm0 := addPermanent g3 modalAbDef p0 p0
+  let rodId := (gAm0.permanentsOf p0)[0]!.id
+  let gAmStarted := mustApply gAm0 p0 (.activate rodId 0)
+  let gAmStolen := gAmStarted.createEffect (.control rodId p2) (cause := some testCause)
+  let gAmReversed := mustApply gAmStolen p0 (.chooseMode 0)
+  let announceModeReversalOk :=
+    gAmStarted.pending == .chooseMode p0 &&
+    gAmReversed.proposedSpell.isNone &&
+    gAmReversed.stack.isEmpty
+
+  -- (ii) Multi-pick `CostPick` reverses on lost `canPayLife` before pick 1, AND `FraAnswer.decline` on `paid := true`
+  --      reverses when `!proposalCostPromptStillPayable`:
+  let lifeMultiAb : ActivatedAbility := {
+    cost := { payLife := 5, tapAnUntappedCreatureYouControl := true, sacrificeArtifact := true }
+    effect := Effect.gainLife 1
+  }
+  let lifeMultiArtDef : CardDef := {
+    name := "P37i4 LifeAltar", types := #[.artifact], activatedAbilities := #[lifeMultiAb]
+  }
+  let lmBaubleDef : CardDef := { name := "P37i4 SacBauble", types := #[.artifact] }
+  let gLm0 := addPermanent (addPermanent (addPermanent g3 lifeMultiArtDef p0 p0) lmBaubleDef p0 p0) bear p0 p0
+  let lmArtId := (gLm0.permanentsOf p0).find? (·.name == lifeMultiArtDef.name) |>.get!.id
+  let lmBaubleId := (gLm0.permanentsOf p0).find? (·.name == lmBaubleDef.name) |>.get!.id
+  let lmBearId := (gLm0.permanentsOf p0).find? (·.name == bear.name) |>.get!.id
+  let gLmStarted := mustApply gLm0 p0 (.activate lmArtId 0)
+  -- Pay pick 0 (`sacrificeArtifact` on `lmBaubleId`, setting `paid := true`):
+  let gLmPick0 :=
+    match gLmStarted.answerFraChoice p0 (.objects #[lmBaubleId]) with
+    | .ok g => g
+    | .error e => panic! e
+  let gLmLowLife := gLmPick0.loseLife p0 17 (cause := some testCause)
+  let gLmPick1Reversed :=
+    match gLmLowLife.answerFraChoice p0 (.objects #[lmBearId]) with
+    | .ok g => g
+    | .error e => panic! e
+  let gLmDeclineReversed :=
+    match gLmLowLife.answerFraChoice p0 .decline with
+    | .ok g => g
+    | .error e => panic! e
+  let costPickAndDeclineOk :=
+    (gLmPick1Reversed.permanentsOf p0).any (·.id == lmBaubleId) &&
+    gLmPick1Reversed.proposedSpell.isNone &&
+    (gLmDeclineReversed.permanentsOf p0).any (·.id == lmBaubleId) &&
+    gLmDeclineReversed.proposedSpell.isNone
+
+  -- Shared `.turnFaceUp` setup for (iii) and (iv): `p0` controls `p2`'s face-down morph creature `p2MorphId`
+  -- via `.whileSourceOnBattlefield p0HelmId`:
+  let morphCrDef : CardDef := {
+    creature "P37i4 MorphSpy" ManaCost.empty #["Human"] 3 3 with morph := some ManaCost.empty
+  }
+  let ctrlRelicDef : CardDef := { name := "P37i4 Helm", types := #[.artifact] }
+  let gTf0 := addPermanent (addPermanent g3 morphCrDef p2 p2) ctrlRelicDef p0 p0
+  let p2MorphId := (gTf0.permanentsOf p2)[0]!.id
+  let p0HelmId := (gTf0.permanentsOf p0)[0]!.id
+  let gTf1 :=
+    (setFaceDown gTf0 p2MorphId true).createEffect
+      (.layered (.objects #[p2MorphId]) (.control p0) (.whileSourceOnBattlefield p0HelmId))
+      (cause := some testCause)
+  let mSnapObj := gTf1.object! p2MorphId
+  let tfProp : ProposedSpell := {
+    caster := p0, cost := ManaCost.empty, spellId := p2MorphId, sourceId := some p2MorphId
+    original := mSnapObj, originalSnapshot := gTf1.snapshot mSnapObj
+    kind := .turnFaceUp, needsSacrificeOther := true
+  }
+
+  -- (iii) `.discardForAdditionalCost` and `.sacrificePermanent` reverse (on BOTH answer and `Action.decline`)
+  --       when `!proposalCostPromptStillPayable`:
+  let gUnpayBase :=
+    (addPermanent gTf1 lmBaubleDef p0 p0).changes #[.saveProposalCheckpoint, .proposedSpell (some tfProp)]
+  let gUnpayStolen := gUnpayBase.createEffect (.control p2MorphId p2) (cause := some testCause)
+  let gDiscUnpay := gUnpayStolen.change (.pending (.discardForAdditionalCost p0))
+  let h0Id := (gDiscUnpay.player p0).hand[0]!
+  let gDiscRev := mustApply gDiscUnpay p0 (.discard h0Id)
+  let gDiscDeclineRev := mustApply gDiscUnpay p0 .decline
+  let gSacUnpay := gUnpayStolen.change (.pending (.sacrificePermanent p0 p2MorphId))
+  let sacCandId := (gSacUnpay.permanentsOf p0).find? (fun (o : GameObject) => o.name == lmBaubleDef.name) |>.get!.id
+  let gSacRev := mustApply gSacUnpay p0 (.sacrifice sacCandId)
+  let gSacDeclineRev := mustApply gSacUnpay p0 .decline
+  let discardAndSacGuardOk :=
+    !gDiscUnpay.proposalCostPromptStillPayable p0 gDiscUnpay.pending &&
+    !gSacUnpay.proposalCostPromptStillPayable p0 gSacUnpay.pending &&
+    gDiscRev.proposedSpell.isNone &&
+    (gDiscRev.player p0).hand.contains h0Id &&
+    gDiscDeclineRev.proposedSpell.isNone &&
+    (gDiscDeclineRev.player p0).hand.contains h0Id &&
+    gSacRev.proposedSpell.isNone &&
+    (gSacRev.permanentsOf p0).any (·.id == sacCandId) &&
+    gSacDeclineRev.proposedSpell.isNone &&
+    (gSacDeclineRev.permanentsOf p0).any (·.id == sacCandId)
+
+  -- (iv) `completeTurnFaceUp` reverses when sacrificing the morph-cost permanent loses control of `spellId`:
+  let gTfPrompt :=
+    gTf1.changes #[.saveProposalCheckpoint, .proposedSpell (some tfProp), .pending (.sacrificePermanent p0 p2MorphId)]
+  -- Sacrificing `p0HelmId` returns `p2MorphId` to `p2`, so `completeTurnFaceUp` reverses (restoring `p0HelmId`
+  -- to `.battlefield` and keeping `p2MorphId` face-down)!
+  let gTfReversed := mustApply gTfPrompt p0 (.sacrifice p0HelmId)
+  let turnFaceUpControlLossReversesOk :=
+    gTfReversed.proposedSpell.isNone &&
+    (gTfReversed.permanentsOf p0).any (·.id == p0HelmId) &&
+    (gTfReversed.object! p2MorphId).status.faceDown
+
+  -- (v) Post-sacrifice loyalty `becomeActivated`: sacrificing the permanent granting control of planeswalker `src`
+  --     reverses via `becomeActivated` instead of activating an opponent's planeswalker!
+  let pwSacAb : ActivatedAbility := {
+    cost := { loyalty := some (.minus 2), sacrificeArtifact := false }
+    effect := Effect.gainLife 3
+  }
+  let pwDef : CardDef := {
+    name := "P37i4 Walker", types := #[.planeswalker], loyalty := some 3
+    activatedAbilities := #[pwSacAb]
+  }
+  let gPw0 := addPermanent (addPermanent g3 pwDef p2 p2) ctrlRelicDef p0 p0
+  let pwId := (gPw0.permanentsOf p2)[0]!.id
+  let pwHelmId := (gPw0.permanentsOf p0)[0]!.id
+  let gPw1 :=
+    (gPw0.recordPutCounters pwId .loyalty 3 (some p2) (cause := some testCause)).createEffect
+      (.layered (.objects #[pwId]) (.control p0) (.whileSourceOnBattlefield pwHelmId))
+      (cause := some testCause)
+  let gPwCkpt := gPw1.change .saveProposalCheckpoint
+  let (gPw2, pwStackAb) := gPwCkpt.putStackAbility (gPwCkpt.object! pwId) p0 (abilityEffect := some (Effect.gainLife 3))
+  let pwProp : ProposedSpell := {
+    caster := p0, cost := ManaCost.empty, spellId := pwStackAb.id, original := pwStackAb
+    originalSnapshot := gPw2.snapshot pwStackAb, kind := .activatedAbility
+    sourceId := some pwId, activation := some pwSacAb, needsSacrificeOther := true
+  }
+  let gPwPrompt :=
+    gPw2.changes #[.proposedSpell (some pwProp), .pending (.sacrificePermanent p0 pwId)]
+  let gPwReversed := mustApply gPwPrompt p0 (.sacrifice pwHelmId)
+  -- And when `p0` sacrifices an unrelated artifact (keeping control & 3 loyalty >= 2), loyalty IS paid and ability stays on stack!
+  let extraArtDef : CardDef := { name := "P37i4 Bauble", types := #[.artifact] }
+  let gPwOk0 := addPermanent gPw1 extraArtDef p0 p0
+  let baubleId := (gPwOk0.permanentsOf p0).find? (·.name == extraArtDef.name) |>.get!.id
+  let gPwOkCkpt := gPwOk0.change .saveProposalCheckpoint
+  let (gPwOk2, pwOkStackAb) := gPwOkCkpt.putStackAbility (gPwOkCkpt.object! pwId) p0 (abilityEffect := some (Effect.gainLife 3))
+  let pwOkProp : ProposedSpell := {
+    caster := p0, cost := ManaCost.empty, spellId := pwOkStackAb.id, original := pwOkStackAb
+    originalSnapshot := gPwOk2.snapshot pwOkStackAb, kind := .activatedAbility
+    sourceId := some pwId, activation := some pwSacAb, needsSacrificeOther := true
+  }
+  let gPwOkPrompt :=
+    gPwOk2.changes #[.proposedSpell (some pwOkProp), .pending (.sacrificePermanent p0 pwId)]
+  let gPwSucceeded := mustApply gPwOkPrompt p0 (.sacrifice baubleId)
+  let loyaltyPostSacOk :=
+    gPwReversed.proposedSpell.isNone &&
+    gPwReversed.stack.isEmpty &&
+    (gPwReversed.permanentsOf p0).any (·.id == pwHelmId) &&
+    (gPwReversed.object! pwId).status.loyaltyCounters == 3 &&
+    gPwSucceeded.proposedSpell.isNone &&
+    gPwSucceeded.stack.size == 1 &&
+    (gPwSucceeded.object! pwId).status.loyaltyCounters == 1
+
+  mustHold37i4 "4a.activateFromHand" activateFromHandOk &&
+  mustHold37i4 "4b.manaAbilityGuards" manaAbilityGuardsOk &&
+  mustHold37i4 "4c.announceModeReversal" announceModeReversalOk &&
+  mustHold37i4 "4c.costPickAndDecline" costPickAndDeclineOk &&
+  mustHold37i4 "4c.discardAndSacGuard" discardAndSacGuardOk &&
+  mustHold37i4 "4c.turnFaceUpControlLossReverses" turnFaceUpControlLossReversesOk &&
+  mustHold37i4 "4c.loyaltyPostSac" loyaltyPostSacOk &&
+  mustHold37i4 "4.replay"
+    (replayOk37i4 #[gFhKeepActivated, gFhMultiStarted, gFhMultiPick0, gFhMultiDone,
+      gMaPaused, gMaConceded, gMaValPaused, gMaValResolved,
+      gAmStarted, gAmReversed, gLmStarted, gLmPick0, gLmPick1Reversed, gLmDeclineReversed,
+      gDiscRev, gDiscDeclineRev, gSacRev, gSacDeclineRev, gTfReversed, gPwReversed, gPwSucceeded])
+
+end Phase37Item4EventAlignment
 
 end Mtg.Engine.EventTests
