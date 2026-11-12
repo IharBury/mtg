@@ -13243,8 +13243,9 @@ unpayable-prompt `decline` reversals).
    1930–1931, 2250–2251`, `Core.lean:90–94, 161–162, 371–381, 675–855, 919–920,
    953–985, 991–1004, 1072, 1655–1662, 1835–1860, 2028–2077, 2110, 2174–2185,
    2267–2269, 5211–5248, 7837, 10324–10328, 10372–10510, 10544–10552, 10599–10825,
-   11175–11284, 11412–11418`, `Movement.lean:712–839`, `Decisions.lean:662–703,
-   1648–1650`, `Leaving.lean:33–47, 178–218, 2506–2546`, §2.1, §2.4, §2.5, §3.8,
+   11175–11284, 11412–11418`, `Movement.lean:215–218, 265, 420–446, 570, 596,
+   675, 712–839`, `Decisions.lean:662–703, 1648–1650`, `Leaving.lean:33–47,
+   178–218, 2506–2546`, §2.1, §2.4, §2.5, §3.8,
    CR 104.1 / 104.2a / 400.7 / 603.2c / 610.3 / 725.4 / 733.1–733.2 / 800.4a,c,j):
    - In `Core.replayKeptStreamCore` (`Core.lean:10599–10825`) and
      `PendingReplacement.continueCheckpointReplay` (`Event.lean:1930–1931`,
@@ -13331,8 +13332,8 @@ unpayable-prompt `decline` reversals).
      (`Event.lean:833–835, 1930–1931, 2250–2251`, `Core.lean:90–94, 161–162,
      1655–1662, 1835–1860, 2028–2077, 2174–2185, 2267–2269, 7837, 10324–10328,
      10372–10510, 10544–10552, 10599–10825, 11175–11284, 11412–11418`,
-     `Movement.lean:712–839`, `Decisions.lean:662–703, 1648–1650`,
-     `Leaving.lean:33–47, 178–218, 2506–2546`):
+     `Movement.lean:215–218, 265, 420–446, 570, 596, 675, 712–839`,
+     `Decisions.lean:662–703, 1648–1650`, `Leaving.lean:33–47, 178–218, 2506–2546`):
      - Existing game-over cleanup paths (`Decisions.finishAndGrantPriority` at
        `Decisions.lean:204–207`, `Decisions.finishFraChoice` at `291–292`,
        `Decisions.afterTriggerTargetsChosen` at `3448–3451`, and
@@ -13380,7 +13381,21 @@ unpayable-prompt `decline` reversals).
          `Core.promptChooseReplacement` (`Core.lean:11412–11418`), returning `g`
          without pushing a frame or writing `.pending (.chooseReplacement ..)` /
          `.pendingReplacement (some cont)` when `suppressInteractive ||
-         g.openBatchSuppressInteractive || g.over || g.suppressInteractiveReplay`;
+         g.openBatchSuppressInteractive || g.over || g.suppressInteractiveReplay`,
+         **and** in `Movement.move` (`Movement.lean:265, 420–446, 570, 596, 675`),
+         bind `let quietMove := g.openBatchSuppressInteractive || g.over ||
+         g.suppressInteractiveReplay`, bypass the `.chooseReplacement` queue-and-return
+         guard at `265` (and `596`) when `quietMove` is `true`, gate
+         `etb.choice?.isSome` on `!quietMove` at `420`, compute
+         `preCheckStayNoAuraHost` at `432` whenever `(quietMove ||
+         moveRep.choice?.isNone) && dest == .battlefield`, match **`if quietMove then
+         none else moveRep.choice?.orElse (fun _ => preCheckArrivalChoice?)`** at
+         `436–446` so a quiet move **falls through into the `| none =>` zone-write arm
+         (`446–660`, `g.record happened` at `570`) using `dest := moveRep.dest`,
+         `moveRep.applied`, and `moveRep.cause` without applying the unchosen
+         replacement** (instead of returning `promptChooseReplacement`'s unchanged `g`
+         with `(id, none, false)` and leaving a CR 610.3 linked card in `.exile`), and
+         skip `recordReflexiveTrigger` at `675` when `quietMove || !g.stillInGame p`;
          add `(suppressInteractive : Bool := false)` to **both**
          `finishOpenBatchSync` (`Core.lean:10372–10395`) and
          `Core.withBatchCoreReturn` / `Core.withBatchCore` (`Core.lean:10424–10510`)
@@ -13461,19 +13476,22 @@ unpayable-prompt `decline` reversals).
          `postCastCleanup`, `ckptPausedBatch?`, `ckptQueuedLinkedExile`,
          `ckptPending`, and `ckptCont?` (`11224–11283`) whenever `wasOver ||
          gAcc.over || gAcc.suppressInteractiveReplay`; add `(suppressInteractive :
-         Bool := false)` to `Movement.runLinkedExileBatch` (`712–780`),
-         `Movement.flushQueuedLinkedExile` (`784–790`), and
-         `Movement.returnLinkedExileMoves` (`794–803`) **without returning `g` early
-         on `suppressInteractive || g.over || g.suppressInteractiveReplay`** so CR
-         610.3 zone changes still execute (`flushQueuedLinkedExile` keeps `785` as
+         Bool := false)` to `Movement.runLinkedExileBatch` (`712–780`, computing
+         `movedDest?` on `.hand p` at `738–739` and `.graveyard p` at `744–745` via
+         `(g'.followMovedToZone? o.id (· == dest)).isSome || (!quiet && match
+         g'.pending with | .chooseReplacement .. => true | _ => false)` to match
+         `.battlefield` at `754–757`), `Movement.flushQueuedLinkedExile` (`784–790`),
+         and `Movement.returnLinkedExileMoves` (`794–803`) **without returning `g`
+         early on `suppressInteractive || g.over || g.suppressInteractiveReplay`** so
+         CR 610.3 zone changes still execute (`flushQueuedLinkedExile` keeps `785` as
          `if g.currentBatch.isSome || g.queuedLinkedExile.isEmpty then g` and passes
          `(suppressInteractive := suppressInteractive)` from `789` into
          `returnLinkedExileMoves`; `returnLinkedExileMoves` still queues
          `g.change (.queueLinkedExile ids)` when `g.currentBatch.isSome` at `796–797`,
          suppresses the `.finishLinkedExileMove` pause at `798–799`—just as
-         `runLinkedExileBatch` suppresses `717–718, 762–767, 775–779`—when
-         `suppressInteractive || g.openBatchSuppressInteractive || g.over ||
-         g.suppressInteractiveReplay`, passes `(suppressInteractive :=
+         `runLinkedExileBatch` suppresses `717–718, 762–767, 775–779`—when `let quiet
+         := suppressInteractive || g.openBatchSuppressInteractive || g.over ||
+         g.suppressInteractiveReplay` is `true`, passes `(suppressInteractive :=
          suppressInteractive)` into `withBatchCore` and `runLinkedExileBatch` at
          `801`, and passes `(suppressInteractive := suppressInteractive)` from `802`
          back into `flushQueuedLinkedExile`); and **insert** `else if g.over &&
