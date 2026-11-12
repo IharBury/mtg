@@ -665,9 +665,9 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let totalAvail :=
       ((gPre.creaturesControlledBy p).filter (fun c => c.id != vehicleId && !c.status.tapped)).foldl
         (fun acc c => acc + (gPre.power c).toNat) 0
-    if totalAvail < n then
+    if totalAvail < n || !gPre.proposalCostPromptStillPayable p gPre.pending then
       gPre.reverseProposedSpell? (resumeContinuation := true)
-        (extraLog := some s!"{(gPre.player p).name} doesn't crew")
+        (extraLog := if totalAvail < n then some s!"{(gPre.player p).name} doesn't crew" else none)
     else if gPre.proposedSpell.any (·.cost.includesManaPayment) then
       throw "Part of the cost is already paid; the activation can't be cancelled"
     else
@@ -683,9 +683,10 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let discSrc :=
       prop.discardSource ||
         prop.activation.any (fun a => a.cost.discardSource || a.cost.fra == .exileSourceFromHand)
-    if !gPre.costPicksPayable p (some sourceId) picks
-        (tapSource := tapSrc) (sacrificeOrExileSource := sacSrc)
-        (discardOrExileHandSource := discSrc) then
+    if !(gPre.sourceStillPayable prop && gPre.canPayLife prop.caster prop.payLife) ||
+        !gPre.costPicksPayable p (some sourceId) picks
+          (tapSource := tapSrc) (sacrificeOrExileSource := sacSrc)
+          (discardOrExileHandSource := discSrc) then
       return (← gPre.reverseProposedSpell? (resumeContinuation := true))
     let outerCont? := g.pendingReplacement
     let openCont := g.proposalHadOpenContinuation
@@ -732,10 +733,11 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       gPre.proposedSpell.any fun prop =>
         prop.discardSource ||
           prop.activation.any (fun a => a.cost.discardSource || a.cost.fra == .exileSourceFromHand)
-    if !picks.isEmpty &&
-        !gPre.costPicksPayable p (some sourceId) picks
-          (tapSource := tapSrc) (sacrificeOrExileSource := sacSrc)
-          (discardOrExileHandSource := discSrc) then
+    if !gPre.proposalCostPromptStillPayable p gPre.pending ||
+        (!picks.isEmpty &&
+          !gPre.costPicksPayable p (some sourceId) picks
+            (tapSource := tapSrc) (sacrificeOrExileSource := sacSrc)
+            (discardOrExileHandSource := discSrc)) then
       return (← gPre.reverseProposedSpell? (resumeContinuation := true))
     throw "Part of the cost is already paid; the activation can't be cancelled"
   | .costPicks .., _ => throw "Choose what to pay the cost with, or decline to cancel"
@@ -1100,9 +1102,9 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       | none => .black
     let allCands := (gPre.player p).graveyard.filter (fun id =>
       (gPre.findObject? id).any (fun card => (gPre.colors card).contains col))
-    if !gPre.canPayZemoBoast p allCands col then
+    if !gPre.canPayZemoBoast p allCands col || !gPre.proposalCostPromptStillPayable p gPre.pending then
       gPre.reverseProposedSpell? (resumeContinuation := true)
-        (extraLog := some s!"{(gPre.player p).name} doesn't boast")
+        (extraLog := if !gPre.canPayZemoBoast p allCands col then some s!"{(gPre.player p).name} doesn't boast" else none)
     else if gPre.proposedSpell.any (·.cost.includesManaPayment) then
       throw "Part of the cost is already paid; the activation can't be cancelled"
     else

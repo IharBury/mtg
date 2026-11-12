@@ -200,10 +200,12 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
         return g.logMsg s!"{pl.name} may activate mana abilities to turn {g.name o} face up (CR 601.2g / 702.37e)"
       else
         let g := g.change .clearProposalCheckpoint
+        let pre := g
         let g := g.record
           (GameEvent.turnedFaceUp g.turnNumber (g.snapshot (g.object! o.id))
             (cause := .specialAction .turnFaceUp p))
         let g := g.logMsg s!"{pl.name} turns {g.name (g.object! o.id)} face up"
+        let g := reconcileControlAfterTransition pre g (cause := some (.specialAction .turnFaceUp p))
         return g.receivePriority p
     | none => throw s!"{g.name o} is face down"
   let defs := g.manaAbilityDefs o

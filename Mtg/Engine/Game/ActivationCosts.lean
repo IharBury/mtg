@@ -71,6 +71,21 @@ def sourceSacrificedForCost (g : Game) (sid : ObjectId) (forObject : Option Obje
             | _ => false
         | _ => false
 
+/-- Whether `sid` was already discarded from its owner's hand as a cost for
+`forObject` (CR 601.2h). -/
+def sourceDiscardedFromHandForCost (g : Game) (sid : ObjectId) (forObject : Option ObjectId) : Bool :=
+  match forObject with
+  | none => false
+  | some fid =>
+    fid != sid &&
+      g.events.any fun
+        | .rules _ (.zone (.moved before _ (.hand _) _ ..)) cause _ =>
+          before.id == some sid &&
+            match unreplacedCostCause cause with
+            | .costPayment .discard _ (some f) => f == fid
+            | _ => false
+        | _ => false
+
 /-- Whether `sid` was already tapped to pay `{T}` for `forObject` (CR 601.2h). -/
 def sourceTappedForCost (g : Game) (sid : ObjectId) (forObject : Option ObjectId) : Bool :=
   match forObject with
@@ -444,8 +459,13 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
       !ab.any (fun a =>
         a.activateFromGraveyard || a.activateFromHand || a.cost.fra == .exileSourceFromHand) &&
       g.sourceSacrificedForCost sourceId forObject
+  let alreadyDiscardedFromHandForCost :=
+    !sacrificeOrExileSource && !discardSource &&
+      ab.any (·.activateFromHand) &&
+      !ab.any (·.cost.fra == .exileSourceFromHand) &&
+      g.sourceDiscardedFromHandForCost sourceId forObject
   let some src := g.findObject? sourceId | do
-    if alreadySacrificedForCost then
+    if alreadySacrificedForCost || alreadyDiscardedFromHandForCost then
       if !g.canPayLife p payLife then
         throw s!"{(g.player p).name} cannot pay {payLife} life"
       return (← g.payLifeCost p payLife (forObject := forObject))
@@ -502,8 +522,17 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
         else g
       return match outer? with | some outer => g.chainPendingReplacement outer | none => g
     return g
+  let fromHand :=
+    !discardSource && !ab.any (·.cost.fra == .exileSourceFromHand) &&
+      ab.any (·.activateFromHand) &&
+      src.zone == .hand src.owner && src.owner == p &&
+      !tapSource && !sacrificeSource
+  if fromHand then
+    if !g.canPayLife p payLife then
+      throw s!"{(g.player p).name} cannot pay {payLife} life"
+    return (← g.payLifeCost p payLife (forObject := forObject))
   if !src.isOnBattlefield then
-    if alreadySacrificedForCost then
+    if alreadySacrificedForCost || alreadyDiscardedFromHandForCost then
       if !g.canPayLife p payLife then
         throw s!"{(g.player p).name} cannot pay {payLife} life"
       return (← g.payLifeCost p payLife (forObject := forObject))

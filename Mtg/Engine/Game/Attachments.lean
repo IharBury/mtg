@@ -43,17 +43,23 @@ def attachSourceTo (g : Game) (src host : GameObject)
 /-- An object ceases to exist (CR 111.7 / 704.5d / 704.5e).
 The object is deleted and its id is removed from the zone it occupied, so a
 graveyard, hand, library, or stack keeps nothing of it. -/
-def ceaseToExist (g : Game) (id : ObjectId) (cause : Option EventCause := none) : Game :=
+def ceaseToExist (g : Game) (id : ObjectId) (cause : Option EventCause := none)
+    (reconcileControl : Bool := true) : Game :=
   let effCause :=
     g.resolveOptionalCause cause (fallbackSrc := some id)
       (defaultCause := .gameRule .leavingZone)
   match g.findObject? id with
   | some old =>
+    let pre := g
     let snap := g.snapshot old
     let g := g.record (GameEvent.ceasedToExist g.turnNumber snap (cause := effCause))
     let expCause := cause.orElse (fun _ => some (.gameRule .leavingZone))
-    let g := g.expireEffectsOnLeavingObject old (cause := expCause)
-    if old.zone == .battlefield then g.expireWhileSourceEffects id (cause := expCause) else g
+    let g := g.expireEffectsOnLeavingObject old (cause := expCause) (reconcileControl := false)
+    let g :=
+      if old.zone == .battlefield then g.expireWhileSourceEffects id (cause := expCause) else g
+    if reconcileControl then
+      reconcileControlAfterTransitionFwd pre g (cause := expCause)
+    else g
   | none =>
     g.record (GameEvent.ceasedToExist g.turnNumber { id := some id } (cause := effCause))
 

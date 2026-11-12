@@ -81,10 +81,11 @@ def runEndControlExileLoop (g : Game) (remaining : Array (ObjectId × String))
     (cause : Option EventCause := none)
     (pendingLog : Option (ObjectId × String) := none) : Game :=
   if remaining.isEmpty && pendingLog.isNone then g
-  else if let .chooseReplacement .. := g.pending then
+  else if g.sbaPaused then
     g.chainPendingReplacement (.endControlExileLoop remaining cause pendingLog)
   else Id.run do
-    let mut g := g
+    let priorCont? := g.pendingReplacement
+    let mut g := if priorCont?.isSome then g.change (.pendingReplacement none) else g
     if let some (fromId, logLine) := pendingLog then
       if (g.followMovedToZone? fromId (· == .exile)).isSome then
         g := g.logMsg logLine
@@ -94,12 +95,16 @@ def runEndControlExileLoop (g : Game) (remaining : Array (ObjectId × String))
         if cur.isBattlefieldObject || cur.zone == .stack then
           let (g', _) := g.move oid .exile none (cause := cause)
           g := g'
-          if let .chooseReplacement .. := g.pending then
+          if g.sbaPaused then
             let rem := remaining.extract (i + 1) remaining.size
             g := g.chainPendingReplacement (.endControlExileLoop rem cause (some (oid, logLine)))
+            if let some prior := priorCont? then
+              g := g.chainPendingReplacement prior
             return g
           if (g.followMovedToZone? oid (· == .exile)).isSome then
             g := g.logMsg logLine
+    if let some prior := priorCont? then
+      g := g.chainPendingReplacement prior
     return g
 
 /-- End the Layer 2 control-changing effect recorded under `eid` across every
@@ -160,6 +165,56 @@ def endControlEffectById (g : Game) (eid : EffectId)
                 (acc.logMsg s!"{acc.name cur} reverts to {(acc.player dest).name}'s control", exiles)
               else (acc, exiles)) (g, #[])
     g.runEndControlExileLoop exileQueue (cause := some (.gameRule .playerLeftGame))
+
+private def inActiveEndControlExile (oid : ObjectId) : PendingReplacement → Bool
+  | .endControlExileLoop remaining _ pendingLog =>
+    pendingLog.any (·.1 == oid) || remaining.any (·.1 == oid)
+  | .seq a b => inActiveEndControlExile oid a || inActiveEndControlExile oid b
+  | _ => false
+
+/-- Reconcile `.ringBearer` designation loss, CR 506.4 combat removal, and
+CR 800.4c control-ending exile across `pre -> post` for battlefield permanents
+(CR 506.4 / 613.1a–b / 800.4c). -/
+@[export mtg_game_reconcile_control_after_transition]
+def reconcileControlAfterTransition (pre post : Game)
+    (cause : Option EventCause := none) : Game :=
+  let alreadyQueuedForExile (g : Game) (oid : ObjectId) : Bool :=
+    g.pendingReplacement.any (inActiveEndControlExile oid) ||
+      g.outerPendingReplacements.any (inActiveEndControlExile oid)
+  let g :=
+    post.objects.foldl (fun acc o =>
+      if !o.isBattlefieldObject then acc
+      else
+        match pre.findObject? o.id, acc.findObject? o.id with
+        | some preObj, some cur =>
+          if !preObj.isBattlefieldObject || !cur.isBattlefieldObject then acc
+          else
+            match pre.controllerOf preObj with
+            | some prev =>
+              if acc.controllerOf cur != some prev && (acc.player prev).ringBearerId == some cur.id then
+                acc.record (GameEvent.designation acc.turnNumber (acc.snapshot cur) .ringBearer false
+                  (cause := cause.getD (.gameRule .staticAbility)))
+              else acc
+            | none => acc
+        | _, _ => acc) post
+  let g := removeFromCombatOnControlChange pre g (cause := cause)
+  let exileQueue : Array (ObjectId × String) :=
+    g.objects.filterMap fun cur =>
+      if !cur.isBattlefieldObject then none
+      else
+        match pre.findObject? cur.id with
+        | none => none
+        | some preObj =>
+          if !preObj.isBattlefieldObject then none
+          else if !(pre.appliedControlEffectIds preObj).isEmpty &&
+              (g.appliedControlEffectIds cur).isEmpty then
+            let fallback := (cur.defaultController.orElse (fun _ => cur.controller)).getD cur.owner
+            if (g.player fallback).leftTheGame && !alreadyQueuedForExile g cur.id then
+              some (cur.id, s!"{g.name cur} is exiled (CR 800.4c)")
+            else none
+          else none
+  if exileQueue.isEmpty then g
+  else g.runEndControlExileLoop exileQueue (cause := some (.gameRule .playerLeftGame))
 
 /-- Record removing up to `n` counters of `kind` from `id` via
 `PermanentEvent.counters` (CR 122.1). Clamps to the current counter count,
@@ -389,13 +444,13 @@ def objectLeavesTheGame (g : Game) (o : GameObject) (_leavingPlayer : PlayerId) 
       let g := g.withBatch cause fun g =>
         let g := g.unattachFrom o.id
         let g := g.removePreparedCopy o.id
-        let g := g.ceaseToExist o.id (cause := cause)
+        let g := g.ceaseToExist o.id (cause := cause) (reconcileControl := false)
         g.runEndControlExileLoop (collectCtrlLossExiles g) (cause := cause)
       if !o.linkedExile.isEmpty && g.currentBatch.isNone then
         g.returnLinkedExileMoves o.linkedExile
       else g
     else
-      let g := g.ceaseToExist o.id (cause := cause)
+      let g := g.ceaseToExist o.id (cause := cause) (reconcileControl := false)
       let exileQueue := collectCtrlLossExiles g
       if exileQueue.isEmpty then g
       else g.withBatch cause fun g => g.runEndControlExileLoop exileQueue (cause := cause)
@@ -565,7 +620,7 @@ def isProposalAbortedByLeave (g : Game) (p : PlayerId) : Bool :=
                   (prop.kind == .turnFaceUp &&
                     !(gAfterLeave.unmaskedCopiableValues srcAfter).morph.isSome))))
 
-private def isProposalPromptFor (caster : PlayerId) : Pending → Bool
+def isProposalPromptFor (caster : PlayerId) : Pending → Bool
   | .chooseMode q | .chooseTargets q | .activateManaAbilities q | .chooseX q
   | .chooseAdditionalCost q | .chooseKicker q | .chooseGift q
   | .chooseTeamwork q | .chooseTeamworkCreatures q _
@@ -686,9 +741,6 @@ private opaque resumeTriggerSequence (g : Game) : Game := g
 
 @[extern "mtg_game_auto_resolve_choose_object"]
 private opaque autoResolveSingleChooseObject (g : Game) (id : ObjectId) : Game := g
-
-@[extern "mtg_game_run_post_cast_cleanup"]
-private opaque runPostCastCleanup (g : Game) : Game := g
 
 /-- After `p` leaves, pending costs they would pay are not paid (CR 800.4f)
 and other pending choices they would make are skipped or passed on
@@ -2018,9 +2070,13 @@ batch owned `currentBatch` (CR 603.2c / 701.9b / 800.4a). -/
 def restorePausedBatch (g : Game) (batchId : BatchId) (startIdx : Nat) (wasDiscard : Bool)
     (cause : Option EventCause) (objects : Array GameObject)
     (players : Array Player) (effects : Array (EffectId × ContinuousEffectSpec))
-    (pending : Pending) (stack : Array StackEntry := #[]) : Game :=
+    (pending : Pending) (stack : Array StackEntry := #[])
+    (closeIfOrphaned : Bool := true) (queuedLinkedExile : Array ObjectId := #[]) : Game :=
   let g := g.change (.pauseBatch batchId cause objects players effects pending stack)
-  if (wasDiscard && g.discardBatch.isNone) || (!wasDiscard && !hasCloseBatchFor g batchId) then
+  let g :=
+    if queuedLinkedExile.isEmpty then g else g.change (.queueLinkedExile queuedLinkedExile)
+  if !closeIfOrphaned then g
+  else if (wasDiscard && g.discardBatch.isNone) || (!wasDiscard && !hasCloseBatchFor g batchId) then
     g.finishOpenBatchAndLinkedExile batchId startIdx
   else g
 
@@ -2057,10 +2113,6 @@ def batchPausePromptGoneOrInvalid (g : Game) : Pending → Bool
   | .none => true
   | p@(.chooseReplacement ..) | p@(.chooseLegend ..) => !g.batchPausePromptValid p
   | _ => false
-
-@[extern "mtg_game_resume_pending_replacement"]
-private opaque resumePendingReplacement (g : Game) (pr : PendingReplacement)
-    (followedByFinishFra : Bool := false) : Game := g
 
 /-- Roll back an active proposal aborted by a player's departure using
 `reverseToProposalCheckpoint?`, the reversal log, and `runPostCastCleanup`
@@ -2138,20 +2190,27 @@ def rewindAbortedProposalOnLeave (g : Game)
       let rec contContains (target : PendingReplacement) : PendingReplacement → Bool
         | .seq a b => a == target || b == target || contContains target a || contContains target b
         | step => step == target
-      let rec dropCkptPrefix (target : PendingReplacement) (cur : PendingReplacement) :
+      let rec dropCkptTarget (target : PendingReplacement) (cur : PendingReplacement) :
           Option PendingReplacement :=
         if cur == target then none
         else
           match cur with
           | .seq a b =>
-            match dropCkptPrefix target a with
-            | none => some b
-            | some a' => some (.seq a' b)
+            if contContains target a then
+              match dropCkptTarget target a with
+              | none => some b
+              | some a' => some (.seq a' b)
+            else if contContains target b then
+              match dropCkptTarget target b with
+              | none => some a
+              | some b' => some (.seq a b')
+            else
+              some (.seq a b)
           | step => some step
       let g :=
         match ckptOrigCont?, g.pendingReplacement with
         | some origCont, some curCont =>
-          let stripped? := dropCkptPrefix origCont curCont
+          let stripped? := dropCkptTarget origCont curCont
           if stripped? != some curCont then g.change (.pendingReplacement stripped?) else g
         | _, _ => g
       let name := (g.player prop.caster).name
@@ -2161,7 +2220,7 @@ def rewindAbortedProposalOnLeave (g : Game)
         | .activatedAbility => "the activation is reversed (CR 602.2 / 733.1)"
         | .turnFaceUp => "turning it face up is reversed (CR 116.2b / 702.37e / 733.1)"
       let g := g.logMsg s!"{name} cannot pay {prop.cost}; {reversed}"
-      let g := if g.over then g else g.runPostCastCleanup
+      let g := if g.over then g else g.runPostCastCleanupFwd
       let g :=
         if !departed.isEmpty then g.appendDepartedManyToContinuations departed else g
       let seqOpt (a? b? : Option PendingReplacement) : Option PendingReplacement :=
@@ -2303,7 +2362,7 @@ def flushDismissedPausedBatch (g : Game) (saved? : Option Pending) (popOuter : B
     | some (curBid, _) =>
       match g.pendingReplacement.bind (splitAfterCloseBatchFor? curBid) with
       | some (closePrefix, afterClose?) =>
-        let g := (g.change (.pendingReplacement none)).resumePendingReplacement closePrefix
+        let g := (g.change (.pendingReplacement none)).resumePendingReplacementFwd closePrefix
         let g :=
           match afterClose? with
           | some after => g.chainPendingReplacement after
@@ -2323,7 +2382,7 @@ def flushDismissedPausedBatch (g : Game) (saved? : Option Pending) (popOuter : B
                 (g.change (.pushOuterPendingReplacement after), true)
               | none =>
                 (g, false)
-            (g.resumePendingReplacement closePrefix, popOuter)
+            (g.resumePendingReplacementFwd closePrefix, popOuter)
 
 /-- Restore a non-SBA pending decision saved across `playerLeavesGameCore`,
 popping any pushed outer `pendingReplacement` when unpaused (CR 800.4a). -/
@@ -2336,14 +2395,14 @@ def restoreSavedPostLeave (g : Game) (saved? : Option Pending) (popOuter : Bool)
       g.chainPendingReplacement
         (.restorePending .none popOuter (departed := departed) (rewindProposal := rewindProposal))
     else
-      g.resumePendingReplacement
+      g.resumePendingReplacementFwd
         (.restorePending .none popOuter (departed := departed) (rewindProposal := rewindProposal))
   | some saved =>
     if g.sbaPaused || g.pendingReplacement.isSome then
       g.chainPendingReplacement
         (.restorePending saved popOuter (departed := departed) (rewindProposal := rewindProposal))
     else
-      g.resumePendingReplacement
+      g.resumePendingReplacementFwd
         (.restorePending saved popOuter (departed := departed) (rewindProposal := rewindProposal))
 
 /-- Core implementation of `playerLeavesGame` (CR 800.4 / 800.4a). When
@@ -2382,7 +2441,10 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
         some (origBid, origStartIdx, wasDiscard, origCause, g.openBatchObjects,
           g.openBatchPlayers, g.openBatchEffects, g.openBatchPending, g.openBatchStack)
       | none => none
+    let savedQueuedLinkedExile :=
+      if savedPausedBatch?.isSome then g.queuedLinkedExile else #[]
     let g := if savedPausedBatch?.isSome then g.change .clearPausedBatch else g
+    let g := if !savedQueuedLinkedExile.isEmpty then g.change .clearQueuedLinkedExile else g
     let wasAbortedProposal := g.isProposalAbortedByLeave p
     let rewindAbortedProposal :=
       wasAbortedProposal && g.proposalCheckpoint.isSome &&
@@ -2473,7 +2535,7 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
       let g :=
         g.objects.foldl (fun acc o =>
           if o.zone == .stack && acc.controlledBy o p && !representedByCard o then
-            acc.ceaseToExist o.id (cause := cause)
+            acc.ceaseToExist o.id (cause := cause) (reconcileControl := false)
           else acc) g
       let still := g.objects.filter (fun o =>
         let fallback := (o.defaultController.orElse (fun _ => o.controller)).getD o.owner
@@ -2865,11 +2927,15 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
       | some (origBid, origStartIdx, wasDiscard, origCause, origObjs, origPls, origEffs, origPend, origStk) =>
         if depPaused0 then
           g.chainPendingReplacement
-            (.restorePausedBatch origBid origStartIdx wasDiscard origCause origObjs origPls origEffs origPend origStk)
+            (.restorePausedBatch origBid origStartIdx wasDiscard origCause origObjs origPls origEffs origPend origStk true savedQueuedLinkedExile)
         else
-          g.restorePausedBatch origBid origStartIdx wasDiscard origCause origObjs origPls origEffs origPend origStk
+          g.restorePausedBatch origBid origStartIdx wasDiscard origCause origObjs origPls origEffs origPend origStk true savedQueuedLinkedExile
       | none => g
-    let depPaused := g.sbaPaused || g.currentBatch.isSome
+    let isPreCkptBatch :=
+      keptPausedBatch?.any fun info =>
+        g.proposalCheckpoint.any fun ckpt =>
+          ckpt.currentBatch.map Prod.fst == some info.1
+    let depPaused := depPaused0 || g.sbaPaused || (g.currentBatch.isSome && !isPreCkptBatch)
     let (g, savedPreLeavePending?, pushedOuterCont?, deferredRewind) :=
       if shouldRewindProposal then
         if !depPaused then
@@ -2969,6 +3035,10 @@ def leavePlayersWhoLostCore (g : Game)
         let pendingIn := if g.pending == .none then saved? else none
         if pendingIn.isSome then
           saved? := none
+        else if g.isProposalAbortedByLeave pl.id then
+          if let some prop := g.proposedSpell then
+            if saved?.any (isProposalPromptFor prop.caster) then
+              saved? := none
         let (g', newlySaved?, po, rw) :=
           g.playerLeavesGameCore pl.id (deferRestore := true) (pendingIn := pendingIn)
             (departedIn := departed) (rewindProposalIn := rewindProposal)

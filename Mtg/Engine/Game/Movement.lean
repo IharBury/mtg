@@ -604,7 +604,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
                         (.endControlExileLoop rem (some (.gameRule .playerLeftGame))
                           (some (tid, s!"{name} is exiled (CR 800.4c)")))
                       return acc
-                    if !(acc.findObject? tid).any (·.isBattlefieldObject) then
+                    if (acc.followMovedToZone? tid (· == .exile)).isSome then
                       acc := acc.logMsg s!"{name} is exiled (CR 800.4c)"
             return acc
       let g :=
@@ -833,7 +833,9 @@ def withBatchM {ε : Type} (g : Game) (cause : Option EventCause := none)
 /-- Reverse to the saved CR 733.1–733.2 proposal checkpoint, re-running batches
 and flushing any CR 610.3 `linkedExile` returns from kept irreversible moves. -/
 def reverseToProposalCheckpoint? (g : Game) : Except String Game :=
-  (g.reverseToProposalCheckpointCore?).map Game.flushQueuedLinkedExile
+  (g.reverseToProposalCheckpointCore?
+    (runBatch := fun g0 f => g0.withBatch none f)
+    (flushLinked := Game.flushQueuedLinkedExile)).map Game.flushQueuedLinkedExile
 
 /-- Close a paused batch (`Core.finishOpenBatch`) and flush any CR 610.3
 `linkedExile` returns once the outermost batch closes. -/

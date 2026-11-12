@@ -292,6 +292,8 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
   | .sacrificePermanent caster sourceId =>
     if caster != p then
       throw s!"Only {(g.player caster).name} may sacrifice"
+    if g.proposedSpell.isSome && !g.proposalCostPromptStillPayableFwd p g.pending then
+      return (← g.reverseProposedSpellExceptFwd (resumeContinuation := true))
     let some sac := g.findObject? id | throw "no such object"
     if !g.canSacrificeAsCreatureOrArtifact p sourceId sac then
       throw s!"Can't sacrifice {g.name sac}"
@@ -327,14 +329,15 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
             (hadOuterReplacement := outerCont?.isSome)
         else
           let isResCast := prop.resolutionCast
-          let g := g.changes (clearPending ++ #[.proposedSpell none, .consecutivePasses 0])
           match prop.kind with
           | .spell =>
+            let g := g.changes (clearPending ++ #[.proposedSpell none, .consecutivePasses 0])
             g.becomeCast prop.caster (g.object! prop.spellId)
               (grantPriority := !isResCast)
               (hadOuterReplacement := outerCont?.isSome)
               (hadOpenContinuation := some openCont)
           | .activatedAbility =>
+            let g := g.changes (clearPending ++ #[.consecutivePasses 0])
             g.becomeActivated p prop.originalSnapshot.name prop.sourceId prop.activation
               (abilityId := some prop.spellId)
               (sourceSnapshot := some prop.originalSnapshot)
