@@ -13240,12 +13240,12 @@ unpayable-prompt `decline` reversals).
    `Core.replayKeptStreamCore`, tighten `queueUnreturnedLinked` & multi-hop
    `followMoved` resolution, and preserve CR 104.1 `g.over` & mid-pause 3rd-player
    departure invariants across `.continueCheckpointReplay` (`Event.lean:833–835,
-   1930–1931, 2250–2251`, `Core.lean:161–162, 371–381, 675–855, 919–920, 953–985,
-   991–1004, 1072, 1655–1662, 1835–1860, 2028–2077, 2110, 2182–2185, 2267–2269,
-   5211–5248, 7837, 10324–10328, 10372–10510, 10599–10825, 11175–11284, 11412–11418`,
-   `Movement.lean:784–839`, `Decisions.lean:662–703, 1648–1650`,
-   `Leaving.lean:33–47, 178–218, 2506–2546`, §2.1, §2.4, §2.5, §3.8, CR 104.1 /
-   104.2a / 400.7 / 603.2c / 610.3 / 725.4 / 733.1–733.2 / 800.4a,c,j):
+   1930–1931, 2250–2251`, `Core.lean:90–94, 161–162, 371–381, 675–855, 919–920,
+   953–985, 991–1004, 1072, 1655–1662, 1835–1860, 2028–2077, 2110, 2174–2185,
+   2267–2269, 5211–5248, 7837, 10324–10328, 10372–10510, 10544–10552, 10599–10825,
+   11175–11284, 11412–11418`, `Movement.lean:712–839`, `Decisions.lean:662–703,
+   1648–1650`, `Leaving.lean:33–47, 178–218, 2506–2546`, §2.1, §2.4, §2.5, §3.8,
+   CR 104.1 / 104.2a / 400.7 / 603.2c / 610.3 / 725.4 / 733.1–733.2 / 800.4a,c,j):
    - In `Core.replayKeptStreamCore` (`Core.lean:10599–10825`) and
      `PendingReplacement.continueCheckpointReplay` (`Event.lean:1930–1931`,
      `Decisions.lean:1648–1650`), when an earlier replayed batch `B1` flushes a
@@ -13328,11 +13328,11 @@ unpayable-prompt `decline` reversals).
        earlier replayed batches or live CR 610.3 returns is still located.
    - Preserve CR 104.1 game-end finality and mid-pause 3rd-player departure
      invariants across checkpoint reversal and `.continueCheckpointReplay`
-     (`Event.lean:833–835, 1930–1931, 2250–2251`, `Core.lean:161–162, 1655–1662,
-     1835–1860, 2028–2077, 2182–2185, 2267–2269, 7837, 10324–10328, 10372–10510,
-     10599–10825, 11175–11284, 11412–11418`, `Movement.lean:784–839`,
-     `Decisions.lean:662–703, 1648–1650`, `Leaving.lean:33–47, 178–218,
-     2506–2546`):
+     (`Event.lean:833–835, 1930–1931, 2250–2251`, `Core.lean:90–94, 161–162,
+     1655–1662, 1835–1860, 2028–2077, 2174–2185, 2267–2269, 7837, 10324–10328,
+     10372–10510, 10544–10552, 10599–10825, 11175–11284, 11412–11418`,
+     `Movement.lean:712–839`, `Decisions.lean:662–703, 1648–1650`,
+     `Leaving.lean:33–47, 178–218, 2506–2546`):
      - Existing game-over cleanup paths (`Decisions.finishAndGrantPriority` at
        `Decisions.lean:204–207`, `Decisions.finishFraChoice` at `291–292`,
        `Decisions.afterTriggerTargetsChosen` at `3448–3451`, and
@@ -13359,90 +13359,130 @@ unpayable-prompt `decline` reversals).
          instead **thread `(suppressInteractive : Bool := false)` directly into
          `Core.replayKeptStreamCore` (`Core.lean:10599–10602`),
          `promptChooseReplacement`, `withBatchCoreReturn` / `withBatchCore`,
-         `finishOpenBatchSync`, `Movement.flushQueuedLinkedExile` /
-         `returnLinkedExileMoves`, and `PendingReplacement.continueCheckpointReplay`**
-         while leaving a `suppressInteractiveReplay : Bool := false` field on
-         `structure Game` after `events : Array GameEvent := #[]` (`Core.lean:161`)
-         and before `deriving Repr, Inhabited, BEq` (`162`) as a **pure function of
-         `g.continuations`** (never mutated directly): add `(suppressInteractive :
-         Bool := false)` to `Core.promptChooseReplacement` (`Core.lean:11412–11418`),
-         returning `g` without pushing a frame or writing `.pending
-         (.chooseReplacement ..)` / `.pendingReplacement (some cont)` when
-         `suppressInteractive || g.over || g.suppressInteractiveReplay`; add
-         `(suppressInteractive : Bool := false)` to **both** `finishOpenBatchSync`
-         (`Core.lean:10372–10395`) and `Core.withBatchCoreReturn` /
-         `Core.withBatchCore` (`Core.lean:10424–10510`) so when `let noInteractive :=
-         suppressInteractive || g1.over || g1.suppressInteractiveReplay` is `true`,
-         `keepOpen` (`10497–10504`) is forced `false`, `10506` calls
+         `finishOpenBatchSync`, `Movement.runLinkedExileBatch` /
+         `flushQueuedLinkedExile` / `returnLinkedExileMoves`, and
+         `PendingReplacement.continueCheckpointReplay`** while leaving a
+         `suppressInteractiveReplay : Bool := false` field on `structure Game`
+         after `events : Array GameEvent := #[]` (`Core.lean:161`) and before
+         `deriving Repr, Inhabited, BEq` (`162`) as a **pure function of
+         `g.continuations`** (never mutated directly, alongside synchronous
+         batch-scoped `openBatchSuppressInteractive : Bool := false` after
+         `openBatchStack : Array StackEntry := #[]` at `Core.lean:94`, set to
+         `let quiet0 := suppressInteractive || g.openBatchSuppressInteractive ||
+         g.over || g.suppressInteractiveReplay` on `g0` at `10488–10495` before
+         `let (g1, res) := f g0` at `10496`—and set to `quiet0` for `f` at `10433`
+         and restored on `g2` to `if g1.currentBatch.isNone then false else
+         g.openBatchSuppressInteractive` at `10435–10479` when `g.currentBatch` is
+         already `some`—and cleared back to `false` in
+         `finishOpenBatchSync` at `10382–10388`, `.clearPausedBatch` at
+         `2174–2181`, and `restoreProposalCheckpoint` at `2028–2077`): add
+         `(suppressInteractive : Bool := false)` to
+         `Core.promptChooseReplacement` (`Core.lean:11412–11418`), returning `g`
+         without pushing a frame or writing `.pending (.chooseReplacement ..)` /
+         `.pendingReplacement (some cont)` when `suppressInteractive ||
+         g.openBatchSuppressInteractive || g.over || g.suppressInteractiveReplay`;
+         add `(suppressInteractive : Bool := false)` to **both**
+         `finishOpenBatchSync` (`Core.lean:10372–10395`) and
+         `Core.withBatchCoreReturn` / `Core.withBatchCore` (`Core.lean:10424–10510`)
+         so when `let noInteractive := quiet0 || g1.over ||
+         g1.suppressInteractiveReplay` is `true` after `f g0`, `keepOpen`
+         (`10497–10504`) is forced `false`, `10506` calls
          `g1.finishOpenBatchSync batchId startIdx (suppressInteractive :=
          noInteractive)`, and `finishOpenBatchSync` clears `currentBatch` /
-         `openBatch*` (`10381–10388`) and takes an explicit early-return branch
-         (`if suppressInteractive || g2.over || g2.suppressInteractiveReplay ||
-         batchEvents.isEmpty then g2 else g2.closeBatch pre batchId batchEvents` at
-         `10394–10395`) that skips `g2.closeBatch`; add `(suppressInteractive : Bool
-         := false)` to `Core.replayKeptStreamCore` (`Core.lean:10599–10602`),
-         skipping `queueUnreturnedLinked` (`10656–10657`) and
-         `drainLocalPendingReplacement` (`10790, 10820`) whenever
-         `suppressInteractive || g0.over || g0.suppressInteractiveReplay` is `true`
-         and storing **`suppressInteractive || gAcc.over ||
-         gAcc.suppressInteractiveReplay`**—using the `suppressInteractive` parameter
-         rather than the recomputed field—alongside Item 1a's `mutRevMap` and
-         `effRevMap` on `PendingReplacement.continueCheckpointReplay`
-         (`Event.lean:1930–1931`, chained via `chainPendingReplacement` as
-         `.continueCheckpointReplay remSlice fullKeptStream mutRevMap effRevMap
-         (suppressInteractive || gAcc.over || gAcc.suppressInteractiveReplay)` at
-         `Core.lean:10824`); define `PendingReplacement.hasSuppressedCheckpointReplay`
-         (`| .continueCheckpointReplay _ _ _ _ suppressInteractive =>
+         `openBatch*` (`10381–10388`, including `openBatchSuppressInteractive :=
+         false`) and takes an explicit early-return branch (`if suppressInteractive
+         || g2.over || g2.suppressInteractiveReplay || batchEvents.isEmpty then g2
+         else g2.closeBatch pre batchId batchEvents` at `10394–10395`) that skips
+         `g2.closeBatch`; add `(suppressInteractive : Bool := false)` to
+         `Core.replayKeptStreamCore` (`Core.lean:10599–10602`), **keeping
+         `queueUnreturnedLinked` (`10656–10676`, called at `10711, 10735`) active**
+         so CR 610.3 linked-exile zone changes still occur during a quiet replay
+         (preventing later kept moves of the returned card from hitting
+         `!hasLiveOrig` at `10707–10708`), skipping `drainLocalPendingReplacement`
+         (`10790, 10820`) whenever `suppressInteractive || gAcc.over ||
+         gAcc.suppressInteractiveReplay` is `true`, and storing
+         **`suppressInteractive || gAcc.over || gAcc.suppressInteractiveReplay`**—using
+         the `suppressInteractive` parameter rather than the recomputed field—alongside
+         Item 1a's `mutRevMap` and `effRevMap` on
+         `PendingReplacement.continueCheckpointReplay` (`Event.lean:1930–1931`,
+         chained via `chainPendingReplacement` as `.continueCheckpointReplay remSlice
+         fullKeptStream mutRevMap effRevMap (suppressInteractive || gAcc.over ||
+         gAcc.suppressInteractiveReplay)` at `Core.lean:10824`); define
+         `PendingReplacement.hasSuppressedCheckpointReplay` (`|
+         .continueCheckpointReplay _ _ _ _ suppressInteractive =>
          suppressInteractive | .seq a b => a.hasSuppressedCheckpointReplay ||
          b.hasSuppressedCheckpointReplay | _ => false`, walking nested `.seq` trees
          built by `chainPendingReplacement` at `Core.lean:10324–10328` and
-         `reverseToProposalCheckpointCore?` at `11228–11241`) and
-         `continuationsHaveSuppressedReplay (frames : Array ContinuationFrame) : Bool`
-         walking **every** frame's `pendingReplacement` and
-         `outerPendingReplacements`, and keep `g.suppressInteractiveReplay` a **pure
-         function of the frames**—recomputed **only** in `Core.applyEngineChange` on
-         `.pushContinuationFrame` / `.popContinuationFrame` (`Core.lean:2182–2183`)
-         and after `modifyTopFrame` (`2185`) on `.continuation (.pendingReplacement
-         ..)` / `.continuation (.pushOuterPendingReplacement ..)` / `.continuation
+         `reverseToProposalCheckpointCore?` at `11228–11241`),
+         `PendingReplacement.hasCheckpointReplay` (`| .continueCheckpointReplay .. =>
+         true | .seq a b => a.hasCheckpointReplay || b.hasCheckpointReplay | _ =>
+         false`), and `continuationsHaveSuppressedReplay (frames : Array
+         ContinuationFrame) : Bool` walking **every** frame's `pendingReplacement`
+         and `outerPendingReplacements`, and keep `g.suppressInteractiveReplay` a
+         **pure function of the frames**—recomputed **only** in
+         `Core.applyEngineChange` on `.pushContinuationFrame` /
+         `.popContinuationFrame` (`Core.lean:2182–2183`) and after `modifyTopFrame`
+         (`2185`) on `.continuation (.pendingReplacement ..)` / `.continuation
+         (.pushOuterPendingReplacement ..)` / `.continuation
          (.popOuterPendingReplacement)` (`2267–2269`) as well as in
          `restoreProposalCheckpoint` (`2028–2077`), setting it `false` when the walk
          finds no `.continueCheckpointReplay` with `suppressInteractive == true`—so
          `Game.replayEvents g.events == g` holds at every step; in
          `Decisions.resumePendingReplacement`'s `| .continueCheckpointReplay
          remainingStream fullKeptStream revMap effRevMap suppressInteractive =>`
-         (`Decisions.lean:1648–1650`) return `g` if `g.over` and otherwise compute
-         `let quiet := suppressInteractive || g.suppressInteractiveReplay` and call
-         **`g.replayKeptStreamCore remainingStream fullKeptStream revMap effRevMap
-         (suppressInteractive := quiet) (runBatch := if quiet then (fun g0 f =>
-         g0.withBatchCore none f (suppressInteractive := true)) else (fun g0 f =>
-         g0.withBatch none f))`** (forwarding `revMap`, `effRevMap`, and
-         `suppressInteractive := quiet` without writing `g.suppressInteractiveReplay`
-         directly); in `Core.reverseToProposalCheckpointCore?`
-         (`Core.lean:11175–11284`) and `Movement.reverseToProposalCheckpoint?`
-         (`Movement.lean:835–839`), snapshot `let wasOver := g.over ||
-         g.suppressInteractiveReplay` **before** `restoreProposalCheckpoint`
-         (`11175`, and before `reverseToProposalCheckpointCore?` at `835–839`), pass
+         (`Decisions.lean:1648–1650`), **do not `return g` early on `g.over`**
+         (which would drop the unreplayed irreversible `remainingStream` suffix if a
+         player left and ended the game during a pause, leaving library/exile zones
+         at the checkpoint in violation of CR 733.1)—instead compute `let quiet :=
+         suppressInteractive || g.over || g.suppressInteractiveReplay` and always
+         call **`g.replayKeptStreamCore remainingStream fullKeptStream revMap
+         effRevMap (suppressInteractive := quiet) (runBatch := if quiet then (fun g0
+         f => (g0.withBatchCore none f (suppressInteractive :=
+         true)).flushQueuedLinkedExile (suppressInteractive := true)) else (fun g0 f
+         => g0.withBatch none f))`** (forwarding `revMap`, `effRevMap`, and
+         `suppressInteractive := quiet`, and calling `flushQueuedLinkedExile
+         (suppressInteractive := true)` after each quiet `withBatchCore` without
+         writing `g.suppressInteractiveReplay` directly); in
+         `Core.reverseToProposalCheckpointCore?` (`Core.lean:11175–11284`) and
+         `Movement.reverseToProposalCheckpoint?` (`Movement.lean:835–839`), snapshot
+         `let wasOver := g.over || g.suppressInteractiveReplay` **before**
+         `restoreProposalCheckpoint` (`11175`, and before
+         `reverseToProposalCheckpointCore?` at `835–839`), pass
          `(suppressInteractive := wasOver)` and `(runBatch := if wasOver then (fun g0
-         f => g0.withBatchCore none f (suppressInteractive := true)) else runBatch)`
-         into `gAcc.replayKeptStreamCore` at `11222` (without writing
-         `gAcc.suppressInteractiveReplay` directly), pass `flushLinked := fun g0 =>
-         g0.flushQueuedLinkedExile (suppressInteractive := wasOver)` (and pass
-         `(suppressInteractive := wasOver)` to the trailing `.map
-         (·.flushQueuedLinkedExile (suppressInteractive := wasOver))` at `838`), and
-         skip restoring/chaining `postCastCleanup`, `ckptPausedBatch?`,
-         `ckptQueuedLinkedExile`, `ckptPending`, and `ckptCont?` (`11224–11283`)
-         whenever `wasOver || gAcc.over || gAcc.suppressInteractiveReplay`; and add
-         `(suppressInteractive : Bool := false)` to `Movement.flushQueuedLinkedExile`
-         (`784–790`, returning `g` when `suppressInteractive || g.over ||
-         g.suppressInteractiveReplay || g.currentBatch.isSome ||
-         g.queuedLinkedExile.isEmpty`) and `Movement.returnLinkedExileMoves`
-         (`794–803`, returning `g` when `suppressInteractive || g.over ||
-         g.suppressInteractiveReplay || ids.isEmpty`), and **insert** `else if g.over
-         then g` after `if reversed then g` (`699`) and **ahead of** `else if
-         g.pending != .none then g.chainPendingReplacement rest` (`700–701`) in
-         `Decisions.resumePendingReplacement`'s `| .seq first rest =>` arm
-         (`Decisions.lean:662–703`, preserving `700–701`'s `chainPendingReplacement
-         rest` branch); and
+         f => (g0.withBatchCore none f (suppressInteractive :=
+         true)).flushQueuedLinkedExileFwd (suppressInteractive := true)) else
+         runBatch)` into `gAcc.replayKeptStreamCore` at `11222` (calling Item 3's
+         `flushQueuedLinkedExileFwd (suppressInteractive := true)` after each quiet
+         `withBatchCore` without writing `gAcc.suppressInteractiveReplay` directly),
+         pass `flushLinked := fun g0 => g0.flushQueuedLinkedExile
+         (suppressInteractive := wasOver)` (and pass `(suppressInteractive :=
+         wasOver)` to the trailing `.map (·.flushQueuedLinkedExile
+         (suppressInteractive := wasOver))` at `838`), and skip restoring/chaining
+         `postCastCleanup`, `ckptPausedBatch?`, `ckptQueuedLinkedExile`,
+         `ckptPending`, and `ckptCont?` (`11224–11283`) whenever `wasOver ||
+         gAcc.over || gAcc.suppressInteractiveReplay`; add `(suppressInteractive :
+         Bool := false)` to `Movement.runLinkedExileBatch` (`712–780`),
+         `Movement.flushQueuedLinkedExile` (`784–790`), and
+         `Movement.returnLinkedExileMoves` (`794–803`) **without returning `g` early
+         on `suppressInteractive || g.over || g.suppressInteractiveReplay`** so CR
+         610.3 zone changes still execute (`flushQueuedLinkedExile` keeps `785` as
+         `if g.currentBatch.isSome || g.queuedLinkedExile.isEmpty then g` and passes
+         `(suppressInteractive := suppressInteractive)` from `789` into
+         `returnLinkedExileMoves`; `returnLinkedExileMoves` still queues
+         `g.change (.queueLinkedExile ids)` when `g.currentBatch.isSome` at `796–797`,
+         suppresses the `.finishLinkedExileMove` pause at `798–799`—just as
+         `runLinkedExileBatch` suppresses `717–718, 762–767, 775–779`—when
+         `suppressInteractive || g.openBatchSuppressInteractive || g.over ||
+         g.suppressInteractiveReplay`, passes `(suppressInteractive :=
+         suppressInteractive)` into `withBatchCore` and `runLinkedExileBatch` at
+         `801`, and passes `(suppressInteractive := suppressInteractive)` from `802`
+         back into `flushQueuedLinkedExile`); and **insert** `else if g.over &&
+         !rest.hasCheckpointReplay then g` after `if reversed then g` (`699`) and
+         **ahead of** `else if g.pending != .none then g.chainPendingReplacement rest`
+         (`700–701`) in `Decisions.resumePendingReplacement`'s `| .seq first rest =>`
+         arm (`Decisions.lean:662–703`, preserving both `.continueCheckpointReplay`
+         suffixes when `g.over` and `700–701`'s `chainPendingReplacement rest`
+         branch); and
      - when `.continueCheckpointReplay` pauses on `B1`'s `.chooseReplacement` /
        `.chooseLegend` and a **3rd player `p3` concedes or loses during that
        pause** before `B2` replays:
@@ -13855,10 +13895,12 @@ unpayable-prompt `decline` reversals).
      `Entering.lean:205–244, 352–366`, `Decisions.lean:1656, 2241, 2263–2265,
      3445–3473`):
      - Expose one **non-`private`** public `opaque flushQueuedLinkedExileFwd (g :
-       Game) : Game := g` with `@[extern "mtg_game_flush_queued_linked_exile"]` in
-       `namespace Game` in `Core.lean` (backed by `@[export
-       mtg_game_flush_queued_linked_exile]` on `Movement.flushQueuedLinkedExile` at
-       `Movement.lean:784`), pipe `Phasing.phaseOut` (`Phasing.lean:54`),
+       Game) (suppressInteractive : Bool := false) : Game := g` with `@[extern
+       "mtg_game_flush_queued_linked_exile"]` in `namespace Game` in `Core.lean`
+       (matching `resumePendingReplacementFwd` at `Core.lean:10544–10545` and
+       backed by `@[export mtg_game_flush_queued_linked_exile]` on Item 1c's
+       `Movement.flushQueuedLinkedExile` at `Movement.lean:784`), pipe
+       `Phasing.phaseOut` (`Phasing.lean:54`),
        `Phasing.phaseOutPermanents` (`118`), `Phasing.phaseIn` (`132`),
        `Phasing.phaseInControlled` (`163`), and `Core.createEffects`
        (`Core.lean:11625`) through `|>.flushQueuedLinkedExileFwd` after
