@@ -13565,10 +13565,11 @@ unpayable-prompt `decline` reversals).
    `Decisions.reverseOrResumePopped`, and `Casting.reverseProposedSpellCore?`,
    re-validate `.chooseLegend` characteristics (`CR 704.5j`), and preserve
    `pendingPriority` / priority-grant detection in `Decisions`
-   (`Event.lean:1722–1746, 2303–2312`, `Leaving.lean:16–19, 914–2027, 2103–2106,
-   2121–2325`, `Casting.lean:639–694, 844–848, 1022–1185`, `Decisions.lean:17–24,
-   168–212, 286–298, 353, 548–549, 606–607, 683–703, 889–1469, 1540, 4891–4940,
-   5214–5217`,
+   (`Event.lean:1722–1746, 2303–2312`, `Core.lean:2071`, `Leaving.lean:16–19,
+   914–2027, 2103–2106, 2121–2325`, `Casting.lean:639–694, 844–848, 1022–1196`,
+   `SacrificeDiscard.lean:327–329`, `Decisions.lean:17–24, 168–212, 286–298, 353,
+   548–549, 606–607, 683–703, 889–1469, 1540, 3035, 3379–3384, 4134–4148,
+   4891–4940, 5214–5217`,
    `TriggeredAbilities.lean:4598–4604`, `StateBasedActions.lean:346–374`, §2.4,
    §2.5, §3.6, §3.8, CR 104.3a / 601.2 / 602.2 / 704.3 / 704.5j / 733.1 / 800.4a):
    - Unify multi-departure `allDeparted` collection and post-reversal
@@ -13717,45 +13718,64 @@ unpayable-prompt `decline` reversals).
          ObjectId) (hadOuterReplacement : Bool := false)` (`1734–1735`, no `openCont`
          field; `Decisions.lean:1459–1460`) calls `Casting.completeTurnFaceUp`
          (`Casting.lean:1032–1062`), which handles an open `.chooseReplacement`
-         earlier by chaining `.finishTurnFaceUp` (`1034–1035`), clears `pending`
-         (`1049`), and then binds `let skipTail := hadOuterReplacement &&
-         g.pendingReplacement.isNone` (`1050`) and `let chainFinishFra := !skipTail &&
-         (g.triggerSequenceRest.isSome || g.pendingReplacement.isSome)` (`1051`,
-         branching at `1058–1062` between `g`, `g.chainPendingReplacement
-         .finishFraChoice`, and `g.receivePriority caster`). Queued continuations
-         in `g.pendingReplacement` / `g.outerPendingReplacements` do not start until
-         `g.pending == .none` (`drainPendingContinuations` at `Decisions.lean:168`,
-         `chooseReplacement` clearing `pending` at `5214` before resuming at `5217`,
-         and `.seq` at `700–703`), so a queued `.finishPostLoyaltyActivated`
+         earlier by chaining `.finishTurnFaceUp` (`1034–1035`), and—in its `some o`
+         arm (`1046–1062`, whereas `none` at `1039–1045` reverses or clears when
+         `1037–1038` fails)—clears `pending` (`1049`) and binds `let skipTail :=
+         hadOuterReplacement && g.pendingReplacement.isNone` (`1050`) and `let
+         chainFinishFra := !skipTail && (g.triggerSequenceRest.isSome ||
+         g.pendingReplacement.isSome)` (`1051`, branching at `1058–1062` between `g`,
+         `g.chainPendingReplacement .finishFraChoice`, and `g.receivePriority
+         caster`). Queued continuations in `g.pendingReplacement` /
+         `g.outerPendingReplacements` do not start until `g.pending == .none`
+         (`drainPendingContinuations` at `Decisions.lean:168`, `chooseReplacement`
+         clearing `pending` at `5214` before resuming at `5217`, and `.seq` at
+         `700–703`), so on resumption: a queued `.finishPostLoyaltyActivated`
          (`Decisions.lean:1467–1468`) enters `finishPostLoyaltyActivated` with
-         `g.pending == .none` (reaching `1023–1027` when not reversed at entry),
-         whereas `.completeActivation` (`Decisions.lean:1417–1427`, which can open
-         `.pending (.sacrificePermanent …)` at `Casting.lean:1184–1185` or reverse on
-         `.error _` at `1426–1427`), `.finishBecomeActivated`
-         (`Decisions.lean:1428–1435`, which can return on `unpaidLoyaltyUnpayable` at
-         `Casting.lean:1101–1107`), and `.finishTurnFaceUp`
-         (`Decisions.lean:1459–1460`, which takes `Casting.lean:1039–1045` when the
-         `1037–1038` filter fails) either take those earlier exits or reach the
-         `1023–1027` / `1050–1051, 1058–1062` success tails—where both success tails
-         chain `.finishFraChoice` (`1026, 1060`, granting priority via
-         `finishFraChoice`) when `hadOuterReplacement` is `true` and
+         `g.pending == .none` and reaches `1023–1027` when not reversed at entry;
+         `.finishBecomeActivated` (`1428–1435`) calls `becomeActivated`, which either
+         returns on `unpaidLoyaltyUnpayable` (`Casting.lean:1101–1107`), pauses on
+         loyalty replacement at `1124–1126` (chaining `.finishPostLoyaltyActivated`
+         and returning), or falls through at `1135–1136` to
+         `finishPostLoyaltyActivated`'s `1022–1027` tail (`1023–1027` once
+         `g.pending == .none` and not reversed at entry); `.completeActivation`
+         (`1417–1427`) either reverses on `.error _` (`1426–1427`), opens `.pending
+         (.sacrificePermanent …)` at `Casting.lean:1184–1185` and returns before
+         `1196`, or calls `becomeActivated` at `1196` (taking that same `1101–1107` /
+         `1124–1126` / `1135–1136` -> `1022–1027` activation path); and
+         `.finishTurnFaceUp` (`1459–1460`) calls only `completeTurnFaceUp`, reaching
+         `1039–1045` (`none`) or `1046–1062` (`some o`, the only arm binding
+         `skipTail` / `chainFinishFra` at `1050–1051` and branching at `1058–1062`,
+         never `1022–1027`)—where `finishPostLoyaltyActivated`'s `1023–1027` tail (for
+         activations) and `completeTurnFaceUp`'s `some o` arm `1050–1051, 1058–1062`
+         (for turn-face-up) each chain `.finishFraChoice` (`1026, 1060`, granting
+         priority via `finishFraChoice`) when `hadOuterReplacement` is `true` and
          `g.pendingReplacement` is non-empty, and route to `.finishFraChoice` rather
          than direct `g.receivePriority` (`1027, 1062`) when `hadOuterReplacement` is
          `false` and `g.triggerSequenceRest.isSome || g.pendingReplacement.isSome`
          holds:
-       - in `Decisions.lean:1459–1460`, run `if hadOuter then g else
-         resumeAfterBecomeCast g` after `g.completeTurnFaceUp` (matching `1425,
-         1435, 1443, 1469` so a queued `.finishFraChoice` drains even when
-         `resumePendingReplacement` is called directly), and on the orphaned-proposal
-         clear-only arms `Casting.lean:1043–1045` (in `completeTurnFaceUp`) and
-         `Casting.lean:1105–1107` (in `becomeActivated`)—where `!hadOuter` leaves no
-         longer get a fallback `.receivePriority` chained by `Decisions.lean:210–212`—when
-         `!g.over && g.pending == .none` and `!(hadOuterReplacement &&
-         g.pendingReplacement.isNone)`, chain `.finishFraChoice` if
-         `g.triggerSequenceRest.isSome || g.pendingReplacement.isSome` or else grant
-         priority via `g.receivePriority (g.priorityInstead caster)` (at `1043–1045`)
-         / `g.receivePriority (g.priorityInstead (if openCont then g.activePlayer
-         else p))` (at `1105–1107`); in
+       - in `Decisions.lean:1459–1460`, wrap **only** `completeTurnFaceUp`'s `some o`
+         (`1046–1062`) result in `if hadOuter then g else resumeAfterBecomeCast g`
+         (leaving `1034–1035` and `1039–1045`—including `1040–1041`'s
+         `reverseProposedSpell (resumeContinuation := true)`—unwrapped just like
+         `1425`/`1426–1427` and `1456`/`1457–1458`, because `resumeAfterBecomeCast` at
+         `3379–3384` has no `afterRandom` check and would prematurely resume a
+         checkpoint continuation restored at `Core.lean:2071` while `afterRandom !=
+         .none`, whereas `reverseProposedSpell?` at `3035` already runs
+         `finishFraChoice` via `Casting.lean:672–674`, which stops on `afterRandom !=
+         .none` via `drainPendingContinuations` at `168`), and on the
+         orphaned-proposal clear-only arms `Casting.lean:1043–1045` (in
+         `completeTurnFaceUp`, reading `g.pending == .none` **before** `1045`'s
+         `#[.pending .none, …]` write) and `Casting.lean:1105–1107` (in
+         `becomeActivated`)—without chaining `.finishFraChoice`, since `1105–1107`
+         returns to `Decisions.lean:1435` (`resumeAfterBecomeCast` when `!hadOuter`)
+         and `completeTurnFaceUp`'s direct callers at `Decisions.lean:4134–4148` and
+         `SacrificeDiscard.lean:327–329` already continue any existing queue—grant
+         priority on the idle-stall branch when `!g.over && !hadOuterReplacement &&
+         g.pending == .none` (captured before `1045` in `completeTurnFaceUp`) `&&
+         g.pendingReplacement.isNone && g.triggerSequenceRest.isNone` via
+         `g.receivePriority (g.priorityInstead caster)` (at `1043–1045`) /
+         `g.receivePriority (g.priorityInstead (if openCont then g.activePlayer else
+         p))` (at `1105–1107`); in
          `PendingReplacement.endsWithPriorityGrant` (`Event.lean:2303–2312`, where
          `Game` is not in scope—leaving `Event.lean:2306`'s `.finishPostCast` arm
          `grantPriority && !hadOuter` untouched since `Casting.finishPostCast` at
