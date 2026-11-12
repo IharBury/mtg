@@ -13699,8 +13699,8 @@ unpayable-prompt `decline` reversals).
        - `.completeActivation (hadOuterReplacement hadOpenContinuation : Bool)`
          (`Event.lean:1722`, no `caster` field; `Decisions.lean:1417–1425` reads
          `g.proposedSpell` and runs `resumeAfterBecomeCast` when `!hadOuter`),
-         `.finishBecomeActivated` (`1723–1724`), and `.finishPostLoyaltyActivated`
-         (`1744–1746`) all funnel through `Casting.finishPostLoyaltyActivated`
+         `.finishBecomeActivated` (`1723–1727`), and `.finishPostLoyaltyActivated`
+         (`1742–1746`) all funnel through `Casting.finishPostLoyaltyActivated`
          (`Casting.lean:1022–1027`), whose activation tail is `if g.pending != .none
          then g` (`1022`, returning before any chain whenever a prompt—including
          `.chooseReplacement`—is already open, whereas `completeActivation` at
@@ -13803,38 +13803,43 @@ unpayable-prompt `decline` reversals).
          `hasQueuedPending` on `hadOuter == true` leaves at `1425, 1435, 1443,
          1450, 1456, 1460, 1469` and neutral steps), use it in
          `continuationGrantsPriority (g : Game) (hasQueuedPending : Bool := false)
-         (promptOpen : Bool := g.pending != .none && !g.sbaPaused)` (`| .seq a b =>
-         ...` threading `nextQueuedPendingOnResume` and clearing/setting `promptOpen`
-         so if `.restorePending` with `popped? == some popped` and `priorCont?.isNone`
-         at `990–998, 1404`—or a non-`sbaPaused` root `g.pending != .none`—enters
-         `.finishPostLoyaltyActivated` on `Casting.lean:1022`'s `if g.pending !=
-         .none then g` early-return path, `.finishPostLoyaltyActivated` returns
-         `false` rather than treating `1022` as chaining `.finishFraChoice` or
-         granting priority, while delegating `promptOpen == false` leaves to
+         (promptOpen : Bool := g.pending != .none)` (`| .seq a b =>
+         continuationGrantsPriority g (nextQueuedPendingOnResume g hasQueuedPending
+         a) false b`—passing `false` for `b`'s `promptOpen` because `.seq` at
+         `Decisions.lean:700–703` chains `b` at `700–701` whenever `a` left
+         `g.pending != .none` and never executes `b` while a prompt is open, `|
+         .finishPostLoyaltyActivated _ .. hadOuter _ => !promptOpen && (!hadOuter ||
+         hasQueuedPending)` so a root `.finishPostLoyaltyActivated` leaf when
+         `g.pending != .none`—including `.chooseReplacement` / `.chooseLegend` at
+         `Decisions.lean:210–212, 545–549, 606–607`—matches `Casting.lean:1022`'s
+         `if g.pending != .none then g` return by evaluating `false` rather than
+         `!hadOuter || hasQueuedPending`, and delegating all other leaves to
          `pr.endsWithPriorityGrant hasQueuedPending`) at `Decisions.lean:195–196,
          548–549, 606–607` in place of `.any PendingReplacement.endsWithPriorityGrant`;
          and in `Decisions.priorityRecipientOfContinuation? (g : Game)
-         (hasQueuedPending : Bool := false) (promptOpen : Bool := g.pending != .none
-         && !g.sbaPaused)` (`Decisions.lean:17–24`, called at `Decisions.lean:191–192`
-         and returning raw `Option PlayerId` without pre-applying `priorityInstead`
-         just like `18–21`), **update `.seq a b` at `22–23` to thread `bQueued :=
-         nextQueuedPendingOnResume g hasQueuedPending a` (and `bPromptOpen`) into `b`
-         before `.orElse` on `a`** (so `b` receives the updated `bQueued` flag when
-         `a` enqueues onto `g.pendingReplacement`, while `a` receives
-         `hasQueuedPending`) and add `| .completeActivation false false => if
-         g.triggerSequenceRest.isSome || hasQueuedPending then none else
-         g.proposedSpell.map (·.caster)`, `| .finishBecomeActivated caster .. false
-         false => if g.triggerSequenceRest.isSome || hasQueuedPending then none else
-         some caster`, `| .finishPostLoyaltyActivated caster .. false false => if
+         (hasQueuedPending : Bool := false) (promptOpen : Bool := g.pending !=
+         .none)` (`Decisions.lean:17–24`, called at `Decisions.lean:191–192` and
+         returning raw `Option PlayerId` without pre-applying `priorityInstead` just
+         like `18–21`), **update `.seq a b` at `22–23` to `let bQueued :=
+         nextQueuedPendingOnResume g hasQueuedPending a;
+         priorityRecipientOfContinuation? g bQueued false b |>.orElse (fun _ =>
+         priorityRecipientOfContinuation? g hasQueuedPending promptOpen a)`** (so `b`
+         receives the updated `bQueued` flag and `promptOpen := false` since `.seq` at
+         `700–703` does not execute `b` while `a` left `g.pending != .none`, while `a`
+         receives `hasQueuedPending` and `promptOpen`) and add `| .completeActivation
+         false false => if g.triggerSequenceRest.isSome || hasQueuedPending then none
+         else g.proposedSpell.map (·.caster)`, `| .finishBecomeActivated caster ..
+         false false => if g.triggerSequenceRest.isSome || hasQueuedPending then none
+         else some caster`, `| .finishPostLoyaltyActivated caster .. false false => if
          promptOpen || g.triggerSequenceRest.isSome || hasQueuedPending then none
          else some caster`, and `| .finishTurnFaceUp caster _ false => if
          g.triggerSequenceRest.isSome || hasQueuedPending then none else some caster`
-         (returning `none` when `.finishPostLoyaltyActivated` hits `1022`'s
-         `g.pending != .none` early return without chaining `.finishFraChoice` or
-         granting priority, and whenever `1025–1026` in `finishPostLoyaltyActivated`
-         or `chainFinishFra` at `1051, 1059–1060` in `completeTurnFaceUp` routes to
-         `.finishFraChoice` via `g.triggerSequenceRest.isSome` or queued
-         `pendingReplacement.isSome`).
+         (returning `none` when `.finishPostLoyaltyActivated` would hit `1022`'s
+         `g.pending != .none` return—including `.chooseReplacement` / `.chooseLegend`—without
+         chaining `.finishFraChoice` or granting priority, and whenever `1025–1026` in
+         `finishPostLoyaltyActivated` or `chainFinishFra` at `1051, 1059–1060` in
+         `completeTurnFaceUp` routes to `.finishFraChoice` via
+         `g.triggerSequenceRest.isSome` or queued `pendingReplacement.isSome`).
 3. Capture pre-mutation `pre` snapshots across counter and zone-exit control/copy
    transitions, align phased-out Layer 1/2 scope matching & CR 502.1 phase-in
    controller lookup, wire `flushQueuedLinkedExileFwd` after `withBatchCore` in
@@ -14141,17 +14146,25 @@ unpayable-prompt `decline` reversals).
          =>`), `Casting.lean:1109, 1195`, and `FraChoices.lean:649, 1083`, and
          instead clear `.proposedSpell none` atomically alongside
          `.clearProposalCheckpoint` inside `Casting.becomeCast` (`Casting.lean:864`,
-         once past the `861` `.chooseReplacement` pause) and
-         `Casting.finishPostLoyaltyActivated` (`Casting.lean:1018`, once past both
-         `becomeActivated`'s `1079` pause and `payLoyaltyCost`'s `1124` pause); and
-         at entry to `Decisions.resumePendingReplacement`'s `.finishBecomeCast`
-         (`Decisions.lean:1436–1444`) and `Casting.finishPostLoyaltyActivated`
-         (`Casting.lean:980–1028`, once `!g.sbaPaused`), verify `g.stillInGame
-         caster` / `g.stillInGame p` and `(g.findObject? spellId).any (·.zone ==
-         .stack)` (or `abilityId.all (fun aid => (g.findObject? aid).any (·.zone ==
-         .stack))`), reversing via `g.reverseProposedSpell (resumeContinuation :=
-         true)` when `g.proposedSpell.isSome && g.proposalCheckpoint.isSome` (or
-         clearing any orphaned proposal state and granting/resuming priority via
+         in the `else` of `861`'s `.chooseReplacement` chain) and—in
+         `Casting.finishPostLoyaltyActivated` (`Casting.lean:980–1028`, where `1018`
+         currently clears `proposalCheckpoint` and `1019–1021` record
+         `abilityActivated` and log before `1022`'s `if g.pending != .none then g`
+         guard)—move `.clearProposalCheckpoint` from `1018` together with
+         `.proposedSpell none` to **after** `1022`, on the `g.pending == .none` tail
+         (`1023–1027`) that finalizes the ability rather than on `1022`'s early
+         return; and at entry to `Decisions.resumePendingReplacement`'s
+         `.finishBecomeCast` (`Decisions.lean:1436–1444`, when `g.pending` is not
+         `.chooseReplacement`) and at entry to `Casting.finishPostLoyaltyActivated`
+         (`Casting.lean:980–1028`, when `g.pending == .none`—before `1019–1021` emit
+         `GameEvent.abilityActivated` / `logMsg` and before the post-`1022`
+         proposal-state clear),
+         verify `g.stillInGame caster` / `g.stillInGame p` and `(g.findObject?
+         spellId).any (·.zone == .stack)` (or `abilityId.all (fun aid =>
+         (g.findObject? aid).any (·.zone == .stack))`), reversing via
+         `g.reverseProposedSpell (resumeContinuation := true)` when
+         `g.proposedSpell.isSome && g.proposalCheckpoint.isSome` (or clearing any
+         orphaned proposal state and granting/resuming priority via
          `g.priorityInstead` when `!g.over`) if the caster departed or the stack
          object vanished.
    - Fix two remaining `ManaAbilities.lean` departed-player edge cases
