@@ -13310,7 +13310,7 @@ unpayable-prompt `decline` reversals).
          intervened, while keeping recorded IDs strictly monotonic and
          `Game.replayEvents g.events == g` exact when a collision occurs).
    - Fix two `Core.replayKeptStreamCore` object-tracking gaps (`Core.lean:10656–10738`):
-     - In `queueUnreturnedLinked` (`Core.lean:10656–10679`), `10711` (`fromZ'`,
+     - In `queueUnreturnedLinked` (`Core.lean:10656–10673`), `10711` (`fromZ'`,
        i.e. `b'.zone`) and `10735` (`origObj.zone`) pass the **already-remapped**
        zone, while the scan at `10669–10671` matches a later `.ceasedToExist lo`
        for the linked card `lid` (`lo.zone == .exile && lo.id == some lid`, which
@@ -13419,7 +13419,7 @@ unpayable-prompt `decline` reversals).
          else g2.closeBatch pre batchId batchEvents` at `10394–10395`) that skips
          `g2.closeBatch`; add `(suppressInteractive : Bool := false)` to
          `Core.replayKeptStreamCore` (`Core.lean:10599–10602`), **keeping
-         `queueUnreturnedLinked` (`10656–10676`, called at `10711, 10735`) active**
+         `queueUnreturnedLinked` (`10656–10673`, called at `10711, 10735`) active**
          so CR 610.3 linked-exile zone changes still occur during a quiet replay
          (preventing later kept moves of the returned card from hitting
          `!hasLiveOrig` at `10707–10708`), skipping `drainLocalPendingReplacement`
@@ -13701,32 +13701,47 @@ unpayable-prompt `decline` reversals).
          `g.proposedSpell` and runs `resumeAfterBecomeCast` when `!hadOuter`),
          `.finishBecomeActivated` (`1723–1724`), and `.finishPostLoyaltyActivated`
          (`1744–1746`) all funnel through `Casting.finishPostLoyaltyActivated`
-         (`Casting.lean:1022–1027`), and `.finishTurnFaceUp (caster : PlayerId)
-         (spellId : ObjectId) (hadOuterReplacement : Bool := false)` (`1734–1735`,
-         no `openCont` field; `Decisions.lean:1459–1460`) calls
-         `Casting.completeTurnFaceUp` (`Casting.lean:1032–1062`). Both functions
-         compute `skipTail := hadOuterReplacement && g.pendingReplacement.isNone`
-         (`1023, 1050`) and `chainFinishFra := !skipTail &&
-         (g.triggerSequenceRest.isSome || g.pendingReplacement.isSome)` (`1025–1026,
-         1051, 1060`): when `hadOuterReplacement` is `true` and `g.pendingReplacement`
-         is non-empty when that leaf executes, `skipTail` is `false` and
-         `chainFinishFra` still chains `.finishFraChoice` (`1026, 1060`, granting
-         priority via `finishFraChoice`), and when `hadOuterReplacement` is `false`
-         and either `g.triggerSequenceRest.isSome` or `g.pendingReplacement.isSome`
-         holds on execution, `chainFinishFra` likewise routes to `.finishFraChoice`
-         rather than `g.receivePriority (if openCont then g.activePlayer else p)` /
-         `g.receivePriority caster` (`1027, 1062`):
+         (`Casting.lean:1022–1027`), whose activation tail is `if g.pending != .none
+         then g` (`1022`, returning before any chain whenever a prompt—including
+         `.chooseReplacement`—is already open, whereas `completeActivation` at
+         `1157–1159` and `becomeActivated` at `1079–1081` handle an open
+         `.chooseReplacement` earlier by re-chaining themselves) `else if
+         hadOuterReplacement && g.pendingReplacement.isNone then g` (`1023–1024`)
+         `else if g.triggerSequenceRest.isSome || g.pendingReplacement.isSome then
+         g.chainPendingReplacement .finishFraChoice` (`1025–1026`) `else
+         g.receivePriority (if openCont then g.activePlayer else p)` (`1027`); while
+         `.finishTurnFaceUp (caster : PlayerId) (spellId : ObjectId)
+         (hadOuterReplacement : Bool := false)` (`1734–1735`, no `openCont` field;
+         `Decisions.lean:1459–1460`) calls `Casting.completeTurnFaceUp`
+         (`Casting.lean:1032–1062`), which handles an open `.chooseReplacement`
+         earlier by chaining `.finishTurnFaceUp` (`1034–1035`), clears `pending`
+         (`1049`), and then binds `let skipTail := hadOuterReplacement &&
+         g.pendingReplacement.isNone` (`1050`) and `let chainFinishFra := !skipTail &&
+         (g.triggerSequenceRest.isSome || g.pendingReplacement.isSome)` (`1051`,
+         branching at `1058–1062` between `g`, `g.chainPendingReplacement
+         .finishFraChoice`, and `g.receivePriority caster`). Thus on `g.pending ==
+         .none` execution (`1023–1027` in `finishPostLoyaltyActivated`, and
+         `1050–1051, 1058–1062` in `completeTurnFaceUp`), when `hadOuterReplacement`
+         is `true` and `g.pendingReplacement` is non-empty, both still chain
+         `.finishFraChoice` (`1026, 1060`, granting priority via `finishFraChoice`),
+         and when `hadOuterReplacement` is `false` and `g.triggerSequenceRest.isSome
+         || g.pendingReplacement.isSome` holds, both route to `.finishFraChoice`
+         rather than direct `g.receivePriority` (`1027, 1062`):
        - in `Decisions.lean:1459–1460`, run `if hadOuter then g else
          resumeAfterBecomeCast g` after `g.completeTurnFaceUp` (matching `1425,
          1435, 1443, 1469` so a queued `.finishFraChoice` drains even when
          `resumePendingReplacement` is called directly); in
          `PendingReplacement.endsWithPriorityGrant` (`Event.lean:2303–2312`, where
-         `Game` is not in scope—leaving `Event.lean:2306`'s `.finishPostCast` arm
-         `grantPriority && !hadOuter` untouched, since `Casting.finishPostCast` at
-         `844–848` chains `.finishFraChoice` / `.receivePriority` on `.chooseReplacement`
-         even when `hadOuterReplacement` is `true` and `pendingReplacement` is `none`,
-         unlike `Casting.lean:1022–1027, 1034–1062`), add optional `(hasQueuedPending
-         : Bool := false)`, add `| .completeActivation hadOuter _ |
+         `Game` is not in scope—modeling `g.pending == .none` resumption while
+         `Decisions.continuationGrantsPriority` below handles `1022`'s `g.pending !=
+         .none` early return for `.finishPostLoyaltyActivated`, and leaving
+         `Event.lean:2306`'s `.finishPostCast` arm `grantPriority && !hadOuter`
+         untouched since `Casting.finishPostCast` at `844–848` chains
+         `.finishFraChoice` / `.receivePriority` on `.chooseReplacement` even when
+         `hadOuterReplacement && g.pendingReplacement.isNone`, whereas
+         `completeTurnFaceUp` re-chains `.finishTurnFaceUp` at `1034–1035` and
+         `finishPostLoyaltyActivated` returns `g` at `1022`), add optional
+         `(hasQueuedPending : Bool := false)`, add `| .completeActivation hadOuter _ |
          .finishBecomeActivated _ .. hadOuter _ | .finishPostLoyaltyActivated _ ..
          hadOuter _ | .finishTurnFaceUp _ _ hadOuter => !hadOuter ||
          hasQueuedPending`, and **update `Event.lean:2311` from `| .seq _ b =>
@@ -13786,35 +13801,46 @@ unpayable-prompt `decline` reversals).
          `g.pendingReplacement`—while clearing to `false` on draining steps when
          `g.pending == .none && g.afterRandom == .none` and preserving
          `hasQueuedPending` on `hadOuter == true` leaves at `1425, 1435, 1443,
-         1450, 1456, 1460, 1469` and neutral steps), use it in `continuationGrantsPriority (g : Game) (hasQueuedPending :
-         Bool := false)` (`| .seq a b => continuationGrantsPriority g
-         (nextQueuedPendingOnResume g hasQueuedPending a) b`, delegating leaves to
+         1450, 1456, 1460, 1469` and neutral steps), use it in
+         `continuationGrantsPriority (g : Game) (hasQueuedPending : Bool := false)
+         (promptOpen : Bool := g.pending != .none && !g.sbaPaused)` (`| .seq a b =>
+         ...` threading `nextQueuedPendingOnResume` and clearing/setting `promptOpen`
+         so if `.restorePending` with `popped? == some popped` and `priorCont?.isNone`
+         at `990–998, 1404`—or a non-`sbaPaused` root `g.pending != .none`—enters
+         `.finishPostLoyaltyActivated` on `Casting.lean:1022`'s `if g.pending !=
+         .none then g` early-return path, `.finishPostLoyaltyActivated` returns
+         `false` rather than treating `1022` as chaining `.finishFraChoice` or
+         granting priority, while delegating `promptOpen == false` leaves to
          `pr.endsWithPriorityGrant hasQueuedPending`) at `Decisions.lean:195–196,
          548–549, 606–607` in place of `.any PendingReplacement.endsWithPriorityGrant`;
          and in `Decisions.priorityRecipientOfContinuation? (g : Game)
-         (hasQueuedPending : Bool := false)` (`Decisions.lean:17–24`, called as
-         `priorityRecipientOfContinuation? g false` at `Decisions.lean:191–192` and
-         returning raw `Option PlayerId` without pre-applying `priorityInstead` just
-         like `18–21`), **update `.seq a b` at `22–23` to `let bQueued :=
-         nextQueuedPendingOnResume g hasQueuedPending a;
-         priorityRecipientOfContinuation? g bQueued b |>.orElse (fun _ =>
-         priorityRecipientOfContinuation? g hasQueuedPending a)`** (so `b` receives the
-         updated `bQueued` flag when `a` enqueues onto `g.pendingReplacement`, while
-         `a` receives `hasQueuedPending`) and add `| .completeActivation false false
-         => if g.triggerSequenceRest.isSome || hasQueuedPending then none else
+         (hasQueuedPending : Bool := false) (promptOpen : Bool := g.pending != .none
+         && !g.sbaPaused)` (`Decisions.lean:17–24`, called at `Decisions.lean:191–192`
+         and returning raw `Option PlayerId` without pre-applying `priorityInstead`
+         just like `18–21`), **update `.seq a b` at `22–23` to thread `bQueued :=
+         nextQueuedPendingOnResume g hasQueuedPending a` (and `bPromptOpen`) into `b`
+         before `.orElse` on `a`** (so `b` receives the updated `bQueued` flag when
+         `a` enqueues onto `g.pendingReplacement`, while `a` receives
+         `hasQueuedPending`) and add `| .completeActivation false false => if
+         g.triggerSequenceRest.isSome || hasQueuedPending then none else
          g.proposedSpell.map (·.caster)`, `| .finishBecomeActivated caster .. false
-         false | .finishPostLoyaltyActivated caster .. false false => if
-         g.triggerSequenceRest.isSome || hasQueuedPending then none else some caster`,
-         and `| .finishTurnFaceUp caster _ false => if g.triggerSequenceRest.isSome ||
-         hasQueuedPending then none else some caster` (returning `none` whenever
-         `chainFinishFra` routes to `.finishFraChoice`, whether from
-         `g.triggerSequenceRest.isSome` or queued `pendingReplacement.isSome`).
+         false => if g.triggerSequenceRest.isSome || hasQueuedPending then none else
+         some caster`, `| .finishPostLoyaltyActivated caster .. false false => if
+         promptOpen || g.triggerSequenceRest.isSome || hasQueuedPending then none
+         else some caster`, and `| .finishTurnFaceUp caster _ false => if
+         g.triggerSequenceRest.isSome || hasQueuedPending then none else some caster`
+         (returning `none` when `.finishPostLoyaltyActivated` hits `1022`'s
+         `g.pending != .none` early return without chaining `.finishFraChoice` or
+         granting priority, and whenever `1025–1026` in `finishPostLoyaltyActivated`
+         or `chainFinishFra` at `1051, 1059–1060` in `completeTurnFaceUp` routes to
+         `.finishFraChoice` via `g.triggerSequenceRest.isSome` or queued
+         `pendingReplacement.isSome`).
 3. Capture pre-mutation `pre` snapshots across counter and zone-exit control/copy
    transitions, align phased-out Layer 1/2 scope matching & CR 502.1 phase-in
    controller lookup, wire `flushQueuedLinkedExileFwd` after `withBatchCore` in
    `Phasing` / `Core.createEffects` / `Leaving.removeAllCountersFrom`, and make
    remaining `ceaseToExist` callers pause-safe (`Event.lean:307–316, 1194–1511,
-   1933–1934`, `Object.lean:139–144`, `Core.lean:1670–1689, 1785–1806,
+   1933–1934`, `Object.lean:139–144`, `Core.lean:1656, 1677–1689, 1785–1806,
    11598–11675, 11909–11915, 11954–12020, 12042–12065`, `Phasing.lean:45–162`,
    `Attachments.lean:46–65`, `Movement.lean:301–308, 570–660, 784`,
    `Leaving.lean:118–167, 224–305, 422–456, 2515–2546`, `Entering.lean:205–244,
@@ -13910,13 +13936,14 @@ unpayable-prompt `decline` reversals).
          keeping CR 800.4c exile batched in `playerLeavesGameCore` when `(g.player
          _leavingPlayer).leftTheGame`, or running `reconcileControlAfterTransition
          pre g` when called standalone).
-   - Fix phased-out scope matching in Layer 1 / Layer 2 (`Event.lean:307–316,
-     1933–1934`, `Object.lean:139–144`, `Core.lean:1656, 1677–1689, 1785–1806`,
-     `Decisions.lean:1652–1653`) and CR 502.1 phase-in
-     controller lookup in `Phasing.phaseInControlled` (`Phasing.lean:155–162`):
+   - Fix phased-out scope matching in Layer 1 / Layer 2 (`Event.lean:307–316`,
+     `Object.lean:139–144`, `Core.lean:1656, 1677–1689, 1785–1806`) and CR 502.1
+     phase-in controller lookup in `Phasing.phaseInControlled`
+     (`Phasing.lean:155–162`, `Event.lean:1933–1934`):
      - Under CR 702.26b,d,f, phasing out a permanent does **not** end continuous
        effects affecting that permanent unless their duration expires, and
-       phased-out permanents remain in `o.zone == .battlefield` (`Object.lean:139–144`,
+       phased-out permanents remain in `o.zone == .battlefield`
+       (`isBattlefieldObject` at `Object.lean:142–144`,
        passing `effectiveControllerWithApplied`'s `o.zone != .battlefield` early
        return at `Core.lean:1785`—while `initialControllerOf` at `1656` still
        computes their battlefield controller and `unmaskedCopiableValuesWithTs` has
@@ -13925,8 +13952,8 @@ unpayable-prompt `decline` reversals).
        three `ObjectScope` arms (`Event.lean:307–316`: `.creaturesControlledBy`,
        `.creaturesWithout`, and `.permanentsOfSubtype`) in `scopeMatchesL1`
        (`Core.lean:1680–1688`) and `scopeMatchesL2` (`Core.lean:1797–1805`) gate on
-       `o.isOnBattlefield` (`!o.status.phasedOut`) rather than
-       `o.isBattlefieldObject`, causing a permanent `P` held under a scoped
+       `o.isOnBattlefield` (`Object.lean:139–140`, `!o.status.phasedOut`) rather than
+       `o.isBattlefieldObject` (`142–144`), causing a permanent `P` held under a scoped
        `.control` effect on top of a departed owner/defaultController to lose that
        `.control` effect the instant `P` phases out and get falsely exiled from
        phased-out state by `Phasing.phaseOut`'s `reconcileControlAfterTransitionFwd`:
@@ -14067,9 +14094,14 @@ unpayable-prompt `decline` reversals).
          to `.plusX -> LoyaltySymbol.plus chosenX`—in front of `1120`); test
          `prop.loyaltyPaid || g.sourceCounterCostPaidFor ...` in
          `Choices.sourceStillPayable` (`641–648`) and
-         `Decisions.proposalCostPromptStillPayable` (`145–156`, also accepting
-         `sym == LoyaltySymbol.plusX` in both functions' `| none =>` `sym.counters`
-         branch at `Choices.lean:646–648` and `Decisions.lean:153–156`),
+         `Decisions.proposalCostPromptStillPayable` (`145–156`, changing both
+         functions' `| none =>` `sym.counters` arm at `Choices.lean:646–648` and
+         `Decisions.lean:153–156`—where `LoyaltySymbol.counters` is `none` for both
+         `.plusX` and `.minusX` at `ActivatedAbility.lean:40`—to `sym ==
+         LoyaltySymbol.plusX || (sym == LoyaltySymbol.minusX &&
+         src.status.loyaltyCounters ≥ x)` so `[+X]` remains payable even when
+         `src.status.loyaltyCounters < x`, keeping the `≥ x` threshold only for
+         `.minusX`),
          `ActivationCosts.payCostPick` (`364, 392`),
          `ActivationCosts.payActivationExtraCosts`, and `Casting.becomeActivated`
          (`1089, 1119`); in `ActivationCosts.payActivationExtraCosts` (`547–602`),
