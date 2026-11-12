@@ -12461,10 +12461,11 @@ multi-pick disjointness, and `canPayLife`).
 1. Isolate `ckpt` continuations and paused batches during `keptStream` replay,
    flush CR 610.3 `queuedLinkedExile` per replayed batch in chronological order,
    and track `nonDepBatches` dynamically across inter-departure proposal actions
-   (`Event.lean:1679`, `Core.lean:2069–2071, 10497–10506, 10606–10705,
-   10940–11103`, `Movement.lean:784–837`, `Leaving.lean:438–440, 2018–2025,
-   2141–2156`, `Casting.lean:565–568`, `Decisions.lean:690–693, 992–1001,
-   1245–1246`, §2.1, §2.4, §2.5, §3.8,
+   (`Event.lean:1679, 1954`, `Core.lean:2069–2071, 10497–10506, 10606–10705,
+   10940–11103`, `Movement.lean:784–837`, `Leaving.lean:16–19, 438–440,
+   2018–2025, 2141–2164`, `Library.lean:390–393`, `Casting.lean:564–584, 656,
+   688–689`, `Decisions.lean:171–175, 648–650, 690–693, 992–1001, 1243–1246`,
+   §2.1, §2.4, §2.5, §3.8,
    CR 603.2c / 603.3 / 610.3 / 616.1 / 733.1–733.2 / 800.4a):
    - In `Core.reverseToProposalCheckpointCore?` (`Core.lean:11055–11103`) and
      `Movement.reverseToProposalCheckpoint?` (`Movement.lean:835–837`):
@@ -12491,20 +12492,29 @@ multi-pick disjointness, and `canPayLife`).
        without per-batch trigger evaluation or `flushQueuedLinkedExile`; if
        `ckpt.queuedLinkedExile` is non-empty (`Core.lean:2069`), the first
        replayed batch that closes would prematurely flush those pre-proposal ids
-       while `ckpt`'s batch is still supposed to reopen at the tail; and even
-       with a single departure when `ckpt` had no open batch, flushing
+       while `ckpt`'s batch is still supposed to reopen at the tail; even with a
+       single departure when `ckpt` had no open batch, flushing
        `queuedLinkedExile` only once after the entire `keptStream` finishes
        (`Movement.lean:836`) inverts multi-departure CR 610.3 chronology
        (`[B1, B2, return(L)]` instead of `[B1, return(L), B2]` when permanent `S`
        owned by `p1` had left `.battlefield` reversibly during the aborted
        proposal before `p1` departed in `B1`, suppressing `L`'s LTB triggers if
-       `L` is owned by `p2` departing in `B2`):
-       - When `!keptStream.isEmpty` in `Core.reverseToProposalCheckpointCore?`
-         (`11056–11102`), snapshot `ckpt`'s pre-proposal `ckptPausedBatch?`
-         (`origBid, origStartIdx, wasDiscard, origCause, openBatchObjects,
-         openBatchPlayers, openBatchEffects, openBatchPending, openBatchStack`),
-         `ckptQueuedLinkedExile := gAcc.queuedLinkedExile` (`Core.lean:2069`),
-         `ckptPending := gAcc.pending`, and `ckptCont? :=
+       `L` is owned by `p2` departing in `B2`); and returning with `ckpt.pending`
+       (e.g. `.fraChoice ...`) already installed in `g.pending` before
+       `Casting.lean:656` / `Leaving.lean:2164` call `runPostCastCleanup` causes
+       `Library.requestOrderInto` (`Library.lean:390–391`) to take
+       `ids.size ≤ 1 || g.pending != .none` and move multi-card cascade / Gríma /
+       looked-card bottoms immediately instead of opening
+       `Pending.resolveRandom (.orderInto ...)`:
+       - Enter the checkpoint-isolation block in
+         `Core.reverseToProposalCheckpointCore?` (`11056–11102`) whenever
+         `!keptStream.isEmpty || (!gAcc.over && gAcc.postCastCleanup.isSome &&
+         (gAcc.pending != .none || gAcc.currentBatch.isSome ||
+         gAcc.pendingReplacement.isSome))`: snapshot `ckpt`'s pre-proposal
+         `ckptPausedBatch?` (`origBid, origStartIdx, wasDiscard, origCause,
+         openBatchObjects, openBatchPlayers, openBatchEffects, openBatchPending,
+         openBatchStack`), `ckptQueuedLinkedExile := gAcc.queuedLinkedExile`
+         (`Core.lean:2069`), `ckptPending := gAcc.pending`, and `ckptCont? :=
          gAcc.pendingReplacement`, journal-clear any active `currentBatch` via
          `.clearPausedBatch` **without** clearing `discardBatch` (matching
          `Leaving.playerLeavesGameCore` at `Leaving.lean:2385`, since
@@ -12514,8 +12524,9 @@ multi-pick disjointness, and `canPayLife`).
          `.clearQueuedLinkedExile` (when `!ckptQueuedLinkedExile.isEmpty`, so
          each replayed batch flushes **only** the `queuedLinkedExile` ids queued
          by that batch itself via `Core.lean:10940–10956`), `pending` (`.pending
-         .none`), and `pendingReplacement` (`.pendingReplacement none`) on
-         `gAcc`, and remove the `if gAcc.currentBatch.isSome` unbatched shortcut
+         .none`, when `ckptPending != .none`), and `pendingReplacement`
+         (`.pendingReplacement none`, when `ckptCont?.isSome`) on `gAcc`, and
+         remove the `if gAcc.currentBatch.isSome` unbatched shortcut
          (`11058–11061`) so every `keptStream` batch replays in isolation with
          `currentBatch == none`, `queuedLinkedExile == #[]`, `pending == .none`,
          and `pendingReplacement == none`;
@@ -12531,52 +12542,106 @@ multi-pick disjointness, and `canPayLife`).
          == false` at `Leaving.lean:438–440` while `.closeBatch` is still only in
          the outer `.seq` tail not yet installed in `pendingReplacement` /
          `outerPendingReplacements` by `Decisions.lean:673, 690–693`, prematurely
-         closing the batch and evaluating triggers), and extract the `idx <
-         keptStream.size` replay loop into `Core.replayKeptStreamCore` backed by
+         closing the batch and evaluating triggers), move `PostCastCleanup` above
+         `PendingReplacement` in `Event.lean:1954` to add
+         `PendingReplacement.runPostCastCleanup (cleanup : PostCastCleanup)`
+         (guarding `g.stillInGame caster` on `.cascadeBottom` / `.lookedBottom` in
+         `Casting.runPostCastCleanup` at `Casting.lean:571, 620` alongside
+         `.grimaBottom` at `583`, **without** adding an `sbaPaused` skip at `565`),
+         declare `@[extern "mtg_game_resume_pending_replacement"]` and
+         `@[extern "mtg_game_run_post_cast_cleanup"]` in `Core.lean` matching
+         `Decisions.lean:648` and `Casting.lean:564` with a helper
+         `Core.drainLocalPendingReplacement` that drains **only**
+         `g.pendingReplacement` while `!g.over && g.pending == .none &&
+         g.afterRandom == .none` (popping `.pendingReplacement none` +
+         `popEmptyTopContinuationFrames` and calling `resumePendingReplacement
+         cont false`, without touching `triggerSequenceRest` or
+         `outerPendingReplacements`), and extract the `idx < keptStream.size`
+         replay loop into `Core.replayKeptStreamCore` backed by
          `PendingReplacement.continueCheckpointReplay (remainingStream
          fullKeptStream : Array (Bool × GameEvent)) (revMap : Array (ObjectId ×
          ObjectId))` (`Event.lean`, `Decisions.lean`, `Core.lean` /
-         `Movement.lean`); pass `runBatch := fun g0 f => g0.withBatch none f`
-         from `Movement.reverseToProposalCheckpoint?` (`Movement.lean:835–836`,
-         keeping `.map Game.flushQueuedLinkedExile` as a trailing safety net) so
-         each replayed `keptStream` batch closes synchronously and immediately
-         flushes its own CR 610.3 `queuedLinkedExile` in a separate
-         post-departure batch before the next `keptStream` batch replays; if
-         `runBatch` opens a pause (`gAcc.pending != .none ||
-         gAcc.pendingReplacement.isSome || gAcc.currentBatch.isSome`, e.g.
-         `.chooseReplacement` on `returnLinkedExileMoves` inside `withBatch`),
-         **stop replaying immediately, leave that live pause in place** (its open
-         `currentBatch` / `openBatch*`, live `gAcc.pending`, and live
-         `gAcc.pendingReplacement` including `.closeBatch`), and sequence behind
-         that batch's `.closeBatch`:
-         1. `.continueCheckpointReplay (keptStream.extract idx keptStream.size)
-            keptStream finalRevMap` when `idx < keptStream.size` (so `return(L)`
-            finishes and closes before `B2` replays—preserving `[B1, return(L),
-            B2]`—and if `B2` also pauses, `B2` becomes the live batch while
-            `Decisions.resumePendingReplacement` `.seq` at `Decisions.lean:690–693`
-            sequences the remaining tail behind `B2`'s `.closeBatch`),
-         2. deferred `PendingReplacement.runPostCastCleanup` (having
-            `Casting.runPostCastCleanup` at `Casting.lean:565` skip while
-            `g.sbaPaused` so `requestOrderInto` / `copyCeaseToExist` runs only
-            after `keptStream` finishes rather than overwriting the live replay
-            prompt or firing inside the paused replay batch),
-         3. `ckptPausedBatch?` + `ckptQueuedLinkedExile` (via `.restorePausedBatch
-            ... (closeIfOrphaned := false) (queuedLinkedExile :=
-            ckptQueuedLinkedExile)` when `ckptPausedBatch?.isSome`, or
-            `.finishLinkedExileMove ckptQueuedLinkedExile none` when
-            `ckptPausedBatch?.isNone && !ckptQueuedLinkedExile.isEmpty`),
-         4. `ckptPending` (when `!gAcc.over && ckptPending != .none`, via
-            `.restorePending ckptPending false`), and
-         5. `ckptCont?` (when `!gAcc.over`, via `chainPendingReplacement`);
-         whereas when the entire `keptStream` finishes synchronously without
-         pausing, install `ckptPausedBatch?` directly via `.pauseBatch`, restore
-         `ckptQueuedLinkedExile` via `.queueLinkedExile ckptQueuedLinkedExile`
-         (calling `flushQueuedLinkedExile` only when `ckptPausedBatch?.isNone`,
-         and if that flush pauses, leaving its live pause in place with
-         `.runPostCastCleanup` → `.restorePending ckptPending false` → `ckptCont?`
-         chained behind its `.closeBatch`), and when still idle install
-         `ckptPending` via `.pending` (when `!gAcc.over && ckptPending != .none`)
-         and `ckptCont?` via `chainPendingReplacement`; and
+         `Movement.lean`); pass `runBatch := fun g0 f => g0.withBatch none f` and
+         `flushLinked := Game.flushQueuedLinkedExile` from
+         `Movement.reverseToProposalCheckpoint?` (`Movement.lean:835–836`, keeping
+         `.map Game.flushQueuedLinkedExile` as a trailing safety net), and
+         immediately after each `runBatch` call `gAcc :=
+         gAcc.drainLocalPendingReplacement` so when `withBatchCoreReturn` kept the
+         batch open solely because `pendingReplacement.isSome` while `pending ==
+         .none` (`Core.lean:10497–10500`—not a player pause, and not drained by
+         `reverseProposedSpell (resumeContinuation := false)` at
+         `Casting.lean:688–689`), its `.closeBatch` (`Decisions.lean:1243–1244`)
+         and `finishOpenBatchAndLinkedExile` (`Movement.lean:784–786, 796–801`)
+         run immediately before advancing `idx` to the next `keptStream` batch.
+         Stop replaying `keptStream` **only** when `isReplayPaused gAcc` is `true`
+         (`match gAcc.pending with | .chooseReplacement .. | .chooseLegend .. =>
+         true | _ => false`, matching `Leaving.sbaPaused` at
+         `Leaving.lean:16–19`):
+         - When `replayKeptStreamCore` stops on `isReplayPaused gAcc`, leave that
+           live `.chooseReplacement` / `.chooseLegend` pause in place (its open
+           `currentBatch` / `openBatch*`, live `gAcc.pending`, and live
+           `gAcc.pendingReplacement` including `.closeBatch`), snapshot
+           `deferredCleanup? := if gAcc.over then none else gAcc.postCastCleanup`,
+           journal-clear `gAcc := gAcc.change (.postCastCleanup none)` when
+           `deferredCleanup?.isSome` (so the subsequent `Casting.lean:656` and
+           `Leaving.lean:2164` `runPostCastCleanup` calls see `postCastCleanup ==
+           none`), and sequence behind that batch's `.closeBatch`:
+           1. `.continueCheckpointReplay (keptStream.extract idx keptStream.size)
+              keptStream finalRevMap` when `idx < keptStream.size` (so `return(L)`
+              finishes and closes before `B2` replays—preserving `[B1, return(L),
+              B2]`—and if `B2` also pauses on `.chooseReplacement` /
+              `.chooseLegend`, `B2` becomes the live batch while
+              `Decisions.resumePendingReplacement` `.seq` at
+              `Decisions.lean:690–693` sequences the remaining tail behind `B2`'s
+              `.closeBatch`),
+           2. `.runPostCastCleanup cleanup` when `deferredCleanup? = some cleanup`
+              (resumed in `Decisions.resumePendingReplacement` via
+              `((g.change (.postCastCleanup (some cleanup))).runPostCastCleanup).drainLocalPendingReplacement`
+              when `!g.over`),
+           3. `ckptPausedBatch?` + `ckptQueuedLinkedExile` (via
+              `.restorePausedBatch ... (closeIfOrphaned := false)
+              (queuedLinkedExile := ckptQueuedLinkedExile)` when
+              `ckptPausedBatch?.isSome`, or `.finishLinkedExileMove
+              ckptQueuedLinkedExile none` when `ckptPausedBatch?.isNone &&
+              !ckptQueuedLinkedExile.isEmpty`),
+           4. `.restorePending ckptPending false` (when `!gAcc.over &&
+              ckptPending != .none`), and
+           5. `ckptCont?` (when `!gAcc.over`, via `chainPendingReplacement`);
+         - whereas when `keptStream` finishes synchronously with
+           `!isReplayPaused gAcc`: first, if `ckptPausedBatch?.isNone &&
+           !ckptQueuedLinkedExile.isEmpty`, restore `.queueLinkedExile
+           ckptQueuedLinkedExile` and run `(flushLinked
+           gAcc).drainLocalPendingReplacement`, and if that flush stops on
+           `isReplayPaused gAcc`, snapshot `deferredCleanup? := if gAcc.over then
+           none else gAcc.postCastCleanup`, journal-clear `.postCastCleanup none`
+           when `deferredCleanup?.isSome`, and leave its live pause in place with
+           `.runPostCastCleanup cleanup` (if `some cleanup`) → `.restorePending
+           ckptPending false` (when `!gAcc.over && ckptPending != .none`) →
+           `ckptCont?` (when `!gAcc.over`) chained behind its `.closeBatch`;
+           otherwise (still `!isReplayPaused gAcc`, with `gAcc.currentBatch ==
+           none`, `gAcc.pending == .none`, and `gAcc.pendingReplacement == none`),
+           **run `gAcc := if gAcc.over then gAcc else
+           gAcc.runPostCastCleanup.drainLocalPendingReplacement` first — before
+           installing `ckptPausedBatch?`, `ckptPending`, or `ckptCont?`** (so
+           `Casting.lean:656` and `Leaving.lean:2164` see `postCastCleanup`
+           already cleared and `Library.requestOrderInto` at
+           `Library.lean:390–393` sees `g.pending == .none` and opens
+           `Pending.resolveRandom (.orderInto ...)` on multi-card cascade /
+           Gríma / looked-card bottoming instead of taking `g.pending != .none`
+           behind a restored `.fraChoice`); then if `runPostCastCleanup` opened a
+           prompt or pause (`gAcc.pending != .none || gAcc.afterRandom != .none ||
+           isReplayPaused gAcc`), leave that live cleanup prompt in place and
+           chain `ckptPausedBatch?` + `ckptQueuedLinkedExile` (via
+           `.restorePausedBatch ... (closeIfOrphaned := false) (queuedLinkedExile
+           := ckptQueuedLinkedExile)` when `ckptPausedBatch?.isSome`) →
+           `.restorePending ckptPending false` (when `!gAcc.over && ckptPending !=
+           .none`) → `ckptCont?` (when `!gAcc.over`) onto
+           `gAcc.pendingReplacement`, and when `gAcc` is still idle install
+           `ckptPausedBatch?` directly via `.pauseBatch` (plus `.queueLinkedExile
+           ckptQueuedLinkedExile` when `ckptPausedBatch?.isSome &&
+           !ckptQueuedLinkedExile.isEmpty`), `ckptPending` directly via `.pending`
+           (when `!gAcc.over && ckptPending != .none`), and `ckptCont?` via
+           `chainPendingReplacement` (when `!gAcc.over`); and
        - in `Leaving.rewindAbortedProposalOnLeave` (`Leaving.lean:2141–2156`) and
          `Decisions.resumePendingReplacement` `.restorePending`
          `reverseOrResumePopped` (`Decisions.lean:992–1001`), generalize
@@ -12987,9 +13052,11 @@ multi-pick disjointness, and `canPayLife`).
 Tests: `Events.lean` (isolation tests for `Core.reverseToProposalCheckpointCore?`
 `ckpt` continuation / batch / `queuedLinkedExile` isolation with
 `restorePausedBatch (closeIfOrphaned := false)`, per-batch CR 610.3
-`queuedLinkedExile` chronology and `.continueCheckpointReplay` mid-replay pause
-chaining across multi-departure `keptStream` replay, `dropCkptTarget`, and
-inter-departure `nonDepBatches` mana-sacrifice reversal;
+`queuedLinkedExile` chronology, `drainLocalPendingReplacement` non-paused
+`.closeBatch` draining, `.continueCheckpointReplay` `.chooseReplacement` /
+`.chooseLegend` pause chaining, and synchronous + paused `runPostCastCleanup`
+ordering before `ckptPending` across multi-departure `keptStream` replay,
+`dropCkptTarget`, and inter-departure `nonDepBatches` mana-sacrifice reversal;
 `Decisions.reverseOrResumePopped` `resumeContinuation :=
 false` `extraDepartureOuters` / consumed-`ckptOrigCont?` / outer `ckptPending`
 ordering across `| some popped =>` and `| none =>`, `.restorePending`
