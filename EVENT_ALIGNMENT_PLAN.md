@@ -13477,24 +13477,27 @@ unpayable-prompt `decline` reversals).
          `ckptPending`, and `ckptCont?` (`11224–11283`) whenever `wasOver ||
          gAcc.over || gAcc.suppressInteractiveReplay`; add `(suppressInteractive :
          Bool := false)` to `Movement.runLinkedExileBatch` (`712–780`, computing
-         `movedDest?` on `.hand p` at `738–739` and `.graveyard p` at `744–745` via
-         `(g'.followMovedToZone? o.id (· == dest)).isSome || (!quiet && match
-         g'.pending with | .chooseReplacement .. => true | _ => false)` to match
-         `.battlefield` at `754–757`), `Movement.flushQueuedLinkedExile` (`784–790`),
-         and `Movement.returnLinkedExileMoves` (`794–803`) **without returning `g`
+         `movedDest?` on `.hand p` at `738–739` as `if (g'.followMovedToZone? o.id
+         (· == .hand p)).isSome || (match g'.pending with | .chooseReplacement .. =>
+         true | _ => false) then some (.hand p) else none` and on `.graveyard p` at
+         `744–745` as `if (g'.followMovedToZone? o.id (· == .graveyard p)).isSome ||
+         (match g'.pending with | .chooseReplacement .. => true | _ => false) then
+         some (.graveyard p) else none` to match `.battlefield` at `754–757`),
+         `Movement.flushQueuedLinkedExile` (`784–790`), and
+         `Movement.returnLinkedExileMoves` (`794–803`) **without returning `g`
          early on `suppressInteractive || g.over || g.suppressInteractiveReplay`** so
          CR 610.3 zone changes still execute (`flushQueuedLinkedExile` keeps `785` as
          `if g.currentBatch.isSome || g.queuedLinkedExile.isEmpty then g` and passes
          `(suppressInteractive := suppressInteractive)` from `789` into
          `returnLinkedExileMoves`; `returnLinkedExileMoves` still queues
          `g.change (.queueLinkedExile ids)` when `g.currentBatch.isSome` at `796–797`,
-         suppresses the `.finishLinkedExileMove` pause at `798–799`—just as
-         `runLinkedExileBatch` suppresses `717–718, 762–767, 775–779`—when `let quiet
-         := suppressInteractive || g.openBatchSuppressInteractive || g.over ||
-         g.suppressInteractiveReplay` is `true`, passes `(suppressInteractive :=
-         suppressInteractive)` into `withBatchCore` and `runLinkedExileBatch` at
-         `801`, and passes `(suppressInteractive := suppressInteractive)` from `802`
-         back into `flushQueuedLinkedExile`); and **insert** `else if g.over &&
+         and both `returnLinkedExileMoves` at `798–799` and `runLinkedExileBatch` at
+         `717–718, 762–767, 775–779` suppress `.finishLinkedExileMove` pauses when
+         `suppressInteractive || g.openBatchSuppressInteractive || g.over ||
+         g.suppressInteractiveReplay` is `true`, while `returnLinkedExileMoves` passes
+         `(suppressInteractive := suppressInteractive)` into `withBatchCore` and
+         `runLinkedExileBatch` at `801` and from `802` back into
+         `flushQueuedLinkedExile`); and **insert** `else if g.over &&
          !rest.hasCheckpointReplay then g` after `if reversed then g` (`699`) and
          **ahead of** `else if g.pending != .none then g.chainPendingReplacement rest`
          (`700–701`) in `Decisions.resumePendingReplacement`'s `| .seq first rest =>`
