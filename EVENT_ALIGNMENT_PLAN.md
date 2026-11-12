@@ -13645,8 +13645,8 @@ unpayable-prompt `decline` reversals).
        - Bind `name` in `Leaving.batchPausePromptValid` (`| .chooseLegend q name
          ids =>` at `Leaving.lean:2103–2106`) and add a **new**
          `g.currentBatch.isSome` leniency exception (`o.isOnBattlefield &&
-         g.controlledBy o q && (g.currentBatch.isSome || (g.treatedAsLegendary o
-         && g.name o == name))`, matching `StateBasedActions.lean:367–368` while an
+         (g.currentBatch.isSome || (g.controlledBy o q && g.treatedAsLegendary o &&
+         g.name o == name))`, matching `StateBasedActions.lean:367–368` while an
          enclosing batch is still mid-flight) across
          `Leaving.redirectPendingAfterLeave` (`936–938`),
          `Leaving.batchPausePromptValid` (`2103–2106`), and
@@ -13668,8 +13668,9 @@ unpayable-prompt `decline` reversals).
          unreachable `362–373` `.chooseLegend` arm with a pre-`g.sbaPaused` check
          ahead of line `351` (and before `withBatchReturn` at `353` opens a batch):
          when `!g.over` and `g.pending` is `.chooseLegend p name ids`, filter
-         `still` by `o.isOnBattlefield && g.stillInGame p && g.controlledBy o p &&
-         (g.currentBatch.isSome || (g.treatedAsLegendary o && g.name o == name))`;
+         `still` by `o.isOnBattlefield && g.stillInGame p &&
+         (g.currentBatch.isSome || (g.controlledBy o p && g.treatedAsLegendary o &&
+         g.name o == name))`;
          if `still.size ≥ 2`, return `(g, false)` (narrowing `ids` via `g.change
          (.pending (.chooseLegend p name still))` when `g.currentBatch.isNone &&
          still.size < ids.size`), and if `still.size < 2`, journal-clear `g :=
@@ -13808,12 +13809,12 @@ unpayable-prompt `decline` reversals).
    transitions, align phased-out Layer 1/2 scope matching & CR 502.1 phase-in
    controller lookup, wire `flushQueuedLinkedExileFwd` after `withBatchCore` in
    `Phasing` / `Core.createEffects` / `Leaving.removeAllCountersFrom`, and make
-   remaining `ceaseToExist` callers pause-safe (`Event.lean:307–316, 1194, 1932`,
-   `Object.lean:139–144`, `Core.lean:1670–1689, 1785–1806, 11598–11675,
-   11909–11915, 11954–12020, 12042–12065`, `Phasing.lean:45–162`,
+   remaining `ceaseToExist` callers pause-safe (`Event.lean:307–316, 1194,
+   1933–1934`, `Object.lean:139–144`, `Core.lean:1670–1689, 1785–1806,
+   11598–11675, 11909–11915, 11954–12020, 12042–12065`, `Phasing.lean:45–162`,
    `Attachments.lean:46–65`, `Movement.lean:301–308, 570–660, 784`,
    `Leaving.lean:118–167, 224–305, 422–456, 2515–2546`, `Entering.lean:205–244,
-   352–366`, `Decisions.lean:1651–1656, 2241, 2263–2265, 3445–3473`, §2.2, §2.5, §3.3,
+   352–366`, `Decisions.lean:1652–1656, 2241, 2263–2265, 3445–3473`, §2.2, §2.5, §3.3,
    §3.8, CR 104.1 / 502.1 / 506.4 / 603.3d / 608.2n / 610.3 / 611.2a–b / 613.1a–b /
    701.54a / 702.26b,d,f–h / 800.4a,c):
    - Fix post-mutation `pre` snapshot timing across counter removal/addition and
@@ -13905,9 +13906,9 @@ unpayable-prompt `decline` reversals).
          keeping CR 800.4c exile batched in `playerLeavesGameCore` when `(g.player
          _leavingPlayer).leftTheGame`, or running `reconcileControlAfterTransition
          pre g` when called standalone).
-   - Fix phased-out scope matching in Layer 1 / Layer 2 (`Event.lean:307–316, 1932`,
-     `Object.lean:139–144`, `Core.lean:1670–1689, 1785–1806`,
-     `Decisions.lean:1651–1652`) and CR 502.1 phase-in
+   - Fix phased-out scope matching in Layer 1 / Layer 2 (`Event.lean:307–316,
+     1933–1934`, `Object.lean:139–144`, `Core.lean:1670–1689, 1785–1806`,
+     `Decisions.lean:1652–1653`) and CR 502.1 phase-in
      controller lookup in `Phasing.phaseInControlled` (`Phasing.lean:155–162`):
      - Under CR 702.26b,d,f, phasing out a permanent does **not** end continuous
        effects affecting that permanent unless their duration expires, and
@@ -13944,11 +13945,14 @@ unpayable-prompt `decline` reversals).
          without a `phasedOut` event), snapshot matching IDs up front, and drive
          them through a pause-safe `Phasing.phaseInControlledLoop` +
          `PendingReplacement.phaseInControlledLoop (remainingIds : Array ObjectId)
-         (cause : Option EventCause)` (`Event.lean:1932`, dispatched in
-         `Decisions.lean:1651–1652`) inside `g.withBatchCore cause` at `157`
-         (keeping `let cause := some (EventCause.turnBased .phaseInOut)` at `156`,
-         mirroring `phaseOutPermanentsLoop` at `Phasing.lean:83–100` and
-         `phaseOutPermanents` at `106–119`).
+         (cause : Option EventCause := none)` (added in `Event.lean` after `1933`,
+         before `deriving` at `1934`, with a new `resumePendingReplacement` arm in
+         `Decisions.lean` after `1652`—leaving `1651–1652` as the
+         `.phaseOutPermanentsLoop` dispatch, ahead of `def runPostStep` at `1656`)
+         inside `g.withBatchCore cause` at `157` (keeping `let cause := some
+         (EventCause.turnBased .phaseInOut)` at `156`, mirroring
+         `phaseOutPermanentsLoop` at `Phasing.lean:83–100` and `phaseOutPermanents`
+         at `106–119`).
    - Flush `queuedLinkedExile` after `withBatchCore` in `Phasing`, `Core.createEffects`,
      and `Leaving.removeAllCountersFrom`, and make remaining `ceaseToExist` /
      resolution callers pause-safe (`Event.lean:1194`, `Core.lean:11598–11626`,
