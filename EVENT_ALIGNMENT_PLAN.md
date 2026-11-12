@@ -13531,12 +13531,11 @@ unpayable-prompt `decline` reversals).
          fallback); and **add a new `| .rules t (.player (.becameMonarch heir
          prev)) cause batch =>` arm ahead of `| _ => gCur.record ev`
          (`Core.lean:10776–10777`)** that, when `(gCur.player heir).leftTheGame` while
-         a living player remains, computes `let depMonarch := prev.getD heir` and
-         redirects `heir` to `if gCur.stillInGame gCur.activePlayer &&
-         gCur.activePlayer != depMonarch then gCur.activePlayer else if
+         a living player remains, redirects `heir` directly to `if gCur.stillInGame
+         gCur.activePlayer && gCur.activePlayer != heir then gCur.activePlayer else if
          !gCur.isSharedTurnFinalSeat then gCur.nextLiving gCur.activePlayer else
-         gCur.nextLiving depMonarch` (matching `Leaving.lean:2508–2510` verbatim, CR
-         725.4); and
+         gCur.nextLiving heir` (matching `Leaving.lean:2508–2510` verbatim, where
+         `heir`—not `prev`—is the monarch who left the game, CR 725.4); and
        - in `Decisions.resumePendingReplacement` `.continueCheckpointReplay`
          (`Decisions.lean:1648–1650`), because a concession during the pause was
          already applied by `playerLeavesGameCore` *before* resume (not recorded as a
@@ -13964,9 +13963,10 @@ unpayable-prompt `decline` reversals).
    live across final cost-payment pauses, guard `finishManaAbilityMountainTrigger`
    & `abortDepartedManaAbilityCont`, and enforce mid-proposal payability on `.crew`
    / `.zemoBoastExile` / `payTeamworkCreatures` / `.chooseMode` `decline`
-   (`Stack.lean:60–126`, `Pending.lean:647`, `Event.lean:86–105, 1522–1525`,
-   `Core.lean:314`, `Leaving.lean:566–605`, `ActivationCosts.lean:391–441,
-   506–605`, `Casting.lean:856–866, 963–1028, 1064–1208`, `Choices.lean:637–677`,
+   (`ActivatedAbility.lean:36–40`, `Stack.lean:60–126`, `Pending.lean:647`,
+   `Event.lean:86–105, 1522–1525`, `Core.lean:314`, `Leaving.lean:566–605`,
+   `ActivationCosts.lean:320–441, 506–605`, `Casting.lean:856–866, 963–1028,
+   1064–1208`, `Choices.lean:637–677`,
    `SacrificeDiscard.lean:333–352`, `Decisions.lean:121–158, 1428–1444, 3139, 3256,
    3772–3810, 4151, 4567–4577`, `FraChoices.lean:621–663, 1056–1097`,
    `ManaAbilities.lean:334–396`, §2.4, §2.5, §3.1, §3.8, CR 118.11 / 601.2b–i /
@@ -13997,22 +13997,35 @@ unpayable-prompt `decline` reversals).
        - Add `loyaltyPaid : Bool := false` to `ProposedSpell` (`Stack.lean:60–126`)
          and `| loyaltyPaid (v : Bool)` to `ProposalChange` (`Event.lean:86–105`,
          `ProposedSpell.applyChange` at `Core.lean:314`); move `payLoyaltyCost` to
-         `ActivationCosts.lean` (recording `ProposalChange.loyaltyPaid true` inside
-         `withProposalAction .costAction` whenever `g.proposedSpell.isSome`, across
-         all `k > 0`, `k < 0`, and `k == 0` cases, **replacing** the inline
-         `k > 0` / `k < 0` / `k == 0` loyalty payment block in
-         `ActivationCosts.payCostPick` at `391–401` with `payLoyaltyCost` so
-         counters are not paid twice, and calling `payLoyaltyCost` from
-         `ActivationCosts.payActivationExtraCosts` at `565–600` and
-         `Casting.becomeActivated` at `1120`); test `prop.loyaltyPaid ||
-         g.sourceCounterCostPaidFor ...` in `Choices.sourceStillPayable` (`641`),
-         `Decisions.proposalCostPromptStillPayable` (`145`),
-         `ActivationCosts.payCostPick` (`364, 392`),
+         `ActivationCosts.lean`, resolving `let chosenX := ((forObject.bind
+         g.findObject?).bind (·.chosenX)).getD 0` so `let k : Int := match sym with
+         | .minusX => -(chosenX : Int) | .plusX => (chosenX : Int) | _ =>
+         (sym.counters).getD 0` (`ActivatedAbility.lean:36–40`, since
+         `LoyaltySymbol.counters` is `none` for `.minusX` / `.plusX`), recording
+         `ProposalChange.loyaltyPaid true` inside `withProposalAction .costAction`
+         whenever `g.proposedSpell.isSome` across `k > 0`, `k < 0`, **and** `k == 0`
+         (`[0]`, `LoyaltySymbol.minus 0`, and `LoyaltySymbol.plus 0`, wrapping the
+         `else` `k == 0` branch in `g.withProposalAction .costAction` where
+         `Casting.lean:976` currently has bare `else g` with no counter event),
+         **replacing** the inline `k > 0` / `k < 0` loyalty payment block in
+         `ActivationCosts.payCostPick` at `391–401` (under `!sacrificeOrExileSource
+         && isBfSacPick` at `320`) with `payLoyaltyCost` on `actualSym` (converting
+         `.minusX -> LoyaltySymbol.minus effX` / `.plusX -> LoyaltySymbol.plus effX`
+         with `effX` from `336`) so counters are not paid twice, and calling
+         `payLoyaltyCost` on `actualSym` from `ActivationCosts.payActivationExtraCosts`
+         at `565–600` (converting `.minusX` / `.plusX` with `chosenX` from
+         `forObject.bind g.findObject?`) and `Casting.becomeActivated` at `1116–1120`
+         (keeping `1116`'s `minusX -> LoyaltySymbol.minus chosenX` conversion—extended
+         to `.plusX -> LoyaltySymbol.plus chosenX`—in front of `1120`); test
+         `prop.loyaltyPaid || g.sourceCounterCostPaidFor ...` in
+         `Choices.sourceStillPayable` (`641`), `Decisions.proposalCostPromptStillPayable`
+         (`145`), `ActivationCosts.payCostPick` (`364, 392`),
          `ActivationCosts.payActivationExtraCosts`, and `Casting.becomeActivated`
          (`1089, 1119`); in `ActivationCosts.payActivationExtraCosts` (`547–602`),
          validate `a.cost.loyalty` (`!g.loyaltyActivatedThisTurn src.id` and
          sufficient loyalty counters for `k < 0`, reading `chosenX` from
-         `forObject.bind g.findObject?`) before mutating `g` and pay `payLoyaltyCost`
+         `forObject.bind g.findObject?` to convert `.minusX` / `.plusX` into
+         `actualSym`) before mutating `g` and pay `payLoyaltyCost` on `actualSym`
          before `putStunCounterOnSource` / `finishActivationExtraCosts`, adding
          `ActivationExtraCostStage.stunAndSacrifice` (`Event.lean:1522–1525`,
          handled in `finishActivationExtraCosts` at `ActivationCosts.lean:413–441`)
