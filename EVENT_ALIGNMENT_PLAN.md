@@ -13239,9 +13239,10 @@ unpayable-prompt `decline` reversals).
 1. Remap `ObjectId` and `EffectId` collisions dynamically across
    `Core.replayKeptStreamCore`, tighten `queueUnreturnedLinked` & multi-hop
    `followMoved` resolution, and preserve CR 104.1 `g.over` & mid-pause 3rd-player
-   departure invariants across `.continueCheckpointReplay` (`Event.lean:1930–1931`,
-   `Core.lean:371–381, 675–855, 919–920, 953–985, 991–1004, 1072, 2110, 5211–5248,
-   10599–10825, 11175–11270, 11412–11418`, `Movement.lean:784–839`,
+   departure invariants across `.continueCheckpointReplay` (`Event.lean:1930–1931,
+   2250–2251`, `Core.lean:160, 371–381, 675–855, 919–920, 953–985, 991–1004, 1072,
+   1655–1662, 1835–1860, 2052, 2110, 5211–5248, 5928–5975, 10372–10510, 10599–10825,
+   11175–11270, 11412–11418`, `Movement.lean:784–839`,
    `Decisions.lean:662–703, 1648–1650`, `Leaving.lean:33–47, 178–218, 2506–2546`,
    §2.1, §2.4, §2.5, §3.8, CR 104.1 / 104.2a / 400.7 / 603.2c / 610.3 / 725.4 /
    733.1–733.2 / 800.4a,c,j):
@@ -13322,7 +13323,8 @@ unpayable-prompt `decline` reversals).
        earlier replayed batches or live CR 610.3 returns is still located.
    - Preserve CR 104.1 game-end finality and mid-pause 3rd-player departure
      invariants across checkpoint reversal and `.continueCheckpointReplay`
-     (`Core.lean:10653–10790, 11175–11270, 11412–11418`, `Movement.lean:784–839`,
+     (`Event.lean:2250–2251`, `Core.lean:160, 1655–1662, 1835–1860, 2052, 5928–5975,
+     10372–10510, 10653–10825, 11175–11270, 11412–11418`, `Movement.lean:784–839`,
      `Decisions.lean:662–703, 1648–1650`, `Leaving.lean:33–47, 178–218, 2506–2546`):
      - Existing game-over cleanup paths (`Decisions.finishAndGrantPriority` at
        `Decisions.lean:204–207`, `Decisions.finishFraChoice` at `291–292`,
@@ -13332,73 +13334,103 @@ unpayable-prompt `decline` reversals).
        true) (alwaysGrantPriority := true)` when `g.over == true` to unwind an
        orphaned `proposedSpell`; yet `restoreProposalCheckpoint`
        (`Core.lean:2052`) resets `result := ckpt.result` (`none`, making `gAcc.over`
-       at `Core.lean:1313` `false` until `GameEvent.gameEnded` replays), and
-       `Core.promptChooseReplacement` (`Core.lean:11412–11418`) writes
-       `.chooseReplacement` without checking `g.over`, so if anything before
-       `GameEvent.gameEnded` in `keptStream` opens a pause (for example, live
-       `Movement.withBatch` / `flushQueuedLinkedExile` at `Movement.lean:836–838`
-       invoking `promptChooseReplacement`, whereas `applyKeptEvent` at
-       `Core.lean:10653–10777` replays kept moves via `gCur.record` and
-       `skipProposalActionScaffolding` at `10585` strips recorded `.engine
-       (.pending _)`), `Casting.reverseProposedSpellCore?` misses `if g.over` at
-       `Casting.lean:665` and continues as a live game (violating CR 104.1):
-       - Guard `Core.promptChooseReplacement` (`Core.lean:11412–11418`) with `if
-         g.over then g else ...`; in `Core.reverseToProposalCheckpointCore?`
-         (`Core.lean:11175–11270`), snapshot `let wasOver := g.over` **before**
-         `restoreProposalCheckpoint`, pass `(suppressPauses := wasOver)` into
-         `replayKeptStreamCore` (so `isProposalReplayPaused` never breaks out of
-         `keptStream` before replaying `GameEvent.gameEnded`), and skip
-         restoring/chaining `postCastCleanup`, `ckptPausedBatch?`,
-         `ckptQueuedLinkedExile`, `ckptPending`, and `ckptCont?` whenever
-         `wasOver || gAcc.over`; in `Movement.reverseToProposalCheckpoint?`
-         (`Movement.lean:835–839`), when `wasOver := g.over` is `true`, pass
-         `runBatch := fun g0 f => g0.withBatchCore none f` and `flushLinked := id`
-         (and skip the trailing `.map Game.flushQueuedLinkedExile`) so game-over
-         reversal replays `keptStream` deterministically through
-         `GameEvent.gameEnded` with `g.over == true` intact; and guard
-         `Movement.flushQueuedLinkedExile` (`785`),
-         `Movement.returnLinkedExileMoves` (`795`),
-         `Decisions.resumePendingReplacement`'s `| .continueCheckpointReplay .. =>`
-         (`1648`: `if g.over then g else ...`), and **insert** `else if g.over then
-         g` after `if reversed then g` (`699`) and **ahead of** `else if g.pending
-         != .none then g.chainPendingReplacement rest` (`700–701`) in
+       at `Core.lean:1313` `false` until `GameEvent.gameEnded` replays), so a bare
+       `g.over` check does not see pre-rewind `wasOver`, while
+       `Core.promptChooseReplacement` (`Core.lean:11412–11418`),
+       `Core.withBatchCoreReturn`'s `keepOpen` arm (`Core.lean:10497–10504`),
+       `finishOpenBatchSync`'s `closeBatch` trigger evaluation (`Core.lean:10372–10395,
+       10506`), and `Movement.withBatch` / `flushQueuedLinkedExile`
+       (`Movement.lean:811–816, 836–838`) can still open `.chooseReplacement`, pause a
+       batch, or evaluate new batch triggers on the pre-`gameEnded` slice (and
+       disabling the `isProposalReplayPaused` break at `Core.lean:10781` while a
+       prompt is open would replay the rest of `keptStream` on top of that pending
+       choice):
+       - Keep `if isProposalReplayPaused gAcc then break` at `Core.lean:10781` intact
+         and instead **thread `wasOver` (`suppressInteractive : Bool := false`) into
+         `promptChooseReplacement` and `withBatchCoreReturn` / `withBatchCore`** (plus
+         a transient `suppressInteractiveReplay : Bool := false` field on `Game` at
+         `Core.lean:160`—cleared back to `false` before
+         `reverseToProposalCheckpointCore?` returns, matching transient
+         `openBatchObjects` in `finishOpenBatchSync` at `10381–10388` so
+         `Game.replayEvents g.events == g` holds—so indirect callers also see
+         `wasOver`): add `(suppressInteractive : Bool := false)` to
+         `Core.promptChooseReplacement` (`Core.lean:11412–11418`), returning `g`
+         without pushing a frame or writing `.pending (.chooseReplacement ..)` /
+         `.pendingReplacement (some cont)` when `g.over ||
+         g.suppressInteractiveReplay || suppressInteractive` (and in
+         `Core.selectNextReplacementStep` at `5928–5975`, when `g.over ||
+         g.suppressInteractiveReplay` would otherwise return `.needChoice`,
+         deterministically choose `pool[0]!` for non-prompt ties and drop open-prompt
+         candidates so replacement loops terminate without opening a prompt); add
+         `(suppressInteractive : Bool := false)` to `Core.withBatchCoreReturn` /
+         `Core.withBatchCore` (`Core.lean:10424–10510`) so when `g.over ||
+         g.suppressInteractiveReplay || suppressInteractive`, `keepOpen` (`10497–10504`)
+         is forced `false` and `finishOpenBatchSync` (`10372–10395, 10506`) clears the
+         transient `currentBatch` / `openBatch*` fields (`10381–10388`) without calling
+         `g2.closeBatch` (`10395`); in `Core.reverseToProposalCheckpointCore?`
+         (`Core.lean:11175–11270`) and `Movement.reverseToProposalCheckpoint?`
+         (`Movement.lean:835–839`), snapshot `let wasOver := g.over` **before**
+         `restoreProposalCheckpoint` (`11175`), set `suppressInteractiveReplay :=
+         wasOver` across `replayKeptStreamCore` (resetting it to `false` immediately
+         afterward), pass `runBatch := fun g0 f => g0.withBatchCore none f
+         (suppressInteractive := true)` and `flushLinked := id` (and skip trailing
+         `.map Game.flushQueuedLinkedExile` at `838`) when `wasOver` is `true`, and
+         skip restoring/chaining `postCastCleanup`, `ckptPausedBatch?`,
+         `ckptQueuedLinkedExile`, `ckptPending`, and `ckptCont?` whenever `wasOver ||
+         gAcc.over`; and guard `Movement.flushQueuedLinkedExile` (`785`: `if g.over ||
+         g.suppressInteractiveReplay || ...`), `Movement.returnLinkedExileMoves`
+         (`795`), `Decisions.resumePendingReplacement`'s `| .continueCheckpointReplay
+         .. =>` (`1648`: `if g.over then g else ...`), and **insert** `else if g.over
+         then g` after `if reversed then g` (`699`) and **ahead of** `else if
+         g.pending != .none then g.chainPendingReplacement rest` (`700–701`) in
          `Decisions.resumePendingReplacement`'s `| .seq first rest =>` arm
          (`Decisions.lean:662–703`, preserving `700–701`'s `chainPendingReplacement
          rest` branch); and
      - when `.continueCheckpointReplay` pauses on `B1`'s `.chooseReplacement` /
        `.chooseLegend` and a **3rd player `p3` concedes or loses during that
        pause** before `B2` replays:
-       - in `Core.replayKeptStreamCore` (`Core.lean:10690–10790`), skip replaying
-         `ZoneEvent.moved` into a zone or battlefield controller belonging to an
-         already-departed player (`(gCur.player ...).leftTheGame`) and
-         `ZoneEvent.created` for a departed owner/controller, redirect replayed
-         `TurnEvent.priority` and `EngineChange.pendingPriority` away from departed
-         players via `gCur.nextLiving` (CR 800.4j), and when replaying
-         `PlayerEvent.becameMonarch heir prev` with `(gCur.player heir).leftTheGame`
-         while a living player remains, compute `let depMonarch := prev.getD heir`
-         and redirect `heir` to `if gCur.stillInGame gCur.activePlayer &&
-         gCur.activePlayer != depMonarch then gCur.activePlayer else if
+       - in `Core.replayKeptStreamCore` (`Core.lean:10682–10790`), on the existing
+         `EngineChange.priority` (`.engine t (.priority nextP)` at `Event.lean:2250`,
+         `Core.lean:10682–10685`) and `EngineChange.pendingPriority` (`.engine t
+         (.pendingPriority (some nextP))` at `Event.lean:2251`, `Core.lean:10686–10689`)
+         arms, redirect `nextP` via `gCur.nextLiving nextP` when `(gCur.player
+         nextP).leftTheGame` and a living player remains (CR 800.4j); on `ZoneEvent`
+         arms (`10690–10750`), skip replaying `ZoneEvent.moved` into a zone or
+         battlefield controller belonging to an already-departed player (`(gCur.player
+         ...).leftTheGame`) and `ZoneEvent.created` for a departed owner/controller;
+         and when replaying `PlayerEvent.becameMonarch heir prev` with `(gCur.player
+         heir).leftTheGame` while a living player remains, compute `let depMonarch :=
+         prev.getD heir` and redirect `heir` to `if gCur.stillInGame gCur.activePlayer
+         && gCur.activePlayer != depMonarch then gCur.activePlayer else if
          !gCur.isSharedTurnFinalSeat then gCur.nextLiving gCur.activePlayer else
-         gCur.nextLiving depMonarch` (matching `Leaving.lean:2508–2510` verbatim,
-         CR 725.4); and
+         gCur.nextLiving depMonarch` (matching `Leaving.lean:2508–2510` verbatim, CR
+         725.4); and
        - in `Decisions.resumePendingReplacement` `.continueCheckpointReplay`
-         (`Decisions.lean:1648–1650`), when the replayed slice recorded a
-         `PlayerEvent.leftGame` while another player had already departed before
-         this resumption, run `let g := (g.decideGameIfFinished).getD g` (`CR
-         104.2a`) and, when `!g.over`, scan `g.objects.filter
-         (·.isBattlefieldObject)` for any permanent with `g.controllerOf cur ==
-         none` (stranded because `p3` was its fallback controller when `B2` expired
-         a control effect) and exile it via `Leaving.runEndControlExileLoop` (CR
-         800.4c).
+         (`Decisions.lean:1648–1650`), because a concession during the pause was
+         already applied by `playerLeavesGameCore` *before* resume (not recorded as a
+         `PlayerEvent.leftGame` inside `remainingStream`), and because
+         `g.controllerOf cur` (`Core.lean:1859` -> `effectiveController?` at `1844,
+         1851`) still returns `some chosen.ctrl` when an active `.control` effect
+         names a departed player (`none` only occurs once the control effect is gone
+         and `initialControllerOf` at `1655–1662` drops a departed fallback),
+         **after `replayKeptStreamCore` returns (whenever `g.players.any
+         (·.leftTheGame)` and `!isProposalReplayPaused g`, whether or not
+         `remainingStream` itself contained `PlayerEvent.leftGame`)** run `let g :=
+         (g.decideGameIfFinished).getD g` (`CR 104.2a`) and, when `!g.over`, expire
+         any lingering `.layered _ (.control c) _` effects for departed `c`
+         (`(g.player c).leftTheGame`, CR 800.4a) and exile any battlefield permanent
+         whose `g.controllerOf cur` is `none` or `some c` with `(g.player
+         c).leftTheGame` via `Leaving.runEndControlExileLoop` (CR 800.4c).
 2. Unify post-departure continuation/prompt ordering and full `ckptDeparted`
    tracking across `Leaving.rewindAbortedProposalOnLeave`,
    `Decisions.reverseOrResumePopped`, and `Casting.reverseProposedSpellCore?`,
    re-validate `.chooseLegend` characteristics (`CR 704.5j`), and preserve
    `pendingPriority` / priority-grant detection in `Decisions`
    (`Event.lean:1722–1746, 2303–2312`, `Leaving.lean:16–19, 936–938, 2103–2106,
-   2121–2268`, `Casting.lean:639–694, 1022–1062`, `Decisions.lean:17–24, 190–193,
-   1000–1242, 1417–1469, 4891–4940`, `StateBasedActions.lean:346–374`, §2.4, §2.5,
-   §3.6, §3.8, CR 104.3a / 601.2 / 602.2 / 704.3 / 704.5j / 733.1 / 800.4a):
+   2121–2325`, `Casting.lean:639–694, 1022–1062`, `Decisions.lean:17–24, 172–196,
+   548–549, 606–607, 1000–1242, 1417–1469, 4891–4940, 5214`,
+   `StateBasedActions.lean:346–374`, §2.4, §2.5, §3.6, §3.8, CR 104.3a / 601.2 /
+   602.2 / 704.3 / 704.5j / 733.1 / 800.4a):
    - Unify multi-departure `allDeparted` collection and post-reversal
      `ckptOrigCont?` / `ckptPending` / `extraDepartureOuters` bookkeeping across
      all three proposal-reversal entrypoints (`Leaving.rewindAbortedProposalOnLeave`
@@ -13425,17 +13457,20 @@ unpayable-prompt `decline` reversals).
          `ckptUntouchedBeforeLeave` (`Decisions.lean:1028–1060`) and
          `rawCkptRestoreTarget` / `strippedDeferredCkptPending` handling
          (`Decisions.lean:1106–1118, 1154–1162`) into
-         `Leaving.rewindAbortedProposalOnLeave` (`Leaving.lean:2156–2268`):
-         specifically, when `!g.over && ckptPending != .none &&
-         (pushedOuterCont?.isSome || !allDeparted.isEmpty)`, either clear
-         `g.pending` to `.none` (when `!g.sbaPaused && g.pending == ckptPending`)
+         `Leaving.rewindAbortedProposalOnLeave` (`Leaving.lean:2156–2268`, updating
+         the `outCont?` assembly at `Leaving.lean:2261–2267`): specifically, when
+         `!g.over && ckptPending != .none && (pushedOuterCont?.isSome ||
+         !allDeparted.isEmpty)`, either clear `g.pending` to `.none` (when
+         `!g.sbaPaused && g.pending == ckptPending`, matching `Decisions.lean:1155–1158`)
          or strip `.restorePending ckptPending false` from `g.pendingReplacement`
-         via `dropCkptTarget`, and sequence `.restorePending ckptPending false none
-         allDeparted none` inside `outCont?` **after** `pushedOuterCont?` and
-         **before** `tailOrig?` (fixing the inverted ordering where synchronous
-         `reverseToProposalCheckpointCore?` left `g.pending == ckptPending`,
-         causing `hasBlockingPrompt` at `Leaving.lean:2236` to stash
-         `pushedOuterCont?` *behind* the outer `.mayCastCards` prompt and skip
+         via `dropCkptTarget`, and at `Leaving.lean:2261–2267` sequence
+         `.restorePending ckptPending false none allDeparted none` inside `outCont?`
+         **after** `pushedOuterCont?` and **before** `tailOrig?` (fixing the
+         inverted ordering where `Leaving.lean:2261–2267` built `outCont? := seqOpt
+         freshKeptCont? (seqOpt pushedOuterCont? tailOrig?)` without clearing
+         `g.pending == ckptPending` or inserting `.restorePending`, causing
+         `Leaving.stashPostRewindPending` at `Leaving.lean:2317–2322` to capture raw
+         `ckptPending` into `saved?` *ahead* of `pushedOuterCont?` and skip
          re-validating `ckptPending` against `allDeparted`); and
        - in `Casting.reverseProposedSpellCore?` (`Casting.lean:639–694`, adding
          `(skipDepartureReconcile : Bool := false)` passed as `true` from
@@ -13514,46 +13549,65 @@ unpayable-prompt `decline` reversals).
          `g.proposedSpell` and runs `resumeAfterBecomeCast` when `!hadOuter`),
          `.finishBecomeActivated` (`1723–1724`), and `.finishPostLoyaltyActivated`
          (`1744–1746`) all funnel through `Casting.finishPostLoyaltyActivated`
-         (`Casting.lean:1022–1027`), which when `!hadOuter` either chains
-         `.finishFraChoice` (`1025–1026`, when `g.triggerSequenceRest.isSome ||
-         g.pendingReplacement.isSome`) or calls `g.receivePriority (if openCont
-         then g.activePlayer else p)` (`1027`), while `.finishTurnFaceUp (caster :
-         PlayerId) (spellId : ObjectId) (hadOuterReplacement : Bool := false)`
-         (`1734–1735`, no `openCont` field; `Decisions.lean:1459–1460`) calls
-         `Casting.completeTurnFaceUp` (`Casting.lean:1032–1062`), where `!hadOuter`
-         makes `skipTail` (`1050`) `false` and either chains `.finishFraChoice`
-         when `chainFinishFra` (`g.triggerSequenceRest.isSome ||
-         g.pendingReplacement.isSome`, `1051, 1060`) or calls `g.receivePriority
-         caster` (`1062`, which already applies `g.priorityInstead`):
+         (`Casting.lean:1022–1027`), and `.finishTurnFaceUp (caster : PlayerId)
+         (spellId : ObjectId) (hadOuterReplacement : Bool := false)` (`1734–1735`,
+         no `openCont` field; `Decisions.lean:1459–1460`) calls
+         `Casting.completeTurnFaceUp` (`Casting.lean:1032–1062`). Both functions
+         compute `skipTail := hadOuterReplacement && g.pendingReplacement.isNone`
+         (`1023, 1050`) and `chainFinishFra := !skipTail &&
+         (g.triggerSequenceRest.isSome || g.pendingReplacement.isSome)` (`1025–1026,
+         1051, 1060`): when `hadOuterReplacement` is `true` and `g.pendingReplacement`
+         is non-empty when that leaf executes, `skipTail` is `false` and
+         `chainFinishFra` still chains `.finishFraChoice` (`1026, 1060`, granting
+         priority via `finishFraChoice`), and when `hadOuterReplacement` is `false`
+         and either `g.triggerSequenceRest.isSome` or `g.pendingReplacement.isSome`
+         holds on execution, `chainFinishFra` likewise routes to `.finishFraChoice`
+         rather than `g.receivePriority (if openCont then g.activePlayer else p)` /
+         `g.receivePriority caster` (`1027, 1062`):
        - in `Decisions.lean:1459–1460`, run `if hadOuter then g else
          resumeAfterBecomeCast g` after `g.completeTurnFaceUp` (matching `1425,
          1435, 1443, 1469` so a queued `.finishFraChoice` drains even when
          `resumePendingReplacement` is called directly); in
-         `PendingReplacement.endsWithPriorityGrant` (`Event.lean:2303–2312`), add
-         `| .completeActivation hadOuter _ | .finishBecomeActivated _ .. hadOuter _
-         | .finishPostLoyaltyActivated _ .. hadOuter _ | .finishTurnFaceUp _ _
-         hadOuter => !hadOuter`; and in `Decisions.priorityRecipientOfContinuation?`
-         (`Decisions.lean:17–24`, returning raw `Option PlayerId` without
-         pre-applying `priorityInstead` just like `18–21`), add `|
-         .completeActivation false false => if g.triggerSequenceRest.isSome then
-         none else g.proposedSpell.map (·.caster)`, `| .finishBecomeActivated
-         caster .. false false | .finishPostLoyaltyActivated caster .. false false
-         => if g.triggerSequenceRest.isSome then none else some caster`, and `|
-         .finishTurnFaceUp caster _ false => if g.triggerSequenceRest.isSome then
-         none else some caster` (returning `none` when `chainFinishFra` routes to
-         `.finishFraChoice`, where `.seq _ b` at `22–23` already inspects any
-         trailing continuation first).
+         `PendingReplacement.endsWithPriorityGrant` (`Event.lean:2303–2312`, where
+         `Game` is not in scope), add optional `(hasQueuedPending : Bool := false)`
+         with `| .completeActivation hadOuter _ | .finishBecomeActivated _ ..
+         hadOuter _ | .finishPostLoyaltyActivated _ .. hadOuter _ | .finishTurnFaceUp
+         _ _ hadOuter => !hadOuter || hasQueuedPending` (and `| .finishPostCast _
+         grantPriority hadOuter _ => grantPriority && (!hadOuter ||
+         hasQueuedPending)`), paired with a `Game`-aware `Decisions` helper used at
+         `Decisions.lean:195–196, 548–549, 606–607` that starts with
+         `hasQueuedPending := false` at the root of `g.pendingReplacement` /
+         `g.outerPendingReplacements` (since `drainPendingContinuations` at `174,
+         181–183` and `chooseReplacement` at `5214` pop `g.pendingReplacement` to
+         `none` before resuming, avoiding self-matching `g.pendingReplacement == some
+         cont`) and sets `hasQueuedPending := true` on `b` in `.seq a b` whenever `a`
+         enqueues onto `g.pendingReplacement` without pausing (e.g.
+         `a.endsWithFinishFra` or `.restorePending .none true` with
+         `!g.outerPendingReplacements.isEmpty`); and in
+         `Decisions.priorityRecipientOfContinuation? (g : Game) (hasQueuedPending :
+         Bool := false)` (`Decisions.lean:17–24`, returning raw `Option PlayerId`
+         without pre-applying `priorityInstead` just like `18–21`, propagating the
+         same `hasQueuedPending` across `.seq a b` at `22–23`), add `|
+         .completeActivation false false => if g.triggerSequenceRest.isSome ||
+         hasQueuedPending then none else g.proposedSpell.map (·.caster)`, `|
+         .finishBecomeActivated caster .. false false | .finishPostLoyaltyActivated
+         caster .. false false => if g.triggerSequenceRest.isSome || hasQueuedPending
+         then none else some caster`, and `| .finishTurnFaceUp caster _ false => if
+         g.triggerSequenceRest.isSome || hasQueuedPending then none else some caster`
+         (returning `none` whenever `chainFinishFra` routes to `.finishFraChoice`,
+         whether from `g.triggerSequenceRest.isSome` or queued
+         `pendingReplacement.isSome`).
 3. Capture pre-mutation `pre` snapshots across counter and zone-exit control/copy
    transitions, align phased-out Layer 1/2 scope matching & CR 502.1 phase-in
    controller lookup, wire `flushQueuedLinkedExileFwd` after `withBatchCore` in
    `Phasing` / `Core.createEffects` / `Leaving.removeAllCountersFrom`, and make
-   remaining `ceaseToExist` callers pause-safe (`Event.lean:307–316`,
+   remaining `ceaseToExist` callers pause-safe (`Event.lean:307–316, 1194`,
    `Object.lean:139–144`, `Core.lean:1670–1689, 1785–1806, 11598–11626,
    11909–11915, 11954–12020, 12042–12065`, `Phasing.lean:45–164`,
    `Attachments.lean:46–65`, `Movement.lean:301–308, 570–660, 784`,
    `Leaving.lean:118–168, 224–305, 422–456, 2515–2546`, `Entering.lean:205–244,
-   364`, `Decisions.lean:2241, 2263–2265, 3445–3473`, §2.2, §2.5, §3.3, §3.8,
-   CR 104.1 / 502.1 / 506.4 / 603.3d / 608.2n / 610.3 / 611.2a–b / 613.1a–b /
+   352–366`, `Decisions.lean:1656, 2241, 2263–2265, 3445–3473`, §2.2, §2.5, §3.3,
+   §3.8, CR 104.1 / 502.1 / 506.4 / 603.3d / 608.2n / 610.3 / 611.2a–b / 613.1a–b /
    701.54a / 702.26b,d,f–h / 800.4a,c):
    - Fix post-mutation `pre` snapshot timing across counter removal/addition and
      zone-exit control/copy expirations:
@@ -13617,13 +13671,13 @@ unpayable-prompt `decline` reversals).
          `.whileSourceOnBattlefield`, `.whileSourceHasCounter`, `.layered _ (.copy
          _) _` LKI / source-leave cascades, CR 506.4 combat removal, and
          `.ringBearer` loss); and in `Leaving.objectLeavesTheGame`
-         (`Leaving.lean:422–456`, which calls `ceaseToExist` with
-         `reconcileControl := false` at `447, 453` rather than `move`), capture
-         `let pre := g` before `443`'s `match g.findObject? id` / `ceaseToExist`
-         branches and run `removeFromCombatOnControlChange pre g (cause := some
-         (.gameRule .playerLeftGame))` + `.ringBearer` clearing across surviving
-         battlefield permanents whose controller changed (while keeping CR 800.4c
-         exile batched in `playerLeavesGameCore` when `(g.player
+         (`Leaving.lean:422–456`, taking `(o : GameObject)` and calling
+         `ceaseToExist` with `reconcileControl := false` at `447` and `453` rather
+         than `move`), capture `let pre := g` before `443`'s `if o.zone ==
+         .battlefield` branch and run `removeFromCombatOnControlChange pre g
+         (cause := some (.gameRule .playerLeftGame))` + `.ringBearer` clearing
+         across surviving battlefield permanents whose controller changed (while
+         keeping CR 800.4c exile batched in `playerLeavesGameCore` when `(g.player
          _leavingPlayer).leftTheGame`, or running `reconcileControlAfterTransition
          pre g` when called standalone).
    - Fix phased-out scope matching in Layer 1 / Layer 2 (`Event.lean:307–316`,
@@ -13668,9 +13722,10 @@ unpayable-prompt `decline` reversals).
          `phaseOutPermanentsLoop` at `Phasing.lean:83–120`).
    - Flush `queuedLinkedExile` after `withBatchCore` in `Phasing`, `Core.createEffects`,
      and `Leaving.removeAllCountersFrom`, and make remaining `ceaseToExist` /
-     resolution callers pause-safe (`Core.lean:11598–11626`, `Phasing.lean:54, 118,
-     132, 163`, `Leaving.lean:264`, `Entering.lean:205–244, 364`,
-     `Decisions.lean:2241, 2263–2265, 3445–3473`):
+     resolution callers pause-safe (`Event.lean:1194`, `Core.lean:11598–11626`,
+     `Phasing.lean:54, 118, 132, 163`, `Attachments.lean:46–61`, `Leaving.lean:264`,
+     `Entering.lean:205–244, 352–366`, `Decisions.lean:1656, 2241, 2263–2265,
+     3445–3473`):
      - Expose one **non-`private`** public `opaque flushQueuedLinkedExileFwd (g :
        Game) : Game := g` with `@[extern "mtg_game_flush_queued_linked_exile"]` in
        `namespace Game` in `Core.lean` (backed by `@[export
@@ -13683,20 +13738,31 @@ unpayable-prompt `decline` reversals).
        batches immediately returns its linked exiled cards when the batch closes),
        and switch `Leaving.removeAllCountersFrom` (`Leaving.lean:264`, downstream
        of `Movement.lean`) from `g.withBatchCore cause` to `g.withBatch cause`;
-     - in `Decisions.afterTriggerTargetsChosen` (`Decisions.lean:3445–3473`,
-       invoked after `ceaseToExist` at `Decisions.lean:2241, 2264`), if
-       `g.sbaPaused` is `true` on entry (because `ceaseToExist` opened a CR 800.4c
-       `.chooseReplacement` pause), chain `.finishPostStep
-       .afterTriggerTargetsChosen` onto `g.pendingReplacement` instead of
-       overwriting `g.pending` with `.pending .none` at `3452`; in
-       `Entering.finishOneResolution` `.ability` (`Entering.lean:207–243`), if
-       `g.ceaseToExist objId` at `218` opens `g.sbaPaused`, chain a `PostStep`
-       carrying `(snap, controller, sourceId, sagaChapter, ab?, alreadyResolved)`
-       so `finishSagaFinalChapter` / `GameEvent.resolved` (`CR 608.2n`) runs after
-       the CR 800.4c replacement choice closes rather than mid-pause; and in
-       `Entering.completeActiveResolutions` (`Entering.lean:364`), pass
-       `(reconcileControl := !g.over)` to `expireEffectsOnLeavingObject` so
-       game-over resolution cleanup never opens an interactive CR 800.4c prompt
+     - add `| afterTriggerTargetsChosen` and `| finishAbilityResolution (snap :
+       EventObject) (controller : PlayerId) (sourceId : Option ObjectId)
+       (sagaChapter : Option Nat) (ab? : Option TriggeredAbility) (alreadyResolved :
+       Bool)` to `PostStep` (`Event.lean:1194`, dispatched in `Decisions.runPostStep`
+       at `Decisions.lean:1656`); in `Decisions.afterTriggerTargetsChosen`
+       (`Decisions.lean:3445–3473`, invoked after `ceaseToExist` at
+       `Decisions.lean:2241, 2264`), guard on `g.sbaPaused` on entry—ahead of the
+       `.pending .none` clears at `3457` (`promptTriggerTargetsIfNeeded (g.change
+       (.pending .none))`), `3469`, and `3472`, as well as `3450` and `3462` on the
+       `reverseProposedSpell` arms—chaining `.finishPostStep
+       .afterTriggerTargetsChosen` onto `g.pendingReplacement` and returning `g`
+       when `!g.over && g.sbaPaused` (and skipping `3450`'s `.pending .none` clear
+       when `g.over && g.sbaPaused`); in `Entering.finishOneResolution` `.ability`
+       (`Entering.lean:207–243`), if `g.ceaseToExist objId` at `218` opens
+       `g.sbaPaused`, chain `.finishPostStep (.finishAbilityResolution snap
+       controller sourceId sagaChapter ab? alreadyResolved)` so
+       `finishSagaFinalChapter` / `GameEvent.resolved` (`CR 608.2n`) runs after the
+       CR 800.4c replacement choice closes rather than mid-pause; and in
+       `Entering.completeActiveResolutions` (`Entering.lean:352–366`, inside `if
+       g.over`), pass `(reconcileControl := false)` on `g.ceaseToExist objId` at
+       `Entering.lean:364` (matching `Attachments.ceaseToExist` at
+       `Attachments.lean:46, 57, 60–61`, which already passes `reconcileControl :=
+       false` into `expireEffectsOnLeavingObject` and gates
+       `reconcileControlAfterTransitionFwd` on its own `reconcileControl` parameter)
+       so game-over resolution cleanup never opens an interactive CR 800.4c prompt
        (CR 104.1).
 4. Move `payLoyaltyCost` upstream to `ActivationCosts` (paying loyalty before
    self-sacrifice & tracking `ProposedSpell.loyaltyPaid`), keep `proposedSpell`
@@ -13704,8 +13770,8 @@ unpayable-prompt `decline` reversals).
    & `abortDepartedManaAbilityCont`, and enforce mid-proposal payability on `.crew`
    / `.zemoBoastExile` / `payTeamworkCreatures` / `.chooseMode` `decline`
    (`Stack.lean:60–126`, `Pending.lean:647`, `Event.lean:86–105, 1522–1525`,
-   `Core.lean:314`, `ActivationCosts.lean:391–441, 506–605`,
-   `Casting.lean:856–866, 963–1028, 1064–1208`, `Choices.lean:637–677`,
+   `Core.lean:314`, `Leaving.lean:566–605`, `ActivationCosts.lean:391–441,
+   506–605`, `Casting.lean:856–866, 963–1028, 1064–1208`, `Choices.lean:637–677`,
    `SacrificeDiscard.lean:333–352`, `Decisions.lean:121–158, 1428–1444, 3139, 3256,
    3772–3810, 4151, 4567–4577`, `FraChoices.lean:621–663, 1056–1097`,
    `ManaAbilities.lean:334–396`, §2.4, §2.5, §3.1, §3.8, CR 118.11 / 601.2b–i /
@@ -13763,9 +13829,9 @@ unpayable-prompt `decline` reversals).
          and `Choices.lean:674, 676`.
    - Keep `g.proposedSpell` live across final cost-payment `Pending.chooseReplacement`
      pauses until `becomeCast` / `finishPostLoyaltyActivated` actually finalizes the
-     spell or ability (`Decisions.lean:1428–1444, 3139, 3256, 4151`,
-     `SacrificeDiscard.lean:334`, `Casting.lean:856–866, 980–1028, 1109, 1195`,
-     `FraChoices.lean:649, 1083`):
+     spell or ability (`Leaving.lean:566–605`, `Decisions.lean:1428–1444, 3139, 3256,
+     4151`, `SacrificeDiscard.lean:334`, `Casting.lean:856–866, 980–1028, 1109,
+     1195`, `FraChoices.lean:649, 1083`):
      - Clearing `.proposedSpell none` *before* calling `becomeCast`,
        `completeActivation`, `becomeActivated`, or `payLoyaltyCost` (at
        `Decisions.lean:3139, 3256, 4151`, `SacrificeDiscard.lean:334`,
@@ -13775,8 +13841,8 @@ unpayable-prompt `decline` reversals).
        `payActivationExtraCosts`, or `[+N]` `payLoyaltyCost`) paused on
        `Pending.chooseReplacement`: if the caster or sole target/host subsequently
        leaves the game during that replacement pause, `Leaving.isProposalAbortedByLeave`
-       (`Leaving.lean:695`, which reads `g.proposedSpell`) returns `false`, failing
-       to rewind the proposal and letting `finishBecomeCast` /
+       (`Leaving.lean:566–605`, reading `g.proposedSpell.any` at `597`) returns
+       `false`, failing to rewind the proposal and letting `finishBecomeCast` /
        `finishPostLoyaltyActivated` emit `GameEvent.spellCast` /
        `GameEvent.abilityActivated` for a departed caster or vanished stack object:
        - Remove the premature `.proposedSpell none` writes at
