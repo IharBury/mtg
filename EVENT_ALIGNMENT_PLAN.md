@@ -12557,9 +12557,10 @@ multi-pick disjointness, and `canPayLife`).
          in `namespace Game` (deleting the `Leaving.lean` copies and repointing
          `Leaving.lean:2164` to `runPostCastCleanupFwd` and
          `Leaving.lean:2306, 2326, 2339, 2346` to `resumePendingReplacementFwd`,
-         so both `Core` and `Leaving` see one shared extern pair without
-         redeclaring `Game.runPostCastCleanup` / `Game.resumePendingReplacement`
-         ahead of `Casting.lean:565` and `Decisions.lean:649`) along with a
+         so `Core`, `Leaving`, and `ManaAbilities` see one shared extern pair
+         without redeclaring `Game.runPostCastCleanup` /
+         `Game.resumePendingReplacement` ahead of `Casting.lean:565` and
+         `Decisions.lean:649`) along with a
          helper `Core.drainLocalPendingReplacement` that drains **only**
          `g.pendingReplacement` while `!g.over && g.pending == .none &&
          g.afterRandom == .none` (popping `.pendingReplacement none`, popping
@@ -12850,10 +12851,16 @@ multi-pick disjointness, and `canPayLife`).
    614.6 / 702.26b,f / 708.8 / 712.18 / 800.4b–c):
    - Add a shared post-transition reconciliation helper
      `Leaving.reconcileControlAfterTransition (pre post : Game) (cause : Option
-     EventCause := none) : Game` (exposed upstream via
-     `@[export mtg_game_reconcile_control_after_transition]` in `Leaving.lean` and
-     `@[extern "mtg_game_reconcile_control_after_transition"]` in `Core.lean` /
-     `Attachments.lean`) that compares `pre` and `post` across
+     EventCause := none) : Game` (`@[export
+     mtg_game_reconcile_control_after_transition]` in `Leaving.lean`, exposed
+     upstream via one **non-`private`** public
+     `opaque reconcileControlAfterTransitionFwd (pre post : Game) (cause : Option
+     EventCause := none) : Game := post` with `@[extern
+     "mtg_game_reconcile_control_after_transition"]` in `namespace Game` in
+     `Core.lean` above `Core.createEffect`—with **no** second extern in
+     `Attachments.lean`—so `Core`, `Phasing`, and `Attachments` all see
+     `reconcileControlAfterTransitionFwd` without colliding with `Leaving`'s
+     `def reconcileControlAfterTransition`) that compares `pre` and `post` across
      `post.objects.filter (·.isBattlefieldObject)`:
      1. clears `.ringBearer` (`GameEvent.designation ... .ringBearer false`) when
         `pre.controllerOf cur = some prev`, `post.controllerOf cur != some prev`,
@@ -12869,8 +12876,9 @@ multi-pick disjointness, and `canPayLife`).
         and `cur.id` is not already referenced by an active
         `PendingReplacement.endControlExileLoop` (`pendingLog` or `remaining`) in
         `post.pendingReplacement` or `post.outerPendingReplacements` (CR 800.4c).
-   - Wire `reconcileControlAfterTransition` across every non-`endControlEffectById`
-     control-transition boundary:
+   - Wire `reconcileControlAfterTransitionFwd` (upstream of `Leaving.lean`) /
+     `reconcileControlAfterTransition` (downstream of `Leaving.lean`) across every
+     non-`endControlEffectById` control-transition boundary:
      - in `Attachments.ceaseToExist` (`Attachments.lean:46–59`, adding optional
        `(reconcileControl : Bool := true)` passed as `false` from
        `Leaving.objectLeavesTheGame` at `Leaving.lean:392, 398` and
@@ -12878,33 +12886,34 @@ multi-pick disjointness, and `canPayLife`).
        exile queues already run in batch) and in `Core.expireEffectById`'s
        `.gameRule (.fraEmblem id)` `ceasedToExist` branch
        (`Core.lean:11459–11465`, when `reconcileControl == true`), run
-       `reconcileControlAfterTransition pre g` after expiring leaving-object /
+       `reconcileControlAfterTransitionFwd pre g` after expiring leaving-object /
        while-source effects so a token outside `.battlefield`, copy, stack
        ability, or temporary emblem ceasing to exist exiles any permanent whose
        last control effect ended onto a departed fallback controller;
      - in `Phasing.phaseOut` (`Phasing.lean:55–79`, replacing bare
        `removeFromCombatOnControlChange pre g` at `78`, and likewise updating
        `Phasing.phaseIn` at `Phasing.lean:100–129` for combat removal +
-       ring-bearer designation loss), run `reconcileControlAfterTransition pre g`
-       so phasing out a control-effect source (which stops `.whileSourceOnBattlefield`
-       and `.whileSourceHasCounter` in `Core.durationActive` at
-       `Core.lean:352–362`, CR 702.26b,f) exiles any permanent whose last control
-       effect ended onto a departed fallback controller instead of stranding it
-       with `controllerOf == none`;
+       ring-bearer designation loss), run `reconcileControlAfterTransitionFwd pre
+       g` so phasing out a control-effect source (which stops
+       `.whileSourceOnBattlefield` and `.whileSourceHasCounter` in
+       `Core.durationActive` at `Core.lean:352–362`, CR 702.26b,f) exiles any
+       permanent whose last control effect ended onto a departed fallback
+       controller instead of stranding it with `controllerOf == none`;
      - in `Core.createEffect` (`Core.lean:11375–11378`, widening the post-creation
        hook from `.layered _ (.control _) _` to `.layered _ (.control _) _ |
-       .layered _ (.copy _) _`), in `Core.expireEffectById` (`Core.lean:11444–11465`,
-       adding optional `(reconcileControl : Bool := true)` threaded through
-       `Core.restoreCopiesWhere` at `11681–11701`—which forwards
-       `reconcileControl` without taking a snapshot of its own—and passed as
-       `false` only from `Core.restoreCopiesUntilSourceLeaves` at `11728–11734`
+       .layered _ (.copy _) _` and calling `reconcileControlAfterTransitionFwd pre
+       g (cause := some effCause)`), in `Core.expireEffectById`
+       (`Core.lean:11444–11465`, adding optional `(reconcileControl : Bool :=
+       true)` threaded through `Core.restoreCopiesWhere` at `11681–11701`—which
+       forwards `reconcileControl` without taking a snapshot of its own—and passed
+       as `false` only from `Core.restoreCopiesUntilSourceLeaves` at `11728–11734`
        where enclosing `Movement.move` / `objectLeavesTheGame` / `ceaseToExist` /
        `playerLeavesGameCore` boundaries reconcile after
        `expireWhileSourceEffects`: **add a new `| .layered _ (.copy _) _ =>`
        arm** to the `11454–11457` `match eff with` running `if reconcileControl
-       then reconcileControlAfterTransition pre g (cause := some expCause) else
+       then reconcileControlAfterTransitionFwd pre g (cause := some expCause) else
        g` against the existing `let pre := g` snapshot at `11449`, while keeping
-       `reconcileControlAfterTransition` strictly **off** `| .layered _
+       `reconcileControlAfterTransitionFwd` strictly **off** `| .layered _
        (.control _) _`—which keeps only `removeFromCombatOnControlChange pre g`
        because `Leaving.endControlEffectById` calls `expireEffectById` at
        `Leaving.lean:130` before running `runEndControlExileLoop` at `162`—and
@@ -12954,10 +12963,11 @@ multi-pick disjointness, and `canPayLife`).
    guard paused `ManaAbilities` continuations against departed players and raw
    `prevPending` writes, and enforce mid-proposal `sourceStillPayable`, loyalty,
    `turnFaceUp`, `decline`, and `announceMode` payability invariants
-   (`ActivationCosts.lean:61–72, 442–510`, `Choices.lean:614–628, 658–669`,
-   `ManaAbilities.lean:344–445`, `CastSpell.lean:229–281`,
-   `Decisions.lean:2543–2567, 3939–3967, 4638–4686`, `FraChoices.lean:664–740,
-   1096–1109`, `SacrificeDiscard.lean:292–356`, `Casting.lean:1021–1085`, §2.4,
+   (`Entering.lean:394`, `ActivationCosts.lean:61–72, 442–510`,
+   `Choices.lean:614–628, 658–669`, `ManaAbilities.lean:344–445`,
+   `CastSpell.lean:229–281`, `Decisions.lean:97, 648–650, 2543–2567, 2851–2858,
+   3939–3967, 4638–4686`, `FraChoices.lean:664–740, 1096–1109`,
+   `SacrificeDiscard.lean:292–356`, `Casting.lean:691–696, 1021–1085`, §2.4,
    §2.5, §3.1, §3.8, CR 116.2b / 118.3 / 601.2b–h / 602.2b / 605.3 / 606.4 /
    702.37e / 733.1 / 800.4a):
    - In `ActivationCosts.payActivationExtraCosts` (`ActivationCosts.lean:442–510`)
@@ -13010,11 +13020,15 @@ multi-pick disjointness, and `canPayLife`).
        `damageYou`, and `finishManaAbilityMountainTrigger`, close
        `.endProposalAction` if `g.proposalCheckpoint.isSome`, and when `!g.over`
        either route non-`.none` `prevPending` through
-       `g.resumePendingReplacement (.restorePending prevPending false)` or (when
-       `prevPending == .none && g.pending == .none && !g.sbaPaused`) grant
-       priority to `g.activePlayer`; and at `392–393` when `g.stillInGame p &&
-       wasPaused`, replace `g := g.change (.pending prevPending)` with
-       `g := g.resumePendingReplacement (.restorePending prevPending false)`.
+       `g.resumePendingReplacementFwd (.restorePending prevPending false)` (via
+       the public `Core.resumePendingReplacementFwd` forwarder added in Item 1,
+       since `Decisions.resumePendingReplacement` is downstream of
+       `ManaAbilities.lean`) or (when `prevPending == .none && g.pending == .none
+       && !g.sbaPaused`) grant priority via `g.receivePriority g.activePlayer`
+       (`Entering.lean:394`, matching `ManaAbilities.lean:391`); and at `392–393`
+       when `g.stillInGame p && wasPaused`, replace `g := g.change (.pending
+       prevPending)` with `g := g.resumePendingReplacementFwd (.restorePending
+       prevPending false)`.
    - Close the remaining mid-proposal payability, reversal, and `decline` gaps in
      `CastSpell.announceMode` (`CastSpell.lean:229–281`),
      `Decisions.continueCostPicks` (`Decisions.lean:2543–2567`),
@@ -13035,12 +13049,28 @@ multi-pick disjointness, and `canPayLife`).
        prop.payLife` alongside `g.costPicksPayable` before paying or opening the
        next pick (so losing control of `sid` or life payability on an earlier
        pick reverses immediately before an irreversible library pick can run);
-     - in `Decisions.discardForDraw` `.discardForAdditionalCost`
-       (`Decisions.lean:3939–3966`) and `SacrificeDiscard.sacrificeForActivation`
-       `.sacrificePermanent` (`SacrificeDiscard.lean:292–304`), check
-       `if !g.proposalCostPromptStillPayable p g.pending then return (←
-       g.reverseProposedSpell? (resumeContinuation := true))` before paying the
-       discard/sacrifice cost, and in `Decisions.decline`
+     - export `@[export mtg_game_proposal_cost_prompt_still_payable]` on
+       `Decisions.proposalCostPromptStillPayable` (`Decisions.lean:97`) and
+       `@[export mtg_game_reverse_proposed_spell_except]` on
+       `Decisions.reverseProposedSpell?` (`Decisions.lean:2851`), and expose
+       **non-`private`** public `opaque proposalCostPromptStillPayableFwd (g :
+       Game) (caster : PlayerId) (p : Pending) : Bool := false` (`@[extern
+       "mtg_game_proposal_cost_prompt_still_payable"]`) and `opaque
+       reverseProposedSpellExceptFwd (g : Game) (resumeContinuation : Bool :=
+       false) (extraLog : Option String := none) (alwaysGrantPriority : Bool :=
+       false) : Except String Game := .ok g` (`@[extern
+       "mtg_game_reverse_proposed_spell_except"]`) in `namespace Game` in
+       `Casting.lean` (alongside `691–696`, visible to `SacrificeDiscard` via
+       `Choices` → `Casting` without colliding with `Decisions`'s `def` names):
+       in `Decisions.discardForDraw` `.discardForAdditionalCost`
+       (`Decisions.lean:3939–3966`) check `if !g.proposalCostPromptStillPayable p
+       g.pending then return (← g.reverseProposedSpell? (resumeContinuation :=
+       true))` before paying the discard cost, in
+       `SacrificeDiscard.sacrificeForActivation` `.sacrificePermanent`
+       (`SacrificeDiscard.lean:292–304`) check `if
+       !g.proposalCostPromptStillPayableFwd p g.pending then return (←
+       g.reverseProposedSpellExceptFwd (resumeContinuation := true))` before
+       paying the sacrifice cost, and in `Decisions.decline`
        (`Decisions.lean:4638–4650, 4679–4686`) plus `FraChoices.answerFraChoice`
        `.decline` (`FraChoices.lean:664–674, 1096–1109`) allow declining to
        reverse via `reverseProposedSpell? (resumeContinuation := true)` whenever
