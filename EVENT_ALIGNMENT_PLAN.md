@@ -12843,13 +12843,13 @@ multi-pick disjointness, and `canPayLife`).
    (`.copy`, `turnedFaceUp`, `transformed`) transitions on scoped Layer 2
    `.control` effects, `Movement.move`, and `Core.restoreControlUntilSourceLeaves`
    (`Event.lean:1095–1136, 1827–1892`, `Core.lean:352–362, 1793–1806, 2161–2163,
-   10430–10504, 11231–11237, 11327–11378, 11444–11465, 11681–11768`,
+   10324–10328, 10430–10504, 11231–11237, 11327–11378, 11444–11465, 11681–11768`,
    `Attachments.lean:46–59`, `Movement.lean:582–609`, `Leaving.lean:80–197,
    386–403`, `Entering.lean:404–407`, `Phasing.lean:45–97, 100–130`,
    `Turns.lean:20–38, 183, 349, 811`, `Casting.lean:1021–1045`,
    `Activation.lean:203–207`, `ResolutionHelpers.lean:577–583`,
-   `FrcResolve.lean:802–816, 1035–1046, 1087`, `EffectResolution.lean:2001–2013,
-   2404–2408`, `Decisions.lean:690–691, 1295, 1414–1421`, §2.2, §2.5, §3.3, §3.8,
+   `FrcResolve.lean:738–742, 802–816, 1035–1046, 1087`, `EffectResolution.lean:2001–2013,
+   2404–2408`, `Decisions.lean:690–691, 1295, 1414–1421, 5029–5037`, §2.2, §2.5, §3.3, §3.8,
    CR 110.2 / 506.4 / 514.2 / 611.2a–b / 613.1a–b / 613.7–613.8 / 614.6 /
    702.26b,f,g–h / 708.8 / 712.18 / 800.4b–c):
    - Add a shared post-transition reconciliation helper
@@ -12940,11 +12940,19 @@ multi-pick disjointness, and `canPayLife`).
        single-target `phaseOut` at `EffectResolution.lean:2013` is unchanged); and
        in `FrcResolve.lean:810–815` (`.teferi`), add `FrcPostStep.teferiExileSpell`
        (`Event.lean`, handled in `FrcResolve.runFrcPostStep` at
-       `FrcResolve.lean:1087`) and append
-       `PendingReplacement.finishFrcPostStep .teferiExileSpell` **after**
-       `g.phaseOutPermanents targetsToPhase (cause := phaseCause)` returns
-       whenever `g.sbaPaused`, placing Teferi's `.exileInstantSorceryInstead
-       spell.id` follow-up behind that `.closeBatch`;
+       `FrcResolve.lean:1087` via a helper `FrcResolve.teferiExileSpell` defined
+       above `applyFrc` that runs `match g.resolvingSpell.bind g.findObject? with
+       | some spell => g.createEffect (.exileInstantSorceryInstead spell.id)
+       |>.logMsg s!"{g.name spell} will be exiled" | none => g`) and **replace**
+       the unconditional `match g.resolvingSpell` at `811–815` after
+       `let g := g.phaseOutPermanents targetsToPhase (cause := phaseCause)` with
+       the `.jacePlus` `if / else` shape (`FrcResolve.lean:738–742`): when
+       `g.sbaPaused`, **only** call `g.chainPendingReplacement (.finishFrcPostStep
+       .teferiExileSpell)` (`Core.lean:10324–10328`, placing the post-step behind
+       `.closeBatch`, where `Decisions.chooseReplacement` at
+       `Decisions.lean:5029–5037` drains it before `completeActiveResolutions`
+       clears `resolvingSpell` and moves the spell) without creating the effect
+       immediately, and `else` run `g.teferiExileSpell` immediately;
      - in `Core.createEffect` (`Core.lean:11375–11378`, widening the post-creation
        hook from `.layered _ (.control _) _` to `.layered _ (.control _) _ |
        .layered _ (.copy _) _` and calling `reconcileControlAfterTransitionFwd pre
