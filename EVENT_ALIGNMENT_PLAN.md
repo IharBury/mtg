@@ -12587,9 +12587,9 @@ multi-pick disjointness, and `canPayLife`).
          gAcc.drainLocalPendingReplacement` so when `withBatchCoreReturn` kept the
          batch open solely because `pendingReplacement.isSome` while `pending ==
          .none` (`Core.lean:10497–10500`—not a player pause, and not drained by
-         `reverseProposedSpellCore?` / `reverseProposedSpell` when
-         `resumeContinuation == false` at `Casting.lean:672–674`,
-         `Decisions.lean:3029–3045`), its `.closeBatch` (`Decisions.lean:1408–1409`)
+         `reverseProposedSpellCore?` / `reverseProposedSpell?` / `reverseProposedSpell` when
+         `resumeContinuation == false`—skipping `672–674` and returning `(..., false)` at `Casting.lean:675–693`,
+         so `3035` in `Decisions.lean:3029–3045` skips `finishFraChoice`), its `.closeBatch` (`Decisions.lean:1408–1409`)
          and `finishOpenBatchAndLinkedExile` (`Movement.lean:842–843`, via
          `flushQueuedLinkedExile` at `784–789` and `returnLinkedExileMoves` at
          `794–802`—queueing while a batch is open at `796–797`, chaining
@@ -12863,7 +12863,7 @@ multi-pick disjointness, and `canPayLife`).
        when `hadEntryPending` was already true before the drain while overwriting
        any stale `pendingPriority` via the `== some target` check whenever the
        drain itself opened `.chooseLegend`, even when `target ==
-       g.activePlayer`), so `Decisions.keepLegend` (`Decisions.lean:4753–4754`)
+       g.activePlayer`), so `Decisions.keepLegend` (`Decisions.lean:4889–4939`, priority grant at `4938–4939`)
        grants post-legend-rule priority to the player who would have received
        priority rather than defaulting to `g.activePlayer` or a stale
        `pendingPriority` (CR 704.3); and
@@ -12876,10 +12876,10 @@ multi-pick disjointness, and `canPayLife`).
    `Attachments.ceaseToExist`, `Phasing.phaseOut`, Layer 1 copiable-value
    (`.copy`, `turnedFaceUp`, `transformed`) transitions on scoped Layer 2
    `.control` effects, `Movement.move`, and `Core.restoreControlUntilSourceLeaves`
-   (`Event.lean:1095–1136, 1827–1892`, `Core.lean:352–362, 1793–1806, 2161–2163,
-   10324–10328, 10430–10504, 11231–11237, 11327–11378, 11444–11465, 11681–11768`,
-   `Attachments.lean:46–59`, `Movement.lean:582–609`, `Leaving.lean:80–197,
-   386–403`, `Entering.lean:404–407`, `Phasing.lean:45–97, 100–130`,
+   (`Event.lean:1095–1136, 1893, 1905–1907, 1932–1934`, `Core.lean:352–362, 1793–1806, 2161–2163,
+   10324–10328, 10430–10504, 11412–11418, 11499–11521, 11559–11566, 11631–11675, 11893–11949, 11954–12006`,
+   `Attachments.lean:46–65`, `Movement.lean:582–609`, `Leaving.lean:80–217, 241,
+   422–456, 2515–2518, 2538`, `Entering.lean:404–407`, `Phasing.lean:45–78, 83–100, 106–119, 123–152`,
    `Turns.lean:20–38, 183, 349, 811`, `Casting.lean:1032–1062`,
    `SacrificeDiscard.lean:315, 328–329, 356`,
    `Activation.lean:203–209`, `ResolutionHelpers.lean:577–583`,
@@ -12904,23 +12904,23 @@ multi-pick disjointness, and `canPayLife`).
      `post.objects.filter (·.isBattlefieldObject)`:
      1. clears `.ringBearer` (`GameEvent.designation ... .ringBearer false
         (cause := cause.getD (.gameRule .staticAbility))`, matching
-        `Leaving.endControlEffectById` at `Leaving.lean:144–145`) when
+        `Leaving.endControlEffectById` at `Leaving.lean:148–150`) when
         `pre.controllerOf cur = some prev`, `post.controllerOf cur != some prev`,
         and `(post.player prev).ringBearerId == some cur.id`;
      2. removes `cur` from combat via `removeFromCombatOnControlChange pre post
-        (cause := cause)` (forwarding `cause` into `removeFromCombat` at
-        `Core.lean:11327–11332` so stamped callers keep their `EventCause`) when
+        (cause := cause)` (`Core.lean:11508–11516`, forwarding `cause` into `removeFromCombat` at
+        `Core.lean:11499–11504` so stamped callers keep their `EventCause`) when
         `pre.controllerOf cur != post.controllerOf cur` (CR 506.4); and
      3. queues `(cur.id, s!"{post.name cur} is exiled (CR 800.4c)")` into
         `runEndControlExileLoop` (`cause := some (.gameRule .playerLeftGame)`,
-        tightening `Leaving.runEndControlExileLoop` at `Leaving.lean:80–104` to
-        guard on `g.sbaPaused` at `84` without clearing `pendingReplacement` on
-        that entry arm, clear any pre-existing `priorCont? :=
-        g.pendingReplacement` before the `else` `for` loop at `91`, append
-        `priorCont?` **after** `.endControlExileLoop` before returning on the
-        `97–100` `.chooseReplacement` pause arm—where `promptChooseReplacement` at
-        `Core.lean:11234–11236` replaces `pendingReplacement` with only `.move`—and
-        append `priorCont?` once on the `103` no-pause fall-through) whenever
+        tightening `Leaving.runEndControlExileLoop` at `Leaving.lean:80–108` to
+        guard on `g.sbaPaused` at `84–85` without clearing `pendingReplacement` on
+        that entry arm, snapshot `priorCont? := g.pendingReplacement` at `87` and clear
+        it at `88` before `pendingLog` (`89–91`) and the `for` loop at `92`, append
+        `priorCont?` (`101–102`) **after** `.endControlExileLoop` (`100`) before returning (`103`) on the
+        `98–103` `g.sbaPaused` pause arm—where `promptChooseReplacement` at
+        `Core.lean:11412–11418` replaces `pendingReplacement` with only `.move`—and
+        append `priorCont?` once on the `106–107` no-pause fall-through) whenever
         `!(pre.appliedControlEffectIds cur).isEmpty &&
         (post.appliedControlEffectIds cur).isEmpty`, `(post.player
         fallback).leftTheGame` for `fallback :=
@@ -12931,31 +12931,31 @@ multi-pick disjointness, and `canPayLife`).
    - Wire `reconcileControlAfterTransitionFwd` (upstream of `Leaving.lean`) /
      `reconcileControlAfterTransition` (downstream of `Leaving.lean`) across every
      non-`endControlEffectById` control-transition boundary:
-     - in `Attachments.ceaseToExist` (`Attachments.lean:46–59`, adding optional
+     - in `Attachments.ceaseToExist` (`Attachments.lean:46–65`, adding optional
        `(reconcileControl : Bool := true)` passed as `false` from
-       `Leaving.objectLeavesTheGame` at `Leaving.lean:392, 398` and
-       `Leaving.playerLeavesGameCore` at `Leaving.lean:2476` where departure
+       `Leaving.objectLeavesTheGame` at `Leaving.lean:422–456` (`447, 453`) and
+       `Leaving.playerLeavesGameCore` at `Leaving.lean:2538` (with `objectLeavesTheGame` at `2515–2518`) where departure
        exile queues already run in batch) and in `Core.expireEffectById`'s
        `.gameRule (.fraEmblem id)` `ceasedToExist` branch
-       (`Core.lean:11459–11465`, when `reconcileControl == true`), run
+       (`Core.lean:11650–11673`, reconciling at `11671–11672` when `reconcileControl == true`), run
        `reconcileControlAfterTransitionFwd pre g (cause := expCause)` /
        `(cause := some embCause)` after expiring leaving-object / while-source
        effects so a token outside `.battlefield`, copy, stack ability, or
        temporary emblem ceasing to exist exiles any permanent whose last control
        effect ended onto a departed fallback controller;
-     - in `Phasing.phaseOut` (`Phasing.lean:55–79`, replacing
-       `removeFromCombatOnControlChange pre g (cause := some (stepCause g))` at
-       `78`, and likewise updating `Phasing.phaseIn` at `Phasing.lean:100–129`
-       replacing `removeFromCombatOnControlChange pre g (cause := some
-       resolvedCause)` at `129` for combat removal + ring-bearer designation
+     - in `Phasing.phaseOut` (`Phasing.lean:45–78`, calling `reconcileControlAfterTransitionFwd`
+       in place of `removeFromCombatOnControlChange` at
+       `78`, and likewise updating `Phasing.phaseIn` at `Phasing.lean:123–152`
+       —binding `resolvedCause` at `129–131`—to call `reconcileControlAfterTransitionFwd` in place of
+       `removeFromCombatOnControlChange` at `152` for combat removal + ring-bearer designation
        loss), run `reconcileControlAfterTransitionFwd pre g (cause := some
        (stepCause g))` / `(cause := some resolvedCause)` so phasing out a
        control-effect source (which stops `.whileSourceOnBattlefield` and
        `.whileSourceHasCounter` in `Core.durationActive` at `Core.lean:352–362`,
        CR 702.26b,f) exiles any permanent whose last control effect ended onto a
        departed fallback controller instead of stranding it with `controllerOf ==
-       none`; make `Phasing.phaseOutPermanents` (`Phasing.lean:84–97`, factored
-       through `Phasing.phaseOutPermanentsLoop` and a new
+       none`; make `Phasing.phaseOutPermanents` (`Phasing.lean:106–119`, `withBatchCore` at `118`, factored
+       through `Phasing.phaseOutPermanentsLoop` at `83–100` and a new
        `PendingReplacement.phaseOutPermanentsLoop (remainingIds : Array ObjectId)
        (cause : Option EventCause := none)` constructor in `Event.lean` dispatched
        in `Decisions.resumePendingReplacement`, matching
@@ -14300,8 +14300,8 @@ unpayable-prompt `decline` reversals).
        recording extra `{R}` `GameEvent.manaAdded` for `g.mountainExtraRedThisTurn
        p` (`CR 800.4a`) while leaving the already-chained `.endProposalAction` and
        `.receivePriority p` / `.restorePending prevPending` (`391–396`) to run; and
-     - in `ManaAbilities.abortDepartedManaAbilityCont` (`342–352`), replace the
-       `else if prevPending == .none ...` mutually exclusive branch with a
+     - in `ManaAbilities.abortDepartedManaAbilityCont` (`342–352`), replace `350–351`'s
+       mutually exclusive `else if g.pending == .none && !g.sbaPaused` branch (inside `if !g.over` at `347`) with a
        fall-through check (`if prevPending != .none then g :=
        g.resumePendingReplacementFwd (.restorePending prevPending false)` followed
        by `if !g.over && g.pending == .none && g.afterRandom == .none &&
