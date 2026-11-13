@@ -276,6 +276,15 @@ private partial def nextQueuedPendingOnResume (g : Game) (hasQueuedPending : Boo
 private def continuationGrantsPriority (g : Game) (hasQueuedPending : Bool := false) :
     PendingReplacement → Bool
   | .seq a b => continuationGrantsPriority g (nextQueuedPendingOnResume g hasQueuedPending a) b
+  | .beginStepCont st => st != .untap || hasQueuedPending
+  | .beginTurnAfterStartExpiry
+  | .continueStartNextTurn ..
+  | .finishCleanupAfterClearEot
+  | .finishPostStep .startNextTurnAndBegin
+  | .finishPostStep .endTurnAfterCleanupStepEnded
+  | .finishPostStep .advanceAfterStepEnded => true
+  | .finishPostStep (.beginStepBody st)
+  | .finishPostStep (.beginStepAfterPhaseBegan st) => st != .untap || hasQueuedPending
   | pr => pr.endsWithPriorityGrant hasQueuedPending
 
 /-- Explicit priority recipient encoded by a pending replacement continuation
@@ -801,8 +810,8 @@ partial def resumePendingReplacement (g : Game) (pr : PendingReplacement)
     (followedByFinishFra : Bool := false) : Game :=
   match pr with
   | .seq first rest =>
-    let checkReversal : Bool :=
-      match first with
+    let rec stepCanReverseProposal : PendingReplacement → Bool
+      | .seq a b => stepCanReverseProposal a || stepCanReverseProposal b
       | .restorePending (.fraChoice _ (.costPicks ..)) ..
       | .restorePending (.fraChoice _ (.crew ..)) ..
       | .restorePending (.fraChoice _ (.zemoBoastExile ..)) ..
@@ -815,11 +824,16 @@ partial def resumePendingReplacement (g : Game) (pr : PendingReplacement)
       | .restorePending (.chooseKicker ..) ..
       | .restorePending (.chooseGift ..) ..
       | .restorePending (.chooseTeamwork ..) ..
+      | .payCostPickItems ..
+      | .finishActivationExtraCosts ..
+      | .finishBecomeCast ..
       | .completeActivation ..
-      | .finishProposedSpellCosts .. =>
-        g.proposedSpell.isSome
+      | .finishProposedSpellCosts .. => true
       | _ => false
+    let checkReversal : Bool :=
+      !g.hasActiveManaProposalCheckpoint && g.proposedSpell.isSome && stepCanReverseProposal first
     let spellId? := g.proposedSpell.map (·.spellId)
+    let wasTurnFaceUp := g.proposedSpell.any (·.kind == .turnFaceUp)
     let g0 := g
     let g := g.resumePendingReplacement first
       (followedByFinishFra := followedByFinishFra || rest.endsWithFinishFra)
@@ -834,9 +848,13 @@ partial def resumePendingReplacement (g : Game) (pr : PendingReplacement)
     let g :=
       if newlyDeparted.isEmpty then g
       else g.appendDepartedManyToContinuations newlyDeparted
+    let completedOnStackOrBf :=
+      spellId?.any fun sid =>
+        (g.findObject? sid).any fun o =>
+          if wasTurnFaceUp then o.isOnBattlefield && !o.status.faceDown
+          else o.zone == .stack
     let reversed :=
-      checkReversal && g.proposedSpell.isNone &&
-        !spellId?.any (fun sid => (g.findObject? sid).any (·.zone == .stack))
+      checkReversal && g.proposedSpell.isNone && !completedOnStackOrBf
     if reversed then g
     else if g.over && !rest.hasCheckpointReplay then g
     else if g.pending != .none then
@@ -1141,6 +1159,7 @@ partial def resumePendingReplacement (g : Game) (pr : PendingReplacement)
       | none => g
     let reverseOrResumePopped (g : Game) : Game :=
       if g.proposedSpell.isSome then
+        let g := g.popNestedManaProposalCheckpoint
         let caster : PlayerId := (g.proposedSpell.map (·.caster)).getD g.activePlayer
         let allDeparted : Array PlayerId :=
           match g.proposalCheckpoint with
@@ -1172,38 +1191,7 @@ partial def resumePendingReplacement (g : Game) (pr : PendingReplacement)
               return false
         let ckptUntouchedBeforeLeave : Bool :=
           g.proposalCheckpoint.any fun ckpt =>
-            ((ckpt.continuations.back?.getD {}).pendingReplacement).isSome && Id.run do
-              let slice := g.events.extract (min ckpt.eventsSize g.events.size) g.events.size
-              let anyDepartedInSlice := slice.any fun ev =>
-                match ev with
-                | .rules _ (.player (.lost q ..)) _ _
-                | .rules _ (.player (.leftGame q)) _ _ => allDeparted.contains q
-                | _ => false
-              if !anyDepartedInSlice then return true
-              let firstLeaveBatch? : Option BatchId :=
-                slice.findSome? fun ev =>
-                  match ev with
-                  | .rules _ (.player (.leftGame q)) _ (some b) =>
-                    if allDeparted.contains q then some b else none
-                  | _ => none
-              let mut frameDepth : Nat := 0
-              for ev in slice do
-                match ev with
-                | .rules _ (.player (.lost q ..)) _ _
-                | .rules _ (.player (.leftGame q)) _ _ =>
-                  if allDeparted.contains q then return true
-                | .engine _ (.pushContinuationFrame _) _ =>
-                  frameDepth := frameDepth + 1
-                | .engine _ .popContinuationFrame _ =>
-                  if frameDepth == 0 then return false
-                  frameDepth := frameDepth - 1
-                | .engine _ (.continuation (.pendingReplacement none)) (some b) =>
-                  if frameDepth == 0 then
-                    if firstLeaveBatch? == some b then return true else return false
-                | .engine _ (.continuation (.pendingReplacement _)) _ =>
-                  if frameDepth == 0 then return false
-                | _ => pure ()
-              return false
+            g.ckptPendingReplacementUntouchedBeforeLeave ckpt allDeparted
         let hadConsumedOrig : Bool :=
           ckptOrigCont?.isSome && !(ckptMovedToOuter || ckptUntouchedBeforeLeave)
         let startExtraIdx :=
@@ -1341,13 +1329,15 @@ partial def resumePendingReplacement (g : Game) (pr : PendingReplacement)
             if !g.sbaPaused && g.pending == .none && ckptWasRandom &&
                 restoreCkptPending?.isSome && freshCont?.isNone then
               let g :=
-                match restored? with
-                | some rest =>
-                  let g := if g.continuations.isEmpty then g.change (.pushContinuationFrame {}) else g
-                  if g.pendingReplacement == some rest then g else g.change (.pendingReplacement (some rest))
+                if g.pendingReplacement.isSome then g.change (.pendingReplacement none) else g
+              let g :=
+                match restoreCkptPending? with
+                | some rp => g.resumePendingReplacement rp
                 | none => g
-              match restoreCkptPending? with
-              | some rp => g.resumePendingReplacement rp
+              match restored? with
+              | some rest =>
+                let g := if g.continuations.isEmpty then g.change (.pushContinuationFrame {}) else g
+                g.chainPendingReplacement rest
               | none => g
             else
               let combinedCont? := seqOpt freshCont? (seqOpt restoreCkptPending? restored?)
@@ -1402,11 +1392,7 @@ partial def resumePendingReplacement (g : Game) (pr : PendingReplacement)
       else
         reverseOrResumePopped g
     | .chooseLegend q name ids =>
-      let liveIds := ids.filter fun id =>
-        (g.findObject? id).any (fun o =>
-          o.isOnBattlefield &&
-            (g.currentBatch.isSome ||
-              (g.controlledBy o q && g.treatedAsLegendary o && g.name o == name)))
+      let liveIds := g.validLegendChoiceIds q name ids
       if !g.stillInGame q || liveIds.size < 2 then resumePoppedIfNoPrompt g
       else openPromptWith g (.chooseLegend q name liveIds)
     | .chooseReplacement q choices =>
@@ -1641,8 +1627,10 @@ partial def resumePendingReplacement (g : Game) (pr : PendingReplacement)
     | .error _ =>
       g.reverseProposedSpell (resumeContinuation := true)
   | .finishTurnFaceUp caster spellId hadOuter =>
-    (g.completeTurnFaceUp caster spellId (hadOuterReplacement := hadOuter)).1
-  | .endProposalAction =>
+    let (g, callerShouldResume) := g.completeTurnFaceUp caster spellId (hadOuterReplacement := hadOuter)
+    if callerShouldResume && !hadOuter then resumeAfterBecomeCast g else g
+  | .endProposalAction clearCkpt =>
+    let g := if clearCkpt && g.proposalCheckpoint.isSome then g.change .clearProposalCheckpoint else g
     if g.proposalCheckpoint.isSome then g.change .endProposalAction else g
   | .payCostPickItems p abilityId sourceId pick remainingIds =>
     g.payCostPickItems p abilityId sourceId pick remainingIds
@@ -1829,10 +1817,12 @@ partial def resumePendingReplacement (g : Game) (pr : PendingReplacement)
       let g := if g.continuations.isEmpty then g.change (.pushContinuationFrame {}) else g
       let g := ((g.change (.postCastCleanup (some cleanup))).runPostCastCleanup).drainLocalPendingReplacement
       if g.pending == .none && g.afterRandom == .none then g.popEmptyTopContinuationFrames else g
-  | .continueCheckpointReplay remainingStream fullKeptStream revMap effRevMap suppressInteractive =>
+  | .continueCheckpointReplay remainingStream fullKeptStream revMap liveObjMap effRevMap minPostCkptEffId suppressInteractive keptOrigNextEffs =>
     let quiet := suppressInteractive || g.over || g.suppressInteractiveReplay
-    let g := g.replayKeptStreamCore remainingStream fullKeptStream revMap effRevMap
+    let g := g.replayKeptStreamCore remainingStream fullKeptStream revMap liveObjMap effRevMap
+      (minPostCkptEffId := minPostCkptEffId)
       (suppressInteractive := quiet)
+      (keptOrigNextEffs := keptOrigNextEffs)
       (runBatch := if quiet then
         (fun g0 f =>
           (g0.withBatchCore none f (suppressInteractive := true)).flushQueuedLinkedExile
@@ -1841,36 +1831,7 @@ partial def resumePendingReplacement (g : Game) (pr : PendingReplacement)
         (fun g0 f => g0.withBatch none f))
     if g.players.any (·.leftTheGame) &&
         !g.sbaPaused && !g.pendingReplacement.any PendingReplacement.hasCheckpointReplay then
-      let g := (g.decideGameIfFinished).getD g
-      if g.over then g
-      else
-        let staleCtrlEids := g.activeEffects.filterMap fun (eid, e) =>
-          match e with
-          | .layered _ (.control c) _ => if (g.player c).leftTheGame then some eid else none
-          | _ => none
-        let g := staleCtrlEids.foldl (fun acc eid =>
-          acc.endControlEffectById eid (cause := some (.gameRule .playerLeftGame))) g
-        let rec queuedExileIds : PendingReplacement → Array ObjectId
-          | .endControlExileLoop rem _ pend =>
-            (rem.map Prod.fst) ++ (match pend with | some (oid, _) => #[oid] | none => #[])
-          | .seq a b => queuedExileIds a ++ queuedExileIds b
-          | _ => #[]
-        let alreadyQueued :=
-          (g.pendingReplacement.map queuedExileIds |>.getD #[]) ++
-            g.outerPendingReplacements.foldl (fun acc pr => acc ++ queuedExileIds pr) #[]
-        let orphanExiles : Array (ObjectId × String) :=
-          g.objects.filterMap fun cur =>
-            if !cur.isBattlefieldObject || alreadyQueued.contains cur.id then none
-            else
-              let noLiveCtrl :=
-                match g.controllerOf cur with
-                | none => true
-                | some c => (g.player c).leftTheGame
-              if noLiveCtrl then
-                some (cur.id, s!"{g.name cur} is exiled (no controller, CR 800.4c)")
-              else none
-        if orphanExiles.isEmpty then g
-        else g.runEndControlExileLoop orphanExiles (cause := some (.gameRule .playerLeftGame))
+      g.reconcilePostReplayDepartures
     else g
   | .phaseOutPermanentsLoop remainingIds cause =>
     g.phaseOutPermanentsLoop remainingIds (cause := cause)
@@ -2629,6 +2590,8 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
       | none => g
   | .recordUntapStepEnded =>
     g.recordStepEnded .untap
+  | .untapStepAfterPhaseIn =>
+    g.runUntapStepAfterPhaseIn
   | .beginStepAfterPhaseBegan st =>
     g.beginStepAfterPhaseBegan st
   | .beginStepBody st =>
@@ -5132,27 +5095,8 @@ def keepLegend (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game :=
   | .chooseLegend q name ids =>
     if p != q then
       throw s!"Only {(g.player q).name} may choose which {name} to keep (CR 704.5j)"
-    let unchangedSincePrompt : Bool := Id.run do
-      let mut promptIdx? : Option Nat := none
-      let mut i := g.events.size
-      while i > 0 do
-        i := i - 1
-        match g.events[i]!.change with
-        | .engine (.pending (.chooseLegend ..)) =>
-          promptIdx? := some i
-          break
-        | _ => pure ()
-      match promptIdx? with
-      | none => return false
-      | some idx =>
-        for j in [idx + 1 : g.events.size] do
-          match g.events[j]!.change with
-          | .rules _ | .engine (.object ..) | .engine (.materializeObject ..) =>
-            return false
-          | _ => pure ()
-        return true
     let preBatchLegendIds : Array ObjectId :=
-      if unchangedSincePrompt && g.currentBatch.isSome && !g.openBatchObjects.isEmpty then
+      if g.preBatchLegendSnapshotValid then
         let preG : Game :=
           { g with
             objects := g.openBatchObjects
@@ -5167,7 +5111,7 @@ def keepLegend (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game :=
     let isMatchingLegend (gCur : Game) (o : GameObject) : Bool :=
       o.isOnBattlefield && gCur.controlledBy o p &&
         ((gCur.treatedAsLegendary o && gCur.name o == name) || preBatchLegendIds.contains o.id)
-    let liveIds := ids.filter fun oid => (g.findObject? oid).any (isMatchingLegend g)
+    let liveIds := g.validLegendChoiceIds p name ids
     if liveIds.size < 2 then
       let outerCont? := g.pendingReplacement
       let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g

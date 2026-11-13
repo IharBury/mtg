@@ -68,6 +68,25 @@ def setUntilEotForm (g : Game) (o : GameObject) (pt : Int × Int)
     let g := if pumpPerArtifact then g.createEffect (.pumpPerArtifactUntilEot o.id) else g
     g.logMsg msg
 
+private def recordCounterPutAndReconcile (g : Game) (o : GameObject) (kind : CounterKind)
+    (n' : Nat) (putter : Option PlayerId) (finalCause : EventCause) : Game :=
+  let pre := g
+  let wasZeroOnBf := o.isOnBattlefield && o.status.counterCount kind == 0
+  let hasWhileCounterCtrlOrCopy :=
+    wasZeroOnBf &&
+      g.activeEffects.any (fun (_, e) =>
+        match e with
+        | .layered _ (.control _) (.whileSourceHasCounter s k)
+        | .layered _ (.copy _) (.whileSourceHasCounter s k) => s == o.id && k == kind
+        | _ => false)
+  let g := g.record (GameEvent.counters g.turnNumber putter (g.snapshot o) kind n'
+    (cause := finalCause))
+  let g :=
+    if kind == .time then g.syncImpendingNotACreature o.id (cause := some finalCause) else g
+  if hasWhileCounterCtrlOrCopy then
+    reconcileControlAfterTransition pre g (cause := some finalCause)
+  else g
+
 /-- Put `n` finality counters on `o` (MSH). Multiple counters are redundant. -/
 def addFinalityTo (g : Game) (o : GameObject) (n : Nat := 1)
     (byPlayer : Option PlayerId := none) (entersWith := false)
@@ -93,10 +112,11 @@ def addFinalityTo (g : Game) (o : GameObject) (n : Nat := 1)
     else
       let g :=
         if !entersWith then
-          g.record (GameEvent.counters g.turnNumber putter (g.snapshot o) .finality n'
-            (cause := g.resolveOptionalCause cause' (fallbackCtrl := putter)))
+          let finalCause := g.resolveOptionalCause cause' (fallbackCtrl := putter)
+          recordCounterPutAndReconcile g o .finality n' putter finalCause
         else g
-      g.logMsg s!"{g.name o} gets {CounterKind.finality.countersPhrase n'}"
+      let oName := (g.findObject? o.id).map g.name |>.getD (g.name o)
+      g.logMsg s!"{oName} gets {CounterKind.finality.countersPhrase n'}"
 
 /-- Frozen in Ice, or a granted “can't become untapped”, blocks every untap.
 Enchanted River's Grasp only skips the untap step. -/
@@ -300,10 +320,10 @@ def addIndestructibleCounter (g : Game) (o : GameObject) (n : Nat := 1)
     let g := g.consumeReplacementOrder applied
     if n' == 0 then g
     else
-      let g :=
-        g.record (GameEvent.counters g.turnNumber putter (g.snapshot o) .indestructible n'
-          (cause := g.resolveOptionalCause cause' (fallbackCtrl := putter)))
-      g.logMsg s!"{g.name o} gets {CounterKind.indestructible.countersPhrase n'}"
+      let g := g.recordCounterPutAndReconcile o .indestructible n' putter
+        (g.resolveOptionalCause cause' (fallbackCtrl := putter))
+      let oName := (g.findObject? o.id).map g.name |>.getD (g.name o)
+      g.logMsg s!"{oName} gets {CounterKind.indestructible.countersPhrase n'}"
 
 /-- Put a lifelink counter on `o`. -/
 def addLifelinkCounter (g : Game) (o : GameObject) (n : Nat := 1)
@@ -325,10 +345,10 @@ def addLifelinkCounter (g : Game) (o : GameObject) (n : Nat := 1)
     let g := g.consumeReplacementOrder applied
     if n' == 0 then g
     else
-      let g :=
-        g.record (GameEvent.counters g.turnNumber putter (g.snapshot o) .lifelink n'
-          (cause := g.resolveOptionalCause cause' (fallbackCtrl := putter)))
-      g.logMsg s!"{g.name o} gets {CounterKind.lifelink.countersPhrase n'}"
+      let g := g.recordCounterPutAndReconcile o .lifelink n' putter
+        (g.resolveOptionalCause cause' (fallbackCtrl := putter))
+      let oName := (g.findObject? o.id).map g.name |>.getD (g.name o)
+      g.logMsg s!"{oName} gets {CounterKind.lifelink.countersPhrase n'}"
 
 /-- Put a burden counter on `o`. The log includes the new total. -/
 def addBurdenCounter (g : Game) (o : GameObject) (n : Nat := 1)
@@ -350,11 +370,12 @@ def addBurdenCounter (g : Game) (o : GameObject) (n : Nat := 1)
     let g := g.consumeReplacementOrder applied
     if n' == 0 then g
     else
-      let g :=
-        g.record (GameEvent.counters g.turnNumber putter (g.snapshot o) .burden n'
-          (cause := g.resolveOptionalCause cause' (fallbackCtrl := putter)))
-      let total := (g.object! o.id).status.burden
-      g.logMsg s!"{g.name o} gets {CounterKind.burden.countersPhrase n'} ({total})"
+      let g := g.recordCounterPutAndReconcile o .burden n' putter
+        (g.resolveOptionalCause cause' (fallbackCtrl := putter))
+      let oCur? := g.findObject? o.id
+      let total := (oCur?.map (·.status.burden)).getD (o.status.burden + n')
+      let oName := (oCur?.map g.name).getD (g.name o)
+      g.logMsg s!"{oName} gets {CounterKind.burden.countersPhrase n'} ({total})"
 
 /-- Put `n` counters of `kind` on `o`. +1/+1 counters go through
 `addPlusOnePlusOneTo` so their enters-with bonus and “you put a +1/+1
@@ -387,14 +408,11 @@ def addCounters (g : Game) (o : GameObject) (kind : CounterKind) (n : Nat := 1)
         if n' == 0 then g
         else
           let finalCause := g.resolveOptionalCause cause' (fallbackCtrl := putter)
-          let happened := GameEvent.counters g.turnNumber putter (g.snapshot o) kind n'
-            (cause := finalCause)
-          let g := if entersWith then g else g.record happened
           let g :=
-            if !entersWith && kind == .time then
-              g.syncImpendingNotACreature o.id (cause := some finalCause)
-            else g
-          g.logMsg s!"{g.name o} gets {kind.countersPhrase n'}"
+            if entersWith then g
+            else g.recordCounterPutAndReconcile o kind n' putter finalCause
+          let oName := (g.findObject? o.id).map g.name |>.getD (g.name o)
+          g.logMsg s!"{oName} gets {kind.countersPhrase n'}"
 
 /-- Log and optionally attach `attach` once `finishAmassOn`'s counter placement finishes. -/
 private def finishAmassOnPost (g : Game) (controller : PlayerId) (armyId : ObjectId)

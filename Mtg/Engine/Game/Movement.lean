@@ -634,6 +634,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
     if old.zone == .battlefield && !old.linkedExile.isEmpty then
       g.returnLinkedExileMoves old.linkedExile (suppressInteractive := quietMove)
     else g
+  let g := g.flushQueuedLinkedExile (suppressInteractive := quietMove)
   -- Head of the Hunt: “When you do, create a Wolf” is a reflexive trigger.
   -- The exile replacement already happened (CR 614.6); the token waits for the stack.
   let g :=

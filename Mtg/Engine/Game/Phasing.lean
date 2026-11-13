@@ -173,23 +173,138 @@ def phaseInControlledLoop (g : Game) (remainingIds : Array ObjectId)
           return g
   return g
 
-/-- Phase in every phased-out permanent `p` controlled when it phased out
-(CR 502.1 / 703.4a). -/
+/-- Whether departed player `dep`'s next turn would have begun in `g.events`
+strictly after event index `sinceIdx`, folding turn-order, extra-turn, and
+shared-turn state from `g.events` (CR 500.7 / 702.26m,n / 800.4 / 805.4). -/
+private def departedNextTurnWouldHaveBegunSince (g : Game) (dep : PlayerId)
+    (sinceIdx : Nat) : Bool := Id.run do
+  let n := g.players.size
+  if n == 0 then return false
+  let hasLeaveEvent (p : PlayerId) : Bool :=
+    g.events.any fun ev =>
+      match ev.change with
+      | .rules (.player (.lost q ..))
+      | .rules (.player (.leftGame q)) => q == p
+      | _ => false
+  let mut alive : Array Bool := Array.ofFn (n := n) fun ⟨k, _⟩ =>
+    let pk : PlayerId := ⟨k⟩
+    g.stillInGame pk || hasLeaveEvent pk
+  let mut activePlayer : PlayerId := ⟨0⟩
+  let mut extraTurns : Array PlayerId := #[]
+  let mut seats : Array PlayerId := #[⟨0⟩]
+  let mut seatsExtra : Bool := false
+  let isAlive (al : Array Bool) (q : PlayerId) : Bool :=
+    q.idx < n && al[q.idx]!
+  let isFinalSeat (ap : PlayerId) (al : Array Bool) (stSeats : Array PlayerId) : Bool := Id.run do
+    for k in [1:n+1] do
+      let q : PlayerId := ⟨(ap.idx + k) % n⟩
+      if isAlive al q then
+        return !(g.areTeammates ap q && !stSeats.contains q)
+    return true
+  for idx in [0:g.events.size] do
+    match g.events[idx]!.change with
+    | .engine (.addPlayer pl) =>
+      if pl.id.idx < n then
+        alive := alive.set! pl.id.idx (!pl.lost && !pl.leftTheGame)
+    | .engine (.startingPlayer v) =>
+      activePlayer := v
+      seats := #[v]
+      seatsExtra := false
+    | .rules (.player (.lost q ..))
+    | .rules (.player (.leftGame q)) =>
+      if q.idx < n then
+        alive := alive.set! q.idx false
+    | .rules (.turn (.extraTurnAdded player _)) =>
+      let team := g.teamMembers player
+      let inProgress :=
+        if seatsExtra && !seats.isEmpty then
+          Id.run do
+            let mut seen := seats
+            let mut cnt := 0
+            let mut keepGoing := true
+            for q in extraTurns do
+              if keepGoing && g.areTeammates seats[0]! q && !seen.contains q then
+                seen := seen.push q
+                cnt := cnt + 1
+              else
+                keepGoing := false
+            return cnt
+        else 0
+      extraTurns :=
+        extraTurns.extract 0 inProgress ++ team ++
+          extraTurns.extract inProgress extraTurns.size
+    | .rules (.turn (.turnBegan player extra)) =>
+      let sameShared :=
+        extra == seatsExtra && !seats.isEmpty &&
+          g.areTeammates seats[0]! player && !seats.contains player
+      if idx > sinceIdx then
+        let finalSeat := isFinalSeat activePlayer alive seats
+        let midRegularShared := !seatsExtra && !finalSeat
+        let skipped : Array PlayerId := Id.run do
+          let mut depSkipped : Array PlayerId := #[]
+          if !midRegularShared then
+            let mut skipIdx := 0
+            while skipIdx < extraTurns.size && !isAlive alive extraTurns[skipIdx]! do
+              let d := extraTurns[skipIdx]!
+              if !depSkipped.contains d then depSkipped := depSkipped.push d
+              skipIdx := skipIdx + 1
+            if (extraTurns.extract skipIdx extraTurns.size)[0]?.isSome then
+              return depSkipped
+          for k in [1:n+1] do
+            let q : PlayerId := ⟨(activePlayer.idx + k) % n⟩
+            if !isAlive alive q then
+              if !depSkipped.contains q then depSkipped := depSkipped.push q
+            else
+              return depSkipped
+          return depSkipped
+        let depSharedTurnBegan :=
+          !sameShared && (player == dep || g.areTeammates player dep)
+        if skipped.contains dep || depSharedTurnBegan then
+          return true
+      let dropLost (xs : Array PlayerId) : Array PlayerId :=
+        (xs.toList.dropWhile (fun q => !isAlive alive q)).toArray
+      let restExtra :=
+        if extra then
+          let trimmed := dropLost extraTurns
+          if trimmed[0]? == some player then trimmed.extract 1 trimmed.size
+          else trimmed
+        else if sameShared then
+          extraTurns
+        else
+          dropLost extraTurns
+      extraTurns := restExtra
+      activePlayer := player
+      if sameShared then
+        seats := seats.push player
+      else
+        seats := #[player]
+        seatsExtra := extra
+    | _ => pure ()
+  return false
+
+/-- Phase in every phased-out permanent `p` controlled when it phased out, plus
+any phased-out permanent whose phase-out controller has left the game and whose
+next turn would have begun since it phased out (CR 502.1 / 702.26m,n / 703.4a). -/
 def phaseInControlled (g : Game) (p : PlayerId) : Game :=
   let cause := some (EventCause.turnBased .phaseInOut)
-  let phaseOutControllerOf (o : GameObject) : Option PlayerId :=
-    match g.events.findSomeRev? (fun ev =>
-      match ev.change with
+  let phaseOutControllerOf (o : GameObject) : Option PlayerId × Nat := Id.run do
+    for rev in [0:g.events.size] do
+      let idx := g.events.size - 1 - rev
+      match g.events[idx]!.change with
       | .rules (.permanent (.phasedOut eo _)) =>
-        if eo.id == some o.id then some eo.controller else none
-      | _ => none) with
-    | some ctrl? => ctrl?
-    | none => g.controllerOf o
+        if eo.id == some o.id then return (eo.controller, idx)
+      | _ => pure ()
+    return (g.controllerOf o, 0)
   let targetIds :=
     g.objects.filterMap fun o =>
-      if o.zone == .battlefield && o.status.phasedOut && o.status.phasedWith.isNone &&
-          phaseOutControllerOf o == some p then
-        some o.id
+      if o.zone == .battlefield && o.status.phasedOut && o.status.phasedWith.isNone then
+        let (ctrl?, sinceIdx) := phaseOutControllerOf o
+        let shouldPhaseIn :=
+          ctrl? == some p ||
+            match ctrl? with
+            | some dep => !g.stillInGame dep && departedNextTurnWouldHaveBegunSince g dep sinceIdx
+            | none => false
+        if shouldPhaseIn then some o.id else none
       else none
   (g.withBatchCore cause fun g =>
     g.phaseInControlledLoop targetIds (cause := cause)).flushQueuedLinkedExileFwd

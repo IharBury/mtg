@@ -388,10 +388,25 @@ def addLoreCounters (g : Game) (saga : GameObject) (n : Nat)
             | some o =>
               if !o.isOnBattlefield then g
               else
-                let lore := o.status.lore + n'
-                let sagaName := g.name o
+                let pre := g
+                let wasZeroOnBf := o.isOnBattlefield && o.status.counterCount .lore == 0
+                let hasWhileCounterCtrlOrCopy :=
+                  wasZeroOnBf &&
+                    g.activeEffects.any (fun (_, e) =>
+                      match e with
+                      | .layered _ (.control _) (.whileSourceHasCounter s k)
+                      | .layered _ (.copy _) (.whileSourceHasCounter s k) =>
+                        s == o.id && k == .lore
+                      | _ => false)
                 let g := g.record (GameEvent.counters g.turnNumber (some p) (g.snapshot o) .lore n'
                   (cause := finalCause))
+                let g :=
+                  if hasWhileCounterCtrlOrCopy then
+                    reconcileControlAfterTransition pre g (cause := some finalCause)
+                  else g
+                let postObj? := g.findObject? o.id
+                let sagaName := postObj?.map g.name |>.getD (g.name o)
+                let lore := postObj?.map (·.status.lore) |>.getD (o.status.lore + n')
                 if n' == 1 then
                   g.logMsg s!"{sagaName} gets a lore counter ({lore})"
                 else
@@ -432,8 +447,8 @@ def addLoreAfterDrawStep (g : Game) : Game :=
     g.hasSubtype o .saga && g.retainsPrintedAbilities o && (g.baseCard o).saga.isSome)).map (·.id)
   if sagaIds.isEmpty then g
   else
-    g.withBatchCore (some (.turnBased .sagaLoreOnMain)) fun g =>
-      g.addLoreAfterDrawStepIds sagaIds
+    (g.withBatchCore (some (.turnBased .sagaLoreOnMain)) fun g =>
+      g.addLoreAfterDrawStepIds sagaIds).flushQueuedLinkedExile
 
 /-- Apply `f` to each battlefield permanent matching `pred`. -/
 def foldBattlefield (g : Game) (pred : GameObject → Bool)

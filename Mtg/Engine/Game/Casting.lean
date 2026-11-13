@@ -643,6 +643,7 @@ def reverseProposedSpellCore? (g : Game) (resumeContinuation : Bool := false)
   match g.proposedSpell with
   | none => return (g, false)
   | some prop =>
+    let g := g.popNestedManaProposalCheckpoint
     let name := (g.player prop.caster).name
     let baseTriggers := (g.proposalCheckpoint.map (·.waitingTriggers.size)).getD 0
     let baseEventSize := (g.proposalCheckpoint.map (·.eventsSize)).getD g.events.size
@@ -681,38 +682,7 @@ def reverseProposedSpellCore? (g : Game) (resumeContinuation : Bool := false)
       if !doReconcileDep then false
       else
         g.proposalCheckpoint.any fun ckpt =>
-          ((ckpt.continuations.back?.getD {}).pendingReplacement).isSome && Id.run do
-            let slice := g.events.extract (min ckpt.eventsSize g.events.size) g.events.size
-            let anyDepartedInSlice := slice.any fun ev =>
-              match ev with
-              | .rules _ (.player (.lost q ..)) _ _
-              | .rules _ (.player (.leftGame q)) _ _ => allDeparted.contains q
-              | _ => false
-            if !anyDepartedInSlice then return true
-            let firstLeaveBatch? : Option BatchId :=
-              slice.findSome? fun ev =>
-                match ev with
-                | .rules _ (.player (.leftGame q)) _ (some b) =>
-                  if allDeparted.contains q then some b else none
-                | _ => none
-            let mut frameDepth : Nat := 0
-            for ev in slice do
-              match ev with
-              | .rules _ (.player (.lost q ..)) _ _
-              | .rules _ (.player (.leftGame q)) _ _ =>
-                if allDeparted.contains q then return true
-              | .engine _ (.pushContinuationFrame _) _ =>
-                frameDepth := frameDepth + 1
-              | .engine _ .popContinuationFrame _ =>
-                if frameDepth == 0 then return false
-                frameDepth := frameDepth - 1
-              | .engine _ (.continuation (.pendingReplacement none)) (some b) =>
-                if frameDepth == 0 then
-                  if firstLeaveBatch? == some b then return true else return false
-              | .engine _ (.continuation (.pendingReplacement _)) _ =>
-                if frameDepth == 0 then return false
-              | _ => pure ()
-            return false
+          g.ckptPendingReplacementUntouchedBeforeLeave ckpt allDeparted
     let hadConsumedOrig : Bool :=
       ckptOrigCont?.isSome && !(ckptMovedToOuter || ckptUntouchedBeforeLeave)
     let startExtraIdx :=
@@ -737,7 +707,7 @@ def reverseProposedSpellCore? (g : Game) (resumeContinuation : Bool := false)
       match extraLog with
       | some msg => g.logMsg msg
       | none => g
-    let g := if g.over then g else g.runPostCastCleanup
+    let g := if g.over || g.suppressInteractiveReplay then g else g.runPostCastCleanup
     let g :=
       if !doReconcileDep || g.over then g
       else Id.run do
@@ -824,13 +794,14 @@ def reverseProposedSpellCore? (g : Game) (resumeContinuation : Bool := false)
         if !g.sbaPaused && g.pending == .none &&
             (g.afterRandom == .none || (ckptWasRandom && restoreCkptPending?.isSome)) &&
             freshCont?.isNone then
-          if let some rest := restored? then
-            if g.continuations.isEmpty then
-              g := g.change (.pushContinuationFrame {})
-            if g.pendingReplacement != some rest then
-              g := g.change (.pendingReplacement (some rest))
           if let some rp := restoreCkptPending? then
             g := g.resumePendingReplacementFwd rp
+          if !g.over then
+            if let some rest := restored? then
+              if g.continuations.isEmpty then
+                g := g.change (.pushContinuationFrame {})
+              if g.pendingReplacement != some rest then
+                g := g.chainPendingReplacement rest
           if g.pending == .none && g.afterRandom == .none && g.pendingReplacement.isNone then
             while g.continuations.back? == some {} do
               g := g.change .popContinuationFrame
@@ -861,7 +832,7 @@ def reverseProposedSpellCore? (g : Game) (resumeContinuation : Bool := false)
           g.priority != prio then
         g.change (.priority prio)
       else g
-    if resumeContinuation &&
+    if (resumeContinuation || (doReconcileDep && g.pending == .none && g.afterRandom == .none)) &&
         (!g.continuations.isEmpty || g.pendingReplacement.isSome) then
       return (g, true)
     else if g.pending == .none && g.continuations.isEmpty then
@@ -1232,7 +1203,28 @@ costs have been paid, deferring `GameEvent.turnedFaceUp`, clearing proposal stat
 and granting priority across `Pending.chooseReplacement` (CR 116.2b / 708.8). -/
 def completeTurnFaceUp (g : Game) (caster : PlayerId) (spellId : ObjectId)
     (hadOuterReplacement : Bool := false) : Game × Bool :=
-  if let .chooseReplacement .. := g.pending then
+  if g.over || !g.stillInGame caster then
+    if !g.over && g.proposedSpell.isSome && g.proposalCheckpoint.isSome then
+      (g.reverseProposedSpell (resumeContinuation := true), false)
+    else if g.over then
+      (g, false)
+    else
+      let clearPending : Array EngineChange :=
+        if isProposalPromptFor caster g.pending then #[.pending .none] else #[]
+      let clearProp : Array EngineChange :=
+        if g.proposedSpell.isSome then #[.proposedSpell none] else #[]
+      let clearCkpt : Array EngineChange :=
+        if g.proposalCheckpoint.isSome then #[.clearProposalCheckpoint] else #[]
+      let changes := clearPending ++ clearProp ++ clearCkpt
+      let g := if changes.isEmpty then g else g.changes changes
+      if g.over || g.pending != .none then (g, false)
+      else if !hadOuterReplacement && (g.pendingReplacement.isSome || g.triggerSequenceRest.isSome) then
+        (g.chainPendingReplacement .finishFraChoice, true)
+      else if !hadOuterReplacement && g.continuations.isEmpty then
+        (g.receivePriority (g.priorityInstead caster), false)
+      else
+        (g, !g.over && g.pending == .none)
+  else if let .chooseReplacement .. := g.pending then
     (g.chainPendingReplacement (.finishTurnFaceUp caster spellId hadOuterReplacement), false)
   else
     match (g.findObject? spellId).filter (fun o =>
@@ -1241,35 +1233,47 @@ def completeTurnFaceUp (g : Game) (caster : PlayerId) (spellId : ObjectId)
       if g.proposedSpell.isSome && g.proposalCheckpoint.isSome then
         (g.reverseProposedSpell (resumeContinuation := true), false)
       else
-        let wasIdle := g.pending == .none
+        let wasIdle := g.pending == .none || isProposalPromptFor caster g.pending
+        let clearPending : Array EngineChange :=
+          if isProposalPromptFor caster g.pending then #[.pending .none] else #[]
         let clearCkpt : Array EngineChange :=
           if g.proposalCheckpoint.isSome then #[.clearProposalCheckpoint] else #[]
-        let g := g.changes (#[.pending .none, .proposedSpell none, .consecutivePasses 0] ++ clearCkpt)
+        let g := g.changes (clearPending ++ #[.proposedSpell none, .consecutivePasses 0] ++ clearCkpt)
         let g :=
-          if !g.over && !hadOuterReplacement && wasIdle &&
-              g.pendingReplacement.isNone && g.triggerSequenceRest.isNone then
+          if !g.over && !hadOuterReplacement && wasIdle && g.pending == .none &&
+              g.continuations.isEmpty && g.pendingReplacement.isNone && g.triggerSequenceRest.isNone then
             g.receivePriority (g.priorityInstead caster)
+          else if !g.over && !hadOuterReplacement && g.pending == .none &&
+              (g.pendingReplacement.isSome || g.triggerSequenceRest.isSome) then
+            g.chainPendingReplacement .finishFraChoice
           else g
-        (g, true)
+        (g, !g.over && g.pending == .none)
     | some o =>
+      let clearPending : Array EngineChange :=
+        if isProposalPromptFor caster g.pending then #[.pending .none] else #[]
       let clearCkpt : Array EngineChange :=
         if g.proposalCheckpoint.isSome then #[.clearProposalCheckpoint] else #[]
-      let g := g.changes (#[.pending .none, .proposedSpell none, .consecutivePasses 0] ++ clearCkpt)
-      let skipTail := hadOuterReplacement && g.pendingReplacement.isNone
-      let chainFinishFra := !skipTail && (g.triggerSequenceRest.isSome || g.pendingReplacement.isSome)
+      let g := g.changes (clearPending ++ #[.proposedSpell none, .consecutivePasses 0] ++ clearCkpt)
       let pre := g
       let g := g.record
         (GameEvent.turnedFaceUp g.turnNumber (g.snapshot o)
           (cause := .specialAction .turnFaceUp caster))
-      let g := g.logMsg s!"{(g.player caster).name} turns {g.name (g.object! spellId)} face up"
-      let g := reconcileControlAfterTransition pre g (cause := some (.specialAction .turnFaceUp caster))
+      let objName := (g.findObject? spellId).map g.name |>.getD (g.name o)
+      let g := g.logMsg s!"{(g.player caster).name} turns {objName} face up"
+      let g :=
+        (reconcileControlAfterTransition pre g (cause := some (.specialAction .turnFaceUp caster)))
+          |>.flushQueuedLinkedExile
+      let skipTail := g.over || (hadOuterReplacement && g.pendingReplacement.isNone)
+      let chainFinishFra := !skipTail && (g.triggerSequenceRest.isSome || g.pendingReplacement.isSome)
       let g :=
         if skipTail then g
         else if chainFinishFra then
           g.chainPendingReplacement .finishFraChoice
         else
           g.receivePriority caster
-      if hadOuterReplacement then (g, true) else (g.resumeAfterBecomeCastFwd, false)
+      if hadOuterReplacement then (g, !g.over && g.pending == .none)
+      else if !g.over && g.pending == .none then (g.resumeAfterBecomeCastFwd, false)
+      else (g, false)
 
 def becomeActivated (g : Game) (p : PlayerId) (sourceName : String)
     (sourceId : Option ObjectId := none) (activation : Option ActivatedAbility := none)
