@@ -1513,6 +1513,7 @@ inductive PostStep where
   | finishAbilityResolution (snap : EventObject) (controller : PlayerId)
       (sourceId : Option ObjectId) (sagaChapter : Option Nat)
       (ab? : Option TriggeredAbility) (alreadyResolved : Bool)
+  | untapStepAfterPhaseIn
 deriving Repr, Inhabited, BEq
 
 /-- Stage of `StateBasedActions.finishSbaSweep` across `Pending.chooseReplacement` pauses. -/
@@ -1739,7 +1740,7 @@ inductive PendingReplacement where
       (grantPriority hadOuterReplacement hadOpenContinuation : Bool)
   | finishTurnFaceUp (caster : PlayerId) (spellId : ObjectId)
       (hadOuterReplacement : Bool := false)
-  | endProposalAction
+  | endProposalAction (clearCkpt : Bool := false)
   | payCostPickItems (p : PlayerId) (abilityId sourceId : Option ObjectId) (pick : CostPick)
       (remainingIds : Array ObjectId)
   | finishActivationExtraCosts (p : PlayerId) (sourceId : ObjectId)
@@ -1935,8 +1936,11 @@ inductive PendingReplacement where
   | runPostCastCleanup (cleanup : PostCastCleanup)
   | continueCheckpointReplay (remainingStream fullKeptStream : Array (Bool × GameEvent))
       (revMap : Array (ObjectId × ObjectId))
+      (liveObjMap : Array (ObjectId × ObjectId) := #[])
       (effRevMap : Array (EffectId × EffectId) := #[])
+      (minPostCkptEffId : Nat := 0)
       (suppressInteractive : Bool := false)
+      (keptOrigNextEffs : Array Nat := #[])
   | phaseOutPermanentsLoop (remainingIds : Array ObjectId)
       (cause : Option EventCause := none)
   | phaseInControlledLoop (remainingIds : Array ObjectId)
@@ -2309,7 +2313,7 @@ def PendingReplacement.endsWithFinishFra : PendingReplacement → Bool
 
 /-- Whether a `PendingReplacement` continuation contains a suppressed checkpoint replay. -/
 def PendingReplacement.hasSuppressedCheckpointReplay : PendingReplacement → Bool
-  | .continueCheckpointReplay _ _ _ _ suppressInteractive => suppressInteractive
+  | .continueCheckpointReplay _ _ _ _ _ _ suppressInteractive _ => suppressInteractive
   | .seq a b => a.hasSuppressedCheckpointReplay || b.hasSuppressedCheckpointReplay
   | _ => false
 

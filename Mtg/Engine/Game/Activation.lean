@@ -107,7 +107,8 @@ def validateActivation (g : Game) (p : PlayerId) (o : GameObject) (ab : Activate
       if k < 0 && (o.status.loyaltyCounters : Int) < -k then
         throw s!"{g.name o} doesn't have {-k} loyalty counters to remove (CR 606.4)"
     | none =>
-      if sym != .minusX then throw s!"{g.name o}'s X loyalty cost is not supported"
+      if sym != .minusX && sym != .plusX then
+        throw s!"{g.name o}'s X loyalty cost is not supported"
   if ab.onlyDuringYourTurn && !g.isOnActiveTeam p then
     throw s!"{g.name o}'s ability can be activated only during your turn"
   if ab.onceEachTurn &&
@@ -204,8 +205,11 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
         let g := g.record
           (GameEvent.turnedFaceUp g.turnNumber (g.snapshot (g.object! o.id))
             (cause := .specialAction .turnFaceUp p))
-        let g := g.logMsg s!"{pl.name} turns {g.name (g.object! o.id)} face up"
-        let g := reconcileControlAfterTransition pre g (cause := some (.specialAction .turnFaceUp p))
+        let objName := (g.findObject? o.id).map g.name |>.getD (g.name o)
+        let g := g.logMsg s!"{pl.name} turns {objName} face up"
+        let g :=
+          (reconcileControlAfterTransition pre g (cause := some (.specialAction .turnFaceUp p)))
+            |>.flushQueuedLinkedExile
         return g.receivePriority p
     | none => throw s!"{g.name o} is face down"
   let defs := g.manaAbilityDefs o
@@ -219,7 +223,7 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
   if !g.hasPriority p then
     throw "You don't have priority"
   g.validateActivation p o ab
-  let loyaltyX := ab.cost.loyalty == some .minusX
+  let loyaltyX := ab.cost.loyalty == some .minusX || ab.cost.loyalty == some .plusX
   let o := g.object! id
   let origSnap := g.snapshot o
   let pl := g.player p

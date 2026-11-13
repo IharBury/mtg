@@ -356,16 +356,10 @@ partial def checkSBACounted (g : Game)
     let (g, returnEarly) : Game × Bool :=
       match g.pending with
       | .chooseLegend p name ids =>
-        let still := ids.filter fun id =>
-          match g.findObject? id with
-          | some o =>
-            o.isOnBattlefield && g.stillInGame p &&
-              (g.currentBatch.isSome ||
-                (g.controlledBy o p && g.treatedAsLegendary o && g.name o == name))
-          | none => false
+        let still := g.validLegendChoiceIds p name ids
         if still.size ≥ 2 then
           let g :=
-            if g.currentBatch.isNone && still.size < ids.size then
+            if !g.preBatchLegendSnapshotValid && still.size < ids.size then
               g.change (.pending (.chooseLegend p name still))
             else g
           (g, true)

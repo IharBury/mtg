@@ -616,7 +616,12 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
         let msg := s!"Counters are put on {g.name o}"
         g.withBatch none fun g =>
           let g := g.putCountersExceptPlusOne o.id st (byPlayer := g.controllerOf o)
-          let g := if st.plusOnePlusOne > 0 then g.addPlusOnePlusOneTo (g.object! o.id) st.plusOnePlusOne else g
+          let g :=
+            if st.plusOnePlusOne > 0 then
+              if let some live := g.findObject? o.id then
+                g.addPlusOnePlusOneTo live st.plusOnePlusOne
+              else g
+            else g
           if let .chooseReplacement .. := g.pending then
             g.chainPendingReplacement (.finishPostStep (.logIfCountersIncreased o.id before msg))
           else

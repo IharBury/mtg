@@ -20,22 +20,36 @@ private def effectDuration : ContinuousEffect → EffectDuration
 handling `.control` via `endControlEffectById` and `.copy` log messages (CR 611.2a). -/
 def expireEffectsByDuration (g : Game) (pred : EffectId → EffectDuration → Bool)
     (cause : Option EventCause) : Game :=
+  let ctrlEids := g.activeEffects.filterMap fun (eid, e) =>
+    match e with
+    | .layered _ (.control _) d => if pred eid d then some eid else none
+    | _ => none
+  let copyEntries := g.activeEffects.filterMap fun (eid, e) =>
+    match e with
+    | .layered (.objects #[id]) (.copy printed) d =>
+      if pred eid d then some (eid, some (id, printed.name)) else none
+    | .layered _ (.copy _) d =>
+      if pred eid d then some (eid, none) else none
+    | _ => none
+  let g :=
+    if ctrlEids.isEmpty && copyEntries.isEmpty then g
+    else
+      g.endControlEffectsSimultaneously ctrlEids (cause := cause)
+        (preExpire := fun g0 =>
+          copyEntries.foldl (fun acc (eid, logInfo?) =>
+            let acc := acc.expireEffectById eid (cause := cause) (reconcileControl := false)
+            match logInfo? with
+            | some (id, pName) =>
+              match acc.findObject? id with
+              | some o =>
+                if o.zone == .battlefield then
+                  acc.logMsg s!"{acc.name o} is no longer a copy of {pName}"
+                else acc
+              | none => acc
+            | none => acc) g0)
   g.activeEffects.foldl (fun acc (eid, e) =>
     if !pred eid (effectDuration e) then acc
-    else
-      match e with
-      | .layered _ (.control _) _ =>
-        acc.endControlEffectById eid (cause := cause)
-      | .layered (.objects #[id]) (.copy printed) _ =>
-        let acc := acc.expireEffectById eid (cause := cause)
-        match acc.findObject? id with
-        | some o =>
-          if o.zone == .battlefield then
-            acc.logMsg s!"{acc.name o} is no longer a copy of {printed.name}"
-          else acc
-        | none => acc
-      | _ =>
-        acc.expireEffectById eid (cause := cause)) g
+    else acc.expireEffectById eid (cause := cause)) g
 
 /-- Expire effects lasting until the end of `st` (CR 500.5). -/
 def expireAtStepEnd (g : Game) (st : Step) : Game :=
@@ -180,21 +194,20 @@ def clearEOT (g : Game) : Game :=
         g := g.expireMatching (fun
           | .replacement _ .untilEndOfTurn | .prevention _ .untilEndOfTurn => true
           | _ => false) (cause := cause)
-        g := g.restoreCopiesUntilEot
         -- Each control-changing effect ends or counts down on its own across all
-        -- ObjectScopes, so another control effect on the same permanent keeps
-        -- applying (CR 514.2 / 613.7 / 800.4c).
-        let effs := g.activeEffects
-        for (eid, e) in effs do
+        -- ObjectScopes, while all simultaneously ending control/copy effects share
+        -- one pre-expiry controller snapshot (CR 514.2 / 613.7 / 800.4c).
+        let ctrlEids := g.activeEffects.filterMap fun (eid, e) =>
           match e with
-          | .layered _ (.control _) d =>
-            if d == .untilEndOfTurn then
-              g := g.endControlEffectById eid (cause := cause)
-            else if let .untilEndOfNextTurnOf q := d then
-              if (q == g.activePlayer || g.areTeammates q g.activePlayer) &&
-                  g.isSharedTurnFinalSeat && g.hasTurnBegunSince eid q then
-                g := g.endControlEffectById eid (cause := cause)
-          | _ => pure ()
+          | .layered _ (.control _) .untilEndOfTurn => some eid
+          | .layered _ (.control _) (.untilEndOfNextTurnOf q) =>
+            if (q == g.activePlayer || g.areTeammates q g.activePlayer) &&
+                g.isSharedTurnFinalSeat && g.hasTurnBegunSince eid q then
+              some eid
+            else none
+          | _ => none
+        g := g.endControlEffectsSimultaneously ctrlEids (cause := cause)
+          (preExpire := fun g0 => g0.restoreCopiesUntilEot (reconcileControl := false))
         g := g.expirePlayPermissions g.activePlayer (cause := cause)
         for pl in g.players do
           if pl.id != g.activePlayer && g.stillInGame pl.id then
@@ -293,18 +306,23 @@ def expireGoadedFor (g : Game) (p : PlayerId) (includeTeammates : Bool := false)
 /-- End Reality Fracture effects that last until `p`'s next turn: Garruk,
 Veiled Butcher's toughness and power reduction and the command-zone effects of Jace, Reality Sculptor
 and Garruk, Curse Breaker (CR 611.2a / 805.4 / 810.2). -/
-def expireFraUntilTurnEffects (g : Game) (p : PlayerId) (includeTeammates : Bool := false) : Game :=
+def expireFraUntilTurnEffects (g : Game) (p : PlayerId) (includeTeammates : Bool := false)
+    (skipControl : Bool := false) : Game :=
   let matchesTurnOf (q : PlayerId) : Bool :=
     q == p || (includeTeammates && g.areTeammates q p)
   let cause := some (EventCause.turnBased .expireAtStepBegin)
   let endingEmblems := g.objects.filter (fun o =>
     o.zone == .command && (g.fraEffectUntilTurnOf o).any matchesTurnOf)
   let g :=
-    g.activeEffects.foldl (fun acc (eid, e) =>
-      match e with
-      | .layered _ (.control _) (.untilNextTurnOf q) =>
-        if matchesTurnOf q then acc.endControlEffectById eid (cause := cause) else acc
-      | _ => acc) g
+    if skipControl then g
+    else
+      let ctrlEids := g.activeEffects.filterMap fun (eid, e) =>
+        match e with
+        | .layered _ (.control _) (.untilNextTurnOf q) =>
+          if matchesTurnOf q then some eid else none
+        | _ => none
+      if ctrlEids.isEmpty then g
+      else g.endControlEffectsSimultaneously ctrlEids (cause := cause)
   let g := g.expireMatching (fun
     | .layered _ (.copy ..) _ | .layered _ (.control _) _
     | .playerRule _ .protectionFromEverything _
@@ -328,25 +346,28 @@ def expireUntilNextTurnEffects (g : Game) (p : PlayerId) : Game :=
       if teamHasLiving then g
       else
         let g := g.expireGoadedFor p
-        let g := g.expireFraUntilTurnEffects p
-        let g :=
-          g.activeEffects.foldl (fun acc (eid, e) =>
-            match e with
-            | .layered _ (.control _) (.untilEndOfNextTurnOf q) =>
-              if q == p then acc.endControlEffectById eid (cause := cause) else acc
-            | _ => acc) g
-        let g := g.expireMatching (fun
-          | .layered _ (.copy ..) _ | .layered _ (.control _) _
-          | .permission _ (.playFromExile ..) _ => false
-          | e => effectDuration e == .untilEndOfNextTurnOf p) (cause := cause)
-        let g :=
-          if g.hasActiveEffect (.protectionFromEverything p) then
-            g.expireAll (.protectionFromEverything p) (cause := cause)
-              |>.logMsg
-                s!"{(g.player p).name}'s protection from everything ends (CR 800.4m)"
-          else g
-        let g := g.expireAll (.lifeCantChange p) (cause := cause)
-        let g := g.restoreCopiesUntilNextTurn p (departed := true)
+        let ctrlEids := g.activeEffects.filterMap fun (eid, e) =>
+          match e with
+          | .layered _ (.control _) (.untilNextTurnOf q)
+          | .layered _ (.control _) (.untilEndOfNextTurnOf q) =>
+            if q == p then some eid else none
+          | _ => none
+        let expireNonControl (g0 : Game) : Game :=
+          let g0 := g0.expireFraUntilTurnEffects p (skipControl := true)
+          let g0 := g0.expireMatching (fun
+            | .layered _ (.copy ..) _ | .layered _ (.control _) _
+            | .permission _ (.playFromExile ..) _ => false
+            | e => effectDuration e == .untilEndOfNextTurnOf p) (cause := cause)
+          let g0 :=
+            if g0.hasActiveEffect (.protectionFromEverything p) then
+              g0.expireAll (.protectionFromEverything p) (cause := cause)
+                |>.logMsg
+                  s!"{(g0.player p).name}'s protection from everything ends (CR 800.4m)"
+            else g0
+          let g0 := g0.expireAll (.lifeCantChange p) (cause := cause)
+          g0.restoreCopiesUntilNextTurn p (departed := true) (reconcileControl := false)
+        let g := g.endControlEffectsSimultaneously ctrlEids (cause := cause)
+          (preExpire := expireNonControl)
         g.expirePlayPermissions p (cause := cause)
     let g := g.expireMatching (fun
       | .playerRule q (.additionalLands _) .untilEndOfTurn
@@ -646,24 +667,37 @@ partial def finishCleanupStepAfterDiscard (g : Game) : Game :=
   else
     g.finishCleanupAfterClearEot
 
+/-- Untap the active player's permanents and record `stepEnded .untap` once
+CR 502.1 phase-in (and any replacement or legend-rule pause it opened) finishes
+(CR 502.3–502.4). -/
+partial def runUntapStepAfterPhaseIn (g : Game) : Game :=
+  let ap := g.activePlayer
+  let ids := (g.permanentsOf ap).map (·.id)
+  let g := g.withBatch (some (.turnBased .untapAll)) fun g =>
+    g.untapStepPermanents ids
+  match g.pending with
+  | .chooseReplacement .. | .chooseLegend .. =>
+    g.chainPendingReplacement (.finishPostStep .recordUntapStepEnded)
+  | _ =>
+    -- No priority (CR 502.4). Immediately continue.
+    g.recordStepEnded .untap
+
 /-- Execute the body of `beginStep st` once `phaseBegan` and `stepBegan` have finished. -/
 partial def beginStepBody (g : Game) (st : Step) : Game :=
   let g := g.logMsg s!"— Turn {g.turnNumber}, {g.player g.activePlayer |>.name}: {st} —"
   match st with
   | .untap =>
-    Id.run do
-      let mut g := g
-      let ap := g.activePlayer
-      -- CR 502.1: phased-out permanents phase in before the player untaps.
-      g := g.phaseInControlled ap
-      let ids := (g.permanentsOf ap).map (·.id)
-      g := g.withBatch (some (.turnBased .untapAll)) fun g =>
-        g.untapStepPermanents ids
-      if let .chooseReplacement .. := g.pending then
-        return g.chainPendingReplacement (.finishPostStep .recordUntapStepEnded)
-      -- No priority (CR 502.4). Immediately continue.
-      g := g.recordStepEnded .untap
-      return g
+    let ap := g.activePlayer
+    -- CR 502.1: phased-out permanents phase in before the player untaps.
+    let g := g.phaseInControlled ap
+    match g.pending with
+    | .chooseReplacement .. | .chooseLegend .. =>
+      g.chainPendingReplacement (.finishPostStep .untapStepAfterPhaseIn)
+    | _ =>
+      if g.pendingReplacement.isSome then
+        g.chainPendingReplacement (.finishPostStep .untapStepAfterPhaseIn)
+      else
+        g.runUntapStepAfterPhaseIn
   | .draw =>
     if g.skipsFirstDraw then
       -- CR 103.8a–b / 500.11 / 614.10 / 810.6: to skip a step is to proceed
@@ -786,10 +820,14 @@ partial def beginStepCont (g : Game) (st : Step) : Game :=
 partial def beginTurnAfterStartExpiry (g : Game) : Game :=
   -- No player receives priority during untap (CR 502.4).
   let g := g.beginStep .untap
-  if let .chooseReplacement .. := g.pending then
+  match g.pending with
+  | .chooseReplacement .. | .chooseLegend .. =>
     g.chainPendingReplacement (.beginStepCont .upkeep)
-  else
-    g.beginStep .upkeep
+  | _ =>
+    if g.pendingReplacement.isSome then
+      g.chainPendingReplacement (.beginStepCont .upkeep)
+    else
+      g.beginStep .upkeep
 
 partial def beginTurn (g : Game) : Game :=
   let p := g.activePlayer
@@ -807,8 +845,15 @@ partial def beginTurn (g : Game) : Game :=
           | _ => false
         let g := expiredCtrl.foldl (fun acc (eid, _) => acc.expireEffectById eid (cause := cause)) g
         let g := g.expireGoadedFor p (includeTeammates := true)
-        let g := g.expireFraUntilTurnEffects p (includeTeammates := true)
-        let g := g.restoreCopiesUntilNextTurn p
+        let ctrlEids := g.activeEffects.filterMap fun (eid, e) =>
+          match e with
+          | .layered _ (.control _) (.untilNextTurnOf q) =>
+            if q == p || g.areTeammates q p then some eid else none
+          | _ => none
+        let g := g.endControlEffectsSimultaneously ctrlEids (cause := cause)
+          (preExpire := fun g0 =>
+            (g0.expireFraUntilTurnEffects p (includeTeammates := true) (skipControl := true))
+              |>.restoreCopiesUntilNextTurn p (reconcileControl := false))
         let teamSeats := g.teamMembers p
         teamSeats.foldl (fun g q =>
           let hadLife := g.activeEffects.any (fun (_, s) => s == .lifeCantChange q)
@@ -821,9 +866,10 @@ partial def beginTurn (g : Game) : Game :=
                else if hadProt then s!"{(g.player q).name}'s protection from everything ends"
                else s!"{(g.player q).name}'s life total can change again")
           else g) g
-  if let .chooseReplacement .. := g.pending then
+  match g.pending with
+  | .chooseReplacement .. | .chooseLegend .. =>
     g.chainPendingReplacement .beginTurnAfterStartExpiry
-  else
+  | _ =>
     g.beginTurnAfterStartExpiry
 
 end

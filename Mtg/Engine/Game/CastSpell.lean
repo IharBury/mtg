@@ -303,7 +303,8 @@ def announceX (g : Game) (p : PlayerId) (x : Nat) : Except String Game := do
       if prop.loyaltyX then
         let some src := prop.sourceId.bind g.findObject?
           | throw "The planeswalker left the battlefield"
-        if src.status.loyaltyCounters < x then
+        if prop.activation.bind (·.cost.loyalty) == some .minusX &&
+            src.status.loyaltyCounters < x then
           throw s!"{g.name src} doesn't have {x} loyalty counters to remove (CR 606.4)"
         pure g
       else if prop.removePlusOneX then

@@ -169,9 +169,22 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
       match g.proposedSpell with
       | some prop =>
         if prop.loyaltyX then
-          -- Remove all but one loyalty counter so the planeswalker survives.
-          let loyalty := ((prop.sourceId.bind g.findObject?).map (·.status.loyaltyCounters)).getD 0
-          some (.chooseX (loyalty - 1))
+          if prop.activation.bind (·.cost.loyalty) == some .plusX then
+            if prop.cost.containsX then
+              some (.chooseX (maxAffordableX g p prop.cost
+                (allowElfRestricted := g.proposedAllowsElfRestricted prop)
+                (allowInstRestricted := g.proposedAllowsInstRestricted prop)
+                (allowHeroRestricted := g.proposedAllowsHeroRestricted prop)
+                (allowVillainRestricted := g.proposedAllowsVillainRestricted prop)
+                (allowCantNonartifact := g.proposedAllowsCantNonartifact prop)
+                (allowCreatureRestricted := g.proposedAllowsCreatureRestricted prop)
+                (spend := g.proposedManaSpend prop)))
+            else
+              some (.chooseX 1)
+          else
+            -- Remove all but one loyalty counter so the planeswalker survives.
+            let loyalty := ((prop.sourceId.bind g.findObject?).map (·.status.loyaltyCounters)).getD 0
+            some (.chooseX (loyalty - 1))
         else if prop.removePlusOneX then
           some (.chooseX (((prop.sourceId.bind g.findObject?).map (·.status.plusOnePlusOne)).getD 0))
         else

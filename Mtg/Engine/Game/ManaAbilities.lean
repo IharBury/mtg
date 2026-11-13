@@ -344,14 +344,47 @@ def finishManaAbilityMountainTrigger (g : Game) (p : PlayerId) (id : ObjectId) :
 private def abortDepartedManaAbilityCont (g : Game) (p : PlayerId) (prevPending : Pending) : Game :=
   Id.run do
     let mut g := g
-    if g.proposalCheckpoint.isSome then
+    let mut didReverseManaCkpt := false
+    if g.hasActiveManaProposalCheckpoint then
+      match g.reverseToProposalCheckpoint? with
+      | .ok g' =>
+        g := g'
+        didReverseManaCkpt := true
+      | .error _ =>
+        g := g.change .clearProposalCheckpoint
+    else if g.proposalCheckpoint.isSome then
       g := g.change .endProposalAction
     if !g.over then
-      if prevPending != .none then
+      let shouldRestorePrev :=
+        prevPending != .none &&
+          if didReverseManaCkpt then
+            g.pending == prevPending && g.afterRandom == .none && !g.sbaPaused
+          else
+            !g.sbaPaused
+      if shouldRestorePrev then
         g := g.resumePendingReplacementFwd (.restorePending prevPending false)
       if !g.over && g.pending == .none && g.afterRandom == .none && !g.sbaPaused then
-        g := g.receivePriority p
+        if g.continuations.isEmpty && g.pendingReplacement.isNone && g.triggerSequenceRest.isNone then
+          g := g.receivePriority p
+        else if g.pendingReplacement.isSome || g.triggerSequenceRest.isSome then
+          g := g.chainPendingReplacement .finishFraChoice
     return g
+
+private def manaSourceTapPaidSinceCkpt (g : Game) (p : PlayerId) (id : ObjectId) : Bool :=
+  let rec unwrapReplaced : EventCause → EventCause
+    | .replaced _ orig => unwrapReplaced orig
+    | other => other
+  match g.proposalCheckpoint with
+  | none => false
+  | some ckpt =>
+    let slice := g.events.extract (min ckpt.eventsSize g.events.size) g.events.size
+    slice.any fun
+      | .rules _ (.permanent (.tapped snap _)) cause _ =>
+        snap.id == some id &&
+          match unwrapReplaced cause with
+          | .costPayment .tap q (some f) => q == p && f == id
+          | _ => false
+      | _ => false
 
 /-- Finish the post-sacrifice steps (`abilityActivated`, `manaAdded`, pain-land
 damage, Mountain extra mana, and CR 733.1 / priority cleanup) of a mana ability. -/
@@ -390,8 +423,9 @@ def finishActivateManaAbilityPostSac (g : Game) (p : PlayerId) (id : ObjectId) (
   if let .chooseReplacement .. := g.pending then
     if isMountain then
       g := g.chainPendingReplacement (.finishManaAbilityMountainTrigger p id)
+    let manaCkpt := g.hasActiveManaProposalCheckpoint
     if g.proposalCheckpoint.isSome then
-      g := g.chainPendingReplacement .endProposalAction
+      g := g.chainPendingReplacement (.endProposalAction manaCkpt)
     if prevPending == .none then
       g := g.chainPendingReplacement (.receivePriority p)
     else
@@ -400,6 +434,9 @@ def finishActivateManaAbilityPostSac (g : Game) (p : PlayerId) (id : ObjectId) (
   else
     if isMountain then
       g := g.finishManaAbilityMountainTrigger p id
+    let manaCkpt := g.hasActiveManaProposalCheckpoint
+    if manaCkpt then
+      g := g.change .clearProposalCheckpoint
     if g.proposalCheckpoint.isSome then
       g := g.change .endProposalAction
     if prevPending == .none then
@@ -419,12 +456,51 @@ def finishActivateManaAbilityPicks (g : Game) (p : PlayerId) (id : ObjectId) (on
     (wasPaused : Bool := true) : Game := Id.run do
   if g.over || !g.stillInGame p then
     return abortDepartedManaAbilityCont g p prevPending
+  if wasPaused then
+    let tapPrePaid := manaSourceTapPaidSinceCkpt g p id
+    let srcPayable : Bool :=
+      let needTap := tap && !tapPrePaid
+      if !needTap && !sacrificeSelf then true
+      else
+        match g.findObject? id with
+        | some cur =>
+          cur.isOnBattlefield && g.controlledBy cur p && (!needTap || !cur.status.tapped)
+        | none => false
+    if !srcPayable then
+      return abortDepartedManaAbilityCont g p prevPending
+    let mut checkRest := costIds
+    for pick in picks do
+      let slice := checkRest.extract 0 pick.count
+      if slice.size != pick.count then
+        return abortDepartedManaAbilityCont g p prevPending
+      for cid in slice do
+        let ok :=
+          match g.findObject? cid with
+          | some co =>
+            g.costPickAllows p (some id) pick co
+              (tapSource := tap) (sacrificeOrExileSource := sacrificeSelf)
+          | none => false
+        if !ok then
+          return abortDepartedManaAbilityCont g p prevPending
+      checkRest := checkRest.extract pick.count checkRest.size
   let mut g := g
   let mut rest := costIds
   for i in [0:picks.size] do
+    if g.over || !g.stillInGame p then
+      return abortDepartedManaAbilityCont g p prevPending
     let pick := picks[i]!
     let slice := rest.extract 0 pick.count
     rest := rest.extract pick.count rest.size
+    if i > 0 then
+      for cid in slice do
+        let ok :=
+          match g.findObject? cid with
+          | some co =>
+            g.costPickAllows p (some id) pick co
+              (tapSource := tap) (sacrificeOrExileSource := sacrificeSelf)
+          | none => false
+        if !ok then
+          return abortDepartedManaAbilityCont g p prevPending
     let isBfSacPick : Bool :=
       match pick with
       | .tapUntappedCreature | .tapTwoUntappedArtifacts
@@ -441,16 +517,26 @@ def finishActivateManaAbilityPicks (g : Game) (p : PlayerId) (id : ObjectId) (on
         (.finishActivateManaAbilityPicks p id oname mana remPicks rest tap sacrificeSelf
           activatedIdx restriction damageYou isMountain prevPending)
       return g
-  if tap then
-    if let some cur := g.findObject? id then
-      if !cur.status.tapped then
-        g := g.becomeTapped cur (cause := some (.costPayment .tap p (some id)))
+  if g.over || !g.stillInGame p then
+    return abortDepartedManaAbilityCont g p prevPending
+  let tapAlreadyPaid := manaSourceTapPaidSinceCkpt g p id
+  if tap && !tapAlreadyPaid then
+    match g.findObject? id with
+    | some cur =>
+      if !cur.isOnBattlefield || !g.controlledBy cur p || cur.status.tapped then
+        return abortDepartedManaAbilityCont g p prevPending
+      g := g.becomeTapped cur (cause := some (.costPayment .tap p (some id)))
+    | none =>
+      return abortDepartedManaAbilityCont g p prevPending
   let srcSnap : EventObject :=
     match g.findObject? id with
     | some src => g.snapshot src
     | none => (g.lastKnownBefore? id).getD default
   if sacrificeSelf then
-    if let some src := g.findObject? id then
+    match g.findObject? id with
+    | some src =>
+      if !src.isOnBattlefield || !g.controlledBy src p then
+        return abortDepartedManaAbilityCont g p prevPending
       g := g.sacrificeToGraveyard src s!"{(g.player p).name} sacrifices {g.name src}"
         (cause := some (.costPayment .sacrifice p (some id)))
       if let .chooseReplacement .. := g.pending then
@@ -458,6 +544,8 @@ def finishActivateManaAbilityPicks (g : Game) (p : PlayerId) (id : ObjectId) (on
           (.finishActivateManaAbilityPostSac p id oname srcSnap mana tap activatedIdx
             restriction damageYou isMountain prevPending)
         return g
+    | none =>
+      return abortDepartedManaAbilityCont g p prevPending
   return g.finishActivateManaAbilityPostSac p id oname srcSnap mana tap activatedIdx
     restriction damageYou isMountain prevPending (wasPaused := wasPaused)
 
@@ -518,8 +606,12 @@ def activateManaAbility (g : Game) (p : PlayerId) (id : ObjectId) (idx : Nat)
   let prevPending := g.pending
   let outerCont? := g.pendingReplacement
   let isMountain := g.hasSubtype o .mountain && d.tap && !mana.isEmpty
+  let needsManaCkpt := !d.picks.isEmpty || d.sacrificeSelf
+  let hadOuterCkpt := g.proposalCheckpoint.isSome
   let mut g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
-  if g.proposalCheckpoint.isSome then
+  if needsManaCkpt then
+    g := g.change .saveProposalCheckpoint
+  if hadOuterCkpt then
     g := g.change (.beginProposalAction (.manaAbility (some id)))
   if let some spentUnits := spentUnits? then
     g := g.record (GameEvent.manaSpent g.turnNumber p spentUnits (some id)
