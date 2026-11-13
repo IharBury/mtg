@@ -13265,7 +13265,7 @@ unpayable-prompt `decline` reversals).
    `followMoved` resolution, and preserve CR 104.1 `g.over` & mid-pause 3rd-player
    departure invariants across `.continueCheckpointReplay` (`Event.lean:833–835,
    1930–1931, 2250–2251`, `Core.lean:90–94, 161–162, 371–381, 675–855, 919–920,
-   953–985, 991–1004, 1072, 1655–1662, 1835–1860, 2028–2077, 2110, 2174–2185,
+   953–986, 991–1003, 1072, 1655–1662, 1835–1860, 2028–2077, 2110, 2174–2185,
    2267–2269, 5211–5248, 7837, 10324–10328, 10372–10510, 10544–10552, 10599–10825,
    11175–11284, 11412–11418`, `Movement.lean:215–218, 265–282, 312, 420–446, 570,
    596–608, 675–683, 691–839`, `Decisions.lean:662–703, 1648–1650`, `Leaving.lean:33–47,
@@ -13282,8 +13282,8 @@ unpayable-prompt `decline` reversals).
      static/replacement hooks allocate `⟨gCur.nextEffectId⟩` (`ckpt.nextEffectId`),
      advancing `gCur.nextObjectId` / `gCur.nextEffectId` ahead of the IDs recorded
      in later `keptStream` batches `B2`:
-     - `TriggerQueueEvent.putOnStack` (`Core.lean:954`: `if g.objects.any (·.id ==
-       stackObj) then g`) and `CastEvent.abilityActivated` (`.nonMana` at
+     - `TriggerQueueEvent.putOnStack` (`Core.lean:953–986`, `| .putOnStack … =>` at `953`, where `954`'s `if g.objects.any (·.id ==
+       stackObj) then g` drops an existing ID) and `CastEvent.abilityActivated` (`.nonMana` at
        `Core.lean:5211–5248`, where `5214`'s `if g.objects.any (·.id == ability)
        then g` drops a newly minted ability stack object) **silently drop** `B2`'s
        stack ability if `B1`'s live return already minted that `ObjectId`; while
@@ -13506,13 +13506,13 @@ unpayable-prompt `decline` reversals).
          `postCastCleanup`, `ckptPausedBatch?`, `ckptQueuedLinkedExile`,
          `ckptPending`, and `ckptCont?` (`11224–11283`) whenever `wasOver ||
          gAcc.over || gAcc.suppressInteractiveReplay`; add `(suppressInteractive :
-         Bool := false)` to `Movement.runLinkedExileBatch` (`712–780`, computing
-         `movedDest?` on `.hand p` at `738–739` as `if (g'.followMovedToZone? o.id
+         Bool := false)` to `Movement.runLinkedExileBatch` (`712–780`, **rewriting** `739`'s `(g', some (.hand p))` (after `738`'s `g.move`)
+         and `745`'s `(g', some (.graveyard p))` (after `744`'s `g.move`) to compute `movedDest?` on `.hand p` (`738–739`) as `if (g'.followMovedToZone? o.id
          (· == .hand p)).isSome || (match g'.pending with | .chooseReplacement .. =>
          true | _ => false) then some (.hand p) else none` and on `.graveyard p` at
          `744–745` as `if (g'.followMovedToZone? o.id (· == .graveyard p)).isSome ||
          (match g'.pending with | .chooseReplacement .. => true | _ => false) then
-         some (.graveyard p) else none` to match `.battlefield` at `754–757`),
+         some (.graveyard p) else none`, matching `.battlefield`'s `movedDest?` binding at `753–757` / `(g', movedDest?)` at `758`),
          `Movement.flushQueuedLinkedExile` (`784–789`), and
          `Movement.returnLinkedExileMoves` (`794–802`) **without returning `g`
          early on `suppressInteractive || g.over || g.suppressInteractiveReplay`** so
