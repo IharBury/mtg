@@ -13038,8 +13038,8 @@ multi-pick disjointness, and `canPayLife`).
        no post-reconcile `if g.pending != .none then g` early return so when
        `reconcileControlAfterTransition` at `1057` reopens `.chooseReplacement`
        (`g.pending != .none` after `1049` cleared `.pending .none`), `!skipTail`
-       chains the snapshotted `.finishFraChoice` (`1060`) or `.receivePriority
-       (g.priorityInstead caster)` (`1062`) tail after `.endControlExileLoop`,
+       chains the snapshotted `.finishFraChoice` (`1060`) or, via `g.receivePriority caster` (`1062`;
+       `Entering.lean:394–395, 406–407`), `.receivePriority (g.priorityInstead caster)` after `.endControlExileLoop`,
        while under `skipTail` (`1058` returning `g` when `.finishTurnFaceUp` at
        `Decisions.lean:1459–1460` ran as `first` of `.seq first rest` at
        `Decisions.lean:662, 683–684`, where `rest := outer.ensureEndsWithFinishFra`
@@ -13513,8 +13513,8 @@ unpayable-prompt `decline` reversals).
          `744–745` as `if (g'.followMovedToZone? o.id (· == .graveyard p)).isSome ||
          (match g'.pending with | .chooseReplacement .. => true | _ => false) then
          some (.graveyard p) else none` to match `.battlefield` at `754–757`),
-         `Movement.flushQueuedLinkedExile` (`784–790`), and
-         `Movement.returnLinkedExileMoves` (`794–803`) **without returning `g`
+         `Movement.flushQueuedLinkedExile` (`784–789`), and
+         `Movement.returnLinkedExileMoves` (`794–802`) **without returning `g`
          early on `suppressInteractive || g.over || g.suppressInteractiveReplay`** so
          CR 610.3 zone changes still execute (`flushQueuedLinkedExile` keeps `785` as
          `if g.currentBatch.isSome || g.queuedLinkedExile.isEmpty then g` and passes
@@ -14161,7 +14161,7 @@ unpayable-prompt `decline` reversals).
    & `abortDepartedManaAbilityCont`, and enforce mid-proposal payability on `.crew`
    / `.zemoBoastExile` / `payTeamworkCreatures` / `.chooseMode` `decline`
    (`ActivatedAbility.lean:36–40`, `Stack.lean:60–126`, `Pending.lean:647`,
-   `Event.lean:86–105, 1522–1525`, `Core.lean:314`, `Leaving.lean:566–605`,
+   `Event.lean:86–105, 1522–1525`, `Core.lean:314`, `Leaving.lean:566–621`,
    `ActivationCosts.lean:320–441, 506–605`, `Casting.lean:856–866, 963–1028,
    1064–1208`, `Choices.lean:637–677`,
    `SacrificeDiscard.lean:333–352`, `Decisions.lean:121–158, 1428–1444, 3139, 3256,
@@ -14242,7 +14242,7 @@ unpayable-prompt `decline` reversals).
          and `Choices.lean:674, 676`.
    - Keep `g.proposedSpell` live across final cost-payment `Pending.chooseReplacement`
      pauses until `becomeCast` / `finishPostLoyaltyActivated` actually finalizes the
-     spell or ability (`Leaving.lean:566–605`, `Decisions.lean:1428–1444, 3139, 3256,
+     spell or ability (`Leaving.lean:566–621`, `Decisions.lean:1428–1444, 3139, 3256,
      4151`, `SacrificeDiscard.lean:334`, `Casting.lean:856–866, 980–1028, 1109,
      1195`, `FraChoices.lean:649, 1083`):
      - Clearing `.proposedSpell none` *before* calling `becomeCast`,
@@ -14254,7 +14254,7 @@ unpayable-prompt `decline` reversals).
        `payActivationExtraCosts`, or `[+N]` `payLoyaltyCost`) paused on
        `Pending.chooseReplacement`: if the caster or sole target/host subsequently
        leaves the game during that replacement pause, `Leaving.isProposalAbortedByLeave`
-       (`Leaving.lean:566–605`, reading `g.proposedSpell.any` at `597`) returns
+       (`Leaving.lean:566–621`, reading `g.proposedSpell.any` at `597`) returns
        `false`, failing to rewind the proposal and letting `finishBecomeCast` /
        `finishPostLoyaltyActivated` emit `GameEvent.spellCast` /
        `GameEvent.abilityActivated` for a departed caster or vanished stack object:
