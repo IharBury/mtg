@@ -13065,27 +13065,27 @@ multi-pick disjointness, and `canPayLife`).
        800.4c exile.
    - Fix misleading CR 800.4b / 800.4c log lines and missing `.ringBearer`
      designation loss in `Core.restoreControlUntilSourceLeaves`
-     (`Core.lean:11739–11768`) and `Movement.move` (`Movement.lean:607–608`):
-     - in `Core.restoreControlUntilSourceLeaves` (`11743–11766`), remove the
+     (`Core.lean:11954–12006`) and `Movement.move` (`Movement.lean:607–608`):
+     - in `Core.restoreControlUntilSourceLeaves` (`11958–12005`), remove the
        `"does not change control (CR 800.4b)"` log on the singleton arm
-       (`11759–11760`) when `(acc.player p).leftTheGame` (CR 800.4b governs *new*
+       (`11984–11985`) when `(acc.player p).leftTheGame` (CR 800.4b governs *new*
        control-changing effects giving control to a departed player, whereas an
        *ending* control effect with no remaining control effects exiles the
        permanent under CR 800.4c in the immediately following `Movement.move` /
        `objectLeavesTheGame` / `ceaseToExist` step), and clear `.ringBearer` on
-       control change across **both** the singleton arm (`11743–11762`,
-       snapshotting `prevCtrl := acc.controllerOf o` before `expireEffectById` at
-       `11752`) and the non-singleton arm (`11763–11766`, snapshotting
-       `(o.id, acc.controllerOf o)` across battlefield permanents before
-       `expireEffectById` at `11766`), emitting `GameEvent.designation ...
+       control change across **both** the singleton arm (`11958–11987`, expiring `| none =>` at `11964` and
+       snapshotting `prevCtrl := acc.controllerOf o` at `11966` before `expireEffectById` at
+       `11968`, recording `.ringBearer` loss at `11974–11975`) and the non-singleton arm (`11988–12005`, snapshotting
+       `(o.id, acc.controllerOf o)` across battlefield permanents at `11992–11994` before
+       `expireEffectById` at `11995` and `prevCtrls.foldl` at `11996`, recording `.ringBearer` loss at `12001–12002`), emitting `GameEvent.designation ...
        .ringBearer false (cause := cause.getD (.gameRule .leavingZone))` whenever
        `prevCtrl = some prev`, `acc.controllerOf cur != prevCtrl`, and
        `(acc.player prev).ringBearerId == some cur.id` (matching
-       `Leaving.endControlEffectById` at `Leaving.lean:141–146`); and
+       `Leaving.endControlEffectById` at `Leaving.lean:148–150`); and
      - in `Movement.move` (`Movement.lean:607`), replace
        `!(acc.findObject? tid).any (·.isBattlefieldObject)` with
        `(acc.followMovedToZone? tid (· == .exile)).isSome` (matching
-       `Leaving.runEndControlExileLoop` at `Leaving.lean:89, 101`) so `"is exiled
+       `Leaving.runEndControlExileLoop`'s post-move check at `Leaving.lean:104`, and `pendingLog` check at `90`) so `"is exiled
        (CR 800.4c)"` is not logged when a replacement effect redirected the exile
        to another zone (CR 614.6).
 4. Complete `ActivationCosts.payActivationExtraCosts` `activateFromHand` support,
