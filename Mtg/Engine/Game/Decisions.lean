@@ -208,11 +208,7 @@ private partial def nextQueuedPendingOnResume (g : Game) (hasQueuedPending : Boo
         else
           reverseOrPopped
       | .chooseLegend q name ids =>
-        let liveIds := ids.filter fun id =>
-          (g.findObject? id).any (fun o =>
-            o.isOnBattlefield &&
-              (g.currentBatch.isSome ||
-                (g.controlledBy o q && g.treatedAsLegendary o && g.name o == name)))
+        let liveIds := g.validLegendChoiceIds q name ids
         if !g.stillInGame q || liveIds.size < 2 then resumePopped g hasQueuedPending
         else hasQueuedPending
       | .chooseReplacement q choices =>
@@ -1812,7 +1808,7 @@ partial def resumePendingReplacement (g : Game) (pr : PendingReplacement)
   | .beginTurnAfterStartExpiry =>
     g.beginTurnAfterStartExpiry
   | .runPostCastCleanup cleanup =>
-    if g.over then g
+    if g.over || g.suppressInteractiveReplay then g
     else
       let g := if g.continuations.isEmpty then g.change (.pushContinuationFrame {}) else g
       let g := ((g.change (.postCastCleanup (some cleanup))).runPostCastCleanup).drainLocalPendingReplacement

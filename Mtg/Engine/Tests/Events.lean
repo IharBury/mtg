@@ -30781,19 +30781,27 @@ private def replayOk39i1 (gs : Array Game) : Bool :=
   -- CR 610.3 return, clears `suppressInteractiveReplay` back to checkpoint's `false`, AND restores `supOuterPrompt` + `supOrigCont`!
   let gSupReversed := mustApply gSupAfterP1 p0 .pay
   let gSupDrained := (mustApply gSupReversed p0 .decline).drainPendingContinuations
+  -- Queued `.runPostCastCleanup` continuation is also skipped when `g.suppressInteractiveReplay` holds (`!g.over`):
+  let gSupCleanupQuiet :=
+    (gSup0.change (.pushContinuationFrame {
+      pendingReplacement := some (.continueCheckpointReplay #[] #[] #[] #[] #[] 0 true #[])
+    })).resumePendingReplacement (.runPostCastCleanup (.cascadeBottom p0 supExCard.id #[]))
   let wasSuppressedSplitOk :=
     gSupAfterP1.suppressInteractiveReplay &&
     !gSupReversed.over &&
     !gSupReversed.suppressInteractiveReplay &&
     (gSupReversed.permanentsOf p0).any (·.name == bear.name) &&
     gSupReversed.pending == supOuterPrompt &&
-    (gSupDrained.player p0).life == supLifeBefore + 5
+    (gSupDrained.player p0).life == supLifeBefore + 5 &&
+    gSupCleanupQuiet.suppressInteractiveReplay &&
+    gSupCleanupQuiet.afterRandom == .none &&
+    (gSupCleanupQuiet.findObject? supExCard.id).any (·.zone == .exile)
 
   mustHold39i1 "1ab.twoStageAndOneShot" twoStageAndOneShotOk &&
   mustHold39i1 "1c.syncReconcileAndGuards" syncReconcileAndGuardsOk &&
   mustHold39i1 "1d.wasSuppressedSplit" wasSuppressedSplitOk &&
   mustHold39i1 "1.replay"
-    (replayOk39i1 #[gColReversed, gSyncDone, gSupReversed, gSupDrained])
+    (replayOk39i1 #[gColReversed, gSyncDone, gSupReversed, gSupDrained, gSupCleanupQuiet])
 
 end Phase39Item1EventAlignment
 
@@ -30975,20 +30983,38 @@ private def replayOk39i2 (gs : Array Game) : Bool :=
     match gKeepInBatch.currentBatch with
     | some (b, _) => gKeepInBatch.finishOpenBatch b pauseStartIdx
     | none => gKeepInBatch
+  -- `nextQueuedPendingOnResume` / `continuationGrantsPriority` (`finishAndGrantPriority` `alreadyGrants`)
+  -- also uses `validLegendChoiceIds` while `currentBatch.isSome` (`!preBatchLegendSnapshotValid`),
+  -- inspecting `popOuter` when `liveIds.size < 2`:
+  let pauseBid := (gInBatchExpired.currentBatch.get!).1
+  let gPred0 :=
+    gInBatchExpired.changes #[
+      .pending .none,
+      .priority p1,
+      .pushContinuationFrame {},
+      .pushOuterPendingReplacement
+        (.restorePending (.chooseMode p2) false none #[p3] none),
+      .pendingReplacement
+        (some (.seq (.closeBatch pauseBid pauseStartIdx)
+          (.seq (.restorePending (.chooseLegend p0 bear.name legIds) true none #[] none)
+            (.finishTurnFaceUp p2 ⟨999998⟩ true)))) ]
+  let gPredDone := gPred0.finishAndGrantPriority p0
   let crossBatchLegendOk :=
     validBeforeExpiry &&
     invalidAfterExpiry &&
     redirInBatch == Pending.none &&
     gSbaClosed.pending == Pending.none &&
     gKeepClosed.pending == Pending.none &&
-    (gKeepClosed.permanentsOf p0).size == 2
+    (gKeepClosed.permanentsOf p0).size == 2 &&
+    gPredDone.currentBatch.isNone &&
+    gPredDone.priority == p1
 
   mustHold39i2 "2a.consumedNotRerun" consumedNotRerunOk &&
   mustHold39i2 "2b.randomOrderAndDrain" randomOrderAndDrainOk &&
   mustHold39i2 "2c.crossBatchLegend" crossBatchLegendOk &&
   mustHold39i2 "2.replay"
     (replayOk39i2 #[gLeaveConsumed, gPopConsumed, gStandConsumed, gLeaveUntouched, gStandUntouched,
-      gRndPostLeave, gDrainRev, gSbaClosed, gKeepClosed])
+      gRndPostLeave, gDrainRev, gSbaClosed, gKeepClosed, gPredDone])
 
 end Phase39Item2EventAlignment
 
