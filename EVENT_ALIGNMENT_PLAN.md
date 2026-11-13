@@ -13035,10 +13035,11 @@ multi-pick disjointness, and `canPayLife`).
        g.chainPendingReplacement .finishFraChoice else g.receivePriority caster`—with
        no post-reconcile `if g.pending != .none then g` early return so an open
        `.chooseReplacement` from `runEndControlExileLoop` chains the snapshotted
-       `.finishFraChoice` or `.receivePriority (g.priorityInstead caster)` tail—or
-       `outer.ensureEndsWithFinishFra` via `Decisions.lean:700–701, 1459–1460`
-       when `skipTail`—after `.endControlExileLoop` instead of returning early or
-       misreading `.endControlExileLoop`'s `pendingReplacement.isSome` as
+       `.finishFraChoice` or `.receivePriority (g.priorityInstead caster)` tail—or,
+       when `skipTail` holds on a resumed `.seq (.finishTurnFaceUp … true) rest`
+       (`Decisions.lean:1459–1460`), returns `g` at `1058` so `Decisions.lean:700–701`
+       chains `rest` unchanged—after `.endControlExileLoop` instead of returning
+       early or misreading `.endControlExileLoop`'s `pendingReplacement.isSome` as
        `.finishFraChoice`), `Activation.lean:203–209` (`cause := some
        (.specialAction .turnFaceUp p)` at `208` after `207`'s face-up log, keeping
        `209`'s `g.receivePriority p` which already chains `.receivePriority` on an
@@ -13263,8 +13264,10 @@ unpayable-prompt `decline` reversals).
    - In `Core.replayKeptStreamCore` (`Core.lean:10599–10825`) and
      `PendingReplacement.continueCheckpointReplay` (`Event.lean:1930–1931`,
      `Decisions.lean:1648–1650`), when an earlier replayed batch `B1` flushes a
-     live CR 610.3 `returnLinkedExileMoves` return (`Movement.lean:784–801`),
-     `Movement.move` allocates `⟨gCur.nextObjectId⟩` (`ckpt.nextObjectId`) and ETB
+     live CR 610.3 return via `flushQueuedLinkedExile` (`Movement.lean:784–789`)
+     -> `returnLinkedExileMoves` (`794–802`) -> `runLinkedExileBatch`
+     (`717–780`), `Movement.move` (at `738`, `744`, and `750–752`) allocates
+     `⟨gCur.nextObjectId⟩` (`ckpt.nextObjectId`) and ETB
      static/replacement hooks allocate `⟨gCur.nextEffectId⟩` (`ckpt.nextEffectId`),
      advancing `gCur.nextObjectId` / `gCur.nextEffectId` ahead of the IDs recorded
      in later `keptStream` batches `B2`:
