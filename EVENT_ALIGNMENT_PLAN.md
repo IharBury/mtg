@@ -12880,10 +12880,11 @@ multi-pick disjointness, and `canPayLife`).
    10324–10328, 10430–10504, 11231–11237, 11327–11378, 11444–11465, 11681–11768`,
    `Attachments.lean:46–59`, `Movement.lean:582–609`, `Leaving.lean:80–197,
    386–403`, `Entering.lean:404–407`, `Phasing.lean:45–97, 100–130`,
-   `Turns.lean:20–38, 183, 349, 811`, `Casting.lean:1021–1045`,
-   `Activation.lean:203–207`, `ResolutionHelpers.lean:577–583`,
-   `FrcResolve.lean:738–742, 802–816, 1035–1046, 1087`, `EffectResolution.lean:2001–2013,
-   2404–2408`, `Decisions.lean:690–691, 1295, 1414–1421, 5029–5037`, §2.2, §2.5, §3.3, §3.8,
+   `Turns.lean:20–38, 183, 349, 811`, `Casting.lean:1032–1062`,
+   `Activation.lean:203–209`, `ResolutionHelpers.lean:577–583`,
+   `FrcResolve.lean:746–751, 811–824, 1035–1059, 1100–1103`,
+   `EffectResolution.lean:2013, 2404–2409`,
+   `Decisions.lean:700–701, 1459–1460, 1632–1633, 1651–1652, 5213–5222`, §2.2, §2.5, §3.3, §3.8,
    CR 110.2 / 506.4 / 514.2 / 611.2a–b / 613.1a–b / 613.7–613.8 / 614.6 /
    702.26b,f,g–h / 708.8 / 712.18 / 800.4b–c):
    - Add a shared post-transition reconciliation helper
@@ -13019,26 +13020,32 @@ multi-pick disjointness, and `canPayLife`).
        standalone `.layered _ (.copy _) _` expirations each reconcile strictly
        across `expireEffectById`'s own `pre -> g` step), and after
        `GameEvent.turnedFaceUp` / `GameEvent.transformed` in
-       `Casting.completeTurnFaceUp` (`Casting.lean:1028–1045`, `cause := some
-       (.specialAction .turnFaceUp caster)`, **snapshotting the `1040–1044`
-       post-face-up tail before `reconcileControlAfterTransition`** via `let
-       skipTail := hadOuterReplacement && g.pendingReplacement.isNone` and `let
-       chainFinishFra := !skipTail && (g.triggerSequenceRest.isSome ||
-       g.pendingReplacement.isSome)` right after `1028` sets `.pending .none`,
-       then dropping the early `if g.pending != .none then g` return at `1039` and
-       dispatching `if skipTail then g else if chainFinishFra then
-       g.chainPendingReplacement .finishFraChoice else g.receivePriority caster`
-       so an open `.chooseReplacement` from `runEndControlExileLoop` chains the
-       snapshotted `.finishFraChoice` or `.receivePriority (g.priorityInstead
-       caster)` tail—or `outer.ensureEndsWithFinishFra` via
-       `Decisions.lean:690–691, 1295` when `skipTail`—after `.endControlExileLoop`
-       instead of returning early or misreading `.endControlExileLoop`'s
-       `pendingReplacement.isSome` as `.finishFraChoice`), `Activation.lean:203–207`
-       (`cause := some (.specialAction .turnFaceUp p)`, keeping `207`'s existing
-       `g.receivePriority p` which already chains `.receivePriority` on an open
-       `.chooseReplacement` at `Entering.lean:406–407`), `FrcResolve.lean:1035–1046`
-       (`cause := some transformCause` / the resolved face-up `EventCause`), and
-       `EffectResolution.lean:2404–2408` (`cause := some fallback`), run
+       `Casting.completeTurnFaceUp` (`Casting.lean:1032–1062`—where `1034–1035`
+       re-chains `.finishTurnFaceUp` while `.chooseReplacement` is open and
+       `1039–1045`'s `| none =>` arm keeps `1040–1041`'s checkpoint reverse and
+       `1043–1045`'s orphan clear—with `cause := some (.specialAction .turnFaceUp
+       caster)` at `1057` in `| some o =>` at `1046–1062`, **snapshotting the
+       `1058–1062` post-face-up tail before `reconcileControlAfterTransition`**
+       via `let skipTail := hadOuterReplacement && g.pendingReplacement.isNone`
+       (`1050`) and `let chainFinishFra := !skipTail &&
+       (g.triggerSequenceRest.isSome || g.pendingReplacement.isSome)` (`1051`)
+       right after `1049` sets `.pending .none`, recording `turnedFaceUp` and
+       logging at `1053–1056`, calling `reconcileControlAfterTransition` at `1057`,
+       and dispatching `1058–1062`—`if skipTail then g else if chainFinishFra then
+       g.chainPendingReplacement .finishFraChoice else g.receivePriority caster`—with
+       no post-reconcile `if g.pending != .none then g` early return so an open
+       `.chooseReplacement` from `runEndControlExileLoop` chains the snapshotted
+       `.finishFraChoice` or `.receivePriority (g.priorityInstead caster)` tail—or
+       `outer.ensureEndsWithFinishFra` via `Decisions.lean:700–701, 1459–1460`
+       when `skipTail`—after `.endControlExileLoop` instead of returning early or
+       misreading `.endControlExileLoop`'s `pendingReplacement.isSome` as
+       `.finishFraChoice`), `Activation.lean:203–209` (`cause := some
+       (.specialAction .turnFaceUp p)` at `208` after `207`'s face-up log, keeping
+       `209`'s `g.receivePriority p` which already chains `.receivePriority` on an
+       open `.chooseReplacement` at `Entering.lean:406–407`),
+       `FrcResolve.lean:1035–1059` (`cause := some transformCause` at `1048` /
+       `some faceUpCause` at `1058`), and `EffectResolution.lean:2404–2409`
+       (`cause := some fallback` at `2409`), run
        `reconcileControlAfterTransition pre g (cause := ...)` so scoped Layer 2
        `.control` effects (`.creaturesWithout`, `.creaturesControlledBy`,
        `.permanentsOfSubtype` at `Core.lean:1793–1806`, which inspect Layer 1
@@ -13567,7 +13574,7 @@ unpayable-prompt `decline` reversals).
    `pendingPriority` / priority-grant detection in `Decisions`
    (`Event.lean:1722–1746, 2303–2312`, `Core.lean:2071`, `Leaving.lean:16–19,
    914–2027, 2103–2106, 2121–2325`, `ActivationCosts.lean:425–605`,
-   `Casting.lean:639–709, 844–848, 1022–1208`, `SacrificeDiscard.lean:316–359`,
+   `Casting.lean:639–709, 844–848, 1022–1208`, `SacrificeDiscard.lean:324–359`,
    `Decisions.lean:17–24, 168–212, 286–298, 353, 548–549, 606–607, 683–703,
    889–1469, 1540, 3035, 3379–3384, 4134–4148, 4891–4940, 5214–5217`,
    `PriorityActions.lean:66–67`, `Actions.lean:71–88`,
@@ -13807,16 +13814,17 @@ unpayable-prompt `decline` reversals).
          `outer.ensureEndsWithFinishFra` when `paused`) and at
          `PriorityActions.lean:66–67`, binding `let (g, callerShouldResume) := match
          g.proposedSpell with …` across `SacrificeDiscard.sacrificeForActivation`'s
-         `324–352` match (`SacrificeDiscard.lean:324–359`—where `327–329` returns the
-         `completeTurnFaceUp` pair while `SacrificeDiscard.lean`'s `| .spell =>` at
-         `333–338`, `| .activatedAbility =>` at `339–346`, `| .turnFaceUp =>` at `347`,
-         and `| none =>` at `348–352` each return `(…, false)`) and applying `if
-         callerShouldResume then g.resumeAfterBecomeCastFwd else g` **after** `354–357`
-         so only `327–329` can resume there while capturing `let isTurnFaceUpSac :=
-         wasProp && g.proposedSpell.any (·.kind == .turnFaceUp)` before
-         `Actions.lean:72` so the single `else if wasProp` branch at `Actions.lean:87–88`
-         runs `return if isTurnFaceUpSac then g else g.resumeAfterBecomeCast` (returning
-         `g` for `isTurnFaceUpSac` and keeping `g.resumeAfterBecomeCast` for non-turn-face-up
+         `SacrificeDiscard.lean:324–352` match (where `327–329` returns the
+         `completeTurnFaceUp` pair while `| .spell =>` at `333–338`,
+         `| .activatedAbility =>` at `339–346`, `| .turnFaceUp =>` at `347`, and
+         `| none =>` at `348–352` each return `(g, false)`) and replacing `return g`
+         at `SacrificeDiscard.lean:359` (**after** `354–357`'s `if paused` chain) with
+         `return if callerShouldResume then g.resumeAfterBecomeCastFwd else g` so only
+         `327–329` can resume there while capturing `let isTurnFaceUpSac := wasProp &&
+         g.proposedSpell.any (·.kind == .turnFaceUp)` before `Actions.lean:72` so the
+         single `else if wasProp` branch at `Actions.lean:87–88` runs `return if
+         isTurnFaceUpSac then g else g.resumeAfterBecomeCast` (returning `g` for
+         `isTurnFaceUpSac` and keeping `g.resumeAfterBecomeCast` for non-turn-face-up
          sacrifices), and projecting `.1` in the unit
          test at `Events.lean:29022`; and on the orphaned-proposal
          clear-only arms `Casting.lean:1043–1045` (in `completeTurnFaceUp`, reading
@@ -13825,9 +13833,10 @@ unpayable-prompt `decline` reversals).
          `.finishFraChoice`, since `1105–1107` returns either to `Decisions.lean:1435`
          (from `.finishBecomeActivated`) or through `completeActivation`'s `1196` ->
          `.ok` at `1208` to `Decisions.lean:1424–1425` (`if hadOuter then g' else
-         resumeAfterBecomeCast g'`), and `completeTurnFaceUp`'s callers at
-         `PriorityActions.lean:66–67`, `Decisions.lean:4134–4148`, and
-         `SacrificeDiscard.lean:316–359` consume `callerShouldResume == true`
+         resumeAfterBecomeCast g'`), and `completeTurnFaceUp`'s callers
+         (`PriorityActions.lean:66–67`, `Decisions.lean:4140–4141` consumed at `4148`
+         after `4142–4147`, and `SacrificeDiscard.lean:327–329` consumed at `359`
+         after `354–357`) consume `callerShouldResume == true`
          to continue any existing queue on `1043–1045`—grant
          priority on the idle-stall branch when `!g.over && !hadOuterReplacement &&
          g.pending == .none` (captured before `1045` in `completeTurnFaceUp`) `&&
