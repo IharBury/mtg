@@ -12881,10 +12881,12 @@ multi-pick disjointness, and `canPayLife`).
    `Attachments.lean:46–59`, `Movement.lean:582–609`, `Leaving.lean:80–197,
    386–403`, `Entering.lean:404–407`, `Phasing.lean:45–97, 100–130`,
    `Turns.lean:20–38, 183, 349, 811`, `Casting.lean:1032–1062`,
+   `SacrificeDiscard.lean:315, 328–329, 356`,
    `Activation.lean:203–209`, `ResolutionHelpers.lean:577–583`,
    `FrcResolve.lean:746–751, 811–824, 1035–1059, 1100–1103`,
    `EffectResolution.lean:2013, 2404–2409`,
-   `Decisions.lean:700–701, 1459–1460, 1632–1633, 1651–1652, 5213–5222`, §2.2, §2.5, §3.3, §3.8,
+   `Decisions.lean:662, 683–684, 700–703, 1459–1460, 1632–1633, 1651–1652,
+   4132, 4140–4141, 4145, 5213–5222`, §2.2, §2.5, §3.3, §3.8,
    CR 110.2 / 506.4 / 514.2 / 611.2a–b / 613.1a–b / 613.7–613.8 / 614.6 /
    702.26b,f,g–h / 708.8 / 712.18 / 800.4b–c):
    - Add a shared post-transition reconciliation helper
@@ -13033,13 +13035,21 @@ multi-pick disjointness, and `canPayLife`).
        logging at `1053–1056`, calling `reconcileControlAfterTransition` at `1057`,
        and dispatching `1058–1062`—`if skipTail then g else if chainFinishFra then
        g.chainPendingReplacement .finishFraChoice else g.receivePriority caster`—with
-       no post-reconcile `if g.pending != .none then g` early return so an open
-       `.chooseReplacement` from `runEndControlExileLoop` chains the snapshotted
-       `.finishFraChoice` or `.receivePriority (g.priorityInstead caster)` tail—or,
-       when `skipTail` holds on a resumed `.seq (.finishTurnFaceUp … true) rest`
-       (`Decisions.lean:1459–1460`), returns `g` at `1058` so `Decisions.lean:700–701`
-       chains `rest` unchanged—after `.endControlExileLoop` instead of returning
-       early or misreading `.endControlExileLoop`'s `pendingReplacement.isSome` as
+       no post-reconcile `if g.pending != .none then g` early return so when
+       `reconcileControlAfterTransition` at `1057` reopens `.chooseReplacement`
+       (`g.pending != .none` after `1049` cleared `.pending .none`), `!skipTail`
+       chains the snapshotted `.finishFraChoice` (`1060`) or `.receivePriority
+       (g.priorityInstead caster)` (`1062`) tail after `.endControlExileLoop`,
+       while under `skipTail` (`1058` returning `g` when `.finishTurnFaceUp` at
+       `Decisions.lean:1459–1460` ran as `first` of `.seq first rest` at
+       `Decisions.lean:662, 683–684`, where `rest := outer.ensureEndsWithFinishFra`
+       was queued behind `1034–1035` by the paused callers at
+       `Decisions.lean:4145`—`paused` at `4132`, call at `4140–4141`—or
+       `SacrificeDiscard.lean:356`—`paused` at `315`, call at `328–329`) that
+       reopened `g.pending != .none` causes `.seq` to take `Decisions.lean:700–701`
+       —rather than `702–703` when `g.pending == .none`—and chain `rest` unchanged
+       after `.endControlExileLoop` instead of returning early or misreading
+       `.endControlExileLoop`'s `pendingReplacement.isSome` as
        `.finishFraChoice`), `Activation.lean:203–209` (`cause := some
        (.specialAction .turnFaceUp p)` at `208` after `207`'s face-up log, keeping
        `209`'s `g.receivePriority p` which already chains `.receivePriority` on an
@@ -13257,7 +13267,7 @@ unpayable-prompt `decline` reversals).
    1930–1931, 2250–2251`, `Core.lean:90–94, 161–162, 371–381, 675–855, 919–920,
    953–985, 991–1004, 1072, 1655–1662, 1835–1860, 2028–2077, 2110, 2174–2185,
    2267–2269, 5211–5248, 7837, 10324–10328, 10372–10510, 10544–10552, 10599–10825,
-   11175–11284, 11412–11418`, `Movement.lean:215–218, 265–282, 420–446, 570,
+   11175–11284, 11412–11418`, `Movement.lean:215–218, 265–282, 312, 420–446, 570,
    596–608, 675–683, 691–839`, `Decisions.lean:662–703, 1648–1650`, `Leaving.lean:33–47,
    178–218, 2506–2546`, §2.1, §2.4, §2.5, §3.8,
    CR 104.1 / 104.2a / 400.7 / 603.2c / 610.3 / 725.4 / 733.1–733.2 / 800.4a,c,j):
@@ -13265,8 +13275,9 @@ unpayable-prompt `decline` reversals).
      `PendingReplacement.continueCheckpointReplay` (`Event.lean:1930–1931`,
      `Decisions.lean:1648–1650`), when an earlier replayed batch `B1` flushes a
      live CR 610.3 return via `flushQueuedLinkedExile` (`Movement.lean:784–789`)
-     -> `returnLinkedExileMoves` (`794–802`) -> `runLinkedExileBatch`
-     (`717–780`), `Movement.move` (at `738`, `744`, and `750–752`) allocates
+     -> `returnLinkedExileMoves` (`794–802`, calling `runLinkedExileBatch` at
+     `801`) -> `runLinkedExileBatch` (`712–780`), `Movement.move` (at `738`,
+     `744`, and `750–752`, minting `⟨g.nextObjectId⟩` at `312`) allocates
      `⟨gCur.nextObjectId⟩` (`ckpt.nextObjectId`) and ETB
      static/replacement hooks allocate `⟨gCur.nextEffectId⟩` (`ckpt.nextEffectId`),
      advancing `gCur.nextObjectId` / `gCur.nextEffectId` ahead of the IDs recorded
