@@ -56,7 +56,9 @@ def ceaseToExist (g : Game) (id : ObjectId) (cause : Option EventCause := none)
     let expCause := cause.orElse (fun _ => some (.gameRule .leavingZone))
     let g := g.expireEffectsOnLeavingObject old (cause := expCause) (reconcileControl := false)
     let g :=
-      if old.zone == .battlefield then g.expireWhileSourceEffects id (cause := expCause) else g
+      if old.zone == .battlefield then
+        g.expireWhileSourceEffects id (cause := expCause) (preState? := some pre)
+      else g
     if reconcileControl then
       reconcileControlAfterTransitionFwd pre g (cause := expCause)
     else g

@@ -332,12 +332,14 @@ def canActivateManaAbility (g : Game) (p : PlayerId) : Bool :=
 
 /-- Molten Tide: a triggered mana ability that resolves immediately (CR 605.4a). -/
 def finishManaAbilityMountainTrigger (g : Game) (p : PlayerId) (id : ObjectId) : Game :=
-  let extraRed := g.mountainExtraRedThisTurn p
-  if extraRed > 0 then
-    let extraUnits := Array.replicate extraRed ({ mana := .colored .red, source := some id } : ManaUnit)
-    (g.record (GameEvent.manaAdded g.turnNumber p extraUnits)).logMsg
-      (s!"{(g.player p).name} adds an additional " ++ String.join (List.replicate extraRed "{R}"))
-  else g
+  if g.over || !g.stillInGame p then g
+  else
+    let extraRed := g.mountainExtraRedThisTurn p
+    if extraRed > 0 then
+      let extraUnits := Array.replicate extraRed ({ mana := .colored .red, source := some id } : ManaUnit)
+      (g.record (GameEvent.manaAdded g.turnNumber p extraUnits)).logMsg
+        (s!"{(g.player p).name} adds an additional " ++ String.join (List.replicate extraRed "{R}"))
+    else g
 
 private def abortDepartedManaAbilityCont (g : Game) (p : PlayerId) (prevPending : Pending) : Game :=
   Id.run do
@@ -347,7 +349,7 @@ private def abortDepartedManaAbilityCont (g : Game) (p : PlayerId) (prevPending 
     if !g.over then
       if prevPending != .none then
         g := g.resumePendingReplacementFwd (.restorePending prevPending false)
-      else if g.pending == .none && !g.sbaPaused then
+      if !g.over && g.pending == .none && g.afterRandom == .none && !g.sbaPaused then
         g := g.receivePriority p
     return g
 

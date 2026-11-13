@@ -348,30 +348,37 @@ partial def checkSBACounted (g : Game)
     (departedIn : Array PlayerId := #[])
     (rewindProposalIn : Option Bool := none)
     (deferRestore : Bool := false) : Game × Bool :=
-  if g.over || g.sbaPaused then (g, false)
+  if g.over then (g, false)
   else
-    let (g, (changed, _paused)) := g.withBatchReturn none fun g => Id.run do
-      let mut g := g
-      let mut changed := false
-      -- Waiting for a legend-rule choice: do not apply further SBAs until
-      -- the player keeps one copy (CR 704.5j). Drop a stale prompt if the
-      -- group is no longer two or more.
+    -- Waiting for a legend-rule choice: do not apply further SBAs until
+    -- the player keeps one copy (CR 704.5j). Narrow or drop a stale prompt
+    -- before `g.sbaPaused` returns `(g, false)` or `withBatchReturn` opens a batch.
+    let (g, returnEarly) : Game × Bool :=
       match g.pending with
-      | .chooseReplacement _ _ =>
-        return (g, (changed, true))
       | .chooseLegend p name ids =>
-        let still := ids.filter (fun id =>
+        let still := ids.filter fun id =>
           match g.findObject? id with
           | some o =>
             o.isOnBattlefield && g.stillInGame p &&
-              (if g.currentBatch.isSome then true
-               else g.controlledBy o p && g.treatedAsLegendary o && g.name o == name)
-          | none => false)
+              (g.currentBatch.isSome ||
+                (g.controlledBy o p && g.treatedAsLegendary o && g.name o == name))
+          | none => false
         if still.size ≥ 2 then
-          return (g, (changed, true))
+          let g :=
+            if g.currentBatch.isNone && still.size < ids.size then
+              g.change (.pending (.chooseLegend p name still))
+            else g
+          (g, true)
         else
-          g := g.change (.pending .none)
-      | _ => pure ()
+          (g.change (.pending .none), false)
+      | _ => (g, false)
+    if returnEarly || g.sbaPaused then (g, false)
+    else
+    let (g, (changed, _paused)) := g.withBatchReturn none fun g => Id.run do
+      let mut g := g
+      let mut changed := false
+      if let .chooseReplacement _ _ := g.pending then
+        return (g, (changed, true))
       -- Capture all applicable CR 704.5 state-based actions simultaneously
       -- against the start-of-pass state BEFORE recording `GameEvent.playerLost`
       -- or applying CR 704.5q counter annihilation so a player losing in this

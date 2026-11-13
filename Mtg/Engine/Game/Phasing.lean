@@ -51,7 +51,7 @@ def phaseOut (g : Game) (o : GameObject) (cause : Option EventCause := none) : G
       let batchCause :=
         g.resolveOptionalCause cause (fallbackCtrl := g.controllerOf live)
           (defaultCause := .turnBased .phaseInOut)
-      g.withBatchCore (some batchCause) fun g =>
+      (g.withBatchCore (some batchCause) fun g =>
         let pre := g
         let stepCause (g : Game) : EventCause :=
           g.resolveOptionalCause cause (fallbackCtrl := g.controllerOf live)
@@ -75,7 +75,7 @@ def phaseOut (g : Game) (o : GameObject) (cause : Option EventCause := none) : G
                 let attName := acc.name att
                 acc.record (GameEvent.phasedOut acc.turnNumber (acc.snapshot att) true (cause := stepCause acc))
                   |>.logMsg s!"{attName} phases out attached to {hostName}") g
-        reconcileControlAfterTransitionFwd pre g (cause := some (stepCause g))
+        reconcileControlAfterTransitionFwd pre g (cause := some (stepCause g))).flushQueuedLinkedExileFwd
 
 /-- Continue phasing out `remainingIds` sequentially inside the enclosing
 simultaneous phase-out batch, pausing and chaining `.phaseOutPermanentsLoop` if
@@ -115,8 +115,8 @@ def phaseOutPermanents (g : Game) (targets : Array GameObject)
     let batchCause :=
       g.resolveOptionalCause cause (fallbackCtrl := g.controllerOf sorted[0]!)
         (defaultCause := .turnBased .phaseInOut)
-    g.withBatchCore (some batchCause) fun g =>
-      g.phaseOutPermanentsLoop sortedIds (cause := cause)
+    (g.withBatchCore (some batchCause) fun g =>
+      g.phaseOutPermanentsLoop sortedIds (cause := cause)).flushQueuedLinkedExileFwd
 
 /-- Phase `o` in, along with anything that phased out attached to it.
 Counters and “as this enters” choices are kept. Does not trigger enters (CR 702.26c / 702.26d / 702.26g). -/
@@ -129,7 +129,7 @@ def phaseIn (g : Game) (o : GameObject) (cause : Option EventCause := none) : Ga
       let resolvedCause :=
         g.resolveOptionalCause cause (fallbackCtrl := g.controllerOf live)
           (defaultCause := .turnBased .phaseInOut)
-      g.withBatchCore (some resolvedCause) fun g =>
+      (g.withBatchCore (some resolvedCause) fun g =>
         let pre := g
         let g := g.record (GameEvent.phasedIn g.turnNumber (g.snapshot live) false (cause := resolvedCause))
         let oName := g.name (g.object! live.id)
@@ -149,17 +149,50 @@ def phaseIn (g : Game) (o : GameObject) (cause : Option EventCause := none) : Ga
                 acc := acc.logMsg s!"{acc.name (acc.object! att.id)} phases in still attached to {hostName}"
                 queue := queue.push att.id
           return acc
-        reconcileControlAfterTransitionFwd pre g (cause := some resolvedCause)
+        reconcileControlAfterTransitionFwd pre g (cause := some resolvedCause)).flushQueuedLinkedExileFwd
 
-/-- Phase in every phased-out permanent `p` controls (CR 502.1 / 703.4a). -/
+/-- Continue phasing in `remainingIds` sequentially inside the enclosing
+simultaneous phase-in batch, pausing and chaining `.phaseInControlledLoop` if
+a CR 616.1 / 800.4c replacement or legend choice opens (CR 502.1 / 703.4a). -/
+def phaseInControlledLoop (g : Game) (remainingIds : Array ObjectId)
+    (cause : Option EventCause := none) : Game := Id.run do
+  let mut g := g
+  for i in [0:remainingIds.size] do
+    let id := remainingIds[i]!
+    if let some o := g.findObject? id then
+      if o.zone == .battlefield && o.status.phasedOut && o.status.phasedWith.isNone then
+        g := g.phaseIn o (cause := cause)
+        let paused :=
+          match g.pending with
+          | .chooseReplacement .. | .chooseLegend .. => true
+          | _ => false
+        if paused then
+          let rem := remainingIds.extract (i + 1) remainingIds.size
+          if !rem.isEmpty then
+            g := g.chainPendingReplacement (.phaseInControlledLoop rem cause)
+          return g
+  return g
+
+/-- Phase in every phased-out permanent `p` controlled when it phased out
+(CR 502.1 / 703.4a). -/
 def phaseInControlled (g : Game) (p : PlayerId) : Game :=
   let cause := some (EventCause.turnBased .phaseInOut)
-  g.withBatchCore cause fun g =>
-    g.objects.foldl (fun acc o =>
-      if o.zone == .battlefield && o.status.phasedOut && acc.controlledBy o p &&
-          o.status.phasedWith.isNone then
-        acc.phaseIn (acc.object! o.id) (cause := cause)
-      else acc) g
+  let phaseOutControllerOf (o : GameObject) : Option PlayerId :=
+    match g.events.findSomeRev? (fun ev =>
+      match ev.change with
+      | .rules (.permanent (.phasedOut eo _)) =>
+        if eo.id == some o.id then some eo.controller else none
+      | _ => none) with
+    | some ctrl? => ctrl?
+    | none => g.controllerOf o
+  let targetIds :=
+    g.objects.filterMap fun o =>
+      if o.zone == .battlefield && o.status.phasedOut && o.status.phasedWith.isNone &&
+          phaseOutControllerOf o == some p then
+        some o.id
+      else none
+  (g.withBatchCore cause fun g =>
+    g.phaseInControlledLoop targetIds (cause := cause)).flushQueuedLinkedExileFwd
 
 end Game
 end Mtg.Engine

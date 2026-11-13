@@ -69,6 +69,7 @@ private def applyActionFor (g : Game) (p : PlayerId) : Action → Except String 
       | .sacrificePermanent .. => true
       | _ => false
     let isResCastSac := wasProp && g.proposedSpell.any (·.resolutionCast)
+    let isTurnFaceUpSac := wasProp && g.proposedSpell.any (fun prop => prop.kind == ProposalKind.turnFaceUp)
     let g ← g.sacrificeForActivation p id
     if isResCastSac then
       if (match g.pending with | .chooseReplacement .. => true | _ => false) &&
@@ -85,7 +86,7 @@ private def applyActionFor (g : Game) (p : PlayerId) : Action → Except String 
           else if g.pending == .none && g.afterRandom == .none then g.popEmptyContinuationFrames
           else g
     else if wasProp then
-      return g.resumeAfterBecomeCast
+      return if isTurnFaceUpSac then g else g.resumeAfterBecomeCast
     else
       return if g.mayThenResume then g.acceptMayThen else g.finishAndGrantPriority
   | .chooseAdditionalCost payGeneric => g.announceAdditionalCost p payGeneric
