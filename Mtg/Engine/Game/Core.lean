@@ -92,6 +92,7 @@ structure Game where
   openBatchEffects : Array (EffectId × ContinuousEffectSpec) := #[]
   openBatchPending : Pending := .none
   openBatchStack : Array StackEntry := #[]
+  openBatchSuppressInteractive : Bool := false
   /-- Active continuous effects paired with their unique `EffectId` (CR 611). -/
   activeEffects : Array (EffectId × ContinuousEffectSpec) := #[]
   timestamp : Nat := 0
@@ -159,6 +160,9 @@ structure Game where
   replacement effects match the same events. A replaced change is not
   recorded (CR 614.6). -/
   events : Array GameEvent := #[]
+  /-- Derived invariant (`== continuationsHaveSuppressedReplay continuations`):
+  true while a suppressed checkpoint replay continuation is active. -/
+  suppressInteractiveReplay : Bool := false
 deriving Repr, Inhabited, BEq
 
 /-- Pre-batch game state snapshot for CR 603.10 look-back trigger evaluation. -/
@@ -330,6 +334,7 @@ def applyChange (p : ProposedSpell) (c : ProposalChange) : ProposedSpell :=
   | .needsBehold v => { p with needsBehold := v }
   | .payLife v => { p with payLife := v }
   | .alternativeCost v => { p with alternativeCost := v }
+  | .loyaltyPaid v => { p with loyaltyPaid := v }
 
 end ProposedSpell
 
@@ -1678,12 +1683,12 @@ def unmaskedCopiableValuesWithTs (g : Game) (o : GameObject) : CardDef × (Nat �
       match sc with
       | .objects ids => ids.contains o.id
       | .creaturesControlledBy p =>
-        o.isOnBattlefield && initCtrl == some p && cur.types.contains .creature
+        o.isBattlefieldObject && initCtrl == some p && cur.types.contains .creature
       | .creaturesWithout kw =>
-        o.isOnBattlefield && cur.types.contains .creature &&
+        o.isBattlefieldObject && cur.types.contains .creature &&
           Keywords.merge cur.keywords kw != cur.keywords
       | .permanentsOfSubtype p s =>
-        o.isOnBattlefield && initCtrl == some p &&
+        o.isBattlefieldObject && initCtrl == some p &&
           ((CardSubtype.ofSubtypes cur.subtypes).contains s ||
             (cur.keywords.changeling &&
               (cur.types.contains .creature || cur.types.contains .kindred) && !s.isNoncreature))
@@ -1795,12 +1800,12 @@ def effectiveControllerWithApplied (g : Game) (o : GameObject) :
         match sc with
         | .objects ids => ids.contains o.id
         | .creaturesControlledBy p =>
-          o.isOnBattlefield && cur == some p && bc.types.contains .creature
+          o.isBattlefieldObject && cur == some p && bc.types.contains .creature
         | .creaturesWithout kw =>
-          o.isOnBattlefield && bc.types.contains .creature &&
+          o.isBattlefieldObject && bc.types.contains .creature &&
             Keywords.merge bc.keywords kw != bc.keywords
         | .permanentsOfSubtype p s =>
-          o.isOnBattlefield && cur == some p &&
+          o.isBattlefieldObject && cur == some p &&
             ((CardSubtype.ofSubtypes bc.subtypes).contains s ||
               (bc.keywords.changeling &&
                 (bc.types.contains .creature || bc.types.contains .kindred) && !s.isNoncreature))
@@ -2024,6 +2029,13 @@ def captureProposalCheckpoint (g : Game) (eventsSize : Nat) : ProposalCheckpoint
     extraTurns := g.extraTurns
     additionalCombatPhases := g.additionalCombatPhases }
 
+/-- Whether any frame in `frames` holds a `PendingReplacement` continuation
+with `suppressInteractive == true`. -/
+def continuationsHaveSuppressedReplay (frames : Array ContinuationFrame) : Bool :=
+  frames.any fun f =>
+    f.pendingReplacement.any (·.hasSuppressedCheckpointReplay) ||
+      f.outerPendingReplacements.any (·.hasSuppressedCheckpointReplay)
+
 /-- Restore `g` from `ckpt`, truncating `g.events` back to `ckpt.eventsSize` (CR 733.1). -/
 def restoreProposalCheckpoint (g : Game) (ckpt : ProposalCheckpoint) : Game :=
   { players := ckpt.players
@@ -2046,6 +2058,7 @@ def restoreProposalCheckpoint (g : Game) (ckpt : ProposalCheckpoint) : Game :=
     openBatchEffects := ckpt.openBatchEffects
     openBatchPending := ckpt.openBatchPending
     openBatchStack := ckpt.openBatchStack
+    openBatchSuppressInteractive := false
     activeEffects := ckpt.activeEffects
     timestamp := ckpt.timestamp
     pregameRandom := ckpt.pregameRandom
@@ -2074,7 +2087,19 @@ def restoreProposalCheckpoint (g : Game) (ckpt : ProposalCheckpoint) : Game :=
     delayedTriggers := ckpt.delayedTriggers
     extraTurns := ckpt.extraTurns
     additionalCombatPhases := ckpt.additionalCombatPhases
-    events := g.events.extract 0 (min ckpt.eventsSize g.events.size) }
+    events := g.events.extract 0 (min ckpt.eventsSize g.events.size)
+    suppressInteractiveReplay := continuationsHaveSuppressedReplay ckpt.continuations }
+
+/-- Players who have left the game since `ckpt` was captured (`pl.leftTheGame` now,
+not at `ckpt`), deduplicated and merged with `extra` (CR 733.1 / 800.4a). -/
+def playersDepartedSinceCheckpoint (g : Game) (ckpt : ProposalCheckpoint)
+    (extra : Array PlayerId := #[]) : Array PlayerId :=
+  let since := g.players.foldl (fun acc pl =>
+    if pl.leftTheGame && !ckpt.players.any (fun cpl => cpl.id == pl.id && cpl.leftTheGame) &&
+        !acc.contains pl.id then
+      acc.push pl.id
+    else acc) #[]
+  extra.foldl (fun acc p => if acc.contains p then acc else acc.push p) since
 
 /-- Process one `EngineChange` in isolation. -/
 def applyEngineChange (g : Game) (c : EngineChange) : Game :=
@@ -2178,11 +2203,20 @@ def applyEngineChange (g : Game) (c : EngineChange) : Game :=
       openBatchPlayers := #[]
       openBatchEffects := #[]
       openBatchPending := .none
-      openBatchStack := #[] }
-  | .pushContinuationFrame frame => { g with continuations := g.continuations.push frame }
-  | .popContinuationFrame => { g with continuations := g.continuations.pop }
+      openBatchStack := #[]
+      openBatchSuppressInteractive := false }
+  | .pushContinuationFrame frame =>
+    let nextConts := g.continuations.push frame
+    { g with
+      continuations := nextConts
+      suppressInteractiveReplay := continuationsHaveSuppressedReplay nextConts }
+  | .popContinuationFrame =>
+    let nextConts := g.continuations.pop
+    { g with
+      continuations := nextConts
+      suppressInteractiveReplay := continuationsHaveSuppressedReplay nextConts }
   | .continuation cc =>
-    g.modifyTopFrame (fun f =>
+    let g' := g.modifyTopFrame (fun f =>
       match cc with
       | .pendingDrawAfterScry v => { f with pendingDrawAfterScry := v }
       | .discardedCardThisWay v => { f with discardedCardThisWay := v }
@@ -2285,6 +2319,10 @@ def applyEngineChange (g : Game) (c : EngineChange) : Game :=
       | .afterRandom v => { f with afterRandom := v }
       | .resolutionFinish v => { f with resolutionFinish := v }
       | .pendingResolvedEvent v => { f with pendingResolvedEvent := v })
+    match cc with
+    | .pendingReplacement _ | .pushOuterPendingReplacement _ | .popOuterPendingReplacement =>
+      { g' with suppressInteractiveReplay := continuationsHaveSuppressedReplay g'.continuations }
+    | _ => g'
   | .priority v => { g with priority := v }
   | .pendingPriority v => { g with pendingPriority := v }
   | .pendingBlockerAssignments v => { g with pendingBlockerAssignments := v }
@@ -10369,7 +10407,8 @@ def replayEvents (es : Array GameEvent) (init : Game := {}) : Game :=
 /-- Close a synchronous (non-paused) outermost rules-event batch `batchId` that
 started at `startIdx`, reconstructing its pre-batch `GameSnapshot` from the
 transient `openBatch*` fields without emitting extra engine events. -/
-private def finishOpenBatchSync (g : Game) (batchId : BatchId) (startIdx : Nat) : Game :=
+private def finishOpenBatchSync (g : Game) (batchId : BatchId) (startIdx : Nat)
+    (suppressInteractive : Bool := false) : Game :=
   let pre : GameSnapshot :=
     { g with
       objects := g.openBatchObjects
@@ -10377,6 +10416,7 @@ private def finishOpenBatchSync (g : Game) (batchId : BatchId) (startIdx : Nat) 
       activeEffects := g.openBatchEffects
       pending := g.openBatchPending
       stack := g.openBatchStack
+      openBatchSuppressInteractive := false
       events := g.events.extract 0 (min startIdx g.events.size) }
   let g2 :=
     { g with
@@ -10385,13 +10425,14 @@ private def finishOpenBatchSync (g : Game) (batchId : BatchId) (startIdx : Nat) 
       openBatchPlayers := #[]
       openBatchEffects := #[]
       openBatchPending := .none
-      openBatchStack := #[] }
+      openBatchStack := #[]
+      openBatchSuppressInteractive := false }
   let slice := g2.events.extract (min startIdx g2.events.size) g2.events.size
   let batchEvents := slice.filter (fun ev =>
     match ev.change with
     | .rules _ => ev.batch == some batchId
     | .engine _ => false)
-  if batchEvents.isEmpty then g2
+  if suppressInteractive || g2.over || g2.suppressInteractiveReplay || batchEvents.isEmpty then g2
   else g2.closeBatch pre batchId batchEvents
 
 /-- Close a paused outermost rules-event batch `batchId` that started at `startIdx`,
@@ -10405,6 +10446,7 @@ def finishOpenBatch (g : Game) (batchId : BatchId) (startIdx : Nat) : Game :=
       activeEffects := g.openBatchEffects
       pending := g.openBatchPending
       stack := g.openBatchStack
+      openBatchSuppressInteractive := false
       events := g.events.extract 0 (min startIdx g.events.size) }
   let g2 := g.change .clearPausedBatch
   let slice := g2.events.extract (min startIdx g2.events.size) g2.events.size
@@ -10422,18 +10464,23 @@ new `BatchId` is opened (advancing `nextBatchId` only if an event uses `batchId`
 or the batch pauses) and triggers are evaluated once when `f` completes (or
 after `Pending.chooseReplacement` finishes if `f` pauses for a replacement choice). -/
 def withBatchCoreReturn {α : Type} (g : Game) (cause : Option EventCause := none)
-    (f : Game → Game × α) : Game × α :=
+    (f : Game → Game × α) (suppressInteractive : Bool := false) : Game × α :=
   let isPausePending : Pending → Bool
     | .chooseReplacement .. | .chooseLegend .. => true
     | _ => false
+  let quiet0 := suppressInteractive || g.openBatchSuppressInteractive || g.over || g.suppressInteractiveReplay
   match g.currentBatch with
   | some (batchId, prevCause?) =>
     let mergedCause? := prevCause?.orElse (fun _ => cause)
     let wasPaused := isPausePending g.pending
-    let (g1, res) := f { g with currentBatch := some (batchId, mergedCause?) }
+    let (g1, res) := f
+      { g with
+        currentBatch := some (batchId, mergedCause?)
+        openBatchSuppressInteractive := quiet0 }
     let g2 :=
       match g1.currentBatch with
-      | none => g1
+      | none =>
+        { g1 with openBatchSuppressInteractive := false }
       | some _ =>
         let nowPaused := isPausePending g1.pending
         let innerOpenedPause :=
@@ -10468,14 +10515,16 @@ def withBatchCoreReturn {α : Type} (g : Game) (cause : Option EventCause := non
                   cur := (cur.1, nextC?)
               | _ => pure ()
             return some cur
-        match replayedPausedBatch? with
-        | some (pBid, pCause?) =>
-          if pBid == batchId && pCause? != targetCause? then
-            g1.change (.setPausedBatchCause targetCause?)
-          else
+        let g2Core :=
+          match replayedPausedBatch? with
+          | some (pBid, pCause?) =>
+            if pBid == batchId && pCause? != targetCause? then
+              g1.change (.setPausedBatchCause targetCause?)
+            else
+              { g1 with currentBatch := some (batchId, targetCause?) }
+          | none =>
             { g1 with currentBatch := some (batchId, targetCause?) }
-        | none =>
-          { g1 with currentBatch := some (batchId, targetCause?) }
+        { g2Core with openBatchSuppressInteractive := g.openBatchSuppressInteractive }
     (g2, res)
   | none =>
     let batchId : BatchId := ⟨g.nextBatchId⟩
@@ -10492,22 +10541,26 @@ def withBatchCoreReturn {α : Type} (g : Game) (cause : Option EventCause := non
         openBatchPlayers := prePls
         openBatchEffects := preEffs
         openBatchPending := prePend
-        openBatchStack := preStk }
+        openBatchStack := preStk
+        openBatchSuppressInteractive := quiet0 }
     let (g1, res) := f g0
+    let noInteractive := quiet0 || g1.over || g1.suppressInteractiveReplay
     let keepOpen :=
-      match g1.pending with
-      | .chooseReplacement .. | .chooseLegend .. => true
-      | _ => g1.pendingReplacement.isSome
+      !noInteractive &&
+        match g1.pending with
+        | .chooseReplacement .. | .chooseLegend .. => true
+        | _ => g1.pendingReplacement.isSome
     if keepOpen then
       let batchCause? := (g1.currentBatch.map Prod.snd).join
       let g2 := g1.change (.pauseBatch batchId batchCause? preObjs prePls preEffs prePend preStk)
       (g2.chainPendingReplacement (.closeBatch batchId startIdx), res)
     else
-      (g1.finishOpenBatchSync batchId startIdx, res)
+      (g1.finishOpenBatchSync batchId startIdx (suppressInteractive := noInteractive), res)
 
 /-- Core batch runner (without `Movement`'s deferred `linkedExile` flush). -/
-def withBatchCore (g : Game) (cause : Option EventCause := none) (f : Game → Game) : Game :=
-  (g.withBatchCoreReturn cause (fun g => (f g, ()))).1
+def withBatchCore (g : Game) (cause : Option EventCause := none) (f : Game → Game)
+    (suppressInteractive : Bool := false) : Game :=
+  (g.withBatchCoreReturn cause (fun g => (f g, ())) (suppressInteractive := suppressInteractive)).1
 
 /-- Bracket a single mana ability or cost action executed during a spell/ability
 proposal with `EngineChange.beginProposalAction` / `endProposalAction` so
@@ -10544,6 +10597,10 @@ opaque runPostCastCleanupFwd (g : Game) : Game := g
 opaque resumePendingReplacementFwd (g : Game) (pr : PendingReplacement)
     (followedByFinishFra : Bool := false) : Game := g
 
+/-- Forward reference to `Movement.flushQueuedLinkedExile` (resolved at link time via `@[export]`). -/
+@[extern "mtg_game_flush_queued_linked_exile"]
+opaque flushQueuedLinkedExileFwd (g : Game) (suppressInteractive : Bool := false) : Game := g
+
 /-- Drain `g.pendingReplacement` locally while `!g.over && g.pending == .none &&
 g.afterRandom == .none`, without touching `triggerSequenceRest` or
 `outerPendingReplacements` (CR 603.2c / 616.1 / 733.1). -/
@@ -10561,7 +10618,7 @@ partial def drainLocalPendingReplacement (g : Game) : Game :=
       g.drainLocalPendingReplacement
     | none => g
 
-private def isProposalReplayPaused (g : Game) : Bool :=
+def isProposalReplayPaused (g : Game) : Bool :=
   match g.pending with
   | .chooseReplacement .. | .chooseLegend .. => true
   | _ => false
@@ -10571,6 +10628,267 @@ private def resolveProposalRevId (m : Array (ObjectId × ObjectId)) (oid : Objec
       if afterId == oid then some origId else none) with
   | some origId => origId
   | none => oid
+
+private def resolveProposalEffId (m : Array (EffectId × EffectId)) (eid : EffectId) : EffectId :=
+  match m.findSomeRev? (fun (rawEid, actualEid) =>
+      if rawEid == eid then some actualEid else none) with
+  | some actualEid => actualEid
+  | none => eid
+
+private def remapProposalAttackTarget (ro : ObjectId → ObjectId) : AttackTarget → AttackTarget
+  | .player p => .player p
+  | .planeswalker pw => .planeswalker (ro pw)
+  | .battle b => .battle (ro b)
+
+private def remapProposalTarget (ro : ObjectId → ObjectId) : Target → Target
+  | .player p => .player p
+  | .permanent id => .permanent (ro id)
+  | .card id => .card (ro id)
+
+private def remapProposalStatus (ro : ObjectId → ObjectId) (s : Status) : Status :=
+  { s with
+    attackingTarget := s.attackingTarget.map (remapProposalAttackTarget ro)
+    blocking := s.blocking.map ro
+    phasedWith := s.phasedWith.map ro }
+
+private def remapProposalPlayPerm (ro : ObjectId → ObjectId) (p : PlayPermission) : PlayPermission :=
+  { p with prepareSource := p.prepareSource.map ro }
+
+private def remapProposalGameObjNoId (ro : ObjectId → ObjectId) (o : GameObject) : GameObject :=
+  { o with
+    status := remapProposalStatus ro o.status
+    sourceId := o.sourceId.map ro
+    attachedTo := o.attachedTo.map ro
+    linkedExile := o.linkedExile.map ro
+    leaveTriggerExile := o.leaveTriggerExile.map ro
+    fraCauseId := o.fraCauseId.map ro
+    fraCauseStatus := o.fraCauseStatus.map (remapProposalStatus ro)
+    fraCauseIds := o.fraCauseIds.map ro
+    exiledBy := o.exiledBy.map ro }
+
+private def remapProposalGameObj (ro : ObjectId → ObjectId) (o : GameObject) : GameObject :=
+  { remapProposalGameObjNoId ro o with id := ro o.id }
+
+private def remapProposalEventObjNoId (ro : ObjectId → ObjectId) (eo : EventObject) : EventObject :=
+  { eo with
+    blockingIds := eo.blockingIds.map ro
+    attachedTo := eo.attachedTo.map ro
+    attackingTarget := eo.attackingTarget.map (remapProposalAttackTarget ro) }
+
+private def remapProposalEventObj (ro : ObjectId → ObjectId) (eo : EventObject) : EventObject :=
+  { remapProposalEventObjNoId ro eo with id := eo.id.map ro }
+
+private def remapProposalRepEffKind (ro : ObjectId → ObjectId) :
+    ReplacementEffectKind → ReplacementEffectKind
+  | .entersUntappedBehold bid sub => .entersUntappedBehold (ro bid) sub
+  | .entersAsCopyCreatureUntilEot tid => .entersAsCopyCreatureUntilEot (ro tid)
+  | .asEntersAttachAura hid => .asEntersAttachAura (ro hid)
+  | k => k
+
+private def remapProposalRepId (ro : ObjectId → ObjectId) (r : ReplacementId) : ReplacementId :=
+  { r with
+    kind := remapProposalRepEffKind ro r.kind
+    object := r.object.map ro
+    grantor := r.grantor.map ro }
+
+private def remapProposalRepKind (ro : ObjectId → ObjectId) : ReplacementKind → ReplacementKind
+  | .entersTappedSelf oid => .entersTappedSelf (ro oid)
+  | .entersUntappedPayLife oid l => .entersUntappedPayLife (ro oid) l
+  | .entersTappedDeclinePayLife oid => .entersTappedDeclinePayLife (ro oid)
+  | .entersUntappedBehold oid bid s => .entersUntappedBehold (ro oid) (ro bid) s
+  | .entersTappedDeclineBehold oid => .entersTappedDeclineBehold (ro oid)
+  | .asEntersChooseColor oid c => .asEntersChooseColor (ro oid) c
+  | .asEntersChooseCreatureType oid s => .asEntersChooseCreatureType (ro oid) s
+  | .asEntersChooseOdd oid o => .asEntersChooseOdd (ro oid) o
+  | .asEntersChooseCardName oid n => .asEntersChooseCardName (ro oid) n
+  | .asEntersChooseCardType oid t => .asEntersChooseCardType (ro oid) t
+  | .asEntersChooseAnchor oid a => .asEntersChooseAnchor (ro oid) a
+  | .entersWithCountersSelf oid k a => .entersWithCountersSelf (ro oid) k a
+  | .entersUnderControl oid c => .entersUnderControl (oid.map ro) c
+  | .entersAsCopy oid t => .entersAsCopy (oid.map ro) t
+  | .entersAsCopyCreatureUntilEot oid tid => .entersAsCopyCreatureUntilEot (ro oid) (ro tid)
+  | .declineEntersAsCopy oid => .declineEntersAsCopy (ro oid)
+  | .entersBackFaceUp oid => .entersBackFaceUp (oid.map ro)
+  | .asEntersAttachAura oid hid => .asEntersAttachAura (ro oid) (ro hid)
+  | .entersWithExtraCounters oid k a => .entersWithExtraCounters (oid.map ro) k a
+  | .modifyCountersPut oid k a m => .modifyCountersPut (oid.map ro) k a m
+  | .exileInsteadOfStackLeave oid => .exileInsteadOfStackLeave (oid.map ro)
+  | .exileInsteadOfGraveyard oid w => .exileInsteadOfGraveyard (oid.map ro) w
+  | .shieldCounterDestroy oid => .shieldCounterDestroy (ro oid)
+  | .addNoncombatDamage src b => .addNoncombatDamage (src.map ro) b
+  | .multiplyDamage src f => .multiplyDamage (src.map ro) f
+  | .stunCounterUntap oid => .stunCounterUntap (ro oid)
+  | k => k
+
+private def remapProposalPrevKind (ro : ObjectId → ObjectId) : PreventionKind → PreventionKind
+  | .preventAllDamageToPermanent tid => .preventAllDamageToPermanent (ro tid)
+  | .preventAllDamageFromSource sid => .preventAllDamageFromSource (ro sid)
+  | .protectionPreventDamage pid sid => .protectionPreventDamage (ro pid) (ro sid)
+  | .shieldCounterPreventDamage oid => .shieldCounterPreventDamage (ro oid)
+  | k => k
+
+private def remapProposalDuration (ro : ObjectId → ObjectId) : EffectDuration → EffectDuration
+  | .whileSourceOnBattlefield s => .whileSourceOnBattlefield (ro s)
+  | .untilSourceLeaves s => .untilSourceLeaves (ro s)
+  | .whileSourceHasCounter s k => .whileSourceHasCounter (ro s) k
+  | .whileInZone o z => .whileInZone (ro o) z
+  | d => d
+
+private def remapProposalScope (ro : ObjectId → ObjectId) : ObjectScope → ObjectScope
+  | .objects ids => .objects (ids.map ro)
+  | s => s
+
+private def remapProposalGameRule (ro : ObjectId → ObjectId) : GameRule → GameRule
+  | .cantUntap o s => .cantUntap (ro o) (ro s)
+  | .cantBeBlockedByPlayer o p => .cantBeBlockedByPlayer (ro o) p
+  | .cantBeBlockedExceptByHaste o => .cantBeBlockedExceptByHaste (ro o)
+  | .cantBlock o => .cantBlock (ro o)
+  | .uncounterable o => .uncounterable (ro o)
+  | .fraEmblem o => .fraEmblem (ro o)
+  | r => r
+
+private def remapProposalPlayPermSpec (ro : ObjectId → ObjectId) :
+    PlayPermissionSpec → PlayPermissionSpec
+  | .playFromExile o perm => .playFromExile (ro o) (remapProposalPlayPerm ro perm)
+  | .flashback o => .flashback (ro o)
+  | .colorlessGrant o c => .colorlessGrant (ro o) (ro c)
+
+private def remapProposalEffSpec (ro : ObjectId → ObjectId) :
+    ContinuousEffectSpec → ContinuousEffectSpec
+  | .layered sc e d => .layered (remapProposalScope ro sc) e (remapProposalDuration ro d)
+  | .playerRule p r d => .playerRule p r (remapProposalDuration ro d)
+  | .gameRule r d => .gameRule (remapProposalGameRule ro r) (remapProposalDuration ro d)
+  | .replacement r d =>
+    .replacement
+      { r with
+        id := remapProposalRepId ro r.id
+        source := r.source.map ro
+        kind := remapProposalRepKind ro r.kind }
+      (remapProposalDuration ro d)
+  | .prevention r d =>
+    .prevention
+      { r with
+        id := remapProposalRepId ro r.id
+        source := r.source.map ro
+        kind := remapProposalPrevKind ro r.kind }
+      (remapProposalDuration ro d)
+  | .permission p r d => .permission p (remapProposalPlayPermSpec ro r) (remapProposalDuration ro d)
+
+private def remapProposalCause (ro : ObjectId → ObjectId) (re : EffectId → EffectId) :
+    EventCause → EventCause
+  | .costPayment k p fo => .costPayment k p (fo.map ro)
+  | .oneShotEffect eid src ctrl => .oneShotEffect (eid.map re) (src.map ro) ctrl
+  | .replaced rep orig => .replaced (remapProposalRepId ro rep) (remapProposalCause ro re orig)
+  | c => c
+
+private def remapProposalDelayedKind (ro : ObjectId → ObjectId) :
+    DelayedTriggerKind → DelayedTriggerKind
+  | .endStepReturn oid => .endStepReturn (ro oid)
+  | .endStepExile oid => .endStepExile (ro oid)
+  | .endStepSacrifice oid => .endStepSacrifice (ro oid)
+  | .endStepGraveReturn oid c => .endStepGraveReturn (ro oid) c
+  | .lokiCopyNextInstantSorceryThisTurn sid fp =>
+    .lokiCopyNextInstantSorceryThisTurn (sid.map ro) fp
+  | k => k
+
+private def remapProposalDelayedTrigger (ro : ObjectId → ObjectId) (re : EffectId → EffectId)
+    (dt : DelayedTrigger) : DelayedTrigger :=
+  { dt with
+    source := dt.source.map (remapProposalGameObj ro)
+    kind := remapProposalDelayedKind ro dt.kind
+    cause := remapProposalCause ro re dt.cause }
+
+private def remapProposalStackTriggerSpec (ro : ObjectId → ObjectId) (re : EffectId → EffectId)
+    (sp : StackTriggerSpec) : StackTriggerSpec :=
+  { sp with
+    sourceId := sp.sourceId.map ro
+    delayedTrigger := sp.delayedTrigger.map (fun (k, c) =>
+      (remapProposalDelayedKind ro k, remapProposalCause ro re c))
+    fraCauseId := sp.fraCauseId.map ro
+    fraCauseIds := sp.fraCauseIds.map ro
+    fraCauseStatus := sp.fraCauseStatus.map (remapProposalStatus ro) }
+
+private def remapProposalStackEntry (ro : ObjectId → ObjectId) (re : EffectId → EffectId)
+    (se : StackEntry) : StackEntry :=
+  { se with
+    objectId := ro se.objectId
+    targets := se.targets.map (remapProposalTarget ro)
+    delayedTrigger := se.delayedTrigger.map (fun (k, c) =>
+      (remapProposalDelayedKind ro k, remapProposalCause ro re c)) }
+
+private def remapProposalObjectChange (ro : ObjectId → ObjectId) : ObjectChange → ObjectChange
+  | .linkedExile v => .linkedExile (v.map ro)
+  | .pushLinkedExile id => .pushLinkedExile (ro id)
+  | .leaveTriggerExile v => .leaveTriggerExile (v.map ro)
+  | .pushLeaveTriggerExile id => .pushLeaveTriggerExile (ro id)
+  | .exiledBy v => .exiledBy (v.map ro)
+  | oc => oc
+
+private def remapProposalContinuationChange (ro : ObjectId → ObjectId) (re : EffectId → EffectId) :
+    ContinuationChange → ContinuationChange
+  | .discardedCardThisWay v => .discardedCardThisWay (v.map (fun (p, id) => (p, ro id)))
+  | .recentTokenIds v => .recentTokenIds (v.map ro)
+  | .fraAfterLook v => .fraAfterLook (v.map (fun (p, sid, fn) => (p, sid.map ro, fn)))
+  | .pendingFreeCopies v => .pendingFreeCopies (v.map (fun (p, ids, a, b) => (p, ids.map ro, a, b)))
+  | .pendingMayCastFromExile v => .pendingMayCastFromExile (v.map (fun (p, ids, n) => (p, ids.map ro, n)))
+  | .postCastCleanup v => .postCastCleanup (v.map fun
+      | .cascadeBottom c id os => .cascadeBottom c (ro id) (os.map ro)
+      | .grimaBottom vic id os => .grimaBottom vic (ro id) (os.map ro)
+      | .copyCeaseToExist cid => .copyCeaseToExist (ro cid)
+      | .lookedBottom c id os => .lookedBottom c (ro id) (os.map ro))
+  | .permanentDealtDamageThisWay v => .permanentDealtDamageThisWay (v.map ro)
+  | .milledIdsThisWay v => .milledIdsThisWay (v.map ro)
+  | .revealedIdsThisWay v => .revealedIdsThisWay (v.map ro)
+  | .palantirChoiceReady v => .palantirChoiceReady (v.map (fun (a, b, id) => (a, b, ro id)))
+  | .grimaImpulseFound v => .grimaImpulseFound (v.map ro)
+  | .grimaImpulseOthers v => .grimaImpulseOthers (v.map ro)
+  | .exiledIdsThisWay v => .exiledIdsThisWay (v.map ro)
+  | .pushExiledIdThisWay id => .pushExiledIdThisWay (ro id)
+  | .notedCopyObject v => .notedCopyObject (v.map (remapProposalGameObj ro))
+  | .notedHostId v => .notedHostId (v.map ro)
+  | .notedSourceThisWay v => .notedSourceThisWay (v.map ro)
+  | .equipmentAttachedHost v => .equipmentAttachedHost (v.map ro)
+  | .createdTokensThisWay v => .createdTokensThisWay (v.map ro)
+  | .putArtifactThisWay v => .putArtifactThisWay (v.map (fun (a, b) => (ro a, ro b)))
+  | .playExiledThisWay v => .playExiledThisWay (v.map ro)
+  | .triggerSequenceRest v => .triggerSequenceRest (v.map (fun t =>
+      { t with sourceId := t.sourceId.map ro, targets := t.targets.map (remapProposalTarget ro) }))
+  | .mayContext v => .mayContext (v.map (fun t =>
+      { t with sourceId := t.sourceId.map ro, targets := t.targets.map (remapProposalTarget ro) }))
+  | .triggerOr v => .triggerOr (v.map (fun t =>
+      { t with sourceId := t.sourceId.map ro, targets := t.targets.map (remapProposalTarget ro) }))
+  | .chooseModesRest v => .chooseModesRest (v.map (fun t =>
+      { t with sourceId := t.sourceId.map ro, targets := t.targets.map (remapProposalTarget ro) }))
+  | .unlessPaysTargets v => .unlessPaysTargets (v.map (remapProposalTarget ro))
+  | .unlessPaysSource v => .unlessPaysSource (v.map ro)
+  | .mayTargets v => .mayTargets (v.map (remapProposalTarget ro))
+  | .maySource v => .maySource (v.map ro)
+  | .spellOrTargets v => .spellOrTargets (v.map (remapProposalTarget ro))
+  | .spellOrSource v => .spellOrSource (v.map ro)
+  | .conniveSource v => .conniveSource (v.map ro)
+  | .plusOneAfterDiscards v => .plusOneAfterDiscards (v.map ro)
+  | .plusOneAfterSearch v => .plusOneAfterSearch (v.map (fun (id, p, sid) => (ro id, p, sid.map ro)))
+  | .stagedAttackTokenBatches v => .stagedAttackTokenBatches (v.map (fun b =>
+      { b with
+        attackingTarget := b.attackingTarget.map (remapProposalAttackTarget ro)
+        cause := b.cause.map (remapProposalCause ro re) }))
+  | .stashedCause v => .stashedCause (v.map (remapProposalCause ro re))
+  | .resolvingSpell v => .resolvingSpell (v.map ro)
+  | .resolvingAbility v => .resolvingAbility (v.map ro)
+  | .afterRandom v => .afterRandom (match v with
+      | .revealRandomCreatureThenBottom c rev => .revealRandomCreatureThenBottom c (rev.map ro)
+      | .putOnTop p ids => .putOnTop p (ids.map ro)
+      | .beholdUntap p lid sub => .beholdUntap p (ro lid) sub
+      | .plusOne id c sid => .plusOne (ro id) c (sid.map ro)
+      | ar => ar)
+  | .resolutionFinish v => .resolutionFinish (v.map fun
+      | .ability oid snap ctrl sid sc =>
+        .ability (ro oid) (remapProposalEventObj ro snap) ctrl (sid.map ro) sc
+      | .spell se snap fg =>
+        .spell (remapProposalStackEntry ro re se) (remapProposalEventObj ro snap) fg)
+  | .pendingResolvedEvent v => .pendingResolvedEvent (v.map (fun (eo, p, c) =>
+      (remapProposalEventObj ro eo, p, remapProposalCause ro re c)))
+  | cc => cc
 
 private def skipProposalActionScaffolding : GameEvent → Bool
   | .rules _ (.triggerQueue (.triggered ..)) _ _
@@ -10599,6 +10917,8 @@ each `runBatch` and stopping only when `Pending.chooseReplacement` or
 def replayKeptStreamCore (g : Game)
     (remainingStream fullKeptStream : Array (Bool × GameEvent))
     (revMap : Array (ObjectId × ObjectId))
+    (effRevMap : Array (EffectId × EffectId) := #[])
+    (suppressInteractive : Bool := false)
     (runBatch : Game → (Game → Game) → Game := fun g0 f => g0.withBatchCore none f) : Game := Id.run do
   let isLibZone : Zone → Bool
     | .library _ => true
@@ -10650,10 +10970,32 @@ def replayKeptStreamCore (g : Game)
            | _ => false)
       if tied then acc.record (GameEvent.effectExpired acc.turnNumber eid (cause := cause))
       else acc) g0
-  let applyKeptEvent (fromAction : Bool) (gCur : Game) (ev : GameEvent) : Game :=
-    if skipProposalActionScaffolding ev then gCur
+  let mintObjId (gCur : Game) (rev : Array (ObjectId × ObjectId)) (oid : ObjectId) :
+      ObjectId × Array (ObjectId × ObjectId) :=
+    if oid.raw < gCur.nextObjectId || gCur.objects.any (·.id == oid) then
+      let freshId : ObjectId := ⟨gCur.nextObjectId⟩
+      (freshId, if freshId == oid then rev else rev.push (oid, freshId))
     else
-      let queueUnreturnedLinked (before : EventObject) (fromZ toZ : Zone) (g0 : Game) : Game :=
+      (oid, rev)
+  let mintEffId (gCur : Game) (effRev : Array (EffectId × EffectId)) (eid : EffectId) :
+      EffectId × Array (EffectId × EffectId) :=
+    if eid.raw < gCur.nextEffectId || gCur.activeEffects.any (·.1 == eid) then
+      let freshEid : EffectId := ⟨gCur.nextEffectId⟩
+      (freshEid, if freshEid == eid then effRev else effRev.push (eid, freshEid))
+    else
+      (eid, effRev)
+  let stepEvent (fromAction : Bool)
+      (st : Game × Array (ObjectId × ObjectId) × Array (EffectId × EffectId) × Array ObjectId)
+      (ev : GameEvent) :
+      Game × Array (ObjectId × ObjectId) × Array (EffectId × EffectId) × Array ObjectId :=
+    let (gCur, rev, effRev, matIds) := st
+    if skipProposalActionScaffolding ev then st
+    else
+      let ro := resolveProposalRevId rev
+      let re := resolveProposalEffId effRev
+      let queueUnreturnedLinked (curRev : Array (ObjectId × ObjectId))
+          (before : EventObject) (fromZ toZ : Zone) (rawSourceOnBattlefield : Bool)
+          (g0 : Game) : Game :=
         if fromZ != .battlefield || toZ == .battlefield then g0
         else
           match before.id.bind g0.findObject? with
@@ -10665,116 +11007,392 @@ def replayKeptStreamCore (g : Game)
                   !fullKeptStream.any fun (_, kev) =>
                     match kev with
                     | .rules _ (.zone (.moved lb _ .exile ..)) _ _ =>
-                      lb.id.map (resolveProposalRevId revMap) == some lid
+                      lb.id.map (resolveProposalRevId curRev) == some lid
                     | .rules _ (.zone (.ceasedToExist lo)) _ kb =>
-                      (kb == ev.batch || (lo.zone == .exile && lo.id == some lid)) &&
-                        lo.id.map (resolveProposalRevId revMap) == some lid
+                      (kb == ev.batch ||
+                        (rawSourceOnBattlefield && lo.zone == .exile && lo.id == some lid)) &&
+                        lo.id.map (resolveProposalRevId curRev) == some lid
                     | _ => false
             if unret.isEmpty then g0 else g0.change (.queueLinkedExile unret)
       match ev with
-      | .engine t (.nextEffectId v) =>
-        gCur.record (.engine t (.nextEffectId (max gCur.nextEffectId v)))
-      | .engine t (.removeStackEntry oid) =>
-        let origId := resolveProposalRevId revMap oid
-        if gCur.stack.any (·.objectId == origId) then
-          gCur.record (.engine t (.removeStackEntry origId))
-        else gCur
-      | .engine t (.priority nextP) =>
-        if fromAction || (gCur.player gCur.priority).leftTheGame then
-          gCur.record (.engine t (.priority nextP))
-        else gCur
-      | .engine t (.pendingPriority (some nextP)) =>
-        if fromAction || gCur.pendingPriority.any (fun q => (gCur.player q).leftTheGame) then
-          gCur.record (.engine t (.pendingPriority (some nextP)))
-        else gCur
+      | .engine t (.materializeObject obj libPos) _ =>
+        let matIds' := if matIds.contains obj.id then matIds else matIds.push obj.id
+        let objNoId := remapProposalGameObjNoId ro obj
+        let (freshId, rev') := mintObjId gCur rev obj.id
+        let obj' := { objNoId with id := freshId }
+        (gCur.record (.engine t (.materializeObject obj' libPos)), rev', effRev, matIds')
+      | .engine t (.nextEffectId v) _ =>
+        (gCur.record (.engine t (.nextEffectId (max gCur.nextEffectId v))), rev, effRev, matIds)
+      | .engine t (.removeStackEntry oid) _ =>
+        let origId := ro oid
+        let gNext :=
+          if gCur.stack.any (·.objectId == origId) then
+            gCur.record (.engine t (.removeStackEntry origId))
+          else gCur
+        (gNext, rev, effRev, matIds)
+      | .engine t (.pushStack se) _ =>
+        (gCur.record (.engine t (.pushStack (remapProposalStackEntry ro re se))), rev, effRev, matIds)
+      | .engine t (.stackEntry oid sc) _ =>
+        (gCur.record (.engine t (.stackEntry (ro oid) sc)), rev, effRev, matIds)
+      | .engine t (.object oid oc) _ =>
+        (gCur.record (.engine t (.object (ro oid) (remapProposalObjectChange ro oc))), rev, effRev, matIds)
+      | .engine t (.continuation cc) _ =>
+        (gCur.record (.engine t (.continuation (remapProposalContinuationChange ro re cc))), rev, effRev, matIds)
+      | .engine t (.pendingBlockerAssignments asgns) _ =>
+        let asgns' := asgns.map (fun a =>
+          { a with
+            source := ro a.source
+            toCreatures := a.toCreatures.map (fun (cid, d) => (ro cid, d)) })
+        (gCur.record (.engine t (.pendingBlockerAssignments asgns')), rev, effRev, matIds)
+      | .engine t (.priority nextP) _ =>
+        let gNext :=
+          if fromAction || (gCur.player gCur.priority).leftTheGame then
+            let nextP' :=
+              if (gCur.player nextP).leftTheGame && !gCur.livingPlayers.isEmpty then
+                gCur.nextLiving nextP
+              else nextP
+            gCur.record (.engine t (.priority nextP'))
+          else gCur
+        (gNext, rev, effRev, matIds)
+      | .engine t (.pendingPriority (some nextP)) _ =>
+        let gNext :=
+          if fromAction || gCur.pendingPriority.any (fun q => (gCur.player q).leftTheGame) then
+            let nextP' :=
+              if (gCur.player nextP).leftTheGame && !gCur.livingPlayers.isEmpty then
+                gCur.nextLiving nextP
+              else nextP
+            gCur.record (.engine t (.pendingPriority (some nextP')))
+          else gCur
+        (gNext, rev, effRev, matIds)
       | .rules t (.zone (.moved before after fromZ toZ verb actor entersWith libPos)) cause batch =>
+        let beforeBase := remapProposalEventObjNoId ro before
         let (b', remapped, hasLiveOrig) :=
-          match before.id with
+          match beforeBase.id with
           | some bid =>
-            let origId := resolveProposalRevId revMap bid
+            let origId := ro bid
             let resolvedObj? :=
-              (gCur.findObject? origId).orElse (fun _ => gCur.followMovedToZone? origId (fun _ => true))
+              (gCur.findObject? origId).orElse (fun _ => gCur.findObject? (gCur.followMoved origId))
             match resolvedObj? with
             | some origObj =>
               let liveId := origObj.id
               let bRemap :=
-                if liveId == bid && origObj.zone == before.zone then before
-                else { before with id := some liveId, zone := origObj.zone }
+                if liveId == bid && origObj.zone == beforeBase.zone then beforeBase
+                else { beforeBase with id := some liveId, zone := origObj.zone }
               (bRemap, liveId != bid, true)
             | none =>
-              (if origId == bid then before else { before with id := some origId }, origId != bid, false)
-          | none => (before, false, true)
+              (if origId == bid then beforeBase else { beforeBase with id := some origId },
+                origId != bid, false)
+          | none => (beforeBase, false, true)
         if !fromAction && before.id.isSome && !hasLiveOrig then
-          gCur
+          st
         else
-          let fromZ' := if hasLiveOrig && before.id.isSome then b'.zone else fromZ
-          let gCur := queueUnreturnedLinked b' fromZ' toZ gCur
-          let gCur :=
-            match b'.id with
-            | some oid =>
-              if remapped && hasLiveOrig && fromZ' != toZ then
-                cleanupRemappedLeavingId oid cause gCur
-              else gCur
-            | none => gCur
-          gCur.record (.rules t (.zone (.moved b' after fromZ' toZ verb actor entersWith libPos)) cause batch)
+          let destDeparted : Bool :=
+            match toZ with
+            | .outside _ => false
+            | .library p | .hand p | .graveyard p =>
+              (gCur.player p).leftTheGame || (gCur.player after.owner).leftTheGame
+            | .battlefield | .stack =>
+              (gCur.player after.owner).leftTheGame ||
+                after.controller.any (fun c => (gCur.player c).leftTheGame)
+            | .exile | .command | .ante =>
+              (gCur.player after.owner).leftTheGame
+          if destDeparted then
+            st
+          else
+            let rawSourceOnBattlefield := fromZ == .battlefield
+            let cause' := remapProposalCause ro re cause
+            let afterBase := remapProposalEventObjNoId ro after
+            let (after', rev') :=
+              if after.id == before.id then
+                ({ afterBase with id := b'.id }, rev)
+              else
+                match after.id with
+                | some rawAfterId =>
+                  let (freshAfterId, r1) := mintObjId gCur rev rawAfterId
+                  ({ afterBase with id := some freshAfterId }, r1)
+                | none => (afterBase, rev)
+            let fromZ' := if hasLiveOrig && before.id.isSome then b'.zone else fromZ
+            let gCur := queueUnreturnedLinked rev' b' fromZ' toZ rawSourceOnBattlefield gCur
+            let gCur :=
+              match b'.id with
+              | some oid =>
+                if remapped && hasLiveOrig && fromZ' != toZ then
+                  cleanupRemappedLeavingId oid cause' gCur
+                else gCur
+              | none => gCur
+            let gNext :=
+              gCur.record (.rules t (.zone (.moved b' after' fromZ' toZ verb actor entersWith libPos)) cause' batch)
+            (gNext, rev', effRev, matIds)
+      | .rules t (.zone (.created obj ctrl)) cause batch =>
+        if (gCur.player obj.owner).leftTheGame || (gCur.player ctrl).leftTheGame ||
+            obj.controller.any (fun c => (gCur.player c).leftTheGame) then
+          st
+        else
+          let cause' := remapProposalCause ro re cause
+          let objBase := remapProposalEventObjNoId ro obj
+          let (obj', rev') :=
+            match obj.id with
+            | some rawId =>
+              let (freshId, r1) := mintObjId gCur rev rawId
+              ({ objBase with id := some freshId }, r1)
+            | none => (objBase, rev)
+          (gCur.record (.rules t (.zone (.created obj' ctrl)) cause' batch), rev', effRev, matIds)
       | .rules t (.zone (.ceasedToExist obj)) cause batch =>
-        match obj.id with
-        | none => gCur.record ev
+        let cause' := remapProposalCause ro re cause
+        let objBase := remapProposalEventObjNoId ro obj
+        match objBase.id with
+        | none =>
+          (gCur.record (.rules t (.zone (.ceasedToExist objBase)) cause' batch), rev, effRev, matIds)
         | some oid =>
-          let origId := resolveProposalRevId revMap oid
+          let rawSourceOnBattlefield := obj.zone == .battlefield
+          let origId := ro oid
           let resolvedObj? :=
-            (gCur.findObject? origId).orElse (fun _ => gCur.followMovedToZone? origId (fun _ => true))
+            (gCur.findObject? origId).orElse (fun _ => gCur.findObject? (gCur.followMoved origId))
           match resolvedObj? with
           | none =>
-            if fromAction then gCur.record ev else gCur
+            let gNext :=
+              if fromAction then
+                gCur.record (.rules t (.zone (.ceasedToExist { objBase with id := some origId })) cause' batch)
+              else gCur
+            (gNext, rev, effRev, matIds)
           | some origObj =>
             let liveId := origObj.id
             let obj' :=
-              if liveId == oid && origObj.zone == obj.zone then obj
-              else { obj with id := some liveId, zone := origObj.zone }
-            let gCur := queueUnreturnedLinked obj' origObj.zone (.outside origObj.owner) gCur
+              if liveId == oid && origObj.zone == objBase.zone then objBase
+              else { objBase with id := some liveId, zone := origObj.zone }
+            let gCur := queueUnreturnedLinked rev obj' origObj.zone (.outside origObj.owner) rawSourceOnBattlefield gCur
             let gCur :=
               if liveId == oid then gCur
-              else cleanupRemappedLeavingId liveId cause gCur
-            gCur.record (.rules t (.zone (.ceasedToExist obj')) cause batch)
+              else cleanupRemappedLeavingId liveId cause' gCur
+            (gCur.record (.rules t (.zone (.ceasedToExist obj')) cause' batch), rev, effRev, matIds)
       | .rules t (.player (.shuffled p newOrder)) cause batch =>
+        let cause' := remapProposalCause ro re cause
+        let mappedOrder := newOrder.map ro
         let curLib := (gCur.player p).library
-        let kept := newOrder.filter curLib.contains
+        let kept := mappedOrder.filter curLib.contains
         let missing := curLib.filter (!kept.contains ·)
-        gCur.record (.rules t (.player (.shuffled p (kept ++ missing))) cause batch)
+        (gCur.record (.rules t (.player (.shuffled p (kept ++ missing))) cause' batch), rev, effRev, matIds)
       | .rules t (.player (.revealed p cardIds)) cause batch =>
+        let cause' := remapProposalCause ro re cause
+        let mappedIds := cardIds.map ro
         let validIds :=
-          if fromAction then cardIds.filter (fun cid => (gCur.findObject? cid).isSome)
-          else cardIds.filter (inLibraryObjs gCur.objects ·)
-        if validIds.isEmpty then gCur
-        else gCur.record (.rules t (.player (.revealed p validIds)) cause batch)
+          if fromAction then mappedIds.filter (fun cid => (gCur.findObject? cid).isSome)
+          else mappedIds.filter (inLibraryObjs gCur.objects ·)
+        let gNext :=
+          if validIds.isEmpty then gCur
+          else gCur.record (.rules t (.player (.revealed p validIds)) cause' batch)
+        (gNext, rev, effRev, matIds)
       | .rules t (.player (.lookedAt p cardIds)) cause batch =>
+        let cause' := remapProposalCause ro re cause
+        let mappedIds := cardIds.map ro
         let validIds :=
-          if fromAction then cardIds.filter (fun cid => (gCur.findObject? cid).isSome)
-          else cardIds.filter (inLibraryObjs gCur.objects ·)
-        if validIds.isEmpty then gCur
-        else gCur.record (.rules t (.player (.lookedAt p validIds)) cause batch)
+          if fromAction then mappedIds.filter (fun cid => (gCur.findObject? cid).isSome)
+          else mappedIds.filter (inLibraryObjs gCur.objects ·)
+        let gNext :=
+          if validIds.isEmpty then gCur
+          else gCur.record (.rules t (.player (.lookedAt p validIds)) cause' batch)
+        (gNext, rev, effRev, matIds)
+      | .rules t (.player (.becameMonarch heir prev)) cause batch =>
+        let cause' := remapProposalCause ro re cause
+        let gNext :=
+          if (gCur.player heir).leftTheGame then
+            if gCur.livingPlayers.isEmpty then gCur
+            else
+              let heir' :=
+                if gCur.stillInGame gCur.activePlayer && gCur.activePlayer != heir then
+                  gCur.activePlayer
+                else if !gCur.isSharedTurnFinalSeat then
+                  gCur.nextLiving gCur.activePlayer
+                else
+                  gCur.nextLiving heir
+              gCur.record (.rules t (.player (.becameMonarch heir' prev)) cause' batch)
+          else
+            gCur.record (.rules t (.player (.becameMonarch heir prev)) cause' batch)
+        (gNext, rev, effRev, matIds)
+      | .rules t (.player pe) cause batch =>
+        let cause' := remapProposalCause ro re cause
+        let pe' : PlayerEvent :=
+          match pe with
+          | .manaAdded p units =>
+            .manaAdded p (units.map (fun u => { u with source := u.source.map ro }))
+          | .manaSpent p units fo =>
+            .manaSpent p (units.map (fun u => { u with source := u.source.map ro })) (fo.map ro)
+          | .manaEmptied p units kept =>
+            .manaEmptied p (units.map (fun u => { u with source := u.source.map ro })) kept
+          | .scried p top bottom l a => .scried p (top.map ro) (bottom.map ro) l a
+          | .surveilled p top gy l a => .surveilled p (top.map ro) (gy.map ro) l a
+          | .searched p lo found => .searched p lo (found.map ro)
+          | .proliferated p perms pls => .proliferated p (perms.map ro) pls
+          | .ringTempted p bearer stage => .ringTempted p (bearer.map ro) stage
+          | .optionalOnceActed p src => .optionalOnceActed p (ro src)
+          | other => other
+        (gCur.record (.rules t (.player pe') cause' batch), rev, effRev, matIds)
       | .rules t (.permanent (.unattached att fromHost)) cause batch =>
-        let att' :=
-          match att.id with
-          | some aid =>
-            let origAid := resolveProposalRevId revMap aid
-            if origAid == aid then att else { att with id := some origAid }
-          | none => att
-        let fromHost' := resolveProposalRevId revMap fromHost
-        if att'.id.isNone || (att'.id.bind gCur.findObject?).any (·.attachedTo == some fromHost') then
-          gCur.record (.rules t (.permanent (.unattached att' fromHost')) cause batch)
-        else gCur
-      | .rules t (.permanent (.designation obj d v)) cause batch =>
-        let obj' :=
-          match obj.id with
-          | some oid =>
-            let origOid := resolveProposalRevId revMap oid
-            if origOid == oid then obj else { obj with id := some origOid }
-          | none => obj
-        gCur.record (.rules t (.permanent (.designation obj' d v)) cause batch)
+        let cause' := remapProposalCause ro re cause
+        let att' := remapProposalEventObj ro att
+        let fromHost' := ro fromHost
+        let gNext :=
+          if att'.id.isNone || (att'.id.bind gCur.findObject?).any (·.attachedTo == some fromHost') then
+            gCur.record (.rules t (.permanent (.unattached att' fromHost')) cause' batch)
+          else gCur
+        (gNext, rev, effRev, matIds)
+      | .rules t (.permanent pe) cause batch =>
+        let cause' := remapProposalCause ro re cause
+        let pe' : PermanentEvent :=
+          match pe with
+          | .tapped eo d => .tapped (remapProposalEventObj ro eo) d
+          | .untapped eo => .untapped (remapProposalEventObj ro eo)
+          | .phasedOut eo i => .phasedOut (remapProposalEventObj ro eo) i
+          | .phasedIn eo i => .phasedIn (remapProposalEventObj ro eo) i
+          | .transformed eo b => .transformed (remapProposalEventObj ro eo) b
+          | .turnedFaceUp eo => .turnedFaceUp (remapProposalEventObj ro eo)
+          | .turnedFaceDown eo => .turnedFaceDown (remapProposalEventObj ro eo)
+          | .counters (.object eo) k d a => .counters (.object (remapProposalEventObj ro eo)) k d a
+          | .counters (.player p) k d a => .counters (.player p) k d a
+          | .attached att host prev => .attached (remapProposalEventObj ro att) (ro host) (prev.map ro)
+          | .unattached att fh => .unattached (remapProposalEventObj ro att) (ro fh)
+          | .designation eo d v => .designation (remapProposalEventObj ro eo) d v
+        (gCur.record (.rules t (.permanent pe') cause' batch), rev, effRev, matIds)
+      | .rules t (.damage de) cause batch =>
+        let cause' := remapProposalCause ro re cause
+        let remapRecp : DamageRecipient → DamageRecipient
+          | .permanent eo => .permanent (remapProposalEventObj ro eo)
+          | .battle eo => .battle (remapProposalEventObj ro eo)
+          | .player p => .player p
+        let de' : DamageEvent :=
+          match de with
+          | .dealt pkts =>
+            .dealt (pkts.map (fun pkt =>
+              { pkt with
+                source := remapProposalEventObj ro pkt.source
+                recipient := remapRecp pkt.recipient }))
+          | .marked oid amt => .marked (ro oid) amt
+          | .markedCleared oids => .markedCleared (oids.map ro)
+          | .prevented src recp amt =>
+            .prevented (remapProposalEventObj ro src) (remapRecp recp) amt
+        (gCur.record (.rules t (.damage de') cause' batch), rev, effRev, matIds)
+      | .rules t (.cast ce) cause batch =>
+        let cause' := remapProposalCause ro re cause
+        match ce with
+        | .abilityActivated ability source player kind =>
+          let source' := remapProposalEventObj ro source
+          let (ability', rev') :=
+            match kind with
+            | .nonMana .. =>
+              if !matIds.contains ability then
+                mintObjId gCur rev ability
+              else
+                (ro ability, rev)
+            | .mana .. => (ro ability, rev)
+          (gCur.record (.rules t (.cast (.abilityActivated ability' source' player kind)) cause' batch),
+            rev', effRev, matIds)
+        | .proposed obj p fz way =>
+          (gCur.record (.rules t (.cast (.proposed (ro obj) p fz way)) cause' batch), rev, effRev, matIds)
+        | .announced obj modes x costs =>
+          let costs' := costs.map fun
+            | .teamwork ids => .teamwork (ids.map ro)
+            | .behold id => .behold (ro id)
+            | .sacrifice id => .sacrifice (ro id)
+            | .discard id => .discard (ro id)
+            | .sneak ret atk => .sneak (ro ret) (atk.map (remapProposalAttackTarget ro))
+            | c => c
+          (gCur.record (.rules t (.cast (.announced (ro obj) modes x costs')) cause' batch), rev, effRev, matIds)
+        | .targeted obj tgts div sk =>
+          (gCur.record (.rules t (.cast (.targeted (ro obj) (tgts.map (remapProposalTarget ro)) div sk)) cause' batch),
+            rev, effRev, matIds)
+        | .spellCast eo p fz =>
+          (gCur.record (.rules t (.cast (.spellCast (remapProposalEventObj ro eo) p fz)) cause' batch),
+            rev, effRev, matIds)
+      | .rules t (.triggerQueue tqe) cause batch =>
+        let cause' := remapProposalCause ro re cause
+        match tqe with
+        | .putOnStack stackObj source ctrl spec =>
+          let source' := remapProposalEventObj ro source
+          let spec' := remapProposalStackTriggerSpec ro re spec
+          let (freshStackObj, rev') := mintObjId gCur rev stackObj
+          (gCur.record (.rules t (.triggerQueue (.putOnStack freshStackObj source' ctrl spec')) cause' batch),
+            rev', effRev, matIds)
+        | .triggered src ctrl ab orig =>
+          (gCur.record (.rules t (.triggerQueue (.triggered (remapProposalEventObj ro src) ctrl ab orig)) cause' batch),
+            rev, effRev, matIds)
+        | .modeChosen src mode lt =>
+          (gCur.record (.rules t (.triggerQueue (.modeChosen (ro src) mode lt)) cause' batch),
+            rev, effRev, matIds)
+      | .rules t (.stackObject soe) cause batch =>
+        let cause' := remapProposalCause ro re cause
+        match soe with
+        | .copied original copy ctrl =>
+          let original' := ro original
+          let copyBase := remapProposalEventObjNoId ro copy
+          let (copy', rev') :=
+            match copy.id with
+            | some rawCopyId =>
+              let (freshCopyId, r1) := mintObjId gCur rev rawCopyId
+              ({ copyBase with id := some freshCopyId }, r1)
+            | none => (copyBase, rev)
+          (gCur.record (.rules t (.stackObject (.copied original' copy' ctrl)) cause' batch),
+            rev', effRev, matIds)
+        | .resolved eo nth sid ab =>
+          (gCur.record (.rules t (.stackObject (.resolved (remapProposalEventObj ro eo) nth (sid.map ro) ab)) cause' batch),
+            rev, effRev, matIds)
+        | .removedOnResolution eo =>
+          (gCur.record (.rules t (.stackObject (.removedOnResolution (remapProposalEventObj ro eo))) cause' batch),
+            rev, effRev, matIds)
+      | .rules t (.combat cbe) cause batch =>
+        let cause' := remapProposalCause ro re cause
+        let cbe' : CombatEvent :=
+          match cbe with
+          | .attackersDeclared p decls =>
+            .attackersDeclared p (decls.map (fun (eo, atgt) =>
+              (remapProposalEventObj ro eo, remapProposalAttackTarget ro atgt)))
+          | .becameAttacking eo atgt =>
+            .becameAttacking (remapProposalEventObj ro eo) (remapProposalAttackTarget ro atgt)
+          | .blockersDeclared p decls =>
+            .blockersDeclared p (decls.map (fun (eo, aid) => (remapProposalEventObj ro eo, ro aid)))
+          | .becameBlocked eo blks =>
+            .becameBlocked (remapProposalEventObj ro eo) (blks.map ro)
+          | .remainedUnblocked eo => .remainedUnblocked (remapProposalEventObj ro eo)
+          | .damageAssigned fs fa asgns =>
+            .damageAssigned fs fa (asgns.map (fun a =>
+              { a with
+                source := ro a.source
+                toCreatures := a.toCreatures.map (fun (cid, d) => (ro cid, d)) }))
+          | .removedFromCombat eo => .removedFromCombat (remapProposalEventObj ro eo)
+        (gCur.record (.rules t (.combat cbe') cause' batch), rev, effRev, matIds)
+      | .rules t (.continuousEffect cee) cause batch =>
+        let cause' := remapProposalCause ro re cause
+        match cee with
+        | .created eid spec =>
+          let spec' := remapProposalEffSpec ro spec
+          let (freshEid, effRev') := mintEffId gCur effRev eid
+          (gCur.record (.rules t (.continuousEffect (.created freshEid spec')) cause' batch),
+            rev, effRev', matIds)
+        | .expired eid =>
+          (gCur.record (.rules t (.continuousEffect (.expired (re eid))) cause' batch),
+            rev, effRev, matIds)
+      | .rules t (.delayedTrigger dte) cause batch =>
+        let cause' := remapProposalCause ro re cause
+        let dte' : DelayedTriggerEvent :=
+          match dte with
+          | .created dt => .created (remapProposalDelayedTrigger ro re dt)
+          | .consumed dt => .consumed (remapProposalDelayedTrigger ro re dt)
+          | .expired dt => .expired (remapProposalDelayedTrigger ro re dt)
+        (gCur.record (.rules t (.delayedTrigger dte') cause' batch), rev, effRev, matIds)
+      | .rules t r cause batch =>
+        let cause' := remapProposalCause ro re cause
+        (gCur.record (.rules t r cause' batch), rev, effRev, matIds)
       | _ =>
-        gCur.record ev
+        (gCur.record ev, rev, effRev, matIds)
+  let prefixLen := fullKeptStream.size - min remainingStream.size fullKeptStream.size
+  let mut materializedIds : Array ObjectId := Id.run do
+    let mut ids : Array ObjectId := #[]
+    for i in [0:prefixLen] do
+      if let (_, .engine _ (.materializeObject obj _) _) := fullKeptStream[i]! then
+        if !ids.contains obj.id then
+          ids := ids.push obj.id
+    return ids
+  let mut mutRevMap := revMap
+  let mut mutEffMap := effRevMap
   let mut gAcc := g
   let mut idx := 0
   while idx < remainingStream.size do
@@ -10783,11 +11401,28 @@ def replayKeptStreamCore (g : Game)
     let (fromAct0, ev0) := remainingStream[idx]!
     match ev0 with
     | .engine .. =>
-      gAcc := applyKeptEvent fromAct0 gAcc ev0
+      let (gNext, r1, e1, m1) := stepEvent fromAct0 (gAcc, mutRevMap, mutEffMap, materializedIds) ev0
+      gAcc := gNext
+      mutRevMap := r1
+      mutEffMap := e1
+      materializedIds := m1
       idx := idx + 1
     | .rules _ _ _ none =>
-      gAcc := runBatch gAcc (fun g0 => applyKeptEvent fromAct0 g0 ev0)
-      gAcc := gAcc.drainLocalPendingReplacement
+      let r0 := mutRevMap
+      let e0 := mutEffMap
+      let m0 := materializedIds
+      let (r1, e1, m1) :=
+        (gAcc.withBatchCoreReturn none
+          (fun g0 =>
+            let (g1, r', e', m') := stepEvent fromAct0 (g0, r0, e0, m0) ev0
+            (g1, (r', e', m')))
+          (suppressInteractive := true)).2
+      gAcc := runBatch gAcc (fun g0 => (stepEvent fromAct0 (g0, r0, e0, m0) ev0).1)
+      mutRevMap := r1
+      mutEffMap := e1
+      materializedIds := m1
+      if !(suppressInteractive || gAcc.over || gAcc.suppressInteractiveReplay) then
+        gAcc := gAcc.drainLocalPendingReplacement
       idx := idx + 1
     | .rules _ _ _ (some bid) =>
       let mut grp : Array (Bool × GameEvent) := #[(fromAct0, ev0)]
@@ -10815,13 +11450,29 @@ def replayKeptStreamCore (g : Game)
             grp := grp.push (fa, nextEv)
             idx := idx + 1
           else break
+      let r0 := mutRevMap
+      let e0 := mutEffMap
+      let m0 := materializedIds
+      let grpSnap := grp
+      let (r1, e1, m1) :=
+        (gAcc.withBatchCoreReturn none
+          (fun g0 =>
+            let (g1, r', e', m') :=
+              grpSnap.foldl (fun st (fa, e) => stepEvent fa st e) (g0, r0, e0, m0)
+            (g1, (r', e', m')))
+          (suppressInteractive := true)).2
       gAcc := runBatch gAcc (fun g0 =>
-        grp.foldl (fun acc (fa, e) => applyKeptEvent fa acc e) g0)
-      gAcc := gAcc.drainLocalPendingReplacement
+        (grpSnap.foldl (fun st (fa, e) => stepEvent fa st e) (g0, r0, e0, m0)).1)
+      mutRevMap := r1
+      mutEffMap := e1
+      materializedIds := m1
+      if !(suppressInteractive || gAcc.over || gAcc.suppressInteractiveReplay) then
+        gAcc := gAcc.drainLocalPendingReplacement
   if isProposalReplayPaused gAcc && idx < remainingStream.size then
     let remSlice := remainingStream.extract idx remainingStream.size
     gAcc := gAcc.chainPendingReplacement
-      (.continueCheckpointReplay remSlice fullKeptStream revMap)
+      (.continueCheckpointReplay remSlice fullKeptStream mutRevMap mutEffMap
+        (suppressInteractive || gAcc.over || gAcc.suppressInteractiveReplay))
   return gAcc
 
 private inductive ProposalSliceUnit where
@@ -11172,10 +11823,11 @@ def reverseToProposalCheckpointCore? (g : Game)
       if irrevStIdxs.contains idx && !skipProposalActionScaffolding ev then
         keptStream := keptStream.push (false, ev)
   let finalKeptStream := keptStream
+  let wasOver := g.over || g.suppressInteractiveReplay
   let mut gAcc := g.restoreProposalCheckpoint ckpt
   let needsIsolation :=
     !keptStream.isEmpty ||
-      (!gAcc.over && gAcc.postCastCleanup.isSome &&
+      (!wasOver && !gAcc.over && !gAcc.suppressInteractiveReplay && gAcc.postCastCleanup.isSome &&
         (gAcc.pending != .none || gAcc.currentBatch.isSome || gAcc.pendingReplacement.isSome))
   if !needsIsolation then
     return gAcc
@@ -11219,7 +11871,15 @@ def reverseToProposalCheckpointCore? (g : Game)
   if ckptCont?.isSome then
     gAcc := gAcc.change (.pendingReplacement none)
   if !keptStream.isEmpty then
-    gAcc := gAcc.replayKeptStreamCore keptStream finalKeptStream finalRevMap (runBatch := runBatch)
+    gAcc := gAcc.replayKeptStreamCore keptStream finalKeptStream finalRevMap
+      (suppressInteractive := wasOver)
+      (runBatch := if wasOver then
+        (fun g0 f =>
+          (g0.withBatchCore none f (suppressInteractive := true)).flushQueuedLinkedExileFwd
+            (suppressInteractive := true))
+      else runBatch)
+  if wasOver || gAcc.over || gAcc.suppressInteractiveReplay then
+    return gAcc
   if isProposalReplayPaused gAcc then
     let deferredCleanup? := if gAcc.over then none else gAcc.postCastCleanup
     if deferredCleanup?.isSome then
@@ -11410,12 +12070,16 @@ def consumeReplacementOrder (g : Game) (applied : Array ReplacementId) : Game :=
 `cont` in `g.pendingReplacement` so `Action.chooseReplacement` can resume the
 event once the player chooses (CR 616.1). -/
 def promptChooseReplacement (g : Game) (chooser : PlayerId)
-    (choices : Array ReplacementId) (cont : PendingReplacement) : Game :=
-  let g := if g.continuations.isEmpty then g.change (.pushContinuationFrame {}) else g
-  g.changes #[
-    .pending (.chooseReplacement chooser choices),
-    .pendingReplacement (some cont)
-  ]
+    (choices : Array ReplacementId) (cont : PendingReplacement)
+    (suppressInteractive : Bool := false) : Game :=
+  if suppressInteractive || g.openBatchSuppressInteractive || g.over || g.suppressInteractiveReplay then
+    g
+  else
+    let g := if g.continuations.isEmpty then g.change (.pushContinuationFrame {}) else g
+    g.changes #[
+      .pending (.chooseReplacement chooser choices),
+      .pendingReplacement (some cont)
+    ]
 
 /-- Add and process a `PlayerChange` for `p`. -/
 def changePlayer (g : Game) (p : PlayerId) (c : PlayerChange) : Game :=
@@ -11622,18 +12286,19 @@ def createEffects (g : Game) (effs : Array ContinuousEffect)
       | _, _, _ => (g, cause)
     let applyAll (g : Game) : Game :=
       effs.foldl (fun acc e => acc.createEffect e (cause := cause)) g
-    if effs.size > 1 then g.withBatchCore cause applyAll else applyAll g
+    if effs.size > 1 then (g.withBatchCore cause applyAll).flushQueuedLinkedExileFwd else applyAll g
 
 /-- Record and apply the expiration of the active continuous effect recorded
 under `eid` (CR 611), using the payload stored when it was created. An id that
 is not active records nothing; Layers 1–7d derive remaining characteristics
 purely from `g.activeEffects`. -/
 partial def expireEffectById (g : Game) (eid : EffectId)
-    (cause : Option EventCause := none) (reconcileControl : Bool := true) : Game :=
+    (cause : Option EventCause := none) (reconcileControl : Bool := true)
+    (preState? : Option Game := none) : Game :=
   match g.activeEffect? eid with
   | none => g
   | some eff =>
-    let pre := g
+    let pre := preState?.getD g
     let expCause :=
       g.resolveOptionalCause cause (defaultCause := .gameRule .continuousEffect)
     let g := g.record (GameEvent.effectExpired g.turnNumber eid eff (cause := expCause))
@@ -11667,7 +12332,8 @@ partial def expireEffectById (g : Game) (eid : EffectId)
               ids.contains old.id && ids.all (fun oid => oid == old.id || (g.findObject? oid).isNone)
             | _ => false)
         let g := leaving.foldl (fun acc (mEid, _) =>
-          acc.expireEffectById mEid (cause := some embCause) (reconcileControl := false)) g
+          acc.expireEffectById mEid (cause := some embCause) (reconcileControl := false)
+            (preState? := some pre)) g
         if reconcileControl then
           reconcileControlAfterTransitionFwd pre g (cause := some embCause)
         else g
@@ -11686,10 +12352,12 @@ def expireEffect (g : Game) (eff : ContinuousEffect)
 /-- Record and apply the expiration of every active continuous effect matching
 `pred`, each under its own `EffectId` (CR 611). -/
 def expireMatching (g : Game) (pred : ContinuousEffect → Bool)
-    (cause : Option EventCause := none) (reconcileControl : Bool := true) : Game :=
+    (cause : Option EventCause := none) (reconcileControl : Bool := true)
+    (preState? : Option Game := none) : Game :=
   let matching := g.activeEffects.filter (fun (_, e) => pred e)
   matching.foldl (fun acc (eid, _) =>
-    acc.expireEffectById eid (cause := cause) (reconcileControl := reconcileControl)) g
+    acc.expireEffectById eid (cause := cause) (reconcileControl := reconcileControl)
+      (preState? := preState?)) g
 
 /-- Record and apply the expiration of every active continuous effect equal to
 `eff`, e.g. when their shared duration ends (CR 611). -/
@@ -11952,8 +12620,10 @@ def restoreCopiesUntilSourceLeaves (g : Game) (srcId : ObjectId)
 its own `EffectId` (Super Hero Civil War; MSH 143). Other control-changing
 effects on the same permanent keep applying (CR 613.7). -/
 def restoreControlUntilSourceLeaves (g : Game) (srcId : ObjectId)
-    (cause : Option EventCause := some (.gameRule .leavingZone)) : Game :=
+    (cause : Option EventCause := some (.gameRule .leavingZone))
+    (preState? : Option Game := none) : Game :=
   g.activeEffects.foldl (fun acc (eid, e) =>
+    let preRef := preState?.getD acc
     match e with
     | .layered (.objects #[id]) (.control _) (.whileSourceOnBattlefield s)
     | .layered (.objects #[id]) (.control _) (.untilSourceLeaves s)
@@ -11961,11 +12631,11 @@ def restoreControlUntilSourceLeaves (g : Game) (srcId : ObjectId)
       if s != srcId then acc
       else
         match acc.findObject? id with
-        | none => acc.expireEffectById eid (cause := cause)
+        | none => acc.expireEffectById eid (cause := cause) (preState? := preState?)
         | some o =>
-          let prevCtrl := acc.controllerOf o
+          let prevCtrl := preRef.controllerOf ((preRef.findObject? id).getD o)
           let objName := acc.name o
-          let acc := acc.expireEffectById eid (cause := cause)
+          let acc := acc.expireEffectById eid (cause := cause) (preState? := preState?)
           let acc :=
             match prevCtrl, acc.findObject? id with
             | some prev, some cur =>
@@ -11990,9 +12660,9 @@ def restoreControlUntilSourceLeaves (g : Game) (srcId : ObjectId)
     | .layered _ (.control _) (.whileSourceHasCounter s _) =>
       if s == srcId then
         let prevCtrls :=
-          acc.objects.filterMap fun o =>
-            if o.isBattlefieldObject then some (o.id, acc.controllerOf o) else none
-        let acc := acc.expireEffectById eid (cause := cause)
+          preRef.objects.filterMap fun o =>
+            if o.isBattlefieldObject then some (o.id, preRef.controllerOf o) else none
+        let acc := acc.expireEffectById eid (cause := cause) (preState? := preState?)
         prevCtrls.foldl (fun acc' (oid, prevCtrl) =>
           match prevCtrl, acc'.findObject? oid with
           | some prev, some cur =>
@@ -12009,14 +12679,15 @@ def restoreControlUntilSourceLeaves (g : Game) (srcId : ObjectId)
 the battlefield or until `srcId` leaves the battlefield (CR 611.2a / 611.2b),
 each under its own `EffectId`. -/
 def expireWhileSourceEffects (g : Game) (srcId : ObjectId)
-    (cause : Option EventCause := some (.gameRule .leavingZone)) : Game :=
+    (cause : Option EventCause := some (.gameRule .leavingZone))
+    (preState? : Option Game := none) : Game :=
   let g := g.restoreCopiesUntilSourceLeaves srcId (cause := cause)
-  let g := g.restoreControlUntilSourceLeaves srcId (cause := cause)
+  let g := g.restoreControlUntilSourceLeaves srcId (cause := cause) (preState? := preState?)
   g.expireMatching (fun s =>
     match s.duration with
     | .whileSourceOnBattlefield src | .untilSourceLeaves src | .whileSourceHasCounter src _ =>
       src == srcId
-    | _ => false) (cause := cause)
+    | _ => false) (cause := cause) (preState? := preState?)
 
 /-- Last player-controlling effect wins (MSH 259). The controlled player
 remains the active player on their turn (MSH 300) and still controls their
@@ -12059,9 +12730,21 @@ def recordPutCounters (g : Game) (id : ObjectId) (kind : CounterKind) (n : Nat)
         let g := g.consumeReplacementOrder applied
         if n' == 0 then g
         else
+          let pre := g
+          let wasZeroOnBf := o.isOnBattlefield && o.status.counterCount kind == 0
+          let hasWhileCounterCtrlOrCopy :=
+            wasZeroOnBf &&
+              g.activeEffects.any (fun (_, e) =>
+                match e with
+                | .layered _ (.control _) (.whileSourceHasCounter s k)
+                | .layered _ (.copy _) (.whileSourceHasCounter s k) => s == id && k == kind
+                | _ => false)
           let finalCause := g.resolveOptionalCause cause' (fallbackCtrl := putter)
           let g := g.record (GameEvent.counters g.turnNumber putter (g.snapshot o) kind n' (cause := finalCause))
-          if kind == .time then g.syncImpendingNotACreature id (cause := some finalCause) else g
+          let g := if kind == .time then g.syncImpendingNotACreature id (cause := some finalCause) else g
+          if hasWhileCounterCtrlOrCopy then
+            reconcileControlAfterTransitionFwd pre g (cause := some finalCause)
+          else g
 
 /-- Put all non-+1/+1 counters from `«from»` (with `extra` added to each
 non-zero counter kind) onto `id`, emitting one `PermanentEvent.counters` put

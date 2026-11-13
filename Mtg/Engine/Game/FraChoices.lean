@@ -619,6 +619,8 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .mayMoveAllCounters .., .decline => return g.finishFraChoice
   | .mayMoveAllCounters .., _ => throw "Answer accept or decline"
   | .crew abilityId vehicleId n, .objects ids =>
+    if !gPre.proposalCostPromptStillPayable p gPre.pending then
+      return (← gPre.reverseProposedSpell? (resumeContinuation := true))
     let some vehicle := g.findObject? vehicleId | throw "The Vehicle is gone"
     let vName := g.name vehicle
     if ids.toList.eraseDups.length != ids.size then throw "Choose each creature once"
@@ -646,7 +648,6 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
         | none => g
       else g
     let g := g.logMsg s!"{(g.player p).name} crews {vName}"
-    let g := if g.proposedSpell.isSome then g.change (.proposedSpell none) else g
     let g := g.becomeActivated p vName (some vehicleId)
       (activation := prop?.bind (·.activation))
       (abilityId := some abilityId)
@@ -1054,6 +1055,8 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     return g.finishFraChoice
   | .discardThenDraw, _ => throw "Choose a card to discard"
   | .zemoBoastExile abilityId sourceId, .objects ids =>
+    if !gPre.proposalCostPromptStillPayable p gPre.pending then
+      return (← gPre.reverseProposedSpell? (resumeContinuation := true))
     if ids.toList.eraseDups.length != ids.size then throw "Choose each card once"
     let col :=
       match g.findObject? sourceId with
@@ -1080,7 +1083,6 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
         | none => g
     let name := ((g.findObject? sourceId).map g.name).getD
       ((prop?.map (fun pr => pr.originalSnapshot.name)).getD "Baron Helmut Zemo")
-    let g := if g.proposedSpell.isSome then g.change (.proposedSpell none) else g
     let g := g.becomeActivated p name (some sourceId)
       (some (prop?.bind (fun pr => pr.activation) |>.getD ActivatedAbility.zemoBoastAbility))
       (abilityId := some abilityId)

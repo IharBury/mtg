@@ -638,14 +638,15 @@ def sourceStillPayable (g : Game) (prop : ProposedSpell) : Bool :=
         match prop.activation.bind (·.cost.loyalty) with
         | none => true
         | some sym =>
-          g.sourceCounterCostPaidFor sid forObj .loyalty ||
+          prop.loyaltyPaid || g.sourceCounterCostPaidFor sid forObj .loyalty ||
             (src.isOnBattlefield && g.controlledBy src prop.caster &&
               !g.loyaltyActivatedThisTurn src.id &&
               match sym.counters with
               | some k => k ≥ 0 || (src.status.loyaltyCounters : Int) ≥ -k
               | none =>
                 let x := ((g.findObject? prop.spellId).bind (·.chosenX)).getD 0
-                sym == LoyaltySymbol.minusX && src.status.loyaltyCounters ≥ x)
+                sym == LoyaltySymbol.plusX ||
+                  (sym == LoyaltySymbol.minusX && src.status.loyaltyCounters ≥ x))
       let removePlusOneXPayable :=
         !prop.removePlusOneX ||
           g.sourceCounterCostPaidFor sid forObj .removeCounters ||
@@ -671,9 +672,9 @@ def sourceStillPayable (g : Game) (prop : ProposedSpell) : Bool :=
         (!prop.tapSource || !src.status.tapped || g.sourceTappedForCost sid forObj) &&
         !prop.discardSource && !prop.activation.any (·.cost.fra == .exileSourceFromHand)) ||
       (fromGyAb && src.zone == .graveyard src.owner && src.owner == prop.caster &&
-        !prop.tapSource && !prop.sacrificeSource && !prop.discardSource) ||
+        !prop.tapSource && !prop.sacrificeSource && !prop.discardSource && !exileSource) ||
       (fromHandAb && src.zone == .hand src.owner && src.owner == prop.caster &&
-        !prop.tapSource && !prop.sacrificeSource))
+        !prop.tapSource && !prop.sacrificeSource && !exileSource))
 
 end Game
 end Mtg.Engine

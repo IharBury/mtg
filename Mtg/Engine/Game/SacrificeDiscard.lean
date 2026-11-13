@@ -321,42 +321,42 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
       else g
     let clearPending : Array EngineChange :=
       if paused then #[] else #[.pending .none]
-    let g :=
+    let (g, callerShouldResume) : Game × Bool :=
       match g.proposedSpell with
       | some prop =>
-        if prop.kind == .turnFaceUp then
+        if prop.kind == ProposalKind.turnFaceUp then
           g.completeTurnFaceUp prop.caster prop.spellId
             (hadOuterReplacement := outerCont?.isSome)
         else
           let isResCast := prop.resolutionCast
           match prop.kind with
           | .spell =>
-            let g := g.changes (clearPending ++ #[.proposedSpell none, .consecutivePasses 0])
-            g.becomeCast prop.caster (g.object! prop.spellId)
+            let g := g.changes (clearPending ++ #[EngineChange.consecutivePasses 0])
+            (g.becomeCast prop.caster (g.object! prop.spellId)
               (grantPriority := !isResCast)
               (hadOuterReplacement := outerCont?.isSome)
-              (hadOpenContinuation := some openCont)
+              (hadOpenContinuation := some openCont), false)
           | .activatedAbility =>
-            let g := g.changes (clearPending ++ #[.consecutivePasses 0])
-            g.becomeActivated p prop.originalSnapshot.name prop.sourceId prop.activation
+            let g := g.changes (clearPending ++ #[EngineChange.consecutivePasses 0])
+            (g.becomeActivated p prop.originalSnapshot.name prop.sourceId prop.activation
               (abilityId := some prop.spellId)
               (sourceSnapshot := some prop.originalSnapshot)
               (sourceOriginal := some prop.original)
               (hadOuterReplacement := outerCont?.isSome)
-              (hadOpenContinuation := some openCont)
-          | .turnFaceUp => g
+              (hadOpenContinuation := some openCont), false)
+          | .turnFaceUp => (g, false)
       | none =>
-        let g := g.changes (clearPending ++ #[.proposedSpell none, .consecutivePasses 0])
-        g.becomeActivated p (g.name (g.object! sourceId)) (some sourceId)
+        let g := g.changes (clearPending ++ #[EngineChange.proposedSpell none, EngineChange.consecutivePasses 0])
+        (g.becomeActivated p (g.name (g.object! sourceId)) (some sourceId)
           (hadOuterReplacement := outerCont?.isSome)
-          (hadOpenContinuation := some openCont)
+          (hadOpenContinuation := some openCont), false)
     let g :=
       if paused then
         match outerCont? with
         | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishFra
         | none => g
       else g
-    return g
+    return if callerShouldResume then g.resumeAfterBecomeCastFwd else g
   | .chooseSacrificeCreature q chosen remaining =>
     if q != p then
       throw s!"Only {(g.player q).name} may sacrifice"

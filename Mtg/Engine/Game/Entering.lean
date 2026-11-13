@@ -200,6 +200,33 @@ def resolveAdventureSpell (g : Game) (entry : StackEntry) (obj : GameObject) : G
             s!"{g.name o} is exiled. {(g.player entry.controller).name} may cast it for as long as it remains exiled (CR 715.3d)"
       | none => g
 
+/-- Complete the post-`ceaseToExist` CR 608.2n / 714.4 step of `.ability` resolution
+(either immediately in `finishOneResolution` or after a `sbaPaused` replacement
+choice finishes via `PostStep.finishAbilityResolution`). -/
+def finishAbilityResolutionTail (g : Game) (snap : EventObject) (controller : PlayerId)
+    (sourceId : Option ObjectId) (sagaChapter : Option Nat)
+    (ab? : Option TriggeredAbility) (alreadyResolved : Bool) : Game :=
+  let finalSagaPlayer? :=
+    match sagaChapter, sourceId.bind g.findObject? with
+    | some n, some src =>
+      if src.isOnBattlefield && g.hasSubtype src .saga && g.retainsPrintedAbilities src then
+        match (g.baseCard src).saga, g.controllerOf src with
+        | some s, some p =>
+          if s.finalChapterNumber > 0 && n == s.finalChapterNumber then some p else none
+        | _, _ => none
+      else none
+    | _, _ => none
+  match finalSagaPlayer? with
+  | some p =>
+    g.finishSagaFinalChapter p (snap := some snap) (sourceId := sourceId)
+      (ability := ab?) (alreadyResolved := alreadyResolved)
+  | none =>
+    if alreadyResolved then g
+    else
+      g.record (GameEvent.resolved g.turnNumber controller 0 snap
+        (sourceId := sourceId) (ability := ab?)
+        (cause := some (.gameRule .abilityFinishedResolving)))
+
 /-- Perform the final CR 608.2n / 608.2p / 608.3 stack-exit and `StackObjectEvent.resolved`
 step for one finished `ResolutionFinish`. -/
 def finishOneResolution (g : Game) (fin : ResolutionFinish) : Game :=
@@ -221,26 +248,11 @@ def finishOneResolution (g : Game) (fin : ResolutionFinish) : Game :=
         if g.stack.any (·.objectId == objId) then
           g.change (.removeStackEntry objId)
         else g
-    let finalSagaPlayer? :=
-      match sagaChapter, sourceId.bind g.findObject? with
-      | some n, some src =>
-        if src.isOnBattlefield && g.hasSubtype src .saga && g.retainsPrintedAbilities src then
-          match (g.baseCard src).saga, g.controllerOf src with
-          | some s, some p =>
-            if s.finalChapterNumber > 0 && n == s.finalChapterNumber then some p else none
-          | _, _ => none
-        else none
-      | _, _ => none
-    match finalSagaPlayer? with
-    | some p =>
-      g.finishSagaFinalChapter p (snap := some snap) (sourceId := sourceId)
-        (ability := ab?) (alreadyResolved := alreadyResolved)
-    | none =>
-      if alreadyResolved then g
-      else
-        g.record (GameEvent.resolved g.turnNumber controller 0 snap
-          (sourceId := sourceId) (ability := ab?)
-          (cause := some (.gameRule .abilityFinishedResolving)))
+    if g.sbaPaused then
+      g.chainPendingReplacement
+        (.finishPostStep (.finishAbilityResolution snap controller sourceId sagaChapter ab? alreadyResolved))
+    else
+      g.finishAbilityResolutionTail snap controller sourceId sagaChapter ab? alreadyResolved
   | .spell entry snap _fromGy =>
     match g.findObject? entry.objectId with
     | none =>
@@ -361,7 +373,9 @@ partial def completeActiveResolutions (g : Game) : Game :=
               else g
             match g.findObject? objId with
             | some (o : GameObject) =>
-              if o.zone == Zone.stack then g.ceaseToExist objId (cause := some (.gameRule .abilityFinishedResolving))
+              if o.zone == Zone.stack then
+                g.ceaseToExist objId (cause := some (.gameRule .abilityFinishedResolving))
+                  (reconcileControl := false)
               else g
             | none => g
           | some (.spell entry ..) =>

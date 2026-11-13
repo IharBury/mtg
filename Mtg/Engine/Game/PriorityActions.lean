@@ -64,7 +64,8 @@ def finishProposedSpell (g : Game) : Except String Game := do
         else paid
       | _, _ => paid
   if prop.kind == .turnFaceUp && !prop.needsSacrificeOther && !prop.needsDiscardCard then
-    return g.completeTurnFaceUp prop.caster prop.spellId
+    let (g, callerShouldResume) := g.completeTurnFaceUp prop.caster prop.spellId
+    return if callerShouldResume then g.resumeAfterBecomeCast else g
   if prop.kind == .activatedAbility then
     return (← g.beginActivationPayment prop)
   let openCont := g.proposalHadOpenContinuation

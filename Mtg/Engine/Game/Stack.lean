@@ -123,6 +123,9 @@ structure ProposedSpell where
   /-- Deferred behold subtype announced at CR 601.2b and performed at CR 601.2h
   cost payment (e.g. Countersculpt). -/
   needsBehold : Option CardSubtype := none
+  /-- Whether this activation's loyalty cost has already been paid (including `+0`,
+  CR 602.2b / 606.4). -/
+  loyaltyPaid : Bool := false
 deriving Repr, Inhabited, BEq
 
 end Mtg.Engine

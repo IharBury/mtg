@@ -101,6 +101,7 @@ inductive ProposalChange where
   | needsBehold (v : Option CardSubtype)
   | payLife (n : Nat)
   | alternativeCost (v : Bool)
+  | loyaltyPaid (v : Bool)
 deriving Repr, Inhabited, BEq
 
 /-- Priority tiers for choosing among multiple applicable replacement or
@@ -1508,6 +1509,10 @@ inductive PostStep where
   /-- Log `msg` only if some counter kind on `targetId` increased over `before`
   (CR 122.1 / 614.6). -/
   | logIfCountersIncreased (targetId : ObjectId) (before : CounterBag) (msg : String)
+  | afterTriggerTargetsChosen
+  | finishAbilityResolution (snap : EventObject) (controller : PlayerId)
+      (sourceId : Option ObjectId) (sagaChapter : Option Nat)
+      (ab? : Option TriggeredAbility) (alreadyResolved : Bool)
 deriving Repr, Inhabited, BEq
 
 /-- Stage of `StateBasedActions.finishSbaSweep` across `Pending.chooseReplacement` pauses. -/
@@ -1520,6 +1525,7 @@ deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- Stage of `ActivationCosts.finishActivationExtraCosts` across `Pending.chooseReplacement` pauses. -/
 inductive ActivationExtraCostStage where
+  | stunAndSacrifice
   | sacrificeAndExile
   | exileOnly
 deriving DecidableEq, Repr, Inhabited, BEq
@@ -1929,7 +1935,11 @@ inductive PendingReplacement where
   | runPostCastCleanup (cleanup : PostCastCleanup)
   | continueCheckpointReplay (remainingStream fullKeptStream : Array (Bool × GameEvent))
       (revMap : Array (ObjectId × ObjectId))
+      (effRevMap : Array (EffectId × EffectId) := #[])
+      (suppressInteractive : Bool := false)
   | phaseOutPermanentsLoop (remainingIds : Array ObjectId)
+      (cause : Option EventCause := none)
+  | phaseInControlledLoop (remainingIds : Array ObjectId)
       (cause : Option EventCause := none)
 deriving Repr, Inhabited, BEq
 
@@ -2297,10 +2307,42 @@ def PendingReplacement.endsWithFinishFra : PendingReplacement → Bool
   | .seq _ b => b.endsWithFinishFra
   | _ => false
 
+/-- Whether a `PendingReplacement` continuation contains a suppressed checkpoint replay. -/
+def PendingReplacement.hasSuppressedCheckpointReplay : PendingReplacement → Bool
+  | .continueCheckpointReplay _ _ _ _ suppressInteractive => suppressInteractive
+  | .seq a b => a.hasSuppressedCheckpointReplay || b.hasSuppressedCheckpointReplay
+  | _ => false
+
+/-- Whether a `PendingReplacement` continuation contains any checkpoint replay. -/
+def PendingReplacement.hasCheckpointReplay : PendingReplacement → Bool
+  | .continueCheckpointReplay .. => true
+  | .seq a b => a.hasCheckpointReplay || b.hasCheckpointReplay
+  | _ => false
+
+/-- Update `hasQueuedPending` across a `PendingReplacement` tree without `Game`
+state: clears to `false` on draining leaves and preserves on neutral leaves. -/
+def PendingReplacement.nextQueuedPending (hasQueuedPending : Bool := false) :
+    PendingReplacement → Bool
+  | .seq a1 a2 => a2.nextQueuedPending (a1.nextQueuedPending hasQueuedPending)
+  | .receivePriority _ | .finishFraChoice | .finishConcede .. | .afterWardResolved
+  | .runPostCastCleanup _ => false
+  | .concedePlayersLoop _ wp mid .. => if !wp && !mid then false else hasQueuedPending
+  | .finishPostCast _ _ hadOuter _
+  | .finishBecomeCast _ _ _ hadOuter _
+  | .finishProposedSpellCosts _ _ hadOuter _
+  | .completeActivation hadOuter _
+  | .finishBecomeActivated _ _ _ _ _ _ _ hadOuter _
+  | .finishPostLoyaltyActivated _ _ _ _ _ _ _ hadOuter _
+  | .finishTurnFaceUp _ _ hadOuter =>
+    if !hadOuter then false else hasQueuedPending
+  | _ => hasQueuedPending
+
 /-- Whether a `PendingReplacement` continuation already ends by granting
 priority (`.receivePriority` / `.finishFraChoice` / `.finishPostCast` /
 `.finishBecomeCast` with `grantPriority == true` / `.finishConcede`). -/
-def PendingReplacement.endsWithPriorityGrant : PendingReplacement → Bool
+def PendingReplacement.endsWithPriorityGrant (pr : PendingReplacement)
+    (hasQueuedPending : Bool := false) : Bool :=
+  match pr with
   | .receivePriority _ | .finishFraChoice | .finishConcede .. | .afterWardResolved => true
   | .concedePlayersLoop _ wp mid .. => !wp && !mid
   | .finishPostCast _ grantPriority hadOuter _ => grantPriority && !hadOuter
@@ -2308,7 +2350,12 @@ def PendingReplacement.endsWithPriorityGrant : PendingReplacement → Bool
     grantPriority && !hadOuter && !openCont
   | .finishProposedSpellCosts _ grantPriority hadOuter openCont =>
     grantPriority && !hadOuter && !openCont
-  | .seq _ b => b.endsWithPriorityGrant
+  | .completeActivation hadOuter _
+  | .finishBecomeActivated _ _ _ _ _ _ _ hadOuter _
+  | .finishPostLoyaltyActivated _ _ _ _ _ _ _ hadOuter _
+  | .finishTurnFaceUp _ _ hadOuter =>
+    !hadOuter || hasQueuedPending
+  | .seq a b => b.endsWithPriorityGrant (a.nextQueuedPending hasQueuedPending)
   | _ => false
 
 /-- Ensure a `PendingReplacement` continuation ends with `.finishFraChoice`
