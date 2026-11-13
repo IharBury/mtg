@@ -14367,10 +14367,11 @@ priority handoff, and `.crew` / `.zemoBoastExile` / `payTeamworkCreatures` /
    post-replay & mid-replay departure reconciliation on both synchronous and
    resumed paths, and preserve quiet-replay / `g.over` CR 610.3 invariants across
    `finishOpenBatch` and `reverseToProposalCheckpointCore?` (`Event.lean:1936–1939,
-   2311–2320`, `Core.lean:1983–2030, 2331, 10261–10329, 10370–10400, 10441–10458,
-   10626–10636, 10777–10817, 10827–10891, 10917–11476, 11798–11943, 12037–12045,
-   12190–12229, 12262–12289`, `Movement.lean:823–828`, `Leaving.lean:179–218, 2277,
-   2607–2610`, `Casting.lean:740`, `Decisions.lean:1832–1874`, §2.1, §2.4, §2.5,
+   2311–2320`, `Core.lean:378, 385, 1983–2030, 2331, 10261–10329, 10370–10400,
+   10441–10458, 10626–10636, 10777–10817, 10827–10891, 10917–11476, 11798–11943,
+   12037–12045, 12190–12229, 12262–12289`, `Movement.lean:823–828`,
+   `Leaving.lean:179–218, 2277, 2607–2610`, `Casting.lean:740`,
+   `Decisions.lean:1832–1874`, §2.1, §2.4, §2.5,
    §3.8, CR 104.1 / 104.2a / 400.7 / 603.2c / 610.3 / 718.6 / 725.4 / 733.1–733.2 /
    800.4a,c,d,j):
    - **Two-stage `ObjectId` remapping (`revMap` vs `liveObjMap`) and `ZoneEvent.moved`
@@ -14415,14 +14416,16 @@ priority handoff, and `.crew` / `.zemoBoastExile` / `payTeamworkCreatures` /
          CR 400.7 without chasing moves, whereas reversed post-return IDs where
          `r1 != oid` follow any live CR 610.3 return of `r2` in `gCur`).
    - **Post-checkpoint one-shot `EffectId` collision remapping (`ckpt.nextEffectId`)**
-     (`Event.lean:1936–1939, 2312`, `Core.lean:1997, 2331, 10261–10329, 10386–10388,
-     10632–10636, 10777–10817, 10827–10891, 10980–10986, 10995, 11024–11025,
-     11103–11383, 11474–11475, 11874, 12037–12045, 12190–12229, 12262–12289`,
-     `Decisions.lean:1832–1835`):
+     (`Event.lean:1936–1939, 2312`, `Core.lean:378, 385, 1997, 2331, 10261–10329,
+     10386–10388, 10632–10636, 10777–10817, 10827–10891, 10980–10986, 10995,
+     11024–11025, 11103–11383, 11474–11475, 11874, 12037–12045, 12190–12229,
+     12262–12289`, `Decisions.lean:1832–1835`):
      - Currently, `mintEffId` (`Core.lean:10980–10986`) is only invoked on
-       `ContinuousEffectEvent.created` (`11365–11369`), while `.engine t
-       (.nextEffectId v)` (`11024–11025`, emitted by `allocDelayedCause` at
-       `12043–12044` with `v = g.nextEffectId + 1` for newly minted `⟨g.nextEffectId⟩`
+       `ContinuousEffectEvent.created` (`11365–11369`), while cause-free `.engine t
+       (.nextEffectId v)` (`11024–11025`—emitted by `allocDelayedCause` at
+       `12043–12044` with `v = g.nextEffectId + 1` for newly minted `⟨g.nextEffectId⟩`,
+       by `createEffect` at `12198–12199` with `v = cid.raw + 1` and no `max` when
+       `cause` is already `.oneShotEffect (some cid)` and `g.nextEffectId ≤ cid.raw`,
        and by `createEffect` at `12204, 12214` and `createEffects` at `12274, 12284`
        with `nextEffectId (max g.nextEffectId (cid.raw + 1))` for `bumpId? = some cid`)
        only clamps `max gCur.nextEffectId v` without recording an `effRev` entry,
@@ -14449,18 +14452,26 @@ priority handoff, and `.crew` / `.zemoBoastExile` / `payTeamworkCreatures` /
          `ensurePostCkptEffId` (emitting `.engine gCur.turnNumber (.nextEffectId
          (actualEid.raw + 1))` before non-`e.cause` payload uses when
          `actualEid.raw ≥ gCur.nextEffectId`). While scanning all `units`
-         (`11798–11825`, stepping `origNextEff` from `ckpt.nextEffectId` across both
-         reversed and kept units before filtering `keptStream`), distinguish genuine
-         `+ 1` allocations (`v > origNextEff`, such as `allocDelayedCause` at
-         `12043–12044` where `⟨v - 1⟩` is the newly minted ID) from `max`-preserved
-         `createEffect`/`createEffects` bumps (`v ≤ origNextEff` at `12204, 12214,
-         12274, 12284`, where `max g.nextEffectId (cid.raw + 1)` kept the existing
-         counter so `⟨v - 1⟩ ≠ cid` and can be a pre-checkpoint or reversed ID): in
-         `stepEvent` at `.engine t (.nextEffectId v)` (`11024–11025`), use `⟨v - 1⟩`
-         **only** on those genuine `v > origNextEff` bumps, whereas on `v ≤ origNextEff`
-         clamps remap `cid` from its `EventCause.oneShotEffect (some cid)` via
-         `ensurePostCkptEffId` and record `.engine t (.nextEffectId gCur.nextEffectId)`
-         so `Game.replayEvents g.events == g` holds.
+         (`11798–11825`, initializing `origNextEff := ckpt.nextEffectId` and stepping
+         `origNextEff` across both reversed and kept units before filtering
+         `keptStream`—advancing `origNextEff := v` on each `.engine _ (.nextEffectId v) _`
+         per `Core.lean:2331` rather than `+ 1`, and `origNextEff := max origNextEff
+         (eid.raw + 1)` on `ContinuousEffectEvent.created` / `.rules` one-shot causes
+         per `378, 385, 10327, 10387`), classify each kept cause-free `.engine t
+         (.nextEffectId v)` (`11024–11025`): when `v > origNextEff`
+         (`allocDelayedCause` at `12043–12044`, `createEffect`'s non-`max` jump at
+         `12198–12199` including `v > origNextEff + 1`, or `12204, 12214, 12274, 12284`
+         when `cid.raw ≥ origNextEff`), `⟨v - 1⟩` is `id` / `cid`, so remap `⟨v - 1⟩`
+         via `ensurePostCkptEffId` to `actualEid` and record `.engine t (.nextEffectId
+         (max gCur.nextEffectId (actualEid.raw + 1)))`; when `v ≤ origNextEff`
+         (`12204, 12214, 12274, 12284` when `max` kept `origNextEff`, so `⟨v - 1⟩ ≠
+         cid` and can be a pre-checkpoint or reversed ID), do **not** read a cause off
+         the cause-free `.nextEffectId` event itself or remap `⟨v - 1⟩`, and instead
+         take `cid` from the following rules event's `EventCause.oneShotEffect
+         (some cid)` (`GameEvent.effectCreated` at `12225`), remap `cid` via
+         `ensurePostCkptEffId` to `actualCid`, and record `.engine t (.nextEffectId
+         (max gCur.nextEffectId (actualCid.raw + 1)))` so
+         `Game.replayEvents g.events == g` holds.
    - **Complete post-replay & mid-replay departure invariants on both synchronous and
      `.continueCheckpointReplay` paths** (`Core.lean:11018–11036, 11216–11217,
      11277–11288, 11309–11314, 11324–11334, 11373–11380, 11471–11475, 11874–11882`,
@@ -14585,16 +14596,24 @@ priority handoff, and `.crew` / `.zemoBoastExile` / `payTeamworkCreatures` /
          `Core.ckptPendingReplacementUntouchedBeforeLeave (g : Game)
          (ckpt : ProposalCheckpoint) (allDeparted : Array PlayerId) : Bool` in
          `Core.lean` (after `playersDepartedSinceCheckpoint` at `2102`) and call it
-         from `Leaving.lean:2197`, `Casting.lean:680`, and `Decisions.lean:1173`:
-         scanning `slice := g.events.extract (min ckpt.eventsSize g.events.size)
-         g.events.size` with `frameDepth`, when `frameDepth == 0` hits
-         `.engine _ (.continuation (.pendingReplacement none)) _`, treat it as the
-         departure's own pre-`leftGame` clear iff scanning forward from `i + 1`
-         (tracking nested `subDepth`) sees no `.continuation (.pendingReplacement
-         (some _))` at `subDepth == 0` before the next `.rules` event and that next
-         `.rules` event is `.rules _ (.player (.leftGame q)) _ _` with
-         `allDeparted.contains q` (returning `true` in that case and `false` on any
-         earlier `frameDepth == 0` `.pendingReplacement` mutation).
+         from `Leaving.lean:2197`, `Casting.lean:680`, and `Decisions.lean:1173`,
+         preserving the existing outer `((ckpt.continuations.back?.getD
+         {}).pendingReplacement).isSome` guard, the `!anyDepartedInSlice` `return true`
+         fast path, the `frameDepth`-independent `.rules _ (.player (.lost q ..)) _ _
+         | .rules _ (.player (.leftGame q)) _ _ => if allDeparted.contains q then
+         return true` short-circuit (`Leaving.lean:2216–2218`,
+         `Casting.lean:701–703`, `Decisions.lean:1192–1194`, which handles departures
+         where `g.pendingReplacement` was already `none` so `playerLeavesGameCore`
+         `2575–2577` emitted no `.pendingReplacement none` before `2582`), and the
+         `.pushContinuationFrame` / `.popContinuationFrame` / `frameDepth == 0`
+         `.pendingReplacement _` arms—replacing **only** the unreachable `(some b)`
+         arm (`Leaving.lean:2224–2226`, `Casting.lean:709–711`,
+         `Decisions.lean:1200–1202`) so when `frameDepth == 0` hits `.engine _
+         (.continuation (.pendingReplacement none)) _`, it returns `true` iff scanning
+         forward from `i + 1` (tracking nested `subDepth`) sees no `.continuation
+         (.pendingReplacement (some _))` at `subDepth == 0` before the next `.rules`
+         event and that next `.rules` event is `.rules _ (.player (.leftGame q)) _ _`
+         with `allDeparted.contains q` (and `false` otherwise).
    - **Execute `restoreCkptPending?` ahead of `restored?` (`ckptOrigCont?`) and
      honor continuation resumption when `resumeContinuation == false`**
      (`Casting.lean:824–837, 864–885`, `Decisions.lean:1340–1351, 3259–3267`):
@@ -14671,12 +14690,12 @@ priority handoff, and `.crew` / `.zemoBoastExile` / `payTeamworkCreatures` /
 3. Reconcile control across non-`recordPutCounters` counter puts & simultaneous
    continuous-effect expirations, complete CR 610.3 `linkedExile` flushes, and make
    phasing scope & untap/multiplayer phase-in CR 502.1,3 / CR 611.2c / CR 702.26b,e,n
-   pause-safe (`Event.lean:1195–1516`, `Core.lean:936–948, 1651–1656, 1682–1727,
-   1776–1782, 1799–1852, 1900–1965, 2329, 10561–10563, 12262–12289, 12295–12341,
-   12561–12608, 12713–12765`, `Phasing.lean:45–78, 123–195`,
+   pause-safe (`Event.lean:1195–1516`, `Core.lean:936–948, 1375–1422, 1651–1656,
+   1682–1727, 1776–1782, 1799–1852, 1900–1965, 2329, 10561–10563, 12262–12289,
+   12295–12341, 12561–12608, 12713–12765`, `Phasing.lean:45–78, 123–195`,
    `Movement.lean:294, 629–636, 767–790`, `Leaving.lean:118–218, 426–436, 478–485,
    998`, `Triggers.lean:358–399, 430–436`, `Pumps.lean:72–99, 284–397`,
-   `FraAbilities.lean:610–624`, `Turns.lean:21–38, 169–197, 296–350, 579–597,
+   `FraAbilities.lean:610–624`, `Turns.lean:21–38, 169–197, 296–350, 553–597,
    650–666, 753–792`, `Decisions.lean:2630–2631`, §2.1, §2.5, §3.4,
    CR 122.1 / 502.1 / 502.3 / 506.4 / 610.3 / 611.2a,c / 613.1a–b / 701.54a /
    702.26b,d,e,f,m,n / 800.4a,c,k,m):
@@ -14771,9 +14790,9 @@ priority handoff, and `.crew` / `.zemoBoastExile` / `payTeamworkCreatures` /
          `Triggers.addLoreAfterDrawStep` (`435–436`).
    - **CR 611.2c / CR 702.26b,e post-phase-out Layer 1/2 scope gating, CR 702.26n
      departed-controller multiplayer phase-in, and pause-safe CR 502.1,3 `.untap`
-     progression** (`Event.lean:1195–1516`, `Core.lean:936–948, 1651–1656, 1682–1727,
-     1776–1782, 1799–1852, 1900–1965, 2329`, `Phasing.lean:157–195`,
-     `Turns.lean:579–597, 650–666, 753–792`, `Decisions.lean:2630–2631`):
+     progression** (`Event.lean:1195–1516`, `Core.lean:936–948, 1375–1422, 1651–1656,
+     1682–1727, 1776–1782, 1799–1852, 1900–1965, 2329`, `Phasing.lean:157–195`,
+     `Turns.lean:553–597, 650–666, 753–792`, `Decisions.lean:2630–2631`):
      - In `Core.unmaskedCopiableValuesWithTs` (`scopeMatchesL1`, `Core.lean:1682–1694`)
        and `Core.effectiveControllerWithApplied` (`scopeMatchesL2`, `1799–1811`),
        non-`.objects` scopes (`.creaturesControlledBy`, `.creaturesWithout`,
@@ -14801,20 +14820,29 @@ priority handoff, and `.crew` / `.zemoBoastExile` / `payTeamworkCreatures` /
        untap step after that player's next turn would have begun"*, and if an
        intervening player's untap step is skipped under CR 702.26m, during the next
        untap step that actually occurs):
-       - Compute `departedNextTurnWouldHaveBegunSince (g : Game) (dep : PlayerId)
-         (sinceIdx : Nat) : Bool` purely from `g.events` (folding
-         `EngineChange.startingPlayer` per `Core.applyEngineChange` at
-         `Core.lean:2329`, `PlayerEvent.lost` / `PlayerEvent.leftGame` per
-         `Core.applyPlayerEvent` at `Core.lean:936–948`, and `TurnEvent.turnBegan`
-         (`1900`), `TurnEvent.turnEnded` (`1942`), and `TurnEvent.extraTurnAdded`
-         (`1945–1965`) per `Core.applyTurnEvent` at `Core.lean:1900–1965`, and at
-         each `TurnEvent.turnBegan player extra` with `idx > sinceIdx` applying the
-         extra-turn and seat-order skip rules of `Turns.startNextTurnCore` at
-         `Turns.lean:580–597` against that folded pre-`turnBegan` state to detect
-         whether `dep`'s queued head `extraTurns` entry was skipped, `dep`'s living
-         shared-turn teammate began a new shared turn, or `!extra` skipped `dep` in
-         seat order between `ending` and `player`), and include `o` in `targetIds`
-         when `ctrl? == some p || (match ctrl? with | some dep => !g.stillInGame dep &&
+       - Extend `phaseOutControllerOf` (`Phasing.lean:180–188`) to also return
+         `sinceIdx : Nat`—the index in `g.events` of `o`'s latest
+         `PermanentEvent.phasedOut` event (`181–185`, defaulting to `0` if none)—and
+         compute `departedNextTurnWouldHaveBegunSince (g : Game) (dep : PlayerId)
+         (sinceIdx : Nat) : Bool` purely from `g.events`: fold `g.events` maintaining
+         `activePlayer`, `stillInGame` (`players`), `extraTurns`, and shared-turn
+         `(seats, seatsExtra)` (`Core.currentSharedTurnState` at `Core.lean:1375–1394`
+         and `isSharedTurnFinalSeat` at `1412–1422`), applying
+         `EngineChange.startingPlayer` (`Core.lean:2329`), `PlayerEvent.lost` /
+         `PlayerEvent.leftGame` (`Core.lean:936–948`), and `TurnEvent.extraTurnAdded`
+         (`Core.lean:1945–1965`, while `TurnEvent.turnEnded` at `1942` is a no-op),
+         and on each `TurnEvent.turnBegan player extra`: (i) when `idx > sinceIdx`,
+         first evaluate the next-seat selector of `Turns.startNextTurnCore`
+         (`Turns.lean:553–556, 580–597`, including `midRegularShared := !seatsExtra &&
+         !isSharedTurnFinalSeat`) against that pre-`turnBegan` folded `extraTurns` /
+         `stillInGame` / `activePlayer` state to check whether `dep` was skipped
+         before `player` (or `dep`'s living shared-turn teammate began a new shared
+         turn), and (ii) **then** apply `Core.applyTurnEvent`'s `.turnBegan` update
+         (`Core.lean:1900–1923`, consuming `extraTurns` via `restExtra` at
+         `1908–1922` and updating `activePlayer := player` and `(seats, seatsExtra)`
+         per `1386–1392`) so subsequent `extraTurnAdded` and `turnBegan` events see
+         the shrunk queue; include `o` in `targetIds` when `ctrl? == some p ||
+         (match ctrl? with | some dep => !g.stillInGame dep &&
          departedNextTurnWouldHaveBegunSince g dep sinceIdx | none => false)`.
      - In `Turns.beginStepBody` (`.untap` at `Turns.lean:653–666`) and
        `Turns.beginTurnAfterStartExpiry` (`786–792`), `beginStepBody` snapshots
@@ -14846,11 +14874,11 @@ priority handoff, and `.crew` / `.zemoBoastExile` / `payTeamworkCreatures` /
    make `abortDepartedManaAbilityCont` continuation-safe, and harden
    `completeTurnFaceUp` guards & post-reconcile tail ordering
    (`ActivatedAbility.lean:16–42`, `Event.lean:1740–1745, 2247, 2356–2357`,
-   `Core.lean:2173–2185`, `Entering.lean:408–424`,
+   `Core.lean:2014, 2173–2185`, `Entering.lean:408–424`,
    `ActivationCosts.lean:120–158, 229–293, 427–488`,
    `ManaAbilities.lean:344–354, 390–410, 415–462, 518–532`,
    `Casting.lean:639–660, 890–893, 1233–1272`,
-   `Leaving.lean:665, 2162–2168`, `Decisions.lean:1150–1170, 1643–1648, 3270–3279`,
+   `Leaving.lean:665, 2162–2169`, `Decisions.lean:1143–1170, 1643–1648, 3270–3279`,
    `CastSpell.lean:303–308`, `Activation.lean:96–110, 222, 263–271`,
    `Agent.lean:171–174`, §2.1, §3.6, §3.8,
    CR 107.3a / 116.2b / 601.2b / 602.2b / 605.3b / 606.3–606.4 / 702.37e / 708.8 /
@@ -14877,10 +14905,10 @@ priority handoff, and `.crew` / `.zemoBoastExile` / `payTeamworkCreatures` /
          (·.cost.loyalty) == some .plusX`.
    - **Pause-safe loyalty-to-stun ordering in `ActivationCosts.payCostPick` and
      resumed cost-item re-validation across `ActivationCosts` and `ManaAbilities`**
-     (`Event.lean:1742, 2247`, `Core.lean:2173–2185`, `ActivationCosts.lean:120–158,
+     (`Event.lean:1742, 2247`, `Core.lean:2014, 2173–2185`, `ActivationCosts.lean:120–158,
      229–293, 427–488`, `ManaAbilities.lean:344–354, 390–410, 415–462, 518–532`,
-     `Casting.lean:639–660, 890–893`, `Leaving.lean:665, 2162–2168`,
-     `Decisions.lean:1150–1170, 1645–1646, 3270–3279`):
+     `Casting.lean:639–660, 890–893`, `Leaving.lean:665, 2162–2169`,
+     `Decisions.lean:1143–1170, 1645–1646, 3270–3279`):
      - In `ActivationCosts.payCostPick` (`ActivationCosts.lean:427–445`),
        `payLoyaltyCost` (`437`, e.g. `[+N]` / `[+X]` under competing counter-put
        replacements) and `putCountersDeferredLog sid .stun 1` (`440`) run back-to-back
@@ -14912,35 +14940,43 @@ priority handoff, and `.crew` / `.zemoBoastExile` / `payTeamworkCreatures` /
          `stun` / `sacrificeSource` / `exileSource` in `finishActivationExtraCosts`),
          reverse an active proposal via `g.reverseProposedSpellFwd
          (resumeContinuation := true)` (CR 602.2b / 733.1).
-       - In `ManaAbilities.activateManaAbility` (`ManaAbilities.lean:518–532`), push
+       - In `ManaAbilities.activateManaAbility` (`ManaAbilities.lean:518–532`),
+         whenever `!d.picks.isEmpty || d.sacrificeSelf`, snapshot
+         `hadOuterCkpt := g.proposalCheckpoint.isSome` and push
          `.saveProposalCheckpoint` (`Core.lean:2173–2185`, nesting any enclosing
-         spell checkpoint on `outerProposalCheckpoints`) after `.beginProposalAction`
-         (`522–523`) whenever `!d.picks.isEmpty || d.sacrificeSelf` (emitting
+         spell checkpoint on `outerProposalCheckpoints`) **before** `522–523` (then
+         emitting `.beginProposalAction (.manaAbility (some id))` at `522–523` when
+         `hadOuterCkpt`, so the mana checkpoint's own slice after its `eventsSize`
+         contains that `.beginProposalAction (.manaAbility _)`). Emit
          `.clearProposalCheckpoint` before `EngineChange.endProposalAction` on
          completion in `finishActivateManaAbilityPostSac` at `393–394, 403–404` via an
          added `(clearCkpt : Bool := false)` flag on
-         `PendingReplacement.endProposalAction` at `Event.lean:1742`—leaving the
+         `PendingReplacement.endProposalAction` at `Event.lean:1742` (leaving the
          separate nullary `EngineChange.endProposalAction` at `Event.lean:2247`
          unchanged and updating both `Leaving.isProposalBoundaryStep` at
          `Leaving.lean:665` (`| .endProposalAction ..`) and
-         `Decisions.resumePendingReplacement` at `Decisions.lean:1645–1646`—and
-         collapsing any nested intra-proposal mana checkpoint
-         `g.proposalCheckpoint.any (·.proposedSpell.isSome)` via
-         `.clearProposalCheckpoint` at the top of
-         `Leaving.rewindAbortedProposalOnLeave` `2162–2168`,
-         `Casting.reverseProposedSpellCore?` `639–660`, and
-         `Decisions.reverseOrResumePopped` `1150–1170` when an enclosing
-         `proposedSpell` itself reverses). In `finishActivateManaAbilityPicks`
+         `Decisions.resumePendingReplacement` at `Decisions.lean:1645–1646`). When an
+         enclosing `proposedSpell` itself reverses (`Leaving.rewindAbortedProposalOnLeave`
+         `2162–2169`, `Casting.reverseProposedSpellCore?` `639–660`, and
+         `Decisions.reverseOrResumePopped` `1143–1170`), do **not** test
+         `ckpt.proposedSpell.isSome` (which `captureProposalCheckpoint` at
+         `Core.lean:2014` also copies onto a spell's own checkpoint) and do **not**
+         loop: emit **one** `.clearProposalCheckpoint` iff
+         `!g.outerProposalCheckpoints.isEmpty` and `g.proposalCheckpoint`'s slice
+         (after its `eventsSize`) contains an unclosed
+         `.beginProposalAction (.manaAbility _)` from `ManaAbilities.lean:522–523` that
+         the restored outer checkpoint does not, restoring the spell checkpoint before
+         reading `ckpt` fields and reversing. In `finishActivateManaAbilityPicks`
          (`415–462`) when `wasPaused` is `true`, if any remaining `slice` item fails
          `g.costPickAllows p (some id) pick o (tapSource := tap)
          (sacrificeOrExileSource := sacrificeSelf)`, or `tap` / `sacrificeSelf` can no
          longer be paid on `id` (`!cur.isOnBattlefield || !g.controlledBy cur p` or
          already tapped when `{T}` wasn't pre-paid at `433–436`), reverse that mana
-         ability's checkpoint via `reverseToProposalCheckpoint?` (emitting
-         `EngineChange.endProposalAction` when an enclosing
-         `g.proposalCheckpoint.isSome` remains after the pop) and restore
-         `prevPending` / priority via `abortDepartedManaAbilityCont` without aborting
-         any enclosing spell/ability proposal (and likewise call
+         ability's checkpoint via `reverseToProposalCheckpoint?` (truncating `g.events`
+         back to `ckpt.eventsSize`, which removes `.beginProposalAction (.manaAbility _)`
+         and pops `proposalCheckpoint` back to the enclosing spell checkpoint) and
+         restore `prevPending` / priority via `abortDepartedManaAbilityCont` without
+         aborting any enclosing spell/ability proposal (and likewise call
          `reverseToProposalCheckpoint?` in `abortDepartedManaAbilityCont` when a
          standalone mana-ability checkpoint is open).
    - **Continuation-safe priority handoff in `ManaAbilities.abortDepartedManaAbilityCont`**
