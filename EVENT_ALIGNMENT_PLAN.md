@@ -15088,6 +15088,7 @@ prompt-preservation / post-reconcile tail / `callerShouldResume` invariants).
    `stepCanReverseProposal` constructors, and complete `Pending.chooseLegend`
    spectator-departure / `finishSbaSweep` / `keepLegend` / `Agent` alignment
    (`Event.lean:2401`, `Core.lean:1327–1328, 2079–2201, 10704, 12144–12279`,
+   `Movement.lean:246–265, 294, 450`,
    `Leaving.lean:80–169, 226–333, 896–951, 2390–2540, 2702–2800, 3118–3238`,
    `Casting.lean:639–855, 1133–1145, 1204–1235, 1294–1364`,
    `Decisions.lean:77–81, 805–860, 1188–1345, 1816–1831, 5094–5160`,
@@ -15097,9 +15098,9 @@ prompt-preservation / post-reconcile tail / `callerShouldResume` invariants).
    - **Quiet `reconcilePostReplayDepartures`, `wasSuppressed` preservation in
      `Casting` & `Leaving`, simultaneous departed `.control` expiry, and departed
      `ckptPending` routing in `Core.reverseToProposalCheckpointCore?`**
-     (`Core.lean:2079–2132, 10704, 12144–12279`, `Leaving.lean:80–169, 226–333,
-     2430, 2466, 2792–2800`, `Casting.lean:703, 710, 839–855`,
-     `Decisions.lean:1816–1831`):
+     (`Core.lean:2079–2132, 10704, 12144–12279`, `Movement.lean:246–265, 294, 450`,
+     `Leaving.lean:80–169, 226–333, 2430, 2466, 2792–2800`,
+     `Casting.lean:703, 710, 839–855`, `Decisions.lean:1816–1831`):
      - `Core.restoreProposalCheckpoint` (`Core.lean:2079–2132`, line `2130`) recomputes
        `suppressInteractiveReplay` from `ckpt.continuations`, and popping
        `.continueCheckpointReplay ... (suppressInteractive := true) _` before
@@ -15107,8 +15108,11 @@ prompt-preservation / post-reconcile tail / `callerShouldResume` invariants).
        replay frame remains. Consequently, `Leaving.reconcilePostReplayDepartures`
        (`Leaving.lean:298–333`, called at `Core.lean:12204` and `Decisions.lean:1830`)
        runs un-suppressed (`Leaving.runEndControlExileLoop` at `80–109` calls
-       `g.move id .exile` without `suppressInteractive` and pauses on interactive
-       replacement prompts during quiet replay), while `Casting.reverseProposedSpellCore?`
+       `g.move oid .exile none` at `96`, and `Movement.move` at `246–265` has no
+       `suppressInteractive` parameter and only sets `quietMove` from
+       `g.openBatchSuppressInteractive || g.over || g.suppressInteractiveReplay` at
+       `265`, pausing on interactive replacement prompts during quiet replay), while
+       `Casting.reverseProposedSpellCore?`
        (`Casting.lean:703, 710, 839–855`) and `Leaving.rewindAbortedProposalOnLeave`
        (`Leaving.lean:2430, 2466`) read `g.suppressInteractiveReplay` **after**
        `g.reverseToProposalCheckpoint?` restored `ckpt`'s `false` flag and still run
@@ -15121,9 +15125,15 @@ prompt-preservation / post-reconcile tail / `callerShouldResume` invariants).
        12274–12275`) omits `ckptDeparted` on `.restorePending ckptPending false` (and
        writes raw `gAcc.change (.pending ckptPending)` at `12274–12275` even when a
        player departed since `ckpt` during a standalone `ManaAbilities` reversal):
-       - Thread `(suppressInteractive : Bool := false)` through
-         `Leaving.runEndControlExileLoop` (`80–109`, gating `84, 98` on
-         `!suppressInteractive && g.sbaPaused` and forwarding
+       - Add `(suppressInteractive : Bool := false)` to `Movement.move`
+         (`Movement.lean:246–265`, folding `suppressInteractive` into `quietMove` at
+         `265` and forwarding `(suppressInteractive := suppressInteractive)` to
+         `withBatchCoreReturn` at `294` and recursive `move` at `450`), and thread
+         `(suppressInteractive : Bool := false)` through `Leaving.runEndControlExileLoop`
+         (`80–109`, computing `quiet := suppressInteractive ||
+         g.openBatchSuppressInteractive || g.over || g.suppressInteractiveReplay`,
+         gating `84, 98` on `!quiet && g.sbaPaused` so the `sbaPaused` continuation is
+         preserved whenever the move is not quiet, and passing
          `(suppressInteractive := suppressInteractive)` to `g.move` at `96`),
          `endControlEffectById` (`118–169`), `endControlEffectsSimultaneously`
          (`226–291`), and `reconcilePostReplayDepartures` (`298–333`, updating
@@ -15270,16 +15280,17 @@ prompt-preservation / post-reconcile tail / `callerShouldResume` invariants).
          `Leaving.lean:3118–3119`, evaluate `redirectPendingAfterLeave`'s legend
          validation against the saved paused-batch snapshot (`origBid` / `origObjs` /
          `origPls` / `origEffs` / `origPend` / `origStk`).
-       - Factor the `preBatchLegendIds` + `isMatchingLegend` (`isOnBattlefield &&
-         g.controlledBy o p && ((g.treatedAsLegendary o && g.name o == name) ||
-         preBatchLegendIds.contains o.id)`) helper out of `Leaving.validLegendChoiceIds`
-         (`934–950`, parameterized by `requireStillInGame : Bool := true`) and reuse it
-         in `Decisions.keepLegend` (`5094–5110, 5146, 5153`, preserving the
+       - Wrap `Leaving.validLegendChoiceIds`'s (`930–950`) `932` early return in
+         `(requireStillInGame : Bool := true)` (`if requireStillInGame && !g.stillInGame p
+         then #[]`) and factor its `934–950` `preBatchLegendIds` + `isMatchingLegend`
+         (`isOnBattlefield && g.controlledBy o p && ((g.treatedAsLegendary o &&
+         g.name o == name) || preBatchLegendIds.contains o.id)`) helper so
+         `Decisions.keepLegend` (`5094–5110, 5146, 5153`, preserving the
          `isOnBattlefield && controlledBy` + `preBatchLegendIds` disjunct in the
-         graveyard loop) and `StateBasedActions.finishSbaSweep` (`208–245`): skip `p`'s
-         group when `(g.player p).leftTheGame` (`CR 800.4a`), filter `rawIds` at `210`
-         (and re-check at `230, 237`) via that shared helper with
-         `requireStillInGame := false`, **keep** `if g.stillInGame p` at `213` for
+         graveyard loop) and `StateBasedActions.finishSbaSweep` (`208–245`) reuse it:
+         skip `p`'s group when `(g.player p).leftTheGame` (`CR 800.4a`), apply that
+         shared helper (`requireStillInGame := false`) at `210` and `230` (leaving `237`
+         as the `.chooseReplacement` pause), **keep** `if g.stillInGame p` at `213` for
          opening `.chooseLegend` (so a player with `lost && !leftTheGame` is never
          re-prompted and instead enters the filtered `221–245` auto-resolve branch), and
          pass live-filtered `validLegendChoiceIds` (falling back to `ids` if empty) to
@@ -15290,15 +15301,16 @@ prompt-preservation / post-reconcile tail / `callerShouldResume` invariants).
    `endControlEffectsSimultaneously` pause- and batch-safe across both empty and
    non-empty control sets, and close remaining `withBatchCore` `linkedExile` flushes &
    post-reconcile `findObject?` guards (`Attachments.lean:46–65`,
-   `Core.lean:12644–12651, 12964–13033`, `Leaving.lean:202–291, 339–395, 426–446`,
-   `StateBasedActions.lean:529–542`, `Turns.lean:309–337`,
-   `Tokens.lean:78, 174–190, 396`, `Movement.lean:40–46, 577, 629`, §3.2, §3.6,
+   `Core.lean:10560–10577, 12644–12651, 12953–13033`,
+   `Leaving.lean:202–291, 339–395, 426–446`, `StateBasedActions.lean:529–542`,
+   `Turns.lean:309–337`, `Tokens.lean:78, 174–190, 396, 404, 448`,
+   `Movement.lean:40–45, 577, 629, 769`, §3.2, §3.6,
    CR 122.1 / 400.7 / 506.4 / 610.3 / 611.2a–b / 701.54a / 704.5q / 800.4c):
    - **Simultaneous outer-`pre` control expiry in `Leaving.recordRemoveCounters`,
      `Leaving.removeAllCountersFrom`, CR 704.5q, `Core.expireWhileSourceEffects`, and
      `Turns.expireFraUntilTurnEffects`, plus pause-safe
      `Leaving.endControlEffectsSimultaneously`** (`Attachments.lean:60, 63`,
-     `Core.lean:12644–12651, 12964–13033`, `Leaving.lean:202–291, 339–395`,
+     `Core.lean:12644–12651, 12953–13033`, `Leaving.lean:202–291, 339–395`,
      `Movement.lean:577, 629`, `StateBasedActions.lean:535–536`,
      `Turns.lean:309–337`):
      - In `Leaving.recordRemoveCounters` (`Leaving.lean:339–380`, `counterCount kind ==
@@ -15308,12 +15320,13 @@ prompt-preservation / post-reconcile tail / `callerShouldResume` invariants).
        (`384–395`) and CR 704.5q counter annihilation (`StateBasedActions.lean:535–536`)
        invoke `recordRemoveCounters` per counter kind sequentially instead of recording
        all counter removals first and expiring across one outer `pre` snapshot. Meanwhile,
-       in `Core.expireWhileSourceEffects` (`Core.lean:13023–13032`),
-       `restoreCopiesUntilSourceLeaves` (`13026`, whose `.copy` expiry at `12648–12651`
-       runs `reconcileControlAfterTransitionFwd`), `restoreControlUntilSourceLeaves`
-       (`12964–13018`, whose `expireEffectById` calls at `12976, 12980, 13007` run
-       `removeFromCombatOnControlChange` at `12644–12647` one by one), and
-       `expireMatching` (`13028–13032`) all run with default `reconcileControl := true`
+       in `Core.expireWhileSourceEffects` (`Core.lean:13023–13032`, where
+       `restoreCopiesUntilSourceLeaves` at `12953–12959, 13026` already passes
+       `reconcileControl := false` to `restoreCopiesWhere`),
+       `restoreControlUntilSourceLeaves`'s (`12964–13018`) `expireEffectById` calls at
+       `12976, 12980, 13007` (whose `.control` arm at `12644–12647` runs
+       `removeFromCombatOnControlChange` one by one when `reconcileControl` is true) and
+       `expireMatching` (`13028–13032`) still run with default `reconcileControl := true`
        before `Movement.move` (`577 -> 629`) or `Attachments.ceaseToExist` (`60 -> 63`)
        finishes expiring/creating co-incident effects; `Turns.expireFraUntilTurnEffects`
        (`Turns.lean:309–337`) honors `skipControl` at `317–325` (skipping
@@ -15336,9 +15349,10 @@ prompt-preservation / post-reconcile tail / `callerShouldResume` invariants).
          `GameEvent.counters` removals first before expiring all `.whileSourceHasCounter`
          effects whose counter count reached `0` across one outer `pre`.
        - Add `(reconcileControl : Bool := true)` to `Core.expireWhileSourceEffects`
-         (`Core.lean:13023–13032`), passing `reconcileControl := false` to
-         `restoreCopiesUntilSourceLeaves` (`13026`), per-effect `expireEffectById` inside
-         `restoreControlUntilSourceLeaves` (`12976, 12980, 13007`), and `expireMatching`
+         (`Core.lean:13023–13032`, leaving `restoreCopiesUntilSourceLeaves` at
+         `12953–12959, 13026` with its existing `reconcileControl := false`), passing
+         `reconcileControl := false` into `restoreControlUntilSourceLeaves`'s
+         `expireEffectById` calls (`12976, 12980, 13007`) and `expireMatching`
          (`13028–13032`), evaluating `restoreControlUntilSourceLeaves` `.ringBearer`
          losses and reversion logs once against `preRef` after all `srcId` effects have
          expired, and calling `reconcileControlAfterTransitionFwd preRef g` only when
@@ -15355,22 +15369,32 @@ prompt-preservation / post-reconcile tail / `callerShouldResume` invariants).
          `runEndControlExileLoop` once on the combined deduplicated queue, and flush
          `queuedLinkedExile` (`flushQueuedLinkedExile (suppressInteractive :=
          suppressInteractive)`) when no enclosing batch was open on entry.
-   - **Close remaining `withBatchCore` `linkedExile` flushes and post-reconcile
+   - **Close remaining outermost-batch `linkedExile` flushes and post-reconcile
      `findObject?` guards in `Tokens`, `Movement`, and `Leaving`**
-     (`Tokens.lean:78, 174–190, 396`, `Movement.lean:40–46`, `Leaving.lean:437`):
-     - `Tokens.createOneToken` (`Tokens.lean:78`), `Tokens.createTokenBatches` (`396`),
-       and `Movement.becomePrepared` (`Movement.lean:40–46`) can queue `linkedExile`
-       inside `withBatchCore` / `withBatchCoreReturn` (via `createEffect` control
-       transitions) without flushing on outer-batch exit, `Tokens.createOneToken`
-       (`176–190`) calls `g.object! newId` after `createEffect`, and
-       `Leaving.addPlusOnePlusOneTo` calls `g.object! o.id` at `Leaving.lean:437` for the
-       `GameEvent.counters` snapshot:
-       - Call `flushQueuedLinkedExile` / `flushQueuedLinkedExileFwd` after the outer
-         `withBatchCore` / `withBatchCoreReturn` of `Tokens.createOneToken` (`78`),
-         `Tokens.createTokenBatches` (`396`), and `Movement.becomePrepared` (`40–46`),
-         guard post-`createEffect` `newId` lookups in `Tokens.createOneToken` (`176–190`)
-         with `g.findObject? newId`, and guard `Leaving.addPlusOnePlusOneTo`'s snapshot
-         at `Leaving.lean:437` with `g.findObject? o.id` (leaving `441–442`'s existing
+     (`Core.lean:10560–10577`, `Tokens.lean:78, 174–190, 396, 404, 448`,
+     `Movement.lean:40–45, 769`, `Leaving.lean:437`):
+     - Because `Core.withBatchCoreReturn` (`Core.lean:10560–10577`) joins an already-open
+       batch without closing it and `Movement.flushQueuedLinkedExile`
+       (`Movement.lean:769`) returns immediately while `currentBatch.isSome` (for
+       example, `Tokens.createTokenBatches` opens a batch at `396` and calls
+       `createOneToken` at `404`, whose `withBatchCoreReturn` at `78` joins that batch),
+       when `Tokens.createTokenBatches` (`396`), a standalone `Tokens.createOneToken`
+       (`78`, e.g. via `448`), or `Movement.becomePrepared` (`Movement.lean:40–45`)
+       itself opens the outermost batch, `linkedExile` queued via `createEffect` control
+       transitions is never flushed when that outermost batch closes; meanwhile,
+       `Tokens.createOneToken` (`176–190`) calls `g.object! newId` after `createEffect`,
+       and `Leaving.addPlusOnePlusOneTo` calls `g.object! o.id` at `Leaving.lean:437` for
+       the `GameEvent.counters` snapshot:
+       - Flush only after the outermost `withBatchCore` / `withBatchCoreReturn` returns
+         with `currentBatch == none` (`let hadOpenBatch := g.currentBatch.isSome` on
+         entry, flushing only when `!hadOpenBatch`): call `flushQueuedLinkedExileFwd`
+         after `Tokens.createTokenBatches` (`396`, and after `Tokens.createOneToken` at
+         `78` only when `!hadOpenBatch` so joined calls from `404` do not flush inside
+         `createTokenBatches`'s open batch) and call `flushQueuedLinkedExile` after
+         `Movement.becomePrepared` (`40–45`) only when `!hadOpenBatch`; guard
+         post-`createEffect` `newId` lookups in `Tokens.createOneToken` (`176–190`) with
+         `g.findObject? newId`; and guard `Leaving.addPlusOnePlusOneTo`'s snapshot at
+         `Leaving.lean:437` with `g.findObject? o.id` (leaving `441–442`'s existing
          `g.name o` intact).
 
 3. Enforce CR 611.2b–c vs CR 611.3a / CR 702.26b,d,e,f phasing scope rules across Layers
