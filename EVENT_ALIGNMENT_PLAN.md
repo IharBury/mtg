@@ -14407,10 +14407,11 @@ priority handoff, and `.crew` / `.zemoBoastExile` / `payTeamworkCreatures` /
          and key every `liveObjMap` entry by `r1 := resolveProposalRevId revMap oid`
          (the exact key `ro` looks up in `liveObjMap`): in `mintObjId`
          (`Core.lean:10973–10979`, called at `11021, 11111, 11136, 11283, 11312,
-         11330`), compute `r1 := resolveProposalRevId revMap oid`, allocate `freshId`
-         (`⟨gCur.nextObjectId⟩` when `oid.raw < gCur.nextObjectId ||
-         gCur.objects.any (·.id == oid)`, else `oid`), and push `(r1, freshId)` into
-         `liveObjMap` whenever `freshId != resolveProposalRevId liveObjMap r1`; in
+         11330`), inside the collision branch (`oid.raw < gCur.nextObjectId ||
+         gCur.objects.any (·.id == oid)`) allocate `freshId : ObjectId :=
+         ⟨gCur.nextObjectId⟩` and push `(r1, freshId)` into `liveObjMap` when
+         `freshId != oid` (as `10977` does today), while leaving `(oid, liveObjMap)`
+         unchanged on the `else` branch (`10978–10979`); in
          `ZoneEvent.moved` `after.id == before.id` (`Core.lean:11106–11107`, with
          `before.id = some bid` and `r1 := resolveProposalRevId revMap bid`), push
          `(r1, liveId)` into `liveObjMap` whenever `b'.id == some liveId &&
