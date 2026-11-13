@@ -14367,7 +14367,7 @@ priority handoff, and `.crew` / `.zemoBoastExile` / `payTeamworkCreatures` /
    post-replay & mid-replay departure reconciliation on both synchronous and
    resumed paths, and preserve quiet-replay / `g.over` CR 610.3 invariants across
    `finishOpenBatch` and `reverseToProposalCheckpointCore?` (`Event.lean:1936–1939,
-   2311–2320`, `Core.lean:378, 385, 1983–2030, 2331, 10261–10329, 10370–10400,
+   2311–2320`, `Core.lean:378, 385, 996–1008, 1983–2030, 2331, 10261–10329, 10370–10400,
    10441–10458, 10626–10636, 10777–10817, 10827–10891, 10917–11476, 11798–11943,
    12037–12045, 12190–12229, 12262–12289`, `Movement.lean:823–828`,
    `Leaving.lean:179–218, 2277, 2607–2610`, `Casting.lean:740`,
@@ -14376,8 +14376,9 @@ priority handoff, and `.crew` / `.zemoBoastExile` / `payTeamworkCreatures` /
    800.4a,c,d,j):
    - **Two-stage `ObjectId` remapping (`revMap` vs `liveObjMap`) and `ZoneEvent.moved`
      `after.id == before.id` propagation** (`Event.lean:1936–1939, 2311–2320`,
-     `Core.lean:10626–10630, 10973–10979, 10994, 11106–11107, 11373–11380, 11394,
-     11471–11475, 11798–11813`, `Decisions.lean:1832–1835`):
+     `Core.lean:996–1008, 10626–10630, 10973–10979, 10994, 10996–11016, 11021, 11074,
+     11106–11113, 11136, 11150, 11283, 11312, 11330, 11373–11380, 11394, 11471–11475,
+     11798–11813`, `Decisions.lean:1832–1835`):
      - Currently, `Core.replayKeptStreamCore` seeds `mutRevMap := revMap`
        (`Core.lean:11394`, where `revMap` is `revIdMap` from `11798–11813` mapping
        reversed post-return `aid -> origId`) and appends live collision remappings
@@ -14387,13 +14388,14 @@ priority handoff, and `.crew` / `.zemoBoastExile` / `payTeamworkCreatures` /
        -> `⟨15⟩`) and a reversed action had previously mapped `(⟨15⟩, ⟨10⟩)` in
        `revMap`, `ro ⟨15⟩` returns dead pre-return `⟨10⟩` instead of the live
        returned permanent `⟨15⟩` (and if a later kept action also mints a colliding
-       ID, `findRev?` shadows earlier mappings while `DelayedTriggerEvent` at
+       ID, `findSomeRev?` shadows earlier mappings while `DelayedTriggerEvent` at
        `11373–11380` intentionally skips `followMoved` so raw pre-move IDs obey
        CR 400.7). In addition, in `ZoneEvent.moved` when `after.id == before.id`
        (`Core.lean:11106–11107`), `b'` resolves through `followMoved (ro bid)` to a
-       live `liveId` and sets `a' := { after with id := b'.id }` without recording
-       `(ro bid, liveId)`, leaving subsequent non-`ZoneEvent` references pointing at
-       stale `ro bid`:
+       live `liveId` and sets `after' := { afterBase with id := b'.id }` without
+       recording `(r1, liveId)` (and `11074, 11150` short-circuit `followMoved`
+       whenever a pre-move `GameObject` is still in `gCur.objects`), leaving
+       subsequent non-`ZoneEvent` references pointing at stale IDs:
        - Keep `revMap : Array (ObjectId × ObjectId)` (reversed-action `revIdMap`,
          immutable during replay) separate from
          `(liveObjMap : Array (ObjectId × ObjectId) := #[])` (threaded through
@@ -14401,20 +14403,32 @@ priority handoff, and `.crew` / `.zemoBoastExile` / `payTeamworkCreatures` /
          `PendingReplacement.continueCheckpointReplay` at `Event.lean:1936–1939`,
          matched in `PendingReplacement.hasSuppressedCheckpointReplay` at
          `Event.lean:2312` while `hasCheckpointReplay` at `2318` already uses `..`,
-         and forwarded at `Core.lean:11474–11475` and `Decisions.lean:1832–1835`):
-         `mintObjId` records `(oid, freshId)` into `liveObjMap` (and `ZoneEvent.moved`
-         `after.id == before.id` at `Core.lean:11106–11107` records `(r2, liveId)`
-         into `liveObjMap` whenever `b'.id == some liveId && liveId != r2`), while
-         `ro` (`Core.lean:10994`) resolves in two stages:
+         and forwarded at `Core.lean:11474–11475` and `Decisions.lean:1832–1835`),
+         and key every `liveObjMap` entry by `r1 := resolveProposalRevId revMap oid`
+         (the exact key `ro` looks up in `liveObjMap`): in `mintObjId`
+         (`Core.lean:10973–10979`, called at `11021, 11111, 11136, 11283, 11312,
+         11330`), compute `r1 := resolveProposalRevId revMap oid`, allocate `freshId`
+         (`⟨gCur.nextObjectId⟩` when `oid.raw < gCur.nextObjectId ||
+         gCur.objects.any (·.id == oid)`, else `oid`), and push `(r1, freshId)` into
+         `liveObjMap` whenever `freshId != resolveProposalRevId liveObjMap r1`; in
+         `ZoneEvent.moved` `after.id == before.id` (`Core.lean:11106–11107`, with
+         `before.id = some bid` and `r1 := resolveProposalRevId revMap bid`), push
+         `(r1, liveId)` into `liveObjMap` whenever `b'.id == some liveId &&
+         liveId != resolveProposalRevId liveObjMap r1` (also preferring
+         `gCur.followMoved origId` when live at `11074, 11150` and resolving through
+         both maps in `queueUnreturnedLinked` at `10996–11016`). In `ro`
+         (`Core.lean:10994`), resolve in two stages without gating `followMoved` on
+         `(gCur.findObject? r2).isNone`:
          `let r1 := resolveProposalRevId revMap oid;
           let r2 := resolveProposalRevId liveObjMap r1;
-          if r1 != oid && (gCur.findObject? r2).isNone then
+          if r1 != oid then
             let f := gCur.followMoved r2
-            if (gCur.findObject? f).isSome then f else r2
+            if f != r2 && (gCur.findObject? f).isSome then f else r2
           else r2`
          (so raw pre-move `DelayedTriggerKind` IDs where `r1 == oid` still obey
          CR 400.7 without chasing moves, whereas reversed post-return IDs where
-         `r1 != oid` follow any live CR 610.3 return of `r2` in `gCur`).
+         `r1 != oid` follow `Core.followMoved` at `Core.lean:996–1008` to `f` in
+         `gCur` even if a pre-return entry for `r2` remains in `gCur.objects`).
    - **Post-checkpoint one-shot `EffectId` collision remapping (`ckpt.nextEffectId`)**
      (`Event.lean:1936–1939, 2312`, `Core.lean:378, 385, 1997, 2331, 10261–10329,
      10386–10388, 10632–10636, 10777–10817, 10827–10891, 10980–10986, 10995,
@@ -14874,11 +14888,11 @@ priority handoff, and `.crew` / `.zemoBoastExile` / `payTeamworkCreatures` /
    make `abortDepartedManaAbilityCont` continuation-safe, and harden
    `completeTurnFaceUp` guards & post-reconcile tail ordering
    (`ActivatedAbility.lean:16–42`, `Event.lean:1740–1745, 2247, 2356–2357`,
-   `Core.lean:2014, 2173–2185`, `Entering.lean:408–424`,
+   `Core.lean:2014, 2090, 2173–2185`, `Entering.lean:408–424`,
    `ActivationCosts.lean:120–158, 229–293, 427–488`,
    `ManaAbilities.lean:344–354, 390–410, 415–462, 518–532`,
    `Casting.lean:639–660, 890–893, 1233–1272`,
-   `Leaving.lean:665, 2162–2169`, `Decisions.lean:1143–1170, 1643–1648, 3270–3279`,
+   `Leaving.lean:665, 2162–2175`, `Decisions.lean:1143–1170, 1643–1648, 3270–3279`,
    `CastSpell.lean:303–308`, `Activation.lean:96–110, 222, 263–271`,
    `Agent.lean:171–174`, §2.1, §3.6, §3.8,
    CR 107.3a / 116.2b / 601.2b / 602.2b / 605.3b / 606.3–606.4 / 702.37e / 708.8 /
@@ -14905,9 +14919,9 @@ priority handoff, and `.crew` / `.zemoBoastExile` / `payTeamworkCreatures` /
          (·.cost.loyalty) == some .plusX`.
    - **Pause-safe loyalty-to-stun ordering in `ActivationCosts.payCostPick` and
      resumed cost-item re-validation across `ActivationCosts` and `ManaAbilities`**
-     (`Event.lean:1742, 2247`, `Core.lean:2014, 2173–2185`, `ActivationCosts.lean:120–158,
+     (`Event.lean:1742, 2247`, `Core.lean:2014, 2090, 2173–2185`, `ActivationCosts.lean:120–158,
      229–293, 427–488`, `ManaAbilities.lean:344–354, 390–410, 415–462, 518–532`,
-     `Casting.lean:639–660, 890–893`, `Leaving.lean:665, 2162–2169`,
+     `Casting.lean:639–660, 890–893`, `Leaving.lean:665, 2162–2175`,
      `Decisions.lean:1143–1170, 1645–1646, 3270–3279`):
      - In `ActivationCosts.payCostPick` (`ActivationCosts.lean:427–445`),
        `payLoyaltyCost` (`437`, e.g. `[+N]` / `[+X]` under competing counter-put
@@ -14957,16 +14971,21 @@ priority handoff, and `.crew` / `.zemoBoastExile` / `payTeamworkCreatures` /
          `Leaving.lean:665` (`| .endProposalAction ..`) and
          `Decisions.resumePendingReplacement` at `Decisions.lean:1645–1646`). When an
          enclosing `proposedSpell` itself reverses (`Leaving.rewindAbortedProposalOnLeave`
-         `2162–2169`, `Casting.reverseProposedSpellCore?` `639–660`, and
+         `2162–2175`, `Casting.reverseProposedSpellCore?` `639–660`, and
          `Decisions.reverseOrResumePopped` `1143–1170`), do **not** test
          `ckpt.proposedSpell.isSome` (which `captureProposalCheckpoint` at
-         `Core.lean:2014` also copies onto a spell's own checkpoint) and do **not**
-         loop: emit **one** `.clearProposalCheckpoint` iff
-         `!g.outerProposalCheckpoints.isEmpty` and `g.proposalCheckpoint`'s slice
-         (after its `eventsSize`) contains an unclosed
-         `.beginProposalAction (.manaAbility _)` from `ManaAbilities.lean:522–523` that
-         the restored outer checkpoint does not, restoring the spell checkpoint before
-         reading `ckpt` fields and reversing. In `finishActivateManaAbilityPicks`
+         `Core.lean:2014` also copies onto a spell's own checkpoint), do **not** scan
+         `outer.eventsSize` in `g.events` (since `outer.eventsSize <
+         current.eventsSize`, the live log from `outer.eventsSize` also contains the
+         mana action until `restoreProposalCheckpoint` at `Core.lean:2090` truncates
+         `g.events`), and do **not** loop: emit **one** `.clearProposalCheckpoint` iff
+         `!g.outerProposalCheckpoints.isEmpty` and `g.proposalCheckpoint` (`current`)
+         has an unclosed `.beginProposalAction (.manaAbility _)` at index
+         `≥ current.eventsSize` in `g.events` (immediately following
+         `.saveProposalCheckpoint` at `current.eventsSize` from
+         `ManaAbilities.lean:522–523`, with no `.proposedSpell (some _)` after
+         `current.eventsSize`), then read `ckpt` fields from the restored outer spell
+         checkpoint and reverse. In `finishActivateManaAbilityPicks`
          (`415–462`) when `wasPaused` is `true`, if any remaining `slice` item fails
          `g.costPickAllows p (some id) pick o (tapSource := tap)
          (sacrificeOrExileSource := sacrificeSelf)`, or `tap` / `sacrificeSelf` can no
