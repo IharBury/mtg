@@ -1054,20 +1054,17 @@ def preBatchLegendSnapshotValid (g : Game)
             | .zone (.ceasedToExist before)
             | .zone (.moved before ..) =>
               isDepartureCleanup &&
-                before.id.isSome && !before.id.any promptIds.contains &&
-                !before.attachedTo.any promptIds.contains
-            | .permanent (.unattached attachment fromHost) =>
-              isDepartureCleanup &&
-                !promptIds.contains fromHost && !attachment.id.any promptIds.contains
-            | .permanent (.designation obj .ringBearer false)
-            | .combat (.removedFromCombat obj) =>
-              isDepartureCleanup &&
-                obj.id.isSome && !obj.id.any promptIds.contains
+                before.id.isSome && !before.id.any promptIds.contains
+            | .permanent (.unattached _ fromHost) =>
+              isDepartureCleanup && !promptIds.contains fromHost
+            | .permanent (.designation _ .ringBearer false)
+            | .combat (.removedFromCombat _) => isDepartureCleanup
             | .continuousEffect (.expired eid) =>
               isDepartureCleanup &&
                 (g.openBatchEffects.find? (·.1 == eid)).any fun (_, spec) =>
                   match spec with
-                  | .permission .. | .replacement .. | .prevention .. => true
+                  | .permission .. | .replacement .. | .prevention .. | .gameRule .. => true
+                  | .playerRule _ r _ => r != .legendRuleOff
                   | .layered (.objects tgtIds) _ _ => !tgtIds.any promptIds.contains
                   | _ => false
             | _ => false

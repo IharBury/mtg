@@ -31822,9 +31822,11 @@ private def replayOk40i1 (gs : Array Game) : Bool :=
                 (addPermanent
                   (addPermanent
                     (addPermanent
-                      (addPermanent (addPermanent (addPermanent g4 bear p0 p0) bear p0 p0) fragileLordDef p0 p0)
-                      p2LandDef p2 p2)
-                    hero p2 p2)
+                      (addPermanent
+                        (addPermanent (addPermanent (addPermanent g4 bear p0 p0) bear p0 p0) fragileLordDef p0 p0)
+                        p2LandDef p2 p2)
+                      hero p2 p2)
+                    eqDef p2 p2)
                   eqDef p1 p1)
                 altarDef p1 p1)
               hero p1 p2)
@@ -31837,12 +31839,14 @@ private def replayOk40i1 (gs : Array Game) : Bool :=
   let sb2 := snapBears[1]!
   let sLord := (gSnapSetup0.permanentsOf p0).find? (·.name == fragileLordDef.name) |>.get!
   let p2Host := (gSnapSetup0.permanentsOf p2).find? (fun o => o.name == hero.name && o.owner == p2) |>.get!
+  let p2Eq := (gSnapSetup0.permanentsOf p2).find? (fun o => o.name == eqDef.name && o.owner == p2) |>.get!
   let p1Eq := (gSnapSetup0.permanentsOf p1).find? (·.name == eqDef.name) |>.get!
   let p1Altar := (gSnapSetup0.permanentsOf p1).find? (·.name == altarDef.name) |>.get!
   let p1Orph := (gSnapSetup0.permanentsOf p2).find? (fun o => o.name == hero.name && o.owner == p1) |>.get!
   let p2Ex := (gSnapSetup0.objects.filter (fun o => o.zone == .exile && o.owner == p2))[0]!
   let gSnap0 :=
-    ((((((gSnapSetup0.record (GameEvent.attached gSnapSetup0.turnNumber (gSnapSetup0.snapshot p1Eq) p2Host.id (cause := testCause))).createEffect
+    (((((((gSnapSetup0.record (GameEvent.attached gSnapSetup0.turnNumber (gSnapSetup0.snapshot p1Eq) p2Host.id (cause := testCause))).record
+      (GameEvent.attached gSnapSetup0.turnNumber (gSnapSetup0.snapshot p2Eq) sb1.id (cause := testCause))).createEffect
       (.control p1Altar.id p2) (cause := some testCause)).record
       (GameEvent.manaAdded gSnapSetup0.turnNumber p2 #[{ mana := .colorless }] (cause := some testCause))).record
       (GameEvent.becameMonarch gSnapSetup0.turnNumber p2 none (cause := some testCause))).createEffect
@@ -31862,6 +31866,22 @@ private def replayOk40i1 (gs : Array Game) : Bool :=
     | some (.keepLegend id) => id == sb1.id || id == sb2.id
     | _ => false
   let gSnapKept := mustApply gSnapAfterP2 p0 (.keepLegend sb1.id)
+  let gEqPromptSetup0 :=
+    addPermanent
+      (addPermanent (addPermanent (addPermanent g4 eqDef p0 p0) eqDef p0 p0) fragileLordDef p0 p0)
+      hero p2 p2
+  let snapEqs := (gEqPromptSetup0.permanentsOf p0).filter (·.name == eqDef.name)
+  let se1 := snapEqs[0]!
+  let se2 := snapEqs[1]!
+  let eLord := (gEqPromptSetup0.permanentsOf p0).find? (·.name == fragileLordDef.name) |>.get!
+  let eP2Host := (gEqPromptSetup0.permanentsOf p2)[0]!
+  let gEqPrompt0 :=
+    ((gEqPromptSetup0.record
+      (GameEvent.attached gEqPromptSetup0.turnNumber (gEqPromptSetup0.snapshot se1) eP2Host.id (cause := testCause))).createEffect
+      (.layered (.objects #[se1.id, se2.id]) (.types .add #[] #[] #[.legendary]) (.whileSourceOnBattlefield eLord.id))
+      (cause := some testCause)).checkSBA
+  let gEqPromptAfterP2 := mustApply gEqPrompt0 p2 .concede
+  let gEqPromptKept := mustApply gEqPromptAfterP2 p0 (.keepLegend se1.id)
   let gPermSetup0 :=
     addPermanent (addPermanent (addPermanent (addPermanent g4 bear p2 p0) bear p0 p0) bear p0 p0) fragileLordDef p0 p0
   let permBears := (gPermSetup0.permanentsOf p0).filter (·.name == bear.name)
@@ -31884,7 +31904,8 @@ private def replayOk40i1 (gs : Array Game) : Bool :=
   let snapSpectatorOk :=
     !gSnap0.treatedAsLegendary (gSnap0.object! sb1.id) &&
     gSnap0.pending == .chooseLegend p0 bear.name #[sb1.id, sb2.id] &&
-    bfCeasedCount == 2 &&
+    bfCeasedCount == 3 &&
+    (gSnapAfterP2.findObject? p2Eq.id).isNone &&
     (gSnapAfterP2.followMovedToZone? p1Orph.id (· == .exile)).isSome &&
     gSnapAfterP2.pending == .chooseLegend p0 bear.name #[sb1.id, sb2.id] &&
     snapAgentPickOk &&
@@ -31892,6 +31913,15 @@ private def replayOk40i1 (gs : Array Game) : Bool :=
     gSnapKept.currentBatch.isNone &&
     (gSnapKept.permanentsOf p0).map (·.id) == #[sb1.id] &&
     (gSnapKept.followMovedToZone? sb2.id (· == .graveyard p0)).isSome &&
+    !gEqPrompt0.treatedAsLegendary (gEqPrompt0.object! se1.id) &&
+    (gEqPrompt0.object! se1.id).attachedTo == some eP2Host.id &&
+    gEqPrompt0.pending == .chooseLegend p0 eqDef.name #[se1.id, se2.id] &&
+    (gEqPromptAfterP2.object! se1.id).attachedTo == none &&
+    gEqPromptAfterP2.pending == .chooseLegend p0 eqDef.name #[se1.id, se2.id] &&
+    gEqPromptKept.pending == .none &&
+    gEqPromptKept.currentBatch.isNone &&
+    (gEqPromptKept.permanentsOf p0).map (·.id) == #[se1.id] &&
+    (gEqPromptKept.followMovedToZone? se2.id (· == .graveyard p0)).isSome &&
     gPermSnap0.pending == .chooseLegend p0 bear.name pbIds &&
     gPermLeft.pending == .none &&
     gPermLeft.currentBatch.isNone &&
@@ -31915,7 +31945,7 @@ private def replayOk40i1 (gs : Array Game) : Bool :=
     (replayOk40i1 #[gQAfterQuietCont, gQCastRev, gQLeaveRev, gSimCtrlAfter, gDepPendRev,
       gMultiAfterP2, gOrderPopped, gOrderAfterDecline, gOrdLeavePaused, gOrdLeaveDrained,
       gSeqRnd1, gInnerDone, gStepRevDone, gLegAfterSpec, gIdleRes,
-      gSnapAfterP2, gSnapKept, gPermLeft, gLandSrcLeft])
+      gSnapAfterP2, gSnapKept, gEqPromptAfterP2, gEqPromptKept, gPermLeft, gLandSrcLeft])
 
 end Phase40Item1EventAlignment
 
