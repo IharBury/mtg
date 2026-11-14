@@ -15348,16 +15348,21 @@ prompt-preservation / post-reconcile tail / `callerShouldResume` invariants).
          (`384–395`) and CR 704.5q (`StateBasedActions.lean:535–536`) that records all
          `GameEvent.counters` removals first before expiring all `.whileSourceHasCounter`
          effects whose counter count reached `0` across one outer `pre`.
-       - Add `(reconcileControl : Bool := true)` to `Core.expireWhileSourceEffects`
-         (`Core.lean:13023–13032`, leaving `restoreCopiesUntilSourceLeaves` at
-         `12953–12959, 13026` with its existing `reconcileControl := false`), passing
-         `reconcileControl := false` into `restoreControlUntilSourceLeaves`'s
-         `expireEffectById` calls (`12976, 12980, 13007`) and `expireMatching`
-         (`13028–13032`), evaluating `restoreControlUntilSourceLeaves` `.ringBearer`
-         losses and reversion logs once against `preRef` after all `srcId` effects have
-         expired, and calling `reconcileControlAfterTransitionFwd preRef g` only when
-         `reconcileControl` is `true` (passing `reconcileControl := false` at
-         `Movement.lean:577` and `Attachments.lean:60`); and in
+       - Add `(reconcileControl : Bool := true)` to
+         `Core.restoreControlUntilSourceLeaves` (`Core.lean:12964–13018`, passing
+         `(reconcileControl := reconcileControl)` into its three `expireEffectById`
+         calls at `12976, 12980, 13007` so direct callers such as `Events.lean:29077`
+         retain `.control` combat removal, and evaluating `.ringBearer` losses and
+         reversion logs once against `preRef` after all `srcId` effects have expired)
+         and to `Core.expireWhileSourceEffects` (`Core.lean:13023–13032`, leaving
+         `restoreCopiesUntilSourceLeaves` at `12953–12959, 13026` at its existing
+         `reconcileControl := false` and forwarding `(reconcileControl :=
+         reconcileControl)` into `restoreControlUntilSourceLeaves` at `13027` and
+         `expireMatching` at `13028–13032` without adding a duplicate end
+         `reconcileControlAfterTransitionFwd`), passing `reconcileControl := false` at
+         `Movement.lean:577` (`move` reconciles at `629`) and `Attachments.lean:60`
+         (`ceaseToExist` reconciles at `63` when its own flag is true, or in
+         `Leaving.objectLeavesTheGame`'s `reconcileOnLeave` after `595`); and in
          `Turns.expireFraUntilTurnEffects` (`309–337`, keeping `317–325` intact), forward
          `(reconcileControl := !skipControl)` to `expireMatching` (`326–333`) and
          `ceaseToExist` (`336`).
