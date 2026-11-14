@@ -16419,10 +16419,11 @@ resolving stack-object `abId` priority in `FraChoices` `.mayPayPickThen` + `remo
        none` (queued when `lost && !leftTheGame` with empty leave args) when the SBA pass finishes
        unpaused because `(savedIn.isSome || popOuterIn || !departedIn.isEmpty ||
        rewindProposalIn.isSome)` is `false`, drops a peeled `.checkSBA` (`peeledLeave == false`) even
-       when `changed == true`, drops `(s0, d0, rw0)` if a direct `checkSBACounted (deferRestore :=
-       true)` caller peels `.leavePlayersWhoLost`, and silently discards non-empty caller leave args
-       at `521` and `868` when `g.pendingReplacement.any contHasLeave` already holds an earlier
-       `.leavePlayersWhoLost`; and
+       when `changed == true`, drops `(s0, po0, d0, rw0)` whenever a `deferRestore := true` call into
+       `checkSBACounted` (`556`, which returns only `Game × Bool`, including `863`) peels
+       `.leavePlayersWhoLost`, and silently discards non-empty caller leave args at `521` and `868`
+       when `g.pendingReplacement.any contHasLeave` already holds an earlier `.leavePlayersWhoLost`;
+       and
        (iii) `prependRestToOuter` (`386–399`) pushes `.seq rest origOuter` instead of `.seq origOuter
        rest` when `po0` is `true` (reversing `s0`'s outer continuation `O_0` and the peeled `rest`),
        `mergeLeaveArgs` (`408`) and lines `825–826` OR `po0 || popOuterIn` into a single `Bool`
@@ -16437,8 +16438,15 @@ resolving stack-object `abId` priority in `FraChoices` `.mayPayPickThen` + `remo
          `checkSBACountedWithLeavesCore` (`806–811`), capturing `flushedBid? := if shouldFlush then
          g.currentBatch.map Prod.fst else none` (and `flushedFromPending`) prior to the flush,
          replacing `810–811` / `540` with `if shouldFlush then g.flushDismissedPausedBatch
-         savedForFlush popOuterIn else (g, popOuterIn)`, and gating the unpaused
-         `peelLeadingSbaOrLeave?` blocks (`556, 821`) on `shouldFlush`; on re-pause
+         savedForFlush popOuterIn else (g, popOuterIn)`, gating `checkSBACounted`'s
+         `peelLeadingSbaOrLeave?` block (`556`) on `shouldFlush && !deferRestore &&
+         g.currentBatch.isNone` (so no `deferRestore` call into `Game × Bool`-returning
+         `checkSBACounted`, including `863`, ever peels and drops leave args) while gating
+         `checkSBACountedWithLeavesCore`'s 6-tuple `peelLeadingSbaOrLeave?` block (`821`) on
+         `shouldFlush && !g.over && !g.sbaPaused && g.currentBatch.isNone` (and re-entering
+         `checkSBACountedWithLeavesCore` with `rewindProposalIn := none` after
+         `applyDeferredProposalRewind` at `852` so any post-rewind `.chooseLegend` or dismissed batch
+         is normalized, flushed, and peeled in `804–847` before `863`); on re-pause
          (`flushedBid?.isSome && g.sbaPaused`), pass the current `newBid` from
          `g.currentBatch.map Prod.fst` into `rewriteRepausedPostCloseBatch` so both same-batch and
          `queuedLinkedExile` `newBid` re-pauses rewrite their post-`.closeBatch` suffix; in
@@ -16447,15 +16455,15 @@ resolving stack-object `abId` priority in `FraChoices` `.mayPayPickThen` + `remo
          flush and suffix rewrite, and add `(flushDismissed : Bool := true)` to
          `Leaving.leavePlayersWhoLostCore` (`3518`), gating all three `flushDismissedPausedBatch`
          calls (`3532`, `3552`, and `3614`) on `flushDismissed` and passing `(flushDismissed :=
-         false)` from `StateBasedActions.lean:884`; add `(callerHandlesPostPass : Bool := false)` to
-         `checkSBACounted` (`true` at `863`), avoid peeling `.leavePlayersWhoLost` in
-         `checkSBACounted` when `deferRestore && !callerHandlesPostPass`, re-chain
-         `.leavePlayersWhoLost` at `768–773` (when `!callerHandlesPostPass && !deferRestore &&
-         !g.over`) whenever `peeledLeave && (savedIn.isSome || popOuterIn || !departedIn.isEmpty ||
-         rewindProposalIn.isSome || g.players.any (fun r => r.lost && !r.leftTheGame))` or else
-         `.checkSBA` when `!peeledLeave && changed`, and merge non-empty caller args into an existing
-         `.leavePlayersWhoLost` (or upgrade a post-`.closeBatch` `.checkSBA` in place) at `521` and
-         `868`; and fix `prependRestToOuter`, `mergeLeaveArgs` (`408`), and `825–826` to pop
+         false)` from `StateBasedActions.lean:884`; track `(peeledLeave, peeledSba)` from
+         `checkSBACounted`'s `556–586` peel (also including `peeledLeave || g0.players.any (fun r =>
+         r.lost && !r.leftTheGame)` in `chainSbaPauseTail` at `520`), re-chain `.leavePlayersWhoLost
+         savedIn popOuterIn departedIn rewindProposalIn` at `768–773` (when `!deferRestore && !g.over`
+         and `(peeledLeave || peeledSba)`) whenever `savedIn.isSome || popOuterIn ||
+         !departedIn.isEmpty || rewindProposalIn.isSome || g.players.any (fun r => r.lost &&
+         !r.leftTheGame)` or else `.checkSBA` when `changed`, and merge non-empty caller args into an
+         existing `.leavePlayersWhoLost` (or upgrade a post-`.closeBatch` `.checkSBA` in place) at
+         `521` and `868`; and fix `prependRestToOuter`, `mergeLeaveArgs` (`408`), and `825–826` to pop
          `oCaller?` (when `popOuterCaller`) then `o0?` (when `po0`) and push a single combined
          `seqOptPending (seqOptPending o0? rest?) oCaller?` entry onto `outerPendingReplacements`,
          applying the same `O_0 >> remTail? >> O_caller` outer push (`newPr := throughClose`) when
