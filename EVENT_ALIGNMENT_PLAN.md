@@ -16018,13 +16018,16 @@ pain-mana ordering in `ManaAbilities.finishActivateManaAbilityPostSac`).
      - Three continuation bugs remain when `clearedInvalidLegend` is `true`:
        (i) if `flushDismissedPausedBatch` (`Leaving.lean:2850–2873`) **re-pauses** inside `origBid`
        (e.g. a second legend group's `Pending.chooseLegend` or a `finishSbaSweep`
-       `Pending.chooseReplacement`), `flushDismissedPausedBatch` re-attaches `afterClose?`
-       (`.checkSBA` or `.seq .checkSBA outerTail`) after `.closeBatch origBid _`, and then both
-       `checkSBACountedWithLeavesCore` (`664–670`) and `checkSBACounted` (`402`, via
-       `chainSbaPauseTail` at `378–386`, where `contHasLeave` is `false` on that `.checkSBA` tail)
-       append `.leavePlayersWhoLost savedIn popOuterIn departedIn rewindProposalIn` **at the very
-       end** *after* `.checkSBA` and `outerTail` (or skip chaining when `deferRestore == true` at
-       `379` / `666`, leaving `.checkSBA` queued);
+       `Pending.chooseReplacement`), `flushDismissedPausedBatch` either chains `afterClose?`
+       (`.checkSBA` or `.seq .checkSBA outerTail`) back onto `g.pendingReplacement` after
+       `closePrefix` (`2851–2857`) or pushes `afterClose?` alone onto `g.outerPendingReplacements`
+       (`2858–2872`, after `2863` already peeled `.closeBatch origBid _` into `closePrefix`), and
+       then both `checkSBACountedWithLeavesCore` (`664–670`) and `checkSBACounted` (`402`, via
+       `chainSbaPauseTail` at `378–386`, where `contHasLeave` is `false` on `g.pendingReplacement`)
+       append `.leavePlayersWhoLost savedIn popOuterIn departedIn rewindProposalIn` onto
+       `g.pendingReplacement` — **after** `.checkSBA` and `outerTail` on `2851–2857`, or leaving the
+       unrewritten `afterClose?` `.checkSBA` tail on `g.outerPendingReplacements` on `2869` (or skip
+       chaining when `deferRestore == true` at `379` / `666`, leaving `.checkSBA` queued);
        (ii) when `g.pendingReplacement` starts with `.leavePlayersWhoLost s0 po0 d0 rw0` and caller
        arguments `(savedIn, popOuterIn, departedIn, rewindProposalIn)` are also non-default (e.g. a
        second concession passes `departedIn := #[p3]`), `checkSBACountedWithLeavesCore` (`633–642`)
@@ -16043,20 +16046,30 @@ pain-mana ordering in `ManaAbilities.finishActivateManaAbilityPostSac`).
          preserving `rw0 <|> rewindProposalIn`, and when both `s0` and `savedIn` are non-`.none`
          pushing `.restorePending s0` onto `outerPendingReplacements` via
          `Leaving.chainRestoreAfterOpenBatch` matching `Decisions.lean:664–689`); capture
-         `flushedBid? := if clearedInvalidLegend then g.currentBatch.map Prod.fst else none` before
-         `flushDismissedPausedBatch`; if `flushDismissedPausedBatch` re-paused inside `origBid`
-         (`flushedBid? == some origBid && g.currentBatch.map Prod.fst == some origBid`), split the
-         active continuation (`g.pendingReplacement`, or `g.outerPendingReplacements.back?` when
-         `popOuterIn` pushed `afterClose?` at `Leaving.lean:2869`) via
+         `flushedBid? := if clearedInvalidLegend then g.currentBatch.map Prod.fst else none` and
+         `flushedFromPending := flushedBid?.any (fun bid => (g.pendingReplacement.bind
+         (Leaving.splitAfterCloseBatchFor? bid)).isSome)` before `flushDismissedPausedBatch`; if
+         `flushDismissedPausedBatch` re-paused inside `origBid` (`flushedBid? == some origBid &&
+         g.sbaPaused && g.currentBatch.map Prod.fst == some origBid`), rewrite the post-`.closeBatch`
+         suffix (and skip the fallback tail append at `402` and `664–677`): on the `2851–2857` arm
+         (`flushedFromPending`), split `g.pendingReplacement` via
          `Leaving.splitAfterCloseBatchFor? origBid`, peel any leading `.checkSBA` /
          `.leavePlayersWhoLost` from `afterClose?`, merge with caller args, and rewrite the slot
-         **immediately after `.closeBatch origBid _`** (before any remaining `outerTail` such as
-         `.finishPostStep`) to `none` (when `deferRestore`), `.leavePlayersWhoLost ...` (when any
-         merged leave arg is non-empty), or `.checkSBA` (otherwise); and when unpaused
-         (`g.currentBatch.isNone`), peel via `peelLeadingSbaOrLeave?` (from `g.pendingReplacement`,
-         or from `g.outerPendingReplacements.back?` when `g.pendingReplacement.isNone &&
-         popOuterIn`) and merge via `mergeLeaveArgs` in both `checkSBACounted` and
-         `checkSBACountedWithLeavesCore`.
+         immediately after `closePrefix` to `none` (when `deferRestore`), the merged
+         `.leavePlayersWhoLost ...` (when any merged leave arg is non-default), or `.checkSBA`
+         (otherwise) ahead of any remaining `outerTail`; on the `2858–2872` outer-stack arm
+         (`!flushedFromPending`, where `2863` already peeled `.closeBatch origBid _` into
+         `closePrefix` and `2869` pushed only `afterClose?` onto `g.outerPendingReplacements`), pop
+         that pushed outer post-`.closeBatch` suffix in place when `popOuterIn` returned `true`
+         (passing `false` for the consumed outer slot into `mergeLeaveArgs`, or starting from `none`
+         when `2870–2871` returned `popOuterIn == false`), replace any leading `.checkSBA` /
+         `.leavePlayersWhoLost` with `none` (when `deferRestore`), the merged
+         `.leavePlayersWhoLost ...`, or `.checkSBA` ahead of any remaining `outerTail`, and push the
+         resulting suffix (when `some`) back onto `g.outerPendingReplacements` (updating `popOuterIn`
+         to whether that suffix is `some`); and when unpaused (`g.currentBatch.isNone`), peel via
+         `peelLeadingSbaOrLeave?` (from `g.pendingReplacement`, or from
+         `g.outerPendingReplacements.back?` when `g.pendingReplacement.isNone && popOuterIn`) and
+         merge via `mergeLeaveArgs` in both `checkSBACounted` and `checkSBACountedWithLeavesCore`.
    - **Outer-continuation, `triggerSequenceRest`, `mayThenResume`, and active-resolution priority
      deferral in `ManaAbilities`**
      (`Core.lean:11033–11048, 12759–12769`, `Decisions.lean:273–285, 336–378, 461–462`,
