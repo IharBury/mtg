@@ -58,6 +58,7 @@ def ceaseToExist (g : Game) (id : ObjectId) (cause : Option EventCause := none)
     let g :=
       if old.zone == .battlefield then
         g.expireWhileSourceEffects id (cause := expCause) (preState? := some pre)
+          (reconcileControl := false)
       else g
     if reconcileControl then
       reconcileControlAfterTransitionFwd pre g (cause := expCause)

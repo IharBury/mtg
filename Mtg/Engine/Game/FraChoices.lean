@@ -692,10 +692,17 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let outerCont? := g.pendingReplacement
     let openCont := g.proposalHadOpenContinuation
     let g0 := if outerCont?.isSome then g.change (.pendingReplacement none) else g
-    let g ← g0.withProposalActionM .costAction fun g =>
-      g.payCostPick p (some prop.spellId) (some sourceId) pick ids
-        (tapSource := tapSrc) (sacrificeOrExileSource := sacSrc)
-        (discardOrExileHandSource := discSrc)
+    let g ← g0.payCostPick p (some prop.spellId) (some sourceId) pick ids
+      (tapSource := tapSrc) (sacrificeOrExileSource := sacSrc)
+      (discardOrExileHandSource := discSrc)
+      (callerOuter? := outerCont?)
+    if g.proposedSpell.isNone then
+      return g
+    let completedAfterContinue (gCur : Game) : Bool :=
+      if prop.kind == .turnFaceUp then
+        (gCur.findObject? prop.spellId).any (fun o => o.isOnBattlefield && !o.status.faceDown)
+      else
+        (gCur.findObject? prop.spellId).any (·.zone == .stack)
     let restPicks := picks.extract 1 picks.size
     let pausedBeforeContinue := match g.pending with | .chooseReplacement .. => true | _ => false
     if restPicks.isEmpty && !pausedBeforeContinue then
@@ -706,14 +713,14 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       let g ← g.continueCostPicks prop restPicks true
         (hadOuterReplacement := outerCont?.isSome)
         (hadOpenContinuation := some openCont)
-      if g.proposedSpell.isNone && !(g.findObject? prop.spellId).any (·.zone == .stack) then
+      if g.proposedSpell.isNone && !completedAfterContinue g then
         return g
       return g.resumeAfterBecomeCast
     else
       let g ← g.continueCostPicks prop restPicks true
         (hadOuterReplacement := outerCont?.isSome)
         (hadOpenContinuation := some openCont)
-      if g.proposedSpell.isNone && !(g.findObject? prop.spellId).any (·.zone == .stack) then
+      if g.proposedSpell.isNone && !completedAfterContinue g then
         return g
       let g :=
         match outerCont? with

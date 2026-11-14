@@ -37,12 +37,14 @@ def becomePrepared (g : Game) (o : GameObject) (cause : Option EventCause := non
       let batchCause :=
         g.resolveOptionalCause cause (fallbackSrc := srcFallback) (fallbackCtrl := some p)
           (defaultCause := .gameRule .spellCast)
+      let hadOpenBatch := g.currentBatch.isSome
       let g := g.withBatchCore (some batchCause) fun g =>
         let g := g.createPreparedCopy o face (cause := cause)
         let prepCause :=
           g.resolveOptionalCause cause (fallbackSrc := srcFallback) (fallbackCtrl := some p)
             (defaultCause := .gameRule .spellCast)
         g.record (GameEvent.designation g.turnNumber (g.snapshot o) .prepared true (cause := prepCause))
+      let g := if !hadOpenBatch then g.flushQueuedLinkedExileFwd else g
       g.logMsg s!"{oName} becomes prepared. A copy of {face.name} is exiled"
 
 /-- `o` stops being prepared and the copy of its prepare spell in exile
@@ -261,8 +263,10 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
     (faceDown? : Option Bool := none)
     (fromStackTime? : Option Nat := none)
     (enterMods : Array TriggeredAbility.TriggerEnterWith := #[])
-    (cause : Option EventCause := none) : Game × ObjectId :=
-  let quietMove := g.openBatchSuppressInteractive || g.over || g.suppressInteractiveReplay
+    (cause : Option EventCause := none)
+    (suppressInteractive : Bool := false) : Game × ObjectId :=
+  let quietMove :=
+    suppressInteractive || g.openBatchSuppressInteractive || g.over || g.suppressInteractiveReplay
   if !quietMove && (match g.pending with | .chooseReplacement .. => true | _ => false) then
     let old? := g.findObject? id
     let faceDown :=
@@ -291,7 +295,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
     (g, id)
   else
   let (g, (newId, headSource, didMove)) :=
-    g.withBatchCoreReturn cause fun g =>
+    g.withBatchCoreReturn cause (suppressInteractive := suppressInteractive) fun g =>
       let (board, boardOld) := preBatchBoardFor g old
       let enterCtrl := controller.getD old.owner
       let resolvedAttackTarget : Option AttackTarget :=
@@ -447,7 +451,8 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
              (old.id, none, false))
           else
             let (g', gyId) :=
-              g.move old.id (.graveyard old.owner) none (verb := verb) (actor := actor) (cause := cause)
+              g.move old.id (.graveyard old.owner) none (verb := verb) (actor := actor)
+                (cause := cause) (suppressInteractive := suppressInteractive)
             let msg := s!"{oldName} goes to the graveyard (can't be attached legally; CR 303.4g)"
             -- CR 614.6: log only once the Aura actually reaches its owner's graveyard.
             if let .chooseReplacement .. := g'.pending then
@@ -574,7 +579,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
       let g := g.expireEffectsOnLeavingObject old (reconcileControl := false)
       let g :=
         if old.zone == .battlefield then
-          g.expireWhileSourceEffects old.id (preState? := some preMove)
+          g.expireWhileSourceEffects old.id (preState? := some preMove) (reconcileControl := false)
         else g
       let g :=
         match g.findObject? newId with

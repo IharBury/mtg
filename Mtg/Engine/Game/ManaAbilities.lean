@@ -341,10 +341,21 @@ def finishManaAbilityMountainTrigger (g : Game) (p : PlayerId) (id : ObjectId) :
         (s!"{(g.player p).name} adds an additional " ++ String.join (List.replicate extraRed "{R}"))
     else g
 
-private def abortDepartedManaAbilityCont (g : Game) (p : PlayerId) (prevPending : Pending) : Game :=
+private def departedSinceOptionalCkpt (g : Game) (ckpt? : Option ProposalCheckpoint)
+    (seed : Array PlayerId := #[]) : Array PlayerId :=
+  match ckpt? with
+  | some ckpt => g.playersDepartedSinceCheckpoint ckpt seed
+  | none =>
+    g.players.foldl (fun acc pl =>
+      if pl.leftTheGame && !acc.contains pl.id then acc.push pl.id else acc) seed
+
+private def abortDepartedManaAbilityContCore (g : Game) (p : PlayerId) (prevPending : Pending)
+    (wasPaused : Bool := true) (hasFollowingSeq : Bool := false) : Game × Bool :=
   Id.run do
     let mut g := g
     let mut didReverseManaCkpt := false
+    let manaCkpt? := if g.hasActiveManaProposalCheckpoint then g.proposalCheckpoint else none
+    let preDeparted := departedSinceOptionalCkpt g manaCkpt?
     if g.hasActiveManaProposalCheckpoint then
       match g.reverseToProposalCheckpoint? with
       | .ok g' =>
@@ -354,21 +365,43 @@ private def abortDepartedManaAbilityCont (g : Game) (p : PlayerId) (prevPending 
         g := g.change .clearProposalCheckpoint
     else if g.proposalCheckpoint.isSome then
       g := g.change .endProposalAction
+    let allDeparted := departedSinceOptionalCkpt g manaCkpt? preDeparted
+    if !wasPaused && didReverseManaCkpt &&
+        manaCkpt?.any (fun ckpt => g.events.size == ckpt.eventsSize) &&
+        !g.over && g.stillInGame p then
+      return (g, true)
     if !g.over then
+      let mut strippedSoloPrev := false
+      if didReverseManaCkpt && prevPending != .none &&
+          g.pending == .none && g.afterRandom == .none && !g.sbaPaused then
+        if let some curCont := g.pendingReplacement then
+          let target : PendingReplacement := .restorePending prevPending false
+          if PendingReplacement.containsModDeparted target curCont &&
+              (PendingReplacement.dropTargetModDeparted target curCont).isNone then
+            g := g.change (.pendingReplacement none)
+            while g.continuations.back? == some {} do
+              g := g.change .popContinuationFrame
+            strippedSoloPrev := true
       let shouldRestorePrev :=
         prevPending != .none &&
           if didReverseManaCkpt then
-            g.pending == prevPending && g.afterRandom == .none && !g.sbaPaused
+            (g.pending == prevPending || strippedSoloPrev) && g.afterRandom == .none && !g.sbaPaused
           else
             !g.sbaPaused
       if shouldRestorePrev then
-        g := g.resumePendingReplacementFwd (.restorePending prevPending false)
+        g := g.resumePendingReplacementFwd (.restorePending prevPending false none allDeparted none)
       if !g.over && g.pending == .none && g.afterRandom == .none && !g.sbaPaused then
-        if g.continuations.isEmpty && g.pendingReplacement.isNone && g.triggerSequenceRest.isNone then
-          g := g.receivePriority p
-        else if g.pendingReplacement.isSome || g.triggerSequenceRest.isSome then
+        if !hasFollowingSeq && g.continuations.isEmpty && g.pendingReplacement.isNone && g.triggerSequenceRest.isNone then
+          let prio := if g.stillInGame p then p else g.priorityInstead g.activePlayer
+          g := g.receivePriority prio
+        else if !hasFollowingSeq && (g.pendingReplacement.isSome || g.triggerSequenceRest.isSome) then
           g := g.chainPendingReplacement .finishFraChoice
-    return g
+    return (g, false)
+
+private def abortDepartedManaAbilityCont (g : Game) (p : PlayerId) (prevPending : Pending)
+    (wasPaused : Bool := true) (hasFollowingSeq : Bool := false) : Game :=
+  (abortDepartedManaAbilityContCore g p prevPending
+    (wasPaused := wasPaused) (hasFollowingSeq := hasFollowingSeq)).1
 
 private def manaSourceTapPaidSinceCkpt (g : Game) (p : PlayerId) (id : ObjectId) : Bool :=
   let rec unwrapReplaced : EventCause → EventCause
@@ -392,9 +425,10 @@ def finishActivateManaAbilityPostSac (g : Game) (p : PlayerId) (id : ObjectId) (
     (srcSnap : EventObject) (mana : Array ManaType) (tap : Bool)
     (activatedIdx : Option Nat) (restriction : ManaRestriction)
     (damageYou : Nat) (isMountain : Bool) (prevPending : Pending)
-    (wasPaused : Bool := true) : Game := Id.run do
+    (wasPaused : Bool := true) (hasFollowingSeq : Bool := false) : Game := Id.run do
   if g.over || !g.stillInGame p then
     return abortDepartedManaAbilityCont g p prevPending
+      (wasPaused := wasPaused) (hasFollowingSeq := hasFollowingSeq)
   let mut g := g
   g := g.record (GameEvent.abilityActivated g.turnNumber id srcSnap p (.mana activatedIdx))
   let rOpt : Option ManaRestriction := if restriction == .none then none else some restriction
@@ -420,6 +454,7 @@ def finishActivateManaAbilityPostSac (g : Game) (p : PlayerId) (id : ObjectId) (
     let dmgSrc := (g.findObject? id).orElse (fun _ => some (damageSourceObjectFromLki srcSnap))
     g := g.dealDamageToPlayer p damageYou (source := dmgSrc)
       (cause := some (.gameRule .abilityActivated))
+  let allDeparted := departedSinceOptionalCkpt g g.proposalCheckpoint
   if let .chooseReplacement .. := g.pending then
     if isMountain then
       g := g.chainPendingReplacement (.finishManaAbilityMountainTrigger p id)
@@ -429,7 +464,7 @@ def finishActivateManaAbilityPostSac (g : Game) (p : PlayerId) (id : ObjectId) (
     if prevPending == .none then
       g := g.chainPendingReplacement (.receivePriority p)
     else
-      g := g.chainPendingReplacement (.restorePending prevPending)
+      g := g.chainPendingReplacement (.restorePending prevPending false none allDeparted none)
     return g
   else
     if isMountain then
@@ -440,22 +475,22 @@ def finishActivateManaAbilityPostSac (g : Game) (p : PlayerId) (id : ObjectId) (
     if g.proposalCheckpoint.isSome then
       g := g.change .endProposalAction
     if prevPending == .none then
-      if g.pending == .none then
+      if !hasFollowingSeq && g.pending == .none then
         g := g.receivePriority p
     else if wasPaused then
-      g := g.resumePendingReplacementFwd (.restorePending prevPending false)
+      g := g.resumePendingReplacementFwd (.restorePending prevPending false none allDeparted none)
     return g
 
-/-- Execute the remaining `picks`, `{T}`, and `sacrificeSelf` steps of a mana
-ability before `finishActivateManaAbilityPostSac`, chaining continuations if any
-cost step pauses on `Pending.chooseReplacement`. -/
-def finishActivateManaAbilityPicks (g : Game) (p : PlayerId) (id : ObjectId) (oname : String)
+private def finishActivateManaAbilityPicksCore (g : Game) (p : PlayerId) (id : ObjectId) (oname : String)
     (mana : Array ManaType) (picks : Array CostPick) (costIds : Array ObjectId)
     (tap sacrificeSelf : Bool) (activatedIdx : Option Nat) (restriction : ManaRestriction)
     (damageYou : Nat) (isMountain : Bool) (prevPending : Pending)
-    (wasPaused : Bool := true) : Game := Id.run do
+    (wasPaused : Bool := true) (hasFollowingSeq : Bool := false) : Game × Bool := Id.run do
+  let abortNow (g0 : Game) : Game × Bool :=
+    abortDepartedManaAbilityContCore g0 p prevPending
+      (wasPaused := wasPaused) (hasFollowingSeq := hasFollowingSeq)
   if g.over || !g.stillInGame p then
-    return abortDepartedManaAbilityCont g p prevPending
+    return abortNow g
   if wasPaused then
     let tapPrePaid := manaSourceTapPaidSinceCkpt g p id
     let srcPayable : Bool :=
@@ -467,12 +502,12 @@ def finishActivateManaAbilityPicks (g : Game) (p : PlayerId) (id : ObjectId) (on
           cur.isOnBattlefield && g.controlledBy cur p && (!needTap || !cur.status.tapped)
         | none => false
     if !srcPayable then
-      return abortDepartedManaAbilityCont g p prevPending
+      return abortNow g
     let mut checkRest := costIds
     for pick in picks do
       let slice := checkRest.extract 0 pick.count
       if slice.size != pick.count then
-        return abortDepartedManaAbilityCont g p prevPending
+        return abortNow g
       for cid in slice do
         let ok :=
           match g.findObject? cid with
@@ -481,13 +516,13 @@ def finishActivateManaAbilityPicks (g : Game) (p : PlayerId) (id : ObjectId) (on
               (tapSource := tap) (sacrificeOrExileSource := sacrificeSelf)
           | none => false
         if !ok then
-          return abortDepartedManaAbilityCont g p prevPending
+          return abortNow g
       checkRest := checkRest.extract pick.count checkRest.size
   let mut g := g
   let mut rest := costIds
   for i in [0:picks.size] do
     if g.over || !g.stillInGame p then
-      return abortDepartedManaAbilityCont g p prevPending
+      return abortNow g
     let pick := picks[i]!
     let slice := rest.extract 0 pick.count
     rest := rest.extract pick.count rest.size
@@ -500,7 +535,7 @@ def finishActivateManaAbilityPicks (g : Game) (p : PlayerId) (id : ObjectId) (on
               (tapSource := tap) (sacrificeOrExileSource := sacrificeSelf)
           | none => false
         if !ok then
-          return abortDepartedManaAbilityCont g p prevPending
+          return abortNow g
     let isBfSacPick : Bool :=
       match pick with
       | .tapUntappedCreature | .tapTwoUntappedArtifacts
@@ -510,24 +545,27 @@ def finishActivateManaAbilityPicks (g : Game) (p : PlayerId) (id : ObjectId) (on
       if let some cur := g.findObject? id then
         if cur.isOnBattlefield && !cur.status.tapped then
           g := g.becomeTapped cur (cause := some (.costPayment .tap p (some id)))
-    g := g.payCostPickItems p (some id) (some id) pick slice
+    let (g', pickPaid) := g.payCostPickItemsChecked p (some id) (some id) pick slice
+    g := g'
     if let .chooseReplacement .. := g.pending then
       let remPicks := picks.extract (i + 1) picks.size
       g := g.chainPendingReplacement
         (.finishActivateManaAbilityPicks p id oname mana remPicks rest tap sacrificeSelf
           activatedIdx restriction damageYou isMountain prevPending)
-      return g
+      return (g, false)
+    if !pickPaid then
+      return abortNow g
   if g.over || !g.stillInGame p then
-    return abortDepartedManaAbilityCont g p prevPending
+    return abortNow g
   let tapAlreadyPaid := manaSourceTapPaidSinceCkpt g p id
   if tap && !tapAlreadyPaid then
     match g.findObject? id with
     | some cur =>
       if !cur.isOnBattlefield || !g.controlledBy cur p || cur.status.tapped then
-        return abortDepartedManaAbilityCont g p prevPending
+        return abortNow g
       g := g.becomeTapped cur (cause := some (.costPayment .tap p (some id)))
     | none =>
-      return abortDepartedManaAbilityCont g p prevPending
+      return abortNow g
   let srcSnap : EventObject :=
     match g.findObject? id with
     | some src => g.snapshot src
@@ -536,18 +574,31 @@ def finishActivateManaAbilityPicks (g : Game) (p : PlayerId) (id : ObjectId) (on
     match g.findObject? id with
     | some src =>
       if !src.isOnBattlefield || !g.controlledBy src p then
-        return abortDepartedManaAbilityCont g p prevPending
+        return abortNow g
       g := g.sacrificeToGraveyard src s!"{(g.player p).name} sacrifices {g.name src}"
         (cause := some (.costPayment .sacrifice p (some id)))
       if let .chooseReplacement .. := g.pending then
         g := g.chainPendingReplacement
           (.finishActivateManaAbilityPostSac p id oname srcSnap mana tap activatedIdx
             restriction damageYou isMountain prevPending)
-        return g
+        return (g, false)
     | none =>
-      return abortDepartedManaAbilityCont g p prevPending
-  return g.finishActivateManaAbilityPostSac p id oname srcSnap mana tap activatedIdx
-    restriction damageYou isMountain prevPending (wasPaused := wasPaused)
+      return abortNow g
+  return (g.finishActivateManaAbilityPostSac p id oname srcSnap mana tap activatedIdx
+    restriction damageYou isMountain prevPending
+    (wasPaused := wasPaused) (hasFollowingSeq := hasFollowingSeq), false)
+
+/-- Execute the remaining `picks`, `{T}`, and `sacrificeSelf` steps of a mana
+ability before `finishActivateManaAbilityPostSac`, chaining continuations if any
+cost step pauses on `Pending.chooseReplacement`. -/
+def finishActivateManaAbilityPicks (g : Game) (p : PlayerId) (id : ObjectId) (oname : String)
+    (mana : Array ManaType) (picks : Array CostPick) (costIds : Array ObjectId)
+    (tap sacrificeSelf : Bool) (activatedIdx : Option Nat) (restriction : ManaRestriction)
+    (damageYou : Nat) (isMountain : Bool) (prevPending : Pending)
+    (wasPaused : Bool := true) (hasFollowingSeq : Bool := false) : Game :=
+  (finishActivateManaAbilityPicksCore g p id oname mana picks costIds tap sacrificeSelf
+    activatedIdx restriction damageYou isMountain prevPending
+    (wasPaused := wasPaused) (hasFollowingSeq := hasFollowingSeq)).1
 
 /-- Activate mana ability `idx` of `id` (CR 605.3), adding `mana`, paying
 choice costs with `costIds` in order. The mana is added immediately; the
@@ -617,8 +668,13 @@ def activateManaAbility (g : Game) (p : PlayerId) (id : ObjectId) (idx : Nat)
     g := g.record (GameEvent.manaSpent g.turnNumber p spentUnits (some id)
       (cause := some (.costPayment .mana p (some id))))
   g ← g.payLifeCost p d.payLife (forObject := some id)
-  g := g.finishActivateManaAbilityPicks p id oname mana d.picks costIds d.tap d.sacrificeSelf
-    d.activatedIdx d.restriction d.damageYou isMountain prevPending (wasPaused := false)
+  let (gAfter, cleanSyncAbort) :=
+    finishActivateManaAbilityPicksCore g p id oname mana d.picks costIds d.tap d.sacrificeSelf
+      d.activatedIdx d.restriction d.damageYou isMountain prevPending
+      (wasPaused := false) (hasFollowingSeq := outerCont?.isSome)
+  if cleanSyncAbort then
+    throw s!"{oname}'s ability has a cost that can't be paid"
+  g := gAfter
   if let some outer := outerCont? then
     g := g.chainPendingReplacement outer
   return g

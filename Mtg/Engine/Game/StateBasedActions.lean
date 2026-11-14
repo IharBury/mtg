@@ -207,42 +207,43 @@ def finishSbaSweep (g : Game) (moves : Array SbaGraveyardMove)
     -- in the same batch before Pass 2 runs (CR 704.3 / 603.2c).
     for gi in [0:legendGroups.size] do
       let (p, name, rawIds) := legendGroups[gi]!
-      let ids := rawIds.filter (fun id => (g.findObject? id).any GameObject.isOnBattlefield)
-      if ids.size ≥ 2 then
-        let restGroups := legendGroups.extract (gi + 1) legendGroups.size
-        if g.stillInGame p then
-          g := g.change (.pending (.chooseLegend p name ids))
-          g := g.logMsg
-            s!"{(g.player p).name} chooses which {name} to keep (legend rule, CR 704.5j)"
-          g := g.chainPendingReplacement (.finishSbaSweep #[] preBf .planeswalkersAndLegend
-            #[] sagaMoves tokensOutsideBf copiesOutside illegalAuras
-            illegalEquips illegalCreatureAtts restGroups)
-          return (g, (true, true))
-        else
-          let keptId := g.defaultLegendToKeep ids
-          let others := ids.filter (· != keptId)
-          if let some kept := g.findObject? keptId then
-            g := g.logMsg s!"{(g.player p).name} keeps {g.name kept} (legend rule, CR 704.5j)"
-          for oi in [0:others.size] do
-            let other := others[oi]!
-            match g.findObject? other with
-            | some o =>
-              if o.isOnBattlefield then
-                g := g.moveToOwnerGraveyard o
-                  s!"{g.name o} is put into its owner's graveyard (legend rule, CR 704.5j)"
-                  (preBattlefield := some preBf)
-                  (cause := some (.stateBased .legendRule))
-                changed := true
-                if let .chooseReplacement _ _ := g.pending then
-                  let remOthers := others.extract (oi + 1) others.size
-                  let tail := PendingReplacement.finishSbaSweep #[] preBf .planeswalkersAndLegend
-                    #[] sagaMoves tokensOutsideBf copiesOutside illegalAuras
-                    illegalEquips illegalCreatureAtts restGroups
-                  let cont :=
-                    if remOthers.isEmpty then tail
-                    else .seq (.moveSimultaneousToGraveyard remOthers (some preBf) (some (.stateBased .legendRule))) tail
-                  return (g.chainPendingReplacement cont, (true, true))
-            | none => pure ()
+      if !(g.player p).leftTheGame then
+        let ids := g.validLegendChoiceIds p name rawIds (requireStillInGame := false)
+        if ids.size ≥ 2 then
+          let restGroups := legendGroups.extract (gi + 1) legendGroups.size
+          if g.stillInGame p then
+            g := g.change (.pending (.chooseLegend p name ids))
+            g := g.logMsg
+              s!"{(g.player p).name} chooses which {name} to keep (legend rule, CR 704.5j)"
+            g := g.chainPendingReplacement (.finishSbaSweep #[] preBf .planeswalkersAndLegend
+              #[] sagaMoves tokensOutsideBf copiesOutside illegalAuras
+              illegalEquips illegalCreatureAtts restGroups)
+            return (g, (true, true))
+          else
+            let keptId := g.defaultLegendToKeep ids
+            let others := ids.filter (· != keptId)
+            if let some kept := g.findObject? keptId then
+              g := g.logMsg s!"{(g.player p).name} keeps {g.name kept} (legend rule, CR 704.5j)"
+            for oi in [0:others.size] do
+              let other := others[oi]!
+              match g.findObject? other with
+              | some o =>
+                if (g.validLegendChoiceIds p name rawIds (requireStillInGame := false)).contains o.id then
+                  g := g.moveToOwnerGraveyard o
+                    s!"{g.name o} is put into its owner's graveyard (legend rule, CR 704.5j)"
+                    (preBattlefield := some preBf)
+                    (cause := some (.stateBased .legendRule))
+                  changed := true
+                  if let .chooseReplacement _ _ := g.pending then
+                    let remOthers := others.extract (oi + 1) others.size
+                    let tail := PendingReplacement.finishSbaSweep #[] preBf .planeswalkersAndLegend
+                      #[] sagaMoves tokensOutsideBf copiesOutside illegalAuras
+                      illegalEquips illegalCreatureAtts restGroups
+                    let cont :=
+                      if remOthers.isEmpty then tail
+                      else .seq (.moveSimultaneousToGraveyard remOthers (some preBf) (some (.stateBased .legendRule))) tail
+                    return (g.chainPendingReplacement cont, (true, true))
+              | none => pure ()
     -- Tokens in zones other than the battlefield at start of pass cease to exist (CR 704.5d).
     for tid in tokensOutsideBf do
       match g.findObject? tid with
@@ -532,8 +533,8 @@ partial def checkSBACounted (g : Game)
         if k > 0 then
           let oName0 := g.name curBefore
           let cause := EventCause.stateBased .counterAnnihilation
-          g := g.recordRemoveCounters o.id .plusOnePlusOne k (noActor := true) (cause := some cause)
-          g := g.recordRemoveCounters o.id .minusOneMinusOne k (noActor := true) (cause := some cause)
+          g := g.recordRemoveCountersMulti o.id #[(.plusOnePlusOne, k), (.minusOneMinusOne, k)]
+            (noActor := true) (cause := some cause)
           let oName :=
             match g.findObject? o.id with
             | some cur => if cur.isOnBattlefield then g.name cur else oName0

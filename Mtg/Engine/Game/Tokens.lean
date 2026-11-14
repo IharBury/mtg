@@ -75,7 +75,8 @@ def createOneToken (g : Game) (controller : PlayerId) (printed : CardDef)
   else if !g.stillInGame controller then
     (g.logMsg "no token is created (CR 800.4b)", noTokenCreated controller printed)
   else
-    g.withBatchCoreReturn cause fun g =>
+    let hadOpenBatch := g.currentBatch.isSome
+    let (g, tok) := g.withBatchCoreReturn cause fun g =>
       let printed := { printed with
         isToken := true
         otherFace := printed.otherFace.map (fun f => { f with isToken := true }) }
@@ -160,6 +161,10 @@ def createOneToken (g : Game) (controller : PlayerId) (printed : CardDef)
             isCopy := obj.isCopy }
         | none => g.snapshot obj
       let g := g.record (GameEvent.created g.turnNumber controller snapObj (cause := resolvedEtbCause))
+      let preCreateEffName :=
+        match g.findObject? newId with
+        | some curObj => g.nameWithToken curObj
+        | none => g.nameWithToken obj
       let happenedCause := (g.events.findSomeRev? (·.cause?)).getD resolvedEtbCause
       let baseHappenedCause := unreplacedCause happenedCause
       let g : Game :=
@@ -171,22 +176,35 @@ def createOneToken (g : Game) (controller : PlayerId) (printed : CardDef)
           g.createEffect (.copy newId copyTok (untilEot := true)) (cause := some baseHappenedCause)
         | none => g
       let g : Game :=
-        match effectiveAttackTarget with
-        | some tgt =>
-          g.record (GameEvent.becameAttacking g.turnNumber (g.snapshot (g.object! newId)) tgt
-            (cause := resolvedEtbCause))
-        | none => g
-      let g := g.logMsg s!"{(g.player controller).name} creates {g.nameWithToken (g.object! newId)}"
+        match effectiveAttackTarget, g.findObject? newId with
+        | some tgt, some curObj =>
+          if curObj.isOnBattlefield then
+            g.record (GameEvent.becameAttacking g.turnNumber (g.snapshot curObj) tgt
+              (cause := resolvedEtbCause))
+          else g
+        | _, _ => g
+      let curTokName :=
+        match g.findObject? newId with
+        | some curObj => g.nameWithToken curObj
+        | none => preCreateEffName
+      let g := g.logMsg s!"{(g.player controller).name} creates {curTokName}"
       let g :=
         if etb.weaverBonus > 0 then
-          g.logMsg s!"{g.nameWithToken (g.object! newId)} enters with {etb.weaverBonus} additional +1/+1 counter(s)"
+          g.logMsg s!"{curTokName} enters with {etb.weaverBonus} additional +1/+1 counter(s)"
         else g
-      let g := g.ensurePreparedCopy (g.object! newId)
+      let g :=
+        match g.findObject? newId with
+        | some curObj => if curObj.isOnBattlefield then g.ensurePreparedCopy curObj else g
+        | none => g
       let g :=
         if recordRecent && !g.continuations.isEmpty then
           g.change (.recentTokenIds (g.recentTokenIds.push newId))
         else g
-      (g, g.object! newId)
+      let retObj :=
+        (g.findObject? newId).orElse (fun _ => g.followMovedToZone? newId (fun _ => true))
+          |>.getD (noTokenCreated controller printed)
+      (g, retObj)
+    if !hadOpenBatch then (g.flushQueuedLinkedExileFwd, tok) else (g, tok)
 
 /-- Synthetic off-battlefield token probe reflecting active wildcard
 `entersAsCopy` replacements so `replaceTokenCreationChoice` evaluates the created
@@ -393,7 +411,8 @@ def createTokenBatches (g : Game) (batches : Array ProposedTokenBatch)
     (extraCounters : CounterBag := #[])
     (recordRecent : Bool := false)
     (cause : Option EventCause := none) : Game × GameObject :=
-  g.withBatchCoreReturn cause fun g => Id.run do
+  let hadOpenBatch := g.currentBatch.isSome
+  let (g, tok) := g.withBatchCoreReturn cause fun g => Id.run do
     let mut g := g
     let mut last : Option GameObject := none
     for i in [0:batches.size] do
@@ -424,6 +443,11 @@ def createTokenBatches (g : Game) (batches : Array ProposedTokenBatch)
       let fallbackCtrl := (batches[0]?.map (·.controller)).getD g.activePlayer
       let fallbackCard := (batches[0]?.map (·.printed)).getD { name := "", types := #[], isToken := true }
       (g, noTokenCreated fallbackCtrl fallbackCard)
+  if !hadOpenBatch then
+    let g := g.flushQueuedLinkedExileFwd
+    (g, (g.findObject? tok.id).getD tok)
+  else
+    (g, tok)
 
 /-- Create `count` tokens under `controller` in a single CR 616.1 token-creation
 event (Food/Treasure, Draconic Visitor, token-doubling). -/
