@@ -16202,7 +16202,8 @@ pain-mana ordering in `ManaAbilities.finishActivateManaAbilityPostSac`).
 3. **Continuous `[pIdx .. now]` phasing-duration check, pre-`events[0]` & `ZoneEvent.created`
    phasing helpers, `Core.hasSummoningSickness` phased-out / `leftTheGame` / counter & DFC
    `transformed` reconstruction, and `Phasing.phaseInControlled` historical controller lookup**
-   (`Core.lean:448–463, 1676–1820, 1835, 1953, 5202–5522`, `Phasing.lean:334–367`;
+   (`Core.lean:448–463, 935–945, 1327–1328, 1676–1820, 1835, 1953, 5202–5522`,
+   `Phasing.lean:334–367`;
    **CR 302.6 / 502.1 / 611.2b–c / 611.3a / 613.1a–b / 701.27 / 702.26b,d,e,f,m,n / 800.4a**):
    - **`durationActiveContinuouslySince`, `ZoneEvent.created` `eo.zone` check, in-place
      `.materializeObject` guard, and pre-`events[0]` fallback in `Core.lean` phasing helpers**
@@ -16242,17 +16243,20 @@ pain-mana ordering in `ManaAbilities.finishActivateManaAbilityPostSac`).
          for `o.status.phasedOut == true` with `latestPhaseOutIdxOf? o == none` (pre-`events[0]`
          phase-out), treat `phaseOutIdx?` at `1835, 1953` as `some 0` while rejecting post-`events[0]`
          `effectCreatedInfo? eid == some _` in `effectPhasingAllows`.
-   - **Phased-out controller check, `leftTheGame` vs `lost`, `.whileSourceHasCounter`, and DFC
-     `PermanentEvent.transformed` in `Core.hasSummoningSickness`**
-     (`Core.lean:448–463, 1813–1820, 5202–5522`):
+   - **Phased-out controller check, `leftTheGame` alongside `lost`, `.whileSourceHasCounter`, and
+     DFC `PermanentEvent.transformed` in `Core.hasSummoningSickness`**
+     (`Core.lean:448–463, 935–945, 1327–1328, 1813–1820, 5202–5522`):
      - In `Core.hasSummoningSickness`:
        (i) lines `5415–5418` and `5519–5521` skip `gAt.controllerOf oAt != some ctrl` whenever
        `oAt.status.phasedOut`, falsely returning `false` when `o` phased out under `p1`'s control
        (`gAt.controllerOf oAt == some p1`) and later phased in under `p0`'s static control effect,
        or reverted to `p1` while phased out (CR 702.26f) before `p0` regained control;
-       (ii) `mkGameAt` (`5392–5395`) sets `{ pl with lost := v }` from the flag tracked at
-       `5365–5366` and `5510–5511` on `.player (.lost ..)` as well as `.player (.leftGame ..)`,
-       whereas `Core.initialControllerOf` (`1817`) reads `pl.leftTheGame`; and
+       (ii) `mkGameAt` (`5392–5395`) writes only `{ pl with lost := v }` from `plLost` (tracked at
+       `5365–5366` and `5509–5511` on both `.player (.lost ..)` and `.player (.leftGame ..)`),
+       leaving `pl.leftTheGame` at its end-of-log value on every earlier slice even though
+       `.lost` (`935–938`) sets only `lost`, `.leftGame` (`944`) sets both `lost` and `leftTheGame`,
+       `stillInGame` (`1327–1328`) checks `!pl.lost && !pl.leftTheGame`, and
+       `Core.initialControllerOf` (`1817`) checks `!pl.leftTheGame`; and
        (iii) `hasSummoningSickness` ignores `.rules (.permanent (.counters ..))` for
        `.whileSourceHasCounter src k` Layer 1/2 effects and ignores
        `.rules (.permanent (.transformed eo nowBackFace))` (`448–463`), keeping `oAt.printed` /
@@ -16262,12 +16266,16 @@ pain-mana ordering in `ManaAbilities.finishActivateManaAbilityPostSac`).
          `o0At.status.phasedOut` while still requiring `g0At.controllerOf o0At == some ctrl`, and
          drop `!oAt.status.phasedOut &&` at `5520` so `gAt.controllerOf oAt != some ctrl` is
          enforced even while phased out; leave `5260` matching both `.player (.lost ..)` and
-         `.player (.leftGame ..)` for `sawWindowCtrlChange`, and track `plLeft` / `leftTheGame` only
-         at `5365–5366` (backward), `5394` (`{ pl with leftTheGame := v }` in `mkGameAt`), and
-         `5510–5511` (forward) on `.rules (.player (.leftGame p))` only; and track `(src, k)` counter
-         events for `.whileSourceHasCounter` Layer 1/2 effects (populating `src`'s `k` counter count
-         in `mkGameAt` via `g.objectCounterCountAt src k evLen`) plus DFC `printed` / `transformed`
-         transitions across `.permanent (.transformed ..)`, `.zone (.moved ..)`,
+         `.player (.leftGame ..)` for `sawWindowCtrlChange`, keep the existing `plLost` / `curLs`
+         updates on both `.rules (.player (.lost p _))` and `.rules (.player (.leftGame p))` at
+         `5365–5366` (`false` on backward scan) and `5509–5511` (`true` on forward scan), add a
+         separate `plLeft` / `curLefts` updated only on `.rules (.player (.leftGame p))` at the same
+         sites with the same polarity (`false` on backward scan, `true` on forward scan), and have
+         `mkGameAt` (`5392–5395`) apply both fields (`{ pl with lost := v, leftTheGame := leftV }`,
+         defaulting each field to `pl.lost` / `pl.leftTheGame` when absent); and track `(src, k)`
+         counter events for `.whileSourceHasCounter` Layer 1/2 effects (populating `src`'s `k`
+         counter count in `mkGameAt` via `g.objectCounterCountAt src k evLen`) plus DFC `printed` /
+         `transformed` transitions across `.permanent (.transformed ..)`, `.zone (.moved ..)`,
          `.zone (.created ..)`, and `.engine (.materializeObject ..)`.
    - **Historical controller reconstruction in `Phasing.phaseInControlled`**
      (`Core.lean:5368–5400`, `Phasing.lean:334–367`):
