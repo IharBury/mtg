@@ -616,7 +616,8 @@ def sourceStillPayable (g : Game) (prop : ProposedSpell) : Bool :=
       prop.kind == .activatedAbility &&
         !sacrificeOrExileSource && !prop.discardSource &&
         !prop.activation.any (fun a =>
-          a.activateFromGraveyard || a.activateFromHand || a.cost.fra == .exileSourceFromHand) &&
+          a.activateFromGraveyard || a.cost.exileSourceFromGraveyard ||
+            a.activateFromHand || a.cost.fra == .exileSourceFromHand) &&
         g.sourceSacrificedForCost sid (some prop.spellId) sinceIdx
     let alreadyDiscardedFromHandForCost :=
       prop.kind == .activatedAbility &&
@@ -663,14 +664,15 @@ def sourceStillPayable (g : Game) (prop : ProposedSpell) : Bool :=
           g.sourceCounterCostPaidFor sid forObj .removeCounters (some .indestructible) sinceIdx ||
           (src.isOnBattlefield && g.controlledBy src prop.caster &&
            src.status.indestructibleCounters > 0)
-      let fromGyAb := prop.activation.any (·.activateFromGraveyard)
+      let fromGyAb :=
+        prop.activation.any (fun a => a.activateFromGraveyard || a.cost.exileSourceFromGraveyard)
       let fromHandAb :=
         prop.discardSource ||
           prop.activation.any (fun a => a.activateFromHand || a.cost.fra == .exileSourceFromHand)
       loyaltyPayable && removePlusOneXPayable &&
       removeStoryPayable && removeIndestructiblePayable &&
       ((src.isOnBattlefield && g.controlledBy src prop.caster &&
-        !prop.activation.any (fun a => a.activateFromGraveyard || a.activateFromHand) &&
+        !fromGyAb && !prop.activation.any (·.activateFromHand) &&
         (!prop.tapSource || !src.status.tapped || g.sourceTappedForCost sid forObj sinceIdx) &&
         !prop.discardSource && !prop.activation.any (·.cost.fra == .exileSourceFromHand)) ||
       (fromGyAb && src.zone == .graveyard src.owner && src.owner == prop.caster &&

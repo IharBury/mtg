@@ -633,7 +633,8 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
   let alreadySacrificedForCost :=
     !sacrificeOrExileSource && !discardSource &&
       !ab.any (fun a =>
-        a.activateFromGraveyard || a.activateFromHand || a.cost.fra == .exileSourceFromHand) &&
+        a.activateFromGraveyard || a.cost.exileSourceFromGraveyard ||
+          a.activateFromHand || a.cost.fra == .exileSourceFromHand) &&
       g.sourceSacrificedForCost sourceId forObject sinceIdx
   let alreadyDiscardedFromHandForCost :=
     !sacrificeOrExileSource && !discardSource &&
@@ -687,11 +688,12 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
         g.logMsg msg
       else g
     return match outer? with | some outer => g.chainPendingReplacement outer | none => g
-  let fromGraveyard :=
-    ab.any (·.activateFromGraveyard) &&
-      src.zone == .graveyard src.owner && src.owner == p &&
-      !ab.any (·.cost.loyalty.isSome)
-  if fromGraveyard && !tapSource && !sacrificeSource && !exileSource then
+  let fromGraveyardAb :=
+    ab.any (fun a => a.activateFromGraveyard || a.cost.exileSourceFromGraveyard) &&
+      !ab.any (·.cost.loyalty.isSome) && !tapSource && !sacrificeSource && !exileSource
+  if fromGraveyardAb then
+    if !(src.zone == .graveyard src.owner && src.owner == p) then
+      throw s!"{g.name src} is not in your graveyard"
     let g ← g.payLifeCost p payLife (forObject := forObject)
     if ab.any (·.cost.exileSourceFromGraveyard) then
       let outer? := g.pendingReplacement
@@ -706,12 +708,13 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
         else g
       return match outer? with | some outer => g.chainPendingReplacement outer | none => g
     return g
-  let fromHand :=
+  let fromHandAb :=
     !discardSource && !ab.any (·.cost.fra == .exileSourceFromHand) &&
       ab.any (·.activateFromHand) &&
-      src.zone == .hand src.owner && src.owner == p &&
       !tapSource && !sacrificeSource && !exileSource
-  if fromHand then
+  if fromHandAb && !alreadyDiscardedFromHandForCost then
+    if !(src.zone == .hand src.owner && src.owner == p) then
+      throw s!"{g.name src} is not in your hand"
     if !g.canPayLife p payLife then
       throw s!"{(g.player p).name} cannot pay {payLife} life"
     return (← g.payLifeCost p payLife (forObject := forObject))

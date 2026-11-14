@@ -316,6 +316,7 @@ def expireFraUntilTurnEffects (g : Game) (p : PlayerId) (includeTeammates : Bool
   let expireNonControl (g0 : Game) : Game :=
     let g0 := g0.expireMatching (fun
       | .layered _ (.copy ..) _ | .layered _ (.control _) _
+      | .gameRule (.fraEmblem _) _
       | .playerRule _ .protectionFromEverything _
       | .playerRule _ .lifeCantChange _ => false
       | e =>
@@ -324,8 +325,9 @@ def expireFraUntilTurnEffects (g : Game) (p : PlayerId) (includeTeammates : Bool
         | _ => false) (cause := cause) (reconcileControl := false)
     endingEmblems.foldl (fun acc o =>
       if (acc.findObject? o.id).any (·.zone == .command) then
+        let embName := acc.name o
         (acc.ceaseToExist o.id (cause := cause) (reconcileControl := false)
-          (suppressReturnLog := true)).logMsg s!"{acc.name o} ends"
+          (suppressReturnLog := true)).logMsg s!"{embName} ends"
       else acc) g0
   if skipControl then
     expireNonControl g
@@ -346,33 +348,42 @@ def expireUntilNextTurnEffects (g : Game) (p : PlayerId) : Game :=
   g.withBatch none fun g =>
     let cause := some (EventCause.turnBased .expireAtStepBegin)
     let teamHasLiving := g.players.any (fun m => g.stillInGame m.id && g.areTeammates p m.id)
+    let matchesDeparted (q : PlayerId) : Bool :=
+      q == p || (!teamHasLiving && g.areTeammates q p)
+    let targets : Array PlayerId :=
+      if teamHasLiving then #[p] else g.teamMembers p
     let g :=
       if teamHasLiving then g
       else
-        let g := g.expireGoadedFor p
+        let g := targets.foldl (fun acc t => acc.expireGoadedFor t) g
         let ctrlEids := g.activeEffects.filterMap fun (eid, e) =>
           match e with
           | .layered _ (.control _) (.untilNextTurnOf q)
           | .layered _ (.control _) (.untilEndOfNextTurnOf q) =>
-            if q == p then some eid else none
+            if matchesDeparted q then some eid else none
           | _ => none
         let expireNonControl (g0 : Game) : Game :=
-          let g0 := g0.expireFraUntilTurnEffects p (skipControl := true)
+          let g0 := g0.expireFraUntilTurnEffects p
+            (includeTeammates := !teamHasLiving) (skipControl := true)
           let g0 := g0.expireMatching (fun
             | .layered _ (.copy ..) _ | .layered _ (.control _) _
             | .permission _ (.playFromExile ..) _ => false
-            | e => effectDuration e == .untilEndOfNextTurnOf p) (cause := cause)
-          let g0 :=
-            if g0.hasActiveEffect (.protectionFromEverything p) then
-              g0.expireAll (.protectionFromEverything p) (cause := cause)
-                |>.logMsg
-                  s!"{(g0.player p).name}'s protection from everything ends (CR 800.4m)"
-            else g0
-          let g0 := g0.expireAll (.lifeCantChange p) (cause := cause)
+            | e =>
+              match effectDuration e with
+              | .untilEndOfNextTurnOf q => matchesDeparted q
+              | _ => false) (cause := cause)
+          let g0 := targets.foldl (fun acc t =>
+            let acc :=
+              if acc.hasActiveEffect (.protectionFromEverything t) then
+                acc.expireAll (.protectionFromEverything t) (cause := cause)
+                  |>.logMsg
+                    s!"{(acc.player t).name}'s protection from everything ends (CR 800.4m)"
+              else acc
+            acc.expireAll (.lifeCantChange t) (cause := cause)) g0
           g0.restoreCopiesUntilNextTurn p (departed := true) (reconcileControl := false)
         let g := g.endControlEffectsSimultaneously ctrlEids (cause := cause)
           (preExpire := expireNonControl)
-        g.expirePlayPermissions p (cause := cause)
+        targets.foldl (fun acc t => acc.expirePlayPermissions t (cause := cause)) g
     let g := g.expireMatching (fun
       | .playerRule q (.additionalLands _) .untilEndOfTurn
       | .playerRule q .jaceLoyaltyAtInstantSpeed .untilEndOfTurn
@@ -383,18 +394,18 @@ def expireUntilNextTurnEffects (g : Game) (p : PlayerId) : Game :=
       | .playerRule q .nextSpellCantBeCountered .untilEndOfTurn
       | .playerRule q .lifeLocked .untilEndOfTurn
       | .playerRule q (.typeSpellCostLess _ _) .untilEndOfTurn
-      | .playerRule q (.supertypeSpellCostLess _ _) .untilEndOfTurn => q == p
+      | .playerRule q (.supertypeSpellCostLess _ _) .untilEndOfTurn => matchesDeparted q
       | .playerRule q (.controlsPlayer them false) .untilEndOfTurn =>
-        q == p || ((them == p || g.areTeammates them p) && !teamHasLiving)
+        matchesDeparted q || ((them == p || g.areTeammates them p) && !teamHasLiving)
       | .playerRule q (.controlsPlayer them true) _ =>
-        q == p || ((them == p || g.areTeammates them p) && !teamHasLiving)
+        matchesDeparted q || ((them == p || g.areTeammates them p) && !teamHasLiving)
       | _ => false) (cause := cause)
     let expiredDt := g.delayedTriggers.filter (fun dt =>
       (match dt.kind with
        | .attackPumpPerPlains
        | .copyNextInstantSorceryThisTurn
        | .lokiCopyNextInstantSorceryThisTurn _ _ => true
-       | _ => false) && dt.controller == p)
+       | _ => false) && matchesDeparted dt.controller)
     expiredDt.foldl (fun g dt =>
       g.record (GameEvent.delayedTriggerExpired g.turnNumber dt (.turnBased .expireAtStepBegin))) g
 
@@ -521,6 +532,24 @@ private def expireFinishedNextTurnPlayerControl (g : Game) : Game :=
     g.withBatch none fun g =>
       expiredCtrl.foldl (fun acc (eid, _) => acc.expireEffectById eid (cause := cause)) g
 
+/-- Count of queued extra-turn seats belonging to the currently active shared extra turn
+(CR 805.8). -/
+private def sharedTurnInProgressExtraSeats (g : Game) (seats : Array PlayerId)
+    (seatsExtra : Bool) : Nat :=
+  if seatsExtra && !seats.isEmpty then
+    Id.run do
+      let mut seen := seats
+      let mut cnt := 0
+      let mut keepGoing := true
+      for q in g.extraTurns do
+        if keepGoing && g.areTeammates seats[0]! q && !seen.contains q then
+          seen := seen.push q
+          cnt := cnt + 1
+        else
+          keepGoing := false
+      return cnt
+  else 0
+
 mutual
 
 /-- Resume `startNextTurn` across departed-player `expireUntilNextTurnEffects` pauses
@@ -535,27 +564,56 @@ partial def continueStartNextTurn (g : Game) (nextP : PlayerId)
   for i in [0:remainingDeparted.size] do
     let dep := remainingDeparted[i]!
     if !alreadyExpired.contains dep then
-      alreadyExpired := alreadyExpired.push dep
-    g := g.expireUntilNextTurnEffects dep
-    if g.over then
-      return g
-    let paused :=
-      match g.pending with
-      | .chooseReplacement .. | .chooseLegend .. => true
-      | _ => g.pendingReplacement.isSome
-    if paused then
-      let rem := remainingDeparted.extract (i + 1) remainingDeparted.size
-      return g.chainPendingReplacement
-        (.continueStartNextTurn nextP rem runBeginTurn alreadyExpired)
+      if !(g.teamMembers dep).any g.stillInGame then
+        for m in g.teamMembers dep do
+          if !alreadyExpired.contains m then
+            alreadyExpired := alreadyExpired.push m
+      else
+        alreadyExpired := alreadyExpired.push dep
+      g := g.expireUntilNextTurnEffects dep
+      if g.over then
+        return g
+      let paused :=
+        match g.pending with
+        | .chooseReplacement .. | .chooseLegend .. => true
+        | _ => g.pendingReplacement.isSome
+      if paused then
+        let rem := remainingDeparted.extract (i + 1) remainingDeparted.size
+        return g.chainPendingReplacement
+          (.continueStartNextTurn nextP rem runBeginTurn alreadyExpired)
   let (seats, seatsExtra) := g.currentSharedTurnState
   let midRegularShared := !seatsExtra && !g.isSharedTurnFinalSeat
+  let inProgressExtraSeats := sharedTurnInProgressExtraSeats g seats seatsExtra
   let pendingExtraCauses := pendingExtraTurnCauses g
+  let (targetP, targetExtra) : PlayerId × Bool := Id.run do
+    if !midRegularShared then
+      let mut sIdx := 0
+      while sIdx < g.extraTurns.size && !g.stillInGame g.extraTurns[sIdx]! do
+        sIdx := sIdx + 1
+      if let some q := (g.extraTurns.extract sIdx g.extraTurns.size)[0]? then
+        return (q, true)
+    let n := g.players.size
+    let fromExtra := !midRegularShared && g.extraTurns.contains nextP
+    if fromExtra || !g.stillInGame nextP then
+      let startIdx := if fromExtra then g.activePlayer.idx + 1 else nextP.idx
+      for k in [0:n] do
+        let q : PlayerId := ⟨(startIdx + k) % n⟩
+        if g.stillInGame q then
+          return (q, false)
+    return (nextP, false)
+  let sameShared :=
+    g.stillInGame targetP && targetExtra == seatsExtra && !seats.isEmpty &&
+      g.areTeammates seats[0]! targetP && !seats.contains targetP
+  let endingCurrentShared (q : PlayerId) : Bool :=
+    !sameShared && seats.any (fun s => s == q || g.areTeammates s q)
   let mut skipIdx := 0
   let mut unexpiredExtra : Array PlayerId := #[]
   if !midRegularShared then
     while skipIdx < g.extraTurns.size && !g.stillInGame g.extraTurns[skipIdx]! do
       let d := g.extraTurns[skipIdx]!
-      if !alreadyExpired.contains d && !unexpiredExtra.contains d then
+      let extraSeatEnding :=
+        seatsExtra && !sameShared && skipIdx < inProgressExtraSeats
+      if !extraSeatEnding && !alreadyExpired.contains d && !unexpiredExtra.contains d then
         unexpiredExtra := unexpiredExtra.push d
       skipIdx := skipIdx + 1
   let nextExtra? :=
@@ -573,12 +631,13 @@ partial def continueStartNextTurn (g : Game) (nextP : PlayerId)
       let (nextP', newlyDeparted) := Id.run do
         let mut newly := unexpiredExtra
         if fromExtra then
-          if !alreadyExpired.contains nextP && !newly.contains nextP then
+          if !endingCurrentShared nextP && !alreadyExpired.contains nextP &&
+              !newly.contains nextP then
             newly := newly.push nextP
           for k in [1:n+1] do
             let q : PlayerId := ⟨(g.activePlayer.idx + k) % n⟩
             if !g.stillInGame q then
-              if !alreadyExpired.contains q && !newly.contains q then
+              if !endingCurrentShared q && !alreadyExpired.contains q && !newly.contains q then
                 newly := newly.push q
             else
               return (q, newly)
@@ -587,7 +646,7 @@ partial def continueStartNextTurn (g : Game) (nextP : PlayerId)
           for k in [0:n] do
             let q : PlayerId := ⟨(nextP.idx + k) % n⟩
             if !g.stillInGame q then
-              if !alreadyExpired.contains q && !newly.contains q then
+              if !endingCurrentShared q && !alreadyExpired.contains q && !newly.contains q then
                 newly := newly.push q
             else
               return (q, newly)
@@ -627,8 +686,9 @@ partial def continueStartNextTurn (g : Game) (nextP : PlayerId)
 
 partial def startNextTurnCore (g : Game) (runBeginTurn : Bool) : Game :=
   let ending := g.activePlayer
+  let (seats, seatsExtra) := g.currentSharedTurnState
   let finalSeat := g.isSharedTurnFinalSeat
-  let midRegularShared := !g.currentSharedTurnIsExtra && !finalSeat
+  let midRegularShared := !seatsExtra && !finalSeat
   let g :=
     if finalSeat then
       g.withBatch none fun g =>
@@ -652,13 +712,35 @@ partial def startNextTurnCore (g : Game) (runBeginTurn : Bool) : Game :=
         g.clearTurnActivations
     else g
   let g := g.record (GameEvent.turnEnded g.turnNumber ending)
+  let inProgressExtraSeats := sharedTurnInProgressExtraSeats g seats seatsExtra
+  let (targetP, targetExtra) : PlayerId × Bool := Id.run do
+    if !midRegularShared then
+      let mut sIdx := 0
+      while sIdx < g.extraTurns.size && !g.stillInGame g.extraTurns[sIdx]! do
+        sIdx := sIdx + 1
+      if let some q := (g.extraTurns.extract sIdx g.extraTurns.size)[0]? then
+        return (q, true)
+    let n := g.players.size
+    for k in [1:n+1] do
+      let q : PlayerId := ⟨(ending.idx + k) % n⟩
+      if g.stillInGame q then
+        return (q, false)
+    return (ending, false)
+  let sameShared :=
+    g.stillInGame targetP && targetExtra == seatsExtra && !seats.isEmpty &&
+      g.areTeammates seats[0]! targetP && !seats.contains targetP
+  let endingCurrentShared (q : PlayerId) : Bool :=
+    !sameShared && seats.any (fun s => s == q || g.areTeammates s q)
   let (nextP, departed) := Id.run do
     let mut departed : Array PlayerId := #[]
     if !midRegularShared then
       let mut skipIdx := 0
       while skipIdx < g.extraTurns.size && !g.stillInGame g.extraTurns[skipIdx]! do
         let d := g.extraTurns[skipIdx]!
-        if !departed.contains d then departed := departed.push d
+        let extraSeatEnding :=
+          seatsExtra && !sameShared && skipIdx < inProgressExtraSeats
+        if !extraSeatEnding && !departed.contains d then
+          departed := departed.push d
         skipIdx := skipIdx + 1
       if let some q := (g.extraTurns.extract skipIdx g.extraTurns.size)[0]? then
         return (q, departed)
@@ -666,7 +748,8 @@ partial def startNextTurnCore (g : Game) (runBeginTurn : Bool) : Game :=
     for k in [1:n+1] do
       let q : PlayerId := ⟨(ending.idx + k) % n⟩
       if !g.stillInGame q then
-        if !departed.contains q then departed := departed.push q
+        if !endingCurrentShared q && !departed.contains q then
+          departed := departed.push q
       else
         return (q, departed)
     return (ending, departed)

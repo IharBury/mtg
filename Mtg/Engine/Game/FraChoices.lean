@@ -873,7 +873,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     return (g.sacrificeLeastPowerCreature p (some id)).finishFraChoice
   | .sacrificeLeastPower _, _ => throw "Choose a creature tied for the least power"
   | .mayPayPickThen pick next sourceId, .objects ids =>
-    let abId := resolvingForObj <|> sourceId
+    let abId := g.resolvingAbility <|> g.resolvingSpell <|> resolvingForObj <|> sourceId
     let g ← g.payCostPick p abId sourceId pick ids
     if g.mayThenDrop > 0 then
       return g.acceptMayThen
