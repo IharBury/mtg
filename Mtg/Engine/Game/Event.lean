@@ -1754,6 +1754,7 @@ inductive PendingReplacement where
   | finishActivationExtraCosts (p : PlayerId) (sourceId : ObjectId)
       (forObject : Option ObjectId) (sacrificeSource exileSource : Bool)
       (stage : ActivationExtraCostStage := .sacrificeAndExile)
+      (sinceIdx : Nat := 0)
   | finishPostLoyaltyActivated (caster : PlayerId) (sourceName : String)
       (sourceId : Option ObjectId) (activation : Option ActivatedAbility)
       (abilityId : Option ObjectId)
@@ -1923,7 +1924,7 @@ inductive PendingReplacement where
   | beginStepCont (step : Step)
   | finishCleanupAfterClearEot
   | continueStartNextTurn (nextP : PlayerId) (remainingDeparted : Array PlayerId)
-      (runBeginTurn : Bool := false)
+      (runBeginTurn : Bool := false) (alreadyExpired : Array PlayerId := #[])
   | beginTurnAfterStartExpiry
   | moveCardsToGraveyardLoop (ids : Array ObjectId) (cause : Option EventCause := none)
   | placeSearchedGraveyardLoop (ids : Array ObjectId) (cause : Option EventCause := none)

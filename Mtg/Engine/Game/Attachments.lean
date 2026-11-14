@@ -44,7 +44,7 @@ def attachSourceTo (g : Game) (src host : GameObject)
 The object is deleted and its id is removed from the zone it occupied, so a
 graveyard, hand, library, or stack keeps nothing of it. -/
 def ceaseToExist (g : Game) (id : ObjectId) (cause : Option EventCause := none)
-    (reconcileControl : Bool := true) : Game :=
+    (reconcileControl : Bool := true) (suppressReturnLog : Bool := false) : Game :=
   let effCause :=
     g.resolveOptionalCause cause (fallbackSrc := some id)
       (defaultCause := .gameRule .leavingZone)
@@ -58,7 +58,7 @@ def ceaseToExist (g : Game) (id : ObjectId) (cause : Option EventCause := none)
     let g :=
       if old.zone == .battlefield then
         g.expireWhileSourceEffects id (cause := expCause) (preState? := some pre)
-          (reconcileControl := false)
+          (reconcileControl := false) (suppressReturnLog := suppressReturnLog)
       else g
     if reconcileControl then
       reconcileControlAfterTransitionFwd pre g (cause := expCause)

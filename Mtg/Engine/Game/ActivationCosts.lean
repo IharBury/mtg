@@ -65,11 +65,13 @@ private def unreplacedCostCause : EventCause → EventCause
 
 /-- Whether `sid` was already sacrificed from the battlefield as a cost for
 `forObject` (CR 601.2h). -/
-def sourceSacrificedForCost (g : Game) (sid : ObjectId) (forObject : Option ObjectId) : Bool :=
+def sourceSacrificedForCost (g : Game) (sid : ObjectId) (forObject : Option ObjectId)
+    (sinceIdx : Nat := 0) : Bool :=
   match forObject with
   | none => false
   | some fid =>
-    g.events.any fun
+    let slice := g.events.extract (min sinceIdx g.events.size) g.events.size
+    slice.any fun
       | .rules _ (.zone (.moved before _ .battlefield _ ..)) cause _ =>
         before.id == some sid &&
           match unreplacedCostCause cause with
@@ -79,11 +81,13 @@ def sourceSacrificedForCost (g : Game) (sid : ObjectId) (forObject : Option Obje
 
 /-- Whether `sid` was already discarded from its owner's hand as a cost for
 `forObject` (CR 601.2h). -/
-def sourceDiscardedFromHandForCost (g : Game) (sid : ObjectId) (forObject : Option ObjectId) : Bool :=
+def sourceDiscardedFromHandForCost (g : Game) (sid : ObjectId) (forObject : Option ObjectId)
+    (sinceIdx : Nat := 0) : Bool :=
   match forObject with
   | none => false
   | some fid =>
-    g.events.any fun
+    let slice := g.events.extract (min sinceIdx g.events.size) g.events.size
+    slice.any fun
       | .rules _ (.zone (.moved before _ (.hand _) _ ..)) cause _ =>
         before.id == some sid &&
           match unreplacedCostCause cause with
@@ -92,11 +96,13 @@ def sourceDiscardedFromHandForCost (g : Game) (sid : ObjectId) (forObject : Opti
       | _ => false
 
 /-- Whether `sid` was already tapped to pay `{T}` for `forObject` (CR 601.2h). -/
-def sourceTappedForCost (g : Game) (sid : ObjectId) (forObject : Option ObjectId) : Bool :=
+def sourceTappedForCost (g : Game) (sid : ObjectId) (forObject : Option ObjectId)
+    (sinceIdx : Nat := 0) : Bool :=
   match forObject with
   | none => false
   | some fid =>
-    g.events.any fun
+    let slice := g.events.extract (min sinceIdx g.events.size) g.events.size
+    slice.any fun
       | .rules _ (.permanent (.tapped snap _)) cause _ =>
         snap.id == some sid &&
           match unreplacedCostCause cause with
@@ -104,16 +110,18 @@ def sourceTappedForCost (g : Game) (sid : ObjectId) (forObject : Option ObjectId
           | _ => false
       | _ => false
 
-/-- Whether `sid` already paid a counter cost of `costKind` for `forObject`
-(CR 601.2h). -/
+/-- Whether `sid` already paid a counter cost of `costKind` (and optional
+`counterKind?`) for `forObject` (CR 601.2h). -/
 def sourceCounterCostPaidFor (g : Game) (sid : ObjectId) (forObject : Option ObjectId)
-    (costKind : CostKind) : Bool :=
+    (costKind : CostKind) (counterKind? : Option CounterKind := none)
+    (sinceIdx : Nat := 0) : Bool :=
   match forObject with
   | none => false
   | some fid =>
-    g.events.any fun
-      | .rules _ (.permanent (.counters (.object snap) ..)) cause _ =>
-        snap.id == some sid &&
+    let slice := g.events.extract (min sinceIdx g.events.size) g.events.size
+    slice.any fun
+      | .rules _ (.permanent (.counters (.object snap) ck ..)) cause _ =>
+        snap.id == some sid && counterKind?.all (· == ck) &&
           match unreplacedCostCause cause with
           | .costPayment k _ (some f) => k == costKind && f == fid
           | _ => false
@@ -377,6 +385,7 @@ def payCostPick (g : Game) (p : PlayerId) (abilityId sourceId : Option ObjectId)
         (sacrificeOrExileSource := sacrificeOrExileSource)
         (discardOrExileHandSource := discardOrExileHandSource) then
       throw s!"{g.name o} can't be used to {pick.phrase}"
+  let sinceIdx := (g.proposalCheckpoint.map (·.eventsSize)).getD g.events.size
   let hadProp := g.proposedSpell.isSome
   let outer? := g.pendingReplacement
   let outerForAbort? := outer?.orElse (fun _ => callerOuter?)
@@ -425,28 +434,28 @@ def payCostPick (g : Game) (p : PlayerId) (abilityId sourceId : Option ObjectId)
                 effX
               else 0
             let forObj := abilityId <|> some sid
-            let tapNeeded := effTap && !g.sourceTappedForCost sid forObj
+            let tapNeeded := effTap && !g.sourceTappedForCost sid forObj sinceIdx
             if !g.controlledBy src p then
               throw "You don't control that permanent"
             if tapNeeded && src.status.tapped then
               throw s!"{g.name src} is already tapped"
             if let some a := effAb? then
               if a.cost.removeStoryCounter &&
-                  !g.sourceCounterCostPaidFor sid forObj .removeCounters &&
+                  !g.sourceCounterCostPaidFor sid forObj .removeCounters (some .story) sinceIdx &&
                   src.status.story == 0 then
                 throw s!"{g.name src} has no story counter"
               if a.cost.removeIndestructibleCounter &&
-                  !g.sourceCounterCostPaidFor sid forObj .removeCounters &&
+                  !g.sourceCounterCostPaidFor sid forObj .removeCounters (some .indestructible) sinceIdx &&
                   src.status.indestructibleCounters == 0 then
                 throw s!"{g.name src} has no indestructible counter"
               if a.cost.removeAnyNumberPlusOne &&
-                  !g.sourceCounterCostPaidFor sid forObj .removeCounters &&
+                  !g.sourceCounterCostPaidFor sid forObj .removeCounters (some .plusOnePlusOne) sinceIdx &&
                   src.status.plusOnePlusOne < effRemovePlusOnes then
                 throw s!"{g.name src} doesn't have {effRemovePlusOnes} +1/+1 counters"
               if let some sym := a.cost.loyalty then
                 let loyaltyAlreadyPaid :=
                   g.proposedSpell.any (·.loyaltyPaid) ||
-                    g.sourceCounterCostPaidFor sid forObj .loyalty
+                    g.sourceCounterCostPaidFor sid forObj .loyalty (some .loyalty) sinceIdx
                 let k : Int :=
                   match sym with
                   | .minusX => -(effX : Int)
@@ -463,7 +472,7 @@ def payCostPick (g : Game) (p : PlayerId) (abilityId sourceId : Option ObjectId)
               g := g.becomeTapped curSrc (cause := some (.costPayment .tap p forObj))
             if let some a := effAb? then
               if a.cost.removeStoryCounter &&
-                  !g.sourceCounterCostPaidFor sid forObj .removeCounters then
+                  !g.sourceCounterCostPaidFor sid forObj .removeCounters (some .story) sinceIdx then
                 let some curSrc := requireLiveSource g sid | return abortMissingSource g
                 if curSrc.status.story == 0 then return abortMissingSource g
                 let srcName := g.name curSrc
@@ -471,12 +480,12 @@ def payCostPick (g : Game) (p : PlayerId) (abilityId sourceId : Option ObjectId)
                   (cause := some (.costPayment .removeCounters p forObj))
                 g := g.logMsg s!"{(g.player p).name} removes a story counter from {srcName}"
               if a.cost.removeIndestructibleCounter &&
-                  !g.sourceCounterCostPaidFor sid forObj .removeCounters then
+                  !g.sourceCounterCostPaidFor sid forObj .removeCounters (some .indestructible) sinceIdx then
                 let some curSrc := requireLiveSource g sid | return abortMissingSource g
                 if curSrc.status.indestructibleCounters == 0 then return abortMissingSource g
                 g := (← g.payRemoveIndestructibleCounter curSrc forObj)
               if a.cost.removeAnyNumberPlusOne &&
-                  !g.sourceCounterCostPaidFor sid forObj .removeCounters then
+                  !g.sourceCounterCostPaidFor sid forObj .removeCounters (some .plusOnePlusOne) sinceIdx then
                 let some curSrc := requireLiveSource g sid | return abortMissingSource g
                 if curSrc.status.plusOnePlusOne < effRemovePlusOnes then return abortMissingSource g
                 let srcName := g.name curSrc
@@ -490,7 +499,7 @@ def payCostPick (g : Game) (p : PlayerId) (abilityId sourceId : Option ObjectId)
               if let some sym := a.cost.loyalty then
                 let loyaltyAlreadyPaid :=
                   g.proposedSpell.any (·.loyaltyPaid) ||
-                    g.sourceCounterCostPaidFor sid forObj .loyalty
+                    g.sourceCounterCostPaidFor sid forObj .loyalty (some .loyalty) sinceIdx
                 if !loyaltyAlreadyPaid then
                   let some curSrc := requireLiveSource g sid | return abortMissingSource g
                   let actualSym :=
@@ -505,16 +514,16 @@ def payCostPick (g : Game) (p : PlayerId) (abilityId sourceId : Option ObjectId)
                   g := g.payLoyaltyCost p curSrc actualSym (forObject := forObj)
                   if let .chooseReplacement .. := g.pending then
                     if a.cost.putStunCounterOnSource &&
-                        !g.sourceCounterCostPaidFor sid forObj .putCounters then
+                        !g.sourceCounterCostPaidFor sid forObj .putCounters (some .stun) sinceIdx then
                       g := g.chainPendingReplacement
-                        (.finishActivationExtraCosts p sid forObj false false .stunAndSacrifice)
+                        (.finishActivationExtraCosts p sid forObj false false .stunAndSacrifice sinceIdx)
                     g := g.chainPendingReplacement
                       (.payCostPickItems p abilityId sourceId pick ids)
                     return match outer? with
                       | some outer => g.chainPendingReplacement outer
                       | none => g
               if a.cost.putStunCounterOnSource &&
-                  !g.sourceCounterCostPaidFor sid forObj .putCounters then
+                  !g.sourceCounterCostPaidFor sid forObj .putCounters (some .stun) sinceIdx then
                 let some _ := requireLiveSource g sid | return abortMissingSource g
                 g := g.putCountersDeferredLog sid .stun 1 (some p) (.playerPutsOn p)
                   (cause := some (.costPayment .putCounters p forObj))
@@ -536,10 +545,11 @@ counter or sacrifice step paused on `Pending.chooseReplacement`. -/
 def finishActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
     (forObject : Option ObjectId) (sacrificeSource exileSource : Bool)
     (stage : ActivationExtraCostStage := .sacrificeAndExile)
+    (sinceIdx : Nat := 0)
     (outerToRestore? : Option PendingReplacement := none) : Game := Id.run do
   if let .chooseReplacement .. := g.pending then
     return g.chainPendingReplacement
-      (.finishActivationExtraCosts p sourceId forObject sacrificeSource exileSource stage)
+      (.finishActivationExtraCosts p sourceId forObject sacrificeSource exileSource stage sinceIdx)
   let abortOrNoop (g0 : Game) : Game :=
     if !g0.hasActiveManaProposalCheckpoint && g0.proposedSpell.isSome then
       let g1 :=
@@ -552,7 +562,7 @@ def finishActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
     return abortOrNoop g
   let mut g := g
   if stage == .stunAndSacrifice then
-    if !g.sourceCounterCostPaidFor sourceId forObject .putCounters then
+    if !g.sourceCounterCostPaidFor sourceId forObject .putCounters (some .stun) sinceIdx then
       match g.findObject? sourceId with
       | some src =>
         if !src.isOnBattlefield || !g.controlledBy src p then
@@ -563,7 +573,7 @@ def finishActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
           if sacrificeSource || exileSource then
             g := g.chainPendingReplacement
               (.finishActivationExtraCosts p sourceId forObject sacrificeSource exileSource
-                .sacrificeAndExile)
+                .sacrificeAndExile sinceIdx)
           return g
       | none =>
         return abortOrNoop g
@@ -580,7 +590,7 @@ def finishActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
       if let .chooseReplacement .. := g.pending then
         if exileSource then
           g := g.chainPendingReplacement
-            (.finishActivationExtraCosts p sourceId forObject false exileSource .exileOnly)
+            (.finishActivationExtraCosts p sourceId forObject false exileSource .exileOnly sinceIdx)
         return g
     | none =>
       return abortOrNoop g
@@ -614,6 +624,7 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
     (callerOuter? : Option PendingReplacement := none) :
     Except String Game :=
   g.withProposalActionM .costAction fun g => do
+  let sinceIdx := (g.proposalCheckpoint.map (·.eventsSize)).getD g.events.size
   let hadProp := g.proposedSpell.isSome
   let forObject := forObject? <|> g.proposedSpell.map (·.spellId) <|> some sourceId
   let exileSource := ab.any (·.cost.fra == .exileSource)
@@ -623,12 +634,12 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
     !sacrificeOrExileSource && !discardSource &&
       !ab.any (fun a =>
         a.activateFromGraveyard || a.activateFromHand || a.cost.fra == .exileSourceFromHand) &&
-      g.sourceSacrificedForCost sourceId forObject
+      g.sourceSacrificedForCost sourceId forObject sinceIdx
   let alreadyDiscardedFromHandForCost :=
     !sacrificeOrExileSource && !discardSource &&
       ab.any (·.activateFromHand) &&
       !ab.any (·.cost.fra == .exileSourceFromHand) &&
-      g.sourceDiscardedFromHandForCost sourceId forObject
+      g.sourceDiscardedFromHandForCost sourceId forObject sinceIdx
   let some src := g.findObject? sourceId | do
     if alreadySacrificedForCost || alreadyDiscardedFromHandForCost then
       if !g.canPayLife p payLife then
@@ -712,7 +723,7 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
     throw "The source is no longer on the battlefield"
   if !g.controlledBy src p then
     throw "You don't control that permanent"
-  let tapNeeded := tapSource && !g.sourceTappedForCost sourceId forObject
+  let tapNeeded := tapSource && !g.sourceTappedForCost sourceId forObject sinceIdx
   if tapNeeded && src.status.tapped then
     throw s!"{g.name src} is already tapped"
   if !g.canPayLife p payLife then
@@ -720,21 +731,21 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
   let chosenX := ((forObject.bind g.findObject?).bind (·.chosenX)).getD 0
   if let some a := ab then
     if a.cost.removeStoryCounter &&
-        !g.sourceCounterCostPaidFor sourceId forObject .removeCounters &&
+        !g.sourceCounterCostPaidFor sourceId forObject .removeCounters (some .story) sinceIdx &&
         src.status.story == 0 then
       throw s!"{g.name src} has no story counter"
     if a.cost.removeIndestructibleCounter &&
-        !g.sourceCounterCostPaidFor sourceId forObject .removeCounters &&
+        !g.sourceCounterCostPaidFor sourceId forObject .removeCounters (some .indestructible) sinceIdx &&
         src.status.indestructibleCounters == 0 then
       throw s!"{g.name src} has no indestructible counter"
     if a.cost.removeAnyNumberPlusOne &&
-        !g.sourceCounterCostPaidFor sourceId forObject .removeCounters &&
+        !g.sourceCounterCostPaidFor sourceId forObject .removeCounters (some .plusOnePlusOne) sinceIdx &&
         src.status.plusOnePlusOne < removePlusOnes then
       throw s!"{g.name src} doesn't have {removePlusOnes} +1/+1 counters"
     if let some sym := a.cost.loyalty then
       let loyaltyAlreadyPaid :=
         g.proposedSpell.any (·.loyaltyPaid) ||
-          g.sourceCounterCostPaidFor sourceId forObject .loyalty
+          g.sourceCounterCostPaidFor sourceId forObject .loyalty (some .loyalty) sinceIdx
       if !loyaltyAlreadyPaid then
         if g.loyaltyActivatedThisTurn src.id then
           throw s!"{g.name src}'s loyalty ability was already activated this turn (CR 606.3)"
@@ -772,7 +783,7 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
   match ab with
   | some a =>
     if a.cost.removeStoryCounter &&
-        !g.sourceCounterCostPaidFor sourceId forObject .removeCounters then
+        !g.sourceCounterCostPaidFor sourceId forObject .removeCounters (some .story) sinceIdx then
       let some curSrc := requireLiveSource g | return abortMissingSource g
       if curSrc.status.story == 0 then return abortMissingSource g
       let srcName := g.name curSrc
@@ -780,12 +791,12 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
         (cause := some (.costPayment .removeCounters p forObject))
       g := g.logMsg s!"{(g.player p).name} removes a story counter from {srcName}"
     if a.cost.removeIndestructibleCounter &&
-        !g.sourceCounterCostPaidFor sourceId forObject .removeCounters then
+        !g.sourceCounterCostPaidFor sourceId forObject .removeCounters (some .indestructible) sinceIdx then
       let some curSrc := requireLiveSource g | return abortMissingSource g
       if curSrc.status.indestructibleCounters == 0 then return abortMissingSource g
       g := (← g.payRemoveIndestructibleCounter curSrc forObject)
     if a.cost.removeAnyNumberPlusOne &&
-        !g.sourceCounterCostPaidFor sourceId forObject .removeCounters then
+        !g.sourceCounterCostPaidFor sourceId forObject .removeCounters (some .plusOnePlusOne) sinceIdx then
       let some curSrc := requireLiveSource g | return abortMissingSource g
       if curSrc.status.plusOnePlusOne < removePlusOnes then return abortMissingSource g
       let srcName := g.name curSrc
@@ -799,7 +810,7 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
     if let some sym := a.cost.loyalty then
       let loyaltyAlreadyPaid :=
         g.proposedSpell.any (·.loyaltyPaid) ||
-          g.sourceCounterCostPaidFor sourceId forObject .loyalty
+          g.sourceCounterCostPaidFor sourceId forObject .loyalty (some .loyalty) sinceIdx
       if !loyaltyAlreadyPaid then
         let some curSrc := requireLiveSource g | return abortMissingSource g
         let actualSym :=
@@ -815,20 +826,20 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
         if let .chooseReplacement .. := g.pending then
           let needsStun :=
             a.cost.putStunCounterOnSource &&
-              !g.sourceCounterCostPaidFor sourceId forObject .putCounters
+              !g.sourceCounterCostPaidFor sourceId forObject .putCounters (some .stun) sinceIdx
           if needsStun then
             g := g.chainPendingReplacement
               (.finishActivationExtraCosts p sourceId forObject sacrificeSource exileSource
-                .stunAndSacrifice)
+                .stunAndSacrifice sinceIdx)
           else if sacrificeSource || exileSource then
             g := g.chainPendingReplacement
               (.finishActivationExtraCosts p sourceId forObject sacrificeSource exileSource
-                .sacrificeAndExile)
+                .sacrificeAndExile sinceIdx)
           if let some outer := outer? then
             g := g.chainPendingReplacement outer
           return g
     if a.cost.putStunCounterOnSource &&
-        !g.sourceCounterCostPaidFor sourceId forObject .putCounters then
+        !g.sourceCounterCostPaidFor sourceId forObject .putCounters (some .stun) sinceIdx then
       let some _ := requireLiveSource g | return abortMissingSource g
       g := g.putCountersDeferredLog sourceId .stun 1 (some p) (.playerPutsOn p)
         (cause := some (.costPayment .putCounters p forObject))
@@ -836,13 +847,13 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
         if sacrificeSource || exileSource then
           g := g.chainPendingReplacement
             (.finishActivationExtraCosts p sourceId forObject sacrificeSource exileSource
-              .sacrificeAndExile)
+              .sacrificeAndExile sinceIdx)
         if let some outer := outer? then
           g := g.chainPendingReplacement outer
         return g
   | none => pure ()
   g := g.finishActivationExtraCosts p sourceId forObject sacrificeSource exileSource
-    .sacrificeAndExile (outerToRestore? := outerForAbort?)
+    .sacrificeAndExile (sinceIdx := sinceIdx) (outerToRestore? := outerForAbort?)
   if hadProp && g.proposedSpell.isNone then
     return g
   if let some outer := outer? then

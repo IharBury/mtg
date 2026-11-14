@@ -262,6 +262,20 @@ private def departedNextTurnWouldHaveBegunSince (g : Game) (dep : PlayerId)
       if idx > sinceIdx then
         let finalSeat := isFinalSeat activePlayer alive seats
         let midRegularShared := !seatsExtra && !finalSeat
+        let inProgressExtraSeats :=
+          if seatsExtra && !seats.isEmpty then
+            Id.run do
+              let mut seen := seats
+              let mut cnt := 0
+              let mut keepGoing := true
+              for q in extraTurns do
+                if keepGoing && g.areTeammates seats[0]! q && !seen.contains q then
+                  seen := seen.push q
+                  cnt := cnt + 1
+                else
+                  keepGoing := false
+              return cnt
+          else 0
         let skipped : Array PlayerId := Id.run do
           let mut depSkipped : Array PlayerId := #[]
           if !midRegularShared then
@@ -269,8 +283,7 @@ private def departedNextTurnWouldHaveBegunSince (g : Game) (dep : PlayerId)
             while skipIdx < extraTurns.size && !isAlive alive extraTurns[skipIdx]! do
               let d := extraTurns[skipIdx]!
               let extraSeatEnding :=
-                seatsExtra && !sameShared &&
-                  seats.any (fun s => s == d || g.areTeammates s d)
+                seatsExtra && !sameShared && skipIdx < inProgressExtraSeats
               if !(g.teamMembers d).any (isAlive alive) && !extraSeatEnding &&
                   !depSkipped.contains d then
                 depSkipped := depSkipped.push d
@@ -318,14 +331,29 @@ any phased-out permanent whose phase-out controller has left the game and whose
 next turn would have begun since it phased out (CR 502.1 / 702.26m,n / 703.4a). -/
 def phaseInControlled (g : Game) (p : PlayerId) : Game :=
   let cause := some (EventCause.turnBased .phaseInOut)
+  let fallbackCtrlOf (o : GameObject) : Option PlayerId :=
+    (g.controllerOf o).orElse (fun _ =>
+      some ((o.defaultController.orElse (fun _ => o.controller)).getD o.owner))
   let phaseOutControllerOf (o : GameObject) : Option PlayerId × Nat := Id.run do
     for rev in [0:g.events.size] do
       let idx := g.events.size - 1 - rev
       match g.events[idx]!.change with
       | .rules (.permanent (.phasedOut eo _)) =>
-        if eo.id == some o.id then return (eo.controller, idx)
+        if eo.id == some o.id then return (eo.controller <|> fallbackCtrlOf o, idx)
+      | .engine (.materializeObject obj _) =>
+        if obj.id == o.id && obj.zone == .battlefield && obj.status.phasedOut then
+          let matCtrl :=
+            if !(g.appliedControlEffectIds o).isEmpty then g.controllerOf o
+            else some ((obj.defaultController.orElse (fun _ => obj.controller)).getD obj.owner)
+          return (matCtrl, idx)
+      | .rules (.zone (.moved _ after _ toZone ..)) =>
+        if after.id == some o.id && toZone == .battlefield && after.phasedOut then
+          return (after.controller <|> fallbackCtrlOf o, idx)
+      | .rules (.zone (.created eo c)) =>
+        if eo.id == some o.id && eo.phasedOut then
+          return (eo.controller <|> some c, idx)
       | _ => pure ()
-    return (g.controllerOf o, 0)
+    return (fallbackCtrlOf o, 0)
   let targetIds :=
     g.objects.filterMap fun o =>
       if o.zone == .battlefield && o.status.phasedOut && o.status.phasedWith.isNone then

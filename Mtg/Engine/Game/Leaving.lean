@@ -243,26 +243,40 @@ def endControlEffectsSimultaneously (g : Game) (eids : Array EffectId)
     g0.pendingReplacement.any (inActiveEndControlExile oid) ||
       g0.outerPendingReplacements.any (inActiveEndControlExile oid)
   let g := preExpire g
+  let preExpiredCtrlEids : Array EffectId :=
+    pre.activeEffects.filterMap fun (eid, e) =>
+      match e with
+      | .layered _ (.control _) _ =>
+        if (g.activeEffect? eid).isNone then some eid else none
+      | _ => none
   let activeEids := eids.filter (fun eid => (g.activeEffect? eid).isSome)
+  let allEndingEids :=
+    preExpiredCtrlEids.foldl (fun acc eid =>
+      if acc.contains eid then acc else acc.push eid) activeEids
   let explicitIds : Array ObjectId :=
-    activeEids.foldl (fun acc eid =>
-      match g.activeEffect? eid with
+    allEndingEids.foldl (fun acc eid =>
+      match (g.activeEffect? eid).orElse (fun _ => pre.activeEffect? eid) with
       | some (.layered (.objects ids) (.control _) _) =>
         ids.foldl (fun a oid => if a.contains oid then a else a.push oid) acc
       | _ => acc) #[]
   let candidates : Array (ObjectId × Option PlayerId × Bool) :=
-    if activeEids.isEmpty then #[]
-    else
-      pre.objects.filterMap fun o =>
-        if !o.isBattlefieldObject then none
-        else
-          let applied := pre.appliedControlEffectIds o
-          let anyApplied := activeEids.any (fun eid => applied.contains eid)
-          if anyApplied || explicitIds.contains o.id then
-            some (o.id, pre.controllerOf o, pre.controlChanged o || anyApplied)
-          else none
+    pre.objects.filterMap fun o =>
+      if !o.isBattlefieldObject then none
+      else
+        let applied := pre.appliedControlEffectIds o
+        let anyApplied := allEndingEids.any (fun eid => applied.contains eid)
+        let changedInPreExpire :=
+          match g.findObject? o.id with
+          | some postO =>
+            postO.isBattlefieldObject &&
+              (g.controllerOf postO != pre.controllerOf o ||
+                g.appliedControlEffectIds postO != applied)
+          | none => false
+        if anyApplied || explicitIds.contains o.id || changedInPreExpire then
+          some (o.id, pre.controllerOf o, pre.controlChanged o || anyApplied || changedInPreExpire)
+        else none
   let combatCause : Option EventCause :=
-    if activeEids.isEmpty then cause
+    if allEndingEids.isEmpty && candidates.isEmpty then cause
     else some (g.resolveOptionalCause cause (defaultCause := .gameRule .continuousEffect))
   let g :=
     activeEids.foldl (fun acc eid =>
@@ -671,7 +685,8 @@ through `move` to `.exile`), unattaching attachments, cleaning up prepared exile
 copies, evaluating CR 603.10a leaves-the-battlefield look-back triggers for
 remaining players, and returning CR 610.3 linked-exile cards (CR 800.4a).
 Ante stays (CR 800.4n). -/
-def objectLeavesTheGame (g : Game) (o : GameObject) (_leavingPlayer : PlayerId) : Game :=
+def objectLeavesTheGame (g : Game) (o : GameObject) (_leavingPlayer : PlayerId)
+    (reconcileControl : Bool := true) (returnLinkedExile : Bool := true) : Game :=
   let cause := some (EventCause.gameRule .playerLeftGame)
   if o.zone == .ante then g
   else
@@ -703,13 +718,15 @@ def objectLeavesTheGame (g : Game) (o : GameObject) (_leavingPlayer : PlayerId) 
         let g := g.unattachFrom o.id
         let g := g.removePreparedCopy o.id
         let g := g.ceaseToExist o.id (cause := cause) (reconcileControl := false)
-        reconcileOnLeave pre g
-      if !o.linkedExile.isEmpty then
+          (suppressReturnLog := !reconcileControl)
+        if reconcileControl then reconcileOnLeave pre g else g
+      if returnLinkedExile && !o.linkedExile.isEmpty then
         g.returnLinkedExileMoves o.linkedExile
       else g
     else
       let g := g.ceaseToExist o.id (cause := cause) (reconcileControl := false)
-      reconcileOnLeave pre g
+        (suppressReturnLog := !reconcileControl)
+      if reconcileControl then reconcileOnLeave pre g else g
 
 private def findPausedCloseBatch? : PendingReplacement → Option (BatchId × Nat)
   | .closeBatch b s => some (b, s)
@@ -1036,6 +1053,27 @@ def preBatchLegendSnapshotValid (g : Game)
           match g.pending with
           | .chooseLegend _ _ pIds => pIds
           | _ => candidateIds
+      let preG : Game :=
+        { g with
+          objects := g.openBatchObjects
+          players := g.openBatchPlayers
+          activeEffects := g.openBatchEffects
+          stack := g.openBatchStack }
+      let isPromptAttachment (tid : ObjectId) : Bool :=
+        (preG.findObject? tid).any (fun att =>
+          att.isOnBattlefield && !att.status.faceDown &&
+            att.attachedTo.any promptIds.contains)
+      let attachmentAffectsPromptLegend (tid : ObjectId) : Bool :=
+        if !isPromptAttachment tid then false
+        else
+          let preGWithout : Game :=
+            { preG with objects := preG.objects.filter (·.id != tid) }
+          promptIds.any fun pid =>
+            match preG.findObject? pid, preGWithout.findObject? pid with
+            | some o1, some o2 =>
+              preG.treatedAsLegendary o1 != preGWithout.treatedAsLegendary o2 ||
+                preG.name o1 != preGWithout.name o2
+            | _, _ => false
       let mut earliestPromptIdx? : Option Nat := none
       let mut inPlayerDeparture := false
       for i in [startIdx : g.events.size] do
@@ -1054,7 +1092,9 @@ def preBatchLegendSnapshotValid (g : Game)
             | .zone (.ceasedToExist before)
             | .zone (.moved before ..) =>
               isDepartureCleanup &&
-                before.id.isSome && !before.id.any promptIds.contains
+                before.id.isSome &&
+                !before.id.any promptIds.contains &&
+                !before.id.any attachmentAffectsPromptLegend
             | .permanent (.unattached _ fromHost) =>
               isDepartureCleanup && !promptIds.contains fromHost
             | .permanent (.designation _ .ringBearer false)
@@ -1065,7 +1105,12 @@ def preBatchLegendSnapshotValid (g : Game)
                   match spec with
                   | .permission .. | .replacement .. | .prevention .. | .gameRule .. => true
                   | .playerRule _ r _ => r != .legendRuleOff
-                  | .layered (.objects tgtIds) _ _ => !tgtIds.any promptIds.contains
+                  | .layered (.objects tgtIds) eff _ =>
+                    !tgtIds.any promptIds.contains &&
+                      !(tgtIds.any isPromptAttachment &&
+                        match eff with
+                        | .copy .. | .text .. | .types .. | .abilities .. => true
+                        | _ => false)
                   | _ => false
             | _ => false
           if !nonCharRules && (batch != some curBid || earliestPromptIdx?.isSome) then
@@ -2953,11 +2998,6 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
           (g.record (GameEvent.becameMonarch g.turnNumber heir (some p) (cause := cause))).logMsg
             s!"{(g.player heir).name} becomes the monarch (CR 725.4)"
         else g
-      let g :=
-        owned.foldl (fun acc o =>
-          match acc.findObject? o.id with
-          | none => acc
-          | some o => acc.objectLeavesTheGame o p) g
       let ctrlEids :=
         g.activeEffects.filterMap fun (eid, e) =>
           match e with
@@ -2971,12 +3011,18 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
               acc.expireEffectById eid (cause := cause)
             else acc
           | _ => acc) g0
+      let preExpireLeave (g0 : Game) : Game :=
+        let g1 :=
+          owned.foldl (fun acc o =>
+            match acc.findObject? o.id with
+            | none => acc
+            | some o =>
+              acc.objectLeavesTheGame o p (reconcileControl := false)
+                (returnLinkedExile := false)) g0
+        expireControlsPlayers g1
       let g :=
-        if ctrlEids.isEmpty then
-          expireControlsPlayers g
-        else
-          g.endControlEffectsSimultaneously ctrlEids (cause := cause)
-            (preExpire := expireControlsPlayers)
+        g.endControlEffectsSimultaneously ctrlEids (cause := cause)
+          (preExpire := preExpireLeave)
       let bodyExilePending? := if g.pending != .none then some g.pending else none
       let bodyExileCont? := g.pendingReplacement
       let g :=
@@ -2990,9 +3036,10 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
           else acc) g
       let still := g.objects.filter (fun o =>
         let fallback := (o.defaultController.orElse (fun _ => o.controller)).getD o.owner
-        g.controlledBy o p ||
-          (o.isBattlefieldObject && (g.appliedControlEffectIds o).isEmpty &&
-            (g.player fallback).leftTheGame))
+        !bodyExileCont?.any (inActiveEndControlExile o.id) &&
+          (g.controlledBy o p ||
+            (o.isBattlefieldObject && (g.appliedControlEffectIds o).isEmpty &&
+              (g.player fallback).leftTheGame)))
       let exileQueue := still.filterMap fun o =>
         (g.findObject? o.id).map (fun cur => (cur.id, s!"{g.name cur} is exiled (CR 800.4a)"))
       let g :=

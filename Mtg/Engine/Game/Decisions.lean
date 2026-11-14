@@ -135,7 +135,8 @@ def proposalCostPromptStillPayable (g : Game) (caster : PlayerId) (p : Pending) 
               | none => true
               | some sym =>
                 prop.loyaltyPaid ||
-                  g.sourceCounterCostPaidFor excludeId (some prop.spellId) .loyalty ||
+                  g.sourceCounterCostPaidFor excludeId (some prop.spellId) .loyalty
+                    (some .loyalty) ((g.proposalCheckpoint.map (·.eventsSize)).getD 0) ||
                   (g.findObject? excludeId).any (fun src =>
                     src.isOnBattlefield && g.controlledBy src caster &&
                       !g.loyaltyActivatedThisTurn src.id &&
@@ -840,10 +841,9 @@ partial def resumePendingReplacementCore (g : Game) (pr : PendingReplacement)
     let spellId? := g.proposedSpell.map (·.spellId)
     let wasTurnFaceUp := g.proposedSpell.any (·.kind == .turnFaceUp)
     let g0 := g
-    let firstHasFollowing := g0.pendingReplacement.isNone
     let g := g.resumePendingReplacementCore first
       (followedByFinishFra := followedByFinishFra || rest.endsWithFinishFra)
-      (hasFollowingSeq := firstHasFollowing)
+      (hasFollowingSeq := true)
     let newlyDeparted :=
       g.players.foldl (fun acc pl =>
         if pl.leftTheGame && !(g0.player pl.id).leftTheGame && !acc.contains pl.id then
@@ -1099,7 +1099,9 @@ partial def resumePendingReplacementCore (g : Game) (pr : PendingReplacement)
                 .restorePending p false promptLog departed rewindProposal
               (g, .seq closePrefix tailRestore)
           let g := if g.pendingReplacement.isSome then g.change (.pendingReplacement none) else g
-          return g.resumePendingReplacement splitCont (followedByFinishFra := followedByFinishFra)
+          return g.resumePendingReplacementCore splitCont
+            (followedByFinishFra := followedByFinishFra)
+            (hasFollowingSeq := hasFollowingSeq)
     let validReplForDefer :=
       rewindProposal.isSome && g.batchPausePromptValid p
     let (g, popped?, p) : Game × Option PendingReplacement × Pending ← do
@@ -1175,7 +1177,9 @@ partial def resumePendingReplacementCore (g : Game) (pr : PendingReplacement)
           match priorCont? with
           | some prior => .seq prior popped
           | none => popped
-        g.resumePendingReplacement toRun (followedByFinishFra := followedByFinishFra)
+        g.resumePendingReplacementCore toRun
+          (followedByFinishFra := followedByFinishFra)
+          (hasFollowingSeq := hasFollowingSeq)
       | none => g
     let reverseOrResumePopped (g : Game) : Game :=
       if g.proposedSpell.isSome then
@@ -1331,7 +1335,9 @@ partial def resumePendingReplacementCore (g : Game) (pr : PendingReplacement)
           else
             let g := if g.pendingReplacement.isSome then g.change (.pendingReplacement none) else g
             let g := g.popEmptyTopContinuationFrames
-            g.resumePendingReplacement toRun (followedByFinishFra := followedByFinishFra)
+            g.resumePendingReplacementCore toRun
+              (followedByFinishFra := followedByFinishFra)
+              (hasFollowingSeq := hasFollowingSeq)
         | none =>
           let g :=
             if !g.sbaPaused && g.pending == .none && ckptWasRandom &&
@@ -1340,7 +1346,9 @@ partial def resumePendingReplacementCore (g : Game) (pr : PendingReplacement)
                 if g.pendingReplacement.isSome then g.change (.pendingReplacement none) else g
               let g :=
                 match restoreCkptPending? with
-                | some rp => g.resumePendingReplacement rp
+                | some rp =>
+                  g.resumePendingReplacementCore rp
+                    (hasFollowingSeq := restored?.isSome || hasFollowingSeq)
                 | none => g
               match restored? with
               | some rest =>
@@ -1642,8 +1650,9 @@ partial def resumePendingReplacementCore (g : Game) (pr : PendingReplacement)
     if g.proposalCheckpoint.isSome then g.change .endProposalAction else g
   | .payCostPickItems p abilityId sourceId pick remainingIds =>
     g.payCostPickItems p abilityId sourceId pick remainingIds
-  | .finishActivationExtraCosts p sourceId forObject sacrificeSource exileSource stage =>
+  | .finishActivationExtraCosts p sourceId forObject sacrificeSource exileSource stage sinceIdx =>
     g.finishActivationExtraCosts p sourceId forObject sacrificeSource exileSource stage
+      (sinceIdx := sinceIdx)
   | .finishPostLoyaltyActivated caster srcName srcId act abId srcSnap srcOrig hadOuter hadOpenCont =>
     let g := g.finishPostLoyaltyActivated caster srcName srcId act abId srcSnap srcOrig hadOuter hadOpenCont
     if hadOuter then g else resumeAfterBecomeCast g
@@ -1817,8 +1826,8 @@ partial def resumePendingReplacementCore (g : Game) (pr : PendingReplacement)
     g.beginStepCont st
   | .finishCleanupAfterClearEot =>
     g.finishCleanupAfterClearEot
-  | .continueStartNextTurn nextP remainingDeparted runBeginTurn =>
-    g.continueStartNextTurn nextP remainingDeparted runBeginTurn
+  | .continueStartNextTurn nextP remainingDeparted runBeginTurn alreadyExpired =>
+    g.continueStartNextTurn nextP remainingDeparted runBeginTurn alreadyExpired
   | .beginTurnAfterStartExpiry =>
     g.beginTurnAfterStartExpiry
   | .runPostCastCleanup cleanup =>
