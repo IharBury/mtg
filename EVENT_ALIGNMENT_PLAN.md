@@ -15990,9 +15990,9 @@ pain-mana ordering in `ManaAbilities.finishActivateManaAbilityPostSac`).
 1. **Cumulative legend-attachment departure invalidation in `Leaving.preBatchLegendSnapshotValid`,
    dismissed SBA batch re-pause / `.leavePlayersWhoLost` merging / left-associated `.seq` peeling
    in `StateBasedActions`, and outer-continuation priority deferral in `ManaAbilities`**
-   (`Core.lean:11038–11048, 12759–12769`, `Leaving.lean:744–764, 1056–1076, 1092–1097,
-   2784–2793, 2850–2873`, `StateBasedActions.lean:395–411, 588–597, 624–678`,
-   `Decisions.lean:273–285, 336–379`, `ManaAbilities.lean:393–399, 464–466, 478–480`;
+   (`Core.lean:11033–11048, 12759–12769`, `Leaving.lean:744–764, 1056–1076, 1092–1097,
+   2784–2793, 2850–2873`, `StateBasedActions.lean:378–411, 588–597, 624–678`,
+   `Decisions.lean:273–285, 336–378, 461–462`, `ManaAbilities.lean:393–399, 464–466, 478–480`;
    **CR 117.3b / 117.3c / 603.2c / 605.3b / 613.1d / 616.1 / 704.3 / 704.5j / 704.8 / 800.4a**):
    - **Cumulative multi-attachment departure tracking in `Leaving.preBatchLegendSnapshotValid`**
      (`Leaving.lean:1056–1076, 1092–1097`):
@@ -16014,22 +16014,24 @@ pain-mana ordering in `ManaAbilities.finishActivateManaAbilityPostSac`).
    - **Mid-flush re-pause ordering, `.leavePlayersWhoLost` argument merging, and recursive leftmost
      `.seq` peeling in `StateBasedActions`**
      (`Leaving.lean:744–764, 2784–2793, 2850–2873`,
-     `StateBasedActions.lean:395–411, 588–597, 624–678`):
+     `StateBasedActions.lean:378–411, 588–597, 624–678`):
      - Three continuation bugs remain when `clearedInvalidLegend` is `true`:
        (i) if `flushDismissedPausedBatch` (`Leaving.lean:2850–2873`) **re-pauses** inside `origBid`
        (e.g. a second legend group's `Pending.chooseLegend` or a `finishSbaSweep`
        `Pending.chooseReplacement`), `flushDismissedPausedBatch` re-attaches `afterClose?`
-       (`.checkSBA` or `.seq .checkSBA outerTail`) after `.closeBatch origBid _`, and then
-       `checkSBACountedWithLeavesCore` (`664–670`) chains `.leavePlayersWhoLost savedIn popOuterIn
-       departedIn rewindProposalIn` **at the very end** *after* `.checkSBA` and `outerTail` (or
-       leaves `.checkSBA` queued when `deferRestore == true`), while `checkSBACounted` (`402`) sees
-       `contHasSbaOrLeave == true` and drops `(savedIn, popOuterIn, departedIn, rewindProposalIn)`;
+       (`.checkSBA` or `.seq .checkSBA outerTail`) after `.closeBatch origBid _`, and then both
+       `checkSBACountedWithLeavesCore` (`664–670`) and `checkSBACounted` (`402`, via
+       `chainSbaPauseTail` at `378–386`, where `contHasLeave` is `false` on that `.checkSBA` tail)
+       append `.leavePlayersWhoLost savedIn popOuterIn departedIn rewindProposalIn` **at the very
+       end** *after* `.checkSBA` and `outerTail` (or skip chaining when `deferRestore == true` at
+       `379` / `666`, leaving `.checkSBA` queued);
        (ii) when `g.pendingReplacement` starts with `.leavePlayersWhoLost s0 po0 d0 rw0` and caller
        arguments `(savedIn, popOuterIn, departedIn, rewindProposalIn)` are also non-default (e.g. a
        second concession passes `departedIn := #[p3]`), `checkSBACountedWithLeavesCore` (`633–642`)
        discards `(s0, po0, d0, rw0)` completely, and `checkSBACounted` (`409`) treats
-       `.leavePlayersWhoLost` as `some other` in `outerAfter?` (placing it *after*
-       `chainSbaPauseTail` at `595`); and
+       `.leavePlayersWhoLost` as `some other` in `outerAfter?` (so `595` chains `outerAfter?`
+       *after* the SBA pass — and after `chainSbaPauseTail` if the pass re-paused at `590` — rather
+       than peeling and merging its `(s0, po0, d0, rw0)` tuple); and
        (iii) `Core.chainPendingReplacement` builds left-associated `.seq (.seq .checkSBA a) b`
        trees, which shallow `some (.seq .checkSBA rest)` patterns at `408, 631, 638` fail to peel
        at depth ≥ 2 (and miss `g.outerPendingReplacements.back?` when `g.pendingReplacement.isNone
@@ -16057,7 +16059,7 @@ pain-mana ordering in `ManaAbilities.finishActivateManaAbilityPostSac`).
          `checkSBACountedWithLeavesCore`.
    - **Outer-continuation, `triggerSequenceRest`, `mayThenResume`, and active-resolution priority
      deferral in `ManaAbilities`**
-     (`Core.lean:11038–11048, 12759–12769`, `Decisions.lean:273–285, 336–379`,
+     (`Core.lean:11033–11048, 12759–12769`, `Decisions.lean:273–285, 336–378, 461–462`,
      `ManaAbilities.lean:393–399, 464–466, 478–480`):
      - In `ManaAbilities.finishActivateManaAbilityPostSac`, when `prevPending == .none`:
        (i) line `465` (pain-land `Pending.chooseReplacement` pause) checks only
@@ -16073,17 +16075,22 @@ pain-mana ordering in `ManaAbilities.finishActivateManaAbilityPostSac`).
        or stacked `outerPendingReplacements` continuations drain; and
        (iii) `abortDepartedManaAbilityContCore` (`393–399`) likewise omits
        `g.outerPendingReplacements.isEmpty && !g.mayThenResume` (and tests `g.continuations.isEmpty`
-       rather than `g.continuations.all (· == {})`, while `.finishFraChoice` at `398` falls back to
-       `g.activePlayer` if `g.pendingPriority.isNone` when non-active `p` had priority):
-       - Expose `@[extern "mtg_game_finish_and_grant_priority"] opaque finishAndGrantPriorityFwd`
-         and `@[extern "mtg_game_any_continuation_grants_priority"] opaque
-         anyContinuationGrantsPriorityFwd` in `Core.lean` (`11038–11048`) backed by `@[export]`
-         wrappers on `Decisions.finishAndGrantPriority` / `Decisions.continuationGrantsPriority`
-         (`273–285, 336–379`); at `ManaAbilities.lean:464–466` (`Pending.chooseReplacement`,
-         `prevPending == .none`), when `!hasFollowingSeq && g.continuations.all (· == {})`, chain
-         `.receivePriority p` if `g.outerPendingReplacements.isEmpty &&
-         g.triggerSequenceRest.isNone && !g.mayThenResume`, or else if
-         `!g.anyContinuationGrantsPriorityFwd` set `pendingPriority := some p` (when
+       rather than `g.continuations.all (· == {})`, while `.finishFraChoice` at `398` falls back via
+       `Decisions.finishFraChoice` at `461–462` to `g.pendingPriority.getD g.activePlayer` when
+       non-active `p` had priority):
+       - Add `@[extern "mtg_game_finish_and_grant_priority"] opaque finishAndGrantPriorityFwd` and
+         `@[extern "mtg_game_any_continuation_grants_priority"] opaque
+         anyContinuationGrantsPriorityFwd` in `Core.lean` right after
+         `reconcilePostReplayDeparturesFwd` (`11048`, at the end of the `11033–11048` forward-ref
+         cluster before `drainLocalPendingReplacement` at `11050`), backed by `@[export]` wrappers
+         on `Decisions.finishAndGrantPriority` (`336–378`) and the `Game → Bool`
+         `anyContinuationGrantsPriority` check from `Decisions.lean:341–343`
+         (`g.pendingReplacement.any (continuationGrantsPriority g false) ||
+         g.outerPendingReplacements.any (continuationGrantsPriority g false)`); at
+         `ManaAbilities.lean:464–466` (`Pending.chooseReplacement`, `prevPending == .none`), when
+         `!hasFollowingSeq && g.continuations.all (· == {})`, chain `.receivePriority p` if
+         `g.outerPendingReplacements.isEmpty && g.triggerSequenceRest.isNone && !g.mayThenResume`,
+         or else if `!g.anyContinuationGrantsPriorityFwd` set `pendingPriority := some p` (when
          `g.pendingPriority.isNone`) and chain `.finishFraChoice`; and at both
          `ManaAbilities.lean:393–399` and `478–480` (`!g.over && g.pending == .none &&
          g.afterRandom == .none && !g.sbaPaused && !hasFollowingSeq`), compute
@@ -16091,9 +16098,12 @@ pain-mana ordering in `ManaAbilities.finishActivateManaAbilityPostSac`).
          `g.continuations.all (· == {})`, delegate to `g.finishAndGrantPriorityFwd prio` (which
          checks `anyContinuationGrantsPriority`, drains `mayThenResume` → `pendingReplacement` →
          `triggerSequenceRest` → `outerPendingReplacements`, pops empty `{}` frames, and grants
-         priority to `prio` only if no outer continuation already grants priority), and otherwise
-         (when a non-empty resolution frame is on `g.continuations` and queued replacement/trigger
-         work remains without an existing priority-granting tail) chain `.finishFraChoice`.
+         priority to `prio` only if no outer continuation already grants priority), `else if
+         (g.pendingReplacement.isSome || !g.outerPendingReplacements.isEmpty ||
+         g.triggerSequenceRest.isSome || g.mayThenResume) && !g.anyContinuationGrantsPriorityFwd`
+         set `pendingPriority := some prio` (when `g.pendingPriority.isNone`) and chain
+         `.finishFraChoice`, and otherwise (a non-empty resolution frame with no queued work, or
+         when an outer continuation already grants priority) return `g` without granting priority.
 
 2. **Pre-`playerLeftGame` CR 800.4a LKI/control snapshot & departing-attachment `unattachFrom`
    suppression in `Leaving.playerLeavesGameCore`, reachable FRA emblem expiry logging in
@@ -16240,9 +16250,9 @@ pain-mana ordering in `ManaAbilities.finishActivateManaAbilityPostSac`).
        `oAt.status.phasedOut`, falsely returning `false` when `o` phased out under `p1`'s control
        (`gAt.controllerOf oAt == some p1`) and later phased in under `p0`'s static control effect,
        or reverted to `p1` while phased out (CR 702.26f) before `p0` regained control;
-       (ii) `mkGameAt` (`5392–5395`) sets `{ pl with lost := v }` and triggers on
-       `.player (.lost ..)` (`5260, 5365, 5510`), whereas `Core.initialControllerOf` (`1817`) reads
-       `pl.leftTheGame`; and
+       (ii) `mkGameAt` (`5392–5395`) sets `{ pl with lost := v }` from the flag tracked at
+       `5365–5366` and `5510–5511` on `.player (.lost ..)` as well as `.player (.leftGame ..)`,
+       whereas `Core.initialControllerOf` (`1817`) reads `pl.leftTheGame`; and
        (iii) `hasSummoningSickness` ignores `.rules (.permanent (.counters ..))` for
        `.whileSourceHasCounter src k` Layer 1/2 effects and ignores
        `.rules (.permanent (.transformed eo nowBackFace))` (`448–463`), keeping `oAt.printed` /
@@ -16251,8 +16261,10 @@ pain-mana ordering in `ManaAbilities.finishActivateManaAbilityPostSac`).
        - At `5415–5418`, skip only `g0At.initialControllerOf o0At != some ctrl` when
          `o0At.status.phasedOut` while still requiring `g0At.controllerOf o0At == some ctrl`, and
          drop `!oAt.status.phasedOut &&` at `5520` so `gAt.controllerOf oAt != some ctrl` is
-         enforced even while phased out; track `plLeft` on `.rules (.player (.leftGame p))` only and
-         update `{ pl with leftTheGame := v }` in `mkGameAt` (`5394`); and track `(src, k)` counter
+         enforced even while phased out; leave `5260` matching both `.player (.lost ..)` and
+         `.player (.leftGame ..)` for `sawWindowCtrlChange`, and track `plLeft` / `leftTheGame` only
+         at `5365–5366` (backward), `5394` (`{ pl with leftTheGame := v }` in `mkGameAt`), and
+         `5510–5511` (forward) on `.rules (.player (.leftGame p))` only; and track `(src, k)` counter
          events for `.whileSourceHasCounter` Layer 1/2 effects (populating `src`'s `k` counter count
          in `mkGameAt` via `g.objectCounterCountAt src k evLen`) plus DFC `printed` / `transformed`
          transitions across `.permanent (.transformed ..)`, `.zone (.moved ..)`,
