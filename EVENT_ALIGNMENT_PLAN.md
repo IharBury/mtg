@@ -16383,15 +16383,15 @@ resolving stack-object `abId` priority in `FraChoices` `.mayPayPickThen` + `remo
 `removeIndestructibleCounter` / graveyard & hand cost-zone legality in
 `Activation.validateActivation` and `Choices.sourceStillPayable`).
 
-### Phase 43 — Concede/loss dismissed-batch SBA continuation ordering, multi-group & 3+-copy `preBatchLegendSnapshotValid`, `.finishFraChoice` priority & carrier-frame draining, CR 800.4c `before.controller` LKI & 2HG turn/permission expiry, historical slice & `Phasing` reconstruction, and stack-object cost provenance & mana-ability parity
+### Phase 43 — Concede/loss dismissed-batch SBA continuation ordering, multi-group & 3+-copy `preBatchLegendSnapshotValid`, `.finishFraChoice` priority & non-carrier draining, CR 800.4c `before.controller` LKI & 2HG turn/permission expiry, historical slice & `Phasing` reconstruction, and stack-object cost provenance & mana-ability parity
 
 1. **Concede / `leavePlayersWhoLostCore` dismissed-batch SBA flushing, `checkSBACounted` &
    `prependRestToOuter` continuation ordering, multi-group & 3+-copy
-   `Leaving.preBatchLegendSnapshotValid`, and `.finishFraChoice` / carrier-frame priority &
-   draining in `Decisions` & `ManaAbilities`**
+   `Leaving.preBatchLegendSnapshotValid`, and `.finishFraChoice` priority & non-carrier draining in
+   `Decisions` & `ManaAbilities`**
    (`Core.lean:374, 417, 11351–11356`, `Decisions.lean:285, 289–321, 343–368, 469, 521–544`,
    `Leaving.lean:1052–1154, 2550–2553, 2855–2887, 3378–3382, 3518–3620`,
-   `ManaAbilities.lean:355–361, 405–415, 479–521, 695–718`,
+   `ManaAbilities.lean:405–415, 479–521, 695–718`,
    `StateBasedActions.lean:346–358, 386–503, 519–587, 768–779, 804–896`;
    **CR 104.5 / 117.3b / 117.3c / 603.2c / 605.3b / 613.1d / 616.1 / 704.3 / 704.5j / 704.8 /
    733.1 / 800.4a**):
@@ -16401,17 +16401,20 @@ resolving stack-object `abId` priority in `FraChoices` `.mayPayPickThen` + `remo
      (`Decisions.lean:521–544`, `Leaving.lean:2550–2553, 2855–2887, 3378–3380, 3518–3620`,
      `StateBasedActions.lean:386–503, 519–587, 768–779, 804–896`):
      - Three continuation bugs remain in Phase 42's SBA / departure handoff:
-       (i) `checkSBACounted` (`535–587`) and `checkSBACountedWithLeavesCore` (`806–847`) gate
-       `flushedBid?`, `rewriteRepausedPostCloseBatch`, and `peelLeadingSbaOrLeave?` on
-       `clearedInvalidLegend`, and check `g.currentBatch.map Prod.fst == some bid` (`543–544,
-       813–814`). In live gameplay, `playerLeavesGameCore` (`Leaving.lean:3378–3380`) already clears
-       an invalidated `.chooseLegend` prompt to `.none` (`clearedInvalidLegend == false`), while
-       `Decisions.finishConcedePriority` (`522`) and `Leaving.leavePlayersWhoLostCore` (`3614`)
-       pre-flush `flushDismissedPausedBatch` before `checkSBACountedWithLeavesCore` runs — bypassing
-       `rewriteRepausedPostCloseBatch` and `peelLeadingSbaOrLeave?` (leaving `.checkSBA` stranded on
-       `pendingReplacement` / `outerPendingReplacements` so `deferRestore := true` fails to strip it
-       or `finishFraChoice` loses priority, and missing re-pauses when `.closeBatch origBid` opens a
-       fresh `queuedLinkedExile` batch `newBid != origBid`);
+       (i) `checkSBACounted` (`535–587`) gates `flushedBid?`, `flushDismissedPausedBatch` (`540`),
+       `rewriteRepausedPostCloseBatch`, and `peelLeadingSbaOrLeave?` (`556`) on
+       `clearedInvalidLegend`, while `checkSBACountedWithLeavesCore` (`806–847`) calls
+       `flushDismissedPausedBatch` unconditionally at `810–811` yet still gates `flushedBid?`
+       (`806–807`) and `peelLeadingSbaOrLeave?` (`821`) on `clearedInvalidLegend` (and both check
+       `g.currentBatch.map Prod.fst == some bid` at `543–544, 813–814`). In live gameplay,
+       `playerLeavesGameCore` (`Leaving.lean:3378–3380`) already clears an invalidated
+       `.chooseLegend` prompt to `.none` (`clearedInvalidLegend == false`), while
+       `Decisions.finishConcedePriority` (`522`) and `Leaving.leavePlayersWhoLostCore` (`3532,
+       3552, 3614`) pre-flush `flushDismissedPausedBatch` before `checkSBACountedWithLeavesCore`
+       runs — bypassing `rewriteRepausedPostCloseBatch` and `peelLeadingSbaOrLeave?` (leaving
+       `.checkSBA` stranded on `pendingReplacement` / `outerPendingReplacements` so `deferRestore :=
+       true` fails to strip it or `finishFraChoice` loses priority, and missing re-pauses when
+       `.closeBatch origBid` opens a fresh `queuedLinkedExile` batch `newBid != origBid`);
        (ii) in `checkSBACounted`, line `769–773` drops a peeled `.leavePlayersWhoLost none false #[]
        none` (queued when `lost && !leftTheGame` with empty leave args) when the SBA pass finishes
        unpaused because `(savedIn.isSome || popOuterIn || !departedIn.isEmpty ||
@@ -16422,23 +16425,29 @@ resolving stack-object `abId` priority in `FraChoices` `.mayPayPickThen` + `remo
        `.leavePlayersWhoLost`; and
        (iii) `prependRestToOuter` (`386–399`) pushes `.seq rest origOuter` instead of `.seq origOuter
        rest` when `po0` is `true` (reversing `s0`'s outer continuation `O_0` and the peeled `rest`),
-       `mergeLeaveArgs` (`408`) and lines `825–826` collapse `po0 && popOuterIn` into a single `Bool`
-       without popping and sequencing both outer-stack entries (`O_0 >> rest >> O_caller`), and
-       `rewriteRepausedPostCloseBatch` (`438–463`) keeps `remTail?` on `g.pendingReplacement` when
-       `flushedFromPending && deferRestore` so `finishConcedePriority` (`541`) appends
-       `.finishConcede` *after* `remTail?`:
-       - Compute `savedForFlush := if clearedInvalidLegend then none else savedIn` and trigger
-         batch-flush / peeling in `checkSBACounted` (`535–587`) and `checkSBACountedWithLeavesCore`
-         (`806–847`) whenever `clearedInvalidLegend || (!g.sbaPaused && g.pending == .none &&
-         g.currentBatch.isSome && savedForFlush.all g.batchPausePromptGoneOrInvalid)`; on re-pause
+       `mergeLeaveArgs` (`408`) and lines `825–826` OR `po0 || popOuterIn` into a single `Bool`
+       without popping and sequencing both outer-stack entries when both flags are `true`
+       (`O_0 >> rest >> O_caller`), and `rewriteRepausedPostCloseBatch` (`438–463`) keeps `remTail?`
+       on `g.pendingReplacement` when `flushedFromPending && deferRestore` so
+       `finishConcedePriority` (`541`) appends `.finishConcede` *after* `remTail?`:
+       - Compute `savedForFlush := if clearedInvalidLegend then none else savedIn` and
+         `shouldFlush := clearedInvalidLegend || (!g.sbaPaused && g.pending == .none &&
+         g.currentBatch.isSome && savedForFlush.all g.batchPausePromptGoneOrInvalid)` **before**
+         calling `flushDismissedPausedBatch` in both `checkSBACounted` (`535–541`) and
+         `checkSBACountedWithLeavesCore` (`806–811`), capturing `flushedBid? := if shouldFlush then
+         g.currentBatch.map Prod.fst else none` (and `flushedFromPending`) prior to the flush,
+         replacing `810–811` / `540` with `if shouldFlush then g.flushDismissedPausedBatch
+         savedForFlush popOuterIn else (g, popOuterIn)`, and gating the unpaused
+         `peelLeadingSbaOrLeave?` blocks (`556, 821`) on `shouldFlush`; on re-pause
          (`flushedBid?.isSome && g.sbaPaused`), pass the current `newBid` from
          `g.currentBatch.map Prod.fst` into `rewriteRepausedPostCloseBatch` so both same-batch and
          `queuedLinkedExile` `newBid` re-pauses rewrite their post-`.closeBatch` suffix; in
          `Decisions.finishConcedePriority` (`522–538`), skip pre-flushing `flushDismissedPausedBatch`
          when `runSba && !g.over` so `checkSBACountedWithLeavesCore (deferRestore := true)` owns the
          flush and suffix rewrite, and add `(flushDismissed : Bool := true)` to
-         `Leaving.leavePlayersWhoLostCore` (`3518, 3614`), passing `(flushDismissed := false)` from
-         `StateBasedActions.lean:884`; add `(callerHandlesPostPass : Bool := false)` to
+         `Leaving.leavePlayersWhoLostCore` (`3518`), gating all three `flushDismissedPausedBatch`
+         calls (`3532`, `3552`, and `3614`) on `flushDismissed` and passing `(flushDismissed :=
+         false)` from `StateBasedActions.lean:884`; add `(callerHandlesPostPass : Bool := false)` to
          `checkSBACounted` (`true` at `863`), avoid peeling `.leavePlayersWhoLost` in
          `checkSBACounted` when `deferRestore && !callerHandlesPostPass`, re-chain
          `.leavePlayersWhoLost` at `768–773` (when `!callerHandlesPostPass && !deferRestore &&
@@ -16463,12 +16472,14 @@ resolving stack-object `abId` priority in `FraChoices` `.mayPayPickThen` + `remo
        .legendRule`, after Group 1's `earliestPromptIdx?`) trips `return false` at `1130–1131` when
        validating Group 2;
        (ii) lines `1110, 1113, 1123` reject any departure `.ceasedToExist` / `.moved` / `.unattached`
-       / `.expired` touching `promptIds` (and `StateBasedActions.normalizePendingLegendChoice` at
-       `352` gates narrowing on `!g.preBatchLegendSnapshotValid`), so when 1 of 3 copies `b1 ∈ #[b1,
-       b2, b3]` leaves the battlefield during a player departure, `preBatchLegendSnapshotValid`
-       returns `false` and dismisses `.chooseLegend` instead of narrowing to surviving `#[b2, b3]`
-       (or `normalizePendingLegendChoice` leaves dead `b1` in `ids` when the snapshot stays valid,
-       CR 704.5j / 800.4a);
+       / `.expired` touching `promptIds`, while `StateBasedActions.normalizePendingLegendChoice` at
+       `352` gates narrowing on `!g.preBatchLegendSnapshotValid`: when 1 of 3 copies `b1 ∈ #[b1, b2,
+       b3]` leaves the battlefield during a player departure, `preBatchLegendSnapshotValid == false`
+       wrongly clears `.chooseLegend` (`still.size < 2` at `356` / `liveIds.size < 2` at `3378`)
+       whenever `b2` or `b3` relied on `preBatchLegendIds` (e.g. a 0/0 legend-granting source that
+       left earlier in the same SBA batch) so fewer than two copies remain legendary on the live
+       board, whereas when `still.size ≥ 2` and the snapshot stays valid, `352` skips narrowing and
+       leaves dead `b1` in `ids` (CR 704.5j / 800.4a);
        (iii) `curPreG` (`1090–1097`) removes only `isPromptAttachment tid` objects and ignores
        `.permanent (.unattached ..)` and `.continuousEffect (.expired ..)`, missing departing
        non-attachment static legendary/name sources on `curPreG` and cumulative attachment unattach +
@@ -16476,27 +16487,29 @@ resolving stack-object `abId` priority in `FraChoices` `.mayPayPickThen` + `remo
        (iv) line `1121` (`| .playerRule _ r _ => r != .legendRuleOff`) invalidates `p`'s legend
        prompt when a *different* departing player `q != p` loses `.legendRuleOff`:
        - Add `(promptCtrl? : Option PlayerId := none)` to `preBatchLegendSnapshotValid` (passing
-         `some p` from `preBatchLegendChoiceIds` at `1153` and extracting `some q` when falling back
-         to `g.pending = .chooseLegend q _ pIds`); scope `promptIds` and `earliestPromptIdx?` to
-         `.chooseLegend` events whose `pIds` overlap `targetIds` (`candidateIds` when non-empty, else
-         `g.pending`'s `pIds`); compute `survivingPromptIds := promptIds.filter (fun pid =>
-         (g.findObject? pid).any (·.isOnBattlefield))`, check `!survivingPromptIds.contains` (in
-         place of `!promptIds.contains`) at `1110, 1113, 1123` (defining `isPromptAttachment` and
-         `promptLegendChanged` against `survivingPromptIds`), and narrow `Pending.chooseLegend` in
-         `StateBasedActions.normalizePendingLegendChoice` (`352`) whenever `still != ids` (matching
+         `some p` from `preBatchLegendChoiceIds` at `1153` and resolving `promptCtrl?` when `none`
+         directly from the overlapping `.pending (.chooseLegend q _ pIds)` event at `1054` as well as
+         the `g.pending = .chooseLegend q _ pIds` fallback at `1060`); scope `promptIds` and
+         `earliestPromptIdx?` to `.chooseLegend` events whose `pIds` overlap `targetIds`
+         (`candidateIds` when non-empty, else `g.pending`'s `pIds`); compute `survivingPromptIds :=
+         promptIds.filter (fun pid => (g.findObject? pid).any (·.isOnBattlefield))`, check
+         `!survivingPromptIds.contains` (in place of `!promptIds.contains`) at `1110, 1113, 1123`
+         (defining `isPromptAttachment` and `promptLegendChanged` against `survivingPromptIds`), and
+         narrow `Pending.chooseLegend` in `StateBasedActions.normalizePendingLegendChoice` (`352`)
+         whenever `still != ids` without gating on `!g.preBatchLegendSnapshotValid` (matching
          `Leaving.lean:3381`); during `isDepartureCleanup`, remove every departing `tid ∉
          survivingPromptIds` from `curPreG.objects`, apply `curPreG.applyPermanentEvent (.unattached
          ..)` (`Core.lean:417`) and `curPreG.applyContinuousEffectEvent (.expired eid spec?)`
          (`Core.lean:374`) to `curPreG`, and check `!promptLegendChanged curPreG` across all three
          (preserving conservative `false` on `.supertypes` / `.copy` / `.text` / `.types` /
          `.control` and attachment `.abilities`); and narrow line `1121` to
-         `| .playerRule q r _ => r != .legendRuleOff || promptCtrl?.any (· != q)`.
-   - **Explicit `pendingPriority` stamping for `.finishFraChoice`, complete `isCarrierOnlyFrame`,
-     unpaused non-carrier draining, and `prevPending == .none` outer-continuation stashing in
-     `Decisions` & `ManaAbilities`**
+         `| .playerRule q r _ => r != .legendRuleOff || effCtrl?.any (· != q)` using the resolved
+         prompt controller `effCtrl?`.
+   - **Explicit `pendingPriority` stamping for `.finishFraChoice`, unpaused non-carrier draining,
+     and `prevPending == .none` outer-continuation stashing in `Decisions` & `ManaAbilities`**
      (`Core.lean:11351–11356`, `Decisions.lean:285, 289–321, 343–368, 469`,
-     `ManaAbilities.lean:355–361, 405–415, 479–521, 695–718`):
-     - Four priority / continuation bugs remain between `Decisions` and `ManaAbilities`:
+     `ManaAbilities.lean:405–415, 479–521, 695–718`):
+     - Three priority / continuation bugs remain between `Decisions` and `ManaAbilities`:
        (i) `continuationGrantsPriority` (`Decisions.lean:285`) returns `true` for `.finishFraChoice`,
        while `priorityRecipientOfContinuation?` (`289–307`) returns `none` and `Decisions.finishFraChoice`
        (`469`) falls back to `g.pendingPriority.getD g.activePlayer` — so whenever non-active `p`
@@ -16505,15 +16518,12 @@ resolving stack-object `abId` priority in `FraChoices` `.mayPayPickThen` + `remo
        `receivePriority p` and `pendingPriority := some p` in `Decisions.finishAndGrantPriority`
        (`348–368`) and `ManaAbilities` (`410, 485, 491, 514`), stealing priority to `g.activePlayer`
        (CR 117.3c / 605.3b);
-       (ii) `ManaAbilities.isCarrierOnlyFrame` (`355–360`) omits `mayThenDrop := 0, mayThenSkip := 0,
-       mayThenConditional := none`, misclassifying active `mayThen` resolution frames as empty
-       carriers;
-       (iii) in `abortDepartedManaAbilityContCore` (`408–414`) and `finishActivateManaAbilityPostSac`
+       (ii) in `abortDepartedManaAbilityContCore` (`408–414`) and `finishActivateManaAbilityPostSac`
        (`512–517`), when `!g.continuations.all isCarrierOnlyFrame` and queued work exists while
        unpaused (`g.pending == .none`), chaining `.finishFraChoice` onto `g.pendingReplacement`
        without draining leaves the game completely idle (`pending == .none`, undrained
        `pendingReplacement`); and
-       (iv) in `activateManaAbility` (`696–718`), `g.change (.pendingReplacement none)` at `700`
+       (iii) in `activateManaAbility` (`696–718`), `g.change (.pendingReplacement none)` at `700`
        runs *before* `g.change .saveProposalCheckpoint` at `702` (dropping `outerCont?` on mana
        checkpoint rewind), and when `prevPending == .none` keeping `outerCont?` in a local variable
        sets `hasFollowingSeq := true` (`712`) and chains `outerCont?` *after* the mana ability at
@@ -16522,26 +16532,24 @@ resolving stack-object `abId` priority in `FraChoices` `.mayPayPickThen` + `remo
          `priorityRecipientOfContinuation?`, and stamp `g.change (.pendingPriority (some
          (g.priorityInstead prio)))` whenever `g.pendingPriority.isNone` in
          `Decisions.finishAndGrantPriority` (`348–368`) and `ManaAbilities` (`410, 485, 491, 514`)
-         before deferring to that implicit `.finishFraChoice` grant; zero `mayThenDrop`,
-         `mayThenSkip`, and `mayThenConditional` in `ManaAbilities.isCarrierOnlyFrame` (`355–360`);
-         expose `@[extern "mtg_game_drain_pending_continuations"] opaque
-         drainPendingContinuationsFwd` in `Core.lean:11356` (backed by the existing
-         `@[export mtg_game_drain_pending_continuations]` at `Decisions.lean:320`) and call
-         `g.drainPendingContinuationsFwd` after chaining `.finishFraChoice` in
-         `abortDepartedManaAbilityContCore` (`408–414`) and `finishActivateManaAbilityPostSac`
-         (`512–517`, still leaving `g` untouched when no queued work exists); and in
-         `activateManaAbility` (`696–718`), record `.saveProposalCheckpoint` *before* clearing or
-         stashing `g.pendingReplacement`, and when `prevPending == .none` (and on entry to
-         `finishActivateManaAbilityPostSac` when `prevPending == .none && !hasFollowingSeq &&
-         g.pendingReplacement.isSome`) push any `g.pendingReplacement` onto
+         before deferring to that implicit `.finishFraChoice` grant; expose
+         `@[extern "mtg_game_drain_pending_continuations"] opaque drainPendingContinuationsFwd` in
+         `Core.lean:11356` (backed by the existing `@[export mtg_game_drain_pending_continuations]`
+         at `Decisions.lean:320`) and call `g.drainPendingContinuationsFwd` after chaining
+         `.finishFraChoice` in `abortDepartedManaAbilityContCore` (`408–414`) and
+         `finishActivateManaAbilityPostSac` (`512–517`, still leaving `g` untouched when no queued
+         work exists); and in `activateManaAbility` (`696–718`), record `.saveProposalCheckpoint`
+         *before* clearing or stashing `g.pendingReplacement`, and when `prevPending == .none` (and
+         on entry to `finishActivateManaAbilityPostSac` when `prevPending == .none &&
+         !hasFollowingSeq && g.pendingReplacement.isSome`) push any `g.pendingReplacement` onto
          `g.outerPendingReplacements` (pushing `{}` onto `g.continuations` if empty) so
          `hasFollowingSeq` is `false` when `prevPending == .none`.
 
 2. **Unbatched CR 800.4c `ZoneEvent.moved.before.controller` LKI & replacement chooser, active-only
    CR 800.4c classification, co-departing unattach/copy cleanup, `.fraEmblem` turn/duration expiry,
    and 2HG multi-round extra-turn splice & `.playFromExile` duration expiry**
-   (`Attachments.lean:77–86`, `Core.lean:2240–2257, 3149–3153, 9448, 13309–13339, 13559–13620,
-   13700–13712`, `Decisions.lean:954, 1831`, `Event.lean:1647, 1921–1923`,
+   (`Attachments.lean:77–86`, `Core.lean:2240–2257, 2913–2915, 3149–3153, 9448, 13309–13339,
+   13559–13620, 13700–13712`, `Decisions.lean:954, 1831`, `Event.lean:1647, 1921–1923`,
    `Leaving.lean:80–115, 141, 171–176, 222–226, 281, 321, 354–362, 458–490, 725, 3029–3062`,
    `Movement.lean:113–131, 267–306, 437–442, 487`,
    `Phasing.lean:241–254, 265–278, 306`,
@@ -16634,7 +16642,7 @@ resolving stack-object `abId` priority in `FraChoices` `.mayPayPickThen` + `remo
          `Leaving.recordRemoveCountersMulti`.
    - **2HG multi-round extra-turn `inProgress` splice & skipped-teammate check, and `.playFromExile`
      `.untilEndOfNextTurnOf` / departed `.untilEndOfTurn` expiry**
-     (`Core.lean:2240–2257`, `Phasing.lean:241–254, 265–278, 306`,
+     (`Core.lean:2240–2257, 2913–2915`, `Phasing.lean:241–254, 265–278, 306`,
      `Turns.lean:107–137, 211–225, 356, 370, 386, 435–450, 537–551, 696–711`):
      - Two 2HG / duration bugs remain:
        (i) when Team A `#[⟨0⟩, ⟨1⟩]` has two queued extra turns (`#[⟨0⟩, ⟨1⟩, ⟨0⟩, ⟨1⟩]`) and `⟨0⟩`
@@ -16649,26 +16657,31 @@ resolving stack-object `abId` priority in `FraChoices` `.mayPayPickThen` + `remo
        (ii) `Turns.expirePlayPermissions` (`107–137`) gates `.untilEndOfNextTurnOf q` on
        `matchesTeam` (`grantee == endingPlayer`), so permissions granted to `p0` with duration
        `.untilEndOfNextTurnOf p1` (or cross-seat 2HG teammate durations when one teammate departed)
-       never expire when `p1`'s turn ends or is skipped (and `p == none` permissions never expire),
-       while `Turns.expireUntilNextTurnEffects` (`356, 386`) skips `expirePlayPermissions p` when
-       `teamHasLiving == true`, leaving a departed 2HG player's personal `.untilEndOfTurn`
-       permissions active under CR 800.4i:
+       never expire when `p1`'s turn ends or is skipped (and `p == none` permissions, where
+       `Core.playPermissionEntryOf?` at `Core.lean:2914` resolves the grantee as `p.getD
+       perm.player`, are skipped), while `Turns.expireUntilNextTurnEffects` (`356, 386`) skips
+       `expirePlayPermissions p` when `teamHasLiving == true`, leaving a departed 2HG player's
+       personal `.untilEndOfTurn` permissions active under CR 800.4i:
        - Compute `inProgress` / `inProgressExtraSeats` across `Core.lean:2240–2253`,
          `Turns.lean:435–448`, `Turns.lean:537–551`, and `Phasing.lean:241–254, 265–278` by
          matching prefix entries of `extraTurns` as an ordered subsequence of the suffix of
          `g.teamMembers seats[0]!` strictly *after* `seats.back!`, and check `skipped.any (fun q =>
          q == dep || g.areTeammates q dep)` at `Phasing.lean:306`; in `Turns.expirePlayPermissions`
-         (`107–137`), decouple `d == .untilEndOfNextTurnOf q` from `grantee` (expiring for any
-         `grantee` when `departed` and `q == endingPlayer || (!(g.teamMembers endingPlayer).any
-         g.stillInGame && g.areTeammates q endingPlayer)`, or when `!departed` and `(q ==
-         endingPlayer || g.areTeammates q endingPlayer) && g.isSharedTurnFinalSeat &&
-         g.hasTurnBegunSince eid q`, while keeping `d == .untilEndOfTurn` scoped to `grantee ==
-         endingPlayer || (!departed && g.areTeammates grantee endingPlayer)` plus `p == none` when
-         `!departed && g.isSharedTurnFinalSeat` — and including `p == none` in `clearEOT` / `endTurn`
-         at `216–217, 701–702` — preserving single-player `expirePlayPermissions` semantics); and in
-         `Turns.expireUntilNextTurnEffects` (`356, 386`), always expire departed `p`'s personal
-         `.untilEndOfTurn` `.playFromExile` permissions under CR 800.4i even when `teamHasLiving ==
-         true` (keeping departed `.untilEndOfNextTurnOf` gated on `!teamHasLiving` per CR 805.4).
+         (`107–137`), resolve `let grantee := p.getD perm.player` (matching `Core.lean:2914`, and
+         likewise test `p.getD perm.player != pl.id` in `clearEOT` / `endTurn` at `216–217,
+         701–702`), keep `d == .untilEndOfTurn` scoped to `(departed && grantee == endingPlayer) ||
+         (!departed && g.isSharedTurnFinalSeat && (grantee == endingPlayer || g.areTeammates grantee
+         endingPlayer))` (preserving single-player `expirePlayPermissions` semantics), and decouple
+         `d == .untilEndOfNextTurnOf q` from `grantee`, expiring when `departed` **only if
+         `!(g.teamMembers endingPlayer).any g.stillInGame && (q == endingPlayer || g.areTeammates q
+         endingPlayer)`** (staying `false` while any teammate of `endingPlayer` remains in the game
+         per CR 805.4) or when `!departed` and `(q == endingPlayer || g.areTeammates q endingPlayer)
+         && g.isSharedTurnFinalSeat && g.hasTurnBegunSince eid q`; and in
+         `Turns.expireUntilNextTurnEffects` (`356, 386`), run `targets.foldl (fun acc t =>
+         acc.expirePlayPermissions t (cause := cause)) g` outside `if teamHasLiving` so when
+         `teamHasLiving == true` (`targets == #[p]`) departed `p`'s personal `.untilEndOfTurn`
+         `.playFromExile` permissions expire under CR 800.4i while `.untilEndOfNextTurnOf` stays
+         untouched per CR 805.4.
 
 3. **Historical-slice `Core.controlChanged`, CR 400.7 & pre-existence invariants in
    `initHistoricalSlice` / `stepHistoricalSlice`, `Phasing` `sinceIdx?` / `initAp` / extra-turn &
@@ -16707,17 +16720,22 @@ resolving stack-object `abId` priority in `FraChoices` `.mayPayPickThen` + `remo
        (`before.id != some aid`) to `fromZ` instead of `.outside after.owner` prior to the move; and
        (iii) `stepHistoricalSlice` leaves `s.dc` / `s.rc` stale when `o` ceases to exist (`5574`) or
        moves to a new `after.id != some o.id` (`5598`, where `s.z` is also set to `toZ` instead of
-       `.outside before.owner`), while `initHistoricalSlice` (`5445–5447` when `before.id != some
-       o.id`, `5480–5481`, `5493–5497`) populates `dc0` / `rc0` from post-creation values instead of
-       `none`, so `g.controllerOfAt o 0` returns `some ctrl` before `o` existed:
+       `.outside before.owner`), while `initHistoricalSlice` sets `z0 := fromZ` and `dc0` / `rc0 :=
+       after.controller` for a newly allocated `after.id == some o.id` (`before.id != some o.id` at
+       `5441–5451`, rather than `.outside after.owner` / `none` while keeping same-ID `before.id ==
+       some o.id` pre-move state intact) and populates `dc0` / `rc0` from post-creation values on
+       `.created` (`5480–5481`) and initial `.materializeObject` (`5493–5497`), so
+       `g.controllerOfAt o 0` returns `some ctrl` before `o` existed:
        - In `stepHistoricalSlice` `.moved` (`5577–5581`), set `bid`'s zone to `.outside
          before.owner` when `after.id != some bid` (and set `o`'s `z := .outside before.owner, dc :=
          none, rc := none` when `before.id == some o.id && after.id != some o.id` at `5598`, and
          `dc := none, rc := none` on `ceasedToExist` at `5574`); and in `initHistoricalSlice`, set
-         `objZones` for `aid` (`before.id != some aid`) to `.outside after.owner` at `5468`, and
-         clear `dc0 := none, rc0 := none, fd0 := false` prior to `o`'s initial creation /
-         `.materializeObject` / newly-allocated `.moved` arrival (`5445–5447, 5480–5481,
-         5490–5497`).
+         `objZones` for `aid` (`before.id != some aid`) to `.outside after.owner` at `5467–5468`,
+         and clear `z0 := .outside after.owner, ph0 := false, fd0 := false, dc0 := none, rc0 :=
+         none` inside the newly-allocated `before.id != some o.id` branch (`5448`, leaving same-ID
+         `before.id == some o.id` moves preserving `before`'s pre-move state) as well as `fd0 :=
+         false, dc0 := none, rc0 := none` on `.created` (`5478–5481`) and initial
+         `.materializeObject` (`5490–5497`).
    - **Pre-`events[0]` `sinceIdx?`, backward `initAp` reconstruction, extra-turn skip guard,
      already-phased-out `.moved` guard, and `controllerOfAt` in `Phasing`**
      (`Core.lean:1768–1770`, `Phasing.lean:179–212, 262, 293, 337–366`):
@@ -16880,21 +16898,20 @@ dismissed-batch SBA flushing & `queuedLinkedExile` re-pause rewriting, `checkSBA
 re-chaining & `contHasLeave` merging, and `prependRestToOuter` `O_0 >> rest >> O_caller` ordering in
 `StateBasedActions`, multi-group `keepLegend` + 3+-copy narrowing + cumulative `curPreG` +
 controller-scoped `.legendRuleOff` in `Leaving.preBatchLegendSnapshotValid`, and `.finishFraChoice`
-`pendingPriority` stamping + `isCarrierOnlyFrame` `mayThen*` fields + non-carrier draining +
-`prevPending == .none` outer-continuation stashing in `Decisions` and `ManaAbilities`; unbatched CR
-800.4c `lkiController?` `before.controller` LKI & CR 616.1 chooser + active-only CR 800.4c vs CR
-800.4a classification + co-departing `skipUnattachIds` / `unattachFrom` `preState?` /
-`restoreCopiesUntilSourceLeaves` `suppressLog`, multi-effect & orphaned `.fraEmblem` expiry +
-cease-first `"<embName> ends"` logging, and 2HG multi-round extra-turn `inProgress` splicing +
-decoupled `.untilEndOfNextTurnOf` & departed CR 800.4i `.untilEndOfTurn` `.playFromExile` expiry in
-`Leaving`, `Movement`, and `Turns`; historical-slice `Core.controlChanged`, dead `before.id` &
-pre-existence invariants in `initHistoricalSlice` / `stepHistoricalSlice`, pre-`events[0]`
-`sinceIdx?` + backward `initAp` + extra-turn CR 500.7 guard + `controllerOfAt` in `Phasing`, and
-full-`GameChange` + monotonic ID/timestamp `Core.isInitialMaterialize`; and stack-object `forObject`
-priority + `spellCast`-bounded cast-mana provenance, mixed-zone & battlefield-source activation
-legality, `Timing.isManaActivation` / `ManaAbilities` parity, and CR 601.2g self-sacrificing mana
-sources across `FraChoices`, `Decisions`, `Event`, `Activation`, `Choices`, `ActivationCosts`, and
-`ManaAbilities`).
+`pendingPriority` stamping + non-carrier draining + `prevPending == .none` outer-continuation
+stashing in `Decisions` and `ManaAbilities`; unbatched CR 800.4c `lkiController?` `before.controller`
+LKI & CR 616.1 chooser + active-only CR 800.4c vs CR 800.4a classification + co-departing
+`skipUnattachIds` / `unattachFrom` `preState?` / `restoreCopiesUntilSourceLeaves` `suppressLog`,
+multi-effect & orphaned `.fraEmblem` expiry + cease-first `"<embName> ends"` logging, and 2HG
+multi-round extra-turn `inProgress` splicing + decoupled `.untilEndOfNextTurnOf` & departed CR 800.4i
+`.untilEndOfTurn` `.playFromExile` expiry in `Leaving`, `Movement`, and `Turns`; historical-slice
+`Core.controlChanged`, dead `before.id` & pre-existence invariants in `initHistoricalSlice` /
+`stepHistoricalSlice`, pre-`events[0]` `sinceIdx?` + backward `initAp` + extra-turn CR 500.7 guard +
+`controllerOfAt` in `Phasing`, and full-`GameChange` + monotonic ID/timestamp
+`Core.isInitialMaterialize`; and stack-object `forObject` priority + `spellCast`-bounded cast-mana
+provenance, mixed-zone & battlefield-source activation legality, `Timing.isManaActivation` /
+`ManaAbilities` parity, and CR 601.2g self-sacrificing mana sources across `FraChoices`, `Decisions`,
+`Event`, `Activation`, `Choices`, `ActivationCosts`, and `ManaAbilities`).
 
 Final check (after Phase 43): `lake build`, `lake exe mtg-demo`,
 `lake exe oracle-roundtrip`, no `EventCause.unclassified` constructor, no
