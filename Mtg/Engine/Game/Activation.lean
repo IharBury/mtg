@@ -200,17 +200,15 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
         let g := g.changes #[.pending (.activateManaAbilities p), .proposedSpell (some prop)]
         return g.logMsg s!"{pl.name} may activate mana abilities to turn {g.name o} face up (CR 601.2g / 702.37e)"
       else
-        let g := g.change .clearProposalCheckpoint
-        let pre := g
-        let g := g.record
-          (GameEvent.turnedFaceUp g.turnNumber (g.snapshot (g.object! o.id))
-            (cause := .specialAction .turnFaceUp p))
-        let objName := (g.findObject? o.id).map g.name |>.getD (g.name o)
-        let g := g.logMsg s!"{pl.name} turns {objName} face up"
+        let localOuter? := g.pendingReplacement
+        let g0 := if localOuter?.isSome then g.change (.pendingReplacement none) else g
+        let (g, callerShouldResume) :=
+          g0.completeTurnFaceUp p o.id (hadOuterReplacement := localOuter?.isSome)
         let g :=
-          (reconcileControlAfterTransition pre g (cause := some (.specialAction .turnFaceUp p)))
-            |>.flushQueuedLinkedExile
-        return g.receivePriority p
+          match localOuter? with
+          | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishFra
+          | none => g
+        return if callerShouldResume then g.resumeAfterBecomeCastFwd else g
     | none => throw s!"{g.name o} is face down"
   let defs := g.manaAbilityDefs o
   if let some i := (List.range defs.size).find? (fun i => defs[i]!.activatedIdx == some abilityIdx) then

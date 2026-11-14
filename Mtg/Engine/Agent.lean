@@ -168,34 +168,46 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
     | .chooseX _ =>
       match g.proposedSpell with
       | some prop =>
-        if prop.loyaltyX then
-          if prop.activation.bind (·.cost.loyalty) == some .plusX then
-            if prop.cost.containsX then
-              some (.chooseX (maxAffordableX g p prop.cost
-                (allowElfRestricted := g.proposedAllowsElfRestricted prop)
-                (allowInstRestricted := g.proposedAllowsInstRestricted prop)
-                (allowHeroRestricted := g.proposedAllowsHeroRestricted prop)
-                (allowVillainRestricted := g.proposedAllowsVillainRestricted prop)
-                (allowCantNonartifact := g.proposedAllowsCantNonartifact prop)
-                (allowCreatureRestricted := g.proposedAllowsCreatureRestricted prop)
-                (spend := g.proposedManaSpend prop)))
-            else
-              some (.chooseX 1)
-          else
-            -- Remove all but one loyalty counter so the planeswalker survives.
+        let excludeId := if prop.tapSource then prop.sourceId else none
+        let manaBound? : Option Nat :=
+          if prop.cost.containsX then
+            some (maxAffordableX g p prop.cost
+              (allowElfRestricted := g.proposedAllowsElfRestricted prop)
+              (allowInstRestricted := g.proposedAllowsInstRestricted prop)
+              (allowHeroRestricted := g.proposedAllowsHeroRestricted prop)
+              (allowVillainRestricted := g.proposedAllowsVillainRestricted prop)
+              (allowCantNonartifact := g.proposedAllowsCantNonartifact prop)
+              (allowCreatureRestricted := g.proposedAllowsCreatureRestricted prop)
+              (spend := g.proposedManaSpend prop)
+              (exclude := excludeId))
+          else none
+        let minusLoyaltyBound? : Option Nat :=
+          if prop.loyaltyX && prop.activation.bind (·.cost.loyalty) == some .minusX then
+            -- Remove all but one loyalty counter so the planeswalker survives when loyalty > 0.
             let loyalty := ((prop.sourceId.bind g.findObject?).map (·.status.loyaltyCounters)).getD 0
-            some (.chooseX (loyalty - 1))
-        else if prop.removePlusOneX then
-          some (.chooseX (((prop.sourceId.bind g.findObject?).map (·.status.plusOnePlusOne)).getD 0))
-        else
-          some (.chooseX (maxAffordableX g p prop.cost
-            (allowElfRestricted := g.proposedAllowsElfRestricted prop)
-            (allowInstRestricted := g.proposedAllowsInstRestricted prop)
-            (allowHeroRestricted := g.proposedAllowsHeroRestricted prop)
-            (allowVillainRestricted := g.proposedAllowsVillainRestricted prop)
-            (allowCantNonartifact := g.proposedAllowsCantNonartifact prop)
-            (allowCreatureRestricted := g.proposedAllowsCreatureRestricted prop)
-            (spend := g.proposedManaSpend prop)))
+            some (loyalty - 1)
+          else none
+        let plusOneBound? : Option Nat :=
+          if prop.removePlusOneX then
+            some (((prop.sourceId.bind g.findObject?).map (·.status.plusOnePlusOne)).getD 0)
+          else none
+        let bounds := #[manaBound?, minusLoyaltyBound?, plusOneBound?].filterMap id
+        match bounds[0]? with
+        | some b0 =>
+          some (.chooseX (bounds.foldl min b0))
+        | none =>
+          if prop.loyaltyX && prop.activation.bind (·.cost.loyalty) == some .plusX then
+            some (.chooseX 1)
+          else
+            some (.chooseX (maxAffordableX g p prop.cost
+              (allowElfRestricted := g.proposedAllowsElfRestricted prop)
+              (allowInstRestricted := g.proposedAllowsInstRestricted prop)
+              (allowHeroRestricted := g.proposedAllowsHeroRestricted prop)
+              (allowVillainRestricted := g.proposedAllowsVillainRestricted prop)
+              (allowCantNonartifact := g.proposedAllowsCantNonartifact prop)
+              (allowCreatureRestricted := g.proposedAllowsCreatureRestricted prop)
+              (spend := g.proposedManaSpend prop)
+              (exclude := excludeId)))
       | none => some (.chooseX 0)
     | .chooseTargets _ =>
       chooseSpellTarget g p
@@ -234,8 +246,9 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
       discardBackOrDecline g p
     | .assignCombatDamage _ _ =>
       some (.assignCombatDamage #[])
-    | .chooseLegend _ _ ids =>
-      some (.keepLegend (defaultLegendToKeep g ids))
+    | .chooseLegend q name ids =>
+      let liveIds := g.validLegendChoiceIds q name ids
+      some (.keepLegend (defaultLegendToKeep g (if liveIds.isEmpty then ids else liveIds)))
     | .chooseTriggerToStack q =>
       some (.stackTriggers (defaultTriggerSourceIds g q))
     | .mayPayGeneric _ n =>
@@ -467,8 +480,8 @@ where
       (allowElfRestricted := false) (allowInstRestricted := false)
       (allowHeroRestricted := false) (allowVillainRestricted := false)
       (allowCantNonartifact := false) (allowCreatureRestricted := false)
-      (spend : ManaSpend := {}) : Nat :=
-    let available := g.availableMana p
+      (spend : ManaSpend := {}) (exclude : Option ObjectId := none) : Nat :=
+    let available := g.availableManaExcept p exclude
     Id.run do
       let mut best : Nat := 0
       for x in [0:available.total + 1] do
@@ -485,8 +498,8 @@ where
   /-- Activate a non-mana ability if the available mana covers its cost. -/
   chooseActivate (g : Game) (p : PlayerId) : Option Action :=
     let shouldActivate (o : GameObject) (ab : ActivatedAbility) : Bool :=
-      let available :=
-        g.availableManaExcept p (if ab.cost.tap then some o.id else none)
+      let excludeId := if ab.cost.tap then some o.id else none
+      let available := g.availableManaExcept p excludeId
       let manaCost := g.activationManaCost p ab (some o)
       let isTurnFaceUp := o.status.faceDown && ab.effect.resolution == .frc .turnFaceUp
       let allowElf := !isTurnFaceUp && g.hasSubtype o .elf
@@ -517,7 +530,8 @@ where
           (allowVillainRestricted := allowVillain)
           (allowCantNonartifact := true)
           (allowCreatureRestricted := allowCreature)
-          (spend := actSpend) == 0) &&
+          (spend := actSpend)
+          (exclude := excludeId) == 0) &&
       -- Don't spend mana re-equipping a creature that is already equipped.
       !(ab.isEquip && o.attachedTo.isSome) &&
       -- Spend {4}{T} on Rogue's Passage only after attackers are declared.

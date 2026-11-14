@@ -308,8 +308,9 @@ def mustApply (g : Game) (p : PlayerId) (a : Action) : Game :=
     mustApply g actor (.chooseX 0)
   | .assignCombatDamage _ _, some actor =>
     mustApply g actor (.assignCombatDamage #[])
-  | .chooseLegend _ _ ids, some actor =>
-    mustApply g actor (.keepLegend (g.defaultLegendToKeep ids))
+  | .chooseLegend q name ids, some actor =>
+    let liveIds := g.validLegendChoiceIds q name ids
+    mustApply g actor (.keepLegend (g.defaultLegendToKeep (if liveIds.isEmpty then ids else liveIds)))
   | .chooseTriggerToStack seat, some actor =>
     mustApply g actor (.stackTriggers (g.defaultTriggerSourceIds seat))
   | .mayPayGeneric _ _, some actor =>

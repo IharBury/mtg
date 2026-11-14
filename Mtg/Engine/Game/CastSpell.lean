@@ -299,21 +299,17 @@ def announceX (g : Game) (p : PlayerId) (x : Nat) : Except String Game := do
     if !g.sourceStillPayable prop then
       return (← g.reverseProposedSpell? (resumeContinuation := true))
     let g := g.record (GameEvent.announced g.turnNumber prop.spellId (x := some x))
-    let g ←
-      if prop.loyaltyX then
-        let some src := prop.sourceId.bind g.findObject?
-          | throw "The planeswalker left the battlefield"
-        if prop.activation.bind (·.cost.loyalty) == some .minusX &&
-            src.status.loyaltyCounters < x then
-          throw s!"{g.name src} doesn't have {x} loyalty counters to remove (CR 606.4)"
-        pure g
-      else if prop.removePlusOneX then
-        let some src := prop.sourceId.bind g.findObject?
-          | throw "The source left the battlefield"
-        if src.status.plusOnePlusOne < x then
-          throw s!"{g.name src} doesn't have {x} +1/+1 counters to remove"
-        pure g
-      else pure g
+    if prop.loyaltyX then
+      let some src := prop.sourceId.bind g.findObject?
+        | throw "The planeswalker left the battlefield"
+      if prop.activation.bind (·.cost.loyalty) == some .minusX &&
+          src.status.loyaltyCounters < x then
+        throw s!"{g.name src} doesn't have {x} loyalty counters to remove (CR 606.4)"
+    if prop.removePlusOneX then
+      let some src := prop.sourceId.bind g.findObject?
+        | throw "The source left the battlefield"
+      if src.status.plusOnePlusOne < x then
+        throw s!"{g.name src} doesn't have {x} +1/+1 counters to remove"
     let cost :=
       match prop.kind, prop.activation, prop.sourceId.bind g.findObject? with
       | .activatedAbility, some ab, src =>

@@ -189,9 +189,26 @@ private def departedNextTurnWouldHaveBegunSince (g : Game) (dep : PlayerId)
   let mut alive : Array Bool := Array.ofFn (n := n) fun ⟨k, _⟩ =>
     let pk : PlayerId := ⟨k⟩
     g.stillInGame pk || hasLeaveEvent pk
-  let mut activePlayer : PlayerId := ⟨0⟩
+  let initAp : PlayerId := Id.run do
+    for i in [0 : min (sinceIdx + 1) g.events.size] do
+      match g.events[i]!.change with
+      | .engine (.startingPlayer v) => return v
+      | .rules (.turn (.turnBegan p _)) => return p
+      | .rules (.turn (.stepBegan _ ap)) => return ap
+      | .rules (.turn (.turnEnded ap)) => return ap
+      | _ => pure ()
+    for ev in g.events do
+      match ev.change with
+      | .engine (.startingPlayer v) => return v
+      | .rules (.turn (.stepBegan _ ap)) => return ap
+      | .rules (.turn (.turnEnded ap)) => return ap
+      | .rules (.turn (.turnBegan p _)) =>
+        return if g.startingPlayer.idx < n then g.startingPlayer else p
+      | _ => pure ()
+    return if g.activePlayer.idx < n then g.activePlayer else ⟨0⟩
+  let mut activePlayer : PlayerId := initAp
   let mut extraTurns : Array PlayerId := #[]
-  let mut seats : Array PlayerId := #[⟨0⟩]
+  let mut seats : Array PlayerId := #[initAp]
   let mut seatsExtra : Bool := false
   let isAlive (al : Array Bool) (q : PlayerId) : Bool :=
     q.idx < n && al[q.idx]!
@@ -214,6 +231,11 @@ private def departedNextTurnWouldHaveBegunSince (g : Game) (dep : PlayerId)
     | .rules (.player (.leftGame q)) =>
       if q.idx < n then
         alive := alive.set! q.idx false
+    | .rules (.turn (.stepBegan _ ap))
+    | .rules (.turn (.turnEnded ap)) =>
+      activePlayer := ap
+      if seats.isEmpty || (!seats.contains ap && !g.areTeammates seats[0]! ap) then
+        seats := #[ap]
     | .rules (.turn (.extraTurnAdded player _)) =>
       let team := g.teamMembers player
       let inProgress :=
@@ -246,14 +268,23 @@ private def departedNextTurnWouldHaveBegunSince (g : Game) (dep : PlayerId)
             let mut skipIdx := 0
             while skipIdx < extraTurns.size && !isAlive alive extraTurns[skipIdx]! do
               let d := extraTurns[skipIdx]!
-              if !depSkipped.contains d then depSkipped := depSkipped.push d
+              let extraSeatEnding :=
+                seatsExtra && !sameShared &&
+                  seats.any (fun s => s == d || g.areTeammates s d)
+              if !(g.teamMembers d).any (isAlive alive) && !extraSeatEnding &&
+                  !depSkipped.contains d then
+                depSkipped := depSkipped.push d
               skipIdx := skipIdx + 1
             if (extraTurns.extract skipIdx extraTurns.size)[0]?.isSome then
               return depSkipped
           for k in [1:n+1] do
             let q : PlayerId := ⟨(activePlayer.idx + k) % n⟩
             if !isAlive alive q then
-              if !depSkipped.contains q then depSkipped := depSkipped.push q
+              let endingCurrentShared :=
+                !sameShared && seats.any (fun s => s == q || g.areTeammates s q)
+              if !(g.teamMembers q).any (isAlive alive) && !endingCurrentShared &&
+                  !depSkipped.contains q then
+                depSkipped := depSkipped.push q
             else
               return depSkipped
           return depSkipped

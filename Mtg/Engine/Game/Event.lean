@@ -304,6 +304,14 @@ inductive EffectDuration where
   | indefinite
 deriving DecidableEq, Repr, Inhabited, BEq
 
+/-- Whether this duration is a resolving-effect timed or `untilSourceLeaves`
+duration whose affected set is locked in when created (CR 611.2b–c / 702.26b,d,e). -/
+def EffectDuration.isTimedResolvingDuration : EffectDuration → Bool
+  | .untilEndOfTurn | .untilEndOfCombat | .untilEndOfStepOrPhase _ | .untilStepOrPhase _
+  | .untilNextTurnOf _ | .untilEndOfNextTurnOf _ | .untilSourceLeaves _ => true
+  | .whileSourceOnBattlefield _ | .whileSourceHasCounter _ _ | .whileInZone _ _
+  | .indefinite => false
+
 /-- Closed-data scope of a layered continuous effect (CR 611.2c / 611.3). -/
 inductive ObjectScope where
   /-- Specific object(s) locked in when the effect was created (CR 611.2c). -/
@@ -2399,6 +2407,98 @@ def PendingReplacement.collectDeparted : PendingReplacement → Array PlayerId
   | .seq a b =>
     b.collectDeparted.foldl (fun acc p => if acc.contains p then acc else acc.push p) a.collectDeparted
   | _ => #[]
+
+/-- Strip recorded `departed` lists to `#[]` across a `PendingReplacement` tree so
+checkpoint continuations can be compared modulo post-checkpoint departures. -/
+def PendingReplacement.withoutDeparted : PendingReplacement → PendingReplacement
+  | .restorePending pend popOuter promptLog _ rw =>
+    .restorePending pend popOuter promptLog #[] rw
+  | .leavePlayersWhoLost saved popOuter _ rw =>
+    .leavePlayersWhoLost saved popOuter #[] rw
+  | .finishConcede wasIdle prio wasCombat saved popOuter _ rw =>
+    .finishConcede wasIdle prio wasCombat saved popOuter #[] rw
+  | .concedePlayersLoop rem wp mid wasIdle prio wasCombat saved popOuter _ rw =>
+    .concedePlayersLoop rem wp mid wasIdle prio wasCombat saved popOuter #[] rw
+  | .seq a b => .seq a.withoutDeparted b.withoutDeparted
+  | other => other
+
+private def PendingReplacement.toSeqLeaves : PendingReplacement → Array PendingReplacement
+  | .seq a b => a.toSeqLeaves ++ b.toSeqLeaves
+  | other => #[other]
+
+private def PendingReplacement.ofSeqLeaves? (leaves : Array PendingReplacement) :
+    Option PendingReplacement :=
+  match leaves[0]? with
+  | none => none
+  | some first =>
+    some ((leaves.extract 1 leaves.size).foldl (fun acc x => .seq acc x) first)
+
+private def PendingReplacement.containsSubtreeBase (targetBase : PendingReplacement) :
+    PendingReplacement → Bool
+  | .seq a b =>
+    (PendingReplacement.seq a b).withoutDeparted == targetBase ||
+      PendingReplacement.containsSubtreeBase targetBase a ||
+      PendingReplacement.containsSubtreeBase targetBase b
+  | other => other.withoutDeparted == targetBase
+
+/-- Whether `cur` contains `target` modulo `withoutDeparted` (including across
+`.seq` reassociation such as `ensureEndsWithFinishFra`). -/
+def PendingReplacement.containsModDeparted (target : PendingReplacement)
+    (cur : PendingReplacement) : Bool :=
+  let targetBase := target.withoutDeparted
+  if PendingReplacement.containsSubtreeBase targetBase cur then true
+  else
+    let tLeaves := targetBase.toSeqLeaves
+    if tLeaves.size <= 1 then false
+    else
+      let cLeaves := cur.withoutDeparted.toSeqLeaves
+      if cLeaves.size < tLeaves.size then false
+      else
+        Id.run do
+          for i in [0 : cLeaves.size - tLeaves.size + 1] do
+            if cLeaves.extract i (i + tLeaves.size) == tLeaves then
+              return true
+          return false
+
+private def PendingReplacement.dropSubtreeBase (targetBase : PendingReplacement) :
+    PendingReplacement → Option PendingReplacement
+  | .seq a b =>
+    if (PendingReplacement.seq a b).withoutDeparted == targetBase then none
+    else
+      match PendingReplacement.dropSubtreeBase targetBase a,
+            PendingReplacement.dropSubtreeBase targetBase b with
+      | none, none => none
+      | some a', none => some a'
+      | none, some b' => some b'
+      | some a', some b' => some (.seq a' b')
+  | other =>
+    if other.withoutDeparted == targetBase then none else some other
+
+/-- Remove occurrences of `target` modulo `withoutDeparted` from `cur`. -/
+def PendingReplacement.dropTargetModDeparted (target : PendingReplacement)
+    (cur : PendingReplacement) : Option PendingReplacement :=
+  let targetBase := target.withoutDeparted
+  if PendingReplacement.containsSubtreeBase targetBase cur then
+    PendingReplacement.dropSubtreeBase targetBase cur
+  else
+    let tLeaves := targetBase.toSeqLeaves
+    if tLeaves.size <= 1 then some cur
+    else
+      let origLeaves := cur.toSeqLeaves
+      let baseLeaves := origLeaves.map (·.withoutDeparted)
+      if baseLeaves.size < tLeaves.size then some cur
+      else
+        Id.run do
+          let mut out : Array PendingReplacement := #[]
+          let mut i : Nat := 0
+          while i < origLeaves.size do
+            if i + tLeaves.size <= origLeaves.size &&
+                baseLeaves.extract i (i + tLeaves.size) == tLeaves then
+              i := i + tLeaves.size
+            else
+              out := out.push origLeaves[i]!
+              i := i + 1
+          return PendingReplacement.ofSeqLeaves? out
 
 namespace EngineChange
 @[inline] def pendingDrawAfterScry (v : Option (PlayerId × Nat)) : EngineChange := .continuation (.pendingDrawAfterScry v)

@@ -700,37 +700,19 @@ def reverseProposedSpellCore? (g : Game) (resumeContinuation : Bool := false)
       | .spell => "the casting is reversed (CR 601.2 / 733.1)"
       | .activatedAbility => "the activation is reversed (CR 602.2 / 733.1)"
       | .turnFaceUp => "turning it face up is reversed (CR 116.2b / 702.37e / 733.1)"
+    let wasSuppressed := g.suppressInteractiveReplay
     let g ← g.reverseToProposalCheckpoint?
+    let quiet := wasSuppressed || g.suppressInteractiveReplay
     let hasUnreversedActions := g.events.size > baseEventSize
     let g := g.logMsg s!"{name} cannot pay {prop.cost}; {reversed}"
     let g :=
       match extraLog with
       | some msg => g.logMsg msg
       | none => g
-    let g := if g.over || g.suppressInteractiveReplay then g else g.runPostCastCleanup
+    let g := if g.over || quiet then g else g.runPostCastCleanup
     let g :=
       if !doReconcileDep || g.over then g
       else Id.run do
-        let rec contContains (target : PendingReplacement) : PendingReplacement → Bool
-          | .seq a b => a == target || b == target || contContains target a || contContains target b
-          | step => step == target
-        let rec dropCkptTarget (target : PendingReplacement) (cur : PendingReplacement) :
-            Option PendingReplacement :=
-          if cur == target then none
-          else
-            match cur with
-            | .seq a b =>
-              if contContains target a then
-                match dropCkptTarget target a with
-                | none => some b
-                | some a' => some (.seq a' b)
-              else if contContains target b then
-                match dropCkptTarget target b with
-                | none => some a
-                | some b' => some (.seq a b')
-              else
-                some (.seq a b)
-            | step => some step
         let seqOpt (a? b? : Option PendingReplacement) : Option PendingReplacement :=
           match a?, b? with
           | some a, some b => some (.seq a b)
@@ -740,7 +722,7 @@ def reverseProposedSpellCore? (g : Game) (resumeContinuation : Bool := false)
         let mut g :=
           match ckptOrigCont?, g.pendingReplacement with
           | some origCont, some curCont =>
-            let stripped? := dropCkptTarget origCont curCont
+            let stripped? := PendingReplacement.dropTargetModDeparted origCont curCont
             if stripped? != some curCont then g.change (.pendingReplacement stripped?) else g
           | _, _ => g
         let rawCkptRestoreTarget : Option PendingReplacement :=
@@ -748,8 +730,8 @@ def reverseProposedSpellCore? (g : Game) (resumeContinuation : Bool := false)
         let mut strippedDeferredCkptPending := false
         if let some target := rawCkptRestoreTarget then
           if let some curCont := g.pendingReplacement then
-            if contContains target curCont then
-              let stripped? := dropCkptTarget target curCont
+            if PendingReplacement.containsModDeparted target curCont then
+              let stripped? := PendingReplacement.dropTargetModDeparted target curCont
               if stripped? != some curCont then
                 g := g.change (.pendingReplacement stripped?)
               strippedDeferredCkptPending := true
@@ -765,7 +747,9 @@ def reverseProposedSpellCore? (g : Game) (resumeContinuation : Bool := false)
                      some preRewindOuters[ckptOuters.size]!
                    else ckptOrigCont?).map (·.appendDepartedMany allDeparted) with
             | some origDep =>
-              if extraDepartureOuters.any (contContains origDep) then none else some origDep
+              if extraDepartureOuters.any (PendingReplacement.containsModDeparted origDep) then
+                none
+              else some origDep
             | none => none
           else none
         let extraToPush : Array PendingReplacement :=
@@ -791,7 +775,7 @@ def reverseProposedSpellCore? (g : Game) (resumeContinuation : Bool := false)
         let ckptWasRandom : Bool :=
           match ckptPending with | .resolveRandom _ => true | _ => false
         let freshCont? := g.pendingReplacement
-        if !g.sbaPaused && g.pending == .none &&
+        if !quiet && !g.sbaPaused && g.pending == .none &&
             (g.afterRandom == .none || (ckptWasRandom && restoreCkptPending?.isSome)) &&
             freshCont?.isNone then
           if let some rp := restoreCkptPending? then
@@ -821,6 +805,8 @@ def reverseProposedSpellCore? (g : Game) (resumeContinuation : Bool := false)
               while g.continuations.back? == some {} do
                 g := g.change .popContinuationFrame
           return g
+    if quiet || g.suppressInteractiveReplay then
+      return (g, false)
     let prio := g.priorityInstead prop.caster
     let stashPendingPrio (g : Game) : Game :=
       if g.pendingPriority == some prio then g
@@ -1260,11 +1246,13 @@ def completeTurnFaceUp (g : Game) (caster : PlayerId) (spellId : ObjectId)
           (cause := .specialAction .turnFaceUp caster))
       let objName := (g.findObject? spellId).map g.name |>.getD (g.name o)
       let g := g.logMsg s!"{(g.player caster).name} turns {objName} face up"
+      let hadPreReconcileCont := g.triggerSequenceRest.isSome || g.pendingReplacement.isSome
       let g :=
         (reconcileControlAfterTransition pre g (cause := some (.specialAction .turnFaceUp caster)))
           |>.flushQueuedLinkedExile
       let skipTail := g.over || (hadOuterReplacement && g.pendingReplacement.isNone)
-      let chainFinishFra := !skipTail && (g.triggerSequenceRest.isSome || g.pendingReplacement.isSome)
+      let chainFinishFra :=
+        !skipTail && (hadPreReconcileCont || (hadOuterReplacement && g.pendingReplacement.isSome))
       let g :=
         if skipTail then g
         else if chainFinishFra then
@@ -1393,6 +1381,9 @@ def completeActivation (g : Game) (prop : ProposedSpell)
   let g0 := if localOuter?.isSome then g.change (.pendingReplacement none) else g
   let g ← g0.payActivationExtraCosts prop.caster sid prop.tapSource prop.sacrificeSource
     prop.payLife prop.discardSource prop.activation (if prop.removePlusOneX then x else 0)
+    (callerOuter? := localOuter?)
+  if g.proposedSpell.isNone then
+    return g
   if prop.needsSacrificeOther then
     let prompt := s!"{(g.player prop.caster).name} must sacrifice another creature or artifact"
     if let .chooseReplacement .. := g.pending then

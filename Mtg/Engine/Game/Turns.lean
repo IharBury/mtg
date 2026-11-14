@@ -330,15 +330,17 @@ def expireFraUntilTurnEffects (g : Game) (p : PlayerId) (includeTeammates : Bool
     | e =>
       match effectDuration e with
       | .untilNextTurnOf q => matchesTurnOf q
-      | _ => false) (cause := cause)
+      | _ => false) (cause := cause) (reconcileControl := !skipControl)
   endingEmblems.foldl (fun g o =>
     if (g.findObject? o.id).any (·.zone == .command) then
-      (g.ceaseToExist o.id (cause := cause)).logMsg s!"{g.name o} ends"
+      (g.ceaseToExist o.id (cause := cause) (reconcileControl := !skipControl)).logMsg s!"{g.name o} ends"
     else g) g
 
 /-- Expire effects that last until `p`'s next turn (CR 800.4m) and clear
 that player's last-turn information (CR 800.4i). -/
 def expireUntilNextTurnEffects (g : Game) (p : PlayerId) : Game :=
+  if g.over then g
+  else
   g.withBatch none fun g =>
     let cause := some (EventCause.turnBased .expireAtStepBegin)
     let teamHasLiving := g.players.any (fun m => g.stillInGame m.id && g.areTeammates p m.id)
@@ -523,11 +525,19 @@ mutual
 (CR 800.4k / 800.4m), optionally entering `beginTurn` once `turnBegan` is recorded. -/
 partial def continueStartNextTurn (g : Game) (nextP : PlayerId)
     (remainingDeparted : Array PlayerId) (runBeginTurn : Bool := false) : Game := Id.run do
+  if g.over then
+    return g
   let mut g := g
   for i in [0:remainingDeparted.size] do
     let dep := remainingDeparted[i]!
     g := g.expireUntilNextTurnEffects dep
-    if let .chooseReplacement .. := g.pending then
+    if g.over then
+      return g
+    let paused :=
+      match g.pending with
+      | .chooseReplacement .. | .chooseLegend .. => true
+      | _ => g.pendingReplacement.isSome
+    if paused then
       let rem := remainingDeparted.extract (i + 1) remainingDeparted.size
       return g.chainPendingReplacement (.continueStartNextTurn nextP rem runBeginTurn)
   let (seats, seatsExtra) := g.currentSharedTurnState
@@ -540,7 +550,32 @@ partial def continueStartNextTurn (g : Game) (nextP : PlayerId)
   let nextExtra? :=
     if midRegularShared then none
     else (g.extraTurns.extract skipIdx g.extraTurns.size)[0]?
-  let gNext :=
+  if nextExtra?.isNone && !g.stillInGame nextP && !g.over &&
+      g.players.any (fun pl => g.stillInGame pl.id) then
+    let n := g.players.size
+    let fromExtra := !midRegularShared && g.extraTurns.contains nextP
+    let (nextP', newlyDeparted) := Id.run do
+      let mut newly : Array PlayerId := #[]
+      if fromExtra then
+        newly := newly.push nextP
+        for k in [1:n+1] do
+          let q : PlayerId := ⟨(g.activePlayer.idx + k) % n⟩
+          if !g.stillInGame q then
+            if !newly.contains q then newly := newly.push q
+          else
+            return (q, newly)
+        return (g.activePlayer, newly)
+      else
+        for k in [0:n] do
+          let q : PlayerId := ⟨(nextP.idx + k) % n⟩
+          if !g.stillInGame q then
+            if !newly.contains q then newly := newly.push q
+          else
+            return (q, newly)
+        return (nextP, newly)
+    if g.stillInGame nextP' then
+      return g.continueStartNextTurn nextP' newlyDeparted runBeginTurn
+  let (gNext, didBeginTurn) : Game × Bool :=
     match nextExtra? with
     | some q =>
       let extraCause? := (pendingExtraCauses.extract skipIdx pendingExtraCauses.size)[0]?
@@ -555,7 +590,7 @@ partial def continueStartNextTurn (g : Game) (nextP : PlayerId)
           let cause := extraCause? <|> some (.gameRule .continuousEffect)
           g.createEffect .powerUpsForbiddenThisTurn (cause := cause)
         else g
-      g.logMsg s!"It is now {(g.player q).name}'s extra turn {g.turnNumber}"
+      (g.logMsg s!"It is now {(g.player q).name}'s extra turn {g.turnNumber}", true)
     | none =>
       if g.stillInGame nextP then
         let sameShared :=
@@ -565,9 +600,9 @@ partial def continueStartNextTurn (g : Game) (nextP : PlayerId)
         let g := g.record (GameEvent.turnBegan nextTurnNum nextP (extra := false))
         let g := g.expireFinishedNextTurnPlayerControl
         let g := g.change (.cleanupGivesPriority false)
-        g.logMsg s!"It is now {(g.player nextP).name}'s turn {g.turnNumber}"
-      else g
-  if runBeginTurn && g.stillInGame gNext.activePlayer then
+        (g.logMsg s!"It is now {(g.player nextP).name}'s turn {g.turnNumber}", true)
+      else (g, false)
+  if runBeginTurn && didBeginTurn && !gNext.over && gNext.stillInGame gNext.activePlayer then
     gNext.beginTurn
   else gNext
 
@@ -671,16 +706,18 @@ partial def finishCleanupStepAfterDiscard (g : Game) : Game :=
 CR 502.1 phase-in (and any replacement or legend-rule pause it opened) finishes
 (CR 502.3–502.4). -/
 partial def runUntapStepAfterPhaseIn (g : Game) : Game :=
-  let ap := g.activePlayer
-  let ids := (g.permanentsOf ap).map (·.id)
-  let g := g.withBatch (some (.turnBased .untapAll)) fun g =>
-    g.untapStepPermanents ids
-  match g.pending with
-  | .chooseReplacement .. | .chooseLegend .. =>
-    g.chainPendingReplacement (.finishPostStep .recordUntapStepEnded)
-  | _ =>
-    -- No priority (CR 502.4). Immediately continue.
-    g.recordStepEnded .untap
+  if g.over then g
+  else
+    let ap := g.activePlayer
+    let ids := (g.permanentsOf ap).map (·.id)
+    let g := g.withBatch (some (.turnBased .untapAll)) fun g =>
+      g.untapStepPermanents ids
+    match g.pending with
+    | .chooseReplacement .. | .chooseLegend .. =>
+      g.chainPendingReplacement (.finishPostStep .recordUntapStepEnded)
+    | _ =>
+      -- No priority (CR 502.4). Immediately continue.
+      g.recordStepEnded .untap
 
 /-- Execute the body of `beginStep st` once `phaseBegan` and `stepBegan` have finished. -/
 partial def beginStepBody (g : Game) (st : Step) : Game :=
@@ -785,25 +822,27 @@ partial def beginStepAfterPhaseBegan (g : Game) (st : Step) : Game :=
 turn, and a skipped draw step (CR 103.8a / 500.11) immediately begins
 precombat main; both re-enter `beginStep`. -/
 partial def beginStep (g : Game) (st : Step) : Game :=
-  let g := Id.run do
-    let mut g := g
-    while g.proposalCheckpoint.isSome do
-      g := g.change .clearProposalCheckpoint
-    return g
-  let g := g.changes #[
-    .pending .none,
-    .consecutivePasses 0,
-    .cleanupGivesPriority false,
-    .proposedSpell none ]
-  let g :=
-    if st == .draw && g.skipsFirstDraw then g
-    else if isPhaseStartStep st then
-      g.recordPhaseBegan st.phase
-    else g
-  if let .chooseReplacement .. := g.pending then
-    g.chainPendingReplacement (.finishPostStep (.beginStepAfterPhaseBegan st))
+  if g.over then g
   else
-    g.beginStepAfterPhaseBegan st
+    let g := Id.run do
+      let mut g := g
+      while g.proposalCheckpoint.isSome do
+        g := g.change .clearProposalCheckpoint
+      return g
+    let g := g.changes #[
+      .pending .none,
+      .consecutivePasses 0,
+      .cleanupGivesPriority false,
+      .proposedSpell none ]
+    let g :=
+      if st == .draw && g.skipsFirstDraw then g
+      else if isPhaseStartStep st then
+        g.recordPhaseBegan st.phase
+      else g
+    if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement (.finishPostStep (.beginStepAfterPhaseBegan st))
+    else
+      g.beginStepAfterPhaseBegan st
 
 /-- Continue into `st` after step/phase-end replacement pauses resolve. -/
 partial def beginStepCont (g : Game) (st : Step) : Game :=
@@ -816,61 +855,93 @@ partial def beginStepCont (g : Game) (st : Step) : Game :=
   else
     g.beginStep st
 
+/-- Expire `.protectionFromEverything` and `.lifeCantChange` for `p`'s team at
+the start of their shared turn (CR 500.4 / 611.2a / 805.4). -/
+partial def expireTurnStartProtectionAndLife (g : Game) (p : PlayerId) : Game :=
+  let cause := some (EventCause.turnBased .expireAtStepBegin)
+  let teamSeats := g.teamMembers p
+  teamSeats.foldl (fun g q =>
+    let hadLife := g.activeEffects.any (fun (_, s) => s == .lifeCantChange q)
+    let hadProt := g.activeEffects.any (fun (_, s) => s == .protectionFromEverything q)
+    if hadProt || hadLife then
+      let g := if hadProt then g.expireAll (.protectionFromEverything q) (cause := cause) else g
+      let g := if hadLife then g.expireAll (.lifeCantChange q) (cause := cause) else g
+      g.logMsg
+        (if hadProt && hadLife then s!"{(g.player q).name}'s protection and life lock end"
+         else if hadProt then s!"{(g.player q).name}'s protection from everything ends"
+         else s!"{(g.player q).name}'s life total can change again")
+    else g) g
+
 /-- Enter `.untap` and `.upkeep` after CR 500.4 turn-start expiry completes. -/
 partial def beginTurnAfterStartExpiry (g : Game) : Game :=
-  -- No player receives priority during untap (CR 502.4).
-  let g := g.beginStep .untap
-  match g.pending with
-  | .chooseReplacement .. | .chooseLegend .. =>
-    g.chainPendingReplacement (.beginStepCont .upkeep)
-  | _ =>
-    if g.pendingReplacement.isSome then
-      g.chainPendingReplacement (.beginStepCont .upkeep)
+  if g.over then g
+  else
+    let p := g.activePlayer
+    let needDeferred :=
+      g.isSharedTurnFirstSeat &&
+        (g.teamMembers p).any (fun q =>
+          g.activeEffects.any (fun (_, s) =>
+            s == .lifeCantChange q || s == .protectionFromEverything q))
+    let g :=
+      if needDeferred then
+        g.withBatch none (fun g => g.expireTurnStartProtectionAndLife p)
+      else g
+    if g.over then g
     else
-      g.beginStep .upkeep
+      -- No player receives priority during untap (CR 502.4).
+      let g := g.beginStep .untap
+      match g.pending with
+      | .chooseReplacement .. | .chooseLegend .. =>
+        g.chainPendingReplacement (.beginStepCont .upkeep)
+      | _ =>
+        if g.pendingReplacement.isSome then
+          g.chainPendingReplacement (.beginStepCont .upkeep)
+        else
+          g.beginStep .upkeep
 
 partial def beginTurn (g : Game) : Game :=
-  let p := g.activePlayer
-  let cause := some (EventCause.turnBased .expireAtStepBegin)
-  -- CR 500.4 / 611.2a / 805.4 / 810.2: effects lasting until `p`'s team's next
-  -- turn expire as the first living seat of that shared turn begins, before
-  -- `TurnEvent.phaseBegan .beginning` / `TurnEvent.stepBegan .untap`.
-  let g :=
-    if !g.isSharedTurnFirstSeat then g
+  if g.over then g
+  else
+    let p := g.activePlayer
+    let cause := some (EventCause.turnBased .expireAtStepBegin)
+    -- CR 500.4 / 611.2a / 805.4 / 810.2: effects lasting until `p`'s team's next
+    -- turn expire as the first living seat of that shared turn begins, before
+    -- `TurnEvent.phaseBegan .beginning` / `TurnEvent.stepBegan .untap`.
+    let g :=
+      if !g.isSharedTurnFirstSeat then g
+      else
+        g.withBatch none fun g =>
+          let expiredCtrl := g.activeEffects.filter fun (eid, e) =>
+            match e with
+            | .playerRule _ (.controlsPlayer them true) _ => g.hasTurnAfterBegunSince eid them
+            | _ => false
+          let g := expiredCtrl.foldl (fun acc (eid, _) => acc.expireEffectById eid (cause := cause)) g
+          let g := g.expireGoadedFor p (includeTeammates := true)
+          let ctrlEids := g.activeEffects.filterMap fun (eid, e) =>
+            match e with
+            | .layered _ (.control _) (.untilNextTurnOf q) =>
+              if q == p || g.areTeammates q p then some eid else none
+            | _ => none
+          let g := g.endControlEffectsSimultaneously ctrlEids (cause := cause)
+            (preExpire := fun g0 =>
+              (g0.expireFraUntilTurnEffects p (includeTeammates := true) (skipControl := true))
+                |>.restoreCopiesUntilNextTurn p (reconcileControl := false))
+          let paused :=
+            match g.pending with
+            | .chooseReplacement .. | .chooseLegend .. => true
+            | _ => g.pendingReplacement.isSome
+          if paused || g.over then g
+          else g.expireTurnStartProtectionAndLife p
+    if g.over then g
     else
-      g.withBatch none fun g =>
-        let expiredCtrl := g.activeEffects.filter fun (eid, e) =>
-          match e with
-          | .playerRule _ (.controlsPlayer them true) _ => g.hasTurnAfterBegunSince eid them
-          | _ => false
-        let g := expiredCtrl.foldl (fun acc (eid, _) => acc.expireEffectById eid (cause := cause)) g
-        let g := g.expireGoadedFor p (includeTeammates := true)
-        let ctrlEids := g.activeEffects.filterMap fun (eid, e) =>
-          match e with
-          | .layered _ (.control _) (.untilNextTurnOf q) =>
-            if q == p || g.areTeammates q p then some eid else none
-          | _ => none
-        let g := g.endControlEffectsSimultaneously ctrlEids (cause := cause)
-          (preExpire := fun g0 =>
-            (g0.expireFraUntilTurnEffects p (includeTeammates := true) (skipControl := true))
-              |>.restoreCopiesUntilNextTurn p (reconcileControl := false))
-        let teamSeats := g.teamMembers p
-        teamSeats.foldl (fun g q =>
-          let hadLife := g.activeEffects.any (fun (_, s) => s == .lifeCantChange q)
-          let hadProt := g.activeEffects.any (fun (_, s) => s == .protectionFromEverything q)
-          if hadProt || hadLife then
-            let g := if hadProt then g.expireAll (.protectionFromEverything q) (cause := cause) else g
-            let g := if hadLife then g.expireAll (.lifeCantChange q) (cause := cause) else g
-            g.logMsg
-              (if hadProt && hadLife then s!"{(g.player q).name}'s protection and life lock end"
-               else if hadProt then s!"{(g.player q).name}'s protection from everything ends"
-               else s!"{(g.player q).name}'s life total can change again")
-          else g) g
-  match g.pending with
-  | .chooseReplacement .. | .chooseLegend .. =>
-    g.chainPendingReplacement .beginTurnAfterStartExpiry
-  | _ =>
-    g.beginTurnAfterStartExpiry
+      match g.pending with
+      | .chooseReplacement .. | .chooseLegend .. =>
+        g.chainPendingReplacement .beginTurnAfterStartExpiry
+      | _ =>
+        if g.pendingReplacement.isSome then
+          g.chainPendingReplacement .beginTurnAfterStartExpiry
+        else
+          g.beginTurnAfterStartExpiry
 
 end
 

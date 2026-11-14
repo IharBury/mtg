@@ -1650,14 +1650,53 @@ def maxTs (a b : Nat × Nat) : Nat × Nat :=
 
 private structure Layer1Entry where
   idx : Nat
-  eid : EffectId
   ts : Nat × Nat
   scope : ObjectScope
   card : CardDef
 deriving Inhabited
 
-/-- Latest `PermanentEvent.phasedOut` index for `oid` in `g.events` when
-currently phased out (CR 702.26b,e). -/
+private def isOneShotEffectCause : EventCause → Bool
+  | .oneShotEffect .. => true
+  | .replaced _ orig => isOneShotEffectCause orig
+  | _ => false
+
+/-- `(createdIdx, cause)` recorded on `ContinuousEffectEvent.created` for `eid` (CR 611.2b–c). -/
+private def effectCreatedInfo? (g : Game) (eid : EffectId) : Option (Nat × EventCause) :=
+  Id.run do
+    for rev in [0:g.events.size] do
+      let i := g.events.size - 1 - rev
+      match g.events[i]! with
+      | .rules _ (.continuousEffect (.created id _)) cause _ =>
+        if id == eid then return some (i, cause)
+      | _ => pure ()
+    return none
+
+/-- Whether `o` was phased out on the battlefield immediately before event
+`evIdx` in `g.events` (CR 611.2b–c / 702.26b,e). -/
+def objectWasPhasedOutAt (g : Game) (o : GameObject) (evIdx : Nat) : Bool :=
+  let bound := min evIdx g.events.size
+  Id.run do
+    for rev in [0:bound] do
+      let i := bound - 1 - rev
+      match g.events[i]!.change with
+      | .rules (.permanent (.phasedOut eo _)) =>
+        if eo.id == some o.id then return true
+      | .rules (.permanent (.phasedIn eo _)) =>
+        if eo.id == some o.id then return false
+      | .engine (.materializeObject obj _) =>
+        if obj.id == o.id then return obj.zone == .battlefield && obj.status.phasedOut
+      | .rules (.zone (.moved before after _ toZone ..)) =>
+        if after.id == some o.id then return toZone == .battlefield && after.phasedOut
+        if before.id == some o.id then return false
+      | .rules (.zone (.created eo _)) =>
+        if eo.id == some o.id then return eo.phasedOut
+      | .rules (.zone (.ceasedToExist eo)) =>
+        if eo.id == some o.id then return false
+      | _ => pure ()
+    return false
+
+/-- Latest `PermanentEvent.phasedOut` (or phased-out `.materializeObject` /
+arrival) index for `o` in `g.events` when currently phased out (CR 702.26b,e). -/
 private def latestPhaseOutIdxOf? (g : Game) (o : GameObject) : Option Nat :=
   if !o.status.phasedOut then none
   else Id.run do
@@ -1666,24 +1705,108 @@ private def latestPhaseOutIdxOf? (g : Game) (o : GameObject) : Option Nat :=
       match g.events[i]!.change with
       | .rules (.permanent (.phasedOut eo _)) =>
         if eo.id == some o.id then return some i
+      | .engine (.materializeObject obj _) =>
+        if obj.id == o.id && obj.zone == .battlefield && obj.status.phasedOut then
+          return some i
+      | .rules (.zone (.moved _ after _ toZone ..)) =>
+        if after.id == some o.id && toZone == .battlefield && after.phasedOut then
+          return some i
+      | .rules (.zone (.created eo _)) =>
+        if eo.id == some o.id && eo.phasedOut then
+          return some i
       | _ => pure ()
     return none
 
-/-- Whether continuous effect `eid` existed before `phaseOutIdx` in `g.events`,
-so non-`.objects` scopes do not start affecting a phased-out permanent after it
-phased out (CR 611.2c / 702.26b,d,e,f). -/
-private def effectCreatedBeforePhaseOut (g : Game) (phaseOutIdx? : Option Nat)
-    (eid : EffectId) : Bool :=
-  match phaseOutIdx? with
-  | none => true
-  | some pIdx => Id.run do
-    for rev in [0:g.events.size] do
-      let i := g.events.size - 1 - rev
+private def objectZoneAndPhasedOutAt? (g : Game) (oid : ObjectId) (evIdx : Nat) :
+    Option (Zone × Bool) :=
+  let bound := min evIdx g.events.size
+  Id.run do
+    let mut seenPhased? : Option Bool := none
+    for rev in [0:bound] do
+      let i := bound - 1 - rev
       match g.events[i]!.change with
-      | .rules (.continuousEffect (.created id _)) =>
-        if id == eid then return i < pIdx
+      | .rules (.permanent (.phasedOut eo _)) =>
+        if eo.id == some oid && seenPhased?.isNone then seenPhased? := some true
+      | .rules (.permanent (.phasedIn eo _)) =>
+        if eo.id == some oid && seenPhased?.isNone then seenPhased? := some false
+      | .rules (.zone (.ceasedToExist eo)) =>
+        if eo.id == some oid then return none
+      | .rules (.zone (.moved before after _ toZone ..)) =>
+        if after.id == some oid then
+          return some (toZone, seenPhased?.getD after.phasedOut)
+        if before.id == some oid then return none
+      | .rules (.zone (.created eo _)) =>
+        if eo.id == some oid then
+          return some (.battlefield, seenPhased?.getD eo.phasedOut)
+      | .engine (.materializeObject obj _) =>
+        if obj.id == oid then
+          return some (obj.zone, seenPhased?.getD obj.status.phasedOut)
       | _ => pure ()
-    return true
+    return none
+
+private def objectCounterCountAt (g : Game) (oid : ObjectId) (k : CounterKind)
+    (evIdx : Nat) : Nat :=
+  let bound := min evIdx g.events.size
+  Id.run do
+    let mut count? : Option Nat := none
+    for i in [0:bound] do
+      match g.events[i]!.change with
+      | .rules (.permanent (.counters (.object eo) k' (.put n) _)) =>
+        if eo.id == some oid && k' == k then
+          let base := count?.getD (eo.counters.count k)
+          count? := some (base + n)
+      | .rules (.permanent (.counters (.object eo) k' (.removed n) _)) =>
+        if eo.id == some oid && k' == k then
+          let base := count?.getD (eo.counters.count k)
+          count? := some (base - n)
+      | .rules (.zone (.moved before after _ _ _ _ entersWith _)) =>
+        if before.id == some oid && after.id != some oid then
+          count? := some 0
+        if after.id == some oid then
+          count? := some (max (after.counters.count k) (entersWith.count k))
+      | .rules (.zone (.created eo _)) =>
+        if eo.id == some oid then count? := some (eo.counters.count k)
+      | .rules (.zone (.ceasedToExist eo)) =>
+        if eo.id == some oid then count? := some 0
+      | .engine (.materializeObject obj _) =>
+        if obj.id == oid then count? := some (obj.status.counters.count k)
+      | _ => pure ()
+    return count?.getD 0
+
+private def durationActiveAt (g : Game) (d : EffectDuration) (evIdx : Nat) : Bool :=
+  match d with
+  | .whileSourceOnBattlefield src =>
+    (g.objectZoneAndPhasedOutAt? src evIdx).any (fun (z, ph) => z == .battlefield && !ph)
+  | .untilSourceLeaves src =>
+    (g.objectZoneAndPhasedOutAt? src evIdx).any (fun (z, _) => z == .battlefield)
+  | .whileSourceHasCounter src k =>
+    (g.objectZoneAndPhasedOutAt? src evIdx).any (fun (z, ph) => z == .battlefield && !ph) &&
+      g.objectCounterCountAt src k evIdx > 0
+  | .whileInZone oid z =>
+    (g.objectZoneAndPhasedOutAt? oid evIdx).any (fun (z', _) => z' == z)
+  | _ => true
+
+/-- Whether continuous effect `(eid, sc, d)` is eligible to affect `o` under
+CR 611.2b–c resolving-effect scope lock-in (Layers 1–7) and, when `phaseOutIdx?`
+is supplied (Layers 1–2 while `o.status.phasedOut`), pre-phase-out active
+duration (CR 611.3a / 702.26b,d,e,f). -/
+private def effectPhasingAllows (g : Game) (o : GameObject) (eid : EffectId)
+    (sc : ObjectScope) (d : EffectDuration)
+    (phaseOutIdx? : Option Nat := none) : Bool :=
+  let isExplicitObjects := match sc with | .objects _ => true | _ => false
+  if isExplicitObjects && phaseOutIdx?.isNone then true
+  else
+    match g.effectCreatedInfo? eid with
+    | none => true
+    | some (createdIdx, createdCause) =>
+      let isLocked := d.isTimedResolvingDuration || isOneShotEffectCause createdCause
+      let lockOk := isExplicitObjects || !isLocked || !g.objectWasPhasedOutAt o createdIdx
+      let curPhaseOutOk :=
+        match phaseOutIdx? with
+        | none => true
+        | some pIdx =>
+          createdIdx < pIdx && (isLocked || g.durationActiveAt d pIdx)
+      lockOk && curPhaseOutOk
 
 /-- Initial Layer 2 controller of `o` before active `LayerEffect.control` effects,
 used internally by Layer 1 and Layer 2 (CR 110.2 / 613.1a–b / 800.4a). -/
@@ -1710,19 +1833,16 @@ def unmaskedCopiableValuesWithTs (g : Game) (o : GameObject) : CardDef × (Nat �
   else
     let initCtrl := g.initialControllerOf o
     let phaseOutIdx? := g.latestPhaseOutIdxOf? o
-    let scopeMatchesL1 (cur : CardDef) (eid : EffectId) (sc : ObjectScope) : Bool :=
+    let scopeMatchesL1 (cur : CardDef) (sc : ObjectScope) : Bool :=
       match sc with
       | .objects ids => ids.contains o.id
       | .creaturesControlledBy p =>
-        o.isBattlefieldObject && g.effectCreatedBeforePhaseOut phaseOutIdx? eid &&
-          initCtrl == some p && cur.types.contains .creature
+        o.isBattlefieldObject && initCtrl == some p && cur.types.contains .creature
       | .creaturesWithout kw =>
-        o.isBattlefieldObject && g.effectCreatedBeforePhaseOut phaseOutIdx? eid &&
-          cur.types.contains .creature &&
+        o.isBattlefieldObject && cur.types.contains .creature &&
           Keywords.merge cur.keywords kw != cur.keywords
       | .permanentsOfSubtype p s =>
-        o.isBattlefieldObject && g.effectCreatedBeforePhaseOut phaseOutIdx? eid &&
-          initCtrl == some p &&
+        o.isBattlefieldObject && initCtrl == some p &&
           ((CardSubtype.ofSubtypes cur.subtypes).contains s ||
             (cur.keywords.changeling &&
               (cur.types.contains .creature || cur.types.contains .kindred) && !s.isNoncreature))
@@ -1732,10 +1852,9 @@ def unmaskedCopiableValuesWithTs (g : Game) (o : GameObject) : CardDef × (Nat �
         let (eid, s) := g.activeEffects[pos]!
         match s with
         | .layered sc (.copy card) d =>
-          if g.durationActive d then
+          if g.durationActive d && g.effectPhasingAllows o eid sc d (phaseOutIdx? := phaseOutIdx?) then
             raw := raw.push {
               idx := raw.size
-              eid := eid
               ts := g.effectTimestamp eid pos
               scope := sc
               card := card
@@ -1749,11 +1868,11 @@ def unmaskedCopiableValuesWithTs (g : Game) (o : GameObject) : CardDef × (Nat �
       let mut cur := o.printed
       let mut curTs := objTs
       for _ in [0:sorted.size] do
-        let applicable := rem.filter (fun e => scopeMatchesL1 cur e.eid e.scope)
+        let applicable := rem.filter (fun e => scopeMatchesL1 cur e.scope)
         if applicable.isEmpty then break
         let dependsOn (a b : Layer1Entry) : Bool :=
           a.idx != b.idx &&
-            scopeMatchesL1 cur a.eid a.scope != scopeMatchesL1 b.card a.eid a.scope
+            scopeMatchesL1 cur a.scope != scopeMatchesL1 b.card a.scope
         let chosen :=
           (applicable.find? (fun a => !applicable.any (fun b => dependsOn a b))).getD applicable[0]!
         cur := chosen.card
@@ -1832,19 +1951,16 @@ def effectiveControllerWithApplied (g : Game) (o : GameObject) :
     else
       let bc := g.baseCard o
       let phaseOutIdx? := g.latestPhaseOutIdxOf? o
-      let scopeMatchesL2 (cur : Option PlayerId) (eid : EffectId) (sc : ObjectScope) : Bool :=
+      let scopeMatchesL2 (cur : Option PlayerId) (sc : ObjectScope) : Bool :=
         match sc with
         | .objects ids => ids.contains o.id
         | .creaturesControlledBy p =>
-          o.isBattlefieldObject && g.effectCreatedBeforePhaseOut phaseOutIdx? eid &&
-            cur == some p && bc.types.contains .creature
+          o.isBattlefieldObject && cur == some p && bc.types.contains .creature
         | .creaturesWithout kw =>
-          o.isBattlefieldObject && g.effectCreatedBeforePhaseOut phaseOutIdx? eid &&
-            bc.types.contains .creature &&
+          o.isBattlefieldObject && bc.types.contains .creature &&
             Keywords.merge bc.keywords kw != bc.keywords
         | .permanentsOfSubtype p s =>
-          o.isBattlefieldObject && g.effectCreatedBeforePhaseOut phaseOutIdx? eid &&
-            cur == some p &&
+          o.isBattlefieldObject && cur == some p &&
             ((CardSubtype.ofSubtypes bc.subtypes).contains s ||
               (bc.keywords.changeling &&
                 (bc.types.contains .creature || bc.types.contains .kindred) && !s.isNoncreature))
@@ -1854,7 +1970,7 @@ def effectiveControllerWithApplied (g : Game) (o : GameObject) :
           let (eid, s) := g.activeEffects[pos]!
           match s with
           | .layered sc (.control c) d =>
-            if g.durationActive d then
+            if g.durationActive d && g.effectPhasingAllows o eid sc d (phaseOutIdx? := phaseOutIdx?) then
               cands := cands.push (eid, pos, sc, c)
           | _ => pure ()
         if cands.isEmpty then return (initCtrl, #[])
@@ -1878,11 +1994,11 @@ def effectiveControllerWithApplied (g : Game) (o : GameObject) :
         let mut cur := initCtrl
         let mut applied : Array EffectId := #[]
         for _ in [0:sorted.size] do
-          let applicable := rem.filter (fun e => scopeMatchesL2 cur e.eid e.scope)
+          let applicable := rem.filter (fun e => scopeMatchesL2 cur e.scope)
           if applicable.isEmpty then break
           let dependsOn (a b : Layer2Entry) : Bool :=
             a.idx != b.idx &&
-              scopeMatchesL2 cur a.eid a.scope != scopeMatchesL2 (some b.ctrl) a.eid a.scope
+              scopeMatchesL2 cur a.scope != scopeMatchesL2 (some b.ctrl) a.scope
           let chosen :=
             (applicable.find? (fun a => !applicable.any (fun b => dependsOn a b))).getD applicable[0]!
           cur := some chosen.ctrl
@@ -2140,64 +2256,144 @@ def playersDepartedSinceCheckpoint (g : Game) (ckpt : ProposalCheckpoint)
     else acc) #[]
   extra.foldl (fun acc p => if acc.contains p then acc else acc.push p) since
 
-/-- Whether `ckpt`'s top continuation frame held a `pendingReplacement` that was
-still untouched at the moment the first player in `allDeparted` lost or left the
-game after `ckpt`, accounting for unstamped (`batch == none`) `GameEvent.engine`
-events emitted by `Leaving.playerLeavesGameCore` immediately before
-`PlayerEvent.leftGame` (CR 733.1 / 800.4a). -/
+/-- Whether `ckpt`'s top continuation frame held a `pendingReplacement` that
+remained unconsumed across `ckpt.eventsSize .. g.events.size`, tracking
+temporary cost/mana outer-continuation stashes, `outerPendingReplacements`
+bundles, and `Leaving.playerLeavesGameCore`'s pre-`leftGame` header / popped
+outer bundle (CR 733.1 / 800.4a). -/
 def ckptPendingReplacementUntouchedBeforeLeave (g : Game) (ckpt : ProposalCheckpoint)
-    (allDeparted : Array PlayerId) : Bool :=
-  ((ckpt.continuations.back?.getD {}).pendingReplacement).isSome && Id.run do
+    (_allDeparted : Array PlayerId)
+    (poppedOuter? : Option PendingReplacement := none) : Bool :=
+  Id.run do
+    let some origCont := (ckpt.continuations.back?.getD {}).pendingReplacement
+      | return false
+    let origBase := origCont.withoutDeparted
     let slice := g.events.extract (min ckpt.eventsSize g.events.size) g.events.size
-    let anyDepartedInSlice := slice.any fun ev =>
-      match ev with
-      | .rules _ (.player (.lost q ..)) _ _
-      | .rules _ (.player (.leftGame q)) _ _ => allDeparted.contains q
-      | _ => false
-    if !anyDepartedInSlice then return true
+    let mut hasRootFrame : Bool := true
     let mut frameDepth : Nat := 0
-    for i in [0:slice.size] do
-      match slice[i]! with
-      | .rules _ (.player (.lost q ..)) _ _
-      | .rules _ (.player (.leftGame q)) _ _ =>
-        if allDeparted.contains q then return true
+    let mut poppedOrigInFlight : Bool := false
+    let mut proposalActionDepth : Nat := 0
+    let mut curHasOrig : Bool := true
+    let mut outerStack : Array Bool := #[]
+    let mut stashedPreAction : Bool := false
+    let mut stashedInProposalAction : Bool := false
+    let mut stashedForLeaveHeader : Bool := false
+    let mut heldInLeaveBatch? : Option BatchId := none
+    for ev in slice do
+      match ev with
       | .engine _ (.pushContinuationFrame _) _ =>
-        frameDepth := frameDepth + 1
+        if !hasRootFrame then
+          if poppedOrigInFlight then
+            hasRootFrame := true
+            poppedOrigInFlight := false
+          else
+            return false
+        else
+          frameDepth := frameDepth + 1
       | .engine _ .popContinuationFrame _ =>
-        if frameDepth == 0 then return false
-        frameDepth := frameDepth - 1
-      | .engine _ (.continuation (.pendingReplacement none)) _ =>
-        if frameDepth == 0 then
-          let mut subDepth : Nat := 0
-          for j in [i + 1 : slice.size] do
-            match slice[j]! with
-            | .engine _ (.pushContinuationFrame _) _ =>
-              subDepth := subDepth + 1
-            | .engine _ .popContinuationFrame _ =>
-              if subDepth == 0 then return false
-              subDepth := subDepth - 1
-            | .engine _ (.continuation (.pendingReplacement (some _))) _ =>
-              if subDepth == 0 then return false
-            | .engine _ (.proposedSpell (some _)) _
-            | .engine _ (.beginProposalAction _) _
-            | .engine _ .saveProposalCheckpoint _ =>
-              return false
-            | .engine _ (.pending p) _ =>
-              if p != .none then return false
-            | .rules _ (.player (.leftGame q)) _ (some _) =>
-              return allDeparted.contains q &&
-                (match slice[j + 1]? with
-                | some (.engine _ (.logMsg msg) _) => msg.endsWith " leaves the game"
-                | some (.engine _ (.log msgs) _) => msgs.any (·.endsWith " leaves the game")
-                | _ => false)
-            | .rules .. =>
-              return false
-            | _ => pure ()
+        if !hasRootFrame then
           return false
-      | .engine _ (.continuation (.pendingReplacement (some _))) _ =>
-        if frameDepth == 0 then return false
-      | _ => pure ()
-    return false
+        else if frameDepth > 0 then
+          frameDepth := frameDepth - 1
+        else if poppedOrigInFlight then
+          hasRootFrame := false
+        else
+          return false
+      | .engine _ (.beginProposalAction _) _ =>
+        if !hasRootFrame then return false
+        poppedOrigInFlight := false
+        stashedForLeaveHeader := false
+        if stashedPreAction then
+          stashedInProposalAction := true
+          stashedPreAction := false
+        proposalActionDepth := proposalActionDepth + 1
+      | .engine _ .endProposalAction _ =>
+        if !hasRootFrame then return false
+        poppedOrigInFlight := false
+        stashedForLeaveHeader := false
+        stashedPreAction := false
+        if proposalActionDepth > 0 then
+          proposalActionDepth := proposalActionDepth - 1
+          if proposalActionDepth == 0 then
+            stashedInProposalAction := false
+      | .engine _ (.continuation (.pendingReplacement none)) _ =>
+        if !hasRootFrame then return false
+        if frameDepth == 0 then
+          let hadOrig := curHasOrig
+          curHasOrig := false
+          if hadOrig then
+            if proposalActionDepth > 0 then
+              stashedInProposalAction := true
+            else
+              stashedPreAction := true
+            stashedForLeaveHeader := true
+      | .engine _ (.continuation (.pendingReplacement (some pr))) _ =>
+        if !hasRootFrame then return false
+        if frameDepth == 0 then
+          poppedOrigInFlight := false
+          stashedForLeaveHeader := false
+          let has := PendingReplacement.containsModDeparted origBase pr
+          curHasOrig := has
+          if has then
+            stashedPreAction := false
+            stashedInProposalAction := false
+            heldInLeaveBatch? := none
+      | .engine _ (.continuation (.pushOuterPendingReplacement pr)) _ =>
+        if !hasRootFrame then return false
+        if frameDepth == 0 then
+          poppedOrigInFlight := false
+          stashedForLeaveHeader := false
+          let has := PendingReplacement.containsModDeparted origBase pr
+          outerStack := outerStack.push has
+          if has then
+            heldInLeaveBatch? := none
+            stashedPreAction := false
+      | .engine _ (.continuation .popOuterPendingReplacement) _ =>
+        if !hasRootFrame then return false
+        if frameDepth == 0 then
+          stashedForLeaveHeader := false
+          let poppedHas := outerStack.back?.getD false
+          if !outerStack.isEmpty then
+            outerStack := outerStack.pop
+          if poppedHas then
+            poppedOrigInFlight := true
+      | .engine _ .saveProposalCheckpoint _ =>
+        if !hasRootFrame then return false
+        poppedOrigInFlight := false
+        stashedForLeaveHeader := false
+      | .engine _ (.proposedSpell (some _)) _
+      | .engine _ (.afterRandom _) _ =>
+        if !hasRootFrame then return false
+        poppedOrigInFlight := false
+        stashedForLeaveHeader := false
+        if proposalActionDepth == 0 then
+          stashedPreAction := false
+      | .engine _ (.pending p) _ =>
+        if !hasRootFrame then return false
+        if p != .none then
+          poppedOrigInFlight := false
+          stashedForLeaveHeader := false
+          if proposalActionDepth == 0 then
+            stashedPreAction := false
+      | .rules _ (.player (.leftGame _)) _ (some bid) =>
+        if !hasRootFrame then return false
+        poppedOrigInFlight := false
+        if stashedForLeaveHeader then
+          heldInLeaveBatch? := some bid
+          stashedForLeaveHeader := false
+        stashedPreAction := false
+      | .rules .. =>
+        if !hasRootFrame then return false
+        poppedOrigInFlight := false
+        stashedForLeaveHeader := false
+        stashedPreAction := false
+      | _ =>
+        if !hasRootFrame then return false
+    if heldInLeaveBatch?.isSome && g.currentBatch.map Prod.fst != heldInLeaveBatch? then
+      heldInLeaveBatch? := none
+    return (hasRootFrame && (curHasOrig || stashedInProposalAction || outerStack.any id ||
+      heldInLeaveBatch?.isSome)) ||
+      (poppedOrigInFlight && poppedOuter?.any (PendingReplacement.containsModDeparted origBase))
 
 /-- Process one `EngineChange` in isolation. -/
 def applyEngineChange (g : Game) (c : EngineChange) : Game :=
@@ -3043,7 +3239,7 @@ def evalLayer3 (g : Game) (o : GameObject) : Array TextChange :=
           let (eid, s) := g.activeEffects[pos]!
           match s with
           | .layered sc (.text tc) d =>
-            if g.durationActive d then
+            if g.durationActive d && g.effectPhasingAllows o eid sc d then
               cands := cands.push (eid, pos, sc, tc)
           | _ => pure ()
         if cands.isEmpty then return #[]
@@ -3193,7 +3389,7 @@ def evalLayer4 (g : Game) (o : GameObject) : Array CardType × Array CardSubtype
         let (eid, s) := g.activeEffects[pos]!
         match s with
         | .layered sc (.types mode ts subs sups) d =>
-          if g.durationActive d then
+          if g.durationActive d && g.effectPhasingAllows o eid sc d then
             pending := pending.push (.eff eid pos, {
               idx := pending.size, ts := (0, 0), scope := sc
               mode := mode, tsAdd := ts, subs := subs, sups := sups
@@ -3474,7 +3670,7 @@ def colors (g : Game) (o : GameObject) : ColorSet :=
             let (eid, s) := g.activeEffects[pos]!
             match s with
             | .layered sc (.colors mode cols) d =>
-              if g.durationActive d then
+              if g.durationActive d && g.effectPhasingAllows o eid sc d then
                 raw := raw.push {
                   idx := raw.size
                   ts := g.effectTimestamp eid pos
@@ -4161,7 +4357,8 @@ private def evalStaticsFast (g : Game) (needTs : Bool) :
           let (eid, s) := g.activeEffects[pos]!
           match s with
           | .layered sc (.abilities add rem) d =>
-            if scopeOk sc && g.durationActive d && (rem == .all || !add.staticAbilities.isEmpty) then
+            if scopeOk sc && g.durationActive d && g.effectPhasingAllows x eid sc d &&
+                (rem == .all || !add.staticAbilities.isEmpty) then
               let effTs := g.effectTimestamp eid pos
               let grantTs := maxTs xObjTs effTs
               raw := raw.push {
@@ -4210,7 +4407,8 @@ private def evalStaticsFast (g : Game) (needTs : Bool) :
           let (eid, s) := g.activeEffects[pos]!
           match s with
           | .layered sc (.abilities add rem) d =>
-            if scopeOk sc && g.durationActive d && (rem == .all || !add.staticAbilities.isEmpty) then
+            if scopeOk sc && g.durationActive d && g.effectPhasingAllows x eid sc d &&
+                (rem == .all || !add.staticAbilities.isEmpty) then
               let effTs := g.effectTimestamp eid pos
               let grantTs := maxTs xObjTs effTs
               raw := raw.push {
@@ -4679,7 +4877,7 @@ private def evalLayer6Aux (g : Game) (needStaticsTs kwOnly : Bool) : Nat → Gam
         let (eid, s) := g.activeEffects[pos]!
         match s with
         | .layered sc (.abilities add rem) d =>
-          if g.durationActive d then
+          if g.durationActive d && g.effectPhasingAllows o eid sc d then
             let grantedStatics := add.staticAbilities
             let fsKw :=
               if add.firstStrikeOnYourTurn && ctrl?.any g.isOnActiveTeam then
@@ -4847,16 +5045,23 @@ def currentKeywords (g : Game) (o : GameObject) : Keywords :=
   g.currentKeywords o
 
 /-- Whether `o` matches `scope` using evaluated Layer 2, Layer 4, and Layer 6
-characteristics (CR 611.2c / 611.3 / 613.8). -/
-def scopeMatches (g : Game) (scope : ObjectScope) (o : GameObject) : Bool :=
+characteristics (CR 611.2b–c / 611.3 / 613.8). -/
+def scopeMatches (g : Game) (scope : ObjectScope) (o : GameObject)
+    (eid? : Option EffectId := none) (dur? : Option EffectDuration := none) : Bool :=
+  let phasingOk : Bool :=
+    match eid?, dur? with
+    | some eid, some d => g.effectPhasingAllows o eid scope d
+    | _, _ => true
   match scope with
   | .objects ids => ids.contains o.id
-  | .creaturesControlledBy p => o.isOnBattlefield && g.controlledBy o p && g.isCreature o
+  | .creaturesControlledBy p =>
+    phasingOk && o.isOnBattlefield && g.controlledBy o p && g.isCreature o
   | .creaturesWithout kw =>
-    o.isOnBattlefield && g.isCreature o &&
+    phasingOk && o.isOnBattlefield && g.isCreature o &&
       let curKw := g.currentKeywords o
       Keywords.merge curKw kw != curKw
-  | .permanentsOfSubtype p s => o.isOnBattlefield && g.controlledBy o p && g.hasSubtype o s
+  | .permanentsOfSubtype p s =>
+    phasingOk && o.isOnBattlefield && g.controlledBy o p && g.hasSubtype o s
 
 /-- Current keyword including attached and continuous grants (CR 613.1f). -/
 def hasKeyword (g : Game) (o : GameObject) (sel : Keywords → Bool) : Bool :=
@@ -6446,7 +6651,7 @@ def evalLayer7b (g : Game) (o : GameObject) : Option Int × Option Int :=
             let (eid, s) := g.activeEffects[pos]!
             match s with
             | .layered sc (.ptSet pw tg) d =>
-              if g.durationActive d then
+              if g.durationActive d && g.effectPhasingAllows o eid sc d then
                 raw := raw.push {
                   idx := raw.size
                   ts := g.effectTimestamp eid pos
@@ -6455,7 +6660,7 @@ def evalLayer7b (g : Game) (o : GameObject) : Option Int × Option Int :=
                   setT := some tg
                 }
             | .layered sc (.types .addConstruct55 _ _ _) d =>
-              if g.durationActive d then
+              if g.durationActive d && g.effectPhasingAllows o eid sc d then
                 raw := raw.push {
                   idx := raw.size
                   ts := g.effectTimestamp eid pos
@@ -6464,7 +6669,7 @@ def evalLayer7b (g : Game) (o : GameObject) : Option Int × Option Int :=
                   setT := some 5
                 }
             | .layered sc (.ptCda .cardsInHandPower) d =>
-              if g.durationActive d then
+              if g.durationActive d && g.effectPhasingAllows o eid sc d then
                 raw := raw.push {
                   idx := raw.size
                   ts := g.effectTimestamp eid pos
@@ -6523,20 +6728,23 @@ def addStats (a b : Int × Int) : Int × Int :=
   (a.1 + b.1, a.2 + b.2)
 
 def pumpOf (g : Game) (o : GameObject) : Int × Int :=
-  g.activeEffects.foldl (fun (ap, atg) (_, s) =>
+  g.activeEffects.foldl (fun (ap, atg) (eid, s) =>
     match s with
     | .layered scope (.ptModify pw tg) d =>
       let isUntilTurn := match d with | .untilNextTurnOf _ => true | _ => false
-      if !isUntilTurn && g.scopeMatches scope o && g.durationActive d then
+      if !isUntilTurn && g.scopeMatches scope o (eid? := some eid) (dur? := some d) &&
+          g.durationActive d then
         (ap + pw, atg + tg)
       else (ap, atg)
     | _ => (ap, atg)) (0, 0)
 
 def untilTurnOfPump (g : Game) (o : GameObject) : Array (PlayerId × Int × Int) :=
-  g.activeEffects.filterMap fun (_, s) =>
+  g.activeEffects.filterMap fun (eid, s) =>
     match s with
     | .layered scope (.ptModify pw tg) (.untilNextTurnOf p) =>
-      if g.scopeMatches scope o then some (p, pw, tg) else none
+      if g.scopeMatches scope o (eid? := some eid) (dur? := some (.untilNextTurnOf p)) then
+        some (p, pw, tg)
+      else none
     | _ => none
 
 /-- Continuous +P/+T `src` currently grants `target` as a lord (CR 604.2 / 613.4c). -/
@@ -6735,10 +6943,12 @@ def artifactCountPump (g : Game) (o : GameObject) : Int × Int :=
   if !o.isOnBattlefield then (0, 0)
   else
     let mult : Nat :=
-      g.activeEffects.foldl (fun cnt (_, s) =>
+      g.activeEffects.foldl (fun cnt (eid, s) =>
         match s with
         | .layered sc (.ptCda .pumpPerArtifact) d =>
-          if g.scopeMatches sc o && g.durationActive d then cnt + 1 else cnt
+          if g.scopeMatches sc o (eid? := some eid) (dur? := some d) && g.durationActive d then
+            cnt + 1
+          else cnt
         | _ => cnt) 0
     if mult == 0 then (0, 0)
     else
@@ -6753,10 +6963,12 @@ next turn. -/
 def fraStatBonus (g : Game) (o : GameObject) : Int × Int :=
   if !o.isOnBattlefield then (0, 0)
   else
-    let untilTurn := g.activeEffects.foldl (fun acc (_, s) =>
+    let untilTurn := g.activeEffects.foldl (fun acc (eid, s) =>
       match s with
-      | .layered scope (.ptModify pw tg) (.untilNextTurnOf _) =>
-        if g.scopeMatches scope o then addStats acc (pw, tg) else acc
+      | .layered scope (.ptModify pw tg) (.untilNextTurnOf p) =>
+        if g.scopeMatches scope o (eid? := some eid) (dur? := some (.untilNextTurnOf p)) then
+          addStats acc (pw, tg)
+        else acc
       | _ => acc) (0, 0)
     match g.controllerOf o with
     | none => untilTurn
@@ -6831,10 +7043,12 @@ def snapshotPT (g : Game) (o : GameObject) : Int × Int :=
   let (pw, tg) :=
     addStats (addStats (addStats s4 (g.leftoverSelfBonus o)) (g.fraStatBonus o)) (g.thresholdBonus o)
   let switchCnt : Nat :=
-    g.activeEffects.foldl (fun cnt (_, s) =>
+    g.activeEffects.foldl (fun cnt (eid, s) =>
       match s with
       | .layered scope .ptSwitch d =>
-        if g.scopeMatches scope o && g.durationActive d then cnt + 1 else cnt
+        if g.scopeMatches scope o (eid? := some eid) (dur? := some d) && g.durationActive d then
+          cnt + 1
+        else cnt
       | _ => cnt) 0
   if switchCnt % 2 == 1 then (tg, pw) else (pw, tg)
 
@@ -10666,12 +10880,14 @@ proposal with `EngineChange.beginProposalAction` / `endProposalAction` so
 def withProposalAction (g : Game) (kind : ProposalActionKind) (f : Game → Game) : Game :=
   if g.proposalCheckpoint.isNone then f g
   else
-    let g := g.change (.beginProposalAction kind)
-    let g := f g
-    if let .chooseReplacement .. := g.pending then
-      g.chainPendingReplacement .endProposalAction
+    let g0 := g.change (.beginProposalAction kind)
+    let g1 := f g0
+    if g1.proposalCheckpoint.isNone || (g.proposedSpell.isSome && g1.proposedSpell.isNone) then
+      g1
+    else if let .chooseReplacement .. := g1.pending then
+      g1.chainPendingReplacement .endProposalAction
     else
-      g.change .endProposalAction
+      g1.change .endProposalAction
 
 /-- Monadic `Except` variant of `withProposalAction`: emits `beginProposalAction` /
 `endProposalAction` around `f` when `g.proposalCheckpoint.isSome`, propagating `.error` untouched. -/
@@ -10681,7 +10897,9 @@ def withProposalActionM {ε : Type} (g : Game) (kind : ProposalActionKind)
   else
     let g0 := g.change (.beginProposalAction kind)
     let g1 ← f g0
-    if let .chooseReplacement .. := g1.pending then
+    if g1.proposalCheckpoint.isNone || (g.proposedSpell.isSome && g1.proposedSpell.isNone) then
+      return g1
+    else if let .chooseReplacement .. := g1.pending then
       return g1.chainPendingReplacement .endProposalAction
     else
       return g1.change .endProposalAction
@@ -10701,7 +10919,7 @@ opaque flushQueuedLinkedExileFwd (g : Game) (suppressInteractive : Bool := false
 
 /-- Forward reference to `Leaving.reconcilePostReplayDepartures` (resolved at link time via `@[export]`). -/
 @[extern "mtg_game_reconcile_post_replay_departures"]
-opaque reconcilePostReplayDeparturesFwd (g : Game) : Game := g
+opaque reconcilePostReplayDeparturesFwd (g : Game) (suppressInteractive : Bool := false) : Game := g
 
 /-- Drain `g.pendingReplacement` locally while `!g.over && g.pending == .none &&
 g.afterRandom == .none`, without touching `triggerSequenceRest` or
@@ -12201,11 +12419,13 @@ def reverseToProposalCheckpointCore? (g : Game)
             (suppressInteractive := true))
       else runBatch)
     if !wasGameOver && !isProposalReplayPaused gAcc && gAcc.players.any (·.leftTheGame) then
-      gAcc := gAcc.reconcilePostReplayDeparturesFwd
+      gAcc := gAcc.reconcilePostReplayDeparturesFwd (suppressInteractive := quietReplay)
   if wasGameOver || gAcc.over then
     if !isProposalReplayPaused gAcc && ckptPausedBatch?.isNone && !ckptQueuedLinkedExile.isEmpty then
       gAcc := gAcc.change (.queueLinkedExile ckptQueuedLinkedExile)
     return gAcc
+  let preReplayDeparted := g.playersDepartedSinceCheckpoint ckpt
+  let ckptDeparted := gAcc.playersDepartedSinceCheckpoint ckpt preReplayDeparted
   let nowSuppressed := wasSuppressed || gAcc.suppressInteractiveReplay
   if isProposalReplayPaused gAcc then
     let deferredCleanup? := if gAcc.over || nowSuppressed then none else gAcc.postCastCleanup
@@ -12222,7 +12442,7 @@ def reverseToProposalCheckpointCore? (g : Game)
       if !ckptQueuedLinkedExile.isEmpty then
         gAcc := gAcc.chainPendingReplacement (.finishLinkedExileMove ckptQueuedLinkedExile none)
     if !gAcc.over && ckptPending != .none then
-      gAcc := gAcc.chainPendingReplacement (.restorePending ckptPending false)
+      gAcc := gAcc.chainPendingReplacement (.restorePending ckptPending false none ckptDeparted none)
     if !gAcc.over then
       if let some origCont := ckptCont? then
         gAcc := gAcc.chainPendingReplacement origCont
@@ -12235,6 +12455,7 @@ def reverseToProposalCheckpointCore? (g : Game)
       gAcc := (flushLinked gAcc).drainLocalPendingReplacement
   if gAcc.over then
     return gAcc
+  let ckptDeparted := gAcc.playersDepartedSinceCheckpoint ckpt ckptDeparted
   let nowSuppressed := nowSuppressed || gAcc.suppressInteractiveReplay
   if isProposalReplayPaused gAcc then
     let deferredCleanup? := if gAcc.over || nowSuppressed then none else gAcc.postCastCleanup
@@ -12243,7 +12464,7 @@ def reverseToProposalCheckpointCore? (g : Game)
     if let some cleanup := deferredCleanup? then
       gAcc := gAcc.chainPendingReplacement (.runPostCastCleanup cleanup)
     if !gAcc.over && ckptPending != .none then
-      gAcc := gAcc.chainPendingReplacement (.restorePending ckptPending false)
+      gAcc := gAcc.chainPendingReplacement (.restorePending ckptPending false none ckptDeparted none)
     if !gAcc.over then
       if let some origCont := ckptCont? then
         gAcc := gAcc.chainPendingReplacement origCont
@@ -12252,6 +12473,7 @@ def reverseToProposalCheckpointCore? (g : Game)
     gAcc := gAcc.runPostCastCleanupFwd.drainLocalPendingReplacement
   if gAcc.over then
     return gAcc
+  let ckptDeparted := gAcc.playersDepartedSinceCheckpoint ckpt ckptDeparted
   if gAcc.pending != .none || gAcc.afterRandom != .none || isProposalReplayPaused gAcc then
     match ckptPausedBatch? with
     | some (origBid, origStartIdx, wasDiscard, origCause, origObjs, origPls, origEffs, origPend, origStk) =>
@@ -12260,7 +12482,7 @@ def reverseToProposalCheckpointCore? (g : Game)
           origObjs origPls origEffs origPend origStk false ckptQueuedLinkedExile)
     | none => pure ()
     if !gAcc.over && ckptPending != .none then
-      gAcc := gAcc.chainPendingReplacement (.restorePending ckptPending false)
+      gAcc := gAcc.chainPendingReplacement (.restorePending ckptPending false none ckptDeparted none)
     if !gAcc.over then
       if let some origCont := ckptCont? then
         gAcc := gAcc.chainPendingReplacement origCont
@@ -12272,7 +12494,10 @@ def reverseToProposalCheckpointCore? (g : Game)
       gAcc := gAcc.change (.queueLinkedExile ckptQueuedLinkedExile)
   | none => pure ()
   if !gAcc.over && ckptPending != .none then
-    gAcc := gAcc.change (.pending ckptPending)
+    if !ckptDeparted.isEmpty then
+      gAcc := gAcc.chainPendingReplacement (.restorePending ckptPending false none ckptDeparted none)
+    else
+      gAcc := gAcc.change (.pending ckptPending)
   if !gAcc.over then
     if let some origCont := ckptCont? then
       gAcc := gAcc.chainPendingReplacement origCont
@@ -12963,73 +13188,85 @@ its own `EffectId` (Super Hero Civil War; MSH 143). Other control-changing
 effects on the same permanent keep applying (CR 613.7). -/
 def restoreControlUntilSourceLeaves (g : Game) (srcId : ObjectId)
     (cause : Option EventCause := some (.gameRule .leavingZone))
-    (preState? : Option Game := none) : Game :=
-  g.activeEffects.foldl (fun acc (eid, e) =>
-    let preRef := preState?.getD acc
-    match e with
-    | .layered (.objects #[id]) (.control _) (.whileSourceOnBattlefield s)
-    | .layered (.objects #[id]) (.control _) (.untilSourceLeaves s)
-    | .layered (.objects #[id]) (.control _) (.whileSourceHasCounter s _) =>
-      if s != srcId then acc
-      else
-        match acc.findObject? id with
-        | none => acc.expireEffectById eid (cause := cause) (preState? := preState?)
-        | some o =>
-          let prevCtrl := preRef.controllerOf ((preRef.findObject? id).getD o)
-          let objName := acc.name o
-          let acc := acc.expireEffectById eid (cause := cause) (preState? := preState?)
-          let acc :=
-            match prevCtrl, acc.findObject? id with
+    (preState? : Option Game := none)
+    (reconcileControl : Bool := true) : Game :=
+  let preRef := preState?.getD g
+  let (matchingEids, singleTargets) :=
+    g.activeEffects.foldl (fun (eids, singles) (eid, e) =>
+      match e with
+      | .layered (.objects #[id]) (.control _) (.whileSourceOnBattlefield s)
+      | .layered (.objects #[id]) (.control _) (.untilSourceLeaves s)
+      | .layered (.objects #[id]) (.control _) (.whileSourceHasCounter s _) =>
+        if s != srcId then (eids, singles)
+        else
+          let singles' :=
+            if singles.any (·.1 == id) then singles
+            else
+              match g.findObject? id with
+              | some o => singles.push (id, o, g.name o)
+              | none => singles
+          (eids.push eid, singles')
+      | .layered _ (.control _) (.whileSourceOnBattlefield s)
+      | .layered _ (.control _) (.untilSourceLeaves s)
+      | .layered _ (.control _) (.whileSourceHasCounter s _) =>
+        if s == srcId then (eids.push eid, singles) else (eids, singles)
+      | _ => (eids, singles)) (#[], #[])
+  if matchingEids.isEmpty then g
+  else
+    let resolvedCause := cause.getD (.gameRule .leavingZone)
+    let g :=
+      matchingEids.foldl (fun acc eid =>
+        acc.expireEffectById eid (cause := cause) (reconcileControl := false)
+          (preState? := some preRef)) g
+    let g :=
+      if reconcileControl then
+        let g := removeFromCombatOnControlChange preRef g (cause := some resolvedCause)
+        preRef.objects.foldl (fun acc preObj =>
+          if !preObj.isBattlefieldObject then acc
+          else
+            match preRef.controllerOf preObj, acc.findObject? preObj.id with
             | some prev, some cur =>
-              if cur.isBattlefieldObject && acc.controllerOf cur != prevCtrl &&
+              if cur.isBattlefieldObject && acc.controllerOf cur != some prev &&
                   (acc.player prev).ringBearerId == some cur.id then
                 acc.record (GameEvent.designation acc.turnNumber (acc.snapshot cur) .ringBearer false
-                  (cause := cause.getD (.gameRule .leavingZone)))
+                  (cause := resolvedCause))
               else acc
-            | _, _ => acc
-          let p := (o.defaultController.orElse (fun _ => o.controller)).getD o.owner
-          let othersRemain := !(acc.appliedControlEffectIds o).isEmpty
+            | _, _ => acc) g
+      else g
+    singleTargets.foldl (fun acc (id, o, objName) =>
+      match acc.findObject? id with
+      | none => acc
+      | some cur =>
+        let prevCtrl := preRef.controllerOf ((preRef.findObject? id).getD o)
+        let curCtrl := acc.controllerOf cur
+        if curCtrl == prevCtrl then acc
+        else
+          let p := (cur.defaultController.orElse (fun _ => cur.controller)).getD cur.owner
+          let othersRemain := !(acc.appliedControlEffectIds cur).isEmpty
           if othersRemain then
-            match (acc.findObject? id).bind acc.controllerOf with
+            match curCtrl with
             | some q => acc.logMsg s!"{objName} returns to {(acc.player q).name}'s control"
             | none => acc
           else if (acc.player p).leftTheGame then
             acc
           else
-            acc.logMsg s!"{objName} returns to {(acc.player p).name}'s control"
-    | .layered _ (.control _) (.whileSourceOnBattlefield s)
-    | .layered _ (.control _) (.untilSourceLeaves s)
-    | .layered _ (.control _) (.whileSourceHasCounter s _) =>
-      if s == srcId then
-        let prevCtrls :=
-          preRef.objects.filterMap fun o =>
-            if o.isBattlefieldObject then some (o.id, preRef.controllerOf o) else none
-        let acc := acc.expireEffectById eid (cause := cause) (preState? := preState?)
-        prevCtrls.foldl (fun acc' (oid, prevCtrl) =>
-          match prevCtrl, acc'.findObject? oid with
-          | some prev, some cur =>
-            if cur.isBattlefieldObject && acc'.controllerOf cur != prevCtrl &&
-                (acc'.player prev).ringBearerId == some cur.id then
-              acc'.record (GameEvent.designation acc'.turnNumber (acc'.snapshot cur) .ringBearer false
-                (cause := cause.getD (.gameRule .leavingZone)))
-            else acc'
-          | _, _ => acc') acc
-      else acc
-    | _ => acc) g
+            acc.logMsg s!"{objName} returns to {(acc.player p).name}'s control") g
 
 /-- Expire all continuous effects that last for as long as `srcId` remains on
 the battlefield or until `srcId` leaves the battlefield (CR 611.2a / 611.2b),
 each under its own `EffectId`. -/
 def expireWhileSourceEffects (g : Game) (srcId : ObjectId)
     (cause : Option EventCause := some (.gameRule .leavingZone))
-    (preState? : Option Game := none) : Game :=
+    (preState? : Option Game := none)
+    (reconcileControl : Bool := true) : Game :=
   let g := g.restoreCopiesUntilSourceLeaves srcId (cause := cause)
   let g := g.restoreControlUntilSourceLeaves srcId (cause := cause) (preState? := preState?)
+    (reconcileControl := reconcileControl)
   g.expireMatching (fun s =>
     match s.duration with
     | .whileSourceOnBattlefield src | .untilSourceLeaves src | .whileSourceHasCounter src _ =>
       src == srcId
-    | _ => false) (cause := cause) (preState? := preState?)
+    | _ => false) (cause := cause) (preState? := preState?) (reconcileControl := reconcileControl)
 
 /-- Last player-controlling effect wins (MSH 259). The controlled player
 remains the active player on their turn (MSH 300) and still controls their

@@ -321,35 +321,63 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
       else g
     let clearPending : Array EngineChange :=
       if paused then #[] else #[.pending .none]
-    let (g, callerShouldResume) : Game × Bool :=
+    if let some prop := g.proposedSpell then
+      if prop.needsDiscardCard then
+        if !paused && (g.player prop.caster).hand.isEmpty then
+          return (← g.reverseProposedSpellExceptFwd (resumeContinuation := true))
+        let prompt := s!"{(g.player prop.caster).name} must discard a card"
+        if paused then
+          let g := (g.change (.consecutivePasses 0)).chainPendingReplacement
+            (.restorePending (.discardForAdditionalCost prop.caster) (promptLog := some prompt))
+          return match outerCont? with
+            | some outer => g.chainPendingReplacement outer
+            | none => g
+        else
+          let g := g.changes #[.pending (.discardForAdditionalCost prop.caster), .consecutivePasses 0]
+          return g.logMsg prompt
+    let (g, callerShouldResume) : Game × Bool ←
       match g.proposedSpell with
       | some prop =>
         if prop.kind == ProposalKind.turnFaceUp then
-          g.completeTurnFaceUp prop.caster prop.spellId
-            (hadOuterReplacement := outerCont?.isSome)
+          pure (g.completeTurnFaceUp prop.caster prop.spellId
+            (hadOuterReplacement := outerCont?.isSome))
         else
           let isResCast := prop.resolutionCast
           match prop.kind with
           | .spell =>
-            let g := g.changes (clearPending ++ #[EngineChange.consecutivePasses 0])
-            (g.becomeCast prop.caster (g.object! prop.spellId)
-              (grantPriority := !isResCast)
-              (hadOuterReplacement := outerCont?.isSome)
-              (hadOpenContinuation := some openCont), false)
+            match g.findObject? prop.spellId with
+            | some spellObj =>
+              let g := g.changes (clearPending ++ #[EngineChange.consecutivePasses 0])
+              pure (g.becomeCast prop.caster spellObj
+                (grantPriority := !isResCast)
+                (hadOuterReplacement := outerCont?.isSome)
+                (hadOpenContinuation := some openCont), false)
+            | none =>
+              let g ← g.reverseProposedSpellExceptFwd (resumeContinuation := true)
+              return g
           | .activatedAbility =>
             let g := g.changes (clearPending ++ #[EngineChange.consecutivePasses 0])
-            (g.becomeActivated p prop.originalSnapshot.name prop.sourceId prop.activation
+            pure (g.becomeActivated p prop.originalSnapshot.name prop.sourceId prop.activation
               (abilityId := some prop.spellId)
               (sourceSnapshot := some prop.originalSnapshot)
               (sourceOriginal := some prop.original)
               (hadOuterReplacement := outerCont?.isSome)
               (hadOpenContinuation := some openCont), false)
-          | .turnFaceUp => (g, false)
+          | .turnFaceUp => pure (g, false)
       | none =>
         let g := g.changes (clearPending ++ #[EngineChange.proposedSpell none, EngineChange.consecutivePasses 0])
-        (g.becomeActivated p (g.name (g.object! sourceId)) (some sourceId)
-          (hadOuterReplacement := outerCont?.isSome)
-          (hadOpenContinuation := some openCont), false)
+        match g.findObject? sourceId with
+        | some srcObj =>
+          pure (g.becomeActivated p (g.name srcObj) (some sourceId)
+            (hadOuterReplacement := outerCont?.isSome)
+            (hadOpenContinuation := some openCont), false)
+        | none =>
+          let g :=
+            if !paused && !g.over && outerCont?.isNone && g.pending == .none &&
+                g.pendingReplacement.isNone && g.triggerSequenceRest.isNone then
+              g.receivePriority (g.priorityInstead p)
+            else g
+          pure (g, false)
     let g :=
       if paused then
         match outerCont? with
