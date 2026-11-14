@@ -63,10 +63,10 @@ def validateActivation (g : Game) (p : PlayerId) (o : GameObject) (ab : Activate
     throw s!"{g.name o}'s ability is a mana ability (CR 605)"
   if g.splitSecondOnStack && !isManaActivation ab then
     throw "A spell with split second is on the stack (CR 702.61a)"
-  if ab.activateFromGraveyard then
+  if ab.activateFromGraveyard || ab.cost.exileSourceFromGraveyard then
     if !(o.zone == .graveyard o.owner && o.owner == p) then
       throw s!"{g.name o}'s ability can be activated only from the graveyard"
-  else if ab.activateFromHand then
+  else if ab.activateFromHand || ab.cost.discardSource || ab.cost.fra == .exileSourceFromHand then
     if !(o.zone == .hand o.owner && o.owner == p) then
       throw s!"{g.name o}'s ability can be activated only from your hand"
   else
@@ -134,6 +134,10 @@ def validateActivation (g : Game) (p : PlayerId) (o : GameObject) (ab : Activate
       (sacrificeOrExileSource := ab.cost.sacrificeSource || ab.cost.fra == .exileSource)
       (discardOrExileHandSource := ab.cost.discardSource || ab.cost.fra == .exileSourceFromHand) then
     throw s!"{g.name o}'s ability has a cost that can't be paid"
+  if ab.cost.removeStoryCounter && o.status.story == 0 then
+    throw s!"{g.name o} doesn't have a story counter to remove"
+  if ab.cost.removeIndestructibleCounter && o.status.indestructibleCounters == 0 then
+    throw s!"{g.name o} doesn't have an indestructible counter to remove"
   if ab.cost.removeAnyNumberPlusOne && ab.cost.tap && o.status.tapped then
     throw s!"{g.name o} is already tapped"
   if !g.canPayLife p ab.cost.payLife then

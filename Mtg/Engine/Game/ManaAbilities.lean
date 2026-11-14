@@ -349,6 +349,16 @@ private def departedSinceOptionalCkpt (g : Game) (ckpt? : Option ProposalCheckpo
     g.players.foldl (fun acc pl =>
       if pl.leftTheGame && !acc.contains pl.id then acc.push pl.id else acc) seed
 
+/-- True when `f` holds only queued replacement/trigger-sequence continuations
+(`pendingReplacement`, `outerPendingReplacements`, `triggerSequenceRest`,
+`mayThenResume`) rather than an active resolving spell/ability/choice frame. -/
+private def isCarrierOnlyFrame (f : ContinuationFrame) : Bool :=
+  { f with
+    pendingReplacement := none
+    outerPendingReplacements := #[]
+    triggerSequenceRest := none
+    mayThenResume := false } == {}
+
 private def abortDepartedManaAbilityContCore (g : Game) (p : PlayerId) (prevPending : Pending)
     (wasPaused : Bool := true) (hasFollowingSeq : Bool := false) : Game × Bool :=
   Id.run do
@@ -390,11 +400,16 @@ private def abortDepartedManaAbilityContCore (g : Game) (p : PlayerId) (prevPend
             !g.sbaPaused
       if shouldRestorePrev then
         g := g.resumePendingReplacementFwd (.restorePending prevPending false none allDeparted none)
-      if !g.over && g.pending == .none && g.afterRandom == .none && !g.sbaPaused then
-        if !hasFollowingSeq && g.continuations.isEmpty && g.pendingReplacement.isNone && g.triggerSequenceRest.isNone then
-          let prio := if g.stillInGame p then p else g.priorityInstead g.activePlayer
-          g := g.receivePriority prio
-        else if !hasFollowingSeq && (g.pendingReplacement.isSome || g.triggerSequenceRest.isSome) then
+      if !g.over && g.pending == .none && g.afterRandom == .none && !g.sbaPaused &&
+          !hasFollowingSeq then
+        let prio := if g.stillInGame p then p else g.priorityInstead g.activePlayer
+        if g.continuations.all isCarrierOnlyFrame then
+          g := g.finishAndGrantPriorityFwd prio
+        else if (g.pendingReplacement.isSome || !g.outerPendingReplacements.isEmpty ||
+            g.triggerSequenceRest.isSome || g.mayThenResume) &&
+            !g.anyContinuationGrantsPriorityFwd then
+          if g.pendingPriority.isNone then
+            g := g.change (.pendingPriority (some prio))
           g := g.chainPendingReplacement .finishFraChoice
     return (g, false)
 
@@ -463,7 +478,20 @@ def finishActivateManaAbilityPostSac (g : Game) (p : PlayerId) (id : ObjectId) (
       g := g.chainPendingReplacement (.endProposalAction manaCkpt)
     if prevPending == .none then
       if !hasFollowingSeq then
-        g := g.chainPendingReplacement (.receivePriority p)
+        if g.continuations.all isCarrierOnlyFrame then
+          if g.outerPendingReplacements.isEmpty &&
+              g.triggerSequenceRest.isNone && !g.mayThenResume then
+            g := g.chainPendingReplacement (.receivePriority p)
+          else if !g.anyContinuationGrantsPriorityFwd then
+            if g.pendingPriority.isNone then
+              g := g.change (.pendingPriority (some p))
+            g := g.chainPendingReplacement .finishFraChoice
+        else if (!g.outerPendingReplacements.isEmpty ||
+            g.triggerSequenceRest.isSome || g.mayThenResume) &&
+            !g.anyContinuationGrantsPriorityFwd then
+          if g.pendingPriority.isNone then
+            g := g.change (.pendingPriority (some p))
+          g := g.chainPendingReplacement .finishFraChoice
     else
       g := g.chainPendingReplacement (.restorePending prevPending false none allDeparted none)
     return g
@@ -476,8 +504,17 @@ def finishActivateManaAbilityPostSac (g : Game) (p : PlayerId) (id : ObjectId) (
     if g.proposalCheckpoint.isSome then
       g := g.change .endProposalAction
     if prevPending == .none then
-      if !hasFollowingSeq && g.pending == .none then
-        g := g.receivePriority p
+      if !g.over && g.pending == .none && g.afterRandom == .none && !g.sbaPaused &&
+          !hasFollowingSeq then
+        let prio := if g.stillInGame p then p else g.priorityInstead g.activePlayer
+        if g.continuations.all isCarrierOnlyFrame then
+          g := g.finishAndGrantPriorityFwd prio
+        else if (g.pendingReplacement.isSome || !g.outerPendingReplacements.isEmpty ||
+            g.triggerSequenceRest.isSome || g.mayThenResume) &&
+            !g.anyContinuationGrantsPriorityFwd then
+          if g.pendingPriority.isNone then
+            g := g.change (.pendingPriority (some prio))
+          g := g.chainPendingReplacement .finishFraChoice
     else if wasPaused then
       g := g.resumePendingReplacementFwd (.restorePending prevPending false none allDeparted none)
     return g

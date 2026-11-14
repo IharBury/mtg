@@ -716,7 +716,7 @@ end ContinuousEffectSpec
 /-- Continuous-effect creation and expiration events (CR 611). -/
 inductive ContinuousEffectEvent where
   | created (id : EffectId) (spec : ContinuousEffectSpec)
-  | expired (id : EffectId)
+  | expired (id : EffectId) (spec? : Option ContinuousEffectSpec := none)
 deriving Repr, Inhabited, BEq
 
 /-- Who or what receives or loses counters (CR 122.1). Players carry poison
@@ -3130,9 +3130,9 @@ def effectCreated (turn : Nat) (id : EffectId) (spec : ContinuousEffectSpec)
   rules turn (.continuousEffect (.created id spec)) cause
 
 /-- A continuous effect ends (CR 611). -/
-def effectExpired (turn : Nat) (id : EffectId) (_spec : Option ContinuousEffectSpec := none)
+def effectExpired (turn : Nat) (id : EffectId) (spec : Option ContinuousEffectSpec := none)
     (cause : EventCause) : GameEvent :=
-  rules turn (.continuousEffect (.expired id)) cause
+  rules turn (.continuousEffect (.expired id spec)) cause
 
 /-- Delayed triggered ability `dt` was created (CR 603.7). -/
 def delayedTriggerCreated (turn : Nat) (dt : DelayedTrigger)
@@ -4271,12 +4271,14 @@ def createdEffects (events : Array GameEvent) : Array ContinuousEffectSpec :=
 def expiredEffectsWithId (events : Array GameEvent) : Array (EffectId × ContinuousEffectSpec) :=
   events.foldl (fun acc e =>
     match e.change with
-    | .rules (.continuousEffect (.expired id)) =>
-      match events.findSomeRev? (fun ev =>
-        match ev.change with
-        | .rules (.continuousEffect (.created cid eff)) =>
-          if cid == id then some eff else none
-        | _ => none) with
+    | .rules (.continuousEffect (.expired id spec?)) =>
+      let eff? := spec?.orElse fun _ =>
+        events.findSomeRev? (fun ev =>
+          match ev.change with
+          | .rules (.continuousEffect (.created cid eff)) =>
+            if cid == id then some eff else none
+          | _ => none)
+      match eff? with
       | some eff => acc.push (id, eff)
       | none => acc
     | _ => acc) #[]

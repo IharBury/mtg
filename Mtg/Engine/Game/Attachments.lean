@@ -44,14 +44,18 @@ def attachSourceTo (g : Game) (src host : GameObject)
 The object is deleted and its id is removed from the zone it occupied, so a
 graveyard, hand, library, or stack keeps nothing of it. -/
 def ceaseToExist (g : Game) (id : ObjectId) (cause : Option EventCause := none)
-    (reconcileControl : Bool := true) (suppressReturnLog : Bool := false) : Game :=
+    (reconcileControl : Bool := true) (suppressReturnLog : Bool := false)
+    (preState? : Option Game := none) : Game :=
   let effCause :=
     g.resolveOptionalCause cause (fallbackSrc := some id)
       (defaultCause := .gameRule .leavingZone)
   match g.findObject? id with
   | some old =>
-    let pre := g
-    let snap := g.snapshot old
+    let pre := preState?.getD g
+    let snap :=
+      { (pre.snapshot ((pre.findObject? id).getD old)) with
+        id := some old.id
+        zone := old.zone }
     let g := g.record (GameEvent.ceasedToExist g.turnNumber snap (cause := effCause))
     let expCause := cause.orElse (fun _ => some (.gameRule .leavingZone))
     let g := g.expireEffectsOnLeavingObject old (cause := expCause) (reconcileControl := false)
@@ -70,11 +74,11 @@ def ceaseToExist (g : Game) (id : ObjectId) (cause : Option EventCause := none)
 Auras and Equipment attached to a permanent that leaves the battlefield
 (including indirectly phased-out attachments, CR 702.26g / 800.4a) become
 unattached and remain on the battlefield (CR 701.3d). -/
-def unattachFrom (g : Game) (hostId : ObjectId) : Game :=
+def unattachFrom (g : Game) (hostId : ObjectId) (skipIds : Array ObjectId := #[]) : Game :=
   Id.run do
     let mut g := g
     for o in g.objects.filter (·.isBattlefieldObject) do
-      if o.attachedTo == some hostId then
+      if o.attachedTo == some hostId && !skipIds.contains o.id then
         let oName := g.name o
         g := g.record (GameEvent.unattached g.turnNumber (g.snapshot o) hostId
           (cause := .gameRule .unattachOnHostLeave))

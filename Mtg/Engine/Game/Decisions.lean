@@ -306,6 +306,13 @@ private def priorityRecipientOfContinuation? (g : Game) (hasQueuedPending : Bool
       (fun _ => priorityRecipientOfContinuation? g hasQueuedPending a)
   | _ => none
 
+/-- Whether `g.pendingReplacement` or `g.outerPendingReplacements` already
+contains a continuation that grants priority (CR 117.3 / 616.1). -/
+@[export mtg_game_any_continuation_grants_priority]
+def anyContinuationGrantsPriority (g : Game) : Bool :=
+  g.pendingReplacement.any (continuationGrantsPriority g false) ||
+    g.outerPendingReplacements.any (continuationGrantsPriority g false)
+
 mutual
 /-- Drain queued `g.pendingReplacement` continuations and paused
 `triggerSequenceRest` steps while no interactive `Pending` or `afterRandom`
@@ -338,11 +345,8 @@ partial def finishAndGrantPriority (g : Game)
       (g.pendingReplacement.bind (priorityRecipientOfContinuation? g false)).orElse
         (fun _ => g.outerPendingReplacements.findSomeRev? (priorityRecipientOfContinuation? g false))
         |>.getD (g.pendingPriority.getD g.activePlayer)) : Game :=
-  let anyContinuationGrantsPriority (g : Game) : Bool :=
-    g.pendingReplacement.any (continuationGrantsPriority g false) ||
-      g.outerPendingReplacements.any (continuationGrantsPriority g false)
   let alreadyGrants : Bool :=
-    g.pending == .none && g.afterRandom == .none && anyContinuationGrantsPriority g
+    g.pending == .none && g.afterRandom == .none && g.anyContinuationGrantsPriority
   let hadEntryPending : Bool := g.pending != .none
   let g := g.drainPendingContinuations
   let g := if g.pending == .none && g.afterRandom == .none then g.popEmptyContinuationFrames else g
@@ -355,7 +359,7 @@ partial def finishAndGrantPriority (g : Game)
       else g
     g.completeActiveResolutions
   else if let .chooseReplacement .. := g.pending then
-    if anyContinuationGrantsPriority g then g
+    if g.anyContinuationGrantsPriority then g
     else g.chainPendingReplacement (.receivePriority p)
   else if let .chooseLegend .. := g.pending then
     let target := g.priorityInstead p
@@ -376,6 +380,10 @@ partial def finishAndGrantPriority (g : Game)
   else if g.proposedSpell.isSome then
     if g.pending == .none then g else g.change (.pending .none)
   else g.receivePriority p
+
+@[export mtg_game_finish_and_grant_priority]
+partial def finishAndGrantPriorityExport (g : Game) (prio : PlayerId) : Game :=
+  g.finishAndGrantPriority prio
 
 /-- Run trigger-sequence steps and pending continuations, then give priority when
 nothing else is pending. -/

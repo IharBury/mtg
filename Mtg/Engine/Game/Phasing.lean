@@ -341,19 +341,20 @@ def phaseInControlled (g : Game) (p : PlayerId) : Game :=
       | .rules (.permanent (.phasedOut eo _)) =>
         if eo.id == some o.id then return (eo.controller <|> fallbackCtrlOf o, idx)
       | .engine (.materializeObject obj _) =>
-        if obj.id == o.id && obj.zone == .battlefield && obj.status.phasedOut then
+        if obj.id == o.id && obj.zone == .battlefield && obj.status.phasedOut &&
+            !g.objectWasPhasedOutAt o idx then
           let matCtrl :=
-            if !(g.appliedControlEffectIds o).isEmpty then g.controllerOf o
-            else some ((obj.defaultController.orElse (fun _ => obj.controller)).getD obj.owner)
+            (g.controllerOfAt o (idx + 1)).orElse (fun _ =>
+              some ((obj.defaultController.orElse (fun _ => obj.controller)).getD obj.owner))
           return (matCtrl, idx)
       | .rules (.zone (.moved _ after _ toZone ..)) =>
         if after.id == some o.id && toZone == .battlefield && after.phasedOut then
           return (after.controller <|> fallbackCtrlOf o, idx)
       | .rules (.zone (.created eo c)) =>
-        if eo.id == some o.id && eo.phasedOut then
+        if eo.id == some o.id && eo.zone == .battlefield && eo.phasedOut then
           return (eo.controller <|> some c, idx)
       | _ => pure ()
-    return (fallbackCtrlOf o, 0)
+    return (g.controllerOfAt o 0 <|> fallbackCtrlOf o, 0)
   let targetIds :=
     g.objects.filterMap fun o =>
       if o.zone == .battlefield && o.status.phasedOut && o.status.phasedWith.isNone then
