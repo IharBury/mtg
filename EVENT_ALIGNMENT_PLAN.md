@@ -15910,14 +15910,14 @@ reporting, `.turnFaceUp` `costPicks` / `finalize` + `sacrificeForActivation`
 4. **Proposal-scoped & `CounterKind`-accurate `ActivationCosts.source*ForCost` helpers and
    `hasFollowingSeq` guard on replacement-paused pain-mana abilities in
    `ManaAbilities.finishActivateManaAbilityPostSac`**
-   (`ActivationCosts.lean:68–120, 380, 428–517, 536–586, 618–845`, `Event.lean:1754`,
-   `Casting.lean:1292, 1334`, `Choices.lean:619–672`, `Decisions.lean:138, 1645–1646`,
+   (`ActivationCosts.lean:68–120, 380, 428–517, 536–586, 617–845`, `Event.lean:1754`,
+   `Casting.lean:649, 1292, 1334`, `Choices.lean:619–672`, `Decisions.lean:138, 1645–1646`,
    `FraChoices.lean:243–246, 876`, `ManaAbilities.lean:458–468, 477–479, 678–679`;
    **CR 117.3b / 118.3 / 601.2h / 602.2b / 605.3b / 616.1 / 704.3**):
    - **Proposal/activation `sinceIdx` bound and `CounterKind` discrimination on
      `ActivationCosts.source*ForCost`**
-     (`ActivationCosts.lean:68–120, 380, 428–517, 536–586, 618–845`, `Event.lean:1754`,
-     `Casting.lean:1292, 1334`, `Choices.lean:619–672`, `Decisions.lean:138, 1645–1646`,
+     (`ActivationCosts.lean:68–120, 380, 428–517, 536–586, 617–845`, `Event.lean:1754`,
+     `Casting.lean:649, 1292, 1334`, `Choices.lean:619–672`, `Decisions.lean:138, 1645–1646`,
      `FraChoices.lean:243–246, 876`):
      - Dropping `fid != sid` in Phase 40 exposed two bugs: (i) all four `source*ForCost`
        helpers (`68–120`) scan `g.events` from index `0` with no proposal/activation start
@@ -15938,13 +15938,19 @@ reporting, `.turnFaceUp` `costPicks` / `finalize` + `sacrificeForActivation`
          `sourceCounterCostPaidFor` (`109–120`, matching `counterKind?.all (· == ck)` on
          `PermanentEvent.counters` while preserving default `counterKind? := none` /
          `sinceIdx := 0` callers); pass explicit `some .story`, `some .indestructible`,
-         `some .plusOnePlusOne`, `some .loyalty`, and `some .stun` plus proposal-bounded
-         `sinceIdx` (`(g.proposalCheckpoint.map (·.eventsSize)).getD ...`, threading
-         `(sinceIdx : Nat := 0)` through `finishActivationExtraCosts` at
-         `ActivationCosts.lean:510, 536–586, 821–845`, `Event.lean:1754`, and
-         `Decisions.lean:1645–1646`) across `ActivationCosts.lean`, `Choices.lean:619–672`,
-         `Casting.lean:1292, 1334`, and `Decisions.lean:138`; and use
-         `resolvingForObj <|> sourceId` at `FraChoices.lean:876` (preserving `resolvingForObj`'s
+         `some .plusOnePlusOne`, `some .loyalty`, and `some .stun`; capture
+         `let sinceIdx := (g.proposalCheckpoint.map (·.eventsSize)).getD g.events.size`
+         (matching `Casting.reverseProposedSpellCore?` at `Casting.lean:649`) **once on entry**
+         at the start of `payCostPick` (`ActivationCosts.lean:380`) and
+         `payActivationExtraCosts` (`ActivationCosts.lean:617`) before any cost event is
+         recorded, and thread that same captured `sinceIdx` through
+         `finishActivationExtraCosts` (`ActivationCosts.lean:510, 536–586, 821–845`),
+         `PendingReplacement.finishActivationExtraCosts` (`Event.lean:1754`), and
+         `Decisions.lean:1645–1646` (while passing
+         `sinceIdx := (g.proposalCheckpoint.map (·.eventsSize)).getD 0` at the mid-proposal /
+         post-cost query sites `Choices.lean:619–672`, `Casting.lean:1292, 1334`, and
+         `Decisions.lean:138`); and use `resolvingForObj <|> sourceId` at `FraChoices.lean:876`
+         (preserving `resolvingForObj`'s
          `currentResolvingContext?`-before-`resolvingAbility`-before-`resolvingSpell` order at
          `243–246`, matching `372, 843, 905, 998`, without pinning `forObject` to `sourceId`).
    - **`!hasFollowingSeq` guard on replacement-paused pain-mana abilities in
