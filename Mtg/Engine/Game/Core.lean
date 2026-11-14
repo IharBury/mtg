@@ -377,7 +377,7 @@ def applyContinuousEffectEvent (g : Game) (e : ContinuousEffectEvent) : Game :=
     { g with
       nextEffectId := max g.nextEffectId (effectId.raw + 1)
       activeEffects := g.activeEffects.push (effectId, spec) }
-  | .expired effectId =>
+  | .expired effectId _ =>
     match g.activeEffects.findIdx? (·.1 == effectId) with
     | none => g
     | some idx =>
@@ -2958,8 +2958,8 @@ def hasFlashbackPermission (g : Game) (o : GameObject) : Bool :=
       let expiredOtherwise (eid : EffectId) : Bool :=
         g.events.any fun x =>
           match x.change, x.cause? with
-          | .rules (.continuousEffect (.expired _)), some (.gameRule .leavingZone) => false
-          | .rules (.continuousEffect (.expired xid)), _ => xid == eid
+          | .rules (.continuousEffect (.expired ..)), some (.gameRule .leavingZone) => false
+          | .rules (.continuousEffect (.expired xid _)), _ => xid == eid
           | _, _ => false
       g.events.any fun e =>
         match e.change with
@@ -5244,17 +5244,22 @@ def hasLifelink (g : Game) (o : GameObject) : Bool :=
 def hasMenace (g : Game) (o : GameObject) : Bool :=
   g.hasKeyword o (·.menace)
 
-/-- True when `eid` was created as a Layer 1 copy or Layer 2 control effect. -/
+private def isCtrlOrCopyEffectSpec : ContinuousEffectSpec → Bool
+  | .layered _ (.control _) _ | .layered _ (.copy _) _ => true
+  | _ => false
+
+/-- True when `eid` was created or expired as a Layer 1 copy or Layer 2 control effect. -/
 private def isCtrlOrCopyEffectId (g : Game) (eid : EffectId) : Bool :=
   Id.run do
+    if let some (_, spec) := g.activeEffects.find? (·.1 == eid) then
+      return isCtrlOrCopyEffectSpec spec
     for rev in [0:g.events.size] do
       let i := g.events.size - 1 - rev
       match g.events[i]!.change with
       | .rules (.continuousEffect (.created id spec)) =>
-        if id == eid then
-          return match spec with
-            | .layered _ (.control _) _ | .layered _ (.copy _) _ => true
-            | _ => false
+        if id == eid then return isCtrlOrCopyEffectSpec spec
+      | .rules (.continuousEffect (.expired id (some spec))) =>
+        if id == eid then return isCtrlOrCopyEffectSpec spec
       | _ => pure ()
     return false
 
@@ -5351,8 +5356,19 @@ private def addTrackedCounterSource (acc : Array (ObjectId × CounterKind))
     if acc.contains (src, k) then acc else acc.push (src, k)
   | _ => acc
 
-private def initHistoricalSlice (g : Game) (o : GameObject) : HistoricalSliceState := Id.run do
+private def insertPreLogEffectById (effs : Array (EffectId × ContinuousEffectSpec))
+    (eid : EffectId) (spec : ContinuousEffectSpec) : Array (EffectId × ContinuousEffectSpec) :=
+  if effs.any (·.1 == eid) then effs
+  else
+    match effs.findIdx? (fun (eid', _) => eid.raw < eid'.raw) with
+    | some idx =>
+      (effs.extract 0 idx |>.push (eid, spec)) ++ effs.extract idx effs.size
+    | none => effs.push (eid, spec)
+
+private def preLogEffectsAndCounterSources (g : Game) :
+    Array (EffectId × ContinuousEffectSpec) × Array (ObjectId × CounterKind) := Id.run do
   let mut createdIds : Array EffectId := #[]
+  let mut expiredCandidates : Array (EffectId × ContinuousEffectSpec) := #[]
   let mut counterSources : Array (ObjectId × CounterKind) :=
     g.activeEffects.foldl (fun acc (_, spec) => addTrackedCounterSource acc spec) #[]
   for i in [0:g.events.size] do
@@ -5360,8 +5376,21 @@ private def initHistoricalSlice (g : Game) (o : GameObject) : HistoricalSliceSta
     | .rules (.continuousEffect (.created eid spec)) =>
       createdIds := createdIds.push eid
       counterSources := addTrackedCounterSource counterSources spec
+    | .rules (.continuousEffect (.expired eid (some spec))) =>
+      counterSources := addTrackedCounterSource counterSources spec
+      if !expiredCandidates.any (·.1 == eid) then
+        expiredCandidates := expiredCandidates.push (eid, spec)
     | _ => pure ()
-  let initEffects := g.activeEffects.filter (fun (eid, _) => !createdIds.contains eid)
+  let survivingPreLog := g.activeEffects.filter (fun (eid, _) => !createdIds.contains eid)
+  let initEffects :=
+    expiredCandidates.foldl
+      (fun acc (eid, spec) =>
+        if createdIds.contains eid then acc else insertPreLogEffectById acc eid spec)
+      survivingPreLog
+  return (initEffects, counterSources)
+
+private def initHistoricalSlice (g : Game) (o : GameObject) : HistoricalSliceState := Id.run do
+  let (initEffects, counterSources) := preLogEffectsAndCounterSources g
   let mut z0 : Zone := o.zone
   let mut fd0 := o.status.faceDown
   let mut ph0 := o.status.phasedOut
@@ -5500,7 +5529,7 @@ private def stepHistoricalSlice (o : GameObject) (st : HistoricalSliceState)
     match spec with
     | .layered _ (.control _) _ | .layered _ (.copy _) _ => dirty := true
     | _ => pure ()
-  | .rules (.continuousEffect (.expired eid)) =>
+  | .rules (.continuousEffect (.expired eid _)) =>
     if s.effs.any (·.1 == eid) then
       s := { s with effs := s.effs.filter (·.1 != eid) }
       dirty := true
@@ -5641,11 +5670,12 @@ private def mkHistoricalGameAt (g : Game) (o : GameObject) (s : HistoricalSliceS
       let pOut := (s.phs.find? (·.1 == obj.id)).map Prod.snd |>.getD obj.status.phasedOut
       applyTrackedCounters { obj with zone := z, status := { obj.status with phasedOut := pOut } }
   let missingObjs := s.zs.filterMap fun (zid, z) =>
-    if z == .battlefield && !objsAt0.any (·.id == zid) then
-      let pOut := (s.phs.find? (·.1 == zid)).map Prod.snd |>.getD false
+    let nonOutside := match z with | .outside _ => false | _ => true
+    if nonOutside && !objsAt0.any (·.id == zid) then
+      let pOut := z == .battlefield && ((s.phs.find? (·.1 == zid)).map Prod.snd |>.getD false)
       some (applyTrackedCounters
         ({ id := zid, printed := { name := "", types := #[] }, owner := o.owner,
-           zone := .battlefield, status := { phasedOut := pOut } } : GameObject))
+           zone := z, status := { phasedOut := pOut } } : GameObject))
     else none
   let objsAt := objsAt0 ++ missingObjs
   let plsAt := g.players.map fun pl =>
@@ -5691,7 +5721,9 @@ def hasSummoningSickness (g : Game) (o : GameObject) : Bool :=
         let counterSourcesAtNow : Array (ObjectId × CounterKind) :=
           g.events.foldl (fun acc ev =>
             match ev.change with
-            | .rules (.continuousEffect (.created _ spec)) => addTrackedCounterSource acc spec
+            | .rules (.continuousEffect (.created _ spec))
+            | .rules (.continuousEffect (.expired _ (some spec))) =>
+              addTrackedCounterSource acc spec
             | _ => acc)
             (g.activeEffects.foldl (fun acc (_, spec) => addTrackedCounterSource acc spec) #[])
         let mut sawUnoverriddenArrival : Bool := false
@@ -5724,8 +5756,8 @@ def hasSummoningSickness (g : Game) (o : GameObject) : Bool :=
             | .layered _ (.control _) _ | .layered _ (.copy _) _ =>
               sawWindowCtrlChange := true
             | _ => pure ()
-          | .rules (.continuousEffect (.expired eid)) =>
-            if g.isCtrlOrCopyEffectId eid then
+          | .rules (.continuousEffect (.expired eid spec?)) =>
+            if spec?.any isCtrlOrCopyEffectSpec || g.isCtrlOrCopyEffectId eid then
               sawWindowCtrlChange := true
           | .rules (.permanent (.turnedFaceUp eo))
           | .rules (.permanent (.turnedFaceDown eo))
@@ -6013,7 +6045,8 @@ def controlChanged (g : Game) (o : GameObject) : Bool :=
       !(g.appliedControlEffectIds o).isEmpty ||
       g.events.any (fun ev =>
         match ev.change with
-        | .rules (.continuousEffect (.created _ (.layered (.objects ids) (.control _) _))) =>
+        | .rules (.continuousEffect (.created _ (.layered (.objects ids) (.control _) _)))
+        | .rules (.continuousEffect (.expired _ (some (.layered (.objects ids) (.control _) _)))) =>
           ids.contains o.id
         | _ => false) then
     true
@@ -6022,7 +6055,8 @@ def controlChanged (g : Game) (o : GameObject) : Bool :=
   else
     let hasFilterCtrl := g.events.any fun ev =>
       match ev.change with
-      | .rules (.continuousEffect (.created _ (.layered sc (.control _) _))) =>
+      | .rules (.continuousEffect (.created _ (.layered sc (.control _) _)))
+      | .rules (.continuousEffect (.expired _ (some (.layered sc (.control _) _)))) =>
         match sc with
         | .objects _ => false
         | _ => true
@@ -6035,17 +6069,12 @@ def controlChanged (g : Game) (o : GameObject) : Bool :=
         | .rules (.zone (.moved _ after _ .battlefield ..)) => after.id == some o.id
         | .rules (.zone (.created eo _)) => eo.id == some o.id && eo.zone == .battlefield
         | _ => false
-      let mut createdIds : Array EffectId := #[]
-      for ev in g.events do
-        match ev.change with
-        | .rules (.continuousEffect (.created eid _)) => createdIds := createdIds.push eid
-        | _ => pure ()
       let mut gSim : Game :=
         if arrivedInEvents then
           { players := g.players.map (fun pl => { id := pl.id, name := pl.name }) }
         else
           { g with
-            activeEffects := g.activeEffects.filter (fun (eid, _) => !createdIds.contains eid)
+            activeEffects := (preLogEffectsAndCounterSources g).1
             events := #[] }
       for ev in g.events do
         gSim := ({ gSim with events := gSim.events.push ev }).applyChange ev.change
@@ -11678,7 +11707,7 @@ def replayKeptStreamCore (g : Game)
            | .layered (.objects ids) _ _ =>
              ids.contains origId && ids.all (fun id => id == origId || (acc.findObject? id).isNone)
            | _ => false)
-      if tied then acc.record (GameEvent.effectExpired acc.turnNumber eid (cause := cause))
+      if tied then acc.record (GameEvent.effectExpired acc.turnNumber eid eff (cause := cause))
       else acc) g0
   let stepOrigNextEff (cur : Nat) (ev : GameEvent) : Nat :=
     match ev with
@@ -11687,7 +11716,7 @@ def replayKeptStreamCore (g : Game)
       let cur1 :=
         match r with
         | .continuousEffect (.created eid _)
-        | .continuousEffect (.expired eid) => max cur (eid.raw + 1)
+        | .continuousEffect (.expired eid _) => max cur (eid.raw + 1)
         | _ => cur
       match cause.oneShotEffectId? with
       | some eid => max cur1 (eid.raw + 1)
@@ -12279,8 +12308,9 @@ def replayKeptStreamCore (g : Game)
           let (freshEid, effRev2) := ensurePostCkptEffId gCur effRev1 eid
           (gCur.record (.rules t (.continuousEffect (.created freshEid spec')) cause' batch),
             liveMap, effRev2, matIds)
-        | .expired eid =>
-          (gCur.record (.rules t (.continuousEffect (.expired (re1 eid))) cause' batch),
+        | .expired eid spec? =>
+          let spec?' := spec?.map (remapProposalEffSpec ro)
+          (gCur.record (.rules t (.continuousEffect (.expired (re1 eid) spec?')) cause' batch),
             liveMap, effRev1, matIds)
       | .rules t (.delayedTrigger dte) cause batch =>
         match dte with
@@ -12731,7 +12761,7 @@ def reverseToProposalCheckpointCore? (g : Game)
       let cur1 :=
         match r with
         | .continuousEffect (.created eid _)
-        | .continuousEffect (.expired eid) => max cur (eid.raw + 1)
+        | .continuousEffect (.expired eid _) => max cur (eid.raw + 1)
         | _ => cur
       match cause.oneShotEffectId? with
       | some eid => max cur1 (eid.raw + 1)

@@ -1065,7 +1065,7 @@ chosen piles/targets; a resolving pump has cause `.oneShotEffect`; a cleanup
       | _, _ => false) &&
     gCleanup.events.any (fun e =>
       match e.change with
-      | .rules (.continuousEffect (.expired _)) =>
+      | .rules (.continuousEffect (.expired ..)) =>
         e.cause? == some (.turnBased .cleanupClear)
       | _ => false) &&
     gBeholdEff.events.any (fun e =>
@@ -1360,7 +1360,7 @@ printed static abilities (CR 702.26b / 702.26f). -/
   let expiredCause? : Option EventCause :=
     gPhasedOut.events.findSome? (fun e =>
       match e.change with
-      | .rules (.continuousEffect (.expired _)) => e.cause?
+      | .rules (.continuousEffect (.expired ..)) => e.cause?
       | _ => none)
   let phasedCause? : Option EventCause :=
     gPhasedOut.events.findSome? (fun e =>
@@ -1494,12 +1494,12 @@ before the next upkeep keep each batch's delayed `.oneShotEffect` cause (CR 603.
     (mustApply ((quiet gEagles2).beginStep .upkeep) me (.stackTriggers #[0, 1])).resolveTop.resolveTop
   gPermTurnEnd.events.any (fun e =>
     match e.change with
-    | .rules (.continuousEffect (.expired _)) =>
+    | .rules (.continuousEffect (.expired ..)) =>
       e.cause? == some (EventCause.turnBased .cleanupClear)
     | _ => false) &&
     gPermNextTurn.events.any (fun e =>
       match e.change with
-      | .rules (.continuousEffect (.expired _)) =>
+      | .rules (.continuousEffect (.expired ..)) =>
         e.cause? == some (EventCause.turnBased .expireAtStepBegin)
       | _ => false) &&
     storedExtraCause? == some (EventCause.oneShotEffect (some ⟨effBeforeExtra⟩) (some h.id) (some me)) &&
@@ -1510,12 +1510,12 @@ before the next upkeep keep each batch's delayed `.oneShotEffect` cause (CR 603.
       | _ => false) &&
     gExtraClearedEot.events.any (fun e =>
       match e.change with
-      | .rules (.continuousEffect (.expired _)) =>
+      | .rules (.continuousEffect (.expired ..)) =>
         e.cause? == some (EventCause.turnBased .cleanupClear)
       | _ => false) &&
     gExtraEndedTurn.events.any (fun e =>
       match e.change with
-      | .rules (.continuousEffect (.expired _)) =>
+      | .rules (.continuousEffect (.expired ..)) =>
         e.cause? == some (EventCause.turnBased .cleanupClear)
       | _ => false) &&
     (gTreasPlayer.battlefield.filter (·.name == "Treasure")).size == 1 &&
@@ -11440,7 +11440,7 @@ private def mustHold17 (label : String) (ok : Bool) : Bool :=
       | _ => false) &&
     gProtNextTurn.events.any (fun e =>
       match e.change, e.cause? with
-      | .rules (.continuousEffect (.expired _)), some (.turnBased .expireAtStepBegin) => true
+      | .rules (.continuousEffect (.expired ..)), some (.turnBased .expireAtStepBegin) => true
       | _, _ => false)
 
   -- 8c. Step/phase `EffectDuration` expiry (`CR 500.4–5 / 511.2 / 611.2a`):
@@ -20869,7 +20869,7 @@ private def mkTwoHeadedGiant26i4 (seed : UInt64 := 2641) (startingSeat : Nat := 
       | _ => false
     let hasExpired := slice.any fun e =>
       match e.change with
-      | .rules (.continuousEffect (.expired _)) => true
+      | .rules (.continuousEffect (.expired ..)) => true
       | _ => false
     let exiledBy800_4c := slice.any fun e =>
       match e.change, e.cause? with
@@ -33422,7 +33422,7 @@ private def replayOk41i3 (gs : Array Game) : Bool :=
     -- `p3`'s `.untilNextTurnOf p3` also expired as `p3`'s turn began (`beginTurn`), or verify `p2`'s expired before `p3` began:
     gExSomeResumed.events.any (fun ev =>
       match ev.change with
-      | .rules (.continuousEffect (.expired _)) => true
+      | .rules (.continuousEffect (.expired ..)) => true
       | _ => false)
 
   -- Also verify with `runBeginTurn := false` so `p3`'s `.untilNextTurnOf p3` stays active while `p2`'s `.untilNextTurnOf p2` expires!
@@ -34166,7 +34166,7 @@ private def replayOk42i2 (gs : Array Game) : Bool :=
   let expiredBatches :=
     skipSlice.filterMap fun ev =>
       match ev.change with
-      | .rules (.continuousEffect (.expired _)) => ev.batch
+      | .rules (.continuousEffect (.expired ..)) => ev.batch
       | _ => none
   let singleBatchDeadTeamOk :=
     stillActiveOnTeamB &&
@@ -34355,7 +34355,7 @@ private def replayOk42i3 (gs : Array Game) : Bool :=
   let betweenEvLen := gAfterLostOnly.events.size
   let gAfterLeft := gAfterLostOnly.record (GameEvent.playerLeftGame gAfterLostOnly.turnNumber p2 (cause := some testCause))
 
-  -- (iii) `.whileSourceHasCounter` Layer 2 control in `hasSummoningSickness`:
+  -- (iii) `.whileSourceHasCounter` Layer 2 control in `hasSummoningSickness` (created in log and pre-`events[0]` + expired):
   let gCntSick0 := addPermanent (addPermanent g4 bear p1 p1) srcDefB p0 p0
   let cntBear := (gCntSick0.permanentsOf p1)[0]!
   let cntSrc := (gCntSick0.permanentsOf p0).find? (·.name == srcDefB.name) |>.get!
@@ -34368,6 +34368,22 @@ private def replayOk42i3 (gs : Array Game) : Bool :=
   let gCntToggled :=
     (gCntSick1.recordRemoveCounters cntSrc.id .charge 1 (some p0) (cause := some testCause)).recordPutCounters
       cntSrc.id .charge 1 (some p0) (cause := some testCause)
+
+  -- Pre-`events[0]` `.whileSourceHasCounter` `.control p1` effect on `p0`'s creature that toggles on mid-turn and then expires:
+  let gPreCnt0 :=
+    quiet
+      (readyControlledForTurn
+        ((addPermanent (addPermanent g4 bear p0 p0) srcDefB p0 p0)) p0)
+  let preCntBearId := (gPreCnt0.permanentsOf p0).find? (·.name == bear.name) |>.get!.id
+  let preCntSrcId := (gPreCnt0.permanentsOf p0).find? (·.name == srcDefB.name) |>.get!.id
+  let gPreCnt1 :=
+    quiet
+      (gPreCnt0.createEffect
+        (.layered (.objects #[preCntBearId]) (.control p1) (.whileSourceHasCounter preCntSrcId .charge))
+        (cause := some testCause))
+  let preCntReadyBefore := !gPreCnt1.hasSummoningSickness (gPreCnt1.object! preCntBearId)
+  let gPreCntTurnedOn := gPreCnt1.recordPutCounters preCntSrcId .charge 1 (some p0) (cause := some testCause)
+  let (gPreCntExpired, _) := gPreCntTurnedOn.move preCntSrcId (.graveyard p0) none
 
   -- (iv) DFC `PermanentEvent.transformed` in `hasSummoningSickness`:
   --      Front face has `trample := false` (stolen by `noTrampleScope` `.control p0`), back face has `trample := true` (reverts to `p1`!):
@@ -34390,14 +34406,19 @@ private def replayOk42i3 (gs : Array Game) : Bool :=
     gAfterLeft.controllerOfAt (gAfterLeft.object! cDefP2.id) betweenEvLen == some p2 &&
     gAfterLeft.controllerOfAt (gAfterLeft.object! cDefP2.id) gAfterLeft.events.size == none &&
     cntReadyBefore && gCntToggled.hasSummoningSickness (gCntToggled.object! cntBear.id) &&
+    preCntReadyBefore &&
+    gPreCntExpired.activeEffects.isEmpty &&
+    gPreCntExpired.controllerOf (gPreCntExpired.object! preCntBearId) == some p0 &&
+    gPreCntExpired.hasSummoningSickness (gPreCntExpired.object! preCntBearId) &&
     dfcReadyBefore && gDfcBackAndForth.hasSummoningSickness (gDfcBackAndForth.object! dfcId)
 
   -- 3c. `Phasing.phaseInControlled` historical `Core.controllerOfAt` lookup:
   --     (i) `matStealId` materialized phased out while controlled by `p1` via `p1`'s `srcDefA` (which leaves when `p1` concedes,
   --         so current `g.controllerOf` is `some p0` and `appliedControlEffectIds` is empty!), PLUS a later `.control p2` effect
-  --         created AFTER `matStealId` materialized phased out;
+  --         created AFTER `matStealId` arrived phased out;
   --     (ii) `preId` already phased out under `p1`'s `.whileSourceOnBattlefield p0Src.id` control before `events[0]` (`quiet`),
-  --          where `p0Src` phases out after `events[0]` (ending `p1`'s control on current `g` while `controllerOfAt preId 0 == some p1`) before `p1`'s turn is skipped!
+  --          plus `concedePreId` & `revPreId` exercising real `concede` (`ctrlEids` expiration of pre-log `.control p1` effects
+  --          with both earlier and later surviving pre-log `.control p2` timestamps)!
   let gHist0 := addPermanent g4 srcDefA p1 p1
   let p1Src := (gHist0.permanentsOf p1)[0]!
   let gHist1 :=
@@ -34415,7 +34436,7 @@ private def replayOk42i3 (gs : Array Game) : Bool :=
   let gHistAfterP1Concede := (mustApply gHist4 p1 .concede).startNextTurnAndBegin
 
   -- Pre-`events[0]` (`quiet`) phased-out permanent controlled at `evLen = 0` by `p1` via `.whileSourceOnBattlefield p0Src.id`,
-  -- then `p0Src` phases out after `events[0]` (so `g.controllerOf preId == some p0` and `appliedControlEffectIds == #[]`, yet `controllerOfAt preId 0 == some p1`!):
+  -- then `p0Src` phases out after `events[0]`:
   let gPre0 := addPermanent (addPermanent g4 bear p0 p0) srcDefA p0 p0
   let preId := (gPre0.permanentsOf p0).find? (·.name == bear.name) |>.get!.id
   let p0SrcId := (gPre0.permanentsOf p0).find? (·.name == srcDefA.name) |>.get!.id
@@ -34424,10 +34445,26 @@ private def replayOk42i3 (gs : Array Game) : Bool :=
       ((gPre0.createEffect (.layered (.objects #[preId]) (.control p1) (.whileSourceOnBattlefield p0SrcId))
         (cause := some testCause)).phaseOut (gPre0.object! preId) (cause := some testCause))
   let gPreSrcOut := gPre1.phaseOut (gPre1.object! p0SrcId) (cause := some testCause)
-  let gPreExpiredAndSkip :=
-    ((gPreSrcOut.record
-      (GameEvent.playerLost gPreSrcOut.turnNumber p1 .conceded (cause := some testCause))).record
-      (GameEvent.playerLeftGame gPreSrcOut.turnNumber p1 (cause := some testCause))).startNextTurnAndBegin
+  let gPreExpiredAndSkip := (mustApply gPreSrcOut p1 .concede).startNextTurnAndBegin
+
+  -- Real `concede p1` (`ctrlEids` expiration) on a quiet position where `concedePreId` had an earlier `.control p2`
+  -- and a later `.control p1` before `events[0]`, and `revPreId` had an earlier `.control p1` and a later `.control p2`:
+  let gRealPre0 := addPermanent (addPermanent g4 bear p0 p0) hero p0 p0
+  let concedePreId := (gRealPre0.permanentsOf p0).find? (·.name == bear.name) |>.get!.id
+  let revPreId := (gRealPre0.permanentsOf p0).find? (·.name == hero.name) |>.get!.id
+  let gRealPre1 :=
+    quiet
+      ((((((gRealPre0.createEffect (.layered (.objects #[concedePreId]) (.control p2) .indefinite)
+            (cause := some testCause)).createEffect
+          (.layered (.objects #[concedePreId]) (.control p1) .indefinite)
+          (cause := some testCause)).createEffect
+        (.layered (.objects #[revPreId]) (.control p1) .indefinite)
+        (cause := some testCause)).createEffect
+      (.layered (.objects #[revPreId]) (.control p2) .indefinite)
+      (cause := some testCause)).phaseOut (gRealPre0.object! concedePreId) (cause := some testCause)).phaseOut
+      (gRealPre0.object! revPreId) (cause := some testCause))
+  let gAfterRealConcede := mustApply gRealPre1 p1 .concede
+  let gAfterRealConcedeSkip := gAfterRealConcede.startNextTurnAndBegin
 
   let item3cOk :=
     gHistAfterP1Concede.activePlayer == p2 &&
@@ -34435,7 +34472,13 @@ private def replayOk42i3 (gs : Array Game) : Bool :=
     gPreSrcOut.controllerOf (gPreSrcOut.object! preId) == some p0 &&
     gPreSrcOut.controllerOfAt (gPreSrcOut.object! preId) 0 == some p1 &&
     gPreExpiredAndSkip.activePlayer == p2 &&
-    !(gPreExpiredAndSkip.object! preId).status.phasedOut
+    !(gPreExpiredAndSkip.object! preId).status.phasedOut &&
+    !gAfterRealConcede.activeEffects.any (fun (_, s) => s == .layered (.objects #[concedePreId]) (.control p1) .indefinite) &&
+    gAfterRealConcede.controllerOf (gAfterRealConcede.object! concedePreId) == some p2 &&
+    gAfterRealConcede.controllerOfAt (gAfterRealConcede.object! concedePreId) 0 == some p1 &&
+    gAfterRealConcede.controllerOfAt (gAfterRealConcede.object! revPreId) 0 == some p2 &&
+    gAfterRealConcedeSkip.activePlayer == p2 &&
+    !(gAfterRealConcedeSkip.object! concedePreId).status.phasedOut
 
   mustHold42i3 "3a.continuousPhasingHelpers" item3aOk &&
   mustHold42i3 "3b.summoningSicknessHistorical" item3bOk &&

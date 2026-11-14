@@ -1113,9 +1113,9 @@ def preBatchLegendSnapshotValid (g : Game)
               isDepartureCleanup && !promptIds.contains fromHost
             | .permanent (.designation _ .ringBearer false)
             | .combat (.removedFromCombat _) => isDepartureCleanup
-            | .continuousEffect (.expired eid) =>
+            | .continuousEffect (.expired eid spec?) =>
               isDepartureCleanup &&
-                (g.openBatchEffects.find? (·.1 == eid)).any fun (_, spec) =>
+                (spec?.orElse fun _ => (g.openBatchEffects.find? (·.1 == eid)).map Prod.snd).any fun spec =>
                   match spec with
                   | .permission .. | .replacement .. | .prevention .. | .gameRule .. => true
                   | .playerRule _ r _ => r != .legendRuleOff
