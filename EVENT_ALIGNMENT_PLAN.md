@@ -16108,10 +16108,10 @@ pain-mana ordering in `ManaAbilities.finishActivateManaAbilityPostSac`).
 2. **Pre-`playerLeftGame` CR 800.4a LKI/control snapshot & departing-attachment `unattachFrom`
    suppression in `Leaving.playerLeavesGameCore`, reachable FRA emblem expiry logging in
    `Turns.expireFraUntilTurnEffects`, and 2HG shared-turn departure expiry in `Turns`**
-   (`Attachments.lean:46–82`, `Core.lean:1813–1820, 13005–13009, 13291–13301`,
-   `Leaving.lean:241, 268–277, 688–730, 2985–3025`, `Phasing.lean:265–300`,
-   `Turns.lean:314–400, 535–596, 655–673`; **CR 114.5 / 603.10a / 701.3d / 800.4a / 800.4c /
-   800.4m / 805.2 / 805.8 / 810.4**):
+   (`Attachments.lean:46–82`, `Core.lean:1375–1394, 1813–1820, 13005–13009, 13275–13301`,
+   `Leaving.lean:241, 268–277, 688–730, 2985–3025`, `Phasing.lean:258–303`,
+   `Turns.lean:314–400, 535–596, 628–673, 926–948`; **CR 114.5 / 603.10a / 701.3d / 800.4a /
+   800.4c / 800.4m / 805.2 / 805.8 / 810.4**):
    - **Pre-`playerLeftGame` `preLeave` snapshot, simultaneous `ceaseToExist` LKI, and departing
      `skipIds` in `Attachments.unattachFrom`**
      (`Attachments.lean:46–82`, `Core.lean:1813–1820`,
@@ -16167,37 +16167,52 @@ pain-mana ordering in `ManaAbilities.finishActivateManaAbilityPostSac`).
          expires `.gameRule (.fraEmblem o.id)` and `.whileInZone o.id .command` via
          `expireEffectsOnLeavingObject`), and logs `s!"{embName} ends"`.
    - **2HG shared-turn ending-seat guard & simultaneous dead-team expiry in `Turns`**
-     (`Core.lean:13291–13301`, `Phasing.lean:265–300`, `Turns.lean:343–400, 535–596, 655–673`):
+     (`Core.lean:1375–1394, 13275–13301`, `Phasing.lean:258–303`,
+     `Turns.lean:343–400, 535–596, 628–673, 926–948`):
      - Two 2HG shared-turn departure bugs remain in `Turns`:
        (i) when a 2HG team (`#[⟨0⟩, ⟨1⟩]`) concedes during its own shared regular or extra turn
-       while `g.activePlayer == ⟨0⟩` (`seats == #[⟨0⟩]`), `Turns.startNextTurnCore` (`658–671`) and
-       `Turns.continueStartNextTurn` (`556–560, 578–594`) lack
-       `Phasing.departedNextTurnWouldHaveBegunSince`'s `extraSeatEnding` (`seatsExtra && skipIdx <
-       inProgressExtraSeats`) and `endingCurrentShared` (`seats.any (fun s => s == q ||
-       g.areTeammates s q)`) guards (`Phasing.lean:265–300`), immediately pushing `⟨1⟩` into
-       `departed` and expiring `.untilNextTurnOf ⟨1⟩` / `.untilEndOfNextTurnOf ⟨1⟩` as Team B's turn
-       begins (one full turn round early); and
+       while `g.activePlayer == ⟨0⟩` (`seats == #[⟨0⟩]`), `Turns.startNextTurnCore` (`658–671`,
+       which currently binds only `ending` and `midRegularShared` at `629–631` without loading
+       `(seats, seatsExtra) := g.currentSharedTurnState`) and `Turns.continueStartNextTurn`
+       (`550–596`) lack `Phasing.departedNextTurnWouldHaveBegunSince`'s `extraSeatEnding`
+       (`seatsExtra && !sameShared && skipIdx < inProgressExtraSeats`, `Phasing.lean:265–286`) and
+       `endingCurrentShared` (`!sameShared && seats.any (fun s => s == q || g.areTeammates s q)`,
+       `Phasing.lean:296–298`) guards, immediately pushing `⟨1⟩` into `departed` / `newlyDeparted`
+       (including on the regular-seat fallback at `666–671` and `576–594` after an extra shared
+       turn's dead prefix is skipped) and expiring `.untilNextTurnOf ⟨1⟩` /
+       `.untilEndOfNextTurnOf ⟨1⟩` as Team B's turn begins (one full turn round early); and
        (ii) in `Turns.continueStartNextTurn` (`535–539`), `g := g.expireUntilNextTurnEffects dep`
        sits outside `if !alreadyExpired.contains dep`, and when a dead 2HG team's turn IS skipped
        (`!teamHasLiving`), `Turns.expireUntilNextTurnEffects` (`348–400`) expires `⟨0⟩` and `⟨1⟩` in
        two separate batches / `endControlEffectsSimultaneously` passes (`q == p` rather than
        `q == p || (!teamHasLiving && g.areTeammates q p)`, while `Core.restoreCopiesUntilNextTurn`
-       at `13295–13298` omits `acc.areTeammates q p` when `departed == true`):
-       - Guard the dead-extra-turn and regular-seat loops in `Turns.startNextTurnCore` (`658–671`)
-         and `Turns.continueStartNextTurn` (`556–594`) with `extraSeatEnding` (`seatsExtra &&
-         skipIdx < inProgressExtraSeats` via `inProgressExtraSeats` matching `Phasing.lean:245–258`)
-         and `endingCurrentShared` (`!seatsExtra && seats.any (fun s => s == q || g.areTeammates s
-         q)`); in `continueStartNextTurn` (`535–549`), skip `dep` when `alreadyExpired.contains dep`
-         and, when `!(g.teamMembers dep).any g.stillInGame`, push all `g.teamMembers dep` into
+       at `13295–13298` matches teammates only when `!departed` on `.untilNextTurnOf` and never on
+       `.untilEndOfNextTurnOf`):
+       - Load `let (seats, seatsExtra) := g.currentSharedTurnState` (`Core.lean:1375–1394`) in
+         `Turns.startNextTurnCore` (`628–673`) before `658` (matching `continueStartNextTurn` at
+         `550`), compute `inProgressExtraSeats` (`Phasing.lean:265–278`), resolve the candidate
+         living turn `(targetP, targetExtra)` and `sameShared := g.stillInGame targetP &&
+         targetExtra == seatsExtra && !seats.isEmpty && g.areTeammates seats[0]! targetP &&
+         !seats.contains targetP` (`Phasing.lean:259–261`), and guard dead extra-turn seats in
+         `startNextTurnCore` (`658–664`) and `continueStartNextTurn` (`556–560`) with
+         `!extraSeatEnding` (`seatsExtra && !sameShared && skipIdx < inProgressExtraSeats`,
+         `Phasing.lean:285–286`) and dead regular-seat / `fromExtra` fallback seats (`666–671` and
+         `576–594`, without gating on `!seatsExtra`) with `!endingCurrentShared` (`!sameShared &&
+         seats.any (fun s => s == q || g.areTeammates s q)`, `Phasing.lean:296–298`); in
+         `continueStartNextTurn` (`535–549`), skip `dep` when `alreadyExpired.contains dep` and,
+         when `!(g.teamMembers dep).any g.stillInGame`, push all `g.teamMembers dep` into
          `alreadyExpired` and expire the entire dead team simultaneously in one
          `Turns.expireUntilNextTurnEffects` batch (`348–400`, matching `q == p || (!teamHasLiving &&
          g.areTeammates q p)` across `expireFraUntilTurnEffects ... (includeTeammates :=
          !teamHasLiving)`, `ctrlEids`, `.untilEndOfNextTurnOf`, per-turn `.playerRule`s, and
          `delayedTriggers`, iterating `if teamHasLiving then #[p] else g.teamMembers p` for
          `expireGoadedFor`, `protectionFromEverything`, `lifeCantChange`, and
-         `expirePlayPermissions`, and allowing `(!departed || !(acc.teamMembers p).any
-         acc.stillInGame) && acc.areTeammates q p` in `Core.restoreCopiesUntilNextTurn` at
-         `13295–13298`).
+         `expirePlayPermissions`, and widening both `.untilNextTurnOf q` — keeping its existing
+         `!departed && acc.areTeammates q p` clause for `Turns.beginTurn` (`926–928, 947`) — and
+         `.untilEndOfNextTurnOf q` in `Core.restoreCopiesUntilNextTurn` (`13295–13298`) only by
+         `departed && !(acc.teamMembers p).any acc.stillInGame && acc.areTeammates q p` so a living
+         teammate's `.untilEndOfNextTurnOf` copies continue ending through `restoreCopiesUntilEot`
+         at `13275–13287`).
 
 3. **Continuous `[pIdx .. now]` phasing-duration check, pre-`events[0]` & `ZoneEvent.created`
    phasing helpers, `Core.hasSummoningSickness` phased-out / `leftTheGame` / counter & DFC
