@@ -313,28 +313,30 @@ def expireFraUntilTurnEffects (g : Game) (p : PlayerId) (includeTeammates : Bool
   let cause := some (EventCause.turnBased .expireAtStepBegin)
   let endingEmblems := g.objects.filter (fun o =>
     o.zone == .command && (g.fraEffectUntilTurnOf o).any matchesTurnOf)
-  let g :=
-    if skipControl then g
-    else
-      let ctrlEids := g.activeEffects.filterMap fun (eid, e) =>
-        match e with
-        | .layered _ (.control _) (.untilNextTurnOf q) =>
-          if matchesTurnOf q then some eid else none
-        | _ => none
-      if ctrlEids.isEmpty then g
-      else g.endControlEffectsSimultaneously ctrlEids (cause := cause)
-  let g := g.expireMatching (fun
-    | .layered _ (.copy ..) _ | .layered _ (.control _) _
-    | .playerRule _ .protectionFromEverything _
-    | .playerRule _ .lifeCantChange _ => false
-    | e =>
-      match effectDuration e with
-      | .untilNextTurnOf q => matchesTurnOf q
-      | _ => false) (cause := cause) (reconcileControl := !skipControl)
-  endingEmblems.foldl (fun g o =>
-    if (g.findObject? o.id).any (·.zone == .command) then
-      (g.ceaseToExist o.id (cause := cause) (reconcileControl := !skipControl)).logMsg s!"{g.name o} ends"
-    else g) g
+  let expireNonControl (g0 : Game) : Game :=
+    let g0 := g0.expireMatching (fun
+      | .layered _ (.copy ..) _ | .layered _ (.control _) _
+      | .playerRule _ .protectionFromEverything _
+      | .playerRule _ .lifeCantChange _ => false
+      | e =>
+        match effectDuration e with
+        | .untilNextTurnOf q => matchesTurnOf q
+        | _ => false) (cause := cause) (reconcileControl := false)
+    endingEmblems.foldl (fun acc o =>
+      if (acc.findObject? o.id).any (·.zone == .command) then
+        (acc.ceaseToExist o.id (cause := cause) (reconcileControl := false)
+          (suppressReturnLog := true)).logMsg s!"{acc.name o} ends"
+      else acc) g0
+  if skipControl then
+    expireNonControl g
+  else
+    let ctrlEids := g.activeEffects.filterMap fun (eid, e) =>
+      match e with
+      | .layered _ (.control _) (.untilNextTurnOf q) =>
+        if matchesTurnOf q then some eid else none
+      | _ => none
+    g.endControlEffectsSimultaneously ctrlEids (cause := cause)
+      (preExpire := expireNonControl)
 
 /-- Expire effects that last until `p`'s next turn (CR 800.4m) and clear
 that player's last-turn information (CR 800.4i). -/
@@ -524,12 +526,16 @@ mutual
 /-- Resume `startNextTurn` across departed-player `expireUntilNextTurnEffects` pauses
 (CR 800.4k / 800.4m), optionally entering `beginTurn` once `turnBegan` is recorded. -/
 partial def continueStartNextTurn (g : Game) (nextP : PlayerId)
-    (remainingDeparted : Array PlayerId) (runBeginTurn : Bool := false) : Game := Id.run do
+    (remainingDeparted : Array PlayerId) (runBeginTurn : Bool := false)
+    (alreadyExpired : Array PlayerId := #[]) : Game := Id.run do
   if g.over then
     return g
   let mut g := g
+  let mut alreadyExpired := alreadyExpired
   for i in [0:remainingDeparted.size] do
     let dep := remainingDeparted[i]!
+    if !alreadyExpired.contains dep then
+      alreadyExpired := alreadyExpired.push dep
     g := g.expireUntilNextTurnEffects dep
     if g.over then
       return g
@@ -539,42 +545,55 @@ partial def continueStartNextTurn (g : Game) (nextP : PlayerId)
       | _ => g.pendingReplacement.isSome
     if paused then
       let rem := remainingDeparted.extract (i + 1) remainingDeparted.size
-      return g.chainPendingReplacement (.continueStartNextTurn nextP rem runBeginTurn)
+      return g.chainPendingReplacement
+        (.continueStartNextTurn nextP rem runBeginTurn alreadyExpired)
   let (seats, seatsExtra) := g.currentSharedTurnState
   let midRegularShared := !seatsExtra && !g.isSharedTurnFinalSeat
   let pendingExtraCauses := pendingExtraTurnCauses g
   let mut skipIdx := 0
+  let mut unexpiredExtra : Array PlayerId := #[]
   if !midRegularShared then
     while skipIdx < g.extraTurns.size && !g.stillInGame g.extraTurns[skipIdx]! do
+      let d := g.extraTurns[skipIdx]!
+      if !alreadyExpired.contains d && !unexpiredExtra.contains d then
+        unexpiredExtra := unexpiredExtra.push d
       skipIdx := skipIdx + 1
   let nextExtra? :=
     if midRegularShared then none
     else (g.extraTurns.extract skipIdx g.extraTurns.size)[0]?
-  if nextExtra?.isNone && !g.stillInGame nextP && !g.over &&
+  if (!g.stillInGame nextP || !unexpiredExtra.isEmpty) && !g.over &&
       g.players.any (fun pl => g.stillInGame pl.id) then
-    let n := g.players.size
-    let fromExtra := !midRegularShared && g.extraTurns.contains nextP
-    let (nextP', newlyDeparted) := Id.run do
-      let mut newly : Array PlayerId := #[]
-      if fromExtra then
-        newly := newly.push nextP
-        for k in [1:n+1] do
-          let q : PlayerId := ⟨(g.activePlayer.idx + k) % n⟩
-          if !g.stillInGame q then
-            if !newly.contains q then newly := newly.push q
-          else
-            return (q, newly)
-        return (g.activePlayer, newly)
-      else
-        for k in [0:n] do
-          let q : PlayerId := ⟨(nextP.idx + k) % n⟩
-          if !g.stillInGame q then
-            if !newly.contains q then newly := newly.push q
-          else
-            return (q, newly)
-        return (nextP, newly)
-    if g.stillInGame nextP' then
-      return g.continueStartNextTurn nextP' newlyDeparted runBeginTurn
+    match nextExtra? with
+    | some q =>
+      if q != nextP || !unexpiredExtra.isEmpty then
+        return g.continueStartNextTurn q unexpiredExtra runBeginTurn alreadyExpired
+    | none =>
+      let n := g.players.size
+      let fromExtra := !midRegularShared && g.extraTurns.contains nextP
+      let (nextP', newlyDeparted) := Id.run do
+        let mut newly := unexpiredExtra
+        if fromExtra then
+          if !alreadyExpired.contains nextP && !newly.contains nextP then
+            newly := newly.push nextP
+          for k in [1:n+1] do
+            let q : PlayerId := ⟨(g.activePlayer.idx + k) % n⟩
+            if !g.stillInGame q then
+              if !alreadyExpired.contains q && !newly.contains q then
+                newly := newly.push q
+            else
+              return (q, newly)
+          return (g.activePlayer, newly)
+        else
+          for k in [0:n] do
+            let q : PlayerId := ⟨(nextP.idx + k) % n⟩
+            if !g.stillInGame q then
+              if !alreadyExpired.contains q && !newly.contains q then
+                newly := newly.push q
+            else
+              return (q, newly)
+          return (nextP, newly)
+      if g.stillInGame nextP' && (nextP' != nextP || !newlyDeparted.isEmpty) then
+        return g.continueStartNextTurn nextP' newlyDeparted runBeginTurn alreadyExpired
   let (gNext, didBeginTurn) : Game × Bool :=
     match nextExtra? with
     | some q =>

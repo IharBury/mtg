@@ -462,7 +462,8 @@ def finishActivateManaAbilityPostSac (g : Game) (p : PlayerId) (id : ObjectId) (
     if g.proposalCheckpoint.isSome then
       g := g.chainPendingReplacement (.endProposalAction manaCkpt)
     if prevPending == .none then
-      g := g.chainPendingReplacement (.receivePriority p)
+      if !hasFollowingSeq then
+        g := g.chainPendingReplacement (.receivePriority p)
     else
       g := g.chainPendingReplacement (.restorePending prevPending false none allDeparted none)
     return g

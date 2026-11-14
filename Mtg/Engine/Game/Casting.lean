@@ -1284,12 +1284,14 @@ def becomeActivated (g : Game) (p : PlayerId) (sourceName : String)
   else
     let chosenX :=
       ((abilityId.bind g.findObject?).bind (·.chosenX)).getD 0
+    let sinceIdx := (g.proposalCheckpoint.map (·.eventsSize)).getD 0
     let unpaidLoyaltyUnpayable : Bool :=
       match activation.bind (·.cost.loyalty) with
       | none => false
       | some sym =>
         if g.proposedSpell.any ProposedSpell.loyaltyPaid ||
-            sourceId.any (fun sid => g.sourceCounterCostPaidFor sid abilityId .loyalty) then
+            sourceId.any (fun sid =>
+              g.sourceCounterCostPaidFor sid abilityId .loyalty (some .loyalty) sinceIdx) then
           false
         else
           let actualSym :=
@@ -1331,7 +1333,7 @@ def becomeActivated (g : Game) (p : PlayerId) (sourceName : String)
           match sourceId.bind g.findObject? with
           | some src =>
             if !(g.proposedSpell.any ProposedSpell.loyaltyPaid) &&
-                !g.sourceCounterCostPaidFor src.id abilityId .loyalty then
+                !g.sourceCounterCostPaidFor src.id abilityId .loyalty (some .loyalty) sinceIdx then
               g.payLoyaltyCost p src actualSym (forObject := abilityId)
             else g
           | none => g

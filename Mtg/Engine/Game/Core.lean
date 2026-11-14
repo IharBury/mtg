@@ -1805,7 +1805,7 @@ private def effectPhasingAllows (g : Game) (o : GameObject) (eid : EffectId)
         match phaseOutIdx? with
         | none => true
         | some pIdx =>
-          createdIdx < pIdx && (isLocked || g.durationActiveAt d pIdx)
+          createdIdx < pIdx && (d.isTimedResolvingDuration || g.durationActiveAt d pIdx)
       lockOk && curPhaseOutOk
 
 /-- Initial Layer 2 controller of `o` before active `LayerEffect.control` effects,
@@ -5180,6 +5180,21 @@ def hasSummoningSickness (g : Game) (o : GameObject) : Bool :=
           match turnStartIdx? with
           | some tsIdx => tsIdx + 1
           | none => 0
+        let isInitialMaterialize (oid : ObjectId) (matIdx : Nat) : Bool := Id.run do
+          for j in [0:matIdx] do
+            match g.events[j]!.change with
+            | .engine (.materializeObject obj _) => if obj.id == oid then return false
+            | .engine (.object id _) => if id == oid then return false
+            | .rules (.zone (.created eo _))
+            | .rules (.zone (.ceasedToExist eo))
+            | .rules (.permanent (.phasedOut eo _))
+            | .rules (.permanent (.phasedIn eo _))
+            | .rules (.permanent (.turnedFaceUp eo))
+            | .rules (.permanent (.turnedFaceDown eo)) => if eo.id == some oid then return false
+            | .rules (.zone (.moved before after ..)) =>
+              if before.id == some oid || after.id == some oid then return false
+            | _ => pure ()
+          return true
         let mut sawUnoverriddenArrival : Bool := false
         let mut overrideIdx? : Option Nat := none
         let mut sawWindowCtrlChange : Bool := false
@@ -5222,6 +5237,26 @@ def hasSummoningSickness (g : Game) (o : GameObject) : Bool :=
           | .rules (.permanent (.turnedFaceDown eo)) =>
             if eo.id == some o.id then
               sawWindowCtrlChange := true
+          | .rules (.permanent (.phasedOut ..))
+          | .rules (.permanent (.phasedIn ..)) =>
+            sawWindowCtrlChange := true
+          | .engine (.materializeObject obj _) =>
+            sawWindowCtrlChange := true
+            if obj.id == o.id then
+              if isInitialMaterialize obj.id i then
+                if obj.zone == .battlefield then
+                  if !obj.status.summoningSick && !obj.printed.isToken then
+                    overrideIdx? := some i
+                    sawUnoverriddenArrival := false
+                  else
+                    overrideIdx? := none
+                    sawUnoverriddenArrival := true
+                else
+                  overrideIdx? := none
+                  sawUnoverriddenArrival := true
+              else if obj.zone != .battlefield then
+                overrideIdx? := none
+                sawUnoverriddenArrival := true
           | .rules (.player (.lost ..)) | .rules (.player (.leftGame ..)) =>
             sawWindowCtrlChange := true
           | _ => pure ()
@@ -5244,15 +5279,22 @@ def hasSummoningSickness (g : Game) (o : GameObject) : Bool :=
         let initEffects := g.activeEffects.filter (fun (eid, _) => !createdIds.contains eid)
         let mut z0 : Zone := o.zone
         let mut fd0 := o.status.faceDown
+        let mut ph0 := o.status.phasedOut
         let mut dc0 := o.defaultController
         let mut rc0 := o.controller
         let mut objZones : Array (ObjectId × Zone) := #[]
+        let mut objPhased : Array (ObjectId × Bool) := #[]
         let mut plLost : Array (PlayerId × Bool) := #[]
         let setZone (zs : Array (ObjectId × Zone)) (oid : ObjectId) (z : Zone) :
             Array (ObjectId × Zone) :=
           match zs.findIdx? (·.1 == oid) with
           | some k => zs.set! k (oid, z)
           | none => zs.push (oid, z)
+        let setPhased (ps : Array (ObjectId × Bool)) (oid : ObjectId) (ph : Bool) :
+            Array (ObjectId × Bool) :=
+          match ps.findIdx? (·.1 == oid) with
+          | some k => ps.set! k (oid, ph)
+          | none => ps.push (oid, ph)
         let setLost (ls : Array (PlayerId × Bool)) (pid : PlayerId) (v : Bool) :
             Array (PlayerId × Bool) :=
           match ls.findIdx? (·.1 == pid) with
@@ -5265,23 +5307,40 @@ def hasSummoningSickness (g : Game) (o : GameObject) : Bool :=
             if eo.id == some o.id then fd0 := true
           | .rules (.permanent (.turnedFaceDown eo)) =>
             if eo.id == some o.id then fd0 := false
+          | .rules (.permanent (.phasedOut eo _)) =>
+            if eo.id == some o.id then ph0 := false
+            if let some pid := eo.id then
+              objPhased := setPhased objPhased pid false
+          | .rules (.permanent (.phasedIn eo _)) =>
+            if eo.id == some o.id then ph0 := true
+            if let some pid := eo.id then
+              objPhased := setPhased objPhased pid true
+          | .rules (.zone (.ceasedToExist eo)) =>
+            if let some cid := eo.id then
+              objZones := setZone objZones cid eo.zone
+              objPhased := setPhased objPhased cid eo.phasedOut
           | .rules (.zone (.moved before after fromZ toZ ..)) =>
             if after.id == some o.id then
               z0 := fromZ
+              ph0 := if before.id == some o.id then before.phasedOut else false
               if toZ == .battlefield then
                 fd0 := after.faceDown
                 dc0 := after.controller
                 rc0 := after.controller
             if before.id == some o.id then
               z0 := fromZ
+              ph0 := before.phasedOut
             if let some bid := before.id then
               objZones := setZone objZones bid fromZ
+              objPhased := setPhased objPhased bid before.phasedOut
             if let some aid := after.id then
               if before.id != some aid then
                 objZones := setZone objZones aid fromZ
+                objPhased := setPhased objPhased aid false
           | .rules (.zone (.created eo c)) =>
             if eo.id == some o.id then
               z0 := .outside o.owner
+              ph0 := false
               if eo.zone == .battlefield then
                 let c' := eo.controller.orElse (fun _ => some c)
                 fd0 := eo.faceDown
@@ -5289,48 +5348,73 @@ def hasSummoningSickness (g : Game) (o : GameObject) : Bool :=
                 rc0 := c'
             if let some eid := eo.id then
               objZones := setZone objZones eid (.outside eo.owner)
+              objPhased := setPhased objPhased eid false
+          | .engine (.materializeObject obj _) =>
+            if isInitialMaterialize obj.id idx then
+              if obj.id == o.id then
+                z0 := .outside obj.owner
+                ph0 := false
+                fd0 := obj.status.faceDown
+                dc0 :=
+                  if obj.zone == .battlefield then
+                    obj.defaultController.orElse (fun _ => obj.controller)
+                  else none
+                rc0 := obj.controller
+              objZones := setZone objZones obj.id (.outside obj.owner)
+              objPhased := setPhased objPhased obj.id false
           | .rules (.player (.lost p _)) | .rules (.player (.leftGame p)) =>
             plLost := setLost plLost p false
           | _ => pure ()
         let mkGameAt (effs : Array (EffectId × ContinuousEffectSpec))
-            (cz : Zone) (fd : Bool) (dc rc : Option PlayerId)
-            (zs : Array (ObjectId × Zone)) (ls : Array (PlayerId × Bool)) :
+            (cz : Zone) (fd ph : Bool) (dc rc : Option PlayerId)
+            (zs : Array (ObjectId × Zone)) (phs : Array (ObjectId × Bool))
+            (ls : Array (PlayerId × Bool)) (evLen : Nat) :
             Game × GameObject :=
           let oAt : GameObject :=
             { o with
               zone := cz
               defaultController := dc
               controller := rc
-              status := { o.status with faceDown := fd } }
+              status := { o.status with faceDown := fd, phasedOut := ph } }
           let objsAt0 := g.objects.map fun obj =>
             if obj.id == o.id then oAt
             else
-              match zs.find? (·.1 == obj.id) with
-              | some (_, z) => { obj with zone := z }
-              | none => obj
+              let z := (zs.find? (·.1 == obj.id)).map Prod.snd |>.getD obj.zone
+              let pOut := (phs.find? (·.1 == obj.id)).map Prod.snd |>.getD obj.status.phasedOut
+              { obj with zone := z, status := { obj.status with phasedOut := pOut } }
           let missingObjs := zs.filterMap fun (zid, z) =>
             if z == .battlefield && !objsAt0.any (·.id == zid) then
-              some ({ id := zid, printed := { name := "", types := #[] }, owner := ctrl, zone := .battlefield } : GameObject)
+              let pOut := (phs.find? (·.1 == zid)).map Prod.snd |>.getD false
+              some ({ id := zid, printed := { name := "", types := #[] }, owner := ctrl,
+                      zone := .battlefield, status := { phasedOut := pOut } } : GameObject)
             else none
           let objsAt := objsAt0 ++ missingObjs
           let plsAt := g.players.map fun pl =>
             match ls.find? (·.1 == pl.id) with
             | some (_, v) => { pl with lost := v }
             | none => pl
-          ({ g with activeEffects := effs, objects := objsAt, players := plsAt }, oAt)
+          ({ g with
+             activeEffects := effs
+             objects := objsAt
+             players := plsAt
+             events := g.events.extract 0 (min evLen g.events.size) }, oAt)
         let mut curEffs := initEffects
         let mut curZ := z0
         let mut curFd := fd0
+        let mut curPh := ph0
         let mut curDc := dc0
         let mut curRc := rc0
         let mut curZs := objZones
+        let mut curPhs := objPhased
         let mut curLs := plLost
         match effStartIdx? with
         | none =>
-          let (g0At, o0At) := mkGameAt curEffs curZ curFd curDc curRc curZs curLs
-          if o0At.zone != .battlefield ||
-              g0At.initialControllerOf o0At != some ctrl ||
-              g0At.controllerOf o0At != some ctrl then
+          let (g0At, o0At) := mkGameAt curEffs curZ curFd curPh curDc curRc curZs curPhs curLs 0
+          if o0At.zone != .battlefield then
+            return true
+          if !o0At.status.phasedOut &&
+              (g0At.initialControllerOf o0At != some ctrl ||
+                g0At.controllerOf o0At != some ctrl) then
             return true
         | some _ => pure ()
         for i in [0:g.events.size] do
@@ -5353,15 +5437,41 @@ def hasSummoningSickness (g : Game) (o : GameObject) : Bool :=
             if eo.id == some o.id then
               curFd := true
               dirty := true
+          | .rules (.permanent (.phasedOut eo _)) =>
+            if let some pid := eo.id then
+              curPhs := setPhased curPhs pid true
+              dirty := true
+            if eo.id == some o.id then
+              curPh := true
+              dirty := true
+          | .rules (.permanent (.phasedIn eo _)) =>
+            if let some pid := eo.id then
+              curPhs := setPhased curPhs pid false
+              dirty := true
+            if eo.id == some o.id then
+              curPh := false
+              dirty := true
+          | .rules (.zone (.ceasedToExist eo)) =>
+            if let some cid := eo.id then
+              curZs := setZone curZs cid (.outside eo.owner)
+              curPhs := setPhased curPhs cid false
+              dirty := true
+            if eo.id == some o.id then
+              curZ := .outside eo.owner
+              curPh := false
+              dirty := true
           | .rules (.zone (.moved before after _ toZ ..)) =>
             if let some bid := before.id then
               curZs := setZone curZs bid toZ
+              curPhs := setPhased curPhs bid false
               dirty := true
             if let some aid := after.id then
               curZs := setZone curZs aid toZ
+              curPhs := setPhased curPhs aid (toZ == .battlefield && after.phasedOut)
               dirty := true
             if before.id == some o.id || after.id == some o.id then
               curZ := toZ
+              curPh := after.id == some o.id && toZ == .battlefield && after.phasedOut
               dirty := true
             if after.id == some o.id && toZ == .battlefield then
               curFd := after.faceDown
@@ -5371,9 +5481,11 @@ def hasSummoningSickness (g : Game) (o : GameObject) : Bool :=
           | .rules (.zone (.created eo c)) =>
             if let some eid := eo.id then
               curZs := setZone curZs eid eo.zone
+              curPhs := setPhased curPhs eid (eo.zone == .battlefield && eo.phasedOut)
               dirty := true
             if eo.id == some o.id then
               curZ := eo.zone
+              curPh := eo.zone == .battlefield && eo.phasedOut
               dirty := true
             if eo.id == some o.id && eo.zone == .battlefield then
               let c' := eo.controller.orElse (fun _ => some c)
@@ -5381,6 +5493,19 @@ def hasSummoningSickness (g : Game) (o : GameObject) : Bool :=
               curDc := c'
               curRc := c'
               dirty := true
+          | .engine (.materializeObject obj _) =>
+            curZs := setZone curZs obj.id obj.zone
+            curPhs := setPhased curPhs obj.id obj.status.phasedOut
+            dirty := true
+            if obj.id == o.id then
+              curZ := obj.zone
+              curPh := obj.status.phasedOut
+              curFd := obj.status.faceDown
+              curDc :=
+                if obj.zone == .battlefield then
+                  obj.defaultController.orElse (fun _ => obj.controller)
+                else none
+              curRc := obj.controller
           | .rules (.player (.lost p _)) | .rules (.player (.leftGame p)) =>
             curLs := setLost curLs p true
             dirty := true
@@ -5390,8 +5515,9 @@ def hasSummoningSickness (g : Game) (o : GameObject) : Bool :=
             | none => dirty
             | some sIdx => i == sIdx || (i > sIdx && dirty)
           if checkNow then
-            let (gAt, oAt) := mkGameAt curEffs curZ curFd curDc curRc curZs curLs
-            if oAt.zone != .battlefield || gAt.controllerOf oAt != some ctrl then
+            let (gAt, oAt) := mkGameAt curEffs curZ curFd curPh curDc curRc curZs curPhs curLs (i + 1)
+            if oAt.zone != .battlefield ||
+                (!oAt.status.phasedOut && gAt.controllerOf oAt != some ctrl) then
               return true
         return false
       sickWithoutHaste && !g.hasHaste o
@@ -13189,7 +13315,8 @@ effects on the same permanent keep applying (CR 613.7). -/
 def restoreControlUntilSourceLeaves (g : Game) (srcId : ObjectId)
     (cause : Option EventCause := some (.gameRule .leavingZone))
     (preState? : Option Game := none)
-    (reconcileControl : Bool := true) : Game :=
+    (reconcileControl : Bool := true)
+    (suppressReturnLog : Bool := false) : Game :=
   let preRef := preState?.getD g
   let (matchingEids, singleTargets) :=
     g.activeEffects.foldl (fun (eids, singles) (eid, e) =>
@@ -13233,24 +13360,28 @@ def restoreControlUntilSourceLeaves (g : Game) (srcId : ObjectId)
               else acc
             | _, _ => acc) g
       else g
-    singleTargets.foldl (fun acc (id, o, objName) =>
-      match acc.findObject? id with
-      | none => acc
-      | some cur =>
-        let prevCtrl := preRef.controllerOf ((preRef.findObject? id).getD o)
-        let curCtrl := acc.controllerOf cur
-        if curCtrl == prevCtrl then acc
-        else
-          let p := (cur.defaultController.orElse (fun _ => cur.controller)).getD cur.owner
-          let othersRemain := !(acc.appliedControlEffectIds cur).isEmpty
-          if othersRemain then
-            match curCtrl with
-            | some q => acc.logMsg s!"{objName} returns to {(acc.player q).name}'s control"
-            | none => acc
-          else if (acc.player p).leftTheGame then
-            acc
+    if suppressReturnLog then g
+    else
+      singleTargets.foldl (fun acc (id, o, objName) =>
+        match acc.findObject? id with
+        | none => acc
+        | some cur =>
+          let prevCtrl := preRef.controllerOf ((preRef.findObject? id).getD o)
+          let curCtrl := acc.controllerOf cur
+          if curCtrl == prevCtrl then acc
           else
-            acc.logMsg s!"{objName} returns to {(acc.player p).name}'s control") g
+            let p := (cur.defaultController.orElse (fun _ => cur.controller)).getD cur.owner
+            let othersRemain := !(acc.appliedControlEffectIds cur).isEmpty
+            if othersRemain then
+              match curCtrl with
+              | some q =>
+                if (acc.player q).leftTheGame then acc
+                else acc.logMsg s!"{objName} returns to {(acc.player q).name}'s control"
+              | none => acc
+            else if (acc.player p).leftTheGame then
+              acc
+            else
+              acc.logMsg s!"{objName} returns to {(acc.player p).name}'s control") g
 
 /-- Expire all continuous effects that last for as long as `srcId` remains on
 the battlefield or until `srcId` leaves the battlefield (CR 611.2a / 611.2b),
@@ -13258,10 +13389,11 @@ each under its own `EffectId`. -/
 def expireWhileSourceEffects (g : Game) (srcId : ObjectId)
     (cause : Option EventCause := some (.gameRule .leavingZone))
     (preState? : Option Game := none)
-    (reconcileControl : Bool := true) : Game :=
+    (reconcileControl : Bool := true)
+    (suppressReturnLog : Bool := false) : Game :=
   let g := g.restoreCopiesUntilSourceLeaves srcId (cause := cause)
   let g := g.restoreControlUntilSourceLeaves srcId (cause := cause) (preState? := preState?)
-    (reconcileControl := reconcileControl)
+    (reconcileControl := reconcileControl) (suppressReturnLog := suppressReturnLog)
   g.expireMatching (fun s =>
     match s.duration with
     | .whileSourceOnBattlefield src | .untilSourceLeaves src | .whileSourceHasCounter src _ =>
