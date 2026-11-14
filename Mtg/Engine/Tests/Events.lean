@@ -31794,10 +31794,13 @@ private def replayOk40i1 (gs : Array Game) : Bool :=
     (gStepRevDone.player p0).life == mBaseLife + 6
 
   -- 1d. `Pending.chooseLegend` spectator-departure preservation (including snapshot-only choices when `p2` owns
-  --     non-battlefield cards / mana / monarch vs battlefield legend departure invalidation), `finishSbaSweep`
-  --     live filtering + `leftTheGame` skip, shared `keepLegend`, and `Agent.choose` / `Game.applyIdle` live filtering:
+  --     non-prompted battlefield permanents / attachments / cards / mana / monarch vs prompted-legend or
+  --     legend-source departure invalidation), `finishSbaSweep` live filtering + `leftTheGame` skip,
+  --     shared `keepLegend`, and `Agent.choose` / `Game.applyIdle` live filtering:
   let legDef : CardDef := { bear with name := "P40i1 Legend", supertypes := #[.legendary] }
   let fragileLordDef : CardDef := creature "P40i1 FragileLord" ManaCost.empty #["Wizard"] 1 0
+  let p2LandDef : CardDef := { name := "P40i1 Forest", types := #[.land] }
+  let eqDef : CardDef := { name := "P40i1 Spear", types := #[.artifact], subtypes := #["Equipment"] }
   let gLeg0 :=
     (addPermanent (addPermanent (addPermanent g4 legDef p0 p0) legDef p0 p0) legDef p0 p0).checkSBA
   let legIds := match gLeg0.pending with | .chooseLegend _ _ ids => ids | _ => #[]
@@ -31814,7 +31817,17 @@ private def replayOk40i1 (gs : Array Game) : Bool :=
       (insertObject
         (insertObject
           (insertObject
-            (addPermanent (addPermanent (addPermanent g4 bear p0 p0) bear p0 p0) fragileLordDef p0 p0)
+            (addPermanent
+              (addPermanent
+                (addPermanent
+                  (addPermanent
+                    (addPermanent
+                      (addPermanent (addPermanent (addPermanent g4 bear p0 p0) bear p0 p0) fragileLordDef p0 p0)
+                      p2LandDef p2 p2)
+                    hero p2 p2)
+                  eqDef p1 p1)
+                altarDef p1 p1)
+              hero p1 p2)
             hero p2 (.library p2))
           hero p2 (.hand p2))
         hero p2 (.graveyard p2))
@@ -31823,19 +31836,26 @@ private def replayOk40i1 (gs : Array Game) : Bool :=
   let sb1 := snapBears[0]!
   let sb2 := snapBears[1]!
   let sLord := (gSnapSetup0.permanentsOf p0).find? (·.name == fragileLordDef.name) |>.get!
+  let p2Host := (gSnapSetup0.permanentsOf p2).find? (fun o => o.name == hero.name && o.owner == p2) |>.get!
+  let p1Eq := (gSnapSetup0.permanentsOf p1).find? (·.name == eqDef.name) |>.get!
+  let p1Altar := (gSnapSetup0.permanentsOf p1).find? (·.name == altarDef.name) |>.get!
+  let p1Orph := (gSnapSetup0.permanentsOf p2).find? (fun o => o.name == hero.name && o.owner == p1) |>.get!
   let p2Ex := (gSnapSetup0.objects.filter (fun o => o.zone == .exile && o.owner == p2))[0]!
   let gSnap0 :=
-    ((((gSnapSetup0.record (GameEvent.manaAdded gSnapSetup0.turnNumber p2 #[{ mana := .colorless }] (cause := some testCause))).record
+    ((((((gSnapSetup0.record (GameEvent.attached gSnapSetup0.turnNumber (gSnapSetup0.snapshot p1Eq) p2Host.id (cause := testCause))).createEffect
+      (.control p1Altar.id p2) (cause := some testCause)).record
+      (GameEvent.manaAdded gSnapSetup0.turnNumber p2 #[{ mana := .colorless }] (cause := some testCause))).record
       (GameEvent.becameMonarch gSnapSetup0.turnNumber p2 none (cause := some testCause))).createEffect
       (.playPermission p2Ex.id { player := p2, whileExiled := true }) (cause := some testCause)).createEffect
       (.layered (.objects #[sb1.id, sb2.id]) (.types .add #[] #[] #[.legendary]) (.whileSourceOnBattlefield sLord.id))
       (cause := some testCause)).checkSBA
   let preSpecEvIdx := gSnap0.events.size
   let gSnapAfterP2 := mustApply gSnap0 p2 .concede
-  let ceasedCount :=
+  let bfCeasedCount :=
     (gSnapAfterP2.events.extract preSpecEvIdx gSnapAfterP2.events.size).foldl (fun acc ev =>
       match ev with
-      | .rules _ (.zone (.ceasedToExist _)) _ _ => acc + 1
+      | .rules _ (.zone (.ceasedToExist before)) _ _ =>
+        if before.zone == .battlefield then acc + 1 else acc
       | _ => acc) 0
   let snapAgentPickOk :=
     match Agent.choose gSnapAfterP2 p0 with
@@ -31852,10 +31872,20 @@ private def replayOk40i1 (gs : Array Game) : Bool :=
       (.layered (.objects pbIds) (.types .add #[] #[] #[.legendary]) (.whileSourceOnBattlefield pLord.id))
       (cause := some testCause)).checkSBA
   let gPermLeft := mustApply gPermSnap0 p2 .concede
+  let gLandSrcSetup0 :=
+    addPermanent (addPermanent (addPermanent g4 bear p0 p0) bear p0 p0) p2LandDef p2 p2
+  let lbIds := ((gLandSrcSetup0.permanentsOf p0).filter (·.name == bear.name)).map (·.id)
+  let p2SrcLand := (gLandSrcSetup0.permanentsOf p2)[0]!
+  let gLandSrc0 :=
+    (gLandSrcSetup0.createEffect
+      (.layered (.objects lbIds) (.types .add #[] #[] #[.legendary]) (.whileSourceOnBattlefield p2SrcLand.id))
+      (cause := some testCause)).checkSBA
+  let gLandSrcLeft := mustApply gLandSrc0 p2 .concede
   let snapSpectatorOk :=
     !gSnap0.treatedAsLegendary (gSnap0.object! sb1.id) &&
     gSnap0.pending == .chooseLegend p0 bear.name #[sb1.id, sb2.id] &&
-    ceasedCount == 4 &&
+    bfCeasedCount == 2 &&
+    (gSnapAfterP2.followMovedToZone? p1Orph.id (· == .exile)).isSome &&
     gSnapAfterP2.pending == .chooseLegend p0 bear.name #[sb1.id, sb2.id] &&
     snapAgentPickOk &&
     gSnapKept.pending == .none &&
@@ -31865,7 +31895,11 @@ private def replayOk40i1 (gs : Array Game) : Bool :=
     gPermSnap0.pending == .chooseLegend p0 bear.name pbIds &&
     gPermLeft.pending == .none &&
     gPermLeft.currentBatch.isNone &&
-    (gPermLeft.permanentsOf p0).size == 2
+    (gPermLeft.permanentsOf p0).size == 2 &&
+    gLandSrc0.pending == .chooseLegend p0 bear.name lbIds &&
+    gLandSrcLeft.pending == .none &&
+    gLandSrcLeft.currentBatch.isNone &&
+    (gLandSrcLeft.permanentsOf p0).size == 2
   let legendAlignOk :=
     legIds.size == 3 &&
     specFilteredIds == #[legIds[1]!, legIds[2]!] &&
@@ -31880,7 +31914,8 @@ private def replayOk40i1 (gs : Array Game) : Bool :=
   mustHold40i1 "1.replay"
     (replayOk40i1 #[gQAfterQuietCont, gQCastRev, gQLeaveRev, gSimCtrlAfter, gDepPendRev,
       gMultiAfterP2, gOrderPopped, gOrderAfterDecline, gOrdLeavePaused, gOrdLeaveDrained,
-      gSeqRnd1, gInnerDone, gStepRevDone, gLegAfterSpec, gIdleRes, gSnapAfterP2, gSnapKept, gPermLeft])
+      gSeqRnd1, gInnerDone, gStepRevDone, gLegAfterSpec, gIdleRes,
+      gSnapAfterP2, gSnapKept, gPermLeft, gLandSrcLeft])
 
 end Phase40Item1EventAlignment
 

@@ -1002,10 +1002,12 @@ private opaque autoResolveSingleChooseObject (g : Game) (id : ObjectId) : Game :
 open `Pending.chooseLegend` prompt on `g.currentBatch` (no cross-batch `.rules`
 event since the batch opened, and no `.rules`, `.engine (.object ..)`, or
 `.engine (.materializeObject ..)` event since the earliest
-`.engine (.pending (.chooseLegend ..))` in that batch, aside from non-battlefield
-CR 800.4a player-departure cleanup, CR 704.3 / 704.5j / 704.8 / 800.4a). -/
+`.engine (.pending (.chooseLegend ..))` in that batch, aside from CR 800.4a
+player-departure cleanup that does not remove a prompted legend or expire a
+characteristic/control effect on one, CR 704.3 / 704.5j / 704.8 / 800.4a). -/
 def preBatchLegendSnapshotValid (g : Game)
-    (startIdxOverride? : Option Nat := none) : Bool :=
+    (startIdxOverride? : Option Nat := none)
+    (candidateIds : Array ObjectId := #[]) : Bool :=
   match g.currentBatch with
   | none => false
   | some (curBid, _) =>
@@ -1023,42 +1025,67 @@ def preBatchLegendSnapshotValid (g : Game)
               (g.pendingReplacement.bind (findPausedCloseBatchFor? curBid)).orElse
                 (fun _ => g.outerPendingReplacements.findSomeRev? (findPausedCloseBatchFor? curBid))
             min (closeIdx?.getD earliestBatchIdx) earliestBatchIdx
+      let mut promptIds : Array ObjectId := #[]
+      for i in [startIdx : g.events.size] do
+        if let .engine _ (.pending (.chooseLegend _ _ pIds)) _ := g.events[i]! then
+          for x in pIds do
+            if !promptIds.contains x then
+              promptIds := promptIds.push x
+      if promptIds.isEmpty then
+        promptIds :=
+          match g.pending with
+          | .chooseLegend _ _ pIds => pIds
+          | _ => candidateIds
       let mut earliestPromptIdx? : Option Nat := none
-      let mut inPausedDeparture := false
+      let mut inPlayerDeparture := false
       for i in [startIdx : g.events.size] do
         match g.events[i]! with
         | .rules _ r cause batch =>
+          if let .player (.leftGame _) := r then
+            inPlayerDeparture := true
           let isDepartureCleanup :=
-            cause == .gameRule .playerLeftGame ||
-              (inPausedDeparture && cause == .stateBased .copyOutsideStackOrBf)
+            inPlayerDeparture || cause == .gameRule .playerLeftGame
           let nonCharRules :=
             match r with
             | .player (.lost ..) | .player (.leftGame ..)
-            | .player (.manaEmptied ..) | .player (.becameMonarch ..)
             | .triggerQueue _ | .delayedTrigger _ => true
-            | .zone (.ceasedToExist before) =>
+            | .player (.manaEmptied ..) | .player (.becameMonarch ..)
+            | .player (.gainedDesignation ..) => isDepartureCleanup
+            | .zone (.ceasedToExist before)
+            | .zone (.moved before ..) =>
               isDepartureCleanup &&
-                before.zone != .battlefield && before.zone != .stack
+                before.id.isSome && !before.id.any promptIds.contains &&
+                !before.attachedTo.any promptIds.contains
+            | .permanent (.unattached attachment fromHost) =>
+              isDepartureCleanup &&
+                !promptIds.contains fromHost && !attachment.id.any promptIds.contains
+            | .permanent (.designation obj .ringBearer false)
+            | .combat (.removedFromCombat obj) =>
+              isDepartureCleanup &&
+                obj.id.isSome && !obj.id.any promptIds.contains
             | .continuousEffect (.expired eid) =>
               isDepartureCleanup &&
                 (g.openBatchEffects.find? (·.1 == eid)).any fun (_, spec) =>
                   match spec with
                   | .permission .. | .replacement .. | .prevention .. => true
+                  | .layered (.objects tgtIds) _ _ => !tgtIds.any promptIds.contains
                   | _ => false
             | _ => false
           if !nonCharRules && (batch != some curBid || earliestPromptIdx?.isSome) then
             return false
-        | .engine _ .clearPausedBatch _ =>
-          inPausedDeparture := true
         | .engine _ (.pauseBatch bid ..) _ =>
           if bid == curBid then
-            inPausedDeparture := false
+            inPlayerDeparture := false
         | .engine _ (.object ..) _ | .engine _ (.materializeObject ..) _ =>
           if earliestPromptIdx?.isSome then
             return false
-        | .engine _ (.pending (.chooseLegend ..)) _ =>
+        | .engine _ (.pending (.chooseLegend _ _ pIds)) _ =>
+          inPlayerDeparture := false
           if earliestPromptIdx?.isNone then
             earliestPromptIdx? := some i
+          for x in pIds do
+            if !promptIds.contains x then
+              promptIds := promptIds.push x
         | _ => pure ()
       return true
 
@@ -1067,7 +1094,8 @@ in `g.openBatchObjects` when `g.preBatchLegendSnapshotValid` holds
 (CR 704.3 / 704.5j / 704.8). -/
 def preBatchLegendChoiceIds (g : Game) (p : PlayerId) (name : String)
     (ids : Array ObjectId) (startIdxOverride? : Option Nat := none) : Array ObjectId :=
-  if g.preBatchLegendSnapshotValid (startIdxOverride? := startIdxOverride?) then
+  if g.preBatchLegendSnapshotValid (startIdxOverride? := startIdxOverride?)
+      (candidateIds := ids) then
     let preG : Game :=
       { g with
         objects := g.openBatchObjects
