@@ -15985,7 +15985,357 @@ phase-in in `Phasing`, and multi-extra-turn mid-pause departure expiry in
 multi-counter costs & prior-turn `{T}` mana abilities + `!hasFollowingSeq` replacement-paused
 pain-mana ordering in `ManaAbilities.finishActivateManaAbilityPostSac`).
 
-Final check (after Phase 41): `lake build`, `lake exe mtg-demo`,
+### Phase 42 — Cumulative legend-attachment snapshot invalidation, dismissed SBA batch re-pause & `.leavePlayersWhoLost` merging, `ManaAbilities` outer-continuation priority deferral, pre-`playerLeftGame` CR 800.4a LKI/control & 2HG turn-expiry accuracy, continuous-phasing / `hasSummoningSickness` / `phaseInControlled` historical reconstruction, and `FraChoices` / `Activation` cost legality
+
+1. **Cumulative legend-attachment departure invalidation in `Leaving.preBatchLegendSnapshotValid`,
+   dismissed SBA batch re-pause / `.leavePlayersWhoLost` merging / left-associated `.seq` peeling
+   in `StateBasedActions`, and outer-continuation priority deferral in `ManaAbilities`**
+   (`Core.lean:11038–11048, 12759–12769`, `Leaving.lean:744–764, 1056–1076, 1092–1097,
+   2784–2793, 2850–2873`, `StateBasedActions.lean:395–411, 588–597, 624–678`,
+   `Decisions.lean:273–285, 336–379`, `ManaAbilities.lean:393–399, 464–466, 478–480`;
+   **CR 117.3b / 117.3c / 603.2c / 605.3b / 613.1d / 616.1 / 704.3 / 704.5j / 704.8 / 800.4a**):
+   - **Cumulative multi-attachment departure tracking in `Leaving.preBatchLegendSnapshotValid`**
+     (`Leaving.lean:1056–1076, 1092–1097`):
+     - `attachmentAffectsPromptLegend` (`1066–1076`) removes only a single `tid` in isolation from
+       `preG` (`{ preG with objects := preG.objects.filter (·.id != tid) }`). When a departing
+       player owns **two** legend-granting Auras (`auraA`, `auraB`) attached to a non-legendary
+       permanent `b2 ∈ promptIds`, removing `auraA` alone leaves `auraB` on `b2`
+       (`treatedAsLegendary == true`) and removing `auraB` alone leaves `auraA` on `b2`, so both
+       `.ceasedToExist` / `.moved` events pass `1092–1097` and `preBatchLegendSnapshotValid`
+       falsely returns `true` (leaving a stale 3-copy `#[b1, b2, b3]` prompt un-narrowed at
+       `StateBasedActions.lean:352`):
+       - Maintain a mutable `curPreG : Game := preG` across `for i in [startIdx : g.events.size]`;
+         whenever a departure `.zone (.ceasedToExist before)` or `.zone (.moved before ..)`
+         (`1092–1097`) has `before.id == some tid` with `isPromptAttachment tid`, remove `tid` from
+         `curPreG.objects` (`curPreG := { curPreG with objects := curPreG.objects.filter (·.id !=
+         tid) }`) and invalidate (`nonCharRules := false`) if any `pid ∈ promptIds` now differs
+         between `preG` and `curPreG` in `treatedAsLegendary` or `name` (still leaving non-legendary
+         subtype/Construct Auras and Layer 7 attachments allowlisted).
+   - **Mid-flush re-pause ordering, `.leavePlayersWhoLost` argument merging, and recursive leftmost
+     `.seq` peeling in `StateBasedActions`**
+     (`Leaving.lean:744–764, 2784–2793, 2850–2873`,
+     `StateBasedActions.lean:395–411, 588–597, 624–678`):
+     - Three continuation bugs remain when `clearedInvalidLegend` is `true`:
+       (i) if `flushDismissedPausedBatch` (`Leaving.lean:2850–2873`) **re-pauses** inside `origBid`
+       (e.g. a second legend group's `Pending.chooseLegend` or a `finishSbaSweep`
+       `Pending.chooseReplacement`), `flushDismissedPausedBatch` re-attaches `afterClose?`
+       (`.checkSBA` or `.seq .checkSBA outerTail`) after `.closeBatch origBid _`, and then
+       `checkSBACountedWithLeavesCore` (`664–670`) chains `.leavePlayersWhoLost savedIn popOuterIn
+       departedIn rewindProposalIn` **at the very end** *after* `.checkSBA` and `outerTail` (or
+       leaves `.checkSBA` queued when `deferRestore == true`), while `checkSBACounted` (`402`) sees
+       `contHasSbaOrLeave == true` and drops `(savedIn, popOuterIn, departedIn, rewindProposalIn)`;
+       (ii) when `g.pendingReplacement` starts with `.leavePlayersWhoLost s0 po0 d0 rw0` and caller
+       arguments `(savedIn, popOuterIn, departedIn, rewindProposalIn)` are also non-default (e.g. a
+       second concession passes `departedIn := #[p3]`), `checkSBACountedWithLeavesCore` (`633–642`)
+       discards `(s0, po0, d0, rw0)` completely, and `checkSBACounted` (`409`) treats
+       `.leavePlayersWhoLost` as `some other` in `outerAfter?` (placing it *after*
+       `chainSbaPauseTail` at `595`); and
+       (iii) `Core.chainPendingReplacement` builds left-associated `.seq (.seq .checkSBA a) b`
+       trees, which shallow `some (.seq .checkSBA rest)` patterns at `408, 631, 638` fail to peel
+       at depth ≥ 2 (and miss `g.outerPendingReplacements.back?` when `g.pendingReplacement.isNone
+       && popOuterIn`):
+       - Add recursive leftmost-spine `peelLeadingSbaOrLeave?` (peeling a leading `.checkSBA` or
+         `.leavePlayersWhoLost s0 po0 d0 rw0` from arbitrarily nested left-associated `.seq` trees
+         into `(sbaOrLeave, rest?)`) and `mergeLeaveArgs` (merging `(s0, po0, d0, rw0)` with
+         `(savedIn, popOuterIn, departedIn, rewindProposalIn)`, deduplicating `d0 ++ departedIn`,
+         preserving `rw0 <|> rewindProposalIn`, and when both `s0` and `savedIn` are non-`.none`
+         pushing `.restorePending s0` onto `outerPendingReplacements` via
+         `Leaving.chainRestoreAfterOpenBatch` matching `Decisions.lean:664–689`); capture
+         `flushedBid? := if clearedInvalidLegend then g.currentBatch.map Prod.fst else none` before
+         `flushDismissedPausedBatch`; if `flushDismissedPausedBatch` re-paused inside `origBid`
+         (`flushedBid? == some origBid && g.currentBatch.map Prod.fst == some origBid`), split the
+         active continuation (`g.pendingReplacement`, or `g.outerPendingReplacements.back?` when
+         `popOuterIn` pushed `afterClose?` at `Leaving.lean:2869`) via
+         `Leaving.splitAfterCloseBatchFor? origBid`, peel any leading `.checkSBA` /
+         `.leavePlayersWhoLost` from `afterClose?`, merge with caller args, and rewrite the slot
+         **immediately after `.closeBatch origBid _`** (before any remaining `outerTail` such as
+         `.finishPostStep`) to `none` (when `deferRestore`), `.leavePlayersWhoLost ...` (when any
+         merged leave arg is non-empty), or `.checkSBA` (otherwise); and when unpaused
+         (`g.currentBatch.isNone`), peel via `peelLeadingSbaOrLeave?` (from `g.pendingReplacement`,
+         or from `g.outerPendingReplacements.back?` when `g.pendingReplacement.isNone &&
+         popOuterIn`) and merge via `mergeLeaveArgs` in both `checkSBACounted` and
+         `checkSBACountedWithLeavesCore`.
+   - **Outer-continuation, `triggerSequenceRest`, `mayThenResume`, and active-resolution priority
+     deferral in `ManaAbilities`**
+     (`Core.lean:11038–11048, 12759–12769`, `Decisions.lean:273–285, 336–379`,
+     `ManaAbilities.lean:393–399, 464–466, 478–480`):
+     - In `ManaAbilities.finishActivateManaAbilityPostSac`, when `prevPending == .none`:
+       (i) line `465` (pain-land `Pending.chooseReplacement` pause) checks only
+       `if !hasFollowingSeq` without checking whether `g.continuations` has a non-empty resolving
+       frame (`!g.continuations.all (· == {})`, noting `promptChooseReplacement` at
+       `Core.lean:12765` pushes an empty `{}` frame) or whether `g.outerPendingReplacements`,
+       `g.triggerSequenceRest`, or `g.mayThenResume` has queued work;
+       (ii) line `479` (unpaused completion) checks only `if !hasFollowingSeq && g.pending == .none`
+       without checking `!g.over && g.afterRandom == .none && !g.sbaPaused &&
+       g.continuations.all (· == {}) && g.outerPendingReplacements.isEmpty &&
+       g.pendingReplacement.isNone && g.triggerSequenceRest.isNone && !g.mayThenResume`, running
+       `g.receivePriority p` (and SBAs) prematurely before `triggerSequenceRest`, `mayThenResume`,
+       or stacked `outerPendingReplacements` continuations drain; and
+       (iii) `abortDepartedManaAbilityContCore` (`393–399`) likewise omits
+       `g.outerPendingReplacements.isEmpty && !g.mayThenResume` (and tests `g.continuations.isEmpty`
+       rather than `g.continuations.all (· == {})`, while `.finishFraChoice` at `398` falls back to
+       `g.activePlayer` if `g.pendingPriority.isNone` when non-active `p` had priority):
+       - Expose `@[extern "mtg_game_finish_and_grant_priority"] opaque finishAndGrantPriorityFwd`
+         and `@[extern "mtg_game_any_continuation_grants_priority"] opaque
+         anyContinuationGrantsPriorityFwd` in `Core.lean` (`11038–11048`) backed by `@[export]`
+         wrappers on `Decisions.finishAndGrantPriority` / `Decisions.continuationGrantsPriority`
+         (`273–285, 336–379`); at `ManaAbilities.lean:464–466` (`Pending.chooseReplacement`,
+         `prevPending == .none`), when `!hasFollowingSeq && g.continuations.all (· == {})`, chain
+         `.receivePriority p` if `g.outerPendingReplacements.isEmpty &&
+         g.triggerSequenceRest.isNone && !g.mayThenResume`, or else if
+         `!g.anyContinuationGrantsPriorityFwd` set `pendingPriority := some p` (when
+         `g.pendingPriority.isNone`) and chain `.finishFraChoice`; and at both
+         `ManaAbilities.lean:393–399` and `478–480` (`!g.over && g.pending == .none &&
+         g.afterRandom == .none && !g.sbaPaused && !hasFollowingSeq`), compute
+         `prio := if g.stillInGame p then p else g.priorityInstead g.activePlayer`: when
+         `g.continuations.all (· == {})`, delegate to `g.finishAndGrantPriorityFwd prio` (which
+         checks `anyContinuationGrantsPriority`, drains `mayThenResume` → `pendingReplacement` →
+         `triggerSequenceRest` → `outerPendingReplacements`, pops empty `{}` frames, and grants
+         priority to `prio` only if no outer continuation already grants priority), and otherwise
+         (when a non-empty resolution frame is on `g.continuations` and queued replacement/trigger
+         work remains without an existing priority-granting tail) chain `.finishFraChoice`.
+
+2. **Pre-`playerLeftGame` CR 800.4a LKI/control snapshot & departing-attachment `unattachFrom`
+   suppression in `Leaving.playerLeavesGameCore`, reachable FRA emblem expiry logging in
+   `Turns.expireFraUntilTurnEffects`, and 2HG shared-turn departure expiry in `Turns`**
+   (`Attachments.lean:46–82`, `Core.lean:1813–1820, 13005–13009, 13291–13301`,
+   `Leaving.lean:241, 268–277, 688–730, 2985–3025`, `Phasing.lean:265–300`,
+   `Turns.lean:314–400, 535–596, 655–673`; **CR 114.5 / 603.10a / 701.3d / 800.4a / 800.4c /
+   800.4m / 805.2 / 805.8 / 810.4**):
+   - **Pre-`playerLeftGame` `preLeave` snapshot, simultaneous `ceaseToExist` LKI, and departing
+     `skipIds` in `Attachments.unattachFrom`**
+     (`Attachments.lean:46–82`, `Core.lean:1813–1820`,
+     `Leaving.lean:241, 268–277, 688–730, 2985–3025`):
+     - `Leaving.playerLeavesGameCore` records `GameEvent.playerLeftGame p` at `2986` — setting
+       `(g.player p).leftTheGame := true` so `Core.initialControllerOf` (`1813–1820`) immediately
+       returns `none` for every permanent with `defaultController == p` — **before** `owned.foldl`
+       (`3016–3021`) and **before** `endControlEffectsSimultaneously` (`3024`, which captures
+       `pre := preState?.getD g` at `241`). As a result:
+       (i) `Attachments.ceaseToExist` (`54`, `snap := g.snapshot old`) records
+       `ZoneEvent.ceasedToExist` with `snap.controller == none` instead of `some p` (and after
+       earlier `o1 ∈ owned` already expired continuous effects on later `o2 ∈ owned`), breaking
+       surviving players' CR 603.10a leaves-the-battlefield triggers (`Event.lean:3420–3421`);
+       (ii) when `p` owns both host `o1` and attachment `o2` attached to `o1`, `unattachFrom o1.id`
+       (`Leaving.lean:718`, `Attachments.lean:73–82`) emits an order-dependent spurious
+       `GameEvent.unattached` + `"becomes unattached"` log when `o1` precedes `o2` in `owned`; and
+       (iii) if surviving `p0` controlled permanent `c` (`owner := p0`,
+       `defaultController := some p`) via a dynamic scope such as
+       `.layered (.creaturesControlledBy p) (.control p0) .indefinite`, `pre.initialControllerOf c`
+       is already `none` on entry to `endControlEffectsSimultaneously` (`pre.controllerOf c == none
+       == g.controllerOf c`), missing `removeFromCombatOnControlChange` (`285`) and `p0`'s
+       `.ringBearer` designation loss (`298–300, 330–332`):
+       - Capture `let preLeave := g` at `Leaving.lean:2985` before `GameEvent.playerLeftGame p`; add
+         `(preState? : Option Game := none)` to `Attachments.ceaseToExist` (`46`, snapshotting
+         `let pre := preState?.getD g` via `{ (pre.snapshot ((pre.findObject? id).getD old)) with
+         id := some old.id, zone := old.zone }`) and `Leaving.objectLeavesTheGame` (`688`), plus
+         `(skipIds : Array ObjectId := #[])` on `Attachments.unattachFrom` (`73`, skipping any `o`
+         with `skipIds.contains o.id`) threaded as `(skipUnattachIds : Array ObjectId := #[])` on
+         `objectLeavesTheGame` (`718`); pass `(preState? := some preLeave)` and
+         `(skipUnattachIds := owned.map (·.id))` in `playerLeavesGameCore` (`3020`) and
+         `(preState? := some preLeave)` to `endControlEffectsSimultaneously` (`3024`); and in
+         `Leaving.endControlEffectsSimultaneously` (`268–277`), keep `changedInPreExpire` in
+         `candidates` selection (so `removeFromCombatOnControlChange` and `.ringBearer` cleanup see
+         `preLeave` control loss) while computing `hadControlChange` at `276` from
+         `pre.controlChanged o || anyApplied || appliedChangedInPreExpire` (where
+         `appliedChangedInPreExpire` tests `postO.isBattlefieldObject && g.appliedControlEffectIds
+         postO != applied`), so a permanent with `defaultController == some p` and **zero**
+         control-changing effects (`!pre.controlChanged o && applied.isEmpty`) remains exiled under
+         CR 800.4a (`3044`) rather than mislabeled CR 800.4c (`316`).
+   - **Reachable FRA command-emblem expiry and `"<emblem> ends"` logging in
+     `Turns.expireFraUntilTurnEffects`**
+     (`Core.lean:13005–13009`, `Turns.lean:314–329`):
+     - In `Turns.expireFraUntilTurnEffects`, `expireMatching` (`317–324`) matches
+       `.gameRule (.fraEmblem id) (.untilNextTurnOf q)`, and `Core.expireEffectById` (`13005–13009`)
+       immediately emits `GameEvent.ceasedToExist` for `id`, removing the emblem from `acc.objects`
+       **before** `endingEmblems.foldl` (`325–329`) runs — making
+       `(acc.findObject? o.id).any (·.zone == .command)` at `326` always `false` and the
+       `s!"{acc.name o} ends"` log at `328` unreachable dead code:
+       - Exclude `| .gameRule (.fraEmblem _) _ => false` in `expireFraUntilTurnEffects`'s
+         `expireMatching` (`318`) so `endingEmblems.foldl` (`325–329`) finds `o` in `.command`,
+         captures `let embName := acc.name o`, calls `acc.ceaseToExist o.id (cause := cause)
+         (reconcileControl := false) (suppressReturnLog := true)` (which emits `ceasedToExist` and
+         expires `.gameRule (.fraEmblem o.id)` and `.whileInZone o.id .command` via
+         `expireEffectsOnLeavingObject`), and logs `s!"{embName} ends"`.
+   - **2HG shared-turn ending-seat guard & simultaneous dead-team expiry in `Turns`**
+     (`Core.lean:13291–13301`, `Phasing.lean:265–300`, `Turns.lean:343–400, 535–596, 655–673`):
+     - Two 2HG shared-turn departure bugs remain in `Turns`:
+       (i) when a 2HG team (`#[⟨0⟩, ⟨1⟩]`) concedes during its own shared regular or extra turn
+       while `g.activePlayer == ⟨0⟩` (`seats == #[⟨0⟩]`), `Turns.startNextTurnCore` (`658–671`) and
+       `Turns.continueStartNextTurn` (`556–560, 578–594`) lack
+       `Phasing.departedNextTurnWouldHaveBegunSince`'s `extraSeatEnding` (`seatsExtra && skipIdx <
+       inProgressExtraSeats`) and `endingCurrentShared` (`seats.any (fun s => s == q ||
+       g.areTeammates s q)`) guards (`Phasing.lean:265–300`), immediately pushing `⟨1⟩` into
+       `departed` and expiring `.untilNextTurnOf ⟨1⟩` / `.untilEndOfNextTurnOf ⟨1⟩` as Team B's turn
+       begins (one full turn round early); and
+       (ii) in `Turns.continueStartNextTurn` (`535–539`), `g := g.expireUntilNextTurnEffects dep`
+       sits outside `if !alreadyExpired.contains dep`, and when a dead 2HG team's turn IS skipped
+       (`!teamHasLiving`), `Turns.expireUntilNextTurnEffects` (`348–400`) expires `⟨0⟩` and `⟨1⟩` in
+       two separate batches / `endControlEffectsSimultaneously` passes (`q == p` rather than
+       `q == p || (!teamHasLiving && g.areTeammates q p)`, while `Core.restoreCopiesUntilNextTurn`
+       at `13295–13298` omits `acc.areTeammates q p` when `departed == true`):
+       - Guard the dead-extra-turn and regular-seat loops in `Turns.startNextTurnCore` (`658–671`)
+         and `Turns.continueStartNextTurn` (`556–594`) with `extraSeatEnding` (`seatsExtra &&
+         skipIdx < inProgressExtraSeats` via `inProgressExtraSeats` matching `Phasing.lean:245–258`)
+         and `endingCurrentShared` (`!seatsExtra && seats.any (fun s => s == q || g.areTeammates s
+         q)`); in `continueStartNextTurn` (`535–549`), skip `dep` when `alreadyExpired.contains dep`
+         and, when `!(g.teamMembers dep).any g.stillInGame`, push all `g.teamMembers dep` into
+         `alreadyExpired` and expire the entire dead team simultaneously in one
+         `Turns.expireUntilNextTurnEffects` batch (`348–400`, matching `q == p || (!teamHasLiving &&
+         g.areTeammates q p)` across `expireFraUntilTurnEffects ... (includeTeammates :=
+         !teamHasLiving)`, `ctrlEids`, `.untilEndOfNextTurnOf`, per-turn `.playerRule`s, and
+         `delayedTriggers`, iterating `if teamHasLiving then #[p] else g.teamMembers p` for
+         `expireGoadedFor`, `protectionFromEverything`, `lifeCantChange`, and
+         `expirePlayPermissions`, and allowing `(!departed || !(acc.teamMembers p).any
+         acc.stillInGame) && acc.areTeammates q p` in `Core.restoreCopiesUntilNextTurn` at
+         `13295–13298`).
+
+3. **Continuous `[pIdx .. now]` phasing-duration check, pre-`events[0]` & `ZoneEvent.created`
+   phasing helpers, `Core.hasSummoningSickness` phased-out / `leftTheGame` / counter & DFC
+   `transformed` reconstruction, and `Phasing.phaseInControlled` historical controller lookup**
+   (`Core.lean:448–463, 1676–1820, 1835, 1953, 5202–5522`, `Phasing.lean:334–367`;
+   **CR 302.6 / 502.1 / 611.2b–c / 611.3a / 613.1a–b / 701.27 / 702.26b,d,e,f,m,n / 800.4a**):
+   - **`durationActiveContinuouslySince`, `ZoneEvent.created` `eo.zone` check, in-place
+     `.materializeObject` guard, and pre-`events[0]` fallback in `Core.lean` phasing helpers**
+     (`Core.lean:1676–1810, 1835, 1953`):
+     - Four gaps remain in `Core.lean`'s Phase 41 phasing helpers:
+       (i) `effectPhasingAllows` (`1808`) tests `g.durationActiveAt d pIdx` only at `pIdx` — if a
+       `.whileSourceOnBattlefield src` source phases out and back in (or a `.whileSourceHasCounter
+       src k` source drops to `0` `k` counters and later regains one) while `o` stays phased out
+       (`pIdx < i < g.events.size`), CR 702.26f ended the effect on `o` and CR 702.26b forbids it
+       from re-affecting phased-out `o`, yet `durationActiveAt d pIdx` returns `true`;
+       (ii) `objectZoneAndPhasedOutAt?` (`1738–1740`) hardcodes `.battlefield` on
+       `ZoneEvent.created` (and `1692, 1715` omit `eo.zone == .battlefield`), misclassifying
+       exile-created copy objects (`Allocation.lean:83`, `FraAbilities.lean:180, 729`,
+       `FraResolve.lean:313`);
+       (iii) `latestPhaseOutIdxOf?` (`1708–1710`) matches `.engine (.materializeObject obj _)`
+       without checking `!g.objectWasPhasedOutAt o i`, so an in-place `.materializeObject` while `o`
+       is already phased out advances `pIdx` and lets post-phase-out effects affect `o`; and
+       (iv) in seeded/quiet games or `hasSummoningSickness`'s `evLen = 0` slice where objects or
+       effects predate `g.events[0]`, `objectZoneAndPhasedOutAt?` (`1745`), `objectWasPhasedOutAt`
+       (`1696`), `objectCounterCountAt` (`1774`), `latestPhaseOutIdxOf?` (`1718`), and
+       `effectPhasingAllows` (`1800`, `effectCreatedInfo? eid == none`) return `none` / `false` /
+       `0` / `true`:
+       - Replace `durationActiveAt` at `1808` (and when `effectCreatedInfo? eid == none` with
+         `phaseOutIdx? == some pIdx` at `1800`) with `g.durationActiveContinuouslySince d pIdx`,
+         verifying `durationActiveAt d pIdx` and scanning `g.events[pIdx : g.events.size]` to reject
+         if `src` / `oid` leaves its required zone, phases out (for `.whileSourceOnBattlefield` /
+         `.whileSourceHasCounter`), or drops `k` counters to `0`; check `eo.zone` on
+         `ZoneEvent.created` (`some (eo.zone, eo.zone == .battlefield && seenPhased?.getD
+         eo.phasedOut)` at `1740` and `eo.zone == .battlefield && eo.phasedOut` at `1692, 1715`);
+         guard `.materializeObject` in `latestPhaseOutIdxOf?` (`1709`) with
+         `!g.objectWasPhasedOutAt o i`; fall back in `objectZoneAndPhasedOutAt?` (when `[0 : bound]`
+         has no event for `oid`, reconstructing backward from `g.findObject? oid` across
+         `g.events[bound : g.events.size]` and defining `objectWasPhasedOutAt` via
+         `objectZoneAndPhasedOutAt?`) and `objectCounterCountAt` (reading pre-event `eo.counters` /
+         `before.counters`, `0` before initial creation/arrival/materialize in
+         `[bound : g.events.size]`, or `(g.findObject? oid).map (·.status.counters.count k)`); and
+         for `o.status.phasedOut == true` with `latestPhaseOutIdxOf? o == none` (pre-`events[0]`
+         phase-out), treat `phaseOutIdx?` at `1835, 1953` as `some 0` while rejecting post-`events[0]`
+         `effectCreatedInfo? eid == some _` in `effectPhasingAllows`.
+   - **Phased-out controller check, `leftTheGame` vs `lost`, `.whileSourceHasCounter`, and DFC
+     `PermanentEvent.transformed` in `Core.hasSummoningSickness`**
+     (`Core.lean:448–463, 1813–1820, 5202–5522`):
+     - In `Core.hasSummoningSickness`:
+       (i) lines `5415–5418` and `5519–5521` skip `gAt.controllerOf oAt != some ctrl` whenever
+       `oAt.status.phasedOut`, falsely returning `false` when `o` phased out under `p1`'s control
+       (`gAt.controllerOf oAt == some p1`) and later phased in under `p0`'s static control effect,
+       or reverted to `p1` while phased out (CR 702.26f) before `p0` regained control;
+       (ii) `mkGameAt` (`5392–5395`) sets `{ pl with lost := v }` and triggers on
+       `.player (.lost ..)` (`5260, 5365, 5510`), whereas `Core.initialControllerOf` (`1817`) reads
+       `pl.leftTheGame`; and
+       (iii) `hasSummoningSickness` ignores `.rules (.permanent (.counters ..))` for
+       `.whileSourceHasCounter src k` Layer 1/2 effects and ignores
+       `.rules (.permanent (.transformed eo nowBackFace))` (`448–463`), keeping `oAt.printed` /
+       `oAt.status.transformed` frozen at end-of-log state across mid-turn DFC transforms under
+       characteristic-filtered Layer 2 scopes (e.g. `.creaturesWithout`):
+       - At `5415–5418`, skip only `g0At.initialControllerOf o0At != some ctrl` when
+         `o0At.status.phasedOut` while still requiring `g0At.controllerOf o0At == some ctrl`, and
+         drop `!oAt.status.phasedOut &&` at `5520` so `gAt.controllerOf oAt != some ctrl` is
+         enforced even while phased out; track `plLeft` on `.rules (.player (.leftGame p))` only and
+         update `{ pl with leftTheGame := v }` in `mkGameAt` (`5394`); and track `(src, k)` counter
+         events for `.whileSourceHasCounter` Layer 1/2 effects (populating `src`'s `k` counter count
+         in `mkGameAt` via `g.objectCounterCountAt src k evLen`) plus DFC `printed` / `transformed`
+         transitions across `.permanent (.transformed ..)`, `.zone (.moved ..)`,
+         `.zone (.created ..)`, and `.engine (.materializeObject ..)`.
+   - **Historical controller reconstruction in `Phasing.phaseInControlled`**
+     (`Core.lean:5368–5400`, `Phasing.lean:334–367`):
+     - In `Phasing.phaseInControlled`, `phaseOutControllerOf` (`343–356`) (i) matches
+       `.engine (.materializeObject obj _)` without `!g.objectWasPhasedOutAt o idx`, (ii) computes
+       `matCtrl` (`345–347`) and pre-`events[0]` `fallbackCtrlOf` (`334–336, 356`) from
+       `!(g.appliedControlEffectIds o).isEmpty` / `g.controllerOf o` on **current `g`** (failing
+       when a Layer 2 control effect active at `idx + 1` or `evLen = 0` later expired or ended on
+       `dep`'s departure before `departedNextTurnWouldHaveBegunSince g dep idx` runs, or when a
+       conditional Layer 2 scope began matching `o` after `idx`), and (iii) omits
+       `eo.zone == .battlefield` on `ZoneEvent.created` at `353`:
+       - Extract a shared historical slice helper `Core.controllerOfAt (g : Game) (o : GameObject)
+         (evLen : Nat) : Option PlayerId` from `hasSummoningSickness`'s reconstruction in
+         `Core.lean`; in `Phasing.phaseInControlled` (`334–356`), guard `.materializeObject` (`344`)
+         with `!g.objectWasPhasedOutAt o idx` and compute `matCtrl` via
+         `g.controllerOfAt o (idx + 1)` (falling back to
+         `some ((obj.defaultController.orElse (fun _ => obj.controller)).getD obj.owner)` when
+         `none`), require `eo.zone == .battlefield` on `.created` (`353`), and use
+         `g.controllerOfAt o 0 <|> fallbackCtrlOf o` at the pre-`events[0]` return (`356`).
+
+4. **Stack-object `abId` priority in `FraChoices` `.mayPayPickThen` and `removeStoryCounter` /
+   `removeIndestructibleCounter` / zone-cost activation legality in `Activation` & `Choices`**
+   (`Activation.lean:66–76, 125–140`, `Choices.lean:618–620, 666–676`, `Core.lean:1244–1253`,
+   `FraChoices.lean:243–246, 875–877`; **CR 118.3 / 602.2b / 602.5a / 608.2g / 733.1**):
+   - **Resolving stack-object `abId` before `currentResolvingContext?` permanent `sourceId` in
+     `FraChoices` `.mayPayPickThen`**
+     (`Core.lean:1244–1253`, `FraChoices.lean:243–246, 875–877`):
+     - Phase 41 changed `FraChoices.lean:876` to `let abId := resolvingForObj <|> sourceId` so a
+       resolving ability's `.mayPayPickThen` cost payment would bind `abId` to the stack ability
+       object rather than the permanent `sourceId`. However, `resolvingForObj` (`243–246`) checks
+       `g.currentResolvingContext?.bind Prod.fst` **first**, and `Core.currentResolvingContext?`
+       (`1251–1252`) looks up `g.resolvingAbility` (`trigAb`) and returns **`o.sourceId`** (the
+       battlefield permanent's ID `some dorkObj.id`, NOT `some trigAb.id`), shadowing
+       `g.resolvingAbility`! Consequently `payCostPick` still records `.costPayment .tap p
+       (some dorkObj.id)`, colliding with any same-checkpoint standalone `{T}` cost keyed on
+       `dorkObj.id`:
+       - Bind `let abId := g.resolvingAbility <|> g.resolvingSpell <|> resolvingForObj <|> sourceId`
+         at `FraChoices.lean:876` so an active resolving stack ability or spell stamps its unique
+         stack `ObjectId` onto `.costPayment` while non-stack resolution contexts still fall back to
+         `resolvingForObj <|> sourceId`.
+   - **`removeStoryCounter`, `removeIndestructibleCounter`, and graveyard/hand cost-zone legality in
+     `Activation.validateActivation` & `Choices.sourceStillPayable`**
+     (`Activation.lean:66–76, 125–140`, `Choices.lean:618–620, 666–676`):
+     - `Activation.validateActivation` (`57–155`, backing `canActivate` at `167` and
+       `activateAbility` at `223`) never checks `ab.cost.removeStoryCounter` (`o.status.story > 0`)
+       or `ab.cost.removeIndestructibleCounter` (`o.status.indestructibleCounters > 0`, e.g. Arwen,
+       Mortal Queen at `OracleCandidates.lean:1517`), causing `canActivate` to return `true` with `0`
+       counters so `Agent.choose` (`Agent.lean:513`) repeatedly proposes `.activate`, hits
+       `!g.sourceStillPayable` at `.pay`, rewinds to `proposalCheckpoint`, and loops; and
+       `validateActivation` (`66–72`) checks only `ab.activateFromGraveyard` / `ab.activateFromHand`
+       without `ab.cost.exileSourceFromGraveyard` or `ab.cost.discardSource || ab.cost.fra ==
+       .exileSourceFromHand` (while `Choices.sourceStillPayable` at `619, 666, 673` likewise checks
+       `activateFromGraveyard` without `|| a.cost.exileSourceFromGraveyard`):
+       - Reject `ab.cost.removeStoryCounter && o.status.story == 0` and
+         `ab.cost.removeIndestructibleCounter && o.status.indestructibleCounters == 0` in
+         `Activation.validateActivation` (`125–140`), treat `ab.activateFromGraveyard ||
+         ab.cost.exileSourceFromGraveyard` as graveyard-activated (`66`) and `ab.activateFromHand ||
+         ab.cost.discardSource || ab.cost.fra == .exileSourceFromHand` as hand-activated (`69`) in
+         `validateActivation`, and include `a.cost.exileSourceFromGraveyard` alongside
+         `a.activateFromGraveyard` in `Choices.sourceStillPayable` (`619, 666, 673`).
+
+Tests: `Events.lean` (unit + replay-determinism `#guard`s for cumulative multi-attachment departure
+invalidation in `Leaving.preBatchLegendSnapshotValid`, mid-flush SBA re-pause post-`.closeBatch`
+slot rewriting + `mergeLeaveArgs` + recursive leftmost `.seq` peeling in `StateBasedActions`, and
+`finishAndGrantPriorityFwd` / `anyContinuationGrantsPriorityFwd` / `g.continuations.all (· == {})`
+priority deferral across `outerPendingReplacements`, `triggerSequenceRest`, `mayThenResume`, and
+non-active priority holders in `ManaAbilities`; pre-`playerLeftGame` `preLeave` `ceasedToExist`
+controller/characteristic LKI + departing-attachment `unattachFrom` suppression + pre-leave dynamic
+`.control` combat/`.ringBearer` reconciliation without mislabeling CR 800.4a exiles as CR 800.4c in
+`Leaving.playerLeavesGameCore`, reachable `"<emblem> ends"` logging in
+`Turns.expireFraUntilTurnEffects`, and 2HG ending-shared-turn guard + simultaneous dead-team batch
+expiry in `Turns`; `durationActiveContinuouslySince` + `ZoneEvent.created` `eo.zone` + in-place
+`.materializeObject` + pre-`events[0]` phasing helpers in `Core.lean`, phased-out controller /
+`leftTheGame` / `.whileSourceHasCounter` / DFC `transformed` accuracy in `Core.hasSummoningSickness`,
+and `Core.controllerOfAt` historical phase-out controller lookup in `Phasing.phaseInControlled`; and
+resolving stack-object `abId` priority in `FraChoices` `.mayPayPickThen` + `removeStoryCounter` /
+`removeIndestructibleCounter` / graveyard & hand cost-zone legality in
+`Activation.validateActivation` and `Choices.sourceStillPayable`).
+
+Final check (after Phase 42): `lake build`, `lake exe mtg-demo`,
 `lake exe oracle-roundtrip`, no `EventCause.unclassified` constructor, no
 `ObjectId ⟨0⟩` or `BatchId ⟨0⟩` wildcard/sentinel defaults (unbatched/proposed
 events and unstamped `.engine` changes carry `batch := none` via
