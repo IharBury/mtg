@@ -1002,7 +1002,8 @@ private opaque autoResolveSingleChooseObject (g : Game) (id : ObjectId) : Game :
 open `Pending.chooseLegend` prompt on `g.currentBatch` (no cross-batch `.rules`
 event since the batch opened, and no `.rules`, `.engine (.object ..)`, or
 `.engine (.materializeObject ..)` event since the earliest
-`.engine (.pending (.chooseLegend ..))` in that batch, CR 704.3 / 704.5j / 704.8). -/
+`.engine (.pending (.chooseLegend ..))` in that batch, aside from non-battlefield
+CR 800.4a player-departure cleanup, CR 704.3 / 704.5j / 704.8 / 800.4a). -/
 def preBatchLegendSnapshotValid (g : Game)
     (startIdxOverride? : Option Nat := none) : Bool :=
   match g.currentBatch with
@@ -1023,21 +1024,39 @@ def preBatchLegendSnapshotValid (g : Game)
                 (fun _ => g.outerPendingReplacements.findSomeRev? (findPausedCloseBatchFor? curBid))
             min (closeIdx?.getD earliestBatchIdx) earliestBatchIdx
       let mut earliestPromptIdx? : Option Nat := none
+      let mut inPausedDeparture := false
       for i in [startIdx : g.events.size] do
-        let ev := g.events[i]!
-        match ev.change with
-        | .rules r =>
+        match g.events[i]! with
+        | .rules _ r cause batch =>
+          let isDepartureCleanup :=
+            cause == .gameRule .playerLeftGame ||
+              (inPausedDeparture && cause == .stateBased .copyOutsideStackOrBf)
           let nonCharRules :=
             match r with
             | .player (.lost ..) | .player (.leftGame ..)
+            | .player (.manaEmptied ..) | .player (.becameMonarch ..)
             | .triggerQueue _ | .delayedTrigger _ => true
+            | .zone (.ceasedToExist before) =>
+              isDepartureCleanup &&
+                before.zone != .battlefield && before.zone != .stack
+            | .continuousEffect (.expired eid) =>
+              isDepartureCleanup &&
+                (g.openBatchEffects.find? (·.1 == eid)).any fun (_, spec) =>
+                  match spec with
+                  | .permission .. | .replacement .. | .prevention .. => true
+                  | _ => false
             | _ => false
-          if !nonCharRules && (ev.batch != some curBid || earliestPromptIdx?.isSome) then
+          if !nonCharRules && (batch != some curBid || earliestPromptIdx?.isSome) then
             return false
-        | .engine (.object ..) | .engine (.materializeObject ..) =>
+        | .engine _ .clearPausedBatch _ =>
+          inPausedDeparture := true
+        | .engine _ (.pauseBatch bid ..) _ =>
+          if bid == curBid then
+            inPausedDeparture := false
+        | .engine _ (.object ..) _ | .engine _ (.materializeObject ..) _ =>
           if earliestPromptIdx?.isSome then
             return false
-        | .engine (.pending (.chooseLegend ..)) =>
+        | .engine _ (.pending (.chooseLegend ..)) _ =>
           if earliestPromptIdx?.isNone then
             earliestPromptIdx? := some i
         | _ => pure ()

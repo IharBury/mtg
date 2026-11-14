@@ -31793,9 +31793,11 @@ private def replayOk40i1 (gs : Array Game) : Bool :=
     innerGains == #[p0, p1, p2] &&
     (gStepRevDone.player p0).life == mBaseLife + 6
 
-  -- 1d. `Pending.chooseLegend` spectator-departure preservation, `finishSbaSweep` live filtering + `leftTheGame` skip,
-  --     shared `keepLegend`, and `Agent.choose` / `Game.applyIdle` live filtering:
+  -- 1d. `Pending.chooseLegend` spectator-departure preservation (including snapshot-only choices when `p2` owns
+  --     non-battlefield cards / mana / monarch vs battlefield legend departure invalidation), `finishSbaSweep`
+  --     live filtering + `leftTheGame` skip, shared `keepLegend`, and `Agent.choose` / `Game.applyIdle` live filtering:
   let legDef : CardDef := { bear with name := "P40i1 Legend", supertypes := #[.legendary] }
+  let fragileLordDef : CardDef := creature "P40i1 FragileLord" ManaCost.empty #["Wizard"] 1 0
   let gLeg0 :=
     (addPermanent (addPermanent (addPermanent g4 legDef p0 p0) legDef p0 p0) legDef p0 p0).checkSBA
   let legIds := match gLeg0.pending with | .chooseLegend _ _ ids => ids | _ => #[]
@@ -31807,11 +31809,69 @@ private def replayOk40i1 (gs : Array Game) : Bool :=
     | some (.keepLegend id) => id != legIds[0]! && specFilteredIds.contains id
     | _ => false
   let gIdleRes := applyIdle gLegExiledOne
+  let gSnapSetup0 :=
+    insertObject
+      (insertObject
+        (insertObject
+          (insertObject
+            (addPermanent (addPermanent (addPermanent g4 bear p0 p0) bear p0 p0) fragileLordDef p0 p0)
+            hero p2 (.library p2))
+          hero p2 (.hand p2))
+        hero p2 (.graveyard p2))
+      hero p2 .exile
+  let snapBears := (gSnapSetup0.permanentsOf p0).filter (·.name == bear.name)
+  let sb1 := snapBears[0]!
+  let sb2 := snapBears[1]!
+  let sLord := (gSnapSetup0.permanentsOf p0).find? (·.name == fragileLordDef.name) |>.get!
+  let p2Ex := (gSnapSetup0.objects.filter (fun o => o.zone == .exile && o.owner == p2))[0]!
+  let gSnap0 :=
+    ((((gSnapSetup0.record (GameEvent.manaAdded gSnapSetup0.turnNumber p2 #[{ mana := .colorless }] (cause := some testCause))).record
+      (GameEvent.becameMonarch gSnapSetup0.turnNumber p2 none (cause := some testCause))).createEffect
+      (.playPermission p2Ex.id { player := p2, whileExiled := true }) (cause := some testCause)).createEffect
+      (.layered (.objects #[sb1.id, sb2.id]) (.types .add #[] #[] #[.legendary]) (.whileSourceOnBattlefield sLord.id))
+      (cause := some testCause)).checkSBA
+  let preSpecEvIdx := gSnap0.events.size
+  let gSnapAfterP2 := mustApply gSnap0 p2 .concede
+  let ceasedCount :=
+    (gSnapAfterP2.events.extract preSpecEvIdx gSnapAfterP2.events.size).foldl (fun acc ev =>
+      match ev with
+      | .rules _ (.zone (.ceasedToExist _)) _ _ => acc + 1
+      | _ => acc) 0
+  let snapAgentPickOk :=
+    match Agent.choose gSnapAfterP2 p0 with
+    | some (.keepLegend id) => id == sb1.id || id == sb2.id
+    | _ => false
+  let gSnapKept := mustApply gSnapAfterP2 p0 (.keepLegend sb1.id)
+  let gPermSetup0 :=
+    addPermanent (addPermanent (addPermanent (addPermanent g4 bear p2 p0) bear p0 p0) bear p0 p0) fragileLordDef p0 p0
+  let permBears := (gPermSetup0.permanentsOf p0).filter (·.name == bear.name)
+  let pbIds := permBears.map (·.id)
+  let pLord := (gPermSetup0.permanentsOf p0).find? (·.name == fragileLordDef.name) |>.get!
+  let gPermSnap0 :=
+    (gPermSetup0.createEffect
+      (.layered (.objects pbIds) (.types .add #[] #[] #[.legendary]) (.whileSourceOnBattlefield pLord.id))
+      (cause := some testCause)).checkSBA
+  let gPermLeft := mustApply gPermSnap0 p2 .concede
+  let snapSpectatorOk :=
+    !gSnap0.treatedAsLegendary (gSnap0.object! sb1.id) &&
+    gSnap0.pending == .chooseLegend p0 bear.name #[sb1.id, sb2.id] &&
+    ceasedCount == 4 &&
+    gSnapAfterP2.pending == .chooseLegend p0 bear.name #[sb1.id, sb2.id] &&
+    snapAgentPickOk &&
+    gSnapKept.pending == .none &&
+    gSnapKept.currentBatch.isNone &&
+    (gSnapKept.permanentsOf p0).map (·.id) == #[sb1.id] &&
+    (gSnapKept.followMovedToZone? sb2.id (· == .graveyard p0)).isSome &&
+    gPermSnap0.pending == .chooseLegend p0 bear.name pbIds &&
+    gPermLeft.pending == .none &&
+    gPermLeft.currentBatch.isNone &&
+    (gPermLeft.permanentsOf p0).size == 2
   let legendAlignOk :=
     legIds.size == 3 &&
     specFilteredIds == #[legIds[1]!, legIds[2]!] &&
     agentStalePickOk &&
-    ((gIdleRes.permanentsOf p0).filter (·.name == legDef.name)).size == 1
+    ((gIdleRes.permanentsOf p0).filter (·.name == legDef.name)).size == 1 &&
+    snapSpectatorOk
 
   mustHold40i1 "1a.quietAndDepartedCtrl" quietAndDepartedCtrlOk &&
   mustHold40i1 "1b.stateMachineAndOrder" stateMachineAndOrderOk &&
@@ -31820,7 +31880,7 @@ private def replayOk40i1 (gs : Array Game) : Bool :=
   mustHold40i1 "1.replay"
     (replayOk40i1 #[gQAfterQuietCont, gQCastRev, gQLeaveRev, gSimCtrlAfter, gDepPendRev,
       gMultiAfterP2, gOrderPopped, gOrderAfterDecline, gOrdLeavePaused, gOrdLeaveDrained,
-      gSeqRnd1, gInnerDone, gStepRevDone, gLegAfterSpec, gIdleRes])
+      gSeqRnd1, gInnerDone, gStepRevDone, gLegAfterSpec, gIdleRes, gSnapAfterP2, gSnapKept, gPermLeft])
 
 end Phase40Item1EventAlignment
 
