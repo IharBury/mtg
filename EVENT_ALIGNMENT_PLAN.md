@@ -15787,17 +15787,23 @@ reporting, `.turnFaceUp` `costPicks` / `finalize` + `sacrificeForActivation`
        - Add `(suppressReturnLog : Bool := false)` to `Core.restoreControlUntilSourceLeaves`
          (`13189–13253`, threaded through `Core.expireWhileSourceEffects` `13258–13269` and
          `Attachments.ceaseToExist` `46–66`) and guard `!(acc.player q).leftTheGame` at
-         `13247–13249`; extend `Leaving.endControlEffectsSimultaneously` (`245–263`) so
-         `candidates` also covers battlefield permanents whose `pre.appliedControlEffectIds` or
-         explicit `.control` scopes expired inside `preExpire`; add
-         `(reconcileControl : Bool := true)` and `(returnLinkedExile : Bool := true)` to
-         `Leaving.objectLeavesTheGame` (`674–713`, passing `suppressReturnLog :=
-         !reconcileControl` into `ceaseToExist` and gating `reconcileOnLeave` /
-         `returnLinkedExileMoves`); in `Leaving.playerLeavesGameCore` (`2956–2998`), run
-         `owned.foldl` (`reconcileControl := false`, `returnLinkedExile := false`) and
-         `expireControlsPlayers` inside `endControlEffectsSimultaneously ctrlEids`'s `preExpire`
-         callback (invoking `endControlEffectsSimultaneously` even when `ctrlEids.isEmpty`)
-         against one outer `pre` snapshot, and exclude
+         `13247–13249`; in `Leaving.endControlEffectsSimultaneously` (`245–305`), diff `pre`
+         (`241`) against the post-`preExpire` game `g` (`245`) — collecting `.layered _
+         (.control _) _` `EffectId`s in `pre.activeEffects` that `preExpire` already expired
+         (`(g.activeEffect? eid).isNone`), their `.objects ids` scopes in `pre.activeEffects`, and
+         battlefield permanents whose `controllerOf` or `appliedControlEffectIds` changed between
+         `pre` and post-`preExpire` `g` — and union those permanents into `candidates` (`253–263`)
+         **before** the `activeEids.isEmpty` short-circuit (`254–255`), including when
+         `activeEids` is empty (so `candidates.foldl` at `272–305` still emits `"reverts to …'s
+         control"` logs and queues `hadControlChange` CR 800.4c exiles when `ctrlEids` is empty or
+         `preExpire` expired every control effect); add `(reconcileControl : Bool := true)` and
+         `(returnLinkedExile : Bool := true)` to `Leaving.objectLeavesTheGame` (`674–713`, passing
+         `suppressReturnLog := !reconcileControl` into `ceaseToExist` and gating
+         `reconcileOnLeave` / `returnLinkedExileMoves`); in `Leaving.playerLeavesGameCore`
+         (`2956–2998`), run `owned.foldl` (`reconcileControl := false`, `returnLinkedExile :=
+         false`) and `expireControlsPlayers` inside `endControlEffectsSimultaneously ctrlEids`'s
+         `preExpire` callback (invoking `endControlEffectsSimultaneously` even when
+         `ctrlEids.isEmpty`) against one outer `pre` snapshot, and exclude
          `bodyExileCont?.any (inActiveEndControlExile o.id)` in `still` (`2991–2995`).
    - **Unified outer-`pre` simultaneous FRA turn-start expiry when `skipControl == false` in
      `Turns.expireFraUntilTurnEffects`** (`Core.lean:12879–12905`, `Turns.lean:309–338`):
@@ -15960,7 +15966,8 @@ Layer 7 attachment effects, Pass-1-before-Pass-2 SBA batch draining + `savedIn`-
 `wasPaused` / `.leavePlayersWhoLost` / `g.over` / mid-flush pause accuracy on invalidated
 `Pending.chooseLegend`, and `hasFollowingSeq` propagation across `.seq` & `.restorePending` in
 `Decisions.resumePendingReplacementCore`; simultaneous outer-`pre` `playerLeavesGameCore`
-owned-object + `.control` departure reconciliation without false departed-player return logs,
+owned-object + `.control` departure reconciliation and `pre`-vs-post-`preExpire` `candidates`
+reversion/exile coverage when `activeEids` is empty without false departed-player return logs,
 duplicate `linkedExile`, or duplicate CR 800.4c exile queues, and unified outer-`pre`
 `expireFraUntilTurnEffects` (`skipControl := false`); `oneShotEffect` dynamic-duration
 `durationActiveAt` phase-out enforcement (`d.isTimedResolvingDuration || g.durationActiveAt d
