@@ -168,7 +168,14 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
     | .chooseX _ =>
       match g.proposedSpell with
       | some prop =>
-        let excludeId := if g.proposedNeedsBattlefieldSource prop then prop.sourceId else none
+        let sinceIdx := (g.proposalCheckpoint.map (·.eventsSize)).getD g.events.size
+        let selfTapExcl : Array ObjectId :=
+          match prop.sourceId with
+          | some sid =>
+            if prop.tapSource && !g.sourceTappedForCost sid (some prop.spellId) sinceIdx then #[sid]
+            else #[]
+          | none => #[]
+        let excludeIds := selfTapExcl ++ prop.teamworkCreatures
         let manaBound? : Option Nat :=
           if prop.cost.containsX then
             some (maxAffordableX g p prop.cost
@@ -179,7 +186,7 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
               (allowCantNonartifact := g.proposedAllowsCantNonartifact prop)
               (allowCreatureRestricted := g.proposedAllowsCreatureRestricted prop)
               (spend := g.proposedManaSpend prop)
-              (exclude := excludeId))
+              (excludeIds := excludeIds))
           else none
         let minusLoyaltyBound? : Option Nat :=
           if prop.loyaltyX && prop.activation.bind (·.cost.loyalty) == some .minusX then
@@ -207,7 +214,7 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
               (allowCantNonartifact := g.proposedAllowsCantNonartifact prop)
               (allowCreatureRestricted := g.proposedAllowsCreatureRestricted prop)
               (spend := g.proposedManaSpend prop)
-              (exclude := excludeId)))
+              (excludeIds := excludeIds)))
       | none => some (.chooseX 0)
     | .chooseTargets _ =>
       chooseSpellTarget g p
@@ -480,8 +487,13 @@ where
       (allowElfRestricted := false) (allowInstRestricted := false)
       (allowHeroRestricted := false) (allowVillainRestricted := false)
       (allowCantNonartifact := false) (allowCreatureRestricted := false)
-      (spend : ManaSpend := {}) (exclude : Option ObjectId := none) : Nat :=
-    let available := g.availableManaExcept p exclude
+      (spend : ManaSpend := {}) (exclude : Option ObjectId := none)
+      (excludeIds : Array ObjectId := #[]) : Nat :=
+    let ids :=
+      match exclude with
+      | some id => if excludeIds.contains id then excludeIds else excludeIds.push id
+      | none => excludeIds
+    let available := g.availableManaExceptIds p ids
     Id.run do
       let mut best : Nat := 0
       for x in [0:available.total + 1] do
@@ -497,11 +509,49 @@ where
       return best
   /-- Activate a non-mana ability if the available mana covers its cost. -/
   chooseActivate (g : Game) (p : PlayerId) : Option Action :=
-    let shouldActivate (o : GameObject) (ab : ActivatedAbility) : Bool :=
+    let shouldActivate (o : GameObject) (idx : Nat) (ab : ActivatedAbility) : Bool :=
       let isTurnFaceUp := o.status.faceDown && ab.effect.resolution == .frc .turnFaceUp
-      let excludeId :=
-        if isTurnFaceUp || ab.needsBattlefieldSourceAtManaWindow then some o.id else none
-      let available := g.availableManaExcept p excludeId
+      let selfExcl : Array ObjectId :=
+        if !isTurnFaceUp && ab.cost.tap then #[o.id] else #[]
+      let crewExcl : Array ObjectId :=
+        if isTurnFaceUp then #[]
+        else
+          match ab.cost.fra with
+          | .crew n =>
+            let cands :=
+              ((g.creaturesControlledBy p).filter (fun c => c.id != o.id && !c.status.tapped)).qsort
+                (fun a b =>
+                  let aNonMana := (g.manaAbilitiesOf a).isEmpty
+                  let bNonMana := (g.manaAbilitiesOf b).isEmpty
+                  if aNonMana != bNonMana then aNonMana else g.power a > g.power b)
+            (cands.foldl (fun (acc : Array ObjectId × Nat) c =>
+              if acc.2 ≥ n then acc else (acc.1.push c.id, acc.2 + (g.power c).toNat)) (#[], 0)).1
+          | _ => #[]
+      let tapPickExcl : Array ObjectId :=
+        if isTurnFaceUp then #[]
+        else
+          let picks := costPicksOf ab
+          let sacSrc := ab.cost.sacrificeSource || ab.cost.fra == .exileSource
+          let discSrc := ab.cost.discardSource || ab.cost.fra == .exileSourceFromHand
+          (List.range picks.size).foldl (fun (acc : Array ObjectId) i =>
+            let pick := picks[i]!
+            if pick == .tapUntappedCreature || pick == .tapTwoUntappedArtifacts then
+              let chosen :=
+                if crewExcl.isEmpty && acc.isEmpty then
+                  (g.firstPayableCostPickSlice? p (some o.id) (picks.extract i picks.size)
+                    (tapSource := ab.cost.tap)
+                    (sacrificeOrExileSource := sacSrc)
+                    (discardOrExileHandSource := discSrc)).getD #[]
+                else
+                  ((g.costPickCandidates p (some o.id) pick
+                    (tapSource := ab.cost.tap)
+                    (sacrificeOrExileSource := sacSrc)
+                    (discardOrExileHandSource := discSrc)).filter (fun cid =>
+                      !crewExcl.contains cid && !acc.contains cid)).extract 0 pick.count
+              acc ++ chosen
+            else acc) #[]
+      let excludeIds := selfExcl ++ crewExcl ++ tapPickExcl
+      let available := g.availableManaExceptIds p excludeIds
       let manaCost := g.activationManaCost p ab (some o)
       let allowElf := !isTurnFaceUp && g.hasSubtype o .elf
       let allowHero := !isTurnFaceUp && g.hasSubtype o .hero
@@ -511,7 +561,7 @@ where
       let spellSpend : ManaSpend :=
         { spell := true, fromHand := o.zone == .hand p
           supertypes := g.supertypes o, types := g.types o, subtypes := g.subtypes o }
-      g.canActivate p o ab &&
+      g.canActivate p o ab (idx? := some idx) &&
       available.canPay manaCost
         (allowElfRestricted := allowElf)
         (allowInstRestricted := false)
@@ -532,7 +582,7 @@ where
           (allowCantNonartifact := true)
           (allowCreatureRestricted := allowCreature)
           (spend := actSpend)
-          (exclude := excludeId) == 0) &&
+          (excludeIds := excludeIds) == 0) &&
       -- Don't spend mana re-equipping a creature that is already equipped.
       !(ab.isEquip && o.attachedTo.isSome) &&
       -- Spend {4}{T} on Rogue's Passage only after attackers are declared.
@@ -549,7 +599,8 @@ where
           (allowCreatureRestricted := false)
           (spend := spellSpend))
     let firstAbility (o : GameObject) : Option Nat :=
-      (g.activatedAbilitiesOf o).findIdx? (shouldActivate o)
+      let abs := g.activatedAbilitiesOf o
+      (List.range abs.size).find? (fun idx => shouldActivate o idx abs[idx]!)
     let gy := (g.player p).graveyard.filterMap (fun id => g.findObject? id)
     let candidate :=
       (g.permanentsOf p).find? (fun o => (firstAbility o).isSome) <|>

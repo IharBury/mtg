@@ -73,13 +73,13 @@ def greatestManaValueAmong (g : Game) (p : PlayerId) (pred : GameObject → Bool
     if pred o then max acc (g.objectManaValue o) else acc) 0
 
 /-- Mana in `p`'s pool plus mana from each of their untapped sources, skipping
-`exclude` (used when that source's `{T}` is part of an activation cost).
-Each source is counted as its first mana type (green for any color), with
-its spending restriction. -/
-def availableManaExcept (g : Game) (p : PlayerId) (exclude : Option ObjectId) : ManaPool :=
+any source in `excludeIds` (used when `{T}` or tap-cost picks reserve those
+permanents). Each source is counted as its first mana type (green for any color),
+with its spending restriction. -/
+def availableManaExceptIds (g : Game) (p : PlayerId) (excludeIds : Array ObjectId) : ManaPool :=
   (g.manaSources p).foldl
     (fun pool (src, types) =>
-      if exclude == some src.id then pool
+      if excludeIds.contains src.id then pool
       else
         let green := ManaType.colored .green
         match (if types.size ≥ 5 && types.contains green then some green else types[0]?) with
@@ -88,9 +88,16 @@ def availableManaExcept (g : Game) (p : PlayerId) (exclude : Option ObjectId) : 
         | none => pool)
     (g.player p).manaPool
 
+/-- Mana in `p`'s pool plus mana from each of their untapped sources, skipping
+`exclude` (used when that source's `{T}` is part of an activation cost).
+Each source is counted as its first mana type (green for any color), with
+its spending restriction. -/
+def availableManaExcept (g : Game) (p : PlayerId) (exclude : Option ObjectId) : ManaPool :=
+  g.availableManaExceptIds p exclude.toArray
+
 /-- Mana in `p`'s pool plus mana from each of their untapped sources. -/
 def availableMana (g : Game) (p : PlayerId) : ManaPool :=
-  g.availableManaExcept p none
+  g.availableManaExceptIds p #[]
 
 end Game
 end Mtg.Engine

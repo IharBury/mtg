@@ -142,6 +142,7 @@ inductive CostPick where
   | sacrificeArtifactOrCreature
   | sacrificeAnotherArtifact
   | sacrificeAnotherCreatureOrPlaneswalker
+  | sacrificeAnotherCreatureOrArtifact
   | sacrificeArtifactOrLand
   | sacrificeEquipmentAttachedToSource
   /-- Sacrifice an artifact, or discard a nonland card. -/
@@ -172,6 +173,7 @@ def CostPick.phrase : CostPick → String
   | .sacrificeArtifactOrCreature => "sacrifice an artifact or creature"
   | .sacrificeAnotherArtifact => "sacrifice another artifact"
   | .sacrificeAnotherCreatureOrPlaneswalker => "sacrifice another creature or planeswalker"
+  | .sacrificeAnotherCreatureOrArtifact => "sacrifice another creature or artifact"
   | .sacrificeArtifactOrLand => "sacrifice an artifact or land"
   | .sacrificeEquipmentAttachedToSource => "sacrifice an Equipment attached to the source"
   | .sacrificeArtifactOrDiscardNonland => "sacrifice an artifact or discard a nonland card"

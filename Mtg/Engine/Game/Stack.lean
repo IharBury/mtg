@@ -123,6 +123,9 @@ structure ProposedSpell where
   /-- Deferred behold subtype announced at CR 601.2b and performed at CR 601.2h
   cost payment (e.g. Countersculpt). -/
   needsBehold : Option CardSubtype := none
+  /-- Index of the activated ability on `sourceId` when activation was announced
+  (CR 602.2a / 602.5b), preserved even if Layer 3/6 abilities change during cost payment. -/
+  abilityIdx : Option Nat := none
   /-- Whether this activation's loyalty cost has already been paid (including `+0`,
   CR 602.2b / 606.4). -/
   loyaltyPaid : Bool := false

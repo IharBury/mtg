@@ -2705,6 +2705,8 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
         g.beginLookRevealToHand controller n (fun o => g.isArtifact o) false
       | .addAnyColorSpendOnlySubtype subtype =>
         match subtype with
+        | .elf =>
+          g.addMana controller (.colored .green) 1 (source := sourceId) (restriction := some .elf)
         | .hero =>
           g.addMana controller (.colored .white) 1 (source := sourceId) (restriction := some .hero)
         | .villain =>

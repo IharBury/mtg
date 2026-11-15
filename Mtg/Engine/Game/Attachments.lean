@@ -45,7 +45,9 @@ The object is deleted and its id is removed from the zone it occupied, so a
 graveyard, hand, library, or stack keeps nothing of it. -/
 def ceaseToExist (g : Game) (id : ObjectId) (cause : Option EventCause := none)
     (reconcileControl : Bool := true) (suppressReturnLog : Bool := false)
-    (preState? : Option Game := none) : Game :=
+    (preState? : Option Game := none)
+    (skipLogIds : Array ObjectId := #[])
+    (suppressEmblemLog : Bool := false) : Game :=
   let effCause :=
     g.resolveOptionalCause cause (fallbackSrc := some id)
       (defaultCause := .gameRule .leavingZone)
@@ -63,6 +65,7 @@ def ceaseToExist (g : Game) (id : ObjectId) (cause : Option EventCause := none)
       if old.zone == .battlefield then
         g.expireWhileSourceEffects id (cause := expCause) (preState? := some pre)
           (reconcileControl := false) (suppressReturnLog := suppressReturnLog)
+          (skipLogIds := skipLogIds) (suppressEmblemLog := suppressEmblemLog)
       else g
     if reconcileControl then
       reconcileControlAfterTransitionFwd pre g (cause := expCause)
@@ -104,9 +107,10 @@ def unattachFrom (g : Game) (hostId : ObjectId) (skipIds : Array ObjectId := #[]
     let mut g := g
     for o in g.objects.filter (·.isBattlefieldObject) do
       if o.attachedTo == some hostId && !skipIds.contains o.id then
-        let oName := g.name o
+        let preObj := (pre.findObject? o.id).getD o
+        let oName := pre.name preObj
         let snap :=
-          { (pre.snapshot ((pre.findObject? o.id).getD o)) with
+          { (pre.snapshot preObj) with
             id := some o.id
             zone := o.zone
             attachedTo := o.attachedTo }

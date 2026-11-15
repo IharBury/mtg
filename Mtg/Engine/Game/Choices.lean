@@ -678,7 +678,7 @@ def sourceStillPayable (g : Game) (prop : ProposedSpell) : Bool :=
       (!prop.activation.any (·.cost.putStunCounterOnSource) ||
         g.sourceCounterCostPaidFor sid forObj .putCounters (some .stun) sinceIdx ||
         (src.isOnBattlefield && g.controlledBy src prop.caster)) &&
-      ((src.isOnBattlefield && g.controlledBy src prop.caster &&
+      (((src.isOnBattlefield && (g.controlledBy src prop.caster || alreadySacrificedForCost)) &&
         !fromGyAb && !fromHandAb &&
         (!prop.tapSource || !src.status.tapped || g.sourceTappedForCost sid forObj sinceIdx)) ||
       (fromGyAb && !fromHandAb && !needsBfSource &&

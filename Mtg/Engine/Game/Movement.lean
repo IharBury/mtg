@@ -493,7 +493,9 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
           g.logMsg s!"A finality counter exiles {oldName} instead of putting it into a graveyard"
         else g
       let g :=
-        if old.zone == .battlefield then g.unattachFrom id (skipIds := skipUnattachIds) else g
+        if old.zone == .battlefield then
+          g.unattachFrom id (skipIds := skipUnattachIds) (preState? := some board)
+        else g
       -- The copy of a prepare spell stays in exile only while its permanent is
       -- on the battlefield (ruling 742).
       let g :=
@@ -589,6 +591,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
       let g :=
         if old.zone == .battlefield then
           g.expireWhileSourceEffects old.id (preState? := some preMove) (reconcileControl := false)
+            (skipLogIds := skipUnattachIds)
         else g
       let g :=
         match g.findObject? newId with

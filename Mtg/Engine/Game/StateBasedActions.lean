@@ -566,10 +566,18 @@ private def rewriteRepausedPostCloseBatch (g : Game) (curBid : BatchId)
           some (.leavePlayersWhoLost savedM poM depM rwM)
         else
           some .checkSBA
-      let newSuffix? := seqOptPending newHead? remTail?
-      if let some suf := newSuffix? then
-        g := pushOuterSuffix g suf
-      return (g, savedM, newSuffix?.isSome || poM, depM, rwM)
+      match g.pendingReplacement.bind (splitAfterCloseBatchFor? curBid) with
+      | some (throughClose, innerAfter?) =>
+        let newAfter? := seqOptPending newHead? (seqOptPending innerAfter? remTail?)
+        let newPr :=
+          match newAfter? with
+          | some after => .seq throughClose after
+          | none => throughClose
+        g := g.change (.pendingReplacement (some newPr))
+      | none =>
+        if let some suf := seqOptPending newHead? remTail? then
+          g := g.chainPendingReplacement suf
+      return (g, savedM, poM, depM, rwM)
 
 partial def checkSBACounted (g : Game)
     (savedIn : Option Pending := none) (popOuterIn : Bool := false)
@@ -599,15 +607,18 @@ partial def checkSBACounted (g : Game)
     else
     let savedForFlush := if clearedInvalidLegend then none else savedIn
     let shouldFlush :=
-      clearedInvalidLegend ||
-        (!g.sbaPaused && g.pending == .none && g.currentBatch.isSome &&
-          savedForFlush.all g.batchPausePromptGoneOrInvalid)
+      !(rewindProposalIn.isSome && g.isPreProposalCheckpointBatch) &&
+        (clearedInvalidLegend ||
+          (!g.sbaPaused && g.pending == .none && g.currentBatch.isSome &&
+            savedForFlush.all g.batchPausePromptGoneOrInvalid))
     let flushedBid? : Option BatchId :=
       if shouldFlush then g.currentBatch.map Prod.fst else none
     let flushedFromPending : Bool :=
       flushedBid?.any (fun bid => (g.pendingReplacement.bind (splitAfterCloseBatchFor? bid)).isSome)
     let (g, popOuterIn) :=
-      if shouldFlush then g.flushDismissedPausedBatch savedForFlush popOuterIn
+      if shouldFlush then
+        g.flushDismissedPausedBatch savedForFlush popOuterIn
+          (hasDeferredRewind := rewindProposalIn.isSome)
       else (g, popOuterIn)
     if g.over then (g, true)
     else if flushedBid?.isSome && g.sbaPaused then
@@ -878,15 +889,18 @@ partial def checkSBACountedWithLeavesCore (g : Game)
   let entryPaused := g.sbaPaused
   let savedForFlush := if clearedInvalidLegend then none else savedIn
   let shouldFlush :=
-    clearedInvalidLegend ||
-      (!g.sbaPaused && g.pending == .none && g.currentBatch.isSome &&
-        savedForFlush.all g.batchPausePromptGoneOrInvalid)
+    !(rewindProposalIn.isSome && g.isPreProposalCheckpointBatch) &&
+      (clearedInvalidLegend ||
+        (!g.sbaPaused && g.pending == .none && g.currentBatch.isSome &&
+          savedForFlush.all g.batchPausePromptGoneOrInvalid))
   let flushedBid? : Option BatchId :=
     if shouldFlush then g.currentBatch.map Prod.fst else none
   let flushedFromPending : Bool :=
     flushedBid?.any (fun bid => (g.pendingReplacement.bind (splitAfterCloseBatchFor? bid)).isSome)
   let (g, popOuterIn) :=
-    if shouldFlush then g.flushDismissedPausedBatch savedForFlush popOuterIn
+    if shouldFlush then
+      g.flushDismissedPausedBatch savedForFlush popOuterIn
+        (hasDeferredRewind := rewindProposalIn.isSome)
     else (g, popOuterIn)
   if g.over then (g, shouldFlush, none, false, departedIn, none)
   else if flushedBid?.isSome && g.sbaPaused then
@@ -930,7 +944,7 @@ partial def checkSBACountedWithLeavesCore (g : Game)
       Option (Game × Bool × Option Pending × Bool × Array PlayerId × Option Bool) :=
     match rewindProposalIn with
     | some hadPreBodyCont =>
-      if !g.over && !g.sbaPaused && g.currentBatch.isNone then
+      if !g.over && !g.sbaPaused && (g.currentBatch.isNone || g.isPreProposalCheckpointBatch) then
         let (g', s', po') := g.applyDeferredProposalRewind savedIn popOuterIn departedIn hadPreBodyCont
         let (g'', didMore, savedOut, poOut, depOut, rwOut) :=
           g'.checkSBACountedWithLeavesCore s' po' departedIn none (deferRestore := deferRestore)
