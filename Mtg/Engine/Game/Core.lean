@@ -335,6 +335,7 @@ def applyChange (p : ProposedSpell) (c : ProposalChange) : ProposedSpell :=
   | .payLife v => { p with payLife := v }
   | .alternativeCost v => { p with alternativeCost := v }
   | .loyaltyPaid v => { p with loyaltyPaid := v }
+  | .fraCostPaid v => { p with fraCostPaid := v }
 
 end ProposedSpell
 
@@ -1671,27 +1672,337 @@ private def effectCreatedInfo? (g : Game) (eid : EffectId) : Option (Nat × Even
       | _ => pure ()
     return none
 
-private def isInitialMaterialize (g : Game) (oid : ObjectId) (matIdx : Nat) : Bool := Id.run do
-  let bound := min matIdx g.events.size
-  for j in [0:bound] do
-    match g.events[j]!.change with
-    | .engine (.materializeObject obj _) => if obj.id == oid then return false
-    | .engine (.object id _) => if id == oid then return false
-    | .rules (.zone (.created eo _))
-    | .rules (.zone (.ceasedToExist eo))
-    | .rules (.permanent (.tapped eo))
-    | .rules (.permanent (.untapped eo))
-    | .rules (.permanent (.phasedOut eo _))
-    | .rules (.permanent (.phasedIn eo _))
-    | .rules (.permanent (.transformed eo _))
+private def eventCauseReferencesObject : EventCause → ObjectId → Bool
+  | .costPayment _ _ forObj, oid => forObj == some oid
+  | .oneShotEffect _ src _, oid => src == some oid
+  | .replaced rep orig, oid =>
+    rep.object == some oid || rep.grantor == some oid ||
+      (match rep.kind with
+       | .entersUntappedBehold bid _ => bid == oid
+       | .entersAsCopyCreatureUntilEot tid => tid == oid
+       | .asEntersAttachAura hid => hid == oid
+       | _ => false) ||
+      eventCauseReferencesObject orig oid
+  | _, _ => false
+
+private def specReferencesObject (spec : ContinuousEffectSpec) (oid : ObjectId) : Bool :=
+  (match spec with
+   | .layered (.objects ids) _ _ => ids.contains oid
+   | .permission _ (.playFromExile id _) _
+   | .permission _ (.flashback id) _
+   | .permission _ (.colorlessGrant id _) _ => id == oid
+   | .gameRule (.cantUntap id _) _
+   | .gameRule (.cantBeBlockedByPlayer id _) _
+   | .gameRule (.cantBeBlockedExceptByHaste id) _
+   | .gameRule (.cantBlock id) _
+   | .gameRule (.uncounterable id) _
+   | .gameRule (.fraEmblem id) _ => id == oid
+   | .replacement r _ => r.id.object == some oid || r.id.grantor == some oid
+   | .prevention p _ => p.id.object == some oid || p.id.grantor == some oid
+   | _ => false) ||
+  match spec.duration with
+  | .whileSourceOnBattlefield src | .untilSourceLeaves src
+  | .whileSourceHasCounter src _ | .whileInZone src _ => src == oid
+  | _ => false
+
+private def gameChangeReferencesObject (ch : GameChange) (oid : ObjectId) : Bool :=
+  let proposalChangeRefs : ProposalChange → Bool
+    | .tapped ids | .teamworkCreatures ids => ids.contains oid
+    | .pushTapped id => id == oid
+    | _ => false
+  match ch with
+  | .engine (.materializeObject obj _) => obj.id == oid
+  | .engine (.object id oc) =>
+    id == oid ||
+      match oc with
+      | .linkedExile ids | .leaveTriggerExile ids => ids.contains oid
+      | .pushLinkedExile tid | .pushLeaveTriggerExile tid => tid == oid
+      | .exiledBy tid => tid == some oid
+      | _ => false
+  | .engine (.removeStackEntry id)
+  | .engine (.stackEntry id _) => id == oid
+  | .engine (.pushStack e) =>
+    e.objectId == oid || e.targets.any (fun
+      | .permanent tid | .card tid => tid == oid
+      | .player _ => false)
+  | .engine (.proposedSpell (some prop)) =>
+    prop.spellId == oid || prop.sourceId == some oid || prop.original.id == oid ||
+      prop.tapped.contains oid || prop.teamworkCreatures.contains oid
+  | .engine (.proposal pc) => proposalChangeRefs pc
+  | .engine (.proposalChanges pcs) => pcs.any proposalChangeRefs
+  | .engine (.pauseBatch _ _ objs _ effs pend stk) =>
+    objs.any (·.id == oid) || stk.any (·.objectId == oid) ||
+      effs.any (fun (_, sp) => specReferencesObject sp oid) ||
+      (match pend with
+       | .chooseReplacement _ rids => rids.any (fun r => r.object == some oid || r.grantor == some oid)
+       | .chooseLegend _ _ ids => ids.contains oid
+       | _ => false)
+  | .engine (.waitingTriggers wts)
+  | .engine (.enqueueWaitingTriggers wts) =>
+    wts.any (fun wt =>
+      wt.source.id == oid || wt.causeId == some oid || wt.causeIds.contains oid ||
+        wt.cause.any (·.id == oid))
+  | .engine (.queueLinkedExile ids) => ids.contains oid
+  | .engine (.replacementOrder rids) =>
+    rids.any (fun r => r.object == some oid || r.grantor == some oid)
+  | .engine (.pendingBlockerAssignments asgns) =>
+    asgns.any (fun a => a.source == oid || a.toCreatures.any (·.1 == oid))
+  | .engine (.pending p) =>
+    match p with
+    | .sacrificePermanent _ sid | .maySacrificeAnotherBolg _ sid | .payWard _ sid _ => sid == oid
+    | .chooseSacrificeCreature _ ids _ | .chooseLegend _ _ ids | .mayCastFromLooked _ ids _ =>
+      ids.contains oid
+    | .chooseLibraryPlacement _ (some id) | .payOrLetCounter _ _ (some id)
+    | .mayPutArtifactFromHand _ (some id) => id == oid
+    | .mayAttachEquipment _ hid sid => hid == oid || sid == some oid
+    | .mayHaveVillainConnive _ sid vid => sid == oid || vid == oid
+    | .mayCastExiledElseDamage _ cid _ sid => cid == oid || sid == some oid
+    | .chooseReplacement _ rids =>
+      rids.any (fun r => r.object == some oid || r.grantor == some oid)
+    | _ => false
+  | .rules (.zone (.created eo _))
+  | .rules (.zone (.ceasedToExist eo))
+  | .rules (.permanent (.tapped eo _))
+  | .rules (.permanent (.untapped eo))
+  | .rules (.permanent (.phasedOut eo _))
+  | .rules (.permanent (.phasedIn eo _))
+  | .rules (.permanent (.transformed eo _))
+  | .rules (.permanent (.turnedFaceUp eo))
+  | .rules (.permanent (.turnedFaceDown eo))
+  | .rules (.permanent (.counters (.object eo) ..))
+  | .rules (.permanent (.designation eo _ _)) => eo.id == some oid
+  | .rules (.permanent (.attached eo host prev)) =>
+    eo.id == some oid || host == oid || prev == some oid
+  | .rules (.permanent (.unattached eo fromHost)) =>
+    eo.id == some oid || fromHost == oid
+  | .rules (.zone (.moved before after ..)) =>
+    before.id == some oid || after.id == some oid
+  | .rules (.damage (.dealt pkts)) =>
+    pkts.any (fun pkt =>
+      pkt.source.id == some oid ||
+        match pkt.recipient with
+        | .permanent eo | .battle eo => eo.id == some oid
+        | .player _ => false)
+  | .rules (.damage (.marked id _)) => id == oid
+  | .rules (.damage (.markedCleared ids)) => ids.contains oid
+  | .rules (.damage (.prevented src rec _)) =>
+    src.id == some oid ||
+      match rec with
+      | .permanent eo | .battle eo => eo.id == some oid
+      | .player _ => false
+  | .rules (.combat (.attackersDeclared _ decls)) =>
+    decls.any (fun (eo, tgt) =>
+      eo.id == some oid ||
+        match tgt with
+        | .planeswalker pid | .battle pid => pid == oid
+        | .player _ => false)
+  | .rules (.combat (.becameAttacking eo tgt)) =>
+    eo.id == some oid ||
+      match tgt with
+      | .planeswalker pid | .battle pid => pid == oid
+      | .player _ => false
+  | .rules (.combat (.blockersDeclared _ decls)) =>
+    decls.any (fun (eo, aid) => eo.id == some oid || aid == oid)
+  | .rules (.combat (.becameBlocked eo blks)) =>
+    eo.id == some oid || blks.contains oid
+  | .rules (.combat (.remainedUnblocked eo))
+  | .rules (.combat (.removedFromCombat eo)) => eo.id == some oid
+  | .rules (.combat (.damageAssigned _ _ asgns)) =>
+    asgns.any (fun a => a.source == oid || a.toCreatures.any (·.1 == oid))
+  | .rules (.cast (.proposed obj ..)) => obj == oid
+  | .rules (.cast (.announced obj _ _ costs)) =>
+    obj == oid || costs.any (fun
+      | .teamwork ids => ids.contains oid
+      | .behold id | .sacrifice id | .discard id | .sneak id _ => id == oid
+      | _ => false)
+  | .rules (.cast (.targeted obj tgts ..)) =>
+    obj == oid || tgts.any (fun
+      | .permanent tid | .card tid => tid == oid
+      | .player _ => false)
+  | .rules (.cast (.spellCast spell ..)) => spell.id == some oid
+  | .rules (.cast (.abilityActivated ab src ..)) => ab == oid || src.id == some oid
+  | .rules (.triggerQueue (.triggered src _ _ _)) => src.id == some oid
+  | .rules (.triggerQueue (.putOnStack stObj src _ spec)) =>
+    stObj == oid || src.id == some oid || spec.sourceId == some oid ||
+      spec.fraCauseId == some oid || spec.fraCauseIds.contains oid
+  | .rules (.triggerQueue (.modeChosen src ..)) => src == oid
+  | .rules (.stackObject (.copied orig copy _)) => orig == oid || copy.id == some oid
+  | .rules (.stackObject (.resolved eo _ srcId _)) => eo.id == some oid || srcId == some oid
+  | .rules (.stackObject (.removedOnResolution eo)) => eo.id == some oid
+  | .rules (.player (.manaAdded _ units))
+  | .rules (.player (.manaEmptied _ units _)) => units.any (·.source == some oid)
+  | .rules (.player (.manaSpent _ units forObj)) =>
+    forObj == some oid || units.any (·.source == some oid)
+  | .rules (.player (.scried _ top bot ..)) => top.contains oid || bot.contains oid
+  | .rules (.player (.surveilled _ top gy ..)) => top.contains oid || gy.contains oid
+  | .rules (.player (.lookedAt _ cs))
+  | .rules (.player (.revealed _ cs))
+  | .rules (.player (.searched _ _ cs))
+  | .rules (.player (.shuffled _ cs))
+  | .rules (.player (.proliferated _ cs _)) => cs.contains oid
+  | .rules (.player (.ringTempted _ b _)) => b == some oid
+  | .rules (.player (.optionalOnceActed _ s)) => s == oid
+  | .rules (.continuousEffect (.created _ spec))
+  | .rules (.continuousEffect (.expired _ (some spec))) => specReferencesObject spec oid
+  | .rules (.delayedTrigger (.created dt))
+  | .rules (.delayedTrigger (.consumed dt))
+  | .rules (.delayedTrigger (.expired dt)) => dt.source.bind (·.id) == some oid
+  | _ => false
+
+private def gameChangeMaxIdAndTs (ch : GameChange) : Option Nat × Nat :=
+  let updOpt (a : Option Nat) (b : Option ObjectId) : Option Nat :=
+    match a, b with
+    | some x, some y => some (max x y.raw)
+    | none, some y => some y.raw
+    | x, none => x
+  let eoPair (eo : EventObject) : Option Nat × Nat :=
+    (eo.id.map (·.raw), 0)
+  let merge (p1 p2 : Option Nat × Nat) : Option Nat × Nat :=
+    (match p1.1, p2.1 with
+     | some x, some y => some (max x y)
+     | some x, none => some x
+     | none, y => y,
+     max p1.2 p2.2)
+  match ch with
+  | .engine (.materializeObject obj _) => (some obj.id.raw, obj.timestamp)
+  | .engine (.pauseBatch _ _ objs _ _ _ stk) =>
+    let pObjs := objs.foldl (fun acc o => merge acc (some o.id.raw, o.timestamp)) (none, 0)
+    stk.foldl (fun acc e => merge acc (some e.objectId.raw, 0)) pObjs
+  | .engine (.waitingTriggers wts)
+  | .engine (.enqueueWaitingTriggers wts) =>
+    wts.foldl (fun acc wt =>
+      let pSrc := (some wt.source.id.raw, wt.source.timestamp)
+      let pCause := match wt.cause with | some c => (some c.id.raw, c.timestamp) | none => (none, 0)
+      merge acc (merge pSrc pCause)) (none, 0)
+  | .engine (.object id _)
+  | .engine (.removeStackEntry id)
+  | .engine (.stackEntry id _) => (some id.raw, 0)
+  | .engine (.pushStack e) => (some e.objectId.raw, 0)
+  | .engine (.proposedSpell (some prop)) =>
+    (updOpt (some (max prop.spellId.raw prop.original.id.raw)) prop.sourceId, prop.original.timestamp)
+  | .rules (.zone (.created eo _))
+  | .rules (.zone (.ceasedToExist eo))
+  | .rules (.permanent (.tapped eo _))
+  | .rules (.permanent (.untapped eo))
+  | .rules (.permanent (.phasedOut eo _))
+  | .rules (.permanent (.phasedIn eo _))
+  | .rules (.permanent (.transformed eo _))
+  | .rules (.permanent (.turnedFaceUp eo))
+  | .rules (.permanent (.turnedFaceDown eo))
+  | .rules (.permanent (.counters (.object eo) ..))
+  | .rules (.permanent (.designation eo _ _))
+  | .rules (.combat (.becameAttacking eo _))
+  | .rules (.combat (.becameBlocked eo _))
+  | .rules (.combat (.remainedUnblocked eo))
+  | .rules (.combat (.removedFromCombat eo))
+  | .rules (.cast (.spellCast eo ..))
+  | .rules (.triggerQueue (.triggered eo ..))
+  | .rules (.stackObject (.resolved eo ..))
+  | .rules (.stackObject (.removedOnResolution eo)) => eoPair eo
+  | .rules (.permanent (.attached eo host prev)) =>
+    merge (eoPair eo) (updOpt (some host.raw) prev, 0)
+  | .rules (.permanent (.unattached eo fromHost)) =>
+    merge (eoPair eo) (some fromHost.raw, 0)
+  | .rules (.zone (.moved before after ..)) =>
+    merge (eoPair before) (eoPair after)
+  | .rules (.cast (.proposed obj ..))
+  | .rules (.cast (.announced obj ..))
+  | .rules (.cast (.targeted obj ..))
+  | .rules (.triggerQueue (.modeChosen obj ..)) => (some obj.raw, 0)
+  | .rules (.cast (.abilityActivated ab src ..)) =>
+    merge (some ab.raw, 0) (eoPair src)
+  | .rules (.triggerQueue (.putOnStack stObj src ..)) =>
+    merge (some stObj.raw, 0) (eoPair src)
+  | .rules (.stackObject (.copied orig copy _)) =>
+    merge (some orig.raw, 0) (eoPair copy)
+  | .rules (.damage (.dealt pkts)) =>
+    pkts.foldl (fun acc pkt =>
+      let rPair :=
+        match pkt.recipient with
+        | .permanent eo | .battle eo => eoPair eo
+        | .player _ => (none, 0)
+      merge acc (merge (eoPair pkt.source) rPair)) (none, 0)
+  | .rules (.damage (.marked id _)) => (some id.raw, 0)
+  | .rules (.damage (.markedCleared ids)) =>
+    ids.foldl (fun acc id => merge acc (some id.raw, 0)) (none, 0)
+  | .rules (.damage (.prevented src rec _)) =>
+    let rPair :=
+      match rec with
+      | .permanent eo | .battle eo => eoPair eo
+      | .player _ => (none, 0)
+    merge (eoPair src) rPair
+  | .rules (.combat (.attackersDeclared _ decls)) =>
+    decls.foldl (fun acc (eo, _) => merge acc (eoPair eo)) (none, 0)
+  | .rules (.combat (.blockersDeclared _ decls)) =>
+    decls.foldl (fun acc (eo, aid) => merge acc (merge (eoPair eo) (some aid.raw, 0))) (none, 0)
+  | .rules (.combat (.damageAssigned _ _ asgns)) =>
+    asgns.foldl (fun acc a =>
+      let cMax := a.toCreatures.foldl (fun m (cid, _) => max m cid.raw) a.source.raw
+      merge acc (some cMax, 0)) (none, 0)
+  | _ => (none, 0)
+
+private def postBoundObjectCreatedOrTsUpdated (g : Game) (bound : Nat) (otherId : ObjectId) :
+    Bool × Bool := Id.run do
+  let mut created := false
+  let mut tsUpdated := false
+  for i in [bound : g.events.size] do
+    match g.events[i]!.change with
+    | .engine (.materializeObject obj _) =>
+      if obj.id == otherId then
+        created := true
+        tsUpdated := true
+    | .rules (.zone (.created eo _)) =>
+      if eo.id == some otherId then
+        created := true
+        tsUpdated := true
+    | .rules (.zone (.moved _ after ..)) =>
+      if after.id == some otherId then
+        created := true
+        tsUpdated := true
     | .rules (.permanent (.turnedFaceUp eo))
     | .rules (.permanent (.turnedFaceDown eo))
-    | .rules (.permanent (.counters (.object eo) ..))
-    | .rules (.permanent (.attached eo _))
-    | .rules (.permanent (.unattached eo _)) => if eo.id == some oid then return false
-    | .rules (.zone (.moved before after ..)) =>
-      if before.id == some oid || after.id == some oid then return false
+    | .rules (.permanent (.transformed eo _))
+    | .rules (.permanent (.attached eo ..)) =>
+      if eo.id == some otherId then tsUpdated := true
+    | .rules (.cast (.proposed id ..)) =>
+      if id == otherId then
+        created := true
+        tsUpdated := true
+    | .rules (.cast (.spellCast eo ..)) =>
+      if eo.id == some otherId then tsUpdated := true
+    | .rules (.cast (.abilityActivated ab _ ..)) =>
+      if ab == otherId then
+        created := true
+        tsUpdated := true
+    | .rules (.triggerQueue (.putOnStack stObj ..)) =>
+      if stObj == otherId then
+        created := true
+        tsUpdated := true
+    | .rules (.stackObject (.copied _ copy _)) =>
+      if copy.id == some otherId then
+        created := true
+        tsUpdated := true
     | _ => pure ()
+  return (created, tsUpdated)
+
+private def isInitialMaterialize (g : Game) (oid : ObjectId) (matIdx : Nat) : Bool := Id.run do
+  let bound := min matIdx g.events.size
+  let matTs : Nat :=
+    match g.events[bound]? with
+    | some (.engine _ (.materializeObject obj _) _) => obj.timestamp
+    | _ => (g.findObject? oid).map (·.timestamp) |>.getD 0
+  for j in [0:bound] do
+    let ev := g.events[j]!
+    if gameChangeReferencesObject ev.change oid then return false
+    if ev.cause?.any (eventCauseReferencesObject · oid) then return false
+    let (maxId?, maxTs) := gameChangeMaxIdAndTs ev.change
+    if maxId?.any (· > oid.raw) then return false
+    if matTs > 0 && maxTs > matTs then return false
+  for other in g.objects do
+    if other.id != oid then
+      let (createdAfter, tsAfter) := postBoundObjectCreatedOrTsUpdated g bound other.id
+      if !createdAfter && other.id.raw > oid.raw then return false
+      if !createdAfter && !tsAfter && matTs > 0 && other.timestamp > matTs then return false
   return true
 
 def objectZoneAndPhasedOutAt? (g : Game) (oid : ObjectId) (evIdx : Nat) :
@@ -1765,8 +2076,9 @@ def latestPhaseOutIdxOf? (g : Game) (o : GameObject) : Option Nat :=
         if obj.id == o.id && obj.zone == .battlefield && obj.status.phasedOut &&
             !g.objectWasPhasedOutAt o i then
           return some i
-      | .rules (.zone (.moved _ after _ toZone ..)) =>
-        if after.id == some o.id && toZone == .battlefield && after.phasedOut then
+      | .rules (.zone (.moved before after _ toZone ..)) =>
+        if after.id == some o.id && toZone == .battlefield && after.phasedOut &&
+            (before.id != some o.id || !g.objectWasPhasedOutAt o i) then
           return some i
       | .rules (.zone (.created eo _)) =>
         if eo.id == some o.id && eo.zone == .battlefield && eo.phasedOut then
@@ -2238,19 +2550,23 @@ def applyTurnEvent (g : Game) (e : TurnEvent) : Game :=
     let (seats, seatsExtra) := g.currentSharedTurnState (some priorLimit)
     let team := g.teamMembers player
     let inProgress :=
-      if seatsExtra && !seats.isEmpty then
-        Id.run do
-          let mut seen := seats
-          let mut cnt := 0
-          let mut keepGoing := true
-          for q in g.extraTurns do
-            if keepGoing && g.areTeammates seats[0]! q && !seen.contains q then
-              seen := seen.push q
-              cnt := cnt + 1
-            else
-              keepGoing := false
-          return cnt
-      else 0
+      if !seatsExtra || seats.isEmpty then 0
+      else Id.run do
+        let curTeam := g.teamMembers seats[0]!
+        let lastSeat := seats.back!
+        let mut remIdx : Nat :=
+          match curTeam.findIdx? (· == lastSeat) with
+          | some k => k + 1
+          | none => curTeam.size
+        let mut cnt : Nat := 0
+        for q in g.extraTurns do
+          match (curTeam.extract remIdx curTeam.size).findIdx? (· == q) with
+          | some rel =>
+            remIdx := remIdx + rel + 1
+            cnt := cnt + 1
+          | none =>
+            return cnt
+        return cnt
     { g with
       extraTurns :=
         g.extraTurns.extract 0 inProgress ++ team ++
@@ -4031,6 +4347,30 @@ def activationsThisTurn (g : Game) (id : ObjectId) : Nat :=
         if src.id == some id then n + 1 else n
       | _ => n) 0
 
+/-- Count how many leading `(PlayerId, α)` or `PlayerId` entries in `queued`
+belong to the remaining seats of the currently in-progress shared extra turn
+(`seatsExtra && !seats.isEmpty`), matched as an ordered subsequence of
+`g.teamMembers seats[0]!` strictly after `seats.back!` (CR 500.7 / 805.8 / 810.2). -/
+def countInProgressSharedExtraSeats (g : Game) (seats : Array PlayerId) (seatsExtra : Bool)
+    (queued : Array PlayerId) : Nat :=
+  if !seatsExtra || seats.isEmpty then 0
+  else Id.run do
+    let curTeam := g.teamMembers seats[0]!
+    let lastSeat := seats.back!
+    let mut remIdx : Nat :=
+      match curTeam.findIdx? (· == lastSeat) with
+      | some k => k + 1
+      | none => curTeam.size
+    let mut cnt : Nat := 0
+    for q in queued do
+      match (curTeam.extract remIdx curTeam.size).findIdx? (· == q) with
+      | some rel =>
+        remIdx := remIdx + rel + 1
+        cnt := cnt + 1
+      | none =>
+        return cnt
+    return cnt
+
 /-- Indices of activated abilities of `id` activated this turn (CR 602.5b). -/
 def abilitiesActivatedThisTurn (g : Game) (id : ObjectId) : Array Nat :=
   g.events.foldl (fun acc e =>
@@ -4038,7 +4378,7 @@ def abilitiesActivatedThisTurn (g : Game) (id : ObjectId) : Array Nat :=
     else
       match e.change with
       | .rules (.cast (.abilityActivated _ src _ (.nonMana _ _ _ _ (some idx) _)))
-      | .rules (.cast (.abilityActivated _ src _ (.mana (some idx)))) =>
+      | .rules (.cast (.abilityActivated _ src _ (.mana (some idx) ..))) =>
         if src.id == some id then acc.push idx else acc
       | _ => acc) #[]
 
@@ -4068,7 +4408,8 @@ def powerUpActivations (g : Game) (id : ObjectId) : Nat :=
       if after.id == some id then 0 else n
     | .rules (.zone (.created obj _)) =>
       if obj.zone == .battlefield && obj.id == some id then 0 else n
-    | .rules (.cast (.abilityActivated _ src _ (.nonMana _ _ true ..))) =>
+    | .rules (.cast (.abilityActivated _ src _ (.nonMana _ _ true ..)))
+    | .rules (.cast (.abilityActivated _ src _ (.mana _ true _))) =>
       if src.id == some id then n + 1 else n
     | _ => n) 0
 
@@ -4084,7 +4425,8 @@ def exhaustUsed (g : Game) (id : ObjectId) : Bool :=
       if after.id == some id then false else used
     | .rules (.zone (.created obj _)) =>
       if obj.zone == .battlefield && obj.id == some id then false else used
-    | .rules (.cast (.abilityActivated _ src _ (.nonMana _ _ _ _ _ true))) =>
+    | .rules (.cast (.abilityActivated _ src _ (.nonMana _ _ _ _ _ true)))
+    | .rules (.cast (.abilityActivated _ src _ (.mana _ _ true))) =>
       used || src.id == some id
     | _ => used) false
 
@@ -5327,6 +5669,8 @@ private structure HistoricalSliceState where
   rc : Option PlayerId
   zs : Array (ObjectId × Zone)
   phs : Array (ObjectId × Bool)
+  atts : Array (ObjectId × Option ObjectId)
+  missingInfo : Array (ObjectId × EventObject)
   ls : Array (PlayerId × Bool)
   lefts : Array (PlayerId × Bool)
 
@@ -5342,18 +5686,35 @@ private def setHistPhased (ps : Array (ObjectId × Bool)) (oid : ObjectId) (ph :
   | some k => ps.set! k (oid, ph)
   | none => ps.push (oid, ph)
 
+private def setHistAtt (as : Array (ObjectId × Option ObjectId)) (oid : ObjectId)
+    (att : Option ObjectId) : Array (ObjectId × Option ObjectId) :=
+  match as.findIdx? (·.1 == oid) with
+  | some k => as.set! k (oid, att)
+  | none => as.push (oid, att)
+
+private def setHistMissingInfo (ms : Array (ObjectId × EventObject)) (oid : ObjectId)
+    (eo : EventObject) : Array (ObjectId × EventObject) :=
+  match ms.findIdx? (·.1 == oid) with
+  | some k =>
+    let cur := ms[k]!.2
+    let merged := if eo.printed.isSome || cur.printed.isNone then eo else { eo with printed := cur.printed }
+    ms.set! k (oid, merged)
+  | none => ms.push (oid, eo)
+
 private def setHistPlFlag (ls : Array (PlayerId × Bool)) (pid : PlayerId) (v : Bool) :
     Array (PlayerId × Bool) :=
   match ls.findIdx? (·.1 == pid) with
   | some k => ls.set! k (pid, v)
   | none => ls.push (pid, v)
 
+private def addTrackedCounterPair (acc : Array (ObjectId × CounterKind))
+    (sid : ObjectId) (k : CounterKind) : Array (ObjectId × CounterKind) :=
+  if acc.contains (sid, k) then acc else acc.push (sid, k)
+
 private def addTrackedCounterSource (acc : Array (ObjectId × CounterKind))
     (spec : ContinuousEffectSpec) : Array (ObjectId × CounterKind) :=
   match spec with
-  | .layered _ (.control _) (.whileSourceHasCounter src k)
-  | .layered _ (.copy _) (.whileSourceHasCounter src k) =>
-    if acc.contains (src, k) then acc else acc.push (src, k)
+  | .layered _ _ (.whileSourceHasCounter src k) => addTrackedCounterPair acc src k
   | _ => acc
 
 private def insertPreLogEffectById (effs : Array (EffectId × ContinuousEffectSpec))
@@ -5365,7 +5726,7 @@ private def insertPreLogEffectById (effs : Array (EffectId × ContinuousEffectSp
       (effs.extract 0 idx |>.push (eid, spec)) ++ effs.extract idx effs.size
     | none => effs.push (eid, spec)
 
-private def preLogEffectsAndCounterSources (g : Game) :
+private def preLogEffectsAndCounterSources (g : Game) (targetId? : Option ObjectId := none) :
     Array (EffectId × ContinuousEffectSpec) × Array (ObjectId × CounterKind) := Id.run do
   let mut createdIds : Array EffectId := #[]
   let mut expiredCandidates : Array (EffectId × ContinuousEffectSpec) := #[]
@@ -5380,6 +5741,10 @@ private def preLogEffectsAndCounterSources (g : Game) :
       counterSources := addTrackedCounterSource counterSources spec
       if !expiredCandidates.any (·.1 == eid) then
         expiredCandidates := expiredCandidates.push (eid, spec)
+    | .rules (.permanent (.counters (.object eo) k ..)) =>
+      if let some sid := eo.id then
+        if targetId? == some sid || k == .lore then
+          counterSources := addTrackedCounterPair counterSources sid k
     | _ => pure ()
   let survivingPreLog := g.activeEffects.filter (fun (eid, _) => !createdIds.contains eid)
   let initEffects :=
@@ -5390,7 +5755,7 @@ private def preLogEffectsAndCounterSources (g : Game) :
   return (initEffects, counterSources)
 
 private def initHistoricalSlice (g : Game) (o : GameObject) : HistoricalSliceState := Id.run do
-  let (initEffects, counterSources) := preLogEffectsAndCounterSources g
+  let (initEffects, counterSources) := preLogEffectsAndCounterSources g (some o.id)
   let mut z0 : Zone := o.zone
   let mut fd0 := o.status.faceDown
   let mut ph0 := o.status.phasedOut
@@ -5400,6 +5765,8 @@ private def initHistoricalSlice (g : Game) (o : GameObject) : HistoricalSliceSta
   let mut rc0 := o.controller
   let mut objZones : Array (ObjectId × Zone) := #[]
   let mut objPhased : Array (ObjectId × Bool) := #[]
+  let mut objAtts : Array (ObjectId × Option ObjectId) := #[]
+  let mut missingInfo : Array (ObjectId × EventObject) := #[]
   let mut plLost : Array (PlayerId × Bool) := #[]
   let mut plLeft : Array (PlayerId × Bool) := #[]
   for rev in [0:g.events.size] do
@@ -5419,6 +5786,12 @@ private def initHistoricalSlice (g : Game) (o : GameObject) : HistoricalSliceSta
               { p with isToken := true, otherFace := p.otherFace.map ({ · with isToken := true }) }
             else p
         tr0 := eo.transformed
+    | .rules (.permanent (.attached eo _ prev)) =>
+      if let some aid := eo.id then
+        objAtts := setHistAtt objAtts aid prev
+    | .rules (.permanent (.unattached eo prevHost)) =>
+      if let some aid := eo.id then
+        objAtts := setHistAtt objAtts aid (some prevHost)
     | .rules (.permanent (.phasedOut eo _)) =>
       if eo.id == some o.id then ph0 := false
       if let some pid := eo.id then
@@ -5431,72 +5804,98 @@ private def initHistoricalSlice (g : Game) (o : GameObject) : HistoricalSliceSta
       if eo.id == some o.id then
         z0 := eo.zone
         ph0 := eo.zone == .battlefield && eo.phasedOut
+        fd0 := eo.zone == .battlefield && eo.faceDown
+        dc0 := if eo.zone == .battlefield then dc0.orElse (fun _ => eo.controller) else none
+        rc0 := rc0.orElse (fun _ => eo.controller)
         let prevTr := eo.zone == .battlefield && eo.transformed
         if tr0 != prevTr then pr0 := swapCardFace pr0
+        if let some p := eo.printed then
+          if p.otherFace.isSome || pr0.otherFace.isNone then
+            pr0 :=
+              if eo.token && !p.isToken then
+                { p with isToken := true, otherFace := p.otherFace.map ({ · with isToken := true }) }
+              else p
         tr0 := prevTr
       if let some cid := eo.id then
         objZones := setHistZone objZones cid eo.zone
-        objPhased := setHistPhased objPhased cid eo.phasedOut
+        objPhased := setHistPhased objPhased cid (eo.zone == .battlefield && eo.phasedOut)
+        objAtts := setHistAtt objAtts cid (if eo.zone == .battlefield then eo.attachedTo else none)
+        missingInfo := setHistMissingInfo missingInfo cid eo
     | .rules (.zone (.moved before after fromZ toZ ..)) =>
-      if after.id == some o.id then
-        z0 := fromZ
-        ph0 := if before.id == some o.id then before.phasedOut else false
-        if toZ == .battlefield then
-          fd0 := after.faceDown
-          dc0 := after.controller
-          rc0 := after.controller
-        if before.id != some o.id then
-          let newTr := toZ == .battlefield && after.transformed
-          if tr0 != newTr then pr0 := swapCardFace pr0
-          tr0 := newTr
+      if after.id == some o.id && before.id != some o.id then
+        z0 := .outside after.owner
+        ph0 := false
+        fd0 := false
+        dc0 := none
+        rc0 := none
+        let newTr := toZ == .battlefield && after.transformed
+        if tr0 != newTr then pr0 := swapCardFace pr0
+        tr0 := newTr
       if before.id == some o.id then
         z0 := fromZ
         ph0 := before.phasedOut
+        fd0 := fromZ == .battlefield && before.faceDown
+        dc0 := if fromZ == .battlefield then dc0.orElse (fun _ => before.controller) else none
+        rc0 := rc0.orElse (fun _ => before.controller)
         let prevTr := fromZ == .battlefield && before.transformed
         if tr0 != prevTr then pr0 := swapCardFace pr0
         if let some p := before.printed then
-          pr0 :=
-            if before.token && !p.isToken then
-              { p with isToken := true, otherFace := p.otherFace.map ({ · with isToken := true }) }
-            else p
+          if p.otherFace.isSome || pr0.otherFace.isNone then
+            pr0 :=
+              if before.token && !p.isToken then
+                { p with isToken := true, otherFace := p.otherFace.map ({ · with isToken := true }) }
+              else p
         tr0 := prevTr
       if let some bid := before.id then
         objZones := setHistZone objZones bid fromZ
-        objPhased := setHistPhased objPhased bid before.phasedOut
+        objPhased := setHistPhased objPhased bid (fromZ == .battlefield && before.phasedOut)
+        objAtts := setHistAtt objAtts bid (if fromZ == .battlefield then before.attachedTo else none)
+        missingInfo := setHistMissingInfo missingInfo bid before
       if let some aid := after.id then
         if before.id != some aid then
-          objZones := setHistZone objZones aid fromZ
+          objZones := setHistZone objZones aid (.outside after.owner)
           objPhased := setHistPhased objPhased aid false
-    | .rules (.zone (.created eo c)) =>
+          objAtts := setHistAtt objAtts aid none
+    | .rules (.zone (.created eo _)) =>
       if eo.id == some o.id then
         z0 := .outside o.owner
         ph0 := false
+        fd0 := false
+        dc0 := none
+        rc0 := none
         let newTr := eo.zone == .battlefield && eo.transformed
         if tr0 != newTr then pr0 := swapCardFace pr0
         tr0 := newTr
-        if eo.zone == .battlefield then
-          let c' := eo.controller.orElse (fun _ => some c)
-          fd0 := eo.faceDown
-          dc0 := c'
-          rc0 := c'
       if let some eid := eo.id then
         objZones := setHistZone objZones eid (.outside eo.owner)
         objPhased := setHistPhased objPhased eid false
+        objAtts := setHistAtt objAtts eid none
+        missingInfo := setHistMissingInfo missingInfo eid eo
     | .engine (.materializeObject obj _) =>
+      let synthEo : EventObject :=
+        { id := some obj.id
+          owner := obj.owner
+          controller := obj.controller
+          zone := obj.zone
+          phasedOut := obj.status.phasedOut
+          faceDown := obj.status.faceDown
+          transformed := obj.status.transformed
+          attachedTo := obj.attachedTo
+          token := obj.printed.isToken
+          printed := some obj.printed }
+      missingInfo := setHistMissingInfo missingInfo obj.id synthEo
       if g.isInitialMaterialize obj.id idx then
         if obj.id == o.id then
           z0 := .outside obj.owner
           ph0 := false
-          fd0 := obj.status.faceDown
+          fd0 := false
           pr0 := obj.printed
           tr0 := obj.status.transformed
-          dc0 :=
-            if obj.zone == .battlefield then
-              obj.defaultController.orElse (fun _ => obj.controller)
-            else none
-          rc0 := obj.controller
+          dc0 := none
+          rc0 := none
         objZones := setHistZone objZones obj.id (.outside obj.owner)
         objPhased := setHistPhased objPhased obj.id false
+        objAtts := setHistAtt objAtts obj.id none
     | .rules (.player (.lost p _)) =>
       plLost := setHistPlFlag plLost p false
     | .rules (.player (.leftGame p)) =>
@@ -5515,6 +5914,8 @@ private def initHistoricalSlice (g : Game) (o : GameObject) : HistoricalSliceSta
     rc := rc0
     zs := objZones
     phs := objPhased
+    atts := objAtts
+    missingInfo := missingInfo
     ls := plLost
     lefts := plLeft
   }
@@ -5527,7 +5928,7 @@ private def stepHistoricalSlice (o : GameObject) (st : HistoricalSliceState)
   | .rules (.continuousEffect (.created eid spec)) =>
     s := { s with effs := s.effs.push (eid, spec) }
     match spec with
-    | .layered _ (.control _) _ | .layered _ (.copy _) _ => dirty := true
+    | .layered .. => dirty := true
     | _ => pure ()
   | .rules (.continuousEffect (.expired eid _)) =>
     if s.effs.any (·.1 == eid) then
@@ -5546,8 +5947,16 @@ private def stepHistoricalSlice (o : GameObject) (st : HistoricalSliceState)
       let pr' := if s.tr != nowBackFace then swapCardFace s.pr else s.pr
       s := { s with pr := pr', tr := nowBackFace }
       dirty := true
+  | .rules (.permanent (.attached eo host _)) =>
+    if let some aid := eo.id then
+      s := { s with atts := setHistAtt s.atts aid (some host) }
+      dirty := true
+  | .rules (.permanent (.unattached eo _)) =>
+    if let some aid := eo.id then
+      s := { s with atts := setHistAtt s.atts aid none }
+      dirty := true
   | .rules (.permanent (.counters (.object eo) k _ _)) =>
-    if eo.id.any (fun sid => s.counterSources.contains (sid, k)) then
+    if eo.id == some o.id || eo.id.any (fun sid => s.counterSources.contains (sid, k)) then
       dirty := true
   | .rules (.permanent (.phasedOut eo _)) =>
     if let some pid := eo.id then
@@ -5567,59 +5976,80 @@ private def stepHistoricalSlice (o : GameObject) (st : HistoricalSliceState)
     if let some cid := eo.id then
       s := { s with
         zs := setHistZone s.zs cid (.outside eo.owner)
-        phs := setHistPhased s.phs cid false }
+        phs := setHistPhased s.phs cid false
+        atts := setHistAtt s.atts cid none }
       dirty := true
     if eo.id == some o.id then
       let pr' := if s.tr then swapCardFace s.pr else s.pr
-      s := { s with z := .outside eo.owner, ph := false, pr := pr', tr := false }
+      s := { s with z := .outside eo.owner, ph := false, fd := false, pr := pr', tr := false, dc := none, rc := none }
       dirty := true
   | .rules (.zone (.moved before after _ toZ ..)) =>
     if let some bid := before.id then
-      s := { s with
-        zs := setHistZone s.zs bid toZ
-        phs := setHistPhased s.phs bid false }
-      dirty := true
+      if after.id != some bid then
+        s := { s with
+          zs := setHistZone s.zs bid (.outside before.owner)
+          phs := setHistPhased s.phs bid false
+          atts := setHistAtt s.atts bid none }
+        dirty := true
     if let some aid := after.id then
       s := { s with
         zs := setHistZone s.zs aid toZ
-        phs := setHistPhased s.phs aid (toZ == .battlefield && after.phasedOut) }
+        phs := setHistPhased s.phs aid (toZ == .battlefield && after.phasedOut)
+        atts := setHistAtt s.atts aid (if toZ == .battlefield then after.attachedTo else none)
+        missingInfo := setHistMissingInfo s.missingInfo aid after }
       dirty := true
-    if before.id == some o.id || after.id == some o.id then
-      let newPh := after.id == some o.id && toZ == .battlefield && after.phasedOut
-      let newTr := after.id == some o.id && toZ == .battlefield && after.transformed
+    if before.id == some o.id && after.id != some o.id then
+      let pr' := if s.tr then swapCardFace s.pr else s.pr
+      s := { s with z := .outside before.owner, ph := false, fd := false, pr := pr', tr := false, dc := none, rc := none }
+      dirty := true
+    else if after.id == some o.id then
+      let newPh := toZ == .battlefield && after.phasedOut
+      let newTr := toZ == .battlefield && after.transformed
       let mut pr' := if s.tr != newTr then swapCardFace s.pr else s.pr
-      if after.id == some o.id then
-        if let some p := after.printed then
-          if p.otherFace.isSome || pr'.otherFace.isNone then
-            pr' :=
-              if after.token && !p.isToken then
-                { p with isToken := true, otherFace := p.otherFace.map ({ · with isToken := true }) }
-              else p
-      s := { s with z := toZ, ph := newPh, pr := pr', tr := newTr }
-      dirty := true
-    if after.id == some o.id && toZ == .battlefield then
-      s := { s with fd := after.faceDown, dc := after.controller, rc := after.controller }
+      if let some p := after.printed then
+        if p.otherFace.isSome || pr'.otherFace.isNone then
+          pr' :=
+            if after.token && !p.isToken then
+              { p with isToken := true, otherFace := p.otherFace.map ({ · with isToken := true }) }
+            else p
+      let newFd := toZ == .battlefield && after.faceDown
+      let newDc := if toZ == .battlefield then after.controller else none
+      s := { s with z := toZ, ph := newPh, fd := newFd, pr := pr', tr := newTr, dc := newDc, rc := after.controller }
       dirty := true
   | .rules (.zone (.created eo c)) =>
     if let some eid := eo.id then
       s := { s with
         zs := setHistZone s.zs eid eo.zone
-        phs := setHistPhased s.phs eid (eo.zone == .battlefield && eo.phasedOut) }
+        phs := setHistPhased s.phs eid (eo.zone == .battlefield && eo.phasedOut)
+        atts := setHistAtt s.atts eid (if eo.zone == .battlefield then eo.attachedTo else none)
+        missingInfo := setHistMissingInfo s.missingInfo eid eo }
       dirty := true
     if eo.id == some o.id then
       let newPh := eo.zone == .battlefield && eo.phasedOut
       let newTr := eo.zone == .battlefield && eo.transformed
       let pr' := if s.tr != newTr then swapCardFace s.pr else s.pr
-      s := { s with z := eo.zone, ph := newPh, pr := pr', tr := newTr }
-      dirty := true
-    if eo.id == some o.id && eo.zone == .battlefield then
       let c' := eo.controller.orElse (fun _ => some c)
-      s := { s with fd := eo.faceDown, dc := c', rc := c' }
+      let newFd := eo.zone == .battlefield && eo.faceDown
+      let newDc := if eo.zone == .battlefield then c' else none
+      s := { s with z := eo.zone, ph := newPh, fd := newFd, pr := pr', tr := newTr, dc := newDc, rc := c' }
       dirty := true
   | .engine (.materializeObject obj _) =>
+    let synthEo : EventObject :=
+      { id := some obj.id
+        owner := obj.owner
+        controller := obj.controller
+        zone := obj.zone
+        phasedOut := obj.status.phasedOut
+        faceDown := obj.status.faceDown
+        transformed := obj.status.transformed
+        attachedTo := obj.attachedTo
+        token := obj.printed.isToken
+        printed := some obj.printed }
     s := { s with
       zs := setHistZone s.zs obj.id obj.zone
-      phs := setHistPhased s.phs obj.id (obj.zone == .battlefield && obj.status.phasedOut) }
+      phs := setHistPhased s.phs obj.id (obj.zone == .battlefield && obj.status.phasedOut)
+      atts := setHistAtt s.atts obj.id (if obj.zone == .battlefield then obj.attachedTo else none)
+      missingInfo := setHistMissingInfo s.missingInfo obj.id synthEo }
     dirty := true
     if obj.id == o.id then
       s := { s with
@@ -5655,6 +6085,12 @@ private def mkHistoricalGameAt (g : Game) (o : GameObject) (s : HistoricalSliceS
           obj.status.counters
       if bag == obj.status.counters then obj
       else { obj with status := { obj.status with counters := bag } }
+  let oAtt :=
+    if s.z == .battlefield then
+      match s.atts.find? (·.1 == o.id) with
+      | some (_, v) => v
+      | none => o.attachedTo
+    else none
   let oAt : GameObject :=
     applyTrackedCounters
       { o with
@@ -5662,20 +6098,49 @@ private def mkHistoricalGameAt (g : Game) (o : GameObject) (s : HistoricalSliceS
         zone := s.z
         defaultController := s.dc
         controller := s.rc
+        attachedTo := oAtt
         status := { o.status with faceDown := s.fd, phasedOut := s.ph, transformed := s.tr } }
   let objsAt0 := g.objects.map fun obj =>
     if obj.id == o.id then oAt
     else
       let z := (s.zs.find? (·.1 == obj.id)).map Prod.snd |>.getD obj.zone
       let pOut := (s.phs.find? (·.1 == obj.id)).map Prod.snd |>.getD obj.status.phasedOut
-      applyTrackedCounters { obj with zone := z, status := { obj.status with phasedOut := pOut } }
+      let attTo :=
+        if z == .battlefield then
+          match s.atts.find? (·.1 == obj.id) with
+          | some (_, v) => v
+          | none => obj.attachedTo
+        else none
+      applyTrackedCounters
+        { obj with
+          zone := z
+          attachedTo := attTo
+          status := { obj.status with phasedOut := pOut } }
   let missingObjs := s.zs.filterMap fun (zid, z) =>
     let nonOutside := match z with | .outside _ => false | _ => true
     if nonOutside && !objsAt0.any (·.id == zid) then
       let pOut := z == .battlefield && ((s.phs.find? (·.1 == zid)).map Prod.snd |>.getD false)
+      let attTo :=
+        if z == .battlefield then ((s.atts.find? (·.1 == zid)).map Prod.snd).join else none
+      let info? := (s.missingInfo.find? (·.1 == zid)).map Prod.snd
+      let pr : CardDef :=
+        match info?.bind (·.printed) with
+        | some p =>
+          if info?.any (·.token) && !p.isToken then
+            { p with isToken := true, otherFace := p.otherFace.map ({ · with isToken := true }) }
+          else p
+        | none => { name := "", types := #[] }
+      let own := (info?.map (·.owner)).getD o.owner
+      let ctrl := info?.bind (·.controller)
+      let fd := z == .battlefield && info?.any (·.faceDown)
+      let tr := z == .battlefield && info?.any (·.transformed)
       some (applyTrackedCounters
-        ({ id := zid, printed := { name := "", types := #[] }, owner := o.owner,
-           zone := z, status := { phasedOut := pOut } } : GameObject))
+        ({ id := zid, printed := pr, owner := own,
+           defaultController := if z == .battlefield then ctrl else none,
+           controller := ctrl,
+           attachedTo := attTo,
+           zone := z,
+           status := { phasedOut := pOut, faceDown := fd, transformed := tr } } : GameObject))
     else none
   let objsAt := objsAt0 ++ missingObjs
   let plsAt := g.players.map fun pl =>
@@ -5719,13 +6184,7 @@ def hasSummoningSickness (g : Game) (o : GameObject) : Bool :=
           | some tsIdx => tsIdx + 1
           | none => 0
         let counterSourcesAtNow : Array (ObjectId × CounterKind) :=
-          g.events.foldl (fun acc ev =>
-            match ev.change with
-            | .rules (.continuousEffect (.created _ spec))
-            | .rules (.continuousEffect (.expired _ (some spec))) =>
-              addTrackedCounterSource acc spec
-            | _ => acc)
-            (g.activeEffects.foldl (fun acc (_, spec) => addTrackedCounterSource acc spec) #[])
+          (preLogEffectsAndCounterSources g (some o.id)).2
         let mut sawUnoverriddenArrival : Bool := false
         let mut overrideIdx? : Option Nat := none
         let mut sawWindowCtrlChange : Bool := false
@@ -5753,8 +6212,7 @@ def hasSummoningSickness (g : Game) (o : GameObject) : Bool :=
               sawUnoverriddenArrival := true
           | .rules (.continuousEffect (.created _ spec)) =>
             match spec with
-            | .layered _ (.control _) _ | .layered _ (.copy _) _ =>
-              sawWindowCtrlChange := true
+            | .layered .. => sawWindowCtrlChange := true
             | _ => pure ()
           | .rules (.continuousEffect (.expired eid spec?)) =>
             if spec?.any isCtrlOrCopyEffectSpec || g.isCtrlOrCopyEffectId eid then
@@ -5764,8 +6222,11 @@ def hasSummoningSickness (g : Game) (o : GameObject) : Bool :=
           | .rules (.permanent (.transformed eo _)) =>
             if eo.id == some o.id then
               sawWindowCtrlChange := true
+          | .rules (.permanent (.attached ..))
+          | .rules (.permanent (.unattached ..)) =>
+            sawWindowCtrlChange := true
           | .rules (.permanent (.counters (.object eo) k _ _)) =>
-            if eo.id.any (fun sid => counterSourcesAtNow.contains (sid, k)) then
+            if eo.id == some o.id || eo.id.any (fun sid => counterSourcesAtNow.contains (sid, k)) then
               sawWindowCtrlChange := true
           | .rules (.permanent (.phasedOut ..))
           | .rules (.permanent (.phasedIn ..)) =>
@@ -6014,7 +6475,7 @@ def applyCastEvent (g : Game) (e : CastEvent) : Game :=
           nextObjectId := max g.nextObjectId (ability.raw + 1)
           timestamp := max g.timestamp ts
           consecutivePasses := 0 }
-    | .mana _ => g
+    | .mana .. => g
 
 /-- Process one `RulesEvent` in isolation. -/
 def applyRulesEvent (g : Game) (r : RulesEvent) : Game :=
@@ -6043,6 +6504,10 @@ def controlChanged (g : Game) (o : GameObject) : Bool :=
   if g.controllerOf o != some defCtrl ||
       (o.controller.isSome && o.controller != some defCtrl) ||
       !(g.appliedControlEffectIds o).isEmpty ||
+      g.activeEffects.any (fun (_, sp) =>
+        match sp with
+        | .layered (.objects ids) (.control _) _ => ids.contains o.id
+        | _ => false) ||
       g.events.any (fun ev =>
         match ev.change with
         | .rules (.continuousEffect (.created _ (.layered (.objects ids) (.control _) _)))
@@ -6053,36 +6518,65 @@ def controlChanged (g : Game) (o : GameObject) : Bool :=
   else if !o.isBattlefieldObject then
     false
   else
-    let hasFilterCtrl := g.events.any fun ev =>
-      match ev.change with
-      | .rules (.continuousEffect (.created _ (.layered sc (.control _) _)))
-      | .rules (.continuousEffect (.expired _ (some (.layered sc (.control _) _)))) =>
-        match sc with
-        | .objects _ => false
-        | _ => true
+    let isFilterCtrlSpec (sp : ContinuousEffectSpec) : Bool :=
+      match sp with
+      | .layered (.objects _) (.control _) _ => false
+      | .layered _ (.control _) _ => true
       | _ => false
+    let hasFilterCtrl :=
+      g.activeEffects.any (fun (_, sp) => isFilterCtrlSpec sp) ||
+      g.events.any fun ev =>
+        match ev.change with
+        | .rules (.continuousEffect (.created _ sp))
+        | .rules (.continuousEffect (.expired _ (some sp))) => isFilterCtrlSpec sp
+        | .rules (.continuousEffect (.expired eid none)) => g.isCtrlOrCopyEffectId eid
+        | _ => false
     if !hasFilterCtrl then false
     else Id.run do
-      let arrivedInEvents := g.events.any fun ev =>
-        match ev.change with
-        | .engine (.materializeObject obj _) => obj.id == o.id && obj.zone == .battlefield
-        | .rules (.zone (.moved _ after _ .battlefield ..)) => after.id == some o.id
-        | .rules (.zone (.created eo _)) => eo.id == some o.id && eo.zone == .battlefield
-        | _ => false
-      let mut gSim : Game :=
-        if arrivedInEvents then
-          { players := g.players.map (fun pl => { id := pl.id, name := pl.name }) }
+      let init := initHistoricalSlice g o
+      let mut arrivalSlice : Nat := 0
+      let mut curZ := init.z
+      for i in [0 : g.events.size] do
+        match g.events[i]!.change with
+        | .rules (.zone (.moved before after fromZ toZ ..)) =>
+          if before.id == some o.id && after.id != some o.id then
+            curZ := .outside before.owner
+          else if after.id == some o.id then
+            if toZ == .battlefield &&
+                (curZ != .battlefield || before.id != some o.id || fromZ != .battlefield) then
+              arrivalSlice := i + 1
+            curZ := toZ
+        | .rules (.zone (.created eo _)) =>
+          if eo.id == some o.id then
+            if eo.zone == .battlefield then
+              arrivalSlice := i + 1
+            curZ := eo.zone
+        | .rules (.zone (.ceasedToExist eo)) =>
+          if eo.id == some o.id then
+            curZ := .outside eo.owner
+        | .engine (.materializeObject obj _) =>
+          if obj.id == o.id then
+            if obj.zone == .battlefield &&
+                (curZ != .battlefield || g.isInitialMaterialize obj.id i) then
+              arrivalSlice := i + 1
+            curZ := obj.zone
+        | _ => pure ()
+      let checkSlice (slice : HistoricalSliceState) (evLen : Nat) : Bool :=
+        if slice.z != .battlefield then false
         else
-          { g with
-            activeEffects := (preLogEffectsAndCounterSources g).1
-            events := #[] }
-      for ev in g.events do
-        gSim := ({ gSim with events := gSim.events.push ev }).applyChange ev.change
-        if let some oSim := gSim.findObject? o.id then
-          if oSim.isBattlefieldObject then
-            let simDef := oSim.defaultController.getD oSim.owner
-            if gSim.controllerOf oSim != some simDef || !(gSim.appliedControlEffectIds oSim).isEmpty then
-              return true
+          let (gAt, oAt) := mkHistoricalGameAt g o slice evLen
+          let defAt := oAt.defaultController.getD oAt.owner
+          gAt.controllerOf oAt != some defAt || !(gAt.appliedControlEffectIds oAt).isEmpty
+      if arrivalSlice == 0 && checkSlice init 0 then
+        return true
+      let mut cur := init
+      for i in [0 : g.events.size] do
+        let (next, dirty) := stepHistoricalSlice o cur g.events[i]!.change
+        cur := next
+        let sliceIdx := i + 1
+        if sliceIdx == arrivalSlice || (sliceIdx > arrivalSlice && dirty) then
+          if checkSlice cur sliceIdx then
+            return true
       return false
 
 /-- Generic mana each creature must pay to attack `defender` (Dáin). -/
@@ -6350,7 +6844,8 @@ def ancestryManaSpentOn (g : Game) (spellId : ObjectId) : Bool :=
         fromBattlefieldLki srcId
     | none =>
       fromBattlefieldLki srcId
-  g.events.any fun e =>
+  let preCast := g.events.extract 0 (GameEvent.castEventBound g.events spellId)
+  preCast.any fun e =>
     match e.change, e.cause? with
     | .rules (.player (.manaSpent _ units forObj)), some (.costPayment .mana _ oid?) =>
       (forObj == some spellId || oid? == some spellId) &&
@@ -10744,7 +11239,7 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
               let (w, fs) :=
                 queueWardsFor post controller abObj uniquePerm (w := waiting) (fs := firedSources)
               waiting := w; firedSources := fs
-          | .mana _ =>
+          | .mana .. =>
             if srcObj?.any (post.isCreature ·) || sourceSnap.creature then
               let (w, fs) :=
                 queueCtrl post controller .youActivateCreatureAbility
@@ -11353,6 +11848,14 @@ opaque finishAndGrantPriorityFwd (g : Game) (prio : PlayerId) : Game := g
 /-- Forward reference to `Decisions.anyContinuationGrantsPriority` (resolved at link time via `@[export]`). -/
 @[extern "mtg_game_any_continuation_grants_priority"]
 opaque anyContinuationGrantsPriorityFwd (g : Game) : Bool := false
+
+/-- Forward reference to `Decisions.hasImplicitPriorityContinuation` (resolved at link time via `@[export]`). -/
+@[extern "mtg_game_has_implicit_priority_continuation"]
+opaque hasImplicitPriorityContinuationFwd (g : Game) : Bool := false
+
+/-- Forward reference to `Decisions.drainPendingContinuations` (resolved at link time via `@[export]`). -/
+@[extern "mtg_game_drain_pending_continuations"]
+opaque drainPendingContinuationsFwd (g : Game) : Game := g
 
 /-- Drain `g.pendingReplacement` locally while `!g.over && g.pending == .none &&
 g.afterRandom == .none`, without touching `triggerSequenceRest` or
@@ -13314,7 +13817,11 @@ partial def expireEffectById (g : Game) (eid : EffectId)
       match g.findObject? id with
       | some old =>
         let embCause := cause.getD (.gameRule .leavingZone)
-        let g := g.record (GameEvent.ceasedToExist g.turnNumber (g.snapshot old) (cause := embCause))
+        let snap :=
+          { (pre.snapshot ((pre.findObject? id).getD old)) with
+            id := some old.id
+            zone := old.zone }
+        let g := g.record (GameEvent.ceasedToExist g.turnNumber snap (cause := embCause))
         let leaving := g.activeEffects.filter (fun (_, e) =>
           effectObject? e == some old.id ||
             (match e.duration with
@@ -13559,18 +14066,21 @@ Does not cause the permanent to enter or leave the battlefield. -/
 def restoreCopiesWhere (g : Game)
     (sel : Game → EffectId → Option GameObject → EffectDuration → Bool)
     (cause : Option EventCause := none)
-    (reconcileControl : Bool := true) : Game :=
+    (reconcileControl : Bool := true)
+    (suppressLog : Bool := false) : Game :=
   g.activeEffects.foldl (fun acc (eid, e) =>
     match e with
     | .layered (.objects #[id]) (.copy printed) d =>
       let obj? := (acc.findObject? id).filter (fun o => o.zone == .battlefield)
       if sel acc eid obj? d then
         let acc := acc.expireEffectById eid (cause := cause) (reconcileControl := reconcileControl)
-        match obj? with
-        | some o =>
-          let restName := acc.name o
-          acc.logMsg s!"{restName} is no longer a copy of {printed.name}"
-        | none => acc
+        if suppressLog then acc
+        else
+          match obj? with
+          | some o =>
+            let restName := acc.name o
+            acc.logMsg s!"{restName} is no longer a copy of {printed.name}"
+          | none => acc
       else acc
     | .layered _ (.copy _) d =>
       let matchesAny :=
@@ -13613,12 +14123,13 @@ def restoreCopiesUntilNextTurn (g : Game) (p : PlayerId) (departed : Bool := fal
 
 /-- Restore copy effects that last until `srcId` leaves the battlefield. -/
 def restoreCopiesUntilSourceLeaves (g : Game) (srcId : ObjectId)
-    (cause : Option EventCause := some (.gameRule .leavingZone)) : Game :=
+    (cause : Option EventCause := some (.gameRule .leavingZone))
+    (suppressLog : Bool := false) : Game :=
   g.restoreCopiesWhere (fun _ _ _ d =>
     match d with
     | .untilSourceLeaves s | .whileSourceOnBattlefield s | .whileSourceHasCounter s _ => s == srcId
     | _ => false)
-    (cause := cause) (reconcileControl := false)
+    (cause := cause) (reconcileControl := false) (suppressLog := suppressLog)
 
 /-- End the control-changing effects that last until `srcId` leaves, each under
 its own `EffectId` (Super Hero Civil War; MSH 143). Other control-changing
@@ -13702,7 +14213,7 @@ def expireWhileSourceEffects (g : Game) (srcId : ObjectId)
     (preState? : Option Game := none)
     (reconcileControl : Bool := true)
     (suppressReturnLog : Bool := false) : Game :=
-  let g := g.restoreCopiesUntilSourceLeaves srcId (cause := cause)
+  let g := g.restoreCopiesUntilSourceLeaves srcId (cause := cause) (suppressLog := suppressReturnLog)
   let g := g.restoreControlUntilSourceLeaves srcId (cause := cause) (preState? := preState?)
     (reconcileControl := reconcileControl) (suppressReturnLog := suppressReturnLog)
   g.expireMatching (fun s =>

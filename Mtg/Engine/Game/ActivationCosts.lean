@@ -127,6 +127,98 @@ def sourceCounterCostPaidFor (g : Game) (sid : ObjectId) (forObject : Option Obj
           | _ => false
       | _ => false
 
+private def pendingReplHasZemoBoastExileFor (fid : ObjectId) : PendingReplacement → Bool
+  | .seq a b => pendingReplHasZemoBoastExileFor fid a || pendingReplHasZemoBoastExileFor fid b
+  | .finishPostStep (.exileZemoBoastCards _ aid _) => aid == fid
+  | _ => false
+
+/-- Whether another creature was already tapped to pay a crew cost for
+`forObject` (CR 702.122a / 602.2b). -/
+def crewCostPaidFor (g : Game) (sid : ObjectId) (forObject : Option ObjectId)
+    (sinceIdx : Nat := 0) : Bool :=
+  match forObject with
+  | none => false
+  | some fid =>
+    let slice := g.events.extract (min sinceIdx g.events.size) g.events.size
+    slice.any fun
+      | .rules _ (.permanent (.tapped snap _)) cause _ =>
+        snap.id != some sid &&
+          match unreplacedCostCause cause with
+          | .costPayment .tap _ (some f) => f == fid
+          | _ => false
+      | _ => false
+
+/-- Whether graveyard cards were already exiled (or replaced) to pay a boast
+cost for `forObject`, with no remaining boast-exile cards queued across a
+replacement pause (CR 702.142 / 602.2b). -/
+def zemoBoastCostPaidFor (g : Game) (sid : ObjectId) (forObject : Option ObjectId)
+    (sinceIdx : Nat := 0) : Bool :=
+  match forObject with
+  | none => false
+  | some fid =>
+    let stillExiling :=
+      g.pendingReplacement.any (pendingReplHasZemoBoastExileFor fid) ||
+        g.outerPendingReplacements.any (pendingReplHasZemoBoastExileFor fid)
+    if stillExiling then false
+    else
+      let slice := g.events.extract (min sinceIdx g.events.size) g.events.size
+      slice.any fun
+        | .rules _ ch cause _ =>
+          let notBfSelf :=
+            match ch with
+            | .zone (.moved before _ .battlefield _ ..) => before.id != some sid
+            | _ => true
+          notBfSelf &&
+            match unreplacedCostCause cause with
+            | .costPayment .exile _ (some f) => f == fid
+            | _ => false
+        | _ => false
+
+/-- Whether `sid` left the battlefield after `sinceIdx` as part of a cost paid
+by `p` (e.g. sacrificing or exiling `sid` to a CR 601.2g mana ability). -/
+def sourceRemovedByCostSince (g : Game) (p : PlayerId) (sid : ObjectId)
+    (sinceIdx : Nat := 0) : Bool :=
+  let slice := g.events.extract (min sinceIdx g.events.size) g.events.size
+  slice.any fun
+    | .rules _ (.zone (.moved before _ .battlefield _ ..)) cause _ =>
+      before.id == some sid &&
+        match unreplacedCostCause cause with
+        | .costPayment .sacrifice q _ | .costPayment .exile q _ => q == p
+        | _ => false
+    | _ => false
+
+/-- Whether `prop` still requires its `sourceId` to remain on the battlefield
+for an unpaid battlefield-source cost (CR 601.2g / 601.2h / 602.2b). -/
+def proposedNeedsBattlefieldSource (g : Game) (prop : ProposedSpell)
+    (sinceIdx : Nat := (g.proposalCheckpoint.map (·.eventsSize)).getD g.events.size) : Bool :=
+  match prop.sourceId with
+  | none => false
+  | some sid =>
+    if prop.kind == .turnFaceUp then true
+    else if prop.kind != .activatedAbility then false
+    else
+      let forObj := some prop.spellId
+      (prop.tapSource && !g.sourceTappedForCost sid forObj sinceIdx) ||
+        ((prop.sacrificeSource || prop.activation.any (·.cost.sacrificeSource)) &&
+          !g.sourceSacrificedForCost sid forObj sinceIdx) ||
+        prop.activation.any (·.cost.fra == .exileSource) ||
+        (prop.activation.any (·.cost.loyalty.isSome) && !prop.loyaltyPaid &&
+          !g.sourceCounterCostPaidFor sid forObj .loyalty (some .loyalty) sinceIdx) ||
+        (prop.removePlusOneX &&
+          !g.sourceCounterCostPaidFor sid forObj .removeCounters (some .plusOnePlusOne) sinceIdx) ||
+        (prop.activation.any (·.cost.removeStoryCounter) &&
+          !g.sourceCounterCostPaidFor sid forObj .removeCounters (some .story) sinceIdx) ||
+        (prop.activation.any (·.cost.removeIndestructibleCounter) &&
+          !g.sourceCounterCostPaidFor sid forObj .removeCounters (some .indestructible) sinceIdx) ||
+        (prop.activation.any (fun a =>
+          (a.cost.putStunCounterOnSource &&
+            !g.sourceCounterCostPaidFor sid forObj .putCounters (some .stun) sinceIdx) ||
+          (a.cost.sacrificeEquipmentAttachedToSource && g.pending == .activateManaAbilities prop.caster) ||
+          (match a.cost.fra with
+           | .crew _ => !prop.fraCostPaid && !g.crewCostPaidFor sid forObj sinceIdx
+           | .zemoBoast => !prop.fraCostPaid && !g.zemoBoastCostPaidFor sid forObj sinceIdx
+           | _ => false)))
+
 /-- Whether `o` can pay `pick` for `p`'s ability of `sourceId`. -/
 def costPickAllows (g : Game) (p : PlayerId) (sourceId : Option ObjectId) (pick : CostPick)
     (o : GameObject)
@@ -630,14 +722,40 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
   let exileSource := ab.any (·.cost.fra == .exileSource)
   let sacrificeOrExileSource :=
     sacrificeSource || exileSource || ab.any (·.cost.sacrificeSource)
+  let rawFromGy := ab.any (·.isFromGraveyard)
+  let rawFromHand := discardSource || ab.any (·.isFromHand)
+  let needsBfSource :=
+    tapSource || sacrificeOrExileSource || removePlusOnes > 0 || ab.any (·.needsBattlefieldSource)
+  if (rawFromGy && rawFromHand) || ((rawFromGy || rawFromHand) && needsBfSource) then
+    throw "Ability cost cannot be paid from that zone"
+  let hasUnpaidBfSourceCost : Bool :=
+    (tapSource && !g.sourceTappedForCost sourceId forObject sinceIdx) ||
+      (sacrificeOrExileSource && !g.sourceSacrificedForCost sourceId forObject sinceIdx) ||
+      exileSource ||
+      (ab.any (·.cost.loyalty.isSome) &&
+        !(g.proposedSpell.any (·.loyaltyPaid) ||
+          g.sourceCounterCostPaidFor sourceId forObject .loyalty (some .loyalty) sinceIdx)) ||
+      ((removePlusOnes > 0 || ab.any (·.cost.removeAnyNumberPlusOne)) &&
+        !g.sourceCounterCostPaidFor sourceId forObject .removeCounters (some .plusOnePlusOne) sinceIdx) ||
+      (ab.any (·.cost.removeStoryCounter) &&
+        !g.sourceCounterCostPaidFor sourceId forObject .removeCounters (some .story) sinceIdx) ||
+      (ab.any (·.cost.removeIndestructibleCounter) &&
+        !g.sourceCounterCostPaidFor sourceId forObject .removeCounters (some .indestructible) sinceIdx) ||
+      (ab.any (fun a =>
+        (a.cost.putStunCounterOnSource &&
+          !g.sourceCounterCostPaidFor sourceId forObject .putCounters (some .stun) sinceIdx) ||
+        (match a.cost.fra with
+         | .crew _ =>
+           !(g.proposedSpell.any (·.fraCostPaid) || g.crewCostPaidFor sourceId forObject sinceIdx)
+         | .zemoBoast =>
+           !(g.proposedSpell.any (·.fraCostPaid) || g.zemoBoastCostPaidFor sourceId forObject sinceIdx)
+         | _ => false)))
   let alreadySacrificedForCost :=
-    !sacrificeOrExileSource && !discardSource &&
-      !ab.any (fun a =>
-        a.activateFromGraveyard || a.cost.exileSourceFromGraveyard ||
-          a.activateFromHand || a.cost.fra == .exileSourceFromHand) &&
-      g.sourceSacrificedForCost sourceId forObject sinceIdx
+    !sacrificeOrExileSource && !discardSource && !rawFromGy && !rawFromHand &&
+      (g.sourceSacrificedForCost sourceId forObject sinceIdx ||
+        (!hasUnpaidBfSourceCost && g.sourceRemovedByCostSince p sourceId sinceIdx))
   let alreadyDiscardedFromHandForCost :=
-    !sacrificeOrExileSource && !discardSource &&
+    !sacrificeOrExileSource && !discardSource && !rawFromGy && !needsBfSource &&
       ab.any (·.activateFromHand) &&
       !ab.any (·.cost.fra == .exileSourceFromHand) &&
       g.sourceDiscardedFromHandForCost sourceId forObject sinceIdx
@@ -688,9 +806,7 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
         g.logMsg msg
       else g
     return match outer? with | some outer => g.chainPendingReplacement outer | none => g
-  let fromGraveyardAb :=
-    ab.any (fun a => a.activateFromGraveyard || a.cost.exileSourceFromGraveyard) &&
-      !ab.any (·.cost.loyalty.isSome) && !tapSource && !sacrificeSource && !exileSource
+  let fromGraveyardAb := rawFromGy && !rawFromHand && !needsBfSource
   if fromGraveyardAb then
     if !(src.zone == .graveyard src.owner && src.owner == p) then
       throw s!"{g.name src} is not in your graveyard"
@@ -710,8 +826,7 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
     return g
   let fromHandAb :=
     !discardSource && !ab.any (·.cost.fra == .exileSourceFromHand) &&
-      ab.any (·.activateFromHand) &&
-      !tapSource && !sacrificeSource && !exileSource
+      ab.any (·.activateFromHand) && !rawFromGy && !needsBfSource
   if fromHandAb && !alreadyDiscardedFromHandForCost then
     if !(src.zone == .hand src.owner && src.owner == p) then
       throw s!"{g.name src} is not in your hand"

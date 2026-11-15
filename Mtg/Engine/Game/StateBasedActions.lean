@@ -349,7 +349,7 @@ def normalizePendingLegendChoice (g : Game) : Game × Bool × Bool :=
     let still := g.validLegendChoiceIds p name ids
     if still.size ≥ 2 then
       let g :=
-        if !g.preBatchLegendSnapshotValid && still.size < ids.size then
+        if still != ids then
           g.change (.pending (.chooseLegend p name still))
         else g
       (g, true, false)
@@ -383,29 +383,38 @@ private def pushOuterSuffix (g : Game) (suf : PendingReplacement) : Game :=
   let g := if g.continuations.isEmpty then g.change (.pushContinuationFrame {}) else g
   g.change (.pushOuterPendingReplacement suf)
 
-private def prependRestToOuter (g : Game) (rest? : Option PendingReplacement) (hasOuter : Bool) :
+/-- Pop `oCaller?` (when `popOuterCaller`) then `o0?` (when `po0`) and push a
+single combined `O_0 >> rest? >> O_caller` entry onto `outerPendingReplacements`. -/
+private def combineOuterContinuations (g : Game)
+    (po0 : Bool) (rest? : Option PendingReplacement) (popOuterCaller : Bool) :
     Game × Bool :=
-  match rest? with
-  | none => (g, hasOuter)
-  | some rest =>
-    if hasOuter then
-      match g.outerPendingReplacements.back? with
-      | some origOuter =>
-        (pushOuterSuffix (g.change .popOuterPendingReplacement) (.seq rest origOuter), true)
-      | none =>
-        (pushOuterSuffix g rest, true)
-    else
-      (pushOuterSuffix g rest, true)
+  if rest?.isNone && !popOuterCaller then (g, po0)
+  else if rest?.isNone && !po0 then (g, popOuterCaller)
+  else Id.run do
+    let mut g := g
+    let oCaller? : Option PendingReplacement :=
+      if popOuterCaller then g.outerPendingReplacements.back? else none
+    if oCaller?.isSome then
+      g := g.change .popOuterPendingReplacement
+    let o0? : Option PendingReplacement :=
+      if po0 then g.outerPendingReplacements.back? else none
+    if o0?.isSome then
+      g := g.change .popOuterPendingReplacement
+    match seqOptPending (seqOptPending o0? rest?) oCaller? with
+    | some comb => return (pushOuterSuffix g comb, true)
+    | none => return (g, false)
 
 private def mergeLeaveArgs (g : Game)
     (s0 : Option Pending) (po0 : Bool) (d0 : Array PlayerId) (rw0 : Option Bool)
     (savedIn : Option Pending) (popOuterIn : Bool)
-    (departedIn : Array PlayerId) (rewindProposalIn : Option Bool) :
+    (departedIn : Array PlayerId) (rewindProposalIn : Option Bool)
+    (rest? : Option PendingReplacement := none) :
     Game × Option Pending × Bool × Array PlayerId × Option Bool := Id.run do
-  let mut g := g
+  let (g0, popOuter0) := combineOuterContinuations g po0 rest? popOuterIn
+  let mut g := g0
   let departed :=
     departedIn.foldl (fun acc pid => if acc.contains pid then acc else acc.push pid) d0
-  let mut popOuter := po0 || popOuterIn
+  let mut popOuter := popOuter0
   let mut saved? := s0
   match s0, savedIn with
   | none, s => saved? := s
@@ -427,7 +436,54 @@ private def mergeLeaveArgs (g : Game)
   let rw? := rw0 <|> rewindProposalIn
   return (g, saved?, popOuter, departed, rw?)
 
-private def rewriteRepausedPostCloseBatch (g : Game) (origBid : BatchId)
+private def mergeLeaveIntoCont? (g : Game)
+    (savedIn : Option Pending) (popOuterIn : Bool)
+    (departedIn : Array PlayerId) (rewindProposalIn : Option Bool) :
+    PendingReplacement → Option (Game × PendingReplacement)
+  | .leavePlayersWhoLost s0 po0 d0 rw0 =>
+    let (g', sm, pom, dm, rwm) :=
+      mergeLeaveArgs g s0 po0 d0 rw0 savedIn popOuterIn departedIn rewindProposalIn
+    some (g', .leavePlayersWhoLost sm pom dm rwm)
+  | .seq a b =>
+    match mergeLeaveIntoCont? g savedIn popOuterIn departedIn rewindProposalIn a with
+    | some (g', a') => some (g', .seq a' b)
+    | none =>
+      match mergeLeaveIntoCont? g savedIn popOuterIn departedIn rewindProposalIn b with
+      | some (g', b') => some (g', .seq a b')
+      | none => none
+  | _ => none
+
+private def upgradeCheckSbaToLeave?
+    (savedIn : Option Pending) (popOuterIn : Bool)
+    (departedIn : Array PlayerId) (rewindProposalIn : Option Bool) :
+    PendingReplacement → Option PendingReplacement
+  | .checkSBA =>
+    some (.leavePlayersWhoLost savedIn popOuterIn departedIn rewindProposalIn)
+  | .seq a b =>
+    match upgradeCheckSbaToLeave? savedIn popOuterIn departedIn rewindProposalIn a with
+    | some a' => some (.seq a' b)
+    | none =>
+      (upgradeCheckSbaToLeave? savedIn popOuterIn departedIn rewindProposalIn b).map (.seq a ·)
+  | _ => none
+
+private def chainOrMergeLeave (g0 : Game)
+    (saved? : Option Pending) (popOuter : Bool)
+    (departed : Array PlayerId) (rewindProposal : Option Bool) : Game :=
+  match g0.pendingReplacement with
+  | none =>
+    g0.chainPendingReplacement
+      (.leavePlayersWhoLost saved? popOuter departed rewindProposal)
+  | some pr =>
+    match mergeLeaveIntoCont? g0 saved? popOuter departed rewindProposal pr with
+    | some (g1, pr') => g1.change (.pendingReplacement (some pr'))
+    | none =>
+      match upgradeCheckSbaToLeave? saved? popOuter departed rewindProposal pr with
+      | some pr' => g0.change (.pendingReplacement (some pr'))
+      | none =>
+        g0.chainPendingReplacement
+          (.leavePlayersWhoLost saved? popOuter departed rewindProposal)
+
+private def rewriteRepausedPostCloseBatch (g : Game) (curBid : BatchId)
     (flushedFromPending : Bool)
     (savedIn : Option Pending) (popOuterAfterFlush : Bool)
     (departedIn : Array PlayerId) (rewindProposalIn : Option Bool)
@@ -435,32 +491,45 @@ private def rewriteRepausedPostCloseBatch (g : Game) (origBid : BatchId)
     Game × Option Pending × Bool × Array PlayerId × Option Bool := Id.run do
   let mut g := g
   if flushedFromPending then
-    match g.pendingReplacement.bind (splitAfterCloseBatchFor? origBid) with
+    match g.pendingReplacement.bind (splitAfterCloseBatchFor? curBid) with
     | some (throughClose, curAfter?) =>
-      let (g1, savedM, poM, depM, rwM, remTail?) :=
+      if deferRestore then
+        let g0 := g.change (.pendingReplacement (some throughClose))
         match curAfter?.bind peelLeadingSbaOrLeave? with
         | some (.leavePlayersWhoLost s0 po0 d0 rw0, outerTail?) =>
-          let (gm, sm, pom, dm, rwm) :=
-            mergeLeaveArgs g s0 po0 d0 rw0 savedIn popOuterAfterFlush departedIn rewindProposalIn
-          (gm, sm, pom, dm, rwm, outerTail?)
+          return mergeLeaveArgs g0 s0 po0 d0 rw0 savedIn popOuterAfterFlush departedIn rewindProposalIn
+            (rest? := outerTail?)
         | some (.checkSBA, outerTail?) =>
-          (g, savedIn, popOuterAfterFlush, departedIn, rewindProposalIn, outerTail?)
+          let (gp, po1) := combineOuterContinuations g0 false outerTail? popOuterAfterFlush
+          return (gp, savedIn, po1, departedIn, rewindProposalIn)
         | _ =>
-          (g, savedIn, popOuterAfterFlush, departedIn, rewindProposalIn, curAfter?)
-      g := g1
-      let newHead? : Option PendingReplacement :=
-        if deferRestore then none
-        else if savedM.isSome || poM || !depM.isEmpty || rwM.isSome then
-          some (.leavePlayersWhoLost savedM poM depM rwM)
-        else
-          some .checkSBA
-      let newAfter? := seqOptPending newHead? remTail?
-      let newPr :=
-        match newAfter? with
-        | some after => .seq throughClose after
-        | none => throughClose
-      g := g.change (.pendingReplacement (some newPr))
-      return (g, savedM, poM, depM, rwM)
+          let (gp, po1) := combineOuterContinuations g0 false curAfter? popOuterAfterFlush
+          return (gp, savedIn, po1, departedIn, rewindProposalIn)
+      else
+        let (g1, savedM, poM, depM, rwM, remTail?) :=
+          match curAfter?.bind peelLeadingSbaOrLeave? with
+          | some (.leavePlayersWhoLost s0 po0 d0 rw0, outerTail?) =>
+            let (gm, sm, pom, dm, rwm) :=
+              mergeLeaveArgs g s0 po0 d0 rw0 savedIn popOuterAfterFlush departedIn rewindProposalIn
+            (gm, sm, pom, dm, rwm, outerTail?)
+          | some (.checkSBA, outerTail?) =>
+            (g, savedIn, popOuterAfterFlush, departedIn, rewindProposalIn, outerTail?)
+          | _ =>
+            (g, savedIn, popOuterAfterFlush, departedIn, rewindProposalIn, curAfter?)
+        g := g1
+        let newHead? : Option PendingReplacement :=
+          if savedM.isSome || poM || !depM.isEmpty || rwM.isSome ||
+              g.players.any (fun r => r.lost && !r.leftTheGame) then
+            some (.leavePlayersWhoLost savedM poM depM rwM)
+          else
+            some .checkSBA
+        let newAfter? := seqOptPending newHead? remTail?
+        let newPr :=
+          match newAfter? with
+          | some after => .seq throughClose after
+          | none => throughClose
+        g := g.change (.pendingReplacement (some newPr))
+        return (g, savedM, poM, depM, rwM)
     | none =>
       return (g, savedIn, popOuterAfterFlush, departedIn, rewindProposalIn)
   else
@@ -471,13 +540,13 @@ private def rewriteRepausedPostCloseBatch (g : Game) (origBid : BatchId)
     if deferRestore then
       match pushedAfter?.bind peelLeadingSbaOrLeave? with
       | some (.leavePlayersWhoLost s0 po0 d0 rw0, outerTail?) =>
-        let (gp, po1) := prependRestToOuter g outerTail? po0
-        return mergeLeaveArgs gp s0 po1 d0 rw0 savedIn false departedIn rewindProposalIn
+        return mergeLeaveArgs g s0 po0 d0 rw0 savedIn false departedIn rewindProposalIn
+          (rest? := outerTail?)
       | some (.checkSBA, outerTail?) =>
-        let (gp, po1) := prependRestToOuter g outerTail? false
+        let (gp, po1) := combineOuterContinuations g false outerTail? false
         return (gp, savedIn, po1, departedIn, rewindProposalIn)
       | _ =>
-        let (gp, po1) := prependRestToOuter g pushedAfter? false
+        let (gp, po1) := combineOuterContinuations g false pushedAfter? false
         return (gp, savedIn, po1, departedIn, rewindProposalIn)
     else
       let (g1, savedM, poM, depM, rwM, remTail?) :=
@@ -492,7 +561,8 @@ private def rewriteRepausedPostCloseBatch (g : Game) (origBid : BatchId)
           (g, savedIn, false, departedIn, rewindProposalIn, pushedAfter?)
       g := g1
       let newHead? : Option PendingReplacement :=
-        if savedM.isSome || poM || !depM.isEmpty || rwM.isSome then
+        if savedM.isSome || poM || !depM.isEmpty || rwM.isSome ||
+            g.players.any (fun r => r.lost && !r.leftTheGame) then
           some (.leavePlayersWhoLost savedM poM depM rwM)
         else
           some .checkSBA
@@ -510,18 +580,13 @@ partial def checkSBACounted (g : Game)
     | .checkSBA | .leavePlayersWhoLost .. => true
     | .seq a b => contHasSbaOrLeave a || contHasSbaOrLeave b
     | _ => false
-  let rec contHasLeave : PendingReplacement → Bool
-    | .leavePlayersWhoLost .. => true
-    | .seq a b => contHasLeave a || contHasLeave b
-    | _ => false
   let chainSbaPauseTail (g0 : Game) (saved? : Option Pending) (popOuter : Bool)
-      (departed : Array PlayerId) (rewindProposal : Option Bool) : Game :=
+      (departed : Array PlayerId) (rewindProposal : Option Bool)
+      (forceLeave : Bool := false) : Game :=
     if deferRestore then g0
-    else if saved?.isSome || popOuter || !departed.isEmpty || rewindProposal.isSome then
-      if g0.pendingReplacement.any contHasLeave then g0
-      else
-        g0.chainPendingReplacement
-          (.leavePlayersWhoLost saved? popOuter departed rewindProposal)
+    else if forceLeave || saved?.isSome || popOuter || !departed.isEmpty ||
+        rewindProposal.isSome || g0.players.any (fun r => r.lost && !r.leftTheGame) then
+      chainOrMergeLeave g0 saved? popOuter departed rewindProposal
     else if g0.pendingReplacement.any contHasSbaOrLeave then g0
     else g0.chainPendingReplacement .checkSBA
   if g.over then (g, false)
@@ -532,28 +597,35 @@ partial def checkSBACounted (g : Game)
     let (g, returnEarly, clearedInvalidLegend) := g.normalizePendingLegendChoice
     if returnEarly || g.sbaPaused then (g, false)
     else
+    let savedForFlush := if clearedInvalidLegend then none else savedIn
+    let shouldFlush :=
+      clearedInvalidLegend ||
+        (!g.sbaPaused && g.pending == .none && g.currentBatch.isSome &&
+          savedForFlush.all g.batchPausePromptGoneOrInvalid)
     let flushedBid? : Option BatchId :=
-      if clearedInvalidLegend then g.currentBatch.map Prod.fst else none
+      if shouldFlush then g.currentBatch.map Prod.fst else none
     let flushedFromPending : Bool :=
       flushedBid?.any (fun bid => (g.pendingReplacement.bind (splitAfterCloseBatchFor? bid)).isSome)
     let (g, popOuterIn) :=
-      if clearedInvalidLegend then g.flushDismissedPausedBatch none popOuterIn
+      if shouldFlush then g.flushDismissedPausedBatch savedForFlush popOuterIn
       else (g, popOuterIn)
     if g.over then (g, true)
-    else if let some origBid := flushedBid?.filter (fun bid =>
-        g.sbaPaused && g.currentBatch.map Prod.fst == some bid) then
-      let (g, _, _, _, _) :=
-        rewriteRepausedPostCloseBatch g origBid flushedFromPending
-          savedIn popOuterIn departedIn rewindProposalIn deferRestore
-      (g, true)
+    else if flushedBid?.isSome && g.sbaPaused then
+      if let some newBid := g.currentBatch.map Prod.fst then
+        let (g, _, _, _, _) :=
+          rewriteRepausedPostCloseBatch g newBid flushedFromPending
+            savedIn popOuterIn departedIn rewindProposalIn deferRestore
+        (g, true)
+      else
+        (g, true)
     else
     match g.pending with
     | .chooseReplacement .. | .chooseLegend .. =>
       (chainSbaPauseTail g savedIn popOuterIn departedIn rewindProposalIn, true)
     | _ =>
-    let (g, savedIn, popOuterIn, departedIn, rewindProposalIn, outerAfter?, peeledLeave) :
-        Game × Option Pending × Bool × Array PlayerId × Option Bool × Option PendingReplacement × Bool :=
-      if clearedInvalidLegend && g.currentBatch.isNone then
+    let (g, savedIn, popOuterIn, departedIn, rewindProposalIn, outerAfter?, peeledLeave, peeledSba) :
+        Game × Option Pending × Bool × Array PlayerId × Option Bool × Option PendingReplacement × Bool × Bool :=
+      if shouldFlush && !deferRestore && g.currentBatch.isNone then
         match g.pendingReplacement with
         | some pr =>
           let g1 := g.change (.pendingReplacement none)
@@ -561,30 +633,30 @@ partial def checkSBACounted (g : Game)
           | some (.leavePlayersWhoLost s0 po0 d0 rw0, rest?) =>
             let (gm, sm, pom, dm, rwm) :=
               mergeLeaveArgs g1 s0 po0 d0 rw0 savedIn popOuterIn departedIn rewindProposalIn
-            (gm, sm, pom, dm, rwm, rest?, true)
+            (gm, sm, pom, dm, rwm, rest?, true, false)
           | some (.checkSBA, rest?) =>
-            (g1, savedIn, popOuterIn, departedIn, rewindProposalIn, rest?, false)
+            (g1, savedIn, popOuterIn, departedIn, rewindProposalIn, rest?, false, true)
           | _ =>
-            (g1, savedIn, popOuterIn, departedIn, rewindProposalIn, some pr, false)
+            (g1, savedIn, popOuterIn, departedIn, rewindProposalIn, some pr, false, false)
         | none =>
           if popOuterIn then
             match g.outerPendingReplacements.back?.bind peelLeadingSbaOrLeave? with
             | some (.leavePlayersWhoLost s0 po0 d0 rw0, rest?) =>
               let g1 := g.change .popOuterPendingReplacement
-              let (g2, po1) := prependRestToOuter g1 rest? po0
               let (gm, sm, pom, dm, rwm) :=
-                mergeLeaveArgs g2 s0 po1 d0 rw0 savedIn false departedIn rewindProposalIn
-              (gm, sm, pom, dm, rwm, none, true)
+                mergeLeaveArgs g1 s0 po0 d0 rw0 savedIn false departedIn rewindProposalIn
+                  (rest? := rest?)
+              (gm, sm, pom, dm, rwm, none, true, false)
             | some (.checkSBA, rest?) =>
               let g1 := g.change .popOuterPendingReplacement
-              let (g2, po1) := prependRestToOuter g1 rest? false
-              (g2, savedIn, po1, departedIn, rewindProposalIn, none, false)
+              let (g2, po1) := combineOuterContinuations g1 false rest? false
+              (g2, savedIn, po1, departedIn, rewindProposalIn, none, false, true)
             | _ =>
-              (g, savedIn, popOuterIn, departedIn, rewindProposalIn, none, false)
+              (g, savedIn, popOuterIn, departedIn, rewindProposalIn, none, false, false)
           else
-            (g, savedIn, popOuterIn, departedIn, rewindProposalIn, none, false)
+            (g, savedIn, popOuterIn, departedIn, rewindProposalIn, none, false, false)
       else
-        (g, savedIn, popOuterIn, departedIn, rewindProposalIn, none, false)
+        (g, savedIn, popOuterIn, departedIn, rewindProposalIn, none, false, false)
     let (g, (changed, _paused)) := g.withBatchReturn none fun g => Id.run do
       let mut g := g
       let mut changed := false
@@ -763,13 +835,18 @@ partial def checkSBACounted (g : Game)
     let (g, didOut) :=
       match g.pending with
       | .chooseReplacement .. | .chooseLegend .. =>
-        (chainSbaPauseTail g savedIn popOuterIn departedIn rewindProposalIn, true)
+        (chainSbaPauseTail g savedIn popOuterIn departedIn rewindProposalIn
+           (forceLeave := peeledLeave), true)
       | _ =>
         let g :=
-          if peeledLeave && !g.over && !deferRestore &&
-              (savedIn.isSome || popOuterIn || !departedIn.isEmpty || rewindProposalIn.isSome) then
-            g.chainPendingReplacement
-              (.leavePlayersWhoLost savedIn popOuterIn departedIn rewindProposalIn)
+          if (peeledLeave || peeledSba) && !g.over && !deferRestore then
+            if savedIn.isSome || popOuterIn || !departedIn.isEmpty || rewindProposalIn.isSome ||
+                g.players.any (fun r => r.lost && !r.leftTheGame) then
+              chainOrMergeLeave g savedIn popOuterIn departedIn rewindProposalIn
+            else if changed then
+              if g.pendingReplacement.any contHasSbaOrLeave then g
+              else g.chainPendingReplacement .checkSBA
+            else g
           else g
         (g, changed || clearedInvalidLegend)
     let g :=
@@ -795,49 +872,53 @@ partial def checkSBACountedWithLeavesCore (g : Game)
     | .checkSBA | .leavePlayersWhoLost .. => true
     | .seq a b => contHasSbaOrLeave a || contHasSbaOrLeave b
     | _ => false
-  let rec contHasLeave : PendingReplacement → Bool
-    | .leavePlayersWhoLost .. => true
-    | .seq a b => contHasLeave a || contHasLeave b
-    | _ => false
   if g.over then (g, false, none, false, departedIn, none)
   else
   let (g, _, clearedInvalidLegend) := g.normalizePendingLegendChoice
   let entryPaused := g.sbaPaused
+  let savedForFlush := if clearedInvalidLegend then none else savedIn
+  let shouldFlush :=
+    clearedInvalidLegend ||
+      (!g.sbaPaused && g.pending == .none && g.currentBatch.isSome &&
+        savedForFlush.all g.batchPausePromptGoneOrInvalid)
   let flushedBid? : Option BatchId :=
-    if clearedInvalidLegend then g.currentBatch.map Prod.fst else none
+    if shouldFlush then g.currentBatch.map Prod.fst else none
   let flushedFromPending : Bool :=
     flushedBid?.any (fun bid => (g.pendingReplacement.bind (splitAfterCloseBatchFor? bid)).isSome)
   let (g, popOuterIn) :=
-    g.flushDismissedPausedBatch (if clearedInvalidLegend then none else savedIn) popOuterIn
-  if g.over then (g, clearedInvalidLegend, none, false, departedIn, none)
-  else if let some origBid := flushedBid?.filter (fun bid =>
-      g.sbaPaused && g.currentBatch.map Prod.fst == some bid) then
-    let (g, savedM, poM, depM, rwM) :=
-      rewriteRepausedPostCloseBatch g origBid flushedFromPending
-        savedIn popOuterIn departedIn rewindProposalIn deferRestore
-    (g, true, savedM, poM, depM, rwM)
+    if shouldFlush then g.flushDismissedPausedBatch savedForFlush popOuterIn
+    else (g, popOuterIn)
+  if g.over then (g, shouldFlush, none, false, departedIn, none)
+  else if flushedBid?.isSome && g.sbaPaused then
+    if let some newBid := g.currentBatch.map Prod.fst then
+      let (g, savedM, poM, depM, rwM) :=
+        rewriteRepausedPostCloseBatch g newBid flushedFromPending
+          savedIn popOuterIn departedIn rewindProposalIn deferRestore
+      (g, true, savedM, poM, depM, rwM)
+    else
+      (g, true, savedIn, popOuterIn, departedIn, rewindProposalIn)
   else
   let (g, savedIn, popOuterIn, departedIn, rewindProposalIn) :=
-    if clearedInvalidLegend && !g.over && !g.sbaPaused && g.currentBatch.isNone then
+    if shouldFlush && !g.over && !g.sbaPaused && g.currentBatch.isNone then
       match g.pendingReplacement.bind peelLeadingSbaOrLeave? with
       | some (.leavePlayersWhoLost s0 po0 d0 rw0, rest?) =>
         let g1 := g.change (.pendingReplacement none)
-        let (g2, po1) := prependRestToOuter g1 rest? (po0 || popOuterIn)
-        mergeLeaveArgs g2 s0 po1 d0 rw0 savedIn false departedIn rewindProposalIn
+        mergeLeaveArgs g1 s0 po0 d0 rw0 savedIn popOuterIn departedIn rewindProposalIn
+          (rest? := rest?)
       | some (.checkSBA, rest?) =>
         let g1 := g.change (.pendingReplacement none)
-        let (g2, po1) := prependRestToOuter g1 rest? popOuterIn
+        let (g2, po1) := combineOuterContinuations g1 false rest? popOuterIn
         (g2, savedIn, po1, departedIn, rewindProposalIn)
       | _ =>
         if g.pendingReplacement.isNone && popOuterIn then
           match g.outerPendingReplacements.back?.bind peelLeadingSbaOrLeave? with
           | some (.leavePlayersWhoLost s0 po0 d0 rw0, rest?) =>
             let g1 := g.change .popOuterPendingReplacement
-            let (g2, po1) := prependRestToOuter g1 rest? po0
-            mergeLeaveArgs g2 s0 po1 d0 rw0 savedIn false departedIn rewindProposalIn
+            mergeLeaveArgs g1 s0 po0 d0 rw0 savedIn false departedIn rewindProposalIn
+              (rest? := rest?)
           | some (.checkSBA, rest?) =>
             let g1 := g.change .popOuterPendingReplacement
-            let (g2, po1) := prependRestToOuter g1 rest? false
+            let (g2, po1) := combineOuterContinuations g1 false rest? false
             (g2, savedIn, po1, departedIn, rewindProposalIn)
           | _ =>
             (g, savedIn, popOuterIn, departedIn, rewindProposalIn)
@@ -845,68 +926,69 @@ partial def checkSBACountedWithLeavesCore (g : Game)
           (g, savedIn, popOuterIn, departedIn, rewindProposalIn)
     else
       (g, savedIn, popOuterIn, departedIn, rewindProposalIn)
-  let (g, savedIn, popOuterIn, rewindProposalIn) :=
+  let reenterAfterRewind? :
+      Option (Game × Bool × Option Pending × Bool × Array PlayerId × Option Bool) :=
     match rewindProposalIn with
     | some hadPreBodyCont =>
       if !g.over && !g.sbaPaused && g.currentBatch.isNone then
         let (g', s', po') := g.applyDeferredProposalRewind savedIn popOuterIn departedIn hadPreBodyCont
-        (g', s', po', none)
-      else
-        (g, savedIn, popOuterIn, rewindProposalIn)
-    | none =>
-      (g, savedIn, popOuterIn, none)
-  let wasPaused := g.sbaPaused
-  let hasPendingLosers :=
-    !g.over && !wasPaused && g.players.any (fun r => r.lost && !r.leftTheGame)
-  let (g, didSba) :=
-    if hasPendingLosers then (g, false)
-    else g.checkSBACounted savedIn popOuterIn departedIn rewindProposalIn (deferRestore := deferRestore)
-  let didAny := didSba || clearedInvalidLegend
-  if g.over then (g, didAny, none, false, departedIn, none)
-  else if wasPaused && (savedIn.isSome || popOuterIn || !departedIn.isEmpty || rewindProposalIn.isSome) then
-    let g :=
-      if deferRestore || g.pendingReplacement.any contHasLeave then g
-      else
-        g.chainPendingReplacement
-          (.leavePlayersWhoLost savedIn popOuterIn departedIn rewindProposalIn)
-    (g, didAny, savedIn, popOuterIn, departedIn, rewindProposalIn)
-  else if g.pending != .none then
-    let g :=
-      if !entryPaused && wasPaused && !deferRestore &&
-          !(savedIn.isSome || popOuterIn || !departedIn.isEmpty || rewindProposalIn.isSome) &&
-          !g.pendingReplacement.any contHasSbaOrLeave then
-        g.chainPendingReplacement .checkSBA
-      else g
-    (g, didAny, savedIn, popOuterIn, departedIn, rewindProposalIn)
+        let (g'', didMore, savedOut, poOut, depOut, rwOut) :=
+          g'.checkSBACountedWithLeavesCore s' po' departedIn none (deferRestore := deferRestore)
+        some (g'', clearedInvalidLegend || didMore, savedOut, poOut, depOut, rwOut)
+      else none
+    | none => none
+  if let some res := reenterAfterRewind? then res
   else
-    let leftBefore := (g.players.filter (·.leftTheGame)).size
-    let (g, saved?, popOuter, departed, rewindProposal) :=
-      g.leavePlayersWhoLostCore savedIn popOuterIn departedIn rewindProposalIn
-    let anyLeft := (g.players.filter (·.leftTheGame)).size > leftBefore
-    if g.over then (g, didAny || anyLeft, none, false, departed, none)
-    else if g.sbaPaused then
+    let wasPaused := g.sbaPaused
+    let hasPendingLosers :=
+      !g.over && !wasPaused && g.players.any (fun r => r.lost && !r.leftTheGame)
+    let (g, didSba) :=
+      if hasPendingLosers then (g, false)
+      else g.checkSBACounted savedIn popOuterIn departedIn rewindProposalIn (deferRestore := deferRestore)
+    let didAny := didSba || clearedInvalidLegend
+    if g.over then (g, didAny, none, false, departedIn, none)
+    else if wasPaused && (savedIn.isSome || popOuterIn || !departedIn.isEmpty || rewindProposalIn.isSome) then
       let g :=
         if deferRestore then g
-        else
-          g.chainPendingReplacement
-            (if g.players.any (fun r => r.lost && !r.leftTheGame) || saved?.isSome || popOuter ||
-                !departed.isEmpty || rewindProposal.isSome then
-              .leavePlayersWhoLost saved? popOuter departed rewindProposal
-            else .checkSBA)
-      (g, true, saved?, popOuter, departed, rewindProposal)
+        else chainOrMergeLeave g savedIn popOuterIn departedIn rewindProposalIn
+      (g, didAny, savedIn, popOuterIn, departedIn, rewindProposalIn)
     else if g.pending != .none then
-      (g, didAny || anyLeft, saved?, popOuter, departed, rewindProposal)
-    else if didSba || anyLeft || hasPendingLosers then
-      let (g', didMore, saved'?, popOuter', departed', rewindProposal') :=
-        g.checkSBACountedWithLeavesCore saved? popOuter departed rewindProposal
-          (deferRestore := deferRestore)
-      (g', didAny || anyLeft || didMore, saved'?, popOuter', departed', rewindProposal')
-    else if deferRestore then
-      (g, didAny, saved?, popOuter, departed, rewindProposal)
+      let g :=
+        if !entryPaused && wasPaused && !deferRestore &&
+            !(savedIn.isSome || popOuterIn || !departedIn.isEmpty || rewindProposalIn.isSome) &&
+            !g.pendingReplacement.any contHasSbaOrLeave then
+          g.chainPendingReplacement .checkSBA
+        else g
+      (g, didAny, savedIn, popOuterIn, departedIn, rewindProposalIn)
     else
-      (g.restoreSavedPostLeave saved? popOuter
-         (departed := departed) (rewindProposal := rewindProposal),
-       didAny, none, false, departed, none)
+      let leftBefore := (g.players.filter (·.leftTheGame)).size
+      let (g, saved?, popOuter, departed, rewindProposal) :=
+        g.leavePlayersWhoLostCore savedIn popOuterIn departedIn rewindProposalIn
+          (flushDismissed := false)
+      let anyLeft := (g.players.filter (·.leftTheGame)).size > leftBefore
+      if g.over then (g, didAny || anyLeft, none, false, departed, none)
+      else if g.sbaPaused then
+        let g :=
+          if deferRestore then g
+          else if g.players.any (fun r => r.lost && !r.leftTheGame) || saved?.isSome || popOuter ||
+              !departed.isEmpty || rewindProposal.isSome then
+            chainOrMergeLeave g saved? popOuter departed rewindProposal
+          else if g.pendingReplacement.any contHasSbaOrLeave then g
+          else g.chainPendingReplacement .checkSBA
+        (g, true, saved?, popOuter, departed, rewindProposal)
+      else if g.pending != .none then
+        (g, didAny || anyLeft, saved?, popOuter, departed, rewindProposal)
+      else if didSba || anyLeft || hasPendingLosers then
+        let (g', didMore, saved'?, popOuter', departed', rewindProposal') :=
+          g.checkSBACountedWithLeavesCore saved? popOuter departed rewindProposal
+            (deferRestore := deferRestore)
+        (g', didAny || anyLeft || didMore, saved'?, popOuter', departed', rewindProposal')
+      else if deferRestore then
+        (g, didAny, saved?, popOuter, departed, rewindProposal)
+      else
+        (g.restoreSavedPostLeave saved? popOuter
+           (departed := departed) (rewindProposal := rewindProposal),
+         didAny, none, false, departed, none)
 
 /-- Repeat `checkSBACounted` and `leavePlayersWhoLostCore` until neither performs
 an action or the game ends / pauses on a pending choice, restoring any deferred

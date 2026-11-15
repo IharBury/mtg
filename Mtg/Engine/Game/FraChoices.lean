@@ -241,9 +241,9 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       | none => g
     else g
   let resolvingForObj :=
-    (g.currentResolvingContext?.bind Prod.fst) <|>
-      g.resolvingAbility <|>
-      g.resolvingSpell
+    g.resolvingAbility <|>
+      g.resolvingSpell <|>
+      (g.currentResolvingContext?.bind Prod.fst)
   match choice, answer with
   | .discardFromRevealedHand victim permanentOnly, .objects #[id] =>
     if !(g.revealedHandChoices victim permanentOnly).contains id then
@@ -369,7 +369,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     if !(g.player p).manaPool.canPay (ManaCost.ofGeneric n) (allowCantNonartifact := true) then
       throw s!"{(g.player p).name} cannot pay \{{n}}; add mana first"
     let g ← g.payCost p (ManaCost.ofGeneric n) (allowCantNonartifact := true)
-      (forObject := sourceId <|> resolvingForObj)
+      (forObject := resolvingForObj <|> sourceId)
     let g := g.logMsg s!"{(g.player p).name} pays \{{n}}"
     return (g.applyFra p default next.toResolution #[] sourceId).finishFraChoice
   | .mayPayThen .., .decline => return g.finishFraChoice
@@ -642,26 +642,38 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
           g.becomeTapped (g.object! c.id) (cause := cause)) g
     let paused := match g.pending with | .chooseReplacement .. => true | _ => false
     let g :=
-      if !paused then
+      if paused then
+        g.chainPendingReplacement (.finishPostStep .markFraCostPaid)
+      else
+        let g := if g.proposedSpell.isSome then g.changeProposal (.fraCostPaid true) else g
         match outerCont? with
         | some outer => g.chainPendingReplacement outer
         | none => g
-      else g
     let g := g.logMsg s!"{(g.player p).name} crews {vName}"
-    let g := g.becomeActivated p vName (some vehicleId)
-      (activation := prop?.bind (·.activation))
-      (abilityId := some abilityId)
-      (sourceSnapshot := prop?.map (·.originalSnapshot))
-      (sourceOriginal := prop?.map (·.original))
-      (hadOuterReplacement := outerCont?.isSome)
-      (hadOpenContinuation := some openCont)
-    let g :=
+    match g.proposedSpell.filter g.propNeedsPostFraSteps with
+    | some curProp =>
       if paused then
-        match outerCont? with
-        | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishFra
-        | none => g
-      else g
-    return g.resumeAfterBecomeCast
+        let g := g.chainPendingReplacement (.finishPostStep (.continuePostFraActivation p))
+        return match outerCont? with
+          | some outer => g.chainPendingReplacement outer
+          | none => g
+      else
+        return (← g.continuePostFraActivationM p curProp)
+    | none =>
+      let g := g.becomeActivated p vName (some vehicleId)
+        (activation := prop?.bind (·.activation))
+        (abilityId := some abilityId)
+        (sourceSnapshot := prop?.map (·.originalSnapshot))
+        (sourceOriginal := prop?.map (·.original))
+        (hadOuterReplacement := outerCont?.isSome)
+        (hadOpenContinuation := some openCont)
+      let g :=
+        if paused then
+          match outerCont? with
+          | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishFra
+          | none => g
+        else g
+      return g.resumeAfterBecomeCast
   | .crew _ vehicleId n, .decline =>
     let totalAvail :=
       ((gPre.creaturesControlledBy p).filter (fun c => c.id != vehicleId && !c.status.tapped)).foldl
@@ -840,7 +852,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     if !(g.player p).manaPool.canPay cost (allowCantNonartifact := true) then
       throw s!"{(g.player p).name} cannot pay that cost; add mana first"
     let g ← g.payCost p cost (allowCantNonartifact := true)
-      (forObject := some sourceId <|> resolvingForObj)
+      (forObject := resolvingForObj <|> some sourceId)
     if g.mayThenDrop > 0 then
       return g.acceptMayThen
     else
@@ -873,7 +885,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     return (g.sacrificeLeastPowerCreature p (some id)).finishFraChoice
   | .sacrificeLeastPower _, _ => throw "Choose a creature tied for the least power"
   | .mayPayPickThen pick next sourceId, .objects ids =>
-    let abId := g.resolvingAbility <|> g.resolvingSpell <|> resolvingForObj <|> sourceId
+    let abId := resolvingForObj <|> sourceId
     let g ← g.payCostPick p abId sourceId pick ids
     if g.mayThenDrop > 0 then
       return g.acceptMayThen
@@ -902,7 +914,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     if !(g.player p).manaPool.canPay cost (allowCantNonartifact := true) then
       throw s!"{(g.player p).name} cannot pay \{W/B}; add mana first"
     let g ← g.payCost p cost (allowCantNonartifact := true)
-      (forObject := sourceId <|> resolvingForObj)
+      (forObject := resolvingForObj <|> sourceId)
     return (g.extortDrain p).finishFraChoice
   | .mayPayExtort _, .decline => return (g.logMsg "Extort is not paid").finishFraChoice
   | .mayPayExtort _, _ => throw "Pay {W/B} (accept), or decline"
@@ -995,7 +1007,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     if !(g.player p).manaPool.canPay total (allowCantNonartifact := true) then
       throw s!"{(g.player p).name} cannot pay {total}; add mana first"
     let g ← g.payCost p total (allowCantNonartifact := true)
-      (forObject := sourceId <|> resolvingForObj)
+      (forObject := resolvingForObj <|> sourceId)
     let g := g.logMsg s!"{(g.player p).name} pays {total}"
     if g.mayThenDrop > 0 then
       return g.acceptMayThen
@@ -1088,22 +1100,32 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
         match outerCont? with
         | some outer => g.chainPendingReplacement outer
         | none => g
-    let name := ((g.findObject? sourceId).map g.name).getD
-      ((prop?.map (fun pr => pr.originalSnapshot.name)).getD "Baron Helmut Zemo")
-    let g := g.becomeActivated p name (some sourceId)
-      (some (prop?.bind (fun pr => pr.activation) |>.getD ActivatedAbility.zemoBoastAbility))
-      (abilityId := some abilityId)
-      (sourceSnapshot := prop?.map (fun pr => pr.originalSnapshot))
-      (sourceOriginal := prop?.map (fun pr => pr.original))
-      (hadOuterReplacement := outerCont?.isSome)
-      (hadOpenContinuation := some openCont)
-    let g :=
+    match g.proposedSpell.filter g.propNeedsPostFraSteps with
+    | some curProp =>
       if paused then
-        match outerCont? with
-        | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishFra
-        | none => g
-      else g
-    return g.resumeAfterBecomeCast
+        let g := g.chainPendingReplacement (.finishPostStep (.continuePostFraActivation p))
+        return match outerCont? with
+          | some outer => g.chainPendingReplacement outer
+          | none => g
+      else
+        return (← g.continuePostFraActivationM p curProp)
+    | none =>
+      let name := ((g.findObject? sourceId).map g.name).getD
+        ((prop?.map (fun pr => pr.originalSnapshot.name)).getD "Baron Helmut Zemo")
+      let g := g.becomeActivated p name (some sourceId)
+        (some (prop?.bind (fun pr => pr.activation) |>.getD ActivatedAbility.zemoBoastAbility))
+        (abilityId := some abilityId)
+        (sourceSnapshot := prop?.map (fun pr => pr.originalSnapshot))
+        (sourceOriginal := prop?.map (fun pr => pr.original))
+        (hadOuterReplacement := outerCont?.isSome)
+        (hadOpenContinuation := some openCont)
+      let g :=
+        if paused then
+          match outerCont? with
+          | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishFra
+          | none => g
+        else g
+      return g.resumeAfterBecomeCast
   | .zemoBoastExile _ sourceId, .decline =>
     let col :=
       match gPre.findObject? sourceId with

@@ -174,10 +174,11 @@ def phaseInControlledLoop (g : Game) (remainingIds : Array ObjectId)
   return g
 
 /-- Whether departed player `dep`'s next turn would have begun in `g.events`
-strictly after event index `sinceIdx`, folding turn-order, extra-turn, and
-shared-turn state from `g.events` (CR 500.7 / 702.26m,n / 800.4 / 805.4). -/
+strictly after event index `sinceIdx?` (`none` when phased out prior to `g.events[0]`),
+folding turn-order, extra-turn, and shared-turn state from `g.events`
+(CR 500.7 / 702.26m,n / 800.4 / 805.4). -/
 private def departedNextTurnWouldHaveBegunSince (g : Game) (dep : PlayerId)
-    (sinceIdx : Nat) : Bool := Id.run do
+    (sinceIdx? : Option Nat) : Bool := Id.run do
   let n := g.players.size
   if n == 0 then return false
   let hasLeaveEvent (p : PlayerId) : Bool :=
@@ -189,27 +190,44 @@ private def departedNextTurnWouldHaveBegunSince (g : Game) (dep : PlayerId)
   let mut alive : Array Bool := Array.ofFn (n := n) fun ⟨k, _⟩ =>
     let pk : PlayerId := ⟨k⟩
     g.stillInGame pk || hasLeaveEvent pk
-  let initAp : PlayerId := Id.run do
-    for i in [0 : min (sinceIdx + 1) g.events.size] do
-      match g.events[i]!.change with
-      | .engine (.startingPlayer v) => return v
-      | .rules (.turn (.turnBegan p _)) => return p
-      | .rules (.turn (.stepBegan _ ap)) => return ap
-      | .rules (.turn (.turnEnded ap)) => return ap
-      | _ => pure ()
+  let (initAp, initSeats, initSeatsExtra) : PlayerId × Array PlayerId × Bool := Id.run do
+    let mut aliveScan := alive
     for ev in g.events do
       match ev.change with
-      | .engine (.startingPlayer v) => return v
-      | .rules (.turn (.stepBegan _ ap)) => return ap
-      | .rules (.turn (.turnEnded ap)) => return ap
-      | .rules (.turn (.turnBegan p _)) =>
-        return if g.startingPlayer.idx < n then g.startingPlayer else p
+      | .engine (.addPlayer pl) =>
+        if pl.id.idx < n then
+          aliveScan := aliveScan.set! pl.id.idx (!pl.lost && !pl.leftTheGame)
+      | .rules (.player (.lost q ..))
+      | .rules (.player (.leftGame q)) =>
+        if q.idx < n then
+          aliveScan := aliveScan.set! q.idx false
+      | .engine (.startingPlayer v) =>
+        return (v, #[v], false)
+      | .rules (.turn (.stepBegan _ ap))
+      | .rules (.turn (.turnEnded ap)) =>
+        return (ap, #[ap], false)
+      | .rules (.turn (.turnBegan p extra)) =>
+        let mut prev? : Option PlayerId := none
+        for k in [1 : n + 1] do
+          let q : PlayerId := ⟨(p.idx + n - k) % n⟩
+          if q.idx < n && aliveScan[q.idx]! then
+            prev? := some q
+            break
+        let prev := prev?.getD (if g.startingPlayer.idx < n then g.startingPlayer else p)
+        let team := g.teamMembers p
+        let sameSharedPrev :=
+          g.areTeammates prev p &&
+            match team.findIdx? (· == prev), team.findIdx? (· == p) with
+            | some ia, some ib => ia < ib
+            | _, _ => false
+        return (prev, #[prev], if sameSharedPrev then extra else false)
       | _ => pure ()
-    return if g.activePlayer.idx < n then g.activePlayer else ⟨0⟩
+    let fallback := if g.activePlayer.idx < n then g.activePlayer else ⟨0⟩
+    return (fallback, #[fallback], false)
   let mut activePlayer : PlayerId := initAp
   let mut extraTurns : Array PlayerId := #[]
-  let mut seats : Array PlayerId := #[initAp]
-  let mut seatsExtra : Bool := false
+  let mut seats : Array PlayerId := initSeats
+  let mut seatsExtra : Bool := initSeatsExtra
   let isAlive (al : Array Bool) (q : PlayerId) : Bool :=
     q.idx < n && al[q.idx]!
   let isFinalSeat (ap : PlayerId) (al : Array Bool) (stSeats : Array PlayerId) : Bool := Id.run do
@@ -238,20 +256,7 @@ private def departedNextTurnWouldHaveBegunSince (g : Game) (dep : PlayerId)
         seats := #[ap]
     | .rules (.turn (.extraTurnAdded player _)) =>
       let team := g.teamMembers player
-      let inProgress :=
-        if seatsExtra && !seats.isEmpty then
-          Id.run do
-            let mut seen := seats
-            let mut cnt := 0
-            let mut keepGoing := true
-            for q in extraTurns do
-              if keepGoing && g.areTeammates seats[0]! q && !seen.contains q then
-                seen := seen.push q
-                cnt := cnt + 1
-              else
-                keepGoing := false
-            return cnt
-        else 0
+      let inProgress := g.countInProgressSharedExtraSeats seats seatsExtra extraTurns
       extraTurns :=
         extraTurns.extract 0 inProgress ++ team ++
           extraTurns.extract inProgress extraTurns.size
@@ -259,23 +264,10 @@ private def departedNextTurnWouldHaveBegunSince (g : Game) (dep : PlayerId)
       let sameShared :=
         extra == seatsExtra && !seats.isEmpty &&
           g.areTeammates seats[0]! player && !seats.contains player
-      if idx > sinceIdx then
+      if sinceIdx?.all (idx > ·) then
         let finalSeat := isFinalSeat activePlayer alive seats
         let midRegularShared := !seatsExtra && !finalSeat
-        let inProgressExtraSeats :=
-          if seatsExtra && !seats.isEmpty then
-            Id.run do
-              let mut seen := seats
-              let mut cnt := 0
-              let mut keepGoing := true
-              for q in extraTurns do
-                if keepGoing && g.areTeammates seats[0]! q && !seen.contains q then
-                  seen := seen.push q
-                  cnt := cnt + 1
-                else
-                  keepGoing := false
-              return cnt
-          else 0
+        let inProgressExtraSeats := g.countInProgressSharedExtraSeats seats seatsExtra extraTurns
         let skipped : Array PlayerId := Id.run do
           let mut depSkipped : Array PlayerId := #[]
           if !midRegularShared then
@@ -290,20 +282,21 @@ private def departedNextTurnWouldHaveBegunSince (g : Game) (dep : PlayerId)
               skipIdx := skipIdx + 1
             if (extraTurns.extract skipIdx extraTurns.size)[0]?.isSome then
               return depSkipped
-          for k in [1:n+1] do
-            let q : PlayerId := ⟨(activePlayer.idx + k) % n⟩
-            if !isAlive alive q then
-              let endingCurrentShared :=
-                !sameShared && seats.any (fun s => s == q || g.areTeammates s q)
-              if !(g.teamMembers q).any (isAlive alive) && !endingCurrentShared &&
-                  !depSkipped.contains q then
-                depSkipped := depSkipped.push q
-            else
-              return depSkipped
+          if !extra && !sameShared then
+            for k in [1:n+1] do
+              let q : PlayerId := ⟨(activePlayer.idx + k) % n⟩
+              if !isAlive alive q then
+                let endingCurrentShared :=
+                  !sameShared && seats.any (fun s => s == q || g.areTeammates s q)
+                if !(g.teamMembers q).any (isAlive alive) && !endingCurrentShared &&
+                    !depSkipped.contains q then
+                  depSkipped := depSkipped.push q
+              else
+                return depSkipped
           return depSkipped
         let depSharedTurnBegan :=
           !sameShared && (player == dep || g.areTeammates player dep)
-        if skipped.contains dep || depSharedTurnBegan then
+        if skipped.any (fun q => q == dep || g.areTeammates q dep) || depSharedTurnBegan then
           return true
       let dropLost (xs : Array PlayerId) : Array PlayerId :=
         (xs.toList.dropWhile (fun q => !isAlive alive q)).toArray
@@ -334,35 +327,37 @@ def phaseInControlled (g : Game) (p : PlayerId) : Game :=
   let fallbackCtrlOf (o : GameObject) : Option PlayerId :=
     (g.controllerOf o).orElse (fun _ =>
       some ((o.defaultController.orElse (fun _ => o.controller)).getD o.owner))
-  let phaseOutControllerOf (o : GameObject) : Option PlayerId × Nat := Id.run do
+  let phaseOutControllerOf (o : GameObject) : Option PlayerId × Option Nat := Id.run do
     for rev in [0:g.events.size] do
       let idx := g.events.size - 1 - rev
       match g.events[idx]!.change with
       | .rules (.permanent (.phasedOut eo _)) =>
-        if eo.id == some o.id then return (eo.controller <|> fallbackCtrlOf o, idx)
+        if eo.id == some o.id then
+          return (g.controllerOfAt o idx <|> eo.controller <|> fallbackCtrlOf o, some idx)
       | .engine (.materializeObject obj _) =>
         if obj.id == o.id && obj.zone == .battlefield && obj.status.phasedOut &&
             !g.objectWasPhasedOutAt o idx then
           let matCtrl :=
             (g.controllerOfAt o (idx + 1)).orElse (fun _ =>
               some ((obj.defaultController.orElse (fun _ => obj.controller)).getD obj.owner))
-          return (matCtrl, idx)
-      | .rules (.zone (.moved _ after _ toZone ..)) =>
-        if after.id == some o.id && toZone == .battlefield && after.phasedOut then
-          return (after.controller <|> fallbackCtrlOf o, idx)
+          return (matCtrl, some idx)
+      | .rules (.zone (.moved before after _ toZone ..)) =>
+        if after.id == some o.id && toZone == .battlefield && after.phasedOut &&
+            (before.id != some o.id || !g.objectWasPhasedOutAt o idx) then
+          return (g.controllerOfAt o (idx + 1) <|> after.controller <|> fallbackCtrlOf o, some idx)
       | .rules (.zone (.created eo c)) =>
         if eo.id == some o.id && eo.zone == .battlefield && eo.phasedOut then
-          return (eo.controller <|> some c, idx)
+          return (g.controllerOfAt o (idx + 1) <|> eo.controller <|> some c, some idx)
       | _ => pure ()
-    return (g.controllerOfAt o 0 <|> fallbackCtrlOf o, 0)
+    return (g.controllerOfAt o 0 <|> fallbackCtrlOf o, none)
   let targetIds :=
     g.objects.filterMap fun o =>
       if o.zone == .battlefield && o.status.phasedOut && o.status.phasedWith.isNone then
-        let (ctrl?, sinceIdx) := phaseOutControllerOf o
+        let (ctrl?, sinceIdx?) := phaseOutControllerOf o
         let shouldPhaseIn :=
           ctrl? == some p ||
             match ctrl? with
-            | some dep => !g.stillInGame dep && departedNextTurnWouldHaveBegunSince g dep sinceIdx
+            | some dep => !g.stillInGame dep && departedNextTurnWouldHaveBegunSince g dep sinceIdx?
             | none => false
         if shouldPhaseIn then some o.id else none
       else none

@@ -711,7 +711,7 @@ def applyFrc (g : Game) (controller : PlayerId) (effect : Effect) (e : FrcEffect
       let payCause : Option EventCause :=
         g.currentResolvingContext?.map fun (src, _) =>
           .costPayment .life controller
-            (g.resolvingAbility.orElse (fun _ => sourceId.orElse (fun _ => src)))
+            (g.resolvingAbility <|> g.resolvingSpell <|> sourceId <|> src)
       match g.payLifeCost controller n (cause := payCause) with
       | .ok g =>
         if (g.player controller).life < before then g.draw controller n else g

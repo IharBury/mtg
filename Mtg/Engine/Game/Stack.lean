@@ -126,6 +126,9 @@ structure ProposedSpell where
   /-- Whether this activation's loyalty cost has already been paid (including `+0`,
   CR 602.2b / 606.4). -/
   loyaltyPaid : Bool := false
+  /-- Whether this activation's initial `.crew` or `.zemoBoast` choice has already
+  been paid (including `Crew 0`, CR 602.2b / 702.122a / 702.142). -/
+  fraCostPaid : Bool := false
 deriving Repr, Inhabited, BEq
 
 end Mtg.Engine

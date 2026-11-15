@@ -102,6 +102,7 @@ inductive ProposalChange where
   | payLife (n : Nat)
   | alternativeCost (v : Bool)
   | loyaltyPaid (v : Bool)
+  | fraCostPaid (v : Bool)
 deriving Repr, Inhabited, BEq
 
 /-- Priority tiers for choosing among multiple applicable replacement or
@@ -956,7 +957,7 @@ deriving DecidableEq, Repr, Inhabited, BEq
 inductive ActivationKind where
   | nonMana (loyalty : Option Int) (equip : Bool) (powerUp : Bool) (boast : Bool)
       (abilityIdx : Option Nat := none) (exhaust : Bool := false)
-  | mana (abilityIdx : Option Nat := none)
+  | mana (abilityIdx : Option Nat := none) (powerUp : Bool := false) (exhaust : Bool := false)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- Casting and activation lifecycle events (CR 601.2 / 602.2 / 605.3b). -/
@@ -1428,6 +1429,8 @@ inductive PostStep where
       (top : Bool) (msgOverride : Option String := none)
   | logDealDamageEachOpposingCreature (amount : Nat)
   | finishZemoBoastExileLogs (p : PlayerId) (sourceId : ObjectId) (preIds : Array ObjectId)
+  | markFraCostPaid
+  | continuePostFraActivation (p : PlayerId)
   | plusOneOnCreatedTokensLoop (controller : PlayerId) (remainingIds : Array ObjectId)
       (amount : Nat)
   | moveIdsInOrderLoop (ids : Array ObjectId) (dest : Zone) (log : String)
@@ -1659,6 +1662,8 @@ inductive PendingReplacement where
       (attachedTo : Option ObjectId := none)
       (enterMods : Array TriggeredAbility.TriggerEnterWith := #[])
       (cause : Option EventCause)
+      (lkiController? : Option PlayerId := none)
+      (skipUnattachIds : Array ObjectId := #[])
   | moveSimultaneousToGraveyard (ids : Array ObjectId)
       (preBattlefield : Option (Array GameObject))
       (cause : Option EventCause)
@@ -1765,10 +1770,12 @@ inductive PendingReplacement where
       (remainingCostIds : Array ObjectId) (tap sacrificeSelf : Bool)
       (activatedIdx : Option Nat) (restriction : ManaRestriction)
       (damageYou : Nat) (isMountain : Bool) (prevPending : Pending)
+      (exileSelf : Bool := false) (powerUp : Bool := false) (exhaust : Bool := false)
   | finishActivateManaAbilityPostSac (p : PlayerId) (id : ObjectId) (oname : String)
       (srcSnap : EventObject) (mana : Array ManaType) (tap : Bool)
       (activatedIdx : Option Nat) (restriction : ManaRestriction)
       (damageYou : Nat) (isMountain : Bool) (prevPending : Pending)
+      (powerUp : Bool := false) (exhaust : Bool := false)
   | finishBeginRecruit (p : PlayerId)
   | finishDrawThenBeginDiscard (p : PlayerId) (discardRounds : Nat)
   | finishConniveDraws (controller : PlayerId)
@@ -1918,7 +1925,7 @@ inductive PendingReplacement where
       (postMove : Bool := false)
   | leavePlayersWhoLost (savedPending : Option Pending := none) (popOuter : Bool := false)
       (departed : Array PlayerId := #[]) (rewindProposal : Option Bool := none)
-  | endControlExileLoop (remaining : Array (ObjectId × String))
+  | endControlExileLoop (remaining : Array (ObjectId × String × Option PlayerId))
       (cause : Option EventCause := none)
       (pendingLog : Option (ObjectId × String) := none)
   | beginStepCont (step : Step)
@@ -3782,9 +3789,20 @@ def dealtNoncombat (events : Array GameEvent) (turn : Nat) (p : PlayerId) : Bool
       | .rules (.life (.lost q amt true false)) => q == p && amt > 0
       | _ => false
 
+/-- Index of the `CastEvent.spellCast` event for `spell`, or `events.size` when
+`spell` has not yet finished casting (CR 601.2h–i). -/
+def castEventBound (events : Array GameEvent) (spell : ObjectId) : Nat :=
+  match events.findIdx? (fun e =>
+    match e.change with
+    | .rules (.cast (.spellCast s ..)) => s.id == some spell
+    | _ => false) with
+  | some idx => idx
+  | none => events.size
+
 /-- Mana recorded for `spell` when it was cast, if the log has that payment. -/
 def manaSpentOn (events : Array GameEvent) (spell : ObjectId) : Nat :=
-  events.foldl (fun n e =>
+  let preCast := events.extract 0 (castEventBound events spell)
+  preCast.foldl (fun n e =>
     match e.change, e.cause? with
     | .rules (.player (.manaSpent _ units forObj)), some (.costPayment .mana _ oid?) =>
       if forObj == some spell || oid? == some spell then max n units.size else n
@@ -3806,18 +3824,20 @@ private def isTreasureManaUnit (events : Array GameEvent) (u : ManaUnit) : Bool 
 
 /-- Whether mana from a Treasure was spent to cast `spell` (CR 106.6). -/
 def treasureManaSpentOn (events : Array GameEvent) (spell : ObjectId) : Bool :=
-  events.any fun e =>
+  let preCast := events.extract 0 (castEventBound events spell)
+  preCast.any fun e =>
     match e.change, e.cause? with
     | .rules (.player (.manaSpent _ units forObj)), some (.costPayment .mana _ oid?) =>
       (forObj == some spell || oid? == some spell) &&
-        units.any (isTreasureManaUnit events)
+        units.any (isTreasureManaUnit preCast)
     | .rules (.player (.manaSpent _ units forObj)), _ =>
-      forObj == some spell && units.any (isTreasureManaUnit events)
+      forObj == some spell && units.any (isTreasureManaUnit preCast)
     | _, _ => false
 
 /-- Whether legendary-restricted mana (Delighted Halfling) was spent to cast `spell` (CR 106.6). -/
 def legendaryManaSpentOn (events : Array GameEvent) (spell : ObjectId) : Bool :=
-  events.any fun e =>
+  let preCast := events.extract 0 (castEventBound events spell)
+  preCast.any fun e =>
     match e.change, e.cause? with
     | .rules (.player (.manaSpent _ units forObj)), some (.costPayment .mana _ oid?) =>
       (forObj == some spell || oid? == some spell) &&

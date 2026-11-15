@@ -422,12 +422,13 @@ def usableManaTypesForProposed (g : Game) (src : GameObject) (types : Array Mana
   types.filter (fun t => g.restrictionAllowsProposed (g.tapRestrictionOf src t) prop)
 
 /-- Untapped mana sources `p` may activate while paying `prop` (CR 601.2g).
-Sources reserved for `{T}`, or whose mana cannot be spent on this spell or
-ability, are omitted. -/
+Sources reserved for `{T}` or another battlefield-source cost, or whose mana
+cannot be spent on this spell or ability, are omitted. -/
 def manaSourcesForProposed (g : Game) (p : PlayerId) (prop : ProposedSpell) :
     Array (GameObject × Array ManaType) :=
   (g.manaSources p).filterMap (fun (src, types) =>
-    if (prop.tapSource && prop.sourceId == some src.id) || prop.teamworkCreatures.contains src.id then
+    if (g.proposedNeedsBattlefieldSource prop && prop.sourceId == some src.id) ||
+        prop.teamworkCreatures.contains src.id then
       none
     else
       let usable := g.usableManaTypesForProposed src types prop
@@ -1165,7 +1166,8 @@ def finishPostLoyaltyActivated (g : Game) (p : PlayerId) (sourceName : String)
       match activation with
       | some ab => ab.powerUp
       | none => srcObj?.any (fun src => (g.baseCard src).activatedAbilities.any (·.powerUp))
-    let isBoast := activation == some ActivatedAbility.zemoBoastAbility
+    let isBoast :=
+      activation.any (fun ab => ab == ActivatedAbility.zemoBoastAbility || ab.cost.fra == .zemoBoast)
     let abilityIdx : Option Nat :=
       match srcObj?, activation with
       | some src, some ab => (g.activatedAbilitiesOf src).findIdx? (· == ab)
@@ -1445,6 +1447,21 @@ def proposedNeedsTarget (g : Game) (prop : ProposedSpell) : Bool :=
       | some e => e.requiresTarget
       | none => false
     | .turnFaceUp => false
+
+/-- Whether an activated-ability proposal still has announcement choices or
+unpaid non-loyalty costs after an initial `.crew` or `.zemoBoast` choice. -/
+def propNeedsPostFraSteps (g : Game) (prop : ProposedSpell) : Bool :=
+  let isModal := prop.abilityModes.size > 1
+  let needsTarget := g.proposedNeedsTarget prop
+  let hasExtraCost :=
+    prop.tapSource || prop.sacrificeSource || prop.payLife > 0 || prop.discardSource ||
+      prop.needsSacrificeOther || prop.removePlusOneX ||
+      prop.activation.any (fun a =>
+        !(costPicksOf a).isEmpty || a.cost.sacrificeSource || a.cost.fra == .exileSource ||
+        a.cost.fra == .exileSourceFromHand || a.cost.removeStoryCounter ||
+        a.cost.removeIndestructibleCounter || a.cost.putStunCounterOnSource)
+  isModal || needsTarget || prop.loyaltyX || prop.removePlusOneX ||
+    prop.cost.includesManaPayment || prop.cost.containsX || hasExtraCost
 
 /-- Choose new targets for a spell on the stack (Speedball; MSH 370).
 Each slot that has no new legal target is left unchanged, even if the
