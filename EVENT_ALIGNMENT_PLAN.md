@@ -17679,9 +17679,12 @@ parity).
          `.finishPostCast`'s `g.finishFraChoice` call at `1694` with
          `!grantPriority && !followedByFinishFra && !followedByNonProposalPriorityGrant`, and in
          `reverseOrResumePopped` (`1241, 1382–1384, 1425–1438`) when
-         `followedByExplicitPriority? == some prio` (and `!followedByFinishFra`) append/chain
-         `.receivePriority prio` (`1383, 1425–1431`) or call `g.finishAndGrantPriority prio` (`1432–1434`)
-         instead of `.finishFraChoice` / `g.finishFraChoice`;
+         `!followedByFinishFra && followedByExplicitPriority? == some prio` append `.receivePriority prio`
+         in `1383`'s `else tailSeq` branch (`poppedTail? = some tailSeq`) and add a new arm beside `1425`
+         (`poppedTail? = none`, leaving the `followedByFinishFra` arm at `1425–1431` unchanged) that chains
+         `.receivePriority prio` when `g.sbaPaused` and otherwise (when `!g.over`) calls
+         `g.finishAndGrantPriority prio` (covering both the nonempty-continuation path at `1432–1434` and the
+         empty-continuation path at `1435–1438`);
          and check `g.anyContinuationGrantsPriority` in `Decisions.finishFraChoice` (`478`),
          `Decisions.finishProposedSpellCosts` (`3487`), `Decisions.beginResolutionCastTargets` (`3590`),
          `Decisions.discardChosen` (`4537, 4541`), and `Actions.applyAction` (`Actions.lean:76`).
@@ -17703,7 +17706,7 @@ parity).
      (`Phasing.lean:341–352`, `Turns.lean:642–702, 783–814`):
      - Two 2HG / extra-turn expiry bugs remain in `Turns` and `Phasing`:
        (i) `endingCurrentShared q := !sameShared && seats.any (fun s => s == q || g.areTeammates s q)`
-       (`Turns.lean:653–654, 792–793`; mirrored in `Phasing.departedNextTurnWouldHaveBegunSince` at
+       (`Turns.lean:642–643, 783–784`; mirrored in `Phasing.departedNextTurnWouldHaveBegunSince` at
        `Phasing.lean:345–347`) omits `!seatsExtra` in the regular-turn ring scans (`Turns.lean:688, 697,
        802`), so when Team B (`#[p2, p3]`, after `p0`'s regular turn `lastRegEnd = p1`) takes an extra turn
        (`seats = #[p2, p3]`, `seatsExtra = true`), departs during that extra turn, and regular turn order
@@ -17716,11 +17719,12 @@ parity).
        Regular, Regular -> Extra, or Extra -> Extra) after one teammate `tm` departed on or before the first
        turn, `endingCurrentShared tm` suppresses CR 800.4i `.untilNextTurnOf tm` expiry at the start of the
        team's *next* shared turn:
-       - Split `endingCurrentShared` into `endingCurrentRegularShared q := !seatsExtra && !sameShared &&
-         seats.any (fun s => s == q || g.areTeammates s q)` for regular-turn ring scans (`Turns.lean:688,
-         697, 802` and `Phasing.lean:345–347`) and `endingCurrentExtraShared q := seatsExtra && !sameShared
-         && seats.any (fun s => s == q || g.areTeammates s q)` for `nextP` when `nextP` was already one of
-         the `inProgressExtraSeats` of the ending shared extra turn (`Turns.lean:682`), and drop
+       - Split `endingCurrentShared` (`Turns.lean:642–643, 783–784`) into
+         `endingCurrentRegularShared q := !seatsExtra && !sameShared && seats.any (fun s => s == q ||
+         g.areTeammates s q)` for regular-turn ring scans (`Turns.lean:688, 697, 802` and
+         `Phasing.lean:345–347`) and `endingCurrentExtraShared q := seatsExtra && !sameShared && seats.any
+         (fun s => s == q || g.areTeammates s q)` for `nextP` when `nextP` was already one of the
+         `inProgressExtraSeats` of the ending shared extra turn (`Turns.lean:682`), and drop
          `!endingCurrentShared tm` from the `!sameShared` departed-teammate loops on newly starting turns at
          `Turns.lean:659, 674, 810`.
    - **Cease-first `.fraEmblem` ordering & `skipLogIds` forwarding in `Core.expireWhileSourceEffects` /
