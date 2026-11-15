@@ -17216,8 +17216,8 @@ provenance, mixed-zone & battlefield-source activation legality, `Timing.isManaA
    pattern arities & pre-materialize snapshots, `HistoricalSlice` controller / `.created` `printed` /
    non-initial `.materializeObject` rollback, `Core.isInitialMaterialize` `noSourceSentinelId` &
    post-bound accuracy, and `Phasing` simultaneous batch LKI & 2HG shared-extra-turn `initAp`**
-   (`ActivationCosts.lean:1011`,
-   `Core.lean:1688–2007, 2010–2059, 2089–2143, 5595–5606, 5803–5899, 6008–6035, 6237–6251, 6502–6570`,
+   (`ActivationCosts.lean:1011`, `CardDef.lean:309`,
+   `Core.lean:1688–2007, 2010–2059, 2089–2143, 5595–5606, 5651–5658, 5803–5899, 6008–6035, 6237–6251, 6502–6570`,
    `Event.lean:957–961, 971–972`, `ManaAbilities.lean:577`,
    `Phasing.lean:83–119, 206–208, 228, 259, 264–266, 334–336`;
    **CR 108.4 / 110.2 / 122.1 / 302.6 / 400.7 / 500.7 / 502.1 / 608.2f / 611.2b–c / 611.3a /
@@ -17244,7 +17244,7 @@ provenance, mixed-zone & battlefield-source activation legality, `Timing.isManaA
      `initHistoricalSlice` / `objectZoneAndPhasedOutAt?` non-initial `.materializeObject` rollback &
      `hasSummoningSickness` non-initial arrival, and `initHistoricalSlice` / `stepHistoricalSlice`
      `.created` & DFC `.moved` accuracy**
-     (`Core.lean:2010–2059, 2089–2143, 5803–5899, 6008–6035, 6237–6251`):
+     (`CardDef.lean:309`, `Core.lean:2010–2059, 2089–2143, 5651–5658, 5803–5899, 6008–6035, 6237–6251`):
      - Three historical-reconstruction bugs remain in `Core`:
        (i) `Core.objectCounterCountAt` (`2121, 2128`) writes `.tapped eo` (`duringControllersTurn =
        false`) and `.attached eo _` (`previous = none`), missing taps on the controller's turn and
@@ -17252,8 +17252,13 @@ provenance, mixed-zone & battlefield-source activation legality, `Timing.isManaA
        snapshots (`2094–2131`), and returns post-materialize `obj.status.counters.count k` on
        non-initial `.materializeObject` (`2140`);
        (ii) `initHistoricalSlice` (`5808–5809, 5838–5839`) uses `dc0.orElse` / `rc0.orElse` (keeping
-       end-of-log `some p1` over `before.controller`), ignores `eo.printed` on `.created` (`5860–5869,
-       6027–6035`), and flips `pr` to `card.dfcFront` on non-DFC-to-DFC `.moved` (`5843, 6010`); and
+       end-of-log `some p1` over `before.controller`), `initHistoricalSlice` (`5860–5868`) and
+       `stepHistoricalSlice` (`6027–6034`) ignore `eo.printed` on `.created`, and the `p.otherFace.isSome
+       || pr.otherFace.isNone` guard (`5813, 5843, 6010`, `CardDef.otherFace` at `CardDef.lean:309`)
+       skips `eo.printed` / `before.printed` / `after.printed` (`some p` with `p.otherFace.isNone`)
+       whenever `pr` has `otherFace.isSome` — keeping a DFC `pr` instead of assigning an unrelated
+       non-DFC `p` or flipping via `swapCardFace` (`Core.lean:5651–5658`) when `p` matches
+       `pr.otherFace`; and
        (iii) on a non-initial `.materializeObject` (`!g.isInitialMaterialize ..`) at `i >= bound` /
        `idx >= startIdx`, `objectZoneAndPhasedOutAt?`'s post-`bound` backward rollback (`2037–2058`,
        after `[0:bound]` at `2013–2032` found no pre-`bound` zone/materialize event; `2054–2056`
@@ -17277,11 +17282,15 @@ provenance, mixed-zone & battlefield-source activation legality, `Timing.isManaA
          (whereas `2013–2032` scans `i < bound` prior to `evIdx`, where post-materialize `obj.zone` is
          already in effect at `evIdx`), and gate `missingInfo := setHistMissingInfo missingInfo obj.id
          synthEo` (`5886`) on `g.isInitialMaterialize obj.id idx` while rolling back pre-event
-         `EventObject` state via `eventObjectPreSnapshotOf?` in `initHistoricalSlice` (`5874–5898`); update `pr` from `eo.printed` on `.created` (`5860–5869, 6027–6035`, guarding
-         `.moved` DFC face selection at `5843, 6010` on `pr.isDfcBack` / `pr.name == back.name`); and
-         in `hasSummoningSickness` (`6237–6250`) handle non-initial `.materializeObject` onto
-         `.battlefield` when `(g.objectZoneAndPhasedOutAt? obj.id i).all (·.1 != .battlefield)`
-         alongside the `g.isInitialMaterialize obj.id i` arrival arm.
+         `EventObject` state via `eventObjectPreSnapshotOf?` in `initHistoricalSlice` (`5874–5898`);
+         update `pr` from `eo.printed` on `.created` (`5860–5868, 6027–6034`) and refine the
+         `otherFace` guard at `5813, 5843, 6010` (`CardDef.lean:309`) so when `p.otherFace.isNone &&
+         pr.otherFace.isSome`, `pr` stays on its current face when `p.name == pr.name`, flips via
+         `swapCardFace pr` (`Core.lean:5651–5658`) when `pr.otherFace.any (·.name == p.name)`, and
+         otherwise assigns `p` (with `isToken` adjustment across all three cases) when `p` is a
+         distinct non-DFC `CardDef`; and in `hasSummoningSickness` (`6237–6250`) handle non-initial
+         `.materializeObject` onto `.battlefield` when `(g.objectZoneAndPhasedOutAt? obj.id i).all
+         (·.1 != .battlefield)` alongside the `g.isInitialMaterialize obj.id i` arrival arm.
    - **`noSourceSentinelId` exclusion, non-mana / new-ID `postBoundObjectCreatedOrTsUpdated`, departed
      post-bound newer-ID scan, and complete `ObjectId` coverage in `Core.isInitialMaterialize`**
      (`ActivationCosts.lean:1011`, `Core.lean:1688–2007`, `Event.lean:957–961, 971–972`,
