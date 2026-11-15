@@ -241,9 +241,9 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       | none => g
     else g
   let resolvingForObj :=
-    (g.currentResolvingContext?.bind Prod.fst) <|>
-      g.resolvingAbility <|>
-      g.resolvingSpell
+    g.resolvingAbility <|>
+      g.resolvingSpell <|>
+      (g.currentResolvingContext?.bind Prod.fst)
   match choice, answer with
   | .discardFromRevealedHand victim permanentOnly, .objects #[id] =>
     if !(g.revealedHandChoices victim permanentOnly).contains id then
@@ -369,7 +369,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     if !(g.player p).manaPool.canPay (ManaCost.ofGeneric n) (allowCantNonartifact := true) then
       throw s!"{(g.player p).name} cannot pay \{{n}}; add mana first"
     let g ← g.payCost p (ManaCost.ofGeneric n) (allowCantNonartifact := true)
-      (forObject := sourceId <|> resolvingForObj)
+      (forObject := resolvingForObj <|> sourceId)
     let g := g.logMsg s!"{(g.player p).name} pays \{{n}}"
     return (g.applyFra p default next.toResolution #[] sourceId).finishFraChoice
   | .mayPayThen .., .decline => return g.finishFraChoice
@@ -840,7 +840,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     if !(g.player p).manaPool.canPay cost (allowCantNonartifact := true) then
       throw s!"{(g.player p).name} cannot pay that cost; add mana first"
     let g ← g.payCost p cost (allowCantNonartifact := true)
-      (forObject := some sourceId <|> resolvingForObj)
+      (forObject := resolvingForObj <|> some sourceId)
     if g.mayThenDrop > 0 then
       return g.acceptMayThen
     else
@@ -873,7 +873,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     return (g.sacrificeLeastPowerCreature p (some id)).finishFraChoice
   | .sacrificeLeastPower _, _ => throw "Choose a creature tied for the least power"
   | .mayPayPickThen pick next sourceId, .objects ids =>
-    let abId := g.resolvingAbility <|> g.resolvingSpell <|> resolvingForObj <|> sourceId
+    let abId := resolvingForObj <|> sourceId
     let g ← g.payCostPick p abId sourceId pick ids
     if g.mayThenDrop > 0 then
       return g.acceptMayThen
@@ -902,7 +902,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     if !(g.player p).manaPool.canPay cost (allowCantNonartifact := true) then
       throw s!"{(g.player p).name} cannot pay \{W/B}; add mana first"
     let g ← g.payCost p cost (allowCantNonartifact := true)
-      (forObject := sourceId <|> resolvingForObj)
+      (forObject := resolvingForObj <|> sourceId)
     return (g.extortDrain p).finishFraChoice
   | .mayPayExtort _, .decline => return (g.logMsg "Extort is not paid").finishFraChoice
   | .mayPayExtort _, _ => throw "Pay {W/B} (accept), or decline"
@@ -995,7 +995,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     if !(g.player p).manaPool.canPay total (allowCantNonartifact := true) then
       throw s!"{(g.player p).name} cannot pay {total}; add mana first"
     let g ← g.payCost p total (allowCantNonartifact := true)
-      (forObject := sourceId <|> resolvingForObj)
+      (forObject := resolvingForObj <|> sourceId)
     let g := g.logMsg s!"{(g.player p).name} pays {total}"
     if g.mayThenDrop > 0 then
       return g.acceptMayThen

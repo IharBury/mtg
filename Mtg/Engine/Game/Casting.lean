@@ -422,12 +422,13 @@ def usableManaTypesForProposed (g : Game) (src : GameObject) (types : Array Mana
   types.filter (fun t => g.restrictionAllowsProposed (g.tapRestrictionOf src t) prop)
 
 /-- Untapped mana sources `p` may activate while paying `prop` (CR 601.2g).
-Sources reserved for `{T}`, or whose mana cannot be spent on this spell or
-ability, are omitted. -/
+Sources reserved for `{T}` or another battlefield-source cost, or whose mana
+cannot be spent on this spell or ability, are omitted. -/
 def manaSourcesForProposed (g : Game) (p : PlayerId) (prop : ProposedSpell) :
     Array (GameObject × Array ManaType) :=
   (g.manaSources p).filterMap (fun (src, types) =>
-    if (prop.tapSource && prop.sourceId == some src.id) || prop.teamworkCreatures.contains src.id then
+    if (g.proposedNeedsBattlefieldSource prop && prop.sourceId == some src.id) ||
+        prop.teamworkCreatures.contains src.id then
       none
     else
       let usable := g.usableManaTypesForProposed src types prop

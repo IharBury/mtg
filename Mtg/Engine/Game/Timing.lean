@@ -74,10 +74,56 @@ def combatLocksNonManaAbilities (g : Game) : Bool :=
     g.step == .declareBlockers || g.step == .combatDamage || g.step == .endOfCombat) &&
     g.battlefield.any (fun x => (g.staticAbilities x).any (· == .fra .noSpellsOrAbilitiesDuringCombat))
 
-/-- Mana abilities (CR 605.1a): no target, not a loyalty ability, and the
-effect adds mana. -/
+/-- Loyalty counters among Jace planeswalkers `p` controls. -/
+def jaceLoyaltyAmong (g : Game) (p : PlayerId) : Nat :=
+  (g.permanentsOf p).foldl (fun acc o =>
+    if g.isPlaneswalker o && g.hasSubtype o .jace then acc + o.status.loyaltyCounters
+    else acc) 0
+
+/-- Whether a Reality Fracture “Activate only if …” condition holds. -/
+def fraActivationConditionHolds (g : Game) (p : PlayerId) : FraActivationCondition → Bool
+  | .none => true
+  | .scriedOrSurveilledThisTurn =>
+    g.loggedScried p || g.loggedSurveilled p
+  | .graveyardAtLeast n => (g.player p).graveyard.size ≥ n
+  | .jaceLoyaltyAtLeast n => g.jaceLoyaltyAmong p ≥ n
+
+/-- Whether `ab` is activated from its owner's graveyard (CR 113.6 / 404). -/
+def _root_.Mtg.Engine.ActivatedAbility.isFromGraveyard (ab : ActivatedAbility) : Bool :=
+  ab.activateFromGraveyard || ab.cost.exileSourceFromGraveyard
+
+/-- Whether `ab` is activated from its owner's hand (CR 113.6 / 702.29). -/
+def _root_.Mtg.Engine.ActivatedAbility.isFromHand (ab : ActivatedAbility) : Bool :=
+  ab.activateFromHand || ab.cost.discardSource || ab.cost.fra == .exileSourceFromHand
+
+/-- Whether `ab`'s cost requires its source to be a permanent on the battlefield
+(CR 113.6 / 602.2b). -/
+def _root_.Mtg.Engine.ActivatedAbility.needsBattlefieldSource (ab : ActivatedAbility) : Bool :=
+  ab.cost.tap || ab.cost.sacrificeSource || ab.cost.loyalty.isSome ||
+    ab.cost.removeStoryCounter || ab.cost.removeIndestructibleCounter ||
+    ab.cost.removeAnyNumberPlusOne || ab.cost.putStunCounterOnSource ||
+    match ab.cost.fra with
+    | .exileSource | .crew _ | .zemoBoast => true
+    | _ => false
+
+/-- Whether `ab`'s non-mana extra costs can be paid by `ManaAbilityDef`
+(CR 605.1a / 605.3). -/
+def _root_.Mtg.Engine.ActivatedAbility.hasSupportedManaActivationCost (ab : ActivatedAbility) : Bool :=
+  !ab.cost.sacrificeAnotherCreatureOrArtifact &&
+    !ab.cost.removeAnyNumberPlusOne &&
+    !ab.cost.putStunCounterOnSource &&
+    match ab.cost.fra with
+    | .none | .exileSource
+    | .exileAnotherCreatureCardFromGraveyard | .sacrificeAnotherArtifact
+    | .sacrificeAnotherCreatureOrPlaneswalker | .sacrificeArtifactOrLand
+    | .discardLegendaryCard | .tapTwoUntappedArtifacts => true
+    | .exileSourceFromHand | .zemoBoast | .crew _ => false
+
+/-- Mana abilities (CR 605.1a): non-modal battlefield ability with no target,
+not a loyalty ability, supported mana-ability costs, and an effect that adds mana. -/
 def isManaActivation (ab : ActivatedAbility) : Bool :=
-  !ab.effect.requiresTarget && ab.cost.loyalty.isNone &&
+  ab.otherModes.isEmpty && !ab.effect.requiresTarget && ab.cost.loyalty.isNone &&
+    !ab.isFromGraveyard && !ab.isFromHand && ab.hasSupportedManaActivationCost &&
     match ab.effect.resolution with
     | .addMana _ | .addAnyColor | .addAnyColorSpendOnlySubtype _
     | .addAnyColorSpendOnlyArtifactSpell | .addTwoAnyColorCreatureSources

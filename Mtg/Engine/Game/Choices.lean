@@ -612,19 +612,29 @@ def sourceStillPayable (g : Game) (prop : ProposedSpell) : Bool :=
     let sacrificeOrExileSource :=
       prop.sacrificeSource || exileSource || prop.activation.any (·.cost.sacrificeSource)
     let sinceIdx := (g.proposalCheckpoint.map (·.eventsSize)).getD 0
+    let fromGyAb := prop.activation.any (·.isFromGraveyard)
+    let fromHandAb := prop.discardSource || prop.activation.any (·.isFromHand)
+    let needsBfSource :=
+      prop.tapSource || sacrificeOrExileSource || prop.removePlusOneX ||
+        prop.activation.any (·.needsBattlefieldSource)
+    if (fromGyAb && fromHandAb) || ((fromGyAb || fromHandAb) && needsBfSource) then
+      false
+    else
+    let forObj := some prop.spellId
+    let hasUnpaidBfSourceCost := g.proposedNeedsBattlefieldSource prop sinceIdx
     let alreadySacrificedForCost :=
       prop.kind == .activatedAbility &&
         !sacrificeOrExileSource && !prop.discardSource &&
-        !prop.activation.any (fun a =>
-          a.activateFromGraveyard || a.cost.exileSourceFromGraveyard ||
-            a.activateFromHand || a.cost.fra == .exileSourceFromHand) &&
-        g.sourceSacrificedForCost sid (some prop.spellId) sinceIdx
+        !fromGyAb && !fromHandAb &&
+        (g.sourceSacrificedForCost sid forObj sinceIdx ||
+          (!hasUnpaidBfSourceCost && g.sourceRemovedByCostSince prop.caster sid sinceIdx))
     let alreadyDiscardedFromHandForCost :=
       prop.kind == .activatedAbility &&
         !sacrificeOrExileSource && !prop.discardSource &&
+        !fromGyAb && !needsBfSource &&
         prop.activation.any (·.activateFromHand) &&
         !prop.activation.any (·.cost.fra == .exileSourceFromHand) &&
-        g.sourceDiscardedFromHandForCost sid (some prop.spellId) sinceIdx
+        g.sourceDiscardedFromHandForCost sid forObj sinceIdx
     match g.findObject? sid with
     | none => alreadySacrificedForCost || alreadyDiscardedFromHandForCost
     | some src =>
@@ -635,7 +645,6 @@ def sourceStillPayable (g : Game) (prop : ProposedSpell) : Bool :=
           (src.zone != .hand src.owner && alreadyDiscardedFromHandForCost) then
         true
       else
-      let forObj := some prop.spellId
       let loyaltyPayable :=
         match prop.activation.bind (·.cost.loyalty) with
         | none => true
@@ -664,21 +673,18 @@ def sourceStillPayable (g : Game) (prop : ProposedSpell) : Bool :=
           g.sourceCounterCostPaidFor sid forObj .removeCounters (some .indestructible) sinceIdx ||
           (src.isOnBattlefield && g.controlledBy src prop.caster &&
            src.status.indestructibleCounters > 0)
-      let fromGyAb :=
-        prop.activation.any (fun a => a.activateFromGraveyard || a.cost.exileSourceFromGraveyard)
-      let fromHandAb :=
-        prop.discardSource ||
-          prop.activation.any (fun a => a.activateFromHand || a.cost.fra == .exileSourceFromHand)
       loyaltyPayable && removePlusOneXPayable &&
       removeStoryPayable && removeIndestructiblePayable &&
+      (!prop.activation.any (·.cost.putStunCounterOnSource) ||
+        g.sourceCounterCostPaidFor sid forObj .putCounters (some .stun) sinceIdx ||
+        (src.isOnBattlefield && g.controlledBy src prop.caster)) &&
       ((src.isOnBattlefield && g.controlledBy src prop.caster &&
-        !fromGyAb && !prop.activation.any (·.activateFromHand) &&
-        (!prop.tapSource || !src.status.tapped || g.sourceTappedForCost sid forObj sinceIdx) &&
-        !prop.discardSource && !prop.activation.any (·.cost.fra == .exileSourceFromHand)) ||
-      (fromGyAb && src.zone == .graveyard src.owner && src.owner == prop.caster &&
-        !prop.tapSource && !prop.sacrificeSource && !prop.discardSource && !exileSource) ||
-      (fromHandAb && src.zone == .hand src.owner && src.owner == prop.caster &&
-        !prop.tapSource && !prop.sacrificeSource && !exileSource))
+        !fromGyAb && !fromHandAb &&
+        (!prop.tapSource || !src.status.tapped || g.sourceTappedForCost sid forObj sinceIdx)) ||
+      (fromGyAb && !fromHandAb && !needsBfSource &&
+        src.zone == .graveyard src.owner && src.owner == prop.caster) ||
+      (fromHandAb && !fromGyAb && !needsBfSource &&
+        src.zone == .hand src.owner && src.owner == prop.caster))
 
 end Game
 end Mtg.Engine

@@ -116,7 +116,8 @@ def replaceZoneMove (g : Game) (old : GameObject) (beforeSnap : EventObject)
     (libraryPosition : Option LibraryPosition := none)
     (preBattlefield : Option (Array GameObject) := none)
     (applied : Array ReplacementId := #[])
-    (cause : Option EventCause := none) : ZoneMoveReplacementResult := Id.run do
+    (cause : Option EventCause := none)
+    (lkiController? : Option PlayerId := none) : ZoneMoveReplacementResult := Id.run do
   let (board, boardOld) := preBatchBoardFor g old
   let mut curDest := initialDest
   let mut exileInstead := false
@@ -126,7 +127,7 @@ def replaceZoneMove (g : Game) (old : GameObject) (beforeSnap : EventObject)
   let mut curCause := cause
   let mut curOrder := g.replacementOrder
   let mut choice? : Option (PlayerId × Array ReplacementId) := none
-  let oldCtrl := board.controllerOf boardOld
+  let oldCtrl := (board.controllerOf boardOld).orElse (fun _ => lkiController?)
   let affected := oldCtrl.getD old.owner
   let bf := preBattlefield.getD board.battlefield
   let mut fuel := 32
@@ -264,7 +265,9 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
     (fromStackTime? : Option Nat := none)
     (enterMods : Array TriggeredAbility.TriggerEnterWith := #[])
     (cause : Option EventCause := none)
-    (suppressInteractive : Bool := false) : Game × ObjectId :=
+    (suppressInteractive : Bool := false)
+    (lkiController? : Option PlayerId := none)
+    (skipUnattachIds : Array ObjectId := #[]) : Game × ObjectId :=
   let quietMove :=
     suppressInteractive || g.openBatchSuppressInteractive || g.over || g.suppressInteractiveReplay
   if !quietMove && (match g.pending with | .chooseReplacement .. => true | _ => false) then
@@ -283,7 +286,8 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
       (.move id dest controller verb actor faceDown tapped
         isAttacking resolvedAttackTarget nightBack returnedAsArtifact onlyFoodArtifact
         extraEntersWith libraryPosition fromStackTime applyHope preBattlefield
-        isCopy overridePrinted adventurerCard summoningSick attachedTo enterMods cause),
+        isCopy overridePrinted adventurerCard summoningSick attachedTo enterMods cause
+        lkiController? skipUnattachIds),
      id)
   else
   match g.findObject? id with
@@ -302,7 +306,11 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
         if dest == .battlefield then g.resolveEnteringAttackTarget? enterCtrl attacking attackingTarget
         else none
       let isAttacking := resolvedAttackTarget.isSome
-      let beforeSnap := board.snapshot boardOld
+      let rawBeforeSnap := board.snapshot boardOld
+      let beforeSnap :=
+        if old.zone == .battlefield && rawBeforeSnap.controller.isNone && lkiController?.isSome then
+          { rawBeforeSnap with controller := lkiController? }
+        else rawBeforeSnap
       let buildArrival (g : Game) (targetZone : Zone) (asOf : Nat)
           (applied : Array ReplacementId := #[]) (curCause : Option EventCause := cause) :
           GameObject × CounterBag × Nat × Bool × Bool × Array ReplacementId × Option EventCause × Option (PlayerId × Array ReplacementId) × Option (CardDef × CardDef) × Bool :=
@@ -423,7 +431,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
       let moveRep :=
         g.replaceZoneMove old beforeSnap dest (verb := verb) (actor := actor)
           (libraryPosition := libraryPosition) (preBattlefield := preBattlefield)
-          (cause := cause)
+          (cause := cause) (lkiController? := lkiController?)
       let dest := moveRep.dest
       let (preCheckArrivalChoice?, preCheckStayNoAuraHost, preCheckAllApplied) :=
         if (quietMove || moveRep.choice?.isNone) && dest == .battlefield then
@@ -438,7 +446,8 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
           (.move id origDest controller verb actor faceDown tapped
             isAttacking resolvedAttackTarget nightBack returnedAsArtifact onlyFoodArtifact
             extraEntersWith libraryPosition fromStackTime applyHope preBattlefield
-            isCopy overridePrinted adventurerCard summoningSick attachedTo enterMods cause),
+            isCopy overridePrinted adventurerCard summoningSick attachedTo enterMods cause
+            lkiController? skipUnattachIds),
          (id, none, false))
       | none =>
       if preCheckStayNoAuraHost then
@@ -484,7 +493,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
           g.logMsg s!"A finality counter exiles {oldName} instead of putting it into a graveyard"
         else g
       let g :=
-        if old.zone == .battlefield then g.unattachFrom id else g
+        if old.zone == .battlefield then g.unattachFrom id (skipIds := skipUnattachIds) else g
       -- The copy of a prepare spell stays in exile only while its permanent is
       -- on the battlefield (ruling 742).
       let g :=

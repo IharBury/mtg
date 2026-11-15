@@ -168,7 +168,7 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
     | .chooseX _ =>
       match g.proposedSpell with
       | some prop =>
-        let excludeId := if prop.tapSource then prop.sourceId else none
+        let excludeId := if g.proposedNeedsBattlefieldSource prop then prop.sourceId else none
         let manaBound? : Option Nat :=
           if prop.cost.containsX then
             some (maxAffordableX g p prop.cost
@@ -498,10 +498,10 @@ where
   /-- Activate a non-mana ability if the available mana covers its cost. -/
   chooseActivate (g : Game) (p : PlayerId) : Option Action :=
     let shouldActivate (o : GameObject) (ab : ActivatedAbility) : Bool :=
-      let excludeId := if ab.cost.tap then some o.id else none
+      let isTurnFaceUp := o.status.faceDown && ab.effect.resolution == .frc .turnFaceUp
+      let excludeId := if isTurnFaceUp || ab.needsBattlefieldSource then some o.id else none
       let available := g.availableManaExcept p excludeId
       let manaCost := g.activationManaCost p ab (some o)
-      let isTurnFaceUp := o.status.faceDown && ab.effect.resolution == .frc .turnFaceUp
       let allowElf := !isTurnFaceUp && g.hasSubtype o .elf
       let allowHero := !isTurnFaceUp && g.hasSubtype o .hero
       let allowVillain := !isTurnFaceUp && g.hasSubtype o .villain

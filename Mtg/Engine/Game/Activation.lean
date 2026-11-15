@@ -15,20 +15,6 @@ planeswalkers they control any time they could cast an instant. -/
 def mayActivateLoyaltyAtInstantSpeed (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
   g.jaceLoyaltyAtInstantSpeed p && g.isPlaneswalker o && g.hasSubtype o .jace
 
-/-- Loyalty counters among Jace planeswalkers `p` controls. -/
-def jaceLoyaltyAmong (g : Game) (p : PlayerId) : Nat :=
-  (g.permanentsOf p).foldl (fun acc o =>
-    if g.isPlaneswalker o && g.hasSubtype o .jace then acc + o.status.loyaltyCounters
-    else acc) 0
-
-/-- Whether a Reality Fracture “Activate only if …” condition holds. -/
-def fraActivationConditionHolds (g : Game) (p : PlayerId) : FraActivationCondition → Bool
-  | .none => true
-  | .scriedOrSurveilledThisTurn =>
-    g.loggedScried p || g.loggedSurveilled p
-  | .graveyardAtLeast n => (g.player p).graveyard.size ≥ n
-  | .jaceLoyaltyAtLeast n => g.jaceLoyaltyAmong p ≥ n
-
 /-- Whether `p` can pay the Reality Fracture part of `o`'s activation cost. -/
 def canPayFraCost (g : Game) (p : PlayerId) (o : GameObject) (ab : ActivatedAbility) : Bool :=
   let sacOrExileSrc := ab.cost.sacrificeSource || ab.cost.fra == .exileSource
@@ -45,12 +31,14 @@ def canPayFraCost (g : Game) (p : PlayerId) (o : GameObject) (ab : ActivatedAbil
   | .exileSourceFromHand => o.zone == .hand o.owner
   | .exileSource => o.isOnBattlefield
   | .zemoBoast =>
-    let col := TextChange.applyColor (g.evalLayer3 o) .black
-    g.canPayZemoBoast p ((g.player p).graveyard.filter (fun id =>
-      (g.findObject? id).any (fun card => (g.colors card).contains col))) col
+    o.isOnBattlefield &&
+      let col := TextChange.applyColor (g.evalLayer3 o) .black
+      g.canPayZemoBoast p ((g.player p).graveyard.filter (fun id =>
+        (g.findObject? id).any (fun card => (g.colors card).contains col))) col
   | .crew n =>
-    ((g.creaturesControlledBy p).filter (fun c => c.id != o.id && !c.status.tapped)).foldl
-      (fun acc c => acc + (g.power c).toNat) 0 ≥ n
+    o.isOnBattlefield &&
+      ((g.creaturesControlledBy p).filter (fun c => c.id != o.id && !c.status.tapped)).foldl
+        (fun acc c => acc + (g.power c).toNat) 0 ≥ n
 
 /-- Shared activation legality (CR 602.5a / 602.5d). `canActivate` is this check as a
 `Bool`; `activateAbility` reports the first failing reason. -/
@@ -63,10 +51,16 @@ def validateActivation (g : Game) (p : PlayerId) (o : GameObject) (ab : Activate
     throw s!"{g.name o}'s ability is a mana ability (CR 605)"
   if g.splitSecondOnStack && !isManaActivation ab then
     throw "A spell with split second is on the stack (CR 702.61a)"
-  if ab.activateFromGraveyard || ab.cost.exileSourceFromGraveyard then
+  let fromGy := ab.isFromGraveyard
+  let fromHand := ab.isFromHand
+  if fromGy && fromHand then
+    throw s!"{g.name o}'s ability has conflicting hand and graveyard activation zones"
+  if (fromGy || fromHand) && ab.needsBattlefieldSource then
+    throw s!"{g.name o}'s ability has a battlefield cost that can't be paid from that zone"
+  if fromGy then
     if !(o.zone == .graveyard o.owner && o.owner == p) then
       throw s!"{g.name o}'s ability can be activated only from the graveyard"
-  else if ab.activateFromHand || ab.cost.discardSource || ab.cost.fra == .exileSourceFromHand then
+  else if fromHand then
     if !(o.zone == .hand o.owner && o.owner == p) then
       throw s!"{g.name o}'s ability can be activated only from your hand"
   else

@@ -313,6 +313,15 @@ def anyContinuationGrantsPriority (g : Game) : Bool :=
   g.pendingReplacement.any (continuationGrantsPriority g false) ||
     g.outerPendingReplacements.any (continuationGrantsPriority g false)
 
+/-- Whether `anyContinuationGrantsPriority` holds without an explicit
+`priorityRecipientOfContinuation?` (e.g. `.finishFraChoice`, which reads
+`g.pendingPriority.getD g.activePlayer`, CR 117.3c / 605.3b). -/
+@[export mtg_game_has_implicit_priority_continuation]
+def hasImplicitPriorityContinuation (g : Game) : Bool :=
+  g.anyContinuationGrantsPriority &&
+    (g.pendingReplacement.bind (priorityRecipientOfContinuation? g false)).isNone &&
+    (g.outerPendingReplacements.findSomeRev? (priorityRecipientOfContinuation? g false)).isNone
+
 mutual
 /-- Drain queued `g.pendingReplacement` continuations and paused
 `triggerSequenceRest` steps while no interactive `Pending` or `afterRandom`
@@ -348,6 +357,10 @@ partial def finishAndGrantPriority (g : Game)
   let alreadyGrants : Bool :=
     g.pending == .none && g.afterRandom == .none && g.anyContinuationGrantsPriority
   let hadEntryPending : Bool := g.pending != .none
+  let g :=
+    if alreadyGrants && g.hasImplicitPriorityContinuation && g.pendingPriority.isNone then
+      g.change (.pendingPriority (some (g.priorityInstead p)))
+    else g
   let g := g.drainPendingContinuations
   let g := if g.pending == .none && g.afterRandom == .none then g.popEmptyContinuationFrames else g
   if g.over then
@@ -359,13 +372,19 @@ partial def finishAndGrantPriority (g : Game)
       else g
     g.completeActiveResolutions
   else if let .chooseReplacement .. := g.pending then
-    if g.anyContinuationGrantsPriority then g
+    if g.anyContinuationGrantsPriority then
+      if g.hasImplicitPriorityContinuation && g.pendingPriority.isNone then
+        g.change (.pendingPriority (some (g.priorityInstead p)))
+      else g
     else g.chainPendingReplacement (.receivePriority p)
   else if let .chooseLegend .. := g.pending then
     let target := g.priorityInstead p
     if hadEntryPending || g.pendingPriority == some target then g
     else g.change (.pendingPriority (some target))
-  else if g.pending != .none || g.afterRandom != .none || alreadyGrants then g
+  else if g.pending != .none || g.afterRandom != .none || alreadyGrants then
+    if g.hasImplicitPriorityContinuation && g.pendingPriority.isNone then
+      g.change (.pendingPriority (some (g.priorityInstead p)))
+    else g
   else if g.triggerNeedingTargets.isSome then
     g.promptTriggerTargetsIfNeeded
   else if g.proposedSpell.any (fun prop =>
@@ -519,7 +538,9 @@ partial def finishConcedePriority (g : Game) (wasIdlePriority : Bool)
     (departed : Array PlayerId := #[])
     (rewindProposal : Option Bool := none) : Game :=
   let g := g.popEmptyContinuationFrames
-  let (g, popOuter) := g.flushDismissedPausedBatch savedPending popOuter
+  let (g, popOuter) :=
+    if runSba && !g.over then (g, popOuter)
+    else g.flushDismissedPausedBatch savedPending popOuter
   let (g, savedPending, popOuter, rewindProposal) :=
     match rewindProposal with
     | some hadPreBodyCont =>
@@ -531,7 +552,7 @@ partial def finishConcedePriority (g : Game) (wasIdlePriority : Bool)
     | none =>
       (g, savedPending, popOuter, none)
   let (g, _, savedPending, popOuter, departed, rewindProposal) :=
-    if runSba && !g.over && !g.sbaPaused then
+    if runSba && !g.over then
       g.checkSBACountedWithLeavesCore savedPending popOuter departed rewindProposal
         (deferRestore := true)
     else
@@ -954,7 +975,8 @@ partial def resumePendingReplacementCore (g : Game) (pr : PendingReplacement)
   | .move id dest controller verb actor faceDown tapped
       attacking attackingTarget transformed returnedAsArtifact onlyFoodArtifact
       extraEntersWith libraryPosition fromStackTime applyHope preBattlefield
-      isCopy overridePrinted adventurerCard summoningSick attachedTo enterMods cause =>
+      isCopy overridePrinted adventurerCard summoningSick attachedTo enterMods cause
+      lkiController? skipUnattachIds =>
     (g.move id dest controller (tapped := tapped) (summoningSick := summoningSick)
       (attachedTo := attachedTo) (applyHope := applyHope)
       (attacking := attacking) (attackingTarget := attackingTarget)
@@ -964,7 +986,8 @@ partial def resumePendingReplacementCore (g : Game) (pr : PendingReplacement)
       (preBattlefield := preBattlefield) (isCopy := isCopy)
       (overridePrinted := overridePrinted) (adventurerCard := adventurerCard)
       (faceDown? := some faceDown) (fromStackTime? := some fromStackTime)
-      (enterMods := enterMods) (cause := cause)).1
+      (enterMods := enterMods) (cause := cause)
+      (lkiController? := lkiController?) (skipUnattachIds := skipUnattachIds)).1
   | .moveSimultaneousToGraveyard ids preBattlefield cause =>
     g.moveSimultaneousToGraveyard ids (preBattlefield := preBattlefield) (cause := cause)
   | .destroyPermanent targetId cause preBattlefield reason =>
@@ -1664,11 +1687,13 @@ partial def resumePendingReplacementCore (g : Game) (pr : PendingReplacement)
   | .finishPostLoyaltyActivated caster srcName srcId act abId srcSnap srcOrig hadOuter hadOpenCont =>
     let g := g.finishPostLoyaltyActivated caster srcName srcId act abId srcSnap srcOrig hadOuter hadOpenCont
     if hadOuter then g else resumeAfterBecomeCast g
-  | .finishActivateManaAbilityPicks p id oname mana remainingPicks remainingCostIds tap sacrificeSelf activatedIdx restriction damageYou isMountain prevPending =>
+  | .finishActivateManaAbilityPicks p id oname mana remainingPicks remainingCostIds tap sacrificeSelf activatedIdx restriction damageYou isMountain prevPending exileSelf powerUp exhaust =>
     g.finishActivateManaAbilityPicks p id oname mana remainingPicks remainingCostIds tap sacrificeSelf activatedIdx restriction damageYou isMountain prevPending
+      (exileSelf := exileSelf) (powerUp := powerUp) (exhaust := exhaust)
       (hasFollowingSeq := hasFollowingSeq)
-  | .finishActivateManaAbilityPostSac p id oname srcSnap mana tap activatedIdx restriction damageYou isMountain prevPending =>
+  | .finishActivateManaAbilityPostSac p id oname srcSnap mana tap activatedIdx restriction damageYou isMountain prevPending powerUp exhaust =>
     g.finishActivateManaAbilityPostSac p id oname srcSnap mana tap activatedIdx restriction damageYou isMountain prevPending
+      (powerUp := powerUp) (exhaust := exhaust)
       (hasFollowingSeq := hasFollowingSeq)
   | .finishBeginRecruit p =>
     g.finishBeginRecruit p
@@ -4471,7 +4496,7 @@ def payGeneric (g : Game) (p : PlayerId) : Except String Game := do
     let outerCont? := g.pendingReplacement
     let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
     let forObj :=
-      (g.currentResolvingContext?.bind Prod.fst) <|> g.resolvingAbility <|> g.resolvingSpell
+      g.resolvingAbility <|> g.resolvingSpell <|> (g.currentResolvingContext?.bind Prod.fst)
     let g ← g.payCost p (ManaCost.ofGeneric n) (allowCantNonartifact := true) (forObject := forObj)
     let g := g.logMsg s!"{(g.player p).name} pays \{{n}}"
     if g.mayThenDrop > 0 then
@@ -4496,7 +4521,7 @@ def payGeneric (g : Game) (p : PlayerId) : Except String Game := do
     let outerCont? := g.pendingReplacement
     let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
     let forObj :=
-      g.unlessPaysSource <|> (g.currentResolvingContext?.bind Prod.fst) <|> g.resolvingAbility <|> g.resolvingSpell
+      g.resolvingAbility <|> g.resolvingSpell <|> g.unlessPaysSource <|> (g.currentResolvingContext?.bind Prod.fst)
     let g ← g.payCost p (ManaCost.ofGeneric n) (allowCantNonartifact := true) (forObject := forObj)
     let g := g.logMsg s!"{(g.player p).name} pays \{{n}}"
     let g := (g.change (.pending .none)).clearUnlessPays
@@ -4513,7 +4538,7 @@ def payGeneric (g : Game) (p : PlayerId) : Except String Game := do
     let outerCont? := g.pendingReplacement
     let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
     let forObj :=
-      (g.currentResolvingContext?.bind Prod.fst) <|> g.resolvingAbility <|> g.resolvingSpell
+      g.resolvingAbility <|> g.resolvingSpell <|> (g.currentResolvingContext?.bind Prod.fst)
     let g ← g.payCost p (ManaCost.ofGeneric n) (allowCantNonartifact := true) (forObject := forObj)
     let g := g.logMsg s!"{(g.player p).name} pays \{{n}} (ward)"
     return g.finishWardAndDrain outerCont?
