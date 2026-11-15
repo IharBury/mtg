@@ -17054,22 +17054,26 @@ provenance, mixed-zone & battlefield-source activation legality, `Timing.isManaA
          `943–947`); in `PendingReplacement.ensureEndsWithFinishFra` (`Event.lean:2383–2386`), return
          `pr` unchanged whenever `pr.endsWithPriorityGrant` holds; add a dedicated left-to-right
          helper `firstPriorityGrantRecipient? (g : Game) (hasQueuedPending : Bool := false) :
-         PendingReplacement → Option (Option PlayerId)` in `Decisions.lean` (recursing into `a` before
-         `b` on `.seq a b` — matching `resumePendingReplacementCore` at `874` rather than right-biased
-         `continuationGrantsPriority` at `275` / `priorityRecipientOfContinuation?` at `303–306` —
-         returning `some (some q)` on explicit priority-granting leaves and `some none` on implicit
-         ones such as `.finishFraChoice`), and walk `g.pendingReplacement` first followed by
-         `g.outerPendingReplacements` from `size - 1` down to `0` in both
-         `Decisions.hasImplicitPriorityContinuation` (`320–324`, checking `== some none`) and
-         `finishAndGrantPriority`'s default `p` (`353–356`, extracting `some (some q)`); in
-         `Decisions.finishFraChoice` (`454–490`), compute `alreadyGrants := g.pending == .none &&
-         g.afterRandom == .none && g.anyContinuationGrantsPriority` before `drainPendingContinuations`
-         (`460`) and return `(if g.pending == .none && g.afterRandom == .none then
-         g.popEmptyContinuationFrames else g)` when `alreadyGrants` holds without calling
-         `receivePriority` a second time; and stamp `pendingPriority` when `g.pendingPriority != some
-         prio` in `ManaAbilities.lean` (`531–535, 616–630, 651–655`, all `prevPending == .none`) and
-         when `(!hadEntryPending || g.pendingPriority.isNone) && g.pendingPriority != some target` in
-         `Decisions.finishAndGrantPriority` (`361, 376, 385`).
+         PendingReplacement → Option (Option PlayerId)` in `Decisions.lean` (resolving
+         `firstPriorityGrantRecipient? g hasQueuedPending a` first on `.seq a b` and, if `none`,
+         recursing into `b` with `nextQueuedPendingOnResume g hasQueuedPending a` — matching
+         `resumePendingReplacementCore` at `874` while threading `a`'s queued-pending flag into `b` as
+         in `continuationGrantsPriority` at `275` / `priorityRecipientOfContinuation?` at `303–304`,
+         rather than evaluating `b` ahead of `a` — and returning `some (some q)` on explicit
+         priority-granting leaves and `some none` on implicit ones such as `.finishFraChoice`), and
+         walk `g.pendingReplacement` first followed by `g.outerPendingReplacements` from `size - 1`
+         down to `0` in both `Decisions.hasImplicitPriorityContinuation` (`320–324`, checking `== some
+         none`) and `finishAndGrantPriority`'s default `p` (`353–356`, extracting `some (some q)`); in
+         `Decisions.finishFraChoice` (`454–490`), capture `alreadyGrants := g.pending == .none &&
+         g.afterRandom == .none && g.anyContinuationGrantsPriority` before `let g :=
+         g.drainPendingContinuations` (`460`), still run `drainPendingContinuations` (`460`) and the
+         post-drain `g.over` / `.chooseReplacement` / `g.pending != .none || g.afterRandom != .none` /
+         `popEmptyContinuationFrames` (`473`) / `triggerNeedingTargets` / `proposedSpell` checks, and
+         when `alreadyGrants` holds skip only the final `receivePriority` at `488–489` (returning `g`
+         there instead of calling `receivePriority` a second time); and stamp `pendingPriority` when
+         `g.pendingPriority != some prio` in `ManaAbilities.lean` (`531–535, 616–630, 651–655`, all
+         `prevPending == .none`) and when `(!hadEntryPending || g.pendingPriority.isNone) &&
+         g.pendingPriority != some target` in `Decisions.finishAndGrantPriority` (`361, 376, 385`).
 
 2. **CR 800.4c / 800.4a `coDepartingIds` & `unattachFrom` LKI across `runEndControlExileLoop` &
    `Movement.move`, simultaneous `Turns.clearEOT` & `Core.expireEffectById` `.fraEmblem` parity, and
@@ -17236,9 +17240,10 @@ provenance, mixed-zone & battlefield-source activation legality, `Timing.isManaA
          `.layered _ (.control _) _` (including `.objects ids` containing `o.id`), any `.expired _
          none`, or any `.moved` / `.materializeObject` touching `o.id` so the `[arrivalSlice ..
          g.events.size]` `HistoricalSlice` walk verifies actual historical control changes.
-   - **`Core.objectCounterCountAt` omitted default args & `eventObjectPreSnapshotOf?`, plus
-     `initHistoricalSlice` / `stepHistoricalSlice` / `objectZoneAndPhasedOutAt?` /
-     `hasSummoningSickness` non-initial `.materializeObject` rollback & `.created` accuracy**
+   - **`Core.objectCounterCountAt` omitted default args & `eventObjectPreSnapshotOf?`,
+     `initHistoricalSlice` / `objectZoneAndPhasedOutAt?` non-initial `.materializeObject` rollback &
+     `hasSummoningSickness` non-initial arrival, and `initHistoricalSlice` / `stepHistoricalSlice`
+     `.created` & DFC `.moved` accuracy**
      (`Core.lean:2010–2059, 2089–2143, 5803–5899, 6008–6035, 6237–6251`):
      - Three historical-reconstruction bugs remain in `Core`:
        (i) `Core.objectCounterCountAt` (`2121, 2128`) writes `.tapped eo` (`duringControllersTurn =
@@ -17475,8 +17480,9 @@ stamping; CR 800.4c `coDepartingIds` in `endControlEffectsSimultaneously` & `run
 controlled-not-owned `.command` departure, and 2HG departed higher-index teammate CR 800.4i expiry +
 `.playFromExile` `grantee` & expiry logging + CR 500.7 `lastRegularTurnSeat` regular-turn resumption;
 off-battlefield & historical `Core.controlChanged`, `eventObjectPreSnapshotOf?` in
-`objectCounterCountAt` + `initHistoricalSlice` / `stepHistoricalSlice` / `objectZoneAndPhasedOutAt?` /
-`hasSummoningSickness` non-initial `.materializeObject` rollback & `.created` reconstruction,
+`objectCounterCountAt` + `initHistoricalSlice` / `objectZoneAndPhasedOutAt?` non-initial
+`.materializeObject` rollback + `hasSummoningSickness` non-initial `.materializeObject` arrival +
+`initHistoricalSlice` / `stepHistoricalSlice` `.created` & DFC `.moved` reconstruction,
 `noSourceSentinelId` & post-bound `Core.isInitialMaterialize`, and simultaneous phase-out batch LKI +
 2HG shared-extra-turn `initAp` in `Phasing`; and CR 602.2b `beginActivationPayment` `.crew` /
 `.zemoBoast` ordering + `ProposedSpell.abilityIdx` `onceEachTurn` preservation, plain-`{T}`
