@@ -17872,13 +17872,19 @@ parity).
          `3029–3045` to accept non-delayed `.cast (.abilityActivated _ eo ..)` when `eo.zone` is live); add
          `defaultController : Option PlayerId := none` to `EventObject` (`Object.lean:438`), populate it from
          `o.defaultController` in `Game.snapshot` (`Core.lean:10107`) and `obj.defaultController` in `synthEo`
-         (`6884, 7044`), and read `eo.defaultController` first (falling back to `after.controller` at `727,
-         7019`, `ctrl` at `844, 7140`, `eo.controller` / `before.controller` at `6777, 6817, 6844`, and `c'`
-         at `7037` when on `.battlefield`, and `eo.controller` in `damageSourceObjectFromLki` at `9915`); and
-         hoist `adjustTokenCardDef` (`6628`) above `applyZoneEvent` (`810`) to apply it in `applyZoneEvent`
-         `.created` (`810`), fall back to `eo.toCardDef` when `eo.printed.isNone && !eo.name.isEmpty` in
-         `6871, 7034`, and apply `adjustTokenCardDef eo.token` on the `eo.toCardDef` fallback in `missingObjs`
-         (`7131–7133`).
+         (`6884, 7044`), keep `else none` off `.battlefield` while reading `<snap>.defaultController` inside
+         each existing `if <zone> == .battlefield then ... else none` arm (`after.defaultController.orElse
+         (fun _ => after.controller)` when `toZone` / `toZ == .battlefield` at `727, 7019`,
+         `object.defaultController.orElse (fun _ => ctrl)` when `object.zone == .battlefield` at `844`,
+         `eo.defaultController.orElse (fun _ => eo.controller)` when `eo.zone == .battlefield` at `6777, 6817`,
+         `before.defaultController.orElse (fun _ => before.controller)` when `fromZ == .battlefield` at `6844`,
+         `eo.defaultController.orElse (fun _ => c')` when `eo.zone == .battlefield` at `7037`, and
+         `(info?.bind (·.defaultController)).orElse (fun _ => ctrl)` when `z == .battlefield` at `7140`), and
+         unconditionally set `defaultController := eo.defaultController.orElse (fun _ => eo.controller)` in
+         `damageSourceObjectFromLki` (`9915`); and hoist `adjustTokenCardDef` (`6628`) above `applyZoneEvent`
+         (`810`) to apply it in `applyZoneEvent` `.created` (`810`), fall back to `eo.toCardDef` when
+         `eo.printed.isNone && !eo.name.isEmpty` in `6871, 7034`, and apply `adjustTokenCardDef eo.token` on
+         the `eo.toCardDef` fallback in `missingObjs` (`7131–7133`).
    - **Batch-end CR 800.4c reconciliation & CR 702.26b phased-out immunity in `Phasing` / `Leaving`,
      hoisted general same-batch `phaseOutBatchStartIdx`, and pre-log extra-turn reconstruction**
      (`Core.lean:1375–1400, 1460–1478`, `Leaving.lean:226–242`, `Phasing.lean:45–46, 101, 106–146, 220–280, 388–425`):
@@ -18015,9 +18021,10 @@ parity).
        `defaultFraAction` (`737–741, 822–825, 2013–2015`), and `Agent.chooseActivate` (`541–544`) do not check
        disjointness between `costPicksOf ab` / remaining `picks` and the trailing
        `sacrificeAnotherCreatureOrArtifact` requirement, while `Agent.chooseActivate`'s `crewExcl` (`520–529`)
-       and `!crewExcl.isEmpty || !acc.isEmpty` tap-pick arm (`546–550`, raw `costPickCandidates.filter
-       (!crewExcl && !acc)`) bypass `firstPayableCostPickSlice?` and can still reserve the creature or artifact
-       needed by a later pick or `sacrificeAnotherCreatureOrArtifact`;
+       and `533–552` fold (which skips non-tap picks at `538` and falls back to raw
+       `costPickCandidates.filter (!crewExcl && !acc)` at `546–550` when `!crewExcl.isEmpty || !acc.isEmpty`)
+       can still reserve the creature or artifact needed by an earlier sacrifice pick, a later pick, or
+       `sacrificeAnotherCreatureOrArtifact`;
        (ii) `Activation.canPayFraCost` / `validateActivation` (`19–42, 88–89, 128–132`) and
        `Decisions.beginActivationPayment` (`3843–3850`) check `FraCost.crew n` independently of tap
        `CostPick`s (`.tapUntappedCreature`, `.tapTwoUntappedArtifacts`), allowing a single creature to be
@@ -18038,11 +18045,14 @@ parity).
          `costPicksPayable` / `firstPayableCostPickSlice?` (while still prompting only `costPicksOf ab` before
          `needsSacrificeOther`) across `Activation.lean:27–30, 128–132`, `Decisions.lean:105–109, 3008–3016,
          3814–3822`, `FraChoices.lean:737–741, 822–825, 2013–2015`, and `Agent.lean:520–552`, and in
-         `Agent.chooseActivate` (`520–552`) choose `crewExcl` leaving `allPicks` payable
-         (`costPicksPayable ... (used := crewChosen)`) and replace the `540–550` split with a single
-         `firstPayableCostPickSlice? p (some o.id) (allPicks.extract i allPicks.size) ...
-         (used := crewExcl ++ usedPicks)` walk across `allPicks` (recording `usedPicks` across every pick and
-         adding tap-pick slices to `tapPickExcl`); check joint satisfiability of
+         `Agent.chooseActivate` (`520–552`) choose the `crewExcl` IDs (`520–529`) so
+         `g.costPicksPayable p (some o.id) allPicks ... (used := crewExcl)` holds and replace the entire
+         `533–552` fold with one walk over `allPicks` (`costPicksOf ab` plus the appended
+         `CostPick.sacrificeAnotherCreatureOrArtifact` pick) that for each `i` calls
+         `g.firstPayableCostPickSlice? p (some o.id) (allPicks.extract i allPicks.size) ...
+         (used := crewExcl ++ usedPicks)`, appends that slice to `usedPicks` on every pick, and appends it to
+         `tapPickExcl` only when `allPicks[i]!` is `.tapUntappedCreature` or `.tapTwoUntappedArtifacts`; check
+         joint satisfiability of
          `FraCost.crew n` alongside tap `CostPick`s and `tapSource` in `Activation.lean:19–42, 88–89,
          128–132` and `Decisions.beginActivationPayment` (`3843–3850`, filtering `.crew` selections so
          remaining untapped permanents still satisfy `prop`'s tap `CostPick`s); include
