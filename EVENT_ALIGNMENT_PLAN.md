@@ -17816,7 +17816,7 @@ parity).
    `Core.isInitialMaterialize`, post-`bound` `eventObjectIsLiveSubject` & `EventObject.defaultController` in
    `HistoricalSlice`, and batch-end `Phasing.phaseOutPermanentsLoop` CR 800.4c / CR 702.26b handling &
    pre-log extra-turn reconstruction**
-   (`Core.lean:807–815, 1375–1400, 1460–1478, 1795–1799, 2024–2045, 2316, 2670–2674, 2774–2894, 2996–2998, 3029–3045, 3102–3104, 6628–6645, 6770–6892, 7019–7051, 7130–7144, 10106–10109`,
+   (`Core.lean:727, 807–845, 1375–1400, 1460–1478, 1795–1799, 2024–2045, 2316, 2670–2674, 2774–2894, 2996–2998, 3029–3045, 3102–3104, 6628–6645, 6770–6892, 7019–7051, 7130–7144, 9911–9916, 10106–10109`,
    `Leaving.lean:226–242`, `Object.lean:436–440`, `Phasing.lean:45–46, 101, 106–146, 220–280, 388–425`;
    **CR 108.4 / 110.2 / 111.6 / 113.7a / 122.1 / 302.6 / 400.7 / 500.7 / 502.1 / 611.2b–c / 611.3a /
    613.1a–b / 613.7d / 614.12 / 702.26b,e,g–h,m,n / 800.4c / 805.4,8 / 810.2**):
@@ -17847,7 +17847,7 @@ parity).
          `gameChangeMaxTs` (`2774–2791`).
    - **Post-`bound` `eventObjectIsLiveSubject` guards, `EventObject.defaultController` preservation, and
      `.created` / `missingObjs` `printed` & `isToken` parity in `Core` / `HistoricalSlice`**
-     (`Core.lean:807–815, 2996–2998, 3029–3045, 3102–3104, 6628–6645, 6770–6892, 7019–7051, 7130–7144, 10106–10109`,
+     (`Core.lean:727, 807–845, 2996–2998, 3029–3045, 3102–3104, 6628–6645, 6770–6892, 7019–7051, 7130–7144, 9911–9916, 10106–10109`,
      `Object.lean:436–440`):
      - Three historical-reconstruction inaccuracies remain:
        (i) the post-`bound` (`nonInitMatIds`) `eventObjectPreSnapshotOf?` arms in
@@ -17856,11 +17856,12 @@ parity).
        (`.triggered`, `.putOnStack`, or post-departure `.dealt` / `.prevented`) for an object `oid` that had
        already left the battlefield before `bound` resurrects `oid`'s stale LKI zone/counters/presence at
        `bound`;
-       (ii) `EventObject` (`Object.lean:436–440`) omits `defaultController`, so `initHistoricalSlice`
-       (`6777, 6817, 6844`), `stepHistoricalSlice` (`7019`), and `mkHistoricalGameAt` `missingObjs` (`7140`)
-       derive `dc` from Layer-2 `eo.controller`, overwriting `defaultController` whenever `eo` was
-       snapshotted under a temporary `.control` effect (violating CR 110.2 when that `.control` effect is not
-       active at the queried historical index); and
+       (ii) `EventObject` (`Object.lean:436–440`) omits `defaultController`, so `applyZoneEvent` (`727, 844`),
+       `initHistoricalSlice` (`6777, 6817, 6844`), `stepHistoricalSlice` (`7019, 7037`), `mkHistoricalGameAt`
+       `missingObjs` (`7140`), and `damageSourceObjectFromLki` (`9915`) derive `defaultController` from Layer-2
+       `eo.controller` (or `c' := eo.controller.orElse (fun _ => some c)` at `7035–7037`), overwriting
+       `defaultController` whenever `eo` was snapshotted under a temporary `.control` effect (violating CR
+       110.2 when that `.control` effect is not active at the queried historical or LKI state); and
        (iii) `applyZoneEvent` `.created` (`Core.lean:810`) omits `adjustTokenCardDef` (`6628`, leaving
        `isToken == false` on replay of `.created` when `after.token && after.printed.isSome`), while
        `initHistoricalSlice` / `stepHistoricalSlice` `.created` (`6871, 7034`) and `mkHistoricalGameAt`
@@ -17869,14 +17870,15 @@ parity).
          `objectZoneAndPhasedOutAt?` (`2996`), `objectCounterCountAt` (`3102`), and `initHistoricalSlice`
          (`6772`) with `eventObjectIsLiveSubject ch oid` (extending `eventObjectIsLiveSubject` at
          `3029–3045` to accept non-delayed `.cast (.abilityActivated _ eo ..)` when `eo.zone` is live); add
-         `defaultController : Option PlayerId := none` to `EventObject` (`Object.lean:438`), populate it in
-         `Game.snapshot` (`Core.lean:10107` and `synthEo` at `6884, 7044`), and read
-         `eo.defaultController.orElse (fun _ => if eo.zone == .battlefield then eo.controller else none)` in
-         `initHistoricalSlice` (`6777, 6817, 6844`), `stepHistoricalSlice` (`7019`), and `missingObjs`
-         (`7140`); and hoist `adjustTokenCardDef` (`6628`) above `applyZoneEvent` (`810`) to apply it in
-         `applyZoneEvent` `.created` (`810`), fall back to `eo.toCardDef` when
-         `eo.printed.isNone && !eo.name.isEmpty` in `6871, 7034`, and apply `adjustTokenCardDef eo.token` on
-         the `eo.toCardDef` fallback in `missingObjs` (`7131–7133`).
+         `defaultController : Option PlayerId := none` to `EventObject` (`Object.lean:438`), populate it from
+         `o.defaultController` in `Game.snapshot` (`Core.lean:10107`) and `obj.defaultController` in `synthEo`
+         (`6884, 7044`), and read `eo.defaultController` first (falling back to `after.controller` at `727,
+         7019`, `ctrl` at `844, 7140`, `eo.controller` / `before.controller` at `6777, 6817, 6844`, and `c'`
+         at `7037` when on `.battlefield`, and `eo.controller` in `damageSourceObjectFromLki` at `9915`); and
+         hoist `adjustTokenCardDef` (`6628`) above `applyZoneEvent` (`810`) to apply it in `applyZoneEvent`
+         `.created` (`810`), fall back to `eo.toCardDef` when `eo.printed.isNone && !eo.name.isEmpty` in
+         `6871, 7034`, and apply `adjustTokenCardDef eo.token` on the `eo.toCardDef` fallback in `missingObjs`
+         (`7131–7133`).
    - **Batch-end CR 800.4c reconciliation & CR 702.26b phased-out immunity in `Phasing` / `Leaving`,
      hoisted general same-batch `phaseOutBatchStartIdx`, and pre-log extra-turn reconstruction**
      (`Core.lean:1375–1400, 1460–1478`, `Leaving.lean:226–242`, `Phasing.lean:45–46, 101, 106–146, 220–280, 388–425`):
@@ -17920,7 +17922,7 @@ parity).
    `Event.castEventBound` stack-resolved permanent & stack-copy bounds, nested mana
    `targetProposalCheckpoint?`, disjoint combined activation costs, and stack-resolved `ManaRestriction`
    parity**
-   (`Activation.lean:19–42, 88–89, 125–132`, `ActivationCosts.lean:22–24, 150, 179, 235–293, 456, 695`,
+   (`Activation.lean:19–42, 88–89, 125–132`, `ActivationCosts.lean:22–24, 150, 179, 235–303, 456, 695`,
    `Agent.lean:21–45, 171, 512–564`, `Casting.lean:427–439, 531–546, 1292`, `Choices.lean:614`,
    `Core.lean:3890–3893`, `Decisions.lean:105–109, 138, 3008–3016, 3807–3866`, `EffectResolution.lean:2716–2728`,
    `Event.lean:3800–3827`, `FraChoices.lean:727–748, 822–825, 1994–2018`, `LandsAndMana.lean:58–65`,
@@ -18001,7 +18003,7 @@ parity).
          `.clearProposalCheckpoint`).
    - **Disjoint object assignment across combined non-mana activation costs (CR 118.10 / 602.2b) and
      stack-resolved `ManaRestriction` parity in `EffectResolution`**
-     (`Activation.lean:19–42, 88–89, 125–132`, `ActivationCosts.lean:254–293`, `Agent.lean:541–544`,
+     (`Activation.lean:19–42, 88–89, 125–132`, `ActivationCosts.lean:254–303`, `Agent.lean:520–552`,
      `Decisions.lean:105–109, 3008–3016, 3807–3866`, `EffectResolution.lean:2716–2728`,
      `FraChoices.lean:737–741, 822–825, 2013–2015`, `Pending.lean:188–212`, `Timing.lean:101–108`):
      - Four CR 118.10 / CR 602.2b / CR 106.6 parity gaps remain:
@@ -18012,7 +18014,10 @@ parity).
        `beginActivationPayment` (`105–109, 3008–3016, 3814–3822`), `FraChoices` `.costPicks` /
        `defaultFraAction` (`737–741, 822–825, 2013–2015`), and `Agent.chooseActivate` (`541–544`) do not check
        disjointness between `costPicksOf ab` / remaining `picks` and the trailing
-       `sacrificeAnotherCreatureOrArtifact` requirement;
+       `sacrificeAnotherCreatureOrArtifact` requirement, while `Agent.chooseActivate`'s `crewExcl` (`520–529`)
+       and `!crewExcl.isEmpty || !acc.isEmpty` tap-pick arm (`546–550`, raw `costPickCandidates.filter
+       (!crewExcl && !acc)`) bypass `firstPayableCostPickSlice?` and can still reserve the creature or artifact
+       needed by a later pick or `sacrificeAnotherCreatureOrArtifact`;
        (ii) `Activation.canPayFraCost` / `validateActivation` (`19–42, 88–89, 128–132`) and
        `Decisions.beginActivationPayment` (`3843–3850`) check `FraCost.crew n` independently of tap
        `CostPick`s (`.tapUntappedCreature`, `.tapTwoUntappedArtifacts`), allowing a single creature to be
@@ -18026,12 +18031,18 @@ parity).
        (iv) `EffectResolution.lean` (`2716–2717, 2727–2728`) omits `(restriction := some (.fra
        .artifactSpell))` on `.addAnyColorSpendOnlyArtifactSpell` and `(restriction := some (.fra
        .equipmentOrEquip))` on `.addTwoAnyColorEquipment` when resolved from the stack:
-       - Append `CostPick.sacrificeAnotherCreatureOrArtifact` (when
-         `ab.cost.sacrificeAnotherCreatureOrArtifact` / `prop.needsSacrificeOther` holds) to the
-         disjointness-check slice passed to `costPicksPayable` / `firstPayableCostPickSlice?` (while still
-         prompting only `costPicksOf ab` before `needsSacrificeOther`) across `Activation.lean:27–30, 128–132`,
-         `Decisions.lean:105–109, 3008–3016, 3814–3822`, `FraChoices.lean:737–741, 822–825, 2013–2015`, and
-         `Agent.lean:541–544`; check joint satisfiability of
+       - Add `(used : Array ObjectId := #[])` to `firstPayableCostPickSlice?` and `costPicksPayable`
+         (`ActivationCosts.lean:284–303`, forwarded to `assignDisjointPicks`), append
+         `CostPick.sacrificeAnotherCreatureOrArtifact` (when `ab.cost.sacrificeAnotherCreatureOrArtifact` /
+         `prop.needsSacrificeOther` holds) to the disjointness-check slice (`allPicks`) passed to
+         `costPicksPayable` / `firstPayableCostPickSlice?` (while still prompting only `costPicksOf ab` before
+         `needsSacrificeOther`) across `Activation.lean:27–30, 128–132`, `Decisions.lean:105–109, 3008–3016,
+         3814–3822`, `FraChoices.lean:737–741, 822–825, 2013–2015`, and `Agent.lean:520–552`, and in
+         `Agent.chooseActivate` (`520–552`) choose `crewExcl` leaving `allPicks` payable
+         (`costPicksPayable ... (used := crewChosen)`) and replace the `540–550` split with a single
+         `firstPayableCostPickSlice? p (some o.id) (allPicks.extract i allPicks.size) ...
+         (used := crewExcl ++ usedPicks)` walk across `allPicks` (recording `usedPicks` across every pick and
+         adding tap-pick slices to `tapPickExcl`); check joint satisfiability of
          `FraCost.crew n` alongside tap `CostPick`s and `tapSource` in `Activation.lean:19–42, 88–89,
          128–132` and `Decisions.beginActivationPayment` (`3843–3850`, filtering `.crew` selections so
          remaining untapped permanents still satisfy `prop`'s tap `CostPick`s); include
