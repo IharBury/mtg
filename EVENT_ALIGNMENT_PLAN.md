@@ -16921,16 +16921,16 @@ provenance, mixed-zone & battlefield-source activation legality, `Timing.isManaA
 `ManaAbilities` parity, and CR 601.2g self-sacrificing mana sources across `FraChoices`, `Decisions`,
 `Event`, `Activation`, `Choices`, `ActivationCosts`, and `ManaAbilities`).
 
-### Phase 44 — `!flushedFromPending` SBA re-pause chaining & `isPreProposalCheckpointBatch` rewind guards, Layer 5–7 / filter-scope `preBatchLegendSnapshotValid`, `prevPending != .none` mana checkpoints & `.finishFraChoice` priority guards, CR 800.4c `coDepartingIds` & `.fraEmblem` cleanup parity, 2HG CR 800.4i / CR 500.7 turn resumption, `HistoricalSlice` / `isInitialMaterialize` / `Phasing` batch LKI, and CR 602.2b `.crew` / `.zemoBoast` cost-step ordering & mana-ability parity
+### Phase 44 — `!flushedFromPending` SBA re-pause chaining & `isPreProposalCheckpointBatch` rewind guards, Layer 5–7 / filter-scope `preBatchLegendSnapshotValid`, `.finishFraChoice` / `firstPriorityGrantRecipient?` priority guards, CR 800.4c `coDepartingIds` & `.fraEmblem` cleanup parity, 2HG CR 800.4i / CR 500.7 turn resumption, `HistoricalSlice` / `isInitialMaterialize` / `Phasing` batch LKI, and CR 602.2b `.crew` / `.zemoBoast` cost-step ordering & mana-ability parity
 
 1. **`!flushedFromPending && !deferRestore` SBA re-pause chaining, `isPreProposalCheckpointBatch`
    deferred proposal rewind, Layer 5–7 & filter-scope `Leaving.preBatchLegendSnapshotValid`, and
-   `prevPending != .none` mana checkpoints & `.finishFraChoice` priority guards**
+   `.finishFraChoice` / `firstPriorityGrantRecipient?` priority guards**
    (`Core.lean:941–949, 2928–2931`,
    `Decisions.lean:273–324, 353–387, 454–490, 541–553, 660–666, 734–745, 874, 1106–1110`,
-   `Event.lean:2383–2386`,
+   `Entering.lean:438–441`, `Event.lean:2383–2386`,
    `Leaving.lean:1071–1100, 1131–1141, 1168–1175, 1196, 2655, 2669, 2905–2937, 3563–3567, 3623–3660, 3707–3723`,
-   `ManaAbilities.lean:530–536, 615–630, 650–656, 936–949`,
+   `ManaAbilities.lean:530–536, 615–630, 650–656`,
    `StateBasedActions.lean:552–572, 601–620, 880–899, 929–940`;
    **CR 104.5 / 117.3a–c / 601.2i / 605.3b / 608.2c,k / 613.1 / 616.1 / 704.3 / 704.5j / 704.8 /
    733.1–733.2 / 800.4a**):
@@ -17019,41 +17019,33 @@ provenance, mixed-zone & battlefield-source activation legality, `Timing.isManaA
          !promptLegendChanged curPreG` and `.creaturesControlledBy q` / `.permanentsOfSubtype q _`
          when `effCtrl?.any (· != q)` and neither `survivingPromptIds` nor any `isPromptAttachment`
          was controlled by `q` on `preG` and `!promptLegendChanged curPreG`.
-   - **`prevPending != .none` `activateManaAbility` checkpoint ordering, `finishFraChoice`
-     `alreadyGrants`, `ensureEndsWithFinishFra` `endsWithPriorityGrant` guard, execution-order
-     `hasImplicitPriorityContinuation`, and non-stale `pendingPriority` stamping**
-     (`Decisions.lean:273–324, 353–364, 376–387, 454–490, 874`, `Event.lean:2383–2386`,
-     `ManaAbilities.lean:530–536, 615–630, 650–656, 936–949`):
-     - Three priority / checkpoint continuation bugs remain between `Decisions`, `Event`, and
-       `ManaAbilities`:
-       (i) in `ManaAbilities.activateManaAbility` (`936–949`), when `prevPending != .none`,
-       `needsManaCkpt == true`, and `g.pendingReplacement == some outer`, Phase 43 placed
-       `saveProposalCheckpoint` (`938`) *before* `g := g.change (.pendingReplacement none)` (`949`),
-       recording `ckpt.pendingReplacement == some outer` while line `976` also chains `outer` onto
-       `g.pendingReplacement` — so if a paused mana ability aborts (`abortDepartedManaAbilityContCore`
-       at `482–538`), rewinding to `ckpt` restores `outer` *and*
-       `Decisions.resumePendingReplacementCore` (`898, 903`) runs/chains `rest = outer`, executing
-       `outer` twice (and defeating `strippedSoloPrev` at `509–510`);
-       (ii) `Decisions.finishFraChoice` (`454–490`) omits `alreadyGrants`, calling `g.receivePriority
+   - **`finishFraChoice` `alreadyGrants`, `ensureEndsWithFinishFra` `endsWithPriorityGrant` guard,
+     execution-order `firstPriorityGrantRecipient?` / `hasImplicitPriorityContinuation`, and
+     non-stale `pendingPriority` stamping**
+     (`Decisions.lean:273–324, 353–364, 376–387, 454–490, 874`, `Entering.lean:438–441`,
+     `Event.lean:2383–2386`, `ManaAbilities.lean:530–536, 615–630, 650–656`):
+     - Two priority-continuation bugs remain between `Decisions`, `Event`, and `ManaAbilities` (while
+       keeping `ManaAbilities.activateManaAbility`'s `saveProposalCheckpoint` at `938` *before*
+       `g.change (.pendingReplacement none)` at `949` so
+       `(ckpt.continuations.back?.getD {}).pendingReplacement` at `Core.lean:60, 2633, 2692` retains
+       `outer` for `reverseToProposalCheckpointCore?` at `Core.lean:13346–13347, 13384–13385,
+       13439–13440`):
+       (i) `Decisions.finishFraChoice` (`454–490`) omits `alreadyGrants`, calling `g.receivePriority
        (g.pendingPriority.getD g.activePlayer)` at `488–489` and overwriting non-active priority `p3`
        whenever `drainPendingContinuations` (`460`) already granted priority (since
        `Entering.receivePriority p3` at `Entering.lean:438–441` clears `g.pendingPriority := none`),
        while `PendingReplacement.ensureEndsWithFinishFra` (`Event.lean:2383–2386`) wraps explicit
        priority-granting tails (`.receivePriority p3`, `.finishPostCast p3 true false false`, etc.) in
        `.seq <explicit> .finishFraChoice`, overwriting `p3` with `g.activePlayer`; and
-       (iii) `Decisions.hasImplicitPriorityContinuation` (`320–324`) returns `false` when an implicit
+       (ii) `Decisions.hasImplicitPriorityContinuation` (`320–324`) returns `false` when an implicit
        `.finishFraChoice` on `g.pendingReplacement` (or `outerPendingReplacements.back?`) precedes a
        deeper explicit `.receivePriority q` on `outerPendingReplacements` (`findSomeRev?` finds `some
        q` deeper down even though `.finishFraChoice` executes first), while `g.pendingPriority.isNone`
        guards (`Decisions.lean:361, 376, 385`; `ManaAbilities.lean:531, 534, 616, 619, 624, 627, 629,
        651, 654`) leave stale `some staleP` untouched:
-       - In `ManaAbilities.activateManaAbility` (`936–949`), when `prevPending != .none`, capture
-         `outerCont? := g.pendingReplacement` and clear `g := g.change (.pendingReplacement none)`
-         *before* `if needsManaCkpt then g := g.change .saveProposalCheckpoint` (keeping the
-         `prevPending == .none` `outerPendingReplacements` stash *after* `saveProposalCheckpoint` at
-         `943–947`); in `PendingReplacement.ensureEndsWithFinishFra` (`Event.lean:2383–2386`), return
-         `pr` unchanged whenever `pr.endsWithPriorityGrant` holds; add a dedicated left-to-right
-         helper `firstPriorityGrantRecipient? (g : Game) (hasQueuedPending : Bool := false) :
+       - In `PendingReplacement.ensureEndsWithFinishFra` (`Event.lean:2383–2386`), return `pr`
+         unchanged whenever `pr.endsWithPriorityGrant` holds; add a dedicated left-to-right helper
+         `firstPriorityGrantRecipient? (g : Game) (hasQueuedPending : Bool := false) :
          PendingReplacement → Option (Option PlayerId)` in `Decisions.lean` (resolving
          `firstPriorityGrantRecipient? g hasQueuedPending a` first on `.seq a b` and, if `none`,
          recursing into `b` with `nextQueuedPendingOnResume g hasQueuedPending a` — matching
@@ -17480,8 +17472,7 @@ Tests: `Events.lean` (unit + replay-determinism `#guard`s for `!flushedFromPendi
 re-pause chaining on `pendingReplacement` + `isPreProposalCheckpointBatch` deferred proposal rewind in
 `StateBasedActions`, `Leaving`, and `Decisions`, Layer 5–7 / non-`.objects` `.expired` scopes +
 `.leftGame` `curPreG` + `openBatchPending` / empty-`promptIds` guards in
-`Leaving.preBatchLegendSnapshotValid`, and `prevPending != .none` `activateManaAbility` checkpoint
-ordering + `finishFraChoice` `alreadyGrants` + `ensureEndsWithFinishFra` + left-to-right
+`Leaving.preBatchLegendSnapshotValid`, and `finishFraChoice` `alreadyGrants` + `ensureEndsWithFinishFra` + left-to-right
 `firstPriorityGrantRecipient?` / `hasImplicitPriorityContinuation` + non-stale `pendingPriority`
 stamping; CR 800.4c `coDepartingIds` in `endControlEffectsSimultaneously` & `runEndControlExileLoop` +
 `.whileInZone` + `skipLogIds` + `unattachFrom` `pre.name` & `Movement.move` `some board`, simultaneous
