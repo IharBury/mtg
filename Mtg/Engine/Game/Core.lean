@@ -1370,6 +1370,34 @@ def opponentPoisonedAtLeast (g : Game) (p : PlayerId) (n : Nat) : Bool :=
 def battlefield (g : Game) : Array GameObject :=
   g.objects.filter GameObject.isOnBattlefield
 
+/-- Infer whether a pre-`turnBegan` slice on turn `t0` with active player `ap`
+began inside an in-progress shared extra turn (CR 500.7 / 805.8). -/
+def inferPreLogTurnIsExtra (g : Game) (ap : PlayerId) (t0 : Nat) : Bool :=
+  match g.events.findSome? (fun ev =>
+    match ev.change with
+    | .rules (.turn (.turnBegan p extra)) =>
+      if ev.turn == t0 && g.areTeammates ap p then some extra else none
+    | _ => none) with
+  | some extra => extra
+  | none =>
+    let team := g.teamMembers ap
+    let apIdx := (team.findIdx? (· == ap)).getD 0
+    let remTeammates := team.extract (apIdx + 1) team.size
+    if remTeammates.isEmpty then false
+    else
+      let netAdded (q : PlayerId) : Int :=
+        g.events.foldl (fun acc ev =>
+          match ev.change with
+          | .rules (.turn (.extraTurnAdded p _)) =>
+            if (g.teamMembers p).contains q then acc + 1 else acc
+          | .rules (.turn (.turnBegan p true)) =>
+            if p == q then acc - 1 else acc
+          | _ => acc) 0
+      let preCount (q : PlayerId) : Int :=
+        Int.ofNat (g.extraTurns.filter (· == q)).size - netAdded q
+      let apPre := preCount ap
+      remTeammates.any (fun tm => preCount tm > apPre)
+
 /-- `(seats, isExtra)` for the current shared turn in `g.events` (up to `limit?`,
 defaulting to all of `g.events`), tracking whether the shared turn is an extra
 turn (CR 805.4 / 805.8 / 810.2). -/
@@ -1379,19 +1407,43 @@ def currentSharedTurnState (g : Game) (limit? : Option Nat := none) :
   Id.run do
     let mut seats : Array PlayerId := #[⟨0⟩]
     let mut seatsExtra : Bool := false
+    let mut seenStartOrTurnBegan : Bool := false
+    let mut seenPreLogStep : Bool := false
     for i in [0:endIdx] do
-      match g.events[i]!.change with
+      let ev := g.events[i]!
+      match ev.change with
       | .engine (.startingPlayer v) =>
         seats := #[v]
         seatsExtra := false
+        seenStartOrTurnBegan := true
       | .rules (.turn (.turnBegan q extra)) =>
+        seenStartOrTurnBegan := true
         if extra == seatsExtra && !seats.isEmpty &&
             g.areTeammates seats[0]! q && !seats.contains q then
           seats := seats.push q
         else
           seats := #[q]
           seatsExtra := extra
+      | .rules (.turn (.stepBegan _ ap))
+      | .rules (.turn (.turnEnded ap)) =>
+        if !seenStartOrTurnBegan then
+          if !seenPreLogStep then
+            seenPreLogStep := true
+            let team := g.teamMembers ap
+            let apPos := (team.findIdx? (· == ap)).getD 0
+            let s0 := team.extract 0 (apPos + 1)
+            seats := if s0.isEmpty then #[ap] else s0
+            seatsExtra := g.inferPreLogTurnIsExtra ap ev.turn
+          else if !seats.isEmpty && g.areTeammates seats[0]! ap && !seats.contains ap then
+            seats := seats.push ap
       | _ => pure ()
+    if !seenStartOrTurnBegan && !seenPreLogStep then
+      let ap := g.activePlayer
+      let team := g.teamMembers ap
+      let apPos := (team.findIdx? (· == ap)).getD 0
+      let s0 := team.extract 0 (apPos + 1)
+      seats := if s0.isEmpty then #[ap] else s0
+      seatsExtra := g.inferPreLogTurnIsExtra ap g.turnNumber
     return (seats, seatsExtra)
 
 /-- Seats that have begun as part of the current shared turn in `g.events`
@@ -1402,6 +1454,27 @@ def currentSharedTurnSeats (g : Game) : Array PlayerId :=
 /-- True when the current shared turn is an extra turn (CR 500.7 / 805.8). -/
 def currentSharedTurnIsExtra (g : Game) : Bool :=
   (g.currentSharedTurnState).2
+
+/-- Seat of the most recent regular (non-extra) turn in `g.events`, defaulting
+to `g.startingPlayer` before any turn events (CR 500.7 / 805.4 / 805.8). -/
+def lastRegularTurnSeat (g : Game) : PlayerId := Id.run do
+  let mut seat : PlayerId := g.startingPlayer
+  let mut seenTurnBegan : Bool := false
+  for ev in g.events do
+    match ev.change with
+    | .engine (.startingPlayer v) =>
+      seat := v
+      seenTurnBegan := false
+    | .rules (.turn (.turnBegan q extra)) =>
+      seenTurnBegan := true
+      if !extra then
+        seat := q
+    | .rules (.turn (.stepBegan _ ap))
+    | .rules (.turn (.turnEnded ap)) =>
+      if !seenTurnBegan && !g.inferPreLogTurnIsExtra ap ev.turn then
+        seat := ap
+    | _ => pure ()
+  return seat
 
 /-- True when `g.activePlayer` is the first living seat of the current shared turn
 (CR 805.4 / 810.2). Always true in non-team games. -/
@@ -1672,94 +1745,933 @@ private def effectCreatedInfo? (g : Game) (eid : EffectId) : Option (Nat × Even
       | _ => pure ()
     return none
 
-private def eventCauseReferencesObject : EventCause → ObjectId → Bool
-  | .costPayment _ _ forObj, oid => forObj == some oid
-  | .oneShotEffect _ src _, oid => src == some oid
-  | .replaced rep orig, oid =>
-    rep.object == some oid || rep.grantor == some oid ||
-      (match rep.kind with
-       | .entersUntappedBehold bid _ => bid == oid
-       | .entersAsCopyCreatureUntilEot tid => tid == oid
-       | .asEntersAttachAura hid => hid == oid
-       | _ => false) ||
-      eventCauseReferencesObject orig oid
-  | _, _ => false
+private def checkValidObjId (pred : ObjectId → Bool) (id : ObjectId) : Bool :=
+  id != noSourceSentinelId && pred id
 
-private def specReferencesObject (spec : ContinuousEffectSpec) (oid : ObjectId) : Bool :=
+private def checkValidOptObjId (pred : ObjectId → Bool) : Option ObjectId → Bool
+  | some id => checkValidObjId pred id
+  | none => false
+
+private def checkValidObjIds (pred : ObjectId → Bool) (ids : Array ObjectId) : Bool :=
+  ids.any (checkValidObjId pred)
+
+private def attackTargetAnyObjId (pred : ObjectId → Bool) : AttackTarget → Bool
+  | .planeswalker pid | .battle pid => checkValidObjId pred pid
+  | .player _ => false
+
+private def targetAnyObjId (pred : ObjectId → Bool) : Target → Bool
+  | .permanent tid | .card tid => checkValidObjId pred tid
+  | .player _ => false
+
+private def statusAnyObjId (pred : ObjectId → Bool) (s : Status) : Bool :=
+  s.attackingTarget.any (attackTargetAnyObjId pred) ||
+    checkValidObjIds pred s.blocking ||
+    checkValidOptObjId pred s.phasedWith
+
+private def gameObjAnyObjId (pred : ObjectId → Bool) (o : GameObject) : Bool :=
+  checkValidObjId pred o.id ||
+    statusAnyObjId pred o.status ||
+    checkValidOptObjId pred o.sourceId ||
+    checkValidOptObjId pred o.attachedTo ||
+    checkValidObjIds pred o.linkedExile ||
+    checkValidObjIds pred o.leaveTriggerExile ||
+    checkValidOptObjId pred o.fraCauseId ||
+    o.fraCauseStatus.any (statusAnyObjId pred) ||
+    checkValidObjIds pred o.fraCauseIds ||
+    checkValidOptObjId pred o.exiledBy
+
+private def eventObjAnyObjId (pred : ObjectId → Bool) (eo : EventObject) : Bool :=
+  checkValidOptObjId pred eo.id ||
+    checkValidObjIds pred eo.blockingIds ||
+    checkValidOptObjId pred eo.attachedTo ||
+    eo.attackingTarget.any (attackTargetAnyObjId pred)
+
+private def repEffKindAnyObjId (pred : ObjectId → Bool) : ReplacementEffectKind → Bool
+  | .entersUntappedBehold bid _ => checkValidObjId pred bid
+  | .entersAsCopyCreatureUntilEot tid => checkValidObjId pred tid
+  | .asEntersAttachAura hid => checkValidObjId pred hid
+  | _ => false
+
+private def repIdAnyObjId (pred : ObjectId → Bool) (r : ReplacementId) : Bool :=
+  checkValidOptObjId pred r.object ||
+    checkValidOptObjId pred r.grantor ||
+    repEffKindAnyObjId pred r.kind
+
+private def repKindAnyObjId (pred : ObjectId → Bool) : ReplacementKind → Bool
+  | .entersTappedSelf oid
+  | .entersUntappedPayLife oid _
+  | .entersTappedDeclinePayLife oid
+  | .entersTappedDeclineBehold oid
+  | .asEntersChooseColor oid _
+  | .asEntersChooseCreatureType oid _
+  | .asEntersChooseOdd oid _
+  | .asEntersChooseCardName oid _
+  | .asEntersChooseCardType oid _
+  | .asEntersChooseAnchor oid _
+  | .entersWithCountersSelf oid _ _
+  | .declineEntersAsCopy oid
+  | .shieldCounterDestroy oid
+  | .stunCounterUntap oid => checkValidObjId pred oid
+  | .entersUntappedBehold oid bid _ => checkValidObjId pred oid || checkValidObjId pred bid
+  | .entersAsCopyCreatureUntilEot oid tid => checkValidObjId pred oid || checkValidObjId pred tid
+  | .asEntersAttachAura oid hid => checkValidObjId pred oid || checkValidObjId pred hid
+  | .entersUnderControl oid _
+  | .entersAsCopy oid _
+  | .entersBackFaceUp oid
+  | .entersWithExtraCounters oid _ _
+  | .modifyCountersPut oid _ _ _
+  | .exileInsteadOfStackLeave oid
+  | .exileInsteadOfGraveyard oid _
+  | .addNoncombatDamage oid _
+  | .multiplyDamage oid _ => checkValidOptObjId pred oid
+  | _ => false
+
+private def prevKindAnyObjId (pred : ObjectId → Bool) : PreventionKind → Bool
+  | .preventAllDamageToPermanent tid => checkValidObjId pred tid
+  | .preventAllDamageFromSource sid => checkValidObjId pred sid
+  | .protectionPreventDamage pid sid => checkValidObjId pred pid || checkValidObjId pred sid
+  | .shieldCounterPreventDamage oid => checkValidObjId pred oid
+  | _ => false
+
+private def eventCauseAnyObjId (c : EventCause) (pred : ObjectId → Bool) : Bool :=
+  match c with
+  | .costPayment _ _ forObj => checkValidOptObjId pred forObj
+  | .oneShotEffect _ src _ => checkValidOptObjId pred src
+  | .replaced rep orig => repIdAnyObjId pred rep || eventCauseAnyObjId orig pred
+  | _ => false
+
+private def eventCauseReferencesObject (c : EventCause) (oid : ObjectId) : Bool :=
+  eventCauseAnyObjId c (· == oid)
+
+private def specAnyObjId (spec : ContinuousEffectSpec) (pred : ObjectId → Bool) : Bool :=
   (match spec with
-   | .layered (.objects ids) _ _ => ids.contains oid
-   | .permission _ (.playFromExile id _) _
-   | .permission _ (.flashback id) _
-   | .permission _ (.colorlessGrant id _) _ => id == oid
-   | .gameRule (.cantUntap id _) _
+   | .layered (.objects ids) _ _ => checkValidObjIds pred ids
+   | .permission _ (.playFromExile id perm) _ =>
+     checkValidObjId pred id || checkValidOptObjId pred perm.prepareSource
+   | .permission _ (.flashback id) _ => checkValidObjId pred id
+   | .permission _ (.colorlessGrant id c) _ => checkValidObjId pred id || checkValidObjId pred c
+   | .gameRule (.cantUntap id s) _ => checkValidObjId pred id || checkValidObjId pred s
    | .gameRule (.cantBeBlockedByPlayer id _) _
    | .gameRule (.cantBeBlockedExceptByHaste id) _
    | .gameRule (.cantBlock id) _
    | .gameRule (.uncounterable id) _
-   | .gameRule (.fraEmblem id) _ => id == oid
-   | .replacement r _ => r.id.object == some oid || r.id.grantor == some oid
-   | .prevention p _ => p.id.object == some oid || p.id.grantor == some oid
+   | .gameRule (.fraEmblem id) _ => checkValidObjId pred id
+   | .replacement r _ =>
+     repIdAnyObjId pred r.id || checkValidOptObjId pred r.source || repKindAnyObjId pred r.kind
+   | .prevention p _ =>
+     repIdAnyObjId pred p.id || checkValidOptObjId pred p.source || prevKindAnyObjId pred p.kind
    | _ => false) ||
   match spec.duration with
   | .whileSourceOnBattlefield src | .untilSourceLeaves src
-  | .whileSourceHasCounter src _ | .whileInZone src _ => src == oid
+  | .whileSourceHasCounter src _ | .whileInZone src _ => checkValidObjId pred src
   | _ => false
 
-private def gameChangeReferencesObject (ch : GameChange) (oid : ObjectId) : Bool :=
+private def specReferencesObject (spec : ContinuousEffectSpec) (oid : ObjectId) : Bool :=
+  specAnyObjId spec (· == oid)
+
+private def delayedKindAnyObjId (pred : ObjectId → Bool) : DelayedTriggerKind → Bool
+  | .endStepReturn oid
+  | .endStepExile oid
+  | .endStepSacrifice oid
+  | .endStepGraveReturn oid _ => checkValidObjId pred oid
+  | .lokiCopyNextInstantSorceryThisTurn sid _ => checkValidOptObjId pred sid
+  | _ => false
+
+private def delayedTriggerAnyObjId (dt : DelayedTrigger) (pred : ObjectId → Bool) : Bool :=
+  dt.source.any (gameObjAnyObjId pred) ||
+    delayedKindAnyObjId pred dt.kind ||
+    eventCauseAnyObjId dt.cause pred
+
+private def stackEntryAnyObjId (e : StackEntry) (pred : ObjectId → Bool) : Bool :=
+  checkValidObjId pred e.objectId ||
+    e.targets.any (targetAnyObjId pred) ||
+    e.delayedTrigger.any (fun (k, c) =>
+      delayedKindAnyObjId pred k || eventCauseAnyObjId c pred)
+
+private def playerAnyObjId (pl : Player) (pred : ObjectId → Bool) : Bool :=
+  checkValidObjIds pred pl.library ||
+    checkValidObjIds pred pl.hand ||
+    checkValidObjIds pred pl.graveyard ||
+    checkValidOptObjId pred pl.ringBearerId ||
+    pl.manaPool.units.any (fun u => checkValidOptObjId pred u.source)
+
+private def enteringAttackItemAnyObjId (it : EnteringAttackItem) (pred : ObjectId → Bool) : Bool :=
+  match it with
+  | .token _ _ _ opts _ => opts.any (attackTargetAnyObjId pred)
+  | .card cid _ _ _ _ _ _ _ opts =>
+    checkValidObjId pred cid || opts.any (attackTargetAnyObjId pred)
+
+private def searchDestAnyObjId (d : SearchDest) (pred : ObjectId → Bool) : Bool :=
+  match d with
+  | .exileLinked sid => checkValidOptObjId pred sid
+  | _ => false
+
+private def afterRandomAnyObjId (ar : AfterRandom) (pred : ObjectId → Bool) : Bool :=
+  match ar with
+  | .revealRandomCreatureThenBottom _ ids | .putOnTop _ ids => checkValidObjIds pred ids
+  | .beholdUntap _ lid _ => checkValidObjId pred lid
+  | .plusOne id _ sid => checkValidObjId pred id || checkValidOptObjId pred sid
+  | _ => false
+
+private def postCastCleanupAnyObjId (pc : PostCastCleanup) (pred : ObjectId → Bool) : Bool :=
+  match pc with
+  | .cascadeBottom _ id os
+  | .grimaBottom _ id os
+  | .lookedBottom _ id os => checkValidObjId pred id || checkValidObjIds pred os
+  | .copyCeaseToExist cid => checkValidObjId pred cid
+
+private def fraChoiceAnyObjId (fc : FraChoice) (pred : ObjectId → Bool) : Bool :=
+  match fc with
+  | .topOrBottomDamage id _ sid => checkValidObjId pred id || checkValidOptObjId pred sid
+  | .sphinxsApproach id
+  | .mayMovePlusOne id
+  | .allianceMode id _
+  | .gollumMode id _
+  | .triggerModes id _ _
+  | .upToTriggerModes id _ _
+  | .stackHydeMode id
+  | .chooseKeyword id _
+  | .costPicks id _ _
+  | .maySacrificeAnotherCreatureForPower id
+  | .maySacrificeAnotherForDrawTreasure id
+  | .mayPaySymbolsThen _ _ id
+  | .mayBecomeBasePT id _ _
+  | .mayTapSourceThen _ id
+  | .palantirMayDraw _ id
+  | .mayCastCopy id
+  | .ultronMayPay id
+  | .visionMode id _
+  | .moonstoneMayExile id
+  | .blackGatePlayer id _ => checkValidObjId pred id
+  | .extrapolatePick _ ids
+  | .mayPutMilledPermanent ids _
+  | .castCopiesFree ids _ _
+  | .sacrificeCreatureEach _ _ ids
+  | .maySacrificeThese _ ids
+  | .mayDiscardThese _ ids
+  | .sacrificeLeastPower ids
+  | .sacrificeNontokenEach _ ids
+  | .orderLibraryBottom ids
+  | .mayCastFromGraveyard ids
+  | .mayCastCards ids _ _
+  | .mayCastInstantSorceryFromHand ids
+  | .mayCastUpToFromExile ids _
+  | .hydeRemoveCounter ids
+  | .mayTakeMilled ids _
+  | .mayPutHeroFromHandOrDraw ids
+  | .visionQuestPick ids _ _
+  | .newTargetsForCopies ids
+  | .riddlesSplit ids
+  | .mayBeginOnBattlefield ids => checkValidObjIds pred ids
+  | .mayThen _ sid
+  | .mayPayThen _ _ sid
+  | .mayDiscardThen _ sid
+  | .discardThenStun _ sid
+  | .maySacrificeThen _ _ sid
+  | .exileFromRevealedHand _ sid
+  | .mayPayPickThen _ _ sid
+  | .mayPayExtort sid
+  | .mayPayManaForReflexive _ _ _ sid
+  | .hawkeyeModes _ _ sid
+  | .mayDiscardHandBalin sid
+  | .hydeMode sid
+  | .oddOrEvenDestroy sid
+  | .daredevilMayExile sid => checkValidOptObjId pred sid
+  | .discardThen _ sid cid => checkValidOptObjId pred sid || checkValidOptObjId pred cid
+  | .stackTriggerUnusedMode oid sid _ _ =>
+    checkValidObjId pred oid || checkValidOptObjId pred sid
+  | .discardTwo _ _ _ chosen => chosen.any (fun (_, ids) => checkValidObjIds pred ids)
+  | .mayMoveAllCounters fid tid
+  | .crew fid tid _
+  | .zemoBoastExile fid tid => checkValidObjId pred fid || checkValidObjId pred tid
+  | .attachAnyEquipment hid elig => checkValidObjId pred hid || checkValidObjIds pred elig
+  | .mayRevealToHand l e _
+  | .nickFuryPut l e
+  | .visionQuestZones l e _
+  | .riddlesChoosePile _ l e
+  | .revealPutCreatures l e _ => checkValidObjIds pred l || checkValidObjIds pred e
+  | .nickFuryMayTransform id os
+  | .mayCastCascade id os
+  | .mayCastGrima id os _ => checkValidObjId pred id || checkValidObjIds pred os
+  | .searchLibrary elig _ dest _ _
+  | .maySearchLibrary elig _ dest _ _ =>
+    checkValidObjIds pred elig || searchDestAnyObjId dest pred
+  | .sacrificeDamager ids _ _ chosen =>
+    checkValidObjIds pred ids || chosen.any (fun (_, id) => checkValidObjId pred id)
+  | .sheHulkMayDamage _ tgt sid => targetAnyObjId pred tgt || checkValidOptObjId pred sid
+  | .widowMayCounter sid ex => checkValidOptObjId pred sid || checkValidOptObjId pred ex
+  | .tricksterLibrary _ cid conn sid =>
+    checkValidObjId pred cid || checkValidOptObjId pred conn || checkValidOptObjId pred sid
+  | .mayChangeSpellTarget sid _ stg =>
+    checkValidObjId pred sid || stg.any (targetAnyObjId pred)
+  | .newTargetsForCopySlot copies _ stg =>
+    checkValidObjIds pred copies || stg.any (targetAnyObjId pred)
+  | .worldsPutCreatures elig _ ex ch sid =>
+    checkValidObjIds pred elig || checkValidObjIds pred ex ||
+      checkValidObjIds pred ch || checkValidOptObjId pred sid
+  | .chooseCards ids _ purpose =>
+    checkValidObjIds pred ids ||
+      match purpose with
+      | .amassArmy _ _ att => checkValidOptObjId pred att
+      | _ => false
+  | .chooseEnteringAttackTarget rem chosen c =>
+    rem.any (enteringAttackItemAnyObjId · pred) ||
+      chosen.any (fun (it, atgt) =>
+        enteringAttackItemAnyObjId it pred || atgt.any (attackTargetAnyObjId pred)) ||
+      c.any (eventCauseAnyObjId · pred)
+  | _ => false
+
+private def pendingAnyObjId (p : Pending) (pred : ObjectId → Bool) : Bool :=
+  match p with
+  | .sacrificePermanent _ sid
+  | .maySacrificeAnotherBolg _ sid
+  | .payWard _ sid _ => checkValidObjId pred sid
+  | .chooseSacrificeCreature _ ids _
+  | .chooseLegend _ _ ids
+  | .mayCastFromLooked _ ids _ => checkValidObjIds pred ids
+  | .chooseLibraryPlacement _ (some id)
+  | .payOrLetCounter _ _ (some id)
+  | .mayPutArtifactFromHand _ (some id) => checkValidObjId pred id
+  | .mayAttachEquipment _ hid sid => checkValidObjId pred hid || checkValidOptObjId pred sid
+  | .mayHaveVillainConnive _ sid vid => checkValidObjId pred sid || checkValidObjId pred vid
+  | .mayCastExiledElseDamage _ cid _ sid =>
+    checkValidObjId pred cid || checkValidOptObjId pred sid
+  | .chooseReplacement _ rids => rids.any (repIdAnyObjId pred)
+  | .fraChoice _ fc => fraChoiceAnyObjId fc pred
+  | .resolveRandom (.orderInto ids _ c) =>
+    checkValidObjIds pred ids || c.any (eventCauseAnyObjId · pred)
+  | .resolveRandom (.chooseObject ids) => checkValidObjIds pred ids
+  | _ => false
+
+private def frcPostStepAnyObjId (st : FrcPostStep) (pred : ObjectId → Bool) : Bool :=
+  match st with
+  | .incubateForExiledCount _ _ ids c =>
+    checkValidObjIds pred ids || c.any (eventCauseAnyObjId · pred)
+  | .polymorphRevealCreatures _ _ sid ids =>
+    checkValidOptObjId pred sid || checkValidObjIds pred ids
+  | .registerSyntheticDestinyEndStep _ _ sid ids c =>
+    checkValidOptObjId pred sid || checkValidObjIds pred ids || c.any (eventCauseAnyObjId · pred)
+  | .polymorphSingleTargetReveal _ _ sid
+  | .optionalOncePolymorphReveal _ sid
+  | .revealCreatureOrPlaneswalker _ sid => checkValidOptObjId pred sid
+  | .currencyReturnCreateToken _ eid sid _ =>
+    checkValidObjId pred eid || checkValidObjId pred sid
+  | .urSphinxCastNext _ buckets => buckets.any (checkValidObjIds pred)
+  | .factOrFictionHandInnerLoop _ ids pc
+  | .factOrFictionGyInnerLoop _ ids pc
+  | .putBackOnTopLoop _ ids _ pc => checkValidObjIds pred ids || checkValidOptObjId pred pc
+  | .tamiyoStunLoop _ tid _ rem => checkValidObjId pred tid || checkValidObjIds pred rem
+  | .factOrFictionGyLoop _ ids => checkValidObjIds pred ids
+  | .swordsGainLife tid _ _
+  | .logHandDiscard _ tid _ _
+  | .logHandDiscardToBottom _ tid _ _
+  | .logExploreLandToHand _ tid _ => checkValidObjId pred tid
+  | _ => false
+
+private def postStepAnyObjId (st : PostStep) (pred : ObjectId → Bool) : Bool :=
+  match st with
+  | .putArtifactOntoBattlefield _ cid hid =>
+    checkValidObjId pred cid || checkValidOptObjId pred hid
+  | .copyEnteredArtifact _ id
+  | .enteredBattlefieldSilent id _
+  | .returnedBattlefieldEndStep id _
+  | .returnedToBattlefield id _
+  | .returnedToBattlefieldTapped id _
+  | .enteredBattlefieldTapped id _
+  | .empowerJaceExcessDamage _ id _ _
+  | .enteredOfferAttachEquipment _ id
+  | .putOntoBattlefieldHasteAtFour _ id _ _
+  | .noteExcessDamageDealt id _ _
+  | .notePermanentDealtDamage id _
+  | .addPlusOnesToSource id _
+  | .logPutsIntoHand _ id _
+  | .logInfluenceThenScryTwo id _
+  | .finishPalantirInfluence _ id _ _
+  | .logShuffleIntoLibrary _ id
+  | .logReturnsToBattlefieldAndEnter id
+  | .logPutUnderOwnerControlAndEnter id
+  | .millSourceInfluenceCount _ id
+  | .grantCantBeBlockedIfOnBattlefield id
+  | .logReturnsAsArtifactAndEnter id
+  | .logMovedToExile id
+  | .resumeTriggerModesAfterLeave _ id _ _
+  | .resumeUpToTriggerModesAfterLeave _ id _ _
+  | .resumeHawkeyeModesAfterLeave _ id _ _
+  | .notePlayExiledThisWay id
+  | .evilsThrallGrantHaste id
+  | .logExiledIfInExile id _
+  | .logReturnedToHand id _ _
+  | .finishMoveToOwnerGraveyardLog id _ _ _ _ _
+  | .logPutOnOwnerLibrary id _ _ _ _
+  | .putSourceCountersPlusOneAndLog id _ _ _ _
+  | .logSacrificedIfInGraveyard id _ _
+  | .logDiscardIfInGraveyard id _ _
+  | .logIfCountersIncreased id _ _
+  | .putDoubleStrikeCounter id _ => checkValidObjId pred id
+  | .grantHandSizePower sid
+  | .beginDiscardThenStun _ sid
+  | .addPlusOnesForLoggedDiscards _ sid
+  | .addRedManaIfPositive _ _ sid
+  | .treasureThenDragonAfterCreate _ sid
+  | .logTwoNonlegendaryCopyTokens sid _
+  | .drawOneThenPlusOnesForDiscards _ sid
+  | .queueTapAndStunReflexive _ _ sid
+  | .noteHandDiscardedCount _ sid
+  | .reflexiveReturnLandTapped _ sid
+  | .worldsWithinWorldsExileSelf sid
+  | .incrementPlanSource _ sid => checkValidOptObjId pred sid
+  | .destroyTargetLandThenOfferSearchBasics _ s1 s2
+  | .conniveTricksterTarget _ s1 s2
+  | .finishDaredevilExile s1 s2 => checkValidOptObjId pred s1 || checkValidOptObjId pred s2
+  | .continueDiscardTwo _ _ _ chosen => chosen.any (fun (_, ids) => checkValidObjIds pred ids)
+  | .enteredBattlefieldPutRestBottomRandom _ cid rest c
+  | .nickFuryMayTransformOrBottom _ cid rest c
+  | .enteredThenPutRestBottomRandom cid _ rest c =>
+    checkValidObjId pred cid || checkValidObjIds pred rest || c.any (eventCauseAnyObjId · pred)
+  | .hawkeyeArrows _ _ tgts _ sid
+  | .fightTargetOpponentCreature _ sid tgts
+  | .countersOnCreatureTargetsLoop _ tgts _ _ sid
+  | .returnInstantsLoop _ _ tgts sid
+  | .putPlusOnesUpToLastKnownLoop _ tgts sid =>
+    tgts.any (targetAnyObjId pred) || checkValidOptObjId pred sid
+  | .returnTappedWithEndStepExile _ cid sid c
+  | .exileReturnBrieflyAfterExile _ cid _ _ sid c
+  | .exileFlickerAfterExile _ cid _ sid c =>
+    checkValidObjId pred cid || checkValidOptObjId pred sid || eventCauseAnyObjId c pred
+  | .drainOpponents _ _ sid c
+  | .dealDamageToEachOpponent _ _ sid c _
+  | .twoPlayersDrawSecond _ _ sid c
+  | .dealDamageToEachNonSubtypeAndOpponents _ _ _ sid c =>
+    checkValidOptObjId pred sid || c.any (eventCauseAnyObjId · pred)
+  | .exileLibraryUntilNonlandLoop _ _ sid c pf =>
+    checkValidOptObjId pred sid || checkValidOptObjId pred pf || c.any (eventCauseAnyObjId · pred)
+  | .revealPutCreaturesStep _ r p e c =>
+    checkValidObjIds pred r || checkValidObjIds pred p ||
+      checkValidObjIds pred e || c.any (eventCauseAnyObjId · pred)
+  | .offerCreaturesFromHandToBattlefield _ c
+  | .gainLifePlayer _ _ c
+  | .drawCardsPlayer _ _ c
+  | .millOpponentsOnly _ _ c
+  | .millOpponentsAndNote _ _ _ c
+  | .opponentsDrawOneLoop _ _ c
+  | .twoPlayersEachDrawSecond _ _ c
+  | .applyAggregatedLifelink _ c
+  | .finishUldarosCopiesOffer _ c
+  | .finishExileHandDrawPlayUntilNext _ _ c => c.any (eventCauseAnyObjId · pred)
+  | .enteredAttachedToSource a h
+  | .finishFraExileUntilSourceLeaves a h => checkValidObjId pred a || checkValidObjId pred h
+  | .discardCleanupIds _ rem jd =>
+    checkValidObjIds pred rem || jd.any (fun (id, _) => checkValidObjId pred id)
+  | .loseLifeForMilledManaValue _ ids c
+  | .discardHandIdsLoop _ ids _ c
+  | .putRestOnBottomRandom _ ids c =>
+    checkValidObjIds pred ids || c.any (eventCauseAnyObjId · pred)
+  | .eaglesReturnCreaturesLoop _ _ sid rem c _ pr =>
+    checkValidOptObjId pred sid || checkValidObjIds pred rem ||
+      c.any (eventCauseAnyObjId · pred) || pr.any (fun (id, _, _) => checkValidObjId pred id)
+  | .discardMultiHandIdsLoop rem _ c =>
+    rem.any (fun (_, id) => checkValidObjId pred id) || c.any (eventCauseAnyObjId · pred)
+  | .noteMilledIds ids
+  | .empowerJaceExiledCount _ _ ids
+  | .offerPutMilledPermanentOrGainLife _ ids _
+  | .millMayPutPermanentGainLife _ ids _
+  | .offerSearchBasicsExiledCount _ _ ids
+  | .noteExiledIds ids
+  | .notedLandsEntered ids
+  | .noteSacrificedSource ids
+  | .noteSacrificedPlan ids
+  | .continueOpeningBegin ids
+  | .offerMayCastUpToFromExile _ ids _
+  | .noteReturnedPermanentIfInHand ids
+  | .plusOneOnCreatedTokensLoop _ ids _
+  | .loyaltyOnPlaneswalkersLoop _ ids
+  | .honeControlledEquipmentLoop _ ids => checkValidObjIds pred ids
+  | .offerWorldsCreatures _ _ ids sid =>
+    checkValidObjIds pred ids || checkValidOptObjId pred sid
+  | .identityEchoAfterExile _ eid sid
+  | .applyPlusOneAfterSearch eid _ sid
+  | .finishExileTopMayCastElseDamage _ eid _ sid
+  | .exileFromRevealedHandAfterMove _ _ eid _ sid
+  | .topOrBottomDamageFollowup eid _ _ _ _ sid =>
+    checkValidObjId pred eid || checkValidOptObjId pred sid
+  | .worldsWithinWorlds ex ch sid =>
+    checkValidObjIds pred ex || checkValidObjIds pred ch || checkValidOptObjId pred sid
+  | .returnNotedLandsStep r e => checkValidObjIds pred r || checkValidObjIds pred e
+  | .worldsReturnExiledLoop rem pc =>
+    checkValidObjIds pred rem || pc.any (fun (id, _) => checkValidObjId pred id)
+  | .resumeProposalCostAfterLeave _ savedP => pendingAnyObjId savedP pred
+  | .runAfterRandom ar => afterRandomAnyObjId ar pred
+  | .grantLifelinkUntilEot id c
+  | .grantHasteUntilEotSilent id c
+  | .grantAdventureExilePermission _ id c
+  | .grantPlayUntilEndOfNextTurn _ id c =>
+    checkValidObjId pred id || c.any (eventCauseAnyObjId · pred)
+  | .finishExileUntilNextEndStep _ id c
+  | .sarumanExileCopyMayCast _ id c => checkValidObjId pred id || eventCauseAnyObjId c pred
+  | .tapAndStunTargetsLoop _ rem sid c
+  | .damageUpToOneAndPlayerLoop _ _ rem _ _ sid c _ =>
+    rem.any (fun (_, t) => targetAnyObjId pred t) ||
+      checkValidOptObjId pred sid || c.any (eventCauseAnyObjId · pred)
+  | .exileZemoBoastCards _ aid rem
+  | .copyMissingKeywordsStep rem aid _ =>
+    checkValidObjId pred aid || checkValidObjIds pred rem
+  | .exileSearchedLinkedLoop _ rem sid c pf
+  | .uldarosCopiesLoop _ sid rem c pf =>
+    checkValidObjIds pred rem || checkValidOptObjId pred sid ||
+      c.any (eventCauseAnyObjId · pred) || checkValidOptObjId pred pf
+  | .exileCreaturesFromGraveyardLoop _ rem c pf
+  | .exileHandDrawLoop _ rem c pf
+  | .exileUntilInstantOrSorceryLoop _ _ c rem pf =>
+    checkValidObjIds pred rem || c.any (eventCauseAnyObjId · pred) || checkValidOptObjId pred pf
+  | .finishExileUntilSourceLeaves sid fid
+  | .finishExileForLeaveTrigger sid fid
+  | .recordCostSacrificedPower sid fid _ =>
+    checkValidOptObjId pred sid || checkValidObjId pred fid
+  | .exileTopForPlayLoop _ _ _ _ c pf
+  | .exileTopPlayIfYouControlSubtypeLoop _ _ _ c pf
+  | .exileTopXOppPlayForLifeLoop _ _ _ c pf =>
+    c.any (eventCauseAnyObjId · pred) || checkValidOptObjId pred pf
+  | .exileTopMayCastUpToLoop _ _ _ _ c ex pf =>
+    c.any (eventCauseAnyObjId · pred) || checkValidObjIds pred ex || checkValidOptObjId pred pf
+  | .exileIdsUntilSourceLeavesLoop sid rem c =>
+    checkValidOptObjId pred sid || checkValidObjIds pred rem || c.any (eventCauseAnyObjId · pred)
+  | .exileThenReturnNextEndLoop _ sid rem c jf _ _ =>
+    checkValidOptObjId pred sid || checkValidObjIds pred rem ||
+      eventCauseAnyObjId c pred || checkValidOptObjId pred jf
+  | .triggerExileLoop _ sid _ rem acc c jf _ _ =>
+    checkValidOptObjId pred sid || checkValidObjIds pred rem ||
+      checkValidObjIds pred acc || c.any (eventCauseAnyObjId · pred) || checkValidOptObjId pred jf
+  | .resolveCascadeLoop _ _ c ex pf =>
+    eventCauseAnyObjId c pred || checkValidObjIds pred ex || checkValidOptObjId pred pf
+  | .finishGrimaDirectCast _ _ fid os c
+  | .finishSurveilHandMove _ fid _ os c =>
+    checkValidObjId pred fid || checkValidObjIds pred os || c.any (eventCauseAnyObjId · pred)
+  | .finishPaySneak _ sid aid atk c =>
+    checkValidObjId pred sid || checkValidObjId pred aid ||
+      attackTargetAnyObjId pred atk || c.any (eventCauseAnyObjId · pred)
+  | .finishZemoBoastExileLogs _ sid pids =>
+    checkValidObjId pred sid || checkValidObjIds pred pids
+  | .moveIdsInOrderLoop ids _ _ c _ pm =>
+    checkValidObjIds pred ids || c.any (eventCauseAnyObjId · pred) ||
+      pm.any (fun (id, _) => checkValidObjId pred id)
+  | .targetPlayersGainLifeLoop _ tgts _ sid c =>
+    tgts.any (targetAnyObjId pred) || checkValidOptObjId pred sid || c.any (eventCauseAnyObjId · pred)
+  | .bounceEachTargetLoop _ _ rem sid
+  | .untapTargetsLoop _ _ rem sid
+  | .plusOneOnEachTargetLoop _ _ rem _ sid
+  | .minusOnesPerOpponentLoop _ _ rem _ sid
+  | .divideSevenDamageLoop _ _ rem _ sid _ =>
+    rem.any (fun (_, t) => targetAnyObjId pred t) || checkValidOptObjId pred sid
+  | .attachEquipmentToHostLoop _ _ hid rem sid =>
+    checkValidObjId pred hid || rem.any (fun (_, t) => targetAnyObjId pred t) ||
+      checkValidOptObjId pred sid
+  | .dealDamageLoseIndestructibleExileTo tid _ src =>
+    checkValidObjId pred tid || eventObjAnyObjId pred src
+  | .dealDamageFromPermanentsLoop rem _ _ src c _ _ pt =>
+    checkValidObjIds pred rem || src.any (eventObjAnyObjId pred) ||
+      c.any (eventCauseAnyObjId · pred) || pt.any (fun (id, _, _) => checkValidObjId pred id)
+  | .triggerDividedDamageLoop rem _ src c _ tc =>
+    rem.any (fun (t, _) => targetAnyObjId pred t) || src.any (eventObjAnyObjId pred) ||
+      c.any (eventCauseAnyObjId · pred) || tc.any (fun (_, _, sid) => checkValidOptObjId pred sid)
+  | .fblthpMoveToHandLoop _ rem c =>
+    checkValidObjIds pred rem || eventCauseAnyObjId c pred
+  | .revealUntilCreatureToHandAfterMove _ cid _ rest c =>
+    checkValidObjId pred cid || checkValidObjIds pred rest || eventCauseAnyObjId c pred
+  | .movePublicCardsToHandLoop _ rem _ _ c pc _ =>
+    checkValidObjIds pred rem || c.any (eventCauseAnyObjId · pred) ||
+      pc.any (fun (id, _) => checkValidObjId pred id)
+  | .exileOpponentLibrariesLoop _ _ cids _ pid =>
+    checkValidObjIds pred cids || checkValidOptObjId pred pid
+  | .worldsWithinWorldsAfterPut ex vc sid =>
+    checkValidObjIds pred ex || vc.any (fun (id, _, _) => checkValidObjId pred id) ||
+      checkValidOptObjId pred sid
+  | .chooseCardsToHandLoop _ rem c pc =>
+    checkValidObjIds pred rem || c.any (eventCauseAnyObjId · pred) ||
+      pc.any (fun (id, _, _) => checkValidObjId pred id)
+  | .finishAbilityResolution snap _ sid _ _ _ =>
+    eventObjAnyObjId pred snap || checkValidOptObjId pred sid
+  | _ => false
+
+mutual
+
+private partial def pendingReplacementAnyObjId (pr : PendingReplacement)
+    (pred : ObjectId → Bool) : Bool :=
+  match pr with
+  | .seq a b => pendingReplacementAnyObjId a pred || pendingReplacementAnyObjId b pred
+  | .dealDamageToPlayer _ _ src _ c _
+  | .dealDamageToPlayers _ _ src c _ _ =>
+    src.any (eventObjAnyObjId pred) || c.any (eventCauseAnyObjId · pred)
+  | .dealDamageFrom _ src tid _ _ c _ =>
+    eventObjAnyObjId pred src || checkValidObjId pred tid || c.any (eventCauseAnyObjId · pred)
+  | .dealFightDamage sid tid c _ =>
+    checkValidObjId pred sid || checkValidObjId pred tid || c.any (eventCauseAnyObjId · pred)
+  | .dealDamageToPermanent tid _ src c _
+  | .markDamageOn tid _ _ _ src _ _ c =>
+    checkValidObjId pred tid || src.any (eventObjAnyObjId pred) || c.any (eventCauseAnyObjId · pred)
+  | .gainLife _ _ c
+  | .createTreasureTokens _ _ _ c
+  | .draw _ _ c
+  | .copyNontokenCreatures _ _ c
+  | .copyPermanentTokens _ _ _ c _ _
+  | .surveilMoveLoop _ _ c
+  | .makeFrcLoop _ _ _ _ _ c
+  | .setLife _ _ _ c
+  | .loseLifeAfterDraw _ _ c => c.any (eventCauseAnyObjId · pred)
+  | .addPlusOnePlusOneTo tid _ _ _ c
+  | .addCounters tid _ _ _ _ c
+  | .recordPutCounters tid _ _ _ c
+  | .putCountersDeferredLog tid _ _ _ _ c
+  | .untapPermanent tid _ _ c
+  | .addLoreCounters tid _ c
+  | .finishPlaceSearched _ tid _ _ c
+  | .addFinalityTo tid _ _ _ c
+  | .counterStackSpell tid _ _ _ c _ _ =>
+    checkValidObjId pred tid || c.any (eventCauseAnyObjId · pred)
+  | .destroyPermanent tid c pb _ =>
+    checkValidObjId pred tid || c.any (eventCauseAnyObjId · pred) ||
+      pb.any (·.any (gameObjAnyObjId pred))
+  | .logPutCounterDelta tid _ _ _
+  | .finishManaAbilityMountainTrigger _ tid
+  | .finishPutLandFromHand tid
+  | .putShadowCounter tid
+  | .finishShadowCounter tid _
+  | .finishSearchedUntap _ tid _
+  | .returnStackSpell tid _ _ _
+  | .finishTurnFaceUp _ tid _
+  | .finishBecomeCast _ tid _ _ _ => checkValidObjId pred tid
+  | .move id _ _ _ _ _ _ _ atgt _ _ _ _ _ _ _ pb _ _ _ _ att _ c _ skip =>
+    checkValidObjId pred id || atgt.any (attackTargetAnyObjId pred) ||
+      pb.any (·.any (gameObjAnyObjId pred)) || checkValidOptObjId pred att ||
+      c.any (eventCauseAnyObjId · pred) || checkValidObjIds pred skip
+  | .moveSimultaneousToGraveyard ids pb c =>
+    checkValidObjIds pred ids || pb.any (·.any (gameObjAnyObjId pred)) ||
+      c.any (eventCauseAnyObjId · pred)
+  | .createToken _ _ _ _ atgt _ _ _ c _
+  | .createKindTokens _ _ _ _ _ atgt _ c =>
+    atgt.any (attackTargetAnyObjId pred) || c.any (eventCauseAnyObjId · pred)
+  | .createTokenBatches batches _ atgt _ _ c =>
+    batches.any (fun b =>
+      b.attackingTarget.any (attackTargetAnyObjId pred) || b.cause.any (eventCauseAnyObjId · pred)) ||
+      atgt.any (attackTargetAnyObjId pred) || c.any (eventCauseAnyObjId · pred)
+  | .createAndMarkTokensAttacking _ _ _ _ _ sid c =>
+    checkValidOptObjId pred sid || c.any (eventCauseAnyObjId · pred)
+  | .commitEnteringAttackItems chosen c _ pe pb =>
+    chosen.any (fun (it, atgt) =>
+      enteringAttackItemAnyObjId it pred || atgt.any (attackTargetAnyObjId pred)) ||
+      c.any (eventCauseAnyObjId · pred) ||
+      pe.any (fun (id, _, _, _, _) => checkValidObjId pred id) ||
+      pb.any (·.any (gameObjAnyObjId pred))
+  | .finishEnteringAttackCards pe c =>
+    pe.any (fun (id, _, _, _, _) => checkValidObjId pred id) || c.any (eventCauseAnyObjId · pred)
+  | .finishEnteringAttackCard nid _ _ _ _ c =>
+    checkValidOptObjId pred nid || c.any (eventCauseAnyObjId · pred)
+  | .afterLastPermanentEnters fid _ hid =>
+    checkValidOptObjId pred fid || checkValidOptObjId pred hid
+  | .shuffleThen _ ar => afterRandomAnyObjId ar pred
+  | .drawOne _ app _ c
+  | .drawSubDraws _ _ app c =>
+    app.any (repIdAnyObjId pred) || c.any (eventCauseAnyObjId · pred)
+  | .connive _ sid => checkValidOptObjId pred sid
+  | .finishSbaSweep moves pb _ pwm sm tok cop ia ie ica lg =>
+    (moves ++ pwm ++ sm).any (fun m => checkValidObjId pred m.objectId) ||
+      pb.any (gameObjAnyObjId pred) || checkValidObjIds pred tok ||
+      checkValidObjIds pred cop || checkValidObjIds pred ia ||
+      (ie ++ ica).any (fun (a, b) => checkValidObjId pred a || checkValidObjId pred b) ||
+      lg.any (fun (_, _, ids) => checkValidObjIds pred ids)
+  | .finishDealDamageLoseIndestructibleExile tid _ _ c
+  | .finishProliferateEachKind _ tid _ _ c =>
+    checkValidObjId pred tid || eventCauseAnyObjId c pred
+  | .untapStepPermanents ids
+  | .addLoreAfterDrawStep ids
+  | .continueConnives _ ids
+  | .finishMillSubtypeOrEnchantment _ ids _ => checkValidObjIds pred ids
+  | .restorePending p _ _ _ _ => pendingAnyObjId p pred
+  | .restorePausedBatch _ _ _ c objs pls effs pend stk _ qle =>
+    c.any (eventCauseAnyObjId · pred) || objs.any (gameObjAnyObjId pred) ||
+      pls.any (playerAnyObjId · pred) || effs.any (fun (_, sp) => specAnyObjId sp pred) ||
+      pendingAnyObjId pend pred || stk.any (stackEntryAnyObjId · pred) ||
+      checkValidObjIds pred qle
+  | .finishBecomeActivated _ _ sid _ aid snap orig _ _
+  | .finishPostLoyaltyActivated _ _ sid _ aid snap orig _ _ =>
+    checkValidOptObjId pred sid || checkValidOptObjId pred aid ||
+      snap.any (eventObjAnyObjId pred) || orig.any (gameObjAnyObjId pred)
+  | .payCostPickItems _ aid sid _ rem =>
+    checkValidOptObjId pred aid || checkValidOptObjId pred sid || checkValidObjIds pred rem
+  | .finishActivationExtraCosts _ sid fo _ _ _ _ =>
+    checkValidObjId pred sid || checkValidOptObjId pred fo
+  | .finishActivateManaAbilityPicks _ id _ _ _ rem _ _ _ _ _ _ prevP _ _ _ =>
+    checkValidObjId pred id || checkValidObjIds pred rem || pendingAnyObjId prevP pred
+  | .finishActivateManaAbilityPostSac _ id _ snap _ _ _ _ _ _ prevP _ _ =>
+    checkValidObjId pred id || eventObjAnyObjId pred snap || pendingAnyObjId prevP pred
+  | .finishConniveDraws _ ed c _ =>
+    ed.any (fun (_, r) => repIdAnyObjId pred r) || c.any (eventCauseAnyObjId · pred)
+  | .amass _ _ _ att c
+  | .finishFreshAmass _ _ _ att c _ =>
+    checkValidOptObjId pred att || c.any (eventCauseAnyObjId · pred)
+  | .finishAmassOn _ aid _ _ att _ c =>
+    checkValidObjId pred aid || checkValidOptObjId pred att || c.any (eventCauseAnyObjId · pred)
+  | .placeSearchedBatch _ rem _ c ent pb =>
+    checkValidObjIds pred rem || c.any (eventCauseAnyObjId · pred) ||
+      ent.any (fun (id, _) => checkValidObjId pred id) ||
+      pb.any (·.any (gameObjAnyObjId pred))
+  | .finishSearchAfterPlace _ fid dest _ _ hr c =>
+    checkValidOptObjId pred fid || searchDestAnyObjId dest pred ||
+      checkValidObjIds pred hr || c.any (eventCauseAnyObjId · pred)
+  | .finishSurveilPostMove _ card fid rem c =>
+    gameObjAnyObjId pred card || checkValidObjId pred fid ||
+      checkValidObjIds pred rem || c.any (eventCauseAnyObjId · pred)
+  | .requestOrderInto ids _ _ c
+  | .untapPermanentsLoop ids c
+  | .millCardsLoop _ ids _ c _ _
+  | .moveCardsToGraveyardLoop ids c
+  | .phaseInControlledLoop ids c =>
+    checkValidObjIds pred ids || c.any (eventCauseAnyObjId · pred)
+  | .finishProliferateTarget _ tid _ _ rtgts pids _ _ _ c =>
+    checkValidObjId pred tid || rtgts.any (targetAnyObjId pred) ||
+      checkValidObjIds pred pids || c.any (eventCauseAnyObjId · pred)
+  | .finishChooseDiscardCard _ card _ => gameObjAnyObjId pred card
+  | .finishBeginOnBattlefield fid rem =>
+    checkValidObjId pred fid || checkValidObjIds pred rem
+  | .continueUnified _ _ _ tgts _ _ _ _ sid
+  | .continueUnifiedAbility _ _ _ tgts sid _ _
+  | .continueSpellModes _ _ tgts _ _ _ _ sid _ _ _
+  | .continueTriggeredSequence _ _ sid tgts _ _ _ _
+  | .continueTriggeredModes _ _ _ sid tgts _ _ _ _ =>
+    tgts.any (targetAnyObjId pred) || checkValidOptObjId pred sid
+  | .empowerJace _ _ _ tid c =>
+    checkValidOptObjId pred tid || c.any (eventCauseAnyObjId · pred)
+  | .dealDamageToEachCreatureMatching rem _ _ _ _ src c _ _ =>
+    checkValidObjIds pred rem || src.any (eventObjAnyObjId pred) ||
+      c.any (eventCauseAnyObjId · pred)
+  | .destroyPermanentsLoop r a _ _ _ pb c =>
+    checkValidObjIds pred r || checkValidObjIds pred a ||
+      pb.any (·.any (gameObjAnyObjId pred)) || c.any (eventCauseAnyObjId · pred)
+  | .sacrificePermanentsLoop rem pb c _ _ =>
+    rem.any (fun (_, id) => checkValidObjId pred id) ||
+      pb.any (·.any (gameObjAnyObjId pred)) || c.any (eventCauseAnyObjId · pred)
+  | .putToBattlefieldLoop _ r e _ _ _ _ _ _ c pb =>
+    checkValidObjIds pred r || checkValidObjIds pred e ||
+      c.any (eventCauseAnyObjId · pred) || pb.any (·.any (gameObjAnyObjId pred))
+  | .returnLinkedExileLoop r c e pb pl =>
+    checkValidObjIds pred r || c.any (eventCauseAnyObjId · pred) ||
+      checkValidObjIds pred e || pb.any (·.any (gameObjAnyObjId pred)) ||
+      pl.any (fun (id, _) => checkValidObjId pred id)
+  | .finishLinkedExileMove r pb pl e =>
+    checkValidObjIds pred r || pb.any (·.any (gameObjAnyObjId pred)) ||
+      pl.any (fun (id, _) => checkValidObjId pred id) || checkValidObjIds pred e
+  | .exilePermanentsLoop r _ c lc =>
+    checkValidObjIds pred r || c.any (eventCauseAnyObjId · pred) ||
+      lc.any (fun (id, _) => checkValidObjId pred id)
+  | .causeDealsDamageToOpponentsLoop _ _ _ src c _ _ =>
+    src.any (eventObjAnyObjId pred) || c.any (eventCauseAnyObjId · pred)
+  | .flickerLoop r ex ent _ _ _ _ _ c pb =>
+    checkValidObjIds pred r || checkValidObjIds pred ex || checkValidObjIds pred ent ||
+      c.any (eventCauseAnyObjId · pred) || pb.any (·.any (gameObjAnyObjId pred))
+  | .finishMillChooseForHand _ p _ m _ _ _ _ c =>
+    checkValidObjIds pred p || checkValidObjIds pred m || c.any (eventCauseAnyObjId · pred)
+  | .finishFrcRestBottom _ r _ c dt =>
+    checkValidObjIds pred r || c.any (eventCauseAnyObjId · pred) || checkValidObjIds pred dt
+  | .finishFrcPostStep st => frcPostStepAnyObjId st pred
+  | .finishPostStep st => postStepAnyObjId st pred
+  | .leavePlayersWhoLost sp _ _ _
+  | .finishConcede _ _ _ sp _ _ _
+  | .concedePlayersLoop _ _ _ _ _ _ sp _ _ _ => sp.any (pendingAnyObjId · pred)
+  | .endControlExileLoop rem c pl extra =>
+    rem.any (fun (id, _, _) => checkValidObjId pred id) ||
+      c.any (eventCauseAnyObjId · pred) ||
+      pl.any (fun (id, _) => checkValidObjId pred id) ||
+      checkValidObjIds pred extra
+  | .placeSearchedGraveyardLoop ids c pl =>
+    checkValidObjIds pred ids || c.any (eventCauseAnyObjId · pred) ||
+      pl.any (fun (id, _, _) => checkValidObjId pred id)
+  | .returnLinkedExileToHandLoop sid ids pi =>
+    checkValidObjId pred sid || checkValidObjIds pred ids ||
+      pi.any (fun (id, _, _) => checkValidObjId pred id)
+  | .runPostCastCleanup pc => postCastCleanupAnyObjId pc pred
+  | .continueCheckpointReplay rem full rev lm _ _ _ _ =>
+    (rem ++ full).any (fun (_, ev) =>
+      gameChangeAnyObjId ev.change pred || ev.cause?.any (eventCauseAnyObjId · pred)) ||
+      (rev ++ lm).any (fun (a, b) => checkValidObjId pred a || checkValidObjId pred b)
+  | .phaseOutPermanentsLoop rem c ps =>
+    checkValidObjIds pred rem || c.any (eventCauseAnyObjId · pred) ||
+      ps.any (fun (id, eo) => checkValidObjId pred id || eventObjAnyObjId pred eo)
+  | _ => false
+
+private partial def continuationChangeAnyObjId (cc : ContinuationChange)
+    (pred : ObjectId → Bool) : Bool :=
+  match cc with
+  | .discardedCardThisWay v => v.any (fun (_, id) => checkValidObjId pred id)
+  | .recentTokenIds v
+  | .milledIdsThisWay v
+  | .revealedIdsThisWay v
+  | .grimaImpulseOthers v
+  | .exiledIdsThisWay v
+  | .createdTokensThisWay v => checkValidObjIds pred v
+  | .fraAfterLook v => v.any (fun (_, sid, _) => checkValidOptObjId pred sid)
+  | .pendingFreeCopies v => v.any (fun (_, ids, _, _) => checkValidObjIds pred ids)
+  | .pendingMayCastFromExile v => v.any (fun (_, ids, _) => checkValidObjIds pred ids)
+  | .postCastCleanup v => v.any (postCastCleanupAnyObjId · pred)
+  | .permanentDealtDamageThisWay v
+  | .grimaImpulseFound v
+  | .notedHostId v
+  | .notedSourceThisWay v
+  | .equipmentAttachedHost v
+  | .playExiledThisWay v
+  | .unlessPaysSource v
+  | .maySource v
+  | .spellOrSource v
+  | .conniveSource v
+  | .plusOneAfterDiscards v
+  | .resolvingSpell v
+  | .resolvingAbility v => checkValidOptObjId pred v
+  | .palantirChoiceReady v => v.any (fun (_, _, id) => checkValidObjId pred id)
+  | .pushExiledIdThisWay id => checkValidObjId pred id
+  | .notedCopyObject v => v.any (gameObjAnyObjId pred)
+  | .putArtifactThisWay v =>
+    v.any (fun (a, b) => checkValidObjId pred a || checkValidObjId pred b)
+  | .triggerSequenceRest v =>
+    v.any (fun t => checkValidOptObjId pred t.sourceId || t.targets.any (targetAnyObjId pred))
+  | .mayContext v =>
+    v.any (fun t => checkValidOptObjId pred t.sourceId || t.targets.any (targetAnyObjId pred))
+  | .triggerOr v =>
+    v.any (fun t => checkValidOptObjId pred t.sourceId || t.targets.any (targetAnyObjId pred))
+  | .chooseModesRest v =>
+    v.any (fun t => checkValidOptObjId pred t.sourceId || t.targets.any (targetAnyObjId pred))
+  | .unlessPaysTargets v
+  | .mayTargets v
+  | .spellOrTargets v => v.any (targetAnyObjId pred)
+  | .pendingReplacement v => v.any (pendingReplacementAnyObjId · pred)
+  | .pushOuterPendingReplacement v => pendingReplacementAnyObjId v pred
+  | .plusOneAfterSearch v =>
+    v.any (fun (id, _, sid) => checkValidObjId pred id || checkValidOptObjId pred sid)
+  | .stagedAttackTokenBatches v =>
+    v.any (fun b =>
+      b.attackingTarget.any (attackTargetAnyObjId pred) || b.cause.any (eventCauseAnyObjId · pred))
+  | .stashedCause v => v.any (eventCauseAnyObjId · pred)
+  | .afterRandom v => afterRandomAnyObjId v pred
+  | .resolutionFinish v =>
+    v.any fun
+      | .ability oid snap _ sid _ =>
+        checkValidObjId pred oid || eventObjAnyObjId pred snap || checkValidOptObjId pred sid
+      | .spell se snap _ =>
+        stackEntryAnyObjId se pred || eventObjAnyObjId pred snap
+  | .pendingResolvedEvent v =>
+    v.any (fun (eo, _, c) => eventObjAnyObjId pred eo || eventCauseAnyObjId c pred)
+  | _ => false
+
+private partial def continuationFrameAnyObjId (f : ContinuationFrame)
+    (pred : ObjectId → Bool) : Bool :=
+  f.discardedCardThisWay.any (fun (_, id) => checkValidObjId pred id) ||
+    checkValidObjIds pred f.recentTokenIds ||
+    f.fraAfterLook.any (fun (_, sid, _) => checkValidOptObjId pred sid) ||
+    f.pendingFreeCopies.any (fun (_, ids, _, _) => checkValidObjIds pred ids) ||
+    f.pendingMayCastFromExile.any (fun (_, ids, _) => checkValidObjIds pred ids) ||
+    f.postCastCleanup.any (postCastCleanupAnyObjId · pred) ||
+    checkValidOptObjId pred f.permanentDealtDamageThisWay ||
+    checkValidObjIds pred f.milledIdsThisWay ||
+    checkValidObjIds pred f.revealedIdsThisWay ||
+    f.palantirChoiceReady.any (fun (_, _, id) => checkValidObjId pred id) ||
+    checkValidOptObjId pred f.grimaImpulseFound ||
+    checkValidObjIds pred f.grimaImpulseOthers ||
+    checkValidObjIds pred f.exiledIdsThisWay ||
+    f.notedCopyObject.any (gameObjAnyObjId pred) ||
+    checkValidOptObjId pred f.notedHostId ||
+    checkValidOptObjId pred f.notedSourceThisWay ||
+    checkValidOptObjId pred f.equipmentAttachedHost ||
+    checkValidObjIds pred f.createdTokensThisWay ||
+    f.putArtifactThisWay.any (fun (a, b) => checkValidObjId pred a || checkValidObjId pred b) ||
+    checkValidOptObjId pred f.playExiledThisWay ||
+    f.triggerSequenceRest.any (fun t =>
+      checkValidOptObjId pred t.sourceId || t.targets.any (targetAnyObjId pred)) ||
+    f.mayContext.any (fun t =>
+      checkValidOptObjId pred t.sourceId || t.targets.any (targetAnyObjId pred)) ||
+    f.triggerOr.any (fun t =>
+      checkValidOptObjId pred t.sourceId || t.targets.any (targetAnyObjId pred)) ||
+    f.chooseModesRest.any (fun t =>
+      checkValidOptObjId pred t.sourceId || t.targets.any (targetAnyObjId pred)) ||
+    f.unlessPaysTargets.any (targetAnyObjId pred) ||
+    checkValidOptObjId pred f.unlessPaysSource ||
+    f.mayTargets.any (targetAnyObjId pred) ||
+    checkValidOptObjId pred f.maySource ||
+    f.spellOrTargets.any (targetAnyObjId pred) ||
+    checkValidOptObjId pred f.spellOrSource ||
+    f.pendingReplacement.any (pendingReplacementAnyObjId · pred) ||
+    f.outerPendingReplacements.any (pendingReplacementAnyObjId · pred) ||
+    checkValidOptObjId pred f.conniveSource ||
+    checkValidOptObjId pred f.plusOneAfterDiscards ||
+    f.plusOneAfterSearch.any (fun (id, _, sid) =>
+      checkValidObjId pred id || checkValidOptObjId pred sid) ||
+    f.stagedAttackTokenBatches.any (fun b =>
+      b.attackingTarget.any (attackTargetAnyObjId pred) || b.cause.any (eventCauseAnyObjId · pred)) ||
+    f.resolvingContext.any (fun (sid, _) => checkValidOptObjId pred sid) ||
+    f.stashedCause.any (eventCauseAnyObjId · pred) ||
+    checkValidOptObjId pred f.resolvingSpell ||
+    checkValidOptObjId pred f.resolvingAbility ||
+    afterRandomAnyObjId f.afterRandom pred ||
+    f.resolutionFinish.any (fun
+      | .ability oid snap _ sid _ =>
+        checkValidObjId pred oid || eventObjAnyObjId pred snap || checkValidOptObjId pred sid
+      | .spell se snap _ =>
+        stackEntryAnyObjId se pred || eventObjAnyObjId pred snap) ||
+    f.pendingResolvedEvent.any (fun (eo, _, c) =>
+      eventObjAnyObjId pred eo || eventCauseAnyObjId c pred)
+
+private partial def gameChangeAnyObjId (ch : GameChange) (pred : ObjectId → Bool) : Bool :=
   let proposalChangeRefs : ProposalChange → Bool
-    | .tapped ids | .teamworkCreatures ids => ids.contains oid
-    | .pushTapped id => id == oid
+    | .tapped ids | .teamworkCreatures ids => checkValidObjIds pred ids
+    | .pushTapped id => checkValidObjId pred id
     | _ => false
   match ch with
-  | .engine (.materializeObject obj _) => obj.id == oid
+  | .engine (.addPlayer pl) => playerAnyObjId pl pred
+  | .engine (.materializeObject obj _) => gameObjAnyObjId pred obj
   | .engine (.object id oc) =>
-    id == oid ||
+    checkValidObjId pred id ||
       match oc with
-      | .linkedExile ids | .leaveTriggerExile ids => ids.contains oid
-      | .pushLinkedExile tid | .pushLeaveTriggerExile tid => tid == oid
-      | .exiledBy tid => tid == some oid
+      | .linkedExile ids | .leaveTriggerExile ids => checkValidObjIds pred ids
+      | .pushLinkedExile tid | .pushLeaveTriggerExile tid => checkValidObjId pred tid
+      | .exiledBy tid => checkValidOptObjId pred tid
       | _ => false
   | .engine (.removeStackEntry id)
-  | .engine (.stackEntry id _) => id == oid
-  | .engine (.pushStack e) =>
-    e.objectId == oid || e.targets.any (fun
-      | .permanent tid | .card tid => tid == oid
-      | .player _ => false)
+  | .engine (.stackEntry id _) => checkValidObjId pred id
+  | .engine (.pushStack e) => stackEntryAnyObjId e pred
   | .engine (.proposedSpell (some prop)) =>
-    prop.spellId == oid || prop.sourceId == some oid || prop.original.id == oid ||
-      prop.tapped.contains oid || prop.teamworkCreatures.contains oid
+    checkValidObjId pred prop.spellId ||
+      checkValidOptObjId pred prop.sourceId ||
+      gameObjAnyObjId pred prop.original ||
+      eventObjAnyObjId pred prop.originalSnapshot ||
+      checkValidObjIds pred prop.tapped ||
+      checkValidObjIds pred prop.teamworkCreatures ||
+      checkValidOptObjId pred prop.sneakAttacker ||
+      prop.origPerm.any (fun p => checkValidOptObjId pred p.prepareSource)
   | .engine (.proposal pc) => proposalChangeRefs pc
   | .engine (.proposalChanges pcs) => pcs.any proposalChangeRefs
-  | .engine (.pauseBatch _ _ objs _ effs pend stk) =>
-    objs.any (·.id == oid) || stk.any (·.objectId == oid) ||
-      effs.any (fun (_, sp) => specReferencesObject sp oid) ||
-      (match pend with
-       | .chooseReplacement _ rids => rids.any (fun r => r.object == some oid || r.grantor == some oid)
-       | .chooseLegend _ _ ids => ids.contains oid
-       | _ => false)
+  | .engine (.beginProposalAction (.manaAbility sid)) => checkValidOptObjId pred sid
+  | .engine (.pauseBatch _ c objs pls effs pend stk) =>
+    c.any (eventCauseAnyObjId · pred) ||
+      objs.any (gameObjAnyObjId pred) ||
+      pls.any (playerAnyObjId · pred) ||
+      effs.any (fun (_, sp) => specAnyObjId sp pred) ||
+      pendingAnyObjId pend pred ||
+      stk.any (stackEntryAnyObjId · pred)
+  | .engine (.setPausedBatchCause (some c)) => eventCauseAnyObjId c pred
+  | .engine (.pushContinuationFrame f) => continuationFrameAnyObjId f pred
+  | .engine (.continuation cc) => continuationChangeAnyObjId cc pred
   | .engine (.waitingTriggers wts)
   | .engine (.enqueueWaitingTriggers wts) =>
-    wts.any (fun wt =>
-      wt.source.id == oid || wt.causeId == some oid || wt.causeIds.contains oid ||
-        wt.cause.any (·.id == oid))
-  | .engine (.queueLinkedExile ids) => ids.contains oid
-  | .engine (.replacementOrder rids) =>
-    rids.any (fun r => r.object == some oid || r.grantor == some oid)
+    wts.any fun wt =>
+      gameObjAnyObjId pred wt.source ||
+        checkValidOptObjId pred wt.causeId ||
+        checkValidObjIds pred wt.causeIds ||
+        wt.cause.any (gameObjAnyObjId pred) ||
+        wt.eventCause.any (eventCauseAnyObjId · pred) ||
+        wt.delayedTrigger.any (fun (k, c) =>
+          delayedKindAnyObjId pred k || eventCauseAnyObjId c pred)
+  | .engine (.queueLinkedExile ids) => checkValidObjIds pred ids
+  | .engine (.replacementOrder rids) => rids.any (repIdAnyObjId pred)
   | .engine (.pendingBlockerAssignments asgns) =>
-    asgns.any (fun a => a.source == oid || a.toCreatures.any (·.1 == oid))
-  | .engine (.pending p) =>
-    match p with
-    | .sacrificePermanent _ sid | .maySacrificeAnotherBolg _ sid | .payWard _ sid _ => sid == oid
-    | .chooseSacrificeCreature _ ids _ | .chooseLegend _ _ ids | .mayCastFromLooked _ ids _ =>
-      ids.contains oid
-    | .chooseLibraryPlacement _ (some id) | .payOrLetCounter _ _ (some id)
-    | .mayPutArtifactFromHand _ (some id) => id == oid
-    | .mayAttachEquipment _ hid sid => hid == oid || sid == some oid
-    | .mayHaveVillainConnive _ sid vid => sid == oid || vid == oid
-    | .mayCastExiledElseDamage _ cid _ sid => cid == oid || sid == some oid
-    | .chooseReplacement _ rids =>
-      rids.any (fun r => r.object == some oid || r.grantor == some oid)
-    | _ => false
+    asgns.any (fun a =>
+      checkValidObjId pred a.source || a.toCreatures.any (fun (cid, _) => checkValidObjId pred cid))
+  | .engine (.pending p) => pendingAnyObjId p pred
   | .rules (.zone (.created eo _))
   | .rules (.zone (.ceasedToExist eo))
   | .rules (.permanent (.tapped eo _))
@@ -1770,176 +2682,137 @@ private def gameChangeReferencesObject (ch : GameChange) (oid : ObjectId) : Bool
   | .rules (.permanent (.turnedFaceUp eo))
   | .rules (.permanent (.turnedFaceDown eo))
   | .rules (.permanent (.counters (.object eo) ..))
-  | .rules (.permanent (.designation eo _ _)) => eo.id == some oid
+  | .rules (.permanent (.designation eo _ _)) => eventObjAnyObjId pred eo
   | .rules (.permanent (.attached eo host prev)) =>
-    eo.id == some oid || host == oid || prev == some oid
+    eventObjAnyObjId pred eo || checkValidObjId pred host || checkValidOptObjId pred prev
   | .rules (.permanent (.unattached eo fromHost)) =>
-    eo.id == some oid || fromHost == oid
+    eventObjAnyObjId pred eo || checkValidObjId pred fromHost
   | .rules (.zone (.moved before after ..)) =>
-    before.id == some oid || after.id == some oid
+    eventObjAnyObjId pred before || eventObjAnyObjId pred after
   | .rules (.damage (.dealt pkts)) =>
-    pkts.any (fun pkt =>
-      pkt.source.id == some oid ||
+    pkts.any fun pkt =>
+      eventObjAnyObjId pred pkt.source ||
         match pkt.recipient with
-        | .permanent eo | .battle eo => eo.id == some oid
-        | .player _ => false)
-  | .rules (.damage (.marked id _)) => id == oid
-  | .rules (.damage (.markedCleared ids)) => ids.contains oid
+        | .permanent eo | .battle eo => eventObjAnyObjId pred eo
+        | .player _ => false
+  | .rules (.damage (.marked id _)) => checkValidObjId pred id
+  | .rules (.damage (.markedCleared ids)) => checkValidObjIds pred ids
   | .rules (.damage (.prevented src rec _)) =>
-    src.id == some oid ||
+    eventObjAnyObjId pred src ||
       match rec with
-      | .permanent eo | .battle eo => eo.id == some oid
+      | .permanent eo | .battle eo => eventObjAnyObjId pred eo
       | .player _ => false
   | .rules (.combat (.attackersDeclared _ decls)) =>
-    decls.any (fun (eo, tgt) =>
-      eo.id == some oid ||
-        match tgt with
-        | .planeswalker pid | .battle pid => pid == oid
-        | .player _ => false)
+    decls.any (fun (eo, tgt) => eventObjAnyObjId pred eo || attackTargetAnyObjId pred tgt)
   | .rules (.combat (.becameAttacking eo tgt)) =>
-    eo.id == some oid ||
-      match tgt with
-      | .planeswalker pid | .battle pid => pid == oid
-      | .player _ => false
+    eventObjAnyObjId pred eo || attackTargetAnyObjId pred tgt
   | .rules (.combat (.blockersDeclared _ decls)) =>
-    decls.any (fun (eo, aid) => eo.id == some oid || aid == oid)
+    decls.any (fun (eo, aid) => eventObjAnyObjId pred eo || checkValidObjId pred aid)
   | .rules (.combat (.becameBlocked eo blks)) =>
-    eo.id == some oid || blks.contains oid
+    eventObjAnyObjId pred eo || checkValidObjIds pred blks
   | .rules (.combat (.remainedUnblocked eo))
-  | .rules (.combat (.removedFromCombat eo)) => eo.id == some oid
+  | .rules (.combat (.removedFromCombat eo)) => eventObjAnyObjId pred eo
   | .rules (.combat (.damageAssigned _ _ asgns)) =>
-    asgns.any (fun a => a.source == oid || a.toCreatures.any (·.1 == oid))
-  | .rules (.cast (.proposed obj ..)) => obj == oid
+    asgns.any (fun a =>
+      checkValidObjId pred a.source || a.toCreatures.any (fun (cid, _) => checkValidObjId pred cid))
+  | .rules (.cast (.proposed obj ..)) => checkValidObjId pred obj
   | .rules (.cast (.announced obj _ _ costs)) =>
-    obj == oid || costs.any (fun
-      | .teamwork ids => ids.contains oid
-      | .behold id | .sacrifice id | .discard id | .sneak id _ => id == oid
-      | _ => false)
+    checkValidObjId pred obj || costs.any fun
+      | .teamwork ids => checkValidObjIds pred ids
+      | .behold id | .sacrifice id | .discard id => checkValidObjId pred id
+      | .sneak id atk => checkValidObjId pred id || atk.any (attackTargetAnyObjId pred)
+      | _ => false
   | .rules (.cast (.targeted obj tgts ..)) =>
-    obj == oid || tgts.any (fun
-      | .permanent tid | .card tid => tid == oid
-      | .player _ => false)
-  | .rules (.cast (.spellCast spell ..)) => spell.id == some oid
-  | .rules (.cast (.abilityActivated ab src ..)) => ab == oid || src.id == some oid
-  | .rules (.triggerQueue (.triggered src _ _ _)) => src.id == some oid
+    checkValidObjId pred obj || tgts.any (targetAnyObjId pred)
+  | .rules (.cast (.spellCast spell ..)) => eventObjAnyObjId pred spell
+  | .rules (.cast (.abilityActivated ab src ..)) =>
+    checkValidObjId pred ab || eventObjAnyObjId pred src
+  | .rules (.triggerQueue (.triggered src _ _ _)) => eventObjAnyObjId pred src
   | .rules (.triggerQueue (.putOnStack stObj src _ spec)) =>
-    stObj == oid || src.id == some oid || spec.sourceId == some oid ||
-      spec.fraCauseId == some oid || spec.fraCauseIds.contains oid
-  | .rules (.triggerQueue (.modeChosen src ..)) => src == oid
-  | .rules (.stackObject (.copied orig copy _)) => orig == oid || copy.id == some oid
-  | .rules (.stackObject (.resolved eo _ srcId _)) => eo.id == some oid || srcId == some oid
-  | .rules (.stackObject (.removedOnResolution eo)) => eo.id == some oid
+    checkValidObjId pred stObj ||
+      eventObjAnyObjId pred src ||
+      checkValidOptObjId pred spec.sourceId ||
+      checkValidOptObjId pred spec.fraCauseId ||
+      checkValidObjIds pred spec.fraCauseIds ||
+      spec.fraCauseStatus.any (statusAnyObjId pred) ||
+      spec.delayedTrigger.any (fun (k, c) =>
+        delayedKindAnyObjId pred k || eventCauseAnyObjId c pred)
+  | .rules (.triggerQueue (.modeChosen src ..)) => checkValidObjId pred src
+  | .rules (.stackObject (.copied orig copy _)) =>
+    checkValidObjId pred orig || eventObjAnyObjId pred copy
+  | .rules (.stackObject (.resolved eo _ srcId _)) =>
+    eventObjAnyObjId pred eo || checkValidOptObjId pred srcId
+  | .rules (.stackObject (.removedOnResolution eo)) => eventObjAnyObjId pred eo
   | .rules (.player (.manaAdded _ units))
-  | .rules (.player (.manaEmptied _ units _)) => units.any (·.source == some oid)
+  | .rules (.player (.manaEmptied _ units _)) =>
+    units.any (fun u => checkValidOptObjId pred u.source)
   | .rules (.player (.manaSpent _ units forObj)) =>
-    forObj == some oid || units.any (·.source == some oid)
-  | .rules (.player (.scried _ top bot ..)) => top.contains oid || bot.contains oid
-  | .rules (.player (.surveilled _ top gy ..)) => top.contains oid || gy.contains oid
+    checkValidOptObjId pred forObj || units.any (fun u => checkValidOptObjId pred u.source)
+  | .rules (.player (.scried _ top bot ..)) =>
+    checkValidObjIds pred top || checkValidObjIds pred bot
+  | .rules (.player (.surveilled _ top gy ..)) =>
+    checkValidObjIds pred top || checkValidObjIds pred gy
   | .rules (.player (.lookedAt _ cs))
   | .rules (.player (.revealed _ cs))
   | .rules (.player (.searched _ _ cs))
   | .rules (.player (.shuffled _ cs))
-  | .rules (.player (.proliferated _ cs _)) => cs.contains oid
-  | .rules (.player (.ringTempted _ b _)) => b == some oid
-  | .rules (.player (.optionalOnceActed _ s)) => s == oid
+  | .rules (.player (.proliferated _ cs _)) => checkValidObjIds pred cs
+  | .rules (.player (.ringTempted _ b _)) => checkValidOptObjId pred b
+  | .rules (.player (.optionalOnceActed _ s)) => checkValidObjId pred s
   | .rules (.continuousEffect (.created _ spec))
-  | .rules (.continuousEffect (.expired _ (some spec))) => specReferencesObject spec oid
+  | .rules (.continuousEffect (.expired _ (some spec))) => specAnyObjId spec pred
   | .rules (.delayedTrigger (.created dt))
   | .rules (.delayedTrigger (.consumed dt))
-  | .rules (.delayedTrigger (.expired dt)) => dt.source.bind (·.id) == some oid
+  | .rules (.delayedTrigger (.expired dt)) => delayedTriggerAnyObjId dt pred
   | _ => false
 
-private def gameChangeMaxIdAndTs (ch : GameChange) : Option Nat × Nat :=
-  let updOpt (a : Option Nat) (b : Option ObjectId) : Option Nat :=
-    match a, b with
-    | some x, some y => some (max x y.raw)
-    | none, some y => some y.raw
-    | x, none => x
-  let eoPair (eo : EventObject) : Option Nat × Nat :=
-    (eo.id.map (·.raw), 0)
-  let merge (p1 p2 : Option Nat × Nat) : Option Nat × Nat :=
-    (match p1.1, p2.1 with
-     | some x, some y => some (max x y)
-     | some x, none => some x
-     | none, y => y,
-     max p1.2 p2.2)
+end
+
+private def gameChangeReferencesObject (ch : GameChange) (oid : ObjectId) : Bool :=
+  gameChangeAnyObjId ch (· == oid)
+
+private def gameChangeMaxTs (ch : GameChange) : Nat :=
+  let objTs (o : GameObject) : Nat :=
+    if o.id != noSourceSentinelId then o.timestamp else 0
   match ch with
-  | .engine (.materializeObject obj _) => (some obj.id.raw, obj.timestamp)
-  | .engine (.pauseBatch _ _ objs _ _ _ stk) =>
-    let pObjs := objs.foldl (fun acc o => merge acc (some o.id.raw, o.timestamp)) (none, 0)
-    stk.foldl (fun acc e => merge acc (some e.objectId.raw, 0)) pObjs
+  | .engine (.materializeObject obj _) => objTs obj
+  | .engine (.pauseBatch _ _ objs ..) =>
+    objs.foldl (fun acc o => max acc (objTs o)) 0
   | .engine (.waitingTriggers wts)
   | .engine (.enqueueWaitingTriggers wts) =>
     wts.foldl (fun acc wt =>
-      let pSrc := (some wt.source.id.raw, wt.source.timestamp)
-      let pCause := match wt.cause with | some c => (some c.id.raw, c.timestamp) | none => (none, 0)
-      merge acc (merge pSrc pCause)) (none, 0)
-  | .engine (.object id _)
-  | .engine (.removeStackEntry id)
-  | .engine (.stackEntry id _) => (some id.raw, 0)
-  | .engine (.pushStack e) => (some e.objectId.raw, 0)
-  | .engine (.proposedSpell (some prop)) =>
-    (updOpt (some (max prop.spellId.raw prop.original.id.raw)) prop.sourceId, prop.original.timestamp)
-  | .rules (.zone (.created eo _))
-  | .rules (.zone (.ceasedToExist eo))
-  | .rules (.permanent (.tapped eo _))
-  | .rules (.permanent (.untapped eo))
-  | .rules (.permanent (.phasedOut eo _))
-  | .rules (.permanent (.phasedIn eo _))
-  | .rules (.permanent (.transformed eo _))
-  | .rules (.permanent (.turnedFaceUp eo))
-  | .rules (.permanent (.turnedFaceDown eo))
-  | .rules (.permanent (.counters (.object eo) ..))
-  | .rules (.permanent (.designation eo _ _))
-  | .rules (.combat (.becameAttacking eo _))
-  | .rules (.combat (.becameBlocked eo _))
-  | .rules (.combat (.remainedUnblocked eo))
-  | .rules (.combat (.removedFromCombat eo))
-  | .rules (.cast (.spellCast eo ..))
-  | .rules (.triggerQueue (.triggered eo ..))
-  | .rules (.stackObject (.resolved eo ..))
-  | .rules (.stackObject (.removedOnResolution eo)) => eoPair eo
-  | .rules (.permanent (.attached eo host prev)) =>
-    merge (eoPair eo) (updOpt (some host.raw) prev, 0)
-  | .rules (.permanent (.unattached eo fromHost)) =>
-    merge (eoPair eo) (some fromHost.raw, 0)
+      max acc (max (objTs wt.source) (wt.cause.map objTs |>.getD 0))) 0
+  | .engine (.proposedSpell (some prop)) => objTs prop.original
+  | .engine (.pushContinuationFrame f) => f.notedCopyObject.map objTs |>.getD 0
+  | .engine (.continuation (.notedCopyObject (some o))) => objTs o
+  | .rules (.delayedTrigger (.created dt))
+  | .rules (.delayedTrigger (.consumed dt))
+  | .rules (.delayedTrigger (.expired dt)) => dt.source.map objTs |>.getD 0
+  | _ => 0
+
+private def newlyCreatedIdsOfChange (ch : GameChange) : Array ObjectId :=
+  match ch with
+  | .engine (.materializeObject obj _) =>
+    if obj.id != noSourceSentinelId then #[obj.id] else #[]
+  | .rules (.zone (.created eo _)) =>
+    match eo.id with
+    | some id => if id != noSourceSentinelId then #[id] else #[]
+    | none => #[]
   | .rules (.zone (.moved before after ..)) =>
-    merge (eoPair before) (eoPair after)
-  | .rules (.cast (.proposed obj ..))
-  | .rules (.cast (.announced obj ..))
-  | .rules (.cast (.targeted obj ..))
-  | .rules (.triggerQueue (.modeChosen obj ..)) => (some obj.raw, 0)
-  | .rules (.cast (.abilityActivated ab src ..)) =>
-    merge (some ab.raw, 0) (eoPair src)
+    match after.id with
+    | some aid => if before.id != some aid && aid != noSourceSentinelId then #[aid] else #[]
+    | none => #[]
+  | .rules (.cast (.proposed id ..)) =>
+    if id != noSourceSentinelId then #[id] else #[]
+  | .rules (.cast (.abilityActivated ab src _ (.nonMana ..))) =>
+    if src.id != some ab && ab != noSourceSentinelId then #[ab] else #[]
   | .rules (.triggerQueue (.putOnStack stObj src ..)) =>
-    merge (some stObj.raw, 0) (eoPair src)
+    if src.id != some stObj && stObj != noSourceSentinelId then #[stObj] else #[]
   | .rules (.stackObject (.copied orig copy _)) =>
-    merge (some orig.raw, 0) (eoPair copy)
-  | .rules (.damage (.dealt pkts)) =>
-    pkts.foldl (fun acc pkt =>
-      let rPair :=
-        match pkt.recipient with
-        | .permanent eo | .battle eo => eoPair eo
-        | .player _ => (none, 0)
-      merge acc (merge (eoPair pkt.source) rPair)) (none, 0)
-  | .rules (.damage (.marked id _)) => (some id.raw, 0)
-  | .rules (.damage (.markedCleared ids)) =>
-    ids.foldl (fun acc id => merge acc (some id.raw, 0)) (none, 0)
-  | .rules (.damage (.prevented src rec _)) =>
-    let rPair :=
-      match rec with
-      | .permanent eo | .battle eo => eoPair eo
-      | .player _ => (none, 0)
-    merge (eoPair src) rPair
-  | .rules (.combat (.attackersDeclared _ decls)) =>
-    decls.foldl (fun acc (eo, _) => merge acc (eoPair eo)) (none, 0)
-  | .rules (.combat (.blockersDeclared _ decls)) =>
-    decls.foldl (fun acc (eo, aid) => merge acc (merge (eoPair eo) (some aid.raw, 0))) (none, 0)
-  | .rules (.combat (.damageAssigned _ _ asgns)) =>
-    asgns.foldl (fun acc a =>
-      let cMax := a.toCreatures.foldl (fun m (cid, _) => max m cid.raw) a.source.raw
-      merge acc (some cMax, 0)) (none, 0)
-  | _ => (none, 0)
+    match copy.id with
+    | some cid => if cid != orig && cid != noSourceSentinelId then #[cid] else #[]
+    | none => #[]
+  | _ => #[]
 
 private def postBoundObjectCreatedOrTsUpdated (g : Game) (bound : Nat) (otherId : ObjectId) :
     Bool × Bool := Id.run do
@@ -1955,9 +2828,10 @@ private def postBoundObjectCreatedOrTsUpdated (g : Game) (bound : Nat) (otherId 
       if eo.id == some otherId then
         created := true
         tsUpdated := true
-    | .rules (.zone (.moved _ after ..)) =>
+    | .rules (.zone (.moved before after ..)) =>
       if after.id == some otherId then
-        created := true
+        if before.id != some otherId then
+          created := true
         tsUpdated := true
     | .rules (.permanent (.turnedFaceUp eo))
     | .rules (.permanent (.turnedFaceDown eo))
@@ -1970,22 +2844,23 @@ private def postBoundObjectCreatedOrTsUpdated (g : Game) (bound : Nat) (otherId 
         tsUpdated := true
     | .rules (.cast (.spellCast eo ..)) =>
       if eo.id == some otherId then tsUpdated := true
-    | .rules (.cast (.abilityActivated ab _ ..)) =>
-      if ab == otherId then
+    | .rules (.cast (.abilityActivated ab src _ (.nonMana ..))) =>
+      if ab == otherId && src.id != some ab then
         created := true
         tsUpdated := true
-    | .rules (.triggerQueue (.putOnStack stObj ..)) =>
-      if stObj == otherId then
+    | .rules (.triggerQueue (.putOnStack stObj src ..)) =>
+      if stObj == otherId && src.id != some stObj then
         created := true
         tsUpdated := true
-    | .rules (.stackObject (.copied _ copy _)) =>
-      if copy.id == some otherId then
+    | .rules (.stackObject (.copied orig copy _)) =>
+      if copy.id == some otherId && copy.id != some orig then
         created := true
         tsUpdated := true
     | _ => pure ()
   return (created, tsUpdated)
 
 private def isInitialMaterialize (g : Game) (oid : ObjectId) (matIdx : Nat) : Bool := Id.run do
+  if oid == noSourceSentinelId then return false
   let bound := min matIdx g.events.size
   let matTs : Nat :=
     match g.events[bound]? with
@@ -1993,17 +2868,78 @@ private def isInitialMaterialize (g : Game) (oid : ObjectId) (matIdx : Nat) : Bo
     | _ => (g.findObject? oid).map (·.timestamp) |>.getD 0
   for j in [0:bound] do
     let ev := g.events[j]!
-    if gameChangeReferencesObject ev.change oid then return false
-    if ev.cause?.any (eventCauseReferencesObject · oid) then return false
-    let (maxId?, maxTs) := gameChangeMaxIdAndTs ev.change
-    if maxId?.any (· > oid.raw) then return false
-    if matTs > 0 && maxTs > matTs then return false
+    if gameChangeAnyObjId ev.change (fun id => id == oid || id.raw > oid.raw) then
+      return false
+    if ev.cause?.any (fun c => eventCauseAnyObjId c (fun id => id == oid || id.raw > oid.raw)) then
+      return false
+    if matTs > 0 && gameChangeMaxTs ev.change > matTs then
+      return false
+  let mut createdSinceBound : Array ObjectId := #[]
+  for i in [bound : g.events.size] do
+    let ev := g.events[i]!
+    for cid in newlyCreatedIdsOfChange ev.change do
+      if cid != oid && !createdSinceBound.contains cid then
+        createdSinceBound := createdSinceBound.push cid
+    let isPreExistingNewer (refId : ObjectId) : Bool :=
+      refId != oid && refId.raw > oid.raw && !createdSinceBound.contains refId
+    if gameChangeAnyObjId ev.change isPreExistingNewer then
+      return false
+    if ev.cause?.any (fun c => eventCauseAnyObjId c isPreExistingNewer) then
+      return false
   for other in g.objects do
-    if other.id != oid then
+    if other.id != oid && other.id != noSourceSentinelId then
       let (createdAfter, tsAfter) := postBoundObjectCreatedOrTsUpdated g bound other.id
       if !createdAfter && other.id.raw > oid.raw then return false
       if !createdAfter && !tsAfter && matTs > 0 && other.timestamp > matTs then return false
   return true
+
+/-- Pre-event `EventObject` snapshot recorded for `oid` on `ch`, if any (CR 113.7a). -/
+private def eventObjectPreSnapshotOf? (ch : GameChange) (oid : ObjectId) : Option EventObject :=
+  match ch with
+  | .rules (.permanent (.counters (.object eo) ..))
+  | .rules (.permanent (.tapped eo _))
+  | .rules (.permanent (.untapped eo))
+  | .rules (.permanent (.phasedOut eo _))
+  | .rules (.permanent (.phasedIn eo _))
+  | .rules (.permanent (.transformed eo _))
+  | .rules (.permanent (.turnedFaceUp eo))
+  | .rules (.permanent (.turnedFaceDown eo))
+  | .rules (.permanent (.attached eo _ _))
+  | .rules (.permanent (.unattached eo _))
+  | .rules (.permanent (.designation eo _ _))
+  | .rules (.combat (.becameAttacking eo _))
+  | .rules (.combat (.becameBlocked eo _))
+  | .rules (.combat (.remainedUnblocked eo))
+  | .rules (.combat (.removedFromCombat eo))
+  | .rules (.cast (.spellCast eo ..))
+  | .rules (.cast (.abilityActivated _ eo ..))
+  | .rules (.triggerQueue (.triggered eo ..))
+  | .rules (.triggerQueue (.putOnStack _ eo ..))
+  | .rules (.stackObject (.resolved eo ..))
+  | .rules (.stackObject (.removedOnResolution eo))
+  | .rules (.zone (.ceasedToExist eo)) =>
+    if eo.id == some oid then some eo else none
+  | .rules (.zone (.moved before _ ..)) =>
+    if before.id == some oid then some before else none
+  | .rules (.combat (.attackersDeclared _ decls)) =>
+    decls.findSome? (fun (eo, _) => if eo.id == some oid then some eo else none)
+  | .rules (.combat (.blockersDeclared _ decls)) =>
+    decls.findSome? (fun (eo, _) => if eo.id == some oid then some eo else none)
+  | .rules (.damage (.dealt pkts)) =>
+    (pkts.findSome? fun pkt =>
+      match pkt.recipient with
+      | .permanent eo | .battle eo => if eo.id == some oid then some eo else none
+      | .player _ => none).orElse fun _ =>
+      pkts.findSome? (fun pkt => if pkt.source.id == some oid then some pkt.source else none)
+  | .rules (.damage (.prevented src rec _)) =>
+    match rec with
+    | .permanent eo | .battle eo =>
+      if eo.id == some oid then some eo
+      else if src.id == some oid then some src
+      else none
+    | .player _ =>
+      if src.id == some oid then some src else none
+  | _ => none
 
 def objectZoneAndPhasedOutAt? (g : Game) (oid : ObjectId) (evIdx : Nat) :
     Option (Zone × Bool) :=
@@ -2036,7 +2972,8 @@ def objectZoneAndPhasedOutAt? (g : Game) (oid : ObjectId) (evIdx : Nat) :
       (g.findObject? oid).map fun obj => (obj.zone, obj.zone == .battlefield && obj.status.phasedOut)
     for rev in [0 : g.events.size - bound] do
       let i := g.events.size - 1 - rev
-      match g.events[i]!.change with
+      let ch := g.events[i]!.change
+      match ch with
       | .rules (.permanent (.phasedOut eo _)) =>
         if eo.id == some oid then cur? := some (.battlefield, false)
       | .rules (.permanent (.phasedIn eo _)) =>
@@ -2050,11 +2987,14 @@ def objectZoneAndPhasedOutAt? (g : Game) (oid : ObjectId) (evIdx : Nat) :
         else if after.id == some oid then
           cur? := none
       | .rules (.zone (.created eo _)) =>
-        if eo.id == some oid then cur? := none
+        if eo.id == some oid then
+          cur? := none
       | .engine (.materializeObject obj _) =>
         if obj.id == oid && g.isInitialMaterialize oid i then
           cur? := none
-      | _ => pure ()
+      | _ =>
+        if let some eo := eventObjectPreSnapshotOf? ch oid then
+          cur? := some (eo.zone, eo.zone == .battlefield && eo.phasedOut)
     return cur?
 
 /-- Whether `o` was phased out on the battlefield immediately before event
@@ -2086,59 +3026,81 @@ def latestPhaseOutIdxOf? (g : Game) (o : GameObject) : Option Nat :=
       | _ => pure ()
     return none
 
+private def eventObjectIsLiveSubject (ch : GameChange) (oid : ObjectId) : Bool :=
+  match ch with
+  | .rules (.permanent _)
+  | .rules (.combat _)
+  | .rules (.cast (.spellCast ..))
+  | .rules (.stackObject _) => true
+  | .rules (.damage (.dealt pkts)) =>
+    pkts.any fun pkt =>
+      match pkt.recipient with
+      | .permanent eo | .battle eo => eo.id == some oid
+      | .player _ => false
+  | .rules (.damage (.prevented _ rec _)) =>
+    match rec with
+    | .permanent eo | .battle eo => eo.id == some oid
+    | .player _ => false
+  | _ => false
+
 def objectCounterCountAt (g : Game) (oid : ObjectId) (k : CounterKind)
     (evIdx : Nat) : Nat :=
   let bound := min evIdx g.events.size
   Id.run do
     let mut count? : Option Nat := none
+    let mut departed : Bool := false
     for i in [0:bound] do
-      match g.events[i]!.change with
+      let ch := g.events[i]!.change
+      match ch with
       | .rules (.permanent (.counters (.object eo) k' (.put n) _)) =>
         if eo.id == some oid then
           let base := count?.getD (eo.counters.count k)
           count? := some (if k' == k then base + n else base)
+          departed := false
       | .rules (.permanent (.counters (.object eo) k' (.removed n) _)) =>
         if eo.id == some oid then
           let base := count?.getD (eo.counters.count k)
           count? := some (if k' == k then base - n else base)
+          departed := false
       | .rules (.zone (.moved before after _ _ _ _ entersWith _)) =>
         if before.id == some oid && after.id != some oid then
           count? := some 0
+          departed := true
         if after.id == some oid then
           count? := some (max (after.counters.count k) (entersWith.count k))
+          departed := false
       | .rules (.zone (.created eo _)) =>
-        if eo.id == some oid then count? := some (eo.counters.count k)
+        if eo.id == some oid then
+          count? := some (eo.counters.count k)
+          departed := false
       | .rules (.zone (.ceasedToExist eo)) =>
-        if eo.id == some oid then count? := some 0
+        if eo.id == some oid then
+          count? := some 0
+          departed := true
       | .engine (.materializeObject obj _) =>
-        if obj.id == oid then count? := some (obj.status.counters.count k)
-      | _ => pure ()
+        if obj.id == oid then
+          count? := some (obj.status.counters.count k)
+          departed := false
+      | _ =>
+        if let some eo := eventObjectPreSnapshotOf? ch oid then
+          if !departed && (eventObjectIsLiveSubject ch oid || count?.isNone) then
+            count? := some (eo.counters.count k)
     if let some c := count? then
       return c
     for i in [bound : g.events.size] do
-      match g.events[i]!.change with
-      | .rules (.permanent (.counters (.object eo) ..))
-      | .rules (.permanent (.tapped eo))
-      | .rules (.permanent (.untapped eo))
-      | .rules (.permanent (.phasedOut eo _))
-      | .rules (.permanent (.phasedIn eo _))
-      | .rules (.permanent (.transformed eo _))
-      | .rules (.permanent (.turnedFaceUp eo))
-      | .rules (.permanent (.turnedFaceDown eo))
-      | .rules (.permanent (.attached eo _))
-      | .rules (.permanent (.unattached eo _))
-      | .rules (.zone (.ceasedToExist eo)) =>
-        if eo.id == some oid then return eo.counters.count k
+      let ch := g.events[i]!.change
+      match ch with
       | .rules (.zone (.moved before after ..)) =>
         if before.id == some oid then return before.counters.count k
         else if after.id == some oid then return 0
       | .rules (.zone (.created eo _)) =>
         if eo.id == some oid then return 0
       | .engine (.materializeObject obj _) =>
-        if obj.id == oid then
-          if g.isInitialMaterialize oid i then return 0
-          else return obj.status.counters.count k
-      | _ => pure ()
+        if obj.id == oid && g.isInitialMaterialize oid i then
+          return 0
+      | _ =>
+        if let some eo := eventObjectPreSnapshotOf? ch oid then
+          return eo.counters.count k
     return ((g.findObject? oid).map (·.status.counters.count k)).getD 0
 
 private def durationActiveAt (g : Game) (d : EffectDuration) (evIdx : Nat) : Bool :=
@@ -3227,14 +4189,20 @@ def playPermissionEntryOf? (g : Game) (id : ObjectId) :
     g.activeEffects.foldl (fun acc (eid, s) =>
       match s with
       | .permission p (.playFromExile oid perm) d =>
-        if oid == id && g.durationActive d then some (eid, p.getD perm.player, perm, d) else acc
+        if oid == id && g.durationActive d then
+          let grantee := p.getD perm.player
+          some (eid, grantee, { perm with player := grantee }, d)
+        else acc
       | _ => acc) none
   if active.isSome || (g.findObject? id).isSome then active
   else
     g.events.findSomeRev? fun e =>
       match e.change with
       | .rules (.continuousEffect (.created eid (.permission p (.playFromExile oid perm) d))) =>
-        if oid == id then some (eid, p.getD perm.player, perm, d) else none
+        if oid == id then
+          let grantee := p.getD perm.player
+          some (eid, grantee, { perm with player := grantee }, d)
+        else none
       | _ => none
 
 def playPermissionOf? (g : Game) (o : GameObject) : Option PlayPermission :=
@@ -5657,6 +6625,24 @@ private def swapCardFace (c : CardDef) : CardDef :=
       otherFace := some { c with isToken := keepToken, otherFace := none } }
   | none => c
 
+private def adjustTokenCardDef (isTok : Bool) (p : CardDef) : CardDef :=
+  if isTok && !p.isToken then
+    { p with isToken := true, otherFace := p.otherFace.map ({ · with isToken := true }) }
+  else p
+
+private def applySnapshotPrinted (pr : CardDef) (isTok : Bool) (printed? : Option CardDef) : CardDef :=
+  match printed? with
+  | none => pr
+  | some p =>
+    if p.otherFace.isSome || pr.otherFace.isNone then
+      adjustTokenCardDef isTok p
+    else if p.name == pr.name then
+      adjustTokenCardDef isTok pr
+    else if pr.otherFace.any (·.name == p.name) then
+      adjustTokenCardDef isTok (swapCardFace pr)
+    else
+      adjustTokenCardDef isTok p
+
 private structure HistoricalSliceState where
   effs : Array (EffectId × ContinuousEffectSpec)
   counterSources : Array (ObjectId × CounterKind)
@@ -5769,9 +6755,36 @@ private def initHistoricalSlice (g : Game) (o : GameObject) : HistoricalSliceSta
   let mut missingInfo : Array (ObjectId × EventObject) := #[]
   let mut plLost : Array (PlayerId × Bool) := #[]
   let mut plLeft : Array (PlayerId × Bool) := #[]
+  let mut nonInitMatIds : Array ObjectId := #[]
   for rev in [0:g.events.size] do
     let idx := g.events.size - 1 - rev
-    match g.events[idx]!.change with
+    let ch := g.events[idx]!.change
+    if !nonInitMatIds.isEmpty then
+      let isZoneOrMat :=
+        match ch with
+        | .rules (.zone (.ceasedToExist _))
+        | .rules (.zone (.moved ..))
+        | .rules (.zone (.created ..))
+        | .engine (.materializeObject ..) => true
+        | _ => false
+      if !isZoneOrMat then
+        for nid in nonInitMatIds do
+          if let some eo := eventObjectPreSnapshotOf? ch nid then
+            if nid == o.id then
+              z0 := eo.zone
+              ph0 := eo.zone == .battlefield && eo.phasedOut
+              fd0 := eo.zone == .battlefield && eo.faceDown
+              dc0 := if eo.zone == .battlefield then eo.controller else none
+              rc0 := eo.controller
+              let prevTr := eo.zone == .battlefield && eo.transformed
+              if tr0 != prevTr then pr0 := swapCardFace pr0
+              pr0 := applySnapshotPrinted pr0 eo.token eo.printed
+              tr0 := prevTr
+            objZones := setHistZone objZones nid eo.zone
+            objPhased := setHistPhased objPhased nid (eo.zone == .battlefield && eo.phasedOut)
+            objAtts := setHistAtt objAtts nid (if eo.zone == .battlefield then eo.attachedTo else none)
+            missingInfo := setHistMissingInfo missingInfo nid eo
+    match ch with
     | .rules (.permanent (.turnedFaceUp eo)) =>
       if eo.id == some o.id then fd0 := true
     | .rules (.permanent (.turnedFaceDown eo)) =>
@@ -5780,11 +6793,7 @@ private def initHistoricalSlice (g : Game) (o : GameObject) : HistoricalSliceSta
       if eo.id == some o.id then
         if tr0 != eo.transformed then
           pr0 := swapCardFace pr0
-        if let some p := eo.printed then
-          pr0 :=
-            if eo.token && !p.isToken then
-              { p with isToken := true, otherFace := p.otherFace.map ({ · with isToken := true }) }
-            else p
+        pr0 := applySnapshotPrinted pr0 eo.token eo.printed
         tr0 := eo.transformed
     | .rules (.permanent (.attached eo _ prev)) =>
       if let some aid := eo.id then
@@ -5805,18 +6814,14 @@ private def initHistoricalSlice (g : Game) (o : GameObject) : HistoricalSliceSta
         z0 := eo.zone
         ph0 := eo.zone == .battlefield && eo.phasedOut
         fd0 := eo.zone == .battlefield && eo.faceDown
-        dc0 := if eo.zone == .battlefield then dc0.orElse (fun _ => eo.controller) else none
-        rc0 := rc0.orElse (fun _ => eo.controller)
+        dc0 := if eo.zone == .battlefield then eo.controller else none
+        rc0 := eo.controller
         let prevTr := eo.zone == .battlefield && eo.transformed
         if tr0 != prevTr then pr0 := swapCardFace pr0
-        if let some p := eo.printed then
-          if p.otherFace.isSome || pr0.otherFace.isNone then
-            pr0 :=
-              if eo.token && !p.isToken then
-                { p with isToken := true, otherFace := p.otherFace.map ({ · with isToken := true }) }
-              else p
+        pr0 := applySnapshotPrinted pr0 eo.token eo.printed
         tr0 := prevTr
       if let some cid := eo.id then
+        nonInitMatIds := nonInitMatIds.filter (· != cid)
         objZones := setHistZone objZones cid eo.zone
         objPhased := setHistPhased objPhased cid (eo.zone == .battlefield && eo.phasedOut)
         objAtts := setHistAtt objAtts cid (if eo.zone == .battlefield then eo.attachedTo else none)
@@ -5830,29 +6835,27 @@ private def initHistoricalSlice (g : Game) (o : GameObject) : HistoricalSliceSta
         rc0 := none
         let newTr := toZ == .battlefield && after.transformed
         if tr0 != newTr then pr0 := swapCardFace pr0
+        pr0 := applySnapshotPrinted pr0 after.token after.printed
         tr0 := newTr
       if before.id == some o.id then
         z0 := fromZ
-        ph0 := before.phasedOut
+        ph0 := fromZ == .battlefield && before.phasedOut
         fd0 := fromZ == .battlefield && before.faceDown
-        dc0 := if fromZ == .battlefield then dc0.orElse (fun _ => before.controller) else none
-        rc0 := rc0.orElse (fun _ => before.controller)
+        dc0 := if fromZ == .battlefield then before.controller else none
+        rc0 := before.controller
         let prevTr := fromZ == .battlefield && before.transformed
         if tr0 != prevTr then pr0 := swapCardFace pr0
-        if let some p := before.printed then
-          if p.otherFace.isSome || pr0.otherFace.isNone then
-            pr0 :=
-              if before.token && !p.isToken then
-                { p with isToken := true, otherFace := p.otherFace.map ({ · with isToken := true }) }
-              else p
+        pr0 := applySnapshotPrinted pr0 before.token before.printed
         tr0 := prevTr
       if let some bid := before.id then
+        nonInitMatIds := nonInitMatIds.filter (· != bid)
         objZones := setHistZone objZones bid fromZ
         objPhased := setHistPhased objPhased bid (fromZ == .battlefield && before.phasedOut)
         objAtts := setHistAtt objAtts bid (if fromZ == .battlefield then before.attachedTo else none)
         missingInfo := setHistMissingInfo missingInfo bid before
       if let some aid := after.id then
         if before.id != some aid then
+          nonInitMatIds := nonInitMatIds.filter (· != aid)
           objZones := setHistZone objZones aid (.outside after.owner)
           objPhased := setHistPhased objPhased aid false
           objAtts := setHistAtt objAtts aid none
@@ -5865,26 +6868,29 @@ private def initHistoricalSlice (g : Game) (o : GameObject) : HistoricalSliceSta
         rc0 := none
         let newTr := eo.zone == .battlefield && eo.transformed
         if tr0 != newTr then pr0 := swapCardFace pr0
+        pr0 := applySnapshotPrinted pr0 eo.token eo.printed
         tr0 := newTr
       if let some eid := eo.id then
+        nonInitMatIds := nonInitMatIds.filter (· != eid)
         objZones := setHistZone objZones eid (.outside eo.owner)
         objPhased := setHistPhased objPhased eid false
         objAtts := setHistAtt objAtts eid none
         missingInfo := setHistMissingInfo missingInfo eid eo
     | .engine (.materializeObject obj _) =>
-      let synthEo : EventObject :=
-        { id := some obj.id
-          owner := obj.owner
-          controller := obj.controller
-          zone := obj.zone
-          phasedOut := obj.status.phasedOut
-          faceDown := obj.status.faceDown
-          transformed := obj.status.transformed
-          attachedTo := obj.attachedTo
-          token := obj.printed.isToken
-          printed := some obj.printed }
-      missingInfo := setHistMissingInfo missingInfo obj.id synthEo
       if g.isInitialMaterialize obj.id idx then
+        let synthEo : EventObject :=
+          { id := some obj.id
+            owner := obj.owner
+            controller := obj.controller
+            zone := obj.zone
+            phasedOut := obj.status.phasedOut
+            faceDown := obj.status.faceDown
+            transformed := obj.status.transformed
+            attachedTo := obj.attachedTo
+            token := obj.printed.isToken
+            printed := some obj.printed }
+        nonInitMatIds := nonInitMatIds.filter (· != obj.id)
+        missingInfo := setHistMissingInfo missingInfo obj.id synthEo
         if obj.id == o.id then
           z0 := .outside obj.owner
           ph0 := false
@@ -5896,6 +6902,8 @@ private def initHistoricalSlice (g : Game) (o : GameObject) : HistoricalSliceSta
         objZones := setHistZone objZones obj.id (.outside obj.owner)
         objPhased := setHistPhased objPhased obj.id false
         objAtts := setHistAtt objAtts obj.id none
+      else if !nonInitMatIds.contains obj.id then
+        nonInitMatIds := nonInitMatIds.push obj.id
     | .rules (.player (.lost p _)) =>
       plLost := setHistPlFlag plLost p false
     | .rules (.player (.leftGame p)) =>
@@ -6005,13 +7013,8 @@ private def stepHistoricalSlice (o : GameObject) (st : HistoricalSliceState)
     else if after.id == some o.id then
       let newPh := toZ == .battlefield && after.phasedOut
       let newTr := toZ == .battlefield && after.transformed
-      let mut pr' := if s.tr != newTr then swapCardFace s.pr else s.pr
-      if let some p := after.printed then
-        if p.otherFace.isSome || pr'.otherFace.isNone then
-          pr' :=
-            if after.token && !p.isToken then
-              { p with isToken := true, otherFace := p.otherFace.map ({ · with isToken := true }) }
-            else p
+      let pr0 := if s.tr != newTr then swapCardFace s.pr else s.pr
+      let pr' := applySnapshotPrinted pr0 after.token after.printed
       let newFd := toZ == .battlefield && after.faceDown
       let newDc := if toZ == .battlefield then after.controller else none
       s := { s with z := toZ, ph := newPh, fd := newFd, pr := pr', tr := newTr, dc := newDc, rc := after.controller }
@@ -6027,7 +7030,8 @@ private def stepHistoricalSlice (o : GameObject) (st : HistoricalSliceState)
     if eo.id == some o.id then
       let newPh := eo.zone == .battlefield && eo.phasedOut
       let newTr := eo.zone == .battlefield && eo.transformed
-      let pr' := if s.tr != newTr then swapCardFace s.pr else s.pr
+      let pr0 := if s.tr != newTr then swapCardFace s.pr else s.pr
+      let pr' := applySnapshotPrinted pr0 eo.token eo.printed
       let c' := eo.controller.orElse (fun _ => some c)
       let newFd := eo.zone == .battlefield && eo.faceDown
       let newDc := if eo.zone == .battlefield then c' else none
@@ -6125,10 +7129,7 @@ private def mkHistoricalGameAt (g : Game) (o : GameObject) (s : HistoricalSliceS
       let info? := (s.missingInfo.find? (·.1 == zid)).map Prod.snd
       let pr : CardDef :=
         match info?.bind (·.printed) with
-        | some p =>
-          if info?.any (·.token) && !p.isToken then
-            { p with isToken := true, otherFace := p.otherFace.map ({ · with isToken := true }) }
-          else p
+        | some p => adjustTokenCardDef (info?.any (·.token)) p
         | none => { name := "", types := #[] }
       let own := (info?.map (·.owner)).getD o.owner
       let ctrl := info?.bind (·.controller)
@@ -6245,7 +7246,8 @@ def hasSummoningSickness (g : Game) (o : GameObject) : Bool :=
                 else
                   overrideIdx? := none
                   sawUnoverriddenArrival := true
-              else if obj.zone != .battlefield then
+              else if obj.zone != .battlefield ||
+                  (g.objectZoneAndPhasedOutAt? obj.id i).all (·.1 != .battlefield) then
                 overrideIdx? := none
                 sawUnoverriddenArrival := true
           | .rules (.player (.lost ..)) | .rules (.player (.leftGame ..)) =>
@@ -6500,84 +7502,82 @@ def applyChange (g : Game) (c : GameChange) : Game :=
   | .engine e => g.applyEngineChange e
 
 def controlChanged (g : Game) (o : GameObject) : Bool :=
-  let defCtrl := o.defaultController.getD o.owner
-  if g.controllerOf o != some defCtrl ||
-      (o.controller.isSome && o.controller != some defCtrl) ||
-      !(g.appliedControlEffectIds o).isEmpty ||
-      g.activeEffects.any (fun (_, sp) =>
-        match sp with
-        | .layered (.objects ids) (.control _) _ => ids.contains o.id
-        | _ => false) ||
-      g.events.any (fun ev =>
-        match ev.change with
-        | .rules (.continuousEffect (.created _ (.layered (.objects ids) (.control _) _)))
-        | .rules (.continuousEffect (.expired _ (some (.layered (.objects ids) (.control _) _)))) =>
-          ids.contains o.id
-        | _ => false) then
-    true
-  else if !o.isBattlefieldObject then
+  if !o.isBattlefieldObject then
     false
   else
-    let isFilterCtrlSpec (sp : ContinuousEffectSpec) : Bool :=
-      match sp with
-      | .layered (.objects _) (.control _) _ => false
-      | .layered _ (.control _) _ => true
-      | _ => false
-    let hasFilterCtrl :=
-      g.activeEffects.any (fun (_, sp) => isFilterCtrlSpec sp) ||
-      g.events.any fun ev =>
-        match ev.change with
-        | .rules (.continuousEffect (.created _ sp))
-        | .rules (.continuousEffect (.expired _ (some sp))) => isFilterCtrlSpec sp
-        | .rules (.continuousEffect (.expired eid none)) => g.isCtrlOrCopyEffectId eid
+    let defCtrl := o.defaultController.getD o.owner
+    if g.controllerOf o != some defCtrl ||
+        (o.controller.isSome && o.controller != some defCtrl) ||
+        !(g.appliedControlEffectIds o).isEmpty then
+      true
+    else
+      let isPotentialCtrlSpec (sp : ContinuousEffectSpec) : Bool :=
+        match sp with
+        | .layered (.objects ids) (.control _) _ => ids.contains o.id
+        | .layered _ (.control _) _ => true
         | _ => false
-    if !hasFilterCtrl then false
-    else Id.run do
-      let init := initHistoricalSlice g o
-      let mut arrivalSlice : Nat := 0
-      let mut curZ := init.z
-      for i in [0 : g.events.size] do
-        match g.events[i]!.change with
-        | .rules (.zone (.moved before after fromZ toZ ..)) =>
-          if before.id == some o.id && after.id != some o.id then
-            curZ := .outside before.owner
-          else if after.id == some o.id then
-            if toZ == .battlefield &&
-                (curZ != .battlefield || before.id != some o.id || fromZ != .battlefield) then
-              arrivalSlice := i + 1
-            curZ := toZ
-        | .rules (.zone (.created eo _)) =>
-          if eo.id == some o.id then
-            if eo.zone == .battlefield then
-              arrivalSlice := i + 1
-            curZ := eo.zone
-        | .rules (.zone (.ceasedToExist eo)) =>
-          if eo.id == some o.id then
-            curZ := .outside eo.owner
-        | .engine (.materializeObject obj _) =>
-          if obj.id == o.id then
-            if obj.zone == .battlefield &&
-                (curZ != .battlefield || g.isInitialMaterialize obj.id i) then
-              arrivalSlice := i + 1
-            curZ := obj.zone
-        | _ => pure ()
-      let checkSlice (slice : HistoricalSliceState) (evLen : Nat) : Bool :=
-        if slice.z != .battlefield then false
-        else
-          let (gAt, oAt) := mkHistoricalGameAt g o slice evLen
-          let defAt := oAt.defaultController.getD oAt.owner
-          gAt.controllerOf oAt != some defAt || !(gAt.appliedControlEffectIds oAt).isEmpty
-      if arrivalSlice == 0 && checkSlice init 0 then
-        return true
-      let mut cur := init
-      for i in [0 : g.events.size] do
-        let (next, dirty) := stepHistoricalSlice o cur g.events[i]!.change
-        cur := next
-        let sliceIdx := i + 1
-        if sliceIdx == arrivalSlice || (sliceIdx > arrivalSlice && dirty) then
-          if checkSlice cur sliceIdx then
-            return true
-      return false
+      let hasPotentialHistCtrlChange :=
+        g.activeEffects.any (fun (_, sp) => isPotentialCtrlSpec sp) ||
+        g.events.any fun ev =>
+          match ev.change with
+          | .rules (.continuousEffect (.created _ sp))
+          | .rules (.continuousEffect (.expired _ (some sp))) => isPotentialCtrlSpec sp
+          | .rules (.continuousEffect (.expired _ none)) => true
+          | .rules (.zone (.moved before after ..)) =>
+            before.id == some o.id || after.id == some o.id
+          | .engine (.materializeObject obj _) =>
+            obj.id == o.id
+          | _ => false
+      if !hasPotentialHistCtrlChange then false
+      else Id.run do
+        let init := initHistoricalSlice g o
+        let mut arrivalSlice : Nat := 0
+        let mut curZ := init.z
+        for i in [0 : g.events.size] do
+          match g.events[i]!.change with
+          | .rules (.zone (.moved before after fromZ toZ ..)) =>
+            if before.id == some o.id && after.id != some o.id then
+              curZ := .outside before.owner
+            else if after.id == some o.id then
+              if toZ == .battlefield &&
+                  (curZ != .battlefield || before.id != some o.id || fromZ != .battlefield) then
+                arrivalSlice := i + 1
+              curZ := toZ
+          | .rules (.zone (.created eo _)) =>
+            if eo.id == some o.id then
+              if eo.zone == .battlefield then
+                arrivalSlice := i + 1
+              curZ := eo.zone
+          | .rules (.zone (.ceasedToExist eo)) =>
+            if eo.id == some o.id then
+              curZ := .outside eo.owner
+          | .engine (.materializeObject obj _) =>
+            if obj.id == o.id then
+              if obj.zone == .battlefield &&
+                  (curZ != .battlefield || g.isInitialMaterialize obj.id i) then
+                arrivalSlice := i + 1
+              curZ := obj.zone
+          | _ => pure ()
+        let curCtrl := g.controllerOf o
+        let checkSlice (slice : HistoricalSliceState) (evLen : Nat) : Bool :=
+          if slice.z != .battlefield then false
+          else
+            let (gAt, oAt) := mkHistoricalGameAt g o slice evLen
+            let defAt := oAt.defaultController.getD oAt.owner
+            let ctrlAt := gAt.controllerOf oAt
+            ctrlAt != some defAt || ctrlAt != curCtrl || ctrlAt != some defCtrl ||
+              !(gAt.appliedControlEffectIds oAt).isEmpty
+        if arrivalSlice == 0 && checkSlice init 0 then
+          return true
+        let mut cur := init
+        for i in [0 : g.events.size] do
+          let (next, dirty) := stepHistoricalSlice o cur g.events[i]!.change
+          cur := next
+          let sliceIdx := i + 1
+          if sliceIdx == arrivalSlice || (sliceIdx > arrivalSlice && dirty) then
+            if checkSlice cur sliceIdx then
+              return true
+        return false
 
 /-- Generic mana each creature must pay to attack `defender` (Dáin). -/
 def attackTaxPerCreature (g : Game) (defender : PlayerId) : Nat :=
@@ -6729,11 +7729,11 @@ def sneakAttackWhom? (g : Game) (id : ObjectId) : Option PlayerId :=
 
 /-- Whether mana from a Treasure was spent to cast `id` (CR 106.6 / 400.7d / 707.10 / 707.12). -/
 def treasureManaSpent (g : Game) (id : ObjectId) : Bool :=
-  let spellId := GameEvent.stackSpellIdOf g.events id
-  if GameEvent.isUncastStackCopy g.events spellId || GameEvent.isUncastStackCopy g.events id then false
+  if !g.wasCast id then false
   else
-    GameEvent.treasureManaSpentOn g.events spellId ||
-      GameEvent.treasureManaSpentOn g.events id
+    let spellId := GameEvent.stackSpellIdOf g.events id
+    if GameEvent.isUncastStackCopy g.events spellId || GameEvent.isUncastStackCopy g.events id then false
+    else GameEvent.treasureManaSpentOn g.events spellId
 
 /-- Cards exiled from a graveyard to pay the boast activation cost of `abilityId` (MSH 227). -/
 def boastExiledOf (g : Game) (abilityId : ObjectId) : Array ObjectId :=
@@ -13793,15 +14793,52 @@ is not active records nothing; Layers 1–7d derive remaining characteristics
 purely from `g.activeEffects`. -/
 partial def expireEffectById (g : Game) (eid : EffectId)
     (cause : Option EventCause := none) (reconcileControl : Bool := true)
-    (preState? : Option Game := none) : Game :=
+    (preState? : Option Game := none) (suppressEmblemLog : Bool := false) : Game :=
   match g.activeEffect? eid with
   | none => g
   | some eff =>
     let pre := preState?.getD g
     let expCause :=
       g.resolveOptionalCause cause (defaultCause := .gameRule .continuousEffect)
-    let g := g.record (GameEvent.effectExpired g.turnNumber eid eff (cause := expCause))
-    let g :=
+    match eff with
+    | .gameRule (.fraEmblem id) _ =>
+      match g.findObject? id with
+      | some old =>
+        if old.zone == .command then
+          let embName := pre.name ((pre.findObject? id).getD old)
+          let embCause := cause.getD (.gameRule .leavingZone)
+          let snap :=
+            { (pre.snapshot ((pre.findObject? id).getD old)) with
+              id := some old.id
+              zone := old.zone }
+          let g := g.record (GameEvent.ceasedToExist g.turnNumber snap (cause := embCause))
+          let leaving := g.activeEffects.filter (fun (_, e) =>
+            effectObject? e == some old.id ||
+              (match e.duration with
+               | .whileInZone oid z => oid == old.id && (old.zone == z || !(g.findObject? oid).any (·.zone == z))
+               | _ => false) ||
+              match e with
+              | .layered (.objects ids) _ _ =>
+                ids.contains old.id && ids.all (fun oid => oid == old.id || (g.findObject? oid).isNone)
+              | _ => false)
+          let g := leaving.foldl (fun acc (mEid, _) =>
+            let mCause := if mEid == eid then some expCause else some embCause
+            acc.expireEffectById mEid (cause := mCause) (reconcileControl := false)
+              (preState? := some pre) (suppressEmblemLog := true)) g
+          let g :=
+            if (g.activeEffect? eid).isSome then
+              g.record (GameEvent.effectExpired g.turnNumber eid eff (cause := expCause))
+            else g
+          let g := if suppressEmblemLog then g else g.logMsg s!"{embName} ends"
+          if reconcileControl then
+            reconcileControlAfterTransitionFwd pre g (cause := some embCause)
+          else g
+        else
+          g.record (GameEvent.effectExpired g.turnNumber eid eff (cause := expCause))
+      | none =>
+        g.record (GameEvent.effectExpired g.turnNumber eid eff (cause := expCause))
+    | _ =>
+      let g := g.record (GameEvent.effectExpired g.turnNumber eid eff (cause := expCause))
       match eff with
       | .layered _ (.control _) _ =>
         if reconcileControl then
@@ -13812,38 +14849,6 @@ partial def expireEffectById (g : Game) (eid : EffectId)
           reconcileControlAfterTransitionFwd pre g (cause := some expCause)
         else g
       | _ => g
-    match eff with
-    | .gameRule (.fraEmblem id) _ =>
-      match g.findObject? id with
-      | some old =>
-        let embCause := cause.getD (.gameRule .leavingZone)
-        let snap :=
-          { (pre.snapshot ((pre.findObject? id).getD old)) with
-            id := some old.id
-            zone := old.zone }
-        let g := g.record (GameEvent.ceasedToExist g.turnNumber snap (cause := embCause))
-        let leaving := g.activeEffects.filter (fun (_, e) =>
-          effectObject? e == some old.id ||
-            (match e.duration with
-             | .whileInZone oid z => oid == old.id && (old.zone == z || !(g.findObject? oid).any (·.zone == z))
-             | _ => false) ||
-            (old.zone == .battlefield &&
-              match e.duration with
-              | .whileSourceOnBattlefield src | .untilSourceLeaves src | .whileSourceHasCounter src _ =>
-                src == old.id
-              | _ => false) ||
-            match e with
-            | .layered (.objects ids) _ _ =>
-              ids.contains old.id && ids.all (fun oid => oid == old.id || (g.findObject? oid).isNone)
-            | _ => false)
-        let g := leaving.foldl (fun acc (mEid, _) =>
-          acc.expireEffectById mEid (cause := some embCause) (reconcileControl := false)
-            (preState? := some pre)) g
-        if reconcileControl then
-          reconcileControlAfterTransitionFwd pre g (cause := some embCause)
-        else g
-      | none => g
-    | _ => g
 
 /-- Record and apply the expiration of the earliest active continuous effect
 equal to `eff` (CR 611). When no such effect is active, nothing is recorded
@@ -13858,11 +14863,11 @@ def expireEffect (g : Game) (eff : ContinuousEffect)
 `pred`, each under its own `EffectId` (CR 611). -/
 def expireMatching (g : Game) (pred : ContinuousEffect → Bool)
     (cause : Option EventCause := none) (reconcileControl : Bool := true)
-    (preState? : Option Game := none) : Game :=
+    (preState? : Option Game := none) (suppressEmblemLog : Bool := false) : Game :=
   let matching := g.activeEffects.filter (fun (_, e) => pred e)
   matching.foldl (fun acc (eid, _) =>
     acc.expireEffectById eid (cause := cause) (reconcileControl := reconcileControl)
-      (preState? := preState?)) g
+      (preState? := preState?) (suppressEmblemLog := suppressEmblemLog)) g
 
 /-- Record and apply the expiration of every active continuous effect equal to
 `eff`, e.g. when their shared duration ends (CR 611). -/
@@ -14067,14 +15072,15 @@ def restoreCopiesWhere (g : Game)
     (sel : Game → EffectId → Option GameObject → EffectDuration → Bool)
     (cause : Option EventCause := none)
     (reconcileControl : Bool := true)
-    (suppressLog : Bool := false) : Game :=
+    (suppressLog : Bool := false)
+    (skipLogIds : Array ObjectId := #[]) : Game :=
   g.activeEffects.foldl (fun acc (eid, e) =>
     match e with
     | .layered (.objects #[id]) (.copy printed) d =>
       let obj? := (acc.findObject? id).filter (fun o => o.zone == .battlefield)
       if sel acc eid obj? d then
         let acc := acc.expireEffectById eid (cause := cause) (reconcileControl := reconcileControl)
-        if suppressLog then acc
+        if suppressLog || skipLogIds.contains id then acc
         else
           match obj? with
           | some o =>
@@ -14124,12 +15130,14 @@ def restoreCopiesUntilNextTurn (g : Game) (p : PlayerId) (departed : Bool := fal
 /-- Restore copy effects that last until `srcId` leaves the battlefield. -/
 def restoreCopiesUntilSourceLeaves (g : Game) (srcId : ObjectId)
     (cause : Option EventCause := some (.gameRule .leavingZone))
-    (suppressLog : Bool := false) : Game :=
+    (suppressLog : Bool := false)
+    (skipLogIds : Array ObjectId := #[]) : Game :=
   g.restoreCopiesWhere (fun _ _ _ d =>
     match d with
     | .untilSourceLeaves s | .whileSourceOnBattlefield s | .whileSourceHasCounter s _ => s == srcId
     | _ => false)
     (cause := cause) (reconcileControl := false) (suppressLog := suppressLog)
+    (skipLogIds := skipLogIds)
 
 /-- End the control-changing effects that last until `srcId` leaves, each under
 its own `EffectId` (Super Hero Civil War; MSH 143). Other control-changing
@@ -14212,8 +15220,11 @@ def expireWhileSourceEffects (g : Game) (srcId : ObjectId)
     (cause : Option EventCause := some (.gameRule .leavingZone))
     (preState? : Option Game := none)
     (reconcileControl : Bool := true)
-    (suppressReturnLog : Bool := false) : Game :=
-  let g := g.restoreCopiesUntilSourceLeaves srcId (cause := cause) (suppressLog := suppressReturnLog)
+    (suppressReturnLog : Bool := false)
+    (skipLogIds : Array ObjectId := #[])
+    (suppressEmblemLog : Bool := false) : Game :=
+  let g := g.restoreCopiesUntilSourceLeaves srcId (cause := cause)
+    (suppressLog := false) (skipLogIds := skipLogIds)
   let g := g.restoreControlUntilSourceLeaves srcId (cause := cause) (preState? := preState?)
     (reconcileControl := reconcileControl) (suppressReturnLog := suppressReturnLog)
   g.expireMatching (fun s =>
@@ -14221,6 +15232,7 @@ def expireWhileSourceEffects (g : Game) (srcId : ObjectId)
     | .whileSourceOnBattlefield src | .untilSourceLeaves src | .whileSourceHasCounter src _ =>
       src == srcId
     | _ => false) (cause := cause) (preState? := preState?) (reconcileControl := reconcileControl)
+    (suppressEmblemLog := suppressEmblemLog)
 
 /-- Last player-controlling effect wins (MSH 259). The controlled player
 remains the active player on their turn (MSH 300) and still controls their

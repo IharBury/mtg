@@ -622,12 +622,24 @@ def sourceStillPayable (g : Game) (prop : ProposedSpell) : Bool :=
     else
     let forObj := some prop.spellId
     let hasUnpaidBfSourceCost := g.proposedNeedsBattlefieldSource prop sinceIdx
+    let costAlreadyPaidForAbility :=
+      prop.fraCostPaid ||
+        (g.events.extract (min sinceIdx g.events.size) g.events.size).any fun
+          | .rules _ _ cause _ =>
+            let rec unwrap : EventCause → EventCause
+              | .replaced _ orig => unwrap orig
+              | other => other
+            match unwrap cause with
+            | .costPayment k q (some f) => k != .mana && q == prop.caster && f == prop.spellId
+            | _ => false
+          | _ => false
     let alreadySacrificedForCost :=
       prop.kind == .activatedAbility &&
         !sacrificeOrExileSource && !prop.discardSource &&
         !fromGyAb && !fromHandAb &&
         (g.sourceSacrificedForCost sid forObj sinceIdx ||
-          (!hasUnpaidBfSourceCost && g.sourceRemovedByCostSince prop.caster sid sinceIdx))
+          (!hasUnpaidBfSourceCost &&
+            (g.sourceRemovedByCostSince prop.caster sid sinceIdx || costAlreadyPaidForAbility)))
     let alreadyDiscardedFromHandForCost :=
       prop.kind == .activatedAbility &&
         !sacrificeOrExileSource && !prop.discardSource &&
@@ -678,7 +690,8 @@ def sourceStillPayable (g : Game) (prop : ProposedSpell) : Bool :=
       (!prop.activation.any (·.cost.putStunCounterOnSource) ||
         g.sourceCounterCostPaidFor sid forObj .putCounters (some .stun) sinceIdx ||
         (src.isOnBattlefield && g.controlledBy src prop.caster)) &&
-      ((src.isOnBattlefield && g.controlledBy src prop.caster &&
+      (((src.isOnBattlefield &&
+          (g.controlledBy src prop.caster || (!hasUnpaidBfSourceCost && costAlreadyPaidForAbility))) &&
         !fromGyAb && !fromHandAb &&
         (!prop.tapSource || !src.status.tapped || g.sourceTappedForCost sid forObj sinceIdx)) ||
       (fromGyAb && !fromHandAb && !needsBfSource &&

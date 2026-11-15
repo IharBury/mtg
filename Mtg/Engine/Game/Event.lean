@@ -1430,7 +1430,6 @@ inductive PostStep where
   | logDealDamageEachOpposingCreature (amount : Nat)
   | finishZemoBoastExileLogs (p : PlayerId) (sourceId : ObjectId) (preIds : Array ObjectId)
   | markFraCostPaid
-  | continuePostFraActivation (p : PlayerId)
   | plusOneOnCreatedTokensLoop (controller : PlayerId) (remainingIds : Array ObjectId)
       (amount : Nat)
   | moveIdsInOrderLoop (ids : Array ObjectId) (dest : Zone) (log : String)
@@ -1928,6 +1927,7 @@ inductive PendingReplacement where
   | endControlExileLoop (remaining : Array (ObjectId × String × Option PlayerId))
       (cause : Option EventCause := none)
       (pendingLog : Option (ObjectId × String) := none)
+      (extraSkipIds : Array ObjectId := #[])
   | beginStepCont (step : Step)
   | finishCleanupAfterClearEot
   | continueStartNextTurn (nextP : PlayerId) (remainingDeparted : Array PlayerId)
@@ -1959,6 +1959,7 @@ inductive PendingReplacement where
       (keptOrigNextEffs : Array Nat := #[])
   | phaseOutPermanentsLoop (remainingIds : Array ObjectId)
       (cause : Option EventCause := none)
+      (preSnaps : Array (ObjectId × EventObject) := #[])
   | phaseInControlledLoop (remainingIds : Array ObjectId)
       (cause : Option EventCause := none)
 deriving Repr, Inhabited, BEq
@@ -2378,12 +2379,15 @@ def PendingReplacement.endsWithPriorityGrant (pr : PendingReplacement)
   | .seq a b => b.endsWithPriorityGrant (a.nextQueuedPending hasQueuedPending)
   | _ => false
 
-/-- Ensure a `PendingReplacement` continuation ends with `.finishFraChoice`
-without appending a duplicate `.finishFraChoice` when already present. -/
-def PendingReplacement.ensureEndsWithFinishFra : PendingReplacement → PendingReplacement
-  | .finishFraChoice => .finishFraChoice
-  | .seq a b => .seq a b.ensureEndsWithFinishFra
-  | other => .seq other .finishFraChoice
+/-- Ensure a `PendingReplacement` continuation ends with a priority grant
+without appending `.finishFraChoice` onto a continuation that already grants priority. -/
+def PendingReplacement.ensureEndsWithFinishFra (pr : PendingReplacement) : PendingReplacement :=
+  if pr.endsWithPriorityGrant then pr
+  else
+    match pr with
+    | .finishFraChoice => .finishFraChoice
+    | .seq a b => .seq a b.ensureEndsWithFinishFra
+    | other => .seq other .finishFraChoice
 
 /-- Record that `p` left the game on any nested `.restorePending`,
 `.leavePlayersWhoLost`, `.finishConcede`, or `.concedePlayersLoop`
@@ -3789,15 +3793,37 @@ def dealtNoncombat (events : Array GameEvent) (turn : Nat) (p : PlayerId) : Bool
       | .rules (.life (.lost q amt true false)) => q == p && amt > 0
       | _ => false
 
-/-- Index of the `CastEvent.spellCast` event for `spell`, or `events.size` when
-`spell` has not yet finished casting (CR 601.2h–i). -/
+/-- Index of the `CastEvent.spellCast` event for `spell`, `0` when `events`
+identifies `spell` as a non-spell stack ability or uncast battlefield permanent,
+or `events.size` when `spell` is a spell that has not yet finished casting
+(CR 601.2h–i). -/
 def castEventBound (events : Array GameEvent) (spell : ObjectId) : Nat :=
   match events.findIdx? (fun e =>
     match e.change with
     | .rules (.cast (.spellCast s ..)) => s.id == some spell
     | _ => false) with
   | some idx => idx
-  | none => events.size
+  | none =>
+    let hasSpellProposal :=
+      events.any fun e =>
+        match e.change with
+        | .rules (.cast (.proposed obj ..)) => obj == spell
+        | .rules (.zone (.moved _ after _ .stack .cast ..)) => after.id == some spell
+        | _ => false
+    let isNonSpellOrBattlefieldPerm :=
+      events.any fun e =>
+        match e.change with
+        | .rules (.cast (.abilityActivated ab ..)) => ab == spell
+        | .rules (.triggerQueue (.putOnStack stObj ..)) => stObj == spell
+        | .engine (.materializeObject obj _) =>
+          obj.id == spell &&
+            (obj.abilityEffect.isSome || obj.triggeredAbility.isSome || obj.zone == .battlefield)
+        | .rules (.zone (.moved _ after fromZ .battlefield ..)) =>
+          fromZ != .stack && after.id == some spell
+        | .rules (.zone (.created eo _)) =>
+          eo.zone == .battlefield && eo.id == some spell
+        | _ => false
+    if !hasSpellProposal && isNonSpellOrBattlefieldPerm then 0 else events.size
 
 /-- Mana recorded for `spell` when it was cast, if the log has that payment. -/
 def manaSpentOn (events : Array GameEvent) (spell : ObjectId) : Nat :=

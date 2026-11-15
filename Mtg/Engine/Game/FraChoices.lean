@@ -621,8 +621,18 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .crew abilityId vehicleId n, .objects ids =>
     if !gPre.proposalCostPromptStillPayable p gPre.pending then
       return (← gPre.reverseProposedSpell? (resumeContinuation := true))
-    let some vehicle := g.findObject? vehicleId | throw "The Vehicle is gone"
-    let vName := g.name vehicle
+    let prop? := g.proposedSpell
+    if (g.findObject? vehicleId).isNone && prop?.isNone then
+      throw "The Vehicle is gone"
+    let vName :=
+      match g.findObject? vehicleId with
+      | some vehicle => g.name vehicle
+      | none =>
+        match prop? with
+        | some pr =>
+          if pr.originalSnapshot.name.isEmpty then g.name pr.original
+          else pr.originalSnapshot.name
+        | none => "Vehicle"
     if ids.toList.eraseDups.length != ids.size then throw "Choose each creature once"
     let crew ← ids.mapM (fun id => do
       let some c := g.findObject? id | throw "no such object"
@@ -631,7 +641,6 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       pure c)
     let total := crew.foldl (fun acc c => acc + (g.power c).toNat) 0
     if total < n then throw s!"Total power {total} is less than {n}"
-    let prop? := g.proposedSpell
     let outerCont? := g.pendingReplacement
     let openCont := g.proposalHadOpenContinuation
     let g0 := if outerCont?.isSome then g.change (.pendingReplacement none) else g
@@ -644,22 +653,46 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let g :=
       if paused then
         g.chainPendingReplacement (.finishPostStep .markFraCostPaid)
-      else
-        let g := if g.proposedSpell.isSome then g.changeProposal (.fraCostPaid true) else g
-        match outerCont? with
-        | some outer => g.chainPendingReplacement outer
-        | none => g
+      else if g.proposedSpell.isSome then
+        g.changeProposal (.fraCostPaid true)
+      else g
     let g := g.logMsg s!"{(g.player p).name} crews {vName}"
-    match g.proposedSpell.filter g.propNeedsPostFraSteps with
+    match g.proposedSpell with
     | some curProp =>
-      if paused then
-        let g := g.chainPendingReplacement (.finishPostStep (.continuePostFraActivation p))
-        return match outerCont? with
+      let picks := (curProp.activation.map costPicksOf).getD #[]
+      let completedAfterContinue (gCur : Game) : Bool :=
+        (gCur.findObject? curProp.spellId).any (·.zone == .stack)
+      if picks.isEmpty && !paused then
+        let g :=
+          match outerCont? with
           | some outer => g.chainPendingReplacement outer
           | none => g
+        let g ← g.continueCostPicks curProp picks true
+          (hadOuterReplacement := outerCont?.isSome)
+          (hadOpenContinuation := some openCont)
+        if g.proposedSpell.isNone && !completedAfterContinue g then
+          return g
+        return g.resumeAfterBecomeCast
       else
-        return (← g.continuePostFraActivationM p curProp)
+        let g ← g.continueCostPicks curProp picks true
+          (hadOuterReplacement := outerCont?.isSome)
+          (hadOpenContinuation := some openCont)
+        if g.proposedSpell.isNone && !completedAfterContinue g then
+          return g
+        let g :=
+          match outerCont? with
+          | some outer =>
+            let nextOuter := if picks.isEmpty then outer.ensureEndsWithFinishFra else outer
+            g.chainPendingReplacement nextOuter
+          | none => g
+        return g.resumeAfterBecomeCast
     | none =>
+      let g :=
+        if !paused then
+          match outerCont? with
+          | some outer => g.chainPendingReplacement outer
+          | none => g
+        else g
       let g := g.becomeActivated p vName (some vehicleId)
         (activation := prop?.bind (·.activation))
         (abilityId := some abilityId)
@@ -1077,13 +1110,13 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     if !gPre.proposalCostPromptStillPayable p gPre.pending then
       return (← gPre.reverseProposedSpell? (resumeContinuation := true))
     if ids.toList.eraseDups.length != ids.size then throw "Choose each card once"
+    let prop? := g.proposedSpell
     let col :=
-      match g.findObject? sourceId with
+      match g.findObject? sourceId <|> prop?.map (·.original) with
       | some src => TextChange.applyColor (g.evalLayer3 src) .black
       | none => .black
     if !g.canPayZemoBoast p ids col then
       throw "Choose black cards from your graveyard with fifteen or more black mana symbols among their mana costs"
-    let prop? := g.proposedSpell
     let outerCont? := g.pendingReplacement
     let openCont := g.proposalHadOpenContinuation
     let g0 := if outerCont?.isSome then g.change (.pendingReplacement none) else g
@@ -1096,22 +1129,47 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       if paused then
         g.chainPendingReplacement (.finishPostStep (.finishZemoBoastExileLogs p sourceId ids))
       else
-        let g := g.runPostStep (.finishZemoBoastExileLogs p sourceId ids)
-        match outerCont? with
-        | some outer => g.chainPendingReplacement outer
-        | none => g
-    match g.proposedSpell.filter g.propNeedsPostFraSteps with
+        g.runPostStep (.finishZemoBoastExileLogs p sourceId ids)
+    match g.proposedSpell with
     | some curProp =>
-      if paused then
-        let g := g.chainPendingReplacement (.finishPostStep (.continuePostFraActivation p))
-        return match outerCont? with
+      let picks := (curProp.activation.map costPicksOf).getD #[]
+      let completedAfterContinue (gCur : Game) : Bool :=
+        (gCur.findObject? curProp.spellId).any (·.zone == .stack)
+      if picks.isEmpty && !paused then
+        let g :=
+          match outerCont? with
           | some outer => g.chainPendingReplacement outer
           | none => g
+        let g ← g.continueCostPicks curProp picks true
+          (hadOuterReplacement := outerCont?.isSome)
+          (hadOpenContinuation := some openCont)
+        if g.proposedSpell.isNone && !completedAfterContinue g then
+          return g
+        return g.resumeAfterBecomeCast
       else
-        return (← g.continuePostFraActivationM p curProp)
+        let g ← g.continueCostPicks curProp picks true
+          (hadOuterReplacement := outerCont?.isSome)
+          (hadOpenContinuation := some openCont)
+        if g.proposedSpell.isNone && !completedAfterContinue g then
+          return g
+        let g :=
+          match outerCont? with
+          | some outer =>
+            let nextOuter := if picks.isEmpty then outer.ensureEndsWithFinishFra else outer
+            g.chainPendingReplacement nextOuter
+          | none => g
+        return g.resumeAfterBecomeCast
     | none =>
+      let g :=
+        if !paused then
+          match outerCont? with
+          | some outer => g.chainPendingReplacement outer
+          | none => g
+        else g
       let name := ((g.findObject? sourceId).map g.name).getD
-        ((prop?.map (fun pr => pr.originalSnapshot.name)).getD "Baron Helmut Zemo")
+        ((prop?.map (fun pr =>
+          if pr.originalSnapshot.name.isEmpty then g.name pr.original
+          else pr.originalSnapshot.name)).getD "Baron Helmut Zemo")
       let g := g.becomeActivated p name (some sourceId)
         (some (prop?.bind (fun pr => pr.activation) |>.getD ActivatedAbility.zemoBoastAbility))
         (abilityId := some abilityId)
@@ -1128,7 +1186,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       return g.resumeAfterBecomeCast
   | .zemoBoastExile _ sourceId, .decline =>
     let col :=
-      match gPre.findObject? sourceId with
+      match gPre.findObject? sourceId <|> gPre.proposedSpell.map (·.original) with
       | some src => TextChange.applyColor (gPre.evalLayer3 src) .black
       | none => .black
     let allCands := (gPre.player p).graveyard.filter (fun id =>
@@ -1899,7 +1957,10 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
   | .mayMoveAllCounters .. => .accept
   | .crew _ vehicleId n =>
     let cands := ((g.creaturesControlledBy p).filter (fun c => c.id != vehicleId && !c.status.tapped)).qsort
-      (fun a b => g.power a > g.power b)
+      (fun a b =>
+        let aNonMana := (g.manaAbilitiesOf a).isEmpty
+        let bNonMana := (g.manaAbilitiesOf b).isEmpty
+        if aNonMana != bNonMana then aNonMana else g.power a > g.power b)
     let (picked, total) := cands.foldl (fun (acc : Array ObjectId × Nat) c =>
       if acc.2 ≥ n then acc else (acc.1.push c.id, acc.2 + (g.power c).toNat)) (#[], 0)
     if total < n then .decline else .choosePermanents picked
@@ -2153,7 +2214,7 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
   | .revealPutCreatures .. => .decline
   | .zemoBoastExile _ sourceId =>
     let col :=
-      match g.findObject? sourceId with
+      match g.findObject? sourceId <|> g.proposedSpell.map (·.original) with
       | some src => TextChange.applyColor (g.evalLayer3 src) .black
       | none => .black
     let cands := (g.player p).graveyard.filter (fun id =>

@@ -42,12 +42,14 @@ def canPayFraCost (g : Game) (p : PlayerId) (o : GameObject) (ab : ActivatedAbil
 
 /-- Shared activation legality (CR 602.5a / 602.5d). `canActivate` is this check as a
 `Bool`; `activateAbility` reports the first failing reason. -/
-def validateActivation (g : Game) (p : PlayerId) (o : GameObject) (ab : ActivatedAbility) :
+def validateActivation (g : Game) (p : PlayerId) (o : GameObject) (ab : ActivatedAbility)
+    (idx? : Option Nat := none) :
     Except String Unit := do
   if !g.hasPriority p then
     throw "You don't have priority"
+  let resolvedIdx? := idx?.orElse (fun _ => (g.activatedAbilitiesOf o).findIdx? (· == ab))
   if (g.manaAbilityDefs o).any (fun d =>
-      d.activatedIdx.isSome && d.activatedIdx == (g.activatedAbilitiesOf o).findIdx? (· == ab)) then
+      d.activatedIdx.isSome && d.activatedIdx == resolvedIdx?) then
     throw s!"{g.name o}'s ability is a mana ability (CR 605)"
   if g.splitSecondOnStack && !isManaActivation ab then
     throw "A spell with split second is on the stack (CR 702.61a)"
@@ -106,7 +108,7 @@ def validateActivation (g : Game) (p : PlayerId) (o : GameObject) (ab : Activate
   if ab.onlyDuringYourTurn && !g.isOnActiveTeam p then
     throw s!"{g.name o}'s ability can be activated only during your turn"
   if ab.onceEachTurn &&
-      (match (g.activatedAbilitiesOf o).findIdx? (· == ab) with
+      (match resolvedIdx? with
        | some i => (g.abilitiesActivatedThisTurn o.id).contains i
        | none => g.activationsThisTurn o.id != 0) then
     throw s!"{g.name o}'s ability can be activated only once each turn"
@@ -157,12 +159,13 @@ CR 601.2g. Cycling and other hand abilities use `activateFromHand` (CR 702.29).
 Turning a face-down Morph permanent face up is a CR 116.2b / 702.37e special
 action rather than an activated ability (so Split Second does not forbid it,
 CR 702.61b). -/
-def canActivate (g : Game) (p : PlayerId) (o : GameObject) (ab : ActivatedAbility) : Bool :=
+def canActivate (g : Game) (p : PlayerId) (o : GameObject) (ab : ActivatedAbility)
+    (idx? : Option Nat := none) : Bool :=
   if o.status.faceDown && ab.effect.resolution == .frc .turnFaceUp then
     g.hasPriority p && o.isOnBattlefield && g.controlledBy o p &&
       (g.unmaskedCopiableValues o).morph.isSome
   else
-    (g.validateActivation p o ab).isOk
+    (g.validateActivation p o ab (idx? := idx?)).isOk
 
 def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat) :
     Except String Game := do
@@ -218,7 +221,7 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
       throw s!"{g.name o}'s ability is a mana ability: choose the mana it adds and what pays its cost (CR 605.3)"
   if !g.hasPriority p then
     throw "You don't have priority"
-  g.validateActivation p o ab
+  g.validateActivation p o ab (idx? := some abilityIdx)
   let loyaltyX := ab.cost.loyalty == some .minusX || ab.cost.loyalty == some .plusX
   let o := g.object! id
   let origSnap := g.snapshot o
@@ -247,19 +250,10 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
     targetKindOverride :=
       if effect.targetKind != ab.effect.targetKind then some effect.targetKind else none
     activation := some ab
+    abilityIdx := some abilityIdx
     loyaltyX
     removePlusOneX := ab.cost.removeAnyNumberPlusOne
   }
-  if ab.cost.fra == .zemoBoast then
-    return (g.changes #[
-      .proposedSpell (some prop),
-      .pending (.fraChoice p (.zemoBoastExile newId id))]).logMsg
-      s!"{pl.name} chooses black cards to exile from their graveyard"
-  if let .crew n := ab.cost.fra then
-    return (g.changes #[
-      .proposedSpell (some prop),
-      .pending (.fraChoice p (.crew newId id n))]).logMsg
-      s!"{pl.name} chooses untapped creatures with total power {n} or more to crew {g.name o}"
   if !ab.isModal && !effect.requiresTarget && !loyaltyX &&
       !ab.cost.removeAnyNumberPlusOne &&
       !manaCost.includesManaPayment && !manaCost.containsX &&

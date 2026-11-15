@@ -134,6 +134,7 @@ structure ManaAbilityDef where
   exileSelf : Bool := false
   removeStoryCounter : Bool := false
   removeIndestructibleCounter : Bool := false
+  putStunCounterOnSource : Bool := false
   /-- Costs paid with objects the player chooses (Bolg's Company). -/
   picks : Array CostPick := #[]
   restriction : ManaRestriction := .none
@@ -273,7 +274,13 @@ def activatedManaAbilities (g : Game) (o : GameObject) : Array ManaAbilityDef :=
         exileSelf := ab.cost.fra == .exileSource
         removeStoryCounter := ab.cost.removeStoryCounter
         removeIndestructibleCounter := ab.cost.removeIndestructibleCounter
-        picks := costPicksOf ab, activatedIdx := some i, onceEachTurn := ab.onceEachTurn
+        putStunCounterOnSource := ab.cost.putStunCounterOnSource
+        picks :=
+          costPicksOf ab ++
+            (if ab.cost.sacrificeAnotherCreatureOrArtifact then
+              #[CostPick.sacrificeAnotherCreatureOrArtifact]
+             else #[])
+        activatedIdx := some i, onceEachTurn := ab.onceEachTurn
         powerUp := ab.powerUp, exhaust := ab.exhaust, sourceAbility := some ab }
       let with_ (out : ManaOutput) (r : ManaRestriction := .none) :=
         some { base with output := out, restriction := r }
@@ -282,7 +289,7 @@ def activatedManaAbilities (g : Game) (o : GameObject) : Array ManaAbilityDef :=
       | .addAnyColor => with_ (.oneOf anyColorMana 1)
       | .addAnyColorSpendOnlySubtype s =>
         with_ (.oneOf anyColorMana 1)
-          (if s == .hero then .hero else if s == .villain then .villain else .none)
+          (if s == .elf then .elf else if s == .hero then .hero else if s == .villain then .villain else .none)
       | .addAnyColorSpendOnlyArtifactSpell => with_ (.oneOf anyColorMana 1) (.fra .artifactSpell)
       | .addTwoAnyColorCreatureSources => with_ (.oneOf anyColorMana 2) .creatureSource
       | .addBlueCantNonartifact => with_ (.fixed #[.colored .blue]) .cantNonartifact
@@ -325,11 +332,9 @@ def grantedManaAbilityDefs (g : Game) (o : GameObject) : Array ManaAbilityDef :=
 
 /-- Every mana ability `o` has (CR 605.1a). -/
 def manaAbilityDefs (g : Game) (o : GameObject) : Array ManaAbilityDef :=
+  let gyCopied := (g.copiedFromGy o (fun c => #[c])).foldl (fun acc c => acc ++ g.cardManaAbilities o c) #[]
   let own :=
-    if !g.retainsPrintedAbilities o then #[]
-    else
-      g.cardManaAbilities o (g.baseCard o) ++
-        (g.copiedFromGy o (fun c => #[c])).foldl (fun acc c => acc ++ g.cardManaAbilities o c) #[]
+    (if !g.retainsPrintedAbilities o then #[] else g.cardManaAbilities o (g.baseCard o)) ++ gyCopied
   let defs := own ++ g.activatedManaAbilities o ++ g.grantedManaAbilityDefs o
   let treasure := g.hasSubtype o .treasure
   defs.map (fun d =>
@@ -347,14 +352,14 @@ the source, removing counters, choosing other objects, paying life, or paying
 mana (the `tap` shortcut and automatic payment). -/
 def ManaAbilityDef.isPlainTap (d : ManaAbilityDef) : Bool :=
   d.tap && !d.sacrificeSelf && !d.exileSelf &&
-    !d.removeStoryCounter && !d.removeIndestructibleCounter &&
+    !d.removeStoryCounter && !d.removeIndestructibleCounter && !d.putStunCounterOnSource &&
     d.picks.isEmpty && !d.cost.includesManaPayment && d.payLife == 0
 
 /-- Whether `d` is a plain `{T}` mana ability after `activationManaCost`
 reductions on `o` for `p`. -/
 def isPlainTapManaAbilityDef (g : Game) (p : PlayerId) (o : GameObject) (d : ManaAbilityDef) : Bool :=
   d.tap && !d.sacrificeSelf && !d.exileSelf &&
-    !d.removeStoryCounter && !d.removeIndestructibleCounter &&
+    !d.removeStoryCounter && !d.removeIndestructibleCounter && !d.putStunCounterOnSource &&
     d.picks.isEmpty && !(g.manaAbilityEffectiveCost p o d).includesManaPayment && d.payLife == 0
 
 /-- Whether mana ability `d` of permanent `o` currently satisfies its timing,
@@ -393,6 +398,7 @@ def manaAbilityDefUsable (g : Game) (p : PlayerId) (o : GameObject) (d : ManaAbi
           (g.findObject? cid).any g.isCreature)).size ≥ ab.onlyIfGyCreaturesAtLeast))
 
 /-- Mana types `o` can currently add with plain `{T}` mana abilities. -/
+@[export mtg_game_mana_abilities_of]
 def manaAbilitiesOf (g : Game) (o : GameObject) : Array ManaType :=
   let p := (g.controllerOf o).getD o.owner
   (g.manaAbilityDefs o).foldl (fun acc d =>
@@ -528,10 +534,10 @@ private def abortDepartedManaAbilityContCore (g : Game) (p : PlayerId) (prevPend
         else if g.pendingReplacement.isSome || !g.outerPendingReplacements.isEmpty ||
             g.triggerSequenceRest.isSome || g.mayThenResume then
           if !g.anyContinuationGrantsPriorityFwd then
-            if g.pendingPriority.isNone then
+            if g.pendingPriority != some prio then
               g := g.change (.pendingPriority (some prio))
             g := g.chainPendingReplacement .finishFraChoice
-          else if g.hasImplicitPriorityContinuationFwd && g.pendingPriority.isNone then
+          else if g.hasImplicitPriorityContinuationFwd && g.pendingPriority != some prio then
             g := g.change (.pendingPriority (some prio))
           g := g.drainPendingContinuationsFwd
     return (g, false)
@@ -613,20 +619,20 @@ def finishActivateManaAbilityPostSac (g : Game) (p : PlayerId) (id : ObjectId) (
               g.triggerSequenceRest.isNone && !g.mayThenResume then
             g := g.chainPendingReplacement (.receivePriority prio)
           else if !g.anyContinuationGrantsPriorityFwd then
-            if g.pendingPriority.isNone then
+            if g.pendingPriority != some prio then
               g := g.change (.pendingPriority (some prio))
             g := g.chainPendingReplacement .finishFraChoice
-          else if g.hasImplicitPriorityContinuationFwd && g.pendingPriority.isNone then
+          else if g.hasImplicitPriorityContinuationFwd && g.pendingPriority != some prio then
             g := g.change (.pendingPriority (some prio))
         else if !g.outerPendingReplacements.isEmpty ||
             g.triggerSequenceRest.isSome || g.mayThenResume then
           if !g.anyContinuationGrantsPriorityFwd then
-            if g.pendingPriority.isNone then
+            if g.pendingPriority != some prio then
               g := g.change (.pendingPriority (some prio))
             g := g.chainPendingReplacement .finishFraChoice
-          else if g.hasImplicitPriorityContinuationFwd && g.pendingPriority.isNone then
+          else if g.hasImplicitPriorityContinuationFwd && g.pendingPriority != some prio then
             g := g.change (.pendingPriority (some prio))
-        else if g.hasImplicitPriorityContinuationFwd && g.pendingPriority.isNone then
+        else if g.hasImplicitPriorityContinuationFwd && g.pendingPriority != some prio then
           g := g.change (.pendingPriority (some prio))
     else
       g := g.chainPendingReplacement (.restorePending prevPending false none allDeparted none)
@@ -648,10 +654,10 @@ def finishActivateManaAbilityPostSac (g : Game) (p : PlayerId) (id : ObjectId) (
         else if g.pendingReplacement.isSome || !g.outerPendingReplacements.isEmpty ||
             g.triggerSequenceRest.isSome || g.mayThenResume then
           if !g.anyContinuationGrantsPriorityFwd then
-            if g.pendingPriority.isNone then
+            if g.pendingPriority != some prio then
               g := g.change (.pendingPriority (some prio))
             g := g.chainPendingReplacement .finishFraChoice
-          else if g.hasImplicitPriorityContinuationFwd && g.pendingPriority.isNone then
+          else if g.hasImplicitPriorityContinuationFwd && g.pendingPriority != some prio then
             g := g.change (.pendingPriority (some prio))
           g := g.drainPendingContinuationsFwd
     else if wasPaused then
@@ -931,7 +937,8 @@ def activateManaAbility (g : Game) (p : PlayerId) (id : ObjectId) (idx : Nat)
   let prevPending := g.pending
   let isMountain := g.hasSubtype o .mountain && d.tap && !mana.isEmpty
   let needsManaCkpt :=
-    !d.picks.isEmpty || sacOrExileSelf || d.removeStoryCounter || d.removeIndestructibleCounter
+    !d.picks.isEmpty || sacOrExileSelf || d.removeStoryCounter ||
+      d.removeIndestructibleCounter || d.putStunCounterOnSource
   let hadOuterCkpt := g.proposalCheckpoint.isSome
   let mut g := g
   if needsManaCkpt then
@@ -964,6 +971,20 @@ def activateManaAbility (g : Game) (p : PlayerId) (id : ObjectId) (idx : Nat)
     if !curSrc.isOnBattlefield || !g.controlledBy curSrc p || curSrc.status.indestructibleCounters == 0 then
       throw s!"{oname} doesn't have an indestructible counter to remove"
     g ← g.payRemoveIndestructibleCounter curSrc (some id)
+  if d.putStunCounterOnSource then
+    let some curSrc := g.findObject? id | throw s!"{oname} is no longer on the battlefield"
+    if !curSrc.isOnBattlefield || !g.controlledBy curSrc p then
+      throw s!"{oname} is no longer on the battlefield"
+    g := g.putCountersDeferredLog id .stun 1 (some p) (.playerPutsOn p)
+      (cause := some (.costPayment .putCounters p (some id)))
+    if let .chooseReplacement .. := g.pending then
+      g := g.chainPendingReplacement
+        (.finishActivateManaAbilityPicks p id oname mana d.picks costIds d.tap d.sacrificeSelf
+          d.activatedIdx d.restriction d.damageYou isMountain prevPending
+          d.exileSelf d.powerUp d.exhaust)
+      if let some outer := outerCont? then
+        g := g.chainPendingReplacement outer
+      return g
   let (gAfter, cleanSyncAbort) :=
     finishActivateManaAbilityPicksCore g p id oname mana d.picks costIds d.tap d.sacrificeSelf
       d.activatedIdx d.restriction d.damageYou isMountain prevPending
@@ -982,21 +1003,61 @@ def manaAbilityIndexFor (g : Game) (o : GameObject) (mana : ManaType) (plainOnly
     Option Nat :=
   let p := (g.controllerOf o).getD o.owner
   let defs := g.manaAbilityDefs o
+  let sinceIdx := (g.proposalCheckpoint.map (·.eventsSize)).getD g.events.size
   (List.range defs.size).find? (fun i =>
     let d := defs[i]!
     g.manaAbilityDefUsable p o d &&
       (if plainOnly then g.isPlainTapManaAbilityDef p o d else d.picks.isEmpty) &&
-      (d.output.withType mana).isSome)
+      (d.output.withType mana).isSome &&
+      (!d.tap ||
+        (!o.status.tapped &&
+          !(g.hasSummoningSickness o && !(g.isCreature o && g.activatesAsThoughHaste p)))) &&
+      (plainOnly ||
+        let effCost := g.manaAbilityEffectiveCost p o d
+        !effCost.includesManaPayment ||
+          ((g.player p).manaPool.payUnits? effCost (g.hasSubtype o .elf) false
+            (g.hasSubtype o .hero) (g.hasSubtype o .villain) true (g.isCreature o)).isSome) &&
+      (match g.proposedSpell with
+       | none => true
+       | some prop =>
+         (!d.tap ||
+           !((prop.tapSource && prop.sourceId == some o.id &&
+               !g.sourceTappedForCost o.id (some prop.spellId) sinceIdx) ||
+             prop.teamworkCreatures.contains o.id)) &&
+         (!(d.sacrificeSelf || d.exileSelf) ||
+           !((prop.sourceId == some o.id && g.proposedNeedsBattlefieldSource prop sinceIdx) ||
+             prop.teamworkCreatures.contains o.id ||
+             (prop.sneakAttacker == some o.id && !g.sneakPaid prop.spellId))) &&
+         (!d.removeStoryCounter ||
+           !(prop.sourceId == some o.id && prop.activation.any (·.cost.removeStoryCounter) &&
+             !g.sourceCounterCostPaidFor o.id (some prop.spellId) .removeCounters (some .story) sinceIdx &&
+             o.status.story ≤ 1)) &&
+         (!d.removeIndestructibleCounter ||
+           !(prop.sourceId == some o.id && prop.activation.any (·.cost.removeIndestructibleCounter) &&
+             !g.sourceCounterCostPaidFor o.id (some prop.spellId) .removeCounters (some .indestructible) sinceIdx &&
+             o.status.indestructibleCounters ≤ 1))))
 
 /-- Tap `id` for `mana` with the first mana ability that can add it
 (CR 605.3). Abilities that need other choices use `activateManaAbility`. -/
 def tapForMana (g : Game) (p : PlayerId) (id : ObjectId) (mana : ManaType) : Except String Game := do
   let some o := g.findObject? id | throw "no such object"
-  if (g.baseCard o).tapAddOneOfIfEnteredOrBasic.contains mana && !g.canUseEnteredOrBasicAdd o then
-    throw s!"{g.nameWithToken o}'s colored mana ability can be activated only if this land entered this turn or if you control a basic land"
   let defs := g.manaAbilityDefs o
   let some i := g.manaAbilityIndexFor o mana true <|> g.manaAbilityIndexFor o mana false
-    | throw s!"{g.nameWithToken o} cannot produce {mana}"
+    | do
+      let pCtrl := (g.controllerOf o).getD o.owner
+      let fallbackIdx? :=
+        (List.range defs.size).find? (fun j =>
+          let d := defs[j]!
+          g.manaAbilityDefUsable pCtrl o d && d.picks.isEmpty && (d.output.withType mana).isSome)
+      if let some j := fallbackIdx? then
+        if let some d := defs[j]? then
+          if let some added := d.output.withType mana then
+            return ← g.activateManaAbility p id j added
+      if g.retainsPrintedAbilities o &&
+          (g.baseCard o).tapAddOneOfIfEnteredOrBasic.contains mana &&
+          !g.canUseEnteredOrBasicAdd o then
+        throw s!"{g.nameWithToken o}'s colored mana ability can be activated only if this land entered this turn or if you control a basic land"
+      throw s!"{g.nameWithToken o} cannot produce {mana}"
   let some d := defs[i]? | throw s!"{g.nameWithToken o} cannot produce {mana}"
   let some added := d.output.withType mana | throw s!"{g.nameWithToken o} cannot produce {mana}"
   g.activateManaAbility p id i added

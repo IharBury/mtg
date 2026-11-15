@@ -18,6 +18,10 @@ private opaque reverseProposedSpellFwd (g : Game) (resumeContinuation : Bool := 
     (alwaysGrantPriority : Bool := false)
     (skipDepartureReconcile : Bool := false) : Game := g
 
+/-- Forward reference to `ManaAbilities.manaAbilitiesOf` (resolved at link time via `@[export]`). -/
+@[extern "mtg_game_mana_abilities_of"]
+private opaque manaAbilitiesOfFwd (g : Game) (o : GameObject) : Array ManaType := #[]
+
 /-- Remove an indestructible counter as a cost (ruling 357). -/
 def payRemoveIndestructibleCounter (g : Game) (o : GameObject)
     (forObject : Option ObjectId := none) : Except String Game := do
@@ -127,53 +131,6 @@ def sourceCounterCostPaidFor (g : Game) (sid : ObjectId) (forObject : Option Obj
           | _ => false
       | _ => false
 
-private def pendingReplHasZemoBoastExileFor (fid : ObjectId) : PendingReplacement → Bool
-  | .seq a b => pendingReplHasZemoBoastExileFor fid a || pendingReplHasZemoBoastExileFor fid b
-  | .finishPostStep (.exileZemoBoastCards _ aid _) => aid == fid
-  | _ => false
-
-/-- Whether another creature was already tapped to pay a crew cost for
-`forObject` (CR 702.122a / 602.2b). -/
-def crewCostPaidFor (g : Game) (sid : ObjectId) (forObject : Option ObjectId)
-    (sinceIdx : Nat := 0) : Bool :=
-  match forObject with
-  | none => false
-  | some fid =>
-    let slice := g.events.extract (min sinceIdx g.events.size) g.events.size
-    slice.any fun
-      | .rules _ (.permanent (.tapped snap _)) cause _ =>
-        snap.id != some sid &&
-          match unreplacedCostCause cause with
-          | .costPayment .tap _ (some f) => f == fid
-          | _ => false
-      | _ => false
-
-/-- Whether graveyard cards were already exiled (or replaced) to pay a boast
-cost for `forObject`, with no remaining boast-exile cards queued across a
-replacement pause (CR 702.142 / 602.2b). -/
-def zemoBoastCostPaidFor (g : Game) (sid : ObjectId) (forObject : Option ObjectId)
-    (sinceIdx : Nat := 0) : Bool :=
-  match forObject with
-  | none => false
-  | some fid =>
-    let stillExiling :=
-      g.pendingReplacement.any (pendingReplHasZemoBoastExileFor fid) ||
-        g.outerPendingReplacements.any (pendingReplHasZemoBoastExileFor fid)
-    if stillExiling then false
-    else
-      let slice := g.events.extract (min sinceIdx g.events.size) g.events.size
-      slice.any fun
-        | .rules _ ch cause _ =>
-          let notBfSelf :=
-            match ch with
-            | .zone (.moved before _ .battlefield _ ..) => before.id != some sid
-            | _ => true
-          notBfSelf &&
-            match unreplacedCostCause cause with
-            | .costPayment .exile _ (some f) => f == fid
-            | _ => false
-        | _ => false
-
 /-- Whether `sid` left the battlefield after `sinceIdx` as part of a cost paid
 by `p` (e.g. sacrificing or exiling `sid` to a CR 601.2g mana ability). -/
 def sourceRemovedByCostSince (g : Game) (p : PlayerId) (sid : ObjectId)
@@ -213,11 +170,7 @@ def proposedNeedsBattlefieldSource (g : Game) (prop : ProposedSpell)
         (prop.activation.any (fun a =>
           (a.cost.putStunCounterOnSource &&
             !g.sourceCounterCostPaidFor sid forObj .putCounters (some .stun) sinceIdx) ||
-          (a.cost.sacrificeEquipmentAttachedToSource && g.pending == .activateManaAbilities prop.caster) ||
-          (match a.cost.fra with
-           | .crew _ => !prop.fraCostPaid && !g.crewCostPaidFor sid forObj sinceIdx
-           | .zemoBoast => !prop.fraCostPaid && !g.zemoBoastCostPaidFor sid forObj sinceIdx
-           | _ => false)))
+          (a.cost.sacrificeEquipmentAttachedToSource && g.pending == .activateManaAbilities prop.caster)))
 
 /-- Whether `o` can pay `pick` for `p`'s ability of `sourceId`. -/
 def costPickAllows (g : Game) (p : PlayerId) (sourceId : Option ObjectId) (pick : CostPick)
@@ -239,6 +192,8 @@ def costPickAllows (g : Game) (p : PlayerId) (sourceId : Option ObjectId) (pick 
   | .sacrificeArtifactOrCreature =>
     perm && (!sacrificeOrExileSource || other) && (artifact || g.isCreature o)
   | .sacrificeAnotherArtifact => perm && other && artifact
+  | .sacrificeAnotherCreatureOrArtifact =>
+    perm && other && (g.isCreature o || artifact)
   | .sacrificeAnotherCreatureOrPlaneswalker =>
     perm && other && (g.isCreature o || g.isPlaneswalker o)
   | .sacrificeArtifactOrLand =>
@@ -261,7 +216,7 @@ def costPickAllows (g : Game) (p : PlayerId) (sourceId : Option ObjectId) (pick 
   | .tapTwoUntappedArtifacts => perm && (!tapSource || other) && artifact && !o.status.tapped
 
 /-- Objects that can pay `pick`, in a default order (tokens and cheaper
-permanents first). -/
+permanents first, preferring non-mana permanents for tap picks). -/
 def costPickCandidates (g : Game) (p : PlayerId) (sourceId : Option ObjectId) (pick : CostPick)
     (tapSource : Bool := false)
     (sacrificeOrExileSource : Bool := false)
@@ -270,10 +225,16 @@ def costPickCandidates (g : Game) (p : PlayerId) (sourceId : Option ObjectId) (p
   let pl := g.player p
   let zoneCards (ids : Array ObjectId) := ids.filterMap g.findObject?
   let pool := g.cheapestFirst (g.permanentsOf p) ++ zoneCards pl.hand ++ zoneCards pl.graveyard
-  (pool.filter (g.costPickAllows p sourceId pick
+  let allowed := pool.filter (g.costPickAllows p sourceId pick
     (tapSource := tapSource)
     (sacrificeOrExileSource := sacrificeOrExileSource)
-    (discardOrExileHandSource := discardOrExileHandSource))).map (·.id)
+    (discardOrExileHandSource := discardOrExileHandSource))
+  let ordered :=
+    if pick == .tapUntappedCreature || pick == .tapTwoUntappedArtifacts then
+      let (nonMana, manaSrcs) := allowed.partition (fun o => (manaAbilitiesOfFwd g o).isEmpty)
+      nonMana ++ manaSrcs
+    else allowed
+  ordered.map (·.id)
 
 private partial def assignDisjointPicks (g : Game) (p : PlayerId) (sourceId : Option ObjectId)
     (picks : Array CostPick) (tapSource sacrificeOrExileSource discardOrExileHandSource : Bool)
@@ -742,18 +703,24 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
       (ab.any (·.cost.removeIndestructibleCounter) &&
         !g.sourceCounterCostPaidFor sourceId forObject .removeCounters (some .indestructible) sinceIdx) ||
       (ab.any (fun a =>
-        (a.cost.putStunCounterOnSource &&
-          !g.sourceCounterCostPaidFor sourceId forObject .putCounters (some .stun) sinceIdx) ||
-        (match a.cost.fra with
-         | .crew _ =>
-           !(g.proposedSpell.any (·.fraCostPaid) || g.crewCostPaidFor sourceId forObject sinceIdx)
-         | .zemoBoast =>
-           !(g.proposedSpell.any (·.fraCostPaid) || g.zemoBoastCostPaidFor sourceId forObject sinceIdx)
-         | _ => false)))
+        a.cost.putStunCounterOnSource &&
+          !g.sourceCounterCostPaidFor sourceId forObject .putCounters (some .stun) sinceIdx))
+  let costAlreadyPaidForAbility :=
+    g.proposedSpell.any (·.fraCostPaid) ||
+      match forObject with
+      | none => false
+      | some fid =>
+        (g.events.extract (min sinceIdx g.events.size) g.events.size).any fun
+          | .rules _ _ cause _ =>
+            match unreplacedCostCause cause with
+            | .costPayment k q (some f) => k != .mana && q == p && f == fid
+            | _ => false
+          | _ => false
   let alreadySacrificedForCost :=
     !sacrificeOrExileSource && !discardSource && !rawFromGy && !rawFromHand &&
       (g.sourceSacrificedForCost sourceId forObject sinceIdx ||
-        (!hasUnpaidBfSourceCost && g.sourceRemovedByCostSince p sourceId sinceIdx))
+        (!hasUnpaidBfSourceCost &&
+          (g.sourceRemovedByCostSince p sourceId sinceIdx || costAlreadyPaidForAbility)))
   let alreadyDiscardedFromHandForCost :=
     !sacrificeOrExileSource && !discardSource && !rawFromGy && !needsBfSource &&
       ab.any (·.activateFromHand) &&
@@ -839,7 +806,7 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
         throw s!"{(g.player p).name} cannot pay {payLife} life"
       return (← g.payLifeCost p payLife (forObject := forObject))
     throw "The source is no longer on the battlefield"
-  if !g.controlledBy src p then
+  if !g.controlledBy src p && !(!hasUnpaidBfSourceCost && costAlreadyPaidForAbility) then
     throw "You don't control that permanent"
   let tapNeeded := tapSource && !g.sourceTappedForCost sourceId forObject sinceIdx
   if tapNeeded && src.status.tapped then
