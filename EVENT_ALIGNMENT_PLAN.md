@@ -17558,11 +17558,13 @@ parity).
        `Decisions.lean:1132–1135`) mistakes `preCkptBid` for a dismissed pause-prompt batch and flushes its
        `.closeBatch preCkptBid` prematurely, while `checkSBACountedWithLeavesCore` (`960–961`) runs a CR
        704.3-violating SBA sweep mid-resolution inside `preCkptBid`; and
-       (v) in `Leaving.playerLeavesGameCore` (`3367, 3392–3403`), when a third party `p` aborts `q`'s
-       proposal with `rewindAbortedProposal == true`, line `3367` still re-queues `pendingMayCastFromExile`
-       and lines `3392–3403` either cease `q`'s remaining exiled copies (`castable.isEmpty || castsLeft == 0`
-       before `ckpt` restores the card back to `.exile`) or fabricate a decremented `.fraChoice` prompt on
-       `wasAbortedProposal`:
+       (v) in `Leaving.playerLeavesGameCore` (`3367–3372, 3392–3403`), when a third party `p` aborts `q`'s
+       proposal with `rewindAbortedProposal == true`, lines `3367–3372` still clear `pendingMayCastFromExile`
+       (`none` at `3370`) and return `Pending.fraChoice q (.mayCastUpToFromExile alive left)` (with the
+       already-decremented `left` before `ckpt` restores the pre-proposal stash), and lines `3392–3403` either
+       cease `q`'s remaining exiled copies (`castable.isEmpty || castsLeft == 0` before `ckpt` restores the
+       card back to `.exile`) or clear `pendingFreeCopies` (`none` at `3402`) and return
+       `Pending.fraChoice q (.castCopiesFree alive budget castsLeft)` on `wasAbortedProposal`:
        - In `rewriteRepausedPostCloseBatch` (`509–532`), pass `(rest? := outerTail?)` to `mergeLeaveArgs`
          (with `remTail? := none`) when `po0 || popOuterAfterFlush` at `513` and combine `outerTail?` /
          `curAfter?` via `combineOuterContinuations` (with `remTail? := none`) when `popOuterAfterFlush`
@@ -17584,8 +17586,9 @@ parity).
          `shouldFlush` (`StateBasedActions.lean:609–613, 891–895`), and `.restorePending`'s
          `shouldSplitBatch` (`Decisions.lean:1132–1135`), and skip `g.checkSBACounted` in
          `StateBasedActions.checkSBACountedWithLeavesCore` (`960–961`) when
-         `g.currentBatch.isSome && !g.sbaPaused && !g.openBatchAwaitedPausePrompt` (CR 704.3); and gate
-         `wasAbortedProposal` re-prompting at `Leaving.lean:3367` and `pendingFreeCopies` consumption at
+         `g.currentBatch.isSome && !g.sbaPaused && !g.openBatchAwaitedPausePrompt` (CR 704.3); and gate the
+         `wasAbortedProposal` `.mayCastUpToFromExile` stash-clear / `.fraChoice` re-prompt at
+         `Leaving.lean:3367–3372` and `pendingFreeCopies` consumption / `.castCopiesFree` re-prompt at
          `3392–3403` on `!(wasAbortedProposal && rewindAbortedProposal)`.
    - **`depBid?` departure-batch boundary, `to_ != .battlefield` zone-move filter, and multi-chooser
      `effCtrls` in `Leaving.preBatchLegendSnapshotValid`**
@@ -17719,13 +17722,14 @@ parity).
        Regular, Regular -> Extra, or Extra -> Extra) after one teammate `tm` departed on or before the first
        turn, `endingCurrentShared tm` suppresses CR 800.4i `.untilNextTurnOf tm` expiry at the start of the
        team's *next* shared turn:
-       - Split `endingCurrentShared` (`Turns.lean:642–643, 783–784`) into
+       - Replace `endingCurrentShared` at `Turns.lean:642–643, 783–784` (and `Phasing.lean:345–347`) with
          `endingCurrentRegularShared q := !seatsExtra && !sameShared && seats.any (fun s => s == q ||
-         g.areTeammates s q)` for regular-turn ring scans (`Turns.lean:688, 697, 802` and
-         `Phasing.lean:345–347`) and `endingCurrentExtraShared q := seatsExtra && !sameShared && seats.any
-         (fun s => s == q || g.areTeammates s q)` for `nextP` when `nextP` was already one of the
-         `inProgressExtraSeats` of the ending shared extra turn (`Turns.lean:682`), and drop
-         `!endingCurrentShared tm` from the `!sameShared` departed-teammate loops on newly starting turns at
+         g.areTeammates s q)` for the regular-turn ring scans (`Turns.lean:688, 697, 802` and
+         `Phasing.lean:345–347`), add `endingCurrentExtraShared q := seatsExtra && !sameShared && seats.any
+         (fun s => s == q || g.areTeammates s q)` in `continueStartNextTurn` (`Turns.lean:642–702`;
+         `startNextTurnCore` returns early on its extra-queue path at `796–797`) for the `if fromExtra`
+         (`!midRegularShared && g.extraTurns.contains nextP`, `670`) check on `nextP` at `Turns.lean:682`, and
+         drop `!endingCurrentShared tm` from the `!sameShared` departed-teammate loops on newly starting turns at
          `Turns.lean:659, 674, 810`.
    - **Cease-first `.fraEmblem` ordering & `skipLogIds` forwarding in `Core.expireWhileSourceEffects` /
      `expireEffectById`, `pre.name` in `Attachments.ceaseEndingFraEmblemsWhere`, and emblem-chain /
@@ -17769,13 +17773,15 @@ parity).
      `Leaving.lean:409–435, 3040–3043, 3205–3219`, `Timing.lean:158–176`,
      `Turns.lean:64–74, 154–160, 253–262, 362–374, 749–758`):
      - Four cleanup and permission bugs remain:
-       (i) `Leaving.playerLeavesGameCore` (`3040–3043, 3210–3213`) checks only `g.controlledBy o p` (omitting
-       `o.owner == p`) for non-card `.command` emblems (violating CR 800.4a when `p` owns an emblem whose
-       controller changed), and runs the `.stack` and `.command` non-card `ceaseToExist (reconcileControl :=
-       false)` passes (`3205–3213`) *after* `reconcileControlAfterTransition preExpireLeave g` (`3197`, while
-       `reconcilePostReplayDepartures` at `409–435` checks only `.battlefield`), skipping CR 506.4 combat
-       removal and CR 701.54a `.ringBearer` clearing when a `.whileInZone id .stack` / `.command` control
-       effect expires;
+       (i) in `Leaving.playerLeavesGameCore`, `owned` (`3040–3042`,
+       `o.owner == p && o.zone != .ante && ((o.zone != .stack && o.zone != .command) || representedByCard o ||
+       g.controlledBy o p)`) requires `g.controlledBy o p` for owned non-card `.command` objects while the
+       `.command` non-card cease pass (`3210–3213`) checks only `acc.controlledBy o p` (violating CR 800.4a when
+       `p` owns an emblem whose controller changed), and `playerLeavesGameCore` runs the `.stack` and `.command`
+       non-card `ceaseToExist (reconcileControl := false)` passes (`3205–3213`) *after*
+       `reconcileControlAfterTransition preExpireLeave g` (`3197`, while `reconcilePostReplayDepartures` at
+       `409–435` checks only `.battlefield`), skipping CR 506.4 combat removal and CR 701.54a `.ringBearer`
+       clearing when a `.whileInZone id .stack` / `.command` control effect expires;
        (ii) `FrcResolve.lean:741–742` gives `"Elspeth emblem"` `types := #[.enchantment]` (violating CR
        114.3: an emblem has no card types);
        (iii) `Core.playPermissionEntryOf?` (`4186–4206`, wrapped by `playPermissionOf?` at `4208–4209` and
@@ -17789,14 +17795,17 @@ parity).
        `.exile`; and
        (iv) `Turns.lean` (`70–72, 156–158, 258–260, 369–372, 754–756`) logs `"can no longer be played from
        exile"` without checking whether another active `.playFromExile` permission still applies to `oid`:
-       - Include `o.owner == p || g.controlledBy o p` for non-card `.command` objects in `owned` / `.command`
-         cease cleanup (`Leaving.lean:3042, 3211`), run `.stack` and `.command` non-card cease passes inside
-         the `preExpireLeave` -> `reconcileControlAfterTransition` window (`3184–3219`, and cease non-card
-         `.stack` / `.command` objects owned or controlled by departed players in
-         `reconcilePostReplayDepartures` at `409–435`), and set `types := #[]` on `"Elspeth emblem"` at
-         `FrcResolve.lean:741–742` (CR 114.3); add `Core.playPermissionEntriesOf` (`Core.lean:4186–4206`)
-         returning all active `(eid, grantee, { perm with player := grantee }, d)` entries for `id` (and in
-         the `(g.findObject? id).isNone` fallback keeping only `.created eid _` entries not paired with an
+       - Drop `&& o.zone != .command` from `owned`'s zone disjunct at `Leaving.lean:3042`
+         (`o.zone != .stack || representedByCard o || g.controlledBy o p`, preserving `o.owner == p` on `3041`
+         without pulling uncontrolled non-card `.stack` objects into `owned`) and widen the `.command` non-card
+         cease predicate at `3211` to `(o.owner == p || acc.controlledBy o p)`, run `.stack` and `.command`
+         non-card cease passes inside the `preExpireLeave` -> `reconcileControlAfterTransition` window
+         (`3184–3219`, and in `reconcilePostReplayDepartures` at `409–435` cease non-card `.stack` objects
+         controlled by and non-card `.command` objects owned or controlled by departed players), and set
+         `types := #[]` on `"Elspeth emblem"` at `FrcResolve.lean:741–742` (CR 114.3); add
+         `Core.playPermissionEntriesOf` (`Core.lean:4186–4206`) returning all active
+         `(eid, grantee, { perm with player := grantee }, d)` entries for `id` (and in the
+         `(g.findObject? id).isNone` fallback keeping only `.created eid _` entries not paired with an
          `.expired eid _` prior to `id`'s departure from `.exile`) plus player-scoped `Core.playPermissionFor?`
          used in `Timing.mayPlayFromExile` (`158–176`) and the player-scoped cast callers (`CastSpell.lean:92`,
          `Casting.lean:136, 160, 236, 261, 303`, `Costs.lean:251`, `Decisions.lean:3610, 4857`,
@@ -17807,21 +17816,23 @@ parity).
    `Core.isInitialMaterialize`, post-`bound` `eventObjectIsLiveSubject` & `EventObject.defaultController` in
    `HistoricalSlice`, and batch-end `Phasing.phaseOutPermanentsLoop` CR 800.4c / CR 702.26b handling &
    pre-log extra-turn reconstruction**
-   (`Core.lean:807–815, 1375–1400, 1460–1478, 2024–2045, 2316, 2774–2895, 2996–2998, 3029–3045, 3102–3104, 6628–6645, 6770–6892, 7019–7051, 7130–7144, 10106–10109`,
+   (`Core.lean:807–815, 1375–1400, 1460–1478, 1795–1799, 2024–2045, 2316, 2670–2674, 2774–2894, 2996–2998, 3029–3045, 3102–3104, 6628–6645, 6770–6892, 7019–7051, 7130–7144, 10106–10109`,
    `Leaving.lean:226–242`, `Object.lean:436–440`, `Phasing.lean:45–46, 101, 106–146, 220–280, 388–425`;
    **CR 108.4 / 110.2 / 111.6 / 113.7a / 122.1 / 302.6 / 400.7 / 500.7 / 502.1 / 611.2b–c / 611.3a /
    613.1a–b / 613.7d / 614.12 / 702.26b,e,g–h,m,n / 800.4c / 805.4,8 / 810.2**):
    - **ETB replacement lookahead `ObjectId` exclusion and full `Pending` / `PendingReplacement` payload &
      timestamp coverage in `Core.isInitialMaterialize`**
-     (`Core.lean:2024–2045, 2316, 2774–2895`):
-     - Three `Core.isInitialMaterialize` (`2837–2895`) edge cases remain:
+     (`Core.lean:1795–1799, 2024–2045, 2316, 2670–2674, 2774–2894`):
+     - Three `Core.isInitialMaterialize` (`2862–2894`) edge cases remain:
        (i) when `Movement.move` / `Tokens` allocates a provisional `newId` for a CR 614.12 ETB replacement
        choice (`Pending.chooseReplacement _ choices` / `EngineChange.replacementOrder` carrying
        `ReplacementId.object = some newId`) and a chosen self-replacement / redirection instead creates or
        moves the object under a different ID (leaving `newId` unmaterialized in any zone), `newId` is omitted
-       from `newlyCreatedIdsOfChange` (`2793–2815`) yet counted by `changeAnyObjId` (`2039, 2871`), poisoning
-       `isInitialMaterialize` to `false` for every pre-game object `oid` with `oid.raw < newId.raw` whose
-       first `.materializeObject` arrives later;
+       from `newlyCreatedIdsOfChange` (`2793–2815`) yet counted by `gameChangeAnyObjId` at `2871` (via
+       `repIdAnyObjId` at `1796` from `.engine (.replacementOrder rids)` at `2670` and `.engine (.pending p)`
+       -> `pendingAnyObjId`'s `.chooseReplacement` arm at `2039, 2674`), poisoning `isInitialMaterialize` to
+       `false` for every pre-game object `oid` with `oid.raw < newId.raw` whose first `.materializeObject`
+       arrives later;
        (ii) `pendingAnyObjId` (`2028`) ignores `WardCost.sacrificePermanents _ _ chosen` inside `.payWard`,
        and `pendingReplacementAnyObjId` (`2316`) ignores `remainingGy` inside `.surveilMoveLoop`; and
        (iii) `gameChangeMaxTs` (`2774–2791`) ignores `GameObject` timestamps embedded in
@@ -17911,11 +17922,10 @@ parity).
    parity**
    (`Activation.lean:19–42, 88–89, 125–132`, `ActivationCosts.lean:22–24, 150, 179, 235–293, 456, 695`,
    `Agent.lean:21–45, 171, 512–564`, `Casting.lean:427–439, 531–546, 1292`, `Choices.lean:614`,
-   `Core.lean:3890–3893`, `Decisions.lean:138, 3807–3866`, `EffectResolution.lean:2716–2728`,
-   `Event.lean:3800–3827`, `FraChoices.lean:727–748, 1994–2003`, `LandsAndMana.lean:58–65`,
+   `Core.lean:3890–3893`, `Decisions.lean:105–109, 138, 3008–3016, 3807–3866`, `EffectResolution.lean:2716–2728`,
+   `Event.lean:3800–3827`, `FraChoices.lean:727–748, 822–825, 1994–2018`, `LandsAndMana.lean:58–65`,
    `Leaving.lean:1292–1294, 2360–2435, 2697–2710, 3110–3112, 3242, 3355–3359`,
-   `ManaAbilities.lean:401–408, 822, 1006, 1052`, `Pending.lean:188–212`, `PriorityActions.lean:30–34`,
-   `Timing.lean:101–108`;
+   `ManaAbilities.lean:401–408, 822, 1006, 1052`, `Pending.lean:188–212`, `Timing.lean:101–108`;
    **CR 106.6 / 113.6 / 118.3 / 118.10 / 302.6 / 400.7 / 601.2b–i / 602.2b / 605.1a / 605.3a–b / 608.2 /
    702.37a,e / 702.122a / 702.142a / 707.10 / 733.1**):
    - **Deferred CR 601.2h tap-cost reservation in `Casting.preferredManaTap` and CR 302.6-aware live
@@ -17991,16 +18001,18 @@ parity).
          `.clearProposalCheckpoint`).
    - **Disjoint object assignment across combined non-mana activation costs (CR 118.10 / 602.2b) and
      stack-resolved `ManaRestriction` parity in `EffectResolution`**
-     (`Activation.lean:19–42, 88–89, 125–132`, `ActivationCosts.lean:254–293`,
-     `Decisions.lean:3807–3866`, `EffectResolution.lean:2716–2728`, `FraChoices.lean:737–741`,
-     `Pending.lean:188–212`, `PriorityActions.lean:30–34`, `Timing.lean:101–108`):
+     (`Activation.lean:19–42, 88–89, 125–132`, `ActivationCosts.lean:254–293`, `Agent.lean:541–544`,
+     `Decisions.lean:105–109, 3008–3016, 3807–3866`, `EffectResolution.lean:2716–2728`,
+     `FraChoices.lean:737–741, 822–825, 2013–2015`, `Pending.lean:188–212`, `Timing.lean:101–108`):
      - Four CR 118.10 / CR 602.2b / CR 106.6 parity gaps remain:
        (i) because Phase 44 kept `ActivationCost.sacrificeAnotherCreatureOrArtifact` out of
        `Pending.costPicksOf` (`Pending.lean:188–212`) for non-mana `ProposedSpell.needsSacrificeOther`,
-       `costPicksPayable` / `firstPayableCostPickSlice?` in `Activation.validateActivation` (`125–132`),
-       `PriorityActions.finishProposedSpell` (`30–34`), `Decisions.beginActivationPayment` (`3807–3822`), and
-       `FraChoices` `.costPicks` (`737–741`) do not check disjointness between `costPicksOf ab` and the
-       trailing `sacrificeAnotherCreatureOrArtifact` requirement;
+       `costPicksPayable` / `firstPayableCostPickSlice?` in `Activation.canPayFraCost` / `validateActivation`
+       (`27–30, 128–132`), `Decisions.proposalCostPromptStillPayable` / `continueCostPicks` /
+       `beginActivationPayment` (`105–109, 3008–3016, 3814–3822`), `FraChoices` `.costPicks` /
+       `defaultFraAction` (`737–741, 822–825, 2013–2015`), and `Agent.chooseActivate` (`541–544`) do not check
+       disjointness between `costPicksOf ab` / remaining `picks` and the trailing
+       `sacrificeAnotherCreatureOrArtifact` requirement;
        (ii) `Activation.canPayFraCost` / `validateActivation` (`19–42, 88–89, 128–132`) and
        `Decisions.beginActivationPayment` (`3843–3850`) check `FraCost.crew n` independently of tap
        `CostPick`s (`.tapUntappedCreature`, `.tapTwoUntappedArtifacts`), allowing a single creature to be
@@ -18014,10 +18026,12 @@ parity).
        (iv) `EffectResolution.lean` (`2716–2717, 2727–2728`) omits `(restriction := some (.fra
        .artifactSpell))` on `.addAnyColorSpendOnlyArtifactSpell` and `(restriction := some (.fra
        .equipmentOrEquip))` on `.addTwoAnyColorEquipment` when resolved from the stack:
-       - Include `#[CostPick.sacrificeAnotherCreatureOrArtifact]` in the disjointness-check slice
-         (`costPicksPayable` / `firstPayableCostPickSlice?`, while still prompting only `costPicksOf ab`
-         before `needsSacrificeOther`) across `Activation.lean:125–132`, `PriorityActions.lean:30–34`,
-         `Decisions.lean:3807–3822`, and `FraChoices.lean:737–741`; check joint satisfiability of
+       - Append `CostPick.sacrificeAnotherCreatureOrArtifact` (when
+         `ab.cost.sacrificeAnotherCreatureOrArtifact` / `prop.needsSacrificeOther` holds) to the
+         disjointness-check slice passed to `costPicksPayable` / `firstPayableCostPickSlice?` (while still
+         prompting only `costPicksOf ab` before `needsSacrificeOther`) across `Activation.lean:27–30, 128–132`,
+         `Decisions.lean:105–109, 3008–3016, 3814–3822`, `FraChoices.lean:737–741, 822–825, 2013–2015`, and
+         `Agent.lean:541–544`; check joint satisfiability of
          `FraCost.crew n` alongside tap `CostPick`s and `tapSource` in `Activation.lean:19–42, 88–89,
          128–132` and `Decisions.beginActivationPayment` (`3843–3850`, filtering `.crew` selections so
          remaining untapped permanents still satisfy `prop`'s tap `CostPick`s); include
