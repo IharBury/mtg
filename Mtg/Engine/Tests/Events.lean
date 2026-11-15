@@ -35599,12 +35599,137 @@ private def replayOk43i4 (gs : Array Game) : Bool :=
     !prop1SourcesIncludeAltar &&
     sacTapSourceRejected
 
+  -- 4d. `tapForMana` rejects unusable mana abilities (`"cannot produce"`) instead of falling back past `manaAbilityDefUsable`
+  --     while still advancing to a later usable mana ability, AND `.crew` / `.zemoBoast` clear battlefield-source reservation once paid:
+  let p1 : PlayerId := ⟨1⟩
+  let cannotProduceErr (res : Except String Game) : Bool :=
+    match res with
+    | .error msg => mentions msg "cannot produce"
+    | .ok _ => false
+  let tapNoStoryCannotProduce := cannotProduceErr (gParity0.tapForMana p0 dynObj.id (.colored .blue))
+  let tapExhaustedCannotProduce := cannotProduceErr (gExhaust1.tapForMana p0 dynObj.id (.colored .blue))
+  let tapNonSorceryCannotProduce :=
+    cannotProduceErr ((gExhaust1.change (.priority p1)).tapForMana p0 dynObj.id (.colored .red))
+  let tapPowerUpUsedCannotProduce := cannotProduceErr (gPowerUp1.tapForMana p0 dynObj.id (.colored .red))
+  let dualBlueDef : CardDef := {
+    name := "P43i4 DualWell"
+    types := #[.artifact]
+    activatedAbilities := #[
+      { cost := { tap := true }, exhaust := true
+        effect := { resolution := .addMana #[.colored .blue], phrase := "Add {U}." } },
+      { cost := { tap := true, payLife := 1 }
+        effect := { resolution := .addMana #[.colored .blue], phrase := "Add {U}." } }
+    ]
+  }
+  let gDual0 := addPermanent g2 dualBlueDef p0 p0
+  let dualId := (gDual0.permanentsOf p0).find? (·.name == dualBlueDef.name) |>.get!.id
+  let gDual1 := mustApply gDual0 p0 (.tapForMana dualId (.colored .blue))
+  let gDualUntapped := gDual1.untapPermanent (gDual1.object! dualId) (cause := some testCause)
+  let gDual2 := mustApply gDualUntapped p0 (.tapForMana dualId (.colored .blue))
+
+  let crewManaChariotDef : CardDef := {
+    name := "P43i4 ManaChariot"
+    types := #[.artifact]
+    subtypes := #["Vehicle"]
+    power := some 4
+    toughness := some 4
+    tapAddMana := #[.colorless]
+    staticAbilities := #[.fra .tapSacrificeAddThreeOfOneColor]
+    activatedAbilities := #[
+      { cost := { mana := ManaCost.ofGeneric 1, fra := .crew 2 }, effect := Effect.gainLife 3 },
+      { cost := { mana := ManaCost.ofGeneric 2, fra := .crew 2 }, effect := Effect.gainLife 5 },
+      { cost := { mana := ManaCost.ofGeneric 1, fra := .crew 0 }, effect := Effect.gainLife 1 },
+      { cost := { mana := ManaCost.ofGeneric 1, tap := true, fra := .crew 2 }, effect := Effect.gainLife 7 }
+    ]
+  }
+  let gCrBase := addPermanent (addPermanent g2 crewManaChariotDef p0 p0) bear p0 p0
+  let chariotId := (gCrBase.permanentsOf p0).find? (·.name == crewManaChariotDef.name) |>.get!.id
+  let pilotId := (gCrBase.permanentsOf p0).find? (·.name == bear.name) |>.get!.id
+  let gCrCombat := mustApply (mustApply gCrBase p0 .pass) p1 .pass
+  let agentChoosesCrewMana :=
+    match Agent.choose gCrCombat p0 with
+    | some (.activate id 0) => id == chariotId
+    | _ => false
+  let gCrStep1 := mustApply gCrBase p0 (.activate chariotId 0)
+  let crReservedBefore := gCrStep1.proposedNeedsBattlefieldSource gCrStep1.proposedSpell.get!
+  let gCrStep2 := mustApply gCrStep1 p0 (.choosePermanents #[pilotId])
+  let crUnreservedAfter := !gCrStep2.proposedNeedsBattlefieldSource gCrStep2.proposedSpell.get!
+  let crInManaSources :=
+    (gCrStep2.manaSourcesForProposed p0 gCrStep2.proposedSpell.get!).any (fun (o, _) => o.id == chariotId)
+  let agentTapsChariot :=
+    match Agent.choose gCrStep2 p0 with
+    | some (.tapForMana id .colorless) => id == chariotId
+    | _ => false
+  let gCrStep3 := mustApply gCrStep2 p0 (.tapForMana chariotId .colorless)
+  let gCrStep4 := mustApply gCrStep3 p0 .pay
+
+  let gCrZero1 := mustApply gCrBase p0 (.activate chariotId 2)
+  let gCrZero2 := mustApply gCrZero1 p0 (.choosePermanents #[])
+  let gCrZero3 := mustApply gCrZero2 p0 (.tapForMana chariotId .colorless)
+  let gCrZero4 := mustApply gCrZero3 p0 .pay
+
+  let gCrTap1 := mustApply gCrBase p0 (.activate chariotId 3)
+  let gCrTap2 := mustApply gCrTap1 p0 (.choosePermanents #[pilotId])
+  let crTapStillReserved :=
+    gCrTap2.proposedNeedsBattlefieldSource gCrTap2.proposedSpell.get! &&
+    (gCrTap2.tapForMana p0 chariotId .colorless).toOption.isNone &&
+    (gCrTap2.activateManaAbility p0 chariotId 1 #[.colored .red, .colored .red, .colored .red]).toOption.isNone
+
+  let gCrSac1 := mustApply gCrBase p0 (.activate chariotId 1)
+  let gCrSac2 := mustApply gCrSac1 p0 (.choosePermanents #[pilotId])
+  let gCrSac3 : Game :=
+    match gCrSac2.activateManaAbility p0 chariotId 1 #[.colored .red, .colored .red, .colored .red] with
+    | .ok g => g
+    | .error e => panic! e
+  let gCrSac4 := mustApply gCrSac3 p0 .pay
+
+  let black15Def : CardDef :=
+    creature "P43i4 Black15" { symbols := Array.replicate 15 (.colored .black) } #["Horror"] 2 2
+  let boastManaZemoDef : CardDef := {
+    creature "P43i4 ManaZemo" ManaCost.empty #["Human", "Villain"] 3 3 with
+    staticAbilities := #[.boast, .fra .tapSacrificeAddThreeOfOneColor]
+    activatedAbilities := #[
+      { cost := { mana := ManaCost.ofGeneric 2, fra := .zemoBoast }, effect := Effect.gainLife 4 }
+    ]
+  }
+  let gZm0 := insertObject (addPermanent g2 boastManaZemoDef p0 p0) black15Def p0 (.graveyard p0)
+  let zemoObj := (gZm0.permanentsOf p0).find? (·.name == boastManaZemoDef.name) |>.get!
+  let zemoId := zemoObj.id
+  let black15Id := (gZm0.player p0).graveyard.back!
+  let gZmBase := gZm0.record (GameEvent.attacked gZm0.turnNumber p0 (gZm0.snapshot zemoObj) p1)
+  let gZm1 := mustApply gZmBase p0 (.activate zemoId 0)
+  let zmReservedBefore := gZm1.proposedNeedsBattlefieldSource gZm1.proposedSpell.get!
+  let gZm2 := mustApply gZm1 p0 (.choosePermanents #[black15Id])
+  let zmUnreservedAfter := !gZm2.proposedNeedsBattlefieldSource gZm2.proposedSpell.get!
+  let gZm3 : Game :=
+    match gZm2.activateManaAbility p0 zemoId 0 #[.colored .black, .colored .black, .colored .black] with
+    | .ok g => g
+    | .error e => panic! e
+  let gZm4 := mustApply gZm3 p0 .pay
+
+  let item4dOk :=
+    tapNoStoryCannotProduce && tapExhaustedCannotProduce &&
+    tapNonSorceryCannotProduce && tapPowerUpUsedCannotProduce &&
+    (gDual1.player p0).life == 20 && gDual1.exhaustUsed dualId &&
+    (gDual2.player p0).life == 19 && (gDual2.player p0).manaPool.blue == 2 &&
+    agentChoosesCrewMana && crReservedBefore && crUnreservedAfter &&
+    crInManaSources && agentTapsChariot &&
+    gCrStep4.stack.size == 1 && (gCrStep4.object! chariotId).status.tapped &&
+    gCrZero4.stack.size == 1 && (gCrZero4.object! chariotId).status.tapped &&
+    crTapStillReserved &&
+    stillPayable gCrSac3 && gCrSac4.stack.size == 1 && (gCrSac4.player p0).manaPool.total == 1 &&
+    zmReservedBefore && zmUnreservedAfter &&
+    stillPayable gZm3 && gZm4.stack.size == 1 && gZm4.boastUsedThisTurn zemoId &&
+    (gZm4.player p0).manaPool.total == 1
+
   mustHold43i4 "4a.forObjAndCastManaBounds" item4aOk &&
   mustHold43i4 "4b.zoneAndBattlefieldSourceGuards" item4bOk &&
   mustHold43i4 "4c.manaParityAndSelfSac6012g" item4cOk &&
+  mustHold43i4 "4d.tapFallbackAndPostFraUnreserve" item4dOk &&
   mustHold43i4 "4.replay"
     (replayOk43i4 #[gPostCastSpent, gPayGenDone, gGySacPaid, gExhaust1, gPowerUp1,
-      gAltarSacForMana, gAltarPaid, gAltarTapProp])
+      gAltarSacForMana, gAltarPaid, gAltarTapProp,
+      gDual2, gCrStep4, gCrZero4, gCrTap2, gCrSac3, gCrSac4, gZm3, gZm4])
 
 end Phase43Item4EventAlignment
 

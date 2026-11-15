@@ -102,6 +102,7 @@ inductive ProposalChange where
   | payLife (n : Nat)
   | alternativeCost (v : Bool)
   | loyaltyPaid (v : Bool)
+  | fraCostPaid (v : Bool)
 deriving Repr, Inhabited, BEq
 
 /-- Priority tiers for choosing among multiple applicable replacement or
@@ -1428,6 +1429,8 @@ inductive PostStep where
       (top : Bool) (msgOverride : Option String := none)
   | logDealDamageEachOpposingCreature (amount : Nat)
   | finishZemoBoastExileLogs (p : PlayerId) (sourceId : ObjectId) (preIds : Array ObjectId)
+  | markFraCostPaid
+  | continuePostFraActivation (p : PlayerId)
   | plusOneOnCreatedTokensLoop (controller : PlayerId) (remainingIds : Array ObjectId)
       (amount : Nat)
   | moveIdsInOrderLoop (ids : Array ObjectId) (dest : Zone) (log : String)

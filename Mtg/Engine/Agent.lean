@@ -499,7 +499,8 @@ where
   chooseActivate (g : Game) (p : PlayerId) : Option Action :=
     let shouldActivate (o : GameObject) (ab : ActivatedAbility) : Bool :=
       let isTurnFaceUp := o.status.faceDown && ab.effect.resolution == .frc .turnFaceUp
-      let excludeId := if isTurnFaceUp || ab.needsBattlefieldSource then some o.id else none
+      let excludeId :=
+        if isTurnFaceUp || ab.needsBattlefieldSourceAtManaWindow then some o.id else none
       let available := g.availableManaExcept p excludeId
       let manaCost := g.activationManaCost p ab (some o)
       let allowElf := !isTurnFaceUp && g.hasSubtype o .elf

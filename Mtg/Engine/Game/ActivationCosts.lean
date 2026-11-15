@@ -127,6 +127,53 @@ def sourceCounterCostPaidFor (g : Game) (sid : ObjectId) (forObject : Option Obj
           | _ => false
       | _ => false
 
+private def pendingReplHasZemoBoastExileFor (fid : ObjectId) : PendingReplacement → Bool
+  | .seq a b => pendingReplHasZemoBoastExileFor fid a || pendingReplHasZemoBoastExileFor fid b
+  | .finishPostStep (.exileZemoBoastCards _ aid _) => aid == fid
+  | _ => false
+
+/-- Whether another creature was already tapped to pay a crew cost for
+`forObject` (CR 702.122a / 602.2b). -/
+def crewCostPaidFor (g : Game) (sid : ObjectId) (forObject : Option ObjectId)
+    (sinceIdx : Nat := 0) : Bool :=
+  match forObject with
+  | none => false
+  | some fid =>
+    let slice := g.events.extract (min sinceIdx g.events.size) g.events.size
+    slice.any fun
+      | .rules _ (.permanent (.tapped snap _)) cause _ =>
+        snap.id != some sid &&
+          match unreplacedCostCause cause with
+          | .costPayment .tap _ (some f) => f == fid
+          | _ => false
+      | _ => false
+
+/-- Whether graveyard cards were already exiled (or replaced) to pay a boast
+cost for `forObject`, with no remaining boast-exile cards queued across a
+replacement pause (CR 702.142 / 602.2b). -/
+def zemoBoastCostPaidFor (g : Game) (sid : ObjectId) (forObject : Option ObjectId)
+    (sinceIdx : Nat := 0) : Bool :=
+  match forObject with
+  | none => false
+  | some fid =>
+    let stillExiling :=
+      g.pendingReplacement.any (pendingReplHasZemoBoastExileFor fid) ||
+        g.outerPendingReplacements.any (pendingReplHasZemoBoastExileFor fid)
+    if stillExiling then false
+    else
+      let slice := g.events.extract (min sinceIdx g.events.size) g.events.size
+      slice.any fun
+        | .rules _ ch cause _ =>
+          let notBfSelf :=
+            match ch with
+            | .zone (.moved before _ .battlefield _ ..) => before.id != some sid
+            | _ => true
+          notBfSelf &&
+            match unreplacedCostCause cause with
+            | .costPayment .exile _ (some f) => f == fid
+            | _ => false
+        | _ => false
+
 /-- Whether `sid` left the battlefield after `sinceIdx` as part of a cost paid
 by `p` (e.g. sacrificing or exiling `sid` to a CR 601.2g mana ability). -/
 def sourceRemovedByCostSince (g : Game) (p : PlayerId) (sid : ObjectId)
@@ -167,7 +214,10 @@ def proposedNeedsBattlefieldSource (g : Game) (prop : ProposedSpell)
           (a.cost.putStunCounterOnSource &&
             !g.sourceCounterCostPaidFor sid forObj .putCounters (some .stun) sinceIdx) ||
           (a.cost.sacrificeEquipmentAttachedToSource && g.pending == .activateManaAbilities prop.caster) ||
-          (match a.cost.fra with | .crew _ | .zemoBoast => true | _ => false)))
+          (match a.cost.fra with
+           | .crew _ => !prop.fraCostPaid && !g.crewCostPaidFor sid forObj sinceIdx
+           | .zemoBoast => !prop.fraCostPaid && !g.zemoBoastCostPaidFor sid forObj sinceIdx
+           | _ => false)))
 
 /-- Whether `o` can pay `pick` for `p`'s ability of `sourceId`. -/
 def costPickAllows (g : Game) (p : PlayerId) (sourceId : Option ObjectId) (pick : CostPick)
@@ -694,7 +744,12 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
       (ab.any (fun a =>
         (a.cost.putStunCounterOnSource &&
           !g.sourceCounterCostPaidFor sourceId forObject .putCounters (some .stun) sinceIdx) ||
-        (match a.cost.fra with | .crew _ | .zemoBoast => true | _ => false)))
+        (match a.cost.fra with
+         | .crew _ =>
+           !(g.proposedSpell.any (·.fraCostPaid) || g.crewCostPaidFor sourceId forObject sinceIdx)
+         | .zemoBoast =>
+           !(g.proposedSpell.any (·.fraCostPaid) || g.zemoBoastCostPaidFor sourceId forObject sinceIdx)
+         | _ => false)))
   let alreadySacrificedForCost :=
     !sacrificeOrExileSource && !discardSource && !rawFromGy && !rawFromHand &&
       (g.sourceSacrificedForCost sourceId forObject sinceIdx ||

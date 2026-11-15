@@ -941,7 +941,8 @@ private def isProposalBoundaryStep (caster : PlayerId) : PendingReplacement → 
   | .finishManaAbilityMountainTrigger .. => true
   | .finishPostStep (.resumeProposalCostAfterLeave q _)
   | .finishPostStep (.resumeChooseModeAfterLeave q)
-  | .finishPostStep (.resumeChooseTargetsAfterLeave q) => q == caster
+  | .finishPostStep (.resumeChooseTargetsAfterLeave q)
+  | .finishPostStep (.continuePostFraActivation q) => q == caster
   | .restorePending rp po log dep rw =>
     !po && rw.isNone && (dep.isEmpty || log.isSome) && isProposalPromptFor caster rp
   | _ => false

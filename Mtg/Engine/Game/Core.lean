@@ -335,6 +335,7 @@ def applyChange (p : ProposedSpell) (c : ProposalChange) : ProposedSpell :=
   | .payLife v => { p with payLife := v }
   | .alternativeCost v => { p with alternativeCost := v }
   | .loyaltyPaid v => { p with loyaltyPaid := v }
+  | .fraCostPaid v => { p with fraCostPaid := v }
 
 end ProposedSpell
 

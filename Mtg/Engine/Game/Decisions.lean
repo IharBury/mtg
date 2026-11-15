@@ -863,7 +863,8 @@ partial def resumePendingReplacementCore (g : Game) (pr : PendingReplacement)
       | .finishBecomeActivated ..
       | .finishPostLoyaltyActivated ..
       | .completeActivation ..
-      | .finishProposedSpellCosts .. => true
+      | .finishProposedSpellCosts ..
+      | .finishPostStep (.continuePostFraActivation _) => true
       | _ => false
     let checkReversal : Bool :=
       !g.hasActiveManaProposalCheckpoint && g.proposedSpell.isSome && stepCanReverseProposal first
@@ -2816,6 +2817,7 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
   | .logDealDamageEachOpposingCreature amount =>
     g.logMsg s!"deals {amount} damage to each opposing creature"
   | .finishZemoBoastExileLogs p sourceId preIds =>
+    let g := if g.proposedSpell.isSome then g.changeProposal (.fraCostPaid true) else g
     let exiledCount := (preIds.filter (fun id => (g.followMovedToZone? id (· == .exile)).isSome)).size
     let g :=
       if exiledCount > 0 then
@@ -2824,6 +2826,19 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
     match g.findObject? sourceId with
     | some src => g.logMsg s!"{g.name src}'s boast ability is activated"
     | none => g
+  | .markFraCostPaid =>
+    if g.proposedSpell.isSome then g.changeProposal (.fraCostPaid true) else g
+  | .continuePostFraActivation p =>
+    match g.proposedSpell with
+    | none => g
+    | some prop =>
+      if g.over || !g.stillInGame p || !(g.findObject? prop.spellId).any (·.zone == .stack) ||
+          !g.sourceStillPayable prop || !g.canPayLife p prop.payLife then
+        g.reverseProposedSpell (resumeContinuation := true)
+      else
+        match g.continuePostFraActivationM p prop with
+        | .ok g' => g'
+        | .error _ => g.reverseProposedSpell (resumeContinuation := true)
   | .plusOneOnCreatedTokensLoop controller remainingIds amount =>
     g.plusOneOnCreatedTokensLoop controller remainingIds amount
   | .moveIdsInOrderLoop ids dest log cause placedCount prevMoved =>
@@ -3782,10 +3797,35 @@ partial def beginActivationPayment (g : Game) (prop : ProposedSpell) : Except St
             prop.activation.any (fun a => a.cost.discardSource || a.cost.fra == .exileSourceFromHand))
     | none => true
   if !payable then return (← g.reverseProposedSpell? (resumeContinuation := true))
-  let g ← g.continueCostPicks prop picks prop.cost.includesManaPayment
+  let g ← g.continueCostPicks prop picks (prop.cost.includesManaPayment || prop.fraCostPaid)
   if g.proposedSpell.isNone && !(g.findObject? prop.spellId).any (fun o => o.zone == .stack) then
     return g
   return g.resumeAfterBecomeCast
+
+/-- Continue an activated-ability proposal after an initial `.crew` or
+`.zemoBoastExile` choice has been paid (CR 601.2b–h / 602.2b). -/
+partial def continuePostFraActivationM (g : Game) (p : PlayerId) (prop : ProposedSpell) :
+    Except String Game := do
+  let pl := g.player p
+  let isModal := prop.abilityModes.size > 1
+  let needsTarget := g.proposedNeedsTarget prop
+  if !isModal && !needsTarget && !prop.loyaltyX &&
+      !prop.removePlusOneX &&
+      !prop.cost.includesManaPayment && !prop.cost.containsX &&
+      !prop.needsSacrificeOther then
+    let g := g.changes #[.pending .none, .consecutivePasses 0]
+    return (← g.beginActivationPayment prop)
+  if prop.loyaltyX || prop.removePlusOneX || prop.cost.containsX then
+    let g := g.changes #[.pending (.chooseX p), .consecutivePasses 0]
+    return g.logMsg s!"{pl.name} must choose a value for X (CR 107.3a / 601.2b)"
+  if isModal then
+    let g := g.changes #[.pending (.chooseMode p), .consecutivePasses 0]
+    return g.logMsg s!"{pl.name} must choose a mode (CR 601.2b)"
+  if needsTarget then
+    let g := g.changes #[.pending (.chooseTargets p), .consecutivePasses 0]
+    return g.logMsg s!"{pl.name} must choose a target (CR 601.2c)"
+  let g := g.changes #[.pending (.activateManaAbilities p), .consecutivePasses 0]
+  return g.logMsg s!"{pl.name} may activate mana abilities (CR 601.2g)"
 
 /-- Continue after CR 601.2c: determine the total cost (601.2f), then mana
 abilities (601.2g). Additional-cost *choices* are announced earlier, at 601.2b. -/

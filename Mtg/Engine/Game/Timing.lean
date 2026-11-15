@@ -96,14 +96,20 @@ def _root_.Mtg.Engine.ActivatedAbility.isFromGraveyard (ab : ActivatedAbility) :
 def _root_.Mtg.Engine.ActivatedAbility.isFromHand (ab : ActivatedAbility) : Bool :=
   ab.activateFromHand || ab.cost.discardSource || ab.cost.fra == .exileSourceFromHand
 
-/-- Whether `ab`'s cost requires its source to be a permanent on the battlefield
-(CR 113.6 / 602.2b). -/
-def _root_.Mtg.Engine.ActivatedAbility.needsBattlefieldSource (ab : ActivatedAbility) : Bool :=
+/-- Whether `ab`'s cost still requires its source on the battlefield at the
+CR 601.2g mana-ability window (after any initial `.crew` / `.zemoBoast` choice). -/
+def _root_.Mtg.Engine.ActivatedAbility.needsBattlefieldSourceAtManaWindow (ab : ActivatedAbility) : Bool :=
   ab.cost.tap || ab.cost.sacrificeSource || ab.cost.loyalty.isSome ||
     ab.cost.removeStoryCounter || ab.cost.removeIndestructibleCounter ||
     ab.cost.removeAnyNumberPlusOne || ab.cost.putStunCounterOnSource ||
+    ab.cost.fra == .exileSource
+
+/-- Whether `ab`'s cost requires its source to be a permanent on the battlefield
+(CR 113.6 / 602.2b). -/
+def _root_.Mtg.Engine.ActivatedAbility.needsBattlefieldSource (ab : ActivatedAbility) : Bool :=
+  ab.needsBattlefieldSourceAtManaWindow ||
     match ab.cost.fra with
-    | .exileSource | .crew _ | .zemoBoast => true
+    | .crew _ | .zemoBoast => true
     | _ => false
 
 /-- Whether `ab`'s non-mana extra costs can be paid by `ManaAbilityDef`

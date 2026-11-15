@@ -995,11 +995,7 @@ def tapForMana (g : Game) (p : PlayerId) (id : ObjectId) (mana : ManaType) : Exc
   if (g.baseCard o).tapAddOneOfIfEnteredOrBasic.contains mana && !g.canUseEnteredOrBasicAdd o then
     throw s!"{g.nameWithToken o}'s colored mana ability can be activated only if this land entered this turn or if you control a basic land"
   let defs := g.manaAbilityDefs o
-  let some i :=
-      g.manaAbilityIndexFor o mana true <|>
-        g.manaAbilityIndexFor o mana false <|>
-        (List.range defs.size).find? (fun i =>
-          defs[i]!.picks.isEmpty && (defs[i]!.output.withType mana).isSome)
+  let some i := g.manaAbilityIndexFor o mana true <|> g.manaAbilityIndexFor o mana false
     | throw s!"{g.nameWithToken o} cannot produce {mana}"
   let some d := defs[i]? | throw s!"{g.nameWithToken o} cannot produce {mana}"
   let some added := d.output.withType mana | throw s!"{g.nameWithToken o} cannot produce {mana}"

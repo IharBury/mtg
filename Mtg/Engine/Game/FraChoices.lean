@@ -642,26 +642,38 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
           g.becomeTapped (g.object! c.id) (cause := cause)) g
     let paused := match g.pending with | .chooseReplacement .. => true | _ => false
     let g :=
-      if !paused then
+      if paused then
+        g.chainPendingReplacement (.finishPostStep .markFraCostPaid)
+      else
+        let g := if g.proposedSpell.isSome then g.changeProposal (.fraCostPaid true) else g
         match outerCont? with
         | some outer => g.chainPendingReplacement outer
         | none => g
-      else g
     let g := g.logMsg s!"{(g.player p).name} crews {vName}"
-    let g := g.becomeActivated p vName (some vehicleId)
-      (activation := prop?.bind (·.activation))
-      (abilityId := some abilityId)
-      (sourceSnapshot := prop?.map (·.originalSnapshot))
-      (sourceOriginal := prop?.map (·.original))
-      (hadOuterReplacement := outerCont?.isSome)
-      (hadOpenContinuation := some openCont)
-    let g :=
+    match g.proposedSpell.filter g.propNeedsPostFraSteps with
+    | some curProp =>
       if paused then
-        match outerCont? with
-        | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishFra
-        | none => g
-      else g
-    return g.resumeAfterBecomeCast
+        let g := g.chainPendingReplacement (.finishPostStep (.continuePostFraActivation p))
+        return match outerCont? with
+          | some outer => g.chainPendingReplacement outer
+          | none => g
+      else
+        return (← g.continuePostFraActivationM p curProp)
+    | none =>
+      let g := g.becomeActivated p vName (some vehicleId)
+        (activation := prop?.bind (·.activation))
+        (abilityId := some abilityId)
+        (sourceSnapshot := prop?.map (·.originalSnapshot))
+        (sourceOriginal := prop?.map (·.original))
+        (hadOuterReplacement := outerCont?.isSome)
+        (hadOpenContinuation := some openCont)
+      let g :=
+        if paused then
+          match outerCont? with
+          | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishFra
+          | none => g
+        else g
+      return g.resumeAfterBecomeCast
   | .crew _ vehicleId n, .decline =>
     let totalAvail :=
       ((gPre.creaturesControlledBy p).filter (fun c => c.id != vehicleId && !c.status.tapped)).foldl
@@ -1088,22 +1100,32 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
         match outerCont? with
         | some outer => g.chainPendingReplacement outer
         | none => g
-    let name := ((g.findObject? sourceId).map g.name).getD
-      ((prop?.map (fun pr => pr.originalSnapshot.name)).getD "Baron Helmut Zemo")
-    let g := g.becomeActivated p name (some sourceId)
-      (some (prop?.bind (fun pr => pr.activation) |>.getD ActivatedAbility.zemoBoastAbility))
-      (abilityId := some abilityId)
-      (sourceSnapshot := prop?.map (fun pr => pr.originalSnapshot))
-      (sourceOriginal := prop?.map (fun pr => pr.original))
-      (hadOuterReplacement := outerCont?.isSome)
-      (hadOpenContinuation := some openCont)
-    let g :=
+    match g.proposedSpell.filter g.propNeedsPostFraSteps with
+    | some curProp =>
       if paused then
-        match outerCont? with
-        | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishFra
-        | none => g
-      else g
-    return g.resumeAfterBecomeCast
+        let g := g.chainPendingReplacement (.finishPostStep (.continuePostFraActivation p))
+        return match outerCont? with
+          | some outer => g.chainPendingReplacement outer
+          | none => g
+      else
+        return (← g.continuePostFraActivationM p curProp)
+    | none =>
+      let name := ((g.findObject? sourceId).map g.name).getD
+        ((prop?.map (fun pr => pr.originalSnapshot.name)).getD "Baron Helmut Zemo")
+      let g := g.becomeActivated p name (some sourceId)
+        (some (prop?.bind (fun pr => pr.activation) |>.getD ActivatedAbility.zemoBoastAbility))
+        (abilityId := some abilityId)
+        (sourceSnapshot := prop?.map (fun pr => pr.originalSnapshot))
+        (sourceOriginal := prop?.map (fun pr => pr.original))
+        (hadOuterReplacement := outerCont?.isSome)
+        (hadOpenContinuation := some openCont)
+      let g :=
+        if paused then
+          match outerCont? with
+          | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishFra
+          | none => g
+        else g
+      return g.resumeAfterBecomeCast
   | .zemoBoastExile _ sourceId, .decline =>
     let col :=
       match gPre.findObject? sourceId with
