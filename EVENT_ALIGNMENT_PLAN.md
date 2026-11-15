@@ -17210,8 +17210,8 @@ provenance, mixed-zone & battlefield-source activation legality, `Timing.isManaA
    post-bound accuracy, and `Phasing` simultaneous batch LKI & 2HG shared-extra-turn `initAp`**
    (`ActivationCosts.lean:1011`, `CardDef.lean:309`,
    `Core.lean:1688–2007, 2010–2059, 2089–2143, 5595–5606, 5651–5658, 5803–5899, 6008–6035, 6237–6251, 6502–6570`,
-   `Event.lean:957–961, 971–972`, `ManaAbilities.lean:577`,
-   `Phasing.lean:83–119, 206–208, 228, 259, 264–266, 334–336`;
+   `Event.lean:136–244, 412, 424, 957–961, 971–972`, `ManaAbilities.lean:577`,
+   `Object.lean:47, 258–328`, `Phasing.lean:83–119, 206–208, 228, 259, 264–266, 334–336`;
    **CR 108.4 / 110.2 / 122.1 / 302.6 / 400.7 / 500.7 / 502.1 / 608.2f / 611.2b–c / 611.3a /
    613.1a–b / 613.7d / 702.26b,e,m / 805.4a / 805.8 / 810.2**):
    - **Off-battlefield guard, live-only O(1) fast-path, and `hasPotentialHistCtrlChange` in
@@ -17285,8 +17285,9 @@ provenance, mixed-zone & battlefield-source activation legality, `Timing.isManaA
          (·.1 != .battlefield)` alongside the `g.isInitialMaterialize obj.id i` arrival arm.
    - **`noSourceSentinelId` exclusion, non-mana / new-ID `postBoundObjectCreatedOrTsUpdated`, departed
      post-bound newer-ID scan, and complete `ObjectId` coverage in `Core.isInitialMaterialize`**
-     (`ActivationCosts.lean:1011`, `Core.lean:1688–2007`, `Event.lean:957–961, 971–972`,
-     `ManaAbilities.lean:577`):
+     (`ActivationCosts.lean:1011`, `Core.lean:1688–2007`,
+     `Event.lean:136–244, 412, 424, 957–961, 971–972`, `ManaAbilities.lean:577`,
+     `Object.lean:47, 258–328`):
      - Four `Core.isInitialMaterialize` bugs remain:
        (i) `noSourceSentinelId` (`⟨1000000000⟩` on sourceless/delayed `WaitingTrigger`s) sets `maxId?
        = some 1000000000` (`1874, 1999`), causing `isInitialMaterialize` to return `false` for every
@@ -17298,20 +17299,29 @@ provenance, mixed-zone & battlefield-source activation legality, `Timing.isManaA
        as well as `ActivationCosts.markBoastUsed` at `1011` where `ab == o.id` and `src.id == some ab`);
        (iii) pre-existing newer objects (`other.id.raw > oid.raw`) that leave `g.objects` after
        `bound` bypass `2001–2005`; and
-       (iv) `specReferencesObject` (`1691–1701`) omits secondary payload IDs (`perm.prepareSource` on
-       `.playFromExile`, `c` on `.colorlessGrant _ c`, `s` on `.cantUntap _ s`, `r.source` /
-       `r.id.kind` / `r.kind` on `.replacement`, and `p.source` / `p.kind` on `.prevention`),
+       (iv) `specReferencesObject` (`1691–1701`) omits secondary `ObjectId` / `Option ObjectId` payloads
+       (`perm.prepareSource == some oid` on `.playFromExile` at `Object.lean:47`, `c == oid` on
+       `.colorlessGrant _ c` at `Event.lean:424`, `s == oid` on `.cantUntap _ s` at `Event.lean:412`,
+       `r.source == some oid` plus the `ObjectId` / `Option ObjectId` constructor payloads inside
+       `r.id.kind : ReplacementEffectKind` (`beholdId` / `targetId` / `hostId` on
+       `.entersUntappedBehold` / `.entersAsCopyCreatureUntilEot` / `.asEntersAttachAura` at
+       `Object.lean:262, 281, 284`, matching `eventCauseReferencesObject` at `Core.lean:1680–1684`) and
+       `r.kind : ReplacementKind` (`object` / `beholdId` / `targetId` / `hostId` / `source` at
+       `Event.lean:136–201`) on `.replacement`, and `p.source == some oid` plus the `ObjectId`
+       constructor payloads inside `p.id.kind` and `p.kind : PreventionKind` (`target` / `source` /
+       `protectedObject` / `damageSource` / `object` at `Event.lean:224–235`) on `.prevention`),
        `gameChangeReferencesObject` omits `dt.kind` / `dt.cause` on `.delayedTrigger` (`1847–1849`),
        `.fraChoice` / `.resolveRandom` on `.pending` (`1750–1762`), and `.continuation` /
        `.pushContinuationFrame` (`1850`), and `gameChangeMaxIdAndTs` (`1852–1942`) has no
        `.continuousEffect`, `.delayedTrigger`, `.player`, `.pending`, `.continuation`, or
        `.pushContinuationFrame` arm (nor secondary target/cost `ObjectId`s):
        - Exclude `noSourceSentinelId` across all `isInitialMaterialize` ID reference and `maxId?`
-         helpers; add those missing secondary continuous-effect IDs in `specReferencesObject`
-         (`1691–1701`), `dt.kind` / `dt.cause`, `.fraChoice` / `.resolveRandom`, and `.continuation` /
-         `.pushContinuationFrame` in `gameChangeReferencesObject`, and `.continuousEffect` /
-         `.delayedTrigger` / `.player` / `.pending` / `.continuation` / secondary target-and-cost arms
-         in `gameChangeMaxIdAndTs` (`1852–1942`) via shared `GameChange` `ObjectId` traversal; restrict
+         helpers; match those missing secondary `ObjectId` / `Option ObjectId` fields and constructor
+         payloads in `specReferencesObject` (`1691–1701`), `dt.kind` / `dt.cause`, `.fraChoice` /
+         `.resolveRandom`, and `.continuation` / `.pushContinuationFrame` in
+         `gameChangeReferencesObject`, and `.continuousEffect` / `.delayedTrigger` / `.player` /
+         `.pending` / `.continuation` / secondary target-and-cost arms in `gameChangeMaxIdAndTs`
+         (`1852–1942`) via shared `GameChange` `ObjectId` traversal; restrict
          `postBoundObjectCreatedOrTsUpdated` `created := true` to `after.id == some otherId &&
          before.id != some otherId` on `.moved` (`1958–1961`), `ab == otherId && src.id != some ab`
          with `ActivationKind.nonMana ..` (`Event.lean:957–960`) on `.abilityActivated` (`1973–1976`),
@@ -17340,14 +17350,14 @@ provenance, mixed-zone & battlefield-source activation legality, `Timing.isManaA
    `onceEachTurn` preservation, plain-`{T}` `manaSourcesForProposed` & `Agent` tap-cost conflict
    prevention, non-cast `castEventBound` & `Core.treasureManaSpent` isolation, and `ManaAbilities` /
    `Timing` mana-ability parity**
-   (`Activation.lean:45–51, 108–112, 160–272`,
-   `ActivationCosts.lean:192–221, 260–295, 744–753`, `Agent.lean:171, 500–535`,
-   `Casting.lean:427–436, 1120–1181, 1268–1356, 1451–1465`,
+   (`ActivatedAbility.lean:93`, `Activation.lean:45–51, 108–112, 160–272`,
+   `ActivationCosts.lean:192–295, 380–390, 744–753`, `Agent.lean:171, 500–535`,
+   `Casting.lean:427–436, 1120–1181, 1268–1391, 1451–1465`,
    `Core.lean:6689–6690, 6731–6736, 6834–6855`,
-   `Decisions.lean:867, 2819–2841, 2979–3036, 3785–3829`, `EffectResolution.lean:2707–2713`,
+   `Decisions.lean:867, 2819–2841, 2979–3036, 3406–3414, 3785–3829`, `EffectResolution.lean:2707–2713`,
    `Event.lean:1433, 3794–3848, 4085–4097`, `FraChoices.lean:621–688, 1076–1143, 1900–1920`,
    `Leaving.lean:945`, `ManaAbilities.lean:128–149, 263–292, 327–359, 876–1003`,
-   `Pending.lean:140–213`, `Stack.lean:126–132`, `Tests/Events.lean:35653–35709`, `Timing.lean:99–139`;
+   `Pending.lean:135–213`, `Stack.lean:126–132`, `Tests/Events.lean:35653–35709`, `Timing.lean:99–139`;
    **CR 106.6 / 113.1c / 113.2c / 117.3b / 118.3 / 122.1d / 302.6 / 400.7d / 601.2b–i / 602.2b /
    602.5b / 605.1a / 605.3a–b / 608.2 / 612.2 / 613.1f / 613.7 / 702.37e / 702.122a / 702.142a /
    733.1**):
@@ -17441,8 +17451,9 @@ provenance, mixed-zone & battlefield-source activation legality, `Timing.isManaA
      tap/summoning-sickness/cost/reservation checks, Layer-6 `copiedFromGy` under
      `!retainsPrintedAbilities` & `.elf` subtype restriction, and `putStunCounterOnSource` /
      `sacrificeAnotherCreatureOrArtifact` mana-ability parity**
-     (`ActivationCosts.lean:223–262`, `EffectResolution.lean:2707–2713`,
-     `ManaAbilities.lean:128–149, 263–292, 327–359, 876–1003`, `Pending.lean:140–186`,
+     (`ActivatedAbility.lean:93`, `Activation.lean:243`, `ActivationCosts.lean:223–262, 380–390`,
+     `Casting.lean:1358–1367, 1391`, `Decisions.lean:3406–3414`, `EffectResolution.lean:2707–2713`,
+     `ManaAbilities.lean:128–149, 263–292, 327–359, 876–1003`, `Pending.lean:135–212`,
      `Timing.lean:117–139`):
      - Three mana-ability parity gaps remain:
        (i) `ManaAbilities.tapForMana` (`995–996`) throws the `tapAddOneOfIfEnteredOrBasic` error
@@ -17453,8 +17464,8 @@ provenance, mixed-zone & battlefield-source activation legality, `Timing.isManaA
        `!g.retainsPrintedAbilities o`, and `activatedManaAbilities` (`284–285`) /
        `EffectResolution.lean:2707–2713` drop `.elf` on `.addAnyColorSpendOnlySubtype`; and
        (iii) `Timing.hasSupportedManaActivationCost` (`118, 120`) rejects `putStunCounterOnSource` and
-       `sacrificeAnotherCreatureOrArtifact` mana abilities, routing them onto the stack in violation of
-       CR 605.1a / 605.3b:
+       `ActivationCost.sacrificeAnotherCreatureOrArtifact` (`ActivatedAbility.lean:93`), routing those
+       mana abilities onto the stack in violation of CR 605.1a / 605.3b:
        - Move the `tapAddOneOfIfEnteredOrBasic` throw into `tapForMana`'s `none` arm (`998–999`,
          guarded by `g.retainsPrintedAbilities o`) and filter `manaAbilityIndexFor` (`981–990`) by
          tap/summoning-sickness, `manaPool.payUnits?` affordability on `!plainOnly`, and
@@ -17463,10 +17474,17 @@ provenance, mixed-zone & battlefield-source activation legality, `Timing.isManaA
          `ManaRestriction.elf` at `ManaAbilities.lean:284–285` and `EffectResolution.lean:2707–2713`;
          and support `putStunCounterOnSource` on `ManaAbilityDef` (`ManaAbilities.lean:128–149,
          270–277, 348–359, 934, 966`, chaining `finishActivateManaAbilityPicks` on
-         `Pending.chooseReplacement`) plus `CostPick.sacrificeAnotherCreatureOrArtifact` in
-         `Pending.lean` (`140–186`), `ActivationCosts.lean` (`223–262` and `payCostPickItems`),
-         `ManaAbilities.activatedManaAbilities` (`276`, without adding it to non-mana `costPicksOf`),
-         and `Timing.hasSupportedManaActivationCost` (`118, 120`).
+         `Pending.chooseReplacement`), add a new `sacrificeAnotherCreatureOrArtifact` constructor to
+         `CostPick` and `CostPick.phrase` (`Pending.lean:135–186`) plus its `perm && other &&
+         (g.isCreature o || artifact)` arm in `ActivationCosts.costPickAllows` (`223–262`, paid by
+         `payCostPickItemsChecked`'s battlefield-sacrifice arm at `380–390`), append
+         `(if ab.cost.sacrificeAnotherCreatureOrArtifact then
+         #[CostPick.sacrificeAnotherCreatureOrArtifact] else #[])` to `costPicksOf ab` *only* inside
+         `ManaAbilities.activatedManaAbilities` (`276`, leaving `Pending.costPicksOf` at `188–212`
+         unchanged so non-mana `ProposedSpell.needsSacrificeOther` / `Pending.sacrificePermanent` at
+         `Activation.lean:243`, `Casting.lean:1358–1367, 1391`, and `Decisions.lean:3406–3414` does not
+         ask for the sacrifice twice), and allow both costs in
+         `ActivatedAbility.hasSupportedManaActivationCost` (`Timing.lean:118, 120`).
 
 Tests: `Events.lean` (unit + replay-determinism `#guard`s for `!flushedFromPending && !deferRestore`
 re-pause chaining on `pendingReplacement` + `isPreProposalCheckpointBatch` deferred proposal rewind in
