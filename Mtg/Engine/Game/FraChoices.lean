@@ -657,7 +657,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
         g.changeProposal (.fraCostPaid true)
       else g
     let g := g.logMsg s!"{(g.player p).name} crews {vName}"
-    match g.proposedSpell with
+    match g.proposedSpell.filter (fun pr => g.propHasRemainingExtraCosts pr) with
     | some curProp =>
       let picks := (curProp.activation.map costPicksOf).getD #[]
       let completedAfterContinue (gCur : Game) : Bool :=
@@ -693,13 +693,18 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
           | some outer => g.chainPendingReplacement outer
           | none => g
         else g
-      let g := g.becomeActivated p vName (some vehicleId)
+      let actName := ((g.findObject? vehicleId).map g.name).getD vName
+      let g := (if g.consecutivePasses != 0 then g.change (.consecutivePasses 0) else g).becomeActivated p
+        actName (some vehicleId)
         (activation := prop?.bind (·.activation))
         (abilityId := some abilityId)
         (sourceSnapshot := prop?.map (·.originalSnapshot))
         (sourceOriginal := prop?.map (·.original))
         (hadOuterReplacement := outerCont?.isSome)
         (hadOpenContinuation := some openCont)
+      if prop?.isSome && g.proposedSpell.isNone &&
+          !(g.findObject? abilityId).any (·.zone == .stack) then
+        return g
       let g :=
         if paused then
           match outerCont? with
@@ -750,7 +755,34 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
         (gCur.findObject? prop.spellId).any (·.zone == .stack)
     let restPicks := picks.extract 1 picks.size
     let pausedBeforeContinue := match g.pending with | .chooseReplacement .. => true | _ => false
-    if restPicks.isEmpty && !pausedBeforeContinue then
+    if !g.propHasRemainingExtraCosts prop (remainingPicks := restPicks) then
+      let g :=
+        if !pausedBeforeContinue then
+          match outerCont? with
+          | some outer => g.chainPendingReplacement outer
+          | none => g
+        else g
+      let fallbackName :=
+        if prop.originalSnapshot.name.isEmpty then g.name prop.original
+        else prop.originalSnapshot.name
+      let srcName := ((g.findObject? sourceId).map g.name).getD fallbackName
+      let g := (if g.consecutivePasses != 0 then g.change (.consecutivePasses 0) else g).becomeActivated p
+        srcName (some sourceId) prop.activation
+        (abilityId := some prop.spellId)
+        (sourceSnapshot := some prop.originalSnapshot)
+        (sourceOriginal := some prop.original)
+        (hadOuterReplacement := outerCont?.isSome)
+        (hadOpenContinuation := some openCont)
+      if g.proposedSpell.isNone && !completedAfterContinue g then
+        return g
+      let g :=
+        if pausedBeforeContinue then
+          match outerCont? with
+          | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishFra
+          | none => g
+        else g
+      return g.resumeAfterBecomeCast
+    else if restPicks.isEmpty && !pausedBeforeContinue then
       let g :=
         match outerCont? with
         | some outer => g.chainPendingReplacement outer
@@ -1130,7 +1162,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
         g.chainPendingReplacement (.finishPostStep (.finishZemoBoastExileLogs p sourceId ids))
       else
         g.runPostStep (.finishZemoBoastExileLogs p sourceId ids)
-    match g.proposedSpell with
+    match g.proposedSpell.filter (fun pr => g.propHasRemainingExtraCosts pr) with
     | some curProp =>
       let picks := (curProp.activation.map costPicksOf).getD #[]
       let completedAfterContinue (gCur : Game) : Bool :=
@@ -1170,13 +1202,17 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
         ((prop?.map (fun pr =>
           if pr.originalSnapshot.name.isEmpty then g.name pr.original
           else pr.originalSnapshot.name)).getD "Baron Helmut Zemo")
-      let g := g.becomeActivated p name (some sourceId)
+      let g := (if g.consecutivePasses != 0 then g.change (.consecutivePasses 0) else g).becomeActivated p
+        name (some sourceId)
         (some (prop?.bind (fun pr => pr.activation) |>.getD ActivatedAbility.zemoBoastAbility))
         (abilityId := some abilityId)
         (sourceSnapshot := prop?.map (fun pr => pr.originalSnapshot))
         (sourceOriginal := prop?.map (fun pr => pr.original))
         (hadOuterReplacement := outerCont?.isSome)
         (hadOpenContinuation := some openCont)
+      if prop?.isSome && g.proposedSpell.isNone &&
+          !(g.findObject? abilityId).any (·.zone == .stack) then
+        return g
       let g :=
         if paused then
           match outerCont? with

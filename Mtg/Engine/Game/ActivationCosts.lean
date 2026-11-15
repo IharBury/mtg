@@ -136,20 +136,11 @@ by `p` (e.g. sacrificing or exiling `sid` to a CR 601.2g mana ability). -/
 def sourceRemovedByCostSince (g : Game) (p : PlayerId) (sid : ObjectId)
     (sinceIdx : Nat := 0) : Bool :=
   let slice := g.events.extract (min sinceIdx g.events.size) g.events.size
-  let batchHasCostByP (bid : BatchId) : Bool :=
-    slice.any fun
-      | .rules _ _ c (some b) =>
-        b == bid &&
-          match unreplacedCostCause c with
-          | .costPayment _ q _ => q == p
-          | _ => false
-      | _ => false
   slice.any fun
-    | .rules _ (.zone (.moved before _ .battlefield _ ..)) cause batch? =>
+    | .rules _ (.zone (.moved before _ .battlefield _ ..)) cause _ =>
       before.id == some sid &&
         match unreplacedCostCause cause with
         | .costPayment .sacrifice q _ | .costPayment .exile q _ => q == p
-        | .gameRule .playerLeftGame => batch?.any batchHasCostByP
         | _ => false
     | _ => false
 
@@ -180,6 +171,21 @@ def proposedNeedsBattlefieldSource (g : Game) (prop : ProposedSpell)
           (a.cost.putStunCounterOnSource &&
             !g.sourceCounterCostPaidFor sid forObj .putCounters (some .stun) sinceIdx) ||
           (a.cost.sacrificeEquipmentAttachedToSource && g.pending == .activateManaAbilities prop.caster)))
+
+/-- Whether `prop` still has activation costs remaining to be paid after a
+CR 601.2h chosen-object cost step (`.crew`, `.zemoBoast`, or `CostPick`). -/
+def propHasRemainingExtraCosts (g : Game) (prop : ProposedSpell)
+    (remainingPicks : Array CostPick := (prop.activation.map costPicksOf).getD #[])
+    (sinceIdx : Nat := (g.proposalCheckpoint.map (·.eventsSize)).getD g.events.size) : Bool :=
+  prop.kind != .activatedAbility ||
+    prop.sourceId.isNone ||
+    !remainingPicks.isEmpty ||
+    prop.needsSacrificeOther ||
+    prop.payLife > 0 ||
+    prop.discardSource ||
+    g.proposedNeedsBattlefieldSource prop sinceIdx ||
+    prop.activation.any (fun a =>
+      a.isFromGraveyard || a.isFromHand || a.cost.removeAnyNumberPlusOne)
 
 /-- Whether `o` can pay `pick` for `p`'s ability of `sourceId`. -/
 def costPickAllows (g : Game) (p : PlayerId) (sourceId : Option ObjectId) (pick : CostPick)

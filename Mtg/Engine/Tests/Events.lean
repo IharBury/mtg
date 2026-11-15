@@ -36620,6 +36620,30 @@ private def replayOk44i4 (gs : Array Game) : Bool :=
     let g0 := addPermanent g2 tapRelicDef p0 p0
     let rid := (g0.permanentsOf p0)[0]!.id
     (mustApply g0 p0 (.activate rid 0), rid)
+  let borrowedRelicDef : CardDef := {
+    name := "P44i4 BorrowedRelic"
+    types := #[.artifact]
+    activatedAbilities := #[
+      { cost := { mana := ManaCost.ofGeneric 1 }, effect := Effect.gainLife 1 }
+    ]
+  }
+  let p2 : PlayerId := ⟨2⟩
+  let gCtrlEx00 :=
+    addPermanent
+      (addPermanent (g2.change (.addPlayer { id := p2, name := "Liliana" })) treasureTokDef p0 p0)
+      borrowedRelicDef p2 p1
+  let ctrlTrId := (gCtrlEx00.permanentsOf p0).find? (·.name == treasureTokDef.name) |>.get!.id
+  let borrowedId := (gCtrlEx00.permanentsOf p1).find? (·.name == borrowedRelicDef.name) |>.get!.id
+  let gCtrlEx0 :=
+    (gCtrlEx00.createEffect
+      (.layered (.objects #[borrowedId]) (.control p0) (.whileSourceOnBattlefield ctrlTrId))
+      (cause := some testCause)).concede p1
+  let gCtrlProp := mustApply gCtrlEx0 p0 (.activate borrowedId 0)
+  let gCtrlAfterSacMana : Game :=
+    match gCtrlProp.activateManaAbility p0 ctrlTrId 0 #[.colorless] with
+    | .ok g => g
+    | .error e => panic! e
+  let gCtrlRev := mustApply gCtrlAfterSacMana p0 .pay
 
   let item4dOk :=
     (gCondTappedBlue.player p0).manaPool.blue == 1 &&
@@ -36642,6 +36666,11 @@ private def replayOk44i4 (gs : Array Game) : Bool :=
     (gCrewStolen.payActivationExtraCosts p0 cdSkiffId false false 0 false
       (gCrewStolen.proposedSpell.get!.activation)).isOk == false &&
     gCrewStolenRev.proposedSpell.isNone && gCrewStolenRev.stack.isEmpty &&
+    !gCtrlAfterSacMana.sourceRemovedByCostSince p0 borrowedId 0 &&
+    !gCtrlAfterSacMana.sourceStillPayable (gCtrlAfterSacMana.proposedSpell.get!) &&
+    (gCtrlAfterSacMana.payActivationExtraCosts p0 borrowedId false false 0 false
+      (gCtrlAfterSacMana.proposedSpell.get!.activation)).isOk == false &&
+    gCtrlRev.proposedSpell.isNone && gCtrlRev.stack.isEmpty &&
     (gCondTappedBlue.tapForMana p0 condGrantId (.colored .blue)).isOk == false &&
     (gSickDork.tapForMana p0 sickDorkId (.colored .green)).isOk == false &&
     (gFilter0.tapForMana p0 filterRelicId (.colored .blue)).isOk == false &&
@@ -36654,7 +36683,7 @@ private def replayOk44i4 (gs : Array Game) : Bool :=
   mustHold44i4 "4.replay"
     (replayOk44i4 #[gTcStep3, gCrewSac2, gDup1, gBaublePaid, gNc4,
       gMorphTurnedUp, gAbPaid, gGyCopiedTapped, gAfterStunMana, gAfterSacOtherMana,
-      gCrewBouncedRev, gCrewStolenRev])
+      gCrewBouncedRev, gCrewStolenRev, gCtrlRev])
 
 end Phase44Item4EventAlignment
 
