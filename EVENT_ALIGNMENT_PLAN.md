@@ -17519,7 +17519,7 @@ parity).
    batch-boundary & multi-chooser `Leaving.preBatchLegendSnapshotValid`, and explicit priority-grant
    preservation across `Decisions`, `Actions`, & `Event`**
    (`Actions.lean:75–79`,
-   `Decisions.lean:367–410, 476–516, 568–579, 672–772, 894–938, 1126–1162, 1377–1467, 1688–1695, 3486–3490, 3584–3596, 4537–4544`,
+   `Decisions.lean:367–410, 476–516, 568–579, 672–772, 867–938, 1126–1162, 1237–1467, 1688–1695, 3486–3490, 3584–3596, 4537–4544`,
    `Event.lean:2364–2391`,
    `Leaving.lean:1093–1114, 1137–1239, 2635–2646, 2714–2717, 2967–3001, 3355–3407, 3695–3799`,
    `StateBasedActions.lean:509–580, 608–670, 847–867, 890–980`;
@@ -17617,10 +17617,10 @@ parity).
          `g.pending`, `g.openBatchPending`, and in-batch `.engine _ (.pending (.chooseLegend q ..)) _`
          events (testing `!effCtrls.contains q` at `1184` and `1205`).
    - **Explicit priority-grant preservation across `Decisions.finishAndGrantPriority`,
-     `finishFraChoice`, `resumePendingReplacementCore` (`.seq` & `.finishPostCast`),
-     `reverseOrResumePopped`, resolution-cast cost/target/discard/sacrifice paths, and `Event`**
+     `finishFraChoice`, `resumePendingReplacementCore` (`.seq`, `reverseOrResumePopped`, &
+     `.finishPostCast`), resolution-cast cost/target/discard/sacrifice paths, and `Event`**
      (`Actions.lean:75–79`,
-     `Decisions.lean:367–410, 476–516, 894–938, 1377–1467, 1688–1695, 3486–3490, 3584–3596, 4537–4544`,
+     `Decisions.lean:367–410, 476–516, 867–938, 1160, 1237–1467, 1688–1695, 3486–3490, 3584–3596, 4537–4544`,
      `Event.lean:2364–2391`):
      - Three priority-handoff bugs overwrite an explicit priority recipient `p3` (such as a post-cast or
        outer `.receivePriority p3` when `p3 != activePlayer`):
@@ -17629,20 +17629,24 @@ parity).
        `.chooseReplacement` or `.chooseLegend`, the `.chooseReplacement` arm (`392–399`) either chains
        `.receivePriority p` with the caller's fallback `p` at line `399` (when no remaining continuation
        grants priority) or overwrites `pendingPriority` with `target = g.priorityInstead p` at `395–397`
-       (when post-drain `g.hasImplicitPriorityContinuation && !hadEntryPending && g.pendingPriority != some
-       target`), the `.chooseLegend` arm (`401–403`) overwrites `pendingPriority` whenever
-       `!hadEntryPending && g.pendingPriority != some target`, and `406–408` overwrites `pendingPriority`
-       when post-drain `g.hasImplicitPriorityContinuation && !hadEntryPending && g.pendingPriority != some
-       target`;
-       (ii) in `Decisions.resumePendingReplacementCore` (`.seq first rest` at `894–938` and
+       (when post-drain `g.hasImplicitPriorityContinuation && (!hadEntryPending || g.pendingPriority.isNone)
+       && g.pendingPriority != some target`), the `.chooseLegend` arm (`401–403`) overwrites `pendingPriority`
+       whenever `!hadEntryPending && g.pendingPriority != some target`, and `406–408` overwrites
+       `pendingPriority` when post-drain
+       `g.hasImplicitPriorityContinuation && (!hadEntryPending || g.pendingPriority.isNone) &&
+       g.pendingPriority != some target`;
+       (ii) in `Decisions.resumePendingReplacementCore` (`867–868`, `.seq first rest` at `870–938`,
+       `reverseOrResumePopped` local to `.restorePending` at `1241, 1382–1384, 1425–1438`, and
        `.finishPostCast caster grantPriority hadOuter hadOpenCont` at `1688–1695`), when a continuation
        chains `.seq (.finishPostCast caster false false hadOpenCont) (.seq postStep (.receivePriority p3))`,
        line `900` computes `followedByFinishFra || rest.endsWithFinishFra == false` so line `1694`
        (`!grantPriority && !followedByFinishFra`) immediately runs `g.finishFraChoice` (`activePlayer`
        priority + SBA check) *before* `932` runs `rest = .seq postStep (.receivePriority p3)`, while on an
        illegal resolution cast reversal (`reversed == true` at `918–920` after `reverseOrResumePopped` at
-       `1425–1438`) `reverseOrResumePopped` has no visibility into `rest`'s explicit `.receivePriority p3`
-       and grants `activePlayer` priority via `finishFraChoice`; and
+       `1241, 1382–1384, 1425–1438`) `rest` is bound only in `.seq first rest` (`870–938`) and not in scope
+       inside `reverseOrResumePopped` (and folding `rest.endsWithNonProposalPriorityGrant` into
+       `followedByFinishFra` at `900` would make `1383` / `1425–1434` append or run `.finishFraChoice` before
+       `920` returns `g` and drops `rest`); and
        (iii) `Decisions.finishFraChoice` (`478`) checks `pr.endsWithFinishFra || pr.endsWithPriorityGrant`
        only on `g.pendingReplacement` (ignoring `outerPendingReplacements`), while
        `Decisions.finishProposedSpellCosts` (`3486–3490`), `Decisions.beginResolutionCastTargets` (`3590`),
@@ -17662,12 +17666,22 @@ parity).
          `.concedePlayersLoop _ wp mid .. => !wp && !mid`, and
          `.seq _ b => b.endsWithNonProposalPriorityGrant` while excluding all proposal-completion arms
          (`.finishPostCast`, `.finishBecomeCast`, `.finishProposedSpellCosts`, `.completeActivation`,
-         `.finishBecomeActivated`, `.finishPostLoyaltyActivated`, and `.finishTurnFaceUp`), pass
-         `followedByFinishFra := followedByFinishFra || rest.endsWithNonProposalPriorityGrant` at
-         `Decisions.lean:900`, and when `first` reverses inside `.seq first rest` (`894–920` /
-         `reverseOrResumePopped` at `1425–1438`) with an explicit recipient
-         `firstPriorityGrantRecipient? g0 false rest == some (some prio)` (and `!rest.endsWithFinishFra`)
-         preserve `.receivePriority prio` / `g.finishAndGrantPriority prio` instead of `.finishFraChoice`;
+         `.finishBecomeActivated`, `.finishPostLoyaltyActivated`, and `.finishTurnFaceUp`), add
+         `(followedByNonProposalPriorityGrant : Bool := false)` and
+         `(followedByExplicitPriority? : Option PlayerId := none)` to
+         `Decisions.resumePendingReplacementCore` (`867–868`, threaded through recursive calls at
+         `929–937, 1160, 1238, 1396`), keep `followedByFinishFra := followedByFinishFra ||
+         rest.endsWithFinishFra` strictly for `.finishFraChoice` at `900` while computing
+         `followedByNonProposalPriorityGrant := followedByNonProposalPriorityGrant ||
+         rest.endsWithNonProposalPriorityGrant` and `followedByExplicitPriority? := match
+         firstPriorityGrantRecipient? g0 false rest with | some (some prio) => if rest.endsWithFinishFra then
+         none else some prio | _ => followedByExplicitPriority?` in `.seq first rest` (`898–901`), guard
+         `.finishPostCast`'s `g.finishFraChoice` call at `1694` with
+         `!grantPriority && !followedByFinishFra && !followedByNonProposalPriorityGrant`, and in
+         `reverseOrResumePopped` (`1241, 1382–1384, 1425–1438`) when
+         `followedByExplicitPriority? == some prio` (and `!followedByFinishFra`) append/chain
+         `.receivePriority prio` (`1383, 1425–1431`) or call `g.finishAndGrantPriority prio` (`1432–1434`)
+         instead of `.finishFraChoice` / `g.finishFraChoice`;
          and check `g.anyContinuationGrantsPriority` in `Decisions.finishFraChoice` (`478`),
          `Decisions.finishProposedSpellCosts` (`3487`), `Decisions.beginResolutionCastTargets` (`3590`),
          `Decisions.discardChosen` (`4537, 4541`), and `Actions.applyAction` (`Actions.lean:76`).
@@ -17891,11 +17905,11 @@ parity).
    `Event.castEventBound` stack-resolved permanent & stack-copy bounds, nested mana
    `targetProposalCheckpoint?`, disjoint combined activation costs, and stack-resolved `ManaRestriction`
    parity**
-   (`Activation.lean:19–42, 88–89, 125–132`, `ActivationCosts.lean:22–24, 150, 179, 235–293, 695`,
+   (`Activation.lean:19–42, 88–89, 125–132`, `ActivationCosts.lean:22–24, 150, 179, 235–293, 456, 695`,
    `Agent.lean:21–45, 171, 512–564`, `Casting.lean:427–439, 531–546, 1292`, `Choices.lean:614`,
    `Core.lean:3890–3893`, `Decisions.lean:138, 3807–3866`, `EffectResolution.lean:2716–2728`,
    `Event.lean:3800–3827`, `FraChoices.lean:727–748, 1994–2003`, `LandsAndMana.lean:58–65`,
-   `Leaving.lean:1293, 2361–2434, 2697–2710, 3110–3112, 3242, 3355–3359`,
+   `Leaving.lean:1292–1294, 2360–2435, 2697–2710, 3110–3112, 3242, 3355–3359`,
    `ManaAbilities.lean:401–408, 822, 1006, 1052`, `Pending.lean:188–212`, `PriorityActions.lean:30–34`,
    `Timing.lean:101–108`;
    **CR 106.6 / 113.6 / 118.3 / 118.10 / 302.6 / 400.7 / 601.2b–i / 602.2b / 605.1a / 605.3a–b / 608.2 /
@@ -17928,9 +17942,9 @@ parity).
          `Agent.chooseActivate` (`520–552`).
    - **Stack-resolved permanent & stack-copy bounds in `Event.castEventBound` and
      `targetProposalCheckpoint?` across `Choices`, `sinceIdx` helpers, & `Leaving`**
-     (`ActivationCosts.lean:150, 179, 695`, `Agent.lean:171`, `Casting.lean:429, 1292`, `Choices.lean:614`,
+     (`ActivationCosts.lean:150, 179, 456, 695`, `Agent.lean:171`, `Casting.lean:429, 1292`, `Choices.lean:614`,
      `Core.lean:3890–3893`, `Decisions.lean:138`, `Event.lean:3800–3827`,
-     `Leaving.lean:1293, 2361–2434, 2697–2710, 3110–3112, 3242, 3355–3359`,
+     `Leaving.lean:1292–1294, 2360–2435, 2697–2710, 3110–3112, 3242, 3355–3359`,
      `ManaAbilities.lean:822, 1006, 1052`):
      - Two cost-provenance and nested-checkpoint bugs remain:
        (i) in `Event.castEventBound` (`3821–3822`), `.rules (.zone (.moved _ after fromZ .battlefield ..))`
@@ -17939,30 +17953,38 @@ parity).
        querying `castEventBound` on a stack-resolved permanent `after.id` (e.g. turning a face-down cast
        creature face up via morph under CR 702.37a,e) or an uncast stack copy created via
        `StackObjectEvent.copied` (CR 707.10) returns `events.size` instead of `0`; and
-       (ii) `Choices.sourceStillPayable` (`614`) and the `sinceIdx` defaults in `ActivationCosts.lean` (`150,
-       179, 695`), `Decisions.lean` (`138`), `Casting.lean` (`429, 1292`), `ManaAbilities.lean` (`822, 1006,
-       1052`), and `Agent.lean` (`171`) read `g.proposalCheckpoint` rather than
-       `g.targetProposalCheckpoint?` (`Leaving.lean:2705–2710`), advancing `sinceIdx` past already-paid outer
-       proposal costs whenever a nested mana-ability checkpoint (`g.isNestedManaProposalCheckpoint`) is open,
-       while `Leaving.playerLeavesGameCore` (`3110–3112, 3242, 3355–3358`, and `redirectPendingAfterLeave` at
-       `1293, 2361–2434`) emits only a single `EngineChange.clearProposalCheckpoint` (`Core.lean:3890–3893`)
-       when aborting a caster's own nested mana + spell proposal without rewind — which pops
-       `outerProposalCheckpoints` once and promotes the enclosing spell/ability checkpoint into
-       `g.proposalCheckpoint`, leaving `g.proposalCheckpoint.isSome` for the aborted proposal (or, if multiple
-       cleanup steps in the same departure each emit `.clearProposalCheckpoint`, risks popping a surviving
-       outer checkpoint):
+       (ii) `Choices.sourceStillPayable` (`614`) and the eleven `sinceIdx` / `eventsSize` reads in
+       `ActivationCosts.lean` (`150, 179, 456, 695`), `Decisions.lean` (`138`), `Casting.lean` (`429, 1292`),
+       `ManaAbilities.lean` (`822, 1006, 1052`), and `Agent.lean` (`171`) read `g.proposalCheckpoint` rather
+       than `g.targetProposalCheckpoint?` (`Leaving.lean:2705–2710`), advancing `sinceIdx` past already-paid
+       outer proposal costs whenever a nested mana-ability checkpoint (`g.isNestedManaProposalCheckpoint`) is
+       open, while in `Leaving.redirectPendingAfterLeave` (`1288–1294`) six arms (`2360–2362, 2371–2373,
+       2388–2390, 2402–2404, 2417–2419, 2433–2435`) shadow the `!rewindAbortedProp`-gated `clearProp`
+       (`1292–1294`) with `if abortedProp then #[.proposedSpell none, .clearProposalCheckpoint]` (clearing a
+       checkpoint that a third-party departure rewind still needs when `rewindAbortedProp == true`), and the
+       genuine no-rewind abort sites (`redirectPendingAfterLeave`'s shared `clearProp` at `1292–1294` and
+       `playerLeavesGameCore` at `3110–3112, 3242, 3355–3358`) emit only a single
+       `EngineChange.clearProposalCheckpoint` (`Core.lean:3890–3893`) when aborting a caster's own nested
+       mana + spell proposal without rewind — which pops `outerProposalCheckpoints` once and promotes the
+       enclosing spell/ability checkpoint into `g.proposalCheckpoint`, leaving `g.proposalCheckpoint.isSome`
+       for the aborted proposal (or, if multiple cleanup steps in the same departure each emit
+       `.clearProposalCheckpoint`, risks popping a surviving outer checkpoint):
        - Drop `fromZ != .stack &&` from `Event.castEventBound` (`3821–3822`) and add
          `| .rules (.stackObject (.copied _ copy _)) => copy.id == some spell` (`CR 707.10`) so post-arrival
          battlefield permanents and uncast stack copies return bound `0`; replace `g.proposalCheckpoint` with
-         `g.targetProposalCheckpoint?` in `Choices.sourceStillPayable` (`614`) and all nine `sinceIdx`
-         helpers (`ActivationCosts.lean:150, 179, 695`, `Decisions.lean:138`, `Casting.lean:429, 1292`,
-         `ManaAbilities.lean:822, 1006, 1052`, `Agent.lean:171`); and when aborting a proposal without rewind
-         (`Leaving.lean:1293, 2361–2434, 3110–3112, 3242, 3355–3358`), pop any active nested mana checkpoint
-         first (`g.popNestedManaProposalCheckpoint`, `2697–2698`, promoting the enclosing spell/ability
-         checkpoint via `.clearProposalCheckpoint`) before emitting `.proposedSpell none` and
-         `.clearProposalCheckpoint` for that promoted spell/ability checkpoint (tracking that the aborted
-         stack's checkpoints were already cleared so subsequent cleanup steps in the same departure do not emit
-         an extra `.clearProposalCheckpoint`).
+         `g.targetProposalCheckpoint?` in `Choices.sourceStillPayable` (`614`) and all eleven `sinceIdx` /
+         `eventsSize` sites (`ActivationCosts.lean:150, 179, 456, 695`, `Decisions.lean:138`,
+         `Casting.lean:429, 1292`, `ManaAbilities.lean:822, 1006, 1052`, `Agent.lean:171`); drop the six
+         shadowed `let clearProp` bindings in `Leaving.redirectPendingAfterLeave` (`2360–2362, 2371–2373,
+         2388–2390, 2402–2404, 2417–2419, 2433–2435`) so they reuse the shared
+         `abortedProp && !rewindAbortedProp`-gated `clearProp` (`1292–1294`), and on the genuine no-rewind
+         abort sites (`1292–1294` when `abortedProp && !rewindAbortedProp`, and `3110–3112, 3242, 3355–3358`
+         when `!rewindAbortedProposal`) pop any active nested mana checkpoint first
+         (`g.popNestedManaProposalCheckpoint`, `2697–2698`, promoting the enclosing spell/ability checkpoint
+         via `.clearProposalCheckpoint`) before emitting `.proposedSpell none` and `.clearProposalCheckpoint`
+         for that promoted spell/ability checkpoint (tracking that the aborted stack's checkpoints were
+         already cleared so subsequent cleanup steps in the same departure do not emit an extra
+         `.clearProposalCheckpoint`).
    - **Disjoint object assignment across combined non-mana activation costs (CR 118.10 / 602.2b) and
      stack-resolved `ManaRestriction` parity in `EffectResolution`**
      (`Activation.lean:19–42, 88–89, 125–132`, `ActivationCosts.lean:254–293`,
