@@ -1044,15 +1044,44 @@ def tapForMana (g : Game) (p : PlayerId) (id : ObjectId) (mana : ManaType) : Exc
   let defs := g.manaAbilityDefs o
   let some i := g.manaAbilityIndexFor o mana true <|> g.manaAbilityIndexFor o mana false
     | do
-      let pCtrl := (g.controllerOf o).getD o.owner
-      let fallbackIdx? :=
-        (List.range defs.size).find? (fun j =>
-          let d := defs[j]!
-          g.manaAbilityDefUsable pCtrl o d && d.picks.isEmpty && (d.output.withType mana).isSome)
-      if let some j := fallbackIdx? then
-        if let some d := defs[j]? then
-          if let some added := d.output.withType mana then
-            return ← g.activateManaAbility p id j added
+      if let some d := defs.find? (fun d =>
+          g.manaAbilityDefUsable p o d && d.picks.isEmpty && (d.output.withType mana).isSome) then
+        if !g.canActivateManaAbility p then
+          throw "You can't activate a mana ability now (CR 605.3a)"
+        let oname := g.name o
+        let sinceIdx := (g.proposalCheckpoint.map (·.eventsSize)).getD g.events.size
+        if d.tap then
+          if o.status.tapped then
+            throw s!"{oname} is already tapped"
+          if let some prop := g.proposedSpell then
+            if prop.tapSource && prop.sourceId == some id &&
+                !g.sourceTappedForCost id (some prop.spellId) sinceIdx then
+              throw s!"{oname} is needed to pay \{T}"
+            if prop.teamworkCreatures.contains id then
+              throw s!"{oname} is already chosen to tap for teamwork"
+          if g.hasSummoningSickness o && !(g.isCreature o && g.activatesAsThoughHaste p) then
+            throw s!"{oname} has summoning sickness (CR 302.6)"
+        if d.sacrificeSelf || d.exileSelf then
+          if let some prop := g.proposedSpell then
+            if (prop.sourceId == some id && g.proposedNeedsBattlefieldSource prop sinceIdx) ||
+                prop.teamworkCreatures.contains id ||
+                (prop.sneakAttacker == some id && !g.sneakPaid prop.spellId) then
+              throw s!"{oname} is needed on the battlefield for the proposed spell or ability"
+        if d.removeStoryCounter then
+          if let some prop := g.proposedSpell then
+            if prop.sourceId == some id && prop.activation.any (·.cost.removeStoryCounter) &&
+                !g.sourceCounterCostPaidFor id (some prop.spellId) .removeCounters (some .story) sinceIdx &&
+                o.status.story ≤ 1 then
+              throw s!"{oname}'s story counter is needed for the proposed ability"
+        if d.removeIndestructibleCounter then
+          if let some prop := g.proposedSpell then
+            if prop.sourceId == some id && prop.activation.any (·.cost.removeIndestructibleCounter) &&
+                !g.sourceCounterCostPaidFor id (some prop.spellId) .removeCounters (some .indestructible) sinceIdx &&
+                o.status.indestructibleCounters ≤ 1 then
+              throw s!"{oname}'s indestructible counter is needed for the proposed ability"
+        let effCost := g.manaAbilityEffectiveCost p o d
+        if effCost.includesManaPayment then
+          throw s!"{(g.player p).name} cannot pay {effCost}"
       if g.retainsPrintedAbilities o &&
           (g.baseCard o).tapAddOneOfIfEnteredOrBasic.contains mana &&
           !g.canUseEnteredOrBasicAdd o then

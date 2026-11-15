@@ -136,11 +136,20 @@ by `p` (e.g. sacrificing or exiling `sid` to a CR 601.2g mana ability). -/
 def sourceRemovedByCostSince (g : Game) (p : PlayerId) (sid : ObjectId)
     (sinceIdx : Nat := 0) : Bool :=
   let slice := g.events.extract (min sinceIdx g.events.size) g.events.size
+  let batchHasCostByP (bid : BatchId) : Bool :=
+    slice.any fun
+      | .rules _ _ c (some b) =>
+        b == bid &&
+          match unreplacedCostCause c with
+          | .costPayment _ q _ => q == p
+          | _ => false
+      | _ => false
   slice.any fun
-    | .rules _ (.zone (.moved before _ .battlefield _ ..)) cause _ =>
+    | .rules _ (.zone (.moved before _ .battlefield _ ..)) cause batch? =>
       before.id == some sid &&
         match unreplacedCostCause cause with
         | .costPayment .sacrifice q _ | .costPayment .exile q _ => q == p
+        | .gameRule .playerLeftGame => batch?.any batchHasCostByP
         | _ => false
     | _ => false
 
@@ -705,22 +714,10 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
       (ab.any (fun a =>
         a.cost.putStunCounterOnSource &&
           !g.sourceCounterCostPaidFor sourceId forObject .putCounters (some .stun) sinceIdx))
-  let costAlreadyPaidForAbility :=
-    g.proposedSpell.any (·.fraCostPaid) ||
-      match forObject with
-      | none => false
-      | some fid =>
-        (g.events.extract (min sinceIdx g.events.size) g.events.size).any fun
-          | .rules _ _ cause _ =>
-            match unreplacedCostCause cause with
-            | .costPayment k q (some f) => k != .mana && q == p && f == fid
-            | _ => false
-          | _ => false
   let alreadySacrificedForCost :=
     !sacrificeOrExileSource && !discardSource && !rawFromGy && !rawFromHand &&
       (g.sourceSacrificedForCost sourceId forObject sinceIdx ||
-        (!hasUnpaidBfSourceCost &&
-          (g.sourceRemovedByCostSince p sourceId sinceIdx || costAlreadyPaidForAbility)))
+        (!hasUnpaidBfSourceCost && g.sourceRemovedByCostSince p sourceId sinceIdx))
   let alreadyDiscardedFromHandForCost :=
     !sacrificeOrExileSource && !discardSource && !rawFromGy && !needsBfSource &&
       ab.any (·.activateFromHand) &&
@@ -806,7 +803,7 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
         throw s!"{(g.player p).name} cannot pay {payLife} life"
       return (← g.payLifeCost p payLife (forObject := forObject))
     throw "The source is no longer on the battlefield"
-  if !g.controlledBy src p && !(!hasUnpaidBfSourceCost && costAlreadyPaidForAbility) then
+  if !g.controlledBy src p && !alreadySacrificedForCost then
     throw "You don't control that permanent"
   let tapNeeded := tapSource && !g.sourceTappedForCost sourceId forObject sinceIdx
   if tapNeeded && src.status.tapped then

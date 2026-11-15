@@ -36570,6 +36570,57 @@ private def replayOk44i4 (gs : Array Game) : Bool :=
     | .ok g => g
     | .error e => panic! e
 
+  -- Unrelated cost payment (`fraCostPaid`) does not waive `sourceId` battlefield presence or control,
+  -- and `tapForMana` rejects tapped, summoning-sick, unaffordable, or proposal-reserved abilities:
+  let crewDiscSkiffDef : CardDef := {
+    name := "P44i4 CrewDiscSkiff"
+    types := #[.artifact]
+    subtypes := #["Vehicle"]
+    power := some 3
+    toughness := some 3
+    activatedAbilities := #[
+      { cost := { discardACard := true, fra := .crew 2 }, effect := Effect.gainLife 2 }
+    ]
+  }
+  let filterManaRelicDef : CardDef := {
+    name := "P44i4 FilterRelic"
+    types := #[.artifact]
+    activatedAbilities := #[
+      { cost := { mana := ManaCost.ofGeneric 2 }
+        effect := { resolution := .addAnyColor, phrase := "Add one mana of any color." } },
+      { cost := { tap := true }, effect := Effect.gainLife 1 }
+    ]
+  }
+  let gCrewDisc0 := addPermanent (addPermanent g2 crewDiscSkiffDef p0 p0) bear p0 p0
+  let cdSkiffId := (gCrewDisc0.permanentsOf p0).find? (·.name == crewDiscSkiffDef.name) |>.get!.id
+  let cdPilotId := (gCrewDisc0.permanentsOf p0).find? (·.name == bear.name) |>.get!.id
+  let cdHandCardId := (gCrewDisc0.player p0).hand[0]!
+  let gCrewAfterTap :=
+    mustApply (mustApply gCrewDisc0 p0 (.activate cdSkiffId 0)) p0 (.choosePermanents #[cdPilotId])
+  let gCrewBounced := (gCrewAfterTap.move cdSkiffId (.hand p0) none (cause := some testCause)).1
+  let gCrewBouncedRev := mustApply gCrewBounced p0 (.choosePermanents #[cdHandCardId])
+  let gCrewStolen :=
+    gCrewAfterTap.createEffect
+      (.layered (.objects #[cdSkiffId]) (.control p1) .indefinite)
+      (cause := some testCause)
+  let gCrewStolenRev := mustApply gCrewStolen p0 (.choosePermanents #[cdHandCardId])
+  let gSickDork := addSickPermanent g2 dork22Def p0 p0
+  let sickDorkId := (gSickDork.permanentsOf p0)[0]!.id
+  let gFilter0 := addPermanent (addPermanent g2 filterManaRelicDef p0 p0) condLandWithGrantDef p0 p0
+  let filterRelicId := (gFilter0.permanentsOf p0).find? (·.name == filterManaRelicDef.name) |>.get!.id
+  let gTapProp :=
+    let tapRelicDef : CardDef := {
+      name := "P44i4 TapReservedRelic"
+      types := #[.artifact]
+      tapAddMana := #[.colorless]
+      activatedAbilities := #[
+        { cost := { mana := ManaCost.ofGeneric 1, tap := true }, effect := Effect.gainLife 1 }
+      ]
+    }
+    let g0 := addPermanent g2 tapRelicDef p0 p0
+    let rid := (g0.permanentsOf p0)[0]!.id
+    (mustApply g0 p0 (.activate rid 0), rid)
+
   let item4dOk :=
     (gCondTappedBlue.player p0).manaPool.blue == 1 &&
     condOnlyFails &&
@@ -36581,7 +36632,20 @@ private def replayOk44i4 (gs : Array Game) : Bool :=
     !elfPool.canPay (ManaCost.ofGeneric 1) (allowElfRestricted := false) &&
     gAfterSacOtherMana.stack.isEmpty &&
     (gAfterSacOtherMana.followMovedToZone? sacFodderId (· == .graveyard p0)).isSome &&
-    (gAfterSacOtherMana.player p0).manaPool.black == 2
+    (gAfterSacOtherMana.player p0).manaPool.black == 2 &&
+    gCrewAfterTap.proposedSpell.any (·.fraCostPaid) &&
+    !gCrewBounced.sourceStillPayable (gCrewBounced.proposedSpell.get!) &&
+    (gCrewBounced.payActivationExtraCosts p0 cdSkiffId false false 0 false
+      (gCrewBounced.proposedSpell.get!.activation)).isOk == false &&
+    gCrewBouncedRev.proposedSpell.isNone && gCrewBouncedRev.stack.isEmpty &&
+    !gCrewStolen.sourceStillPayable (gCrewStolen.proposedSpell.get!) &&
+    (gCrewStolen.payActivationExtraCosts p0 cdSkiffId false false 0 false
+      (gCrewStolen.proposedSpell.get!.activation)).isOk == false &&
+    gCrewStolenRev.proposedSpell.isNone && gCrewStolenRev.stack.isEmpty &&
+    (gCondTappedBlue.tapForMana p0 condGrantId (.colored .blue)).isOk == false &&
+    (gSickDork.tapForMana p0 sickDorkId (.colored .green)).isOk == false &&
+    (gFilter0.tapForMana p0 filterRelicId (.colored .blue)).isOk == false &&
+    (gTapProp.1.tapForMana p0 gTapProp.2 .colorless).isOk == false
 
   mustHold44i4 "4a.crewOrderAndAbilityIdx" item4aOk &&
   mustHold44i4 "4b.plainTapAndAgentConflict" item4bOk &&
@@ -36589,7 +36653,8 @@ private def replayOk44i4 (gs : Array Game) : Bool :=
   mustHold44i4 "4d.manaAbilityParity" item4dOk &&
   mustHold44i4 "4.replay"
     (replayOk44i4 #[gTcStep3, gCrewSac2, gDup1, gBaublePaid, gNc4,
-      gMorphTurnedUp, gAbPaid, gGyCopiedTapped, gAfterStunMana, gAfterSacOtherMana])
+      gMorphTurnedUp, gAbPaid, gGyCopiedTapped, gAfterStunMana, gAfterSacOtherMana,
+      gCrewBouncedRev, gCrewStolenRev])
 
 end Phase44Item4EventAlignment
 
