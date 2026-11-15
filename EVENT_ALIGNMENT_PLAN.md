@@ -17308,8 +17308,10 @@ provenance, mixed-zone & battlefield-source activation legality, `Timing.isManaA
        `Object.lean:262, 281, 284`, matching `eventCauseReferencesObject` at `Core.lean:1680–1684`) and
        `r.kind : ReplacementKind` (`object` / `beholdId` / `targetId` / `hostId` / `source` at
        `Event.lean:136–201`) on `.replacement`, and `p.source == some oid` plus the `ObjectId`
-       constructor payloads inside `p.id.kind` and `p.kind : PreventionKind` (`target` / `source` /
-       `protectedObject` / `damageSource` / `object` at `Event.lean:224–235`) on `.prevention`),
+       constructor payloads inside `p.id.kind : ReplacementEffectKind` (`beholdId` / `targetId` /
+       `hostId` at `Object.lean:262, 281, 284`, matching `r.id.kind`) and inside `p.kind :
+       PreventionKind` (`target` / `source` / `protectedObject` / `damageSource` / `object` at
+       `Event.lean:224–235`) on `.prevention`),
        `gameChangeReferencesObject` omits `dt.kind` / `dt.cause` on `.delayedTrigger` (`1847–1849`),
        `.fraChoice` / `.resolveRandom` on `.pending` (`1750–1762`), and `.continuation` /
        `.pushContinuationFrame` (`1850`), and `gameChangeMaxIdAndTs` (`1852–1942`) has no
