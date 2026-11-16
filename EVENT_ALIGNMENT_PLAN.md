@@ -18090,11 +18090,11 @@ permanent & stack-copy `Event.castEventBound` + nested mana `targetProposalCheck
 1. **Post-SBA `.seq` sibling ordering in `StateBasedActions.chainOrMergeLeave`, non-abort `pendingFreeCopies`
    preservation in `Leaving.playerLeavesGameCore`, and complete priority-recipient / cleanup-step /
    `.seq`-reversal classification across `Decisions`, `ManaAbilities`, & `Event`**
-   (`Casting.lean:690–893`, `Core.lean:24, 8149–8156`,
-   `Decisions.lean:283–329, 348–349, 385–423, 600–659, 673–788, 865–969, 1271–1488, 1602–1684, 1911–1912, 1972, 2441–2526, 2671–2682, 3379–3399`,
+   (`Casting.lean:690–893, 1008–1059`, `Core.lean:73, 1329–1330, 8149–8156`,
+   `Decisions.lean:283–329, 348–349, 385–423, 600–659, 673–788, 865–969, 1271–1488, 1602–1684, 1911–1912, 1972, 2441–2526, 2671–2682, 2704–2719, 3379–3399`,
    `Event.lean:1257–1258, 1341–1346, 1749–1750, 1931–1935, 2345–2400`, `Leaving.lean:1765–1805, 3552–3583`,
    `ManaAbilities.lean:547–548, 632–633, 640–643, 667–668`, `StateBasedActions.lean:440–486`,
-   `Triggers.lean:511–525`, `Turns.lean:592–737, 772–868, 965, 1120–1209`;
+   `Triggers.lean:511–525`, `Turns.lean:592–737, 772–868, 888–1021, 1041–1066, 1120–1209`;
    **CR 104.5 / 117.3a,c / 503.1 / 514.3a / 601.2a–i / 603.3b / 605.3b / 616.1 / 704.3 / 704.5e / 707.12 /
    733.1–733.2 / 800.4a,i**):
    - **Post-leaf `.seq` sibling ordering in `StateBasedActions.chainOrMergeLeave` and non-abort
@@ -18130,17 +18130,20 @@ permanent & stack-copy `Event.castEventBound` + nested mana `targetProposalCheck
          `runPostCastCleanup` to handle remaining copies.
    - **Explicit `priorityRecipientOfContinuation?`, cleanup-step priority continuations, and `.seq`
      proposal-reversal coverage across `Decisions`, `ManaAbilities`, & `Event`**
-     (`Casting.lean:690–893`, `Core.lean:24, 8149–8156`,
-     `Decisions.lean:283–329, 348–349, 385–423, 600–659, 673–788, 865–969, 1271–1275, 1602–1684, 1911–1912, 1972, 2441–2526, 2671–2682, 3379–3399`,
+     (`Casting.lean:690–893, 1008–1059`, `Core.lean:73, 1329–1330, 8149–8156`,
+     `Decisions.lean:283–329, 348–349, 385–423, 600–659, 673–788, 865–969, 1271–1275, 1602–1684, 1911–1912, 1972, 2441–2526, 2671–2682, 2704–2719, 3379–3399`,
      `Event.lean:1257–1258, 1341–1346, 1749–1750, 1931–1935, 2345–2400`, `Leaving.lean:1765–1805`,
      `ManaAbilities.lean:547–548, 632–633, 640–643, 667–668`, `Triggers.lean:511–525`,
-     `Turns.lean:592–737, 772–868, 965, 1120–1209`):
+     `Turns.lean:592–737, 772–868, 888–1021, 1041–1066, 1120–1209`):
      - Three priority-continuation and `.seq`-reversal classification gaps remain:
        (i) `Decisions.priorityRecipientOfContinuation?` (`299–314`) returns `none` for `.finishConcede`, idle
        `.concedePlayersLoop` (`!wp && !mid`), `.finishPostCast caster true false true` (`Event.lean:1749–1750`,
        fourth field `hadOpenContinuation`: `endsWithPriorityGrant` at `Event.lean:2369` is `grantPriority &&
        !hadOuter` for both values of `hasQueuedPending`, while line `301` matches only `.finishPostCast caster true
-       false false`), and the step/turn leaves already in `Decisions.continuationGrantsPriority` (`286–294`:
+       false false => some caster` — returning `none` on `hadOpenContinuation == true` when `Casting.finishPostCast`
+       at `Casting.lean:1053, 1059` grants `g.activePlayer`, and returning `some caster` unconditionally on
+       `hadOpenContinuation == false` even when `1015–1058` divert to `.finishFraChoice` or a non-replacement prompt),
+       and the step/turn leaves already in `Decisions.continuationGrantsPriority` (`286–294`:
        `.beginStepCont st` when `st != .untap || hasQueuedPending`, `.beginTurnAfterStartExpiry`,
        `.continueStartNextTurn ..`, `.finishCleanupAfterClearEot`, and `.finishPostStep` of
        `.startNextTurnAndBegin`, `.endTurnAfterCleanupStepEnded`, `.advanceAfterStepEnded`, `.beginStepBody st`,
@@ -18198,23 +18201,43 @@ permanent & stack-copy `Event.castEventBound` + nested mana `targetProposalCheck
          (`Triggers.lean:511–525`, `g.triggerNeedingTargets.isSome`) opens `.chooseTargets` without a priority grant,
          and `!g.playersReceivePriority` at `659` — while returning
          `some (if g.stillInGame rawPrio then rawPrio else g.nextLiving rawPrio)` for `rawPrio :=
-         (savedPendingPrio.orElse (fun _ => g.pendingPriority)).getD g.priority` (`653–655`, `Core.lean:24, 8149–8156`)
-         only for the `g.receivePriority nextP` call at `658` when `g.playersReceivePriority` holds and `656–657`
-         leaves `g.pending == .none`, including when the `614–631` restoration `let` or `concedePlayersLoop`'s
-         `680–773` loop falls through to `658` via `869–871`), for `.finishPostCast caster
-         true false _` (`some caster`
-         unconditionally across `hadOpenContinuation`), and for the step/turn/cleanup continuations (next living
-         turn seat from `Turns.continueStartNextTurn`'s extra-turn / departed-seat recomputation at
-         `Turns.lean:625–640, 708–736` on `.continueStartNextTurn nextP remainingDeparted true alreadyExpired`,
-         next-turn seat from `Turns.startNextTurnCore`'s seat scan at `772–784` on
-         `.finishPostStep .startNextTurnAndBegin` / `.finishPostStep .endTurnAfterCleanupStepEnded` and on
-         `.finishPostStep (.postSbaCleanup false)` when `!g.hasWaitingTriggers` (`840–847`), `some g.activePlayer`
-         on `.beginTurnAfterStartExpiry`, `.finishPostStep (.postSbaCleanup true)` and
-         `.finishPostStep (.postSbaCleanup false)` when `g.hasWaitingTriggers` (`836–839`),
-         `.finishPostStep .advanceAfterStepEnded`, and non-cleanup `.beginStepCont st` /
-         `.finishPostStep (.beginStepBody st)` / `.finishPostStep (.beginStepAfterPhaseBegan st)`, and cleanup-SBA
-         vs next-turn recipient on `.finishCleanupAfterClearEot` / `.finishPostStep .cleanupStepAfterDiscard` /
-         cleanup `.beginStepCont` / `.beginStepBody` / `.beginStepAfterPhaseBegan`); add
+         (savedPendingPrio.orElse (fun _ => g.pendingPriority)).getD g.priority` (`653–655`,
+         `Core.lean:73, 1329–1330, 8149–8156`) only for the `g.receivePriority nextP` call at `658` when
+         `g.playersReceivePriority` holds and `656–657` leaves `g.pending == .none`, including when the `614–631`
+         restoration `let` or `concedePlayersLoop`'s `680–773` loop falls through to `658` via `869–871`), for
+         `.finishPostCast caster true false hadOpenContinuation` (`Casting.lean:1008–1059`: after `runPostCastCleanup`
+         / `pendingMayCastFromExile` / `pendingFreeCopies` at `1012–1047`, return `none` when `.chooseReplacement`
+         with `g.triggerSequenceRest.isSome` chains `.finishFraChoice` at `1050–1051`, when any other `g.pending !=
+         .none` returns without a priority grant at `1054`, or when `g.triggerSequenceRest.isSome ||
+         g.pendingReplacement.isSome` chains `.finishFraChoice` at `1057–1058`, and otherwise return
+         `some (if hadOpenContinuation then g.activePlayer else caster)` for the `1053` / `1059` `receivePriority`
+         sites, i.e., `some caster` on `hadOpenContinuation == false` and `some g.activePlayer` on
+         `hadOpenContinuation == true`), and for the step/turn/cleanup
+         continuations (next living turn seat from `Turns.continueStartNextTurn`'s extra-turn / departed-seat
+         recomputation at `Turns.lean:625–640, 708–736` on `.continueStartNextTurn nextP remainingDeparted true
+         alreadyExpired` — or `none` on `g.over` / no living seat at `595, 609, 734–737` — next-turn seat from
+         `Turns.startNextTurnCore`'s seat scan at `772–784` on `.finishPostStep .startNextTurnAndBegin` /
+         `.finishPostStep .endTurnAfterCleanupStepEnded` and on `.finishPostStep (.postSbaCleanup false)` when
+         `!g.hasWaitingTriggers` (`840–847`), `some g.activePlayer` on `.beginTurnAfterStartExpiry` (`1041–1066`, or
+         `none` on `g.over`) and on `.finishPostStep (.postSbaCleanup true)` and
+         `.finishPostStep (.postSbaCleanup false)` when `g.hasWaitingTriggers` (`834–839`, or `none` on `g.over`),
+         step-specific recipient on non-cleanup `.beginStepCont st` (`1013–1021`, evaluating after `clearCombat` from
+         `.endOfCombat` at `1014–1019`) / `.finishPostStep (.beginStepAfterPhaseBegan st)` (`979–984`) /
+         `.finishPostStep (.beginStepBody st)` (`888–976`) — and on `.finishPostStep .advanceAfterStepEnded`
+         (`Decisions.lean:2704–2719`), following the next step it chains (`.beginningOfCombat` when `g.step ==
+         .endOfCombat && g.additionalCombatPhases > 0` at `2705–2710`, `st` when `g.step.next? == some st` at
+         `2712–2718`, or `none` on `g.step.next? == none` at `2719`) — returning `none` on `.untap` (`891–902`, even
+         when `hasQueuedPending` is `true`), on `.declareAttackers` when `g.stillInGame g.activePlayer` sets `.pending
+         .declareAttackers` at `922–926` (`some g.activePlayer` only in the `!g.stillInGame g.activePlayer` `else`
+         branch), on `.declareBlockers` when attackers remain and a defending player is left to set `.pending
+         .declareBlockers` at `927–950` (`some g.activePlayer` only on the empty-attacker arm at `929–933` and
+         departed-defender arm at `945–948`), and on `.combatDamage` calling `beginCombatDamageAssignment` at
+         `951–952`, following `.precombatMain` when `.draw` skips via `g.skipsFirstDraw` at `904–914` (without
+         granting during the skipped draw itself), and returning `some g.activePlayer` on `.upkeep`,
+         `.beginningOfCombat`, `.end`, `.precombatMain` (`953–960, 968–974`), non-skip `.draw` (`916–921`, or `none`
+         if the draw ends the game), and the `| _ =>` arm (`975–976`), and cleanup-SBA vs next-turn recipient on
+         `.finishCleanupAfterClearEot` / `.finishPostStep .cleanupStepAfterDiscard` / cleanup `.beginStepCont` /
+         `.beginStepBody` / `.beginStepAfterPhaseBegan`); add
          `.finishPostStep .cleanupStepAfterDiscard` and `.finishPostStep (.postSbaCleanup _)` and gate
          `.continueStartNextTurn _ _ runBeginTurn _` on `runBeginTurn` (`735–737`) in
          `Decisions.continuationGrantsPriority` (`283–296`); add `.beginTurnAfterStartExpiry`,
