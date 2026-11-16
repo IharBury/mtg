@@ -19040,7 +19040,7 @@ arbitrary-subtype `.addAnyColorSpendOnlySubtype` (`abilitySourceSubtypes`) + Lay
    `Card/CardDef.lean:246, 531–541, 705–721`, `Casting.lean:468–496, 629–664`,
    `Core.lean:4923–4937, 15030–15043`, `Demo.lean:2085–2100, 2141–2148, 2186–2206`,
    `EffectResolution.lean:1557–1558, 2519–2520`, `Event.lean:3889–3902`, `LandsAndMana.lean:84–88`,
-   `Mana.lean:414–416, 431, 481–485, 644–664, 678–717`, `ManaAbilities.lean:218–221, 238, 428–429, 679–681, 1024–1028, 1111–1114, 1186–1196`,
+   `Mana.lean:481–485, 644–664, 678–717`, `ManaAbilities.lean:218–221, 238, 428–429, 679–681, 1024–1028, 1111–1114, 1186–1196`,
    `TriggerArgs.lean:15–22, 459, 469–485`, `TriggeredAbilities.lean:5689–5694`;
    **CR 106.1 / 106.4 / 106.6 / 107.3a / 111.10a / 118.3 / 601.2b,f–h / 602.2b / 605.1a / 605.3b / 608.2c,h /
    612.2 / 613.1c / 702.51 / 702.122a / 702.126 / 733.1**):
@@ -19089,7 +19089,7 @@ arbitrary-subtype `.addAnyColorSpendOnlySubtype` (`abilitySourceSubtypes`) + Lay
      `CardDef.tapAddColorlessPerSubtype` mana parity**
      (`Card/CardDef.lean:246, 531–541, 705–721`, `Core.lean:4923–4937, 15030–15043`,
      `EffectResolution.lean:1557–1558, 2519–2520`, `Event.lean:3889–3902`,
-     `Mana.lean:414–416, 431, 481–485, 644–664, 678–717`,
+     `Mana.lean:481–485, 644–664, 678–717`,
      `ManaAbilities.lean:218–221, 238, 428–429, 679–681, 1024–1028, 1111–1114`,
      `TriggerArgs.lean:15–22, 459, 469–485`, `TriggeredAbilities.lean:5689–5694`):
      - Three mana-restriction, Treasure-provenance, and resolution/Layer-3 parity bugs remain:
@@ -19111,11 +19111,13 @@ arbitrary-subtype `.addAnyColorSpendOnlySubtype` (`abilitySourceSubtypes`) + Lay
        (`1557–1558`) / `applyUnifiedAbility` (`2519–2520`) omit `(chosenX := chosenX)` when calling `applyAddMana`
        (and `TriggeredAbilities.lean:5689–5694` drops `lastKnownPower` / `lastKnownToughness` when routing
        `TriggerResolution` through `applyUnified` / `applyUnifiedAbility`), `Core.TextChange.applyResolution`
-       (`4923–4937`) does not rewrite creature-subtype words inside `Resolution.addMana types amount`'s
-       `NumberSelector` (`ManaAbilities.cardManaAbilities`'s `c.tapAddRestricted` arm at `238` likewise passes
-       `restrictionOfText text` without rewriting `.dwarf` via `sub .dwarf`), and `CardDef.tapAddColorlessPerSubtype`
-       (`Card/CardDef.lean:246, 531–541, 705–721`) is unwired in `ManaAbilities.cardManaAbilities` (`218–221`),
-       `CardDef.manaAbilities`, and `CardDef.structuredAbilityLines`:
+       (`4923–4937`) has no `.addMana` arm (`4924–4936`, falling through to `| r => r`) to rewrite creature-subtype
+       words inside `Resolution.addMana types amount`'s `NumberSelector`, `ManaAbilities.cardManaAbilities`'s
+       `c.tapAddRestricted` arm (`238`) calls `restrictionOfText text` on raw `text : String` without applying
+       `tcs`'s `.replaceCreatureType` rewrites before building the `ManaRestriction` (and `.dwarfEquipmentSagaSpell`
+       hardcodes `.dwarf`, `.equipment`, and `.saga` rather than carrying a replaced subtype), and
+       `CardDef.tapAddColorlessPerSubtype` (`Card/CardDef.lean:246, 531–541, 705–721`) is unwired in
+       `ManaAbilities.cardManaAbilities` (`218–221`), `CardDef.manaAbilities`, and `CardDef.structuredAbilityLines`:
        - Pass `(spend := { abilitySourceSubtypes := g.subtypes o })` in `ManaAbilities.lean:1024–1028, 1111–1114`,
          place `.fra .notSpellsFromHand` after narrow positive restrictions alongside `.cantNonartifact` in
          `ManaPool.spendOneUnit?` (`654–660`) and `spendAnyUnit?` (`696–711`), and iterate `for t in order` when
@@ -19128,10 +19130,12 @@ arbitrary-subtype `.addAnyColorSpendOnlySubtype` (`abilitySourceSubtypes`) + Lay
          `3905–3914` already passes `preCast`); and add `chosenX : Nat := 0` to `TriggerRead`
          (`TriggerArgs.lean:15–22, 459, 469–485`), forward `(chosenX := chosenX)` at `EffectResolution.lean:1558, 2520`
          (and `lastKnownToughness` through `EffectResolution.applyUnifiedAbility` / `TriggeredAbilities.lean:5689–5694`),
-         rewrite `Resolution.addMana`'s `NumberSelector` subtype words in `Core.TextChange.applyResolution`
-         (`4923–4937`) plus `cardManaAbilities`'s `c.tapAddRestricted` arm at `ManaAbilities.lean:238` (and
-         `Mana.lean:414–416, 431`), and wire `CardDef.tapAddColorlessPerSubtype` across
-         `ManaAbilities.cardManaAbilities` (`218–221`) and `Card/CardDef.lean:531–541, 705–721`.
+         add a `.addMana` arm in `Core.TextChange.applyResolution` (`4923–4937`) rewriting creature-subtype words in its
+         `NumberSelector`, build the `c.tapAddRestricted` `ManaRestriction` at `ManaAbilities.lean:238` from `text`
+         after applying `tcs`'s `.replaceCreatureType` rewrites (using a parameterized `FraManaUse` variant when the
+         creature subtype is rewritten rather than `.dwarfEquipmentSagaSpell`), and wire
+         `CardDef.tapAddColorlessPerSubtype` across `ManaAbilities.cardManaAbilities` (`218–221`) and
+         `Card/CardDef.lean:531–541, 705–721`.
 
 Tests: `Events.lean` (unit + replay-determinism `#guard`s for `concedePlayersLoop` `anyContinuationGrantsPriority`
 termination + `continuationGrantsPriority` / `firstPriorityGrantRecipient?` `some none` separation + `openCont` /
