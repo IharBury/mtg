@@ -168,7 +168,7 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
     | .chooseX _ =>
       match g.proposedSpell with
       | some prop =>
-        let sinceIdx := (g.proposalCheckpoint.map (·.eventsSize)).getD g.events.size
+        let sinceIdx := (g.targetProposalCheckpoint?.map (·.eventsSize)).getD g.events.size
         let selfTapExcl : Array ObjectId :=
           match prop.sourceId with
           | some sid =>
@@ -384,7 +384,7 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
       let affordable :=
         (g.findObject? cardId).any (fun o =>
           let available := g.availableMana p
-          let origPerm := g.playPermission o
+          let origPerm := g.playPermissionFor? p o
           let spend : ManaSpend :=
             { spell := true, fromHand := o.zone == .hand p
               supertypes := g.supertypes o, types := g.types o, subtypes := g.subtypes o }
@@ -513,43 +513,54 @@ where
       let isTurnFaceUp := o.status.faceDown && ab.effect.resolution == .frc .turnFaceUp
       let selfExcl : Array ObjectId :=
         if !isTurnFaceUp && ab.cost.tap then #[o.id] else #[]
-      let crewExcl : Array ObjectId :=
-        if isTurnFaceUp then #[]
+      let allPicks :=
+        costPicksWithSacrificeOther (costPicksOf ab) ab.cost.sacrificeAnotherCreatureOrArtifact
+      let sacSrc := ab.cost.sacrificeSource || ab.cost.fra == .exileSource
+      let discSrc := ab.cost.discardSource || ab.cost.fra == .exileSourceFromHand
+      let (crewOk, crewExcl) : Bool × Array ObjectId :=
+        if isTurnFaceUp then (true, #[])
         else
           match ab.cost.fra with
           | .crew n =>
+            let manaSrcs := g.manaSources p
             let cands :=
               ((g.creaturesControlledBy p).filter (fun c => c.id != o.id && !c.status.tapped)).qsort
                 (fun a b =>
-                  let aNonMana := (g.manaAbilitiesOf a).isEmpty
-                  let bNonMana := (g.manaAbilitiesOf b).isEmpty
+                  let aNonMana := !manaSrcs.any (·.1.id == a.id)
+                  let bNonMana := !manaSrcs.any (·.1.id == b.id)
                   if aNonMana != bNonMana then aNonMana else g.power a > g.power b)
-            (cands.foldl (fun (acc : Array ObjectId × Nat) c =>
-              if acc.2 ≥ n then acc else (acc.1.push c.id, acc.2 + (g.power c).toNat)) (#[], 0)).1
-          | _ => #[]
-      let tapPickExcl : Array ObjectId :=
-        if isTurnFaceUp then #[]
-        else
-          let picks := costPicksOf ab
-          let sacSrc := ab.cost.sacrificeSource || ab.cost.fra == .exileSource
-          let discSrc := ab.cost.discardSource || ab.cost.fra == .exileSourceFromHand
-          (List.range picks.size).foldl (fun (acc : Array ObjectId) i =>
-            let pick := picks[i]!
-            if pick == .tapUntappedCreature || pick == .tapTwoUntappedArtifacts then
-              let chosen :=
-                if crewExcl.isEmpty && acc.isEmpty then
-                  (g.firstPayableCostPickSlice? p (some o.id) (picks.extract i picks.size)
-                    (tapSource := ab.cost.tap)
-                    (sacrificeOrExileSource := sacSrc)
-                    (discardOrExileHandSource := discSrc)).getD #[]
-                else
-                  ((g.costPickCandidates p (some o.id) pick
-                    (tapSource := ab.cost.tap)
-                    (sacrificeOrExileSource := sacSrc)
-                    (discardOrExileHandSource := discSrc)).filter (fun cid =>
-                      !crewExcl.contains cid && !acc.contains cid)).extract 0 pick.count
-              acc ++ chosen
-            else acc) #[]
+            match g.firstPayableCrewSelection? p o.id n allPicks
+                (tapSource := ab.cost.tap)
+                (sacrificeOrExileSource := sacSrc)
+                (discardOrExileHandSource := discSrc)
+                (orderedCands? := some cands)
+                (disjointFromAllPicks := true) with
+            | some picked => (true, picked)
+            | none => (false, #[])
+          | _ => (true, #[])
+      let (picksOk, tapPickExcl) : Bool × Array ObjectId :=
+        if isTurnFaceUp then (true, #[])
+        else if !crewOk then (false, #[])
+        else Id.run do
+          let mut usedPicks : Array ObjectId := #[]
+          let mut tapExcl : Array ObjectId := #[]
+          for i in [0:allPicks.size] do
+            let pick := allPicks[i]!
+            match g.firstPayableCostPickSlice? p (some o.id) (allPicks.extract i allPicks.size)
+                (tapSource := ab.cost.tap)
+                (sacrificeOrExileSource := sacSrc)
+                (discardOrExileHandSource := discSrc)
+                (used := crewExcl ++ usedPicks)
+                (preTappedIds := crewExcl) with
+            | some chosen =>
+              if chosen.size != pick.count then
+                return (false, #[])
+              usedPicks := usedPicks ++ chosen
+              if pick == .tapUntappedCreature || pick == .tapTwoUntappedArtifacts then
+                tapExcl := tapExcl ++ chosen
+            | none =>
+              return (false, #[])
+          return (true, tapExcl)
       let excludeIds := selfExcl ++ crewExcl ++ tapPickExcl
       let available := g.availableManaExceptIds p excludeIds
       let manaCost := g.activationManaCost p ab (some o)
@@ -561,6 +572,7 @@ where
       let spellSpend : ManaSpend :=
         { spell := true, fromHand := o.zone == .hand p
           supertypes := g.supertypes o, types := g.types o, subtypes := g.subtypes o }
+      crewOk && picksOk &&
       g.canActivate p o ab (idx? := some idx) &&
       available.canPay manaCost
         (allowElfRestricted := allowElf)
@@ -615,7 +627,7 @@ where
   chooseCast (g : Game) (p : PlayerId) : Option Action :=
     let available := g.availableMana p
     let playable := (g.handObjects p ++ g.exiledPlayable p).filter (fun o =>
-      let perm? := g.playPermission o
+      let perm? := g.playPermissionFor? p o
       let spend : ManaSpend :=
         { spell := true, fromHand := o.zone == .hand p
           supertypes := g.supertypes o, types := g.types o, subtypes := g.subtypes o }
@@ -637,7 +649,7 @@ where
         | some adv =>
           let face := adv.toCardDef
           let advObj := { o with controller := some p, printed := face, adventurerCard := some o.printed }
-          let perm? := g.playPermission o
+          let perm? := g.playPermissionFor? p o
           let spend : ManaSpend :=
             { spell := true, fromHand := o.zone == .hand p
               supertypes := g.supertypes advObj, types := g.types advObj, subtypes := g.subtypes advObj }

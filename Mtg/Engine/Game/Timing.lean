@@ -99,7 +99,8 @@ def _root_.Mtg.Engine.ActivatedAbility.isFromHand (ab : ActivatedAbility) : Bool
 /-- Whether `ab`'s cost requires its source to be a permanent on the battlefield
 (CR 113.6 / 602.2b). -/
 def _root_.Mtg.Engine.ActivatedAbility.needsBattlefieldSource (ab : ActivatedAbility) : Bool :=
-  ab.cost.tap || ab.cost.sacrificeSource || ab.cost.loyalty.isSome ||
+  ab.cost.tap || ab.cost.sacrificeSource || ab.cost.sacrificeEquipmentAttachedToSource ||
+    ab.cost.loyalty.isSome ||
     ab.cost.removeStoryCounter || ab.cost.removeIndestructibleCounter ||
     ab.cost.removeAnyNumberPlusOne || ab.cost.putStunCounterOnSource ||
     match ab.cost.fra with
@@ -157,7 +158,7 @@ def canPlayLand (g : Game) (p : PlayerId) : Bool :=
 /-- Whether `p` may play `o` from exile under a granted permission (CR 701.18 / 715.3d). -/
 def mayPlayFromExile (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
   o.zone == .exile &&
-  match g.playPermission o with
+  match g.playPermissionFor? p o with
   | some perm =>
     -- Ruling 744: only the current controller of the prepared permanent may
     -- cast the copy of its prepare spell.

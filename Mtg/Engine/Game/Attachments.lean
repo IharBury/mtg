@@ -90,7 +90,7 @@ def ceaseEndingFraEmblemsWhere (g : Game) (pred : EffectId â†’ EffectDuration â†
     match acc.findObject? id with
     | some o =>
       if o.zone == .command then
-        let embName := acc.name o
+        let embName := pre.name ((pre.findObject? o.id).getD o)
         (acc.ceaseToExist o.id (cause := cause) (reconcileControl := reconcileControl)
           (suppressReturnLog := true) (preState? := some pre)).logMsg s!"{embName} ends"
       else acc

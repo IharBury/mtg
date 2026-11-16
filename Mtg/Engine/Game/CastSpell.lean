@@ -71,7 +71,7 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
   if asAdventure then
     if bc.adventure.isNone then
       throw s!"{g.name card} has no Adventure"
-    if g.adventureExileForbidsRecast card then
+    if g.adventureExileForbidsRecast card (some p) then
       throw "You may not cast that card as an Adventure this way (CR 715.3d)"
   let face :=
     match asAdventure, bc.adventure with
@@ -89,8 +89,12 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
           att.status.attacking && !att.status.blocked) then
         throw s!"{g.name att} is not an unblocked attacker you control"
       pure (some c)
-  let origPerm := g.playPermission card
-  match origPerm.bind (·.prepareSource) with
+  let origPerm := g.playPermissionFor? p card
+  let prepPerm :=
+    origPerm <|>
+      (g.playPermissionEntriesOf card.id).findSome? (fun (_, _, pm, _) =>
+        if pm.prepareSource.isSome then some pm else none)
+  match prepPerm.bind (·.prepareSource) with
   | some src =>
     match g.findObject? src with
     | some perm =>

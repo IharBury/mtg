@@ -238,7 +238,12 @@ def playManaCost (g : Game) (card : GameObject) (face : CardDef)
     (origPerm : Option PlayPermission := none)
     (flashback : Option Bool := none)
     (explicitAltCost : Bool := false) : ManaCost :=
-  let caster := card.controller.getD card.owner
+  let effPerm :=
+    origPerm <|>
+      match card.controller with
+      | some c => g.playPermissionFor? c card
+      | none => g.playPermissionFor? card.owner card <|> g.playPermission card
+  let caster := card.controller.getD ((effPerm.map (·.player)).getD card.owner)
   -- Thalia, the Survivor: each one an opponent controls adds {1}.
   let tax :=
     if face.isCreature then 0
@@ -248,7 +253,6 @@ def playManaCost (g : Game) (card : GameObject) (face : CardDef)
           (· == .fra .opponentsNoncreatureSpellsCostMore))).size) 0
   let increase := if tax == 0 then increase else increase.addCost (ManaCost.ofGeneric tax)
   let inGy := match card.zone with | .graveyard _ => true | _ => false
-  let effPerm := origPerm <|> g.playPermission card
   let hasFb := face.flashback.isSome || g.flashbackUntilEot card
   let usedFlashback :=
     hasFb && flashback.getD (inGy || GameEvent.castWithFlashback g.events card.id)

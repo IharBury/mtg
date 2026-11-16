@@ -73,7 +73,7 @@ private def applyActionFor (g : Game) (p : PlayerId) : Action → Except String 
     let g ← g.sacrificeForActivation p id
     if isResCastSac then
       if (match g.pending with | .chooseReplacement .. => true | _ => false) &&
-          g.pendingReplacement.any (·.endsWithFinishFra) then
+          g.anyContinuationGrantsPriority then
         return g
       else
         return g.finishFraChoice

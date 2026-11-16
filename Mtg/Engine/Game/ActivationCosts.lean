@@ -18,9 +18,9 @@ private opaque reverseProposedSpellFwd (g : Game) (resumeContinuation : Bool := 
     (alwaysGrantPriority : Bool := false)
     (skipDepartureReconcile : Bool := false) : Game := g
 
-/-- Forward reference to `ManaAbilities.manaAbilitiesOf` (resolved at link time via `@[export]`). -/
-@[extern "mtg_game_mana_abilities_of"]
-private opaque manaAbilitiesOfFwd (g : Game) (o : GameObject) : Array ManaType := #[]
+/-- Forward reference to `ManaAbilities.canTapForPlainMana` (resolved at link time via `@[export]`). -/
+@[extern "mtg_game_can_tap_for_plain_mana"]
+private opaque canTapForPlainManaFwd (g : Game) (p : PlayerId) (o : GameObject) : Bool := false
 
 /-- Remove an indestructible counter as a cost (ruling 357). -/
 def payRemoveIndestructibleCounter (g : Game) (o : GameObject)
@@ -147,7 +147,7 @@ def sourceRemovedByCostSince (g : Game) (p : PlayerId) (sid : ObjectId)
 /-- Whether `prop` still requires its `sourceId` to remain on the battlefield
 for an unpaid battlefield-source cost (CR 601.2g / 601.2h / 602.2b). -/
 def proposedNeedsBattlefieldSource (g : Game) (prop : ProposedSpell)
-    (sinceIdx : Nat := (g.proposalCheckpoint.map (·.eventsSize)).getD g.events.size) : Bool :=
+    (sinceIdx : Nat := (g.targetProposalCheckpoint?.map (·.eventsSize)).getD g.events.size) : Bool :=
   match prop.sourceId with
   | none => false
   | some sid =>
@@ -176,7 +176,7 @@ def proposedNeedsBattlefieldSource (g : Game) (prop : ProposedSpell)
 CR 601.2h chosen-object cost step (`.crew`, `.zemoBoast`, or `CostPick`). -/
 def propHasRemainingExtraCosts (g : Game) (prop : ProposedSpell)
     (remainingPicks : Array CostPick := (prop.activation.map costPicksOf).getD #[])
-    (sinceIdx : Nat := (g.proposalCheckpoint.map (·.eventsSize)).getD g.events.size) : Bool :=
+    (sinceIdx : Nat := (g.targetProposalCheckpoint?.map (·.eventsSize)).getD g.events.size) : Bool :=
   prop.kind != .activatedAbility ||
     prop.sourceId.isNone ||
     !remainingPicks.isEmpty ||
@@ -246,22 +246,34 @@ def costPickCandidates (g : Game) (p : PlayerId) (sourceId : Option ObjectId) (p
     (discardOrExileHandSource := discardOrExileHandSource))
   let ordered :=
     if pick == .tapUntappedCreature || pick == .tapTwoUntappedArtifacts then
-      let (nonMana, manaSrcs) := allowed.partition (fun o => (manaAbilitiesOfFwd g o).isEmpty)
+      let (nonMana, manaSrcs) := allowed.partition (fun o => !canTapForPlainManaFwd g p o)
       nonMana ++ manaSrcs
     else allowed
   ordered.map (·.id)
 
 private partial def assignDisjointPicks (g : Game) (p : PlayerId) (sourceId : Option ObjectId)
     (picks : Array CostPick) (tapSource sacrificeOrExileSource discardOrExileHandSource : Bool)
-    (idx : Nat) (used : Array ObjectId) : Option (Array ObjectId) :=
+    (idx : Nat) (used : Array ObjectId) (preTappedIds : Array ObjectId := #[]) :
+    Option (Array ObjectId) :=
   if idx ≥ picks.size then some #[]
   else
     let pick := picks[idx]!
+    let isTapPick : Bool :=
+      pick == .tapUntappedCreature || pick == .tapTwoUntappedArtifacts
+    let isBfSacPick : Bool :=
+      match pick with
+      | .tapUntappedCreature | .tapTwoUntappedArtifacts
+      | .discardACard | .discardNonland | .discardLegendaryCard | .discardLegendarySameName
+      | .exileAnotherCreatureCardFromGraveyard => false
+      | _ => true
+    let laterSacAttachedEquip :=
+      isBfSacPick && (picks.extract (idx + 1) picks.size).contains .sacrificeEquipmentAttachedToSource
     let cands :=
       (g.costPickCandidates p sourceId pick
         (tapSource := tapSource)
-        (sacrificeOrExileSource := sacrificeOrExileSource)
-        (discardOrExileHandSource := discardOrExileHandSource)).filter (!used.contains ·)
+        (sacrificeOrExileSource := sacrificeOrExileSource || laterSacAttachedEquip)
+        (discardOrExileHandSource := discardOrExileHandSource)).filter fun cid =>
+          !used.contains cid && !(isTapPick && preTappedIds.contains cid)
     if cands.size < pick.count then none
     else if idx + 1 == picks.size then
       some (cands.extract 0 pick.count)
@@ -269,7 +281,7 @@ private partial def assignDisjointPicks (g : Game) (p : PlayerId) (sourceId : Op
       let rec chooseK (start left : Nat) (picked : Array ObjectId) : Option (Array ObjectId) :=
         if left == 0 then
           if (assignDisjointPicks g p sourceId picks tapSource sacrificeOrExileSource
-                discardOrExileHandSource (idx + 1) (used ++ picked)).isSome then
+                discardOrExileHandSource (idx + 1) (used ++ picked) preTappedIds).isSome then
             some picked
           else none
         else if start + left > cands.size then none
@@ -285,11 +297,13 @@ def firstPayableCostPickSlice? (g : Game) (p : PlayerId) (sourceId : Option Obje
     (picks : Array CostPick)
     (tapSource : Bool := false)
     (sacrificeOrExileSource : Bool := false)
-    (discardOrExileHandSource : Bool := false) : Option (Array ObjectId) :=
+    (discardOrExileHandSource : Bool := false)
+    (used : Array ObjectId := #[])
+    (preTappedIds : Array ObjectId := #[]) : Option (Array ObjectId) :=
   if picks.isEmpty then none
   else
     assignDisjointPicks g p sourceId picks tapSource sacrificeOrExileSource
-      discardOrExileHandSource 0 #[]
+      discardOrExileHandSource 0 used preTappedIds
 
 /-- Whether every pick can be paid by different objects, accounting for whether
 `sourceId` itself is separately tapped, sacrificed/exiled, or discarded/exiled
@@ -297,10 +311,74 @@ from hand (CR 602.2b / 118.3 / 118.10). -/
 def costPicksPayable (g : Game) (p : PlayerId) (sourceId : Option ObjectId) (picks : Array CostPick)
     (tapSource : Bool := false)
     (sacrificeOrExileSource : Bool := false)
-    (discardOrExileHandSource : Bool := false) :
+    (discardOrExileHandSource : Bool := false)
+    (used : Array ObjectId := #[])
+    (preTappedIds : Array ObjectId := #[]) :
     Bool :=
   (assignDisjointPicks g p sourceId picks tapSource sacrificeOrExileSource
-    discardOrExileHandSource 0 #[]).isSome
+    discardOrExileHandSource 0 used preTappedIds).isSome
+
+/-- Append `CostPick.sacrificeAnotherCreatureOrArtifact` when `needsSacrificeOther`
+holds so disjointness is checked across all non-mana object picks (CR 118.10 / 602.2b). -/
+def costPicksWithSacrificeOther (picks : Array CostPick) (needsSacrificeOther : Bool) :
+    Array CostPick :=
+  if needsSacrificeOther then picks.push .sacrificeAnotherCreatureOrArtifact else picks
+
+/-- Find a subset of untapped creatures `p` controls other than `vehicleId` with
+total power at least `crewN` whose tapping still leaves `allPicks` payable
+(CR 118.10 / 602.2b / 702.122a). -/
+partial def firstPayableCrewSelection? (g : Game) (p : PlayerId) (vehicleId : ObjectId)
+    (crewN : Nat) (allPicks : Array CostPick)
+    (tapSource : Bool := false)
+    (sacrificeOrExileSource : Bool := false)
+    (discardOrExileHandSource : Bool := false)
+    (orderedCands? : Option (Array GameObject) := none)
+    (disjointFromAllPicks : Bool := false)
+    (preTappedIds : Array ObjectId := #[]) : Option (Array ObjectId) :=
+  let cands :=
+    (orderedCands?.getD
+      ((g.creaturesControlledBy p).filter (fun c => c.id != vehicleId && !c.status.tapped))).filter
+      (fun c => c.id != vehicleId && !c.status.tapped && !preTappedIds.contains c.id)
+  let okAfterCrew (picked : Array ObjectId) : Bool :=
+    if allPicks.isEmpty then true
+    else if disjointFromAllPicks then
+      g.costPicksPayable p (some vehicleId) allPicks
+        (tapSource := tapSource)
+        (sacrificeOrExileSource := sacrificeOrExileSource)
+        (discardOrExileHandSource := discardOrExileHandSource)
+        (used := picked)
+        (preTappedIds := preTappedIds ++ picked)
+    else
+      g.costPicksPayable p (some vehicleId) allPicks
+        (tapSource := tapSource)
+        (sacrificeOrExileSource := sacrificeOrExileSource)
+        (discardOrExileHandSource := discardOrExileHandSource)
+        (preTappedIds := preTappedIds ++ picked)
+  if crewN == 0 then
+    if okAfterCrew #[] then some #[] else none
+  else
+    let sufPow : Array Nat := Id.run do
+      let mut out := Array.replicate (cands.size + 1) 0
+      let mut i := cands.size
+      while i > 0 do
+        i := i - 1
+        out := out.set! i (out[i + 1]! + (g.power cands[i]!).toNat)
+      return out
+    let rec search (idx : Nat) (curPow : Nat) (picked : Array ObjectId) : Option (Array ObjectId) :=
+      if curPow ≥ crewN then
+        if okAfterCrew picked then some picked else none
+      else if idx ≥ cands.size || curPow + sufPow[idx]! < crewN then
+        none
+      else
+        let c := cands[idx]!
+        let pwr := (g.power c).toNat
+        if pwr == 0 then
+          search (idx + 1) curPow picked
+        else
+          match search (idx + 1) (curPow + pwr) (picked.push c.id) with
+          | some res => some res
+          | none => search (idx + 1) curPow picked
+    search 0 0 #[]
 
 /-- Pay one or more already-validated `ids` for `pick` on `abilityId` / `sourceId`,
 chaining `.payCostPickItems` if an earlier move or sacrifice pauses on
@@ -453,7 +531,7 @@ def payCostPick (g : Game) (p : PlayerId) (abilityId sourceId : Option ObjectId)
         (sacrificeOrExileSource := sacrificeOrExileSource)
         (discardOrExileHandSource := discardOrExileHandSource) then
       throw s!"{g.name o} can't be used to {pick.phrase}"
-  let sinceIdx := (g.proposalCheckpoint.map (·.eventsSize)).getD g.events.size
+  let sinceIdx := (g.targetProposalCheckpoint?.map (·.eventsSize)).getD g.events.size
   let hadProp := g.proposedSpell.isSome
   let outer? := g.pendingReplacement
   let outerForAbort? := outer?.orElse (fun _ => callerOuter?)
@@ -692,7 +770,7 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
     (callerOuter? : Option PendingReplacement := none) :
     Except String Game :=
   g.withProposalActionM .costAction fun g => do
-  let sinceIdx := (g.proposalCheckpoint.map (·.eventsSize)).getD g.events.size
+  let sinceIdx := (g.targetProposalCheckpoint?.map (·.eventsSize)).getD g.events.size
   let hadProp := g.proposedSpell.isSome
   let forObject := forObject? <|> g.proposedSpell.map (·.spellId) <|> some sourceId
   let exileSource := ab.any (·.cost.fra == .exileSource)

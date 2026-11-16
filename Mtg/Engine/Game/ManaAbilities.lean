@@ -428,6 +428,13 @@ def activatesAsThoughHaste (g : Game) (p : PlayerId) : Bool :=
       | .activateCreaturesAsThoughHaste => true
       | _ => false))
 
+/-- Whether `p` can currently tap `o` for a plain `{T}` mana ability (CR 302.6 / 605.3). -/
+@[export mtg_game_can_tap_for_plain_mana]
+def canTapForPlainMana (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
+  o.isOnBattlefield && g.controlledBy o p && !o.status.tapped &&
+    !(g.manaAbilitiesOf o).isEmpty &&
+    !(g.hasSummoningSickness o && !(g.isCreature o && g.activatesAsThoughHaste p))
+
 /-- A player may activate mana abilities with priority, or while paying a
 spell they are casting or another mana payment prompt (CR 605.3a / 601.2g / 608.2g). -/
 def canActivateManaAbility (g : Game) (p : PlayerId) : Bool :=
@@ -819,7 +826,7 @@ def activateManaAbility (g : Game) (p : PlayerId) (id : ObjectId) (idx : Nat)
   let some d := (g.manaAbilityDefs o)[idx]? | throw s!"{oname} has no such mana ability"
   if !d.output.allows mana then
     throw s!"{oname}'s mana ability can't add that mana"
-  let sinceIdx := (g.proposalCheckpoint.map (·.eventsSize)).getD g.events.size
+  let sinceIdx := (g.targetProposalCheckpoint?.map (·.eventsSize)).getD g.events.size
   let sacOrExileSelf := d.sacrificeSelf || d.exileSelf
   if d.tap then
     if o.status.tapped then
@@ -1003,7 +1010,7 @@ def manaAbilityIndexFor (g : Game) (o : GameObject) (mana : ManaType) (plainOnly
     Option Nat :=
   let p := (g.controllerOf o).getD o.owner
   let defs := g.manaAbilityDefs o
-  let sinceIdx := (g.proposalCheckpoint.map (·.eventsSize)).getD g.events.size
+  let sinceIdx := (g.targetProposalCheckpoint?.map (·.eventsSize)).getD g.events.size
   (List.range defs.size).find? (fun i =>
     let d := defs[i]!
     g.manaAbilityDefUsable p o d &&
@@ -1049,7 +1056,7 @@ def tapForMana (g : Game) (p : PlayerId) (id : ObjectId) (mana : ManaType) : Exc
         if !g.canActivateManaAbility p then
           throw "You can't activate a mana ability now (CR 605.3a)"
         let oname := g.name o
-        let sinceIdx := (g.proposalCheckpoint.map (·.eventsSize)).getD g.events.size
+        let sinceIdx := (g.targetProposalCheckpoint?.map (·.eventsSize)).getD g.events.size
         if d.tap then
           if o.status.tapped then
             throw s!"{oname} is already tapped"
