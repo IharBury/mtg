@@ -18090,8 +18090,8 @@ permanent & stack-copy `Event.castEventBound` + nested mana `targetProposalCheck
 1. **Post-SBA `.seq` sibling ordering in `StateBasedActions.chainOrMergeLeave`, non-abort `pendingFreeCopies`
    preservation in `Leaving.playerLeavesGameCore`, and complete priority-recipient / cleanup-step /
    `.seq`-reversal classification across `Decisions`, `ManaAbilities`, & `Event`**
-   (`Casting.lean:690–893, 1008–1059`, `Core.lean:73, 1329–1330, 8149–8156`,
-   `Decisions.lean:283–329, 348–349, 385–423, 600–659, 673–788, 865–969, 1271–1488, 1602–1684, 1911–1912, 1972, 2441–2526, 2671–2682, 2704–2719, 3379–3399`,
+   (`Casting.lean:690–893, 1008–1059`, `Combat.lean:494–506, 519–557`, `Core.lean:73, 1329–1330, 8149–8156`,
+   `Decisions.lean:275–329, 348–349, 385–423, 600–659, 673–788, 865–969, 1271–1488, 1602–1684, 1911–1912, 1972, 2441–2526, 2671–2682, 2704–2719, 3379–3399`,
    `Event.lean:1257–1258, 1341–1346, 1749–1750, 1931–1935, 2345–2400`, `Leaving.lean:1765–1805, 3552–3583`,
    `ManaAbilities.lean:547–548, 632–633, 640–643, 667–668`, `StateBasedActions.lean:440–486`,
    `Triggers.lean:511–525`, `Turns.lean:592–737, 772–868, 888–1021, 1041–1066, 1120–1209`;
@@ -18130,8 +18130,8 @@ permanent & stack-copy `Event.castEventBound` + nested mana `targetProposalCheck
          `runPostCastCleanup` to handle remaining copies.
    - **Explicit `priorityRecipientOfContinuation?`, cleanup-step priority continuations, and `.seq`
      proposal-reversal coverage across `Decisions`, `ManaAbilities`, & `Event`**
-     (`Casting.lean:690–893, 1008–1059`, `Core.lean:73, 1329–1330, 8149–8156`,
-     `Decisions.lean:283–329, 348–349, 385–423, 600–659, 673–788, 865–969, 1271–1275, 1602–1684, 1911–1912, 1972, 2441–2526, 2671–2682, 2704–2719, 3379–3399`,
+     (`Casting.lean:690–893, 1008–1059`, `Combat.lean:494–506, 519–557`, `Core.lean:73, 1329–1330, 8149–8156`,
+     `Decisions.lean:275–329, 348–349, 385–423, 600–659, 673–788, 865–969, 1271–1275, 1602–1684, 1911–1912, 1972, 2441–2526, 2671–2682, 2704–2719, 3379–3399`,
      `Event.lean:1257–1258, 1341–1346, 1749–1750, 1931–1935, 2345–2400`, `Leaving.lean:1765–1805`,
      `ManaAbilities.lean:547–548, 632–633, 640–643, 667–668`, `Triggers.lean:511–525`,
      `Turns.lean:592–737, 772–868, 888–1021, 1041–1066, 1120–1209`):
@@ -18159,11 +18159,14 @@ permanent & stack-copy `Event.castEventBound` + nested mana `targetProposalCheck
        `Turns.lean:834–868, 965`) are omitted from `Decisions.continuationGrantsPriority` (`283–296`), so
        `finishAndGrantPriority` (`405–413`) sees `anyContinuationGrantsPriority == false` for them and takes line
        `413` to chain a duplicate `.receivePriority` that lingers at idle priority and hijacks CR 514.3a / CR 117.3c
-       cleanup priority — while all of those step/turn/cleanup priority-granting leaves (`Decisions.lean:286–294`
-       plus `.cleanupStepAfterDiscard` and `.postSbaCleanup _`) hit the `| _ =>` wildcard in
-       `PendingReplacement.nextQueuedPending` (`2345–2359`, preserving `hasQueuedPending`),
-       `endsWithPriorityGrant` (`2364–2380`, returning `false` so `ensureEndsWithFinishFra` at `2394–2400` appends a
-       redundant `.finishFraChoice`), and `endsWithNonProposalPriorityGrant` (`2386–2390`, returning `false`); and
+       cleanup priority — while `Decisions.continuationGrantsPriority` (`286–294`) conversely returns `true` for
+       `.continueStartNextTurn _ _ false _`, prompt-opening `.declareAttackers` / `.declareBlockers` / `.combatDamage`,
+       and non-granting `.advanceAfterStepEnded` (making `firstPriorityGrantRecipient?` return `some none` and write
+       `pendingPriority` when no `receivePriority` runs), and the unconditionally priority-granting step/turn/cleanup
+       leaves hit the `| _ =>` wildcard in `PendingReplacement.nextQueuedPending` (`2345–2359`, preserving
+       `hasQueuedPending`), `endsWithPriorityGrant` (`2364–2380`, returning `false` so `ensureEndsWithFinishFra` at
+       `2394–2400` appends a redundant `.finishFraChoice`), and `endsWithNonProposalPriorityGrant` (`2386–2390`,
+       returning `false`); and
        (iii) in `Decisions.resumePendingReplacementCore` (`.seq first rest`, `886–969`), `stepCanReverseProposal`
        (`887–909`) omits `.restorePending (.chooseMode ..) ..` and `.restorePending (.chooseTargets ..) ..` (which
        route through `Leaving.redirectPendingAfterLeave` at `Leaving.lean:1765–1805`, called from
@@ -18214,41 +18217,56 @@ permanent & stack-copy `Event.castEventBound` + nested mana `targetProposalCheck
          sites, i.e., `some caster` on `hadOpenContinuation == false` and `some g.activePlayer` on
          `hadOpenContinuation == true`), and for the step/turn/cleanup
          continuations (next living turn seat from `Turns.continueStartNextTurn`'s extra-turn / departed-seat
-         recomputation at `Turns.lean:625–640, 708–736` on `.continueStartNextTurn nextP remainingDeparted true
-         alreadyExpired` — or `none` on `g.over` / no living seat at `595, 609, 734–737` — next-turn seat from
-         `Turns.startNextTurnCore`'s seat scan at `772–784` on `.finishPostStep .startNextTurnAndBegin` /
-         `.finishPostStep .endTurnAfterCleanupStepEnded` and on `.finishPostStep (.postSbaCleanup false)` when
-         `!g.hasWaitingTriggers` (`840–847`), `some g.activePlayer` on `.beginTurnAfterStartExpiry` (`1041–1066`, or
-         `none` on `g.over`) and on `.finishPostStep (.postSbaCleanup true)` and
-         `.finishPostStep (.postSbaCleanup false)` when `g.hasWaitingTriggers` (`834–839`, or `none` on `g.over`),
-         step-specific recipient on non-cleanup `.beginStepCont st` (`1013–1021`, evaluating after `clearCombat` from
-         `.endOfCombat` at `1014–1019`) / `.finishPostStep (.beginStepAfterPhaseBegan st)` (`979–984`) /
-         `.finishPostStep (.beginStepBody st)` (`888–976`) — and on `.finishPostStep .advanceAfterStepEnded`
-         (`Decisions.lean:2704–2719`), following the next step it chains (`.beginningOfCombat` when `g.step ==
-         .endOfCombat && g.additionalCombatPhases > 0` at `2705–2710`, `st` when `g.step.next? == some st` at
-         `2712–2718`, or `none` on `g.step.next? == none` at `2719`) — returning `none` on `.untap` (`891–902`, even
-         when `hasQueuedPending` is `true`), on `.declareAttackers` when `g.stillInGame g.activePlayer` sets `.pending
-         .declareAttackers` at `922–926` (`some g.activePlayer` only in the `!g.stillInGame g.activePlayer` `else`
-         branch), on `.declareBlockers` when attackers remain and a defending player is left to set `.pending
-         .declareBlockers` at `927–950` (`some g.activePlayer` only on the empty-attacker arm at `929–933` and
-         departed-defender arm at `945–948`), and on `.combatDamage` calling `beginCombatDamageAssignment` at
-         `951–952`, following `.precombatMain` when `.draw` skips via `g.skipsFirstDraw` at `904–914` (without
-         granting during the skipped draw itself), and returning `some g.activePlayer` on `.upkeep`,
-         `.beginningOfCombat`, `.end`, `.precombatMain` (`953–960, 968–974`), non-skip `.draw` (`916–921`, or `none`
-         if the draw ends the game), and the `| _ =>` arm (`975–976`), and cleanup-SBA vs next-turn recipient on
-         `.finishCleanupAfterClearEot` / `.finishPostStep .cleanupStepAfterDiscard` / cleanup `.beginStepCont` /
-         `.beginStepBody` / `.beginStepAfterPhaseBegan`); add
-         `.finishPostStep .cleanupStepAfterDiscard` and `.finishPostStep (.postSbaCleanup _)` and gate
-         `.continueStartNextTurn _ _ runBeginTurn _` on `runBeginTurn` (`735–737`) in
-         `Decisions.continuationGrantsPriority` (`283–296`); add `.beginTurnAfterStartExpiry`,
-         `.continueStartNextTurn _ _ runBeginTurn _` (gated on `runBeginTurn`), `.finishCleanupAfterClearEot`,
-         `.finishPostStep` of `.startNextTurnAndBegin` / `.endTurnAfterCleanupStepEnded` / `.advanceAfterStepEnded`
-         / `.cleanupStepAfterDiscard` / `.postSbaCleanup _`, and `.beginStepCont st` /
-         `.finishPostStep (.beginStepBody st)` / `.finishPostStep (.beginStepAfterPhaseBegan st)` (gated on
-         `st != .untap || hasQueuedPending` in `endsWithPriorityGrant` and `st != .untap` in
-         `endsWithNonProposalPriorityGrant`, and returning `false` on those draining leaves in
-         `PendingReplacement.nextQueuedPending` at `Event.lean:2345–2359` while leaving `.untap` and
-         `runBeginTurn == false` on the `| _ => hasQueuedPending` wildcard); and in
+         recomputation into `gNext.beginTurn` at `Turns.lean:625–640, 708–736` on
+         `.continueStartNextTurn nextP remainingDeparted true alreadyExpired` — or `none` on the no-grant exits
+         `g.over` at `595` and `609–610`, `(g, false)` when `!g.stillInGame nextP` at `734`, and `else gNext` at
+         `737` — next-turn seat from `Turns.startNextTurnCore`'s seat scan at `772–784` on
+         `.finishPostStep .startNextTurnAndBegin` / `.finishPostStep .endTurnAfterCleanupStepEnded` and on
+         `.finishPostStep (.postSbaCleanup false)` when `!g.hasWaitingTriggers` (`840–847`), `some g.activePlayer` on
+         `.beginTurnAfterStartExpiry` (`1041–1066`, or `none` on `g.over` at `1042, 1054`) and on
+         `.finishPostStep (.postSbaCleanup true)` and `.finishPostStep (.postSbaCleanup false)` when
+         `g.hasWaitingTriggers` (`834–839`, or `none` on `g.over` at `835`), step-specific recipient on non-cleanup
+         `.beginStepCont st` (`1013–1021`, evaluating after `clearCombat` from `.endOfCombat` at `1014–1019`) /
+         `.finishPostStep (.beginStepAfterPhaseBegan st)` (`979–984`) / `.finishPostStep (.beginStepBody st)`
+         (`888–976`) — and on `.finishPostStep .advanceAfterStepEnded` (`Decisions.lean:2704–2719`), following the
+         next step it chains (`.beginningOfCombat` when `g.step == .endOfCombat && g.additionalCombatPhases > 0` at
+         `2705–2710`, `st` when `g.step.next? == some st` at `2712–2718`, or `none` on `g.step.next? == none` at
+         `2719`) — returning `none` on `.untap` (`891–902`, even when `hasQueuedPending` is `true`), returning
+         `some g.activePlayer` on `.declareAttackers` in the `!g.stillInGame g.activePlayer` `then` branch at
+         `923–924` and `none` in the `else` branch setting `.pending .declareAttackers` at `925–926`, returning
+         `some g.activePlayer` on `.declareBlockers` in the empty-attacker (`929–933`) and departed-defender
+         (`945–948`) arms and `none` when attackers remain and a defending player is left to set `.pending
+         .declareBlockers` (`941–943, 950`), returning `some g.activePlayer` on `.combatDamage` (`951–952`,
+         `Combat.lean:546–557`) when both assigning sets are empty (`548–550`) or when no attacker/blocker assignment
+         choice is needed (`554–556` -> `519–537` -> `dealAssignedCombatDamage` at `494–505`) and `none` only on the
+         two assignment-prompt paths (`g.needsCombatDamageChoice true` at `551–553` and a defending player splitting
+         blocker damage at `528–530`), following `.precombatMain` when `.draw` skips via `g.skipsFirstDraw` at
+         `904–914` (without granting during the skipped draw itself), and returning `some g.activePlayer` on
+         `.upkeep`, `.beginningOfCombat`, `.end`, `.precombatMain` (`953–960, 968–974`), non-skip `.draw` (`916–921`),
+         and the `| _ =>` arm (`975–976`), and cleanup-SBA vs next-turn recipient on `.finishCleanupAfterClearEot` /
+         `.finishPostStep .cleanupStepAfterDiscard` / cleanup `.beginStepCont` / `.beginStepBody` /
+         `.beginStepAfterPhaseBegan`); in `Decisions.continuationGrantsPriority` (`283–296`, plus
+         `nextQueuedPendingOnResume` at `275–280`) add `.finishPostStep .cleanupStepAfterDiscard` and
+         `.finishPostStep (.postSbaCleanup _)`, gate `.continueStartNextTurn _ _ runBeginTurn _` on `runBeginTurn`
+         (`735–737`), and decide `.beginStepCont st` / `.finishPostStep (.beginStepBody st)` /
+         `.finishPostStep (.beginStepAfterPhaseBegan st)` and `.finishPostStep .advanceAfterStepEnded` using `g` so
+         `continuationGrantsPriority` is `false` (rather than turning them into `some none` implicit grants) whenever
+         the step opens a prompt or skips granting — `.untap` when `!hasQueuedPending`, `.declareAttackers` while
+         `g.stillInGame g.activePlayer` (`925–926`), `.declareBlockers` when a defending player is left to declare
+         (`941–943, 950`), `.combatDamage` when `beginCombatDamageAssignment` opens an assignment prompt
+         (`Combat.lean:551–553, 528–530`), and `.advanceAfterStepEnded` when `g.step.next? == none` (`2719`) or its
+         next step opens one of those prompts; add only the `Game`-independent priority-granting step/turn/cleanup
+         leaves — `.beginTurnAfterStartExpiry`, `.continueStartNextTurn _ _ runBeginTurn _` (gated on `runBeginTurn`),
+         `.finishCleanupAfterClearEot`, `.finishPostStep` of `.startNextTurnAndBegin` /
+         `.endTurnAfterCleanupStepEnded` / `.cleanupStepAfterDiscard` / `.postSbaCleanup _`, and `.beginStepCont st` /
+         `.finishPostStep (.beginStepBody st)` / `.finishPostStep (.beginStepAfterPhaseBegan st)` for the
+         unconditionally granting steps (`st` in `.upkeep | .draw | .precombatMain | .beginningOfCombat | .endOfCombat
+         | .postcombatMain | .end | .cleanup`) — to `endsWithPriorityGrant` (`2364–2380`),
+         `endsWithNonProposalPriorityGrant` (`2386–2390`), and `PendingReplacement.nextQueuedPending` (`2345–2359`,
+         returning `false` on those draining leaves while leaving `.untap`, `runBeginTurn == false`,
+         `.advanceAfterStepEnded`, and the `Game`-dependent `.declareAttackers` / `.declareBlockers` / `.combatDamage`
+         steps out of `endsWithPriorityGrant` / `endsWithNonProposalPriorityGrant` and on `| _ => hasQueuedPending`);
+         and in
          `Decisions.resumePendingReplacementCore` (`886–969, 1271–1275, 1911–1912, 1972, 2441–2526, 2671–2682`)
          include `.restorePending (.chooseMode ..) ..`, `.restorePending (.chooseTargets ..) ..`, and
          `.finishPostStep (.resumeProposalCostAfterLeave ..)` / `.resumeChooseModeAfterLeave` /
