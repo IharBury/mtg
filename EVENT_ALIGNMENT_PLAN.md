@@ -18090,8 +18090,8 @@ permanent & stack-copy `Event.castEventBound` + nested mana `targetProposalCheck
 1. **Post-SBA `.seq` sibling ordering in `StateBasedActions.chainOrMergeLeave`, non-abort `pendingFreeCopies`
    preservation in `Leaving.playerLeavesGameCore`, and complete priority-recipient / cleanup-step /
    `.seq`-reversal classification across `Decisions`, `ManaAbilities`, & `Event`**
-   (`Casting.lean:690–893`,
-   `Decisions.lean:283–329, 348–349, 385–423, 886–969, 1271–1488, 1602–1684, 1911–1912, 1972, 2441–2526, 2671–2682, 3379–3399`,
+   (`Casting.lean:690–893`, `Core.lean:24, 8149–8156`,
+   `Decisions.lean:283–329, 348–349, 385–423, 642–658, 869–969, 1271–1488, 1602–1684, 1911–1912, 1972, 2441–2526, 2671–2682, 3379–3399`,
    `Event.lean:1257–1258, 1341–1346, 1749–1750, 1931–1935, 2345–2400`, `Leaving.lean:1765–1805, 3552–3583`,
    `ManaAbilities.lean:547–548, 632–633, 640–643, 667–668`, `StateBasedActions.lean:440–486`,
    `Turns.lean:592–737, 772–868, 965`;
@@ -18130,8 +18130,8 @@ permanent & stack-copy `Event.castEventBound` + nested mana `targetProposalCheck
          `runPostCastCleanup` to handle remaining copies.
    - **Explicit `priorityRecipientOfContinuation?`, cleanup-step priority continuations, and `.seq`
      proposal-reversal coverage across `Decisions`, `ManaAbilities`, & `Event`**
-     (`Casting.lean:690–893`,
-     `Decisions.lean:283–329, 348–349, 385–423, 886–969, 1271–1275, 1602–1684, 1911–1912, 1972, 2441–2526, 2671–2682, 3379–3399`,
+     (`Casting.lean:690–893`, `Core.lean:24, 8149–8156`,
+     `Decisions.lean:283–329, 348–349, 385–423, 642–658, 869–969, 1271–1275, 1602–1684, 1911–1912, 1972, 2441–2526, 2671–2682, 3379–3399`,
      `Event.lean:1257–1258, 1341–1346, 1749–1750, 1931–1935, 2345–2400`, `Leaving.lean:1765–1805`,
      `ManaAbilities.lean:547–548, 632–633, 640–643, 667–668`, `Turns.lean:592–737, 772–868, 965`):
      - Three priority-continuation and `.seq`-reversal classification gaps remain:
@@ -18177,10 +18177,16 @@ permanent & stack-copy `Event.castEventBound` + nested mana `targetProposalCheck
        `followedByExplicitPriority?` when `firstPriorityGrantRecipient? g0 false rest == some none` (an implicit
        priority grant in `rest` ahead of the outer continuation):
        - Return `some prio` from `Decisions.priorityRecipientOfContinuation?` (`299–314`) for `.finishConcede` /
-         idle `.concedePlayersLoop` (computing the CR 800.4i recipient from `savedPendingPrio` / `g.pendingPriority`
-         / `g.activePlayer` modulo `remaining` + `departed`), for `.finishPostCast caster true false _` (`some
-         caster` unconditionally across `hadOpenContinuation`), and for the step/turn/cleanup continuations (next
-         living turn seat from `Turns.continueStartNextTurn`'s extra-turn / departed-seat recomputation at
+         idle `.concedePlayersLoop` (`869–871`, mirroring `finishConcedePriority` at `Decisions.lean:642–658`: on
+         the ordinary `g.playersReceivePriority` path at `653–658`, compute `rawPrio :=
+         (savedPendingPrio.orElse (fun _ => g.pendingPriority)).getD g.priority` (`Core.lean:24`) and
+         `if g.stillInGame rawPrio then rawPrio else g.nextLiving rawPrio` (`Core.lean:8149–8156`), while
+         branching the all-passed case `wasIdlePriority && g.playersReceivePriority && !g.hasWaitingTriggers &&
+         g.consecutivePasses ≥ g.livingPlayers.size` at `642–652` separately to `some g.activePlayer` when
+         `!g.stack.isEmpty` at `648, 650` and to `advanceStep`'s step/cleanup-or-next-turn recipient when
+         `g.stack.isEmpty` at `652`), for `.finishPostCast caster true false _` (`some caster` unconditionally
+         across `hadOpenContinuation`), and for the step/turn/cleanup continuations (next living turn seat from
+         `Turns.continueStartNextTurn`'s extra-turn / departed-seat recomputation at
          `Turns.lean:625–640, 708–736` on `.continueStartNextTurn nextP remainingDeparted true alreadyExpired`,
          next-turn seat from `Turns.startNextTurnCore`'s seat scan at `772–784` on
          `.finishPostStep .startNextTurnAndBegin` / `.finishPostStep .endTurnAfterCleanupStepEnded` and on
