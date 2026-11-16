@@ -38073,17 +38073,48 @@ private def replayOk46i1 (gs : Array Game) : Bool :=
         (gMultiBlocked0.snapshot (gMultiBlocked0.object! atkId)) p1BlkIds
         (cause := some (.turnBased .declareBlockers)))
 
+  let tricksterRestore : PendingReplacement :=
+    .seq (.restorePending (.fraChoice p1 (.tricksterLibrary p0 ⟨99999⟩ (some ⟨99998⟩) none)) true)
+      (.gainLife p0 0 none)
+  let gFcQueuedViaRestore :=
+    gP1Gone.changes #[
+      .pendingPriority (some p2),
+      .pushContinuationFrame {},
+      .pushOuterPendingReplacement (.finishConcede false none none none false #[] none),
+      .pendingReplacement (some tricksterRestore) ]
+  let gFcAfterQueued := gFcQueuedViaRestore.finishAndGrantPriority p0
+  let gPcQueuedViaRestore :=
+    gP1Gone.changes #[
+      .pendingPriority (some p2),
+      .pushContinuationFrame {},
+      .pushOuterPendingReplacement (.finishPostCast p3 true false false),
+      .pendingReplacement (some tricksterRestore) ]
+  let prePcAfterLen := gPcQueuedViaRestore.events.size
+  let gPcAfterQueued := gPcQueuedViaRestore.finishAndGrantPriority p0
+  let noPcOverwriteToP0 :=
+    !(gPcAfterQueued.events.extract prePcAfterLen gPcAfterQueued.events.size).any fun ev =>
+      ev.change == .engine (.pendingPriority (some p0))
+
   let item1bOk :=
     mustHold46i1 "1b_finishConcede"
       (gP1Gone.priorityRecipientOfContinuation? false fcOrdinary == some p2 &&
+       gP1Gone.priorityRecipientOfContinuation? true fcOrdinary == some p2 &&
        gFcQueued.priority == p2 &&
+       !gFcQueuedViaRestore.hasImplicitPriorityContinuation &&
+       gFcAfterQueued.priority == p2 &&
        g4.priorityRecipientOfContinuation? false fcCombatDmg == none &&
        gWithQueuedCont.priorityRecipientOfContinuation? false (.finishConcede false (some p2) none none false #[] none) == none &&
        gAllPassed.priorityRecipientOfContinuation? false (.finishConcede true none none none false #[] none) == none &&
-       g4.priorityRecipientOfContinuation? false cplOrdinary == some p2) &&
+       g4.priorityRecipientOfContinuation? false cplOrdinary == some p2 &&
+       g4.priorityRecipientOfContinuation? true cplOrdinary == some p2) &&
     mustHold46i1 "1b_finishPostCast"
       (g4.priorityRecipientOfContinuation? false (.finishPostCast p1 true false false) == some p1 &&
+       g4.priorityRecipientOfContinuation? true (.finishPostCast p1 true false false) == some p1 &&
        g4.priorityRecipientOfContinuation? false (.finishPostCast p1 true false true) == some p0 &&
+       g4.priorityRecipientOfContinuation? true (.finishPostCast p1 true false true) == some p0 &&
+       !gPcQueuedViaRestore.hasImplicitPriorityContinuation &&
+       gPcAfterQueued.priority == p3 &&
+       noPcOverwriteToP0 &&
        gPcWithCastable.priorityRecipientOfContinuation? false (.finishPostCast p1 true false false) == none &&
        gPcExhausted.priorityRecipientOfContinuation? false (.finishPostCast p1 true false false) == some p1) &&
     mustHold46i1 "1b_cleanupAndTurn"
@@ -38163,7 +38194,7 @@ private def replayOk46i1 (gs : Array Game) : Bool :=
   mustHold46i1 "1c.seqReversalAndImplicitClear" item1cOk &&
   mustHold46i1 "1.replay"
     (replayOk46i1 #[gOrdLeaveDone, gOrdSbaDone, gFreeCpAfterP2, gFreeCpReversed, gFreeCpCastDone,
-      gFcQueued, gCleanupQueued, gMultiBlocked, gTgtSeqRev, gImplicitClearsOuter])
+      gFcQueued, gFcAfterQueued, gPcAfterQueued, gCleanupQueued, gMultiBlocked, gTgtSeqRev, gImplicitClearsOuter])
 
 end Phase46Item1EventAlignment
 
@@ -38397,7 +38428,8 @@ private def replayOk46i2 (gs : Array Game) : Bool :=
   let gPrepCastByP1 := mustApply gPrepStolenP1Prio p1 (.cast prepCopyId)
   let prepStackObj := gPrepCastByP1.object! gPrepCastByP1.stack.back!.objectId
 
-  -- Unattributed `playsWithoutPayingManaCost` when owner `p0` has paid grant and non-owner `p1` has `withoutManaCost`:
+  -- Unattributed `playsWithoutPayingManaCost` when owner `p0` has paid grant and non-owner `p1` has `withoutManaCost`,
+  -- AND rejecting an unprepared `prepareSource` `withoutManaCost` grant (no `g.playPermission` fallback):
   let paidOgreDef : CardDef := creature "P46i2 Ogre" (ManaCost.ofGeneric 3) #["Ogre"] 2 2
   let gUnattr0 := insertObject gP3Gone paidOgreDef p0 .exile
   let unattrExId := (gUnattr0.objects.filter (·.zone == .exile))[0]!.id
@@ -38407,6 +38439,14 @@ private def replayOk46i2 (gs : Array Game) : Bool :=
         (cause := some testCause)).createEffect
       (.permission (some p1) (.playFromExile unattrExId { player := p1, withoutManaCost := true }) .untilEndOfTurn)
       (cause := some testCause))
+  let gUnprepPerm0 := insertObject gPrep0 paidOgreDef p0 .exile
+  let unprepExId := (gUnprepPerm0.objects.filter (·.zone == .exile))[0]!.id
+  let gUnprepPerm1 :=
+    gUnprepPerm0.createEffect
+      (.permission (some p0)
+        (.playFromExile unprepExId { player := p0, withoutManaCost := true, prepareSource := some prepSrcObj.id })
+        .untilEndOfTurn)
+      (cause := some testCause)
 
   let item2cOk :=
     mustHold46i2 "2c_multiGrantRankAndAdv"
@@ -38423,14 +38463,18 @@ private def replayOk46i2 (gs : Array Game) : Bool :=
     mustHold46i2 "2c_unattributedBestPerm"
       ((gUnattr1.bestActivePlayPermission? (gUnattr1.object! unattrExId)).any (fun pm =>
          pm.player == p1 && pm.withoutManaCost) &&
-       gUnattr1.playsWithoutPayingManaCost (gUnattr1.object! unattrExId))
+       gUnattr1.playsWithoutPayingManaCost (gUnattr1.object! unattrExId) &&
+       (gUnprepPerm1.playPermission (gUnprepPerm1.object! unprepExId)).isSome &&
+       (gUnprepPerm1.bestActivePlayPermission? (gUnprepPerm1.object! unprepExId)).isNone &&
+       gUnprepPerm1.playManaCost (gUnprepPerm1.object! unprepExId) paidOgreDef == ManaCost.ofGeneric 3 &&
+       !gUnprepPerm1.playsWithoutPayingManaCost (gUnprepPerm1.object! unprepExId))
 
   mustHold46i2 "2a.commandEmblemRestoreAndCoDepartingSkip" item2aOk &&
   mustHold46i2 "2b.playPermissionEntriesOfScoping" item2bOk &&
   mustHold46i2 "2c.multiPermissionPrepareAndCosts" item2cOk &&
   mustHold46i2 "2.replay"
     (replayOk46i2 #[gEmbExpiredById, gEmbCeasedDirect, gEotCoAfter, gBeginTurnCoAfter, gDepTurnCoAfter, gCntCoAfter,
-      gAdvWithCopy, gPhSrcMovedOut, gDeadGrAfterTurn, gMultiGrant1, gPrepCastByP1, gUnattr1])
+      gAdvWithCopy, gPhSrcMovedOut, gDeadGrAfterTurn, gMultiGrant1, gPrepCastByP1, gUnattr1, gUnprepPerm1])
 
 end Phase46Item2EventAlignment
 

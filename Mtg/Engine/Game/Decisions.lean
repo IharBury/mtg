@@ -624,7 +624,7 @@ private def probeGameForOuterAt (g : Game) (idx : Nat) : Game := Id.run do
   return g.popEmptyTopContinuationFrames
 
 private def finishPostCastRecipient? (g : Game) (caster : PlayerId)
-    (hadOpenContinuation : Bool) (hasQueuedPending : Bool) : Option PlayerId :=
+    (hadOpenContinuation : Bool) : Option PlayerId :=
   let g := if g.sbaPaused then g.change (.pending .none) else g
   let g := g.runPostCastCleanup
   let g : Game :=
@@ -663,7 +663,7 @@ private def finishPostCastRecipient? (g : Game) (caster : PlayerId)
     if g.triggerSequenceRest.isSome then none
     else some (if hadOpenContinuation then g.activePlayer else caster)
   else if g.pending != Pending.none then none
-  else if g.triggerSequenceRest.isSome || hasQueuedPending || g.pendingReplacement.isSome then none
+  else if g.triggerSequenceRest.isSome || g.pendingReplacement.isSome then none
   else some (if hadOpenContinuation then g.activePlayer else caster)
 
 /-- Forward reference to `firstContinuationPriorityGrant?` for `finishAndGrantPriority`'s default parameter. -/
@@ -680,8 +680,7 @@ private partial def finishConcedePriorityRecipient? (g : Game) (wasIdlePriority 
     (popOuter : Bool := false)
     (runSba : Bool := false)
     (departed : Array PlayerId := #[])
-    (rewindProposal : Option Bool := none)
-    (hasQueuedPending : Bool := false) : Option PlayerId :=
+    (rewindProposal : Option Bool := none) : Option PlayerId :=
   let g := if g.sbaPaused then g.change (.pending .none) else g
   let g := g.popEmptyContinuationFrames
   let (g, popOuter) :=
@@ -726,7 +725,7 @@ private partial def finishConcedePriorityRecipient? (g : Game) (wasIdlePriority 
     if g.pending != Pending.none || g.unlessPaysDue || wasAssigningCombatDamage.isSome then none
     else
       let g := g.popEmptyContinuationFrames
-      if !g.continuations.isEmpty || hasQueuedPending || g.pendingReplacement.isSome ||
+      if !g.continuations.isEmpty || g.pendingReplacement.isSome ||
           !g.outerPendingReplacements.isEmpty ||
           g.triggerSequenceRest.isSome || g.mayThenResume then
         none
@@ -750,8 +749,7 @@ private partial def concedePlayersLoopRecipient? (g : Game) (remaining : Array P
     (savedIn : Option Pending := none)
     (popOuterIn : Bool := false)
     (departedIn : Array PlayerId := #[])
-    (rewindProposalIn : Option Bool := none)
-    (hasQueuedPending : Bool := false) : Option PlayerId := Id.run do
+    (rewindProposalIn : Option Bool := none) : Option PlayerId := Id.run do
   let mut g := if g.sbaPaused then g.change (.pending .none) else g
   if g.over then
     return none
@@ -860,7 +858,6 @@ private partial def concedePlayersLoopRecipient? (g : Game) (remaining : Array P
   else
     return finishConcedePriorityRecipient? g wasIdlePriority savedPendingPrio wasAssigningCombatDamage
       saved? popOuter (runSba := true) (departed := departed) (rewindProposal := rewindProposal)
-      (hasQueuedPending := hasQueuedPending)
 
 /-- `Game`-aware check whether a `PendingReplacement` continuation ends by granting priority. -/
 partial def continuationGrantsPriority (g : Game) (hasQueuedPending : Bool := false) :
@@ -904,7 +901,7 @@ replacement leaf (e.g. `.finishPostCast` for a non-active caster, CR 117.3c). -/
 partial def priorityRecipientOfContinuation? (g : Game) (hasQueuedPending : Bool := false) :
     PendingReplacement → Option PlayerId
   | .finishPostCast caster true false hadOpenContinuation =>
-    finishPostCastRecipient? g caster hadOpenContinuation hasQueuedPending
+    finishPostCastRecipient? g caster hadOpenContinuation
   | .finishBecomeCast caster _ true false false => some caster
   | .finishProposedSpellCosts _ true false false => g.proposedSpell.map (·.caster)
   | .receivePriority p => some p
@@ -919,12 +916,11 @@ partial def priorityRecipientOfContinuation? (g : Game) (hasQueuedPending : Bool
   | .finishConcede wasIdlePriority savedPendingPrio wasAssigningCombatDamage savedPending popOuter departed rewindProposal =>
     finishConcedePriorityRecipient? g wasIdlePriority savedPendingPrio wasAssigningCombatDamage
       savedPending popOuter (runSba := true) (departed := departed)
-      (rewindProposal := rewindProposal) (hasQueuedPending := hasQueuedPending)
+      (rewindProposal := rewindProposal)
   | .concedePlayersLoop remaining false false wasIdlePriority savedPendingPrio wasAssigningCombatDamage savedPending popOuter departed rewindProposal =>
     concedePlayersLoopRecipient? g remaining wasIdlePriority savedPendingPrio
       wasAssigningCombatDamage savedPending popOuter
       (departedIn := departed) (rewindProposalIn := rewindProposal)
-      (hasQueuedPending := hasQueuedPending)
   | .continueStartNextTurn nextP remainingDeparted runBeginTurn alreadyExpired =>
     let gR := if g.sbaPaused then g.change (.pending .none) else g
     continueStartNextTurnRecipient? gR nextP remainingDeparted runBeginTurn alreadyExpired
