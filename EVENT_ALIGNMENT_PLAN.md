@@ -18729,11 +18729,11 @@ arbitrary-subtype `.addAnyColorSpendOnlySubtype` (`abilitySourceSubtypes`) + Lay
        `.completeActivation` (`908–910`) omits `prop.needsSacrificeOther` (`Casting.lean:1582–1598`) and
        `.finishBecomeCast` / `.finishProposedSpellCosts` (`905–906`) omit
        `prop.needsSacrificeOther || prop.needsDiscardCard` (`Decisions.lean:4181–4197`), Ancestry scry
-       (`Casting.lean:1228–1248`), and `finishPostCastRecipient?` (`626–668`, whose line `666` already mirrors
-       `Casting.finishPostCast` at `1190–1191` without taking `hasQueuedPending`); and `finishAndGrantPriority`
-       (`1080–1081`) plus `finishConcedePriority` (`1312–1314`) invoke `g.promptTriggerTargetsIfNeeded`
-       (`Triggers.lean:511–525`) without stashing `g.priorityInstead p` / `nextP` into `g.pendingPriority`, losing
-       non-active priority when `afterTriggerTargetsChosen` (`4555–4556`) runs:
+       (`Casting.lean:1228–1248`), and `finishPostCastRecipient?` (`626–668`, whose lines `663` and `666` already
+       mirror `Casting.finishPostCast` at `1183–1184` and `1190–1191` without taking `hasQueuedPending`); and
+       `finishAndGrantPriority` (`1080–1081`) plus `finishConcedePriority` (`1312–1314`) invoke
+       `g.promptTriggerTargetsIfNeeded` (`Triggers.lean:511–525`) without stashing `g.priorityInstead p` / `nextP` into
+       `g.pendingPriority`, losing non-active priority when `afterTriggerTargetsChosen` (`4555–4556`) runs:
        - Use `g.anyContinuationGrantsPriority` in `Decisions.concedePlayersLoop` (`1419–1421, 1477–1479`); drop the
          `stepAlwaysGrantsPriority` short-circuits in `nextQueuedPendingOnResume` (`587, 592, 597, 607`, draining to
          `false` when the `Game`-aware step recipient helper is `.isSome` and preserving `hasQueuedPending` when
@@ -18743,9 +18743,10 @@ arbitrary-subtype `.addAnyColorSpendOnlySubtype` (`abilitySourceSubtypes`) + Lay
          (`(advanceAfterStepEndedRecipient? gR).isSome`, keeping `889` ahead of `gR.step.next?` so additional combat
          still probes `.beginningOfCombat` via `446–453` instead of falling through to `.postcombatMain`); add
          `Game`-aware arms in `continuationGrantsPriority` for `.finishPostCast caster true false hadOpenContinuation`
-         (matching `priorityRecipientOfContinuation?` at `903–904` and `finishPostCastRecipient?` at `626–668`: `false`
-         when `finishPostCast` opens a non-granting prompt at `665`, `true` when `(finishPostCastRecipient? ...).isSome`
-         or it chains `.finishFraChoice` at `666` / `Casting.finishPostCast` `1190–1191`, while leaving
+         (matching `priorityRecipientOfContinuation?` at `903–904` and `finishPostCastRecipient?` at `626–668`: `true`
+         when `!g.over` and either `(finishPostCastRecipient? ...).isSome` or the exit is `663` / `666` where
+         `Casting.finishPostCast` at `1183–1184` / `1190–1191` chains `.finishFraChoice`, and `false` only when `g.over`
+         holds or `finishPostCast` exits at the non-granting prompt `665` / `1187`, while leaving
          `grantPriority == false` or `hadOuter == true` as `false` per `Event.lean:2375–2376, 2396`) as well as
          `.finishConcede` / idle `.concedePlayersLoop` / turn-and-cleanup leaves (preserving `Game`-free
          `Event.endsWithPriorityGrant`'s step/cleanup arms), and return `some none` in `firstPriorityGrantRecipient?`
@@ -18892,7 +18893,7 @@ arbitrary-subtype `.addAnyColorSpendOnlySubtype` (`abilitySourceSubtypes`) + Lay
          `(gAfter.activePlayPermissions oAfter).isEmpty` after `expireEffectById`.
    - **One-shot resolution casts vs continuous `.playFromExile` grants, `Impending` / `Adventure` / `Demo` exile
      permission parity, and simultaneous copy / `.fraEmblem` / `coDepartingIds` expiry**
-     (`Agent.lean:709`, `Attachments.lean:62–68`, `CastExtras.lean:206–215`, `CastSpell.lean:231`,
+     (`Agent.lean:709`, `Attachments.lean:62–68`, `CastExtras.lean:206–215`, `CastSpell.lean:97, 231`,
      `Casting.lean:247–252`, `Core.lean:15370–15385, 15429–15455, 15821–15877`,
      `Decisions.lean:4368–4402, 5620–5682`, `Demo.lean:2053–2084`, `FraChoices.lean:1680–1706`,
      `Leaving.lean:133–143`, `Turns.lean:35–63, 397–402, 466–494, 1152–1156`):
@@ -18904,8 +18905,9 @@ arbitrary-subtype `.addAnyColorSpendOnlySubtype` (`abilitySourceSubtypes`) + Lay
        with unpayable `payLifeEqualManaValue` aborts the cast at `4388–4390` / `5653–5655` / `1704–1706` and blocks
        `canMorph` at `4372, 5633, 1684`; meanwhile `CastSpell.lean:231` (`!altCost && face.impending.isSome`) and
        `CastExtras.lean:206–215` fail to offer `Impending` under a clean permission when `origPerm` picked an
-       alt-cost grant, `Agent.chooseCast` (`Agent.lean:709`) omits `(!·.fromAdventure)` and checks creature MV rather
-       than `adv.manaCost.manaValue` for `payLifeEqualManaValue`, `Casting.adventureExileForbidsRecast` (`247–252`)
+       alt-cost grant, `Agent.chooseCast` (`Agent.lean:709`) reads `g.playPermissionFor? p o` without filtering
+       `(!·.fromAdventure)` as `CastSpell.lean:97` does (whereas `713` already checks `face.manaValue`),
+       `Casting.adventureExileForbidsRecast` (`247–252`)
        ignores `mayCastExiledBySource`, and `Demo.hasGameStatePriorityAction` (`Demo.lean:2053–2084`) ignores
        `withoutManaCost` / `payLifeEqualManaValue` / `anyMana` on `.exile` cards; and
        (ii) `Leaving.coDepartingIds` (`140–142`) checks `o.isOnBattlefield` instead of `o.isBattlefieldObject` in its
@@ -18924,7 +18926,8 @@ arbitrary-subtype `.addAnyColorSpendOnlySubtype` (`abilitySourceSubtypes`) + Lay
          `playPermissionsFor p o` (using `origPerm` only when it strictly improves payment via `withoutManaCost`,
          payable `payLifeEqualManaValue`, or `anyMana`, never blocking `canMorph` or aborting on unpayable life);
          offer `Impending` in `CastSpell.lean:231` / `CastExtras.lean:206–215` whenever a clean permission exists in
-         `allPerms`, filter `!pm.fromAdventure` and `adv.manaCost.manaValue` in `Agent.lean:709`, check
+         `allPerms`, filter `(!·.fromAdventure)` when selecting `perm?` at `Agent.lean:709` (leaving `713`'s
+         `face.manaValue` life check intact), check
          `!g.livingPlayers.any (g.mayCastExiledBySource ·.id o)` in `Casting.lean:247–252`, and evaluate `.exile`
          permission costs in `Demo.lean:2053–2084` (keeping `(g.baseCard o).manaCost` / `adv.manaCost` for hand
          spells); and use `o.isBattlefieldObject` in `Leaving.coDepartingIds`'s `| none =>` arm (`140–142`), run
@@ -19036,8 +19039,8 @@ arbitrary-subtype `.addAnyColorSpendOnlySubtype` (`abilitySourceSubtypes`) + Lay
    (`ActivationCosts.lean:245–248, 273, 333, 349–353`, `Agent.lean:68–69, 191–272, 580–641`,
    `Card/CardDef.lean:246, 531–541, 705–721`, `Casting.lean:468–496, 629–664`,
    `Core.lean:4923–4937, 15030–15043`, `Demo.lean:2085–2100, 2141–2148, 2186–2206`,
-   `EffectResolution.lean:1557–1558, 2519–2520`, `Event.lean:3889–3912`, `LandsAndMana.lean:84–88`,
-   `Mana.lean:481–485, 644–664, 678–717`, `ManaAbilities.lean:154–156, 218–221, 237–239, 428–429, 679–681, 1024–1028, 1111–1114, 1186–1196`,
+   `EffectResolution.lean:1557–1558, 2519–2520`, `Event.lean:3889–3902`, `LandsAndMana.lean:84–88`,
+   `Mana.lean:414–416, 431, 481–485, 644–664, 678–717`, `ManaAbilities.lean:218–221, 238, 428–429, 679–681, 1024–1028, 1111–1114, 1186–1196`,
    `TriggerArgs.lean:15–22, 459, 469–485`, `TriggeredAbilities.lean:5689–5694`;
    **CR 106.1 / 106.4 / 106.6 / 107.3a / 111.10a / 118.3 / 601.2b,f–h / 602.2b / 605.1a / 605.3b / 608.2c,h /
    612.2 / 613.1c / 702.51 / 702.122a / 702.126 / 733.1**):
@@ -19085,9 +19088,9 @@ arbitrary-subtype `.addAnyColorSpendOnlySubtype` (`abilitySourceSubtypes`) + Lay
      bounded `isTreasureSourceInLog`, `TriggerArgs.applyAddMana` `chosenX`, and Layer 3 `TextChange` /
      `CardDef.tapAddColorlessPerSubtype` mana parity**
      (`Card/CardDef.lean:246, 531–541, 705–721`, `Core.lean:4923–4937, 15030–15043`,
-     `EffectResolution.lean:1557–1558, 2519–2520`, `Event.lean:3889–3912`,
-     `Mana.lean:481–485, 644–664, 678–717`,
-     `ManaAbilities.lean:154–156, 218–221, 237–239, 428–429, 679–681, 1024–1028, 1111–1114`,
+     `EffectResolution.lean:1557–1558, 2519–2520`, `Event.lean:3889–3902`,
+     `Mana.lean:414–416, 431, 481–485, 644–664, 678–717`,
+     `ManaAbilities.lean:218–221, 238, 428–429, 679–681, 1024–1028, 1111–1114`,
      `TriggerArgs.lean:15–22, 459, 469–485`, `TriggeredAbilities.lean:5689–5694`):
      - Three mana-restriction, Treasure-provenance, and resolution/Layer-3 parity bugs remain:
        (i) `ManaAbilities.activateManaAbility` (`1024–1028`) and `manaAbilityIndexFor` (`1111–1114`) omit
@@ -19101,7 +19104,7 @@ arbitrary-subtype `.addAnyColorSpendOnlySubtype` (`abilitySourceSubtypes`) + Lay
        (ii) when a Treasure produces mana with a non-`.none` spending restriction (e.g. `.elf` or
        `.fra (.subtypeSpellOrSource s)`), `ManaAbilities` (`428–429, 679–681`) and `Core.addManaUnits`
        (`15030–15043`) drop Treasure provenance if no activation/trigger log entry exists, whereas for unrestricted
-       mana `Core.addManaUnits` (`15035–15040`) and `Event.isTreasureSourceInLog` (`3889–3898`) check
+       mana `Core.addManaUnits` (`15035–15040`, at `15038`) and `Event.isTreasureSourceInLog` (`3889–3898`) check
        `GameEvent.isTreasureSourceInLog` across the entire log even when `srcId` is currently on the battlefield
        without `.treasure` (or lost its temporary `.treasure` subtype before a later activation); and
        (iii) `TriggerArgs.triggerInt` (`459`) returns `none` on `.chosenX` and `EffectResolution.applyUnified`
@@ -19109,23 +19112,25 @@ arbitrary-subtype `.addAnyColorSpendOnlySubtype` (`abilitySourceSubtypes`) + Lay
        (and `TriggeredAbilities.lean:5689–5694` drops `lastKnownPower` / `lastKnownToughness` when routing
        `TriggerResolution` through `applyUnified` / `applyUnifiedAbility`), `Core.TextChange.applyResolution`
        (`4923–4937`) does not rewrite creature-subtype words inside `Resolution.addMana types amount`'s
-       `NumberSelector` (`ManaAbilities.cardManaAbilities` at `154–156, 237–239` likewise skips `sub .dwarf` on
-       `c.tapAddRestricted`), and `CardDef.tapAddColorlessPerSubtype` (`Card/CardDef.lean:246, 531–541, 705–721`) is
-       unwired in `ManaAbilities.cardManaAbilities` (`218–221`), `CardDef.manaAbilities`, and
-       `CardDef.structuredAbilityLines`:
+       `NumberSelector` (`ManaAbilities.cardManaAbilities`'s `c.tapAddRestricted` arm at `238` likewise passes
+       `restrictionOfText text` without rewriting `.dwarf` via `sub .dwarf`), and `CardDef.tapAddColorlessPerSubtype`
+       (`Card/CardDef.lean:246, 531–541, 705–721`) is unwired in `ManaAbilities.cardManaAbilities` (`218–221`),
+       `CardDef.manaAbilities`, and `CardDef.structuredAbilityLines`:
        - Pass `(spend := { abilitySourceSubtypes := g.subtypes o })` in `ManaAbilities.lean:1024–1028, 1111–1114`,
          place `.fra .notSpellsFromHand` after narrow positive restrictions alongside `.cantNonartifact` in
          `ManaPool.spendOneUnit?` (`654–660`) and `spendAnyUnit?` (`696–711`), and iterate `for t in order` when
          taking `.fra` units in `spendAnyUnit?`; add `fromTreasure : Bool := false` on `ManaUnit` (`Mana.lean:481–485`,
-         preserving `some (.fra .fromTreasure)` when `u.restriction` is `none`) set from Treasure provenance in
-         `ManaAbilities` (`679–681`) and `Core.addManaUnits` (`15030–15043`, using live `g.hasSubtype src .treasure`
-         whenever `src.isOnBattlefield` rather than falling back to `isTreasureSourceInLog`), and bound
-         `Event.isTreasureSourceInLog` (`3889–3912`) to the latest activation/trigger entry of `srcId` before the
-         spending event; and add `chosenX : Nat := 0` to `TriggerRead` (`TriggerArgs.lean:15–22, 459, 469–485`),
-         forward `(chosenX := chosenX)` at `EffectResolution.lean:1558, 2520` (and `lastKnownToughness` through
-         `EffectResolution.applyUnifiedAbility` / `TriggeredAbilities.lean:5689–5694`), rewrite `Resolution.addMana`'s
-         `NumberSelector` subtype words in `Core.TextChange.applyResolution` (`4923–4937`) plus `c.tapAddRestricted`
-         in `ManaAbilities.lean:154–156, 237–239`, and wire `CardDef.tapAddColorlessPerSubtype` across
+         checked by `Event.isTreasureManaUnit` at `3901–3902` while preserving `some (.fra .fromTreasure)` when
+         `u.restriction` is `none`) set from Treasure provenance in `ManaAbilities` (`679–681`) and `Core.addManaUnits`
+         (`15030–15043`, using live `g.hasSubtype src .treasure` whenever `src.isOnBattlefield` rather than calling
+         `GameEvent.isTreasureSourceInLog g.events srcId` at `15038`), and bound `Event.isTreasureSourceInLog`
+         (`3889–3898`) to the latest activation/trigger entry of `srcId` in `events` (note `treasureManaSpentOn` at
+         `3905–3914` already passes `preCast`); and add `chosenX : Nat := 0` to `TriggerRead`
+         (`TriggerArgs.lean:15–22, 459, 469–485`), forward `(chosenX := chosenX)` at `EffectResolution.lean:1558, 2520`
+         (and `lastKnownToughness` through `EffectResolution.applyUnifiedAbility` / `TriggeredAbilities.lean:5689–5694`),
+         rewrite `Resolution.addMana`'s `NumberSelector` subtype words in `Core.TextChange.applyResolution`
+         (`4923–4937`) plus `cardManaAbilities`'s `c.tapAddRestricted` arm at `ManaAbilities.lean:238` (and
+         `Mana.lean:414–416, 431`), and wire `CardDef.tapAddColorlessPerSubtype` across
          `ManaAbilities.cardManaAbilities` (`218–221`) and `Card/CardDef.lean:531–541, 705–721`.
 
 Tests: `Events.lean` (unit + replay-determinism `#guard`s for `concedePlayersLoop` `anyContinuationGrantsPriority`
