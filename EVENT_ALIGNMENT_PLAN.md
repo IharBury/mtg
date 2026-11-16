@@ -18090,7 +18090,7 @@ permanent & stack-copy `Event.castEventBound` + nested mana `targetProposalCheck
 1. **Post-SBA `.seq` sibling ordering in `StateBasedActions.chainOrMergeLeave`, non-abort `pendingFreeCopies`
    preservation in `Leaving.playerLeavesGameCore`, and complete priority-recipient / cleanup-step /
    `.seq`-reversal classification across `Decisions`, `ManaAbilities`, & `Event`**
-   (`Casting.lean:690–893, 1008–1059`, `Combat.lean:494–506, 519–557`, `Core.lean:73, 1329–1330, 8149–8156`,
+   (`Casting.lean:690–893, 1008–1059`, `Combat.lean:494–506, 519–557`, `Core.lean:73, 1329–1330, 3625, 8149–8156`,
    `Decisions.lean:275–329, 348–349, 385–423, 600–659, 673–788, 865–969, 1271–1488, 1602–1684, 1911–1912, 1972, 2441–2526, 2671–2682, 2704–2719, 3379–3399`,
    `Event.lean:1257–1258, 1341–1346, 1749–1750, 1931–1935, 2345–2400`, `Leaving.lean:1765–1805, 3552–3583`,
    `ManaAbilities.lean:547–548, 632–633, 640–643, 667–668`, `StateBasedActions.lean:440–486`,
@@ -18130,7 +18130,7 @@ permanent & stack-copy `Event.castEventBound` + nested mana `targetProposalCheck
          `runPostCastCleanup` to handle remaining copies.
    - **Explicit `priorityRecipientOfContinuation?`, cleanup-step priority continuations, and `.seq`
      proposal-reversal coverage across `Decisions`, `ManaAbilities`, & `Event`**
-     (`Casting.lean:690–893, 1008–1059`, `Combat.lean:494–506, 519–557`, `Core.lean:73, 1329–1330, 8149–8156`,
+     (`Casting.lean:690–893, 1008–1059`, `Combat.lean:494–506, 519–557`, `Core.lean:73, 1329–1330, 3625, 8149–8156`,
      `Decisions.lean:275–329, 348–349, 385–423, 600–659, 673–788, 865–969, 1271–1275, 1602–1684, 1911–1912, 1972, 2441–2526, 2671–2682, 2704–2719, 3379–3399`,
      `Event.lean:1257–1258, 1341–1346, 1749–1750, 1931–1935, 2345–2400`, `Leaving.lean:1765–1805`,
      `ManaAbilities.lean:547–548, 632–633, 640–643, 667–668`, `Triggers.lean:511–525`,
@@ -18217,13 +18217,16 @@ permanent & stack-copy `Event.castEventBound` + nested mana `targetProposalCheck
          `some (if hadOpenContinuation then g.activePlayer else caster)` for the `1053` / `1059` `receivePriority`
          sites, i.e., `some caster` on `hadOpenContinuation == false` and `some g.activePlayer` on
          `hadOpenContinuation == true`), and for the step/turn/cleanup
-         continuations (next living turn seat from `Turns.continueStartNextTurn`'s extra-turn / departed-seat
-         recomputation at `Turns.lean:649–707`, `turnBegan` binding `(gNext, true)` at `708–733` (`710–723` for an
-         extra turn, `725–733` when `nextExtra?` is `none` and `g.stillInGame nextP`), and `gNext.beginTurn` at
-         `735–736` on `.continueStartNextTurn nextP remainingDeparted true alreadyExpired` — or `none` on the no-grant
-         exits `g.over` at `595–596` and `609–610`, the `.continueStartNextTurn` re-chain after
-         `expireUntilNextTurnEffects` at `615–618`, `(g, false)` when `!g.stillInGame nextP` at `734`, and `else gNext`
-         at `737` — next-turn seat from `Turns.startNextTurnCore`'s seat scan at `772–784` on
+         continuations (on `.continueStartNextTurn nextP remainingDeparted runBeginTurn alreadyExpired` at
+         `Turns.lean:592–737`, returning `none` when `!runBeginTurn` or when a frame exits at `g.over` (`595–596,
+         609–610`) or the `.continueStartNextTurn` re-chain after `expireUntilNextTurnEffects` (`615–618`), following any
+         synchronous `continueStartNextTurn` re-entry at `666–707` (`671` when `nextExtra? = some q` and `q != nextP ||
+         !unexpiredExtra.isEmpty`, or `707` with `nextP'` from `683–705`), and on the frame that reaches `708–737`
+         returning `some` of the player `turnBegan` stores as `gNext.activePlayer` (`Core.lean:3625`) when `(gNext,
+         true)` (`708–733`: `q` from `nextExtra?` at `658–660` in the `710–723` extra-turn arm, or `nextP` in the
+         `725–733` `none` arm when `g.stillInGame nextP`) enters `gNext.beginTurn` at `735–736`, or `none` on `(g,
+         false)` when `!g.stillInGame nextP` at `734` and `else gNext` at `737` — next-turn seat from
+         `Turns.startNextTurnCore`'s seat scan at `772–784` on
          `.finishPostStep .startNextTurnAndBegin` / `.finishPostStep .endTurnAfterCleanupStepEnded` and on
          `.finishPostStep (.postSbaCleanup false)` when `!g.hasWaitingTriggers` (`840–847`), `some g.activePlayer` on
          `.beginTurnAfterStartExpiry` (`1041–1066`, or `none` on `g.over` at `1042, 1054`) and on
@@ -18255,9 +18258,9 @@ permanent & stack-copy `Event.castEventBound` + nested mana `targetProposalCheck
          `.finishPostStep (.beginStepAfterPhaseBegan st)`, and `.finishPostStep .advanceAfterStepEnded` using `g` so
          `continuationGrantsPriority` is `false` (rather than turning them into `some none` implicit grants) whenever
          the continuation exits without granting or opens a prompt — `.continueStartNextTurn` when `!runBeginTurn` or
-         when execution exits at `g.over` (`595–596, 609–610`), the `615–618` re-chain, `(g, false)` at `734`, or
-         `else gNext` at `737` (`gNext.over || !gNext.stillInGame gNext.activePlayer`) rather than entering
-         `gNext.beginTurn` at `735–736`, `.untap` when `!hasQueuedPending`, `.declareAttackers` while
+         when execution (following any synchronous `671` / `707` re-entry) exits at `g.over` (`595–596, 609–610`), the
+         `615–618` re-chain, `(g, false)` at `734`, or `else gNext` at `737` (`gNext.over || !gNext.stillInGame
+         gNext.activePlayer`) rather than entering `gNext.beginTurn` at `735–736`, `.untap` when `!hasQueuedPending`, `.declareAttackers` while
          `g.stillInGame g.activePlayer` (`925–926`), `.declareBlockers` when a defending player is left to declare
          (`941–943, 950`), `.combatDamage` when `beginCombatDamageAssignment` opens an assignment prompt
          (`Combat.lean:551–553, 528–530`), and `.advanceAfterStepEnded` when `g.step.next? == none` (`2719`) or its
