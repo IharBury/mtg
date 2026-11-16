@@ -242,7 +242,7 @@ def playManaCost (g : Game) (card : GameObject) (face : CardDef)
     origPerm <|>
       match card.controller with
       | some c => g.playPermissionFor? c card
-      | none => g.playPermissionFor? card.owner card <|> g.playPermission card
+      | none => g.bestActivePlayPermission? card <|> g.playPermission card
   let caster := card.controller.getD ((effPerm.map (·.player)).getD card.owner)
   -- Thalia, the Survivor: each one an opponent controls adds {1}.
   let tax :=

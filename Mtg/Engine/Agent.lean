@@ -175,7 +175,62 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
             if prop.tapSource && !g.sourceTappedForCost sid (some prop.spellId) sinceIdx then #[sid]
             else #[]
           | none => #[]
-        let excludeIds := selfTapExcl ++ prop.teamworkCreatures
+        let (crewExcl, tapPickExcl) : Array ObjectId × Array ObjectId :=
+          if prop.kind != .activatedAbility then (#[], #[])
+          else
+            match prop.sourceId, prop.activation with
+            | some sid, some ab =>
+              let allPicks :=
+                costPicksWithSacrificeOther (costPicksOf ab)
+                  (prop.needsSacrificeOther || ab.cost.sacrificeAnotherCreatureOrArtifact)
+              let sacSrc :=
+                prop.sacrificeSource || ab.cost.sacrificeSource || ab.cost.fra == .exileSource
+              let discSrc :=
+                prop.discardSource || ab.cost.discardSource || ab.cost.fra == .exileSourceFromHand
+              let (crewOk, cExcl) : Bool × Array ObjectId :=
+                if prop.fraCostPaid then (true, #[])
+                else
+                  match ab.cost.fra with
+                  | .crew n =>
+                    let manaSrcs := g.manaSources p
+                    let cands :=
+                      ((g.creaturesControlledBy p).filter (fun c => c.id != sid && !c.status.tapped)).qsort
+                        (fun a b =>
+                          let aNonMana := !manaSrcs.any (·.1.id == a.id)
+                          let bNonMana := !manaSrcs.any (·.1.id == b.id)
+                          if aNonMana != bNonMana then aNonMana else g.power a > g.power b)
+                    match g.firstPayableCrewSelection? p sid n allPicks
+                        (tapSource := prop.tapSource)
+                        (sacrificeOrExileSource := sacSrc)
+                        (discardOrExileHandSource := discSrc)
+                        (orderedCands? := some cands)
+                        (disjointFromAllPicks := true) with
+                    | some picked => (true, picked)
+                    | none => (false, #[])
+                  | _ => (true, #[])
+              if !crewOk then (#[], #[])
+              else Id.run do
+                let mut usedPicks : Array ObjectId := #[]
+                let mut tExcl : Array ObjectId := #[]
+                for i in [0:allPicks.size] do
+                  let pick := allPicks[i]!
+                  match g.firstPayableCostPickSlice? p (some sid) (allPicks.extract i allPicks.size)
+                      (tapSource := prop.tapSource)
+                      (sacrificeOrExileSource := sacSrc)
+                      (discardOrExileHandSource := discSrc)
+                      (used := cExcl ++ usedPicks)
+                      (preTappedIds := cExcl) with
+                  | some chosen =>
+                    if chosen.size != pick.count then
+                      return (cExcl, #[])
+                    usedPicks := usedPicks ++ chosen
+                    if pick == .tapUntappedCreature || pick == .tapTwoUntappedArtifacts then
+                      tExcl := tExcl ++ chosen
+                  | none =>
+                    return (cExcl, #[])
+                return (cExcl, tExcl)
+            | _, _ => (#[], #[])
+        let excludeIds := selfTapExcl ++ prop.teamworkCreatures ++ crewExcl ++ tapPickExcl
         let manaBound? : Option Nat :=
           if prop.cost.containsX then
             some (maxAffordableX g p prop.cost
@@ -568,7 +623,9 @@ where
       let allowHero := !isTurnFaceUp && g.hasSubtype o .hero
       let allowVillain := !isTurnFaceUp && g.hasSubtype o .villain
       let allowCreature := !isTurnFaceUp && g.isCreature o
-      let actSpend : ManaSpend := if isTurnFaceUp then {} else { equip := ab.isEquip }
+      let actSpend : ManaSpend :=
+        if isTurnFaceUp then {}
+        else { equip := ab.isEquip, abilitySourceSubtypes := g.subtypes o }
       let spellSpend : ManaSpend :=
         { spell := true, fromHand := o.zone == .hand p
           supertypes := g.supertypes o, types := g.types o, subtypes := g.subtypes o }

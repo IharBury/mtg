@@ -16,7 +16,9 @@ namespace Game
 private opaque reverseProposedSpellFwd (g : Game) (resumeContinuation : Bool := false)
     (extraLog : Option String := none)
     (alwaysGrantPriority : Bool := false)
-    (skipDepartureReconcile : Bool := false) : Game := g
+    (skipDepartureReconcile : Bool := false)
+    (followedByFinishFra : Bool := false)
+    (followedByExplicitPriority? : Option PlayerId := none) : Game := g
 
 /-- Forward reference to `ManaAbilities.canTapForPlainMana` (resolved at link time via `@[export]`). -/
 @[extern "mtg_game_can_tap_for_plain_mana"]
@@ -33,11 +35,6 @@ def payRemoveIndestructibleCounter (g : Game) (o : GameObject)
   let g := g.recordRemoveCounters o.id .indestructible 1 (byPlayer := ctrl) (noActor := ctrl.isNone)
     (cause := some (.costPayment .removeCounters p forObject))
   return g.logMsg s!"{oName} loses an indestructible counter"
-
-/-- Whether `p` can pay `n` life (CR 119.4 / 119.8 / 800.4a). Paying 0 life is always legal for a player in the game. -/
-def canPayLife (g : Game) (p : PlayerId) (n : Nat) : Bool :=
-  g.stillInGame p &&
-    (n == 0 || ((g.player p).life ≥ (n : Int) && !g.lifeLocked p && !g.lifeCantChange p))
 
 /-- Pay `n` life as a cost (CR 118.3b / 119.4 / 119.8). Payment of life is not damage. -/
 def payLifeCost (g : Game) (p : PlayerId) (n : Nat)

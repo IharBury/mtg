@@ -2340,13 +2340,30 @@ def PendingReplacement.hasCheckpointReplay : PendingReplacement → Bool
   | .seq a b => a.hasCheckpointReplay || b.hasCheckpointReplay
   | _ => false
 
+/-- Whether `st` unconditionally grants priority (either directly or after
+silent cleanup turn advancement) without opening a non-replacement prompt. -/
+def PendingReplacement.stepAlwaysGrantsPriority : Step → Bool
+  | .upkeep | .draw | .precombatMain | .beginningOfCombat
+  | .endOfCombat | .postcombatMain | .end | .cleanup => true
+  | .untap | .declareAttackers | .declareBlockers | .combatDamage => false
+
 /-- Update `hasQueuedPending` across a `PendingReplacement` tree without `Game`
 state: clears to `false` on draining leaves and preserves on neutral leaves. -/
 def PendingReplacement.nextQueuedPending (hasQueuedPending : Bool := false) :
     PendingReplacement → Bool
   | .seq a1 a2 => a2.nextQueuedPending (a1.nextQueuedPending hasQueuedPending)
   | .receivePriority _ | .finishFraChoice | .finishConcede .. | .afterWardResolved
-  | .runPostCastCleanup _ => false
+  | .runPostCastCleanup _
+  | .beginTurnAfterStartExpiry
+  | .finishCleanupAfterClearEot
+  | .finishPostStep .startNextTurnAndBegin
+  | .finishPostStep .endTurnAfterCleanupStepEnded
+  | .finishPostStep .cleanupStepAfterDiscard
+  | .finishPostStep (.postSbaCleanup _) => false
+  | .beginStepCont st
+  | .finishPostStep (.beginStepBody st)
+  | .finishPostStep (.beginStepAfterPhaseBegan st) =>
+    if stepAlwaysGrantsPriority st then false else hasQueuedPending
   | .concedePlayersLoop _ wp mid .. => if !wp && !mid then false else hasQueuedPending
   | .finishPostCast _ _ hadOuter _
   | .finishBecomeCast _ _ _ hadOuter _
@@ -2364,7 +2381,17 @@ priority (`.receivePriority` / `.finishFraChoice` / `.finishPostCast` /
 def PendingReplacement.endsWithPriorityGrant (pr : PendingReplacement)
     (hasQueuedPending : Bool := false) : Bool :=
   match pr with
-  | .receivePriority _ | .finishFraChoice | .finishConcede .. | .afterWardResolved => true
+  | .receivePriority _ | .finishFraChoice | .finishConcede .. | .afterWardResolved
+  | .beginTurnAfterStartExpiry
+  | .finishCleanupAfterClearEot
+  | .finishPostStep .startNextTurnAndBegin
+  | .finishPostStep .endTurnAfterCleanupStepEnded
+  | .finishPostStep .cleanupStepAfterDiscard
+  | .finishPostStep (.postSbaCleanup _) => true
+  | .beginStepCont st
+  | .finishPostStep (.beginStepBody st)
+  | .finishPostStep (.beginStepAfterPhaseBegan st) =>
+    stepAlwaysGrantsPriority st
   | .concedePlayersLoop _ wp mid .. => !wp && !mid
   | .finishPostCast _ grantPriority hadOuter _ => grantPriority && !hadOuter
   | .finishBecomeCast _ _ grantPriority hadOuter openCont =>
@@ -2381,10 +2408,21 @@ def PendingReplacement.endsWithPriorityGrant (pr : PendingReplacement)
 
 /-- Whether a `PendingReplacement` continuation ends with a non-proposal priority
 grant (`.receivePriority`, `.finishFraChoice`, `.finishConcede`,
-`.afterWardResolved`, or an idle `.concedePlayersLoop`), excluding
+`.afterWardResolved`, an idle `.concedePlayersLoop`, or an unconditionally
+priority-granting step/turn/cleanup continuation), excluding
 proposal-completion continuations. -/
 def PendingReplacement.endsWithNonProposalPriorityGrant : PendingReplacement → Bool
-  | .receivePriority _ | .finishFraChoice | .finishConcede .. | .afterWardResolved => true
+  | .receivePriority _ | .finishFraChoice | .finishConcede .. | .afterWardResolved
+  | .beginTurnAfterStartExpiry
+  | .finishCleanupAfterClearEot
+  | .finishPostStep .startNextTurnAndBegin
+  | .finishPostStep .endTurnAfterCleanupStepEnded
+  | .finishPostStep .cleanupStepAfterDiscard
+  | .finishPostStep (.postSbaCleanup _) => true
+  | .beginStepCont st
+  | .finishPostStep (.beginStepBody st)
+  | .finishPostStep (.beginStepAfterPhaseBegan st) =>
+    stepAlwaysGrantsPriority st
   | .concedePlayersLoop _ wp mid .. => !wp && !mid
   | .seq _ b => b.endsWithNonProposalPriorityGrant
   | _ => false
@@ -3847,12 +3885,16 @@ def manaSpentOn (events : Array GameEvent) (spell : ObjectId) : Nat :=
       if forObj == some spell then max n units.size else n
     | _, _ => n) 0
 
-/-- Whether `srcId` was recorded as a Treasure permanent when its mana ability was activated. -/
-private def isTreasureSourceInLog (events : Array GameEvent) (srcId : ObjectId) : Bool :=
+/-- Whether `srcId` was recorded as a Treasure permanent when its ability was activated or triggered. -/
+def isTreasureSourceInLog (events : Array GameEvent) (srcId : ObjectId) : Bool :=
   events.any fun e =>
     match e.change with
     | .rules (.cast (.abilityActivated id snap _ _)) =>
-      id == srcId && snap.subtypes.contains .treasure
+      (id == srcId || snap.id == some srcId) && snap.subtypes.contains .treasure
+    | .rules (.triggerQueue (.triggered snap _ _ _)) =>
+      snap.id == some srcId && snap.subtypes.contains .treasure
+    | .rules (.triggerQueue (.putOnStack _ snap _ spec)) =>
+      (snap.id == some srcId || spec.sourceId == some srcId) && snap.subtypes.contains .treasure
     | _ => false
 
 /-- Whether `u` came from a Treasure source (via spending restriction or `source` provenance). -/

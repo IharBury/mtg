@@ -505,7 +505,7 @@ def simpleTapAddMana (c : CardDef) : Array ManaType :=
 def mshTapAddMana (c : CardDef) : Array ManaType :=
   c.activatedAbilities.foldl (fun acc ab =>
     match ab.effect.resolution with
-    | .addMana types => acc ++ types
+    | .addMana types amount => if amount == .fixed 0 then acc else acc ++ types
     | .addBlueCantNonartifact => acc ++ #[.colored .blue]
     | _ => acc) #[]
 

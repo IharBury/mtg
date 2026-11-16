@@ -359,6 +359,9 @@ inductive FraManaUse where
   | dragonSpell
   /-- Only casting spells of this subtype. -/
   | subtypeSpell (subtype : CardSubtype)
+  /-- Only casting spells of this subtype or activating abilities of sources of
+  this subtype (CR 106.6). -/
+  | subtypeSpellOrSource (subtype : CardSubtype)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- What a payment is for, as far as `FraManaUse` restrictions care. The
@@ -372,6 +375,8 @@ structure ManaSpend where
   types : Array CardType := #[]
   /-- Subtypes of the spell being cast. -/
   subtypes : Array CardSubtype := #[]
+  /-- Subtypes of the source of an activated ability being paid for. -/
+  abilitySourceSubtypes : Array CardSubtype := #[]
   /-- Activating an equip ability. -/
   equip : Bool := false
 deriving DecidableEq, Repr, Inhabited, BEq
@@ -413,6 +418,8 @@ def FraManaUse.allows : FraManaUse → ManaSpend → Bool
   | .artifactSpell, s => s.spell && s.artifact
   | .dragonSpell, s => s.spell && s.subtypes.contains .dragon
   | .subtypeSpell sub, s => s.spell && s.subtypes.contains sub
+  | .subtypeSpellOrSource sub, s =>
+    (s.spell && s.subtypes.contains sub) || (!s.spell && s.abilitySourceSubtypes.contains sub)
 
 /-- Short label for a restriction in pool notation. -/
 def FraManaUse.label : FraManaUse → String
@@ -426,6 +433,7 @@ def FraManaUse.label : FraManaUse → String
   | .artifactSpell => "artifact spells"
   | .dragonSpell => "Dragon spells"
   | .subtypeSpell sub => s!"{sub} spells"
+  | .subtypeSpellOrSource sub => s!"{sub} spells and abilities"
 
 /-- Spend restriction for spells of `subtype`. Dragon keeps its dedicated constructor. -/
 def FraManaUse.forSubtype (subtype : CardSubtype) : FraManaUse :=
@@ -442,6 +450,15 @@ inductive ManaRestriction where
   | creatureSource
   | fra (u : FraManaUse)
 deriving DecidableEq, Repr, Inhabited, BEq
+
+/-- Spend restriction for spells of `subtype` or abilities of `subtype`
+sources (CR 106.6). `.elf`, `.hero`, and `.villain` keep their dedicated
+constructors. -/
+def ManaRestriction.forSubtypeSpellOrSource (subtype : CardSubtype) : ManaRestriction :=
+  if subtype == .elf then .elf
+  else if subtype == .hero then .hero
+  else if subtype == .villain then .villain
+  else .fra (.subtypeSpellOrSource subtype)
 
 /-- A short note for the log describing `r`. -/
 def ManaRestriction.note : ManaRestriction → String

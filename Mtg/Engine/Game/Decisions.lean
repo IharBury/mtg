@@ -161,6 +161,308 @@ def proposalCostPromptStillPayable (g : Game) (caster : PlayerId) (p : Pending) 
           q == caster && !(g.player caster).hand.isEmpty
         | _ => false
 
+private def probeGameCleanPaused (g : Game) : Game :=
+  if g.sbaPaused then g.change (.pending .none) else g
+
+private def nextTurnSeatOf (g : Game) : Option PlayerId :=
+  if g.over || !g.players.any (fun pl => g.stillInGame pl.id) then none
+  else
+    let ending := g.activePlayer
+    let (_, seatsExtra) := g.currentSharedTurnState
+    let finalSeat := g.isSharedTurnFinalSeat
+    let midRegularShared := !seatsExtra && !finalSeat
+    let lastReg := g.lastRegularTurnSeat
+    let regEnd := (g.teamMembers lastReg).back? |>.getD lastReg
+    let regAnchor := if seatsExtra then regEnd else ending
+    Id.run do
+      if !midRegularShared then
+        let mut sIdx := 0
+        while sIdx < g.extraTurns.size && !g.stillInGame g.extraTurns[sIdx]! do
+          sIdx := sIdx + 1
+        if let some q := (g.extraTurns.extract sIdx g.extraTurns.size)[0]? then
+          return some q
+      let n := g.players.size
+      for k in [1:n+1] do
+        let q : PlayerId := ⟨(regAnchor.idx + k) % n⟩
+        if g.stillInGame q then
+          return some q
+      return none
+
+private partial def continueStartNextTurnRecipient? (g : Game) (nextP : PlayerId)
+    (remainingDeparted : Array PlayerId) (runBeginTurn : Bool)
+    (alreadyExpired : Array PlayerId) : Option PlayerId := Id.run do
+  if !runBeginTurn || g.over then
+    return none
+  let mut g := g
+  let mut alreadyExpired := alreadyExpired
+  for i in [0:remainingDeparted.size] do
+    let dep := remainingDeparted[i]!
+    if !alreadyExpired.contains dep then
+      if !(g.teamMembers dep).any g.stillInGame then
+        for m in g.teamMembers dep do
+          if !alreadyExpired.contains m then
+            alreadyExpired := alreadyExpired.push m
+      else
+        alreadyExpired := alreadyExpired.push dep
+      g := g.expireUntilNextTurnEffects dep
+      if g.over then
+        return none
+      let paused :=
+        match g.pending with
+        | .chooseReplacement .. | .chooseLegend .. => true
+        | _ => g.pendingReplacement.isSome
+      if paused then
+        return none
+  let (seats, seatsExtra) := g.currentSharedTurnState
+  let midRegularShared := !seatsExtra && !g.isSharedTurnFinalSeat
+  let inProgressExtraSeats := g.countInProgressSharedExtraSeats seats seatsExtra g.extraTurns
+  let lastReg := g.lastRegularTurnSeat
+  let regEnd := (g.teamMembers lastReg).back? |>.getD lastReg
+  let (targetP, targetExtra) : PlayerId × Bool := Id.run do
+    if !midRegularShared then
+      let mut sIdx := 0
+      while sIdx < g.extraTurns.size && !g.stillInGame g.extraTurns[sIdx]! do
+        sIdx := sIdx + 1
+      if let some q := (g.extraTurns.extract sIdx g.extraTurns.size)[0]? then
+        return (q, true)
+    let n := g.players.size
+    let fromExtra := !midRegularShared && g.extraTurns.contains nextP
+    if fromExtra || !g.stillInGame nextP then
+      let startIdx := if fromExtra then regEnd.idx + 1 else nextP.idx
+      for k in [0:n] do
+        let q : PlayerId := ⟨(startIdx + k) % n⟩
+        if g.stillInGame q then
+          return (q, false)
+    return (nextP, false)
+  let sameShared :=
+    g.stillInGame targetP && targetExtra == seatsExtra && !seats.isEmpty &&
+      g.areTeammates seats[0]! targetP && !seats.contains targetP
+  let endingCurrentRegularShared (q : PlayerId) : Bool :=
+    !seatsExtra && !sameShared && seats.any (fun s => s == q || g.areTeammates s q)
+  let endingCurrentExtraShared (q : PlayerId) : Bool :=
+    seatsExtra && !sameShared && seats.any (fun s => s == q || g.areTeammates s q)
+  let mut skipIdx := 0
+  let mut unexpiredExtra : Array PlayerId := #[]
+  if !midRegularShared then
+    while skipIdx < g.extraTurns.size && !g.stillInGame g.extraTurns[skipIdx]! do
+      let d := g.extraTurns[skipIdx]!
+      let extraSeatEnding :=
+        seatsExtra && !sameShared && skipIdx < inProgressExtraSeats
+      if !extraSeatEnding && !alreadyExpired.contains d && !unexpiredExtra.contains d then
+        unexpiredExtra := unexpiredExtra.push d
+      skipIdx := skipIdx + 1
+  let nextExtra? :=
+    if midRegularShared then none
+    else (g.extraTurns.extract skipIdx g.extraTurns.size)[0]?
+  if !sameShared && g.stillInGame targetP then
+    for tm in g.teamMembers targetP do
+      if !g.stillInGame tm &&
+          !alreadyExpired.contains tm && !unexpiredExtra.contains tm then
+        unexpiredExtra := unexpiredExtra.push tm
+  if (!g.stillInGame nextP || !unexpiredExtra.isEmpty) && !g.over &&
+      g.players.any (fun pl => g.stillInGame pl.id) then
+    match nextExtra? with
+    | some q =>
+      if q != nextP || !unexpiredExtra.isEmpty then
+        return continueStartNextTurnRecipient? g q unexpiredExtra runBeginTurn alreadyExpired
+    | none =>
+      let n := g.players.size
+      let fromExtra := !midRegularShared && g.extraTurns.contains nextP
+      let appendDepartedTeammates (base : Array PlayerId) (q : PlayerId) : Array PlayerId :=
+        if !sameShared then
+          (g.teamMembers q).foldl (fun acc tm =>
+            if !g.stillInGame tm &&
+                !alreadyExpired.contains tm && !acc.contains tm then
+              acc.push tm
+            else acc) base
+        else base
+      let (nextP', newlyDeparted) := Id.run do
+        let mut newly := unexpiredExtra
+        if fromExtra then
+          if !endingCurrentExtraShared nextP && !alreadyExpired.contains nextP &&
+              !newly.contains nextP then
+            newly := newly.push nextP
+          for k in [1:n+1] do
+            let q : PlayerId := ⟨(regEnd.idx + k) % n⟩
+            if !g.stillInGame q then
+              if !endingCurrentRegularShared q && !alreadyExpired.contains q && !newly.contains q then
+                newly := newly.push q
+            else
+              return (q, appendDepartedTeammates newly q)
+          return (regEnd, newly)
+        else
+          for k in [0:n] do
+            let q : PlayerId := ⟨(nextP.idx + k) % n⟩
+            if !g.stillInGame q then
+              if !endingCurrentRegularShared q && !alreadyExpired.contains q && !newly.contains q then
+                newly := newly.push q
+            else
+              return (q, appendDepartedTeammates newly q)
+          return (nextP, newly)
+      if g.stillInGame nextP' && (nextP' != nextP || !newlyDeparted.isEmpty) then
+        return continueStartNextTurnRecipient? g nextP' newlyDeparted runBeginTurn alreadyExpired
+  let (gNext, didBeginTurn) : Game × Bool :=
+    match nextExtra? with
+    | some q =>
+      let sameShared :=
+        seatsExtra && !seats.isEmpty && g.areTeammates seats[0]! q && !seats.contains q
+      let nextTurnNum := if sameShared then g.turnNumber else g.turnNumber + 1
+      let g := g.record (GameEvent.turnBegan nextTurnNum q (extra := true))
+      (g, true)
+    | none =>
+      if g.stillInGame nextP then
+        let sameShared :=
+          !seatsExtra && !seats.isEmpty &&
+            g.areTeammates seats[0]! nextP && !seats.contains nextP
+        let nextTurnNum := if sameShared then g.turnNumber else g.turnNumber + 1
+        let g := g.record (GameEvent.turnBegan nextTurnNum nextP (extra := false))
+        (g, true)
+      else (g, false)
+  if runBeginTurn && didBeginTurn && !gNext.over && gNext.stillInGame gNext.activePlayer then
+    return some gNext.activePlayer
+  else
+    return none
+
+private partial def finishCleanupAfterClearEotRecipient? (g : Game) : Option PlayerId :=
+  if g.over then none
+  else
+    let (g1, sba, _) := g.checkSBACountedWithLeaves
+    if g1.over then none
+    else if sba || g1.hasWaitingTriggers ||
+        (match g1.pending with | .chooseLegend .. => true | _ => false) then
+      some g1.activePlayer
+    else
+      nextTurnSeatOf g1
+
+private partial def cleanupStepAfterDiscardRecipient? (g : Game) : Option PlayerId :=
+  if g.over then none
+  else
+    let g1 := g.clearEOT
+    if g1.over then none
+    else
+      let gClean :=
+        if g1.sbaPaused then
+          let g2 := g1.change (.pending .none)
+          if g2.pendingReplacement.isSome then g2.change (.pendingReplacement none) else g2
+        else g1
+      finishCleanupAfterClearEotRecipient? gClean
+
+private partial def stepPriorityRecipient? (g : Game) (st : Step) : Option PlayerId :=
+  if g.over then none
+  else
+    match st with
+    | .untap => none
+    | .draw =>
+      if g.skipsFirstDraw then stepPriorityRecipient? g .precombatMain
+      else some g.activePlayer
+    | .declareAttackers =>
+      if !g.stillInGame g.activePlayer then some g.activePlayer
+      else none
+    | .declareBlockers =>
+      let attackers := g.battlefield.filter (·.status.attacking)
+      if attackers.isEmpty then
+        some g.activePlayer
+      else
+        let ps := g.defendingPlayers
+        let teamQueue := ps.foldl (fun (acc : Array PlayerId) pid =>
+          if acc.any (fun q => q == pid || g.areTeammates q pid) then acc
+          else acc.push pid) #[]
+        if teamQueue.isEmpty then
+          let opp := g.defendingPlayer
+          if attackers.any (·.status.attackingTarget.isNone) &&
+              (g.livingOpponents g.activePlayer).any (fun pl => pl.id == opp) then
+            none
+          else
+            some g.activePlayer
+        else
+          none
+    | .combatDamage =>
+      let gCd := g.changes #[.pending .none, .pendingBlockerAssignments #[]]
+      if (gCd.creaturesAssigningCombatDamage true).isEmpty &&
+          (gCd.creaturesAssigningCombatDamage false).isEmpty then
+        some g.activePlayer
+      else if gCd.needsCombatDamageChoice true then
+        none
+      else
+        let assigningBlockers := gCd.creaturesAssigningCombatDamage false
+        let blockerNeedsPrompt := gCd.apnapOrder.any (fun p =>
+          p != gCd.activePlayer && gCd.stillInGame p &&
+            assigningBlockers.any (fun o =>
+              gCd.controlledBy o p &&
+                (gCd.legalCombatDamageRecipients o false).size ≥ 2 &&
+                gCd.combatDamageAmount o > 0))
+        if blockerNeedsPrompt then none
+        else some g.activePlayer
+    | .cleanup =>
+      let g1 := g.discardToMaxHandSize
+      if g1.over then none
+      else
+        let gClean :=
+          if g1.sbaPaused then
+            let g2 := g1.change (.pending .none)
+            if g2.pendingReplacement.isSome then g2.change (.pendingReplacement none) else g2
+          else g1
+        cleanupStepAfterDiscardRecipient? gClean
+    | .upkeep | .beginningOfCombat | .end | .precombatMain | .endOfCombat | .postcombatMain =>
+      some g.activePlayer
+
+private partial def beginStepAfterPhaseBeganRecipient? (g : Game) (st : Step) : Option PlayerId :=
+  if g.over then none
+  else
+    let g1 := if st == .draw && g.skipsFirstDraw then g else g.recordStepBegan st
+    let gClean :=
+      if g1.sbaPaused then
+        let g2 := g1.change (.pending .none)
+        if g2.pendingReplacement.isSome then g2.change (.pendingReplacement none) else g2
+      else g1
+    stepPriorityRecipient? gClean st
+
+private partial def beginStepContRecipient? (g : Game) (st : Step) : Option PlayerId :=
+  if g.over then none
+  else
+    let g := if g.step == .endOfCombat && st != .endOfCombat then g.clearCombat else g
+    let g := g.changes #[
+      .pending .none,
+      .consecutivePasses 0,
+      .cleanupGivesPriority false,
+      .proposedSpell none ]
+    let isPhaseStart :=
+      match st with
+      | .untap | .precombatMain | .beginningOfCombat | .postcombatMain | .end => true
+      | _ => false
+    let g1 :=
+      if st == .draw && g.skipsFirstDraw then g
+      else if isPhaseStart then g.recordPhaseBegan st.phase
+      else g
+    let gClean :=
+      if g1.sbaPaused then
+        let g2 := g1.change (.pending .none)
+        if g2.pendingReplacement.isSome then g2.change (.pendingReplacement none) else g2
+      else g1
+    beginStepAfterPhaseBeganRecipient? gClean st
+
+private partial def advanceAfterStepEndedRecipient? (g : Game) : Option PlayerId :=
+  if g.over then none
+  else if g.step == .endOfCombat && g.additionalCombatPhases > 0 then
+    let g1 := g.recordPhaseEnded .combat
+    let gClean :=
+      if g1.sbaPaused then
+        let g2 := g1.change (.pending .none)
+        if g2.pendingReplacement.isSome then g2.change (.pendingReplacement none) else g2
+      else g1
+    beginStepContRecipient? gClean .beginningOfCombat
+  else
+    match g.step.next? with
+    | some st =>
+      let g1 := g.recordPhaseEnded g.step.phase
+      let gClean :=
+        if g1.sbaPaused then
+          let g2 := g1.change (.pending .none)
+          if g2.pendingReplacement.isSome then g2.change (.pendingReplacement none) else g2
+        else g1
+      beginStepContRecipient? gClean st
+    | none => none
+
 /-- Track whether resuming a `PendingReplacement` step leaves a freshly queued
 continuation unresumed on `g.pendingReplacement` while `g.pending == .none` so
 the next step in `.seq` immediately runs with `g.pendingReplacement.isSome`. -/
@@ -276,29 +578,333 @@ private partial def nextQueuedPendingOnResume (g : Game) (hasQueuedPending : Boo
     if g.afterRandom == .none then false else hasQueuedPending
   | .finishPostCast _ grantPriority false _ =>
     if !grantPriority && g.afterRandom != .none then hasQueuedPending else false
+  | .continueStartNextTurn nextP remainingDeparted runBeginTurn alreadyExpired =>
+    if (continueStartNextTurnRecipient? (probeGameCleanPaused g) nextP remainingDeparted runBeginTurn alreadyExpired).isSome then
+      false
+    else hasQueuedPending
+  | .beginStepCont st =>
+    if st == .untap then hasQueuedPending
+    else if PendingReplacement.stepAlwaysGrantsPriority st then false
+    else if (beginStepContRecipient? (probeGameCleanPaused g) st).isSome then false
+    else hasQueuedPending
+  | .finishPostStep (.beginStepBody st) =>
+    if st == .untap then hasQueuedPending
+    else if PendingReplacement.stepAlwaysGrantsPriority st then false
+    else if (stepPriorityRecipient? (probeGameCleanPaused g) st).isSome then false
+    else hasQueuedPending
+  | .finishPostStep (.beginStepAfterPhaseBegan st) =>
+    if st == .untap then hasQueuedPending
+    else if PendingReplacement.stepAlwaysGrantsPriority st then false
+    else if (beginStepAfterPhaseBeganRecipient? (probeGameCleanPaused g) st).isSome then false
+    else hasQueuedPending
+  | .finishPostStep .advanceAfterStepEnded =>
+    let gR := probeGameCleanPaused g
+    if gR.step == .endOfCombat && gR.additionalCombatPhases > 0 then false
+    else
+      match gR.step.next? with
+      | none | some .untap => hasQueuedPending
+      | some st =>
+        if PendingReplacement.stepAlwaysGrantsPriority st then false
+        else if (advanceAfterStepEndedRecipient? gR).isSome then false
+        else hasQueuedPending
   | pr =>
     pr.nextQueuedPending hasQueuedPending
 
+private def probeGameForPendingReplacement (g : Game) : Game :=
+  let g := if g.sbaPaused then g.change (.pending .none) else g
+  let g := if g.pendingReplacement.isSome then g.change (.pendingReplacement none) else g
+  g.popEmptyTopContinuationFrames
+
+private def probeGameForOuterAt (g : Game) (idx : Nat) : Game := Id.run do
+  let mut g := if g.sbaPaused then g.change (.pending .none) else g
+  if g.pendingReplacement.isSome then
+    g := g.change (.pendingReplacement none)
+  while g.outerPendingReplacements.size > idx do
+    g := g.change .popOuterPendingReplacement
+  return g.popEmptyTopContinuationFrames
+
+private def finishPostCastRecipient? (g : Game) (caster : PlayerId)
+    (hadOpenContinuation : Bool) (hasQueuedPending : Bool) : Option PlayerId :=
+  let g := if g.sbaPaused then g.change (.pending .none) else g
+  let g := g.runPostCastCleanup
+  let g : Game :=
+    match g.pendingMayCastFromExile with
+    | some (q, ids, left) =>
+      if g.pending != Pending.none then g
+      else
+        let alive := ids.filter (fun id =>
+          (g.findObject? id).any (fun (o : GameObject) =>
+            o.zone == Zone.exile && !g.isLand o))
+        let g := g.change (.pendingMayCastFromExile none)
+        if q != caster || alive.isEmpty || left == 0 then g
+        else
+          g.beginFraChoice q (.mayCastUpToFromExile alive left) ""
+    | none => g
+  let g : Game :=
+    match g.pendingFreeCopies with
+    | some (q, ids, budget, castsLeft) =>
+      if q != caster || g.pending != Pending.none then g
+      else
+        let alive := ids.filter (fun id => (g.findObject? id).any (fun (o : GameObject) => o.zone == Zone.exile))
+        let castable := alive.filter (fun id =>
+          (g.findObject? id).any (fun o => g.objectManaValue o ≤ budget))
+        if castable.isEmpty || castsLeft == 0 then
+          let g :=
+            if alive.isEmpty then g
+            else
+              g.withBatch (some (.stateBased .copyOutsideStackOrBf)) fun g =>
+                alive.foldl (fun g id =>
+                  g.ceaseToExist id (cause := some (.stateBased .copyOutsideStackOrBf))) g
+          g.change (.pendingFreeCopies none)
+        else
+          g.beginFraChoice q (.castCopiesFree alive budget castsLeft) ""
+    | none => g
+  if let .chooseReplacement .. := g.pending then
+    if g.triggerSequenceRest.isSome then none
+    else some (if hadOpenContinuation then g.activePlayer else caster)
+  else if g.pending != Pending.none then none
+  else if g.triggerSequenceRest.isSome || hasQueuedPending || g.pendingReplacement.isSome then none
+  else some (if hadOpenContinuation then g.activePlayer else caster)
+
+/-- Forward reference to `firstContinuationPriorityGrant?` for `finishAndGrantPriority`'s default parameter. -/
+@[extern "mtg_game_first_continuation_priority_grant"]
+opaque firstContinuationPriorityGrantFwd? (g : Game) : Option (Option PlayerId) := none
+
+mutual
+/-- Helper computing the explicit priority recipient (if any) of
+`finishConcedePriority` (`600–659`) without entering `resolveTop` / `advanceStep`. -/
+private partial def finishConcedePriorityRecipient? (g : Game) (wasIdlePriority : Bool)
+    (savedPendingPrio : Option PlayerId)
+    (wasAssigningCombatDamage : Option Bool := none)
+    (savedPending : Option Pending := none)
+    (popOuter : Bool := false)
+    (runSba : Bool := false)
+    (departed : Array PlayerId := #[])
+    (rewindProposal : Option Bool := none)
+    (hasQueuedPending : Bool := false) : Option PlayerId :=
+  let g := if g.sbaPaused then g.change (.pending .none) else g
+  let g := g.popEmptyContinuationFrames
+  let (g, popOuter) :=
+    if runSba && !g.over then (g, popOuter)
+    else g.flushDismissedPausedBatch savedPending popOuter (hasDeferredRewind := rewindProposal.isSome)
+  let (g, savedPending, popOuter, rewindProposal) :=
+    match rewindProposal with
+    | some hadPreBodyCont =>
+      if !g.sbaPaused && (g.currentBatch.isNone || g.isPreProposalCheckpointBatch) then
+        let (g', s', po') := g.applyDeferredProposalRewind savedPending popOuter departed hadPreBodyCont
+        (g', s', po', none)
+      else
+        (g, savedPending, popOuter, rewindProposal)
+    | none =>
+      (g, savedPending, popOuter, none)
+  let (g, _, savedPending, popOuter, departed, rewindProposal) :=
+    if runSba && !g.over then
+      g.checkSBACountedWithLeavesCore savedPending popOuter departed rewindProposal
+        (deferRestore := true)
+    else
+      (g, false, savedPending, popOuter, departed, rewindProposal)
+  if g.over || g.sbaPaused || (g.unlessPaysDue && rewindProposal.isNone) then none
+  else
+    let g : Game :=
+      match savedPending with
+      | some sp =>
+        if g.pending == Pending.none then
+          resumePendingReplacement g
+            (.restorePending sp popOuter (departed := departed) (rewindProposal := rewindProposal))
+        else g
+      | none =>
+        if rewindProposal.isSome then
+          if g.pending == Pending.none then
+            resumePendingReplacement g
+              (.restorePending Pending.none popOuter (departed := departed) (rewindProposal := rewindProposal))
+          else g
+        else if popOuter then
+          match g.outerPendingReplacements.back? with
+          | some popped => (g.change .popOuterPendingReplacement).chainPendingReplacement popped
+          | none => g
+        else g
+    if g.pending != Pending.none || g.unlessPaysDue || wasAssigningCombatDamage.isSome then none
+    else
+      let g := g.popEmptyContinuationFrames
+      if !g.continuations.isEmpty || hasQueuedPending || g.pendingReplacement.isSome ||
+          !g.outerPendingReplacements.isEmpty ||
+          g.triggerSequenceRest.isSome || g.mayThenResume then
+        none
+      else if wasIdlePriority && g.playersReceivePriority && !g.hasWaitingTriggers &&
+          g.consecutivePasses ≥ g.livingPlayers.size then
+        none
+      else if g.playersReceivePriority then
+        let rawPrio := (savedPendingPrio.orElse (fun _ => g.pendingPriority)).getD g.priority
+        let nextP := if g.stillInGame rawPrio then rawPrio else g.nextLiving rawPrio
+        let g := g.promptTriggerTargetsIfNeeded
+        if g.pending != Pending.none then none
+        else some nextP
+      else none
+
+/-- Helper computing the explicit priority recipient (if any) of an idle
+`concedePlayersLoop` (`!wasPregame && !midResolutionOrBatch`, `673–788, 865–871`). -/
+private partial def concedePlayersLoopRecipient? (g : Game) (remaining : Array PlayerId)
+    (wasIdlePriority : Bool)
+    (savedPendingPrio : Option PlayerId)
+    (wasAssigningCombatDamage : Option Bool := none)
+    (savedIn : Option Pending := none)
+    (popOuterIn : Bool := false)
+    (departedIn : Array PlayerId := #[])
+    (rewindProposalIn : Option Bool := none)
+    (hasQueuedPending : Bool := false) : Option PlayerId := Id.run do
+  let mut g := if g.sbaPaused then g.change (.pending .none) else g
+  if g.over then
+    return none
+  let mut saved? := savedIn
+  let mut popOuter := popOuterIn
+  let mut departed := departedIn
+  let mut rewindProposal := rewindProposalIn
+  for i in [0:remaining.size] do
+    if g.over then
+      return none
+    let pid := remaining[i]!
+    if !(g.player pid).leftTheGame then
+      let wasSbaPaused := g.sbaPaused
+      let (gf, pof) := g.flushDismissedPausedBatch saved? popOuter (hasDeferredRewind := rewindProposal.isSome)
+      g := gf
+      popOuter := pof
+      if g.over then
+        return none
+      if !wasSbaPaused then
+        match g.pending with
+        | .chooseReplacement r _ | .chooseLegend r _ _ =>
+          let remHere := remaining.extract i remaining.size
+          if !remHere.contains r then
+            return none
+        | _ => pure ()
+      if let some hadPreBodyCont := rewindProposal then
+        if !g.sbaPaused && (g.currentBatch.isNone || g.isPreProposalCheckpointBatch) then
+          let (g', s', po') := g.applyDeferredProposalRewind saved? popOuter departed hadPreBodyCont
+          g := g'
+          saved? := s'
+          popOuter := po'
+          rewindProposal := none
+          match g.pending with
+          | .chooseReplacement r _ | .chooseLegend r _ _ =>
+            let remHere := remaining.extract i remaining.size
+            if !remHere.contains r then
+              return none
+          | _ => pure ()
+      let prePopCont? : Option (Option PendingReplacement) :=
+        if popOuter then some g.pendingReplacement else none
+      if popOuter then
+        if let some popped := g.outerPendingReplacements.back? then
+          g := (g.change .popOuterPendingReplacement).chainPendingReplacement popped
+        popOuter := false
+      let pendingIn := if g.pending == .none then saved? else none
+      if pendingIn.isSome then
+        saved? := none
+      else if g.isProposalAbortedByLeave pid then
+        if let some prop := g.proposedSpell then
+          if saved?.any (isProposalPromptFor prop.caster) then
+            saved? := none
+      let (g', newlySaved?, po, rw) :=
+        g.playerLeavesGameCore pid (deferRestore := true) (pendingIn := pendingIn)
+          (departedIn := departed) (rewindProposalIn := rewindProposal)
+          (prePopCont? := prePopCont?)
+      g := g'
+      departed := if departed.contains pid then departed else departed.push pid
+      popOuter := popOuter || po
+      match saved?, newlySaved? with
+      | none, s => saved? := s
+      | some .none, s => saved? := s.orElse (fun _ => some .none)
+      | some oldP, some newP =>
+        if newP != .none then
+          let popped? : Option PendingReplacement :=
+            if popOuter then g.outerPendingReplacements.back? else none
+          if popped?.isSome then
+            g := g.change .popOuterPendingReplacement
+          let restoreOld : PendingReplacement := .restorePending oldP false (departed := departed)
+          let outer := g.chainRestoreAfterOpenBatch restoreOld popped?
+          if g.continuations.isEmpty then
+            g := g.change (.pushContinuationFrame {})
+          g := g.change (.pushOuterPendingReplacement outer)
+          popOuter := true
+          saved? := some newP
+      | some _, none => pure ()
+      rewindProposal :=
+        match rewindProposal, rw with
+        | some a, some _ => some a
+        | some a, none =>
+          if g.proposedSpell.isSome && g.proposalCheckpoint.isSome then some a else none
+        | none, some b => some b
+        | none, none => none
+      let rem := remaining.extract (i + 1) remaining.size
+      match g.pending with
+      | .chooseReplacement r _ | .chooseLegend r _ _ =>
+        if !rem.contains r then
+          return none
+      | _ => pure ()
+  let (gf, pof) := g.flushDismissedPausedBatch saved? popOuter (hasDeferredRewind := rewindProposal.isSome)
+  g := gf
+  popOuter := pof
+  if g.over then
+    return none
+  if let some hadPreBodyCont := rewindProposal then
+    if !g.sbaPaused && (g.currentBatch.isNone || g.isPreProposalCheckpointBatch) then
+      let (g', s', po') := g.applyDeferredProposalRewind saved? popOuter departed hadPreBodyCont
+      g := g'
+      saved? := s'
+      popOuter := po'
+      rewindProposal := none
+  if saved?.isNone && !g.sbaPaused && g.pending != .none then
+    saved? := some g.pending
+    g := g.change (.pending .none)
+  if g.sbaPaused then
+    return none
+  else
+    return finishConcedePriorityRecipient? g wasIdlePriority savedPendingPrio wasAssigningCombatDamage
+      saved? popOuter (runSba := true) (departed := departed) (rewindProposal := rewindProposal)
+      (hasQueuedPending := hasQueuedPending)
+
 /-- `Game`-aware check whether a `PendingReplacement` continuation ends by granting priority. -/
-private def continuationGrantsPriority (g : Game) (hasQueuedPending : Bool := false) :
+partial def continuationGrantsPriority (g : Game) (hasQueuedPending : Bool := false) :
     PendingReplacement → Bool
   | .seq a b => continuationGrantsPriority g (nextQueuedPendingOnResume g hasQueuedPending a) b
-  | .beginStepCont st => st != .untap || hasQueuedPending
-  | .beginTurnAfterStartExpiry
-  | .continueStartNextTurn ..
-  | .finishCleanupAfterClearEot
-  | .finishPostStep .startNextTurnAndBegin
-  | .finishPostStep .endTurnAfterCleanupStepEnded
-  | .finishPostStep .advanceAfterStepEnded => true
-  | .finishPostStep (.beginStepBody st)
-  | .finishPostStep (.beginStepAfterPhaseBegan st) => st != .untap || hasQueuedPending
+  | .continueStartNextTurn nextP remainingDeparted runBeginTurn alreadyExpired =>
+    let gR := if g.sbaPaused then g.change (.pending .none) else g
+    (continueStartNextTurnRecipient? gR nextP remainingDeparted runBeginTurn alreadyExpired).isSome
+  | .beginStepCont st =>
+    if st == .untap then hasQueuedPending
+    else if PendingReplacement.stepAlwaysGrantsPriority st then true
+    else
+      let gR := if g.sbaPaused then g.change (.pending .none) else g
+      (beginStepContRecipient? gR st).isSome
+  | .finishPostStep (.beginStepBody st) =>
+    if st == .untap then hasQueuedPending
+    else if PendingReplacement.stepAlwaysGrantsPriority st then true
+    else
+      let gR := if g.sbaPaused then g.change (.pending .none) else g
+      (stepPriorityRecipient? gR st).isSome
+  | .finishPostStep (.beginStepAfterPhaseBegan st) =>
+    if st == .untap then hasQueuedPending
+    else if PendingReplacement.stepAlwaysGrantsPriority st then true
+    else
+      let gR := if g.sbaPaused then g.change (.pending .none) else g
+      (beginStepAfterPhaseBeganRecipient? gR st).isSome
+  | .finishPostStep .advanceAfterStepEnded =>
+    let gR := if g.sbaPaused then g.change (.pending .none) else g
+    if gR.step == .endOfCombat && gR.additionalCombatPhases > 0 then true
+    else
+      match gR.step.next? with
+      | none => false
+      | some .untap => hasQueuedPending
+      | some st =>
+        if PendingReplacement.stepAlwaysGrantsPriority st then true
+        else (advanceAfterStepEndedRecipient? gR).isSome
   | pr => pr.endsWithPriorityGrant hasQueuedPending
 
 /-- Explicit priority recipient encoded by a priority-granting pending
 replacement leaf (e.g. `.finishPostCast` for a non-active caster, CR 117.3c). -/
-private def priorityRecipientOfContinuation? (g : Game) (hasQueuedPending : Bool := false) :
+partial def priorityRecipientOfContinuation? (g : Game) (hasQueuedPending : Bool := false) :
     PendingReplacement → Option PlayerId
-  | .finishPostCast caster true false false => some caster
+  | .finishPostCast caster true false hadOpenContinuation =>
+    finishPostCastRecipient? g caster hadOpenContinuation hasQueuedPending
   | .finishBecomeCast caster _ true false false => some caster
   | .finishProposedSpellCosts _ true false false => g.proposedSpell.map (·.caster)
   | .receivePriority p => some p
@@ -310,13 +916,54 @@ private def priorityRecipientOfContinuation? (g : Game) (hasQueuedPending : Bool
     if g.triggerSequenceRest.isSome || hasQueuedPending then none else some caster
   | .finishTurnFaceUp caster _ false =>
     if g.triggerSequenceRest.isSome || hasQueuedPending then none else some caster
+  | .finishConcede wasIdlePriority savedPendingPrio wasAssigningCombatDamage savedPending popOuter departed rewindProposal =>
+    finishConcedePriorityRecipient? g wasIdlePriority savedPendingPrio wasAssigningCombatDamage
+      savedPending popOuter (runSba := true) (departed := departed)
+      (rewindProposal := rewindProposal) (hasQueuedPending := hasQueuedPending)
+  | .concedePlayersLoop remaining false false wasIdlePriority savedPendingPrio wasAssigningCombatDamage savedPending popOuter departed rewindProposal =>
+    concedePlayersLoopRecipient? g remaining wasIdlePriority savedPendingPrio
+      wasAssigningCombatDamage savedPending popOuter
+      (departedIn := departed) (rewindProposalIn := rewindProposal)
+      (hasQueuedPending := hasQueuedPending)
+  | .continueStartNextTurn nextP remainingDeparted runBeginTurn alreadyExpired =>
+    let gR := if g.sbaPaused then g.change (.pending .none) else g
+    continueStartNextTurnRecipient? gR nextP remainingDeparted runBeginTurn alreadyExpired
+  | .beginTurnAfterStartExpiry =>
+    if g.over then none else some g.activePlayer
+  | .finishPostStep .startNextTurnAndBegin
+  | .finishPostStep .endTurnAfterCleanupStepEnded =>
+    let gR := if g.sbaPaused then g.change (.pending .none) else g
+    nextTurnSeatOf gR
+  | .finishPostStep (.postSbaCleanup sba) =>
+    let gR := if g.sbaPaused then g.change (.pending .none) else g
+    if gR.over then none
+    else if sba || gR.hasWaitingTriggers then some gR.activePlayer
+    else nextTurnSeatOf gR
+  | .finishCleanupAfterClearEot =>
+    let gR := if g.sbaPaused then g.change (.pending .none) else g
+    finishCleanupAfterClearEotRecipient? gR
+  | .finishPostStep .cleanupStepAfterDiscard =>
+    let gR := if g.sbaPaused then g.change (.pending .none) else g
+    cleanupStepAfterDiscardRecipient? gR
+  | .beginStepCont st =>
+    let gR := if g.sbaPaused then g.change (.pending .none) else g
+    beginStepContRecipient? gR st
+  | .finishPostStep (.beginStepAfterPhaseBegan st) =>
+    let gR := if g.sbaPaused then g.change (.pending .none) else g
+    beginStepAfterPhaseBeganRecipient? gR st
+  | .finishPostStep (.beginStepBody st) =>
+    let gR := if g.sbaPaused then g.change (.pending .none) else g
+    stepPriorityRecipient? gR st
+  | .finishPostStep .advanceAfterStepEnded =>
+    let gR := if g.sbaPaused then g.change (.pending .none) else g
+    advanceAfterStepEndedRecipient? gR
   | _ => none
 
 /-- Resolve the first priority-granting continuation leaf in execution order
 (left-to-right across `.seq a b`), returning `some (some q)` for an explicit
 recipient `q`, `some none` for an implicit grant (such as `.finishFraChoice`),
 or `none` when no leaf grants priority (CR 117.3c / 605.3b / 616.1). -/
-private def firstPriorityGrantRecipient? (g : Game) (hasQueuedPending : Bool := false) :
+partial def firstPriorityGrantRecipient? (g : Game) (hasQueuedPending : Bool := false) :
     PendingReplacement → Option (Option PlayerId)
   | .seq a b =>
     match firstPriorityGrantRecipient? g hasQueuedPending a with
@@ -330,25 +977,38 @@ private def firstPriorityGrantRecipient? (g : Game) (hasQueuedPending : Bool := 
 
 /-- Resolve the first priority-granting continuation across `g.pendingReplacement`
 followed by `g.outerPendingReplacements` from top (`size - 1`) down to `0`. -/
-private def firstContinuationPriorityGrant? (g : Game) : Option (Option PlayerId) :=
-  (g.pendingReplacement.bind (firstPriorityGrantRecipient? g false)).orElse
-    (fun _ => g.outerPendingReplacements.findSomeRev? (firstPriorityGrantRecipient? g false))
+@[export mtg_game_first_continuation_priority_grant]
+partial def firstContinuationPriorityGrant? (g : Game) : Option (Option PlayerId) :=
+  (g.pendingReplacement.bind (firstPriorityGrantRecipient? (probeGameForPendingReplacement g) false)).orElse
+    (fun _ => Id.run do
+      let mut idx := g.outerPendingReplacements.size
+      while idx > 0 do
+        idx := idx - 1
+        let outer := g.outerPendingReplacements[idx]!
+        if let some res := firstPriorityGrantRecipient? (probeGameForOuterAt g idx) false outer then
+          return some res
+      return none)
 
 /-- Whether `g.pendingReplacement` or `g.outerPendingReplacements` already
 contains a continuation that grants priority (CR 117.3 / 616.1). -/
 @[export mtg_game_any_continuation_grants_priority]
-def anyContinuationGrantsPriority (g : Game) : Bool :=
-  g.pendingReplacement.any (continuationGrantsPriority g false) ||
-    g.outerPendingReplacements.any (continuationGrantsPriority g false)
+partial def anyContinuationGrantsPriority (g : Game) : Bool :=
+  g.pendingReplacement.any (continuationGrantsPriority (probeGameForPendingReplacement g) false) ||
+    Id.run do
+      let mut idx := g.outerPendingReplacements.size
+      while idx > 0 do
+        idx := idx - 1
+        if continuationGrantsPriority (probeGameForOuterAt g idx) false g.outerPendingReplacements[idx]! then
+          return true
+      return false
 
 /-- Whether the first priority-granting continuation in execution order is
 implicit (e.g. `.finishFraChoice`, which reads
 `g.pendingPriority.getD g.activePlayer`, CR 117.3c / 605.3b). -/
 @[export mtg_game_has_implicit_priority_continuation]
-def hasImplicitPriorityContinuation (g : Game) : Bool :=
+partial def hasImplicitPriorityContinuation (g : Game) : Bool :=
   firstContinuationPriorityGrant? g == some none
 
-mutual
 /-- Drain queued `g.pendingReplacement` continuations and paused
 `triggerSequenceRest` steps while no interactive `Pending` or `afterRandom`
 choice is open. -/
@@ -377,7 +1037,7 @@ partial def drainPendingContinuations (g : Game) : Game :=
 `Pending.chooseReplacement` pause opened, or grant priority to `p` when idle. -/
 partial def finishAndGrantPriority (g : Game)
     (p : PlayerId :=
-      (match firstContinuationPriorityGrant? g with
+      (match g.firstContinuationPriorityGrantFwd? with
        | some (some q) => some q
        | _ => none)
         |>.getD (g.pendingPriority.getD g.activePlayer)) : Game :=
@@ -898,6 +1558,11 @@ partial def resumePendingReplacementCore (g : Game) (pr : PendingReplacement)
       | .restorePending (.chooseKicker ..) ..
       | .restorePending (.chooseGift ..) ..
       | .restorePending (.chooseTeamwork ..) ..
+      | .restorePending (.chooseMode ..) ..
+      | .restorePending (.chooseTargets ..) ..
+      | .finishPostStep (.resumeProposalCostAfterLeave ..)
+      | .finishPostStep (.resumeChooseModeAfterLeave ..)
+      | .finishPostStep (.resumeChooseTargetsAfterLeave ..)
       | .payCostPickItems ..
       | .finishActivationExtraCosts ..
       | .finishBecomeCast ..
@@ -918,7 +1583,8 @@ partial def resumePendingReplacementCore (g : Game) (pr : PendingReplacement)
     let nextFollowedByExplicit? : Option PlayerId :=
       match firstPriorityGrantRecipient? g0 false rest with
       | some (some prio) => if rest.endsWithFinishFra then none else some prio
-      | _ => followedByExplicitPriority?
+      | some none => none
+      | none => followedByExplicitPriority?
     let g := g.resumePendingReplacementCore first
       (followedByFinishFra := nextFollowedByFinishFra)
       (hasFollowingSeq := true)
@@ -1702,6 +2368,8 @@ partial def resumePendingReplacementCore (g : Game) (pr : PendingReplacement)
         if hadOuter then g' else resumeAfterBecomeCast g'
       | .error _ =>
         g.reverseProposedSpell (resumeContinuation := true)
+          (followedByFinishFra := followedByFinishFra)
+          (followedByExplicitPriority? := followedByExplicitPriority?)
   | .finishBecomeActivated caster srcName srcId act abId srcSnap srcOrig hadOuter hadOpenCont =>
     let g := g.becomeActivated caster srcName srcId act
       (abilityId := abId)
@@ -1723,6 +2391,8 @@ partial def resumePendingReplacementCore (g : Game) (pr : PendingReplacement)
       if hadOuter then g else resumeAfterBecomeCast g
     else if g.proposedSpell.isSome && g.proposalCheckpoint.isSome then
       g.reverseProposedSpell (resumeContinuation := true)
+        (followedByFinishFra := followedByFinishFra)
+        (followedByExplicitPriority? := followedByExplicitPriority?)
     else
       let clearChanges : Array EngineChange :=
         (if g.proposedSpell.isSome then #[EngineChange.proposedSpell none] else #[]) ++
@@ -1749,6 +2419,8 @@ partial def resumePendingReplacementCore (g : Game) (pr : PendingReplacement)
       if hadOuter then g' else resumeAfterBecomeCast g'
     | .error _ =>
       g.reverseProposedSpell (resumeContinuation := true)
+        (followedByFinishFra := followedByFinishFra)
+        (followedByExplicitPriority? := followedByExplicitPriority?)
   | .finishTurnFaceUp caster spellId hadOuter =>
     let (g, callerShouldResume) := g.completeTurnFaceUp caster spellId (hadOuterReplacement := hadOuter)
     if callerShouldResume && !hadOuter then resumeAfterBecomeCast g else g
@@ -1909,7 +2581,8 @@ partial def resumePendingReplacementCore (g : Game) (pr : PendingReplacement)
   | .finishFrcPostStep step =>
     g.runFrcPostStep step
   | .finishPostStep step =>
-    g.runPostStep step
+    g.runPostStep step (followedByFinishFra := followedByFinishFra)
+      (followedByExplicitPriority? := followedByExplicitPriority?)
   | .acceptMayThen =>
     g.acceptMayThenCore
   | .setLife p life msg cause =>
@@ -1969,7 +2642,9 @@ partial def resumePendingReplacementCore (g : Game) (pr : PendingReplacement)
 
 /-- Execute a deferred `PostStep` continuation after a CR 616.1
 `Pending.chooseReplacement` pause finishes. -/
-partial def runPostStep (g : Game) (step : PostStep) : Game :=
+partial def runPostStep (g : Game) (step : PostStep)
+    (followedByFinishFra : Bool := false)
+    (followedByExplicitPriority? : Option PlayerId := none) : Game :=
   match step with
   | .putArtifactOntoBattlefield p cardId hostId =>
     match g.followMovedToZone? cardId (· == .battlefield) with
@@ -2450,12 +3125,16 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
             !g.stillInGame prop.caster || (g.findObject? prop.spellId).isNone) then
           (if g.pending == .none then g else g.change (.pending .none)).reverseProposedSpell
             (resumeContinuation := true) (alwaysGrantPriority := true)
+            (followedByFinishFra := followedByFinishFra)
+            (followedByExplicitPriority? := followedByExplicitPriority?)
         else g
       g.completeActiveResolutions
     else if !g.stillInGame p then
       if g.proposedSpell.any (·.caster == p) then
         promptIfTriggersNeedTargets
-          (g.reverseProposedSpell (resumeContinuation := true) (alwaysGrantPriority := true))
+          (g.reverseProposedSpell (resumeContinuation := true) (alwaysGrantPriority := true)
+            (followedByFinishFra := followedByFinishFra)
+            (followedByExplicitPriority? := followedByExplicitPriority?))
       else g
     else
       match g.proposedSpell with
@@ -2471,16 +3150,22 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
               g.change (.pending (.chooseMode p))
             else
               promptIfTriggersNeedTargets
-                (g.reverseProposedSpell (resumeContinuation := true) (alwaysGrantPriority := true))
+                (g.reverseProposedSpell (resumeContinuation := true) (alwaysGrantPriority := true)
+                  (followedByFinishFra := followedByFinishFra)
+                  (followedByExplicitPriority? := followedByExplicitPriority?))
           | .spell =>
             match g.findObject? prop.spellId with
             | none =>
               promptIfTriggersNeedTargets
-                (g.reverseProposedSpell (resumeContinuation := true) (alwaysGrantPriority := true))
+                (g.reverseProposedSpell (resumeContinuation := true) (alwaysGrantPriority := true)
+                  (followedByFinishFra := followedByFinishFra)
+                  (followedByExplicitPriority? := followedByExplicitPriority?))
             | some spell =>
               if spell.zone != .stack || !g.sourceStillPayable prop then
                 promptIfTriggersNeedTargets
-                  (g.reverseProposedSpell (resumeContinuation := true) (alwaysGrantPriority := true))
+                  (g.reverseProposedSpell (resumeContinuation := true) (alwaysGrantPriority := true)
+                    (followedByFinishFra := followedByFinishFra)
+                    (followedByExplicitPriority? := followedByExplicitPriority?))
               else
               let face := g.baseCard spell
               let effModes := g.evalSpellModes p spell
@@ -2503,12 +3188,16 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
                 g.change (.pending (.chooseMode p))
               else
                 promptIfTriggersNeedTargets
-                  (g.reverseProposedSpell (resumeContinuation := true) (alwaysGrantPriority := true))
+                  (g.reverseProposedSpell (resumeContinuation := true) (alwaysGrantPriority := true)
+                    (followedByFinishFra := followedByFinishFra)
+                    (followedByExplicitPriority? := followedByExplicitPriority?))
           | .turnFaceUp =>
             if g.sourceStillPayable prop && (g.findObject? prop.spellId).any (·.isOnBattlefield) then g
             else
               promptIfTriggersNeedTargets
-                (g.reverseProposedSpell (resumeContinuation := true) (alwaysGrantPriority := true))
+                (g.reverseProposedSpell (resumeContinuation := true) (alwaysGrantPriority := true)
+                  (followedByFinishFra := followedByFinishFra)
+                  (followedByExplicitPriority? := followedByExplicitPriority?))
   | .resumeChooseTargetsAfterLeave p =>
     let promptIfTriggersNeedTargets (g : Game) : Game :=
       if !g.over && g.pending == .none && g.continuations.isEmpty &&
@@ -2523,6 +3212,8 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
       if ownPropNeedsReverse then
         (if g.pending == .none then g else g.change (.pending .none)).reverseProposedSpell
           (resumeContinuation := true) (alwaysGrantPriority := true)
+          (followedByFinishFra := followedByFinishFra)
+          (followedByExplicitPriority? := followedByExplicitPriority?)
       else g
     let pendingBlocksTargets :=
       match g.pending with
@@ -2552,7 +3243,9 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
         if !g.stillInGame caster then
           if isPropSpell then
             promptIfTriggersNeedTargets
-              (g.reverseProposedSpell (resumeContinuation := true) (alwaysGrantPriority := true))
+              (g.reverseProposedSpell (resumeContinuation := true) (alwaysGrantPriority := true)
+                (followedByFinishFra := followedByFinishFra)
+                (followedByExplicitPriority? := followedByExplicitPriority?))
           else
             (g.ceaseToExist obj.id (cause := some (.gameRule .triggeredAbility))).afterTriggerTargetsChosen
         else
@@ -2573,7 +3266,9 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
             promptIfTriggersNeedTargets
               (g.reverseProposedSpell (resumeContinuation := true)
                 (extraLog := some s!"{g.name obj} has no legal target and can't be cast")
-                (alwaysGrantPriority := true))
+                (alwaysGrantPriority := true)
+                (followedByFinishFra := followedByFinishFra)
+                (followedByExplicitPriority? := followedByExplicitPriority?))
           else
             let objName := g.name obj
             let g := g.ceaseToExist obj.id (cause := some (.gameRule .triggeredAbility))
@@ -2673,6 +3368,8 @@ partial def runPostStep (g : Game) (step : PostStep) : Game :=
       g.change (.pending savedP)
     else if g.proposedSpell.any (·.caster == p) then
       let g := g.reverseProposedSpell (resumeContinuation := true) (alwaysGrantPriority := true)
+        (followedByFinishFra := followedByFinishFra)
+        (followedByExplicitPriority? := followedByExplicitPriority?)
       if !g.over && g.pending == .none && g.continuations.isEmpty &&
           g.triggerNeedingTargets.isSome then
         g.promptTriggerTargetsIfNeeded
@@ -3379,22 +4076,36 @@ cleanup, and resuming an active continuation via `finishFraChoice` when
 partial def reverseProposedSpell? (g : Game) (resumeContinuation : Bool := false)
     (extraLog : Option String := none)
     (alwaysGrantPriority : Bool := false)
-    (skipDepartureReconcile : Bool := false) : Except String Game := do
+    (skipDepartureReconcile : Bool := false)
+    (followedByFinishFra : Bool := false)
+    (followedByExplicitPriority? : Option PlayerId := none) : Except String Game := do
+  let hadProposal := g.proposedSpell.isSome
   let (g, needsFinish) ← g.reverseProposedSpellCore?
     (resumeContinuation := resumeContinuation) (extraLog := extraLog)
     (alwaysGrantPriority := alwaysGrantPriority)
     (skipDepartureReconcile := skipDepartureReconcile)
-  return if needsFinish then g.finishFraChoice else g
+    (followedByFinishFra := followedByFinishFra)
+    (followedByExplicitPriority? := followedByExplicitPriority?)
+  if !needsFinish then
+    return g
+  else
+    match (if !followedByFinishFra && hadProposal then followedByExplicitPriority? else none) with
+    | some prio => return g.finishAndGrantPriority (g.priorityInstead prio)
+    | none => return g.finishFraChoice
 
 /-- Non-monadic wrapper around `reverseProposedSpell?`. -/
 @[export mtg_game_reverse_proposed_spell]
 partial def reverseProposedSpell (g : Game) (resumeContinuation : Bool := false)
     (extraLog : Option String := none)
     (alwaysGrantPriority : Bool := false)
-    (skipDepartureReconcile : Bool := false) : Game :=
+    (skipDepartureReconcile : Bool := false)
+    (followedByFinishFra : Bool := false)
+    (followedByExplicitPriority? : Option PlayerId := none) : Game :=
   match g.reverseProposedSpell? (resumeContinuation := resumeContinuation)
       (extraLog := extraLog) (alwaysGrantPriority := alwaysGrantPriority)
-      (skipDepartureReconcile := skipDepartureReconcile) with
+      (skipDepartureReconcile := skipDepartureReconcile)
+      (followedByFinishFra := followedByFinishFra)
+      (followedByExplicitPriority? := followedByExplicitPriority?) with
   | .ok g' => g'
   | .error msg => g.logMsg msg
 

@@ -1,4 +1,4 @@
-import Mtg.Engine.Game.FraResolve
+import Mtg.Engine.Game.TriggerArgs
 
 /-!
 # Unified effect resolution (CR 608)
@@ -1554,8 +1554,8 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
   | .teamGain k =>
     g.grantUntilEotToControlledCreatures controller k k.joinedAnd
   | .recruit _ => g.beginRecruit controller
-  | .addMana types (.fixed 1) =>
-    g.addManaLogged controller types (source := sourceId)
+  | .addMana types amount =>
+    g.applyAddMana controller sourceId types amount targets
   | .discard (.cards n) =>
     g.beginDiscardCards #[controller] n
   | .onSource a =>
@@ -2516,6 +2516,8 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
         let (g, linkCause) := g.allocDelayedCause (some controller) sourceId
         g.withBatch (some linkCause) fun g =>
           g.exileIdsUntilSourceLeavesLoop sourceId validIds (some linkCause)
+  | .addMana types amount =>
+    g.applyAddMana controller sourceId types amount targets lastKnownPower
   | r =>
     match Resolution.toSpell r with
     | some _ =>
@@ -2704,15 +2706,13 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
       | .lookAtTopRevealArtifact n =>
         g.beginLookRevealToHand controller n (fun o => g.isArtifact o) false
       | .addAnyColorSpendOnlySubtype subtype =>
-        match subtype with
-        | .elf =>
-          g.addMana controller (.colored .green) 1 (source := sourceId) (restriction := some .elf)
-        | .hero =>
-          g.addMana controller (.colored .white) 1 (source := sourceId) (restriction := some .hero)
-        | .villain =>
-          g.addMana controller (.colored .black) 1 (source := sourceId) (restriction := some .villain)
-        | _ =>
-          g.addMana controller (.colored .white) 1 (source := sourceId)
+        let color : Color :=
+          match subtype with
+          | .elf => .green
+          | .villain => .black
+          | _ => .white
+        g.addMana controller (.colored color) 1 (source := sourceId)
+          (restriction := some (.forSubtypeSpellOrSource subtype))
       | .addAnyColorSpendOnlyArtifactSpell =>
         g.addMana controller (.colored .white) 1 (source := sourceId)
           (restriction := some (.fra .artifactSpell))

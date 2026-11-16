@@ -124,7 +124,7 @@ def isManaActivation (ab : ActivatedAbility) : Bool :=
   ab.otherModes.isEmpty && !ab.effect.requiresTarget && ab.cost.loyalty.isNone &&
     !ab.isFromGraveyard && !ab.isFromHand && ab.hasSupportedManaActivationCost &&
     match ab.effect.resolution with
-    | .addMana _ | .addAnyColor | .addAnyColorSpendOnlySubtype _
+    | .addMana _ _ | .addAnyColor | .addAnyColorSpendOnlySubtype _
     | .addAnyColorSpendOnlyArtifactSpell | .addTwoAnyColorCreatureSources
     | .addBlueCantNonartifact | .addAnyColorEqualToSourcePower
     | .addFourAnyCombination | .addTwoAnyColorEquipment => true

@@ -154,7 +154,7 @@ def applyKickerToProposed (g : Game) (kick : Bool) : Except String Game := do
   let some spell := g.findObject? prop.spellId | throw "The spell left the stack"
   let face := { g.baseCard spell with keywords := g.currentKeywords spell }
   if !kick then
-    if !prop.alternativeCost && face.morph.isSome && face.kicker.isNone then
+    if prop.sneakAttacker.isNone && face.morph.isSome && face.kicker.isNone then
       let effPerm :=
         if prop.resolutionCast then
           some { (prop.origPerm.getD { player := prop.caster }) with ignoreTiming := true }
@@ -173,17 +173,35 @@ def applyKickerToProposed (g : Game) (kick : Bool) : Except String Game := do
   | some _, _, none =>
     if g.spellNameForbidden "" then
       throw "Nameless spells can't be cast"
+    let cleanPerms :=
+      (g.playPermissionsFor prop.caster preSpell).filter fun pm =>
+        !pm.withoutManaCost && !pm.payLifeEqualManaValue && pm.prepareSource.isNone
+    let morphPerm :=
+      match prop.origPerm with
+      | some pm =>
+        if !pm.withoutManaCost && !pm.payLifeEqualManaValue && pm.prepareSource.isNone then
+          some pm
+        else
+          cleanPerms.foldl (fun best? q =>
+            match best? with
+            | none => some q
+            | some b =>
+              let sQ := (if q.ignoreTiming then 2 else 0) + (if q.anyMana then 1 else 0)
+              let sB := (if b.ignoreTiming then 2 else 0) + (if b.anyMana then 1 else 0)
+              if sQ >= sB then some q else some b) none
+      | none => none
     if !(g.timingAllowsCast prop.caster morphSpellFace (excludeStackId := some spell.id) ||
-        prop.resolutionCast || prop.origPerm.any (·.ignoreTiming)) then
+        prop.resolutionCast || morphPerm.any (·.ignoreTiming) ||
+        cleanPerms.any (·.ignoreTiming)) then
       throw "Morph can be cast face down only when you could cast a creature spell (CR 702.37a)"
     let g := g.record (GameEvent.announced g.turnNumber spell.id (costs := #[.morph]))
     let cost :=
       g.playManaCost preSpell morphSpellFace extraGen
-        (origPerm := prop.origPerm)
+        (origPerm := morphPerm)
         (flashback := some (GameEvent.castWithFlashback g.events prop.spellId))
         (explicitAltCost := true)
     return g.changeProposals
-      #[.kicked true, .kickerAnnounced true, .cost cost, .alternativeCost true,
+      #[.kicked true, .kickerAnnounced true, .cost cost, .payLife 0, .alternativeCost true,
         .needsSacrificeOther false, .needsDiscardCard false]
   | _, some (n, alt), none =>
     let g := g.record (GameEvent.announced g.turnNumber spell.id (costs := #[.impending n]))
