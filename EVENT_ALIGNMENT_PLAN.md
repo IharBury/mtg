@@ -18091,7 +18091,7 @@ permanent & stack-copy `Event.castEventBound` + nested mana `targetProposalCheck
    preservation in `Leaving.playerLeavesGameCore`, and complete priority-recipient / cleanup-step /
    `.seq`-reversal classification across `Decisions`, `ManaAbilities`, & `Event`**
    (`Casting.lean:690–893`, `Core.lean:24, 8149–8156`,
-   `Decisions.lean:283–329, 348–349, 385–423, 605–659, 680–773, 869–969, 1271–1488, 1602–1684, 1911–1912, 1972, 2441–2526, 2671–2682, 3379–3399`,
+   `Decisions.lean:283–329, 348–349, 385–423, 600–659, 673–788, 865–969, 1271–1488, 1602–1684, 1911–1912, 1972, 2441–2526, 2671–2682, 3379–3399`,
    `Event.lean:1257–1258, 1341–1346, 1749–1750, 1931–1935, 2345–2400`, `Leaving.lean:1765–1805, 3552–3583`,
    `ManaAbilities.lean:547–548, 632–633, 640–643, 667–668`, `StateBasedActions.lean:440–486`,
    `Turns.lean:592–737, 772–868, 965, 1120–1209`;
@@ -18131,7 +18131,7 @@ permanent & stack-copy `Event.castEventBound` + nested mana `targetProposalCheck
    - **Explicit `priorityRecipientOfContinuation?`, cleanup-step priority continuations, and `.seq`
      proposal-reversal coverage across `Decisions`, `ManaAbilities`, & `Event`**
      (`Casting.lean:690–893`, `Core.lean:24, 8149–8156`,
-     `Decisions.lean:283–329, 348–349, 385–423, 605–659, 680–773, 869–969, 1271–1275, 1602–1684, 1911–1912, 1972, 2441–2526, 2671–2682, 3379–3399`,
+     `Decisions.lean:283–329, 348–349, 385–423, 600–659, 673–788, 865–969, 1271–1275, 1602–1684, 1911–1912, 1972, 2441–2526, 2671–2682, 3379–3399`,
      `Event.lean:1257–1258, 1341–1346, 1749–1750, 1931–1935, 2345–2400`, `Leaving.lean:1765–1805`,
      `ManaAbilities.lean:547–548, 632–633, 640–643, 667–668`, `Turns.lean:592–737, 772–868, 965, 1120–1209`):
      - Three priority-continuation and `.seq`-reversal classification gaps remain:
@@ -18177,25 +18177,28 @@ permanent & stack-copy `Event.castEventBound` + nested mana `targetProposalCheck
        `followedByExplicitPriority?` when `firstPriorityGrantRecipient? g0 false rest == some none` (an implicit
        priority grant in `rest` ahead of the outer continuation):
        - Return `some prio` from `Decisions.priorityRecipientOfContinuation?` (`299–314`) for `.finishConcede` /
-         idle `.concedePlayersLoop` (`680–773, 869–871`, mirroring `finishConcedePriority` at `Decisions.lean:605–659`:
-         keep un-departed `remaining` teammates `remaining.any (fun pid => !(g.player pid).leftTheGame)` on
-         `.concedePlayersLoop` at `680–773`, the `unlessPaysDue` / `savedPending` / `rewindProposal` / `popOuter`
-         guards at `605–633`, the `wasAssigningCombatDamage` arm at `634–635` — calling
-         `beginCombatDamageAssignment` / `continueBlockerCombatAssignment` — and the queued-continuation
-         `finishFraChoice` arm at `637–641` — after `drainPendingContinuations` pops the inspected continuation slot
-         and `popEmptyContinuationFrames` (`637`), any remaining `continuations`, queued/outer pending replacements
-         (`hasQueuedPending` or remaining `outerPendingReplacements`), `triggerSequenceRest`, or `mayThenResume` —
-         out of the explicit recipient as `none`; keep the `wasIdlePriority` all-passed arm
-         `wasIdlePriority && g.playersReceivePriority && !g.hasWaitingTriggers && g.consecutivePasses ≥
-         g.livingPlayers.size` at `642–652` separate and out of `priorityRecipientOfContinuation?` as `none`, since
-         `!g.stack.isEmpty` runs `resolveTop` at `646` before chaining `.receivePriority g.activePlayer` on
+         idle `.concedePlayersLoop` (`673–788, 865–871`, mirroring `finishConcedePriority` at `Decisions.lean:600–659`:
+         return `none` only on the actual early exits — `g.over` at `600` (and `673, 681, 689, 777` in
+         `concedePlayersLoop`), `g.sbaPaused` re-chaining `.finishConcede` at `601–604` (and `865–868`), a
+         `.chooseReplacement` / `.chooseLegend` re-chain during `concedePlayersLoop`'s `680–773`
+         `playerLeavesGameCore` loop at `696–698, 711–713, 769–772`, `g.unlessPaysDue && rewindProposal.isNone` at
+         `605–612`, `g.pending != .none` at `632` or `g.unlessPaysDue` at `633` after the `614–631` `savedPending` /
+         `rewindProposal` / `popOuter` restoration `let`, the `wasAssigningCombatDamage` arm at `634–635` calling
+         `beginCombatDamageAssignment` / `continueBlockerCombatAssignment`, the `finishFraChoice` arm at `637–641`
+         when `!g.continuations.isEmpty || g.pendingReplacement.isSome || !g.outerPendingReplacements.isEmpty ||
+         g.triggerSequenceRest.isSome || g.mayThenResume` holds after `g.popEmptyContinuationFrames` at `637` (once
+         `632–635` have not returned), the `wasIdlePriority` all-passed arm `wasIdlePriority &&
+         g.playersReceivePriority && !g.hasWaitingTriggers && g.consecutivePasses ≥ g.livingPlayers.size` at `642–652`
+         where `!g.stack.isEmpty` runs `resolveTop` at `646` before chaining `.receivePriority g.activePlayer` on
          `.chooseReplacement` at `648`, returning without a priority grant on any other `g.pending != .none` at
-         `649`, or calling `g.receivePriority g.activePlayer` post-`resolveTop` on `g.pending == .none` at `650`,
-         while `g.stack.isEmpty` calls `g.advanceStep` at `652` (`Turns.lean:1120–1209`) rather than computing a
-         `PlayerId`; and on the ordinary `g.playersReceivePriority` arm at `653–658` return
+         `649`, or calling `g.receivePriority g.activePlayer` post-`resolveTop` on `g.pending == .none` at `650` and
+         `g.stack.isEmpty` calls `g.advanceStep` at `652` (`Turns.lean:1120–1209`) rather than computing a
+         `PlayerId`, and `!g.playersReceivePriority` at `659` — while returning
          `some (if g.stillInGame rawPrio then rawPrio else g.nextLiving rawPrio)` for `rawPrio :=
-         (savedPendingPrio.orElse (fun _ => g.pendingPriority)).getD g.priority` (`Core.lean:24, 8149–8156`), or
-         `none` when `!g.playersReceivePriority` at `659`), for `.finishPostCast caster true false _` (`some caster`
+         (savedPendingPrio.orElse (fun _ => g.pendingPriority)).getD g.priority` (`Core.lean:24, 8149–8156`) on the
+         ordinary `g.playersReceivePriority` arm at `653–658`, including when the `614–631` restoration `let` or
+         `concedePlayersLoop`'s `680–773` loop falls through to `653–658` via `869–871`), for `.finishPostCast caster
+         true false _` (`some caster`
          unconditionally across `hadOpenContinuation`), and for the step/turn/cleanup continuations (next living
          turn seat from `Turns.continueStartNextTurn`'s extra-turn / departed-seat recomputation at
          `Turns.lean:625–640, 708–736` on `.continueStartNextTurn nextP remainingDeparted true alreadyExpired`,
