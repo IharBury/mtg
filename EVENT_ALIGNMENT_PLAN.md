@@ -18092,9 +18092,9 @@ permanent & stack-copy `Event.castEventBound` + nested mana `targetProposalCheck
    `.seq`-reversal classification across `Decisions`, `ManaAbilities`, & `Event`**
    (`Casting.lean:690–893`,
    `Decisions.lean:283–329, 348–349, 385–423, 886–969, 1271–1488, 1602–1684, 1911–1912, 1972, 2441–2526, 2671–2682, 3379–3399`,
-   `Event.lean:1257–1258, 1341–1346, 1931–1935, 2345–2390`, `Leaving.lean:1765–1805, 3552–3583`,
+   `Event.lean:1257–1258, 1341–1346, 1749–1750, 1931–1935, 2345–2400`, `Leaving.lean:1765–1805, 3552–3583`,
    `ManaAbilities.lean:547–548, 632–633, 640–643, 667–668`, `StateBasedActions.lean:440–486`,
-   `Turns.lean:772–868, 965`;
+   `Turns.lean:592–737, 772–868, 965`;
    **CR 104.5 / 117.3a,c / 503.1 / 514.3a / 601.2a–i / 603.3b / 605.3b / 616.1 / 704.3 / 704.5e / 707.12 /
    733.1–733.2 / 800.4a,i**):
    - **Post-leaf `.seq` sibling ordering in `StateBasedActions.chainOrMergeLeave` and non-abort
@@ -18132,31 +18132,34 @@ permanent & stack-copy `Event.castEventBound` + nested mana `targetProposalCheck
      proposal-reversal coverage across `Decisions`, `ManaAbilities`, & `Event`**
      (`Casting.lean:690–893`,
      `Decisions.lean:283–329, 348–349, 385–423, 886–969, 1271–1275, 1602–1684, 1911–1912, 1972, 2441–2526, 2671–2682, 3379–3399`,
-     `Event.lean:1257–1258, 1341–1346, 1931–1935, 2345–2390`, `Leaving.lean:1765–1805`,
-     `ManaAbilities.lean:547–548, 632–633, 640–643, 667–668`, `Turns.lean:772–868, 965`):
+     `Event.lean:1257–1258, 1341–1346, 1749–1750, 1931–1935, 2345–2400`, `Leaving.lean:1765–1805`,
+     `ManaAbilities.lean:547–548, 632–633, 640–643, 667–668`, `Turns.lean:592–737, 772–868, 965`):
      - Three priority-continuation and `.seq`-reversal classification gaps remain:
        (i) `Decisions.priorityRecipientOfContinuation?` (`299–314`) returns `none` for `.finishConcede`, idle
-       `.concedePlayersLoop` (`!wp && !mid`), `.finishPostCast caster true false true` (line `301` matches only
-       `.finishPostCast caster true false false`, whereas `endsWithPriorityGrant` at `Event.lean:2369` grants
-       priority when `!hasQueuedPending`), and the step/turn/cleanup continuations (`.beginStepCont st`,
-       `.beginTurnAfterStartExpiry`, `.continueStartNextTurn nextP _ true _`, `.finishCleanupAfterClearEot`, and
-       `.finishPostStep` of `.startNextTurnAndBegin`, `.endTurnAfterCleanupStepEnded`, `.advanceAfterStepEnded`,
-       `.cleanupStepAfterDiscard`, `.postSbaCleanup _`, `.beginStepBody st`, and `.beginStepAfterPhaseBegan st`),
-       so `firstPriorityGrantRecipient?` (`327–328`) classifies them as `some none`
-       (`hasImplicitPriorityContinuation == true` at `348–349`, `entryExplicitGrant == false`) and
+       `.concedePlayersLoop` (`!wp && !mid`), `.finishPostCast caster true false true` (`Event.lean:1749–1750`,
+       fourth field `hadOpenContinuation`: `endsWithPriorityGrant` at `Event.lean:2369` is `grantPriority &&
+       !hadOuter` for both values of `hasQueuedPending`, while line `301` matches only `.finishPostCast caster true
+       false false`), and the step/turn leaves already in `Decisions.continuationGrantsPriority` (`286–294`:
+       `.beginStepCont st` when `st != .untap || hasQueuedPending`, `.beginTurnAfterStartExpiry`,
+       `.continueStartNextTurn ..`, `.finishCleanupAfterClearEot`, and `.finishPostStep` of
+       `.startNextTurnAndBegin`, `.endTurnAfterCleanupStepEnded`, `.advanceAfterStepEnded`, `.beginStepBody st`,
+       and `.beginStepAfterPhaseBegan st`), so `firstPriorityGrantRecipient?` (`327–328`) turns those leaves into
+       `some none` (`hasImplicitPriorityContinuation == true` at `348–349`, `entryExplicitGrant == false`) and
        `finishAndGrantPriority` (`390–392, 407–409, 416–417`) plus `ManaAbilities` (`547–548, 632–633, 640–643,
        667–668`) overwrite `g.pendingPriority`, stealing CR 800.4i next-in-turn concession priority and CR 503.1 /
-       CR 117.3a new-turn active-player priority;
+       CR 117.3a new-turn active-player priority (whereas `.finishPostStep .cleanupStepAfterDiscard` and
+       `.finishPostStep (.postSbaCleanup _)` currently return `none` from `firstPriorityGrantRecipient?` because
+       they are absent from `286–294` and `endsWithPriorityGrant`, and will likewise need explicit recipients once
+       added to `continuationGrantsPriority`);
        (ii) `.finishPostStep .cleanupStepAfterDiscard` and `.finishPostStep (.postSbaCleanup _)` (`Event.lean:1257–1258`,
-       `Turns.lean:834–868, 965`) are omitted from `Decisions.continuationGrantsPriority` (`283–296`), and all of
-       those step/turn/cleanup priority-granting leaves (`.beginStepCont st`, `.beginTurnAfterStartExpiry`,
-       `.continueStartNextTurn _ _ true _`, `.finishCleanupAfterClearEot`, and `.finishPostStep` of
-       `.startNextTurnAndBegin`, `.endTurnAfterCleanupStepEnded`, `.advanceAfterStepEnded`,
-       `.cleanupStepAfterDiscard`, `.postSbaCleanup _`, `.beginStepBody st`, and `.beginStepAfterPhaseBegan st`
-       from `Decisions.lean:286–294` + the two cleanup `PostStep`s) are omitted from
-       `PendingReplacement.nextQueuedPending`, `endsWithPriorityGrant`, and `endsWithNonProposalPriorityGrant`
-       (`Event.lean:2345–2390`), causing `finishAndGrantPriority` (`413`) to chain a duplicate `.receivePriority`
-       that lingers at idle priority and hijacks CR 514.3a / CR 117.3c cleanup priority; and
+       `Turns.lean:834–868, 965`) are omitted from `Decisions.continuationGrantsPriority` (`283–296`), so
+       `finishAndGrantPriority` (`405–413`) sees `anyContinuationGrantsPriority == false` for them and takes line
+       `413` to chain a duplicate `.receivePriority` that lingers at idle priority and hijacks CR 514.3a / CR 117.3c
+       cleanup priority — while all of those step/turn/cleanup priority-granting leaves (`Decisions.lean:286–294`
+       plus `.cleanupStepAfterDiscard` and `.postSbaCleanup _`) hit the `| _ =>` wildcard in
+       `PendingReplacement.nextQueuedPending` (`2345–2359`, preserving `hasQueuedPending`),
+       `endsWithPriorityGrant` (`2364–2380`, returning `false` so `ensureEndsWithFinishFra` at `2394–2400` appends a
+       redundant `.finishFraChoice`), and `endsWithNonProposalPriorityGrant` (`2386–2390`, returning `false`); and
        (iii) in `Decisions.resumePendingReplacementCore` (`.seq first rest`, `886–969`), `stepCanReverseProposal`
        (`887–909`) omits `.restorePending (.chooseMode ..) ..` and `.restorePending (.chooseTargets ..) ..` (which
        route through `Leaving.redirectPendingAfterLeave` at `Leaving.lean:1765–1805`, called from
@@ -18175,20 +18178,30 @@ permanent & stack-copy `Event.castEventBound` + nested mana `targetProposalCheck
        priority grant in `rest` ahead of the outer continuation):
        - Return `some prio` from `Decisions.priorityRecipientOfContinuation?` (`299–314`) for `.finishConcede` /
          idle `.concedePlayersLoop` (computing the CR 800.4i recipient from `savedPendingPrio` / `g.pendingPriority`
-         / `g.activePlayer` modulo `remaining` + `departed`), for `.finishPostCast caster true false true` when
-         `!hasQueuedPending`, and for the step/turn/cleanup continuations (`some nextP` on
-         `.continueStartNextTurn nextP _ true _`, next-turn seat from `Turns.startNextTurnCore`'s seat scan on
+         / `g.activePlayer` modulo `remaining` + `departed`), for `.finishPostCast caster true false _` (`some
+         caster` unconditionally across `hadOpenContinuation`), and for the step/turn/cleanup continuations (next
+         living turn seat from `Turns.continueStartNextTurn`'s extra-turn / departed-seat recomputation at
+         `Turns.lean:625–640, 708–736` on `.continueStartNextTurn nextP remainingDeparted true alreadyExpired`,
+         next-turn seat from `Turns.startNextTurnCore`'s seat scan at `772–784` on
          `.finishPostStep .startNextTurnAndBegin` / `.finishPostStep .endTurnAfterCleanupStepEnded` and on
-         `.finishPostStep (.postSbaCleanup false)` when `!g.hasWaitingTriggers`, `some g.activePlayer` on
-         `.beginTurnAfterStartExpiry`, `.finishPostStep (.postSbaCleanup true)`, non-cleanup `.beginStepCont st` /
-         `.finishPostStep (.beginStepBody st)` / `.finishPostStep (.beginStepAfterPhaseBegan st)` /
-         `.finishPostStep .advanceAfterStepEnded`, and cleanup-SBA vs next-turn recipient on
-         `.finishCleanupAfterClearEot` / `.finishPostStep .cleanupStepAfterDiscard` / cleanup `.beginStepCont` /
-         `.beginStepBody` / `.beginStepAfterPhaseBegan` / `.advanceAfterStepEnded`); add
-         `.finishPostStep .cleanupStepAfterDiscard` and `.finishPostStep (.postSbaCleanup _)` (plus gating
-         `.continueStartNextTurn _ _ runBeginTurn _` on `runBeginTurn`) to `Decisions.continuationGrantsPriority`
-         (`283–296`) and add those step/turn/cleanup continuations to `PendingReplacement.nextQueuedPending`,
-         `endsWithPriorityGrant`, and `endsWithNonProposalPriorityGrant` (`Event.lean:2345–2390`); and in
+         `.finishPostStep (.postSbaCleanup false)` when `!g.hasWaitingTriggers` (`840–847`), `some g.activePlayer`
+         on `.beginTurnAfterStartExpiry`, `.finishPostStep (.postSbaCleanup true)` and
+         `.finishPostStep (.postSbaCleanup false)` when `g.hasWaitingTriggers` (`836–839`),
+         `.finishPostStep .advanceAfterStepEnded`, and non-cleanup `.beginStepCont st` /
+         `.finishPostStep (.beginStepBody st)` / `.finishPostStep (.beginStepAfterPhaseBegan st)`, and cleanup-SBA
+         vs next-turn recipient on `.finishCleanupAfterClearEot` / `.finishPostStep .cleanupStepAfterDiscard` /
+         cleanup `.beginStepCont` / `.beginStepBody` / `.beginStepAfterPhaseBegan`); add
+         `.finishPostStep .cleanupStepAfterDiscard` and `.finishPostStep (.postSbaCleanup _)` and gate
+         `.continueStartNextTurn _ _ runBeginTurn _` on `runBeginTurn` (`735–737`) in
+         `Decisions.continuationGrantsPriority` (`283–296`); add `.beginTurnAfterStartExpiry`,
+         `.continueStartNextTurn _ _ runBeginTurn _` (gated on `runBeginTurn`), `.finishCleanupAfterClearEot`,
+         `.finishPostStep` of `.startNextTurnAndBegin` / `.endTurnAfterCleanupStepEnded` / `.advanceAfterStepEnded`
+         / `.cleanupStepAfterDiscard` / `.postSbaCleanup _`, and `.beginStepCont st` /
+         `.finishPostStep (.beginStepBody st)` / `.finishPostStep (.beginStepAfterPhaseBegan st)` (gated on
+         `st != .untap || hasQueuedPending` in `endsWithPriorityGrant` and `st != .untap` in
+         `endsWithNonProposalPriorityGrant`, and returning `false` on those draining leaves in
+         `PendingReplacement.nextQueuedPending` at `Event.lean:2345–2359` while leaving `.untap` and
+         `runBeginTurn == false` on the `| _ => hasQueuedPending` wildcard); and in
          `Decisions.resumePendingReplacementCore` (`886–969, 1271–1275, 1911–1912, 1972, 2441–2526, 2671–2682`)
          include `.restorePending (.chooseMode ..) ..`, `.restorePending (.chooseTargets ..) ..`, and
          `.finishPostStep (.resumeProposalCostAfterLeave ..)` / `.resumeChooseModeAfterLeave` /
