@@ -18219,13 +18219,16 @@ permanent & stack-copy `Event.castEventBound` + nested mana `targetProposalCheck
          `hadOpenContinuation == true`), and for the step/turn/cleanup
          continuations (on `.continueStartNextTurn nextP remainingDeparted runBeginTurn alreadyExpired` at
          `Turns.lean:592–737`, returning `none` when `!runBeginTurn` or when a frame exits at `g.over` (`595–596,
-         609–610`) or the `.continueStartNextTurn` re-chain after `expireUntilNextTurnEffects` (`615–618`), following any
-         synchronous `continueStartNextTurn` re-entry at `666–707` (`671` when `nextExtra? = some q` and `q != nextP ||
-         !unexpiredExtra.isEmpty`, or `707` with `nextP'` from `683–705`), and on the frame that reaches `708–737`
-         returning `some` of the player `turnBegan` stores as `gNext.activePlayer` (`Core.lean:3625`) when `(gNext,
-         true)` (`708–733`: `q` from `nextExtra?` at `658–660` in the `710–723` extra-turn arm, or `nextP` in the
-         `725–733` `none` arm when `g.stillInGame nextP`) enters `gNext.beginTurn` at `735–736`, or `none` on `(g,
-         false)` when `!g.stillInGame nextP` at `734` and `else gNext` at `737` — next-turn seat from
+         609–610`) or the `.continueStartNextTurn` re-chain after `expireUntilNextTurnEffects` (`615–618`), following a
+         synchronous `continueStartNextTurn` re-entry at `666–707` when `(!g.stillInGame nextP ||
+         !unexpiredExtra.isEmpty) && !g.over && g.players.any (fun pl => g.stillInGame pl.id)` holds (`671` in the `some
+         q` arm of `nextExtra?` when `q != nextP || !unexpiredExtra.isEmpty`, or `707` in the `none` arm with `(nextP',
+         newlyDeparted)` from `683–705` when `g.stillInGame nextP' && (nextP' != nextP || !newlyDeparted.isEmpty)`), and
+         for the frame that actually reaches `708–737` returning `some` of the player `turnBegan` stores as
+         `gNext.activePlayer` (`Core.lean:3625`) when `(gNext, true)` (`708–733`: `q` from `nextExtra?` at `658–660` in
+         the `710–723` extra-turn arm, or `nextP` in the `725–733` `none` arm when `g.stillInGame nextP`) enters
+         `gNext.beginTurn` at `735–736`, or `none` on `(g, false)` when `!g.stillInGame nextP` at `734` and `else gNext`
+         at `737` — next-turn seat from
          `Turns.startNextTurnCore`'s seat scan at `772–784` on
          `.finishPostStep .startNextTurnAndBegin` / `.finishPostStep .endTurnAfterCleanupStepEnded` and on
          `.finishPostStep (.postSbaCleanup false)` when `!g.hasWaitingTriggers` (`840–847`), `some g.activePlayer` on
@@ -18258,9 +18261,13 @@ permanent & stack-copy `Event.castEventBound` + nested mana `targetProposalCheck
          `.finishPostStep (.beginStepAfterPhaseBegan st)`, and `.finishPostStep .advanceAfterStepEnded` using `g` so
          `continuationGrantsPriority` is `false` (rather than turning them into `some none` implicit grants) whenever
          the continuation exits without granting or opens a prompt — `.continueStartNextTurn` when `!runBeginTurn` or
-         when execution (following any synchronous `671` / `707` re-entry) exits at `g.over` (`595–596, 609–610`), the
-         `615–618` re-chain, `(g, false)` at `734`, or `else gNext` at `737` (`gNext.over || !gNext.stillInGame
-         gNext.activePlayer`) rather than entering `gNext.beginTurn` at `735–736`, `.untap` when `!hasQueuedPending`, `.declareAttackers` while
+         when execution (following a synchronous `671` / `707` re-entry under the same `(!g.stillInGame nextP ||
+         !unexpiredExtra.isEmpty) && !g.over && g.players.any (fun pl => g.stillInGame pl.id)` outer guard at `666–667`
+         and inner `669–670` `nextExtra? = some q` (`q != nextP || !unexpiredExtra.isEmpty`) / `672–706`
+         `nextExtra? = none` (`(nextP', newlyDeparted)` from `683–705` with `g.stillInGame nextP' && (nextP' != nextP ||
+         !newlyDeparted.isEmpty)`) guards) exits at `g.over` (`595–596, 609–610`), the `615–618` re-chain, `(g, false)`
+         at `734`, or `else gNext` at `737` (`gNext.over || !gNext.stillInGame gNext.activePlayer`) rather than entering
+         `gNext.beginTurn` at `735–736`, `.untap` when `!hasQueuedPending`, `.declareAttackers` while
          `g.stillInGame g.activePlayer` (`925–926`), `.declareBlockers` when a defending player is left to declare
          (`941–943, 950`), `.combatDamage` when `beginCombatDamageAssignment` opens an assignment prompt
          (`Combat.lean:551–553, 528–530`), and `.advanceAfterStepEnded` when `g.step.next? == none` (`2719`) or its
